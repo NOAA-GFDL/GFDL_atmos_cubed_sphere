@@ -50,7 +50,7 @@ module fv_io_mod
 
   !--- version information variables ----
   character(len=128) :: version = '$Id: fv_io.F90,v 14.0 2007/03/15 21:58:41 fms Exp $'
-  character(len=128) :: tagname = '$Name: nalanda $'
+  character(len=128) :: tagname = '$Name: nalanda_2007_04 $'
 
 contains 
 

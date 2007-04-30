@@ -47,7 +47,7 @@ public  atmosphere_down,       atmosphere_up,       &
 !-----------------------------------------------------------------------
 
 character(len=128) :: version = '$Id: atmosphere.F90,v 14.0 2007/03/15 21:57:47 fms Exp $'
-character(len=128) :: tagname = '$Name: nalanda $'
+character(len=128) :: tagname = '$Name: nalanda_2007_04 $'
 
 !---- namelist (saved in file input.nml) ----
 !

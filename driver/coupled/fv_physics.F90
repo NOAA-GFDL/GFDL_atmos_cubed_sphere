@@ -41,7 +41,7 @@ public  surf_diff_type
 
 !-----------------------------------------------------------------------
 character(len=128) :: version = '$Id: fv_physics.F90,v 14.0 2007/03/15 21:57:50 fms Exp $'
-character(len=128) :: tag = '$Name: nalanda $'
+character(len=128) :: tag = '$Name: nalanda_2007_04 $'
 !-----------------------------------------------------------------------
 
    real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt
