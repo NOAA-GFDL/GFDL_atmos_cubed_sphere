@@ -1,4 +1,4 @@
-! $Id: fv_pack.F90,v 14.0 2007/03/15 21:58:14 fms Exp $
+! $Id: fv_pack.F90,v 14.0.2.1 2007/05/23 15:46:10 z1l Exp $
 
 module fv_pack_mod
 
@@ -226,7 +226,8 @@ module fv_pack_mod
 
         allocate ( Atm(n)%u_srf(isc:iec,jsc:jec) )
         allocate ( Atm(n)%v_srf(isc:iec,jsc:jec) )
-
+        Atm(n)%u_srf = 0
+        Atm(n)%v_srf = 0
 #ifdef FV_LAND
         allocate ( Atm(n)%sgh(isc:iec,jsc:jec) )
         allocate ( Atm(n)%oro(isc:iec,jsc:jec) )

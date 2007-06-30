@@ -71,9 +71,9 @@ public
     real, _ALLOCATABLE ::  cy(:,:,:)  _NULL
 
 ! Horizontal Grid descriptors
-    real, pointer :: grid(:,:,:)  _NULL  ! Leave as a pointer for now
-    real, pointer :: agrid(:,:,:)  _NULL  ! Leave as a pointer for now
-    real, pointer :: grid_g(:,:,:) _NULL  ! "global" grid (one face of a cube)
+    real, pointer :: grid(:,:,:)  =>NULL()  ! Leave as a pointer for now
+    real, pointer :: agrid(:,:,:)  =>NULL()  ! Leave as a pointer for now
+    real, pointer :: grid_g(:,:,:) =>NULL()  ! "global" grid (one face of a cube)
 
     real   :: consv_te
 

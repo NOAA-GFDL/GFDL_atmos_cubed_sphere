@@ -42,12 +42,12 @@ public  atmosphere_down,       atmosphere_up,       &
         atmosphere_resolution, atmosphere_boundary, &
         get_atmosphere_axes,   atmosphere_domain,   &
         get_bottom_mass,       get_bottom_wind,     &
-        fv_stock_pe,           surf_diff_type
+        get_stock_pe,           surf_diff_type
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id: atmosphere.F90,v 14.0 2007/03/15 21:57:47 fms Exp $'
-character(len=128) :: tagname = '$Name: nalanda_2007_04 $'
+character(len=128) :: version = '$Id: atmosphere.F90,v 14.0.2.1 2007/05/23 15:46:07 z1l Exp $'
+character(len=128) :: tagname = '$Name: nalanda_2007_06 $'
 
 !---- namelist (saved in file input.nml) ----
 !
@@ -443,7 +443,7 @@ contains
 
 
 
- subroutine fv_stock_pe(index, value)
+ subroutine get_stock_pe(index, value)
 
     integer, intent(in) :: index
     real,   intent(out) :: value
@@ -493,6 +493,6 @@ contains
      value = 0.0
     end select
 
- end subroutine fv_stock_pe 
+ end subroutine get_stock_pe 
 
 end module atmosphere_mod

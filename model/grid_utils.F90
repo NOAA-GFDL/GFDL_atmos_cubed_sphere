@@ -5,8 +5,9 @@
                           mp_reduce_sum, mp_reduce_min, mp_reduce_max
  use eta_mod,       only: set_eta
  use mpp_mod,       only: FATAL, mpp_error
- use mpp_domains_mod, only: mpp_update_domains, CGRID_NE
+ use mpp_domains_mod, only: mpp_update_domains, CGRID_NE, mpp_global_sum, BITWISE_EXACT_SUM
  use mpp_parameter_mod, only: CORNER
+ use fms_mod,           only: check_nml_error, open_namelist_file, file_exist, close_file
 
 
  implicit none
@@ -96,6 +97,10 @@
  public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, grid_utils_end, &
         spherical_angle, cell_center2, get_area, inner_prod, fill_ghost, make_eta_level
 
+ !--- namelist option
+! for bitwise exact global sums independent of PE number, set false to improve efficiency
+ logical :: do_bitwise_exact_sum = .true.
+ namelist /grid_utils_nml/ do_bitwise_exact_sum
 
  contains
 
@@ -124,8 +129,20 @@
       real p1(3), p2(3), pp(3)
       real sin2, tmp1, tmp2
       integer i, j, k, n
+      integer unit, ierr, io
 
       g_sum_initialized = .false.
+
+      !----- read namelist -----
+      if ( file_exist('input.nml') ) then
+         unit = open_namelist_file ( )
+         ierr=1
+         do while (ierr /= 0)
+            read (unit, nml=grid_utils_nml, iostat=io, end=10)
+            ierr = check_nml_error (io, 'grid_utils_nml')
+         enddo
+10       call close_file (unit)
+      endif
 
       if ( grid_type < 0 ) then
           Gnomonic_grid = .false.
@@ -492,7 +509,7 @@
         if ( (ie+1)==npx ) then
              i=npx
              call vect_cross(ew(1,i,j,1), grid3(1,i,j+1),grid3(1,i,j)) 
-             call normalize_vect(1, ew(1,i,j,1))
+             call normalize_vect(1, ew(:,i,j,1))
         endif
      enddo
 
@@ -2130,8 +2147,6 @@
 
  real function g_sum(p, ifirst, ilast, jfirst, jlast, ngc, area, mode)
  
-! Fast version of globalsum 
-! Warning: produce diff answer with diff total CPU numbers
  
       integer, intent(IN) :: ifirst, ilast
       integer, intent(IN) :: jfirst, jlast, ngc
@@ -2140,24 +2155,32 @@
       real, intent(IN) :: area(ifirst-ngc:ilast+ngc,jfirst-ngc:jlast+ngc)
       integer :: i,j
       real gsum
-         
-      gsum = 0.
-      do j=jfirst,jlast
-         do i=ifirst,ilast
-            gsum = gsum + p(i,j)*area(i,j)
+       
+      if(do_bitwise_exact_sum) then
+         gsum = mpp_global_sum(domain, p(:,:)*area(ifirst:ilast,jfirst:jlast), flags=BITWISE_EXACT_SUM)  
+      else        
+         gsum = 0.
+         do j=jfirst,jlast
+            do i=ifirst,ilast
+               gsum = gsum + p(i,j)*area(i,j)
+            enddo
          enddo
-      enddo
-      call mp_reduce_sum(gsum)
+         call mp_reduce_sum(gsum)
+      end if
 
       if ( present(mode) ) then
-        if ( .not. g_sum_initialized ) then
-           global_area = 0.
-           do j=jfirst,jlast
-              do i=ifirst,ilast
-                 global_area = global_area + area(i,j)
-              enddo
-           enddo
-           call mp_reduce_sum(global_area)
+         if ( .not. g_sum_initialized ) then
+            if(do_bitwise_exact_sum) then
+               global_area = mpp_global_sum(domain, area, flags=BITWISE_EXACT_SUM)
+            else
+               global_area = 0.
+               do j=jfirst,jlast
+                  do i=ifirst,ilast
+                     global_area = global_area + area(i,j)
+                  enddo
+               enddo
+               call mp_reduce_sum(global_area)
+            end if
            g_sum_initialized = .true.
         endif
         g_sum = gsum / global_area
