@@ -31,21 +31,23 @@ module fv_restart_mod
   ! for the model.
   !</DESCRIPTION>
 
-  use constants_mod,       only: kappa, omega, rdgas, grav
+  use constants_mod,       only: kappa, pi, omega, rdgas, grav
   use fv_arrays_mod,       only: fv_atmos_type
-  use fv_io_mod,           only: fv_io_init, fv_io_read_restart, fv_io_write_restart
+  use fv_io_mod,           only: fv_io_init, fv_io_read_restart, fv_io_write_restart, &
+                                 remap_restart
   use grid_tools,          only: area
-  use grid_utils,          only: fC, f0, ptop, ptop_min, fill_ghost, big_number,   &
-                                 make_eta_level
+  use grid_utils,          only: fc, f0, ptop, ptop_min, fill_ghost, big_number,   &
+                                 make_eta_level, deglat
   use fv_diagnostics_mod,  only: prt_maxmin
   use init_hydro,          only: p_var
   use mpp_domains_mod,     only: mpp_update_domains, domain2d, DGRID_NE
   use mpp_mod,             only: mpp_chksum, stdout, mpp_error, FATAL
-  use test_cases,          only: alpha, init_case
+  use test_cases,          only: alpha, init_case, init_double_periodic, init_latlon
   use mp_mod,              only: gid, masterproc
 #ifdef FV_LAND
   use surf_map,            only: sgh_g, oro_g
 #endif
+  use fv_diagnostics_mod,  only: steps, efx, efx_sum, mtq, mtq_sum
 
 
   implicit none
@@ -57,8 +59,8 @@ module fv_restart_mod
   logical                       :: module_is_initialized = .FALSE.
 
   !--- version information variables ----
-  character(len=128) :: version = '$Id: fv_restart.F90,v 14.0 2007/03/15 21:58:44 fms Exp $'
-  character(len=128) :: tagname = '$Name: nalanda_2007_06 $'
+  character(len=128) :: version = '$Id: fv_restart.F90,v 15.0 2007/08/14 03:51:26 fms Exp $'
+  character(len=128) :: tagname = '$Name: omsk $'
 
 contains 
 
@@ -83,29 +85,47 @@ contains
   ! The fv core restart facility
   ! </DESCRIPTION>
   !
-  subroutine fv_restart(fv_domain, Atm, dt_atmos, seconds, days, cold_start)
+  subroutine fv_restart(fv_domain, Atm, dt_atmos, seconds, days, cold_start, grid_type)
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
     real,                intent(in)    :: dt_atmos
     integer,             intent(out)   :: seconds
     integer,             intent(out)   :: days
     logical,             intent(in)    :: cold_start
-
+    integer,             intent(in)    :: grid_type
 
     integer :: i, j, k, n, ntileMe
-    integer :: isc, iec, jsc, jec, npz, ncnst
+    integer :: isc, iec, jsc, jec, npz, npz_rst, ncnst
     integer :: isd, ied, jsd, jed
-    real rgrav
+    real rgrav, f00
+    logical :: hybrid
 
     rgrav = 1. / grav
 
     if(.not.module_is_initialized) call mpp_error(FATAL, 'You must call fv_restart_init.')
 
     ntileMe = size(Atm(:))
+    npz     = Atm(1)%npz
+    npz_rst = Atm(1)%npz_rst
 
   ! This logic doesn't work very well.
   ! Shouldn't have read for all tiles then loop over tiles
-    if(.not.cold_start) call fv_io_read_restart(fv_domain,Atm)
+
+    if(.not.cold_start) then
+        if ( npz_rst /= 0 .and. npz_rst /= npz ) then
+!            Remap vertically the prognostic variables for the chosen vertical resolution
+             if( gid==masterproc ) then
+                 write(*,*) ' '
+                 write(*,*) '***** Important Note from FV core ********************'
+                 write(*,*) 'Remapping dynamic IC from', npz_rst, 'levels to ', npz,'levels'
+                 write(*,*) '***** End Note from FV core **************************'
+                 write(*,*) ' '
+             endif
+             call remap_restart( fv_domain, Atm )
+        else
+             call fv_io_read_restart(fv_domain,Atm)
+        endif
+    endif
 
     seconds = 0; days = 0   ! Restart needs to be modified to record seconds and days.
 
@@ -115,7 +135,6 @@ contains
        ied = Atm(n)%ied
        jsd = Atm(n)%jsd
        jed = Atm(n)%jed
-       npz = Atm(n)%npz
        ncnst = Atm(n)%ncnst
        isc = Atm(n)%isc; iec = Atm(n)%iec; jsc = Atm(n)%jsc; jec = Atm(n)%jec
 
@@ -123,8 +142,6 @@ contains
       if(.not.cold_start)then  ! This is not efficient stacking if there are really more tiles than 1.
 
         call mpp_update_domains( Atm(n)%phis, fv_domain, complete=.true. )
-! Fill big values in  the non-existinng corner regions:
-        call fill_ghost(Atm(n)%phis, Atm(n)%npx, Atm(n)%npy, big_number)
 
 #ifdef SW_DYNAMICS
         Atm(n)%pt(:,:,:)=1.
@@ -134,32 +151,62 @@ contains
                    Atm(n)%delp, Atm(n)%delz, Atm(n)%pt, Atm(n)%ps, Atm(n)%pe, Atm(n)%peln,   &
                    Atm(n)%pk,   Atm(n)%pkz, kappa, Atm(n)%q, Atm(n)%ng, ncnst,  Atm(n)%dry_mass,  &
                    Atm(n)%adjust_dry_mass,  Atm(n)%mountain, Atm(n)%full_phys,  Atm(n)%hydrostatic, &
-                   Atm(n)%k_top)
+                   Atm(n)%k_top, Atm(n)%Make_NH)
 #endif
-        do j=jsd,jed+1
+        if ( grid_type < 7 .and. grid_type /= 4 ) then
+! Fill big values in the non-existinng corner regions:
+!          call fill_ghost(Atm(n)%phis, Atm(n)%npx, Atm(n)%npy, big_number)
+           do j=jsd,jed+1
            do i=isd,ied+1
-              fC(i,j) = 2.*Omega*( -cos(Atm(n)%grid(i,j,1))*cos(Atm(n)%grid(i,j,2))*sin(alpha) + &
+              fc(i,j) = 2.*omega*( -cos(Atm(n)%grid(i,j,1))*cos(Atm(n)%grid(i,j,2))*sin(alpha) + &
                                     sin(Atm(n)%grid(i,j,2))*cos(alpha) )
            enddo
-        enddo
-        do j=jsd,jed
+           enddo
+           do j=jsd,jed
            do i=isd,ied
-             f0(i,j) = 2.*Omega*( -cos(Atm(n)%agrid(i,j,1))*cos(Atm(n)%agrid(i,j,2))*sin(alpha) + &
+             f0(i,j) = 2.*omega*( -cos(Atm(n)%agrid(i,j,1))*cos(Atm(n)%agrid(i,j,2))*sin(alpha) + &
                                     sin(Atm(n)%agrid(i,j,2))*cos(alpha) )
            enddo
-        enddo
+           enddo
+        else
+           f00 = 2.*omega*sin(deglat/180.*pi)
+           do j=jsd,jed+1
+              do i=isd,ied+1
+                 fc(i,j) = f00
+              enddo
+           enddo
+           do j=jsd,jed
+              do i=isd,ied
+                 f0(i,j) = f00
+              enddo
+           enddo
+        endif
       else
 ! Setup Case to Run
-          call init_case(Atm(n)%u,Atm(n)%v,Atm(n)%pt,Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
-                         Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        & 
-                         Atm(n)%ak, Atm(n)%bk, Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, ncnst, &
-                         Atm(n)%k_top, Atm(n)%ndims, Atm(n)%ntiles, Atm(n)%dry_mass, Atm(n)%mountain,       &
 #ifdef MAKE_HYBRID_Z
-                         Atm(n)%full_phys,  .false.       , Atm(n)%delz, Atm(n)%ze0)
+         hybrid = .false.
 #else
-                         Atm(n)%full_phys, Atm(n)%hybrid_z, Atm(n)%delz, Atm(n)%ze0)
+         hybrid = Atm(n)%hybrid_z
 #endif
-
+         if (grid_type < 4) then
+            call init_case(Atm(n)%u,Atm(n)%v,Atm(n)%pt,Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
+                           Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        & 
+                           Atm(n)%ak, Atm(n)%bk, Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, ncnst, &
+                           Atm(n)%k_top, Atm(n)%ndims, Atm(n)%ntiles, Atm(n)%dry_mass, Atm(n)%mountain,       &
+                           Atm(n)%full_phys, hybrid, Atm(n)%delz, Atm(n)%ze0)
+         elseif (grid_type == 4) then
+            call init_double_periodic(Atm(n)%u,Atm(n)%v,Atm(n)%pt,Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
+                                      Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        & 
+                                      Atm(n)%ak, Atm(n)%bk, Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, ncnst, &
+                                      Atm(n)%k_top, Atm(n)%ndims, Atm(n)%ntiles, Atm(n)%dry_mass, Atm(n)%mountain,       &
+                                      Atm(n)%full_phys, hybrid, Atm(n)%delz, Atm(n)%ze0)
+         elseif (grid_type == 5 .or. grid_type == 6) then
+            call init_latlon(Atm(n)%u,Atm(n)%v,Atm(n)%pt,Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
+                             Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        &
+                             Atm(n)%ak, Atm(n)%bk, Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, ncnst, &
+                             Atm(n)%k_top, Atm(n)%ndims, Atm(n)%ntiles, Atm(n)%dry_mass, Atm(n)%mountain,       &
+                             Atm(n)%full_phys, hybrid, Atm(n)%delz, Atm(n)%ze0)
+         endif
 
 #ifdef FV_LAND
         do j=jsc,jec
@@ -226,10 +273,12 @@ contains
 
       call prt_maxmin('PS', Atm(n)%ps, isc, iec, jsc, jec, Atm(n)%ng, 1,    0.01, gid==masterproc)
       call prt_maxmin('T ', Atm(n)%pt, isc, iec, jsc, jec, Atm(n)%ng, npz, 1., gid==masterproc)
+#ifndef MARS_GCM
       if (ncnst>0) call prt_maxmin('Q1', Atm(n)%q(isd,jsd,1,1), isc, iec, jsc, jec, Atm(n)%ng, npz, 1.,gid==masterproc)
       if (ncnst>1) call prt_maxmin('Q2', Atm(n)%q(isd,jsd,1,2), isc, iec, jsc, jec, Atm(n)%ng, npz, 1.,gid==masterproc)
       if (ncnst>2) call prt_maxmin('Q3', Atm(n)%q(isd,jsd,1,3), isc, iec, jsc, jec, Atm(n)%ng, npz, 1.,gid==masterproc)
       if (ncnst>3) call prt_maxmin('Q4', Atm(n)%q(isd,jsd,1,4), isc, iec, jsc, jec, Atm(n)%ng, npz, 1.,gid==masterproc)
+#endif
 #endif
       call prt_maxmin('U ', Atm(n)%u(isc:iec,jsc:jec,1:npz), isc, iec, jsc, jec, 0, npz, 1., gid==masterproc)
       call prt_maxmin('V ', Atm(n)%v(isc:iec,jsc:jec,1:npz), isc, iec, jsc, jec, 0, npz, 1., gid==masterproc)
@@ -306,11 +355,26 @@ contains
       if ( .not. Atm(n)%hydrostatic )    &
       call prt_maxmin('W ', Atm(n)%w , isc, iec, jsc, jec, Atm(n)%ng, npz, 1., gid==masterproc)
       call prt_maxmin('T ', Atm(n)%pt, isc, iec, jsc, jec, Atm(n)%ng, npz, 1., gid==masterproc)
+! Write4 energy correction term
 #endif
     end do
 
     call fv_io_write_restart(fv_domain,Atm)
     module_is_initialized = .FALSE.
+
+#ifdef EFLUX_OUT
+    if( gid==masterproc ) then
+        write(*,*) steps, 'Mean equivalent Heat flux for this integration period=',efx_sum/real(max(1,steps)), &
+                          'Mean mountain torque=',mtq_sum/real(max(1,steps))
+        open (98, file='e_flux.data', form='unformatted',status='unknown', access='sequential')
+        do n=1,steps
+           write(98) efx(n)
+           write(98) mtq(n)    ! time series global mountain torque
+        enddo
+        close(98)
+    endif
+#endif
+
   end subroutine fv_restart_end
   ! </SUBROUTINE> NAME="fv_restart_end"
 

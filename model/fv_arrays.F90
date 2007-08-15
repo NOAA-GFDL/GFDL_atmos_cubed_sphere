@@ -71,19 +71,19 @@ public
     real, _ALLOCATABLE ::  cy(:,:,:)  _NULL
 
 ! Horizontal Grid descriptors
-    real, pointer :: grid(:,:,:)  =>NULL()  ! Leave as a pointer for now
-    real, pointer :: agrid(:,:,:)  =>NULL()  ! Leave as a pointer for now
-    real, pointer :: grid_g(:,:,:) =>NULL()  ! "global" grid (one face of a cube)
+    real, pointer :: grid(:,:,:)  _NULL  ! Leave as a pointer for now
+    real, pointer :: agrid(:,:,:)  _NULL  ! Leave as a pointer for now
+    real, pointer :: grid_g(:,:,:) _NULL  ! "global" grid (one face of a cube)
 
     real   :: consv_te
 
     integer :: isc, iec, jsc, jec
     integer :: isd, ied, jsd, jed
-
-    integer :: ks, npx, npy, npz, ng, ntiles
+    integer :: ks, npx, npy, npz, npz_rst, ng, ntiles
     integer :: n_sponge    ! Number of sponge layers at the top of the atmosphere
     integer :: k_top       ! Starting layer for non-hydrostatic dynamics
     integer :: ncnst, ndims, n_split, m_split, q_split, print_freq
+    integer :: fv_sg_adj
 
 ! Namelist control values
     logical :: fill
@@ -95,7 +95,6 @@ public
     logical :: mountain
     logical :: non_ortho
     logical :: adjust_dry_mass
-
     logical :: hydrostatic
     logical :: hybrid_z, Make_NH
 
@@ -103,4 +102,3 @@ public
 
   end type fv_atmos_type
 end module fv_arrays_mod
-

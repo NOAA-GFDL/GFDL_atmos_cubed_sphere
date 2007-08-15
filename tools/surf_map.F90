@@ -1,19 +1,19 @@
  module surf_map
 
       use constants_mod, only: grav
+!     use tpcore,     only: copy_corners
       use grid_utils, only: great_circle_dist, latlon2xyz, v_prod,  &
                             sina_u, sina_v, g_sum, global_mx 
-      use mp_mod, only: domain, ng, is,js,ie,je, isd,jsd,ied,jed, &
-                        fill_corners,  &
-                        mp_stop, mp_reduce_min, mp_reduce_max
+      use mp_mod,   only: domain, ng, is,js,ie,je, isd,jsd,ied,jed, &
+                          mp_stop, mp_reduce_min, mp_reduce_max
       use mpp_domains_mod,   only : mpp_update_domains
 
       implicit none
       real pi
       private
-      real, allocatable:: sgh_g(:,:), oro_g(:,:)
-      public  sgh_g, oro_g
-      public  surfdrv
+      real, allocatable:: sgh_g(:,:), oro_g(:,:), zs_g(:,:)
+      public  sgh_g, oro_g, zs_g
+      public  surfdrv, map_to_cubed_simple
 
       contains
 
@@ -56,9 +56,8 @@
       integer ncid, lonid, latid, ftopoid, htopoid
       integer status
       logical check_orig
-      integer nmax
       integer nlon, nlat
-      real da_min, da_max, cd, zmean
+      real da_min, da_max, cd2, cd4, zmean
       integer fid
 
 ! Output the original 10 min NAVY data in grads readable format
@@ -66,11 +65,14 @@
 
       allocate ( oro_g(isd:ied, jsd:jed) )
       allocate ( sgh_g(isd:ied, jsd:jed) )
+      allocate (  zs_g(is:ie, js:je) )
 
 #ifdef MARS_GCM
-
+!!!             Note that it is necessary to convert from km to m
+!!!                     see ifdef MARS_GCM  below 
       fid = 22
-      open( Unit= fid, FILE= '/home/sjl/Cubed_Grids/mars_topo_mola16', FORM= 'unformatted')
+!!!   open( Unit= fid, FILE= '/home/sjl/Cubed_Grids/mars_topo_mola16', FORM= 'unformatted')
+      open( Unit= fid, FILE= '/home/rjw/MGCM/mars_topo_mola16', FORM= 'unformatted')
       read( fid ) nlon, nlat
 
       if(master) write(*,*) 'Mars Terrain dataset dims=', nlon, nlat
@@ -226,35 +228,35 @@
       call global_mx(oro_g, ng, da_min, da_max)
       if ( master ) write(*,*) 'ORO min=', da_min, ' Max=', da_max
 
+      do j=js,je
+         do i=is,ie
+            zs_g(i,j) = phis(i,j)
+         end do
+      end do
 !--------
 ! Filter:
 !--------
       call global_mx(area, ng, da_min, da_max)
 
 ! diffusion coefficient:
-      cd = 0.20 * da_min
+      cd2 = 0.10 * da_min
+      cd4 = 0.24 * da_min
 
-      if ( npx<=45 ) then
-         nmax = 1
-      elseif ( npx<=91 ) then
-         nmax = 2
-      elseif ( npx<=361 ) then
-         nmax = 3
-      else
-         nmax = 4
+      call global_mx(phis, ng, da_min, da_max)
+      zmean = g_sum(zs_g, is, ie, js, je, ng, area, mode=1)
+
+      if ( master )  &
+           write(*,*) 'Before filter Phis min=', da_min, ' Max=', da_max,' Mean=',zmean
+
+      if ( npx<=1000 ) then 
+         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 2, cd4)
+!        call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 1, cd2)
       endif
 
       call global_mx(phis, ng, da_min, da_max)
-      zmean = g_sum(phis(is:ie,js:je), is, ie, js, je, ng, area,1)
-      if ( master ) then
-         write(*,*) 'Before filter Phis min=', da_min, ' Max=', da_max,' Mean=',zmean
-      endif
-
-      if ( npx<=1000 )   &
-         call del2_on_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, nmax, cd)
-
-      call global_mx(phis, ng, da_min, da_max)
-      if ( master ) write(*,*) ' after filter Phis min=', da_min, ' Max=', da_max
+      zmean = g_sum(phis(is:ie,js:je), is, ie, js, je, ng, area, mode=1)
+      if ( master ) &
+           write(*,*) 'After filter Phis min=', da_min, ' Max=', da_max, 'Mean=', zmean
 
       do j=js,je
          do i=is,ie
@@ -285,24 +287,25 @@
 !-----------------------------------------------
 ! Filter the standard deviation of mean terrain:
 !-----------------------------------------------
-      if ( npx<=91 ) then
-           nmax = 1
-      else
-           nmax = 2
+
+      if ( npx<=1000 ) then
+         call del4_cubed_sphere(npx, npy, sgh_g, area, dx, dy, dxc, dyc, 2, cd4)
+!        call del2_cubed_sphere(npx, npy, sgh_g, area, dx, dy, dxc, dyc, 1, cd2)
+         call global_mx(sgh_g, ng, da_min, da_max)
+         if ( master ) write(*,*) 'After filter SGH min=', da_min, ' Max=', da_max
+         do j=js,je
+            do i=is,ie
+               sgh_g(i,j) = max(0., sgh_g(i,j))
+            enddo
+         enddo
       endif
-
-      if ( npx<=1000 )   &
-         call del2_on_cubed_sphere(npx, npy, sgh_g, area, dx, dy, dxc, dyc, nmax, cd)
-
-      call global_mx(sgh_g, ng, da_min, da_max)
-      if ( master ) write(*,*) 'After filter SGH min=', da_min, ' Max=', da_max
 
 
       end subroutine surfdrv
 
 
 
-      subroutine del2_on_cubed_sphere(npx, npy, q, area, dx, dy, dxc, dyc, nmax, cd)
+ subroutine del2_cubed_sphere(npx, npy, q, area, dx, dy, dxc, dyc, nmax, cd)
       integer, intent(in):: npx, npy
       integer, intent(in):: nmax
       real, intent(in):: cd
@@ -318,8 +321,7 @@
       real ddx(is:ie+1,js:je), ddy(is:ie,js:je+1)
       integer i,j,n
 
-     
-      call mpp_update_domains( q, domain )
+      call mpp_update_domains(q,domain,whalo=1,ehalo=1,shalo=1,nhalo=1)
 
 ! First step: average the corners:
       if ( is==1 .and. js==1 ) then
@@ -346,7 +348,7 @@
 
       do n=1,nmax
 
-         if( n>1 ) call mpp_update_domains( q, domain )
+         if( n>1 ) call mpp_update_domains(q,domain,whalo=1,ehalo=1,shalo=1,nhalo=1)
 
          do j=js,je
             do i=is,ie+1
@@ -368,7 +370,158 @@
        
       enddo
 
-      end subroutine del2_on_cubed_sphere
+ end subroutine del2_cubed_sphere
+
+
+ subroutine del4_cubed_sphere(npx, npy, q, area, dx, dy, dxc, dyc, nmax, cd)
+      real, parameter:: esl = 1.E-20
+      integer, intent(in):: npx, npy, nmax
+      real, intent(in)::area(isd:ied,  jsd:jed)
+      real, intent(in)::  dx(isd:ied,  jsd:jed+1)
+      real, intent(in)::  dy(isd:ied+1,jsd:jed)
+      real, intent(in):: dxc(isd:ied+1,jsd:jed)
+      real, intent(in):: dyc(isd:ied,  jsd:jed+1)
+      real, intent(in):: cd
+      real, intent(inout):: q(is-ng:ie+ng, js-ng:je+ng)
+! diffusive fluxes: 
+      real :: fx2(is:ie+1,js:je), fy2(is:ie,js:je+1)
+      real :: fx4(is:ie+1,js:je), fy4(is:ie,js:je+1)
+      real   d2(isd:ied,jsd:jed)
+      real  win(isd:ied,jsd:jed)
+      real  wou(isd:ied,jsd:jed)
+
+      real qlow(is:ie,js:je)
+      real qmin(is:ie,js:je)
+      real qmax(is:ie,js:je)
+      integer i,j, n
+
+      call mpp_update_domains(q,domain,whalo=1,ehalo=1,shalo=1,nhalo=1)
+
+! First step: average the corners:
+      if ( is==1 .and. js==1 ) then
+           q(1,1) = (q(1,1)+q(0,1)+q(1,0)) / 3.
+           q(0,1) =  q(1,1)
+           q(1,0) =  q(1,1)
+      endif
+      if ( (ie+1)==npx .and. js==1 ) then
+           q(ie, 1) = (q(ie,1)+q(npx,1)+q(ie,0)) / 3.
+           q(npx,1) =  q(ie,1)
+           q(ie, 0) =  q(ie,1)
+      endif
+      if ( (ie+1)==npx .and. (je+1)==npy ) then
+           q(ie, je) = (q(ie,je)+q(npx,je)+q(ie,npy)) / 3.
+           q(npx,je) =  q(ie,je)
+           q(ie,npy) =  q(ie,je)
+      endif
+      if ( is==1 .and. (je+1)==npy ) then
+           q(1, je) = (q(1,je)+q(0,je)+q(1,npy)) / 3.
+           q(0, je) =  q(1,je)
+           q(1,npy) =  q(1,je)
+      endif
+
+     do j=js,je
+        do i=is,ie
+           qmin(i,j) = min(q(i,j-1), q(i-1,j), q(i,j), q(i+1,j), q(i,j+1))
+           qmax(i,j) = max(q(i,j-1), q(i-1,j), q(i,j), q(i+1,j), q(i,j+1))
+        enddo
+     enddo
+
+  do n=1,nmax
+     if( n/=1 ) call mpp_update_domains(q,domain,whalo=1,ehalo=1,shalo=1,nhalo=1)
+!--------------
+! Compute del-2
+!--------------
+!     call copy_corners(q, npx, npy, 1)
+      do j=js,je
+         do i=is,ie+1
+            fx2(i,j) = cd*dy(i,j)*sina_u(i,j)*(q(i-1,j)-q(i,j))/dxc(i,j)
+         enddo
+      enddo
+
+!     call copy_corners(q, npx, npy, 2)
+      do j=js,je+1
+         do i=is,ie
+            fy2(i,j) = cd*dx(i,j)*sina_v(i,j)*(q(i,j-1)-q(i,j))/dyc(i,j)
+         enddo
+      enddo
+
+      do j=js,je
+         do i=is,ie
+            d2(i,j) = (fx2(i,j)-fx2(i+1,j)+fy2(i,j)-fy2(i,j+1)) / area(i,j)
+! Low order monotonic solution
+            qlow(i,j) = q(i,j) + d2(i,j)
+            d2(i,j) = cd * d2(i,j)
+         enddo
+      enddo
+
+      call mpp_update_domains(d2,domain,whalo=1,ehalo=1,shalo=1,nhalo=1)
+
+!---------------------
+! Compute del4 fluxes:
+!---------------------
+!     call copy_corners(d2, npx, npy, 1)
+      do j=js,je
+         do i=is,ie+1
+            fx4(i,j) = dy(i,j)*sina_u(i,j)*(d2(i,j)-d2(i-1,j))/dxc(i,j)-fx2(i,j)
+         enddo
+      enddo
+
+!     call copy_corners(d2, npx, npy, 2)
+      do j=js,je+1
+         do i=is,ie
+            fy4(i,j) = dx(i,j)*sina_v(i,j)*(d2(i,j)-d2(i,j-1))/dyc(i,j)-fy2(i,j)
+         enddo
+      enddo
+
+!----------------
+! Flux limitting:
+!----------------
+#ifndef NO_MFCT_FILTER
+      do j=js,je
+         do i=is,ie
+            win(i,j) = max(0.,fx4(i,  j)) - min(0.,fx4(i+1,j)) +   &
+                       max(0.,fy4(i,  j)) - min(0.,fy4(i,j+1)) + esl
+            wou(i,j) = max(0.,fx4(i+1,j)) - min(0.,fx4(i,  j)) +   &
+                       max(0.,fy4(i,j+1)) - min(0.,fy4(i,  j)) + esl
+            win(i,j) = max(0., qmax(i,j) - qlow(i,j)) / win(i,j)*area(i,j)
+            wou(i,j) = max(0., qlow(i,j) - qmin(i,j)) / wou(i,j)*area(i,j)
+         enddo
+      enddo
+
+      call mpp_update_domains(win,domain,whalo=1,ehalo=1,shalo=1,nhalo=1, complete=.false.)
+      call mpp_update_domains(wou,domain,whalo=1,ehalo=1,shalo=1,nhalo=1, complete=.true.)
+
+      do j=js,je
+         do i=is,ie+1
+            if ( fx4(i,j) > 0. ) then
+                 fx4(i,j) = min(1., wou(i-1,j), win(i,j)) * fx4(i,j) 
+            else
+                 fx4(i,j) = min(1., win(i-1,j), wou(i,j)) * fx4(i,j) 
+            endif
+         enddo
+      enddo
+      do j=js,je+1
+         do i=is,ie
+            if ( fy4(i,j) > 0. ) then
+                 fy4(i,j) = min(1., wou(i,j-1), win(i,j)) * fy4(i,j) 
+            else
+                 fy4(i,j) = min(1., win(i,j-1), wou(i,j)) * fy4(i,j) 
+            endif
+         enddo
+      enddo
+#endif
+
+! Update:
+      do j=js,je
+         do i=is,ie
+            q(i,j) = qlow(i,j) + (fx4(i,j)-fx4(i+1,j)+fy4(i,j)-fy4(i,j+1))/area(i,j)
+         enddo
+      enddo
+
+  enddo    ! end n-loop
+
+ end subroutine del4_cubed_sphere
+
 
 
 
@@ -785,5 +938,152 @@
          enddo
       enddo
       end subroutine remove_ice_sheets
+
+    subroutine map_to_cubed_simple(im, jm, lat1, lon1, q1, grid, agrid, q2, npx, npy)
+
+
+! Input
+      integer, intent(in):: im,jm         ! original dimensions
+      integer, intent(in):: npx, npy
+!rjw      logical, intent(in):: master
+      real, intent(in):: lat1(jm+1)       ! original southern edge of the cell [-pi/2:pi/2]
+      real, intent(in):: lon1(im+1)       ! original western edge of the cell [0:2*pi]
+      real*4, intent(in):: q1(im,jm)        ! original data at center of the cell
+!rjw      real*4, intent(in):: f1(im,jm)        !
+
+      real, intent(in)::  grid(is-ng:ie+ng+1, js-ng:je+ng+1,2)
+      real, intent(in):: agrid(is-ng:ie+ng,   js-ng:je+ng,  2)
+
+! Output
+      real, intent(out):: q2(is-ng:ie+ng, js-ng:je+ng) ! Mapped data at the target resolution
+!rjw      real, intent(out):: f2(isd:ied,jsd:jed) ! oro
+!rjw      real, intent(out):: h2(isd:ied,jsd:jed) ! variances of terrain
+
+! Local
+      real*4  qt(-im/32:im+im/32,jm)    ! ghosted east-west
+!rjw      real*4  ft(-im/32:im+im/32,jm)    ! 
+      real lon_g(-im/32:im+im/32)
+      real lat_g(jm)
+
+      real pc(3), p2(2), pp(3), grid3(3,is-ng:ie+ng+1, js-ng:je+ng+1)
+      integer i,j, np
+      integer ii, jj, i1, i2, j1, j2
+      integer ifirst, ilast
+      real ddeg, latitude, qsum, fsum, hsum, lon_w, lon_e, lat_s, lat_n, r2d
+      real delg
+
+      pi = 4.0 * datan(1.0d0)
+
+      r2d = 180./pi
+      ddeg = 2.*pi/real(4*npx)
+
+! Ghost the input coordinates:
+      do i=1,im
+         lon_g(i) = 0.5*(lon1(i)+lon1(i+1))
+      enddo
+
+      do i=-im/32,0
+         lon_g(i) = lon_g(i+im)
+      enddo
+      do i=im+1,im+im/32
+         lon_g(i) = lon_g(i-im)
+      enddo
+
+      do j=1,jm
+         lat_g(j) = 0.5*(lat1(j)+lat1(j+1))
+      enddo
+
+      if ( 2*(im/2) /= im ) then
+           write(*,*) 'Warning: Terrain datset must have an even nlon dimension'
+      endif
+! Ghost Data
+      do j=1,jm
+         do i=1,im
+            qt(i,j) = q1(i,j)
+!rjw            ft(i,j) = f1(i,j)
+         enddo
+         do i=-im/32,0
+            qt(i,j) = qt(i+im,j)
+!rjw            ft(i,j) = ft(i+im,j)
+         enddo
+         do i=im+1,im+im/32
+            qt(i,j) = qt(i-im,j)
+!rjw            ft(i,j) = ft(i-im,j)
+         enddo
+      enddo
+      
+      do j=js,je+1
+         do i=is,ie+1
+            call latlon2xyz(grid(i,j,1:2), grid3(1,i,j))
+         enddo
+      enddo
+
+!rjw     if(master) write(*,*) 'surf_map: Search started ....'
+! Mapping:
+      do j=js,je
+         do i=is,ie
+! Determine the approximate local loop bounds (slightly larger than needed)
+            lon_w = min( grid(i,j,1), grid(i+1,j,1), grid(i,j+1,1), grid(i+1,j+1,1) ) - ddeg
+            lon_e = max( grid(i,j,1), grid(i+1,j,1), grid(i,j+1,1), grid(i+1,j+1,1) ) + ddeg
+            if ( (lon_e - lon_w) > pi ) then
+                 delg = max( abs(lon_e-2.*pi), abs(lon_w) ) + ddeg
+                 i1 = -delg / (2.*pi/real(im)) - 1
+                 i2 = -i1 + 1
+            else 
+                 i1 = lon_w / (2.*pi/real(im)) - 1
+                 i2 = lon_e / (2.*pi/real(im)) + 2
+            endif
+            i1 = max(-im/32, i1)
+            i2 = min(im+im/32, i2)
+!           
+            lat_s = min( grid(i,j,2), grid(i+1,j,2), grid(i,j+1,2), grid(i+1,j+1,2) ) - ddeg
+            lat_n = max( grid(i,j,2), grid(i+1,j,2), grid(i,j+1,2), grid(i+1,j+1,2) ) + ddeg
+            j1 = (0.5*pi + lat_s) / (pi/real(jm)) - 1
+            j2 = (0.5*pi + lat_n) / (pi/real(jm)) + 2
+              
+              np = 0
+            qsum = 0.
+!rjw            fsum = 0.
+!rjw            hsum = 0.
+            call latlon2xyz(agrid(i,j,1:2), pc)
+
+!rjw             print *, 'Interior loop:  ',  i, j, i1, i2, j1, j2,  grid(i,j,1:2)*r2d,  agrid(i,j,1:2)*r2d
+
+            do jj=max(1,j1),min(jm,j2)
+                  p2(2) = lat_g(jj)
+                  latitude =  p2(2)*r2d
+               if ( abs(latitude) > 80.  ) then
+                  ifirst = 1; ilast = im
+               else
+                  ifirst = i1; ilast = i2
+               endif
+
+               do ii=ifirst, ilast
+                  p2(1) = lon_g(ii)
+                  call latlon2xyz(p2, pp)
+                  if (inside_p4(grid3(1,i,j), grid3(1,i+1,j), grid3(1,i+1,j+1), grid3(1,i,j+1), pc, pp)) then
+                       np = np + 1
+                       qsum = qsum + qt(ii,jj)
+!rjw                       fsum = fsum + ft(ii,jj)
+!rjw                       hsum = hsum + qt(ii,jj)**2
+                  endif
+
+               enddo
+            enddo
+! Compute weighted average:
+            if ( np > 0 ) then
+                 q2(i,j) = qsum / real(np)
+!rjw                 f2(i,j) = fsum / real(np)
+!rjw                 h2(i,j) = hsum / real(np) - q2(i,j)**2
+            else                    ! the subdomain could be totally flat
+!rjw            if(master) write(*,*) 'Warning: surf_map failed'
+                write(*,*) 'Warning: surf_map_simple failed'
+                q2(i,j) = 1.E8
+                call mp_stop
+
+            endif
+         enddo
+      enddo
+      end subroutine map_to_cubed_simple
 
  end module surf_map

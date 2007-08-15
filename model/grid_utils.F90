@@ -7,8 +7,6 @@
  use mpp_mod,       only: FATAL, mpp_error
  use mpp_domains_mod, only: mpp_update_domains, CGRID_NE, mpp_global_sum, BITWISE_EXACT_SUM
  use mpp_parameter_mod, only: CORNER
- use fms_mod,           only: check_nml_error, open_namelist_file, file_exist, close_file
-
 
  implicit none
  private
@@ -18,6 +16,8 @@
 ! Higher precisions for grid geometrical factors:
  integer, parameter:: f_p = selected_real_kind(20)
 #endif
+ real, parameter::  big_number=1.E35
+ real, parameter:: tiny_number=1.E-35
 
 ! For computing mismatch for variable grid zise:
  real, allocatable :: cx1(:,:), cx2(:,:)    !
@@ -44,8 +44,6 @@
  real, allocatable :: a21(:,:)
  real, allocatable :: a22(:,:)
 
- real, parameter::  big_number=1.E25
- real, parameter:: tiny_number=1.E-25
  real:: global_area, da_min, da_max, da_min_c, da_max_c
  logical:: g_sum_initialized
  logical:: Gnomonic_grid
@@ -74,18 +72,18 @@
 ! Extended Cubed cross-edge winds
  real, allocatable :: eww(:,:)
  real, allocatable :: ess(:,:)
- real, allocatable :: ue(:,:)    ! West-East edges
- real, allocatable :: ve(:,:)    ! South-North edges
 
 ! Unit vectors for lat-lon grid
  real, allocatable :: vlon(:,:,:), vlat(:,:,:)
  real, allocatable :: fC(:,:), f0(:,:)
+ real :: deglat=15.
 
  real, parameter:: ptop_min=1.E-8
  real    :: ptop
  integer :: ks
+ integer :: g_type
 
- public ptop, ks, ptop_min, fC, f0, big_number, ew, es, eww, ess, ec1, ec2, ue, ve
+ public ptop, ks, ptop_min, fC, f0, deglat, big_number, ew, es, eww, ess, ec1, ec2
  public sina_u, sina_v, cosa_u, cosa_v, cosa_s, sina_s, rsin_u, rsin_v, rsina, rsin2
  public project_sphere_v, latlon2xyz,  gnomonic_grids, global_area,         &
         sw_corner, se_corner, ne_corner, nw_corner, global_mx,              &
@@ -95,12 +93,8 @@
         v_prod, en1, en2, ex_w, ex_e, ex_s, ex_n, vlon, vlat, ee1, ee2,     &
         a11, a12, a21, a22, cx1, cx2, cy1, cy2, Gnomonic_grid
  public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, grid_utils_end, &
-        spherical_angle, cell_center2, get_area, inner_prod, fill_ghost, make_eta_level
-
- !--- namelist option
-! for bitwise exact global sums independent of PE number, set false to improve efficiency
- logical :: do_bitwise_exact_sum = .true.
- namelist /grid_utils_nml/ do_bitwise_exact_sum
+        spherical_angle, cell_center2, get_area, inner_prod, fill_ghost,    &
+        make_eta_level, expand_cell
 
  contains
 
@@ -129,20 +123,8 @@
       real p1(3), p2(3), pp(3)
       real sin2, tmp1, tmp2
       integer i, j, k, n
-      integer unit, ierr, io
 
       g_sum_initialized = .false.
-
-      !----- read namelist -----
-      if ( file_exist('input.nml') ) then
-         unit = open_namelist_file ( )
-         ierr=1
-         do while (ierr /= 0)
-            read (unit, nml=grid_utils_nml, iostat=io, end=10)
-            ierr = check_nml_error (io, 'grid_utils_nml')
-         enddo
-10       call close_file (unit)
-      endif
 
       if ( grid_type < 0 ) then
           Gnomonic_grid = .false.
@@ -211,17 +193,18 @@
 
       allocate( eww(3,4) )
       allocate( ess(3,4) )
-      allocate ( ue(js:je,2) )
-      allocate ( ve(is:ie,2) )
 
       sw_corner = .false.
       se_corner = .false.
       ne_corner = .false.
       nw_corner = .false.
-      if (       is==1 .and.  js==1 )      sw_corner = .true.
-      if ( (ie+1)==npx .and.  js==1 )      se_corner = .true.
-      if ( (ie+1)==npx .and. (je+1)==npy ) ne_corner = .true.
-      if (       is==1 .and. (je+1)==npy ) nw_corner = .true.
+
+      if (grid_type < 3) then
+         if (       is==1 .and.  js==1 )      sw_corner = .true.
+         if ( (ie+1)==npx .and.  js==1 )      se_corner = .true.
+         if ( (ie+1)==npx .and. (je+1)==npy ) ne_corner = .true.
+         if (       is==1 .and. (je+1)==npy ) nw_corner = .true.
+      endif
 
 ! For variable grid
    if ( .not. uniform_ppm ) then
@@ -247,13 +230,15 @@
      enddo
   endif
 
+
+  if (grid_type < 3) then
      do j=jsd,jed+1
         do i=isd,ied+1
            call latlon2xyz(grid(i,j,1:2), grid3(1,i,j))
         enddo
      enddo
 
-     call get_center_vect( grid3, ec1, ec2 )
+     call get_center_vect( npx, npy, grid3, ec1, ec2 )
 
 ! Fill arbitrary values in the non-existing corner regions:
      do k=1,3
@@ -263,7 +248,12 @@
 
      do j=jsd,jed
         do i=isd+1,ied
-           call mid_pt_cart( grid(i,j,1:2), grid(i,j+1,1:2), pp)
+        if ( (i<1   .and. j<1  ) .or. (i>npx .and. j<1  ) .or.  &
+             (i>npx .and. j>(npy-1)) .or. (i<1   .and. j>(npy-1)) ) then
+!            (i>npx .and. j>npy) .or. (i<1   .and. j>npy) ) then
+              ew(1:3,i,j,1:2) = 0.
+        else
+              call mid_pt_cart( grid(i,j,1:2), grid(i,j+1,1:2), pp)
            if (i==1) then
               call latlon2xyz( agrid(i,j,1:2), p1)
               do k=1,3
@@ -280,18 +270,23 @@
                                - grid3(k,i-1,j+1) + grid3(k,i+1,j+1)
               enddo
            endif
-           call project_sphere_v(1, ew(1,i,j,1), pp)
-           call   normalize_vect(1, ew(1,i,j,1))
-           do k=1,3
-              ew(k,i,j,2) =  - grid3(k,i,j) + grid3(k,i,j+1)
-           enddo
-           call normalize_vect(1, ew(1,i,j,2))
+             call project_sphere_v(1, ew(1,i,j,1), pp)
+             call   normalize_vect( ew(1,i,j,1) )
+             do k=1,3
+                ew(k,i,j,2) =  - grid3(k,i,j) + grid3(k,i,j+1)
+             enddo
+           call normalize_vect( ew(1,i,j,2) )
+        endif
         enddo
      enddo
 
      do j=jsd+1,jed
         do i=isd,ied
-           call mid_pt_cart(grid(i,j,1:2), grid(i+1,j,1:2), pp)
+        if ( (i<1   .and. j<1  ) .or. (i>(npx-1) .and. j<1  ) .or.  &
+             (i>(npx-1) .and. j>npy) .or. (i<1   .and. j>npy) ) then
+             es(1:3,i,j,1:2) = 0.
+        else
+             call mid_pt_cart(grid(i,j,1:2), grid(i+1,j,1:2), pp)
            if (j==1) then
               call latlon2xyz( agrid(i,j,1:2), p1)
               do k=1,3
@@ -308,14 +303,40 @@
                                + grid3(k,i,j+1) + grid3(k,i+1,j+1)
               enddo
            endif
-           call project_sphere_v(1, es(1,i,j,2), pp)
-           call normalize_vect(1, es(1,i,j,2))
-           do k=1,3
-              es(k,i,j,1) = - grid3(k,i,j) + grid3(k,i+1,j)
-           enddo
-           call normalize_vect(1, es(1,i,j,1))
+             call project_sphere_v(1, es(1,i,j,2), pp)
+             call normalize_vect( es(1,i,j,2) )
+             do k=1,3
+                es(k,i,j,1) = - grid3(k,i,j) + grid3(k,i+1,j)
+             enddo
+             call normalize_vect( es(1,i,j,1) )
+        endif
         enddo
      enddo
+  else
+     ec1(1,:,:)=1.
+     ec1(2,:,:)=0.
+     ec1(3,:,:)=0.
+
+     ec2(1,:,:)=0.
+     ec2(2,:,:)=1.
+     ec2(3,:,:)=0.
+
+     ew(1,:,:,1)=1.
+     ew(2,:,:,1)=0.
+     ew(3,:,:,1)=0.
+                                   
+     ew(1,:,:,2)=0.
+     ew(2,:,:,2)=1.
+     ew(3,:,:,2)=0.
+
+     es(1,:,:,1)=1.
+     es(2,:,:,1)=0.
+     es(3,:,:,1)=0.
+                                   
+     es(1,:,:,2)=0.
+     es(2,:,:,2)=1.
+     es(3,:,:,2)=0.
+  endif
 
      if ( non_ortho ) then
 
@@ -336,7 +357,7 @@
 
 ! The follwoing way works well ONLY with the Gnomonic grid (type 0)
 ! using great circles
-#ifdef TO_DO_LIST
+#ifdef TO_TEST_LIST
          if ( Gnomonic_grid ) then
             do j=js,je+1
                do i=is,ie+1
@@ -366,7 +387,7 @@
                    enddo
                 endif
                 call project_sphere_v(1, ee1(1,i,j), grid3(1,i,j))
-                call normalize_vect(1, ee1(1,i,j))
+                call normalize_vect( ee1(1,i,j) )
 
 ! unit vect in Y-dir: ee2
                 if (j==1) then
@@ -383,7 +404,7 @@
                    enddo
                 endif
                 call project_sphere_v(1, ee2(1,i,j), grid3(1,i,j))
-                call normalize_vect(1, ee2(1,i,j))
+                call normalize_vect( ee2(1,i,j) )
 ! Compute (sine,cosine) at cell corners:
 !               if ( .not. Gnomonic_grid ) then
                      tmp1 = inner_prod(ee1(1,i,j), ee2(1,i,j))
@@ -405,47 +426,39 @@
 
       do j=jsd,jed
          do i=isd+1,ied
-            cosa_u(i,j) = inner_prod(ew(1,i,j,1), ew(1,i,j,2))
+                   tmp1 = inner_prod(ew(1,i,j,1), ew(1,i,j,2))
+            cosa_u(i,j) = sign( min(1., abs(tmp1)), tmp1 )
+!
             sin2 = 1. - cosa_u(i,j)**2
-            if ( sin2 <= 0.) then
-                 cosa_u(i,j) = 1.
-                 sina_u(i,j) = tiny_number
-                 rsin_u(i,j) =  big_number
-            else
-                 sina_u(i,j) = sqrt( sin2 )
-                 rsin_u(i,j) =  1. / sin2
-            endif
+            sin2 = min(1., sin2)
+            sin2 = max(tiny_number, sin2)  ! sin(alpha)**2 >= 0.75
+!
+            sina_u(i,j) = sqrt( sin2 )
+            rsin_u(i,j) =  1. / sin2
          enddo
       enddo
 
       do j=jsd+1,jed
          do i=isd,ied
-            cosa_v(i,j) = inner_prod(es(1,i,j,1), es(1,i,j,2))
+                   tmp1 = inner_prod(es(1,i,j,1), es(1,i,j,2))
+            cosa_v(i,j) = sign( min(1., abs(tmp1)), tmp1 )
             sin2 = 1. - cosa_v(i,j)**2
-            if ( sin2 <= 0. ) then
-                 cosa_v(i,j) = 1.
-                 sina_v(i,j) = tiny_number
-                 rsin_v(i,j) =  big_number
-            else
-                 sina_v(i,j) = sqrt( sin2 )
-                 rsin_v(i,j) =  1. / sin2
-            endif
+            sin2 = min(1., sin2)
+            sin2 = max(tiny_number, sin2)
+            sina_v(i,j) = sqrt( sin2 )
+            rsin_v(i,j) =  1. / sin2
          enddo
       enddo
      
       do j=jsd,jed
          do i=isd,ied
-            cosa_s(i,j) = inner_prod(ec1(1,i,j), ec2(1,i,j))
-            cosa_s(i,j) = sign(min(1., abs(cosa_s(i,j))), cosa_s(i,j))
+                  tmp1  = inner_prod(ec1(1,i,j), ec2(1,i,j))
+            cosa_s(i,j) = sign(min(1., abs(tmp1)), tmp1 )
             sin2 = 1. - cosa_s(i,j)**2
-            if(  sin2<=0. ) then
-                 cosa_s(i,j) = 1.
-                 sina_s(i,j) = tiny_number
-                 rsin2(i,j)  = 1.
-            else
-                 sina_s(i,j) = min(1., sqrt(sin2))
-                 rsin2(i,j) = 1. / sin2
-            endif
+            sin2 = min(1., sin2)
+            sin2 = max(tiny_number, sin2)
+            sina_s(i,j) = min(1., sqrt(sin2))
+            rsin2(i,j) = 1. / sin2
          enddo
       enddo
 ! Force the model to fail if incorrect corner values are to be used:
@@ -468,7 +481,7 @@
       do j=jsd,jed
          do i=isd+1,ied
             if ( i==1 .or. i==npx ) then
-                 rsin_u(i,j) = 1. / sqrt(1.-cosa_u(i,j)**2)
+                 rsin_u(i,j) = 1. / sina_u(i,j)
             endif
          enddo
       enddo
@@ -476,13 +489,12 @@
       do j=jsd+1,jed
          do i=isd,ied
             if ( j==1 .or. j==npy ) then
-                 rsin_v(i,j) = 1. / sqrt(1.-cosa_v(i,j)**2)
+                 rsin_v(i,j) = 1. / sina_v(i,j)
             endif
          enddo
       enddo
 
-
-     else
+   else
            sina = 1.
            cosa = 0.
            rsina  = 1.
@@ -495,51 +507,56 @@
            sina_s = 1.        
            rsin_u = 1.
            rsin_v = 1.
-      endif
+   endif
 
+   if ( grid_type < 3 ) then
+
+#ifdef USE_NORM_VECT
 !-------------------------------------------------------------
 ! Make normal vect at face edges after consines are computed:
 !-------------------------------------------------------------
-     do j=jsd,jed
+! for old d2a2c_vect routines
+     do j=js-1,je+1
         if ( is==1 ) then
              i=1
              call vect_cross(ew(1,i,j,1), grid3(1,i,j+1), grid3(1,i,j)) 
-             call normalize_vect(1, ew(1,i,j,1))
+             call normalize_vect( ew(1,i,j,1) )
         endif
         if ( (ie+1)==npx ) then
              i=npx
-             call vect_cross(ew(1,i,j,1), grid3(1,i,j+1),grid3(1,i,j)) 
-             call normalize_vect(1, ew(:,i,j,1))
+             call vect_cross(ew(1,i,j,1), grid3(1,i,j+1), grid3(1,i,j)) 
+             call normalize_vect( ew(1,i,j,1) )
         endif
      enddo
 
      if ( js==1 ) then
         j=1
-        do i=isd,ied
+        do i=is-1,ie+1
              call vect_cross(es(1,i,j,2), grid3(1,i,j),grid3(1,i+1,j)) 
-             call normalize_vect(1, es(1,i,j,2))
+             call normalize_vect( es(1,i,j,2) )
         enddo
      endif
      if ( (je+1)==npy ) then
         j=npy
-        do i=isd,ied
+        do i=is-1,ie+1
              call vect_cross(es(1,i,j,2), grid3(1,i,j),grid3(1,i+1,j)) 
-             call normalize_vect(1, es(1,i,j,2))
+             call normalize_vect( es(1,i,j,2) )
         enddo
      endif
+#endif
 
 ! For omega computation:
 ! Unit vectors:
      do j=js,je+1
         do i=is,ie
            call vect_cross(en1(1,i,j), grid3(1,i,j), grid3(1,i+1,j))
-           call normalize_vect(1, en1(1,i,j))
+           call normalize_vect( en1(1,i,j) )
         enddo
      enddo
      do j=js,je
         do i=is,ie+1
            call vect_cross(en2(1,i,j), grid3(1,i,j+1), grid3(1,i,j)) 
-           call normalize_vect(1, en2(1,i,j))
+           call normalize_vect( en2(1,i,j) )
         enddo
      enddo
 !-------------------------------------------------------------
@@ -550,45 +567,46 @@
         do k=1,3
            ess(k,1) = grid3(k,1,1) - grid3(k,0,2)
         enddo
-        call normalize_vect(1, ess(1,1),'11')
+        call normalize_vect( ess(1,1) )
         do k=1,3
            eww(k,1) = grid3(k,1,1) - grid3(k,2,0)
         enddo
-        call normalize_vect(1, eww(1,1), '12')
+        call normalize_vect( eww(1,1) )
      endif
      if ( se_corner ) then
         do k=1,3
            ess(k,2) = grid3(k,npx+1,2) - grid3(k,npx,1)
         enddo
-        call normalize_vect(1, ess(1,2), '13')
+        call normalize_vect( ess(1,2) )
         do k=1,3
            eww(k,2) = grid3(k,npx,1) - grid3(k,npx-1,0)
         enddo
-        call normalize_vect(1, eww(1,2))
+        call normalize_vect( eww(1,2) )
      endif
      if ( ne_corner ) then
         do k=1,3
            ess(k,3) = grid3(k,npx+1,npy-1) - grid3(k,npx,npy)
         enddo
-        call normalize_vect(1, ess(1,3))
+        call normalize_vect( ess(1,3) )
         do k=1,3
            eww(k,3) = grid3(k,npx-1,npy+1) - grid3(k,npx,npy)
         enddo
-        call normalize_vect(1, eww(1,3))
+        call normalize_vect( eww(1,3) )
      endif
      if ( nw_corner ) then
         do k=1,3
            ess(k,4) = grid3(k,1,npy) - grid3(k,0,npy-1)
         enddo
-        call normalize_vect(1, ess(1,4))
+        call normalize_vect( ess(1,4) )
         do k=1,3
            eww(k,4) = grid3(k,2,npy+1) - grid3(k,1,npy)
         enddo
-        call normalize_vect(1, eww(1,4))
+        call normalize_vect( eww(1,4) )
      endif
 #endif
+  endif
 ! Initialize cubed_sphere to lat-lon transformation:
-     call init_cubed_to_latlon( agrid )
+     call init_cubed_to_latlon( agrid, grid_type )
 
      call global_mx(area, ng, da_min, da_max)
      if( gid==0 ) write(6,*) 'da_max/da_min=', da_max/da_min
@@ -601,9 +619,42 @@
 ! Initialization for interpolation at face edges
 !------------------------------------------------
 ! A->B scalar:
-     call edge_factors (non_ortho, grid, agrid, npx, npy)
-     call efactor_a2c_v(non_ortho, grid, agrid, npx, npy)
-     call extend_cube_s(non_ortho, grid, agrid, npx, npy, .false.)
+     if (grid_type < 3) then
+        call edge_factors (non_ortho, grid, agrid, npx, npy)
+        call efactor_a2c_v(non_ortho, grid, agrid, npx, npy)
+        call extend_cube_s(non_ortho, grid, agrid, npx, npy, .false.)
+     else
+        allocate ( edge_s(npx) )
+        allocate ( edge_n(npx) )
+        allocate ( edge_w(npy) )
+        allocate ( edge_e(npy) )
+
+        allocate ( edge_vect_s(isd:ied) )
+        allocate ( edge_vect_n(isd:ied) )
+        allocate ( edge_vect_w(jsd:jed) )
+        allocate ( edge_vect_e(jsd:jed) )
+
+        allocate ( ex_s(npx) )
+        allocate ( ex_n(npx) )
+        allocate ( ex_w(npy) )
+        allocate ( ex_e(npy) )
+
+        edge_s = big_number
+        edge_n = big_number
+        edge_w = big_number
+        edge_e = big_number
+
+        edge_vect_s = big_number
+        edge_vect_n = big_number
+        edge_vect_w = big_number
+        edge_vect_e = big_number
+
+        ex_s(npx) = big_number
+        ex_n(npx) = big_number
+        ex_w(npy) = big_number
+        ex_e(npy) = big_number
+
+     endif
 
   end subroutine grid_utils_init
 
@@ -642,8 +693,6 @@
 
       deallocate( eww )
       deallocate( ess )
-      deallocate( ue )
-      deallocate( ve )
 
       deallocate( edge_s )
       deallocate( edge_n )
@@ -660,10 +709,15 @@
       deallocate( ex_w )
       deallocate( ex_e )
 
+
+    if ( g_type<4 ) then
       deallocate( a11 )
       deallocate( a12 )
       deallocate( a21 )
       deallocate( a22 )
+      deallocate( vlon )
+      deallocate( vlat )
+    endif
 
   end subroutine grid_utils_end
 
@@ -1190,13 +1244,6 @@
  endif
  endif
 
-#ifdef NO_EDGE_TP
-     edge_s = 0.5
-     edge_n = 0.5
-     edge_w = 0.5
-     edge_e = 0.5
-#endif
-
  end subroutine edge_factors
 
 
@@ -1568,7 +1615,8 @@
 
 
 
- subroutine get_center_vect( pp, u1, u2 )
+ subroutine get_center_vect( npx, npy, pp, u1, u2 )
+    integer, intent(in):: npx, npy
     real, intent(in) :: pp(3,isd:ied+1,jsd:jed+1)
     real, intent(out):: u1(3,isd:ied,  jsd:jed)
     real, intent(out):: u2(3,isd:ied,  jsd:jed)
@@ -1578,6 +1626,11 @@
 
     do j=jsd,jed
        do i=isd,ied
+        if ( ( i<1   .and. j<1  )          .or. ( i>(npx-1) .and. j<1 ) .or.  &
+             ( i>(npx-1) .and. j>(npy-1) ) .or. ( i<1 .and. j>(npy-1) ) ) then
+             u1(1:3,i,j) = 0.
+             u2(1:3,i,j) = 0.
+        else
 #ifdef NEW_VECT
           call cell_center3(pp(1,i,j), pp(1,i+1,j), pp(1,i,j+1), pp(1,i+1,j+1), pc)
 ! e1:
@@ -1585,65 +1638,57 @@
           call mid_pt3_cart(pp(1,i+1,j), pp(1,i+1,j+1), p2)
           call vect_cross(p3, p2, p1)
           call vect_cross(u1(1,i,j), pc, p3)
-          call normalize_vect(1, u1(1,i,j))
+          call normalize_vect( u1(1,i,j) )
 ! e2:
           call mid_pt3_cart(pp(1,i,j),   pp(1,i+1,j),   p1)
           call mid_pt3_cart(pp(1,i,j+1), pp(1,i+1,j+1), p2)
           call vect_cross(p3, p2, p1)
           call vect_cross(u2(1,i,j), pc, p3)
-          call normalize_vect(1, u2(1,i,j))
+          call normalize_vect( u2(1,i,j) )
 #else
           do k=1,3
              u1(k,i,j) = pp(k,i+1,j)+pp(k,i+1,j+1) - pp(k,i,j)-pp(k,i,j+1)
              u2(k,i,j) = pp(k,i,j+1)+pp(k,i+1,j+1) - pp(k,i,j)-pp(k,i+1,j) 
           enddo
-          call normalize_vect(1, u1(1,i,j))
-          call normalize_vect(1, u2(1,i,j))
+          call normalize_vect( u1(1,i,j) )
+          call normalize_vect( u2(1,i,j) )
 #endif
+        endif
        enddo
     enddo
 
  end subroutine get_center_vect
 
 
- subroutine normalize_vect(np, e, r_name)
-!
-! Make e an unit vector
-!
- integer, intent(in):: np
- real, intent(inout):: e(3,np)
- character*(*), intent(in), optional:: r_name
-! local:
- integer k, n
- real pdot
+ subroutine normalize_vect(e)
+!                              Make e an unit vector
+ real, intent(inout):: e(3)
+ real(f_p):: pdot
+ integer k
 
- do n=1,np
-    pdot = e(1,n)**2+e(2,n)**2+e(3,n)**2
-    if ( pdot>0. ) then
-       pdot = sqrt(pdot)
-       do k=1,3
-          e(k,n) = e(k,n) / pdot
-       enddo
-    else
-#ifdef TEST_BUG
-       write(*,*) 'Stop in normalize_vect'
-       if ( present(r_name) ) then
-            call mpp_error(FATAL, 'normalize_vect')
-            write(*,*) 'called from ', r_name
-       endif
-#endif
-    endif
- enddo
+    pdot = e(1)**2 + e(2)**2 + e(3)**2
+    pdot = sqrt( pdot ) 
+
+!if ( pdot > 0. ) then
+    do k=1,3
+       e(k) = e(k) / pdot
+    enddo
+!else
+!   do k=1,3
+!      e(k) = 1. / sqrt(3.)
+!   enddo
+!endif
+
  end subroutine normalize_vect
 
 
  subroutine project_sphere_v( np, f, e )
 !---------------------------------
  integer, intent(in):: np           ! total number of points
- real,    intent(in):: e(3,np)         ! input position unit vector
+ real,    intent(in):: e(3,np)      ! input position unit vector
  real, intent(inout):: f(3,np)
 ! local
- real ap
+ real(f_p):: ap
  integer i
 
  do i=1,np
@@ -1675,6 +1720,7 @@
  subroutine mid_pt3_cart(p1, p2, e)
        real, intent(IN)  :: p1(3), p2(3)
        real, intent(OUT) :: e(3)
+!
        real (f_p):: q1(3), q2(3)
        real (f_p):: dd, e1, e2, e3
        integer k
@@ -1702,14 +1748,14 @@
 
 
  subroutine mid_pt_cart(p1, p2, e3)
-         real , intent(IN)  :: p1(2), p2(2)
-         real , intent(OUT) :: e3(3)
+    real, intent(IN)  :: p1(2), p2(2)
+    real, intent(OUT) :: e3(3)
 !-------------------------------------
-         real e1(3), e2(3)
+    real e1(3), e2(3)
 
-         call latlon2xyz(p1, e1)
-         call latlon2xyz(p2, e2)
-         call mid_pt3_cart(e1, e2, e3)
+    call latlon2xyz(p1, e1)
+    call latlon2xyz(p2, e2)
+    call mid_pt3_cart(e1, e2, e3)
 
  end subroutine mid_pt_cart
 
@@ -1720,7 +1766,7 @@
       real, intent(IN), optional :: radius
  
       real (f_p):: p1(2), p2(2)
-      real (f_p):: d3
+      real (f_p):: beta
       integer n
 
       do n=1,2
@@ -1728,16 +1774,16 @@
          p2(n) = q2(n)
       enddo
 
-      d3 = asin(sqrt(sin((p1(2)-p2(2))/2.)*sin((p1(2)-p2(2))/2.) + &
-           cos(p1(2))*cos(p2(2))*(sin((p1(1)-p2(1))/2.)*sin((p1(1)-p2(1))/2.))) )
+      beta = asin( sqrt( sin((p1(2)-p2(2))/2.)**2 + cos(p1(2))*cos(p2(2))*   &
+                         sin((p1(1)-p2(1))/2.)**2 ) ) * 2.
 
       if ( present(radius) ) then
-           great_circle_dist = 2.*radius * d3
+           great_circle_dist = radius * beta
       else
-           great_circle_dist = d3
+           great_circle_dist = beta   ! Returns the angle
       endif
-         
- end function great_circle_dist
+
+  end function great_circle_dist
 
 
 
@@ -1881,10 +1927,15 @@
 
 
 
-  subroutine init_cubed_to_latlon( agrid )
+  subroutine init_cubed_to_latlon( agrid, grid_type )
 
-  real, intent(in)::  agrid(isd:ied,jsd:jed,2)
+  real,    intent(in) :: agrid(isd:ied,jsd:jed,2)
+  integer, intent(in) :: grid_type
   integer i, j
+
+  g_type = grid_type
+
+  if ( g_type < 4 ) then
 
      allocate (  a11(is-1:ie+1,js-1:je+1) )
      allocate (  a12(is-1:ie+1,js-1:je+1) )
@@ -1907,10 +1958,110 @@
            a22(i,j) =  0.5*v_prod(ec1(1,i,j), vlon(i,j,1:3)) / sina_s(i,j)
         enddo
      enddo
+  endif
 
   end subroutine init_cubed_to_latlon
 
 
+
+#ifdef DEV_CODE
+! To use this code (u,v) need to be ghosted/updated
+  subroutine cubed_to_latlon(u, v, ua, va, dx, dy, dxa, dya, km)
+  integer, intent(in) :: km
+  real, intent(in) ::  u(isd:ied,jsd:jed+1,km)
+  real, intent(in) ::  v(isd:ied+1,jsd:jed,km)
+  real, intent(in) :: dx(isd:ied,jsd:jed+1)
+  real, intent(in) :: dy(isd:ied+1,jsd:jed)
+  real, intent(in) ::dxa(isd:ied,  jsd:jed)
+  real, intent(in) ::dya(isd:ied,  jsd:jed)
+!
+  real, intent(out):: ua(isd:ied, jsd:jed,km)
+  real, intent(out):: va(isd:ied, jsd:jed,km)
+! Local 
+! 4-pt Lagrange interpolation
+  real, parameter:: a1 =  0.5625
+  real, parameter:: a2 = -0.0625
+  real utmp(is:ie,  js:je+1)
+  real vtmp(is:ie+1,js:je)
+  real wu(is:ie,  js:je+1)
+  real wv(is:ie+1,js:je)
+  integer i, j, k
+
+  do k=1,km
+     do j=max(2,js),min(npy-2,je)
+        do i=max(2,is),min(npx-2,ie)
+           utmp(i,j) = a2*(u(i,j-1,k)+u(i,j+2,k)) + a1*(u(i,j,k)+u(i,j+1,k))
+           vtmp(i,j) = a2*(v(i-1,j,k)+v(i+2,j,k)) + a1*(v(i,j,k)+v(i+1,j,k))
+        enddo
+     enddo
+
+    if ( js==1 ) then
+         do i=is,ie+1
+            wv(i,1) = v(i,1,k)*dy(i,1)
+         enddo
+         do i=is,ie
+            wu(i,1) = u(i,1,k)*dx(i,1)
+            wu(i,2) = u(i,2,k)*dx(i,2)
+            utmp(i,1) = 0.5*(wu(i,1) + wu(i,  2)) * rdxa(i,1)
+            vtmp(i,1) = 0.5*(wv(i,1) + wv(i+1,1)) * rdya(i,1)
+         enddo
+    endif
+
+    if ( (je+1)==npy ) then
+         j = npy-1
+         do i=is,ie+1
+            wv(i,j) = v(i,j,k)*dy(i,j)
+         enddo
+         do i=is,ie
+            wu(i,j  ) = u(i,j,  k)*dx(i,j  )
+            wu(i,j+1) = u(i,j+1,k)*dx(i,j+1)
+            utmp(i,j) = 0.5*(wu(i,j) + wu(i,j+1)) * rdxa(i,j)
+            vtmp(i,j) = 0.5*(wv(i,j) + wv(i+1,j)) * rdya(i,j)
+         enddo
+    endif
+
+    if ( is==1 ) then
+      i = 1
+      do j=js,je
+         wv(i,  j) = v(i,  j)*dy(i,  j)
+         wv(i+1,j) = v(i+1,j)*dy(i+1,j)
+      enddo
+      do j=js,je+1
+         wu(i,j) = u(i,j)*dx(i,j)
+      enddo
+      do j=js,je
+            utmp(i,j) = 0.5*(wu(i,j) + wu(i,  j+1)) * rdxa(i,j)
+            vtmp(i,j) = 0.5*(wv(i,j) + wv(i+1,j  )) * rdya(i,j)
+         enddo
+      enddo
+    endif
+
+    if ( (ie+1)==npx ) then
+      i = npx-1
+      do j=js,je
+         wv(i,  j) = v(i,  j)*dy(i,  j)
+         wv(i+1,j) = v(i+1,j)*dy(i+1,j)
+      enddo
+      do j=js,je+1
+         wu(i,j) = u(i,j)*dx(i,j)
+      enddo
+      do j=js,je
+            utmp(i,j) = 0.5*(wu(i,j) + wu(i,  j+1)) * rdxa(i,j)
+            vtmp(i,j) = 0.5*(wv(i,j) + wv(i+1,j  )) * rdya(i,j)
+         enddo
+      enddo
+    endif
+
+     do j=js,je
+        do i=is,ie
+           ua(i,j,k) = 2.*(a11(i,j)*utmp(i,j) + a12(i,j)*vtmp(i,j))
+           va(i,j,k) = 2.*(a21(i,j)*utmp(i,j) + a22(i,j)*vtmp(i,j))
+        enddo
+     enddo
+  enddo
+
+ end subroutine cubed_to_latlon
+#endif
 
   subroutine cubed_to_latlon(u, v, ua, va, dx, dy, dxa, dya, km)
   integer, intent(in) :: km
@@ -1931,34 +2082,113 @@
   integer i, j, k
 
   do k=1,km
-     do j=js,je+1
-        do i=is,ie
-           wu(i,j) = u(i,j,k)*dx(i,j)
-        enddo
-     enddo
-     do j=js,je
-        do i=is,ie+1
-           wv(i,j) = v(i,j,k)*dy(i,j)
-        enddo
-     enddo
+     if ( g_type < 4 ) then
+       do j=js,je+1
+          do i=is,ie
+             wu(i,j) = u(i,j,k)*dx(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie+1
+             wv(i,j) = v(i,j,k)*dy(i,j)
+          enddo
+       enddo
 
-     do j=js,je
-        do i=is,ie
+       do j=js,je
+          do i=is,ie
 ! Co-variant to Co-variant "vorticity-conserving" interpolation
-           u1(i) = (wu(i,j) + wu(i,j+1)) / dxa(i,j)
-           v1(i) = (wv(i,j) + wv(i+1,j)) / dya(i,j)
+             u1(i) = (wu(i,j) + wu(i,j+1)) / dxa(i,j)
+             v1(i) = (wv(i,j) + wv(i+1,j)) / dya(i,j)
 ! Cubed (cell center co-variant winds) to lat-lon:
-           ua(i,j,k) = a11(i,j)*u1(i) + a12(i,j)*v1(i)
-           va(i,j,k) = a21(i,j)*u1(i) + a22(i,j)*v1(i)
-        enddo
-     enddo
+             ua(i,j,k) = a11(i,j)*u1(i) + a12(i,j)*v1(i)
+             va(i,j,k) = a21(i,j)*u1(i) + a22(i,j)*v1(i)
+          enddo
+       enddo
+     else
+! 2nd order:
+       do j=js,je
+          do i=is,ie
+             ua(i,j,k) = 0.5*(u(i,j,k)+u(i,  j+1,k))
+             va(i,j,k) = 0.5*(v(i,j,k)+v(i+1,j,  k))
+          enddo
+       enddo
+     endif
   enddo
+
  end subroutine cubed_to_latlon
 
 
+ subroutine expand_cell(q1, q2, q3, q4, a1, a2, a3, a4, fac)
+! Util for land model (for BW)
+!
+!        4----3
+!        |  . |
+!        1----2
+!
+      real, intent(in):: q1(2), q2(2), q3(2), q4(2)
+      real, intent(in):: fac    ! expansion factor: outside: > 1
+                                ! fac = 1: qq1 returns q1
+                                ! fac = 0: qq1 returns the center position
+      real, intent(out):: a1(2), a2(2), a3(2), a4(2)
+! Local
+      real qq1(3), qq2(3), qq3(3), qq4(3)
+      real p1(3), p2(3), p3(3), p4(3)
+      real ec(3)
+      real(f_p):: dd, d1, d2, d3, d4
+      integer k
+
+! Transform to (x,y,z)
+      call latlon2xyz(q1, p1)
+      call latlon2xyz(q2, p2)
+      call latlon2xyz(q3, p3)
+      call latlon2xyz(q4, p4)
+
+! Get center position:
+      do k=1,3
+         ec(k) = p1(k) + p2(k) + p3(k) + p4(k)
+      enddo
+      dd = sqrt( ec(1)**2 + ec(2)**2 + ec(3)**2 )
+
+      do k=1,3
+         ec(k) = ec(k) / dd   ! cell center position
+      enddo
+
+! Perform the "extrapolation" in 3D (x-y-z) 
+      do k=1,3
+         qq1(k) = ec(k) + fac*(p1(k)-ec(k)) 
+         qq2(k) = ec(k) + fac*(p2(k)-ec(k)) 
+         qq3(k) = ec(k) + fac*(p3(k)-ec(k)) 
+         qq4(k) = ec(k) + fac*(p4(k)-ec(k)) 
+      enddo
+
+!--------------------------------------------------------
+! Force the points to be on the sphere via normalization
+!--------------------------------------------------------
+      d1 = sqrt( qq1(1)**2 + qq1(2)**2 + qq1(3)**2 )
+      d2 = sqrt( qq2(1)**2 + qq2(2)**2 + qq2(3)**2 )
+      d3 = sqrt( qq3(1)**2 + qq3(2)**2 + qq3(3)**2 )
+      d4 = sqrt( qq4(1)**2 + qq4(2)**2 + qq4(3)**2 )
+      do k=1,3
+         qq1(k) = qq1(k) / d1
+         qq2(k) = qq2(k) / d2
+         qq3(k) = qq3(k) / d3
+         qq4(k) = qq4(k) / d4
+      enddo
+
+!----------------------------------------
+! Transform back to lat-lon coordinates:
+!----------------------------------------
+
+      call cart_to_latlon(1, qq1, a1(1), a1(2))
+      call cart_to_latlon(1, qq2, a2(1), a2(2))
+      call cart_to_latlon(1, qq3, a3(1), a3(2))
+      call cart_to_latlon(1, qq4, a4(1), a4(2))
+
+ end subroutine expand_cell
+
+
  subroutine cell_center2(q1, q2, q3, q4, e2)
-! Get center position of a cell
-      real , intent(IN)  :: q1(2), q2(2), q3(2), q4(2)
+      real , intent(in ) :: q1(2), q2(2), q3(2), q4(2)
       real , intent(OUT) :: e2(2)
 ! Local
       real p1(3), p2(3), p3(3), p4(3)
@@ -2145,41 +2375,44 @@
 
 
 
- real function g_sum(p, ifirst, ilast, jfirst, jlast, ngc, area, mode)
+ real function g_sum(p, ifirst, ilast, jfirst, jlast, ngc, area, mode, exact_sum)
  
+! Fast version of globalsum 
+! Warning: produce diff answer with diff total CPU numbers
  
       integer, intent(IN) :: ifirst, ilast
       integer, intent(IN) :: jfirst, jlast, ngc
       integer, intent(IN), optional :: mode  ! if (presen) divided by area
+      logical, intent(in), optional :: exact_sum
       real, intent(IN) :: p(ifirst:ilast,jfirst:jlast)      ! field to be summed
       real, intent(IN) :: area(ifirst-ngc:ilast+ngc,jfirst-ngc:jlast+ngc)
       integer :: i,j
       real gsum
-       
-      if(do_bitwise_exact_sum) then
+         
+      if(present(exact_sum)) then
          gsum = mpp_global_sum(domain, p(:,:)*area(ifirst:ilast,jfirst:jlast), flags=BITWISE_EXACT_SUM)  
       else        
-         gsum = 0.
-         do j=jfirst,jlast
-            do i=ifirst,ilast
-               gsum = gsum + p(i,j)*area(i,j)
-            enddo
+      gsum = 0.
+      do j=jfirst,jlast
+         do i=ifirst,ilast
+            gsum = gsum + p(i,j)*area(i,j)
          enddo
-         call mp_reduce_sum(gsum)
+      enddo
+      call mp_reduce_sum(gsum)
       end if
 
       if ( present(mode) ) then
-         if ( .not. g_sum_initialized ) then
-            if(do_bitwise_exact_sum) then
+        if ( .not. g_sum_initialized ) then
+            if(present(exact_sum)) then
                global_area = mpp_global_sum(domain, area, flags=BITWISE_EXACT_SUM)
             else
-               global_area = 0.
-               do j=jfirst,jlast
-                  do i=ifirst,ilast
-                     global_area = global_area + area(i,j)
-                  enddo
-               enddo
-               call mp_reduce_sum(global_area)
+           global_area = 0.
+           do j=jfirst,jlast
+              do i=ifirst,ilast
+                 global_area = global_area + area(i,j)
+              enddo
+           enddo
+           call mp_reduce_sum(global_area)
             end if
            g_sum_initialized = .true.
         endif
@@ -2284,7 +2517,7 @@
            enddo
         enddo
 ! Make it the same acroos all PEs
-        p4 = g_sum(pem, is, ie, js, je, ng, area, 1)
+        p4 = g_sum(pem, is, ie, js, je, ng, area, mode=1)
         ph(k) = p4
      enddo
 

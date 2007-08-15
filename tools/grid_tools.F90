@@ -1,392 +1,433 @@
-      module grid_tools
+module grid_tools
 
-      use constants_mod, only: radius, pi, omega, grav
-      use fv_arrays_mod, only: fv_atmos_type
-      use grid_utils,    only: gnomonic_grids, great_circle_dist,  &
-                               mid_pt_sphere, spherical_angle,     &
-                               project_sphere_v,  cell_center2,    &
-                               get_area, inner_prod
-      use grid_utils,    only: sw_corner, se_corner, ne_corner, nw_corner, fill_ghost
-      use timingModule,  only: timing_on, timing_off
-      use mp_mod, only: gid, masterproc, domain, tile, &
-                        is,js,ie,je,isd,jsd,ied,jed, ng, &
-                        fill_corners, XDir, YDir, &
-                        mp_gather, mp_bcst, mp_reduce_max, mp_stop
-      use sorted_index_mod,  only: sorted_inta, sorted_intb
-      use mpp_domains_mod,   only: mpp_update_domains
-      use mpp_parameter_mod, only: AGRID_PARAM=>AGRID,       & 
-                                   CGRID_NE_PARAM=>CGRID_NE, &
-                                   CGRID_SW_PARAM=>CGRID_SW, &
-                                   BGRID_NE_PARAM=>BGRID_NE, &
-                                   BGRID_SW_PARAM=>BGRID_SW, & 
-                                   SCALAR_PAIR,              &
-                                   CORNER, CENTER
+  use constants_mod, only: radius, pi, omega, grav
+  use fv_arrays_mod, only: fv_atmos_type
+  use grid_utils,    only: gnomonic_grids, great_circle_dist,  &
+                           mid_pt_sphere, spherical_angle,     &
+                           project_sphere_v,  cell_center2,    &
+                           get_area, inner_prod, deglat,       &
+                           sw_corner, se_corner, ne_corner, nw_corner, fill_ghost
+  use timingModule,  only: timing_on, timing_off
+  use mp_mod, only: gid, masterproc, domain, tile, &
+                    is,js,ie,je,isd,jsd,ied,jed, ng, &
+                    fill_corners, XDir, YDir, &
+                    mp_gather, mp_bcst, mp_reduce_max, mp_stop
+  use sorted_index_mod,  only: sorted_inta, sorted_intb
+  use mpp_mod,           only: mpp_error, FATAL
+  use mpp_domains_mod,   only: mpp_update_domains
+  use mpp_parameter_mod, only: AGRID_PARAM=>AGRID,       & 
+                               CGRID_NE_PARAM=>CGRID_NE, &
+                               CGRID_SW_PARAM=>CGRID_SW, &
+                               BGRID_NE_PARAM=>BGRID_NE, &
+                               BGRID_SW_PARAM=>BGRID_SW, & 
+                               SCALAR_PAIR,              &
+                               CORNER, CENTER
 
-      implicit none
-      private
+  implicit none
+  private
 #include "netcdf.inc"
 
-      real :: csFac = -999
-      real            :: zeta = 1.0                ! non-linear flag 
-      real , parameter:: todeg = 180.0/pi          ! convert to degrees
-      real , parameter:: torad = pi/180.0          ! convert to radians
-      real , parameter:: missing = 1.e25
-      real    :: stretch ! Optional stretching factor for the grid 
-      logical :: dxdy_area = .false.   ! define area using dx*dy else spherical excess formula
-      logical :: latlon = .false.
-      logical :: cubed_sphere = .false.
-      logical :: have_south_pole = .false.
-      logical :: have_north_pole = .false.
-      logical :: uniform_ppm = .true.     ! assume uniform grid spacing for PPM calcs, else variable dx,dy
-      integer :: interpOrder = 1
+  real :: csFac = -999
+  real            :: zeta = 1.0                ! non-linear flag 
+  real , parameter:: todeg = 180.0/pi          ! convert to degrees
+  real , parameter:: torad = pi/180.0          ! convert to radians
+  real , parameter:: missing = 1.e25
+  real    :: stretch ! Optional stretching factor for the grid 
+  logical :: dxdy_area = .false.   ! define area using dx*dy else spherical excess formula
+  logical :: latlon = .false.
+  logical :: cubed_sphere = .false.
+  logical :: double_periodic = .false.
+  logical :: latlon_patch = .false.
+  logical :: latlon_strip = .false.
+  logical :: channel = .false.
+  logical :: have_south_pole = .false.
+  logical :: have_north_pole = .false.
+  logical :: uniform_ppm = .true.     ! assume uniform grid spacing for PPM calcs, else variable dx,dy
+  integer :: interpOrder = 1
 
-! grid descriptors
+  ! grid descriptors
 
   ! Horizontal
-      integer :: npx_g, npy_g, npz_g, ntiles_g ! global domain
-      real, allocatable, target, dimension(:,:,:) :: grid, agrid, grid_g
-      real, allocatable, dimension(:,:) :: area, area_c
-      real, allocatable, dimension(:,:) :: sina, cosa
-      real, allocatable, dimension(:,:,:) :: e1,e2
-      real, allocatable, dimension(:,:) :: dx, dy
-      real, allocatable, dimension(:,:) :: dxc, dyc
-      real, allocatable, dimension(:,:) :: dxa, dya
-      real, allocatable, dimension(:,:) :: rarea, rarea_c
-      real, allocatable, dimension(:,:) :: rdx, rdy
-      real, allocatable, dimension(:,:) :: rdxc, rdyc
-      real, allocatable, dimension(:,:) :: rdxa, rdya
-      real  :: acapN, acapS
-      real  :: globalarea  ! total Global Area
-      real, allocatable :: cose(:,:)
-      real, allocatable :: cosp(:,:)
-      real, allocatable :: acosp(:,:)
+  integer :: npx_g, npy_g, npz_g, ntiles_g ! global domain
+  real, allocatable, target, dimension(:,:,:) :: grid, agrid, grid_g
+  real, allocatable, dimension(:,:) :: area, area_c
+  real, allocatable, dimension(:,:) :: sina, cosa
+  real, allocatable, dimension(:,:,:) :: e1,e2
+  real, allocatable, dimension(:,:) :: dx, dy
+  real, allocatable, dimension(:,:) :: dxc, dyc
+  real, allocatable, dimension(:,:) :: dxa, dya
+  real, allocatable, dimension(:,:) :: rarea, rarea_c
+  real, allocatable, dimension(:,:) :: rdx, rdy
+  real, allocatable, dimension(:,:) :: rdxc, rdyc
+  real, allocatable, dimension(:,:) :: rdxa, rdya
+  real  :: acapN, acapS
+  real  :: globalarea  ! total Global Area
+  real, allocatable :: cose(:,:)
+  real, allocatable :: cosp(:,:)
+  real, allocatable :: acosp(:,:)
+  
+  integer, dimension(:,:,:), allocatable :: iinta, jinta, iintb, jintb
+  
+  integer :: grid_type = 0    ! -1: read from file; 0: ED Gnomonic
+                              !  0: the "true" equal-distance Gnomonic grid
+                              !  1: the traditional equal-distance Gnomonic grid
+                              !  2: the equal-angular Gnomonic grid
+                              !  3: the lat-lon grid -- to be implemented
+                              !  4: double periodic boundary condition on Cartesian grid
+                              !  5: latlon patch
+                              !  6: latlon strip (cyclic in longitude)
+                              !  7: channel flow on Cartesian grid
 
-      integer, dimension(:,:,:), allocatable :: iinta, jinta, iintb, jintb
+  real :: dx_const = 1000.    ! spatial resolution for double periodic boundary configuration [m]
+  real :: dy_const = 1000.
+  real :: deglon_start = -30., deglon_stop = 30., &  ! boundaries of latlon patch
+          deglat_start = -30., deglat_stop = 30.
 
-      public :: npx_g, npy_g, npz_g, grid, agrid, grid_g, stretch, todeg, &
-                interpOrder, uniform_ppm, zeta, missing, &
-                cubed_sphere, latlon, have_south_pole, have_north_pole, &
-                dx,dy, dxa,dya, dxc,dyc, rdx,rdy, rdxc,rdyc,  &
-                sina, cosa, area, rarea, area_c, rarea_c,  &
-                acapN, acapS, cosp, cose, acosp, init_grid, &
-                rdxa, rdya, d2a2c, ctoa, atod, dtoa, atoc, atob_s,   &
-                mp_update_dwinds, rotate_winds, &
-                spherical_to_cartesian, globalsum, &
-                get_unit_vector, unit_vect2
-
-      INTERFACE get_unit_vector
-        MODULE PROCEDURE get_unit_vector_3pts
-        MODULE PROCEDURE get_unit_vector_2pts
-      END INTERFACE
-
-      INTERFACE mp_update_dwinds
-        MODULE PROCEDURE mp_update_dwinds_2d
-        MODULE PROCEDURE mp_update_dwinds_3d
-      END INTERFACE
-
-      contains
+  public :: npx_g, npy_g, npz_g, grid, agrid, grid_g, stretch, todeg, &
+            interpOrder, uniform_ppm, zeta, missing, &
+            cubed_sphere, latlon, have_south_pole, have_north_pole, &
+            double_periodic, channel, &
+            dx,dy, dxa,dya, dxc,dyc, rdx,rdy, rdxc,rdyc,  &
+            sina, cosa, area, rarea, area_c, rarea_c,  &
+            acapN, acapS, cosp, cose, acosp, init_grid, &
+            rdxa, rdya, d2a2c, ctoa, atod, dtoa, atoc, atob_s,   &
+            mp_update_dwinds, rotate_winds, &
+            spherical_to_cartesian, globalsum, &
+            get_unit_vector, unit_vect2
+  public :: grid_type, dx_const, dy_const
+  public :: deglon_start, deglon_stop, deglat_start, deglat_stop
 
 
-      subroutine init_grid(Atm, grid_name, grid_file, npx, npy, npz, ndims, nregions, ng, grid_type)
+  INTERFACE get_unit_vector
+     MODULE PROCEDURE get_unit_vector_3pts
+     MODULE PROCEDURE get_unit_vector_2pts
+  END INTERFACE
+
+  INTERFACE mp_update_dwinds
+     MODULE PROCEDURE mp_update_dwinds_2d
+     MODULE PROCEDURE mp_update_dwinds_3d
+  END INTERFACE
+
+contains
+
+
+  subroutine init_grid(Atm, grid_name, grid_file, npx, npy, npz, ndims, nregions, ng)
  
 !     init_grid :: read grid from input file and setup grid descriptors
  
 !--------------------------------------------------------
-         type(fv_atmos_type), intent(inout) :: Atm
-         character*80, intent(IN) :: grid_name
-         character*120,intent(IN) :: grid_file
-         integer,      intent(IN) :: npx, npy, npz
-         integer,      intent(IN) :: ndims
-         integer,      intent(IN) :: nregions
-         integer,      intent(IN) :: ng
-         integer,      intent(IN) :: grid_type
+    type(fv_atmos_type), intent(inout) :: Atm
+    character*80, intent(IN) :: grid_name
+    character*120,intent(IN) :: grid_file
+    integer,      intent(IN) :: npx, npy, npz
+    integer,      intent(IN) :: ndims
+    integer,      intent(IN) :: nregions
+    integer,      intent(IN) :: ng
 !--------------------------------------------------------
-         real*8 ::  xs(npx,npy)
-         real*8 ::  ys(npx,npy)
+    real*8 ::  xs(npx,npy)
+    real*8 ::  ys(npx,npy)
 
-         real*8 :: grid_R8(npx,npy)
-         real  :: dp, dl
-         real  :: x1,x2,y1,y2,z1,z2
-         integer :: i,j,k,n,nreg
-         integer :: fileLun
+    real*8 :: grid_R8(npx,npy)
+    real  :: dp, dl
+    real  :: x1,x2,y1,y2,z1,z2
+    integer :: i,j,k,n,nreg
+    integer :: fileLun
 
-         real  :: p_lL(ndims) ! lower Left
-         real  :: p_uL(ndims) ! upper Left
-         real  :: p_lR(ndims) ! lower Right
-         real  :: p_uR(ndims) ! upper Right
-         real  :: d1, d2, mydx, mydy, tmp
+    real  :: p_lL(ndims) ! lower Left
+    real  :: p_uL(ndims) ! upper Left
+    real  :: p_lR(ndims) ! lower Right
+    real  :: p_uR(ndims) ! upper Right
+    real  :: d1, d2, mydx, mydy, tmp
 
-         real  :: p1(3), p2(3), p3(3), p4(3)
-         real  :: dist,dist1,dist2, pa(2), pa1(2), pa2(2), pb(2)
-         real  :: pt(3), pt1(3), pt2(3), pt3(3)
-         real :: ee1(3), ee2(3)
+    real  :: p1(3), p2(3), p3(3), p4(3)
+    real  :: dist,dist1,dist2, pa(2), pa1(2), pa2(2), pb(2)
+    real  :: pt(3), pt1(3), pt2(3), pt3(3)
+    real :: ee1(3), ee2(3)
 
-         real  :: angN,angM,angAV,ang
-         real  :: aspN,aspM,aspAV,asp
-         real  ::  dxN, dxM, dxAV
-         real  :: dx_local, dy_local
+    real  :: angN,angM,angAV,ang
+    real  :: aspN,aspM,aspAV,asp
+    real  ::  dxN, dxM, dxAV
+    real  :: dx_local, dy_local
 
-         real  :: vec1(3), vec2(3), vec3(3), vec4(3)
-         real  :: vecAvg(3), vec3a(3), vec3b(3), vec4a(3), vec4b(3)
-         real  :: xyz1(3), xyz2(3)
+    real  :: vec1(3), vec2(3), vec3(3), vec4(3)
+    real  :: vecAvg(3), vec3a(3), vec3b(3), vec4a(3), vec4b(3)
+    real  :: xyz1(3), xyz2(3)
 
-         real  :: angs(1:(npx/2)+1, 1:(npy/2)+1)
-         real  :: asps(1:(npx/2)+1, 1:(npy/2)+1)
-         real  ::  dxs(1:(npx/2)+1, 1:(npy/2)+1)
-         character*80 :: gcharFile
+    real  :: angs(1:(npx/2)+1, 1:(npy/2)+1)
+    real  :: asps(1:(npx/2)+1, 1:(npy/2)+1)
+    real  ::  dxs(1:(npx/2)+1, 1:(npy/2)+1)
+    character*80 :: gcharFile
 
-         real :: grid_global(1-ng:npx  +ng,1-ng:npy  +ng,ndims,1:nregions)
-         real ::   dx_global(1:npx-1,1:npy  ,1:nregions)
-         real ::   dy_global(1:npx  ,1:npy-1,1:nregions)
+    real :: grid_global(1-ng:npx  +ng,1-ng:npy  +ng,ndims,1:nregions)
+    real ::   dx_global(1:npx-1,1:npy  ,1:nregions)
+    real ::   dy_global(1:npx  ,1:npy-1,1:nregions)
 #ifdef GLOBAL_TRIG
-         real ::      sina_g(1:npx  ,1:npy  ,1:nregions)
-         real ::      cosa_g(1:npx  ,1:npy  ,1:nregions)
+    real ::      sina_g(1:npx  ,1:npy  ,1:nregions)
+    real ::      cosa_g(1:npx  ,1:npy  ,1:nregions)
 #endif
 
-         character*80 :: evalue
-         integer :: ios, ip, jp
+    character*80 :: evalue
+    integer :: ios, ip, jp
+    
+    integer :: igrid
+    
+    integer :: tmplun
+    character*80 :: tmpFile   
 
-         integer :: igrid
-
-         integer :: tmplun
-         character*80 :: tmpFile   
-
-         npx_g = npx
-         npy_g = npy
-         npz_g = npz
-         ntiles_g = nregions
-         latlon = .false.
-         cubed_sphere = .false.
-
-         allocate (  area(isd:ied  ,jsd:jed  ) )   ! Cell Centered
-         allocate ( rarea(isd:ied  ,jsd:jed  ) )   ! Cell Centered
-
-         allocate (  area_c(isd:ied+1,jsd:jed+1) )  ! Cell Corners
-         allocate ( rarea_c(isd:ied+1,jsd:jed+1) )  ! Cell Corners
-
-         allocate (  dx(isd:ied  ,jsd:jed+1) )
-         allocate ( rdx(isd:ied  ,jsd:jed+1) )
-         allocate (  dy(isd:ied+1,jsd:jed  ) )
-         allocate ( rdy(isd:ied+1,jsd:jed  ) )
-
-         allocate (  dxc(isd:ied+1,jsd:jed  ) )
-         allocate ( rdxc(isd:ied+1,jsd:jed  ) )
-         allocate (  dyc(isd:ied  ,jsd:jed+1) )
-         allocate ( rdyc(isd:ied  ,jsd:jed+1) )
-
-         allocate (  dxa(isd:ied  ,jsd:jed  ) )
-         allocate ( rdxa(isd:ied  ,jsd:jed  ) )
-         allocate (  dya(isd:ied  ,jsd:jed  ) )
-         allocate ( rdya(isd:ied  ,jsd:jed  ) )
-
-         allocate ( grid (isd:ied+1,jsd:jed+1,1:ndims) )
-         allocate ( agrid(isd:ied  ,jsd:jed  ,1:ndims) )
-         allocate ( grid_g(1:npx,1:npy,1:ndims) )
-
-         Atm%grid  =>grid
-         Atm%agrid =>agrid
-         Atm%grid_g =>grid_g
-
-         allocate ( sina(isd:ied+1,jsd:jed+1) )   ! SIN(angle of intersection)
-         allocate ( cosa(isd:ied+1,jsd:jed+1) )   ! COS(angle of intersection)
-
-         allocate (   e1(3,isd:ied+1,jsd:jed+1) )
-         allocate (   e2(3,isd:ied+1,jsd:jed+1) )
-
-
-         if (TRIM(grid_name) == 'Lat-Lon') then
-            allocate ( cose(isd:ied,jsd:jed))
-            allocate ( cosp(isd:ied,jsd:jed))
-            allocate ( acosp(isd:ied,jsd:jed))
-         endif 
-
+    npx_g = npx
+    npy_g = npy
+    npz_g = npz
+    ntiles_g = nregions
+    latlon = .false.
+    cubed_sphere = .false.
+    
+    allocate (  area(isd:ied  ,jsd:jed  ) )   ! Cell Centered
+    allocate ( rarea(isd:ied  ,jsd:jed  ) )   ! Cell Centered
+    
+    allocate (  area_c(isd:ied+1,jsd:jed+1) )  ! Cell Corners
+    allocate ( rarea_c(isd:ied+1,jsd:jed+1) )  ! Cell Corners
+    
+    allocate (  dx(isd:ied  ,jsd:jed+1) )
+    allocate ( rdx(isd:ied  ,jsd:jed+1) )
+    allocate (  dy(isd:ied+1,jsd:jed  ) )
+    allocate ( rdy(isd:ied+1,jsd:jed  ) )
+    
+    allocate (  dxc(isd:ied+1,jsd:jed  ) )
+    allocate ( rdxc(isd:ied+1,jsd:jed  ) )
+    allocate (  dyc(isd:ied  ,jsd:jed+1) )
+    allocate ( rdyc(isd:ied  ,jsd:jed+1) )
+    
+    allocate (  dxa(isd:ied  ,jsd:jed  ) )
+    allocate ( rdxa(isd:ied  ,jsd:jed  ) )
+    allocate (  dya(isd:ied  ,jsd:jed  ) )
+    allocate ( rdya(isd:ied  ,jsd:jed  ) )
+    
+    allocate ( grid (isd:ied+1,jsd:jed+1,1:ndims) )
+    allocate ( agrid(isd:ied  ,jsd:jed  ,1:ndims) )
+    allocate ( grid_g(1:npx,1:npy,1:ndims) )
+    
+    Atm%grid  =>grid
+    Atm%agrid =>agrid
+    Atm%grid_g =>grid_g
+    
+    allocate ( sina(isd:ied+1,jsd:jed+1) )   ! SIN(angle of intersection)
+    allocate ( cosa(isd:ied+1,jsd:jed+1) )   ! COS(angle of intersection)
+    
+    allocate (   e1(3,isd:ied+1,jsd:jed+1) )
+    allocate (   e2(3,isd:ied+1,jsd:jed+1) )
+    
+    
+    if (TRIM(grid_name) == 'Lat-Lon') then
+       allocate ( cose(isd:ied,jsd:jed))
+       allocate ( cosp(isd:ied,jsd:jed))
+       allocate ( acosp(isd:ied,jsd:jed))
+    endif
+    
 !mlh
-         allocate (iinta(4, isd:ied ,jsd:jed), jinta(4, isd:ied ,jsd:jed),  &
-                   iintb(4, is:ie+1 ,js:je+1), jintb(4, is:ie+1 ,js:je+1))
+    allocate (iinta(4, isd:ied ,jsd:jed), jinta(4, isd:ied ,jsd:jed),  &
+              iintb(4, is:ie+1 ,js:je+1), jintb(4, is:ie+1 ,js:je+1))
 !mlh
 
+    if (grid_type>3) then
+       uniform_ppm = .true.
+       if (grid_type == 4) then
+          double_periodic = .true.
+          call setup_cartesian(npx, npy)
+       elseif  (grid_type == 5) then
+          latlon_patch = .true.
+          call setup_latlon()
+       elseif  (grid_type == 6) then
+          latlon_strip = .true.
+          call setup_latlon()
+       elseif  (grid_type == 7) then
+          channel = .true.
+          call setup_cartesian(npx, npy)
+       else
+          call mpp_error(FATAL, 'init_grid: unknown grid type')
+       endif
+    else
 
-         if (TRIM(grid_name) == 'Lat-Lon') then
+       if (TRIM(grid_name) == 'Lat-Lon') then
 
-            latlon = .true.
-            uniform_ppm = .true.
+          latlon = .true.
+          uniform_ppm = .true.
 
-            dp = pi/(npy-2)
-            dl = (pi+pi)/(npx-1)
+          dp = pi/(npy-2)
+          dl = (pi+pi)/(npx-1)
 
-            do n=1,nregions
-               do j=1,npy
-                  do i=1,npx
-                     grid_global(i,j,1,n) = real(i-1)*dl
-                     grid_global(i,j,2,n) = (-1.*(pi/2.)) + real(j-1)*dp - dp/2.
-                     if (j==1)   grid_global(i,j,2,n) =-1.*(pi/2.)
-                     if (j==npy) grid_global(i,j,2,n) = 1.*(pi/2.)
-                  enddo
-               enddo
-            enddo   
+          do n=1,nregions
+             do j=1,npy
+                do i=1,npx
+                   grid_global(i,j,1,n) = real(i-1)*dl
+                   grid_global(i,j,2,n) = (-1.*(pi/2.)) + real(j-1)*dp - dp/2.
+                   if (j==1)   grid_global(i,j,2,n) =-1.*(pi/2.)
+                   if (j==npy) grid_global(i,j,2,n) = 1.*(pi/2.)
+                enddo
+             enddo
+          enddo
+          
+       else
+          cubed_sphere = .true.
+          uniform_ppm = .true.
 
-         else
-            cubed_sphere = .true.
-            uniform_ppm = .true.
+          if (gid == masterproc) then
 
-            if (gid == masterproc) then
-
-               if( grid_type>=0 ) then
-                  call gnomonic_grids(grid_type, npx-1, xs, ys)
-                  do j=1,npy
-                     do i=1,npx
-                        grid_global(i,j,1,1) = xs(i,j) - pi
-                        grid_global(i,j,2,1) = ys(i,j)
-                     enddo
-                  enddo
+             if( grid_type>=0 ) then
+                call gnomonic_grids(grid_type, npx-1, xs, ys)
+                do j=1,npy
+                   do i=1,npx
+                      grid_global(i,j,1,1) = xs(i,j) - pi
+                      grid_global(i,j,2,1) = ys(i,j)
+                   enddo
+                enddo
 ! mirror_grid assumes that the tile=1 is centered on equator and greenwich meridian Lon[-pi,pi] 
-                  call mirror_grid(grid_global, ng, npx, npy, 2, 6)
-                  do n=1,nregions
-                     do j=1,npy
-                        do i=1,npx
+                call mirror_grid(grid_global, ng, npx, npy, 2, 6)
+                do n=1,nregions
+                   do j=1,npy
+                      do i=1,npx
 !---------------------------------
 ! Shift the corner away from Japan
 !---------------------------------
 #ifndef NO_SHIFT_WEST
 ! This will result in the corner close to east coast of China
-                           grid_global(i,j,1,n) = grid_global(i,j,1,n) - pi/18.
+                         grid_global(i,j,1,n) = grid_global(i,j,1,n) - pi/18.
 #endif
-                           if ( grid_global(i,j,1,n) < 0. )              &
-                                grid_global(i,j,1,n) = grid_global(i,j,1,n) + 2.*pi
-                           if (ABS(grid_global(i,j,1,1)) < 1.e-10) grid_global(i,j,1,1) = 0.0
-                           if (ABS(grid_global(i,j,2,1)) < 1.e-10) grid_global(i,j,2,1) = 0.0
-                        enddo
-                     enddo
-                  enddo
-               else
-                  print*, 'Reading Grid from file: ', trim(grid_file)
-                  fileLun=16
-                  open(unit=fileLun,file=grid_file, form='unformatted', access='sequential')
-                  do n=1,nregions
-                     do k=1,ndims
-                        read(unit=fileLun) grid_R8(1:npx,1:npy)
-                        do j=1,npy
-                        do i=1,npx
-                           grid_global(i,j,k,n) = grid_R8(i,j)
-                           if (ABS(grid_global(i,j,k,n)) < 1.e-10) grid_global(i,j,k,n) = 0.0
-                        enddo
-                        enddo
-                     enddo
-                  enddo
-                  close(unit=fileLun)
-               endif
+                         if ( grid_global(i,j,1,n) < 0. )              &
+                              grid_global(i,j,1,n) = grid_global(i,j,1,n) + 2.*pi
+                         if (ABS(grid_global(i,j,1,1)) < 1.e-10) grid_global(i,j,1,1) = 0.0
+                         if (ABS(grid_global(i,j,2,1)) < 1.e-10) grid_global(i,j,2,1) = 0.0
+                      enddo
+                   enddo
+                enddo
+             else
+                print*, 'Reading Grid from file: ', trim(grid_file)
+                fileLun=16
+                open(unit=fileLun,file=grid_file, form='unformatted', access='sequential')
+                do n=1,nregions
+                   do k=1,ndims
+                      read(unit=fileLun) grid_R8(1:npx,1:npy)
+                      do j=1,npy
+                         do i=1,npx
+                            grid_global(i,j,k,n) = grid_R8(i,j)
+                            if (ABS(grid_global(i,j,k,n)) < 1.e-10) grid_global(i,j,k,n) = 0.0
+                         enddo
+                      enddo
+                   enddo
+                enddo
+                close(unit=fileLun)
+             endif
 
-               grid_global(  1,1:npy,:,2)=grid_global(npx,1:npy,:,1)
-               grid_global(  1,1:npy,:,3)=grid_global(npx:1:-1,npy,:,1)
-               grid_global(1:npx,npy,:,5)=grid_global(1,npy:1:-1,:,1)
-               grid_global(1:npx,npy,:,6)=grid_global(1:npx,1,:,1)
-
-               grid_global(1:npx,  1,:,3)=grid_global(1:npx,npy,:,2)
-               grid_global(1:npx,  1,:,4)=grid_global(npx,npy:1:-1,:,2)
-               grid_global(npx,1:npy,:,6)=grid_global(npx:1:-1,1,:,2)
-
-               grid_global(  1,1:npy,:,4)=grid_global(npx,1:npy,:,3)
-               grid_global(  1,1:npy,:,5)=grid_global(npx:1:-1,npy,:,3)
-
-               grid_global(npx,1:npy,:,3)=grid_global(1,1:npy,:,4)
-               grid_global(1:npx,  1,:,5)=grid_global(1:npx,npy,:,4)
-               grid_global(1:npx,  1,:,6)=grid_global(npx,npy:1:-1,:,4)
-
-               grid_global(  1,1:npy,:,6)=grid_global(npx,1:npy,:,5)
+             grid_global(  1,1:npy,:,2)=grid_global(npx,1:npy,:,1)
+             grid_global(  1,1:npy,:,3)=grid_global(npx:1:-1,npy,:,1)
+             grid_global(1:npx,npy,:,5)=grid_global(1,npy:1:-1,:,1)
+             grid_global(1:npx,npy,:,6)=grid_global(1:npx,1,:,1)
+             
+             grid_global(1:npx,  1,:,3)=grid_global(1:npx,npy,:,2)
+             grid_global(1:npx,  1,:,4)=grid_global(npx,npy:1:-1,:,2)
+             grid_global(npx,1:npy,:,6)=grid_global(npx:1:-1,1,:,2)
+             
+             grid_global(  1,1:npy,:,4)=grid_global(npx,1:npy,:,3)
+             grid_global(  1,1:npy,:,5)=grid_global(npx:1:-1,npy,:,3)
+             
+             grid_global(npx,1:npy,:,3)=grid_global(1,1:npy,:,4)
+             grid_global(1:npx,  1,:,5)=grid_global(1:npx,npy,:,4)
+             grid_global(1:npx,  1,:,6)=grid_global(npx,npy:1:-1,:,4)
+             
+             grid_global(  1,1:npy,:,6)=grid_global(npx,1:npy,:,5)
 
 ! Compute dx:
-               do n=1,nregions
-                  do j=1,npy
-                     do i=1,npx-1
-                        p1(1) = grid_global(i  ,j,1,n)
-                        p1(2) = grid_global(i  ,j,2,n)
-                        p2(1) = grid_global(i+1,j,1,n)
-                        p2(2) = grid_global(i+1,j,2,n)
-                        dx_global(i,j,n) = great_circle_dist( p2, p1, radius )
-                     enddo
-                  enddo
-               enddo
-
-               dx_global(1:npx-1,  1,1) = dx_global(1:npx-1,npy,6)
-               dx_global(1:npx-1,npy,2) = dx_global(1:npx-1,1,  3)
-               dx_global(1:npx-1,npy,4) = dx_global(1:npx-1,1,  5)
+             do n=1,nregions
+                do j=1,npy
+                   do i=1,npx-1
+                      p1(1) = grid_global(i  ,j,1,n)
+                      p1(2) = grid_global(i  ,j,2,n)
+                      p2(1) = grid_global(i+1,j,1,n)
+                      p2(2) = grid_global(i+1,j,2,n)
+                      dx_global(i,j,n) = great_circle_dist( p2, p1, radius )
+                   enddo
+                enddo
+             enddo
+             
+             dx_global(1:npx-1,  1,1) = dx_global(1:npx-1,npy,6)
+             dx_global(1:npx-1,npy,2) = dx_global(1:npx-1,1,  3)
+             dx_global(1:npx-1,npy,4) = dx_global(1:npx-1,1,  5)
 
 ! Compute dy:
-               do n=1,nregions
-                  do j=1,npy
-                     do i=1,npx-1
+             do n=1,nregions
+                do j=1,npy
+                   do i=1,npx-1
 ! Symmetry is assumed here:
-                        dy_global(j,i,n) = dx_global(i,j,n)
-                     enddo
-                  enddo
-               enddo
+                      dy_global(j,i,n) = dx_global(i,j,n)
+                   enddo
+                enddo
+             enddo
+             
+             dy_global(  1,1:npy-1,1)=dx_global(npx-1:1:-1,npy,5)
+             dy_global(npx,1:npy-1,1)=dy_global(1,1:npy-1,2)
+             
+             dy_global(npx,1:npy-1,2)=dx_global(npx-1:1:-1,1,4)
+             
+             dy_global(  1,1:npy-1,3)=dx_global(npx-1:1:-1,npy,1)
+             dy_global(npx,1:npy-1,3)=dy_global(1,1:npy-1,4)
+             
+             dy_global(  1,1:npy-1,4)=dy_global(npx,1:npy-1,3)
+             dy_global(npx,1:npy-1,4)=dx_global(npx-1:1:-1,1,6)
+             
+             dy_global(  1,1:npy-1,5)=dx_global(npx-1:1:-1,npy,3)
+             dy_global(npx,1:npy-1,5)=dy_global(1,1:npy-1,6)
+             
+             dy_global(npx,1:npy-1,6)=dx_global(npx-1:1:-1,1,2)
+             
+          endif ! masterproc
+          
+       endif  ! (latlon vs cubed_sphere)
+      
+       call mp_bcst(grid_global, (npx+ng)-(1-ng)+1, (npy+ng)-(1-ng)+1, ndims, nregions )
+       call mp_bcst(  dx_global, npx-1, npy  , nregions )
+       call mp_bcst(  dy_global, npx  , npy-1, nregions )
 
-               dy_global(  1,1:npy-1,1)=dx_global(npx-1:1:-1,npy,5)
-               dy_global(npx,1:npy-1,1)=dy_global(1,1:npy-1,2)
-
-               dy_global(npx,1:npy-1,2)=dx_global(npx-1:1:-1,1,4)
-
-               dy_global(  1,1:npy-1,3)=dx_global(npx-1:1:-1,npy,1)
-               dy_global(npx,1:npy-1,3)=dy_global(1,1:npy-1,4)
-
-               dy_global(  1,1:npy-1,4)=dy_global(npx,1:npy-1,3)
-               dy_global(npx,1:npy-1,4)=dx_global(npx-1:1:-1,1,6)
-
-               dy_global(  1,1:npy-1,5)=dx_global(npx-1:1:-1,npy,3)
-               dy_global(npx,1:npy-1,5)=dy_global(1,1:npy-1,6)
-
-               dy_global(npx,1:npy-1,6)=dx_global(npx-1:1:-1,1,2)
-
-           endif ! masterproc
-
-      endif  ! (latlon vs cubed_sphere)
-
-      call mp_bcst(grid_global, (npx+ng)-(1-ng)+1, (npy+ng)-(1-ng)+1, ndims, nregions )
-      call mp_bcst(  dx_global, npx-1, npy  , nregions )
-      call mp_bcst(  dy_global, npx  , npy-1, nregions )
-
-      grid(isd: is-1, jsd:js-1,1:ndims)=0.
-      grid(isd: is-1, je+2:jed+1,1:ndims)=0.
-      grid(ie+2:ied+1,jsd:js-1,1:ndims)=0.
-      grid(ie+2:ied+1,je+2:jed+1,1:ndims)=0.
-
-      do n=1,ndims
-         do j=js,je+1
-            do i=is,ie+1
-               grid(i,j,n) = grid_global(i,j,n,tile)
-            enddo
-         enddo
-      enddo
+       grid(isd: is-1, jsd:js-1,1:ndims)=0.
+       grid(isd: is-1, je+2:jed+1,1:ndims)=0.
+       grid(ie+2:ied+1,jsd:js-1,1:ndims)=0.
+       grid(ie+2:ied+1,je+2:jed+1,1:ndims)=0.
+       
+       do n=1,ndims
+          do j=js,je+1
+             do i=is,ie+1
+                grid(i,j,n) = grid_global(i,j,n,tile)
+             enddo
+          enddo
+       enddo
 !
 ! SJL: For phys/exchange grid, etc
 !
-      do j=1,npy
-         do i=1,npx
-            grid_g(i,j,1) = grid_global(i,j,1,tile)
-            grid_g(i,j,2) = grid_global(i,j,2,tile)
-         enddo
-      enddo
-
-      call mpp_update_domains( grid, domain, position=CORNER)
+       do j=1,npy
+          do i=1,npx
+             grid_g(i,j,1) = grid_global(i,j,1,tile)
+             grid_g(i,j,2) = grid_global(i,j,2,tile)
+          enddo
+       enddo
+       
+       call mpp_update_domains( grid, domain, position=CORNER)
 
 !mlh
-      call sorted_inta(isd, ied, jsd, jed, cubed_sphere, grid, iinta, jinta)
+       call sorted_inta(isd, ied, jsd, jed, cubed_sphere, grid, iinta, jinta)
 !mlh
 
-      agrid(:,:,:) = -1.e25
+       agrid(:,:,:) = -1.e25
  
-      do j=js,je
-         do i=is,ie
-            if (latlon) then
-               x1=grid(i  ,j  ,1)*todeg
-               x2=grid(i+1,j  ,1)*todeg
-               if ((x2-x1).gt.180) x2=x2-360
-               if ((x1-x2).gt.180) x2=x2+360
-               agrid(i,j,1) = torad*(x1 + (x2-x1)/2.)
-
-               y1=grid(i  ,j  ,2)*todeg
-               y2=grid(i  ,j+1,2)*todeg
-               agrid(i,j,2) = torad*(y1 + (y2-y1)/2.)
+       do j=js,je
+          do i=is,ie
+             if (latlon) then
+                x1=grid(i  ,j  ,1)*todeg
+                x2=grid(i+1,j  ,1)*todeg
+                if ((x2-x1).gt.180) x2=x2-360
+                if ((x1-x2).gt.180) x2=x2+360
+                agrid(i,j,1) = torad*(x1 + (x2-x1)/2.)
+                
+                y1=grid(i  ,j  ,2)*todeg
+                y2=grid(i  ,j+1,2)*todeg
+                agrid(i,j,2) = torad*(y1 + (y2-y1)/2.)
              else
 #ifndef SIMP_GRID
                 call cell_center2(grid(iinta(1,i,j),jinta(1,i,j),1:2),  &
@@ -399,129 +440,129 @@
                                   grid(i,j+1,1:2), grid(i+1,j+1,1:2),   &
                                   agrid(i,j,1:2) )
 #endif
-            endif
+             endif
+          enddo
+       enddo
 
-         enddo
-      enddo
-
-      call mpp_update_domains( agrid, domain, position=CENTER, complete=.true. )
-      call fill_corners(agrid(:,:,1), npx, npy, XDir, AGRID=.true.)
-      call fill_corners(agrid(:,:,2), npx, npy, YDir, AGRID=.true.)
+       call mpp_update_domains( agrid, domain, position=CENTER, complete=.true. )
+       call fill_corners(agrid(:,:,1), npx, npy, XDir, AGRID=.true.)
+       call fill_corners(agrid(:,:,2), npx, npy, YDir, AGRID=.true.)
 !mlh
-      call sorted_intb(isd, ied, jsd, jed, is, ie, js, je, npx, npy, &
-                       cubed_sphere, agrid, iintb, jintb)
+       call sorted_intb(isd, ied, jsd, jed, is, ie, js, je, npx, npy, &
+                        cubed_sphere, agrid, iintb, jintb)
 !mlh
 
-         if (latlon) then
+       if (latlon) then
 
-            DL = 2.*PI/float(npx-1)
-            DP = PI/float(npy-1)
+          DL = 2.*PI/float(npx-1)
+          DP = PI/float(npy-1)
 
-            do j=js,je
-               do i=is,ie+1
-                  dxc(i,j) = DL*radius*COS(agrid(i,j,2))
-               enddo
-            enddo
-            do j=js,je+1
-               do i=is,ie
-                  dyc(i,j) = DP*radius
-               enddo
-            enddo
+          do j=js,je
+             do i=is,ie+1
+                dxc(i,j) = DL*radius*COS(agrid(i,j,2))
+             enddo
+          enddo
+          do j=js,je+1
+             do i=is,ie
+                dyc(i,j) = DP*radius
+             enddo
+          enddo
 
-            do j=js,je
-               do i=is,ie
-                  dxa(i,j) = DL*radius*COS(agrid(i,j,2))
-                  dya(i,j) = DP*radius
-               enddo
-            enddo
+          do j=js,je
+             do i=is,ie
+                dxa(i,j) = DL*radius*COS(agrid(i,j,2))
+                dya(i,j) = DP*radius
+             enddo
+          enddo
+          
+          do j=jsd,jed+1
+             do i=isd,ied
+                dx(i,j) = DL*radius*COS(grid(i,j,2))
+             enddo
+          enddo
+          do j=jsd,jed
+             do i=isd,ied+1
+                dy(i,j) = DP*radius
+             enddo
+          enddo
 
-            do j=jsd,jed+1
-               do i=isd,ied
-                  dx(i,j) = DL*radius*COS(grid(i,j,2))
-               enddo
-            enddo
-            do j=jsd,jed
-               do i=isd,ied+1
-                  dy(i,j) = DP*radius
-               enddo
-            enddo
+       else
+            
+          do j=js,je+1
+             do i=is,ie
+                dx(i,j) = dx_global(i,j,tile)
+             enddo
+          enddo
+          do j=js,je
+             do i=is,ie+1
+                dy(i,j) = dy_global(i,j,tile)
+             enddo
+          enddo
+          
+       endif  ! latlon -v- cubed_sphere
 
-         else
+       call mpp_update_domains( dy, dx, domain, flags=SCALAR_PAIR,      &
+                                gridtype=CGRID_NE_PARAM, complete=.true.)
+       if (cubed_sphere) call fill_corners(dx, dy, npx, npy, DGRID=.true.)
 
-            do j=js,je+1
-               do i=is,ie
-                  dx(i,j) = dx_global(i,j,tile)
-               enddo
-            enddo
-            do j=js,je
-               do i=is,ie+1
-                  dy(i,j) = dy_global(i,j,tile)
-               enddo
-            enddo
-
-         endif  ! latlon -v- cubed_sphere
-
-         call mpp_update_domains( dy, dx, domain, flags=SCALAR_PAIR,      &
-                                  gridtype=CGRID_NE_PARAM, complete=.true.)
-         if (cubed_sphere) call fill_corners(dx, dy, npx, npy, DGRID=.true.)
-
-!        do j=jsd,jed
-!           do i=isd,ied
-         do j=js,je
-            do i=is,ie
+       do j=jsd,jed
+          do i=isd,ied
+!        do j=js,je
+!           do i=is,ie
 #ifdef ALT_DXDY
-               dxa(i,j) = 0.5*(dx(i,j)+dx(i,j+1))
-               dya(i,j) = 0.5*(dy(i,j)+dy(i+1,j))
+             dxa(i,j) = 0.5*(dx(i,j)+dx(i,j+1))
+             dya(i,j) = 0.5*(dy(i,j)+dy(i+1,j))
 #else
-               call mid_pt_sphere(grid(i,  j,1:2), grid(i,  j+1,1:2), p1)
-               call mid_pt_sphere(grid(i+1,j,1:2), grid(i+1,j+1,1:2), p2)
-               dxa(i,j) = great_circle_dist( p2, p1, radius )
-               call mid_pt_sphere(grid(i,j  ,1:2), grid(i+1,j  ,1:2), p1)
-               call mid_pt_sphere(grid(i,j+1,1:2), grid(i+1,j+1,1:2), p2)
-               dya(i,j) = great_circle_dist( p2, p1, radius )
+             call mid_pt_sphere(grid(i,  j,1:2), grid(i,  j+1,1:2), p1)
+             call mid_pt_sphere(grid(i+1,j,1:2), grid(i+1,j+1,1:2), p2)
+             dxa(i,j) = great_circle_dist( p2, p1, radius )
+!
+             call mid_pt_sphere(grid(i,j  ,1:2), grid(i+1,j  ,1:2), p1)
+             call mid_pt_sphere(grid(i,j+1,1:2), grid(i+1,j+1,1:2), p2)
+             dya(i,j) = great_circle_dist( p2, p1, radius )
 #endif
-            enddo
-         enddo
-         call mpp_update_domains( dxa, dya, domain, flags=SCALAR_PAIR, gridtype=AGRID_PARAM)
-         if (cubed_sphere) call fill_corners(dxa, dya, npx, npy, AGRID=.true.)
+          enddo
+       enddo
+!      call mpp_update_domains( dxa, dya, domain, flags=SCALAR_PAIR, gridtype=AGRID_PARAM)
+       if (cubed_sphere) call fill_corners(dxa, dya, npx, npy, AGRID=.true.)
 
-         do j=js,je
-            do i=is,ie+1
+       do j=js,je
+          do i=is,ie+1
 #ifdef ALT_DXDY
-               dxc(i,j) = 0.5*(dxa(i-1,j)+dxa(i,j))
+             dxc(i,j) = 0.5*(dxa(i-1,j)+dxa(i,j))
 #else
-               p1(1) = agrid(i-1,j,1)
-               p1(2) = agrid(i-1,j,2)
-               p2(1) = agrid(i  ,j,1)
-               p2(2) = agrid(i  ,j,2)
-               dxc(i,j) = great_circle_dist( p2, p1, radius )
+             p1(1) = agrid(i-1,j,1)
+             p1(2) = agrid(i-1,j,2)
+             p2(1) = agrid(i  ,j,1)
+             p2(2) = agrid(i  ,j,2)
+             dxc(i,j) = great_circle_dist( p2, p1, radius )
 #endif
-            enddo
-         enddo
-         do j=js,je+1
-            do i=is,ie
+          enddo
+       enddo
+       do j=js,je+1
+          do i=is,ie
 #ifdef ALT_DXDY
-               dyc(i,j) = 0.5*(dya(i,j-1)+dya(i,j))
+             dyc(i,j) = 0.5*(dya(i,j-1)+dya(i,j))
 #else
-               p1(1) = agrid(i,j-1,1)
-               p1(2) = agrid(i,j-1,2)
-               p2(1) = agrid(i,j  ,1)
-               p2(2) = agrid(i,j  ,2)
-               dyc(i,j) = great_circle_dist( p2, p1, radius )
+             p1(1) = agrid(i,j-1,1)
+             p1(2) = agrid(i,j-1,2)
+             p2(1) = agrid(i,j  ,1)
+             p2(2) = agrid(i,j  ,2)
+             dyc(i,j) = great_circle_dist( p2, p1, radius )
 #endif
-            enddo
-         enddo
-         if (gid == masterproc) then
-            if (nregions > 1) then
-               print*, 'Resolution in Lon-Direction: ', 360./( (npx*4.)-3. )
-               print*, 'Resolution in Lat-Direction: ', 360./( (npy*4.)-3. )
-            else
-               print*, 'Resolution in Lon-Direction: ', 360./(npx-1.)
-               print*, 'Resolution in Lat-Direction: ', 180./(npy-1.)
-            endif
-         endif
+          enddo
+       enddo
+       if (gid == masterproc) then
+          if (nregions > 1) then
+             print*, 'Resolution in Lon-Direction: ', 360./( (npx*4.)-3. )
+             print*, 'Resolution in Lat-Direction: ', 360./( (npy*4.)-3. )
+          else
+             print*, 'Resolution in Lon-Direction: ', 360./(npx-1.)
+             print*, 'Resolution in Lat-Direction: ', 180./(npy-1.)
+          endif
+       endif
 
-         call grid_area( npx, npy, ndims, nregions )
+       call grid_area( npx, npy, ndims, nregions )
 
 #ifndef ORIG_AREA_C
 ! area_c, rarea_c, dxc, dyc
@@ -618,266 +659,439 @@
              area_c(i,j) = 3.*get_area(p1, p4, p2, p3, radius)
        endif
 #endif
-         call mpp_update_domains( dxc, dyc, domain, flags=SCALAR_PAIR,   &
-                                  gridtype=CGRID_NE_PARAM, complete=.true.)
-         if (cubed_sphere) call fill_corners(dxc, dyc, npx, npy, CGRID=.true.)
+       call mpp_update_domains( dxc, dyc, domain, flags=SCALAR_PAIR,   &
+                                gridtype=CGRID_NE_PARAM, complete=.true.)
+       if (cubed_sphere) call fill_corners(dxc, dyc, npx, npy, CGRID=.true.)
+       
+       call mpp_update_domains( area,   domain, complete=.true. )
+       call mpp_update_domains( area_c, domain, position=CORNER, complete=.true.)
+       
+       ! Handle corner Area ghosting
+       if (cubed_sphere) then
+          call fill_ghost(area, npx, npy, -1.E35)  ! fill in garbage values
+          call fill_corners(area_c, npx, npy, FILL=XDir, BGRID=.true.)
+       endif
+       
+       do j=jsd,jed+1
+          do i=isd,ied
+             rdx(i,j) = 1.0/dx(i,j)
+          enddo
+       enddo
+       do j=jsd,jed
+          do i=isd,ied+1
+             rdy(i,j) = 1.0/dy(i,j)
+          enddo
+       enddo
+       do j=jsd,jed
+          do i=isd,ied+1
+             rdxc(i,j) = 1.0/dxc(i,j)
+          enddo
+       enddo
+       do j=jsd,jed+1
+          do i=isd,ied
+             rdyc(i,j) = 1.0/dyc(i,j)
+          enddo
+       enddo
+       do j=jsd,jed
+          do i=isd,ied
+             rarea(i,j) = 1.0/area(i,j)
+             rdxa(i,j) = 1./dxa(i,j)
+             rdya(i,j) = 1./dya(i,j)
+          enddo
+       enddo
+       do j=jsd,jed+1
+          do i=isd,ied+1
+             rarea_c(i,j) = 1.0/area_c(i,j)
+          enddo
+       enddo
 
-         call mpp_update_domains( area,   domain, complete=.true. )
-         call mpp_update_domains( area_c, domain, position=CORNER, complete=.true.)
-
-      ! Handle corner Area ghosting
-         if (cubed_sphere) then
-            call fill_ghost(area, npx, npy, -1.E35)  ! fill in garbage values
-            call fill_corners(area_c, npx, npy, FILL=XDir, BGRID=.true.)
-         endif
-
-         do j=jsd,jed+1
-            do i=isd,ied
-               rdx(i,j) = 1.0/dx(i,j)
-            enddo
-         enddo
-         do j=jsd,jed
-            do i=isd,ied+1
-               rdy(i,j) = 1.0/dy(i,j)
-            enddo
-         enddo
-         do j=jsd,jed
-            do i=isd,ied+1
-               rdxc(i,j) = 1.0/dxc(i,j)
-            enddo
-         enddo
-         do j=jsd,jed+1
-            do i=isd,ied
-               rdyc(i,j) = 1.0/dyc(i,j)
-            enddo
-         enddo
-         do j=jsd,jed
-            do i=isd,ied
-               rarea(i,j) = 1.0/area(i,j)
-               rdxa(i,j) = 1./dxa(i,j)
-               rdya(i,j) = 1./dya(i,j)
-            enddo
-         enddo
-         do j=jsd,jed+1
-            do i=isd,ied+1
-               rarea_c(i,j) = 1.0/area_c(i,j)
-            enddo
-         enddo
-
- 200  format(A,f9.2,A,f9.2,A,f9.2)
- 201  format(A,f9.2,A,f9.2,A,f9.2,A,f9.2)
- 202  format(A,A,i4.4,A,i4.4,A)
-
+200    format(A,f9.2,A,f9.2,A,f9.2)
+201    format(A,f9.2,A,f9.2,A,f9.2,A,f9.2)
+202    format(A,A,i4.4,A,i4.4,A)
+       
 ! Get and print Grid Statistics
        if ((gid==masterproc) .and. (cubed_sphere)) then
-         dxAV =0.0
-         angAV=0.0
-         aspAV=0.0
-         dxN  =  missing
-         dxM  = -missing
-         angN =  missing
-         angM = -missing
-         aspN =  missing
-         aspM = -missing
-         angs(1,1) = get_angle(2, grid_global(1,2,1:2,1), grid_global(1,1,1:2,1), grid_global(2,1,1:2,1))
-         angs(1,1) = ABS(90.0 - angs(1,1))
-         do j=1,ceiling(npy/2.)
-            do i=1,ceiling(npx/2.)
-               ang  = get_angle(2, grid_global(i,j+1,1:2,1), grid_global(i,j,1:2,1), grid_global(i+1,j,1:2,1))
-               ang  = ABS(90.0 - ang)
-               angs(i,j) = ang
+          dxAV =0.0
+          angAV=0.0
+          aspAV=0.0
+          dxN  =  missing
+          dxM  = -missing
+          angN =  missing
+          angM = -missing
+          aspN =  missing
+          aspM = -missing
+          angs(1,1) = get_angle(2, grid_global(1,2,1:2,1), grid_global(1,1,1:2,1), grid_global(2,1,1:2,1))
+          angs(1,1) = ABS(90.0 - angs(1,1))
+          do j=1,ceiling(npy/2.)
+             do i=1,ceiling(npx/2.)
+                ang  = get_angle(2, grid_global(i,j+1,1:2,1), grid_global(i,j,1:2,1), grid_global(i+1,j,1:2,1))
+                ang  = ABS(90.0 - ang)
+                angs(i,j) = ang
 
-               if ( (i==1) .and. (j==1) ) then
-               else 
-                  angAV = angAV + ang
-                  angM  = MAX(angM,ang)
-                  angN  = MIN(angN,ang)
-               endif
+                if ( (i==1) .and. (j==1) ) then
+                else 
+                   angAV = angAV + ang
+                   angM  = MAX(angM,ang)
+                   angN  = MIN(angN,ang)
+                endif
 
-               dx_local = dx_global(i,j,1)
-               dy_local = dy_global(i,j,1)
+                dx_local = dx_global(i,j,1)
+                dy_local = dy_global(i,j,1)
 
-               dxAV  = dxAV + 0.5 * (dx_local + dy_local)
-               dxM   = MAX(dxM,dx_local)
-               dxM   = MAX(dxM,dy_local)
-               dxN   = MIN(dxN,dx_local)
-               dxN   = MIN(dxN,dy_local)
-               dxs(i,j) = dy_local !0.5 * (dx_local + dy_local)
+                dxAV  = dxAV + 0.5 * (dx_local + dy_local)
+                dxM   = MAX(dxM,dx_local)
+                dxM   = MAX(dxM,dy_local)
+                dxN   = MIN(dxN,dx_local)
+                dxN   = MIN(dxN,dy_local)
+                dxs(i,j) = dy_local !0.5 * (dx_local + dy_local)
 
-               asp   = ABS(dx_local/dy_local)
-               if (asp < 1.0) asp = 1.0/asp
-               asps(i,j) = asp 
-               aspAV = aspAV + asp
-               aspM  = MAX(aspM,asp)
-               aspN  = MIN(aspN,asp)
-            enddo
-         enddo
-         angAV = angAV / ( (ceiling(npy/2.0))*(ceiling(npx/2.0)) - 1 )
-         dxAV  = dxAV  / ( (ceiling(npy/2.0))*(ceiling(npx/2.0)) )
-         aspAV = aspAV / ( (ceiling(npy/2.0))*(ceiling(npx/2.0)) )
-         write(*,*  ) ''
-         write(*,*  ) ' Cubed-Sphere Grid Stats : ', npx,'x',npy,'x',nregions
-         write(*,201) '      Grid Length               : min: ', dxN,' max: ', dxM,' avg: ', dxAV, ' min/max: ',dxN/dxM
-         write(*,200) '      Deviation from Orthogonal : min: ',angN,' max: ',angM,' avg: ',angAV
-         write(*,200) '      Aspect Ratio              : min: ',aspN,' max: ',aspM,' avg: ',aspAV
-         write(*,*  ) ''
-         write(gcharFile,202) TRIM(grid_name),'_chars_',npx,'x',npy,'.dat'
-         open(unit=29,file=gcharFile, form='unformatted', access='direct',  &
-              recl=((npx/2)+1)*((npy/2)+1)*8, status='unknown')
-         write(29,rec=1) angs
-         write(29,rec=2) asps
-         write(29,rec=3)  dxs
-         do j=1,(npy/2.0)+1
-            do i=1,(npx/2.0)+1
-               do n=1,ndims
-                  p_lL(n) = grid_global(i  ,j  ,n,1)
-                  p_uL(n) = grid_global(i  ,j+1,n,1)
-                  p_lR(n) = grid_global(i+1,j  ,n,1)
-                  p_uR(n) = grid_global(i+1,j+1,n,1)
-               enddo
-               if ((latlon) .or. (dxdy_area)) then
-           ! DX_*DY_
+                asp   = ABS(dx_local/dy_local)
+                if (asp < 1.0) asp = 1.0/asp
+                asps(i,j) = asp 
+                aspAV = aspAV + asp
+                aspM  = MAX(aspM,asp)
+                aspN  = MIN(aspN,asp)
+             enddo
+          enddo
+          angAV = angAV / ( (ceiling(npy/2.0))*(ceiling(npx/2.0)) - 1 )
+          dxAV  = dxAV  / ( (ceiling(npy/2.0))*(ceiling(npx/2.0)) )
+          aspAV = aspAV / ( (ceiling(npy/2.0))*(ceiling(npx/2.0)) )
+          write(*,*  ) ''
+          write(*,*  ) ' Cubed-Sphere Grid Stats : ', npx,'x',npy,'x',nregions
+          write(*,201) '      Grid Length               : min: ', dxN,' max: ', dxM,' avg: ', dxAV, ' min/max: ',dxN/dxM
+          write(*,200) '      Deviation from Orthogonal : min: ',angN,' max: ',angM,' avg: ',angAV
+          write(*,200) '      Aspect Ratio              : min: ',aspN,' max: ',aspM,' avg: ',aspAV
+          write(*,*  ) ''
+          write(gcharFile,202) TRIM(grid_name),'_chars_',npx,'x',npy,'.dat'
+          open(unit=29,file=gcharFile, form='unformatted', access='direct',  &
+               recl=((npx/2)+1)*((npy/2)+1)*8, status='unknown')
+          write(29,rec=1) angs
+          write(29,rec=2) asps
+          write(29,rec=3)  dxs
+          do j=1,(npy/2.0)+1
+             do i=1,(npx/2.0)+1
+                do n=1,ndims
+                   p_lL(n) = grid_global(i  ,j  ,n,1)
+                   p_uL(n) = grid_global(i  ,j+1,n,1)
+                   p_lR(n) = grid_global(i+1,j  ,n,1)
+                   p_uR(n) = grid_global(i+1,j+1,n,1)
+                enddo
+                if ((latlon) .or. (dxdy_area)) then
+                   ! DX_*DY_
                    d1 = dx_global(i  ,j  ,1)
                    d2 = dx_global(i  ,j+1,1)
-                 mydx = 0.5 * ( d1+d2 )
+                   mydx = 0.5 * ( d1+d2 )
                    d1 = dy_global(i  ,j  ,1)
                    d2 = dy_global(i+1,j  ,1)
-                 mydy = 0.5 * ( d1+d2 )
-                 angs(i,j) = (mydx*mydy)
-               else
-           ! Spherical Excess Formula
-                 angs(i,j) = get_area(p_lL, p_uL, p_lR, p_uR, radius)
-               endif
-            enddo
-         enddo
-         write(29,rec=4) angs
-         close(unit=29)
+                   mydy = 0.5 * ( d1+d2 )
+                   angs(i,j) = (mydx*mydy)
+                else
+                   ! Spherical Excess Formula
+                   angs(i,j) = get_area(p_lL, p_uL, p_lR, p_uR, radius)
+                endif
+             enddo
+          enddo
+          write(29,rec=4) angs
+          close(unit=29)
 
 #ifdef GLOBAL_TRIG
 !----------------------------------------------------
 ! Initialize sina and cosa forcing an 8-fold symmetry
 !----------------------------------------------------
-         do j=1,ceiling(npy/2.)
-            do i=1,ceiling(npx/2.)
+          do j=1,ceiling(npy/2.)
+             do i=1,ceiling(npx/2.)
 
-               if (i==1) then
-                  call get_unit_vector(grid_global(i,j,1:2,1), grid_global(i+1,j,1:2,1), ee1)
-               elseif (i==npx) then
-                  call get_unit_vector(grid_global(i-1,j,1:2,1), grid_global(i,j,1:2,1), ee1)
-               else
-                  call get_unit_vector(grid_global(i-1,j,1:2,1), grid_global(i,j,1:2,1), grid_global(i+1,j,1:2,1), ee1)
-               endif
+                if (i==1) then
+                   call get_unit_vector(grid_global(i,j,1:2,1), grid_global(i+1,j,1:2,1), ee1)
+                elseif (i==npx) then
+                   call get_unit_vector(grid_global(i-1,j,1:2,1), grid_global(i,j,1:2,1), ee1)
+                else
+                   call get_unit_vector(grid_global(i-1,j,1:2,1), grid_global(i,j,1:2,1), grid_global(i+1,j,1:2,1), ee1)
+                endif
+                
+                if (j==1) then
+                   call get_unit_vector(grid_global(i,j,1:2,1), grid_global(i,j+1,1:2,1), ee2)
+                elseif (j==npy) then
+                   call get_unit_vector(grid_global(i,j-1,1:2,1), grid_global(i,j,1:2,1), ee2)
+                else
+                   call get_unit_vector(grid_global(i,j-1,1:2,1), grid_global(i,j,1:2,1), grid_global(i,j+1,1:2,1), ee2)
+                endif
 
-               if (j==1) then
-                  call get_unit_vector(grid_global(i,j,1:2,1), grid_global(i,j+1,1:2,1), ee2)
-               elseif (j==npy) then
-                  call get_unit_vector(grid_global(i,j-1,1:2,1), grid_global(i,j,1:2,1), ee2)
-               else
-                  call get_unit_vector(grid_global(i,j-1,1:2,1), grid_global(i,j,1:2,1), grid_global(i,j+1,1:2,1), ee2)
-               endif
-
-               if (j<=i) then  ! force 8-fold symmetry
-                              tmp = inner_prod(ee1,ee2)
+                if (j<=i) then  ! force 8-fold symmetry
+                   tmp = inner_prod(ee1,ee2)
                    cosa_g(i ,j,:) = tmp
                    cosa_g(j ,i,:) = tmp
-                              tmp = sqrt ( 1. - tmp**2 )
+                   tmp = sqrt ( 1. - tmp**2 )
                    sina_g(i ,j,:) = tmp
                    sina_g(j ,i,:) = tmp
-               endif
-            enddo
-         enddo
+                endif
+             enddo
+          enddo
 
 ! force remainder of symmetry
-         do j=1,ceiling(npy/2.)
-            do i=1,ceiling(npx/2.)
-               sina_g(npx-(i-1),j        ,:) = sina_g(i        ,j        ,:)
-               sina_g(i        ,npy-(j-1),:) = sina_g(i        ,j        ,:)
-               sina_g(npx-(i-1),npy-(j-1),:) = sina_g(i        ,j        ,:)
-               cosa_g(npx-(i-1),j        ,:) = cosa_g(i        ,j        ,:)
-               cosa_g(i        ,npy-(j-1),:) = cosa_g(i        ,j        ,:)
-               cosa_g(npx-(i-1),npy-(j-1),:) = cosa_g(i        ,j        ,:)
-            enddo
-         enddo
+          do j=1,ceiling(npy/2.)
+             do i=1,ceiling(npx/2.)
+                sina_g(npx-(i-1),j        ,:) = sina_g(i        ,j        ,:)
+                sina_g(i        ,npy-(j-1),:) = sina_g(i        ,j        ,:)
+                sina_g(npx-(i-1),npy-(j-1),:) = sina_g(i        ,j        ,:)
+                cosa_g(npx-(i-1),j        ,:) = cosa_g(i        ,j        ,:)
+                cosa_g(i        ,npy-(j-1),:) = cosa_g(i        ,j        ,:)
+                cosa_g(npx-(i-1),npy-(j-1),:) = cosa_g(i        ,j        ,:)
+             enddo
+          enddo
+          
+          do n=nregions,1,-1
+             do j=1,npy
+                do i=1,npy
+                   if (i==1) then
+                      call get_unit_vector(grid_global(i,j,1:2,1), grid_global(i+1,j,1:2,1), ee1)
+                   elseif (i==npx) then
+                      call get_unit_vector(grid_global(i-1,j,1:2,1), grid_global(i,j,1:2,1), ee1)
+                   else
+                      call get_unit_vector(grid_global(i-1,j,1:2,1), grid_global(i,j,1:2,1), grid_global(i+1,j,1:2,1), ee1)
+                   endif
+                   if (j==1) then
+                      call get_unit_vector(grid_global(i,j,1:2,1), grid_global(i,j+1,1:2,1), ee2)
+                   elseif (j==npy) then
+                      call get_unit_vector(grid_global(i,j-1,1:2,1), grid_global(i,j,1:2,1), ee2)
+                   else
+                      call get_unit_vector(grid_global(i,j-1,1:2,1), grid_global(i,j,1:2,1), grid_global(i,j+1,1:2,1), ee2)
+                   endif
+                   ! Ensure correct sign for cosa
+                   cosa_g(i,j,n) = SIGN(cosa_g(i,j,1), inner_prod(ee1,ee2))
+                enddo
+             enddo
+          enddo
+         
+          sina_g(  1,1:npy,2)=sina_g(npx,1:npy,1)
+          sina_g(  1,1:npy,3)=sina_g(npx:1:-1,npy,1)
+          sina_g(1:npx,npy,5)=sina_g(1,npy:1:-1,1)
+          sina_g(1:npx,npy,6)=sina_g(1:npx,1,1)
+          
+          sina_g(1:npx,  1,3)=sina_g(1:npx,npy,2)
+          sina_g(1:npx,  1,4)=sina_g(npx,npy:1:-1,2)
+          sina_g(npx,1:npy,6)=sina_g(npx:1:-1,1,2)
+          
+          sina_g(  1,1:npy,4)=sina_g(npx,1:npy,3)
+          sina_g(  1,1:npy,5)=sina_g(npx:1:-1,npy,3)
+          
+          sina_g(npx,1:npy,3)=sina_g(1,1:npy,4)
+          sina_g(1:npx,  1,5)=sina_g(1:npx,npy,4)
+          sina_g(1:npx,  1,6)=sina_g(npx,npy:1:-1,4)
+          
+          sina_g(  1,1:npy,6)=sina_g(npx,1:npy,5)
+          
+          
+          cosa_g(  1,1:npy,2)=cosa_g(npx,1:npy,1)
+          cosa_g(  1,1:npy,3)=cosa_g(npx:1:-1,npy,1)
+          cosa_g(1:npx,npy,5)=cosa_g(1,npy:1:-1,1)
+          cosa_g(1:npx,npy,6)=cosa_g(1:npx,1,1)
+          
+          cosa_g(1:npx,  1,3)=cosa_g(1:npx,npy,2)
+          cosa_g(1:npx,  1,4)=cosa_g(npx,npy:1:-1,2)
+          cosa_g(npx,1:npy,6)=cosa_g(npx:1:-1,1,2)
+          
+          cosa_g(  1,1:npy,4)=cosa_g(npx,1:npy,3)
+          cosa_g(  1,1:npy,5)=cosa_g(npx:1:-1,npy,3)
+          
+          cosa_g(npx,1:npy,3)=cosa_g(1,1:npy,4)
+          cosa_g(1:npx,  1,5)=cosa_g(1:npx,npy,4)
+          cosa_g(1:npx,  1,6)=cosa_g(npx,npy:1:-1,4)
+          
+          cosa_g(  1,1:npy,6)=cosa_g(npx,1:npy,5)
+       endif                  ! end master
+       
+       call mp_bcst(sina_g, npx, npy, nregions)
+       call mp_bcst(cosa_g, npx, npy, nregions)
 
-         do n=nregions,1,-1
-         do j=1,npy
-            do i=1,npy
-               if (i==1) then
-                  call get_unit_vector(grid_global(i,j,1:2,1), grid_global(i+1,j,1:2,1), ee1)
-               elseif (i==npx) then
-                  call get_unit_vector(grid_global(i-1,j,1:2,1), grid_global(i,j,1:2,1), ee1)
-               else
-                  call get_unit_vector(grid_global(i-1,j,1:2,1), grid_global(i,j,1:2,1), grid_global(i+1,j,1:2,1), ee1)
-               endif
-               if (j==1) then
-                  call get_unit_vector(grid_global(i,j,1:2,1), grid_global(i,j+1,1:2,1), ee2)
-               elseif (j==npy) then
-                  call get_unit_vector(grid_global(i,j-1,1:2,1), grid_global(i,j,1:2,1), ee2)
-               else
-                  call get_unit_vector(grid_global(i,j-1,1:2,1), grid_global(i,j,1:2,1), grid_global(i,j+1,1:2,1), ee2)
-               endif
-         ! Ensure correct sign for cosa
-               cosa_g(i,j,n) = SIGN(cosa_g(i,j,1), inner_prod(ee1,ee2))
-            enddo
-         enddo
-         enddo
-         
-         sina_g(  1,1:npy,2)=sina_g(npx,1:npy,1)
-         sina_g(  1,1:npy,3)=sina_g(npx:1:-1,npy,1)
-         sina_g(1:npx,npy,5)=sina_g(1,npy:1:-1,1)
-         sina_g(1:npx,npy,6)=sina_g(1:npx,1,1)
-         
-         sina_g(1:npx,  1,3)=sina_g(1:npx,npy,2)
-         sina_g(1:npx,  1,4)=sina_g(npx,npy:1:-1,2)
-         sina_g(npx,1:npy,6)=sina_g(npx:1:-1,1,2)
-         
-         sina_g(  1,1:npy,4)=sina_g(npx,1:npy,3)
-         sina_g(  1,1:npy,5)=sina_g(npx:1:-1,npy,3)
-         
-         sina_g(npx,1:npy,3)=sina_g(1,1:npy,4)
-         sina_g(1:npx,  1,5)=sina_g(1:npx,npy,4)
-         sina_g(1:npx,  1,6)=sina_g(npx,npy:1:-1,4)
-         
-         sina_g(  1,1:npy,6)=sina_g(npx,1:npy,5)
+       do j=js,je+1
+          do i=is,ie+1
+             sina(i,j) = sina_g(i,j,1)
+             cosa(i,j) = cosa_g(i,j,tile)
+          enddo
+       enddo
+!      call mpp_update_domains( sina, domain, position=CORNER, complete=.true. )
+!      call mpp_update_domains( cosa, domain, position=CORNER, complete=.true. )
+#else
+       endif
+#endif
+    endif
+
+  contains
+
+    subroutine setup_cartesian(npx, npy)
+       integer, intent(in):: npx, npy
+       real lat_rad, lon_rad, domain_rad
+       integer i,j
+
+       domain_rad = pi/16.   ! arbitrary
+       lat_rad = deglat * pi/180.
+       lon_rad = 0.
+
+       dx(:,:)  = dx_const
+       rdx(:,:) = 1./dx_const
+       dy(:,:)  = dy_const
+       rdy(:,:) = 1./dy_const
+       
+       dxc(:,:)  = dx_const
+       rdxc(:,:) = 1./dx_const
+       dyc(:,:)  = dy_const
+       rdyc(:,:) = 1./dy_const
+       
+       dxa(:,:)  = dx_const
+       rdxa(:,:) = 1./dx_const
+       dya(:,:)  = dy_const
+       rdya(:,:) = 1./dy_const
+       
+       area(:,:)  = dx_const*dy_const
+       rarea(:,:) = 1./(dx_const*dy_const)
+       
+       area_c(:,:)  = dx_const*dy_const
+       rarea_c(:,:) = 1./(dx_const*dy_const)
+       
+! The following is a hack to get pass the am2 phys init:
+       do j=1,npy
+          do i=1,npx
+             grid_g(i,j,1) = lon_rad - 0.5*domain_rad + real(i-1)/real(npx-1)*domain_rad
+             grid_g(i,j,2) = lat_rad - 0.5*domain_rad + real(j-1)/real(npy-1)*domain_rad
+          enddo
+       enddo
+
+       do j=max(1,jsd),min(jed,npy)
+          do i=max(1,isd),min(ied,npx)
+             grid(i,j,1) = grid_g(i,j,1)
+             grid(i,j,2) = grid_g(i,j,2)
+          enddo
+       enddo
+
+       agrid(:,:,1)  = lon_rad
+       agrid(:,:,2)  = lat_rad
+       
+       sina(:,:) = 1.
+       cosa(:,:) = 0.
+
+       e1(1,:,:) = 1.
+       e1(2,:,:) = 0.
+       e1(3,:,:) = 0.
+
+       e2(1,:,:) = 0.
+       e2(2,:,:) = 1.
+       e2(3,:,:) = 0.
+
+    end subroutine setup_cartesian
 
 
-         cosa_g(  1,1:npy,2)=cosa_g(npx,1:npy,1)
-         cosa_g(  1,1:npy,3)=cosa_g(npx:1:-1,npy,1)
-         cosa_g(1:npx,npy,5)=cosa_g(1,npy:1:-1,1)
-         cosa_g(1:npx,npy,6)=cosa_g(1:npx,1,1)
-         
-         cosa_g(1:npx,  1,3)=cosa_g(1:npx,npy,2)
-         cosa_g(1:npx,  1,4)=cosa_g(npx,npy:1:-1,2)
-         cosa_g(npx,1:npy,6)=cosa_g(npx:1:-1,1,2)
-         
-         cosa_g(  1,1:npy,4)=cosa_g(npx,1:npy,3)
-         cosa_g(  1,1:npy,5)=cosa_g(npx:1:-1,npy,3)
-         
-         cosa_g(npx,1:npy,3)=cosa_g(1,1:npy,4)
-         cosa_g(1:npx,  1,5)=cosa_g(1:npx,npy,4)
-         cosa_g(1:npx,  1,6)=cosa_g(npx,npy:1:-1,4)
-         
-         cosa_g(  1,1:npy,6)=cosa_g(npx,1:npy,5)
-      endif                  ! end master
+    subroutine setup_latlon()
+      real, parameter :: big_number = 1.e30
+      real :: lon_start, lat_start, area_j
 
-      call mp_bcst(sina_g, npx, npy, nregions)
-      call mp_bcst(cosa_g, npx, npy, nregions)
+      dl = (deglon_stop-deglon_start)*pi/(180.*(npx-1))
+      dp = (deglat_stop-deglat_start)*pi/(180.*(npy-1))
 
-      do j=js,je+1
-         do i=is,ie+1
-            sina(i,j) = sina_g(i,j,1)
-            cosa(i,j) = cosa_g(i,j,tile)
+      lon_start = deglon_start*pi/180.
+      lat_start = deglat_start*pi/180.
+      
+      do j=jsd,jed+1
+         do i=isd,ied+1
+            grid(i,j,1) = lon_start + real(i-1)*dl
+            grid(i,j,2) = lat_start + real(j-1)*dp
          enddo
       enddo
-!     call mpp_update_domains( sina, domain, position=CORNER, complete=.true. )
-!     call mpp_update_domains( cosa, domain, position=CORNER, complete=.true. )
-#else
+
+      do j=jsd,jed
+         do i=isd,ied
+            agrid(i,j,1) = (grid(i,j,1) + grid(i+1,j,1))/2.
+            agrid(i,j,2) = (grid(i,j,2) + grid(i,j+1,2))/2.
+         enddo
+      enddo
+
+
+      do j=jsd,jed
+         do i=isd,ied+1
+            dxc(i,j) = dl*radius*cos(agrid(is,j,2))
+            rdxc(i,j) = 1./dxc(i,j)
+         enddo
+      enddo
+      do j=jsd,jed+1
+         do i=isd,ied
+            dyc(i,j) = dp*radius
+            rdyc(i,j) = 1./dyc(i,j)
+         enddo
+      enddo
+
+      do j=jsd,jed
+         do i=isd,ied
+            dxa(i,j) = dl*radius*cos(agrid(i,j,2))
+            dya(i,j) = dp*radius
+            rdxa(i,j) = 1./dxa(i,j)
+            rdya(i,j) = 1./dya(i,j)
+         enddo
+      enddo
+          
+      do j=jsd,jed+1
+         do i=isd,ied
+            dx(i,j) = dl*radius*cos(grid(i,j,2))
+            rdx(i,j) = 1./dx(i,j)
+         enddo
+      enddo
+      do j=jsd,jed
+         do i=isd,ied+1
+            dy(i,j) = dp*radius
+            rdy(i,j) = 1./dy(i,j)
+         enddo
+      enddo
+
+      do j=jsd,jed
+         area_j = radius*radius*dl*(sin(grid(is,j+1,2))-sin(grid(is,j,2)))
+         do i=isd,ied
+            area(i,j) = area_j
+            rarea(i,j) = 1./area_j
+         enddo
+      enddo
+
+      do j=jsd+1,jed
+         area_j = radius*radius*dl*(sin(agrid(is,j,2))-sin(agrid(is,j-1,2)))
+         do i=isd,ied+1
+            area_c(i,j) = area_j
+            rarea_c(i,j) = 1./area_j
+         enddo
+      enddo
+      if (jsd==1) then
+         j=1
+         area_j = radius*radius*dl*(sin(agrid(is,j,2))-sin(agrid(is,j,2)-dp))
+         do i=isd,ied+1
+            area_c(i,j) = area_j
+            rarea_c(i,j) = 1./area_j
+         enddo
       endif
-#endif
+      if (jed+1==npy) then
+         j=npy
+         area_j = radius*radius*dl*(sin(agrid(is,j-1,2)+dp)-sin(agrid(is,j-1,2)))
+         do i=isd,ied+1
+            area_c(i,j) = area_j
+            rarea_c(i,j) = 1./area_j
+         enddo
+      endif
+      call mpp_update_domains( area_c, domain, position=CORNER, complete=.true.)
+
+      ! grid is set to big_number to test algorithms
+      ! for output it should be latlon coor
+      grid_g(:,:,:) = big_number
+       
+      sina(:,:) = 1.
+      cosa(:,:) = 0.
       
+      e1(1,:,:) = 1.
+      e1(2,:,:) = 0.
+      e1(3,:,:) = 0.
+      
+      e2(1,:,:) = 0.
+      e2(2,:,:) = 1.
+      e2(3,:,:) = 0.
+
+    end subroutine setup_latlon
+  
    end subroutine init_grid
-
-
 
 
       subroutine cartesian_to_spherical(x, y, z, lon, lat, r) 

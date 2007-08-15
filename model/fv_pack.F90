@@ -1,19 +1,35 @@
-! $Id: fv_pack.F90,v 14.0.2.1 2007/05/23 15:46:10 z1l Exp $
+! $Id: fv_pack.F90,v 15.0 2007/08/14 03:51:06 fms Exp $
 
 module fv_pack_mod
 
-      use constants_mod,   only: pi, kappa
+      use constants_mod,   only: pi, kappa, radius
       use fv_io_mod,       only: fv_io_exit
       use fv_restart_mod,  only: fv_restart_init, fv_restart_end
       use fv_arrays_mod,   only: fv_atmos_type
-      use grid_utils,      only: grid_utils_init, grid_utils_end, ptop_min
-      use grid_tools,      only: init_grid, cosa, sina, area, area_c, dx, dy, dxa, dya
+      use grid_utils,      only: grid_utils_init, grid_utils_end, ptop_min, deglat
+      use grid_tools,      only: init_grid, cosa, sina, area, area_c, dx, dy, dxa, dya, &
+                                 grid_type, dx_const, dy_const,                         &
+                                 deglon_start, deglon_stop, deglat_start, deglat_stop
       use mp_mod,          only: mp_start, domain_decomp, domain, &
                                  ng, tile, npes_x, npes_y, gid
       use mpp_mod,         only: FATAL, mpp_error, stdout, mpp_pe
       use mpp_domains_mod, only: mpp_get_data_domain, mpp_get_compute_domain
       use test_cases,      only: test_case, alpha
       use timingModule,    only: timing_on, timing_off, timing_init, timing_prt
+
+#ifdef MARS_GCM
+! --- tracer manager ---
+   use tracer_manager_mod, only : tm_get_number_tracers => get_number_tracers, &
+                                  tm_get_tracer_index   => get_tracer_index,   &
+                                  tm_get_tracer_indices => get_tracer_indices, &
+                                  tm_set_tracer_profile => set_tracer_profile, &
+                                  tm_get_tracer_names   => get_tracer_names,   &
+                                  tm_check_if_prognostic=> check_if_prognostic,&
+                                  tm_register_tracers   => register_tracers
+
+   use field_manager_mod, only  : MODEL_ATMOS
+#endif MARS_GCM
+
 
       implicit none
 !!! #include <netcdf.inc>
@@ -22,37 +38,44 @@ module fv_pack_mod
 !-----------------------------------------------------------------------
 ! Grid descriptor file setup
 !-----------------------------------------------------------------------
-   character*80 :: grid_name
-   character*120:: grid_file
-   integer      :: grid_stretch = 0
-   integer      :: grid_type = 0    ! -1: read from file; 0: ED Gnomonic
-                                    !  0: the "true" equal-distance Gnomonic grid
-                                    !  1: the traditional equal-distance Gnomonic grid
-                                    !  2: the equal-angular Gnomonic grid
-                                    !  3: the lat-lon grid -- to be implemented
+   character*80 :: grid_name = 'Gnomonic'
+   character*120:: grid_file = 'Inline'
+!   integer      :: grid_type = 0    ! -1: read from file; 0: ED Gnomonic
+!                                    !  0: the "true" equal-distance Gnomonic grid
+!                                    !  1: the traditional equal-distance Gnomonic grid
+!                                    !  2: the equal-angular Gnomonic grid
+!                                    !  3: the lat-lon grid -- to be implemented
+!                                    !  4: double periodic boundary condition on Cartesian grid
+!                                    !  5: channel flow on Cartesian grid
+!  -> moved to grid_tools
+
 ! Momentum (or KE) options:
-   integer :: hord_mt = 5    !  
-   integer :: kord_mt = 4    ! vertical mapping option
+   integer :: hord_mt = 6    ! the best option for Gnomonic grids  
+   integer :: kord_mt = 8    ! vertical mapping option
 
 ! Vorticity transport options:
-   integer :: hord_vt = 9    ! 
+   integer :: hord_vt = 9    ! 10 not recommended (noisy case-5) 
 
 ! Heat transport options:
    integer :: hord_tm = 9    ! 
-   integer :: kord_tm =-4    ! vertical mapping option
+   integer :: kord_tm =-8    !
 
 ! Tracer transport options:
-   integer :: hord_tr = 4    ! E-W
-   integer :: kord_tr = 7    ! vertical mapping option for tracers
+   integer :: hord_tr = 12   !11: PPM mono constraint (Lin 2004); fast 
+                             !12: Huynh 2nd constraint (Lin 2004) +
+                             !    positive definite (Lin & Rood 1996); slower
+                             !>12: positive definite only (Lin & Rood 1996); fastest
+   integer :: kord_tr = 8    ! 
 
-   real   :: dddmp = 0.01
+   real   :: dddmp = 0.0075
 #ifdef SW_DYNAMICS
    integer :: n_sponge = 0   ! Number of sponge layers at the top of the atmosphere
    real    :: d_ext = 0.
 #else
    integer :: n_sponge = 1   ! Number of sponge layers at the top of the atmosphere
-   real    :: d_ext = 0.01
+   real    :: d_ext = 0.02
 #endif
+   integer :: m_riem  = 0    ! Time scheme for Riem solver subcycling
    integer :: k_top   = 1    ! Starting layer for non-hydrostatic dynamics
    integer :: n_split = 0    ! Number of time splits for the lagrangian dynamics
                              ! Default = 0 (automatic computation of best value)
@@ -63,7 +86,8 @@ module fv_pack_mod
             !        dx (km)    dt (sc)    n_split    m_split
             !===================================================
             ! C1000:   10        150         16          3
-            ! C2000:    5         60         12 (5 s)    2
+            ! C2000:    5        120         24 (5 s)    2
+            ! C2000:    5         60         12 (5 s)    1
             !===================================================
 ! The nonhydrostatic algorithm is described in Lin 2006, QJ, (submitted)
 ! C2000 should easily scale to at least 6 * 100 * 100 = 60,000 CPUs  
@@ -81,14 +105,28 @@ module fv_pack_mod
    integer :: npx                     ! Number of Grid Points in X- dir
    integer :: npy                     ! Number of Grid Points in Y- dir
    integer :: npz                     ! Number of Vertical Levels
+   integer :: npz_rst = 0             ! Original Vertical Levels (in the restart)
+                                      ! 0: no change (default)
    integer :: layout(2)=(/2,2/)       ! Processor layout
    integer :: ncnst = 1               ! Number of advected consituents
    integer :: ntiles                  ! Number or tiles that make up the Grid 
    integer :: ntilesMe                ! Number of tiles on this process =1 for now
    integer, parameter:: ndims = 2     ! Lat-Lon Dims for Grid in Radians
-   integer :: nf_omega = 1
+   integer :: nf_omega  = 1           ! Filter omega "nf_omega" times
+   integer :: fv_sg_adj = -1          ! Perform grid-scale moist adjustment if > 0
+                                      ! Relaxzation time  scale (sec) if positive
 
+#ifdef MARS_GCM
+   real    :: p_ref = 600.
+   real   ::  reference_sfc_pres = 7.7E2
+   real   ::  sponge_damp=   1.0
+   integer :: nt_prog = 0
+   integer :: nt_phys = 0
+   real    :: dry_mass = 7.7E2
+#else
+   real    :: p_ref = 1.E5
    real    :: dry_mass = 98290.
+#endif
    real    :: too_big  = 1.E35
    real    :: consv_te = 0.
    real    :: tau = 0.                ! Time scale (days) for Rayleigh friction
@@ -107,6 +145,7 @@ module fv_pack_mod
    logical :: ch4_chem  = .false.
    logical :: master
    logical :: uniform_ppm = .true.
+   logical :: remap_t  = .true.
    logical :: z_tracer = .true.       ! transport tracers layer by layer with independent
                                       ! time split; use this if tracer number is huge and/or
                                       ! high resolution (nsplt > 1)
@@ -123,23 +162,30 @@ module fv_pack_mod
                              ! m_grad_p=1:  one-stage full pressure for grad_p; this option is faster
                              !              but it is not suitable for low horizontal resolution
                              ! m_grad_p=0:  two-stage grad computation (best for low resolution runs)
-   public :: npx,npy,npz,ntiles,ncnst
+   integer :: a2b_ord = 2    ! order for interpolation from A to B Grid (corners)
+   public :: npx,npy,npz, npz_rst, ntiles,ncnst
    public :: hord_mt, hord_vt, kord_mt, hord_tm, kord_tm, hord_tr, kord_tr
    public :: n_split, m_split, q_split, master
    public :: dddmp, d_ext
-   public :: k_top, n_sponge
-   public :: uniform_ppm, z_tracer, ch4_chem
+   public :: k_top, m_riem, n_sponge, p_ref
+   public :: uniform_ppm, remap_t,  z_tracer, ch4_chem
    public :: tau, rf_center
    public :: fv_init, fv_end
    public :: domain
    public :: adiabatic, nf_omega, full_phys
-   public :: hydrostatic, hybrid_z, quick_p_c, quick_p_d, m_grad_p
+   public :: hydrostatic, hybrid_z, quick_p_c, quick_p_d, m_grad_p, a2b_ord
+
+#ifdef MARS_GCM
+   public :: reference_sfc_pres, sponge_damp
+   public :: nt_prog, nt_phys
+#endif MARS
+
+
 
  contains
 
 !-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!        
+         
  subroutine fv_init(Atm, dt_atmos)
 
    type(fv_atmos_type), intent(inout) :: Atm(:)
@@ -148,6 +194,15 @@ module fv_pack_mod
    integer :: i, j, k, n
    integer :: isc, iec, jsc, jec
    integer :: isd, ied, jsd, jed
+
+
+#ifdef MARS_GCM
+! tracers
+   integer :: num_family, pnats, index ! output of register_tracers
+   integer, allocatable :: tracer_indices(:)
+   logical :: is_in_nonadv_tracer_section
+   character(len=128) :: msg, tname
+#endif MARS
 
 
 ! Start up MPI
@@ -167,7 +222,22 @@ module fv_pack_mod
                                         ! needs modification for multiple tiles
       k_top = max(1, k_top)   ! to idiot proof
 
+
+#ifdef MARS_GCM
+!           override number of tracers by reading field_table
+
+    call tm_register_tracers (MODEL_ATMOS, ncnst, nt_prog, pnats, num_family)
+    write(stdout(), *)'ncnst=', ncnst,' num_prog=',nt_prog,' pnats=',pnats,' num_family=',num_family
+
+!!!    allocate(tracer_indices(ncnst))
+!!!    call tm_get_tracer_indices(MODEL_ATMOS, tracer_indices)
+!!!    index = tm_get_tracer_index(MODEL_ATMOS, 'h2o_vapor', tracer_indices)
+!!!    deallocate(tracer_indices)
+#endif MARS_GCM
+
+
       Atm(1)%npx=npx; Atm(1)%npy=npy; Atm(1)%npz=npz; Atm(1)%ng=ng
+      Atm(1)%npz_rst = npz_rst
       Atm(1)%n_split = n_split
       Atm(1)%m_split = m_split
       Atm(1)%q_split = q_split
@@ -183,6 +253,7 @@ module fv_pack_mod
       Atm(1)%mountain = mountain
       Atm(1)%non_ortho = non_ortho
       Atm(1)%adjust_dry_mass = adjust_dry_mass
+      Atm(1)%fv_sg_adj = fv_sg_adj
       Atm(1)%dry_mass = dry_mass
 
       Atm(1)%hydrostatic = hydrostatic
@@ -192,7 +263,7 @@ module fv_pack_mod
 
     ! Read Grid from GRID_FILE and setup grid descriptors
     ! needs modification for multiple tiles
-      call init_grid(Atm(1), grid_name, grid_file, npx, npy, npz, ndims, ntiles, ng, grid_type)
+      call init_grid(Atm(1), grid_name, grid_file, npx, npy, npz, ndims, ntiles, ng)
       Atm(1)%ndims = ndims
       Atm(1)%ntiles = ntiles
 
@@ -226,8 +297,7 @@ module fv_pack_mod
 
         allocate ( Atm(n)%u_srf(isc:iec,jsc:jec) )
         allocate ( Atm(n)%v_srf(isc:iec,jsc:jec) )
-        Atm(n)%u_srf = 0
-        Atm(n)%v_srf = 0
+
 #ifdef FV_LAND
         allocate ( Atm(n)%sgh(isc:iec,jsc:jec) )
         allocate ( Atm(n)%oro(isc:iec,jsc:jec) )
@@ -280,12 +350,10 @@ module fv_pack_mod
       call fv_restart_init()
 
  end subroutine fv_init
-! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!        
+         
  subroutine fv_end(Atm)
 
     type(fv_atmos_type), intent(inout) :: Atm(:)
@@ -342,11 +410,9 @@ module fv_pack_mod
 
 
  end subroutine fv_end
-! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
 !     run_setup :: initialize run from namelist
 !
@@ -362,24 +428,35 @@ module fv_pack_mod
       real :: dt0  = 1800.          ! base time step
       real :: ns0  = 5.             ! base nsplit for base dimension 
                                     ! For cubed sphere 5 is better
-      real dimx
+      real :: umax = 350.           ! max wave speed for grid_type>3
+      real :: dimx, dl, dp, dxmin, dymin
 
       integer :: iq
 
       namelist /mpi_nml/npes_x,npes_y  ! Use of this namelist is deprecated
-      namelist /fv_grid_nml/grid_name,grid_file,grid_stretch
-      namelist /fv_core_nml/npx, npy, ntiles, npz, layout, ncnst,    &
+      namelist /fv_grid_nml/grid_name,grid_file
+      namelist /fv_core_nml/npx, npy, ntiles, npz, npz_rst, layout, ncnst,    &
                             n_split, m_split, q_split, print_freq,   &
                             hord_mt, hord_vt, hord_tm, hord_tr, &
                             kord_mt, kord_tm, kord_tr, &
                             dddmp, d_ext, non_ortho, n_sponge, adjust_dry_mass,  &
                             dry_mass, grid_type, do_Held_Suarez, consv_te, fill, &
                             z_tracer, ch4_chem, reproduce_sum, adiabatic,        &
-                            tau, rf_center, nf_omega, hydrostatic,       &
+                            tau, rf_center, nf_omega, hydrostatic, fv_sg_adj,    &
                             hybrid_z, quick_p_c, quick_p_d, Make_NH, m_grad_p,   &
-                            uniform_ppm, k_top
+                            a2b_ord, uniform_ppm, remap_t, k_top, m_riem, p_ref, &
+#ifdef MARS_GCM
+                            sponge_damp, reference_sfc_pres,                     &
+#endif
+                            dx_const, dy_const, umax, deglat,                    &
+                            deglon_start, deglon_stop, deglat_start, deglat_stop
+
+
       namelist /test_case_nml/test_case,alpha
 
+! Make alpha = 0 the default:
+      alpha = 0.
+      test_case = 11   ! (USGS terrain)
 
       filename = "input.nml"
       inquire(file=filename,exist=exists)
@@ -406,6 +483,18 @@ module fv_pack_mod
            if(master) write(6,*) 'fv_core_nml ERROR: reading ',trim(filename),', iostat=',ios
            call mpp_error(FATAL,'FV core terminating')
         endif
+
+!*** single tile for Cartesian grids
+        if (grid_type>3) then
+           ntiles=1
+           non_ortho = .false.
+           uniform_ppm = .true.
+           nf_omega = 0
+        endif
+
+!*** remap_t is NOT yet supported for non-hydrostatic option *****
+        if ( .not. hydrostatic ) remap_t = .false.
+
         npes_x = layout(1)
         npes_y = layout(2)
 
@@ -431,11 +520,41 @@ module fv_pack_mod
       if ( n_split == 0 ) then
           if (ntiles==6) then
              dimx = 4.0*(npx-1)
-             if ( npx >= 180 .or. (.not.hydrostatic) ) ns0 = 6
+#ifdef MARS_GCM
+             ns0 = 8
+#else
+             if ( hydrostatic ) then
+                  if ( npx >= 120 ) ns0 = 6
+             else
+                  if ( npx <= 45 ) then
+                       ns0 = 6
+                  elseif ( npx <=90 ) then
+                       ns0 = 7
+                  else
+                       ns0 = 8
+                  endif
+             endif
+#endif
           else
              dimx = max ( npx, 2*(npy-1) )
           endif
-          n_split = nint ( ns0*abs(dt_atmos)*dimx/(dt0*dim0) + 0.49 )
+          
+          if (grid_type < 4) then
+             n_split = nint ( ns0*abs(dt_atmos)*dimx/(dt0*dim0) + 0.49 )
+          elseif (grid_type == 4 .or. grid_type == 7) then
+             n_split = nint ( 2.*umax*dt_atmos/sqrt(dx_const**2 + dy_const**2) + 0.49 )
+          elseif (grid_type == 5 .or. grid_type == 6) then
+             if (grid_type == 6) then
+                deglon_start = 0.; deglon_stop  = 360.
+             endif
+             dl = (deglon_stop-deglon_start)*pi/(180.*(npx-1))
+             dp = (deglat_stop-deglat_start)*pi/(180.*(npy-1))
+
+             dxmin=dl*radius*min(cos(deglat_start*pi/180.-ng*dp),   &
+                                 cos(deglat_stop *pi/180.+ng*dp))
+             dymin=dp*radius
+             n_split = nint ( 2.*umax*dt_atmos/sqrt(dxmin**2 + dymin**2) + 0.49 )
+          endif
           n_split = max ( 1, n_split )
           if(master) write(6,198) 'n_split is set to ', n_split, ' for resolution-dt=',npx,npy,ntiles,dt_atmos
       else
@@ -465,7 +584,7 @@ module fv_pack_mod
 
       alpha = alpha*pi
 
-      call domain_decomp(npx,npy,ntiles,ng)
+      call domain_decomp(npx,npy,ntiles,ng,grid_type)
 
   end subroutine run_setup
 

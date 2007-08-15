@@ -1,4 +1,4 @@
-! $Id: init_hydro.F90,v 14.0 2007/03/15 21:58:53 fms Exp $
+! $Id: init_hydro.F90,v 15.0 2007/08/14 03:51:33 fms Exp $
 
 module init_hydro
 
@@ -18,7 +18,8 @@ contains
 !-------------------------------------------------------------------------------
  subroutine p_var(km, ifirst, ilast, jfirst, jlast, ptop, ptop_min,    &
                   delp, delz, pt, ps,  pe, peln, pk, pkz, cappa, q, ng, nq,    &
-                  dry_mass, adjust_dry_mass, mountain, full_phys, hydrostatic, ktop)
+                  dry_mass, adjust_dry_mass, mountain, full_phys,      &
+                  hydrostatic, ktop, make_nh)
                
 ! Given (ptop, delp) computes (ps, pk, pe, peln, pkz)
 ! Input:
@@ -31,9 +32,10 @@ contains
    logical, intent(in):: adjust_dry_mass, mountain, full_phys, hydrostatic
    real, intent(in):: dry_mass, cappa, ptop, ptop_min
    real, intent(in   )::   pt(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
-   real, intent(in   ):: delz(ifirst   :ilast   ,jfirst   :jlast   , km)
+   real, intent(inout):: delz(ifirst   :ilast   ,jfirst   :jlast   , km)
    real, intent(inout):: delp(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
    real, intent(inout)::    q(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km, nq)
+   logical, optional:: make_nh
 ! Output:
    real, intent(out) ::   ps(ifirst-ng:ilast+ng, jfirst-ng:jlast+ng)
    real, intent(out) ::   pk(ifirst:ilast, jfirst:jlast, km+1)
@@ -111,6 +113,20 @@ contains
       endif
 
       rdg = -rdgas / grav
+      if ( present(make_nh) ) then
+          if ( make_nh ) then
+             do k=1,km
+                do j=jfirst,jlast
+                   do i=ifirst,ilast
+                      delz(i,j,k) = rdg*pt(i,j,k)*(peln(i,k+1,j)-peln(i,k,j))
+                   enddo
+                enddo
+             enddo
+             if(gid==0) write(*,*) 'delz computed from hydrostatic state'
+!            call prt_maxmin('delz', delz, ifirst, ilast, jfirst, jlast, 0, km, 1., gid==masterproc)
+          endif
+      endif
+
       do k=ktop,km
          do j=jfirst,jlast
             do i=ifirst,ilast
@@ -184,8 +200,9 @@ contains
         if( full_phys ) then
           do k=1,km
             do i=ifirst,ilast
-              psd(i,j) = psd(i,j) + delp(i,j,k)*(1.-q(i,j,k,1))
-              psq(i,j) = psq(i,j) + delp(i,j,k)*sum( q(i,j,k,1:ip) )
+              psmo = sum( q(i,j,k,1:ip) ) * delp(i,j,k)
+              psq(i,j) = psq(i,j) + psmo
+              psd(i,j) = psd(i,j) + delp(i,j,k) - psmo
             enddo
           enddo
         else
@@ -198,9 +215,10 @@ contains
 1000  continue
 
 ! Check global maximum/minimum
-       psmo = g_sum( ps(ifirst:ilast,jfirst:jlast), ifirst, ilast, jfirst, jlast, ng, area, 1) 
-      psdry = g_sum(psd, ifirst, ilast, jfirst, jlast, ng, area, 1) 
-       qtot = g_sum(psq, ifirst, ilast, jfirst, jlast, ng, area, 1) 
+       psmo = g_sum( ps(ifirst:ilast,jfirst:jlast), ifirst, ilast, jfirst, jlast,  &
+                     ng, area, mode=1, exact_sum=.true.) 
+      psdry = g_sum(psd, ifirst, ilast, jfirst, jlast, ng, area, mode=1, exact_sum=.true.) 
+       qtot = g_sum(psq, ifirst, ilast, jfirst, jlast, ng, area, mode=1, exact_sum=.true.) 
 
       if(gid==masterproc) then
          write(6,*) 'Total surface pressure (mb) = ', 0.01*psmo
@@ -244,7 +262,8 @@ contains
          enddo
 2000  continue
 
-      psmo = g_sum(ps(ifirst:ilast,jfirst:jlast), ifirst, ilast, jfirst, jlast, ng, area, 1) 
+      psmo = g_sum(ps(ifirst:ilast,jfirst:jlast), ifirst, ilast, jfirst, jlast,   &
+                   ng, area, mode=1, exact_sum=.true.) 
       if( gid==masterproc ) write(6,*)                                     &
               'Total (moist) surface pressure after adjustment = ', &
                0.01*psmo
@@ -284,9 +303,8 @@ contains
   if ( gid==masterproc ) write(*,*) 'Initializing ATM hydrostatically'
 
 #ifdef MARS_GCM
-      p0 = 893.E2         ! need to tune this value
-      t0 = 300.
-      u = 0;  v = 0.
+      p0 = 6.1E2         ! need to tune this value
+      t0 = 250.
       pt = t0
 ! gztop when zs==0
       gztop = rdgas*t0*log(p0/ak(1))
@@ -331,7 +349,7 @@ contains
         enddo
      enddo
 
-     psm = g_sum(ps(is:ie,js:je), is, ie, js, je, ng, area, 1)
+     psm = g_sum(ps(is:ie,js:je), is, ie, js, je, ng, area, mode=1, exact_sum=.true.)
      dps = drym - psm
      if(gid==masterproc) write(6,*) 'Computed mean ps=', psm
      if(gid==masterproc) write(6,*) 'Correction delta-ps=', dps

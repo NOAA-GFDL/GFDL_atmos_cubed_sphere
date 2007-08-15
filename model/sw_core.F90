@@ -1,31 +1,39 @@
-      module sw_core
+ module sw_core
 
-      use mp_mod,     only: ng, is,js,ie,je, isd,jsd,ied,jed,  &
-                            mp_corner_comm, tile, domain
-      use mpp_domains_mod, only: CGRID_NE, mpp_update_domains
-      use grid_tools, only: npx=>npx_g,npy=>npy_g, cosa, sina,  &
+ use mp_mod,     only: ng, is,js,ie,je, isd,jsd,ied,jed,  &
+                       mp_corner_comm, tile, domain
+ use grid_tools, only: npx=>npx_g,npy=>npy_g, cosa, sina,  &
                             rdxc, rdyc, dx,dy, dxc,dyc, dxa,dya,  &
                             rdxa, rdya, area, rarea, rarea_c, rdx, rdy
-      use tpcore,     only: fv_tp_2d, std_ppm
-      use grid_utils, only: edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e,  &
-                            sw_corner, se_corner, ne_corner, nw_corner,       &
-                            cosa_u, cosa_v, cosa_s, sina_s, sina_u, sina_v,   &
-                            rsin_u, rsin_v, rsin_v, rsina, ec1, ec2, ew, es,  &
-                            eww, ess, ue, ve, big_number, da_min_c, fC, f0,   &
-                            a11, a12, a21, a22, rsin2, Gnomonic_grid
-      use timingModule, only : timing_on, timing_off
+ use grid_tools, only: grid_type
+ use tpcore,     only: fv_tp_2d, pert_ppm, copy_corners
+ use grid_utils, only: edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e,  &
+                       sw_corner, se_corner, ne_corner, nw_corner,       &
+                       cosa_u, cosa_v, cosa_s, sina_s, sina_u, sina_v,   &
+                       rsin_u, rsin_v, rsin_v, rsina, ec1, ec2, ew, es,  &
+                       big_number, da_min_c, fC, f0,   &
+                       a11, a12, a21, a22, rsin2, Gnomonic_grid
+ use mpp_domains_mod, only: CGRID_NE, mpp_update_domains
 #ifdef SW_DYNAMICS
-      use test_cases, only: test_case
+ use test_cases,   only: test_case
 #endif
-      implicit none
+ implicit none
 
-! The wave-form is more diffusive than the default "5th" order
-      real, parameter:: b1 =   0.0375
-      real, parameter:: b2 =  -7./30.
-      real, parameter:: b3 =  -23./120.
-      real, parameter:: b4 =  13./30.
-      real, parameter:: b5 = -11./240.
-      real, parameter:: r3  = 1./3.
+  real, parameter:: r3 =   1./3.
+  real, parameter:: t11=27./28., t12=-13./28., t13=3./7., t14=6./7., t15=3./28.
+  real, parameter:: s11=11./14., s13=-13./14., s14=4./7., s15=3./14.
+! PPM volume mean form:
+  real, parameter:: b1 =  7./12.     ! 0.58333333
+  real, parameter:: b2 = -1./12.
+! 4-pt Lagrange interpolation
+  real, parameter:: a1 =  0.5625
+  real, parameter:: a2 = -0.0625
+!----------------------------------------------
+! 3-pt off-center intp formular:
+  real, parameter:: c1 = -0.125
+  real, parameter:: c2 =  0.75
+  real, parameter:: c3 =  0.375
+!----------------------------------------------
 
       private
       public :: c_sw, d_sw, d2a2c_vect
@@ -48,19 +56,24 @@
       real, dimension(is-1:ie+1,js-1:je+2):: fy, fy1, fy2
       real :: dt4
       integer :: i,j, is2, ie1
-!                             call timing_on('d2a2c')
-      call d2a2c_vect(u, v, ua, va, uc, vc, ut, vt)  ! simpler/quicker version
-                                                     ! This version also reduces naturally
-                                                     ! for lat-lon or x-y coordinate
-!     call d2a2c_vect_v0(u, v, ua, va, uc, vc, ut, vt)
-!                             call timing_off('d2a2c')
-      do j=js-1,je+1
-         do i=is-1,ie+2
+      integer iep1, jep1
+
+#ifdef FIX_C_BOUNDARY 
+      iep1 = ie;   jep1 = je
+#else
+      iep1 = ie+1; jep1 = je+1
+#endif
+
+      call d2a2c_vect   (u, v, ua, va, uc, vc, ut, vt)  
+!     call d2a2c_vect_v2(u, v, ua, va, uc, vc, ut, vt)
+ 
+      do j=js-1,jep1
+         do i=is-1,iep1+1
             ut(i,j) = dt2*ut(i,j)*dy(i,j)*sina_u(i,j)
          enddo
       enddo
-      do j=js-1,je+2
-         do i=is-1,ie+1
+      do j=js-1,jep1+1
+         do i=is-1,iep1
             vt(i,j) = dt2*vt(i,j)*dx(i,j)*sina_v(i,j)
          enddo
       enddo
@@ -69,11 +82,11 @@
 ! Transport delp:
 !----------------
 ! Xdir:
-      call fill2_4corners(delp, pt, 1)
+      if (grid_type < 3) call fill2_4corners(delp, pt, 1)
       if ( hydrostatic ) then
 #ifdef SW_DYNAMICS
-           do j=js-1,je+1
-              do i=is-1,ie+2      
+           do j=js-1,jep1
+              do i=is-1,iep1+1      
                  if ( ut(i,j) > 0. ) then
                       fx1(i,j) = delp(i-1,j)
                  else
@@ -83,8 +96,8 @@
               enddo
            enddo
 #else
-           do j=js-1,je+1
-              do i=is-1,ie+2      
+           do j=js-1,jep1
+              do i=is-1,iep1+1
                  if ( ut(i,j) > 0. ) then
                       fx1(i,j) = delp(i-1,j)
                        fx(i,j) =   pt(i-1,j)
@@ -98,7 +111,7 @@
            enddo
 #endif
       else
-           call fill_4corners(w, 1)
+           if (grid_type < 3) call fill_4corners(w, 1)
            do j=js-1,je+1
               do i=is-1,ie+2      
                  if ( ut(i,j) > 0. ) then
@@ -118,10 +131,10 @@
       endif
 
 ! Ydir:
-      call fill2_4corners(delp, pt, 2)
+      if (grid_type < 3) call fill2_4corners(delp, pt, 2)
       if ( hydrostatic ) then
-           do j=js-1,je+2
-              do i=is-1,ie+1      
+           do j=js-1,jep1+1
+              do i=is-1,iep1      
                  if ( vt(i,j) > 0. ) then
                       fy1(i,j) = delp(i,j-1)
                        fy(i,j) =   pt(i,j-1)
@@ -133,8 +146,8 @@
                   fy(i,j) = fy1(i,j)* fy(i,j)
               enddo
            enddo
-           do j=js-1,je+1
-              do i=is-1,ie+1    
+           do j=js-1,jep1
+              do i=is-1,iep1    
                  delpc(i,j) = delp(i,j) + (fx1(i,j)-fx1(i+1,j)+fy1(i,j)-fy1(i,j+1))*rarea(i,j)
 #ifdef SW_DYNAMICS
                    ptc(i,j) = pt(i,j)
@@ -145,7 +158,7 @@
               enddo
            enddo
       else
-           call fill_4corners(w, 2)
+           if (grid_type < 3) call fill_4corners(w, 2)
            do j=js-1,je+2
               do i=is-1,ie+1      
                  if ( vt(i,j) > 0. ) then
@@ -177,8 +190,8 @@
 ! Compute KE:
 !------------
 #ifdef SMOOTH_GRID
-      do j=js-1,je+1
-         do i=is-1,ie+1
+      do j=js-1,jep1
+         do i=is-1,iep1
             if ( ua(i,j) > 0. ) then
                  ke(i,j) = uc(i,j)
             else
@@ -186,8 +199,8 @@
             endif
          enddo
       enddo
-      do j=js-1,je+1
-         do i=is-1,ie+1
+      do j=js-1,jep1
+         do i=is-1,iep1
             if ( va(i,j) > 0. ) then
                  vort(i,j) = vc(i,j)
             else
@@ -196,8 +209,8 @@
          enddo
       enddo
 #else
-      do j=js-1,je+1
-         do i=is-1,ie+1
+      do j=js-1,jep1
+         do i=is-1,iep1
             if ( ua(i,j) > 0. ) then
                  if ( i==1 ) then
                     ke(1,j) = uc(1,  j)*sina_u(1,  j)+v(1,  j)*cosa_u(1,  j)
@@ -217,8 +230,8 @@
             endif
          enddo
       enddo
-      do j=js-1,je+1
-         do i=is-1,ie+1
+      do j=js-1,jep1
+         do i=is-1,iep1
             if ( va(i,j) > 0. ) then
                if ( j==1 ) then
                   vort(i,1) = vc(i,  1)*sina_v(i,  1)+u(i,  1)*cosa_v(i,  1)
@@ -241,8 +254,8 @@
 #endif
 
       dt4 = 0.5*dt2
-      do j=js-1,je+1
-         do i=is-1,ie+1
+      do j=js-1,jep1
+         do i=is-1,iep1
             ke(i,j) = dt4*(ua(i,j)*ke(i,j) + va(i,j)*vort(i,j)) 
          enddo
       enddo
@@ -252,17 +265,6 @@
 !------------------------------
 ! To consider using true co-variant winds at face edges?
 #ifdef TEST_EDGE
-      do j=js-1,je+1
-         do i=is,ie+1
-            fx(i,j) = uc(i,j) * dxc(i,j)
-         enddo
-      enddo
-      do j=js,je+1
-         do i=is-1,ie+1
-            fy(i,j) = vc(i,j) * dyc(i,j)
-         enddo
-      enddo
-#else
       is2 = max(2,is); ie1 = min(npx-1,ie+1)
       do j=js-1,je+1
          do i=is2,ie1
@@ -283,6 +285,17 @@
            enddo
          endif
       enddo
+#else
+      do j=js-1,je+1
+         do i=is,ie+1
+            fx(i,j) = uc(i,j) * dxc(i,j)
+         enddo
+      enddo
+      do j=js,je+1
+         do i=is-1,ie+1
+            fy(i,j) = vc(i,j) * dyc(i,j)
+         enddo
+      enddo
 #endif
       do j=js,je+1
          do i=is,ie+1
@@ -301,11 +314,7 @@
 !----------------------------
       do j=js,je+1
          do i=is,ie+1
-#ifdef NON_ROTATING
-            vort(i,j) = rarea_c(i,j) * vort(i,j)
-#else
             vort(i,j) = fC(i,j) + rarea_c(i,j) * vort(i,j)
-#endif
          enddo
       enddo
 
@@ -313,13 +322,12 @@
 ! Transport absolute vorticity:
 !----------------------------------
       do j=js,je
-         do i=is,ie+1
+         do i=is,iep1
             if ( i==1 .or. i==npx ) then
                  fy1(i,j) = dt2*v(i,j)*sina_u(i,j)
             else
                  fy1(i,j) = dt2*(v(i,j)-uc(i,j)*cosa_u(i,j))/sina_u(i,j)
             endif
-!
             if ( fy1(i,j) > 0. ) then
                  fy(i,j) = vort(i,j)
             else
@@ -328,7 +336,7 @@
           enddo
       enddo
 
-      do j=js,je+1
+      do j=js,jep1
          if ( j==1 .or. j==npy ) then
             do i=is,ie
                fx1(i,j) = dt2*u(i,j)*sina_v(i,j)
@@ -352,11 +360,11 @@
 
 ! Update time-centered winds on the C-Grid
       do j=js,je
-         do i=is,ie+1
+         do i=is,iep1
             uc(i,j) = uc(i,j) + fy1(i,j)*fy(i,j) + rdxc(i,j)*(ke(i-1,j)-ke(i,j))
          enddo
       enddo
-      do j=js,je+1
+      do j=js,jep1
          do i=is,ie
             vc(i,j) = vc(i,j) - fx1(i,j)*fx(i,j) + rdyc(i,j)*(ke(i,j-1)-ke(i,j))
          enddo
@@ -391,25 +399,21 @@
       real, intent(OUT), dimension(is:ie+1,jsd:jed):: crx_adv, xfx_adv
       real, intent(OUT), dimension(isd:ied,js:je+1):: cry_adv, yfx_adv
 ! Local:
-!     real :: ut(isd:ied+1,jsd:jed  )
-!     real :: vt(isd:ied  ,jsd:jed+1)
+      real, dimension(is:ie+1,js:je+1):: ub, vb
       real :: ut(is-1:ie+2,jsd: jed  )
       real :: vt(isd: ied ,js-1:je+2)
-
-      real, dimension(is:ie+1,js:je+1):: ub, vb, cfl, fy_ke
+      real :: ke(isd:ied+1,jsd:jed+1) ! Kinetic Energy
       real :: vort(isd:ied,jsd:jed)     ! Vorticity
-      real ::   ke(isd:ied+1,jsd:jed+1) ! Kinetic Energy
       real ::   fx(is:ie+1,js:je  )  ! 1-D X-direction Fluxes
       real ::   fy(is:ie  ,js:je+1)  ! 1-D Y-direction Fluxes
       real ::   gy(is:ie  ,js:je+1)  ! work Y-dir flux array
+      real :: ra_x(is:ie,jsd:jed)
+      real :: ra_y(isd:ied,js:je)
 
-      real :: dt5, dt6, rdt
-      real :: utmp, vtmp, damp
-      real :: u1, v1, vs, uw, vn, ue
-      real :: k1, k2, k3
-      integer :: i,j, is2, ie1
+      real :: dt4, dt5, dt6
+      real :: damp
+      integer :: i,j, is2, ie1, js2, je1
 
-      rdt = 1./ dt
 
 #ifdef SW_DYNAMICS
       if ( test_case == 1 ) then
@@ -439,28 +443,28 @@
       else
 #endif
 
+
+     if (grid_type < 3) then
+! Interior:
         do j=jsd,jed
            if(j/=0 .and. j/=1 .and. j/=(npy-1) .and. j/=npy) then
-           do i=is-1,ie+2
-              vtmp = 0.25*(vc(i-1,j) + vc(i,j) + vc(i-1,j+1) + vc(i,j+1))
-              ut(i,j) = (uc(i,j) - cosa_u(i,j)*vtmp) * rsin_u(i,j)
-           enddo
-! Fix i=1 & npx:
-             if(     is==1   ) ut(1  ,j) = uc(1,  j) * rsin_u(1,  j)
-             if( (ie+1)==npx ) ut(npx,j) = uc(npx,j) * rsin_u(npx,j)
+             do i=is-1,ie+2
+                ut(i,j) = ( uc(i,j) - 0.25 * cosa_u(i,j) *     &
+                    (vc(i-1,j)+vc(i,j)+vc(i-1,j+1)+vc(i,j+1)))*rsin_u(i,j)
+             enddo
            endif
         enddo
 
         do j=js-1,je+2
            if( j/=1 .and. j/=npy ) then
               do i=isd,ied
-                 utmp = 0.25*(uc(i,j-1) + uc(i+1,j-1) + uc(i,j) + uc(i+1,j))
-                 vt(i,j) = (vc(i,j) - cosa_v(i,j)*utmp) * rsin_v(i,j)
+                 vt(i,j) = ( vc(i,j) - 0.25 * cosa_v(i,j) *     &
+                    (uc(i,j-1)+uc(i+1,j-1)+uc(i,j)+uc(i+1,j)))*rsin_v(i,j)
               enddo
            endif
         enddo
 
-! Fix the 4 edges (if existed):
+! West edge:
         if ( is==1 ) then
            do j=jsd,jed
               ut(1,j) = uc(1,j) * rsin_u(1,j)
@@ -468,25 +472,27 @@
            do j=max(3,js), min(npy-2,je+1)
 !             vt(0,j) = vc(0,j) - 0.25*cosa_v(0,j)*   &
               vt(0,j) = vc(0,j) + 0.25*cosa_v(1,j)*   &
-                                 (ut(0,j)+ut(1,j)+ut(0,j-1)+ut(1,j-1))
+                       (ut(0,j-1)+ut(1,j-1)+ut(0,j)+ut(1,j))
               vt(1,j) = vc(1,j) - 0.25*cosa_v(1,j)*   &
-                                 (ut(1,j)+ut(2,j)+ut(1,j-1)+ut(2,j-1))
+                       (ut(1,j-1)+ut(2,j-1)+ut(1,j)+ut(2,j))
            enddo
         endif
 
+! East edge:
         if ( (ie+1)==npx ) then
            do j=jsd,jed
               ut(npx,j) = uc(npx,j) * rsin_u(npx,j)
            enddo
            do j=max(3,js), min(npy-2,je+1)
               vt(npx-1,j) = vc(npx-1,j) - 0.25*cosa_v(npx-1,j)*   &
-                                 (ut(npx-1,j)+ut(npx,j)+ut(npx-1,j-1)+ut(npx,j-1))
+                           (ut(npx-1,j-1)+ut(npx,j-1)+ut(npx-1,j)+ut(npx,j))
 !             vt(npx,j) = vc(npx,j) - 0.25*cosa_v(npx,j)*   &
               vt(npx,j) = vc(npx,j) + 0.25*cosa_v(npx-1,j)*   &
-                                 (ut(npx,j)+ut(npx+1,j)+ut(npx,j-1)+ut(npx+1,j-1))
+                         (ut(npx,j-1)+ut(npx+1,j-1)+ut(npx,j)+ut(npx+1,j))
            enddo
         endif
 
+! South (Bottom) edge:
         if ( js==1 ) then
            do i=isd,ied
               vt(i,1) = vc(i,1) * rsin_v(i,1)
@@ -494,100 +500,101 @@
            do i=max(3,is),min(npx-2,ie+1)
 !             ut(i,0) = uc(i,0) - 0.25*cosa_u(i,0)*   &
               ut(i,0) = uc(i,0) + 0.25*cosa_u(i,1)*   &
-                                 (vt(i,0)+vt(i,1)+vt(i-1,0)+vt(i-1,1))
+                       (vt(i-1,0)+vt(i,0)+vt(i-1,1)+vt(i,1))
               ut(i,1) = uc(i,1) - 0.25*cosa_u(i,1)*   &
-                                 (vt(i,1)+vt(i,2)+vt(i-1,1)+vt(i-1,2))
+                       (vt(i-1,1)+vt(i,1)+vt(i-1,2)+vt(i,2))
            enddo
         endif
 
+! North edge:
         if ( (je+1)==npy ) then
            do i=isd,ied
               vt(i,npy) = vc(i,npy) * rsin_v(i,npy)
            enddo
            do i=max(3,is),min(npx-2,ie+1)
               ut(i,npy-1) = uc(i,npy-1) - 0.25*cosa_u(i,npy-1)*   &
-                           (vt(i,npy-1)+vt(i,npy)+vt(i-1,npy-1)+vt(i-1,npy))
+                           (vt(i-1,npy-1)+vt(i,npy-1)+vt(i-1,npy)+vt(i,npy))
 !             ut(i,npy) = uc(i,npy) - 0.25*cosa_u(i,npy)*   &
               ut(i,npy) = uc(i,npy) + 0.25*cosa_u(i,npy-1)*   &
-                         (vt(i,npy)+vt(i,npy+1)+vt(i-1,npy)+vt(i-1,npy+1))
+                         (vt(i-1,npy)+vt(i,npy)+vt(i-1,npy+1)+vt(i,npy+1))
            enddo
         endif
 
-! Finally, fix the 4 corners:
         if( sw_corner ) then
-            utmp = uc(2,1)+uc(2,2)
-            vtmp = vc(1,2)+vc(2,2)
-            u1 = (utmp - vtmp*cosa(2,2))*rsina(2,2)
-            v1 = (vtmp - utmp*cosa(2,2))*rsina(2,2)
-            vs = vt(1,1)+vt(2,1)
-            uw = ut(1,1)+ut(1,2)
-            ut(2,1) = uc(2,1) - 0.25*(v1+vs)*cosa_u(2,1)
-            vt(1,2) = vc(1,2) - 0.25*(u1+uw)*cosa_v(1,2) 
-! South
-            v1 = (vc(1,0)+vc(2,0)+(uc(2,-1)+uc(2,0))*cosa(2,2))*rsina(2,2)
-            ut(2,0) = uc(2,0) + 0.25*(v1+vs)*cosa_u(2,1)
-! West
-            u1 = (uc(0,1)+uc(0,2)+(vc(-1,2)+vc(0,2))*cosa(2,2))*rsina(2,2)
-            vt(0,2) = vc(0,2) + 0.25*(u1+uw)*cosa_v(1,2) 
+            damp = 1. / (1.-0.0625*cosa_u(2,1)*cosa_v(1,2))
+            ut(2,0) = (uc(2,0)-0.25*cosa_u(2,0)*(vt(1,1)+vt(2,1)+vt(2,0)+vc(1,0) -   &
+                      0.25*cosa_v(1,0)*(ut(1,0)+ut(1,-1)+ut(2,-1))) ) * damp
+            ut(2,1) = (uc(2,1)-0.25*cosa_u(2,1)*(vt(1,1)+vt(2,1)+vt(2,2)+vc(1,2) -   &
+                      0.25*cosa_v(1,2)*(ut(1,1)+ut(1,2)+ut(2,2))) ) * damp
+            vt(1,2) = (vc(1,2)-0.25*cosa_v(1,2)*(ut(1,1)+ut(1,2)+ut(2,2)+uc(2,1) -   &
+                      0.25*cosa_u(2,1)*(vt(1,1)+vt(2,1)+vt(2,2))) ) * damp
+            vt(0,2) = (vc(0,2)-0.25*cosa_v(0,2)*(ut(1,1)+ut(1,2)+ut(0,2)+uc(0,1) -   &
+                      0.25*cosa_u(0,1)*(vt(0,1)+vt(-1,1)+vt(-1,2))) ) * damp
         endif
 
         if( se_corner ) then
-            utmp = uc(npx-1,1)+uc(npx-1,2)
-            vtmp = vc(npx-2,2)+vc(npx-1,2)
-            u1 = (utmp - vtmp*cosa(npx-1,2))*rsina(npx-1,2)
-            v1 = (vtmp - utmp*cosa(npx-1,2))*rsina(npx-1,2)
-            vs = vt(npx-1,1)+vt(npx-2,1)
-            ue = ut(npx,1)+ut(npx,2)
-            ut(npx-1,1) = uc(npx-1,1) - 0.25*(v1+vs)*cosa_u(npx-1,1)
-            vt(npx-1,2) = vc(npx-1,2) - 0.25*(u1+ue)*cosa_v(npx-1,2) 
-! South
-            v1 = (vc(npx-2,0)+vc(npx-1,0) +        &
-                 (uc(npx-1,-1)+uc(npx-1,0))*cosa(npx-1,2))*rsina(npx-1,2)
-            ut(npx-1,0) = uc(npx-1,0) + 0.25*(v1+vs)*cosa_u(npx-1,1)
-! East
-            u1 = (uc(npx+1,1)+uc(npx+1,2) +     &
-                 (vc(npx  ,2)+vc(npx+1,2))*cosa(npx-1,2))*rsina(npx-1,2)
-            vt(npx,2) = vc(npx,2) + 0.25*(u1+ue)*cosa_v(npx-1,2) 
+            damp = 1. / (1. - 0.0625*cosa_u(npx-1,1)*cosa_v(npx-1,2))
+            ut(npx-1,0) = ( uc(npx-1,0)+0.25*cosa_u(npx-1,1)*(   &
+                            vt(npx-1,1)+vt(npx-2,1)+vt(npx-2,0)+vc(npx-1,0) +   &
+                      0.25*cosa_v(npx-1,2)*(ut(npx,0)+ut(npx,-1)+ut(npx-1,-1))) ) * damp
+            ut(npx-1,1) = ( uc(npx-1,1)-0.25*cosa_u(npx-1,1)*(  &
+                            vt(npx-1,1)+vt(npx-2,1)+vt(npx-2,2)+vc(npx-1,2) -   &
+                      0.25*cosa_v(npx-1,2)*(ut(npx,1)+ut(npx,2)+ut(npx-1,2))) ) * damp
+            vt(npx-1,2) = ( vc(npx-1,2)-0.25*cosa_v(npx-1,2)*(  &
+                            ut(npx,1)+ut(npx,2)+ut(npx-1,2)+uc(npx-1,1) -   &
+                      0.25*cosa_u(npx-1,1)*(vt(npx-1,1)+vt(npx-2,1)+vt(npx-2,2))) ) * damp
+            vt(npx,  2) = ( vc(npx,2)+0.25*cosa_v(npx-1,2)*(  &
+                            ut(npx,1)+ut(npx,2)+ut(npx+1,2)+uc(npx+1,1) +   &
+                      0.25*cosa_u(npx-1,1)*(vt(npx,1)+vt(npx+1,1)+vt(npx+1,2))) ) * damp
         endif
 
         if( ne_corner ) then
-            utmp = uc(npx-1,npy-2)+uc(npx-1,npy-1)
-            vtmp = vc(npx-2,npy-1)+vc(npx-1,npy-1)
-            u1 = (utmp - vtmp*cosa(npx-1,npy-1))*rsina(npx-1,npy-1)
-            v1 = (vtmp - utmp*cosa(npx-1,npy-1))*rsina(npx-1,npy-1)
-            vn = vt(npx-1,npy)+vt(npx-2,npy)
-            ue = ut(npx,npx-1)+ut(npx,npx-2)
-            ut(npx-1,npx-1) = uc(npx-1,npy-1) - 0.25*(v1+vn)*cosa_u(npx-1,npy-1)
-            vt(npx-1,npy-1) = vc(npx-1,npy-1) - 0.25*(u1+ue)*cosa_v(npx-1,npy-1)
-! east
-            u1 = (uc(npx+1,npy-2)+uc(npx+1,npy-1) +    &
-             (vc(npx,npy-1)+vc(npx+1,npy-1))*cosa(npx-1,npy-1))*rsina(npx-1,npy-1)
-            vt(npx,npy-1) = vc(npx,npy-1) + 0.25*(u1+ue)*cosa_v(npx-1,npy-1)
-! North
-            v1 = (vc(npx-2,npy+1)+vc(npx-1,npy+1) +    &
-              (uc(npx-1,npy  )+uc(npx-1,npy+1))*cosa(npx-1,npy-1))*rsina(npx-1,npy-1)
-            ut(npx-1,npy) = uc(npx-1,npy) + 0.25*(v1+vn)*cosa_u(npx-1,npy-1)
+            damp = 1. / (1. - 0.0625*cosa_u(npx-1,npy-1)*cosa_v(npx-1,npy-1))
+            ut(npx-1,npy) = ( uc(npx-1,npy)+0.25*cosa_u(npx-1,npy-1)*(   &
+                              vt(npx-1,npy)+vt(npx-2,npy)+vt(npx-2,npy+1)+vc(npx-1,npy+1) +   &
+                0.25*cosa_v(npx-1,npy-1)*(ut(npx,npy)+ut(npx,npy+1)+ut(npx-1,npy+1))) ) * damp
+            ut(npx-1,npy-1) = ( uc(npx-1,npy-1)-0.25*cosa_u(npx-1,npy-1)*(  &
+                                vt(npx-1,npy)+vt(npx-2,npy)+vt(npx-2,npy-1)+vc(npx-1,npy-1) -  &
+                0.25*cosa_v(npx-1,npy-1)*(ut(npx,npy-1)+ut(npx,npy-2)+ut(npx-1,npy-2))) ) * damp
+            vt(npx-1,npy-1) = ( vc(npx-1,npy-1)-0.25*cosa_v(npx-1,npy-1)*(  &
+                                ut(npx,npy-1)+ut(npx,npy-2)+ut(npx-1,npy-2)+uc(npx-1,npy-1) -  &
+                0.25*cosa_u(npx-1,npy-1)*(vt(npx-1,npy)+vt(npx-2,npy)+vt(npx-2,npy-1))) ) * damp
+            vt(npx,  npy-1) = ( vc(npx,npy-1)+0.25*cosa_v(npx-1,npy-1)*(   &
+                                ut(npx,npy-1)+ut(npx,npy-2)+ut(npx+1,npy-2)+uc(npx+1,npy-1) +   &
+                0.25*cosa_u(npx-1,npy-1)*(vt(npx,npy)+vt(npx+1,npy)+vt(npx+1,npy-1))) ) * damp
         endif
 
         if( nw_corner ) then
-            utmp = uc(2,npy-1)+uc(2,npy-2)
-            vtmp = vc(1,npy-1)+vc(2,npy-1)
-            u1 = (utmp - vtmp*cosa(2,npy-1))*rsina(2,npy-1)
-            v1 = (vtmp - utmp*cosa(2,npy-1))*rsina(2,npy-1)
-            vn = vt(1,npy)+vt(2,npy)
-            uw = ut(1,npy-1)+ut(1,npy-2)
-            ut(2,npy-1) = uc(2,npy-1) - 0.25*(v1+vn)*cosa_u(2,npy-1)
-            vt(1,npy-1) = vc(1,npy-1) - 0.25*(u1+uw)*cosa_v(1,npy-1) 
-! North:
-            v1 = (vc(1,npy+1)+vc(2,npy+1) +   &
-                 (uc(2,npy+1)+uc(2,npy))*cosa(2,npy-1))*rsina(2,npy-1)
-            ut(2,npy) = uc(2,npy) + 0.25*(v1+vn)*cosa_u(2,npy-1)
-! West:
-            u1 = (uc( 0,npy-1)+uc(0,npy-2) +    &
-                 (vc(-1,npy-1)+vc(0,npy-1))*cosa(2,npy-1))*rsina(2,npy-1)
-            vt(0,npy-1) = vc(0,npy-1) + 0.25*(u1+uw)*cosa_v(1,npy-1) 
+            damp = 1. / (1. - 0.0625*cosa_u(2,npy-1)*cosa_v(1,npy-1))
+            ut(2,npy) = ( uc(2,npy)+0.25*cosa_u(2,npy-1)*(   &
+                          vt(1,npy)+vt(2,npy)+vt(2,npy+1)+vc(1,npy+1) +   &
+                      0.25*cosa_v(1,npy-1)*(ut(1,npy)+ut(1,npy+1)+ut(2,npy+1))) ) * damp
+            ut(2,npy-1) = ( uc(2,npy-1)-0.25*cosa_u(2,npy-1)*(  &
+                            vt(1,npy)+vt(2,npy)+vt(2,npy-1)+vc(1,npy-1) -   &
+                      0.25*cosa_v(1,npy-1)*(ut(1,npy-1)+ut(1,npy-2)+ut(2,npy-2))) ) * damp
+            vt(1,npy-1) = ( vc(1,npy-1)-0.25*cosa_v(1,npy-1)*(  &
+                            ut(1,npy-1)+ut(1,npy-2)+ut(2,npy-2)+uc(2,npy-1) -   &
+                      0.25*cosa_u(2,npy-1)*(vt(1,npy)+vt(2,npy)+vt(2,npy-1))) ) * damp
+            vt(0,npy-1) = ( vc(0,npy-1)+0.25*cosa_v(1,npy-1)*(  &
+                            ut(1,npy-1)+ut(1,npy-2)+ut(0,npy-2)+uc(0,npy-1) +   &
+                      0.25*cosa_u(2,npy-1)*(vt(0,npy)+vt(-1,npy)+vt(-1,npy-1))) ) * damp
         endif
  
+     else
+! grid_type >= 3
+        do j=jsd,jed
+           do i=is-1,ie+2
+              ut(i,j) =  uc(i,j)
+           enddo
+        enddo
+        
+        do j=js-1,je+2
+           do i=isd,ied
+              vt(i,j) = vc(i,j) 
+           enddo
+        enddo
+     endif      ! end grid_type choices
+
         do j=jsd,jed
            do i=is,ie+1
               xfx_adv(i,j) = dt*ut(i,j)
@@ -636,10 +643,20 @@
       endif
 #endif
 
+      do j=jsd,jed
+         do i=is,ie
+            ra_x(i,j) = area(i,j) + xfx_adv(i,j) - xfx_adv(i+1,j)
+         enddo
+      enddo
+      do j=js,je
+         do i=isd,ied
+            ra_y(i,j) = area(i,j) + yfx_adv(i,j) - yfx_adv(i,j+1)
+         enddo
+      enddo
 
-! Transport delp
-      call fv_tp_2d(delp, crx_adv, cry_adv, npx-1, npy-1, hord_tm,  &
-                    fx, fy, xfx_adv,yfx_adv, area, uniform_ppm)
+
+      call fv_tp_2d(delp, crx_adv, cry_adv, npx, npy, hord_tm, fx, fy,  &
+                    xfx_adv, yfx_adv, area, ra_x, ra_y, uniform_ppm)
 
 #ifdef SW_DYNAMICS
         do j=js,je
@@ -653,7 +670,7 @@
 
 ! <<< Save the mass fluxes to the "Flux Capacitor" for tracer transport >>>
         do j=jsd,jed
-           do i=is,ie+1
+            do i=is,ie+1
               cx(i,j) = cx(i,j) + crx_adv(i,j)
            enddo
         enddo       
@@ -673,8 +690,8 @@
         enddo 
 
         if ( .not. hydrostatic ) then
-            call fv_tp_2d(w, crx_adv,cry_adv, npx-1, npy-1, hord_vt, &
-                      ub, gy, xfx_adv,yfx_adv, area, uniform_ppm, mfx=fx, mfy=fy)
+            call fv_tp_2d(w, crx_adv,cry_adv, npx, npy, hord_vt, ub, gy, &
+                          xfx_adv,yfx_adv, area, ra_x, ra_y, uniform_ppm, mfx=fx, mfy=fy)
             do j=js,je
                do i=is,ie
                   w(i,j) = w(i,j)*delp(i,j) +             &
@@ -683,11 +700,11 @@
             enddo
         endif
 
-        call fv_tp_2d(pt, crx_adv,cry_adv, npx-1, npy-1, hord_tm,  &
-                      ub, gy, xfx_adv,yfx_adv, area, uniform_ppm, mfx=fx, mfy=fy)
+        call fv_tp_2d(pt, crx_adv,cry_adv, npx, npy, hord_tm, ub, gy,  &
+                      xfx_adv,yfx_adv, area, ra_x, ra_y, uniform_ppm, mfx=fx, mfy=fy)
         do j=js,je
            do i=is,ie
-              pt(i,j) = pt(i,j)*delp(i,j) +             &
+              pt(i,j) = pt(i,j)*delp(i,j) +               &
                        (ub(i,j)-ub(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
               delp(i,j) = delp(i,j) +                     &
                          (fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j)
@@ -713,88 +730,175 @@
 !----------------------
 ! Compute B grid contra-variant components for KE:
 
-      do j=js,je+1
-         do i=is,ie+1
-            cfl(i,j) = 0.5*(cry_adv(i-1,j)+cry_adv(i,j))
-         enddo
-      enddo
-      do j=js,je+1
-         do i=is,ie+1
-            if ( cfl(i,j) > 0. ) then
-                 vb(i,j) = cfl(i,j)*dy(i,j-1)*rdt
-            else
-                 vb(i,j) = cfl(i,j)*dy(i,j)*rdt
+      dt5 = 0.5 *dt
+      dt4 = 0.25*dt
+
+
+      is2 = max(2,is); ie1 = min(npx-1,ie+1)
+      js2 = max(2,js); je1 = min(npy-1,je+1)
+
+      if (grid_type < 3) then
+
+         if ( js==1 ) then
+            do i=is,ie+1
+               vb(i,1) = dt5*(vt(i-1,1)+vt(i,1))       ! corner values are incorrect
+            enddo
+         endif
+         
+         do j=js2,je1
+            do i=is2,ie1
+               vb(i,j) = dt5*(vc(i-1,j)+vc(i,j)-(uc(i,j-1)+uc(i,j))*cosa(i,j))*rsina(i,j)
+            enddo
+            if ( is==1 ) then
+#ifdef NO_EXTP
+               vb(1,j) = dt5*(vt(0,j)+vt(1,j)) 
+#else
+! 2-pt extrapolation from both sides:
+               vb(1,j) = dt4*(-vt(-1,j) + 3.*(vt(0,j)+vt(1,j)) - vt(2,j))
+#endif
+            endif
+            if ( (ie+1)==npx ) then
+#ifdef NO_EXTP
+               vb(npx,j) = dt5*(vt(npx-1,j)+vt(npx,j))
+#else
+               ! 2-pt extrapolation from both sides:
+               vb(npx,j) = dt4*(-vt(npx-2,j) + 3.*(vt(npx-1,j)+vt(npx,j)) - vt(npx+1,j))
+#endif
             endif
          enddo
-      enddo
 
-      call ytp_v(cfl, u, v, fy_ke, vb, hord_mt)
+         if ( (je+1)==npy ) then
+            do i=is,ie+1
+               vb(i,npy) = dt5*(vt(i-1,npy)+vt(i,npy)) ! corner values are incorrect
+            enddo
+         endif
+         
+      else
+         do j=js,je+1
+            do i=is,ie+1
+               vb(i,j) = dt5*(vc(i-1,j)+vc(i,j))
+            enddo
+         enddo
+      endif
+
+      call ytp_v(vb, u, v, ub, hord_mt)
 
       do j=js,je+1
          do i=is,ie+1
-            cfl(i,j) = 0.5*(crx_adv(i,j-1)+crx_adv(i,j))
+            ke(i,j) = vb(i,j)*ub(i,j)
          enddo
       enddo
-      do j=js,je+1
-         do i=is,ie+1
-            if ( cfl(i,j) > 0. ) then
-                 ub(i,j) = cfl(i,j)*dx(i-1,j)*rdt
+
+      if (grid_type < 3) then
+         if ( is==1 ) then
+            do j=js,je+1
+               ub(1,j) = dt5*(ut(1,j-1)+ut(1,j))       ! corner values are incorrect
+            enddo
+         endif
+         
+         do j=js,je+1
+            if ( j==1 .or. j==npy ) then
+               do i=is2,ie1
+#ifdef NO_EXTP
+                  ub(i,j) = dt5*(ut(i,j-1)+ut(i,j))
+#else
+! 2-pt extrapolation from both sides:
+                  ub(i,j) = dt4*(-ut(i,j-2) + 3.*(ut(i,j-1)+ut(i,j)) - ut(i,j+1))
+#endif
+               enddo
             else
-                 ub(i,j) = cfl(i,j)*dx(i,j)*rdt
+               do i=is2,ie1
+                  ub(i,j) = dt5*(uc(i,j-1)+uc(i,j)-(vc(i-1,j)+vc(i,j))*cosa(i,j))*rsina(i,j)
+               enddo
             endif
          enddo
-      enddo
+         
+         if ( (ie+1)==npx ) then
+            do j=js,je+1
+               ub(npx,j) = dt5*(ut(npx,j-1)+ut(npx,j))       ! corner values are incorrect
+            enddo
+         endif
+         
+      else
+         do j=js,je+1
+            do i=is,ie+1
+               ub(i,j) = dt5*(uc(i,j-1)+uc(i,j))
+            enddo
+         enddo
+      endif
 
-      call xtp_u(cfl, u, v, vb, ub, hord_mt)
+      call xtp_u(ub, u, v, vb, hord_mt)
 
-      dt5 = 0.5*dt
       do j=js,je+1
          do i=is,ie+1
-            ke(i,j) = max(0., dt5*(vb(i,j) + fy_ke(i,j)))
+            ke(i,j) = 0.5*(ke(i,j) + ub(i,j)*vb(i,j))
          enddo
       enddo
 
 !-----------------------------------------
 ! Fix KE at the 4 corners of the face:
 !-----------------------------------------
-!  call timing_on('CORNER_KE')
+#ifndef NO_CORNER_KE
    if ( Gnomonic_grid ) then
-      dt6 = dt / 6.
+#ifdef NEW_WAY
+      dt6 = dt / 12
       if ( sw_corner ) then
-           k1 = (uc(1,1) + uc(1,0)) * u(1,1)
-           k2 = (vc(1,1) + vc(0,1)) * v(1,1)
-           k3 = (uc(1,1) + vc(1,1)) * u(0,1)
-           ke(1,1) = dt6*max(0.,k1 + k2 + k3)*rsin_v(1,1)
+           ke(1,1) = dt6*( (ut(1,0)+ut(1,1)+ut(2,0)+ut(2,1))*u(1,1) +  &
+                           (vt(0,1)+vt(1,1)+vt(0,2)+vt(1,2))*v(1,1) +  &
+                           (ut(0,1)+ut(1,1)+vt(1,0)+vt(1,1))*u(0,1) )
       endif
       if ( se_corner ) then
-           i = npx;      j = 1
-           k1 = (uc(i,j) + uc(i,j-1)) * u(i-1,j)
-           k2 = (vc(i,j) + vc(i-1,j)) * v(i,j)
-           k3 = (uc(i,j) - vc(i-1,j)) * u(i,j)
-           ke(i,j) = dt6*max(0.,k1 + k2 + k3)*rsin_v(npx-1,1)
+           i = npx
+           ke(i,1) = dt6*( (ut(i-1,0)+ut(i-1,1)+ut(i,0)+ut(i,1))*u(npx-1,1) + &
+                           (vt(i-1,1)+vt(i,1)+vt(i-1,2)+vt(i,2))*v(npx,1) + &
+                           (ut(i,1)+ut(i+1,1)-vt(i-1,0)-vt(i-1,1))*u(npx,1) )
+      endif
+      if ( ne_corner ) then
+           i = npx;  j = npy
+           ke(i,j) = dt6*( (ut(i-1,j-1)+ut(i,j-1)+ut(i-1,j)+ut(i,j))*u(i-1,j) +  &
+                           (vt(i-1,j-1)+vt(i,j-1)+vt(i-1,j)+vt(i,j))*v(i,j-1) +  &
+                           (ut(i,j-1)+ut(i+1,j-1)+vt(i-1,j)+vt(i-1,j+1))*u(i,j)  )
+      endif
+      if ( nw_corner ) then
+           j = npy
+           ke(1,j) = dt6*( (ut(1,j-1)+ut(2,j-1)+ut(1,j)+ut(2,j))*u(1,j) +  &
+                           (vt(0,j-1)+vt(1,j-1)+vt(0,j)+vt(1,j))*v(1,j-1) +  &
+                           (ut(0,j-1)+ut(1,j-1)-vt(1,j)-vt(1,j+1))*u(0,j)  )
+      endif
+#else
+      dt6 = dt / 6.
+      if ( sw_corner ) then
+           ke(1,1) = dt6*( (ut(1,1) + ut(1,0)) * u(1,1) +  &
+                           (vt(1,1) + vt(0,1)) * v(1,1) +  &
+                           (ut(1,1) + vt(1,1)) * u(0,1) )
+      endif
+      if ( se_corner ) then
+           i = npx
+           ke(i,1) = dt6*( (ut(i,1) + ut(i,  0)) * u(i-1,1) + &
+                           (vt(i,1) + vt(i-1,1)) * v(i,  1) + &
+                           (ut(i,1) - vt(i-1,1)) * u(i,  1) )
       endif
       if ( ne_corner ) then
            i = npx;      j = npy
-           k1 = (uc(i,  j) + uc(i,j-1)) * u(i-1,j)
-           k2 = (vc(i,  j) + vc(i-1,j)) * v(i,j-1)
-           k3 = (uc(i,j-1) + vc(i-1,j)) * u(i,j)
-           ke(i,j) = dt6*max(0.,k1 + k2 + k3)*rsin_v(npx-1,npy)
+           ke(i,j) = dt6*( (ut(i,j  ) + ut(i,j-1)) * u(i-1,j) +  &
+                           (vt(i,j  ) + vt(i-1,j)) * v(i,j-1) +  &
+                           (ut(i,j-1) + vt(i-1,j)) * u(i,j  )  )
       endif
       if ( nw_corner ) then
-           i = 1;      j = npy
-           k1 = (uc(i,  j) + uc(i,j-1)) * u(i,j)
-           k2 = (vc(i,  j) + vc(i-1,j)) * v(i,j-1)
-           k3 = (uc(i,j-1) - vc(i,  j)) * u(i-1,j)
-           ke(i,j) = dt6*max(0.,k1 + k2 + k3)*rsin_v(1,npy)
+           j = npy
+           ke(1,j) = dt6*( (ut(1,  j) + ut(1,j-1)) * u(1,j  ) +  &
+                           (vt(1,  j) + vt(0,  j)) * v(1,j-1) +  &
+                           (ut(1,j-1) - vt(1,  j)) * u(0,j  )  )
       endif
-   else
+#endif
+   elseif (grid_type < 3) then
       call mp_corner_comm(ke, npx, npy) 
       if (sw_corner) ke(1,    1) = r3*(ke(2,      1)+ke(1,      2)+ke(0,      1))
       if (se_corner) ke(npx,  1) = r3*(ke(npx+1,  1)+ke(npx,    2)+ke(npx-1,  1))
       if (ne_corner) ke(npx,npy) = r3*(ke(npx+1,npy)+ke(npx,npy-1)+ke(npx-1,npy))
       if (nw_corner) ke(1,  npy) = r3*(ke(2,    npy)+ke(1,  npy-1)+ke(0,    npy))
    endif
-!  call timing_off('CORNER_KE')
+#endif
 
 !-----------------------------
 ! Compute divergence damping
@@ -814,9 +918,8 @@
              endif
           enddo
 
-          is2 = max(2,is); ie1 = min(npx-1,ie+1)
           do j=js-1,je+1
-             do i=is2, ie1
+             do i=is2,ie1
                 vort(i,j) = (v(i,j) - 0.5*(ua(i-1,j)+ua(i,j))*cosa_u(i,j))  &
                             *dxc(i,j)*sina_u(i,j)
              enddo
@@ -845,7 +948,6 @@
              enddo
           enddo
 
-
 ! Calc Vorticity
 ! Convert winds to circulation elements:
        do j=jsd,jed+1
@@ -861,16 +963,12 @@
 
        do j=jsd,jed
           do i=isd,ied
-#ifdef NON_ROTATING
-             vort(i,j) = rarea(i,j)*(u(i,j)-u(i,j+1)-v(i,j)+v(i+1,j))
-#else
              vort(i,j) = f0(i,j) + rarea(i,j)*(u(i,j)-u(i,j+1)-v(i,j)+v(i+1,j))
-#endif
           enddo
        enddo
 
-       call fv_tp_2d(vort, crx_adv, cry_adv, npx-1, npy-1, hord_vt, &
-                     fx, fy, xfx_adv,yfx_adv, area, uniform_ppm)
+       call fv_tp_2d(vort, crx_adv, cry_adv, npx, npy, hord_vt, fx, fy, &
+                     xfx_adv,yfx_adv, area, ra_x, ra_y, uniform_ppm)
 
        do j=js,je+1
           do i=is,ie
@@ -887,25 +985,38 @@
       endif ! test_case
 #endif
 
-   end subroutine d_sw
+ end subroutine d_sw
 
- subroutine xtp_u(c, u, v, flux, xfx, iord)
+
+
+ subroutine xtp_u(c, u, v, flux, iord)
 
  real, INTENT(IN)  ::   u(isd:ied,jsd:jed+1)
  real, INTENT(IN)  ::   v(isd:ied+1,jsd:jed) ! u-wind
  real, INTENT(IN)  ::   c(is:ie+1,js:je+1)   !  Courant   N (like FLUX)
- real, INTENT(in)  :: xfx(is:ie+1,js:je+1)
  real, INTENT(out):: flux(is:ie+1,js:je+1)
- integer, INTENT(IN) ::  iord
+ integer, INTENT(IN) :: iord
 ! Local
  real al(is-1:ie+2), dm(is-2:ie+2)
  real bl(is-1:ie+1)
  real br(is-1:ie+1)
  real dq(is-3:ie+2)
- real dl, dr, xt, pmp, lac, dqt, q0
+ real dl, dr, xt, pmp, lac, dqt, cfl
  integer i, j
 
- if (iord<=4) then
+ if ( iord==1 ) then
+
+     do j=js,je+1
+        do i=is,ie+1
+           if( c(i,j)>0. ) then
+               flux(i,j) = u(i-1,j)
+           else
+               flux(i,j) = u(i,j)
+           endif 
+        enddo
+     enddo
+
+ elseif ( iord<=4 ) then
      do j=js,je+1
 
         do i=is-2,ie+2
@@ -928,208 +1039,211 @@
              xt = 2.*dm(i-1)
              dl = sign(min(abs(xt), abs(al(i-1)-u(i-1,j))), xt)
              dr = sign(min(abs(xt), abs(al(i  )-u(i-1,j))), xt)
-             flux(i,j) = u(i-1,j) + (1.-c(i,j))*(dr + c(i,j)*(dl-dr))
+             cfl = c(i,j) * rdx(i-1,j)
+             flux(i,j) = u(i-1,j) + (1.-cfl)*(dr + cfl*(dl-dr))
           else
              xt = 2.*dm(i)
              dl = sign(min(abs(xt), abs(al(i  )-u(i,j))), xt)
              dr = sign(min(abs(xt), abs(al(i+1)-u(i,j))), xt)
-             flux(i,j) = u(i,j) - (1.+c(i,j))*(dl + c(i,j)*(dl-dr))
+             cfl = c(i,j) * rdx(i,j)
+             flux(i,j) = u(i,j) - (1.+cfl)*(dl + cfl*(dl-dr))
           endif 
         enddo
      enddo
- elseif ( iord==5 .or. iord==6 ) then
-     do j=js,je+1
-        do i=is-3,ie+2
-           dq(i) = u(i+1,j) - u(i,j)
-        enddo
-        do i=is-2,ie+2
-              xt = 0.25*(dq(i-1) + dq(i))
-           dm(i) = sign(min(abs(xt), abs(dq(i-1)), abs(dq(i))), xt)
-        enddo
-        do i=max(3,is-1),min(npx-2,ie+2)
-           al(i) = 0.5*(u(i-1,j)+u(i,j)) + r3*(dm(i-1) - dm(i))
-        enddo
-
-! Perturbation form:
-        do i=max(3,is-1),min(npx-3,ie+1)
-           pmp = -2.*dq(i)
-           lac = pmp + 1.5*dq(i+1)
-           bl(i) = min(max(0., pmp, lac), max(al(i  )-u(i,j), min(0.,pmp, lac)))
-           pmp = 2.*dq(i-1)
-           lac = pmp - 1.5*dq(i-2)
-           br(i) = min(max(0., pmp, lac), max(al(i+1)-u(i,j), min(0.,pmp, lac)))
-        enddo
-
-!--------------
-! fix the edges
-!--------------
-        if ( is==1 ) then
-             br(2) = al(3) - u(2,j)
-                xt = 3./14.*u(1,j) + 11./14.*u( 2,j) - 4./7.*dm( 2)
-             bl(2) = xt - u(2,j)
-
-           if( j==1 .or. j==npy ) then
-              bl(0) = 0.
-              br(0) = 0.
-              bl(1) = 0.
-              br(1) = 0.
-              if(iord==5) call std_ppm(1, u(2,j), bl(2), br(2))
-           else
-              br(1) = xt - u(1,j)
-              bl(0) = 11./14.*(u(-1,j)-u(0,j)) + 4./7.*dm(-1)
-              xt = 27./28.*(u(0,j)+u(1,j)) - 13./28.*(u(-1,j)+u(2,j))   &
-                  + 3./7.*(dm(2)-dm(-1))
-#ifdef TEST_1E
-              dl = 0.5*(v(1,j-1)+v(1,j)) * cosa(1,j) 
-              bl(1) = xt + dl - u(1,j)
-              br(0) = xt - dl - u(0,j)
-#else
-              bl(1) = xt - u(1,j)
-              br(0) = xt - u(0,j)
-#endif
-              if(iord==5) call std_ppm(3, u(0,j), bl(0), br(0))
-           endif
-        endif
-        if ( (ie+1)==npx ) then
-             bl(npx-2) = al(npx-2) - u(npx-2,j)
-                    xt = 3./14.*u(npx-1,j) + 11./14.*u(npx-2,j) + 4./7.*dm(npx-2)
-             br(npx-2) = xt - u(npx-2,j)
-           if( j==1 .or. j==npy ) then
-             bl(npx-1) = 0.
-             br(npx-1) = 0.
-             bl(npx  ) = 0.
-             br(npx  ) = 0.
-             if(iord==5) call std_ppm(1, u(npx-2,j), bl(npx-2), br(npx-2))
-           else
-             bl(npx-1) = xt - u(npx-1,j)
-             br(npx) = 11./14.*(u(npx+1,j)-u(npx,j)) - 4./7.*dm(npx+1)
-             xt = 27./28.*(u(npx-1,j)+u(npx,j)) - 13./28.*(u(npx-2,j)+u(npx+1,j))   &
-                 + 3./7.*(dm(npx+1)-dm(npx-2))
-#ifdef TEST_1E
-             dl = 0.5*(v(npx,j-1)+v(npx,j)) * cosa(npx,j) 
-             br(npx-1) = xt + dl - u(npx-1,j)
-             bl(npx  ) = xt - dl - u(npx  ,j)
-#else
-             br(npx-1) = xt - u(npx-1,j)
-             bl(npx  ) = xt - u(npx  ,j)
-#endif
-             if(iord==5) call std_ppm(3, u(npx-2,j), bl(npx-2), br(npx-2))
-           endif
-        endif
-
-        do i=is,ie+1
-           if( c(i,j)>0. ) then
-              flux(i,j) = u(i-1,j) + (1.-c(i,j))*(br(i-1)-c(i,j)*(bl(i-1)+br(i-1)))
-           else
-              flux(i,j) = u(i,  j) + (1.+c(i,j))*(bl(i  )+c(i,j)*(bl(i  )+br(i  )))
-           endif
-        enddo
-     enddo
  else
+
      do j=js,je+1
         do i=is-2,ie+2
-              xt = 0.25*(u(i+1,j) - u(i-1,j))
+           xt = 0.25*(u(i+1,j) - u(i-1,j))
            dm(i) = sign(min(abs(xt), max(u(i-1,j), u(i,j), u(i+1,j)) - u(i,j),  &
                             u(i,j) - min(u(i-1,j), u(i,j), u(i+1,j))), xt)
         enddo
-
-        do i=max(3,is-1),min(npx-2,ie+2)
-           al(i) = 0.5*(u(i-1,j)+u(i,j)) + r3*(dm(i-1) - dm(i))
+        do i=is-3,ie+2
+           dq(i) = u(i+1,j) - u(i,j)
         enddo
+! Perturbation form:
 
-        do i=max(3,is-1),min(npx-3,ie+1)
-              xt = 2.*dm(i)
-           bl(i) = sign(min(abs(xt), abs(al(i)  -u(i,j))), xt)
-           br(i) = sign(min(abs(xt), abs(al(i+1)-u(i,j))), xt)
-        enddo
+        if (grid_type < 3) then
 
+           do i=max(3,is-1),min(npx-2,ie+2)
+              al(i) = 0.5*(u(i-1,j)+u(i,j)) + r3*(dm(i-1) - dm(i))
+           enddo
+
+           do i=max(3,is-1),min(npx-3,ie+1)
+              pmp = -2.*dq(i)
+              lac = pmp + 1.5*dq(i+1)
+              bl(i) = min(max(0., pmp, lac), max(al(i  )-u(i,j), min(0.,pmp, lac)))
+              pmp = 2.*dq(i-1)
+              lac = pmp - 1.5*dq(i-2)
+              br(i) = min(max(0., pmp, lac), max(al(i+1)-u(i,j), min(0.,pmp, lac)))
+           enddo
 !--------------
 ! fix the edges
 !--------------
-             if ( is==1 ) then
-! Inside:
-                   dqt = u(1,j) - u(2,j)
-                   bl(1) =  6./7.*dm(2) + 13./14.*dqt
-                   br(1) = -4./7.*dm(2) - 11./14.*dqt
-                      xt = 0.5*(br(1) - bl(1))
-                  dm(1) = sign(min(abs(xt), abs(dqt)), xt)
-                     xt = 2.*dm(1)
-                  bl(1) = sign( min(abs(xt), abs(bl(1))), xt )
-                  br(1) = sign( min(abs(xt), abs(br(1))), xt )
-                  bl(2) = 0.5*dqt + r3*(dm(1) - dm(2))
-                     xt = 2.*dm(2)
-                  bl(2) = sign(min(abs(xt), abs(bl(2))), xt)
-                  br(2) = sign(min(abs(xt), abs(al(3)-u(2,j))), xt)
-! Outside: (mirrors what's done inside)
-                   dqt = u(0,j) - u(-1,j)
-                   br(0) = -6./7.*dm(-1) + 13./14.*dqt
-                   bl(0) =  4./7.*dm(-1) - 11./14.*dqt
-                      xt = 0.5*(br(0) - bl(0))
-                  dm(0) = sign(min(abs(xt), abs(dqt)), xt)
-                     xt = 2.*dm(0)
-                  bl(0) = sign( min(abs(xt), abs(bl(0))), xt )
-                  br(0) = sign( min(abs(xt), abs(br(0))), xt )
-! Average (u+,u-) at edges:
-!                 xt  = 0.5*(bl(1)+br(0)+u(0,j)+u(1,j))
-!                 dqt = 0.5*(v(1,j-1)+v(1,j))*cosa(1,j) 
-!                 bl(1) =  (xt + dqt - u(1,j))
-!                 br(0) =   xt - dqt - u(0,j)
-             endif
-             if ( (ie+1)==npx ) then
-! Inside:
-                   dqt = u(npx-1,j) - u(npx-2,j)
-                   br(npx-1) = -6./7.*dm(npx-2) + 13./14.*dqt
-                   bl(npx-1) =  4./7.*dm(npx-2) - 11./14.*dqt
-                      xt = 0.5*(br(npx-1) - bl(npx-1))
-                  dm(npx-1) = sign(min(abs(xt), abs(dqt)), xt)
-                     xt = 2.*dm(npx-1)
-                  bl(npx-1) = sign( min(abs(xt), abs(bl(npx-1))), xt )
-                  br(npx-1) = sign( min(abs(xt), abs(br(npx-1))), xt )
-                  br(npx-2) = 0.5*dqt + r3*(dm(npx-2) - dm(npx-1))
-                         xt = 2.*dm(npx-2)
-                  br(npx-2) = sign(min(abs(xt), abs(br(npx-2))), xt)
-                  bl(npx-2) = sign(min(abs(xt), abs(al(npx-2)-u(npx-2,j))), xt)
-! Outside: (mirrors what's done inside)
-                   dqt = u(npx,j) - u(npx+1,j)
-                   bl(npx) =  6./7.*dm(npx+1) + 13./14.*dqt
-                   br(npx) = -4./7.*dm(npx+1) - 11./14.*dqt
-                        xt = 0.5*(br(npx) - bl(npx))
-                  dm(npx) = sign(min(abs(xt), abs(dqt)), xt)
-                     xt = 2.*dm(npx)
-                  bl(npx) = sign( min(abs(xt), abs(bl(npx))), xt )
-                  br(npx) = sign( min(abs(xt), abs(br(npx))), xt )
-! Average (u+,u-) at Eastern edge:
-!                 xt  = 0.5*(br(npx-1)+bl(npx)+u(npx-1,j)+u(npx,j))
-!                 dqt = 0.5*(v(npx,j-1)+v(npx,j))*cosa(npx,j) 
-!                 br(npx-1) =   xt + dqt - u(npx-1,j)
-!                 bl(npx  ) =  (xt - dqt - u(npx,  j))
-        endif
+           if ( is==1 ) then
+              br(2) = al(3) - u(2,j)
+              xt = s15*u(1,j) + s11*u(2,j) - s14*dm(2)
+!-- Secondary MONO constraint:
+#ifdef S_MONO
+              xt = min ( xt, max(u(1,j), u(2,j)) )
+              xt = max ( xt, min(u(1,j), u(2,j)) )
+#endif
+              bl(2) = xt - u(2,j)
+              
+              if( j==1 .or. j==npy ) then
+                 bl(0) = 0.
+                 br(0) = 0.
+#ifdef NO_LIMIT_CORNER
+                 br(1) = xt - u(1,j)
+! One-sided form:
+                 bl(1) = t14*dm(2) + s13*dq(1)
+                 if(iord==5) then
+                    call pert_ppm(2, u(1,j), bl(1), br(1), -1)
+                 else
+                    call pert_ppm(1, u(2,j), bl(2), br(2), -1)
+                 endif
+#else
+                 bl(1) = 0.
+                 br(1) = 0.
+                 call pert_ppm(1, u(2,j), bl(2), br(2), -1)
+#endif
+              else
+                 br(1) = xt - u(1,j)
+#ifdef S_MONO
+                 xt = s14*dm(-1) - s11*dq(-1) + u(0,j)
+                 xt = min( xt, max(u(-1,j), u(0,j)) )
+                 xt = max( xt, min(u(-1,j), u(0,j)) )
+                 bl(0) = xt - u(0,j)
+#else
+                 bl(0) = s14*dm(-1) - s11*dq(-1)
+#endif
 
-        do i=is,ie+1
-           if( c(i,j)>0. ) then
-              flux(i,j) = u(i-1,j) + (1.-c(i,j))*(br(i-1)+c(i,j)*(bl(i-1)-br(i-1)))
-           else
-              flux(i,j) = u(i,  j) - (1.+c(i,j))*(bl(i  )+c(i,j)*(bl(i  )-br(i  )))
+!---------------------------------------------------------------
+#ifdef ONE_SIDED_KE
+                 bl(1) = 0.5*(u(1,j) - u( 2,j))
+                 br(0) = 0.5*(u(0,j) - u(-1,j))
+#else
+!             xt = t14*(u(0,j)+u(1,j)) + t12*(u(-1,j)+u(2,j)) + t15*(u(-2,j)+u(3,j))
+!             xt = 0.75*(u(0,j)+u(1,j)) - 0.25*(u(-1,j)+u(2,j))
+
+                 xt = 0.5*((2.*dx(1,j)+dx(2,j))*(u(0,j)+u(1,j))   &
+                    - dx(1,j)*(u(-1,j)+u(2,j)))/(dx(1,j)+dx(2,j))
+
+!                if ( j==1 .or. j==(npy-1) ) then
+                    bl(1) = xt - u(1,j)
+                    br(0) = xt - u(0,j)
+!                else
+!                   bl(1) = xt + 0.5*(v(1,j-1)+v(1,j))*cosa(1,j) - u(1,j)
+!                   br(0) = xt - 0.5*(v(1,j-1)+v(1,j))*cosa(1,j) - u(0,j)
+!                endif
+#endif
+!---------------------------------------------------------------
+                 if(iord==5) then
+                    call pert_ppm(3, u(0,j), bl(0), br(0), -1)
+                 else
+                    call pert_ppm(1, u(2,j), bl(2), br(2), -1)
+                 endif
+              endif
            endif
-        enddo
-     enddo
- endif
 
-   do j=js,je+1
-      do i=is,ie+1
-         flux(i,j) = flux(i,j)*xfx(i,j)
-      enddo
-   enddo
+           if ( (ie+1)==npx ) then
+              bl(npx-2) = al(npx-2) - u(npx-2,j)
+              xt = s15*u(npx-1,j) + s11*u(npx-2,j) + s14*dm(npx-2)
+#ifdef S_MONO
+              xt = min ( xt, max(u(npx-2,j), u(npx-1,j)) )
+              xt = max ( xt, min(u(npx-2,j), u(npx-1,j)) )
+#endif
+              br(npx-2) = xt - u(npx-2,j)
+              if( j==1 .or. j==npy ) then
+                 bl(npx  ) = 0.
+                 br(npx  ) = 0.
+#ifdef NO_LIMIT_CORNER
+                 bl(npx-1) = xt - u(npx-1,j)
+! One-sided form:
+                 br(npx-1) = -(t14*dm(npx-2) + s13*dq(npx-2))
+                 if(iord==5) then
+                    call pert_ppm(2, u(npx-2,j), bl(npx-2), br(npx-2), -1)
+                 else
+                    call pert_ppm(1, u(npx-2,j), bl(npx-2), br(npx-2), -1)
+                 endif
+#else
+                 bl(npx-1) = 0.
+                 br(npx-1) = 0.
+                 call pert_ppm(1, u(npx-2,j), bl(npx-2), br(npx-2), -1)
+#endif
+              else
+                 bl(npx-1) = xt - u(npx-1,j)
+#ifdef S_MONO
+                 xt = s11*dq(npx) - s14*dm(npx+1) + u(npx,j)
+                 xt = min( xt, max(u(npx,j), u(npx+1,j)) )
+                 xt = max( xt, min(u(npx,j), u(npx+1,j)) )
+                 br(npx) = xt - u(npx,j)
+#else
+                 br(npx) = s11*dq(npx) - s14*dm(npx+1)
+#endif
+
+#ifdef ONE_SIDED_KE
+                 br(npx-1) = 0.5*(u(npx-1,j) - u(npx-2,j))
+                 bl(npx  ) = 0.5*(u(npx  ,j) - u(npx+1,j))
+#else
+!            xt = t14*(u(npx-1,j)+u(npx,j)) + t12*(u(npx-2,j)+u(npx+1,j))   &
+!                + t15*(u(npx-3,j)+u(npx+2,j))
+!            xt = 0.75*(u(npx-1,j)+u(npx,j)) - 0.25*(u(npx-2,j)+u(npx+1,j))
+
+                xt = 0.5*( (2.*dx(npx-1,j)+dx(npx-2,j))*(u(npx-1,j)+u(npx,j))  &
+                   - dx(npx-1,j)*(u(npx-2,j)+u(npx+1,j)))/(dx(npx-1,j)+dx(npx-2,j))
+
+!               if ( j==1 .or. j==(npy-1) ) then
+                   br(npx-1) = xt - u(npx-1,j)
+                   bl(npx  ) = xt - u(npx  ,j)
+!               else
+!                  br(npx-1) = xt + 0.5*(v(npx,j-1)+v(npx,j))*cosa(npx,j) - u(npx-1,j)
+!                  bl(npx  ) = xt - 0.5*(v(npx,j-1)+v(npx,j))*cosa(npx,j) - u(npx  ,j)
+!               endif
+#endif
+                if(iord==5) then
+                   call pert_ppm(3, u(npx-2,j), bl(npx-2), br(npx-2), -1)
+                else
+                   call pert_ppm(1, u(npx-2,j), bl(npx-2), br(npx-2), -1)
+                endif
+             endif
+          endif
+       else
+          
+          do i=is-1,ie+2
+             al(i) = 0.5*(u(i-1,j)+u(i,j)) + r3*(dm(i-1) - dm(i))
+          enddo
+
+          do i=is-1,ie+1
+             pmp = -2.*dq(i)
+             lac = pmp + 1.5*dq(i+1)
+             bl(i) = min(max(0., pmp, lac), max(al(i  )-u(i,j), min(0.,pmp, lac)))
+             pmp = 2.*dq(i-1)
+             lac = pmp - 1.5*dq(i-2)
+             br(i) = min(max(0., pmp, lac), max(al(i+1)-u(i,j), min(0.,pmp, lac)))
+          enddo
+       endif
+       
+       do i=is,ie+1
+          if( c(i,j)>0. ) then
+             cfl = c(i,j)*rdx(i-1,j)
+             flux(i,j) = u(i-1,j) + (1.-cfl)*(br(i-1)-cfl*(bl(i-1)+br(i-1)))
+          else
+             cfl = c(i,j)*rdx(i,j)
+             flux(i,j) = u(i,  j) + (1.+cfl)*(bl(i  )+cfl*(bl(i  )+br(i  )))
+          endif
+       enddo
+    enddo
+ endif
 
  end subroutine xtp_u
 
 
- subroutine ytp_v(c, u, v, flux, yfx, jord)
+ subroutine ytp_v(c, u, v, flux, jord)
  integer, intent(IN):: jord
  real, INTENT(IN)  ::   u(isd:ied,jsd:jed+1)
- real, INTENT(IN)  ::   v(isd:ied+1,jsd:jed) ! u-wind
+ real, INTENT(IN)  ::   v(isd:ied+1,jsd:jed)
  real, INTENT(IN) ::    c(is:ie+1,js:je+1)   !  Courant   N (like FLUX)
- real, INTENT(IN) ::  yfx(is:ie+1,js:je+1)
  real, INTENT(OUT):: flux(is:ie+1,js:je+1)
 ! Local:
  real dm(is:ie+1,js-2:je+2)
@@ -1137,10 +1251,22 @@
  real bl(is:ie+1,js-1:je+1)
  real br(is:ie+1,js-1:je+1)
  real dq(is:ie+1,js-3:je+2)
- real xt, dl, dr, pmp, lac, dqt, q0
+ real xt, dl, dr, pmp, lac, dqt, cfl
  integer i, j
 
- if (jord<=4) then
+ if ( jord==1 ) then
+
+      do j=js,je+1
+         do i=is,ie+1
+            if( c(i,j)>0. ) then
+               flux(i,j) = v(i,j-1)
+            else
+               flux(i,j) = v(i,j)
+            endif
+         enddo
+      enddo
+
+ elseif ( jord<=4 ) then
 
      do j=js-2,je+2
         do i=is,ie+1
@@ -1173,245 +1299,227 @@
             xt = 2.*dm(i,j-1)
             dl = sign(min(abs(xt), abs(al(i,j-1)-v(i,j-1))), xt)
             dr = sign(min(abs(xt), abs(al(i,j)-v(i,j-1))),   xt)
-            flux(i,j) = v(i,j-1) + (1.-c(i,j))*(dr + c(i,j)*(dl-dr))
+            cfl = c(i,j)*rdy(i,j-1)
+            flux(i,j) = v(i,j-1) + (1.-cfl)*(dr + cfl*(dl-dr))
          else
             xt = 2.*dm(i,j)
             dl = sign(min(abs(xt), abs(al(i,j)-v(i,j))),   xt)
             dr = sign(min(abs(xt), abs(al(i,j+1)-v(i,j))), xt)
-            flux(i,j) = v(i,j) - (1.+c(i,j))*(dl + c(i,j)*(dl-dr))
+            cfl = c(i,j)*rdy(i,j)
+            flux(i,j) = v(i,j) - (1.+cfl)*(dl + cfl*(dl-dr))
          endif
       enddo
    enddo
- elseif (jord==5 .or. jord==6) then
-! PPM with Hunyh's 2nd constraint
-   do j=js-3, je+2
+ else
+   do j=js-2,je+2
+      do i=is,ie+1
+         xt = 0.25*(v(i,j+1) - v(i,j-1))
+         dm(i,j) = sign(min(abs(xt), max(v(i,j-1), v(i,j), v(i,j+1)) - v(i,j),   &
+                            v(i,j) - min(v(i,j-1), v(i,j), v(i,j+1))), xt)
+      enddo
+   enddo
+
+   do j=js-3,je+2
       do i=is,ie+1
          dq(i,j) = v(i,j+1) - v(i,j)
       enddo
    enddo
 
-   do j=js-2,je+2
-      do i=is,ie+1
-         xt = 0.25*(dq(i,j-1) + dq(i,j))
-         dm(i,j) = sign(min(abs(xt), abs(dq(i,j-1)), abs(dq(i,j))), xt)
+   if (grid_type < 3) then
+      do j=max(3,js-1),min(npy-2,je+2)
+         do i=is,ie+1
+            al(i,j) = 0.5*(v(i,j-1)+v(i,j)) + r3*(dm(i,j-1)-dm(i,j))
+         enddo
       enddo
-   enddo
-
-   do j=max(3,js-1),min(npy-2,je+2)
-      do i=is,ie+1
-         al(i,j) = 0.5*(v(i,j-1)+v(i,j)) + r3*(dm(i,j-1) - dm(i,j))
-      enddo
-   enddo
-
-   do j=max(3,js-1),min(npy-3,je+1)
-      do i=is,ie+1
+      
+      do j=max(3,js-1),min(npy-3,je+1)
+         do i=is,ie+1
             pmp = -2.*dq(i,j) 
             lac = pmp + 1.5*dq(i,j+1)
             bl(i,j) = min(max(0.,pmp,lac), max(al(i,j)-v(i,j), min(0.,pmp,lac)))
             pmp = 2.*dq(i,j-1)
             lac = pmp - 1.5*dq(i,j-2)
             br(i,j) = min(max(0.,pmp,lac), max(al(i,j+1)-v(i,j), min(0.,pmp,lac)))
+         enddo
       enddo
-   enddo
-
-   if( js==1 ) then
-!      do i=max(2,is),min(npx-1,ie+1)
-       do i=is,ie+1
-          br(i,2) = al(i,3) - v(i,2)
-               xt = 3./14.*v(i,1) + 11./14.*v(i,2) - 4./7.*dm(i,2)
-          bl(i,2) = xt - v(i,2)
-          br(i,1) = xt - v(i,1)
-          bl(i,0) = 11./14.*(v(i,-1)-v(i,0)) + 4./7.*dm(i,-1)
-             xt = 27./28.*(v(i,0)+v(i,1)) - 13./28.*(v(i,-1)+v(i,2))   &
-                 + 3./7.*(dm(i,2)-dm(i,-1))
-#ifdef TEST_1E
-          dl = 0.5*(u(i-1,1)+u(i,1)) * cosa(i,1) 
-          bl(i,1) = xt + dl - v(i,1)
-          br(i,0) = xt - dl - v(i,0)
-#else
-          bl(i,1) = xt - v(i,1)
-          br(i,0) = xt - v(i,0)
+      
+!--------------
+! fix the edges
+!--------------
+      if( js==1 ) then
+         do i=is,ie+1
+            br(i,2) = al(i,3) - v(i,2)
+            xt = s15*v(i,1) + s11*v(i,2) - s14*dm(i,2)
+#ifdef S_MONO
+            xt = min ( xt, max(v(i,1), v(i,2)) )
+            xt = max ( xt, min(v(i,1), v(i,2)) )
 #endif
-       enddo
-       if ( jord==5 ) then
-          do j=0,2
-             call std_ppm(ie-is+2, v(is,j), bl(is,j), br(is,j))
-          enddo
-       endif
+            br(i,1) = xt - v(i,1)
+            bl(i,2) = xt - v(i,2)
 
-       if ( is==1 ) then
-          do j=0,1
-             bl(1,j) = 0.
-             br(1,j) = 0.
-          enddo
-       endif
-       if ( (ie+1)==npx ) then
-          do j=0,1
-             bl(npx,j) = 0.
-             br(npx,j) = 0.
-          enddo
-       endif
-   endif 
-
-   if( (je+1)==npy ) then
-!      do i=max(2,is),min(npx-1,ie+1)
-       do i=is,ie+1
-          bl(i,npy-2) = al(i,npy-2) - v(i,npy-2)
-                   xt = 3./14.*v(i,npy-1) + 11./14.*v(i,npy-2) + 4./7.*dm(i,npy-2)
-          br(i,npy-2) = xt - v(i,npy-2)
-
-          bl(i,npy-1) = xt - v(i,npy-1)
-          br(i,npy) = 11./14.*(v(i,npy+1)-v(i,npy)) - 4./7.*dm(i,npy+1)
-          xt = 27./28.*(v(i,npy-1)+v(i,npy)) - 13./28.*(v(i,npy-2)+v(i,npy+1))   &
-              + 3./7.*(dm(i,npy+1)-dm(i,npy-2))
-#ifdef TEST_1E
-          dl = 0.5*(u(i-1,npy)+u(i,npy)) * cosa(i,npy) 
-          br(i,npy-1) = xt + dl - v(i,npy-1)
-          bl(i,npy  ) = xt - dl - v(i,npy)
+#ifdef S_MONO
+            xt = s14*dm(i,-1) - s11*dq(i,-1) + v(i,0)
+            xt = min( xt, max( v(i,-1), v(i,0)) )
+            xt = max( xt, min( v(i,-1), v(i,0)) )
+            bl(i,0) = xt - v(i,0)
 #else
-          br(i,npy-1) = xt - v(i,npy-1)
-          bl(i,npy  ) = xt - v(i,npy)
+            bl(i,0) = s14*dm(i,-1) - s11*dq(i,-1)
 #endif
-       enddo
-       if ( jord==5 ) then
-          do j=npy-2,npy
-             call std_ppm(ie-is+2, v(is,j), bl(is,j), br(is,j))
-          enddo
-       endif
+ 
+#ifdef ONE_SIDED_KE
+            bl(i,1) = 0.5*(v(i,1) - v(i, 2))
+            br(i,0) = 0.5*(v(i,0) - v(i,-1))
+#else
+!           xt =  t14*(v(i,0)+v(i,1)) +  t12*(v(i,-1)+v(i,2)) + t15*(v(i,-2)+v(i,3))
+!           xt = 0.75*(v(i,0)+v(i,1)) - 0.25*(v(i,-1)+v(i,2))
 
-        if ( is==1 ) then
-          do j=npy-1,npy
-             bl(1,j) = 0.
-             br(1,j) = 0.
-          enddo
-        endif
-        if ( (ie+1)==npx ) then
-          do j=npy-1,npy
-             bl(npx,j) = 0.
-             br(npx,j) = 0.
-          enddo
-        endif
+            xt = 0.5*( (2.*dy(i,1)+dy(i,2))*(v(i,0)+v(i,1))   &
+               - dy(i,1)*(v(i,-1)+v(i,2)))/(dy(i,1)+dy(i,2))
+
+!           if ( i==1 .or. i==(npx-1) ) then
+               bl(i,1) = xt - v(i,1)
+               br(i,0) = xt - v(i,0)
+!           else
+!              bl(i,1) = xt + 0.5*(u(i-1,1)+u(i,1))*cosa(i,1) - v(i,1)
+!              br(i,0) = xt - 0.5*(u(i-1,1)+u(i,1))*cosa(i,1) - v(i,0)
+!           endif
+#endif
+         enddo
+
+#ifdef NO_LIMIT_CORNER
+! One-sided form: (to avoid inconsistency by rounding)
+         if( is==1)       bl(1,  1) = t14*dm(1,  2) + s13*dq(1,  1)
+         if((ie+1)==npx ) bl(npx,1) = t14*dm(npx,2) + s13*dq(npx,1)
+#else
+         if ( is==1 ) then
+            do j=0,1
+               bl(1,j) = 0.
+               br(1,j) = 0.
+            enddo
+         endif
+         if ( (ie+1)==npx ) then
+            do j=0,1
+               bl(npx,j) = 0.
+               br(npx,j) = 0.
+            enddo
+         endif
+#endif
+         if ( jord==5 ) then
+            do j=0,2
+               call pert_ppm(ie-is+2, v(is,j), bl(is,j), br(is,j), -1)
+            enddo
+         else
+            j=2
+            call pert_ppm(ie-is+2, v(is,j), bl(is,j), br(is,j), -1)
+         endif
+      endif
+
+      if( (je+1)==npy ) then
+         do i=is,ie+1
+            bl(i,npy-2) = al(i,npy-2) - v(i,npy-2)
+            xt = s15*v(i,npy-1) + s11*v(i,npy-2) + s14*dm(i,npy-2)
+#ifdef S_MONO
+            xt = min( xt, max(v(i,npy-2), v(i,npy-1)) )
+            xt = max( xt, min(v(i,npy-2), v(i,npy-1)) )
+#endif
+            br(i,npy-2) = xt - v(i,npy-2)
+            bl(i,npy-1) = xt - v(i,npy-1)
+
+#ifdef S_MONO
+            xt = s11*dq(i,npy) - s14*dm(i,npy+1) + v(i,npy)
+            xt = min ( xt, max(v(i,npy), v(i,npy+1)))
+            xt = max ( xt, min(v(i,npy), v(i,npy+1)))
+            br(i,npy) = xt - v(i,npy)
+#else
+            br(i,npy) = s11*dq(i,npy) - s14*dm(i,npy+1)
+#endif
+
+#ifdef ONE_SIDED_KE
+            br(i,npy-1) = 0.5*(v(i,npy-1) - v(i,npy-2))
+            bl(i,npy  ) = 0.5*(v(i,npy  ) - v(i,npy+1))
+#else
+!           xt = t14*(v(i,npy-1)+v(i,npy)) + t12*(v(i,npy-2)+v(i,npy+1))  &
+!              + t15*(v(i,npy-3)+v(i,npy+2))
+!           xt = 0.75*(v(i,npy-1)+v(i,npy)) - 0.25*(v(i,npy-2)+v(i,npy+1))
+
+            xt = 0.5*((2.*dy(i,npy-1)+dy(i,npy-2))*(v(i,npy-1)+v(i,npy)) -  &
+                 dy(i,npy-1)*(v(i,npy-2)+v(i,npy+1)))/(dy(i,npy-1)+dy(i,npy-2))
+
+!           if ( i==1 .or. i==(npx-1) ) then
+               br(i,npy-1) = xt - v(i,npy-1)
+               bl(i,npy  ) = xt - v(i,npy)
+!           else
+!              br(i,npy-1) = xt + 0.5*(u(i-1,npy)+u(i,npy))*cosa(i,npy) - v(i,npy-1)
+!              bl(i,npy  ) = xt - 0.5*(u(i-1,npy)+u(i,npy))*cosa(i,npy) - v(i,npy)
+!           endif
+#endif
+         enddo
+
+#ifdef NO_LIMIT_CORNER
+! One-sided form:
+         if( is==1 )     br(1,  npy-1) = -(t14*dm(1,  npy-2)+s13*dq(1,  npy-2))
+         if((ie+1)==npx) br(npx,npy-1) = -(t14*dm(npx,npy-2)+s13*dq(npx,npy-2))
+
+#else
+         if ( is==1 ) then
+            do j=npy-1,npy
+               bl(1,j) = 0.
+               br(1,j) = 0.
+            enddo
+         endif
+         if ( (ie+1)==npx ) then
+            do j=npy-1,npy
+               bl(npx,j) = 0.
+               br(npx,j) = 0.
+            enddo
+         endif
+#endif
+         if ( jord==5 ) then
+            do j=npy-2,npy
+               call pert_ppm(ie-is+2, v(is,j), bl(is,j), br(is,j), -1)
+            enddo
+         else
+            j=npy-2
+            call pert_ppm(ie-is+2, v(is,j), bl(is,j), br(is,j), -1)
+         endif
+      endif
+
+   else
+
+      do j=js-1,je+2
+         do i=is,ie+1
+            al(i,j) = 0.5*(v(i,j-1)+v(i,j)) + r3*(dm(i,j-1)-dm(i,j))
+         enddo
+      enddo
+      
+      do j=js-1,je+1
+         do i=is,ie+1
+            pmp = -2.*dq(i,j) 
+            lac = pmp + 1.5*dq(i,j+1)
+            bl(i,j) = min(max(0.,pmp,lac), max(al(i,j)-v(i,j), min(0.,pmp,lac)))
+            pmp = 2.*dq(i,j-1)
+            lac = pmp - 1.5*dq(i,j-2)
+            br(i,j) = min(max(0.,pmp,lac), max(al(i,j+1)-v(i,j), min(0.,pmp,lac)))
+         enddo
+      enddo
+      
    endif
 
    do j=js,je+1
       do i=is,ie+1
          if(c(i,j)>0.) then
-            flux(i,j) = v(i,j-1) + (1.-c(i,j))*(br(i,j-1)-c(i,j)*(bl(i,j-1)+br(i,j-1)))
+            cfl = c(i,j)*rdy(i,j-1)
+            flux(i,j) = v(i,j-1) + (1.-cfl)*(br(i,j-1)-cfl*(bl(i,j-1)+br(i,j-1)))
          else
-            flux(i,j) = v(i,j  ) + (1.+c(i,j))*(bl(i,j  )+c(i,j)*(bl(i,j  )+br(i,j  )))
+            cfl = c(i,j)*rdy(i,j)
+            flux(i,j) = v(i,j  ) + (1.+cfl)*(bl(i,j  )+cfl*(bl(i,j  )+br(i,j  )))
          endif
       enddo
    enddo
 
- else
-   do j=js-2,je+2
-      do i=is,ie+1
-              xt = 0.25*(v(i,j+1) - v(i,j-1))
-         dm(i,j) = sign(min(abs(xt), max(v(i,j-1), v(i,j), v(i,j+1)) - v(i,j),   &
-                            v(i,j) - min(v(i,j-1), v(i,j), v(i,j+1))), xt)
-      enddo
-   enddo
+endif
 
-   do j=max(3,js-1),min(npy-2,je+2)
-      do i=is,ie+1
-         al(i,j) = 0.5*(v(i,j-1)+v(i,j)) + r3*(dm(i,j-1) - dm(i,j))
-      enddo
-   enddo
-
-   do j=max(3,js-1),min(npy-3,je+1)
-      do i=is,ie+1
-              xt = 2.*dm(i,j)
-         bl(i,j) = sign(min(abs(xt), abs(al(i,j  )-v(i,j))), xt)
-         br(i,j) = sign(min(abs(xt), abs(al(i,j+1)-v(i,j))), xt)
-      enddo
-   enddo
-
-      if( js==1 ) then
-        do i=is,ie+1
-! Inside:
-          dqt = v(i,1) - v(i,2)
-          bl(i,1) =  6./7.*dm(i,2) + 13./14.*dqt
-          br(i,1) = -4./7.*dm(i,2) - 11./14.*dqt
-               xt = 0.5*(br(i,1) - bl(i,1))
-          dm(i,1) = sign(min(abs(xt), abs(dqt)), xt)
-!----------------------------------------------------
-!         br(i,1) = -0.5*dqt + r3*(dm(i,1) - dm(i,2))
-!----------------------------------------------------
-               xt = 2.*dm(i,1)
-          bl(i,1) = sign( min(abs(xt), abs(bl(i,1))), xt )
-          br(i,1) = sign( min(abs(xt), abs(br(i,1))), xt )
-          bl(i,2) = 0.5*dqt + r3*(dm(i,1) - dm(i,2))
-               xt = 2.*dm(i,2)
-          bl(i,2) = sign(min(abs(xt), abs(bl(i,2))), xt)
-          br(i,2) = sign(min(abs(xt), abs(al(i,3)-v(i,2))), xt)
-! Outside: (mirrors what's done inside)
-              dqt = v(i,0) - v(i,-1)
-          br(i,0) = -6./7.*dm(i,-1) + 13./14.*dqt
-          bl(i,0) =  4./7.*dm(i,-1) - 11./14.*dqt
-               xt = 0.5*(br(i,0) - bl(i,0))
-          dm(i,0) = sign(min(abs(xt), abs(dqt)), xt)
-               xt = 2.*dm(i,0)
-          bl(i,0) = sign( min(abs(xt), abs(bl(i,0))), xt )
-          br(i,0) = sign( min(abs(xt), abs(br(i,0))), xt )
-!-------------------------
-! Average (v+,v-) at south edge (j=1):
-!             xt  = 0.5*(bl(i,1)+br(i,0)+v(i,0)+v(i,1))
-!             dqt = 0.5*(u(i-1,1)+u(i,1))*cosa(i,1) 
-!         bl(i,1) =  (xt + dqt - v(i,1))
-!         br(i,0) =   xt - dqt - v(i,0)
-        enddo
-      endif 
-      if( (je+1)==npy ) then
-        do i=is,ie+1
-! Inside:
-                   dqt = v(i,npy-1) - v(i,npy-2)
-           br(i,npy-1) = -6./7.*dm(i,npy-2) + 13./14.*dqt
-           bl(i,npy-1) =  4./7.*dm(i,npy-2) - 11./14.*dqt
-                    xt = 0.5*(br(i,npy-1) - bl(i,npy-1))
-           dm(i,npy-1) = sign(min(abs(xt), abs(dqt)), xt)
-                    xt = 2.*dm(i,npy-1)
-           bl(i,npy-1) = sign( min(abs(xt), abs(bl(i,npy-1))), xt )
-           br(i,npy-1) = sign( min(abs(xt), abs(br(i,npy-1))), xt )
-           br(i,npy-2) = 0.5*dqt + r3*(dm(i,npy-2) - dm(i,npy-1))
-                    xt = 2.*dm(i,npy-2)
-           br(i,npy-2) = sign(min(abs(xt), abs(br(i,npy-2))), xt)
-           bl(i,npy-2) = sign(min(abs(xt), abs(al(i,npy-2)-v(i,npy-2))), xt)
-! Outside: (mirrors what's done inside)
-                 dqt = v(i,npy) - v(i,npy+1)
-           bl(i,npy) =  6./7.*dm(i,npy+1) + 13./14.*dqt
-           br(i,npy) = -4./7.*dm(i,npy+1) - 11./14.*dqt
-                  xt = 0.5*(br(i,npy) - bl(i,npy))
-           dm(i,npy) = sign(min(abs(xt), abs(dqt)), xt)
-                  xt = 2.*dm(i,npy)
-           bl(i,npy) = sign( min(abs(xt), abs(bl(i,npy))), xt )
-           br(i,npy) = sign( min(abs(xt), abs(br(i,npy))), xt )
-!-------------------------
-! Average (v+,v-) at north edge (j=npy):
-!             xt  = 0.5*(br(i,npy-1)+bl(i,npy)+v(i,npy-1)+v(i,npy))
-!             dqt = 0.5*(u(i-1,npy)+u(i,npy))*cosa(i,npy) 
-!         br(i,npy-1) =   xt + dqt - v(i,npy-1)
-!         bl(i,npy  ) =  (xt - dqt - v(i,npy))
-        enddo
-      endif
-
-   do j=js,je+1
-      do i=is,ie+1
-         if(c(i,j)>0.) then
-            flux(i,j) = v(i,j-1) + (1.-c(i,j))*(br(i,j-1)+c(i,j)*(bl(i,j-1)-br(i,j-1)))
-         else
-            flux(i,j) = v(i,j  ) - (1.+c(i,j))*(bl(i,j  )+c(i,j)*(bl(i,j  )-br(i,j  )))
-         endif
-      enddo
-   enddo
- endif
-
-   do j=js,je+1
-      do i=is,ie+1
-         flux(i,j) = flux(i,j)*yfx(i,j)
-      enddo
-   enddo
-
- end subroutine ytp_v
+end subroutine ytp_v
 
 
 
@@ -1422,43 +1530,111 @@
   real, intent(out), dimension(isd:ied  ,jsd:jed+1):: vc
   real, intent(out), dimension(isd:ied  ,jsd:jed  ):: ua, va, ut, vt
 ! Local 
-!----------------------------------------------
-! 4-pt Lagrange interpolation
-#ifdef LAGR_INTP
-  real, parameter:: a1 =  0.5625
-  real, parameter:: a2 = -0.0625
-#else
-! PPM volume mean form:
-  real, parameter:: a1 =   7./12.     ! 0.58333333
-  real, parameter:: a2 =  -1./12.
-#endif
-!----------------------------------------------
-! 3-pt formular:
-  real, parameter:: b1 = -0.125
-  real, parameter:: b2 =  0.75
-  real, parameter:: b3 =  0.375
-!----------------------------------------------
+  integer :: npt=4
   real, dimension(isd:ied,jsd:jed):: utmp, vtmp
   integer i, j, ifirst, ilast
 
-  do j=jsd,jed
-     do i=isd,ied+1
-        uc(i,j) = v(i,j)*dy(i,j)
+
+  if (grid_type < 3) then
+     npt = 4
+  else
+     npt = -2
+  endif
+!----------
+! Interior:
+!----------
+  do j=max(npt,js-1),min(npy-npt,je+1)
+     do i=max(npt,isd),min(npx-npt,ied)
+        utmp(i,j) = a2*(u(i,j-1)+u(i,j+2)) + a1*(u(i,j)+u(i,j+1))
      enddo
   enddo
-
-  do j=jsd,jed+1
-     do i=isd,ied
-        vc(i,j) = u(i,j)*dx(i,j)
+  do j=max(npt,jsd),min(npy-npt,jed)
+     do i=max(npt,is-1),min(npx-npt,ie+1)
+        vtmp(i,j) = a2*(v(i-1,j)+v(i+2,j)) + a1*(v(i,j)+v(i+1,j))
      enddo
   enddo
+!----------
+! do the edges:
+!----------
+  if (grid_type < 3) then
 
-! D --> A
-! Co-variant to Co-variant "vorticity-conserving" remapping
-  do j=jsd,jed
-     do i=isd,ied
-        utmp(i,j) = 0.5*(vc(i,j) + vc(i,j+1)) * rdxa(i,j)
-        vtmp(i,j) = 0.5*(uc(i,j) + uc(i+1,j)) * rdya(i,j)
+  if ( js==1 ) then
+      do j=jsd,npt-1
+         do i=isd,ied+1
+            uc(i,j) = v(i,j)*dy(i,j)
+         enddo
+      enddo
+      do j=jsd,npt
+         do i=isd,ied
+            vc(i,j) = u(i,j)*dx(i,j)
+         enddo
+      enddo
+      do j=jsd,npt-1
+         do i=isd,ied
+            utmp(i,j) = 0.5*(vc(i,j) + vc(i,j+1)) * rdxa(i,j)
+            vtmp(i,j) = 0.5*(uc(i,j) + uc(i+1,j)) * rdya(i,j)
+         enddo
+      enddo
+  endif
+  if ( (je+1)==npy ) then
+      do j=npy-npt+1,jed
+         do i=isd,ied+1
+            uc(i,j) = v(i,j)*dy(i,j)
+         enddo
+      enddo
+      do j=npy-npt+1,jed+1
+         do i=isd,ied
+            vc(i,j) = u(i,j)*dx(i,j)
+         enddo
+      enddo
+      do j=npy-npt+1,jed
+         do i=isd,ied
+            utmp(i,j) = 0.5*(vc(i,j) + vc(i,j+1)) * rdxa(i,j)
+            vtmp(i,j) = 0.5*(uc(i,j) + uc(i+1,j)) * rdya(i,j)
+         enddo
+      enddo
+  endif
+  if ( is==1 ) then
+      do j=max(npt,jsd),min(npy-npt,jed)
+         do i=isd,npt
+            uc(i,j) = v(i,j)*dy(i,j)
+         enddo
+      enddo
+      do j=max(npt,jsd),min(npy-npt+1,jed+1)
+         do i=isd,npt-1
+            vc(i,j) = u(i,j)*dx(i,j)
+         enddo
+      enddo
+      do j=max(npt,jsd),min(npy-npt,jed)
+         do i=isd,npt-1
+            utmp(i,j) = 0.5*(vc(i,j) + vc(i,j+1)) * rdxa(i,j)
+            vtmp(i,j) = 0.5*(uc(i,j) + uc(i+1,j)) * rdya(i,j)
+         enddo
+      enddo
+  endif
+  if ( (ie+1)==npx ) then
+      do j=max(npt,jsd),min(npy-npt,jed)
+         do i=npx-npt+1,ied+1
+            uc(i,j) = v(i,j)*dy(i,j)
+         enddo
+      enddo
+      do j=max(npt,jsd),min(npy-npt+1,jed+1)
+         do i=npx-npt+1,ied
+            vc(i,j) = u(i,j)*dx(i,j)
+         enddo
+      enddo
+      do j=max(npt,jsd),min(npy-npt,jed)
+         do i=npx-npt+1,ied
+            utmp(i,j) = 0.5*(vc(i,j) + vc(i,j+1)) * rdxa(i,j)
+            vtmp(i,j) = 0.5*(uc(i,j) + uc(i+1,j)) * rdya(i,j)
+         enddo
+      enddo
+  endif
+
+  endif
+
+  do j=js-1,je+1
+     do i=is-1,ie+1
         ua(i,j) = (utmp(i,j)-vtmp(i,j)*cosa_s(i,j)) * rsin2(i,j)
         va(i,j) = (vtmp(i,j)-utmp(i,j)*cosa_s(i,j)) * rsin2(i,j)
      enddo
@@ -1470,142 +1646,181 @@
 !--------------
 ! Xdir:
      if( sw_corner ) then
-        utmp( 0, 0) = -vtmp(0, 1)
-        utmp(-1, 0) = -vtmp(0, 2)
-!       utmp(-2, 0) = -vtmp(0, 3)
+         do i=-2,0
+            utmp(i,0) = -vtmp(0,1-i)
+         enddo
      endif
      if( se_corner ) then
-        utmp(npx,  0) = vtmp(npx, 1)
-        utmp(npx+1,0) = vtmp(npx, 2)
-!       utmp(npx+2,0) = vtmp(npx, 3)
+         do i=0,2
+            utmp(npx+i,0) = vtmp(npx,i+1)
+         enddo
      endif
      if( ne_corner ) then
-         utmp(npx,  npy) = -vtmp(npx,je  )
-         utmp(npx+1,npy) = -vtmp(npx,je-1)
-!        utmp(npx+2,npy) = -vtmp(npx,je-2)
+         do i=0,2
+            utmp(npx+i,npy) = -vtmp(npx,je-i)
+         enddo
      endif
      if( nw_corner ) then
-         utmp( 0,npy) = vtmp(0,je  )
-         utmp(-1,npy) = vtmp(0,je-1)
-!        utmp(-2,npy) = vtmp(0,je-2)
+         do i=-2,0
+            utmp(i,npy) = vtmp(0,je+i)
+         enddo
      endif
 
+  if (grid_type < 3) then
      ifirst = max(3,    is-1)
      ilast  = min(npx-2,ie+2)
-
+  else
+     ifirst = is-1
+     ilast  = ie+2
+  endif
+!---------------------------------------------
 ! 4th order interpolation for interior points:
+!---------------------------------------------
      do j=js-1,je+1
         do i=ifirst,ilast
-           uc(i,j) = a1*(utmp(i-1,j) + utmp(i,  j)) +  &
-                     a2*(utmp(i-2,j) + utmp(i+1,j))
+           uc(i,j) = a1*(utmp(i-1,j)+utmp(i,j))+a2*(utmp(i-2,j)+utmp(i+1,j))
            ut(i,j) = (uc(i,j) - v(i,j)*cosa_u(i,j))*rsin_u(i,j)
         enddo
      enddo
 
+     if (grid_type < 3) then
+
      if( is==1 ) then
         do j=js-1,je+1
-! Special case: i=1
-! 2-pt extrapolation --------------------------------------------------------
-           uc(1,j) = 0.25*( -utmp(-1,j) + 3.*(utmp(0,j)+utmp(1,j))     &
-                            -utmp( 2,j) ) * rsin_u(1,j)
-! 3-pt extrapolation --------------------------------------------------------
-!          uc(1,j) = ( 24.*(utmp(0,j)+utmp(1,j)) - 13.*(utmp(-1,j)+utmp(2,j))    &
-!                     + 3.*(utmp(-2,j)+utmp(3,j)) ) * rsin_u(1,j) / 28.
-           ut(1,j) = uc(1,j) * rsin_u(1,j)
+           uc(0,j) = c1*utmp(-2,j) + c2*utmp(-1,j) + c3*utmp(0,j) 
+! 3-pt extrapolation --------------------------------------------------
+           uc(1,j) = ( t14*(utmp( 0,j)+utmp(1,j))    &
+                     + t12*(utmp(-1,j)+utmp(2,j))    &
+                     + t15*(utmp(-2,j)+utmp(3,j)) )*rsin_u(1,j)
+! 2-pt extrapolation --------------------------------------------------
+!          uc(1,j) = 0.25*( -utmp(-1,j) + 3.*(utmp(0,j)+utmp(1,j))     &
+!                           -utmp( 2,j) ) * rsin_u(1,j)
+! 2-pt extrapolation --------------------------------------------------
+!!         uc(1,j) = 0.5*((2.*dxa(1,j)+dxa(2,j))*(utmp(0,j)+utmp(1,j)) &
+!!                 - dxa(1,j)*(utmp(-1,j)+utmp(2,j)) )  &
+!!                / (dxa(1,j)+dxa(2,j))*rsin_u(1,j)
 ! 3-pt formular:
-           uc(0,j) = b1*utmp(-2,j) + b2*utmp(-1,j) + b3*utmp(0,j) 
+           uc(2,j) = c1*utmp(3,j) + c2*utmp(2,j) + c3*utmp(1,j)
            ut(0,j) = (uc(0,j) - v(0,j)*cosa_u(0,j))*rsin_u(0,j)
-           uc(2,j) = b3*utmp(1,j) + b2*utmp(2,j) + b1*utmp(3,j)
+           ut(1,j) =  uc(1,j) * rsin_u(1,j)
            ut(2,j) = (uc(2,j) - v(2,j)*cosa_u(2,j))*rsin_u(2,j)
         enddo
      endif
+
      if( (ie+1)==npx ) then
         do j=js-1,je+1
-! 2-pt extrapolation --------------------------------------------------------
-           uc(npx,j) = 0.25*(-utmp(npx-2,j) + 3.*(utmp(ie,j)+utmp(npx,j))  &
-                             -utmp(npx+1,j) ) * rsin_u(npx,j)
+           uc(npx-1,j) = c1*utmp(npx-3,j)+c2*utmp(npx-2,j)+c3*utmp(npx-1,j) 
 ! 3-pt extrapolation --------------------------------------------------------
-!          uc(npx,j) = ( 24.*(utmp(npx-1,j)+utmp(npx,j))-13.*(utmp(npx-2,j)+utmp(npx+1,j))    &
-!                       + 3.*(utmp(npx-3,j)+utmp(npx+2,j)) ) * rsin_u(npx,j) / 28.
-           ut(npx,j) = uc(npx,j) * rsin_u(npx,j)
-! 3-pt formular:
-           uc(npx-1,j) = b1*utmp(npx-3,j) + b2*utmp(npx-2,j) + b3*utmp(npx-1,j) 
-           ut(npx-1,j) = (uc(npx-1,j) - v(npx-1,j)*cosa_u(npx-1,j))*rsin_u(npx-1,j)
-           uc(npx+1,j) = b3*utmp(npx,j) + b2*utmp(npx+1,j) + b1*utmp(npx+2,j) 
-           ut(npx+1,j) = (uc(npx+1,j) - v(npx+1,j)*cosa_u(npx+1,j))*rsin_u(npx+1,j)
+           uc(npx,j) = (t14*(utmp(npx-1,j)+utmp(npx,j))+      &
+                        t12*(utmp(npx-2,j)+utmp(npx+1,j))     &
+                      + t15*(utmp(npx-3,j)+utmp(npx+2,j)))*rsin_u(npx,j)
+! 2-pt extrapolation --------------------------------------------------------
+!          uc(npx,j) = 0.25*(-utmp(npx-2,j) + 3.*(utmp(ie,j)+utmp(npx,j))  &
+!                            -utmp(npx+1,j) ) * rsin_u(npx,j)
+! 2-pt extrapolation --------------------------------------------------------
+!!         uc(npx,j) = 0.5*((2.*dxa(npx-1,j)+dxa(npx-2,j))*    &
+!!                     (utmp(npx-1,j)+utmp(npx,j)) -           &
+!!                      dxa(npx-1,j)*(utmp(npx-2,j)+utmp(npx+1,j)))  &
+!!                   / (dxa(npx-1,j)+dxa(npx-2,j))*rsin_u(npx,j)
+           uc(npx+1,j) = c3*utmp(npx,j)+c2*utmp(npx+1,j)+c1*utmp(npx+2,j) 
+           ut(npx-1,j) = (uc(npx-1,j)-v(npx-1,j)*cosa_u(npx-1,j))*rsin_u(npx-1,j)
+           ut(npx,  j) =  uc(npx,j) * rsin_u(npx,j)
+           ut(npx+1,j) = (uc(npx+1,j)-v(npx+1,j)*cosa_u(npx+1,j))*rsin_u(npx+1,j)
         enddo
      endif
 
+     endif
 !------
 ! Ydir:
 !------
      if( sw_corner ) then
-         vtmp(0, 0) = -utmp(1,0)
-         vtmp(0,-1) = -utmp(2,0)
-!        vtmp(0,-2) = -utmp(3,0)
+         do j=-2,0
+            vtmp(0,j) = -utmp(1-j,0)
+         enddo
      endif
      if( nw_corner ) then
-         vtmp(0, npy  ) =  utmp(1,npy)
-         vtmp(0, npy+1) =  utmp(2,npy)
-!        vtmp(0, npy+2) =  utmp(3,npy)
+         do j=0,2
+            vtmp(0,npy+j) = utmp(j+1,npy)
+         enddo
      endif
      if( se_corner ) then
-         vtmp(npx, 0) =  utmp(ie,  0)
-         vtmp(npx,-1) =  utmp(ie-1,0)
-!        vtmp(npx,-2) =  utmp(ie-2,0)
+         do j=-2,0
+            vtmp(npx,j) = utmp(ie+j,0)
+         enddo
      endif
      if( ne_corner ) then
-         vtmp(npx,npy  ) = -utmp(ie,  npy)
-         vtmp(npx,npy+1) = -utmp(ie-1,npy)
-!        vtmp(npx,npy+2) = -utmp(ie-2,npy)
+         do j=0,2
+            vtmp(npx,npy+j) = -utmp(ie-j,npy)
+         enddo
      endif
+
+     if (grid_type < 3) then
 
      do j=js-1,je+2
       if ( j==1 ) then
         do i=is-1,ie+1
-! 2-pt extrapolation --------------------------------------------------------
-           vc(i,1) = 0.25 * ( -vtmp(i,-1) +  3.*(vtmp(i,0)+vtmp(i,1))       &
-                              -vtmp(i,2) ) * rsin_v(i,1)
-! 3-pt extrapolation --------------------------------------------------------
-!          vc(i,1) = (24.*(vtmp(i,0)+vtmp(i,1))-13.*(vtmp(i,-1)+vtmp(i,2))  &
-!                    + 3.*(vtmp(i,-2)+vtmp(i,3)) ) * rsin_v(i,1) / 28.
+! 3-pt extrapolation -----------------------------------------
+           vc(i,1) = (t14*(vtmp(i, 0)+vtmp(i,1))    &
+                    + t12*(vtmp(i,-1)+vtmp(i,2))    &
+                    + t15*(vtmp(i,-2)+vtmp(i,3)))*rsin_v(i,1)
+! 2-pt extrapolation -----------------------------------------
+!          vc(i,1) = 0.25*( -vtmp(i,-1) +  3.*(vtmp(i,0)+vtmp(i,1))    &
+!                           -vtmp(i,2) )*rsin_v(i,1)
+! 2-pt extrapolation --------------------------------------------------
+!!         vc(i,1) = 0.5*((2.*dya(i,1)+dya(i,2))*(vtmp(i,0)+vtmp(i,1)) &
+!!                 -  dya(i,1)*(vtmp(i,-1)+vtmp(i,2)) )  &
+!!                 / (dya(i,1)+dya(i,2))*rsin_v(i,1)
            vt(i,1) = vc(i,1) * rsin_v(i,1)
         enddo
-      elseif ( j==0 .or.  j==(npy-1) ) then
+      elseif ( j==0 .or. j==(npy-1) ) then
         do i=is-1,ie+1
-           vc(i,j) = b1*vtmp(i,j-2) + b2*vtmp(i,j-1) + b3*vtmp(i,j)
+           vc(i,j) = c1*vtmp(i,j-2) + c2*vtmp(i,j-1) + c3*vtmp(i,j)
            vt(i,j) = (vc(i,j) - u(i,j)*cosa_v(i,j))*rsin_v(i,j)
         enddo
       elseif ( j==2 .or. j==(npy+1) ) then
         do i=is-1,ie+1
-           vc(i,j) = b3*vtmp(i,j-1) + b2*vtmp(i,j) + b1*vtmp(i,j+1)
+           vc(i,j) = c1*vtmp(i,j+1) + c2*vtmp(i,j) + c3*vtmp(i,j-1)
            vt(i,j) = (vc(i,j) - u(i,j)*cosa_v(i,j))*rsin_v(i,j)
         enddo
       elseif ( j==npy ) then
         do i=is-1,ie+1
-! 2-pt extrapolation --------------------------------------------------------
-           vc(i,npy) = 0.25*( -vtmp(i,npy-2)+ 3.*(vtmp(i,je)+vtmp(i,npy))   &
-                              -vtmp(i,npy+1) )*rsin_v(i,npy)
 ! 3-pt extrapolation --------------------------------------------------------
-!          vc(i,npy) = (24.*(vtmp(i,npy-1)+vtmp(i,npy))-13.*(vtmp(i,npy-2)+vtmp(i,npy+1))  &
-!                      + 3.*(vtmp(i,npy-3)+vtmp(i,npy+2)))*rsin_v(i,npy) / 28.
+           vc(i,npy) = (t14*(vtmp(i,npy-1)+vtmp(i,npy))    &
+                      + t12*(vtmp(i,npy-2)+vtmp(i,npy+1))  &
+                      + t15*(vtmp(i,npy-3)+vtmp(i,npy+2)))*rsin_v(i,npy)
+! 2-pt extrapolation --------------------------------------------------------
+!          vc(i,npy) = 0.25*( -vtmp(i,npy-2)+ 3.*(vtmp(i,je)+vtmp(i,npy))   &
+!                             -vtmp(i,npy+1) )*rsin_v(i,npy)
+! 2-pt extrapolation --------------------------------------------------------
+!!         vc(i,npy) = 0.5*((2.*dya(i,npy-1)+dya(i,npy-2))*   &
+!!                    (vtmp(i,npy-1)+vtmp(i,npy)) -  &
+!!                      dya(i,npy-1)*(vtmp(i,npy-2)+vtmp(i,npy+1)) )  &
+!!                   / (dya(i,npy-1)+dya(i,npy-2))*rsin_v(i,npy)
            vt(i,npy) = vc(i,npy) * rsin_v(i,npy)
         enddo
       else
 ! 4th order interpolation for interior points:
         do i=is-1,ie+1
-           vc(i,j) = a1*(vtmp(i,j-1)+vtmp(i,j  )) +   &
-                     a2*(vtmp(i,j-2)+vtmp(i,j+1))
+           vc(i,j) = a2*(vtmp(i,j-2)+vtmp(i,j+1))+a1*(vtmp(i,j-1)+vtmp(i,j))
            vt(i,j) = (vc(i,j) - u(i,j)*cosa_v(i,j))*rsin_v(i,j)
         enddo
       endif
      enddo
 
+    else
+! 4th order interpolation:
+       do j=js-1,je+2
+          do i=is-1,ie+1
+             vc(i,j) = a2*(vtmp(i,j-2)+vtmp(i,j+1))+a1*(vtmp(i,j-1)+vtmp(i,j))
+             vt(i,j) = (vc(i,j) - u(i,j)*cosa_v(i,j))*rsin_v(i,j)
+          enddo
+       enddo
+    endif
+      
  end subroutine d2a2c_vect
  
 
-
- subroutine d2a2c_vect_v0( u, v, ua, va, uc, vc, ut, vt )
+ subroutine d2a2c_vect_v2( u, v, ua, va, uc, vc, ut, vt )
   real, intent(in) ::  u(isd:ied,jsd:jed+1)
   real, intent(in) ::  v(isd:ied+1,jsd:jed)
   real, intent(out), dimension(isd:ied+1,jsd:jed  ):: uc
@@ -1613,49 +1828,50 @@
   real, intent(out), dimension(isd:ied  ,jsd:jed  ):: ua, va, ut, vt
 ! Local 
     real, dimension(is-2:ie+2,js-2:je+2):: wk
-#ifdef VECT_DEV
-    real, dimension(isd:ied,jsd:jed):: utmp, vtmp
-#else
     real :: utmp, vtmp
-#endif
-    real, dimension(isd:ied,jsd:jed):: v1, v2, v3
-    real v1d(3,-3:npx+4), w3(3,-3:npx+4)
-    real vw1, vw2, vw3
-    real vs1, vs2, vs3
-    integer k, im, jm, im2, jm2
     integer i, j
 
-
 ! needs only ut[is-1:ie+2,js-1:je+1], vt[is-1:ie+1,js-1:je+2]
+
      do j=js-2,je+2
         do i=is-2,ie+3
-           ut(i,j) = v(i,j)*dy(i,j)
+           uc(i,j) = v(i,j)*dy(i,j)
         enddo
      enddo
-
      do j=js-2,je+3
         do i=is-2,ie+2
-           vt(i,j) = u(i,j)*dx(i,j)
+           vc(i,j) = u(i,j)*dx(i,j)
         enddo
      enddo
 
 ! D --> A
+! Co-variant to Co-variant "vorticity-conserving" interpolation
      do j=js-2,je+2
         do i=is-2,ie+2
-! Co-variant to Co-variant "vorticity-conserving" interpolation
-#ifdef VECT_DEV
-           utmp(i,j) = 0.5*(vt(i,j) + vt(i,j+1)) * rdxa(i,j)
-           vtmp(i,j) = 0.5*(ut(i,j) + ut(i+1,j)) * rdya(i,j)
-           ua(i,j) = (utmp(i,j)-vtmp(i,j)*cosa_s(i,j)) * rsin2(i,j)
-           va(i,j) = (vtmp(i,j)-utmp(i,j)*cosa_s(i,j)) * rsin2(i,j)
-#else
-           utmp = 0.5*(vt(i,j) + vt(i,j+1)) * rdxa(i,j)
-           vtmp = 0.5*(ut(i,j) + ut(i+1,j)) * rdya(i,j)
-           ua(i,j) = (utmp-vtmp*cosa_s(i,j)) * rsin2(i,j)
-           va(i,j) = (vtmp-utmp*cosa_s(i,j)) * rsin2(i,j)
-#endif
+           utmp = 0.5*(vc(i,j) + vc(i,j+1)) * rdxa(i,j)
+           vtmp = 0.5*(uc(i,j) + uc(i+1,j)) * rdya(i,j)
+           ua(i,j) = (utmp-vtmp*cosa_s(i,j))*rsin2(i,j)
+           va(i,j) = (vtmp-utmp*cosa_s(i,j))*rsin2(i,j)
         enddo
      enddo
+
+! Xdir:
+     if( sw_corner ) then
+         ua(-1,0) = -va(0,2)
+         ua( 0,0) = -va(0,1) 
+     endif
+     if( se_corner ) then
+         ua(npx,  0) = va(npx,1)
+         ua(npx+1,0) = va(npx,2) 
+     endif
+     if( ne_corner ) then
+         ua(npx,  npy) = -va(npx,npy-1)
+         ua(npx+1,npy) = -va(npx,npy-2) 
+     endif
+     if( nw_corner ) then
+         ua(-1,npy) = va(0,npy-2)
+         ua( 0,npy) = va(0,npy-1) 
+     endif
 
 ! A -> C
 !--------------------------------------------
@@ -1673,411 +1889,227 @@
         enddo
      enddo
 
-     do j=js-2,je+2
-        do i=is-1,ie+1
-           wk(i,j) = va(i,j)*dxa(i,j)*sina_s(i,j)
-        enddo
-     enddo
-     do j=js-1,je+2
-        do i=is-1,ie+1
-           vt(i,j) = 0.5*(wk(i,j-1)+wk(i,j)) / (dx(i,j)*sina_v(i,j))
-           vc(i,j) = vt(i,j) + 0.5*(ua(i,j-1)*cosa_s(i,j-1)+ua(i,j)*cosa_s(i,j))
-        enddo
-     enddo
-
-!--------------
-! Fix the edges
-!--------------
-! V = ua * e1 + va * e2
-     do j=js-2,je+2
-     if ( is==1 ) then
-        do i=0,1
-        v1(i,j) = ua(i,j)*ec1(1,i,j) + va(i,j)*ec2(1,i,j)
-        v2(i,j) = ua(i,j)*ec1(2,i,j) + va(i,j)*ec2(2,i,j)
-        v3(i,j) = ua(i,j)*ec1(3,i,j) + va(i,j)*ec2(3,i,j)
-        enddo
-     endif
-     if ( (ie+1)==npx ) then
-        do i=npx-1,npx
-        v1(i,j) = ua(i,j)*ec1(1,i,j) + va(i,j)*ec2(1,i,j)
-        v2(i,j) = ua(i,j)*ec1(2,i,j) + va(i,j)*ec2(2,i,j)
-        v3(i,j) = ua(i,j)*ec1(3,i,j) + va(i,j)*ec2(3,i,j)
-        enddo
-     endif
-     enddo
-
-     if ( js==1 ) then
-     do j=0,1
-        do i=is-2,ie+2
-           v1(i,j) = ua(i,j)*ec1(1,i,j) + va(i,j)*ec2(1,i,j)
-           v2(i,j) = ua(i,j)*ec1(2,i,j) + va(i,j)*ec2(2,i,j)
-           v3(i,j) = ua(i,j)*ec1(3,i,j) + va(i,j)*ec2(3,i,j)
-        enddo
-     enddo
-     endif
-     if ( (je+1)==npy ) then
-     do j=npy-1,npy
-        do i=is-2,ie+2
-           v1(i,j) = ua(i,j)*ec1(1,i,j) + va(i,j)*ec2(1,i,j)
-           v2(i,j) = ua(i,j)*ec1(2,i,j) + va(i,j)*ec2(2,i,j)
-           v3(i,j) = ua(i,j)*ec1(3,i,j) + va(i,j)*ec2(3,i,j)
-        enddo
-     enddo
-     endif
-
-     im2 = (npx-1)/2;   jm2 = (npy-1)/2
-! A -> C (across face averaging taking place here):
-! Xdir
-     call fill3_4corners(v1, v2, v3, 1)
-
+     if (grid_type < 3) then
      if ( is==1 ) then
         i=1
-        do j=js-2,je+2
-           v1d(1,j) = v1(0,j) + v1(1,j)
-           v1d(2,j) = v2(0,j) + v2(1,j)
-           v1d(3,j) = v3(0,j) + v3(1,j)
-        enddo
         do j=js-1,je+1
-        if ( j==0 .or. (j>jm2 .and. j<npy) ) then
-           do k=1,3
-              w3(k,j) = edge_vect_w(j)*v1d(k,j-1)+(1.-edge_vect_w(j))*v1d(k,j)
-!             w3(k,j) = v1d(k,j)
-           enddo
-        else
-           do k=1,3
-              w3(k,j) = edge_vect_w(j)*v1d(k,j+1)+(1.-edge_vect_w(j))*v1d(k,j)
-!             w3(k,j) = v1d(k,j)
-           enddo
-        endif
-        enddo
-! Projection:
-        do j=js-1,je+1
-           uc(i,j) = 0.5*(w3(1,j)*ew(1,i,j,1)+w3(2,j)*ew(2,i,j,1)+w3(3,j)*ew(3,i,j,1))
-           ut(i,j) = uc(i,j)*rsin_u(i,j)
+!          ut(i,j) = 0.75*(ua(i-1,j)+ua(i,j))-0.25*(ua(i-2,j)+ua(i+1,j))
+           ut(i,j) = 0.25*(-ua(-1,j) + 3.*(ua(0,j)+ua(1,j)) - ua(2,j))
+           uc(i,j) = ut(i,j)*sina_u(i,j)
         enddo
      endif
 
      if ( (ie+1)==npx ) then
         i=npx
-        do j=js-2,je+2
-           v1d(1,j) = v1(ie,j) + v1(i,j)
-           v1d(2,j) = v2(ie,j) + v2(i,j)
-           v1d(3,j) = v3(ie,j) + v3(i,j)
-        enddo
         do j=js-1,je+1
-        if ( j==0 .or. (j>jm2 .and. j<npy) ) then
-           do k=1,3
-              w3(k,j) = edge_vect_e(j)*v1d(k,j-1)+(1.-edge_vect_e(j))*v1d(k,j)
-!             w3(k,j) = v1d(k,j)
-           enddo
-        else
-           do k=1,3
-              w3(k,j) = edge_vect_e(j)*v1d(k,j+1)+(1.-edge_vect_e(j))*v1d(k,j)
-!             w3(k,j) = v1d(k,j)
-           enddo
-        endif
+!          ut(i,j) = 0.75*(ua(i-1,j)+ua(i,j))-0.25*(ua(i-2,j)+ua(i+1,j))
+           ut(i,j) = 0.25*(-ua(i-2,j) + 3.*(ua(i-1,j)+ua(i,j)) - ua(i+1,j))
+           uc(i,j) = ut(i,j)*sina_u(i,j)
         enddo
-! Projection:
-        do j=js-1,je+1
-           uc(i,j) = 0.5*(w3(1,j)*ew(1,i,j,1)+w3(2,j)*ew(2,i,j,1)+w3(3,j)*ew(3,i,j,1))
-           ut(i,j) = uc(i,j)*rsin_u(i,j)
-        enddo
+     endif
      endif
 
 ! Ydir:
-     call fill3_4corners(v1, v2, v3, 2)
+     if( sw_corner ) then
+         va(0,-1) = -ua(2,0)
+         va(0, 0) = -ua(1,0)
+     endif
+     if( se_corner ) then
+         va(npx, 0) = ua(npx-1,0)
+         va(npx,-1) = ua(npx-2,0)
+     endif
+     if( ne_corner ) then
+         va(npx,npy  ) = -ua(npx-1,npy)
+         va(npx,npy+1) = -ua(npx-2,npy)
+     endif
+     if( nw_corner ) then
+         va(0,npy)   = ua(1,npy)
+         va(0,npy+1) = ua(2,npy)
+     endif
 
-     if ( js==1 ) then
-        j=1
-        do i=is-2,ie+2
-           v1d(1,i) = v1(i,0) + v1(i,1)
-           v1d(2,i) = v2(i,0) + v2(i,1)
-           v1d(3,i) = v3(i,0) + v3(i,1)
-        enddo
+     do j=js-2,je+2
         do i=is-1,ie+1
-        if ( i<=0 .or. (i>im2 .and. i<npx) ) then
-           do k=1,3
-              w3(k,i) = edge_vect_s(i)*v1d(k,i-1)+ (1.-edge_vect_s(i))*v1d(k,i)
-!             w3(k,i) = v1d(k,i)
-           enddo
+           wk(i,j) = va(i,j)*dxa(i,j)*sina_s(i,j)
+        enddo
+     enddo
+
+     if (grid_type < 3) then
+     do j=js-1,je+2
+        if ( j==1 .or. j==npy ) then
+          do i=is-1,ie+1
+             vt(i,j) = 0.25*(-va(i,j-2) + 3.*(va(i,j-1)+va(i,j)) - va(i,j+1))
+             vc(i,j) = vt(i,j)*sina_v(i,j)
+          enddo
         else
-           do k=1,3
-              w3(k,i) = edge_vect_s(i)*v1d(k,i+1)+(1.-edge_vect_s(i))*v1d(k,i)
-!             w3(k,i) = v1d(k,i)
-           enddo
+          do i=is-1,ie+1
+             vt(i,j) = 0.5*(wk(i,j-1)+wk(i,j)) / (dx(i,j)*sina_v(i,j))
+             vc(i,j) = vt(i,j) + 0.5*(ua(i,j-1)*cosa_s(i,j-1)+ua(i,j)*cosa_s(i,j))
+          enddo
         endif
-        enddo
-! Projection:
-        do i=is-1,ie+1
-           vc(i,j) = 0.5*(w3(1,i)*es(1,i,j,2)+w3(2,i)*es(2,i,j,2)+w3(3,i)*es(3,i,j,2))
-           vt(i,j) = vc(i,j)*rsin_v(i,j)
-        enddo
-     endif
-
-     if ( (je+1)==npy ) then
-        j=npy
-        do i=is-2,ie+2
-           v1d(1,i) = v1(i,je) + v1(i,j)
-           v1d(2,i) = v2(i,je) + v2(i,j)
-           v1d(3,i) = v3(i,je) + v3(i,j)
-        enddo
-        do i=is-1,ie+1
-        if ( i<=0 .or. (i>im2 .and. i<npx) ) then
-           do k=1,3
-              w3(k,i) = edge_vect_n(i)*v1d(k,i-1)+(1.-edge_vect_n(i))*v1d(k,i)
-!             w3(k,i) = v1d(k,i)
+     enddo
+     else
+        do j=js-1,je+2
+           do i=is-1,ie+1
+              vt(i,j) = 0.5*(wk(i,j-1)+wk(i,j)) / (dx(i,j)*sina_v(i,j))
+              vc(i,j) = vt(i,j) + 0.5*(ua(i,j-1)*cosa_s(i,j-1)+ua(i,j)*cosa_s(i,j))
            enddo
-        else
-           do k=1,3
-              w3(k,i) = edge_vect_n(i)*v1d(k,i+1)+(1.-edge_vect_n(i))*v1d(k,i)
-!             w3(k,i) = v1d(k,i)
-           enddo
-        endif
-        enddo
-! Projection:
-        do i=is-1,ie+1
-           vc(i,j) = 0.5*(w3(1,i)*es(1,i,j,2)+w3(2,i)*es(2,i,j,2)+w3(3,i)*es(3,i,j,2))
-           vt(i,j) = vc(i,j)*rsin_v(i,j)
         enddo
      endif
 
-#ifdef VECT_DEV
-!  return
-!----------
-! Final fix
-!--------- Use lat-lon component along equator --------------------------
-   if ( tile==1 .or. tile==2 ) then
-     if ( is==1 ) then
-        do j=js,je
-           uc(1,j) = a11(0,j)*utmp(0,j)+a12(0,j)*vtmp(0,j) +   &
-                     a11(1,j)*utmp(1,j)+a12(1,j)*vtmp(1,j)
-           ut(1,j) = uc(1,j)*rsin_u(1,j)
-        enddo
-     endif
-     if ( (ie+1)==npx ) then
-        do j=js,je
-           uc(npx,j) = a11(ie, j)*utmp(ie, j)+a12(ie, j)*vtmp(ie, j) +   &
-                       a11(npx,j)*utmp(npx,j)+a12(npx,j)*vtmp(npx,j)
-           ut(npx,j) = uc(npx,j)*rsin_u(npx,j)
-        enddo
-     endif
-   endif
-
-   if ( tile==4 .or. tile==5 ) then
-     if ( js==1 ) then
-        do i=is,ie
-           vc(i,1) = a11(i,0)*utmp(i,0)+a12(i,0)*vtmp(i,0) +   &
-                     a11(i,1)*utmp(i,1)+a12(i,1)*vtmp(i,1)
-           vt(i,1) = vc(i,1)*rsin_v(i,1)
-        enddo
-     endif
-     if ( (je+1)==npy ) then
-        do i=is,ie
-           vc(i,npy) = a11(i,je )*utmp(i,je )+a12(i,je )*vtmp(i,je ) +   &
-                       a11(i,npy)*utmp(i,npy)+a12(i,npy)*vtmp(i,npy)
-           vt(i,npy) = vc(i,npy)*rsin_v(i,npy)
-        enddo
-     endif
-   endif
-!  call mpp_update_domains(uc, vc, domain, gridtype=CGRID_NE, complete=.true.)
-#endif
-
-
- end subroutine d2a2c_vect_v0
+ end subroutine d2a2c_vect_v2
 
  
       
-!-------------------------------------------------------------------------------
  subroutine d2a2c_vect_v1( u,v, ua,va, uc,vc, ut,vt )
   real, intent(in) ::  u(isd:ied,jsd:jed+1)
   real, intent(in) ::  v(isd:ied+1,jsd:jed)
   real, intent(out), dimension(isd:ied+1,jsd:jed  ):: uc
   real, intent(out), dimension(isd:ied  ,jsd:jed+1):: vc
   real, intent(out), dimension(isd:ied  ,jsd:jed  ):: ua, va, ut, vt
-!--------------------------------------------------------------
 ! Local 
   real, dimension(isd:ied,jsd:jed):: v1, v2, v3
-    real wk(is-2:ie+2,js-2:je+2)
-    real v1d(3,-3:npx+4), w3(3,-3:npx+4)
-
+  real, dimension(isd:ied,jsd:jed):: utmp, vtmp
     real vw1, vw2, vw3
     real vs1, vs2, vs3
-    integer i, j, k, im, jm, im2, jm2
-    real utmp, vtmp
+    real up, vp
+    integer i, j
 
-     im = npx - 1
-     jm = npy - 1
+! Needs ut[is-1:ie+2,js-1:je+1], vt[is-1:ie+1,js-1:je+2]
 
-! needs only ut[is-1:ie+2,js-1:je+1], vt[is-1:ie+1,js-1:je+2]
-
-     do j=js-2,je+3
-        do i=is-2,ie+2
-           vt(i,j) = u(i,j)*dx(i,j)
+     do j=jsd,jed
+        do i=isd,ied+1
+           uc(i,j) = v(i,j)*dy(i,j)
         enddo
      enddo
-     do j=js-2,je+2
-        do i=is-2,ie+3
-           ut(i,j) = v(i,j)*dy(i,j)
+     do j=jsd,jed+1
+        do i=isd,ied
+           vc(i,j) = u(i,j)*dx(i,j)
         enddo
      enddo
 
-     do j=js-2,je+2
-        do i=is-2,ie+2
-! Co-variant to Co-variant "vorticity-conserving" interpolation
-           utmp = 0.5*(vt(i,j) + vt(i,j+1)) * rdxa(i,j)
-           vtmp = 0.5*(ut(i,j) + ut(i+1,j)) * rdya(i,j)
-           ua(i,j) = (utmp-vtmp*cosa_s(i,j)) * rsin2(i,j)
-           va(i,j) = (vtmp-utmp*cosa_s(i,j)) * rsin2(i,j)
-        enddo
-     enddo
-
-! V = ua * e1 + va * e2
-     do j=js-2,je+2
-        do i=is-2,ie+2
+! D --> A
+     do j=jsd,jed
+        do i=isd,ied
+           up = 0.5*(vc(i,j) + vc(i,j+1)) * rdxa(i,j)
+           vp = 0.5*(uc(i,j) + uc(i+1,j)) * rdya(i,j)
+           ua(i,j) = (up-vp*cosa_s(i,j)) * rsin2(i,j)
+           va(i,j) = (vp-up*cosa_s(i,j)) * rsin2(i,j)
            v1(i,j) = ua(i,j)*ec1(1,i,j) + va(i,j)*ec2(1,i,j)
            v2(i,j) = ua(i,j)*ec1(2,i,j) + va(i,j)*ec2(2,i,j)
            v3(i,j) = ua(i,j)*ec1(3,i,j) + va(i,j)*ec2(3,i,j)
         enddo
      enddo
 
-     im2 = (npx-1)/2;   jm2 = (npy-1)/2
-
 ! A -> C (across face averaging taking place here):
 ! Xdir
      call fill3_4corners(v1, v2, v3, 1)
+!    call copy_corners(v1, npx, npy, 1)
+!    call copy_corners(v2, npx, npy, 1)
+!    call copy_corners(v3, npx, npy, 1)
 
-! A -> C
+! 4th order interpolation:
      do j=js-1,je+1
-        do i=is-1,ie+2
-           vw1 = v1(i-1,j) + v1(i,j)
-           vw2 = v2(i-1,j) + v2(i,j)
-           vw3 = v3(i-1,j) + v3(i,j)
-           uc(i,j) = 0.5*(vw1*ew(1,i,j,1) + vw2*ew(2,i,j,1) + vw3*ew(3,i,j,1))
-              vtmp = 0.5*(vw1*ew(1,i,j,2) + vw2*ew(2,i,j,2) + vw3*ew(3,i,j,2))
-           ut(i,j) = (uc(i,j)-vtmp*cosa_u(i,j)) * rsin_u(i,j)
+        do i=max(3,is-1),min(npx-2,ie+2)
+           vw1 = a2*(v1(i-2,j)+v1(i+1,j)) + a1*(v1(i-1,j)+v1(i,j))
+           vw2 = a2*(v2(i-2,j)+v2(i+1,j)) + a1*(v2(i-1,j)+v2(i,j))
+           vw3 = a2*(v3(i-2,j)+v3(i+1,j)) + a1*(v3(i-1,j)+v3(i,j))
+           uc(i,j) = vw1*ew(1,i,j,1) + vw2*ew(2,i,j,1) + vw3*ew(3,i,j,1)
+           ut(i,j) = (uc(i,j)-v(i,j)*cosa_u(i,j)) * rsin_u(i,j)
         enddo
      enddo
 
 ! Fix the edge:
-
      if ( is==1 ) then
+        do j=js-1,je+1
+        i=0
+           vw1 = c1*v1(-2,j) + c2*v1(-1,j) + c3*v1(0,j) 
+           vw2 = c1*v2(-2,j) + c2*v2(-1,j) + c3*v2(0,j) 
+           vw3 = c1*v3(-2,j) + c2*v3(-1,j) + c3*v3(0,j) 
+           uc(i,j) = vw1*ew(1,i,j,1) + vw2*ew(2,i,j,1) + vw3*ew(3,i,j,1)
+           ut(i,j) = (uc(i,j)-v(i,j)*cosa_u(i,j)) * rsin_u(i,j)
         i=1
-        do j=js-2,je+2
-           v1d(1,j) = v1(i-1,j) + v1(i,j)
-           v1d(2,j) = v2(i-1,j) + v2(i,j)
-           v1d(3,j) = v3(i-1,j) + v3(i,j)
-        enddo
-        do j=js-1,je+1
-        if ( j==0 .or. (j>jm2 .and. j<npy) ) then
-           do k=1,3
-              w3(k,j) = edge_vect_w(j)*v1d(k,j-1)+(1.-edge_vect_w(j))*v1d(k,j)
-           enddo
-        else
-           do k=1,3
-              w3(k,j) = edge_vect_w(j)*v1d(k,j+1)+(1.-edge_vect_w(j))*v1d(k,j)
-           enddo
-        endif
-        enddo
-! Projection:
-        do j=js-1,je+1
-           uc(i,j) = 0.5*(w3(1,j)*ew(1,i,j,1)+w3(2,j)*ew(2,i,j,1)+w3(3,j)*ew(3,i,j,1))
+           vw1 = 3.*(v1(0,j)+v1(1,j)) - (v1(-1,j)+v1(2,j))
+           vw2 = 3.*(v2(0,j)+v2(1,j)) - (v2(-1,j)+v2(2,j))
+           vw3 = 3.*(v3(0,j)+v3(1,j)) - (v3(-1,j)+v3(2,j))
+           uc(i,j) = 0.25*(vw1*ew(1,i,j,1) + vw2*ew(2,i,j,1) + vw3*ew(3,i,j,1))
            ut(i,j) = uc(i,j)*rsin_u(i,j)
+        i=2
+           vw1 = c3*v1(1,j) + c2*v1(2,j) + c1*v1(3,j)
+           vw2 = c3*v2(1,j) + c2*v2(2,j) + c1*v2(3,j)
+           vw3 = c3*v3(1,j) + c2*v3(2,j) + c1*v3(3,j)
+           uc(i,j) = vw1*ew(1,i,j,1) + vw2*ew(2,i,j,1) + vw3*ew(3,i,j,1)
+           ut(i,j) = (uc(i,j)-v(i,j)*cosa_u(i,j)) * rsin_u(i,j)
         enddo
      endif
 
      if ( (ie+1)==npx ) then
+        do j=js-1,je+1
+        i=npx-1
+           vw1 = c1*v1(npx-3,j) + c2*v1(npx-2,j) + c3*v1(npx-1,j) 
+           vw2 = c1*v2(npx-3,j) + c2*v2(npx-2,j) + c3*v2(npx-1,j) 
+           vw3 = c1*v3(npx-3,j) + c2*v3(npx-2,j) + c3*v3(npx-1,j) 
+           uc(i,j) = vw1*ew(1,i,j,1) + vw2*ew(2,i,j,1) + vw3*ew(3,i,j,1)
+           ut(i,j) = (uc(i,j)-v(i,j)*cosa_u(i,j)) * rsin_u(i,j)
         i=npx
-        do j=js-2,je+2
-           v1d(1,j) = v1(i-1,j) + v1(i,j)
-           v1d(2,j) = v2(i-1,j) + v2(i,j)
-           v1d(3,j) = v3(i-1,j) + v3(i,j)
-        enddo
-        do j=js-1,je+1
-        if ( j==0 .or. (j>jm2 .and. j<npy) ) then
-           do k=1,3
-              w3(k,j) = edge_vect_e(j)*v1d(k,j-1)+(1.-edge_vect_e(j))*v1d(k,j)
-           enddo
-        else
-           do k=1,3
-              w3(k,j) = edge_vect_e(j)*v1d(k,j+1)+(1.-edge_vect_e(j))*v1d(k,j)
-           enddo
-        endif
-        enddo
-! Projection:
-        do j=js-1,je+1
-           uc(i,j) = 0.5*(w3(1,j)*ew(1,i,j,1)+w3(2,j)*ew(2,i,j,1)+w3(3,j)*ew(3,i,j,1))
+           vw1 = 3.*(v1(i-1,j)+v1(i,j)) - (v1(i-2,j)+v1(i+1,j))
+           vw2 = 3.*(v2(i-1,j)+v2(i,j)) - (v2(i-2,j)+v2(i+1,j))
+           vw3 = 3.*(v3(i-1,j)+v3(i,j)) - (v3(i-2,j)+v3(i+1,j))
+           uc(i,j) = 0.25*(vw1*ew(1,i,j,1) + vw2*ew(2,i,j,1) + vw3*ew(3,i,j,1))
            ut(i,j) = uc(i,j)*rsin_u(i,j)
+        i=npx+1
+           vw1 = c3*v1(npx,j) + c2*v1(npx+1,j) + c1*v1(npx+2,j) 
+           vw2 = c3*v2(npx,j) + c2*v2(npx+1,j) + c1*v2(npx+2,j) 
+           vw3 = c3*v3(npx,j) + c2*v3(npx+1,j) + c1*v3(npx+2,j) 
+           uc(i,j) = vw1*ew(1,i,j,1) + vw2*ew(2,i,j,1) + vw3*ew(3,i,j,1)
+           ut(i,j) = (uc(i,j)-v(i,j)*cosa_u(i,j)) * rsin_u(i,j)
         enddo
      endif
 
 ! Ydir:
      call fill3_4corners(v1, v2, v3, 2)
+!    call copy_corners(v1, npx, npy, 2)
+!    call copy_corners(v2, npx, npy, 2)
+!    call copy_corners(v3, npx, npy, 2)
 
      do j=js-1,je+2
-        do i=is-1,ie+1
-           vs1 = v1(i,j-1) + v1(i,j)
-           vs2 = v2(i,j-1) + v2(i,j)
-           vs3 = v3(i,j-1) + v3(i,j)
-           vc(i,j) = 0.5*(vs1*es(1,i,j,2) + vs2*es(2,i,j,2) + vs3*es(3,i,j,2))
-              utmp = 0.5*(vs1*es(1,i,j,1) + vs2*es(2,i,j,1) + vs3*es(3,i,j,1))
-           vt(i,j) = (vc(i,j)-utmp*cosa_v(i,j)) * rsin_v(i,j)
-        enddo
+        if( j==0 .or. j==(npy-1) ) then
+          do i=is-1,ie+1
+             vs1 = c1*v1(i,j-2) + c2*v1(i,j-1) + c3*v1(i,j)
+             vs2 = c1*v2(i,j-2) + c2*v2(i,j-1) + c3*v2(i,j)
+             vs3 = c1*v3(i,j-2) + c2*v3(i,j-1) + c3*v3(i,j)
+             vc(i,j) = vs1*es(1,i,j,2) + vs2*es(2,i,j,2) + vs3*es(3,i,j,2)
+             vt(i,j) = (vc(i,j)-u(i,j)*cosa_v(i,j)) * rsin_v(i,j)
+          enddo
+        elseif ( j==2 .or. j==(npy+1) ) then
+          do i=is-1,ie+1
+             vs1 = c3*v1(i,j-1) + c2*v1(i,j) + c1*v1(i,j+1)
+             vs2 = c3*v2(i,j-1) + c2*v2(i,j) + c1*v2(i,j+1)
+             vs3 = c3*v3(i,j-1) + c2*v3(i,j) + c1*v3(i,j+1)
+             vc(i,j) = vs1*es(1,i,j,2) + vs2*es(2,i,j,2) + vs3*es(3,i,j,2)
+             vt(i,j) = (vc(i,j)-u(i,j)*cosa_v(i,j)) * rsin_v(i,j)
+          enddo
+        elseif ( j==1 .or. j==npy ) then
+          do i=is-1,ie+1
+              vs1 = 3.*(v1(i,j-1)+v1(i,j)) - (v1(i,j-2)+v1(i,j+1))
+              vs2 = 3.*(v2(i,j-1)+v2(i,j)) - (v2(i,j-2)+v2(i,j+1))
+              vs3 = 3.*(v3(i,j-1)+v3(i,j)) - (v3(i,j-2)+v3(i,j+1))
+              vc(i,j) = 0.25*(vs1*es(1,i,j,2) + vs2*es(2,i,j,2) + vs3*es(3,i,j,2))
+              vt(i,j) = vc(i,j)*rsin_v(i,j)
+          enddo
+        else
+! Interior: 4th order
+          do i=is-1,ie+1
+             vs1 = a2*(v1(i,j-2)+v1(i,j+1)) + a1*(v1(i,j-1)+v1(i,j))
+             vs2 = a2*(v2(i,j-2)+v2(i,j+1)) + a1*(v2(i,j-1)+v2(i,j))
+             vs3 = a2*(v3(i,j-2)+v3(i,j+1)) + a1*(v3(i,j-1)+v3(i,j))
+             vc(i,j) = vs1*es(1,i,j,2) + vs2*es(2,i,j,2) + vs3*es(3,i,j,2)
+             vt(i,j) = (vc(i,j)-u(i,j)*cosa_v(i,j)) * rsin_v(i,j)
+          enddo
+        endif
      enddo
 
-! Fix the edge:
-     if ( js==1 ) then
-        j=1
-        do i=is-2,ie+2
-           v1d(1,i) = v1(i,j-1) + v1(i,j)
-           v1d(2,i) = v2(i,j-1) + v2(i,j)
-           v1d(3,i) = v3(i,j-1) + v3(i,j)
-        enddo
-        do i=is-1,ie+1
-        if ( i<=0 .or. (i>im2 .and. i<npx) ) then
-           do k=1,3
-              w3(k,i) = edge_vect_s(i)*v1d(k,i-1)+ (1.-edge_vect_s(i))*v1d(k,i)
-           enddo
-        else
-           do k=1,3
-              w3(k,i) = edge_vect_s(i)*v1d(k,i+1)+(1.-edge_vect_s(i))*v1d(k,i)
-           enddo
-        endif
-        enddo
-! Projection:
-        do i=is-1,ie+1
-           vc(i,j) = 0.5*(w3(1,i)*es(1,i,j,2)+w3(2,i)*es(2,i,j,2)+w3(3,i)*es(3,i,j,2))
-           vt(i,j) = vc(i,j)*rsin_v(i,j)
-        enddo
-     endif
-
-     if ( (je+1)==npy ) then
-        j=npy
-        do i=is-2,ie+2
-           v1d(1,i) = v1(i,j-1) + v1(i,j)
-           v1d(2,i) = v2(i,j-1) + v2(i,j)
-           v1d(3,i) = v3(i,j-1) + v3(i,j)
-        enddo
-        do i=is-1,ie+1
-        if ( i<=0 .or. (i>im2 .and. i<npx) ) then
-           do k=1,3
-              w3(k,i) = edge_vect_n(i)*v1d(k,i-1)+(1.-edge_vect_n(i))*v1d(k,i)
-           enddo
-        else
-           do k=1,3
-              w3(k,i) = edge_vect_n(i)*v1d(k,i+1)+(1.-edge_vect_n(i))*v1d(k,i)
-           enddo
-        endif
-        enddo
-! Projection:
-        do i=is-1,ie+1
-           vc(i,j) = 0.5*(w3(1,i)*es(1,i,j,2)+w3(2,i)*es(2,i,j,2)+w3(3,i)*es(3,i,j,2))
-           vt(i,j) = vc(i,j)*rsin_v(i,j)
-        enddo
-     endif
-
  end subroutine d2a2c_vect_v1
-
-
+      
 
  subroutine fill3_4corners(q1, q2, q3, dir)
 ! This routine fill the 4 corners of the scalar fileds only as needed by c_core
@@ -2085,6 +2117,7 @@
   real, intent(inout):: q1(isd:ied,jsd:jed)
   real, intent(inout):: q2(isd:ied,jsd:jed)
   real, intent(inout):: q3(isd:ied,jsd:jed)
+  integer i,j
 
   select case(dir)
   case(1)
@@ -2133,6 +2166,7 @@
 
   end select
  end subroutine fill3_4corners
+
 
  subroutine fill2_4corners(q1, q2, dir)
 ! This routine fill the 4 corners of the scalar fileds only as needed by c_core

@@ -7,8 +7,6 @@ module tracer_2d_mod
       use mpp_domains_mod, only: mpp_update_domains
       use timingModule,    only: timing_on, timing_off
 
-!-----------------------------------------------------------------------
-
 implicit none
 private
 
@@ -18,11 +16,8 @@ public :: tracer_2d, tracer_2d_1L
 contains
 
 !-----------------------------------------------------------------------
-!BOP
 ! !ROUTINE: Perform 2D horizontal-to-lagrangian transport
-!
-! !INTERFACE:
-
+!-----------------------------------------------------------------------
 
 subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
                         q_split, k, q3, dt, uniform_ppm, id_divg)
@@ -46,7 +41,8 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
       real :: dp2(isd:ied,jsd:jed)
       real :: fx(is:ie+1,js:je )
       real :: fy(is:ie , js:je+1)
-
+      real :: ra_x(is:ie,jsd:jed)
+      real :: ra_y(isd:ied,js:je)
       real :: xfx(is:ie+1,jsd:jed)
       real :: yfx(isd:ied,js: je+1)
       real :: cmax
@@ -55,36 +51,37 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
       integer :: i,j,it,iq
 
 
-         do j=jsd,jed
-            do i=is,ie+1
-               if (cx(i,j) > 0.) then
-                  xfx(i,j) = cx(i,j)*dxa(i-1,j)*dy(i,j)*sina_u(i,j)
-               else
-                  xfx(i,j) = cx(i,j)*dxa(i,j)*dy(i,j)*sina_u(i,j)
-               endif
-            enddo
+      do j=jsd,jed
+         do i=is,ie+1
+            if (cx(i,j) > 0.) then
+                xfx(i,j) = cx(i,j)*dxa(i-1,j)*dy(i,j)*sina_u(i,j)
+            else
+                xfx(i,j) = cx(i,j)*dxa(i,j)*dy(i,j)*sina_u(i,j)
+            endif
          enddo
-         do j=js,je+1
-            do i=isd,ied
-               if (cy(i,j) > 0.) then
-                  yfx(i,j) = cy(i,j)*dya(i,j-1)*dx(i,j)*sina_v(i,j)
-               else
-                  yfx(i,j) = cy(i,j)*dya(i,j)*dx(i,j)*sina_v(i,j)
-               endif
-            enddo
+      enddo
+      do j=js,je+1
+         do i=isd,ied
+            if (cy(i,j) > 0.) then
+                yfx(i,j) = cy(i,j)*dya(i,j-1)*dx(i,j)*sina_v(i,j)
+            else
+                yfx(i,j) = cy(i,j)*dya(i,j)*dx(i,j)*sina_v(i,j)
+            endif
          enddo
+      enddo
 
 
       if ( q_split==0 ) then
-! Determine nsplt
+! Determine nsplt for tracer advection
          cmax = 0.
          do j=js,je
             do i=is,ie
-               cmax = max(abs(cx(i,j))+1.-sina_u(i,j), abs(cy(i,j))+1.-sina_v(i,j), cmax)
+               cmax = max(abs(cx(i,j))+(1.-sina_u(i,j)),     &
+                          abs(cy(i,j))+(1.-sina_v(i,j)), cmax)
             enddo
          enddo
          call mp_reduce_max(cmax)
-         nsplt = int(1. + cmax)
+         nsplt = int(1.0001 + cmax)
          if ( gid == 0 .and. nsplt > 3 )  write(6,*) k, 'Tracer_2d_split=', nsplt, cmax
       else
          nsplt = q_split
@@ -93,31 +90,42 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
 
       frac  = 1. / real(nsplt)
       if( nsplt /= 1 ) then
-             do j=jsd,jed
-                do i=is,ie+1
-                    cx(i,j) =  cx(i,j) * frac
-                   xfx(i,j) = xfx(i,j) * frac
-                enddo
+          do j=jsd,jed
+             do i=is,ie+1
+                cx(i,j) =  cx(i,j) * frac
+                xfx(i,j) = xfx(i,j) * frac
              enddo
-             do j=js,je
-                do i=is,ie+1
-                   mfx(i,j) = mfx(i,j) * frac
-                enddo
+          enddo
+          do j=js,je
+             do i=is,ie+1
+                mfx(i,j) = mfx(i,j) * frac
              enddo
+          enddo
 
-             do j=js,je+1
-                do i=isd,ied
-                   cy(i,j) =  cy(i,j) * frac
-                  yfx(i,j) = yfx(i,j) * frac
-                enddo
+          do j=js,je+1
+             do i=isd,ied
+                cy(i,j) =  cy(i,j) * frac
+               yfx(i,j) = yfx(i,j) * frac
              enddo
+          enddo
 
-             do j=js,je+1
-                do i=is,ie
-                   mfy(i,j) = mfy(i,j) * frac
-                enddo
+          do j=js,je+1
+             do i=is,ie
+                mfy(i,j) = mfy(i,j) * frac
              enddo
+          enddo
       endif
+
+      do j=jsd,jed
+         do i=is,ie
+            ra_x(i,j) = area(i,j) + xfx(i,j) - xfx(i+1,j)
+         enddo
+      enddo
+      do j=js,je
+         do i=isd,ied
+            ra_y(i,j) = area(i,j) + yfx(i,j) - yfx(i,j+1)
+         enddo
+      enddo
 
       do it=1,nsplt
 
@@ -135,8 +143,8 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
          call timing_off('COMM_TOTAL')
 
          do iq=1,nq
-            call fv_tp_2d( q(isd,jsd,iq), cx, cy,  npx-1, npy-1, hord, fx, fy, &
-                           xfx,   yfx,  area, uniform_ppm, mfx=mfx, mfy=mfy )
+            call fv_tp_2d( q(isd,jsd,iq), cx, cy,  npx, npy, hord, fx, fy, &
+                           xfx, yfx, area, ra_x, ra_y, uniform_ppm, mfx=mfx, mfy=mfy )
             if( it==nsplt ) then
             do j=js,je
                do i=is,ie
@@ -148,7 +156,7 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
             do j=js,je
                do i=is,ie
                   q(i,j,iq) = (q(i,j,iq)*dp1(i,j) + (fx(i,j)-fx(i+1,j) + &
-                                 fy(i,j)-fy(i,j+1))*rarea(i,j)) / dp2(i,j)
+                              fy(i,j)-fy(i,j+1))*rarea(i,j)) / dp2(i,j)
                enddo
             enddo
            endif
@@ -198,7 +206,8 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
       real :: dp2(isd:ied,jsd:jed)
       real :: fx(is:ie+1,js:je )
       real :: fy(is:ie , js:je+1)
-
+      real :: ra_x(is:ie,jsd:jed)
+      real :: ra_y(isd:ied,js:je)
       real :: xfx(is:ie+1,jsd:jed  ,npz)
       real :: yfx(isd:ied,js: je+1, npz)
       real :: cmax(npz)
@@ -298,6 +307,17 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
 
       do k=1,npz
 
+         do j=jsd,jed
+            do i=is,ie
+               ra_x(i,j) = area(i,j) + xfx(i,j,k) - xfx(i+1,j,k)
+            enddo
+         enddo
+         do j=js,je
+            do i=isd,ied
+               ra_y(i,j) = area(i,j) + yfx(i,j,k) - yfx(i,j+1,k)
+            enddo
+         enddo
+
          do j=js,je
             do i=is,ie
                dp2(i,j) = dp1(i,j,k) + (mfx(i,j,k) - mfx(i+1,j,k) +  &
@@ -307,8 +327,8 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
 
          do iq=1,nq
             call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
-                          npx-1, npy-1, hord, fx, fy,            &
-                          xfx(is,jsd,k), yfx(isd,js,k), area,          &
+                          npx, npy, hord, fx, fy,            &
+                          xfx(is,jsd,k), yfx(isd,js,k), area, ra_x, ra_y, &
                           uniform_ppm, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
 
             do j=js,je

@@ -31,6 +31,7 @@ use fv_arrays_mod,         only: fv_atmos_type
 use fv_pack_mod,           only: npx, npy, npz, ncnst, domain
 use eta_mod,               only: get_eta_level
 use update_fv_phys_mod,    only: update_fv_phys
+use fv_sg_mod,             only: fv_sg_conv
 use timingModule,          only: timing_on, timing_off
 
 implicit none
@@ -40,14 +41,13 @@ public  fv_physics_down, fv_physics_up, fv_physics_init, fv_physics_end
 public  surf_diff_type
 
 !-----------------------------------------------------------------------
-character(len=128) :: version = '$Id: fv_physics.F90,v 14.0 2007/03/15 21:57:50 fms Exp $'
-character(len=128) :: tag = '$Name: nalanda_2007_06 $'
+character(len=128) :: version = '$Id: fv_physics.F90,v 15.0 2007/08/14 03:50:50 fms Exp $'
+character(len=128) :: tag = '$Name: omsk $'
 !-----------------------------------------------------------------------
 
    real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt
    real, allocatable, dimension(:,:,:,:) :: q_dt  ! potentially a huge array
    real, allocatable, dimension(:,:,:)   :: p_full, z_full, p_half, z_half
-
    logical :: do_atmos_nudge
    real    :: zvir, rrg, ginv
    integer :: id_fv_physics_down, id_fv_physics_up, id_update_fv_phys
@@ -228,33 +228,36 @@ contains
                                    flux_sw_vis_dif, flux_lw, coszen, gust
 !-----------------------------------------------------------------------
     real :: gavg_rrv(nt_prog)
-    real :: rdt
     integer :: i, j, k, m
 !---------------------------- do physics -------------------------------
 
-    rdt = 1. / dt_phys
     gavg_rrv = 0.
     call compute_g_avg(gavg_rrv, 'co2', Atm(1)%pe, Atm(1)%q)
     call mpp_clock_begin(id_fv_physics_down)
 
-    do jsw = jsc,jec, ny_win
+    do jsw = jsc, jec, ny_win
        jew = jsw + ny_win - 1
        do isw = isc, iec, nx_win
           iew = isw + nx_win - 1
 
-          call compute_p_z( npz, isw, jsw, nx_win, ny_win, Atm(1)%phis, Atm(1)%pt,   &
-                            Atm(1)%q, Atm(1)%delp, Atm(1)%pe, Atm(1)%peln )
-          do k=1,npz
-             do j=jsw,jew
-                do i=isw,iew
-                   u_dt(i,j,k) = 0.
-                   v_dt(i,j,k) = 0.
-                   t_dt(i,j,k) = 0.
+          if ( Atm(1)%fv_sg_adj>0 ) then
+             call fv_sg_conv(isw, iew, jsw, jew, isd, ied, jsd, jed,    &
+                             isc, iec, jsc, jec, npz, nt_prog, dt_phys, &
+                             Atm(1)%fv_sg_adj, Atm(1)%delp, Atm(1)%pe, Atm(1)%peln,  &
+                             Atm(1)%pt, Atm(1)%q, Atm(1)%ua, Atm(1)%va,       &
+                             u_dt, v_dt, t_dt, q_dt, Atm(1)%ak, Atm(1)%bk) 
+          else
+! Initialize tendencies due to parameterizations:
+             do k=1,npz
+                do j=jsw,jew
+                   do i=isw,iew
+                      u_dt(i,j,k) = 0.
+                      v_dt(i,j,k) = 0.
+                      t_dt(i,j,k) = 0.
+                   enddo
                 enddo
              enddo
-          enddo
-
-          do m=1,nt_prog
+             do m=1,nt_prog
              do k=1,npz
                 do j=jsw,jew
                    do i=isw,iew
@@ -262,7 +265,11 @@ contains
                    enddo
                 enddo
              enddo
-          enddo
+             enddo
+          endif
+
+          call compute_p_z(npz, isw, jsw, nx_win, ny_win, Atm(1)%phis, Atm(1)%pt, &
+                           Atm(1)%q, Atm(1)%delp, Atm(1)%pe, Atm(1)%peln )
 
           call physics_driver_down( isw-isc+1, iew-isc+1, jsw-jsc+1, jew-jsc+1, &
                    Time_prev, Time, Time_next                              , &

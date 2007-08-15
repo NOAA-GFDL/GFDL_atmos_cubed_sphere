@@ -1,4 +1,4 @@
-      module test_cases
+ module test_cases
 
       use constants_mod, only: radius, pi, omega, grav, kappa, rdgas
       use init_hydro,    only: p_var, hydro_eq
@@ -7,14 +7,15 @@
                                domain_decomp, fill_corners, XDir, YDir, &
                                mp_stop, mp_reduce_sum, mp_reduce_max, mp_gather, mp_bcst
       use grid_utils,    only: cubed_to_latlon, great_circle_dist, mid_pt_sphere,   &
-                               ptop, ptop_min, fC, f0, inner_prod,      &
+                               ptop, ptop_min, fC, f0, deglat, inner_prod,      &
                                ee1, ee2, ew, es, g_sum
       use surf_map,      only: surfdrv
 
       use grid_tools, only: grid, agrid, cubed_sphere, latlon,  todeg, missing,  &
                             dx,dy, dxa,dya, dxc,dyc, area, rarea,rarea_c, &
                             ctoa, atod, dtoa, atoc, atob_s, mp_update_dwinds, rotate_winds, &
-                            globalsum, get_unit_vector, unit_vect2
+                            globalsum, get_unit_vector, unit_vect2,                         &
+                            dx_const, dy_const
       use eta_mod,    only: compute_dz_L32, set_hybrid_z
 
       use mpp_mod,    only: mpp_error, FATAL
@@ -34,6 +35,7 @@
 !                    5 = Zonal geostrophically balanced flow over an isolated mountain
 !                    6 = Rossby Wave number 4 
 !                    7 = Barotropic instability
+!                    8 = Potential flow (as in 5 but no rotation and initially at rest)
 !                    9 = Polar vortex
 !                   10 = hydrostatically balanced 3D test with idealized mountain
 !                   11 = Use this for cold starting the climate model with USGS terrain
@@ -83,6 +85,7 @@
       public :: test_case, alpha
       public :: init_case, get_stats, check_courant_numbers, output, output_ncdf
       public :: case9_forcing1, case9_forcing2
+      public :: init_double_periodic, init_latlon
 
       contains
 
@@ -335,8 +338,7 @@
       subroutine init_case(u,v,pt,delp,q,phis, ps,pe,peln,pk,pkz,  uc,vc, ua,va, ak, bk,  &
                            npx, npy, npz, ng, ncnst, k_top, ndims, nregions, dry_mass,    &
                            mountain, full_phys, hybrid_z, delz, ze0)
-      use mpp_domains_mod, only : DGRID_NE
-      use mpp_domains_mod, only : mpp_get_boundary
+
       real ,      intent(INOUT) ::    u(isd:ied  ,jsd:jed+1,npz)
       real ,      intent(INOUT) ::    v(isd:ied+1,jsd:jed  ,npz)
       real ,      intent(INOUT) ::   pt(isd:ied  ,jsd:jed  ,npz)
@@ -447,13 +449,13 @@
       fC(:,:) = huge(dummy)
       do j=jsd,jed+1
          do i=isd,ied+1
-            fC(i,j) = 2.*Omega*( -1.*cos(grid(i,j,1))*cos(grid(i,j,2))*sin(alpha) + &
+            fC(i,j) = 2.*omega*( -1.*cos(grid(i,j,1))*cos(grid(i,j,2))*sin(alpha) + &
                                      sin(grid(i,j,2))*cos(alpha) )
          enddo
       enddo
       do j=jsd,jed
          do i=isd,ied
-            f0(i,j) = 2.*Omega*( -1.*cos(agrid(i,j,1))*cos(agrid(i,j,2))*sin(alpha) + &
+            f0(i,j) = 2.*omega*( -1.*cos(agrid(i,j,1))*cos(agrid(i,j,2))*sin(alpha) + &
                                      sin(agrid(i,j,2))*cos(alpha) )
          enddo
       enddo
@@ -475,7 +477,7 @@
          phis = 0.0
          do j=js,je
             do i=is,ie
-               delp(i,j,1) = gh0 - (radius*Omega*Ubar + (Ubar*Ubar)/2.) * &
+               delp(i,j,1) = gh0 - (radius*omega*Ubar + (Ubar*Ubar)/2.) * &
                              ( -1.*cos(agrid(i  ,j  ,1))*cos(agrid(i  ,j  ,2))*sin(alpha) + &
                                    sin(agrid(i  ,j  ,2))*cos(alpha) ) ** 2.0
             enddo
@@ -658,7 +660,7 @@
          phis = 0.0
          do j=js,je
             do i=is,ie
-               delp(i,j,1) = gh0 - (radius*Omega*Ubar + (Ubar*Ubar)/2.) * &
+               delp(i,j,1) = gh0 - (radius*omega*Ubar + (Ubar*Ubar)/2.) * &
                              ( -1.*cos(agrid(i  ,j  ,1))*cos(agrid(i  ,j  ,2))*sin(alpha) + &
                                    sin(agrid(i  ,j  ,2))*cos(alpha) ) ** 2.0
             enddo
@@ -682,7 +684,7 @@
          enddo
          do j=js,je
             do i=is,ie
-               delp(i,j,1) =gh0 - (radius*Omega*Ubar + (Ubar*Ubar)/2.) * &
+               delp(i,j,1) =gh0 - (radius*omega*Ubar + (Ubar*Ubar)/2.) * &
                              ( -1.*cos(agrid(i  ,j  ,1))*cos(agrid(i  ,j  ,2))*sin(alpha) + &
                                    sin(agrid(i  ,j  ,2))*cos(alpha) ) ** 2  - phis(i,j)
             enddo
@@ -696,11 +698,11 @@
          phis = 0.0
          do j=js,je
             do i=is,ie
-               A = 0.5*omg*(2.*Omega+omg)*(COS(agrid(i,j,2))**2) + &
+               A = 0.5*omg*(2.*omega+omg)*(COS(agrid(i,j,2))**2) + &
                    0.25*k*k*(COS(agrid(i,j,2))**(r+r)) * &
                    ( (r+1)*(COS(agrid(i,j,2))**2) + (2.*r*r-r-2.) - &
                      2.*(r*r)*COS(agrid(i,j,2))**(-2.) )
-               B = (2.*(Omega+omg)*k / ((r+1)*(r+2))) * (COS(agrid(i,j,2))**r) * &
+               B = (2.*(omega+omg)*k / ((r+1)*(r+2))) * (COS(agrid(i,j,2))**r) * &
                     ( (r*r+2.*r+2.) - ((r+1.)*COS(agrid(i,j,2)))**2 )
                C = 0.25*k*k*(COS(agrid(i,j,2))**(2.*r)) * ( &
                    (r+1) * (COS(agrid(i,j,2))**2.) - (r+2.) )
@@ -734,8 +736,6 @@
                u(i,j,1) = utmp*inner_prod(e1,ex) + vtmp*inner_prod(e1,ey)
             enddo
          enddo
-!        call mpp_get_boundary(u, v, domain, wbuffery=wbuffer, ebuffery=v(ie+1,js:je,1:npz), &
-!                                            sbufferx=sbuffer, nbufferx=u(is:ie,je+1,1:npz), gridtype=DGRID_NE )
          call mp_update_dwinds(u, v, npx, npy, npz)
          call dtoa( u, v,ua,va,npx,npy,ng)
          !call mpp_update_domains( ua, va, domain, gridtype=AGRID_PARAM)
@@ -820,6 +820,35 @@
             enddo
          enddo
          initWindsCase=initWindsCase6  ! shouldn't do anything with this
+
+      case(8)
+!----------------------------
+! Non-rotating potential flow
+!----------------------------
+         Ubar = 0.        
+         gh0  = 5960.*Grav
+         phis = 0.0
+         r0 = PI/9.
+         p1(1) = PI/2.
+         p1(2) = PI/6.
+         do j=js,je
+            do i=is,ie
+               p2(1) = agrid(i,j,1)
+               p2(2) = agrid(i,j,2)
+               r = MIN(r0*r0, (p2(1)-p1(1))*(p2(1)-p1(1)) + (p2(2)-p1(2))*(p2(2)-p1(2)) )
+               r = SQRT(r)
+               phis(i,j) = 2000.0*Grav*(1.0-(r/r0))
+            enddo
+         enddo
+         do j=js,je
+            do i=is,ie
+               delp(i,j,1) = gh0
+            enddo
+         enddo
+         u  = 0.;   v = 0.
+         f0 = 0.;  fC = 0.
+         initWindsCase=initWindsCase6
+
       case(9)
          jm1 = jm - 1
          DDP = PI/DBLE(jm1)
@@ -853,7 +882,7 @@
          ll_phi(1) = 6000. * Grav
          do j=2,jm1
             ll_phi(j)=ll_phi(j-1)  - DP*sine(j) * &
-                    (radius*2.*Omega + ll_u(j)/cose(j))*ll_u(j)
+                    (radius*2.*omega + ll_u(j)/cose(j))*ll_u(j)
          enddo
          phis = 0.0
          do j=js,je
@@ -914,6 +943,12 @@
          u(:,:,k) = u(:,:,1)
          v(:,:,k) = v(:,:,1)
       enddo
+
+      do j=js,je
+         do i=is,ie
+            ps(i,j) = delp(i,j,1)
+         enddo
+      enddo
 ! -------- end s-w section ----------------------------------
 #else
 
@@ -933,7 +968,11 @@
                        delp, ak, bk, pt, delz, ng, .false., hybrid_z)
        else
 ! Initialize topography
+#ifdef MARS_GCM
+         gh0  = 0.*Grav
+#else
          gh0  = 5960.*Grav
+#endif MARS_GCM
          phis = 0.0
          r0 = PI/9.
          p1(1) = PI/4.
@@ -1112,7 +1151,7 @@
                   pt1 = T_mean + 0.75*(eta*PI*Ubar/RDGAS)*SIN(eta_v(z))*SQRT(COS(eta_v(z))) * ( &
                               ( -2.0*(SIN(agrid(i,j,2))**6.0) *(COS(agrid(i,j,2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                               2.0*Ubar*COS(eta_v(z))**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(agrid(i,j,2))**3.0)*(SIN(agrid(i,j,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(agrid(i,j,2))**3.0)*(SIN(agrid(i,j,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
 #ifndef NO_AVG13
 ! 9-point average: should be 2nd order accurate for a rectangular cell
 !
@@ -1126,39 +1165,39 @@
                   pt2 = T_mean + 0.75*(eta*PI*Ubar/RDGAS)*SIN(eta_v(z))*SQRT(COS(eta_v(z))) * ( &
                               ( -2.0*(SIN(p1(2))**6.0) *(COS(p1(2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                               2.0*Ubar*COS(eta_v(z))**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
                   call mid_pt_sphere(grid(i+1,j,1:2), grid(i+1,j+1,1:2), p1)
                   pt3 = T_mean + 0.75*(eta*PI*Ubar/RDGAS)*SIN(eta_v(z))*SQRT(COS(eta_v(z))) * ( &
                               ( -2.0*(SIN(p1(2))**6.0) *(COS(p1(2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                               2.0*Ubar*COS(eta_v(z))**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
                   call mid_pt_sphere(grid(i,j+1,1:2), grid(i+1,j+1,1:2), p1)
                   pt4 = T_mean + 0.75*(eta*PI*Ubar/RDGAS)*SIN(eta_v(z))*SQRT(COS(eta_v(z))) * ( &
                               ( -2.0*(SIN(p1(2))**6.0) *(COS(p1(2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                               2.0*Ubar*COS(eta_v(z))**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
                   call mid_pt_sphere(grid(i,j,1:2), grid(i,j+1,1:2), p1)
                   pt5 = T_mean + 0.75*(eta*PI*Ubar/RDGAS)*SIN(eta_v(z))*SQRT(COS(eta_v(z))) * ( &
                               ( -2.0*(SIN(p1(2))**6.0) *(COS(p1(2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                               2.0*Ubar*COS(eta_v(z))**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
 
                   pt6 = T_mean + 0.75*(eta*PI*Ubar/RDGAS)*SIN(eta_v(z))*SQRT(COS(eta_v(z))) * ( &
                               ( -2.0*(SIN(grid(i,j,2))**6.0) *(COS(grid(i,j,2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                               2.0*Ubar*COS(eta_v(z))**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(grid(i,j,2))**3.0)*(SIN(grid(i,j,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(grid(i,j,2))**3.0)*(SIN(grid(i,j,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
                   pt7 = T_mean + 0.75*(eta*PI*Ubar/RDGAS)*SIN(eta_v(z))*SQRT(COS(eta_v(z))) * ( &
                               ( -2.0*(SIN(grid(i+1,j,2))**6.0) *(COS(grid(i+1,j,2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                               2.0*Ubar*COS(eta_v(z))**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(grid(i+1,j,2))**3.0)*(SIN(grid(i+1,j,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(grid(i+1,j,2))**3.0)*(SIN(grid(i+1,j,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
                   pt8 = T_mean + 0.75*(eta*PI*Ubar/RDGAS)*SIN(eta_v(z))*SQRT(COS(eta_v(z))) * ( &
                               ( -2.0*(SIN(grid(i+1,j+1,2))**6.0) *(COS(grid(i+1,j+1,2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                               2.0*Ubar*COS(eta_v(z))**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(grid(i+1,j+1,2))**3.0)*(SIN(grid(i+1,j+1,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(grid(i+1,j+1,2))**3.0)*(SIN(grid(i+1,j+1,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
                   pt9 = T_mean + 0.75*(eta*PI*Ubar/RDGAS)*SIN(eta_v(z))*SQRT(COS(eta_v(z))) * ( &
                               ( -2.0*(SIN(grid(i,j+1,2))**6.0) *(COS(grid(i,j+1,2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                               2.0*Ubar*COS(eta_v(z))**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(grid(i,j+1,2))**3.0)*(SIN(grid(i,j+1,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(grid(i,j+1,2))**3.0)*(SIN(grid(i,j+1,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
                   pt(i,j,z) = 0.25*pt1 + 0.125*(pt2+pt3+pt4+pt5) + 0.0625*(pt6+pt7+pt8+pt9)
 #else
                   pt(i,j,z) = pt1
@@ -1174,7 +1213,7 @@
                pt1 = Ubar* (COS( (eta_s-eta_0)*PI/2.0 ))**(3.0/2.0) * ( &
                               ( -2.0*(SIN(agrid(i,j,2))**6.0) *(COS(agrid(i,j,2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                               Ubar*COS( (eta_s-eta_0)*PI/2.0 )**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(agrid(i,j,2))**3.0)*(SIN(agrid(i,j,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(agrid(i,j,2))**3.0)*(SIN(agrid(i,j,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
 #ifndef NO_AVG13
 ! 9-point average:
 !
@@ -1188,39 +1227,39 @@
                pt2 = Ubar* (COS( (eta_s-eta_0)*PI/2.0 ))**(3.0/2.0) * ( &
                            ( -2.0*(SIN(p1(2))**6.0) *(COS(p1(2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                              Ubar*COS( (eta_s-eta_0)*PI/2.0 )**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
                call mid_pt_sphere(grid(i+1,j,1:2), grid(i+1,j+1,1:2), p1)
                pt3 = Ubar* (COS( (eta_s-eta_0)*PI/2.0 ))**(3.0/2.0) * ( &
                            ( -2.0*(SIN(p1(2))**6.0) *(COS(p1(2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                              Ubar*COS( (eta_s-eta_0)*PI/2.0 )**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
                call mid_pt_sphere(grid(i,j+1,1:2), grid(i+1,j+1,1:2), p1)
                pt4 = Ubar* (COS( (eta_s-eta_0)*PI/2.0 ))**(3.0/2.0) * ( &
                            ( -2.0*(SIN(p1(2))**6.0) *(COS(p1(2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                              Ubar*COS( (eta_s-eta_0)*PI/2.0 )**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
                call mid_pt_sphere(grid(i,j,1:2), grid(i,j+1,1:2), p1)
                pt5 = Ubar* (COS( (eta_s-eta_0)*PI/2.0 ))**(3.0/2.0) * ( &
                            ( -2.0*(SIN(p1(2))**6.0) *(COS(p1(2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                              Ubar*COS( (eta_s-eta_0)*PI/2.0 )**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(p1(2))**3.0)*(SIN(p1(2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
 
                pt6 = Ubar* (COS( (eta_s-eta_0)*PI/2.0 ))**(3.0/2.0) * ( &
                               ( -2.0*(SIN(grid(i,j,2))**6.0) *(COS(grid(i,j,2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                               Ubar*COS( (eta_s-eta_0)*PI/2.0 )**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(grid(i,j,2))**3.0)*(SIN(grid(i,j,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(grid(i,j,2))**3.0)*(SIN(grid(i,j,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
                pt7 = Ubar* (COS( (eta_s-eta_0)*PI/2.0 ))**(3.0/2.0) * ( &
                               ( -2.0*(SIN(grid(i+1,j,2))**6.0) *(COS(grid(i+1,j,2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                               Ubar*COS( (eta_s-eta_0)*PI/2.0 )**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(grid(i+1,j,2))**3.0)*(SIN(grid(i+1,j,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(grid(i+1,j,2))**3.0)*(SIN(grid(i+1,j,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
                pt8 = Ubar* (COS( (eta_s-eta_0)*PI/2.0 ))**(3.0/2.0) * ( &
                               ( -2.0*(SIN(grid(i+1,j+1,2))**6.0) *(COS(grid(i+1,j+1,2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                               Ubar*COS( (eta_s-eta_0)*PI/2.0 )**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(grid(i+1,j+1,2))**3.0)*(SIN(grid(i+1,j+1,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(grid(i+1,j+1,2))**3.0)*(SIN(grid(i+1,j+1,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
                pt9 = Ubar* (COS( (eta_s-eta_0)*PI/2.0 ))**(3.0/2.0) * ( &
                               ( -2.0*(SIN(grid(i,j+1,2))**6.0) *(COS(grid(i,j+1,2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                               Ubar*COS( (eta_s-eta_0)*PI/2.0 )**(3.0/2.0) + &
-                              ( (8.0/5.0)*(COS(grid(i,j+1,2))**3.0)*(SIN(grid(i,j+1,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*Omega )
+                              ( (8.0/5.0)*(COS(grid(i,j+1,2))**3.0)*(SIN(grid(i,j+1,2))**2.0 + 2.0/3.0) - PI/4.0 )*radius*omega )
                phis(i,j) = 0.25*pt1 + 0.125*(pt2+pt3+pt4+pt5) + 0.0625*(pt6+pt7+pt8+pt9)
 #else
                phis(i,j) = pt1
@@ -1232,7 +1271,7 @@
 
       call mpp_update_domains( phis, domain )
 
-     ftop = g_sum(phis(is:ie,js:je), is, ie, js, je, ng, area, 1)
+     ftop = g_sum(phis(is:ie,js:je), is, ie, js, je, ng, area, mode=1)
      if(gid==masterproc) write(6,*) 'mean terrain height (m)=', ftop/grav
 
      call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
@@ -1240,8 +1279,7 @@
                 full_phys, .true., k_top)
 
 #ifdef COLUMN_TRACER
-      if (ncnst > 1) then
-         q(:,:,:,2:ncnst) = 0.0
+      if( ncnst>1 ) q(:,:,:,2:ncnst) = 0.0
    ! Initialize a dummy Column Tracer
          pcen(1) = PI/9.
          pcen(2) = 2.0*PI/9.
@@ -1260,12 +1298,7 @@
                enddo
             enddo
          enddo
-
-      endif
 #endif
-
-!     call mpp_get_boundary(u, v, domain, wbuffery=wbuffer, ebuffery=v(ie+1,js:je,1:npz), &
-!                                         sbufferx=sbuffer, nbufferx=u(is:ie,je+1,1:npz), gridtype=DGRID_NE )
 
 #endif
 
@@ -2309,7 +2342,7 @@
          phis = 0.0
          do j=js,je+1
             do i=is,ie+1
-               tmp(i,j,tile) = (gh0 - (radius*Omega*Ubar + (Ubar*Ubar)/2.) * &
+               tmp(i,j,tile) = (gh0 - (radius*omega*Ubar + (Ubar*Ubar)/2.) * &
                            ( -1.*cos(grid(i  ,j  ,1))*cos(grid(i  ,j  ,2))*sin(alpha) + &
                                  sin(grid(i  ,j  ,2))*cos(alpha) ) ** 2.0) / Grav
             enddo
@@ -2536,7 +2569,7 @@
          phis = 0.0
          do j=js,je+1
             do i=is,ie+1
-               tmp(i,j,tile) = (gh0 - (radius*Omega*Ubar + (Ubar*Ubar)/2.) * &
+               tmp(i,j,tile) = (gh0 - (radius*omega*Ubar + (Ubar*Ubar)/2.) * &
                            ( -1.*cos(grid(i  ,j  ,1))*cos(grid(i  ,j  ,2))*sin(alpha) + &
                                  sin(grid(i  ,j  ,2))*cos(alpha) ) ** 2.0) / Grav
             enddo
@@ -2769,5 +2802,334 @@
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
-      end module test_cases
 
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!     init_double_periodic
+!
+      subroutine init_double_periodic(u,v,pt,delp,q,phis, ps,pe,peln,pk,pkz,  uc,vc, ua,va, ak, bk,  &
+                                      npx, npy, npz, ng, ncnst, k_top, ndims, nregions, dry_mass,    &
+                                      mountain, full_phys, hybrid_z, delz, ze0)
+
+        real ,      intent(INOUT) ::    u(isd:ied  ,jsd:jed+1,npz)
+        real ,      intent(INOUT) ::    v(isd:ied+1,jsd:jed  ,npz)
+        real ,      intent(INOUT) ::   pt(isd:ied  ,jsd:jed  ,npz)
+        real ,      intent(INOUT) :: delp(isd:ied  ,jsd:jed  ,npz)
+        real ,      intent(INOUT) ::    q(isd:ied  ,jsd:jed  ,npz, ncnst)
+        
+        real ,      intent(INOUT) :: phis(isd:ied  ,jsd:jed  )
+
+        real ,      intent(INOUT) ::   ps(isd:ied  ,jsd:jed  )
+        real ,      intent(INOUT) ::   pe(is-1:ie+1,npz+1,js-1:je+1)
+        real ,      intent(INOUT) ::   pk(is:ie    ,js:je    ,npz+1)
+        real ,      intent(INOUT) :: peln(is :ie   ,npz+1    ,js:je)
+        real ,      intent(INOUT) ::  pkz(is:ie    ,js:je    ,npz  )
+        
+        real ,      intent(INOUT) ::   uc(isd:ied+1,jsd:jed  ,npz)
+        real ,      intent(INOUT) ::   vc(isd:ied  ,jsd:jed+1,npz)
+        real ,      intent(INOUT) ::   ua(isd:ied  ,jsd:jed  ,npz)
+        real ,      intent(INOUT) ::   va(isd:ied  ,jsd:jed  ,npz)
+        real ,      intent(inout) :: delz(is:ie,js:je,npz)
+        real ,      intent(out)   ::  ze0(is:ie,js:je,npz+1)
+        
+        real ,      intent(IN)    ::   ak(npz+1)
+        real ,      intent(IN)    ::   bk(npz+1)
+        
+        integer,      intent(IN) :: npx, npy, npz
+        integer,      intent(IN) :: ng, ncnst
+        integer,      intent(IN) :: k_top
+        integer,      intent(IN) :: ndims
+        integer,      intent(IN) :: nregions
+        
+        real,         intent(IN) :: dry_mass
+        logical,      intent(IN) :: mountain
+        logical,      intent(IN) :: full_phys
+        logical,      intent(IN) :: hybrid_z
+
+        real ::    radius, r0, f0_const, prf
+        integer :: i, j, k, icenter, jcenter
+
+        f0_const = 2.*omega*sin(deglat/180.*pi)
+        f0(:,:) = f0_const
+        fC(:,:) = f0_const
+
+        select case (test_case)
+        case ( 1 )
+
+           phis(:,:)=0.
+
+           u (:,:,:)=10.
+           v (:,:,:)=10.
+           ua(:,:,:)=10.
+           va(:,:,:)=10.
+           uc(:,:,:)=10.
+           vc(:,:,:)=10.
+           pt(:,:,:)=1.
+           delp(:,:,:)=0.
+           
+           do j=js,je
+              if (j>0 .and. j<5) then
+                 do i=is,ie
+                    if (i>0 .and. i<5) then
+                       delp(i,j,:)=1.
+                    endif
+                 enddo
+              endif
+           enddo
+           call mpp_update_domains( delp, domain )
+
+        case ( 2 )
+
+           phis(:,:) = 0.
+
+!          r0 = 5000.
+           r0 = 5.*sqrt(dx_const**2 + dy_const**2)
+           icenter = npx/2
+           jcenter = npy/2
+           do j=jsd,jed
+              do i=isd,ied
+                 radius=(i-icenter)*dx_const*(i-icenter)*dx_const   &
+                       +(j-jcenter)*dy_const*(j-jcenter)*dy_const
+                 radius=min(r0,sqrt(radius))
+                 phis(i,j)=1500.*(1. - (radius/r0))
+              enddo
+           enddo
+
+           u (:,:,:)=0.
+           v (:,:,:)=0.
+           ua(:,:,:)=0.
+           va(:,:,:)=0.
+           uc(:,:,:)=0.
+           vc(:,:,:)=0.
+           pt(:,:,:)=1.
+           delp(:,:,:)=1500.
+
+        case ( 14 )
+!---------------------------
+! Doubly periodic Aqua-plane
+!---------------------------
+           u(:,:,:) = 0.
+           v(:,:,:) = 0.
+           do j=jsd,jed
+              do i=isd,ied
+                 phis(i,j) = 0.
+                   ps(i,j) = 100000.
+              enddo
+           enddo
+
+           do k=1,npz
+              do j=jsd,jed
+                 do i=isd,ied
+                    pt(i,j,k) = 260.
+                    delp(i,j,k) = ak(k+1)-ak(k) + ps(i,j)*(bk(k+1)-bk(k))
+                    q(i,j,k,1) = 3.E-6
+                 enddo
+              enddo
+           enddo
+
+! *** Add Initial perturbation ***
+           r0 = 5.*sqrt(dx_const**2 + dy_const**2)
+           icenter = npx/2
+           jcenter = npy/2
+
+           do j=jsd,jed
+              do i=isd,ied
+                 radius = (i-icenter)*dx_const*(i-icenter)*dx_const   &
+                         +(j-jcenter)*dy_const*(j-jcenter)*dy_const
+                 radius = min(r0,sqrt(radius))
+                 do k=1,npz
+                    prf = ak(k) + ps(i,j)*bk(k)
+                    if ( prf > 100.E2 ) then
+                         pt(i,j,k) = pt(i,j,k) + 10.*(1. - (radius/r0)) * prf/ps(i,j) 
+                    endif
+                 enddo
+              enddo
+           enddo
+
+!         call mpp_update_domains( phis, domain )
+          call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
+                     pe, peln, pk, pkz, kappa, q, ng, ncnst, dry_mass, .false., .false., &
+                     full_phys, .true., k_top)
+
+        end select
+
+      end subroutine init_double_periodic
+
+      subroutine init_latlon(u,v,pt,delp,q,phis, ps,pe,peln,pk,pkz,  uc,vc, ua,va, ak, bk,  &
+                             npx, npy, npz, ng, ncnst, k_top, ndims, nregions, dry_mass,    &
+                             mountain, full_phys, hybrid_z, delz, ze0)
+
+        real ,      intent(INOUT) ::    u(isd:ied  ,jsd:jed+1,npz)
+        real ,      intent(INOUT) ::    v(isd:ied+1,jsd:jed  ,npz)
+        real ,      intent(INOUT) ::   pt(isd:ied  ,jsd:jed  ,npz)
+        real ,      intent(INOUT) :: delp(isd:ied  ,jsd:jed  ,npz)
+        real ,      intent(INOUT) ::    q(isd:ied  ,jsd:jed  ,npz, ncnst)
+        
+        real ,      intent(INOUT) :: phis(isd:ied  ,jsd:jed  )
+
+        real ,      intent(INOUT) ::   ps(isd:ied  ,jsd:jed  )
+        real ,      intent(INOUT) ::   pe(is-1:ie+1,npz+1,js-1:je+1)
+        real ,      intent(INOUT) ::   pk(is:ie    ,js:je    ,npz+1)
+        real ,      intent(INOUT) :: peln(is :ie   ,npz+1    ,js:je)
+        real ,      intent(INOUT) ::  pkz(is:ie    ,js:je    ,npz  )
+        
+        real ,      intent(INOUT) ::   uc(isd:ied+1,jsd:jed  ,npz)
+        real ,      intent(INOUT) ::   vc(isd:ied  ,jsd:jed+1,npz)
+        real ,      intent(INOUT) ::   ua(isd:ied  ,jsd:jed  ,npz)
+        real ,      intent(INOUT) ::   va(isd:ied  ,jsd:jed  ,npz)
+        real ,      intent(inout) :: delz(is:ie,js:je,npz)
+        real ,      intent(out)   ::  ze0(is:ie,js:je,npz+1)
+        
+        real ,      intent(IN)    ::   ak(npz+1)
+        real ,      intent(IN)    ::   bk(npz+1)
+        
+        integer,      intent(IN) :: npx, npy, npz
+        integer,      intent(IN) :: ng, ncnst
+        integer,      intent(IN) :: k_top
+        integer,      intent(IN) :: ndims
+        integer,      intent(IN) :: nregions
+        
+        real,         intent(IN) :: dry_mass
+        logical,      intent(IN) :: mountain
+        logical,      intent(IN) :: full_phys
+        logical,      intent(IN) :: hybrid_z
+
+        real    :: p1(2), p2(2), r, r0
+        integer :: i,j
+
+        do j=jsd,jed+1
+           do i=isd,ied+1
+              fc(i,j) = 2.*omega*( -cos(grid(i,j,1))*cos(grid(i,j,2))*sin(alpha)  &
+                                   +sin(grid(i,j,2))*cos(alpha) )
+           enddo
+        enddo
+        do j=jsd,jed
+           do i=isd,ied
+              f0(i,j) = 2.*omega*( -cos(agrid(i,j,1))*cos(agrid(i,j,2))*sin(alpha)  &
+                                   +sin(agrid(i,j,2))*cos(alpha) )
+           enddo
+        enddo
+
+        select case (test_case)
+        case ( 1 )
+
+         Ubar = (2.0*pi*radius)/(12.0*86400.0)
+         phis = 0.0
+         r0 = radius/3. !RADIUS radius/3.
+!!$         p1(1) = 0.
+         p1(1) = pi/2. + pi_shift
+         p1(2) = 0.
+         do j=jsd,jed
+            do i=isd,ied
+               p2(1) = agrid(i,j,1)
+               p2(2) = agrid(i,j,2)
+               r = great_circle_dist( p1, p2, radius )
+               if (r < r0) then
+                  delp(i,j,1) = phis(i,j) + 0.5*(1.0+cos(PI*r/r0))
+               else
+                  delp(i,j,1) = phis(i,j)
+               endif
+            enddo
+         enddo
+         call init_latlon_winds(UBar, u, v, ua, va, uc, vc, 1)
+
+
+!!$           phis(:,:)=0.
+!!$
+!!$           u (:,:,:)=10.
+!!$           v (:,:,:)=10.
+!!$           ua(:,:,:)=10.
+!!$           va(:,:,:)=10.
+!!$           uc(:,:,:)=10.
+!!$           vc(:,:,:)=10.
+!!$           pt(:,:,:)=1.
+!!$           delp(:,:,:)=0.
+!!$           
+!!$           do j=js,je
+!!$              if (j>10 .and. j<15) then
+!!$                 do i=is,ie
+!!$                    if (i>10 .and. i<15) then
+!!$                       delp(i,j,:)=1.
+!!$                    endif
+!!$                 enddo
+!!$              endif
+!!$           enddo
+!!$           call mpp_update_domains( delp, domain )
+
+        end select
+
+      end subroutine init_latlon
+
+      subroutine init_latlon_winds(UBar, u, v, ua, va, uc, vc, defOnGrid)
+
+        ! defOnGrid = -1:null_op, 0:All-Grids, 1:C-Grid, 2:D-Grid, 3:A-Grid, 4:A-Grid then Rotate, 5:D-Grid with unit vectors then Rotate
+
+        real,    intent(INOUT) :: UBar
+        real,    intent(INOUT) ::  u(isd:ied  ,jsd:jed+1)
+        real,    intent(INOUT) ::  v(isd:ied+1,jsd:jed  )
+        real,    intent(INOUT) :: uc(isd:ied+1,jsd:jed  )
+        real,    intent(INOUT) :: vc(isd:ied  ,jsd:jed+1)
+        real,    intent(INOUT) :: ua(isd:ied  ,jsd:jed  )
+        real,    intent(INOUT) :: va(isd:ied  ,jsd:jed  )
+        integer, intent(IN)    :: defOnGrid
+
+        real   :: p1(2),p2(2),p3(2),p4(2), pt(2)
+        real :: e1(3), e2(3), ex(3), ey(3)
+
+        real   :: dist, r, r0 
+        integer :: i,j,k,n
+        real :: utmp, vtmp
+
+        real :: psi_b(isd:ied+1,jsd:jed+1), psi(isd:ied,jsd:jed), psi1, psi2 
+
+        psi(:,:) = 1.e25
+        psi_b(:,:) = 1.e25
+        do j=jsd,jed
+           do i=isd,ied
+              psi(i,j) = (-1.0 * Ubar * radius *( sin(agrid(i,j,2))                  *cos(alpha) - &
+                                                  cos(agrid(i,j,1))*cos(agrid(i,j,2))*sin(alpha) ) )
+           enddo
+        enddo
+        do j=jsd,jed+1
+           do i=isd,ied+1
+              psi_b(i,j) = (-1.0 * Ubar * radius *( sin(grid(i,j,2))                 *cos(alpha) - &
+                                                    cos(grid(i,j,1))*cos(grid(i,j,2))*sin(alpha) ) )
+           enddo
+        enddo
+        
+        if ( defOnGrid == 1 ) then
+           do j=jsd,jed+1
+              do i=isd,ied
+                 dist = dx(i,j)
+                 vc(i,j) = (psi_b(i+1,j)-psi_b(i,j))/dist
+                 if (dist==0) vc(i,j) = 0.
+              enddo
+           enddo
+           do j=jsd,jed
+              do i=isd,ied+1
+                 dist = dy(i,j)
+                 uc(i,j) = -1.0*(psi_b(i,j+1)-psi_b(i,j))/dist
+                 if (dist==0) uc(i,j) = 0.
+              enddo
+           enddo
+
+           
+           do j=js,je
+              do i=is,ie+1
+                 dist = dxc(i,j)
+                 v(i,j) = (psi(i,j)-psi(i-1,j))/dist
+                 if (dist==0) v(i,j) = 0.            
+              enddo
+           enddo
+           do j=js,je+1
+              do i=is,ie
+                 dist = dyc(i,j)
+                 u(i,j) = -1.0*(psi(i,j)-psi(i,j-1))/dist
+                 if (dist==0) u(i,j) = 0. 
+              enddo
+           enddo
+        endif
+     
+      end subroutine init_latlon_winds
+      
+end module test_cases

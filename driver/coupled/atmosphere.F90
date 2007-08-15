@@ -23,9 +23,9 @@ use mpp_domains_mod,  only: domain2d
 !-----------------
 ! FV core modules:
 !-----------------
-use grid_tools,         only: area
+use grid_tools,         only: area, grid_type
 use fv_arrays_mod,      only: fv_atmos_type
-use fv_pack_mod,        only: fv_init, domain, fv_end
+use fv_pack_mod,        only: fv_init, domain, fv_end, p_ref
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time
 use fv_restart_mod,     only: fv_restart
@@ -42,12 +42,12 @@ public  atmosphere_down,       atmosphere_up,       &
         atmosphere_resolution, atmosphere_boundary, &
         get_atmosphere_axes,   atmosphere_domain,   &
         get_bottom_mass,       get_bottom_wind,     &
-        get_stock_pe,           surf_diff_type
+        get_stock_pe,          surf_diff_type
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id: atmosphere.F90,v 14.0.2.1 2007/05/23 15:46:07 z1l Exp $'
-character(len=128) :: tagname = '$Name: nalanda_2007_06 $'
+character(len=128) :: version = '$Id: atmosphere.F90,v 15.0 2007/08/14 03:50:48 fms Exp $'
+character(len=128) :: tagname = '$Name: omsk $'
 
 !---- namelist (saved in file input.nml) ----
 !
@@ -125,13 +125,13 @@ contains
 
    nq = ncnst
 
-   call fv_restart(domain, Atm, dt_atmos, seconds, days, cold_start)
+   call fv_restart(domain, Atm, dt_atmos, seconds, days, cold_start, grid_type)
 
    fv_time = Time
 
 !----- initialize atmos_axes and fv_dynamics diagnostics
 
-   call fv_diag_init(Atm, atmos_axes, Time, npx, npy, npz)
+   call fv_diag_init(Atm, atmos_axes, Time, npx, npy, npz, p_ref)
 
 !----- initialize physics interface -----
 !----- initialize domains for reading global physics data -----

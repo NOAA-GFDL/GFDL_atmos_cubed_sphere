@@ -11,8 +11,8 @@ module nh_core
 
    use constants_mod,  only: rdgas, grav
    use fv_pack_mod,    only: m_split, quick_p_c, quick_p_d, uniform_ppm,   &
-                             k_top,  master
-   use tpcore,         only: fv_tp_2d
+                             k_top, m_riem,  master
+   use tpcore,         only: fv_tp_2d, copy_corners
 !  use timingModule,   only: timing_on, timing_off
 
    implicit none
@@ -122,65 +122,45 @@ CONTAINS
 
 
   subroutine update_dz_d(hord, is, ie, js, je, km, ng, npx, npy, area,    &
-                         zh, crx, cry, xfx, yfx, delz, wk, n_sponge)
+                         zh, crx, cry, xfx, yfx, delz, wk, delp, n_sponge)
 
   integer, intent(in):: is, ie, js, je, ng, km, npx, npy
   integer, intent(in):: hord, n_sponge
-  real, intent(in   ) :: area(is-ng:ie+ng,js-ng:je+ng)
-  real, intent(inout) ::   zh(is-ng:ie+ng,js-ng:je+ng,km)
-  real, intent(inout) :: delz(is:ie,js:je,km)
+  real, intent(in)   :: area(is-ng:ie+ng,js-ng:je+ng)
+  real, intent(inout) ::  zh(is-ng:ie+ng,js-ng:je+ng,km)
+  real, intent(inout) ::delz(is:ie,js:je,km)
+  real, intent(inout) ::delp(is-ng:ie+ng,js-ng:je+ng,km)
+  real, intent(inout), dimension(is:ie+1,js-ng:je+ng,km):: crx, xfx
+  real, intent(inout), dimension(is-ng:ie+ng,js:je+1,km):: cry, yfx
   real, intent(  out) ::   wk(is:ie,js:je,km)  ! work array
-!
-  real, intent(in):: crx(is:ie+1,js-ng:je+ng,km)
-  real, intent(in):: xfx(is:ie+1,js-ng:je+ng,km)
-! Note the index in the following 2 arrays
-!!!  real, intent(in):: cry(is-ng:ie+ng,js:je+1,km)
-!!!  real, intent(in):: yfx(is-ng:ie+ng,js:je+1,km)
-  real, intent(in):: cry(is-ng:ie+ng,js-ng:je+ng,km)
-  real, intent(in):: yfx(is-ng:ie+ng,js-ng:je+ng,km)
 !-----------------------------------------------------
 ! Local array:
   real, dimension(is:   ie+1, js-ng:je+ng):: crx_adv, xfx_adv
   real, dimension(is-ng:ie+ng,js:   je+1 ):: cry_adv, yfx_adv
   real, dimension(is:ie+1,js:je  ):: fx
   real, dimension(is:ie  ,js:je+1):: fy
+  real  delx(is:ie+1,km), dely(is-ng:ie+ng,km)
+  real :: ra_x(is:ie,js-ng:je+ng)
+  real :: ra_y(is-ng:ie+ng,js:je)
 !--------------------------------------------------------------------
-  integer  i, j, k, iord, isd, ied, jsd, jed
+  integer  i, j, k, iord, isd, ied, jsd, jed, lm
 
-  isd = is - ng
-  ied = ie + ng
-  jsd = js - ng
-  jed = je + ng
+  isd = is - ng;  ied = ie + ng
+  jsd = js - ng;  jed = je + ng
 
+#ifdef NO_CS_PROFILE
   do k=k_top,km
      if( k <= n_sponge .and. km>16 ) then
-          iord = 1
-         elseif( k == n_sponge+1 .and. km>16 ) then
-          iord = 2
-         else
-          iord = hord
+         iord = 1
+     else
+         iord = hord
      endif
-!-------------------------------------------------------------
+
      if ( k==1 ) then
-#ifdef TOP_WIND
-        do j=jsd,jed
-           do i=is,ie+1
-              crx_adv(i,j) = crx(i,j,1) 
-              xfx_adv(i,j) = xfx(i,j,1) 
-           enddo
-        enddo
-        do j=js,je+1
-           do i=isd,ied
-              cry_adv(i,j) = cry(i,j,1)
-              yfx_adv(i,j) = yfx(i,j,1)
-           enddo
-        enddo
-#else
-        call top_edge(crx, crx_adv, is, ie+1, jsd, jed,  km)
-        call top_edge(xfx, xfx_adv, is, ie+1, jsd, jed,  km)
-        call top_edge(cry(isd:ied,js:je+1,1:3), cry_adv, isd, ied, js, je+1, 3)
-        call top_edge(yfx(isd:ied,js:je+1,1:3), yfx_adv, isd, ied, js, je+1, 3)
-#endif
+          call top_edge(crx,                      crx_adv, is,  ie+1, jsd, jed, km)
+          call top_edge(xfx,                      xfx_adv, is,  ie+1, jsd, jed, km)
+          call top_edge(cry(isd:ied,js:je+1,1:3), cry_adv, isd, ied,  js,  je+1, 3)
+          call top_edge(yfx(isd:ied,js:je+1,1:3), yfx_adv, isd, ied,  js,  je+1, 3)
      else
         do j=jsd,jed
            do i=is,ie+1
@@ -195,20 +175,93 @@ CONTAINS
            enddo
         enddo
      endif
-!-------------------------------------------------------------
 
-     call fv_tp_2d(zh(isd,jsd,k), crx_adv, cry_adv, npx-1, npy-1, iord, &
-                   fx, fy, xfx_adv, yfx_adv, area, uniform_ppm)
+     do j=jsd,jed
+        do i=is,ie
+           ra_x(i,j) = area(i,j) + xfx_adv(i,j) - xfx_adv(i+1,j)
+        enddo
+     enddo
+     do j=js,je
+        do i=isd,ied
+           ra_y(i,j) = area(i,j) + yfx_adv(i,j) - yfx_adv(i,j+1)
+        enddo
+     enddo
 
-! height increments due to horizontal advection:
+     call fv_tp_2d(zh(isd,jsd,k), crx_adv, cry_adv, npx, npy, iord, &
+                   fx, fy, xfx_adv, yfx_adv, area, ra_x, ra_y, uniform_ppm)
      do j=js,je
         do i=is,ie
-           wk(i,j,k) = (zh(i,j,k)*area(i,j) + fx(i,j)- fx(i+1,j) + fy(i,j)- fy(i,j+1))       &
-                     / (area(i,j) + xfx_adv(i,j)-xfx_adv(i+1,j)+yfx_adv(i,j)-yfx_adv(i,j+1)) &
+           wk(i,j,k) = (zh(i,j,k)*area(i,j)+fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))       &
+                     / (area(i,j)+xfx_adv(i,j)-xfx_adv(i+1,j)+yfx_adv(i,j)-yfx_adv(i,j+1)) &
                      - zh(i,j,k)
         enddo
      enddo
   enddo    ! k-loop
+
+#else
+! lm = 1   ! interior limiter
+  lm = 0   ! no limiter
+
+#ifndef UNIFORM_CS
+  do k=1,km
+     call copy_corners(delp(isd,jsd,k), npx, npy, 1)
+  enddo
+
+  do j=jsd,jed
+     do k=1,km
+        do i=is,ie+1
+           delx(i,k) = 0.5*(delp(i-1,j,k)+delp(i,j,k))
+        enddo
+     enddo
+     call edge_profile(crx, xfx, is, ie+1, jsd, jed, j, km, lm, delx)
+  enddo
+
+  do k=1,km
+     call copy_corners(delp(isd,jsd,k), npx, npy, 2)
+  enddo
+
+  do j=js,je+1
+     do k=1,km
+        do i=isd,ied
+           dely(i,k) = 0.5*(delp(i,j-1,k)+delp(i,j,k))
+        enddo
+     enddo
+     call edge_profile(cry, yfx, isd, ied, js, je+1, j, km, lm, dely)
+  enddo
+
+#else
+  do j=jsd,jed
+     call edge_profile(crx, xfx, is,  ie+1, jsd, jed, j, km, lm)
+  enddo
+  do j=js,je+1
+     call edge_profile(cry, yfx, isd, ied,  js, je+1, j, km, lm)
+  enddo
+#endif
+
+  do k=k_top,km
+
+     do j=jsd,jed
+        do i=is,ie
+           ra_x(i,j) = area(i,j) + xfx(i,j,k) - xfx(i+1,j,k)
+        enddo
+     enddo
+     do j=js,je
+        do i=isd,ied
+           ra_y(i,j) = area(i,j) + yfx(i,j,k) - yfx(i,j+1,k)
+        enddo
+     enddo
+
+     call fv_tp_2d(zh(isd,jsd,k), crx(is,jsd,k), cry(isd,js,k), npx,  npy, iord, &
+                   fx, fy, xfx(is,jsd,k), yfx(isd,js,k), area, ra_x, ra_y, uniform_ppm)
+     do j=js,je
+        do i=is,ie
+           wk(i,j,k) = (zh(i,j,k)*area(i,j)+fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))   &
+                     / (area(i,j)+xfx(i,j,k)-xfx(i+1,j,k)+yfx(i,j,k)-yfx(i,j+1,k)) &
+                     - zh(i,j,k)
+        enddo
+     enddo
+  enddo
+#endif
 
   do k=k_top,km-1
      do j=js,je
@@ -244,7 +297,7 @@ CONTAINS
 ! Local:
   real, dimension(is:ie,km  ):: pm, dm, dz2
   real, dimension(is:ie,km+1):: pem, pk2
-  real gama, rgrav, sdt, ptk, peln
+  real gama, rgrav, ptk, peln
   integer i, j, k
   integer m_split_c
 
@@ -252,7 +305,6 @@ CONTAINS
    m_split_c = max(1, m_split/2)
     gama = 1./(1.-akap)
    rgrav = 1./grav
-     sdt = dt/real(m_split_c)
 
    ptk = ptop ** akap
    peln = log(ptop)
@@ -305,8 +357,8 @@ CONTAINS
       enddo
 #endif
 
-      call Riem_3D( m_split_c, sdt, is, ie, js, je, ng, j, km, cp, gama, akap, &
-                    pk, dm, pm, w, dz2, pt, quick_p_c, .true., k_top)
+      call Riem_3D(m_split_c, dt, is, ie, js, je, ng, j, km, cp, gama, akap, &
+                   pk, dm, pm, w, dz2, pt, quick_p_c, .true., k_top, m_riem)
       do i=is,ie
          pk(i,j,1) = ptop
       enddo
@@ -376,13 +428,12 @@ CONTAINS
 ! Local:
   real, dimension(is:ie,km):: pm, dm, dz2
   real :: pem(is:ie,km+1)
-  real gama, rgrav, sdt, ptk
+  real gama, rgrav, ptk
   integer i, j, k
 
     gama = 1./(1.-akap)
    rgrav = 1./grav
      ptk = ptop ** akap
-     sdt = dt / real(m_split)
 
    do 2000 j=js,je      ! This loop can be parallelized with OpenMP
 
@@ -412,8 +463,8 @@ CONTAINS
          enddo
       enddo
 
-      call Riem_3D( m_split, sdt, is, ie, js, je, ng, j, km, cp, gama, akap,  &
-                    pkc, dm, pm, w, dz2, pt, quick_p_d, .false., k_top)
+      call Riem_3D(m_split, dt, is, ie, js, je, ng, j, km, cp, gama, akap,  &
+                   pkc, dm, pm, w, dz2, pt, quick_p_d, .false., k_top, m_riem)
       if ( ip==1 ) then
            do i=is,ie
               pkc(i,j,1) = ptop
@@ -473,14 +524,15 @@ CONTAINS
   end subroutine Riem_Solver
 
 
-  subroutine Riem_3D(ns, dt, is, ie, js, je, ng, j, km, cp, gama, cappa, p3, dm2,    &
-                     pm2, w, dz2, pt, quick_p, c_core, ktop)
+  subroutine Riem_3D(ns, bdt, is, ie, js, je, ng, j, km, cp, gama, cappa, p3, dm2,    &
+                     pm2, w, dz2, pt, quick_p, c_core, ktop, iad)
 
   integer, intent(in):: ns, is, ie, js, je, ng,  km, j
+  integer, intent(in):: iad      ! time step scheme 
   integer, intent(in):: ktop     ! starting layer for non-hydrostatic dynamics
                                  ! 1: All non-hydrostatic
                                  ! 2: top sponge layer is hydrostatic
-  real,    intent(in):: dt, cp, gama, cappa
+  real,    intent(in):: bdt, cp, gama, cappa
   real,    intent(in), dimension(is:ie,km):: dm2, pm2
   logical, intent(in):: quick_p       ! fast algorithm for pressure
   logical, intent(in):: c_core
@@ -489,7 +541,7 @@ CONTAINS
   real, intent(inout):: dz2(is:ie,km)
   real, intent(inout)::   w(is-ng:ie+ng,js-ng:je+ng,km)
   real, intent(out  )::  p3(is-ng:ie+ng,js-ng:je+ng,km+1)
-! Local 1D copyies:
+! --- Local 1D copyies -----
 #ifdef USE_2D
   real, dimension(km,is:ie):: t2, p2, pt2
 #else
@@ -499,14 +551,17 @@ CONTAINS
   real, dimension(km+1):: m_bot, m_top, r_bot, r_top, time_left, pe1, pbar, wbar
 
   real, parameter:: dzmx = 0.5*dz_max
-  integer k2(km+1)
-  integer :: i, k, n, ke, kt, k0, k1, k3
-  real    :: bdt, grg, z_frac, t_left
+  real    :: dt, rdt, grg, z_frac, t_left
   real    :: a1, b1, g2, rcp
+  real    :: seq(ns)       ! time stepping sequence
+  integer :: k2(km+1)
+  integer :: i, k, n, ke, kt, k0, k1, k3
+
+  call time_sequence( iad, ns, bdt, seq )
 
   grg = gama * rdgas  
-  bdt = 1./(ns*dt)
-  rcp = 1./cp
+  rcp = 1. / cp
+  rdt = 1. / bdt
 
   if ( quick_p ) then
        a1 = 0.5               ! a1=1 fully implicit
@@ -553,6 +608,8 @@ CONTAINS
     enddo
 
  do 5000 n=1,ns
+
+   dt = seq(n)
 
    do k=ktop,km
 #ifdef USE_2D
@@ -743,11 +800,192 @@ CONTAINS
          p3(i,j,k) = 0.
       enddo
       do k=ktop+1,km+1
-         p3(i,j,k) = pe1(k)*bdt
+         p3(i,j,k) = pe1(k)*rdt
       enddo
 6000  continue
 
  end subroutine Riem_3D
+
+ subroutine time_sequence ( iad, ns, bdt, tseq )
+ integer, intent(in) :: iad, ns
+ real,    intent(in) :: bdt
+ real, intent(out):: tseq(ns)
+! local
+  integer :: seq(ns)
+  integer :: n, nstep
+  real :: sdt
+
+! Default uniform time stepping (iad=0)
+  do n=1,ns
+     seq(n) = 1
+  enddo
+
+! Note: iad=2 or 4 appear to be more stable than other options
+  if ( ns>3 ) then
+    if ( iad==1 ) then
+                     ! 1, 1, 2, 2, ...
+         do n=3,ns
+            seq(n) = 2
+         enddo
+    elseif ( iad==2 ) then
+                     ! 1, 2, 2, 2, ...
+         do n=2,ns
+            seq(n) = 2
+         enddo
+    elseif ( iad==3 ) then
+                     ! 1, 2, 3, 3, 3. ...
+         seq(2) = 2
+         do n=3,ns
+            seq(n) = 3
+         enddo
+    elseif ( iad==4 ) then
+                     ! 1, 2, 4, 4, 4, ...
+         seq(2) = 2
+         do n=3,ns
+            seq(n) = 4
+         enddo
+    elseif( iad==5 ) then
+!---------------------
+! Fibonacci sequence:
+!---------------------
+                     ! 1, 1, 2, 3, 5, 8, 13, 21, 34
+         do n=3,ns
+            seq(n) = seq(n-2) + seq(n-1)
+         enddo
+    endif
+  endif
+
+  nstep = 1
+  if ( ns>1 ) then
+       do n=2,ns
+          nstep = nstep + seq(n) 
+       enddo
+  endif
+  sdt = bdt / real(nstep)
+
+  do n=1,ns
+     tseq(n) = sdt * real ( seq(n) )
+  enddo
+
+
+ end subroutine time_sequence
+
+
+ subroutine edge_profile(q1, q2, i1, i2, j1, j2, j, km, limiter, delp)
+! Optimized for wind profile reconstruction:
+! Developer: S.-J. Lin, NOAA/GFDL
+ integer, intent(in):: i1, i2, j1, j2
+ integer, intent(in):: j, km
+ integer, intent(in):: limiter
+ real, intent(in), optional::  delp(i1:i2,km)  ! layer thickness
+ real, intent(inout), dimension(i1:i2,j1:j2,km):: q1, q2
+!-----------------------------------------------------------------------
+ real, dimension(i1:i2,km+1):: qe1, qe2  ! edge values
+ real   d4(i1:i2)
+ real  gam(i1:i2,km)
+ real  gak(km)
+ real  bet, a_bot, gratio, r2o3, r4o3, xt1, xt2
+ integer i, k
+
+ if ( present(delp) ) then
+  do i=i1,i2
+        gratio = delp(i,2) / delp(i,1)   ! grid ratio
+           xt1 = 2.*gratio*(gratio+1. )
+           bet =    gratio*(gratio+0.5)
+      qe1(i,1) = ( xt1*q1(i,j,1) + q1(i,j,2) ) / bet
+      qe2(i,1) = ( xt1*q2(i,j,1) + q2(i,j,2) ) / bet
+      gam(i,1) = ( 1. + gratio*(gratio+1.5) ) / bet
+  enddo
+
+  do k=2,km
+     do i=i1,i2
+           d4(i) = delp(i,k-1) / delp(i,k)
+             bet =  2. + 2.*d4(i) - gam(i,k-1)
+        qe1(i,k) = ( 3.*(q1(i,j,k-1)+d4(i)*q1(i,j,k)) - qe1(i,k-1) ) / bet
+        qe2(i,k) = ( 3.*(q2(i,j,k-1)+d4(i)*q2(i,j,k)) - qe2(i,k-1) ) / bet
+        gam(i,k) = d4(i) / bet
+     enddo
+  enddo
+ 
+  do i=i1,i2
+           a_bot = 1. + d4(i)*(d4(i)+1.5)
+             xt1 = 2.*d4(i)*(d4(i) + 1.)
+             xt2 = d4(i)*(d4(i)+0.5) - a_bot*gam(i,km)
+     qe1(i,km+1) = ( xt1*q1(i,j,km) + q1(i,j,km-1) - a_bot*qe1(i,km) ) / xt2
+     qe2(i,km+1) = ( xt1*q2(i,j,km) + q2(i,j,km-1) - a_bot*qe2(i,km) ) / xt2
+  enddo
+
+  do k=km,1,-1
+     do i=i1,i2
+        qe1(i,k) = qe1(i,k) - gam(i,k)*qe1(i,k+1)
+        qe2(i,k) = qe2(i,k) - gam(i,k)*qe2(i,k+1)
+     enddo
+  enddo
+
+ else
+!------------------------------------------------
+! Optimized coding for uniform grid: SJL Apr 2007
+!------------------------------------------------
+     r2o3 = 2./3.
+     r4o3 = 4./3.
+     do i=i1,i2
+        qe1(i,1) = r4o3*q1(i,j,1) + r2o3*q1(i,j,2)
+        qe2(i,1) = r4o3*q2(i,j,1) + r2o3*q2(i,j,2)
+     enddo
+
+        gak(1) = 7./3.
+     do k=2,km
+        gak(k) =  1. / (4. - gak(k-1))
+        do i=i1,i2
+           qe1(i,k) = (3.*(q1(i,j,k-1) + q1(i,j,k)) - qe1(i,k-1)) * gak(k)
+           qe2(i,k) = (3.*(q2(i,j,k-1) + q2(i,j,k)) - qe2(i,k-1)) * gak(k)
+        enddo
+     enddo
+
+     bet = 1. / (1.5 - 3.5*gak(km))
+     do i=i1,i2
+        qe1(i,km+1) = (4.*q1(i,j,km) + q1(i,j,km-1) - 3.5*qe1(i,km)) * bet
+        qe2(i,km+1) = (4.*q2(i,j,km) + q2(i,j,km-1) - 3.5*qe2(i,km)) * bet
+     enddo
+
+     do k=km,1,-1
+        do i=i1,i2
+           qe1(i,k) = qe1(i,k) - gak(k)*qe1(i,k+1)
+           qe2(i,k) = qe2(i,k) - gak(k)*qe2(i,k+1)
+        enddo
+     enddo
+ endif
+
+!------------------
+! Apply constraints
+!------------------
+    if ( limiter==2 ) then   ! limit the top winds
+         do i=i1,i2
+            if ( q1(i,j,1)*qe1(i,1) <= 0. ) qe1(i,1) = 0.
+            if ( q2(i,j,1)*qe2(i,1) <= 0. ) qe2(i,1) = 0.
+         enddo
+    endif
+
+    if ( limiter/=0 ) then
+         do k=2,km
+            do i=i1,i2
+               qe1(i,k) = min( qe1(i,k), max(q1(i,j,k-1), q1(i,j,k)) )
+               qe1(i,k) = max( qe1(i,k), min(q1(i,j,k-1), q1(i,j,k)) )
+               qe2(i,k) = min( qe2(i,k), max(q2(i,j,k-1), q2(i,j,k)) )
+               qe2(i,k) = max( qe2(i,k), min(q2(i,j,k-1), q2(i,j,k)) )
+            enddo
+         enddo
+    endif
+
+! mean values replaced by edge winds
+    do k=1,km
+       do i=i1,i2
+          q1(i,j,k) = qe1(i,k)
+          q2(i,j,k) = qe2(i,k)
+       enddo
+    enddo
+
+ end subroutine edge_profile
 
 
  subroutine top_edge(p, qe, is, ie, js, je, km)

@@ -10,6 +10,7 @@ module update_fv_phys_mod
   use mpp_domains_mod,    only: mpp_update_domains
   use grid_utils,         only: edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e,    &
                                 es, ew, vlon, vlat
+  use grid_tools,         only: grid_type
   use timingModule,       only: timing_on, timing_off
 #ifdef GFDL_NUDGE
   use atmos_nudge_mod,    only: get_atmos_nudge, do_ps
@@ -87,12 +88,18 @@ module update_fv_phys_mod
     dt5 = 0.5 * dt
     rdt = 1./ dt
 
+#ifndef MARS_MGCM
+!rjw             Should include p_ref in subroutine argument list, to be used here
     cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
 
+!rjw    call get_eta_level(npz, p_ref, pfull, phalf, ak, bk)
     call get_eta_level(npz, 1.0E5, pfull, phalf, ak, bk)
+#endif
 
 !$omp parallel do private (i,j,k,m, qstar)
     do 1000 k=1, npz
+
+#ifndef MARS_MGCM
 ! Do idealized Ch4 chemistry
        if ( ch4_chem .and. pfull(k) < 50.E2 ) then
 
@@ -115,6 +122,7 @@ module update_fv_phys_mod
               enddo
            enddo
        endif
+#endif 
 
        do j=js,je
           do i=is,ie
@@ -134,6 +142,11 @@ module update_fv_phys_mod
              enddo
           enddo
        enddo
+
+#ifdef MARS_MGCM
+!     Adjust Mars tracer mixing ratios in fv_phys 
+!
+#else
 
        if ( full_phys ) then
            do j=js,je
@@ -166,6 +179,7 @@ module update_fv_phys_mod
              endif
            enddo
        endif
+#endif MARS_MGCM
 
 1000 continue
 
@@ -291,19 +305,32 @@ module update_fv_phys_mod
   real dt5
   integer i, j, k, im2, jm2
 
-  im2 = (npx-1)/2
-  jm2 = (npy-1)/2
-
-  dt5 = 0.5 * dt
 
        call timing_on('COMM_TOTAL')
   call mpp_update_domains(u_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.false.)
   call mpp_update_domains(v_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
        call timing_off('COMM_TOTAL')
 
-
+    dt5 = 0.5 * dt
+    im2 = (npx-1)/2
+    jm2 = (npy-1)/2
 !$omp parallel do private (i,j,k)
+
     do k=1, npz
+
+     if ( grid_type > 3 ) then    ! Local & one tile configurations
+       do j=js,je+1
+          do i=is,ie
+             u(i,j,k) = u(i,j,k) + dt5*(u_dt(i,j-1,k) + u_dt(i,j,k))
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie+1
+             v(i,j,k) = v(i,j,k) + dt5*(v_dt(i-1,j,k) + v_dt(i,j,k))
+          enddo
+       enddo
+
+     else
 ! Compute 3D wind tendency on A grid
        do j=js-1,je+1
           do i=is-1,ie+1
@@ -425,6 +452,8 @@ module update_fv_phys_mod
                                          ve(i,j,3)*ew(3,i,j,2) )
           enddo
        enddo
+
+      endif   ! end grid_type
  
     enddo         ! k-loop
 

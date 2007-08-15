@@ -1,17 +1,18 @@
 module mapz_module
 
-  use grid_tools,   only: area, dx, dy, dxa, dya
-  use grid_utils,   only: cubed_to_latlon, g_sum, ptop, ptop_min
-  use fill_module,  only: fillz
-  use mp_mod,       only: gid, domain
+  use constants_mod, only: radius, pi, rvgas, rdgas
+  use grid_tools,    only: area, dx, dy, dxa, dya
+  use grid_utils,    only: cubed_to_latlon, g_sum, ptop, ptop_min
+  use fill_module,   only: fillz
+  use mp_mod,        only: gid, domain
   use mpp_domains_mod, only: mpp_update_domains
 
   implicit none
-  real, parameter:: r3 = 1./3., r23 = 2./3.
-
+  real, parameter::  r3 = 1./3., r23 = 2./3., r12 = 1./12.
+  real*4 :: E_FLUX
   private
 
-  public compute_total_energy, Lagrangian_to_Eulerian
+  public compute_total_energy, Lagrangian_to_Eulerian, rst_remap, E_Flux
 
 CONTAINS
 
@@ -20,7 +21,7 @@ CONTAINS
                       nq, u, v, w, delz, pt, q, hs, grav, r_vir, cp,  &
                       akap, kord_mt, kord_tr, kord_tm,  peln, te0_2d,        &
                       ng, ua, va, omga, te, pem, fill, reproduce_sum,        &
-                      ak, bk, ks, ze0, hydrostatic, hybrid_z, ktop)
+                      ak, bk, ks, ze0, remap_t, hydrostatic, hybrid_z, ktop)
 ! !INPUT PARAMETERS:
   real,    intent(in):: mdt                   ! mapping time step (same as phys)
   integer, intent(in):: km
@@ -60,8 +61,9 @@ CONTAINS
   real, intent(inout)::  w(isd:ied  ,jsd:jed  ,km)   ! vertical velocity (m/s)
   real, intent(inout):: pt(isd:ied  ,jsd:jed  ,km)   ! cp*virtual potential temperature 
                                                      ! as input; output: temperature
-  real, intent(inout)::  delz(is:ie,js:je,km)   ! delta-height (m)
-  logical, intent(in)::           hydrostatic
+  real, intent(inout):: delz(is:ie,js:je,km)   ! delta-height (m)
+  logical, intent(in):: remap_t
+  logical, intent(in):: hydrostatic
   logical, intent(in):: hybrid_z
 
   real, intent(inout)::   ua(isd:ied,jsd:jed,km)   ! u-wind (m/s) on physics grid
@@ -78,31 +80,30 @@ CONTAINS
 !
 !-----------------------------------------------------------------------
   integer :: i,j,k 
-      real te_2d(is:ie,js:je)
-      real  zsum(is:ie,js:je)
+     real te_2d(is:ie,js:je)
+      real zsum(is:ie,js:je)
       real   q2(is:ie,km)
       real  dp2(is:ie,km)
       real  pe1(is:ie,km+1)
       real  pe2(is:ie,km+1)
       real  pk1(is:ie,km+1)
       real  pk2(is:ie,km+1)
+      real  pn2(is:ie,km+1)
       real  pe0(is:ie+1,km+1)
       real  pe3(is:ie+1,km+1)
       real phis(is:ie,km+1)
-      real    gz(is:ie)
+      real   gz(is:ie)
 ! for nonhydrostatic option with hybrid_z coordinate
       real ze1(is:ie,km+1), ze2(is:ie,km+1), deng(is:ie,km)
 
       real rcp, rg, ak1, tmp, tpe
       real bkh
-      real dtmp, pk0
+      real dtmp
       real dlnp
-      real*4 dtmp4
       integer iq, n, kp, k_next
-      logical:: diag = .false.
       logical te_map
       real k1k, kapag
-  
+
       k1k   =  akap / (1.-akap)
       kapag = -akap / grav
        rg = akap * cp
@@ -118,6 +119,17 @@ CONTAINS
                  enddo
               enddo
            enddo
+          if ( remap_t ) then
+! Transform virtual pt to virtual Temp
+             do k=1,km
+                do j=js,je
+                   do i=is,ie
+                      pt(i,j,k) = pt(i,j,k) * (pk(i,j,k+1)-pk(i,j,k)) /  &
+                                  (rg*(peln(i,k+1,j)-peln(i,k,j)) )
+                   enddo
+                enddo
+             enddo
+          endif 
       else
            te_map = .true.
            call pkez(km, is, ie, js, je, pe, pk, akap, peln, pkz)
@@ -255,15 +267,15 @@ CONTAINS
 !----------------
 ! Map constituents
 !----------------
-       if(nq /= 0) then
+       if( nq /= 0 ) then
 !------------------------------------------------------------------
 ! Do remapping one tracer at a time; seems to be faster on the SGI
 ! It requires less memory than mapn_ppm
 !------------------------------------------------------------------
           do iq=1,nq
-            call map1_q2(km, pe1, q(isd,jsd,1,iq),     &
-                         km, pe2, q2, dp2,             &
-                         is, ie, 0, kord_tr, j, isd, ied, jsd, jed)
+             call map1_q2(km, pe1, q(isd,jsd,1,iq),     &
+                          km, pe2, q2, dp2,             &
+                          is, ie, 0, kord_tr, j, isd, ied, jsd, jed)
             if (fill) call fillz(ie-is+1, km, 1, q2, dp2)
             do k=1,km
                do i=is,ie
@@ -317,12 +329,26 @@ CONTAINS
                        km,   pe2,  te,       &
                        is, ie, j, is, ie, js, je, 1, kord_tm)
    else
+     if ( remap_t ) then
+!----------------
+! Map t using logp
+!----------------
+       do k=1,km+1
+          do i=is,ie
+             pn2(i,k) = log(pe2(i,k))
+          enddo
+       enddo
+       call map1_ppm (km,  peln(is,1,j),  pt,    &
+                      km,  pn2,           pt,    &
+                      is, ie, j, isd, ied, jsd, jed, 1, abs(kord_tm))
+     else
 !----------------
 ! Map pt using pk
 !----------------
-        call map1_ppm (km,  pk1,  pt,           &
-                       km,  pk2,  pt,           &
-                       is, ie, j, isd, ied, jsd, jed, 1, abs(kord_tm))
+       call map1_ppm (km,  pk1,  pt,           &
+                      km,  pk2,  pt,           &
+                      is, ie, j, isd, ied, jsd, jed, 1, abs(kord_tm))
+     endif
    endif
 
    if ( .not. hydrostatic ) then
@@ -378,28 +404,36 @@ CONTAINS
          enddo
       enddo
    else
-      do k=2,ks+1
-         tmp = log(ak(k))
-         do i=is,ie
-            peln(i,k,j) = tmp
-         enddo
-      enddo
-      do k=ks+2,km+1
-         do i=is,ie
-            peln(i,k,j) = log(pe2(i,k))
-         enddo
-      enddo
+     if ( remap_t ) then
+        do k=1,km+1
+           do i=is,ie
+              peln(i,k,j) = pn2(i,k)
+           enddo
+        enddo
+     else
+        do k=2,ks+1
+           tmp = log(ak(k))
+           do i=is,ie
+              peln(i,k,j) = tmp
+           enddo
+        enddo
+        do k=ks+2,km+1
+           do i=is,ie
+              peln(i,k,j) = log(pe2(i,k))
+           enddo
+        enddo
 
-      if( ptop < ptop_min ) then
-          do i=is,ie
-             peln(i,1,j) = peln(i,2,j) - ak1
-          enddo
-      else
-          tmp = log( ptop )
-          do i=is,ie
-             peln(i,1,j) = tmp
-          enddo
-      endif
+        if( ptop < ptop_min ) then
+            do i=is,ie
+               peln(i,1,j) = peln(i,2,j) - ak1
+            enddo
+        else
+            tmp = log( ptop )
+            do i=is,ie
+               peln(i,1,j) = tmp
+            enddo
+        endif
+     endif
    endif
 
 !------------
@@ -581,6 +615,24 @@ endif         !------------- Hybrid_z section ----------------------
     else
 !$omp parallel do private(i,j,k,gz)
       do j=js,je
+        if ( remap_t ) then
+         do i=is,ie
+            gz(i) = hs(i,j)
+            do k=1,km
+               gz(i) = gz(i) + rg*pt(i,j,k)*(peln(i,k+1,j)-peln(i,k,j))
+            enddo
+         enddo
+         do i=is,ie
+            te_2d(i,j) = pe(i,km+1,j)*hs(i,j) - pe(i,1,j)*gz(i)
+         enddo
+
+         do k=1,km
+            do i=is,ie
+               te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cp*pt(i,j,k) +   &  
+                                      0.5*(ua(i,j,k)**2+va(i,j,k)**2))
+            enddo
+         enddo
+        else
          do i=is,ie
             gz(i) = hs(i,j)
             do k=1,km
@@ -597,6 +649,7 @@ endif         !------------- Hybrid_z section ----------------------
                                       0.5*(ua(i,j,k)**2+va(i,j,k)**2))
             enddo
          enddo
+       endif
       enddo
     endif
 
@@ -614,23 +667,17 @@ endif         !------------- Hybrid_z section ----------------------
          enddo
       enddo
 
-      tpe = g_sum(te_2d, is,ie, js,je, ng, area)
-      dtmp = consv * tpe /(cp*g_sum(zsum, is,ie, js,je, ng, area))
+         tpe = consv*g_sum(te_2d, is, ie, js, je, ng, area)
+      E_Flux = tpe / (grav*mdt*4.*pi*radius**2)    ! unit: W/m**2
+        dtmp = tpe / (cp*g_sum(zsum,  is, ie, js, je, ng, area))
 !-------------------------------------------------------------------------------
 ! One may use this quick fix to ensure reproducibility at the expense of a lower
 ! floating precision; this is fine for the TE correction
 !-------------------------------------------------------------------------------
-      if ( reproduce_sum ) then
-           dtmp4 = dtmp
-           dtmp  = dtmp4
-      endif
-
-      if( diag ) then
-          pk0 = 1.E5 ** akap 
-          write(6,*) 'heating (deg/day) =',pk0*dtmp*86400./mdt
-      endif
+      if ( reproduce_sum ) dtmp = real(dtmp, 4) ! convert to 4-byte real
   else
-      dtmp = 0.
+      dtmp   = 0.
+      E_Flux = 0.
   endif        ! end consv check
 
   if ( te_map ) then
@@ -643,14 +690,22 @@ endif         !------------- Hybrid_z section ----------------------
             do i=is,ie
                tpe = te(i,j,k) - 0.5*(ua(i,j,k)**2 + va(i,j,k)**2) - gz(i)
                dlnp = rg*(peln(i,k+1,j) - peln(i,k,j))
-               tmp = tpe/((cp - pe(i,k,j)*dlnp/delp(i,j,k))*(1.+r_vir*q(i,j,k,1)) )
-               pt(i,j,k) =  tmp + dtmp*pkz(i,j,k)/(1.+r_vir*q(i,j,k,1))
+               tmp = tpe / ((cp - pe(i,k,j)*dlnp/delp(i,j,k))*(1.+r_vir*q(i,j,k,1)) )
+               pt(i,j,k) =  tmp + dtmp*pkz(i,j,k) / (1.+r_vir*q(i,j,k,1))
                gz(i) = gz(i) + dlnp*tmp*(1.+r_vir*q(i,j,k,1))
             enddo
          enddo           ! end k-loop
       enddo
   else
-!$omp parallel do private(i, j, k)
+    if ( remap_t ) then
+      do k=1,km
+         do j=js,je
+            do i=is,ie
+               pt(i,j,k) = (pt(i,j,k) + dtmp*pkz(i,j,k))/(1.+r_vir*q(i,j,k,1))
+            enddo
+         enddo   
+      enddo
+    else
       do k=1,km
          do j=js,je
             do i=is,ie
@@ -658,6 +713,7 @@ endif         !------------- Hybrid_z section ----------------------
             enddo
          enddo   
       enddo
+    endif
   endif
 
  end subroutine Lagrangian_to_Eulerian
@@ -732,11 +788,11 @@ endif         !------------- Hybrid_z section ----------------------
               enddo
            enddo
       endif
-      do j=js,je
-         do i=is,ie
-            teq(i,j) = teq(i,j) / (pe(i,km,j) - pe(i,1,j))
-         enddo
-      enddo
+!     do j=js,je
+!        do i=is,ie
+!           teq(i,j) = teq(i,j) / (pe(i,km,j) - pe(i,1,j))
+!        enddo
+!     enddo
    endif
 
   end subroutine compute_total_energy
@@ -825,8 +881,7 @@ endif         !------------- Hybrid_z section ----------------------
       real  dp1(  i1:i2,km)
       real   q4(4,i1:i2,km)
       real   pl, pr, qsum, delp, esl
-
-      integer i, k, l, ll, k0
+      integer i, k, l, m, k0
 
       do k=1,km
          do i=i1,i2
@@ -836,7 +891,11 @@ endif         !------------- Hybrid_z section ----------------------
       enddo
 
 ! Compute vertical subgrid distribution
-      call ppm2m( q4, dp1, km, i1, i2, 0, kord )
+   if ( kord >7 ) then
+        call  cs_profile( q4, dp1, km, i1, i2, 1, kord )
+   else
+        call ppm_profile( q4, dp1, km, i1, i2, 1, kord )
+   endif
 
 ! Mapping
       do 1000 i=i1,i2
@@ -858,17 +917,17 @@ endif         !------------- Hybrid_z section ----------------------
             qsum = (pe1(i,l+1)-pe2(i,k))*(q4(2,i,l)+0.5*(q4(4,i,l)+   &
                     q4(3,i,l)-q4(2,i,l))*(1.+pl)-q4(4,i,l)*           &
                      (r3*(1.+pl*(1.+pl))))
-              do ll=l+1,km
+              do m=l+1,km
 ! locate the bottom edge: pe2(i,k+1)
-                 if(pe2(i,k+1) < pe1(i,ll+1) ) then
+                 if(pe2(i,k+1) < pe1(i,m+1) ) then
 ! Whole layer..
-                    qsum = qsum + dp1(i,ll)*q4(1,i,ll)
+                    qsum = qsum + dp1(i,m)*q4(1,i,m)
                  else
-                    delp = pe2(i,k+1)-pe1(i,ll)
-                    esl = delp / dp1(i,ll)
-                    qsum = qsum + delp*(q4(2,i,ll)+0.5*esl*               &
-                         (q4(3,i,ll)-q4(2,i,ll)+q4(4,i,ll)*(1.-r23*esl)))
-                    k0 = ll
+                    delp = pe2(i,k+1)-pe1(i,m)
+                    esl = delp / dp1(i,m)
+                    qsum = qsum + delp*(q4(2,i,m)+0.5*esl*               &
+                         (q4(3,i,m)-q4(2,i,m)+q4(4,i,m)*(1.-r23*esl)))
+                    k0 = m
                  goto 123
                  endif
               enddo
@@ -886,149 +945,126 @@ endif         !------------- Hybrid_z section ----------------------
  subroutine map1_ppm( km,   pe1,    q1,                 &
                       kn,   pe2,    q2,   i1, i2,       &
                       j,    ibeg, iend, jbeg, jend, iv,  kord)
-                    
-! !INPUT PARAMETERS:
-      integer, intent(in) :: i1                ! Starting longitude
-      integer, intent(in) :: i2                ! Finishing longitude
-      integer, intent(in) :: iv                ! Mode: 0 ==  constituents  1 == ???
-      integer, intent(in) :: kord              ! Method order
-      integer, intent(in) :: j                 ! Current latitude
-      integer, intent(in) :: ibeg, iend, jbeg, jend
-      integer, intent(in) :: km                ! Original vertical dimension
-      integer, intent(in) :: kn                ! Target vertical dimension
-
-      real, intent(in) ::  pe1(i1:i2,km+1)  ! pressure at layer edges 
-                                               ! (from model top to bottom surface)
-                                               ! in the original vertical coordinate
-      real, intent(in) ::  pe2(i1:i2,kn+1)  ! pressure at layer edges 
-                                               ! (from model top to bottom surface)
-                                               ! in the new vertical coordinate
-      real, intent(in) ::    q1(ibeg:iend,jbeg:jend,km) ! Field input
+ integer, intent(in) :: i1                ! Starting longitude
+ integer, intent(in) :: i2                ! Finishing longitude
+ integer, intent(in) :: iv                ! Mode: 0 ==  constituents  1 == ???
+                                          !       2 = potential temp
+ integer, intent(in) :: kord              ! Method order
+ integer, intent(in) :: j                 ! Current latitude
+ integer, intent(in) :: ibeg, iend, jbeg, jend
+ integer, intent(in) :: km                ! Original vertical dimension
+ integer, intent(in) :: kn                ! Target vertical dimension
+ real, intent(in) ::  pe1(i1:i2,km+1)  ! pressure at layer edges 
+                                       ! (from model top to bottom surface)
+                                       ! in the original vertical coordinate
+ real, intent(in) ::  pe2(i1:i2,kn+1)  ! pressure at layer edges 
+                                       ! (from model top to bottom surface)
+                                       ! in the new vertical coordinate
+ real, intent(in) ::    q1(ibeg:iend,jbeg:jend,km) ! Field input
 ! !INPUT/OUTPUT PARAMETERS:
-      real, intent(inout)::  q2(ibeg:iend,jbeg:jend,kn) ! Field output
+ real, intent(inout)::  q2(ibeg:iend,jbeg:jend,kn) ! Field output
 
 ! !DESCRIPTION:
-!
-!     Perform piecewise parabolic method on a given latitude    
 ! IV = 0: constituents
 ! pe1: pressure at layer edges (from model top to bottom surface)
 !      in the original vertical coordinate
 ! pe2: pressure at layer edges (from model top to bottom surface)
 !      in the new vertical coordinate
-!
 ! !LOCAL VARIABLES:
-      real    dp1(i1:i2,km)
-      real   q4(4,i1:i2,km)
-      real    pl, pr, qsum, dp, esl
+   real    dp1(i1:i2,km)
+   real   q4(4,i1:i2,km)
+   real    pl, pr, qsum, dp, esl
+   integer i, k, l, m, k0
 
-      integer i, k, l, ll, k0
-
-      do k=1,km
-         do i=i1,i2
-             dp1(i,k) = pe1(i,k+1) - pe1(i,k)
-            q4(1,i,k) = q1(i,j,k)
-         enddo
+   do k=1,km
+      do i=i1,i2
+         dp1(i,k) = pe1(i,k+1) - pe1(i,k)
+         q4(1,i,k) = q1(i,j,k)
       enddo
+   enddo
 
 ! Compute vertical subgrid distribution
-      call ppm2m( q4, dp1, km, i1, i2, iv, kord )
+   if ( kord >7 ) then
+        call  cs_profile( q4, dp1, km, i1, i2, iv, kord )
+   else
+        call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
+   endif
 
-      do 1000 i=i1,i2
-         k0 = 1
-      do 555 k=1,kn
-      do 100 l=k0,km
+  do i=i1,i2
+     k0 = 1
+     do 555 k=1,kn
+      do l=k0,km
 ! locate the top edge: pe2(i,k)
-      if(pe2(i,k) >= pe1(i,l) .and. pe2(i,k) <= pe1(i,l+1)) then
+      if( pe2(i,k) >= pe1(i,l) .and. pe2(i,k) <= pe1(i,l+1) ) then
          pl = (pe2(i,k)-pe1(i,l)) / dp1(i,l)
-         if(pe2(i,k+1) <= pe1(i,l+1)) then
+         if( pe2(i,k+1) <= pe1(i,l+1) ) then
 ! entire new grid is within the original grid
             pr = (pe2(i,k+1)-pe1(i,l)) / dp1(i,l)
             q2(i,j,k) = q4(2,i,l) + 0.5*(q4(4,i,l)+q4(3,i,l)-q4(2,i,l))  &
                        *(pr+pl)-q4(4,i,l)*r3*(pr*(pr+pl)+pl**2)
                k0 = l
                goto 555
-          else
+         else
 ! Fractional area...
             qsum = (pe1(i,l+1)-pe2(i,k))*(q4(2,i,l)+0.5*(q4(4,i,l)+   &
                     q4(3,i,l)-q4(2,i,l))*(1.+pl)-q4(4,i,l)*           &
                      (r3*(1.+pl*(1.+pl))))
-              do ll=l+1,km
+              do m=l+1,km
 ! locate the bottom edge: pe2(i,k+1)
-                 if(pe2(i,k+1) > pe1(i,ll+1) ) then
-! Whole layer..
-                 qsum = qsum + dp1(i,ll)*q4(1,i,ll)
+                 if( pe2(i,k+1) > pe1(i,m+1) ) then
+! Whole layer
+                     qsum = qsum + dp1(i,m)*q4(1,i,m)
                  else
-                   dp = pe2(i,k+1)-pe1(i,ll)
-                  esl = dp / dp1(i,ll)
-                 qsum = qsum + dp*(q4(2,i,ll)+0.5*esl*               &
-                       (q4(3,i,ll)-q4(2,i,ll)+q4(4,i,ll)*(1.-r23*esl)))
-                 k0 = ll
-                 goto 123
+                     dp = pe2(i,k+1)-pe1(i,m)
+                     esl = dp / dp1(i,m)
+                     qsum = qsum + dp*(q4(2,i,m)+0.5*esl*               &
+                           (q4(3,i,m)-q4(2,i,m)+q4(4,i,m)*(1.-r23*esl)))
+                     k0 = m
+                     goto 123
                  endif
               enddo
               goto 123
-           endif
+         endif
       endif
-100   continue
+      enddo
 123   q2(i,j,k) = qsum / ( pe2(i,k+1) - pe2(i,k) )
 555   continue
-1000  continue
+  enddo
 
  end subroutine map1_ppm
 
 
-subroutine map1_q2( km,   pe1,   q1,            &
+ subroutine map1_q2(km,   pe1,   q1,            &
                     kn,   pe2,   q2,   dp2,     &
                     i1,   i2,    iv,   kord, j, &
                     ibeg, iend, jbeg, jend )
 
 
 ! !INPUT PARAMETERS:
-      integer, intent(in) :: j                 ! Current latitude
-      integer, intent(in) :: i1                ! Starting longitude
-      integer, intent(in) :: i2                ! Finishing longitude
+      integer, intent(in) :: j
+      integer, intent(in) :: i1, i2
       integer, intent(in) :: ibeg, iend, jbeg, jend
-      integer, intent(in) :: iv                ! Mode: 0 ==  constituents  1 == ???
-      integer, intent(in) :: kord              ! Method order
+      integer, intent(in) :: iv                ! Mode: 0 ==  constituents 1 == ???
+      integer, intent(in) :: kord
       integer, intent(in) :: km                ! Original vertical dimension
       integer, intent(in) :: kn                ! Target vertical dimension
 
-      real, intent(in) ::  pe1(i1:i2,km+1)  ! pressure at layer edges 
+      real, intent(in) ::  pe1(i1:i2,km+1)     ! pressure at layer edges 
                                                ! (from model top to bottom surface)
                                                ! in the original vertical coordinate
-      real, intent(in) ::  pe2(i1:i2,kn+1)  ! pressure at layer edges 
+      real, intent(in) ::  pe2(i1:i2,kn+1)     ! pressure at layer edges 
                                                ! (from model top to bottom surface)
                                                ! in the new vertical coordinate
       real, intent(in) ::  q1(ibeg:iend,jbeg:jend,km) ! Field input
       real, intent(in) ::  dp2(i1:i2,kn)
 ! !INPUT/OUTPUT PARAMETERS:
-      real, intent(inout):: q2(i2-i1+1,kn) ! Field output
-
-! !DESCRIPTION:
-!
-!     Perform piecewise parabolic method on a given latitude    
-! IV = 0: constituents
-! pe1: pressure at layer edges (from model top to bottom surface)
-!      in the original vertical coordinate
-! pe2: pressure at layer edges (from model top to bottom surface)
-!      in the new vertical coordinate
-!
-! !REVISION HISTORY: 
-!    00.04.24   Lin       Last modification
-!    01.03.26   Sawyer    Added ProTeX documentation
-!    02.04.04   Sawyer    incorporated latest FVGCM version
-!    02.06.20   Sawyer    made Q2 inout since the args for Q1/Q2 same
-!
-!EOP
-!-----------------------------------------------------------------------
-!BOC
-!
+      real, intent(inout):: q2(i1:i2,kn) ! Field output
 ! !LOCAL VARIABLES:
       real   dp1(i1:i2,km)
       real   q4(4,i1:i2,km)
       real   pl, pr, qsum, dp, esl
 
-      integer i, k, l, ll, k0
+      integer i, k, l, m, k0
 
       do k=1,km
          do i=i1,i2
@@ -1038,7 +1074,11 @@ subroutine map1_q2( km,   pe1,   q1,            &
       enddo
 
 ! Compute vertical subgrid distribution
-      call ppm2m( q4, dp1, km, i1, i2, iv, kord )
+   if ( kord >7 ) then
+        call  cs_profile( q4, dp1, km, i1, i2, iv, kord )
+   else
+        call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
+   endif
 
 ! Mapping
       do 1000 i=i1,i2
@@ -1051,7 +1091,7 @@ subroutine map1_q2( km,   pe1,   q1,            &
          if(pe2(i,k+1) <= pe1(i,l+1)) then
 ! entire new grid is within the original grid
             pr = (pe2(i,k+1)-pe1(i,l)) / dp1(i,l)
-            q2(i-i1+1,k) = q4(2,i,l) + 0.5*(q4(4,i,l)+q4(3,i,l)-q4(2,i,l))  &
+            q2(i,k) = q4(2,i,l) + 0.5*(q4(4,i,l)+q4(3,i,l)-q4(2,i,l))  &
                        *(pr+pl)-q4(4,i,l)*r3*(pr*(pr+pl)+pl**2)
                k0 = l
                goto 555
@@ -1060,37 +1100,328 @@ subroutine map1_q2( km,   pe1,   q1,            &
             qsum = (pe1(i,l+1)-pe2(i,k))*(q4(2,i,l)+0.5*(q4(4,i,l)+   &
                     q4(3,i,l)-q4(2,i,l))*(1.+pl)-q4(4,i,l)*           &
                      (r3*(1.+pl*(1.+pl))))
-              do ll=l+1,km
+              do m=l+1,km
 ! locate the bottom edge: pe2(i,k+1)
-                 if(pe2(i,k+1) > pe1(i,ll+1) ) then
-! Whole layer..
-                 qsum = qsum + dp1(i,ll)*q4(1,i,ll)
+                 if(pe2(i,k+1) > pe1(i,m+1) ) then
+                                                   ! Whole layer..
+                    qsum = qsum + dp1(i,m)*q4(1,i,m)
                  else
-                   dp = pe2(i,k+1)-pe1(i,ll)
-                  esl = dp / dp1(i,ll)
-                 qsum = qsum + dp*(q4(2,i,ll)+0.5*esl*               &
-                       (q4(3,i,ll)-q4(2,i,ll)+q4(4,i,ll)*(1.-r23*esl)))
-                 k0 = ll
-                 goto 123
+                     dp = pe2(i,k+1)-pe1(i,m)
+                    esl = dp / dp1(i,m)
+                   qsum = qsum + dp*(q4(2,i,m)+0.5*esl*               &
+                       (q4(3,i,m)-q4(2,i,m)+q4(4,i,m)*(1.-r23*esl)))
+                   k0 = m
+                   goto 123
                  endif
               enddo
               goto 123
-           endif
+          endif
       endif
 100   continue
-123   q2(i-i1+1,k) = qsum / dp2(i,k)
+123   q2(i,k) = qsum / dp2(i,k)
 555   continue
 1000  continue
 
-!EOC
  end subroutine map1_q2
 
-!----------------------------------------------------------------------- 
-!BOP
-! !ROUTINE:  ppm2m --- Piecewise parabolic method for fields
-!
-! !INTERFACE:
- subroutine ppm2m(a4, delp, km, i1, i2, iv, kord)
+
+
+ subroutine remap_2d(km,   pe1,   q1,        &
+                     kn,   pe2,   q2,        &
+                     i1,   i2,    iv,   kord )
+   integer, intent(in):: i1, i2
+   integer, intent(in):: iv               ! Mode: 0 ==  constituents 1 ==others
+   integer, intent(in):: kord
+   integer, intent(in):: km               ! Original vertical dimension
+   integer, intent(in):: kn               ! Target vertical dimension
+   real, intent(in):: pe1(i1:i2,km+1)     ! pressure at layer edges 
+                                          ! (from model top to bottom surface)
+                                          ! in the original vertical coordinate
+   real, intent(in):: pe2(i1:i2,kn+1)     ! pressure at layer edges 
+                                          ! (from model top to bottom surface)
+                                          ! in the new vertical coordinate
+   real, intent(in) :: q1(i1:i2,km) ! Field input
+   real, intent(out):: q2(i1:i2,kn) ! Field output
+! !LOCAL VARIABLES:
+   real   dp1(i1:i2,km)
+   real   q4(4,i1:i2,km)
+   real   pl, pr, qsum, dp, esl
+   integer i, k, l, m, k0
+
+   do k=1,km
+      do i=i1,i2
+          dp1(i,k) = pe1(i,k+1) - pe1(i,k)
+         q4(1,i,k) = q1(i,k)
+      enddo
+   enddo
+
+! Compute vertical subgrid distribution
+   if ( kord >7 ) then
+        call  cs_profile( q4, dp1, km, i1, i2, iv, kord )
+   else
+        call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
+   endif
+
+   do i=i1,i2
+      k0 = 1
+      do 555 k=1,kn
+         if( pe2(i,k+1) <= pe1(i,1) ) then
+! Entire grid above old ptop
+             q2(i,k) = q4(2,i,1)
+         elseif( pe2(i,k) < pe1(i,1) .and. pe2(i,k+1)>pe1(i,1) ) then
+! Partially above old ptop:
+             q2(i,k) = q1(i,1)
+         else
+           do l=k0,km
+! locate the top edge: pe2(i,k)
+           if( pe2(i,k) >= pe1(i,l) .and. pe2(i,k) <= pe1(i,l+1) ) then
+               pl = (pe2(i,k)-pe1(i,l)) / dp1(i,l)
+               if(pe2(i,k+1) <= pe1(i,l+1)) then
+! entire new grid is within the original grid
+                  pr = (pe2(i,k+1)-pe1(i,l)) / dp1(i,l)
+                  q2(i,k) = q4(2,i,l) + 0.5*(q4(4,i,l)+q4(3,i,l)-q4(2,i,l))  &
+                          *(pr+pl)-q4(4,i,l)*r3*(pr*(pr+pl)+pl**2)
+                  k0 = l
+                  goto 555
+               else
+! Fractional area...
+                 qsum = (pe1(i,l+1)-pe2(i,k))*(q4(2,i,l)+0.5*(q4(4,i,l)+   &
+                         q4(3,i,l)-q4(2,i,l))*(1.+pl)-q4(4,i,l)*           &
+                        (r3*(1.+pl*(1.+pl))))
+                 do m=l+1,km
+! locate the bottom edge: pe2(i,k+1)
+                    if(pe2(i,k+1) > pe1(i,m+1) ) then
+                                                   ! Whole layer..
+                       qsum = qsum + dp1(i,m)*q4(1,i,m)
+                    else
+                       dp = pe2(i,k+1)-pe1(i,m)
+                      esl = dp / dp1(i,m)
+                      qsum = qsum + dp*(q4(2,i,m)+0.5*esl*               &
+                            (q4(3,i,m)-q4(2,i,m)+q4(4,i,m)*(1.-r23*esl)))
+                      k0 = m
+                      goto 123
+                    endif
+                 enddo
+                 goto 123
+               endif
+           endif
+           enddo
+123        q2(i,k) = qsum / ( pe2(i,k+1) - pe2(i,k) )
+         endif
+555   continue
+   enddo
+
+ end subroutine remap_2d
+
+
+ subroutine cs_profile(a4, delp, km, i1, i2, iv, kord)
+! Optimized vertical profile reconstruction:
+! Developer: S.-J. Lin, NOAA/GFDL
+ integer, intent(in):: i1, i2
+ integer, intent(in):: km      ! vertical dimension
+ integer, intent(in):: kord    ! Order (or more accurately method no.):
+ integer, intent(in):: iv      ! iv =-1: winds
+                               ! iv = 0: positive definite scalars
+                               ! iv = 1: others
+ real , intent(in)   :: delp(i1:i2,km)     ! layer pressure thickness
+ real , intent(inout):: a4(4,i1:i2,km)  ! Interpolated values
+!-----------------------------------------------------------------------
+ real  gam(i1:i2,km)
+ real    q(i1:i2,km+1)
+ real   d4(i1:i2)
+ real   bet, a_bot, grat, pmp, lac
+ integer i, k, im
+
+  do i=i1,i2
+         grat = delp(i,2) / delp(i,1)   ! grid ratio
+          bet = grat*(grat+0.5)
+       q(i,1) = (2.*grat*(grat+1.)*a4(1,i,1)+a4(1,i,2)) / bet
+     gam(i,1) = ( 1. + grat*(grat+1.5) ) / bet
+  enddo
+
+  do k=2,km
+     do i=i1,i2
+           d4(i) = delp(i,k-1) / delp(i,k)
+             bet =  2. + 2.*d4(i) - gam(i,k-1)
+          q(i,k) = (3.*(a4(1,i,k-1)+d4(i)*a4(1,i,k))-q(i,k-1))/bet
+        gam(i,k) = d4(i) / bet
+     enddo
+  enddo
+ 
+  do i=i1,i2
+         a_bot = 1. + d4(i)*(d4(i)+1.5)
+     q(i,km+1) = (2.*d4(i)*(d4(i)+1.)*a4(1,i,km)+a4(1,i,km-1)-a_bot*q(i,km))  &
+               / ( d4(i)*(d4(i)+0.5) - a_bot*gam(i,km) )
+  enddo
+
+  do k=km,1,-1
+     do i=i1,i2
+        q(i,k) = q(i,k) - gam(i,k)*q(i,k+1)
+     enddo
+  enddo
+
+!------------------
+! Apply constraints
+!------------------
+  im = i2 - i1 + 1
+
+  do k=2,km
+     do i=i1,i2
+        gam(i,k) = a4(1,i,k) - a4(1,i,k-1)
+     enddo
+  enddo
+
+! Apply large-scale constraints to ALL fields if not local max/min
+! Top:
+
+  do i=i1,i2
+!    if ( gam(i,2)*gam(i,3)>0. ) then
+     if ( (q(i,2)-q(i,1))*(q(i,3)-q(i,2))>0. ) then
+          q(i,2) = min( q(i,2), max(a4(1,i,1), a4(1,i,2)) )
+          q(i,2) = max( q(i,2), min(a4(1,i,1), a4(1,i,2)) )
+     elseif ( iv==0 ) then
+          q(i,2) = max(0., q(i,2))
+     endif
+  enddo
+
+! Interior:
+  do k=3,km-1
+     do i=i1,i2
+        if ( gam(i,k-1)*gam(i,k+1)>0. ) then
+             q(i,k) = min( q(i,k), max(a4(1,i,k-1),a4(1,i,k)) )
+             q(i,k) = max( q(i,k), min(a4(1,i,k-1),a4(1,i,k)) )
+        elseif ( iv==0 ) then
+             q(i,k) = max(0., q(i,k))
+        endif
+     enddo
+  enddo
+
+! Bottom:
+  do i=i1,i2
+!    if ( gam(i,km-1)*gam(i,km)>0. ) then
+     if ( (q(i,km)-q(i,km-1))*(q(i,km+1)-q(i,km))>0. ) then
+          q(i,km) = min( q(i,km), max(a4(1,i,km-1), a4(1,i,km)) )
+          q(i,km) = max( q(i,km), min(a4(1,i,km-1), a4(1,i,km)) )
+     elseif ( iv==0 ) then
+          q(i,km) = max(0., q(i,km))
+     endif
+  enddo
+
+  do k=1,km
+     do i=i1,i2
+        a4(2,i,k) = q(i,k  )
+        a4(3,i,k) = q(i,k+1)
+     enddo
+  enddo
+
+! Top & bot surfaces
+  do i=i1,i2
+     if ( a4(2,i, 1)*a4(1,i, 1) <= 0. ) a4(2,i, 1) = 0.
+     if ( a4(1,i,km)*a4(3,i,km) <= 0. ) a4(3,i,km) = 0.
+  enddo
+
+!-----------------------------------------------------------
+! f(s) = AL + s*[(AR-AL) + A6*(1-s)]         ( 0 <= s  <= 1 )
+!-----------------------------------------------------------
+! Top 2 and bottom 2 layers always use monotonic mapping
+  do k=1,2
+     do i=i1,i2
+        a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+     enddo
+     call cs_limiters(im, a4(1,i1,k), 1)
+  enddo
+
+!-------------------------------------
+! Huynh's 2nd constraint for interior:
+!-------------------------------------
+  do k=3,km-2
+     do i=i1,i2
+! Left  edges
+!      a4(2,i,k) = a4(1,i,k) -   &
+!                  sign(min(abs(a4(2,i,k)-a4(1,i,k)), abs(gam(i,k))),gam(i,k))
+             pmp = a4(1,i,k) - 2.*gam(i,k+1)
+             lac = pmp + 1.5*gam(i,k+2)
+       a4(2,i,k) = min(max(a4(2,i,k),  min(a4(1,i,k), pmp, lac)),   &
+                                       max(a4(1,i,k), pmp, lac) )
+! Right edges
+!      a4(3,i,k) = a4(1,i,k) +  &
+!                  sign(min(abs(a4(3,i,k)-a4(1,i,k)), abs(gam(i,k+1))),gam(i,k+1))
+             pmp = a4(1,i,k) + 2.*gam(i,k)
+             lac = pmp - 1.5*gam(i,k-1)
+       a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp, lac)),    &
+                                      max(a4(1,i,k), pmp, lac) )
+       a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+     enddo
+! Additional constraint to ensure positivity
+     if ( iv==0 ) call cs_limiters(im, a4(1,i1,k), 0)
+  enddo
+
+  do k=km-1,km
+     do i=i1,i2
+        a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+     enddo
+     call cs_limiters(im, a4(1,i1,k), 1)
+  enddo
+
+ end subroutine cs_profile
+
+
+
+ subroutine cs_limiters(im, a4, iv)
+ integer, intent(in) :: im
+ integer, intent(in) :: iv
+ real , intent(inout) :: a4(4,im)   ! PPM array
+! !LOCAL VARIABLES:
+ real  da1, da2, a6da
+ real  fmin
+ integer i
+
+ if ( iv==0 ) then
+! Positive definite constraint
+    do i=1,im
+      if( abs(a4(3,i)-a4(2,i)) < -a4(4,i) ) then
+         fmin = a4(1,i)+0.25*(a4(3,i)-a4(2,i))**2/a4(4,i)+a4(4,i)*r12
+         if( fmin < 0. ) then
+             if( a4(1,i)<a4(3,i) .and. a4(1,i)<a4(2,i) ) then
+                 a4(3,i) = a4(1,i)
+                 a4(2,i) = a4(1,i)
+                a4(4,i) = 0.
+             elseif( a4(3,i) > a4(2,i) ) then
+                 a4(4,i) = 3.*(a4(2,i)-a4(1,i))
+                 a4(3,i) = a4(2,i) - a4(4,i)
+             else
+                 a4(4,i) = 3.*(a4(3,i)-a4(1,i))
+                 a4(2,i) = a4(3,i) - a4(4,i)
+             endif
+         endif
+      endif
+    enddo
+ else
+! Standard PPM constraint
+    do i=1,im
+      if( (a4(1,i)-a4(2,i))*(a4(1,i)-a4(3,i))>=0. ) then
+         a4(2,i) = a4(1,i)
+         a4(3,i) = a4(1,i)
+         a4(4,i) = 0.
+      else
+         da1  = a4(3,i) - a4(2,i)
+         da2  = da1**2
+         a6da = a4(4,i)*da1
+         if(a6da < -da2) then
+            a4(4,i) = 3.*(a4(2,i)-a4(1,i))
+            a4(3,i) = a4(2,i) - a4(4,i)
+         elseif(a6da > da2) then
+            a4(4,i) = 3.*(a4(3,i)-a4(1,i))
+            a4(2,i) = a4(3,i) - a4(4,i)
+         endif
+      endif
+    enddo
+ endif
+ end subroutine cs_limiters
+
+
+
+ subroutine ppm_profile(a4, delp, km, i1, i2, iv, kord)
 
 ! !INPUT PARAMETERS:
  integer, intent(in):: iv      ! iv =-1: winds
@@ -1106,19 +1437,13 @@ subroutine map1_q2( km,   pe1,   q1,            &
 ! !INPUT/OUTPUT PARAMETERS:
  real , intent(inout):: a4(4,i1:i2,km)  ! Interpolated values
 
-! !DESCRIPTION:
+! DESCRIPTION:
 !
-!   Perform the piecewise parabolic method 
+!   Perform the piecewise parabolic reconstruction
 ! 
 ! !REVISION HISTORY: 
-!   ??.??.??    Lin        Creation
-!   02.04.04    Sawyer     Newest release from FVGCM
-! 
-!EOP
+! S.-J. Lin   revised at GFDL 2007
 !-----------------------------------------------------------------------
-!BOC
-!
-! !LOCAL VARIABLES:
 ! local arrays:
       real    dc(i1:i2,km)
       real    h2(i1:i2,km)
@@ -1127,14 +1452,10 @@ subroutine map1_q2( km,   pe1,   q1,            &
       real    d4(i1:i2,km)
 
 ! local scalars:
-      integer i, k, km1, lmt
-      integer it
+      integer i, k, km1, lmt, it
       real  fac
       real  a1, a2, c1, c2, c3, d1, d2
-      real  qmax, qmin, cmax, cmin
-      real  qm, dq, tmp
-      real  qmp, pmp
-      real  lac
+      real  qm, dq, lac, qmp, pmp
 
       km1 = km - 1
        it = i2 - i1 + 1
@@ -1148,14 +1469,13 @@ subroutine map1_q2( km,   pe1,   q1,            &
 
       do k=2,km1
          do i=i1,i2
-            c1  = (delp(i,k-1)+0.5*delp(i,k))/d4(i,k+1)
-            c2  = (delp(i,k+1)+0.5*delp(i,k))/d4(i,k)
-            tmp = delp(i,k)*(c1*delq(i,k) + c2*delq(i,k-1)) /      &
+                 c1  = (delp(i,k-1)+0.5*delp(i,k))/d4(i,k+1)
+                 c2  = (delp(i,k+1)+0.5*delp(i,k))/d4(i,k)
+            df2(i,k) = delp(i,k)*(c1*delq(i,k) + c2*delq(i,k-1)) /      &
                                     (d4(i,k)+delp(i,k+1))
-            qmax = max(a4(1,i,k-1),a4(1,i,k),a4(1,i,k+1)) - a4(1,i,k)
-            qmin = a4(1,i,k) - min(a4(1,i,k-1),a4(1,i,k),a4(1,i,k+1))
-             dc(i,k) = sign(min(abs(tmp),qmax,qmin), tmp)
-            df2(i,k) = tmp
+            dc(i,k) = sign( min(abs(df2(i,k)),              &
+                            max(a4(1,i,k-1),a4(1,i,k),a4(1,i,k+1))-a4(1,i,k),  &
+                  a4(1,i,k)-min(a4(1,i,k-1),a4(1,i,k),a4(1,i,k+1))), df2(i,k) )
          enddo
       enddo
 
@@ -1164,14 +1484,14 @@ subroutine map1_q2( km,   pe1,   q1,            &
 !-----------------------------------------------------------
 
       do k=3,km1
-      do i=i1,i2
-        c1 = delq(i,k-1)*delp(i,k-1) / d4(i,k)
-        a1 = d4(i,k-1) / (d4(i,k) + delp(i,k-1))
-        a2 = d4(i,k+1) / (d4(i,k) + delp(i,k))
-        a4(2,i,k) = a4(1,i,k-1) + c1 + 2./(d4(i,k-1)+d4(i,k+1)) *    &
-                  ( delp(i,k)*(c1*(a1 - a2)+a2*dc(i,k-1)) -          &
-                                delp(i,k-1)*a1*dc(i,k  ) )
-      enddo
+         do i=i1,i2
+            c1 = delq(i,k-1)*delp(i,k-1) / d4(i,k)
+            a1 = d4(i,k-1) / (d4(i,k) + delp(i,k-1))
+            a2 = d4(i,k+1) / (d4(i,k) + delp(i,k))
+            a4(2,i,k) = a4(1,i,k-1) + c1 + 2./(d4(i,k-1)+d4(i,k+1)) *    &
+                      ( delp(i,k)*(c1*(a1 - a2)+a2*dc(i,k-1)) -          &
+                        delp(i,k-1)*a1*dc(i,k  ) )
+         enddo
       enddo
 
       if(km>8 .and. kord>3) call steepz(i1, i2, km, a4, df2, dc, delq, delp, d4)
@@ -1186,15 +1506,33 @@ subroutine map1_q2( km,   pe1,   q1,            &
          c1 = 4.*(a4(2,i,3)-qm-d2*dq) / ( d2*(2.*d2*d2+d1*(d2+3.*d1)) )
          c3 = dq - 0.5*c1*(d2*(5.*d1+d2)-3.*d1*d1)
          a4(2,i,2) = qm - 0.25*c1*d1*d2*(d2+3.*d1)
+! Top edge:
+!-------------------------------------------------------
          a4(2,i,1) = d1*(2.*c1*d1**2-c3) + a4(2,i,2)
-!        dc(i,1) =       a4(1,i,1) - a4(2,i,1)
-         dc(i,1) =  0.5*(a4(1,i,1) - a4(2,i,1))
+!-------------------------------------------------------
+!        a4(2,i,1) = (12./7.)*a4(1,i,1)-(13./14.)*a4(1,i,2)+(3./14.)*a4(1,i,3)
+!-------------------------------------------------------
 ! No over- and undershoot condition
-         cmax = max(a4(1,i,1), a4(1,i,2))
-         cmin = min(a4(1,i,1), a4(1,i,2))
-         a4(2,i,2) = max(cmin,a4(2,i,2))
-         a4(2,i,2) = min(cmax,a4(2,i,2))
+         a4(2,i,2) = max( a4(2,i,2), min(a4(1,i,1), a4(1,i,2)) )
+         a4(2,i,2) = min( a4(2,i,2), max(a4(1,i,1), a4(1,i,2)) )
+         dc(i,1) =  0.5*(a4(2,i,2) - a4(1,i,1))
       enddo
+
+! Enforce monotonicity of the "slope" within the top layer
+
+      if( iv==0 ) then
+         do i=i1,i2
+            a4(2,i,1) = max(0., a4(2,i,1))
+            a4(2,i,2) = max(0., a4(2,i,2))
+         enddo 
+      elseif( iv==-1 ) then
+         do i=i1,i2
+            if ( a4(2,i,1)*a4(1,i,1) <= 0. ) then
+                 a4(2,i,1) = 0.
+            endif
+         enddo
+      endif
+
 
 ! Bottom
 ! Area preserving cubic with 2nd deriv. = 0 at the surface
@@ -1206,37 +1544,22 @@ subroutine map1_q2( km,   pe1,   q1,            &
          c1 = (a4(2,i,km1)-qm-d2*dq) / (d2*(2.*d2*d2+d1*(d2+3.*d1)))
          c3 = dq - 2.0*c1*(d2*(5.*d1+d2)-3.*d1*d1)
          a4(2,i,km) = qm - c1*d1*d2*(d2+3.*d1)
+! Bottom edge:
+!-----------------------------------------------------
          a4(3,i,km) = d1*(8.*c1*d1**2-c3) + a4(2,i,km)
-!        dc(i,km) =      a4(3,i,km) - a4(1,i,km)
-         dc(i,km) = 0.5*(a4(3,i,km) - a4(1,i,km))
+!        dc(i,km) = 0.5*(a4(3,i,km) - a4(1,i,km))
+!-----------------------------------------------------
+!        a4(3,i,km) = (12./7.)*a4(1,i,km)-(13./14.)*a4(1,i,km-1)+(3./14.)*a4(1,i,km-2)
 ! No over- and under-shoot condition
-         cmax = max(a4(1,i,km), a4(1,i,km1))
-         cmin = min(a4(1,i,km), a4(1,i,km1))
-         a4(2,i,km) = max(cmin,a4(2,i,km))
-         a4(2,i,km) = min(cmax,a4(2,i,km))
+         a4(2,i,km) = max( a4(2,i,km), min(a4(1,i,km), a4(1,i,km1)) )
+         a4(2,i,km) = min( a4(2,i,km), max(a4(1,i,km), a4(1,i,km1)) )
+         dc(i,km) = 0.5*(a4(1,i,km) - a4(2,i,km))
       enddo
 
-      do k=1,km1
-         do i=i1,i2
-            a4(3,i,k) = a4(2,i,k+1)
-         enddo
-      enddo
-
-! Enforce monotonicity of the "slope" within the top layer
-      do i=i1,i2
-         if ( a4(2,i,1) * a4(1,i,1) <= 0. ) then
-              a4(2,i,1) = 0.
-!               dc(i,1) = a4(1,i,1)
-         endif
-         if ( dc(i,1) * (a4(2,i,2) - a4(1,i,1)) <= 0. ) then
-! Setting DC==0 will force piecewise constant distribution after
-! calling kmppm
-              dc(i,1) = 0.
-         endif
-      enddo
 
 ! Enforce constraint on the "slope" at the surface
 
+#ifdef BOT_MONO
       do i=i1,i2
          a4(4,i,km) = 0
          if( a4(3,i,km) * a4(1,i,km) <= 0. ) a4(3,i,km) = 0.
@@ -1251,6 +1574,26 @@ subroutine map1_q2( km,   pe1,   q1,            &
               a4(3,i,km) = a4(1,i,km) + dq
          endif
       enddo
+#else
+      if( iv==0 ) then
+          do i=i1,i2
+             a4(2,i,km) = max(0.,a4(2,i,km))
+             a4(3,i,km) = max(0.,a4(3,i,km))
+          enddo
+      elseif( iv==-1 ) then
+          do i=i1,i2
+             if ( a4(1,i,km)*a4(3,i,km) <= 0. ) then
+                  a4(3,i,km) = 0.
+             endif
+          enddo
+      endif
+#endif
+
+   do k=1,km1
+      do i=i1,i2
+         a4(3,i,k) = a4(2,i,k+1)
+      enddo
+   enddo
 
 !-----------------------------------------------------------
 ! f(s) = AL + s*[(AR-AL) + A6*(1-s)]         ( 0 <= s  <= 1 )
@@ -1260,7 +1603,7 @@ subroutine map1_q2( km,   pe1,   q1,            &
          do i=i1,i2
             a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
          enddo
-            call kmppm(dc(i1,k), a4(1,i1,k), it, 0)
+         call ppm_limiters(dc(i1,k), a4(1,i1,k), it, 0)
       enddo
 
       if(kord >= 7) then
@@ -1271,20 +1614,16 @@ subroutine map1_q2( km,   pe1,   q1,            &
          do i=i1,i2
 ! Method#1
 !           h2(i,k) = delq(i,k) - delq(i,k-1)
-! Method#2
-!           h2(i,k) = 2.*(dc(i,k+1)/delp(i,k+1) - dc(i,k-1)/delp(i,k-1))
-!    &               / ( delp(i,k)+0.5*(delp(i,k-1)+delp(i,k+1)) )
-!    &               * delp(i,k)**2
+! Method#2 - better
+            h2(i,k) = 2.*(dc(i,k+1)/delp(i,k+1) - dc(i,k-1)/delp(i,k-1))  &
+                     / ( delp(i,k)+0.5*(delp(i,k-1)+delp(i,k+1)) )        &
+                     * delp(i,k)**2 
 ! Method#3
-            h2(i,k) = dc(i,k+1) - dc(i,k-1)
+!!!            h2(i,k) = dc(i,k+1) - dc(i,k-1)
          enddo
       enddo
 
-      if( kord == 7 ) then
-         fac = 1.5           ! original quasi-monotone
-      else
-         fac = 0.125         ! full monotone
-      endif
+      fac = 1.5           ! original quasi-monotone
 
       do k=3,km-2
         do i=i1,i2
@@ -1295,25 +1634,24 @@ subroutine map1_q2( km,   pe1,   q1,            &
          pmp   = 2.*dc(i,k)
          qmp   = a4(1,i,k) + pmp
          lac   = a4(1,i,k) + fac*h2(i,k-1) + dc(i,k)
-         qmin  = min(a4(1,i,k), qmp, lac)
-         qmax  = max(a4(1,i,k), qmp, lac)
-         a4(3,i,k) = min(max(a4(3,i,k), qmin), qmax)
+         a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), qmp, lac)),    &
+                                        max(a4(1,i,k), qmp, lac) )
 ! Left  edges
 !        qmp   = a4(1,i,k) - 2.0*delq(i,k)
 !        lac   = a4(1,i,k) + fac*h2(i,k+1) - 0.5*delq(i,k)
 !
          qmp   = a4(1,i,k) - pmp
          lac   = a4(1,i,k) + fac*h2(i,k+1) - dc(i,k)
-         qmin  = min(a4(1,i,k), qmp, lac)
-         qmax  = max(a4(1,i,k), qmp, lac)
-         a4(2,i,k) = min(max(a4(2,i,k), qmin), qmax)
+         a4(2,i,k) = min(max(a4(2,i,k),  min(a4(1,i,k), qmp, lac)),   &
+                     max(a4(1,i,k), qmp, lac))
+!-------------
 ! Recompute A6
+!-------------
          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
         enddo
 ! Additional constraint to ensure positivity when kord=7
-         if (iv == 0 .and. kord == 7) then
-             call kmppm(dc(i1,k), a4(1,i1,k), it, 2)
-         endif
+         if (iv == 0 .and. kord >= 6 )                      &
+             call ppm_limiters(dc(i1,k), a4(1,i1,k), it, 2)
       enddo
 
       else
@@ -1322,30 +1660,27 @@ subroutine map1_q2( km,   pe1,   q1,            &
          lmt = max(0, lmt)
          if (iv == 0) lmt = min(2, lmt)
 
-      do k=3,km-2
-      if( kord /= 4) then
+         do k=3,km-2
+            if( kord /= 4) then
+              do i=i1,i2
+                 a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+              enddo
+            endif
+            if(kord/=6) call ppm_limiters(dc(i1,k), a4(1,i1,k), it, lmt)
+         enddo
+      endif
+
+      do k=km1,km
          do i=i1,i2
             a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
          enddo
-      endif
-         call kmppm(dc(i1,k), a4(1,i1,k), it, lmt)
+         call ppm_limiters(dc(i1,k), a4(1,i1,k), it, 0)
       enddo
-      endif
 
-      do i=i1,i2
-         a4(4,i,km1) = 3.*(2.*a4(1,i,km1) - (a4(2,i,km1)+a4(3,i,km1)))
-      enddo
-      call kmppm(dc(i1,km1), a4(1,i1,km1), it, 0)
-!EOC
- end subroutine ppm2m
-!-----------------------------------------------------------------------
+ end subroutine ppm_profile
 
-!----------------------------------------------------------------------- 
-!BOP
-! !ROUTINE:  kmppm --- Perform piecewise parabolic method in vertical
-!
-! !INTERFACE:
- subroutine kmppm(dm, a4, itot, lmt)
+
+ subroutine ppm_limiters(dm, a4, itot, lmt)
 
 ! !INPUT PARAMETERS:
       real , intent(in):: dm(*)     ! the linear slope
@@ -1361,8 +1696,6 @@ subroutine map1_q2( km,   pe1,   q1,            &
                                            ! AR <-- a4(3,i)
                                            ! A6 <-- a4(4,i)
 ! !LOCAL VARIABLES:
-
-      real , parameter:: r12 = 1./12.
       real  qmp
       real  da1, da2, a6da
       real  fmin
@@ -1429,32 +1762,19 @@ subroutine map1_q2( km,   pe1,   q1,            &
 
       endif
 
- end subroutine kmppm
-!-----------------------------------------------------------------------
+ end subroutine ppm_limiters
 
-!----------------------------------------------------------------------- 
-!BOP
-! !ROUTINE:  steepz --- Calculate attributes for PPM
-!
-! !INTERFACE:
+
+
  subroutine steepz(i1, i2, km, a4, df2, dm, dq, dp, d4)
-
-! !INPUT PARAMETERS:
-      integer, intent(in) :: km                   ! Total levels
-      integer, intent(in) :: i1                   ! Starting longitude
-      integer, intent(in) :: i2                   ! Finishing longitude
-      real , intent(in) ::  dp(i1:i2,km)       ! grid size
-      real , intent(in) ::  dq(i1:i2,km)       ! backward diff of q
-      real , intent(in) ::  d4(i1:i2,km)       ! backward sum:  dp(k)+ dp(k-1) 
-      real , intent(in) :: df2(i1:i2,km)       ! first guess mismatch
-      real , intent(in) ::  dm(i1:i2,km)       ! monotonic mismatch
-
+ integer, intent(in) :: km, i1, i2
+   real , intent(in) ::  dp(i1:i2,km)       ! grid size
+   real , intent(in) ::  dq(i1:i2,km)       ! backward diff of q
+   real , intent(in) ::  d4(i1:i2,km)       ! backward sum:  dp(k)+ dp(k-1) 
+   real , intent(in) :: df2(i1:i2,km)       ! first guess mismatch
+   real , intent(in) ::  dm(i1:i2,km)       ! monotonic mismatch
 ! !INPUT/OUTPUT PARAMETERS:
       real , intent(inout) ::  a4(4,i1:i2,km)  ! first guess/steepened
-! !DESCRIPTION:
-!   This is complicated stuff related to the Piecewise Parabolic Method
-!   and I need to read the Collela/Woodward paper before documenting
-!   thoroughly.
 ! !LOCAL VARIABLES:
       integer i, k
       real  alfa(i1:i2,km)
@@ -1499,5 +1819,197 @@ subroutine map1_q2( km,   pe1,   q1,            &
 
  end subroutine steepz
 
-end module mapz_module
 
+
+ subroutine rst_remap(km, kn, is,ie,js,je, isd,ied,jsd,jed, nq,  &
+                      delp_r, u_r, v_r, w_r, delz_r, pt_r, q_r,      &
+                      delp,   u,   v,   w,   delz,   pt,   q,        &
+                      ak_r, bk_r, ak, bk, hydrostatic)
+!------------------------------------
+! Assuming hybrid sigma-P coordinate:
+!------------------------------------
+! !INPUT PARAMETERS:
+  integer, intent(in):: km                    ! Restart z-dimension
+  integer, intent(in):: kn                    ! Run time dimension
+  integer, intent(in):: nq                    ! number of tracers (including h2o)
+  integer, intent(in):: is,ie,isd,ied         ! starting & ending X-Dir index
+  integer, intent(in):: js,je,jsd,jed         ! starting & ending Y-Dir index
+  logical, intent(in):: hydrostatic
+  real, intent(in) :: ak_r(km+1)
+  real, intent(in) :: bk_r(km+1)
+  real, intent(in) :: ak(kn+1)
+  real, intent(in) :: bk(kn+1)
+  real, intent(in):: delp_r(is:ie,js:je,km) ! pressure thickness
+  real, intent(in)::   u_r(is:ie,  js:je+1,km)   ! u-wind (m/s)
+  real, intent(in)::   v_r(is:ie+1,js:je  ,km)   ! v-wind (m/s)
+  real, intent(inout)::  pt_r(is:ie,js:je,km)
+  real, intent(in)::   w_r(is:ie,js:je,km)
+  real, intent(in)::   q_r(is:ie,js:je,km,*)
+  real, intent(in)::delz_r(is:ie,js:je,km)
+! Output:
+  real, intent(out):: delp(isd:ied,jsd:jed,kn) ! pressure thickness
+  real, intent(out)::  u(isd:ied  ,jsd:jed+1,kn)   ! u-wind (m/s)
+  real, intent(out)::  v(isd:ied+1,jsd:jed  ,kn)   ! v-wind (m/s)
+  real, intent(out)::  w(isd:ied  ,jsd:jed  ,kn)   ! vertical velocity (m/s)
+  real, intent(out):: pt(isd:ied  ,jsd:jed  ,kn)   ! temperature
+  real, intent(out):: q(isd:ied,jsd:jed,kn,*)
+  real, intent(out):: delz(is:ie,js:je,kn)   ! delta-height (m)
+!-----------------------------------------------------------------------
+  real r_vir
+  real ps(isd:ied,jsd:jed)  ! surface pressure
+  real  pe1(is:ie,km+1)
+  real  pe2(is:ie,kn+1)
+  real  pv1(is:ie+1,km+1)
+  real  pv2(is:ie+1,kn+1)
+
+  integer i,j,k , iq
+  integer, parameter:: kord=8
+
+  r_vir = rvgas/rdgas - 1.
+
+  do j=js,je
+     do i=is,ie
+        ps(i,j) = ak_r(1)
+     enddo
+  enddo
+
+  do k=1,km
+     do j=js,je
+        do i=is,ie
+           ps(i,j) = ps(i,j) + delp_r(i,j,k)
+        enddo
+     enddo
+  enddo
+
+  call mpp_update_domains(ps, domain,  whalo=1, ehalo=1,     &
+                          shalo=1, nhalo=1, complete=.true.)
+
+! Compute virtual Temp
+  do k=1,km
+     do j=js,je
+        do i=is,ie
+           pt_r(i,j,k) = pt_r(i,j,k) * (1.+r_vir*q_r(i,j,k,1))
+        enddo
+     enddo
+  enddo
+
+  do 1000 j=js,je+1
+!------
+! map u
+!------
+     do k=1,km+1
+        do i=is,ie
+           pe1(i,k) = ak_r(k) + 0.5*bk_r(k)*(ps(i,j-1)+ps(i,j))
+        enddo
+     enddo
+
+     do k=1,kn+1
+        do i=is,ie
+           pe2(i,k) = ak(k) + 0.5*bk(k)*(ps(i,j-1)+ps(i,j))
+        enddo
+     enddo
+
+     call remap_2d(km, pe1, u_r(is:ie,j:j,1:km),       &
+                   kn, pe2,   u(is:ie,j:j,1:kn),       &
+                   is, ie, -1, kord)
+
+  if ( j /= (je+1) )  then 
+
+!---------------
+! Hybrid sigma-p
+!---------------
+     do k=1,km+1
+        do i=is,ie
+           pe1(i,k) = ak_r(k) + bk_r(k)*ps(i,j)
+        enddo
+     enddo
+
+     do k=1,kn+1
+        do i=is,ie
+           pe2(i,k) =   ak(k) + bk(k)*ps(i,j)
+        enddo
+     enddo
+
+!-------------
+! Compute delp
+!-------------
+      do k=1,kn
+         do i=is,ie
+            delp(i,j,k) = pe2(i,k+1) - pe2(i,k)
+         enddo
+      enddo
+
+!----------------
+! Map constituents
+!----------------
+      if( nq /= 0 ) then
+          do iq=1,nq
+             call remap_2d(km, pe1, q_r(is:ie,j:j,1:km,iq:iq),  &
+                           kn, pe2,   q(is:ie,j:j,1:kn,iq:iq),  &
+                           is, ie, 0, kord)
+          enddo
+      endif
+
+      if ( .not. hydrostatic ) then
+! Remap vertical wind:
+         call remap_2d(km, pe1, w_r(is:ie,j:j,1:km),       &
+                       kn, pe2,   w(is:ie,j:j,1:kn),       &
+                       is, ie, -1, kord)
+! Remap delz for hybrid sigma-p coordinate
+         call remap_2d(km, pe1, delz_r(is:ie,j:j,1:km),       &
+                       kn, pe2,   delz(is:ie,j:j,1:kn),       &
+                       is, ie, 1, kord)
+          do k=1,kn
+             do i=is,ie
+                delz(i,j,k) = -delz(i,j,k)*delp(i,j,k)
+             enddo
+          enddo
+      endif
+
+! Geopotential conserving remap of virtual temperature:
+       do k=1,km+1
+          do i=is,ie
+             pe1(i,k) = log(pe1(i,k))
+          enddo
+       enddo
+       do k=1,kn+1
+          do i=is,ie
+             pe2(i,k) = log(pe2(i,k))
+          enddo
+       enddo
+
+       call remap_2d(km, pe1, pt_r(is:ie,j:j,1:km),       &
+                     kn, pe2,   pt(is:ie,j:j,1:kn),       &
+                     is, ie, 1, kord)
+!------
+! map v
+!------
+       do k=1,km+1
+          do i=is,ie+1
+             pv1(i,k) = ak_r(k) + 0.5*bk_r(k)*(ps(i-1,j)+ps(i,j))
+          enddo
+       enddo
+       do k=1,kn+1
+          do i=is,ie+1
+             pv2(i,k) = ak(k) + 0.5*bk(k)*(ps(i-1,j)+ps(i,j))
+          enddo
+       enddo
+
+       call remap_2d(km, pv1, v_r(is:ie+1,j:j,1:km),       &
+                     kn, pv2,   v(is:ie+1,j:j,1:kn),       &
+                     is, ie+1, -1, kord)
+
+  endif !(j < je+1)
+1000  continue
+
+  do k=1,kn
+     do j=js,je
+        do i=is,ie
+           pt(i,j,k) = pt(i,j,k) / (1.+r_vir*q(i,j,k,1))
+        enddo
+     enddo   
+  enddo
+
+ end subroutine rst_remap
+
+end module mapz_module

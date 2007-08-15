@@ -23,7 +23,8 @@
       use mpp_domains_mod, only : mpp_get_neighbor_pe, mpp_define_mosaic
       use mpp_domains_mod, only : NORTH, NORTH_EAST, EAST, SOUTH_EAST
       use mpp_domains_mod, only : SOUTH, SOUTH_WEST, WEST, NORTH_WEST
-      use mpp_parameter_mod,      only : WUPDATE, EUPDATE, SUPDATE, NUPDATE, XUPDATE, YUPDATE
+      use mpp_parameter_mod, only : WUPDATE, EUPDATE, SUPDATE, NUPDATE, XUPDATE, YUPDATE
+
       implicit none
       private
 
@@ -157,15 +158,15 @@
 !
 !     domain_decomp :: Setup domain decomp
 !
-      subroutine domain_decomp(npx,npy,nregions,ng)
+      subroutine domain_decomp(npx,npy,nregions,ng,grid_type)
 
-         integer, intent(IN)  :: npx,npy,nregions,ng
+         integer, intent(IN)  :: npx,npy,nregions,ng,grid_type
 
          integer :: layout(2)
          integer, allocatable :: pe_start(:), pe_end(:)
 
          character*80 :: evalue
-         integer :: ios,nx,ny,n
+         integer :: ios,nx,ny,n,num_alloc
          character(len=32) :: type
 
          nx = npx-1
@@ -179,16 +180,41 @@
 
          select case(nregions)
          case ( 1 )  ! Lat-Lon "cyclic"
-            ntiles = 4
-            num_contact = 8
-            if( mod(npes,ntiles) .NE. 0 ) then
-               call mpp_error(NOTE,'TEST_MPP_DOMAINS: for Cyclic mosaic, npes should be multiple of ntiles. ' // &
-                                   'No test is done for Cyclic mosaic. ' )
-               return
-            end if
-            npes_per_tile = npes/ntiles
-            call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
-            layout = (/1,npes_per_tile/) ! force decomp only in Lat-Direction
+
+            select case (grid_type)
+            case (3)   ! Lat-Lon "cyclic"
+               ntiles = 4
+               num_contact = 8
+               if( mod(npes,ntiles) .NE. 0 ) then
+                  call mpp_error(NOTE,'TEST_MPP_DOMAINS: for Cyclic mosaic, npes should be multiple of ntiles. ' // &
+                                       'No test is done for Cyclic mosaic. ' )
+                  return
+               end if
+               npes_per_tile = npes/ntiles
+               call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
+               layout = (/1,npes_per_tile/) ! force decomp only in Lat-Direction
+            case (4)   ! Cartesian, double periodic
+               ntiles = 1
+               num_contact = 2
+               npes_per_tile = npes/ntiles
+               call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
+            case (5)   ! latlon patch
+               ntiles = 1
+               num_contact = 0
+               npes_per_tile = npes/ntiles
+               call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
+            case (6)   ! latlon strip
+               ntiles = 1
+               num_contact = 1
+               npes_per_tile = npes/ntiles
+               call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
+            case (7)   ! Cartesian, channel
+               ntiles = 1
+               num_contact = 1
+               npes_per_tile = npes/ntiles
+               call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
+            end select
+
          case ( 6 )  ! Cubed-Sphere
             type="Cubic-Grid"
             ntiles = 6
@@ -230,48 +256,94 @@
             pe_start(n) = (n-1)*layout(1)*layout(2)
             pe_end(n)   = pe_start(n) + layout(1)*layout(2) -1
          end do
-         allocate(tile1(num_contact), tile2(num_contact) )
-         allocate(istart1(num_contact), iend1(num_contact), jstart1(num_contact), jend1(num_contact) )
-         allocate(istart2(num_contact), iend2(num_contact), jstart2(num_contact), jend2(num_contact) )
+         num_alloc=max(1,num_contact)
+         allocate(tile1(num_alloc), tile2(num_alloc) )
+         allocate(istart1(num_alloc), iend1(num_alloc), jstart1(num_alloc), jend1(num_alloc) )
+         allocate(istart2(num_alloc), iend2(num_alloc), jstart2(num_alloc), jend2(num_alloc) )
 
          select case(nregions)
-         case ( 1 )  ! Lat-Lon "cyclic"
-       !--- Contact line 1, between tile 1 (EAST) and tile 2 (WEST)
-       tile1(1) = 1; tile2(1) = 2
-       istart1(1) = nx; iend1(1) = nx; jstart1(1) = 1;  jend1(1) = ny
-       istart2(1) = 1;  iend2(1) = 1;  jstart2(1) = 1;  jend2(1) = ny
-       !--- Contact line 2, between tile 1 (SOUTH) and tile 3 (NORTH)  --- cyclic
-       tile1(2) = 1; tile2(2) = 3
-       istart1(2) = 1;  iend1(2) = nx; jstart1(2) = 1;   jend1(2) = 1
-       istart2(2) = 1;  iend2(2) = nx; jstart2(2) = ny;  jend2(2) = ny
-       !--- Contact line 3, between tile 1 (WEST) and tile 2 (EAST) --- cyclic
-       tile1(3) = 1; tile2(3) = 2
-       istart1(3) = 1;  iend1(3) = 1;  jstart1(3) = 1;  jend1(3) = ny
-       istart2(3) = nx; iend2(3) = nx; jstart2(3) = 1;  jend2(3) = ny
-       !--- Contact line 4, between tile 1 (NORTH) and tile 3 (SOUTH)
-       tile1(4) = 1; tile2(4) = 3
-       istart1(4) = 1;  iend1(4) = nx; jstart1(4) = ny;  jend1(4) = ny
-       istart2(4) = 1;  iend2(4) = nx; jstart2(4) = 1;   jend2(4) = 1
-       !--- Contact line 5, between tile 2 (SOUTH) and tile 4 (NORTH) --- cyclic
-       tile1(5) = 2; tile2(5) = 4
-       istart1(5) = 1;  iend1(5) = nx; jstart1(5) = 1;  jend1(5) = 1
-       istart2(5) = 1;  iend2(5) = nx; jstart2(5) = ny; jend2(5) = ny
-       !--- Contact line 6, between tile 2 (NORTH) and tile 4 (SOUTH)
-       tile1(6) = 2; tile2(6) = 4
-       istart1(6) = 1;  iend1(6) = nx; jstart1(6) = ny;  jend1(6) = ny
-       istart2(6) = 1;  iend2(6) = nx; jstart2(6) = 1;   jend2(6) = 1
-       !--- Contact line 7, between tile 3 (EAST) and tile 4 (WEST)
-       tile1(7) = 3; tile2(7) = 4
-       istart1(7) = nx; iend1(7) = nx; jstart1(7) = 1;  jend1(7) = ny
-       istart2(7) = 1;  iend2(7) = 1;  jstart2(7) = 1;  jend2(7) = ny
-       !--- Contact line 8, between tile 3 (WEST) and tile 4 (EAST) --- cyclic
-       tile1(8) = 3; tile2(8) = 4
-       istart1(8) = 1;  iend1(8) = 1;  jstart1(8) = 1;  jend1(8) = ny
-       istart2(8) = nx; iend2(8) = nx; jstart2(8) = 1;  jend2(8) = ny
-       call mpp_define_mosaic(global_indices, layout2D, domain, ntiles, num_contact, tile1, tile2, &
-                              istart1, iend1, jstart1, jend1, istart2, iend2, jstart2, jend2,      &
-                              pe_start=pe_start, pe_end=pe_end,                                    &
-                              shalo = ng, nhalo = ng, whalo = ng, ehalo = ng, name = type)
+         case ( 1 )
+
+            select case (grid_type)
+               case (3)   ! Lat-Lon "cyclic"
+                  !--- Contact line 1, between tile 1 (EAST) and tile 2 (WEST)
+                  tile1(1) = 1; tile2(1) = 2
+                  istart1(1) = nx; iend1(1) = nx; jstart1(1) = 1;  jend1(1) = ny
+                  istart2(1) = 1;  iend2(1) = 1;  jstart2(1) = 1;  jend2(1) = ny
+                  !--- Contact line 2, between tile 1 (SOUTH) and tile 3 (NORTH)  --- cyclic
+                  tile1(2) = 1; tile2(2) = 3
+                  istart1(2) = 1;  iend1(2) = nx; jstart1(2) = 1;   jend1(2) = 1
+                  istart2(2) = 1;  iend2(2) = nx; jstart2(2) = ny;  jend2(2) = ny
+                  !--- Contact line 3, between tile 1 (WEST) and tile 2 (EAST) --- cyclic
+                  tile1(3) = 1; tile2(3) = 2
+                  istart1(3) = 1;  iend1(3) = 1;  jstart1(3) = 1;  jend1(3) = ny
+                  istart2(3) = nx; iend2(3) = nx; jstart2(3) = 1;  jend2(3) = ny
+                  !--- Contact line 4, between tile 1 (NORTH) and tile 3 (SOUTH)
+                  tile1(4) = 1; tile2(4) = 3
+                  istart1(4) = 1;  iend1(4) = nx; jstart1(4) = ny;  jend1(4) = ny
+                  istart2(4) = 1;  iend2(4) = nx; jstart2(4) = 1;   jend2(4) = 1
+                  !--- Contact line 5, between tile 2 (SOUTH) and tile 4 (NORTH) --- cyclic
+                  tile1(5) = 2; tile2(5) = 4
+                  istart1(5) = 1;  iend1(5) = nx; jstart1(5) = 1;  jend1(5) = 1
+                  istart2(5) = 1;  iend2(5) = nx; jstart2(5) = ny; jend2(5) = ny
+                  !--- Contact line 6, between tile 2 (NORTH) and tile 4 (SOUTH)
+                  tile1(6) = 2; tile2(6) = 4
+                  istart1(6) = 1;  iend1(6) = nx; jstart1(6) = ny;  jend1(6) = ny
+                  istart2(6) = 1;  iend2(6) = nx; jstart2(6) = 1;   jend2(6) = 1
+                  !--- Contact line 7, between tile 3 (EAST) and tile 4 (WEST)
+                  tile1(7) = 3; tile2(7) = 4
+                  istart1(7) = nx; iend1(7) = nx; jstart1(7) = 1;  jend1(7) = ny
+                  istart2(7) = 1;  iend2(7) = 1;  jstart2(7) = 1;  jend2(7) = ny
+                  !--- Contact line 8, between tile 3 (WEST) and tile 4 (EAST) --- cyclic
+                  tile1(8) = 3; tile2(8) = 4
+                  istart1(8) = 1;  iend1(8) = 1;  jstart1(8) = 1;  jend1(8) = ny
+                  istart2(8) = nx; iend2(8) = nx; jstart2(8) = 1;  jend2(8) = ny
+                  call mpp_define_mosaic(global_indices, layout2D, domain, ntiles, num_contact, tile1, tile2, &
+                                         istart1, iend1, jstart1, jend1, istart2, iend2, jstart2, jend2,      &
+                                         pe_start=pe_start, pe_end=pe_end,                                    &
+                                         shalo = ng, nhalo = ng, whalo = ng, ehalo = ng, name = type)
+
+               case (4)   ! Cartesian, double periodic
+                  !--- Contact line 1, between tile 1 (EAST) and tile 1 (WEST)
+                  tile1(1) = 1; tile2(1) = 1
+                  istart1(1) = nx; iend1(1) = nx; jstart1(1) = 1;  jend1(1) = ny
+                  istart2(1) = 1;  iend2(1) = 1;  jstart2(1) = 1;  jend2(1) = ny
+                  !--- Contact line 2, between tile 1 (SOUTH) and tile 1 (NORTH)  --- cyclic
+                  tile1(2) = 1; tile2(2) = 1
+                  istart1(2) = 1;  iend1(2) = nx; jstart1(2) = 1;   jend1(2) = 1
+                  istart2(2) = 1;  iend2(2) = nx; jstart2(2) = ny;  jend2(2) = ny
+                  call mpp_define_mosaic(global_indices, layout2D, domain, ntiles, num_contact, tile1, tile2, &
+                                         istart1, iend1, jstart1, jend1, istart2, iend2, jstart2, jend2,      &
+                                         pe_start=pe_start, pe_end=pe_end, symmetry=.true.,                   &
+                                         shalo = ng, nhalo = ng, whalo = ng, ehalo = ng, name = type)
+
+               case (5)   ! latlon patch
+                  call mpp_define_mosaic(global_indices, layout2D, domain, ntiles, num_contact, tile1, tile2, &
+                                         istart1, iend1, jstart1, jend1, istart2, iend2, jstart2, jend2,      &
+                                         pe_start=pe_start, pe_end=pe_end, symmetry=.true.,                   &
+                                         shalo = ng, nhalo = ng, whalo = ng, ehalo = ng, name = type)
+
+               case (6)   !latlon strip
+                  !--- Contact line 1, between tile 1 (EAST) and tile 1 (WEST)
+                  tile1(1) = 1; tile2(1) = 1
+                  istart1(1) = nx; iend1(1) = nx; jstart1(1) = 1;  jend1(1) = ny
+                  istart2(1) = 1;  iend2(1) = 1;  jstart2(1) = 1;  jend2(1) = ny
+                  call mpp_define_mosaic(global_indices, layout2D, domain, ntiles, num_contact, tile1, tile2, &
+                                         istart1, iend1, jstart1, jend1, istart2, iend2, jstart2, jend2,      &
+                                         pe_start=pe_start, pe_end=pe_end, symmetry=.true.,                   &
+                                         shalo = ng, nhalo = ng, whalo = ng, ehalo = ng, name = type)
+               case (7)   ! Cartesian, channel
+                  !--- Contact line 1, between tile 1 (EAST) and tile 1 (WEST)
+                  tile1(1) = 1; tile2(1) = 1
+                  istart1(1) = nx; iend1(1) = nx; jstart1(1) = 1;  jend1(1) = ny
+                  istart2(1) = 1;  iend2(1) = 1;  jstart2(1) = 1;  jend2(1) = ny
+                  call mpp_define_mosaic(global_indices, layout2D, domain, ntiles, num_contact, tile1, tile2, &
+                                         istart1, iend1, jstart1, jend1, istart2, iend2, jstart2, jend2,      &
+                                         pe_start=pe_start, pe_end=pe_end, symmetry=.true.,                   &
+                                         shalo = ng, nhalo = ng, whalo = ng, ehalo = ng, name = type)
+
+               end select
+
          case ( 6 )  ! Cubed-Sphere
        !--- Contact line 1, between tile 1 (EAST) and tile 2 (WEST)
        tile1(1) = 1; tile2(1) = 2

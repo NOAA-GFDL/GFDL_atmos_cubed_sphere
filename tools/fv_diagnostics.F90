@@ -1,6 +1,6 @@
 module fv_diagnostics_mod
 
- use constants_mod,    only: grav, rdgas, pi
+ use constants_mod,    only: grav, rdgas, pi, radius
  use fms_io_mod,       only: set_domain, nullify_domain
  use time_manager_mod, only: time_type, get_date, get_time
  use mpp_domains_mod,  only: domain2d, mpp_update_domains, DGRID_NE
@@ -10,19 +10,34 @@ module fv_diagnostics_mod
  use mpp_mod,          only: stdout
 #endif
  use fv_arrays_mod,    only: fv_atmos_type
+ use mapz_module,      only: E_Flux
  use mp_mod,           only: domain, gid, masterproc, &
                              mp_reduce_sum, mp_reduce_min, mp_reduce_max
  use eta_mod,          only: get_eta_level
  use grid_tools,       only: dx, dy, dxa, dya, area, rarea
- use grid_utils,       only: f0, cosa_s, cubed_to_latlon, g_sum, sina_u, sina_v
+ use grid_utils,       only: f0, cosa_s, cubed_to_latlon, g_sum, sina_u, sina_v,   &
+                             en1, en2, vlon
+ use a2b_edge_mod,     only: a2b_ord4
  use sw_core,          only: d2a2c_vect
+ use surf_map,         only: zs_g
+
+ use tracer_manager_mod, only: get_tracer_names, get_number_tracers
+ use field_manager_mod,  only: MODEL_ATMOS
+ use fms_mod,            only: error_mesg, FATAL, stdlog
 
  implicit none
+ private
 
  logical master
- integer ::id_ps, id_slp, id_h500, id_ua, id_va, id_pt, id_omga, id_divv, id_vort,  &
+ integer ::id_ps, id_slp, id_h500, id_ua, id_va, id_pt, id_omga, id_vort,  &
            id_pv, id_zsurf, id_oro, id_sgh, id_prec, id_divg, id_u, id_v, id_w,     &
-           id_te
+           id_te, id_zs, id_mq
+ integer, parameter:: max_step = 1000
+ integer steps
+ real*4:: efx(max_step), mtq(max_step)
+ real*4:: efx_sum,       mtq_sum
+! For initial conditions:
+ integer ic_ps, ic_ua, ic_va
  integer, allocatable :: id_tracer(:), id_tracer_tend(:)
 
  integer  :: ncnst
@@ -30,6 +45,7 @@ module fv_diagnostics_mod
  real :: ginv
  real, allocatable :: phalf(:)
  real, allocatable :: zsurf(:,:)
+ real, allocatable :: zxg(:,:)
 
  type(time_type) :: fv_time
 
@@ -37,15 +53,17 @@ module fv_diagnostics_mod
  logical :: full_phys
  real    :: ptop
 
- public :: fv_diag_init, fv_time, fv_diag, prt_maxmin, id_prec
+ public :: fv_diag_init, fv_time, fv_diag, prt_maxmin, id_prec, id_divg, id_te
+ public :: efx, efx_sum, mtq, mtq_sum, steps
 
 contains
 
- subroutine fv_diag_init(Atm, axes, Time, npx, npy, npz)
-    type(fv_atmos_type), intent(in) :: Atm(:)
+ subroutine fv_diag_init(Atm, axes, Time, npx, npy, npz, p_ref)
+    type(fv_atmos_type), intent(inout) :: Atm(:)
     integer, intent(out) :: axes(4)
     type(time_type), intent(in) :: Time
     integer,         intent(in) :: npx, npy, npz
+    real, intent(in):: p_ref
 
     real, allocatable :: grid_xt(:), grid_yt(:), grid_xe(:), grid_ye(:), grid_xn(:), grid_yn(:)
     real, allocatable :: grid_x(:),  grid_y(:)
@@ -60,8 +78,19 @@ contains
 
     character(len=64) :: field
 
-    ncnst = Atm(1)%ncnst
+#ifdef MARS_GCM
+! tracers
+    character(len=128)   :: tname
+    character(len=256)   :: tlongname, tunits
+    integer              :: ntprog
+#endif MARS_GCM
 
+! For total energy diagnostics:
+    steps = 0
+    efx = 0.;       efx_sum = 0.
+    mtq = 0.;       mtq_sum = 0.
+
+    ncnst = Atm(1)%ncnst
 
     call set_domain(Atm(1)%domain)  ! Set domain so that diag_manager can access tile information
 
@@ -80,10 +109,13 @@ contains
     slprange = (/800.,  1200./)  ! sea-level-pressure
 #endif
 
+
     ginv = 1./GRAV
     fv_time = Time  ! Fix the fv_time is used
 
     allocate ( phalf(npz+1) )
+    call get_eta_level(Atm(1)%npz, p_ref, pfull, phalf, Atm(1)%ak, Atm(1)%bk, 0.01)
+
 !   allocate(grid_xt(npx-1), grid_yt(npy-1), grid_xe(npx), grid_ye(npy-1), grid_xn(npx-1), grid_yn(npy))
     allocate(grid_xt(npx-1), grid_yt(npy-1))
     grid_xt = (/ (i, i=1,npx-1) /)
@@ -97,7 +129,6 @@ contains
     grid_x = (/ (i, i=1,npx) /)
     grid_y = (/ (j, j=1,npy) /)
 
-    call get_eta_level(Atm(1)%npz, 1.E5, pfull, phalf, Atm(1)%ak, Atm(1)%bk, 0.01)
 
     ntileMe = size(Atm(:))
     do n = 1, ntileMe
@@ -168,10 +199,21 @@ contains
        id_zsurf = register_static_field ( trim(field), 'zsurf', axes(1:2),  &
                                          'surface height', 'm' )
 #endif
+       id_zs = register_static_field ( trim(field), 'zs', axes(1:2),  &
+                                        'Original Mean Terrain', 'm' )
+! For mountain torque in zonal dir:
        id_oro = register_static_field ( trim(field), 'oro', axes(1:2),  &
                                         'Land/Water Mask', 'none' )
        id_sgh = register_static_field ( trim(field), 'sgh', axes(1:2),  &
                                         'Terrain Standard deviation', 'm' )
+       ic_ps  = register_static_field ( trim(field), 'ps_ic', axes(1:2),  &
+                                         'initial surface pressure', 'Pa' )
+
+       ic_ua = register_static_field ( trim(field), 'ua_ic', axes(1:3),        &
+            'zonal wind', 'm/sec' )
+       ic_va = register_static_field ( trim(field), 'va_ic', axes(1:3),        &
+            'meridional wind', 'm/sec' )
+
     end do
 
     master = (gid == masterproc)
@@ -187,7 +229,6 @@ contains
           zsurf(i,j) = ginv * Atm(n)%phis(i,j)
        enddo
     enddo
-!   call prt_maxmin('ZS', zsurf, isc, iec, jsc, jec, 0, 1, 1., master)
 
 !--- Send time independent data
 
@@ -202,18 +243,35 @@ contains
        if (id_zsurf > 0) used = send_data(id_zsurf, zsurf, Time)
 #endif
 #ifdef FV_LAND
+       if (id_zs  > 0) used = send_data(id_zs , zs_g, Time)
        if (id_oro > 0) used = send_data(id_oro, Atm(n)%oro(isc:iec,jsc:jec), Time)
        if (id_sgh > 0) used = send_data(id_sgh, Atm(n)%sgh(isc:iec,jsc:jec), Time)
 #endif
+#ifdef SW_DYNAMICS
+       Atm(n)%ps(isc:iec,jsc:jec) = ginv * Atm(n)%delp(isc:iec,jsc:jec,1)
+#endif
+       if (ic_ps  > 0) used = send_data(ic_ps, Atm(n)%ps(isc:iec,jsc:jec), Time)
+
+#ifdef SW_DYNAMICS
+       if (ic_ua>0 .or. ic_va>0) then
+          call cubed_to_latlon(Atm(n)%u, Atm(n)%v, Atm(n)%ua, Atm(n)%va,   &
+                               dx, dy, dxa, dya, 1)
+       endif
+#endif
+       if(ic_ua > 0) used=send_data(ic_ua, Atm(n)%ua(isc:iec,jsc:jec,:), Time)
+       if(ic_va > 0) used=send_data(ic_va, Atm(n)%va(isc:iec,jsc:jec,:), Time)
     end do
 
 !--------------------------------------------------------------
 ! Register main prognostic fields: ps, (u,v), t, omega (dp/dt)
 !--------------------------------------------------------------
 
-
-!    allocate(id_tracer(ncnst))
+#ifdef MARS_GCM
+    allocate(id_tracer(ncnst))
+#else
     allocate(id_tracer(4))
+#endif MARS_GCM
+
     do n = 1, ntileMe
        field= 'dynamics'
 
@@ -226,6 +284,13 @@ contains
 !-------------------
        id_ps = register_diag_field ( trim(field), 'ps', axes(1:2), Time,           &
             'surface pressure', 'Pa', missing_value=missing_value )
+
+!-------------------
+! Mountain torque
+!-------------------
+       id_mq = register_diag_field ( trim(field), 'mq', axes(1:2), Time,           &
+            'mountain torque', 'Hadleys per unit area', missing_value=missing_value )
+
 !--------------
 ! 500 mb Height
 !--------------
@@ -263,8 +328,6 @@ contains
             'temperature', 'K', missing_value=missing_value, range=trange )
        id_omga = register_diag_field ( trim(field), 'omega', axes(1:3), Time,      &
             'omega', 'Pa/s', missing_value=missing_value )
-       id_divv  = register_diag_field ( trim(field), 'divv', axes(1:3), Time,      &
-            'divergence', '1/s', missing_value=missing_value )
        id_divg  = register_diag_field ( trim(field), 'divg', axes(1:3), Time,      &
             'mean divergence', '1/s', missing_value=missing_value )
 ! Total energy (moist only when full_phys = .T.)
@@ -281,6 +344,21 @@ contains
        id_pv = register_diag_field ( trim(field), 'pv', axes(1:3), Time,       &
             'potential vorticity', '1/s', missing_value=missing_value )
 
+#ifdef MARS_GCM
+        do i = 1, ncnst
+           call get_tracer_names ( MODEL_ATMOS, i, tname, tlongname, tunits )
+           id_tracer(i) = register_diag_field ( field, trim(tname),  &
+                axes(1:3), Time, trim(tlongname), &
+                trim(tunits), missing_value=missing_value)
+           if (master) then
+               if (id_tracer(i) > 0) then
+                   write(stdlog(),'(a,a,a,a)') &
+                        & 'Diagnostics available for tracer ',tname, &
+                        ' in module ', field
+               end if
+           endif
+        enddo
+#else
        id_tracer(1) = register_diag_field ( trim(field), 'sphum', axes(1:3), Time,   &
             'sphum', 'mass/air_mass', missing_value=missing_value )
        id_tracer(2) = register_diag_field ( trim(field), 'liq_wat', axes(1:3), Time, &
@@ -289,6 +367,14 @@ contains
             'cloud ice water', 'mass/air_mass', missing_value=missing_value )
        id_tracer(4) = register_diag_field ( trim(field), 'cld_amt', axes(1:3), Time, &
             'cloud fraction', '%', missing_value=missing_value )
+#endif MARS_GCM
+
+       if ( id_mq > 0 )  then
+            allocate ( zxg(isc:iec,jsc:jec) )
+! Initialize gradient of terrain for mountain torque computation:
+            call init_mq(Atm(n)%phis, Atm(n)%agrid(isc:iec,jsc:jec,2), npx, npy, isc, iec, jsc, jec, Atm(n)%ng)
+       endif
+
     end do
 
     call nullify_domain()  ! Nullify  set_domain info
@@ -296,6 +382,56 @@ contains
     module_is_initialized=.true.
  end subroutine fv_diag_init
 
+ subroutine init_mq(phis, rlat, npx, npy, is, ie, js, je, ng)
+    integer, intent(in):: npx, npy, is, ie, js, je, ng
+    real, intent(in):: phis(is-ng:ie+ng, js-ng:je+ng)
+    real, intent(in):: rlat(is:ie, js:je)  ! latitude (radian)
+! local:
+    real zs(is-ng:ie+ng, js-ng:je+ng)
+    real zb(is-ng:ie+ng, js-ng:je+ng)
+    real pdx(3,is:ie,js:je+1)
+    real pdy(3,is:ie+1,js:je)
+    integer i, j, n
+
+!   do j=js,je
+!      do i=is,ie
+    do j=js-ng,je+ng
+       do i=is-ng,ie+ng
+          zs(i,j) = phis(i,j) / grav
+       enddo
+    enddo
+!   call mpp_update_domains( zs, domain )
+
+    call a2b_ord4(zs, zb, npx, npy, is, ie, js, je, ng)
+
+    do j=js,je+1
+       do i=is,ie
+          do n=1,3
+             pdx(n,i,j) = 0.5*(zb(i,j)+zb(i+1,j))*dx(i,j)*en1(n,i,j)
+          enddo
+       enddo
+    enddo
+    do j=js,je
+       do i=is,ie+1
+          do n=1,3
+             pdy(n,i,j) = 0.5*(zb(i,j)+zb(i,j+1))*dy(i,j)*en2(n,i,j)
+          enddo
+       enddo
+    enddo
+
+! Compute gradient by Green's theorem
+    do j=js,je
+       do i=is,ie
+          zxg(i,j) = vlon(i,j,1)*(pdx(1,i,j+1)-pdx(1,i,j)-pdy(1,i,j)+pdy(1,i+1,j))  &
+                   + vlon(i,j,2)*(pdx(2,i,j+1)-pdx(2,i,j)-pdy(2,i,j)+pdy(2,i+1,j))  &
+                   + vlon(i,j,3)*(pdx(3,i,j+1)-pdx(3,i,j)-pdy(3,i,j)+pdy(3,i+1,j))
+! Times surface pressure to get Hadleys per unit area
+! Unit Hadley = 1.E18 kg m**2 / s**2
+          zxg(i,j) = -zxg(i,j) * radius * cos(rlat(i,j)) * rarea(i,j) * 1.E-18
+       enddo
+    enddo
+
+ end subroutine init_mq
 
  subroutine fv_diag(Atm, zvir, Time, print_freq)
 
@@ -310,10 +446,10 @@ contains
 
     real, allocatable :: a2(:,:), wk(:,:,:), wz(:,:,:), ucoor(:,:,:), vcoor(:,:,:)
     real height(2)
-
+    real tot_mq 
     logical :: used
     logical :: prt_minmax
-    integer  yr, mon, dd, hr, mn, days, seconds
+    integer i,j,  yr, mon, dd, hr, mn, days, seconds
 
 
     height(1) = 5.E3      ! for computing 5-km "pressure"
@@ -335,7 +471,14 @@ contains
     call set_domain(Atm(1)%domain)
 
     if ( full_phys ) then
+#ifdef MARS_GCM
+         call get_time (fv_time, seconds,  days)
+         mn= 0
+         hr= 0
+         mon= 0
+#else
          call get_date(fv_time, yr, mon, dd, hr, mn, seconds)
+#endif 
          if( print_freq == 0 ) then
                  prt_minmax = .false.
          elseif( print_freq < 0 ) then
@@ -395,6 +538,13 @@ contains
 #ifdef SW_DYNAMICS
         call prt_maxmin('PS', Atm(n)%ps, isc, iec, jsc, jec, ngc, 1, 1./grav, master)
 #else
+             steps = steps + 1
+           efx_sum = efx_sum + E_Flux
+        if ( steps <= max_step ) efx(steps) = E_Flux
+        if (master)  then
+            write(6,*) 'ENG Deficit (W/m**2)=', E_Flux
+        endif
+
         call prt_maxmin('PS', Atm(n)%ps, isc, iec, jsc, jec, ngc, 1, 0.01, master)
 #endif
 !       call prt_maxmin('ZS', zsurf, isc, iec, jsc, jec, 0, 1, 1., master)
@@ -408,6 +558,9 @@ contains
         call prt_maxmin('TA', Atm(n)%pt,   isc, iec, jsc, jec, ngc, npz, 1., master)
         call prt_maxmin('OM', Atm(n)%omga, isc, iec, jsc, jec, ngc, npz, 1., master)
 
+#  ifdef MARS_GCM
+!         Have moved this to further down 
+#   else
 ! Tracers:
         if ( ncnst >= 1 )    &
         call prt_maxmin('Q1', Atm(n)%q(isc-ngc,jsc-ngc,1,1), isc, iec, jsc, jec, ngc, npz, 1., master)
@@ -417,6 +570,7 @@ contains
         call prt_maxmin('Q3', Atm(n)%q(isc-ngc,jsc-ngc,1,3), isc, iec, jsc, jec, ngc, npz, 1., master)
         if ( ncnst >= 4 )    &
         call prt_maxmin('Q4', Atm(n)%q(isc-ngc,jsc-ngc,1,4), isc, iec, jsc, jec, ngc, npz, 1., master)
+#   endif MARS_GCM
 #endif
     endif
 
@@ -431,6 +585,7 @@ contains
 #endif
        if(id_ps > 0) used=send_data(id_ps, Atm(n)%ps(isc:iec,jsc:jec), Time)
 
+
        if(id_slp > 0 .or. id_h500 > 0 ) then
 
           allocate ( wz(isc:iec,jsc:jec,npz+1) )
@@ -441,7 +596,7 @@ contains
           if(id_slp > 0) then
 ! Cumpute SLP (pressure at height=0)
           call get_pressure_given_height(isc, iec, jsc, jec, ngc, npz, wz, 1, height(2),   &
-                                        Atm(n)%pt(isc-ngc,jsc-ngc,npz), Atm(n)%peln, a2, 0.01)
+                                        Atm(n)%pt(:,:,npz), Atm(n)%peln, a2, 0.01)
           used = send_data (id_slp, a2, Time)
           if( prt_minmax )   &
              call prt_maxmin('SLP', a2, isc, iec, jsc, jec, 0, 1, 1., master)
@@ -455,9 +610,24 @@ contains
              used = send_data ( id_h500, a2, Time )
           endif
 
-         deallocate ( a2 )
          deallocate ( wz )
        endif
+
+       if(id_mq > 0)  then
+          do j=jsc,jec
+             do i=isc,iec
+                a2(i,j) = Atm(n)%ps(i,j)*zxg(i,j)
+             enddo
+          enddo
+          used = send_data(id_mq, a2, Time)
+          if( prt_minmax ) then
+              tot_mq  = g_sum( a2, isc, iec, jsc, jec, ngc, area) 
+              mtq_sum = mtq_sum + tot_mq
+              if ( steps <= max_step ) mtq(steps) = tot_mq
+              if(master) write(*,*) 'Total (global) mountain torque (Hadleys)=', tot_mq
+          endif
+       endif
+
 
        if(id_ua > 0) used=send_data(id_ua, Atm(n)%ua(isc:iec,jsc:jec,:), Time)
        if(id_va > 0) used=send_data(id_va, Atm(n)%va(isc:iec,jsc:jec,:), Time)
@@ -468,16 +638,11 @@ contains
        if(id_pt   > 0) used=send_data(id_pt  , Atm(n)%pt  (isc:iec,jsc:jec,:), Time)
        if(id_omga > 0) used=send_data(id_omga, Atm(n)%omga(isc:iec,jsc:jec,:), Time)
 
-       if ( id_divv>0 .or. id_vort>0 .or. id_pv>0 ) then
+       if ( id_vort>0 .or. id_pv>0 ) then
           allocate ( wk(isc:iec,jsc:jec,npz) )
           isd = Atm(n)%isd; ied = Atm(n)%ied
           jsd = Atm(n)%jsd; jed = Atm(n)%jed
           npz = Atm(n)%npz
-
-          if(id_divv  > 0) then
-             call get_divergence(Atm(n)%u, Atm(n)%v, wk)
-             used=send_data(id_divv,  wk, Time)
-          endif
 
           if(id_vort >0 .or. id_pv>0) then
              call get_vorticity(Atm(n)%u, Atm(n)%v, wk)
@@ -494,47 +659,26 @@ contains
          deallocate ( wk )
        endif
 
+#ifdef MARS_GCM
+        do itrac=1, ncnst
+          if (id_tracer(itrac) > 0) &
+               & used = send_data (id_tracer(itrac), Atm(n)%q(isc:iec,jsc:jec,:,itrac), Time )
+          if( prt_minmax ) then
+              call prt_maxmin('Q', Atm(n)%q(isc-ngc,jsc-ngc,1,itrac), &
+                   isc, iec, jsc, jec, ngc, npz, 1., master)
+          endif
+        enddo
+#else
        do itrac=1, min(4,ncnst)
           if(id_tracer(itrac) > 0) used=send_data(id_tracer(itrac), Atm(n)%q(isc:iec,jsc:jec,:,itrac), Time)
        enddo
-
+#endif MARS_GCM
+       deallocate ( a2 )
     enddo
 
     call nullify_domain()
 
   contains
-    subroutine get_divergence(u, v, divv)
-
-      real, intent(inout)  :: u(isd:ied,jsd:jed+1,npz), v(isd:ied+1,jsd:jed,npz)
-      real, intent(out)    :: divv(isc:iec,jsc:jec,npz)
-      
-      real    :: uc(isd:ied+1,jsd:jed), vc(isd:ied,jsd:jed+1)
-      real    :: ua(isd:ied,jsd:jed), va(isd:ied,jsd:jed)
-      real    :: ut(isd:ied,jsd:jed), vt(isd:ied,jsd:jed)
-      integer :: i,j,k
-
-      call mpp_update_domains( u, v, domain, gridtype=DGRID_NE,                           &
-                               whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
-      do k=1,npz
-         call d2a2c_vect(u(isd,jsd,k), v(isd,jsd,k), ua,  va,  uc, vc, ut, vt)
-         do j=jsc,jec
-            do i=isc,iec+1
-               ut(i,j) = ut(i,j)*dy(i,j)*sina_u(i,j)
-            enddo
-         enddo
-         do j=jsc,jec+1
-            do i=isc,iec
-               vt(i,j) = vt(i,j)*dx(i,j)*sina_v(i,j)
-            enddo
-         enddo
-         do j=jsc,jec
-            do i=isc,iec
-               divv(i,j,k) = rarea(i,j) * (  ut(i+1,j) - ut(i,j) + vt(i,j+1) - vt(i,j) )
-            enddo
-         enddo
-      enddo
-
-    end subroutine get_divergence
 
     subroutine get_vorticity(u, v, vort)
 
@@ -677,7 +821,7 @@ contains
       logical, intent(in):: master
 ! Local:
       real psq(is:ie,js:je)
-      real psmo, psdry, qtot, qsum
+      real psmo, psdry, qtot
       integer i,j,k, ip
 
       ip = min(3,size(q,4))
@@ -690,8 +834,7 @@ contains
         if( full_phys ) then
           do k=1,km
              do i=is,ie
-                qsum = sum( q(i,j,k,1:ip) ) * delp(i,j,k)
-                psq(i,j) = psq(i,j) + qsum
+                psq(i,j) = psq(i,j) + sum( q(i,j,k,1:ip) ) * delp(i,j,k)
             enddo
           enddo
         else
@@ -704,8 +847,8 @@ contains
 1000  continue
 
 ! Check global means
-       psmo  = g_sum( ps(is:ie,js:je), is, ie, js, je, n_g, area, 1) 
-       qtot  = g_sum( psq, is, ie, js, je, n_g, area, 1) 
+       psmo  = g_sum( ps(is:ie,js:je), is, ie, js, je, n_g, area, mode=1) 
+       qtot  = g_sum( psq, is, ie, js, je, n_g, area, mode=1) 
        psdry = psmo - qtot
 
 #ifdef USE_STDOUT
