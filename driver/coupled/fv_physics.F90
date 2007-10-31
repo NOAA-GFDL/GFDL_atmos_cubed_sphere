@@ -28,7 +28,7 @@ use atmos_nudge_mod,       only: atmos_nudge_init, atmos_nudge_end
 !-----------------
 use grid_tools,            only: area
 use fv_arrays_mod,         only: fv_atmos_type
-use fv_pack_mod,           only: npx, npy, npz, ncnst, domain
+use fv_pack_mod,           only: npx, npy, npz, ncnst, pnats, domain
 use eta_mod,               only: get_eta_level
 use update_fv_phys_mod,    only: update_fv_phys
 use fv_sg_mod,             only: fv_sg_conv
@@ -41,8 +41,8 @@ public  fv_physics_down, fv_physics_up, fv_physics_init, fv_physics_end
 public  surf_diff_type
 
 !-----------------------------------------------------------------------
-character(len=128) :: version = '$Id: fv_physics.F90,v 15.0 2007/08/14 03:50:50 fms Exp $'
-character(len=128) :: tag = '$Name: omsk $'
+character(len=128) :: version = '$Id: fv_physics.F90,v 15.0.2.1 2007/09/19 14:37:01 bw Exp $'
+character(len=128) :: tag = '$Name: omsk_2007_10 $'
 !-----------------------------------------------------------------------
 
    real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt
@@ -80,8 +80,8 @@ contains
     real    :: ps1, ps2
     integer :: i, j, k, sphum
 
-! All tracers are prognostic
-    nt_prog = ncnst
+! Prognostic tracers are total minus non-advected
+    nt_prog = ncnst-pnats
 
     isc = Atm(1)%isc
     iec = Atm(1)%iec
@@ -132,7 +132,7 @@ contains
 
     call physics_driver_init(Time, Atm(1)%grid(isc:iec+1,jsc:jec+1,1),               &
                                    Atm(1)%grid(isc:iec+1,jsc:jec+1,2),               &
-                             axes, pref, Atm(1)%q(isc:iec,jsc:jec,1:npz,1:nt_prog),  &
+                             axes, pref, Atm(1)%q(isc:iec,jsc:jec,1:npz,1:ncnst),  &
                              Surf_diff,  p_edge )
     deallocate ( p_edge )
 
@@ -244,7 +244,7 @@ contains
              call fv_sg_conv(isw, iew, jsw, jew, isd, ied, jsd, jed,    &
                              isc, iec, jsc, jec, npz, nt_prog, dt_phys, &
                              Atm(1)%fv_sg_adj, Atm(1)%delp, Atm(1)%pe, Atm(1)%peln,  &
-                             Atm(1)%pt, Atm(1)%q, Atm(1)%ua, Atm(1)%va,       &
+                             Atm(1)%pt, Atm(1)%q(:,:,:,1:nt_prog), Atm(1)%ua, Atm(1)%va, &
                              u_dt, v_dt, t_dt, q_dt, Atm(1)%ak, Atm(1)%bk) 
           else
 ! Initialize tendencies due to parameterizations:
@@ -269,7 +269,7 @@ contains
           endif
 
           call compute_p_z(npz, isw, jsw, nx_win, ny_win, Atm(1)%phis, Atm(1)%pt, &
-                           Atm(1)%q, Atm(1)%delp, Atm(1)%pe, Atm(1)%peln )
+                           Atm(1)%q(:,:,:,1), Atm(1)%delp, Atm(1)%pe, Atm(1)%peln )
 
           call physics_driver_down( isw-isc+1, iew-isc+1, jsw-jsc+1, jew-jsc+1, &
                    Time_prev, Time, Time_next                              , &
@@ -352,7 +352,7 @@ contains
           iew = isw + nx_win - 1
 
           call compute_p_z( npz, isw, jsw, nx_win, ny_win, Atm(1)%phis, Atm(1)%pt,   &
-                            Atm(1)%q, Atm(1)%delp, Atm(1)%pe, Atm(1)%peln )
+                            Atm(1)%q(:,:,:,1), Atm(1)%delp, Atm(1)%pe, Atm(1)%peln )
 
           call physics_driver_up( isw-isc+1, iew-isc+1, jsw-jsc+1, jew-jsc+1, &
                                   Time_prev, Time, Time_next             , &

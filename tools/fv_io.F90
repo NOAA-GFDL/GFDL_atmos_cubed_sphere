@@ -41,14 +41,12 @@ module fv_io_mod
   use mpp_domains_mod,         only: mpp_get_compute_domain, mpp_get_data_domain
 ! use tracer_manager_mod,      only: get_tracer_names
 
-#ifdef MARS_GCM
   use tracer_manager_mod, only : tr_get_tracer_names=>get_tracer_names, &
        get_tracer_names, get_number_tracers, &
        set_tracer_profile, &
        get_tracer_index, NO_TRACER
   use field_manager_mod, only  : MODEL_ATMOS  
   use fms_mod,           only  : field_exist    
-#endif MARS_GCM  
 
 
   implicit none
@@ -59,8 +57,8 @@ module fv_io_mod
   logical                       :: module_is_initialized = .FALSE.
 
   !--- version information variables ----
-  character(len=128) :: version = '$Id: fv_io.F90,v 15.0 2007/08/14 03:51:24 fms Exp $'
-  character(len=128) :: tagname = '$Name: omsk $'
+  character(len=128) :: version = '$Id: fv_io.F90,v 15.0.2.2.2.1 2007/09/21 18:58:27 z1l Exp $'
+  character(len=128) :: tagname = '$Name: omsk_2007_10 $'
 
 contains 
 
@@ -106,10 +104,7 @@ contains
     integer              :: ntileMe
     integer, allocatable :: tile_id(:)
 
-#ifdef MARS_GCM
     character(len=128)           :: tracer_longname, tracer_units
-!!!!    type(fieldtype), allocatable :: tracer_fields(:)
-#endif MARS_GCM
 
 
     ntileMe = size(Atm(:))  ! This will have to be modified for mult tiles per PE
@@ -122,8 +117,8 @@ contains
     fname_nd = 'INPUT/fv_core.res.nc'
  
   ! write_data does not (yet?) support vector data and tiles
-    call read_data(fname_nd, 'ak', Atm(1)%ak(:))
-    call read_data(fname_nd, 'bk', Atm(1)%bk(:))
+    call read_data(fname_nd, 'ak', Atm(1)%ak(:), no_domain=.true.)
+    call read_data(fname_nd, 'bk', Atm(1)%bk(:), no_domain=.true.)
  
     do n = 1, ntileMe
        isc = Atm(n)%isc; iec = Atm(n)%iec; jsc = Atm(n)%jsc; jec = Atm(n)%jec
@@ -170,36 +165,24 @@ contains
 #endif
  
        call get_tile_string(fname, 'INPUT/fv_tracer.res.tile', tile_id(n), '.nc' )
-       if(file_exist(fname))then
 
 
-#ifdef MARS_GCM
          DO nt = 1, ntracers
            call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
 
-           if( field_exist(fname,tracer_name) ) then
-               call read_data(fname, tracer_name, Atm(n)%q(isc:iec,jsc:jec,:,nt), &
+           if (file_exist(fname)) then
+              if (field_exist(fname,tracer_name)) then
+                 call read_data(fname, tracer_name, Atm(n)%q(isc:iec,jsc:jec,:,nt), &
                                                       domain=fv_domain, tile_count=n)
-               call mpp_error(NOTE,'==>  Have read tracer '//trim(tracer_name)//' from fv_tracer.res')
-
-           else
-               call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%q(isc:iec,jsc:jec,:,nt)  )
-               call mpp_error(NOTE,'==>  Setting tracer '//trim(tracer_name)//' from set_tracer')
+                 call mpp_error(NOTE,'==>  Have read tracer '//trim(tracer_name)//' from fv_tracer.res')
+                 cycle
+              endif
            endif
+
+           call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%q(isc:iec,jsc:jec,:,nt)  )
+           call mpp_error(NOTE,'==>  Setting tracer '//trim(tracer_name)//' from set_tracer')
          ENDDO
-#else
 
-         do nt = 1, ntracers
-!          call get_tracer_names(MODEL_ATMOS, n, tracer_name)
-           ! Temporary until we get tracer manager (or at least a tracer list) integrated
-           call get_tile_string(tracer_name, 'atm_T', nt)
-           call read_data(fname, tracer_name, Atm(n)%q(isc:iec,jsc:jec,:,nt), domain=fv_domain, tile_count=n)
-         end do
-#endif MARS_GCM
-
-       else
-         if (ntracers>0) call mpp_error(FATAL,'==> Error from fv_read_restart: Expected file '//trim(fname)//' does not exist')
-       endif
  
     end do
  
@@ -268,8 +251,8 @@ contains
     fname_nd = 'INPUT/fv_core.res.nc'
 
   ! write_data does not (yet?) support vector data and tiles
-    call read_data(fname_nd, 'ak', ak_r(1:npz_rst+1))
-    call read_data(fname_nd, 'bk', bk_r(1:npz_rst+1))
+    call read_data(fname_nd, 'ak', ak_r(:), no_domain=.true.)
+    call read_data(fname_nd, 'bk', bk_r(:), no_domain=.true.)
 
     do n = 1, ntileMe
        call get_tile_string(fname, 'INPUT/fv_core.res.tile', tile_id(n), '.nc' )
@@ -315,16 +298,21 @@ contains
 #endif
 
        call get_tile_string(fname, 'INPUT/fv_tracer.res.tile', tile_id(n), '.nc' )
-       if(file_exist(fname))then
-         do nt = 1, ntracers
-!          call get_tracer_names(MODEL_ATMOS, n, tracer_name)
-           ! Temporary until we get tracer manager (or at least a tracer list) integrated
-           call get_tile_string(tracer_name, 'atm_T', nt)
-           call read_data(fname, tracer_name, q_r(isc:iec,jsc:jec,:,nt), domain=fv_domain, tile_count=n)
-         end do
-       else
-         if (ntracers>0) call mpp_error(FATAL,'==> Error from fv_read_restart: Expected file '//trim(fname)//' does not exist')
-       endif
+
+       do nt = 1, ntracers
+           call get_tracer_names(MODEL_ATMOS, n, tracer_name)
+
+          if(file_exist(fname))then
+              if (field_exist(fname,tracer_name)) then
+                 call read_data(fname, tracer_name, q_r(isc:iec,jsc:jec,:,nt), domain=fv_domain, tile_count=n)
+                 call mpp_error(NOTE,'==>  Have read tracer '//trim(tracer_name)//' from fv_tracer.res')
+                 cycle
+              endif
+          endif
+
+          call set_tracer_profile (MODEL_ATMOS, nt, q_r(isc:iec,jsc:jec,:,nt)  )
+          call mpp_error(NOTE,'==>  Setting tracer '//trim(tracer_name)//' from set_tracer')
+       ENDDO
 
        call rst_remap(npz_rst, npz, isc, iec, jsc, jec, isd, ied, jsd, jed, ntracers,              &
                       delp_r,      u_r,      v_r,      w_r,      delz_r,      pt_r,      q_r,      &
@@ -365,10 +353,8 @@ contains
     integer              :: ntileMe
     integer, allocatable :: tile_id(:)
 
-#ifdef MARS_GCM
     character(len=128)           :: tracer_longname, tracer_units
-!!!!    type(fieldtype), allocatable :: tracer_fields(:)
-#endif MARS_GCM
+
 
     ntileMe = size(Atm(:))  ! This will need mods for more than 1 tile per pe
     allocate(tile_id(ntileMe))
@@ -380,8 +366,8 @@ contains
     fname_nd = 'RESTART/fv_core.res.nc'
  
   ! write_data does not (yet?) support vector data and tiles
-    call write_data(fname_nd, 'ak', Atm(1)%ak(:))
-    call write_data(fname_nd, 'bk', Atm(1)%bk(:))
+    call write_data(fname_nd, 'ak', Atm(1)%ak(:), no_domain=.true.)
+    call write_data(fname_nd, 'bk', Atm(1)%bk(:), no_domain=.true.)
  
     do n = 1, ntileMe
        isc = Atm(n)%isc; iec = Atm(n)%iec; jsc = Atm(n)%jsc; jec = Atm(n)%jec  
@@ -412,20 +398,11 @@ contains
 
        call get_tile_string(fname, 'RESTART/fv_tracer.res.tile', tile_id(n), '.nc' )
 
-#ifdef MARS_GCM
        do nt = 1, ntracers
          call tr_get_tracer_names(MODEL_ATMOS, nt, &
                 tracer_name, tracer_longname, tracer_units)
          call write_data(fname, tracer_name, Atm(n)%q(isc:iec,jsc:jec,:,nt), domain=fv_domain, tile_count=n)
        end do
-#else
-       do nt = 1, ntracers
-!        call get_tracer_names(MODEL_ATMOS, n, tracer_name)
-         ! Temporary until we get tracer manager (or at least a tracer list) integrated
-         call get_tile_string(tracer_name, 'atm_T', nt)
-         call write_data(fname, tracer_name, Atm(n)%q(isc:iec,jsc:jec,:,nt), domain=fv_domain, tile_count=n)
-       end do
-#endif MARS_GCM
 
     end do
 

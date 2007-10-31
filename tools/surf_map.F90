@@ -7,6 +7,7 @@
       use mp_mod,   only: domain, ng, is,js,ie,je, isd,jsd,ied,jed, &
                           mp_stop, mp_reduce_min, mp_reduce_max
       use mpp_domains_mod,   only : mpp_update_domains
+      use fms_mod, only: file_exist, error_mesg, FATAL
 
       implicit none
       real pi
@@ -71,39 +72,41 @@
 !!!             Note that it is necessary to convert from km to m
 !!!                     see ifdef MARS_GCM  below 
       fid = 22
-!!!   open( Unit= fid, FILE= '/home/sjl/Cubed_Grids/mars_topo_mola16', FORM= 'unformatted')
-      open( Unit= fid, FILE= '/home/rjw/MGCM/mars_topo_mola16', FORM= 'unformatted')
-      read( fid ) nlon, nlat
+      if(file_exist('INPUT/mars_topo')then
+         open( Unit= fid, FILE= 'INPUT/mars_topo', FORM= 'unformatted')
+         read( fid ) nlon, nlat
 
-      if(master) write(*,*) 'Mars Terrain dataset dims=', nlon, nlat
+         if(master) write(*,*) 'Mars Terrain dataset dims=', nlon, nlat
 
-      allocate ( htopo(nlon,nlat) )
-      read( fid )  htopo
+         allocate ( htopo(nlon,nlat) )
+         read( fid )  htopo
 
-      if ( master ) then
-           write(6,*) 'Check Hi-res Mars data ..'
-!          write(*,*) 1.E3*htopo(1,1), 1.E3*htopo(nlon, nlat)
-           fmax =  vmax(htopo,fmin,nlon,nlat,1)
-           write(6,*) 'hmax=', fmax*1.E3
-           write(6,*) 'hmin=', fmin*1.E3
-      endif
-      close(fid)
+         if ( master ) then
+              write(6,*) 'Check Hi-res Mars data ..'
+!             write(*,*) 1.E3*htopo(1,1), 1.E3*htopo(nlon, nlat)
+              fmax =  vmax(htopo,fmin,nlon,nlat,1)
+              write(6,*) 'hmax=', fmax*1.E3
+              write(6,*) 'hmin=', fmin*1.E3
+         endif
+         close(fid)
 !     if(master) write(fid)  htopo
 
 
-      allocate ( ftopo(nlon,nlat) )
-      ftopo = 1.              ! all lands
-
+         allocate ( ftopo(nlon,nlat) )
+         ftopo = 1.              ! all lands
+      else
+         call error_mesg ( 'surfdrv',  &
+             'mars_topo not found in INPUT', FATAL )
+      endif
 #else
  
 #ifndef USE_IEEE_DATA
       if ( npx > 65 ) then
            nlon = 10800
            nlat =  5400
-!          iflnm  = '/archive/sjl/topo/topo2min.nc'
-           iflnm  = '/work/sjl/topo/topo2min.nc'
+           iflnm  = 'INPUT/topo2min.nc'
       else
-           iflnm  = '/home/sjl/Cubed_Grids/topo5min.nc'
+           iflnm  = 'INPUT/topo5min.nc'
            nlon = 4320
            nlat = 2160
       endif
@@ -158,7 +161,7 @@
 #else
       nlon = 10800
       nlat =  5400
-      iflnm    = '/work/sjl/topo/topo2min.bin'
+      iflnm    = 'INPUT/topo2min.bin'
 
       if(master) write(*,*) 'USGS dataset (binary) = ', iflnm
 

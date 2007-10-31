@@ -78,12 +78,10 @@ contains
 
     character(len=64) :: field
 
-#ifdef MARS_GCM
 ! tracers
     character(len=128)   :: tname
     character(len=256)   :: tlongname, tunits
     integer              :: ntprog
-#endif MARS_GCM
 
 ! For total energy diagnostics:
     steps = 0
@@ -266,11 +264,7 @@ contains
 ! Register main prognostic fields: ps, (u,v), t, omega (dp/dt)
 !--------------------------------------------------------------
 
-#ifdef MARS_GCM
     allocate(id_tracer(ncnst))
-#else
-    allocate(id_tracer(4))
-#endif MARS_GCM
 
     do n = 1, ntileMe
        field= 'dynamics'
@@ -344,7 +338,6 @@ contains
        id_pv = register_diag_field ( trim(field), 'pv', axes(1:3), Time,       &
             'potential vorticity', '1/s', missing_value=missing_value )
 
-#ifdef MARS_GCM
         do i = 1, ncnst
            call get_tracer_names ( MODEL_ATMOS, i, tname, tlongname, tunits )
            id_tracer(i) = register_diag_field ( field, trim(tname),  &
@@ -358,16 +351,6 @@ contains
                end if
            endif
         enddo
-#else
-       id_tracer(1) = register_diag_field ( trim(field), 'sphum', axes(1:3), Time,   &
-            'sphum', 'mass/air_mass', missing_value=missing_value )
-       id_tracer(2) = register_diag_field ( trim(field), 'liq_wat', axes(1:3), Time, &
-            'cloud liquid water', 'mass/air_mass', missing_value=missing_value )
-       id_tracer(3) = register_diag_field ( trim(field), 'ice_wat', axes(1:3), Time, &
-            'cloud ice water', 'mass/air_mass', missing_value=missing_value )
-       id_tracer(4) = register_diag_field ( trim(field), 'cld_amt', axes(1:3), Time, &
-            'cloud fraction', '%', missing_value=missing_value )
-#endif MARS_GCM
 
        if ( id_mq > 0 )  then
             allocate ( zxg(isc:iec,jsc:jec) )
@@ -450,6 +433,7 @@ contains
     logical :: used
     logical :: prt_minmax
     integer i,j,  yr, mon, dd, hr, mn, days, seconds
+    character(len=128)   :: tname
 
 
     height(1) = 5.E3      ! for computing 5-km "pressure"
@@ -558,19 +542,16 @@ contains
         call prt_maxmin('TA', Atm(n)%pt,   isc, iec, jsc, jec, ngc, npz, 1., master)
         call prt_maxmin('OM', Atm(n)%omga, isc, iec, jsc, jec, ngc, npz, 1., master)
 
-#  ifdef MARS_GCM
-!         Have moved this to further down 
-#   else
 ! Tracers:
-        if ( ncnst >= 1 )    &
-        call prt_maxmin('Q1', Atm(n)%q(isc-ngc,jsc-ngc,1,1), isc, iec, jsc, jec, ngc, npz, 1., master)
-        if ( ncnst >= 2 )    &
-        call prt_maxmin('Q2', Atm(n)%q(isc-ngc,jsc-ngc,1,2), isc, iec, jsc, jec, ngc, npz, 1., master)
-        if ( ncnst >= 3 )    &
-        call prt_maxmin('Q3', Atm(n)%q(isc-ngc,jsc-ngc,1,3), isc, iec, jsc, jec, ngc, npz, 1., master)
-        if ( ncnst >= 4 )    &
-        call prt_maxmin('Q4', Atm(n)%q(isc-ngc,jsc-ngc,1,4), isc, iec, jsc, jec, ngc, npz, 1., master)
-#   endif MARS_GCM
+! Have moved this to further down 
+!       if ( ncnst >= 1 )    &
+!       call prt_maxmin('Q1', Atm(n)%q(isc-ngc,jsc-ngc,1,1), isc, iec, jsc, jec, ngc, npz, 1., master)
+!       if ( ncnst >= 2 )    &
+!       call prt_maxmin('Q2', Atm(n)%q(isc-ngc,jsc-ngc,1,2), isc, iec, jsc, jec, ngc, npz, 1., master)
+!       if ( ncnst >= 3 )    &
+!       call prt_maxmin('Q3', Atm(n)%q(isc-ngc,jsc-ngc,1,3), isc, iec, jsc, jec, ngc, npz, 1., master)
+!       if ( ncnst >= 4 )    &
+!       call prt_maxmin('Q4', Atm(n)%q(isc-ngc,jsc-ngc,1,4), isc, iec, jsc, jec, ngc, npz, 1., master)
 #endif
     endif
 
@@ -659,20 +640,15 @@ contains
          deallocate ( wk )
        endif
 
-#ifdef MARS_GCM
         do itrac=1, ncnst
           if (id_tracer(itrac) > 0) &
                & used = send_data (id_tracer(itrac), Atm(n)%q(isc:iec,jsc:jec,:,itrac), Time )
           if( prt_minmax ) then
-              call prt_maxmin('Q', Atm(n)%q(isc-ngc,jsc-ngc,1,itrac), &
+              call get_tracer_names ( MODEL_ATMOS, itrac, tname )
+              call prt_maxmin(trim(tname), Atm(n)%q(isc-ngc,jsc-ngc,1,itrac), &
                    isc, iec, jsc, jec, ngc, npz, 1., master)
           endif
         enddo
-#else
-       do itrac=1, min(4,ncnst)
-          if(id_tracer(itrac) > 0) used=send_data(id_tracer(itrac), Atm(n)%q(isc:iec,jsc:jec,:,itrac), Time)
-       enddo
-#endif MARS_GCM
        deallocate ( a2 )
     enddo
 

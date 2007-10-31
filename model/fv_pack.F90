@@ -1,4 +1,4 @@
-! $Id: fv_pack.F90,v 15.0 2007/08/14 03:51:06 fms Exp $
+! $Id: fv_pack.F90,v 15.0.2.1.2.2 2007/09/19 20:08:46 bw Exp $
 
 module fv_pack_mod
 
@@ -17,7 +17,6 @@ module fv_pack_mod
       use test_cases,      only: test_case, alpha
       use timingModule,    only: timing_on, timing_off, timing_init, timing_prt
 
-#ifdef MARS_GCM
 ! --- tracer manager ---
    use tracer_manager_mod, only : tm_get_number_tracers => get_number_tracers, &
                                   tm_get_tracer_index   => get_tracer_index,   &
@@ -28,7 +27,6 @@ module fv_pack_mod
                                   tm_register_tracers   => register_tracers
 
    use field_manager_mod, only  : MODEL_ATMOS
-#endif MARS_GCM
 
 
       implicit none
@@ -108,7 +106,8 @@ module fv_pack_mod
    integer :: npz_rst = 0             ! Original Vertical Levels (in the restart)
                                       ! 0: no change (default)
    integer :: layout(2)=(/2,2/)       ! Processor layout
-   integer :: ncnst = 1               ! Number of advected consituents
+   integer :: ncnst = 1               ! Number of total consituents
+   integer :: pnats                   ! Number of non-advected consituents
    integer :: ntiles                  ! Number or tiles that make up the Grid 
    integer :: ntilesMe                ! Number of tiles on this process =1 for now
    integer, parameter:: ndims = 2     ! Lat-Lon Dims for Grid in Radians
@@ -120,13 +119,13 @@ module fv_pack_mod
    real    :: p_ref = 600.
    real   ::  reference_sfc_pres = 7.7E2
    real   ::  sponge_damp=   1.0
-   integer :: nt_prog = 0
-   integer :: nt_phys = 0
    real    :: dry_mass = 7.7E2
 #else
    real    :: p_ref = 1.E5
    real    :: dry_mass = 98290.
 #endif
+   integer :: nt_prog = 0
+   integer :: nt_phys = 0
    real    :: too_big  = 1.E35
    real    :: consv_te = 0.
    real    :: tau = 0.                ! Time scale (days) for Rayleigh friction
@@ -163,7 +162,7 @@ module fv_pack_mod
                              !              but it is not suitable for low horizontal resolution
                              ! m_grad_p=0:  two-stage grad computation (best for low resolution runs)
    integer :: a2b_ord = 2    ! order for interpolation from A to B Grid (corners)
-   public :: npx,npy,npz, npz_rst, ntiles,ncnst
+   public :: npx,npy,npz, npz_rst, ntiles,ncnst,pnats
    public :: hord_mt, hord_vt, kord_mt, hord_tm, kord_tm, hord_tr, kord_tr
    public :: n_split, m_split, q_split, master
    public :: dddmp, d_ext
@@ -177,8 +176,8 @@ module fv_pack_mod
 
 #ifdef MARS_GCM
    public :: reference_sfc_pres, sponge_damp
-   public :: nt_prog, nt_phys
 #endif MARS
+   public :: nt_prog, nt_phys
 
 
 
@@ -196,13 +195,8 @@ module fv_pack_mod
    integer :: isd, ied, jsd, jed
 
 
-#ifdef MARS_GCM
 ! tracers
-   integer :: num_family, pnats, index ! output of register_tracers
-   integer, allocatable :: tracer_indices(:)
-   logical :: is_in_nonadv_tracer_section
-   character(len=128) :: msg, tname
-#endif MARS
+   integer :: num_family ! output of register_tracers
 
 
 ! Start up MPI
@@ -223,17 +217,10 @@ module fv_pack_mod
       k_top = max(1, k_top)   ! to idiot proof
 
 
-#ifdef MARS_GCM
 !           override number of tracers by reading field_table
 
     call tm_register_tracers (MODEL_ATMOS, ncnst, nt_prog, pnats, num_family)
     write(stdout(), *)'ncnst=', ncnst,' num_prog=',nt_prog,' pnats=',pnats,' num_family=',num_family
-
-!!!    allocate(tracer_indices(ncnst))
-!!!    call tm_get_tracer_indices(MODEL_ATMOS, tracer_indices)
-!!!    index = tm_get_tracer_index(MODEL_ATMOS, 'h2o_vapor', tracer_indices)
-!!!    deallocate(tracer_indices)
-#endif MARS_GCM
 
 
       Atm(1)%npx=npx; Atm(1)%npy=npy; Atm(1)%npz=npz; Atm(1)%ng=ng
@@ -244,6 +231,7 @@ module fv_pack_mod
       Atm(1)%print_freq = print_freq
       Atm(1)%consv_te = consv_te
       Atm(1)%ncnst = ncnst
+      Atm(1)%pnats = pnats
       Atm(1)%fill = fill
       Atm(1)%z_tracer = z_tracer
       Atm(1)%do_Held_Suarez = do_Held_Suarez

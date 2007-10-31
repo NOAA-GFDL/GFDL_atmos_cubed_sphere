@@ -82,7 +82,7 @@ public
     integer :: ks, npx, npy, npz, npz_rst, ng, ntiles
     integer :: n_sponge    ! Number of sponge layers at the top of the atmosphere
     integer :: k_top       ! Starting layer for non-hydrostatic dynamics
-    integer :: ncnst, ndims, n_split, m_split, q_split, print_freq
+    integer :: ncnst, pnats, ndims, n_split, m_split, q_split, print_freq
     integer :: fv_sg_adj
 
 ! Namelist control values

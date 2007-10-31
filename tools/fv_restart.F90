@@ -48,6 +48,8 @@ module fv_restart_mod
   use surf_map,            only: sgh_g, oro_g
 #endif
   use fv_diagnostics_mod,  only: steps, efx, efx_sum, mtq, mtq_sum
+  use tracer_manager_mod,  only: get_tracer_names
+  use field_manager_mod,   only: MODEL_ATMOS
 
 
   implicit none
@@ -59,8 +61,8 @@ module fv_restart_mod
   logical                       :: module_is_initialized = .FALSE.
 
   !--- version information variables ----
-  character(len=128) :: version = '$Id: fv_restart.F90,v 15.0 2007/08/14 03:51:26 fms Exp $'
-  character(len=128) :: tagname = '$Name: omsk $'
+  character(len=128) :: version = '$Id: fv_restart.F90,v 15.0.2.1 2007/08/16 18:46:02 bw Exp $'
+  character(len=128) :: tagname = '$Name: omsk_2007_10 $'
 
 contains 
 
@@ -99,6 +101,7 @@ contains
     integer :: isd, ied, jsd, jed
     real rgrav, f00
     logical :: hybrid
+    character(len=128)   :: tname
 
     rgrav = 1. / grav
 
@@ -273,12 +276,10 @@ contains
 
       call prt_maxmin('PS', Atm(n)%ps, isc, iec, jsc, jec, Atm(n)%ng, 1,    0.01, gid==masterproc)
       call prt_maxmin('T ', Atm(n)%pt, isc, iec, jsc, jec, Atm(n)%ng, npz, 1., gid==masterproc)
-#ifndef MARS_GCM
-      if (ncnst>0) call prt_maxmin('Q1', Atm(n)%q(isd,jsd,1,1), isc, iec, jsc, jec, Atm(n)%ng, npz, 1.,gid==masterproc)
-      if (ncnst>1) call prt_maxmin('Q2', Atm(n)%q(isd,jsd,1,2), isc, iec, jsc, jec, Atm(n)%ng, npz, 1.,gid==masterproc)
-      if (ncnst>2) call prt_maxmin('Q3', Atm(n)%q(isd,jsd,1,3), isc, iec, jsc, jec, Atm(n)%ng, npz, 1.,gid==masterproc)
-      if (ncnst>3) call prt_maxmin('Q4', Atm(n)%q(isd,jsd,1,4), isc, iec, jsc, jec, Atm(n)%ng, npz, 1.,gid==masterproc)
-#endif
+      do i = 1, ncnst
+          call get_tracer_names ( MODEL_ATMOS, i, tname )
+          call prt_maxmin(trim(tname), Atm(n)%q(isd,jsd,1,i), isc, iec, jsc, jec, Atm(n)%ng, npz, 1.,gid==masterproc)
+      enddo
 #endif
       call prt_maxmin('U ', Atm(n)%u(isc:iec,jsc:jec,1:npz), isc, iec, jsc, jec, 0, npz, 1., gid==masterproc)
       call prt_maxmin('V ', Atm(n)%v(isc:iec,jsc:jec,1:npz), isc, iec, jsc, jec, 0, npz, 1., gid==masterproc)

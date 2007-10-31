@@ -1,4 +1,4 @@
-! $Id: init_hydro.F90,v 15.0 2007/08/14 03:51:33 fms Exp $
+! $Id: init_hydro.F90,v 15.0.2.1 2007/08/24 16:45:30 bw Exp $
 
 module init_hydro
 
@@ -44,13 +44,16 @@ contains
    real, intent(out) ::  pkz(ifirst:ilast, jfirst:jlast, km)
 
 ! Local
-   real pek
-   real lnp
-   real ak1, rdg
+   real ratio(ifirst:ilast)
+   real pek, lnp, ak1, rdg, dpd
    integer i, j, k
 
+
+! Check dry air mass & compute the adjustment amount:
+   call drymadj(km, ifirst, ilast,  jfirst,  jlast, ng, cappa, ptop, &
+                ps, delp, q, nq, dry_mass, adjust_dry_mass, full_phys, dpd)
+
    pek = ptop ** cappa
-   ak1 = (cappa + 1.) / cappa
 
    do j=jfirst,jlast
       do i=ifirst,ilast
@@ -58,11 +61,22 @@ contains
          pk(i,j,1) = pek
       enddo
 
+      if ( adjust_dry_mass ) then
+         do i=ifirst,ilast
+            ratio(i) = 1. + dpd/(ps(i,j)-ptop)
+         enddo 
+         do k=1,km
+            do i=ifirst,ilast
+               delp(i,j,k) = delp(i,j,k) * ratio(i)
+            enddo
+         enddo
+      endif
+
       do k=2,km+1
          do i=ifirst,ilast
             pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
-            peln(i,k,j) = log(pe(i,k,j))
             pk(i,j,k) = pe(i,k,j)**cappa
+            peln(i,k,j) = log(pe(i,k,j))
          enddo
       enddo
 
@@ -72,6 +86,7 @@ contains
 
       if( ptop < ptop_min ) then
 !---- small ptop modification -------------
+          ak1 = (cappa + 1.) / cappa
           do i=ifirst,ilast
              peln(i,1,j) = peln(i,2,j) - ak1
           enddo
@@ -99,6 +114,7 @@ contains
 !------------------------------------------------------------------
 ! For adiabatic runs, this form is not exactly the same as in mapz_module;
 ! Therefore, rounding differences will occur with restart!
+
    if ( .not.hydrostatic ) then
 
       if ( ktop>1 ) then
@@ -135,138 +151,82 @@ contains
          enddo
       enddo
    endif
-! Check dry air mass:
-   call drymadj(km, ifirst, ilast,  jfirst,  jlast, ng, mountain, cappa, ptop,   &
-                ps, delp, pe, pk, peln, pkz, nq, q, dry_mass, adjust_dry_mass, full_phys )
 
  end subroutine p_var
 
-! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
-!-------------------------------------------------------------------------------
 
-!-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!        
- subroutine drymadj( km,  ifirst, ilast, jfirst,  jlast,  ng, &  
-                     moun, cappa,   ptop, ps, delp, pe,  &
-                     pk, peln, pkz, nq, q, dry_mass, adjust_dry_mass, full_phys )
+
+ subroutine drymadj(km,  ifirst, ilast, jfirst,  jlast,  ng, &  
+                    cappa,   ptop, ps, delp, q, nq,  &
+                    dry_mass, adjust_dry_mass, full_phys, dpd)
 
 ! !INPUT PARAMETERS:
       integer km
       integer ifirst, ilast  ! Long strip
       integer jfirst, jlast  ! Latitude strip    
-      integer nq             ! Number of tracers         
-      integer ng
-      logical moun
+      integer nq, ng
       real, intent(in):: dry_mass
-      logical, intent(in):: adjust_dry_mass
-      logical, intent(in):: full_phys
       real, intent(in):: ptop
       real, intent(in):: cappa
+      logical, intent(in):: adjust_dry_mass
+      logical, intent(in):: full_phys
 
 ! !INPUT/OUTPUT PARAMETERS:     
-      real  delp(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km)     !
-      real  pe(ifirst-1:ilast+1,km+1,jfirst-1:jlast+1)     !
-      real   q(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km,nq)
-      real  ps(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)        ! surface pressure
-      
-      real, intent(inout)::   pk(ifirst:ilast, jfirst:jlast, km+1)
-      real, intent(inout):: peln(ifirst:ilast, km+1, jfirst:jlast)    ! Edge pressure
-      real, intent(inout)::  pkz(ifirst:ilast, jfirst:jlast, km)
-      
+      real, intent(in)::   q(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km,nq)
+      real, intent(in)::delp(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km)     !
+      real, intent(inout):: ps(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)        ! surface pressure
+      real, intent(out):: dpd
 ! Local
-      real  psq(ifirst:ilast,jfirst:jlast)
       real  psd(ifirst:ilast,jfirst:jlast)     ! surface pressure  due to dry air mass
-!     parameter ( drym = 98288. )       ! setting for USGS
-!     parameter ( drym = 98290. )       ! New setting for USGS
-
-      integer   i, j, k
-      real   psmo
-      real   psdry, qtot
-      real   dpd
-      integer ic, ip
+      real  psmo, psdry
+      integer i, j, k, ip
 
       ip = min(3,size(q,4))
 
-!$omp  parallel do          &
-!$omp  default(shared)      &
-!$omp  private(i,j,k)
-      do 1000 j=jfirst,jlast
-        do i=ifirst,ilast
-           psd(i,j) = ptop
-           psq(i,j) = 0.
-        enddo
+!$omp parallel do private(i, j)
+      do j=jfirst,jlast
+
+         do i=ifirst,ilast
+             ps(i,j) = ptop
+            psd(i,j) = ptop
+         enddo
+
+         do k=1,km
+            do i=ifirst,ilast
+               ps(i,j) = ps(i,j) + delp(i,j,k)
+            enddo
+         enddo
 
         if( full_phys ) then
           do k=1,km
-            do i=ifirst,ilast
-              psmo = sum( q(i,j,k,1:ip) ) * delp(i,j,k)
-              psq(i,j) = psq(i,j) + psmo
-              psd(i,j) = psd(i,j) + delp(i,j,k) - psmo
-            enddo
+             do i=ifirst,ilast
+                psd(i,j) = psd(i,j) + delp(i,j,k)*(1. - sum(q(i,j,k,1:ip)))
+             enddo
           enddo
         else
-          do k=1,km
-            do i=ifirst,ilast
-              psd(i,j) = psd(i,j) +  delp(i,j,k)
-            enddo
+          do i=ifirst,ilast
+             psd(i,j) = ps(i,j)
           enddo
         endif
-1000  continue
+      enddo
 
 ! Check global maximum/minimum
+      psdry = g_sum(psd, ifirst, ilast, jfirst, jlast, ng, area, mode=1, exact_sum=.true.) 
        psmo = g_sum( ps(ifirst:ilast,jfirst:jlast), ifirst, ilast, jfirst, jlast,  &
                      ng, area, mode=1, exact_sum=.true.) 
-      psdry = g_sum(psd, ifirst, ilast, jfirst, jlast, ng, area, mode=1, exact_sum=.true.) 
-       qtot = g_sum(psq, ifirst, ilast, jfirst, jlast, ng, area, mode=1, exact_sum=.true.) 
 
       if(gid==masterproc) then
          write(6,*) 'Total surface pressure (mb) = ', 0.01*psmo
          if ( full_phys ) then
-         write(6,*) 'mean dry surface pressure = ', 0.01*psdry
-         write(6,*) 'TPW-vapor (kg/m**2) =', (psmo-psdry)/GRAV
-         write(6,*) 'TPW-total (kg/m**2) =', qtot/GRAV
+              write(6,*) 'mean dry surface pressure = ', 0.01*psdry
+              write(6,*) 'Total Water (kg/m**2) =', (psmo-psdry)/GRAV
          endif
       endif
 
-      if( .not. adjust_dry_mass ) return
-      if(moun) then
-         dpd = dry_mass - psdry
-      else
-         dpd = 1000.*100. - psdry
+      if( adjust_dry_mass ) Then
+          dpd = dry_mass - psdry
+          if(gid==masterproc) write(6,*) 'dry mass to be added (pascals) =', dpd
       endif
-
-      if(gid==masterproc) write(6,*) 'dry mass to be added (pascals) =', dpd
-
-!$omp  parallel do            &
-!$omp  default(shared)        &
-!$omp  private(i,j, ic)
-
-      do 2000 j=jfirst,jlast
-         do ic=1,nq
-            do i=ifirst,ilast
-               q(i,j,km,ic) = q(i,j,km,ic)*delp(i,j,km) / (delp(i,j,km)+dpd)
-            enddo
-         enddo
-
-! Adjust the lowest Lagrangian layer
-         do i=ifirst,ilast
-            delp(i,j,km) = delp(i,j,km) + dpd
-            pe(i,km+1,j) = pe(i,km,j) + delp(i,j,km)
-            ps(i,j) = pe(i,km+1,j)
-! adjust pk, peln, pkz
-            pk(i,j,km+1) = pe(i,km+1,j) ** cappa
-            peln(i,km+1,j) = log(pe(i,km+1,j))
-            pkz(i,j,km) = (pk(i,j,km+1)-pk(i,j,km)) /      &
-                          (cappa*(peln(i,km+1,j)-peln(i,km,j)))
-         enddo
-2000  continue
-
-      psmo = g_sum(ps(ifirst:ilast,jfirst:jlast), ifirst, ilast, jfirst, jlast,   &
-                   ng, area, mode=1, exact_sum=.true.) 
-      if( gid==masterproc ) write(6,*)                                     &
-              'Total (moist) surface pressure after adjustment = ', &
-               0.01*psmo
 
  end subroutine drymadj
 

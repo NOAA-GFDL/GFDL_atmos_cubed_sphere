@@ -80,7 +80,7 @@ module update_fv_phys_mod
     real  ps_dt(is:ie,js:je)
     real  phalf(npz+1), pfull(npz)
 
-    integer  i, j, k, m, cld_amt
+    integer  i, j, k, m, sphum, liq_wat, ice_wat, cld_amt
     real   qstar, dbk, dt5, rdt, rdg
 
     rdg = -rdgas / grav
@@ -89,9 +89,13 @@ module update_fv_phys_mod
     rdt = 1./ dt
 
 #ifndef MARS_MGCM
-!rjw             Should include p_ref in subroutine argument list, to be used here
+! indices of tracers
+    sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
+    liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
+    ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
     cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
 
+!rjw             Should include p_ref in subroutine argument list, to be used here
 !rjw    call get_eta_level(npz, p_ref, pfull, phalf, ak, bk)
     call get_eta_level(npz, 1.0E5, pfull, phalf, ak, bk)
 #endif
@@ -155,12 +159,12 @@ module update_fv_phys_mod
 ! Adjust total air mass due to changes in water substance
 !--------------------------------------------------------
 ! Consider only water vapor (cloud liquid/ice effects ignored)
-!                t_dt(i,j,k) = 1. + dt*q_dt(i,j,k,1)
+!                t_dt(i,j,k) = 1. + dt*q_dt(i,j,k,sphum)
 ! water vapor, cloud liquid, and cloud ice effects all included
 #ifdef VAPOR_ONLY
-                 t_dt(i,j,k) = 1. + dt*q_dt(i,j,k,1)
+                 t_dt(i,j,k) = 1. + dt*q_dt(i,j,k,sphum)
 #else
-                 t_dt(i,j,k) = 1. + dt*(q_dt(i,j,k,1)+q_dt(i,j,k,2)+q_dt(i,j,k,3))
+                 t_dt(i,j,k) = 1. + dt*(q_dt(i,j,k,sphum)+q_dt(i,j,k,liq_wat)+q_dt(i,j,k,ice_wat))
 #endif
                  delp(i,j,k) = delp(i,j,k) * t_dt(i,j,k)
               enddo

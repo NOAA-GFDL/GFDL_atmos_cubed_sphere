@@ -9,7 +9,7 @@ module atmosphere_mod
 !-----------------
 ! FMS modules:
 !-----------------
-use constants_mod,    only: cp_air, rdgas, grav, rvgas, kappa
+use constants_mod,    only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
 use time_manager_mod, only: time_type, get_time, set_time, operator(+)
 use fms_mod,          only: file_exist, open_namelist_file,    &
                             close_file, error_mesg, FATAL,     &
@@ -46,8 +46,8 @@ public  atmosphere_down,       atmosphere_up,       &
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id: atmosphere.F90,v 15.0 2007/08/14 03:50:48 fms Exp $'
-character(len=128) :: tagname = '$Name: omsk $'
+character(len=128) :: version = '$Id: atmosphere.F90,v 15.0.2.1.2.1 2007/09/19 19:02:50 bw Exp $'
+character(len=128) :: tagname = '$Name: omsk_2007_10 $'
 
 !---- namelist (saved in file input.nml) ----
 !
@@ -64,7 +64,7 @@ character(len=128) :: tagname = '$Name: omsk $'
   type (fv_atmos_type), allocatable :: Atm(:)
   real    :: dt_atmos
   real    :: zvir
-  integer :: npx, npy, npz, ncnst
+  integer :: npx, npy, npz, ncnst, pnats
   integer :: isc, iec, jsc, jec
   integer :: nq                       ! transported tracers
   integer :: sec, seconds, days
@@ -117,13 +117,14 @@ contains
    npy   = Atm(1)%npy
    npz   = Atm(1)%npz
    ncnst = Atm(1)%ncnst
+   pnats = Atm(1)%pnats
 
    isc = Atm(1)%isc
    iec = Atm(1)%iec
    jsc = Atm(1)%jsc
    jec = Atm(1)%jec
 
-   nq = ncnst
+   nq = ncnst-pnats
 
    call fv_restart(domain, Atm, dt_atmos, seconds, days, cold_start, grid_type)
 
@@ -389,17 +390,30 @@ contains
 
 
 
- subroutine get_bottom_mass ( t_bot, tr_bot, p_bot, z_bot, p_surf )
+ subroutine get_bottom_mass ( t_bot, tr_bot, p_bot, z_bot, p_surf, slp )
 !--------------------------------------------------------------
 ! returns temp, sphum, pres, height at the lowest model level
 ! and surface pressure
 !--------------------------------------------------------------
-   real, intent(out), dimension(isc:iec,jsc:jec):: t_bot, p_bot, z_bot, p_surf
+   real, intent(out), dimension(isc:iec,jsc:jec):: t_bot, p_bot, z_bot, p_surf, slp
    real, intent(out), dimension(isc:iec,jsc:jec,nq):: tr_bot
-   integer :: i, j, m
-   real rrg
+   integer :: i, j, m, k, kr
+   real    :: rrg, sigtop, sigbot
+   real, dimension(isc:iec,jsc:jec) :: tref
+   real, parameter :: tlaps = 6.5e-3
 
    rrg  = rdgas / grav
+
+     ! determine 0.8 sigma reference level
+     sigtop = Atm(1)%ak(1)/pstd_mks+Atm(1)%bk(1)
+     do k = 1, npz 
+        sigbot = Atm(1)%ak(k+1)/pstd_mks+Atm(1)%bk(k+1)
+        if (sigbot+sigtop > 1.6) then
+           kr = k  
+           exit    
+        endif   
+        sigtop = sigbot
+     enddo
 
      do j=jsc,jec
         do i=isc,iec
@@ -408,6 +422,10 @@ contains
             p_bot(i,j) = Atm(1)%delp(i,j,npz)/(Atm(1)%peln(i,npz+1,j)-Atm(1)%peln(i,npz,j))
             z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(1)%q(i,j,npz,1)) *  &
                         (1. - Atm(1)%pe(i,npz,j)/p_bot(i,j))
+           ! sea level pressure
+           tref(i,j) = Atm(1)%pt(i,j,kr) * (Atm(1)%delp(i,j,kr)/ &
+                            ((Atm(1)%peln(i,kr+1,j)-Atm(1)%peln(i,kr,j))*Atm(1)%ps(i,j)))**(-rrg*tlaps)
+           slp(i,j) = Atm(1)%ps(i,j)*(1.+tlaps*Atm(1)%phis(i,j)/(tref(i,j)*grav))**(1./(rrg*tlaps))
         enddo
      enddo
 

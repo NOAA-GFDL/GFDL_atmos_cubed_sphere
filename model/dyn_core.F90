@@ -396,8 +396,10 @@ contains
      if ( last_step ) then
        if ( a2b_ord==4 ) then
            if ( hydrostatic )  &
-           call mpp_update_domains(  pt, domain, complete=.false.)
-           call mpp_update_domains(delp, domain, complete=.true.)
+           call mpp_update_domains(  pt, domain, whalo=2, ehalo=2,   &
+                                       shalo=2, nhalo=2, complete=.false.)
+           call mpp_update_domains(delp, domain, whalo=2, ehalo=2,   &
+                                       shalo=2, nhalo=2, complete=.true.)
        else
            if ( hydrostatic )  &
            call mpp_update_domains(  pt, domain,  whalo=1, ehalo=1,    &
