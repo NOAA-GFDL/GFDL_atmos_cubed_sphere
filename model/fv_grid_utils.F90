@@ -1,12 +1,13 @@
- module grid_utils
+ module fv_grid_utils_mod
  
- use fv_arrays_mod, only: fv_atmos_type
- use mp_mod,        only: domain, ng, is,js,ie,je, isd,jsd,ied,jed, gid,  &
-                          mp_reduce_sum, mp_reduce_min, mp_reduce_max
- use eta_mod,       only: set_eta
- use mpp_mod,       only: FATAL, mpp_error
- use mpp_domains_mod, only: mpp_update_domains, CGRID_NE, mpp_global_sum, BITWISE_EXACT_SUM
- use mpp_parameter_mod, only: CORNER
+ use fv_arrays_mod,   only: fv_atmos_type
+ use fv_eta_mod,      only: set_eta
+ use fv_mp_mod,       only: domain, ng, is,js,ie,je, isd,jsd,ied,jed, gid,  &
+                            mp_reduce_sum, mp_reduce_min, mp_reduce_max
+ use mpp_mod,         only: FATAL, mpp_error
+ use fv_timing_mod,   only: timing_on, timing_off
+ use mpp_domains_mod, only: mpp_update_domains, DGRID_NE, mpp_global_sum,   &
+                            BITWISE_EXACT_SUM
 
  implicit none
  private
@@ -81,7 +82,8 @@
  real, parameter:: ptop_min=1.E-8
  real    :: ptop
  integer :: ks
- integer :: g_type
+ integer :: g_type, npxx, npyy
+ integer :: c2l_ord
 
  public ptop, ks, ptop_min, fC, f0, deglat, big_number, ew, es, eww, ess, ec1, ec2
  public sina_u, sina_v, cosa_u, cosa_v, cosa_s, sina_s, rsin_u, rsin_v, rsina, rsin2
@@ -89,9 +91,10 @@
         sw_corner, se_corner, ne_corner, nw_corner, global_mx,              &
         da_min, da_min_c, edge_s, edge_n, edge_w, edge_e,   &
         edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e, unit_vect_latlon,  &
-        cubed_to_latlon, g_sum, great_circle_dist,  &
+        cubed_to_latlon, c2l_ord2, g_sum, great_circle_dist,  &
         v_prod, en1, en2, ex_w, ex_e, ex_s, ex_n, vlon, vlat, ee1, ee2,     &
-        a11, a12, a21, a22, cx1, cx2, cy1, cy2, Gnomonic_grid
+        cx1, cx2, cy1, cy2, Gnomonic_grid
+!       a11, a12, a21, a22, cx1, cx2, cy1, cy2, Gnomonic_grid
  public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, grid_utils_end, &
         spherical_angle, cell_center2, get_area, inner_prod, fill_ghost,    &
         make_eta_level, expand_cell
@@ -100,12 +103,12 @@
 
       subroutine grid_utils_init(Atm, npx, npy, npz, grid, agrid, area, area_c,  &
                                  cosa, sina, dx, dy, dxa, dya, non_ortho,   &
-                                 uniform_ppm, grid_type)
+                                 uniform_ppm, grid_type, c2l_order)
 ! Initialize 2D memory and geometrical factors
       type(fv_atmos_type), intent(inout) :: Atm
       logical, intent(in):: non_ortho
       integer, intent(in):: npx, npy, npz
-      integer, intent(in):: grid_type
+      integer, intent(in):: grid_type, c2l_order
       real, intent(in)::  grid(isd:ied+1,jsd:jed+1,2)
       real, intent(in):: agrid(isd:ied  ,jsd:jed  ,2)
       real, intent(in):: area(isd:ied,jsd:jed)
@@ -123,6 +126,8 @@
       real p1(3), p2(3), pp(3)
       real sin2, tmp1, tmp2
       integer i, j, k, n
+
+      npxx = npx;  npyy = npy
 
       g_sum_initialized = .false.
 
@@ -606,7 +611,7 @@
 #endif
   endif
 ! Initialize cubed_sphere to lat-lon transformation:
-     call init_cubed_to_latlon( agrid, grid_type )
+     call init_cubed_to_latlon( agrid, grid_type, c2l_order )
 
      call global_mx(area, ng, da_min, da_max)
      if( gid==0 ) write(6,*) 'da_max/da_min=', da_max/da_min
@@ -1927,13 +1932,15 @@
 
 
 
-  subroutine init_cubed_to_latlon( agrid, grid_type )
+  subroutine init_cubed_to_latlon( agrid, grid_type, ord )
 
   real,    intent(in) :: agrid(isd:ied,jsd:jed,2)
   integer, intent(in) :: grid_type
+  integer, intent(in) :: ord
   integer i, j
 
-  g_type = grid_type
+   g_type = grid_type
+  c2l_ord = ord
 
   if ( g_type < 4 ) then
 
@@ -1963,35 +1970,63 @@
   end subroutine init_cubed_to_latlon
 
 
+ subroutine cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km, mode)
+ integer, intent(in) :: km
+ integer, intent(in), optional:: mode   ! update if present
+ real, intent(in) :: dx(isd:ied,jsd:jed+1)
+ real, intent(in) :: dy(isd:ied+1,jsd:jed)
+ real, intent(in) ::rdxa(isd:ied,  jsd:jed)
+ real, intent(in) ::rdya(isd:ied,  jsd:jed)
+ real, intent(inout):: u(isd:ied,jsd:jed+1,km)
+ real, intent(inout):: v(isd:ied+1,jsd:jed,km)
+ real, intent(out):: ua(isd:ied, jsd:jed,km)
+ real, intent(out):: va(isd:ied, jsd:jed,km)
 
-#ifdef DEV_CODE
-! To use this code (u,v) need to be ghosted/updated
-  subroutine cubed_to_latlon(u, v, ua, va, dx, dy, dxa, dya, km)
+ if ( c2l_ord == 2 ) then
+      call c2l_ord2(u, v, ua, va, dx, dy, rdxa, rdya, km)
+ else
+      call c2l_ord4(u, v, ua, va, dx, dy, rdxa, rdya, km, mode)
+ endif
+
+ end subroutine cubed_to_latlon
+
+
+ subroutine c2l_ord4(u, v, ua, va, dx, dy, rdxa, rdya, km, mode)
+
   integer, intent(in) :: km
-  real, intent(in) ::  u(isd:ied,jsd:jed+1,km)
-  real, intent(in) ::  v(isd:ied+1,jsd:jed,km)
-  real, intent(in) :: dx(isd:ied,jsd:jed+1)
-  real, intent(in) :: dy(isd:ied+1,jsd:jed)
-  real, intent(in) ::dxa(isd:ied,  jsd:jed)
-  real, intent(in) ::dya(isd:ied,  jsd:jed)
-!
-  real, intent(out):: ua(isd:ied, jsd:jed,km)
-  real, intent(out):: va(isd:ied, jsd:jed,km)
+  integer, intent(in), optional:: mode   ! update if present
+  real, intent(in) ::  dx(isd:ied,jsd:jed+1)
+  real, intent(in) ::  dy(isd:ied+1,jsd:jed)
+  real, intent(in) ::rdxa(isd:ied,  jsd:jed)
+  real, intent(in) ::rdya(isd:ied,  jsd:jed)
+  real, intent(inout):: u(isd:ied,jsd:jed+1,km)
+  real, intent(inout):: v(isd:ied+1,jsd:jed,km)
+  real, intent(out)::  ua(isd:ied, jsd:jed,km)
+  real, intent(out)::  va(isd:ied, jsd:jed,km)
 ! Local 
 ! 4-pt Lagrange interpolation
   real, parameter:: a1 =  0.5625
   real, parameter:: a2 = -0.0625
+  real, parameter:: c1 =  1.125
+  real, parameter:: c2 = -0.125
   real utmp(is:ie,  js:je+1)
   real vtmp(is:ie+1,js:je)
   real wu(is:ie,  js:je+1)
   real wv(is:ie+1,js:je)
   integer i, j, k
 
-  do k=1,km
-     do j=max(2,js),min(npy-2,je)
-        do i=max(2,is),min(npx-2,ie)
-           utmp(i,j) = a2*(u(i,j-1,k)+u(i,j+2,k)) + a1*(u(i,j,k)+u(i,j+1,k))
-           vtmp(i,j) = a2*(v(i-1,j,k)+v(i+2,j,k)) + a1*(v(i,j,k)+v(i+1,j,k))
+  if ( present(mode) ) then
+                                   call timing_on('COMM_TOTAL')
+       call mpp_update_domains(u, v, domain, gridtype=DGRID_NE)
+                                  call timing_off('COMM_TOTAL')
+  endif
+
+ do k=1,km
+   if ( g_type < 4 ) then
+     do j=max(2,js),min(npyy-2,je)
+        do i=max(2,is),min(npxx-2,ie)
+           utmp(i,j) = c2*(u(i,j-1,k)+u(i,j+2,k)) + c1*(u(i,j,k)+u(i,j+1,k))
+           vtmp(i,j) = c2*(v(i-1,j,k)+v(i+2,j,k)) + c1*(v(i,j,k)+v(i+1,j,k))
         enddo
      enddo
 
@@ -2000,77 +2035,78 @@
             wv(i,1) = v(i,1,k)*dy(i,1)
          enddo
          do i=is,ie
-            wu(i,1) = u(i,1,k)*dx(i,1)
-            wu(i,2) = u(i,2,k)*dx(i,2)
-            utmp(i,1) = 0.5*(wu(i,1) + wu(i,  2)) * rdxa(i,1)
-            vtmp(i,1) = 0.5*(wv(i,1) + wv(i+1,1)) * rdya(i,1)
+            vtmp(i,1) = (wv(i,1) + wv(i+1,1)) * rdya(i,1)
+            utmp(i,1) = (u(i,1,k)*dx(i,1) + u(i,2,k)*dx(i,2)) * rdxa(i,1)
          enddo
     endif
 
-    if ( (je+1)==npy ) then
-         j = npy-1
+    if ( (je+1)==npyy ) then
+         j = npyy-1
          do i=is,ie+1
             wv(i,j) = v(i,j,k)*dy(i,j)
          enddo
          do i=is,ie
-            wu(i,j  ) = u(i,j,  k)*dx(i,j  )
-            wu(i,j+1) = u(i,j+1,k)*dx(i,j+1)
-            utmp(i,j) = 0.5*(wu(i,j) + wu(i,j+1)) * rdxa(i,j)
-            vtmp(i,j) = 0.5*(wv(i,j) + wv(i+1,j)) * rdya(i,j)
+            vtmp(i,j) = (wv(i,j) + wv(i+1,j)) * rdya(i,j)
+            utmp(i,j) = (u(i,j,k)*dx(i,j) + u(i,j+1,k)*dx(i,j+1)) * rdxa(i,j)
          enddo
     endif
 
     if ( is==1 ) then
       i = 1
       do j=js,je
-         wv(i,  j) = v(i,  j)*dy(i,  j)
-         wv(i+1,j) = v(i+1,j)*dy(i+1,j)
+         wv(1,j) = v(1,j,k)*dy(1,j)
+         wv(2,j) = v(2,j,k)*dy(2,j)
       enddo
       do j=js,je+1
-         wu(i,j) = u(i,j)*dx(i,j)
+         wu(i,j) = u(i,j,k)*dx(i,j)
       enddo
       do j=js,je
-            utmp(i,j) = 0.5*(wu(i,j) + wu(i,  j+1)) * rdxa(i,j)
-            vtmp(i,j) = 0.5*(wv(i,j) + wv(i+1,j  )) * rdya(i,j)
-         enddo
+         utmp(i,j) = (wu(i,j) + wu(i,  j+1)) * rdxa(i,j)
+         vtmp(i,j) = (wv(i,j) + wv(i+1,j  )) * rdya(i,j)
       enddo
     endif
 
-    if ( (ie+1)==npx ) then
-      i = npx-1
+    if ( (ie+1)==npxx ) then
+      i = npxx-1
       do j=js,je
-         wv(i,  j) = v(i,  j)*dy(i,  j)
-         wv(i+1,j) = v(i+1,j)*dy(i+1,j)
+         wv(i,  j) = v(i,  j,k)*dy(i,  j)
+         wv(i+1,j) = v(i+1,j,k)*dy(i+1,j)
       enddo
       do j=js,je+1
-         wu(i,j) = u(i,j)*dx(i,j)
+         wu(i,j) = u(i,j,k)*dx(i,j)
       enddo
       do j=js,je
-            utmp(i,j) = 0.5*(wu(i,j) + wu(i,  j+1)) * rdxa(i,j)
-            vtmp(i,j) = 0.5*(wv(i,j) + wv(i+1,j  )) * rdya(i,j)
-         enddo
+         utmp(i,j) = (wu(i,j) + wu(i,  j+1)) * rdxa(i,j)
+         vtmp(i,j) = (wv(i,j) + wv(i+1,j  )) * rdya(i,j)
       enddo
     endif
 
      do j=js,je
         do i=is,ie
-           ua(i,j,k) = 2.*(a11(i,j)*utmp(i,j) + a12(i,j)*vtmp(i,j))
-           va(i,j,k) = 2.*(a21(i,j)*utmp(i,j) + a22(i,j)*vtmp(i,j))
+           ua(i,j,k) = a11(i,j)*utmp(i,j) + a12(i,j)*vtmp(i,j)
+           va(i,j,k) = a21(i,j)*utmp(i,j) + a22(i,j)*vtmp(i,j)
         enddo
      enddo
-  enddo
+   else
+! Simple Cartesian Geometry:
+     do j=js,je
+        do i=is,ie
+           ua(i,j,k) = a2*(u(i,j-1,k)+u(i,j+2,k)) + a1*(u(i,j,k)+u(i,j+1,k))
+           va(i,j,k) = a2*(v(i-1,j,k)+v(i+2,j,k)) + a1*(v(i,j,k)+v(i+1,j,k))
+        enddo
+     enddo
+   endif
+ enddo
+ end subroutine c2l_ord4
 
- end subroutine cubed_to_latlon
-#endif
-
-  subroutine cubed_to_latlon(u, v, ua, va, dx, dy, dxa, dya, km)
+ subroutine c2l_ord2(u, v, ua, va, dx, dy, rdxa, rdya, km)
   integer, intent(in) :: km
   real, intent(in) ::  u(isd:ied,jsd:jed+1,km)
   real, intent(in) ::  v(isd:ied+1,jsd:jed,km)
   real, intent(in) :: dx(isd:ied,jsd:jed+1)
   real, intent(in) :: dy(isd:ied+1,jsd:jed)
-  real, intent(in) ::dxa(isd:ied,  jsd:jed)
-  real, intent(in) ::dya(isd:ied,  jsd:jed)
+  real, intent(in) ::rdxa(isd:ied,  jsd:jed)
+  real, intent(in) ::rdya(isd:ied,  jsd:jed)
 !
   real, intent(out):: ua(isd:ied, jsd:jed,km)
   real, intent(out):: va(isd:ied, jsd:jed,km)
@@ -2097,8 +2133,8 @@
        do j=js,je
           do i=is,ie
 ! Co-variant to Co-variant "vorticity-conserving" interpolation
-             u1(i) = (wu(i,j) + wu(i,j+1)) / dxa(i,j)
-             v1(i) = (wv(i,j) + wv(i+1,j)) / dya(i,j)
+             u1(i) = (wu(i,j) + wu(i,j+1)) * rdxa(i,j)
+             v1(i) = (wv(i,j) + wv(i+1,j)) * rdya(i,j)
 ! Cubed (cell center co-variant winds) to lat-lon:
              ua(i,j,k) = a11(i,j)*u1(i) + a12(i,j)*v1(i)
              va(i,j,k) = a21(i,j)*u1(i) + a22(i,j)*v1(i)
@@ -2115,7 +2151,7 @@
      endif
   enddo
 
- end subroutine cubed_to_latlon
+ end subroutine c2l_ord2
 
 
  subroutine expand_cell(q1, q2, q3, q4, a1, a2, a3, a4, fac)
@@ -2375,50 +2411,57 @@
 
 
 
- real function g_sum(p, ifirst, ilast, jfirst, jlast, ngc, area, mode, exact_sum)
- 
+ real function g_sum(p, ifirst, ilast, jfirst, jlast, ngc, area, mode, reproduce)
 ! Fast version of globalsum 
-! Warning: produce diff answer with diff total CPU numbers
- 
       integer, intent(IN) :: ifirst, ilast
       integer, intent(IN) :: jfirst, jlast, ngc
-      integer, intent(IN), optional :: mode  ! if (presen) divided by area
-      logical, intent(in), optional :: exact_sum
+      integer, intent(IN) :: mode  ! if ==1 divided by area
+      logical, intent(in), optional :: reproduce
       real, intent(IN) :: p(ifirst:ilast,jfirst:jlast)      ! field to be summed
       real, intent(IN) :: area(ifirst-ngc:ilast+ngc,jfirst-ngc:jlast+ngc)
       integer :: i,j
       real gsum
          
-      if(present(exact_sum)) then
-         gsum = mpp_global_sum(domain, p(:,:)*area(ifirst:ilast,jfirst:jlast), flags=BITWISE_EXACT_SUM)  
-      else        
-      gsum = 0.
-      do j=jfirst,jlast
-         do i=ifirst,ilast
-            gsum = gsum + p(i,j)*area(i,j)
-         enddo
-      enddo
-      call mp_reduce_sum(gsum)
-      end if
-
-      if ( present(mode) ) then
-        if ( .not. g_sum_initialized ) then
-            if(present(exact_sum)) then
-               global_area = mpp_global_sum(domain, area, flags=BITWISE_EXACT_SUM)
-            else
-           global_area = 0.
-           do j=jfirst,jlast
-              do i=ifirst,ilast
-                 global_area = global_area + area(i,j)
-              enddo
-           enddo
-           call mp_reduce_sum(global_area)
-            end if
-           g_sum_initialized = .true.
-        endif
-        g_sum = gsum / global_area
+      if ( present(reproduce) ) then
+!-------------------------
+! FMS global sum algorithm:
+!-------------------------
+         if ( .not. g_sum_initialized ) then
+              global_area = mpp_global_sum(domain, area, flags=BITWISE_EXACT_SUM)
+!             global_area = mpp_global_sum(domain, area)
+              if ( gid==0 ) write(*,*) 'Global Area=',global_area
+              g_sum_initialized = .true.
+         end if
+         gsum = mpp_global_sum(domain, p(:,:)*area(ifirst:ilast,jfirst:jlast) )
       else
-        g_sum = gsum
+!-------------------------
+! Quick local sum algorithm
+!-------------------------
+         if ( .not. g_sum_initialized ) then
+              global_area = 0.
+              do j=jfirst,jlast
+                 do i=ifirst,ilast
+                    global_area = global_area + area(i,j)
+                 enddo
+              enddo
+              call mp_reduce_sum(global_area)
+              if ( gid==0 ) write(*,*) 'Global Area=',global_area
+              g_sum_initialized = .true.
+         end if
+
+         gsum = 0.
+         do j=jfirst,jlast
+            do i=ifirst,ilast
+               gsum = gsum + p(i,j)*area(i,j)
+            enddo
+         enddo
+         call mp_reduce_sum(gsum)
+      endif
+
+      if ( mode==1 ) then
+           g_sum = gsum / global_area
+      else
+           g_sum = gsum
       endif
 
  end function g_sum
@@ -2548,4 +2591,4 @@
  end subroutine make_eta_level
 
 
- end module grid_utils
+ end module fv_grid_utils_mod

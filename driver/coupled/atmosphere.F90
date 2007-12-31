@@ -23,13 +23,13 @@ use mpp_domains_mod,  only: domain2d
 !-----------------
 ! FV core modules:
 !-----------------
-use grid_tools,         only: area, grid_type
+use fv_grid_tools_mod,         only: area, grid_type
 use fv_arrays_mod,      only: fv_atmos_type
-use fv_pack_mod,        only: fv_init, domain, fv_end, p_ref
+use fv_control_mod,         only: fv_init, domain, fv_end, p_ref
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time
 use fv_restart_mod,     only: fv_restart
-use timingModule,       only: timing_on, timing_off
+use fv_timing_mod,       only: timing_on, timing_off
 use fv_physics_mod,     only: fv_physics_down, fv_physics_up,  &
                            fv_physics_init, fv_physics_end, &
                            surf_diff_type
@@ -46,8 +46,8 @@ public  atmosphere_down,       atmosphere_up,       &
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id: atmosphere.F90,v 15.0.2.1.2.1 2007/09/19 19:02:50 bw Exp $'
-character(len=128) :: tagname = '$Name: omsk_2007_10 $'
+character(len=128) :: version = '$Id: atmosphere.F90,v 1.1.2.11.2.2.2.1.2.2 2007/11/26 22:08:09 sjl Exp $'
+character(len=128) :: tagname = '$Name: omsk_2007_12 $'
 
 !---- namelist (saved in file input.nml) ----
 !
@@ -124,7 +124,7 @@ contains
    jsc = Atm(1)%jsc
    jec = Atm(1)%jec
 
-   nq = ncnst-pnats
+   nq = ncnst - pnats
 
    call fv_restart(domain, Atm, dt_atmos, seconds, days, cold_start, grid_type)
 
@@ -214,8 +214,7 @@ contains
                     Atm(1)%pe, Atm(1)%pk, Atm(1)%peln, Atm(1)%pkz, Atm(1)%phis,      &
                     Atm(1)%omga, Atm(1)%ua, Atm(1)%va, Atm(1)%uc, Atm(1)%vc,         &
                     Atm(1)%ak, Atm(1)%bk, Atm(1)%mfx, Atm(1)%mfy,                    &
-                    Atm(1)%cx, Atm(1)%cy, Atm(1)%u_srf, Atm(1)%v_srf,                &
-                    Atm(1)%srf_init, Atm(1)%ze0, Atm(1)%hybrid_z)
+                    Atm(1)%cx, Atm(1)%cy, Atm(1)%ze0, Atm(1)%hybrid_z)
 
                     call timing_off('fv_dynamics')
    call mpp_clock_end (id_dynam)
@@ -395,7 +394,8 @@ contains
 ! returns temp, sphum, pres, height at the lowest model level
 ! and surface pressure
 !--------------------------------------------------------------
-   real, intent(out), dimension(isc:iec,jsc:jec):: t_bot, p_bot, z_bot, p_surf, slp
+   real, intent(out), dimension(isc:iec,jsc:jec):: t_bot, p_bot, z_bot, p_surf
+   real, intent(out), optional, dimension(isc:iec,jsc:jec):: slp
    real, intent(out), dimension(isc:iec,jsc:jec,nq):: tr_bot
    integer :: i, j, m, k, kr
    real    :: rrg, sigtop, sigbot
@@ -404,6 +404,17 @@ contains
 
    rrg  = rdgas / grav
 
+     do j=jsc,jec
+        do i=isc,iec
+           p_surf(i,j) = Atm(1)%ps(i,j)
+            t_bot(i,j) = Atm(1)%pt(i,j,npz)
+            p_bot(i,j) = Atm(1)%delp(i,j,npz)/(Atm(1)%peln(i,npz+1,j)-Atm(1)%peln(i,npz,j))
+            z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(1)%q(i,j,npz,1)) *  &
+                        (1. - Atm(1)%pe(i,npz,j)/p_bot(i,j))
+        enddo
+     enddo
+
+     if ( present(slp) ) then
      ! determine 0.8 sigma reference level
      sigtop = Atm(1)%ak(1)/pstd_mks+Atm(1)%bk(1)
      do k = 1, npz 
@@ -414,20 +425,15 @@ contains
         endif   
         sigtop = sigbot
      enddo
-
      do j=jsc,jec
         do i=isc,iec
-           p_surf(i,j) = Atm(1)%ps(i,j)
-            t_bot(i,j) = Atm(1)%pt(i,j,npz)
-            p_bot(i,j) = Atm(1)%delp(i,j,npz)/(Atm(1)%peln(i,npz+1,j)-Atm(1)%peln(i,npz,j))
-            z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(1)%q(i,j,npz,1)) *  &
-                        (1. - Atm(1)%pe(i,npz,j)/p_bot(i,j))
            ! sea level pressure
            tref(i,j) = Atm(1)%pt(i,j,kr) * (Atm(1)%delp(i,j,kr)/ &
                             ((Atm(1)%peln(i,kr+1,j)-Atm(1)%peln(i,kr,j))*Atm(1)%ps(i,j)))**(-rrg*tlaps)
            slp(i,j) = Atm(1)%ps(i,j)*(1.+tlaps*Atm(1)%phis(i,j)/(tref(i,j)*grav))**(1./(rrg*tlaps))
         enddo
      enddo
+     endif
 
 ! Copy tracers
      do m=1,nq

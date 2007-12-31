@@ -1,28 +1,30 @@
-module update_fv_phys_mod
+module fv_update_phys_mod
 
   use constants_mod,      only: kappa, rdgas, grav
-  use fv_pack_mod,        only: npx, npy, npz, ncnst, ch4_chem, k_top
+  use fv_control_mod,     only: npx, npy, npz, ncnst, ch4_chem, k_top, nwat, fv_debug
   use field_manager_mod,  only: MODEL_ATMOS
   use tracer_manager_mod, only: get_tracer_index
   use time_manager_mod,   only: time_type
-  use mp_mod,             only: domain
-  use eta_mod,            only: get_eta_level
+  use fv_mp_mod,          only: domain, gid
+  use fv_eta_mod,         only: get_eta_level
   use mpp_domains_mod,    only: mpp_update_domains
-  use grid_utils,         only: edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e,    &
+  use mpp_mod,            only: FATAL, mpp_error
+  use fv_grid_utils_mod,         only: edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e,    &
                                 es, ew, vlon, vlat
-  use grid_tools,         only: grid_type
-  use timingModule,       only: timing_on, timing_off
+  use fv_grid_tools_mod,         only: grid_type
+  use fv_timing_mod,       only: timing_on, timing_off
+  use fv_diagnostics_mod,  only: prt_maxmin
 #ifdef GFDL_NUDGE
   use atmos_nudge_mod,    only: get_atmos_nudge, do_ps
 #endif
 
   implicit none
 
-  public :: update_fv_phys
+  public :: fv_update_phys
 
   contains
 
-  subroutine update_fv_phys ( dt, is, ie, js, je, isd, ied, jsd, jed, ng, nq,     &
+  subroutine fv_update_phys ( dt, is, ie, js, je, isd, ied, jsd, jed, ng, nq,     &
                               u, v, delp, pt, q, ua, va, ps, pe,  peln, pk, pkz,  &
                               ak, bk, u_dt, v_dt, t_dt, q_dt, u_srf, v_srf,       &
                               delz, hydrostatic, full_phys, Time, nudge )
@@ -38,7 +40,7 @@ module update_fv_phys_mod
 
     real, intent(in), dimension(npz+1):: ak, bk
     logical, intent(in):: hydrostatic
-    real, intent(in):: delz(is:ie,js:je,npz)
+    real, intent(inout):: delz(is:ie,js:je,npz)
 ! Tendencies from Physics:
     real, intent(inout), dimension(isd:ied,jsd:jed,npz):: u_dt, v_dt
     real, intent(inout):: t_dt(is:ie,js:je,npz)
@@ -80,30 +82,58 @@ module update_fv_phys_mod
     real  ps_dt(is:ie,js:je)
     real  phalf(npz+1), pfull(npz)
 
-    integer  i, j, k, m, sphum, liq_wat, ice_wat, cld_amt
+    integer  i, j, k, m
+    integer  sphum, liq_wat, ice_wat, cld_amt   ! GFDL AM physics
+    integer  rainwat, snowwat, graupel          ! Lin Micro-physics
     real   qstar, dbk, dt5, rdt, rdg
+
 
     rdg = -rdgas / grav
 
     dt5 = 0.5 * dt
     rdt = 1./ dt
 
-#ifndef MARS_MGCM
-! indices of tracers
-    sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
-    liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
-    ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
-    cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
+   sphum   = 1
 
-!rjw             Should include p_ref in subroutine argument list, to be used here
-!rjw    call get_eta_level(npz, p_ref, pfull, phalf, ak, bk)
+   if ( full_phys ) then
+        cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
+   else
+        cld_amt = 7
+   endif
+
+   if ( nwat>=3 ) then
+        sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
+        liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
+        ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
+   endif
+
+   if ( nwat==6 ) then
+! Micro-physics:
+        rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
+        snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
+        graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+        if ( cld_amt<7 ) call mpp_error(FATAL,'Cloud Fraction allocation error') 
+   endif
+
+   if ( fv_debug ) then
+       if ( gid==0 ) write(*,*) nq, nwat, sphum, liq_wat, ice_wat, rainwat, snowwat, graupel
+       call prt_maxmin('ptop_b_update', pe(is:ie,1,js:je), is, ie, js, je, 0, 1, 0.01, gid==0)
+       call prt_maxmin('delp_b_update', delp, is, ie, js,  je, ng, npz, 0.01, gid==0)
+       do m=1,nq
+          call prt_maxmin('q_dt', q_dt(is,js,1,m), is, ie, js, je, 0, npz, 1., gid==0)
+       enddo
+!         q(:,:,:,graupel) = 0.
+!      q_dt(:,:,:,graupel) = 0.
+   endif
+
+
+#ifndef MARS_MGCM
     call get_eta_level(npz, 1.0E5, pfull, phalf, ak, bk)
 #endif
 
 !$omp parallel do private (i,j,k,m, qstar)
     do 1000 k=1, npz
 
-#ifndef MARS_MGCM
 ! Do idealized Ch4 chemistry
        if ( ch4_chem .and. pfull(k) < 50.E2 ) then
 
@@ -119,22 +149,37 @@ module update_fv_phys_mod
                qstar = q1000_h2o + (q2000_h2o-q1000_h2o)*log(pfull(k)/1.E3)/log(2.)
            endif
 
-! Here water vapor is assumed to be the first tracer
            do j=js,je
               do i=is,ie
-                 q_dt(i,j,k,1) = q_dt(i,j,k,1) + (qstar-q(i,j,k,1))/tau_h2o
+                 q_dt(i,j,k,sphum) = q_dt(i,j,k,sphum) + (qstar-q(i,j,k,sphum))/tau_h2o
               enddo
            enddo
        endif
-#endif 
 
        do j=js,je
           do i=is,ie
              ua(i,j,k) = ua(i,j,k) + dt*u_dt(i,j,k)
              va(i,j,k) = va(i,j,k) + dt*v_dt(i,j,k)
-             pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k)
           enddo
        enddo
+       if ( hydrostatic ) then
+          do j=js,je
+             do i=is,ie
+                pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k)
+             enddo
+          enddo
+       else
+! Heating/cooling from physics is assumed to be hydrostatic (constant-pressure)
+! i.e., del-T = del-Q / Cp; no need for this if del-T = del-Q / Cv
+          do j=js,je
+             do i=is,ie
+!                 pt(i,j,k) =   pt(i,j,k) + dt*t_dt(i,j,k)
+                delz(i,j,k) = delz(i,j,k) / pt(i,j,k)
+                  pt(i,j,k) =   pt(i,j,k) + dt*t_dt(i,j,k)
+                delz(i,j,k) = delz(i,j,k) * pt(i,j,k)
+             enddo
+          enddo
+       endif
 
 !----------------
 ! Update tracers:
@@ -147,43 +192,55 @@ module update_fv_phys_mod
           enddo
        enddo
 
-#ifdef MARS_MGCM
-!     Adjust Mars tracer mixing ratios in fv_phys 
-!
-#else
-
-       if ( full_phys ) then
-           do j=js,je
-              do i=is,ie
+! ncnst == 6
+   if ( nwat==6 ) then
+        do j=js,je
+           do i=is,ie
+              ps_dt(i,j)  = 1. + dt * ( q_dt(i,j,k,sphum  ) +    &
+                                        q_dt(i,j,k,liq_wat) +    &
+                                        q_dt(i,j,k,rainwat) +    &
+                                        q_dt(i,j,k,ice_wat) +    &
+                                        q_dt(i,j,k,snowwat) +    &
+                                        q_dt(i,j,k,graupel) )
+              delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
+           enddo
+        enddo
+   elseif( nwat==3 ) then
+! GFDL AM2/3 phys:
+        do j=js,je
+           do i=is,ie
 !--------------------------------------------------------
 ! Adjust total air mass due to changes in water substance
 !--------------------------------------------------------
-! Consider only water vapor (cloud liquid/ice effects ignored)
-!                t_dt(i,j,k) = 1. + dt*q_dt(i,j,k,sphum)
-! water vapor, cloud liquid, and cloud ice effects all included
-#ifdef VAPOR_ONLY
-                 t_dt(i,j,k) = 1. + dt*q_dt(i,j,k,sphum)
-#else
-                 t_dt(i,j,k) = 1. + dt*(q_dt(i,j,k,sphum)+q_dt(i,j,k,liq_wat)+q_dt(i,j,k,ice_wat))
-#endif
-                 delp(i,j,k) = delp(i,j,k) * t_dt(i,j,k)
-              enddo
+               ps_dt(i,j) = 1. + dt*(q_dt(i,j,k,sphum  ) +    &
+                                     q_dt(i,j,k,liq_wat) +    &
+                                     q_dt(i,j,k,ice_wat) )
+              delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
            enddo
+        enddo
+   elseif ( nwat>0 ) then
+        do j=js,je
+           do i=is,ie
+              ps_dt(i,j)  = 1. + dt*sum(q_dt(i,j,k,1:nwat))
+              delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
+           enddo
+        enddo
+   endif
 
 !-----------------------------------------
 ! Adjust mass mixing ratio of all tracers 
 !-----------------------------------------
-           do m=1,ncnst   
-             if( m /= cld_amt ) then  ! cloud fraction in GFDL physics
-                 do j=js,je
-                    do i=is,ie
-                       q(i,j,k,m) = q(i,j,k,m) / t_dt(i,j,k)
-                    enddo
-                 enddo
-             endif
-           enddo
-       endif
-#endif MARS_MGCM
+   if ( nwat /=0 ) then
+      do m=1,ncnst   
+      if( m /= cld_amt ) then  ! cloud fraction in GFDL physics
+          do j=js,je
+             do i=is,ie
+                q(i,j,k,m) = q(i,j,k,m) / ps_dt(i,j)
+             enddo
+          enddo
+      endif
+      enddo
+   endif
 
 1000 continue
 
@@ -220,41 +277,40 @@ module update_fv_phys_mod
     endif
 #endif
 
-    call update_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v)
 
 !----------------------------------------
 ! Update pe, peln, pkz, and surface winds
 !----------------------------------------
-    if ( full_phys ) then
+  if ( fv_debug ) then
+       call prt_maxmin('PS_b_update',     ps, is, ie, js,  je, ng,   1, 0.01, gid==0)
+       call prt_maxmin('delp_a_update', delp, is, ie, js,  je, ng, npz, 0.01, gid==0)
+  endif
+
 !$omp parallel do private(i, j, k)
-      do j=js,je
+   do j=js,je
+      do k=2,npz+1                                                                             
          do i=is,ie
-            u_srf(i,j) = ua(i,j,npz)
-            v_srf(i,j) = va(i,j,npz)
+            pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+            pk(i,j,k) = pe(i,k,j) ** kappa
+            peln(i,k,j) = log(pe(i,k,j))
          enddo
+      enddo
 
-         do k=2,npz+1                                                                             
-            do i=is,ie
-               pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
-               pk(i,j,k) = pe(i,k,j) ** kappa
-               peln(i,k,j) = log(pe(i,k,j))
-            enddo
-         enddo
-
-         do i=is,ie
+      do i=is,ie
             ps(i,j) = pe(i,npz+1,j)
-         enddo
+         u_srf(i,j) = ua(i,j,npz)
+         v_srf(i,j) = va(i,j,npz)
+      enddo
 
-         if ( hydrostatic ) then
-            do k=1,npz                                                                             
-               do i=is,ie
-                  pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k) ) /  &
-                               (kappa*(peln(i,k+1,j)-peln(i,k,j)))
-               enddo
+      if ( hydrostatic ) then
+         do k=1,npz
+            do i=is,ie
+               pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k) ) /  &
+                            (kappa*(peln(i,k+1,j)-peln(i,k,j)))
             enddo
-         endif
-      enddo      ! j-loop
-    endif
+         enddo
+      endif
+   enddo      ! j-loop
 
 !-------------------------------------------------------------------------
 ! Re-compute the full (nonhydrostatic) pressure due to temperature changes
@@ -265,7 +321,6 @@ module update_fv_phys_mod
 ! will be changed according to the gas law:
 !                                           p = density * R * T
     if ( .not.hydrostatic ) then
-
       if ( k_top>1 ) then
          do k=1,k_top-1
             do j=js,je
@@ -280,13 +335,20 @@ module update_fv_phys_mod
       do k=k_top,npz
          do j=js,je
             do i=is,ie
-               pkz(i,j,k) = (rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k))**kappa
+               pkz(i,j,k) = ( rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k) )**kappa
             enddo
          enddo
       enddo
     endif
+                                                    call timing_on(' Update_dwinds')
+    call update_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v)
+                                                    call timing_off(' Update_dwinds')
 
-  end subroutine update_fv_phys
+  if ( fv_debug ) then
+       call prt_maxmin('PS_a_update', ps, is, ie, js, je, ng,   1, 0.01, gid==0)
+  endif
+
+  end subroutine fv_update_phys
 
 
   subroutine update_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v)
@@ -323,6 +385,7 @@ module update_fv_phys_mod
     do k=1, npz
 
      if ( grid_type > 3 ) then    ! Local & one tile configurations
+
        do j=js,je+1
           do i=is,ie
              u(i,j,k) = u(i,j,k) + dt5*(u_dt(i,j-1,k) + u_dt(i,j,k))
@@ -463,4 +526,4 @@ module update_fv_phys_mod
 
   end subroutine update_dwinds_phys 
 
-end module update_fv_phys_mod
+end module fv_update_phys_mod

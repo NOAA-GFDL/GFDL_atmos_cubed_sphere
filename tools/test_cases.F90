@@ -1,22 +1,22 @@
- module test_cases
+ module test_cases_mod
 
       use constants_mod, only: radius, pi, omega, grav, kappa, rdgas
-      use init_hydro,    only: p_var, hydro_eq
-      use mp_mod,        only: gid, masterproc, domain, tile, ng,         &
+      use init_hydro_mod,    only: p_var, hydro_eq
+      use fv_mp_mod,        only: gid, masterproc, domain, tile, ng,         &
                                is,js,ie,je, isd,jsd,ied,jed, &
                                domain_decomp, fill_corners, XDir, YDir, &
                                mp_stop, mp_reduce_sum, mp_reduce_max, mp_gather, mp_bcst
-      use grid_utils,    only: cubed_to_latlon, great_circle_dist, mid_pt_sphere,   &
+      use fv_grid_utils_mod,    only: cubed_to_latlon, great_circle_dist, mid_pt_sphere,   &
                                ptop, ptop_min, fC, f0, deglat, inner_prod,      &
                                ee1, ee2, ew, es, g_sum
-      use surf_map,      only: surfdrv
+      use fv_surf_map_mod,      only: surfdrv
 
-      use grid_tools, only: grid, agrid, cubed_sphere, latlon,  todeg, missing,  &
-                            dx,dy, dxa,dya, dxc,dyc, area, rarea,rarea_c, &
+      use fv_grid_tools_mod, only: grid, agrid, cubed_sphere, latlon,  todeg, missing,  &
+                            dx,dy, dxa,dya, rdxa, rdya, dxc,dyc, area, rarea,rarea_c, &
                             ctoa, atod, dtoa, atoc, atob_s, mp_update_dwinds, rotate_winds, &
                             globalsum, get_unit_vector, unit_vect2,                         &
                             dx_const, dy_const
-      use eta_mod,    only: compute_dz_L32, set_hybrid_z
+      use fv_eta_mod,    only: compute_dz_L32, set_hybrid_z
 
       use mpp_mod,    only: mpp_error, FATAL
       use mpp_domains_mod,   only: mpp_update_domains
@@ -152,10 +152,8 @@
                if (dist==0) uc(i,j) = 0.
             enddo
          enddo
-#if defined(SPMD)
          call mpp_update_domains( uc, vc, domain, gridtype=CGRID_NE_PARAM)
          call fill_corners(uc, vc, npx, npy, VECTOR=.true., CGRID=.true.)
-#endif
          do j=js,je
             do i=is,ie+1
                dist = dxc(i,j)
@@ -170,9 +168,7 @@
                if (dist==0) u(i,j) = 0.
             enddo
          enddo
-#if defined(SPMD)
          call mp_update_dwinds(u, v, npx, npy)
-#endif
          do j=js,je
             do i=is,ie
                psi1 = 0.5*(psi(i,j)+psi(i,j-1))
@@ -203,10 +199,8 @@
                if (dist==0) uc(i,j) = 0.
             enddo
          enddo
-#if defined(SPMD)
          call mpp_update_domains( uc, vc, domain, gridtype=CGRID_NE_PARAM)
          call fill_corners(uc, vc, npx, npy, VECTOR=.true., CGRID=.true.)
-#endif
          call ctoa(uc,vc,ua,va,npx,npy,ng)
          call atod(ua,va,u ,v ,npx,npy,ng)
         ! call d2a2c(npx,npy,1, is,ie, js,je, ng, u(isd,jsd),v(isd,jsd), &
@@ -226,9 +220,7 @@
                if (dist==0) u(i,j) = 0. 
             enddo
          enddo
-#if defined(SPMD)
          call mp_update_dwinds(u, v, npx, npy)
-#endif
          call dtoa( u, v,ua,va,npx,npy,ng)
          call atoc(ua,va,uc,vc,npx,npy,ng) 
       elseif ( (cubed_sphere) .and. (defOnGrid==3) ) then
@@ -246,9 +238,7 @@
                if (dist==0) va(i,j) = 0.
             enddo
          enddo
-#if defined(SPMD)
          call mpp_update_domains( ua, va, domain, gridtype=AGRID_PARAM)
-#endif
          call atod(ua,va, u, v,npx,npy,ng)
          call atoc(ua,va,uc,vc,npx,npy,ng)
       elseif ( (latlon) .or. (defOnGrid==4) ) then
@@ -271,9 +261,7 @@
 
             enddo
          enddo
-#if defined(SPMD)
          call mpp_update_domains( ua, va, domain, gridtype=AGRID_PARAM)
-#endif
          call atod(ua,va, u, v,npx,npy,ng)
          call atoc(ua,va,uc,vc,npx,npy,ng)
 
@@ -310,9 +298,7 @@
             enddo
          enddo
 
-#if defined(SPMD)
          call mp_update_dwinds(u, v, npx, npy)
-#endif
          call dtoa( u, v,ua,va,npx,npy,ng)
          call atoc(ua,va,uc,vc,npx,npy,ng)
      else
@@ -336,8 +322,8 @@
 !                  case 9 (Stratospheric Vortex Breaking Case)
 !
       subroutine init_case(u,v,pt,delp,q,phis, ps,pe,peln,pk,pkz,  uc,vc, ua,va, ak, bk,  &
-                           npx, npy, npz, ng, ncnst, k_top, ndims, nregions, dry_mass,    &
-                           mountain, full_phys, hybrid_z, delz, ze0)
+                           npx, npy, npz, ng, ncnst, nwat, k_top, ndims, nregions,        &
+                           dry_mass, mountain, full_phys, hybrid_z, delz, ze0)
 
       real ,      intent(INOUT) ::    u(isd:ied  ,jsd:jed+1,npz)
       real ,      intent(INOUT) ::    v(isd:ied+1,jsd:jed  ,npz)
@@ -364,7 +350,7 @@
       real ,      intent(IN)    ::   bk(npz+1)
 
       integer,      intent(IN) :: npx, npy, npz
-      integer,      intent(IN) :: ng, ncnst
+      integer,      intent(IN) :: ng, ncnst, nwat
       integer,      intent(IN) :: k_top
       integer,      intent(IN) :: ndims
       integer,      intent(IN) :: nregions
@@ -459,10 +445,8 @@
                                      sin(agrid(i,j,2))*cos(alpha) )
          enddo
       enddo
-#if defined(SPMD)
       call mpp_update_domains( f0, domain )
       if (cubed_sphere) call fill_corners(f0, npx, npy, YDir)
-#endif
 
       delp(isd:is-1,jsd:js-1,1:npz)=0.
       delp(isd:is-1,je+1:jed,1:npz)=0.
@@ -500,12 +484,10 @@
            enddo
         enddo
         div0(:,:) = 1.e-20
-#if defined(SPMD)
      ! call mpp_update_domains( div0, domain )
      ! call mpp_update_domains( vor0, domain )
      ! call mpp_update_domains( divg, domain )
      ! call mpp_update_domains( vort, domain )
-#endif
       call get_scalar_stats( divg, div0, npx, npy, ndims, nregions, &
                              pmin, pmax, L1_norm, L2_norm, Linf_norm)
  200  format(i4.4,'x',i4.4,'x',i4.4,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14)
@@ -539,12 +521,10 @@
         ua0 = ua
         va0 = va
         div0(:,:) = 1.e-20
-#if defined(SPMD)
      ! call mpp_update_domains( div0, domain )
      ! call mpp_update_domains( vor0, domain )
      ! call mpp_update_domains( divg, domain )
      ! call mpp_update_domains( vort, domain )
-#endif
       call get_scalar_stats( divg, div0, npx, npy, ndims, nregions, &
                              pmin, pmax, L1_norm, L2_norm, Linf_norm)
       if ( (gid == masterproc) ) then
@@ -575,12 +555,10 @@
            enddo
         enddo
         div0(:,:) = 1.e-20
-#if defined(SPMD)
      ! call mpp_update_domains( div0, domain )
      ! call mpp_update_domains( vor0, domain )
      ! call mpp_update_domains( divg, domain )
      ! call mpp_update_domains( vort, domain )
-#endif
       call get_scalar_stats( divg, div0, npx, npy, ndims, nregions, &
                              pmin, pmax, L1_norm, L2_norm, Linf_norm)
       if ( (gid == masterproc) ) then
@@ -621,18 +599,12 @@
 
             enddo
          enddo
-#if defined(SPMD)
          call mpp_update_domains( ua, va, domain, gridtype=AGRID_PARAM)
-#endif         
          call atod(ua,va, u, v,npx,npy,ng)
-#if defined(SPMD)
          call mp_update_dwinds(u, v, npx, npy, npz)
-#endif         
          call atoc(ua,va,uc,vc,npx,npy,ng)
-#if defined(SPMD)
          call mpp_update_domains( uc, vc, domain, gridtype=CGRID_NE_PARAM)
          call fill_corners(uc, vc, npx, npy, npz, VECTOR=.true., CGRID=.true.)
-#endif
          initWindsCase=initWindsCase0
       case(1)
          Ubar = (2.0*pi*radius)/(12.0*86400.0)
@@ -1271,12 +1243,12 @@
 
       call mpp_update_domains( phis, domain )
 
-     ftop = g_sum(phis(is:ie,js:je), is, ie, js, je, ng, area, mode=1)
+     ftop = g_sum(phis(is:ie,js:je), is, ie, js, je, ng, area, 1)
      if(gid==masterproc) write(6,*) 'mean terrain height (m)=', ftop/grav
 
      call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
                 pe, peln, pk, pkz, kappa, q, ng, ncnst, dry_mass, .false., mountain, &
-                full_phys, .true., k_top)
+                full_phys, .true., k_top, nwat)
 
 #ifdef COLUMN_TRACER
       if( ncnst>1 ) q(:,:,:,2:ncnst) = 0.0
@@ -2136,7 +2108,6 @@
          enddo
          enddo
 
-#if defined(SPMD)
          call mp_reduce_max(maxCx)
          call mp_reduce_max(maxCy)
          minCx = -minCx
@@ -2149,7 +2120,6 @@
          call mp_reduce_sum(meanCy)
          meanCx = meanCx/(6.0*DBLE(npx)*DBLE(npy-1))
          meanCy = meanCy/(6.0*DBLE(npx-1)*DBLE(npy))
-#endif
 
          !if ( (ABS(maxCy-ideal_c) <= tolerance) .and. (ABS(maxCx-ideal_c) <= tolerance) ) then 
             ideal = .true. 
@@ -2224,7 +2194,6 @@
             enddo
          enddo
 
-#if defined(SPMD)
          temp = pmax
          call mp_reduce_max(temp)
          if (temp /= pmax) then
@@ -2240,7 +2209,6 @@
          pmin = -pmin                  
          call mp_reduce_max(pmin)
          pmin = -pmin
-#endif
 
       end subroutine pmxn
 !
@@ -2408,7 +2376,7 @@
          call wrtvar_ncdf(ncid, pv_id, nout, is,ie, js,je, npx, npy, npz, nregions, tmpA, 3)
       endif
 
-      call cubed_to_latlon(u, v, ua, va, dx, dy, dxa, dya, 1)
+      call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, 1)
       do j=js,je
          do i=is,ie
             ut(i,j,tile) = ua(i,j,1)
@@ -2454,7 +2422,7 @@
       call wrtvar_ncdf(ncid, pt_id, nout, is,ie, js,je, npx, npy, npz, nregions, tmpA_3d, 4)
 
 ! Write U,V Data
-      call cubed_to_latlon(u, v, ua, va, dx, dy, dxa, dya, npz)
+      call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, npz, 1)
       do k=1,npz
          do j=js,je
             do i=is,ie
@@ -2808,7 +2776,7 @@
 !     init_double_periodic
 !
       subroutine init_double_periodic(u,v,pt,delp,q,phis, ps,pe,peln,pk,pkz,  uc,vc, ua,va, ak, bk,  &
-                                      npx, npy, npz, ng, ncnst, k_top, ndims, nregions, dry_mass,    &
+                                      npx, npy, npz, ng, ncnst, nwat, k_top, ndims, nregions, dry_mass, &
                                       mountain, full_phys, hybrid_z, delz, ze0)
 
         real ,      intent(INOUT) ::    u(isd:ied  ,jsd:jed+1,npz)
@@ -2836,7 +2804,7 @@
         real ,      intent(IN)    ::   bk(npz+1)
         
         integer,      intent(IN) :: npx, npy, npz
-        integer,      intent(IN) :: ng, ncnst
+        integer,      intent(IN) :: ng, ncnst, nwat
         integer,      intent(IN) :: k_top
         integer,      intent(IN) :: ndims
         integer,      intent(IN) :: nregions
@@ -2852,6 +2820,8 @@
         f0_const = 2.*omega*sin(deglat/180.*pi)
         f0(:,:) = f0_const
         fC(:,:) = f0_const
+
+        q = 0.
 
         select case (test_case)
         case ( 1 )
@@ -2913,7 +2883,7 @@
            do j=jsd,jed
               do i=isd,ied
                  phis(i,j) = 0.
-                   ps(i,j) = 100000.
+                   ps(i,j) = 1000.E2
               enddo
            enddo
 
@@ -2928,7 +2898,7 @@
            enddo
 
 ! *** Add Initial perturbation ***
-           r0 = 5.*sqrt(dx_const**2 + dy_const**2)
+           r0 = 15.*sqrt(dx_const**2 + dy_const**2)
            icenter = npx/2
            jcenter = npy/2
 
@@ -2949,7 +2919,7 @@
 !         call mpp_update_domains( phis, domain )
           call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
                      pe, peln, pk, pkz, kappa, q, ng, ncnst, dry_mass, .false., .false., &
-                     full_phys, .true., k_top)
+                     full_phys, .true., k_top, nwat)
 
         end select
 
@@ -3132,4 +3102,4 @@
      
       end subroutine init_latlon_winds
       
-end module test_cases
+end module test_cases_mod

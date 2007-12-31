@@ -1,37 +1,39 @@
-! $Id: fv_pack.F90,v 15.0.2.1.2.2 2007/09/19 20:08:46 bw Exp $
+! $Id: fv_control.F90,v 1.1.2.1.2.1.2.4 2007/11/02 22:03:44 sjl Exp $
+!
+!----------------
+! FV contro panel
+!----------------
 
-module fv_pack_mod
+module fv_control_mod
 
-      use constants_mod,   only: pi, kappa, radius
-      use fv_io_mod,       only: fv_io_exit
-      use fv_restart_mod,  only: fv_restart_init, fv_restart_end
-      use fv_arrays_mod,   only: fv_atmos_type
-      use grid_utils,      only: grid_utils_init, grid_utils_end, ptop_min, deglat
-      use grid_tools,      only: init_grid, cosa, sina, area, area_c, dx, dy, dxa, dya, &
+   use constants_mod,      only: pi, kappa, radius
+   use fv_io_mod,          only: fv_io_exit
+   use fv_restart_mod,     only: fv_restart_init, fv_restart_end
+   use fv_arrays_mod,      only: fv_atmos_type
+   use fv_grid_utils_mod,  only: grid_utils_init, grid_utils_end, ptop_min, deglat
+   use fv_grid_tools_mod,  only: init_grid, cosa, sina, area, area_c, dx, dy, dxa, dya, &
                                  grid_type, dx_const, dy_const,                         &
                                  deglon_start, deglon_stop, deglat_start, deglat_stop
-      use mp_mod,          only: mp_start, domain_decomp, domain, &
+   use fv_mp_mod,          only: mp_start, domain_decomp, domain, &
                                  ng, tile, npes_x, npes_y, gid
-      use mpp_mod,         only: FATAL, mpp_error, stdout, mpp_pe
-      use mpp_domains_mod, only: mpp_get_data_domain, mpp_get_compute_domain
-      use test_cases,      only: test_case, alpha
-      use timingModule,    only: timing_on, timing_off, timing_init, timing_prt
+   use mpp_mod,            only: FATAL, mpp_error, mpp_pe, &
+                                 mpp_npes, mpp_get_current_pelist
 
-! --- tracer manager ---
-   use tracer_manager_mod, only : tm_get_number_tracers => get_number_tracers, &
-                                  tm_get_tracer_index   => get_tracer_index,   &
-                                  tm_get_tracer_indices => get_tracer_indices, &
-                                  tm_set_tracer_profile => set_tracer_profile, &
-                                  tm_get_tracer_names   => get_tracer_names,   &
-                                  tm_check_if_prognostic=> check_if_prognostic,&
-                                  tm_register_tracers   => register_tracers
+   use mpp_domains_mod,    only: mpp_get_data_domain, mpp_get_compute_domain
+   use test_cases_mod,     only: test_case, alpha
+   use fv_timing_mod,      only: timing_on, timing_off, timing_init, timing_prt
+   use tracer_manager_mod, only: tm_get_number_tracers => get_number_tracers, &
+                                 tm_get_tracer_index   => get_tracer_index,   &
+                                 tm_get_tracer_indices => get_tracer_indices, &
+                                 tm_set_tracer_profile => set_tracer_profile, &
+                                 tm_get_tracer_names   => get_tracer_names,   &
+                                 tm_check_if_prognostic=> check_if_prognostic,&
+                                 tm_register_tracers   => register_tracers
+   use field_manager_mod,  only: MODEL_ATMOS
 
-   use field_manager_mod, only  : MODEL_ATMOS
 
-
-      implicit none
-!!! #include <netcdf.inc>
-      private
+   implicit none
+   private
 
 !-----------------------------------------------------------------------
 ! Grid descriptor file setup
@@ -51,11 +53,13 @@ module fv_pack_mod
    integer :: hord_mt = 6    ! the best option for Gnomonic grids  
    integer :: kord_mt = 8    ! vertical mapping option
 
-! Vorticity transport options:
+! Vorticity & w transport options:
    integer :: hord_vt = 9    ! 10 not recommended (noisy case-5) 
 
-! Heat transport options:
-   integer :: hord_tm = 9    ! 
+! Heat & air mass (delp) transport options:
+   integer :: hord_tm = 9    ! virtual potential temperature
+   integer :: hord_dp = 9    ! delp (positive definite)
+   integer :: hord_ze = 9    ! edge height (can be negative near the surface)
    integer :: kord_tm =-8    !
 
 ! Tracer transport options:
@@ -79,6 +83,9 @@ module fv_pack_mod
                              ! Default = 0 (automatic computation of best value)
    integer :: m_split = 0    ! Number of time splits for Riemann solver
 
+!            For doubly periodic domain with sim_phys
+!                     5km        150         20 (7.5 s)  2
+!
 !                     Estimates for Gnomonic grids:
             !===================================================
             !        dx (km)    dt (sc)    n_split    m_split
@@ -106,19 +113,19 @@ module fv_pack_mod
    integer :: npz_rst = 0             ! Original Vertical Levels (in the restart)
                                       ! 0: no change (default)
    integer :: layout(2)=(/2,2/)       ! Processor layout
-   integer :: ncnst = 1               ! Number of total consituents
-   integer :: pnats                   ! Number of non-advected consituents
+   integer :: ncnst = 0               ! Number of advected consituents
+   integer :: pnats = 0               ! Number of non-advected consituents
+   integer :: nwat  = 3               ! Number of water species
    integer :: ntiles                  ! Number or tiles that make up the Grid 
    integer :: ntilesMe                ! Number of tiles on this process =1 for now
    integer, parameter:: ndims = 2     ! Lat-Lon Dims for Grid in Radians
    integer :: nf_omega  = 1           ! Filter omega "nf_omega" times
    integer :: fv_sg_adj = -1          ! Perform grid-scale moist adjustment if > 0
                                       ! Relaxzation time  scale (sec) if positive
-
 #ifdef MARS_GCM
    real    :: p_ref = 600.
-   real   ::  reference_sfc_pres = 7.7E2
-   real   ::  sponge_damp=   1.0
+   real    :: reference_sfc_pres = 7.7E2
+   real    :: sponge_damp=   1.0
    real    :: dry_mass = 7.7E2
 #else
    real    :: p_ref = 1.E5
@@ -126,6 +133,7 @@ module fv_pack_mod
 #endif
    integer :: nt_prog = 0
    integer :: nt_phys = 0
+
    real    :: too_big  = 1.E35
    real    :: consv_te = 0.
    real    :: tau = 0.                ! Time scale (days) for Rayleigh friction
@@ -139,15 +147,31 @@ module fv_pack_mod
    logical :: do_Held_Suarez = .false.
    logical :: reproduce_sum = .true.  ! Make global sum in for consv_te reproduce
    logical :: adjust_dry_mass = .false.
+   logical :: fv_debug  = .false.
    logical :: srf_init  = .false.
    logical :: mountain  = .true.
    logical :: ch4_chem  = .false.
-   logical :: master
    logical :: uniform_ppm = .true.
    logical :: remap_t  = .true.
    logical :: z_tracer = .true.       ! transport tracers layer by layer with independent
                                       ! time split; use this if tracer number is huge and/or
                                       ! high resolution (nsplt > 1)
+
+   logical :: master
+
+   logical :: fv_land = .false.       ! To cold starting the model with USGS terrain
+!--------------------------------------------------------------------------------------
+! The following options are useful for NWP experiments using datasets on the lat-lon grid
+!--------------------------------------------------------------------------------------
+   logical :: ncep_ic = .false.       ! use NCEP ICs 
+   logical :: external_ic = .false.   ! use ICs from external sources; e.g. lat-lon FV core
+                                      ! or NCEP re-analysis; both vertical remapping & horizontal
+                                      ! (lat-lon to cubed sphere) interpolation will be done
+! Default restart files from the "Memphis" latlon FV core:
+   character(len=128) :: res_latlon_dynamics = '/archive/sjl/CUBED/rst_m45/fv_rst.res.nc'
+   character(len=128) :: res_latlon_tracers  = '/archive/sjl/CUBED/rst_m45/atmos_tracers.res.nc'
+! The user also needs to copy the "cold start" cubed sphere restart files (fv_core.res.tile1-6)
+! to the INPUT dir during runtime
 !------------------------------------------------
 ! Parameters related to non-hydrostatic dynamics:
 !------------------------------------------------
@@ -161,25 +185,28 @@ module fv_pack_mod
                              ! m_grad_p=1:  one-stage full pressure for grad_p; this option is faster
                              !              but it is not suitable for low horizontal resolution
                              ! m_grad_p=0:  two-stage grad computation (best for low resolution runs)
-   integer :: a2b_ord = 2    ! order for interpolation from A to B Grid (corners)
-   public :: npx,npy,npz, npz_rst, ntiles,ncnst,pnats
-   public :: hord_mt, hord_vt, kord_mt, hord_tm, kord_tm, hord_tr, kord_tr
-   public :: n_split, m_split, q_split, master
+   integer :: a2b_ord = 4    ! order for interpolation from A to B Grid (corners)
+   integer :: c2l_ord = 2    ! order for interpolation from D to lat-lon A winds for phys & output
+   integer :: dord    = 2    ! diveregence damping order
+   public :: npx,npy,npz, npz_rst, ntiles, ncnst, pnats, nwat
+   public :: hord_mt, hord_vt, kord_mt, hord_tm, hord_dp, hord_ze, kord_tm, hord_tr, kord_tr
+   public :: dord, n_split, m_split, q_split, master
    public :: dddmp, d_ext
    public :: k_top, m_riem, n_sponge, p_ref
-   public :: uniform_ppm, remap_t,  z_tracer, ch4_chem
-   public :: tau, rf_center
+   public :: uniform_ppm, remap_t,  z_tracer, ch4_chem, fv_debug
+   public :: external_ic, ncep_ic, res_latlon_dynamics, res_latlon_tracers, fv_land
+   public :: fv_sg_adj, tau, rf_center
    public :: fv_init, fv_end
    public :: domain
    public :: adiabatic, nf_omega, full_phys
    public :: hydrostatic, hybrid_z, quick_p_c, quick_p_d, m_grad_p, a2b_ord
-
+   public :: nt_prog, nt_phys
 #ifdef MARS_GCM
    public :: reference_sfc_pres, sponge_damp
 #endif MARS
-   public :: nt_prog, nt_phys
 
-
+   integer, allocatable :: pelist(:)
+   integer :: commID
 
  contains
 
@@ -196,11 +223,12 @@ module fv_pack_mod
 
 
 ! tracers
-   integer :: num_family ! output of register_tracers
-
+   integer :: num_family          ! output of register_tracers
 
 ! Start up MPI
-      call mp_start()  ! mp_mod will eventually be eliminated
+      allocate( pelist(mpp_npes()) )
+      call mpp_get_current_pelist( pelist, commID=commID )
+      call mp_start(commID)  ! fv_mp_mod will eventually be eliminated
 
       master = gid==0
 
@@ -217,11 +245,12 @@ module fv_pack_mod
       k_top = max(1, k_top)   ! to idiot proof
 
 
-!           override number of tracers by reading field_table
+!--------------------------------------------------
+! override number of tracers by reading field_table
+!--------------------------------------------------
 
-    call tm_register_tracers (MODEL_ATMOS, ncnst, nt_prog, pnats, num_family)
-    write(stdout(), *)'ncnst=', ncnst,' num_prog=',nt_prog,' pnats=',pnats,' num_family=',num_family
-
+      call tm_register_tracers (MODEL_ATMOS, ncnst, nt_prog, pnats, num_family)
+      if(master) write(*,*) 'ncnst=', ncnst,' num_prog=',nt_prog,' pnats=',pnats,' num_family=',num_family
 
       Atm(1)%npx=npx; Atm(1)%npy=npy; Atm(1)%npz=npz; Atm(1)%ng=ng
       Atm(1)%npz_rst = npz_rst
@@ -232,6 +261,7 @@ module fv_pack_mod
       Atm(1)%consv_te = consv_te
       Atm(1)%ncnst = ncnst
       Atm(1)%pnats = pnats
+      Atm(1)%nwat  = nwat 
       Atm(1)%fill = fill
       Atm(1)%z_tracer = z_tracer
       Atm(1)%do_Held_Suarez = do_Held_Suarez
@@ -243,6 +273,12 @@ module fv_pack_mod
       Atm(1)%adjust_dry_mass = adjust_dry_mass
       Atm(1)%fv_sg_adj = fv_sg_adj
       Atm(1)%dry_mass = dry_mass
+
+      Atm(1)%external_ic = external_ic
+      Atm(1)%ncep_ic = ncep_ic
+      Atm(1)%fv_land     = fv_land
+      Atm(1)%res_latlon_dynamics =  res_latlon_dynamics
+      Atm(1)%res_latlon_tracers  =  res_latlon_tracers
 
       Atm(1)%hydrostatic = hydrostatic
       Atm(1)%hybrid_z    = hybrid_z
@@ -258,7 +294,7 @@ module fv_pack_mod
     ! Initialize the SW (2D) part of the model
       call grid_utils_init(Atm(1), Atm(1)%npx, Atm(1)%npy, Atm(1)%npz, Atm(1)%grid, Atm(1)%agrid,   &
                            area, area_c, cosa, sina, dx, dy, dxa, dya, non_ortho,   &
-                           uniform_ppm, grid_type)
+                           uniform_ppm, grid_type, c2l_ord)
 
       Atm(1)%domain =>domain
       do n = 1, ntilesMe
@@ -286,12 +322,12 @@ module fv_pack_mod
         allocate ( Atm(n)%u_srf(isc:iec,jsc:jec) )
         allocate ( Atm(n)%v_srf(isc:iec,jsc:jec) )
 
-#ifdef FV_LAND
-        allocate ( Atm(n)%sgh(isc:iec,jsc:jec) )
-        allocate ( Atm(n)%oro(isc:iec,jsc:jec) )
-#else
-        allocate ( Atm(n)%oro(1,1) )
-#endif
+        if ( fv_land ) then
+             allocate ( Atm(n)%sgh(isc:iec,jsc:jec) )
+             allocate ( Atm(n)%oro(isc:iec,jsc:jec) )
+        else
+             allocate ( Atm(n)%oro(1,1) )
+        endif
 
 
       ! Allocate others
@@ -385,9 +421,7 @@ module fv_pack_mod
 
       deallocate ( Atm(n)%u_srf )
       deallocate ( Atm(n)%v_srf )
-#ifdef FV_LAND
-      deallocate ( Atm(n)%sgh )
-#endif
+      if( fv_land ) deallocate ( Atm(n)%sgh )
       deallocate ( Atm(n)%oro )
 
 ! Non-hydrostatic:
@@ -423,10 +457,11 @@ module fv_pack_mod
 
       namelist /mpi_nml/npes_x,npes_y  ! Use of this namelist is deprecated
       namelist /fv_grid_nml/grid_name,grid_file
-      namelist /fv_core_nml/npx, npy, ntiles, npz, npz_rst, layout, ncnst,    &
+      namelist /fv_core_nml/npx, npy, ntiles, npz, npz_rst, layout, ncnst, nwat,  &
                             n_split, m_split, q_split, print_freq,   &
-                            hord_mt, hord_vt, hord_tm, hord_tr, &
-                            kord_mt, kord_tm, kord_tr, &
+                            hord_mt, hord_vt, hord_tm, hord_dp, hord_ze, hord_tr, &
+                            kord_mt, kord_tm, kord_tr, fv_debug, fv_land,         &
+                            external_ic, ncep_ic, res_latlon_dynamics, res_latlon_tracers, &
                             dddmp, d_ext, non_ortho, n_sponge, adjust_dry_mass,  &
                             dry_mass, grid_type, do_Held_Suarez, consv_te, fill, &
                             z_tracer, ch4_chem, reproduce_sum, adiabatic,        &
@@ -436,7 +471,7 @@ module fv_pack_mod
 #ifdef MARS_GCM
                             sponge_damp, reference_sfc_pres,                     &
 #endif
-                            dx_const, dy_const, umax, deglat,                    &
+                            c2l_ord, dord, dx_const, dy_const, umax, deglat,     &
                             deglon_start, deglon_stop, deglat_start, deglat_stop
 
 
@@ -482,6 +517,7 @@ module fv_pack_mod
 
 !*** remap_t is NOT yet supported for non-hydrostatic option *****
         if ( .not. hydrostatic ) remap_t = .false.
+!       if ( dord == 4 ) d_ext = 0.
 
         npes_x = layout(1)
         npes_y = layout(2)
@@ -577,4 +613,4 @@ module fv_pack_mod
   end subroutine run_setup
 
 
-end module fv_pack_mod
+end module fv_control_mod

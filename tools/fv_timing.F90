@@ -1,7 +1,7 @@
-      module timingModule
+      module fv_timing_mod
 
 #if defined(SPMD)
-      use mp_mod, only: masterproc, mp_reduce_max
+      use fv_mp_mod, only: masterproc, mp_reduce_max
 #endif
 !
 ! ... Use system etime() function for timing
@@ -295,4 +295,4 @@
       return
       end subroutine upper
 
-      end module TimingModule
+      end module fv_timing_mod

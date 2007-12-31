@@ -1,4 +1,4 @@
-module nh_core
+module nh_core_mod
 
 ! Notes:
 ! Using k_top=2 to treat the top layer hydrostatically so that delz will
@@ -10,10 +10,10 @@ module nh_core
 !------------------------------
 
    use constants_mod,  only: rdgas, grav
-   use fv_pack_mod,    only: m_split, quick_p_c, quick_p_d, uniform_ppm,   &
+   use fv_control_mod,     only: m_split, quick_p_c, quick_p_d, uniform_ppm,   &
                              k_top, m_riem,  master
-   use tpcore,         only: fv_tp_2d, copy_corners
-!  use timingModule,   only: timing_on, timing_off
+   use tp_core_mod,         only: fv_tp_2d, copy_corners
+!  use fv_timing_mod,   only: timing_on, timing_off
 
    implicit none
    private
@@ -1112,4 +1112,4 @@ end subroutine fix_dz
   end subroutine rotate_uvw
 #endif
 
-end module nh_core
+end module nh_core_mod

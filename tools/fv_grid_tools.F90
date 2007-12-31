@@ -1,14 +1,14 @@
-module grid_tools
+module fv_grid_tools_mod
 
   use constants_mod, only: radius, pi, omega, grav
   use fv_arrays_mod, only: fv_atmos_type
-  use grid_utils,    only: gnomonic_grids, great_circle_dist,  &
+  use fv_grid_utils_mod,    only: gnomonic_grids, great_circle_dist,  &
                            mid_pt_sphere, spherical_angle,     &
                            project_sphere_v,  cell_center2,    &
                            get_area, inner_prod, deglat,       &
                            sw_corner, se_corner, ne_corner, nw_corner, fill_ghost
-  use timingModule,  only: timing_on, timing_off
-  use mp_mod, only: gid, masterproc, domain, tile, &
+  use fv_timing_mod,  only: timing_on, timing_off
+  use fv_mp_mod, only: gid, masterproc, domain, tile, &
                     is,js,ie,je,isd,jsd,ied,jed, ng, &
                     fill_corners, XDir, YDir, &
                     mp_gather, mp_bcst, mp_reduce_max, mp_stop
@@ -509,10 +509,6 @@ contains
           do i=isd,ied
 !        do j=js,je
 !           do i=is,ie
-#ifdef ALT_DXDY
-             dxa(i,j) = 0.5*(dx(i,j)+dx(i,j+1))
-             dya(i,j) = 0.5*(dy(i,j)+dy(i+1,j))
-#else
              call mid_pt_sphere(grid(i,  j,1:2), grid(i,  j+1,1:2), p1)
              call mid_pt_sphere(grid(i+1,j,1:2), grid(i+1,j+1,1:2), p2)
              dxa(i,j) = great_circle_dist( p2, p1, radius )
@@ -520,7 +516,6 @@ contains
              call mid_pt_sphere(grid(i,j  ,1:2), grid(i+1,j  ,1:2), p1)
              call mid_pt_sphere(grid(i,j+1,1:2), grid(i+1,j+1,1:2), p2)
              dya(i,j) = great_circle_dist( p2, p1, radius )
-#endif
           enddo
        enddo
 !      call mpp_update_domains( dxa, dya, domain, flags=SCALAR_PAIR, gridtype=AGRID_PARAM)
@@ -528,28 +523,20 @@ contains
 
        do j=js,je
           do i=is,ie+1
-#ifdef ALT_DXDY
-             dxc(i,j) = 0.5*(dxa(i-1,j)+dxa(i,j))
-#else
              p1(1) = agrid(i-1,j,1)
              p1(2) = agrid(i-1,j,2)
              p2(1) = agrid(i  ,j,1)
              p2(2) = agrid(i  ,j,2)
              dxc(i,j) = great_circle_dist( p2, p1, radius )
-#endif
           enddo
        enddo
        do j=js,je+1
           do i=is,ie
-#ifdef ALT_DXDY
-             dyc(i,j) = 0.5*(dya(i,j-1)+dya(i,j))
-#else
              p1(1) = agrid(i,j-1,1)
              p1(2) = agrid(i,j-1,2)
              p2(1) = agrid(i,j  ,1)
              p2(2) = agrid(i,j  ,2)
              dyc(i,j) = great_circle_dist( p2, p1, radius )
-#endif
           enddo
        enddo
        if (gid == masterproc) then
@@ -926,7 +913,7 @@ contains
 
        domain_rad = pi/16.   ! arbitrary
        lat_rad = deglat * pi/180.
-       lon_rad = 0.
+       lon_rad = 0.          ! arbitrary
 
        dx(:,:)  = dx_const
        rdx(:,:) = 1./dx_const
@@ -1841,14 +1828,12 @@ contains
 
 #endif
 
-#if defined(SPMD)
          if (present(noComm)) then
             if (.not. noComm) call mpp_update_domains( uout,vout, domain, gridtype=CGRID_NE_PARAM, complete=.true.)
          else
             call mpp_update_domains( uout,vout, domain, gridtype=CGRID_NE_PARAM, complete=.true.)
          endif
          call fill_corners(uout, vout, npx, npy, VECTOR=.true., CGRID=.true.)
-#endif
 
       end subroutine atoc
 !
@@ -2679,10 +2664,8 @@ contains
                   enddo
                enddo
             enddo
-#if defined(SPMD)
             call mp_gather(p_R8, ifirst,ilast, jfirst,jlast, npx-1, npy-1, ntiles_g)
             if (gid == masterproc) then
-#endif
                do n=1,ntiles_g
                   do j=1,npy-1
                      do i=1,npx-1
@@ -2691,15 +2674,13 @@ contains
                   enddo
                enddo
                gsum = gsum/globalarea
-#if defined(SPMD)
             endif
             call mp_bcst(gsum)
-#endif
 
          endif
 
       end function globalsum
  
 
-      end module grid_tools
+      end module fv_grid_tools_mod
 

@@ -83,6 +83,7 @@ public
     integer :: n_sponge    ! Number of sponge layers at the top of the atmosphere
     integer :: k_top       ! Starting layer for non-hydrostatic dynamics
     integer :: ncnst, pnats, ndims, n_split, m_split, q_split, print_freq
+    integer :: nwat        ! water substance
     integer :: fv_sg_adj
 
 ! Namelist control values
@@ -97,6 +98,12 @@ public
     logical :: adjust_dry_mass
     logical :: hydrostatic
     logical :: hybrid_z, Make_NH
+    logical :: external_ic
+    logical :: ncep_ic
+    logical :: fv_land
+
+    character(len=128) :: res_latlon_dynamics  ! restart file from the latlon FV core
+    character(len=128) :: res_latlon_tracers   ! tracer restart file from the latlon core
 
     real    :: dry_mass
 

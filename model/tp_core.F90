@@ -1,12 +1,12 @@
-module tpcore
+module tp_core_mod
 !BOP
 !
 ! !MODULE: tp_core --- A collection of routines to support FV transport
 !
- use mp_mod,     only: is,js,ie,je, ng, isd,jsd,ied,jed
- use grid_utils, only: sw_corner, se_corner, ne_corner, nw_corner,   &
+ use fv_mp_mod,     only: is,js,ie,je, ng, isd,jsd,ied,jed
+ use fv_grid_utils_mod, only: sw_corner, se_corner, ne_corner, nw_corner,   &
                        cx1, cx2, cy1, cy2
- use grid_tools, only: dxa, dya, grid_type
+ use fv_grid_tools_mod, only: dxa, dya, grid_type
 
  implicit none
 
@@ -1502,4 +1502,4 @@ CONTAINS
 
  end subroutine pert_ppm
 
-end module tpcore
+end module tp_core_mod

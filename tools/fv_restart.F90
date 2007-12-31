@@ -35,21 +35,20 @@ module fv_restart_mod
   use fv_arrays_mod,       only: fv_atmos_type
   use fv_io_mod,           only: fv_io_init, fv_io_read_restart, fv_io_write_restart, &
                                  remap_restart
-  use grid_tools,          only: area
-  use grid_utils,          only: fc, f0, ptop, ptop_min, fill_ghost, big_number,   &
-                                 make_eta_level, deglat
+  use fv_grid_tools_mod,   only: area, dx, dy, rdxa, rdya
+  use fv_grid_utils_mod,   only: fc, f0, ptop, ptop_min, fill_ghost, big_number,   &
+                                 make_eta_level, deglat, cubed_to_latlon
   use fv_diagnostics_mod,  only: prt_maxmin
-  use init_hydro,          only: p_var
+  use init_hydro_mod,      only: p_var
   use mpp_domains_mod,     only: mpp_update_domains, domain2d, DGRID_NE
   use mpp_mod,             only: mpp_chksum, stdout, mpp_error, FATAL
-  use test_cases,          only: alpha, init_case, init_double_periodic, init_latlon
-  use mp_mod,              only: gid, masterproc
-#ifdef FV_LAND
-  use surf_map,            only: sgh_g, oro_g
-#endif
+  use test_cases_mod,      only: alpha, init_case, init_double_periodic, init_latlon
+  use fv_mp_mod,           only: gid, masterproc
+  use fv_surf_map_mod,     only: sgh_g, oro_g
   use fv_diagnostics_mod,  only: steps, efx, efx_sum, mtq, mtq_sum
   use tracer_manager_mod,  only: get_tracer_names
   use field_manager_mod,   only: MODEL_ATMOS
+  use external_ic_mod,     only: get_external_ic
 
 
   implicit none
@@ -61,8 +60,8 @@ module fv_restart_mod
   logical                       :: module_is_initialized = .FALSE.
 
   !--- version information variables ----
-  character(len=128) :: version = '$Id: fv_restart.F90,v 15.0.2.1 2007/08/16 18:46:02 bw Exp $'
-  character(len=128) :: tagname = '$Name: omsk_2007_10 $'
+  character(len=128) :: version = '$Id: fv_restart.F90,v 1.1.4.2.2.2.2.2.2.30.2.2.2.1.2.4 2007/11/26 17:03:28 sjl Exp $'
+  character(len=128) :: tagname = '$Name: omsk_2007_12 $'
 
 contains 
 
@@ -101,7 +100,7 @@ contains
     integer :: isd, ied, jsd, jed
     real rgrav, f00
     logical :: hybrid
-    character(len=128)   :: tname
+    character(len=128):: tname
 
     rgrav = 1. / grav
 
@@ -114,7 +113,7 @@ contains
   ! This logic doesn't work very well.
   ! Shouldn't have read for all tiles then loop over tiles
 
-    if(.not.cold_start) then
+    if( .not.cold_start ) then
         if ( npz_rst /= 0 .and. npz_rst /= npz ) then
 !            Remap vertically the prognostic variables for the chosen vertical resolution
              if( gid==masterproc ) then
@@ -125,9 +124,18 @@ contains
                  write(*,*) ' '
              endif
              call remap_restart( fv_domain, Atm )
+             if( gid==masterproc ) write(*,*) 'Done remapping dynamical IC'
         else
              call fv_io_read_restart(fv_domain,Atm)
         endif
+    else
+
+! Read, interpolate (latlon to cubed), then remap vertically with terrain adjustment if needed
+    if ( Atm(1)%external_ic ) then
+         call get_external_ic(Atm, fv_domain) 
+         if( gid==masterproc ) write(*,*) 'IC generated from the specified external source'
+    endif
+
     endif
 
     seconds = 0; days = 0   ! Restart needs to be modified to record seconds and days.
@@ -154,7 +162,7 @@ contains
                    Atm(n)%delp, Atm(n)%delz, Atm(n)%pt, Atm(n)%ps, Atm(n)%pe, Atm(n)%peln,   &
                    Atm(n)%pk,   Atm(n)%pkz, kappa, Atm(n)%q, Atm(n)%ng, ncnst,  Atm(n)%dry_mass,  &
                    Atm(n)%adjust_dry_mass,  Atm(n)%mountain, Atm(n)%full_phys,  Atm(n)%hydrostatic, &
-                   Atm(n)%k_top, Atm(n)%Make_NH)
+                   Atm(n)%k_top, Atm(n)%nwat, Atm(n)%Make_NH)
 #endif
         if ( grid_type < 7 .and. grid_type /= 4 ) then
 ! Fill big values in the non-existinng corner regions:
@@ -185,24 +193,26 @@ contains
            enddo
         endif
       else
-! Setup Case to Run
 #ifdef MAKE_HYBRID_Z
          hybrid = .false.
 #else
          hybrid = Atm(n)%hybrid_z
 #endif
          if (grid_type < 4) then
+            if ( .not. Atm(n)%external_ic ) then
             call init_case(Atm(n)%u,Atm(n)%v,Atm(n)%pt,Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
                            Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        & 
-                           Atm(n)%ak, Atm(n)%bk, Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, ncnst, &
+                           Atm(n)%ak, Atm(n)%bk, Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, ncnst, Atm(n)%nwat,  &
                            Atm(n)%k_top, Atm(n)%ndims, Atm(n)%ntiles, Atm(n)%dry_mass, Atm(n)%mountain,       &
                            Atm(n)%full_phys, hybrid, Atm(n)%delz, Atm(n)%ze0)
+            endif
          elseif (grid_type == 4) then
             call init_double_periodic(Atm(n)%u,Atm(n)%v,Atm(n)%pt,Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
                                       Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        & 
-                                      Atm(n)%ak, Atm(n)%bk, Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, ncnst, &
+                                      Atm(n)%ak, Atm(n)%bk, Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, ncnst, Atm(n)%nwat,  &
                                       Atm(n)%k_top, Atm(n)%ndims, Atm(n)%ntiles, Atm(n)%dry_mass, Atm(n)%mountain,       &
                                       Atm(n)%full_phys, hybrid, Atm(n)%delz, Atm(n)%ze0)
+            if( gid==masterproc ) write(*,*) 'Doubly Periodic IC generated'
          elseif (grid_type == 5 .or. grid_type == 6) then
             call init_latlon(Atm(n)%u,Atm(n)%v,Atm(n)%pt,Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
                              Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        &
@@ -211,14 +221,15 @@ contains
                              Atm(n)%full_phys, hybrid, Atm(n)%delz, Atm(n)%ze0)
          endif
 
-#ifdef FV_LAND
-        do j=jsc,jec
-           do i=isc,iec
-              Atm(n)%sgh(i,j) = sgh_g(i,j)
-              Atm(n)%oro(i,j) = oro_g(i,j)
-           enddo
-        enddo
-#endif
+        if ( Atm(n)%fv_land ) then
+             do j=jsc,jec
+                do i=isc,iec
+                   Atm(n)%sgh(i,j) = sgh_g(i,j)
+                   Atm(n)%oro(i,j) = oro_g(i,j)
+                enddo
+             enddo
+        endif
+
       endif
 
      if ( Atm(n)%hybrid_z ) then
@@ -253,18 +264,19 @@ contains
       write(stdout(),*) 'fv_restart u    = ', mpp_chksum(Atm(n)%u(isc:iec,jsc:jec,:))
       write(stdout(),*) 'fv_restart v    = ', mpp_chksum(Atm(n)%v(isc:iec,jsc:jec,:))
       write(stdout(),*) 'fv_restart delp = ', mpp_chksum(Atm(n)%delp(isc:iec,jsc:jec,:))
-!     write(stdout(),*) 'fv_restart phis = ', mpp_chksum(Atm(n)%phis(isc:iec,jsc:jec))
+      write(stdout(),*) 'fv_restart phis = ', mpp_chksum(Atm(n)%phis(isc:iec,jsc:jec))
 #ifdef SW_DYNAMICS
       call prt_maxmin('H ', Atm(n)%delp, isc, iec, jsc, jec, Atm(n)%ng, 1, rgrav, gid==masterproc)
 #else
       write(stdout(),*) 'fv_restart pt   = ', mpp_chksum(Atm(n)%pt(isc:iec,jsc:jec,:))
 !     write(stdout(),*) 'fv_restart u_srf = ', mpp_chksum(Atm(n)%u_srf(isc:iec,jsc:jec))
 !     write(stdout(),*) 'fv_restart v_srf = ', mpp_chksum(Atm(n)%v_srf(isc:iec,jsc:jec))
-      if (ncnst>0) write(stdout(),*) 'fv_init q    = ', mpp_chksum(Atm(n)%q(isc:iec,jsc:jec,:,:))
+      if (ncnst>0) write(stdout(),*) 'fv_init nq =',ncnst, mpp_chksum(Atm(n)%q(isc:iec,jsc:jec,:,:))
 !---------------
 ! Check Min/Max:
 !---------------
       call prt_maxmin('ZS', Atm(n)%phis, isc, iec, jsc, jec, Atm(n)%ng, 1, rgrav, gid==masterproc)
+!     call prt_maxmin('ORO',Atm(n)%oro, isc, iec, jsc, jec,          0, 1, 1., gid==masterproc)
 
       if ( (.not.Atm(n)%hydrostatic) .and. (.not.Atm(n)%Make_NH) ) then
             call prt_maxmin('DZ', Atm(n)%delz, isc, iec, jsc, jec, 0, npz, 1., gid==masterproc)
@@ -276,7 +288,9 @@ contains
 
       call prt_maxmin('PS', Atm(n)%ps, isc, iec, jsc, jec, Atm(n)%ng, 1,    0.01, gid==masterproc)
       call prt_maxmin('T ', Atm(n)%pt, isc, iec, jsc, jec, Atm(n)%ng, npz, 1., gid==masterproc)
-      do i = 1, ncnst
+
+! Check tracers:
+      do i=1, ncnst
           call get_tracer_names ( MODEL_ATMOS, i, tname )
           call prt_maxmin(trim(tname), Atm(n)%q(isd,jsd,1,i), isc, iec, jsc, jec, Atm(n)%ng, npz, 1.,gid==masterproc)
       enddo
@@ -300,7 +314,22 @@ contains
       endif
 
       write(stdout(),*)
-    end do
+
+!--------------------------------------------
+! Initialize surface winds for flux coupler:
+!--------------------------------------------
+    if ( .not. Atm(n)%srf_init ) then
+         call cubed_to_latlon(Atm(n)%u, Atm(n)%v, Atm(n)%ua, Atm(n)%va, dx, dy, rdxa, rdya, npz, 1)
+         do j=jsc,jec
+            do i=isc,iec
+               Atm(n)%u_srf(i,j) = Atm(n)%ua(i,j,npz)
+               Atm(n)%v_srf(i,j) = Atm(n)%va(i,j,npz)
+            enddo
+         enddo
+         Atm(n)%srf_init = .true.
+    endif
+
+    end do   ! n_tile
 
   end subroutine fv_restart
   ! </SUBROUTINE> NAME="fv_restart"
@@ -318,7 +347,7 @@ contains
     type(fv_atmos_type), intent(in) :: Atm(:)
 
     integer :: isc, iec, jsc, jec
-    integer :: n, ntileMe
+    integer :: iq, n, ntileMe
     integer :: isd, ied, jsd, jed, npz
 
     ntileMe = size(Atm(:))
@@ -339,12 +368,14 @@ contains
       write(stdout(),*) 'fv_restart_end w    = ', mpp_chksum(Atm(n)%w(isc:iec,jsc:jec,:))
 
       write(stdout(),*) 'fv_restart_end delp = ', mpp_chksum(Atm(n)%delp(isc:iec,jsc:jec,:))
-!     write(stdout(),*) 'fv_restart_end phis = ', mpp_chksum(Atm(n)%phis(isc:iec,jsc:jec))
+      write(stdout(),*) 'fv_restart_end phis = ', mpp_chksum(Atm(n)%phis(isc:iec,jsc:jec))
 #ifndef SW_DYNAMICS
       write(stdout(),*) 'fv_restart_end pt   = ', mpp_chksum(Atm(n)%pt(isc:iec,jsc:jec,:))
 !     write(stdout(),*) 'fv_restart_end u_srf = ', mpp_chksum(Atm(n)%u_srf(isc:iec,jsc:jec))
 !     write(stdout(),*) 'fv_restart_end v_srf = ', mpp_chksum(Atm(n)%v_srf(isc:iec,jsc:jec))
-      write(stdout(),*) 'fv_restart_end q    = ', mpp_chksum(Atm(n)%q(isc:iec,jsc:jec,:,:))
+      do iq=1,min(7, Atm(n)%ncnst)     ! Check up to 7 tracers
+      write(stdout(),*) 'fv_restart_end q    = ', mpp_chksum(Atm(n)%q(isc:iec,jsc:jec,:,iq))
+      enddo
 
 !---------------
 ! Check Min/Max:

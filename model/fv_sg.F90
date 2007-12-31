@@ -3,19 +3,20 @@ module fv_sg_mod
 !-----------------------------------------------------------------------
 ! FV sub-grid mixing
 !-----------------------------------------------------------------------
-use constants_mod, only: rdgas, rvgas, cp_air, hlv
-! use mp_mod,        only: gid
+use constants_mod, only: rdgas, rvgas, cp_air, hlv, hlf, kappa
+! use fv_mp_mod,        only: gid
 
 implicit none
 private
 
-public  fv_sg_conv, qsmith
+public  fv_sg_conv, qsmith_init, qsmith, qs1d, neg_adj3
 
-  logical:: qs_initialized = .false.
+  real, parameter:: Tice = 273.16
+  real, allocatable:: table(:),des(:)
 
 contains
 
-  subroutine fv_sg_conv(is, ie, js, je, isd, ied, jsd, jed,    &
+ subroutine fv_sg_conv(is, ie, js, je, isd, ied, jsd, jed,    &
                         isc, iec, jsc, jec,  km, nq, dt, tau,  &
                         delp, pe, peln, ta, qa, ua, va,        &
                         u_dt, v_dt, t_dt, q_dt, ak, bk)
@@ -37,16 +38,23 @@ contains
 ! Output:
       real, intent(out):: u_dt(isd:ied,jsd:jed,km) 
       real, intent(out):: v_dt(isd:ied,jsd:jed,km) 
+
       real, intent(out):: t_dt(isc:iec,jsc:jec,km) 
       real, intent(out):: q_dt(isc:iec,jsc:jec,km,nq) 
 !---------------------------Local variables-----------------------------
-      real, dimension(is:ie,km):: u0, v0, t0, gz, qsat, hd, pm
+      real, parameter:: qmin1 = 1.E-7
+      real, parameter:: qmin2 = 1.E-8
+      real, parameter:: pmin  =  5000.
+!     real, parameter:: pmin  = 40000.
+      real, dimension(is:ie,km):: tvm, u0, v0, t0, gz, qsat, hd, pm, pkz
+      real, dimension(is:ie,km+1):: pk
       real q0(is:ie,km,nq) 
       real gzh(is:ie)
-      real pbot
-      real rdt, zvir, dh, dq, tv, tvm, qmix, h0, mc, fra, rdm, rl, rk, rz
+      real pbot, ri, pt1, pt2
+      real rdt, zvir, dh, dq, tv, qmix, h0, mc, fra, rdm, rl, rk, rz
       integer mcond, kcond
       integer i, j, k, n, m, iq
+      real, parameter:: ustar2 = 1.E-8
 
       zvir = rvgas / rdgas - 1.     ! = 0.607789855
         rz = rvgas - rdgas          ! rz = zvir * rdgas
@@ -57,7 +65,7 @@ contains
       mcond = 2
       do k=2,km
          pbot = ak(k+1) + bk(k+1)*1.E5
-         if( pbot > 50.E2 ) then
+         if( pbot > pmin ) then
              mcond = k
              go to 150
          endif
@@ -67,13 +75,25 @@ contains
     rdt = 1. / dt
     fra = dt/real(tau)
 
-    m = 2
-    if ( fra >= 1. ) m = 2 + fra
+
+!------------------------------------------------------------------------
+! The nonhydrostatic pressure changes if there is heating (under constant
+! volume and mass is locally conserved).
+!------------------------------------------------------------------------
+
+    m = 3
+    if ( fra >= 1. ) m = m + fra
 
 !------------
-! Compute gz
+! Compute gz: center 
 !------------
   do 1000 j=js,je       ! this main loop can be OpneMPed in j
+
+    do k=mcond,km+1
+       do i=is,ie
+          pk(i,k) = pe(i,k,j)**kappa
+       enddo
+    enddo
 
     do k=mcond,km
        do i=is,ie
@@ -95,12 +115,13 @@ contains
     enddo
     do k=km,mcond,-1
        do i=is,ie
-              tvm = t0(i,k)*(1.+zvir*q0(i,k,1))
-              tv  = rdgas*tvm
+          tvm(i,k) = t0(i,k)*(1.+zvir*q0(i,k,1))
+              tv  = rdgas*tvm(i,k)
           pm(i,k) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
           gz(i,k) = gzh(i) + tv*(1.-pe(i,k,j)/pm(i,k))
-          hd(i,k) = cp_air*tvm + gz(i,k) + 0.5*(u0(i,k)**2+v0(i,k)**2)
+          hd(i,k) = cp_air*tvm(i,k) + gz(i,k) + 0.5*(u0(i,k)**2+v0(i,k)**2)
            gzh(i) = gzh(i) + tv*(peln(i,k+1,j)-peln(i,k,j))
+         pkz(i,k) = (pk(i,k+1)-pk(i,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
        enddo
     enddo
 
@@ -111,6 +132,41 @@ contains
       call qsmith(ie-is+1, km, kcond, t0, pm, qsat)
 
       do k=km,kcond+1,-1
+
+!------------------------------------------------------------------------------
+         do i=is,ie
+! Richardson number = g*delz * theta / ( del_theta * (del_u**2 + del_v**2) )
+            pt1 = tvm(i,k-1)/pkz(i,k-1)
+            pt2 = tvm(i,k  )/pkz(i,k  )
+            ri = (gz(i,k-1)-gz(i,k))*(pt1-pt2)/( 0.5*(pt1+pt2)*        &
+                ((u0(i,k-1)-u0(i,k))**2+(v0(i,k-1)-v0(i,k))**2+ustar2) )
+            if ( ri < 0.25 ) then
+! Dry convective adjustment for K-H instability:
+! Compute equivalent mass flux: mc
+! Ri=1: no mixing
+! Ri=0: complete mixing
+                 mc = (1.-4.*max(0.,ri))*delp(i,j,k-1)*delp(i,j,k)/(delp(i,j,k-1)+delp(i,j,k))
+                 do iq=1,nq
+                    h0 = mc*(q0(i,k,iq)-q0(i,k-1,iq))
+                    q0(i,k-1,iq) = q0(i,k-1,iq) + h0/delp(i,j,k-1)
+                    q0(i,k  ,iq) = q0(i,k  ,iq) - h0/delp(i,j,k  )
+                 enddo
+! h:
+                 h0 = mc*(hd(i,k)-hd(i,k-1))
+                 hd(i,k-1) = hd(i,k-1) + h0/delp(i,j,k-1)
+                 hd(i,k  ) = hd(i,k  ) - h0/delp(i,j,k  )
+! u:
+                 h0 = mc*(u0(i,k)-u0(i,k-1))
+                 u0(i,k-1) = u0(i,k-1) + h0/delp(i,j,k-1)
+                 u0(i,k  ) = u0(i,k  ) - h0/delp(i,j,k  )
+! v:
+                 h0 = mc*(v0(i,k)-v0(i,k-1))
+                 v0(i,k-1) = v0(i,k-1) + h0/delp(i,j,k-1)
+                 v0(i,k  ) = v0(i,k  ) - h0/delp(i,j,k  )
+            endif
+         enddo
+!------------------------------------------------------------------------------
+
          do i=is,ie
             dh = hd(i,k) - hd(i,k-1)
             if ( dh > 0. ) then
@@ -133,12 +189,12 @@ contains
                 v0(i,k  ) = qmix
             else
                 dq = q0(i,k,1) - qsat(i,k-1) + dh*rl
-                if ( dq > 0. ) then
+                if ( dq > qmin1 ) then
 ! Moist Mixing/convection
                     qmix = (q0(i,k-1,1)*delp(i,j,k-1)+q0(i,k,1)*delp(i,j,k)) /  &
                            (delp(i,j,k-1)+delp(i,j,k))
                     dq = min( q0(i,k,1) - qmix, dq )
-                  if( dq > 1.E-7 ) then
+                  if( dq > qmin2 ) then
 ! Compute equivalent mass flux: mc
                     mc = dq/(q0(i,k,1)-q0(i,k-1,1))*delp(i,j,k)
                     do iq=1,nq
@@ -186,6 +242,7 @@ contains
          do i=is,ie
             t0(i,k) = ta(i,j,k) + (t0(i,k) - ta(i,j,k))*fra
             u0(i,k) = ua(i,j,k) + (u0(i,k) - ua(i,j,k))*fra
+            v0(i,k) = va(i,j,k) + (v0(i,k) - va(i,j,k))*fra
          enddo
       enddo
       do iq=1,nq
@@ -198,79 +255,113 @@ contains
    endif
 
 !--------------------
-! Compute tendencies:
+! Update fields:
 !--------------------
    do k=1,mcond-1
       do i=is,ie
-         u_dt(i,j,k) = 0.
-         v_dt(i,j,k) = 0.
-         t_dt(i,j,k) = 0.
+         u_dt(i,j,k) = ua(i,j,k)
+         v_dt(i,j,k) = va(i,j,k)
+         t_dt(i,j,k) = ta(i,j,k)
       enddo
    enddo
    do k=mcond,km
       do i=is,ie
-         u_dt(i,j,k) = (u0(i,k) - ua(i,j,k)) * rdt
-         v_dt(i,j,k) = (v0(i,k) - va(i,j,k)) * rdt
-         t_dt(i,j,k) = (t0(i,k) - ta(i,j,k)) * rdt
+         u_dt(i,j,k) = u0(i,k)
+         v_dt(i,j,k) = v0(i,k)
+         t_dt(i,j,k) = t0(i,k)
       enddo
    enddo
+
    do iq=1,nq
       do k=1,mcond-1
          do i=is,ie
-            q_dt(i,j,k,iq) = 0.
+            q_dt(i,j,k,iq) = qa(i,j,k,iq)
          enddo
       enddo
       do k=mcond,km
          do i=is,ie
-            q_dt(i,j,k,iq) = (q0(i,k,iq) - qa(i,j,k,iq))*rdt
+            q_dt(i,j,k,iq) = q0(i,k,iq)
          enddo
       enddo
    enddo
 
 1000 continue
 
-  end subroutine fv_sg_conv
+ end subroutine fv_sg_conv
+
+ real function qs1d(t, p, dqdt)
+! This routine is for use in mp_lin; which uses dry mixing ratio
+  real, intent(in):: t, p
+  real, intent(out):: dqdt
+! Local:
+  real q, es, ap1
+  real, parameter:: esl = 0.621971831
+  real, parameter:: oms= esl - 1.
+  real, parameter:: Tmin=Tice - 160.
+  integer it
+
+       ap1 = 10.*DIM(t, Tmin) + 1.
+       ap1 = min(2621., ap1)
+        it = ap1
+        es = table(it) + (ap1-it)*des(it)
+      qs1d = esl*es/max(es, p-es)
+! dsq/dt
+      it  = ap1 - 0.5
+! the following form is consistent with mp_lin
+      dqdt = 10.*esl*(des(it) + (ap1-it)*(des(it+1)-des(it)))/max(es, p-es)
+
+  end function qs1d
+
+  subroutine qsmith_init
+  integer, parameter:: length=2621 
+  integer i
+
+  if( .not. allocated(table) ) then
+!                            Generate es table (dT = 0.1 deg. C)
+
+       allocate ( table(length) )
+       allocate (  des (length) )
+
+       call qs_table(length, table)
+
+       do i=1,length-1
+          des(i) = table(i+1) - table(i)
+       enddo
+       des(length) = des(length-1)
+  endif
+ 
+  end subroutine qsmith_init
 
 
   subroutine qsmith(im, km, k1, t, p, q, dqdt)
 ! input T in deg K; p (Pa)
-      integer, intent(in):: im, km, k1
-      real, intent(in),dimension(im,km):: t, p
-      real, intent(out),dimension(im,km):: q
-      real table(2621),des(2621)
-      real, intent(out), optional:: dqdt(im,km)
+  integer, intent(in):: im, km, k1
+  real, intent(in),dimension(im,km):: t, p
+  real, intent(out),dimension(im,km):: q
+  real, intent(out), optional:: dqdt(im,km)
 ! Local:
-      real es(im,km)
-      real ap1
-      real Tmin, Tmax, oms
-      real, parameter:: esl = 0.621971831
-      real, parameter:: Tice = 273.16
-      real:: dt=0.1
-      integer i, k, it
+  real es(im,km)
+  real ap1
+  real Tmin, oms
+  real, parameter:: esl = 0.621971831
+  real:: dt=0.1
+  integer i, k, it
 
-      Tmin = Tice-160.
-      Tmax = Tice+102.
+  Tmin = Tice-160.
 
-      oms = 1. - esl
+  oms = 1. - esl
  
-      if( .not. qs_initialized ) then
-! Generate es table (dT = 0.1 deg. C)
-           call qs_table(table)
-           do i=1,2620
-              des(i) = table(i+1) - table(i)
-           enddo
-           des(2621) = des(2620)
-           qs_initialized = .true.
-!          if(gid==0) write(*,*) 'qsmith initialized' 
-      endif
+  if( .not. allocated(table) ) then
+       call  qsmith_init
+  endif
  
       do k=k1,km
          do i=1,im
-            ap1 = 10.*DIM(t(i,k), Tmin) + 1
+            ap1 = 10.*DIM(t(i,k), Tmin) + 1.
             ap1 = min(2621., ap1)
             it = ap1
             es(i,k) = table(it) + (ap1-it)*des(it)
-            q(i,k) = esl*es(i,k) / max(1.E-5, p(i,k)-oms*es(i,k))
+            q(i,k) = esl*es(i,k) / max(es(i,k), p(i,k)-oms*es(i,k))
             q(i,k) = min(1., q(i,k)) 
          enddo
       enddo
@@ -278,7 +369,7 @@ contains
       if ( present(dqdt) ) then
       do k=k1,km
            do i=1,im
-              ap1 = 10.*DIM(t(i,k), Tmin) + 1
+              ap1 = 10.*DIM(t(i,k), Tmin) + 1.
               ap1 = min(2621., ap1) - 0.5
               it  = ap1
               dqdt(i,k) = 10.*esl*(des(it) + (ap1-it)*(des(it+1)-des(it)))/p(i,k)
@@ -289,8 +380,9 @@ contains
   end subroutine qsmith
  
 
-  subroutine qs_table(table)
-      real table (*)
+  subroutine qs_table(n,table)
+      integer, intent(in):: n
+      real table (n)
       real esupc(200)
       real:: dt=0.1
       real esbasw, tbasw, esbasi, tbasi, Tmin, tem, aa, b, c, d, e, esh20 
@@ -340,11 +432,93 @@ contains
          table(i+1400) = wice*table(i+1400)+wh2o*esupc(i)
       enddo
 
-      do i=1,2621
+      do i=1,n
          table(i) = table(i)*0.1
       enddo
 
-  end subroutine qs_table
+ end subroutine qs_table
 
+ subroutine neg_adj3(is, ie, js, je, ng, kbot,      &
+                     pt, dp, qv, ql, qr, qi, qs, qg)
+
+! This is designed for 6-class micro-physics schemes
+ integer, intent(in):: is, ie, js, je, ng, kbot
+ real, intent(in):: dp(is-ng:ie+ng,js-ng:je+ng,kbot)
+ real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::    &
+                                 pt, qv, ql, qr, qi, qs, qg
+! Local:
+ real lcp, icp
+ real dq
+ integer i, j, k
+
+ lcp = hlv / cp_air
+ icp = hlf / cp_air
+
+ do k=1, kbot
+    do j=js, je
+       do i=is, ie
+!-----------
+! Ice-phase:
+!-----------
+! if ice<0 borrow from snow
+          if( qi(i,j,k) < 0. ) then
+              qs(i,j,k) = qs(i,j,k) + qi(i,j,k)
+              qi(i,j,k) = 0.
+          endif
+! if snow<0 borrow from graupel
+          if( qs(i,j,k) < 0. ) then
+              qg(i,j,k) = qg(i,j,k) + qs(i,j,k)
+              qs(i,j,k) = 0.
+          endif
+! If graupel < 0 then borrow from rain
+          if ( qg(i,j,k) < 0. ) then
+               qr(i,j,k) = qr(i,j,k) + qg(i,j,k)
+               pt(i,j,k) = pt(i,j,k) - qg(i,j,k)*icp   ! heating
+               qg(i,j,k) = 0.
+          endif
+
+! Liquid phase:
+! Fix negative rain by borrowing from cloud water
+          if ( qr(i,j,k) < 0. ) then
+               ql(i,j,k) = ql(i,j,k) + qr(i,j,k)
+               qr(i,j,k) = 0.
+          endif
+! fix negative cloud water with vapor
+          if ( ql(i,j,k) < 0. ) then
+               qv(i,j,k) = qv(i,j,k) + ql(i,j,k)
+               pt(i,j,k) = pt(i,j,k) - ql(i,j,k)*lcp
+               ql(i,j,k) = 0.
+          endif
+     enddo
+   enddo
+ enddo
+
+!-----------------------------------
+! Fix water vapor; borrow from below
+!-----------------------------------
+ do k=1,kbot-1
+    do j=js, je
+       do i=is, ie
+          if( qv(i,j,k) < 0. ) then
+              qv(i,j,k+1) = qv(i,j,k+1) + qv(i,j,k)*dp(i,j,k)/dp(i,j,k+1)
+              qv(i,j,k  ) = 0.
+          endif
+     enddo
+   enddo
+ enddo
+ 
+! Bottom layer; Borrow from above
+  do j=js, je
+     do i=is, ie
+        if( qv(i,j,kbot) < 0. .and. qv(i,j,kbot-1)>0.) then
+            dq = min(-qv(i,j,kbot)*dp(i,j,kbot), qv(i,j,kbot-1)*dp(i,j,kbot-1))
+            qv(i,j,kbot-1) = qv(i,j,kbot-1) - dq/dp(i,j,kbot-1) 
+            qv(i,j,kbot  ) = qv(i,j,kbot  ) + dq/dp(i,j,kbot  ) 
+        endif
+! if qv is still < 0
+   enddo
+ enddo
+
+ end subroutine neg_adj3
 
 end module fv_sg_mod

@@ -1,21 +1,26 @@
 module fv_dynamics_mod
    use constants_mod,   only: grav, pi, radius, hlv    ! latent heat of water vapor
    use dyn_core_mod,    only: dyn_core
-   use mapz_module,     only: compute_total_energy, Lagrangian_to_Eulerian
-   use tracer_2d_mod,   only: tracer_2d, tracer_2d_1L
-   use fv_pack_mod,     only: hord_mt, hord_vt, hord_tm, hord_tr, &
+   use fv_mapz_mod,     only: compute_total_energy, Lagrangian_to_Eulerian
+   use fv_tracer2d_mod,   only: tracer_2d, tracer_2d_1L
+   use fv_control_mod,  only: hord_mt, hord_vt, hord_tm, hord_tr, &
                               kord_mt, kord_tm, kord_tr, full_phys, &
                               z_tracer, tau, rf_center, nf_omega,   &
-                              uniform_ppm, remap_t,  k_top, p_ref
-   use grid_utils,      only: sina_u, sina_v, sw_corner, se_corner, &
+                              uniform_ppm, remap_t,  k_top, p_ref,  &
+                              nwat, fv_debug
+   use fv_grid_utils_mod,      only: sina_u, sina_v, sw_corner, se_corner, &
                               ne_corner, nw_corner, da_min, ptop,   &
-                              cubed_to_latlon
-   use grid_tools,      only: dx, dy, dxa, dya, rdxc, rdyc, area, rarea
-   use mp_mod,          only: is,js,ie,je, isd,jsd,ied,jed, gid
-   use timingModule,    only: timing_on, timing_off
+                              cubed_to_latlon, c2l_ord2
+   use fv_grid_tools_mod,      only: dx, dy, rdxa, rdya, rdxc, rdyc, area, rarea
+   use fv_mp_mod,          only: is,js,ie,je, isd,jsd,ied,jed, gid, domain
+   use fv_timing_mod,    only: timing_on, timing_off
 
    use diag_manager_mod,    only: send_data
-   use fv_diagnostics_mod,  only: id_divg, id_te, fv_time
+   use fv_diagnostics_mod,  only: id_divg, id_te, fv_time, prt_maxmin
+   use mpp_domains_mod, only: mpp_update_domains, DGRID_NE
+   use field_manager_mod,  only: MODEL_ATMOS
+   use tracer_manager_mod, only: get_tracer_index
+   use fv_sg_mod,          only: neg_adj3
 
 implicit none
    logical :: RF_initialized = .false.
@@ -34,8 +39,7 @@ contains
                         reproduce_sum, kappa, cp_air, zvir, ks, ncnst, n_split,     &
                         q_split, u, v, w, delz, hydrostatic, pt, delp, q,           &
                         ps, pe, pk, peln, pkz, phis, omga, ua, va, uc, vc,          &
-                        ak, bk, mfx, mfy, cx, cy, u_srf, v_srf, srf_init,           &
-                        ze0, hybrid_z, time_total)
+                        ak, bk, mfx, mfy, cx, cy, ze0, hybrid_z, time_total)
 
     real, intent(IN) :: bdt  ! Large time-step
     real, intent(IN) :: consv_te
@@ -95,9 +99,6 @@ contains
     real, intent(inout) ::  cx(is:ie+1, jsd:jed, npz)
     real, intent(inout) ::  cy(isd:ied ,js:je+1, npz)
 
-    logical, intent(inout) :: srf_init
-    real, intent(out), dimension(is:ie,js:je):: u_srf, v_srf
-
 
 ! Local Arrays
       real:: q2(isd:ied,jsd:jed,nq)
@@ -108,6 +109,8 @@ contains
       real, allocatable :: pem(:,:,:)
       real:: akap, rg, ph1, ph2
       integer :: i,j,k, iq
+      integer :: sphum, liq_wat, ice_wat      ! GFDL physics
+      integer :: rainwat, snowwat, graupel
       logical used
       real te_den
 
@@ -116,7 +119,21 @@ contains
 
 #ifdef SW_DYNAMICS
       akap  = 1.
+                                                  call timing_on('COMM_TOTAL')
+      call mpp_update_domains(u, v, domain, gridtype=DGRID_NE, complete=.true.)
+                                                 call timing_off('COMM_TOTAL')
 #else
+      if ( nwat==6 ) then
+             sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
+           liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
+           ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
+           rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
+           snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
+           graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+      else
+           sphum = 1
+      endif
+
       akap  = kappa
       rg = kappa*cp_air
 
@@ -125,7 +142,14 @@ contains
          ph2 = ak(k+1) + bk(k+1)*p_ref
          pfull(k) = (ph2 - ph1) / log(ph2/ph1)
       enddo
- 
+
+      if( tau > 0. )      &
+      call Rayleigh_Friction(bdt, npz, ks, pfull, tau, rf_center, u, v, w, pt,  &
+                             ua, va, cp_air, rg,  hydrostatic, .true.)
+
+                                                  call timing_on('COMM_TOTAL')
+      call mpp_update_domains(u, v, domain, gridtype=DGRID_NE, complete=.true.)
+                                                 call timing_off('COMM_TOTAL')
 !---------------------
 ! Compute Total Energy
 !---------------------
@@ -133,18 +157,13 @@ contains
            call compute_total_energy(is, ie, js, je, isd, ied, jsd, jed, npz,  &
                                      u, v, pt, delp, q, pe, peln, phis, zvir,  &
                                      cp_air, rg, hlv, te_2d, ua, va, teq,      &
-                                     full_phys, id_te)
+                                     full_phys, sphum, id_te)
            if( id_te>0 ) then
                used = send_data(id_te, teq, fv_time)
-!              te_den=1.E-9*g_sum(teq, is, ie, js, je, ng, area)/(grav*4.*pi*radius**2)
+!              te_den=1.E-9*g_sum(teq, is, ie, js, je, ng, area, 0)/(grav*4.*pi*radius**2)
 !              if(gid==0)  write(*,*) 'Total Energy Density (Giga J/m**2)=',te_den
            endif
       endif
-
-      if( tau > 0. )      &
-      call Rayleigh_Friction(bdt, npz, ks, pfull, tau, rf_center, u, v, w, pt,  &
-                             ua, va, cp_air, rg,  hydrostatic, .true.)
- 
 
  
 ! Convert pt to virtual potential temperature * CP
@@ -152,7 +171,7 @@ contains
       do k=1,npz
          do j=js,je
             do i=is,ie
-                pt(i,j,k) = cp_air*pt(i,j,k)/pkz(i,j,k)*(1.+zvir*q(i,j,k,1))
+                pt(i,j,k) = cp_air*pt(i,j,k)/pkz(i,j,k)*(1.+zvir*q(i,j,k,sphum))
             enddo
          enddo
       enddo
@@ -168,8 +187,8 @@ contains
       enddo
 
       call dyn_core(npx, npy, npz, ng, bdt, n_split, cp_air, akap, grav, hydrostatic, &
-                    u, v, w, delz, pt, delp, pe, pk, phis, omga, ptop, pfull, & 
-                    ua, va, uc, vc, mfx, mfy, cx, cy, pem, pkz, uniform_ppm, time_total)
+                    u, v, w, delz, pt, delp, pe, pk, phis, omga, ptop, pfull, ua, va, & 
+                    uc, vc, mfx, mfy, cx, cy, pem, pkz, uniform_ppm, time_total)
 
 #ifdef SW_DYNAMICS
       do j=js,je
@@ -217,23 +236,12 @@ contains
 
          call Lagrangian_to_Eulerian(consv_te, ps, pe, delp,  &
                      pkz, pk, bdt, npz, is,ie,js,je, isd,ied,jsd,jed, &
-                     nq, u,  v, w, delz, pt, q, phis, grav, zvir, cp_air,   &
+                     nq, sphum, u,  v, w, delz, pt, q, phis, grav, zvir, cp_air,   &
                      akap, kord_mt, kord_tr, kord_tm, peln, te_2d,  &
                      ng, ua, va, omga, dp1, pem, fill, reproduce_sum, &
                      ak, bk, ks, ze0, remap_t, hydrostatic, hybrid_z, k_top)
 
                                                   call timing_off('Remapping')
-
-         if ( .not. srf_init ) then
-            do j=js,je
-               do i=is,ie
-                  u_srf(i,j) = ua(i,j,npz)
-                  v_srf(i,j) = va(i,j,npz)
-               enddo
-            enddo
-            srf_init = .true.
-         endif
-
 !--------------------------
 ! Filter omega for physics:
 !--------------------------
@@ -248,6 +256,29 @@ contains
       deallocate ( dp1 )
       deallocate ( pem )
 
+  if ( fv_debug ) then
+       call prt_maxmin('PS_dyn', ps, is, ie, js, je, ng,   1, 0.01, gid==0)
+       call prt_maxmin('T_dyn',  pt, is, ie, js, je, ng, npz, 1., gid==0)
+  endif
+
+  if( nwat==6 ) then
+      call neg_adj3(is, ie, js, je, ng, npz,        &
+                    pt, delp, q(isd,jsd,1,sphum),   &
+                              q(isd,jsd,1,liq_wat), &
+                              q(isd,jsd,1,rainwat), &
+                              q(isd,jsd,1,ice_wat), &
+                              q(isd,jsd,1,snowwat), &
+                              q(isd,jsd,1,graupel)  )
+     if ( fv_debug ) then
+       call prt_maxmin('SPHUM_dyn',   q(isd,jsd,1,sphum  ), is, ie, js, je, ng, npz, 1., gid==0)
+       call prt_maxmin('liq_wat_dyn', q(isd,jsd,1,liq_wat), is, ie, js, je, ng, npz, 1., gid==0)
+       call prt_maxmin('ice_wat_dyn', q(isd,jsd,1,ice_wat), is, ie, js, je, ng, npz, 1., gid==0)
+       call prt_maxmin('snowwat_dyn', q(isd,jsd,1,snowwat), is, ie, js, je, ng, npz, 1., gid==0)
+       call prt_maxmin('graupel_dyn', q(isd,jsd,1,graupel), is, ie, js, je, ng, npz, 1., gid==0)
+!      call prt_maxmin('cld_amt_dyn', q(isd,jsd,1,cld_amt), is, ie, js, je, ng, npz, 1., gid==0)
+     endif
+  endif
+
   end subroutine fv_dynamics
 
 
@@ -255,8 +286,6 @@ contains
 !---------------------------------------------------------------
 ! This routine is for filtering the omega field for the physics
 !---------------------------------------------------------------
-   use mpp_domains_mod, only: mpp_update_domains
-   use mp_mod,          only: domain
    integer, intent(in):: npx, npy, km, ntimes
    real,    intent(in):: cd            ! cd = K * da_min;   0 < K < 0.25
    real, intent(inout):: q(isd:ied,jsd:jed,km)
@@ -360,7 +389,7 @@ contains
           RF_initialized = .true.
      endif
 
-     if(conserve) call cubed_to_latlon(u, v, ua, va, dx, dy, dxa, dya, npz)
+     if(conserve) call c2l_ord2(u, v, ua, va, dx, dy, rdxa, rdya, npz)
 
      do k=1,kmax
         if ( pm(k) < 30.E2 ) then
@@ -373,7 +402,6 @@ contains
                   enddo
                enddo
           endif
- 
              do j=js,je+1
                 do i=is,ie
                    u(i,j,k) = u(i,j,k)*rf(k)

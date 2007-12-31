@@ -1,10 +1,10 @@
-module mapz_module
+module fv_mapz_mod
 
   use constants_mod, only: radius, pi, rvgas, rdgas
-  use grid_tools,    only: area, dx, dy, dxa, dya
-  use grid_utils,    only: cubed_to_latlon, g_sum, ptop, ptop_min
-  use fill_module,   only: fillz
-  use mp_mod,        only: gid, domain
+  use fv_grid_tools_mod,    only: area, dx, dy, rdxa, rdya
+  use fv_grid_utils_mod,    only: cubed_to_latlon, g_sum, ptop, ptop_min
+  use fv_fill_mod,   only: fillz
+  use fv_mp_mod,        only: gid, domain
   use mpp_domains_mod, only: mpp_update_domains
 
   implicit none
@@ -12,13 +12,14 @@ module mapz_module
   real*4 :: E_FLUX
   private
 
-  public compute_total_energy, Lagrangian_to_Eulerian, rst_remap, E_Flux
+  public compute_total_energy, Lagrangian_to_Eulerian,    &
+         rst_remap, mappm, E_Flux
 
 CONTAINS
 
  subroutine Lagrangian_to_Eulerian(consv, ps, pe, delp, pkz, pk,   &
                       mdt, km, is,ie,js,je, isd,ied,jsd,jed,       &
-                      nq, u, v, w, delz, pt, q, hs, grav, r_vir, cp,  &
+                      nq, sphum, u, v, w, delz, pt, q, hs, grav, r_vir, cp,  &
                       akap, kord_mt, kord_tr, kord_tm,  peln, te0_2d,        &
                       ng, ua, va, omga, te, pem, fill, reproduce_sum,        &
                       ak, bk, ks, ze0, remap_t, hydrostatic, hybrid_z, ktop)
@@ -26,6 +27,7 @@ CONTAINS
   real,    intent(in):: mdt                   ! mapping time step (same as phys)
   integer, intent(in):: km
   integer, intent(in):: nq                    ! number of tracers (including h2o)
+  integer, intent(in):: sphum                 ! index for water vapor (specific humidity)
   integer, intent(in):: ng
   integer, intent(in):: is,ie,isd,ied         ! starting & ending X-Dir index
   integer, intent(in):: js,je,jsd,jed         ! starting & ending Y-Dir index
@@ -80,6 +82,8 @@ CONTAINS
 !
 !-----------------------------------------------------------------------
   integer :: i,j,k 
+     real q_source(is:ie,js:je,nq)    ! numerical tracer source from surface
+                                      ! in case fillz is not sufficient
      real te_2d(is:ie,js:je)
       real zsum(is:ie,js:je)
       real   q2(is:ie,km)
@@ -133,7 +137,7 @@ CONTAINS
       else
            te_map = .true.
            call pkez(km, is, ie, js, je, pe, pk, akap, peln, pkz)
-           call cubed_to_latlon(u, v, ua, va, dx, dy, dxa, dya, km)
+           call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km, 1)
 ! Compute cp*T + KE
 !$omp parallel do private(i, j, k)
            do k=1,km
@@ -276,6 +280,7 @@ CONTAINS
              call map1_q2(km, pe1, q(isd,jsd,1,iq),     &
                           km, pe2, q2, dp2,             &
                           is, ie, 0, kord_tr, j, isd, ied, jsd, jed)
+!           if (fill) call fillz(ie-is+1, km, 1, q2, dp2, q_source(is,j,iq))
             if (fill) call fillz(ie-is+1, km, 1, q2, dp2)
             do k=1,km
                do i=is,ie
@@ -457,7 +462,7 @@ CONTAINS
          do i=is,ie
 ! Note: pt at this stage is cp*Theta_v
             pkz(i,j,k) = ( kapag*delp(i,j,k)*pt(i,j,k) /            &
-                          (delz(i,j,k)*(1.+r_vir*q(i,j,k,1))) )**k1k
+                          (delz(i,j,k)*(1.+r_vir*q(i,j,k,sphum))) )**k1k
          enddo
       enddo
    endif
@@ -596,7 +601,7 @@ endif         !------------- Hybrid_z section ----------------------
         enddo
      enddo
 
-  call cubed_to_latlon(u,  v, ua, va, dx, dy, dxa, dya, km)
+  call cubed_to_latlon(u,  v, ua, va, dx, dy, rdxa, rdya, km, 1)
 
   if( consv > 0. ) then
 
@@ -667,9 +672,9 @@ endif         !------------- Hybrid_z section ----------------------
          enddo
       enddo
 
-         tpe = consv*g_sum(te_2d, is, ie, js, je, ng, area)
+         tpe = consv*g_sum(te_2d, is, ie, js, je, ng, area, 0)
       E_Flux = tpe / (grav*mdt*4.*pi*radius**2)    ! unit: W/m**2
-        dtmp = tpe / (cp*g_sum(zsum,  is, ie, js, je, ng, area))
+        dtmp = tpe / (cp*g_sum(zsum,  is, ie, js, je, ng, area, 0))
 !-------------------------------------------------------------------------------
 ! One may use this quick fix to ensure reproducibility at the expense of a lower
 ! floating precision; this is fine for the TE correction
@@ -690,9 +695,9 @@ endif         !------------- Hybrid_z section ----------------------
             do i=is,ie
                tpe = te(i,j,k) - 0.5*(ua(i,j,k)**2 + va(i,j,k)**2) - gz(i)
                dlnp = rg*(peln(i,k+1,j) - peln(i,k,j))
-               tmp = tpe / ((cp - pe(i,k,j)*dlnp/delp(i,j,k))*(1.+r_vir*q(i,j,k,1)) )
-               pt(i,j,k) =  tmp + dtmp*pkz(i,j,k) / (1.+r_vir*q(i,j,k,1))
-               gz(i) = gz(i) + dlnp*tmp*(1.+r_vir*q(i,j,k,1))
+               tmp = tpe / ((cp - pe(i,k,j)*dlnp/delp(i,j,k))*(1.+r_vir*q(i,j,k,sphum)) )
+               pt(i,j,k) =  tmp + dtmp*pkz(i,j,k) / (1.+r_vir*q(i,j,k,sphum))
+               gz(i) = gz(i) + dlnp*tmp*(1.+r_vir*q(i,j,k,sphum))
             enddo
          enddo           ! end k-loop
       enddo
@@ -701,7 +706,7 @@ endif         !------------- Hybrid_z section ----------------------
       do k=1,km
          do j=js,je
             do i=is,ie
-               pt(i,j,k) = (pt(i,j,k) + dtmp*pkz(i,j,k))/(1.+r_vir*q(i,j,k,1))
+               pt(i,j,k) = (pt(i,j,k) + dtmp*pkz(i,j,k))/(1.+r_vir*q(i,j,k,sphum))
             enddo
          enddo   
       enddo
@@ -709,7 +714,7 @@ endif         !------------- Hybrid_z section ----------------------
       do k=1,km
          do j=js,je
             do i=is,ie
-               pt(i,j,k) = (rcp*pt(i,j,k) + dtmp)*pkz(i,j,k)/(1.+r_vir*q(i,j,k,1))
+               pt(i,j,k) = (rcp*pt(i,j,k) + dtmp)*pkz(i,j,k)/(1.+r_vir*q(i,j,k,sphum))
             enddo
          enddo   
       enddo
@@ -722,15 +727,17 @@ endif         !------------- Hybrid_z section ----------------------
  subroutine compute_total_energy(is, ie, js, je, isd, ied, jsd, jed, km,  &
                                  u, v, pt, delp, q, pe, peln, hs,         &
                                  r_vir,  cp, rg, hlv, te_2d, ua, va, teq, &
-                                 moist_phys, id_te)
+                                 moist_phys, sphum, id_te)
 !------------------------------------------------------
 ! Compute vertically integrated total energy per column
 !------------------------------------------------------
 ! !INPUT PARAMETERS:
    integer,  intent(in):: km, is, ie, js, je, isd, ied, jsd, jed, id_te
-   real, intent(in), dimension(isd:ied,jsd:jed,km):: pt, delp, q
-   real, intent(in)::  u(isd:ied,  jsd:jed+1,km)
-   real, intent(in)::  v(isd:ied+1,jsd:jed,  km)
+   integer,  intent(in):: sphum
+   real, intent(in), dimension(isd:ied,jsd:jed,km):: pt, delp
+   real, intent(in), dimension(isd:ied,jsd:jed,km,sphum):: q
+   real, intent(inout)::  u(isd:ied,  jsd:jed+1,km)
+   real, intent(inout)::  v(isd:ied+1,jsd:jed,  km)
    real, intent(in):: hs(isd:ied,jsd:jed)  ! surface geopotential
    real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) ! pressure at layer edges
    real, intent(in):: peln(is:ie,km+1,js:je)  ! log(pe)
@@ -747,7 +754,7 @@ endif         !------------- Hybrid_z section ----------------------
 !----------------------
 ! Output lat-lon winds:
 !----------------------
-  call cubed_to_latlon(u, v, ua, va, dx, dy, dxa, dya, km)
+  call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km)
 
 !$omp parallel do private(i,j,k,gztop)
   do j=js,je
@@ -755,7 +762,7 @@ endif         !------------- Hybrid_z section ----------------------
         gztop(i) = hs(i,j)
         do k=1,km
            gztop(i) = gztop(i) + (peln(i,k+1,j)-peln(i,k,j)) *   &
-                      rg*pt(i,j,k)*(1.+r_vir*q(i,j,k))
+                      rg*pt(i,j,k)*(1.+r_vir*q(i,j,k,sphum))
         enddo
      enddo
      do i=is,ie
@@ -765,7 +772,7 @@ endif         !------------- Hybrid_z section ----------------------
      do k=1,km
         do i=is,ie
            te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(0.5*(ua(i,j,k)**2+va(i,j,k)**2)  &
-                                   + cp*pt(i,j,k)*(1.+r_vir*q(i,j,k)))
+                                   + cp*pt(i,j,k)*(1.+r_vir*q(i,j,k,sphum)))
         enddo
      enddo
   enddo
@@ -783,7 +790,7 @@ endif         !------------- Hybrid_z section ----------------------
            do k=1,km
               do j=js,je
                  do i=is,ie
-                    teq(i,j) = teq(i,j) + hlv*q(i,j,k)*delp(i,j,k)
+                    teq(i,j) = teq(i,j) + hlv*q(i,j,k,sphum)*delp(i,j,k)
                  enddo
               enddo
            enddo
@@ -892,7 +899,7 @@ endif         !------------- Hybrid_z section ----------------------
 
 ! Compute vertical subgrid distribution
    if ( kord >7 ) then
-        call  cs_profile( q4, dp1, km, i1, i2, 1, kord )
+        call  cs_profile( q4, dp1, km, i1, i2, 1 )
    else
         call ppm_profile( q4, dp1, km, i1, i2, 1, kord )
    endif
@@ -985,7 +992,7 @@ endif         !------------- Hybrid_z section ----------------------
 
 ! Compute vertical subgrid distribution
    if ( kord >7 ) then
-        call  cs_profile( q4, dp1, km, i1, i2, iv, kord )
+        call  cs_profile( q4, dp1, km, i1, i2, iv )
    else
         call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
    endif
@@ -1075,7 +1082,7 @@ endif         !------------- Hybrid_z section ----------------------
 
 ! Compute vertical subgrid distribution
    if ( kord >7 ) then
-        call  cs_profile( q4, dp1, km, i1, i2, iv, kord )
+        call  cs_profile( q4, dp1, km, i1, i2, iv )
    else
         call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
    endif
@@ -1157,7 +1164,7 @@ endif         !------------- Hybrid_z section ----------------------
 
 ! Compute vertical subgrid distribution
    if ( kord >7 ) then
-        call  cs_profile( q4, dp1, km, i1, i2, iv, kord )
+        call  cs_profile( q4, dp1, km, i1, i2, iv )
    else
         call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
    endif
@@ -1214,12 +1221,11 @@ endif         !------------- Hybrid_z section ----------------------
  end subroutine remap_2d
 
 
- subroutine cs_profile(a4, delp, km, i1, i2, iv, kord)
+ subroutine cs_profile(a4, delp, km, i1, i2, iv)
 ! Optimized vertical profile reconstruction:
 ! Developer: S.-J. Lin, NOAA/GFDL
  integer, intent(in):: i1, i2
  integer, intent(in):: km      ! vertical dimension
- integer, intent(in):: kord    ! Order (or more accurately method no.):
  integer, intent(in):: iv      ! iv =-1: winds
                                ! iv = 0: positive definite scalars
                                ! iv = 1: others
@@ -1275,7 +1281,6 @@ endif         !------------- Hybrid_z section ----------------------
 ! Top:
 
   do i=i1,i2
-!    if ( gam(i,2)*gam(i,3)>0. ) then
      if ( (q(i,2)-q(i,1))*(q(i,3)-q(i,2))>0. ) then
           q(i,2) = min( q(i,2), max(a4(1,i,1), a4(1,i,2)) )
           q(i,2) = max( q(i,2), min(a4(1,i,1), a4(1,i,2)) )
@@ -1298,7 +1303,6 @@ endif         !------------- Hybrid_z section ----------------------
 
 ! Bottom:
   do i=i1,i2
-!    if ( gam(i,km-1)*gam(i,km)>0. ) then
      if ( (q(i,km)-q(i,km-1))*(q(i,km+1)-q(i,km))>0. ) then
           q(i,km) = min( q(i,km), max(a4(1,i,km-1), a4(1,i,km)) )
           q(i,km) = max( q(i,km), min(a4(1,i,km-1), a4(1,i,km)) )
@@ -1845,7 +1849,7 @@ endif         !------------- Hybrid_z section ----------------------
   real, intent(inout)::  pt_r(is:ie,js:je,km)
   real, intent(in)::   w_r(is:ie,js:je,km)
   real, intent(in)::   q_r(is:ie,js:je,km,*)
-  real, intent(in)::delz_r(is:ie,js:je,km)
+  real, intent(inout)::delz_r(is:ie,js:je,km)
 ! Output:
   real, intent(out):: delp(isd:ied,jsd:jed,kn) ! pressure thickness
   real, intent(out)::  u(isd:ied  ,jsd:jed+1,kn)   ! u-wind (m/s)
@@ -1863,7 +1867,7 @@ endif         !------------- Hybrid_z section ----------------------
   real  pv2(is:ie+1,kn+1)
 
   integer i,j,k , iq
-  integer, parameter:: kord=8
+  integer, parameter:: kord=4
 
   r_vir = rvgas/rdgas - 1.
 
@@ -1956,14 +1960,19 @@ endif         !------------- Hybrid_z section ----------------------
                        kn, pe2,   w(is:ie,j:j,1:kn),       &
                        is, ie, -1, kord)
 ! Remap delz for hybrid sigma-p coordinate
+         do k=1,km
+            do i=is,ie
+               delz_r(i,j,k) = -delz_r(i,j,k)/delp_r(i,j,k) ! ="specific volume"/grav
+            enddo
+         enddo
          call remap_2d(km, pe1, delz_r(is:ie,j:j,1:km),       &
                        kn, pe2,   delz(is:ie,j:j,1:kn),       &
                        is, ie, 1, kord)
-          do k=1,kn
-             do i=is,ie
-                delz(i,j,k) = -delz(i,j,k)*delp(i,j,k)
-             enddo
-          enddo
+         do k=1,kn
+            do i=is,ie
+               delz(i,j,k) = -delz(i,j,k)*delp(i,j,k)
+            enddo
+         enddo
       endif
 
 ! Geopotential conserving remap of virtual temperature:
@@ -2012,4 +2021,127 @@ endif         !------------- Hybrid_z section ----------------------
 
  end subroutine rst_remap
 
-end module mapz_module
+
+
+ subroutine mappm(km, pe1, q1, kn, pe2, q2, i1, i2, iv, kord)
+
+! IV = 0: constituents
+! IV = 1: potential temp
+! IV =-1: winds
+ 
+! Mass flux preserving mapping: q1(im,km) -> q2(im,kn)
+ 
+! pe1: pressure at layer edges (from model top to bottom surface)
+!      in the original vertical coordinate
+! pe2: pressure at layer edges (from model top to bottom surface)
+!      in the new vertical coordinate
+
+ integer, intent(in):: i1, i2, km, kn, kord, iv
+ real, intent(in ):: pe1(i1:i2,km+1), pe2(i1:i2,kn+1)
+ real, intent(in )::  q1(i1:i2,km)
+ real, intent(out)::  q2(i1:i2,kn)
+! local
+      real dp1(i1:i2,km)
+      real a4(4,i1:i2,km)
+      integer i, k, l
+      integer k0, k1
+      real pl, pr, tt, delp, qsum, dpsum, esl
+
+      do k=1,km
+         do i=i1,i2
+             dp1(i,k) = pe1(i,k+1) - pe1(i,k)
+            a4(1,i,k) = q1(i,k)
+         enddo
+      enddo
+
+      if ( kord >7 ) then
+           call  cs_profile( a4, dp1, km, i1, i2, iv )
+      else
+           call ppm_profile( a4, dp1, km, i1, i2, iv, kord )
+      endif
+
+!------------------------------------
+! Lowest layer: constant distribution
+!------------------------------------
+      do i=i1,i2
+         a4(2,i,km) = q1(i,km)
+         a4(3,i,km) = q1(i,km)
+         a4(4,i,km) = 0.
+      enddo
+
+      do 5555 i=i1,i2
+         k0 = 1
+      do 555 k=1,kn
+
+         if(pe2(i,k+1) .le. pe1(i,1)) then
+! Entire grid above old ptop
+            q2(i,k) = a4(2,i,1)
+         elseif(pe2(i,k) .ge. pe1(i,km+1)) then
+! Entire grid below old ps
+            q2(i,k) = a4(3,i,km)
+         elseif(pe2(i,k  ) .lt. pe1(i,1) .and.   &
+                pe2(i,k+1) .gt. pe1(i,1))  then
+! Part of the grid above ptop
+            q2(i,k) = a4(1,i,1)
+         else
+
+         do 45 L=k0,km
+! locate the top edge at pe2(i,k)
+         if( pe2(i,k) .ge. pe1(i,L) .and.        &
+             pe2(i,k) .le. pe1(i,L+1)    ) then
+             k0 = L
+             PL = (pe2(i,k)-pe1(i,L)) / dp1(i,L)
+             if(pe2(i,k+1) .le. pe1(i,L+1)) then
+
+! entire new grid is within the original grid
+               PR = (pe2(i,k+1)-pe1(i,L)) / dp1(i,L)
+               TT = r3*(PR*(PR+PL)+PL**2)
+               q2(i,k) = a4(2,i,L) + 0.5*(a4(4,i,L)+a4(3,i,L)  &
+                       - a4(2,i,L))*(PR+PL) - a4(4,i,L)*TT
+              goto 555
+             else
+! Fractional area...
+              delp = pe1(i,L+1) - pe2(i,k)
+              TT   = r3*(1.+PL*(1.+PL))
+              qsum = delp*(a4(2,i,L)+0.5*(a4(4,i,L)+            &
+                     a4(3,i,L)-a4(2,i,L))*(1.+PL)-a4(4,i,L)*TT)
+              dpsum = delp
+              k1 = L + 1
+             goto 111
+             endif
+         endif
+45       continue
+
+111      continue
+         do 55 L=k1,km
+         if( pe2(i,k+1) .gt. pe1(i,L+1) ) then
+
+! Whole layer..
+
+            qsum  =  qsum + dp1(i,L)*q1(i,L)
+            dpsum = dpsum + dp1(i,L)
+         else
+           delp = pe2(i,k+1)-pe1(i,L)
+           esl  = delp / dp1(i,L)
+           qsum = qsum + delp * (a4(2,i,L)+0.5*esl*            &
+                 (a4(3,i,L)-a4(2,i,L)+a4(4,i,L)*(1.-r23*esl)) )
+          dpsum = dpsum + delp
+           k0 = L
+           goto 123
+         endif
+55       continue
+        delp = pe2(i,k+1) - pe1(i,km+1)
+        if(delp > 0.) then
+! Extended below old ps
+           qsum = qsum + delp * a4(3,i,km)
+          dpsum = dpsum + delp
+        endif
+123     q2(i,k) = qsum / dpsum
+      endif
+555   continue
+5555  continue
+
+ end subroutine mappm
+
+
+end module fv_mapz_mod

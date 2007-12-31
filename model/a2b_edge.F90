@@ -1,8 +1,8 @@
 module a2b_edge_mod
 
-  use grid_utils, only : edge_w, edge_e, edge_s, edge_n, sw_corner, se_corner,  &
+  use fv_grid_utils_mod, only : edge_w, edge_e, edge_s, edge_n, sw_corner, se_corner,  &
                          nw_corner, ne_corner
-  use grid_tools, only: dxa, dya, grid_type
+  use fv_grid_tools_mod, only: dxa, dya, grid_type
   implicit none
 
   real, parameter:: r3 = 1./3.
@@ -38,7 +38,8 @@ contains
   real qy(is-ng:ie+ng,js:je+1)
   real qxx(is-ng:ie+ng,js-ng:je+ng)
   real qyy(is-ng:ie+ng,js-ng:je+ng)
-  real gratio
+  real fx(is:ie), fy(is-2:ie+2,js:je)
+  real gratio, bet
   integer :: i, j, is1, js1, is2, js2, ie1, je1
 
 
@@ -78,27 +79,16 @@ contains
     if ( nw_corner ) qout(1,  npy) = r3*(qin(1,    npy-1)+qin(0,  npy-1)+qin(1,    npy))
 #endif
 
-! X-interior:
-    do j=max(1,js-2),min(npy-1,je+2)
-       do i=max(3,is), min(npx-2,ie+1)
-          qx(i,j) = b2*(qin(i-2,j)+qin(i+1,j)) + b1*(qin(i-1,j)+qin(i,j))
-       enddo
-    enddo
-
+! Note: CS_INTP if defined will produce different results wih different PEs
+#ifndef CS_INTP
 ! West Edges:
     if ( is==1 ) then
        do j=max(1,js-2),min(npy-1,je+2)
            gratio = dxa(2,j) / dxa(1,j)
           qx(1,j) = 0.5*((2.+gratio)*(qin(0,j)+qin(1,j))    &
                   - (qin(-1,j)+qin(2,j))) / (1.+gratio)
-#ifdef NEW_ORD
-! Interior spline method
-          qx(2,j) = (3.*(gratio*qin(1,j)+qin(2,j)) - (gratio*qx(1,j)+qx(3,j)) )   &
-                  / (2.+2.*gratio)
-#else
           qx(2,j) = (2.*gratio*(gratio+1.)*qin(1,j)+qin(2,j) -     &
                      gratio*(gratio+0.5)*qx(1,j))/(1.+gratio*(gratio+1.5))
-#endif
        enddo
 
        do j=max(3,js),min(npy-2,je+1)
@@ -115,46 +105,95 @@ contains
                gratio = dxa(npx-2,j) / dxa(npx-1,j)
           qx(npx  ,j) = 0.5*((2.+gratio)*(qin(npx-1,j)+qin(npx,j))   &
                         - (qin(npx-2,j)+qin(npx+1,j))) / (1.+gratio )
-#ifdef NEW_ORD
-          qx(npx-1,j) = (3.*(qin(npx-2,j)+gratio*qin(npx-1,j))-(qx(npx-2,j)+gratio*qx(npx,j)))   &
-                      / (2.+2.*gratio)
-#else
           qx(npx-1,j) = (2.*gratio*(gratio+1.)*qin(npx-1,j)+qin(npx-2,j) -  &
                          gratio*(gratio+0.5)*qx(npx,j))/(1.+gratio*(gratio+1.5))
-#endif
        enddo
-
 
        do j=max(3,js),min(npy-2,je+1)
           qout(npx,j) = a2*(qx(npx,j-2)+qx(npx,j+1)) + a1*(qx(npx,j-1)+qx(npx,j))
        enddo
 
-       if( js==1 )      &
-          qout(npx,2) = c1*(qx(npx,1)+qx(npx,2))+c2*(qout(npx,1)+qout(npx,3))
+       if(js==1) qout(npx,2) = c1*(qx(npx,1)+qx(npx,2))+c2*(qout(npx,1)+qout(npx,3))
        if((je+1)==npy)  &
           qout(npx,npy-1) = c1*(qx(npx,npy-2)+qx(npx,npy-1))+c2*(qout(npx,npy-2)+qout(npx,npy))
     endif
 
-! Y-interior:
-    do j=max(3,js),min(npy-2,je+1)
-       do i=max(1,is-2), min(npx-1,ie+2)
-          qy(i,j) = b2*(qin(i,j-2)+qin(i,j+1)) + b1*(qin(i,j-1)+qin(i,j))
+! X-Interior:
+    do j=max(1,js-2),min(npy-1,je+2)
+       do i=max(3,is), min(npx-2,ie+1)
+          qx(i,j) = b2*(qin(i-2,j)+qin(i+1,j)) + b1*(qin(i-1,j)+qin(i,j))
        enddo
     enddo
+#else
+! West Edges:
+    if ( is==1 ) then
+       do j=max(1,js-2),min(npy-1,je+2)
+           gratio = dxa(2,j) / dxa(1,j)
+          qx(1,j) = 0.5*((2.+gratio)*(qin(0,j)+qin(1,j))    &
+                  - (qin(-1,j)+qin(2,j))) / (1.+gratio)
+       enddo
 
+       do j=max(3,js),min(npy-2,je+1)
+          qout(1,j) = a2*(qx(1,j-2)+qx(1,j+1)) + a1*(qx(1,j-1)+qx(1,j))
+       enddo
+
+       if( js==1 )      qout(1,2) = c1*(qx(1,1)+qx(1,2)) + c2*(qout(1,1)+qout(1,3))
+       if((je+1)==npy) qout(1,npy-1) = c1*(qx(1,npy-2)+qx(1,npy-1))+c2*(qout(1,npy-2)+qout(1,npy))
+    else
+       do j=max(1,js-2),min(npy-1,je+2)
+          qx(is,j) = b2*(qin(is-2,j)+qin(is+1,j)) + b1*(qin(is-1,j)+qin(is,j))
+       enddo
+    endif
+
+! East Edges:
+    if ( (ie+1)==npx ) then
+       do j=max(1,js-2),min(npy-1,je+2)
+             gratio = dxa(npx-2,j) / dxa(npx-1,j)
+          qx(npx,j) = 0.5*((2.+gratio)*(qin(npx-1,j)+qin(npx,j))   &
+                       - (qin(npx-2,j)+qin(npx+1,j))) / (1.+gratio )
+       enddo
+
+       do j=max(3,js),min(npy-2,je+1)
+          qout(npx,j) = a2*(qx(npx,j-2)+qx(npx,j+1)) + a1*(qx(npx,j-1)+qx(npx,j))
+       enddo
+
+       if(js==1) qout(npx,2) = c1*(qx(npx,1)+qx(npx,2))+c2*(qout(npx,1)+qout(npx,3))
+       if((je+1)==npy)  &
+          qout(npx,npy-1) = c1*(qx(npx,npy-2)+qx(npx,npy-1))+c2*(qout(npx,npy-2)+qout(npx,npy))
+    else
+       do j=max(1,js-2),min(npy-1,je+2)
+          qx(ie+1,j) = b2*(qin(ie-1,j)+qin(ie+2,j)) + b1*(qin(ie,j)+qin(ie+1,j))
+       enddo
+    endif
+
+    fx(is) = 0.
+    do j=max(1,js-2),min(npy-1,je+2)
+       do i=is+1,ie
+#ifdef VAR_GRID
+           gratio = dxa(i-1,j)/dxa(i,j)
+              bet =  2.*(1. + gratio) - fx(i-1)
+          qx(i,j) = (3.*(qin(i-1,j)+gratio*qin(i,j)) - qx(i-1,j))/bet
+            fx(i) = gratio / bet
+#else
+            fx(i) = 1./(4.-fx(i-1))
+          qx(i,j) = fx(i)*(3.*(qin(i-1,j)+qin(i,j)) - qx(i-1,j))
+#endif
+       enddo
+       do i=ie,is+1,-1
+          qx(i,j) = qx(i,j) - qx(i+1,j)*fx(i)
+       enddo
+    enddo
+#endif
+
+#ifndef CS_INTP
 ! South Edges:
     if ( js==1 ) then
        do i=max(1,is-2),min(npx-1,ie+2)
            gratio = dya(i,2) / dya(i,1)
           qy(i,1) = 0.5*((2.+gratio)*(qin(i,0)+qin(i,1))   &
                   - (qin(i,-1)+qin(i,2))) / (1.+gratio )
-#ifdef NEW_ORD
-          qy(i,2) = (3.*(gratio*qin(i,1)+qin(i,2))-(gratio*qy(i,1)+qy(i,3)))   &
-                  / (2.+2.*gratio)
-#else
           qy(i,2) = (2.*gratio*(gratio+1.)*qin(i,1)+qin(i,2) -     &
                      gratio*(gratio+0.5)*qy(i,1))/(1.+gratio*(gratio+1.5))
-#endif
        enddo
 
        do i=max(3,is),min(npx-2,ie+1)
@@ -171,13 +210,8 @@ contains
                gratio = dya(i,npy-2) / dya(i,npy-1)
           qy(i,npy  ) = 0.5*((2.+gratio)*(qin(i,npy-1)+qin(i,npy))  &
                       - (qin(i,npy-2)+qin(i,npy+1))) / (1.+gratio)
-#ifdef NEW_ORD
-          qy(i,npy-1) = (3.*(qin(i,npy-2)+gratio*qin(i,npy-1))-(gratio*qy(i,npy)+qy(i,npy-2)))  &
-                      / (2.+2.*gratio)
-#else
           qy(i,npy-1) = (2.*gratio*(gratio+1.)*qin(i,npy-1)+qin(i,npy-2) - &
                          gratio*(gratio+0.5)*qy(i,npy))/(1.+gratio*(gratio+1.5))
-#endif
        enddo
 
        do i=max(3,is),min(npx-2,ie+1)
@@ -188,6 +222,78 @@ contains
        if((ie+1)==npx) qout(npx-1,npy) = c1*(qy(npx-2,npy)+qy(npx-1,npy))+c2*(qout(npx-2,npy)+qout(npx,npy))
     endif
 
+! Y-Interior:
+    do j=max(3,js),min(npy-2,je+1)
+       do i=max(1,is-2), min(npx-1,ie+2)
+          qy(i,j) = b2*(qin(i,j-2)+qin(i,j+1)) + b1*(qin(i,j-1)+qin(i,j))
+       enddo
+    enddo
+#else
+! South Edges:
+    if ( js==1 ) then
+       do i=max(1,is-2),min(npx-1,ie+2)
+           gratio = dya(i,2) / dya(i,1)
+          qy(i,1) = 0.5*((2.+gratio)*(qin(i,0)+qin(i,1))   &
+                  - (qin(i,-1)+qin(i,2))) / (1.+gratio )
+       enddo
+
+       do i=max(3,is),min(npx-2,ie+1)
+          qout(i,1) = a2*(qy(i-2,1)+qy(i+1,1)) + a1*(qy(i-1,1)+qy(i,1))
+       enddo
+
+       if( is==1 )    qout(2,1) = c1*(qy(1,1)+qy(2,1))+c2*(qout(1,1)+qout(3,1))
+       if((ie+1)==npx) qout(npx-1,1) = c1*(qy(npx-2,1)+qy(npx-1,1))+c2*(qout(npx-2,1)+qout(npx,1))
+    else
+       do i=max(1,is-2), min(npx-1,ie+2)
+          qy(i,js) = b2*(qin(i,js-2)+qin(i,js+1)) + b1*(qin(i,js-1)+qin(i,js))
+       enddo
+    endif
+
+! North Edges:
+    if ( (je+1)==npy ) then
+       do i=max(1,is-2),min(npx-1,ie+2)
+               gratio = dya(i,npy-2) / dya(i,npy-1)
+          qy(i,npy  ) = 0.5*((2.+gratio)*(qin(i,npy-1)+qin(i,npy))  &
+                      - (qin(i,npy-2)+qin(i,npy+1))) / (1.+gratio)
+       enddo
+
+       do i=max(3,is),min(npx-2,ie+1)
+          qout(i,npy) = a2*(qy(i-2,npy)+qy(i+1,npy)) + a1*(qy(i-1,npy)+qy(i,npy))
+       enddo
+
+       if( is==1 )  qout(2,npy) = c1*(qy(1,npy)+qy(2,npy))+c2*(qout(1,npy)+qout(3,npy))
+       if((ie+1)==npx) qout(npx-1,npy) = c1*(qy(npx-2,npy)+qy(npx-1,npy))+c2*(qout(npx-2,npy)+qout(npx,npy))
+    else
+       do i=max(1,is-2), min(npx-1,ie+2)
+          qy(i,je+1) = b2*(qin(i,je-1)+qin(i,je+2)) + b1*(qin(i,je)+qin(i,je+1))
+       enddo
+    endif
+
+    do i=max(1,is-2), min(npx-1,ie+2)
+       fy(i,js) = 0.
+    enddo
+
+    do j=js+1,je
+       do i=max(1,is-2), min(npx-1,ie+2)
+#ifdef VAR_GRID
+          gratio = dya(i,j-1)/dya(i,j)
+          bet = 2.*(1.+ gratio) - fy(i,j-1)
+          qy(i,j) = (3.*(qin(i,j-1)+gratio*qin(i,j)) - qy(i,j-1))/bet
+          fy(i,j) = gratio / bet
+#else
+          fy(i,j) = 1./(4.-fy(i,j-1))
+          qy(i,j) = fy(i,j)*(3.*(qin(i,j-1)+qin(i,j)) - qy(i,j-1))
+#endif
+       enddo
+    enddo
+
+    do j=je,js+1,-1
+       do i=max(1,is-2), min(npx-1,ie+2)
+          qy(i,j) = qy(i,j) - qy(i,j+1)*fy(i,j)
+       enddo
+    enddo
+
+#endif
     
     do j=max(3,js),min(npy-2,je+1)
        do i=max(2,is),min(npx-1,ie+1)
@@ -224,19 +330,59 @@ contains
     
  else  ! grid_type>=3
 
+#ifndef CS_INTP
 ! X-sweep: PPM
     do j=js-2,je+2
        do i=is,ie+1
           qx(i,j) = b1*(qin(i-1,j)+qin(i,j)) + b2*(qin(i-2,j)+qin(i+1,j))
        enddo
     enddo
-    
 ! Y-sweep: PPM
     do j=js,je+1
        do i=is-2,ie+2
           qy(i,j) = b1*(qin(i,j-1)+qin(i,j)) + b2*(qin(i,j-2)+qin(i,j+1))
        enddo
     enddo
+#else
+! Local spline
+! X-sweep: PPM
+    fx(is) = 0.
+    do j=js-2,je+2
+       qx(is,j) = b1*(qin(is-1,j)+qin(is,j)) + b2*(qin(is-2,j)+qin(is+1,j))
+       do i=is+1,ie
+            fx(i) = 1./(4.-fx(i-1))
+          qx(i,j) = ( 3.*(qin(i-1,j)+qin(i,j)) - qx(i-1,j) )*fx(i)
+       enddo
+ 
+       qx(ie+1,j) = b1*(qin(ie,j)+qin(ie+1,j)) + b2*(qin(ie-1,j)+qin(ie+2,j))
+       do i=ie,is+1,-1
+          qx(i,j) = qx(i,j) - qx(i+1,j)*fx(i)
+       enddo
+    enddo
+
+! Y-sweep: PPM
+    do i=is-2,ie+2
+       qy(i,js) = b1*(qin(i,js-1)+qin(i,js)) + b2*(qin(i,js-2)+qin(i,js+1))
+       fy(i,js) = 0.
+    enddo
+
+    do j=js+1,je
+       do i=is-2,ie+2
+          fy(i,j) = 1./(4.-fy(i,j-1))
+          qy(i,j) = ( 3.*(qin(i,j-1)+qin(i,j)) - qy(i,j-1) )*fy(i,j)
+       enddo
+    enddo
+
+    do i=is-2,ie+2
+       qy(i,je+1) = b1*(qin(i,je)+qin(i,je+1)) + b2*(qin(i,je-1)+qin(i,je+2))
+    enddo
+
+    do j=je,js+1,-1
+       do i=is-2,ie+2
+          qy(i,j) = qy(i,j) - qy(i,j+1)*fy(i,j)
+       enddo
+    enddo
+#endif
     
     do j=js,je+1
        do i=is,ie+1

@@ -2,19 +2,19 @@ module dyn_core_mod
 
     use mpp_domains_mod, only: CGRID_NE, DGRID_NE, mpp_get_boundary,   &
                                mpp_update_domains
-    use mp_mod,       only: domain, isd, ied, jsd, jed, is, ie, js, je
-    use fv_pack_mod,  only: hord_mt, hord_vt, hord_tm, n_sponge,   &
+    use fv_mp_mod,       only: domain, isd, ied, jsd, jed, is, ie, js, je
+    use fv_control_mod,   only: hord_mt, hord_vt, hord_tm, hord_ze, dord, n_sponge,  &
                             dddmp, d_ext, m_grad_p, a2b_ord, master
-    use sw_core,      only: c_sw, d_sw
+    use sw_core_mod,      only: c_sw, d_sw
     use a2b_edge_mod, only: a2b_ord2, a2b_ord4
-    use grid_tools,   only: rdx, rdy, rdxc, dxc, dyc, rdyc, dx, dy, area, rarea
-    use grid_utils,   only: edge_vect_w, edge_vect_e, edge_vect_s, edge_vect_n,  &
-                            ec1, ec2, en1, en2
-    use nh_core,      only: Riem_Solver_C, Riem_Solver, update_dz_c, update_dz_d
+    use fv_grid_tools_mod,   only: rdx, rdy, rdxc, dxc, dyc, rdyc, dx, dy, area, rarea, grid_type
+    use fv_grid_utils_mod,   only: edge_vect_w, edge_vect_e, edge_vect_s, edge_vect_n,  &
+                            ec1, ec2, en1, en2, da_min_c
+    use nh_core_mod,      only: Riem_Solver_C, Riem_Solver, update_dz_c, update_dz_d
 #ifdef SW_DYNAMICS
-     use test_cases,  only: test_case, case9_forcing1, case9_forcing2
+     use test_cases_mod,  only: test_case, case9_forcing1, case9_forcing2
 #endif
-     use timingModule, only: timing_on, timing_off
+     use fv_timing_mod, only: timing_on, timing_off
 !    use fv_diagnostics_mod, only: prt_maxmin
 
 implicit none
@@ -30,8 +30,8 @@ contains
 !-----------------------------------------------------------------------
  
  subroutine dyn_core(npx, npy, npz, ng, bdt, n_split, cp, akap, grav, hydrostatic,  &
-                     u,  v,  w, delz, pt, delp, pe, pk, phis, omga, ptop, pfull, & 
-                     ua, va, uc, vc, mfx, mfy, cx, cy, pem, delzc, uniform_ppm, time_total)
+                     u,  v,  w, delz, pt, delp, pe, pk, phis, omga, ptop, pfull, ua, va, & 
+                     uc, vc, mfx, mfy, cx, cy, pem, delzc, uniform_ppm, time_total)
     integer, intent(IN) :: npx
     integer, intent(IN) :: npy
     integer, intent(IN) :: npz
@@ -79,11 +79,8 @@ contains
     real, intent(  out):: delzc(is:ie,js:je,npz)  ! 
 
 ! Auto 1D & 2D arrays:
-!   real wbuffer(je-js+1,npz)
-!   real sbuffer(ie-is+1,npz)
     real wbuffer(npy+2,npz)
     real sbuffer(npx+2,npz)
-    real wb(is:ie), sb(js:je)
 ! ----   For external mode:
     real divg2(is:ie+1,js:je+1)
     real wk(isd:ied,jsd:jed)
@@ -177,9 +174,6 @@ contains
         call mpp_update_domains(w,  domain, complete=.true.)
                                 call timing_off('COMM_TOTAL')
      endif
-                                call timing_on('COMM_TOTAL')
-     call mpp_update_domains(u, v, domain, gridtype=DGRID_NE, complete=.true.)
-                                call timing_off('COMM_TOTAL')
 
 #ifdef SW_DYNAMICS
       do_omega  = .false.
@@ -217,7 +211,7 @@ contains
                       pt(isd,jsd,k),    u(isd,jsd,k),    v(isd,jsd,k),  &
                        w(isd,jsd,k),   uc(isd,jsd,k),   vc(isd,jsd,k),  &
                       ua(isd,jsd,k),   va(isd,jsd,k), omga(isd,jsd,k),  &
-                      ut(isd,jsd,k),   vt(isd,jsd,k), dt2, hydrostatic)
+                      ut(isd,jsd,k),   vt(isd,jsd,k), dt2, hydrostatic, dord)
 ! on output omga is updated w
       enddo
                                                      call timing_off('c_sw')
@@ -327,6 +321,8 @@ contains
                endif
          endif
 
+         if( dord==4 ) d_divg = dddmp
+
 !--- external mode divergence damping ---
          if ( d_ext > 0. )  &
               call a2b_ord2(delp(isd,jsd,k), wk, npx, npy, is,    &
@@ -337,7 +333,7 @@ contains
                     vc(isd,jsd,k),   ua(isd,jsd,k),  va(isd,jsd,k),                 &
                    mfx(is, js, k),  mfy(is, js, k),  cx(is, jsd,k),  cy(isd,js, k), &
                    crx(is, jsd,k),  cry(isd,js, k), xfx(is, jsd,k), yfx(isd,js, k), &
-                    dt, hord_m, hord_v, hord_t, d_divg, hydrostatic, uniform_ppm )
+                    dt, hord_m, hord_v, hord_t, d_divg, hydrostatic, uniform_ppm, dord )
 
          if ( d_ext > 0. ) then
               do j=js,jep1
@@ -351,26 +347,8 @@ contains
 
     if ( d_ext > 0. ) then
 !$omp parallel do default(shared) private(i,j,k)
-#ifdef VAR_DAMP
-          do j=js,jep1
-              do i=is,iep1
-                 vt(i,j,1) = ptc(i,j,1) * vt(i,j,1)
-              enddo
-              do k=2,npz
-                 do i=is,iep1
-                     wk(i,j) = ptc(i,j,k) * vt(i,j,k)
-                    ptc(i,j,k) = ptc(i,j,k-1) + ptc(i,j,k)
-                     vt(i,j,k) = vt(i,j,k-1) + wk(i,j)
-                 enddo
-              enddo
-              do k=1,npz
-                 do i=is,iep1
-                    vt(i,j,k) = d_ext * vt(i,j,k) / ptc(i,j,k)
-                 enddo
-              enddo
-          enddo
-#else
 ! Barotropic mode:
+          d_divg = d_ext * da_min_c
           do j=js,jep1
               do i=is,iep1
                     wk(i,j) = ptc(i,j,1)
@@ -383,35 +361,17 @@ contains
                  enddo
               enddo
               do i=is,iep1
-                 divg2(i,j) = d_ext * divg2(i,j) / wk(i,j)
+                 divg2(i,j) = d_divg*divg2(i,j)/wk(i,j)
               enddo
           enddo
-#endif
     else
         divg2 = 0.
         vt = 0.
     endif
-
-                                            call timing_on('COMM_TOTAL')
-     if ( last_step ) then
-       if ( a2b_ord==4 ) then
-           if ( hydrostatic )  &
-           call mpp_update_domains(  pt, domain, whalo=2, ehalo=2,   &
-                                       shalo=2, nhalo=2, complete=.false.)
-           call mpp_update_domains(delp, domain, whalo=2, ehalo=2,   &
-                                       shalo=2, nhalo=2, complete=.true.)
-       else
-           if ( hydrostatic )  &
-           call mpp_update_domains(  pt, domain,  whalo=1, ehalo=1,    &
-                                   shalo=1, nhalo=1, complete=.false.)
-           call mpp_update_domains(delp, domain,  whalo=1, ehalo=1,     &
-                                   shalo=1, nhalo=1, complete=.true.)
-       endif
-     else
-        call mpp_update_domains(  pt, domain, complete=.false.)
-        call mpp_update_domains(delp, domain, complete=.true.)
-     endif
-                                            call timing_off('COMM_TOTAL')
+                               call timing_on('COMM_TOTAL')
+    call mpp_update_domains(  pt, domain, complete=.false.)
+    call mpp_update_domains(delp, domain, complete=.true.)
+                             call timing_off('COMM_TOTAL')
      if ( hydrostatic ) then
           call geopk(ptop, pe, delp, pkc, gz, phis, pt, npz, akap, last_step, .false., .false.)
      else
@@ -496,20 +456,21 @@ contains
 #endif
 
       if ( .not.hydrostatic .and. m_grad_p == 0 ) then
-           call two_grad_p(u, v, pkc, gz, delp, pk3, divg2, vt, dt, ng, npx, npy,   &
+           call two_grad_p(u, v, pkc, gz, delp, pk3, divg2, dt, ng, npx, npy,   &
                            npz, ptk)  
       else
-           call one_grad_p(u, v, pkc, gz, divg2, delp, vt, dt, ng, npx, npy, npz,   &
+           call one_grad_p(u, v, pkc, gz, divg2, delp, dt, ng, npx, npy, npz,   &
                            ptop, ptk, hydrostatic)  
       endif
 
                                                                 call timing_on('COMM_TOTAL')
-#ifdef FIX_D_BOUNDARY 
-      if( last_step )   &
-#endif
-      call mpp_get_boundary(u, v, domain, wbuffery=wbuffer, ebuffery=v(ie+1,js:je,1:npz),  &
+      if( last_step ) then
+! Prevent accumulation of rounding errors at overlapped domain edges:
+          call mpp_get_boundary(u, v, domain, wbuffery=wbuffer, ebuffery=v(ie+1,js:je,1:npz),  &
                             sbufferx=sbuffer, nbufferx=u(is:ie,je+1,1:npz), gridtype=DGRID_NE )
-
+      else
+          call mpp_update_domains(u, v, domain, gridtype=DGRID_NE)
+      endif
                                                                 call timing_off('COMM_TOTAL')
 #ifdef SW_DYNAMICS
       endif
@@ -538,12 +499,11 @@ contains
 
 
 
- subroutine two_grad_p(u, v, pkc, gz, delp, pk3, divg2, delpc, dt, ng, npx, npy, npz, ptk)  
+ subroutine two_grad_p(u, v, pkc, gz, delp, pk3, divg2, dt, ng, npx, npy, npz, ptk)  
 
     integer, intent(IN) :: ng, npx, npy, npz
     real,    intent(IN) :: dt, ptk
     real,    intent(in) :: divg2(is:ie+1, js:je+1)
-    real,    intent(in) :: delpc(isd:ied, jsd:jed, npz)
     real, intent(inout) ::  delp(isd:ied, jsd:jed, npz)
     real, intent(inout) ::   pkc(isd:ied, jsd:jed, npz+1)  ! perturbation pressure
     real, intent(inout) ::   pk3(isd:ied, jsd:jed, npz+1)  ! p**kappa
@@ -613,11 +573,7 @@ contains
 #ifdef NO_EXT_DAMP
              u(i,j,k) = rdx(i,j)*(u(i,j,k) + dt/(wk(i,j)+wk(i+1,j)) *   &
 #else
-#ifdef VAR_DAMP
-             u(i,j,k) = rdx(i,j)*(delpc(i+1,j,k)-delpc(i,j,k)+u(i,j,k) + dt/(wk(i,j)+wk(i+1,j)) *  &
-#else
-             u(i,j,k) = rdx(i,j)*(divg2(i+1,j)-divg2(i,j)+u(i,j,k) + dt/(wk(i,j)+wk(i+1,j)) *      &
-#endif
+             u(i,j,k) = rdx(i,j)*(divg2(i,j)-divg2(i+1,j)+u(i,j,k) + dt/(wk(i,j)+wk(i+1,j)) *      &
 #endif
                    ((gz(i,j,k+1)-gz(i+1,j,k))*(pk3(i+1,j,k+1)-pk3(i,j,k)) &
                   + (gz(i,j,k)-gz(i+1,j,k+1))*(pk3(i,j,k+1)-pk3(i+1,j,k))))
@@ -638,11 +594,7 @@ contains
 #ifdef NO_EXT_DAMP
              v(i,j,k) = rdy(i,j)*(v(i,j,k) + dt/(wk(i,j)+wk(i,j+1)) *   &
 #else
-#ifdef VAR_DAMP
-             v(i,j,k) = rdy(i,j)*(delpc(i,j+1,k)-delpc(i,j,k)+v(i,j,k) + dt/(wk(i,j)+wk(i,j+1)) *  &
-#else
-             v(i,j,k) = rdy(i,j)*(divg2(i,j+1)-divg2(i,j)+v(i,j,k) + dt/(wk(i,j)+wk(i,j+1)) *      &
-#endif
+             v(i,j,k) = rdy(i,j)*(divg2(i,j)-divg2(i,j+1)+v(i,j,k) + dt/(wk(i,j)+wk(i,j+1)) *      &
 #endif
                    ((gz(i,j,k+1)-gz(i,j+1,k))*(pk3(i,j+1,k+1)-pk3(i,j,k)) &
                   + (gz(i,j,k)-gz(i,j+1,k+1))*(pk3(i,j,k+1)-pk3(i,j+1,k))))
@@ -654,7 +606,7 @@ contains
 
 
 
- subroutine one_grad_p(u, v, pkc, gz, divg2, delp, delpc, dt, ng, npx, npy, npz,  &
+ subroutine one_grad_p(u, v, pkc, gz, divg2, delp, dt, ng, npx, npy, npz,  &
                        ptop, ptk,  hydrostatic)  
 
     integer, intent(IN) :: ng, npx, npy, npz
@@ -663,7 +615,6 @@ contains
     real,    intent(in) :: divg2(is:ie+1,js:je+1)
     real, intent(inout) ::   pkc(isd:ied,  jsd:jed  ,npz+1)
     real, intent(inout) ::    gz(isd:ied,  jsd:jed  ,npz+1)
-    real,    intent(in) :: delpc(isd:ied,  jsd:jed  ,npz)
     real, intent(inout) ::  delp(isd:ied,  jsd:jed  ,npz)
     real, intent(inout) ::     u(isd:ied  ,jsd:jed+1,npz) 
     real, intent(inout) ::     v(isd:ied+1,jsd:jed  ,npz)
@@ -728,11 +679,7 @@ contains
 #ifdef NO_EXT_DAMP
              u(i,j,k) = rdx(i,j)*(u(i,j,k) + dt/(wk(i,j)+wk(i+1,j)) *   &
 #else
-#ifdef VAR_DAMP
-             u(i,j,k) = rdx(i,j)*(delpc(i+1,j,k)-delpc(i,j,k)+u(i,j,k) + dt/(wk(i,j)+wk(i+1,j)) *  &
-#else
-             u(i,j,k) = rdx(i,j)*(divg2(i+1,j)-divg2(i,j)+u(i,j,k) + dt/(wk(i,j)+wk(i+1,j)) *      &
-#endif
+             u(i,j,k) = rdx(i,j)*(divg2(i,j)-divg2(i+1,j)+u(i,j,k) + dt/(wk(i,j)+wk(i+1,j)) *      &
 #endif
                    ((gz(i,j,k+1)-gz(i+1,j,k))*(pkc(i+1,j,k+1)-pkc(i,j,k)) &
                   + (gz(i,j,k)-gz(i+1,j,k+1))*(pkc(i,j,k+1)-pkc(i+1,j,k))))
@@ -743,11 +690,7 @@ contains
 #ifdef NO_EXT_DAMP
              v(i,j,k) = rdy(i,j)*(v(i,j,k) + dt/(wk(i,j)+wk(i,j+1)) *   &
 #else
-#ifdef VAR_DAMP
-             v(i,j,k) = rdy(i,j)*(delpc(i,j+1,k)-delpc(i,j,k)+v(i,j,k) + dt/(wk(i,j)+wk(i,j+1)) *  &
-#else
-             v(i,j,k) = rdy(i,j)*(divg2(i,j+1)-divg2(i,j)+v(i,j,k) + dt/(wk(i,j)+wk(i,j+1)) *      &
-#endif
+             v(i,j,k) = rdy(i,j)*(divg2(i,j)-divg2(i,j+1)+v(i,j,k) + dt/(wk(i,j)+wk(i,j+1)) *      &
 #endif
                    ((gz(i,j,k+1)-gz(i,j+1,k))*(pkc(i,j+1,k+1)-pkc(i,j,k)) &
                   + (gz(i,j,k)-gz(i,j+1,k+1))*(pkc(i,j,k+1)-pkc(i,j+1,k))))

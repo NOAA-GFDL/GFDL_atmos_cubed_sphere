@@ -1,11 +1,11 @@
-module tracer_2d_mod
-      use tpcore,          only: fv_tp_2d
-      use grid_tools,      only: area, rarea, dxa, dya, dx, dy
-      use grid_utils,      only: sina_u, sina_v
-      use mp_mod,          only: gid, domain, mp_reduce_max,   &
+module fv_tracer2d_mod
+      use tp_core_mod,          only: fv_tp_2d
+      use fv_grid_tools_mod,      only: area, rarea, dxa, dya, dx, dy
+      use fv_grid_utils_mod,      only: sina_u, sina_v
+      use fv_mp_mod,          only: gid, domain, mp_reduce_max,   &
                                  ng,isd,ied,jsd,jed,is,js,ie,je
       use mpp_domains_mod, only: mpp_update_domains
-      use timingModule,    only: timing_on, timing_off
+      use fv_timing_mod,    only: timing_on, timing_off
 
 implicit none
 private
@@ -82,7 +82,7 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
          enddo
          call mp_reduce_max(cmax)
          nsplt = int(1.0001 + cmax)
-         if ( gid == 0 .and. nsplt > 3 )  write(6,*) k, 'Tracer_2d_split=', nsplt, cmax
+         if ( gid == 0 .and. nsplt > 5 )  write(6,*) k, 'Tracer_2d_split=', nsplt, cmax
       else
          nsplt = q_split
       endif
@@ -260,7 +260,7 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
          enddo
       endif
       nsplt = int(1. + c_global)
-      if ( gid == 0 .and. nsplt > 3 )  write(6,*) 'Tracer_2d_split=', nsplt, c_global
+      if ( gid == 0 .and. nsplt > 5 )  write(6,*) 'Tracer_2d_split=', nsplt, c_global
    else
       nsplt = q_split
    endif
@@ -364,4 +364,4 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
 
 end subroutine tracer_2d
 
-end module tracer_2d_mod
+end module fv_tracer2d_mod

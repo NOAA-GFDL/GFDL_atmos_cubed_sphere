@@ -1,11 +1,11 @@
-! $Id: init_hydro.F90,v 15.0.2.1 2007/08/24 16:45:30 bw Exp $
+! $Id: init_hydro.F90,v 1.1.2.2.2.1.2.3.2.12.2.1.2.1.2.2 2007/12/12 19:00:16 rab Exp $
 
-module init_hydro
+module init_hydro_mod
 
       use constants_mod, only: grav, rdgas
-      use grid_utils,    only: g_sum
-      use grid_tools,    only: area
-      use mp_mod,        only: gid, masterproc
+      use fv_grid_utils_mod,    only: g_sum
+      use fv_grid_tools_mod,    only: area
+      use fv_mp_mod,        only: gid, masterproc
 !     use fv_diagnostics_mod, only: prt_maxmin
 
       implicit none
@@ -19,14 +19,14 @@ contains
  subroutine p_var(km, ifirst, ilast, jfirst, jlast, ptop, ptop_min,    &
                   delp, delz, pt, ps,  pe, peln, pk, pkz, cappa, q, ng, nq,    &
                   dry_mass, adjust_dry_mass, mountain, full_phys,      &
-                  hydrostatic, ktop, make_nh)
+                  hydrostatic, ktop, nwat, make_nh)
                
 ! Given (ptop, delp) computes (ps, pk, pe, peln, pkz)
 ! Input:
    integer,  intent(in):: km
    integer,  intent(in):: ifirst, ilast            ! Longitude strip
    integer,  intent(in):: jfirst, jlast            ! Latitude strip
-   integer,  intent(in):: nq
+   integer,  intent(in):: nq, nwat
    integer,  intent(in):: ng
    integer,  intent(in):: ktop
    logical, intent(in):: adjust_dry_mass, mountain, full_phys, hydrostatic
@@ -50,8 +50,8 @@ contains
 
 
 ! Check dry air mass & compute the adjustment amount:
-   call drymadj(km, ifirst, ilast,  jfirst,  jlast, ng, cappa, ptop, &
-                ps, delp, q, nq, dry_mass, adjust_dry_mass, full_phys, dpd)
+   call drymadj(km, ifirst, ilast,  jfirst,  jlast, ng, cappa, ptop, ps, &
+                delp, q, nq, nwat, dry_mass, adjust_dry_mass, full_phys, dpd)
 
    pek = ptop ** cappa
 
@@ -109,7 +109,7 @@ contains
 !--------
 ! Caution:
 !------------------------------------------------------------------
-! The following form is the same as in "update_fv_phys.F90"
+! The following form is the same as in "fv_update_phys.F90"
 ! Therefore, restart reproducibility is only enforced in diabatic cases
 !------------------------------------------------------------------
 ! For adiabatic runs, this form is not exactly the same as in mapz_module;
@@ -157,14 +157,14 @@ contains
 
 
  subroutine drymadj(km,  ifirst, ilast, jfirst,  jlast,  ng, &  
-                    cappa,   ptop, ps, delp, q, nq,  &
+                    cappa,   ptop, ps, delp, q,  nq,  nwat,  &
                     dry_mass, adjust_dry_mass, full_phys, dpd)
 
 ! !INPUT PARAMETERS:
       integer km
       integer ifirst, ilast  ! Long strip
       integer jfirst, jlast  ! Latitude strip    
-      integer nq, ng
+      integer nq, ng, nwat
       real, intent(in):: dry_mass
       real, intent(in):: ptop
       real, intent(in):: cappa
@@ -179,9 +179,7 @@ contains
 ! Local
       real  psd(ifirst:ilast,jfirst:jlast)     ! surface pressure  due to dry air mass
       real  psmo, psdry
-      integer i, j, k, ip
-
-      ip = min(3,size(q,4))
+      integer i, j, k
 
 !$omp parallel do private(i, j)
       do j=jfirst,jlast
@@ -197,10 +195,10 @@ contains
             enddo
          enddo
 
-        if( full_phys ) then
+       if ( nwat>=1 ) then
           do k=1,km
              do i=ifirst,ilast
-                psd(i,j) = psd(i,j) + delp(i,j,k)*(1. - sum(q(i,j,k,1:ip)))
+                psd(i,j) = psd(i,j) + delp(i,j,k)*(1. - sum(q(i,j,k,1:nwat)))
              enddo
           enddo
         else
@@ -211,20 +209,26 @@ contains
       enddo
 
 ! Check global maximum/minimum
-      psdry = g_sum(psd, ifirst, ilast, jfirst, jlast, ng, area, mode=1, exact_sum=.true.) 
-       psmo = g_sum( ps(ifirst:ilast,jfirst:jlast), ifirst, ilast, jfirst, jlast,  &
-                     ng, area, mode=1, exact_sum=.true.) 
+#ifndef QUICK_SUM
+      psdry = g_sum(psd, ifirst, ilast, jfirst, jlast, ng, area, 1, .true.) 
+       psmo = g_sum(ps(ifirst:ilast,jfirst:jlast), ifirst, ilast, jfirst, jlast,  &
+                     ng, area, 1, .true.) 
+#else
+      psdry = g_sum(psd, ifirst, ilast, jfirst, jlast, ng, area, 1) 
+       psmo = g_sum(ps(ifirst:ilast,jfirst:jlast), ifirst, ilast, jfirst, jlast,  &
+                     ng, area, 1) 
+#endif
 
       if(gid==masterproc) then
          write(6,*) 'Total surface pressure (mb) = ', 0.01*psmo
          if ( full_phys ) then
               write(6,*) 'mean dry surface pressure = ', 0.01*psdry
-              write(6,*) 'Total Water (kg/m**2) =', (psmo-psdry)/GRAV
+              write(6,*) 'Total Water (kg/m**2) =', real(psmo-psdry,4)/GRAV
          endif
       endif
 
       if( adjust_dry_mass ) Then
-          dpd = dry_mass - psdry
+          dpd = real(dry_mass - psdry,4)
           if(gid==masterproc) write(6,*) 'dry mass to be added (pascals) =', dpd
       endif
 
@@ -283,10 +287,7 @@ contains
          enddo
       enddo
 #else
-  if ( mountain ) then
-
 ! Given p1 and z1 (250mb, 10km)
-        mslp = 1009.174*100.
         p1 = 25000.
         z1 = 10.E3 * grav
         t1 = 215.
@@ -303,28 +304,38 @@ contains
      ztop = z1 + (rdgas*t1)*log(p1/ptop)
      if(gid==masterproc) write(6,*) 'ZTOP is computed as', ztop/grav*1.E-3
 
+  if ( mountain ) then
+     mslp = 100917.4
      do j=js,je
         do i=is,ie
            ps(i,j) = mslp*( c0/(hs(i,j)+c0))**(1./(a0*rdgas))
         enddo
      enddo
-
-     psm = g_sum(ps(is:ie,js:je), is, ie, js, je, ng, area, mode=1, exact_sum=.true.)
+     psm = g_sum(ps(is:ie,js:je), is, ie, js, je, ng, area, 1, .true.)
      dps = drym - psm
      if(gid==masterproc) write(6,*) 'Computed mean ps=', psm
      if(gid==masterproc) write(6,*) 'Correction delta-ps=', dps
+  else
+     mslp = 1000.E2
+     do j=js,je
+        do i=is,ie
+           ps(i,j) = mslp
+        enddo
+     enddo
+     dps = 0.
+  endif
 
 
-   do j=js,je
-      do i=is,ie
-         ps(i,j) = ps(i,j) + dps
-         gz(i,   1) = ztop
-         gz(i,km+1) = hs(i,j)
-         ph(i,   1) = ptop                                                     
-         ph(i,km+1) = ps(i,j)                                               
-      enddo
+  do j=js,je
+     do i=is,ie
+        ps(i,j) = ps(i,j) + dps
+        gz(i,   1) = ztop
+        gz(i,km+1) = hs(i,j)
+        ph(i,   1) = ptop                                                     
+        ph(i,km+1) = ps(i,j)                                               
+     enddo
 
-      if ( hybrid_z ) then
+     if ( hybrid_z ) then
 !---------------
 ! Hybrid Z
 !---------------
@@ -349,28 +360,28 @@ contains
               endif
            enddo
         enddo
-      else
+     else
 !---------------
 ! Hybrid sigma-p
 !---------------
-        do k=2,km+1
-           do i=is,ie
-              ph(i,k) = ak(k) + bk(k)*ps(i,j)
-           enddo
-        enddo
+       do k=2,km+1
+          do i=is,ie
+             ph(i,k) = ak(k) + bk(k)*ps(i,j)
+          enddo
+       enddo
 
-        do k=2,km
-           do i=is,ie
-              if ( ph(i,k) <= p1 ) then
+       do k=2,km
+          do i=is,ie
+             if ( ph(i,k) <= p1 ) then
 ! Isothermal
                  gz(i,k) = ztop + (rdgas*t1)*log(ptop/ph(i,k))
-              else
+             else
 ! Constant lapse rate region (troposphere)
                  gz(i,k) = (hs(i,j)+c0)/(ph(i,k)/ps(i,j))**(a0*rdgas) - c0
-              endif
-           enddo
-        enddo
-      endif  ! end hybrid_z
+             endif
+          enddo
+       enddo
+     endif  ! end hybrid_z
 
 ! Convert geopotential to Temperature
       do k=1,km
@@ -388,25 +399,9 @@ contains
    endif
 !  call prt_maxmin('INIT_hydro: PT  ', pt,   is, ie, js, je, ng, km, 1., gid==masterproc)
 
-  else    ! no mountain
-!$omp parallel do private (i, j)
-        do j=js,je
-           do i=is,ie
-              ps(i,j) = 1.E5
-           enddo
-           do k=1,km
-               do i=is,ie
-                  pt(i,j,k) = 273.0
-                  delp(i,j,k) = ak(k+1)-ak(k) + ps(i,j)*(bk(k+1)-bk(k))
-               enddo
-           enddo
-        enddo
-  endif
 #endif
 
  end subroutine hydro_eq
 
-! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
-!-------------------------------------------------------------------------------
 
-end module init_hydro
+end module init_hydro_mod

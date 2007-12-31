@@ -39,14 +39,12 @@ module fv_io_mod
   use mpp_domains_mod,         only: domain2d
   use mpp_domains_mod,         only: EAST, NORTH, mpp_get_tile_id
   use mpp_domains_mod,         only: mpp_get_compute_domain, mpp_get_data_domain
-! use tracer_manager_mod,      only: get_tracer_names
-
-  use tracer_manager_mod, only : tr_get_tracer_names=>get_tracer_names, &
-       get_tracer_names, get_number_tracers, &
-       set_tracer_profile, &
-       get_tracer_index, NO_TRACER
-  use field_manager_mod, only  : MODEL_ATMOS  
-  use fms_mod,           only  : field_exist    
+  use tracer_manager_mod,      only: tr_get_tracer_names=>get_tracer_names, &
+                                     get_tracer_names, get_number_tracers, &
+                                     set_tracer_profile, &
+                                     get_tracer_index, NO_TRACER
+  use field_manager_mod,       only: MODEL_ATMOS  
+  use fms_mod,                 only: field_exist    
 
 
   implicit none
@@ -57,8 +55,8 @@ module fv_io_mod
   logical                       :: module_is_initialized = .FALSE.
 
   !--- version information variables ----
-  character(len=128) :: version = '$Id: fv_io.F90,v 15.0.2.2.2.1 2007/09/21 18:58:27 z1l Exp $'
-  character(len=128) :: tagname = '$Name: omsk_2007_10 $'
+  character(len=128) :: version = '$Id: fv_io.F90,v 1.1.4.3.2.2.2.2.2.10.2.2.2.1.2.2 2007/11/01 18:35:21 sjl Exp $'
+  character(len=128) :: tagname = '$Name: omsk_2007_12 $'
 
 contains 
 
@@ -106,7 +104,6 @@ contains
 
     character(len=128)           :: tracer_longname, tracer_units
 
-
     ntileMe = size(Atm(:))  ! This will have to be modified for mult tiles per PE
     allocate(tile_id(ntileMe))
     tile_id = mpp_get_tile_id(fv_domain)
@@ -117,8 +114,8 @@ contains
     fname_nd = 'INPUT/fv_core.res.nc'
  
   ! write_data does not (yet?) support vector data and tiles
-    call read_data(fname_nd, 'ak', Atm(1)%ak(:), no_domain=.true.)
-    call read_data(fname_nd, 'bk', Atm(1)%bk(:), no_domain=.true.)
+    call read_data(fname_nd, 'ak', Atm(1)%ak(:))
+    call read_data(fname_nd, 'bk', Atm(1)%bk(:))
  
     do n = 1, ntileMe
        isc = Atm(n)%isc; iec = Atm(n)%iec; jsc = Atm(n)%jsc; jec = Atm(n)%jec
@@ -151,21 +148,25 @@ contains
          Atm(n)%srf_init = .false.
        endif
 
-#ifdef FV_LAND
+  if ( Atm(n)%fv_land ) then
 !----------------------------------------------------------------------------------------------------------------
 ! Optional terrain deviation (sgh) and land fraction (oro)
+       call get_tile_string(fname, 'INPUT/mg_drag.res.tile', tile_id(n), '.nc' )
+       if(file_exist(fname))then
+         call read_data(fname, 'ghprime', Atm(n)%sgh(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
+       else
+         call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
+       endif
+! Land-water mask:
        call get_tile_string(fname, 'INPUT/fv_land.res.tile', tile_id(n), '.nc' )
        if(file_exist(fname))then
-         call read_data(fname, 'sgh', Atm(n)%sgh(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
          call read_data(fname, 'oro', Atm(n)%oro(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
        else
          call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
        endif
 !----------------------------------------------------------------------------------------------------------------
-#endif
- 
+  endif
        call get_tile_string(fname, 'INPUT/fv_tracer.res.tile', tile_id(n), '.nc' )
-
 
          DO nt = 1, ntracers
            call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
@@ -183,7 +184,6 @@ contains
            call mpp_error(NOTE,'==>  Setting tracer '//trim(tracer_name)//' from set_tracer')
          ENDDO
 
- 
     end do
  
     deallocate(tile_id)
@@ -194,7 +194,7 @@ contains
 
 
   subroutine  remap_restart(fv_domain,Atm)
-  use mapz_module,       only: rst_remap
+  use fv_mapz_mod,       only: rst_remap
 
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
@@ -251,8 +251,8 @@ contains
     fname_nd = 'INPUT/fv_core.res.nc'
 
   ! write_data does not (yet?) support vector data and tiles
-    call read_data(fname_nd, 'ak', ak_r(:), no_domain=.true.)
-    call read_data(fname_nd, 'bk', bk_r(:), no_domain=.true.)
+    call read_data(fname_nd, 'ak', ak_r(1:npz_rst+1))
+    call read_data(fname_nd, 'bk', bk_r(1:npz_rst+1))
 
     do n = 1, ntileMe
        call get_tile_string(fname, 'INPUT/fv_core.res.tile', tile_id(n), '.nc' )
@@ -284,18 +284,22 @@ contains
          Atm(n)%srf_init = .false.
        endif
 
-#ifdef FV_LAND
-!----------------------------------------------------------------------------------------------------------------
-! Optional terrain deviation (sgh) and land fraction (oro)
+     if ( Atm(n)%fv_land ) then
+! Optional terrain deviation (sgh)
+       call get_tile_string(fname, 'INPUT/mg_drag.res.tile', tile_id(n), '.nc' )
+       if(file_exist(fname))then
+         call read_data(fname, 'ghprime', Atm(n)%sgh(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
+       else
+         call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
+       endif
+! Land-water mask
        call get_tile_string(fname, 'INPUT/fv_land.res.tile', tile_id(n), '.nc' )
        if(file_exist(fname))then
-         call read_data(fname, 'sgh', Atm(n)%sgh(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
          call read_data(fname, 'oro', Atm(n)%oro(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
        else
          call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
        endif
-!----------------------------------------------------------------------------------------------------------------
-#endif
+     endif
 
        call get_tile_string(fname, 'INPUT/fv_tracer.res.tile', tile_id(n), '.nc' )
 
@@ -312,7 +316,7 @@ contains
 
           call set_tracer_profile (MODEL_ATMOS, nt, q_r(isc:iec,jsc:jec,:,nt)  )
           call mpp_error(NOTE,'==>  Setting tracer '//trim(tracer_name)//' from set_tracer')
-       ENDDO
+       enddo
 
        call rst_remap(npz_rst, npz, isc, iec, jsc, jec, isd, ied, jsd, jed, ntracers,              &
                       delp_r,      u_r,      v_r,      w_r,      delz_r,      pt_r,      q_r,      &
@@ -352,9 +356,7 @@ contains
     integer              :: isc, iec, jsc, jec, n, nt, ntracers
     integer              :: ntileMe
     integer, allocatable :: tile_id(:)
-
-    character(len=128)           :: tracer_longname, tracer_units
-
+    character(len=128)   :: tracer_longname, tracer_units
 
     ntileMe = size(Atm(:))  ! This will need mods for more than 1 tile per pe
     allocate(tile_id(ntileMe))
@@ -366,8 +368,8 @@ contains
     fname_nd = 'RESTART/fv_core.res.nc'
  
   ! write_data does not (yet?) support vector data and tiles
-    call write_data(fname_nd, 'ak', Atm(1)%ak(:), no_domain=.true.)
-    call write_data(fname_nd, 'bk', Atm(1)%bk(:), no_domain=.true.)
+    call write_data(fname_nd, 'ak', Atm(1)%ak(:))
+    call write_data(fname_nd, 'bk', Atm(1)%bk(:))
  
     do n = 1, ntileMe
        isc = Atm(n)%isc; iec = Atm(n)%iec; jsc = Atm(n)%jsc; jec = Atm(n)%jec  
@@ -390,11 +392,12 @@ contains
        call write_data(fname, 'u_srf', Atm(n)%u_srf(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
        call write_data(fname, 'v_srf', Atm(n)%v_srf(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
 
-#ifdef FV_LAND
+     if ( Atm(n)%fv_land ) then
+       call get_tile_string(fname, 'RESTART/mg_drag.res.tile', tile_id(n), '.nc' )
+       call write_data(fname, 'ghprime', Atm(n)%sgh(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
        call get_tile_string(fname, 'RESTART/fv_land.res.tile', tile_id(n), '.nc' )
-       call write_data(fname, 'sgh', Atm(n)%sgh(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
        call write_data(fname, 'oro', Atm(n)%oro(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
-#endif
+     endif
 
        call get_tile_string(fname, 'RESTART/fv_tracer.res.tile', tile_id(n), '.nc' )
 

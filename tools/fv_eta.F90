@@ -1,6 +1,6 @@
-module eta_mod
+module fv_eta_mod
  use constants_mod, only: kappa
- use mp_mod, only: gid
+ use fv_mp_mod, only: gid
  implicit none
  private
  public set_eta, get_eta_level, compute_dz_L32, set_hybrid_z, compute_dz
@@ -503,6 +503,7 @@ module eta_mod
 !--------------------------------------------------
 !
          pt = 2000.           ! model top pressure (pascal)
+!        pt =  100.           ! 1 mb
          press(1) = pt
          press(km+1) = p0
          dlnp = (log(p0) - log(pt)) / real(km)
@@ -538,10 +539,10 @@ module eta_mod
              ak(km+1) = 0. 
              bk(km+1) = 1.                                     
                                                               
-          do k=2,km
+!         do k=2,km
 !            bk(k) = real(k-1) / real(km)
 !            ak(k) = pt * ( 1. - bk(k) )
-          enddo
+!         enddo
 
              ak(km+1) = 0.
              bk(km+1) = 1.
@@ -578,16 +579,16 @@ module eta_mod
  subroutine get_eta_level(npz, p_s, pf, ph, ak, bk, pscale)
   integer, intent(in) :: npz    
   real, intent(in)  :: p_s            ! unit: pascal
-  real, intent(out) :: pf(npz)
-  real, intent(out) :: ph(npz+1)
   real, intent(in)  :: ak(npz+1)
   real, intent(in)  :: bk(npz+1)
   real, intent(in), optional :: pscale
+  real, intent(out) :: pf(npz)
+  real, intent(out) :: ph(npz+1)
   integer k
-   
+
   ph(1) = ak(1)               
   do k=2,npz+1
-     ph(k) = ak (k) + bk(k)*p_s
+     ph(k) = ak(k) + bk(k)*p_s
   enddo                           
    
   if ( present(pscale) ) then
@@ -599,7 +600,7 @@ module eta_mod
   if( ak(1) > 1.E-8 ) then   
      pf(1) = (ph(2) - ph(1)) / log(ph(2)/ph(1))
   else
-     pf(1) = (ph(2) - ph(1)) * kappa / (kappa+1.)
+     pf(1) = (ph(2) - ph(1)) * kappa/(kappa+1.)
   endif
 
   do k=2,npz
@@ -618,6 +619,7 @@ module eta_mod
 !------------------------------
   real ze(km+1), dzt(km)
   integer k
+
 
 ! ztop = 30.E3
   dz(1) = ztop / real(km) 
@@ -883,4 +885,4 @@ module eta_mod
                                                               
   end subroutine zflip   
 
-end module eta_mod
+end module fv_eta_mod

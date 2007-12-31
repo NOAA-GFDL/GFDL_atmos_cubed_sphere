@@ -1,4 +1,4 @@
-module fill_module
+module fv_fill_mod
      implicit none
      public fillz, pfix
 
@@ -42,13 +42,13 @@ contains
 ! Bottom layer
       k = km
       do i=1,im
-         if( q(i,km,ic) < 0. .and. q(i,km-1,ic)>0.) then
+         if( q(i,k,ic)<0. .and. q(i,k-1,ic)>0.) then
 ! Borrow from above
              qup =  q(i,k-1,ic)*dp(i,k-1)
              qly = -q(i,k  ,ic)*dp(i,k  )
-             dup =  min( qly, qup )
+             dup =  min(qly, qup)
              q(i,k-1,ic) = q(i,k-1,ic) - dup/dp(i,k-1) 
-             q(i,k,ic) = 0.
+             q(i,k,  ic) = q(i,k,  ic) + dup/dp(i,k  )
 #ifdef NON_CONSV_Q
           else
              q(i,km,ic) = 0.
@@ -96,4 +96,4 @@ contains
 
  end subroutine pfix
 
-end module fill_module
+end module fv_fill_mod

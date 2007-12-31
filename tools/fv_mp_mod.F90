@@ -1,8 +1,8 @@
 !------------------------------------------------------------------------------
 !BOP
 !
-! !MODULE: mp_mod --- SPMD parallel decompostion/communication module
-      module mp_mod
+! !MODULE: fv_mp_mod --- SPMD parallel decompostion/communication module
+      module fv_mp_mod
 
 #if defined(SPMD)
 ! !USES:
@@ -87,7 +87,8 @@
 !
 !     mp_start :: Start SPMD processes
 !
-      subroutine mp_start()
+        subroutine mp_start(commID)
+          integer, intent(in), optional :: commID
 
          integer :: ios, numthreads
          character*80 evalue
@@ -97,6 +98,9 @@
 
          masterproc = mpp_root_pe()
          commglobal = MPI_COMM_WORLD
+         if( PRESENT(commID) )then
+             commglobal = commID
+         end if
 
          numthreads = 0
 #if defined(_OPENMP)
@@ -1473,5 +1477,5 @@
       public gid, masterproc, ng
 #endif
 
-      end module mp_mod
+      end module fv_mp_mod
 !-------------------------------------------------------------------------------

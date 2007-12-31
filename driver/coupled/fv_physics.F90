@@ -26,13 +26,13 @@ use atmos_nudge_mod,       only: atmos_nudge_init, atmos_nudge_end
 !-----------------
 ! FV core modules:
 !-----------------
-use grid_tools,            only: area
+use fv_grid_tools_mod,            only: area
 use fv_arrays_mod,         only: fv_atmos_type
-use fv_pack_mod,           only: npx, npy, npz, ncnst, pnats, domain
-use eta_mod,               only: get_eta_level
-use update_fv_phys_mod,    only: update_fv_phys
+use fv_control_mod,            only: npx, npy, npz, ncnst, pnats, domain
+use fv_eta_mod,               only: get_eta_level
+use fv_update_phys_mod,    only: fv_update_phys
 use fv_sg_mod,             only: fv_sg_conv
-use timingModule,          only: timing_on, timing_off
+use fv_timing_mod,          only: timing_on, timing_off
 
 implicit none
 private
@@ -41,8 +41,8 @@ public  fv_physics_down, fv_physics_up, fv_physics_init, fv_physics_end
 public  surf_diff_type
 
 !-----------------------------------------------------------------------
-character(len=128) :: version = '$Id: fv_physics.F90,v 15.0.2.1 2007/09/19 14:37:01 bw Exp $'
-character(len=128) :: tag = '$Name: omsk_2007_10 $'
+character(len=128) :: version = '$Id: fv_physics.F90,v 1.1.2.8.4.2.2.1.2.1 2007/11/09 19:19:46 sjl Exp $'
+character(len=128) :: tag = '$Name: omsk_2007_12 $'
 !-----------------------------------------------------------------------
 
    real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt
@@ -50,12 +50,13 @@ character(len=128) :: tag = '$Name: omsk_2007_10 $'
    real, allocatable, dimension(:,:,:)   :: p_full, z_full, p_half, z_half
    logical :: do_atmos_nudge
    real    :: zvir, rrg, ginv
-   integer :: id_fv_physics_down, id_fv_physics_up, id_update_fv_phys
+   integer :: id_fv_physics_down, id_fv_physics_up, id_fv_update_phys
    integer :: isc, iec, jsc, jec, ngc, nt_prog
    integer :: isd, ied, jsd, jed
    integer :: isw, iew, jsw, jew  ! window start/end in global index space
    integer :: nx_win, ny_win      ! iew-isw+1, jew-jsw+1 (window sizes)
    integer :: nx_dom, ny_dom      ! ie-is+1, je-js+1 (compute domain sizes)
+   integer :: sphum
 
 contains
 
@@ -78,10 +79,10 @@ contains
     real    ::  pref(npz+1,2)
     real    :: phalf(npz+1)
     real    :: ps1, ps2
-    integer :: i, j, k, sphum
+    integer :: i, j, k
 
-! Prognostic tracers are total minus non-advected
-    nt_prog = ncnst-pnats
+! All tracers are prognostic
+    nt_prog = ncnst - pnats
 
     isc = Atm(1)%isc
     iec = Atm(1)%iec
@@ -130,8 +131,8 @@ contains
     enddo
 !---------- initialize physics -------
 
-    call physics_driver_init(Time, Atm(1)%grid(isc:iec+1,jsc:jec+1,1),               &
-                                   Atm(1)%grid(isc:iec+1,jsc:jec+1,2),               &
+    call physics_driver_init(Time, Atm(1)%grid(isc:iec+1,jsc:jec+1,1),             &
+                                   Atm(1)%grid(isc:iec+1,jsc:jec+1,2),             &
                              axes, pref, Atm(1)%q(isc:iec,jsc:jec,1:npz,1:ncnst),  &
                              Surf_diff,  p_edge )
     deallocate ( p_edge )
@@ -173,7 +174,7 @@ contains
          flags=clock_flag_default, grain=CLOCK_MODULE_DRIVER )
     id_fv_physics_up = mpp_clock_id( 'FV_PHYSICS_UP', &
          flags=clock_flag_default, grain=CLOCK_MODULE_DRIVER )
-    id_update_fv_phys = mpp_clock_id( 'UPDATE_FV_PHYS', &
+    id_fv_update_phys = mpp_clock_id( 'FV_UPDATE_PHYS', &
          flags=clock_flag_default, grain=CLOCK_MODULE_DRIVER )
 
   end subroutine fv_physics_init
@@ -228,9 +229,11 @@ contains
                                    flux_sw_vis_dif, flux_lw, coszen, gust
 !-----------------------------------------------------------------------
     real :: gavg_rrv(nt_prog)
+    real :: rdt
     integer :: i, j, k, m
 !---------------------------- do physics -------------------------------
 
+    rdt = 1./ dt_phys
     gavg_rrv = 0.
     call compute_g_avg(gavg_rrv, 'co2', Atm(1)%pe, Atm(1)%q)
     call mpp_clock_begin(id_fv_physics_down)
@@ -244,8 +247,26 @@ contains
              call fv_sg_conv(isw, iew, jsw, jew, isd, ied, jsd, jed,    &
                              isc, iec, jsc, jec, npz, nt_prog, dt_phys, &
                              Atm(1)%fv_sg_adj, Atm(1)%delp, Atm(1)%pe, Atm(1)%peln,  &
-                             Atm(1)%pt, Atm(1)%q(:,:,:,1:nt_prog), Atm(1)%ua, Atm(1)%va, &
+                             Atm(1)%pt, Atm(1)%q, Atm(1)%ua, Atm(1)%va,       &
                              u_dt, v_dt, t_dt, q_dt, Atm(1)%ak, Atm(1)%bk) 
+             do k=1,npz
+                do j=jsw,jew
+                   do i=isw,iew
+                      u_dt(i,j,k) = (u_dt(i,j,k) - Atm(1)%ua(i,j,k)) * rdt
+                      v_dt(i,j,k) = (v_dt(i,j,k) - Atm(1)%va(i,j,k)) * rdt
+                      t_dt(i,j,k) = (t_dt(i,j,k) - Atm(1)%pt(i,j,k)) * rdt
+                   enddo
+                enddo
+             enddo
+             do m=1,nt_prog
+             do k=1,npz
+                do j=jsw,jew
+                   do i=isw,iew
+                      q_dt(i,j,k,m) = (q_dt(i,j,k,m) - Atm(1)%q(i,j,k,m)) * rdt
+                   enddo
+                enddo
+             enddo
+             enddo
           else
 ! Initialize tendencies due to parameterizations:
              do k=1,npz
@@ -269,7 +290,8 @@ contains
           endif
 
           call compute_p_z(npz, isw, jsw, nx_win, ny_win, Atm(1)%phis, Atm(1)%pt, &
-                           Atm(1)%q(:,:,:,1), Atm(1)%delp, Atm(1)%pe, Atm(1)%peln )
+                           Atm(1)%q, Atm(1)%delp, Atm(1)%pe, Atm(1)%peln,         &
+                           Atm(1)%delz,  Atm(1)%hydrostatic)
 
           call physics_driver_down( isw-isc+1, iew-isc+1, jsw-jsc+1, jew-jsc+1, &
                    Time_prev, Time, Time_next                              , &
@@ -351,8 +373,9 @@ contains
        do isw = isc,iec,nx_win
           iew = isw + nx_win - 1
 
-          call compute_p_z( npz, isw, jsw, nx_win, ny_win, Atm(1)%phis, Atm(1)%pt,   &
-                            Atm(1)%q(:,:,:,1), Atm(1)%delp, Atm(1)%pe, Atm(1)%peln )
+          call compute_p_z(npz, isw, jsw, nx_win, ny_win, Atm(1)%phis, Atm(1)%pt,   &
+                           Atm(1)%q, Atm(1)%delp, Atm(1)%pe, Atm(1)%peln,         &
+                           Atm(1)%delz,  Atm(1)%hydrostatic)
 
           call physics_driver_up( isw-isc+1, iew-isc+1, jsw-jsc+1, jew-jsc+1, &
                                   Time_prev, Time, Time_next             , &
@@ -388,9 +411,9 @@ contains
     enddo
     call mpp_clock_end(id_fv_physics_up)
 
-    call mpp_clock_begin(id_update_fv_phys)
+    call mpp_clock_begin(id_fv_update_phys)
                                                             call timing_on('update_fv')
-    call update_fv_phys( dt_phys,   isc,        iec,         jsc,    jec,   isd,       &
+    call fv_update_phys( dt_phys,   isc,        iec,         jsc,    jec,   isd,       &
                          ied,       jsd,        jed,         ngc,       nt_prog,       &
                          Atm(1)%u,  Atm(1)%v,   Atm(1)%delp, Atm(1)%pt, Atm(1)%q,      &
                          Atm(1)%ua, Atm(1)%va,  Atm(1)%ps,   Atm(1)%pe, Atm(1)%peln,   &
@@ -398,7 +421,7 @@ contains
                          v_dt, t_dt, q_dt, Atm(1)%u_srf, Atm(1)%v_srf,  Atm(1)%delz,   &
                          Atm(1)%hydrostatic, .true., Time_next )
                                                             call timing_off('update_fv')
-    call mpp_clock_end(id_update_fv_phys)
+    call mpp_clock_end(id_fv_update_phys)
 
   end subroutine fv_physics_up
 
@@ -425,16 +448,19 @@ contains
 
 
 
-  subroutine compute_p_z (nlev, istart, jstart, isiz, jsiz, phis, pt, q, delp, pe, peln)
+  subroutine compute_p_z (nlev, istart, jstart, isiz, jsiz, phis, pt, q,   &
+                          delp, pe, peln, delz, hydrostatic)
 
   integer, intent(in):: nlev
   integer, intent(in):: istart, jstart, isiz, jsiz
   real,    intent(in):: phis(isd:ied,jsd:jed)
   real,    intent(in)::   pt(isd:ied,jsd:jed,nlev)
-  real,    intent(in)::    q(isd:ied,jsd:jed,nlev)
+  real,    intent(in)::    q(isd:ied,jsd:jed,nlev,sphum)
   real,    intent(in):: delp(isd:ied,jsd:jed,nlev)
   real,    intent(in)::   pe(isc-1:iec+1,nlev+1,jsc-1:jec+1)
   real,    intent(in):: peln(isc  :iec,  nlev+1,jsc  :jec)
+  real,    intent(in):: delz(isc:iec,jsc:jec,nlev)
+  logical, intent(in):: hydrostatic
 ! local
   integer i,j,k,id,jd
   real    tvm
@@ -442,7 +468,6 @@ contains
 !----------------------------------------------------
 ! Compute pressure and height at full and half levels
 !----------------------------------------------------
-
   do j=1,jsiz
      jd = j + jstart - 1
      do i=1,isiz
@@ -461,18 +486,38 @@ contains
      enddo
   enddo
 
+#ifdef TEST_NH
+  if ( hydrostatic ) then
+#endif
   do k=nlev,1,-1
      do j=1,jsiz
         jd = j + jstart - 1
         do i=1,isiz
            id = i + istart - 1
-           tvm = rrg*pt(id,jd,k)*(1.+zvir*q(id,jd,k))
+           tvm = rrg*pt(id,jd,k)*(1.+zvir*q(id,jd,k,sphum))
            p_full(i,j,k) = delp(id,jd,k)/(peln(id,k+1,jd)-peln(id,k,jd))
            z_full(i,j,k) = z_half(i,j,k+1) + tvm*(1.-p_half(i,j,k)/p_full(i,j,k))
            z_half(i,j,k) = z_half(i,j,k+1) + tvm*(peln(id,k+1,jd)-peln(id,k,jd))
         enddo
      enddo
   enddo
+#ifdef TEST_NH
+  else
+  do k=nlev,1,-1
+     do j=1,jsiz
+        jd = j + jstart - 1
+        do i=1,isiz
+           id = i + istart - 1
+! Consistency between p_half and P_full? obtain p_half from Riemman solver?
+! OR, use hydrostatic values?
+           p_full(i,j,k) = -rrg*delp(id,jd,k)/delz(id,jd,k)*pt(id,jd,k)*(1.+zvir*q(id,jd,k,sphum))
+           z_half(i,j,k) = z_half(i,j,k+1) - delz(i,j,k)
+           z_full(i,j,k) = 0.5*(z_half(i,j,k) + z_half(i,j,k+1))
+        enddo
+     enddo
+  enddo
+  endif
+#endif
 
   end subroutine compute_p_z
 
