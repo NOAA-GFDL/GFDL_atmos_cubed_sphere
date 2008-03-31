@@ -373,8 +373,8 @@ module fv_update_phys_mod
 
 
        call timing_on('COMM_TOTAL')
-  call mpp_update_domains(u_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.false.)
-  call mpp_update_domains(v_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
+  call mpp_update_domains(u_dt, domain, complete=.false.)
+  call mpp_update_domains(v_dt, domain, complete=.true.)
        call timing_off('COMM_TOTAL')
 
     dt5 = 0.5 * dt

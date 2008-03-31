@@ -295,7 +295,7 @@ contains
 
    do n=1,ntimes
                      call timing_on('COMM_TOTAL')
-   call mpp_update_domains(q, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
+   call mpp_update_domains(q, domain, complete=.true.)
                      call timing_off('COMM_TOTAL')
    do k=1,km
       if ( sw_corner ) then

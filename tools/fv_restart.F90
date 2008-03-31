@@ -61,7 +61,7 @@ module fv_restart_mod
 
   !--- version information variables ----
   character(len=128) :: version = '$Id: fv_restart.F90,v 1.1.4.2.2.2.2.2.2.30.2.2.2.1.2.4 2007/11/26 17:03:28 sjl Exp $'
-  character(len=128) :: tagname = '$Name: omsk_2007_12 $'
+  character(len=128) :: tagname = '$Name: omsk_2008_03 $'
 
 contains 
 

@@ -20,16 +20,18 @@ use fms_mod,          only: file_exist, open_namelist_file,    &
                             mpp_clock_end, CLOCK_SUBCOMPONENT, &
                             clock_flag_default, nullify_domain
 use mpp_domains_mod,  only: domain2d
+use xgrid_mod,        only: grid_box_type
 !-----------------
 ! FV core modules:
 !-----------------
-use fv_grid_tools_mod,         only: area, grid_type
+use fv_grid_tools_mod,  only: area, grid_type, dx, dy, area
+use fv_grid_utils_mod,  only: edge_w, edge_e, edge_s, edge_n, en1, en2, vlon, vlat
 use fv_arrays_mod,      only: fv_atmos_type
-use fv_control_mod,         only: fv_init, domain, fv_end, p_ref
+use fv_control_mod,     only: fv_init, domain, domain_for_coupler, fv_end, p_ref
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time
 use fv_restart_mod,     only: fv_restart
-use fv_timing_mod,       only: timing_on, timing_off
+use fv_timing_mod,      only: timing_on, timing_off
 use fv_physics_mod,     only: fv_physics_down, fv_physics_up,  &
                            fv_physics_init, fv_physics_end, &
                            surf_diff_type
@@ -42,12 +44,13 @@ public  atmosphere_down,       atmosphere_up,       &
         atmosphere_resolution, atmosphere_boundary, &
         get_atmosphere_axes,   atmosphere_domain,   &
         get_bottom_mass,       get_bottom_wind,     &
+        atmosphere_cell_area,                       &
         get_stock_pe,          surf_diff_type
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id: atmosphere.F90,v 1.1.2.11.2.2.2.1.2.2 2007/11/26 22:08:09 sjl Exp $'
-character(len=128) :: tagname = '$Name: omsk_2007_12 $'
+character(len=128) :: version = '$Id: atmosphere.F90,v 1.1.2.11.2.2.2.1.2.2.2.2 2008/02/12 17:35:35 z1l Exp $'
+character(len=128) :: tagname = '$Name: omsk_2008_03 $'
 
 !---- namelist (saved in file input.nml) ----
 !
@@ -75,13 +78,13 @@ character(len=128) :: tagname = '$Name: omsk_2007_12 $'
 
 contains
 
- subroutine atmosphere_init (Time_init, Time, Time_step, Surf_diff)
+ subroutine atmosphere_init (Time_init, Time, Time_step, Surf_diff, Grid_box)
 
  type (time_type),     intent(in)    :: Time_init, Time, Time_step
  type(surf_diff_type), intent(inout) :: Surf_diff
+ type(grid_box_type),  intent(inout) :: Grid_box
 
-  integer :: unit, ierr, io
-  integer :: ss, ds
+  integer :: unit, ierr, io, i
 
   zvir = rvgas/rdgas - 1.
 
@@ -124,7 +127,32 @@ contains
    jsc = Atm(1)%jsc
    jec = Atm(1)%jec
 
-   nq = ncnst - pnats
+   ! Allocate grid variables to be used to calculate gradient in 2nd order flux exchange
+   allocate(Grid_box%dx    (   isc:iec  , jsc:jec+1))
+   allocate(Grid_box%dy    (   isc:iec+1, jsc:jec  ))
+   allocate(Grid_box%area  (   isc:iec  , jsc:jec  ))
+   allocate(Grid_box%edge_w(              jsc:jec+1))
+   allocate(Grid_box%edge_e(              jsc:jec+1))
+   allocate(Grid_box%edge_s(   isc:iec+1           ))
+   allocate(Grid_box%edge_n(   isc:iec+1           ))
+   allocate(Grid_box%en1   (3, isc:iec  , jsc:jec+1))
+   allocate(Grid_box%en2   (3, isc:iec+1, jsc:jec  ))
+   allocate(Grid_box%vlon  (3, isc:iec  , jsc:jec  ))
+   allocate(Grid_box%vlat  (3, isc:iec  , jsc:jec  ))
+   Grid_box%dx    (   isc:iec  , jsc:jec+1) = dx    (   isc:iec,   jsc:jec+1)
+   Grid_box%dy    (   isc:iec+1, jsc:jec  ) = dy    (   isc:iec+1, jsc:jec  )
+   Grid_box%area  (   isc:iec  , jsc:jec  ) = area  (   isc:iec  , jsc:jec  )
+   Grid_box%edge_w(              jsc:jec+1) = edge_w(              jsc:jec+1)
+   Grid_box%edge_e(              jsc:jec+1) = edge_e(              jsc:jec+1)
+   Grid_box%edge_s(   isc:iec+1           ) = edge_s(   isc:iec+1)
+   Grid_box%edge_n(   isc:iec+1           ) = edge_n(   isc:iec+1)
+   Grid_box%en1   (:, isc:iec  , jsc:jec+1) = en1   (:, isc:iec  , jsc:jec+1)
+   Grid_box%en2   (:, isc:iec+1, jsc:jec  ) = en2   (:, isc:iec+1, jsc:jec  )
+   do i = 1, 3
+      Grid_box%vlon  (i, isc:iec  , jsc:jec  ) = vlon  (isc:iec ,  jsc:jec, i  )
+      Grid_box%vlat  (i, isc:iec  , jsc:jec  ) = vlat  (isc:iec ,  jsc:jec, i  )
+   end do
+   nq = ncnst-pnats
 
    call fv_restart(domain, Atm, dt_atmos, seconds, days, cold_start, grid_type)
 
@@ -290,8 +318,9 @@ contains
 
 
 
- subroutine atmosphere_end (Time)
- type (time_type), intent(in) :: Time
+ subroutine atmosphere_end (Time, Grid_box)
+ type (time_type),       intent(in) :: Time
+ type(grid_box_type), intent(inout) :: Grid_box
 
   ! initialize domains for writing global physics data
     call set_domain ( domain )
@@ -301,6 +330,19 @@ contains
     call nullify_domain ( )
     call fv_end(Atm)
     deallocate (Atm)
+
+    deallocate(Grid_box%dx)
+    deallocate(Grid_box%dy)
+    deallocate(Grid_box%area)
+    deallocate(Grid_box%edge_w)
+    deallocate(Grid_box%edge_e)
+    deallocate(Grid_box%edge_s)
+    deallocate(Grid_box%edge_n)
+    deallocate(Grid_box%en1)
+    deallocate(Grid_box%en2)
+    deallocate(Grid_box%vlon)
+    deallocate(Grid_box%vlat)
+
 
  end subroutine atmosphere_end
 
@@ -324,6 +366,20 @@ contains
    end if
 
  end subroutine atmosphere_resolution
+
+
+
+
+
+ subroutine atmosphere_cell_area  (area_out)
+
+   real, dimension(:,:),  intent(out)          :: area_out       
+
+   area_out(1:iec-isc+1, 1:jec-jsc+1) =  area (isc:iec,jsc:jec)                        
+
+ end subroutine atmosphere_cell_area 
+
+
 
 
 
@@ -367,7 +423,7 @@ contains
 !  returns the domain2d variable associated with the coupling grid
 !  note: coupling is done using the mass/temperature grid with no halos
 
-   fv_domain = domain
+   fv_domain = domain_for_coupler
 
  end subroutine atmosphere_domain
 

@@ -552,8 +552,7 @@ CONTAINS
 1000  continue
 
 if ( hybrid_z ) then   !------- Hybrid_z section ---------------
-     call mpp_update_domains(ua , domain,  whalo=1, ehalo=1,     &
-                             shalo=1, nhalo=1, complete=.true.)
+     call mpp_update_domains(ua , domain, complete=.true.)
 ! u-wind
    do j=js,je+1
       do i=is,ie
@@ -1885,8 +1884,7 @@ endif         !------------- Hybrid_z section ----------------------
      enddo
   enddo
 
-  call mpp_update_domains(ps, domain,  whalo=1, ehalo=1,     &
-                          shalo=1, nhalo=1, complete=.true.)
+  call mpp_update_domains(ps, domain, complete=.true.)
 
 ! Compute virtual Temp
   do k=1,km

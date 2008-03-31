@@ -80,6 +80,8 @@ contains
 
 ! Auto 1D & 2D arrays:
     real wbuffer(npy+2,npz)
+    real ebuffer(npy+2,npz)
+    real nbuffer(npx+2,npz)
     real sbuffer(npx+2,npz)
 ! ----   For external mode:
     real divg2(is:ie+1,js:je+1)
@@ -228,10 +230,8 @@ contains
                                                call timing_off('Riem_C')
 ! pkc is full non-hydro pressure
                                                call timing_on('COMM_TOTAL')
-           call mpp_update_domains(pkc, domain,  whalo=1, ehalo=1,     &
-                                        shalo=1, nhalo=1, complete=.false.)
-           call mpp_update_domains(gz , domain,  whalo=1, ehalo=1,     &
-                                        shalo=1, nhalo=1, complete=.true.)
+           call mpp_update_domains(pkc, domain, complete=.false.)
+           call mpp_update_domains(gz , domain, complete=.true.)
                                                call timing_off('COMM_TOTAL')
       endif
 
@@ -280,9 +280,11 @@ contains
 !--------------------------------------------------------------------------------------------
 #ifdef FIX_C_BOUNDARY 
                                                                  call timing_on('COMM_TOTAL')
-      call mpp_get_boundary(uc, vc, domain, wbufferx=wbuffer, ebufferx=uc(ie+1,js:je,1:npz), &
-                          sbuffery=sbuffer, nbuffery=vc(is:ie,je+1,1:npz), gridtype=CGRID_NE )
+      call mpp_get_boundary(uc, vc, domain, wbufferx=wbuffer, ebufferx=ebuffer, &
+                          sbuffery=sbuffer, nbuffery=nbuffer, gridtype=CGRID_NE )
                                                                  call timing_off('COMM_TOTAL')
+      uc(ie+1,js:je,1:npz) = ebuffer
+      vc(is:ie,je+1,1:npz) = nbuffer
 #endif
 !--------------------------------------------------------------------------------------------
                                                      call timing_on('COMM_TOTAL')
@@ -398,26 +400,11 @@ contains
                    enddo
                 enddo
              enddo
-             if ( a2b_ord==4 ) then
-                call mpp_update_domains(pk3, domain, whalo=2, ehalo=2,   &
-                                        shalo=2, nhalo=2, complete=.false.)
-             else
-                call mpp_update_domains(pk3, domain, whalo=1, ehalo=1,   &
-                                        shalo=1, nhalo=1, complete=.false.)
-             endif
+             call mpp_update_domains(pk3, domain, complete=.false.)
           endif
 
-          if ( a2b_ord==4 ) then
-               call mpp_update_domains(pkc, domain, whalo=2, ehalo=2,   &
-                                       shalo=2, nhalo=2, complete=.false.)
-               call mpp_update_domains(gz , domain, whalo=2, ehalo=2,   &
-                                       shalo=2, nhalo=2, complete=.true.)
-          else
-               call mpp_update_domains(pkc, domain, whalo=1, ehalo=1,   &
-                                       shalo=1, nhalo=1, complete=.false.)
-               call mpp_update_domains(gz , domain, whalo=1, ehalo=1,   &
-                                       shalo=1, nhalo=1, complete=.true.)
-          endif
+          call mpp_update_domains(pkc, domain, complete=.false.)
+          call mpp_update_domains(gz , domain, complete=.true.)
                                        call timing_off('COMM_TOTAL')
      endif    ! end hydro case
 
@@ -466,8 +453,10 @@ contains
                                                                 call timing_on('COMM_TOTAL')
       if( last_step ) then
 ! Prevent accumulation of rounding errors at overlapped domain edges:
-          call mpp_get_boundary(u, v, domain, wbuffery=wbuffer, ebuffery=v(ie+1,js:je,1:npz),  &
-                            sbufferx=sbuffer, nbufferx=u(is:ie,je+1,1:npz), gridtype=DGRID_NE )
+          call mpp_get_boundary(u, v, domain, wbuffery=wbuffer, ebuffery=ebuffer,  &
+                            sbufferx=sbuffer, nbufferx=nbuffer, gridtype=DGRID_NE )
+          v(ie+1,js:je,1:npz) = ebuffer
+          u(is:ie,je+1,1:npz) = nbuffer
       else
           call mpp_update_domains(u, v, domain, gridtype=DGRID_NE)
       endif

@@ -356,7 +356,7 @@
       real ddx(is:ie+1,js:je), ddy(is:ie,js:je+1)
       integer i,j,n
 
-      call mpp_update_domains(q,domain,whalo=1,ehalo=1,shalo=1,nhalo=1)
+      call mpp_update_domains(q,domain,whalo=ng,ehalo=ng,shalo=ng,nhalo=ng)
 
 ! First step: average the corners:
       if ( is==1 .and. js==1 ) then
@@ -383,7 +383,7 @@
 
       do n=1,nmax
 
-         if( n>1 ) call mpp_update_domains(q,domain,whalo=1,ehalo=1,shalo=1,nhalo=1)
+         if( n>1 ) call mpp_update_domains(q,domain,whalo=ng,ehalo=ng,shalo=ng,nhalo=ng)
 
          do j=js,je
             do i=is,ie+1
@@ -430,7 +430,7 @@
       real qmax(is:ie,js:je)
       integer i,j, n
 
-      call mpp_update_domains(q,domain,whalo=1,ehalo=1,shalo=1,nhalo=1)
+      call mpp_update_domains(q,domain,whalo=ng,ehalo=ng,shalo=ng,nhalo=ng)
 
 ! First step: average the corners:
       if ( is==1 .and. js==1 ) then
@@ -462,7 +462,7 @@
      enddo
 
   do n=1,nmax
-     if( n/=1 ) call mpp_update_domains(q,domain,whalo=1,ehalo=1,shalo=1,nhalo=1)
+     if( n/=1 ) call mpp_update_domains(q,domain,whalo=ng,ehalo=ng,shalo=ng,nhalo=ng)
 !--------------
 ! Compute del-2
 !--------------
@@ -489,7 +489,7 @@
          enddo
       enddo
 
-      call mpp_update_domains(d2,domain,whalo=1,ehalo=1,shalo=1,nhalo=1)
+      call mpp_update_domains(d2,domain)
 
 !---------------------
 ! Compute del4 fluxes:
@@ -523,8 +523,8 @@
          enddo
       enddo
 
-      call mpp_update_domains(win,domain,whalo=1,ehalo=1,shalo=1,nhalo=1, complete=.false.)
-      call mpp_update_domains(wou,domain,whalo=1,ehalo=1,shalo=1,nhalo=1, complete=.true.)
+      call mpp_update_domains(win,domain, complete=.false.)
+      call mpp_update_domains(wou,domain, complete=.true.)
 
       do j=js,je
          do i=is,ie+1

@@ -42,7 +42,7 @@ public  surf_diff_type
 
 !-----------------------------------------------------------------------
 character(len=128) :: version = '$Id: fv_physics.F90,v 1.1.2.8.4.2.2.1.2.1 2007/11/09 19:19:46 sjl Exp $'
-character(len=128) :: tag = '$Name: omsk_2007_12 $'
+character(len=128) :: tag = '$Name: omsk_2008_03 $'
 !-----------------------------------------------------------------------
 
    real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt

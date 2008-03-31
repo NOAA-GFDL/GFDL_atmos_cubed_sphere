@@ -663,8 +663,8 @@ contains
   real, dimension(js:je):: vt1, vt2, vt3
   integer i, j, k, im2, jm2
 
-  call mpp_update_domains(ua, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.false.)
-  call mpp_update_domains(va, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
+  call mpp_update_domains(ua, domain, complete=.false.)
+  call mpp_update_domains(va, domain, complete=.true.)
 
     im2 = (npx-1)/2
     jm2 = (npy-1)/2

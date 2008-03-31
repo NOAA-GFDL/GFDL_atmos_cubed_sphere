@@ -1,4 +1,4 @@
-! $Id: fv_control.F90,v 1.1.2.1.2.1.2.4 2007/11/02 22:03:44 sjl Exp $
+! $Id: fv_control.F90,v 1.1.2.1.2.1.2.4.2.1 2007/12/19 18:22:02 z1l Exp $
 !
 !----------------
 ! FV contro panel
@@ -14,7 +14,7 @@ module fv_control_mod
    use fv_grid_tools_mod,  only: init_grid, cosa, sina, area, area_c, dx, dy, dxa, dya, &
                                  grid_type, dx_const, dy_const,                         &
                                  deglon_start, deglon_stop, deglat_start, deglat_stop
-   use fv_mp_mod,          only: mp_start, domain_decomp, domain, &
+   use fv_mp_mod,          only: mp_start, domain_decomp, domain, domain_for_coupler,&
                                  ng, tile, npes_x, npes_y, gid
    use mpp_mod,            only: FATAL, mpp_error, mpp_pe, &
                                  mpp_npes, mpp_get_current_pelist
@@ -197,7 +197,7 @@ module fv_control_mod
    public :: external_ic, ncep_ic, res_latlon_dynamics, res_latlon_tracers, fv_land
    public :: fv_sg_adj, tau, rf_center
    public :: fv_init, fv_end
-   public :: domain
+   public :: domain, domain_for_coupler
    public :: adiabatic, nf_omega, full_phys
    public :: hydrostatic, hybrid_z, quick_p_c, quick_p_d, m_grad_p, a2b_ord
    public :: nt_prog, nt_phys
