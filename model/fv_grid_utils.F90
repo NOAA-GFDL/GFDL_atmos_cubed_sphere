@@ -8,6 +8,8 @@
  use fv_timing_mod,   only: timing_on, timing_off
  use mpp_domains_mod, only: mpp_update_domains, DGRID_NE, mpp_global_sum,   &
                             BITWISE_EXACT_SUM
+!use mpp_parameter_mod, only: AGRID_PARAM=>AGRID,       & 
+!                              CORNER, CENTER
 
  implicit none
  private
@@ -39,6 +41,8 @@
  real, allocatable :: ex_n(:)
  real, allocatable :: ex_w(:)
  real, allocatable :: ex_e(:)
+! Vandermonde Matrix:
+ real, allocatable :: van2(:,:,:)
 ! Cubed_2_latlon:
  real, allocatable :: a11(:,:)
  real, allocatable :: a12(:,:)
@@ -92,18 +96,17 @@
         da_min, da_min_c, edge_s, edge_n, edge_w, edge_e,   &
         edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e, unit_vect_latlon,  &
         cubed_to_latlon, c2l_ord2, g_sum, great_circle_dist,  &
-        v_prod, en1, en2, ex_w, ex_e, ex_s, ex_n, vlon, vlat, ee1, ee2,     &
-        cx1, cx2, cy1, cy2, Gnomonic_grid
-!       a11, a12, a21, a22, cx1, cx2, cy1, cy2, Gnomonic_grid
+        v_prod, en1, en2, ex_w, ex_e, ex_s, ex_n, vlon, vlat, ee1, ee2, &
+        cx1, cx2, cy1, cy2, Gnomonic_grid, van2
  public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, grid_utils_end, &
         spherical_angle, cell_center2, get_area, inner_prod, fill_ghost,    &
-        make_eta_level, expand_cell
+        make_eta_level, expand_cell, cart_to_latlon
 
  contains
 
-      subroutine grid_utils_init(Atm, npx, npy, npz, grid, agrid, area, area_c,  &
-                                 cosa, sina, dx, dy, dxa, dya, non_ortho,   &
-                                 uniform_ppm, grid_type, c2l_order)
+   subroutine grid_utils_init(Atm, npx, npy, npz, grid, agrid, area, area_c,  &
+                              cosa, sina, dx, dy, dxa, dya, non_ortho,   &
+                              uniform_ppm, grid_type, c2l_order)
 ! Initialize 2D memory and geometrical factors
       type(fv_atmos_type), intent(inout) :: Atm
       logical, intent(in):: non_ortho
@@ -123,7 +126,7 @@
       logical, intent(IN) :: uniform_ppm
 !
       real grid3(3,isd:ied+1,jsd:jed+1)
-      real p1(3), p2(3), pp(3)
+      real p1(3), p2(3), p3(3), pp(3)
       real sin2, tmp1, tmp2
       integer i, j, k, n
 
@@ -164,7 +167,6 @@
 ! Coriolis parameters:
       allocate ( f0(isd:ied  ,jsd:jed  ) )
       allocate ( fC(isd:ied+1,jsd:jed+1) )
-
 
 ! Corner unit vectors:
       allocate( ee1(3,isd:ied+1,jsd:jed+1) )
@@ -256,31 +258,26 @@
         if ( (i<1   .and. j<1  ) .or. (i>npx .and. j<1  ) .or.  &
              (i>npx .and. j>(npy-1)) .or. (i<1   .and. j>(npy-1)) ) then
 !            (i>npx .and. j>npy) .or. (i<1   .and. j>npy) ) then
-              ew(1:3,i,j,1:2) = 0.
+             ew(1:3,i,j,1:2) = 0.
         else
-              call mid_pt_cart( grid(i,j,1:2), grid(i,j+1,1:2), pp)
+           call mid_pt_cart( grid(i,j,1:2), grid(i,j+1,1:2), pp)
            if (i==1) then
               call latlon2xyz( agrid(i,j,1:2), p1)
-              do k=1,3
-                 ew(k,i,j,1) = p1(k) - pp(k) 
-              enddo
+              call vect_cross(p2, pp, p1)
            elseif(i==npx) then
               call latlon2xyz( agrid(i-1,j,1:2), p1)
-              do k=1,3
-                 ew(k,i,j,1) = pp(k) - p1(k) 
-              enddo
+              call vect_cross(p2, p1, pp)
            else
-              do k=1,3
-                 ew(k,i,j,1) = - grid3(k,i-1,j  ) + grid3(k,i+1,j)    &
-                               - grid3(k,i-1,j+1) + grid3(k,i+1,j+1)
-              enddo
+              call latlon2xyz( agrid(i-1,j,1:2), p3)
+              call latlon2xyz( agrid(i,  j,1:2), p1)
+              call vect_cross(p2, p3, p1)
            endif
-             call project_sphere_v(1, ew(1,i,j,1), pp)
-             call   normalize_vect( ew(1,i,j,1) )
-             do k=1,3
-                ew(k,i,j,2) =  - grid3(k,i,j) + grid3(k,i,j+1)
-             enddo
-           call normalize_vect( ew(1,i,j,2) )
+           call vect_cross(ew(1,i,j,1), p2, pp)
+           call normalize_vect(ew(1,i,j,1))
+!---
+           call vect_cross(p1, grid3(1,i,j), grid3(1,i,j+1))
+           call vect_cross(ew(1,i,j,2), p1, pp)
+           call normalize_vect(ew(1,i,j,2))
         endif
         enddo
      enddo
@@ -291,29 +288,24 @@
              (i>(npx-1) .and. j>npy) .or. (i<1   .and. j>npy) ) then
              es(1:3,i,j,1:2) = 0.
         else
-             call mid_pt_cart(grid(i,j,1:2), grid(i+1,j,1:2), pp)
+           call mid_pt_cart(grid(i,j,1:2), grid(i+1,j,1:2), pp)
            if (j==1) then
               call latlon2xyz( agrid(i,j,1:2), p1)
-              do k=1,3
-                 es(k,i,j,2) = p1(k) - pp(k)
-              enddo
+              call vect_cross(p2, pp, p1)
            elseif (j==npy) then
               call latlon2xyz( agrid(i,j-1,1:2), p1)
-              do k=1,3
-                 es(k,i,j,2) = pp(k) - p1(k)
-              enddo
+              call vect_cross(p2, p1, pp)
            else 
-              do k=1,3
-                 es(k,i,j,2) = - grid3(k,i,j-1) - grid3(k,i+1,j-1)   &
-                               + grid3(k,i,j+1) + grid3(k,i+1,j+1)
-              enddo
+              call latlon2xyz( agrid(i,j  ,1:2), p1)
+              call latlon2xyz( agrid(i,j-1,1:2), p3)
+              call vect_cross(p2, p3, p1)
            endif
-             call project_sphere_v(1, es(1,i,j,2), pp)
-             call normalize_vect( es(1,i,j,2) )
-             do k=1,3
-                es(k,i,j,1) = - grid3(k,i,j) + grid3(k,i+1,j)
-             enddo
-             call normalize_vect( es(1,i,j,1) )
+           call vect_cross(es(1,i,j,2), p2, pp)
+           call normalize_vect(es(1,i,j,2))
+!---
+           call vect_cross(p3, grid3(1,i,j), grid3(1,i+1,j))
+           call vect_cross(es(1,i,j,1), p3, pp)
+           call normalize_vect(es(1,i,j,1))
         endif
         enddo
      enddo
@@ -344,7 +336,6 @@
   endif
 
      if ( non_ortho ) then
-
            cosa_u = big_number
            cosa_v = big_number
            cosa_s = big_number
@@ -355,89 +346,63 @@
            rsin_v = big_number
            rsina  = big_number
            rsin2  = big_number
-
 #ifndef GLOBAL_TRIG
           cosa = big_number
           sina = big_number
+!       if ( Gnomonic_grid ) then
+! The following works well ONLY with the Gnomonic grid (type 0)
+!           do j=js,je+1
+!              do i=is,ie+1
+!                 tmp1 = cos_angle(grid3(1,i,j), grid3(1,i+1,j), grid3(1,i,j+1))
+!                 tmp2 = cos_angle(grid3(1,i,j), grid3(1,i-1,j), grid3(1,i,j-1))
+!                 cosa(i,j) = 0.5*(tmp1+tmp2)
+!                 sina(i,j) = sqrt( max(0.,1. -cosa(i,j)**2) )
+!              enddo
+!          enddo
+!       endif
 
-! The follwoing way works well ONLY with the Gnomonic grid (type 0)
-! using great circles
-#ifdef TO_TEST_LIST
-         if ( Gnomonic_grid ) then
-            do j=js,je+1
-               do i=is,ie+1
-                  tmp1 = cos_angle(grid3(1,i,j), grid3(1,i+1,j), grid3(1,i,j+1))
-                  tmp2 = cos_angle(grid3(1,i,j), grid3(1,i-1,j), grid3(1,i,j-1))
-                  cosa(i,j) = 0.5*(tmp1+tmp2)
-                  sina(i,j) = sqrt( max(0.,1. - cosa(i,j)**2) )
-               enddo
-           enddo
-         endif
-#endif
-
-          do j=js,je+1
-             do i=is,ie+1
+        do j=js,je+1
+           do i=is,ie+1
 ! unit vect in X-dir: ee1
-                if (i==1) then
-                   do k=1,3
-                      ee1(k,i,j) = grid3(k,i+1,j) - grid3(k,i,j)
-                   enddo
-                elseif(i==npx) then
-                   do k=1,3
-                      ee1(k,i,j) = grid3(k,i,j) - grid3(k,i-1,j)
-                   enddo
-                else
-                   do k=1,3
-                      ee1(k,i,j) = grid3(k,i+1,j) - grid3(k,i-1,j)
-                   enddo
-                endif
-                call project_sphere_v(1, ee1(1,i,j), grid3(1,i,j))
-                call normalize_vect( ee1(1,i,j) )
+              if (i==1) then
+                  call vect_cross(pp, grid3(1,i,  j), grid3(1,i+1,j))
+              elseif(i==npx) then
+                  call vect_cross(pp, grid3(1,i-1,j), grid3(1,i,  j))
+              else
+                  call vect_cross(pp, grid3(1,i-1,j), grid3(1,i+1,j))
+              endif
+              call vect_cross(ee1(1,i,j), pp, grid3(1,i,j))
+              call normalize_vect( ee1(1,i,j) )
 
 ! unit vect in Y-dir: ee2
-                if (j==1) then
-                   do k=1,3
-                      ee2(k,i,j) = grid3(k,i,j+1) - grid3(k,i,j)
-                   enddo
-                elseif(j==npy) then
-                   do k=1,3
-                      ee2(k,i,j) = grid3(k,i,j) - grid3(k,i,j-1)
-                   enddo
-                else
-                   do k=1,3
-                      ee2(k,i,j) = grid3(k,i,j+1) - grid3(k,i,j-1)
-                   enddo
-                endif
-                call project_sphere_v(1, ee2(1,i,j), grid3(1,i,j))
-                call normalize_vect( ee2(1,i,j) )
-! Compute (sine,cosine) at cell corners:
-!               if ( .not. Gnomonic_grid ) then
-                     tmp1 = inner_prod(ee1(1,i,j), ee2(1,i,j))
-                     cosa(i,j) = sign(min(1., abs(tmp1)), tmp1)
-                     sina(i,j) = sqrt(max(0.,1. - cosa(i,j)**2))
-!               endif
-             enddo
-          enddo
+              if (j==1) then
+                  call vect_cross(pp, grid3(1,i,j  ), grid3(1,i,j+1))
+              elseif(j==npy) then
+                  call vect_cross(pp, grid3(1,i,j-1), grid3(1,i,j  ))
+              else
+                  call vect_cross(pp, grid3(1,i,j-1), grid3(1,i,j+1))
+              endif
+              call vect_cross(ee2(1,i,j), pp, grid3(1,i,j))
+              call normalize_vect( ee2(1,i,j) )
 
-      if ( gid==0 ) then
-          if ( sw_corner) write(*,*) 'SW: cosa=', cosa(1,   1)
-          if ( se_corner) write(*,*) 'SE: cosa=', cosa(npx ,1)
-          if ( ne_corner) write(*,*) 'NE: cosa=', cosa(npx,npy)
-          if ( nw_corner) write(*,*) 'NW: cosa=', cosa(1,  npy)
-      endif
+              tmp1 = inner_prod(ee1(1,i,j), ee2(1,i,j))
+              cosa(i,j) = sign(min(1., abs(tmp1)), tmp1)
+              sina(i,j) = sqrt(max(0.,1. -cosa(i,j)**2))
+           enddo
+        enddo
 #endif
-!  call mpp_update_domains(cosa, domain, position=CORNER)
+
+! call mpp_update_domains(cosa, domain, position=CORNER)
 ! The above does not work because cosa at edges should have two values (left and right)
 
       do j=jsd,jed
          do i=isd+1,ied
                    tmp1 = inner_prod(ew(1,i,j,1), ew(1,i,j,2))
             cosa_u(i,j) = sign( min(1., abs(tmp1)), tmp1 )
-!
             sin2 = 1. - cosa_u(i,j)**2
             sin2 = min(1., sin2)
             sin2 = max(tiny_number, sin2)  ! sin(alpha)**2 >= 0.75
-!
+ 
             sina_u(i,j) = sqrt( sin2 )
             rsin_u(i,j) =  1. / sin2
          enddo
@@ -610,6 +575,7 @@
      endif
 #endif
   endif
+ 
 ! Initialize cubed_sphere to lat-lon transformation:
      call init_cubed_to_latlon( agrid, grid_type, c2l_order )
 
@@ -627,7 +593,8 @@
      if (grid_type < 3) then
         call edge_factors (non_ortho, grid, agrid, npx, npy)
         call efactor_a2c_v(non_ortho, grid, agrid, npx, npy)
-        call extend_cube_s(non_ortho, grid, agrid, npx, npy, .false.)
+!       call extend_cube_s(non_ortho, grid, agrid, npx, npy, .false.)
+!       call van2d_init(grid, agrid, npx, npy)
      else
         allocate ( edge_s(npx) )
         allocate ( edge_n(npx) )
@@ -686,8 +653,11 @@
       deallocate( rsina  )
       deallocate( rsin2  )
 
-      deallocate( ee1 )
-      deallocate( ee2 )
+!     if ( .not. Gnomonic_grid ) then
+           deallocate( ee1 )
+           deallocate( ee2 )
+!     endif
+
       deallocate( ec1 )
       deallocate( ec2 )
       deallocate( ew )
@@ -709,11 +679,13 @@
       deallocate( edge_vect_w )
       deallocate( edge_vect_e )
 
-      deallocate( ex_s )
-      deallocate( ex_n )
-      deallocate( ex_w )
-      deallocate( ex_e )
-
+      if ( allocated(ex_s) ) then
+           deallocate( ex_s )
+           deallocate( ex_n )
+           deallocate( ex_w )
+           deallocate( ex_e )
+      endif
+      if ( allocated(van2) ) deallocate( van2 )
 
     if ( g_type<4 ) then
       deallocate( a11 )
@@ -735,7 +707,7 @@
       
          do k=1,3
             vp1(k) = v1(k)
-            vp2(k) = v2(k)
+           vp2(k) = v2(k)
          enddo
          prod16 = vp1(1)*vp2(1) + vp1(2)*vp2(2) + vp1(3)*vp2(3)
          inner_prod = prod16
@@ -743,6 +715,462 @@
   end function inner_prod
 
 
+ subroutine van2d_init(grid, agrid0, npx, npy)
+  integer, intent(in):: npx, npy
+  real,    intent(in)::  grid(isd:ied+1,jsd:jed+1,2)
+  real,    intent(in):: agrid0(isd:ied ,jsd:jed  ,2)
+!
+  integer, parameter:: n16 = 16
+  real:: agrid(is-2:ie+2 ,js-2:je+2,2)
+  real:: a(n16,n16), b(n16,n16), x(n16), y(n16)
+  real:: x3, x2, x1, y3, y2, y1, lat, lon, lat0, lon0, sum0
+  real:: cos_lat, sin_lat, cos_lat0, sin_lat0, cosc, mfactor
+  integer i, j, k, ip, jp
+
+  do j=js-2, je+2
+     do i=is-2, ie+2
+        agrid(i,j,1) = agrid0(i,j,1)
+        agrid(i,j,2) = agrid0(i,j,2)
+     enddo
+  enddo
+
+  allocate ( van2(n16,is:ie+1,js:je+1) )
+
+  van2 = 0.
+  do 2500 j=js, je+1
+     do 2500 i=is, ie+1
+            lon0 = grid(i,j,1)
+            lat0 = grid(i,j,2)
+        cos_lat0 = cos(lat0)
+        sin_lat0 = sin(lat0)
+
+!--------------
+! fill corners:
+!--------------
+! SW:
+        if ( i==1 .and. j==1 ) then 
+! 12-pt matrix
+             go to 2000
+        endif
+        if ( i==2 .and. j==1 ) then 
+             go to 2000
+! shift the commom point
+             agrid(-1,-1,1:2) = agrid(2,-1,1:2)    ! k=1
+             agrid( 0,-1,1:2) = agrid(2, 0,1:2)    ! k=2
+             agrid(-1, 0,1:2) = agrid(1,-1,1:2)    ! k=3
+             agrid( 0, 0,1:2) = agrid(1, 0,1:2)    ! k=4
+        endif
+        if ( i==1 .and. j==2 ) then 
+! shift the commom point
+             go to 2000
+        endif
+        if ( i==2 .and. j==2 ) then 
+             agrid(0,0,1:2) = agrid(4,4,1:2) ! k=1 
+        endif
+
+! SE:
+        if ( i==npx-1 .and. j==1 ) then 
+             go to 2000
+        endif
+        if ( i==npx   .and. j==1 ) then 
+! 12-pt matrix
+             go to 2000
+        endif
+        if ( i==npx-1 .and. j==2 ) then 
+             agrid(npx,0,1:2) = agrid(npx-4,4,1:2) ! k=4
+        endif
+        if ( i==npx   .and. j==2 ) then 
+             go to 2000
+        endif
+! NE:
+        if ( i==npx-1 .and. j==npy-1) then 
+             agrid(npx,npy,1:2) = agrid(npx-4,npy-4,1:2) ! k=16
+        endif
+        if ( i==npx   .and. j==npy-1) then 
+             go to 2000
+        endif
+        if ( i==npx-1 .and. j==npy) then 
+             go to 2000
+        endif
+        if ( i==npx   .and. j==npy ) then 
+! 12-pt matrix
+             go to 2000
+        endif
+
+! NW:
+        if ( i==1 .and. j==npy-1 ) then 
+             go to 2000
+        endif
+        if ( i==2 .and. j==npy-1 ) then 
+             agrid(0,npy,1:2) = agrid(4,npy-4,1:2) ! k=13
+        endif
+        if ( i==1 .and. j==npy ) then 
+! 12-pt matrix
+             go to 2000
+        endif
+        if ( i==2 .and. j==npy ) then 
+             go to 2000
+        endif
+
+        do k=1,n16
+           if    ( k==1 ) then
+                               ip = i-2; jp = j-2
+           elseif( k==2 ) then
+                               ip = i-1; jp = j-2
+           elseif( k==3 ) then
+                               ip = i;   jp = j-2
+           elseif( k==4 ) then
+                               ip = i+1; jp = j-2
+           elseif( k==5 ) then
+                               ip = i-2; jp = j-1
+           elseif( k==6 ) then
+                               ip = i-1; jp = j-1
+           elseif( k==7 ) then
+                               ip = i  ; jp = j-1
+           elseif( k==8 ) then
+                               ip = i+1; jp = j-1
+           elseif( k==9 ) then
+                               ip = i-2; jp = j
+           elseif( k==10 ) then
+                               ip = i-1; jp = j
+           elseif( k==11 ) then
+                               ip = i;   jp = j
+           elseif( k==12 ) then
+                               ip = i+1; jp = j
+           elseif( k==13 ) then
+                               ip = i-2; jp = j+1
+           elseif( k==14 ) then
+                               ip = i-1; jp = j+1
+           elseif( k==15 ) then
+                               ip = i;   jp = j+1
+           elseif( k==16 ) then
+                               ip = i+1; jp = j+1
+           endif
+
+           lon = agrid(ip,jp,1) 
+           lat = agrid(ip,jp,2) 
+  
+           cos_lat = cos(lat)
+           sin_lat = sin(lat)
+! Gnomonic projection:
+           mfactor = 1. / (sin_lat*sin_lat0 + cos_lat*cos_lat0*cos(lon-lon0))
+           x(k) =  cos_lat *sin(lon-lon0)*mfactor
+           y(k) = (cos_lat0*sin_lat-sin_lat0*cos_lat*cos(lon-lon0))*mfactor
+        enddo
+
+        do k=1,n16
+!-------------------------------------
+! Full 16x16 "Vandermonde" Matrix
+!-------------------------------------
+           x1 = x(k)
+           x2 = x1*x1
+           x3 = x1*x2
+           y1 = y(k)
+           y2 = y1*y1
+           y3 = y1*y2
+           a( 1,k) = x3 * y3
+           a( 2,k) = x3 * y2
+           a( 3,k) = x2 * y3
+           a( 4,k) = x2 * y2
+           a( 5,k) = x3 * y1
+           a( 6,k) = x2 * y1
+           a( 7,k) = x1 * y3
+           a( 8,k) = x1 * y2
+           a( 9,k) = x1 * y1
+           a(10,k) = x3
+           a(11,k) = x2
+           a(12,k) = x1
+           a(13,k) = y3
+           a(14,k) = y2
+           a(15,k) = y1
+           a(16,k) = 1.
+        enddo
+
+        call invert_matrix(n16, a, b)
+
+        do k=1,n16
+           van2(k,i,j) = b(k,n16)
+        enddo
+
+        sum0 = 0.
+        do k=1,n16
+           sum0 = sum0 + b(k,n16)
+#ifdef CHECK_VAN2
+           if ( k==1 .and. i==3 .and. j==3 ) then
+                write(*,*) k,'Van2(3,3):', van2(k,i,j)
+!               write(*,*) '          ', lon0, lat0
+           endif
+#endif
+        enddo
+        if (abs(sum0-1.)>1.e-10) call mpp_error(FATAL, 'van2_init')
+2000 continue
+2500 continue
+
+
+ end subroutine van2d_init
+
+  subroutine van2_init(xs, ys, npx, npy)
+  integer, intent(in):: npx, npy
+  real,    intent(in), dimension(npx,npy):: xs, ys   ! coner positions
+! Local:
+  real, dimension(npx,npy):: lon2, lat2
+  real::  grid(isd:ied+1,jsd:jed+1,2)
+  real:: agrid(is-2:ie+2,js-2:je+2,2)
+  integer, parameter:: n16 = 16
+  real:: a(n16,n16), b(n16,n16), x(n16), y(n16)
+  real:: x3, x2, x1, y3, y2, y1, lat, lon, lat0, lon0, sum0, xk
+  real:: cos_lat, sin_lat, cos_lat0, sin_lat0, cosc, mfactor
+  real pi
+  integer i, j, k, ip, jp
+
+  pi = 4.*atan(1.)
+
+  do j=1,npy
+     do i=1,npx
+        lat2(i,j) = ys(i,j)
+        lon2(i,j) = xs(i,j)
+        if ( lon2(i,j) < 0. ) lon2(i,j) = lon2(i,j) + 2.*pi
+     enddo
+  enddo
+
+  do j=max(1,jsd), min(npy,jed+1)
+     do i=max(1,isd), min(npx,ied+1)
+        grid(i,j,1) = lon2(i,j)
+        grid(i,j,2) = lat2(i,j)
+     enddo
+  enddo
+
+! agrid = 0.
+  do j=max(1,js-2), min(npy-1,je+2)
+     do i=max(1,is-2), min(npx-1,ie+2)
+        call cell_center2( grid(i,j,  1:2), grid(i+1,j,  1:2),                &
+                           grid(i,j+1,1:2), grid(i+1,j+1,1:2), agrid(i,j,1:2) )
+     enddo
+  enddo
+
+! Fill outer edges
+  if ( is==1 ) then 
+       do j=max(1,js-2), min(npy-1,je+2)
+          call mirror_latlon(lon2(1,1), lat2(1,1), lon2(1,npy), lat2(1,npy),   &
+                             agrid(1,j,1), agrid(1,j,2), agrid(0,j,1), agrid(0,j,2))
+          call mirror_latlon(lon2(1,1), lat2(1,1), lon2(1,npy), lat2(1,npy),   &
+                             agrid(2,j,1), agrid(2,j,2), agrid(-1,j,1), agrid(-1,j,2))
+       enddo
+  endif
+  if ( (ie+1)==npx ) then 
+       do j=max(1,js-2), min(npy-1,je+2)
+          call mirror_latlon(lon2(npx,1), lat2(npx,1), lon2(npx,npy), lat2(npx,npy),   &
+                             agrid(npx-1,j,1), agrid(npx-1,j,2), agrid(npx,j,1), agrid(npx,j,2))
+          call mirror_latlon(lon2(npx,1), lat2(npx,1), lon2(npx,npy), lat2(npx,npy),   &
+                             agrid(npx-2,j,1), agrid(npx-2,j,2), agrid(npx+1,j,1), agrid(npx+1,j,2))
+       enddo
+  endif
+  if ( js==1 ) then 
+       do i=max(1,is-2), min(npx-1,ie+2)
+          call mirror_latlon(lon2(1,1), lat2(1,1), lon2(npx,1), lat2(npx,1),   &
+                             agrid(i,1,1), agrid(i,1,2), agrid(i,0,1), agrid(i,0,2))
+          call mirror_latlon(lon2(1,1), lat2(1,1), lon2(npx,1), lat2(npx,1),   &
+                             agrid(i,2,1), agrid(i,2,2), agrid(i,-1,1), agrid(i,-1,2))
+       enddo
+  endif
+  if ( (je+1)==npy ) then 
+       do i=max(1,is-2), min(npx-1,ie+2)
+          call mirror_latlon(lon2(1,npy), lat2(1,npy), lon2(npx,npy), lat2(npx,npy),   &
+                             agrid(i,npy-1,1), agrid(i,npy-1,2), agrid(i,npy,1), agrid(i,npy,2))
+          call mirror_latlon(lon2(1,npy), lat2(1,npy), lon2(npx,npy), lat2(npx,npy),   &
+                             agrid(i,npy-2,1), agrid(i,npy-2,2), agrid(i,npy+1,1), agrid(i,npy+1,2))
+       enddo
+  endif
+
+  allocate ( van2(n16,is:ie+1,js:je+1) )
+
+  van2 = 0.
+  do 2500 j=js, je+1
+     do 2500 i=is, ie+1
+            lon0 = grid(i,j,1)
+            lat0 = grid(i,j,2)
+        cos_lat0 = cos(lat0)
+        sin_lat0 = sin(lat0)
+!----
+! SW:
+!----
+        if ( i==1 .and. j==1 ) then 
+             go to 2000
+        endif
+        if ( i==2 .and. j==1 ) then 
+             agrid(0,-1,1:2) = agrid(-1,2,1:2)
+             agrid(0, 0,1:2) = agrid(-1,1,1:2)
+        endif
+        if ( i==1 .and. j==2 ) then 
+             agrid(-1,0,1:2) = agrid(2,-1,1:2)
+             agrid( 0,0,1:2) = agrid(1,-1,1:2)
+        endif
+        if ( i==2 .and. j==2 ) then 
+             agrid(0,0,1:2) = agrid(4,4,1:2)   ! add extra point to make it 16
+        endif
+!----
+! SE:
+!----
+        if ( i==npx   .and. j==1 ) then 
+             go to 2000
+        endif
+        if ( i==npx-1 .and. j==1 ) then 
+             agrid(npx,-1,1:2) = agrid(npx+1,2,1:2)
+             agrid(npx, 0,1:2) = agrid(npx+1,1,1:2)
+        endif
+        if ( i==npx-1 .and. j==2 ) then 
+             agrid(npx,0,1:2) = agrid(npx-4,4,1:2)
+        endif
+        if ( i==npx   .and. j==2 ) then 
+             agrid(npx+1,0,1:2) = agrid(npx-2,-1,1:2)
+             agrid(npx,  0,1:2) = agrid(npx-1,-1,1:2)
+        endif
+!----
+! NE:
+!----
+        if ( i==npx   .and. j==npy ) then 
+             go to 2000
+        endif
+        if ( i==npx-1 .and. j==npy-1) then 
+             agrid(npx,npy,1:2) = agrid(npx-4,npy-4,1:2)
+        endif
+        if ( i==npx   .and. j==npy-1) then 
+             agrid(npx+1,npy,1:2) = agrid(npx-2,npy+1,1:2)
+             agrid(npx,  npy,1:2) = agrid(npx-1,npy+1,1:2)
+        endif
+        if ( i==npx-1 .and. j==npy) then 
+             agrid(npx,npy+1,1:2) = agrid(npx+1,npy-2,1:2)
+             agrid(npx,npy,  1:2) = agrid(npx+1,npy-1,1:2)
+        endif
+!----
+! NW:
+!----
+        if ( i==1 .and. j==npy ) then 
+             go to 2000
+        endif
+        if ( i==1 .and. j==npy-1 ) then 
+             agrid(-1,npy,1:2) = agrid(2,npy+1,1:2)
+             agrid( 0,npy,1:2) = agrid(1,npy+1,1:2)
+        endif
+        if ( i==2 .and. j==npy-1 ) then 
+             agrid(0,npy,1:2) = agrid(4,npy-4,1:2)
+        endif
+        if ( i==2 .and. j==npy ) then 
+             agrid(0,npy+1,1:2) = agrid(-1,npy-2,1:2)
+             agrid(0,npy,  1:2) = agrid(-1,npy-1,1:2)
+        endif
+
+        do k=1,n16
+           if    ( k==1 ) then
+                               ip = i-2; jp = j-2
+           elseif( k==2 ) then
+                               ip = i-1; jp = j-2
+           elseif( k==3 ) then
+                               ip = i;   jp = j-2
+           elseif( k==4 ) then
+                               ip = i+1; jp = j-2
+           elseif( k==5 ) then
+                               ip = i-2; jp = j-1
+           elseif( k==6 ) then
+                               ip = i-1; jp = j-1
+           elseif( k==7 ) then
+                               ip = i  ; jp = j-1
+           elseif( k==8 ) then
+                               ip = i+1; jp = j-1
+           elseif( k==9 ) then
+                               ip = i-2; jp = j
+           elseif( k==10 ) then
+                               ip = i-1; jp = j
+           elseif( k==11 ) then
+                               ip = i;   jp = j
+           elseif( k==12 ) then
+                               ip = i+1; jp = j
+           elseif( k==13 ) then
+                               ip = i-2; jp = j+1
+           elseif( k==14 ) then
+                               ip = i-1; jp = j+1
+           elseif( k==15 ) then
+                               ip = i;   jp = j+1
+           elseif( k==16 ) then
+                               ip = i+1; jp = j+1
+           endif
+
+           lon = agrid(ip,jp,1) 
+           lat = agrid(ip,jp,2) 
+  
+           cos_lat = cos(lat)
+           sin_lat = sin(lat)
+! Gnomonic projection:
+           mfactor = 1. / (sin_lat*sin_lat0 + cos_lat*cos_lat0*cos(lon-lon0))
+           x(k) =  cos_lat *sin(lon-lon0)*mfactor
+           y(k) = (cos_lat0*sin_lat - sin_lat0*cos_lat*cos(lon-lon0))*mfactor
+#ifdef MIRROR_V
+           if ( j==1 .or. j==npy ) then
+                  xk = x(k)
+                x(k) = y(k)
+                y(k) = xk
+           endif
+#endif
+
+        enddo
+
+        do k=1,n16
+!-------------------------------------
+! Full 16x16 "Vandermonde" Matrix
+!-------------------------------------
+           x1 = x(k)
+           x2 = x1*x1
+           x3 = x1*x2
+           y1 = y(k)
+           y2 = y1*y1
+           y3 = y1*y2
+!---------------------
+           a( 1,k) = x3 * y3
+           a( 2,k) = x3 * y2
+           a( 3,k) = x2 * y3
+           a( 4,k) = x2 * y2
+           a( 5,k) = x3 * y1
+           a( 6,k) = x2 * y1
+           a( 7,k) = x1 * y3
+           a( 8,k) = x1 * y2
+           a( 9,k) = x1 * y1
+           a(10,k) = x3
+           a(11,k) = x2
+           a(12,k) = x1
+           a(13,k) = y3
+           a(14,k) = y2
+           a(15,k) = y1
+           a(16,k) = 1.
+        enddo
+
+        call invert_matrix(n16, a, b)
+
+        do k=1,n16
+           van2(k,i,j) = b(k,n16)
+        enddo
+
+        sum0 = 0.
+        do k=1,n16
+           sum0 = sum0 + b(k,n16)
+#ifdef CHECK_VAN2
+           if ( k==1 .and. i==3 .and. j==3 ) then
+                write(*,*) k,'Van2(3,3):', van2(k,i,j)
+!               write(*,*) '          ', lon0, lat0
+           endif
+#endif
+        enddo
+        if (abs(sum0-1.)>1.e-12) then
+            write(*,*) 'Failed van point:', i,j
+            call mpp_error(FATAL, 'van2_init')
+        endif
+2000 continue
+2500 continue
+
+
+ end subroutine van2_init
+
+
+#ifdef USE_EXTEND_CUBE
  subroutine extend_cube_s(non_ortho, grid, agrid, npx, npy, symm)
  
 ! Initialization of interpolation factors for the extended cubed sphere
@@ -979,6 +1407,7 @@
  endif
 
  end subroutine extend_cube_s
+#endif
 
 
  subroutine efactor_a2c_v(non_ortho, grid, agrid, npx, npy)
@@ -1256,15 +1685,26 @@
  integer, intent(in):: im, grid_type
  real, intent(out):: lon(im+1,im+1)
  real, intent(out):: lat(im+1,im+1)
-
+ real pi
  integer i, j
+
+  pi = 4.*atan(1.)
 
 
   if(grid_type==0) call gnomonic_ed(  im, lon, lat)
   if(grid_type==1) call gnomonic_dist(im, lon, lat)
   if(grid_type==2) call gnomonic_angl(im, lon, lat)
 
-  call symm_ed(im, lon, lat)
+
+  if(grid_type<3) then
+     call symm_ed(im, lon, lat)
+     do j=1,im+1
+        do i=1,im+1
+           lon(i,j) = lon(i,j) - pi
+        enddo
+     enddo
+!    call van2_init(lon, lat, im+1, im+1)
+  endif
   
  end subroutine gnomonic_grids
 
@@ -1532,15 +1972,15 @@
  end subroutine mirror_xyz 
 
 
- subroutine mirror_latlon(lon1, lat1, lon2, lat2, lon0, lat0, lon, lat)
+ subroutine mirror_latlon(lon1, lat1, lon2, lat2, lon0, lat0, lon3, lat3)
 !
 ! Given the "mirror" as defined by (lon1, lat1), (lon2, lat2), and center 
-! of the sphere, compute the mirror image of (lon0, lat0) as  (lon, lat)
+! of the sphere, compute the mirror image of (lon0, lat0) as  (lon3, lat3)
 
  real, intent(in):: lon1, lat1, lon2, lat2, lon0, lat0
- real, intent(inout):: lon(1), lat(1)
+ real, intent(out):: lon3, lat3
 !
- real p0(3), p1(3), p2(3), nb(3), pp(3)
+ real p0(3), p1(3), p2(3), nb(3), pp(3), sp(2)
  real pdot
  integer k
 
@@ -1548,7 +1988,8 @@
  call latlon2xyz2(lon1, lat1, p1)
  call latlon2xyz2(lon2, lat2, p2)
  call vect_cross(nb, p1, p2)
-    pdot = sqrt(nb(1)**2+nb(2)**2+nb(3)**2)
+
+ pdot = sqrt(nb(1)**2+nb(2)**2+nb(3)**2)
  do k=1,3
     nb(k) = nb(k) / pdot
  enddo
@@ -1558,7 +1999,9 @@
     pp(k) = p0(k) - 2.*pdot*nb(k)
  enddo
 
- call cart_to_latlon(1, pp, lon, lat)
+ call cart_to_latlon(1, pp, sp(1), sp(2))
+ lon3 = sp(1)
+ lat3 = sp(2)
 
  end subroutine  mirror_latlon
 
@@ -1631,8 +2074,8 @@
 
     do j=jsd,jed
        do i=isd,ied
-        if ( ( i<1   .and. j<1  )          .or. ( i>(npx-1) .and. j<1 ) .or.  &
-             ( i>(npx-1) .and. j>(npy-1) ) .or. ( i<1 .and. j>(npy-1) ) ) then
+        if ( (i<1       .and. j<1  )     .or. (i>(npx-1) .and. j<1) .or.  &
+             (i>(npx-1) .and. j>(npy-1)) .or. (i<1       .and. j>(npy-1))) then
              u1(1:3,i,j) = 0.
              u2(1:3,i,j) = 0.
         else
@@ -2225,7 +2668,7 @@
 
  subroutine cell_center2(q1, q2, q3, q4, e2)
       real , intent(in ) :: q1(2), q2(2), q3(2), q4(2)
-      real , intent(OUT) :: e2(2)
+      real , intent(out) :: e2(2)
 ! Local
       real p1(3), p2(3), p3(3), p4(3)
       real ec(3)
@@ -2356,12 +2799,17 @@
    qy = e1(3)*e3(1) - e1(1)*e3(3) 
    qz = e1(1)*e3(2) - e1(2)*e3(1) 
 
-   ddd = sqrt( (px**2+py**2+pz**2)*(qx**2+qy**2+qz**2) )
+   ddd = (px*px+py*py+pz*pz)*(qx*qx+qy*qy+qz*qz)
 
-   if ( ddd > 0. ) then
-        angle = acos((px*qx+py*qy+pz*qz) / ddd )
-   else
+   if ( ddd <= 0.0 ) then
         angle = 0.
+   else
+        ddd = (px*qx+py*qy+pz*qz) / sqrt(ddd)
+        if ( abs(ddd)>1.) then
+             angle = 2.*atan(1.0)    ! 0.5*pi
+        else
+             angle = acos( ddd )
+        endif
    endif
 
    spherical_angle = angle
@@ -2590,5 +3038,110 @@
 
  end subroutine make_eta_level
 
+ subroutine invert_matrix(n, a, x)
+  integer, intent (in) :: n
+  integer :: i,j,k
+  real, intent (inout), dimension (n,n):: a
+  real, intent (out), dimension (n,n):: x   ! inverted maxtrix
+  real, dimension (n,n) :: b
+  integer indx(n)
+ 
+  do i = 1, n
+     do j = 1, n
+        b(i,j) = 0.0
+     end do
+  end do
+
+  do i = 1, n
+     b(i,i) = 1.0
+  end do
+ 
+  call elgs (a,n,indx)
+ 
+  do i = 1, n-1
+     do j = i+1, n
+        do k = 1, n
+           b(indx(j),k) = b(indx(j),k) - a(indx(j),i)*b(indx(i),k)
+        end do
+     end do
+  end do
+ 
+  do i = 1, n
+     x(n,i) = b(indx(n),i)/a(indx(n),n)
+     do j = n-1, 1, -1
+        x(j,i) = b(indx(j),i)
+        do k = j+1, n
+           x(j,i) = x(j,i)-a(indx(j),k)*x(k,i)
+        end do
+        x(j,i) =  x(j,i)/a(indx(j),j)
+     end do
+  end do
+
+ end subroutine invert_matrix
+ 
+
+ subroutine elgs (a,n,indx)
+
+!------------------------------------------------------------------
+! subroutine to perform the partial-pivoting gaussian elimination.
+! a(n,n) is the original matrix in the input and transformed matrix
+! plus the pivoting element ratios below the diagonal in the output.
+!------------------------------------------------------------------
+ 
+  integer, intent (in) :: n
+  integer :: i,j,k,itmp
+  integer, intent (out), dimension (n) :: indx
+  real, intent (inout), dimension (n,n) :: a
+!
+  real :: c1,pi,pi1,pj
+  real, dimension (n) :: c
+ 
+  do i = 1, n
+     indx(i) = i
+  end do
+!
+! find the rescaling factors, one from each row
+!
+  do i = 1, n
+     c1= 0.0
+     do j = 1, n
+        c1 = max(c1,abs(a(i,j)))
+     end do
+     c(i) = c1
+  end do
+!
+! search the pivoting (largest) element from each column
+!
+  do j = 1, n-1
+     pi1 = 0.0
+     do i = j, n
+        pi = abs(a(indx(i),j))/c(indx(i))
+        if (pi > pi1) then
+            pi1 = pi
+            k   = i
+        endif
+     end do
+!
+! interchange the rows via indx(n) to record pivoting order
+!
+    itmp    = indx(j)
+    indx(j) = indx(k)
+    indx(k) = itmp
+    do i = j+1, n
+       pj  = a(indx(i),j)/a(indx(j),j)
+!
+! record pivoting ratios below the diagonal
+!
+       a(indx(i),j) = pj
+!
+! modify other elements accordingly
+!
+       do k = j+1, n
+          a(indx(i),k) = a(indx(i),k)-pj*a(indx(j),k)
+       end do
+     end do
+  end do
+ 
+ end subroutine elgs
 
  end module fv_grid_utils_mod

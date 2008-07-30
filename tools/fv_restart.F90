@@ -41,7 +41,7 @@ module fv_restart_mod
   use fv_diagnostics_mod,  only: prt_maxmin
   use init_hydro_mod,      only: p_var
   use mpp_domains_mod,     only: mpp_update_domains, domain2d, DGRID_NE
-  use mpp_mod,             only: mpp_chksum, stdout, mpp_error, FATAL
+  use mpp_mod,             only: mpp_chksum, stdout, mpp_error, FATAL, get_unit
   use test_cases_mod,      only: alpha, init_case, init_double_periodic, init_latlon
   use fv_mp_mod,           only: gid, masterproc
   use fv_surf_map_mod,     only: sgh_g, oro_g
@@ -49,6 +49,7 @@ module fv_restart_mod
   use tracer_manager_mod,  only: get_tracer_names
   use field_manager_mod,   only: MODEL_ATMOS
   use external_ic_mod,     only: get_external_ic
+  use fv_eta_mod,          only: compute_dz_L32, set_hybrid_z
 
 
   implicit none
@@ -60,8 +61,8 @@ module fv_restart_mod
   logical                       :: module_is_initialized = .FALSE.
 
   !--- version information variables ----
-  character(len=128) :: version = '$Id: fv_restart.F90,v 1.1.4.2.2.2.2.2.2.30.2.2.2.1.2.4 2007/11/26 17:03:28 sjl Exp $'
-  character(len=128) :: tagname = '$Name: omsk_2008_03 $'
+  character(len=128) :: version = '$Id: fv_restart.F90,v 16.0 2008/07/30 22:05:14 fms Exp $'
+  character(len=128) :: tagname = '$Name: perth $'
 
 contains 
 
@@ -95,10 +96,13 @@ contains
     logical,             intent(in)    :: cold_start
     integer,             intent(in)    :: grid_type
 
+
     integer :: i, j, k, n, ntileMe
     integer :: isc, iec, jsc, jec, npz, npz_rst, ncnst
     integer :: isd, ied, jsd, jed
-    real rgrav, f00
+    integer :: file_unit
+    real, allocatable :: dz1(:)
+    real rgrav, f00, ztop
     logical :: hybrid
     character(len=128):: tname
 
@@ -110,10 +114,7 @@ contains
     npz     = Atm(1)%npz
     npz_rst = Atm(1)%npz_rst
 
-  ! This logic doesn't work very well.
-  ! Shouldn't have read for all tiles then loop over tiles
-
-    if( .not.cold_start ) then
+    if( .not.cold_start .and. (.not. Atm(1)%external_ic) ) then
         if ( npz_rst /= 0 .and. npz_rst /= npz ) then
 !            Remap vertically the prognostic variables for the chosen vertical resolution
              if( gid==masterproc ) then
@@ -128,17 +129,21 @@ contains
         else
              call fv_io_read_restart(fv_domain,Atm)
         endif
-    else
+    endif
 
+!---------------------------------------------------------------------------------------------
 ! Read, interpolate (latlon to cubed), then remap vertically with terrain adjustment if needed
+!---------------------------------------------------------------------------------------------
     if ( Atm(1)%external_ic ) then
          call get_external_ic(Atm, fv_domain) 
          if( gid==masterproc ) write(*,*) 'IC generated from the specified external source'
     endif
 
-    endif
-
     seconds = 0; days = 0   ! Restart needs to be modified to record seconds and days.
+
+! Notes by Jeff D.
+  ! This logic doesn't work very well.
+  ! Shouldn't have read for all tiles then loop over tiles
 
     do n = 1, ntileMe
 
@@ -161,8 +166,8 @@ contains
         call p_var(npz,         isc,         iec,       jsc,     jec,   ptop,     ptop_min,  &
                    Atm(n)%delp, Atm(n)%delz, Atm(n)%pt, Atm(n)%ps, Atm(n)%pe, Atm(n)%peln,   &
                    Atm(n)%pk,   Atm(n)%pkz, kappa, Atm(n)%q, Atm(n)%ng, ncnst,  Atm(n)%dry_mass,  &
-                   Atm(n)%adjust_dry_mass,  Atm(n)%mountain, Atm(n)%full_phys,  Atm(n)%hydrostatic, &
-                   Atm(n)%k_top, Atm(n)%nwat, Atm(n)%Make_NH)
+                   Atm(n)%adjust_dry_mass,  Atm(n)%mountain, Atm(n)%moist_phys,  Atm(n)%hydrostatic, &
+                   Atm(n)%k_top, Atm(n)%nwat, Atm(n)%make_nh)
 #endif
         if ( grid_type < 7 .and. grid_type /= 4 ) then
 ! Fill big values in the non-existinng corner regions:
@@ -193,32 +198,33 @@ contains
            enddo
         endif
       else
-#ifdef MAKE_HYBRID_Z
+! Cold start
+       if ( Atm(n)%make_hybrid_z ) then
          hybrid = .false.
-#else
+       else
          hybrid = Atm(n)%hybrid_z
-#endif
+       endif
          if (grid_type < 4) then
             if ( .not. Atm(n)%external_ic ) then
             call init_case(Atm(n)%u,Atm(n)%v,Atm(n)%pt,Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
                            Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        & 
                            Atm(n)%ak, Atm(n)%bk, Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, ncnst, Atm(n)%nwat,  &
                            Atm(n)%k_top, Atm(n)%ndims, Atm(n)%ntiles, Atm(n)%dry_mass, Atm(n)%mountain,       &
-                           Atm(n)%full_phys, hybrid, Atm(n)%delz, Atm(n)%ze0)
+                           Atm(n)%moist_phys, hybrid, Atm(n)%delz, Atm(n)%ze0)
             endif
          elseif (grid_type == 4) then
-            call init_double_periodic(Atm(n)%u,Atm(n)%v,Atm(n)%pt,Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
+            call init_double_periodic(Atm(n)%u,Atm(n)%v,Atm(n)%w,Atm(n)%pt,Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
                                       Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        & 
                                       Atm(n)%ak, Atm(n)%bk, Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, ncnst, Atm(n)%nwat,  &
                                       Atm(n)%k_top, Atm(n)%ndims, Atm(n)%ntiles, Atm(n)%dry_mass, Atm(n)%mountain,       &
-                                      Atm(n)%full_phys, hybrid, Atm(n)%delz, Atm(n)%ze0)
+                                      Atm(n)%moist_phys, Atm(n)%hydrostatic, hybrid, Atm(n)%delz, Atm(n)%ze0)
             if( gid==masterproc ) write(*,*) 'Doubly Periodic IC generated'
          elseif (grid_type == 5 .or. grid_type == 6) then
             call init_latlon(Atm(n)%u,Atm(n)%v,Atm(n)%pt,Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
                              Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        &
                              Atm(n)%ak, Atm(n)%bk, Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, ncnst, &
                              Atm(n)%k_top, Atm(n)%ndims, Atm(n)%ntiles, Atm(n)%dry_mass, Atm(n)%mountain,       &
-                             Atm(n)%full_phys, hybrid, Atm(n)%delz, Atm(n)%ze0)
+                             Atm(n)%moist_phys, hybrid, Atm(n)%delz, Atm(n)%ze0)
          endif
 
         if ( Atm(n)%fv_land ) then
@@ -230,47 +236,38 @@ contains
              enddo
         endif
 
-      endif
+      endif  !end cold_start check
 
+!---------------------------------------------------------------------------------------------
+! Transform the (starting) Eulerian vertical coordinate from sigma-p to hybrid_z
      if ( Atm(n)%hybrid_z ) then
-#ifdef MAKE_HYBRID_Z
-          do k=1,npz
-             do j=jsc,jec
-                do i=isc,iec
-                   Atm(n)%delz(i,j,k) = (rdgas*rgrav)*Atm(n)%pt(i,j,k)*(Atm(n)%peln(i,k,j)-Atm(n)%peln(i,k+1,j))
-                enddo
-             enddo
-          enddo
-
-          do j=jsc,jec
-             do i=isc,iec
-                Atm(n)%ze0(i,j,npz+1) = Atm(n)%phis(i,j) * rgrav
-             enddo
-          enddo
-          do k=npz,1,-1
-             do j=jsc,jec
-                do i=isc,iec
-                   Atm(n)%ze0(i,j,k) = Atm(n)%ze0(i,j,k+1) - Atm(n)%delz(i,j,k)
-                enddo
-             enddo
-          enddo
-#endif
+       if ( Atm(n)%make_hybrid_z ) then
+          allocate ( dz1(npz) )
+          if( npz==32 ) then
+              call compute_dz_L32(npz, ztop, dz1)
+          else
+              call mpp_error(FATAL, 'You must provide a specific routine for hybrid_z')
+          endif
+          call set_hybrid_z(isc, iec, jsc, jec, Atm(n)%ng, npz, ztop, dz1, rgrav,  &
+                            Atm(n)%phis, Atm(n)%ze0)
+          deallocate ( dz1 )
 !         call prt_maxmin('ZE0', Atm(n)%ze0,  isc, iec, jsc, jec, 0, npz, 1.E-3, gid==masterproc)
 !         call prt_maxmin('DZ0', Atm(n)%delz, isc, iec, jsc, jec, 0, npz, 1.   , gid==masterproc)
-          call make_eta_level(npz, Atm(n)%pe, area, Atm(n)%ks, Atm(n)%ak, Atm(n)%bk)
+       endif
+       call make_eta_level(npz, Atm(n)%pe, area, Atm(n)%ks, Atm(n)%ak, Atm(n)%bk)
       endif
+!---------------------------------------------------------------------------------------------
 
       write(stdout(),*)
       write(stdout(),*) 'fv_restart u    = ', mpp_chksum(Atm(n)%u(isc:iec,jsc:jec,:))
       write(stdout(),*) 'fv_restart v    = ', mpp_chksum(Atm(n)%v(isc:iec,jsc:jec,:))
       write(stdout(),*) 'fv_restart delp = ', mpp_chksum(Atm(n)%delp(isc:iec,jsc:jec,:))
       write(stdout(),*) 'fv_restart phis = ', mpp_chksum(Atm(n)%phis(isc:iec,jsc:jec))
+
 #ifdef SW_DYNAMICS
       call prt_maxmin('H ', Atm(n)%delp, isc, iec, jsc, jec, Atm(n)%ng, 1, rgrav, gid==masterproc)
 #else
       write(stdout(),*) 'fv_restart pt   = ', mpp_chksum(Atm(n)%pt(isc:iec,jsc:jec,:))
-!     write(stdout(),*) 'fv_restart u_srf = ', mpp_chksum(Atm(n)%u_srf(isc:iec,jsc:jec))
-!     write(stdout(),*) 'fv_restart v_srf = ', mpp_chksum(Atm(n)%v_srf(isc:iec,jsc:jec))
       if (ncnst>0) write(stdout(),*) 'fv_init nq =',ncnst, mpp_chksum(Atm(n)%q(isc:iec,jsc:jec,:,:))
 !---------------
 ! Check Min/Max:
@@ -278,7 +275,7 @@ contains
       call prt_maxmin('ZS', Atm(n)%phis, isc, iec, jsc, jec, Atm(n)%ng, 1, rgrav, gid==masterproc)
 !     call prt_maxmin('ORO',Atm(n)%oro, isc, iec, jsc, jec,          0, 1, 1., gid==masterproc)
 
-      if ( (.not.Atm(n)%hydrostatic) .and. (.not.Atm(n)%Make_NH) ) then
+      if ( (.not.Atm(n)%hydrostatic) .and. (.not.Atm(n)%make_nh) ) then
             call prt_maxmin('DZ', Atm(n)%delz, isc, iec, jsc, jec, 0, npz, 1., gid==masterproc)
             if ( Atm(n)%hybrid_z ) then
             call prt_maxmin('ZTOP(km)', Atm(n)%ze0, isc, iec, jsc, jec, 0, 1, 1.E-3, gid==masterproc)
@@ -300,7 +297,7 @@ contains
       if ( .not.Atm(n)%hydrostatic )   &
       call prt_maxmin('W ', Atm(n)%w, isc, iec, jsc, jec, Atm(n)%ng, npz, 1.,gid==masterproc)
 
-      if ( (.not.Atm(n)%hydrostatic) .and. Atm(n)%Make_NH ) then
+      if ( (.not.Atm(n)%hydrostatic) .and. Atm(n)%make_nh ) then
          Atm(n)%w = 0.
          if ( .not.Atm(n)%hybrid_z ) then
              do k=1,npz
@@ -313,7 +310,7 @@ contains
          endif
       endif
 
-      write(stdout(),*)
+      if (gid==masterproc) write(stdout(),*)
 
 !--------------------------------------------
 ! Initialize surface winds for flux coupler:
@@ -355,26 +352,23 @@ contains
     do n = 1, ntileMe
       isc = Atm(n)%isc; iec = Atm(n)%iec; jsc = Atm(n)%jsc; jec = Atm(n)%jec
 
-       isd = Atm(n)%isd
-       ied = Atm(n)%ied
-       jsd = Atm(n)%jsd
-       jed = Atm(n)%jed
-       npz = Atm(n)%npz
+      isd = Atm(n)%isd
+      ied = Atm(n)%ied
+      jsd = Atm(n)%jsd
+      jed = Atm(n)%jed
+      npz = Atm(n)%npz
  
       write(stdout(),*)
       write(stdout(),*) 'fv_restart_end u    = ', mpp_chksum(Atm(n)%u(isc:iec,jsc:jec,:))
       write(stdout(),*) 'fv_restart_end v    = ', mpp_chksum(Atm(n)%v(isc:iec,jsc:jec,:))
       if ( .not. Atm(n)%hydrostatic )    &
-      write(stdout(),*) 'fv_restart_end w    = ', mpp_chksum(Atm(n)%w(isc:iec,jsc:jec,:))
-
+         write(stdout(),*) 'fv_restart_end w    = ', mpp_chksum(Atm(n)%w(isc:iec,jsc:jec,:))
       write(stdout(),*) 'fv_restart_end delp = ', mpp_chksum(Atm(n)%delp(isc:iec,jsc:jec,:))
       write(stdout(),*) 'fv_restart_end phis = ', mpp_chksum(Atm(n)%phis(isc:iec,jsc:jec))
 #ifndef SW_DYNAMICS
       write(stdout(),*) 'fv_restart_end pt   = ', mpp_chksum(Atm(n)%pt(isc:iec,jsc:jec,:))
-!     write(stdout(),*) 'fv_restart_end u_srf = ', mpp_chksum(Atm(n)%u_srf(isc:iec,jsc:jec))
-!     write(stdout(),*) 'fv_restart_end v_srf = ', mpp_chksum(Atm(n)%v_srf(isc:iec,jsc:jec))
       do iq=1,min(7, Atm(n)%ncnst)     ! Check up to 7 tracers
-      write(stdout(),*) 'fv_restart_end q    = ', mpp_chksum(Atm(n)%q(isc:iec,jsc:jec,:,iq))
+        write(stdout(),*) 'fv_restart_end q    = ', mpp_chksum(Atm(n)%q(isc:iec,jsc:jec,:,iq))
       enddo
 
 !---------------
@@ -398,12 +392,13 @@ contains
     if( gid==masterproc ) then
         write(*,*) steps, 'Mean equivalent Heat flux for this integration period=',efx_sum/real(max(1,steps)), &
                           'Mean mountain torque=',mtq_sum/real(max(1,steps))
-        open (98, file='e_flux.data', form='unformatted',status='unknown', access='sequential')
+        file_unit = get_unit()
+        open (unit=file_unit, file='e_flux.data', form='unformatted',status='unknown', access='sequential')
         do n=1,steps
-           write(98) efx(n)
-           write(98) mtq(n)    ! time series global mountain torque
+           write(file_unit) efx(n)
+           write(file_unit) mtq(n)    ! time series global mountain torque
         enddo
-        close(98)
+        close(unit=file_unit)
     endif
 #endif
 

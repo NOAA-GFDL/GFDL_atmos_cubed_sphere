@@ -13,7 +13,7 @@ module fv_grid_tools_mod
                     fill_corners, XDir, YDir, &
                     mp_gather, mp_bcst, mp_reduce_max, mp_stop
   use sorted_index_mod,  only: sorted_inta, sorted_intb
-  use mpp_mod,           only: mpp_error, FATAL
+  use mpp_mod,           only: mpp_error, FATAL, get_unit
   use mpp_domains_mod,   only: mpp_update_domains
   use mpp_parameter_mod, only: AGRID_PARAM=>AGRID,       & 
                                CGRID_NE_PARAM=>CGRID_NE, &
@@ -124,10 +124,10 @@ contains
     integer,      intent(IN) :: nregions
     integer,      intent(IN) :: ng
 !--------------------------------------------------------
-    real*8 ::  xs(npx,npy)
-    real*8 ::  ys(npx,npy)
+    real   ::  xs(npx,npy)
+    real   ::  ys(npx,npy)
+    real*8 ::  grid_R8(npx,npy)
 
-    real*8 :: grid_R8(npx,npy)
     real  :: dp, dl
     real  :: x1,x2,y1,y2,z1,z2
     integer :: i,j,k,n,nreg
@@ -270,13 +270,14 @@ contains
           cubed_sphere = .true.
           uniform_ppm = .true.
 
+          if (grid_type>=0) call gnomonic_grids(grid_type, npx-1, xs, ys)
+
           if (gid == masterproc) then
 
-             if( grid_type>=0 ) then
-                call gnomonic_grids(grid_type, npx-1, xs, ys)
+             if (grid_type>=0) then
                 do j=1,npy
                    do i=1,npx
-                      grid_global(i,j,1,1) = xs(i,j) - pi
+                      grid_global(i,j,1,1) = xs(i,j)
                       grid_global(i,j,2,1) = ys(i,j)
                    enddo
                 enddo
@@ -288,7 +289,7 @@ contains
 !---------------------------------
 ! Shift the corner away from Japan
 !---------------------------------
-#ifndef NO_SHIFT_WEST
+#ifndef SW_DYNAMICS
 ! This will result in the corner close to east coast of China
                          grid_global(i,j,1,n) = grid_global(i,j,1,n) - pi/18.
 #endif
@@ -301,7 +302,7 @@ contains
                 enddo
              else
                 print*, 'Reading Grid from file: ', trim(grid_file)
-                fileLun=16
+                fileLun=get_unit()
                 open(unit=fileLun,file=grid_file, form='unformatted', access='sequential')
                 do n=1,nregions
                    do k=1,ndims
@@ -541,8 +542,8 @@ contains
        enddo
        if (gid == masterproc) then
           if (nregions > 1) then
-             print*, 'Resolution in Lon-Direction: ', 360./( (npx*4.)-3. )
-             print*, 'Resolution in Lat-Direction: ', 360./( (npy*4.)-3. )
+!             print*, 'Resolution in Lon-Direction: ', 360./( (npx*4.)-3. )
+!             print*, 'Resolution in Lat-Direction: ', 360./( (npy*4.)-3. )
           else
              print*, 'Resolution in Lon-Direction: ', 360./(npx-1.)
              print*, 'Resolution in Lat-Direction: ', 180./(npy-1.)
@@ -552,7 +553,7 @@ contains
        call grid_area( npx, npy, ndims, nregions )
 
 #ifndef ORIG_AREA_C
-! area_c, rarea_c, dxc, dyc
+! Compute area_c, rarea_c, dxc, dyc
        if ( is==1 ) then
           i = 1
           do j=js,je+1
@@ -750,11 +751,12 @@ contains
           write(*,200) '      Aspect Ratio              : min: ',aspN,' max: ',aspM,' avg: ',aspAV
           write(*,*  ) ''
           write(gcharFile,202) TRIM(grid_name),'_chars_',npx,'x',npy,'.dat'
-          open(unit=29,file=gcharFile, form='unformatted', access='direct',  &
+          fileLun=get_unit()
+          open(unit=fileLun,file=gcharFile, form='unformatted', access='direct',  &
                recl=((npx/2)+1)*((npy/2)+1)*8, status='unknown')
-          write(29,rec=1) angs
-          write(29,rec=2) asps
-          write(29,rec=3)  dxs
+          write(fileLun,rec=1) angs
+          write(fileLun,rec=2) asps
+          write(fileLun,rec=3)  dxs
           do j=1,(npy/2.0)+1
              do i=1,(npx/2.0)+1
                 do n=1,ndims
@@ -778,8 +780,8 @@ contains
                 endif
              enddo
           enddo
-          write(29,rec=4) angs
-          close(unit=29)
+          write(fileLun,rec=4) angs
+          close(unit=fileLun)
 
 #ifdef GLOBAL_TRIG
 !----------------------------------------------------
@@ -1415,13 +1417,13 @@ contains
             endif
          endif
 
- 316     format(A,e21.14,A,e21.14)
-         if (tile==1) then
-            if ( (is==   1) .and. (js==   1) ) write(*,316) 'A: SW', area(is,js), ' AC: SW', area_c(is  ,js  )
-            if ( (is==   1) .and. (je==ny-1) ) write(*,316) 'A: SW', area(is,je), ' AC: SW', area_c(is  ,je+1)
-            if ( (ie==nx-1) .and. (je==ny-1) ) write(*,316) 'A: SW', area(ie,je), ' AC: SW', area_c(ie+1,je+1)
-            if ( (ie==nx-1) .and. (js==   1) ) write(*,316) 'A: SW', area(ie,js), ' AC: SW', area_c(ie+1,js  )
-         endif
+!         if (tile==1) then
+!            if ( (is==   1) .and. (js==   1) ) write(*,316) 'A: SW', area(is,js), ' AC: SW', area_c(is  ,js  )
+!            if ( (is==   1) .and. (je==ny-1) ) write(*,316) 'A: SW', area(is,je), ' AC: SW', area_c(is  ,je+1)
+!            if ( (ie==nx-1) .and. (je==ny-1) ) write(*,316) 'A: SW', area(ie,je), ' AC: SW', area_c(ie+1,je+1)
+!            if ( (ie==nx-1) .and. (js==   1) ) write(*,316) 'A: SW', area(ie,js), ' AC: SW', area_c(ie+1,js  )
+!         endif
+! 316     format(A,e21.14,A,e21.14)
 
       end subroutine grid_area
 

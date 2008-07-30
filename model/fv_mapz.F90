@@ -1,11 +1,11 @@
 module fv_mapz_mod
 
-  use constants_mod, only: radius, pi, rvgas, rdgas
-  use fv_grid_tools_mod,    only: area, dx, dy, rdxa, rdya
-  use fv_grid_utils_mod,    only: cubed_to_latlon, g_sum, ptop, ptop_min
-  use fv_fill_mod,   only: fillz
-  use fv_mp_mod,        only: gid, domain
-  use mpp_domains_mod, only: mpp_update_domains
+  use constants_mod,     only: radius, pi, rvgas, rdgas, grav
+  use fv_grid_tools_mod, only: area, dx, dy, rdxa, rdya
+  use fv_grid_utils_mod, only: cubed_to_latlon, g_sum, ptop, ptop_min
+  use fv_fill_mod,       only: fillz
+  use fv_mp_mod,         only: gid, domain
+  use mpp_domains_mod,   only: mpp_update_domains
 
   implicit none
   real, parameter::  r3 = 1./3., r23 = 2./3., r12 = 1./12.
@@ -19,7 +19,7 @@ CONTAINS
 
  subroutine Lagrangian_to_Eulerian(consv, ps, pe, delp, pkz, pk,   &
                       mdt, km, is,ie,js,je, isd,ied,jsd,jed,       &
-                      nq, sphum, u, v, w, delz, pt, q, hs, grav, r_vir, cp,  &
+                      nq, sphum, u, v, w, delz, pt, q, hs, r_vir, cp,  &
                       akap, kord_mt, kord_tr, kord_tm,  peln, te0_2d,        &
                       ng, ua, va, omga, te, pem, fill, reproduce_sum,        &
                       ak, bk, ks, ze0, remap_t, hydrostatic, hybrid_z, ktop)
@@ -38,7 +38,7 @@ CONTAINS
 
   real, intent(in):: consv                 ! factor for TE conservation
   real, intent(in):: r_vir
-  real, intent(in):: cp, grav
+  real, intent(in):: cp
   real, intent(in):: akap
   real, intent(in):: hs(isd:ied,jsd:jed)  ! surface geopotential
   real, intent(in):: te0_2d(is:ie,js:je)
@@ -71,7 +71,7 @@ CONTAINS
   real, intent(inout)::   ua(isd:ied,jsd:jed,km)   ! u-wind (m/s) on physics grid
   real, intent(inout)::   va(isd:ied,jsd:jed,km)   ! v-wind (m/s) on physics grid
   real, intent(inout):: omga(isd:ied,jsd:jed,km)   ! vertical press. velocity (pascal/sec)
-  real, intent(out)::   peln(is:ie,km+1,js:je)     ! log(pe)
+  real, intent(inout)::   peln(is:ie,km+1,js:je)     ! log(pe)
   real, intent(out)::    pkz(is:ie,js:je,km)       ! layer-mean pk for converting t to pt
   real, intent(out)::     te(is:ie,js:je,km)
 
@@ -84,8 +84,9 @@ CONTAINS
   integer :: i,j,k 
      real q_source(is:ie,js:je,nq)    ! numerical tracer source from surface
                                       ! in case fillz is not sufficient
-     real te_2d(is:ie,js:je)
-      real zsum(is:ie,js:je)
+      real te_2d(is:ie,js:je)
+      real zsum0(is:ie,js:je)
+      real zsum1(is:ie,js:je)
       real   q2(is:ie,km)
       real  dp2(is:ie,km)
       real  pe1(is:ie,km+1)
@@ -99,37 +100,36 @@ CONTAINS
       real   gz(is:ie)
 ! for nonhydrostatic option with hybrid_z coordinate
       real ze1(is:ie,km+1), ze2(is:ie,km+1), deng(is:ie,km)
-
-      real rcp, rg, ak1, tmp, tpe
-      real bkh
-      real dtmp
-      real dlnp
+      real rcp, rg, ak1, tmp, tpe, cv, rgama
+      real bkh, dtmp, dlnp
       integer iq, n, kp, k_next
       logical te_map
       real k1k, kapag
 
-      k1k   =  akap / (1.-akap)
+        k1k = akap / (1.-akap)    ! rg/Cv=0.4
       kapag = -akap / grav
-       rg = akap * cp
-      rcp = 1./ cp
-      ak1 = (akap + 1.) / akap
+         rg = akap * cp
+         cv = cp - rg
+      rgama = (1.-akap)           ! cv/cp
+        rcp = 1./ cp
+        ak1 = (akap + 1.) / akap
 
       if ( kord_tm < 0 ) then
            te_map = .false.
-           do j=js,je
-              do k=2,km+1
-                 do i=is,ie
-                    peln(i,k,j) = log(pe(i,k,j))
-                 enddo
-              enddo
-           enddo
+!          do j=js,je
+!             do k=2,km+1
+!                do i=is,ie
+!                   peln(i,k,j) = log(pe(i,k,j))
+!                enddo
+!             enddo
+!          enddo
           if ( remap_t ) then
 ! Transform virtual pt to virtual Temp
              do k=1,km
                 do j=js,je
                    do i=is,ie
                       pt(i,j,k) = pt(i,j,k) * (pk(i,j,k+1)-pk(i,j,k)) /  &
-                                  (rg*(peln(i,k+1,j)-peln(i,k,j)) )
+                                 (rg*(peln(i,k+1,j)-peln(i,k,j)) )
                    enddo
                 enddo
              enddo
@@ -139,7 +139,7 @@ CONTAINS
            call pkez(km, is, ie, js, je, pe, pk, akap, peln, pkz)
            call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km, 1)
 ! Compute cp*T + KE
-!$omp parallel do private(i, j, k)
+!$omp parallel do default(shared) private(i, j, k)
            do k=1,km
               do j=js,je
                  do i=is,ie
@@ -151,6 +151,7 @@ CONTAINS
      endif
 
      if ( (.not.hydrostatic) .and. (.not.hybrid_z) ) then
+!$omp parallel do default(shared) private(i, j, k)
            do k=1,km
               do j=js,je
                  do i=is,ie
@@ -160,7 +161,7 @@ CONTAINS
            enddo
      endif
 
-!$omp parallel do private(i, j, k, pe0, pe1, pe2, pk1, pk2, ......)
+!$omp parallel do default(shared) private(i, j, k, n, iq, kp, k_next, bkh, deng, dp2, pe0, pe1, pe2, pe3, pk1, pk2, pn2, phis, q2, ze1, ze2)
   do 1000 j=js,je+1
 
         do k=1,km+1
@@ -186,13 +187,20 @@ CONTAINS
 !--------------------------
 
         do i=is,ie
-            ze1(i,km+1) = ze0(i,j,km+1)
+           ze1(i,km+1) = ze0(i,j,km+1)
         enddo
 
         do k=km,1,-1
            do i=is,ie
               ze1(i,k) = ze1(i,k+1) - delz(i,j,k)   ! current height
            enddo
+        enddo
+!
+! Copy ztop; the top layer must be thick enough to prevent numerical problems.
+!
+        do i=is,ie
+           ze2(i,  1) = ze1(i,1)
+           ze0(i,j,1) = ze1(i,1)      ! Note: ze0 (top) updated
         enddo
 
         do k=2,km+1
@@ -201,13 +209,6 @@ CONTAINS
            enddo
         enddo
 !
-! Copy ztop; the top layer must be thick enough to prevent numerical problems.
-!
-        do i=is,ie
-           ze2(i,  1) = ze1(i,1)
-           ze0(i,j,1) = ze1(i,1)      ! Note: ze0 updated
-        enddo
-
         do k=1,km
            do i=is,ie
               deng(i,k) = -delp(i,j,k)/delz(i,j,k)  ! density * grav
@@ -229,8 +230,8 @@ CONTAINS
 !------------
         do k=1,km-1
            do i=is,ie
-               dp2(i,k  ) = -deng(i,k) * delz(i,j,k)
-               pe2(i,k+1) =   pe2(i,k) +  dp2(i,k)
+               dp2(i,k  ) = -delz(i,j,k) * deng(i,k)
+               pe2(i,k+1) =     pe2(i,k) +  dp2(i,k)
            enddo
         enddo
 
@@ -290,20 +291,29 @@ CONTAINS
           enddo
        endif
 
-       do k=1,km+1
-          do i=is,ie
-             pk1(i,k) = pk(i,j,k)
-          enddo
-       enddo
-       do i=is,ie
-          pk2(i,   1) = pk1(i,   1)
-          pk2(i,km+1) = pk1(i,km+1)
-       enddo
-       do k=2,km
-          do i=is,ie
-             pk2(i,k) = pe2(i,k) ** akap
-          enddo
-       enddo
+!------------------
+! Compute p**cappa
+!------------------
+   do k=1,km+1
+      do i=is,ie
+         pk1(i,k) = pk(i,j,k)
+      enddo
+   enddo
+
+   do i=is,ie
+      pn2(i,   1) = peln(i,   1,j)
+      pn2(i,km+1) = peln(i,km+1,j)
+      pk2(i,   1) = pk1(i,   1)
+      pk2(i,km+1) = pk1(i,km+1)
+   enddo
+
+   do k=2,km
+      do i=is,ie
+!        pk2(i,k) = pe2(i,k) ** akap
+         pn2(i,k) = log(pe2(i,k))
+         pk2(i,k) = exp(akap*pn2(i,k))
+      enddo
+   enddo
 
    if ( te_map ) then
 !---------------------
@@ -338,11 +348,6 @@ CONTAINS
 !----------------
 ! Map t using logp
 !----------------
-       do k=1,km+1
-          do i=is,ie
-             pn2(i,k) = log(pe2(i,k))
-          enddo
-       enddo
        call map1_ppm (km,  peln(is,1,j),  pt,    &
                       km,  pn2,           pt,    &
                       is, ie, j, isd, ied, jsd, jed, 1, abs(kord_tm))
@@ -392,54 +397,13 @@ CONTAINS
          pe3(i,k) = omga(i,j,k-1)
       enddo
    enddo
+
    do k=1,km+1
       do i=is,ie
-         pe0(i,k) = peln(i,k,j)
+          pe0(i,k)   = peln(i,k,j)
+         peln(i,k,j) =  pn2(i,k)
       enddo
    enddo
-
-!--------------
-! Compute peln
-!--------------
-
-   if ( hybrid_z ) then
-      do k=2,km+1
-         do i=is,ie
-            peln(i,k,j) = log(pe2(i,k))  ! peln is used anywhere?
-         enddo
-      enddo
-   else
-     if ( remap_t ) then
-        do k=1,km+1
-           do i=is,ie
-              peln(i,k,j) = pn2(i,k)
-           enddo
-        enddo
-     else
-        do k=2,ks+1
-           tmp = log(ak(k))
-           do i=is,ie
-              peln(i,k,j) = tmp
-           enddo
-        enddo
-        do k=ks+2,km+1
-           do i=is,ie
-              peln(i,k,j) = log(pe2(i,k))
-           enddo
-        enddo
-
-        if( ptop < ptop_min ) then
-            do i=is,ie
-               peln(i,1,j) = peln(i,2,j) - ak1
-            enddo
-        else
-            tmp = log( ptop )
-            do i=is,ie
-               peln(i,1,j) = tmp
-            enddo
-        endif
-     endif
-   endif
 
 !------------
 ! Compute pkz
@@ -461,8 +425,9 @@ CONTAINS
       do k=ktop,km
          do i=is,ie
 ! Note: pt at this stage is cp*Theta_v
-            pkz(i,j,k) = ( kapag*delp(i,j,k)*pt(i,j,k) /            &
-                          (delz(i,j,k)*(1.+r_vir*q(i,j,k,sphum))) )**k1k
+!           pkz(i,j,k) = ( kapag*delp(i,j,k)*pt(i,j,k) /            &
+!                         (delz(i,j,k)*(1.+r_vir*q(i,j,k,sphum))) )**k1k
+            pkz(i,j,k) = exp( k1k*log(kapag*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
          enddo
       enddo
    endif
@@ -543,6 +508,7 @@ CONTAINS
                       j, isd, ied+1, jsd, jed, -1, kord_mt)
    endif ! (j < je+1)
  endif    ! end hybrid_z check
+
      do k=1,km
         do i=is,ie
            ua(i,j,k) = pe2(i,k+1)
@@ -591,21 +557,21 @@ if ( hybrid_z ) then   !------- Hybrid_z section ---------------
    enddo
 endif         !------------- Hybrid_z section ----------------------
 
-!$omp parallel do private(i,j,k)
-     do k=2,km
-        do j=js,je
-           do i=is,ie
-              pe(i,k,j) = ua(i,j,k-1)
-           enddo
+!$omp parallel do default(shared) private(i, j, k)
+  do k=2,km
+     do j=js,je
+        do i=is,ie
+           pe(i,k,j) = ua(i,j,k-1)
         enddo
      enddo
+  enddo
 
   call cubed_to_latlon(u,  v, ua, va, dx, dy, rdxa, rdya, km, 1)
 
   if( consv > 0. ) then
 
     if ( te_map ) then
-!$omp parallel do private(i, j, k)
+!$omp parallel do default(shared) private(i, j, k)
       do j=js,je
           do i=is,ie
              te_2d(i,j) = te(i,j,1)*delp(i,j,1)
@@ -617,7 +583,7 @@ endif         !------------- Hybrid_z section ----------------------
           enddo
       enddo
     else
-!$omp parallel do private(i,j,k,gz)
+!$omp parallel do default(shared) private(i, j, k, gz, phis)
       do j=js,je
         if ( remap_t ) then
          do i=is,ie
@@ -637,43 +603,73 @@ endif         !------------- Hybrid_z section ----------------------
             enddo
          enddo
         else
-         do i=is,ie
-            gz(i) = hs(i,j)
-            do k=1,km
-               gz(i) = gz(i) + pt(i,j,k)*(pk(i,j,k+1)-pk(i,j,k))
-            enddo
-         enddo
-         do i=is,ie
-            te_2d(i,j) = pe(i,km+1,j)*hs(i,j) - pe(i,1,j)*gz(i)
-         enddo
-
-         do k=1,km
+         if ( hydrostatic ) then
             do i=is,ie
-               te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(pt(i,j,k)*pkz(i,j,k) +   &  
-                                      0.5*(ua(i,j,k)**2+va(i,j,k)**2))
+               gz(i) = hs(i,j)
+               do k=1,km
+                  gz(i) = gz(i) + pt(i,j,k)*(pk(i,j,k+1)-pk(i,j,k))
+               enddo
             enddo
-         enddo
+
+            do i=is,ie
+               te_2d(i,j) = pe(i,km+1,j)*hs(i,j) - pe(i,1,j)*gz(i)
+            enddo
+            do k=1,km
+               do i=is,ie
+                  te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(pt(i,j,k)*pkz(i,j,k) +   &  
+                               0.5*(ua(i,j,k)**2+va(i,j,k)**2))
+               enddo
+            enddo
+         else
+!-----------------
+! Non-hydrostatic:
+!-----------------
+           do i=is,ie
+              phis(i,km+1) = hs(i,j)
+              do k=km,1,-1
+                 phis(i,k) = phis(i,k+1) - grav*delz(i,j,k)
+              enddo
+           enddo
+           do i=is,ie
+              te_2d(i,j) = 0.
+           enddo
+           do k=1,km
+              do i=is,ie
+                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( rgama*pt(i,j,k)*pkz(i,j,k) +   &
+                              0.5*(phis(i,k)+phis(i,k+1)+ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2) )
+              enddo
+           enddo
+         endif
+
        endif
       enddo
     endif
 
-!$omp parallel do private(i, j, k)
+!$omp parallel do default(shared) private(i, j, k)
       do j=js,je
          do i=is,ie
-            te_2d(i,j) = te0_2d(i,j) - te_2d(i,j)
-             zsum(i,j) = ptop*(pk(i,j,1)-pk(i,j,km+1))
+            zsum1(i,j) = pkz(i,j,1)*delp(i,j,1)
+         enddo
+         do k=2,km
+            do i=is,ie
+               zsum1(i,j) = zsum1(i,j) + pkz(i,j,k)*delp(i,j,k)
+            enddo
          enddo
 
-         do k=1,km
-            do i=is,ie
-               zsum(i,j) = zsum(i,j) + pkz(i,j,k)*delp(i,j,k)
-            enddo
+         do i=is,ie
+            zsum0(i,j) = ptop*(pk(i,j,1)-pk(i,j,km+1)) + zsum1(i,j)
+            te_2d(i,j) = te0_2d(i,j) - te_2d(i,j)
          enddo
       enddo
 
          tpe = consv*g_sum(te_2d, is, ie, js, je, ng, area, 0)
       E_Flux = tpe / (grav*mdt*4.*pi*radius**2)    ! unit: W/m**2
-        dtmp = tpe / (cp*g_sum(zsum,  is, ie, js, je, ng, area, 0))
+
+      if ( hydrostatic ) then
+           dtmp = tpe / (cp*g_sum(zsum0,  is, ie, js, je, ng, area, 0))
+      else
+           dtmp = tpe / (cv*g_sum(zsum1,  is, ie, js, je, ng, area, 0))
+      endif
 !-------------------------------------------------------------------------------
 ! One may use this quick fix to ensure reproducibility at the expense of a lower
 ! floating precision; this is fine for the TE correction
@@ -685,7 +681,7 @@ endif         !------------- Hybrid_z section ----------------------
   endif        ! end consv check
 
   if ( te_map ) then
-!$omp parallel do private(i, j, k, gz, tpe, tmp, dlnp)
+!$omp parallel do default(shared) private(i, j, k, gz, tpe, tmp, dlnp)
       do j=js,je
          do i=is,ie
             gz(i) = hs(i,j)
@@ -724,9 +720,9 @@ endif         !------------- Hybrid_z section ----------------------
 
 
  subroutine compute_total_energy(is, ie, js, je, isd, ied, jsd, jed, km,  &
-                                 u, v, pt, delp, q, pe, peln, hs,         &
+                                 u, v, w, delz, pt, delp, q, pe, peln, hs, &
                                  r_vir,  cp, rg, hlv, te_2d, ua, va, teq, &
-                                 moist_phys, sphum, id_te)
+                                 moist_phys, sphum, hydrostatic, id_te)
 !------------------------------------------------------
 ! Compute vertically integrated total energy per column
 !------------------------------------------------------
@@ -737,26 +733,35 @@ endif         !------------- Hybrid_z section ----------------------
    real, intent(in), dimension(isd:ied,jsd:jed,km,sphum):: q
    real, intent(inout)::  u(isd:ied,  jsd:jed+1,km)
    real, intent(inout)::  v(isd:ied+1,jsd:jed,  km)
+   real, intent(in)::  w(isd:ied,jsd:jed,km)   ! vertical velocity (m/s)
+   real, intent(in):: delz(is:ie,js:je,km)
    real, intent(in):: hs(isd:ied,jsd:jed)  ! surface geopotential
    real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) ! pressure at layer edges
    real, intent(in):: peln(is:ie,km+1,js:je)  ! log(pe)
    real, intent(in):: cp, rg, r_vir, hlv
-   logical, intent(in):: moist_phys
+   logical, intent(in):: moist_phys, hydrostatic
 ! Output:
    real, intent(out), dimension(isd:ied,jsd:jed,km):: ua, va
    real, intent(out):: te_2d(is:ie,js:je)   ! vertically integrated TE
    real, intent(out)::   teq(is:ie,js:je)   ! Moist TE
 ! Local
    real  gztop(is:ie)
+   real  phiz(is:ie,km+1)
+   real cv
    integer i, j, k
+
+   cv = cp - rg
 
 !----------------------
 ! Output lat-lon winds:
 !----------------------
   call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km)
 
-!$omp parallel do private(i,j,k,gztop)
+!$omp parallel do default(shared) private(i, j, k, gztop, phiz)
   do j=js,je
+
+     if ( hydrostatic ) then
+
      do i=is,ie
         gztop(i) = hs(i,j)
         do k=1,km
@@ -771,9 +776,27 @@ endif         !------------- Hybrid_z section ----------------------
      do k=1,km
         do i=is,ie
            te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(0.5*(ua(i,j,k)**2+va(i,j,k)**2)  &
-                                   + cp*pt(i,j,k)*(1.+r_vir*q(i,j,k,sphum)))
+                      + cp*pt(i,j,k)*(1.+r_vir*q(i,j,k,sphum)))
         enddo
      enddo
+     else
+! Non-hydrostatic:
+     do i=is,ie
+        phiz(i,km+1) = hs(i,j)
+        do k=km,1,-1
+           phiz(i,k) = phiz(i,k+1) - grav*delz(i,j,k)
+        enddo
+     enddo
+     do i=is,ie
+        te_2d(i,j) = 0.
+     enddo
+     do k=1,km
+        do i=is,ie
+           te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv*pt(i,j,k)*(1.+r_vir*q(i,j,k,sphum)) +  &
+                        0.5*(phiz(i,k)+phiz(i,k+1)+ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2) )
+        enddo
+     enddo
+     endif
   enddo
 
 !-------------------------------------
@@ -816,7 +839,7 @@ endif         !------------- Hybrid_z section ----------------------
    real, intent(in):: pk(ifirst:ilast,jfirst:jlast,km+1)
 ! !OUTPUT
    real, intent(out):: pkz(ifirst:ilast,jfirst:jlast,km)
-   real, intent(out):: peln(ifirst:ilast, km+1, jfirst:jlast)   ! log (pe)
+   real, intent(inout):: peln(ifirst:ilast, km+1, jfirst:jlast)   ! log (pe)
 ! Local
    real pk2(ifirst:ilast, km+1)
    real pek
@@ -824,9 +847,9 @@ endif         !------------- Hybrid_z section ----------------------
    real ak1
    integer i, j, k
 
-   ak1 = (akap + 1.) / akap
+   ak1 = (akap + 1.) / akap  ! = 4.5
 
-!$omp  parallel do default(shared) private(ixj, i1, i2, i, j, k, pek, lnp, pk2)
+!$omp parallel do default(shared) private(i, j, k, lnp, pek, pk2)
    do j=jfirst, jlast
         pek = pk(ifirst,j,1)
         do i=ifirst, ilast
@@ -835,7 +858,7 @@ endif         !------------- Hybrid_z section ----------------------
 
         do k=2,km+1
            do i=ifirst, ilast
-              peln(i,k,j) =  log(pe(i,k,j))
+!             peln(i,k,j) =  log(pe(i,k,j))
               pk2(i,k) =  pk(i,j,k)
            enddo
         enddo
@@ -1222,14 +1245,14 @@ endif         !------------- Hybrid_z section ----------------------
 
  subroutine cs_profile(a4, delp, km, i1, i2, iv)
 ! Optimized vertical profile reconstruction:
-! Developer: S.-J. Lin, NOAA/GFDL
+! Latest: Apr 2008 S.-J. Lin, NOAA/GFDL
  integer, intent(in):: i1, i2
  integer, intent(in):: km      ! vertical dimension
  integer, intent(in):: iv      ! iv =-1: winds
                                ! iv = 0: positive definite scalars
                                ! iv = 1: others
- real , intent(in)   :: delp(i1:i2,km)     ! layer pressure thickness
- real , intent(inout):: a4(4,i1:i2,km)  ! Interpolated values
+ real, intent(in)   :: delp(i1:i2,km)     ! layer pressure thickness
+ real, intent(inout):: a4(4,i1:i2,km)     ! Interpolated values
 !-----------------------------------------------------------------------
  real  gam(i1:i2,km)
  real    q(i1:i2,km+1)
@@ -1240,15 +1263,15 @@ endif         !------------- Hybrid_z section ----------------------
   do i=i1,i2
          grat = delp(i,2) / delp(i,1)   ! grid ratio
           bet = grat*(grat+0.5)
-       q(i,1) = (2.*grat*(grat+1.)*a4(1,i,1)+a4(1,i,2)) / bet
+       q(i,1) = ( (grat+grat)*(grat+1.)*a4(1,i,1) + a4(1,i,2) ) / bet
      gam(i,1) = ( 1. + grat*(grat+1.5) ) / bet
   enddo
 
   do k=2,km
      do i=i1,i2
            d4(i) = delp(i,k-1) / delp(i,k)
-             bet =  2. + 2.*d4(i) - gam(i,k-1)
-          q(i,k) = (3.*(a4(1,i,k-1)+d4(i)*a4(1,i,k))-q(i,k-1))/bet
+             bet =  2. + d4(i) + d4(i) - gam(i,k-1)
+          q(i,k) = ( 3.*(a4(1,i,k-1)+d4(i)*a4(1,i,k)) - q(i,k-1) )/bet
         gam(i,k) = d4(i) / bet
      enddo
   enddo
@@ -1279,28 +1302,66 @@ endif         !------------- Hybrid_z section ----------------------
 ! Apply large-scale constraints to ALL fields if not local max/min
 ! Top:
 
-  do i=i1,i2
-     if ( (q(i,2)-q(i,1))*(q(i,3)-q(i,2))>0. ) then
+  if ( iv==-1 ) then
+       do i=i1,i2
           q(i,2) = min( q(i,2), max(a4(1,i,1), a4(1,i,2)) )
           q(i,2) = max( q(i,2), min(a4(1,i,1), a4(1,i,2)) )
-     elseif ( iv==0 ) then
-          q(i,2) = max(0., q(i,2))
-     endif
-  enddo
+       enddo
+  else     
+       do i=i1,i2
+          if ( (q(i,2)-q(i,1))*(q(i,3)-q(i,2))>0. ) then
+               q(i,2) = min( q(i,2), max(a4(1,i,1), a4(1,i,2)) )
+               q(i,2) = max( q(i,2), min(a4(1,i,1), a4(1,i,2)) )
+           elseif ( iv==0 ) then
+               q(i,2) = max(0., q(i,2))
+           endif
+       enddo
+  endif
 
 ! Interior:
   do k=3,km-1
      do i=i1,i2
         if ( gam(i,k-1)*gam(i,k+1)>0. ) then
+! Apply large-scale constraint to ALL fields if not local max/min
              q(i,k) = min( q(i,k), max(a4(1,i,k-1),a4(1,i,k)) )
              q(i,k) = max( q(i,k), min(a4(1,i,k-1),a4(1,i,k)) )
-        elseif ( iv==0 ) then
-             q(i,k) = max(0., q(i,k))
+        else
+          if ( gam(i,k-1) > 0. ) then
+! There exists a local max
+               q(i,k) = max(q(i,k), min(a4(1,i,k-1),a4(1,i,k)))
+          else
+            if ( iv==0 ) then
+                 q(i,k) = max(0., q(i,k))
+            else
+! There exists a local min
+                 q(i,k) = min(q(i,k), max(a4(1,i,k-1),a4(1,i,k)))
+            endif
+          endif
         endif
      enddo
   enddo
 
+! Top & bot surfaces
+  if ( iv==0 ) then
+       do i=i1,i2
+          q(i,   1) = max(0., q(i,   1))
+          q(i,km+1) = max(0., q(i,km+1))
+       enddo
+  endif
+
+
 ! Bottom:
+  if ( iv==-1 ) then
+       do i=i1,i2
+          q(i,km) = min( q(i,km), max(a4(1,i,km-1), a4(1,i,km)) )
+          q(i,km) = max( q(i,km), min(a4(1,i,km-1), a4(1,i,km)) )
+       enddo
+#ifndef SLIP_SURF
+       do i=i1,i2
+          q(i,km+1) = sign(min(abs(q(i,km+1)), abs(a4(1,i,km))), a4(1,i,km))
+       enddo
+#endif
+  else
   do i=i1,i2
      if ( (q(i,km)-q(i,km-1))*(q(i,km+1)-q(i,km))>0. ) then
           q(i,km) = min( q(i,km), max(a4(1,i,km-1), a4(1,i,km)) )
@@ -1309,6 +1370,7 @@ endif         !------------- Hybrid_z section ----------------------
           q(i,km) = max(0., q(i,km))
      endif
   enddo
+  endif
 
   do k=1,km
      do i=i1,i2
@@ -1318,10 +1380,10 @@ endif         !------------- Hybrid_z section ----------------------
   enddo
 
 ! Top & bot surfaces
-  do i=i1,i2
-     if ( a4(2,i, 1)*a4(1,i, 1) <= 0. ) a4(2,i, 1) = 0.
-     if ( a4(1,i,km)*a4(3,i,km) <= 0. ) a4(3,i,km) = 0.
-  enddo
+! do i=i1,i2
+!    if ( a4(2,i, 1)*a4(1,i, 1) <= 0. ) a4(2,i, 1) = 0.
+!    if ( a4(1,i,km)*a4(3,i,km) <= 0. ) a4(3,i,km) = 0.
+! enddo
 
 !-----------------------------------------------------------
 ! f(s) = AL + s*[(AR-AL) + A6*(1-s)]         ( 0 <= s  <= 1 )
@@ -1342,6 +1404,7 @@ endif         !------------- Hybrid_z section ----------------------
 ! Left  edges
 !      a4(2,i,k) = a4(1,i,k) -   &
 !                  sign(min(abs(a4(2,i,k)-a4(1,i,k)), abs(gam(i,k))),gam(i,k))
+!----
              pmp = a4(1,i,k) - 2.*gam(i,k+1)
              lac = pmp + 1.5*gam(i,k+2)
        a4(2,i,k) = min(max(a4(2,i,k),  min(a4(1,i,k), pmp, lac)),   &
@@ -1349,6 +1412,7 @@ endif         !------------- Hybrid_z section ----------------------
 ! Right edges
 !      a4(3,i,k) = a4(1,i,k) +  &
 !                  sign(min(abs(a4(3,i,k)-a4(1,i,k)), abs(gam(i,k+1))),gam(i,k+1))
+!----
              pmp = a4(1,i,k) + 2.*gam(i,k)
              lac = pmp - 1.5*gam(i,k-1)
        a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp, lac)),    &

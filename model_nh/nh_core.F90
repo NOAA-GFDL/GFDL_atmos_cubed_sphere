@@ -297,7 +297,7 @@ CONTAINS
 ! Local:
   real, dimension(is:ie,km  ):: pm, dm, dz2
   real, dimension(is:ie,km+1):: pem, pk2
-  real gama, rgrav, ptk, peln
+  real gama, rgrav, ptk
   integer i, j, k
   integer m_split_c
 
@@ -307,9 +307,9 @@ CONTAINS
    rgrav = 1./grav
 
    ptk = ptop ** akap
-   peln = log(ptop)
 
-   do 2000 j=js,je      ! This loop can be parallelized with OpenMP
+!$omp parallel do default(shared) private(i, j, k, dm, dz2, pem, pm, pk2)
+   do 2000 j=js,je
 
       do k=1,km
          do i=is,ie
@@ -317,54 +317,35 @@ CONTAINS
          enddo
       enddo
 
-#ifdef USE_PK
       do i=is,ie
          pem(i,1) = ptop
          pk2(i,1) = ptk
       enddo
+
       do k=2,km+1
          do i=is,ie
             pem(i,k) = pem(i,k-1) + dm(i,k-1)
-            pk2(i,k) = pem(i,k)**akap
+            pk2(i,k) = exp( akap*log(pem(i,k)) )
          enddo
       enddo
 
       do k=k_top,km
          do i=is,ie
             dz2(i,k) = delz(i,j,k)
-             pm(i,k) = ( akap*dm(i,k)/(pk2(i,k+1)-pk2(i,k)) ) ** gama
+             pm(i,k) = exp( gama*log(akap*dm(i,k)/(pk2(i,k+1)-pk2(i,k))) )
              dm(i,k) = dm(i,k) * rgrav
          enddo
       enddo
-#else
+
+      call Riem_3D( m_split_c, dt, is, ie, js, je, ng, j, km, cp, gama, akap, &
+                    pk, dm, pm, w, dz2, pt, quick_p_c, .true., k_top, m_riem )
+
       do i=is,ie
-         pem(i,1) = ptop
-         pk2(i,1) = peln
+         pk(i,j,1) = ptop                     ! full pressure at top
       enddo
       do k=2,km+1
          do i=is,ie
-            pem(i,k) = pem(i,k-1) + dm(i,k-1)
-            pk2(i,k) = log(pem(i,k))
-         enddo
-      enddo
-
-      do k=k_top,km
-         do i=is,ie
-            dz2(i,k) = delz(i,j,k)
-             pm(i,k) = dm(i,k) / (pk2(i,k+1) - pk2(i,k))
-             dm(i,k) = dm(i,k) * rgrav
-         enddo
-      enddo
-#endif
-
-      call Riem_3D(m_split_c, dt, is, ie, js, je, ng, j, km, cp, gama, akap, &
-                   pk, dm, pm, w, dz2, pt, quick_p_c, .true., k_top, m_riem)
-      do i=is,ie
-         pk(i,j,1) = ptop
-      enddo
-      do k=2,km+1
-         do i=is,ie
-            pk(i,j,k) = pk(i,j,k) + pem(i,k)
+            pk(i,j,k) = pk(i,j,k) + pem(i,k)  ! add hydrostatic component
          enddo
       enddo
 
@@ -372,16 +353,6 @@ CONTAINS
 ! Compute dz2 hydrostatically if k_top>1
 !---------------------------------------
    if ( k_top>1 ) then
-#ifndef USE_PK
-      do i=is,ie
-         pk2(i,1) = ptk
-      enddo
-      do k=2,k_top
-         do i=is,ie
-            pk2(i,k) = pem(i,k)**akap
-         enddo
-      enddo
-#endif
       do k=1,k_top-1
          do i=is,ie
             dz2(i,k) = pt(i,j,k)*(pk2(i,k)-pk2(i,k+1))*rgrav
@@ -406,7 +377,7 @@ CONTAINS
 
 
   subroutine Riem_Solver(dt,   is,   ie,   js, je, km, ng,    &
-                         akap, cp,   ptop, hs, w,  delz, pt,  &
+                         akap, cp,   ptop, hs, peln, w,  delz, pt,  &
                          delp, gz,   pkc, pk, pe, last_call, ip)
 !--------------------------------------------
 ! !OUTPUT PARAMETERS
@@ -425,6 +396,7 @@ CONTAINS
    real, intent(out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: gz, pkc
    real, intent(out):: pk(is:ie,js:je,km+1)
    real, intent(out):: pe(is-1:ie+1,km+1,js-1:je+1)
+   real, intent(out):: peln(is:ie,km+1,js:je)           ! ln(pe)
 ! Local:
   real, dimension(is:ie,km):: pm, dm, dz2
   real :: pem(is:ie,km+1)
@@ -435,7 +407,8 @@ CONTAINS
    rgrav = 1./grav
      ptk = ptop ** akap
 
-   do 2000 j=js,je      ! This loop can be parallelized with OpenMP
+!$omp parallel do default(shared) private(i, j, k, dm, dz2, pem, pm)
+   do 2000 j=js,je
 
       do k=1,km
          do i=is,ie
@@ -450,15 +423,18 @@ CONTAINS
 
       do k=2,km+1
          do i=is,ie
-            pem(i,k) = pem(i,k-1) + dm(i,k-1)
-            pk(i,j,k) = pem(i,k) ** akap
+               pem(i,k) = pem(i,k-1) + dm(i,k-1)
+            peln(i,k,j) = log(pem(i,k))
+              pk(i,j,k) = exp(akap*peln(i,k,j))
          enddo
       enddo
 
       do k=k_top,km
          do i=is,ie
             dz2(i,k) = delz(i,j,k)
-            pm(i,k) = (akap*dm(i,k)/(pk(i,j,k+1)-pk(i,j,k))) ** gama
+! hydrostatic pressure:
+!           pm(i,k) = (akap*dm(i,k)/(pk(i,j,k+1)-pk(i,j,k))) ** gama
+            pm(i,k) = exp( gama*log(akap*dm(i,k)/(pk(i,j,k+1)-pk(i,j,k))) )
             dm(i,k) = dm(i,k) * rgrav
          enddo
       enddo
@@ -597,8 +573,9 @@ CONTAINS
        dm(k) = dm2(i,k)
        wm(k) = w(i,j,k)*dm(k)
        rden(k) = -rdgas*dm(k)/dz(k)
-       pt2(k) = pt(i,j,k) * rcp
-       p2(k) = ( rden(k)*pt2(k) )**gama
+       pt2(k) = pt(i,j,k) * rcp   ! virtual effect is included in pt
+!      p2(k) = ( rden(k)*pt2(k) )**gama
+       p2(k) = exp( gama*log(rden(k)*pt2(k)) )
        c2(k) = sqrt( grg*p2(k)/rden(k) )
 #endif
     enddo
@@ -782,14 +759,16 @@ CONTAINS
            p2(k,i) = (rden(k)*pt2(k,i))**gama
            t2(k,i) = p2(k,i)/rden(k)
 #else
-           p2(k) = (rden(k)*pt2(k))**gama
-           c2(k) = sqrt ( grg*p2(k)/rden(k) )
+!          p2(k) = (rden(k)*pt2(k))**gama
+           p2(k) = exp( gama*log(rden(k)*pt2(k)) )
+           c2(k) = sqrt( grg*p2(k)/rden(k) )
 #endif
         enddo
       endif
    endif
 
 5000  continue
+
 !---------------------------------------------------------------------
 ! Note: time-mean full pressure at edges and time-level-(n+1) DZ are
 ! used for computation of p-gradient
@@ -802,6 +781,7 @@ CONTAINS
       do k=ktop+1,km+1
          p3(i,j,k) = pe1(k)*rdt
       enddo
+
 6000  continue
 
  end subroutine Riem_3D
@@ -1036,7 +1016,7 @@ CONTAINS
 
    modified = .false.
 
-!$omp parallel do default(shared) private(i,j,k)
+!$omp parallel do default(shared) private(i, j, k)
    do j=js,je
       do k=km,k_top+1,-1
          do i=is,ie

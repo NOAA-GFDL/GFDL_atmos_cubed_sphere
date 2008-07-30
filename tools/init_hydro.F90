@@ -1,4 +1,4 @@
-! $Id: init_hydro.F90,v 1.1.2.2.2.1.2.3.2.12.2.1.2.1.2.2 2007/12/12 19:00:16 rab Exp $
+! $Id: init_hydro.F90,v 16.0 2008/07/30 22:05:18 fms Exp $
 
 module init_hydro_mod
 
@@ -18,7 +18,7 @@ contains
 !-------------------------------------------------------------------------------
  subroutine p_var(km, ifirst, ilast, jfirst, jlast, ptop, ptop_min,    &
                   delp, delz, pt, ps,  pe, peln, pk, pkz, cappa, q, ng, nq,    &
-                  dry_mass, adjust_dry_mass, mountain, full_phys,      &
+                  dry_mass, adjust_dry_mass, mountain, moist_phys,      &
                   hydrostatic, ktop, nwat, make_nh)
                
 ! Given (ptop, delp) computes (ps, pk, pe, peln, pkz)
@@ -29,7 +29,7 @@ contains
    integer,  intent(in):: nq, nwat
    integer,  intent(in):: ng
    integer,  intent(in):: ktop
-   logical, intent(in):: adjust_dry_mass, mountain, full_phys, hydrostatic
+   logical, intent(in):: adjust_dry_mass, mountain, moist_phys, hydrostatic
    real, intent(in):: dry_mass, cappa, ptop, ptop_min
    real, intent(in   )::   pt(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
    real, intent(inout):: delz(ifirst   :ilast   ,jfirst   :jlast   , km)
@@ -51,7 +51,7 @@ contains
 
 ! Check dry air mass & compute the adjustment amount:
    call drymadj(km, ifirst, ilast,  jfirst,  jlast, ng, cappa, ptop, ps, &
-                delp, q, nq, nwat, dry_mass, adjust_dry_mass, full_phys, dpd)
+                delp, q, nq, nwat, dry_mass, adjust_dry_mass, moist_phys, dpd)
 
    pek = ptop ** cappa
 
@@ -75,8 +75,9 @@ contains
       do k=2,km+1
          do i=ifirst,ilast
             pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
-            pk(i,j,k) = pe(i,k,j)**cappa
             peln(i,k,j) = log(pe(i,k,j))
+            pk(i,j,k) = exp( cappa*peln(i,k,j) )
+!            pk(i,j,k) = pe(i,k,j)**cappa
          enddo
       enddo
 
@@ -158,7 +159,7 @@ contains
 
  subroutine drymadj(km,  ifirst, ilast, jfirst,  jlast,  ng, &  
                     cappa,   ptop, ps, delp, q,  nq,  nwat,  &
-                    dry_mass, adjust_dry_mass, full_phys, dpd)
+                    dry_mass, adjust_dry_mass, moist_phys, dpd)
 
 ! !INPUT PARAMETERS:
       integer km
@@ -169,7 +170,7 @@ contains
       real, intent(in):: ptop
       real, intent(in):: cappa
       logical, intent(in):: adjust_dry_mass
-      logical, intent(in):: full_phys
+      logical, intent(in):: moist_phys
 
 ! !INPUT/OUTPUT PARAMETERS:     
       real, intent(in)::   q(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km,nq)
@@ -181,7 +182,7 @@ contains
       real  psmo, psdry
       integer i, j, k
 
-!$omp parallel do private(i, j)
+!$omp parallel do default(shared) private(i, j, k)
       do j=jfirst,jlast
 
          do i=ifirst,ilast
@@ -221,7 +222,7 @@ contains
 
       if(gid==masterproc) then
          write(6,*) 'Total surface pressure (mb) = ', 0.01*psmo
-         if ( full_phys ) then
+         if ( moist_phys ) then
               write(6,*) 'mean dry surface pressure = ', 0.01*psdry
               write(6,*) 'Total Water (kg/m**2) =', real(psmo-psdry,4)/GRAV
          endif

@@ -91,13 +91,13 @@ public
     logical :: z_tracer
     logical :: do_Held_Suarez
     logical :: reproduce_sum
-    logical :: full_phys
+    logical :: moist_phys
     logical :: srf_init
     logical :: mountain
     logical :: non_ortho
     logical :: adjust_dry_mass
-    logical :: hydrostatic
-    logical :: hybrid_z, Make_NH
+    logical :: hydrostatic, phys_hydrostatic
+    logical :: hybrid_z, Make_NH, make_hybrid_z
     logical :: external_ic
     logical :: ncep_ic
     logical :: fv_land

@@ -118,8 +118,10 @@
          call omp_set_num_threads(numthreads)
 #endif
 
-         write(stdout(),*) 'Starting PEs : ', npes
-         write(stdout(),*) 'Starting Threads : ', numthreads
+         if ( mpp_pe()==mpp_root_pe() ) then
+           write(stdout(),*) 'Starting PEs : ', npes
+           write(stdout(),*) 'Starting Threads : ', numthreads
+         endif
 
          call MPI_BARRIER(commglobal, ierror)
       end subroutine mp_start
@@ -172,8 +174,10 @@
 
          character*80 :: evalue
          integer :: ios,nx,ny,n,num_alloc
-         character(len=32) :: type
+         character(len=32) :: type = "unknown"
          logical :: is_symmetry 
+         logical :: debug=.false.
+
          nx = npx-1
          ny = npy-1
 
@@ -188,6 +192,7 @@
 
             select case (grid_type)
             case (3)   ! Lat-Lon "cyclic"
+               type="Lat-Lon: cyclic"
                ntiles = 4
                num_contact = 8
                if( mod(npes,ntiles) .NE. 0 ) then
@@ -199,21 +204,25 @@
                call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
                layout = (/1,npes_per_tile/) ! force decomp only in Lat-Direction
             case (4)   ! Cartesian, double periodic
+               type="Cartesian: double periodic"
                ntiles = 1
                num_contact = 2
                npes_per_tile = npes/ntiles
                call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
             case (5)   ! latlon patch
+               type="Lat-Lon: patch"
                ntiles = 1
                num_contact = 0
                npes_per_tile = npes/ntiles
                call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
             case (6)   ! latlon strip
+               type="Lat-Lon: strip"
                ntiles = 1
                num_contact = 1
                npes_per_tile = npes/ntiles
                call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
             case (7)   ! Cartesian, channel
+               type="Cartesian: channel"
                ntiles = 1
                num_contact = 1
                npes_per_tile = npes/ntiles
@@ -221,7 +230,7 @@
             end select
 
          case ( 6 )  ! Cubed-Sphere
-            type="Cubic-Grid"
+            type="Cubic: cubed-sphere"
             ntiles = 6
             num_contact = 12
             !--- cubic grid always have six tiles, so npes should be multiple of 6
@@ -395,7 +404,7 @@
          call mpp_get_compute_domain( domain, is,  ie,  js,  je  )
          call mpp_get_data_domain   ( domain, isd, ied, jsd, jed )
 
-         if (nregions==1) then
+         if (debug .and. nregions==1) then
             tile=1
             write(*,200) tile, is, ie, js, je
          !   call mp_stop

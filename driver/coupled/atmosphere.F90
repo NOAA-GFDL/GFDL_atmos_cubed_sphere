@@ -9,32 +9,33 @@ module atmosphere_mod
 !-----------------
 ! FMS modules:
 !-----------------
-use constants_mod,    only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
-use time_manager_mod, only: time_type, get_time, set_time, operator(+)
-use fms_mod,          only: file_exist, open_namelist_file,    &
-                            close_file, error_mesg, FATAL,     &
-                            check_nml_error, stdlog,           &
-                            write_version_number,              &
-                            mpp_pe, mpp_root_pe, set_domain,   &
-                            mpp_clock_id, mpp_clock_begin,     &
-                            mpp_clock_end, CLOCK_SUBCOMPONENT, &
-                            clock_flag_default, nullify_domain
-use mpp_domains_mod,  only: domain2d
-use xgrid_mod,        only: grid_box_type
+use constants_mod,      only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
+use time_manager_mod,   only: time_type, get_time, set_time, operator(+)
+use fms_mod,            only: file_exist, open_namelist_file,    &
+                              close_file, error_mesg, FATAL,     &
+                              check_nml_error, stdlog,           &
+                              write_version_number,              &
+                              mpp_pe, mpp_root_pe, set_domain,   &
+                              mpp_clock_id, mpp_clock_begin,     &
+                              mpp_clock_end, CLOCK_SUBCOMPONENT, &
+                              clock_flag_default, nullify_domain
+use mpp_domains_mod,    only: domain2d
+use xgrid_mod,          only: grid_box_type
 !-----------------
 ! FV core modules:
 !-----------------
 use fv_grid_tools_mod,  only: area, grid_type, dx, dy, area
 use fv_grid_utils_mod,  only: edge_w, edge_e, edge_s, edge_n, en1, en2, vlon, vlat
 use fv_arrays_mod,      only: fv_atmos_type
-use fv_control_mod,     only: fv_init, domain, domain_for_coupler, fv_end, p_ref
+use fv_control_mod,     only: fv_init, domain, fv_end, p_ref
+use fv_mp_mod,          only: domain_for_coupler
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time
 use fv_restart_mod,     only: fv_restart
 use fv_timing_mod,      only: timing_on, timing_off
 use fv_physics_mod,     only: fv_physics_down, fv_physics_up,  &
-                           fv_physics_init, fv_physics_end, &
-                           surf_diff_type
+                              fv_physics_init, fv_physics_end, &
+                              surf_diff_type
 
 implicit none
 private
@@ -49,8 +50,8 @@ public  atmosphere_down,       atmosphere_up,       &
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id: atmosphere.F90,v 1.1.2.11.2.2.2.1.2.2.2.2 2008/02/12 17:35:35 z1l Exp $'
-character(len=128) :: tagname = '$Name: omsk_2008_03 $'
+character(len=128) :: version = '$Id: atmosphere.F90,v 16.0 2008/07/30 22:04:36 fms Exp $'
+character(len=128) :: tagname = '$Name: perth $'
 
 !---- namelist (saved in file input.nml) ----
 !
@@ -59,8 +60,8 @@ character(len=128) :: tagname = '$Name: omsk_2008_03 $'
 !                 domain use physics_window = (/0,0/).
 !                   [integer, default: physics_window = 0,0]
 
-   integer, dimension(2) :: physics_window = (/0,0/)
-   namelist /atmosphere_nml/ physics_window
+  integer, dimension(2) :: physics_window = (/0,0/)
+  namelist /atmosphere_nml/ physics_window
 
 !---- private data ----
   type (time_type) :: Time_step_atmos
@@ -78,30 +79,32 @@ character(len=128) :: tagname = '$Name: omsk_2008_03 $'
 
 contains
 
+
+
  subroutine atmosphere_init (Time_init, Time, Time_step, Surf_diff, Grid_box)
+   type (time_type),     intent(in)    :: Time_init, Time, Time_step
+   type(surf_diff_type), intent(inout) :: Surf_diff
+   type(grid_box_type),  intent(inout) :: Grid_box
 
- type (time_type),     intent(in)    :: Time_init, Time, Time_step
- type(surf_diff_type), intent(inout) :: Surf_diff
- type(grid_box_type),  intent(inout) :: Grid_box
+   integer :: unit, ierr, io, i
 
-  integer :: unit, ierr, io, i
-
-  zvir = rvgas/rdgas - 1.
+   zvir = rvgas/rdgas - 1.
 
 !----- read namelist -----
-    if ( file_exist('input.nml') ) then
-        unit = open_namelist_file ( )
-        ierr=1; do while (ierr /= 0)
-           read (unit, nml=atmosphere_nml, iostat=io, end=10)
-           ierr = check_nml_error (io, 'atmosphere_nml')
-        enddo
- 10     call close_file (unit)
-    endif
+   if ( file_exist('input.nml') ) then
+       unit = open_namelist_file ( )
+       ierr=1
+       do while (ierr /= 0)
+          read (unit, nml=atmosphere_nml, iostat=io, end=10)
+          ierr = check_nml_error (io, 'atmosphere_nml')
+       enddo
+ 10    call close_file (unit)
+   endif
 
 !----- write version and namelist to log file -----
 
-    call write_version_number ( version, tagname )
-    if ( mpp_pe() == mpp_root_pe() ) write (stdlog(), nml=atmosphere_nml)
+   call write_version_number ( version, tagname )
+   if ( mpp_pe() == mpp_root_pe() ) write (stdlog(), nml=atmosphere_nml)
 
 !---- compute physics/atmos time step in seconds ----
 
@@ -148,10 +151,17 @@ contains
    Grid_box%edge_n(   isc:iec+1           ) = edge_n(   isc:iec+1)
    Grid_box%en1   (:, isc:iec  , jsc:jec+1) = en1   (:, isc:iec  , jsc:jec+1)
    Grid_box%en2   (:, isc:iec+1, jsc:jec  ) = en2   (:, isc:iec+1, jsc:jec  )
-   do i = 1, 3
-      Grid_box%vlon  (i, isc:iec  , jsc:jec  ) = vlon  (isc:iec ,  jsc:jec, i  )
-      Grid_box%vlat  (i, isc:iec  , jsc:jec  ) = vlat  (isc:iec ,  jsc:jec, i  )
-   end do
+   if (allocated(vlon) .and. allocated(vlat)) then
+      do i = 1, 3
+         Grid_box%vlon  (i, isc:iec  , jsc:jec  ) = vlon  (isc:iec ,  jsc:jec, i  )
+         Grid_box%vlat  (i, isc:iec  , jsc:jec  ) = vlat  (isc:iec ,  jsc:jec, i  )
+      end do
+   else
+      do i = 1, 3
+         Grid_box%vlon  (i, isc:iec  , jsc:jec  ) = 0.
+         Grid_box%vlat  (i, isc:iec  , jsc:jec  ) = 0.
+      end do
+   endif
    nq = ncnst-pnats
 
    call fv_restart(domain, Atm, dt_atmos, seconds, days, cold_start, grid_type)
@@ -182,7 +192,6 @@ contains
           flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
  end subroutine atmosphere_init
-
 
 
 
@@ -319,30 +328,29 @@ contains
 
 
  subroutine atmosphere_end (Time, Grid_box)
- type (time_type),       intent(in) :: Time
- type(grid_box_type), intent(inout) :: Grid_box
+   type (time_type),       intent(in) :: Time
+   type(grid_box_type), intent(inout) :: Grid_box
 
   ! initialize domains for writing global physics data
-    call set_domain ( domain )
+   call set_domain ( domain )
 
-    call get_time (Time, seconds,  days)
-    call fv_physics_end(Time)
-    call nullify_domain ( )
-    call fv_end(Atm)
-    deallocate (Atm)
+   call get_time (Time, seconds,  days)
+   call fv_physics_end(Time)
+   call nullify_domain ( )
+   call fv_end(Atm)
+   deallocate (Atm)
 
-    deallocate(Grid_box%dx)
-    deallocate(Grid_box%dy)
-    deallocate(Grid_box%area)
-    deallocate(Grid_box%edge_w)
-    deallocate(Grid_box%edge_e)
-    deallocate(Grid_box%edge_s)
-    deallocate(Grid_box%edge_n)
-    deallocate(Grid_box%en1)
-    deallocate(Grid_box%en2)
-    deallocate(Grid_box%vlon)
-    deallocate(Grid_box%vlat)
-
+   deallocate(Grid_box%dx)
+   deallocate(Grid_box%dy)
+   deallocate(Grid_box%area)
+   deallocate(Grid_box%edge_w)
+   deallocate(Grid_box%edge_e)
+   deallocate(Grid_box%edge_s)
+   deallocate(Grid_box%edge_n)
+   deallocate(Grid_box%en1)
+   deallocate(Grid_box%en2)
+   deallocate(Grid_box%vlon)
+   deallocate(Grid_box%vlat)
 
  end subroutine atmosphere_end
 
@@ -351,7 +359,6 @@ contains
  subroutine atmosphere_resolution (i_size, j_size, global)
    integer, intent(out)          :: i_size, j_size
    logical, intent(in), optional :: global
-
    logical :: local
 
    local = .true.
@@ -369,10 +376,7 @@ contains
 
 
 
-
-
  subroutine atmosphere_cell_area  (area_out)
-
    real, dimension(:,:),  intent(out)          :: area_out       
 
    area_out(1:iec-isc+1, 1:jec-jsc+1) =  area (isc:iec,jsc:jec)                        
@@ -418,8 +422,7 @@ contains
 
 
  subroutine atmosphere_domain ( fv_domain )
- type(domain2d), intent(out) :: fv_domain
-
+   type(domain2d), intent(out) :: fv_domain
 !  returns the domain2d variable associated with the coupling grid
 !  note: coupling is done using the mass/temperature grid with no halos
 
@@ -433,12 +436,11 @@ contains
    integer, intent(out) :: axes (:)
 
 !----- returns the axis indices for the atmospheric (mass) grid -----
-     if ( size(axes(:)) < 0 .or. size(axes(:)) > 4 ) call error_mesg (    &
-                                 'get_atmosphere_axes in atmosphere_mod', &
-                                 'size of argument is incorrect', FATAL   )
+   if ( size(axes(:)) < 0 .or. size(axes(:)) > 4 ) call error_mesg (    &
+                               'get_atmosphere_axes in atmosphere_mod', &
+                               'size of argument is incorrect', FATAL   )
 
-     axes (1:size(axes(:))) = atmos_axes (1:size(axes(:)))
-
+   axes (1:size(axes(:))) = atmos_axes (1:size(axes(:)))
  
  end subroutine get_atmosphere_axes
 
@@ -460,17 +462,17 @@ contains
 
    rrg  = rdgas / grav
 
-     do j=jsc,jec
-        do i=isc,iec
-           p_surf(i,j) = Atm(1)%ps(i,j)
-            t_bot(i,j) = Atm(1)%pt(i,j,npz)
-            p_bot(i,j) = Atm(1)%delp(i,j,npz)/(Atm(1)%peln(i,npz+1,j)-Atm(1)%peln(i,npz,j))
-            z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(1)%q(i,j,npz,1)) *  &
-                        (1. - Atm(1)%pe(i,npz,j)/p_bot(i,j))
-        enddo
-     enddo
+   do j=jsc,jec
+      do i=isc,iec
+         p_surf(i,j) = Atm(1)%ps(i,j)
+         t_bot(i,j) = Atm(1)%pt(i,j,npz)
+         p_bot(i,j) = Atm(1)%delp(i,j,npz)/(Atm(1)%peln(i,npz+1,j)-Atm(1)%peln(i,npz,j))
+         z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(1)%q(i,j,npz,1)) *  &
+                      (1. - Atm(1)%pe(i,npz,j)/p_bot(i,j))
+      enddo
+   enddo
 
-     if ( present(slp) ) then
+   if ( present(slp) ) then
      ! determine 0.8 sigma reference level
      sigtop = Atm(1)%ak(1)/pstd_mks+Atm(1)%bk(1)
      do k = 1, npz 
@@ -489,16 +491,16 @@ contains
            slp(i,j) = Atm(1)%ps(i,j)*(1.+tlaps*Atm(1)%phis(i,j)/(tref(i,j)*grav))**(1./(rrg*tlaps))
         enddo
      enddo
-     endif
+   endif
 
 ! Copy tracers
-     do m=1,nq
-        do j=jsc,jec
-           do i=isc,iec
-              tr_bot(i,j,m) = Atm(1)%q(i,j,npz,m)
-           enddo
-        enddo
-     enddo
+   do m=1,nq
+      do j=jsc,jec
+         do i=isc,iec
+            tr_bot(i,j,m) = Atm(1)%q(i,j,npz,m)
+         enddo
+      enddo
+   enddo
 
  end subroutine get_bottom_mass
 
@@ -508,7 +510,6 @@ contains
 !-----------------------------------------------------------
 ! returns u and v on the mass grid at the lowest model level
 !-----------------------------------------------------------
-
    real, intent(out), dimension(isc:iec,jsc:jec):: u_bot, v_bot
    integer i, j
 
@@ -524,23 +525,22 @@ contains
 
 
  subroutine get_stock_pe(index, value)
-
-    integer, intent(in) :: index
-    real,   intent(out) :: value
+   integer, intent(in) :: index
+   real,   intent(out) :: value
 
 #ifdef USE_STOCK
-    include 'stock.inc' 
+   include 'stock.inc' 
 #endif
 
-    real wm(isc:iec,jsc:jec)
-    integer i,j,k
+   real wm(isc:iec,jsc:jec)
+   integer i,j,k
    
-    select case (index)
+   select case (index)
 
 #ifdef USE_STOCK
-    case (ISTOCK_WATER)
+   case (ISTOCK_WATER)
 #else
-    case (1)
+   case (1)
 #endif
      
 !----------------------
@@ -569,9 +569,9 @@ contains
      enddo
      value = value/grav
 
-    case default
+   case default
      value = 0.0
-    end select
+   end select
 
  end subroutine get_stock_pe 
 

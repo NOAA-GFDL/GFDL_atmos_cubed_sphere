@@ -6,7 +6,7 @@
    use mpp_domains_mod,   only: mpp_get_tile_id, domain2d
    use init_hydro_mod,    only: p_var
    use mpp_mod,           only: mpp_error, FATAL, NOTE
-   use fms_mod,           only: file_exist, read_data
+   use fms_mod,           only: file_exist, read_data, field_exist
    use mpp_domains_mod,   only: mpp_update_domains
    use fms_io_mod,        only: get_tile_string, field_size
    use fv_diagnostics_mod,only: prt_maxmin
@@ -19,6 +19,7 @@
    use tracer_manager_mod, only: get_tracer_names, get_number_tracers, get_tracer_index
    use field_manager_mod,  only: MODEL_ATMOS
    use fv_surf_map_mod,    only: surfdrv
+   use fv_io_mod,          only: fv_io_read_tracers 
 
    implicit none
    private
@@ -54,15 +55,28 @@ contains
       if ( cubed_sphere ) call fill_corners(f0, Atm(1)%npx, Atm(1)%npy, YDir)
  
 ! Read in cubed_sphere terrain
- 
-      call get_cubed_sphere_terrain(Atm, fv_domain)
+      if ( Atm(1)%mountain ) then
+           call get_cubed_sphere_terrain(Atm, fv_domain)
+      else
+           Atm(1)%phis = 0.
+      endif
  
 ! Read in the specified external dataset and do all the needed transformation
       if ( Atm(1)%ncep_ic ) then
            nq = 1
            call get_ncep_ic( Atm, fv_domain, nq )
+#ifndef NO_FV_TRACERS
+           call fv_io_read_tracers( fv_domain, Atm )
+           if(gid==0) write(6,*) 'All tracers except sphum replaced by FV IC'
+#endif
+!rab - not yet implemented for perth_release code
+!rab      elseif ( Atm(1)%fv_diag_ic ) then
+!rab! Interpolate/remap diagnostic output from a FV model diagnostic output file on lat-lon A grid:
+!rab           nq = 1
+!rab           call get_latlon_ic( Atm, fv_domain, nq )
       else
-           nq = 4
+!  is Atm%q defined in all cases?
+           nq = size(Atm(1)%q,4)
            call get_fv_ic( Atm, fv_domain, nq )
       endif
 
@@ -122,6 +136,128 @@ contains
 
 
 
+  subroutine get_latlon_ic( Atm, fv_domain, nq )
+      type(fv_atmos_type), intent(inout) :: Atm(:)
+      type(domain2d),      intent(inout) :: fv_domain
+      integer, intent(in):: nq
+
+      character(len=128) :: fname
+      real, allocatable:: ps0(:,:), gz0(:,:), t0(:,:,:), dp0(:,:,:), q0(:,:,:)
+      real, allocatable:: ua(:,:,:), va(:,:,:)
+      real, allocatable:: lat(:), lon(:), ak0(:), bk0(:)
+      integer :: i, j, k, im, jm, km, npz
+      integer tsize(4)
+      integer  sphum, liq_wat, ice_wat, cld_amt       ! GFDL AM2 physics
+      logical found
+      real dak, dbk
+
+      npz = Atm(1)%npz
+
+! Zero out all initial tracer fields:
+      Atm(1)%q = 0.
+
+! Read in lat-lon file
+      fname = Atm(1)%res_latlon_dynamics
+
+      if( file_exist(fname) ) then
+          call field_size(fname, 'temp', tsize, field_found=found)
+          if(gid==0) write(*,*) 'Reconstruct cubed-sphere restart file from FV diagnostic file', fname
+
+          if ( found ) then
+               im = tsize(1); jm = tsize(2); km = tsize(3)
+               if(gid==0)  write(*,*) 'External IC dimensions:', tsize
+          else
+               call mpp_error(FATAL,'==> Error from get_external_ic:        &
+                              field not found')
+          endif
+
+! Define the lat-lon coordinate:
+          allocate (  lon(im) )
+          allocate (  lat(jm) )
+
+          allocate ( ak0(km+1) )
+          allocate ( bk0(km+1) )
+          allocate ( gz0(im,jm) )
+          allocate ( ps0(im,jm) )
+          allocate (  ua(im,jm,km) )
+          allocate (  va(im,jm,km) )
+          allocate (  t0(im,jm,km) )
+          allocate ( dp0(im,jm,km) )
+          allocate (  q0(im,jm,km) )
+
+          call read_data (fname, 'LAT', lat)
+          call read_data (fname, 'LON', lon)
+
+          do i=1,im
+             lon(i) = lon(i) * (pi/180.)  ! lon(1) = 0.
+          enddo
+          do j=1,jm
+             lat(j) = lat(j) * (pi/180.)
+          enddo
+
+          call read_data (fname, 'ps', ps0)
+          if(gid==0) call pmaxmin( 'PS_data', ps0, im,    jm, 0.01)
+
+          call read_data (fname, 'zsurf', gz0)
+          if(gid==0) call pmaxmin( 'ZS_data', gz0, im,    jm, 1.)
+
+          gz0(:,:) = grav * gz0(:,:)
+
+          call read_data (fname, 'ucomp',     ua)
+          call read_data (fname, 'vcomp',     va)
+          if(gid==0) call pmaxmin( 'U_data',   ua, im*jm, km, 1.)
+          if(gid==0) call pmaxmin( 'V_data',   va, im*jm, km, 1.)
+
+          call read_data (fname, 'temp',     t0)
+          if(gid==0) call pmaxmin( 'T_data',   t0, im*jm, km, 1.)
+
+          do k=1,km+1
+              ak0(k) = Atm(1)%ak(k)
+              bk0(k) = Atm(1)%bk(k)
+          enddo
+
+! Compute dp0
+          do k=1,km
+             dak = ak0(k+1)-ak0(k)
+             dbk = bk0(k+1)-bk0(k)
+             do j=1,jm
+                do i=1,im
+                   dp0(i,j,k) = dak + dbk*ps0(i,j)
+                enddo
+             enddo
+          enddo
+
+! Read in tracers: only sphum at this point
+          sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
+          call read_data (fname, 'sphum',  q0)
+      else
+          call mpp_error(FATAL,'==> Error from get_external_ic:        &
+                         Expected file '//trim(fname)//' does not exist')
+      endif
+
+! Horizontal interpolation to the cubed sphere grid center
+! remap vertically with terrain adjustment
+
+! nq is assumed to be 1 here:
+      call remap_xyz( im, jm, km, npz, nq, nq, lon, lat, ak0, bk0, ps0,   &
+                      gz0, ua, va, t0, q0, dp0, Atm )
+
+      deallocate ( ak0 )
+      deallocate ( bk0 )
+      deallocate ( ps0 )
+      deallocate ( gz0 )
+      deallocate ( t0 )
+      deallocate ( q0 )
+      deallocate ( dp0 )
+      deallocate ( ua )
+      deallocate ( va )
+      deallocate ( lat )
+      deallocate ( lon )
+
+  end subroutine get_latlon_ic
+
+
+
   subroutine get_ncep_ic( Atm, fv_domain, nq )
       type(fv_atmos_type), intent(inout) :: Atm(:)
       type(domain2d),      intent(inout) :: fv_domain
@@ -142,7 +278,7 @@ contains
 ! Zero out all initial tracer fields:
       Atm(1)%q = 0.
 
-! Read in lat-lon FV core restart file
+! Read in NCEP FV core restart file
 !     fname = "/archive/sjl/CUBED/NCEP20050825/20050825_00Z_T382.nc"
       fname = Atm(1)%res_latlon_dynamics
 
@@ -186,7 +322,7 @@ contains
           call read_data (fname, 'hybi', bk0)
 
 ! Limiter to prevent NAN at top during remapping 
-          ak0(1) = min(1.e-5, 0.1*bk0(2)*1.E5)
+          ak0(1) = max(1.e-9, ak0(1))
 
           call read_data (fname, 'PS', ps0)
           if(gid==0) call pmaxmin( 'PS_ncep', ps0, im,    jm, 0.01)
@@ -250,13 +386,14 @@ contains
       type(domain2d),      intent(inout) :: fv_domain
       integer, intent(in):: nq
 
-      character(len=128) :: fname
+      character(len=128) :: fname, tracer_name
       real, allocatable:: ps0(:,:), gz0(:,:), u0(:,:,:), v0(:,:,:), t0(:,:,:), dp0(:,:,:), q0(:,:,:,:)
       real, allocatable:: ua(:,:,:), va(:,:,:)
       real, allocatable:: lat(:), lon(:), ak0(:), bk0(:)
       integer :: i, j, k, im, jm, km, npz
       integer tsize(4)
-      integer sphum, liq_wat, ice_wat, cld_amt       ! GFDL AM2 physics
+!rab      integer sphum, liq_wat, ice_wat, cld_amt       ! GFDL AM2 physics
+      integer tr_ind
       logical found
 
       npz = Atm(1)%npz
@@ -330,20 +467,29 @@ contains
           allocate ( q0(im,jm,km,Atm(1)%ncnst) )
           q0 = 0.
 
-          sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
-          liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
-          ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
-          cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
+          do tr_ind = 1, nq
+            call get_tracer_names(MODEL_ATMOS, tr_ind, tracer_name)
+            if (field_exist(fname,tracer_name)) then
+               call read_data(fname, tracer_name, q0(1:im,1:jm,1:km,tr_ind))
+               call mpp_error(NOTE,'==>  Have read tracer '//trim(tracer_name)//' from '//trim(fname))
+               cycle
+            endif
+          enddo
 
-          if(gid==0) write(*,*) 'Tracer indices', sphum, liq_wat, ice_wat, cld_amt 
-
-          call read_data (fname, 'SPHUM',   q0(1:im,1:jm,1:km,sphum))
-
-          if ( nq>=4 ) then
-          call read_data (fname, 'LIQ_WAT', q0(1:im,1:jm,1:km,liq_wat))
-          call read_data (fname, 'ICE_WAT', q0(1:im,1:jm,1:km,ice_wat))
-          call read_data (fname, 'CLD_AMT', q0(1:im,1:jm,1:km,cld_amt))
-          endif
+!rab          sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
+!rab          liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
+!rab          ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
+!rab          cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
+!rab
+!rab          if(gid==0) write(*,*) 'Tracer indices', sphum, liq_wat, ice_wat, cld_amt 
+!rab
+!rab          call read_data (fname, 'SPHUM',   q0(1:im,1:jm,1:km,sphum))
+!rab
+!rab          if ( nq>=4 ) then
+!rab          call read_data (fname, 'LIQ_WAT', q0(1:im,1:jm,1:km,liq_wat))
+!rab          call read_data (fname, 'ICE_WAT', q0(1:im,1:jm,1:km,ice_wat))
+!rab          call read_data (fname, 'CLD_AMT', q0(1:im,1:jm,1:km,cld_amt))
+!rab          endif
       else
           call mpp_error(FATAL,'==> Error from get_external_ic:        &
                          Expected file '//trim(fname)//' does not exist')
@@ -411,7 +557,7 @@ contains
   real, dimension(isd:ied,jsd:jed,npz):: ut, vt   ! winds 
   real, dimension(is:ie,km):: up, vp, tp
   real, dimension(is:ie,km+1):: pe0, pn0
-  real pt0(km), gz(km), pk0(km+1)
+  real pt0(km), gz(km+1), pk0(km+1)
   real qp(is:ie,km,ncnst)
   real, dimension(is:ie,npz):: qn1
   real, dimension(is:ie,npz+1):: pe1, pn1
@@ -420,12 +566,13 @@ contains
   real:: a1, b1, c1, c2, c3, c4
   real:: gzc, psc, pst
   integer i,j,k, i1, i2, jc, i0, j0, iq
-  integer  sphum, liq_wat, ice_wat, cld_amt
+!rab  integer  sphum, liq_wat, ice_wat, cld_amt
+  integer  sphum
 
   sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
-  liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
-  ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
-  cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
+!rab  liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
+!rab  ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
+!rab  cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
 
    if ( sphum/=1 ) then
         call mpp_error(FATAL,'SPHUM must be 1st tracer')
@@ -510,12 +657,12 @@ contains
 
 ! 3D fields:
        do iq=1,ncnst
-          if ( iq==sphum .or. iq==liq_wat .or. iq==ice_wat .or. iq==cld_amt ) then
+!          if ( iq==sphum .or. iq==liq_wat .or. iq==ice_wat .or. iq==cld_amt ) then
           do k=1,km
              qp(i,k,iq) = c1*qa(i1,jc,  k,iq) + c2*qa(i2,jc,  k,iq) +  &
                           c3*qa(i2,jc+1,k,iq) + c4*qa(i1,jc+1,k,iq)
           enddo
-          endif
+!          endif
        enddo
 
        do k=1,km
@@ -609,14 +756,14 @@ contains
 !----------------
       do iq=1,ncnst
 ! Note: AM2 physics tracers only
-         if ( iq==sphum .or. iq==liq_wat .or. iq==ice_wat .or. iq==cld_amt ) then
+!         if ( iq==sphum .or. iq==liq_wat .or. iq==ice_wat .or. iq==cld_amt ) then
          call mappm(km, pe0, qp(is,1,iq), npz, pe1,  qn1, is,ie, 0, 8)
          do k=1,npz
             do i=is,ie
                Atm(1)%q(i,j,k,iq) = qn1(i,k)
             enddo
          enddo
-         endif
+!         endif
       enddo
 
 !-------------------------------------------------------------

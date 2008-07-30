@@ -1,9 +1,9 @@
 module fv_eta_mod
- use constants_mod, only: kappa
- use fv_mp_mod, only: gid
+ use constants_mod,  only: kappa, grav, cp_air, rdgas
+ use fv_mp_mod,      only: gid
  implicit none
  private
- public set_eta, get_eta_level, compute_dz_L32, set_hybrid_z, compute_dz
+ public set_eta, get_eta_level, compute_dz_L32, set_hybrid_z, compute_dz, gw_1d
 
  contains
 
@@ -37,7 +37,7 @@ module fv_eta_mod
 #endif MARS_GCM 
 
       real pt, pint, lnpe, dlnp
-      real press(km+1)
+      real press(km+1), pt1(km)
       integer  k
 
 #ifdef MARS_GCM
@@ -415,7 +415,6 @@ module fv_eta_mod
                 0.91261,       0.92687,       0.94073,   &
                 0.95419,       0.96726,       0.97994,   &
                 0.99223,       1.00000  /
-
       select case (km)
 
        case (24)
@@ -497,6 +496,7 @@ module fv_eta_mod
             bk(k) = b100(k)
           enddo
 
+#ifndef TEST_GWAVES
         case (10)
 !--------------------------------------------------
 ! Pure sigma-coordinate with uniform spacing in "z"
@@ -546,8 +546,19 @@ module fv_eta_mod
 
              ak(km+1) = 0.
              bk(km+1) = 1.
+#endif
 
         case default
+
+#ifdef TEST_GWAVES
+!--------------------------------------------------
+! Pure sigma-coordinate with uniform spacing in "z"
+!--------------------------------------------------
+          call gw_1d(km, 1000.E2, ak, bk, ptop, 10.E3, pt1)
+
+            ks = 0
+          pint = ak(1)
+#else
 
 !----------------------------------------------------------------
 ! Sigma-coordinate with uniform spacing in sigma and ptop = 1 mb
@@ -568,10 +579,9 @@ module fv_eta_mod
           enddo
           ak(km+1) = 0.
           bk(km+1) = 1.
-
+#endif
       end select
-
-          ptop = ak(1)
+      ptop = ak(1)
 
  end subroutine set_eta
 
@@ -668,7 +678,8 @@ module fv_eta_mod
 !-------------------
         k0 = 2
         z0 = 0.
-        dz0 = 80.
+!       dz0 = 80.   ! meters
+        dz0 = 75.   ! meters
 !-------------------
 ! Treat the surface layer as a special layer
         ze(1) = z0
@@ -723,7 +734,7 @@ module fv_eta_mod
  real, intent(in):: rgrav, ztop
  real, intent(in):: dz(km)       ! Reference vertical resolution for zs=0
  real, intent(in):: hs(is-ng:ie+ng,js-ng:je+ng)
- real, intent(out):: delz(is:ie,js:je,km)
+ real, intent(out), optional:: delz(is:ie,js:je,km)
  real, intent(out)::   ze(is:ie,js:je,km+1)
 ! local
  integer ntimes
@@ -781,10 +792,11 @@ module fv_eta_mod
     enddo
   enddo
 #else
+! ZINT is a function of local terrain
   ntimes = 5
   do j=js,je
      do i=is,ie
-        z1(i,j) = 1.75*max(0.,ze(i,j,km+1)) + z(km-2)
+        z1(i,j) = 1.75*max(0.0, ze(i,j,km+1)) + z(km-2)
      enddo
   enddo
 
@@ -817,6 +829,7 @@ module fv_eta_mod
   enddo
 #endif
 
+  if ( present(delz) ) then
   do k=1,km
      do j=js,je
         do i=is,ie
@@ -828,6 +841,7 @@ module fv_eta_mod
         enddo
      enddo
   enddo
+  endif
 
   end subroutine set_hybrid_z
 
@@ -866,6 +880,67 @@ module fv_eta_mod
    enddo
 
   end subroutine sm1_edge
+
+  subroutine gw_1d(km, p0, ak, bk, ptop, ztop, pt1)
+  integer, intent(in):: km
+  real,    intent(in):: p0, ztop
+  real,    intent(inout):: ptop
+  real,    intent(inout):: ak(km+1), bk(km+1)
+  real, intent(out):: pt1(km)
+! Local
+  logical:: isothermal
+  real, dimension(km+1):: ze, pe1, pk1
+  real, dimension(km):: dz1
+  real t0, n2, s0
+  integer  k
+
+! Set up vertical coordinare with constant del-z spacing:
+       isothermal = .false.
+       t0 = 300.
+
+       if ( isothermal ) then
+            n2 = grav**2/(cp_air*t0)
+       else
+            n2 = 0.0001
+       endif
+
+       s0 = grav*grav / (cp_air*n2) 
+
+       ze(km+1) = 0.
+       do k=km,1,-1
+          dz1(k) = ztop / real(km)
+           ze(k) = ze(k+1) + dz1(k)
+       enddo
+
+! Given z --> p
+       do k=1,km+1
+          pe1(k) = p0*( (1.-s0/t0) + s0/t0*exp(-n2*ze(k)/grav) )**(1./kappa)
+       enddo
+
+       ptop = pe1(1) 
+!      if ( gid==0 ) write(*,*) 'GW_1D: computed model top (pa)=', ptop
+
+! Set up "sigma" coordinate 
+       ak(1) = pe1(1)
+       bk(1) = 0.
+       do k=2,km
+          bk(k) = (pe1(k) - pe1(1)) / (pe1(km+1)-pe1(1))  ! bk == sigma
+          ak(k) =  pe1(1)*(1.-bk(k)) 
+       enddo                                                
+       ak(km+1) = 0.
+       bk(km+1) = 1.
+
+       do k=1,km+1
+          pk1(k) = pe1(k) ** kappa
+       enddo
+
+! Compute volume mean potential temperature with hydrostatic eqn:
+       do k=1,km
+          pt1(k) = grav*dz1(k) / ( cp_air*(pk1(k+1)-pk1(k)) )
+       enddo
+
+  end subroutine gw_1d
+
 
 
   subroutine zflip(q, im, km)

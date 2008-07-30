@@ -3,6 +3,7 @@
       use fms_mod, only: file_exist, check_nml_error,               &
                          open_namelist_file, close_file, stdlog,    &
                          mpp_pe, mpp_root_pe, FATAL, error_mesg
+      use mpp_mod, only: get_unit
 
       use constants_mod, only: grav
 !     use tp_core_mod,     only: copy_corners
@@ -33,8 +34,13 @@
 !                      binary
       integer           ::  nlon = 10800
       integer           ::  nlat =  5400
-      character(len=128)::  surf_file = "/archive/sjl/topo/topo2min.nc"
+#ifdef MARS_GCM
+      character(len=128)::  surf_file = "INPUT/mars_topo"
+      character(len=6)  ::  surf_format = 'binary'
+#else
+      character(len=128)::  surf_file = "INPUT/topo2min.nc"
       character(len=6)  ::  surf_format = 'netcdf'
+#endif
       namelist /surf_map_nml/ surf_file,surf_format,nlon,nlat
 !
       public  sgh_g, oro_g, zs_g
@@ -63,6 +69,7 @@
     ! OUTPUT arrays
       real, intent(out):: phis(is-ng:ie+ng, js-ng:je+ng)
 ! Local:
+      real :: z2(is:ie, js:je)
 ! Position of edges of the box containing the original data point:
 
       integer          londim
@@ -81,7 +88,7 @@
       integer status
       logical check_orig
 !      integer nlon, nlat
-      real da_min, da_max, cd2, cd4, zmean
+      real da_min, da_max, cd2, cd4, zmean, z2mean
       integer fid
 
 ! Output the original 10 min NAVY data in grads readable format
@@ -97,52 +104,47 @@
 #ifdef MARS_GCM
 !!!             Note that it is necessary to convert from km to m
 !!!                     see ifdef MARS_GCM  below 
-      fid = 22
-!!      if(file_exist('INPUT/mars_topo')then
+      fid = get_unit()
       if (file_exist(surf_file)) then
-         open( Unit= fid, FILE= 'INPUT/mars_topo', FORM= 'unformatted')
-      read( fid ) nlon, nlat
-
-      if(master) write(*,*) 'Mars Terrain dataset dims=', nlon, nlat
-
-      allocate ( htopo(nlon,nlat) )
-      read( fid )  htopo
-
-      if ( master ) then
-           write(6,*) 'Check Hi-res Mars data ..'
-!          write(*,*) 1.E3*htopo(1,1), 1.E3*htopo(nlon, nlat)
-           fmax =  vmax(htopo,fmin,nlon,nlat,1)
-           write(6,*) 'hmax=', fmax*1.E3
-           write(6,*) 'hmin=', fmin*1.E3
-      endif
-      close(fid)
+         open( unit= fid, FILE= surf_file, FORM= 'unformatted')
+         if ( master ) write(*,*) 'Opening Mars datset: ', surf_file, surf_format
+         read( fid ) nlon, nlat
+ 
+         if(master) write(*,*) 'Mars Terrain dataset dims=', nlon, nlat
+ 
+         allocate ( htopo(nlon,nlat) )
+         read( fid )  htopo
+ 
+         if ( master ) then
+            write(6,*) 'Check Hi-res Mars data ..'
+!           write(*,*) 1.E3*htopo(1,1), 1.E3*htopo(nlon, nlat)
+            fmax =  vmax(htopo,fmin,nlon,nlat,1)
+            write(6,*) 'hmax=', fmax*1.E3
+            write(6,*) 'hmin=', fmin*1.E3
+         endif
+         close(fid)
 !     if(master) write(fid)  htopo
 
 
-      allocate ( ftopo(nlon,nlat) )
-      ftopo = 1.              ! all lands
+         allocate ( ftopo(nlon,nlat) )
+         ftopo = 1.              ! all lands
       else
          call error_mesg ( 'surfdrv',  &
              'mars_topo not found in INPUT', FATAL )
       endif
+
 #else
 
       if (file_exist(surf_file)) then
-        if(master) write(*,*) 'USGS dataset = ', surf_file
-
 !
 ! surface file in NetCDF format
 !
         if (surf_format == "netcdf") then
 
-          topoflnm = 'topo.bin'
-
-! ... Open input netCDF file
-
           allocate ( ftopo(nlon,nlat) )
           allocate ( htopo(nlon,nlat) )
 
-          if ( master ) write(*,*) 'Opening USGS datset file'
+          if ( master ) write(*,*) 'Opening USGS datset file:', surf_file, surf_format, nlon, nlat
   
           status = nf_open (surf_file, NF_NOWRITE, ncid)
           if (status .ne. NF_NOERR) call handle_err(status)
@@ -174,11 +176,13 @@
 !         real*4 data (GrADS format)
 !
           if (check_orig) then
-            open (31, file=topoflnm, form='unformatted', &
+            topoflnm = 'topo.bin'
+            fid = get_unit()
+            open (unit=fid, file=topoflnm, form='unformatted', &
                 status='unknown', access='direct', recl=nlon*nlat*4)
-            write (31, rec=1) ftopo
-            write (31, rec=2) htopo
-            close (31)
+            write (fid, rec=1) ftopo
+            write (fid, rec=2) htopo
+            close (unit=fid)
           endif
   
 !
@@ -189,19 +193,21 @@
 !        nlat =  5400
 !        surf_file    = '/work/sjl/topo/topo2min.bin'
   
-          if(master) write(*,*) 'USGS dataset (binary) = ', surf_file
+          if ( master ) write(*,*) 'Opening USGS datset file:', surf_file, surf_format, nlon, nlat
 
-          open (31, file=surf_file, form='unformatted', &
+          fid = get_unit()
+          open (unit=fid, file=surf_file, form='unformatted', &
                     status='unknown', access='direct', recl=nlon*nlat*4)
 
           allocate ( ftopo(nlon,nlat) )
           allocate ( htopo(nlon,nlat) )
-          read (31, rec=1) ftopo
-          read (31, rec=2) htopo
-          close (31)
+          read (fid, rec=1) ftopo
+          read (fid, rec=2) htopo
+          close (unit=fid)
         endif
 
       else
+        if(master) write(*,*) 'USGS dataset = ', surf_file, surf_format
         call error_mesg ( 'surfdrv',  &
             'missing input file', FATAL )
       endif
@@ -258,42 +264,66 @@
       do j=js,je
          do i=is,ie
             zs_g(i,j) = phis(i,j)
+            z2(i,j) = phis(i,j)**2
          end do
       end do
 !--------
 ! Filter:
 !--------
-      call global_mx(area, ng, da_min, da_max)
-
-! diffusion coefficient:
-      cd2 = 0.20 * da_min
-      cd4 = 0.24 * da_min
-
       call global_mx(phis, ng, da_min, da_max)
       zmean = g_sum(zs_g, is, ie, js, je, ng, area, 1)
+      z2mean = g_sum(z2 , is, ie, js, je, ng, area, 1)
 
-      if ( master )  &
-           write(*,*) 'Before filter Phis min=', da_min, ' Max=', da_max,' Mean=',zmean
+      if ( master ) then
+           write(*,*) 'Before filter ZS min=', da_min, ' Max=', da_max,' Mean=',zmean
+           write(*,*) '*** Mean variance *** =', z2mean
+      endif
+
+      call global_mx(area, ng, da_min, da_max)
 
                                                     call timing_on('Terrain_filter')
-      if ( npx<=91 ) then 
-         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 1, cd4)
-      elseif( npx<=721 ) then
-         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 2, cd4)
-      else
-         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 4, cd4)
+! Del-2:
+      cd2 = 0.20*da_min
+      if ( npx>=721 ) then
+           if ( npx<=1001 ) then
+                call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 1, cd2)
+           else
+                call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 2, cd2)
+           endif
       endif
 
-! Additional filter for hi-resolution:
-      if ( npx>=2001 ) then 
-         call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 1, cd2)
+! MFCT Del-4:
+      if ( npx<=91 ) then
+         cd4 = 0.20 * da_min
+         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 1, cd4)
+      elseif( npx<=181 ) then
+         cd4 = 0.20 * da_min
+         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 2, cd4)
+      elseif( npx<=361 ) then
+         cd4 = 0.20 * da_min
+         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 4, cd4)
+      elseif( npx<=721 ) then
+         cd4 = 0.20 * da_min
+         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 6, cd4)
+      else
+         cd4 = 0.20 * da_min
+         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 8, cd4)
       endif
+
+      do j=js,je
+         do i=is,ie
+            z2(i,j) = phis(i,j)**2
+         end do
+      end do
 
       call global_mx(phis, ng, da_min, da_max)
-      zmean = g_sum(phis(is:ie,js:je), is, ie, js, je, ng, area, 1)
+      zmean  = g_sum(phis(is:ie,js:je), is, ie, js, je, ng, area, 1)
+      z2mean = g_sum(z2,                is, ie, js, je, ng, area, 1)
 
-      if ( master ) &
+      if ( master ) then
            write(*,*) 'After filter Phis min=', da_min, ' Max=', da_max, 'Mean=', zmean
+           write(*,*) '*** Mean variance *** =', z2mean
+      endif
 
       do j=js,je
          do i=is,ie
@@ -324,7 +354,7 @@
 !-----------------------------------------------
 ! Filter the standard deviation of mean terrain:
 !-----------------------------------------------
-
+      call global_mx(area, ng, da_min, da_max)
       call del4_cubed_sphere(npx, npy, sgh_g, area, dx, dy, dxc, dyc, 1, cd4)
       call global_mx(sgh_g, ng, da_min, da_max)
       if ( master ) write(*,*) 'After filter SGH min=', da_min, ' Max=', da_max
@@ -387,19 +417,19 @@
 
          do j=js,je
             do i=is,ie+1
-               ddx(i,j) = dy(i,j)*sina_u(i,j)*(q(i,j)-q(i-1,j))/dxc(i,j)
+               ddx(i,j) = dy(i,j)*sina_u(i,j)*(q(i-1,j)-q(i,j))/dxc(i,j)
             enddo
          enddo
 
          do j=js,je+1
             do i=is,ie
-               ddy(i,j) = dx(i,j)*sina_v(i,j)*(q(i,j)-q(i,j-1))/dyc(i,j)
+               ddy(i,j) = dx(i,j)*sina_v(i,j)*(q(i,j-1)-q(i,j))/dyc(i,j)
             enddo
          enddo
 
          do j=js,je
             do i=is,ie
-               q(i,j) = q(i,j) + cd/area(i,j)*(ddx(i+1,j)-ddx(i,j)+ddy(i,j+1)-ddy(i,j))
+               q(i,j) = q(i,j) + cd/area(i,j)*(ddx(i,j)-ddx(i+1,j)+ddy(i,j)-ddy(i,j+1))
             enddo
          enddo
        
@@ -430,7 +460,8 @@
       real qmax(is:ie,js:je)
       integer i,j, n
 
-      call mpp_update_domains(q,domain,whalo=ng,ehalo=ng,shalo=ng,nhalo=ng)
+  do n=1,nmax
+      call mpp_update_domains(q,domain)
 
 ! First step: average the corners:
       if ( is==1 .and. js==1 ) then
@@ -461,8 +492,6 @@
         enddo
      enddo
 
-  do n=1,nmax
-     if( n/=1 ) call mpp_update_domains(q,domain,whalo=ng,ehalo=ng,shalo=ng,nhalo=ng)
 !--------------
 ! Compute del-2
 !--------------

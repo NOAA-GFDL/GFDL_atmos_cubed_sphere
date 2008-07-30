@@ -2,22 +2,24 @@ module fv_dynamics_mod
    use constants_mod,   only: grav, pi, radius, hlv    ! latent heat of water vapor
    use dyn_core_mod,    only: dyn_core
    use fv_mapz_mod,     only: compute_total_energy, Lagrangian_to_Eulerian
-   use fv_tracer2d_mod,   only: tracer_2d, tracer_2d_1L
+   use fv_tracer2d_mod, only: tracer_2d, tracer_2d_1L
    use fv_control_mod,  only: hord_mt, hord_vt, hord_tm, hord_tr, &
-                              kord_mt, kord_tm, kord_tr, full_phys, &
+                              kord_mt, kord_tm, kord_tr, moist_phys, &
                               z_tracer, tau, rf_center, nf_omega,   &
                               uniform_ppm, remap_t,  k_top, p_ref,  &
                               nwat, fv_debug
-   use fv_grid_utils_mod,      only: sina_u, sina_v, sw_corner, se_corner, &
+   use fv_grid_utils_mod, only: sina_u, sina_v, sw_corner, se_corner, &
                               ne_corner, nw_corner, da_min, ptop,   &
                               cubed_to_latlon, c2l_ord2
-   use fv_grid_tools_mod,      only: dx, dy, rdxa, rdya, rdxc, rdyc, area, rarea
-   use fv_mp_mod,          only: is,js,ie,je, isd,jsd,ied,jed, gid, domain
-   use fv_timing_mod,    only: timing_on, timing_off
+   use fv_grid_tools_mod, only: dx, dy, rdxa, rdya, rdxc, rdyc, area, rarea
+   use fv_mp_mod,         only: is,js,ie,je, isd,jsd,ied,jed, gid, domain
+   use fv_timing_mod,     only: timing_on, timing_off
 
    use diag_manager_mod,    only: send_data
    use fv_diagnostics_mod,  only: id_divg, id_te, fv_time, prt_maxmin
-   use mpp_domains_mod, only: mpp_update_domains, DGRID_NE
+
+   use mpp_domains_mod, only: CGRID_NE, DGRID_NE, mpp_get_boundary,   &
+                               mpp_update_domains
    use field_manager_mod,  only: MODEL_ATMOS
    use tracer_manager_mod, only: get_tracer_index
    use fv_sg_mod,          only: neg_adj3
@@ -25,6 +27,7 @@ module fv_dynamics_mod
 implicit none
    logical :: RF_initialized = .false.
    real, allocatable ::  rf(:), rw(:)
+   integer :: kmax
 private
 public :: fv_dynamics
 
@@ -56,7 +59,8 @@ contains
     integer, intent(IN) :: ncnst
     integer, intent(IN) :: n_split        ! small-step horizontal dynamics
     integer, intent(IN) :: q_split        ! tracer
-    logical, intent(IN) :: fill
+!   logical, intent(IN) :: fill
+    logical, intent(inout) :: fill
     logical, intent(IN) :: reproduce_sum
     logical, intent(IN) :: hydrostatic
     logical, intent(IN) :: hybrid_z       ! Using hybrid_z for remapping
@@ -110,7 +114,7 @@ contains
       real:: akap, rg, ph1, ph2
       integer :: i,j,k, iq
       integer :: sphum, liq_wat, ice_wat      ! GFDL physics
-      integer :: rainwat, snowwat, graupel
+      integer :: rainwat, snowwat, graupel, cld_amt
       logical used
       real te_den
 
@@ -123,6 +127,13 @@ contains
       call mpp_update_domains(u, v, domain, gridtype=DGRID_NE, complete=.true.)
                                                  call timing_off('COMM_TOTAL')
 #else
+      if ( fv_debug ) then
+         call prt_maxmin('T_dyn_b',   pt, is, ie, js, je, ng, npz, 1., gid==0)
+         call prt_maxmin('delp_b ', delp, is, ie, js, je, ng, npz, 0.01, gid==0)
+         call prt_maxmin('pk_b   ',   pk, is, ie, js, je, 0, npz+1, 1., gid==0)
+         call prt_maxmin('pkz_b  ',  pkz, is, ie, js, je, 0, npz, 1., gid==0)
+      endif
+
       if ( nwat==6 ) then
              sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
            liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
@@ -130,6 +141,7 @@ contains
            rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
            snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
            graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+           cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
       else
            sphum = 1
       endif
@@ -144,8 +156,8 @@ contains
       enddo
 
       if( tau > 0. )      &
-      call Rayleigh_Friction(bdt, npz, ks, pfull, tau, rf_center, u, v, w, pt,  &
-                             ua, va, cp_air, rg,  hydrostatic, .true.)
+      call Rayleigh_Friction(bdt, npx,npy, npz, ks, pfull, tau, rf_center, u, v, w, pt,  &
+                             ua, va, delz, cp_air, rg,  hydrostatic, .true.)
 
                                                   call timing_on('COMM_TOTAL')
       call mpp_update_domains(u, v, domain, gridtype=DGRID_NE, complete=.true.)
@@ -155,9 +167,9 @@ contains
 !---------------------
       if ( consv_te > 0. ) then
            call compute_total_energy(is, ie, js, je, isd, ied, jsd, jed, npz,  &
-                                     u, v, pt, delp, q, pe, peln, phis, zvir,  &
-                                     cp_air, rg, hlv, te_2d, ua, va, teq,      &
-                                     full_phys, sphum, id_te)
+                                     u, v, w, delz, pt, delp, q, pe, peln, phis, &
+                                     zvir, cp_air, rg, hlv, te_2d, ua, va, teq,  &
+                                     moist_phys, sphum, hydrostatic, id_te)
            if( id_te>0 ) then
                used = send_data(id_te, teq, fv_time)
 !              te_den=1.E-9*g_sum(teq, is, ie, js, je, ng, area, 0)/(grav*4.*pi*radius**2)
@@ -167,7 +179,7 @@ contains
 
  
 ! Convert pt to virtual potential temperature * CP
-!$omp parallel do private (i, j, k)
+!$omp parallel do default(shared) private(i, j, k)
       do k=1,npz
          do j=js,je
             do i=is,ie
@@ -177,7 +189,7 @@ contains
       enddo
 #endif
 
-!$omp parallel do private (i, j, k)
+!$omp parallel do default(shared) private(i, j, k)
       do k=1,npz
          do j=js,je
             do i=is,ie
@@ -188,7 +200,7 @@ contains
 
       call dyn_core(npx, npy, npz, ng, bdt, n_split, cp_air, akap, grav, hydrostatic, &
                     u, v, w, delz, pt, delp, pe, pk, phis, omga, ptop, pfull, ua, va, & 
-                    uc, vc, mfx, mfy, cx, cy, pem, pkz, uniform_ppm, time_total)
+                    uc, vc, mfx, mfy, cx, cy, pem, pkz, peln, uniform_ppm, time_total)
 
 #ifdef SW_DYNAMICS
       do j=js,je
@@ -232,11 +244,12 @@ contains
 ! Note that this finite-volume dycore is otherwise independent of the vertical
 ! Eulerian coordinate.
 !------------------------------------------------------------------------
+!         if( nwat==6 ) fill = .false.
                                                   call timing_on('Remapping')
 
          call Lagrangian_to_Eulerian(consv_te, ps, pe, delp,  &
                      pkz, pk, bdt, npz, is,ie,js,je, isd,ied,jsd,jed, &
-                     nq, sphum, u,  v, w, delz, pt, q, phis, grav, zvir, cp_air,   &
+                     nq, sphum, u,  v, w, delz, pt, q, phis, zvir, cp_air,   &
                      akap, kord_mt, kord_tr, kord_tm, peln, te_2d,  &
                      ng, ua, va, omga, dp1, pem, fill, reproduce_sum, &
                      ak, bk, ks, ze0, remap_t, hydrostatic, hybrid_z, k_top)
@@ -247,7 +260,7 @@ contains
 !--------------------------
          if( nf_omega>0 )  then
                                            call timing_on('OMEGA_DEL2')
-            call del2_cubed(omga, 0.25*da_min, npx, npy, npz, nf_omega)
+            call del2_cubed(omga, 0.20*da_min, npx, npy, npz, nf_omega)
                                            call timing_off('OMEGA_DEL2')
          endif
       endif
@@ -257,8 +270,11 @@ contains
       deallocate ( pem )
 
   if ( fv_debug ) then
-       call prt_maxmin('PS_dyn', ps, is, ie, js, je, ng,   1, 0.01, gid==0)
-       call prt_maxmin('T_dyn',  pt, is, ie, js, je, ng, npz, 1., gid==0)
+!       call prt_maxmin('PS_dyn', ps, is, ie, js, je, ng,   1, 0.01, gid==0)
+       call prt_maxmin('delp_a',  delp, is, ie, js, je, ng, npz, 0.01, gid==0)
+       call prt_maxmin('T_dyn_a',  pt, is, ie, js, je, ng, npz, 1., gid==0)
+       call prt_maxmin('pk_a',   pk, is, ie, js, je, 0, npz+1, 1., gid==0)
+       call prt_maxmin('pkz_a',  pkz, is, ie, js, je, 0, npz, 1., gid==0)
   endif
 
   if( nwat==6 ) then
@@ -268,7 +284,8 @@ contains
                               q(isd,jsd,1,rainwat), &
                               q(isd,jsd,1,ice_wat), &
                               q(isd,jsd,1,snowwat), &
-                              q(isd,jsd,1,graupel)  )
+                              q(isd,jsd,1,graupel), &
+                              q(isd,jsd,1,cld_amt)  )
      if ( fv_debug ) then
        call prt_maxmin('SPHUM_dyn',   q(isd,jsd,1,sphum  ), is, ie, js, je, ng, npz, 1., gid==0)
        call prt_maxmin('liq_wat_dyn', q(isd,jsd,1,liq_wat), is, ie, js, je, ng, npz, 1., gid==0)
@@ -343,14 +360,16 @@ contains
 
 
 
- subroutine Rayleigh_Friction(dt, npz, ks, pm, tau, p_c, u, v, w, pt,  &
-                              ua, va, cp, rg, hydrostatic, conserve)
+#ifdef OLD_RAYF
+
+ subroutine Rayleigh_Friction(dt, npx, npy, npz, ks, pm, tau, p_c, u, v, w, pt,  &
+                              ua, va, delz, cp, rg, hydrostatic, conserve)
     real, intent(in):: dt
     real, intent(in):: tau              ! time scale (days)
     real, intent(in):: p_c
     real, intent(in):: cp, rg
     real, intent(in),  dimension(npz):: pm
-    integer, intent(in):: npz, ks
+    integer, intent(in):: npx, npy, npz, ks
     logical, intent(in):: hydrostatic
     logical, intent(in):: conserve
     real, intent(inout):: u(isd:ied  ,jsd:jed+1,npz) ! D grid zonal wind (m/s)
@@ -359,10 +378,11 @@ contains
     real, intent(inout):: pt(isd:ied,jsd:jed,npz) ! temp
     real, intent(inout):: ua(isd:ied,jsd:jed,npz) ! 
     real, intent(inout):: va(isd:ied,jsd:jed,npz) ! 
+    real, intent(inout):: delz(is:ie,js:je,npz)   ! delta-height (m); non-hydrostatic only
     real, parameter:: sday = 86400.
     real, parameter:: wfac = 10.     ! factor to amplify the drag on w
     real c1, pc, fac
-    integer i, j, k, kmax
+    integer i, j, k
 
      kmax = max(npz/3+1, ks)
 
@@ -423,5 +443,135 @@ contains
      enddo
 
  end subroutine Rayleigh_Friction
+
+#else
+ subroutine Rayleigh_Friction(dt, npx, npy, npz, ks, pm, tau, p_c, u, v, w, pt,  &
+                              ua, va, delz, cp, rg, hydrostatic, conserve)
+    real, intent(in):: dt
+    real, intent(in):: tau              ! time scale (days)
+    real, intent(in):: p_c
+    real, intent(in):: cp, rg
+    real, intent(in),  dimension(npz):: pm
+    integer, intent(in):: npx, npy, npz, ks
+    logical, intent(in):: hydrostatic
+    logical, intent(in):: conserve
+    real, intent(inout):: u(isd:ied  ,jsd:jed+1,npz) ! D grid zonal wind (m/s)
+    real, intent(inout):: v(isd:ied+1,jsd:jed,npz) ! D grid meridional wind (m/s)
+    real, intent(inout)::  w(isd:ied,jsd:jed,npz) ! cell center vertical wind (m/s)
+    real, intent(inout):: pt(isd:ied,jsd:jed,npz) ! temp
+    real, intent(inout):: ua(isd:ied,jsd:jed,npz) ! 
+    real, intent(inout):: va(isd:ied,jsd:jed,npz) ! 
+    real, intent(inout):: delz(is:ie,js:je,npz)   ! delta-height (m); non-hydrostatic only
+! local:
+    real, allocatable ::  u2f(:,:,:)
+    real, parameter:: sday = 86400.
+    real, parameter:: u000 = 4900.   ! scaling velocity  **2
+    real c1, pc, fac
+    integer i, j, k
+
+    if ( .not. RF_initialized ) then
+          allocate( rf(npz) )
+          allocate( rw(npz) )
+
+          if ( p_c <= 0. ) then
+               pc = pm(1)
+          else
+               pc = p_c
+          endif
+
+          if( gid==0 ) write(6,*) 'Rayleigh friction E-folding time [days]:'
+          c1 = 1. / (tau*sday)
+
+          kmax = 1
+          do k=1,npz
+             if ( pm(k) < 40.E2 ) then
+                  rf(k) = c1*(1.+tanh(log10(pc/pm(k))))
+                  kmax = k
+                  if( gid==0 ) write(6,*) k, 0.01*pm(k), 1./(rf(k)*sday)
+             else
+                exit
+             endif
+          enddo
+          if( gid==0 ) write(6,*) 'Rayleigh Friction kmax=', kmax
+
+          RF_initialized = .true.
+    endif
+
+    allocate( u2f(isd:ied,jsd:jed,kmax) )
+
+    call c2l_ord2(u, v, ua, va, dx, dy, rdxa, rdya, npz)
+    u2f = 0.
+    do k=1,kmax
+        if ( hydrostatic ) then
+           do j=js,je
+              do i=is,ie
+                 u2f(i,j,k) = ua(i,j,k)**2 + va(i,j,k)**2
+              enddo
+           enddo
+        else
+           do j=js,je
+              do i=is,ie
+                 u2f(i,j,k) = ua(i,j,k)**2 + va(i,j,k)**2 + w(i,j,k)**2
+              enddo
+           enddo
+        endif
+    enddo
+                                                                call timing_on('COMM_TOTAL')
+    call mpp_update_domains(u2f, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
+                                                                call timing_off('COMM_TOTAL')
+
+     do k=1,kmax
+
+        if ( conserve ) then
+           if ( hydrostatic ) then
+             do j=js,je
+                do i=is,ie
+                   pt(i,j,k) = pt(i,j,k) + 0.5*u2f(i,j,k)/(cp-rg*ptop/pm(k))      &
+                             * ( 1. - 1./(1.+dt*rf(k)*sqrt(u2f(i,j,k)/u000))**2 )
+                enddo
+             enddo
+           else
+             do j=js,je
+                do i=is,ie
+                   delz(i,j,k) = delz(i,j,k) / pt(i,j,k)
+                   pt(i,j,k) = pt(i,j,k) + 0.5*u2f(i,j,k)/(cp-rg*ptop/pm(k))      &
+                             * ( 1. - 1./(1.+dt*rf(k)*sqrt(u2f(i,j,k)/u000))**2 )
+                   delz(i,j,k) = delz(i,j,k) * pt(i,j,k)
+                enddo
+             enddo
+           endif
+        endif
+
+        do j=js-1,je+1
+           do i=is-1,ie+1
+              u2f(i,j,k) = dt*rf(k)*sqrt(u2f(i,j,k)/u000)
+           enddo
+        enddo
+
+        do j=js,je+1
+           do i=is,ie
+              u(i,j,k) = u(i,j,k) / (1.+0.5*(u2f(i,j-1,k)+u2f(i,j,k)))
+           enddo
+        enddo
+        do j=js,je
+           do i=is,ie+1
+              v(i,j,k) = v(i,j,k) / (1.+0.5*(u2f(i-1,j,k)+u2f(i,j,k)))
+           enddo
+        enddo
+
+        if ( .not. hydrostatic ) then
+              do j=js,je
+                 do i=is,ie
+                    w(i,j,k) = w(i,j,k) / (1.+u2f(i,j,k))
+                 enddo
+              enddo
+        endif
+
+     enddo
+
+     deallocate ( u2f )
+
+ end subroutine Rayleigh_Friction
+#endif
 
 end module fv_dynamics_mod

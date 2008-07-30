@@ -1,7 +1,8 @@
 module fv_update_phys_mod
 
-  use constants_mod,      only: kappa, rdgas, grav
-  use fv_control_mod,     only: npx, npy, npz, ncnst, ch4_chem, k_top, nwat, fv_debug
+  use constants_mod,      only: kappa, rdgas, rvgas, grav, cp_air
+  use fv_control_mod,     only: npx, npy, npz, ncnst, k_top, nwat, fv_debug, &
+                                tau_h2o, phys_hydrostatic
   use field_manager_mod,  only: MODEL_ATMOS
   use tracer_manager_mod, only: get_tracer_index
   use time_manager_mod,   only: time_type
@@ -9,11 +10,11 @@ module fv_update_phys_mod
   use fv_eta_mod,         only: get_eta_level
   use mpp_domains_mod,    only: mpp_update_domains
   use mpp_mod,            only: FATAL, mpp_error
-  use fv_grid_utils_mod,         only: edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e,    &
+  use fv_grid_utils_mod,  only: edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e,    &
                                 es, ew, vlon, vlat
-  use fv_grid_tools_mod,         only: grid_type
-  use fv_timing_mod,       only: timing_on, timing_off
-  use fv_diagnostics_mod,  only: prt_maxmin
+  use fv_grid_tools_mod,  only: grid_type
+  use fv_timing_mod,      only: timing_on, timing_off
+  use fv_diagnostics_mod, only: prt_maxmin
 #ifdef GFDL_NUDGE
   use atmos_nudge_mod,    only: get_atmos_nudge, do_ps
 #endif
@@ -27,13 +28,13 @@ module fv_update_phys_mod
   subroutine fv_update_phys ( dt, is, ie, js, je, isd, ied, jsd, jed, ng, nq,     &
                               u, v, delp, pt, q, ua, va, ps, pe,  peln, pk, pkz,  &
                               ak, bk, u_dt, v_dt, t_dt, q_dt, u_srf, v_srf,       &
-                              delz, hydrostatic, full_phys, Time, nudge )
+                              delz, hydrostatic, moist_phys, Time, nudge )
     real, intent(in)   :: dt
     integer, intent(in):: is,  ie,  js,  je, ng
     integer, intent(in):: isd, ied, jsd, jed
     integer, intent(in):: nq            ! tracers modified by physics 
                                         ! ncnst is the total nmber of tracers
-    logical, intent(in):: full_phys     ! full physics
+    logical, intent(in):: moist_phys
     type (time_type), intent(in) :: Time
 
     logical, intent(in), optional:: nudge
@@ -76,7 +77,7 @@ module fv_update_phys_mod
     real, parameter::  q100_h2o = 3.8E-6
     real, parameter:: q1000_h2o = 3.1E-6
     real, parameter:: q2000_h2o = 2.8E-6
-    real, parameter::   tau_h2o = 120.*86400.
+    real, parameter:: q3000_h2o = 3.0E-6
 
 ! Local arrays:
     real  ps_dt(is:ie,js:je)
@@ -85,20 +86,20 @@ module fv_update_phys_mod
     integer  i, j, k, m
     integer  sphum, liq_wat, ice_wat, cld_amt   ! GFDL AM physics
     integer  rainwat, snowwat, graupel          ! Lin Micro-physics
-    real   qstar, dbk, dt5, rdt, rdg
+    real     qstar, dbk, rdg, gama_dt, zvir
 
 
-    rdg = -rdgas / grav
-
-    dt5 = 0.5 * dt
-    rdt = 1./ dt
+        rdg = -rdgas / grav
+    gama_dt = dt * cp_air / (cp_air-rdgas)
 
    sphum   = 1
 
-   if ( full_phys ) then
+   if ( moist_phys ) then
         cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
+           zvir = rvgas/rdgas - 1.
    else
         cld_amt = 7
+           zvir = 0.
    endif
 
    if ( nwat>=3 ) then
@@ -122,8 +123,6 @@ module fv_update_phys_mod
        do m=1,nq
           call prt_maxmin('q_dt', q_dt(is,js,1,m), is, ie, js, je, 0, npz, 1., gid==0)
        enddo
-!         q(:,:,:,graupel) = 0.
-!      q_dt(:,:,:,graupel) = 0.
    endif
 
 
@@ -131,11 +130,11 @@ module fv_update_phys_mod
     call get_eta_level(npz, 1.0E5, pfull, phalf, ak, bk)
 #endif
 
-!$omp parallel do private (i,j,k,m, qstar)
+!$omp parallel do default(shared) private(i, j, k, m, qstar, ps_dt)
     do 1000 k=1, npz
 
 ! Do idealized Ch4 chemistry
-       if ( ch4_chem .and. pfull(k) < 50.E2 ) then
+       if ( tau_h2o>0.0 .and. pfull(k) < 3000. ) then
 
            if ( pfull(k) < 1. ) then
                qstar = q1_h2o
@@ -147,11 +146,13 @@ module fv_update_phys_mod
                qstar = q100_h2o + (q1000_h2o-q100_h2o)*log(pfull(k)/1.E2)/log(10.)
            elseif ( pfull(k) < 2000. .and. pfull(k) >= 1000. ) then
                qstar = q1000_h2o + (q2000_h2o-q1000_h2o)*log(pfull(k)/1.E3)/log(2.)
+           else
+               qstar = q3000_h2o
            endif
 
            do j=js,je
               do i=is,ie
-                 q_dt(i,j,k,sphum) = q_dt(i,j,k,sphum) + (qstar-q(i,j,k,sphum))/tau_h2o
+                 q_dt(i,j,k,sphum) = q_dt(i,j,k,sphum) + (qstar-q(i,j,k,sphum))/(tau_h2o*86400.)
               enddo
            enddo
        endif
@@ -162,23 +163,36 @@ module fv_update_phys_mod
              va(i,j,k) = va(i,j,k) + dt*v_dt(i,j,k)
           enddo
        enddo
+
        if ( hydrostatic ) then
           do j=js,je
              do i=is,ie
+!               pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k) /     &
+!                           (1.-kappa*ak(1)/delp(i,j,k)*(peln(i,k+1,j)-peln(i,k,j)))
                 pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k)
              enddo
           enddo
        else
-! Heating/cooling from physics is assumed to be hydrostatic (constant-pressure)
-! i.e., del-T = del-Q / Cp; no need for this if del-T = del-Q / Cv
-          do j=js,je
-             do i=is,ie
-!                 pt(i,j,k) =   pt(i,j,k) + dt*t_dt(i,j,k)
-                delz(i,j,k) = delz(i,j,k) / pt(i,j,k)
-                  pt(i,j,k) =   pt(i,j,k) + dt*t_dt(i,j,k)
-                delz(i,j,k) = delz(i,j,k) * pt(i,j,k)
+         if ( phys_hydrostatic ) then
+! Heating/cooling from physics is assumed to be isobaric hydrostatic proc
+! "nagative" definiteness of delz is maintained.
+             do j=js,je
+                do i=is,ie
+                   delz(i,j,k) = delz(i,j,k) / pt(i,j,k)
+!                     pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k) /     &
+!                              (1.-kappa*ak(1)/delp(i,j,k)*(peln(i,k+1,j)-peln(i,k,j)))
+               pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k)
+                   delz(i,j,k) = delz(i,j,k) * pt(i,j,k)
+                enddo
              enddo
-          enddo
+         else
+! Convert tendency from constant-p to constant-volume
+             do j=js,je
+                do i=is,ie
+                   pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*gama_dt
+                enddo
+             enddo
+         endif
        endif
 
 !----------------
@@ -192,8 +206,12 @@ module fv_update_phys_mod
           enddo
        enddo
 
-! ncnst == 6
+!--------------------------------------------------------
+! Adjust total air mass due to changes in water substance
+!--------------------------------------------------------
+
    if ( nwat==6 ) then
+! micro-physics with 6 water substances
         do j=js,je
            do i=is,ie
               ps_dt(i,j)  = 1. + dt * ( q_dt(i,j,k,sphum  ) +    &
@@ -206,12 +224,9 @@ module fv_update_phys_mod
            enddo
         enddo
    elseif( nwat==3 ) then
-! GFDL AM2/3 phys:
+! GFDL AM2/3 phys (cloud water + cloud ice)
         do j=js,je
            do i=is,ie
-!--------------------------------------------------------
-! Adjust total air mass due to changes in water substance
-!--------------------------------------------------------
                ps_dt(i,j) = 1. + dt*(q_dt(i,j,k,sphum  ) +    &
                                      q_dt(i,j,k,liq_wat) +    &
                                      q_dt(i,j,k,ice_wat) )
@@ -286,13 +301,13 @@ module fv_update_phys_mod
        call prt_maxmin('delp_a_update', delp, is, ie, js,  je, ng, npz, 0.01, gid==0)
   endif
 
-!$omp parallel do private(i, j, k)
+!$omp parallel do default(shared) private(i, j, k)
    do j=js,je
       do k=2,npz+1                                                                             
          do i=is,ie
-            pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
-            pk(i,j,k) = pe(i,k,j) ** kappa
-            peln(i,k,j) = log(pe(i,k,j))
+              pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+            peln(i,k,j) = log( pe(i,k,j) )
+              pk(i,j,k) = exp( kappa*peln(i,k,j) )
          enddo
       enddo
 
@@ -305,8 +320,7 @@ module fv_update_phys_mod
       if ( hydrostatic ) then
          do k=1,npz
             do i=is,ie
-               pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k) ) /  &
-                            (kappa*(peln(i,k+1,j)-peln(i,k,j)))
+               pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
             enddo
          enddo
       endif
@@ -315,11 +329,6 @@ module fv_update_phys_mod
 !-------------------------------------------------------------------------
 ! Re-compute the full (nonhydrostatic) pressure due to temperature changes
 !-------------------------------------------------------------------------
-! The assumption here is that "delz" is not changed by the diabatic processes
-! and therefore mass & density remain the same within the finite-volume.
-! Potential temperature will change becuase (full nonhydrostatic) pressure
-! will be changed according to the gas law:
-!                                           p = density * R * T
     if ( .not.hydrostatic ) then
       if ( k_top>1 ) then
          do k=1,k_top-1
@@ -335,7 +344,10 @@ module fv_update_phys_mod
       do k=k_top,npz
          do j=js,je
             do i=is,ie
-               pkz(i,j,k) = ( rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k) )**kappa
+! perfect gas law: p = density * rdgas * virtual_temperature
+!              pkz(i,j,k) = ( rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k) )**kappa
+               pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+                                           (1.+zvir*q(i,j,k,sphum))/delz(i,j,k)) )
             enddo
          enddo
       enddo
@@ -380,8 +392,8 @@ module fv_update_phys_mod
     dt5 = 0.5 * dt
     im2 = (npx-1)/2
     jm2 = (npy-1)/2
-!$omp parallel do private (i,j,k)
 
+!$omp parallel do default(shared) private(i, j, k, ut1, ut2, ut3, vt1, vt2, vt3, ue, ve, v3)
     do k=1, npz
 
      if ( grid_type > 3 ) then    ! Local & one tile configurations

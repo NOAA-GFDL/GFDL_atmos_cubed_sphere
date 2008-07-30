@@ -1,4 +1,4 @@
-! $Id: fv_control.F90,v 1.1.2.1.2.1.2.4.2.1 2007/12/19 18:22:02 z1l Exp $
+! $Id: fv_control.F90,v 16.0 2008/07/30 22:04:51 fms Exp $
 !
 !----------------
 ! FV contro panel
@@ -10,14 +10,14 @@ module fv_control_mod
    use fv_io_mod,          only: fv_io_exit
    use fv_restart_mod,     only: fv_restart_init, fv_restart_end
    use fv_arrays_mod,      only: fv_atmos_type
-   use fv_grid_utils_mod,  only: grid_utils_init, grid_utils_end, ptop_min, deglat
+   use fv_grid_utils_mod,  only: grid_utils_init, grid_utils_end, ptop_min, deglat, da_min_c
    use fv_grid_tools_mod,  only: init_grid, cosa, sina, area, area_c, dx, dy, dxa, dya, &
                                  grid_type, dx_const, dy_const,                         &
                                  deglon_start, deglon_stop, deglat_start, deglat_stop
-   use fv_mp_mod,          only: mp_start, domain_decomp, domain, domain_for_coupler,&
+   use fv_mp_mod,          only: mp_start, domain_decomp, domain, &
                                  ng, tile, npes_x, npes_y, gid
    use mpp_mod,            only: FATAL, mpp_error, mpp_pe, &
-                                 mpp_npes, mpp_get_current_pelist
+                                 mpp_npes, mpp_get_current_pelist, get_unit
 
    use mpp_domains_mod,    only: mpp_get_data_domain, mpp_get_compute_domain
    use test_cases_mod,     only: test_case, alpha
@@ -50,7 +50,7 @@ module fv_control_mod
 !  -> moved to grid_tools
 
 ! Momentum (or KE) options:
-   integer :: hord_mt = 6    ! the best option for Gnomonic grids  
+   integer :: hord_mt = 9    ! the best option for Gnomonic grids  
    integer :: kord_mt = 8    ! vertical mapping option
 
 ! Vorticity & w transport options:
@@ -69,13 +69,16 @@ module fv_control_mod
                              !>12: positive definite only (Lin & Rood 1996); fastest
    integer :: kord_tr = 8    ! 
 
-   real   :: dddmp = 0.0075
+   real   :: dddmp = 0.0075  ! coefficient for del-2 divergence damping (was 0.0075)
+   real   :: dddm4 = 0.0     ! coefficient for del-4 divergence dmaping (was 0.05)
 #ifdef SW_DYNAMICS
    integer :: n_sponge = 0   ! Number of sponge layers at the top of the atmosphere
-   real    :: d_ext = 0.
+   real    :: d_ext = 0.    
+   integer :: nwat  = 0      ! Number of water species
 #else
    integer :: n_sponge = 1   ! Number of sponge layers at the top of the atmosphere
-   real    :: d_ext = 0.02
+   real    :: d_ext = 0.02   ! External model damping (was 0.02)
+   integer :: nwat  = 3      ! Number of water species
 #endif
    integer :: m_riem  = 0    ! Time scheme for Riem solver subcycling
    integer :: k_top   = 1    ! Starting layer for non-hydrostatic dynamics
@@ -90,9 +93,8 @@ module fv_control_mod
             !===================================================
             !        dx (km)    dt (sc)    n_split    m_split
             !===================================================
-            ! C1000:   10        150         16          3
-            ! C2000:    5        120         24 (5 s)    2
-            ! C2000:    5         60         12 (5 s)    1
+            ! C1000:  ~10        150         16          3
+            ! C2000:   ~5         90         18 (5 s)    2
             !===================================================
 ! The nonhydrostatic algorithm is described in Lin 2006, QJ, (submitted)
 ! C2000 should easily scale to at least 6 * 100 * 100 = 60,000 CPUs  
@@ -115,7 +117,6 @@ module fv_control_mod
    integer :: layout(2)=(/2,2/)       ! Processor layout
    integer :: ncnst = 0               ! Number of advected consituents
    integer :: pnats = 0               ! Number of non-advected consituents
-   integer :: nwat  = 3               ! Number of water species
    integer :: ntiles                  ! Number or tiles that make up the Grid 
    integer :: ntilesMe                ! Number of tiles on this process =1 for now
    integer, parameter:: ndims = 2     ! Lat-Lon Dims for Grid in Radians
@@ -133,6 +134,7 @@ module fv_control_mod
 #endif
    integer :: nt_prog = 0
    integer :: nt_phys = 0
+   real    :: tau_h2o = 0.            ! Time scale (days) for ch4_chem
 
    real    :: too_big  = 1.E35
    real    :: consv_te = 0.
@@ -143,7 +145,7 @@ module fv_control_mod
    logical :: fill = .false.
    logical :: non_ortho = .true.
    logical :: adiabatic = .false.     ! Run without physics (full or idealized).
-   logical :: full_phys = .true.      ! Run with GFDL physics
+   logical :: moist_phys = .true.     ! Run with moist physics
    logical :: do_Held_Suarez = .false.
    logical :: reproduce_sum = .true.  ! Make global sum in for consv_te reproduce
    logical :: adjust_dry_mass = .false.
@@ -168,38 +170,39 @@ module fv_control_mod
                                       ! or NCEP re-analysis; both vertical remapping & horizontal
                                       ! (lat-lon to cubed sphere) interpolation will be done
 ! Default restart files from the "Memphis" latlon FV core:
-   character(len=128) :: res_latlon_dynamics = '/archive/sjl/CUBED/rst_m45/fv_rst.res.nc'
-   character(len=128) :: res_latlon_tracers  = '/archive/sjl/CUBED/rst_m45/atmos_tracers.res.nc'
+   character(len=128) :: res_latlon_dynamics = 'INPUT/fv_rst.res.nc'
+   character(len=128) :: res_latlon_tracers  = 'INPUT/atmos_tracers.res.nc'
 ! The user also needs to copy the "cold start" cubed sphere restart files (fv_core.res.tile1-6)
 ! to the INPUT dir during runtime
 !------------------------------------------------
 ! Parameters related to non-hydrostatic dynamics:
 !------------------------------------------------
    logical :: hydrostatic = .true.
+   logical :: phys_hydrostatic = .true.    ! heating/cooling term from the physics is hydrostatic
    logical :: hybrid_z    = .false. ! use hybrid_z for remapping
    logical :: quick_p_c   = .false. ! Use quick (approximated) algorithm for Riemann Solver (C grid)
    logical :: quick_p_d   = .false. ! Use quick (approximated) algorithm for Riemann Solver (D grid)
                                     ! The above two options run much faster; but it may be unstable
    logical :: Make_NH     = .false. ! Initialize (w, delz) from hydro restart file 
+   logical :: make_hybrid_z  = .false. ! transform hydrostatic eta-coord IC into non-hydrostatic hybrid_z
    integer :: m_grad_p = 0   ! method for non-hydrostatic grad-p
                              ! m_grad_p=1:  one-stage full pressure for grad_p; this option is faster
                              !              but it is not suitable for low horizontal resolution
                              ! m_grad_p=0:  two-stage grad computation (best for low resolution runs)
    integer :: a2b_ord = 4    ! order for interpolation from A to B Grid (corners)
-   integer :: c2l_ord = 2    ! order for interpolation from D to lat-lon A winds for phys & output
-   integer :: dord    = 2    ! diveregence damping order
+   integer :: c2l_ord = 4    ! order for interpolation from D to lat-lon A winds for phys & output
    public :: npx,npy,npz, npz_rst, ntiles, ncnst, pnats, nwat
    public :: hord_mt, hord_vt, kord_mt, hord_tm, hord_dp, hord_ze, kord_tm, hord_tr, kord_tr
-   public :: dord, n_split, m_split, q_split, master
-   public :: dddmp, d_ext
+   public :: n_split, m_split, q_split, master
+   public :: dddmp, dddm4, d_ext
    public :: k_top, m_riem, n_sponge, p_ref
-   public :: uniform_ppm, remap_t,  z_tracer, ch4_chem, fv_debug
+   public :: uniform_ppm, remap_t,  z_tracer, fv_debug
    public :: external_ic, ncep_ic, res_latlon_dynamics, res_latlon_tracers, fv_land
-   public :: fv_sg_adj, tau, rf_center
+   public :: fv_sg_adj, tau, tau_h2o, rf_center
    public :: fv_init, fv_end
-   public :: domain, domain_for_coupler
-   public :: adiabatic, nf_omega, full_phys
-   public :: hydrostatic, hybrid_z, quick_p_c, quick_p_d, m_grad_p, a2b_ord
+   public :: domain
+   public :: adiabatic, nf_omega, moist_phys
+   public :: hydrostatic, phys_hydrostatic,  hybrid_z, quick_p_c, quick_p_d, m_grad_p, a2b_ord
    public :: nt_prog, nt_phys
 #ifdef MARS_GCM
    public :: reference_sfc_pres, sponge_damp
@@ -220,6 +223,7 @@ module fv_control_mod
    integer :: i, j, k, n
    integer :: isc, iec, jsc, jec
    integer :: isd, ied, jsd, jed
+   real :: sdt
 
 
 ! tracers
@@ -266,7 +270,7 @@ module fv_control_mod
       Atm(1)%z_tracer = z_tracer
       Atm(1)%do_Held_Suarez = do_Held_Suarez
       Atm(1)%reproduce_sum = reproduce_sum
-      Atm(1)%full_phys = full_phys
+      Atm(1)%moist_phys = moist_phys
       Atm(1)%srf_init = srf_init
       Atm(1)%mountain = mountain
       Atm(1)%non_ortho = non_ortho
@@ -274,15 +278,18 @@ module fv_control_mod
       Atm(1)%fv_sg_adj = fv_sg_adj
       Atm(1)%dry_mass = dry_mass
 
-      Atm(1)%external_ic = external_ic
       Atm(1)%ncep_ic = ncep_ic
+                       if ( ncep_ic )  external_ic = .true.
+      Atm(1)%external_ic = external_ic
       Atm(1)%fv_land     = fv_land
       Atm(1)%res_latlon_dynamics =  res_latlon_dynamics
       Atm(1)%res_latlon_tracers  =  res_latlon_tracers
 
       Atm(1)%hydrostatic = hydrostatic
+      Atm(1)%phys_hydrostatic = phys_hydrostatic
       Atm(1)%hybrid_z    = hybrid_z
       Atm(1)%Make_NH     = Make_NH
+      Atm(1)%make_hybrid_z  = make_hybrid_z
       Atm(1)%k_top       = k_top
 
     ! Read Grid from GRID_FILE and setup grid descriptors
@@ -295,6 +302,17 @@ module fv_control_mod
       call grid_utils_init(Atm(1), Atm(1)%npx, Atm(1)%npy, Atm(1)%npz, Atm(1)%grid, Atm(1)%agrid,   &
                            area, area_c, cosa, sina, dx, dy, dxa, dya, non_ortho,   &
                            uniform_ppm, grid_type, c2l_ord)
+
+      if ( master ) then
+           sdt =  dt_atmos/real(n_split)
+           write(*,*) ' '
+           write(*,*) 'Divergence damping Coefficients * 1.E6:'
+           write(*,*) 'For small dt=', sdt
+           write(*,*) 'External mode del-2 (m**2/s)=',  d_ext*da_min_c     /sdt*1.E-6
+           write(*,*) 'Internal mode del-2 (m**2/s)=',  dddmp*da_min_c     /sdt*1.E-6
+           write(*,*) 'Internal mode del-4 (m**4/s)=', (dddm4*da_min_c)**2 /sdt*1.E-6
+           write(*,*) ' '
+      endif
 
       Atm(1)%domain =>domain
       do n = 1, ntilesMe
@@ -443,7 +461,7 @@ module fv_control_mod
       real, intent(in)                   :: dt_atmos
 
       character*80 :: filename, tracerName
-      integer :: ios
+      integer :: ios, f_unit
       logical :: exists
 
       real :: dim0 = 180.           ! base dimension
@@ -451,9 +469,9 @@ module fv_control_mod
       real :: ns0  = 5.             ! base nsplit for base dimension 
                                     ! For cubed sphere 5 is better
       real :: umax = 350.           ! max wave speed for grid_type>3
-      real :: dimx, dl, dp, dxmin, dymin
+      real :: dimx, dl, dp, dxmin, dymin, d_fac
 
-      integer :: iq
+      integer :: n0split
 
       namelist /mpi_nml/npes_x,npes_y  ! Use of this namelist is deprecated
       namelist /fv_grid_nml/grid_name,grid_file
@@ -462,17 +480,18 @@ module fv_control_mod
                             hord_mt, hord_vt, hord_tm, hord_dp, hord_ze, hord_tr, &
                             kord_mt, kord_tm, kord_tr, fv_debug, fv_land,         &
                             external_ic, ncep_ic, res_latlon_dynamics, res_latlon_tracers, &
-                            dddmp, d_ext, non_ortho, n_sponge, adjust_dry_mass,  &
+                            dddmp, dddm4, d_ext, non_ortho, n_sponge, adjust_dry_mass,  &
                             dry_mass, grid_type, do_Held_Suarez, consv_te, fill, &
                             z_tracer, ch4_chem, reproduce_sum, adiabatic,        &
-                            tau, rf_center, nf_omega, hydrostatic, fv_sg_adj,    &
+                            tau, tau_h2o, rf_center, nf_omega, hydrostatic, fv_sg_adj,    &
                             hybrid_z, quick_p_c, quick_p_d, Make_NH, m_grad_p,   &
                             a2b_ord, uniform_ppm, remap_t, k_top, m_riem, p_ref, &
 #ifdef MARS_GCM
                             sponge_damp, reference_sfc_pres,                     &
 #endif
-                            c2l_ord, dord, dx_const, dy_const, umax, deglat,     &
-                            deglon_start, deglon_stop, deglat_start, deglat_stop
+                            c2l_ord, dx_const, dy_const, umax, deglat,     &
+                            deglon_start, deglon_stop, deglat_start, deglat_stop, &
+                            phys_hydrostatic, make_hybrid_z
 
 
       namelist /test_case_nml/test_case,alpha
@@ -489,19 +508,19 @@ module fv_control_mod
         call mpp_error(FATAL,'FV core terminating')
       else
 
+        f_unit = get_unit()
+        open (f_unit,file=filename)
  ! Read Main namelist
-        open (10,file=filename)
-        read (10,nml=fv_grid_nml,iostat=ios)
-        close(10)
+        rewind (f_unit)
+        read (f_unit,fv_grid_nml,iostat=ios)
         if (ios > 0) then
            if(master) write(6,*) 'fv_grid_nml ERROR: reading ',trim(filename),', iostat=',ios
            call mpp_error(FATAL,'FV core terminating')
         endif
 
  ! Read FVCORE namelist 
-        open (10,file=filename)
-        read (10,nml=fv_core_nml,iostat=ios)
-        close(10)
+        rewind (f_unit)
+        read (f_unit,fv_core_nml,iostat=ios)
         if (ios > 0) then
            if(master) write(6,*) 'fv_core_nml ERROR: reading ',trim(filename),', iostat=',ios
            call mpp_error(FATAL,'FV core terminating')
@@ -517,31 +536,29 @@ module fv_control_mod
 
 !*** remap_t is NOT yet supported for non-hydrostatic option *****
         if ( .not. hydrostatic ) remap_t = .false.
-!       if ( dord == 4 ) d_ext = 0.
 
         npes_x = layout(1)
         npes_y = layout(2)
 
  ! Read Test_Case namelist
-        open (10,file=filename)
-        read (10,nml=test_case_nml,iostat=ios)
-        close(10)
+        rewind (f_unit)
+        read (f_unit,test_case_nml,iostat=ios)
         if (ios > 0) then
          if(master) write(6,*) 'test_case_nml ERROR: reading ',trim(filename),', iostat=',ios
             call mpp_error(FATAL,'FV core terminating')
         endif
 
  ! Look for deprecated mpi_nml
-        open (10,file=filename)
-        read (10,nml=mpi_nml,iostat=ios)
-        close(10)
+        rewind (f_unit)
+        read (f_unit,mpi_nml,iostat=ios)
         if (ios == 0) then
            call mpp_error(FATAL,'mpi_nml is deprecated. Use layout in fv_core_nml')
         endif
+
+        close (f_unit)
       endif
 
 ! Define n_split if not in namelist
-      if ( n_split == 0 ) then
           if (ntiles==6) then
              dimx = 4.0*(npx-1)
 #ifdef MARS_GCM
@@ -564,9 +581,9 @@ module fv_control_mod
           endif
           
           if (grid_type < 4) then
-             n_split = nint ( ns0*abs(dt_atmos)*dimx/(dt0*dim0) + 0.49 )
+             n0split = nint ( ns0*abs(dt_atmos)*dimx/(dt0*dim0) + 0.49 )
           elseif (grid_type == 4 .or. grid_type == 7) then
-             n_split = nint ( 2.*umax*dt_atmos/sqrt(dx_const**2 + dy_const**2) + 0.49 )
+             n0split = nint ( 2.*umax*dt_atmos/sqrt(dx_const**2 + dy_const**2) + 0.49 )
           elseif (grid_type == 5 .or. grid_type == 6) then
              if (grid_type == 6) then
                 deglon_start = 0.; deglon_stop  = 360.
@@ -577,13 +594,24 @@ module fv_control_mod
              dxmin=dl*radius*min(cos(deglat_start*pi/180.-ng*dp),   &
                                  cos(deglat_stop *pi/180.+ng*dp))
              dymin=dp*radius
-             n_split = nint ( 2.*umax*dt_atmos/sqrt(dxmin**2 + dymin**2) + 0.49 )
+             n0split = nint ( 2.*umax*dt_atmos/sqrt(dxmin**2 + dymin**2) + 0.49 )
           endif
-          n_split = max ( 1, n_split )
-          if(master) write(6,198) 'n_split is set to ', n_split, ' for resolution-dt=',npx,npy,ntiles,dt_atmos
+          n0split = max ( 1, n0split )
+
+      if ( n_split == 0 ) then
+           n_split = n0split
+           if(master) write(6,198) 'n_split is set to ', n0split, ' for resolution-dt=',npx,npy,ntiles,dt_atmos
       else
           if(master) write(6,199) 'Using n_split from the namelist: ', n_split
       endif
+
+!----------------------------------------
+! Adjust divergence damping coefficients:
+!----------------------------------------
+      d_fac = real(n0split)/real(n_split)
+      dddmp = dddmp * d_fac
+      dddm4 = dddm4 * d_fac
+      d_ext = d_ext * d_fac
 
       if ( (.not.hydrostatic) .and. (m_split==0) ) then
            m_split = max(1., 0.5 + abs(dt_atmos)/(n_split*6.) )
