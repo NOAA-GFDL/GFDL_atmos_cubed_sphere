@@ -34,7 +34,7 @@ module fv_restart_mod
   use constants_mod,       only: kappa, pi, omega, rdgas, grav
   use fv_arrays_mod,       only: fv_atmos_type
   use fv_io_mod,           only: fv_io_init, fv_io_read_restart, fv_io_write_restart, &
-                                 remap_restart
+                                 remap_restart, fv_io_register_restart
   use fv_grid_tools_mod,   only: area, dx, dy, rdxa, rdya
   use fv_grid_utils_mod,   only: fc, f0, ptop, ptop_min, fill_ghost, big_number,   &
                                  make_eta_level, deglat, cubed_to_latlon
@@ -55,14 +55,14 @@ module fv_restart_mod
   implicit none
   private
 
-  public :: fv_restart_init, fv_restart_end, fv_restart
+  public :: fv_restart_init, fv_restart_end, fv_restart, fv_write_restart
 
   !--- private data type
   logical                       :: module_is_initialized = .FALSE.
 
   !--- version information variables ----
-  character(len=128) :: version = '$Id: fv_restart.F90,v 16.0 2008/07/30 22:05:14 fms Exp $'
-  character(len=128) :: tagname = '$Name: perth $'
+  character(len=128) :: version = '$Id: fv_restart.F90,v 16.0.4.1 2008/09/11 20:48:47 rab Exp $'
+  character(len=128) :: tagname = '$Name: perth_2008_10 $'
 
 contains 
 
@@ -100,7 +100,7 @@ contains
     integer :: i, j, k, n, ntileMe
     integer :: isc, iec, jsc, jec, npz, npz_rst, ncnst
     integer :: isd, ied, jsd, jed
-    integer :: file_unit
+
     real, allocatable :: dz1(:)
     real rgrav, f00, ztop
     logical :: hybrid
@@ -113,6 +113,9 @@ contains
     ntileMe = size(Atm(:))
     npz     = Atm(1)%npz
     npz_rst = Atm(1)%npz_rst
+
+    !--- call fv_io_register_restart to register restart field to be written out in fv_io_write_restart
+    call fv_io_register_restart(fv_domain,Atm)
 
     if( .not.cold_start .and. (.not. Atm(1)%external_ic) ) then
         if ( npz_rst /= 0 .and. npz_rst /= npz ) then
@@ -156,8 +159,12 @@ contains
 
       ! Init model data
       if(.not.cold_start)then  ! This is not efficient stacking if there are really more tiles than 1.
-
-        call mpp_update_domains( Atm(n)%phis, fv_domain, complete=.true. )
+        if ( Atm(n)%mountain ) then
+             call mpp_update_domains( Atm(n)%phis, fv_domain, complete=.true. )
+        else
+             Atm(n)%phis = 0.
+            if( gid==masterproc ) write(*,*) 'phis set to zero'
+        endif
 
 #ifdef SW_DYNAMICS
         Atm(n)%pt(:,:,:)=1.
@@ -234,6 +241,11 @@ contains
                    Atm(n)%oro(i,j) = oro_g(i,j)
                 enddo
              enddo
+        endif
+
+        if ( Atm(n)%no_cgrid ) then
+             Atm(n)%um(:,:,:) = Atm(n)%u(:,:,:)
+             Atm(n)%vm(:,:,:) = Atm(n)%v(:,:,:)
         endif
 
       endif  !end cold_start check
@@ -332,6 +344,23 @@ contains
   ! </SUBROUTINE> NAME="fv_restart"
 
 
+
+  !#######################################################################
+  ! <SUBROUTINE NAME="fv_write_restart">
+  ! <DESCRIPTION>
+  !  Write out restart files registered through register_restart_file
+  ! </DESCRIPTION>
+  subroutine fv_write_restart(Atm, timestamp)
+    type(fv_atmos_type), intent(inout) :: Atm(:)
+    character(len=*),    intent(in)    :: timestamp
+
+    call fv_io_write_restart(Atm, timestamp)
+
+  end subroutine fv_write_restart
+  ! </SUBROUTINE>
+
+
+
   !#####################################################################
   ! <SUBROUTINE NAME="fv_restart_end">
   !
@@ -339,13 +368,15 @@ contains
   ! Initialize the fv core restart facilities
   ! </DESCRIPTION>
   !
-  subroutine fv_restart_end(fv_domain,Atm)
-    type(domain2d),      intent(in) :: fv_domain
+  subroutine fv_restart_end(Atm)
     type(fv_atmos_type), intent(in) :: Atm(:)
 
     integer :: isc, iec, jsc, jec
     integer :: iq, n, ntileMe
     integer :: isd, ied, jsd, jed, npz
+#ifdef EFLUX_OUT
+    integer :: file_unit
+#endif
 
     ntileMe = size(Atm(:))
 
@@ -385,7 +416,7 @@ contains
 #endif
     end do
 
-    call fv_io_write_restart(fv_domain,Atm)
+    call fv_io_write_restart(Atm)
     module_is_initialized = .FALSE.
 
 #ifdef EFLUX_OUT

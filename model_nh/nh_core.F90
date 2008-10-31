@@ -10,10 +10,9 @@ module nh_core_mod
 !------------------------------
 
    use constants_mod,  only: rdgas, grav
-   use fv_control_mod,     only: m_split, quick_p_c, quick_p_d, uniform_ppm,   &
-                             k_top, m_riem,  master
-   use tp_core_mod,         only: fv_tp_2d, copy_corners
-!  use fv_timing_mod,   only: timing_on, timing_off
+   use fv_control_mod, only: m_split, quick_p_c, quick_p_d, k_top, m_riem, master
+   use tp_core_mod,    only: fv_tp_2d, copy_corners
+!  use fv_timing_mod,  only: timing_on, timing_off
 
    implicit none
    private
@@ -188,7 +187,7 @@ CONTAINS
      enddo
 
      call fv_tp_2d(zh(isd,jsd,k), crx_adv, cry_adv, npx, npy, iord, &
-                   fx, fy, xfx_adv, yfx_adv, area, ra_x, ra_y, uniform_ppm)
+                   fx, fy, xfx_adv, yfx_adv, area, ra_x, ra_y)
      do j=js,je
         do i=is,ie
            wk(i,j,k) = (zh(i,j,k)*area(i,j)+fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))       &
@@ -252,7 +251,7 @@ CONTAINS
      enddo
 
      call fv_tp_2d(zh(isd,jsd,k), crx(is,jsd,k), cry(isd,js,k), npx,  npy, iord, &
-                   fx, fy, xfx(is,jsd,k), yfx(isd,js,k), area, ra_x, ra_y, uniform_ppm)
+                   fx, fy, xfx(is,jsd,k), yfx(isd,js,k), area, ra_x, ra_y)
      do j=js,je
         do i=is,ie
            wk(i,j,k) = (zh(i,j,k)*area(i,j)+fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))   &

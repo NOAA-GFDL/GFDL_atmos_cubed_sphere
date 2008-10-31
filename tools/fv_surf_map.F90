@@ -6,7 +6,6 @@
       use mpp_mod, only: get_unit
 
       use constants_mod, only: grav
-!     use tp_core_mod,     only: copy_corners
       use fv_grid_utils_mod, only: great_circle_dist, latlon2xyz, v_prod,  &
                             sina_u, sina_v, g_sum, global_mx 
       use fv_mp_mod,   only: domain, ng, is,js,ie,je, isd,jsd,ied,jed, &
@@ -38,7 +37,7 @@
       character(len=128)::  surf_file = "INPUT/mars_topo"
       character(len=6)  ::  surf_format = 'binary'
 #else
-      character(len=128)::  surf_file = "INPUT/topo2min.nc"
+      character(len=128)::  surf_file = "INPUT/topo5min.nc"
       character(len=6)  ::  surf_format = 'netcdf'
 #endif
       namelist /surf_map_nml/ surf_file,surf_format,nlon,nlat

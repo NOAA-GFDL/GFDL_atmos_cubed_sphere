@@ -2,7 +2,7 @@ module fv_mapz_mod
 
   use constants_mod,     only: radius, pi, rvgas, rdgas, grav
   use fv_grid_tools_mod, only: area, dx, dy, rdxa, rdya
-  use fv_grid_utils_mod, only: cubed_to_latlon, g_sum, ptop, ptop_min
+  use fv_grid_utils_mod, only: g_sum, ptop, ptop_min, cosa_s, rsin2
   use fv_fill_mod,       only: fillz
   use fv_mp_mod,         only: gid, domain
   use mpp_domains_mod,   only: mpp_update_domains
@@ -17,14 +17,14 @@ module fv_mapz_mod
 
 CONTAINS
 
- subroutine Lagrangian_to_Eulerian(consv, ps, pe, delp, pkz, pk,   &
-                      mdt, km, is,ie,js,je, isd,ied,jsd,jed,       &
+ subroutine Lagrangian_to_Eulerian(do_consv, consv, ps, pe, delp, pkz, pk,   &
+                      pdt, km, is,ie,js,je, isd,ied,jsd,jed,       &
                       nq, sphum, u, v, w, delz, pt, q, hs, r_vir, cp,  &
                       akap, kord_mt, kord_tr, kord_tm,  peln, te0_2d,        &
                       ng, ua, va, omga, te, pem, fill, reproduce_sum,        &
-                      ak, bk, ks, ze0, remap_t, hydrostatic, hybrid_z, ktop)
-! !INPUT PARAMETERS:
-  real,    intent(in):: mdt                   ! mapping time step (same as phys)
+                      ak, bk, ks, ze0, remap_t, hydrostatic, hybrid_z, do_omega, ktop)
+  logical, intent(in):: do_consv
+  real,    intent(in):: pdt                   ! phys time step
   integer, intent(in):: km
   integer, intent(in):: nq                    ! number of tracers (including h2o)
   integer, intent(in):: sphum                 ! index for water vapor (specific humidity)
@@ -45,6 +45,7 @@ CONTAINS
 
   logical, intent(in):: fill                  ! fill negative tracers
   logical, intent(in):: reproduce_sum
+  logical, intent(in):: do_omega
   real, intent(in) :: ak(km+1)
   real, intent(in) :: bk(km+1)
 
@@ -116,13 +117,6 @@ CONTAINS
 
       if ( kord_tm < 0 ) then
            te_map = .false.
-!          do j=js,je
-!             do k=2,km+1
-!                do i=is,ie
-!                   peln(i,k,j) = log(pe(i,k,j))
-!                enddo
-!             enddo
-!          enddo
           if ( remap_t ) then
 ! Transform virtual pt to virtual Temp
              do k=1,km
@@ -137,14 +131,16 @@ CONTAINS
       else
            te_map = .true.
            call pkez(km, is, ie, js, je, pe, pk, akap, peln, pkz)
-           call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km, 1)
+!           call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km, 1)
 ! Compute cp*T + KE
 !$omp parallel do default(shared) private(i, j, k)
            do k=1,km
               do j=js,je
                  do i=is,ie
-                    te(i,j,k) = 0.5*(ua(i,j,k)**2 + va(i,j,k)**2)  &
-                                  +  pt(i,j,k)*pkz(i,j,k)
+                    te(i,j,k) = 0.25*rsin2(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
+                                                 v(i,j,k)**2+v(i+1,j,k)**2 -  &
+                               (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j))  &
+                              +  pt(i,j,k)*pkz(i,j,k)
                  enddo
               enddo
            enddo
@@ -388,15 +384,19 @@ CONTAINS
       enddo
    enddo
 
+!----------------
+   if ( do_omega ) then
+! Start do_omega
 ! Copy omega field to pe3
-   do i=is,ie
-      pe3(i,1) = 0.
-   enddo
-   do k=2,km+1
       do i=is,ie
-         pe3(i,k) = omga(i,j,k-1)
+         pe3(i,1) = 0.
       enddo
-   enddo
+      do k=2,km+1
+         do i=is,ie
+            pe3(i,k) = omga(i,j,k-1)
+         enddo
+      enddo
+   endif
 
    do k=1,km+1
       do i=is,ie
@@ -433,12 +433,12 @@ CONTAINS
    endif
 
 ! Interpolate omega/pe3 (defined at pe0) to remapped cell center (dp2)
+   if ( do_omega ) then
    do k=1,km
       do i=is,ie
          dp2(i,k) = 0.5*(peln(i,k,j) + peln(i,k+1,j))
       enddo
    enddo
-
    do i=is,ie
        k_next = 1
        do n=1,km
@@ -453,6 +453,7 @@ CONTAINS
           enddo
        enddo
    enddo
+   endif     ! end do_omega
 
   endif !(j < je+1)
 
@@ -566,9 +567,9 @@ endif         !------------- Hybrid_z section ----------------------
      enddo
   enddo
 
-  call cubed_to_latlon(u,  v, ua, va, dx, dy, rdxa, rdya, km, 1)
+!  call cubed_to_latlon(u,  v, ua, va, dx, dy, rdxa, rdya, km, 1)
 
-  if( consv > 0. ) then
+  if( do_consv .and. consv > 0. ) then
 
     if ( te_map ) then
 !$omp parallel do default(shared) private(i, j, k)
@@ -598,8 +599,10 @@ endif         !------------- Hybrid_z section ----------------------
 
          do k=1,km
             do i=is,ie
-               te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cp*pt(i,j,k) +   &  
-                                      0.5*(ua(i,j,k)**2+va(i,j,k)**2))
+               te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cp*pt(i,j,k) +   &
+                            0.25*rsin2(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
+                                             v(i,j,k)**2+v(i+1,j,k)**2 -  &
+                           (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j)))
             enddo
          enddo
         else
@@ -616,8 +619,10 @@ endif         !------------- Hybrid_z section ----------------------
             enddo
             do k=1,km
                do i=is,ie
-                  te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(pt(i,j,k)*pkz(i,j,k) +   &  
-                               0.5*(ua(i,j,k)**2+va(i,j,k)**2))
+                  te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(pt(i,j,k)*pkz(i,j,k) +   &
+                               0.25*rsin2(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
+                                                v(i,j,k)**2+v(i+1,j,k)**2 -  &
+                            (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j)))
                enddo
             enddo
          else
@@ -635,8 +640,10 @@ endif         !------------- Hybrid_z section ----------------------
            enddo
            do k=1,km
               do i=is,ie
-                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( rgama*pt(i,j,k)*pkz(i,j,k) +   &
-                              0.5*(phis(i,k)+phis(i,k+1)+ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2) )
+                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( rgama*pt(i,j,k)*pkz(i,j,k) +  &
+                              0.5*(phis(i,k)+phis(i,k+1) + 0.5*rsin2(i,j)*(            &
+                              u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -  &
+                             (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j))))
               enddo
            enddo
          endif
@@ -663,7 +670,8 @@ endif         !------------- Hybrid_z section ----------------------
       enddo
 
          tpe = consv*g_sum(te_2d, is, ie, js, je, ng, area, 0)
-      E_Flux = tpe / (grav*mdt*4.*pi*radius**2)    ! unit: W/m**2
+      E_Flux = tpe / (grav*pdt*4.*pi*radius**2)    ! unit: W/m**2
+                                                   ! Note pdt is "phys" time step
 
       if ( hydrostatic ) then
            dtmp = tpe / (cp*g_sum(zsum0,  is, ie, js, je, ng, area, 0))
@@ -688,11 +696,19 @@ endif         !------------- Hybrid_z section ----------------------
          enddo
          do k=km,1,-1
             do i=is,ie
-               tpe = te(i,j,k) - 0.5*(ua(i,j,k)**2 + va(i,j,k)**2) - gz(i)
+               tpe = te(i,j,k) - gz(i) - 0.25*rsin2(i,j)*(    &
+                     u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -  &
+                    (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j) )
                dlnp = rg*(peln(i,k+1,j) - peln(i,k,j))
+#ifdef CONVERT_T
                tmp = tpe / ((cp - pe(i,k,j)*dlnp/delp(i,j,k))*(1.+r_vir*q(i,j,k,sphum)) )
                pt(i,j,k) =  tmp + dtmp*pkz(i,j,k) / (1.+r_vir*q(i,j,k,sphum))
                gz(i) = gz(i) + dlnp*tmp*(1.+r_vir*q(i,j,k,sphum))
+#else
+               tmp = tpe / (cp - pe(i,k,j)*dlnp/delp(i,j,k))
+               pt(i,j,k) = cp*(tmp/pkz(i,j,k) + dtmp)
+               gz(i) = gz(i) + dlnp*tmp
+#endif
             enddo
          enddo           ! end k-loop
       enddo
@@ -701,7 +717,11 @@ endif         !------------- Hybrid_z section ----------------------
       do k=1,km
          do j=js,je
             do i=is,ie
+#ifdef CONVERT_T
                pt(i,j,k) = (pt(i,j,k) + dtmp*pkz(i,j,k))/(1.+r_vir*q(i,j,k,sphum))
+#else
+               pt(i,j,k) = cp*(pt(i,j,k)/pkz(i,j,k) + dtmp)
+#endif
             enddo
          enddo   
       enddo
@@ -709,12 +729,18 @@ endif         !------------- Hybrid_z section ----------------------
       do k=1,km
          do j=js,je
             do i=is,ie
+#ifdef CONVERT_T
                pt(i,j,k) = (rcp*pt(i,j,k) + dtmp)*pkz(i,j,k)/(1.+r_vir*q(i,j,k,sphum))
+#else
+               pt(i,j,k) = pt(i,j,k) + cp*dtmp
+#endif
             enddo
          enddo   
       enddo
     endif
   endif
+
+! call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km, 1)
 
  end subroutine Lagrangian_to_Eulerian
 
@@ -745,7 +771,7 @@ endif         !------------- Hybrid_z section ----------------------
    real, intent(out):: te_2d(is:ie,js:je)   ! vertically integrated TE
    real, intent(out)::   teq(is:ie,js:je)   ! Moist TE
 ! Local
-   real  gztop(is:ie)
+   real, dimension(is:ie,km):: tv
    real  phiz(is:ie,km+1)
    real cv
    integer i, j, k
@@ -755,32 +781,40 @@ endif         !------------- Hybrid_z section ----------------------
 !----------------------
 ! Output lat-lon winds:
 !----------------------
-  call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km)
+!  call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km)
 
-!$omp parallel do default(shared) private(i, j, k, gztop, phiz)
+!$omp parallel do default(shared) private(i, j, k, phiz)
   do j=js,je
 
      if ( hydrostatic ) then
 
-     do i=is,ie
-        gztop(i) = hs(i,j)
-        do k=1,km
-           gztop(i) = gztop(i) + (peln(i,k+1,j)-peln(i,k,j)) *   &
-                      rg*pt(i,j,k)*(1.+r_vir*q(i,j,k,sphum))
-        enddo
-     enddo
-     do i=is,ie
-        te_2d(i,j) = pe(i,km+1,j)*hs(i,j) - pe(i,1,j)*gztop(i)
-     enddo
-
-     do k=1,km
         do i=is,ie
-           te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(0.5*(ua(i,j,k)**2+va(i,j,k)**2)  &
-                      + cp*pt(i,j,k)*(1.+r_vir*q(i,j,k,sphum)))
+           phiz(i,km+1) = hs(i,j)
         enddo
-     enddo
+        do k=km,1,-1
+           do i=is,ie
+                   tv(i,k) = pt(i,j,k)*(1.+r_vir*q(i,j,k,sphum))
+                 phiz(i,k) = phiz(i,k+1) + rg*tv(i,k)*(peln(i,k+1,j)-peln(i,k,j))
+           enddo
+        enddo
+
+        do i=is,ie
+           te_2d(i,j) = pe(i,km+1,j)*phiz(i,km+1) - pe(i,1,j)*phiz(i,1)
+        enddo
+
+        do k=1,km
+           do i=is,ie
+              te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cp*tv(i,k) +            &
+                           0.25*rsin2(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +      &
+                                            v(i,j,k)**2+v(i+1,j,k)**2 -      &
+                       (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j)))
+           enddo
+        enddo
+
      else
+!-----------------
 ! Non-hydrostatic:
+!-----------------
      do i=is,ie
         phiz(i,km+1) = hs(i,j)
         do k=km,1,-1
@@ -792,8 +826,11 @@ endif         !------------- Hybrid_z section ----------------------
      enddo
      do k=1,km
         do i=is,ie
+!          te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv*pt(i,j,k)*(1.+r_vir*q(i,j,k,sphum)) +  &
+!                       0.5*(phiz(i,k)+phiz(i,k+1)+ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2) )
            te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv*pt(i,j,k)*(1.+r_vir*q(i,j,k,sphum)) +  &
-                        0.5*(phiz(i,k)+phiz(i,k+1)+ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2) )
+                        0.5*(phiz(i,k)+phiz(i,k+1)+0.5*rsin2(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
+                        v(i,j,k)**2+v(i+1,j,k)**2-(u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j))))
         enddo
      enddo
      endif
@@ -847,7 +884,7 @@ endif         !------------- Hybrid_z section ----------------------
    real ak1
    integer i, j, k
 
-   ak1 = (akap + 1.) / akap  ! = 4.5
+   ak1 = (akap + 1.) / akap
 
 !$omp parallel do default(shared) private(i, j, k, lnp, pek, pk2)
    do j=jfirst, jlast

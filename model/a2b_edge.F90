@@ -25,6 +25,7 @@ contains
 
 #ifdef TEST_VAND2
   subroutine a2b_ord4(qin, qout, npx, npy, is, ie, js, je, ng, replace)
+! use  tp_core_mod,      only: copy_corners
   integer, intent(IN):: npx, npy, is, ie, js, je, ng
   real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   ! A-grid field
   real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   ! Output  B-grid field
@@ -40,6 +41,7 @@ contains
 !------------------------------------------
 ! Copy fields to the phantom corner region:
 !------------------------------------------
+!  call copy_corners(qin, npx, npy, 1)
 
   do j=js,je+1
      do i=is,ie+1
@@ -191,6 +193,9 @@ contains
 ! local: compact 4-pt cubic
   real, parameter:: c1 =  2./3.
   real, parameter:: c2 = -1./6.
+! Parabolic spline
+! real, parameter:: c1 =  0.75
+! real, parameter:: c2 = -0.25
 ! 6-pt corner interpolation:
   real, parameter:: d1 =  0.375                   !   0.5
   real, parameter:: d2 = -1./24.                  !  -1./6.
@@ -219,10 +224,12 @@ contains
     je1 = min(npy-1,je+1)
 
 ! Corners:
-!   if ( sw_corner ) qout(1,    1) = r3*(qin(1,        1)+qin(1,      0)+qin(0,      1))
-!   if ( se_corner ) qout(npx,  1) = r3*(qin(npx-1,    1)+qin(npx-1,  0)+qin(npx,    1))
-!   if ( ne_corner ) qout(npx,npy) = r3*(qin(npx-1,npy-1)+qin(npx,npy-1)+qin(npx-1,npy))
-!   if ( nw_corner ) qout(1,  npy) = r3*(qin(1,    npy-1)+qin(0,  npy-1)+qin(1,    npy))
+ #ifdef USE_3PT
+   if ( sw_corner ) qout(1,    1) = r3*(qin(1,        1)+qin(1,      0)+qin(0,      1))
+   if ( se_corner ) qout(npx,  1) = r3*(qin(npx-1,    1)+qin(npx-1,  0)+qin(npx,    1))
+   if ( ne_corner ) qout(npx,npy) = r3*(qin(npx-1,npy-1)+qin(npx,npy-1)+qin(npx-1,npy))
+   if ( nw_corner ) qout(1,  npy) = r3*(qin(1,    npy-1)+qin(0,  npy-1)+qin(1,    npy))
+ #else
 ! 6-point formular:
     if ( sw_corner ) then
         qout(1,1) = d1*(qin(1, 0) + qin( 0,1) + qin(1,1)) +  &
@@ -240,6 +247,7 @@ contains
         qout(1,npy) = d1*(qin( 0,npy-1) + qin(1,npy-1) + qin(1,npy)) +   &
                       d2*(qin(-1,npy-2) + qin(2,npy-2) + qin(2,npy+1))
     endif
+ #endif
 
 !------------
 ! X-Interior:
@@ -257,7 +265,8 @@ contains
            gratio = dxa(2,j) / dxa(1,j)
           qx(1,j) = 0.5*((2.+gratio)*(qin(0,j)+qin(1,j))    &
                   - (qin(-1,j)+qin(2,j))) / (1.+gratio)
-#ifndef TEST2
+#ifdef TEST2
+! Note: Caused noises in test_case-5 for large n_split
           qx(2,j) = (2.*gratio*(gratio+1.)*qin(1,j)+qin(2,j) -     &
                      gratio*(gratio+0.5)*qx(1,j))/(1.+gratio*(gratio+1.5))
 #else
@@ -280,7 +289,7 @@ contains
                gratio = dxa(npx-2,j) / dxa(npx-1,j)
           qx(npx  ,j) = 0.5*((2.+gratio)*(qin(npx-1,j)+qin(npx,j))   &
                         - (qin(npx-2,j)+qin(npx+1,j))) / (1.+gratio )
-#ifndef TEST2
+#ifdef TEST2
           qx(npx-1,j) = (2.*gratio*(gratio+1.)*qin(npx-1,j)+qin(npx-2,j) -  &
                          gratio*(gratio+0.5)*qx(npx,j))/(1.+gratio*(gratio+1.5))
 #else
@@ -313,7 +322,7 @@ contains
            gratio = dya(i,2) / dya(i,1)
           qy(i,1) = 0.5*((2.+gratio)*(qin(i,0)+qin(i,1))   &
                   - (qin(i,-1)+qin(i,2))) / (1.+gratio )
-#ifndef TEST2
+#ifdef TEST2
           qy(i,2) = (2.*gratio*(gratio+1.)*qin(i,1)+qin(i,2) -     &
                      gratio*(gratio+0.5)*qy(i,1))/(1.+gratio*(gratio+1.5))
 #else
@@ -336,7 +345,7 @@ contains
                gratio = dya(i,npy-2) / dya(i,npy-1)
           qy(i,npy  ) = 0.5*((2.+gratio)*(qin(i,npy-1)+qin(i,npy))  &
                       - (qin(i,npy-2)+qin(i,npy+1))) / (1.+gratio)
-#ifndef TEST2
+#ifdef TEST2
           qy(i,npy-1) = (2.*gratio*(gratio+1.)*qin(i,npy-1)+qin(i,npy-2) - &
                          gratio*(gratio+0.5)*qy(i,npy))/(1.+gratio*(gratio+1.5))
 #else

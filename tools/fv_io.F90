@@ -31,33 +31,42 @@ module fv_io_mod
   ! for the model.
   !</DESCRIPTION>
 
-  use fms_mod,                 only: file_exist
-  use fms_mod,                 only: read_data, write_data
-  use fms_io_mod,              only: fms_io_exit, get_tile_string
-  use fv_arrays_mod,           only: fv_atmos_type
+  use fms_mod,                 only: file_exist, read_data, write_data, field_exist    
+  use fms_io_mod,              only: fms_io_exit, get_tile_string, &
+                                     restart_file_type, register_restart_field, &
+                                     save_restart, restore_state
   use mpp_mod,                 only: mpp_error, FATAL, NOTE
-  use mpp_domains_mod,         only: domain2d
-  use mpp_domains_mod,         only: EAST, NORTH, mpp_get_tile_id
-  use mpp_domains_mod,         only: mpp_get_compute_domain, mpp_get_data_domain
+  use mpp_domains_mod,         only: domain2d, EAST, NORTH, mpp_get_tile_id, &
+                                     mpp_get_compute_domain, mpp_get_data_domain, &
+                                     mpp_get_ntile_count
   use tracer_manager_mod,      only: tr_get_tracer_names=>get_tracer_names, &
                                      get_tracer_names, get_number_tracers, &
                                      set_tracer_profile, &
-                                     get_tracer_index, NO_TRACER
+                                     get_tracer_index
   use field_manager_mod,       only: MODEL_ATMOS  
-  use fms_mod,                 only: field_exist    
-
+  use fv_arrays_mod,           only: fv_atmos_type
+  use fv_grid_utils_mod,       only: sst_ncep
 
   implicit none
   private
 
   public :: fv_io_init, fv_io_exit, fv_io_read_restart, remap_restart, fv_io_write_restart
-  public :: fv_io_read_tracers
+  public :: fv_io_read_tracers, fv_io_register_restart
 
   logical                       :: module_is_initialized = .FALSE.
 
+  !--- for restart file writing
+  type(restart_file_type),        save :: Fv_restart
+  type(restart_file_type), allocatable :: Fv_tile_restart(:)
+  type(restart_file_type), allocatable :: Rsf_restart(:)
+  type(restart_file_type), allocatable :: Mg_restart(:)
+  type(restart_file_type), allocatable :: Lnd_restart(:)
+  type(restart_file_type), allocatable :: Tra_restart(:)
+
+
   !--- version information variables ----
-  character(len=128) :: version = '$Id: fv_io.F90,v 16.0 2008/07/30 22:05:11 fms Exp $'
-  character(len=128) :: tagname = '$Name: perth $'
+  character(len=128) :: version = '$Id: fv_io.F90,v 16.0.4.4 2008/09/15 18:02:17 rab Exp $'
+  character(len=128) :: tagname = '$Name: perth_2008_10 $'
 
 contains 
 
@@ -111,19 +120,36 @@ contains
  
 !   call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
     ntracers = size(Atm(1)%q,4)  ! Temporary until we get tracer manager integrated
+
+    fname_nd = 'INPUT/sst_ncep.res.nc'
+    if(file_exist(fname_nd))then
+! sst_ncep may be used in free-running forecast mode
+       call read_data(fname_nd, 'sst_ncep', sst_ncep)
+    endif
  
     fname_nd = 'INPUT/fv_core.res.nc'
- 
   ! write_data does not (yet?) support vector data and tiles
     call read_data(fname_nd, 'ak', Atm(1)%ak(:))
     call read_data(fname_nd, 'bk', Atm(1)%bk(:))
  
+   
     do n = 1, ntileMe
        isc = Atm(n)%isc; iec = Atm(n)%iec; jsc = Atm(n)%jsc; jec = Atm(n)%jec
        call get_tile_string(fname, 'INPUT/fv_core.res.tile', tile_id(n), '.nc' )
        if(file_exist(fname))then
          call read_data(fname, 'u', Atm(n)%u(isc:iec,jsc:jec+1,:), domain=fv_domain, position=NORTH,tile_count=n)
          call read_data(fname, 'v', Atm(n)%v(isc:iec+1,jsc:jec,:), domain=fv_domain, position=EAST,tile_count=n)
+
+       if ( Atm(n)%no_cgrid ) then
+         if ( Atm(n)%init_wind_m ) then
+             call mpp_error(NOTE,'==> note from fv_read_restart: (um,vm) initialized from current time step')
+             Atm(n)%um(:,:,:) = Atm(n)%u(:,:,:)
+             Atm(n)%vm(:,:,:) = Atm(n)%v(:,:,:)
+         else
+         call read_data(fname, 'um', Atm(n)%um(isc:iec,jsc:jec+1,:), domain=fv_domain, position=NORTH,tile_count=n)
+         call read_data(fname, 'vm', Atm(n)%vm(isc:iec+1,jsc:jec,:), domain=fv_domain, position=EAST,tile_count=n)
+         endif
+       endif
 
          if ( (.not.Atm(n)%hydrostatic) .and. (.not.Atm(n)%make_nh) ) then
               call read_data(fname, 'W',     Atm(n)%w(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
@@ -143,6 +169,8 @@ contains
        if(file_exist(fname))then
          call read_data(fname, 'u_srf', Atm(n)%u_srf(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
          call read_data(fname, 'v_srf', Atm(n)%v_srf(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
+         if (field_exist(fname,'ts'))   &
+               call read_data(fname, 'ts', Atm(n)%ts(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
          Atm(n)%srf_init = .true.
        else
          call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
@@ -323,6 +351,8 @@ contains
        if(file_exist(fname))then
          call read_data(fname, 'u_srf', Atm(n)%u_srf(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
          call read_data(fname, 'v_srf', Atm(n)%v_srf(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
+         if (field_exist(fname,'ts'))   &
+               call read_data(fname, 'ts', Atm(n)%ts(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
          Atm(n)%srf_init = .true.
        else
          call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
@@ -387,74 +417,113 @@ contains
   end subroutine  remap_restart
 
 
+
+  !#####################################################################
+  ! <SUBROUTINE NAME="fv_io_register_restart">
+  !
+  ! <DESCRIPTION>
+  !   register restart field to be written out to restart file. 
+  ! </DESCRIPTION>
+  subroutine  fv_io_register_restart(fv_domain,Atm)
+    type(domain2d),      intent(inout) :: fv_domain
+    type(fv_atmos_type), intent(inout) :: Atm(:)
+
+    character(len=64) :: fname_nd, tracer_name
+    integer           :: id_restart
+    integer           :: n, nt, ntracers, ntileMe, ntiles
+
+    ntileMe = size(Atm(:)) 
+    ntracers = size(Atm(1)%q,4) 
+
+    fname_nd = 'fv_core.res.nc'
+    id_restart = register_restart_field(Fv_restart, fname_nd, 'ak', Atm(1)%ak(:))
+    id_restart = register_restart_field(Fv_restart, fname_nd, 'bk', Atm(1)%bk(:)) 
+
+    allocate(Fv_tile_restart(ntileMe), Rsf_restart(ntileMe) )
+    allocate(Mg_restart(ntileMe), Lnd_restart(ntileMe), Tra_restart(ntileMe) )
+
+! fix for single tile runs where you need fv_core.res.nc and fv_core.res.tile1.nc
+    ntiles = mpp_get_ntile_count(fv_domain)
+    if(ntiles == 1) fname_nd =  'fv_core.res.tile1.nc'
+
+    do n = 1, ntileMe
+       id_restart =  register_restart_field(Fv_tile_restart(n), fname_nd, 'u', Atm(n)%u, &
+                     domain=fv_domain, position=NORTH,tile_count=n)
+       id_restart =  register_restart_field(Fv_tile_restart(n), fname_nd, 'v', Atm(n)%v, &
+                     domain=fv_domain, position=EAST,tile_count=n)
+       if (.not.Atm(n)%hydrostatic) then
+          id_restart =  register_restart_field(Fv_tile_restart(n), fname_nd, 'W', Atm(n)%w, &
+                        domain=fv_domain, tile_count=n, mandatory=.false.)
+          id_restart =  register_restart_field(Fv_tile_restart(n), fname_nd, 'DZ', Atm(n)%delz, &
+                        domain=fv_domain, tile_count=n, mandatory=.false.)
+          if ( Atm(n)%hybrid_z ) then
+             id_restart =  register_restart_field(Fv_tile_restart(n), fname_nd, 'ZE0', Atm(n)%ze0, &
+                           domain=fv_domain, tile_count=n, mandatory=.false.)
+          endif
+       endif
+       id_restart =  register_restart_field(Fv_tile_restart(n), fname_nd, 'T', Atm(n)%pt, &
+                     domain=fv_domain, tile_count=n)
+       id_restart =  register_restart_field(Fv_tile_restart(n), fname_nd, 'delp', Atm(n)%delp, &
+                     domain=fv_domain, tile_count=n)
+       id_restart =  register_restart_field(Fv_tile_restart(n), fname_nd, 'phis', Atm(n)%phis, &
+                     domain=fv_domain, tile_count=n)
+
+       fname_nd = 'fv_srf_wnd.res.nc'
+       id_restart =  register_restart_field(Rsf_restart(n), fname_nd, 'u_srf', Atm(n)%u_srf, &
+                     domain=fv_domain, tile_count=n)
+       id_restart =  register_restart_field(Rsf_restart(n), fname_nd, 'v_srf', Atm(n)%v_srf, &
+                     domain=fv_domain, tile_count=n)
+
+       if ( Atm(n)%fv_land ) then
+          !-------------------------------------------------------------------------------------------------
+          ! Optional terrain deviation (sgh) and land fraction (oro)
+          fname_nd = 'mg_drag.res.nc'
+          id_restart =  register_restart_field(Mg_restart(n), fname_nd, 'ghprime', Atm(n)%sgh, &
+                        domain=fv_domain, tile_count=n)  
+
+          fname_nd = 'fv_land.res.nc'
+          id_restart = register_restart_field(Lnd_restart(n), fname_nd, 'oro', Atm(n)%oro, &
+                        domain=fv_domain, tile_count=n)
+       endif
+       fname_nd = 'fv_tracer.res.nc'
+       do nt = 1, ntracers
+          call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
+          id_restart = register_restart_field(Tra_restart(n), fname_nd, tracer_name, Atm(n)%q(:,:,:,nt), &
+                       domain=fv_domain, tile_count=n, mandatory=.false.)
+       enddo
+    enddo
+
+  end subroutine  fv_io_register_restart
+  ! </SUBROUTINE> NAME="fv_io_register_restart"
+
+
+
   !#####################################################################
   ! <SUBROUTINE NAME="fv_io_write_restart">
   !
   ! <DESCRIPTION>
   ! Write the fv core restart quantities 
   ! </DESCRIPTION>
-  subroutine  fv_io_write_restart(fv_domain,Atm)
-    type(domain2d),      intent(in) :: fv_domain
-    type(fv_atmos_type), intent(in) :: Atm(:)
-
-    character(len=64)    :: fname, fname_nd, tracer_name
-    integer              :: isc, iec, jsc, jec, n, nt, ntracers
-    integer              :: ntileMe
-    integer, allocatable :: tile_id(:)
-    character(len=128)   :: tracer_longname, tracer_units
+  subroutine  fv_io_write_restart(Atm, timestamp)
+    type(fv_atmos_type),        intent(in) :: Atm(:)
+    character(len=*), optional, intent(in) :: timestamp
+    integer                                :: n, ntileMe
 
     ntileMe = size(Atm(:))  ! This will need mods for more than 1 tile per pe
-    allocate(tile_id(ntileMe))
-    tile_id = mpp_get_tile_id(fv_domain)
- 
-!   call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
-    ntracers = size(Atm(1)%q,4)  ! Temporary until we get tracer manager integrated
- 
-    fname_nd = 'RESTART/fv_core.res.nc'
- 
-  ! write_data does not (yet?) support vector data and tiles
-    call write_data(fname_nd, 'ak', Atm(1)%ak(:))
-    call write_data(fname_nd, 'bk', Atm(1)%bk(:))
+
+    call save_restart(Fv_restart, timestamp)
  
     do n = 1, ntileMe
-       isc = Atm(n)%isc; iec = Atm(n)%iec; jsc = Atm(n)%jsc; jec = Atm(n)%jec  
-       call get_tile_string(fname, 'RESTART/fv_core.res.tile', tile_id(n), '.nc' )
-       call write_data(fname, 'u', Atm(n)%u(isc:iec,jsc:jec+1,:), domain=fv_domain, position=NORTH,tile_count=n)
-       call write_data(fname, 'v', Atm(n)%v(isc:iec+1,jsc:jec,:), domain=fv_domain, position=EAST,tile_count=n)
+       call save_restart(Fv_tile_restart(n), timestamp)
+       call save_restart(Rsf_restart(n), timestamp)
 
-       if ( .not.Atm(n)%hydrostatic ) then
-            call write_data(fname, 'W',     Atm(n)%w(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
-            call write_data(fname, 'DZ', Atm(n)%delz(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
-            if ( Atm(n)%hybrid_z )  &
-            call write_data(fname, 'ZE0', Atm(n)%ze0(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
+       if ( Atm(n)%fv_land ) then
+          call save_restart(Mg_restart(n), timestamp)
+          call save_restart(Lnd_restart(n), timestamp)
        endif
 
-       call write_data(fname, 'T', Atm(n)%pt(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
-       call write_data(fname, 'delp', Atm(n)%delp(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
-       call write_data(fname, 'phis', Atm(n)%phis(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
- 
-       call get_tile_string(fname, 'RESTART/fv_srf_wnd.res.tile', tile_id(n), '.nc' )
-       call write_data(fname, 'u_srf', Atm(n)%u_srf(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
-       call write_data(fname, 'v_srf', Atm(n)%v_srf(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
-
-     if ( Atm(n)%fv_land ) then
-       call get_tile_string(fname, 'RESTART/mg_drag.res.tile', tile_id(n), '.nc' )
-       call write_data(fname, 'ghprime', Atm(n)%sgh(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
-       call get_tile_string(fname, 'RESTART/fv_land.res.tile', tile_id(n), '.nc' )
-       call write_data(fname, 'oro', Atm(n)%oro(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
-     endif
-
-       call get_tile_string(fname, 'RESTART/fv_tracer.res.tile', tile_id(n), '.nc' )
-
-       do nt = 1, ntracers
-         call tr_get_tracer_names(MODEL_ATMOS, nt, &
-                tracer_name, tracer_longname, tracer_units)
-         call write_data(fname, tracer_name, Atm(n)%q(isc:iec,jsc:jec,:,nt), domain=fv_domain, tile_count=n)
-       end do
-
+       call save_restart(Tra_restart(n), timestamp)
     end do
-
-    module_is_initialized = .false.
 
   end subroutine  fv_io_write_restart
   ! </SUBROUTINE> NAME="fv_io_write_restart"

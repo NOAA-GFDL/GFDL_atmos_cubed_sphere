@@ -47,6 +47,7 @@
 !                   15 = Small Earth convective bubble
 !                   16 = 3D hydrostatic non-rotating Gravity waves
 !                   17 = 3D hydrostatic rotating Inertial Gravity waves (case 6-3-0)
+!                   18 = 3D mountain-induced Rossby wave
       integer :: test_case
 ! alpha = angle of axis rotation about the poles
       real   :: alpha = 0.
@@ -423,8 +424,8 @@
 ! Baroclinic Test Case 12
       real :: eta, eta_0, eta_s, eta_t
       real :: eta_v(npz), press, anti_rot
-      real :: T_0, T_mean, delta_T, lapse_rate
-      real :: pt1,pt2,pt3,pt4,pt5,pt6, pt7, pt8, pt9, u1
+      real :: T_0, T_mean, delta_T, lapse_rate, n2
+      real :: pt1,pt2,pt3,pt4,pt5,pt6, pt7, pt8, pt9, u1, pt0
       real :: uu1, uu2, uu3, vv1, vv2, vv3
 !     real wbuffer(npx+1,npz)
 !     real sbuffer(npy+1,npz)
@@ -491,10 +492,6 @@
            enddo
         enddo
         div0(:,:) = 1.e-20
-     ! call mpp_update_domains( div0, domain )
-     ! call mpp_update_domains( vor0, domain )
-     ! call mpp_update_domains( divg, domain )
-     ! call mpp_update_domains( vort, domain )
       call get_scalar_stats( divg, div0, npx, npy, ndims, nregions, &
                              pmin, pmax, L1_norm, L2_norm, Linf_norm)
  200  format(i4.4,'x',i4.4,'x',i4.4,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14)
@@ -528,10 +525,6 @@
         ua0 = ua
         va0 = va
         div0(:,:) = 1.e-20
-     ! call mpp_update_domains( div0, domain )
-     ! call mpp_update_domains( vor0, domain )
-     ! call mpp_update_domains( divg, domain )
-     ! call mpp_update_domains( vort, domain )
       call get_scalar_stats( divg, div0, npx, npy, ndims, nregions, &
                              pmin, pmax, L1_norm, L2_norm, Linf_norm)
       if ( (gid == masterproc) ) then
@@ -1202,7 +1195,13 @@
          pcen(1) = PI/9.
          pcen(2) = 2.0*PI/9. 
          if (test_case == 13) then
+#ifdef ALT_PERT
+             u1 = 0.0
+            pt0 = 3.0
+#else
              u1 = 1.0
+            pt0 = 0.0
+#endif
              r0 = radius/10.0
          endif
          do z=1,npz
@@ -1334,6 +1333,13 @@
                   pt(i,j,z) = 0.25*pt1 + 0.125*(pt2+pt3+pt4+pt5) + 0.0625*(pt6+pt7+pt8+pt9)
 #else
                   pt(i,j,z) = pt1
+#endif
+
+#ifdef ALT_PERT
+                  r = great_circle_dist( pcen, agrid(i,j,1:2), radius )
+                  if ( (r/r0)**2 < 40. ) then
+                        pt(i,j,z) = pt(i,j,z) + pt0*exp(-(r/r0)**2)
+                  endif
 #endif
                enddo
             enddo
@@ -1540,6 +1546,59 @@
           enddo
        enddo
 
+      elseif ( test_case==18 ) then
+         ubar = 20.
+          pt0 = 288.
+         n2 = grav**2 / (cp_air*pt0)
+
+         pcen(1) = PI/2.
+         pcen(2) = PI/6.
+
+    ! Initialize surface Pressure
+         do j=js,je
+            do i=is,ie
+               r = great_circle_dist( pcen, agrid(i,j,1:2), radius )
+               phis(i,j) = grav*2.E3*exp( -(r/1500.E3)**2 )
+               ps(i,j) = 930.E2 * exp( -radius*n2*ubar/(2.*grav*grav*kappa)*(ubar/radius+2.*omega)*   &
+                                       (sin(agrid(i,j,2))**2-1.) - n2/(grav*grav*kappa)*phis(i,j))
+            enddo
+         enddo
+
+      do z=1,npz
+            do j=js,je
+               do i=is,ie
+                    pt(i,j,z) = pt0
+                  delp(i,j,z) = ak(z+1)-ak(z) + ps(i,j)*(bk(z+1)-bk(z))
+               enddo
+            enddo
+! v-wind:
+         do j=js,je
+            do i=is,ie+1
+               p1(:) = grid(i  ,j ,1:2)
+               p2(:) = grid(i,j+1 ,1:2)
+               call mid_pt_sphere(p1, p2, p3)
+               call get_unit_vector(p1, p2, e2)
+               call get_latlon_vector(p3, ex, ey)
+               utmp = ubar * cos(p3(2))
+               vtmp = 0.
+               v(i,j,z) = utmp*inner_prod(e2,ex) + vtmp*inner_prod(e2,ey)
+            enddo
+         enddo
+
+! u-wind
+         do j=js,je+1
+            do i=is,ie
+               p1(:) = grid(i,  j,1:2)
+               p2(:) = grid(i+1,j,1:2)
+               call mid_pt_sphere(p1, p2, p3)
+               call get_unit_vector(p1, p2, e1)
+               call get_latlon_vector(p3, ex, ey)
+               utmp = ubar * cos(p3(2))
+               vtmp = 0.
+               u(i,j,z) = utmp*inner_prod(e1,ex) + vtmp*inner_prod(e1,ey)
+            enddo
+         enddo
+      enddo
 
       endif !test_case
 
@@ -1575,6 +1634,7 @@
 #endif
 
 #endif
+    call mp_update_dwinds(u, v, npx, npy, npz)
   end subroutine init_case
 
 

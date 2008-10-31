@@ -19,8 +19,8 @@ contains
 ! !ROUTINE: Perform 2D horizontal-to-lagrangian transport
 !-----------------------------------------------------------------------
 
-subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
-                        q_split, k, q3, dt, uniform_ppm, id_divg)
+subroutine tracer_2d_1L(q, dp0, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
+                        q_split, k, q3, dt, id_divg)
       integer, intent(IN) :: npx, npy, npz
       integer, intent(IN) :: k
       integer, intent(IN) :: nq    ! number of tracers to be advected
@@ -28,17 +28,22 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
       integer, intent(IN) :: q_split
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt
-      logical, intent(IN) :: uniform_ppm
       real   , intent(INOUT) :: q(isd:ied,jsd:jed,nq)       ! 2D Tracers
       real   , intent(INOUT) ::q3(isd:ied,jsd:jed,npz,nq)   ! Tracers
-      real   , intent(INOUT) :: dp1(is:ie,js:je)        ! DELP before dyn_core
-      real   , intent(INOUT) :: mfx(is:ie+1,js:je)    ! Mass Flux X-Dir
-      real   , intent(INOUT) :: mfy(is:ie  ,js:je+1)    ! Mass Flux Y-Dir
-      real   , intent(INOUT) ::  cx(is:ie+1,jsd:jed)  ! Courant Number X-Dir
-      real   , intent(INOUT) ::  cy(isd:ied,js :je +1)  ! Courant Number Y-Dir
+      real   , intent(INOUT) :: dp0(is:ie,js:je)        ! DELP before dyn_core
+      real   , intent(IN) :: mfx(is:ie+1,js:je)    ! Mass Flux X-Dir
+      real   , intent(IN) :: mfy(is:ie  ,js:je+1)    ! Mass Flux Y-Dir
+      real   , intent(IN) ::  cx(is:ie+1,jsd:jed)  ! Courant Number X-Dir
+      real   , intent(IN) ::  cy(isd:ied,js :je +1)  ! Courant Number Y-Dir
 
 ! Local Arrays
-      real :: dp2(isd:ied,jsd:jed)
+      real :: mfx2(is:ie+1,js:je)
+      real :: mfy2(is:ie  ,js:je+1)
+      real ::  cx2(is:ie+1,jsd:jed)
+      real ::  cy2(isd:ied,js :je +1)
+
+      real :: dp1(is:ie,js:je)
+      real :: dp2(is:ie,js:je)
       real :: fx(is:ie+1,js:je )
       real :: fy(is:ie , js:je+1)
       real :: ra_x(is:ie,jsd:jed)
@@ -81,7 +86,7 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
             enddo
          enddo
          call mp_reduce_max(cmax)
-         nsplt = int(1.0001 + cmax)
+         nsplt = int(1.01 + cmax)
          if ( gid == 0 .and. nsplt > 5 )  write(6,*) k, 'Tracer_2d_split=', nsplt, cmax
       else
          nsplt = q_split
@@ -89,32 +94,30 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
 
 
       frac  = 1. / real(nsplt)
-      if( nsplt /= 1 ) then
           do j=jsd,jed
              do i=is,ie+1
-                cx(i,j) =  cx(i,j) * frac
+                cx2(i,j) =  cx(i,j) * frac
                 xfx(i,j) = xfx(i,j) * frac
              enddo
           enddo
           do j=js,je
              do i=is,ie+1
-                mfx(i,j) = mfx(i,j) * frac
+                mfx2(i,j) = mfx(i,j) * frac
              enddo
           enddo
 
           do j=js,je+1
              do i=isd,ied
-                cy(i,j) =  cy(i,j) * frac
+                cy2(i,j) =  cy(i,j) * frac
                yfx(i,j) = yfx(i,j) * frac
              enddo
           enddo
 
           do j=js,je+1
              do i=is,ie
-                mfy(i,j) = mfy(i,j) * frac
+                mfy2(i,j) = mfy(i,j) * frac
              enddo
           enddo
-      endif
 
       do j=jsd,jed
          do i=is,ie
@@ -127,12 +130,18 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
          enddo
       enddo
 
+      do j=js,je
+         do i=is,ie
+            dp1(i,j) = dp0(i,j)
+         enddo
+      enddo
+
       do it=1,nsplt
 
          do j=js,je
             do i=is,ie
-               dp2(i,j) = dp1(i,j) + (mfx(i,j) - mfx(i+1,j) +  &
-                          mfy(i,j) - mfy(i,j+1)) * rarea(i,j)
+               dp2(i,j) = dp1(i,j) + (mfx2(i,j) - mfx2(i+1,j) +  &
+                          mfy2(i,j) - mfy2(i,j+1)) * rarea(i,j)
             enddo
          enddo
 
@@ -143,8 +152,8 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
          call timing_off('COMM_TOTAL')
 
          do iq=1,nq
-            call fv_tp_2d( q(isd,jsd,iq), cx, cy,  npx, npy, hord, fx, fy, &
-                           xfx, yfx, area, ra_x, ra_y, uniform_ppm, mfx=mfx, mfy=mfy )
+            call fv_tp_2d( q(isd,jsd,iq), cx2, cy2, npx, npy, hord, fx, fy, &
+                           xfx, yfx, area, ra_x, ra_y, mfx=mfx2, mfy=mfy2 )
             if( it==nsplt ) then
             do j=js,je
                do i=is,ie
@@ -175,7 +184,7 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
          rdt = 1./(frac*dt)
          do j=js,je
             do i=is,ie
-               dp1(i,j) = (xfx(i+1,j)-xfx(i,j) + yfx(i,j+1)-yfx(i,j))*rarea(i,j)*rdt
+               dp0(i,j) = (xfx(i+1,j)-xfx(i,j) + yfx(i,j+1)-yfx(i,j))*rarea(i,j)*rdt
             enddo
          enddo
      endif
@@ -183,8 +192,7 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
 end subroutine tracer_2d_1L
 
 subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
-                     nq,  hord, q_split, dt, uniform_ppm, id_divg)
-      implicit none
+                     nq,  hord, q_split, dt, id_divg)
 
       integer, intent(IN) :: npx
       integer, intent(IN) :: npy
@@ -194,7 +202,6 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
       integer, intent(IN) :: q_split
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt
-      logical, intent(IN) :: uniform_ppm
       real   , intent(INOUT) :: q(isd:ied,jsd:jed,npz,nq)   ! Tracers
       real   , intent(INOUT) :: dp1(is:ie,js:je,npz)        ! DELP before dyn_core
       real   , intent(INOUT) :: mfx(is:ie+1,js:je,  npz)    ! Mass Flux X-Dir
@@ -203,7 +210,7 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
       real   , intent(INOUT) ::  cy(isd:ied,js :je +1,npz)  ! Courant Number Y-Dir
 
 ! Local Arrays
-      real :: dp2(isd:ied,jsd:jed)
+      real :: dp2(is:ie,js:je)
       real :: fx(is:ie+1,js:je )
       real :: fy(is:ie , js:je+1)
       real :: ra_x(is:ie,jsd:jed)
@@ -329,7 +336,7 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
             call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
                           npx, npy, hord, fx, fy,            &
                           xfx(is,jsd,k), yfx(isd,js,k), area, ra_x, ra_y, &
-                          uniform_ppm, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
+                          mfx=mfx(is,js,k), mfy=mfy(is,js,k))
 
             do j=js,je
                do i=is,ie

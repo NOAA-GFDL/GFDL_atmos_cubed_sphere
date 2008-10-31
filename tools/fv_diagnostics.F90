@@ -12,8 +12,7 @@ module fv_diagnostics_mod
                              mp_reduce_sum, mp_reduce_min, mp_reduce_max
  use fv_eta_mod,        only: get_eta_level, gw_1d
  use fv_grid_tools_mod, only: dx, dy, rdxa, rdya, area, rarea
- use fv_grid_utils_mod, only: f0, cosa_s, cubed_to_latlon, g_sum, sina_u, sina_v,   &
-                             en1, en2, vlon
+ use fv_grid_utils_mod, only: f0, cosa_s, g_sum, sina_u, sina_v, en1, en2, vlon
  use a2b_edge_mod,     only: a2b_ord4
  use fv_surf_map_mod,  only: zs_g
  use fv_sg_mod,        only: qsmith
@@ -30,11 +29,11 @@ module fv_diagnostics_mod
            id_te, id_zs, id_ze, id_mq, id_vorts, id_us, id_vs,    &
            id_tq, id_rh, id_c15, id_c25, id_c35, id_c45,          &
                          id_f15, id_f25, id_f35, id_f45,          &
-           id_ppt
+           id_ppt, id_ts
 
 ! Selected p-level fileds from 3D variables:
  integer ::id_h300, id_h500, id_vort850, id_u850, id_v850, id_w850,  &
-           id_u200, id_v200, id_w200, id_s200, id_sl13
+           id_u200, id_v200, id_w200, id_s200, id_sl12, id_sl13
 
  integer, parameter:: max_step = 1000
  integer steps
@@ -82,8 +81,10 @@ contains
     real              :: vrange(2), vsrange(2), wrange(2), trange(2), slprange(2), rhrange(2)
     real, allocatable :: a3(:,:,:)
     real              :: pfull(npz)
+    real              :: hyam(npz), hybm(npz)
 
     integer :: id_bk, id_pk, id_area, id_lon, id_lat, id_lont, id_latt, id_phalf, id_pfull
+    integer :: id_hyam, id_hybm
     integer :: i, j, k, n, ntileMe, id_xt, id_yt, id_x, id_y, id_xe, id_ye, id_xn, id_yn
     integer :: isc, iec, jsc, jec
 
@@ -196,10 +197,28 @@ contains
     id_pk    = register_static_field ( "dynamics", 'pk', (/id_phalf/), &
          'pressure part of the hybrid coordinate', 'pascal' )
 
+    id_hyam    = register_static_field ( "dynamics", 'hyam', (/id_pfull/), &
+         'vertical coordinate A value', '1E-5 Pa' )
+
+    id_hybm    = register_static_field ( "dynamics", 'hybm', (/id_pfull/), &
+         'vertical coordinate B value', 'none' )
+
 !--- Send static data
 
     if ( id_bk > 0 )    used = send_data ( id_bk,Atm(1)%bk, Time )
     if ( id_pk > 0 )    used = send_data ( id_pk,Atm(1)%ak, Time )
+    if ( id_hyam > 0 ) then
+         do k=1,npz
+            hyam(k) = 0.5 * ( Atm(1)%ak(k) + Atm(1)%ak(k+1) ) * 1.E-5
+         enddo
+         used = send_data ( id_hyam, hyam, Time )
+    endif
+    if ( id_hybm > 0 ) then
+         do k=1,npz
+            hybm(k) = 0.5 * ( Atm(1)%bk(k) + Atm(1)%bk(k+1) )
+         enddo
+         used = send_data ( id_hybm, hybm, Time )
+    endif
 
 !   Approach will need modification if we wish to write values on other than A grid.
     axes(1) = id_xt
@@ -235,6 +254,8 @@ contains
                                         'Land/Water Mask', 'none' )
        id_sgh = register_static_field ( trim(field), 'sgh', axes(1:2),  &
                                         'Terrain Standard deviation', 'm' )
+       id_ts = register_static_field ( trim(field), 'ts', axes(1:2),  &
+                                        'Skin temperature', 'K' )
 
 !--------------------
 ! Initial conditions:
@@ -283,17 +304,15 @@ contains
          if (id_sgh > 0) used = send_data(id_sgh, Atm(n)%sgh(isc:iec,jsc:jec), Time)
        endif
 
+       if ( Atm(n)%ncep_ic ) then
+         if (id_ts > 0) used = send_data(id_ts, Atm(n)%ts(isc:iec,jsc:jec), Time)
+       endif
+
        if ( Atm(n)%hybrid_z .and. id_ze > 0 ) &
                       used = send_data(id_ze, Atm(n)%ze0(isc:iec,jsc:jec,1:npz), Time)
 
        if (ic_ps > 0) used = send_data(ic_ps, Atm(n)%ps(isc:iec,jsc:jec)*ginv, Time)
 
-#ifdef SW_DYNAMICS
-       if (ic_ua>0 .or. ic_va>0) then
-          call cubed_to_latlon(Atm(n)%u, Atm(n)%v, Atm(n)%ua, Atm(n)%va,   &
-                               dx, dy, rdxa, rdya, 1, 1)
-       endif
-#endif
        if(ic_ua > 0) used=send_data(ic_ua, Atm(n)%ua(isc:iec,jsc:jec,:), Time)
        if(ic_va > 0) used=send_data(ic_va, Atm(n)%va(isc:iec,jsc:jec,:), Time)
 
@@ -456,6 +475,8 @@ contains
 ! winds speed (a scalar), rather than wind vectors or kinetic energy directly.
        id_s200 = register_diag_field ( trim(field), 's200', axes(1:2), Time,       &
                            '200-mb wind_speed', 'm/s', missing_value=missing_value )
+       id_sl12 = register_diag_field ( trim(field), 'sl12', axes(1:2), Time,       &
+                           '12th L wind_speed', 'm/s', missing_value=missing_value )
        id_sl13 = register_diag_field ( trim(field), 'sl13', axes(1:2), Time,       &
                            '13th L wind_speed', 'm/s', missing_value=missing_value )
 !--------------------------
@@ -575,6 +596,11 @@ contains
     real, parameter:: ws_1 = 20.
     real, parameter:: vort_c0= 2.2e-5 
     logical, allocatable :: storm(:,:), cat_crt(:,:)
+    real:: wind_range(2), t_range(2)
+
+! Warning thresholds:
+    wind_range = (/ -250.,  250. /)  ! winds
+       t_range = (/  150.,  330. /)  ! temperature
 
     rad2deg = 180./pi
 
@@ -645,13 +671,6 @@ contains
          endif
      endif
 
-#ifdef SW_DYNAMICS
-       if (id_ua>0 .or. id_va>0) then
-          call cubed_to_latlon(Atm(n)%u, Atm(n)%v, Atm(n)%ua, Atm(n)%va,   &
-                               dx, dy, rdxa, rdya, 1, 1)
-       endif
-#endif
-
     if( prt_minmax ) then
 
         call prt_maxmin('ZS', zsurf,     isc, iec, jsc, jec, 0,   1, 1.0,  master)
@@ -682,6 +701,15 @@ contains
         call prt_maxmin('TA', Atm(n)%pt,   isc, iec, jsc, jec, ngc, npz, 1., master)
         call prt_maxmin('OM', Atm(n)%omga, isc, iec, jsc, jec, ngc, npz, 1., master)
 #endif
+
+    elseif ( Atm(n)%range_warn ) then
+
+         call range_check('UA', Atm(n)%ua, isc, iec, jsc, jec, ngc, npz, master, wind_range)
+         call range_check('VA', Atm(n)%ua, isc, iec, jsc, jec, ngc, npz, master, wind_range)
+#ifndef SW_DYNAMICS
+         call range_check('TA', Atm(n)%pt, isc, iec, jsc, jec, ngc, npz, master, t_range)
+#endif
+
     endif
 
 
@@ -982,6 +1010,14 @@ contains
             enddo
             used=send_data(id_s200, a2, Time)
        endif
+       if ( id_sl12>0 ) then   ! 13th level wind speed (~ 222 mb for the 32L setup)
+            do j=jsc,jec
+               do i=isc,iec
+                  a2(i,j) = sqrt(Atm(n)%ua(i,j,12)**2 + Atm(n)%va(i,j,12)**2)
+               enddo
+            enddo
+            used=send_data(id_sl12, a2, Time)
+       endif
        if ( id_sl13>0 ) then   ! 13th level wind speed (~ 222 mb for the 32L setup)
             do j=jsc,jec
                do i=isc,iec
@@ -1159,6 +1195,41 @@ contains
       enddo
 
  end subroutine get_height_field
+
+ subroutine range_check(qname, q, is, ie, js, je, n_g, km, master, range2)
+      character*(*), intent(in)::  qname
+      integer, intent(in):: is, ie, js, je
+      integer, intent(in):: n_g, km
+      real, intent(in)::    q(is-n_g:ie+n_g, js-n_g:je+n_g, km)
+      real, intent(in):: range2(2)
+      logical, intent(in):: master
+!
+      real qmin, qmax
+      integer i,j,k
+
+      qmin = q(is,js,1)
+      qmax = qmin
+
+      do k=1,km
+      do j=js,je
+         do i=is,ie
+            if( q(i,j,k) < qmin ) then
+                qmin = q(i,j,k)
+            elseif( q(i,j,k) > qmax ) then
+                qmax = q(i,j,k)
+            endif
+          enddo
+      enddo
+      enddo
+
+      call mp_reduce_min(qmin)
+      call mp_reduce_max(qmax)
+
+      if( qmin<range2(1) .or. qmax>range2(2) ) then
+          if(master) write(6,*) 'Range_check Warning:', qname, ' max = ', qmax, ' min = ', qmin
+      endif
+
+ end subroutine range_check
 
  subroutine prt_maxmin(qname, q, is, ie, js, je, n_g, km, fac, master)
       character*(*), intent(in)::  qname

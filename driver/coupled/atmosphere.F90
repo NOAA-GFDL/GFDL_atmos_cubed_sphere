@@ -21,6 +21,11 @@ use fms_mod,            only: file_exist, open_namelist_file,    &
                               clock_flag_default, nullify_domain
 use mpp_domains_mod,    only: domain2d
 use xgrid_mod,          only: grid_box_type
+!miz
+use diag_manager_mod,   only: diag_axis_init, register_diag_field, &
+                              register_static_field, send_data
+!miz
+
 !-----------------
 ! FV core modules:
 !-----------------
@@ -31,11 +36,12 @@ use fv_control_mod,     only: fv_init, domain, fv_end, p_ref
 use fv_mp_mod,          only: domain_for_coupler
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time
-use fv_restart_mod,     only: fv_restart
+use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
 use fv_physics_mod,     only: fv_physics_down, fv_physics_up,  &
                               fv_physics_init, fv_physics_end, &
-                              surf_diff_type
+                              surf_diff_type, fv_physics_restart
+use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end
 
 implicit none
 private
@@ -45,13 +51,14 @@ public  atmosphere_down,       atmosphere_up,       &
         atmosphere_resolution, atmosphere_boundary, &
         get_atmosphere_axes,   atmosphere_domain,   &
         get_bottom_mass,       get_bottom_wind,     &
-        atmosphere_cell_area,                       &
+        atmosphere_cell_area,  atmosphere_restart,  &
         get_stock_pe,          surf_diff_type
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id: atmosphere.F90,v 16.0 2008/07/30 22:04:36 fms Exp $'
-character(len=128) :: tagname = '$Name: perth $'
+character(len=128) :: version = '$Id: atmosphere.F90,v 16.0.4.3 2008/09/17 13:23:46 rab Exp $'
+character(len=128) :: tagname = '$Name: perth_2008_10 $'
+character(len=7)   :: mod_name = 'atmos'
 
 !---- namelist (saved in file input.nml) ----
 !
@@ -66,6 +73,8 @@ character(len=128) :: tagname = '$Name: perth $'
 !---- private data ----
   type (time_type) :: Time_step_atmos
   type (fv_atmos_type), allocatable :: Atm(:)
+  public Atm
+
   real    :: dt_atmos
   real    :: zvir
   integer :: npx, npy, npz, ncnst, pnats
@@ -76,6 +85,15 @@ character(len=128) :: tagname = '$Name: perth $'
   integer :: ntiles=1
   integer :: id_dynam, id_phys_down, id_phys_up, id_fv_diag
   logical :: cold_start = .false.       ! read in initial condition
+
+!miz
+  integer :: id_tdt_dyn, id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn
+  logical :: used
+  character(len=64) :: field
+  real, allocatable :: ttend(:,:,:)
+  real, allocatable :: qtend(:,:,:,:)
+  real              :: mv = -1.e10
+!miz
 
 contains
 
@@ -179,6 +197,23 @@ contains
 
    call fv_physics_init (Atm, atmos_axes, Time, physics_window, Surf_diff)
 
+   if ( Atm(1)%nudge )    &
+        call fv_nwp_nudge_init( npz, zvir, Atm(1)%ak, Atm(1)%bk, Atm(1)%ts, Atm(1)%phis)
+
+!miz
+   if( Atm(1)%ncep_ic ) Surf_diff%sst_miz(:,:) = Atm(1)%ts(isc:iec, jsc:jec)
+
+   id_tdt_dyn =register_diag_field(mod_name,'tdt_dyn',  atmos_axes(1:3),Time,'tdt_dyn', 'K/s', missing_value=mv)
+   id_qdt_dyn =register_diag_field(mod_name,'qdt_dyn',  atmos_axes(1:3),Time,'qdt_dyn', 'kg/kg/s', missing_value=mv)
+   id_qldt_dyn=register_diag_field(mod_name,'qldt_dyn', atmos_axes(1:3),Time,'qldt_dyn','kg/kg/s', missing_value=mv)
+   id_qidt_dyn=register_diag_field(mod_name,'qidt_dyn', atmos_axes(1:3),Time,'qidt_dyn','kg/kg/s', missing_value=mv)
+   id_qadt_dyn=register_diag_field(mod_name,'qadt_dyn', atmos_axes(1:3),Time,'qadt_dyn','1/s', missing_value=mv)
+
+   if ( id_tdt_dyn>0 ) allocate(ttend (isc:iec, jsc:jec, 1:npz))
+   if ( id_qdt_dyn>0 .or. id_qldt_dyn>0 .or. id_qidt_dyn>0 .or. id_qadt_dyn>0 )   &
+   allocate(qtend (isc:iec, jsc:jec, 1:npz, 4))
+!miz
+
    call nullify_domain ( )
 
 !  --- initialize clocks for dynamics, physics_down and physics_up
@@ -243,10 +278,17 @@ contains
    call mpp_clock_begin (id_dynam)
                     call timing_on('fv_dynamics')
 
+!miz
+   if ( id_tdt_dyn>0 ) ttend(:, :, :) = Atm(1)%pt(isc:iec, jsc:jec, :)
+   if ( id_qdt_dyn>0 .or. id_qldt_dyn>0 .or. id_qidt_dyn>0 .or. id_qadt_dyn>0 )   &
+   qtend(:, :, :, :) = Atm(1)%q (isc:iec, jsc:jec, :, :)
+!miz
+
    call fv_dynamics(npx, npy, npz, nq, Atm(1)%ng, dt_atmos, Atm(1)%consv_te,         &
                     Atm(1)%fill,  Atm(1)%reproduce_sum, kappa, cp_air, zvir,         &
                     Atm(1)%ks,    ncnst,        Atm(1)%n_split,   Atm(1)%q_split,    &
-                    Atm(1)%u, Atm(1)%v, Atm(1)%w, Atm(1)%delz, Atm(1)%hydrostatic,   & 
+                    Atm(1)%u, Atm(1)%v, Atm(1)%um, Atm(1)%vm,                        &
+                    Atm(1)%w, Atm(1)%delz, Atm(1)%hydrostatic,   & 
                     Atm(1)%pt, Atm(1)%delp, Atm(1)%q, Atm(1)%ps, &
                     Atm(1)%pe, Atm(1)%pk, Atm(1)%peln, Atm(1)%pkz, Atm(1)%phis,      &
                     Atm(1)%omga, Atm(1)%ua, Atm(1)%va, Atm(1)%uc, Atm(1)%vc,         &
@@ -254,6 +296,21 @@ contains
                     Atm(1)%cx, Atm(1)%cy, Atm(1)%ze0, Atm(1)%hybrid_z)
 
                     call timing_off('fv_dynamics')
+!miz
+   if ( id_tdt_dyn>0 ) then
+        ttend = (Atm(1)%pt(isc:iec, jsc:jec, :)   - ttend(:, :, :   ))/dt_atmos
+         used = send_data(id_tdt_dyn,  ttend(:,:,:),   Time)
+   endif
+
+   if ( id_qdt_dyn>0 .or. id_qldt_dyn>0 .or. id_qidt_dyn>0 .or. id_qadt_dyn>0 ) then
+        qtend = (Atm(1)%q (isc:iec, jsc:jec, :, :)- qtend(:, :, :, :))/dt_atmos
+        used = send_data(id_qdt_dyn,  qtend(:,:,:,1), Time)
+        used = send_data(id_qldt_dyn, qtend(:,:,:,2), Time)
+        used = send_data(id_qidt_dyn, qtend(:,:,:,3), Time)
+        used = send_data(id_qadt_dyn, qtend(:,:,:,4), Time)
+   endif
+!miz
+
    call mpp_clock_end (id_dynam)
 
 
@@ -335,7 +392,10 @@ contains
    call set_domain ( domain )
 
    call get_time (Time, seconds,  days)
-   call fv_physics_end(Time)
+
+   call fv_physics_end(Atm, Time)
+   if ( Atm(1)%nudge ) call fv_nwp_nudge_end
+
    call nullify_domain ( )
    call fv_end(Atm)
    deallocate (Atm)
@@ -352,7 +412,27 @@ contains
    deallocate(Grid_box%vlon)
    deallocate(Grid_box%vlat)
 
+   if ( id_tdt_dyn>0 ) deallocate(ttend)
+   if ( id_qdt_dyn>0 .or. id_qldt_dyn>0 .or. id_qidt_dyn>0 .or. id_qadt_dyn>0 )   &
+   deallocate(qtend)
+
  end subroutine atmosphere_end
+
+
+
+  !#######################################################################
+  ! <SUBROUTINE NAME="atmosphere_restart">
+  ! <DESCRIPTION>
+  !  Write out restart files registered through register_restart_file
+  ! </DESCRIPTION>
+  subroutine atmosphere_restart(timestamp)
+    character(len=*),  intent(in) :: timestamp
+
+    call fv_physics_restart(timestamp)
+    call fv_write_restart(Atm, timestamp)
+
+  end subroutine atmosphere_restart
+  ! </SUBROUTINE>
 
 
 

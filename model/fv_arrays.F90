@@ -22,6 +22,8 @@ public
 ! from the D grid variables.
     real, _ALLOCATABLE :: u(:,:,:)    _NULL  ! D grid zonal wind (m/s)
     real, _ALLOCATABLE :: v(:,:,:)    _NULL  ! D grid meridional wind (m/s)
+    real, _ALLOCATABLE :: um(:,:,:)   _NULL  ! D grid zonal wind (m/s) at n-1
+    real, _ALLOCATABLE :: vm(:,:,:)   _NULL  ! D .... meridional ............
     real, _ALLOCATABLE :: pt(:,:,:)   _NULL  ! temperature (K)
     real, _ALLOCATABLE :: delp(:,:,:) _NULL  ! pressure thickness (pascal)
     real, _ALLOCATABLE :: q(:,:,:,:)  _NULL  ! specific humidity and constituents
@@ -49,6 +51,7 @@ public
     real, _ALLOCATABLE :: v_srf(:,:)    _NULL  ! Surface v-wind
     real, _ALLOCATABLE :: sgh(:,:)      _NULL  ! Terrain standard deviation
     real, _ALLOCATABLE :: oro(:,:)      _NULL  ! land fraction (1: all land; 0: all water)
+    real, _ALLOCATABLE :: ts(:,:)       _NULL  ! skin temperature (sst) from NCEP/GFS (K) -- tile
  
 !-----------------------------------------------------------------------
 ! Others:
@@ -82,12 +85,13 @@ public
     integer :: ks, npx, npy, npz, npz_rst, ng, ntiles
     integer :: n_sponge    ! Number of sponge layers at the top of the atmosphere
     integer :: k_top       ! Starting layer for non-hydrostatic dynamics
-    integer :: ncnst, pnats, ndims, n_split, m_split, q_split, print_freq
+    integer :: ncnst, pnats, ndims, k_split, n_split, m_split, q_split, print_freq
     integer :: nwat        ! water substance
     integer :: fv_sg_adj
 
 ! Namelist control values
     logical :: fill
+    logical :: range_warn
     logical :: z_tracer
     logical :: do_Held_Suarez
     logical :: reproduce_sum
@@ -100,7 +104,11 @@ public
     logical :: hybrid_z, Make_NH, make_hybrid_z
     logical :: external_ic
     logical :: ncep_ic
+    logical :: fv_diag_ic
     logical :: fv_land
+    logical :: init_wind_m, no_cgrid
+    logical :: nudge
+    logical :: tq_filter
 
     character(len=128) :: res_latlon_dynamics  ! restart file from the latlon FV core
     character(len=128) :: res_latlon_tracers   ! tracer restart file from the latlon core

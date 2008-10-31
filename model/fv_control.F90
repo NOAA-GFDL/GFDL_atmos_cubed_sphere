@@ -1,4 +1,4 @@
-! $Id: fv_control.F90,v 16.0 2008/07/30 22:04:51 fms Exp $
+! $Id: fv_control.F90,v 16.0.6.3 2008/09/15 15:51:26 rab Exp $
 !
 !----------------
 ! FV contro panel
@@ -7,21 +7,10 @@
 module fv_control_mod
 
    use constants_mod,      only: pi, kappa, radius
-   use fv_io_mod,          only: fv_io_exit
-   use fv_restart_mod,     only: fv_restart_init, fv_restart_end
-   use fv_arrays_mod,      only: fv_atmos_type
-   use fv_grid_utils_mod,  only: grid_utils_init, grid_utils_end, ptop_min, deglat, da_min_c
-   use fv_grid_tools_mod,  only: init_grid, cosa, sina, area, area_c, dx, dy, dxa, dya, &
-                                 grid_type, dx_const, dy_const,                         &
-                                 deglon_start, deglon_stop, deglat_start, deglat_stop
-   use fv_mp_mod,          only: mp_start, domain_decomp, domain, &
-                                 ng, tile, npes_x, npes_y, gid
-   use mpp_mod,            only: FATAL, mpp_error, mpp_pe, &
+   use field_manager_mod,  only: MODEL_ATMOS
+   use mpp_mod,            only: FATAL, mpp_error, mpp_pe, stdlog, &
                                  mpp_npes, mpp_get_current_pelist, get_unit
-
    use mpp_domains_mod,    only: mpp_get_data_domain, mpp_get_compute_domain
-   use test_cases_mod,     only: test_case, alpha
-   use fv_timing_mod,      only: timing_on, timing_off, timing_init, timing_prt
    use tracer_manager_mod, only: tm_get_number_tracers => get_number_tracers, &
                                  tm_get_tracer_index   => get_tracer_index,   &
                                  tm_get_tracer_indices => get_tracer_indices, &
@@ -29,8 +18,19 @@ module fv_control_mod
                                  tm_get_tracer_names   => get_tracer_names,   &
                                  tm_check_if_prognostic=> check_if_prognostic,&
                                  tm_register_tracers   => register_tracers
-   use field_manager_mod,  only: MODEL_ATMOS
 
+   use fv_io_mod,          only: fv_io_exit
+   use fv_restart_mod,     only: fv_restart_init, fv_restart_end
+   use fv_arrays_mod,      only: fv_atmos_type
+   use fv_grid_utils_mod,  only: grid_utils_init, grid_utils_end, ptop_min, deglat, &
+                                 da_min_c, da_min
+   use fv_grid_tools_mod,  only: init_grid, cosa, sina, area, area_c, dx, dy, dxa, dya, &
+                                 dxc, dyc, grid_type, dx_const, dy_const,                         &
+                                 deglon_start, deglon_stop, deglat_start, deglat_stop
+   use fv_mp_mod,          only: mp_start, domain_decomp, domain, &
+                                 ng, tile, npes_x, npes_y, gid
+   use test_cases_mod,     only: test_case, alpha
+   use fv_timing_mod,      only: timing_on, timing_off, timing_init, timing_prt
 
    implicit none
    private
@@ -69,8 +69,17 @@ module fv_control_mod
                              !>12: positive definite only (Lin & Rood 1996); fastest
    integer :: kord_tr = 8    ! 
 
-   real   :: dddmp = 0.0075  ! coefficient for del-2 divergence damping (was 0.0075)
-   real   :: dddm4 = 0.0     ! coefficient for del-4 divergence dmaping (was 0.05)
+   integer :: nord=3         ! 0: del-2, 1: del-4, 2: del-6, 3: del-8 divergence damping
+   real    :: dddmp = 0.0    ! coefficient for del-2 divergence damping (0.2)
+                             ! for C90 or lower: 0.2
+   real    :: d2_bg = 0.0    ! coefficient for background del-2 divergence damping
+   real    :: d4_bg = 0.15   ! coefficient for background del-4(6) divergence damping
+                             ! for stability, d4_bg must be <=0.16 if nord=3
+   real    :: vtdm4 = 0.0    ! coefficient for del-4 vorticity damping
+
+! PG off centering:
+   real    :: beta1 = 0.0    !
+   real    :: beta  = 0.25   ! 0.5 is "neutral" but it may not be stable
 #ifdef SW_DYNAMICS
    integer :: n_sponge = 0   ! Number of sponge layers at the top of the atmosphere
    real    :: d_ext = 0.    
@@ -85,6 +94,7 @@ module fv_control_mod
    integer :: n_split = 0    ! Number of time splits for the lagrangian dynamics
                              ! Default = 0 (automatic computation of best value)
    integer :: m_split = 0    ! Number of time splits for Riemann solver
+   integer :: k_split = 1    ! Number of time splits for Remapping
 
 !            For doubly periodic domain with sim_phys
 !                     5km        150         20 (7.5 s)  2
@@ -123,6 +133,9 @@ module fv_control_mod
    integer :: nf_omega  = 1           ! Filter omega "nf_omega" times
    integer :: fv_sg_adj = -1          ! Perform grid-scale moist adjustment if > 0
                                       ! Relaxzation time  scale (sec) if positive
+   integer :: i_sst = 1200
+   integer :: j_sst =  600
+
 #ifdef MARS_GCM
    real    :: p_ref = 600.
    real    :: reference_sfc_pres = 7.7E2
@@ -137,22 +150,30 @@ module fv_control_mod
    real    :: tau_h2o = 0.            ! Time scale (days) for ch4_chem
 
    real    :: too_big  = 1.E35
+   real    :: d_con = 0.
    real    :: consv_te = 0.
    real    :: tau = 0.                ! Time scale (days) for Rayleigh friction
    real    :: rf_center = 0.          ! Center position of the hyper-tan profile
                                       ! 0: use the top layer center
                                       ! > 0, [Pascal]
+   logical :: tq_filter = .false.
+   logical :: filter_phys = .false.
+   logical :: dwind_2d = .false.
+   logical :: inline_q = .false.
+   logical :: no_cgrid = .false.
+   logical :: init_wind_m = .false.
+   logical :: range_warn = .false.
    logical :: fill = .false.
+   logical :: fill_dp = .false.
    logical :: non_ortho = .true.
    logical :: adiabatic = .false.     ! Run without physics (full or idealized).
    logical :: moist_phys = .true.     ! Run with moist physics
    logical :: do_Held_Suarez = .false.
-   logical :: reproduce_sum = .true.  ! Make global sum in for consv_te reproduce
+   logical :: reproduce_sum = .true.  ! Make global sum for consv_te reproduce
    logical :: adjust_dry_mass = .false.
    logical :: fv_debug  = .false.
    logical :: srf_init  = .false.
    logical :: mountain  = .true.
-   logical :: ch4_chem  = .false.
    logical :: uniform_ppm = .true.
    logical :: remap_t  = .true.
    logical :: z_tracer = .true.       ! transport tracers layer by layer with independent
@@ -165,7 +186,9 @@ module fv_control_mod
 !--------------------------------------------------------------------------------------
 ! The following options are useful for NWP experiments using datasets on the lat-lon grid
 !--------------------------------------------------------------------------------------
+   logical :: nudge = .false.         ! Perform nudging
    logical :: ncep_ic = .false.       ! use NCEP ICs 
+   logical :: fv_diag_ic = .false.    ! reconstruct IC from fv_diagnostics on lat-lon grid
    logical :: external_ic = .false.   ! use ICs from external sources; e.g. lat-lon FV core
                                       ! or NCEP re-analysis; both vertical remapping & horizontal
                                       ! (lat-lon to cubed sphere) interpolation will be done
@@ -191,19 +214,22 @@ module fv_control_mod
                              ! m_grad_p=0:  two-stage grad computation (best for low resolution runs)
    integer :: a2b_ord = 4    ! order for interpolation from A to B Grid (corners)
    integer :: c2l_ord = 4    ! order for interpolation from D to lat-lon A winds for phys & output
+   real    :: ppm_limiter = 2.
    public :: npx,npy,npz, npz_rst, ntiles, ncnst, pnats, nwat
    public :: hord_mt, hord_vt, kord_mt, hord_tm, hord_dp, hord_ze, kord_tm, hord_tr, kord_tr
-   public :: n_split, m_split, q_split, master
-   public :: dddmp, dddm4, d_ext
-   public :: k_top, m_riem, n_sponge, p_ref
+   public :: nord, no_cgrid, fill_dp, inline_q, dwind_2d, filter_phys, tq_filter 
+   public :: k_split, n_split, m_split, q_split, master
+   public :: dddmp, d2_bg, d4_bg, d_ext, vtdm4, beta1, beta, init_wind_m, ppm_limiter
+   public :: k_top, m_riem, n_sponge, p_ref, mountain
    public :: uniform_ppm, remap_t,  z_tracer, fv_debug
-   public :: external_ic, ncep_ic, res_latlon_dynamics, res_latlon_tracers, fv_land
-   public :: fv_sg_adj, tau, tau_h2o, rf_center
+   public :: external_ic, ncep_ic, fv_diag_ic, res_latlon_dynamics, res_latlon_tracers, fv_land
+   public :: fv_sg_adj, tau, tau_h2o, rf_center, d_con
    public :: fv_init, fv_end
    public :: domain
    public :: adiabatic, nf_omega, moist_phys
    public :: hydrostatic, phys_hydrostatic,  hybrid_z, quick_p_c, quick_p_d, m_grad_p, a2b_ord
    public :: nt_prog, nt_phys
+
 #ifdef MARS_GCM
    public :: reference_sfc_pres, sponge_damp
 #endif MARS
@@ -258,6 +284,7 @@ module fv_control_mod
 
       Atm(1)%npx=npx; Atm(1)%npy=npy; Atm(1)%npz=npz; Atm(1)%ng=ng
       Atm(1)%npz_rst = npz_rst
+      Atm(1)%k_split = k_split
       Atm(1)%n_split = n_split
       Atm(1)%m_split = m_split
       Atm(1)%q_split = q_split
@@ -266,7 +293,11 @@ module fv_control_mod
       Atm(1)%ncnst = ncnst
       Atm(1)%pnats = pnats
       Atm(1)%nwat  = nwat 
+      Atm(1)%range_warn = range_warn
       Atm(1)%fill = fill
+      Atm(1)%tq_filter = tq_filter
+      Atm(1)%no_cgrid = no_cgrid
+      Atm(1)%init_wind_m = init_wind_m
       Atm(1)%z_tracer = z_tracer
       Atm(1)%do_Held_Suarez = do_Held_Suarez
       Atm(1)%reproduce_sum = reproduce_sum
@@ -278,9 +309,14 @@ module fv_control_mod
       Atm(1)%fv_sg_adj = fv_sg_adj
       Atm(1)%dry_mass = dry_mass
 
+      Atm(1)%fv_diag_ic = fv_diag_ic
       Atm(1)%ncep_ic = ncep_ic
-                       if ( ncep_ic )  external_ic = .true.
+
+      if ( ncep_ic .or. fv_diag_ic)  external_ic = .true.
       Atm(1)%external_ic = external_ic
+
+      Atm(1)%nudge = nudge
+
       Atm(1)%fv_land     = fv_land
       Atm(1)%res_latlon_dynamics =  res_latlon_dynamics
       Atm(1)%res_latlon_tracers  =  res_latlon_tracers
@@ -300,17 +336,23 @@ module fv_control_mod
 
     ! Initialize the SW (2D) part of the model
       call grid_utils_init(Atm(1), Atm(1)%npx, Atm(1)%npy, Atm(1)%npz, Atm(1)%grid, Atm(1)%agrid,   &
-                           area, area_c, cosa, sina, dx, dy, dxa, dya, non_ortho,   &
-                           uniform_ppm, grid_type, c2l_ord)
+                           area, area_c, cosa, sina, dx, dy, dxa, dya, dxc, dyc, non_ortho,   &
+                           uniform_ppm, grid_type, c2l_ord, i_sst, j_sst)
 
       if ( master ) then
-           sdt =  dt_atmos/real(n_split)
+           sdt =  dt_atmos/real(n_split*k_split)
            write(*,*) ' '
            write(*,*) 'Divergence damping Coefficients * 1.E6:'
            write(*,*) 'For small dt=', sdt
            write(*,*) 'External mode del-2 (m**2/s)=',  d_ext*da_min_c     /sdt*1.E-6
-           write(*,*) 'Internal mode del-2 (m**2/s)=',  dddmp*da_min_c     /sdt*1.E-6
-           write(*,*) 'Internal mode del-4 (m**4/s)=', (dddm4*da_min_c)**2 /sdt*1.E-6
+           write(*,*) 'Internal mode del-2 SMAG dimensionless coeff=',  dddmp
+           write(*,*) 'Internal mode del-2 background diff=', d2_bg
+
+           if (nord==1) write(*,*) 'Internal mode del-4 background diff=', d4_bg
+           if (nord==2) write(*,*) 'Internal mode del-6 background diff=', d4_bg
+           if (nord==3) write(*,*) 'Internal mode del-8 background diff=', d4_bg
+
+           write(*,*) 'Vorticity del-4 (m**4/s)=', (vtdm4*da_min)**2/sdt*1.E-6
            write(*,*) ' '
       endif
 
@@ -326,6 +368,15 @@ module fv_control_mod
       ! Allocate State Variables
         allocate (    Atm(n)%u(isd:ied  ,jsd:jed+1,npz) )
         allocate (    Atm(n)%v(isd:ied+1,jsd:jed  ,npz) )
+
+        if ( no_cgrid ) then
+             allocate ( Atm(n)%um(isd:ied  ,jsd:jed+1,npz) )
+             allocate ( Atm(n)%vm(isd:ied+1,jsd:jed  ,npz) )
+        else
+             allocate ( Atm(n)%um(1,1,1) )
+             allocate ( Atm(n)%vm(1,1,1) )
+        endif
+
         allocate (   Atm(n)%pt(isd:ied  ,jsd:jed  ,npz) )
         allocate ( Atm(n)%delp(isd:ied  ,jsd:jed  ,npz) )
         allocate (    Atm(n)%q(isd:ied  ,jsd:jed  ,npz, ncnst) )
@@ -347,8 +398,8 @@ module fv_control_mod
              allocate ( Atm(n)%oro(1,1) )
         endif
 
-
       ! Allocate others
+        allocate ( Atm(n)%ts(isc:iec,jsc:jec) )
         allocate ( Atm(n)%phis(isd:ied  ,jsd:jed  ) )
         allocate ( Atm(n)%omga(isd:ied  ,jsd:jed  ,npz) ); Atm(n)%omga=0.
         allocate (   Atm(n)%ua(isd:ied  ,jsd:jed  ,npz) )
@@ -379,6 +430,7 @@ module fv_control_mod
 !         allocate ( mono(isd:ied, jsd:jed, npz))
       endif
  
+        Atm(n)%ts   = 0.
         Atm(n)%phis = too_big
 ! The following statements are to prevent the phatom corner regions from
 ! growing instability
@@ -386,6 +438,12 @@ module fv_control_mod
         Atm(n)%v  = 0.
         Atm(n)%ua = too_big
         Atm(n)%va = too_big
+
+        if ( no_cgrid ) then
+             Atm(n)%um = 0.
+             Atm(n)%vm = 0.
+        endif
+
       end do
       
     ! Initialize restart functions
@@ -405,7 +463,7 @@ module fv_control_mod
     call timing_off('TOTAL')
     call timing_prt( mpp_pe() )
 
-    call fv_restart_end(domain,Atm)
+    call fv_restart_end(Atm)
     call fv_io_exit()
 
   ! Free temporary memory from sw_core routines
@@ -416,6 +474,8 @@ module fv_control_mod
     do n = 1, ntilesMe
       deallocate (    Atm(n)%u )
       deallocate (    Atm(n)%v )
+      deallocate (    Atm(n)%um )
+      deallocate (    Atm(n)%vm )
       deallocate (   Atm(n)%pt )
       deallocate ( Atm(n)%delp )
       deallocate (    Atm(n)%q )
@@ -476,13 +536,14 @@ module fv_control_mod
       namelist /mpi_nml/npes_x,npes_y  ! Use of this namelist is deprecated
       namelist /fv_grid_nml/grid_name,grid_file
       namelist /fv_core_nml/npx, npy, ntiles, npz, npz_rst, layout, ncnst, nwat,  &
-                            n_split, m_split, q_split, print_freq,   &
+                            k_split, n_split, m_split, q_split, print_freq,   &
                             hord_mt, hord_vt, hord_tm, hord_dp, hord_ze, hord_tr, &
-                            kord_mt, kord_tm, kord_tr, fv_debug, fv_land,         &
-                            external_ic, ncep_ic, res_latlon_dynamics, res_latlon_tracers, &
-                            dddmp, dddm4, d_ext, non_ortho, n_sponge, adjust_dry_mass,  &
-                            dry_mass, grid_type, do_Held_Suarez, consv_te, fill, &
-                            z_tracer, ch4_chem, reproduce_sum, adiabatic,        &
+                            kord_mt, kord_tm, kord_tr, fv_debug, fv_land, nudge,  &
+                            external_ic, ncep_ic, fv_diag_ic, res_latlon_dynamics, res_latlon_tracers, &
+                            dddmp, d2_bg, d4_bg, vtdm4, d_ext, beta1, beta, non_ortho, n_sponge, &
+                            adjust_dry_mass, mountain, d_con, nord, no_cgrid, init_wind_m, &
+                            dry_mass, grid_type, do_Held_Suarez, consv_te, fill, tq_filter, filter_phys, fill_dp, &
+                            range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic,        &
                             tau, tau_h2o, rf_center, nf_omega, hydrostatic, fv_sg_adj,    &
                             hybrid_z, quick_p_c, quick_p_d, Make_NH, m_grad_p,   &
                             a2b_ord, uniform_ppm, remap_t, k_top, m_riem, p_ref, &
@@ -491,7 +552,7 @@ module fv_control_mod
 #endif
                             c2l_ord, dx_const, dy_const, umax, deglat,     &
                             deglon_start, deglon_stop, deglat_start, deglat_stop, &
-                            phys_hydrostatic, make_hybrid_z
+                            phys_hydrostatic, make_hybrid_z, ppm_limiter, i_sst, j_sst
 
 
       namelist /test_case_nml/test_case,alpha
@@ -517,6 +578,7 @@ module fv_control_mod
            if(master) write(6,*) 'fv_grid_nml ERROR: reading ',trim(filename),', iostat=',ios
            call mpp_error(FATAL,'FV core terminating')
         endif
+        write(stdlog(), nml=fv_grid_nml)
 
  ! Read FVCORE namelist 
         rewind (f_unit)
@@ -525,6 +587,7 @@ module fv_control_mod
            if(master) write(6,*) 'fv_core_nml ERROR: reading ',trim(filename),', iostat=',ios
            call mpp_error(FATAL,'FV core terminating')
         endif
+        write(stdlog(), nml=fv_core_nml)
 
 !*** single tile for Cartesian grids
         if (grid_type>3) then
@@ -547,6 +610,7 @@ module fv_control_mod
          if(master) write(6,*) 'test_case_nml ERROR: reading ',trim(filename),', iostat=',ios
             call mpp_error(FATAL,'FV core terminating')
         endif
+        write(stdlog(), nml=test_case_nml)
 
  ! Look for deprecated mpi_nml
         rewind (f_unit)
@@ -599,8 +663,9 @@ module fv_control_mod
           n0split = max ( 1, n0split )
 
       if ( n_split == 0 ) then
-           n_split = n0split
-           if(master) write(6,198) 'n_split is set to ', n0split, ' for resolution-dt=',npx,npy,ntiles,dt_atmos
+           n_split = n0split/k_split
+           if(master) write(6,*) 'For k_split (remapping)=', k_split
+           if(master) write(6,198) 'n_split is set to ', n_split, ' for resolution-dt=',npx,npy,ntiles,dt_atmos
       else
           if(master) write(6,199) 'Using n_split from the namelist: ', n_split
       endif
@@ -608,10 +673,12 @@ module fv_control_mod
 !----------------------------------------
 ! Adjust divergence damping coefficients:
 !----------------------------------------
-      d_fac = real(n0split)/real(n_split)
-      dddmp = dddmp * d_fac
-      dddm4 = dddm4 * d_fac
-      d_ext = d_ext * d_fac
+!      d_fac = real(n0split)/real(n_split)
+!      dddmp = dddmp * d_fac
+!      d2_bg = d2_bg * d_fac
+!      d4_bg = d4_bg * d_fac
+!      d_ext = d_ext * d_fac
+!      vtdm4 = vtdm4 * d_fac
 
       if ( (.not.hydrostatic) .and. (m_split==0) ) then
            m_split = max(1., 0.5 + abs(dt_atmos)/(n_split*6.) )
@@ -624,7 +691,6 @@ module fv_control_mod
       endif
 
       if ( hydrostatic ) m_grad_p = 1
-
 
  197  format(A,l7)
  198  format(A,i2.2,A,i4.4,'x',i4.4,'x',i1.1,'-',f9.3)

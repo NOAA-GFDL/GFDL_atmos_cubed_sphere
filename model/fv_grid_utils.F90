@@ -1,15 +1,16 @@
  module fv_grid_utils_mod
  
+ use mpp_mod,         only: FATAL, mpp_error
+ use mpp_domains_mod, only: mpp_update_domains, DGRID_NE, mpp_global_sum,   &
+                            BITWISE_EXACT_SUM
+ use mpp_parameter_mod, only: AGRID_PARAM=>AGRID, CGRID_NE_PARAM=>CGRID_NE, & 
+                              CORNER, SCALAR_PAIR
+
  use fv_arrays_mod,   only: fv_atmos_type
  use fv_eta_mod,      only: set_eta
  use fv_mp_mod,       only: domain, ng, is,js,ie,je, isd,jsd,ied,jed, gid,  &
                             mp_reduce_sum, mp_reduce_min, mp_reduce_max
- use mpp_mod,         only: FATAL, mpp_error
  use fv_timing_mod,   only: timing_on, timing_off
- use mpp_domains_mod, only: mpp_update_domains, DGRID_NE, mpp_global_sum,   &
-                            BITWISE_EXACT_SUM
-!use mpp_parameter_mod, only: AGRID_PARAM=>AGRID,       & 
-!                              CORNER, CENTER
 
  implicit none
  private
@@ -43,11 +44,18 @@
  real, allocatable :: ex_e(:)
 ! Vandermonde Matrix:
  real, allocatable :: van2(:,:,:)
+! divergence Damping:
+ real, allocatable :: divg_u(:,:), divg_v(:,:)    !
 ! Cubed_2_latlon:
  real, allocatable :: a11(:,:)
  real, allocatable :: a12(:,:)
  real, allocatable :: a21(:,:)
  real, allocatable :: a22(:,:)
+! latlon_2_cubed:
+ real, allocatable :: z11(:,:)
+ real, allocatable :: z12(:,:)
+ real, allocatable :: z21(:,:)
+ real, allocatable :: z22(:,:)
 
  real:: global_area, da_min, da_max, da_min_c, da_max_c
  logical:: g_sum_initialized
@@ -78,6 +86,9 @@
  real, allocatable :: eww(:,:)
  real, allocatable :: ess(:,:)
 
+! sst_ncep
+ real, allocatable :: sst_ncep(:,:)
+
 ! Unit vectors for lat-lon grid
  real, allocatable :: vlon(:,:,:), vlat(:,:,:)
  real, allocatable :: fC(:,:), f0(:,:)
@@ -88,6 +99,7 @@
  integer :: ks
  integer :: g_type, npxx, npyy
  integer :: c2l_ord
+ integer :: i_sst, j_sst
 
  public ptop, ks, ptop_min, fC, f0, deglat, big_number, ew, es, eww, ess, ec1, ec2
  public sina_u, sina_v, cosa_u, cosa_v, cosa_s, sina_s, rsin_u, rsin_v, rsina, rsin2
@@ -97,21 +109,25 @@
         edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e, unit_vect_latlon,  &
         cubed_to_latlon, c2l_ord2, g_sum, great_circle_dist,  &
         v_prod, en1, en2, ex_w, ex_e, ex_s, ex_n, vlon, vlat, ee1, ee2, &
-        cx1, cx2, cy1, cy2, Gnomonic_grid, van2
+        cx1, cx2, cy1, cy2, Gnomonic_grid, van2, divg_u, divg_v
  public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, grid_utils_end, &
         spherical_angle, cell_center2, get_area, inner_prod, fill_ghost,    &
         make_eta_level, expand_cell, cart_to_latlon
+ public z11, z12, z21, z22
+ public i_sst, j_sst, sst_ncep
+
 
  contains
 
    subroutine grid_utils_init(Atm, npx, npy, npz, grid, agrid, area, area_c,  &
-                              cosa, sina, dx, dy, dxa, dya, non_ortho,   &
-                              uniform_ppm, grid_type, c2l_order)
+                              cosa, sina, dx, dy, dxa, dya, dxc, dyc, non_ortho,   &
+                              uniform_ppm, grid_type, c2l_order, isst, jsst)
 ! Initialize 2D memory and geometrical factors
       type(fv_atmos_type), intent(inout) :: Atm
       logical, intent(in):: non_ortho
       integer, intent(in):: npx, npy, npz
       integer, intent(in):: grid_type, c2l_order
+      integer, intent(in):: isst, jsst
       real, intent(in)::  grid(isd:ied+1,jsd:jed+1,2)
       real, intent(in):: agrid(isd:ied  ,jsd:jed  ,2)
       real, intent(in):: area(isd:ied,jsd:jed)
@@ -120,6 +136,8 @@
       real, intent(in)::  dy(isd:ied+1,jsd:jed  )
       real, intent(inout):: dxa(isd:ied  ,jsd:jed  )
       real, intent(inout):: dya(isd:ied  ,jsd:jed  )
+      real, intent(inout):: dxc(isd:ied+1,jsd:jed  )
+      real, intent(inout):: dyc(isd:ied  ,jsd:jed+1)
 
       real, intent(inout):: cosa(isd:ied+1,jsd:jed+1)
       real, intent(inout):: sina(isd:ied+1,jsd:jed+1)
@@ -164,6 +182,11 @@
 #endif
       endif
 
+! sst_ncep
+      i_sst = isst
+      j_sst = jsst
+      allocate ( sst_ncep(i_sst,j_sst) )
+
 ! Coriolis parameters:
       allocate ( f0(isd:ied  ,jsd:jed  ) )
       allocate ( fC(isd:ied+1,jsd:jed+1) )
@@ -200,6 +223,10 @@
 
       allocate( eww(3,4) )
       allocate( ess(3,4) )
+
+! For diveregnce damping:
+      allocate (  divg_u(isd:ied,  jsd:jed+1) )
+      allocate (  divg_v(isd:ied+1,jsd:jed) )
 
       sw_corner = .false.
       se_corner = .false.
@@ -576,6 +603,17 @@
 #endif
   endif
  
+  do j=jsd,jed+1
+     do i=isd,ied
+        divg_u(i,j) = sina_v(i,j)*dyc(i,j)/dx(i,j)
+     enddo
+  enddo
+  do j=jsd,jed
+     do i=isd,ied+1
+        divg_v(i,j) = sina_u(i,j)*dxc(i,j)/dy(i,j)
+     enddo
+  enddo
+
 ! Initialize cubed_sphere to lat-lon transformation:
      call init_cubed_to_latlon( agrid, grid_type, c2l_order )
 
@@ -591,6 +629,8 @@
 !------------------------------------------------
 ! A->B scalar:
      if (grid_type < 3) then
+        call mpp_update_domains(divg_v, divg_u, domain, flags=SCALAR_PAIR,      &
+                                gridtype=CGRID_NE_PARAM, complete=.true.)
         call edge_factors (non_ortho, grid, agrid, npx, npy)
         call efactor_a2c_v(non_ortho, grid, agrid, npx, npy)
 !       call extend_cube_s(non_ortho, grid, agrid, npx, npy, .false.)
@@ -633,6 +673,9 @@
  
   subroutine grid_utils_end(uniform_ppm)
   logical, intent(IN) :: uniform_ppm
+ 
+! deallocate sst_ncep
+      deallocate ( sst_ncep )
 
   if ( .not. uniform_ppm ) then
       deallocate( cx1 )
@@ -694,7 +737,14 @@
       deallocate( a22 )
       deallocate( vlon )
       deallocate( vlat )
+      deallocate( z11 )
+      deallocate( z12 )
+      deallocate( z21 )
+      deallocate( z22 )
     endif
+
+    deallocate( divg_u )
+    deallocate( divg_v )
 
   end subroutine grid_utils_end
 
@@ -748,69 +798,36 @@
 ! fill corners:
 !--------------
 ! SW:
-        if ( i==1 .and. j==1 ) then 
-! 12-pt matrix
-             go to 2000
-        endif
+        if ( i==1 .and. j==1 ) go to 2000       ! 12-pt matrix
         if ( i==2 .and. j==1 ) then 
-             go to 2000
+!rab             go to 2000
 ! shift the commom point
              agrid(-1,-1,1:2) = agrid(2,-1,1:2)    ! k=1
              agrid( 0,-1,1:2) = agrid(2, 0,1:2)    ! k=2
              agrid(-1, 0,1:2) = agrid(1,-1,1:2)    ! k=3
              agrid( 0, 0,1:2) = agrid(1, 0,1:2)    ! k=4
         endif
-        if ( i==1 .and. j==2 ) then 
 ! shift the commom point
-             go to 2000
-        endif
-        if ( i==2 .and. j==2 ) then 
-             agrid(0,0,1:2) = agrid(4,4,1:2) ! k=1 
-        endif
+        if ( i==1 .and. j==2 ) goto 2000
+        if ( i==2 .and. j==2 ) agrid(0,0,1:2) = agrid(4,4,1:2) ! k=1 
 
 ! SE:
-        if ( i==npx-1 .and. j==1 ) then 
-             go to 2000
-        endif
-        if ( i==npx   .and. j==1 ) then 
-! 12-pt matrix
-             go to 2000
-        endif
-        if ( i==npx-1 .and. j==2 ) then 
-             agrid(npx,0,1:2) = agrid(npx-4,4,1:2) ! k=4
-        endif
-        if ( i==npx   .and. j==2 ) then 
-             go to 2000
-        endif
+        if ( i==npx-1 .and. j==1 ) goto 2000
+        if ( i==npx   .and. j==1 ) goto 2000    ! 12-pt matrix
+        if ( i==npx-1 .and. j==2 ) agrid(npx,0,1:2) = agrid(npx-4,4,1:2) ! k=4
+        if ( i==npx   .and. j==2 ) goto 2000
+
 ! NE:
-        if ( i==npx-1 .and. j==npy-1) then 
-             agrid(npx,npy,1:2) = agrid(npx-4,npy-4,1:2) ! k=16
-        endif
-        if ( i==npx   .and. j==npy-1) then 
-             go to 2000
-        endif
-        if ( i==npx-1 .and. j==npy) then 
-             go to 2000
-        endif
-        if ( i==npx   .and. j==npy ) then 
-! 12-pt matrix
-             go to 2000
-        endif
+        if ( i==npx-1 .and. j==npy-1) agrid(npx,npy,1:2) = agrid(npx-4,npy-4,1:2) ! k=16
+        if ( i==npx   .and. j==npy-1) goto 2000
+        if ( i==npx-1 .and. j==npy)   goto 2000
+        if ( i==npx   .and. j==npy )  goto 2000 ! 12-pt matrix
 
 ! NW:
-        if ( i==1 .and. j==npy-1 ) then 
-             go to 2000
-        endif
-        if ( i==2 .and. j==npy-1 ) then 
-             agrid(0,npy,1:2) = agrid(4,npy-4,1:2) ! k=13
-        endif
-        if ( i==1 .and. j==npy ) then 
-! 12-pt matrix
-             go to 2000
-        endif
-        if ( i==2 .and. j==npy ) then 
-             go to 2000
-        endif
+        if ( i==1 .and. j==npy-1 ) goto 2000
+        if ( i==2 .and. j==npy-1 ) agrid(0,npy,1:2) = agrid(4,npy-4,1:2) ! k=13
+        if ( i==1 .and. j==npy )   goto 2000     ! 12-pt matrix
+        if ( i==2 .and. j==npy )   goto 2000
 
         do k=1,n16
            if    ( k==1 ) then
@@ -2387,21 +2404,35 @@
 
   if ( g_type < 4 ) then
 
+     allocate (  z11(is-1:ie+1,js-1:je+1) )
+     allocate (  z12(is-1:ie+1,js-1:je+1) )
+     allocate (  z21(is-1:ie+1,js-1:je+1) )
+     allocate (  z22(is-1:ie+1,js-1:je+1) )
+
      allocate (  a11(is-1:ie+1,js-1:je+1) )
      allocate (  a12(is-1:ie+1,js-1:je+1) )
      allocate (  a21(is-1:ie+1,js-1:je+1) )
      allocate (  a22(is-1:ie+1,js-1:je+1) )
-     allocate ( vlon(is-1:ie+1,js-1:je+1,3) )
-     allocate ( vlat(is-1:ie+1,js-1:je+1,3) )
+!     allocate ( vlon(is-1:ie+1,js-1:je+1,3) )
+!     allocate ( vlat(is-1:ie+1,js-1:je+1,3) )
+     allocate ( vlon(is-2:ie+2,js-2:je+2,3) )
+     allocate ( vlat(is-2:ie+2,js-2:je+2,3) )
 
-     do j=js-1,je+1
-        do i=is-1,ie+1
+!     do j=js-1,je+1
+!        do i=is-1,ie+1
+     do j=js-2,je+2
+        do i=is-2,ie+2
            call unit_vect_latlon(agrid(i,j,1:2), vlon(i,j,1:3), vlat(i,j,1:3))
         enddo
      enddo
 
      do j=js-1,je+1
         do i=is-1,ie+1
+           z11(i,j) =  v_prod(ec1(1,i,j), vlon(i,j,1:3))
+           z12(i,j) =  v_prod(ec1(1,i,j), vlat(i,j,1:3))
+           z21(i,j) =  v_prod(ec2(1,i,j), vlon(i,j,1:3))
+           z22(i,j) =  v_prod(ec2(1,i,j), vlat(i,j,1:3))
+!-------------------------------------------------------------------------
            a11(i,j) =  0.5*v_prod(ec2(1,i,j), vlat(i,j,1:3)) / sina_s(i,j)
            a12(i,j) = -0.5*v_prod(ec1(1,i,j), vlat(i,j,1:3)) / sina_s(i,j)
            a21(i,j) = -0.5*v_prod(ec2(1,i,j), vlon(i,j,1:3)) / sina_s(i,j)
