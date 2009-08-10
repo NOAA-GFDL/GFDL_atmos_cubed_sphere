@@ -9,7 +9,8 @@ module fv_physics_mod
 !-----------------
 ! FMS modules:
 !-----------------
-use constants_mod,         only: rdgas, grav, rvgas
+use atmos_co2_mod,         only: atmos_co2_rad, co2_radiation_override
+use constants_mod,         only: rdgas, grav, rvgas, WTMAIR, WTMCO2
 use time_manager_mod,      only: time_type, get_time
 use fms_mod,               only: error_mesg, FATAL, write_version_number,clock_flag_default
 use physics_driver_mod,    only: physics_driver_init, physics_driver_end,   &
@@ -33,7 +34,7 @@ use fv_arrays_mod,         only: fv_atmos_type
 use fv_control_mod,        only: npx, npy, npz, ncnst, pnats, domain
 use fv_eta_mod,            only: get_eta_level
 use fv_update_phys_mod,    only: fv_update_phys, del2_phys
-use fv_sg_mod,             only: fv_sg_conv, fv_olr, fv_abs_sw, irad
+use fv_sg_mod,             only: fv_dry_conv, fv_olr, fv_abs_sw, irad
 use fv_mp_mod,             only: gid
 use fv_timing_mod,         only: timing_on, timing_off
 
@@ -44,8 +45,8 @@ public  fv_physics_down, fv_physics_up, fv_physics_init, fv_physics_end
 public  surf_diff_type, fv_physics_restart
 
 !-----------------------------------------------------------------------
-character(len=128) :: version = '$Id: fv_physics.F90,v 16.0.4.3.2.1 2008/09/17 20:26:37 wfc Exp $'
-character(len=128) :: tag = '$Name: perth_2008_10 $'
+character(len=128) :: version = '$Id: fv_physics.F90,v 17.0 2009/07/21 02:51:42 fms Exp $'
+character(len=128) :: tag = '$Name: quebec $'
 !-----------------------------------------------------------------------
 
    real, allocatable, dimension(:,:,:)   :: t_phys
@@ -246,29 +247,45 @@ contains
                                    flux_sw_vis_dif, flux_lw, coszen, gust
 !-----------------------------------------------------------------------
     real :: gavg_rrv(nt_prog)
-    integer:: iq
+    integer:: iq, idx
 
+
+!----------------------------------------------------------------------
+! obtain pressure-weighted global mean co2 dry volume mixing ratio for
+! use by radiation package.
+!----------------------------------------------------------------------
     gavg_rrv = 0.
+! check to override predicted global pressure-weighted rad co2
+    idx = get_tracer_index(MODEL_ATMOS, 'co2')
+    if(idx /= NO_TRACER .and. co2_radiation_override) then
+      call atmos_co2_rad(Time, gavg_rrv(idx))
+    elseif (idx /= NO_TRACER) then
+      call compute_g_avg(gavg_rrv, 'co2', Atm(1)%pe, Atm(1)%q)
+    endif
 
-    call compute_g_avg(gavg_rrv, 'co2', Atm(1)%pe, Atm(1)%q)
-
-! Initialize tendencies due to parameterizations:
-    u_dt = 0.
-    v_dt = 0.
-    t_dt = 0.
-    q_dt = 0.
+    if ( Atm(1)%fv_sg_adj > 0 ) then
+         call fv_dry_conv( isd, ied, jsd, jed, isc, iec, jsc, jec, npz, nt_prog, dt_phys,   &
+                           Atm(1)%fv_sg_adj, Atm(1)%delp, Atm(1)%pe, Atm(1)%peln,  &
+                           Atm(1)%pkz, Atm(1)%pt, Atm(1)%q, Atm(1)%ua, Atm(1)%va,  &
+                           Atm(1)%hydrostatic, Atm(1)%w, Atm(1)%delz, u_dt, v_dt, t_dt, q_dt )
+    else
+         u_dt = 0.
+         v_dt = 0.
+         t_dt = 0.
+         q_dt = 0.
+    endif
 
     call mpp_clock_begin(id_fv_physics_down)
 
   if ( Atm(1)%tq_filter ) then
      
     t_phys(:,:,:) = Atm(1)%pt(:,:,:)
-    call del2_phys(t_phys, Atm(1)%delp, 0.05, npx, npy, npz, isc, iec, jsc, jec, &
+    call del2_phys(t_phys, Atm(1)%delp, 0.2, npx, npy, npz, isc, iec, jsc, jec, &
                    isd, ied, jsd, jed, ngc)
      
     q_phys(:,:,:,:) = Atm(1)%q(:,:,:,:)
     do iq=1,nt_prog
-       call del2_phys(q_phys(:,:,:,iq), Atm(1)%delp, 0.05, npx, npy, npz, isc, iec, jsc, jec, &
+       call del2_phys(q_phys(:,:,:,iq), Atm(1)%delp, 0.2, npx, npy, npz, isc, iec, jsc, jec, &
                    isd, ied, jsd, jed, ngc)
     enddo
 
@@ -681,9 +698,18 @@ contains
        do j=jsc,jec
           do i=isc,iec
              psfc_sum(i,j,1) = pe(i,npz+1,j)*area(i,j)
+!---------------------------------------------------------------------
+!  define pressure-weighted column mean value of dry mass mixing
+!  ratio  for tracer idx. assumption is that the tracer field q_phys
+!  is a moist mass mixing ratio. convert to dry mass mixing ratio by
+!  dividing by (1 - qh2o).
+!---------------------------------------------------------------------
              qp = 0.0
              do k=1,npz
-                qp = qp + q(i,j,k,idx)*(pe(i,k+1,j) - pe(i,k,j))
+! old formulation
+!                qp = qp + q(i,j,k,idx)*(pe(i,k+1,j) - pe(i,k,j))
+                qp = qp + (q(i,j,k,idx) / (1.0 - q_phys(i,j,k,sphum))) &
+                                        * (pe(i,k+1,j) - pe(i,k,j))
              enddo
              qp_sum(i,j,1) = qp * area(i,j)
           enddo
@@ -691,6 +717,13 @@ contains
        s1 = mpp_global_sum(domain, psfc_sum, flags=BITWISE_EXACT_SUM)
        s2 = mpp_global_sum(domain, qp_sum,   flags=BITWISE_EXACT_SUM)
        rrv(idx) = s2 / s1
+!---------------------------------------------------------------------
+!    convert the tracer dry mass mixing ratio to the dry volume
+!    mixing ratio.
+!---------------------------------------------------------------------
+       if (trim(tracer_name).eq.'co2') then
+          rrv(idx) = rrv(idx)*WTMAIR/WTMCO2
+       end if
     endif
   
   end subroutine compute_g_avg

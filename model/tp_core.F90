@@ -150,9 +150,11 @@ CONTAINS
             fy(i,j) = 0.5*(fy(i,j) + fy2(i,j)) * mfy(i,j)
          enddo
       enddo
-      if ( present(nord) .and. damp_c > 1.e-4 ) then
+      if ( present(nord) .and. present(damp_c) ) then
+        if ( damp_c > 1.e-4 ) then
            damp = (damp_c * da_min)**(nord+1)
            call deln_flux( nord, npx, npy, damp, q, fx, fy, mfx, mfy )
+        endif
       endif
    else
 !---------------------------------

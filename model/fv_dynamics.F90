@@ -1,32 +1,34 @@
 module fv_dynamics_mod
-   use constants_mod,   only: grav, pi, radius, hlv    ! latent heat of water vapor
-   use dyn_core_mod,    only: dyn_core
-   use fv_mapz_mod,     only: compute_total_energy, Lagrangian_to_Eulerian
-   use fv_tracer2d_mod, only: tracer_2d, tracer_2d_1L
-   use fv_control_mod,  only: hord_mt, hord_vt, hord_tm, hord_tr, &
-                              kord_mt, kord_tm, kord_tr, moist_phys, &
-                              inline_q, z_tracer, tau, rf_center, nf_omega,   &
-                              remap_t,  k_top, p_ref, nwat, fv_debug, k_split
-   use fv_grid_utils_mod, only: sina_u, sina_v, sw_corner, se_corner, &
-                              ne_corner, nw_corner, da_min, ptop,   &
-                              cubed_to_latlon, c2l_ord2
-   use fv_grid_tools_mod, only: dx, dy, rdxa, rdya, rdxc, rdyc, area, rarea
-   use fv_mp_mod,         only: is,js,ie,je, isd,jsd,ied,jed, gid, domain
-   use fv_timing_mod,     only: timing_on, timing_off
-   use diag_manager_mod,    only: send_data
-   use fv_diagnostics_mod,  only: id_divg, id_te, fv_time, prt_maxmin
-   use mpp_domains_mod, only: DGRID_NE, mpp_update_domains
+   use constants_mod,      only: grav, pi, radius, hlv    ! latent heat of water vapor
+   use dyn_core_mod,       only: dyn_core
+   use fv_mapz_mod,        only: compute_total_energy, Lagrangian_to_Eulerian
+   use fv_tracer2d_mod,    only: tracer_2d, tracer_2d_1L
+   use fv_grid_tools_mod,  only: agrid
+   use fv_control_mod,     only: hord_mt, hord_vt, hord_tm, hord_tr, &
+                                 kord_mt, kord_tm, kord_tr, moist_phys, range_warn, &
+                                 inline_q, z_tracer, tau, rf_center, nf_omega,   &
+                                 remap_t,  k_top, p_ref, nwat, fv_debug, k_split
+   use fv_grid_utils_mod,  only: sina_u, sina_v, sw_corner, se_corner, &
+                                 ne_corner, nw_corner, da_min, ptop,   &
+                                 cubed_to_latlon, c2l_ord2
+   use fv_grid_tools_mod,  only: dx, dy, rdxa, rdya, rdxc, rdyc, area, rarea
+   use fv_mp_mod,          only: is,js,ie,je, isd,jsd,ied,jed, gid, domain
+   use fv_timing_mod,      only: timing_on, timing_off
+   use diag_manager_mod,   only: send_data
+   use fv_diagnostics_mod, only: id_divg, id_te, fv_time, prt_maxmin, range_check
+   use mpp_domains_mod,    only: DGRID_NE, mpp_update_domains
    use field_manager_mod,  only: MODEL_ATMOS
    use tracer_manager_mod, only: get_tracer_index
    use fv_sg_mod,          only: neg_adj3
+   use tp_core_mod,        only: copy_corners
 
 #ifdef WAVE_MAKER
-   use fv_grid_tools_mod, only: agrid
-   use time_manager_mod,  only: get_time
+   use time_manager_mod,   only: get_time
 #endif
 
 implicit none
    logical :: RF_initialized = .false.
+   logical :: bad_range
    real, allocatable ::  rf(:), rw(:)
    integer :: kmax=1
 private
@@ -214,8 +216,8 @@ contains
       enddo
 
       call dyn_core(npx, npy, npz, ng, sphum, nq, mdt, n_split, zvir, cp_air, akap, grav, hydrostatic, &
-                    u, v, um, vm, w, delz, pt, q, delp, pe, pk, phis, omga, ptop, pfull, ua, va, & 
-                    uc, vc, mfx, mfy, cx, cy, pem, pkz, peln, n_map==1, last_step, time_total)
+                    u, v, um, vm, w, delz, pt, q, delp, pe, pk, phis, omga, ptop, pfull, ua, va,       & 
+                    uc, vc, mfx, mfy, cx, cy, pem, pkz, peln, ak, bk, n_map==1, last_step, time_total)
 
 #ifdef SW_DYNAMICS
       do j=js,je
@@ -280,7 +282,7 @@ contains
       endif
 #endif
 
-  enddo
+  enddo    ! n_map loop
 
 #ifndef SW_DYNAMICS
 ! Convert back to temperature
@@ -324,10 +326,91 @@ contains
 
   call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, npz, 1)
 
+  if ( range_warn ) then
+       call range_check('UA_dyn', ua, is, ie, js, je, ng, npz, agrid,   &
+                         gid==0, -220., 260., bad_range)
+       call range_check('VA_dyn', ua, is, ie, js, je, ng, npz, agrid,   &
+                         gid==0, -220., 220., bad_range)
+#ifndef SW_DYNAMICS
+       call range_check('TA_dyn', pt, is, ie, js, je, ng, npz, agrid,   &
+                         gid==0, 150., 350., bad_range)
+#endif
+  endif
+
   end subroutine fv_dynamics
 
 
- subroutine del2_cubed(q, cd, npx, npy, km, ntimes)
+ subroutine del2_cubed(q, cd, npx, npy, km, nmax)
+!---------------------------------------------------------------
+! This routine is for filtering the omega field for the physics
+!---------------------------------------------------------------
+   integer, intent(in):: npx, npy, km, nmax
+   real,    intent(in):: cd            ! cd = K * da_min;   0 < K < 0.25
+   real, intent(inout):: q(isd:ied,jsd:jed,km)
+   real, parameter:: r3  = 1./3.
+   real :: fx(isd:ied+1,jsd:jed), fy(isd:ied,jsd:jed+1)
+   real :: q2(isd:ied,jsd:jed)
+   integer i,j,k, n, nt, ntimes
+
+   ntimes = min(3, nmax)
+
+                     call timing_on('COMM_TOTAL')
+   call mpp_update_domains(q, domain, complete=.true.)
+                     call timing_off('COMM_TOTAL')
+
+
+   do n=1,ntimes
+      nt = ntimes - n
+
+   do k=1,km
+
+      if ( sw_corner ) then
+           q(1,1,k) = (q(1,1,k)+q(0,1,k)+q(1,0,k)) * r3
+           q(0,1,k) =  q(1,1,k)
+           q(1,0,k) =  q(1,1,k)
+      endif
+      if ( se_corner ) then
+           q(ie, 1,k) = (q(ie,1,k)+q(npx,1,k)+q(ie,0,k)) * r3
+           q(npx,1,k) =  q(ie,1,k)
+           q(ie, 0,k) =  q(ie,1,k)
+      endif
+      if ( ne_corner ) then
+           q(ie, je,k) = (q(ie,je,k)+q(npx,je,k)+q(ie,npy,k)) * r3
+           q(npx,je,k) =  q(ie,je,k)
+           q(ie,npy,k) =  q(ie,je,k)
+      endif
+      if ( nw_corner ) then
+           q(1, je,k) = (q(1,je,k)+q(0,je,k)+q(1,npy,k)) * r3
+           q(0, je,k) =  q(1,je,k)
+           q(1,npy,k) =  q(1,je,k)
+      endif
+
+      if(nt>0) call copy_corners(q(isd,jsd,k), npx, npy, 1)
+      do j=js-nt,je+nt
+         do i=is-nt,ie+1+nt
+            fx(i,j) = dy(i,j)*sina_u(i,j)*(q(i-1,j,k)-q(i,j,k))*rdxc(i,j)
+         enddo
+      enddo
+
+      if(nt>0) call copy_corners(q(isd,jsd,k), npx, npy, 2)
+      do j=js-nt,je+1+nt
+         do i=is-nt,ie+nt
+            fy(i,j) = dx(i,j)*sina_v(i,j)*(q(i,j-1,k)-q(i,j,k))*rdyc(i,j)
+         enddo
+      enddo
+
+      do j=js-nt,je+nt
+         do i=is-nt,ie+nt
+            q(i,j,k) = q(i,j,k) + cd*rarea(i,j)*(fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))
+         enddo
+      enddo
+   enddo
+   enddo
+
+ end subroutine del2_cubed
+
+
+ subroutine del2_cubed_old(q, cd, npx, npy, km, ntimes)
 !---------------------------------------------------------------
 ! This routine is for filtering the omega field for the physics
 !---------------------------------------------------------------
@@ -384,7 +467,7 @@ contains
    enddo
    enddo
 
- end subroutine del2_cubed
+ end subroutine del2_cubed_old
 
 
 
@@ -545,7 +628,7 @@ contains
         endif
     enddo
                                                                 call timing_on('COMM_TOTAL')
-    call mpp_update_domains(u2f, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
+    call mpp_update_domains(u2f, domain, complete=.true.)
                                                                 call timing_off('COMM_TOTAL')
 
      do k=1,kmax

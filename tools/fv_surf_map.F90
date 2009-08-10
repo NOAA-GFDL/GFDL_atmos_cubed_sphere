@@ -1,19 +1,24 @@
  module fv_surf_map_mod
 
-      use fms_mod, only: file_exist, check_nml_error,               &
-                         open_namelist_file, close_file, stdlog,    &
-                         mpp_pe, mpp_root_pe, FATAL, error_mesg
-      use mpp_mod, only: get_unit
+      use fms_mod,           only: file_exist, check_nml_error,            &
+                                   open_namelist_file, close_file, stdlog, &
+                                   mpp_pe, mpp_root_pe, FATAL, error_mesg
+      use mpp_mod,           only: get_unit
+      use mpp_domains_mod,   only: mpp_update_domains
+      use constants_mod,     only: grav
+#ifdef MARS_GCM
+      use fms_mod,           only: read_data
+      use fms_io_mod,        only: field_size
+#endif
 
-      use constants_mod, only: grav
       use fv_grid_utils_mod, only: great_circle_dist, latlon2xyz, v_prod,  &
-                            sina_u, sina_v, g_sum, global_mx 
-      use fv_mp_mod,   only: domain, ng, is,js,ie,je, isd,jsd,ied,jed, &
-                           gid, mp_stop, mp_reduce_min, mp_reduce_max
-      use mpp_domains_mod,   only : mpp_update_domains
-      use fv_timing_mod,      only: timing_on, timing_off
+                                   sina_u, sina_v, g_sum, global_mx 
+      use fv_mp_mod,         only: domain, ng, is,js,ie,je, isd,jsd,ied,jed, &
+                                   gid, mp_stop, mp_reduce_min, mp_reduce_max
+      use fv_timing_mod,     only: timing_on, timing_off
 
       implicit none
+
       real pi
       private
       real, allocatable:: sgh_g(:,:), oro_g(:,:), zs_g(:,:)
@@ -34,8 +39,11 @@
       integer           ::  nlon = 10800
       integer           ::  nlat =  5400
 #ifdef MARS_GCM
-      character(len=128)::  surf_file = "INPUT/mars_topo"
-      character(len=6)  ::  surf_format = 'binary'
+      character(len=128)::  surf_file = "INPUT/mars_topo.nc"
+      character(len=6)  ::  surf_format = 'netcdf'
+      character(len=80) :: field_name 
+      integer           :: fld_dims(4)
+      real, allocatable :: rtopo(:,:)
 #else
       character(len=128)::  surf_file = "INPUT/topo5min.nc"
       character(len=6)  ::  surf_format = 'netcdf'
@@ -73,20 +81,17 @@
 
       integer          londim
       integer          latdim
-      character*80:: oflnm
-      character*80:: hgtflnm
 
       real dx1, dx2, dy1, dy2
 
-      character*80     topoflnm
-      real*4 fmin, fmax
-      real*4, allocatable :: ftopo(:,:),  htopo(:,:)
+      character(len=80) :: topoflnm
+      real(kind=4) :: fmin, fmax
+      real(kind=4), allocatable :: ftopo(:,:), htopo(:,:)
       real, allocatable :: lon1(:),  lat1(:)
       integer i, j, n
       integer ncid, lonid, latid, ftopoid, htopoid
       integer status
       logical check_orig
-!      integer nlon, nlat
       real da_min, da_max, cd2, cd4, zmean, z2mean
       integer fid
 
@@ -101,37 +106,39 @@
       call read_namelist
 
 #ifdef MARS_GCM
-!!!             Note that it is necessary to convert from km to m
-!!!                     see ifdef MARS_GCM  below 
-      fid = get_unit()
+      if (surf_format == "binary")  &
+          call error_mesg ( 'surfdrv', ' binary input not allowed for Mars Model', FATAL )
+
       if (file_exist(surf_file)) then
-         open( unit= fid, FILE= surf_file, FORM= 'unformatted')
-         if ( master ) write(*,*) 'Opening Mars datset: ', surf_file, surf_format
-         read( fid ) nlon, nlat
+         field_name = 'topo'
  
+!         call field_size( trim(surf_file), 'lat', fld_dims )
+!         call field_size( trim(surf_file), 'lon', fld_dims )
+         call field_size( trim(surf_file), trim(field_name), fld_dims )
+
+         nlon= fld_dims(1);  nlat= fld_dims(2);
+
          if(master) write(*,*) 'Mars Terrain dataset dims=', nlon, nlat
- 
+
          allocate ( htopo(nlon,nlat) )
-         read( fid )  htopo
- 
+         allocate ( rtopo(nlon,nlat) )
+         allocate ( ftopo(nlon,nlat) )
+
+         call read_data( trim(surf_file), trim(field_name), rtopo, no_domain=.true. )
+
+!   This is needed because htopo is declared as real*4
+         htopo= rtopo
+         ftopo = 1.0              ! all land points
+
          if ( master ) then
             write(6,*) 'Check Hi-res Mars data ..'
-!           write(*,*) 1.E3*htopo(1,1), 1.E3*htopo(nlon, nlat)
             fmax =  vmax(htopo,fmin,nlon,nlat,1)
-            write(6,*) 'hmax=', fmax*1.E3
-            write(6,*) 'hmin=', fmin*1.E3
+            write(6,*) 'hmax=', fmax
+            write(6,*) 'hmin=', fmin
          endif
-         close(fid)
-!     if(master) write(fid)  htopo
-
-
-         allocate ( ftopo(nlon,nlat) )
-         ftopo = 1.              ! all lands
       else
-         call error_mesg ( 'surfdrv',  &
-             'mars_topo not found in INPUT', FATAL )
+         call error_mesg ( 'surfdrv', 'mars_topo not found in INPUT', FATAL )
       endif
-
 #else
 
       if (file_exist(surf_file)) then
@@ -172,7 +179,7 @@
           if (status .ne. NF_NOERR) call handle_err(status)
 !
 ! ... Set check_orig=.true. to output original 10-minute
-!         real*4 data (GrADS format)
+!         real(kind=4) ::  data (GrADS format)
 !
           if (check_orig) then
             topoflnm = 'topo.bin'
@@ -210,7 +217,7 @@
         call error_mesg ( 'surfdrv',  &
             'missing input file', FATAL )
       endif
-#endif
+#endif MARS_GCM
 
       allocate ( lat1(nlat+1) )
       allocate ( lon1(nlon+1) )
@@ -326,11 +333,7 @@
 
       do j=js,je
          do i=is,ie
-#ifdef MARS_GCM
-            phis(i,j) = grav * 1.E3 * phis(i,j)  ! Convert km to meters
-#else
             phis(i,j) =  grav * phis(i,j)
-#endif
             if ( sgh_g(i,j) <= 0. ) then
                  sgh_g(i,j) = 0.
             else
@@ -596,8 +599,8 @@
       integer, intent(in):: npx, npy
       real, intent(in):: lat1(jm+1)       ! original southern edge of the cell [-pi/2:pi/2]
       real, intent(in):: lon1(im+1)       ! original western edge of the cell [0:2*pi]
-      real*4, intent(in):: q1(im,jm)      ! original data at center of the cell
-      real*4, intent(in):: f1(im,jm)      !
+      real(kind=4), intent(in):: q1(im,jm)      ! original data at center of the cell
+      real(kind=4), intent(in):: f1(im,jm)      !
 
       real, intent(in)::  grid(isd:ied+1, jsd:jed+1,2)
       real, intent(in):: agrid(isd:ied,   jsd:jed,  2)
@@ -608,7 +611,7 @@
       real, intent(out):: h2(isd:ied,jsd:jed) ! variances of terrain
 
 ! Local
-      real*4, allocatable:: qt(:,:), ft(:,:), lon_g(:)
+      real(kind=4), allocatable:: qt(:,:), ft(:,:), lon_g(:)
       real lat_g(jm)
       real pc(3), p2(2), pp(3), grid3(3, is:ie+1, js:je+1)
       integer i,j, np
@@ -888,8 +891,8 @@
 
  real function vmax(a,pmin,m,n,z)
       integer m,n,z, i,j,k
-      real*4 pmin, pmax
-      real*4 a(m,n,z)
+      real(kind=4) :: pmin, pmax
+      real(kind=4) :: a(m,n,z)
 
       pmax = a(1,1,1)
       pmin = a(1,1,1)
@@ -953,8 +956,8 @@
 !rjw      logical, intent(in):: master
       real, intent(in):: lat1(jm+1)       ! original southern edge of the cell [-pi/2:pi/2]
       real, intent(in):: lon1(im+1)       ! original western edge of the cell [0:2*pi]
-      real*4, intent(in):: q1(im,jm)        ! original data at center of the cell
-!rjw      real*4, intent(in):: f1(im,jm)        !
+      real(kind=4), intent(in):: q1(im,jm)        ! original data at center of the cell
+!rjw      real(kind=4), intent(in):: f1(im,jm)        !
 
       real, intent(in)::  grid(is-ng:ie+ng+1, js-ng:je+ng+1,2)
       real, intent(in):: agrid(is-ng:ie+ng,   js-ng:je+ng,  2)
@@ -965,8 +968,8 @@
 !rjw      real, intent(out):: h2(isd:ied,jsd:jed) ! variances of terrain
 
 ! Local
-      real*4  qt(-im/32:im+im/32,jm)    ! ghosted east-west
-!rjw      real*4  ft(-im/32:im+im/32,jm)    ! 
+      real(kind=4)  qt(-im/32:im+im/32,jm)    ! ghosted east-west
+!rjw      real(kind=4)  ft(-im/32:im+im/32,jm)    ! 
       real lon_g(-im/32:im+im/32)
       real lat_g(jm)
 

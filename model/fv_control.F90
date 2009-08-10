@@ -1,4 +1,4 @@
-! $Id: fv_control.F90,v 16.0.6.3 2008/09/15 15:51:26 rab Exp $
+! $Id: fv_control.F90,v 17.0 2009/07/21 02:51:56 fms Exp $
 !
 !----------------
 ! FV contro panel
@@ -28,7 +28,7 @@ module fv_control_mod
                                  dxc, dyc, grid_type, dx_const, dy_const,                         &
                                  deglon_start, deglon_stop, deglat_start, deglat_stop
    use fv_mp_mod,          only: mp_start, domain_decomp, domain, &
-                                 ng, tile, npes_x, npes_y, gid
+                                 ng, tile, npes_x, npes_y, gid, io_domain_layout
    use test_cases_mod,     only: test_case, alpha
    use fv_timing_mod,      only: timing_on, timing_off, timing_init, timing_prt
 
@@ -38,8 +38,8 @@ module fv_control_mod
 !-----------------------------------------------------------------------
 ! Grid descriptor file setup
 !-----------------------------------------------------------------------
-   character*80 :: grid_name = 'Gnomonic'
-   character*120:: grid_file = 'Inline'
+   character(len=80) :: grid_name = 'Gnomonic'
+   character(len=120):: grid_file = 'Inline'
 !   integer      :: grid_type = 0    ! -1: read from file; 0: ED Gnomonic
 !                                    !  0: the "true" equal-distance Gnomonic grid
 !                                    !  1: the traditional equal-distance Gnomonic grid
@@ -70,12 +70,19 @@ module fv_control_mod
    integer :: kord_tr = 8    ! 
 
    integer :: nord=3         ! 0: del-2, 1: del-4, 2: del-6, 3: del-8 divergence damping
+                             ! Alternative setting for high-res: nord=1; d4_bg = 0.075
    real    :: dddmp = 0.0    ! coefficient for del-2 divergence damping (0.2)
                              ! for C90 or lower: 0.2
    real    :: d2_bg = 0.0    ! coefficient for background del-2 divergence damping
-   real    :: d4_bg = 0.15   ! coefficient for background del-4(6) divergence damping
+   real    :: d4_bg = 0.16   ! coefficient for background del-4(6) divergence damping
                              ! for stability, d4_bg must be <=0.16 if nord=3
    real    :: vtdm4 = 0.0    ! coefficient for del-4 vorticity damping
+   real    :: d2_bg_k1 = 4.         ! factor for d2_bg (k=1)
+   real    :: d2_bg_k2 = 2.         ! factor for d2_bg (k=2)
+   real    :: d2_divg_max_k1 = 0.05 ! d2_divg max value (k=1)
+   real    :: d2_divg_max_k2 = 0.02 ! d2_divg max value (k=2)
+   real    :: damp_k_k1 = 0.05      ! damp_k value (k=1)
+   real    :: damp_k_k2 = 0.025     ! damp_k value (k=2)
 
 ! PG off centering:
    real    :: beta1 = 0.0    !
@@ -84,10 +91,13 @@ module fv_control_mod
    integer :: n_sponge = 0   ! Number of sponge layers at the top of the atmosphere
    real    :: d_ext = 0.    
    integer :: nwat  = 0      ! Number of water species
+   logical :: warm_start = .false. 
 #else
    integer :: n_sponge = 1   ! Number of sponge layers at the top of the atmosphere
    real    :: d_ext = 0.02   ! External model damping (was 0.02)
    integer :: nwat  = 3      ! Number of water species
+                             ! Set to .F. if cold_start is desired (including terrain generation)
+   logical :: warm_start = .true. 
 #endif
    integer :: m_riem  = 0    ! Time scheme for Riem solver subcycling
    integer :: k_top   = 1    ! Starting layer for non-hydrostatic dynamics
@@ -125,13 +135,14 @@ module fv_control_mod
    integer :: npz_rst = 0             ! Original Vertical Levels (in the restart)
                                       ! 0: no change (default)
    integer :: layout(2)=(/2,2/)       ! Processor layout
+   integer :: io_layout(2)=(/0,0/)    ! IO domain processor layout
    integer :: ncnst = 0               ! Number of advected consituents
    integer :: pnats = 0               ! Number of non-advected consituents
    integer :: ntiles                  ! Number or tiles that make up the Grid 
    integer :: ntilesMe                ! Number of tiles on this process =1 for now
    integer, parameter:: ndims = 2     ! Lat-Lon Dims for Grid in Radians
    integer :: nf_omega  = 1           ! Filter omega "nf_omega" times
-   integer :: fv_sg_adj = -1          ! Perform grid-scale moist adjustment if > 0
+   integer :: fv_sg_adj = -1          ! Perform grid-scale dry adjustment if > 0
                                       ! Relaxzation time  scale (sec) if positive
    integer :: i_sst = 1200
    integer :: j_sst =  600
@@ -160,6 +171,7 @@ module fv_control_mod
    logical :: filter_phys = .false.
    logical :: dwind_2d = .false.
    logical :: inline_q = .false.
+   logical :: breed_vortex_inline = .false.
    logical :: no_cgrid = .false.
    logical :: init_wind_m = .false.
    logical :: range_warn = .false.
@@ -180,6 +192,16 @@ module fv_control_mod
                                       ! time split; use this if tracer number is huge and/or
                                       ! high resolution (nsplt > 1)
 
+   logical :: old_divg_damp = .false. ! parameter to revert damping parameters back to values
+                                      ! defined in a previous revision
+                                      ! old_values:
+                                      !    d2_bg_k1 = 6.           d2_bg_k2 = 4.
+                                      !    d2_divg_max_k1 = 0.02   d2_divg_max_k2 = 0.01
+                                      !    damp_k_k1 = 0.          damp_k_k2 = 0.
+                                      ! current_values:
+                                      !    d2_bg_k1 = 4.           d2_bg_k2 = 2.
+                                      !    d2_divg_max_k1 = 0.05   d2_divg_max_k2 = 0.02
+                                      !    damp_k_k1 = 0.05        damp_k_k2 = 0.025
    logical :: master
 
    logical :: fv_land = .false.       ! To cold starting the model with USGS terrain
@@ -217,7 +239,7 @@ module fv_control_mod
    real    :: ppm_limiter = 2.
    public :: npx,npy,npz, npz_rst, ntiles, ncnst, pnats, nwat
    public :: hord_mt, hord_vt, kord_mt, hord_tm, hord_dp, hord_ze, kord_tm, hord_tr, kord_tr
-   public :: nord, no_cgrid, fill_dp, inline_q, dwind_2d, filter_phys, tq_filter 
+   public :: nord, no_cgrid, fill_dp, inline_q, breed_vortex_inline, dwind_2d, filter_phys, tq_filter 
    public :: k_split, n_split, m_split, q_split, master
    public :: dddmp, d2_bg, d4_bg, d_ext, vtdm4, beta1, beta, init_wind_m, ppm_limiter
    public :: k_top, m_riem, n_sponge, p_ref, mountain
@@ -226,9 +248,10 @@ module fv_control_mod
    public :: fv_sg_adj, tau, tau_h2o, rf_center, d_con
    public :: fv_init, fv_end
    public :: domain
-   public :: adiabatic, nf_omega, moist_phys
+   public :: adiabatic, nf_omega, moist_phys, range_warn
    public :: hydrostatic, phys_hydrostatic,  hybrid_z, quick_p_c, quick_p_d, m_grad_p, a2b_ord
    public :: nt_prog, nt_phys
+   public :: d2_bg_k1, d2_bg_k2, d2_divg_max_k1, d2_divg_max_k2, damp_k_k1, damp_k_k2
 
 #ifdef MARS_GCM
    public :: reference_sfc_pres, sponge_damp
@@ -295,6 +318,7 @@ module fv_control_mod
       Atm(1)%nwat  = nwat 
       Atm(1)%range_warn = range_warn
       Atm(1)%fill = fill
+      Atm(1)%warm_start = warm_start
       Atm(1)%tq_filter = tq_filter
       Atm(1)%no_cgrid = no_cgrid
       Atm(1)%init_wind_m = init_wind_m
@@ -360,6 +384,9 @@ module fv_control_mod
       do n = 1, ntilesMe
         call mpp_get_compute_domain(domain,isc,iec,jsc,jec,tile_count=n)
         call mpp_get_data_domain(domain,isd,ied,jsd,jed,tile_count=n)
+        if ( (iec-isc+1).lt.4 .or. (jec-jsc+1).lt.4 ) &
+           call mpp_error(FATAL,'Domain Decomposition:  Cubed Sphere compute domain has a &
+                                &minium requirement of 4 points in X and Y, respectively')
         Atm(n)%isc = isc; Atm(n)%iec = iec
         Atm(n)%jsc = jsc; Atm(n)%jec = jec
         Atm(n)%isd = isd; Atm(n)%ied = ied
@@ -520,7 +547,7 @@ module fv_control_mod
       type(fv_atmos_type), intent(inout) :: Atm
       real, intent(in)                   :: dt_atmos
 
-      character*80 :: filename, tracerName
+      character(len=80) :: filename, tracerName
       integer :: ios, f_unit
       logical :: exists
 
@@ -532,19 +559,20 @@ module fv_control_mod
       real :: dimx, dl, dp, dxmin, dymin, d_fac
 
       integer :: n0split
+      integer :: unit
 
       namelist /mpi_nml/npes_x,npes_y  ! Use of this namelist is deprecated
       namelist /fv_grid_nml/grid_name,grid_file
-      namelist /fv_core_nml/npx, npy, ntiles, npz, npz_rst, layout, ncnst, nwat,  &
+      namelist /fv_core_nml/npx, npy, ntiles, npz, npz_rst, layout, io_layout, ncnst, nwat,  &
                             k_split, n_split, m_split, q_split, print_freq,   &
                             hord_mt, hord_vt, hord_tm, hord_dp, hord_ze, hord_tr, &
                             kord_mt, kord_tm, kord_tr, fv_debug, fv_land, nudge,  &
                             external_ic, ncep_ic, fv_diag_ic, res_latlon_dynamics, res_latlon_tracers, &
                             dddmp, d2_bg, d4_bg, vtdm4, d_ext, beta1, beta, non_ortho, n_sponge, &
-                            adjust_dry_mass, mountain, d_con, nord, no_cgrid, init_wind_m, &
+                            warm_start, adjust_dry_mass, mountain, d_con, nord, no_cgrid, init_wind_m, &
                             dry_mass, grid_type, do_Held_Suarez, consv_te, fill, tq_filter, filter_phys, fill_dp, &
                             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic,        &
-                            tau, tau_h2o, rf_center, nf_omega, hydrostatic, fv_sg_adj,    &
+                            tau, tau_h2o, rf_center, nf_omega, hydrostatic, fv_sg_adj, breed_vortex_inline,  &
                             hybrid_z, quick_p_c, quick_p_d, Make_NH, m_grad_p,   &
                             a2b_ord, uniform_ppm, remap_t, k_top, m_riem, p_ref, &
 #ifdef MARS_GCM
@@ -552,7 +580,8 @@ module fv_control_mod
 #endif
                             c2l_ord, dx_const, dy_const, umax, deglat,     &
                             deglon_start, deglon_stop, deglat_start, deglat_stop, &
-                            phys_hydrostatic, make_hybrid_z, ppm_limiter, i_sst, j_sst
+                            phys_hydrostatic, make_hybrid_z, ppm_limiter, i_sst, j_sst, &
+                            old_divg_damp
 
 
       namelist /test_case_nml/test_case,alpha
@@ -574,20 +603,22 @@ module fv_control_mod
  ! Read Main namelist
         rewind (f_unit)
         read (f_unit,fv_grid_nml,iostat=ios)
-        if (ios > 0) then
+        if (ios .gt. 0) then
            if(master) write(6,*) 'fv_grid_nml ERROR: reading ',trim(filename),', iostat=',ios
            call mpp_error(FATAL,'FV core terminating')
         endif
-        write(stdlog(), nml=fv_grid_nml)
+        unit = stdlog()
+        write(unit, nml=fv_grid_nml)
 
  ! Read FVCORE namelist 
         rewind (f_unit)
         read (f_unit,fv_core_nml,iostat=ios)
-        if (ios > 0) then
+        if (ios .ne. 0) then
            if(master) write(6,*) 'fv_core_nml ERROR: reading ',trim(filename),', iostat=',ios
            call mpp_error(FATAL,'FV core terminating')
         endif
-        write(stdlog(), nml=fv_core_nml)
+        unit = stdlog()
+        write(unit, nml=fv_core_nml)
 
 !*** single tile for Cartesian grids
         if (grid_type>3) then
@@ -602,15 +633,17 @@ module fv_control_mod
 
         npes_x = layout(1)
         npes_y = layout(2)
+        io_domain_layout = io_layout
 
  ! Read Test_Case namelist
         rewind (f_unit)
         read (f_unit,test_case_nml,iostat=ios)
-        if (ios > 0) then
+        if (ios .gt. 0) then
          if(master) write(6,*) 'test_case_nml ERROR: reading ',trim(filename),', iostat=',ios
             call mpp_error(FATAL,'FV core terminating')
         endif
-        write(stdlog(), nml=test_case_nml)
+        unit = stdlog()
+        write(unit, nml=test_case_nml)
 
  ! Look for deprecated mpi_nml
         rewind (f_unit)
@@ -679,6 +712,15 @@ module fv_control_mod
 !      d4_bg = d4_bg * d_fac
 !      d_ext = d_ext * d_fac
 !      vtdm4 = vtdm4 * d_fac
+      if (old_divg_damp) then
+        if (master) write(6,*) " fv_control: using original values for divergence damping "
+        d2_bg_k1 = 6.         ! factor for d2_bg (k=1)  - default(4.)
+        d2_bg_k2 = 4.         ! factor for d2_bg (k=2)  - default(2.)
+        d2_divg_max_k1 = 0.02 ! d2_divg max value (k=1) - default(0.05)
+        d2_divg_max_k2 = 0.01 ! d2_divg max value (k=2) - default(0.02)
+        damp_k_k1 = 0.        ! damp_k value (k=1)      - default(0.05)
+        damp_k_k2 = 0.        ! damp_k value (k=2)      - default(0.025)
+      endif
 
       if ( (.not.hydrostatic) .and. (m_split==0) ) then
            m_split = max(1., 0.5 + abs(dt_atmos)/(n_split*6.) )
@@ -695,10 +737,10 @@ module fv_control_mod
  197  format(A,l7)
  198  format(A,i2.2,A,i4.4,'x',i4.4,'x',i1.1,'-',f9.3)
  199  format(A,i2.2)
- 200  format(A,A,i4.4,A,i4.4,A)
- 201  format(A,A,f5.3,A,i4.4,A,i4.4,A)
- 202  format(A,A,A,i4.4,A,i4.4,A)
- 210  format(A,A,f5.3,A,i4.4,A,i4.4,A,i2.2,A)
+! 200  format(A,A,i4.4,A,i4.4,A)
+! 201  format(A,A,f5.3,A,i4.4,A,i4.4,A)
+! 202  format(A,A,A,i4.4,A,i4.4,A)
+! 210  format(A,A,f5.3,A,i4.4,A,i4.4,A,i2.2,A)
 
       alpha = alpha*pi
 

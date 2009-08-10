@@ -350,7 +350,7 @@
       real ,      intent(INOUT) ::   ua(isd:ied  ,jsd:jed  ,npz)
       real ,      intent(INOUT) ::   va(isd:ied  ,jsd:jed  ,npz)
       real ,      intent(inout) :: delz(is:ie,js:je,npz)
-      real ,      intent(out)   ::  ze0(is:ie,js:je,npz+1)
+      real ,      intent(inout)   ::  ze0(is:ie,js:je,npz+1)
 
       real ,      intent(inout) ::   ak(npz+1)
       real ,      intent(inout) ::   bk(npz+1)
@@ -419,7 +419,7 @@
       real:: ze1(npz+1), pe1(npz+1)
 
       integer :: nlon,nlat
-      character*80 :: oflnm, hgtflnm
+      character(len=80) :: oflnm, hgtflnm
 
 ! Baroclinic Test Case 12
       real :: eta, eta_0, eta_s, eta_t
@@ -492,6 +492,10 @@
            enddo
         enddo
         div0(:,:) = 1.e-20
+     ! call mpp_update_domains( div0, domain )
+     ! call mpp_update_domains( vor0, domain )
+     ! call mpp_update_domains( divg, domain )
+     ! call mpp_update_domains( vort, domain )
       call get_scalar_stats( divg, div0, npx, npy, ndims, nregions, &
                              pmin, pmax, L1_norm, L2_norm, Linf_norm)
  200  format(i4.4,'x',i4.4,'x',i4.4,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14)
@@ -555,10 +559,6 @@
            enddo
         enddo
         div0(:,:) = 1.e-20
-     ! call mpp_update_domains( div0, domain )
-     ! call mpp_update_domains( vor0, domain )
-     ! call mpp_update_domains( divg, domain )
-     ! call mpp_update_domains( vort, domain )
       call get_scalar_stats( divg, div0, npx, npy, ndims, nregions, &
                              pmin, pmax, L1_norm, L2_norm, Linf_norm)
       if ( (gid == masterproc) ) then
@@ -1908,7 +1908,7 @@
          real   :: Linf_norm
          real   :: pmin, pmin1, uamin1, vamin1
          real   :: pmax, pmax1, uamax1, vamax1
-         real*4 :: arr_r4(5)
+         real(kind=4) :: arr_r4(5)
          real   :: tmass0, tvort0, tener0, tKE0
          real   :: tmass, tvort, tener, tKE
          real   :: temp(is:ie,js:je)
@@ -3144,7 +3144,7 @@
          integer,      intent(IN) :: ndims
 
          integer :: error
-         real*4, allocatable :: p_R4(:,:,:,:)
+         real(kind=4), allocatable :: p_R4(:,:,:,:)
          integer :: i,j,k,n
          integer :: istart(ndims+1), icount(ndims+1)
 
@@ -3187,7 +3187,7 @@
          integer,      intent(IN) :: nregions
          real  , intent(IN)  :: p(npx-1,npy-1,nregions)
 
-         real*4 :: p_R4(npx-1,npy-1,nregions)
+         real(kind=4) :: p_R4(npx-1,npy-1,nregions)
          integer :: i,j,n
 
          do n=tile,tile
@@ -3240,7 +3240,7 @@
         real ,      intent(INOUT) ::   ua(isd:ied  ,jsd:jed  ,npz)
         real ,      intent(INOUT) ::   va(isd:ied  ,jsd:jed  ,npz)
         real ,      intent(inout) :: delz(is:ie,js:je,npz)
-        real ,      intent(out)   ::  ze0(is:ie,js:je,npz+1)
+        real ,      intent(inout)   ::  ze0(is:ie,js:je,npz+1)
         
         real ,      intent(inout)    ::   ak(npz+1)
         real ,      intent(inout)    ::   bk(npz+1)
@@ -3563,7 +3563,7 @@
         real ,      intent(INOUT) ::   ua(isd:ied  ,jsd:jed  ,npz)
         real ,      intent(INOUT) ::   va(isd:ied  ,jsd:jed  ,npz)
         real ,      intent(inout) :: delz(is:ie,js:je,npz)
-        real ,      intent(out)   ::  ze0(is:ie,js:je,npz+1)
+        real ,      intent(inout)   ::  ze0(is:ie,js:je,npz+1)
         
         real ,      intent(IN)    ::   ak(npz+1)
         real ,      intent(IN)    ::   bk(npz+1)

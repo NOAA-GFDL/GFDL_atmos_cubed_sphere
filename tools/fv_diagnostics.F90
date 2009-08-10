@@ -19,7 +19,21 @@ module fv_diagnostics_mod
 
  use tracer_manager_mod, only: get_tracer_names, get_number_tracers, get_tracer_index
  use field_manager_mod,  only: MODEL_ATMOS
- use fms_mod,            only: error_mesg, FATAL, stdlog
+ use mpp_mod,            only: mpp_error, FATAL, stdlog
+
+#if defined(MARS_GCM) && defined(MARS_SURFACE)
+ use mars_surface_mod,     only:  sfc_snow, sfc_frost
+#  ifdef DUST_SOURCE
+ use dust_source_mod,      only:  sfc_dust, odcol
+!!!  use aerosol_mod,          only:  ndust_bins, nice_bins, nice_moms, aerosol_bins, &
+!!!                                   dust_indx, ice_bin_indx, ice_mom_indx
+#  endif DUST_SOURCE
+
+#  ifdef WATER_CYCLE
+ use cloud_physics_mod,   only:  cldcol, wcol
+#  endif WATER_CYCLE
+#endif
+
 
  implicit none
  private
@@ -34,11 +48,18 @@ module fv_diagnostics_mod
 ! Selected p-level fileds from 3D variables:
  integer ::id_h300, id_h500, id_vort850, id_u850, id_v850, id_w850,  &
            id_u200, id_v200, id_w200, id_s200, id_sl12, id_sl13
+! Ned diag for HFIP experiments:
+ integer :: id_h850, id_u700, id_v700, id_h700, id_u500, id_v500
+
+#ifdef MARS_GCM
+ integer ::  id_t05
+ integer ::  id_tdust, id_sfc_dust
+#endif MARS_GCM
 
  integer, parameter:: max_step = 1000
  integer steps
- real*4:: efx(max_step), mtq(max_step)
- real*4:: efx_sum,       mtq_sum
+ real(kind=4):: efx(max_step), mtq(max_step)
+ real(kind=4):: efx_sum,       mtq_sum
 ! For initial conditions:
  integer ic_ps, ic_ua, ic_va, ic_ppt
  integer, allocatable :: id_tracer(:)
@@ -60,11 +81,12 @@ module fv_diagnostics_mod
  integer  sphum, liq_wat, ice_wat       ! GFDL physics
  integer  rainwat, snowwat, graupel
  real    :: ptop
+ real    :: rad2deg
 ! tracers
  character(len=128)   :: tname
  character(len=256)   :: tlongname, tunits
 
- public :: fv_diag_init, fv_time, fv_diag, prt_maxmin, id_divg, id_te
+ public :: fv_diag_init, fv_time, fv_diag, prt_maxmin, range_check, id_divg, id_te
  public :: efx, efx_sum, mtq, mtq_sum, steps
 
 contains
@@ -92,6 +114,9 @@ contains
 
     character(len=64) :: field
     integer              :: ntprog
+    integer              :: unit
+
+    rad2deg = 180./pi
 
 ! For total energy diagnostics:
     steps = 0
@@ -127,17 +152,19 @@ contains
     wrange = (/  -80.,   50. /)  ! vertical wind
    rhrange = (/  -10.,  150. /)  ! RH
 
-#ifdef MARS_GCM
+#if defined(MARS_GCM)
     slprange = (/0.,  100./)  ! sea-level-pressure
     trange = (/  50., 360. /)  ! temperature
+#elif defined(VENUS_GCM)
+    trange = (/  100.,  900. /)  ! temperature
+    slprange = (/80.E3,  98.E3/)  ! sea-level-pressure
 #else
     trange = (/  100.,  350. /)  ! temperature
     slprange = (/800.,  1200./)  ! sea-level-pressure
 #endif
 
-
     ginv = 1./GRAV
-    fv_time = Time  ! Fix the fv_time is used
+    fv_time = Time
 
     allocate ( phalf(npz+1) )
     call get_eta_level(Atm(1)%npz, p_ref, pfull, phalf, Atm(1)%ak, Atm(1)%bk, 0.01)
@@ -374,6 +401,16 @@ contains
 !--------------
       id_h500 = register_diag_field (trim(field), 'h500', axes(1:2),  Time,   &
                                      '500-mb hght', 'm', missing_value=missing_value )
+!--------------
+! 700 mb Height
+!--------------
+      id_h700 = register_diag_field (trim(field), 'h700', axes(1:2),  Time,   &
+                                     '700-mb hght', 'm', missing_value=missing_value )
+!--------------
+! 850 mb Height
+!--------------
+      id_h850 = register_diag_field (trim(field), 'h850', axes(1:2),  Time,   &
+                                     '850-mb hght', 'm', missing_value=missing_value )
 !-----------------------------
 ! mean temp between 300-500 mb
 !-----------------------------
@@ -442,6 +479,20 @@ contains
 !--------------------
        id_pv = register_diag_field ( trim(field), 'pv', axes(1:3), Time,       &
             'potential vorticity', '1/s', missing_value=missing_value )
+
+#ifdef MARS_GCM
+!--------------------------
+! Extra Martian diagnostics:
+!--------------------------
+
+       id_t05 = register_diag_field ( trim(field), 't05', axes(1:2), Time,       &
+               '0.5-mb temperature', 'K', missing_value=missing_value )
+!!       id_sfc_dust = register_diag_field ( trim(field), 'sfc_dust', axes(1:2), Time,        &
+!!             'Total sfc dust', 'kg/m**2', missing_value=missing_value )
+!!        id_tdust = register_diag_field ( trim(field), 'odcol', axes(1:2), Time,        &
+!!             'Total dust column', 'kg/m**2', missing_value=missing_value )
+#endif MARS_GCM
+
 !--------------------------
 ! Extra surface diagnistics:
 !--------------------------
@@ -480,6 +531,20 @@ contains
        id_sl13 = register_diag_field ( trim(field), 'sl13', axes(1:2), Time,       &
                            '13th L wind_speed', 'm/s', missing_value=missing_value )
 !--------------------------
+! 500-mb winds:
+!--------------------------
+       id_u500 = register_diag_field ( trim(field), 'u500', axes(1:2), Time,       &
+                           '500-mb u-wind', '1/s', missing_value=missing_value )
+       id_v500 = register_diag_field ( trim(field), 'v500', axes(1:2), Time,       &
+                           '500-mb v-wind', '1/s', missing_value=missing_value )
+!--------------------------
+! 700-mb winds:
+!--------------------------
+       id_u700 = register_diag_field ( trim(field), 'u700', axes(1:2), Time,       &
+                           '700-mb u-wind', '1/s', missing_value=missing_value )
+       id_v700 = register_diag_field ( trim(field), 'v700', axes(1:2), Time,       &
+                           '700-mb v-wind', '1/s', missing_value=missing_value )
+!--------------------------
 ! 850-mb winds:
 !--------------------------
        id_u850 = register_diag_field ( trim(field), 'u850', axes(1:2), Time,       &
@@ -499,7 +564,8 @@ contains
                 trim(tunits), missing_value=missing_value)
            if (master) then
                if (id_tracer(i) > 0) then
-                   write(stdlog(),'(a,a,a,a)') &
+                   unit = stdlog()
+                   write(unit,'(a,a,a,a)') &
                         & 'Diagnostics available for tracer ',tname, &
                         ' in module ', field
                end if
@@ -586,9 +652,10 @@ contains
     real, allocatable :: slp(:,:), depress(:,:), ws_max(:,:), tc_count(:,:)
     real, allocatable :: u2(:,:), v2(:,:)
     real height(2)
-    real plevs(2)
-    real tot_mq, rad2deg, tmp
+    real plevs(4)
+    real tot_mq, tmp
     logical :: used
+    logical :: bad_range
     logical :: prt_minmax
     integer i,j,k, yr, mon, dd, hr, mn, days, seconds
     character(len=128)   :: tname
@@ -596,13 +663,11 @@ contains
     real, parameter:: ws_1 = 20.
     real, parameter:: vort_c0= 2.2e-5 
     logical, allocatable :: storm(:,:), cat_crt(:,:)
-    real:: wind_range(2), t_range(2)
 
-! Warning thresholds:
-    wind_range = (/ -250.,  250. /)  ! winds
-       t_range = (/  150.,  330. /)  ! temperature
-
-    rad2deg = 180./pi
+#ifdef MARS_GCM
+    real  ::   atm_mass,  sfc_mass, atm_cloud
+    real  ::   tsfc_dust, tcol_dust
+#endif
 
 ! cat15: SLP<1000; srf_wnd>ws_0; vort>vort_c0
 ! cat25: SLP< 980; srf_wnd>ws_1; vort>vort_c0
@@ -623,7 +688,6 @@ contains
     isd = Atm(n)%isd; ied = Atm(n)%ied
     jsd = Atm(n)%jsd; jed = Atm(n)%jed
 
-    allocate( a2(isc:iec,jsc:jec) )
 
     if( id_c15>0 ) then
         allocate (   storm(isc:iec,jsc:jec) )
@@ -637,7 +701,7 @@ contains
     call set_domain(Atm(1)%domain)
 
     if ( moist_phys ) then
-#ifdef MARS_GCM
+#if defined(MARS_GCM) || defined(VENUS_GCM)
          call get_time (fv_time, seconds,  days)
          mn= 0
          hr= 0
@@ -664,11 +728,15 @@ contains
      endif
 
      if(prt_minmax) then
+#if defined(MARS_GCM) || defined(VENUS_GCM)
+        if(master) write(6,*) Days, seconds
+#else
          if ( moist_phys ) then
               if(master) write(6,*) yr, mon, dd, hr, mn, seconds
          else
               if(master) write(6,*) Days, seconds
          endif
+#endif
      endif
 
     if( prt_minmax ) then
@@ -691,9 +759,9 @@ contains
 
         if ( .not. Atm(n)%hydrostatic ) then
           call prt_maxmin('W ', Atm(n)%w , isc, iec, jsc, jec, ngc, npz, 1., master)
-          if ( Atm(n)%hybrid_z ) call prt_maxmin('Hybrid_ZTOP (km)', Atm(n)%ze0(isc,jsc,1), &
+          if ( Atm(n)%hybrid_z ) call prt_maxmin('Hybrid_ZTOP (km)', Atm(n)%ze0(isc:iec,jsc:jec,1), &
                                                  isc, iec, jsc, jec, 0, 1, 1.E-3, master)
-          call prt_maxmin('Bottom DZ (m)', Atm(n)%delz(isc,jsc,npz),    &
+          call prt_maxmin('Bottom DZ (m)', Atm(n)%delz(isc:iec,jsc:jec,npz),    &
                           isc, iec, jsc, jec, 0, 1, 1., master)
         endif
 
@@ -702,17 +770,54 @@ contains
         call prt_maxmin('OM', Atm(n)%omga, isc, iec, jsc, jec, ngc, npz, 1., master)
 #endif
 
-    elseif ( Atm(n)%range_warn ) then
+#if defined(MARS_GCM) && defined(MARS_SURFACE)
+        atm_mass  = g_sum( Atm(n)%ps(isc:iec,jsc:jec), isc, iec, jsc, jec, ngc, area,mode=1)
+        sfc_mass  = g_sum( sfc_snow,isc, iec, jsc, jec, ngc, area,mode=1)
+        sfc_mass= sfc_mass*grav   !   Conversion to pressure units
 
-         call range_check('UA', Atm(n)%ua, isc, iec, jsc, jec, ngc, npz, master, wind_range)
-         call range_check('VA', Atm(n)%ua, isc, iec, jsc, jec, ngc, npz, master, wind_range)
+        if(master) write(*,*) 'Atmospheric CO2 (mb) =', atm_mass*0.01
+        if(master) write(*,*) 'CO2 sfc frost   (mb) =', sfc_mass*0.01
+        if(master) write(*,*) 'Total CO2 Inventory  =', (atm_mass+sfc_mass)*0.01
+
+#ifdef WATER_CYCLE
+        sfc_mass  = g_sum( sfc_frost, isc, iec, jsc, jec, ngc, area,mode=1)
+        atm_mass  = g_sum(      wcol, isc, iec, jsc, jec, ngc, area,mode=1)
+        atm_cloud = g_sum(    cldcol, isc, iec, jsc, jec, ngc, area,mode=1)
+        sfc_mass= sfc_mass - 3.7   !  Arbitrary offset
+
+        if(master) write(*,*) 'Atmospheric H2o vapor (kg/m**2) =', atm_mass
+        if(master) write(*,*) 'Atmospheric H2o cloud (kg/m**2) =', atm_cloud
+        if(master) write(*,*) 'Total Atmospheric H2o ', atm_cloud + atm_mass
+
+        if(master) write(*,*) 'H2O surface frost (kg/m**2) ==', sfc_mass
+        if(master) write(*,*) 'Total H2O inventory =', atm_mass+sfc_mass+atm_cloud
+#endif WATER_CYCLE
+
+#ifdef DUST_SOURCE
+        tsfc_dust  = g_sum( sfc_dust(:,:,1),isc, iec, jsc, jec, ngc, area,mode=1)
+        tcol_dust  = g_sum( odcol   (:,:,1),isc, iec, jsc, jec, ngc, area,mode=1)
+
+        if(master) write(*,*) 'Surface dust inventory (kg/m**2) =', tsfc_dust - 30.0
+        if(master) write(*,*) 'Atmospheric dust (kg/m**2) =', tcol_dust
+        if(master) write(*,*) 'Total dust inventory ', tsfc_dust - 30.0 + tcol_dust
+#endif DUST_SOURCE
+#endif
+
+    elseif ( Atm(n)%range_warn ) then
+         call range_check('DELP', Atm(n)%delp, isc, iec, jsc, jec, ngc, npz, Atm(n)%agrid,    &
+                           master, 0.1*ptop, 200.E2, bad_range)
+         call range_check('UA', Atm(n)%ua, isc, iec, jsc, jec, ngc, npz, Atm(n)%agrid,   &
+                           master, -220., 250., bad_range)
+         call range_check('VA', Atm(n)%ua, isc, iec, jsc, jec, ngc, npz, Atm(n)%agrid,   &
+                           master, -220., 220., bad_range)
 #ifndef SW_DYNAMICS
-         call range_check('TA', Atm(n)%pt, isc, iec, jsc, jec, ngc, npz, master, t_range)
+         call range_check('TA', Atm(n)%pt, isc, iec, jsc, jec, ngc, npz, Atm(n)%agrid,   &
+                           master, 150., 350., bad_range)
 #endif
 
     endif
 
-
+    allocate ( a2(isc:iec,jsc:jec) )
     allocate ( wk(isc:iec,jsc:jec,npz) )
 
     do n = 1, ntileMe
@@ -797,7 +902,7 @@ contains
                enddo
                used = send_data ( id_rh, wk, Time )
                if(prt_minmax) then
-                  call prt_maxmin('RH_sf (%)', wk(isc,jsc,npz), isc, iec, jsc, jec, 0,   1, 1., master)
+                  call prt_maxmin('RH_sf (%)', wk(isc:iec,jsc:jec,npz), isc, iec, jsc, jec, 0,   1, 1., master)
                   call prt_maxmin('RH_3D (%)', wk, isc, iec, jsc, jec, 0, npz, 1., master)
                endif
           endif
@@ -818,12 +923,12 @@ contains
 
 
 
-       if( id_slp>0 .or. id_tm>0 .or. id_h300>0 .or. id_h500>0 .or. id_c15>0 ) then
+       if( id_slp>0 .or. id_tm>0 .or. id_h300>0 .or. id_h500>0 .or. id_h700>0 .or. id_h850>0 .or. id_c15>0 ) then
 
           allocate ( wz(isc:iec,jsc:jec,npz+1) )
           call get_height_field(isc, iec, jsc, jec, ngc, npz, wz, Atm(n)%pt, Atm(n)%q, Atm(n)%peln, zvir)
           if( prt_minmax )   &
-          call prt_maxmin('ZTOP', wz(isc,jsc,1), isc, iec, jsc, jec, 0, 1, 1.E-3, master)
+          call prt_maxmin('ZTOP', wz(isc:iec,jsc:jec,1), isc, iec, jsc, jec, 0, 1, 1.E-3, master)
 
           if(id_slp > 0) then
 ! Cumpute SLP (pressure at height=0)
@@ -836,16 +941,19 @@ contains
           endif
 
 ! Compute H3000 and/or H500
-          if( id_tm>0 .or. id_h300>0 .or. id_h500>0 .or. id_ppt>0) then
+          if( id_tm>0 .or. id_h300>0 .or. id_h500>0 .or. id_h700>0 .or. id_h850>0 .or. id_ppt>0) then
 
-              allocate( a3(isc:iec,jsc:jec,2) )
+              allocate( a3(isc:iec,jsc:jec,4) )
               plevs(1) = log( 30000. )
               plevs(2) = log( 50000. )
+              plevs(3) = log( 70000. )
+              plevs(4) = log( 85000. )
 
-             call get_height_given_pressure(isc, iec, jsc, jec, ngc, npz, wz, 2, plevs,   &
-                                            Atm(n)%peln, a3)
+             call get_height_given_pressure(isc, iec, jsc, jec, ngc, npz, wz, 4, plevs, Atm(n)%peln, a3)
              if(id_h300>0) used = send_data ( id_h300, a3(isc:iec,jsc:jec,1), Time )
              if(id_h500>0) used = send_data ( id_h500, a3(isc:iec,jsc:jec,2), Time )
+             if(id_h700>0) used = send_data ( id_h700, a3(isc:iec,jsc:jec,3), Time )
+             if(id_h850>0) used = send_data ( id_h850, a3(isc:iec,jsc:jec,4), Time )
 
              if( id_tm>0 ) then
                  do j=jsc,jec
@@ -971,6 +1079,27 @@ contains
           endif
        endif
 
+#ifdef MARS_GCM
+       if ( id_t05>0 ) then
+            call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                      0.5e2, Atm(n)%peln, Atm(n)%pt(isc:iec,jsc:jec,:), a2)
+            used=send_data(id_t05, a2, Time)
+       endif
+#  ifdef WATER_CYCLE
+       if ( id_tq>0 ) then
+          itrac= get_tracer_index (MODEL_ATMOS, 'h2o_vapor')
+          a2 = 0.
+          do k=1,npz
+          do j=jsc,jec
+             do i=isc,iec
+                a2(i,j) = a2(i,j) + Atm(n)%q(i,j,k,itrac)*Atm(n)%delp(i,j,k)
+             enddo
+          enddo
+          enddo
+          used = send_data(id_tq, a2*ginv, Time)
+       endif
+#  endif WATER_CYCLE
+#else
        if ( id_tq>0 ) then
           a2 = 0.
           do k=1,npz
@@ -982,6 +1111,7 @@ contains
           enddo
           used = send_data(id_tq, a2*ginv, Time)
        endif
+#endif MARS_GCM
 
        if(id_us > 0) used=send_data(id_us, Atm(n)%ua(isc:iec,jsc:jec,npz), Time)
        if(id_vs > 0) used=send_data(id_vs, Atm(n)%va(isc:iec,jsc:jec,npz), Time)
@@ -1035,6 +1165,28 @@ contains
             used=send_data(id_w200, a2, Time)
        endif
 
+! 500-mb
+       if ( id_u500>0 ) then
+            call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                      500.e2, Atm(n)%peln, Atm(n)%ua(isc:iec,jsc:jec,:), a2)
+            used=send_data(id_u500, a2, Time)
+       endif
+       if ( id_v500>0 ) then
+            call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                      500.e2, Atm(n)%peln, Atm(n)%va(isc:iec,jsc:jec,:), a2)
+            used=send_data(id_v500, a2, Time)
+       endif
+! 700-mb
+       if ( id_u700>0 ) then
+            call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                      700.e2, Atm(n)%peln, Atm(n)%ua(isc:iec,jsc:jec,:), a2)
+            used=send_data(id_u700, a2, Time)
+       endif
+       if ( id_v700>0 ) then
+            call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                      700.e2, Atm(n)%peln, Atm(n)%va(isc:iec,jsc:jec,:), a2)
+            used=send_data(id_v700, a2, Time)
+       endif
 ! 850-mb
        if ( id_u850>0 ) then
             call interpolate_vertical(isc, iec, jsc, jec, npz,   &
@@ -1090,14 +1242,15 @@ contains
                & used = send_data (id_tracer(itrac), Atm(n)%q(isc:iec,jsc:jec,:,itrac), Time )
           if( prt_minmax ) then
               call get_tracer_names ( MODEL_ATMOS, itrac, tname )
-              call prt_maxmin(trim(tname), Atm(n)%q(isc-ngc,jsc-ngc,1,itrac), &
+!              call prt_maxmin(trim(tname), Atm(n)%q(isc-ngc,jsc-ngc,1,itrac), &
+              call prt_maxmin(trim(tname), Atm(n)%q(:,:,1,itrac), &
                               isc, iec, jsc, jec, ngc, npz, 1., master)
           endif
         enddo
 
-       deallocate ( a2 )
     enddo
 
+    deallocate ( a2 )
     deallocate ( wk )
 
     call nullify_domain()
@@ -1196,17 +1349,20 @@ contains
 
  end subroutine get_height_field
 
- subroutine range_check(qname, q, is, ie, js, je, n_g, km, master, range2)
-      character*(*), intent(in)::  qname
+ subroutine range_check(qname, q, is, ie, js, je, n_g, km, pos, master, q_low, q_hi, bad_range)
+      character(len=*), intent(in)::  qname
       integer, intent(in):: is, ie, js, je
       integer, intent(in):: n_g, km
       real, intent(in)::    q(is-n_g:ie+n_g, js-n_g:je+n_g, km)
-      real, intent(in):: range2(2)
+      real, intent(in):: pos(is-n_g:ie+n_g, js-n_g:je+n_g,2)
+      real, intent(in):: q_low, q_hi
       logical, intent(in):: master
+      logical, optional, intent(out):: bad_range
 !
       real qmin, qmax
       integer i,j,k
 
+      if ( present(bad_range) ) bad_range = .false. 
       qmin = q(is,js,1)
       qmax = qmin
 
@@ -1225,14 +1381,35 @@ contains
       call mp_reduce_min(qmin)
       call mp_reduce_max(qmax)
 
-      if( qmin<range2(1) .or. qmax>range2(2) ) then
+      if( qmin<q_low .or. qmax>q_hi ) then
           if(master) write(6,*) 'Range_check Warning:', qname, ' max = ', qmax, ' min = ', qmin
+          if ( present(bad_range) ) then
+               bad_range = .true. 
+          endif
+      endif
+
+      if ( present(bad_range) ) then
+! Print out where the bad value(s) is (are)
+         if ( bad_range == .false. ) return
+         do k=1,km
+            do j=js,je
+               do i=is,ie
+                  if( q(i,j,k)<q_low .or. q(i,j,k)>q_hi ) then
+!                     write(*,*) 'gid=', gid, k,i,j, pos(i,j,1)*rad2deg, pos(i,j,2)*rad2deg, q(i,j,k)
+                      write(*,*) 'k=',k,' (i,j)=',i,j, pos(i,j,1)*rad2deg, pos(i,j,2)*rad2deg, q(i,j,k)
+                      if ( k/= 1 ) write(*,*) k-1, q(i,j,k-1)
+                      if ( k/=km ) write(*,*) k+1, q(i,j,k+1)
+                  endif
+               enddo
+            enddo
+         enddo
+         call mpp_error(FATAL,'==> Error from range_check: data out of bound')
       endif
 
  end subroutine range_check
 
  subroutine prt_maxmin(qname, q, is, ie, js, je, n_g, km, fac, master)
-      character*(*), intent(in)::  qname
+      character(len=*), intent(in)::  qname
       integer, intent(in):: is, ie, js, je
       integer, intent(in):: n_g, km
       real, intent(in)::    q(is-n_g:ie+n_g, js-n_g:je+n_g, km)
@@ -1281,6 +1458,20 @@ contains
  real qtot(nwat)
  real psmo, totw, psdry
  integer k, n, kstrat
+
+#if defined(MARS_GCM) || defined(VENUS_GCM)
+ psmo = g_sum(ps(is:ie,js:je), is, ie, js, je, n_g, area, 1)
+ totw  = 0.0
+ psdry = psmo - totw
+ if ( nwat > 0 ) then
+    qtot(:)= 0.0
+ endif
+
+ if( master ) then
+     write(6,*) 'Total surface pressure (mb) = ',  0.01*psmo
+!!!     write(6,*) 'mean dry surface pressure = ',    0.01*psdry
+  endif
+#else
 
  if ( nwat==0 ) then
       psmo = g_sum(ps(is:ie,js:je), is, ie, js, je, n_g, area, 1) 
@@ -1339,6 +1530,8 @@ contains
           write(6,*) '---------------------------------------------'
      endif
   endif
+
+#endif MARS_GCM
 
  end subroutine prt_mass
 

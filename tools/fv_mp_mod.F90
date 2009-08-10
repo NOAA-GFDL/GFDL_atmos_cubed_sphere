@@ -18,9 +18,8 @@
       use mpp_domains_mod, only : mpp_get_compute_domain, mpp_get_data_domain, mpp_domains_set_stack_size
       use mpp_domains_mod, only : mpp_global_field, mpp_global_sum, mpp_global_max, mpp_global_min
       use mpp_domains_mod, only : mpp_domains_init, mpp_domains_exit, mpp_broadcast_domain
-      use mpp_domains_mod, only : mpp_check_field, mpp_redistribute
-      use mpp_domains_mod, only : mpp_define_layout, mpp_define_domains, mpp_modify_domain
-      use mpp_domains_mod, only : mpp_get_neighbor_pe, mpp_define_mosaic
+      use mpp_domains_mod, only : mpp_check_field, mpp_define_layout 
+      use mpp_domains_mod, only : mpp_get_neighbor_pe, mpp_define_mosaic, mpp_define_io_domain
       use mpp_domains_mod, only : NORTH, NORTH_EAST, EAST, SOUTH_EAST
       use mpp_domains_mod, only : SOUTH, SOUTH_WEST, WEST, NORTH_WEST
       use mpp_parameter_mod, only : WUPDATE, EUPDATE, SUPDATE, NUPDATE, XUPDATE, YUPDATE
@@ -32,6 +31,7 @@
       integer, parameter :: XDir=1
       integer, parameter :: YDir=2
       integer :: npes, npes_x, npes_y, gid, masterproc, commglobal, ierror
+      integer :: io_domain_layout(2) = (/1,1/)
 
       type(domain2D), target, save :: domain
       type(domain2D), target, save :: domain_for_coupler ! domain used in coupled model with halo = 1.
@@ -45,6 +45,7 @@
 
       
       public mp_start, mp_barrier, mp_stop, npes, npes_x, npes_y, ng, gid, masterproc
+      public io_domain_layout
       public domain, tile, domain_for_coupler
       public is, ie, js, je, isd, ied, jsd, jed
       public domain_decomp, mp_bcst, mp_reduce_max, mp_reduce_sum, mp_gather
@@ -92,7 +93,8 @@
           integer, intent(in), optional :: commID
 
          integer :: ios, numthreads
-         character*80 evalue
+         integer :: unit
+         character(len=80) evalue
 
          gid = mpp_pe()
          npes = mpp_npes()
@@ -119,8 +121,9 @@
 #endif
 
          if ( mpp_pe()==mpp_root_pe() ) then
-           write(stdout(),*) 'Starting PEs : ', npes
-           write(stdout(),*) 'Starting Threads : ', numthreads
+           unit = stdout()
+           write(unit,*) 'Starting PEs : ', npes
+           write(unit,*) 'Starting Threads : ', numthreads
          endif
 
          call MPI_BARRIER(commglobal, ierror)
@@ -172,7 +175,7 @@
          integer :: layout(2)
          integer, allocatable :: pe_start(:), pe_end(:)
 
-         character*80 :: evalue
+         character(len=80) :: evalue
          integer :: ios,nx,ny,n,num_alloc
          character(len=32) :: type = "unknown"
          logical :: is_symmetry 
@@ -396,6 +399,9 @@
                               istart1, iend1, jstart1, jend1, istart2, iend2, jstart2, jend2,                  &
                               pe_start=pe_start, pe_end=pe_end, symmetry=is_symmetry,                          &
                               shalo = 1, nhalo = 1, whalo = 1, ehalo = 1, name = type)
+
+       call mpp_define_io_domain(domain, io_domain_layout)
+       call mpp_define_io_domain(domain_for_coupler, io_domain_layout)
 
        deallocate(pe_start,pe_end)
 
@@ -1057,13 +1063,13 @@
       subroutine mp_gather_4d_r4(q, i1,i2, j1,j2, idim, jdim, kdim, ldim)
          integer, intent(IN)  :: i1,i2, j1,j2
          integer, intent(IN)  :: idim, jdim, kdim, ldim
-         real*4, intent(INOUT):: q(idim,jdim,kdim,ldim)
+         real(kind=4), intent(INOUT):: q(idim,jdim,kdim,ldim)
          integer :: i,j,k,l,n,icnt 
          integer :: Lsize
          integer :: Gsize
          integer :: LsizeS(npes), Ldispl(npes), cnts(npes)
          integer :: Ldims(5), Gdims(5*npes)
-         real*4, allocatable, dimension(:) :: larr, garr
+         real(kind=4), allocatable, dimension(:) :: larr, garr
         
          Ldims(1) = i1
          Ldims(2) = i2
@@ -1136,13 +1142,13 @@
       subroutine mp_gather_3d_r4(q, i1,i2, j1,j2, idim, jdim, ldim)
          integer, intent(IN)  :: i1,i2, j1,j2
          integer, intent(IN)  :: idim, jdim, ldim
-         real*4, intent(INOUT):: q(idim,jdim,ldim)
+         real(kind=4), intent(INOUT):: q(idim,jdim,ldim)
          integer :: i,j,l,n,icnt 
          integer :: Lsize
          integer :: Gsize
          integer :: LsizeS(npes), Ldispl(npes), cnts(npes)
          integer :: Ldims(5), Gdims(5*npes)
-         real*4, allocatable, dimension(:) :: larr, garr 
+         real(kind=4), allocatable, dimension(:) :: larr, garr 
 
          Ldims(1) = i1
          Ldims(2) = i2
@@ -1210,7 +1216,7 @@
       subroutine mp_gather_3d_r8(q, i1,i2, j1,j2, idim, jdim, ldim)
          integer, intent(IN)  :: i1,i2, j1,j2
          integer, intent(IN)  :: idim, jdim, ldim
-         real*8,  intent(INOUT):: q(idim,jdim,ldim)
+         real(kind=8),  intent(INOUT):: q(idim,jdim,ldim)
          integer :: i,j,l,n,icnt
          integer :: Lsize
          integer :: Gsize

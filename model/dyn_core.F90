@@ -2,11 +2,13 @@ module dyn_core_mod
 
   use mpp_domains_mod,    only: CGRID_NE, DGRID_NE, mpp_get_boundary,   &
                                 mpp_update_domains
+  use mpp_parameter_mod,  only: CORNER
   use fv_mp_mod,          only: domain, isd, ied, jsd, jed, is, ie, js, je
   use fv_control_mod,     only: hord_mt, hord_vt, hord_tm, hord_dp, hord_ze, hord_tr, n_sponge,  &
                                 dddmp, d2_bg, d4_bg, d_ext, vtdm4, beta1, beta, init_wind_m, m_grad_p, &
                                 a2b_ord, ppm_limiter, master, fv_debug, d_con, nord,   &
-                                no_cgrid, fill_dp, inline_q
+                                no_cgrid, fill_dp, nwat, inline_q, breed_vortex_inline,&
+                                d2_bg_k1, d2_bg_k2, d2_divg_max_k1, d2_divg_max_k2, damp_k_k1, damp_k_k2 
   use sw_core_mod,        only: c_sw, d_sw, divergence_corner, d2a2c
   use a2b_edge_mod,       only: a2b_ord2, a2b_ord4
   use nh_core_mod,        only: Riem_Solver_C, Riem_Solver, update_dz_c, update_dz_d
@@ -15,7 +17,7 @@ module dyn_core_mod
                                 ec1, ec2, en1, en2, da_min_c
   use fv_timing_mod,      only: timing_on, timing_off
   use fv_diagnostics_mod, only: prt_maxmin
-  use mpp_parameter_mod,  only: CORNER
+  use fv_nudge_mod,       only: breed_slp_inline
 
 #ifdef SW_DYNAMICS
     use test_cases_mod,      only: test_case, case9_forcing1, case9_forcing2
@@ -36,7 +38,7 @@ contains
  
  subroutine dyn_core(npx, npy, npz, ng, sphum, nq, bdt, n_split, zvir, cp, akap, grav, hydrostatic,  &
                      u,  v,  um, vm, w, delz, pt, q, delp, pe, pk, phis, omga, ptop, pfull, ua, va, & 
-                     uc, vc, mfx, mfy, cx, cy, pem, pkz, peln, init_step, end_step, time_total)
+                     uc, vc, mfx, mfy, cx, cy, pem, pkz, peln, ak, bk, init_step, end_step, time_total)
     integer, intent(IN) :: npx
     integer, intent(IN) :: npy
     integer, intent(IN) :: npz
@@ -48,6 +50,7 @@ contains
     logical, intent(IN) :: hydrostatic
     logical, intent(IN) :: init_step, end_step
     real, intent(in) :: pfull(npz)
+    real, intent(in),     dimension(npz+1) :: ak, bk
     real, intent(inout), dimension(isd:ied  ,jsd:jed+1,npz):: u, um  ! D grid zonal wind (m/s)
     real, intent(inout), dimension(isd:ied+1,jsd:jed  ,npz):: v, vm  ! D grid meridional wind (m/s)
     real, intent(inout) :: w(   isd:ied  ,jsd:jed  ,npz)  ! vertical vel. (m/s)
@@ -55,7 +58,7 @@ contains
     real, intent(inout) :: pt(  isd:ied  ,jsd:jed  ,npz)  ! temperature (K)
     real, intent(inout) :: delp(isd:ied  ,jsd:jed  ,npz)  ! pressure thickness (pascal)
     real, intent(inout) :: q(   isd:ied  ,jsd:jed  ,npz, nq)  ! 
-    real, intent(IN), optional:: time_total  ! total time (seconds) since start
+    real, intent(in), optional:: time_total  ! total time (seconds) since start
 
 !-----------------------------------------------------------------------
 ! Auxilliary pressure arrays:    
@@ -97,11 +100,11 @@ contains
     real u2(isd:ied,jsd:jed+1)
     real v2(isd:ied+1,jsd:jed)
 !-------------------------------------
-    integer :: hord_m, hord_v, hord_t, hord_p
+    integer :: hord_m, hord_v, hord_t, hord_p, nord_k
     integer :: i,j,k, it, iq
     integer :: ism1, iep1, jsm1, jep1
     integer :: ieb1, jeb1
-    real    :: alpha
+    real    :: alpha, damp_k
     real    :: dt, dt2, rdt, rgrav
     real    :: d2_divg, dd_divg
     real    :: ptk
@@ -343,36 +346,50 @@ contains
     endif
 
                                                      call timing_on('d_sw')
-!$omp parallel do default(shared) private(i, j, k, d2_divg, dd_divg, hord_m, hord_v, hord_t, hord_p, wk)
+!$omp parallel do default(shared) private(i, j, k, nord_k, damp_k, d2_divg, dd_divg, hord_m, hord_v, hord_t, hord_p, wk)
     do k=1,npz
          hord_m = hord_mt
          hord_t = hord_tm
          hord_v = hord_vt
          hord_p = hord_dp
+         nord_k = nord
+         damp_k = dddmp
+         d2_divg = min(0.20, d2_bg*(1.-3.*tanh(0.1*log(pfull(k)/pfull(npz)))))
          if ( n_sponge==-1 .or. npz==1 ) then
 ! Constant divg damping coefficient:
            d2_divg = d2_bg
        else
+         if ( n_sponge==0 .and. k==1 ) then
+               hord_v = 2
+               hord_t = 2
+               hord_p = 2
+               nord_k = max(0, nord-1)
+               damp_k = 0.025
+               d2_divg = min(0.20, 2.*d2_bg)
+               d2_divg = max(0.05 ,  d2_divg)
+         else
            if( k <= n_sponge .and. npz>16 ) then
 ! Apply first order scheme for damping the sponge layer
                hord_m = 1
                hord_v = 1
                hord_t = 1
                hord_p = 1
-               d2_divg = min(0.20, 4.*d2_bg)   ! 0.25 is the stability limit
-               d2_divg = max(0.04, d2_divg)
+               nord_k = 0
+               damp_k = damp_k_k1
+               d2_divg = min(0.20, d2_bg_k1*d2_bg)   ! 0.25 is the stability limit
+               d2_divg = max(d2_divg_max_k1, d2_divg)
            elseif( k == n_sponge+1 .and. npz>24 ) then
                hord_v = 2
                hord_t = 2
                hord_p = 2
-               d2_divg = min(0.20, 2.*d2_bg)
-               d2_divg = max(0.01, d2_divg)
-           else
-               d2_divg = min(0.20, d2_bg*(1.-3.*tanh(0.1*log(pfull(k)/pfull(npz)))))
+               nord_k = max(0, nord-1)
+               damp_k = damp_k_k2
+               d2_divg = min(0.20, d2_bg_k2*d2_bg)
+               d2_divg = max(d2_divg_max_k2, d2_divg)
            endif
+         endif
        endif
        dd_divg = d4_bg
-!      dd_divg = min(0.15, d4_bg*(1.-3.*tanh(0.1*log(pfull(k)/pfull(npz)))))
 
 !--- external mode divergence damping ---
        if ( d_ext > 0. )  &
@@ -385,8 +402,8 @@ contains
                   mfx(is, js, k),  mfy(is, js, k),  cx(is, jsd,k),  cy(isd,js, k),    &
                   crx(is, jsd,k),  cry(isd,js, k), xfx(is, jsd,k), yfx(isd,js, k),    &
                   zvir, sphum, nq, q, k, npz, inline_q, pkz(is,js,k), dt,             &
-                  hord_tr, hord_m, hord_v, hord_t, hord_p, nord,                      &
-                  dddmp, d2_divg, dd_divg, vtdm4, d_con, hydrostatic, ppm_limiter)
+                  hord_tr, hord_m, hord_v, hord_t, hord_p, nord_k, damp_k,            &
+                  d2_divg, dd_divg, vtdm4, d_con, hydrostatic, ppm_limiter)
 
        if ( d_ext > 0. ) then
             do j=js,jep1
@@ -466,7 +483,7 @@ contains
 #ifdef SW_DYNAMICS
       if (test_case > 1) then
 #else
-      if ( it==n_split .and. hydrostatic ) then
+      if ( breed_vortex_inline .or. (it==n_split .and. hydrostatic) ) then
 !$omp parallel do default(shared) private(i, j, k)
            do k=1,npz+1
               do j=js,je
@@ -537,6 +554,11 @@ contains
        endif
       endif
 
+!-------------------------------------------------------------------------------------------------------
+      if ( breed_vortex_inline )     &
+      call breed_slp_inline(it, dt, npz, ak, bk, phis, pe, pk, peln, delp, u, v, pt, q, nwat, zvir)
+!-------------------------------------------------------------------------------------------------------
+
                                                                 call timing_on('COMM_TOTAL')
       if( it==n_split .and. grid_type<4 ) then
 ! Prevent accumulation of rounding errors at overlapped domain edges:
@@ -552,6 +574,7 @@ contains
       endif
 #endif
       init_wind_m = .false.
+
 !-----------------------------------------------------
   enddo   ! time split loop
 !-----------------------------------------------------

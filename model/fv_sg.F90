@@ -10,7 +10,7 @@ implicit none
 private
 
 integer:: irad = 0
-public  fv_sg_conv, qsmith, neg_adj3
+public  fv_dry_conv, fv_sg_conv, qsmith, neg_adj3
 public  fv_olr, fv_abs_sw, irad
 
 real, allocatable:: fv_olr(:,:), fv_abs_sw(:,:)
@@ -21,6 +21,259 @@ real, allocatable:: fv_olr(:,:), fv_abs_sw(:,:)
   real, allocatable:: table(:),des(:)
 
 contains
+
+ subroutine fv_dry_conv( isd, ied, jsd, jed, is, ie, js, je, km, nq, dt,    &
+                         tau, delp, pe, peln, pkz, ta, qa, ua, va,  &
+                         hydrostatic, w, delz, u_dt, v_dt, t_dt, q_dt )
+! Dry convective adjustment-mixing
+!-------------------------------------------
+      integer, intent(in):: is, ie, js, je, km, nq
+      integer, intent(in):: isd, ied, jsd, jed
+      integer, intent(in):: tau         ! Relaxation time scale
+      real, intent(in):: dt             ! model time step
+      real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) 
+      real, intent(in):: peln(is  :ie,  km+1,js  :je)
+      real, intent(in):: delp(isd:ied,jsd:jed,km)      ! Delta p at each model level
+      real, intent(in)::  pkz(is:ie,js:je,km)      ! Delta p at each model level
+      real, intent(in):: delz(is:ie,js:je,km)      ! Delta p at each model level
+      logical, intent(in)::  hydrostatic
+! 
+      real, intent(inout):: ua(isd:ied,jsd:jed,km)
+      real, intent(inout):: va(isd:ied,jsd:jed,km)
+      real, intent(inout)::  w(isd:ied,jsd:jed,km)      ! Delta p at each model level
+      real, intent(inout):: ta(isd:ied,jsd:jed,km)      ! Temperature
+      real, intent(inout):: qa(isd:ied,jsd:jed,km,nq)   ! Specific humidity & tracers
+! Output:
+      real, intent(out):: u_dt(isd:ied,jsd:jed,km) 
+      real, intent(out):: v_dt(isd:ied,jsd:jed,km) 
+      real, intent(out):: t_dt(is:ie,js:je,km) 
+      real, intent(out):: q_dt(is:ie,js:je,km,nq) 
+!---------------------------Local variables-----------------------------
+      real, dimension(is:ie,km):: u0, v0, w0, t0, hd, te, gz, tvm, pm
+      real q0(is:ie,km,nq) 
+      real gzh(is:ie)
+      real ri, pt1, pt2, ratio, tv, cv
+      real qmix, h0, mc, fra, rk, rz, rcv, rdt
+      real qs1, qs2, lf, dh, dhs
+      integer mcond
+      integer i, j, k, kk, n, m, iq
+      real, parameter:: ustar2 = 1.E-8
+
+        rz = rvgas - rdgas          ! rz = zvir * rdgas
+        rk = cp_air/rdgas + 1.
+        cv = cp_air - rdgas
+       rcv = 1./cv
+
+      rdt = 1./ dt
+
+!------------------------------------------------------------------------
+! The nonhydrostatic pressure changes if there is heating (under constant
+! volume and mass is locally conserved).
+!------------------------------------------------------------------------
+   mcond = 1
+   m = 3
+   fra = dt/real(tau)
+
+  do 1000 j=js,je       ! this main loop can be OpneMPed in j
+
+    do iq=1,nq
+       do k=mcond,km
+          do i=is,ie
+             q0(i,k,iq) = qa(i,j,k,iq)
+          enddo
+       enddo
+    enddo
+
+    do k=mcond,km
+       do i=is,ie
+          t0(i,k) = ta(i,j,k)
+          u0(i,k) = ua(i,j,k)
+          v0(i,k) = va(i,j,k)
+          pm(i,k) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
+       enddo
+    enddo
+
+    do i=is,ie
+       gzh(i) = 0.
+    enddo
+
+    if( hydrostatic ) then
+       do k=km, mcond,-1
+          do i=is,ie
+           tvm(i,k) = t0(i,k)*(1.+zvir*q0(i,k,1))
+                tv  = rdgas*tvm(i,k)
+            gz(i,k) = gzh(i) + tv*(1.-pe(i,k,j)/pm(i,k))
+            hd(i,k) = cp_air*tvm(i,k)+gz(i,k)+0.5*(u0(i,k)**2+v0(i,k)**2)
+             gzh(i) = gzh(i) + tv*(peln(i,k+1,j)-peln(i,k,j))
+          enddo
+       enddo
+    else
+       do k=km,mcond,-1
+          do i=is,ie
+             w0(i,k) = w(i,j,k)
+             gz(i,k) = gzh(i)  - 0.5*grav*delz(i,j,k)
+                 tv  = gz(i,k) + 0.5*(u0(i,k)**2+v0(i,k)**2+w0(i,k)**2)
+             hd(i,k) = cp_air*t0(i,k) + tv
+             te(i,k) =     cv*t0(i,k) + tv
+              gzh(i) = gzh(i) - grav*delz(i,j,k)
+          enddo
+       enddo
+    endif
+
+   do n=1,m
+
+      ratio = real(n)/real(m)
+
+      do i=is,ie
+         gzh(i) = 0.
+      enddo
+
+      do k=km,mcond+1,-1
+
+         do i=is,ie
+! Richardson number = g*delz * theta / ( del_theta * (del_u**2 + del_v**2) )
+            pt1 = t0(i,k-1)/pkz(i,j,k-1)
+            pt2 = t0(i,k  )/pkz(i,j,k  )
+            ri = (gz(i,k-1)-gz(i,k))*(pt1-pt2)/( 0.5*(pt1+pt2)*        &
+                ((u0(i,k-1)-u0(i,k))**2+(v0(i,k-1)-v0(i,k))**2+ustar2) )
+! Dry convective adjustment for K-H instability:
+! Compute equivalent mass flux: mc
+            if ( ri < 0.25 ) then
+                 mc = (1.-4.*max(0.0,ri)) ** 2
+                 mc = ratio*mc*delp(i,j,k-1)*delp(i,j,k)/(delp(i,j,k-1)+delp(i,j,k))
+                 do iq=1,nq
+                    h0 = mc*(q0(i,k,iq)-q0(i,k-1,iq))
+                    q0(i,k-1,iq) = q0(i,k-1,iq) + h0/delp(i,j,k-1)
+                    q0(i,k  ,iq) = q0(i,k  ,iq) - h0/delp(i,j,k  )
+                 enddo
+! u:
+                 h0 = mc*(u0(i,k)-u0(i,k-1))
+                 u0(i,k-1) = u0(i,k-1) + h0/delp(i,j,k-1)
+                 u0(i,k  ) = u0(i,k  ) - h0/delp(i,j,k  )
+! v:
+                 h0 = mc*(v0(i,k)-v0(i,k-1))
+                 v0(i,k-1) = v0(i,k-1) + h0/delp(i,j,k-1)
+                 v0(i,k  ) = v0(i,k  ) - h0/delp(i,j,k  )
+              if ( hydrostatic ) then
+                 h0 = mc*(hd(i,k)-hd(i,k-1))
+                 hd(i,k-1) = hd(i,k-1) + h0/delp(i,j,k-1)
+                 hd(i,k  ) = hd(i,k  ) - h0/delp(i,j,k  )
+              else
+! Total energy
+                        h0 = mc*(hd(i,k)-hd(i,k-1))
+                 te(i,k-1) = te(i,k-1) + h0/delp(i,j,k-1)
+                 te(i,k  ) = te(i,k  ) - h0/delp(i,j,k  )
+! w:
+                        h0 = mc*(w0(i,k)-w0(i,k-1))
+                 w0(i,k-1) = w0(i,k-1) + h0/delp(i,j,k-1)
+                 w0(i,k  ) = w0(i,k  ) - h0/delp(i,j,k  )
+              endif
+            endif
+         enddo
+
+!-------------- 
+! Retrive Temp:
+!--------------
+       if ( hydrostatic ) then
+         kk = k
+         do i=is,ie
+            t0(i,kk) = (hd(i,kk)-gzh(i)-0.5*(u0(i,kk)**2+v0(i,kk)**2))  &
+                     / ( rk - pe(i,kk,j)/pm(i,kk) )
+              gzh(i) = gzh(i) + t0(i,kk)*(peln(i,kk+1,j)-peln(i,kk,j))
+            t0(i,kk) = t0(i,kk) / ( rdgas + rz*q0(i,kk,1) )
+         enddo
+         kk = k-1
+         do i=is,ie
+            t0(i,kk) = (hd(i,kk)-gzh(i)-0.5*(u0(i,kk)**2+v0(i,kk)**2))  &
+                     / ((rk-pe(i,kk,j)/pm(i,kk))*(rdgas+rz*q0(i,kk,1)))
+         enddo
+       else
+! Non-hydrostatic under constant volume heating/cooling
+         do kk=k-1,k
+            do i=is,ie
+                     tv = gz(i,kk) + 0.5*(u0(i,kk)**2+v0(i,kk)**2+w0(i,kk)**2)
+               t0(i,kk) = rcv*(te(i,kk)- tv)
+               hd(i,kk) = cp_air*t0(i,kk) + tv
+            enddo
+         enddo
+       endif
+      enddo   ! k-loop
+   enddo       ! n-loop
+
+
+!--------------------
+   if ( fra < 1. ) then
+      do k=mcond,km
+         do i=is,ie
+            t0(i,k) = ta(i,j,k) + (t0(i,k) - ta(i,j,k))*fra
+            u0(i,k) = ua(i,j,k) + (u0(i,k) - ua(i,j,k))*fra
+            v0(i,k) = va(i,j,k) + (v0(i,k) - va(i,j,k))*fra
+         enddo
+      enddo
+
+      if ( .not. hydrostatic ) then
+         do k=mcond,km
+            do i=is,ie
+               w0(i,k) = w(i,j,k) + (w0(i,k) - w(i,j,k))*fra
+            enddo
+         enddo
+      endif
+
+      do iq=1,nq
+         do k=mcond,km
+            do i=is,ie
+               q0(i,k,iq) = qa(i,j,k,iq) + (q0(i,k,iq) - qa(i,j,k,iq))*fra
+            enddo
+         enddo
+      enddo
+   endif
+!--------------------
+
+   if ( mcond/=1 ) then
+   do k=1,mcond-1
+      do i=is,ie
+         u_dt(i,j,k) = 0.
+         v_dt(i,j,k) = 0.
+         t_dt(i,j,k) = 0.
+      enddo
+      do iq=1,nq
+         do i=is,ie
+            q_dt(i,j,k,iq) = 0.
+         enddo
+      enddo
+   enddo
+   endif
+
+   do k=mcond,km
+      do i=is,ie
+         u_dt(i,j,k) = rdt*(u0(i,k) - ua(i,j,k))
+         v_dt(i,j,k) = rdt*(v0(i,k) - va(i,j,k))
+           ta(i,j,k) = t0(i,k)   ! *** temperature updated ***
+         t_dt(i,j,k) = 0.
+      enddo
+   enddo
+
+   do iq=1,nq
+      do k=mcond,km
+         do i=is,ie
+            q_dt(i,j,k,iq) = rdt*(q0(i,k,iq)-qa(i,j,k,iq))
+         enddo
+      enddo
+   enddo
+
+   if ( .not. hydrostatic ) then
+      do k=mcond,km
+         do i=is,ie
+            w(i,j,k) = w0(i,k)   ! w updated
+         enddo
+      enddo
+   endif
+
+1000 continue
+
+
+ end subroutine fv_dry_conv
+
 
  subroutine fv_sg_conv( isd, ied, jsd, jed, is, ie, js, je, km,    &
                         nq, dt, tau, delp, pe, peln, pkz, ta, qa,  &

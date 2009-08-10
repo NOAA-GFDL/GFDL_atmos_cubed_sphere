@@ -23,19 +23,12 @@ module fv_update_phys_mod
 #ifdef CLIMATE_NUDGE
   use atmos_nudge_mod,    only: get_atmos_nudge, do_ps
 #else
-  use fv_nwp_nudge_mod,   only: fv_nwp_nudge
+  use fv_nudge_mod,       only: fv_nwp_nudge
 #endif
 
   implicit none
 
   public :: fv_update_phys, del2_phys
-
-!----------------------
-! PPM volume mean form:
-!----------------------
-  real, parameter:: b1 =  7./12.     ! 0.58333333
-  real, parameter:: b2 = -1./12.
-
 
   contains
 
@@ -85,9 +78,9 @@ module fv_update_phys_mod
     real, intent(inout):: peln(is:ie,npz+1,js:je)           ! ln(pe)
     real, intent(inout):: pkz (is:ie,js:je,npz)             ! finite-volume mean pk
 
-!***********
-! Haloe Data
-!***********
+!**********
+! Halo Data
+!**********
     real, parameter::    q1_h2o = 2.2E-6
     real, parameter::    q7_h2o = 3.8E-6
     real, parameter::  q100_h2o = 3.8E-6
@@ -105,10 +98,10 @@ module fv_update_phys_mod
     real     qstar, dbk, rdg, gama_dt, zvir
 
     if ( filter_phys ) then
-         call del2_phys(t_dt, delp, 0.05, npx, npy, npz, is, ie, js, je, &
+         call del2_phys(t_dt, delp, 0.2, npx, npy, npz, is, ie, js, je, &
                         isd, ied, jsd, jed, 0)
          do m=1,nq
-            call del2_phys(q_dt(:,:,:,m), delp, 0.05, npx, npy, npz, is, ie, js, je, &
+            call del2_phys(q_dt(:,:,:,m), delp, 0.2, npx, npy, npz, is, ie, js, je, &
                            isd, ied, jsd, jed, 0)
          enddo
     endif
@@ -116,6 +109,56 @@ module fv_update_phys_mod
     rdg = -rdgas / grav
     gama_dt = dt * cp_air / (cp_air-rdgas)
 
+#if defined(MARS_GCM) || defined(VENUS_GCM)
+!$omp parallel do default(shared) private(i, j, k, m, qstar, ps_dt)
+    do k=1, npz
+       do j=js,je
+          do i=is,ie
+             ua(i,j,k) = ua(i,j,k) + dt*u_dt(i,j,k)
+             va(i,j,k) = va(i,j,k) + dt*v_dt(i,j,k)
+          enddo
+       enddo
+
+       if ( hydrostatic ) then
+          do j=js,je
+             do i=is,ie
+                pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k)
+             enddo
+          enddo
+       else
+         if ( phys_hydrostatic ) then
+! Heating/cooling from physics is assumed to be isobaric hydrostatic proc
+! "nagative" definiteness of delz is maintained.
+             do j=js,je
+                do i=is,ie
+                   delz(i,j,k) = delz(i,j,k) / pt(i,j,k)
+               pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k)
+                   delz(i,j,k) = delz(i,j,k) * pt(i,j,k)
+                enddo
+             enddo
+         else
+! Convert tendency from constant-p to constant-volume
+             do j=js,je
+                do i=is,ie
+                   pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*gama_dt
+                enddo
+             enddo
+         endif
+       endif
+
+!----------------
+! Update tracers:
+!----------------
+       do m=1,nq
+          do j=js,je
+             do i=is,ie
+                q(i,j,k,m) = q(i,j,k,m) + dt*q_dt(i,j,k,m)
+             enddo
+          enddo
+       enddo
+    enddo  ! openmp k-loop
+
+#else
     sphum   = 1
 
     if ( moist_phys ) then
@@ -140,21 +183,18 @@ module fv_update_phys_mod
         if ( cld_amt<7 ) call mpp_error(FATAL,'Cloud Fraction allocation error') 
     endif
 
-   if ( fv_debug ) then
+    if ( fv_debug ) then
        if ( gid==0 ) write(*,*) nq, nwat, sphum, liq_wat, ice_wat, rainwat, snowwat, graupel
        call prt_maxmin('delp_b_update', delp, is, ie, js,  je, ng, npz, 0.01, gid==0)
        do m=1,nq
           call prt_maxmin('q_dt', q_dt(is,js,1,m), is, ie, js, je, 0, npz, 1., gid==0)
        enddo
-   endif
+    endif
 
-
-#ifndef MARS_MGCM
     call get_eta_level(npz, 1.0E5, pfull, phalf, ak, bk)
-#endif
 
 !$omp parallel do default(shared) private(i, j, k, m, qstar, ps_dt)
-    do 1000 k=1, npz
+    do k=1, npz
 
 ! Do idealized Ch4 chemistry
        if ( tau_h2o>0.0 .and. pfull(k) < 3000. ) then
@@ -233,7 +273,7 @@ module fv_update_phys_mod
 ! Adjust total air mass due to changes in water substance
 !--------------------------------------------------------
 
-   if ( nwat==6 ) then
+      if ( nwat==6 ) then
 ! micro-physics with 6 water substances
         do j=js,je
            do i=is,ie
@@ -246,7 +286,7 @@ module fv_update_phys_mod
               delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
            enddo
         enddo
-   elseif( nwat==3 ) then
+      elseif( nwat==3 ) then
 ! GFDL AM2/3 phys (cloud water + cloud ice)
         do j=js,je
            do i=is,ie
@@ -256,31 +296,32 @@ module fv_update_phys_mod
               delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
            enddo
         enddo
-   elseif ( nwat>0 ) then
+      elseif ( nwat>0 ) then
         do j=js,je
            do i=is,ie
               ps_dt(i,j)  = 1. + dt*sum(q_dt(i,j,k,1:nwat))
               delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
            enddo
         enddo
-   endif
+      endif
 
 !-----------------------------------------
 ! Adjust mass mixing ratio of all tracers 
 !-----------------------------------------
-   if ( nwat /=0 ) then
-      do m=1,ncnst   
-      if( m /= cld_amt ) then  ! cloud fraction in GFDL physics
-          do j=js,je
-             do i=is,ie
-                q(i,j,k,m) = q(i,j,k,m) / ps_dt(i,j)
-             enddo
-          enddo
+      if ( nwat /=0 ) then
+        do m=1,ncnst   
+          if( m /= cld_amt ) then  ! cloud fraction in GFDL physics
+            do j=js,je
+               do i=is,ie
+                  q(i,j,k,m) = q(i,j,k,m) / ps_dt(i,j)
+               enddo
+            enddo
+          endif
+        enddo
       endif
-      enddo
-   endif
+   enddo ! openmp k-loop
 
-1000 continue
+#endif ! Mars and Venus GCM
 
 ! [delp, (ua, va), pt, q] updated. Perform nudging if requested
 
@@ -318,8 +359,19 @@ module fv_update_phys_mod
 #else
 ! All fields will be updated except winds; wind tendencies added
       if (nudge) then
+!$omp parallel do default(shared) private(i, j, k)
+        do j=js,je
+         do k=2,npz+1                                                                             
+          do i=is,ie
+            pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+          enddo
+         enddo
+         do i=is,ie
+           ps(i,j) = pe(i,npz+1,j)
+         enddo
+        enddo
         call fv_nwp_nudge ( Time, dt, npz,  ps_dt, u_dt, v_dt, t_dt, q_dt,   &
-                            zvir, ak, bk, ts, ps, delp, ua, va, pt, q,  phis )
+                            zvir, ak, bk, ts, ps, delp, ua, va, pt, nwat, q,  phis )
       endif
 #endif
     endif
@@ -408,21 +460,25 @@ module fv_update_phys_mod
    real, intent(in   ):: delp(isd:ied,jsd:jed,km)
    real, intent(inout):: qdt(is-ngc:ie+ngc,js-ngc:je+ngc,km)
 !
-   real, parameter:: r3  = 1./3.
-   real:: q(isd:ied,jsd:jed,km)
+   real :: q(isd:ied,jsd:jed,km)
    real :: fx(is:ie+1,js:je), fy(is:ie,js:je+1)
-   integer i,j,k
    real :: mask(is:ie+1,js:je+1)
-   real :: damp, f1, f2
+   real :: f1(is:ie+1), f2(js:je+1)
+   real :: damp
+   integer i,j,k
 
 ! Applying mask to cd, the damping coefficient?
-   damp = cd * da_min
+   damp = 0.25 * cd * da_min
 
 ! Mask defined at corners
+   do i=is,ie+1
+      f1(i) = (1. - sin(real(i-1)/real(npx-1)*pi))**2
+   enddo
+
    do j=js,je+1
-      f1 = damp*(1. - sin(real(j-1)/real(npy-1)*pi))
+      f2(j) = (1. - sin(real(j-1)/real(npy-1)*pi))**2
       do i=is,ie+1
-         mask(i,j) = f1 * (1. - sin(real(i-1)/real(npx-1)*pi))
+         mask(i,j) = damp * (f1(i) + f2(j))
       enddo
    enddo
 
@@ -471,15 +527,9 @@ module fv_update_phys_mod
   real, intent(inout), dimension(isd:ied,jsd:jed,npz):: u_dt, v_dt
 
 ! local:
-#ifdef USE_4th__WIND
-  real v3(is-2:ie+2,js-2:je+2,3)
-  real ue(is:ie,js:je+1,3)    ! 3D winds at edges
-  real ve(is:ie+1,js:je,3)    ! 3D winds at edges
-#else
   real v3(is-1:ie+1,js-1:je+1,3)
   real ue(is-1:ie+1,js:je+1,3)    ! 3D winds at edges
   real ve(is:ie+1,js-1:je+1,  3)    ! 3D winds at edges
-#endif
   real, dimension(is:ie):: ut1, ut2, ut3
   real, dimension(js:je):: vt1, vt2, vt3
   real dt5, gratio
@@ -512,93 +562,6 @@ module fv_update_phys_mod
        enddo
 
      else
-#ifdef USE_4th__WIND
-! Compute 3D wind tendency on A grid
-       do j=js-2,je+2
-          do i=is-2,ie+2
-             v3(i,j,1) = u_dt(i,j,k)*vlon(i,j,1) + v_dt(i,j,k)*vlat(i,j,1)
-             v3(i,j,2) = u_dt(i,j,k)*vlon(i,j,2) + v_dt(i,j,k)*vlat(i,j,2)
-             v3(i,j,3) = u_dt(i,j,k)*vlon(i,j,3) + v_dt(i,j,k)*vlat(i,j,3)
-          enddo
-       enddo
-
-       do j=max(3,js),min(npy-2,je+1)
-          do i=is,ie
-             ue(i,j,1) = b1*(v3(i,j-1,1)+v3(i,j,1)) + b2*(v3(i,j-2,1)+v3(i,j+1,1))
-             ue(i,j,2) = b1*(v3(i,j-1,2)+v3(i,j,2)) + b2*(v3(i,j-2,2)+v3(i,j+1,2))
-             ue(i,j,3) = b1*(v3(i,j-1,3)+v3(i,j,3)) + b2*(v3(i,j-2,3)+v3(i,j+1,3))
-          enddo
-       enddo
-
-       do j=js,je
-          do i=max(3,is),min(npx-2,ie+1)
-             ve(i,j,1) = b1*(v3(i-1,j,1)+v3(i,j,1)) + b2*(v3(i-2,j,1)+v3(i+1,j,1))
-             ve(i,j,2) = b1*(v3(i-1,j,2)+v3(i,j,2)) + b2*(v3(i-2,j,2)+v3(i+1,j,2))
-             ve(i,j,3) = b1*(v3(i-1,j,3)+v3(i,j,3)) + b2*(v3(i-2,j,3)+v3(i+1,j,3))
-          enddo
-       enddo
-
-! --- E_W edges (for v-wind):
-     if ( is==1 ) then
-       do j=js,je
-          gratio = dxa(2,j) / dxa(1,j)
-       do m=1,3
-          ve(1,j,m) = 0.5*((2.+gratio)*(v3(0,j,m)+v3(1,j,m))    &
-                    - (v3(-1,j,m)+v3(2,j,m))) / (1.+gratio)
-          ve(2,j,m) = (3.*(gratio*v3(1,j,m)+v3(2,j,m))-(gratio*ve(1,j,m)+ve(3,j,m)))/(2.+2.*gratio)
-       enddo
-       enddo
-     endif
-
-     if ( (ie+1)==npx ) then
-       do j=js,je
-          gratio = dxa(npx-2,j) / dxa(npx-1,j)
-       do m=1,3
-          ve(npx  ,j,m) = 0.5*((2.+gratio)*(v3(npx-1,j,m)+v3(npx,j,m))   &
-                        - (v3(npx-2,j,m)+v3(npx+1,j,m))) / (1.+gratio )
-          ve(npx-1,j,m) = (3.*(v3(npx-2,j,m)+gratio*v3(npx-1,j,m))-(gratio*ve(npx,j,m)+ve(npx-2,j,m)))/(2.+2.*gratio)
-       enddo
-       enddo
-     endif
-
-! N-S edges (u-wind):
-    if ( js==1 ) then
-       do i=is,ie
-           gratio = dya(i,2) / dya(i,1)
-       do m=1,3
-          ue(i,1,m) = 0.5*((2.+gratio)*(v3(i,0,m)+v3(i,1,m))   &
-                    - (v3(i,-1,m)+v3(i,2,m))) / (1.+gratio )
-          ue(i,2,m) = (3.*(gratio*v3(i,1,m)+v3(i,2,m))-(gratio*ue(i,1,m)+ue(i,3,m)))/(2.+2.*gratio)
-       enddo
-       enddo
-    endif
-    if ( (je+1)==npy ) then
-       do i=is,ie
-          gratio = dya(i,npy-2) / dya(i,npy-1)
-       do m=1,3
-          ue(i,npy,  m) = 0.5*((2.+gratio)*(v3(i,npy-1,m)+v3(i,npy,m))  &
-                        - (v3(i,npy-2,m)+v3(i,npy+1,m))) / (1.+gratio)
-          ue(i,npy-1,m) = (3.*(v3(i,npy-2,m)+gratio*v3(i,npy-1,m))-(gratio*ue(i,npy,m)+ue(i,npy-2,m)))/(2.+2.*gratio)
-       enddo
-       enddo
-    endif
-
-! Update:
-    do j=js,je+1
-       do i=is,ie
-          u(i,j,k) = u(i,j,k) + dt*( ue(i,j,1)*es(1,i,j,1) +  &
-                                     ue(i,j,2)*es(2,i,j,1) +  &
-                                     ue(i,j,3)*es(3,i,j,1) )
-       enddo
-    enddo
-    do j=js,je
-       do i=is,ie+1
-          v(i,j,k) = v(i,j,k) + dt*( ve(i,j,1)*ew(1,i,j,2) +  &
-                                     ve(i,j,2)*ew(2,i,j,2) +  &
-                                     ve(i,j,3)*ew(3,i,j,2) )
-       enddo
-    enddo
-#else
 ! Compute 3D wind tendency on A grid
        do j=js-1,je+1
           do i=is-1,ie+1
@@ -717,7 +680,6 @@ module fv_update_phys_mod
                                          ve(i,j,3)*ew(3,i,j,2) )
           enddo
        enddo
-#endif
 ! Update:
       endif   ! end grid_type
  
@@ -739,16 +701,11 @@ module fv_update_phys_mod
 
 ! local:
   real ut(isd:ied,jsd:jed)
-  real vt(isd:ied,jsd:jed)
-  real ue(is-1:ie+1,js:je+1)
-  real ve(is:ie+1,js-1:je+1)
- real:: gratio
-  real dt5
-  integer i, j, k, im2, jm2
+  real:: dt5, gratio
+  integer i, j, k
 
-
-       call timing_on('COMM_TOTAL')
 ! Transform wind tendency on A grid to local "co-variant" components:
+!$omp parallel do private (i,j,k, ut)
     do k=1,npz
        do j=js,je
           do i=is,ie
@@ -759,16 +716,13 @@ module fv_update_phys_mod
        enddo
     enddo
 ! (u_dt,v_dt) are now on local coordinate system
+       call timing_on('COMM_TOTAL')
   call mpp_update_domains(u_dt, v_dt, domain, gridtype=AGRID_PARAM)
-
        call timing_off('COMM_TOTAL')
 
     dt5 = 0.5 * dt
-    im2 = (npx-1)/2
-    jm2 = (npy-1)/2
 
-!$omp parallel do private (i,j,k)
-
+!$omp parallel do private (i,j,k, gratio)
     do k=1, npz
 
      if ( grid_type > 3 ) then    ! Local & one tile configurations
@@ -789,79 +743,57 @@ module fv_update_phys_mod
 !--------
 ! u-wind
 !--------
-    do j=js-2,je+2
-       do i=is,ie
-          ut(i,j) = u_dt(i,j,k)
-       enddo
-    enddo
-! Interior 4th order PPM
-    do j=max(3,js),min(npy-2,je+1)
-       do i=is,ie
-          ue(i,j) = b1*(ut(i,j-1)+ut(i,j)) + b2*(ut(i,j-2)+ut(i,j+1))
-       enddo
-    enddo
 ! Edges:
     if ( js==1 ) then
        do i=is,ie
-           gratio = dya(i,2) / dya(i,1)
-          ue(i,1) = 0.5*((2.+gratio)*(ut(i,0)+ut(i,1))   &
-                  - (ut(i,-1)+ut(i,2))) / (1.+gratio )
-          ue(i,2) = (3.*(gratio*ut(i,1)+ut(i,2)) - (gratio*ue(i,1)+ue(i,3)))/(2.+2.*gratio)
-       enddo
-    endif
-    if ( (je+1)==npy ) then
-       do i=is,ie
-               gratio = dya(i,npy-2) / dya(i,npy-1)
-          ue(i,npy  ) = 0.5*((2.+gratio)*(ut(i,npy-1)+ut(i,npy))  &
-                      - (ut(i,npy-2)+ut(i,npy+1))) / (1.+gratio)
-          ue(i,npy-1) = (3.*(ut(i,npy-2)+gratio*ut(i,npy-1)) - (gratio*ue(i,npy)+ue(i,npy-2)))/(2.+2.*gratio)
+          gratio = dya(i,2) / dya(i,1)
+          u(i,1,k) = u(i,1,k) + dt5*((2.+gratio)*(u_dt(i,0,k)+u_dt(i,1,k))  &
+                   -(u_dt(i,-1,k)+u_dt(i,2,k)))/(1.+gratio)
        enddo
     endif
 
-    do j=js,je+1
+! Interior
+    do j=max(2,js),min(npy-1,je+1)
        do i=is,ie
-          u(i,j,k) = u(i,j,k) + dt*ue(i,j)
+          u(i,j,k) = u(i,j,k) + dt5*(u_dt(i,j-1,k)+u_dt(i,j,k))
        enddo
     enddo
+
+    if ( (je+1)==npy ) then
+       do i=is,ie
+          gratio = dya(i,npy-2) / dya(i,npy-1)
+          u(i,npy,k) = u(i,npy,k) + dt5*((2.+gratio)*(u_dt(i,npy-1,k)+u_dt(i,npy,k)) &
+                     -(u_dt(i,npy-2,k)+u_dt(i,npy+1,k)))/(1.+gratio)
+       enddo
+    endif
 
 !--------
 ! v-wind
 !--------
-    do j=js,je
-       do i=is-2,ie+2
-          vt(i,j) = v_dt(i,j,k)
-       enddo
-    enddo
-! Interior
-    do j=js,je
-       do i=max(3,is),min(npx-2,ie+1)
-          ve(i,j) = b1*(vt(i-1,j)+vt(i,j)) + b2*(vt(i-2,j)+vt(i+1,j))
-       enddo
-    enddo
 ! West Edges:
     if ( is==1 ) then
        do j=js,je
-           gratio = dxa(2,j) / dxa(1,j)
-          ve(1,j) = 0.5*((2.+gratio)*(vt(0,j)+vt(1,j))    &
-                  - (vt(-1,j)+vt(2,j))) / (1.+gratio)
-          ve(2,j) = (3.*(gratio*vt(1,j)+vt(2,j)) - (gratio*ve(1,j)+ve(3,j)))/(2.+2.*gratio)
-       enddo
-    endif
-! East Edges:
-    if ( (ie+1)==npx ) then
-       do j=js,je
-               gratio = dxa(npx-2,j) / dxa(npx-1,j)
-          ve(npx  ,j) = 0.5*((2.+gratio)*(vt(npx-1,j)+vt(npx,j))   &
-                        - (vt(npx-2,j)+vt(npx+1,j))) / (1.+gratio )
-          ve(npx-1,j) = (3.*(vt(npx-2,j)+gratio*vt(npx-1,j)) - (gratio*ve(npx,j)+ve(npx-2,j)))/(2.+2.*gratio)
+          gratio = dxa(2,j) / dxa(1,j)
+          v(1,j,k) = v(1,j,k) + dt5*((2.+gratio)*(v_dt(0,j,k)+v_dt(1,j,k)) &
+                   -(v_dt(-1,j,k)+v_dt(2,j,k)))/(1.+gratio)
        enddo
     endif
 
+! Interior
     do j=js,je
-       do i=is,ie+1
-          v(i,j,k) = v(i,j,k) + dt*ve(i,j)
+       do i=max(2,is),min(npx-1,ie+1)
+          v(i,j,k) = v(i,j,k) + dt5*(v_dt(i-1,j,k)+v_dt(i,j,k))
        enddo
     enddo
+
+! East Edges:
+    if ( (ie+1)==npx ) then
+       do j=js,je
+          gratio = dxa(npx-2,j) / dxa(npx-1,j)
+          v(npx,j,k) = v(npx,j,k) + dt5*((2.+gratio)*(v_dt(npx-1,j,k)+v_dt(npx,j,k)) &
+                     -(v_dt(npx-2,j,k)+v_dt(npx+1,j,k)))/(1.+gratio)
+       enddo
+    endif
 
     endif   ! end grid_type
 

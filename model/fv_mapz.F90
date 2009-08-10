@@ -6,14 +6,25 @@ module fv_mapz_mod
   use fv_fill_mod,       only: fillz
   use fv_mp_mod,         only: gid, domain
   use mpp_domains_mod,   only: mpp_update_domains
+  use mpp_mod,           only: FATAL, mpp_error, get_unit, stdlog, mpp_root_pe, mpp_pe
 
   implicit none
   real, parameter::  r3 = 1./3., r23 = 2./3., r12 = 1./12.
-  real*4 :: E_FLUX
+  real(kind=4) :: E_FLUX
   private
 
   public compute_total_energy, Lagrangian_to_Eulerian,    &
          rst_remap, mappm, E_Flux
+
+! following added for code segment in cs_profile
+! may be removed at a later date
+  logical :: mapz_is_initialized = .false.
+! vertical profile reconstruction parameters
+! in cs_profile
+! Default: pre-Quebec behavior
+  logical :: vert_profile_reconstruct_top = .false. ! top of atmosphere
+  logical :: vert_profile_reconstruct_bot = .false. ! bottom of atmosphere
+  namelist /fv_mapz_nml/ vert_profile_reconstruct_top, vert_profile_reconstruct_bot
 
 CONTAINS
 
@@ -755,6 +766,7 @@ endif         !------------- Hybrid_z section ----------------------
 ! !INPUT PARAMETERS:
    integer,  intent(in):: km, is, ie, js, je, isd, ied, jsd, jed, id_te
    integer,  intent(in):: sphum
+   real, intent(inout), dimension(isd:ied,jsd:jed,km):: ua, va
    real, intent(in), dimension(isd:ied,jsd:jed,km):: pt, delp
    real, intent(in), dimension(isd:ied,jsd:jed,km,sphum):: q
    real, intent(inout)::  u(isd:ied,  jsd:jed+1,km)
@@ -767,7 +779,6 @@ endif         !------------- Hybrid_z section ----------------------
    real, intent(in):: cp, rg, r_vir, hlv
    logical, intent(in):: moist_phys, hydrostatic
 ! Output:
-   real, intent(out), dimension(isd:ied,jsd:jed,km):: ua, va
    real, intent(out):: te_2d(is:ie,js:je)   ! vertically integrated TE
    real, intent(out)::   teq(is:ie,js:je)   ! Moist TE
 ! Local
@@ -1297,6 +1308,8 @@ endif         !------------- Hybrid_z section ----------------------
  real   bet, a_bot, grat, pmp, lac
  integer i, k, im
 
+  if (.not. mapz_is_initialized) call mapz_init
+
   do i=i1,i2
          grat = delp(i,2) / delp(i,1)   ! grid ratio
           bet = grat*(grat+0.5)
@@ -1337,14 +1350,32 @@ endif         !------------- Hybrid_z section ----------------------
   enddo
 
 ! Apply large-scale constraints to ALL fields if not local max/min
-! Top:
 
-  if ( iv==-1 ) then
+! added a namelist parameter for this section
+! namelist and original method may be removed at a later date
+! Top:
+  IF ( vert_profile_reconstruct_top ) THEN
+! new formulation of damping to reduce instabilities for remap temperature
+    if ( iv==0 ) then
+       do i=i1,i2
+          q(i,2) = min( q(i,2), max(a4(1,i,1), a4(1,i,2)) )
+          q(i,2) = max( q(i,2), min(a4(1,i,1), a4(1,i,2)), 0.)
+       enddo
+    else
        do i=i1,i2
           q(i,2) = min( q(i,2), max(a4(1,i,1), a4(1,i,2)) )
           q(i,2) = max( q(i,2), min(a4(1,i,1), a4(1,i,2)) )
        enddo
-  else     
+    endif
+  ELSE   ! original method
+! The following at times produced instability at layer #2 if used for remap temperature
+    if ( iv==-1 ) then
+       ! winds:
+       do i=i1,i2
+          q(i,2) = min( q(i,2), max(a4(1,i,1), a4(1,i,2)) )
+          q(i,2) = max( q(i,2), min(a4(1,i,1), a4(1,i,2)) )
+       enddo
+    else     
        do i=i1,i2
           if ( (q(i,2)-q(i,1))*(q(i,3)-q(i,2))>0. ) then
                q(i,2) = min( q(i,2), max(a4(1,i,1), a4(1,i,2)) )
@@ -1353,7 +1384,9 @@ endif         !------------- Hybrid_z section ----------------------
                q(i,2) = max(0., q(i,2))
            endif
        enddo
-  endif
+    endif
+  ENDIF
+
 
 ! Interior:
   do k=3,km-1
@@ -1387,8 +1420,30 @@ endif         !------------- Hybrid_z section ----------------------
   endif
 
 
+! added a namelist parameter for this section
+! namelist and original method may be removed at a later date
 ! Bottom:
-  if ( iv==-1 ) then
+  IF ( vert_profile_reconstruct_bot ) THEN
+! new formulation of damping to provide symmetry with new remapping at the top
+    if ( iv==-1 ) then
+       do i=i1,i2
+          q(i,km) = min( q(i,km), max(a4(1,i,km-1), a4(1,i,km)) )
+          q(i,km) = max( q(i,km), min(a4(1,i,km-1), a4(1,i,km)) )
+          q(i,km+1) = sign(min(abs(q(i,km+1)), abs(a4(1,i,km))), a4(1,i,km))
+       enddo
+    elseif ( iv==0 ) then
+       do i=i1,i2
+          q(i,km) = min( q(i,km), max(a4(1,i,km-1), a4(1,i,km)) )
+          q(i,km) = max( q(i,km), min(a4(1,i,km-1), a4(1,i,km)), 0.)
+       enddo
+    else
+       do i=i1,i2
+          q(i,km) = min( q(i,km), max(a4(1,i,km-1), a4(1,i,km)) )
+          q(i,km) = max( q(i,km), min(a4(1,i,km-1), a4(1,i,km)) )
+       enddo
+    endif
+  ELSE   ! original method
+    if ( iv==-1 ) then
        do i=i1,i2
           q(i,km) = min( q(i,km), max(a4(1,i,km-1), a4(1,i,km)) )
           q(i,km) = max( q(i,km), min(a4(1,i,km-1), a4(1,i,km)) )
@@ -1398,16 +1453,19 @@ endif         !------------- Hybrid_z section ----------------------
           q(i,km+1) = sign(min(abs(q(i,km+1)), abs(a4(1,i,km))), a4(1,i,km))
        enddo
 #endif
-  else
-  do i=i1,i2
-     if ( (q(i,km)-q(i,km-1))*(q(i,km+1)-q(i,km))>0. ) then
-          q(i,km) = min( q(i,km), max(a4(1,i,km-1), a4(1,i,km)) )
-          q(i,km) = max( q(i,km), min(a4(1,i,km-1), a4(1,i,km)) )
-     elseif ( iv==0 ) then
-          q(i,km) = max(0., q(i,km))
-     endif
-  enddo
-  endif
+    else
+       do i=i1,i2
+          if ( (q(i,km)-q(i,km-1))*(q(i,km+1)-q(i,km))>0. ) then
+               q(i,km) = min( q(i,km), max(a4(1,i,km-1), a4(1,i,km)) )
+               q(i,km) = max( q(i,km), min(a4(1,i,km-1), a4(1,i,km)) )
+          elseif ( iv==0 ) then
+               q(i,km) = max(0., q(i,km))
+          endif
+       enddo
+    endif
+  ENDIF
+
+
 
   do k=1,km
      do i=i1,i2
@@ -2242,5 +2300,27 @@ endif         !------------- Hybrid_z section ----------------------
 
  end subroutine mappm
 
+
+! subroutine to read in variable for cs_profile
+ subroutine mapz_init
+   character(len=9) :: filename = 'input.nml'
+   integer :: f_unit, log_unit, ios
+
+   if (mapz_is_initialized) return
+   f_unit = get_unit()
+   open (f_unit,file=filename)
+ ! Read fv_mapz namelist
+   read (f_unit,fv_mapz_nml,iostat=ios)
+   close (f_unit)
+   if (ios .gt. 0) then
+     if (mpp_pe() .eq. mpp_root_pe()) &
+       call mpp_error(FATAL,'ERROR: reading fv_mapz_nml in '//trim(filename)//'')
+   endif
+   log_unit = stdlog()
+   write(log_unit, nml=fv_mapz_nml)
+
+   mapz_is_initialized = .true.
+
+ end subroutine mapz_init
 
 end module fv_mapz_mod

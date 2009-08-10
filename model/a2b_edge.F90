@@ -224,12 +224,12 @@ contains
     je1 = min(npy-1,je+1)
 
 ! Corners:
- #ifdef USE_3PT
+#ifdef USE_3PT
    if ( sw_corner ) qout(1,    1) = r3*(qin(1,        1)+qin(1,      0)+qin(0,      1))
    if ( se_corner ) qout(npx,  1) = r3*(qin(npx-1,    1)+qin(npx-1,  0)+qin(npx,    1))
    if ( ne_corner ) qout(npx,npy) = r3*(qin(npx-1,npy-1)+qin(npx,npy-1)+qin(npx-1,npy))
    if ( nw_corner ) qout(1,  npy) = r3*(qin(1,    npy-1)+qin(0,  npy-1)+qin(1,    npy))
- #else
+#else
 ! 6-point formular:
     if ( sw_corner ) then
         qout(1,1) = d1*(qin(1, 0) + qin( 0,1) + qin(1,1)) +  &
@@ -247,7 +247,7 @@ contains
         qout(1,npy) = d1*(qin( 0,npy-1) + qin(1,npy-1) + qin(1,npy)) +   &
                       d2*(qin(-1,npy-2) + qin(2,npy-2) + qin(2,npy+1))
     endif
- #endif
+#endif
 
 !------------
 ! X-Interior:

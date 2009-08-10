@@ -11,7 +11,7 @@
       integer, private      :: nblks
       parameter  (nblks   = 100)
 
-      character*20, private :: blkname(nblks)
+      character(len=20), private :: blkname(nblks)
 
       integer , private      :: tblk
 
@@ -78,12 +78,12 @@
 
          implicit none
 
-         character*(*)  blk_name
+         character(len=*) :: blk_name
 
 
 
-         character*20   UC_blk_name
-         character*20   ctmp 
+         character(len=20) :: UC_blk_name
+         character(len=20) ::  ctmp 
          integer i
          integer iblk
 
@@ -141,10 +141,10 @@
 !
 
         implicit none
-        character*(*) blk_name
+        character(len=*) :: blk_name
 
-        character*20  UC_blk_name
-        character*20  ctmp
+        character(len=20) :: UC_blk_name
+        character(len=20) :: ctmp
         integer i
 
         integer  :: C, R, M
@@ -269,7 +269,7 @@
       implicit         none
 
 !      character string(length)
-!      character*20 string
+!      character(len=20) string
 !      character, dimension(length) :: string
 !      character (len=*), intent(inout) ::  string
 !      character (len=*) ::  string

@@ -117,8 +117,8 @@ contains
  
 !--------------------------------------------------------
     type(fv_atmos_type), intent(inout) :: Atm
-    character*80, intent(IN) :: grid_name
-    character*120,intent(IN) :: grid_file
+    character(len=80), intent(IN) :: grid_name
+    character(len=120),intent(IN) :: grid_file
     integer,      intent(IN) :: npx, npy, npz
     integer,      intent(IN) :: ndims
     integer,      intent(IN) :: nregions
@@ -126,7 +126,7 @@ contains
 !--------------------------------------------------------
     real   ::  xs(npx,npy)
     real   ::  ys(npx,npy)
-    real*8 ::  grid_R8(npx,npy)
+    real(kind=8) ::  grid_R8(npx,npy)
 
     real  :: dp, dl
     real  :: x1,x2,y1,y2,z1,z2
@@ -156,7 +156,7 @@ contains
     real  :: angs(1:(npx/2)+1, 1:(npy/2)+1)
     real  :: asps(1:(npx/2)+1, 1:(npy/2)+1)
     real  ::  dxs(1:(npx/2)+1, 1:(npy/2)+1)
-    character*80 :: gcharFile
+    character(len=80) :: gcharFile
 
     real :: grid_global(1-ng:npx  +ng,1-ng:npy  +ng,ndims,1:nregions)
     real ::   dx_global(1:npx-1,1:npy  ,1:nregions)
@@ -166,13 +166,13 @@ contains
     real ::      cosa_g(1:npx  ,1:npy  ,1:nregions)
 #endif
 
-    character*80 :: evalue
+    character(len=80) :: evalue
     integer :: ios, ip, jp
     
     integer :: igrid
     
     integer :: tmplun
-    character*80 :: tmpFile   
+    character(len=80) :: tmpFile   
 
     npx_g = npx
     npy_g = npy

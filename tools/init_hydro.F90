@@ -1,4 +1,4 @@
-! $Id: init_hydro.F90,v 16.0 2008/07/30 22:05:18 fms Exp $
+! $Id: init_hydro.F90,v 17.0 2009/07/21 02:52:36 fms Exp $
 
 module init_hydro_mod
 
@@ -257,7 +257,7 @@ contains
   real mslp, z1, t1, p1, t0, a0, psm
   real ztop, c0
 #ifdef INIT_4BYTE
-  real*4 dps 
+  real(kind=4) ::  dps 
 #else
   real dps    ! note that different PEs will get differt dps during initialization
               ! this has no effect after cold start
@@ -267,9 +267,48 @@ contains
 
   if ( gid==masterproc ) write(*,*) 'Initializing ATM hydrostatically'
 
-#ifdef MARS_GCM
-      p0 = 6.1E2         ! need to tune this value
-      t0 = 250.
+#if defined(MARS_GCM)
+  if ( gid==masterproc ) write(*,*) 'Initializing Mars'
+      p0 = 6.5E2         !
+      t0 = 200.0
+
+!         Isothermal temperature
+      pt = t0
+
+      gztop = rdgas*t0*log(p0/ak(1))        ! gztop when zs==0
+
+     do j=js,je
+        do i=is,ie
+           ps(i,j) = ak(1)*exp((gztop-hs(i,j))/(rdgas*t0))
+        enddo
+     enddo
+
+     psm = g_sum(ps(is:ie,js:je), is, ie, js, je, ng, area, 1, .true.)
+     dps = drym - psm
+
+     if(gid==masterproc) write(6,*) 'Initializing:  Computed mean ps=', psm
+     if(gid==masterproc) write(6,*) '            Correction delta-ps=', dps
+
+!           Add correction to surface pressure to yield desired
+!                globally-integrated atmospheric mass  (drym)
+     do j=js,je
+        do i=is,ie
+           ps(i,j) = ps(i,j) + dps
+        enddo
+     enddo
+
+      do k=1,km
+         do j=js,je
+            do i=is,ie
+               delp(i,j,k) = ak(k+1)-ak(k) + ps(i,j)*(bk(k+1)-bk(k))
+            enddo
+         enddo
+      enddo
+
+#elif defined(VENUS_GCM)
+  if ( gid==masterproc ) write(*,*) 'Initializing Venus'
+      p0 = 92.E5         ! need to tune this value
+      t0 = 700.
       pt = t0
 ! gztop when zs==0
       gztop = rdgas*t0*log(p0/ak(1))
@@ -287,7 +326,9 @@ contains
             enddo
          enddo
       enddo
+
 #else
+  if ( gid==masterproc ) write(*,*) 'Initializing Earth'
 ! Given p1 and z1 (250mb, 10km)
         p1 = 25000.
         z1 = 10.E3 * grav

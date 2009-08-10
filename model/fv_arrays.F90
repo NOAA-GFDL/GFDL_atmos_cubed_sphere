@@ -109,6 +109,7 @@ public
     logical :: init_wind_m, no_cgrid
     logical :: nudge
     logical :: tq_filter
+    logical :: warm_start
 
     character(len=128) :: res_latlon_dynamics  ! restart file from the latlon FV core
     character(len=128) :: res_latlon_tracers   ! tracer restart file from the latlon core

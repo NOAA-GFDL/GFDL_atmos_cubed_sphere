@@ -42,6 +42,7 @@ module fv_restart_mod
   use init_hydro_mod,      only: p_var
   use mpp_domains_mod,     only: mpp_update_domains, domain2d, DGRID_NE
   use mpp_mod,             only: mpp_chksum, stdout, mpp_error, FATAL, get_unit
+  use fms_io_mod,          only: set_domain, nullify_domain
   use test_cases_mod,      only: alpha, init_case, init_double_periodic, init_latlon
   use fv_mp_mod,           only: gid, masterproc
   use fv_surf_map_mod,     only: sgh_g, oro_g
@@ -61,8 +62,8 @@ module fv_restart_mod
   logical                       :: module_is_initialized = .FALSE.
 
   !--- version information variables ----
-  character(len=128) :: version = '$Id: fv_restart.F90,v 16.0.4.1 2008/09/11 20:48:47 rab Exp $'
-  character(len=128) :: tagname = '$Name: perth_2008_10 $'
+  character(len=128) :: version = '$Id: fv_restart.F90,v 17.0 2009/07/21 02:52:30 fms Exp $'
+  character(len=128) :: tagname = '$Name: quebec $'
 
 contains 
 
@@ -101,6 +102,7 @@ contains
     integer :: isc, iec, jsc, jec, npz, npz_rst, ncnst
     integer :: isd, ied, jsd, jed
 
+    integer :: unit
     real, allocatable :: dz1(:)
     real rgrav, f00, ztop
     logical :: hybrid
@@ -113,6 +115,10 @@ contains
     ntileMe = size(Atm(:))
     npz     = Atm(1)%npz
     npz_rst = Atm(1)%npz_rst
+
+    !---z1l: needed for new IO capability: divide the processor list into many subgroup and 
+    !---     write out from the root pe of each subgroup.
+    call set_domain(fv_domain)
 
     !--- call fv_io_register_restart to register restart field to be written out in fv_io_write_restart
     call fv_io_register_restart(fv_domain,Atm)
@@ -206,6 +212,9 @@ contains
         endif
       else
 ! Cold start
+       if ( Atm(n)%warm_start ) then
+         call mpp_error(FATAL, 'FV restart files not found; set warm_start = .F. if cold_start is desired.')
+       endif
        if ( Atm(n)%make_hybrid_z ) then
          hybrid = .false.
        else
@@ -270,17 +279,18 @@ contains
       endif
 !---------------------------------------------------------------------------------------------
 
-      write(stdout(),*)
-      write(stdout(),*) 'fv_restart u    = ', mpp_chksum(Atm(n)%u(isc:iec,jsc:jec,:))
-      write(stdout(),*) 'fv_restart v    = ', mpp_chksum(Atm(n)%v(isc:iec,jsc:jec,:))
-      write(stdout(),*) 'fv_restart delp = ', mpp_chksum(Atm(n)%delp(isc:iec,jsc:jec,:))
-      write(stdout(),*) 'fv_restart phis = ', mpp_chksum(Atm(n)%phis(isc:iec,jsc:jec))
+      unit = stdout()
+      write(unit,*)
+      write(unit,*) 'fv_restart u    = ', mpp_chksum(Atm(n)%u(isc:iec,jsc:jec,:))
+      write(unit,*) 'fv_restart v    = ', mpp_chksum(Atm(n)%v(isc:iec,jsc:jec,:))
+      write(unit,*) 'fv_restart delp = ', mpp_chksum(Atm(n)%delp(isc:iec,jsc:jec,:))
+      write(unit,*) 'fv_restart phis = ', mpp_chksum(Atm(n)%phis(isc:iec,jsc:jec))
 
 #ifdef SW_DYNAMICS
       call prt_maxmin('H ', Atm(n)%delp, isc, iec, jsc, jec, Atm(n)%ng, 1, rgrav, gid==masterproc)
 #else
-      write(stdout(),*) 'fv_restart pt   = ', mpp_chksum(Atm(n)%pt(isc:iec,jsc:jec,:))
-      if (ncnst>0) write(stdout(),*) 'fv_init nq =',ncnst, mpp_chksum(Atm(n)%q(isc:iec,jsc:jec,:,:))
+      write(unit,*) 'fv_restart pt   = ', mpp_chksum(Atm(n)%pt(isc:iec,jsc:jec,:))
+      if (ncnst>0) write(unit,*) 'fv_init nq =',ncnst, mpp_chksum(Atm(n)%q(isc:iec,jsc:jec,:,:))
 !---------------
 ! Check Min/Max:
 !---------------
@@ -301,7 +311,7 @@ contains
 ! Check tracers:
       do i=1, ncnst
           call get_tracer_names ( MODEL_ATMOS, i, tname )
-          call prt_maxmin(trim(tname), Atm(n)%q(isd,jsd,1,i), isc, iec, jsc, jec, Atm(n)%ng, npz, 1.,gid==masterproc)
+          call prt_maxmin(trim(tname), Atm(n)%q(isd:ied,jsd:jed,1:npz,i), isc, iec, jsc, jec, Atm(n)%ng, npz, 1.,gid==masterproc)
       enddo
 #endif
       call prt_maxmin('U ', Atm(n)%u(isc:iec,jsc:jec,1:npz), isc, iec, jsc, jec, 0, npz, 1., gid==masterproc)
@@ -322,7 +332,7 @@ contains
          endif
       endif
 
-      if (gid==masterproc) write(stdout(),*)
+      if (gid==masterproc) write(unit,*)
 
 !--------------------------------------------
 ! Initialize surface winds for flux coupler:
@@ -339,6 +349,8 @@ contains
     endif
 
     end do   ! n_tile
+
+    call nullify_domain()
 
   end subroutine fv_restart
   ! </SUBROUTINE> NAME="fv_restart"
@@ -374,9 +386,8 @@ contains
     integer :: isc, iec, jsc, jec
     integer :: iq, n, ntileMe
     integer :: isd, ied, jsd, jed, npz
-#ifdef EFLUX_OUT
+    integer :: unit
     integer :: file_unit
-#endif
 
     ntileMe = size(Atm(:))
 
@@ -389,17 +400,18 @@ contains
       jed = Atm(n)%jed
       npz = Atm(n)%npz
  
-      write(stdout(),*)
-      write(stdout(),*) 'fv_restart_end u    = ', mpp_chksum(Atm(n)%u(isc:iec,jsc:jec,:))
-      write(stdout(),*) 'fv_restart_end v    = ', mpp_chksum(Atm(n)%v(isc:iec,jsc:jec,:))
+      unit = stdout()
+      write(unit,*)
+      write(unit,*) 'fv_restart_end u    = ', mpp_chksum(Atm(n)%u(isc:iec,jsc:jec,:))
+      write(unit,*) 'fv_restart_end v    = ', mpp_chksum(Atm(n)%v(isc:iec,jsc:jec,:))
       if ( .not. Atm(n)%hydrostatic )    &
-         write(stdout(),*) 'fv_restart_end w    = ', mpp_chksum(Atm(n)%w(isc:iec,jsc:jec,:))
-      write(stdout(),*) 'fv_restart_end delp = ', mpp_chksum(Atm(n)%delp(isc:iec,jsc:jec,:))
-      write(stdout(),*) 'fv_restart_end phis = ', mpp_chksum(Atm(n)%phis(isc:iec,jsc:jec))
+         write(unit,*) 'fv_restart_end w    = ', mpp_chksum(Atm(n)%w(isc:iec,jsc:jec,:))
+      write(unit,*) 'fv_restart_end delp = ', mpp_chksum(Atm(n)%delp(isc:iec,jsc:jec,:))
+      write(unit,*) 'fv_restart_end phis = ', mpp_chksum(Atm(n)%phis(isc:iec,jsc:jec))
 #ifndef SW_DYNAMICS
-      write(stdout(),*) 'fv_restart_end pt   = ', mpp_chksum(Atm(n)%pt(isc:iec,jsc:jec,:))
+      write(unit,*) 'fv_restart_end pt   = ', mpp_chksum(Atm(n)%pt(isc:iec,jsc:jec,:))
       do iq=1,min(7, Atm(n)%ncnst)     ! Check up to 7 tracers
-        write(stdout(),*) 'fv_restart_end q    = ', mpp_chksum(Atm(n)%q(isc:iec,jsc:jec,:,iq))
+        write(unit,*) 'fv_restart_end q    = ', mpp_chksum(Atm(n)%q(isc:iec,jsc:jec,:,iq))
       enddo
 
 !---------------

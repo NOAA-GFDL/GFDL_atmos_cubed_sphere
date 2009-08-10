@@ -1,5 +1,7 @@
  module fv_grid_utils_mod
  
+#include <fms_platform.h>
+
  use mpp_mod,         only: FATAL, mpp_error
  use mpp_domains_mod, only: mpp_update_domains, DGRID_NE, mpp_global_sum,   &
                             BITWISE_EXACT_SUM
@@ -14,10 +16,11 @@
 
  implicit none
  private
-#ifdef EIGHT_BYTE
- integer, parameter:: f_p = selected_real_kind(15)   ! same as 12 on Altix
+#ifdef NO_QUAD_PRECISION
+! 64-bit precision (kind=8)
+ integer, parameter:: f_p = selected_real_kind(15)
 #else
-! Higher precisions for grid geometrical factors:
+! Higher precision (kind=16) for grid geometrical factors:
  integer, parameter:: f_p = selected_real_kind(20)
 #endif
  real, parameter::  big_number=1.E35
@@ -107,12 +110,12 @@
         sw_corner, se_corner, ne_corner, nw_corner, global_mx,              &
         da_min, da_min_c, edge_s, edge_n, edge_w, edge_e,   &
         edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e, unit_vect_latlon,  &
-        cubed_to_latlon, c2l_ord2, g_sum, great_circle_dist,  &
+        cubed_to_latlon, c2l_ord2, g_sum, global_qsum, great_circle_dist,  &
         v_prod, en1, en2, ex_w, ex_e, ex_s, ex_n, vlon, vlat, ee1, ee2, &
         cx1, cx2, cy1, cy2, Gnomonic_grid, van2, divg_u, divg_v
  public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, grid_utils_end, &
         spherical_angle, cell_center2, get_area, inner_prod, fill_ghost,    &
-        make_eta_level, expand_cell, cart_to_latlon
+        make_eta_level, expand_cell, cart_to_latlon, intp_great_circle
  public z11, z12, z21, z22
  public i_sst, j_sst, sst_ncep
 
@@ -185,6 +188,7 @@
 ! sst_ncep
       i_sst = isst
       j_sst = jsst
+! This is a "hack" to make SST from NCEP analysis available to amip-Interp
       allocate ( sst_ncep(i_sst,j_sst) )
 
 ! Coriolis parameters:
@@ -2166,6 +2170,37 @@
  end subroutine project_sphere_v
 
 
+ subroutine intp_great_circle(beta, p1, p2, x_o, y_o)
+ real, intent(in)::  beta    ! [0,1]
+ real, intent(in)::  p1(2), p2(2)
+ real, intent(out):: x_o, y_o     ! between p1 and p2 along GC
+!------------------------------------------
+    real:: pm(2)
+    real:: e1(3), e2(3), e3(3)
+    real:: s1, s2, s3, dd, alpha
+
+      call latlon2xyz(p1, e1)
+      call latlon2xyz(p2, e2)
+
+       alpha = 1. - beta
+
+       s1 = alpha*e1(1) + beta*e2(1)
+       s2 = alpha*e1(2) + beta*e2(2)
+       s3 = alpha*e1(3) + beta*e2(3)
+
+       dd = sqrt( s1**2 + s2**2 + s3**2 )
+
+       e3(1) = s1 / dd
+       e3(2) = s2 / dd
+       e3(3) = s3 / dd
+
+      call cart_to_latlon(1, e3, pm(1), pm(2))
+
+      x_o = pm(1)
+      y_o = pm(2)
+
+ end subroutine intp_great_circle
+
 
  subroutine mid_pt_sphere(p1, p2, pm)
       real , intent(IN)  :: p1(2), p2(2)
@@ -2901,33 +2936,26 @@
       integer :: i,j
       real gsum
          
-      if ( present(reproduce) ) then
+      if ( .not. g_sum_initialized ) then
+         global_area = mpp_global_sum(domain, area, flags=BITWISE_EXACT_SUM)
+         if ( gid==0 ) write(*,*) 'Global Area=',global_area
+         g_sum_initialized = .true.
+      end if
+ 
 !-------------------------
 ! FMS global sum algorithm:
 !-------------------------
-         if ( .not. g_sum_initialized ) then
-              global_area = mpp_global_sum(domain, area, flags=BITWISE_EXACT_SUM)
-!             global_area = mpp_global_sum(domain, area)
-              if ( gid==0 ) write(*,*) 'Global Area=',global_area
-              g_sum_initialized = .true.
-         end if
-         gsum = mpp_global_sum(domain, p(:,:)*area(ifirst:ilast,jfirst:jlast) )
+      if ( present(reproduce) ) then
+         if (reproduce) then
+            gsum = mpp_global_sum(domain, p(:,:)*area(ifirst:ilast,jfirst:jlast), &
+                                  flags=BITWISE_EXACT_SUM)
+         else
+            gsum = mpp_global_sum(domain, p(:,:)*area(ifirst:ilast,jfirst:jlast))
+         endif
       else
 !-------------------------
 ! Quick local sum algorithm
 !-------------------------
-         if ( .not. g_sum_initialized ) then
-              global_area = 0.
-              do j=jfirst,jlast
-                 do i=ifirst,ilast
-                    global_area = global_area + area(i,j)
-                 enddo
-              enddo
-              call mp_reduce_sum(global_area)
-              if ( gid==0 ) write(*,*) 'Global Area=',global_area
-              g_sum_initialized = .true.
-         end if
-
          gsum = 0.
          do j=jfirst,jlast
             do i=ifirst,ilast
@@ -2945,6 +2973,26 @@
 
  end function g_sum
 
+
+ real function global_qsum(p, ifirst, ilast, jfirst, jlast)
+! quick global sum without area weighting
+      integer, intent(IN) :: ifirst, ilast
+      integer, intent(IN) :: jfirst, jlast
+      real, intent(IN) :: p(ifirst:ilast,jfirst:jlast)      ! field to be summed
+      integer :: i,j
+      real gsum
+         
+      gsum = 0.
+      do j=jfirst,jlast
+         do i=ifirst,ilast
+            gsum = gsum + p(i,j)
+         enddo
+      enddo
+      call mp_reduce_sum(gsum)
+
+      global_qsum  = gsum
+
+ end function global_qsum
 
 
  subroutine global_mx(q, n_g, qmin, qmax)
@@ -3015,16 +3063,16 @@
 
 
 
- subroutine make_eta_level(km, pe, area, ks, ak, bk)
+ subroutine make_eta_level(km, pe, area, kks, ak, bk)
   integer, intent(in ):: km
-  integer, intent(out):: ks
+  integer, intent(out):: kks
   real, intent(in):: area(isd:ied,jsd:jed)
   real, intent(in):: pe(is-1:ie+1,km+1,js-1:je+1)
   real, intent(out):: ak(km+1), bk(km+1)
 ! local:
   real ph(km+1)
   real, allocatable:: pem(:,:)
-  real*4 p4
+  real(kind=4) :: p4
   integer k, i, j
 
      ph(1) = pe(is,1,js)
@@ -3038,13 +3086,13 @@
                pem(i,j) = pe(i,k,j)
            enddo
         enddo
-! Make it the same acroos all PEs
-        p4 = g_sum(pem, is, ie, js, je, ng, area, mode=1)
+! Make it the same across all PEs
+        p4 = g_sum(pem, is, ie, js, je, ng, area, 1)
         ph(k) = p4
      enddo
 
 ! Faking a's and b's for code compatibility with hybrid sigma-p
-     ks = 0
+     kks = 0
      ak(1) = ph(1)
      bk(1) = 0.
      ak(km+1) = 0.

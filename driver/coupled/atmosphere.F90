@@ -41,7 +41,7 @@ use fv_timing_mod,      only: timing_on, timing_off
 use fv_physics_mod,     only: fv_physics_down, fv_physics_up,  &
                               fv_physics_init, fv_physics_end, &
                               surf_diff_type, fv_physics_restart
-use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end
+use fv_nudge_mod,       only: fv_nwp_nudge_init, fv_nwp_nudge_end
 
 implicit none
 private
@@ -56,8 +56,8 @@ public  atmosphere_down,       atmosphere_up,       &
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id: atmosphere.F90,v 16.0.4.3 2008/09/17 13:23:46 rab Exp $'
-character(len=128) :: tagname = '$Name: perth_2008_10 $'
+character(len=128) :: version = '$Id: atmosphere.F90,v 17.0 2009/07/21 02:51:40 fms Exp $'
+character(len=128) :: tagname = '$Name: quebec $'
 character(len=7)   :: mod_name = 'atmos'
 
 !---- namelist (saved in file input.nml) ----
@@ -121,8 +121,9 @@ contains
 
 !----- write version and namelist to log file -----
 
+   unit = stdlog()
    call write_version_number ( version, tagname )
-   if ( mpp_pe() == mpp_root_pe() ) write (stdlog(), nml=atmosphere_nml)
+   if ( mpp_pe() == mpp_root_pe() ) write (unit, nml=atmosphere_nml)
 
 !---- compute physics/atmos time step in seconds ----
 
@@ -413,8 +414,7 @@ contains
    deallocate(Grid_box%vlat)
 
    if ( id_tdt_dyn>0 ) deallocate(ttend)
-   if ( id_qdt_dyn>0 .or. id_qldt_dyn>0 .or. id_qidt_dyn>0 .or. id_qadt_dyn>0 )   &
-   deallocate(qtend)
+   if ( id_qdt_dyn>0 .or. id_qldt_dyn>0 .or. id_qidt_dyn>0 .or. id_qadt_dyn>0 ) deallocate(qtend)
 
  end subroutine atmosphere_end
 

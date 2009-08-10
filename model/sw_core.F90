@@ -749,7 +749,7 @@
         do j=js,je
            do i=is,ie
               pt(i,j) = pt(i,j)*delp(i,j) +               &
-                       (ub(i,j)-ub(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
+                         (ub(i,j)-ub(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
               delp(i,j) = delp(i,j) +                     &
                          (fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j)
               pt(i,j) = pt(i,j) / delp(i,j)
@@ -2064,6 +2064,10 @@ end subroutine ytp_v
   else
      npt = -2
   endif
+
+! Initialize utmp and vtmp to zero
+  utmp=1.e35
+  vtmp=1.e35
 
 !----------
 ! Interior:
