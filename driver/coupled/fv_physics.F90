@@ -46,7 +46,7 @@ public  surf_diff_type, fv_physics_restart
 
 !-----------------------------------------------------------------------
 character(len=128) :: version = '$Id: fv_physics.F90,v 17.0 2009/07/21 02:51:42 fms Exp $'
-character(len=128) :: tag = '$Name: quebec $'
+character(len=128) :: tag = '$Name: quebec_200910 $'
 !-----------------------------------------------------------------------
 
    real, allocatable, dimension(:,:,:)   :: t_phys
