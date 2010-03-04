@@ -8,6 +8,7 @@
  use mpp_parameter_mod, only: AGRID_PARAM=>AGRID, CGRID_NE_PARAM=>CGRID_NE, & 
                               CORNER, SCALAR_PAIR
 
+ use external_sst_mod, only: i_sst, j_sst, sst_ncep, sst_anom
  use fv_arrays_mod,   only: fv_atmos_type
  use fv_eta_mod,      only: set_eta
  use fv_mp_mod,       only: domain, ng, is,js,ie,je, isd,jsd,ied,jed, gid,  &
@@ -89,9 +90,6 @@
  real, allocatable :: eww(:,:)
  real, allocatable :: ess(:,:)
 
-! sst_ncep
- real, allocatable :: sst_ncep(:,:)
-
 ! Unit vectors for lat-lon grid
  real, allocatable :: vlon(:,:,:), vlat(:,:,:)
  real, allocatable :: fC(:,:), f0(:,:)
@@ -102,7 +100,6 @@
  integer :: ks
  integer :: g_type, npxx, npyy
  integer :: c2l_ord
- integer :: i_sst, j_sst
 
  public ptop, ks, ptop_min, fC, f0, deglat, big_number, ew, es, eww, ess, ec1, ec2
  public sina_u, sina_v, cosa_u, cosa_v, cosa_s, sina_s, rsin_u, rsin_v, rsina, rsin2
@@ -115,22 +112,19 @@
         cx1, cx2, cy1, cy2, Gnomonic_grid, van2, divg_u, divg_v
  public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, grid_utils_end, &
         spherical_angle, cell_center2, get_area, inner_prod, fill_ghost,    &
-        make_eta_level, expand_cell, cart_to_latlon, intp_great_circle
+        make_eta_level, expand_cell, cart_to_latlon, intp_great_circle, normalize_vect
  public z11, z12, z21, z22
- public i_sst, j_sst, sst_ncep
-
 
  contains
 
    subroutine grid_utils_init(Atm, npx, npy, npz, grid, agrid, area, area_c,  &
                               cosa, sina, dx, dy, dxa, dya, dxc, dyc, non_ortho,   &
-                              uniform_ppm, grid_type, c2l_order, isst, jsst)
+                              uniform_ppm, grid_type, c2l_order)
 ! Initialize 2D memory and geometrical factors
       type(fv_atmos_type), intent(inout) :: Atm
       logical, intent(in):: non_ortho
       integer, intent(in):: npx, npy, npz
       integer, intent(in):: grid_type, c2l_order
-      integer, intent(in):: isst, jsst
       real, intent(in)::  grid(isd:ied+1,jsd:jed+1,2)
       real, intent(in):: agrid(isd:ied  ,jsd:jed  ,2)
       real, intent(in):: area(isd:ied,jsd:jed)
@@ -154,12 +148,6 @@
       npxx = npx;  npyy = npy
 
       g_sum_initialized = .false.
-
-      if ( grid_type < 0 ) then
-          Gnomonic_grid = .false.
-      else
-          Gnomonic_grid = .true.
-      endif
 
       allocate ( Atm%ak(npz+1) )
       allocate ( Atm%bk(npz+1) )
@@ -185,11 +173,9 @@
 #endif
       endif
 
-! sst_ncep
-      i_sst = isst
-      j_sst = jsst
-! This is a "hack" to make SST from NCEP analysis available to amip-Interp
-      allocate ( sst_ncep(i_sst,j_sst) )
+! NCEP analysis available from amip-Interp (allocate if needed)
+      if (.not. allocated(sst_ncep)) allocate (sst_ncep(i_sst,j_sst))
+      if (.not. allocated(sst_anom)) allocate (sst_anom(i_sst,j_sst))
 
 ! Coriolis parameters:
       allocate ( f0(isd:ied  ,jsd:jed  ) )
@@ -678,8 +664,9 @@
   subroutine grid_utils_end(uniform_ppm)
   logical, intent(IN) :: uniform_ppm
  
-! deallocate sst_ncep
-      deallocate ( sst_ncep )
+! deallocate sst_ncep (if allocated)
+      if (allocated(sst_ncep)) deallocate( sst_ncep )
+      if (allocated(sst_anom)) deallocate( sst_anom )
 
   if ( .not. uniform_ppm ) then
       deallocate( cx1 )
@@ -2626,6 +2613,7 @@
   real u1(is:ie), v1(is:ie)
   integer i, j, k
 
+!$omp parallel do default(shared) private(i, j, k, wu, wv, u1, v1)
   do k=1,km
      if ( g_type < 4 ) then
        do j=js,je+1
@@ -3087,6 +3075,7 @@
            enddo
         enddo
 ! Make it the same across all PEs
+!       p4 = g_sum(pem, is, ie, js, je, ng, area, mode=1)
         p4 = g_sum(pem, is, ie, js, je, ng, area, 1)
         ph(k) = p4
      enddo
@@ -3224,3 +3213,4 @@
  end subroutine elgs
 
  end module fv_grid_utils_mod
+

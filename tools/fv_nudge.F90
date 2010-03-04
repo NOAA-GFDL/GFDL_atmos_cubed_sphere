@@ -1,23 +1,31 @@
-module fv_nudge_mod
+module fv_nwp_nudge_mod
 
  use constants_mod,     only: pi, grav, rdgas, cp_air, kappa, radius
- use fms_io_mod,        only: field_size
  use fms_mod,           only: write_version_number, open_namelist_file, &
-                              check_nml_error, file_exist, close_file,  &
-                              read_data, field_exist 
+                              check_nml_error, file_exist, close_file, read_data
+ use fms_io_mod,        only: field_size
+ use mpp_mod,           only: mpp_error, FATAL, stdlog, get_unit
  use mpp_domains_mod,   only: mpp_update_domains
- use mpp_mod,           only: mpp_error, FATAL, stdlog
  use time_manager_mod,  only: time_type,  get_time, get_date
 
+ use external_sst_mod,   only: i_sst, j_sst, sst_ncep, sst_anom, forecast_mode
  use fv_control_mod,    only: npx, npy
- use fv_diagnostics_mod,only: prt_maxmin, fv_time
- use fv_grid_utils_mod, only: i_sst, j_sst, sst_ncep, vlon, vlat, sina_u, sina_v, &
-                              da_min, great_circle_dist, ks, intp_great_circle
+ use fv_grid_utils_mod, only: vlon, vlat, sina_u, sina_v, da_min, great_circle_dist, ks, intp_great_circle
+ use fv_grid_utils_mod, only: latlon2xyz, vect_cross, normalize_vect
  use fv_grid_tools_mod, only: agrid, dx, dy, rdxc, rdyc, rarea, area
- use fv_mapz_mod,       only: mappm
- use fv_mp_mod,         only: is,js,ie,je, isd,jsd,ied,jed, gid, masterproc, domain, mp_reduce_sum
- use fv_timing_mod,     only: timing_on, timing_off
+ use fv_diagnostics_mod,only: prt_maxmin, fv_time
  use tp_core_mod,       only: copy_corners
+ use fv_mapz_mod,       only: mappm
+ use fv_mp_mod,         only: is,js,ie,je, isd,jsd,ied,jed, gid, masterproc, domain,    &
+                              mp_reduce_sum, mp_reduce_min, mp_reduce_max
+ use fv_timing_mod,     only: timing_on, timing_off
+
+!----------------------------------------------------------------------------------------
+! Note: using FMS read_data for reading multiple analysis files requires too much memory
+! and too many files open (led to fatal errors); 
+!----------------------------------------------------------------------------------------
+ use sim_nc_mod,        only: open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var2_double,   &
+                              get_var3_double
 
  implicit none
  private
@@ -40,16 +48,16 @@ module fv_nudge_mod
  real :: time_nudge = 0.
  integer :: time_interval = 6*3600   ! dataset time interval (seconds)
  integer, parameter :: nfile_max = 125
- integer :: nfile = 1
+ integer :: nfile
 
  integer :: k_breed = 0
  integer :: k_trop = 0
- real    :: p_trop = 300.E2
+ real    :: p_trop = 200.E2
 
  real,    allocatable:: s2c(:,:,:)
  integer, allocatable:: id1(:,:), id2(:,:), jdc(:,:)
  real, allocatable :: ps_dat(:,:,:)
- real(kind=4), allocatable, dimension(:,:,:,:):: u_dat, v_dat, t_dat, q_dat
+ real(KIND=4), allocatable, dimension(:,:,:,:):: u_dat, v_dat, t_dat, q_dat
  real, allocatable:: gz0(:,:)
 
 ! Namelist variables:
@@ -59,9 +67,12 @@ module fv_nudge_mod
  real    :: p_wvp = 100.E2        ! cutoff level for specific humidity nudging 
  integer :: kord_data = 8
 
+ logical :: add_bg_wind = .true.
+ logical :: pre_test = .false.
+ logical :: conserve_mom = .true.
  logical :: tc_mask = .false.
  logical :: strong_mask = .true. 
- logical :: ib_track = .true.
+ logical :: ibtrack = .true. 
  logical :: nudge_debug = .false.
  logical :: nudge_t     = .false.
  logical :: nudge_q     = .false.
@@ -71,6 +82,8 @@ module fv_nudge_mod
  logical :: nudge_tpw   = .false.   ! nudge total precipitable water
  logical :: time_varying = .true.
  logical :: time_track   = .false.
+ logical :: print_end_breed = .true.
+ logical :: print_end_nudge = .true.
 
 
 ! Nudging time-scales (seconds): note, however, the effective time-scale is 2X smaller (stronger) due
@@ -85,7 +98,7 @@ module fv_nudge_mod
  real :: q_min      = 1.E-8
 
  integer :: nf_uv = 0 
- integer :: nf_t  = 2 
+ integer :: nf_t  = 1 
 
 ! starting layer (top layer is sponge layer and is skipped)
  integer :: kstart = 2 
@@ -94,43 +107,55 @@ module fv_nudge_mod
  integer :: kbot_winds = 0 
  integer :: kbot_t     = 0 
  integer :: kbot_q     = 1 
+ logical :: analysis_time
 
 !-- Tropical cyclones  --------------------------------------------------------------------
 
 ! track dataset: 'INPUT/tropical_cyclones.txt'
 
   logical :: breed_vortex = .false.
-  real :: tau_vortex    = 300.
-  real :: tau_vt_max    = 900.
+  real :: grid_size     = 28.E3
+  real :: tau_vt_slp    = 1800.
+  real :: tau_vt_wind   = 1200.
+  real :: tau_vt_rad    = 4.0  ! TEST.exe: 2.0
 
-  real :: slp_env = 101010.    ! storm environment pressure (pa)
+  real ::  slp_env = 101010.    ! storm environment pressure (pa)
+  real :: pre0_env = 100000.    ! critical storm environment pressure (pa) for size computation
+!------------------
+  real:: r_lo = 2.0
+  real:: r_hi = 5.0    ! try 4.0?
+!------------------
+  real::  r_fac = 1.2
   real :: r_min = 200.E3
   real :: r_inc =  25.E3
   real, parameter:: del_r = 50.E3
   real:: elapsed_time = 0.0
-  real:: nudged_time = 1.E12  ! seconds 
-                             ! usage example: set to 21600. to do inline vortex breeding
-                             ! for only the first 6 hours
+  real:: nudged_time = 1.E12 ! seconds 
+                             ! usage example: set to 43200. to do inline vortex breeding
+                             ! for only the first 12 hours
+                             ! In addition, specify only 3 analysis files (12 hours)
   integer:: year_track_data
   integer, parameter:: max_storm = 140     ! max # of storms to process
   integer, parameter::  nobs_max = 125     ! Max # of observations per storm
 
   integer :: nstorms = 0
   integer :: nobs_tc(max_storm)
-  real(kind=4)::     x_obs(nobs_max,max_storm)           ! longitude in degrees
-  real(kind=4)::     y_obs(nobs_max,max_storm)           ! latitude in degrees
-  real(kind=4)::  mslp_obs(nobs_max,max_storm)           ! observed SLP in mb
-  real(kind=4)::  mslp_out(nobs_max,max_storm)           ! outer ring SLP in mb
-  real(kind=4)::   rad_out(nobs_max,max_storm)           ! outer ring radius in meters
-  real(kind=4)::   time_tc(nobs_max,max_storm)           ! start time of the track
+  real(KIND=4)::     x_obs(nobs_max,max_storm)           ! longitude in degrees
+  real(KIND=4)::     y_obs(nobs_max,max_storm)           ! latitude in degrees
+  real(KIND=4)::  wind_obs(nobs_max,max_storm)           ! observed 10-m wind speed (m/s)
+  real(KIND=4)::  mslp_obs(nobs_max,max_storm)           ! observed SLP in mb
+  real(KIND=4)::  mslp_out(nobs_max,max_storm)           ! outer ring SLP in mb
+  real(KIND=4)::   rad_out(nobs_max,max_storm)           ! outer ring radius in meters
+  real(KIND=4)::   time_tc(nobs_max,max_storm)           ! start time of the track
 !------------------------------------------------------------------------------------------
 
  namelist /fv_nwp_nudge_nml/ nudge_virt, nudge_hght, nudge_t, nudge_q, nudge_winds, nudge_tpw, &
-                          tau_winds, tau_t, tau_q, tau_virt, tau_hght,  kstart, kbot_winds,  &
+                          tau_winds, tau_t, tau_q, tau_virt, tau_hght,  kstart, kbot_winds, &
                           k_breed, k_trop, p_trop, kord_data, tc_mask, nudge_debug, nf_t,    &
-                          nf_uv, breed_vortex, tau_vortex, tau_vt_max, tau_tpw, strong_mask, &
-                          kbot_t, kbot_q, p_wvp, time_varying, time_track, time_interval,    &
-                          nudged_time, r_min, r_inc, ib_track, track_file_name, file_names
+                          nf_uv, breed_vortex, tau_vt_wind, tau_vt_slp, tau_tpw, strong_mask,   &
+                          kbot_t, kbot_q, p_wvp, time_varying, time_track, time_interval,  &
+                          pre0_env, tau_vt_rad, r_lo, r_hi, add_bg_wind, pre_test, conserve_mom,  &
+                          nudged_time, r_fac, r_min, r_inc, ibtrack, track_file_name, file_names
 
  contains
  
@@ -154,7 +179,9 @@ module fv_nudge_mod
   real, intent(out):: q_dt(is:ie,js:je,npz)
   real, intent(out), dimension(is:ie,js:je):: ps_dt, ts
 ! local:
-  real:: h_err(is:ie,js:je)         ! height error at specified model interface level
+  real:: m_err(is:ie,js:je)         ! height error at specified model interface level
+  real:: slp_n(is:ie,js:je)         ! "Observed" SLP
+  real:: slp_m(is:ie,js:je)         ! "model" SLP
   real:: tpw_dat(is:ie,js:je)
   real:: tpw_mod(is:ie,js:je)
   real::   mask(is:ie,js:je)
@@ -163,15 +190,21 @@ module fv_nudge_mod
   real:: pkz, ptmp
   real, allocatable :: ps_obs(:,:)
   real, allocatable, dimension(:,:,:):: u_obs, v_obs, t_obs, q_obs
+  real, allocatable, dimension(:,:,:):: du_obs, dv_obs
   integer :: seconds, days
   integer :: i,j,k, iq, kht
-  real :: factor, rms, bias
+  real :: factor, rms, bias, co
   real :: q_rat
   real :: dbk, rdt, press(npz), profile(npz), prof_t(npz), prof_q(npz), du, dv
 
 
   if ( .not. module_is_initialized ) then 
         call mpp_error(FATAL,'==> Error from fv_nwp_nudge: module not initialized')
+  endif
+
+  if ( no_obs ) then
+       forecast_mode = .true.
+       return
   endif
 
   call get_time (time, seconds, days)
@@ -183,7 +216,7 @@ module fv_nudge_mod
   enddo
   if ( tc_mask )  call get_tc_mask(time, mask)
 
-! The following profile is suitable only for NWP purposes; if the analysis has a good representation
+! The following profile is suitable only for nwp purposes; if the analysis has a good representation
 ! of the strat-meso-sphere the profile for upper layers should be changed.
 
   profile(:) = 1.
@@ -245,41 +278,84 @@ module fv_nudge_mod
   call get_obs(Time, dt, zvir, ak, bk, ps, ts, ps_obs, delp, u_obs, v_obs, t_obs, q_obs,   &
                tpw_dat, phis, gz_int, npz)
 
-  if ( no_obs ) return
+  if ( no_obs ) then
+       deallocate (ps_obs)
+       deallocate (t_obs)
+       deallocate (q_obs)
+       if ( nudge_winds ) then
+            deallocate (u_obs)
+            deallocate (v_obs)
+       endif
+       forecast_mode = .true.
+       return
+   endif
+
+  if( analysis_time ) then
+!     call prt_maxmin('PS_o', ps_obs, is, ie, js, je, 0, 1, 0.01, master)
+
+! Compute RMSE, bias, and correlation of SLP 
+      call compute_slp(is, ie, js, je,    pt(is:ie,js:je,npz:npz), ps(is:ie,js:je), phis(is:ie,js:je), slp_m)
+      call compute_slp(is, ie, js, je, t_obs(is:ie,js:je,npz:npz), ps_obs, gz0, slp_n)
+
+      call prt_maxmin('SLP_m', slp_m, is, ie, js, je, 0, 1, 0.01, master)
+      call prt_maxmin('SLP_o', slp_n, is, ie, js, je, 0, 1, 0.01, master)
+
+      do j=js,je
+         do i=is,ie
+            if ( phis(i,j)/grav > 500. ) then
+! Exclude high terrains region for RMS and bias computation
+                 m_err(i,j) = 0.
+            else
+                 m_err(i,j) = mask(i,j)*(slp_m(i,j) - slp_n(i,j))
+            endif
+         enddo
+      enddo
+     
+      call rmse_bias(m_err, rms, bias)
+      call corr(slp_m, slp_n, co)
+
+      if(master) write(*,*) 'SLP (mb): RMS=', 0.01*rms, ' Bias=', 0.01*bias
+      if(master) write(*,*) 'SLP correlation=',co
+  endif
 
   ps_dt(:,:) = 0.
 
   if ( nudge_winds ) then
+
+       allocate (du_obs(is:ie,js:je,npz) )
+       allocate (dv_obs(is:ie,js:je,npz) )
 
 ! Compute tendencies:
      rdt = 1. / (tau_winds/factor + dt)
      do k=kstart, npz - kbot_winds
         do j=js,je
            do i=is,ie
-              u_obs(i,j,k) = profile(k)*(u_obs(i,j,k)-ua(i,j,k))*rdt
-              v_obs(i,j,k) = profile(k)*(v_obs(i,j,k)-va(i,j,k))*rdt
+              du_obs(i,j,k) = profile(k)*(u_obs(i,j,k)-ua(i,j,k))*rdt
+              dv_obs(i,j,k) = profile(k)*(v_obs(i,j,k)-va(i,j,k))*rdt
            enddo
         enddo
      enddo
 
-     if ( nf_uv>0 ) call del2_uv(u_obs, v_obs, 0.20, npz, nf_uv)
+     if ( nf_uv>0 ) call del2_uv(du_obs, dv_obs, 0.20, npz, nf_uv)
 
      do k=kstart, npz - kbot_winds
         do j=js,je
            do i=is,ie
 ! Apply TC mask
-              u_obs(i,j,k) = u_obs(i,j,k) * mask(i,j)
-              v_obs(i,j,k) = v_obs(i,j,k) * mask(i,j)
+              du_obs(i,j,k) = du_obs(i,j,k) * mask(i,j)
+              dv_obs(i,j,k) = dv_obs(i,j,k) * mask(i,j)
 !
-              u_dt(i,j,k) = u_dt(i,j,k) + u_obs(i,j,k)
-              v_dt(i,j,k) = v_dt(i,j,k) + v_obs(i,j,k)
-                ua(i,j,k) =   ua(i,j,k) + u_obs(i,j,k)*dt
-                va(i,j,k) =   va(i,j,k) + v_obs(i,j,k)*dt
+              u_dt(i,j,k) = u_dt(i,j,k) + du_obs(i,j,k)
+              v_dt(i,j,k) = v_dt(i,j,k) + dv_obs(i,j,k)
+                ua(i,j,k) =   ua(i,j,k) + du_obs(i,j,k)*dt
+                va(i,j,k) =   va(i,j,k) + dv_obs(i,j,k)*dt
            enddo
         enddo
      enddo
-     deallocate ( u_obs )
-     deallocate ( v_obs )
+
+     deallocate (du_obs)
+     deallocate (dv_obs)
+
   endif
 
   if ( nudge_t .or. nudge_virt ) then
@@ -326,11 +402,9 @@ module fv_nudge_mod
               enddo
            enddo
 
-!         if(nudge_debug) then
-             do i=is,ie
-                h_err(i,j) = (gz(i,k_trop+1)-gz_int(i,j)) / grav 
-             enddo
-!         endif
+           do i=is,ie
+              m_err(i,j) = gz(i,k_trop+1)
+           enddo
 
            do i=is,ie
               do k=k_trop+1,npz
@@ -343,10 +417,17 @@ module fv_nudge_mod
         enddo   ! j-loop
 
 ! Compute RMSE of height
-!       if(nudge_debug) then
-           call rmse_bias(h_err, rms, bias)
-           if(master) write(*,*) 'HGHT: RMSE (m)=', rms, ' Bias (m)=', bias
-!       endif
+        if( analysis_time ) then
+            call corr(m_err, gz_int, co)
+            do j=js,je
+               do i=is,ie
+                  m_err(i,j) = (m_err(i,j) - gz_int(i,j)) / grav
+               enddo
+            enddo
+            call rmse_bias(m_err, rms, bias)
+            if(master) write(*,*) 'HGHT: RMSE (m)=', rms, ' Bias (m)=', bias
+            if(master) write(*,*) 'HGHT: correlation=', co
+        endif
   endif
 
   if ( nudge_t ) then
@@ -468,9 +549,29 @@ module fv_nudge_mod
 
 
   if ( breed_vortex )   &
-  call breed_slp(Time, dt, npz, ak, bk, ps, phis, delp, ua, va, u_dt, v_dt, pt, q, nwat, zvir)
+  call breed_srf_winds(Time, dt, npz, u_obs, v_obs, ak, bk, ps, phis, delp, ua, va, u_dt, v_dt, pt, q, nwat, zvir)
+
+  if ( nudge_winds ) then
+     deallocate ( u_obs )
+     deallocate ( v_obs )
+  endif
 
  end  subroutine fv_nwp_nudge
+
+
+ subroutine compute_slp(isc, iec, jsc, jec, tm, ps, gz, slp)
+ integer, intent(in):: isc, iec, jsc, jec
+ real, intent(in), dimension(isc:iec,jsc:jec):: tm, ps, gz
+ real, intent(out):: slp(isc:iec,jsc:jec)
+ integer:: i,j
+
+    do j=jsc,jec
+       do i=isc,iec
+          slp(i,j) = ps(i,j) * exp( gz(i,j)/(rdgas*(tm(i,j) + 3.25E-3*gz(i,j)/grav)) )
+       enddo
+    enddo
+
+ end subroutine compute_slp
 
 
  subroutine get_obs(Time, dt, zvir, ak, bk, ps, ts, ps_obs, delp, u_obs, v_obs, t_obs, q_obs,  &
@@ -488,7 +589,7 @@ module fv_nudge_mod
   real, intent(out)::  gz_int(is:ie,js:je)
   real, intent(out):: tpw_dat(is:ie,js:je)
 ! local:
-  real(kind=4), allocatable:: ut(:,:,:), vt(:,:,:)
+  real(KIND=4), allocatable:: ut(:,:,:), vt(:,:,:)
   real, dimension(is:ie,js:je):: h1, h2
   integer :: seconds, days
   integer :: i,j,k
@@ -501,13 +602,19 @@ module fv_nudge_mod
 ! Data must be "time_interval" (hr) apart; keep two time levels in memory
 
   no_obs = .false.
+  analysis_time = .false.
 
   if ( mod(seconds, time_interval) == 0 ) then
 
-    if ( nfile > nfile_total ) then
+    if ( nfile == nfile_total ) then
          no_obs = .true.
+         forecast_mode = .true.
+         if(print_end_nudge)  then
+            print_end_nudge = .false.
+            if (master) write(*,*) '*** L-S nudging Ended at', days, seconds
+         endif
          return              ! free-running mode
-    else
+    endif
 
       ps_dat(:,:,1) = ps_dat(:,:,2)
       if ( nudge_winds ) then
@@ -520,11 +627,12 @@ module fv_nudge_mod
 !---------------
 ! Read next data
 !---------------
+      nfile = nfile + 1
       call get_ncep_analysis ( ps_dat(:,:,2), u_dat(:,:,:,2), v_dat(:,:,:,2),    &
                               t_dat(:,:,:,2), q_dat(:,:,:,2), zvir,  &
                               ts, nfile, file_names(nfile) )
+      analysis_time = .true.
       time_nudge = dt
-    endif
   else
       time_nudge = time_nudge + dt
   endif
@@ -541,7 +649,7 @@ module fv_nudge_mod
 
   alpha = 1. - beta
 
-! Warning: ps_data is not adjusted for the differences in terrain yet
+! Warning: ps_data are not adjusted for the differences in terrain yet
   ps_obs(:,:)  = alpha*ps_dat(:,:,1) + beta*ps_dat(:,:,2)
 
   allocate ( ut(is:ie,js:je,npz) )
@@ -562,7 +670,7 @@ module fv_nudge_mod
        v_obs(:,:,:) = v_obs(:,:,:) + beta*vt(:,:,:)
   endif
 
-  if ( nudge_t .or. nudge_virt .or. nudge_q .or. nudge_tpw ) then
+! if ( nudge_t .or. nudge_virt .or. nudge_q .or. nudge_hght .or. nudge_tpw ) then
 
        call remap_tq(npz, ak, bk, ps(is:ie,js:je), delp,  ut,  vt,  &
                      km,  ps_dat(is:ie,js:je,1),  t_dat(:,:,:,1), q_dat(:,:,:,1), zvir)
@@ -591,7 +699,7 @@ module fv_nudge_mod
            enddo
            enddo
        endif
-  endif
+! endif
 
   if ( nudge_hght ) then
        call get_int_hght(h1, npz, ak, bk, ps(is:ie,js:je), delp, ps_dat(is:ie,js:je,1), t_dat(:,:,:,1))
@@ -617,12 +725,15 @@ module fv_nudge_mod
   real, intent(out), dimension(is:ie,js:je):: ts
   logical found
   integer tsize(4)
-  integer :: i, j, unit, io, ierr, nt, k
+  integer :: i, j, f_unit, unit, io, ierr, nt, k
+  integer :: ncid
 
    master = gid==masterproc
 
    deg2rad = pi/180.
    rad2deg = 180./pi
+
+   grid_size = 1.E7/real(npx-1)         ! mean grid size
 
    do nt=1,nfile_max
       file_names(nt) = "No_File_specified"
@@ -641,8 +752,8 @@ module fv_nudge_mod
     end if
     call write_version_number (version, tagname)
     if ( master ) then
-         unit = stdlog()
-         write( unit, nml = fv_nwp_nudge_nml )
+         f_unit=stdlog()
+         write( f_unit, nml = fv_nwp_nudge_nml )
          write(*,*) 'NWP nudging initialized.'
     endif
 
@@ -664,14 +775,18 @@ module fv_nudge_mod
 
 ! Initialize remapping coefficients:
 
-    call field_size(file_names(1), 'T', tsize, field_found=found)
-
-    if ( found ) then
-         im = tsize(1); jm = tsize(2); km = tsize(3)
-         if(master)  write(*,*) 'NCEP analysis dimensions:', tsize
-    else
-         call mpp_error(FATAL,'==> Error from get_ncep_analysis: T field not found')
-    endif
+!   call field_size(file_names(1), 'T', tsize, field_found=found)
+!   if ( found ) then
+!        im = tsize(1); jm = tsize(2); km = tsize(3)
+!        if(master)  write(*,*) 'NCEP analysis dimensions:', tsize
+!   else
+!        call mpp_error(FATAL,'==> Error from get_ncep_analysis: T field not found')
+!   endif
+    call open_ncfile( file_names(1), ncid )        ! open the file
+    call get_ncdim1( ncid, 'lon', im )
+    call get_ncdim1( ncid, 'lat', jm )
+    call get_ncdim1( ncid, 'lev', km )
+    if(master)  write(*,*) 'NCEP analysis dimensions:', im, jm, km
 
     allocate ( s2c(is:ie,js:je,4) )
     allocate ( id1(is:ie,js:je) )
@@ -681,8 +796,10 @@ module fv_nudge_mod
     allocate (  lon(im) )
     allocate (  lat(jm) )
 
-    call read_data (file_names(1), 'LAT', lat, no_domain=.true.)
-    call read_data (file_names(1), 'LON', lon, no_domain=.true.)
+!   call read_data (file_names(1), 'LAT', lat, no_domain=.true.)
+!   call read_data (file_names(1), 'LON', lon, no_domain=.true.)
+    call get_var1_double (ncid, 'lon', im, lon )
+    call get_var1_double (ncid, 'lat', jm, lat )
 
 ! Convert to radian
     do i=1,im
@@ -695,8 +812,11 @@ module fv_nudge_mod
     allocate ( ak0(km+1) )
     allocate ( bk0(km+1) )
 
-    call read_data (file_names(1), 'hyai', ak0, no_domain=.true.)
-    call read_data (file_names(1), 'hybi', bk0, no_domain=.true.)
+!   call read_data (file_names(1), 'hyai', ak0, no_domain=.true.)
+!   call read_data (file_names(1), 'hybi', bk0, no_domain=.true.)
+    call get_var1_double (ncid, 'hyai', km+1, ak0 )
+    call get_var1_double (ncid, 'hybi', km+1, bk0 )
+    call close_ncfile( ncid )
 
 ! Note: definition of NCEP hybrid is p(k) = a(k)*1.E5 + b(k)*ps
     ak0(:) = ak0(:) * 1.E5
@@ -730,6 +850,7 @@ module fv_nudge_mod
 
 ! Get first dataset
     nt = 2
+    nfile = 1
     call get_ncep_analysis ( ps_dat(:,:,nt), u_dat(:,:,:,nt), v_dat(:,:,:,nt),     &
                             t_dat(:,:,:,nt), q_dat(:,:,:,nt), zvir,   &
                             ts, nfile, file_names(nfile) )
@@ -747,12 +868,12 @@ module fv_nudge_mod
 !
   real, intent(out), dimension(is:ie,js:je):: ts
   real, intent(out), dimension(is:ie,js:je):: ps
-  real(kind=4), intent(out), dimension(is:ie,js:je,km):: u, v, t, q
+  real(KIND=4), intent(out), dimension(is:ie,js:je,km):: u, v, t, q
 ! local:
   real, allocatable:: oro(:,:), wk2(:,:), wk3(:,:,:)
   real tmean
   integer:: i, j, k, npt
-  integer:: i1, i2, j1
+  integer:: i1, i2, j1, ncid
   logical found
   logical:: read_ts = .true.
   logical:: land_ts = .false.
@@ -767,7 +888,11 @@ module fv_nudge_mod
 ! remap surface pressure and height:
 !----------------------------------
      allocate ( wk2(im,jm) )
-     call read_data (fname, 'PS', wk2, no_domain=.true.)
+
+!    call read_data (fname, 'PS', wk2, no_domain=.true.)
+     call open_ncfile( fname, ncid )        ! open the file
+     call get_var2_double( ncid, 'PS', im, jm, wk2 )
+
      if(gid==0) call pmaxmin( 'PS_ncep', wk2, im,  jm, 0.01)
 
      do j=js,je
@@ -780,7 +905,9 @@ module fv_nudge_mod
         enddo
      enddo
 
-     call read_data (fname, 'PHIS', wk2, no_domain=.true.)
+!    call read_data (fname, 'PHIS', wk2, no_domain=.true.)
+     call get_var2_double( ncid, 'PHIS', im, jm, wk2 )
+
 !    if(gid==0) call pmaxmin( 'ZS_ncep', wk2, im,  jm, 1./grav)
      do j=js,je
         do i=is,ie
@@ -795,12 +922,15 @@ module fv_nudge_mod
 
      if ( read_ts ) then       ! read skin temperature; could be used for SST
 
-      call read_data (fname, 'TS', wk2, no_domain=.true.)
+!     call read_data (fname, 'TS', wk2, no_domain=.true.)
+      call get_var2_double( ncid, 'TS', im, jm, wk2 )
 
       if ( .not. land_ts ) then
            allocate ( oro(im,jm) )
+
 ! Read NCEP ORO (1; land; 0: ocean; 2: sea_ice)
-           call read_data (fname, 'ORO', oro, no_domain=.true.)
+!          call read_data (fname, 'ORO', oro, no_domain=.true.)
+           call get_var2_double( ncid, 'ORO', im, jm, oro )
 
            do j=1,jm
               tmean = 0.
@@ -853,7 +983,8 @@ module fv_nudge_mod
 
 ! Perform interp to FMS SST format/grid
       call ncep2fms( wk2 )
-      if(gid==0) call pmaxmin( 'SST_ncep_fms',  sst_ncep, i_sst, j_sst, 1.)
+      if(gid==0) call pmaxmin( 'SST_ncep', sst_ncep, i_sst, j_sst, 1.)
+      if(gid==0) call pmaxmin( 'SST_anom', sst_anom, i_sst, j_sst, 1.)
 
       endif     ! read_ts
 
@@ -865,7 +996,8 @@ module fv_nudge_mod
 ! Winds:
    if ( nudge_winds ) then
 
-      call read_data (fname, 'U',  wk3, no_domain=.true.)
+!     call read_data (fname, 'U',  wk3, no_domain=.true.)
+      call get_var3_double( ncid, 'U', im, jm, km , wk3 )
       if( master ) call pmaxmin( 'U_ncep',   wk3, im*jm, km, 1.)
 
       do k=1,km
@@ -880,7 +1012,9 @@ module fv_nudge_mod
       enddo
       enddo
 
-      call read_data (fname, 'V',  wk3, no_domain=.true.)
+!     call read_data (fname, 'V',  wk3, no_domain=.true.)
+      call get_var3_double( ncid, 'V', im, jm, km , wk3 )
+
       if( master ) call pmaxmin( 'V_ncep',  wk3, im*jm, km, 1.)
       do k=1,km
       do j=js,je
@@ -896,10 +1030,12 @@ module fv_nudge_mod
 
    endif
 
-   if ( nudge_t .or. nudge_virt .or. nudge_q .or. nudge_tpw .or. nudge_hght ) then
+!  if ( nudge_t .or. nudge_virt .or. nudge_q .or. nudge_tpw .or. nudge_hght ) then
 
 ! Read in tracers: only sphum at this point
-      call read_data (fname, 'Q', wk3, no_domain=.true.)
+!     call read_data (fname, 'Q', wk3, no_domain=.true.)
+      call get_var3_double( ncid, 'Q', im, jm, km , wk3 )
+
       if(gid==1) call pmaxmin( 'Q_ncep',   wk3, im*jm, km, 1.)
       do k=1,km
       do j=js,je
@@ -913,7 +1049,10 @@ module fv_nudge_mod
       enddo
       enddo
 
-      call read_data (fname, 'T',  wk3, no_domain=.true.)
+!     call read_data (fname, 'T',  wk3, no_domain=.true.)
+      call get_var3_double( ncid, 'T', im, jm, km , wk3 )
+      call close_ncfile ( ncid )
+
       if(gid==0) call pmaxmin( 'T_ncep',   wk3, im*jm, km, 1.)
 
       do k=1,km
@@ -930,11 +1069,11 @@ module fv_nudge_mod
       enddo
       enddo
 
-   endif
+!  endif
 
    deallocate ( wk3 ) 
 
-  nfile = nfile + 1
+! nfile = nfile + 1
 
  end subroutine get_ncep_analysis
 
@@ -1104,7 +1243,7 @@ module fv_nudge_mod
   real,    intent(in):: ak(npz+1), bk(npz+1)
   real,    intent(in), dimension(is:ie,js:je):: ps, ps0
   real, intent(in), dimension(isd:ied,jsd:jed,npz):: delp
-  real(kind=4),  intent(in), dimension(is:ie,js:je,km):: tv
+  real(KIND=4),  intent(in), dimension(is:ie,js:je,km):: tv
   real,   intent(out), dimension(is:ie,js:je):: h_int  ! g*height
 ! local:
   real, dimension(is:ie,km+1):: pn0, gz
@@ -1163,10 +1302,10 @@ module fv_nudge_mod
   real,    intent(in), dimension(is:ie,js:je):: ps0
   real,    intent(inout), dimension(is:ie,js:je):: ps
   real, intent(in), dimension(isd:ied,jsd:jed,npz):: delp
-  real(kind=4),    intent(in), dimension(is:ie,js:je,kmd):: ta
-  real(kind=4),    intent(in), dimension(is:ie,js:je,kmd):: qa
-  real(kind=4),    intent(out), dimension(is:ie,js:je,npz):: t
-  real(kind=4),    intent(out), dimension(is:ie,js:je,npz):: q
+  real(KIND=4),    intent(in), dimension(is:ie,js:je,kmd):: ta
+  real(KIND=4),    intent(in), dimension(is:ie,js:je,kmd):: qa
+  real(KIND=4),    intent(out), dimension(is:ie,js:je,npz):: t
+  real(KIND=4),    intent(out), dimension(is:ie,js:je,npz):: q
 ! local:
   real, dimension(is:ie,kmd):: tp, qp
   real, dimension(is:ie,kmd+1):: pe0, pn0
@@ -1248,11 +1387,11 @@ module fv_nudge_mod
   real,    intent(in):: ak(npz+1), bk(npz+1)
   real,    intent(inout):: ps(is:ie,js:je)
   real, intent(in), dimension(isd:ied,jsd:jed,npz):: delp
-  real(kind=4),    intent(inout), dimension(is:ie,js:je,npz):: u, v
+  real(KIND=4),    intent(inout), dimension(is:ie,js:je,npz):: u, v
 !
   integer, intent(in):: kmd
   real,    intent(in):: ps0(is:ie,js:je)
-  real(kind=4),    intent(in), dimension(is:ie,js:je,kmd):: u0, v0
+  real(KIND=4),    intent(in), dimension(is:ie,js:je,kmd):: u0, v0
 !
 ! local:
   real, dimension(is:ie,kmd+1):: pe0
@@ -1352,6 +1491,7 @@ module fv_nudge_mod
 ! local
       real:: pos(2)
       real:: slp_o         ! sea-level pressure (Pa)
+      real:: w10_o         ! 10-m wind
       real:: r_vor, p_vor
       real:: dist
       integer n, i, j
@@ -1360,8 +1500,8 @@ module fv_nudge_mod
 !----------------------------------------
 ! Obtain slp observation
 !----------------------------------------
-      call get_slp_obs(time, nobs_tc(n), x_obs(1,n), y_obs(1,n), mslp_obs(1,n), mslp_out(1,n), rad_out(1,n),   &
-                       time_tc(1,n), pos(1), pos(2), slp_o, r_vor, p_vor)
+      call get_slp_obs(time, nobs_tc(n), x_obs(1,n), y_obs(1,n), wind_obs(1,n),  mslp_obs(1,n), mslp_out(1,n), rad_out(1,n),   &
+                       time_tc(1,n), pos(1), pos(2), w10_o, slp_o, r_vor, p_vor)
 
       if ( slp_o<880.E2 .or. slp_o>min(slp_env,slp_mask) .or. abs(pos(2))*rad2deg>40. ) goto 5000  ! next storm
 
@@ -1374,10 +1514,10 @@ module fv_nudge_mod
             dist = great_circle_dist(pos, agrid(i,j,1:2), radius)
             if( dist < 5.*r_vor  ) then 
                 if ( strong_mask ) then
-                     mask(i,j) = mask(i,j) * ( 1. - exp(-(0.5*dist/r_vor)**2)*min(1.,(slp_env-slp_o)/5.E2) )
+                     mask(i,j) = mask(i,j) * ( 1. - exp(-(0.50*dist/r_vor)**2)*min(1.,(slp_env-slp_o)/5.E2) )
                 else
 ! Better analysis data (NCEP 2007 and later) may use a weak mask
-                     mask(i,j) = mask(i,j) * ( 1. - exp(-(0.75*dist/r_vor)**2)*min(1.,(slp_env-slp_o)/10.E2) )
+                     mask(i,j) = mask(i,j) * ( 1. - exp(-(0.70*dist/r_vor)**2)*min(1.,(slp_env-slp_o)/10.E2) )
                 endif
             endif
          enddo             ! i-loop
@@ -1416,10 +1556,10 @@ module fv_nudge_mod
       real::  slp(is:ie,js:je)
       real:: pos(2)
       real:: slp_o         ! sea-level pressure (Pa)
-      real:: p_env
+      real:: w10_o, p_env, pre_env
       real:: r_vor
-      real:: relx0, relx, f1, pbreed, pbtop, pkz
-      real:: p_obs, ratio, p_count, p_sum, mass_sink, delps
+      real:: relx0, relx, f1, pbreed, pbtop, pkz, delp0, dp0
+      real:: ratio, p_count, p_sum, a_sum, mass_sink, delps
       real:: p_lo, p_hi, tau_vt
       real:: split_time, fac, pdep, r2, r3
       integer year, month, day, hour, minute, second
@@ -1445,7 +1585,13 @@ module fv_nudge_mod
     split_time = calday(year, month, day, hour, minute, second) + dt*real(nstep)/86400.
 
     elapsed_time = elapsed_time + dt
-    if ( elapsed_time > nudged_time + 0.1 ) return        !  time to return to forecast mode
+    if ( elapsed_time > nudged_time + 0.1 ) then
+         if(print_end_breed)  then
+            print_end_breed = .false.
+            if (master) write(*,*) '*** Vortext Breeding Ended at', day, hour, minute, second
+         endif
+         return        !  time to return to forecast mode
+    endif
 
     do j=js,je
 ! ---- Compute ps
@@ -1466,6 +1612,7 @@ module fv_nudge_mod
 
     do k=k_breed+1,npz
 
+       if ( conserve_mom ) then
        do j=js,je+1
           do i=is,ie
              u(i,j,k) = u(i,j,k) * (delp(i,j-1,k)+delp(i,j,k))
@@ -1476,6 +1623,8 @@ module fv_nudge_mod
              v(i,j,k) = v(i,j,k) * (delp(i-1,j,k)+delp(i,j,k))
           enddo
        enddo
+       endif
+
        do j=js,je
           do i=is,ie
              pt(i,j,k) = pt(i,j,k)*(pk(i,j,k+1)-pk(i,j,k))
@@ -1497,10 +1646,10 @@ module fv_nudge_mod
 !----------------------------------------
 ! Obtain slp observation
 !----------------------------------------
-      call get_slp_obs(time, nobs_tc(n), x_obs(1,n), y_obs(1,n), mslp_obs(1,n), mslp_out(1,n), rad_out(1,n),   &
-                       time_tc(1,n), pos(1), pos(2), slp_o, r_vor, p_env, stime=split_time, fact=fac)
+      call get_slp_obs(time, nobs_tc(n), x_obs(1,n), y_obs(1,n), wind_obs(1,n),  mslp_obs(1,n), mslp_out(1,n), rad_out(1,n),   &
+                       time_tc(1,n), pos(1), pos(2), w10_o, slp_o, r_vor, p_env, stime=split_time, fact=fac)
 
-      if ( slp_o<87500. .or. slp_o>slp_env .or. abs(pos(2))*rad2deg>40. ) then
+      if ( slp_o<87500. .or. slp_o>slp_env .or. abs(pos(2))*rad2deg>45. ) then
            goto 5000         ! next storm
       endif
 
@@ -1511,11 +1660,12 @@ module fv_nudge_mod
 ! Determine pbtop (top pressure of vortex breeding)
 
       if ( slp_o > 1000.E2 ) then
-           pbtop = 850.E2
+!          pbtop = 850.E2
+           pbtop = 900.E2
       else
-! mp154           pbtop = max(125.E2, 850.E2-25.*(1000.E2-slp_o))
-! pre-mp154
-           pbtop = max(125.E2, 850.E2-30.*(1000.E2-slp_o))
+!          pbtop = max(125.E2, 850.E2-30.*(1000.E2-slp_o))
+!          pbtop = max(125.E2, 900.E2-30.*(1000.E2-slp_o))
+           pbtop = max(120.E2, 900.E2-40.*(1000.E2-slp_o))
       endif
 
       do k=1,npz
@@ -1533,13 +1683,8 @@ module fv_nudge_mod
             dist(i,j) = great_circle_dist( pos, agrid(i,j,1:2), radius)
          enddo
       enddo
-! ---- Compute slp
-      do j=js,je
-         do i=is,ie
-            slp(i,j) = ps(i,j)*exp(phis(i,j)/(rdgas*(tm(i,j)+3.25E-3*phis(i,j)/grav)))
-         enddo
-      enddo
 
+      call compute_slp(is, ie, js, je, tm, ps, phis(is:ie,js:je), slp)
 
     if ( r_vor < 30.E3 .or. p_env<900.E2 ) then
 
@@ -1549,11 +1694,13 @@ module fv_nudge_mod
 123   continue
       p_count = 0.
         p_sum = 0.
+        a_sum = 0.
       do j=js, je
          do i=is, ie
-            if( dist(i,j)<(r_vor+del_r) .and. dist(i,j)>r_vor .and. phis(i,j)<200.*grav ) then 
+            if( dist(i,j)<(r_vor+del_r) .and. dist(i,j)>r_vor .and. phis(i,j)<500.*grav ) then 
                 p_count = p_count + 1.
-                  p_sum = p_sum + slp(i,j) 
+                  p_sum = p_sum + slp(i,j)*area(i,j) 
+                  a_sum = a_sum + area(i,j) 
             endif
          enddo
       enddo
@@ -1566,7 +1713,8 @@ module fv_nudge_mod
       endif
 
       call mp_reduce_sum(p_sum)
-      p_env = p_sum / p_count
+      call mp_reduce_sum(a_sum)
+      p_env = p_sum / a_sum
 
       if(nudge_debug .and. master) write(*,*) 'Environmental SLP=', p_env/100., ' computed radius=', r_vor/1.E3
 
@@ -1580,12 +1728,15 @@ module fv_nudge_mod
 
     endif
 
-      if ( p_env < max(slp_o + 250.0, 1000.E2) ) then
+      pre_env = pre0_env
+
+      if ( p_env < max(pre_env, slp_o + 250.0) ) then
          if(nudge_debug .and. master) then
             write(*,*) 'Computed environmental SLP too low'
             write(*,*) ' ', p_env/100., slp_o/100.,pos(1)*rad2deg, pos(2)*rad2deg
          endif
-         if ( r_vor < 750.E3 ) then
+
+         if ( r_vor < 850.E3 ) then
               r_vor = r_vor + del_r
               if(nudge_debug .and. master) write(*,*) 'Vortex radius (km) increased to:', r_vor/1.E3
               goto 123
@@ -1594,10 +1745,9 @@ module fv_nudge_mod
          endif
       endif
 
-! make tau linear function of SLP_OBS
-! Stronger nudging for weak cyclones
-      tau_vt = tau_vortex + 6.*(980.E2-slp_o)/100.
-      tau_vt = min(tau_vt_max, tau_vt)   ! apply a cap here
+!     tau_vt = tau_vt_slp + 6.*(980.E2-slp_o)/100.
+      tau_vt = tau_vt_slp * (1. + (960.E2-slp_o)/100.E2 )
+
       tau_vt = max(dt, tau_vt)
 
       if ( time_track ) then
@@ -1605,15 +1755,16 @@ module fv_nudge_mod
       else
            relx0  = min(1., dt/tau_vt)
       endif
+
       mass_sink = 0.
       do j=js, je
          do i=is, ie
-            if( dist(i,j) < r_vor .and. phis(i,j)<200.*grav ) then
+            if( dist(i,j) < r_vor .and. phis(i,j)<500.*grav ) then
                 f1 = dist(i,j)/r_vor
-                relx = relx0*exp( -4.*f1**2 )
+                relx = relx0*exp( -tau_vt_rad*f1**2 )
 ! Compute p_obs: assuming local radial distributions of slp are Gaussian
-                p_hi = p_env - (p_env-slp_o) * exp( -5.0*f1**2 )    ! upper bound
-                p_lo = p_env - (p_env-slp_o) * exp( -2.0*f1**2 )    ! lower bound
+                p_hi = p_env - (p_env-slp_o) * exp( -r_hi*f1**2 )    ! upper bound
+                p_lo = p_env - (p_env-slp_o) * exp( -r_lo*f1**2 )    ! lower bound
 
                 if ( ps(i,j) > p_hi ) then 
 ! Under-development:
@@ -1621,40 +1772,39 @@ module fv_nudge_mod
                                                      !       over deepening over terrain
                 elseif ( slp(i,j) < p_lo ) then
 ! Over-development:
+                      relx = max(0.5, relx0)
                      delps = relx*(slp(i,j) - p_lo)  ! Note: slp is used here
                 else
                      goto 400        ! do nothing; proceed to next storm
                 endif 
 
-                mass_sink = mass_sink + delps*area(i,j)
-
-!==========================================================================================
                 if ( delps > 0. ) then
-                     pbreed = ak(1)
-                     do k=1,k0
-                        pbreed = pbreed + delp(i,j,k)
-                     enddo
-                     f1 = 1. - delps/(ps(i,j)-pbreed)
-                     do k=k0+1,npz
-                        delp(i,j,k) = delp(i,j,k)*f1
-                     enddo
+                      pbreed = ak(1)
+                      do k=1,k0
+                         pbreed = pbreed + delp(i,j,k)
+                      enddo
+                      f1 = 1. - delps/(ps(i,j)-pbreed)
+                      do k=k0+1,npz
+                         delp(i,j,k) = delp(i,j,k)*f1
+                      enddo
+                      mass_sink = mass_sink + delps*area(i,j)
                 else
-                      do k=npz,k0+2,-1
+                      dp0 = abs(delps)
+                      do k=npz,k0+1,-1
                          if ( abs(delps) < 1. ) then
                               delp(i,j,k) = delp(i,j,k) - delps
+                              mass_sink = mass_sink + delps*area(i,j)
                               go to 400
                          else
-!                             pdep = max(1.0, min(abs(0.5*delps), 0.020*delp(i,j,k)))
-                              pdep = max(1.0, min(abs(0.4*delps), 0.020*delp(i,j,k)))
-                              pdep = sign( min(pdep, abs(delps)), delps )
+!                             pdep = max(1.0, min(abs(0.5*delps), 0.2*dp0,  0.02*delp(i,j,k)))
+                              pdep = max(1.0, min(abs(0.4*delps), 0.2*dp0,  0.02*delp(i,j,k)))
+                              pdep = - min(pdep, abs(delps))
                               delp(i,j,k) = delp(i,j,k) - pdep
                               delps = delps - pdep
+                              mass_sink = mass_sink + pdep*area(i,j)
                          endif
                       enddo
-! Final stage: put all remaining correction term to the (npz-k_breed) layer
-                      delp(i,j,k0+1) = delp(i,j,k0+1) - delps
                 endif
-!==========================================================================================
 
             endif
 400     continue 
@@ -1665,17 +1815,12 @@ module fv_nudge_mod
       if ( abs(mass_sink)<1.E-40 ) goto 5000
 
       r2 = r_vor + del_r
-! mp141 and before
-!     r3 = 6.*r_vor         ! old
-! mp145 & mp146
-!     r3 = min(2000.E3, 4.*r_vor) + del_r
-! mp147
       r3 = min(2500.E3, 5.*r_vor + del_r)
 
       p_sum = 0.
       do j=js, je
          do i=is, ie
-            if( dist(i,j)<6.*r3 .and. dist(i,j)>r2 ) then
+            if( dist(i,j)<r3 .and. dist(i,j)>r2 ) then
                 p_sum = p_sum + area(i,j) 
             endif
          enddo
@@ -1714,6 +1859,9 @@ module fv_nudge_mod
 
 5000 continue
 
+!--------------------------
+! Update delp halo regions:
+!--------------------------
     call mpp_update_domains(delp, domain, complete=.true.)
 
     do j=js-1,je+1
@@ -1738,6 +1886,8 @@ module fv_nudge_mod
 
 
     do k=k_breed+1,npz
+
+       if ( conserve_mom ) then
        do j=js,je+1
           do i=is,ie
              u(i,j,k) = u(i,j,k) / (delp(i,j-1,k)+delp(i,j,k))
@@ -1748,12 +1898,15 @@ module fv_nudge_mod
              v(i,j,k) = v(i,j,k) / (delp(i-1,j,k)+delp(i,j,k))
           enddo
        enddo
+       endif
+
        do j=js,je
           do i=is,ie
              pt(i,j,k) = pt(i,j,k) / (pk(i,j,k+1)-pk(i,j,k))
           enddo
        enddo
     enddo
+
 
 ! Convert tracer mass back to moist mixing ratio
     do iq=1,nwat
@@ -1771,7 +1924,7 @@ module fv_nudge_mod
   end subroutine breed_slp_inline
 
 
- subroutine breed_slp(time, dt, npz, ak, bk, ps, phis, delp, ua, va, u_dt, v_dt, pt, q, nwat, zvir)
+ subroutine breed_srf_winds(time, dt, npz, u_obs, v_obs, ak, bk, ps, phis, delp, ua, va, u_dt, v_dt, pt, q, nwat, zvir)
 !------------------------------------------------------------------------------------------
 ! Purpose:  Vortex-breeding by nudging sea-level-pressure towards single point observations
 ! Note: conserve water mass, geopotential, and momentum at the expense of dry air mass
@@ -1784,20 +1937,25 @@ module fv_nudge_mod
       real, intent(in), dimension(npz+1):: ak, bk
       real, intent(in):: phis(isd:ied,jsd:jed)
       real, intent(in)::   ps(isd:ied,jsd:jed)
+      real, intent(in), dimension(is:ie,js:je,npz):: u_obs, v_obs
 ! Input/Output
       real, intent(inout), dimension(isd:ied,jsd:jed,npz):: delp, pt, ua, va, u_dt, v_dt
       real, intent(inout)::q(isd:ied,jsd:jed,npz,nwat)
 ! local
-      real:: dist(is:ie,js:je)
+      real:: dist(is:ie,js:je), wind(is:ie,js:je)
       real::  slp(is:ie,js:je)
-      real:: p0(npz+1), p1(npz+1), dm(npz), tvir(npz)
       real:: pos(2)
       real:: slp_o         ! sea-level pressure (Pa)
-      real:: p_env
-      real:: r_vor
+      real:: w10_o, p_env
+      real:: r_vor, pc, p_count
+      real:: r_max, speed, ut, vt, speed_local        ! tangent wind speed
+      real:: u_bg, v_bg, mass, t_mass
       real:: relx0, relx, f1, rdt
-      real:: p_obs, ratio, p_count, p_sum, mass_sink, delps
-      real:: p_lo, p_hi
+      real:: z0
+      real:: zz = 35.
+!     real:: wind_fac = 1.2     ! adjustment factor to account for departure from 10 meter wind
+                                ! Computed using Moon et al 2007 
+      real:: wind_fac
       integer n, i, j, k, iq
 
     if ( nstorms==0 ) then
@@ -1805,218 +1963,228 @@ module fv_nudge_mod
          return
     endif
 
-    rdt = 1./dt
-    relx0  = min(1., dt/tau_vortex)
+       rdt = 1./dt
+    relx0  = min(1., dt/tau_vt_wind)
 
     do j=js, je
        do i=is, ie
-          slp(i,j) = ps(i,j)*exp(phis(i,j)/(rdgas*(pt(i,j,npz)+3.25E-3*phis(i,j)/grav)))
+           slp(i,j) = ps(i,j)*exp(phis(i,j)/(rdgas*(pt(i,j,npz)+3.25E-3*phis(i,j)/grav)))
+          wind(i,j) = sqrt( ua(i,j,npz)**2 + va(i,j,npz)**2 )
        enddo
     enddo
 
-    do 5000 n=1,nstorms      ! looop through all storms
+    do 3000 n=1,nstorms      ! looop through all storms
 
 !----------------------------------------
 ! Obtain slp observation
 !----------------------------------------
-      call get_slp_obs(time, nobs_tc(n), x_obs(1,n), y_obs(1,n), mslp_obs(1,n), mslp_out(1,n), rad_out(1,n),   &
-                       time_tc(1,n), pos(1), pos(2), slp_o, r_vor, p_env)
+      call get_slp_obs(time, nobs_tc(n), x_obs(1,n), y_obs(1,n), wind_obs(1,n),  mslp_obs(1,n), mslp_out(1,n), rad_out(1,n),   &
+                       time_tc(1,n), pos(1), pos(2), w10_o, slp_o, r_vor, p_env)
 
-      if ( slp_o<87000. .or. slp_o>slp_env .or. abs(pos(2))*rad2deg>40. ) then
-           goto 5000         ! next storm
-      endif
-
-      if(nudge_debug .and. master)    &
-         write(*,*) 'Vortex breeding for TC:', n, ' slp=',slp_o/100.,pos(1)*rad2deg,pos(2)*rad2deg
+      if ( slp_o<87000. .or. slp_o>slp_env .or. abs(pos(2))*rad2deg>35. ) goto 3000         ! next storm
 
       do j=js, je
          do i=is, ie
-            dist(i,j) = great_circle_dist( pos, agrid(i,j,1:2), radius)
+            dist(i,j) = great_circle_dist( pos, agrid(i,j,1:2), radius )
          enddo
       enddo
 
-    if ( r_vor < 30.E3 .or. p_env<900.E2 ) then
+      r_vor = r_min + (slp_env-slp_o)/25.E2*r_inc
 
-! Compute r_vor & p_env
-         r_vor = r_min + (slp_env-slp_o)/25.E2*r_inc
+!----------------------------------------------------
+     if ( w10_o < 0. ) then   ! 10-m wind obs is not available
+! Uses Atkinson_Holliday wind-pressure correlation
+          w10_o = 3.446778 * (1010.-slp_o/100.)**0.644
+     endif
 
-123   continue
-      p_count = 0.
-        p_sum = 0.
-      do j=js, je
-         do i=is, ie
-            if( dist(i,j)<(r_vor+del_r) .and. dist(i,j)>r_vor .and. phis(i,j)<250.*grav ) then 
-                p_count = p_count + 1.
-                  p_sum = p_sum + slp(i,j) 
-            endif
-         enddo
-      enddo
+! * Find model's SLP center nearest to the observation
+! * Find maximum wind speed at the lowest model level
 
-      call mp_reduce_sum(p_count)
+     speed_local = 0.
+           r_max = -999.
+              pc = 1013.E2
+     do j=js, je
+        do i=is, ie
+           if( dist(i,j) < r_vor ) then
 
-      if ( p_count<32. ) then
-           if(nudge_debug .and. master) write(*,*) p_count, 'Skipping obs: too few p_count'
-           goto 5000
-      endif
+               pc = min(pc, slp(i,j))
 
-      call mp_reduce_sum(p_sum)
-      p_env = p_sum / p_count
+               if ( speed_local < wind(i,j) ) then
+                    speed_local = wind(i,j)
+                    r_max = dist(i,j)
+               endif
 
-      if(nudge_debug .and. master) write(*,*) 'Environmental SLP=', p_env/100., ' computed radius=', r_vor/1.E3
+           endif
+        enddo
+     enddo
 
-      if ( p_env>1020.E2 .or. p_env<900.E2 ) then
-         if( nudge_debug ) then
-            if(master)  write(*,*) 'Environmental SLP out of bound; skipping obs. p_count=', p_count, p_sum
-            call prt_maxmin('SLP_breeding', slp, is, ie, js, je, 0, 1, 0.01, master)
-         endif
-         goto 5000
-      endif
+     speed = speed_local
+     call mp_reduce_max(speed)     ! global max wind (near storm)
+     call mp_reduce_min(pc)
 
+    if ( speed_local < speed ) then
+         r_max = -999.
     endif
+    call mp_reduce_max(r_max)
+    if( r_max<0. ) call mpp_error(FATAL,'==> Error in r_max')
 
-      if ( p_env < max(slp_o, 1000.E2) ) then
-         if(nudge_debug .and. master) then
-            write(*,*) 'Computed environmental SLP too low'
-            write(*,*) ' ', p_env/100., slp_o/100.,pos(1)*rad2deg, pos(2)*rad2deg
-! This is rare. But it does happen in W. Pacific (e.g., early development stage, Talim 2005); make radius larger
-         endif
-         if ( r_vor < 500.E3 ) then
-              r_vor = r_vor + del_r
-              if(nudge_debug .and. master) write(*,*) 'Vortex radius (km) increased to:', r_vor/1.E3
-              goto 123
-         else
-              p_env = max(slp_o + 200., 1000.E2)
-         endif
-      endif
+! ---------------------------------------------------
+! Determine surface wind speed and radius for nudging 
+! ---------------------------------------------------
 
-      mass_sink = 0.
+! Compute surface roughness z0 from w10, based on Eq (4) & (5) from Moon et al. 2007
+     if ( w10_o > 12.5 ) then
+          z0 = (0.085*w10_o - 0.58) * 1.E-3
+     else
+          z0 = 0.0185/grav*(0.001*w10_o**2 + 0.028*w10_o)**2
+     endif
+
+! lowest layer height: zz
+
+     wind_fac = log(zz/z0) / log(10./z0)
+     if( nudge_debug .and. master ) write(*,*) 'Wind adjustment factor=', wind_fac
+     if( wind_fac<1. ) call mpp_error(FATAL,'==> Error in wind_fac')
+
+     if ( pc < slp_o ) then
+!--
+!         The storm in the model is over developed
+!         if ( (pc+3.0E2)>slp_o .or. speed <= w10_o ) go to 3000    ! next storm
+!--
+! using radius (r_max) as dtermined above;
+! What if model's pressure center is very far from the observed?
+! using obs wind
+          speed = wind_fac*w10_o
+     else
+!         The storm in the model is under developed; using max wind
+          speed = max(wind_fac*w10_o, speed)
+          if ( pc>1009.E2 )  r_max = 0.5 * r_vor
+     endif
+
+! Some bounds on the radius of maximum wind:
+     r_max = max(2.5*grid_size, r_max)      ! at least 2.5X the grid size
+     r_max = min(0.75*r_vor, r_max)
+
+     t_mass = 0.
+     u_bg = 0.
+     v_bg = 0.
+
+     if ( add_bg_wind ) then
+       p_count = 0.
+       do j=js, je
+          do i=is, ie
+           if( dist(i,j) <= min(r_vor,2.*r_fac*r_max) .and. phis(i,j)<1.0*grav ) then
+               mass = area(i,j)*delp(i,j,npz)
+!-- using model winds ----------------------------------
+!              u_bg = u_bg + ua(i,j,npz)*mass
+!              v_bg = v_bg + va(i,j,npz)*mass
+!-------------------------------------------------------
+! Using analysis winds
+               u_bg = u_bg + u_obs(i,j,npz)*mass
+               v_bg = v_bg + v_obs(i,j,npz)*mass
+               t_mass = t_mass + mass
+               p_count = p_count + 1.
+           endif
+          enddo
+       enddo
+       call mp_reduce_sum(p_count)
+       if ( p_count<16. ) go to 3000
+
+       call mp_reduce_sum(t_mass)
+       call mp_reduce_sum(u_bg)
+       call mp_reduce_sum(v_bg)
+       u_bg = u_bg / t_mass
+       v_bg = v_bg / t_mass
+!      if ( master ) write(*,*) pos(2)*rad2deg, 'vortex bg wind=', u_bg, v_bg
+     endif
+
+     relx = relx0
+     k = npz                 ! lowest layer only
+! Nudge wind in the "inner core":
       do j=js, je
          do i=is, ie
-            if( dist(i,j) < r_vor .and. phis(i,j)<250.*grav ) then
-                  p0(ks+1) = ak(ks+1)
-                  do k=ks+1,npz
-                     tvir(k) = pt(i,j,k) * (1.+ zvir*q(i,j,k,1))
-                     p0(k+1) = p0(k) + delp(i,j,k)
-                  enddo
-!===============================================================================================
-                  f1 = dist(i,j)/r_vor
-! Compute p_obs: assuming local radial distributions of slp are Gaussian
-                      p_hi = p_env - (p_env-slp_o) * exp( -5.0*f1**2 )    ! upper bound
-                      p_lo = p_env - (p_env-slp_o) * exp( -2.0*f1**2 )    ! lower bound
-                      relx = relx0 * exp( -4.*f1**2 )
-! Compute p_obs: assuming local radial distributions of slp are Gaussian
-
-                      if ( ps(i,j) > p_hi ) then 
-! under-development
-                           delps = relx*(ps(i,j) - p_hi)   ! Note: ps is used here to prevent
-                                                           !       over deepening over terrain
-                      elseif ( slp(i,j) < p_lo ) then
-! over-development
-                           delps = relx*(slp(i,j) - p_lo)  ! Note: slp is used here
-
-!                          if ( slp(i,j) < slp_o ) then
-!                               delps = min(delps, 0.333*(1.+2.*f1**2)*(slp(i,j)-slp_o))
-!                          endif
-                      else
-! Leave the model alone If the ps/slp is in between [p_lo,p_hi]
-                           goto 400        ! do nothing; proceed to next storm
-                      endif 
-!===============================================================================================
-
-                   mass_sink = mass_sink + delps*area(i,j)
-                   p1(ks+1) = p0(ks+1)
-                   do k=ks+1,npz
-                      dm(k) = delp(i,j,k) - delps*(bk(k+1)-bk(k))
-                      p1(k+1) = p1(k) + dm(k)
-                      ratio = delp(i,j,k)/dm(k)
-                      delp(i,j,k) = dm(k)
-                      do iq=1,nwat
-                         q(i,j,k,iq) = q(i,j,k,iq) * ratio
-                      enddo
-!                                                                       Recompute pt by preserving height
-                      pt(i,j,k) = tvir(k)*log(p0(k+1)/p0(k))/(log(p1(k+1)/p1(k))*(1.+zvir*q(i,j,k,1)))
-! Momentum conserving re-scaling
-                      u_dt(i,j,k) = u_dt(i,j,k) + ua(i,j,k)*(ratio - 1.)*rdt
-                      v_dt(i,j,k) = v_dt(i,j,k) + va(i,j,k)*(ratio - 1.)*rdt
-                      ua(i,j,k) = ua(i,j,k) * ratio
-                      va(i,j,k) = va(i,j,k) * ratio
-                   enddo
+            if( dist(i,j) <= min(r_vor, r_fac*r_max) .and. phis(i,j)<1.0*grav ) then
+                f1 = dist(i,j)/r_max
+!               relx = relx0*exp( -f1**2 )
+                relx = relx0*exp( -tau_vt_rad*f1**2 )
+                if( dist(i,j)<=r_max ) then
+                    speed_local = speed * f1
+                else
+                    speed_local = speed / f1**0.75
+                endif
+                call tangent_wind(vlon(i,j,1:3), vlat(i,j,1:3), speed_local, pos, agrid(i,j,1:2), ut, vt)
+                ut = ut + u_bg
+                vt = vt + v_bg
+                u_dt(i,j,k) = u_dt(i,j,k) + relx*(ut-ua(i,j,k)) * rdt
+                v_dt(i,j,k) = v_dt(i,j,k) + relx*(vt-va(i,j,k)) * rdt
+! Update:
+                ua(i,j,k) = ua(i,j,k) + relx*(ut-ua(i,j,k))
+                va(i,j,k) = va(i,j,k) + relx*(vt-va(i,j,k))
             endif
 400     continue 
         enddo        ! end i-loop
       enddo        ! end j-loop
 
-      call mp_reduce_sum(mass_sink)
-      if ( mass_sink==0. ) goto 5000
+3000 continue
 
-      p_sum = 0.
-      do j=js, je
-         do i=is, ie
-            if( dist(i,j)<(6.*r_vor+del_r) .and. dist(i,j)>r_vor+del_r ) then
-                p_sum = p_sum + area(i,j) 
-            endif
-         enddo
-      enddo
+  end subroutine breed_srf_winds
 
-      call mp_reduce_sum(p_sum)
-      mass_sink = mass_sink / p_sum ! mean delta pressure to be added back to the environment to conserve mass
-      if(master .and. nudge_debug) write(*,*) 'TC#',n, 'Mass tele-ported (pa)=', mass_sink
+  subroutine tangent_wind ( elon, elat, speed, po, pp, ut, vt )
+  real, intent(in):: speed
+  real, intent(in):: po(2), pp(2)
+  real, intent(in):: elon(3), elat(3)
+  real, intent(out):: ut, vt
+! local
+  real:: e1(3), eo(3), ep(3), op(3)
 
-      do j=js, je
-         do i=is, ie
-            if( dist(i,j)<(6.*r_vor+del_r) .and. dist(i,j)>r_vor+del_r ) then
-                  p0(ks+1) = ak(ks+1)
-                  do k=ks+1,npz
-                     tvir(k) = pt(i,j,k) * (1.+ zvir*q(i,j,k,1))
-                     p0(k+1) = p0(k) + delp(i,j,k)
-                  enddo
-                  p1(ks+1) = p0(ks+1)
-                  do k=ks+1,npz
-                     dm(k) = delp(i,j,k) + (bk(k+1)-bk(k))*mass_sink
-                     p1(k+1) = p1(k) + dm(k)
-                     ratio = delp(i,j,k)/dm(k)
-                     delp(i,j,k) = dm(k)
-                     do iq=1,nwat
-                        q(i,j,k,iq) = q(i,j,k,iq) * ratio
-                     enddo
-                     pt(i,j,k) = tvir(k)*log(p0(k+1)/p0(k))/(log(p1(k+1)/p1(k))*(1.+zvir*q(i,j,k,1)))
-                     u_dt(i,j,k) = u_dt(i,j,k) + ua(i,j,k)*(ratio - 1.)*rdt
-                     v_dt(i,j,k) = v_dt(i,j,k) + va(i,j,k)*(ratio - 1.)*rdt
-                     ua(i,j,k) = ua(i,j,k) * ratio
-                     va(i,j,k) = va(i,j,k) * ratio
-                  enddo
-            endif
-         enddo
-      enddo
+  call latlon2xyz(po, eo)
+  call latlon2xyz(pp, ep)
 
-5000 continue
+  op(:) = ep(:) - eo(:)
+  call normalize_vect( op )
 
-  end subroutine breed_slp
+  call vect_cross(e1, ep, eo)
+
+  ut = speed * (e1(1)*elon(1) + e1(2)*elon(2) + e1(3)*elon(3))
+  vt = speed * (e1(1)*elat(1) + e1(2)*elat(2) + e1(3)*elat(3))
+
+! SH:
+  if ( po(2) < 0. ) then
+       ut = -ut
+       vt = -vt
+  endif
+
+  end subroutine tangent_wind
 
 
-  subroutine get_slp_obs(time, nobs, lon_obs, lat_obs, mslp, slp_out, r_out, time_obs,    &
-                         x_o, y_o, slp_o, r_vor, p_vor, stime, fact)
+  subroutine get_slp_obs(time, nobs, lon_obs, lat_obs, w10, mslp, slp_out, r_out, time_obs,    &
+                         x_o, y_o, w10_o, slp_o, r_vor, p_vor, stime, fact)
 ! Input
     type(time_type), intent(in):: time
     integer, intent(in)::  nobs   ! number of observations in this particular storm
-    real(kind=4), intent(in)::  lon_obs(nobs)
-    real(kind=4), intent(in)::  lat_obs(nobs)
-    real(kind=4), intent(in)::     mslp(nobs)        ! observed SLP in pa
-    real(kind=4), intent(in)::  slp_out(nobs)        ! slp at r_out
-    real(kind=4), intent(in)::    r_out(nobs)        ! 
-    real(kind=4), intent(in):: time_obs(nobs)
+    real(KIND=4), intent(in)::  lon_obs(nobs)
+    real(KIND=4), intent(in)::  lat_obs(nobs)
+    real(KIND=4), intent(in)::      w10(nobs)        ! observed 10-m widn speed
+    real(KIND=4), intent(in)::     mslp(nobs)        ! observed SLP in pa
+    real(KIND=4), intent(in)::  slp_out(nobs)        ! slp at r_out
+    real(KIND=4), intent(in)::    r_out(nobs)        ! 
+    real(KIND=4), intent(in):: time_obs(nobs)
     real, optional, intent(in):: stime
     real, optional, intent(out):: fact
 ! Output
     real, intent(out):: x_o , y_o      ! position of the storm center 
+    real, intent(out):: w10_o          ! 10-m wind speed
     real, intent(out):: slp_o          ! Observed sea-level-pressure (pa)
     real, intent(out):: r_vor, p_vor
 ! Internal:
+    real:: t_thresh
       real:: p1(2), p2(2)
       real time_model
       real fac
       integer year, month, day, hour, minute, second, n
 
+      t_thresh = 600./86400.  ! unit: days
+
+       w10_o = -100000.
        slp_o = -100000.
          x_o = -100.*pi
          y_o = -100.*pi
@@ -2037,26 +2205,37 @@ module fv_nudge_mod
 !     if(nudge_debug .and. master) write(*,*) 'Model:', time_model, year, month, day, hour, minute, second
    endif
 
-      if ( time_model <= time_obs(1)  .or.  time_model >= time_obs(nobs) ) then
-!          if(nudge_debug .and. master) write(*,*) '  No valid TC data'
-           return
+!-------------------------------------------------------------------------------------------
+!     if ( time_model <= time_obs(1)  .or.  time_model >= time_obs(nobs) ) then
+!          return
+!-------------------------------------------------------------------------------------------
+
+      if ( time_model <= (time_obs(1)-t_thresh)  .or.  time_model >= time_obs(nobs) ) return
+
+      if ( time_model <=  time_obs(1) ) then
+!--
+! This is an attempt to perform vortex breeding several minutes before the first available observation
+!--
+                 w10_o =     w10(1)
+                 slp_o =    mslp(1)
+                   x_o = lon_obs(1)
+                   y_o = lat_obs(1)
+                 if ( present(fact) )  fact = 1.25
       else
            do n=1,nobs-1
              if( time_model >= time_obs(n) .and. time_model <= time_obs(n+1) ) then
                    fac = (time_model-time_obs(n)) / (time_obs(n+1)-time_obs(n))
+                 w10_o =     w10(n) + (    w10(n+1)-    w10(n)) * fac
                  slp_o =    mslp(n) + (   mslp(n+1)-   mslp(n)) * fac
 ! Trajectory interpolation:
-#ifdef LINEAR_TRAJ
 ! Linear in (lon,lat) space
-                   x_o = lon_obs(n) + (lon_obs(n+1)-lon_obs(n)) * fac
-                   y_o = lat_obs(n) + (lat_obs(n+1)-lat_obs(n)) * fac
-#else 
+!                  x_o = lon_obs(n) + (lon_obs(n+1)-lon_obs(n)) * fac
+!                  y_o = lat_obs(n) + (lat_obs(n+1)-lat_obs(n)) * fac
                  p1(1) = lon_obs(n);     p1(2) = lat_obs(n)
                  p2(1) = lon_obs(n+1);   p2(2) = lat_obs(n+1)
                  call intp_great_circle(fac, p1, p2, x_o, y_o)
-#endif
 !----------------------------------------------------------------------
-                  if ( present(fact) )   fact = 1. + 0.5*cos(fac*2.*pi)
+                  if ( present(fact) )   fact = 1. + 0.25*cos(fac*2.*pi)
 ! Additional data from the extended best track
 !                if ( slp_out(n)>0. .and. slp_out(n+1)>0. .and. r_out(n)>0. .and. r_out(n+1)>0. ) then
 !                     p_vor = slp_out(n) + ( slp_out(n+1) - slp_out(n)) * fac
@@ -2081,6 +2260,7 @@ module fv_nudge_mod
 
   nobs_tc(:) = 0
   time_tc(:,:) = 0.
+  wind_obs(:,:) = -100000.
   mslp_obs(:,:) = -100000.
   x_obs(:,:) = - 100.*pi
   y_obs(:,:) = - 100.*pi
@@ -2092,7 +2272,7 @@ module fv_nudge_mod
       if(master) write(*,*) 'No TC track file specified'
       return
   else
-      unit = 98
+      unit = get_unit()
       open( unit, file=track_file_name)
   endif
 
@@ -2105,10 +2285,10 @@ module fv_nudge_mod
      nobs = 0
     month = 99
 
- if ( ib_track ) then
+  if ( ibtrack ) then
 
 !---------------------------------------------------------------
-! The data format is from Ming Zhao's processed ibTrack datasets
+! The data format is from Ming Zhoa's processed ibTrack datasets
 !---------------------------------------------------------------
 
     read(unit, *) ts_name, nobs, yr, month, day, hour
@@ -2119,9 +2299,10 @@ module fv_nudge_mod
     endif
 
     do while ( ts_name=='start' ) 
-       nstorms  = nstorms + 1
+
+               nstorms  = nstorms + 1
        nobs_tc(nstorms) = nobs       ! observation count for this storm
-       if(master) write(*, *) 'Read Data for TC#', nstorms, nobs
+       if(nudge_debug .and. master) write(*, *) 'Read Data for TC#', nstorms, nobs
 
        do it=1, nobs
           read(unit, *) lon_deg, lat_deg, mps, slp, yr, month, day, hour
@@ -2130,8 +2311,9 @@ module fv_nudge_mod
 !         endif
           cald = calday(yr, month, day, hour, 0, 0)
           time_tc(it,nstorms) = cald
-          if(master) write(*, 100) cald, month, day, hour, lon_deg, lat_deg, mps, slp
+          if(nudge_debug .and. master) write(*, 100) cald, month, day, hour, lon_deg, lat_deg, mps, slp
 
+          wind_obs(it,nstorms) = mps       ! m/s
           mslp_obs(it,nstorms) = 100.*slp
              y_obs(it,nstorms) = lat_deg * deg2rad
              x_obs(it,nstorms) = lon_deg * deg2rad
@@ -2416,7 +2598,62 @@ module fv_nudge_mod
 
    bias = bias / total_area
     rms = sqrt( rms / total_area )
-                                                                                                                                  
+
  end subroutine rmse_bias
 
-end module fv_nudge_mod
+
+ subroutine corr(a, b, co)
+ real, intent(in):: a(is:ie,js:je), b(is:ie,js:je)
+ real, intent(out):: co
+ real:: m_a, m_b, std_a, std_b
+ integer:: i,j
+ real:: total_area
+
+   total_area = 4.*pi*radius**2
+
+! Compute standard deviation:
+   call std(a, m_a, std_a)
+   call std(b, m_b, std_b)
+
+! Compute correlation: 
+   co = 0.
+   do j=js,je
+      do i=is,ie
+         co = co + area(i,j) * (a(i,j)-m_a)*(b(i,j)-m_b)
+      enddo
+   enddo
+   call mp_reduce_sum(co)
+   co = co / (total_area*std_a*std_b )
+
+ end subroutine corr
+
+ subroutine std(a, mean, stdv)
+ real,  intent(in):: a(is:ie,js:je)
+ real, intent(out):: mean, stdv
+ integer:: i,j
+ real:: total_area
+
+   total_area = 4.*pi*radius**2
+
+   mean = 0.
+   do j=js,je
+      do i=is,ie
+         mean = mean + area(i,j) * a(i,j)
+      enddo
+   enddo
+   call mp_reduce_sum(mean)
+   mean = mean / total_area 
+
+   stdv = 0.
+   do j=js,je
+      do i=is,ie
+         stdv = stdv + area(i,j) * (a(i,j)-mean)**2
+      enddo
+   enddo
+   call mp_reduce_sum(stdv)
+   stdv = sqrt( stdv / total_area )
+
+ end subroutine std
+
+
+end module fv_nwp_nudge_mod

@@ -794,7 +794,7 @@ endif         !------------- Hybrid_z section ----------------------
 !----------------------
 !  call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km)
 
-!$omp parallel do default(shared) private(i, j, k, phiz)
+!$omp parallel do default(shared) private(i, j, k, phiz, tv)
   do j=js,je
 
      if ( hydrostatic ) then
@@ -2307,6 +2307,11 @@ endif         !------------- Hybrid_z section ----------------------
    integer :: f_unit, log_unit, ios
 
    if (mapz_is_initialized) return
+
+!openmp statements needed to ensure only one thread
+!executes this section of code
+!this subroutine is unnecessary in S-release and will be removed
+!$OMP MASTER
    f_unit = get_unit()
    open (f_unit,file=filename)
  ! Read fv_mapz namelist
@@ -2320,6 +2325,8 @@ endif         !------------- Hybrid_z section ----------------------
    write(log_unit, nml=fv_mapz_nml)
 
    mapz_is_initialized = .true.
+!$OMP END MASTER 
+!$OMP BARRIER
 
  end subroutine mapz_init
 

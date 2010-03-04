@@ -1147,6 +1147,7 @@
 
  is2 = max(2,is); ie1 = min(npx-1,ie+1)
 
+!$omp parallel do default(shared) private(i, j, k, uf, vf)
  do k=1,km
     if (grid_type==4) then
         do j=js-1,je+2

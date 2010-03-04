@@ -42,7 +42,6 @@ module fv_restart_mod
   use init_hydro_mod,      only: p_var
   use mpp_domains_mod,     only: mpp_update_domains, domain2d, DGRID_NE
   use mpp_mod,             only: mpp_chksum, stdout, mpp_error, FATAL, get_unit
-  use fms_io_mod,          only: set_domain, nullify_domain
   use test_cases_mod,      only: alpha, init_case, init_double_periodic, init_latlon
   use fv_mp_mod,           only: gid, masterproc
   use fv_surf_map_mod,     only: sgh_g, oro_g
@@ -62,8 +61,8 @@ module fv_restart_mod
   logical                       :: module_is_initialized = .FALSE.
 
   !--- version information variables ----
-  character(len=128) :: version = '$Id: fv_restart.F90,v 17.0 2009/07/21 02:52:30 fms Exp $'
-  character(len=128) :: tagname = '$Name: quebec_200910 $'
+  character(len=128) :: version = '$Id: fv_restart.F90,v 18.0 2010/03/02 23:27:40 fms Exp $'
+  character(len=128) :: tagname = '$Name: riga $'
 
 contains 
 
@@ -115,10 +114,6 @@ contains
     ntileMe = size(Atm(:))
     npz     = Atm(1)%npz
     npz_rst = Atm(1)%npz_rst
-
-    !---z1l: needed for new IO capability: divide the processor list into many subgroup and 
-    !---     write out from the root pe of each subgroup.
-    call set_domain(fv_domain)
 
     !--- call fv_io_register_restart to register restart field to be written out in fv_io_write_restart
     call fv_io_register_restart(fv_domain,Atm)
@@ -211,10 +206,10 @@ contains
            enddo
         endif
       else
-! Cold start
        if ( Atm(n)%warm_start ) then
          call mpp_error(FATAL, 'FV restart files not found; set warm_start = .F. if cold_start is desired.')
        endif
+! Cold start
        if ( Atm(n)%make_hybrid_z ) then
          hybrid = .false.
        else
@@ -222,11 +217,11 @@ contains
        endif
          if (grid_type < 4) then
             if ( .not. Atm(n)%external_ic ) then
-            call init_case(Atm(n)%u,Atm(n)%v,Atm(n)%pt,Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
+            call init_case(Atm(n)%u,Atm(n)%v,Atm(n)%w,Atm(n)%pt,Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
                            Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        & 
                            Atm(n)%ak, Atm(n)%bk, Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, ncnst, Atm(n)%nwat,  &
                            Atm(n)%k_top, Atm(n)%ndims, Atm(n)%ntiles, Atm(n)%dry_mass, Atm(n)%mountain,       &
-                           Atm(n)%moist_phys, hybrid, Atm(n)%delz, Atm(n)%ze0)
+                           Atm(n)%moist_phys, Atm(n)%hydrostatic, hybrid, Atm(n)%delz, Atm(n)%ze0)
             endif
          elseif (grid_type == 4) then
             call init_double_periodic(Atm(n)%u,Atm(n)%v,Atm(n)%w,Atm(n)%pt,Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
@@ -349,8 +344,6 @@ contains
     endif
 
     end do   ! n_tile
-
-    call nullify_domain()
 
   end subroutine fv_restart
   ! </SUBROUTINE> NAME="fv_restart"

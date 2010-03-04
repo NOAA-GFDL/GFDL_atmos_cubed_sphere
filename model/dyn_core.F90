@@ -17,7 +17,7 @@ module dyn_core_mod
                                 ec1, ec2, en1, en2, da_min_c
   use fv_timing_mod,      only: timing_on, timing_off
   use fv_diagnostics_mod, only: prt_maxmin
-  use fv_nudge_mod,       only: breed_slp_inline
+  use fv_nwp_nudge_mod,   only: breed_slp_inline
 
 #ifdef SW_DYNAMICS
     use test_cases_mod,      only: test_case, case9_forcing1, case9_forcing2
@@ -173,6 +173,7 @@ contains
   do it=1,n_split
 !-----------------------------------------------------
      if ( .not. hydrostatic ) then
+!$omp parallel do default(shared) private(i, j, k)
         do j=js,je
            do i=is,ie
               zh(i,j,npz) = phis(i,j)*rgrav - delz(i,j,npz)
@@ -217,6 +218,7 @@ contains
 ! Using time extrapolated wind in place of computed C Grid wind
 !---------------------------------------------------------------
                                                call timing_on('no_cgrid')
+!$omp parallel do default(shared) private(i, j, k, u2, v2)
         do k=1,npz
            if ( init_wind_m ) then
               do j=jsd,jed+1
@@ -498,6 +500,7 @@ contains
 !------------------------------
 ! Compute time tendency
 !------------------------------
+!$omp parallel do default(shared) private(i, j, k)
          do k=1,npz
             do j=js,je
                do i=is,ie
@@ -518,6 +521,7 @@ contains
                            npz, ptk)  
       else
        if ( beta > 1.E-4 ) then
+!$omp parallel do default(shared) private(i, j, k)
           do k=1,npz
              do j=js,je+1
                 do i=is,ie
@@ -525,6 +529,7 @@ contains
                 enddo
              enddo
           enddo
+!$omp parallel do default(shared) private(i, j, k)
           do k=1,npz
              do j=js,je
                 do i=is,ie+1
@@ -534,6 +539,7 @@ contains
           enddo
           call grad1_p(du, dv, pkc, gz, delp, dt, ng, npx, npy, npz, ptop, ptk, hydrostatic)
           alpha = 1. - beta
+!$omp parallel do default(shared) private(i, j, k)
           do k=1,npz
              do j=js,je+1
                 do i=is,ie
@@ -541,6 +547,7 @@ contains
                 enddo
              enddo
           enddo
+!$omp parallel do default(shared) private(i, j, k)
           do k=1,npz
              do j=js,je
                 do i=is,ie+1
@@ -636,6 +643,7 @@ contains
        enddo
     enddo
 
+!$omp parallel do default(shared) private(i, j, k, wk1)
     do k=1,npz+1
 
        if ( k/=1 ) then
@@ -655,6 +663,7 @@ contains
        endif
     enddo
 
+!$omp parallel do default(shared) private(i, j, k, wk1, wk)
     do k=1,npz
 
        if ( a2b_ord==4 ) then
@@ -746,6 +755,7 @@ contains
        enddo
     enddo
 
+!$omp parallel do default(shared) private(i, j, k, wk)
     do k=2,npz+1
        if ( a2b_ord==4 ) then
          call a2b_ord4(pk(isd,jsd,k), wk, npx, npy, is, ie, js, je, ng, .true.)
@@ -754,6 +764,7 @@ contains
        endif
     enddo
 
+!$omp parallel do default(shared) private(i, j, k, wk)
     do k=1,npz+1
        if ( a2b_ord==4 ) then
          call a2b_ord4( gh(isd,jsd,k), wk, npx, npy, is, ie, js, je, ng, .true.)
@@ -773,6 +784,7 @@ contains
        enddo
     enddo
 
+!$omp parallel do default(shared) private(i, j, k, wk)
     do k=1,npz
 
        if ( hydrostatic ) then
@@ -845,6 +857,7 @@ contains
        enddo
     enddo
 
+!$omp parallel do default(shared) private(i, j, k, wk)
     do k=2,npz+1
        if ( a2b_ord==4 ) then
          call a2b_ord4(pk(isd,jsd,k), wk, npx, npy, is, ie, js, je, ng, .true.)
@@ -867,6 +880,7 @@ contains
           enddo
        enddo
 
+!$omp parallel do default(shared) private(i, j, k)
     do k=2,npz+1
        do j=js,je+1
           do i=is,ie
@@ -880,6 +894,7 @@ contains
        enddo
     enddo
 
+!$omp parallel do default(shared) private(i, j, k, wk)
     do k=1,npz+1
        if ( a2b_ord==4 ) then
          call a2b_ord4( gh(isd,jsd,k), wk, npx, npy, is, ie, js, je, ng, .true.)
@@ -889,6 +904,7 @@ contains
     enddo
 
 
+!$omp parallel do default(shared) private(i, j, k, wk, pz)
     do k=1,npz
 
        if ( hydrostatic ) then
@@ -963,6 +979,7 @@ contains
        enddo
     enddo
 
+!$omp parallel do default(shared) private(i, j, k, wk)
     do k=2,npz+1
        if ( a2b_ord==4 ) then
          call a2b_ord4(pk(isd,jsd,k), wk, npx, npy, is, ie, js, je, ng, .true.)
@@ -971,6 +988,7 @@ contains
        endif
     enddo
 
+!$omp parallel do default(shared) private(i, j, k, wk)
     do k=1,npz+1
        if ( a2b_ord==4 ) then
          call a2b_ord4( gh(isd,jsd,k), wk, npx, npy, is, ie, js, je, ng, .true.)
@@ -980,6 +998,7 @@ contains
     enddo
 
 
+!$omp parallel do default(shared) private(i, j, k, wk)
     do k=1,npz
 
        if ( hydrostatic ) then
@@ -1127,6 +1146,7 @@ contains
 
       if ( .not. CG ) then
 ! This is for hydrostatic only
+!$omp parallel do default(shared) private(i, j, k)
          do k=1,km
             do j=js,je
                do i=is,ie

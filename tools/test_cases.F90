@@ -7,7 +7,7 @@
                                    domain_decomp, fill_corners, XDir, YDir, &
                                    mp_stop, mp_reduce_sum, mp_reduce_max, mp_gather, mp_bcst
       use fv_grid_utils_mod, only: cubed_to_latlon, great_circle_dist, mid_pt_sphere,   &
-                                   ptop, ptop_min, fC, f0, deglat, inner_prod,      &
+                                   ptop, ptop_min, fC, f0, deglat, inner_prod, normalize_vect, &
                                    ee1, ee2, ew, es, g_sum, latlon2xyz, cart_to_latlon
       use fv_surf_map_mod,   only: surfdrv
 
@@ -44,10 +44,13 @@
 !                   12 = Jablonowski & Williamson Baroclinic test case (Steady State)
 !                   13 = Jablonowski & Williamson Baroclinic test case Perturbation
 !                   14 = Use this for cold starting the Aqua-planet model
-!                   15 = Small Earth convective bubble
+!                   15 = Small Earth density current
 !                   16 = 3D hydrostatic non-rotating Gravity waves
 !                   17 = 3D hydrostatic rotating Inertial Gravity waves (case 6-3-0)
 !                   18 = 3D mountain-induced Rossby wave
+!                   19 = As in 15 but without rotation
+!                   20 = 3D non-hydrostatic lee vortices; non-rotating (small planet)
+!                   21 = 3D non-hydrostatic lee vortices; rotating     (small planet)
       integer :: test_case
 ! alpha = angle of axis rotation about the poles
       real   :: alpha = 0.
@@ -327,12 +330,13 @@
 !                  case 6 (Rossby Wave-4 Case)
 !                  case 9 (Stratospheric Vortex Breaking Case)
 !
-      subroutine init_case(u,v,pt,delp,q,phis, ps,pe,peln,pk,pkz,  uc,vc, ua,va, ak, bk,  &
+      subroutine init_case(u,v,w,pt,delp,q,phis, ps,pe,peln,pk,pkz,  uc,vc, ua,va, ak, bk,  &
                            npx, npy, npz, ng, ncnst, nwat, k_top, ndims, nregions,        &
-                           dry_mass, mountain, moist_phys, hybrid_z, delz, ze0)
+                           dry_mass, mountain, moist_phys, hydrostatic, hybrid_z, delz, ze0)
 
       real ,      intent(INOUT) ::    u(isd:ied  ,jsd:jed+1,npz)
       real ,      intent(INOUT) ::    v(isd:ied+1,jsd:jed  ,npz)
+      real ,      intent(INOUT) ::    w(isd:ied  ,jsd:jed  ,npz)
       real ,      intent(INOUT) ::   pt(isd:ied  ,jsd:jed  ,npz)
       real ,      intent(INOUT) :: delp(isd:ied  ,jsd:jed  ,npz)
       real ,      intent(INOUT) ::    q(isd:ied  ,jsd:jed  ,npz, ncnst)
@@ -364,6 +368,7 @@
       real,         intent(IN) :: dry_mass
       logical,      intent(IN) :: mountain
       logical,      intent(IN) :: moist_phys
+      logical,      intent(IN) :: hydrostatic
       logical,      intent(IN) :: hybrid_z
 
       real   ::  tmp(1-ng:npx  +ng,1-ng:npy  +ng,1:nregions)
@@ -376,12 +381,12 @@
       real   :: pa(2)      ! Temporary Point
       real   :: pb(2)      ! Temporary Point
       real   :: pcen(2)    ! Temporary Point
-      real   :: e1(3), e2(3), ex(3), ey(3)
+      real   :: e1(3), e2(3), e3(3), ex(3), ey(3)
       real   :: dist, r, r0, omg, A, B, C
-      integer :: i,j,nreg,z,zz
+      integer :: i,j,k,nreg,z,zz
       integer :: i0,j0,n0
       real   :: utmp,vtmp,ftmp
-      real   :: k
+      real   :: rk
 
       integer, parameter :: jm = 5761
       real   :: ll_phi(jm)
@@ -414,9 +419,9 @@
       real :: vor0(isd:ied  ,jsd:jed  )
       real :: divg(isd:ied  ,jsd:jed  )
       real :: vort(isd:ied  ,jsd:jed  )
-      real ztop, rgrav, p00, pturb, zmid, pk0
-      real:: dz1(npz), ppt(npz)
-      real:: ze1(npz+1), pe1(npz+1)
+      real :: ztop, rgrav, p00, pturb, zmid, pk0, t00
+      real :: dz1(npz), ppt(npz)
+      real :: ze1(npz+1), pe1(npz+1)
 
       integer :: nlon,nlat
       character(len=80) :: oflnm, hgtflnm
@@ -424,7 +429,7 @@
 ! Baroclinic Test Case 12
       real :: eta, eta_0, eta_s, eta_t
       real :: eta_v(npz), press, anti_rot
-      real :: T_0, T_mean, delta_T, lapse_rate, n2
+      real :: T_0, T_mean, delta_T, lapse_rate, n2, zeta, s0
       real :: pt1,pt2,pt3,pt4,pt5,pt6, pt7, pt8, pt9, u1, pt0
       real :: uu1, uu2, uu3, vv1, vv2, vv3
 !     real wbuffer(npx+1,npz)
@@ -811,17 +816,17 @@
          gh0  = 8.E3*Grav
          R    = 4.
          omg  = 7.848E-6
-         k    = 7.848E-6
+         rk    = 7.848E-6
          phis = 0.0
          do j=js,je
             do i=is,ie
                A = 0.5*omg*(2.*omega+omg)*(COS(agrid(i,j,2))**2) + &
-                   0.25*k*k*(COS(agrid(i,j,2))**(r+r)) * &
+                   0.25*rk*rk*(COS(agrid(i,j,2))**(r+r)) * &
                    ( (r+1)*(COS(agrid(i,j,2))**2) + (2.*r*r-r-2.) - &
                      2.*(r*r)*COS(agrid(i,j,2))**(-2.) )
-               B = (2.*(omega+omg)*k / ((r+1)*(r+2))) * (COS(agrid(i,j,2))**r) * &
+               B = (2.*(omega+omg)*rk / ((r+1)*(r+2))) * (COS(agrid(i,j,2))**r) * &
                     ( (r*r+2.*r+2.) - ((r+1.)*COS(agrid(i,j,2)))**2 )
-               C = 0.25*k*k*(COS(agrid(i,j,2))**(2.*r)) * ( &
+               C = 0.25*rk*rk*(COS(agrid(i,j,2))**(2.*r)) * ( &
                    (r+1) * (COS(agrid(i,j,2))**2.) - (r+2.) )
                delp(i,j,1) =gh0 + radius*radius*(A+B*COS(r*agrid(i,j,1))+C*COS(2.*r*agrid(i,j,1)))
                delp(i,j,1) = delp(i,j,1) - phis(i,j)
@@ -835,8 +840,8 @@
                call get_unit_vector(p1, p2, e2)
                call get_latlon_vector(p3, ex, ey)
                utmp = radius*omg*cos(p3(2)) +                      &
-                      radius*k*(cos(p3(2))**(R-1))*(R*sin(p3(2))**2-cos(p3(2))**2)*cos(R*p3(1)) 
-               vtmp = -radius*k*R*sin(p3(2))*sin(R*p3(1))*cos(p3(2))**(R-1)
+                      radius*rk*(cos(p3(2))**(R-1))*(R*sin(p3(2))**2-cos(p3(2))**2)*cos(R*p3(1)) 
+               vtmp = -radius*rk*R*sin(p3(2))*sin(R*p3(1))*cos(p3(2))**(R-1)
                v(i,j,1) = utmp*inner_prod(e2,ex) + vtmp*inner_prod(e2,ey)
             enddo
          enddo
@@ -848,8 +853,8 @@
                call get_unit_vector(p1, p2, e1)
                call get_latlon_vector(p3, ex, ey)
                utmp = radius*omg*cos(p3(2)) +                      &
-                      radius*k*(cos(p3(2))**(R-1))*(R*sin(p3(2))**2-cos(p3(2))**2)*cos(R*p3(1)) 
-               vtmp = -radius*k*R*sin(p3(2))*sin(R*p3(1))*cos(p3(2))**(R-1)
+                      radius*rk*(cos(p3(2))**(R-1))*(R*sin(p3(2))**2-cos(p3(2))**2)*cos(R*p3(1)) 
+               vtmp = -radius*rk*R*sin(p3(2))*sin(R*p3(1))*cos(p3(2))**(R-1)
                u(i,j,1) = utmp*inner_prod(e1,ex) + vtmp*inner_prod(e1,ey)
             enddo
          enddo
@@ -1406,6 +1411,111 @@
             enddo
          enddo
 
+      else if ( test_case==15 .or. test_case==19 ) then
+!------------------------------------
+! Non-hydrostatic 3D density current:
+!------------------------------------
+! C100_L64; hybrid_z = .T., make_nh = .F. ,   make_hybrid_z = .false.
+! Control: npz=64;  dx = 100 m; dt = 1; n_split=10
+
+        if ( test_case == 19 ) then
+             f0(:,:) = 0.
+             fC(:,:) = 0.
+        endif
+
+           phis = 0.
+           u = 0.
+           v = 0.
+           w = 0.
+          t00 = 300.
+          p00 = 1.E5
+          pk0 = p00**kappa
+! Set up vertical coordinare with constant del-z spacing:
+         ztop = 6.4E3
+         ze1(    1) = ztop
+         ze1(npz+1) = 0.
+         do k=npz,2,-1
+            ze1(k) = ze1(k+1) + ztop/real(npz)
+         enddo
+
+! Provide some room for the top layer
+         ze1(1) = ztop + 1.5*ztop/real(npz)
+
+         do j=js,je
+            do i=is,ie
+               ps(i,j) = p00
+               pe(i,npz+1,j) = p00
+               pk(i,j,npz+1) = pk0
+            enddo
+         enddo
+
+         do k=npz,1,-1
+            do j=js,je
+               do i=is,ie
+                  delz(i,j,k) = ze1(k+1) - ze1(k)
+                    pk(i,j,k) = pk(i,j,k+1) + grav*delz(i,j,k)/(cp_air*t00)*pk0
+                    pe(i,k,j) = pk(i,j,k)**(1./kappa)
+               enddo
+            enddo
+         enddo
+
+         ptop = pe(is,1,js)
+         if ( gid==masterproc ) write(*,*) 'Density curent testcase: model top (mb)=', ptop/100.
+
+         do k=1,npz+1
+            do j=js,je
+               do i=is,ie
+                  peln(i,k,j) = log(pe(i,k,j))
+                   ze0(i,j,k) = ze1(k)
+               enddo
+            enddo
+         enddo
+
+         do k=1,npz
+            do j=js,je
+               do i=is,ie
+                  pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
+                 delp(i,j,k) =  pe(i,k+1,j)-pe(i,k,j)
+                   pt(i,j,k) = t00/pk0   ! potential temp
+                enddo
+            enddo
+         enddo
+
+! Perturbation: center at 3 km from the ground
+         pturb = 15.
+         p1(1) = pi
+         p1(2) = 0.
+
+         do k=1,npz
+#ifndef STD_BUBBLE
+            r0 = 0.5*(ze1(k)+ze1(k+1)) - 3.2E3
+#else
+            r0 = (0.5*(ze1(k)+ze1(k+1)) - 3.0E3) / 2.E3
+#endif
+            do j=js,je
+               do i=is,ie
+! Impose perturbation in potential temperature: pturb
+               p2(1) = agrid(i,j,1)
+               p2(2) = agrid(i,j,2)
+#ifndef STD_BUBBLE
+               r = great_circle_dist( p1, p2, radius )
+               dist = sqrt( r**2 + r0**2 ) / 3.2E3
+#else
+               r = great_circle_dist( p1, p2, radius ) / 4.E3
+               dist = sqrt( r**2 + r0**2 )
+#endif
+                  if ( dist<=1. ) then
+                       q(i,j,k,1) =      pk0 * pturb/pkz(i,j,k)*(cos(pi*dist)+1.)/2.
+                       pt(i,j,k) = pt(i,j,k) - pturb/pkz(i,j,k)*(cos(pi*dist)+1.)/2.
+                  else
+                       q(i,j,k,1) = 0.
+                  endif
+! Transform back to temperature:
+                   pt(i,j,k) = pt(i,j,k) * pkz(i,j,k)
+               enddo
+            enddo
+          enddo
+
       else if ( test_case==16 ) then
 
 ! Non-rotating:
@@ -1600,6 +1710,198 @@
          enddo
       enddo
 
+      else if ( test_case==20 .or. test_case==21 ) then
+!------------------------------------
+! Non-hydrostatic 3D lee vortices
+!------------------------------------
+        f0(:,:) = 0.
+        fC(:,:) = 0.
+
+        if ( test_case == 20 ) then
+             Ubar = 4.       ! u = Ubar * cos(lat)
+             ftop = 2.0E3 * grav
+        else
+             Ubar = 8.       ! u = Ubar * cos(lat)
+             ftop = 4.0E3 * grav
+        endif
+
+        w = 0.
+
+         do j=js,je
+            do i=is,ie+1
+               p1(:) = grid(i  ,j ,1:2)
+               p2(:) = grid(i,j+1 ,1:2)
+               call mid_pt_sphere(p1, p2, p3)
+               call get_unit_vector(p1, p2, e2)
+               call get_latlon_vector(p3, ex, ey)
+               utmp = ubar * cos(p3(2))
+               vtmp = 0.
+               v(i,j,1) = utmp*inner_prod(e2,ex) + vtmp*inner_prod(e2,ey)
+            enddo
+         enddo
+         do j=js,je+1
+            do i=is,ie
+               p1(:) = grid(i,  j,1:2)
+               p2(:) = grid(i+1,j,1:2)
+               call mid_pt_sphere(p1, p2, p3)
+               call get_unit_vector(p1, p2, e1)
+               call get_latlon_vector(p3, ex, ey)
+               utmp = ubar * cos(p3(2))
+               vtmp = 0.
+               u(i,j,1) = utmp*inner_prod(e1,ex) + vtmp*inner_prod(e1,ey)
+            enddo
+         enddo
+
+! copy vertically; no wind shear
+        do k=2,npz
+           do j=js,je+1
+              do i=is,ie
+                 u(i,j,k) = u(i,j,1)
+              enddo
+           enddo
+           do j=js,je
+              do i=is,ie+1
+                 v(i,j,k) = v(i,j,1)
+              enddo
+           enddo
+        enddo
+
+! Center of the mountain:
+        p1(1) = (0.5-0.125) * pi
+        p1(2) = 0.
+        call latlon2xyz(p1, e1)
+         uu1 =  5.0E3
+         uu2 = 10.0E3
+         do j=js,je
+            do i=is,ie
+              p2(:) = agrid(i,j,1:2)
+                  r = great_circle_dist( p1, p2, radius ) 
+              if ( r < pi*radius ) then
+#ifdef T_ANGLE
+                   call latlon2xyz(p2, e2)
+! eastward vector parallel to equator
+                   p3(1) = p1(1) + 0.01*pi  ! arbitrary positive number
+                   p3(2) = p1(2)
+                   call latlon2xyz(p3, e3)
+                   e2(:) = e2(:) - e1(:)
+                   e3(:) = e3(:) - e1(:)
+                   call normalize_vect( e2 )
+                   call normalize_vect( e3 )
+! Compute angle: 0 <= acos() <= pi
+                   zeta = acos( e2(1)*e3(1) + e2(2)*e3(2) + e2(3)*e3(3) )
+                   if ( p2(2) <= p1(2) ) then
+                        zeta = 2.*pi - zeta
+                   endif
+#else
+                   p4(:) = p2(:) - p1(:)
+                   if ( abs(p4(1)) > 1.E-12 ) then
+                        zeta = asin ( p4(2) / sqrt(p4(1)**2 + p4(2)**2) ) 
+                   else
+                        zeta = pi/2.
+                   endif
+                   if ( p4(1) <= 0. ) zeta = pi - zeta
+#endif
+                    zeta = zeta + pi/6.
+                     v1 = r/uu1 * cos( zeta )
+                     v2 = r/uu2 * sin( zeta )
+                   phis(i,j) = ftop / ( 1. + v1**2 + v2**2 )  
+              else
+                   phis(i,j) = 0.
+              endif
+            enddo
+         enddo
+
+       if ( hybrid_z ) then
+            rgrav = 1./ grav
+            if( npz==32 ) then
+                call compute_dz_L32( npz, ztop, dz1 )
+            else
+                if ( gid==masterproc ) write(*,*) 'Using const DZ'
+                ztop = 15.E3
+                dz1(1) = ztop / real(npz) 
+                do k=2,npz
+                   dz1(k) = dz1(1)
+                enddo
+! Make top layer thicker
+                dz1(1) = max( 1.0E3, 3.*dz1(2) )   ! min 1 km
+            endif
+
+! Re-compute ztop
+             ze1(npz+1) = 0.
+             do k=npz,1,-1
+                ze1(k) = ze1(k+1) + dz1(k)
+             enddo
+             ztop = ze1(1)
+
+            call set_hybrid_z( is, ie, js, je, ng, npz, ztop, dz1, rgrav,  &
+                               phis, ze0, delz )
+       else
+            call mpp_error(FATAL, 'This test case is only currently setup for hybrid_z')
+       endif
+
+       do k=1,npz
+          do j=js,je
+             do i=is,ie
+                delz(i,j,k) = ze0(i,j,k+1) - ze0(i,j,k)
+             enddo
+          enddo
+       enddo
+
+       p00 = 1.E5        ! mean SLP
+       pk0 = p00**kappa
+       t00 = 300.
+       pt0 = t00/pk0
+        n2 = 1.E-4
+        s0 = grav*grav / (cp_air*n2) 
+
+! For constant N2, Given z --> p
+       do k=1,npz+1
+          pe1(k) = p00*( (1.-s0/t00) + s0/t00*exp(-n2*ze1(k)/grav) )**(1./kappa)
+       enddo
+
+       ptop = pe1(1) 
+       if ( gid==masterproc ) write(*,*) 'Lee vortex testcase: model top (mb)=', ptop/100.
+
+! Set up fake "sigma" coordinate 
+       ak(1) = pe1(1)
+       bk(1) = 0.
+       do k=2,npz
+          bk(k) = (pe1(k) - pe1(1)) / (pe1(npz+1)-pe1(1))  ! bk == sigma
+          ak(k) =  pe1(1)*(1.-bk(k)) 
+       enddo                                                
+       ak(npz+1) = 0.
+       bk(npz+1) = 1.
+
+! Assuming constant N
+       do k=2,npz+1
+          do j=js,je
+             do i=is,ie
+                pk(i,j,k) = pk0 - (1.-exp(-n2/grav*ze0(i,j,k))) * (grav*grav)/(n2*cp_air*pt0)
+                pe(i,k,j) = pk(i,j,k) ** (1./kappa)
+                peln(i,k,j) = log(pe(i,k,j)) 
+             enddo
+          enddo
+       enddo
+
+       do j=js,je
+          do i=is,ie
+               pe(i,1,j) = ptop
+             peln(i,1,j) = log(pe(i,1,j)) 
+               pk(i,j,1) = pe(i,1,j) ** kappa
+                 ps(i,j) = pe(i,npz+1,j)
+          enddo
+       enddo
+
+       do k=1,npz
+          do j=js,je
+             do i=is,ie
+                pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
+               delp(i,j,k) =  pe(i,k+1,j)-pe(i,k,j)  
+                 pt(i,j,k) =  pkz(i,j,k)*grav*delz(i,j,k) / ( cp_air*(pk(i,j,k)-pk(i,j,k+1)) )
+              enddo
+          enddo
+      enddo
+
       endif !test_case
 
       call mpp_update_domains( phis, domain )
@@ -1607,6 +1909,7 @@
      ftop = g_sum(phis(is:ie,js:je), is, ie, js, je, ng, area, 1)
      if(gid==masterproc) write(6,*) 'mean terrain height (m)=', ftop/grav
 
+! The flow is initially hydrostatic
      call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
                 pe, peln, pk, pkz, kappa, q, ng, ncnst, dry_mass, .false., mountain, &
                 moist_phys, .true., k_top, nwat)

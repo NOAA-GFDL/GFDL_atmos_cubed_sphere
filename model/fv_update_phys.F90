@@ -23,7 +23,7 @@ module fv_update_phys_mod
 #ifdef CLIMATE_NUDGE
   use atmos_nudge_mod,    only: get_atmos_nudge, do_ps
 #else
-  use fv_nudge_mod,       only: fv_nwp_nudge
+  use fv_nwp_nudge_mod,   only: fv_nwp_nudge
 #endif
 
   implicit none

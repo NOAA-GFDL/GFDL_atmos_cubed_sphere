@@ -34,7 +34,8 @@ module fv_io_mod
   use fms_mod,                 only: file_exist, read_data, write_data, field_exist    
   use fms_io_mod,              only: fms_io_exit, get_tile_string, &
                                      restart_file_type, register_restart_field, &
-                                     save_restart, restore_state
+                                     save_restart, restore_state, &
+                                     set_domain, nullify_domain
   use mpp_mod,                 only: mpp_error, FATAL, NOTE
   use mpp_domains_mod,         only: domain2d, EAST, NORTH, mpp_get_tile_id, &
                                      mpp_get_compute_domain, mpp_get_data_domain, &
@@ -44,8 +45,8 @@ module fv_io_mod
                                      set_tracer_profile, &
                                      get_tracer_index
   use field_manager_mod,       only: MODEL_ATMOS  
+  use external_sst_mod,        only: sst_ncep, sst_anom
   use fv_arrays_mod,           only: fv_atmos_type
-  use fv_grid_utils_mod,       only: sst_ncep
 
   implicit none
   private
@@ -57,6 +58,7 @@ module fv_io_mod
 
   !--- for restart file writing
   type(restart_file_type),        save :: Fv_restart
+  type(restart_file_type),        save :: SST_restart
   type(restart_file_type), allocatable :: Fv_tile_restart(:)
   type(restart_file_type), allocatable :: Rsf_restart(:)
   type(restart_file_type), allocatable :: Mg_restart(:)
@@ -65,8 +67,8 @@ module fv_io_mod
 
 
   !--- version information variables ----
-  character(len=128) :: version = '$Id: fv_io.F90,v 17.0 2009/07/21 02:52:25 fms Exp $'
-  character(len=128) :: tagname = '$Name: quebec_200910 $'
+  character(len=128) :: version = '$Id: fv_io.F90,v 18.0 2010/03/02 23:27:35 fms Exp $'
+  character(len=128) :: tagname = '$Name: riga $'
 
 contains 
 
@@ -125,13 +127,18 @@ contains
     if(file_exist(fname_nd))then
 ! sst_ncep may be used in free-running forecast mode
        call read_data(fname_nd, 'sst_ncep', sst_ncep)
+       if (field_exist(fname_nd,'sst_anom')) then
+           call read_data(fname_nd, 'sst_anom', sst_anom)
+       else
+           sst_anom(:,:) = 1.E8   ! make it big enough to cause blowup if used
+       endif
     endif
  
     fname_nd = 'INPUT/fv_core.res.nc'
   ! write_data does not (yet?) support vector data and tiles
     call read_data(fname_nd, 'ak', Atm(1)%ak(:))
     call read_data(fname_nd, 'bk', Atm(1)%bk(:))
- 
+    call set_domain(fv_domain) 
    
     do n = 1, ntileMe
        isc = Atm(n)%isc; iec = Atm(n)%iec; jsc = Atm(n)%jsc; jec = Atm(n)%jec
@@ -216,6 +223,7 @@ contains
     end do
  
     deallocate(tile_id)
+    call nullify_domain()
 
   end subroutine  fv_io_read_restart
   ! </SUBROUTINE> NAME="fv_io_read_restart"
@@ -240,6 +248,7 @@ contains
 !   call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
     ntracers = size(Atm(1)%q,4)  ! Temporary until we get tracer manager integrated
 
+    call set_domain(fv_domain) 
 ! skip the first tracer, which is sphum
     do n = 1, ntileMe
        isc = Atm(n)%isc; iec = Atm(n)%iec; jsc = Atm(n)%jsc; jec = Atm(n)%jec
@@ -260,7 +269,8 @@ contains
            call mpp_error(NOTE,'==>  Setting tracer '//trim(tracer_name)//' from set_tracer')
          ENDDO
     end do
-
+    
+    call nullify_domain()
     deallocate(tile_id)
 
   end subroutine  fv_io_read_tracers
@@ -326,6 +336,7 @@ contains
   ! write_data does not (yet?) support vector data and tiles
     call read_data(fname_nd, 'ak', ak_r(1:npz_rst+1))
     call read_data(fname_nd, 'bk', bk_r(1:npz_rst+1))
+    call set_domain(fv_domain) 
 
     do n = 1, ntileMe
        call get_tile_string(fname, 'INPUT/fv_core.res.tile', tile_id(n), '.nc' )
@@ -399,6 +410,8 @@ contains
                       ak_r,  bk_r, Atm(n)%ak, Atm(n)%bk, Atm(n)%hydrostatic)
     end do
 
+    call nullify_domain()
+
     deallocate(tile_id)
     deallocate( ak_r )
     deallocate( bk_r )
@@ -441,6 +454,7 @@ contains
 
     allocate(Fv_tile_restart(ntileMe), Rsf_restart(ntileMe) )
     allocate(Mg_restart(ntileMe), Lnd_restart(ntileMe), Tra_restart(ntileMe) )
+
 
 ! fix for single tile runs where you need fv_core.res.nc and fv_core.res.tile1.nc
     ntiles = mpp_get_ntile_count(fv_domain)
@@ -491,7 +505,15 @@ contains
           id_restart = register_restart_field(Tra_restart(n), fname_nd, tracer_name, Atm(n)%q(:,:,:,nt), &
                        domain=fv_domain, tile_count=n, mandatory=.false.)
        enddo
+
     enddo
+
+! sst_ncep and sst_anom may be used in free-running forecast mode
+    if ( Atm(1)%nudge .or. Atm(1)%ncep_ic ) then
+       fname_nd = 'sst_ncep.res.nc'
+       id_restart = register_restart_field(SST_restart, fname_nd, 'sst_ncep', sst_ncep)
+       id_restart = register_restart_field(SST_restart, fname_nd, 'sst_anom', sst_anom)
+    endif
 
   end subroutine  fv_io_register_restart
   ! </SUBROUTINE> NAME="fv_io_register_restart"
@@ -512,6 +534,10 @@ contains
     ntileMe = size(Atm(:))  ! This will need mods for more than 1 tile per pe
 
     call save_restart(Fv_restart, timestamp)
+
+    if ( Atm(1)%nudge .or. Atm(1)%ncep_ic ) then
+       call save_restart(SST_restart, timestamp)
+    endif
  
     do n = 1, ntileMe
        call save_restart(Fv_tile_restart(n), timestamp)

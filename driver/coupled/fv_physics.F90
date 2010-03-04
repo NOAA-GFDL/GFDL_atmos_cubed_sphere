@@ -11,10 +11,16 @@ module fv_physics_mod
 !-----------------
 use atmos_co2_mod,         only: atmos_co2_rad, co2_radiation_override
 use constants_mod,         only: rdgas, grav, rvgas, WTMAIR, WTMCO2
-use time_manager_mod,      only: time_type, get_time
+use time_manager_mod,      only: time_type, get_time, operator(-)
 use fms_mod,               only: error_mesg, FATAL, write_version_number,clock_flag_default
 use physics_driver_mod,    only: physics_driver_init, physics_driver_end,   &
+                                 physics_driver_moist_init, &
+                                 physics_driver_moist_end, &
                                  physics_driver_down, physics_driver_up, surf_diff_type, &
+                                 physics_driver_down_time_vary, &
+                                 physics_driver_up_time_vary,  &
+                                 physics_driver_down_endts,  &
+                                 physics_driver_up_endts, &
                                  physics_driver_restart
 use field_manager_mod,     only: MODEL_ATMOS
 use tracer_manager_mod,    only: get_tracer_index, NO_TRACER
@@ -45,8 +51,8 @@ public  fv_physics_down, fv_physics_up, fv_physics_init, fv_physics_end
 public  surf_diff_type, fv_physics_restart
 
 !-----------------------------------------------------------------------
-character(len=128) :: version = '$Id: fv_physics.F90,v 17.0 2009/07/21 02:51:42 fms Exp $'
-character(len=128) :: tag = '$Name: quebec_200910 $'
+character(len=128) :: version = '$Id: fv_physics.F90,v 18.0 2010/03/02 23:26:56 fms Exp $'
+character(len=128) :: tag = '$Name: riga $'
 !-----------------------------------------------------------------------
 
    real, allocatable, dimension(:,:,:)   :: t_phys
@@ -63,6 +69,7 @@ character(len=128) :: tag = '$Name: quebec_200910 $'
    integer :: nx_win, ny_win      ! iew-isw+1, jew-jsw+1 (window sizes)
    integer :: nx_dom, ny_dom      ! ie-is+1, je-js+1 (compute domain sizes)
    integer :: sphum
+   integer :: numthreads, ny_per_thread
 
 contains
 
@@ -86,6 +93,8 @@ contains
     real    :: phalf(npz+1)
     real    :: ps1, ps2
     integer :: i, j, k
+    integer :: ios
+    character(len=80) evalue
 
 ! All tracers are prognostic
     nt_prog = ncnst - pnats
@@ -194,6 +203,22 @@ contains
     id_fv_update_phys = mpp_clock_id( 'FV_UPDATE_PHYS', &
          flags=clock_flag_default, grain=CLOCK_MODULE_DRIVER )
 
+    numthreads = 1
+    call getenv('OMP_NUM_THREADS',evalue)
+    read(evalue,*,iostat=ios) numthreads
+    if ( ios .ne. 0 ) then
+      print *, 'ERROR: cannot read OMP_NUM_THREADS, defaults to  1', &
+                                                           trim(evalue)
+      numthreads = 1
+    end if
+
+    ny_per_thread = ny_win/numthreads
+    if (mod(ny_win, numthreads ) /= 0) then
+      call error_mesg ('physics_driver_down', &
+         'The number of OpenMP threads must be an integral multiple &
+                  &of the number of rows in the physics window', FATAL)
+    endif
+
   end subroutine fv_physics_init
 
 
@@ -248,6 +273,9 @@ contains
 !-----------------------------------------------------------------------
     real :: gavg_rrv(nt_prog)
     integer:: iq, idx
+    integer :: is, ie, js, je
+    real    :: dt 
+    integer :: sec, day
 
 
 !----------------------------------------------------------------------
@@ -262,6 +290,19 @@ contains
     elseif (idx /= NO_TRACER) then
       call compute_g_avg(gavg_rrv, 'co2', Atm(1)%pe, Atm(1)%q)
     endif
+
+!---------------------------------------------------------------------
+! compute the physics time step (from tau-1 to tau+1).
+!---------------------------------------------------------------------
+    call get_time (Time_next-Time_prev, sec, day)
+    dt = real(sec+day*86400)
+ 
+!---------------------------------------------------------------------
+! call physics_driver_down_time_vary to do the time-dependent, spatially
+! independent calculations before entering windows / threads loop. 
+!--------------------------------------------------------------------- 
+    call physics_driver_down_time_vary (Time, Time_next, gavg_rrv, dt)
+
 
     if ( Atm(1)%fv_sg_adj > 0 ) then
          call fv_dry_conv( isd, ied, jsd, jed, isc, iec, jsc, jec, npz, nt_prog, dt_phys,   &
@@ -348,23 +389,33 @@ contains
 
   else
 
-    do jsw = jsc, jec, ny_win
-       jew = jsw + ny_win - 1
-       do isw = isc, iec, nx_win
-          iew = isw + nx_win - 1
+    do js = jsc, jec, ny_win
+      je = js + ny_win - 1
+      do is = isc, iec, nx_win
+        ie = is + nx_win - 1
 
-          call compute_p_z(npz, isw, jsw, nx_win, ny_win, Atm(1)%phis, Atm(1)%pt, &
+          call compute_p_z(npz, is, js, nx_win, ny_win, Atm(1)%phis, Atm(1)%pt, &
                            Atm(1)%q, Atm(1)%delp, Atm(1)%pe, Atm(1)%peln,         &
                            Atm(1)%delz, Atm(1)%phys_hydrostatic)
+
+!$OMP parallel do default(shared) private(isw, iew, jsw, jew )
+         do jsw = js, je, ny_per_thread
+           jew = jsw + ny_per_thread - 1
+           isw = is
+           iew = ie
 
           call physics_driver_down( isw-isc+1, iew-isc+1, jsw-jsc+1, jew-jsc+1, &
                    Time_prev, Time, Time_next                              , &
                    Atm(1)%agrid(isw:iew,jsw:jew,2)                         , &
                    Atm(1)%agrid(isw:iew,jsw:jew,1)                         , &
-                   area(isw:iew,jsw:jew), p_half,  p_full, z_half,  z_full , &
+                   area(isw:iew,jsw:jew),  &
+                   p_half(isw-is+1:iew-is+1,jsw-js+1:jew-js+1,:),  &
+                   p_full(isw-is+1:iew-is+1,jsw-js+1:jew-js+1,:),  &
+                   z_half(isw-is+1:iew-is+1,jsw-js+1:jew-js+1,:), &
+                   z_full(isw-is+1:iew-is+1,jsw-js+1:jew-js+1,:) , &
 !   p_half(1:1,1:1,:) is extra dummy argument in interface required/used to for 
 !   grey radiation routine when using b-grid core
-                   p_half(1:1,1:1,:)                                       , &
+                   p_half(isw-is+1:isw-is+1,jsw-js+1:jsw-js+1,:)                                       , &
                    Atm(1)%ua(isw:iew,jsw:jew,:)                            , &
                    Atm(1)%va(isw:iew,jsw:jew,:)                            , &
                    Atm(1)%pt(isw:iew,jsw:jew,:)                            , &
@@ -404,6 +455,10 @@ contains
                    Surf_diff,   gavg_rrv )
        enddo
     enddo
+    enddo
+
+   call physics_driver_down_endts (is-isc+1, js-jsc+1)
+
 
   endif !(Atm(1)%tq_filter)
 
@@ -436,8 +491,21 @@ contains
     real, intent(in),    dimension(isc:iec,jsc:jec) :: u_star, b_star, q_star
     integer seconds, days
     real gmt1, gmt2
+    integer :: is, ie, js, je
+    integer :: sec, day
+    real    :: dt
+
 
     call mpp_clock_begin(id_fv_physics_up)
+
+!---------------------------------------------------------------------
+!    compute the physics time step (from tau-1 to tau+1).
+!---------------------------------------------------------------------
+    call get_time (Time_next-Time_prev, sec, day)
+    dt = real(sec+day*86400)
+ 
+    call physics_driver_up_time_vary (Time, dt)
+ 
 
   if ( Atm(1)%tq_filter ) then
 
@@ -480,27 +548,38 @@ contains
                                   Surf_diff                              , &
                                   lprec    (isw:iew,jsw:jew)             , &
                                   fprec    (isw:iew,jsw:jew)             , &
-                                  gust     (isw:iew,jsw:jew) )
+                                  gust     (isw:iew,jsw:jew)             , &
+                                  hydrostatic=Atm(1)%hydrostatic         , &
+                                  phys_hydrostatic=Atm(1)%phys_hydrostatic )
        enddo
     enddo
 
   else
 
-    do jsw = jsc, jec, ny_win
-       jew = jsw + ny_win - 1
-       do isw = isc,iec,nx_win
-          iew = isw + nx_win - 1
+    do js = jsc, jec, ny_win
+      je = js + ny_win - 1
+      do is = isc, iec, nx_win
+        ie = is + nx_win - 1
 
-          call compute_p_z(npz, isw, jsw, nx_win, ny_win, Atm(1)%phis, Atm(1)%pt,  &
+          call compute_p_z(npz, is , js , nx_win, ny_win, Atm(1)%phis, Atm(1)%pt,  &
                            Atm(1)%q, Atm(1)%delp, Atm(1)%pe, Atm(1)%peln,      &
                            Atm(1)%delz,  Atm(1)%hydrostatic)
+         call physics_driver_moist_init (nx_win, ny_win,  npz, nt_prog) 
 
+!$OMP parallel do default(shared) private(isw, iew, jsw, jew )
+         do jsw = js, je, ny_per_thread
+           jew = jsw + ny_per_thread - 1
+           isw = is
+           iew = ie
           call physics_driver_up( isw-isc+1, iew-isc+1, jsw-jsc+1, jew-jsc+1, &
                                   Time_prev, Time, Time_next             , &
                                   Atm(1)%agrid(isw:iew,jsw:jew,2)        , &
                                   Atm(1)%agrid(isw:iew,jsw:jew,1)        , &
-                                  area(isw:iew,jsw:jew), p_half, p_full  , &
-                                  z_half,  z_full                        , &
+                                  area(isw:iew,jsw:jew), &
+              p_half(isw-is+1:iew-is+1,jsw-js+1:jew-js+1,:), &
+              p_full(isw-is+1:iew-is+1,jsw-js+1:jew-js+1,:)  , &
+              z_half(isw-is+1:iew-is+1,jsw-js+1:jew-js+1,:),  &
+              z_full (isw-is+1:iew-is+1,jsw-js+1:jew-js+1,:), &
                                   Atm(1)%omga(isw:iew,jsw:jew,:)         , &
                                   Atm(1)%ua(isw:iew,jsw:jew,:)           , &
                                   Atm(1)%va(isw:iew,jsw:jew,:)           , &
@@ -525,9 +604,16 @@ contains
                                   Surf_diff                              , &
                                   lprec    (isw:iew,jsw:jew)             , &
                                   fprec    (isw:iew,jsw:jew)             , &
-                                  gust     (isw:iew,jsw:jew) )
+                                  gust     (isw:iew,jsw:jew)             , &
+                                  hydrostatic=Atm(1)%hydrostatic         , &
+                                  phys_hydrostatic=Atm(1)%phys_hydrostatic )
+         end do
+          call physics_driver_moist_end
        enddo
     enddo
+
+       call physics_driver_up_endts (is-isc+1, js-jsc+1)
+
 
   endif !(Atm(1)%tq_filter)
 

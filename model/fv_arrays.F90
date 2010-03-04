@@ -76,7 +76,6 @@ public
 ! Horizontal Grid descriptors
     real, pointer :: grid(:,:,:)  _NULL  ! Leave as a pointer for now
     real, pointer :: agrid(:,:,:)  _NULL  ! Leave as a pointer for now
-    real, pointer :: grid_g(:,:,:) _NULL  ! "global" grid (one face of a cube)
 
     real   :: consv_te
 

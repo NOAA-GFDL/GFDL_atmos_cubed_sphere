@@ -9,13 +9,13 @@
    use field_manager_mod,  only: MODEL_ATMOS
 
    use constants_mod,     only: pi, omega, grav, kappa, rdgas, rvgas, cp_air
+   use external_sst_mod,    only: i_sst, j_sst, sst_ncep
    use fv_arrays_mod,     only: fv_atmos_type
    use fv_diagnostics_mod,only: prt_maxmin
    use fv_grid_tools_mod, only: grid, agrid, cubed_sphere,  &
                                 dx,dy, dxa,dya, dxc,dyc, area, rarea
    use fv_grid_utils_mod, only: ptop_min, fc, f0, ew, es, g_sum, vlon, vlat,  &
-                                edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e, &
-                                i_sst, j_sst, sst_ncep
+                                edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e
    use fv_io_mod,         only: fv_io_read_tracers 
    use fv_mapz_mod,       only: mappm
    use fv_mp_mod,         only: gid, domain, tile, ng,         &
@@ -173,7 +173,7 @@ contains
                im = tsize(1); jm = tsize(2); km = tsize(3)
                if(gid==0)  write(*,*) 'External IC dimensions:', tsize
           else
-               call mpp_error(FATAL,'==> Error get_external_ic: field not found')
+               call mpp_error(FATAL,'==> Error in get_external_ic: field not found')
           endif
 
 ! Define the lat-lon coordinate:
@@ -224,7 +224,7 @@ contains
           sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
           call read_data (fname, 'sphum',  q0)
       else
-          call mpp_error(FATAL,'==> Error get_external_ic: Expected file '//trim(fname)//' does not exist')
+          call mpp_error(FATAL,'==> Error in get_external_ic: Expected file '//trim(fname)//' does not exist')
       endif
 
 ! Horizontal interpolation to the cubed sphere grid center
@@ -288,7 +288,7 @@ contains
                im = tsize(1); jm = tsize(2); km = tsize(3)
                if(gid==0)  write(*,*) 'External IC dimensions:', tsize
           else
-               call mpp_error(FATAL,'==> Error get_external_ic: field not found')
+               call mpp_error(FATAL,'==> Error in get_external_ic: field not found')
           endif
 
           allocate (  lon(im) )
@@ -314,7 +314,7 @@ contains
 ! Limiter to prevent NAN at top during remapping
           ak0(1) = max(1.e-9, ak0(1))
       else
-          call mpp_error(FATAL,'==> Error get_external_ic: Expected file '//trim(fname)//' does not exist')
+          call mpp_error(FATAL,'==> Error in get_external_ic: Expected file '//trim(fname)//' does not exist')
       endif
 
 ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
@@ -528,7 +528,7 @@ contains
                im = tsize(1); jm = tsize(2); km = tsize(3)
                if(gid==0)  write(*,*) 'External IC dimensions:', tsize
           else
-               call mpp_error(FATAL,'==> Error get_external_ic: field not found')
+               call mpp_error(FATAL,'==> Error in get_external_ic: field not found')
           endif
 
 ! Define the lat-lon coordinate:
@@ -569,7 +569,7 @@ contains
 
 
       else
-          call mpp_error(FATAL,'==> Error get_external_ic: Expected file '//trim(fname)//' does not exist')
+          call mpp_error(FATAL,'==> Error in get_external_ic: Expected file '//trim(fname)//' does not exist')
       endif
 
 ! Read in tracers: only AM2 "physics tracers" at this point
@@ -590,7 +590,7 @@ contains
             endif
           enddo
       else
-          call mpp_error(FATAL,'==> Error get_external_ic: Expected file '//trim(fname)//' does not exist')
+          call mpp_error(FATAL,'==> Error in get_external_ic: Expected file '//trim(fname)//' does not exist')
       endif
 
 ! D to A transform on lat-lon grid:

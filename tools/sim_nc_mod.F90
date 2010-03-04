@@ -1,0 +1,270 @@
+module sim_nc_mod
+
+! This is S-J Lin's private netcdf file reader
+! This code is needed because FMS utilitty (read_data) led to too much
+! memory usage and too many files openned. Perhaps lower-level FMS IO
+! calls should be used instaed.
+
+ use mpp_mod,     only: mpp_error, FATAL
+
+ implicit none
+#include <netcdf.inc>
+
+ private
+ public  open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var2_double,   &
+         get_var3_double
+
+ contains
+
+      subroutine open_ncfile( iflnm, ncid )
+      character*(*), intent(in)::  iflnm
+      integer, intent(out)::      ncid
+      integer::  status
+
+      status = nf_open (iflnm, NF_NOWRITE, ncid)
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+
+      end subroutine open_ncfile
+
+
+      subroutine close_ncfile( ncid )
+      integer, intent(in)::    ncid
+      integer::  status
+
+      status = nf_close (ncid)
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+
+      end subroutine close_ncfile
+
+
+      subroutine get_ncdim1( ncid, var1_name, im )
+      integer, intent(in):: ncid
+      character*(*), intent(in)::  var1_name
+      integer, intent(out):: im
+      integer::  status, var1id
+
+      status = nf_inq_dimid (ncid, var1_name, var1id)
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      status = nf_inq_dimlen (ncid, var1id, im)
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      end subroutine get_ncdim1
+
+
+
+
+      subroutine get_var1_double( ncid, var1_name, im, var1 )
+      integer, intent(in):: ncid
+      character*(*), intent(in)::  var1_name
+      integer, intent(in):: im
+      real*8, intent(out):: var1(im)
+
+      integer::  status, var1id
+
+      status = nf_inq_varid (ncid, var1_name, var1id)
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      status = nf_get_var_double (ncid, var1id, var1)
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+
+      end subroutine get_var1_double
+
+      subroutine get_var1_real( ncid, var1_name, im, var1 )
+      integer, intent(in):: ncid
+      character*(*), intent(in)::  var1_name
+      integer, intent(in):: im
+      real*4, intent(out):: var1(im)
+
+      integer::  status, var1id
+
+      status = nf_inq_varid (ncid, var1_name, var1id)
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      status = nf_get_var_real (ncid, var1id, var1)
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      end subroutine get_var1_real
+
+
+
+      subroutine get_var2_double( ncid, var2_name, im, jm, var2 )
+      integer, intent(in):: ncid
+      character*(*), intent(in)::  var2_name
+      integer, intent(in):: im, jm
+      real*8, intent(out):: var2(im,jm)
+
+      integer::  status, var2id
+
+      status = nf_inq_varid (ncid, var2_name, var2id)
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      status = nf_get_var_double (ncid, var2id, var2)
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+
+      end subroutine get_var2_double
+
+
+      subroutine get_var3_double( ncid, var3_name, im, jm, km, var3 )
+      integer, intent(in):: ncid
+      character*(*), intent(in)::  var3_name
+      integer, intent(in):: im, jm, km
+      real*8, intent(out):: var3(im,jm,km)
+
+      integer::  status, var3id
+
+      status = nf_inq_varid (ncid, var3_name, var3id)
+
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      status = nf_get_var_double (ncid, var3id, var3)
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      end subroutine get_var3_double
+
+!------------------------------------------------------------------------
+      subroutine get_var4_double( ncid, var4_name, im, jm, km, nt, var4 )
+      integer, intent(in):: ncid
+      character*(*), intent(in)::  var4_name
+      integer, intent(in):: im, jm, km, nt
+      real*8, intent(out):: var4(im,jm,km,1)
+      integer::  status, var4id
+!
+      integer:: start(4), icount(4) 
+
+      start(1) = 1
+      start(2) = 1
+      start(3) = 1
+      start(4) = nt
+
+      icount(1) = im    ! all range
+      icount(2) = jm    ! all range
+      icount(3) = km    ! all range
+      icount(4) = 1     ! one time level at a time
+
+
+      status = nf_inq_varid (ncid, var4_name, var4id)
+
+      status = nf_get_vara_double(ncid, var4id, start, icount, var4)
+
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      end subroutine get_var4_double
+!------------------------------------------------------------------------
+
+      subroutine get_real3( ncid, var4_name, im, jm, nt, var4 )
+! This is for multi-time-level 2D var
+      integer, intent(in):: ncid
+      character*(*), intent(in)::  var4_name
+      integer, intent(in):: im, jm, nt
+      real*4, intent(out):: var4(im,jm)
+      integer::  status, var4id
+      integer:: start(3), icount(3)
+      integer:: i,j
+
+      start(1) = 1
+      start(2) = 1
+      start(3) = nt
+
+      icount(1) = im
+      icount(2) = jm
+      icount(3) = 1
+
+      status = nf_inq_varid (ncid, var4_name, var4id)
+      status = nf_get_vara_real(ncid, var4id, start, icount, var4)
+
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      end subroutine get_real3
+!------------------------------------------------------------------------
+
+!------------------------------------------------------------------------
+      subroutine get_var4_real( ncid, var4_name, im, jm, km, nt, var4 )
+      integer, intent(in):: ncid
+      character*(*), intent(in)::  var4_name
+      integer, intent(in):: im, jm, km, nt
+      real*4:: wk4(im,jm,km,4)
+      real*4, intent(out):: var4(im,jm)
+      integer::  status, var4id
+      integer:: start(4), icount(4) 
+      integer:: i,j
+
+      start(1) = 1
+      start(2) = 1
+      start(3) = 1
+      start(4) = nt
+
+      icount(1) = im    ! all range
+      icount(2) = jm    ! all range
+      icount(3) = km    ! all range
+      icount(4) = 1     ! one time level at a time
+
+      status = nf_inq_varid (ncid, var4_name, var4id)
+
+      status = nf_get_vara_real(ncid, var4id, start, icount, var4)
+!     status = nf_get_vara_real(ncid, var4id, start, icount, wk4)
+
+      do j=1,jm
+      do i=1,im
+!        var4(i,j) = wk4(i,j,1,nt)
+      enddo
+      enddo
+
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      end subroutine get_var4_real
+!------------------------------------------------------------------------
+
+
+      subroutine handle_err(status)
+      integer          status
+
+      if (status .ne. nf_noerr) then
+        call mpp_error(FATAL,'Error in handle_err')
+      endif
+
+      end subroutine handle_err
+
+   subroutine calendar(year, month, day, hour)
+      integer, intent(inout) :: year              ! year
+      integer, intent(inout) :: month             ! month
+      integer, intent(inout) :: day               ! day
+      integer, intent(inout) :: hour
+!
+! Local variables
+!
+      integer irem4,irem100
+      integer mdays(12)                           ! number day of month 
+      data mdays /31,28,31,30,31,30,31,31,30,31,30,31/
+!
+!***********************************************************************
+!******         compute current GMT                               ******
+!***********************************************************************
+!
+!**** consider leap year
+!
+      irem4    = mod( year, 4 )
+      irem100  = mod( year, 100 )
+      if( irem4 == 0 .and. irem100 /= 0) mdays(2) = 29
+!
+      if( hour >= 24 ) then
+        day    = day + 1
+        hour   = hour - 24
+      end if
+
+      if( day > mdays(month) ) then
+        day    = day - mdays(month)
+        month  = month + 1
+      end if
+      if( month > 12 ) then
+        year   = year + 1
+        month  = 1
+      end if
+
+  end subroutine calendar
+
+end module sim_nc_mod

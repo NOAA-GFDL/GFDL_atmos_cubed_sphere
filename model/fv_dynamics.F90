@@ -522,6 +522,7 @@ contains
 
      if(conserve) call c2l_ord2(u, v, ua, va, dx, dy, rdxa, rdya, npz)
 
+!$omp parallel do default(shared) private(i, j, k)
      do k=1,kmax
         if ( pm(k) < 30.E2 ) then
 ! Add heat so as to conserve TE
@@ -612,6 +613,7 @@ contains
 
     call c2l_ord2(u, v, ua, va, dx, dy, rdxa, rdya, npz)
     u2f = 0.
+!$omp parallel do default(shared) private(i, j, k)
     do k=1,kmax
         if ( hydrostatic ) then
            do j=js,je
@@ -631,6 +633,7 @@ contains
     call mpp_update_domains(u2f, domain, complete=.true.)
                                                                 call timing_off('COMM_TOTAL')
 
+!$omp parallel do default(shared) private(i, j, k)
      do k=1,kmax
 
         if ( conserve ) then
@@ -686,3 +689,4 @@ contains
 #endif
 
 end module fv_dynamics_mod
+

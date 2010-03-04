@@ -1,4 +1,4 @@
-! $Id: fv_control.F90,v 17.0 2009/07/21 02:51:56 fms Exp $
+! $Id: fv_control.F90,v 18.0 2010/03/02 23:27:09 fms Exp $
 !
 !----------------
 ! FV contro panel
@@ -26,7 +26,8 @@ module fv_control_mod
                                  da_min_c, da_min
    use fv_grid_tools_mod,  only: init_grid, cosa, sina, area, area_c, dx, dy, dxa, dya, &
                                  dxc, dyc, grid_type, dx_const, dy_const,                         &
-                                 deglon_start, deglon_stop, deglat_start, deglat_stop
+                                 deglon_start, deglon_stop, deglat_start, deglat_stop, &
+                                 read_grid, debug_message_size, write_grid_char_file
    use fv_mp_mod,          only: mp_start, domain_decomp, domain, &
                                  ng, tile, npes_x, npes_y, gid, io_domain_layout
    use test_cases_mod,     only: test_case, alpha
@@ -144,9 +145,6 @@ module fv_control_mod
    integer :: nf_omega  = 1           ! Filter omega "nf_omega" times
    integer :: fv_sg_adj = -1          ! Perform grid-scale dry adjustment if > 0
                                       ! Relaxzation time  scale (sec) if positive
-   integer :: i_sst = 1200
-   integer :: j_sst =  600
-
 #ifdef MARS_GCM
    real    :: p_ref = 600.
    real    :: reference_sfc_pres = 7.7E2
@@ -354,14 +352,19 @@ module fv_control_mod
 
     ! Read Grid from GRID_FILE and setup grid descriptors
     ! needs modification for multiple tiles
-      call init_grid(Atm(1), grid_name, grid_file, npx, npy, npz, ndims, ntiles, ng)
+      
+      if(grid_type <0 .AND. trim(grid_file) == 'INPUT/grid_spec.nc') then
+         call read_grid(Atm(1), grid_name, grid_file, npx, npy, npz, ndims, ntiles, ng)
+      else
+         call init_grid(Atm(1), grid_name, grid_file, npx, npy, npz, ndims, ntiles, ng)
+      endif
       Atm(1)%ndims = ndims
       Atm(1)%ntiles = ntiles
 
     ! Initialize the SW (2D) part of the model
       call grid_utils_init(Atm(1), Atm(1)%npx, Atm(1)%npy, Atm(1)%npz, Atm(1)%grid, Atm(1)%agrid,   &
                            area, area_c, cosa, sina, dx, dy, dxa, dya, dxc, dyc, non_ortho,   &
-                           uniform_ppm, grid_type, c2l_ord, i_sst, j_sst)
+                           uniform_ppm, grid_type, c2l_ord)
 
       if ( master ) then
            sdt =  dt_atmos/real(n_split*k_split)
@@ -580,8 +583,8 @@ module fv_control_mod
 #endif
                             c2l_ord, dx_const, dy_const, umax, deglat,     &
                             deglon_start, deglon_stop, deglat_start, deglat_stop, &
-                            phys_hydrostatic, make_hybrid_z, ppm_limiter, i_sst, j_sst, &
-                            old_divg_damp
+                            phys_hydrostatic, make_hybrid_z, ppm_limiter, old_divg_damp, &
+                            debug_message_size, write_grid_char_file
 
 
       namelist /test_case_nml/test_case,alpha

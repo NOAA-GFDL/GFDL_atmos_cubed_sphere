@@ -222,7 +222,7 @@
       allocate ( lat1(nlat+1) )
       allocate ( lon1(nlon+1) )
 
-      pi = 4.0 * datan(1.0)
+      pi = 4.0 * datan(1.0d0)
 
       dx1 = 2.*pi/real(nlon)
       dy1 = pi/real(nlat)

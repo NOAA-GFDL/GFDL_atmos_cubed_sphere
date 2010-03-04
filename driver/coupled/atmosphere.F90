@@ -19,6 +19,7 @@ use fms_mod,            only: file_exist, open_namelist_file,    &
                               mpp_clock_id, mpp_clock_begin,     &
                               mpp_clock_end, CLOCK_SUBCOMPONENT, &
                               clock_flag_default, nullify_domain
+use mpp_mod,            only: mpp_error, FATAL
 use mpp_domains_mod,    only: domain2d
 use xgrid_mod,          only: grid_box_type
 !miz
@@ -41,7 +42,7 @@ use fv_timing_mod,      only: timing_on, timing_off
 use fv_physics_mod,     only: fv_physics_down, fv_physics_up,  &
                               fv_physics_init, fv_physics_end, &
                               surf_diff_type, fv_physics_restart
-use fv_nudge_mod,       only: fv_nwp_nudge_init, fv_nwp_nudge_end
+use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end
 
 implicit none
 private
@@ -56,8 +57,8 @@ public  atmosphere_down,       atmosphere_up,       &
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id: atmosphere.F90,v 17.0 2009/07/21 02:51:40 fms Exp $'
-character(len=128) :: tagname = '$Name: quebec_200910 $'
+character(len=128) :: version = '$Id: atmosphere.F90,v 18.0 2010/03/02 23:26:54 fms Exp $'
+character(len=128) :: tagname = '$Name: riga $'
 character(len=7)   :: mod_name = 'atmos'
 
 !---- namelist (saved in file input.nml) ----
@@ -198,6 +199,8 @@ contains
 
    call fv_physics_init (Atm, atmos_axes, Time, physics_window, Surf_diff)
 
+   call nullify_domain ( )
+
    if ( Atm(1)%nudge )    &
         call fv_nwp_nudge_init( npz, zvir, Atm(1)%ak, Atm(1)%bk, Atm(1)%ts, Atm(1)%phis)
 
@@ -214,8 +217,6 @@ contains
    if ( id_qdt_dyn>0 .or. id_qldt_dyn>0 .or. id_qidt_dyn>0 .or. id_qadt_dyn>0 )   &
    allocate(qtend (isc:iec, jsc:jec, 1:npz, 4))
 !miz
-
-   call nullify_domain ( )
 
 !  --- initialize clocks for dynamics, physics_down and physics_up
    id_dynam     = mpp_clock_id ('FV dynamical core',   &
@@ -475,27 +476,19 @@ contains
     real,    intent(out) :: blon(:,:), blat(:,:)   ! Unit: radian
     logical, intent(in), optional :: global
 ! Local data:
-    logical :: local
     integer i,j
 
-    local = .TRUE.
-    if( PRESENT(global) ) local = .NOT.global
+    if( PRESENT(global) ) then
+      if (global) call mpp_error(FATAL, '==> global grid is no longer available &
+                               & in the Cubed Sphere')
+    endif
 
-    if (local) then
-        do j=jsc,jec+1
-           do i=isc,iec+1
-              blon(i-isc+1,j-jsc+1) = Atm(1)%grid(i,j,1)
-              blat(i-isc+1,j-jsc+1) = Atm(1)%grid(i,j,2)
-           enddo
-        end do
-    else
-        do j=1,npy
-           do i=1,npx
-              blon(i,j) = Atm(1)%grid_g(i,j,1)
-              blat(i,j) = Atm(1)%grid_g(i,j,2)
-           enddo
-        end do
-    end if
+    do j=jsc,jec+1
+       do i=isc,iec+1
+          blon(i-isc+1,j-jsc+1) = Atm(1)%grid(i,j,1)
+          blat(i-isc+1,j-jsc+1) = Atm(1)%grid(i,j,2)
+       enddo
+    end do
 
  end subroutine atmosphere_boundary
 
