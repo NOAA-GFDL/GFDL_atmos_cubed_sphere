@@ -193,7 +193,9 @@ contains
     ! Send diag_manager the grid informtaion
     call diag_grid_init(DOMAIN=Atm(n)%domain, &
          &              GLO_LON=rad2deg*Atm(n)%grid(isc:iec+1,jsc:jec+1,1), &
-         &              GLO_LAT=rad2deg*Atm(n)%grid(isc:iec+1,jsc:jec+1,2))
+         &              GLO_LAT=rad2deg*Atm(n)%grid(isc:iec+1,jsc:jec+1,2), &
+         &              AGLO_LON=rad2deg*Atm(n)%agrid(isc-1:iec+1,jsc-1:jec+1,1), &
+         &              AGLO_LAT=rad2deg*Atm(n)%agrid(isc-1:iec+1,jsc-1:jec+1,2))
 
     ntileMe = size(Atm(:))
     do n = 1, ntileMe
