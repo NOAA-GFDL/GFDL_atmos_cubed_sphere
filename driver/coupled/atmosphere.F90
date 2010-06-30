@@ -26,6 +26,10 @@ use xgrid_mod,          only: grid_box_type
 use diag_manager_mod,   only: diag_axis_init, register_diag_field, &
                               register_static_field, send_data
 !miz
+use field_manager_mod,  only: MODEL_ATMOS
+use tracer_manager_mod, only: get_tracer_index,&
+                              get_number_tracers, &
+                              get_tracer_names
 
 !-----------------
 ! FV core modules:
@@ -57,8 +61,8 @@ public  atmosphere_down,       atmosphere_up,       &
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id: atmosphere.F90,v 18.0 2010/03/02 23:26:54 fms Exp $'
-character(len=128) :: tagname = '$Name: riga_201004 $'
+character(len=128) :: version = '$Id: atmosphere.F90,v 17.0.2.3.2.1 2009/11/28 18:16:26 rsh Exp $'
+character(len=128) :: tagname = '$Name: riga_201006 $'
 character(len=7)   :: mod_name = 'atmos'
 
 !---- namelist (saved in file input.nml) ----
@@ -87,11 +91,14 @@ character(len=7)   :: mod_name = 'atmos'
   integer :: id_dynam, id_phys_down, id_phys_up, id_fv_diag
   logical :: cold_start = .false.       ! read in initial condition
 
+  integer, dimension(:), allocatable :: id_tracerdt_dyn
+  integer :: num_tracers = 0
 !miz
   integer :: id_tdt_dyn, id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn
   logical :: used
   character(len=64) :: field
   real, allocatable :: ttend(:,:,:)
+  real, allocatable :: qtendyyf(:,:,:,:)
   real, allocatable :: qtend(:,:,:,:)
   real              :: mv = -1.e10
 !miz
@@ -106,6 +113,10 @@ contains
    type(grid_box_type),  intent(inout) :: Grid_box
 
    integer :: unit, ierr, io, i
+   integer :: itrac
+   character(len=32) :: tracer_name, tracer_units
+
+   call get_number_tracers(MODEL_ATMOS, num_prog= num_tracers)
 
    zvir = rvgas/rdgas - 1.
 
@@ -213,6 +224,22 @@ contains
    id_qidt_dyn=register_diag_field(mod_name,'qidt_dyn', atmos_axes(1:3),Time,'qidt_dyn','kg/kg/s', missing_value=mv)
    id_qadt_dyn=register_diag_field(mod_name,'qadt_dyn', atmos_axes(1:3),Time,'qadt_dyn','1/s', missing_value=mv)
 
+!yyf---allocate id_tracer_dyn 
+   allocate (id_tracerdt_dyn    (num_tracers))
+!yyf---loop for tracers
+   do itrac = 1, num_tracers
+     call get_tracer_names (MODEL_ATMOS, itrac, name = tracer_name, &
+                                                  units = tracer_units)
+     if (get_tracer_index(MODEL_ATMOS,tracer_name)>0) &
+         id_tracerdt_dyn(itrac) = register_diag_field  &
+             (mod_name, TRIM(tracer_name)//'dt_dyn', atmos_axes(1:3), &
+             Time, TRIM(tracer_name)//' total tendency from advection',&
+             TRIM(tracer_units)//'/s', missing_value = mv)
+   enddo
+   if (any(id_tracerdt_dyn(:)>0))   &
+                     allocate(qtendyyf(isc:iec, jsc:jec,1:npz,num_tracers))
+!yyf---end loop
+
    if ( id_tdt_dyn>0 ) allocate(ttend (isc:iec, jsc:jec, 1:npz))
    if ( id_qdt_dyn>0 .or. id_qldt_dyn>0 .or. id_qidt_dyn>0 .or. id_qadt_dyn>0 )   &
    allocate(qtend (isc:iec, jsc:jec, 1:npz, 4))
@@ -271,6 +298,7 @@ contains
                                          flux_sw_vis_dif, flux_lw
    type(surf_diff_type), intent(inout):: Surf_diff
    type(time_type) :: Time_prev, Time_next
+   integer         :: itrac
 
    Time_prev = Time                       ! two time-level scheme
    Time_next = Time + Time_step_atmos
@@ -285,6 +313,10 @@ contains
    if ( id_qdt_dyn>0 .or. id_qldt_dyn>0 .or. id_qidt_dyn>0 .or. id_qadt_dyn>0 )   &
    qtend(:, :, :, :) = Atm(1)%q (isc:iec, jsc:jec, :, :)
 !miz
+   do itrac = 1, num_tracers
+     if (id_tracerdt_dyn (itrac) >0 )   &
+            qtendyyf(:,:,:,itrac) = Atm(1)%q(isc:iec, jsc:jec, :,itrac)
+   enddo
 
    call fv_dynamics(npx, npy, npz, nq, Atm(1)%ng, dt_atmos, Atm(1)%consv_te,         &
                     Atm(1)%fill,  Atm(1)%reproduce_sum, kappa, cp_air, zvir,         &
@@ -312,6 +344,15 @@ contains
         used = send_data(id_qadt_dyn, qtend(:,:,:,4), Time)
    endif
 !miz
+
+   do itrac = 1, num_tracers
+     if(id_tracerdt_dyn(itrac)>0) then
+       qtendyyf(:,:,:,itrac) = (Atm(1)%q (isc:iec, jsc:jec, :,itrac)-  &
+                                        qtendyyf(:,:,:,itrac))/dt_atmos
+       used = send_data(id_tracerdt_dyn(itrac), qtendyyf(:,:,:,itrac), &
+                                                           Time)
+     endif
+   enddo
 
    call mpp_clock_end (id_dynam)
 
@@ -416,6 +457,8 @@ contains
 
    if ( id_tdt_dyn>0 ) deallocate(ttend)
    if ( id_qdt_dyn>0 .or. id_qldt_dyn>0 .or. id_qidt_dyn>0 .or. id_qadt_dyn>0 ) deallocate(qtend)
+
+   if (allocated(qtendyyf)) deallocate (qtendyyf)
 
  end subroutine atmosphere_end
 

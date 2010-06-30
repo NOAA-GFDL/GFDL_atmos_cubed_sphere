@@ -52,7 +52,7 @@ public  surf_diff_type, fv_physics_restart
 
 !-----------------------------------------------------------------------
 character(len=128) :: version = '$Id: fv_physics.F90,v 18.0 2010/03/02 23:26:56 fms Exp $'
-character(len=128) :: tag = '$Name: riga_201004 $'
+character(len=128) :: tag = '$Name: riga_201006 $'
 !-----------------------------------------------------------------------
 
    real, allocatable, dimension(:,:,:)   :: t_phys
