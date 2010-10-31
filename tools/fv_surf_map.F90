@@ -3,7 +3,7 @@
       use fms_mod,           only: file_exist, check_nml_error,            &
                                    open_namelist_file, close_file, stdlog, &
                                    mpp_pe, mpp_root_pe, FATAL, error_mesg
-      use mpp_mod,           only: get_unit
+      use mpp_mod,           only: get_unit, input_nml_file
       use mpp_domains_mod,   only: mpp_update_domains
       use constants_mod,     only: grav
 #ifdef MARS_GCM
@@ -1105,6 +1105,10 @@ subroutine read_namelist
 
 !  read namelist
 
+#ifdef INTERNAL_FILE_NML
+   read  (input_nml_file, nml=surf_map_nml, iostat=io)
+   ierr = check_nml_error(io,'surf_map_nml')
+#else
    if ( file_exist('input.nml')) then
       unit = open_namelist_file ( )
       ierr=1; do while (ierr /= 0)
@@ -1113,6 +1117,7 @@ subroutine read_namelist
       enddo
  10   call close_file (unit)
    endif
+#endif
 
 !  write version and namelist to log file
 

@@ -1,4 +1,4 @@
-! $Id: fv_control.F90,v 18.0 2010/03/02 23:27:09 fms Exp $
+! $Id: fv_control.F90,v 18.0.4.2.2.1 2010/08/20 16:44:04 rab Exp $
 !
 !----------------
 ! FV contro panel
@@ -9,7 +9,8 @@ module fv_control_mod
    use constants_mod,      only: pi, kappa, radius
    use field_manager_mod,  only: MODEL_ATMOS
    use mpp_mod,            only: FATAL, mpp_error, mpp_pe, stdlog, &
-                                 mpp_npes, mpp_get_current_pelist, get_unit
+                                 mpp_npes, mpp_get_current_pelist, get_unit, &
+                                 input_nml_file
    use mpp_domains_mod,    only: mpp_get_data_domain, mpp_get_compute_domain
    use tracer_manager_mod, only: tm_get_number_tracers => get_number_tracers, &
                                  tm_get_tracer_index   => get_tracer_index,   &
@@ -32,6 +33,7 @@ module fv_control_mod
                                  ng, tile, npes_x, npes_y, gid, io_domain_layout
    use test_cases_mod,     only: test_case, alpha
    use fv_timing_mod,      only: timing_on, timing_off, timing_init, timing_prt
+   use fv_mapz_mod,        only: mapz_init
 
    implicit none
    private
@@ -479,6 +481,9 @@ module fv_control_mod
     ! Initialize restart functions
       call fv_restart_init()
 
+    ! Initialize mapz (to be removed for S)
+      call mapz_init
+
  end subroutine fv_init
 !-------------------------------------------------------------------------------
 
@@ -593,70 +598,79 @@ module fv_control_mod
       alpha = 0.
       test_case = 11   ! (USGS terrain)
 
-      filename = "input.nml"
-      inquire(file=filename,exist=exists)
-
-      if (.not. exists) then  ! This will be replaced with fv_error wrapper
-        if(master) write(6,*) "file ",trim(filename)," doesn't exist" 
-        call mpp_error(FATAL,'FV core terminating')
-      else
-
-        f_unit = get_unit()
-        open (f_unit,file=filename)
  ! Read Main namelist
-        rewind (f_unit)
-        read (f_unit,fv_grid_nml,iostat=ios)
-        if (ios .gt. 0) then
-           if(master) write(6,*) 'fv_grid_nml ERROR: reading ',trim(filename),', iostat=',ios
-           call mpp_error(FATAL,'FV core terminating')
-        endif
-        unit = stdlog()
-        write(unit, nml=fv_grid_nml)
+#ifdef INTERNAL_FILE_NML
+      read (input_nml_file,fv_grid_nml,iostat=ios)
+#else
+      f_unit = get_unit()
+      filename = "input.nml"
+      open (f_unit,file=filename)
+ ! Read Main namelist
+      rewind (f_unit)
+      read (f_unit,fv_grid_nml,iostat=ios)
+#endif
+      if (ios .gt. 0) then
+         if(master) write(6,*) 'fv_grid_nml ERROR: reading ',trim(filename),', iostat=',ios
+         call mpp_error(FATAL,'FV core terminating')
+      endif
+      unit = stdlog()
+      write(unit, nml=fv_grid_nml)
 
  ! Read FVCORE namelist 
-        rewind (f_unit)
-        read (f_unit,fv_core_nml,iostat=ios)
-        if (ios .ne. 0) then
-           if(master) write(6,*) 'fv_core_nml ERROR: reading ',trim(filename),', iostat=',ios
-           call mpp_error(FATAL,'FV core terminating')
-        endif
-        unit = stdlog()
-        write(unit, nml=fv_core_nml)
+#ifdef INTERNAL_FILE_NML
+      read (input_nml_file,fv_core_nml,iostat=ios)
+#else
+      rewind (f_unit)
+      read (f_unit,fv_core_nml,iostat=ios)
+#endif
+      if (ios .ne. 0) then
+         if(master) write(6,*) 'fv_core_nml ERROR: reading ',trim(filename),', iostat=',ios
+         call mpp_error(FATAL,'FV core terminating')
+      endif
+      unit = stdlog()
+      write(unit, nml=fv_core_nml)
 
 !*** single tile for Cartesian grids
-        if (grid_type>3) then
-           ntiles=1
-           non_ortho = .false.
-           uniform_ppm = .true.
-           nf_omega = 0
-        endif
+      if (grid_type>3) then
+         ntiles=1
+         non_ortho = .false.
+         uniform_ppm = .true.
+         nf_omega = 0
+      endif
 
 !*** remap_t is NOT yet supported for non-hydrostatic option *****
-        if ( .not. hydrostatic ) remap_t = .false.
+      if ( .not. hydrostatic ) remap_t = .false.
 
-        npes_x = layout(1)
-        npes_y = layout(2)
-        io_domain_layout = io_layout
+      npes_x = layout(1)
+      npes_y = layout(2)
+      io_domain_layout = io_layout
 
  ! Read Test_Case namelist
-        rewind (f_unit)
-        read (f_unit,test_case_nml,iostat=ios)
-        if (ios .gt. 0) then
-         if(master) write(6,*) 'test_case_nml ERROR: reading ',trim(filename),', iostat=',ios
-            call mpp_error(FATAL,'FV core terminating')
-        endif
-        unit = stdlog()
-        write(unit, nml=test_case_nml)
+#ifdef INTERNAL_FILE_NML
+      read (input_nml_file,test_case_nml,iostat=ios)
+#else
+      rewind (f_unit)
+      read (f_unit,test_case_nml,iostat=ios)
+#endif
+      if (ios .gt. 0) then
+       if(master) write(6,*) 'test_case_nml ERROR: reading ',trim(filename),', iostat=',ios
+          call mpp_error(FATAL,'FV core terminating')
+      endif
+      unit = stdlog()
+      write(unit, nml=test_case_nml)
 
  ! Look for deprecated mpi_nml
-        rewind (f_unit)
-        read (f_unit,mpi_nml,iostat=ios)
-        if (ios == 0) then
-           call mpp_error(FATAL,'mpi_nml is deprecated. Use layout in fv_core_nml')
-        endif
-
-        close (f_unit)
+#ifdef INTERNAL_FILE_NML
+      read (input_nml_file,mpi_nml,iostat=ios)
+#else
+      rewind (f_unit)
+      read (f_unit,mpi_nml,iostat=ios)
+      close (f_unit)
+#endif
+      if (ios == 0) then
+         call mpp_error(FATAL,'mpi_nml is deprecated. Use layout in fv_core_nml')
       endif
+
 
 ! Define n_split if not in namelist
           if (ntiles==6) then

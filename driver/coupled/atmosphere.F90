@@ -19,7 +19,7 @@ use fms_mod,            only: file_exist, open_namelist_file,    &
                               mpp_clock_id, mpp_clock_begin,     &
                               mpp_clock_end, CLOCK_SUBCOMPONENT, &
                               clock_flag_default, nullify_domain
-use mpp_mod,            only: mpp_error, FATAL
+use mpp_mod,            only: mpp_error, FATAL, input_nml_file
 use mpp_domains_mod,    only: domain2d
 use xgrid_mod,          only: grid_box_type
 !miz
@@ -61,8 +61,8 @@ public  atmosphere_down,       atmosphere_up,       &
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id: atmosphere.F90,v 17.0.2.3.2.1 2009/11/28 18:16:26 rsh Exp $'
-character(len=128) :: tagname = '$Name: riga_201006 $'
+character(len=128) :: version = '$Id: atmosphere.F90,v 17.0.2.3.2.1.4.1 2010/08/03 20:29:21 rab Exp $'
+character(len=128) :: tagname = '$Name: riga_201012 $'
 character(len=7)   :: mod_name = 'atmos'
 
 !---- namelist (saved in file input.nml) ----
@@ -121,6 +121,10 @@ contains
    zvir = rvgas/rdgas - 1.
 
 !----- read namelist -----
+#ifdef INTERNAL_FILE_NML
+   read (input_nml_file, nml=atmosphere_nml, iostat=io)
+   ierr = check_nml_error (io, 'atmosphere_nml')
+#else
    if ( file_exist('input.nml') ) then
        unit = open_namelist_file ( )
        ierr=1
@@ -130,6 +134,7 @@ contains
        enddo
  10    call close_file (unit)
    endif
+#endif
 
 !----- write version and namelist to log file -----
 

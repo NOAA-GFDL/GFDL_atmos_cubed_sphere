@@ -11,7 +11,8 @@
       use mpp_mod,         only : mpp_pe, mpp_npes, mpp_node, mpp_root_pe, mpp_error, mpp_set_warn_level
       use mpp_mod,         only : mpp_declare_pelist, mpp_set_current_pelist, mpp_sync
       use mpp_mod,         only : mpp_clock_begin, mpp_clock_end, mpp_clock_id
-      use mpp_mod,         only : mpp_chksum, stdout, stderr
+      use mpp_mod,         only : mpp_chksum, stdout, stderr, mpp_broadcast
+      use mpp_mod,         only : mpp_send, mpp_recv, mpp_sync_self, EVENT_RECV, mpp_gather
       use mpp_domains_mod, only : GLOBAL_DATA_DOMAIN, BITWISE_EXACT_SUM, BGRID_NE, FOLD_NORTH_EDGE, CGRID_NE
       use mpp_domains_mod, only : MPP_DOMAIN_TIME, CYCLIC_GLOBAL_DOMAIN, NUPDATE,EUPDATE, XUPDATE, YUPDATE, SCALAR_PAIR
       use mpp_domains_mod, only : domain1D, domain2D, DomainCommunicator2D
@@ -42,15 +43,18 @@
       integer, allocatable, dimension(:,:)     :: layout2D, global_indices
       integer, parameter:: ng    = 3     ! Number of ghost zones required
       integer :: is, ie, js, je, isd, ied, jsd, jed
+      integer :: numthreads
+      logical:: square_domain = .false.
 
       
       public mp_start, mp_barrier, mp_stop, npes, npes_x, npes_y, ng, gid, masterproc
-      public io_domain_layout
+      public io_domain_layout, square_domain
       public domain, tile, domain_for_coupler
       public is, ie, js, je, isd, ied, jsd, jed
       public domain_decomp, mp_bcst, mp_reduce_max, mp_reduce_sum, mp_gather
       public mp_reduce_min
       public fill_corners, mp_corner_comm, XDir, YDir
+      public numthreads
 
       INTERFACE fill_corners
         MODULE PROCEDURE fill_corners_2d
@@ -82,7 +86,11 @@
         MODULE PROCEDURE mp_gather_3d_r8
       END INTERFACE
 
-      contains
+!---- version number -----
+      character(len=128) :: version = '$Id: fv_mp_mod.F90,v 17.0.4.3.2.2 2010/05/08 03:30:28 z1l Exp $'
+      character(len=128) :: tagname = '$Name: riga_201012 $'
+
+contains
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
@@ -92,7 +100,7 @@
         subroutine mp_start(commID)
           integer, intent(in), optional :: commID
 
-         integer :: ios, numthreads
+         integer :: ios
          integer :: unit
          character(len=80) evalue
 
@@ -105,20 +113,18 @@
              commglobal = commID
          end if
 
-         numthreads = 0
-#if defined(_OPENMP)
-         call getenv('OMP_NUM_THREADS',evalue)
+         numthreads = 1
          if (gid==masterproc) then
+           call getenv('OMP_NUM_THREADS',evalue)
            read(evalue,*,iostat=ios) numthreads
            if ( ios .ne. 0 ) then
-               print *, 'ERROR: cannot read OMP_NUM_THREADS, defaults to 1', &
+               print *, 'WARNING: cannot read OMP_NUM_THREADS, defaults to 1', &
                         trim(evalue)
                numthreads = 1
            end if
          endif
-         call mp_bcst(numthreads)
-         call omp_set_num_threads(numthreads)
-#endif
+         call mpp_broadcast(numthreads, masterproc)
+!         call mp_bcst(numthreads)
 
          if ( mpp_pe()==mpp_root_pe() ) then
            unit = stdout()
@@ -211,7 +217,11 @@
                ntiles = 1
                num_contact = 2
                npes_per_tile = npes/ntiles
-               call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
+               if(npes_x*npes_y == npes_per_tile) then
+                  layout = (/npes_x,npes_y/)
+               else
+                  call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
+               endif
             case (5)   ! latlon patch
                type="Lat-Lon: patch"
                ntiles = 1
@@ -252,6 +262,8 @@
                npes_y = layout(2)
             endif
 
+            if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  square_domain = .true.
+
             if ( (npx/npes_x < ng) .or. (npy/npes_y < ng) ) then
                write(*,310) npes_x, npes_y, npx/npes_x, npy/npes_y
  310           format('Invalid layout, NPES_X:',i4.4,'NPES_Y:',i4.4,'ncells_X:',i4.4,'ncells_Y:',i4.4)
@@ -270,7 +282,7 @@
          do n = 1, ntiles
             global_indices(:,n) = (/1,npx-1,1,npy-1/)
             layout2D(:,n)         = layout
-            pe_start(n) = (n-1)*layout(1)*layout(2)
+            pe_start(n) = mpp_root_pe() + (n-1)*layout(1)*layout(2)
             pe_end(n)   = pe_start(n) + layout(1)*layout(2) -1
          end do
          num_alloc=max(1,num_contact)
@@ -406,7 +418,7 @@
        deallocate(pe_start,pe_end)
 
         !--- find the tile number
-         tile = mpp_pe()/npes_per_tile+1
+         tile = (mpp_pe()-mpp_root_pe())/npes_per_tile+1
          call mpp_get_compute_domain( domain, is,  ie,  js,  je  )
          call mpp_get_data_domain   ( domain, isd, ied, jsd, jed )
 
@@ -1065,7 +1077,7 @@
          integer, intent(IN)  :: idim, jdim, kdim, ldim
          real(kind=4), intent(INOUT):: q(idim,jdim,kdim,ldim)
          integer :: i,j,k,l,n,icnt 
-         integer :: Lsize
+         integer :: Lsize, Lsize_buf(1)
          integer :: Gsize
          integer :: LsizeS(npes), Ldispl(npes), cnts(npes)
          integer :: Ldims(5), Gdims(5*npes)
@@ -1080,7 +1092,8 @@
             cnts(l) = 5
             Ldispl(l) = 5*(l-1)
          enddo 
-         call MPI_GATHERV(Ldims, 5, MPI_INTEGER, Gdims, cnts, Ldispl, MPI_INTEGER, masterproc, commglobal, ierror)
+         call mpp_gather(Ldims, Gdims)
+!         call MPI_GATHERV(Ldims, 5, MPI_INTEGER, Gdims, cnts, Ldispl, MPI_INTEGER, masterproc, commglobal, ierror)
       
          Lsize = ( (i2 - i1 + 1) * (j2 - j1 + 1) ) * kdim
          do l=1,npes
@@ -1088,7 +1101,9 @@
             Ldispl(l) = l-1
          enddo 
          LsizeS(:)=1
-         call MPI_GATHERV(Lsize, 1, MPI_INTEGER, LsizeS, cnts, Ldispl, MPI_INTEGER, masterproc, commglobal, ierror)
+         Lsize_buf(1) = Lsize
+         call mpp_gather(Lsize_buf, LsizeS)
+!         call MPI_GATHERV(Lsize, 1, MPI_INTEGER, LsizeS, cnts, Ldispl, MPI_INTEGER, masterproc, commglobal, ierror)
 
          allocate ( larr(Lsize) )
          icnt = 1
@@ -1101,15 +1116,19 @@
             enddo
          enddo
          Ldispl(1) = 0.0
-         call mp_bcst(LsizeS(1))
+!         call mp_bcst(LsizeS(1))
+         call mpp_broadcast(LsizeS, npes, masterproc)
          Gsize = LsizeS(1)
          do l=2,npes
-            call mp_bcst(LsizeS(l))
+!            call mp_bcst(LsizeS(l))
             Ldispl(l) = Ldispl(l-1) + LsizeS(l-1)
             Gsize = Gsize + LsizeS(l)
          enddo
          allocate ( garr(Gsize) )
-         call MPI_GATHERV(larr, Lsize, MPI_REAL, garr, LsizeS, Ldispl, MPI_REAL, masterproc, commglobal, ierror)
+
+         call mpp_gather(larr, garr)
+!         call MPI_GATHERV(larr, Lsize, MPI_REAL, garr, LsizeS, Ldispl, MPI_REAL, masterproc, commglobal, ierror)
+
          if (gid==masterproc) then
             do n=2,npes
                icnt=1
@@ -1144,7 +1163,7 @@
          integer, intent(IN)  :: idim, jdim, ldim
          real(kind=4), intent(INOUT):: q(idim,jdim,ldim)
          integer :: i,j,l,n,icnt 
-         integer :: Lsize
+         integer :: Lsize, Lsize_buf(1)
          integer :: Gsize
          integer :: LsizeS(npes), Ldispl(npes), cnts(npes)
          integer :: Ldims(5), Gdims(5*npes)
@@ -1159,7 +1178,8 @@
             cnts(l) = 5
             Ldispl(l) = 5*(l-1)
          enddo
-         call MPI_GATHERV(Ldims, 5, MPI_INTEGER, Gdims, cnts, Ldispl, MPI_INTEGER, masterproc, commglobal, ierror)
+!         call MPI_GATHERV(Ldims, 5, MPI_INTEGER, Gdims, cnts, Ldispl, MPI_INTEGER, masterproc, commglobal, ierror)
+         call mpp_gather(Ldims, Gdims)
 
          Lsize = ( (i2 - i1 + 1) * (j2 - j1 + 1) )
          do l=1,npes
@@ -1167,7 +1187,9 @@
             Ldispl(l) = l-1
          enddo 
          LsizeS(:)=1
-         call MPI_GATHERV(Lsize, 1, MPI_INTEGER, LsizeS, cnts, Ldispl, MPI_INTEGER, masterproc, commglobal, ierror)
+         Lsize_buf(1) = Lsize
+         call mpp_gather(Lsize_buf, LsizeS)
+!         call MPI_GATHERV(Lsize, 1, MPI_INTEGER, LsizeS, cnts, Ldispl, MPI_INTEGER, masterproc, commglobal, ierror)
 
          allocate ( larr(Lsize) )
          icnt = 1
@@ -1178,15 +1200,17 @@
             enddo
          enddo
          Ldispl(1) = 0.0
-         call mp_bcst(LsizeS(1))
+!         call mp_bcst(LsizeS(1))
+         call mpp_broadcast(LsizeS, npes, masterproc)
          Gsize = LsizeS(1)
          do l=2,npes
-            call mp_bcst(LsizeS(l))
+!            call mp_bcst(LsizeS(l))
             Ldispl(l) = Ldispl(l-1) + LsizeS(l-1)
             Gsize = Gsize + LsizeS(l)
          enddo
          allocate ( garr(Gsize) )
-         call MPI_GATHERV(larr, Lsize, MPI_REAL, garr, LsizeS, Ldispl, MPI_REAL, masterproc, commglobal, ierror)
+         call mpp_gather(larr, garr)
+!         call MPI_GATHERV(larr, Lsize, MPI_REAL, garr, LsizeS, Ldispl, MPI_REAL, masterproc, commglobal, ierror)
          if (gid==masterproc) then
             do n=2,npes
                icnt=1
@@ -1218,7 +1242,7 @@
          integer, intent(IN)  :: idim, jdim, ldim
          real(kind=8),  intent(INOUT):: q(idim,jdim,ldim)
          integer :: i,j,l,n,icnt
-         integer :: Lsize
+         integer :: Lsize, Lsize_buf(1)
          integer :: Gsize
          integer :: LsizeS(npes), Ldispl(npes), cnts(npes)
          integer :: Ldims(5), Gdims(5*npes)
@@ -1233,15 +1257,18 @@
             cnts(l) = 5
             Ldispl(l) = 5*(l-1)
          enddo
-         call MPI_GATHERV(Ldims, 5, MPI_INTEGER, Gdims, cnts, Ldispl, MPI_INTEGER, masterproc, commglobal, ierror)
-
+!         call MPI_GATHER(Ldims, 5, MPI_INTEGER, Gdims, cnts, MPI_INTEGER, masterproc, commglobal, ierror)
+         call mpp_gather(Ldims, Gdims)
          Lsize = ( (i2 - i1 + 1) * (j2 - j1 + 1) )
          do l=1,npes
             cnts(l) = 1
             Ldispl(l) = l-1
          enddo
          LsizeS(:)=0.
-         call MPI_GATHERV(Lsize, 1, MPI_INTEGER, LsizeS, cnts, Ldispl, MPI_INTEGER, masterproc, commglobal, ierror)
+
+!         call MPI_GATHERV(Lsize, 1, MPI_INTEGER, LsizeS, cnts, Ldispl, MPI_INTEGER, masterproc, commglobal, ierror)
+         Lsize_buf(1) = Lsize
+         call mpp_gather(Lsize_buf, LsizeS)
 
          allocate ( larr(Lsize) )
          icnt = 1
@@ -1252,16 +1279,18 @@
             enddo
          enddo
          Ldispl(1) = 0.0
-         call mp_bcst(LsizeS(1))
+         call mpp_broadcast(LsizeS, npes, masterproc)
+!         call mp_bcst(LsizeS(1))
          Gsize = LsizeS(1)
          do l=2,npes
-            call mp_bcst(LsizeS(l))
+!            call mp_bcst(LsizeS(l))
             Ldispl(l) = Ldispl(l-1) + LsizeS(l-1)
             Gsize = Gsize + LsizeS(l)
          enddo
 
          allocate ( garr(Gsize) )
-         call MPI_GATHERV(larr, Lsize, MPI_DOUBLE_PRECISION, garr, LsizeS, Ldispl, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
+         call mpp_gather(larr, garr)
+!         call MPI_GATHERV(larr, Lsize, MPI_DOUBLE_PRECISION, garr, LsizeS, Ldispl, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
          if (gid==masterproc) then
             do n=2,npes
                icnt=1

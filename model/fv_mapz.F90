@@ -6,7 +6,7 @@ module fv_mapz_mod
   use fv_fill_mod,       only: fillz
   use fv_mp_mod,         only: gid, domain
   use mpp_domains_mod,   only: mpp_update_domains
-  use mpp_mod,           only: FATAL, mpp_error, get_unit, stdlog, mpp_root_pe, mpp_pe
+  use mpp_mod,           only: FATAL, mpp_error, get_unit, stdlog, mpp_root_pe, mpp_pe, input_nml_file
 
   implicit none
   real, parameter::  r3 = 1./3., r23 = 2./3., r12 = 1./12.
@@ -14,7 +14,7 @@ module fv_mapz_mod
   private
 
   public compute_total_energy, Lagrangian_to_Eulerian,    &
-         rst_remap, mappm, E_Flux
+         rst_remap, mappm, E_Flux, mapz_init
 
 ! following added for code segment in cs_profile
 ! may be removed at a later date
@@ -1308,7 +1308,12 @@ endif         !------------- Hybrid_z section ----------------------
  real   bet, a_bot, grat, pmp, lac
  integer i, k, im
 
-  if (.not. mapz_is_initialized) call mapz_init
+  if (.not. mapz_is_initialized) then
+!$OMP MASTER
+     call mapz_init
+!$OMP END MASTER
+!$OMP BARRIER
+  endif
 
   do i=i1,i2
          grat = delp(i,2) / delp(i,1)   ! grid ratio
@@ -2311,12 +2316,15 @@ endif         !------------- Hybrid_z section ----------------------
 !openmp statements needed to ensure only one thread
 !executes this section of code
 !this subroutine is unnecessary in S-release and will be removed
-!$OMP MASTER
+#ifdef INTERNAL_FILE_NML
+   read (input_nml_file,fv_mapz_nml,iostat=ios)
+#else
    f_unit = get_unit()
    open (f_unit,file=filename)
  ! Read fv_mapz namelist
    read (f_unit,fv_mapz_nml,iostat=ios)
    close (f_unit)
+#endif
    if (ios .gt. 0) then
      if (mpp_pe() .eq. mpp_root_pe()) &
        call mpp_error(FATAL,'ERROR: reading fv_mapz_nml in '//trim(filename)//'')
@@ -2325,8 +2333,6 @@ endif         !------------- Hybrid_z section ----------------------
    write(log_unit, nml=fv_mapz_nml)
 
    mapz_is_initialized = .true.
-!$OMP END MASTER 
-!$OMP BARRIER
 
  end subroutine mapz_init
 

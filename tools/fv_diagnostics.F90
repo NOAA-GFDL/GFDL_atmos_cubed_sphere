@@ -50,7 +50,7 @@ module fv_diagnostics_mod
             id_w200, id_s200, id_sl12, id_sl13
  integer :: id_h200, id_t200, id_q200, id_omg200, id_rh200, id_u200, id_v200, &
             id_h50, id_t50, id_q50, id_rh50, id_u50, id_v50
- integer :: id_h250, id_h300, id_h500, id_h700, id_h850
+ integer :: id_h100, id_h250, id_h300, id_h500, id_h700, id_h850
 ! IPCC diag
  integer :: id_u100, id_v100, id_t100, id_q100, id_rh100, id_omg100, &
             id_u250, id_v250, id_t250, id_q250, id_rh250, id_omg250, &
@@ -60,7 +60,8 @@ module fv_diagnostics_mod
             id_u1000,id_v1000,id_t1000,id_q1000,id_rh1000,id_omg1000
  integer :: id_rh1000_cmip, id_rh850_cmip, id_rh700_cmip, id_rh500_cmip, &
             id_rh250_cmip, id_rh100_cmip, id_rh50_cmip, id_rh10_cmip
- integer :: id_u10, id_v10, id_t10, id_q10, id_omg50, id_omg10
+ integer :: id_u10, id_v10, id_t10, id_q10, id_omg50, id_omg10, id_h10
+ integer :: id_hght
 
 #ifdef MARS_GCM
  integer ::  id_t05
@@ -101,8 +102,8 @@ module fv_diagnostics_mod
  public :: efx, efx_sum, mtq, mtq_sum, steps
 
 !---- version number -----
- character(len=128) :: version = '$Id: fv_diagnostics.F90,v 17.0.6.10.2.1.2.1 2010/05/19 14:56:00 sdu Exp $'
- character(len=128) :: tagname = '$Name: riga_201006 $'
+ character(len=128) :: version = '$Id: fv_diagnostics.F90,v 17.0.6.10.2.1.2.1.2.1 2010/08/10 17:27:38 rab Exp $'
+ character(len=128) :: tagname = '$Name: riga_201012 $'
 
 contains
 
@@ -415,10 +416,20 @@ contains
             'mountain torque', 'Hadleys per unit area', missing_value=missing_value )
 
 !--------------
+! 10 mb Height
+!--------------
+      id_h10 = register_diag_field (trim(field), 'h10', axes(1:2),  Time,   &
+                                     '10-mb hght', 'm', missing_value=missing_value )
+!--------------
 ! 50 mb Height
 !--------------
       id_h50 = register_diag_field (trim(field), 'h50', axes(1:2),  Time,   &
                                      '50-mb hght', 'm', missing_value=missing_value )
+!--------------
+! 100 mb Height
+!--------------
+      id_h100 = register_diag_field (trim(field), 'h100', axes(1:2),  Time,   &
+                                     '100-mb hght', 'm', missing_value=missing_value )
 !--------------
 ! 200 mb Height
 !--------------
@@ -449,6 +460,14 @@ contains
 !--------------
       id_h850 = register_diag_field (trim(field), 'h850', axes(1:2),  Time,   &
                                      '850-mb hght', 'm', missing_value=missing_value )
+
+      ! flag for calculation of geopotential
+      if ( id_h10>0  .or. id_h50>0  .or. id_h100>0 .or. id_h200>0 .or.  id_h250>0 .or. &
+           id_h300>0 .or. id_h500>0 .or. id_h700>0 .or. id_h850>0 ) then
+           id_hght = 1
+      else
+           id_hght = 0
+      endif
 !-----------------------------
 ! mean temp between 300-500 mb
 !-----------------------------
@@ -840,7 +859,7 @@ contains
     real, allocatable :: slp(:,:), depress(:,:), ws_max(:,:), tc_count(:,:)
     real, allocatable :: u2(:,:), v2(:,:)
     real height(2)
-    real plevs(7)
+    real plevs(9)
     real tot_mq, tmp
     logical :: used
     logical :: bad_range
@@ -1207,8 +1226,7 @@ contains
 
 
 
-       if( id_slp>0 .or. id_tm>0 .or. id_h50>0 .or. id_h200>0 .or. id_h250>0 .or. id_h300>0 .or. &
-           id_h500>0 .or.  id_h700>0 .or. id_h850>0 .or. id_c15>0 ) then
+       if( id_slp>0 .or. id_tm>0 .or. id_hght>0 .or. id_c15>0 ) then
 
           allocate ( wz(isc:iec,jsc:jec,npz+1) )
           call get_height_field(isc, iec, jsc, jec, ngc, npz, wz, Atm(n)%pt, Atm(n)%q, Atm(n)%peln, zvir)
@@ -1226,31 +1244,35 @@ contains
           endif
 
 ! Compute H3000 and/or H500
-          if( id_tm>0 .or. id_h50>0 .or. id_h200>0 .or. id_h300>0 .or. id_h500>0 .or. id_h700>0 .or. id_h850>0 .or. id_ppt>0) then
+          if( id_tm>0 .or. id_hght>0 .or. id_ppt>0) then
 
               allocate( a3(isc:iec,jsc:jec,size(plevs,1)) )
-              plevs(1) = log( 5000. )
-              plevs(2) = log( 20000. )
-              plevs(3) = log( 25000. )
-              plevs(4) = log( 30000. )
-              plevs(5) = log( 50000. )
-              plevs(6) = log( 70000. )
-              plevs(7) = log( 85000. )
+              plevs(1) = log( 1000. )
+              plevs(2) = log( 5000. )
+              plevs(3) = log( 10000. )
+              plevs(4) = log( 20000. )
+              plevs(5) = log( 25000. )
+              plevs(6) = log( 30000. )
+              plevs(7) = log( 50000. )
+              plevs(8) = log( 70000. )
+              plevs(9) = log( 85000. )
 
-             call get_height_given_pressure(isc, iec, jsc, jec, ngc, npz, wz, 7, plevs, Atm(n)%peln, a3)
-             if(id_h50>0)  used = send_data ( id_h50,  a3(isc:iec,jsc:jec,1), Time )
-             if(id_h200>0) used = send_data ( id_h200, a3(isc:iec,jsc:jec,2), Time )
-             if(id_h250>0) used = send_data ( id_h250, a3(isc:iec,jsc:jec,3), Time )
-             if(id_h300>0) used = send_data ( id_h300, a3(isc:iec,jsc:jec,4), Time )
-             if(id_h500>0) used = send_data ( id_h500, a3(isc:iec,jsc:jec,5), Time )
-             if(id_h700>0) used = send_data ( id_h700, a3(isc:iec,jsc:jec,6), Time )
-             if(id_h850>0) used = send_data ( id_h850, a3(isc:iec,jsc:jec,7), Time )
+             call get_height_given_pressure(isc, iec, jsc, jec, ngc, npz, wz, 9, plevs, Atm(n)%peln, a3)
+             if(id_h10>0)  used = send_data ( id_h10,  a3(isc:iec,jsc:jec,1), Time )
+             if(id_h50>0)  used = send_data ( id_h50,  a3(isc:iec,jsc:jec,2), Time )
+             if(id_h100>0) used = send_data ( id_h100, a3(isc:iec,jsc:jec,3), Time )
+             if(id_h200>0) used = send_data ( id_h200, a3(isc:iec,jsc:jec,4), Time )
+             if(id_h250>0) used = send_data ( id_h250, a3(isc:iec,jsc:jec,5), Time )
+             if(id_h300>0) used = send_data ( id_h300, a3(isc:iec,jsc:jec,6), Time )
+             if(id_h500>0) used = send_data ( id_h500, a3(isc:iec,jsc:jec,7), Time )
+             if(id_h700>0) used = send_data ( id_h700, a3(isc:iec,jsc:jec,8), Time )
+             if(id_h850>0) used = send_data ( id_h850, a3(isc:iec,jsc:jec,9), Time )
 
              ! mean temp 300mb to 500mb
              if( id_tm>0 ) then
                  do j=jsc,jec
                     do i=isc,iec
-                       a2(i,j) = grav*(a3(i,j,4)-a3(i,j,5))/(rdgas*(plevs(5)-plevs(4)))
+                       a2(i,j) = grav*(a3(i,j,6)-a3(i,j,7))/(rdgas*(plevs(7)-plevs(6)))
                     enddo
                  enddo
                  used = send_data ( id_tm, a2, Time )
@@ -1993,15 +2015,15 @@ contains
 
 ! Mean water vapor in the "stratosphere" (75 mb and above):
  if ( phalf(2)< 75. ) then
-      kstrat = 1
-      do k=1,km
-         if ( phalf(k+1) > 75. ) exit
-         kstrat = k
-      enddo
-     call z_sum(is, ie, js, je, kstrat, n_g, delp, q(is-n_g,js-n_g,1,sphum), q_strat(is,js)) 
-     psmo = g_sum(q_strat(is,js), is, ie, js, je, n_g, area, 1) * 1.e6           &
-          / p_sum(is, ie, js, je, kstrat, n_g, delp)
-    if(master) write(*,*) 'Mean specific humidity (mg/kg) above 75 mb=', psmo, kstrat
+ kstrat = 1
+ do k=1,km
+    if ( phalf(k+1) > 75. ) exit
+    kstrat = k
+ enddo
+ call z_sum(is, ie, js, je, kstrat, n_g, delp, q(is-n_g,js-n_g,1,sphum), q_strat(is,js)) 
+ psmo = g_sum(q_strat(is,js), is, ie, js, je, n_g, area, 1) * 1.e6           &
+      / p_sum(is, ie, js, je, kstrat, n_g, delp)
+ if(master) write(*,*) 'Mean specific humidity (mg/kg) above 75 mb=', psmo, kstrat
  endif
 
 
@@ -2431,9 +2453,9 @@ subroutine rh_calc (pfull, t, qv, rh, do_cmip)
          call compute_qs (t, pfull, rh, q=qv, es_over_liq_and_ice = .true.)
          rh(:,:)=100.*qv(:,:)/rh(:,:)
         else
-         call compute_qs (t, pfull, rh, q=qv)
-         rh(:,:)=100.*qv(:,:)/rh(:,:)
-        endif
+        call compute_qs (t, pfull, rh, q=qv)
+        rh(:,:)=100.*qv(:,:)/rh(:,:)
+     endif
      endif
 
 end subroutine rh_calc

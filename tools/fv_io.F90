@@ -67,8 +67,8 @@ module fv_io_mod
 
 
   !--- version information variables ----
-  character(len=128) :: version = '$Id: fv_io.F90,v 18.0 2010/03/02 23:27:35 fms Exp $'
-  character(len=128) :: tagname = '$Name: riga_201006 $'
+  character(len=128) :: version = '$Id: fv_io.F90,v 17.0.2.6.2.1.2.1 2009/11/17 19:27:13 pjp Exp $'
+  character(len=128) :: tagname = '$Name: riga_201012 $'
 
 contains 
 
@@ -483,6 +483,7 @@ contains
                      domain=fv_domain, tile_count=n)
 
        fname_nd = 'fv_srf_wnd.res.nc'
+       if(ntiles == 1) fname_nd = 'fv_srf_wnd.res.tile1.nc'
        id_restart =  register_restart_field(Rsf_restart(n), fname_nd, 'u_srf', Atm(n)%u_srf, &
                      domain=fv_domain, tile_count=n)
        id_restart =  register_restart_field(Rsf_restart(n), fname_nd, 'v_srf', Atm(n)%v_srf, &
@@ -500,6 +501,7 @@ contains
                         domain=fv_domain, tile_count=n)
        endif
        fname_nd = 'fv_tracer.res.nc'
+       if(ntiles == 1) fname_nd = 'fv_tracer.res.tile1.nc'
        do nt = 1, ntracers
           call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
           id_restart = register_restart_field(Tra_restart(n), fname_nd, tracer_name, Atm(n)%q(:,:,:,nt), &

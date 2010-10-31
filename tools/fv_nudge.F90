@@ -4,7 +4,7 @@ module fv_nwp_nudge_mod
  use fms_mod,           only: write_version_number, open_namelist_file, &
                               check_nml_error, file_exist, close_file, read_data
  use fms_io_mod,        only: field_size
- use mpp_mod,           only: mpp_error, FATAL, stdlog, get_unit
+ use mpp_mod,           only: mpp_error, FATAL, stdlog, get_unit, input_nml_file
  use mpp_domains_mod,   only: mpp_update_domains
  use time_manager_mod,  only: time_type,  get_time, get_date
 
@@ -741,6 +741,10 @@ module fv_nwp_nudge_mod
 
    track_file_name = "No_File_specified"
 
+#ifdef INTERNAL_FILE_NML
+    read( input_nml_file, nml = fv_nwp_nudge_nml, iostat = io )
+    ierr = check_nml_error(io,'fv_nwp_nudge_nml')
+#else
     if( file_exist( 'input.nml' ) ) then
        unit = open_namelist_file ()
        io = 1
@@ -750,6 +754,7 @@ module fv_nwp_nudge_mod
        end do
 10     call close_file ( unit )
     end if
+#endif
     call write_version_number (version, tagname)
     if ( master ) then
          f_unit=stdlog()
