@@ -87,8 +87,8 @@
       END INTERFACE
 
 !---- version number -----
-      character(len=128) :: version = '$Id: fv_mp_mod.F90,v 17.0.4.3.2.2 2010/05/08 03:30:28 z1l Exp $'
-      character(len=128) :: tagname = '$Name: riga_201012 $'
+      character(len=128) :: version = '$Id: fv_mp_mod.F90,v 17.0.4.3.2.2.2.1 2010/10/01 13:25:28 z1l Exp $'
+      character(len=128) :: tagname = '$Name: riga_201104 $'
 
 contains
 
@@ -1126,7 +1126,7 @@ contains
          enddo
          allocate ( garr(Gsize) )
 
-         call mpp_gather(larr, garr)
+         call mpp_gather(larr, Lsize, garr, LsizeS)
 !         call MPI_GATHERV(larr, Lsize, MPI_REAL, garr, LsizeS, Ldispl, MPI_REAL, masterproc, commglobal, ierror)
 
          if (gid==masterproc) then
@@ -1209,7 +1209,7 @@ contains
             Gsize = Gsize + LsizeS(l)
          enddo
          allocate ( garr(Gsize) )
-         call mpp_gather(larr, garr)
+         call mpp_gather(larr, Lsize, garr, LsizeS)
 !         call MPI_GATHERV(larr, Lsize, MPI_REAL, garr, LsizeS, Ldispl, MPI_REAL, masterproc, commglobal, ierror)
          if (gid==masterproc) then
             do n=2,npes
@@ -1289,7 +1289,7 @@ contains
          enddo
 
          allocate ( garr(Gsize) )
-         call mpp_gather(larr, garr)
+         call mpp_gather(larr, Lsize, garr, LsizeS)
 !         call MPI_GATHERV(larr, Lsize, MPI_DOUBLE_PRECISION, garr, LsizeS, Ldispl, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
          if (gid==masterproc) then
             do n=2,npes

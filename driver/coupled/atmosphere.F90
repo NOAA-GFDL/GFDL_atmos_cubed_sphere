@@ -62,7 +62,7 @@ public  atmosphere_down,       atmosphere_up,       &
 !-----------------------------------------------------------------------
 
 character(len=128) :: version = '$Id: atmosphere.F90,v 17.0.2.3.2.1.4.1 2010/08/03 20:29:21 rab Exp $'
-character(len=128) :: tagname = '$Name: riga_201012 $'
+character(len=128) :: tagname = '$Name: riga_201104 $'
 character(len=7)   :: mod_name = 'atmos'
 
 !---- namelist (saved in file input.nml) ----

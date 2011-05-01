@@ -12,12 +12,12 @@ module fv_grid_tools_mod
   use fv_mp_mod, only: gid, masterproc, domain, tile, &
                     is,js,ie,je,isd,jsd,ied,jed, ng, &
                     fill_corners, XDir, YDir, &
-                    mp_gather, mp_bcst, mp_reduce_max, mp_stop, &
+                    mp_gather, mp_reduce_max, mp_stop, &
                     npes_x, npes_y
   use sorted_index_mod,  only: sorted_inta, sorted_intb
   use mpp_mod,           only: mpp_error, FATAL, get_unit, mpp_chksum, mpp_pe, stdout, &
                                mpp_send, mpp_recv, mpp_sync_self, EVENT_RECV, mpp_npes, &
-                               mpp_sum, mpp_max, mpp_min
+                               mpp_sum, mpp_max, mpp_min, mpp_broadcast
   use mpp_domains_mod,   only: mpp_update_domains, mpp_get_boundary, &
                                mpp_get_ntile_count, mpp_get_pelist, &
                                mpp_get_compute_domains, mpp_global_field
@@ -1155,9 +1155,12 @@ contains
           
        endif  ! (latlon vs cubed_sphere)
       
-       call mp_bcst(grid_global, (npx+ng)-(1-ng)+1, (npy+ng)-(1-ng)+1, ndims, nregions )
-       call mp_bcst(  dx_global, npx-1, npy  , nregions )
-       call mp_bcst(  dy_global, npx  , npy-1, nregions )
+       call mpp_broadcast(grid_global, ((npx+ng)-(1-ng)+1)*((npy+ng)-(1-ng)+1)*ndims*nregions, masterproc)
+       call mpp_broadcast(dx_global, (npx-1)*npy*nregions, masterproc)
+       call mpp_broadcast(dy_global, npx*(npy-1)*nregions, masterproc)
+!       call mp_bcst(grid_global, (npx+ng)-(1-ng)+1, (npy+ng)-(1-ng)+1, ndims, nregions )
+!       call mp_bcst(  dx_global, npx-1, npy  , nregions )
+!       call mp_bcst(  dy_global, npx  , npy-1, nregions )
 
        grid(isd: is-1, jsd:js-1,1:ndims)=0.
        grid(isd: is-1, je+2:jed+1,1:ndims)=0.
@@ -1653,8 +1656,10 @@ contains
           cosa_g(  1,1:npy,6)=cosa_g(npx,1:npy,5)
        endif                  ! end master
        
-       call mp_bcst(sina_g, npx, npy, nregions)
-       call mp_bcst(cosa_g, npx, npy, nregions)
+       call mpp_broadcast(sina_g, npx*npy*nregions, masterproc)
+       call mpp_broadcast(cosa_g, npx*npy*nregions, masterproc)
+!       call mp_bcst(sina_g, npx, npy, nregions)
+!       call mp_bcst(cosa_g, npx, npy, nregions)
 
        do j=js,je+1
           do i=is,ie+1
@@ -2057,7 +2062,8 @@ contains
                enddo
             enddo
          endif
-         call mp_bcst(globalarea) 
+         call mpp_broadcast(globalarea, masterproc)
+!         call mp_bcst(globalarea) 
          deallocate( p_R8 )
 
         if (latlon) then
@@ -3429,7 +3435,8 @@ contains
                enddo
                gsum = gsum/globalarea
             endif
-            call mp_bcst(gsum)
+            call mpp_broadcast(gsum, masterproc)
+!            call mp_bcst(gsum)
 
          endif
 
