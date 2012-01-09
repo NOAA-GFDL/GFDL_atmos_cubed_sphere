@@ -1,5 +1,6 @@
  module external_ic_mod
 
+   use external_sst_mod,   only: i_sst, j_sst, sst_ncep
    use fms_mod,            only: file_exist, read_data, field_exist
    use fms_io_mod,         only: get_tile_string, field_size
    use mpp_mod,            only: mpp_error, FATAL, NOTE
@@ -9,7 +10,6 @@
    use field_manager_mod,  only: MODEL_ATMOS
 
    use constants_mod,     only: pi, omega, grav, kappa, rdgas, rvgas, cp_air
-   use external_sst_mod,    only: i_sst, j_sst, sst_ncep
    use fv_arrays_mod,     only: fv_atmos_type
    use fv_diagnostics_mod,only: prt_maxmin
    use fv_grid_tools_mod, only: grid, agrid, cubed_sphere,  &
@@ -23,6 +23,8 @@
    use fv_surf_map_mod,   only: surfdrv
    use fv_timing_mod,     only: timing_on, timing_off
    use init_hydro_mod,    only: p_var
+   use sim_nc_mod,        only: open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var2_real,   &
+                                get_var3_r4
 
    implicit none
    private
@@ -32,6 +34,10 @@
 
    public get_external_ic
 
+!---- version number -----
+   character(len=128) :: version = '$Id: external_ic.F90,v 19.0 2012/01/06 19:58:28 fms Exp $'
+   character(len=128) :: tagname = '$Name: siena $'
+
 contains
 
    subroutine get_external_ic( Atm, fv_domain )
@@ -39,7 +45,7 @@ contains
       type(fv_atmos_type), intent(inout) :: Atm(:)
       type(domain2d),      intent(inout) :: fv_domain
       real:: alpha = 0.
-      integer i,j, nq
+      integer i,j,k,nq
 
 ! * Initialize coriolis param:
  
@@ -77,24 +83,28 @@ contains
            call fv_io_read_tracers( fv_domain, Atm )
            if(gid==0) write(6,*) 'All tracers except sphum replaced by FV IC'
 #endif
-          elseif ( Atm(1)%fv_diag_ic ) then
-! Interpolate/remap diagnostic output from a FV model diagnostic output file on lat-lon A grid:
-               nq = 1
-               call get_latlon_ic( Atm, fv_domain, nq )
+      elseif ( Atm(1)%fv_diag_ic ) then
+! Interpolate/remap diagnostic output from a FV model diagnostic output file on uniform lat-lon A grid:
+               nq = size(Atm(1)%q,4)
+! Needed variables: lon, lat, pfull(dim), zsurf, ps, ucomp, vcomp, w, temp, and all q
+! delz not implemnetd yet; set make_nh = .true.
+               call get_diag_ic( Atm, fv_domain, nq )
       else
+! The following is to read in legacy lat-lon FV core restart file
 !  is Atm%q defined in all cases?
+
            nq = size(Atm(1)%q,4)
            call get_fv_ic( Atm, fv_domain, nq )
       endif
 
       call prt_maxmin('T', Atm(1)%pt, is, ie, js, je, ng, Atm(1)%npz, 1., gid==0)
 
-      call p_var(Atm(1)%npz,  is, ie, js, je, Atm(1)%ak(1),  ptop_min,     &
-                 Atm(1)%delp, Atm(1)%delz, Atm(1)%pt, Atm(1)%ps,   &
-                 Atm(1)%pe,   Atm(1)%peln, Atm(1)%pk, Atm(1)%pkz,  &
-                 kappa, Atm(1)%q, ng, Atm(1)%ncnst, Atm(1)%dry_mass,  &
-                 Atm(1)%adjust_dry_mass, .true., .true.,         &
-                 Atm(1)%hydrostatic, Atm(1)%k_top, Atm(1)%nwat)
+      call p_var(Atm(1)%npz,  is, ie, js, je, Atm(1)%ak(1),  ptop_min,         &
+                 Atm(1)%delp, Atm(1)%delz, Atm(1)%pt, Atm(1)%ps,               &
+                 Atm(1)%pe,   Atm(1)%peln, Atm(1)%pk, Atm(1)%pkz,              &
+                 kappa, Atm(1)%q, ng, Atm(1)%ncnst, Atm(1)%dry_mass,           &
+                 Atm(1)%adjust_dry_mass, Atm(1)%mountain, Atm(1)%moist_phys,   &
+                 Atm(1)%hydrostatic, Atm(1)%k_top, Atm(1)%nwat, Atm(1)%make_nh)
 
   end subroutine get_external_ic
 
@@ -107,6 +117,7 @@ contains
     integer, allocatable :: tile_id(:)
     character(len=64)    :: fname
     integer              ::  n
+    integer              ::  jbeg, jend
     real ftop
 
     ntileMe = size(Atm(:))  ! This will have to be modified for mult tiles per PE
@@ -124,7 +135,7 @@ contains
                          domain=fv_domain, tile_count=n)
        else
           call surfdrv(  Atm(n)%npx, Atm(n)%npy, grid, agrid,   &
-                         area, dx, dy, dxc, dyc, Atm(n)%phis, gid==0 ) 
+                         area, dx, dy, dxc, dyc, Atm(n)%phis, gid==0 )
           call mpp_error(NOTE,'terrain datasets generated using USGS data')
        endif
 
@@ -141,135 +152,27 @@ contains
   end subroutine get_cubed_sphere_terrain
 
 
-
-  subroutine get_latlon_ic( Atm, fv_domain, nq )
-      type(fv_atmos_type), intent(inout) :: Atm(:)
-      type(domain2d),      intent(inout) :: fv_domain
-      integer, intent(in):: nq
-
-      character(len=128) :: fname
-      real, allocatable:: ps0(:,:), gz0(:,:), t0(:,:,:), q0(:,:,:)
-      real, allocatable:: ua(:,:,:), va(:,:,:)
-      real, allocatable:: lat(:), lon(:), ak0(:), bk0(:)
-      integer :: i, j, k, im, jm, km, npz
-      integer tsize(4)
-      integer  sphum, liq_wat, ice_wat, cld_amt       ! GFDL AM2 physics
-      logical found
-      real dak, dbk
-
-      npz = Atm(1)%npz
-
-! Zero out all initial tracer fields:
-      Atm(1)%q = 0.
-
-! Read in lat-lon file
-      fname = Atm(1)%res_latlon_dynamics
-
-      if( file_exist(fname) ) then
-          call field_size(fname, 'temp', tsize, field_found=found)
-          if(gid==0) write(*,*) 'Reconstruct cubed-sphere restart file from FV diagnostic file', fname
-
-          if ( found ) then
-               im = tsize(1); jm = tsize(2); km = tsize(3)
-               if(gid==0)  write(*,*) 'External IC dimensions:', tsize
-          else
-               call mpp_error(FATAL,'==> Error in get_external_ic: field not found')
-          endif
-
-! Define the lat-lon coordinate:
-          allocate (  lon(im) )
-          allocate (  lat(jm) )
-
-          allocate ( ak0(km+1) )
-          allocate ( bk0(km+1) )
-          allocate ( gz0(im,jm) )
-          allocate ( ps0(im,jm) )
-          allocate (  ua(im,jm,km) )
-          allocate (  va(im,jm,km) )
-          allocate (  t0(im,jm,km) )
-          allocate (  q0(im,jm,km) )
-
-          call read_data (fname, 'LAT', lat)
-          call read_data (fname, 'LON', lon)
-
-          do i=1,im
-             lon(i) = lon(i) * (pi/180.)  ! lon(1) = 0.
-          enddo
-          do j=1,jm
-             lat(j) = lat(j) * (pi/180.)
-          enddo
-
-          call read_data (fname, 'ps', ps0)
-          if(gid==0) call pmaxmin( 'PS_data', ps0, im,    jm, 0.01)
-
-          call read_data (fname, 'zsurf', gz0)
-          if(gid==0) call pmaxmin( 'ZS_data', gz0, im,    jm, 1.)
-
-          gz0(:,:) = grav * gz0(:,:)
-
-          call read_data (fname, 'ucomp',     ua)
-          call read_data (fname, 'vcomp',     va)
-          if(gid==0) call pmaxmin( 'U_data',   ua, im*jm, km, 1.)
-          if(gid==0) call pmaxmin( 'V_data',   va, im*jm, km, 1.)
-
-          call read_data (fname, 'temp',     t0)
-          if(gid==0) call pmaxmin( 'T_data',   t0, im*jm, km, 1.)
-
-          do k=1,km+1
-              ak0(k) = Atm(1)%ak(k)
-              bk0(k) = Atm(1)%bk(k)
-          enddo
-
-! Read in tracers: only sphum at this point
-          sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
-          call read_data (fname, 'sphum',  q0)
-      else
-          call mpp_error(FATAL,'==> Error in get_external_ic: Expected file '//trim(fname)//' does not exist')
-      endif
-
-! Horizontal interpolation to the cubed sphere grid center
-! remap vertically with terrain adjustment
-
-! nq is assumed to be 1 here:
-      call remap_xyz( im, jm, km, npz, nq, nq, lon, lat, ak0, bk0, ps0,   &
-                      gz0, ua, va, t0, q0, Atm )
-
-      deallocate ( ak0 )
-      deallocate ( bk0 )
-      deallocate ( ps0 )
-      deallocate ( gz0 )
-      deallocate ( t0 )
-      deallocate ( q0 )
-      deallocate ( ua )
-      deallocate ( va )
-      deallocate ( lat )
-      deallocate ( lon )
-
-  end subroutine get_latlon_ic
-
-
-
-  subroutine get_ncep_ic( Atm, fv_domain, nq )
+  subroutine get_diag_ic( Atm, fv_domain, nq )
       type(fv_atmos_type), intent(inout) :: Atm(:)
       type(domain2d),      intent(inout) :: fv_domain
       integer, intent(in):: nq
 ! local:
-      character(len=128) :: fname
-      real, allocatable:: oro(:,:), wk2(:,:), wk3(:,:,:)
-      real, allocatable:: tp(:,:,:), qp(:,:,:)
-      real, allocatable:: ua(:,:,:), va(:,:,:)
+      character(len=128) :: fname, tracer_name
+      real(kind=4), allocatable:: wk1(:), wk2(:,:), wk3(:,:,:)
+      real, allocatable:: tp(:,:,:), qp(:,:,:,:)
+      real, allocatable:: ua(:,:,:), va(:,:,:), wa(:,:,:)
       real, allocatable:: lat(:), lon(:), ak0(:), bk0(:)
       real:: s2c(is:ie,js:je,4)
       integer, dimension(is:ie,js:je):: id1, id2, jdc
       real psc(is:ie,js:je)
       real gzc(is:ie,js:je)
-      real tmean
       integer:: i, j, k, im, jm, km, npz, npt
-      integer:: i1, i2, j1
-      integer tsize(4)
-      logical found
-      logical:: read_ts = .true.
-      logical:: land_ts = .false.
+      integer:: i1, i2, j1, ncid
+      integer:: jbeg, jend
+      integer tsize(4), tr_ind
+      logical:: found
+
+      integer  sphum, liq_wat, rainwat, ice_wat, snowwat, graupel
 
       deg2rad = pi/180.
 
@@ -281,21 +184,21 @@ contains
       fname = Atm(1)%res_latlon_dynamics
 
       if( file_exist(fname) ) then
-          call field_size(fname, 'T', tsize, field_found=found)
-          if(gid==0) write(*,*) 'Using NCEP restart:', fname 
+          call open_ncfile( fname, ncid )        ! open the file
+          call get_ncdim1( ncid, 'lon',   tsize(1) )
+          call get_ncdim1( ncid, 'lat',   tsize(2) )
+          call get_ncdim1( ncid, 'pfull', tsize(3) )
 
-          if ( found ) then
-               im = tsize(1); jm = tsize(2); km = tsize(3)
-               if(gid==0)  write(*,*) 'External IC dimensions:', tsize
-          else
-               call mpp_error(FATAL,'==> Error in get_external_ic: field not found')
-          endif
+          im = tsize(1); jm = tsize(2); km = tsize(3)
+
+          if(gid==0)  write(*,*) fname, ' FV_diag IC dimensions:', tsize
 
           allocate (  lon(im) )
           allocate (  lat(jm) )
  
-          call read_data (fname, 'LAT', lat)
-          call read_data (fname, 'LON', lon)
+          call get_var1_double (ncid, 'lon', im, lon )
+          call get_var1_double (ncid, 'lat', jm, lat )
+
 ! Convert to radian
           do i=1,im
              lon(i) = lon(i) * deg2rad  ! lon(1) = 0.
@@ -306,13 +209,251 @@ contains
 
           allocate ( ak0(km+1) )
           allocate ( bk0(km+1) )
-          call read_data (fname, 'hyai', ak0)
-          call read_data (fname, 'hybi', bk0)
+! npz
+          if ( npz /= km ) then
+               call mpp_error(FATAL,'==>Error in get_diag_ic: vertical dim must be the same')
+          else
+               ak0(:) = Atm(1)%ak(:)
+               bk0(:) = Atm(1)%bk(:)
+          endif
+      else
+          call mpp_error(FATAL,'==> Error in get_diag_ic: Expected file '//trim(fname)//' does not exist')
+      endif
+
+! Initialize lat-lon to Cubed bi-linear interpolation coeff:
+      call remap_coef( im, jm, lon, lat, id1, id2, jdc, s2c )
+
+! Find bounding latitudes:
+      jbeg = jm-1;         jend = 2
+      do j=js,je
+         do i=is,ie
+              j1 = jdc(i,j)
+            jbeg = min(jbeg, j1) 
+            jend = max(jend, j1+1)
+         enddo
+      enddo
+
+! remap surface pressure and height:
+      allocate ( wk2(im,jbeg:jend) )
+      call get_var3_r4( ncid, 'ps', 1,im, jbeg,jend, 1,1, wk2 )
+      do j=js,je
+         do i=is,ie
+            i1 = id1(i,j)
+            i2 = id2(i,j)
+            j1 = jdc(i,j)
+            psc(i,j) = s2c(i,j,1)*wk2(i1,j1  ) + s2c(i,j,2)*wk2(i2,j1  ) +  &
+                       s2c(i,j,3)*wk2(i2,j1+1) + s2c(i,j,4)*wk2(i1,j1+1)
+         enddo
+      enddo
+
+      call get_var3_r4( ncid, 'zsurf', 1,im, jbeg,jend, 1,1, wk2 )
+      do j=js,je
+         do i=is,ie
+            i1 = id1(i,j)
+            i2 = id2(i,j)
+            j1 = jdc(i,j)
+            gzc(i,j) = s2c(i,j,1)*wk2(i1,j1  ) + s2c(i,j,2)*wk2(i2,j1  ) +  &
+                       s2c(i,j,3)*wk2(i2,j1+1) + s2c(i,j,4)*wk2(i1,j1+1)
+         enddo
+      enddo
+      deallocate ( wk2 )
+
+! Read in temperature:
+      allocate ( wk3(1:im,jbeg:jend, 1:km) )
+      call get_var3_r4( ncid, 'temp', 1,im, jbeg,jend, 1,km, wk3 )
+      allocate (  tp(is:ie,js:je,km) )
+      do k=1,km
+        do j=js,je
+         do i=is,ie
+            i1 = id1(i,j)
+            i2 = id2(i,j)
+            j1 = jdc(i,j)
+            tp(i,j,k) = s2c(i,j,1)*wk3(i1,j1  ,k) + s2c(i,j,2)*wk3(i2,j1  ,k) +  &
+                        s2c(i,j,3)*wk3(i2,j1+1,k) + s2c(i,j,4)*wk3(i1,j1+1,k)
+         enddo
+        enddo
+      enddo
+
+! Read in all tracers:
+    allocate ( qp(is:ie,js:je,km,nq) )
+    qp = 1.E25
+    do tr_ind=1, nq
+       call get_tracer_names(MODEL_ATMOS, tr_ind, tracer_name)
+       if (field_exist(fname,tracer_name)) then
+           call get_var3_r4( ncid, tracer_name, 1,im, jbeg,jend, 1,km, wk3 )
+           do k=1,km
+              do j=js,je
+                 do i=is,ie
+                    i1 = id1(i,j)
+                    i2 = id2(i,j)
+                    j1 = jdc(i,j)
+                    qp(i,j,k,tr_ind) = s2c(i,j,1)*wk3(i1,j1  ,k) + s2c(i,j,2)*wk3(i2,j1  ,k) +  &
+                                       s2c(i,j,3)*wk3(i2,j1+1,k) + s2c(i,j,4)*wk3(i1,j1+1,k)
+                 enddo
+              enddo
+           enddo
+       endif
+    enddo
+    call remap_scalar(im, jm, km, npz, nq, nq, ak0, bk0, psc, gzc, tp, qp, Atm)
+    deallocate ( tp )
+    deallocate ( qp )
+
+! Winds:
+      call get_var3_r4( ncid, 'ucomp', 1,im, jbeg,jend, 1,km, wk3 )
+      allocate ( ua(is:ie,js:je,km) )
+      do k=1,km
+        do j=js,je
+          do i=is,ie
+            i1 = id1(i,j)
+            i2 = id2(i,j)
+            j1 = jdc(i,j)
+            ua(i,j,k) = s2c(i,j,1)*wk3(i1,j1  ,k) + s2c(i,j,2)*wk3(i2,j1  ,k) +  &
+                        s2c(i,j,3)*wk3(i2,j1+1,k) + s2c(i,j,4)*wk3(i1,j1+1,k)
+          enddo
+        enddo
+      enddo
+
+      call get_var3_r4( ncid, 'vcomp', 1,im, jbeg,jend, 1,km, wk3 )
+      allocate ( va(is:ie,js:je,km) )
+      do k=1,km
+        do j=js,je
+          do i=is,ie
+            i1 = id1(i,j)
+            i2 = id2(i,j)
+            j1 = jdc(i,j)
+            va(i,j,k) = s2c(i,j,1)*wk3(i1,j1  ,k) + s2c(i,j,2)*wk3(i2,j1  ,k) +  &
+                        s2c(i,j,3)*wk3(i2,j1+1,k) + s2c(i,j,4)*wk3(i1,j1+1,k)
+          enddo
+        enddo
+      enddo
+      call remap_winds(im, jm, km, npz, ak0, bk0, psc, ua, va, Atm)
+
+      deallocate ( ua )
+      deallocate ( va )
+
+      if ( .not. Atm(1)%hydrostatic ) then
+        if (field_exist(fname,'w')) then
+           allocate ( wa(is:ie,js:je,km) )
+           call get_var3_r4( ncid, 'w', 1,im, jbeg,jend, 1,km, wk3 )
+           do k=1,km
+              do j=js,je
+                 do i=is,ie
+                    i1 = id1(i,j)
+                    i2 = id2(i,j)
+                    j1 = jdc(i,j)
+                    wa(i,j,k) = s2c(i,j,1)*wk3(i1,j1  ,k) + s2c(i,j,2)*wk3(i2,j1  ,k) +  &
+                                s2c(i,j,3)*wk3(i2,j1+1,k) + s2c(i,j,4)*wk3(i1,j1+1,k)
+                 enddo
+              enddo
+           enddo
+           call remap_wz(im, jm, km, npz, ng, ak0, bk0, psc, wa, Atm(1)%w, Atm)
+           deallocate ( wa )
+        else    ! use "w = - fac * omega" ?
+           Atm(1)%w(:,:,:) = 0.
+        endif
+! delz:
+        if (field_exist(fname,'delz')) then
+           allocate ( wa(is:ie,js:je,km) )
+           call get_var3_r4( ncid, 'delz', 1,im, jbeg,jend, 1,km, wk3 )
+           do k=1,km
+              do j=js,je
+                 do i=is,ie
+                    i1 = id1(i,j)
+                    i2 = id2(i,j)
+                    j1 = jdc(i,j)
+                    wa(i,j,k) = s2c(i,j,1)*wk3(i1,j1  ,k) + s2c(i,j,2)*wk3(i2,j1  ,k) +  &
+                                s2c(i,j,3)*wk3(i2,j1+1,k) + s2c(i,j,4)*wk3(i1,j1+1,k)
+                 enddo
+              enddo
+           enddo
+           call remap_wz(im, jm, km, npz, 0,  ak0, bk0, psc, wa, Atm(1)%delz, Atm)
+           deallocate ( wa )
+        else    ! Force make = T
+           Atm(1)%make_nh = .true.
+        endif
+
+      endif   ! hydrostatic test
+
+      call close_ncfile ( ncid )
+      deallocate ( wk3 )
+      deallocate ( ak0 )
+      deallocate ( bk0 )
+      deallocate ( lat )
+      deallocate ( lon )
+
+  end subroutine get_diag_ic
+
+
+
+  subroutine get_ncep_ic( Atm, fv_domain, nq )
+      type(fv_atmos_type), intent(inout) :: Atm(:)
+      type(domain2d),      intent(inout) :: fv_domain
+      integer, intent(in):: nq
+! local:
+      character(len=128) :: fname
+      real(kind=4), allocatable:: wk1(:), wk2(:,:), wk3(:,:,:)
+      real, allocatable:: tp(:,:,:), qp(:,:,:)
+      real, allocatable:: ua(:,:,:), va(:,:,:)
+      real, allocatable:: lat(:), lon(:), ak0(:), bk0(:)
+      real:: s2c(is:ie,js:je,4)
+      integer, dimension(is:ie,js:je):: id1, id2, jdc
+      real psc(is:ie,js:je)
+      real gzc(is:ie,js:je)
+      real tmean
+      integer:: i, j, k, im, jm, km, npz, npt
+      integer:: i1, i2, j1, ncid
+      integer:: jbeg, jend
+      integer tsize(4)
+      logical:: read_ts = .true.
+      logical:: land_ts = .false.
+      logical:: found
+
+      deg2rad = pi/180.
+
+      npz = Atm(1)%npz
+
+! Zero out all initial tracer fields:
+! SJL: 20110716
+!      Atm(1)%q = 0.
+
+      fname = Atm(1)%res_latlon_dynamics
+
+      if( file_exist(fname) ) then
+          call open_ncfile( fname, ncid )        ! open the file
+          call get_ncdim1( ncid, 'lon', tsize(1) )
+          call get_ncdim1( ncid, 'lat', tsize(2) )
+          call get_ncdim1( ncid, 'lev', tsize(3) )
+
+          im = tsize(1); jm = tsize(2); km = tsize(3)
+
+          if(gid==0)  write(*,*) fname, ' NCEP IC dimensions:', tsize
+
+          allocate (  lon(im) )
+          allocate (  lat(jm) )
+ 
+          call get_var1_double (ncid, 'lon', im, lon )
+          call get_var1_double (ncid, 'lat', jm, lat )
+
+! Convert to radian
+          do i=1,im
+             lon(i) = lon(i) * deg2rad  ! lon(1) = 0.
+          enddo
+          do j=1,jm
+             lat(j) = lat(j) * deg2rad
+          enddo
+
+          allocate ( ak0(km+1) )
+          allocate ( bk0(km+1) )
+          call get_var1_double (ncid, 'hyai', km+1, ak0, found )
+          if ( .not. found )  ak0(:) = 0.
+
+          call get_var1_double (ncid, 'hybi', km+1, bk0 )
+
 ! Note: definition of NCEP hybrid is p(k) = a(k)*1.E5 + b(k)*ps
           ak0(:) = ak0(:) * 1.E5
 
 ! Limiter to prevent NAN at top during remapping
-          ak0(1) = max(1.e-9, ak0(1))
+          if ( bk0(1) < 1.E-9 ) ak0(1) = max(1.e-9, ak0(1))
       else
           call mpp_error(FATAL,'==> Error in get_external_ic: Expected file '//trim(fname)//' does not exist')
       endif
@@ -320,10 +461,20 @@ contains
 ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
       call remap_coef( im, jm, lon, lat, id1, id2, jdc, s2c )
 
+! Find bounding latitudes:
+      jbeg = jm-1;         jend = 2
+      do j=js,je
+         do i=is,ie
+              j1 = jdc(i,j)
+            jbeg = min(jbeg, j1) 
+            jend = max(jend, j1+1)
+         enddo
+      enddo
+
 ! remap surface pressure and height:
-      allocate ( wk2(im,jm) )
-      call read_data (fname, 'PS', wk2)
-      if(gid==0) call pmaxmin( 'PS_ncep', wk2, im,  jm, 0.01)
+
+      allocate ( wk2(im,jbeg:jend) )
+      call get_var3_r4( ncid, 'PS', 1,im, jbeg,jend, 1,1, wk2 )
 
       do j=js,je
          do i=is,ie
@@ -335,8 +486,7 @@ contains
          enddo
       enddo
 
-      call read_data (fname, 'PHIS', wk2)
-      if(gid==0) call pmaxmin( 'ZS_ncep', wk2, im,  jm, 1./grav)
+      call get_var3_r4( ncid, 'PHIS', 1,im, jbeg,jend, 1,1, wk2 )
       do j=js,je
          do i=is,ie
             i1 = id1(i,j)
@@ -347,20 +497,23 @@ contains
          enddo
       enddo
 
+      deallocate ( wk2 )
+      allocate ( wk2(im,jm) )
+
       if ( read_ts ) then       ! read skin temperature; could be used for SST
 
-        call read_data (fname, 'TS', wk2)
+        call get_var2_real( ncid, 'TS', im, jm, wk2 )
 
         if ( .not. land_ts ) then
-           allocate ( oro(im,jm) )
-! Read NCEP ORO (1; land; 0: ocean; 2: sea_ice)
-           call read_data (fname, 'ORO', oro)
+           allocate ( wk1(im) )
 
            do j=1,jm
+! Read NCEP ORO (1; land; 0: ocean; 2: sea_ice)
+              call get_var3_r4( ncid, 'ORO', 1,im, j,j, 1,1, wk1 )
               tmean = 0.
               npt = 0
               do i=1,im
-                 if( abs(oro(i,j)-1.) > 0.5 ) then
+                 if( abs(wk1(i)-1.) > 0.99 ) then   ! ocean or sea ice
                      tmean = tmean + wk2(i,j)
                      npt = npt + 1
                  endif
@@ -371,7 +524,7 @@ contains
               if ( npt /= 0 ) then
                    tmean= tmean / real(npt)
                    do i=1,im
-                      if( abs(oro(i,j)-1.) <= 0.5 ) then
+                      if( abs(wk1(i)-1.) <= 0.99 ) then  ! Land points
                           if ( i==1 ) then
                                i1 = im;     i2 = 2
                           elseif ( i==im ) then
@@ -379,9 +532,9 @@ contains
                           else
                                i1 = i-1;    i2 = i+1
                           endif
-                          if ( abs(oro(i2,j)-1.)>0.5 ) then     ! east side has priority
+                          if ( abs(wk1(i2)-1.)>0.99 ) then     ! east side has priority
                                wk2(i,j) = wk2(i2,j)
-                          elseif ( abs(oro(i1,j)-1.)>0.5 ) then ! west side
+                          elseif ( abs(wk1(i1)-1.)>0.99 ) then ! west side
                                wk2(i,j) = wk2(i1,j)
                           else
                                wk2(i,j) = tmean
@@ -389,11 +542,10 @@ contains
                       endif
                    enddo
               endif
-           enddo
-           deallocate ( oro )
+           enddo   ! j-loop
+           deallocate ( wk1 )
         endif   !(.not.land_ts)
 
-        if(gid==0) call pmaxmin('SST_ncep', wk2, im,  jm, 1.)
         do j=js,je
           do i=is,ie
             i1 = id1(i,j)
@@ -406,19 +558,21 @@ contains
         call prt_maxmin('SST_model', Atm(1)%ts, is, ie, js, je, 0, 1, 1., gid==0)
 
 ! Perform interp to FMS SST format/grid
+#ifndef DYCORE_SOLO
         call ncep2fms(im, jm, lon, lat, wk2)
         if( gid==0 ) then
           write(*,*) 'External_ic_mod: i_sst=', i_sst, ' j_sst=', j_sst
           call pmaxmin( 'SST_ncep_fms',  sst_ncep, i_sst, j_sst, 1.)
         endif
+#endif
       endif  !(read_ts)
 
       deallocate ( wk2 )
 
 ! Read in temperature:
-      allocate (  wk3(im,jm,km) )
-      call read_data (fname, 'T',  wk3)
-      if(gid==0) call pmaxmin( 'T_ncep',   wk3, im*jm, km, 1.)
+      allocate ( wk3(1:im,jbeg:jend, 1:km) )
+      call get_var3_r4( ncid, 'T', 1,im, jbeg,jend, 1,km, wk3 )
+
       allocate (  tp(is:ie,js:je,km) )
       do k=1,km
         do j=js,je
@@ -433,8 +587,8 @@ contains
       enddo
 
 ! Read in tracers: only sphum at this point
-      call read_data (fname, 'Q',  wk3)
-      if(gid==1) call pmaxmin( 'Q_ncep',   wk3, im*jm, km, 1.)
+      call get_var3_r4( ncid, 'Q', 1,im, jbeg,jend, 1,km, wk3 )
+
       allocate ( qp(is:ie,js:je,km) )
       do k=1,km
         do j=js,je
@@ -453,8 +607,8 @@ contains
       deallocate ( qp )
 
 ! Winds:
-      call read_data (fname, 'U',  wk3)
-      if(gid==2) call pmaxmin( 'U_ncep',   wk3, im*jm, km, 1.)
+      call get_var3_r4( ncid, 'U', 1,im, jbeg,jend, 1,km, wk3 )
+
       allocate ( ua(is:ie,js:je,km) )
       do k=1,km
         do j=js,je
@@ -468,8 +622,9 @@ contains
         enddo
       enddo
 
-      call read_data (fname, 'V',  wk3)
-      if(gid==3) call pmaxmin( 'V_ncep',  wk3, im*jm, km, 1.)
+      call get_var3_r4( ncid, 'V', 1,im, jbeg,jend, 1,km, wk3 )
+      call close_ncfile ( ncid )
+
       allocate ( va(is:ie,js:je,km) )
       do k=1,km
         do j=js,je
@@ -624,7 +779,7 @@ contains
 ! Horizontal interpolation to the cubed sphere grid center
 ! remap vertically with terrain adjustment
 
-      call remap_xyz( im, jm, km, npz, nq, Atm(1)%ncnst, lon, lat, ak0, bk0,   &
+      call remap_xyz( im, 1, jm, jm, km, npz, nq, Atm(1)%ncnst, lon, lat, ak0, bk0,   &
                       ps0,  gz0, ua, va, t0, q0, Atm )
 
       deallocate ( ak0 ) 
@@ -642,11 +797,12 @@ contains
   end subroutine get_fv_ic
 
 
+#ifndef DYCORE_SOLO
  subroutine ncep2fms(im, jm, lon, lat, wk)
 
   integer, intent(in):: im, jm
   real,    intent(in):: lon(im), lat(jm)
-  real,    intent(in):: wk(im,jm)
+  real(kind=4),    intent(in):: wk(im,jm)
 ! local:
   real :: rdlon(im)
   real :: rdlat(jm)
@@ -730,6 +886,7 @@ contains
 5000 continue   ! j-loop
 
  end subroutine ncep2fms
+#endif
 
 
 
@@ -824,27 +981,16 @@ contains
   real, dimension(is:ie,npz+1):: pe1, pn1
   real pt0(km), gz(km+1), pk0(km+1)
   real qp(is:ie,km,ncnst)
-  real pst
+  real pst, p1, p2, alpha
   integer i,j,k, iq
   integer  sphum
 
   sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
-! liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
-! ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
-! cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
-
-   if ( sphum/=1 ) then
-        call mpp_error(FATAL,'SPHUM must be 1st tracer')
-   endif
-
-  pk0(1) = ak0(1)**kappa
+  if ( sphum/=1 ) then
+       call mpp_error(FATAL,'SPHUM must be 1st tracer')
+  endif
 
   do 5000 j=js,je
-
-     do i=is,ie
-        pe0(i,1) = ak0(1)
-        pn0(i,1) = log(ak0(1))
-     enddo
 
      do i=is,ie
 
@@ -859,10 +1005,10 @@ contains
        enddo
 ! Tracers:
 
-       do k=2,km+1
+       do k=1,km+1
           pe0(i,k) = ak0(k) + bk0(k)*psc(i,j)
           pn0(i,k) = log(pe0(i,k))
-          pk0(k) = pe0(i,k)**kappa
+            pk0(k) = pe0(i,k)**kappa
        enddo
 
 #ifdef USE_DATA_ZS
@@ -917,18 +1063,35 @@ contains
 ! map tracers
 !----------------
       do iq=1,ncnst
-         call mappm(km, pe0, qp(is,1,iq), npz, pe1,  qn1, is,ie, 0, 8)
+         call mappm(km, pe0, qp(is,1,iq), npz, pe1,  qn1, is,ie, 0, 11)
+         if ( iq==sphum .and. Atm(1)%ncep_ic ) then
+             p1 = 200.E2
+             p2 =  75.E2
+! Blend model sphum with NCEP data
+         do k=1,npz
+            do i=is,ie
+               pst = 0.5*(pe1(i,k)+pe1(i,k+1))
+               if ( pst > p1 ) then
+                    Atm(1)%q(i,j,k,iq) = qn1(i,k)
+               elseif( pst > p2 ) then            ! p2 < pst < p1
+                    alpha = (pst-p2)/(p1-p2)
+                    Atm(1)%q(i,j,k,1) = qn1(i,k)*alpha + Atm(1)%q(i,j,k,1)*(1.-alpha)
+               endif
+            enddo
+         enddo
+         else
          do k=1,npz
             do i=is,ie
                Atm(1)%q(i,j,k,iq) = qn1(i,k)
             enddo
          enddo
+         endif
       enddo
 
 !-------------------------------------------------------------
 ! map virtual temperature using geopotential conserving scheme.
 !-------------------------------------------------------------
-      call mappm(km, pn0, tp, npz, pn1, qn1, is,ie, 1, 8)
+      call mappm(km, pn0, tp, npz, pn1, qn1, is,ie, 1, 9)
       do k=1,npz
          do i=is,ie
             Atm(1)%pt(i,j,k) = qn1(i,k)/(1.+zvir*Atm(1)%q(i,j,k,sphum))
@@ -960,24 +1123,18 @@ contains
 
   do 5000 j=js,je
 
-     do i=is,ie
-        pe0(i,1) = ak0(1)
-        pe1(i,1) = Atm(1)%ak(1)
-     enddo
-
-     do k=2,km+1
+     do k=1,km+1
         do i=is,ie
            pe0(i,k) = ak0(k) + bk0(k)*psc(i,j)
         enddo
      enddo
 
-     do k=2,npz+1
+     do k=1,npz+1
        do i=is,ie
           pe1(i,k) = Atm(1)%ak(k) + Atm(1)%bk(k)*Atm(1)%ps(i,j)
        enddo
      enddo
 
-! Use kord=4 for winds; kord=8 for others
 !------
 ! map u
 !------
@@ -1012,16 +1169,63 @@ contains
  end subroutine remap_winds
 
 
+ subroutine remap_wz(im, jm, km, npz, mg, ak0, bk0, psc, wa, wz, Atm)
+  type(fv_atmos_type), intent(inout) :: Atm(:)
+  integer, intent(in):: im, jm, km, npz
+  integer, intent(in):: mg     ! mg = 0 for delz; mg=3 for w
+  real,    intent(in):: ak0(km+1), bk0(km+1)
+  real,    intent(in):: psc(is:ie,js:je)
+  real,    intent(in), dimension(is:ie,js:je,km):: wa
+  real,   intent(out):: wz(is-mg:ie+mg,js-mg:je+mg,npz)
+! local:
+  real, dimension(is:ie, km+1):: pe0
+  real, dimension(is:ie,npz+1):: pe1
+  real, dimension(is:ie,npz):: qn1
+  integer i,j,k
 
-  subroutine remap_xyz( im, jm, km, npz, nq, ncnst, lon, lat, ak0, bk0, ps0, gz0,   &
+  do 5000 j=js,je
+
+     do k=1,km+1
+        do i=is,ie
+           pe0(i,k) = ak0(k) + bk0(k)*psc(i,j)
+        enddo
+     enddo
+
+     do k=1,npz+1
+       do i=is,ie
+          pe1(i,k) = Atm(1)%ak(k) + Atm(1)%bk(k)*Atm(1)%ps(i,j)
+       enddo
+     enddo
+
+!------
+! map w
+!------
+      call mappm(km, pe0, wa(is:ie,j,1:km), npz, pe1, qn1, is,ie, -1, 4)
+      do k=1,npz
+         do i=is,ie
+            wz(i,j,k) = qn1(i,k)
+         enddo
+      enddo
+
+5000 continue
+
+! call prt_maxmin('WZ', wz, is, ie, js, je, mg, npz, 1., gid==0)
+! if (gid==0) write(*,*) 'done remap_wz'
+
+ end subroutine remap_wz
+
+
+
+  subroutine remap_xyz( im, jbeg, jend, jm, km, npz, nq, ncnst, lon, lat, ak0, bk0, ps0, gz0,   &
                         ua, va, ta, qa, Atm )
 
   type(fv_atmos_type), intent(inout) :: Atm(:)
   integer, intent(in):: im, jm, km, npz, nq, ncnst
+  integer, intent(in):: jbeg, jend
   real,    intent(in):: lon(im), lat(jm), ak0(km+1), bk0(km+1)
-  real,    intent(in):: gz0(im,jm), ps0(im,jm)
-  real,    intent(in), dimension(im,jm,km):: ua, va, ta
-  real,    intent(in), dimension(im,jm,km,ncnst):: qa
+  real,    intent(in):: gz0(im,jbeg:jend), ps0(im,jbeg:jend)
+  real,    intent(in), dimension(im,jbeg:jend,km):: ua, va, ta
+  real,    intent(in), dimension(im,jbeg:jend,km,ncnst):: qa
 ! local:
   real, dimension(isd:ied,jsd:jed,npz):: ut, vt   ! winds 
   real, dimension(is:ie,km):: up, vp, tp
@@ -1046,9 +1250,6 @@ contains
    if ( sphum/=1 ) then
         call mpp_error(FATAL,'SPHUM must be 1st tracer')
    endif
-
-! call prt_maxmin('C_LON', agrid(isd,jsd,1), is, ie, js, je, ng, 1, 180./pi, gid==0)
-! call prt_maxmin('C_LAT', agrid(isd,jsd,2), is, ie, js, je, ng, 1, 180./pi, gid==0)
 
   pk0(1) = ak0(1)**kappa 
 
@@ -1200,11 +1401,11 @@ contains
         enddo
      enddo
  
-! Use kord=4 for winds; kord=8 for others
+! Use kord=9 for winds; kord=11 for tracers
 !------
 ! map u
 !------
-      call mappm(km, pe0, up, npz, pe1, qn1, is,ie, -1, 4)
+      call mappm(km, pe0, up, npz, pe1, qn1, is,ie, -1, 9)
       do k=1,npz
          do i=is,ie
             ut(i,j,k) = qn1(i,k)
@@ -1213,7 +1414,7 @@ contains
 !------
 ! map v
 !------
-      call mappm(km, pe0, vp, npz, pe1, qn1, is,ie, -1, 4)
+      call mappm(km, pe0, vp, npz, pe1, qn1, is,ie, -1, 9)
       do k=1,npz
          do i=is,ie
             vt(i,j,k) = qn1(i,k)
@@ -1226,7 +1427,7 @@ contains
       do iq=1,ncnst
 ! Note: AM2 physics tracers only
 !         if ( iq==sphum .or. iq==liq_wat .or. iq==ice_wat .or. iq==cld_amt ) then
-         call mappm(km, pe0, qp(is,1,iq), npz, pe1,  qn1, is,ie, 0, 8)
+         call mappm(km, pe0, qp(is,1,iq), npz, pe1,  qn1, is,ie, 0, 11)
          do k=1,npz
             do i=is,ie
                Atm(1)%q(i,j,k,iq) = qn1(i,k)
@@ -1238,7 +1439,7 @@ contains
 !-------------------------------------------------------------
 ! map virtual temperature using geopotential conserving scheme.
 !-------------------------------------------------------------
-      call mappm(km, pn0, tp, npz, pn1, qn1, is,ie, 1, 8)
+      call mappm(km, pn0, tp, npz, pn1, qn1, is,ie, 1, 9)
       do k=1,npz
          do i=is,ie
             Atm(1)%pt(i,j,k) = qn1(i,k)/(1.+zvir*Atm(1)%q(i,j,k,sphum))

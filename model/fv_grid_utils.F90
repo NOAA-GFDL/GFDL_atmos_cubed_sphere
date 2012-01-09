@@ -1,18 +1,19 @@
  module fv_grid_utils_mod
  
 #include <fms_platform.h>
-
+ use constants_mod,   only: pi
  use mpp_mod,         only: FATAL, mpp_error
+ use external_sst_mod, only: i_sst, j_sst, sst_ncep, sst_anom
  use mpp_domains_mod, only: mpp_update_domains, DGRID_NE, mpp_global_sum,   &
                             BITWISE_EXACT_SUM
  use mpp_parameter_mod, only: AGRID_PARAM=>AGRID, CGRID_NE_PARAM=>CGRID_NE, & 
                               CORNER, SCALAR_PAIR
 
- use external_sst_mod, only: i_sst, j_sst, sst_ncep, sst_anom
  use fv_arrays_mod,   only: fv_atmos_type
  use fv_eta_mod,      only: set_eta
  use fv_mp_mod,       only: domain, ng, is,js,ie,je, isd,jsd,ied,jed, gid,  &
                             mp_reduce_sum, mp_reduce_min, mp_reduce_max
+ use fv_mp_mod,       only: fill_corners, XDir, YDir
  use fv_timing_mod,   only: timing_on, timing_off
 
  implicit none
@@ -26,10 +27,6 @@
 #endif
  real, parameter::  big_number=1.E35
  real, parameter:: tiny_number=1.E-35
-
-! For computing mismatch for variable grid zise:
- real, allocatable :: cx1(:,:), cx2(:,:)    !
- real, allocatable :: cy1(:,:), cy2(:,:)    !
 
 ! Scalars:
  real, allocatable :: edge_s(:)
@@ -62,8 +59,10 @@
  real, allocatable :: z22(:,:)
 
  real:: global_area, da_min, da_max, da_min_c, da_max_c
+ real:: stretch_factor=1.
  logical:: g_sum_initialized
- logical:: Gnomonic_grid
+ logical:: stretched_grid
+ logical:: gnomonic_grid
  logical:: sw_corner, se_corner, ne_corner, nw_corner 
  real, allocatable :: cosa_u(:,:)
  real, allocatable :: cosa_v(:,:)
@@ -81,6 +80,12 @@
  real, allocatable :: ec2(:,:,:)
  real, allocatable :: ew(:,:,:,:)
  real, allocatable :: es(:,:,:,:)
+
+!- 3D Super grid to contain all geometrical factors --
+! the 3rd dimension is 9
+ real, allocatable :: sin_sg(:,:,:)
+ real, allocatable :: cos_sg(:,:,:)
+!--------------------------------------------------
 
 ! Unit Normal vectors at cell edges:
  real, allocatable :: en1(:,:,:)
@@ -103,17 +108,22 @@
 
  public ptop, ks, ptop_min, fC, f0, deglat, big_number, ew, es, eww, ess, ec1, ec2
  public sina_u, sina_v, cosa_u, cosa_v, cosa_s, sina_s, rsin_u, rsin_v, rsina, rsin2
- public project_sphere_v, latlon2xyz,  gnomonic_grids, global_area,         &
+ public sin_sg, cos_sg, stretched_grid, stretch_factor, cos_angle
+ public project_sphere_v, latlon2xyz, gnomonic_grids, global_area,         &
         sw_corner, se_corner, ne_corner, nw_corner, global_mx,              &
         da_min, da_min_c, edge_s, edge_n, edge_w, edge_e,   &
         edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e, unit_vect_latlon,  &
         cubed_to_latlon, c2l_ord2, g_sum, global_qsum, great_circle_dist,  &
         v_prod, en1, en2, ex_w, ex_e, ex_s, ex_n, vlon, vlat, ee1, ee2, &
-        cx1, cx2, cy1, cy2, Gnomonic_grid, van2, divg_u, divg_v
+        gnomonic_grid, van2, divg_u, divg_v
  public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, grid_utils_end, &
-        spherical_angle, cell_center2, get_area, inner_prod, fill_ghost,    &
+        spherical_angle, cell_center2, get_area, inner_prod, fill_ghost, direct_transform,  &
         make_eta_level, expand_cell, cart_to_latlon, intp_great_circle, normalize_vect
  public z11, z12, z21, z22
+
+!---- version number -----
+ character(len=128) :: version = '$Id: fv_grid_utils.F90,v 19.0 2012/01/06 19:57:42 fms Exp $'
+ character(len=128) :: tagname = '$Name: siena $'
 
  contains
 
@@ -125,7 +135,7 @@
       logical, intent(in):: non_ortho
       integer, intent(in):: npx, npy, npz
       integer, intent(in):: grid_type, c2l_order
-      real, intent(in)::  grid(isd:ied+1,jsd:jed+1,2)
+      real, intent(inout)::  grid(isd:ied+1,jsd:jed+1,2)
       real, intent(in):: agrid(isd:ied  ,jsd:jed  ,2)
       real, intent(in):: area(isd:ied,jsd:jed)
       real, intent(in):: area_c(isd:ied+1,jsd:jed+1)
@@ -140,14 +150,27 @@
       real, intent(inout):: sina(isd:ied+1,jsd:jed+1)
       logical, intent(IN) :: uniform_ppm
 !
+! Super (composite) grid:
+ 
+!     9---4---8
+!     |       |
+!     1   5   3
+!     |       |
+!     6---2---7
+
+ 
       real grid3(3,isd:ied+1,jsd:jed+1)
-      real p1(3), p2(3), p3(3), pp(3)
+      real p1(3), p2(3), p3(3), p4(3), pp(3)
       real sin2, tmp1, tmp2
-      integer i, j, k, n
+      integer i, j, k, n, ip
 
       npxx = npx;  npyy = npy
 
       g_sum_initialized = .false.
+
+      stretched_grid = .false.
+      stretch_factor = atm%stretch_fac
+      if ( Atm%do_schmidt .and. abs(stretch_factor-1.) > 1.E-5 ) stretched_grid = .true.
 
       allocate ( Atm%ak(npz+1) )
       allocate ( Atm%bk(npz+1) )
@@ -159,23 +182,26 @@
            Atm%bk(2) = 1.
            ptop      = 0.
            Atm%ks    = 0
-      else
+      elseif ( .not. atm%hybrid_z ) then
 ! Initialize (ak,bk) for cold start; overwritten with restart file
            call set_eta(npz, ks, ptop, Atm%ak, Atm%bk)
            Atm%ks = ks
-#ifdef PRINT_GRID
            if ( gid==0 ) then
-                write(*,*) 'Grid_init', ks, ptop
-              do k=1,npz
-                 write(*,*) k, atm%ak(k), atm%bk(k)
+              write(*,*) 'Grid_init', npz, ks, ptop
+              tmp1 = Atm%ak(ks+1)
+              do k=ks+1,npz
+                 tmp1 = max(tmp1, (Atm%ak(k)-Atm%ak(k+1)) / (Atm%bk(k+1)-Atm%bk(k)) )
               enddo
+              write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hpa)=', tmp1/100.
+              if ( tmp1 > 420.E2 ) write(*,*) 'Warning: the chosen setting in set_eta can cause instability'
            endif
-#endif
       endif
 
 ! NCEP analysis available from amip-Interp (allocate if needed)
+#ifndef DYCORE_SOLO
       if (.not. allocated(sst_ncep)) allocate (sst_ncep(i_sst,j_sst))
       if (.not. allocated(sst_anom)) allocate (sst_anom(i_sst,j_sst))
+#endif
 
 ! Coriolis parameters:
       allocate ( f0(isd:ied  ,jsd:jed  ) )
@@ -211,6 +237,20 @@
       allocate (  rsina(is:ie+1,js:je+1) )    ! cell corners
       allocate (  rsin2(isd:ied,jsd:jed) )    ! cell center
 
+! Super (composite) grid:
+ 
+!     9---4---8
+!     |       |
+!     1   5   3
+!     |       |
+!     6---2---7
+ 
+      allocate ( cos_sg(isd:ied,jsd:jed,9) )
+      allocate ( sin_sg(isd:ied,jsd:jed,9) )
+
+      cos_sg(:,:,:) =  big_number
+      sin_sg(:,:,:) = tiny_number
+
       allocate( eww(3,4) )
       allocate( ess(3,4) )
 
@@ -230,32 +270,10 @@
          if (       is==1 .and. (je+1)==npy ) nw_corner = .true.
       endif
 
-! For variable grid
-   if ( .not. uniform_ppm ) then
-      allocate ( cx1(isd:ied,jsd:jed) )
-      allocate ( cx2(isd:ied,jsd:jed) )
-      allocate ( cy1(isd:ied,jsd:jed) )
-      allocate ( cy2(isd:ied,jsd:jed) )
+   if (grid_type < 3) then
+     call fill_corners(grid(:,:,1), npx, npy, FILL=XDir, BGRID=.true.)
+     call fill_corners(grid(:,:,2), npx, npy, FILL=XDir, BGRID=.true.)
 
-     do j=jsd,jed
-        do i=is-2,ie+2
-               tmp1 = dxa(i,j)/(dxa(i-1,j) + dxa(i,j) + dxa(i+1,j))
-           cx1(i,j) = tmp1*(dxa(i+1,j)+0.5*dxa(i,j))/(dxa(i-1,j)+dxa(i,j)) 
-           cx2(i,j) = tmp1*(dxa(i-1,j)+0.5*dxa(i,j))/(dxa(i,j)+dxa(i+1,j)) 
-        enddo
-     enddo
-
-     do j=js-2,je+2
-        do i=isd,ied
-               tmp2 = dya(i,j)/(dya(i,j-1) + dya(i,j) + dya(i,j+1)) 
-           cy1(i,j) = tmp2*(dya(i,j+1)+0.5*dya(i,j))/(dya(i,j-1)+dya(i,j))
-           cy2(i,j) = tmp2*(dya(i,j-1)+0.5*dya(i,j))/(dya(i,j)+dya(i,j+1)) 
-        enddo
-     enddo
-  endif
-
-
-  if (grid_type < 3) then
      do j=jsd,jed+1
         do i=isd,ied+1
            call latlon2xyz(grid(i,j,1:2), grid3(1,i,j))
@@ -274,7 +292,6 @@
         do i=isd+1,ied
         if ( (i<1   .and. j<1  ) .or. (i>npx .and. j<1  ) .or.  &
              (i>npx .and. j>(npy-1)) .or. (i<1   .and. j>(npy-1)) ) then
-!            (i>npx .and. j>npy) .or. (i<1   .and. j>npy) ) then
              ew(1:3,i,j,1:2) = 0.
         else
            call mid_pt_cart( grid(i,j,1:2), grid(i,j+1,1:2), pp)
@@ -326,7 +343,100 @@
         endif
         enddo
      enddo
-  else
+
+!     9---4---8
+!     |       |
+!     1   5   3
+!     |       |
+!     6---2---7
+
+      do j=jsd,jed
+         do i=isd,ied
+! Testing using spherical formular: exact if coordinate lines are along great circles
+! SW corner:
+            ip = 6
+            cos_sg(i,j,ip) = cos_angle( grid3(1,i,j), grid3(1,i+1,j), grid3(1,i,j+1) )
+! SE corner:
+            ip = 7
+            cos_sg(i,j,ip) = -cos_angle( grid3(1,i+1,j), grid3(1,i,j), grid3(1,i+1,j+1) )
+! NE corner:
+            ip = 8
+            cos_sg(i,j,ip) = cos_angle( grid3(1,i+1,j+1), grid3(1,i+1,j), grid3(1,i,j+1) )
+! NW corner:
+            ip = 9
+            cos_sg(i,j,ip) = -cos_angle( grid3(1,i,j+1), grid3(1,i,j), grid3(1,i+1,j+1) )
+         enddo
+      enddo
+
+#ifdef SPECIAL_EDGES
+      if ( sw_corner ) then
+           do j=-2,0
+              cos_sg(0,j,6) = cos_sg(*,*,*)
+           enddo
+      endif
+#endif
+!
+! Mid-points by averaging:
+!
+      do j=jsd,jed
+         do i=isd,ied
+            ip = 1
+            cos_sg(i,j,ip) = 0.5*( cos_sg(i,j,6) + cos_sg(i,j,9) ) 
+            ip = 2
+            cos_sg(i,j,ip) = 0.5*( cos_sg(i,j,6) + cos_sg(i,j,7) ) 
+            ip = 3
+            cos_sg(i,j,ip) = 0.5*( cos_sg(i,j,7) + cos_sg(i,j,8) ) 
+            ip = 4
+            cos_sg(i,j,ip) = 0.5*( cos_sg(i,j,8) + cos_sg(i,j,9) ) 
+! Center point:
+            ip = 5
+            cos_sg(i,j,ip) = 0.5*( cos_sg(i,j,1) + cos_sg(i,j,3) ) 
+         enddo
+      enddo
+
+      do ip=1,9
+         do j=jsd,jed
+            do i=isd,ied
+               sin_sg(i,j,ip) = min(1.0, sqrt( max(0., 1.-cos_sg(i,j,ip)**2) ) )
+            enddo
+         enddo
+      enddo
+
+! -------------------------------
+! For transport operation
+! -------------------------------
+      if ( sw_corner ) then
+           do i=-2,0
+              sin_sg(0,i,3) = sin_sg(i,1,2) 
+              sin_sg(i,0,4) = sin_sg(1,i,1) 
+           enddo
+      endif
+      if ( nw_corner ) then
+           do i=npy,npy+2
+              sin_sg(0,i,3) = sin_sg(npy-i,npy-1,4) 
+           enddo
+           do i=-2,0
+              sin_sg(i,npy,2) = sin_sg(1,npx+i,1) 
+           enddo
+      endif
+      if ( se_corner ) then
+           do j=-2,0
+              sin_sg(npx,j,1) = sin_sg(npx-j,1,2) 
+           enddo
+           do i=npx,npx+2
+              sin_sg(i,0,4) = sin_sg(npx-1,npx-i,3) 
+           enddo
+      endif
+      if ( ne_corner ) then
+           do i=npy,npy+2
+              sin_sg(npx,i,1) = sin_sg(i,npy-1,4) 
+              sin_sg(i,npy,2) = sin_sg(npx-1,i,3) 
+           enddo
+      endif
+   else
+     cos_sg(:,:,:) = 0.
+     sin_sg(:,:,:) = 1.
+
      ec1(1,:,:)=1.
      ec1(2,:,:)=0.
      ec1(3,:,:)=0.
@@ -350,9 +460,9 @@
      es(1,:,:,2)=0.
      es(2,:,:,2)=1.
      es(3,:,:,2)=0.
-  endif
+   endif
 
-     if ( non_ortho ) then
+   if ( non_ortho ) then
            cosa_u = big_number
            cosa_v = big_number
            cosa_s = big_number
@@ -363,20 +473,8 @@
            rsin_v = big_number
            rsina  = big_number
            rsin2  = big_number
-#ifndef GLOBAL_TRIG
-          cosa = big_number
-          sina = big_number
-!       if ( Gnomonic_grid ) then
-! The following works well ONLY with the Gnomonic grid (type 0)
-!           do j=js,je+1
-!              do i=is,ie+1
-!                 tmp1 = cos_angle(grid3(1,i,j), grid3(1,i+1,j), grid3(1,i,j+1))
-!                 tmp2 = cos_angle(grid3(1,i,j), grid3(1,i-1,j), grid3(1,i,j-1))
-!                 cosa(i,j) = 0.5*(tmp1+tmp2)
-!                 sina(i,j) = sqrt( max(0.,1. -cosa(i,j)**2) )
-!              enddo
-!          enddo
-!       endif
+           cosa = big_number
+           sina = big_number
 
         do j=js,je+1
            do i=is,ie+1
@@ -402,16 +500,21 @@
               call vect_cross(ee2(1,i,j), pp, grid3(1,i,j))
               call normalize_vect( ee2(1,i,j) )
 
+#ifdef SYM_GRID
               tmp1 = inner_prod(ee1(1,i,j), ee2(1,i,j))
               cosa(i,j) = sign(min(1., abs(tmp1)), tmp1)
               sina(i,j) = sqrt(max(0.,1. -cosa(i,j)**2))
+#else
+              cosa(i,j) = cos_sg(i,j,6)
+              sina(i,j) = sin_sg(i,j,6)
+#endif
            enddo
         enddo
-#endif
 
 ! call mpp_update_domains(cosa, domain, position=CORNER)
 ! The above does not work because cosa at edges should have two values (left and right)
 
+#ifdef TEST_T3
       do j=jsd,jed
          do i=isd+1,ied
                    tmp1 = inner_prod(ew(1,i,j,1), ew(1,i,j,2))
@@ -419,7 +522,6 @@
             sin2 = 1. - cosa_u(i,j)**2
             sin2 = min(1., sin2)
             sin2 = max(tiny_number, sin2)  ! sin(alpha)**2 >= 0.75
- 
             sina_u(i,j) = sqrt( sin2 )
             rsin_u(i,j) =  1. / sin2
          enddo
@@ -436,9 +538,63 @@
             rsin_v(i,j) =  1. / sin2
          enddo
       enddo
+#else
+!     9---4---8
+!     |       |
+!     1   5   3
+!     |       |
+!     6---2---7
+      do j=jsd,jed
+         do i=isd+1,ied
+!        do i=is,ie+1
+            if ( i==1 ) then
+               cosa_u(i,j) = cos_sg(i,j,1)
+               sina_u(i,j) = sin_sg(i,j,1)
+            elseif ( i==npx ) then
+               cosa_u(i,j) = cos_sg(i-1,j,3)
+               sina_u(i,j) = sin_sg(i-1,j,3)
+            else
+               cosa_u(i,j) = 0.5*(cos_sg(i-1,j,3)+cos_sg(i,j,1))
+               sina_u(i,j) = 0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))
+            endif
+            rsin_u(i,j) =  1. / sina_u(i,j)**2
+         enddo
+      enddo
+      do j=jsd+1,jed
+!     do j=js,je+1
+         if( j==1 ) then
+           do i=isd,ied
+              cosa_v(i,j) = cos_sg(i,j,2)
+              sina_v(i,j) = sin_sg(i,j,2)
+              rsin_v(i,j) =  1. / sina_v(i,j)**2
+           enddo
+         elseif ( j==npy ) then
+           do i=isd,ied
+              cosa_v(i,j) = cos_sg(i,j-1,4)
+              sina_v(i,j) = sin_sg(i,j-1,4)
+              rsin_v(i,j) =  1. / sina_v(i,j)**2
+           enddo
+         else
+           do i=isd,ied
+              cosa_v(i,j) = 0.5*(cos_sg(i,j-1,4)+cos_sg(i,j,2))
+              sina_v(i,j) = 0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))
+              rsin_v(i,j) =  1. / sina_v(i,j)**2
+           enddo
+         endif
+      enddo
+#endif
+
+!     if ( is==1 ) then
+!          write(*,*) 'Super Grid:', is, js, grid(is,js,1)*180./pi, grid(is,js,2)*180./pi
+! j=0: problem
+!          do j=jsd,jed
+!             write(*,*) j, sin_sg(1,j,1), ' sin_diff=', sin_sg(1,j,1)-sin_sg(0,j,3)
+!          enddo
+!     endif
      
       do j=jsd,jed
          do i=isd,ied
+#ifdef TEST_TEST
                   tmp1  = inner_prod(ec1(1,i,j), ec2(1,i,j))
             cosa_s(i,j) = sign(min(1., abs(tmp1)), tmp1 )
             sin2 = 1. - cosa_s(i,j)**2
@@ -446,6 +602,11 @@
             sin2 = max(tiny_number, sin2)
             sina_s(i,j) = min(1., sqrt(sin2))
             rsin2(i,j) = 1. / sin2
+#else
+            cosa_s(i,j) = cos_sg(i,j,5)
+            sina_s(i,j) = sin_sg(i,j,5)
+            rsin2(i,j) = 1. / sina_s(i,j)**2
+#endif
          enddo
       enddo
 ! Force the model to fail if incorrect corner values are to be used:
@@ -457,8 +618,9 @@
 !------------------------------------
       do j=js,je+1
          do i=is,ie+1
-            if ( i==1 .or. i==npx .or. j==1 .or. j==npy ) then
-                 rsina(i,j) = 1. / sina(i,j)
+            if ( i==npx .and. j==npy ) then
+            else if ( i==1 .or. i==npx .or. j==1 .or. j==npy ) then
+                 rsina(i,j) = big_number
             else
                  rsina(i,j) = 1. / sina(i,j)**2
             endif
@@ -466,20 +628,67 @@
       enddo
 
       do j=jsd,jed
-         do i=isd+1,ied
+         do i=is,ie+1
             if ( i==1 .or. i==npx ) then
                  rsin_u(i,j) = 1. / sina_u(i,j)
             endif
          enddo
       enddo
 
-      do j=jsd+1,jed
+      do j=js,je+1
          do i=isd,ied
             if ( j==1 .or. j==npy ) then
                  rsin_v(i,j) = 1. / sina_v(i,j)
             endif
          enddo
       enddo
+
+      !EXPLANATION HERE: calling fill_ghost overwrites **SOME** of the sin_sg values along the outward-facing edge of a tile in the corners, which is incorrect. What we will do is call fill_ghost and then fill in the appropriate values
+
+     do k=1,9
+        call fill_ghost(sin_sg(:,:,k), npx, npy, tiny_number)  ! this will cause NAN if used
+        call fill_ghost(cos_sg(:,:,k), npx, npy, big_number)
+     enddo
+
+! -------------------------------
+! For transport operation
+! -------------------------------
+      if ( sw_corner ) then
+           do i=0,-2,-1
+              sin_sg(0,i,3) = sin_sg(i,1,2) 
+              sin_sg(i,0,4) = sin_sg(1,i,1) 
+              cos_sg(0,i,3) = cos_sg(i,1,2) 
+              cos_sg(i,0,4) = cos_sg(1,i,1) 
+           enddo
+      endif
+      if ( nw_corner ) then
+           do i=npy,npy+2
+              sin_sg(0,i,3) = sin_sg(npy-i,npy-1,4) 
+              cos_sg(0,i,3) = cos_sg(npy-i,npy-1,4) 
+           enddo
+           do i=0,-2,-1
+              sin_sg(i,npy,2) = sin_sg(1,npy-i,1) 
+              cos_sg(i,npy,2) = cos_sg(1,npy-i,1) 
+           enddo
+      endif
+      if ( se_corner ) then
+           do j=0,-2,-1
+              sin_sg(npx,j,1) = sin_sg(npx-j,1,2) 
+              cos_sg(npx,j,1) = cos_sg(npx-j,1,2) 
+           enddo
+           do i=npx,npx+2
+              sin_sg(i,0,4) = sin_sg(npx-1,npx-i,3) 
+              cos_sg(i,0,4) = cos_sg(npx-1,npx-i,3) 
+           enddo
+      endif
+      if ( ne_corner ) then
+         do i=0,2
+            sin_sg(npx,npy+i,1) = sin_sg(npx+i,npy-1,4)
+            sin_sg(npx+i,npy,2) = sin_sg(npx-1,npy+i,3)
+            cos_sg(npx,npy+i,1) = cos_sg(npx+i,npy-1,4)
+            cos_sg(npx+i,npy,2) = cos_sg(npx-1,npy+i,3)
+         end do
+      endif     
 
    else
            sina = 1.
@@ -594,14 +803,25 @@
   endif
  
   do j=jsd,jed+1
-     do i=isd,ied
-        divg_u(i,j) = sina_v(i,j)*dyc(i,j)/dx(i,j)
-     enddo
+     if (j==1 .OR. j==npy) then
+        do i=isd,ied
+           divg_u(i,j) = dyc(i,j)/dx(i,j) &
+                    *0.5*(sin_sg(i,j,2) + sin_sg(i,j-1,4) )
+        enddo
+     else
+        do i=isd,ied
+           divg_u(i,j) = sina_v(i,j)*dyc(i,j)/dx(i,j)
+        enddo
+     end if
   enddo
   do j=jsd,jed
      do i=isd,ied+1
         divg_v(i,j) = sina_u(i,j)*dxc(i,j)/dy(i,j)
      enddo
+     if (is == 1) divg_v(is,j) = dxc(is,j)/dy(is,j)* &
+            0.5*(sin_sg(1,j,1) + sin_sg(0,j,3))
+     if (ie+1 == npx) divg_v(ie+1,j) = dxc(ie+1,j)/dy(ie+1,j)* & 
+            0.5*(sin_sg(npx,j,1) + sin_sg(npx-1,j,3))
   enddo
 
 ! Initialize cubed_sphere to lat-lon transformation:
@@ -665,15 +885,13 @@
   logical, intent(IN) :: uniform_ppm
  
 ! deallocate sst_ncep (if allocated)
+#ifndef DYCORE_SOLO
       if (allocated(sst_ncep)) deallocate( sst_ncep )
       if (allocated(sst_anom)) deallocate( sst_anom )
+#endif
 
-  if ( .not. uniform_ppm ) then
-      deallocate( cx1 )
-      deallocate( cx2 )
-      deallocate( cy1 )
-      deallocate( cy2 )
-  endif
+      if( allocated(cos_sg) ) deallocate( cos_sg )
+      if( allocated(sin_sg) ) deallocate( sin_sg )
 
       deallocate( cosa_u )
       deallocate( cosa_v )
@@ -687,10 +905,8 @@
       deallocate( rsina  )
       deallocate( rsin2  )
 
-!     if ( .not. Gnomonic_grid ) then
-           deallocate( ee1 )
-           deallocate( ee2 )
-!     endif
+      deallocate( ee1 )
+      deallocate( ee2 )
 
       deallocate( ec1 )
       deallocate( ec2 )
@@ -739,6 +955,66 @@
 
   end subroutine grid_utils_end
 
+
+  subroutine direct_transform(c, i1, i2, j1, j2, lon_p, lat_p, n, lon, lat)
+!
+! This is a direct transformation of the standard (symmetrical) cubic grid
+! to a locally enhanced high-res grid on the sphere; it is an application
+! of the Schmidt transformation at the south pole followed by a 
+! pole_shift_to_target (rotation) operation
+!
+    real,    intent(in):: c              ! Stretching factor
+    real,    intent(in):: lon_p, lat_p   ! center location of the target face, radian
+    integer, intent(in):: n              ! grid face number
+    integer, intent(in):: i1, i2, j1, j2
+!  0 <= lon <= 2*pi ;    -pi/2 <= lat <= pi/2
+    real, intent(inout), dimension(i1:i2,j1:j2):: lon, lat
+!
+    real(f_p):: lat_t, sin_p, cos_p, sin_lat, cos_lat, sin_o, p2, two_pi
+    real(f_p):: c2p1, c2m1
+    integer:: i, j
+
+    p2 = 0.5*pi
+    two_pi = 2.*pi
+
+    if( gid==0 .and. n==1 ) then
+        write(*,*) n, 'Schmidt transformation: stretching factor=', c, ' center=', lon_p, lat_p
+    endif
+
+    c2p1 = 1. + c*c
+    c2m1 = 1. - c*c
+
+    sin_p = sin(lat_p)
+    cos_p = cos(lat_p)
+
+    do j=j1,j2
+       do i=i1,i2
+          if ( abs(c2m1) > 1.E-7 ) then
+               sin_lat = sin(lat(i,j)) 
+               lat_t = asin( (c2m1+c2p1*sin_lat)/(c2p1+c2m1*sin_lat) )
+          else
+               lat_t = lat(i,j)
+          endif
+          sin_lat = sin(lat_t) 
+          cos_lat = cos(lat_t) 
+            sin_o = -(sin_p*sin_lat + cos_p*cos_lat*cos(lon(i,j)))
+          if ( (1.-abs(sin_o)) < 1.E-7 ) then    ! poles
+               lon(i,j) = 0.
+               lat(i,j) = sign( p2, sin_o )
+          else
+               lat(i,j) = asin( sin_o )
+               lon(i,j) = lon_p + atan2( -cos_lat*sin(lon(i,j)),   &
+                          -sin_lat*cos_p+cos_lat*sin_p*cos(lon(i,j)))
+               if ( lon(i,j) < 0. ) then
+                    lon(i,j) = lon(i,j) + two_pi
+               elseif( lon(i,j) >= two_pi ) then
+                    lon(i,j) = lon(i,j) - two_pi
+               endif
+          endif
+       enddo
+    enddo
+
+  end subroutine direct_transform
 
 
   real function inner_prod(v1, v2)
@@ -928,10 +1204,7 @@
   real:: a(n16,n16), b(n16,n16), x(n16), y(n16)
   real:: x3, x2, x1, y3, y2, y1, lat, lon, lat0, lon0, sum0, xk
   real:: cos_lat, sin_lat, cos_lat0, sin_lat0, cosc, mfactor
-  real pi
   integer i, j, k, ip, jp
-
-  pi = 4.*atan(1.)
 
   do j=1,npy
      do i=1,npx
@@ -1693,11 +1966,7 @@
  integer, intent(in):: im, grid_type
  real, intent(out):: lon(im+1,im+1)
  real, intent(out):: lat(im+1,im+1)
- real pi
  integer i, j
-
-  pi = 4.*atan(1.)
-
 
   if(grid_type==0) call gnomonic_ed(  im, lon, lat)
   if(grid_type==1) call gnomonic_dist(im, lon, lat)
@@ -1713,6 +1982,8 @@
      enddo
 !    call van2_init(lon, lat, im+1, im+1)
   endif
+
+!   gnomonic_grid = .true.
   
  end subroutine gnomonic_grids
 
@@ -1736,11 +2007,11 @@
 
 ! Local:
  real pp(3,im+1,im+1)
-! real(f_p):: pi, rsq3, alpha, delx, dely
- real:: pi, rsq3, alpha, delx, dely
+ real p1(2), p2(2)
+! real(f_p):: rsq3, alpha, delx, dely
+ real:: rsq3, alpha, delx, dely
  integer i, j, k
 
-    pi = 4.*atan(1.)
   rsq3 = 1./sqrt(3.) 
  alpha = asin( rsq3 )
 
@@ -1807,6 +2078,13 @@
 
  call cart_to_latlon( (im+1)*(im+1), pp, lamda, theta)
 
+! Compute great-circle-distance "resolution" along the face edge:
+ if ( gid==0 ) then
+      p1(1) = lamda(1,1);    p1(2) = theta(1,1)
+      p2(1) = lamda(2,1);    p2(2) = theta(2,1)
+      write(*,*) 'Gird distance at face edge (km)=',great_circle_dist( p1, p2, 6371. )   ! earth radius is assumed
+ endif
+
  end subroutine gnomonic_ed
 
 
@@ -1821,9 +2099,8 @@
  real rsq3, xf, y0, z0, y, x, z, ds
  real dy, dz
  integer j,k
- real pi, dp
+ real dp
 
- pi = 4.*atan(1.)
  dp = 0.5*pi/real(im)
 
  rsq3 = 1./sqrt(3.) 
@@ -1849,9 +2126,6 @@
  real rsq3, xf, y0, z0, y, x, z, ds
  real dy, dz
  integer j,k
- real pi
-
- pi = 4.*atan(1.)
 
 ! Face-2
 
@@ -1877,9 +2151,7 @@
  real lamda(im+1,im+1)
  real theta(im+1,im+1)
  integer i,j,ip,jp
- real pi, avg
-
- pi = 4.*atan(1.)
+ real avg
 
  do j=2,im+1
     do i=2,im
@@ -1958,6 +2230,16 @@
 ! Given the "mirror" as defined by p1(x1, y1, z1), p2(x2, y2, z2), and center 
 ! of the sphere, compute the mirror image of p0(x0, y0, z0) as p(x, y, z)
 
+!-------------------------------------------------------------------------------
+! for k=1,2,3 (x,y,z)
+!
+! p(k) = p0(k) - 2 * [p0(k) .dot. NB(k)] * NB(k)
+!
+! where 
+!       NB(k) = p1(k) .cross. p2(k)         ---- direction of NB is imaterial
+!       the normal unit vector to the "mirror" plane
+!-------------------------------------------------------------------------------
+
  real, intent(in) :: p1(3), p2(3), p0(3)
  real, intent(out):: p(3)
 !
@@ -2022,10 +2304,8 @@
 ! local
   real, parameter:: esl=1.e-10
   real (f_p):: p(3)
-  real (f_p):: pi, dist, lat, lon
+  real (f_p):: dist, lat, lon
   integer i,k
-
-  pi = 4.*atan(1.)
 
   do i=1,np
      do k=1,3
@@ -2125,15 +2405,9 @@
     pdot = e(1)**2 + e(2)**2 + e(3)**2
     pdot = sqrt( pdot ) 
 
-!if ( pdot > 0. ) then
     do k=1,3
        e(k) = e(k) / pdot
     enddo
-!else
-!   do k=1,3
-!      e(k) = 1. / sqrt(3.)
-!   enddo
-!endif
 
  end subroutine normalize_vect
 
@@ -2613,7 +2887,6 @@
   real u1(is:ie), v1(is:ie)
   integer i, j, k
 
-!$omp parallel do default(shared) private(i, j, k, wu, wv, u1, v1)
   do k=1,km
      if ( g_type < 4 ) then
        do j=js,je+1
@@ -2776,9 +3049,6 @@
 !-----------------------------------------------
  real e1(3), e2(3), e3(3)
  real ang1, ang2, ang3, ang4
- real pi
-
- pi = 4.*atan(1.)
 
 ! S-W: 1
        call latlon2xyz(p1, e1)   ! p1
@@ -2873,7 +3143,13 @@
 
  real function cos_angle(p1, p2, p3)
 ! As spherical_angle, but returns the cos(angle)
- real p1(3), p2(3), p3(3)
+!       p3
+!       ^  
+!       |  
+!       | 
+!       p1 ---> p2
+!
+ real, intent(in):: p1(3), p2(3), p3(3)
 
  real (f_p):: e1(3), e2(3), e3(3)
  real (f_p):: px, py, pz
@@ -2890,23 +3166,23 @@
 !-------------------------------------------------------------------
 ! Page 41, Silverman's book on Vector Algebra; spherical trigonmetry
 !-------------------------------------------------------------------
-! Vector P:
+! Vector P:= e1 X e2
    px = e1(2)*e2(3) - e1(3)*e2(2) 
    py = e1(3)*e2(1) - e1(1)*e2(3) 
    pz = e1(1)*e2(2) - e1(2)*e2(1) 
-! Vector Q:
+
+! Vector Q: e1 X e3
    qx = e1(2)*e3(3) - e1(3)*e3(2) 
    qy = e1(3)*e3(1) - e1(1)*e3(3) 
    qz = e1(1)*e3(2) - e1(2)*e3(1) 
 
+! ddd = sqrt[ (P*P) (Q*Q) ]
    ddd = sqrt( (px**2+py**2+pz**2)*(qx**2+qy**2+qz**2) )
-
    if ( ddd > 0. ) then
         angle = (px*qx+py*qy+pz*qz) / ddd 
    else
         angle = 1.
    endif
-
    cos_angle = angle
 
  end function cos_angle
@@ -3055,7 +3331,7 @@
   integer, intent(in ):: km
   integer, intent(out):: kks
   real, intent(in):: area(isd:ied,jsd:jed)
-  real, intent(in):: pe(is-1:ie+1,km+1,js-1:je+1)
+  real, intent(inout):: pe(is-1:ie+1,km+1,js-1:je+1)
   real, intent(out):: ak(km+1), bk(km+1)
 ! local:
   real ph(km+1)
@@ -3063,21 +3339,26 @@
   real(kind=4) :: p4
   integer k, i, j
 
-     ph(1) = pe(is,1,js)
-
      allocate ( pem(is:ie,js:je) )
 
 ! Compute global mean values:
-     do k=2,km+1
+     do k=1,km+1
         do j=js,je
            do i=is,ie
                pem(i,j) = pe(i,k,j)
            enddo
         enddo
 ! Make it the same across all PEs
-!       p4 = g_sum(pem, is, ie, js, je, ng, area, mode=1)
+!       ph(k) = g_sum(pem, is, ie, js, je, ng, area, 1, .true.)
         p4 = g_sum(pem, is, ie, js, je, ng, area, 1)
         ph(k) = p4
+     enddo
+
+     ptop = ph(1)
+     do j=js-1,je+1
+        do i=is-1,ie+1
+           pe(i,1,j) = ptop 
+        enddo
      enddo
 
 ! Faking a's and b's for code compatibility with hybrid sigma-p
@@ -3093,8 +3374,7 @@
      enddo
 
     if ( gid==0 ) then
-         write(*,*) 'Make_eta_level ...., ptop=', ph(1)
-         ptop = ph(1)
+         write(*,*) 'Make_eta_level ...., ptop=', ptop
 #ifdef PRINT_GRID
          do k=1,km+1
             write(*,*) ph(k), ak(k), bk(k)
@@ -3161,7 +3441,7 @@
   integer, intent (out), dimension (n) :: indx
   real, intent (inout), dimension (n,n) :: a
 !
-  real :: c1,pi,pi1,pj
+  real :: c1, pie, pi1, pj
   real, dimension (n) :: c
  
   do i = 1, n
@@ -3183,9 +3463,9 @@
   do j = 1, n-1
      pi1 = 0.0
      do i = j, n
-        pi = abs(a(indx(i),j))/c(indx(i))
-        if (pi > pi1) then
-            pi1 = pi
+        pie = abs(a(indx(i),j))/c(indx(i))
+        if (pie > pi1) then
+            pi1 = pie
             k   = i
         endif
      end do
@@ -3213,4 +3493,3 @@
  end subroutine elgs
 
  end module fv_grid_utils_mod
-

@@ -1,9 +1,13 @@
 module fv_eta_mod
  use constants_mod,  only: kappa, grav, cp_air, rdgas
- use fv_mp_mod,      only: gid
+ use fv_mp_mod,      only: gid, isd, ied, jsd, jed
  implicit none
  private
- public set_eta, get_eta_level, compute_dz_L32, set_hybrid_z, compute_dz, gw_1d
+ public set_eta, get_eta_level, compute_dz_L32, compute_dz_L101, set_hybrid_z, compute_dz, gw_1d
+
+!---- version number -----
+ character(len=128) :: version = '$Id: fv_eta.F90,v 19.0 2012/01/06 19:59:05 fms Exp $'
+ character(len=128) :: tagname = '$Name: siena $'
 
  contains
 
@@ -23,7 +27,6 @@ module fv_eta_mod
       real a48(49),b48(49)
       real a52(53),b52(53)
       real a54(55),b54(55)
-      real a55(56),b55(56)
       real a56(57),b56(57)            ! For Mars GCM
       real a60(61),b60(61)
       real a64(65),b64(65)
@@ -287,44 +290,6 @@ data b50  / &
                 0.90622,       0.93399,       0.95723,     &
                 0.97650,       0.99223,       1.00000   /
 
-#ifdef HI_48
-! High trop-resolution (Feb 2004)
-      data a48/40.00000,     100.00000,     200.00000,     &
-              350.00000,     550.00000,     800.00000,     &
-             1085.00000,    1390.00000,    1720.00000,     &
-             2080.00000,    2470.00000,    2895.00000,     &
-             3365.00000,    3890.00000,    4475.00000,     &
-             5120.00000,    5830.00000,    6608.00000,     &
-             7461.00000,    8395.00000,    9424.46289,     &
-            10574.46900,   11864.80330,   13312.58850,     &
-            14937.03770,   16759.70760,   18804.78670,     &
-            21099.41250,   23674.03720,   26562.82650,     &
-            29804.11680,   32627.31601,   34245.89759,     &
-            34722.29104,   34155.20062,   32636.50533,     &
-            30241.08406,   27101.45052,   23362.20912,     &
-            19317.04955,   15446.17194,   12197.45091,     &
-             9496.39912,    7205.66920,    5144.64339,     &
-             3240.79521,    1518.62245,       0.00000,     &
-                0.00000  /
-
-      data b48/0.00000,       0.00000,       0.00000,      &
-               0.00000,       0.00000,       0.00000,      &
-               0.00000,       0.00000,       0.00000,      &
-               0.00000,       0.00000,       0.00000,      &
-               0.00000,       0.00000,       0.00000,      &
-               0.00000,       0.00000,       0.00000,      &
-               0.00000,       0.00000,       0.00000,      &
-               0.00000,       0.00000,       0.00000,      &
-               0.00000,       0.00000,       0.00000,      &
-               0.00000,       0.00000,       0.00000,      &
-               0.00000,       0.00813,       0.03224,      &
-               0.07128,       0.12445,       0.19063,      &
-               0.26929,       0.35799,       0.45438,      &
-               0.55263,       0.64304,       0.71703,      &
-               0.77754,       0.82827,       0.87352,      &
-               0.91502,       0.95235,       0.98511,      &
-               1.00000      /
-#else
            data a48/                                &
                    1.00000,       2.69722,       5.17136,   &
                    8.89455,      14.24790,      22.07157,   &
@@ -362,7 +327,6 @@ data b50  / &
                    0.88127,       0.91217,       0.93803,   &
                    0.95958,       0.97747,       0.99223,   &
                    1.00000   /
-#endif
 
 #ifdef TTT
       data a52/10.00000,      28.03821,      47.30985,
@@ -446,45 +410,6 @@ data b50  / &
                0.97119,       0.98326,       0.99400,  &
                1.00000   /
 
-      data a55/ 1.00000,     2.00000,       3.27000,       &
-              4.75850,       6.60000,       8.93450,       &
-             11.97030,      15.94950,      21.13490,       &
-             27.85260,      36.50410,      47.58060,       &
-             61.67790,      79.51340,     101.94420,       &
-            130.05080,     165.07920,     208.49720,       &
-            262.02120,     327.64330,     407.65670,       &
-            504.68050,     621.68000,     761.98390,       &
-            929.29430,    1127.68880,    1364.33920,       &
-           1645.70720,    1979.15540,    2373.03610,       &
-           2836.78160,    3380.99550,    4017.54170,       &
-           4764.39320,    5638.79380,    6660.33770,       &
-           7851.22980,    9236.56610,   10866.34270,       &
-          12783.70000,   15039.30000,   17693.00000,       &
-          20119.20876,   21686.49129,   22436.28749,       &
-          22388.46844,   21541.75227,   19873.78342,       &
-          17340.31831,   13874.44006,   10167.16551,       &
-           6609.84274,    3546.59643,    1270.49390,       &
-              0.00000,       0.00000   /
-
-      data b55 /0.00000,       0.00000,       0.00000,     &
-                0.00000,       0.00000,       0.00000,     & 
-                0.00000,       0.00000,       0.00000,     &
-                0.00000,       0.00000,       0.00000,     &
-                0.00000,       0.00000,       0.00000,     &
-                0.00000,       0.00000,       0.00000,     &
-                0.00000,       0.00000,       0.00000,     &
-                0.00000,       0.00000,       0.00000,     &
-                0.00000,       0.00000,       0.00000,     &
-                0.00000,       0.00000,       0.00000,     &
-                0.00000,       0.00000,       0.00000,     &
-                0.00000,       0.00000,       0.00000,     &
-                0.00000,       0.00000,       0.00000,     &
-                0.00000,       0.00000,       0.00000,     &
-                0.00696,       0.02801,       0.06372,     &
-                0.11503,       0.18330,       0.27033,     &
-                0.37844,       0.51046,       0.64271,     &
-                0.76492,       0.86783,       0.94329,     &
-                0.98511,       1.00000  /
 
 ! The 56-L setup Can be used for Mars:
 #ifdef MARS_GCM
@@ -890,11 +815,7 @@ data b50  / &
           enddo
 
         case (48)
-#ifdef HI_48
-          ks = 30
-#else
           ks = 28
-#endif
           do k=1,km+1
             ak(k) = a48(k)
             bk(k) = b48(k)
@@ -912,13 +833,6 @@ data b50  / &
           do k=1,km+1
             ak(k) = a54(k)
             bk(k) = b54(k)
-          enddo
-
-        case (55)
-          ks = 41
-          do k=1,km+1
-            ak(k) = a55(k)
-            bk(k) = b55(k)
           enddo
 
         case (56)
@@ -1017,7 +931,11 @@ data b50  / &
              ak(km+1) = 0.
              bk(km+1) = 1.
 #endif
-
+        case (31)
+             ptop = 100.
+             call var_dz(km, ak, bk, ptop)
+             ks = 0
+             pint = ak(1)
         case default
 
 #ifdef TEST_GWAVES
@@ -1025,7 +943,6 @@ data b50  / &
 ! Pure sigma-coordinate with uniform spacing in "z"
 !--------------------------------------------------
           call gw_1d(km, 1000.E2, ak, bk, ptop, 10.E3, pt1)
-
             ks = 0
           pint = ak(1)
 #else
@@ -1148,7 +1065,6 @@ data b50  / &
 !-------------------
         k0 = 2
         z0 = 0.
-!       dz0 = 80.   ! meters
         dz0 = 75.   ! meters
 !-------------------
 ! Treat the surface layer as a special layer
@@ -1187,31 +1103,74 @@ data b50  / &
            ze(k) = ze(k+1) + dz(k)
         enddo
 
-        if ( gid==0 ) then
-           write(*,*) 'Hybrid_z:  dz, zm'
-           do k=1,km
-              dzt(k) = 0.5*(ze(k)+ze(k+1)) / 1000.
-              write(*,*) k, dz(k), dzt(k)
-           enddo
-        endif
+!       if ( gid==0 ) then
+!          write(*,*) 'Hybrid_z:  dz, zm'
+!          do k=1,km
+!             dzt(k) = 0.5*(ze(k)+ze(k+1)) / 1000.
+!             write(*,*) k, dz(k), dzt(k)
+!          enddo
+!       endif
 
  end subroutine compute_dz_L32
 
+ subroutine compute_dz_L101(km, ztop, dz)
 
- subroutine set_hybrid_z(is, ie, js, je, ng, km, ztop, dz, rgrav, hs, ze, delz)
+  integer, intent(in):: km        ! km==101
+  real,   intent(out):: dz(km)
+  real,   intent(out):: ztop      ! try 30.E3
+!------------------------------
+  real ze(km+1)
+  real dz0, dz1
+  real:: stretch_f = 1.16
+  integer k, k0, k1
+
+         k1 = 2
+         k0 = 25
+        dz0 = 40.   ! meters
+
+        ze(km+1) = 0.
+
+        do k=km, k0, -1
+           dz(k) = dz0
+           ze(k) = ze(k+1) + dz(k)
+        enddo
+
+        do k=k0+1, k1, -1
+           dz(k) = stretch_f * dz(k+1)
+           ze(k) = ze(k+1) + dz(k)
+        enddo
+
+        dz(1) = 4.0*dz(2)
+        ze(1) = ze(2) + dz(1)
+        ztop = ze(1)
+
+        if ( gid==0 ) then
+           write(*,*) 'Hybrid_z:  dz, ze'
+           do k=1,km
+              write(*,*) k, 0.001*dz(k), 0.001*ze(k)
+           enddo
+!  ztop (km) = 20.2859154
+           write(*,*) 'ztop (km) =', ztop * 0.001
+        endif
+
+ end subroutine compute_dz_L101
+
+ subroutine set_hybrid_z(is, ie, js, je, ng, km, ztop, dz, rgrav, hs, ze, dz3)
 
  integer,  intent(in):: is, ie, js, je, ng, km
  real, intent(in):: rgrav, ztop
  real, intent(in):: dz(km)       ! Reference vertical resolution for zs=0
  real, intent(in):: hs(is-ng:ie+ng,js-ng:je+ng)
- real, intent(out), optional:: delz(is:ie,js:je,km)
- real, intent(out)::   ze(is:ie,js:je,km+1)
+ real, intent(inout)::  ze(is:ie,js:je,km+1)
+ real, optional, intent(out):: dz3(is:ie,js:je,km)
 ! local
+ logical:: filter_xy = .false.
+ real, allocatable:: delz(:,:,:)
  integer ntimes
  real zint
  real:: z1(is:ie,js:je)
  real:: z(km+1)
- real sig
+ real sig, z_rat
  integer ks(is:ie,js:je)
  integer i, j, k, ks_min, kint
 
@@ -1236,9 +1195,9 @@ data b50  / &
  enddo
 
 ! Set interface:
-#ifdef USE_CONST_ZINT
-  zint = 8.5E3
-  ntimes = 4
+#ifdef USE_VAR_ZINT
+  zint = 10.0E3
+  ntimes = 2
   kint = 2
   do k=2,km
      if ( z(k)<=zint ) then
@@ -1251,9 +1210,9 @@ data b50  / &
 
   do j=js,je
      do i=is,ie
-        do k=kint+1,km
-           sig = 1. - min(1., z(k)/z(kint))
-           ze(i,j,k) = z(k) + ze(i,j,km+1)*sig
+        z_rat = (ze(i,j,kint)-ze(i,j,km+1)) / (z(kint)-z(km+1))
+        do k=km,kint+1,-1
+           ze(i,j,k) = ze(i,j,k+1) + dz(k)*z_rat
         enddo
 !--------------------------------------
 ! Apply vertical smoother locally to dz
@@ -1263,10 +1222,10 @@ data b50  / &
   enddo
 #else
 ! ZINT is a function of local terrain
-  ntimes = 5
+  ntimes = 4
   do j=js,je
      do i=is,ie
-        z1(i,j) = 1.75*max(0.0, ze(i,j,km+1)) + z(km-2)
+        z1(i,j) = dim(ze(i,j,km+1), 2500.) + 7500.
      enddo
   enddo
 
@@ -1287,9 +1246,9 @@ data b50  / &
   do j=js,je
      do i=is,ie
         kint = ks(i,j) + 1
-        do k=kint,km
-           sig = 1. - min(1., z(k)/z1(i,j))
-           ze(i,j,k) = z(k) + ze(i,j,km+1)*sig
+        z_rat = (ze(i,j,kint)-ze(i,j,km+1)) / (z(kint)-z(km+1))
+        do k=km,kint+1,-1
+           ze(i,j,k) = ze(i,j,k+1) + dz(k)*z_rat
         enddo
 !--------------------------------------
 ! Apply vertical smoother locally to dz
@@ -1299,19 +1258,37 @@ data b50  / &
   enddo
 #endif
 
-  if ( present(delz) ) then
-  do k=1,km
-     do j=js,je
-        do i=is,ie
-           delz(i,j,k) = ze(i,j,k+1) - ze(i,j,k)
-           if ( delz(i,j,k) > 0. ) then
-                write(*,*) 'Error in set_hybrid_z:', k,j,i, delz(i,j,k)
-!               stop
-           endif
+#ifdef DEV_ETA
+    if ( filter_xy ) then
+        allocate (delz(isd:ied, jsd:jed, km) )
+        ntimes = 2
+        do k=1,km
+           do j=js,je
+              do i=is,ie
+                 delz(i,j,k) = ze(i,j,k+1) - ze(i,j,k)
+              enddo
+           enddo
         enddo
-     enddo
-  enddo
-  endif
+        call del2_cubed(delz, 0.2*da_min, npx, npy, km, ntimes)
+        do k=km,2,-1
+           do j=js,je
+              do i=is,ie
+                 ze(i,j,k) = ze(i,j,k+1) - delz(i,j,k)
+              enddo
+           enddo
+        enddo
+        deallocate ( delz )
+    endif
+#endif
+    if ( present(dz3) ) then
+        do k=1,km
+           do j=js,je
+              do i=is,ie
+                 dz3(i,j,k) = ze(i,j,k+1) - ze(i,j,k)
+              enddo
+           enddo
+        enddo
+    endif
 
   end subroutine set_hybrid_z
 
@@ -1350,6 +1327,74 @@ data b50  / &
    enddo
 
   end subroutine sm1_edge
+
+
+
+  subroutine var_dz(km, ak, bk, ptop)
+  integer, intent(in):: km
+  real,    intent(in):: ptop
+  real,    intent(out):: ak(km+1), bk(km+1)
+! Local
+  real, parameter:: p00 = 1.E5
+  real, dimension(km+1):: ze, pe1
+  real, dimension(km):: dz
+  real ztop, t0, n2, s0, dz0
+  integer  k
+
+! Set up vertical coordinare with constant del-z spacing:
+       t0 = 270.
+       n2 = grav**2/(cp_air*t0)
+       s0 = grav*grav / (cp_air*n2) 
+
+       ztop = grav/n2 * log( t0/s0*(kappa*log(ptop/p00)+s0/t0-1.) )
+       if ( gid==0 ) write(*,*) 'fv_eta/var_dz: computed model top (m)=', ztop
+
+! k=1:    4.0 * dz
+! k=2:    2.0 * dz
+! k=3:    1.0 * dz
+! ...
+! km-2    1.00 * dz
+! km-1    0.50 * dz
+! km:     0.25 * dz
+
+! Sum= (km-6) * dz + 8.75 * dz = (km + 2.75) * dz 
+! Compute dz: spacing
+       dz0 = ztop / ( real(km)+2.75 )
+
+       dz(1) = 4. * dz0
+       dz(2) = 2. * dz0
+       do k=3,km-2
+          dz(k) = dz0
+       enddo
+       dz(km-1) = 0.50 * dz0
+       dz(km  ) = 0.25 * dz0
+
+       ze(km+1) = 0.
+       do k=km,2,-1
+          ze(k) = ze(k+1) + dz(k)
+       enddo
+       ze(1) = ztop
+
+! Given z --> p
+! ptop = p00*( (1.-s0/t0) + s0/t0*exp(-n2*ztop/grav) )**(1./kappa)
+       pe1(1) = ptop
+       do k=2,km
+          pe1(k) = p00*( (1.-s0/t0) + s0/t0*exp(-n2*ze(k)/grav) )**(1./kappa)
+       enddo
+       pe1(km+1) = p00
+
+! Set up "sigma" coordinate 
+       ak(1) = pe1(1)
+       bk(1) = 0.
+       do k=2,km
+          bk(k) = (pe1(k) - pe1(1)) / (pe1(km+1)-pe1(1))  ! bk == sigma
+          ak(k) =  pe1(1)*(1.-bk(k)) 
+       enddo                                                
+       ak(km+1) = 0.
+       bk(km+1) = 1.
+
+  end subroutine var_dz
+
 
   subroutine gw_1d(km, p0, ak, bk, ptop, ztop, pt1)
   integer, intent(in):: km

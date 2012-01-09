@@ -23,7 +23,7 @@
       real , private       :: tarray(2)
       type tms
            private
-           real :: usr, sys
+           real (kind=8) :: usr, sys
       end type tms
 
 
@@ -31,6 +31,10 @@
 
       real , private       :: us_tmp1(nblks,2)
       real , private       :: us_tmp2(nblks,2)
+
+!---- version number -----
+      character(len=128) :: version = '$Id: fv_timing.F90,v 19.0 2012/01/06 19:59:19 fms Exp $'
+      character(len=128) :: tagname = '$Name: siena $'
 
       contains
          subroutine timing_init
@@ -40,7 +44,7 @@
          implicit none
 
          integer  :: C, R, M
-         real    :: wclk
+         real (kind=8) :: wclk
 
          integer  n
 
@@ -88,7 +92,7 @@
          integer iblk
 
          integer :: C, R, M
-         real   :: wclk
+         real (kind=8)  :: wclk
 
          integer ierr
 
@@ -148,7 +152,7 @@
         integer i
 
         integer  :: C, R, M
-        real    :: wclk
+        real (kind=8)   :: wclk
 
         integer  iblk
 

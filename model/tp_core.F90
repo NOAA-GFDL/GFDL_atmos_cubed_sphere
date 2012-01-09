@@ -5,7 +5,7 @@ module tp_core_mod
 !
  use fv_mp_mod,         only: is,js,ie,je, ng, isd,jsd,ied,jed
  use fv_grid_utils_mod, only: sw_corner, se_corner, ne_corner, nw_corner, &
-                              sina_u, sina_v, da_min
+                              sina_u, sina_v, da_min, sin_sg, big_number
  use fv_grid_tools_mod, only: dx, dy, rdxc, rdyc, rarea, dxa, dya, grid_type
 
  implicit none
@@ -14,6 +14,8 @@ module tp_core_mod
  public fv_tp_2d, pert_ppm, copy_corners
 
  real, parameter:: r3 = 1./3.
+ real, parameter:: near_zero = 1.E-25
+ real, parameter:: ppm_limiter = 2.0
 
 #ifdef WAVE_FORM
 ! Suresh & Huynh scheme 2.2 (purtabation form)
@@ -46,19 +48,18 @@ module tp_core_mod
   real, parameter:: p1 =  7./12.     ! 0.58333333
   real, parameter:: p2 = -1./12.
 
+!---- version number -----
+   character(len=128) :: version = '$Id: tp_core.F90,v 19.0 2012/01/06 19:57:56 fms Exp $'
+   character(len=128) :: tagname = '$Name: siena $'
 
-!
-! !DESCRIPTION:
-!
-! !REVISION HISTORY:
 !
 !EOP
 !-----------------------------------------------------------------------
 
-CONTAINS
+contains
 
- subroutine fv_tp_2d(q, crx, cry, npx, npy, hord, fx, fy, &
-                     xfx, yfx, area, ra_x, ra_y, mfx, mfy, ppm_fac, nord, damp_c)
+ subroutine fv_tp_2d(q, crx, cry, npx, npy, hord, fx, fy, xfx, yfx,  &
+                     area, ra_x, ra_y, mfx, mfy, mass, nord, damp_c)
    integer, intent(in):: npx, npy
    integer, intent(in)::hord
 
@@ -75,7 +76,7 @@ CONTAINS
 ! optional Arguments:
    real, OPTIONAL, intent(in):: mfx(is:ie+1,js:je  )  ! Mass Flux X-Dir
    real, OPTIONAL, intent(in):: mfy(is:ie  ,js:je+1)  ! Mass Flux Y-Dir
-   real, OPTIONAL, intent(in):: ppm_fac               ! for ord=4 option
+   real, OPTIONAL, intent(in):: mass(isd:ied,jsd:jed)
    real, OPTIONAL, intent(in):: damp_c
    integer, OPTIONAL, intent(in):: nord
 ! Local:
@@ -86,7 +87,7 @@ CONTAINS
    real   fy2(isd:ied,js:je+1)
    real   fyy(isd:ied,js:je+1)
    real   fx1(is:ie+1)
-   real   ppm_limiter, damp
+   real   damp
    integer i, j
 
 
@@ -98,14 +99,8 @@ CONTAINS
         ord    = hord
    endif
 
-   if ( present (ppm_fac) ) then
-        ppm_limiter = ppm_fac
-   else
-        ppm_limiter = 2.0
-   endif
-
    call copy_corners(q, npx, npy, 2)
-   call ytp(fy2, q, cry, ord_in, isd, ied, js, je, npx, npy, ppm_limiter)
+   call ytp(fy2, q, cry, ord_in, isd, ied, js, je, npx, npy)
 
    do j=js,je+1
       do i=isd,ied
@@ -117,10 +112,10 @@ CONTAINS
          q_i(i,j) = (q(i,j)*area(i,j) + fyy(i,j)-fyy(i,j+1))/ra_y(i,j)
       enddo
   enddo
-  call xtp(fx, q_i, crx(is,js), ord, is, ie, js,  je, npx, npy, ppm_limiter)
+  call xtp(fx, q_i, crx(is,js), ord, is, ie, js,  je, npx, npy)
 
   call copy_corners(q, npx, npy, 1)
-  call xtp(fx2, q, crx, ord_in, is, ie, jsd,jed, npx, npy, ppm_limiter)
+  call xtp(fx2, q, crx, ord_in, is, ie, jsd,jed, npx, npy)
 
   do j=jsd,jed
      do i=is,ie+1
@@ -130,7 +125,7 @@ CONTAINS
         q_j(i,j) = (q(i,j)*area(i,j) + fx1(i)-fx1(i+1))/ra_x(i,j)
      enddo
   enddo
-  call ytp(fy, q_j, cry, ord, is, ie, js, je, npx, npy, ppm_limiter)
+  call ytp(fy, q_j, cry, ord, is, ie, js, je, npx, npy)
 
 !----------------
 ! Flux averaging:
@@ -150,10 +145,10 @@ CONTAINS
             fy(i,j) = 0.5*(fy(i,j) + fy2(i,j)) * mfy(i,j)
          enddo
       enddo
-      if ( present(nord) .and. present(damp_c) ) then
+      if ( present(nord) .and. present(damp_c) .and. present(mass) ) then
         if ( damp_c > 1.e-4 ) then
            damp = (damp_c * da_min)**(nord+1)
-           call deln_flux( nord, npx, npy, damp, q, fx, fy, mfx, mfy )
+           call deln_flux( nord, npx, npy, damp, q, fx, fy, mass )
         endif
       endif
    else
@@ -173,7 +168,7 @@ CONTAINS
       if ( present(nord) .and. present(damp_c) ) then
            if ( damp_c > 1.E-4 ) then
                 damp = (damp_c * da_min)**(nord+1)
-                call deln_flux( nord, npx, npy, damp, q, fx, fy, xfx(is:ie+1,js:je), yfx(is:ie,js:je+1) )
+                call deln_flux( nord, npx, npy, damp, q, fx, fy )
            endif
       endif
    endif
@@ -254,18 +249,17 @@ CONTAINS
  end subroutine copy_corners
 
 
- subroutine xtp(fx,  q,  c, iord, ifirst, ilast, jfirst, jlast, npx, npy, ppm_limiter)
+ subroutine xtp(fx,  q,  c, iord, ifirst, ilast, jfirst, jlast, npx, npy)
    integer, intent(IN):: ifirst, ilast   !  X-Dir strip
    integer, intent(IN):: jfirst, jlast   !  Y-Dir strip
    integer, intent(IN):: npx, npy
    integer, intent(IN):: iord
    real   , intent(in):: c(is :ie+1, jfirst:jlast)      ! Courant numbers
    real   , intent(in):: q(isd:ied,  jfirst:jlast)
-   real   , intent(IN):: ppm_limiter
    real   , intent(out):: fx(ifirst:ilast+1,jfirst:jlast)           
 ! Local:
    real   dm(is-2:ie+2)
-   real   x0, x1
+   real   x0L, x0R, x1
    integer i, j
 
    if (iord==1) then
@@ -291,34 +285,47 @@ CONTAINS
 
       if (grid_type < 3) then
 !--------------
-! fix the edges
+! fix the edges 
+!  NOW: interpolation to the edge (originally from PL07, appendix C) generalized first for variable dx, then for dx which differs between the two sides of the edge
 !--------------
         if ( is==1 ) then
-             x0 = 0.5*((2.*dxa(1,j)+dxa(2,j))*(q(0,j)+q(1,j))   &
-                - dxa(1,j)*(q(-1,j)+q(2,j)))/ ( dxa(1,j)+dxa(2,j))
+!             x0 = 0.5*(3.0*(q(0,j)+q(1,j))   &
+!                - (q(-1,j)+q(2,j)))/ ( 2.0 )
+!             x0 = 0.5*((2.*dxa(1,j)+dxa(2,j))*(q(0,j)+q(1,j))   &
+!                - dxa(1,j)*(q(-1,j)+q(2,j)))/ ( dxa(1,j)+dxa(2,j))
+             x0L = 0.5*((2.*dxa(0,j)+dxa(-1,j))*(q(0,j))   &
+                - dxa(0,j)*(q(-1,j)))/ ( dxa(0,j)+dxa(-1,j))
+             x0R = 0.5*((2.*dxa(1,j)+dxa(2,j))*(q(1,j))   &
+                - dxa(1,j)*(q(2,j)))/ ( dxa(1,j)+dxa(2,j))
              x1 = s15*q(1,j) + s11*q(2,j) - s14*dm(2)
-           dm(1) = 0.5*(x1 - x0)
-           dm(1) = sign( min(abs(dm(1)), max(q(1,j), x0, x1) - q(1,j),   &
-                                q(1,j) - min(q(1,j), x0, x1)), dm(1) )
+           dm(1) = 0.5*(x1 - x0L - x0R)
+           dm(1) = sign( min(abs(dm(1)), max(q(1,j), x0L+x0R, x1) - q(1,j),   &
+                                q(1,j) - min(q(1,j), x0L+x0R, x1)), dm(1) )
 !
               x1 = s15*q(0,j) + s11*q(-1,j) + s14*dm(-1)
-           dm(0) = 0.5*(x0 - x1)
-           dm(0) = sign(min(abs(dm(0)), max(q(0,j), x0, x1) - q(0,j),   &
-                               q(0,j) - min(q(0,j), x0, x1)),  dm(0))
+           dm(0) = 0.5*(x0R + x0L - x1)
+           dm(0) = sign(min(abs(dm(0)), max(q(0,j), x0L+x0R, x1) - q(0,j),   &
+                               q(0,j) - min(q(0,j), x0L+x0R, x1)),  dm(0))
         endif
 
         if ( (ie+1)==npx ) then
-              x0 = 0.5*( (2.*dxa(npx-1,j)+dxa(npx-2,j))*(q(npx-1,j)+q(npx,j))   &
-                - dxa(npx-1,j)*(q(npx-2,j)+q(npx+1,j)))/( dxa(npx-1,j)+dxa(npx-2,j))
+!              x0 = 0.5*(3.0*(q(npx-1,j)+q(npx,j))   &
+!                - (q(npx-2,j)+q(npx+1,j)))/( 2.0 )
+!              x0 = 0.5*( (2.*dxa(npx-1,j)+dxa(npx-2,j))*(q(npx-1,j)+q(npx,j))   &
+!                - dxa(npx-1,j)*(q(npx-2,j)+q(npx+1,j)))/( dxa(npx-1,j)+dxa(npx-2,j))
+              x0L = 0.5*( (2.*dxa(npx-1,j)+dxa(npx-2,j))*(q(npx-1,j))   &
+                - dxa(npx-1,j)*(q(npx-2,j)))/( dxa(npx-1,j)+dxa(npx-2,j))
+              x0R = 0.5*( (2.*dxa(npx,j)+dxa(npx+1,j))*(q(npx,j))   &
+                - dxa(npx,j)*(q(npx+1,j)))/( dxa(npx,j)+dxa(npx+1,j))
               x1 = s15*q(npx-1,j) + s11*q(npx-2,j) + s14*dm(npx-2)
-           dm(npx-1) = 0.5*(x0 - x1)
-           dm(npx-1) = sign(min(abs(dm(npx-1)), max(q(npx-1,j), x0, x1) - q(npx-1,j),  &
-                                   q(npx-1,j) - min(q(npx-1,j), x0, x1)), dm(npx-1))
+           dm(npx-1) = 0.5*(x0R + x0L - x1)
+           dm(npx-1) = sign(min(abs(dm(npx-1)), max(q(npx-1,j), x0L+x0R, x1) - q(npx-1,j),  &
+                                   q(npx-1,j) - min(q(npx-1,j), x0L+x0R, x1)), dm(npx-1))
 !
                 x1 = s15*q(npx,j) + s11*q(npx+1,j) - s14*dm(npx+1)
-           dm(npx) = 0.5*(x1 - x0)
-           dm(npx) = sign(min(abs(dm(npx)), max(q(npx,j), x0, x1) - q(npx,j),   &
-                                 q(npx,j) - min(q(npx,j), x0, x1)), dm(npx))
+           dm(npx) = 0.5*(x1 - x0R - x0L)
+           dm(npx) = sign(min(abs(dm(npx)), max(q(npx,j), x0L+x0R, x1) - q(npx,j),   &
+                                 q(npx,j) - min(q(npx,j), x0L+x0R, x1)), dm(npx))
         endif
       endif
 
@@ -332,25 +339,24 @@ CONTAINS
      enddo
 
    else
-      call fxppm(c, q, fx, iord, ifirst, ilast, jfirst, jlast, npx, npy, ppm_limiter)
+      call fxppm(c, q, fx, iord, ifirst, ilast, jfirst, jlast, npx, npy)
    endif
 
  end subroutine xtp
 
 
 
- subroutine ytp(fy, q, c, jord, ifirst, ilast, jfirst, jlast, npx, npy, ppm_limiter)
+ subroutine ytp(fy, q, c, jord, ifirst, ilast, jfirst, jlast, npx, npy)
  integer, intent(in) :: npx, npy
  integer, INTENT(IN) :: ifirst, ilast  !  X-Dir strip
  integer, INTENT(IN) :: jfirst, jlast  !  Y-Dir strip
  integer, intent(in):: jord
  real, intent(in)::   q(ifirst:ilast,jfirst-ng:jlast+ng) 
  real, intent(in)::   c(isd:ied,js:je+1 )  ! Courant number
- real, intent(in)::  ppm_limiter
  real, intent(out):: fy(ifirst:ilast,jfirst:jlast+1)     !  Flux
 ! !LOCAL VARIABLES:
  real   dm(ifirst:ilast,jfirst-2:jlast+2)
- real   x0, x1
+ real   x0L, x0R, x1
  integer i, j
 
    if(jord==1) then
@@ -380,33 +386,45 @@ CONTAINS
     if (grid_type < 3) then
       if( js==1 ) then
          do i=ifirst,ilast
-            x0 = 0.5*((2.*dya(i,1)+dya(i,2))*(q(i,0)+q(i,1))   &
-               -dya(i,1)*(q(i,-1)+q(i,2))) / ( dya(i,1)+dya(i,2) )
+!            x0 = 0.5*(3.0*(q(i,0)+q(i,1))   &
+!               - (q(i,-1)+q(i,2))) / ( 2.0 )
+!            x0 = 0.5*((2.*dya(i,1)+dya(i,2))*(q(i,0)+q(i,1))   &
+!               -dya(i,1)*(q(i,-1)+q(i,2))) / ( dya(i,1)+dya(i,2) )
+            x0L = 0.5*((2.*dya(i,0)+dya(i,-1))*(q(i,0))   &
+               -dya(i,0)*(q(i,-1))) / ( dya(i,0)+dya(i,-1) )
+            x0R = 0.5*((2.*dya(i,1)+dya(i,2))*(q(i,1))   &
+               -dya(i,1)*(q(i,2))) / ( dya(i,1)+dya(i,2) )
             x1 = s15*q(i,1) + s11*q(i,2) - s14*dm(i,2)
-            dm(i,1) = 0.5*(x1 - x0)
-            dm(i,1) = sign(min(abs(dm(i,1)), max(q(i,1), x0, x1) - q(i,1),  &
-                                    q(i,1) - min(q(i,1), x0, x1)), dm(i,1))
+            dm(i,1) = 0.5*(x1 - x0L - x0R)
+            dm(i,1) = sign(min(abs(dm(i,1)), max(q(i,1), x0L+x0R, x1) - q(i,1),  &
+                                    q(i,1) - min(q(i,1), x0L+x0R, x1)), dm(i,1))
 !
             x1 = s15*q(i,0) + s11*q(i,-1) + s14*dm(i,-1)
-            dm(i,0) = 0.5*(x0 - x1)
-            dm(i,0) = sign(min(abs(dm(i,0)), max(q(i,0), x0, x1) - q(i,0),   &
-                                    q(i,0) - min(q(i,0), x0, x1)), dm(i,0))
+            dm(i,0) = 0.5*(x0L + x0R - x1)
+            dm(i,0) = sign(min(abs(dm(i,0)), max(q(i,0), x0L+x0R, x1) - q(i,0),   &
+                                    q(i,0) - min(q(i,0), x0L+x0R, x1)), dm(i,0))
          enddo
       endif
 
       if( (je+1)==npy ) then
          do i=ifirst,ilast
-            x0 = 0.5*((2.*dya(i,npy-1)+dya(i,npy-2))*(q(i,npy-1)+q(i,npy))  &
-               -dya(i,npy-1)*(q(i,npy-2)+q(i,npy+1)))/(dya(i,npy-1)+dya(i,npy-2))
+!            x0 = 0.5*(3.0*(q(i,npy-1)+q(i,npy))  &
+!               - (q(i,npy-2)+q(i,npy+1)))/(2.0)
+!            x0 = 0.5*((2.*dya(i,npy-1)+dya(i,npy-2))*(q(i,npy-1)+q(i,npy))  &
+!               -dya(i,npy-1)*(q(i,npy-2)+q(i,npy+1)))/(dya(i,npy-1)+dya(i,npy-2))
+            x0L = 0.5*((2.*dya(i,npy-1)+dya(i,npy-2))*(q(i,npy-1))  &
+               -dya(i,npy-1)*(q(i,npy-2)))/(dya(i,npy-1)+dya(i,npy-2))
+            x0R = 0.5*((2.*dya(i,npy)+dya(i,npy+1))*(q(i,npy))  &
+               -dya(i,npy)*(q(i,npy+1)))/(dya(i,npy)+dya(i,npy+1))
             x1 = s15*q(i,npy-1) + s11*q(i,npy-2) + s14*dm(i,npy-2)
-            dm(i,npy-1) = 0.5*(x0 - x1)
-            dm(i,npy-1) = sign(min(abs(dm(i,npy-1)), max(q(i,npy-1), x0, x1) - q(i,npy-1),  &
-                                        q(i,npy-1) - min(q(i,npy-1), x0, x1)), dm(i,npy-1))
+            dm(i,npy-1) = 0.5*(x0L + x0R - x1)
+            dm(i,npy-1) = sign(min(abs(dm(i,npy-1)), max(q(i,npy-1), x0L+x0R, x1) - q(i,npy-1),  &
+                                        q(i,npy-1) - min(q(i,npy-1), x0L+x0R, x1)), dm(i,npy-1))
 !
             x1 = s15*q(i,npy) + s11*q(i,npy+1) - s14*dm(i,npy+1)
-            dm(i,npy) = 0.5*(x1 - x0)
-            dm(i,npy) = sign(min(abs(dm(i,npy)), max(q(i,npy), x0, x1) - q(i,npy),  &
-                                      q(i,npy) - min(q(i,npy), x0, x1)), dm(i,npy))
+            dm(i,npy) = 0.5*(x1 - x0L - x0R)
+            dm(i,npy) = sign(min(abs(dm(i,npy)), max(q(i,npy), x0L+x0R, x1) - q(i,npy),  &
+                                      q(i,npy) - min(q(i,npy), x0L+x0R, x1)), dm(i,npy))
          enddo
       endif
     endif
@@ -422,14 +440,14 @@ CONTAINS
       enddo
 
    else
-      call fyppm(c, q, fy, jord, ifirst,ilast,jfirst,jlast, npx, npy, dm, ppm_limiter)
+      call fyppm(c, q, fy, jord, ifirst,ilast,jfirst,jlast, npx, npy, dm)
    endif
 
  end subroutine ytp
 
 
 
- subroutine fxppm(c, q, flux, iord, ifirst, ilast, jfirst, jlast, npx, npy, ppm_limiter)
+ subroutine fxppm(c, q, flux, iord, ifirst, ilast, jfirst, jlast, npx, npy)
 ! !INPUT PARAMETERS:
  integer, INTENT(IN) :: ifirst, ilast               !  X-Dir strip
  integer, INTENT(IN) :: jfirst, jlast               !  Y-Dir strip
@@ -437,18 +455,21 @@ CONTAINS
  integer, INTENT(IN) :: npx, npy
  real   , INTENT(IN) :: q(ifirst-ng:ilast+ng,jfirst:jlast)
  real   , INTENT(IN) :: c(ifirst   :ilast+1 ,jfirst:jlast) ! Courant   N (like FLUX)
- real   , INTENT(IN) :: ppm_limiter
 ! !OUTPUT PARAMETERS:
  real   , INTENT(OUT) :: flux(ifirst:ilast+1,jfirst:jlast) !  Flux
 ! Local
+ logical extm(ifirst-2:ilast+2)
  real dm1(ifirst-2:ilast+2)
  real  al(ifirst-1:ilast+2)
  real  bl(ifirst-1:ilast+1)
  real  br(ifirst-1:ilast+1)
  real  dq(ifirst-3:ilast+2)
  real dl, dr, pmp, lac, ct, qe
- real xt, x1, x0
+ real pmp_1, lac_1, pmp_2, lac_2
+ real xt, x1, x0, x0L, x0R
  integer i, j, is3, ie3, it
+
+ x0 = big_number
 
  is3 = max(3,is-1);   ie3 = min(npx-3,ie+1)
 
@@ -469,8 +490,11 @@ CONTAINS
 
 ! Fix the edges:
         if ( is==1 ) then
-             x0 = 0.5*((2.*dxa(1,j)+dxa(2,j))*(q(0,j)+q(1,j))   &
-                - dxa(1,j)*(q(-1,j)+q(2,j)))/ ( dxa(1,j)+dxa(2,j))
+             x0L = 0.5*((2.*dxa(0,j)+dxa(-1,j))*(q(0,j))   &
+                - dxa(0,j)*(q(-1,j)))/ ( dxa(0,j)+dxa(-1,j))
+             x0R = 0.5*((2.*dxa(1,j)+dxa(2,j))*(q(1,j))   &
+                - dxa(1,j)*(q(2,j)))/ ( dxa(1,j)+dxa(2,j))
+             x0 = x0L + x0R
             al(1) = x0
                x1 = s15*q(0,j) + s11*q(-1,j) + s14*dm1(-1)
            dm1(0) = 0.5*(x0 - x1)
@@ -486,8 +510,11 @@ CONTAINS
         endif
 
         if ( (ie+1)==npx ) then
-              x0 = 0.5*( (2.*dxa(npx-1,j)+dxa(npx-2,j))*(q(npx-1,j)+q(npx,j))   &
-                - dxa(npx-1,j)*(q(npx-2,j)+q(npx+1,j)))/( dxa(npx-1,j)+dxa(npx-2,j))
+              x0L = 0.5*( (2.*dxa(npx-1,j)+dxa(npx-2,j))*(q(npx-1,j))   &
+                - dxa(npx-1,j)*(q(npx-2,j)))/( dxa(npx-1,j)+dxa(npx-2,j))
+              x0R = 0.5*( (2.*dxa(npx,j)+dxa(npx+1,j))*(q(npx,j))   &
+                - dxa(npx,j)*(q(npx+1,j)))/( dxa(npx,j)+dxa(npx+1,j))
+              x0 = x0L + x0R
            al(npx) = x0
               x1 = s15*q(npx-1,j) + s11*q(npx-2,j) + s14*dm1(npx-2)
            dm1(npx-1) = 0.5*(x0 - x1)
@@ -556,12 +583,12 @@ CONTAINS
         enddo
 
         do i=ifirst-1,ilast+1
-           pmp = -2.*dq(i)
-           lac = pmp + 1.5*dq(i+1)
-           bl(i) = min(max(0., pmp, lac), max(al(i)-q(i,j), min(0.,pmp, lac)))
-           pmp = 2.*dq(i-1)
-           lac = pmp - 1.5*dq(i-2)
-           br(i) = min(max(0., pmp, lac), max(al(i+1)-q(i,j), min(0.,pmp, lac)))
+           pmp_1 = -2.*dq(i)
+           lac_1 = pmp_1 + 1.5*dq(i+1)
+           bl(i) = min(max(0., pmp_1, lac_1), max(al(i  )-q(i,j), min(0., pmp_1, lac_1)))
+           pmp_2 = 2.*dq(i-1)
+           lac_2 = pmp_2 - 1.5*dq(i-2)
+           br(i) = min(max(0., pmp_2, lac_2), max(al(i+1)-q(i,j), min(0., pmp_2, lac_2)))
         enddo
 
         do i=ifirst,ilast+1
@@ -577,79 +604,97 @@ CONTAINS
 
      do j=jfirst,jlast
 
-        if ( iord==6 ) then
-! Non-monotonic "5th order" scheme (not really 5th order)
+      if ( iord==6 ) then
           do i=is3, ie3
              bl(i) = b5*q(i-2,j) + b4*q(i-1,j) + b3*q(i,j) + b2*q(i+1,j) + b1*q(i+2,j)
              br(i) = b1*q(i-2,j) + b2*q(i-1,j) + b3*q(i,j) + b4*q(i+1,j) + b5*q(i+2,j)
           enddo
-        else
+      else
           do i=is-3,ie+2
              dq(i) = q(i+1,j) - q(i,j)
           enddo
-          do i=is3, ie3
-!-----------------------------------------------
-!- Huynh's 2nd constraint + simple mono limiter
-!-----------------------------------------------
-             dl = b5*q(i-2,j) + b4*q(i-1,j) + b3*q(i,j) + b2*q(i+1,j) + b1*q(i+2,j)
-             dr = b1*q(i-2,j) + b2*q(i-1,j) + b3*q(i,j) + b4*q(i+1,j) + b5*q(i+2,j)
-               dl = -sign(min(abs(dl), abs(dq(i-1))), dq(i-1))   ! 1st constraint
-              pmp = -2.*dq(i)
-              lac = pmp + 1.5*dq(i+1)
-            bl(i) = min(max(0., pmp, lac), max(dl, min(0.,pmp, lac)))  ! 2nd constraint
-!---
-               dr = sign(min(abs(dr), abs(dq(i))), dq(i))   ! 1st constraint
-              pmp = 2.*dq(i-1)
-              lac = pmp - 1.5*dq(i-2)
-            br(i) = min(max(0., pmp, lac), max(dr, min(0.,pmp, lac)))
+
+          do i=is-2, ie+2
+             if ( dq(i-1)*dq(i) > 0. ) then
+                  extm(i) = .false.
+             else
+                  extm(i) = .true.
+             endif
           enddo
+          do i=is3, ie3
+!            if ( extm(i) .and. (extm(i-1) .or. extm(i+1)) ) then
+             if ( extm(i-1) .and. extm(i) .and. extm(i+1) ) then
+! 2-delta-wave filter:
+                  bl(i) = 0.
+                  br(i) = 0.
+             else
+                  bl(i) = b5*q(i-2,j) + b4*q(i-1,j) + b3*q(i,j) + b2*q(i+1,j) + b1*q(i+2,j)
+                  br(i) = b1*q(i-2,j) + b2*q(i-1,j) + b3*q(i,j) + b4*q(i+1,j) + b5*q(i+2,j)
+             endif
+          enddo
+
         endif
 
 !--------------
 ! fix the edges
 !--------------
         if ( is==1 ) then
+             x0L = 0.5*((2.*dxa(0,j)+dxa(-1,j))*(q(0,j))   &
+                - dxa(0,j)*(q(-1,j)))/ ( dxa(0,j)+dxa(-1,j))
+             x0R = 0.5*((2.*dxa(1,j)+dxa(2,j))*(q(1,j))   &
+                - dxa(1,j)*(q(2,j)))/ ( dxa(1,j)+dxa(2,j))
              br(2) = p1*(q(2,j)+q(3,j)) + p2*(q(1,j)+q(4,j)) - q(2,j)
-             xt = 0.5*((2.*dxa(1,j)+dxa(2,j))*(q(0,j)+q(1,j))   &
-                - dxa(1,j)*(q(-1,j)+q(2,j)))/ ( dxa(1,j)+dxa(2,j))
+             xt = x0L + x0R
              bl(1) = xt - q(1,j)
              br(0) = xt - q(0,j)
 
              xt = c1*q(-2,j) + c2*q(-1,j) + c3*q(0,j)
+#ifdef DO_MONO_EDGE
              xt = max( xt, min(q(-1,j),q(0,j)) )
              xt = min( xt, max(q(-1,j),q(0,j)) )
+#endif
              bl(0) = xt - q(0,j)
 
              xt = c3*q(1,j) + c2*q(2,j) +c1*q(3,j)
+#ifdef DO_MONO_EDGE
              xt = max( xt, min(q(1,j),q(2,j)) )
              xt = min( xt, max(q(1,j),q(2,j)) )
+#endif
              br(1) = xt - q(1,j)
              bl(2) = xt - q(2,j)
-
-             if(iord==7) call pert_ppm(3, q(0,j), bl(0), br(0), 1)
         endif
 
         if ( (ie+1)==npx ) then
+           x0L = 0.5*( (2.*dxa(npx-1,j)+dxa(npx-2,j))*(q(npx-1,j))   &
+                - dxa(npx-1,j)*(q(npx-2,j)))/( dxa(npx-1,j)+dxa(npx-2,j))
+           x0R = 0.5*( (2.*dxa(npx,j)+dxa(npx+1,j))*(q(npx,j))   &
+                - dxa(npx,j)*(q(npx+1,j)))/( dxa(npx,j)+dxa(npx+1,j))
              bl(npx-2) = p1*(q(npx-2,j)+q(npx-3,j)) + p2*(q(npx-4,j)+q(npx-1,j)) - q(npx-2,j)
-             xt = 0.5*( (2.*dxa(npx-1,j)+dxa(npx-2,j))*(q(npx-1,j)+q(npx,j))   &
-                - dxa(npx-1,j)*(q(npx-2,j)+q(npx+1,j)))/( dxa(npx-1,j)+dxa(npx-2,j))
+!             xt = x0L*sin_sg(npx-1,j,3) + x0R*sin_sg(npx,j,1)
+!             xt = 2.*xt / (sin_sg(npx,j,1) + sin_sg(npx-1,j,3))
+             xt = x0L + x0R
 
              br(npx-1) = xt - q(npx-1,j)
              bl(npx  ) = xt - q(npx  ,j)
 
              xt = c3*q(npx,j) + c2*q(npx+1,j) + c1*q(npx+2,j)
+#ifdef DO_MONO_EDGE
              xt = max( xt, min(q(npx,j),q(npx+1,j)) )
              xt = min( xt, max(q(npx,j),q(npx+1,j)) )
+#endif
              br(npx) = xt - q(npx,j)
 
              xt = c1*q(npx-3,j) + c2*q(npx-2,j) + c3*q(npx-1,j)
+#ifdef DO_MONO_EDGE
              xt = max( xt, min(q(npx-2,j),q(npx-1,j)) )
              xt = min( xt, max(q(npx-2,j),q(npx-1,j)) )
+#endif
              br(npx-2) = xt - q(npx-2,j)
              bl(npx-1) = xt - q(npx-1,j)
-
-             if(iord==7) call pert_ppm(3, q(npx-2,j), bl(npx-2), br(npx-2), 1)
         endif
+
+! Positive definite constraint:
+        if(iord==7) call pert_ppm(ilast-ifirst+2, q(ifirst-1,j), bl(ifirst-1), br(ifirst-1), 0)
 
         do i=ifirst,ilast+1
            if(c(i,j)>0.) then
@@ -688,24 +733,27 @@ CONTAINS
            enddo
         elseif ( iord==9 ) then
            do i=is3, ie3
-              pmp = -2.*dq(i)
-              lac = pmp + 1.5*dq(i+1)
-              bl(i) = min(max(0., pmp, lac), max(al(i  )-q(i,j), min(0.,pmp, lac)))
-              pmp = 2.*dq(i-1)
-              lac = pmp - 1.5*dq(i-2)
-              br(i) = min(max(0., pmp, lac), max(al(i+1)-q(i,j), min(0.,pmp, lac)))
+              pmp_1 = -2.*dq(i)
+              lac_1 = pmp_1 + 1.5*dq(i+1)
+              bl(i) = min(max(0., pmp_1, lac_1), max(al(i  )-q(i,j), min(0.,pmp_1, lac_1)))
+              pmp_2 = 2.*dq(i-1)
+              lac_2 = pmp_2 - 1.5*dq(i-2)
+              br(i) = min(max(0., pmp_2, lac_2), max(al(i+1)-q(i,j), min(0.,pmp_2, lac_2)))
            enddo
-        else
+        else     ! iord=10
            do i=is3, ie3
               bl(i) = al(i  ) - q(i,j)
               br(i) = al(i+1) - q(i,j)
-              if ( dq(i-1)*dq(i) <= 0. ) then
-                   pmp = -2.*dq(i)
-                   lac = pmp + 1.5*dq(i+1)
-                   bl(i) = min(max(0., pmp, lac), max(bl(i), min(0.,pmp, lac)))
-                   pmp = 2.*dq(i-1)
-                   lac = pmp - 1.5*dq(i-2)
-                   br(i) = min(max(0., pmp, lac), max(br(i), min(0.,pmp, lac)))
+              if ( abs(dm1(i-1))+abs(dm1(i))+abs(dm1(i+1)) < near_zero ) then
+                   bl(i) = 0.
+                   br(i) = 0.
+              elseif( abs(3.*(bl(i)+br(i))) > abs(bl(i)-br(i)) ) then
+                   pmp_1 = -(dq(i) + dq(i))
+                   lac_1 = pmp_1 + 1.5*dq(i+1)
+                   bl(i) = min( max(0., pmp_1, lac_1), max(bl(i), min(0., pmp_1, lac_1)) )
+                   pmp_2 = dq(i-1) + dq(i-1)
+                   lac_2 = pmp_2 - 1.5*dq(i-2)
+                   br(i) = min( max(0., pmp_2, lac_2), max(br(i), min(0., pmp_2, lac_2)) )
               endif
            enddo
         endif
@@ -714,10 +762,14 @@ CONTAINS
 ! fix the edges
 !--------------
            if ( is==1 ) then
+             x0L = 0.5*((2.*dxa(0,j)+dxa(-1,j))*(q(0,j))   &
+                - dxa(0,j)*(q(-1,j)))/ ( dxa(0,j)+dxa(-1,j))
+             x0R = 0.5*((2.*dxa(1,j)+dxa(2,j))*(q(1,j))   &
+                - dxa(1,j)*(q(2,j)))/ ( dxa(1,j)+dxa(2,j))
               br(2) = al(3) - q(2,j)
-!             xt = t11*(q(0,j)+q(1,j)) + t12*(q(-1,j)+q(2,j)) + t13*(dm1(2)-dm1(-1))
-              xt = 0.5*((2.*dxa(1,j)+dxa(2,j))*(q(0,j)+q(1,j))   &
-                 - dxa(1,j)*(q(-1,j)+q(2,j)))/ ( dxa(1,j)+dxa(2,j))
+             xt = x0L + x0R
+!lmh              xt = 0.5*((2.*dxa(1,j)+dxa(2,j))*(q(0,j)+q(1,j))   &
+!lmh                 - dxa(1,j)*(q(-1,j)+q(2,j)))/ ( dxa(1,j)+dxa(2,j))
               bl(1) = xt - q(1,j)
               br(0) = xt - q(0,j)
               xt = s14*dm1(-1) - s11*dq(-1) + q(0,j)
@@ -738,10 +790,13 @@ CONTAINS
 
            if ( (ie+1)==npx ) then
               bl(npx-2) = al(npx-2) - q(npx-2,j)
-!             xt = t11*(q(npx-1,j)+q(npx,j)) + t12*(q(npx-2,j)+q(npx+1,j))   &
-!                                            + t13*(dm1(npx+1)-dm1(npx-2))
-              xt = 0.5*( (2.*dxa(npx-1,j)+dxa(npx-2,j))*(q(npx-1,j)+q(npx,j))   &
-                 - dxa(npx-1,j)*(q(npx-2,j)+q(npx+1,j)))/( dxa(npx-1,j)+dxa(npx-2,j))
+              x0L = 0.5*( (2.*dxa(npx-1,j)+dxa(npx-2,j))*(q(npx-1,j))   &
+                - dxa(npx-1,j)*(q(npx-2,j)))/( dxa(npx-1,j)+dxa(npx-2,j))
+              x0R = 0.5*( (2.*dxa(npx,j)+dxa(npx+1,j))*(q(npx,j))   &
+                - dxa(npx,j)*(q(npx+1,j)))/( dxa(npx,j)+dxa(npx+1,j))
+             xt = x0L + x0R
+!lmh              xt = 0.5*( (2.*dxa(npx-1,j)+dxa(npx-2,j))*(q(npx-1,j)+q(npx,j))   &
+!lmh                 - dxa(npx-1,j)*(q(npx-2,j)+q(npx+1,j)))/( dxa(npx-1,j)+dxa(npx-2,j))
 
               br(npx-1) = xt - q(npx-1,j)
               bl(npx  ) = xt - q(npx  ,j)
@@ -790,24 +845,11 @@ CONTAINS
         endif     ! grid_type check
 
         do i=ifirst,ilast+1
-#ifdef INTEL_OPT
-             ct = c(i,j)
-             if( ct>0. ) then
-                it = i-1
-                qe = br(i-1)
-             else
-                it = i
-                qe = bl(i)
-             endif
-             ct = -abs(ct)
-             flux(i,j) = q(it,j) + (1.+ct)*( qe + ct*(bl(it)+br(it)) )
-#else
              if( c(i,j)>0. ) then
                 flux(i,j) = q(i-1,j) + (1.-c(i,j))*(br(i-1)-c(i,j)*(bl(i-1)+br(i-1)))
              else
                 flux(i,j) = q(i,  j) + (1.+c(i,j))*(bl(i  )+c(i,j)*(bl(i  )+br(i  )))
              endif
-#endif
            enddo
 
 
@@ -818,7 +860,7 @@ CONTAINS
 !------------------------------
 ! iord=11: PPM mono constraint (Lin 2004)
 ! iord=12: Huynh 2nd constraint (Lin 2004) + positive definite (Lin & Rood 1996)
-! iord>12: positive definite only (Lin & Rood 1996)
+! iord>12: positive definite
 
        do j=jfirst,jlast
 
@@ -855,9 +897,26 @@ CONTAINS
                    br(i) = min(max(0., pmp, lac), max(al(i+1)-q(i,j), min(0.,pmp, lac)))
                 enddo
              else
+                do i=is-3,ie+2
+                   dq(i) = q(i+1,j) - q(i,j)
+                enddo
+
                 do i=is3,ie3
-                   bl(i) = al(i  ) - q(i,j)
-                   br(i) = al(i+1) - q(i,j)
+                   if ( abs(dm1(i-1))+abs(dm1(i))+abs(dm1(i+1)) < near_zero ) then
+                        bl(i) = 0.
+                        br(i) = 0.
+                   else
+                     bl(i) = al(i  ) - q(i,j)
+                     br(i) = al(i+1) - q(i,j)
+                     if( abs(3.*(bl(i)+br(i))) > abs(bl(i)-br(i)) ) then
+                         pmp_1 = -(dq(i) + dq(i))
+                         lac_1 = pmp_1 + 1.5*dq(i+1)
+                         bl(i) = min(max(0., pmp_1, lac_1), max(bl(i), min(0.,pmp_1, lac_1)))
+                         pmp_2 = dq(i-1) + dq(i-1)
+                         lac_2 = pmp_2 - 1.5*dq(i-2)
+                         br(i) = min(max(0., pmp_2, lac_2), max(br(i), min(0.,pmp_2, lac_2)))
+                     endif
+                   endif
                 enddo
              endif
 
@@ -868,11 +927,14 @@ CONTAINS
 ! fix the edges
 !--------------
              if ( is==1 ) then
+             x0L = 0.5*((2.*dxa(0,j)+dxa(-1,j))*(q(0,j))   &
+                - dxa(0,j)*(q(-1,j)))/ ( dxa(0,j)+dxa(-1,j))
+             x0R = 0.5*((2.*dxa(1,j)+dxa(2,j))*(q(1,j))   &
+                - dxa(1,j)*(q(2,j)))/ ( dxa(1,j)+dxa(2,j))
                 br(2) = al(3) - q(2,j)
 !               xt = t11*(q(0,j)+q(1,j)) + t12*(q(-1,j)+q(2,j)) + t13*(dm1(2)-dm1(-1))
 !!!             xt = 0.75*(q(0,j)+q(1,j)) - 0.25*(q(-1,j)+q(2,j))
-                xt = 0.5*( (2.*dxa(1,j)+dxa(2,j))*(q(0,j)+q(1,j))  &
-                   - dxa(1,j)*(q(-1,j)+q(2,j)) ) / ( dxa(1,j)+dxa(2,j) )
+                xt = x0L + x0R
                 xt = max(0., xt)
                 bl(1) = xt - q(1,j)
                 br(0) = xt - q(0,j)
@@ -887,13 +949,15 @@ CONTAINS
              endif
 
              if ( (ie+1)==npx ) then
+              x0L = 0.5*( (2.*dxa(npx-1,j)+dxa(npx-2,j))*(q(npx-1,j))   &
+                - dxa(npx-1,j)*(q(npx-2,j)))/( dxa(npx-1,j)+dxa(npx-2,j))
+              x0R = 0.5*( (2.*dxa(npx,j)+dxa(npx+1,j))*(q(npx,j))   &
+                - dxa(npx,j)*(q(npx+1,j)))/( dxa(npx,j)+dxa(npx+1,j))
                 bl(npx-2) = al(npx-2) - q(npx-2,j)
 !               xt = t11*(q(npx-1,j)+q(npx,j)) + t12*(q(npx-2,j)+q(npx+1,j))   &
 !                  + t13*(dm1(npx+1)-dm1(npx-2))
 !!!             xt = 0.75*(q(npx-1,j)+q(npx,j)) - 0.25*(q(npx-2,j)+q(npx+1,j))
-                xt = 0.5*((2.*dxa(npx-1,j)+dxa(npx-2,j))*(q(npx-1,j)+q(npx,j)) -   &
-                     dxa(npx-1,j)*(q(npx-2,j)+q(npx+1,j)) )  &
-                 / ( dxa(npx-1,j)+dxa(npx-2,j) )
+                xt = x0L + x0R
                 xt = max(0., xt)
                 br(npx-1) = xt - q(npx-1,j)
                 bl(npx  ) = xt - q(npx  ,j)
@@ -961,23 +1025,24 @@ CONTAINS
 
 
 
- subroutine fyppm(c,  q,  flux, jord, ifirst, ilast, jfirst, jlast, npx, npy, dm, ppm_limiter)
+ subroutine fyppm(c,  q,  flux, jord, ifirst, ilast, jfirst, jlast, npx, npy, dm)
  integer, INTENT(IN) :: ifirst, ilast               !  X-Dir strip
  integer, INTENT(IN) :: jfirst, jlast               !  Y-Dir strip
  integer, INTENT(IN) :: jord
  integer, INTENT(IN) :: npx, npy
- real   , intent(IN) :: ppm_limiter
  real   , INTENT(IN) :: q(ifirst:ilast,jfirst-ng:jlast+ng)
  real   , intent(in) :: c(isd:ied,js:je+1 )  ! Courant number
  real   , INTENT(OUT):: flux(ifirst:ilast,jfirst:jlast+1)   !  Flux
  real   , INTENT(OUT)::   dm(ifirst:ilast,jfirst-2:jlast+2)
 ! Local:
+ logical extm(ifirst:ilast,jfirst-2:jlast+2)
  real al(ifirst:ilast,jfirst-1:jlast+2)
  real bl(ifirst:ilast,jfirst-1:jlast+1)
  real br(ifirst:ilast,jfirst-1:jlast+1)
  real dq(ifirst:ilast,jfirst-3:jlast+2)
  real dl, dr, pmp, lac, ct, qe
- real xt, x0, x1
+ real pmp_1, lac_1, pmp_2, lac_2
+ real xt, x0, x1, x0L, x0R
  integer i, j, js3, je3, jt
 
  if (jord<=4) then
@@ -1001,8 +1066,11 @@ CONTAINS
 !--------------
       if( js==1 ) then
          do i=ifirst,ilast
-            x0 = 0.5*((2.*dya(i,1)+dya(i,2))*(q(i,0)+q(i,1))   &
-               -dya(i,1)*(q(i,-1)+q(i,2))) / ( dya(i,1)+dya(i,2) )
+            x0L = 0.5*((2.*dya(i,0)+dya(i,-1))*(q(i,0))   &
+               -dya(i,0)*(q(i,-1))) / ( dya(i,0)+dya(i,-1) )
+            x0R = 0.5*((2.*dya(i,1)+dya(i,2))*(q(i,1))   &
+               -dya(i,1)*(q(i,2))) / ( dya(i,1)+dya(i,2) )
+            x0 = x0L + x0R
             al(i,1) = x0
             x1 = s15*q(i,0) + s11*q(i,-1) + s14*dm(i,-1)
             dm(i,0) = 0.5*(x0 - x1)
@@ -1020,8 +1088,11 @@ CONTAINS
 
       if( (je+1)==npy ) then
          do i=ifirst,ilast
-            x0 = 0.5*((2.*dya(i,npy-1)+dya(i,npy-2))*(q(i,npy-1)+q(i,npy))  &
-               -dya(i,npy-1)*(q(i,npy-2)+q(i,npy+1)))/(dya(i,npy-1)+dya(i,npy-2))
+            x0L = 0.5*((2.*dya(i,npy-1)+dya(i,npy-2))*(q(i,npy-1))  &
+               -dya(i,npy-1)*(q(i,npy-2)))/(dya(i,npy-1)+dya(i,npy-2))
+            x0R = 0.5*((2.*dya(i,npy)+dya(i,npy+1))*(q(i,npy))  &
+               -dya(i,npy)*(q(i,npy+1)))/(dya(i,npy)+dya(i,npy+1))
+            x0 = x0L + x0R
             al(i,npy) = x0
             x1 = s15*q(i,npy-1) + s11*q(i,npy-2) + s14*dm(i,npy-2)
             dm(i,npy-1) = 0.5*(x0 - x1)
@@ -1127,10 +1198,8 @@ CONTAINS
 
  elseif( jord==6 .or. jord==7 ) then
 
-
    if ( jord==6 ) then
 
-! Non-monotonic "5th order" scheme (not really 5th order)
    do j=max(3,js-1),min(npy-3,je+1)
       do i=ifirst,ilast
          bl(i,j) = b5*q(i,j-2) + b4*q(i,j-1) + b3*q(i,j) + b2*q(i,j+1) + b1*q(i,j+2)
@@ -1139,86 +1208,110 @@ CONTAINS
    enddo
 
    else
-!-- Huynh's 2nd constraint + simple mono limiter ---------------------------------
-     do j=js-3,je+2
-        do i=ifirst,ilast
-           dq(i,j) = q(i,j+1) - q(i,j)
-        enddo
-     enddo
 
-     do j=max(3,js-1),min(npy-3,je+1)
-        do i=ifirst,ilast
-           dl = b5*q(i,j-2) + b4*q(i,j-1) + b3*q(i,j) + b2*q(i,j+1) + b1*q(i,j+2)
-           dr = b1*q(i,j-2) + b2*q(i,j-1) + b3*q(i,j) + b4*q(i,j+1) + b5*q(i,j+2)
-           dl = -sign(min(abs(dl), abs(dq(i,j-1))), dq(i,j-1))   ! 1st constraint
-          pmp = -2.*dq(i,j)
-          lac = pmp + 1.5*dq(i,j+1)
-          bl(i,j) = min(max(0.,pmp, lac), max(dl,  min(0.,pmp, lac)))
-!
-           dr = sign(min(abs(dr), abs(dq(i,j))), dq(i,j))    ! 1st constraint
-          pmp = 2.*dq(i,j-1)
-          lac = pmp - 1.5*dq(i,j-2)
-          br(i,j) =  min(max(0.,pmp, lac), max(dr,  min(0.,pmp, lac)))
-        enddo
-     enddo
+   do j=js-3,je+2
+      do i=ifirst,ilast
+         dq(i,j) = q(i,j+1) - q(i,j)
+      enddo
+   enddo
+
+   do j=js-2,je+2
+      do i=ifirst,ilast
+         if ( dq(i,j-1)*dq(i,j) > 0. ) then
+              extm(i,j) = .false.
+         else
+              extm(i,j) = .true.
+         endif
+      enddo
+   enddo
+
+   do j=max(3,js-1),min(npy-3,je+1)
+      do i=ifirst,ilast
+!!!        if ( extm(i,j) .and. (extm(i,j-1) .or. extm(i,j+1)) ) then
+         if ( extm(i,j-1) .and. extm(i,j) .and. extm(i,j+1) ) then
+! 2-delta-wave filter
+              bl(i,j) = 0.
+              br(i,j) = 0.
+         else
+              bl(i,j) = b5*q(i,j-2) + b4*q(i,j-1) + b3*q(i,j) + b2*q(i,j+1) + b1*q(i,j+2)
+              br(i,j) = b1*q(i,j-2) + b2*q(i,j-1) + b3*q(i,j) + b4*q(i,j+1) + b5*q(i,j+2)
+         endif
+      enddo
+   enddo
+
    endif
 
    if( js==1 ) then
          do i=ifirst,ilast
 !           br(i,2) = al(i,3) - q(i,2)
             br(i,2) = p1*(q(i,2)+q(i,3)) + p2*(q(i,1)+q(i,4)) - q(i,2)
-            xt = 0.5*((2.*dya(i,1)+dya(i,2))*(q(i,0)+q(i,1))   &
-               -dya(i,1)*(q(i,-1)+q(i,2))) / ( dya(i,1)+dya(i,2) )
+            x0L = 0.5*((2.*dya(i,0)+dya(i,-1))*(q(i,0))   &
+               -dya(i,0)*(q(i,-1))) / ( dya(i,0)+dya(i,-1) )
+            x0R = 0.5*((2.*dya(i,1)+dya(i,2))*(q(i,1))   &
+               -dya(i,1)*(q(i,2))) / ( dya(i,1)+dya(i,2) )
+            xt = x0L + x0R
+!            xt = ( x0L*sin_sg(i,0,4) + x0R*sin_sg(i,1,2) ) 
+!            xt = 2.*xt / ( sin_sg(i,0,4) + sin_sg(i,1,2) )
             bl(i,1) = xt - q(i,1)
             br(i,0) = xt - q(i,0)
 
 !           xt = s14*0.25*(q(i,0)-q(i,-2)) - s11*(q(i,0)-q(i,-1)) + q(i,0)
             xt = c1*q(i,-2) + c2*q(i,-1) + c3*q(i,0)
+#ifdef DO_MONO_EDGE
             xt = min( xt, max(q(i,-1), q(i,0)) )
             xt = max( xt, min(q(i,-1), q(i,0)) )
+#endif
             bl(i,0) = xt - q(i,0)
 
 !           xt = s15*q(i,1) + s11*q(i,2) - s14*0.25*(q(i,3)-q(i,1))
             xt = c3*q(i,1) + c2*q(i,2) + c1*q(i,3)
+#ifdef DO_MONO_EDGE
             xt = min( xt, max(q(i,1), q(i,2)) )
             xt = max( xt, min(q(i,1), q(i,2)) )
+#endif
             br(i,1) = xt - q(i,1)
             bl(i,2) = xt - q(i,2)
          enddo
-         if ( jord==7 ) then
-            do j=0,2
-               call pert_ppm(ilast-ifirst+1, q(ifirst,j), bl(ifirst,j), br(ifirst,j), 1)
-            enddo
-         endif
    endif
 
    if( (je+1)==npy ) then
          do i=ifirst,ilast
 !           bl(i,npy-2) = al(i,npy-2) - q(i,npy-2)
             bl(i,npy-2) = p1*(q(i,npy-3)+q(i,npy-2)) + p2*(q(i,npy-4)+q(i,npy-1)) - q(i,npy-2)
-            xt = 0.5*((2.*dya(i,npy-1)+dya(i,npy-2))*(q(i,npy-1)+q(i,npy))  &
-               -dya(i,npy-1)*(q(i,npy-2)+q(i,npy+1)))/(dya(i,npy-1)+dya(i,npy-2))
+            x0L = 0.5*((2.*dya(i,npy-1)+dya(i,npy-2))*(q(i,npy-1))  &
+               -dya(i,npy-1)*(q(i,npy-2)))/(dya(i,npy-1)+dya(i,npy-2))
+            x0R = 0.5*((2.*dya(i,npy)+dya(i,npy+1))*(q(i,npy))  &
+               -dya(i,npy)*(q(i,npy+1)))/(dya(i,npy)+dya(i,npy+1))
+            xt = x0L + x0R
+!            xt = x0L*sin_sg(i,npy-1,4) + x0R*sin_sg(i,npy,2)
+!            xt = 2.*xt /( sin_sg(i,npy-1,4) + sin_sg(i,npy,2) )
             br(i,npy-1) = xt - q(i,npy-1)
             bl(i,npy  ) = xt - q(i,npy)
 
 !           xt = s11*(q(i,npy+1)-q(i,npy)) - s14*0.25*(q(i,npy+2)-q(i,npy)) + q(i,npy)
             xt = c3*q(i,npy) + c2*q(i,npy+1) + c1*q(i,npy+2)
+#ifdef DO_MONO_EDGE
             xt = min( xt, max(q(i,npy), q(i,npy+1)) )
             xt = max( xt, min(q(i,npy), q(i,npy+1)) )
+#endif
             br(i,npy) = xt - q(i,npy)
 
 !           xt = s15*q(i,npy-1) + s11*q(i,npy-2) + s14*0.25*(q(i,npy-1)-q(i,npy-3))
             xt = c1*q(i,npy-3) + c2*q(i,npy-2) + c3*q(i,npy-1)
+#ifdef DO_MONO_EDGE
             xt = min( xt, max(q(i,npy-2), q(i,npy-1)) )
             xt = max( xt, min(q(i,npy-2), q(i,npy-1)) )
+#endif
             br(i,npy-2) = xt - q(i,npy-2)
             bl(i,npy-1) = xt - q(i,npy-1)
          enddo
-         if ( jord==7 ) then
-            do j=npy-2,npy
-               call pert_ppm(ilast-ifirst+1, q(ifirst,j), bl(ifirst,j), br(ifirst,j), 1)
-            enddo
-         endif
+   endif
+
+! Positive definite constraint:
+   if ( jord==7 ) then
+        do j=jfirst-1,jlast+1
+           call pert_ppm(ilast-ifirst+1, q(ifirst,j), bl(ifirst,j), br(ifirst,j), 0)
+        enddo
    endif
 
    do j=jfirst,jlast+1
@@ -1266,26 +1359,29 @@ CONTAINS
        elseif( jord==9 ) then
          do j=max(3,js-1),min(npy-3,je+1)
          do i=ifirst,ilast
-            pmp = -2.*dq(i,j) 
-            lac = pmp + 1.5*dq(i,j+1)
-            bl(i,j) = min(max(0.,pmp,lac), max(al(i,j  )-q(i,j), min(0.,pmp,lac)))
-            pmp = 2.*dq(i,j-1)
-            lac = pmp - 1.5*dq(i,j-2)
-            br(i,j) = min(max(0.,pmp,lac), max(al(i,j+1)-q(i,j), min(0.,pmp,lac)))
+              pmp_1 = -2.*dq(i,j) 
+              lac_1 = pmp_1 + 1.5*dq(i,j+1)
+            bl(i,j) = min(max(0., pmp_1, lac_1), max(al(i,j  )-q(i,j), min(0., pmp_1, lac_1)))
+              pmp_2 = 2.*dq(i,j-1)
+              lac_2 = pmp_2 - 1.5*dq(i,j-2)
+            br(i,j) = min(max(0., pmp_2, lac_2), max(al(i,j+1)-q(i,j), min(0., pmp_2, lac_2)))
          enddo
          enddo
-       else
+       else    ! jord=10
          do j=max(3,js-1),min(npy-3,je+1)
             do i=ifirst,ilast
                bl(i,j) = al(i,j  ) - q(i,j)
                br(i,j) = al(i,j+1) - q(i,j)
-            if ( dq(i,j-1)*dq(i,j) <= 0. ) then
-                 pmp = -2.*dq(i,j)
-                 lac = pmp + 1.5*dq(i,j+1)
-                 bl(i,j) = min(max(0.,pmp,lac), max(bl(i,j), min(0.,pmp,lac)))
-                 pmp = 2.*dq(i,j-1)
-                 lac = pmp - 1.5*dq(i,j-2)
-                 br(i,j) = min(max(0.,pmp,lac), max(br(i,j), min(0.,pmp,lac)))
+              if ( abs(dm(i,j-1))+abs(dm(i,j))+abs(dm(i,j+1)) < near_zero ) then
+                   bl(i,j) = 0.
+                   br(i,j) = 0.
+              elseif( abs(3.*(bl(i,j)+br(i,j))) > abs(bl(i,j)-br(i,j)) ) then
+                     pmp_1 = -2.*dq(i,j) 
+                     lac_1 = pmp_1 + 1.5*dq(i,j+1)
+                   bl(i,j) = min(max(0.,pmp_1,lac_1), max(bl(i,j), min(0.,pmp_1,lac_1)))
+                     pmp_2 = 2.*dq(i,j-1)
+                     lac_2 = pmp_2 - 1.5*dq(i,j-2)
+                   br(i,j) = min(max(0.,pmp_2,lac_2), max(br(i,j), min(0.,pmp_2,lac_2)))
             endif
          enddo
          enddo
@@ -1297,10 +1393,13 @@ CONTAINS
       if( js==1 ) then
          do i=ifirst,ilast
             br(i,2) = al(i,3) - q(i,2)
-!           xt = t11*(q(i,0)+q(i,1)) + t12*(q(i,-1)+q(i,2))   &
-!                                  + t13*(dm(i,2)-dm(i,-1))
-            xt = 0.5*((2.*dya(i,1)+dya(i,2))*(q(i,0)+q(i,1))   &
-               -dya(i,1)*(q(i,-1)+q(i,2))) / ( dya(i,1)+dya(i,2) )
+            x0L = 0.5*((2.*dya(i,0)+dya(i,-1))*(q(i,0))   &
+               -dya(i,0)*(q(i,-1))) / ( dya(i,0)+dya(i,-1) )
+            x0R = 0.5*((2.*dya(i,1)+dya(i,2))*(q(i,1))   &
+               -dya(i,1)*(q(i,2))) / ( dya(i,1)+dya(i,2) )
+           xt = x0L + x0R
+!lmh            xt = 0.5*((2.*dya(i,1)+dya(i,2))*(q(i,0)+q(i,1))   &
+!lmh               -dya(i,1)*(q(i,-1)+q(i,2))) / ( dya(i,1)+dya(i,2) )
             bl(i,1) = xt - q(i,1)
             br(i,0) = xt - q(i,0)
             xt = s14*dm(i,-1) - s11*dq(i,-1) + q(i,0)
@@ -1327,10 +1426,13 @@ CONTAINS
       if( (je+1)==npy ) then
          do i=ifirst,ilast
             bl(i,npy-2) = al(i,npy-2) - q(i,npy-2)
-!           xt = t11*( q(i,npy-1)+q(i,npy)) + t12*(q(i,npy-2)+q(i,npy+1))   &
-!                                         + t13*(dm(i,npy+1)-dm(i,npy-2))
-            xt = 0.5*((2.*dya(i,npy-1)+dya(i,npy-2))*(q(i,npy-1)+q(i,npy))  &
-               -dya(i,npy-1)*(q(i,npy-2)+q(i,npy+1)))/(dya(i,npy-1)+dya(i,npy-2))
+            x0L = 0.5*((2.*dya(i,npy-1)+dya(i,npy-2))*(q(i,npy-1))  &
+               -dya(i,npy-1)*(q(i,npy-2)))/(dya(i,npy-1)+dya(i,npy-2))
+            x0R = 0.5*((2.*dya(i,npy)+dya(i,npy+1))*(q(i,npy))  &
+               -dya(i,npy)*(q(i,npy+1)))/(dya(i,npy)+dya(i,npy+1))
+           xt = x0L + x0R
+!lmh            xt = 0.5*((2.*dya(i,npy-1)+dya(i,npy-2))*(q(i,npy-1)+q(i,npy))  &
+!lmh               -dya(i,npy-1)*(q(i,npy-2)+q(i,npy+1)))/(dya(i,npy-1)+dya(i,npy-2))
             br(i,npy-1) = xt - q(i,npy-1)
             bl(i,npy  ) = xt - q(i,npy)
             xt = s11*dq(i,npy) - s14*dm(i,npy+1) + q(i,npy)
@@ -1386,24 +1488,11 @@ CONTAINS
 
    do j=jfirst,jlast+1
       do i=ifirst,ilast
-#ifdef INTEL_OPT
-         ct = c(i,j)
-         if( ct>0. ) then
-             jt = j-1
-             qe = br(i,j-1) 
-         else
-             jt = j
-             qe = bl(i,j) 
-         endif
-         ct = -abs(ct)
-         flux(i,j) = q(i,jt) + (1.+ct)*( qe + ct*(bl(i,jt)+br(i,jt)) )
-#else
          if( c(i,j)>0. ) then
             flux(i,j) = q(i,j-1) + (1.-c(i,j))*(br(i,j-1)-c(i,j)*(bl(i,j-1)+br(i,j-1)))
          else
             flux(i,j) = q(i,j  ) + (1.+c(i,j))*(bl(i,j  )+c(i,j)*(bl(i,j  )+br(i,j  )))
          endif
-#endif
       enddo
    enddo
 
@@ -1458,11 +1547,30 @@ CONTAINS
                br(i,j) = min(max(0.,pmp,lac), max(al(i,j+1)-q(i,j), min(0.,pmp,lac)))
             enddo
          enddo
-      else
+      else  ! jord=13
+
+         do j=js-3,je+2
+            do i=ifirst,ilast
+               dq(i,j) = q(i,j+1) - q(i,j)
+            enddo
+         enddo
          do j=js3,je3
             do i=ifirst,ilast
-               bl(i,j) = al(i,j  ) - q(i,j)
-               br(i,j) = al(i,j+1) - q(i,j)
+               if ( abs(dm(i,j-1))+abs(dm(i,j))+abs(dm(i,j+1)) < near_zero ) then
+                    bl(i,j) = 0.
+                    br(i,j) = 0.
+               else
+                 bl(i,j) = al(i,j  ) - q(i,j)
+                 br(i,j) = al(i,j+1) - q(i,j)
+                 if( abs(3.*(bl(i,j)+br(i,j))) > abs(bl(i,j)-br(i,j)) ) then
+                      pmp_1 = -2.*dq(i,j) 
+                      lac_1 = pmp_1 + 1.5*dq(i,j+1)
+                    bl(i,j) = min(max(0., pmp_1, lac_1), max(bl(i,j), min(0., pmp_1, lac_1)))
+                      pmp_2 = 2.*dq(i,j-1)
+                      lac_2 = pmp_2 - 1.5*dq(i,j-2)
+                    br(i,j) = min(max(0., pmp_2, lac_2), max(br(i,j), min(0., pmp_2, lac_2)))
+                 endif
+               endif
             enddo
          enddo
       endif
@@ -1483,8 +1591,11 @@ CONTAINS
 !           xt = t11*(q(i,0)+q(i,1)) + t12*(q(i,-1)+q(i,2))   &
 !              + t13*(dm(i,2)-dm(i,-1))
 !!!         xt = 0.75*(q(i,0)+q(i,1)) - 0.25*(q(i,-1)+q(i,2))
-            xt = 0.5*((2.*dya(i,1)+dya(i,2))*(q(i,0)+q(i,1))  &
-               -dya(i,1)*(q(i,-1)+q(i,2))) / (dya(i,1)+dya(i,2))
+            x0L = 0.5*((2.*dya(i,0)+dya(i,-1))*(q(i,0))   &
+               -dya(i,0)*(q(i,-1))) / ( dya(i,0)+dya(i,-1) )
+            x0R = 0.5*((2.*dya(i,1)+dya(i,2))*(q(i,1))   &
+               -dya(i,1)*(q(i,2))) / ( dya(i,1)+dya(i,2) )
+            xt = x0L + x0R
             xt = max(0., xt)
             bl(i,1) = xt - q(i,1)
             br(i,0) = xt - q(i,0)
@@ -1508,9 +1619,11 @@ CONTAINS
 !           xt = t11*(q(i,npy-1)+q(i,npy)) + t12*(q(i,npy-2)+q(i,npy+1))   &
 !               + t13*(dm(i,npy+1)-dm(i,npy-2))
 !!!         xt = 0.75*(q(i,npy-1)+q(i,npy)) - 0.25*(q(i,npy-2)+q(i,npy+1))
-            xt = 0.5*((2.*dya(i,npy-1)+dya(i,npy-2))*(q(i,npy-1)+q(i,npy)) &
-               - dya(i,npy-1)*(q(i,npy-2)+q(i,npy+1)))  &
-                / ( dya(i,npy-1)+dya(i,npy-2) )
+            x0L = 0.5*((2.*dya(i,npy-1)+dya(i,npy-2))*(q(i,npy-1))  &
+               -dya(i,npy-1)*(q(i,npy-2)))/(dya(i,npy-1)+dya(i,npy-2))
+            x0R = 0.5*((2.*dya(i,npy)+dya(i,npy+1))*(q(i,npy))  &
+               -dya(i,npy)*(q(i,npy+1)))/(dya(i,npy)+dya(i,npy+1))
+            xt = x0L + x0R
             xt = max(0., xt)
             br(i,npy-1) = xt - q(i,npy-1)
             bl(i,npy  ) = xt - q(i,npy)
@@ -1659,6 +1772,10 @@ CONTAINS
  if ( iv==0 ) then
 ! Positive definite constraint
     do i=1,im
+     if ( a0(i) <= 0. ) then
+          al(i) = 0.
+          ar(i) = 0.
+     else
         a4 = -3.*(ar(i) + al(i))
        da1 =      ar(i) - al(i)
       if( abs(da1) < -a4 ) then
@@ -1674,6 +1791,7 @@ CONTAINS
              endif
          endif
       endif
+     endif
     enddo
  else
 ! Standard PPM constraint
@@ -1698,7 +1816,7 @@ CONTAINS
  end subroutine pert_ppm
 
 
- subroutine deln_flux( nord, npx, npy, damp, q, fx, fy, mfx, mfy )
+ subroutine deln_flux( nord, npx, npy, damp, q, fx, fy, mass )
 ! Del-n damping for the cell-mean values (A grid)
 !------------------
 ! nord = 0:   del-2
@@ -1710,33 +1828,47 @@ CONTAINS
    integer, intent(in):: npx, npy
    real, intent(in):: damp
    real, intent(in):: q(is-ng:ie+ng, js-ng:je+ng)  ! q ghosted on input
+   real, optional, intent(in):: mass(isd:ied, jsd:jed)  ! q ghosted on input
 ! diffusive fluxes:
-   real, intent(in):: mfx(is:ie+1,js:je), mfy(is:ie,js:je+1)
    real, intent(inout):: fx(is:ie+1,js:je), fy(is:ie,js:je+1)
 ! local:
    real fx2(isd:ied+1,jsd:jed), fy2(isd:ied,jsd:jed+1)
    real d2(isd:ied,jsd:jed)
-   integer i,j, n, nt
+   real damp2
+   integer i,j, n, nt, i1, i2, j1, j2
 
+   i1 = is-1-nord;    i2 = ie+1+nord
+   j1 = js-1-nord;    j2 = je+1+nord
 
-   do j=jsd,jed
-      do i=isd,ied
-         d2(i,j) = damp*q(i,j)
-      enddo
-   enddo
+   if ( .not. present(mass) ) then
+     do j=j1, j2
+        do i=i1,i2
+           d2(i,j) = damp*q(i,j)
+        enddo
+     enddo
+   else
+     do j=j1, j2
+        do i=i1,i2
+           d2(i,j) = q(i,j)
+        enddo
+     enddo
+   endif
 
    if( nord>0 ) call copy_corners(d2, npx, npy, 1)
+
    do j=js-nord,je+nord
       do i=is-nord,ie+nord+1
-         fx2(i,j) = dy(i,j)*sina_u(i,j)*(d2(i-1,j)-d2(i,j))*rdxc(i,j)
+!        fx2(i,j) = dy(i,j)*sina_u(i,j)*(d2(i-1,j)-d2(i,j))*rdxc(i,j)
+         fx2(i,j) = 0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))*dy(i,j)*(d2(i-1,j)-d2(i,j))*rdxc(i,j)
       enddo
    enddo
 
    if( nord>0 ) call copy_corners(d2, npx, npy, 2)
    do j=js-nord,je+nord+1
-      do i=is-nord,ie+nord
-         fy2(i,j) = dx(i,j)*sina_v(i,j)*(d2(i,j-1)-d2(i,j))*rdyc(i,j)
-      enddo
+         do i=is-nord,ie+nord
+!           fy2(i,j) = dx(i,j)*sina_v(i,j)*(d2(i,j-1)-d2(i,j))*rdyc(i,j)
+            fy2(i,j) = 0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))*dx(i,j)*(d2(i,j-1)-d2(i,j))*rdyc(i,j)
+         enddo
    enddo
 
    if ( nord>0 ) then
@@ -1758,15 +1890,16 @@ CONTAINS
       call copy_corners(d2, npx, npy, 1)
       do j=js-nt,je+nt
          do i=is-nt,ie+nt+1
-            fx2(i,j) = dy(i,j)*sina_u(i,j)*(d2(i,j)-d2(i-1,j))*rdxc(i,j)
+            fx2(i,j) = 0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))*dy(i,j)*(d2(i,j)-d2(i-1,j))*rdxc(i,j)
          enddo
       enddo
 
       call copy_corners(d2, npx, npy, 2)
       do j=js-nt,je+nt+1
-         do i=is-nt,ie+nt
-            fy2(i,j) = dx(i,j)*sina_v(i,j)*(d2(i,j)-d2(i,j-1))*rdyc(i,j)
-         enddo
+            do i=is-nt,ie+nt
+               fy2(i,j) = dx(i,j)*(d2(i,j)-d2(i,j-1))*rdyc(i,j) &
+                         *0.5*(sin_sg(i,j-1,4) + sin_sg(i,j,2) )
+            enddo
       enddo
    enddo
 
@@ -1775,19 +1908,32 @@ CONTAINS
 !---------------------------------------------
 ! Add the diffusive fluxes to the flux arrays:
 !---------------------------------------------
-   do j=js,je
-      do i=is,ie+1
-!        fx(i,j) = fx(i,j) + fx2(i,j)*mfx(i,j)
-         fx(i,j) = fx(i,j) + fx2(i,j)
-      enddo
-   enddo
 
-   do j=js,je+1
-      do i=is,ie
-!        fy(i,j) = fy(i,j) + fy2(i,j)*mfy(i,j)
-         fy(i,j) = fy(i,j) + fy2(i,j)
-      enddo
-   enddo
+   if ( present(mass) ) then
+! Apply mass weighting to diffusive fluxes:
+        damp2 = 0.5*damp
+        do j=js,je
+           do i=is,ie+1
+              fx(i,j) = fx(i,j) + damp2*(mass(i-1,j)+mass(i,j))*fx2(i,j)
+           enddo
+        enddo
+        do j=js,je+1
+           do i=is,ie
+              fy(i,j) = fy(i,j) + damp2*(mass(i,j-1)+mass(i,j))*fy2(i,j)
+           enddo
+        enddo
+   else
+        do j=js,je
+           do i=is,ie+1
+              fx(i,j) = fx(i,j) + fx2(i,j)
+           enddo
+        enddo
+        do j=js,je+1
+           do i=is,ie
+              fy(i,j) = fy(i,j) + fy2(i,j)
+           enddo
+        enddo
+   endif
 
  end subroutine deln_flux
 

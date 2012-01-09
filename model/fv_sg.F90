@@ -20,6 +20,10 @@ real, allocatable:: fv_olr(:,:), fv_abs_sw(:,:)
   real, parameter:: zvir =  rvgas/rdgas - 1.     ! = 0.607789855
   real, allocatable:: table(:),des(:)
 
+!---- version number -----
+  character(len=128) :: version = '$Id: fv_sg.F90,v 19.0 2012/01/06 19:57:46 fms Exp $'
+  character(len=128) :: tagname = '$Name: siena $'
+
 contains
 
  subroutine fv_dry_conv( isd, ied, jsd, jed, is, ie, js, je, km, nq, dt,    &
@@ -71,10 +75,11 @@ contains
 ! volume and mass is locally conserved).
 !------------------------------------------------------------------------
    mcond = 1
-   m = 3
+   m = 4
    fra = dt/real(tau)
 
-  do 1000 j=js,je       ! this main loop can be OpneMPed in j
+!$omp parallel do default(shared) private(q0, t0, u0, v0, w0, h0, pm, gzh, tvm, tv, gz, hd, te, ratio, pt1, pt2, ri, mc)
+  do 1000 j=js,je  
 
     do iq=1,nq
        do k=mcond,km
@@ -131,9 +136,14 @@ contains
       do k=km,mcond+1,-1
 
          do i=is,ie
+! The following condition is added to minimizes the extent of the adjustment to mainly the tropics
+! and/or extremely hot surface layer
+!!!        if ( t0(i,km) > 310. ) then
 ! Richardson number = g*delz * theta / ( del_theta * (del_u**2 + del_v**2) )
-            pt1 = t0(i,k-1)/pkz(i,j,k-1)
-            pt2 = t0(i,k  )/pkz(i,j,k  )
+            pt1 = t0(i,k-1)/pkz(i,j,k-1) * (1.+zvir*q0(i,k-1,1))
+            pt2 = t0(i,k  )/pkz(i,j,k  ) * (1.+zvir*q0(i,k  ,1))
+!           pt1 = t0(i,k-1)/pkz(i,j,k-1)
+!           pt2 = t0(i,k  )/pkz(i,j,k  )
             ri = (gz(i,k-1)-gz(i,k))*(pt1-pt2)/( 0.5*(pt1+pt2)*        &
                 ((u0(i,k-1)-u0(i,k))**2+(v0(i,k-1)-v0(i,k))**2+ustar2) )
 ! Dry convective adjustment for K-H instability:
@@ -169,6 +179,7 @@ contains
                  w0(i,k  ) = w0(i,k  ) - h0/delp(i,j,k  )
               endif
             endif
+!!!        endif
          enddo
 
 !-------------- 
@@ -198,6 +209,7 @@ contains
          enddo
        endif
       enddo   ! k-loop
+
    enddo       ! n-loop
 
 
@@ -329,7 +341,8 @@ contains
    m = 4
    fra = dt/real(tau)
 
-  do 1000 j=js,je       ! this main loop can be OpneMPed in j
+!$omp parallel do default(shared) private(q0, t0, u0, v0, pm, w0, h0, gzh, tvm, tv, gz, hd, te, ratio, pt1, pt2, ri, mc, qs1, qs2, lf, dh, dhs)
+  do 1000 j=js,je 
 
     do iq=1,nq
        do k=mcond,km
@@ -697,9 +710,7 @@ contains
   Tmin = tice-160.
   eps10  = 10.*esl
 
-  if( .not. allocated(table) ) then
-       call  qsmith_init
-  endif
+  if( .not. allocated(table) ) call  qsmith_init
  
       do k=k1,km
          do i=1,im
@@ -793,63 +804,151 @@ contains
                                  pt, qv, ql, qr, qi, qs, qg
  real, intent(inout), optional, dimension(is-ng:ie+ng,js-ng:je+ng,kbot):: qa
 ! Local:
+ real, dimension(is:ie,kbot):: dp2, q2
  real lcp, icp
- real dq, qsum, psum
+ real dq, qsum, dq1
  integer i, j, k
 
  lcp = hlv / cp_air
  icp = hlf / cp_air
 
+!$omp parallel do default(shared) private(qsum, dq, dq1)
  do k=1, kbot
     do j=js, je
        do i=is, ie
 !-----------
 ! Ice-phase:
 !-----------
-! if ice<0 borrow from snow (since main source of snow is cloud ice)
-          if( qi(i,j,k) < 0. ) then
-              qs(i,j,k) = qs(i,j,k) + qi(i,j,k)
-              qi(i,j,k) = 0.
-          endif
-! if snow<0 borrow from graupel (same as above)
-          if( qs(i,j,k) < 0. ) then
-              qg(i,j,k) = qg(i,j,k) + qs(i,j,k)
-              qs(i,j,k) = 0.
-          endif
-! If graupel < 0 then borrow from cloud ice (loop back)
-          if ( qg(i,j,k) < 0. ) then
-               qi(i,j,k) = qi(i,j,k) + qg(i,j,k)
-               qg(i,j,k) = 0.
-          endif
+        qsum = qi(i,j,k) + qs(i,j,k)
+        if ( qsum > 0. ) then
+             if ( qi(i,j,k) < 0. ) then
+                  qi(i,j,k) = 0.
+                  qs(i,j,k) = qsum
+             elseif ( qs(i,j,k) < 0. ) then
+                  qs(i,j,k) = 0.
+                  qi(i,j,k) = qsum
+             endif
+        else
+! borrow froom graupel
+             qi(i,j,k) = 0.
+             qs(i,j,k) = 0.
+             qg(i,j,k) = qg(i,j,k) + qsum
+        endif
 
-! If ice < 0 then borrow from cloud water
-          if ( qi(i,j,k) < 0. ) then
-               ql(i,j,k) = ql(i,j,k) + qi(i,j,k)
-               pt(i,j,k) = pt(i,j,k) - qi(i,j,k)*icp   ! heating
-               qi(i,j,k) = 0.
-          endif
+! At this stage qi and qs should be positive definite
+! If graupel < 0 then borrow from qs then qi
+        if ( qg(i,j,k) < 0. ) then
+             dq = min( qs(i,j,k), -qg(i,j,k) )
+             qs(i,j,k) = qs(i,j,k) - dq
+             qg(i,j,k) = qg(i,j,k) + dq
+             if ( qg(i,j,k) < 0. ) then
+! if qg is still negative
+                  dq = min( qi(i,j,k), -qg(i,j,k) )
+                  qi(i,j,k) = qi(i,j,k) - dq
+                  qg(i,j,k) = qg(i,j,k) + dq
+             endif
+        endif
 
+! If qg is still negative then borrow from rain water: phase change
+        if ( qg(i,j,k)<0. .and. qr(i,j,k)>0. ) then
+             dq = min( qr(i,j,k), -qg(i,j,k) )
+             qg(i,j,k) = qg(i,j,k) + dq
+             qr(i,j,k) = qr(i,j,k) - dq
+             pt(i,j,k) = pt(i,j,k) + dq*icp  ! conserve total energy
+        endif
+! If qg is still negative then borrow from cloud water: phase change
+        if ( qg(i,j,k)<0. .and. ql(i,j,k)>0. ) then
+             dq = min( ql(i,j,k), -qg(i,j,k) )
+             qg(i,j,k) = qg(i,j,k) + dq
+             ql(i,j,k) = ql(i,j,k) - dq
+             pt(i,j,k) = pt(i,j,k) + dq*icp
+        endif
+! Last resort; borrow from water vapor (up to 99%)
+        if ( qg(i,j,k)<0. .and. qv(i,j,k)>0. ) then
+             dq = min( 0.99*qv(i,j,k), -qg(i,j,k) )
+             qg(i,j,k) = qg(i,j,k) + dq
+             qv(i,j,k) = qv(i,j,k) - dq
+             pt(i,j,k) = pt(i,j,k) + dq*(icp+lcp)
+        endif
+
+!--------------
 ! Liquid phase:
-! Fix negative cloud water by borrowing from rain
-          if ( ql(i,j,k) < 0. ) then
-               qr(i,j,k) = qr(i,j,k) + ql(i,j,k)
-               ql(i,j,k) = 0.
-          endif
-! fix negative rain with vapor
+!--------------
+        qsum = ql(i,j,k) + qr(i,j,k)
+        if ( qsum > 0. ) then
+             if ( qr(i,j,k) < 0. ) then
+                  qr(i,j,k) = 0.
+                  ql(i,j,k) = qsum
+             elseif ( ql(i,j,k) < 0. ) then
+                  ql(i,j,k) = 0.
+                  qr(i,j,k) = qsum
+             endif
+        else
+          ql(i,j,k) = 0.
+          qr(i,j,k) = qsum     ! rain water is still negative
+! fill negative rain with qg first
+          dq = min( max(0.0, qg(i,j,k)), -qr(i,j,k) )
+          qr(i,j,k) = qr(i,j,k) + dq
+          qg(i,j,k) = qg(i,j,k) - dq
+          pt(i,j,k) = pt(i,j,k) - dq*icp
           if ( qr(i,j,k) < 0. ) then
-               qv(i,j,k) = qv(i,j,k) + qr(i,j,k)
-               pt(i,j,k) = pt(i,j,k) - qr(i,j,k)*lcp
-               qr(i,j,k) = 0.
+! fill negative rain with available qi & qs (cooling)
+               dq = min( qi(i,j,k)+qs(i,j,k), -qr(i,j,k) )
+               qr(i,j,k) = qr(i,j,k) + dq
+               dq1 = min( dq, qs(i,j,k) )
+               qs(i,j,k) = qs(i,j,k) - dq1
+               qi(i,j,k) = qi(i,j,k) + dq1 - dq 
+               pt(i,j,k) = pt(i,j,k) - dq*icp
           endif
+! fix negative rain water with available vapor
+          if ( qr(i,j,k)<0. .and. qv(i,j,k)>0. ) then
+               dq = min( 0.99*qv(i,j,k), -qr(i,j,k) )
+               qv(i,j,k) = qv(i,j,k) - dq
+               qr(i,j,k) = qr(i,j,k) + dq
+               pt(i,j,k) = pt(i,j,k) + dq*lcp
+          endif
+        endif
      enddo
    enddo
  enddo
+
+#ifndef FILL_Q
+!$omp parallel do default(shared) private(dp2, q2)
+ do j=js, je
+! Graupel:
+    do k=1,kbot
+       do i=is,ie
+          dp2(i,k) = dp(i,j,k)
+           q2(i,k) = qg(i,j,k)
+       enddo
+    enddo
+    call fillq(ie-is+1, kbot, q2, dp2)
+    do k=1,kbot
+       do i=is,ie
+          qg(i,j,k) = q2(i,k)
+       enddo
+    enddo
+! Rain water:
+    do k=1,kbot
+       do i=is,ie
+          q2(i,k) = qr(i,j,k)
+       enddo
+    enddo
+    call fillq(ie-is+1, kbot, q2, dp2)
+    do k=1,kbot
+       do i=is,ie
+          qr(i,j,k) = q2(i,k)
+       enddo
+    enddo
+ enddo
+#endif
 
 !-----------------------------------
 ! Fix water vapor
 !-----------------------------------
 ! Top layer: borrow from below
     k = 1
+!$omp parallel do default(shared)
     do j=js, je
        do i=is, ie
           if( qv(i,j,k) < 0. ) then
@@ -859,6 +958,8 @@ contains
      enddo
    enddo
 
+! this OpenMP do-loop cannot be parallelized with recursion on k/k-1
+!rab!$omp parallel do default(shared) private(dq)
  do k=2,kbot-1
     do j=js, je
        do i=is, ie
@@ -871,28 +972,34 @@ contains
               qv(i,j,k+1) = qv(i,j,k+1) + qv(i,j,k)*dp(i,j,k)/dp(i,j,k+1)
               qv(i,j,k  ) = 0.
           endif
-     enddo
-   enddo
- enddo
+       enddo
+    enddo
+  enddo
  
 ! Bottom layer; Borrow from above
+!$omp parallel do default(shared) private(dq)
   do j=js, je
      do i=is, ie
-        if( qv(i,j,kbot) < 0. .and. qv(i,j,kbot-1)>0.) then
-            dq = min(-qv(i,j,kbot)*dp(i,j,kbot), qv(i,j,kbot-1)*dp(i,j,kbot-1))
-            qv(i,j,kbot-1) = qv(i,j,kbot-1) - dq/dp(i,j,kbot-1) 
-            qv(i,j,kbot  ) = qv(i,j,kbot  ) + dq/dp(i,j,kbot  ) 
-        endif
-! Last attempt to fix negative qv from condensates
-!       if( qv(i,j,kbot) < 0. ) then
-!       endif
-   enddo
- enddo
+     if( qv(i,j,kbot) < 0. ) then
+         do k=kbot-1,1,-1
+            if ( qv(i,j,kbot)>=0. ) goto 123
+            if ( qv(i,j,k) > 0. ) then
+                 dq = min(-qv(i,j,kbot)*dp(i,j,kbot), qv(i,j,k)*dp(i,j,k))
+                 qv(i,j,k   ) = qv(i,j,k   ) - dq/dp(i,j,k) 
+                 qv(i,j,kbot) = qv(i,j,kbot) + dq/dp(i,j,kbot) 
+            endif
+         enddo   ! k-loop
+123      continue
+     endif
+     enddo ! i-loop
+ enddo   ! j-loop
 
 !-----------------------------------
 ! Fix negative cloud fraction
 !-----------------------------------
  if ( present(qa) ) then
+! this OpenMP do-loop cannot be parallelized by the recursion on k/k+1
+!rab!$omp parallel do default(shared) 
  do k=1,kbot-1
     do j=js, je
        do i=is, ie
@@ -905,6 +1012,7 @@ contains
  enddo
  
 ! Bottom layer; Borrow from above
+!$omp parallel do default(shared) private(dq)
   do j=js, je
      do i=is, ie
         if( qa(i,j,kbot) < 0. .and. qa(i,j,kbot-1)>0.) then
@@ -919,5 +1027,40 @@ contains
  endif
 
  end subroutine neg_adj3
+
+ subroutine fillq(im, km, q, dp)
+! Aggresive 1D filling algorithm for qr and qg
+ integer, intent(in):: im, km
+ real, intent(inout), dimension(im,km):: q, dp
+ integer:: i, k
+ real:: sum1, sum2, dq
+
+ do 500 i=1,im
+    sum1 = 0.
+    do k=1,km
+       if ( q(i,k)>0. ) then
+            sum1 = sum1 + q(i,k)*dp(i,k)
+       endif
+    enddo
+    if ( sum1<1.E-12  ) goto 500
+    sum2 = 0.
+    do k=km,1,-1
+       if ( q(i,k)<0.0 .and. sum1>0. ) then
+            dq = min( sum1, -q(i,k)*dp(i,k) )
+            sum1 = sum1 - dq
+            sum2 = sum2 + dq
+            q(i,k) = q(i,k) + dq/dp(i,k)
+       endif
+    enddo
+    do k=km,1,-1
+       if ( q(i,k)>0.0 .and. sum2>0. ) then
+            dq = min( sum2, q(i,k)*dp(i,k) )
+            sum2 = sum2 - dq
+            q(i,k) = q(i,k) - dq/dp(i,k)
+       endif
+    enddo
+500  continue
+
+ end subroutine fillq
 
 end module fv_sg_mod

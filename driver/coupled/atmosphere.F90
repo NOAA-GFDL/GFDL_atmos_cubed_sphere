@@ -19,7 +19,7 @@ use fms_mod,            only: file_exist, open_namelist_file,    &
                               mpp_clock_id, mpp_clock_begin,     &
                               mpp_clock_end, CLOCK_SUBCOMPONENT, &
                               clock_flag_default, nullify_domain
-use mpp_mod,            only: mpp_error, FATAL, input_nml_file
+use mpp_mod,            only: mpp_error, FATAL, NOTE, input_nml_file
 use mpp_domains_mod,    only: domain2d
 use xgrid_mod,          only: grid_box_type
 !miz
@@ -38,6 +38,7 @@ use fv_grid_tools_mod,  only: area, grid_type, dx, dy, area
 use fv_grid_utils_mod,  only: edge_w, edge_e, edge_s, edge_n, en1, en2, vlon, vlat
 use fv_arrays_mod,      only: fv_atmos_type
 use fv_control_mod,     only: fv_init, domain, fv_end, p_ref
+use fv_io_mod,          only: fv_io_register_nudge_restart
 use fv_mp_mod,          only: domain_for_coupler
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time
@@ -46,7 +47,13 @@ use fv_timing_mod,      only: timing_on, timing_off
 use fv_physics_mod,     only: fv_physics_down, fv_physics_up,  &
                               fv_physics_init, fv_physics_end, &
                               surf_diff_type, fv_physics_restart
-use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end
+#if defined (ATMOS_NUDGE)
+use atmos_nudge_mod,      only: atmos_nudge_init, atmos_nudge_end
+#elif defined (CLIMATE_NUDGE)
+use fv_climate_nudge_mod, only: fv_climate_nudge_init,fv_climate_nudge_end
+#else
+use fv_nwp_nudge_mod,     only: fv_nwp_nudge_init, fv_nwp_nudge_end
+#endif
 
 implicit none
 private
@@ -61,8 +68,8 @@ public  atmosphere_down,       atmosphere_up,       &
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id: atmosphere.F90,v 17.0.2.3.2.1.4.1 2010/08/03 20:29:21 rab Exp $'
-character(len=128) :: tagname = '$Name: riga_201104 $'
+character(len=128) :: version = '$Id: atmosphere.F90,v 19.0 2012/01/06 19:55:50 fms Exp $'
+character(len=128) :: tagname = '$Name: siena $'
 character(len=7)   :: mod_name = 'atmos'
 
 !---- namelist (saved in file input.nml) ----
@@ -114,6 +121,7 @@ contains
 
    integer :: unit, ierr, io, i
    integer :: itrac
+   logical :: do_atmos_nudge
    character(len=32) :: tracer_name, tracer_units
 
    call get_number_tracers(MODEL_ATMOS, num_prog= num_tracers)
@@ -217,8 +225,32 @@ contains
 
    call nullify_domain ( )
 
-   if ( Atm(1)%nudge )    &
-        call fv_nwp_nudge_init( npz, zvir, Atm(1)%ak, Atm(1)%bk, Atm(1)%ts, Atm(1)%phis)
+!--- initialize nudging module ---
+#if defined (ATMOS_NUDGE)
+    call atmos_nudge_init ( Time, atmos_axes(1:3), flag=do_atmos_nudge )
+    if ( do_atmos_nudge .and. Atm(1)%nudge ) then
+         call mpp_error(NOTE, 'Code compiled with atmospheric nudging, but fv_core_nml nudge is also set to .true.')
+    elseif ( do_atmos_nudge) then
+         call mpp_error(NOTE, 'Code compiled with and using atmospheric nudging')
+    endif
+    Atm(1)%nudge = do_atmos_nudge
+#elif defined (CLIMATE_NUDGE)
+    call fv_climate_nudge_init ( Time, atmos_axes(1:3), flag=do_atmos_nudge )
+    if ( do_atmos_nudge .and. Atm(1)%nudge ) then
+         call mpp_error(NOTE, 'Code compiled with climate nudging, but fv_core_nml nudge is also set to .true.')
+    elseif ( do_atmos_nudge ) then
+         call mpp_error(NOTE, 'Code compiled with and using climate nudging')
+    endif
+    Atm(1)%nudge = do_atmos_nudge
+#else
+   if ( Atm(1)%nudge ) then
+        call fv_nwp_nudge_init( Time, atmos_axes, npz, zvir, Atm(1)%ak, Atm(1)%bk, Atm(1)%ts, Atm(1)%phis)
+        call mpp_error(NOTE, 'NWP nudging is active')
+   endif
+#endif
+
+! This call needs to be separate from the register nudging restarts after initialization
+   call fv_io_register_nudge_restart ( Atm )
 
 !miz
    if( Atm(1)%ncep_ic ) Surf_diff%sst_miz(:,:) = Atm(1)%ts(isc:iec, jsc:jec)
@@ -271,9 +303,10 @@ contains
                            rough_mom,                      &
                            u_star,  b_star, q_star,        &
                            dtau_du, dtau_dv, tau_x, tau_y, &
+                           frac_open_sea,                  &
                            gust, coszen, flux_sw,          &
                            flux_sw_dir, flux_sw_dif,       &
-                           flux_sw_down_vis_dir,           &          
+                           flux_sw_down_vis_dir,           &
                            flux_sw_down_vis_dif,           &
                            flux_sw_down_total_dir,         &
                            flux_sw_down_total_dif,         &
@@ -290,7 +323,8 @@ contains
                                       albedo_vis_dir, albedo_nir_dir, &
                                       albedo_vis_dif, albedo_nir_dif, &
                                       rough_mom, u_star, b_star,      &
-                                      q_star, dtau_du, dtau_dv
+                                      q_star, dtau_du, dtau_dv,       &
+                                      frac_open_sea
    real, intent(inout), dimension(:,:):: tau_x,  tau_y
    real, intent(out),   dimension(:,:):: gust, coszen, flux_sw,    &
                                          flux_sw_dir, flux_sw_dif, &
@@ -326,9 +360,8 @@ contains
    call fv_dynamics(npx, npy, npz, nq, Atm(1)%ng, dt_atmos, Atm(1)%consv_te,         &
                     Atm(1)%fill,  Atm(1)%reproduce_sum, kappa, cp_air, zvir,         &
                     Atm(1)%ks,    ncnst,        Atm(1)%n_split,   Atm(1)%q_split,    &
-                    Atm(1)%u, Atm(1)%v, Atm(1)%um, Atm(1)%vm,                        &
-                    Atm(1)%w, Atm(1)%delz, Atm(1)%hydrostatic,   & 
-                    Atm(1)%pt, Atm(1)%delp, Atm(1)%q, Atm(1)%ps, &
+                    Atm(1)%u, Atm(1)%v, Atm(1)%w, Atm(1)%delz, Atm(1)%hydrostatic,   & 
+                    Atm(1)%pt, Atm(1)%delp, Atm(1)%q, Atm(1)%ps,                     &
                     Atm(1)%pe, Atm(1)%pk, Atm(1)%peln, Atm(1)%pkz, Atm(1)%phis,      &
                     Atm(1)%omga, Atm(1)%ua, Atm(1)%va, Atm(1)%uc, Atm(1)%vc,         &
                     Atm(1)%ak, Atm(1)%bk, Atm(1)%mfx, Atm(1)%mfy,                    &
@@ -380,7 +413,8 @@ contains
                          flux_sw_down_total_dif,         &
                          flux_sw_vis, flux_sw_vis_dir,   &
                          flux_sw_vis_dif, flux_lw,       &
-                         coszen, gust, Surf_diff )
+                         coszen, gust, Surf_diff,        &
+                         frac_open_sea )
                          call timing_off('fv_physics_down')
    call mpp_clock_end (id_phys_down)
    call nullify_domain ( )
@@ -442,7 +476,15 @@ contains
    call get_time (Time, seconds,  days)
 
    call fv_physics_end(Atm, Time)
+
+!--- end nudging module ---
+#if defined (ATMOS_NUDGE)
+   if ( Atm(1)%nudge ) call atmos_nudge_end
+#elif defined (CLIMATE_NUDGE)
+   if ( Atm(1)%nudge ) call fv_climate_nudge_end
+#else
    if ( Atm(1)%nudge ) call fv_nwp_nudge_end
+#endif
 
    call nullify_domain ( )
    call fv_end(Atm)

@@ -1,8 +1,8 @@
-! $Id: init_hydro.F90,v 17.0 2009/07/21 02:52:36 fms Exp $
+! $Id: init_hydro.F90,v 19.0 2012/01/06 19:59:21 fms Exp $
 
 module init_hydro_mod
 
-      use constants_mod, only: grav, rdgas
+      use constants_mod, only: grav, rdgas, rvgas
       use fv_grid_utils_mod,    only: g_sum
       use fv_grid_tools_mod,    only: area
       use fv_mp_mod,        only: gid, masterproc
@@ -12,6 +12,10 @@ module init_hydro_mod
       private
 
       public :: p_var, hydro_eq
+
+!---- version number -----
+      character(len=128) :: version = '$Id: init_hydro.F90,v 19.0 2012/01/06 19:59:21 fms Exp $'
+      character(len=128) :: tagname = '$Name: siena $'
 
 contains
 
@@ -45,7 +49,7 @@ contains
 
 ! Local
    real ratio(ifirst:ilast)
-   real pek, lnp, ak1, rdg, dpd
+   real pek, lnp, ak1, rdg, dpd, zvir
    integer i, j, k
 
 
@@ -107,14 +111,6 @@ contains
       endif
    enddo
 
-!--------
-! Caution:
-!------------------------------------------------------------------
-! The following form is the same as in "fv_update_phys.F90"
-! Therefore, restart reproducibility is only enforced in diabatic cases
-!------------------------------------------------------------------
-! For adiabatic runs, this form is not exactly the same as in mapz_module;
-! Therefore, rounding differences will occur with restart!
 
    if ( .not.hydrostatic ) then
 
@@ -140,17 +136,34 @@ contains
                 enddo
              enddo
              if(gid==0) write(*,*) 'delz computed from hydrostatic state'
-!            call prt_maxmin('delz', delz, ifirst, ilast, jfirst, jlast, 0, km, 1., gid==masterproc)
           endif
       endif
 
-      do k=ktop,km
-         do j=jfirst,jlast
-            do i=ifirst,ilast
-               pkz(i,j,k) = (rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k))**cappa
-            enddo
-         enddo
-      enddo
+     if ( moist_phys ) then
+!------------------------------------------------------------------
+! The following form is the same as in "fv_update_phys.F90"
+! Therefore, restart reproducibility is only enforced in diabatic cases
+!------------------------------------------------------------------
+! For adiabatic runs, use "-DSOLO_REPRO" to enforce reproducibility
+       zvir = rvgas/rdgas - 1.
+       do k=ktop,km
+          do j=jfirst,jlast
+             do i=ifirst,ilast
+                pkz(i,j,k) = exp( cappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+                                (1.+zvir*q(i,j,k,1))/delz(i,j,k)) )
+             enddo
+          enddo
+       enddo
+     else
+       do k=ktop,km
+          do j=jfirst,jlast
+             do i=ifirst,ilast
+                pkz(i,j,k) = exp( cappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)) )
+             enddo
+          enddo
+       enddo
+     endif
+
    endif
 
  end subroutine p_var
@@ -182,7 +195,7 @@ contains
       real  psmo, psdry
       integer i, j, k
 
-!$omp parallel do default(shared) private(i, j, k)
+!$omp parallel do default(shared) 
       do j=jfirst,jlast
 
          do i=ifirst,ilast

@@ -7,8 +7,8 @@
                                    domain_decomp, fill_corners, XDir, YDir, &
                                    mp_stop, mp_reduce_sum, mp_reduce_max, mp_gather, mp_bcst
       use fv_grid_utils_mod, only: cubed_to_latlon, great_circle_dist, mid_pt_sphere,   &
-                                   ptop, ptop_min, fC, f0, deglat, inner_prod, normalize_vect, &
-                                   ee1, ee2, ew, es, g_sum, latlon2xyz, cart_to_latlon
+                                   ks, ptop, ptop_min, fC, f0, deglat, inner_prod, normalize_vect, &
+                                   ee1, ee2, ew, es, g_sum, latlon2xyz, cart_to_latlon, make_eta_level
       use fv_surf_map_mod,   only: surfdrv
 
       use fv_grid_tools_mod, only: grid, agrid, cubed_sphere, latlon,  todeg, missing,  &
@@ -16,13 +16,15 @@
                                    ctoa, atod, dtoa, atoc, atob_s, mp_update_dwinds, rotate_winds, &
                                    globalsum, get_unit_vector, unit_vect2,                         &
                                    dx_const, dy_const
-      use fv_eta_mod,        only: compute_dz_L32, set_hybrid_z, gw_1d
+      use fv_eta_mod,        only: compute_dz_L32, compute_dz_L101, set_hybrid_z, gw_1d
 
       use mpp_mod,           only: mpp_error, FATAL
       use mpp_domains_mod,   only: mpp_update_domains
       use mpp_parameter_mod, only: AGRID_PARAM=>AGRID,CGRID_NE_PARAM=>CGRID_NE, &
                                    SCALAR_PAIR
-!     use fv_diagnostics_mod,  only: prt_maxmin
+      use fv_sg_mod,         only: qsmith
+!     use fv_diagnostics_mod, only: prt_maxmin
+
 
       implicit none
       private
@@ -51,6 +53,7 @@
 !                   19 = As in 15 but without rotation
 !                   20 = 3D non-hydrostatic lee vortices; non-rotating (small planet)
 !                   21 = 3D non-hydrostatic lee vortices; rotating     (small planet)
+!                  101 = 3D non-hydrostatic Large-Eddy-Simulation (LES) with hybrid_z IC
       integer :: test_case
 ! alpha = angle of axis rotation about the poles
       real   :: alpha = 0.
@@ -95,6 +98,10 @@
       public :: init_case, get_stats, check_courant_numbers, output, output_ncdf
       public :: case9_forcing1, case9_forcing2
       public :: init_double_periodic, init_latlon
+
+ !---- version number -----
+      character(len=128) :: version = '$Id: test_cases.F90,v 19.0 2012/01/06 19:59:28 fms Exp $'
+      character(len=128) :: tagname = '$Name: siena $'
 
       contains
 
@@ -3520,9 +3527,6 @@
                                       npx, npy, npz, ng, ncnst, nwat, k_top, ndims, nregions, dry_mass, &
                                       mountain, moist_phys, hydrostatic, hybrid_z, delz, ze0)
 
-#ifdef QS_TEST
-!       use mp_lin_mod, only: qsmith
-#endif
         real ,      intent(INOUT) ::    u(isd:ied  ,jsd:jed+1,npz)
         real ,      intent(INOUT) ::    v(isd:ied+1,jsd:jed  ,npz)
         real ,      intent(INOUT) ::    w(isd:ied  ,jsd:jed  ,npz)
@@ -3560,10 +3564,11 @@
         logical,      intent(IN) :: hydrostatic, hybrid_z
 
         real, dimension(is:ie):: pm, qs
-        real :: dist, r0, f0_const, prf
+        real :: dist, r0, f0_const, prf, rgrav
         real :: ptmp, ze, zc, zm
         real :: t00, p00, xmax, xc, xx, yy, zz, pk0, pturb, ztop
         real :: ze1(npz+1)
+         real:: dz1(npz)
         integer :: i, j, k, m, icenter, jcenter
 
         f0_const = 2.*omega*sin(deglat/180.*pi)
@@ -3672,43 +3677,35 @@
                      moist_phys, .true., k_top, nwat)
 
           q = 0.
-#ifdef QS_TEST
          do k=3,npz
             do j=js,je
                do i=is,ie
                   pm(i) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
                enddo
-!              call qsmith(ie-is+1, 1, 1, pt(is:ie,j,k), pm, q(is:ie,j,k,1), qs)
+               call qsmith(ie-is+1, 1, 1, pt(is:ie,j,k), pm, q(is:ie,j,k,1), qs)
                do i=is,ie
-!                 q(i,j,k,1) = 0.99*qs(i)
-                  q(i,j,k,1) = 1.e-4
+                  if ( pm(i)>100.E2 ) then
+                       q(i,j,k,1) = 0.99*qs(i)
+                  else
+                       q(i,j,k,1) = 3.E-6
+                  endif
                enddo
             enddo
          enddo
-#else
-          if ( ncnst==6 ) then
-              do j=js,je
-                 do i=is,ie
-                    q(i,j,1,1:6) = 1.
-                 enddo
-              enddo
-              do m=1,ncnst
-              do j=js,je
-                 do i=is,ie
-                    q(i,j,npz,m) = m
-                 enddo
-              enddo
-              enddo
-          endif
-#endif
 
         case ( 15 )
 !---------------------------
 ! Doubly periodic bubble
 !---------------------------
+           t00 = 250.
+
            u(:,:,:) = 0.
            v(:,:,:) = 0.
-          q(:,:,:,:) = 1.
+          pt(:,:,:) = t00
+          q(:,:,:,:) = 1.E-6
+
+          if ( .not. hydrostatic ) w(:,:,:) = 0.
+
            do j=jsd,jed
               do i=isd,ied
                  phis(i,j) = 0.
@@ -3724,40 +3721,42 @@
               enddo
            enddo
 
+
            do k=1,npz
               do j=jsd,jed
                  do i=isd,ied
-                           ptmp = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
-                      pt(i,j,k) = 300.*(ps(i,j)/ptmp)**kappa
+                         ptmp = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
+!                   pt(i,j,k) = t00
                  enddo
               enddo
            enddo
 
           call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
                      pe, peln, pk, pkz, kappa, q, ng, ncnst, dry_mass, .false., .false., &
-                     moist_phys, .false., k_top, nwat, .true.)
+                     moist_phys, .false., k_top, nwat)
 
 ! *** Add Initial perturbation ***
-           r0 = 0.5e3         ! 500 m
-           zc = 0.5e3         ! center of bubble 
+           r0 = 5.*max(dx_const, dy_const)
+           zc = 0.5e3         ! center of bubble  from surface
            icenter = npx/2
            jcenter = npy/2
 
-           do j=jsd,jed
-              do i=isd,ied
+           do j=js,je
+              do i=is,ie
                  ze = 0.
                  do k=npz,1,-1
-!                   ptmp = 0.5*(ak(k+1)+ak(k) + ps(i,j)*(bk(k+1)+bk(k))) 
                     zm = ze - 0.5*delz(i,j,k)   ! layer center
                     ze = ze - delz(i,j,k)
                     dist = ((i-icenter)*dx_const)**2 + ((j-jcenter)*dy_const)**2 +  &
                            (zm-zc)**2
-                    if ( sqrt(dist) <= r0 ) then
+                    dist = sqrt(dist)
+                    if ( dist <= r0 ) then
                          pt(i,j,k) = pt(i,j,k) + 5.*(1.-dist/r0)
                     endif
                  enddo
               enddo
            enddo
+
         case ( 16 )
 !------------------------------------
 ! Non-hydrostatic 3D density current:
@@ -3838,6 +3837,102 @@
                enddo
             enddo
           enddo
+
+        case ( 101 )
+
+! IC for LES
+         t00 = 250.      ! constant temp
+         p00 = 1.E5
+         pk0 = p00**kappa
+
+         phis = 0.
+         u = 0.
+         v = 0.
+         w = 0.
+         pt(:,:,:) = t00
+         q(:,:,:,1) = 0.
+
+         if (.not.hybrid_z) call mpp_error(FATAL, 'hybrid_z must be .TRUE.')
+
+          rgrav = 1./ grav
+
+          if ( npz/=101)  then
+              call mpp_error(FATAL, 'npz must be == 101 ')
+          else
+              call compute_dz_L101( npz, ztop, dz1 )
+          endif
+
+          call set_hybrid_z(is, ie, js, je, ng, npz, ztop, dz1, rgrav,  &
+                            phis, ze0, delz)
+
+          do j=js,je
+             do i=is,ie
+                ps(i,j) = p00
+                pe(i,npz+1,j) = p00
+                pk(i,j,npz+1) = pk0
+                peln(i,npz+1,j) = log(p00)
+             enddo
+          enddo
+
+          do k=npz,1,-1
+             do j=js,je
+                do i=is,ie
+                   peln(i,k,j) = peln(i,k+1,j) + grav*delz(i,j,k)/(rdgas*t00)
+                     pe(i,k,j) = exp(peln(i,k,j))
+                     pk(i,j,k) = pe(i,k,j)**kappa
+                enddo
+             enddo
+          enddo
+
+
+! Set up fake "sigma" coordinate 
+          call make_eta_level(npz, pe, area, ks, ak, bk)
+
+          if ( gid==masterproc ) write(*,*) 'LES testcase: computed model top (mb)=', ptop/100.
+
+          do k=1,npz
+             do j=js,je
+                do i=is,ie
+                   pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
+                  delp(i,j,k) =  pe(i,k+1,j)-pe(i,k,j)  
+                enddo
+             enddo
+          enddo
+
+         do k=1,npz
+            do j=js,je
+               do i=is,ie
+                  pm(i) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
+               enddo
+               call qsmith(ie-is+1, 1, 1, pt(is:ie,j,k), pm, q(is:ie,j,k,1), qs)
+               do i=is,ie
+                  if ( pm(i) > 100.E2 ) then
+                       q(i,j,k,1) = 0.9*qs(i)
+                  else
+                       q(i,j,k,1) = 2.E-6
+                  endif
+               enddo
+            enddo
+         enddo
+
+! *** Add perturbation ***
+           r0 = 1.0e3         ! radius (m)
+           zc = 1.0e3         ! center of bubble 
+           icenter = npx/2
+           jcenter = npy/2
+
+           do k=1,npz
+              do j=js,je
+                 do i=is,ie
+                    zm = 0.5*(ze0(i,j,k)+ze0(i,j,k+1))
+                    dist = ((i-icenter)*dx_const)**2 + ((j-jcenter)*dy_const)**2 + (zm-zc)**2
+                    dist = sqrt(dist)
+                    if ( dist <= r0 ) then
+                         pt(i,j,k) = pt(i,j,k) + 2.0*(1.-dist/r0)
+                    endif
+                 enddo
+              enddo
+           enddo
 
         end select
 

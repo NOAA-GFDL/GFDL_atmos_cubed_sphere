@@ -28,9 +28,6 @@ use diag_manager_mod,      only: diag_send_complete
 use mpp_domains_mod,       only: mpp_global_sum, BITWISE_EXACT_SUM, NON_BITWISE_EXACT_SUM
 use mpp_mod,               only: mpp_error, mpp_clock_id,  mpp_clock_begin,  &
                                  mpp_clock_end, CLOCK_MODULE_DRIVER, mpp_pe
-#ifdef ATMOS_NUDGE
-use atmos_nudge_mod,       only: atmos_nudge_init, atmos_nudge_end
-#endif
 
 !-----------------
 ! FV core modules:
@@ -62,7 +59,6 @@ public  surf_diff_type, fv_physics_restart
    real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt
    real, allocatable, dimension(:,:,:,:) :: q_dt  ! potentially a huge array
    real, allocatable, dimension(:,:,:)   :: p_full, z_full, p_half, z_half
-   logical :: do_atmos_nudge
    real    :: zvir, rrg, ginv
    integer :: id_fv_physics_down, id_fv_physics_up, id_fv_update_phys
    integer :: isc, iec, jsc, jec, ngc, nt_prog
@@ -76,8 +72,8 @@ public  surf_diff_type, fv_physics_restart
 
 
 !---- version number -----
-   character(len=128) :: version = '$Id: fv_physics.F90,v 17.0.4.1.2.1.2.6.4.2 2011/04/08 20:15:54 William.Cooke Exp $'
-   character(len=128) :: tagname = '$Name: riga_201104 $'
+   character(len=128) :: version = '$Id: fv_physics.F90,v 19.0 2012/01/06 19:55:52 fms Exp $'
+   character(len=128) :: tagname = '$Name: siena $'
 
 contains
 
@@ -171,11 +167,6 @@ contains
                              Surf_diff,  p_edge )
     deallocate ( p_edge )
 
-!--- initialize nudging module ---
-#ifdef ATMOS_NUDGE
-    call atmos_nudge_init ( Time, axes(1:3), flag=do_atmos_nudge )
-#endif
-
 ! physics window
     nx_dom = iec - isc + 1
     ny_dom = jec - jsc + 1
@@ -188,13 +179,15 @@ contains
 
 ! Consistency check:
     if( mod(nx_dom,nx_win).NE.0 )then
-        write( text,'(a,2i4)' )'FV_PHYSICS_INIT: atmosphere_nml problem,'// &
-             ' physics_window must divide domain size: ',  nx_win, nx_dom
+        write( text,'(a,i5,a,i5)' )'FV_PHYSICS_INIT: atmosphere_nml problem,'// &
+             ' physics_window must divide domain size for X-dimension - window:'&
+             ,nx_win, ' domain:', nx_dom
         call mpp_error( FATAL, text )
     end if
     if( mod(ny_dom,ny_win).NE.0 )then
-        write( text,'(a,2i4)' )'FV_PHYSICS_INIT: atmosphere_nml problem,'// &
-             ' physics_window must divide domain size: ',  ny_win, ny_dom
+        write( text,'(a,i5,a,i5)' )'FV_PHYSICS_INIT: atmosphere_nml problem,'// &
+             ' physics_window must divide domain size for Y-dimension - window:'&
+             , ny_win, ' domain: ',ny_dom
         call mpp_error( FATAL, text )
     end if
 
@@ -257,7 +250,7 @@ contains
                              flux_sw_vis, flux_sw_vis_dir,   &
                              flux_sw_vis_dif,                &
                              flux_lw, coszen,                &
-                             gust, Surf_diff )
+                             gust, Surf_diff, frac_open_sea )
 !-----------------------------------------------------------------------
 !
 !   Time_prev =  time at the previous time level, tau-1 (time_type)
@@ -275,7 +268,8 @@ contains
                                        albedo_vis_dir, albedo_nir_dir, &
                                        albedo_vis_dif, albedo_nir_dif, &
                                        rough_vel, t_surf, u_star,      &
-                                       b_star, q_star, dtau_du, dtau_dv
+                                       b_star, q_star, dtau_du, dtau_dv,&
+                                       frac_open_sea
 
     type(surf_diff_type), intent(inout) :: Surf_diff
     real, intent(inout), dimension(isc:iec,jsc:jec):: tau_x, tau_y
@@ -378,6 +372,7 @@ contains
                       q_phys(isw:iew,jsw:jew,:,1)                          , &
                       q_phys(isw:iew,jsw:jew,:,:)                          , &
                    frac_land(isw:iew,jsw:jew), rough_vel(isw:iew,jsw:jew)  , &
+                   frac_open_sea(isw:iew,jsw:jew),                           &
                    albedo   (isw:iew,jsw:jew)                              , &
                    albedo_vis_dir(isw:iew,jsw:jew)                         , &
                    albedo_nir_dir(isw:iew,jsw:jew)                         , &
@@ -444,6 +439,7 @@ contains
                    Atm(1)%q (isw:iew,jsw:jew,:,1)                          , &
                    Atm(1)%q (isw:iew,jsw:jew,:,:)                          , &
                    frac_land(isw:iew,jsw:jew), rough_vel(isw:iew,jsw:jew)  , &
+                   frac_open_sea(isw:iew,jsw:jew),                           &
                    albedo   (isw:iew,jsw:jew)                              , &
                    albedo_vis_dir(isw:iew,jsw:jew)                         , &
                    albedo_nir_dir(isw:iew,jsw:jew)                         , &
@@ -645,6 +641,16 @@ contains
 
     call mpp_clock_begin(id_fv_update_phys)
                                                             call timing_on('update_fv')
+#if defined (CLIMATE_NUDGE)
+    call fv_update_phys( dt_phys,   isc,        iec,         jsc,    jec,   isd,       &
+                         ied,       jsd,        jed,         ngc,       nt_prog,       &
+                         Atm(1)%u,  Atm(1)%v,   Atm(1)%delp, Atm(1)%pt, Atm(1)%q,      &
+                         Atm(1)%ua, Atm(1)%va,  Atm(1)%ps,   Atm(1)%pe, Atm(1)%peln,   &
+                         Atm(1)%pk, Atm(1)%pkz, Atm(1)%ak,   Atm(1)%bk, Atm(1)%phis,   &
+                         Atm(1)%u_srf, Atm(1)%v_srf, Atm(1)%ts, Atm(1)%delz, Atm(1)%hydrostatic, &
+                         u_dt, v_dt, t_dt, q_dt, .true., Time_next, Atm(1)%nudge,      &
+                         Atm(1)%agrid(:,:,1), Atm(1)%agrid(:,:,2) )
+#else
     call fv_update_phys( dt_phys,   isc,        iec,         jsc,    jec,   isd,       &
                          ied,       jsd,        jed,         ngc,       nt_prog,       &
                          Atm(1)%u,  Atm(1)%v,   Atm(1)%delp, Atm(1)%pt, Atm(1)%q,      &
@@ -652,6 +658,7 @@ contains
                          Atm(1)%pk, Atm(1)%pkz, Atm(1)%ak,   Atm(1)%bk, Atm(1)%phis,   &
                          Atm(1)%u_srf, Atm(1)%v_srf, Atm(1)%ts, Atm(1)%delz, Atm(1)%hydrostatic, &
                          u_dt, v_dt, t_dt, q_dt, .true., Time_next, Atm(1)%nudge )
+#endif
                                                             call timing_off('update_fv')
     call mpp_clock_end(id_fv_update_phys)
 
@@ -680,9 +687,6 @@ contains
     type(time_type), intent(in) :: Time
 !                                 NOTE: this is not the dynamics time
     call physics_driver_end (Time)
-#ifdef ATMOS_NUDGE
-    call atmos_nudge_end
-#endif
 
     deallocate ( u_dt )
     deallocate ( v_dt )

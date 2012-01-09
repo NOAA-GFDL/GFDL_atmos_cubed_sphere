@@ -2,22 +2,22 @@ module fv_grid_tools_mod
 
   use constants_mod, only: radius, pi, omega, grav
   use fv_arrays_mod, only: fv_atmos_type
-  use fv_grid_utils_mod,    only: gnomonic_grids, great_circle_dist,  &
+  use fv_grid_utils_mod, only: gnomonic_grids, great_circle_dist,  &
                            mid_pt_sphere, spherical_angle,     &
                            project_sphere_v,  cell_center2,    &
                            get_area, inner_prod, deglat,       &
                            sw_corner, se_corner, ne_corner, nw_corner, fill_ghost, &
-                           Gnomonic_grid
+                           Gnomonic_grid, direct_transform
   use fv_timing_mod,  only: timing_on, timing_off
-  use fv_mp_mod, only: gid, masterproc, domain, tile, &
-                    is,js,ie,je,isd,jsd,ied,jed, ng, &
-                    fill_corners, XDir, YDir, &
-                    mp_gather, mp_reduce_max, mp_stop, &
-                    npes_x, npes_y
+  use fv_mp_mod,      only: gid, masterproc, domain, tile, &
+                            is,js,ie,je,isd,jsd,ied,jed, ng, &
+                            fill_corners, XDir, YDir, &
+                            mp_gather, mp_bcst, mp_reduce_max, mp_stop, &
+                            npes_x, npes_y
   use sorted_index_mod,  only: sorted_inta, sorted_intb
   use mpp_mod,           only: mpp_error, FATAL, get_unit, mpp_chksum, mpp_pe, stdout, &
                                mpp_send, mpp_recv, mpp_sync_self, EVENT_RECV, mpp_npes, &
-                               mpp_sum, mpp_max, mpp_min, mpp_broadcast
+                               mpp_sum, mpp_max, mpp_min, mpp_root_pe, mpp_broadcast
   use mpp_domains_mod,   only: mpp_update_domains, mpp_get_boundary, &
                                mpp_get_ntile_count, mpp_get_pelist, &
                                mpp_get_compute_domains, mpp_global_field
@@ -36,14 +36,14 @@ module fv_grid_tools_mod
   use mosaic_mod,       only : get_mosaic_ntiles
   implicit none
   private
-#include "netcdf.inc"
+#include <netcdf.inc>
 
   real :: csFac = -999
   real            :: zeta = 1.0                ! non-linear flag 
   real , parameter:: todeg = 180.0/pi          ! convert to degrees
   real , parameter:: torad = pi/180.0          ! convert to radians
   real , parameter:: missing = 1.e25
-  real    :: stretch ! Optional stretching factor for the grid 
+  real    :: stretch               ! Optional stretching factor for the grid 
   logical :: dxdy_area = .false.   ! define area using dx*dy else spherical excess formula
   logical :: latlon = .false.
   logical :: cubed_sphere = .false.
@@ -57,11 +57,15 @@ module fv_grid_tools_mod
   integer :: interpOrder = 1
   logical :: debug_message_size = .false.
   logical :: write_grid_char_file = .false.
+  logical :: stretched_grid = .false.
 
   ! grid descriptors
 
   ! Horizontal
   integer :: npx_g, npy_g, npz_g, ntiles_g ! global domain
+#ifndef NO_GRID_G
+  real, allocatable, target, dimension(:,:,:) :: grid_g
+#endif
   real, allocatable, target, dimension(:,:,:) :: grid, agrid
   real, allocatable, dimension(:,:) :: area, area_c
   real, allocatable, dimension(:,:) :: sina, cosa
@@ -96,6 +100,9 @@ module fv_grid_tools_mod
   real :: deglon_start = -30., deglon_stop = 30., &  ! boundaries of latlon patch
           deglat_start = -30., deglat_stop = 30.
 
+#ifndef NO_GRID_G
+  public :: grid_g
+#endif
   public :: npx_g, npy_g, npz_g, grid, agrid, stretch, todeg, &
             interpOrder, uniform_ppm, zeta, missing, &
             cubed_sphere, latlon, have_south_pole, have_north_pole, &
@@ -120,6 +127,10 @@ module fv_grid_tools_mod
      MODULE PROCEDURE mp_update_dwinds_2d
      MODULE PROCEDURE mp_update_dwinds_3d
   END INTERFACE
+
+!---- version number -----
+  character(len=128) :: version = '$Id: fv_grid_tools.F90,v 19.0 2012/01/06 19:59:07 fms Exp $'
+  character(len=128) :: tagname = '$Name: siena $'
 
 contains
 
@@ -149,7 +160,7 @@ contains
     real                               :: dx_local, dy_local
     real, allocatable, dimension(:,:)  :: tmp, g_tmp, angs, asps, dxs
     character(len=80)                  :: gcharFile
-    integer                            :: fileLun, n
+    integer                            :: fileLun, n, stdunit
     real                               :: p_lL(ndims) ! lower Left
     real                               :: p_uL(ndims) ! upper Left
     real                               :: p_lR(ndims) ! lower Right
@@ -164,12 +175,15 @@ contains
     npz_g = npz
     ntiles_g = nregions
 
+    if ( Atm%do_schmidt .and. abs(atm%stretch_fac-1.) > 1.E-5 ) stretched_grid = .true.
+
     if(.not. file_exist(grid_file)) call mpp_error(FATAL, 'fv_grid_tools(read_grid): file '// &
          trim(grid_file)//' does not exist')
 
     !--- make sure the grid file is mosaic file.
     if( field_exist(grid_file, 'atm_mosaic_file') .OR. field_exist(grid_file, 'gridfiles') ) then
-       write(stdout(),*) '==>Note from fv_grid_tools_mod(read_grid): read atmosphere grid from mosaic version grid'
+       stdunit = stdout()
+       write(stdunit,*) '==>Note from fv_grid_tools_mod(read_grid): read atmosphere grid from mosaic version grid'
     else
        call mpp_error(FATAL, 'fv_grid_tools(read_grid): neither atm_mosaic_file nor gridfiles exists in file ' &
             //trim(grid_file))
@@ -313,7 +327,8 @@ contains
          flags=SCALAR_PAIR+XUPDATE, gridtype=CGRID_NE_PARAM)
     if(is == 1 .AND. mod(tile,2) .NE. 0) then ! on the west boundary
        dy(is, js:je) = wbuffer(js:je)
-    else if(ie == npx-1) then  ! on the east boundary
+    endif
+    if(ie == npx-1) then  ! on the east boundary
        dy(ie+1, js:je) = ebuffer(js:je)
     endif
     deallocate(wbuffer, ebuffer, sbuffer, nbuffer)
@@ -663,12 +678,15 @@ contains
        endif
        deallocate(angs, asps, dxs, g_tmp)
     endif
+
 #ifdef GLOBAL_TRIG
     call mpp_error(FATAL, 'fv_grid_tools(read_grid): when reading from '// &
          trim(grid_file)//', -DGLOBAL_TRIG should not be present when compiling')
 #endif
 
   end subroutine read_grid
+
+
 
   !#################################################################################
   subroutine get_symmetry(data_in, data_out, ishift, jshift)
@@ -694,13 +712,14 @@ contains
     npes = mpp_npes()
 
     if(ntiles .NE. 6 ) call mpp_error(FATAL, 'fv_grid_tools(get_symmetry): ntiles should be 6 ')
-    if(mod(npes,ntiles) .NE. 0) call mpp_error(FATAL, 'fv_grid_tools(get_symmetry): npes should be divided by ntiles')
+    if(mod(npes,ntiles) /= 0) call mpp_error(FATAL, 'fv_grid_tools(get_symmetry): npes should be divided by ntiles')
     npes_per_tile = npes/ntiles
 
-    if(npes_x == npes_y .AND. mod(npx_g-1,npes_x) == 0 ) then ! even, simple communication
+!   if(npes_x == npes_y) then ! even, simple communication
+    if(npes_x == npes_y .AND. mod(npx_g-1,npes_x) == 0 ) then ! even, 
        msgsize = (ie-is+1+jshift)*(je-js+1+ishift)
 
-       pos = mod(mpp_pe(), npes_x*npes_y)
+       pos = mod((mpp_pe()-mpp_root_pe()), npes_x*npes_y)       
        start_pe = mpp_pe() - pos
        ipos = mod(pos, npes_x)
        jpos = pos/npes_x
@@ -883,8 +902,8 @@ contains
  
 !--------------------------------------------------------
     type(fv_atmos_type), intent(inout) :: Atm
-    character*80, intent(IN) :: grid_name
-    character*120,intent(IN) :: grid_file
+    character(len=80), intent(IN) :: grid_name
+    character(len=120),intent(IN) :: grid_file
     integer,      intent(IN) :: npx, npy, npz
     integer,      intent(IN) :: ndims
     integer,      intent(IN) :: nregions
@@ -892,7 +911,7 @@ contains
 !--------------------------------------------------------
     real   ::  xs(npx,npy)
     real   ::  ys(npx,npy)
-    real*8 ::  grid_R8(npx,npy)
+    real(kind=8) ::  grid_R8(npx,npy)
 
     real  :: dp, dl
     real  :: x1,x2,y1,y2,z1,z2
@@ -922,23 +941,19 @@ contains
     real  :: angs(1:(npx/2)+1, 1:(npy/2)+1)
     real  :: asps(1:(npx/2)+1, 1:(npy/2)+1)
     real  ::  dxs(1:(npx/2)+1, 1:(npy/2)+1)
-    character*80 :: gcharFile
+    character(len=80) :: gcharFile
 
     real :: grid_global(1-ng:npx  +ng,1-ng:npy  +ng,ndims,1:nregions)
     real ::   dx_global(1:npx-1,1:npy  ,1:nregions)
     real ::   dy_global(1:npx  ,1:npy-1,1:nregions)
-#ifdef GLOBAL_TRIG
-    real ::      sina_g(1:npx  ,1:npy  ,1:nregions)
-    real ::      cosa_g(1:npx  ,1:npy  ,1:nregions)
-#endif
 
-    character*80 :: evalue
+    character(len=80) :: evalue
     integer :: ios, ip, jp
     
     integer :: igrid
     
     integer :: tmplun
-    character*80 :: tmpFile   
+    character(len=80) :: tmpFile   
 
     npx_g = npx
     npy_g = npy
@@ -951,6 +966,8 @@ contains
     else
        Gnomonic_grid = .true.
     endif
+
+    if ( Atm%do_schmidt .and. abs(atm%stretch_fac-1.) > 1.E-5 ) stretched_grid = .true.
     
     allocate (  area(isd:ied  ,jsd:jed  ) )   ! Cell Centered
     allocate ( rarea(isd:ied  ,jsd:jed  ) )   ! Cell Centered
@@ -976,6 +993,10 @@ contains
     allocate ( grid (isd:ied+1,jsd:jed+1,1:ndims) )
     allocate ( agrid(isd:ied  ,jsd:jed  ,1:ndims) )
     
+#ifndef NO_GRID_G
+    allocate ( grid_g(1:npx,1:npy,1:ndims) )
+    Atm%grid_g =>grid_g
+#endif
     Atm%grid  =>grid
     Atm%agrid =>agrid
     
@@ -985,57 +1006,20 @@ contains
     allocate (   e1(3,isd:ied+1,jsd:jed+1) )
     allocate (   e2(3,isd:ied+1,jsd:jed+1) )
     
-    
-    if (TRIM(grid_name) == 'Lat-Lon') then
-       allocate ( cose(isd:ied,jsd:jed))
-       allocate ( cosp(isd:ied,jsd:jed))
-       allocate ( acosp(isd:ied,jsd:jed))
-    endif
-    
-!mlh
+    if( .not. stretched_grid )      &
     allocate (iinta(4, isd:ied ,jsd:jed), jinta(4, isd:ied ,jsd:jed),  &
               iintb(4, is:ie+1 ,js:je+1), jintb(4, is:ie+1 ,js:je+1))
-!mlh
 
     if (grid_type>3) then
        uniform_ppm = .true.
        if (grid_type == 4) then
           double_periodic = .true.
           call setup_cartesian(npx, npy)
-       elseif  (grid_type == 5) then
-          latlon_patch = .true.
-          call setup_latlon()
-       elseif  (grid_type == 6) then
-          latlon_strip = .true.
-          call setup_latlon()
-       elseif  (grid_type == 7) then
-          channel = .true.
-          call setup_cartesian(npx, npy)
        else
-          call mpp_error(FATAL, 'init_grid: unknown grid type')
+          call mpp_error(FATAL, 'init_grid: unsupported grid type')
        endif
     else
 
-       if (TRIM(grid_name) == 'Lat-Lon') then
-
-          latlon = .true.
-          uniform_ppm = .true.
-
-          dp = pi/(npy-2)
-          dl = (pi+pi)/(npx-1)
-
-          do n=1,nregions
-             do j=1,npy
-                do i=1,npx
-                   grid_global(i,j,1,n) = real(i-1)*dl
-                   grid_global(i,j,2,n) = (-1.*(pi/2.)) + real(j-1)*dp - dp/2.
-                   if (j==1)   grid_global(i,j,2,n) =-1.*(pi/2.)
-                   if (j==npy) grid_global(i,j,2,n) = 1.*(pi/2.)
-                enddo
-             enddo
-          enddo
-          
-       else
           cubed_sphere = .true.
           uniform_ppm = .true.
 
@@ -1058,13 +1042,10 @@ contains
 !---------------------------------
 ! Shift the corner away from Japan
 !---------------------------------
-#ifndef SW_DYNAMICS
-! This will result in the corner close to east coast of China
-#ifndef NO_SHIFT
-
-                         grid_global(i,j,1,n) = grid_global(i,j,1,n) - pi/18.
-#endif
-#endif
+!--------------------- This will result in the corner close to east coast of China ------------------
+                         if ( .not.Atm%do_schmidt .and. (Atm%shift_fac)>1.E-4 )   &
+                              grid_global(i,j,1,n) = grid_global(i,j,1,n) - pi/Atm%shift_fac
+!----------------------------------------------------------------------------------------------------
                          if ( grid_global(i,j,1,n) < 0. )              &
                               grid_global(i,j,1,n) = grid_global(i,j,1,n) + 2.*pi
                          if (ABS(grid_global(i,j,1,1)) < 1.e-10) grid_global(i,j,1,1) = 0.0
@@ -1073,21 +1054,7 @@ contains
                    enddo
                 enddo
              else
-                print*, 'Reading Grid from file: ', trim(grid_file)
-                fileLun=get_unit()
-                open(unit=fileLun,file=grid_file, form='unformatted', access='sequential')
-                do n=1,nregions
-                   do k=1,ndims
-                      read(unit=fileLun) grid_R8(1:npx,1:npy)
-                      do j=1,npy
-                         do i=1,npx
-                            grid_global(i,j,k,n) = grid_R8(i,j)
-                            if (ABS(grid_global(i,j,k,n)) < 1.e-10) grid_global(i,j,k,n) = 0.0
-                         enddo
-                      enddo
-                   enddo
-                enddo
-                close(unit=fileLun)
+                call mpp_error(FATAL, "fv_grid_tools: reading of ASCII grid files no longer supported")
              endif
 
              grid_global(  1,1:npy,:,2)=grid_global(npx,1:npy,:,1)
@@ -1108,65 +1075,65 @@ contains
              
              grid_global(  1,1:npy,:,6)=grid_global(npx,1:npy,:,5)
 
-! Compute dx:
+!------------------------
+! Schmidt transformation:
+!------------------------
+             if ( Atm%do_schmidt ) then
+             do n=1,nregions
+                call direct_transform(Atm%stretch_fac, 1, npx, 1, npy, Atm%target_lon, Atm%target_lat, &
+                                      n, grid_global(1:npx,1:npy,1,n), grid_global(1:npx,1:npy,2,n))
+             enddo
+             endif
+
+! Compute dx_global:
              do n=1,nregions
                 do j=1,npy
                    do i=1,npx-1
-                      p1(1) = grid_global(i  ,j,1,n)
-                      p1(2) = grid_global(i  ,j,2,n)
-                      p2(1) = grid_global(i+1,j,1,n)
-                      p2(2) = grid_global(i+1,j,2,n)
-                      dx_global(i,j,n) = great_circle_dist( p2, p1, radius )
+                      dx_global(i,j,n) = great_circle_dist(grid_global(i,j,:,n), grid_global(i+1,j,:,n), radius)
                    enddo
                 enddo
              enddo
-             
              dx_global(1:npx-1,  1,1) = dx_global(1:npx-1,npy,6)
              dx_global(1:npx-1,npy,2) = dx_global(1:npx-1,1,  3)
              dx_global(1:npx-1,npy,4) = dx_global(1:npx-1,1,  5)
 
-! Compute dy:
-             do n=1,nregions
-                do j=1,npy
-                   do i=1,npx-1
-! Symmetry is assumed here:
-                      dy_global(j,i,n) = dx_global(i,j,n)
+
+! Compute dy_global:
+        if( stretched_grid ) then
+           do n=1,nregions
+                do j=1,npy-1
+                   do i=1,npx
+                      dy_global(i,j,n) = great_circle_dist(grid_global(i,j,:,n), grid_global(i,j+1,:,n), radius)
                    enddo
                 enddo
              enddo
-             
-             dy_global(  1,1:npy-1,1)=dx_global(npx-1:1:-1,npy,5)
-             dy_global(npx,1:npy-1,1)=dy_global(1,1:npy-1,2)
-             
-             dy_global(npx,1:npy-1,2)=dx_global(npx-1:1:-1,1,4)
-             
-             dy_global(  1,1:npy-1,3)=dx_global(npx-1:1:-1,npy,1)
-             dy_global(npx,1:npy-1,3)=dy_global(1,1:npy-1,4)
-             
-             dy_global(  1,1:npy-1,4)=dy_global(npx,1:npy-1,3)
-             dy_global(npx,1:npy-1,4)=dx_global(npx-1:1:-1,1,6)
-             
-             dy_global(  1,1:npy-1,5)=dx_global(npx-1:1:-1,npy,3)
-             dy_global(npx,1:npy-1,5)=dy_global(1,1:npy-1,6)
-             
-             dy_global(npx,1:npy-1,6)=dx_global(npx-1:1:-1,1,2)
+        else
+! Grid symmetry is assumed here: for non-stretched grids
+           do n=1,nregions
+              do j=1,npy-1
+                 do i=1,npx-1
+                    dy_global(j,i,n) = dx_global(i,j,n)
+                 enddo
+              enddo
+           enddo
+        endif
+           dy_global(npx,1:npy-1,1)=dy_global(1,1:npy-1,2)
+           dy_global(npx,1:npy-1,3)=dy_global(1,1:npy-1,4)
+           dy_global(npx,1:npy-1,5)=dy_global(1,1:npy-1,6)
+
+           dy_global(  1,1:npy-1,3)=dx_global(npx-1:1:-1, npy,1)
+           dy_global(npx,1:npy-1,6)=dx_global(npx-1:1:-1, 1,  2)
+           dy_global(  1,1:npy-1,5)=dx_global(npx-1:1:-1, npy,3)
+           dy_global(npx,1:npy-1,2)=dx_global(npx-1:1:-1, 1,  4)
+           dy_global(  1,1:npy-1,1)=dx_global(npx-1:1:-1, npy,5)
+           dy_global(npx,1:npy-1,4)=dx_global(npx-1:1:-1, 1,  6)
              
           endif ! masterproc
-          
-       endif  ! (latlon vs cubed_sphere)
-      
-       call mpp_broadcast(grid_global, ((npx+ng)-(1-ng)+1)*((npy+ng)-(1-ng)+1)*ndims*nregions, masterproc)
-       call mpp_broadcast(dx_global, (npx-1)*npy*nregions, masterproc)
-       call mpp_broadcast(dy_global, npx*(npy-1)*nregions, masterproc)
-!       call mp_bcst(grid_global, (npx+ng)-(1-ng)+1, (npy+ng)-(1-ng)+1, ndims, nregions )
-!       call mp_bcst(  dx_global, npx-1, npy  , nregions )
-!       call mp_bcst(  dy_global, npx  , npy-1, nregions )
 
-       grid(isd: is-1, jsd:js-1,1:ndims)=0.
-       grid(isd: is-1, je+2:jed+1,1:ndims)=0.
-       grid(ie+2:ied+1,jsd:js-1,1:ndims)=0.
-       grid(ie+2:ied+1,je+2:jed+1,1:ndims)=0.
-       
+       call mpp_broadcast(grid_global, size(grid_global), masterproc)
+       call mpp_broadcast(dx_global, size(dx_global), masterproc)
+       call mpp_broadcast(dy_global, size(dy_global), masterproc)
+      
        do n=1,ndims
           do j=js,je+1
              do i=is,ie+1
@@ -1174,39 +1141,38 @@ contains
              enddo
           enddo
        enddo
-       
+!
+! SJL: For phys/exchange grid, etc
+!
+#ifndef NO_GRID_G
+       do j=1,npy
+          do i=1,npx
+             grid_g(i,j,1) = grid_global(i,j,1,tile)
+             grid_g(i,j,2) = grid_global(i,j,2,tile)
+          enddo
+       enddo
+#endif
        call mpp_update_domains( grid, domain, position=CORNER)
+       call fill_corners(grid(:,:,1), npx, npy, FILL=XDir, BGRID=.true.)
+       call fill_corners(grid(:,:,2), npx, npy, FILL=XDir, BGRID=.true.)
 
-!mlh
+       if( .not. stretched_grid )         &
        call sorted_inta(isd, ied, jsd, jed, cubed_sphere, grid, iinta, jinta)
-!mlh
 
        agrid(:,:,:) = -1.e25
  
        do j=js,je
           do i=is,ie
-             if (latlon) then
-                x1=grid(i  ,j  ,1)*todeg
-                x2=grid(i+1,j  ,1)*todeg
-                if ((x2-x1).gt.180) x2=x2-360
-                if ((x1-x2).gt.180) x2=x2+360
-                agrid(i,j,1) = torad*(x1 + (x2-x1)/2.)
-                
-                y1=grid(i  ,j  ,2)*todeg
-                y2=grid(i  ,j+1,2)*todeg
-                agrid(i,j,2) = torad*(y1 + (y2-y1)/2.)
+             if ( stretched_grid ) then
+                  call cell_center2(grid(i,j,  1:2), grid(i+1,j,  1:2),   &
+                                    grid(i,j+1,1:2), grid(i+1,j+1,1:2),   &
+                                    agrid(i,j,1:2) )
              else
-#ifndef SIMP_GRID
-                call cell_center2(grid(iinta(1,i,j),jinta(1,i,j),1:2),  &
-                                  grid(iinta(2,i,j),jinta(2,i,j),1:2),  &
-                                  grid(iinta(3,i,j),jinta(3,i,j),1:2),  &
-                                  grid(iinta(4,i,j),jinta(4,i,j),1:2),  &
-                                  agrid(i,j,1:2) )
-#else
-                call cell_center2(grid(i,j,  1:2), grid(i+1,j,  1:2),   &
-                                  grid(i,j+1,1:2), grid(i+1,j+1,1:2),   &
-                                  agrid(i,j,1:2) )
-#endif
+                  call cell_center2(grid(iinta(1,i,j),jinta(1,i,j),1:2),  &
+                                    grid(iinta(2,i,j),jinta(2,i,j),1:2),  &
+                                    grid(iinta(3,i,j),jinta(3,i,j),1:2),  &
+                                    grid(iinta(4,i,j),jinta(4,i,j),1:2),  &
+                                    agrid(i,j,1:2) )
              endif
           enddo
        enddo
@@ -1214,59 +1180,17 @@ contains
        call mpp_update_domains( agrid, domain, position=CENTER, complete=.true. )
        call fill_corners(agrid(:,:,1), npx, npy, XDir, AGRID=.true.)
        call fill_corners(agrid(:,:,2), npx, npy, YDir, AGRID=.true.)
-!mlh
-       call sorted_intb(isd, ied, jsd, jed, is, ie, js, je, npx, npy, &
-                        cubed_sphere, agrid, iintb, jintb)
-!mlh
 
-       if (latlon) then
-
-          DL = 2.*PI/float(npx-1)
-          DP = PI/float(npy-1)
-
-          do j=js,je
-             do i=is,ie+1
-                dxc(i,j) = DL*radius*COS(agrid(i,j,2))
-             enddo
+       do j=js,je+1
+          do i=is,ie
+             dx(i,j) = dx_global(i,j,tile)
           enddo
-          do j=js,je+1
-             do i=is,ie
-                dyc(i,j) = DP*radius
-             enddo
+       enddo
+       do j=js,je
+          do i=is,ie+1
+             dy(i,j) = dy_global(i,j,tile)
           enddo
-
-          do j=js,je
-             do i=is,ie
-                dxa(i,j) = DL*radius*COS(agrid(i,j,2))
-                dya(i,j) = DP*radius
-             enddo
-          enddo
-          
-          do j=jsd,jed+1
-             do i=isd,ied
-                dx(i,j) = DL*radius*COS(grid(i,j,2))
-             enddo
-          enddo
-          do j=jsd,jed
-             do i=isd,ied+1
-                dy(i,j) = DP*radius
-             enddo
-          enddo
-
-       else
-            
-          do j=js,je+1
-             do i=is,ie
-                dx(i,j) = dx_global(i,j,tile)
-             enddo
-          enddo
-          do j=js,je
-             do i=is,ie+1
-                dy(i,j) = dy_global(i,j,tile)
-             enddo
-          enddo
-          
-       endif  ! latlon -v- cubed_sphere
+       enddo
 
        call mpp_update_domains( dy, dx, domain, flags=SCALAR_PAIR,      &
                                 gridtype=CGRID_NE_PARAM, complete=.true.)
@@ -1274,8 +1198,6 @@ contains
 
        do j=jsd,jed
           do i=isd,ied
-!        do j=js,je
-!           do i=is,ie
              call mid_pt_sphere(grid(i,  j,1:2), grid(i,  j+1,1:2), p1)
              call mid_pt_sphere(grid(i+1,j,1:2), grid(i+1,j+1,1:2), p2)
              dxa(i,j) = great_circle_dist( p2, p1, radius )
@@ -1290,36 +1212,27 @@ contains
 
        do j=js,je
           do i=is,ie+1
-             p1(1) = agrid(i-1,j,1)
-             p1(2) = agrid(i-1,j,2)
-             p2(1) = agrid(i  ,j,1)
-             p2(2) = agrid(i  ,j,2)
-             dxc(i,j) = great_circle_dist( p2, p1, radius )
+             dxc(i,j) = great_circle_dist(agrid(i,j,:), agrid(i-1,j,:), radius)
           enddo
        enddo
        do j=js,je+1
           do i=is,ie
-             p1(1) = agrid(i,j-1,1)
-             p1(2) = agrid(i,j-1,2)
-             p2(1) = agrid(i,j  ,1)
-             p2(2) = agrid(i,j  ,2)
-             dyc(i,j) = great_circle_dist( p2, p1, radius )
+             dyc(i,j) = great_circle_dist(agrid(i,j,:), agrid(i,j-1,:), radius)
           enddo
        enddo
-       if (gid == masterproc) then
-          if (nregions > 1) then
-!             print*, 'Resolution in Lon-Direction: ', 360./( (npx*4.)-3. )
-!             print*, 'Resolution in Lat-Direction: ', 360./( (npy*4.)-3. )
-          else
-             print*, 'Resolution in Lon-Direction: ', 360./(npx-1.)
-             print*, 'Resolution in Lat-Direction: ', 180./(npy-1.)
-          endif
-       endif
+
+       if( .not. stretched_grid )      &
+       call sorted_intb(isd, ied, jsd, jed, is, ie, js, je, npx, npy, &
+                        cubed_sphere, agrid, iintb, jintb)
 
        call grid_area( npx, npy, ndims, nregions )
+!      stretched_grid = .false.
 
-#ifndef ORIG_AREA_C
+!----------------------------------
 ! Compute area_c, rarea_c, dxc, dyc
+!----------------------------------
+  if ( .not. stretched_grid ) then
+! For symmetrical grids:
        if ( is==1 ) then
           i = 1
           do j=js,je+1
@@ -1380,6 +1293,7 @@ contains
              dyc(i,j) = 2.*great_circle_dist( p1, p2, radius )
           enddo
        endif
+
        if ( sw_corner ) then
              i=1; j=1
              p1(1:2) = grid(i,j,1:2)
@@ -1412,7 +1326,9 @@ contains
              p4(1:2) = grid(i,j,1:2)
              area_c(i,j) = 3.*get_area(p1, p4, p2, p3, radius)
        endif
-#endif
+   endif
+!-----------------
+
        call mpp_update_domains( dxc, dyc, domain, flags=SCALAR_PAIR,   &
                                 gridtype=CGRID_NE_PARAM, complete=.true.)
        if (cubed_sphere) call fill_corners(dxc, dyc, npx, npy, CGRID=.true.)
@@ -1531,147 +1447,14 @@ contains
                    p_lR(n) = grid_global(i+1,j  ,n,1)
                    p_uR(n) = grid_global(i+1,j+1,n,1)
                 enddo
-                if ((latlon) .or. (dxdy_area)) then
-                   ! DX_*DY_
-                   d1 = dx_global(i  ,j  ,1)
-                   d2 = dx_global(i  ,j+1,1)
-                   mydx = 0.5 * ( d1+d2 )
-                   d1 = dy_global(i  ,j  ,1)
-                   d2 = dy_global(i+1,j  ,1)
-                   mydy = 0.5 * ( d1+d2 )
-                   angs(i,j) = (mydx*mydy)
-                else
                    ! Spherical Excess Formula
                    angs(i,j) = get_area(p_lL, p_uL, p_lR, p_uR, radius)
-                endif
              enddo
           enddo
           write(fileLun,rec=4) angs
           close(unit=fileLun)
 
-#ifdef GLOBAL_TRIG
-!----------------------------------------------------
-! Initialize sina and cosa forcing an 8-fold symmetry
-!----------------------------------------------------
-          do j=1,ceiling(npy/2.)
-             do i=1,ceiling(npx/2.)
-
-                if (i==1) then
-                   call get_unit_vector(grid_global(i,j,1:2,1), grid_global(i+1,j,1:2,1), ee1)
-                elseif (i==npx) then
-                   call get_unit_vector(grid_global(i-1,j,1:2,1), grid_global(i,j,1:2,1), ee1)
-                else
-                   call get_unit_vector(grid_global(i-1,j,1:2,1), grid_global(i,j,1:2,1), grid_global(i+1,j,1:2,1), ee1)
-                endif
-                
-                if (j==1) then
-                   call get_unit_vector(grid_global(i,j,1:2,1), grid_global(i,j+1,1:2,1), ee2)
-                elseif (j==npy) then
-                   call get_unit_vector(grid_global(i,j-1,1:2,1), grid_global(i,j,1:2,1), ee2)
-                else
-                   call get_unit_vector(grid_global(i,j-1,1:2,1), grid_global(i,j,1:2,1), grid_global(i,j+1,1:2,1), ee2)
-                endif
-
-                if (j<=i) then  ! force 8-fold symmetry
-                   tmp = inner_prod(ee1,ee2)
-                   cosa_g(i ,j,:) = tmp
-                   cosa_g(j ,i,:) = tmp
-                   tmp = sqrt ( 1. - tmp**2 )
-                   sina_g(i ,j,:) = tmp
-                   sina_g(j ,i,:) = tmp
-                endif
-             enddo
-          enddo
-
-! force remainder of symmetry
-          do j=1,ceiling(npy/2.)
-             do i=1,ceiling(npx/2.)
-                sina_g(npx-(i-1),j        ,:) = sina_g(i        ,j        ,:)
-                sina_g(i        ,npy-(j-1),:) = sina_g(i        ,j        ,:)
-                sina_g(npx-(i-1),npy-(j-1),:) = sina_g(i        ,j        ,:)
-                cosa_g(npx-(i-1),j        ,:) = cosa_g(i        ,j        ,:)
-                cosa_g(i        ,npy-(j-1),:) = cosa_g(i        ,j        ,:)
-                cosa_g(npx-(i-1),npy-(j-1),:) = cosa_g(i        ,j        ,:)
-             enddo
-          enddo
-          
-          do n=nregions,1,-1
-             do j=1,npy
-                do i=1,npy
-                   if (i==1) then
-                      call get_unit_vector(grid_global(i,j,1:2,1), grid_global(i+1,j,1:2,1), ee1)
-                   elseif (i==npx) then
-                      call get_unit_vector(grid_global(i-1,j,1:2,1), grid_global(i,j,1:2,1), ee1)
-                   else
-                      call get_unit_vector(grid_global(i-1,j,1:2,1), grid_global(i,j,1:2,1), grid_global(i+1,j,1:2,1), ee1)
-                   endif
-                   if (j==1) then
-                      call get_unit_vector(grid_global(i,j,1:2,1), grid_global(i,j+1,1:2,1), ee2)
-                   elseif (j==npy) then
-                      call get_unit_vector(grid_global(i,j-1,1:2,1), grid_global(i,j,1:2,1), ee2)
-                   else
-                      call get_unit_vector(grid_global(i,j-1,1:2,1), grid_global(i,j,1:2,1), grid_global(i,j+1,1:2,1), ee2)
-                   endif
-                   ! Ensure correct sign for cosa
-                   cosa_g(i,j,n) = SIGN(cosa_g(i,j,1), inner_prod(ee1,ee2))
-                enddo
-             enddo
-          enddo
-         
-          sina_g(  1,1:npy,2)=sina_g(npx,1:npy,1)
-          sina_g(  1,1:npy,3)=sina_g(npx:1:-1,npy,1)
-          sina_g(1:npx,npy,5)=sina_g(1,npy:1:-1,1)
-          sina_g(1:npx,npy,6)=sina_g(1:npx,1,1)
-          
-          sina_g(1:npx,  1,3)=sina_g(1:npx,npy,2)
-          sina_g(1:npx,  1,4)=sina_g(npx,npy:1:-1,2)
-          sina_g(npx,1:npy,6)=sina_g(npx:1:-1,1,2)
-          
-          sina_g(  1,1:npy,4)=sina_g(npx,1:npy,3)
-          sina_g(  1,1:npy,5)=sina_g(npx:1:-1,npy,3)
-          
-          sina_g(npx,1:npy,3)=sina_g(1,1:npy,4)
-          sina_g(1:npx,  1,5)=sina_g(1:npx,npy,4)
-          sina_g(1:npx,  1,6)=sina_g(npx,npy:1:-1,4)
-          
-          sina_g(  1,1:npy,6)=sina_g(npx,1:npy,5)
-          
-          
-          cosa_g(  1,1:npy,2)=cosa_g(npx,1:npy,1)
-          cosa_g(  1,1:npy,3)=cosa_g(npx:1:-1,npy,1)
-          cosa_g(1:npx,npy,5)=cosa_g(1,npy:1:-1,1)
-          cosa_g(1:npx,npy,6)=cosa_g(1:npx,1,1)
-          
-          cosa_g(1:npx,  1,3)=cosa_g(1:npx,npy,2)
-          cosa_g(1:npx,  1,4)=cosa_g(npx,npy:1:-1,2)
-          cosa_g(npx,1:npy,6)=cosa_g(npx:1:-1,1,2)
-          
-          cosa_g(  1,1:npy,4)=cosa_g(npx,1:npy,3)
-          cosa_g(  1,1:npy,5)=cosa_g(npx:1:-1,npy,3)
-          
-          cosa_g(npx,1:npy,3)=cosa_g(1,1:npy,4)
-          cosa_g(1:npx,  1,5)=cosa_g(1:npx,npy,4)
-          cosa_g(1:npx,  1,6)=cosa_g(npx,npy:1:-1,4)
-          
-          cosa_g(  1,1:npy,6)=cosa_g(npx,1:npy,5)
-       endif                  ! end master
-       
-       call mpp_broadcast(sina_g, npx*npy*nregions, masterproc)
-       call mpp_broadcast(cosa_g, npx*npy*nregions, masterproc)
-!       call mp_bcst(sina_g, npx, npy, nregions)
-!       call mp_bcst(cosa_g, npx, npy, nregions)
-
-       do j=js,je+1
-          do i=is,ie+1
-             sina(i,j) = sina_g(i,j,1)
-             cosa(i,j) = cosa_g(i,j,tile)
-          enddo
-       enddo
-!      call mpp_update_domains( sina, domain, position=CORNER, complete=.true. )
-!      call mpp_update_domains( cosa, domain, position=CORNER, complete=.true. )
-#else
        endif
-#endif
     endif
 
   contains
@@ -1991,7 +1774,7 @@ contains
 !                    (determined by ndims argument 2=lat/lon, 3=xyz)
 !                    [area is returned in m^2 on Unit sphere]
 !
-      subroutine grid_area(nx, ny, ndims, nregions)
+      subroutine grid_area(nx, ny, ndims, nregions )
 
          integer, intent(IN) :: nx, ny, ndims, nregions
 
@@ -2016,36 +1799,28 @@ contains
          do j=js,je
             do i=is,ie
                do n=1,ndims
+               if ( stretched_grid ) then
+                  p_lL(n) = grid(i  ,j  ,n)
+                  p_uL(n) = grid(i  ,j+1,n)
+                  p_lR(n) = grid(i+1,j  ,n)
+                  p_uR(n) = grid(i+1,j+1,n)
+               else
                   p_lL(n) = grid(iinta(1,i,j), jinta(1,i,j), n)
                   p_uL(n) = grid(iinta(2,i,j), jinta(2,i,j), n)
                   p_lR(n) = grid(iinta(4,i,j), jinta(4,i,j), n)
                   p_uR(n) = grid(iinta(3,i,j), jinta(3,i,j), n)
-!!$                  p_lL(n) = grid(i  ,j  ,n)
-!!$                  p_uL(n) = grid(i  ,j+1,n)
-!!$                  p_lR(n) = grid(i+1,j  ,n)
-!!$                  p_uR(n) = grid(i+1,j+1,n)
+               endif
                enddo
 
-              if ((latlon) .or. (dxdy_area)) then
-              ! DX_*DY_
-                   d1 = dx(i  ,j  )
-                   d2 = dx(i  ,j+1)
-                 mydx = 0.5 * ( d1+d2 )
-                   d1 = dy(i  ,j  )
-                   d2 = dy(i+1,j  )
-                 mydy = 0.5 * ( d1+d2 )
-                 area(i,j) = (mydx*mydy)
-              else
-              ! Spherical Excess Formula
-                area(i,j) = get_area(p_lL, p_uL, p_lR, p_uR, radius)
-              endif
+           ! Spherical Excess Formula
+              area(i,j) = get_area(p_lL, p_uL, p_lR, p_uR, radius)
               maxarea=MAX(area(i,j),maxarea)
               minarea=MIN(area(i,j),minarea)
               globalarea = globalarea + area(i,j)
             enddo
          enddo
 
-         allocate( p_R8(nx-1,ny-1,ntiles_g) )
+         allocate( p_R8(nx-1,ny-1,ntiles_g) )   ! this is a "global" array
          do j=js,je
             do i=is,ie
                p_R8(i,j,tile) = area(i,j)
@@ -2062,19 +1837,10 @@ contains
                enddo
             enddo
          endif
-         call mpp_broadcast(globalarea, masterproc)
-!         call mp_bcst(globalarea) 
-         deallocate( p_R8 )
 
-        if (latlon) then
-           acapS = 0.0
-           acapN = 0.0
-           do i=1,nx-1
-              acapS = acapS + area(i,   1)
-              acapN = acapN + area(i,ny-1)
-           enddo
-           if (gid == masterproc) print*, 'AREA Southern Polar Cap (m*m):', acapS, ' AREA Northern Polar Cap (m*m):', acapN
-        endif
+         call mpp_broadcast(globalarea, masterproc)
+
+         deallocate( p_R8 )
 
          call mp_reduce_max(maxarea)
          minarea = -minarea                  
@@ -2087,47 +1853,40 @@ contains
 
          do j=js,je+1
             do i=is,ie+1
-
                do n=1,ndims
+               if ( stretched_grid ) then
+                  p_lL(n) = agrid(i-1,j-1,n)
+                  p_lR(n) = agrid(i  ,j-1,n)
+                  p_uL(n) = agrid(i-1,j  ,n)
+                  p_uR(n) = agrid(i  ,j  ,n)
+               else
                   p_lL(n) = agrid(iintb(1,i,j), jintb(1,i,j), n)
                   p_lR(n) = agrid(iintb(2,i,j), jintb(2,i,j), n)
                   p_uL(n) = agrid(iintb(4,i,j), jintb(4,i,j), n)
                   p_uR(n) = agrid(iintb(3,i,j), jintb(3,i,j), n)
-!!$                  p_lL(n) = agrid(i-1,j-1,n)
-!!$                  p_lR(n) = agrid(i  ,j-1,n)
-!!$                  p_uL(n) = agrid(i-1,j  ,n)
-!!$                  p_uR(n) = agrid(i  ,j  ,n)
+               endif
                enddo
- 
-        
-              if ((latlon) .or. (dxdy_area)) then
-              ! DX_*DY_
-                 d1 = dxc(i  ,j  ) !
-                 d2 = dxc(i  ,j-1) !
-               mydx = 0.5 * ( d1+d2 )
-                 d1 = dyc(i-1,j  ) !
-                 d2 = dyc(i  ,j  ) !
-               mydy = 0.5 * ( d1+d2 )
-                 area_c(i,j) = (mydx*mydy)
-              else
               ! Spherical Excess Formula
                 area_c(i,j) = get_area(p_lL, p_uL, p_lR, p_uR, radius)
-              endif
-
             enddo
          enddo
 
+! Corners: assuming triangular cells
          if (cubed_sphere) then
+! SW:
             i=1
             j=1
             if ( (is==1) .and. (js==1) ) then
               do n=1,ndims
-               p1(n) = agrid(iintb(1,i,j), jintb(1,i,j), n)
-               p2(n) = agrid(iintb(2,i,j), jintb(2,i,j), n)
-               p3(n) = agrid(iintb(3,i,j), jintb(3,i,j), n)
-!!$               p1(n) = agrid(i-1,j  ,n)
-!!$               p2(n) = agrid(i  ,j  ,n)
-!!$               p3(n) = agrid(i  ,j-1,n)
+               if ( stretched_grid ) then
+                    p1(n) = agrid(i-1,j  ,n)
+                    p2(n) = agrid(i  ,j  ,n)
+                    p3(n) = agrid(i  ,j-1,n)
+               else
+                    p1(n) = agrid(iintb(1,i,j), jintb(1,i,j), n)
+                    p2(n) = agrid(iintb(2,i,j), jintb(2,i,j), n)
+                    p3(n) = agrid(iintb(3,i,j), jintb(3,i,j), n)
+               endif
               enddo
               area_c(i,j) = get_area_tri(ndims, p1, p2, p3)
             endif
@@ -2136,12 +1895,15 @@ contains
             j=1
             if ( (ie+1==nx) .and. (js==1) ) then
               do n=1,ndims
+               if ( stretched_grid ) then
+               p1(n) = agrid(i  ,j  ,n)
+               p2(n) = agrid(i-1,j  ,n)
+               p3(n) = agrid(i-1,j-1,n)
+               else
                p1(n) = agrid(iintb(1,i,j), jintb(1,i,j), n)
                p2(n) = agrid(iintb(2,i,j), jintb(2,i,j), n)
                p3(n) = agrid(iintb(3,i,j), jintb(3,i,j), n)
-!!$               p1(n) = agrid(i  ,j  ,n)
-!!$               p2(n) = agrid(i-1,j  ,n)
-!!$               p3(n) = agrid(i-1,j-1,n)
+               endif
               enddo
               area_c(i,j) = get_area_tri(ndims, p1, p2, p3)
             endif
@@ -2150,12 +1912,15 @@ contains
             j=ny
             if ( (ie+1==nx) .and. (je+1==ny) ) then
               do n=1,ndims
+               if ( stretched_grid ) then
+               p1(n) = agrid(i-1,j  ,n)
+               p2(n) = agrid(i-1,j-1,n)
+               p3(n) = agrid(i  ,j-1,n)
+               else
                p1(n) = agrid(iintb(1,i,j), jintb(1,i,j), n)
                p2(n) = agrid(iintb(2,i,j), jintb(2,i,j), n)
                p3(n) = agrid(iintb(3,i,j), jintb(3,i,j), n)
-!!$               p1(n) = agrid(i-1,j  ,n)
-!!$               p2(n) = agrid(i-1,j-1,n)
-!!$               p3(n) = agrid(i  ,j-1,n)
+               endif
               enddo
               area_c(i,j) = get_area_tri(ndims, p1, p2, p3)
             endif
@@ -2164,27 +1929,21 @@ contains
             j=ny
             if ( (is==1) .and. (je+1==ny) ) then
               do n=1,ndims
+               if ( stretched_grid ) then
+               p1(n) = agrid(i  ,j  ,n)
+               p2(n) = agrid(i  ,j-1,n)
+               p3(n) = agrid(i-1,j-1,n)
+               else
                p1(n) = agrid(iintb(1,i,j), jintb(1,i,j), n)
                p2(n) = agrid(iintb(2,i,j), jintb(2,i,j), n)
                p3(n) = agrid(iintb(3,i,j), jintb(3,i,j), n)
-!!$               p1(n) = agrid(i  ,j  ,n)
-!!$               p2(n) = agrid(i  ,j-1,n)
-!!$               p3(n) = agrid(i-1,j-1,n)
+              endif
               enddo
               area_c(i,j) = get_area_tri(ndims, p1, p2, p3)
             endif
          endif
 
-!         if (tile==1) then
-!            if ( (is==   1) .and. (js==   1) ) write(*,316) 'A: SW', area(is,js), ' AC: SW', area_c(is  ,js  )
-!            if ( (is==   1) .and. (je==ny-1) ) write(*,316) 'A: SW', area(is,je), ' AC: SW', area_c(is  ,je+1)
-!            if ( (ie==nx-1) .and. (je==ny-1) ) write(*,316) 'A: SW', area(ie,je), ' AC: SW', area_c(ie+1,je+1)
-!            if ( (ie==nx-1) .and. (js==   1) ) write(*,316) 'A: SW', area(ie,js), ' AC: SW', area_c(ie+1,js  )
-!         endif
-! 316     format(A,e21.14,A,e21.14)
-
       end subroutine grid_area
-
 
 
 
@@ -3436,7 +3195,6 @@ contains
                gsum = gsum/globalarea
             endif
             call mpp_broadcast(gsum, masterproc)
-!            call mp_bcst(gsum)
 
          endif
 

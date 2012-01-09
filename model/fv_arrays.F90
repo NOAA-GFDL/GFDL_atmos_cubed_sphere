@@ -22,8 +22,6 @@ public
 ! from the D grid variables.
     real, _ALLOCATABLE :: u(:,:,:)    _NULL  ! D grid zonal wind (m/s)
     real, _ALLOCATABLE :: v(:,:,:)    _NULL  ! D grid meridional wind (m/s)
-    real, _ALLOCATABLE :: um(:,:,:)   _NULL  ! D grid zonal wind (m/s) at n-1
-    real, _ALLOCATABLE :: vm(:,:,:)   _NULL  ! D .... meridional ............
     real, _ALLOCATABLE :: pt(:,:,:)   _NULL  ! temperature (K)
     real, _ALLOCATABLE :: delp(:,:,:) _NULL  ! pressure thickness (pascal)
     real, _ALLOCATABLE :: q(:,:,:,:)  _NULL  ! specific humidity and constituents
@@ -76,8 +74,11 @@ public
 ! Horizontal Grid descriptors
     real, pointer :: grid(:,:,:)  _NULL  ! Leave as a pointer for now
     real, pointer :: agrid(:,:,:)  _NULL  ! Leave as a pointer for now
+    real, pointer :: grid_g(:,:,:) _NULL  ! "global" grid (one face of a cube)
 
-    real   :: consv_te
+    real :: consv_te
+    real :: shift_fac, stretch_fac, target_lat, target_lon
+    logical :: do_schmidt
 
     integer :: isc, iec, jsc, jec
     integer :: isd, ied, jsd, jed
@@ -87,6 +88,8 @@ public
     integer :: ncnst, pnats, ndims, k_split, n_split, m_split, q_split, print_freq
     integer :: nwat        ! water substance
     integer :: fv_sg_adj
+    integer :: na_init     ! number of iteraation for the adiabatic initialization
+    integer :: n_zs_filter, nord_zs_filter
 
 ! Namelist control values
     logical :: fill
@@ -105,7 +108,6 @@ public
     logical :: ncep_ic
     logical :: fv_diag_ic
     logical :: fv_land
-    logical :: init_wind_m, no_cgrid
     logical :: nudge
     logical :: tq_filter
     logical :: warm_start
@@ -116,4 +118,9 @@ public
     real    :: dry_mass
 
   end type fv_atmos_type
+
+!---- version number -----
+  character(len=128) :: version = '$Id: fv_arrays.F90,v 19.0 2012/01/06 19:57:34 fms Exp $'
+  character(len=128) :: tagname = '$Name: siena $'
+
 end module fv_arrays_mod

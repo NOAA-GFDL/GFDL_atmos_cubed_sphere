@@ -1,6 +1,6 @@
 module fv_diagnostics_mod
 
- use constants_mod,    only: grav, rdgas, rvgas, pi, radius, kappa
+ use constants_mod,    only: grav, rdgas, rvgas, pi, radius, kappa, WTMAIR, WTMCO2
  use fms_io_mod,       only: set_domain, nullify_domain
  use time_manager_mod, only: time_type, get_date, get_time
  use mpp_domains_mod,  only: domain2d, mpp_update_domains, DGRID_NE
@@ -43,24 +43,25 @@ module fv_diagnostics_mod
            id_te, id_zs, id_ze, id_mq, id_vorts, id_us, id_vs,    &
            id_tq, id_rh, id_c15, id_c25, id_c35, id_c45,          &
                          id_f15, id_f25, id_f35, id_f45,          &
-           id_ppt, id_ts, id_pmask, id_pmaskv2
+           id_ppt, id_ts, id_pmask, id_pmaskv2,                   &
+           id_delp, id_delz, id_zratio, id_ws
 
 ! Selected p-level fields from 3D variables:
  integer :: id_vort850, id_w850,  &
             id_w200, id_s200, id_sl12, id_sl13
- integer :: id_h200, id_t200, id_q200, id_omg200, id_rh200, id_u200, id_v200, &
-            id_h50, id_t50, id_q50, id_rh50, id_u50, id_v50
- integer :: id_h100, id_h250, id_h300, id_h500, id_h700, id_h850
 ! IPCC diag
- integer :: id_u100, id_v100, id_t100, id_q100, id_rh100, id_omg100, &
-            id_u250, id_v250, id_t250, id_q250, id_rh250, id_omg250, &
-            id_u500, id_v500, id_t500, id_q500, id_rh500, id_omg500, &
-            id_u700, id_v700, id_t700, id_q700, id_rh700, id_omg700, &
-            id_u850, id_v850, id_t850, id_q850, id_rh850, id_omg850, &
-            id_u1000,id_v1000,id_t1000,id_q1000,id_rh1000,id_omg1000
+ integer :: id_u10,  id_v10,  id_t10,  id_q10,  id_rh10,  id_omg10,  id_h10,  &
+            id_u50,  id_v50,  id_t50,  id_q50,  id_rh50,  id_omg50,  id_h50,  &
+            id_u100, id_v100, id_t100, id_q100, id_rh100, id_omg100, id_h100, &
+            id_u200, id_v200, id_t200, id_q200, id_rh200, id_omg200, id_h200, &
+            id_u250, id_v250, id_t250, id_q250, id_rh250, id_omg250, id_h250, &
+            id_u300, id_v300, id_t300, id_q300, id_rh300, id_omg300, id_h300, &
+            id_u500, id_v500, id_t500, id_q500, id_rh500, id_omg500, id_h500, &
+            id_u700, id_v700, id_t700, id_q700, id_rh700, id_omg700, id_h700, &
+            id_u850, id_v850, id_t850, id_q850, id_rh850, id_omg850, id_h850, &
+            id_u1000,id_v1000,id_t1000,id_q1000,id_rh1000,id_omg1000,id_h1000
  integer :: id_rh1000_cmip, id_rh850_cmip, id_rh700_cmip, id_rh500_cmip, &
-            id_rh250_cmip, id_rh100_cmip, id_rh50_cmip, id_rh10_cmip
- integer :: id_u10, id_v10, id_t10, id_q10, id_omg50, id_omg10, id_h10
+            id_rh300_cmip, id_rh250_cmip, id_rh100_cmip, id_rh50_cmip, id_rh10_cmip
  integer :: id_hght
 
 #ifdef MARS_GCM
@@ -75,6 +76,11 @@ module fv_diagnostics_mod
 ! For initial conditions:
  integer ic_ps, ic_ua, ic_va, ic_ppt
  integer, allocatable :: id_tracer(:)
+! ESM requested diagnostics  -  dry mass/volume mixing ratios
+ integer, allocatable :: id_tracer_dmmr(:)
+ integer, allocatable :: id_tracer_dvmr(:)
+ real,    allocatable :: w_mr(:)
+
 
  integer  :: ncnst
  real :: missing_value = -1.e10
@@ -99,11 +105,11 @@ module fv_diagnostics_mod
  character(len=256)   :: tlongname, tunits
 
  public :: fv_diag_init, fv_time, fv_diag, prt_maxmin, range_check, id_divg, id_te
- public :: efx, efx_sum, mtq, mtq_sum, steps
+ public :: id_zratio, id_ws, efx, efx_sum, mtq, mtq_sum, steps
 
 !---- version number -----
- character(len=128) :: version = '$Id: fv_diagnostics.F90,v 17.0.6.10.2.1.2.1.2.1 2010/08/10 17:27:38 rab Exp $'
- character(len=128) :: tagname = '$Name: riga_201104 $'
+ character(len=128) :: version = '$Id: fv_diagnostics.F90,v 19.0 2012/01/06 19:59:03 fms Exp $'
+ character(len=128) :: tagname = '$Name: siena $'
 
 contains
 
@@ -395,6 +401,13 @@ contains
 !--------------------------------------------------------------
 
     allocate(id_tracer(ncnst))
+    allocate(id_tracer_dmmr(ncnst))
+    allocate(id_tracer_dvmr(ncnst))
+    allocate(w_mr(ncnst))
+    id_tracer(:)      = 0
+    id_tracer_dmmr(:) = 0 
+    id_tracer_dvmr(:) = 0 
+    w_mr(:) = 0.E0
 
     do n = 1, ntileMe
        field= 'dynamics'
@@ -460,10 +473,15 @@ contains
 !--------------
       id_h850 = register_diag_field (trim(field), 'h850', axes(1:2),  Time,   &
                                      '850-mb hght', 'm', missing_value=missing_value )
+!--------------
+! 1000 mb Height
+!--------------
+      id_h1000= register_diag_field (trim(field), 'h1000', axes(1:2),  Time,   &
+                                     '1000-mb hght', 'm', missing_value=missing_value )
 
       ! flag for calculation of geopotential
-      if ( id_h10>0  .or. id_h50>0  .or. id_h100>0 .or. id_h200>0 .or.  id_h250>0 .or. &
-           id_h300>0 .or. id_h500>0 .or. id_h700>0 .or. id_h850>0 ) then
+      if ( id_h10>0  .or. id_h50>0  .or. id_h100>0 .or. id_h200>0 .or. id_h250>0 .or. &
+           id_h300>0 .or. id_h500>0 .or. id_h700>0 .or. id_h850>0 .or. id_h1000>0 ) then
            id_hght = 1
       else
            id_hght = 0
@@ -538,6 +556,15 @@ contains
 ! Total energy (only when moist_phys = .T.)
        id_te    = register_diag_field ( trim(field), 'te', axes(1:2), Time,      &
             'Total Energy', 'J/kg', missing_value=missing_value )
+
+       id_delp = register_diag_field ( trim(field), 'delp', axes(1:3), Time,        &
+            'pressure thickness', 'pa', missing_value=missing_value )
+       id_delz = register_diag_field ( trim(field), 'delz', axes(1:3), Time,        &
+            'height thickness', 'm', missing_value=missing_value )
+       id_zratio = register_diag_field ( trim(field), 'zratio', axes(1:3), Time,        &
+            'nonhydro_ratio', 'n/a', missing_value=missing_value )
+       id_ws     = register_diag_field ( trim(field), 'ws', axes(1:2), Time,        &
+            'Terrain W', 'm/s', missing_value=missing_value )
 !--------------------
 ! Relative vorticity
 !--------------------
@@ -630,6 +657,13 @@ contains
        id_v250 = register_diag_field ( trim(field), 'v250', axes(1:2), Time,       &
                            '250-mb v-wind', '1/s', missing_value=missing_value )
 !--------------------------
+! 300-mb winds:
+!--------------------------
+       id_u300 = register_diag_field ( trim(field), 'u300', axes(1:2), Time,       &
+                           '300-mb u-wind', '1/s', missing_value=missing_value )
+       id_v300 = register_diag_field ( trim(field), 'v300', axes(1:2), Time,       &
+                           '300-mb v-wind', '1/s', missing_value=missing_value )
+!--------------------------
 ! 500-mb winds:
 !--------------------------
        id_u500 = register_diag_field ( trim(field), 'u500', axes(1:2), Time,       &
@@ -672,6 +706,8 @@ contains
                            '200-mb temperature', 'K', missing_value=missing_value )
        id_t250 = register_diag_field ( trim(field), 't250', axes(1:2), Time,       &
                            '250-mb temperature', 'K', missing_value=missing_value )
+       id_t300 = register_diag_field ( trim(field), 't300', axes(1:2), Time,       &
+                           '300-mb temperature', 'K', missing_value=missing_value )
        id_t500 = register_diag_field ( trim(field), 't500', axes(1:2), Time,       &
                            '500-mb temperature', 'K', missing_value=missing_value )
        id_t700 = register_diag_field ( trim(field), 't700', axes(1:2), Time,       &
@@ -693,6 +729,8 @@ contains
                            '200-mb specific humidity', 'kg/kg', missing_value=missing_value )
        id_q250 = register_diag_field ( trim(field), 'q250', axes(1:2), Time,       &
                            '250-mb specific humidity', 'kg/kg', missing_value=missing_value )
+       id_q300 = register_diag_field ( trim(field), 'q300', axes(1:2), Time,       &
+                           '300-mb specific humidity', 'kg/kg', missing_value=missing_value )
        id_q500 = register_diag_field ( trim(field), 'q500', axes(1:2), Time,       &
                            '500-mb specific humidity', 'kg/kg', missing_value=missing_value )
        id_q700 = register_diag_field ( trim(field), 'q700', axes(1:2), Time,       &
@@ -704,6 +742,8 @@ contains
 !--------------------------
 ! relative humidity (physics definition):
 !--------------------------
+       id_rh10 = register_diag_field ( trim(field), 'rh10', axes(1:2), Time,       &
+                           '10-mb relative humidity', '%', missing_value=missing_value )
        id_rh50 = register_diag_field ( trim(field), 'rh50', axes(1:2), Time,       &
                            '50-mb relative humidity', '%', missing_value=missing_value )
        id_rh100 = register_diag_field ( trim(field), 'rh100', axes(1:2), Time,       &
@@ -712,6 +752,8 @@ contains
                            '200-mb relative humidity', '%', missing_value=missing_value )
        id_rh250 = register_diag_field ( trim(field), 'rh250', axes(1:2), Time,       &
                            '250-mb relative humidity', '%', missing_value=missing_value )
+       id_rh300 = register_diag_field ( trim(field), 'rh300', axes(1:2), Time,       &
+                           '300-mb relative humidity', '%', missing_value=missing_value )
        id_rh500 = register_diag_field ( trim(field), 'rh500', axes(1:2), Time,       &
                            '500-mb relative humidity', '%', missing_value=missing_value )
        id_rh700 = register_diag_field ( trim(field), 'rh700', axes(1:2), Time,       &
@@ -731,6 +773,8 @@ contains
                            '100-mb relative humidity (CMIP)', '%', missing_value=missing_value )
        id_rh250_cmip = register_diag_field ( trim(field), 'rh250_cmip', axes(1:2), Time,       &
                            '250-mb relative humidity (CMIP)', '%', missing_value=missing_value )
+       id_rh300_cmip = register_diag_field ( trim(field), 'rh300_cmip', axes(1:2), Time,       &
+                           '300-mb relative humidity (CMIP)', '%', missing_value=missing_value )
        id_rh500_cmip = register_diag_field ( trim(field), 'rh500_cmip', axes(1:2), Time,       &
                            '500-mb relative humidity (CMIP)', '%', missing_value=missing_value )
        id_rh700_cmip = register_diag_field ( trim(field), 'rh700_cmip', axes(1:2), Time,       &
@@ -752,6 +796,8 @@ contains
                            '200-mb omega', 'Pa/s', missing_value=missing_value )
        id_omg250 = register_diag_field ( trim(field), 'omg250', axes(1:2), Time,       &
                            '250-mb omega', 'Pa/s', missing_value=missing_value )
+       id_omg300 = register_diag_field ( trim(field), 'omg300', axes(1:2), Time,       &
+                           '300-mb omega', 'Pa/s', missing_value=missing_value )
        id_omg500 = register_diag_field ( trim(field), 'omg500', axes(1:2), Time,       &
                            '500-mb omega', 'Pa/s', missing_value=missing_value )
        id_omg700 = register_diag_field ( trim(field), 'omg700', axes(1:2), Time,       &
@@ -761,10 +807,10 @@ contains
        id_omg1000 = register_diag_field ( trim(field), 'omg1000', axes(1:2), Time,       &
                            '1000-mb omega', 'Pa/s', missing_value=missing_value )
 
+       do i=1, ncnst
 !--------------------
 ! Tracer diagnostics:
 !--------------------
-       do i=1, ncnst
            call get_tracer_names ( MODEL_ATMOS, i, tname, tlongname, tunits )
            id_tracer(i) = register_diag_field ( field, trim(tname),  &
                 axes(1:3), Time, trim(tlongname), &
@@ -773,10 +819,37 @@ contains
                if (id_tracer(i) > 0) then
                    unit = stdlog()
                    write(unit,'(a,a,a,a)') &
-                        & 'Diagnostics available for tracer ',tname, &
-                        ' in module ', field
+                        & 'Diagnostics available for tracer ',trim(tname), &
+                        ' in module ', trim(field)
                end if
            endif
+!----------------------------------
+! ESM Tracer dmmr/dvmr diagnostics:
+!   for specific elements only
+!----------------------------------
+!---co2
+           if (trim(tname).eq.'co2') then
+               w_mr(:) = WTMCO2
+               id_tracer_dmmr(i) = register_diag_field ( field, trim(tname)//'_dmmr',  &
+                    axes(1:3), Time, trim(tlongname)//" (dry mmr)",           &
+                    trim(tunits), missing_value=missing_value)
+               id_tracer_dvmr(i) = register_diag_field ( field, trim(tname)//'_dvmr',  &
+                    axes(1:3), Time, trim(tlongname)//" (dry vmr)",           &
+                    'mol/mol', missing_value=missing_value)
+               if (master) then
+                   unit = stdlog()
+                   if (id_tracer_dmmr(i) > 0) then
+                       write(unit,'(a,a,a,a)') 'Diagnostics available for '//trim(tname)//' dry mmr ', &
+                              trim(tname)//'_dmmr', ' in module ', trim(field)
+                   end if
+                   if (id_tracer_dvmr(i) > 0) then
+                       write(unit,'(a,a,a,a)') 'Diagnostics available for '//trim(tname)//' dry vmr ', &
+                            trim(tname)//'_dvmr', ' in module ', trim(field)
+                   end if
+               endif
+           endif
+!---end co2
+
        enddo
 
        if ( id_mq > 0 )  then
@@ -858,8 +931,9 @@ contains
     real, allocatable :: a2(:,:),a3(:,:,:), wk(:,:,:), wz(:,:,:), ucoor(:,:,:), vcoor(:,:,:)
     real, allocatable :: slp(:,:), depress(:,:), ws_max(:,:), tc_count(:,:)
     real, allocatable :: u2(:,:), v2(:,:)
+    real, allocatable :: dmmr(:,:,:), dvmr(:,:,:)
     real height(2)
-    real plevs(9)
+    real plevs(10)
     real tot_mq, tmp
     logical :: used
     logical :: bad_range
@@ -1028,6 +1102,11 @@ contains
 
     allocate ( a2(isc:iec,jsc:jec) )
     allocate ( wk(isc:iec,jsc:jec,npz) )
+    if ( any(id_tracer_dmmr > 0) .or. any(id_tracer_dvmr > 0) ) then
+        allocate ( dmmr(isc:iec,jsc:jec,1:npz) )
+        allocate ( dvmr(isc:iec,jsc:jec,1:npz) )
+    endif
+
 
     do n = 1, ntileMe
 
@@ -1247,26 +1326,28 @@ contains
           if( id_tm>0 .or. id_hght>0 .or. id_ppt>0) then
 
               allocate( a3(isc:iec,jsc:jec,size(plevs,1)) )
-              plevs(1) = log( 1000. )
-              plevs(2) = log( 5000. )
-              plevs(3) = log( 10000. )
-              plevs(4) = log( 20000. )
-              plevs(5) = log( 25000. )
-              plevs(6) = log( 30000. )
-              plevs(7) = log( 50000. )
-              plevs(8) = log( 70000. )
-              plevs(9) = log( 85000. )
+              plevs(1)  = log( 1000. )
+              plevs(2)  = log( 5000. )
+              plevs(3)  = log( 10000. )
+              plevs(4)  = log( 20000. )
+              plevs(5)  = log( 25000. )
+              plevs(6)  = log( 30000. )
+              plevs(7)  = log( 50000. )
+              plevs(8)  = log( 70000. )
+              plevs(9)  = log( 85000. )
+              plevs(10) = log(100000. )
 
-             call get_height_given_pressure(isc, iec, jsc, jec, ngc, npz, wz, 9, plevs, Atm(n)%peln, a3)
-             if(id_h10>0)  used = send_data ( id_h10,  a3(isc:iec,jsc:jec,1), Time )
-             if(id_h50>0)  used = send_data ( id_h50,  a3(isc:iec,jsc:jec,2), Time )
-             if(id_h100>0) used = send_data ( id_h100, a3(isc:iec,jsc:jec,3), Time )
-             if(id_h200>0) used = send_data ( id_h200, a3(isc:iec,jsc:jec,4), Time )
-             if(id_h250>0) used = send_data ( id_h250, a3(isc:iec,jsc:jec,5), Time )
-             if(id_h300>0) used = send_data ( id_h300, a3(isc:iec,jsc:jec,6), Time )
-             if(id_h500>0) used = send_data ( id_h500, a3(isc:iec,jsc:jec,7), Time )
-             if(id_h700>0) used = send_data ( id_h700, a3(isc:iec,jsc:jec,8), Time )
-             if(id_h850>0) used = send_data ( id_h850, a3(isc:iec,jsc:jec,9), Time )
+             call get_height_given_pressure(isc, iec, jsc, jec, ngc, npz, wz, 10, plevs, Atm(n)%peln, a3)
+             if(id_h10>0)   used = send_data ( id_h10,   a3(isc:iec,jsc:jec,1),  Time )
+             if(id_h50>0)   used = send_data ( id_h50,   a3(isc:iec,jsc:jec,2),  Time )
+             if(id_h100>0)  used = send_data ( id_h100,  a3(isc:iec,jsc:jec,3),  Time )
+             if(id_h200>0)  used = send_data ( id_h200,  a3(isc:iec,jsc:jec,4),  Time )
+             if(id_h250>0)  used = send_data ( id_h250,  a3(isc:iec,jsc:jec,5),  Time )
+             if(id_h300>0)  used = send_data ( id_h300,  a3(isc:iec,jsc:jec,6),  Time )
+             if(id_h500>0)  used = send_data ( id_h500,  a3(isc:iec,jsc:jec,7),  Time )
+             if(id_h700>0)  used = send_data ( id_h700,  a3(isc:iec,jsc:jec,8),  Time )
+             if(id_h850>0)  used = send_data ( id_h850,  a3(isc:iec,jsc:jec,9),  Time )
+             if(id_h1000>0) used = send_data ( id_h1000, a3(isc:iec,jsc:jec,10), Time )
 
              ! mean temp 300mb to 500mb
              if( id_tm>0 ) then
@@ -1435,6 +1516,9 @@ contains
 
        if(id_ua > 0) used=send_data(id_ua, Atm(n)%ua(isc:iec,jsc:jec,:), Time)
        if(id_va > 0) used=send_data(id_va, Atm(n)%va(isc:iec,jsc:jec,:), Time)
+
+       if(id_delp > 0) used=send_data(id_delp, Atm(n)%delp(isc:iec,jsc:jec,:), Time)
+       if(id_delz > 0) used=send_data(id_delz, Atm(n)%delz(isc:iec,jsc:jec,:), Time)
 
 ! pressure for masking p-level fields
 ! incorrectly defines a2 to be ps (in mb).
@@ -1766,22 +1850,49 @@ contains
        endif
 
 
+#ifndef SW_DYNAMICS
         do itrac=1, ncnst
           if (id_tracer(itrac) > 0) &
                & used = send_data (id_tracer(itrac), Atm(n)%q(isc:iec,jsc:jec,:,itrac), Time )
           if( prt_minmax ) then
-              call get_tracer_names ( MODEL_ATMOS, itrac, tname )
-#ifndef SW_DYNAMICS
+              call get_tracer_names (MODEL_ATMOS, itrac, tname)
               call prt_maxmin(trim(tname), Atm(n)%q(:,:,1,itrac), &
                               isc, iec, jsc, jec, ngc, npz, 1., master)
-#endif
+          endif
+!-------------------------------
+! ESM TRACER diagnostics output:
+! jgj: per SJ email (jul 17 2008): q_dry = q_moist/(1-sphum)
+! mass mixing ratio: q_dry = mass_tracer/mass_dryair = mass_tracer/(mass_air - mass_water) ~ q_moist/(1-sphum)
+! co2_mmr = (wco2/wair) * co2_vmr
+! Note: There is a check in fv_pack.F90 that ensures that tracer number one is sphum
+
+          if (id_tracer_dmmr(itrac) > 0 .or. id_tracer_dvmr(itrac) > 0) then
+              dmmr(:,:,:) = Atm(n)%q(isc:iec,jsc:jec,1:npz,itrac)/(1.0-Atm(n)%q(isc:iec,jsc:jec,1:npz,1))
+              dvmr(:,:,:) = dmmr(isc:iec,jsc:jec,1:npz) * WTMAIR/w_mr(itrac)
+              used = send_data (id_tracer_dmmr(itrac), dmmr, Time )
+              used = send_data (id_tracer_dvmr(itrac), dvmr, Time )
+              if( prt_minmax ) then
+                 call get_tracer_names (MODEL_ATMOS, itrac, tname)
+                 call prt_maxmin(trim(tname)//'_dmmr', dmmr, &
+                    isc, iec, jsc, jec, 0, npz, 1., master)
+                 call prt_maxmin(trim(tname)//'_dvmr', dvmr, & 
+                    isc, iec, jsc, jec, 0, npz, 1., master)
+            endif
           endif
         enddo
 
-    enddo
+
+#endif
+
+    enddo  ! end ntimeMe do-loop
 
     deallocate ( a2 )
     deallocate ( wk )
+
+    if ( any(id_tracer_dmmr > 0) .or. any(id_tracer_dvmr > 0) ) then
+        deallocate (dmmr)
+        deallocate ( dvmr)
+    endif
 
     call nullify_domain()
 
@@ -2213,6 +2324,7 @@ contains
 
  logp = log(plev)
 
+!$omp parallel do default(shared) private(i, j, k, pm)
  do j=js,je
     do 1000 i=is,ie
 
@@ -2277,6 +2389,7 @@ contains
       integer i, j, k
 
 #ifdef SW_DYNAMICS
+!$omp parallel do default(shared), private(i, j) 
         do j=js,je
           do i=is,ie
             vort(i,j,1) = grav * (vort(i,j,1)+f_d(i,j)) / delp(i,j,1)
@@ -2284,6 +2397,7 @@ contains
         enddo
 #else
 ! Compute PT at layer edges.
+!$omp parallel do default(shared), private(i, j, k, t2, delp2) 
      do j=js,je
         do k=1,km
           do i=is,ie
@@ -2302,6 +2416,7 @@ contains
         enddo
      enddo
 
+!$omp parallel do default(shared), private(i, j, k)
      do k=1,km
         do j=js,je
           do i=is,ie

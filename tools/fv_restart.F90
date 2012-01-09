@@ -35,9 +35,9 @@ module fv_restart_mod
   use fv_arrays_mod,       only: fv_atmos_type
   use fv_io_mod,           only: fv_io_init, fv_io_read_restart, fv_io_write_restart, &
                                  remap_restart, fv_io_register_restart
-  use fv_grid_tools_mod,   only: area, dx, dy, rdxa, rdya
+  use fv_grid_tools_mod,   only: area, dx, dy, rdxa, rdya, dxc, dyc
   use fv_grid_utils_mod,   only: fc, f0, ptop, ptop_min, fill_ghost, big_number,   &
-                                 make_eta_level, deglat, cubed_to_latlon
+                                 make_eta_level, deglat, cubed_to_latlon, da_min
   use fv_diagnostics_mod,  only: prt_maxmin
   use init_hydro_mod,      only: p_var
   use mpp_domains_mod,     only: mpp_update_domains, domain2d, DGRID_NE
@@ -50,6 +50,7 @@ module fv_restart_mod
   use field_manager_mod,   only: MODEL_ATMOS
   use external_ic_mod,     only: get_external_ic
   use fv_eta_mod,          only: compute_dz_L32, set_hybrid_z
+  use fv_surf_map_mod,     only: del2_cubed_sphere, del4_cubed_sphere
 
 
   implicit none
@@ -60,9 +61,9 @@ module fv_restart_mod
   !--- private data type
   logical                       :: module_is_initialized = .FALSE.
 
-  !--- version information variables ----
-  character(len=128) :: version = '$Id: fv_restart.F90,v 18.0 2010/03/02 23:27:40 fms Exp $'
-  character(len=128) :: tagname = '$Name: riga_201104 $'
+!---- version number -----
+  character(len=128) :: version = '$Id: fv_restart.F90,v 19.0 2012/01/06 19:59:15 fms Exp $'
+  character(len=128) :: tagname = '$Name: siena $'
 
 contains 
 
@@ -118,7 +119,7 @@ contains
     !--- call fv_io_register_restart to register restart field to be written out in fv_io_write_restart
     call fv_io_register_restart(fv_domain,Atm)
 
-    if( .not.cold_start .and. (.not. Atm(1)%external_ic) ) then
+    if( .not.cold_start ) then
         if ( npz_rst /= 0 .and. npz_rst /= npz ) then
 !            Remap vertically the prognostic variables for the chosen vertical resolution
              if( gid==masterproc ) then
@@ -161,7 +162,22 @@ contains
       ! Init model data
       if(.not.cold_start)then  ! This is not efficient stacking if there are really more tiles than 1.
         if ( Atm(n)%mountain ) then
-             call mpp_update_domains( Atm(n)%phis, fv_domain, complete=.true. )
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! !!! Additional terrain filter -- should not be called repeatedly !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            if ( Atm(n)%n_zs_filter > 0 ) then
+              if ( Atm(n)%nord_zs_filter == 2 ) then
+                   call del2_cubed_sphere(Atm(n)%npx, Atm(n)%npy, Atm(n)%phis, area, dx, dy,   &
+                                          dxc, dyc, Atm(n)%n_zs_filter, 0.20*da_min)
+                   if ( gid==masterproc ) write(*,*) 'Warning !!! del-2 terrain filter has been applied ', Atm(n)%n_zs_filter, ' times'
+              else if( Atm(n)%nord_zs_filter == 4 ) then
+                   call del4_cubed_sphere(Atm(n)%npx, Atm(n)%npy, Atm(n)%phis, area, dx, dy,   &
+                                        dxc, dyc, Atm(n)%n_zs_filter)
+                 if ( gid==masterproc ) write(*,*) 'Warning !!! del-4 terrain filter has been applied ', Atm(n)%n_zs_filter, ' times'
+              endif
+            endif
+
+            call mpp_update_domains( Atm(n)%phis, fv_domain, complete=.true. )
         else
              Atm(n)%phis = 0.
             if( gid==masterproc ) write(*,*) 'phis set to zero'
@@ -170,7 +186,11 @@ contains
 #ifdef SW_DYNAMICS
         Atm(n)%pt(:,:,:)=1.
 #else
-        if (ptop/=Atm(n)%ak(1)) call mpp_error(FATAL,'FV restart: ptop not equal Atm(n)%ak(1)')
+        if ( .not.Atm(n)%hybrid_z ) then
+           if(ptop/=Atm(n)%ak(1)) call mpp_error(FATAL,'FV restart: ptop not equal Atm(n)%ak(1)')
+        else
+           ptop = Atm(n)%ak(1);  Atm(n)%ks = 0
+        endif
         call p_var(npz,         isc,         iec,       jsc,     jec,   ptop,     ptop_min,  &
                    Atm(n)%delp, Atm(n)%delz, Atm(n)%pt, Atm(n)%ps, Atm(n)%pe, Atm(n)%peln,   &
                    Atm(n)%pk,   Atm(n)%pkz, kappa, Atm(n)%q, Atm(n)%ng, ncnst,  Atm(n)%dry_mass,  &
@@ -247,11 +267,6 @@ contains
              enddo
         endif
 
-        if ( Atm(n)%no_cgrid ) then
-             Atm(n)%um(:,:,:) = Atm(n)%u(:,:,:)
-             Atm(n)%vm(:,:,:) = Atm(n)%v(:,:,:)
-        endif
-
       endif  !end cold_start check
 
 !---------------------------------------------------------------------------------------------
@@ -270,8 +285,8 @@ contains
 !         call prt_maxmin('ZE0', Atm(n)%ze0,  isc, iec, jsc, jec, 0, npz, 1.E-3, gid==masterproc)
 !         call prt_maxmin('DZ0', Atm(n)%delz, isc, iec, jsc, jec, 0, npz, 1.   , gid==masterproc)
        endif
-       call make_eta_level(npz, Atm(n)%pe, area, Atm(n)%ks, Atm(n)%ak, Atm(n)%bk)
-      endif
+!      call make_eta_level(npz, Atm(n)%pe, area, Atm(n)%ks, Atm(n)%ak, Atm(n)%bk)
+     endif
 !---------------------------------------------------------------------------------------------
 
       unit = stdout()

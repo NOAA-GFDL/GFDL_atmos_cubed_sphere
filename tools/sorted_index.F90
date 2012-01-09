@@ -21,6 +21,9 @@ module sorted_index_mod
   private
   public :: sorted_inta, sorted_intb
 
+  !---- version number -----
+  character(len=128) :: version = '$Id: sorted_index.F90,v 19.0 2012/01/06 19:59:26 fms Exp $'
+  character(len=128) :: tagname = '$Name: siena $'
 
 contains
   !#####################################################################

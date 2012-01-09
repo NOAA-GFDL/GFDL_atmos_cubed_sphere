@@ -87,8 +87,8 @@
       END INTERFACE
 
 !---- version number -----
-      character(len=128) :: version = '$Id: fv_mp_mod.F90,v 17.0.4.3.2.2.2.1 2010/10/01 13:25:28 z1l Exp $'
-      character(len=128) :: tagname = '$Name: riga_201104 $'
+      character(len=128) :: version = '$Id: fv_mp_mod.F90,v 19.0 2012/01/06 19:59:11 fms Exp $'
+      character(len=128) :: tagname = '$Name: siena $'
 
 contains
 
@@ -98,11 +98,9 @@ contains
 !     mp_start :: Start SPMD processes
 !
         subroutine mp_start(commID)
-          integer, intent(in), optional :: commID
-
-         integer :: ios
+         integer, intent(in), optional :: commID
          integer :: unit
-         character(len=80) evalue
+!$       integer :: omp_get_num_threads
 
          gid = mpp_pe()
          npes = mpp_npes()
@@ -114,18 +112,11 @@ contains
          end if
 
          numthreads = 1
-         if (gid==masterproc) then
-           call getenv('OMP_NUM_THREADS',evalue)
-           read(evalue,*,iostat=ios) numthreads
-           if ( ios .ne. 0 ) then
-               print *, 'WARNING: cannot read OMP_NUM_THREADS, defaults to 1', &
-                        trim(evalue)
-               numthreads = 1
-           end if
-         endif
-         call mpp_broadcast(numthreads, masterproc)
-!         call mp_bcst(numthreads)
-
+!$OMP PARALLEL
+!$OMP MASTER
+!$       numthreads = omp_get_num_threads()
+!$OMP END MASTER
+!$OMP END PARALLEL
          if ( mpp_pe()==mpp_root_pe() ) then
            unit = stdout()
            write(unit,*) 'Starting PEs : ', npes

@@ -10,37 +10,41 @@ module nh_core_mod
 !------------------------------
 
    use constants_mod,  only: rdgas, grav
-   use fv_control_mod, only: m_split, quick_p_c, quick_p_d, k_top, m_riem, master
+   use fv_control_mod, only: m_split, k_top, m_riem, master, kd3, fill_wz
    use tp_core_mod,    only: fv_tp_2d, copy_corners
-!  use fv_timing_mod,  only: timing_on, timing_off
 
    implicit none
    private
 
-   public Riem_Solver, Riem_Solver_C, update_dz_c, update_dz_d
-   real, parameter:: dz_max = -0.5               ! (meters)
+   public Riem_Solver, update_gz_c, update_dz_d
+   real, parameter:: dz_max = -2.5               ! (meters)
+   real, parameter:: df_max = dz_max * grav
+   real, parameter:: near0 = 1.E-8
 
-CONTAINS 
+   real, allocatable:: density(:,:,:)
+   real:: damp3
 
-  subroutine update_dz_c(is, ie, js, je, km, ng, area,   &
-                         zh, ut, vt, dz_in, dz_out, wk)
+!---- version number -----
+   character(len=128) :: version = '$Id: nh_core.F90,v 19.0 2012/01/06 19:57:52 fms Exp $'
+   character(len=128) :: tagname = '$Name: siena $'
+
+contains
+
+  subroutine update_gz_c(is, ie, js, je, km, ng, area, ut, vt, gz)
 ! !INPUT PARAMETERS:
   integer, intent(in):: is, ie, js, je, ng, km
-  real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: ut, vt, zh
-  real, intent(in ):: area(is-ng:ie+ng,js-ng:je+ng)
-  real, intent(in ):: dz_in (is:ie,js:je,km) 
-  real, intent(out):: dz_out(is:ie,js:je,km) 
-  real, intent(out):: wk(is-ng:ie+ng,js-ng:je+ng,km+1)  ! work array
+  real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: ut, vt
+  real, intent(in):: area(is-ng:ie+ng,js-ng:je+ng)
+  real, intent(inout):: gz(is-ng:ie+ng,js-ng:je+ng,km+1)  ! work array
 ! Local Work array:
   real, dimension(is:ie+1,js:je  ):: xfx, fx
   real, dimension(is:ie  ,js:je+1):: yfx, fy
   integer  i, j, k
 
+!$omp parallel do default(shared) private(xfx, yfx, fx, fy)
   do 6000 k=k_top,km
-
-!-------------------------------------------------------------
+! Use winds below the height
      if ( k==1 ) then
-#ifdef TOP_WIND
         do j=js,je
            do i=is,ie+1
               xfx(i,j) = ut(i,j,k) 
@@ -51,10 +55,6 @@ CONTAINS
               yfx(i,j) = vt(i,j,k)
            enddo
         enddo
-#else
-        call top_edge(ut(is:ie+1,js:je,  1:3), xfx, is, ie+1, js, je, 3)
-        call top_edge(vt(is:ie  ,js:je+1,1:3), yfx, is, ie, js, je+1, 3)
-#endif
      else
         do j=js,je
            do i=is,ie+1
@@ -67,14 +67,12 @@ CONTAINS
            enddo
         enddo
      endif
-!-------------------------------------------------------------
-
      do j=js,je
         do i=is,ie+1
            if( xfx(i,j) > 0. ) then
-               fx(i,j) = zh(i-1,j,k)
+               fx(i,j) = gz(i-1,j,k)
            else
-               fx(i,j) = zh(i  ,j,k)
+               fx(i,j) = gz(i  ,j,k)
            endif
            fx(i,j) = xfx(i,j)*fx(i,j)
         enddo
@@ -82,86 +80,148 @@ CONTAINS
      do j=js,je+1
         do i=is,ie
            if( yfx(i,j) > 0. ) then
-               fy(i,j) = zh(i,j-1,k)
+               fy(i,j) = gz(i,j-1,k)
            else
-               fy(i,j) = zh(i,j  ,k)
+               fy(i,j) = gz(i,j  ,k)
            endif
            fy(i,j) = yfx(i,j)*fy(i,j)
         enddo
      enddo
 
-! height increments due to horizontal advection:
      do j=js,je
         do i=is,ie
-           wk(i,j,k) = (zh(i,j,k)*area(i,j) +  fx(i,j)- fx(i+1,j)+ fy(i,j)- fy(i,j+1)) &
-                     / (          area(i,j) + xfx(i,j)-xfx(i+1,j)+yfx(i,j)-yfx(i,j+1)) &
-                     - zh(i,j,k)
+           gz(i,j,k) = (gz(i,j,k)*area(i,j) +  fx(i,j)- fx(i+1,j)+ fy(i,j)- fy(i,j+1)) &
+                     / (          area(i,j) + xfx(i,j)-xfx(i+1,j)+yfx(i,j)-yfx(i,j+1))
         enddo
      enddo
+
+#ifdef FIX_BOTTOM_LAYER
+     if ( k==km ) then
+        do j=js,je
+           do i=is,ie
+! Limit gz at top edge of the bottom layer; this essentially limited the mountain forcing on ws
+! Prevents negative layer thickness
+                  gz(i,j,km) = max(gz(i,j,km+1)-df_max, gz(i,j,km)) 
+           enddo
+        enddo
+     endif
+#endif
+
 6000 continue
 
-  do k=k_top,km-1
-     do j=js,je
-        do i=is,ie
-           dz_out(i,j,k) = dz_in(i,j,k) - wk(i,j,k) + wk(i,j,k+1)
-        enddo
-     enddo
-  enddo
-
-! Bottom layer: k=km
-  do j=js,je
-     do i=is,ie
-        dz_out(i,j,km) = dz_in(i,j,km) - wk(i,j,km) 
-     enddo
-  enddo
-  call fix_dz(is, ie, js, je, km, 0, dz_out)
-
-  end subroutine update_dz_c
+  end subroutine update_gz_c
 
 
 
-  subroutine update_dz_d(hord, is, ie, js, je, km, ng, npx, npy, area,    &
-                         zh, crx, cry, xfx, yfx, delz, wk, delp, n_sponge)
+  subroutine update_dz_d(ndif, damp, hord, is, ie, js, je, km, ng, npx, npy, area,    &
+                         zs, zh, crx, cry, xfx, yfx, delz, ws, rdt, id_ws)
 
   integer, intent(in):: is, ie, js, je, ng, km, npx, npy
-  integer, intent(in):: hord, n_sponge
+  integer, intent(in):: ndif(km)
+  integer, intent(in):: hord
+  integer, intent(in):: id_ws
+  real, intent(in)   :: rdt
+  real, intent(in)   :: damp(km)
   real, intent(in)   :: area(is-ng:ie+ng,js-ng:je+ng)
+  real, intent(inout) ::  zs(is-ng:ie+ng,js-ng:je+ng)
   real, intent(inout) ::  zh(is-ng:ie+ng,js-ng:je+ng,km)
   real, intent(inout) ::delz(is:ie,js:je,km)
-  real, intent(inout) ::delp(is-ng:ie+ng,js-ng:je+ng,km)
   real, intent(inout), dimension(is:ie+1,js-ng:je+ng,km):: crx, xfx
   real, intent(inout), dimension(is-ng:ie+ng,js:je+1,km):: cry, yfx
-  real, intent(  out) ::   wk(is:ie,js:je,km)  ! work array
+  real, intent(inout)   :: ws(is:ie,js:je)
 !-----------------------------------------------------
+  integer, parameter:: kint = 0 ! top layer(s) using delz transport
 ! Local array:
   real, dimension(is:   ie+1, js-ng:je+ng):: crx_adv, xfx_adv
   real, dimension(is-ng:ie+ng,js:   je+1 ):: cry_adv, yfx_adv
   real, dimension(is:ie+1,js:je  ):: fx
   real, dimension(is:ie  ,js:je+1):: fy
-  real  delx(is:ie+1,km), dely(is-ng:ie+ng,km)
-  real :: ra_x(is:ie,js-ng:je+ng)
-  real :: ra_y(is-ng:ie+ng,js:je)
+  real:: dz1(is-ng:ie+ng,js-ng:je+ng)
+  real:: ra_x(is:ie,js-ng:je+ng)
+  real:: ra_y(is-ng:ie+ng,js:je)
+  real, parameter:: surf_fac = 0.9  ! lowest layer to "surface" reduction factor
 !--------------------------------------------------------------------
-  integer  i, j, k, iord, isd, ied, jsd, jed, lm
+  integer  i, j, k, isd, ied, jsd, jed, kmax
 
   isd = is - ng;  ied = ie + ng
   jsd = js - ng;  jed = je + ng
 
-#ifdef NO_CS_PROFILE
-  do k=k_top,km
-     if( k <= n_sponge .and. km>16 ) then
-         iord = 1
-     else
-         iord = hord
-     endif
+  if ( id_ws > 0 ) then
+       kmax = km + 1
+  else
+       kmax = km
+  endif
 
-     if ( k==1 ) then
-          call top_edge(crx,                      crx_adv, is,  ie+1, jsd, jed, km)
-          call top_edge(xfx,                      xfx_adv, is,  ie+1, jsd, jed, km)
-          call top_edge(cry(isd:ied,js:je+1,1:3), cry_adv, isd, ied,  js,  je+1, 3)
-          call top_edge(yfx(isd:ied,js:je+1,1:3), yfx_adv, isd, ied,  js,  je+1, 3)
-     else
+!$omp parallel do default(shared) private(ra_x, ra_y, fx, fy, crx_adv, xfx_adv, cry_adv, yfx_adv, dz1)
+  do k=1,kmax
+     if ( k <= kint ) then
         do j=jsd,jed
+           do i=isd,ied
+              dz1(i,j) = zh(i,j,k+1) - zh(i,j,k)
+           enddo
+        enddo
+        do j=jsd,jed
+           do i=is,ie
+              ra_x(i,j) = area(i,j) + xfx(i,j,k) - xfx(i+1,j,k)
+           enddo
+        enddo
+        do j=js,je
+           do i=isd,ied
+              ra_y(i,j) = area(i,j) + yfx(i,j,k) - yfx(i,j+1,k)
+           enddo
+        enddo
+
+        call fv_tp_2d(dz1,    crx(is,jsd,k), cry(isd,js,k), npx,  npy, hord, &
+                      fx, fy, xfx(is,jsd,k), yfx(isd,js,k), area, ra_x, ra_y, nord=ndif(k), damp_c=damp(k))
+        do j=js,je
+           do i=is,ie
+              delz(i,j,k) = (dz1(i,j)*area(i,j)+fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))   &
+                          / (ra_x(i,j) + yfx(i,j,k)-yfx(i,j+1,k)) 
+           enddo
+        enddo
+
+     elseif ( k == km+1 ) then
+! Compute ws:
+       if ( id_ws > 0 ) then
+        do j=jsd,jed 
+           do i=is,ie+1
+              crx_adv(i,j) = crx(i,j,km) * surf_fac
+              xfx_adv(i,j) = xfx(i,j,km) * surf_fac
+           enddo
+        enddo
+        do j=js,je+1
+           do i=isd,ied
+              cry_adv(i,j) = cry(i,j,km) * surf_fac
+              yfx_adv(i,j) = yfx(i,j,km) * surf_fac
+           enddo
+        enddo
+        call fv_tp_2d(zs, crx_adv, cry_adv, npx, npy, hord, &
+                      fx, fy, xfx_adv, yfx_adv, area, ra_x, ra_y, nord=ndif(km), damp_c=damp(km))
+        do j=js,je
+           do i=is,ie
+              ws(i,j) = rdt*(zs(i,j) - (zs(i,j)*area(i,j)+fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))   &
+                                     / (ra_x(i,j) + yfx_adv(i,j)-yfx_adv(i,j+1)))
+           enddo
+        enddo
+       endif
+
+     else            
+
+      if ( k==1 ) then
+        do j=jsd,jed 
+           do i=is,ie+1
+              crx_adv(i,j) = crx(i,j,k)
+              xfx_adv(i,j) = xfx(i,j,k)
+           enddo
+        enddo
+        do j=js,je+1
+           do i=isd,ied
+              cry_adv(i,j) = cry(i,j,k)
+              yfx_adv(i,j) = yfx(i,j,k)
+           enddo
+        enddo
+      else
+        do j=jsd,jed 
            do i=is,ie+1
               crx_adv(i,j) = 0.5*(crx(i,j,k-1) + crx(i,j,k))
               xfx_adv(i,j) = 0.5*(xfx(i,j,k-1) + xfx(i,j,k))
@@ -173,240 +233,102 @@ CONTAINS
               yfx_adv(i,j) = 0.5*(yfx(i,j,k-1) + yfx(i,j,k))
            enddo
         enddo
+      endif
+
+        do j=jsd,jed
+           do i=is,ie
+              ra_x(i,j) = area(i,j) + xfx_adv(i,j) - xfx_adv(i+1,j)
+           enddo
+        enddo
+        do j=js,je
+           do i=isd,ied
+              ra_y(i,j) = area(i,j) + yfx_adv(i,j) - yfx_adv(i,j+1)
+           enddo
+        enddo
+
+        call fv_tp_2d(zh(isd,jsd,k), crx_adv, cry_adv, npx,  npy, hord, &
+                      fx, fy, xfx_adv, yfx_adv, area, ra_x, ra_y, nord=ndif(k), damp_c=damp(k))
+        do j=js,je
+           do i=is,ie
+              zh(i,j,k) = (zh(i,j,k)*area(i,j)+fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))   &
+                        / (ra_x(i,j) + yfx_adv(i,j)-yfx_adv(i,j+1))
+           enddo
+        enddo
+
+        if ( k==km ) then
+           if ( fill_wz ) then
+               do j=js,je
+                  do i=is,ie
+                     delz(i,j,km) = zs(i,j) - zh(i,j,km)
+                  enddo
+               enddo
+           else
+               do j=js,je
+                  do i=is,ie
+                     zh(i,j,km) = max(zs(i,j)-dz_max, zh(i,j,km)) 
+                     delz(i,j,km) = zs(i,j) - zh(i,j,km)
+                  enddo
+               enddo
+           endif
+        endif
+
      endif
-
-     do j=jsd,jed
-        do i=is,ie
-           ra_x(i,j) = area(i,j) + xfx_adv(i,j) - xfx_adv(i+1,j)
-        enddo
-     enddo
-     do j=js,je
-        do i=isd,ied
-           ra_y(i,j) = area(i,j) + yfx_adv(i,j) - yfx_adv(i,j+1)
-        enddo
-     enddo
-
-     call fv_tp_2d(zh(isd,jsd,k), crx_adv, cry_adv, npx, npy, iord, &
-                   fx, fy, xfx_adv, yfx_adv, area, ra_x, ra_y)
-     do j=js,je
-        do i=is,ie
-           wk(i,j,k) = (zh(i,j,k)*area(i,j)+fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))       &
-                     / (area(i,j)+xfx_adv(i,j)-xfx_adv(i+1,j)+yfx_adv(i,j)-yfx_adv(i,j+1)) &
-                     - zh(i,j,k)
-        enddo
-     enddo
-  enddo    ! k-loop
-
-#else
-! lm = 1   ! interior limiter
-  lm = 0   ! no limiter
-
-#ifndef UNIFORM_CS
-  do k=1,km
-     call copy_corners(delp(isd,jsd,k), npx, npy, 1)
   enddo
 
-  do j=jsd,jed
-     do k=1,km
-        do i=is,ie+1
-           delx(i,k) = 0.5*(delp(i-1,j,k)+delp(i,j,k))
+  if ( kint < km-1 ) then
+!$omp parallel do default(shared)
+     do k=kint+1, km-1
+        do j=js,je
+           do i=is,ie
+              delz(i,j,k) = zh(i,j,k+1) - zh(i,j,k)
+           enddo
         enddo
      enddo
-     call edge_profile(crx, xfx, is, ie+1, jsd, jed, j, km, lm, delx)
-  enddo
+  endif
 
-  do k=1,km
-     call copy_corners(delp(isd,jsd,k), npx, npy, 2)
-  enddo
-
-  do j=js,je+1
-     do k=1,km
-        do i=isd,ied
-           dely(i,k) = 0.5*(delp(i,j-1,k)+delp(i,j,k))
-        enddo
-     enddo
-     call edge_profile(cry, yfx, isd, ied, js, je+1, j, km, lm, dely)
-  enddo
-
-#else
-  do j=jsd,jed
-     call edge_profile(crx, xfx, is,  ie+1, jsd, jed, j, km, lm)
-  enddo
-  do j=js,je+1
-     call edge_profile(cry, yfx, isd, ied,  js, je+1, j, km, lm)
-  enddo
-#endif
-
-  do k=k_top,km
-
-     do j=jsd,jed
-        do i=is,ie
-           ra_x(i,j) = area(i,j) + xfx(i,j,k) - xfx(i+1,j,k)
-        enddo
-     enddo
-     do j=js,je
-        do i=isd,ied
-           ra_y(i,j) = area(i,j) + yfx(i,j,k) - yfx(i,j+1,k)
-        enddo
-     enddo
-
-     call fv_tp_2d(zh(isd,jsd,k), crx(is,jsd,k), cry(isd,js,k), npx,  npy, iord, &
-                   fx, fy, xfx(is,jsd,k), yfx(isd,js,k), area, ra_x, ra_y)
-     do j=js,je
-        do i=is,ie
-           wk(i,j,k) = (zh(i,j,k)*area(i,j)+fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))   &
-                     / (area(i,j)+xfx(i,j,k)-xfx(i+1,j,k)+yfx(i,j,k)-yfx(i,j+1,k)) &
-                     - zh(i,j,k)
-        enddo
-     enddo
-  enddo
-#endif
-
-  do k=k_top,km-1
-     do j=js,je
-        do i=is,ie
-           delz(i,j,k) = delz(i,j,k) - wk(i,j,k) + wk(i,j,k+1)
-        enddo
-     enddo
-  enddo
-  do j=js,je
-     do i=is,ie
-        delz(i,j,km) = delz(i,j,km) - wk(i,j,km) 
-     enddo
-  enddo
-
-  call fix_dz(is, ie, js, je, km, 0, delz)
 
   end subroutine update_dz_d
 
 
-  subroutine Riem_Solver_C(dt,   is,  ie,   js, je, km,   ng,  &
-                           akap, cp,  ptop, hs, w,  delz, pt,  &
-                           delp, gz,  pk,   ip)
-
-   integer, intent(in):: is, ie, js, je, ng, km
-   integer, intent(in):: ip       ! ip==1 pk is full pressure
-   real, intent(in):: dt,  akap, cp, ptop
-   real, intent(in):: delz(is:ie,js:je,km)
-   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, delp
-   real, intent(in)::       hs(is-ng:ie+ng,js-ng:je+ng)
-   real, intent(inout):: w(is-ng:ie+ng,js-ng:je+ng,km)
-! OUTPUT PARAMETERS 
-   real, intent(out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: gz, pk
-! Local:
-  real, dimension(is:ie,km  ):: pm, dm, dz2
-  real, dimension(is:ie,km+1):: pem, pk2
-  real gama, rgrav, ptk
-  integer i, j, k
-  integer m_split_c
-
-
-   m_split_c = max(1, m_split/2)
-    gama = 1./(1.-akap)
-   rgrav = 1./grav
-
-   ptk = ptop ** akap
-
-!$omp parallel do default(shared) private(i, j, k, dm, dz2, pem, pm, pk2)
-   do 2000 j=js,je
-
-      do k=1,km
-         do i=is,ie
-            dm(i,k) = delp(i,j,k)
-         enddo
-      enddo
-
-      do i=is,ie
-         pem(i,1) = ptop
-         pk2(i,1) = ptk
-      enddo
-
-      do k=2,km+1
-         do i=is,ie
-            pem(i,k) = pem(i,k-1) + dm(i,k-1)
-            pk2(i,k) = exp( akap*log(pem(i,k)) )
-         enddo
-      enddo
-
-      do k=k_top,km
-         do i=is,ie
-            dz2(i,k) = delz(i,j,k)
-             pm(i,k) = exp( gama*log(akap*dm(i,k)/(pk2(i,k+1)-pk2(i,k))) )
-             dm(i,k) = dm(i,k) * rgrav
-         enddo
-      enddo
-
-      call Riem_3D( m_split_c, dt, is, ie, js, je, ng, j, km, cp, gama, akap, &
-                    pk, dm, pm, w, dz2, pt, quick_p_c, .true., k_top, m_riem )
-
-      do i=is,ie
-         pk(i,j,1) = ptop                     ! full pressure at top
-      enddo
-      do k=2,km+1
-         do i=is,ie
-            pk(i,j,k) = pk(i,j,k) + pem(i,k)  ! add hydrostatic component
-         enddo
-      enddo
-
-!---------------------------------------
-! Compute dz2 hydrostatically if k_top>1
-!---------------------------------------
-   if ( k_top>1 ) then
-      do k=1,k_top-1
-         do i=is,ie
-            dz2(i,k) = pt(i,j,k)*(pk2(i,k)-pk2(i,k+1))*rgrav
-         enddo
-      enddo
-   endif
-
-! Compute Height * grav (for p-gradient computation)
-      do i=is,ie
-         gz(i,j,km+1) = hs(i,j)
-      enddo
-
-      do k=km,1,-1
-         do i=is,ie
-            gz(i,j,k) = gz(i,j,k+1) - dz2(i,k)*grav
-         enddo
-      enddo
-
-2000  continue
-
-  end subroutine Riem_Solver_C
-
-
   subroutine Riem_Solver(dt,   is,   ie,   js, je, km, ng,    &
-                         akap, cp,   ptop, hs, peln, w,  delz, pt,  &
-                         delp, gz,   pkc, pk, pe, last_call, ip)
+                         akap, cp,   ptop, hs, w,  delz, pt,  &
+                         delp, gz,   pkc, pk, pe, peln,       &
+                         da_min, diff_z0, first_call, last_call, compute_pvar)
 !--------------------------------------------
 ! !OUTPUT PARAMETERS
 ! Ouput: gz: grav*height at edges
 !        pe: full     hydrostatic pressure
-!       pkc: full non-hydrostatic pressure
+!       pkc: non-hydrostatic "perturbation" pressure
 !--------------------------------------------
    integer, intent(in):: is, ie, js, je, km, ng
-   integer, intent(in):: ip      ! ip==0 pkc is perturbation pressure
    real, intent(in):: dt         ! the BIG horizontal Lagrangian time step
    real, intent(in):: akap, cp, ptop
+   real, intent(in):: da_min, diff_z0
    real, intent(in):: hs(is-ng:ie+ng,js-ng:je+ng)
-   logical, intent(in):: last_call
+   logical, intent(in):: first_call, last_call, compute_pvar
+   real, intent(inout):: peln(is:ie,km+1,js:je)          ! ln(pe)
    real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,km):: w, delp, pt
    real, intent(inout):: delz(is:ie,js:je,km)
-   real, intent(out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: gz, pkc
-   real, intent(out):: pk(is:ie,js:je,km+1)
+   real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: pkc
    real, intent(out):: pe(is-1:ie+1,km+1,js-1:je+1)
-   real, intent(out):: peln(is:ie,km+1,js:je)           ! ln(pe)
+   real, intent(out):: pk(is:ie,js:je,km+1)
+   real, intent(out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: gz
 ! Local:
-  real, dimension(is:ie,km):: pm, dm, dz2
+  real, dimension(is:ie,km):: pm, dm, dz2, w2
   real :: pem(is:ie,km+1)
-  real gama, rgrav, ptk
+  real gama, rgrav, ptk, peln1
   integer i, j, k
 
     gama = 1./(1.-akap)
    rgrav = 1./grav
      ptk = ptop ** akap
+   peln1 = log(ptop)
 
-!$omp parallel do default(shared) private(i, j, k, dm, dz2, pem, pm)
+   damp3 = (kd3*da_min/300.) / (dt/real(m_split))
+
+   if ( first_call .and. kd3 > near0 )  allocate ( density(is:ie,1:km,js:je) )
+
+!$omp parallel do default(shared) private(dm, dz2, pem, pm)
    do 2000 j=js,je
 
       do k=1,km
@@ -414,42 +336,43 @@ CONTAINS
             dm(i,k) = delp(i,j,k)
          enddo
       enddo
-
       do i=is,ie
          pem(i,1) = ptop
-         pk(i,j,1) = ptk
       enddo
-
       do k=2,km+1
          do i=is,ie
-               pem(i,k) = pem(i,k-1) + dm(i,k-1)
-            peln(i,k,j) = log(pem(i,k))
-              pk(i,j,k) = exp(akap*peln(i,k,j))
+            pem(i,k) = pem(i,k-1) + dm(i,k-1)
          enddo
       enddo
 
+      if ( compute_pvar ) then
+           do i=is,ie
+              pk(i,j,1) = ptk
+              peln(i,1,j) = peln1
+           enddo
+           do k=2,km+1
+              do i=is,ie
+                 peln(i,k,j) = log(pem(i,k))
+                 pk(i,j,k) = exp( akap*peln(i,k,j) )
+              enddo
+           enddo
+      endif
+
       do k=k_top,km
          do i=is,ie
-            dz2(i,k) = delz(i,j,k)
+! Non-hydrostatic pressure:
+!      p2(k) = ( -R*dm/dz*pt2(k) )**gama
 ! hydrostatic pressure:
-!           pm(i,k) = (akap*dm(i,k)/(pk(i,j,k+1)-pk(i,j,k))) ** gama
             pm(i,k) = exp( gama*log(akap*dm(i,k)/(pk(i,j,k+1)-pk(i,j,k))) )
+!           pm(i,k) = dm(i,k) / (peln(i,k+1,j)-peln(i,k,j))
             dm(i,k) = dm(i,k) * rgrav
+            dz2(i,k) = delz(i,j,k)
+             w2(i,k) = w(i,j,k)
          enddo
       enddo
 
       call Riem_3D(m_split, dt, is, ie, js, je, ng, j, km, cp, gama, akap,  &
-                   pkc, dm, pm, w, dz2, pt, quick_p_d, .false., k_top, m_riem)
-      if ( ip==1 ) then
-           do i=is,ie
-              pkc(i,j,1) = ptop
-           enddo
-           do k=2,km+1
-              do i=is,ie
-                 pkc(i,j,k) = pkc(i,j,k) + pem(i,k)
-              enddo
-           enddo
-      endif
+                   pkc, dm, pm, pem, w2, dz2, pt, density(is,1,j), first_call, k_top, m_riem)
 
 !---------------------------------------
 ! Compute dz2 hydrostatically if k_top>1
@@ -479,10 +402,22 @@ CONTAINS
          enddo
       enddo
 
+      if ( diff_z0 > near0 ) then
+            call imp_diff_w(j, is, ie, js, je, ng, km, diff_z0, dz2, w2, w)
+      else
+          do k=1,km
+             do i=is,ie
+                w(i,j,k) = w2(i,k)
+             enddo
+          enddo
+      endif
+
 2000  continue
 
   if ( last_call ) then
+    if( kd3 > near0 ) deallocate ( density )
 
+!$omp parallel do default(shared) 
     do j=js-1,je+1
        do i=is-1,ie+1
           pe(i,1,j) = ptop
@@ -499,8 +434,70 @@ CONTAINS
   end subroutine Riem_Solver
 
 
+  subroutine imp_diff_w(j, is, ie, js, je, ng, km, cd, delz, w, w3)
+  integer, intent(in) :: j, is, ie, js, je, km, ng
+  real, intent(in) :: cd
+  real, intent(in) :: delz(is:ie, km)  ! delta-height (m)
+  real, intent(in) :: w(is:ie, km)  ! vertical vel. (m/s)
+  real, intent(out) :: w3(is-ng:ie+ng,js-ng:je+ng,km)
+! Local:
+  real, dimension(is:ie,km):: c, gam, dz, wt
+  real:: bet(is:ie)
+  real:: a
+  integer:: i, k
+
+     do k=2,km
+        do i=is,ie
+           dz(i,k) = 0.5*(delz(i,k-1)+delz(i,k))
+        enddo
+     enddo
+     do k=1,km-1
+        do i=is,ie
+           c(i,k) = -cd/(dz(i,k+1)*delz(i,k))
+        enddo
+     enddo
+
+! model top:
+     do i=is,ie
+         bet(i) = 1. - c(i,1)      ! bet(i) = b
+        wt(i,1) = w(i,1) / bet(i)
+     enddo
+
+! Interior:
+     do k=2,km-1
+        do i=is,ie
+           gam(i,k) = c(i,k-1)/bet(i)
+                  a = cd/(dz(i,k)*delz(i,k))
+             bet(i) = (1.+a-c(i,k)) + a*gam(i,k)
+            wt(i,k) = (w(i,k) + a*wt(i,k-1)) / bet(i)
+        enddo
+     enddo
+
+! Bottom: k = km
+     do i=is,ie
+        gam(i,km) = c(i,km-1) / bet(i)
+                a = cd/(dz(i,km)*delz(i,km))
+         wt(i,km) = (w(i,km) + a*wt(i,km-1))/(1. + a + (cd+cd)/delz(i,km)**2 + a*gam(i,km))
+     enddo
+ 
+     do k=km-1,1,-1
+        do i=is,ie
+           wt(i,k) = wt(i,k) - gam(i,k+1)*wt(i,k+1)
+        enddo
+     enddo
+
+     do k=1,km
+        do i=is,ie
+           w3(i,j,k) = wt(i,k)
+        enddo
+     enddo
+
+  end subroutine imp_diff_w
+
+
+
   subroutine Riem_3D(ns, bdt, is, ie, js, je, ng, j, km, cp, gama, cappa, p3, dm2,    &
-                     pm2, w, dz2, pt, quick_p, c_core, ktop, iad)
+                     pm2, pe2, w2, dz2, pt, den2, first_call, ktop, iad)
 
   integer, intent(in):: ns, is, ie, js, je, ng,  km, j
   integer, intent(in):: iad      ! time step scheme 
@@ -509,28 +506,29 @@ CONTAINS
                                  ! 2: top sponge layer is hydrostatic
   real,    intent(in):: bdt, cp, gama, cappa
   real,    intent(in), dimension(is:ie,km):: dm2, pm2
-  logical, intent(in):: quick_p       ! fast algorithm for pressure
-  logical, intent(in):: c_core
+  logical, intent(in):: first_call
   real, intent(in  ) :: pt (is-ng:ie+ng,js-ng:je+ng,km)
+  real, intent(in  ) :: pe2(is:ie,km+1)
 ! IN/OUT:
+  real, intent(inout):: den2(is:ie,km)
   real, intent(inout):: dz2(is:ie,km)
-  real, intent(inout)::   w(is-ng:ie+ng,js-ng:je+ng,km)
+  real, intent(inout)::  w2(is:ie,km)
   real, intent(out  )::  p3(is-ng:ie+ng,js-ng:je+ng,km+1)
 ! --- Local 1D copyies -----
-#ifdef USE_2D
-  real, dimension(km,is:ie):: t2, p2, pt2
-#else
-  real, dimension(km):: c2, p2, pt2
-#endif
-  real, dimension(km):: r_p, r_n, rden, dz, dm, wm, dts, pdt
+  real, dimension(km):: c2, p2, pt2, r_n, rden, dz, wm
+!-------------------------------------
+! Halo into the ground:
+  real, dimension(km+km+1):: r_p, dm, dts
+!-------------------------------------
   real, dimension(km+1):: m_bot, m_top, r_bot, r_top, time_left, pe1, pbar, wbar
-
-  real, parameter:: dzmx = 0.5*dz_max
-  real    :: dt, rdt, grg, z_frac, t_left
-  real    :: a1, b1, g2, rcp
+  real, parameter:: dzmx = -5.0
+  real    :: dt, rdt, grg, z_frac, ptmp1, den
+  real    :: rcp
   real    :: seq(ns)       ! time stepping sequence
+  real, parameter:: p_fac = 0.9
+  real:: pm_fac
   integer :: k2(km+1)
-  integer :: i, k, n, ke, kt, k0, k1, k3
+  integer :: i, k, n, ke, kt, k0, k1, k3, kmax
 
   call time_sequence( iad, ns, bdt, seq )
 
@@ -538,22 +536,11 @@ CONTAINS
   rcp = 1. / cp
   rdt = 1. / bdt
 
-  if ( quick_p ) then
-       a1 = 0.5               ! a1=1 fully implicit
-       b1 = 1. - a1
-       g2 = -2.*gama
-  endif
+  r_n(:) = 1.E40
+   dm(:) = 1.E40
+  r_p(:) = 1.E40
+  dts(:) = 1.E40
 
-#ifdef USE_2D
-  do i=is,ie
-     do k=ktop,km
-        rden(k) = -rdgas*dm2(i,k)/dz2(i,k)
-        pt2(k,i) = pt(i,j,k) * rcp
-         p2(k,i) = ( rden(k)*pt2(k,i) )**gama
-         t2(k,i) = p2(k,i) / rden(k)
-     enddo
-  enddo
-#endif
 
   do k=1,km+1
      wbar(k) = 0.
@@ -563,41 +550,57 @@ CONTAINS
  do 6000 i=is,ie
 
     do k=ktop,km
-#ifdef USE_2D
        dz(k) = dz2(i,k)
        dm(k) = dm2(i,k)
-       wm(k) = w(i,j,k)*dm(k)
-#else
-       dz(k) = dz2(i,k)
-       dm(k) = dm2(i,k)
-       wm(k) = w(i,j,k)*dm(k)
+       wm(k) = w2(i,k)*dm(k)
        rden(k) = -rdgas*dm(k)/dz(k)
        pt2(k) = pt(i,j,k) * rcp   ! virtual effect is included in pt
 !      p2(k) = ( rden(k)*pt2(k) )**gama
-       p2(k) = exp( gama*log(rden(k)*pt2(k)) )
+       p2(k) = exp( gama*log(rden(k)*pt2(k)) )      ! full pressure
        c2(k) = sqrt( grg*p2(k)/rden(k) )
-#endif
     enddo
+! Initialize "density"
+    if ( kd3 > near0 .and. first_call ) then
+         do k=ktop,km
+            den2(i,k) = -dm(k)/dz(k)
+         enddo
+    endif
 
     do k=1,km+1
        pe1(k) = 0.
     enddo
 
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! extend dm into the ground
+    kmax = 2*km + 1
+    do k=km+1, km+km
+       dm(k) = dm(kmax-k)
+    enddo
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
  do 5000 n=1,ns
 
    dt = seq(n)
+   pm_fac = -p_fac*dt
 
-   do k=ktop,km
-#ifdef USE_2D
-       dts(k) = -dz(k)/(sqrt(grg*t2(k,i)))
-       pdt(k) = dts(k)*(p2(k,i)-pm2(i,k))
-#else
-       dts(k) = -dz(k) / c2(k)
-       pdt(k) = dts(k)*(p2(k)-pm2(i,k))
-#endif
-       r_p(k) = wm(k) + pdt(k)
-       r_n(k) = wm(k) - pdt(k)
-   enddo
+   if ( kd3 > near0 ) then
+! Apply time filter to p_prime !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      do k=ktop,km
+         dts(k) = -dz(k) / c2(k)
+         den = -dm(k)/dz(k)
+         ptmp1 = dts(k) * ( p2(k) - pm2(i,k) + damp3*(den2(i,k)-den) )
+         den2(i,k) = den     !  save current density
+         r_p(k) = wm(k) + ptmp1
+         r_n(k) = wm(k) - ptmp1
+      enddo
+   else
+      do k=ktop,km
+         dts(k) = -dz(k) / c2(k)
+         ptmp1 = dts(k)*(p2(k)-pm2(i,k))
+         r_p(k) = wm(k) + ptmp1
+         r_n(k) = wm(k) - ptmp1
+      enddo
+   endif
 
 !--------------------------------------------------
 ! Compute r_top from bottom up: dm/dt > 0
@@ -614,7 +617,8 @@ CONTAINS
      do k=kt,ktop,-1
         z_frac = time_left(ke)/dts(k)
         if ( z_frac <= 1. ) then
-            if ( (ke-k) > 2 ) then
+            if ( k < ke-2 ) then ! original
+!           if ( k < ke-1 ) then
                k1 = ke-1
                k2(k1) = k
                m_top(k1) = m_top(ke) - dm(k1)
@@ -623,7 +627,7 @@ CONTAINS
             endif
             m_top(ke) = m_top(ke) + z_frac*dm(k)
             r_top(ke) = r_top(ke) + z_frac*r_n(k)
-            go to 444
+            go to 444     ! All done, next level
         else
             time_left(ke) = time_left(ke) - dts(k)
             m_top(ke) = m_top(ke) + dm(k)
@@ -632,6 +636,7 @@ CONTAINS
      enddo
 ! wave from ke already left the top
      if ( ke == ktop+1 ) exit
+! Finish all interfaces above ke
      do k=ke-1,ktop+1,-1
         m_top(k) = m_top(k+1) - dm(k)
         r_top(k) = r_top(k+1) - r_n(k)
@@ -642,6 +647,7 @@ CONTAINS
 !--------------------------------------------------
 ! Compute r_bot from top down: dm/dt < 0
 !----------------------------------------------------
+
    do k=ktop,km
         k2(k) = k
      m_bot(k) = 0.
@@ -649,121 +655,80 @@ CONTAINS
     time_left(k) = dt
    enddo
 
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! Extend r_p into the ground
+    do k=km+1, km+km
+       kt = kmax - k       !   [km,1,-1]
+       r_p(k) = -r_n(kt)   ! w changes sign
+       dts(k) =  dts(kt)
+    enddo
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
   do 4000 ke=ktop,km
         kt = k2(ke)
-     do k=kt,km
+     do k=kt,km+km
         z_frac = time_left(ke)/dts(k)
         if ( z_frac <= 1. ) then
-             if ( (k-ke)>1 ) then
+!            partial volume
+             if ( k > ke+1 ) then
                 time_left(ke+1) = time_left(ke) + dts(ke)
                 m_bot(ke+1) =  m_bot(ke) - dm(ke)
                 r_bot(ke+1) =  r_bot(ke) - r_p(ke)
                 k2(ke+1) = k
              endif
-                m_bot(ke) = m_bot(ke) + z_frac*dm(k)
-                r_bot(ke) = r_bot(ke) + z_frac*r_p(k)
-             if( ke==km ) go to 7777      ! All done
+             m_bot(ke) = m_bot(ke) + z_frac*dm(k)
+             r_bot(ke) = r_bot(ke) + z_frac*r_p(k)
              go to 4000      ! to next interface
+!            exit
         else 
+!            whole volume
              time_left(ke) = time_left(ke) - dts(k)
-             m_bot(ke) =  m_bot(ke) + dm(k)
-             r_bot(ke) =  r_bot(ke) + r_p(k)
+                 m_bot(ke) = m_bot(ke) + dm(k)
+                 r_bot(ke) = r_bot(ke) + r_p(k)
         endif
      enddo
-!----------------------------------------
-! Ray from edge-ke already hit the ground.
-!----------------------------------------
-     k3 = ke
-     t_left = time_left(ke)
-     exit
 4000 continue
 
-
-!---------------------------------
-! Perfect reflection at the bottom
-!---------------------------------
-   k1 = km
-   do kt=k3,km
-     k0 = k1
-     do k=k0,ktop,-1
-        z_frac = t_left/dts(k)
-        if ( z_frac <= 1. ) then
-!-- next interface -------------------------------------
-!          if ( kt /= km ) then
-                    k1 = k
-                 t_left = t_left + dts(kt)
-                 m_bot(kt+1) = m_bot(kt) - dm(kt)
-                 r_bot(kt+1) = r_bot(kt) - r_p(kt)
-!          endif
-!-------------------------------------------------------
-           m_bot(kt) = m_bot(kt) + z_frac*dm(k)
-           r_bot(kt) = r_bot(kt) - z_frac*r_n(k)
-           exit            ! goto next interface
-        else 
-           m_bot(kt) = m_bot(kt) + dm(k)
-           r_bot(kt) = r_bot(kt) - r_n(k)
-              t_left = t_left - dts(k)
-        endif
-     enddo
-   enddo
-
-7777  continue
-
+! Top BC:
   pbar(ktop) = 0.
   wbar(ktop) = r_bot(ktop) / m_bot(ktop)
   do k=ktop+1,km
      wbar(k) = (r_bot(k)+r_top(k)) / (m_top(k)+m_bot(k))
-     pbar(k) =  m_top(k)*wbar(k) - r_top(k)
   enddo
-  pbar(km+1) = -r_top(km+1)
-! wbar(km+1) = 0.
+!---------------------------------------
+! Apply limiter to wbar from bot to top
+!---------------------------------------
+  do k=km,ktop+1,-1
+     wbar(k) = max( wbar(k), (dz(k)-dzmx)/dt + wbar(k+1) )
+  enddo
 
-   do k=ktop+1,km+1
+! Bot BC:
+! wbar(km+1) = 0.
+! pbar(km+1) = -r_top(km+1)
+  do k=ktop+1,km+1
+     pbar(k) =  m_top(k)*wbar(k) - r_top(k)
+!-- pbar limiter: total p > 0 --------------
+     pbar(k) =  max( pbar(k), pm_fac*pe2(i,k) )
+! pbar limiter: ----------------------------
       pe1(k) = pe1(k) + pbar(k)
-   enddo
+  enddo
 
    if ( n==ns ) then
-      if ( c_core ) then
-          do k=ktop,km
-             dz2(i,k) = min(dzmx, dz(k) + dt*(wbar(k+1)-wbar(k)) )
-          enddo
-      else
-          do k=ktop,km
-             dz2(i,k) = min(dzmx, dz(k) + dt*(wbar(k+1)-wbar(k)) )
-             w(i,j,k) = ( wm(k) + pbar(k+1) - pbar(k) ) / dm(k)
-          enddo
-      endif
-   else
-     if ( quick_p ) then
         do k=ktop,km
-           wm(k) = wm(k) + pbar(k+1) - pbar(k)
-           rden(k) = dt*(wbar(k+1)-wbar(k))   ! dz tendency
-           pdt(k) = dz(k)                     ! old dz
-           dz(k) = dz(k) + rden(k)            ! updated dz
-           pdt(k) = g2*rden(k) / (pdt(k)+dz(k))
-#ifdef USE_2D
-           p2(k,i) = max(0., p2(k,i)*(1.+b1*pdt(k))/(1.-a1*pdt(k)))
-           t2(k,i) = -p2(k,i)*dz(k)/(rdgas*dm(k))
-#else
-           p2(k) = max(0., p2(k)*(1.+b1*pdt(k))/(1.-a1*pdt(k)))
-           c2(k) = sqrt( -gama*p2(k)*dz(k)/dm(k) )
-#endif
+           dz2(i,k) = dz(k) + dt*(wbar(k+1)-wbar(k))
+           w2(i,k) = ( wm(k) + pbar(k+1) - pbar(k) ) / dm(k)
         enddo
-      else
+   else
         do k=ktop,km
            wm(k) = wm(k) + pbar(k+1) - pbar(k)
-           dz(k) = min(dzmx, dz(k) + dt*(wbar(k+1)-wbar(k)) )
+           dz(k) = dz(k) + dt*(wbar(k+1)-wbar(k))
            rden(k) = -rdgas*dm(k)/dz(k)
-#ifdef USE_2D
-           p2(k,i) = (rden(k)*pt2(k,i))**gama
-           t2(k,i) = p2(k,i)/rden(k)
-#else
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !          p2(k) = (rden(k)*pt2(k))**gama
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
            p2(k) = exp( gama*log(rden(k)*pt2(k)) )
            c2(k) = sqrt( grg*p2(k)/rden(k) )
-#endif
         enddo
-      endif
    endif
 
 5000  continue
@@ -773,7 +738,6 @@ CONTAINS
 ! used for computation of p-gradient
 ! Could use cell center full pressure at time-level-(n+1)
 !---------------------------------------------------------------------
-!        p3(i,j,1:ktop) = 0.
       do k=1,ktop
          p3(i,j,k) = 0.
       enddo
@@ -784,6 +748,7 @@ CONTAINS
 6000  continue
 
  end subroutine Riem_3D
+
 
  subroutine time_sequence ( iad, ns, bdt, tseq )
  integer, intent(in) :: iad, ns
@@ -966,7 +931,6 @@ CONTAINS
 
  end subroutine edge_profile
 
-
  subroutine top_edge(p, qe, is, ie, js, je, km)
 ! Constant grid spacing:
   integer, intent(in) :: is, ie, js, je, km
@@ -1005,90 +969,5 @@ CONTAINS
   enddo
 
  end subroutine top_edge
-
- subroutine fix_dz(is, ie, js, je, km, ng, dz)
-   integer,  intent(in):: is, ie, km
-   integer,  intent(in):: js, je, ng
-   real,  intent(inout):: dz(is:ie, js-ng:je+ng,km)
-   integer i, j, k
-   logical modified
-
-   modified = .false.
-
-!$omp parallel do default(shared) private(i, j, k)
-   do j=js,je
-      do k=km,k_top+1,-1
-         do i=is,ie
-            if( dz(i,j,k) > dz_max ) then
-                dz(i,j,k-1) = dz(i,j,k-1) + dz(i,j,k) - dz_max
-                dz(i,j,k  ) = dz_max
-!               modified = .true.
-            endif
-         enddo
-      enddo
-! Top layer
-      do i=is,ie
-         if( dz(i,j,k_top) > dz_max ) then
-             dz(i,j,k_top+1) = dz(i,j,k_top+1) + dz(i,j,k_top) - dz_max
-             dz(i,j,k_top) = dz_max
-!            modified = .true.
-         endif
-      enddo
-   enddo
-
-#ifdef NH_DEBUG
-   if ( modified) write(*,*) 'DZ modified'
-#endif
-
-end subroutine fix_dz
-!-----------------------------------------------------------------------
-
-#ifdef DEEP_ATM
-  subroutine rotate_uvw(dt, im, jm, km, jfirst, jlast, ng_d, ng_s, g_d,  &
-                        ua, va, u, v, w, du)
-  integer, intent(in):: im, jm, km
-  integer, intent(in):: ng_d, ng_s
-  integer, intent(in):: jfirst       ! first latitude of the subdomain
-  integer, intent(in):: jlast        ! last latitude of the subdomain
-  real, intent(in)::  dt
-  real, intent(in)::  g_d(im,jfirst:jlast)
-
-  real, intent(inout):: ua(im,jfirst:jlast,km)  ! a-grid u-Wind (m/s)
-  real, intent(inout):: va(im,jfirst:jlast,km)  ! a-grid v-Wind (m/s)
-  real, intent(inout)::  u(im,jfirst-ng_d:jlast+ng_s,km)  ! u-Wind (m/s)
-  real, intent(inout)::  v(im,jfirst-ng_d:jlast+ng_d,km)  ! v-Wind (m/s)
-  real, intent(inout)::  w(im,jfirst-ng_d:jlast+ng_d,km)  ! w-Wind (m/s)
-  real, intent(out):: du(im,jfirst-1:jlast,km)
-
-! Local:
-  real wo(0:im)
-  integer i,j,k
-  
-!-------------------------
-! Fully explicit algorithm
-!-------------------------
-! Need to add mean height to radius!!
-  do k=1,km
-     do j=js,je+1
-        do i=is,ie
-!  A grid tendency:
-           du(i,j,k) = -dt*w(i,j,k)*( g_d(i,j) + ua(i,j,k)/(radius+mz(i,j,k)) )
-        enddo
-     enddo
-     do j=js,je
-        do i=is,ie+1
-           v(i,j,k) = v(i,j,k) * ( 1. - 0.5*dt*(wo(i-1)+wo(i))/radius ) 
-        enddo
-     enddo
-     do j=js,je
-        do i=is,ie
-           w(i,j,k) = wo(i) + dt * ( g_d(i,j)*ua(i,j,k) +    &
-                             (ua(i,j,k)**2+va(i,j,k)**2)/radius )
-        enddo
-     enddo
-  enddo
-
-  end subroutine rotate_uvw
-#endif
 
 end module nh_core_mod

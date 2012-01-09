@@ -45,14 +45,14 @@ module fv_io_mod
                                      set_tracer_profile, &
                                      get_tracer_index
   use field_manager_mod,       only: MODEL_ATMOS  
-  use external_sst_mod,        only: sst_ncep, sst_anom
+  use external_sst_mod,        only: sst_ncep, sst_anom, use_ncep_sst
   use fv_arrays_mod,           only: fv_atmos_type
 
   implicit none
   private
 
   public :: fv_io_init, fv_io_exit, fv_io_read_restart, remap_restart, fv_io_write_restart
-  public :: fv_io_read_tracers, fv_io_register_restart
+  public :: fv_io_read_tracers, fv_io_register_restart, fv_io_register_nudge_restart
 
   logical                       :: module_is_initialized = .FALSE.
 
@@ -66,9 +66,9 @@ module fv_io_mod
   type(restart_file_type), allocatable :: Tra_restart(:)
 
 
-  !--- version information variables ----
-  character(len=128) :: version = '$Id: fv_io.F90,v 17.0.2.6.2.1.2.1 2009/11/17 19:27:13 pjp Exp $'
-  character(len=128) :: tagname = '$Name: riga_201104 $'
+!---- version number -----
+  character(len=128) :: version = '$Id: fv_io.F90,v 19.0 2012/01/06 19:59:09 fms Exp $'
+  character(len=128) :: tagname = '$Name: siena $'
 
 contains 
 
@@ -130,15 +130,17 @@ contains
        if (field_exist(fname_nd,'sst_anom')) then
            call read_data(fname_nd, 'sst_anom', sst_anom)
        else
-           sst_anom(:,:) = 1.E8   ! make it big enough to cause blowup if used
+           sst_anom(:,:) = 1.E35   ! make it big enough to cause blowup if used
        endif
+    elseif ( use_ncep_sst .and. (.not. Atm(1)%nudge) ) then
+       call mpp_error(FATAL,'==> Error:'//trim(fname_nd)//' does not exist')
     endif
  
     fname_nd = 'INPUT/fv_core.res.nc'
   ! write_data does not (yet?) support vector data and tiles
     call read_data(fname_nd, 'ak', Atm(1)%ak(:))
     call read_data(fname_nd, 'bk', Atm(1)%bk(:))
-    call set_domain(fv_domain) 
+    call set_domain(fv_domain)
    
     do n = 1, ntileMe
        isc = Atm(n)%isc; iec = Atm(n)%iec; jsc = Atm(n)%jsc; jec = Atm(n)%jec
@@ -146,17 +148,6 @@ contains
        if(file_exist(fname))then
          call read_data(fname, 'u', Atm(n)%u(isc:iec,jsc:jec+1,:), domain=fv_domain, position=NORTH,tile_count=n)
          call read_data(fname, 'v', Atm(n)%v(isc:iec+1,jsc:jec,:), domain=fv_domain, position=EAST,tile_count=n)
-
-       if ( Atm(n)%no_cgrid ) then
-         if ( Atm(n)%init_wind_m ) then
-             call mpp_error(NOTE,'==> note from fv_read_restart: (um,vm) initialized from current time step')
-             Atm(n)%um(:,:,:) = Atm(n)%u(:,:,:)
-             Atm(n)%vm(:,:,:) = Atm(n)%v(:,:,:)
-         else
-         call read_data(fname, 'um', Atm(n)%um(isc:iec,jsc:jec+1,:), domain=fv_domain, position=NORTH,tile_count=n)
-         call read_data(fname, 'vm', Atm(n)%vm(isc:iec+1,jsc:jec,:), domain=fv_domain, position=EAST,tile_count=n)
-         endif
-       endif
 
          if ( (.not.Atm(n)%hydrostatic) .and. (.not.Atm(n)%make_nh) ) then
               call read_data(fname, 'W',     Atm(n)%w(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
@@ -247,8 +238,8 @@ contains
 
 !   call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
     ntracers = size(Atm(1)%q,4)  ! Temporary until we get tracer manager integrated
+    call set_domain(fv_domain)
 
-    call set_domain(fv_domain) 
 ! skip the first tracer, which is sphum
     do n = 1, ntileMe
        isc = Atm(n)%isc; iec = Atm(n)%iec; jsc = Atm(n)%jsc; jec = Atm(n)%jec
@@ -269,7 +260,7 @@ contains
            call mpp_error(NOTE,'==>  Setting tracer '//trim(tracer_name)//' from set_tracer')
          ENDDO
     end do
-    
+
     call nullify_domain()
     deallocate(tile_id)
 
@@ -336,7 +327,7 @@ contains
   ! write_data does not (yet?) support vector data and tiles
     call read_data(fname_nd, 'ak', ak_r(1:npz_rst+1))
     call read_data(fname_nd, 'bk', bk_r(1:npz_rst+1))
-    call set_domain(fv_domain) 
+    call set_domain(fv_domain)
 
     do n = 1, ntileMe
        call get_tile_string(fname, 'INPUT/fv_core.res.tile', tile_id(n), '.nc' )
@@ -430,6 +421,27 @@ contains
   end subroutine  remap_restart
 
 
+  !#####################################################################
+  ! <SUBROUTINE NAME="fv_io_register_nudge_restart">
+  !
+  ! <DESCRIPTION>
+  !   register restart nudge field to be written out to restart file. 
+  ! </DESCRIPTION>
+  subroutine  fv_io_register_nudge_restart(Atm)
+    type(fv_atmos_type), intent(in) :: Atm(:)
+    character(len=64) :: fname_nd
+    integer           :: id_restart
+
+! use_ncep_sst may not be initialized at this point?
+    if ( use_ncep_sst .or. Atm(1)%nudge .or. Atm(1)%ncep_ic ) then
+       fname_nd = 'sst_ncep.res.nc'
+       id_restart = register_restart_field(SST_restart, fname_nd, 'sst_ncep', sst_ncep)
+       id_restart = register_restart_field(SST_restart, fname_nd, 'sst_anom', sst_anom)
+    endif
+
+  end subroutine  fv_io_register_nudge_restart
+  ! </SUBROUTINE> NAME="fv_io_register_nudge_restart"
+
 
   !#####################################################################
   ! <SUBROUTINE NAME="fv_io_register_restart">
@@ -455,8 +467,8 @@ contains
     allocate(Fv_tile_restart(ntileMe), Rsf_restart(ntileMe) )
     allocate(Mg_restart(ntileMe), Lnd_restart(ntileMe), Tra_restart(ntileMe) )
 
-
 ! fix for single tile runs where you need fv_core.res.nc and fv_core.res.tile1.nc
+    fname_nd = 'fv_core.res.nc'
     ntiles = mpp_get_ntile_count(fv_domain)
     if(ntiles == 1) fname_nd =  'fv_core.res.tile1.nc'
 
@@ -510,13 +522,6 @@ contains
 
     enddo
 
-! sst_ncep and sst_anom may be used in free-running forecast mode
-    if ( Atm(1)%nudge .or. Atm(1)%ncep_ic ) then
-       fname_nd = 'sst_ncep.res.nc'
-       id_restart = register_restart_field(SST_restart, fname_nd, 'sst_ncep', sst_ncep)
-       id_restart = register_restart_field(SST_restart, fname_nd, 'sst_anom', sst_anom)
-    endif
-
   end subroutine  fv_io_register_restart
   ! </SUBROUTINE> NAME="fv_io_register_restart"
 
@@ -537,7 +542,7 @@ contains
 
     call save_restart(Fv_restart, timestamp)
 
-    if ( Atm(1)%nudge .or. Atm(1)%ncep_ic ) then
+    if ( use_ncep_sst .or. Atm(1)%nudge .or. Atm(1)%ncep_ic ) then
        call save_restart(SST_restart, timestamp)
     endif
  

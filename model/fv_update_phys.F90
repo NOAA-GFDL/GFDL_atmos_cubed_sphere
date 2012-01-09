@@ -2,7 +2,7 @@ module fv_update_phys_mod
 
   use constants_mod,      only: kappa, rdgas, rvgas, grav, cp_air, pi
   use field_manager_mod,  only: MODEL_ATMOS
-  use mpp_domains_mod,    only: mpp_update_domains
+  use mpp_domains_mod,    only: mpp_update_domains, mpp_start_update_domains, mpp_complete_update_domains
   use mpp_parameter_mod,  only: AGRID_PARAM=>AGRID
   use mpp_mod,            only: FATAL, mpp_error
   use time_manager_mod,   only: time_type
@@ -11,17 +11,19 @@ module fv_update_phys_mod
   use fv_arrays_mod,      only: fv_atmos_type
   use fv_control_mod,     only: npx, npy, npz, ncnst, k_top, nwat, fv_debug, &
                                 tau_h2o, phys_hydrostatic, dwind_2d, filter_phys
-  use fv_mp_mod,          only: domain, gid
+  use fv_mp_mod,          only: domain, gid, square_domain
   use fv_eta_mod,         only: get_eta_level
   use fv_grid_utils_mod,  only: edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e, &
                                 es, ew, vlon, vlat, z11, z12, z21, z22, &
-                                sina_u, sina_v, da_min
+                                sina_u, sina_v, da_min, sin_sg
   use fv_grid_tools_mod,  only: dx, dy, rdxc, rdyc, rarea, dxa, dya, grid_type
   use fv_timing_mod,      only: timing_on, timing_off
   use fv_diagnostics_mod, only: prt_maxmin
 
-#ifdef CLIMATE_NUDGE
+#if defined (ATMOS_NUDGE)
   use atmos_nudge_mod,    only: get_atmos_nudge, do_ps
+#elif defined (CLIMATE_NUDGE)
+  use fv_climate_nudge_mod, only: fv_climate_nudge, do_ps
 #else
   use fv_nwp_nudge_mod,   only: fv_nwp_nudge
 #endif
@@ -30,12 +32,17 @@ module fv_update_phys_mod
 
   public :: fv_update_phys, del2_phys
 
+!---- version number -----
+  character(len=128) :: version = '$Id: fv_update_phys.F90,v 19.0 2012/01/06 19:57:50 fms Exp $'
+  character(len=128) :: tagname = '$Name: siena $'
+
   contains
 
   subroutine fv_update_phys ( dt, is, ie, js, je, isd, ied, jsd, jed, ng, nq,     &
                               u, v, delp, pt, q, ua, va, ps, pe,  peln, pk, pkz,  &
                               ak, bk, phis, u_srf, v_srf, ts, delz, hydrostatic,  &
-                              u_dt, v_dt, t_dt, q_dt, moist_phys, Time, nudge )
+                              u_dt, v_dt, t_dt, q_dt, moist_phys, Time, nudge,    &
+                              lona, lata)
     real, intent(in)   :: dt
     integer, intent(in):: is,  ie,  js,  je, ng
     integer, intent(in):: isd, ied, jsd, jed
@@ -43,13 +50,17 @@ module fv_update_phys_mod
                                         ! ncnst is the total nmber of tracers
     logical, intent(in):: moist_phys
     logical, intent(in):: hydrostatic
-    logical, optional, intent(in):: nudge
+    logical, intent(in):: nudge
 
     type (time_type), intent(in) :: Time
 
     real, intent(in), dimension(npz+1):: ak, bk
     real, intent(in) :: phis(isd:ied,jsd:jed)
     real, intent(inout):: delz(is:ie,js:je,npz)
+
+! optional arguments for atmospheric nudging
+    real, intent(in), dimension(isd:ied,jsd:jed), optional ::   &
+                                lona, lata   ! A-grid (physics) lon and lat
 
 ! Winds on lat-lon grid:
     real, intent(inout), dimension(isd:ied,jsd:jed,npz):: ua, va
@@ -78,9 +89,9 @@ module fv_update_phys_mod
     real, intent(inout):: peln(is:ie,npz+1,js:je)           ! ln(pe)
     real, intent(inout):: pkz (is:ie,js:je,npz)             ! finite-volume mean pk
 
-!**********
-! Halo Data
-!**********
+!***********
+! Haloe Data
+!***********
     real, parameter::    q1_h2o = 2.2E-6
     real, parameter::    q7_h2o = 3.8E-6
     real, parameter::  q100_h2o = 3.8E-6
@@ -92,10 +103,23 @@ module fv_update_phys_mod
     real  ps_dt(is:ie,js:je)
     real  phalf(npz+1), pfull(npz)
 
+    integer:: i_pack(2)
     integer  i, j, k, m
     integer  sphum, liq_wat, ice_wat, cld_amt   ! GFDL AM physics
     integer  rainwat, snowwat, graupel          ! Lin Micro-physics
-    real     qstar, dbk, rdg, gama_dt, zvir
+    real     qstar, dbk, rdg, gama_dt, zvir, p_fac
+
+    if ( (.not.nudge) .and. (.not.dwind_2d) ) then
+                                                                 call timing_on('COMM_TOTAL')
+        if ( square_domain ) then
+             i_pack(1) = mpp_start_update_domains(u_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.false.)
+             i_pack(1) = mpp_start_update_domains(v_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
+        else
+             i_pack(1) = mpp_start_update_domains(u_dt, domain, complete=.false.)
+             i_pack(1) = mpp_start_update_domains(v_dt, domain, complete=.true.)
+        endif
+                                                                call timing_off('COMM_TOTAL')
+    endif
 
     if ( filter_phys ) then
          call del2_phys(t_dt, delp, 0.2, npx, npy, npz, is, ie, js, je, &
@@ -109,56 +133,6 @@ module fv_update_phys_mod
     rdg = -rdgas / grav
     gama_dt = dt * cp_air / (cp_air-rdgas)
 
-#if defined(MARS_GCM) || defined(VENUS_GCM)
-!$omp parallel do default(shared) private(i, j, k, m, qstar, ps_dt)
-    do k=1, npz
-       do j=js,je
-          do i=is,ie
-             ua(i,j,k) = ua(i,j,k) + dt*u_dt(i,j,k)
-             va(i,j,k) = va(i,j,k) + dt*v_dt(i,j,k)
-          enddo
-       enddo
-
-       if ( hydrostatic ) then
-          do j=js,je
-             do i=is,ie
-                pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k)
-             enddo
-          enddo
-       else
-         if ( phys_hydrostatic ) then
-! Heating/cooling from physics is assumed to be isobaric hydrostatic proc
-! "nagative" definiteness of delz is maintained.
-             do j=js,je
-                do i=is,ie
-                   delz(i,j,k) = delz(i,j,k) / pt(i,j,k)
-               pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k)
-                   delz(i,j,k) = delz(i,j,k) * pt(i,j,k)
-                enddo
-             enddo
-         else
-! Convert tendency from constant-p to constant-volume
-             do j=js,je
-                do i=is,ie
-                   pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*gama_dt
-                enddo
-             enddo
-         endif
-       endif
-
-!----------------
-! Update tracers:
-!----------------
-       do m=1,nq
-          do j=js,je
-             do i=is,ie
-                q(i,j,k,m) = q(i,j,k,m) + dt*q_dt(i,j,k,m)
-             enddo
-          enddo
-       enddo
-    enddo  ! openmp k-loop
-
-#else
     sphum   = 1
 
     if ( moist_phys ) then
@@ -184,7 +158,7 @@ module fv_update_phys_mod
     endif
 
     if ( fv_debug ) then
-       if ( gid==0 ) write(*,*) nq, nwat, sphum, liq_wat, ice_wat, rainwat, snowwat, graupel
+!      if ( gid==0 ) write(*,*) nq, nwat, sphum, liq_wat, ice_wat, rainwat, snowwat, graupel
        call prt_maxmin('delp_b_update', delp, is, ie, js,  je, ng, npz, 0.01, gid==0)
        do m=1,nq
           call prt_maxmin('q_dt', q_dt(is,js,1,m), is, ie, js, je, 0, npz, 1., gid==0)
@@ -193,7 +167,7 @@ module fv_update_phys_mod
 
     call get_eta_level(npz, 1.0E5, pfull, phalf, ak, bk)
 
-!$omp parallel do default(shared) private(i, j, k, m, qstar, ps_dt)
+!$omp parallel do default(shared) private(qstar, ps_dt)
     do k=1, npz
 
 ! Do idealized Ch4 chemistry
@@ -201,21 +175,27 @@ module fv_update_phys_mod
 
            if ( pfull(k) < 1. ) then
                qstar = q1_h2o
+               p_fac = 0.2 * tau_h2o*86400.
            elseif ( pfull(k) <   7. .and. pfull(k) >=    1. ) then
                qstar = q1_h2o + (q7_h2o-q1_h2o)*log(pfull(k)/1.)/log(7.)
+               p_fac = 0.3 * tau_h2o*86400.
            elseif ( pfull(k) <  100. .and. pfull(k) >=    7. ) then
                qstar = q7_h2o + (q100_h2o-q7_h2o)*log(pfull(k)/7.)/log(100./7.)
+               p_fac = 0.4 * tau_h2o*86400.
            elseif ( pfull(k) < 1000. .and. pfull(k) >=  100. ) then
                qstar = q100_h2o + (q1000_h2o-q100_h2o)*log(pfull(k)/1.E2)/log(10.)
+               p_fac = 0.5 * tau_h2o*86400.
            elseif ( pfull(k) < 2000. .and. pfull(k) >= 1000. ) then
                qstar = q1000_h2o + (q2000_h2o-q1000_h2o)*log(pfull(k)/1.E3)/log(2.)
+               p_fac = 0.75 * tau_h2o*86400.
            else
                qstar = q3000_h2o
+               p_fac = tau_h2o*86400.
            endif
 
            do j=js,je
               do i=is,ie
-                 q_dt(i,j,k,sphum) = q_dt(i,j,k,sphum) + (qstar-q(i,j,k,sphum))/(tau_h2o*86400.)
+                 q_dt(i,j,k,sphum) = q_dt(i,j,k,sphum) + (qstar-q(i,j,k,sphum))/p_fac
               enddo
            enddo
        endif
@@ -238,7 +218,7 @@ module fv_update_phys_mod
        else
          if ( phys_hydrostatic ) then
 ! Heating/cooling from physics is assumed to be isobaric hydrostatic proc
-! "nagative" definiteness of delz is maintained.
+! "negative" definiteness of delz is maintained.
              do j=js,je
                 do i=is,ie
                    delz(i,j,k) = delz(i,j,k) / pt(i,j,k)
@@ -319,33 +299,30 @@ module fv_update_phys_mod
           endif
         enddo
       endif
-   enddo ! openmp k-loop
-
-#endif ! Mars and Venus GCM
-
+   enddo ! k-loop
 ! [delp, (ua, va), pt, q] updated. Perform nudging if requested
 
 !------- nudging of atmospheric variables toward specified data --------
 
     ps_dt(:,:) = 0.
 
-    if (present(nudge)) then
-#ifdef CLIMATE_NUDGE
+    if ( nudge ) then
+#if defined (ATMOS_NUDGE)
 !--------------------------------------------
 ! All fields will be updated; tendencies added
 !--------------------------------------------
-      if (nudge) then
-        call get_atmos_nudge ( Time, dt, beglon, endlon, beglat, endlat,    &
-             npz, ng, ps(beglon:endlon,:), ua(beglon:endlon,:,:), &
-             va(beglon:endlon,:,:), pt(beglon:endlon,:,:), &
-             q(beglon:endlon,:,:,:), ps_dt(beglon:endlon,:), u_dt(beglon:endlon,:,:),  & 
-             v_dt(beglon:endlon,:,:), t_dt(beglon:endlon,:,:), &
-             q_dt(beglon:endlon,:,:,:) )
+        call get_atmos_nudge ( Time, dt, is, ie, js, je,    &
+             npz, ng, ps(is:ie,js:je), ua(is:ie, js:je,:), &
+             va(is:ie,js:je,:), pt(is:ie,js:je,:), &
+             q(is:ie,js:je,:,:), ps_dt(is:ie,js:je), u_dt(is:ie,js:je,:),  & 
+             v_dt(is:ie,js:je,:), t_dt(is:ie,js:je,:), &
+             q_dt(is:ie,js:je,:,:) )
 
-        if (do_ps) then
 !--------------
 ! Update delp
 !--------------
+        if (do_ps) then
+!$omp parallel do default(shared) private(dbk)
             do k=1,npz
                dbk = dt * (bk(k+1) - bk(k))
                do j=js,je
@@ -355,11 +332,35 @@ module fv_update_phys_mod
                enddo
             enddo
         endif
-      endif
+#elif defined (CLIMATE_NUDGE)
+!--------------------------------------------
+! All fields will be updated; tendencies added
+!--------------------------------------------
+        call fv_climate_nudge ( Time, dt, is, ie, js, je, npz, pfull,    &
+             lona(is:ie,js:je), lata(is:ie,js:je), phis(is:ie,js:je), ak,&
+             bk, ps(is:ie,js:je), ua(is:ie,js:je,:), va(is:ie,js:je,:), &
+             pt(is:ie,js:je,:), q(is:ie,js:je,:,sphum:sphum),   &
+             ps_dt(is:ie,js:je), u_dt(is:ie,js:je,:),  &
+             v_dt(is:ie,js:je,:), t_dt(is:ie,js:je,:), &
+             q_dt(is:ie,js:je,:,sphum:sphum) )
+
+!--------------
+! Update delp
+!--------------
+        if (do_ps) then
+!$omp parallel do default(shared) private(dbk)
+            do k=1,npz
+              dbk = dt * (bk(k+1) - bk(k))
+               do j=js,je
+                  do i=is,ie
+                     delp(i,j,k) = delp(i,j,k) + dbk*ps_dt(i,j)
+                   enddo
+               enddo
+            enddo
+        endif
 #else
 ! All fields will be updated except winds; wind tendencies added
-      if (nudge) then
-!$omp parallel do default(shared) private(i, j, k)
+!$omp parallel do default(shared) 
         do j=js,je
          do k=2,npz+1                                                                             
           do i=is,ie
@@ -372,9 +373,20 @@ module fv_update_phys_mod
         enddo
         call fv_nwp_nudge ( Time, dt, npz,  ps_dt, u_dt, v_dt, t_dt, q_dt,   &
                             zvir, ak, bk, ts, ps, delp, ua, va, pt, nwat, q,  phis )
-      endif
 #endif
-    endif
+
+        if ( .not.dwind_2d ) then
+                                                                 call timing_on('COMM_TOTAL')
+          if ( square_domain ) then
+             i_pack(1) = mpp_start_update_domains(u_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.false.)
+             i_pack(1) = mpp_start_update_domains(v_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
+          else
+             i_pack(1) = mpp_start_update_domains(u_dt, domain, complete=.false.)
+             i_pack(1) = mpp_start_update_domains(v_dt, domain, complete=.true.)
+          endif
+                                                                call timing_off('COMM_TOTAL')
+        endif
+  endif         ! end nudging       
 
 !----------------------------------------
 ! Update pe, peln, pkz, and surface winds
@@ -385,7 +397,7 @@ module fv_update_phys_mod
        call prt_maxmin('delp_a_update', delp, is, ie, js,  je, ng, npz, 0.01, gid==0)
   endif
 
-!$omp parallel do default(shared) private(i, j, k)
+!$omp parallel do default(shared)
    do j=js,je
       do k=2,npz+1                                                                             
          do i=is,ie
@@ -415,6 +427,7 @@ module fv_update_phys_mod
 !-------------------------------------------------------------------------
     if ( .not.hydrostatic ) then
       if ( k_top>1 ) then
+!$omp parallel do default(shared)
          do k=1,k_top-1
             do j=js,je
                do i=is,ie
@@ -425,6 +438,7 @@ module fv_update_phys_mod
          enddo
       endif
 
+!$omp parallel do default(shared)
       do k=k_top,npz
          do j=js,je
             do i=is,ie
@@ -440,6 +454,15 @@ module fv_update_phys_mod
   if ( dwind_2d ) then
     call update2d_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v)
   else
+    call timing_on('COMM_TOTAL')
+    if ( square_domain ) then
+       call mpp_complete_update_domains(i_pack(1), u_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.false.)
+       call mpp_complete_update_domains(i_pack(1), v_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
+    else
+       call mpp_complete_update_domains(i_pack(1), u_dt, domain, complete=.false.)
+       call mpp_complete_update_domains(i_pack(1), v_dt, domain, complete=.true.)
+    endif
+    call timing_off('COMM_TOTAL')
     call update_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v)
   endif
                                                     call timing_off(' Update_dwinds')
@@ -471,10 +494,13 @@ module fv_update_phys_mod
    damp = 0.25 * cd * da_min
 
 ! Mask defined at corners
+
+!$omp parallel do default(shared)
    do i=is,ie+1
       f1(i) = (1. - sin(real(i-1)/real(npx-1)*pi))**2
    enddo
 
+!$omp parallel do default(shared)
    do j=js,je+1
       f2(j) = (1. - sin(real(j-1)/real(npy-1)*pi))**2
       do i=is,ie+1
@@ -483,6 +509,8 @@ module fv_update_phys_mod
    enddo
 
 ! mass weighted tendency from physics is filtered
+
+!$omp parallel do default(shared)
    do k=1,km
       do j=js,je
          do i=is,ie
@@ -494,16 +522,34 @@ module fv_update_phys_mod
    call mpp_update_domains(q, domain, complete=.true.)
                      call timing_off('COMM_TOTAL')
 
+!$omp parallel do default(shared) private(fx, fy)
    do k=1,km
       do j=js,je
          do i=is,ie+1
-            fx(i,j) = (mask(i,j)+mask(i,j+1))*dy(i,j)*sina_u(i,j)*(q(i-1,j,k)-q(i,j,k))*rdxc(i,j)
+            fx(i,j) = &
+                 (mask(i,j)+mask(i,j+1))*dy(i,j)*sina_u(i,j)* &
+                 (q(i-1,j,k)-q(i,j,k))*rdxc(i,j)
          enddo
+         if (is == 1)   fx(i,j) = &
+              (mask(is,j)+mask(is,j+1))*dy(is,j)*(q(is-1,j,k)-q(is,j,k))*rdxc(is,j)* &
+            0.5*(sin_sg(1,j,1) + sin_sg(0,j,3))
+         if (ie+1==npx) fx(i,j) = &
+              (mask(ie+1,j)+mask(ie+1,j+1))*dy(ie+1,j)*(q(ie,j,k)-q(ie+1,j,k))*rdxc(ie+1,j)* & 
+            0.5*(sin_sg(npx,j,1) + sin_sg(npx-1,j,3))
       enddo
       do j=js,je+1
-         do i=is,ie
-            fy(i,j) = (mask(i,j)+mask(i+1,j))*dx(i,j)*sina_v(i,j)*(q(i,j-1,k)-q(i,j,k))*rdyc(i,j)
-         enddo
+         if (j == 1 .OR. j == npy) then
+            do i=is,ie
+               fy(i,j) = (mask(i,j)+mask(i+1,j))*dx(i,j)*&
+                    (q(i,j-1,k)-q(i,j,k))*rdyc(i,j) &
+                    *0.5*(sin_sg(i,j,2) + sin_sg(i,j-1,4) )
+            enddo
+         else
+            do i=is,ie
+               fy(i,j) = (mask(i,j)+mask(i+1,j))*dx(i,j)*sina_v(i,j)*&
+                    (q(i,j-1,k)-q(i,j,k))*rdyc(i,j)
+            enddo
+         end if
       enddo
       do j=js,je
          do i=is,ie
@@ -536,16 +582,11 @@ module fv_update_phys_mod
   integer i, j, k, m, im2, jm2
 
 
-       call timing_on('COMM_TOTAL')
-  call mpp_update_domains(u_dt, domain, complete=.false.)
-  call mpp_update_domains(v_dt, domain, complete=.true.)
-       call timing_off('COMM_TOTAL')
-
     dt5 = 0.5 * dt
     im2 = (npx-1)/2
     jm2 = (npy-1)/2
 
-!$omp parallel do default(shared) private(i, j, k, ut1, ut2, ut3, vt1, vt2, vt3, ue, ve, v3)
+!$omp parallel do default(shared) private(ut1, ut2, ut3, vt1, vt2, vt3, ue, ve, v3)
     do k=1, npz
 
      if ( grid_type > 3 ) then    ! Local & one tile configurations
@@ -705,7 +746,8 @@ module fv_update_phys_mod
   integer i, j, k
 
 ! Transform wind tendency on A grid to local "co-variant" components:
-!$omp parallel do private (i,j,k, ut)
+
+!$omp parallel do private (ut)
     do k=1,npz
        do j=js,je
           do i=is,ie
@@ -722,7 +764,7 @@ module fv_update_phys_mod
 
     dt5 = 0.5 * dt
 
-!$omp parallel do private (i,j,k, gratio)
+!$omp parallel do private (gratio)
     do k=1, npz
 
      if ( grid_type > 3 ) then    ! Local & one tile configurations
