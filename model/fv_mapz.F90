@@ -19,8 +19,8 @@ module fv_mapz_mod
          rst_remap, mappm, E_Flux
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_mapz.F90,v 19.0 2012/01/06 19:57:44 fms Exp $'
-  character(len=128) :: tagname = '$Name: siena $'
+  character(len=128) :: version = '$Id: fv_mapz.F90,v 19.0.2.1 2012/01/18 15:33:42 Rusty.Benson Exp $'
+  character(len=128) :: tagname = '$Name: siena_201202 $'
 
 contains
 
@@ -404,7 +404,7 @@ contains
                  deng(i,k) = pt(i,j,k)
               enddo
            enddo
-           call remap_z(km, ze1, deng, km, ze2, deng, is, ie, 2, abs(kord_tm))
+           call remap_z(km, ze1, deng, km, ze2, deng, is, ie, 1, abs(kord_tm))
            do k=1,km
               do i=is,ie
                  pt(i,j,k) = deng(i,k)
@@ -413,7 +413,7 @@ contains
        else
          call map1_ppm (km,  peln(is,1,j),  pt,    &
                         km,  pn2,           pt,    &
-                        is, ie, j, isd, ied, jsd, jed, 2, abs(kord_tm))
+                        is, ie, j, isd, ied, jsd, jed, 1, abs(kord_tm))
        endif
      else
 !----------------

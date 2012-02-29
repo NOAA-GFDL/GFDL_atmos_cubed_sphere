@@ -73,7 +73,7 @@ public  surf_diff_type, fv_physics_restart
 
 !---- version number -----
    character(len=128) :: version = '$Id: fv_physics.F90,v 19.0 2012/01/06 19:55:52 fms Exp $'
-   character(len=128) :: tagname = '$Name: siena $'
+   character(len=128) :: tagname = '$Name: siena_201202 $'
 
 contains
 
