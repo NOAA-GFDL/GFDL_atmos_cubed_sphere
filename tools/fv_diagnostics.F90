@@ -59,9 +59,10 @@ module fv_diagnostics_mod
             id_u500, id_v500, id_t500, id_q500, id_rh500, id_omg500, id_h500, &
             id_u700, id_v700, id_t700, id_q700, id_rh700, id_omg700, id_h700, &
             id_u850, id_v850, id_t850, id_q850, id_rh850, id_omg850, id_h850, &
+            id_u925, id_v925, id_t925, id_q925, id_rh925, id_omg925, id_h925, &
             id_u1000,id_v1000,id_t1000,id_q1000,id_rh1000,id_omg1000,id_h1000
- integer :: id_rh1000_cmip, id_rh850_cmip, id_rh700_cmip, id_rh500_cmip, &
-            id_rh300_cmip, id_rh250_cmip, id_rh100_cmip, id_rh50_cmip, id_rh10_cmip
+ integer :: id_rh1000_cmip, id_rh925_cmip, id_rh850_cmip, id_rh700_cmip, id_rh500_cmip, &
+             id_rh300_cmip, id_rh250_cmip, id_rh100_cmip,  id_rh50_cmip,  id_rh10_cmip
  integer :: id_hght
 
 #ifdef MARS_GCM
@@ -108,8 +109,8 @@ module fv_diagnostics_mod
  public :: id_zratio, id_ws, efx, efx_sum, mtq, mtq_sum, steps
 
 !---- version number -----
- character(len=128) :: version = '$Id: fv_diagnostics.F90,v 19.0 2012/01/06 19:59:03 fms Exp $'
- character(len=128) :: tagname = '$Name: siena_201203 $'
+ character(len=128) :: version = '$Id: fv_diagnostics.F90,v 19.0.2.2 2012/02/07 19:27:20 Rusty.Benson Exp $'
+ character(len=128) :: tagname = '$Name: siena_201204 $'
 
 contains
 
@@ -474,6 +475,11 @@ contains
       id_h850 = register_diag_field (trim(field), 'h850', axes(1:2),  Time,   &
                                      '850-mb hght', 'm', missing_value=missing_value )
 !--------------
+! 925 mb Height
+!--------------
+      id_h925 = register_diag_field (trim(field), 'h925', axes(1:2),  Time,   &
+                                     '925-mb hght', 'm', missing_value=missing_value )
+!--------------
 ! 1000 mb Height
 !--------------
       id_h1000= register_diag_field (trim(field), 'h1000', axes(1:2),  Time,   &
@@ -481,7 +487,8 @@ contains
 
       ! flag for calculation of geopotential
       if ( id_h10>0  .or. id_h50>0  .or. id_h100>0 .or. id_h200>0 .or. id_h250>0 .or. &
-           id_h300>0 .or. id_h500>0 .or. id_h700>0 .or. id_h850>0 .or. id_h1000>0 ) then
+           id_h300>0 .or. id_h500>0 .or. id_h700>0 .or. id_h850>0 .or. id_h925>0 .or. &
+           id_h1000>0 ) then
            id_hght = 1
       else
            id_hght = 0
@@ -687,6 +694,13 @@ contains
        id_w850 = register_diag_field ( trim(field), 'w850', axes(1:2), Time,       &
                            '850-mb w-wind', '1/s', missing_value=missing_value )
 !--------------------------
+! 925-mb winds:
+!--------------------------
+       id_u925 = register_diag_field ( trim(field), 'u925', axes(1:2), Time,       &
+                           '925-mb u-wind', '1/s', missing_value=missing_value )
+       id_v925 = register_diag_field ( trim(field), 'v925', axes(1:2), Time,       &
+                           '925-mb v-wind', '1/s', missing_value=missing_value )
+!--------------------------
 ! 1000-mb winds:
 !--------------------------
        id_u1000 = register_diag_field ( trim(field), 'u1000', axes(1:2), Time,       &
@@ -714,6 +728,8 @@ contains
                            '700-mb temperature', 'K', missing_value=missing_value )
        id_t850 = register_diag_field ( trim(field), 't850', axes(1:2), Time,       &
                            '850-mb temperature', 'K', missing_value=missing_value )
+       id_t925 = register_diag_field ( trim(field), 't925', axes(1:2), Time,       &
+                           '925-mb temperature', 'K', missing_value=missing_value )
        id_t1000 = register_diag_field ( trim(field), 't1000', axes(1:2), Time,       &
                            '1000-mb temperature', 'K', missing_value=missing_value )
 !--------------------------
@@ -737,6 +753,8 @@ contains
                            '700-mb specific humidity', 'kg/kg', missing_value=missing_value )
        id_q850 = register_diag_field ( trim(field), 'q850', axes(1:2), Time,       &
                            '850-mb specific humidity', 'kg/kg', missing_value=missing_value )
+       id_q925 = register_diag_field ( trim(field), 'q925', axes(1:2), Time,       &
+                           '925-mb specific humidity', 'kg/kg', missing_value=missing_value )
        id_q1000 = register_diag_field ( trim(field), 'q1000', axes(1:2), Time,       &
                            '1000-mb specific humidity', 'kg/kg', missing_value=missing_value )
 !--------------------------
@@ -760,6 +778,8 @@ contains
                            '700-mb relative humidity', '%', missing_value=missing_value )
        id_rh850 = register_diag_field ( trim(field), 'rh850', axes(1:2), Time,       &
                            '850-mb relative humidity', '%', missing_value=missing_value )
+       id_rh925 = register_diag_field ( trim(field), 'rh925', axes(1:2), Time,       &
+                           '925-mb relative humidity', '%', missing_value=missing_value )
        id_rh1000 = register_diag_field ( trim(field), 'rh1000', axes(1:2), Time,       &
                            '1000-mb relative humidity', '%', missing_value=missing_value )
 !--------------------------
@@ -781,6 +801,8 @@ contains
                            '700-mb relative humidity (CMIP)', '%', missing_value=missing_value )
        id_rh850_cmip = register_diag_field ( trim(field), 'rh850_cmip', axes(1:2), Time,       &
                            '850-mb relative humidity (CMIP)', '%', missing_value=missing_value )
+       id_rh925_cmip = register_diag_field ( trim(field), 'rh925_cmip', axes(1:2), Time,       &
+                           '925-mb relative humidity (CMIP)', '%', missing_value=missing_value )
        id_rh1000_cmip = register_diag_field ( trim(field), 'rh1000_cmip', axes(1:2), Time,       &
                            '1000-mb relative humidity (CMIP)', '%', missing_value=missing_value )
 !--------------------------
@@ -804,6 +826,8 @@ contains
                            '700-mb omega', 'Pa/s', missing_value=missing_value )
        id_omg850 = register_diag_field ( trim(field), 'omg850', axes(1:2), Time,       &
                            '850-mb omega', 'Pa/s', missing_value=missing_value )
+       id_omg925 = register_diag_field ( trim(field), 'omg925', axes(1:2), Time,       &
+                           '925-mb omega', 'Pa/s', missing_value=missing_value )
        id_omg1000 = register_diag_field ( trim(field), 'omg1000', axes(1:2), Time,       &
                            '1000-mb omega', 'Pa/s', missing_value=missing_value )
 
@@ -933,7 +957,7 @@ contains
     real, allocatable :: u2(:,:), v2(:,:)
     real, allocatable :: dmmr(:,:,:), dvmr(:,:,:)
     real height(2)
-    real plevs(10)
+    real plevs(11)
     real tot_mq, tmp
     logical :: used
     logical :: bad_range
@@ -1199,7 +1223,7 @@ contains
 
        ! rel hum from physics at selected press levels (for IPCC)
        if (id_rh50>0  .or. id_rh100>0 .or. id_rh200>0 .or. id_rh250>0 .or. &
-           id_rh500>0 .or. id_rh700>0 .or. id_rh850>0 .or. id_rh1000>0) then
+           id_rh500>0 .or. id_rh700>0 .or. id_rh850>0 .or. id_rh925>0 .or. id_rh1000>0) then
            ! compute mean pressure
            do k=1,npz
                do j=jsc,jec
@@ -1238,6 +1262,10 @@ contains
                call interpolate_vertical(isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
                used=send_data(id_rh850, a2, Time)
            endif
+           if (id_rh925>0) then
+               call interpolate_vertical(isc, iec, jsc, jec, npz, 925.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
+               used=send_data(id_rh925, a2, Time)
+           endif
            if (id_rh1000>0) then
                call interpolate_vertical(isc, iec, jsc, jec, npz, 1000.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
                used=send_data(id_rh1000, a2, Time)
@@ -1246,7 +1274,7 @@ contains
        ! rel hum (CMIP definition) at selected press levels  (for IPCC)
        if (id_rh10_cmip>0 .or. id_rh50_cmip>0  .or. id_rh100_cmip>0 .or. &
            id_rh250_cmip>0 .or. id_rh500_cmip>0 .or. id_rh700_cmip>0 .or. &
-           id_rh850_cmip>0 .or. id_rh1000_cmip>0) then
+           id_rh850_cmip>0 .or. id_rh925_cmip>0 .or. id_rh1000_cmip>0) then
            ! compute mean pressure
            do k=1,npz
                do j=jsc,jec
@@ -1284,6 +1312,10 @@ contains
            if (id_rh850_cmip>0) then
                call interpolate_vertical(isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
                used=send_data(id_rh850_cmip, a2, Time)
+           endif
+           if (id_rh925_cmip>0) then
+               call interpolate_vertical(isc, iec, jsc, jec, npz, 925.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
+               used=send_data(id_rh925_cmip, a2, Time)
            endif
            if (id_rh1000_cmip>0) then
                call interpolate_vertical(isc, iec, jsc, jec, npz, 1000.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
@@ -1326,8 +1358,8 @@ contains
           if( id_tm>0 .or. id_hght>0 .or. id_ppt>0) then
 
               allocate( a3(isc:iec,jsc:jec,size(plevs,1)) )
-              plevs(1)  = log( 1000. )
-              plevs(2)  = log( 5000. )
+              plevs(1)  = log(  1000. )
+              plevs(2)  = log(  5000. )
               plevs(3)  = log( 10000. )
               plevs(4)  = log( 20000. )
               plevs(5)  = log( 25000. )
@@ -1335,9 +1367,10 @@ contains
               plevs(7)  = log( 50000. )
               plevs(8)  = log( 70000. )
               plevs(9)  = log( 85000. )
-              plevs(10) = log(100000. )
+              plevs(10) = log( 92500. )
+              plevs(11) = log(100000. )
 
-             call get_height_given_pressure(isc, iec, jsc, jec, ngc, npz, wz, 10, plevs, Atm(n)%peln, a3)
+             call get_height_given_pressure(isc, iec, jsc, jec, ngc, npz, wz, size(plevs,1), plevs, Atm(n)%peln, a3)
              if(id_h10>0)   used = send_data ( id_h10,   a3(isc:iec,jsc:jec,1),  Time )
              if(id_h50>0)   used = send_data ( id_h50,   a3(isc:iec,jsc:jec,2),  Time )
              if(id_h100>0)  used = send_data ( id_h100,  a3(isc:iec,jsc:jec,3),  Time )
@@ -1347,7 +1380,8 @@ contains
              if(id_h500>0)  used = send_data ( id_h500,  a3(isc:iec,jsc:jec,7),  Time )
              if(id_h700>0)  used = send_data ( id_h700,  a3(isc:iec,jsc:jec,8),  Time )
              if(id_h850>0)  used = send_data ( id_h850,  a3(isc:iec,jsc:jec,9),  Time )
-             if(id_h1000>0) used = send_data ( id_h1000, a3(isc:iec,jsc:jec,10), Time )
+             if(id_h925>0)  used = send_data ( id_h925,  a3(isc:iec,jsc:jec,10),  Time )
+             if(id_h1000>0) used = send_data ( id_h1000, a3(isc:iec,jsc:jec,11), Time )
 
              ! mean temp 300mb to 500mb
              if( id_tm>0 ) then
@@ -1789,6 +1823,32 @@ contains
             call interpolate_vertical(isc, iec, jsc, jec, npz,   &
                                       850.e2, Atm(n)%peln, Atm(n)%omga(isc:iec,jsc:jec,:), a2)
             used=send_data(id_omg850, a2, Time)
+       endif
+! 925-mb
+       if ( id_u925>0 ) then
+            call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                      925.e2, Atm(n)%peln, Atm(n)%ua(isc:iec,jsc:jec,:), a2)
+            used=send_data(id_u925, a2, Time)
+       endif
+       if ( id_v925>0 ) then
+            call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                      925.e2, Atm(n)%peln, Atm(n)%va(isc:iec,jsc:jec,:), a2)
+            used=send_data(id_v925, a2, Time)
+       endif
+       if ( id_t925>0 ) then
+            call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                      925.e2, Atm(n)%peln, Atm(n)%pt(isc:iec,jsc:jec,:), a2)
+            used=send_data(id_t925, a2, Time)
+       endif
+       if ( id_q925>0 ) then
+            call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                      925.e2, Atm(n)%peln, Atm(n)%q(isc:iec,jsc:jec,:,sphum), a2)
+            used=send_data(id_q925, a2, Time)
+       endif
+       if ( id_omg925>0 ) then
+            call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                      925.e2, Atm(n)%peln, Atm(n)%omga(isc:iec,jsc:jec,:), a2)
+            used=send_data(id_omg925, a2, Time)
        endif
 ! 1000-mb
        if ( id_u1000>0 ) then

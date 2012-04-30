@@ -69,7 +69,7 @@ public  atmosphere_down,       atmosphere_up,       &
 !-----------------------------------------------------------------------
 
 character(len=128) :: version = '$Id: atmosphere.F90,v 19.0 2012/01/06 19:55:50 fms Exp $'
-character(len=128) :: tagname = '$Name: siena_201203 $'
+character(len=128) :: tagname = '$Name: siena_201204 $'
 character(len=7)   :: mod_name = 'atmos'
 
 !---- namelist (saved in file input.nml) ----
