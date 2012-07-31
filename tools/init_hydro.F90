@@ -1,4 +1,4 @@
-! $Id: init_hydro.F90,v 19.0 2012/01/06 19:59:21 fms Exp $
+! $Id: init_hydro.F90,v 17.0.2.3.2.4.2.1 2012/05/25 17:57:58 Lucas.Harris Exp $
 
 module init_hydro_mod
 
@@ -14,8 +14,8 @@ module init_hydro_mod
       public :: p_var, hydro_eq
 
 !---- version number -----
-      character(len=128) :: version = '$Id: init_hydro.F90,v 19.0 2012/01/06 19:59:21 fms Exp $'
-      character(len=128) :: tagname = '$Name: siena_201204 $'
+      character(len=128) :: version = '$Id: init_hydro.F90,v 17.0.2.3.2.4.2.1 2012/05/25 17:57:58 Lucas.Harris Exp $'
+      character(len=128) :: tagname = '$Name: siena_201207 $'
 
 contains
 
@@ -23,7 +23,7 @@ contains
  subroutine p_var(km, ifirst, ilast, jfirst, jlast, ptop, ptop_min,    &
                   delp, delz, pt, ps,  pe, peln, pk, pkz, cappa, q, ng, nq,    &
                   dry_mass, adjust_dry_mass, mountain, moist_phys,      &
-                  hydrostatic, ktop, nwat, make_nh)
+                  hydrostatic, nwat, make_nh)
                
 ! Given (ptop, delp) computes (ps, pk, pe, peln, pkz)
 ! Input:
@@ -32,7 +32,6 @@ contains
    integer,  intent(in):: jfirst, jlast            ! Latitude strip
    integer,  intent(in):: nq, nwat
    integer,  intent(in):: ng
-   integer,  intent(in):: ktop
    logical, intent(in):: adjust_dry_mass, mountain, moist_phys, hydrostatic
    real, intent(in):: dry_mass, cappa, ptop, ptop_min
    real, intent(in   )::   pt(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
@@ -54,6 +53,7 @@ contains
 
 
 ! Check dry air mass & compute the adjustment amount:
+   if ( adjust_dry_mass )      &
    call drymadj(km, ifirst, ilast,  jfirst,  jlast, ng, cappa, ptop, ps, &
                 delp, q, nq, nwat, dry_mass, adjust_dry_mass, moist_phys, dpd)
 
@@ -114,17 +114,6 @@ contains
 
    if ( .not.hydrostatic ) then
 
-      if ( ktop>1 ) then
-! Compute pkz using hydrostatic formular:
-         do k=1,ktop-1
-            do j=jfirst,jlast
-            do i=ifirst,ilast
-               pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(cappa*(peln(i,k+1,j)-peln(i,k,j)))
-            enddo
-            enddo
-         enddo
-      endif
-
       rdg = -rdgas / grav
       if ( present(make_nh) ) then
           if ( make_nh ) then
@@ -146,7 +135,7 @@ contains
 !------------------------------------------------------------------
 ! For adiabatic runs, use "-DSOLO_REPRO" to enforce reproducibility
        zvir = rvgas/rdgas - 1.
-       do k=ktop,km
+       do k=1,km
           do j=jfirst,jlast
              do i=ifirst,ilast
                 pkz(i,j,k) = exp( cappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
@@ -155,7 +144,7 @@ contains
           enddo
        enddo
      else
-       do k=ktop,km
+       do k=1,km
           do j=jfirst,jlast
              do i=ifirst,ilast
                 pkz(i,j,k) = exp( cappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)) )
@@ -251,13 +240,14 @@ contains
 
 
  subroutine hydro_eq(km, is, ie, js, je, ps, hs, drym, delp, ak, bk,  &
-                     pt, delz, ng, mountain, hybrid_z)
+                     pt, delz, ng, mountain, hydrostatic, hybrid_z)
 ! Input: 
   integer, intent(in):: is, ie, js, je, km, ng
   real, intent(in):: ak(km+1), bk(km+1)
   real, intent(in):: hs(is-ng:ie+ng,js-ng:je+ng)
   real, intent(in):: drym
   logical, intent(in):: mountain
+  logical, intent(in):: hydrostatic
   logical, intent(in):: hybrid_z
 ! Output
   real, intent(out):: ps(is-ng:ie+ng,js-ng:je+ng)
@@ -345,8 +335,8 @@ contains
 ! Given p1 and z1 (250mb, 10km)
         p1 = 25000.
         z1 = 10.E3 * grav
-        t1 = 215.
-        t0 = 280.            ! sea-level temp.
+        t1 = 200.
+        t0 = 300.            ! sea-level temp.
         a0 = (t1-t0)/z1
         c0 = t0/a0
 
@@ -436,6 +426,13 @@ contains
              endif
           enddo
        enddo
+       if ( .not. hydrostatic ) then
+          do k=1,km
+             do i=is,ie
+                delz(i,j,k) = ( gz(i,k+1) - gz(i,k) ) / grav
+             enddo
+          enddo
+       endif
      endif  ! end hybrid_z
 
 ! Convert geopotential to Temperature

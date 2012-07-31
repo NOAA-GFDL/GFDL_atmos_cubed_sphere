@@ -9,8 +9,9 @@ module fv_update_phys_mod
   use tracer_manager_mod, only: get_tracer_index
 
   use fv_arrays_mod,      only: fv_atmos_type
-  use fv_control_mod,     only: npx, npy, npz, ncnst, k_top, nwat, fv_debug, &
+  use fv_control_mod,     only: npx, npy, npz, ncnst, nwat, fv_debug, &
                                 tau_h2o, phys_hydrostatic, dwind_2d, filter_phys
+  use fv_current_grid_mod, only: nested
   use fv_mp_mod,          only: domain, gid, square_domain
   use fv_eta_mod,         only: get_eta_level
   use fv_grid_utils_mod,  only: edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e, &
@@ -33,8 +34,8 @@ module fv_update_phys_mod
   public :: fv_update_phys, del2_phys
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_update_phys.F90,v 19.0 2012/01/06 19:57:50 fms Exp $'
-  character(len=128) :: tagname = '$Name: siena_201204 $'
+  character(len=128) :: version = '$Id: fv_update_phys.F90,v 17.0.2.7.2.6 2012/05/11 14:01:55 Lucas.Harris Exp $'
+  character(len=128) :: tagname = '$Name: siena_201207 $'
 
   contains
 
@@ -170,8 +171,17 @@ module fv_update_phys_mod
 !$omp parallel do default(shared) private(qstar, ps_dt)
     do k=1, npz
 
+       if ( tau_h2o<0.0 .and. pfull(k) < 100.E2 ) then
+! Wipe the stratosphere clean:
+! This should only be used for initialization from a bad model state
+           p_fac = -tau_h2o*86400.
+           do j=js,je
+              do i=is,ie
+                 q_dt(i,j,k,sphum) = q_dt(i,j,k,sphum) + (3.E-6-q(i,j,k,sphum))/p_fac
+              enddo
+           enddo
+       elseif ( tau_h2o>0.0 .and. pfull(k) < 3000. ) then
 ! Do idealized Ch4 chemistry
-       if ( tau_h2o>0.0 .and. pfull(k) < 3000. ) then
 
            if ( pfull(k) < 1. ) then
                qstar = q1_h2o
@@ -426,20 +436,8 @@ module fv_update_phys_mod
 ! Re-compute the full (nonhydrostatic) pressure due to temperature changes
 !-------------------------------------------------------------------------
     if ( .not.hydrostatic ) then
-      if ( k_top>1 ) then
 !$omp parallel do default(shared)
-         do k=1,k_top-1
-            do j=js,je
-               do i=is,ie
-                  pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k)) /     &
-                         (kappa*(peln(i,k+1,j)-peln(i,k,j)))
-               enddo
-            enddo
-         enddo
-      endif
-
-!$omp parallel do default(shared)
-      do k=k_top,npz
+      do k=1,npz
          do j=js,je
             do i=is,ie
 ! perfect gas law: p = density * rdgas * virtual_temperature
@@ -530,15 +528,15 @@ module fv_update_phys_mod
                  (mask(i,j)+mask(i,j+1))*dy(i,j)*sina_u(i,j)* &
                  (q(i-1,j,k)-q(i,j,k))*rdxc(i,j)
          enddo
-         if (is == 1)   fx(i,j) = &
+         if (is == 1 .and. .not. nested)   fx(i,j) = &
               (mask(is,j)+mask(is,j+1))*dy(is,j)*(q(is-1,j,k)-q(is,j,k))*rdxc(is,j)* &
             0.5*(sin_sg(1,j,1) + sin_sg(0,j,3))
-         if (ie+1==npx) fx(i,j) = &
+         if (ie+1==npx .and. .not. nested) fx(i,j) = &
               (mask(ie+1,j)+mask(ie+1,j+1))*dy(ie+1,j)*(q(ie,j,k)-q(ie+1,j,k))*rdxc(ie+1,j)* & 
             0.5*(sin_sg(npx,j,1) + sin_sg(npx-1,j,3))
       enddo
       do j=js,je+1
-         if (j == 1 .OR. j == npy) then
+         if ((j == 1 .OR. j == npy) .and. .not. nested) then
             do i=is,ie
                fy(i,j) = (mask(i,j)+mask(i+1,j))*dx(i,j)*&
                     (q(i,j-1,k)-q(i,j,k))*rdyc(i,j) &
@@ -602,6 +600,19 @@ module fv_update_phys_mod
           enddo
        enddo
 
+       !!! It is not clear if this is the best remedy at the outer boundary of a nested grid.
+       if (nested) then
+        if (js == 1) then
+           do i=is,ie
+              u(i,1,k) = u(i,1,k) + dt5*u_dt(i,1,k)
+           enddo
+        endif
+        if (is == 1) then
+           do j=js,je
+              v(1,j,k) = v(1,j,k) + dt5*v_dt(1,j,k)
+           enddo
+        endif
+       endif
      else
 ! Compute 3D wind tendency on A grid
        do j=js-1,je+1
@@ -630,7 +641,7 @@ module fv_update_phys_mod
        enddo
 
 ! --- E_W edges (for v-wind):
-     if ( is==1 ) then
+     if ( is==1 .and. .not. nested ) then
        i = 1
        do j=js,je
         if ( j>jm2 ) then
@@ -649,7 +660,7 @@ module fv_update_phys_mod
           ve(i,j,3) = vt3(j)
        enddo
      endif
-     if ( (ie+1)==npx ) then
+     if ( (ie+1)==npx .and. .not. nested ) then
        i = npx
        do j=js,je
         if ( j>jm2 ) then
@@ -669,7 +680,7 @@ module fv_update_phys_mod
        enddo
      endif
 ! N-S edges (for u-wind):
-     if ( js==1 ) then
+     if ( js==1  .and. .not. nested) then
        j = 1
        do i=is,ie
         if ( i>im2 ) then
@@ -688,7 +699,7 @@ module fv_update_phys_mod
           ue(i,j,3) = ut3(i)
        enddo
      endif
-     if ( (je+1)==npy ) then
+     if ( (je+1)==npy  .and. .not. nested) then
        j = npy
        do i=is,ie
         if ( i>im2 ) then
@@ -767,7 +778,7 @@ module fv_update_phys_mod
 !$omp parallel do private (gratio)
     do k=1, npz
 
-     if ( grid_type > 3 ) then    ! Local & one tile configurations
+     if ( grid_type > 3 .or. nested) then    ! Local & one tile configurations
 
        do j=js,je+1
           do i=is,ie

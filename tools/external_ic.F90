@@ -18,25 +18,31 @@
                                 edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e
    use fv_io_mod,         only: fv_io_read_tracers 
    use fv_mapz_mod,       only: mappm
-   use fv_mp_mod,         only: gid, domain, tile, ng,         &
-                                is,js,ie,je, isd,jsd,ied,jed, fill_corners, YDir
+   use fv_mp_mod,         only: gid, domain, tile, ng, masterproc,        &
+                                is,js,ie,je, isd,jsd,ied,jed, fill_corners, YDir, concurrent
    use fv_surf_map_mod,   only: surfdrv
    use fv_timing_mod,     only: timing_on, timing_off
    use init_hydro_mod,    only: p_var
    use sim_nc_mod,        only: open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var2_real,   &
                                 get_var3_r4
+   use fv_nwp_nudge_mod,  only: T_is_Tv
+! The "T" field in NCEP analysis is actually virtual temperature (Larry H. post processing)
+! BEFORE 20051201
 
+   use fv_current_grid_mod, only: nested, master
+   use boundary_mod,      only: gather_grid, nested_grid_BC
+   use mpp_domains_mod,       only: mpp_get_data_domain, mpp_get_global_domain, mpp_get_compute_domain
    implicit none
    private
 
    real, parameter:: zvir = rvgas/rdgas - 1.
    real :: deg2rad
 
-   public get_external_ic
+   public get_external_ic, get_cubed_sphere_terrain
 
 !---- version number -----
-   character(len=128) :: version = '$Id: external_ic.F90,v 19.0 2012/01/06 19:58:28 fms Exp $'
-   character(len=128) :: tagname = '$Name: siena_201204 $'
+   character(len=128) :: version = '$Id: external_ic.F90,v 17.0.2.2.2.4.2.8.2.1 2012/06/12 18:03:35 Lucas.Harris Exp $'
+   character(len=128) :: tagname = '$Name: siena_201207 $'
 
 contains
 
@@ -64,7 +70,7 @@ contains
       enddo
 
       call mpp_update_domains( f0, domain )
-      if ( cubed_sphere ) call fill_corners(f0, Atm(1)%npx, Atm(1)%npy, YDir)
+      if ( cubed_sphere .and. .not. nested) call fill_corners(f0, Atm(1)%npx, Atm(1)%npy, YDir)
  
 ! Read in cubed_sphere terrain
       if ( Atm(1)%mountain ) then
@@ -74,37 +80,37 @@ contains
       endif
  
 ! Read in the specified external dataset and do all the needed transformation
-      if ( Atm(1)%ncep_ic ) then
+        if ( Atm(1)%ncep_ic ) then
            nq = 1
-                             call timing_on('NCEP_IC')
+           call timing_on('NCEP_IC')
            call get_ncep_ic( Atm, fv_domain, nq )
-                             call timing_off('NCEP_IC')
+           call timing_off('NCEP_IC')
 #ifndef NO_FV_TRACERS
            call fv_io_read_tracers( fv_domain, Atm )
-           if(gid==0) write(6,*) 'All tracers except sphum replaced by FV IC'
+           if(gid==masterproc) write(6,*) 'All tracers except sphum replaced by FV IC'
 #endif
-      elseif ( Atm(1)%fv_diag_ic ) then
-! Interpolate/remap diagnostic output from a FV model diagnostic output file on uniform lat-lon A grid:
-               nq = size(Atm(1)%q,4)
-! Needed variables: lon, lat, pfull(dim), zsurf, ps, ucomp, vcomp, w, temp, and all q
-! delz not implemnetd yet; set make_nh = .true.
-               call get_diag_ic( Atm, fv_domain, nq )
-      else
-! The following is to read in legacy lat-lon FV core restart file
-!  is Atm%q defined in all cases?
+        elseif ( Atm(1)%fv_diag_ic ) then
+           ! Interpolate/remap diagnostic output from a FV model diagnostic output file on uniform lat-lon A grid:
+           nq = size(Atm(1)%q,4)
+           ! Needed variables: lon, lat, pfull(dim), zsurf, ps, ucomp, vcomp, w, temp, and all q
+           ! delz not implemnetd yet; set make_nh = .true.
+           call get_diag_ic( Atm, fv_domain, nq )
+        else
+           ! The following is to read in legacy lat-lon FV core restart file
+           !  is Atm%q defined in all cases?
 
            nq = size(Atm(1)%q,4)
            call get_fv_ic( Atm, fv_domain, nq )
-      endif
+        endif
 
-      call prt_maxmin('T', Atm(1)%pt, is, ie, js, je, ng, Atm(1)%npz, 1., gid==0)
+        call prt_maxmin('T', Atm(1)%pt, is, ie, js, je, ng, Atm(1)%npz, 1., gid==masterproc)
 
       call p_var(Atm(1)%npz,  is, ie, js, je, Atm(1)%ak(1),  ptop_min,         &
                  Atm(1)%delp, Atm(1)%delz, Atm(1)%pt, Atm(1)%ps,               &
                  Atm(1)%pe,   Atm(1)%peln, Atm(1)%pk, Atm(1)%pkz,              &
                  kappa, Atm(1)%q, ng, Atm(1)%ncnst, Atm(1)%dry_mass,           &
                  Atm(1)%adjust_dry_mass, Atm(1)%mountain, Atm(1)%moist_phys,   &
-                 Atm(1)%hydrostatic, Atm(1)%k_top, Atm(1)%nwat, Atm(1)%make_nh)
+                 Atm(1)%hydrostatic, Atm(1)%nwat, Atm(1)%make_nh)
 
   end subroutine get_external_ic
 
@@ -116,9 +122,19 @@ contains
     integer              :: ntileMe
     integer, allocatable :: tile_id(:)
     character(len=64)    :: fname
+    character(len=3)  :: gn
     integer              ::  n
     integer              ::  jbeg, jend
     real ftop
+    real, allocatable :: g_dat2(:,:,:)
+    real, allocatable :: pt_coarse(:,:,:)
+    integer isc_p, iec_p, jsc_p, jec_p, isg, ieg, jsg,jeg
+
+    if (Atm(1)%grid_number > 1) then
+       write(gn,'(A2, I1)') ".g", Atm(1)%grid_number
+    else
+       gn = ''
+    end if
 
     ntileMe = size(Atm(:))  ! This will have to be modified for mult tiles per PE
                             ! always one at this point
@@ -128,24 +144,42 @@ contains
  
     do n=1,ntileMe
 
-       call get_tile_string(fname, 'INPUT/fv_core.res.tile', tile_id(n), '.nc' )
+       call get_tile_string(fname, 'INPUT/fv_core'//trim(gn)//'.res.tile', tile_id(n), '.nc' )
 
        if( file_exist(fname) ) then
           call read_data(fname, 'phis', Atm(n)%phis(is:ie,js:je),      &
                          domain=fv_domain, tile_count=n)
        else
           call surfdrv(  Atm(n)%npx, Atm(n)%npy, grid, agrid,   &
-                         area, dx, dy, dxc, dyc, Atm(n)%phis, gid==0 )
+                         area, dx, dy, dxc, dyc, Atm(n)%phis, gid==masterproc)
           call mpp_error(NOTE,'terrain datasets generated using USGS data')
        endif
 
     end do
  
     call mpp_update_domains( Atm(1)%phis, domain )
+    if (nested) then
+       call mpp_get_compute_domain( Atm(1)%parent_grid%domain, &
+            isc_p,  iec_p,  jsc_p,  jec_p  )
+!!$       call mpp_get_data_domain( Atm(1)%parent_grid%domain, &
+!!$            isc_p,  iec_p,  jsc_p,  jec_p  )
+       call mpp_get_global_domain( Atm(1)%parent_grid%domain, &
+            isg, ieg, jsg, jeg)
+
+       allocate(g_dat2( isg:ieg, jsg:jeg,1) )
+       
+       g_dat2 = 0.
+       if (ANY(gid==Atm(1)%parent_grid%pelist)) g_dat2(isc_p:iec_p,  jsc_p:jec_p  , 1) = Atm(1)%parent_grid%phis
+       call nested_grid_BC(Atm(1)%phis, g_dat2(:,:,1), Atm(1)%nest_domain, &
+         Atm(1)%ind_h, Atm(1)%wt_h, 0, 0, &
+         Atm(1)%npx, Atm(1)%npy, isg, ieg, jsg, jeg, proc_in=.true.)
+
+       deallocate(g_dat2)
+    end if
     ftop = g_sum(Atm(1)%phis(is:ie,js:je), is, ie, js, je, ng, area, 1)
  
-    call prt_maxmin('ZS', Atm(1)%phis,  is, ie, js, je, ng, 1, 1./grav, gid==0)
-    if(gid==0) write(6,*) 'mean terrain height (m)=', ftop/grav
+    call prt_maxmin('ZS', Atm(1)%phis,  is, ie, js, je, ng, 1, 1./grav, gid==masterproc)
+    if(gid==masterproc) write(6,*) 'mean terrain height (m)=', ftop/grav
  
     deallocate( tile_id )
 
@@ -191,7 +225,7 @@ contains
 
           im = tsize(1); jm = tsize(2); km = tsize(3)
 
-          if(gid==0)  write(*,*) fname, ' FV_diag IC dimensions:', tsize
+          if(gid==masterproc)  write(*,*) fname, ' FV_diag IC dimensions:', tsize
 
           allocate (  lon(im) )
           allocate (  lat(jm) )
@@ -217,7 +251,7 @@ contains
                bk0(:) = Atm(1)%bk(:)
           endif
       else
-          call mpp_error(FATAL,'==> Error in get_diag_ic: Expected file '//trim(fname)//' does not exist')
+          call mpp_error(FATAL,'==> Error in get_diag_ic: Expected file '//trim(fname)//' for dynamics does not exist')
       endif
 
 ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
@@ -426,7 +460,7 @@ contains
 
           im = tsize(1); jm = tsize(2); km = tsize(3)
 
-          if(gid==0)  write(*,*) fname, ' NCEP IC dimensions:', tsize
+          if(gid==masterproc)  write(*,*) fname, ' NCEP IC dimensions:', tsize
 
           allocate (  lon(im) )
           allocate (  lat(jm) )
@@ -455,7 +489,7 @@ contains
 ! Limiter to prevent NAN at top during remapping
           if ( bk0(1) < 1.E-9 ) ak0(1) = max(1.e-9, ak0(1))
       else
-          call mpp_error(FATAL,'==> Error in get_external_ic: Expected file '//trim(fname)//' does not exist')
+          call mpp_error(FATAL,'==> Error in get_external_ic: Expected file '//trim(fname)//' for NCEP IC does not exist')
       endif
 
 ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
@@ -555,12 +589,12 @@ contains
                              s2c(i,j,3)*wk2(i2,j1+1) + s2c(i,j,4)*wk2(i1,j1+1)
           enddo
         enddo
-        call prt_maxmin('SST_model', Atm(1)%ts, is, ie, js, je, 0, 1, 1., gid==0)
+        call prt_maxmin('SST_model', Atm(1)%ts, is, ie, js, je, 0, 1, 1., gid==masterproc)
 
 ! Perform interp to FMS SST format/grid
 #ifndef DYCORE_SOLO
         call ncep2fms(im, jm, lon, lat, wk2)
-        if( gid==0 ) then
+        if( gid==masterproc ) then
           write(*,*) 'External_ic_mod: i_sst=', i_sst, ' j_sst=', j_sst
           call pmaxmin( 'SST_ncep_fms',  sst_ncep, i_sst, j_sst, 1.)
         endif
@@ -677,11 +711,11 @@ contains
 
       if( file_exist(fname) ) then
           call field_size(fname, 'T', tsize, field_found=found)
-          if(gid==0) write(*,*) 'Using lat-lon FV restart:', fname 
+          if(gid==masterproc) write(*,*) 'Using lat-lon FV restart:', fname 
 
           if ( found ) then
                im = tsize(1); jm = tsize(2); km = tsize(3)
-               if(gid==0)  write(*,*) 'External IC dimensions:', tsize
+               if(gid==masterproc)  write(*,*) 'External IC dimensions:', tsize
           else
                call mpp_error(FATAL,'==> Error in get_external_ic: field not found')
           endif
@@ -716,7 +750,7 @@ contains
           call read_data (fname, 'DELP', dp0)
 
 ! Share the load
-          if(gid==0) call pmaxmin( 'ZS_data', gz0, im,    jm, 1./grav)
+          if(gid==masterproc) call pmaxmin( 'ZS_data', gz0, im,    jm, 1./grav)
           if(gid==1) call pmaxmin( 'U_data',   u0, im*jm, km, 1.)
           if(gid==1) call pmaxmin( 'V_data',   v0, im*jm, km, 1.)
           if(gid==2) call pmaxmin( 'T_data',   t0, im*jm, km, 1.)
@@ -724,14 +758,14 @@ contains
 
 
       else
-          call mpp_error(FATAL,'==> Error in get_external_ic: Expected file '//trim(fname)//' does not exist')
+          call mpp_error(FATAL,'==> Error in get_external_ic: Expected file '//trim(fname)//' for dynamics does not exist')
       endif
 
 ! Read in tracers: only AM2 "physics tracers" at this point
       fname = Atm(1)%res_latlon_tracers
 
       if( file_exist(fname) ) then
-          if(gid==0) write(*,*) 'Using lat-lon tracer restart:', fname 
+          if(gid==masterproc) write(*,*) 'Using lat-lon tracer restart:', fname 
 
           allocate ( q0(im,jm,km,Atm(1)%ncnst) )
           q0 = 0.
@@ -745,7 +779,7 @@ contains
             endif
           enddo
       else
-          call mpp_error(FATAL,'==> Error in get_external_ic: Expected file '//trim(fname)//' does not exist')
+          call mpp_error(FATAL,'==> Error in get_external_ic: Expected file '//trim(fname)//' for tracers does not exist')
       endif
 
 ! D to A transform on lat-lon grid:
@@ -756,9 +790,6 @@ contains
 
       deallocate ( u0 ) 
       deallocate ( v0 ) 
-
-      if(gid==4) call pmaxmin( 'UA', ua, im*jm, km, 1.)
-      if(gid==4) call pmaxmin( 'VA', va, im*jm, km, 1.)
 
       do j=1,jm
          do i=1,im
@@ -774,7 +805,7 @@ contains
          enddo
       enddo
 
-  if (gid==0) call pmaxmin( 'PS_data (mb)', ps0, im, jm, 0.01)
+  if (gid==masterproc) call pmaxmin( 'PS_data (mb)', ps0, im, jm, 0.01)
 
 ! Horizontal interpolation to the cubed sphere grid center
 ! remap vertically with terrain adjustment
@@ -1000,9 +1031,17 @@ contains
           enddo
        enddo
 
+    if ( T_is_Tv ) then
+! The "T" field in NCEP analysis is actually virtual temperature (Larry H. post processing)
+! BEFORE 20051201
+       do k=1,km
+          tp(i,k) = ta(i,j,k)
+       enddo
+    else
        do k=1,km
           tp(i,k) = ta(i,j,k)*(1.+zvir*qp(i,k,sphum))
        enddo
+    endif
 ! Tracers:
 
        do k=1,km+1
@@ -1100,9 +1139,9 @@ contains
 
 5000 continue
 
-  call prt_maxmin('PS_model', Atm(1)%ps, is, ie, js, je, ng, 1, 0.01, gid==0)
+  call prt_maxmin('PS_model', Atm(1)%ps, is, ie, js, je, ng, 1, 0.01, gid==masterproc)
 
-  if (gid==0) write(*,*) 'done remap_scalar'
+  if (gid==masterproc) write(*,*) 'done remap_scalar'
 
  end subroutine remap_scalar
 
@@ -1156,15 +1195,15 @@ contains
 
 5000 continue
 
-  call prt_maxmin('UT', ut, is, ie, js, je, ng, npz, 1., gid==0)
-  call prt_maxmin('VT', vt, is, ie, js, je, ng, npz, 1., gid==0)
+  call prt_maxmin('UT', ut, is, ie, js, je, ng, npz, 1., gid==masterproc)
+  call prt_maxmin('VT', vt, is, ie, js, je, ng, npz, 1., gid==masterproc)
 
 !----------------------------------------------
 ! winds: lat-lon ON A to Cubed-D transformation:
 !----------------------------------------------
   call cubed_a2d(Atm(1)%npx, Atm(1)%npy, npz, ut, vt, Atm(1)%u, Atm(1)%v )
 
-  if (gid==0) write(*,*) 'done remap_winds'
+  if (gid==masterproc) write(*,*) 'done remap_winds'
 
  end subroutine remap_winds
 
@@ -1209,8 +1248,8 @@ contains
 
 5000 continue
 
-! call prt_maxmin('WZ', wz, is, ie, js, je, mg, npz, 1., gid==0)
-! if (gid==0) write(*,*) 'done remap_wz'
+! call prt_maxmin('WZ', wz, is, ie, js, je, mg, npz, 1., gid==masterproc)
+! if (gid==masterproc) write(*,*) 'done remap_wz'
 
  end subroutine remap_wz
 
@@ -1448,16 +1487,16 @@ contains
 
 5000 continue
 
-  call prt_maxmin('PS_model', Atm(1)%ps, is, ie, js, je, ng, 1, 0.01, gid==0)
-  call prt_maxmin('UT', ut, is, ie, js, je, ng, npz, 1., gid==0)
-  call prt_maxmin('VT', vt, is, ie, js, je, ng, npz, 1., gid==0)
+  call prt_maxmin('PS_model', Atm(1)%ps, is, ie, js, je, ng, 1, 0.01, gid==masterproc)
+  call prt_maxmin('UT', ut, is, ie, js, je, ng, npz, 1., gid==masterproc)
+  call prt_maxmin('VT', vt, is, ie, js, je, ng, npz, 1., gid==masterproc)
 
 !----------------------------------------------
 ! winds: lat-lon ON A to Cubed-D transformation:
 !----------------------------------------------
   call cubed_a2d(Atm(1)%npx, Atm(1)%npy, npz, ut, vt, Atm(1)%u, Atm(1)%v )
 
-  if (gid==0) write(*,*) 'done remap_xyz'
+  if (gid==masterproc) write(*,*) 'done remap_xyz'
 
  end subroutine remap_xyz
 
@@ -1515,7 +1554,8 @@ contains
        enddo
 
 ! --- E_W edges (for v-wind):
-     if ( is==1 ) then
+     if (.not. nested) then
+     if ( is==1) then
        i = 1
        do j=js,je
         if ( j>jm2 ) then
@@ -1595,6 +1635,8 @@ contains
           ue(i,j,3) = ut3(i)
        enddo
      endif
+
+     endif ! .not. nested
 
      do j=js,je+1
         do i=is,ie

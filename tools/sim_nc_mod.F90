@@ -12,7 +12,7 @@ module sim_nc_mod
 
  private
  public  open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var2_double,   &
-         get_var3_real, get_var3_r4,  get_var2_real
+         get_var3_real, get_var3_double, get_var3_r4,  get_var2_real, handle_err
 
  contains
 
@@ -189,6 +189,46 @@ module sim_nc_mod
       if (status .ne. NF_NOERR) call handle_err(status)
 
       end subroutine get_var3_r4
+      subroutine get_var4_real( ncid, var4_name, im, jm, km, nt, var4 )
+      implicit         none
+#include <netcdf.inc>
+      integer, intent(in):: ncid
+      character*(*), intent(in)::  var4_name
+      integer, intent(in):: im, jm, km, nt
+      real*4:: wk4(im,jm,km,4)
+      real*4, intent(out):: var4(im,jm)
+      integer::  status, var4id
+      integer:: start(4), icount(4) 
+      integer:: i,j
+
+      start(1) = 1
+      start(2) = 1
+      start(3) = 1
+      start(4) = nt
+
+      icount(1) = im    ! all range
+      icount(2) = jm    ! all range
+      icount(3) = km    ! all range
+      icount(4) = 1     ! one time level at a time
+
+!     write(*,*) nt, 'Within get_var4_double: ', var4_name
+
+      status = nf_inq_varid (ncid, var4_name, var4id)
+!     write(*,*) '#1', status, ncid, var4id
+
+      status = nf_get_vara_real(ncid, var4id, start, icount, var4)
+!     status = nf_get_vara_real(ncid, var4id, start, icount, wk4)
+!     write(*,*) '#2', status, ncid, var4id
+
+      do j=1,jm
+      do i=1,im
+!        var4(i,j) = wk4(i,j,1,nt)
+      enddo
+      enddo
+
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      end subroutine get_var4_real
 
 
       subroutine get_var4_double( ncid, var4_name, im, jm, km, nt, var4 )
@@ -244,12 +284,30 @@ module sim_nc_mod
       end subroutine get_real3
 !------------------------------------------------------------------------
 
+      subroutine get_var_att_str(ncid, var_name, att_name, att)
+      implicit none
+#include <netcdf.inc>
+      integer, intent(in):: ncid
+      character*(*), intent(in)::  var_name, att_name
+      character*(*), intent(out)::  att
+
+      integer::  status, varid
+
+      status = nf_inq_varid (ncid, var_name, varid)
+      status = nf_get_att_text(ncid, varid, att_name, att)
+
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      end subroutine get_var_att_str
+
 
       subroutine handle_err(status)
       integer          status
+      character(len=120) :: errstr
 
       if (status .ne. nf_noerr) then
-        call mpp_error(FATAL,'Error in handle_err')
+         write(errstr,*) 'Error in handle_err: ', NF_STRERROR(STATUS)
+         call mpp_error(FATAL,errstr)
       endif
 
       end subroutine handle_err

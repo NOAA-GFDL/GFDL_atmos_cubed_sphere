@@ -16,7 +16,8 @@
                                    ctoa, atod, dtoa, atoc, atob_s, mp_update_dwinds, rotate_winds, &
                                    globalsum, get_unit_vector, unit_vect2,                         &
                                    dx_const, dy_const
-      use fv_eta_mod,        only: compute_dz_L32, compute_dz_L101, set_hybrid_z, gw_1d
+      use fv_eta_mod,        only: compute_dz_L32, compute_dz_L101, set_hybrid_z, gw_1d,   &
+                                   hybrid_z_dz
 
       use mpp_mod,           only: mpp_error, FATAL
       use mpp_domains_mod,   only: mpp_update_domains
@@ -24,7 +25,7 @@
                                    SCALAR_PAIR
       use fv_sg_mod,         only: qsmith
 !     use fv_diagnostics_mod, only: prt_maxmin
-
+      use fv_current_grid_mod, only: test_case, alpha, Ubar, gh0, case9_B, AofT, phi0, ua0, va0, gh_table, lats_table, gh_initialized, tmass_orig, tvort_orig, tener_orig, nested
 
       implicit none
       private
@@ -54,13 +55,6 @@
 !                   20 = 3D non-hydrostatic lee vortices; non-rotating (small planet)
 !                   21 = 3D non-hydrostatic lee vortices; rotating     (small planet)
 !                  101 = 3D non-hydrostatic Large-Eddy-Simulation (LES) with hybrid_z IC
-      integer :: test_case
-! alpha = angle of axis rotation about the poles
-      real   :: alpha = 0.
-! Ubar = initial wind speed parameter
-      real   :: Ubar
-! gh0 = initial surface height parameter
-      real   :: gh0
 
 ! Case 0 parameters
       real :: p0 = 3.0
@@ -70,21 +64,6 @@
 
 !  pi_shift moves the initial location of the cosine bell for Case 1
       real, parameter :: pi_shift = 0.0 !3.0*pi/4.
-
-!  case 9 parameters 
-      real  , allocatable :: case9_B(:,:)
-      real   :: AofT(2)
-
-!  Validating fields used in statistics
-      real  , allocatable :: phi0(:,:,:) ! Validating Field
-      real  , allocatable :: ua0(:,:,:)  ! Validating U-Wind
-      real  , allocatable :: va0(:,:,:)  ! Validating V-Wind
-      real  , allocatable :: gh_table(:), lats_table(:)
-
-!  Initial Conservation statistics ; total mass ; enstrophy ; energy
-      real   :: tmass_orig
-      real   :: tvort_orig
-      real   :: tener_orig
 
  ! -1:null_op, 0:All-Grids, 1:C-Grid, 2:D-Grid, 3:A-Grid, 4:A-Grid then Rotate, 5:D-Grid with unit vectors then Rotate
       integer, parameter :: initWindsCase0 =-1 
@@ -99,9 +78,10 @@
       public :: case9_forcing1, case9_forcing2
       public :: init_double_periodic, init_latlon
 
+
  !---- version number -----
-      character(len=128) :: version = '$Id: test_cases.F90,v 19.0 2012/01/06 19:59:28 fms Exp $'
-      character(len=128) :: tagname = '$Name: siena_201204 $'
+      character(len=128) :: version = '$Id: test_cases.F90,v 17.0.2.2.2.2.2.13.2.1 2012/05/25 17:57:58 Lucas.Harris Exp $'
+      character(len=128) :: tagname = '$Name: siena_201207 $'
 
       contains
 
@@ -134,6 +114,24 @@
       real :: utmp, vtmp
 
       real :: psi_b(isd:ied+1,jsd:jed+1), psi(isd:ied,jsd:jed), psi1, psi2 
+      integer :: is2, ie2, js2, je2
+
+
+      if (nested) then
+
+         is2 = is-2
+         ie2 = ie+2
+         js2 = js-2
+         je2 = je+2
+
+      else
+
+         is2 = is
+         ie2 = ie
+         js2 = js
+         je2 = je
+
+      end if
 
  200  format(i4.4,'x',i4.4,'x',i4.4,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14)
 
@@ -222,15 +220,15 @@
         ! call d2a2c(npx,npy,1, is,ie, js,je, ng, u(isd,jsd),v(isd,jsd), &
         !            ua(isd,jsd),va(isd,jsd), uc(isd,jsd),vc(isd,jsd))
       elseif ( (cubed_sphere) .and. (defOnGrid==2) ) then
-         do j=js,je
-            do i=is,ie+1
+         do j=js2,je2
+            do i=is2,ie2+1
                dist = dxc(i,j)
                v(i,j) = (psi(i,j)-psi(i-1,j))/dist
                if (dist==0) v(i,j) = 0.            
             enddo
          enddo
-         do j=js,je+1
-            do i=is,ie
+         do j=js2,je2+1
+            do i=is2,ie2
                dist = dyc(i,j)
                u(i,j) = -1.0*(psi(i,j)-psi(i,j-1))/dist
                if (dist==0) u(i,j) = 0. 
@@ -284,8 +282,8 @@
      elseif ( (latlon) .or. (defOnGrid==5) ) then
 ! SJL mods:
 ! v-wind:
-         do j=js,je
-            do i=is,ie+1
+         do j=js2,je2
+            do i=is2,ie2+1
                p1(:) = grid(i  ,j ,1:2)
                p2(:) = grid(i,j+1 ,1:2)
                call mid_pt_sphere(p1, p2, pt)
@@ -299,8 +297,8 @@
             enddo
          enddo
 ! D grid u-wind:
-         do j=js,je+1
-            do i=is,ie
+         do j=js2,je2+1
+            do i=is2,ie2
                p1(:) = grid(i  ,j  ,1:2)
                p2(:) = grid(i+1,j  ,1:2)
                call mid_pt_sphere(p1, p2, pt)
@@ -338,7 +336,7 @@
 !                  case 9 (Stratospheric Vortex Breaking Case)
 !
       subroutine init_case(u,v,w,pt,delp,q,phis, ps,pe,peln,pk,pkz,  uc,vc, ua,va, ak, bk,  &
-                           npx, npy, npz, ng, ncnst, nwat, k_top, ndims, nregions,        &
+                           npx, npy, npz, ng, ncnst, nwat, ndims, nregions,        &
                            dry_mass, mountain, moist_phys, hydrostatic, hybrid_z, delz, ze0)
 
       real ,      intent(INOUT) ::    u(isd:ied  ,jsd:jed+1,npz)
@@ -368,7 +366,6 @@
 
       integer,      intent(IN) :: npx, npy, npz
       integer,      intent(IN) :: ng, ncnst, nwat
-      integer,      intent(IN) :: k_top
       integer,      intent(IN) :: ndims
       integer,      intent(IN) :: nregions
 
@@ -432,6 +429,7 @@
 
       integer :: nlon,nlat
       character(len=80) :: oflnm, hgtflnm
+      integer :: is2, ie2, js2, je2
 
 ! Baroclinic Test Case 12
       real :: eta, eta_0, eta_s, eta_t
@@ -444,9 +442,17 @@
       real wbuffer(npy+2,npz)
       real sbuffer(npx+2,npz)
 
-      allocate ( phi0(isd:ied  ,jsd:jed  ,npz) )
-      allocate (  ua0(isd:ied  ,jsd:jed  ,npz) )
-      allocate (  va0(isd:ied  ,jsd:jed  ,npz) )
+      if (nested) then
+         is2 = isd
+         ie2 = ied
+         js2 = jsd
+         je2 = jed
+      else
+         is2 = is
+         ie2 = ie
+         js2 = js
+         je2 = je
+      end if
 
       pe(:,:,:) = 0.0
       pt(:,:,:) = 1.0
@@ -638,11 +644,37 @@
          enddo
          initWindsCase=initWindsCase1
       case(2)
+#ifdef TEST_TRACER
+!!$         do j=js2,je2
+!!$         do i=is2,ie2
+!!$            q(i,j,1,:) = 1.e-3*cos(agrid(i,j,2))!*(1.+cos(agrid(i,j,1)))
+!!$         enddo
+!!$         enddo
+         gh0  = 1.0e-6
+         r0 = radius/3. !RADIUS radius/3.
+         p1(2) = 35./180.*pi !0.
+         p1(1) = pi/4.!pi/2.
+         do j=jsd,jed
+         do i=isd,ied
+            p2(1) = agrid(i,j,1)
+            p2(2) = agrid(i,j,2)
+            r = great_circle_dist( p1, p2, radius )
+            if (r < r0 .and. .not.( abs(p1(2)-p2(2)) < 1./18. .and. p2(1)-p1(1) < 5./36.)) then
+               !q(i,j,k,1) = max(gh0*0.5*(1.0+cos(PI*r/r0))*exp(real(k-npz)),0.)
+               q(i,j,1,1) = gh0
+            else
+               q(i,j,1,1) = 0.
+            endif
+         enddo
+         enddo
+#endif
          Ubar = (2.0*pi*radius)/(12.0*86400.0)
          gh0  = 2.94e4
          phis = 0.0
-         do j=js,je
-            do i=is,ie
+         do j=js2,je2
+            do i=is2,ie2
+!         do j=jsd,jed
+!            do i=isd,ied
 #ifdef FIVE_AVG
                pt5 = gh0 - (radius*omega*Ubar + (Ubar*Ubar)/2.) * &
                              ( -1.*cos(agrid(i  ,j  ,1))*cos(agrid(i  ,j  ,2))*sin(alpha) + &
@@ -802,8 +834,8 @@
          r0 = PI/9.
          p1(1) = PI/2.
          p1(2) = PI/6.
-         do j=js,je
-            do i=is,ie
+         do j=js2,je2
+            do i=is2,ie2
                p2(1) = agrid(i,j,1)
                p2(2) = agrid(i,j,2)
                r = MIN(r0*r0, (p2(1)-p1(1))*(p2(1)-p1(1)) + (p2(2)-p1(2))*(p2(2)-p1(2)) )
@@ -811,8 +843,8 @@
                phis(i,j) = 2000.0*Grav*(1.0-(r/r0))
             enddo
          enddo
-         do j=js,je
-            do i=is,ie
+         do j=js2,je2
+            do i=is2,ie2
                delp(i,j,1) =gh0 - (radius*omega*Ubar + (Ubar*Ubar)/2.) * &
                              ( -1.*cos(agrid(i  ,j  ,1))*cos(agrid(i  ,j  ,2))*sin(alpha) + &
                                    sin(agrid(i  ,j  ,2))*cos(alpha) ) ** 2  - phis(i,j)
@@ -1050,7 +1082,6 @@
          initWindsCase=initWindsCase9
 
 
-         allocate( case9_B(isd:ied,jsd:jed) )
          call get_case9_B(case9_B)
          AofT(:) = 0.0
       end select
@@ -1088,12 +1119,13 @@
          q(:,:,:,:) = 3.e-6
          u(:,:,:) = 0.0
          v(:,:,:) = 0.0
+         if (.not.hydrostatic) w(:,:,:)= 0.0
 
        if ( test_case==14 ) then
 ! Aqua-planet case: mean SLP=1.E5
          phis = 0.0
          call hydro_eq(npz, is, ie, js, je, ps, phis, 1.E5,      &
-                       delp, ak, bk, pt, delz, ng, .false., hybrid_z)
+                       delp, ak, bk, pt, delz, ng, .false., hydrostatic, hybrid_z)
        else
 ! Initialize topography
 #ifdef MARS_GCM
@@ -1105,8 +1137,8 @@
          r0 = PI/9.
          p1(1) = PI/4.
          p1(2) = PI/6. + (7.5/180.0)*PI
-         do j=js,je
-            do i=is,ie
+         do j=js2,je2
+            do i=is2,ie2
                p2(1) = agrid(i,j,1)
                p2(2) = agrid(i,j,2)
                r = MIN(r0*r0, (p2(1)-p1(1))*(p2(1)-p1(1)) + (p2(2)-p1(2))*(p2(2)-p1(2)) )
@@ -1115,7 +1147,7 @@
             enddo
          enddo
          call hydro_eq(npz, is, ie, js, je, ps, phis, dry_mass,  &
-                       delp, ak, bk, pt, delz, ng, mountain, hybrid_z)
+                       delp, ak, bk, pt, delz, ng, mountain, hydrostatic, hybrid_z)
        endif
 
       else if (test_case==11) then
@@ -1163,12 +1195,13 @@
        q(:,:,:,1) = 3.e-6
 
        call hydro_eq(npz, is, ie, js, je, ps, phis, dry_mass,  &
-                     delp, ak, bk, pt, delz, ng, mountain, hybrid_z)
+                     delp, ak, bk, pt, delz, ng, mountain, hydrostatic, hybrid_z)
 
       else if ( (test_case==12) .or. (test_case==13) ) then
 
-         q(:,:,:,:) = 3.e-6
+         q(:,:,:,1) = 3.e-6
 #ifdef TEST_TRACER
+         if (gid == 0) print*, 'TEST TRACER enabled for this test case'
           q(:,:,:,:) = 0.
           if ( ncnst==6 ) then
               do j=js,je
@@ -1183,6 +1216,27 @@
                  enddo
               enddo
               enddo
+           else
+              !For consistency with earlier single-grid simulations use gh0 = 1.0e-6 and p1(1) = 195.*pi/180. 
+                 gh0  = 1.0e-3
+                 r0 = radius/3. !RADIUS radius/3.
+                 p1(2) = 51.*pi/180.
+                 p1(1) = 205.*pi/180. !231.*pi/180.
+                 do k=1,npz
+                 do j=jsd,jed
+                 do i=isd,ied
+                    p2(1) = agrid(i,j,1)
+                    p2(2) = agrid(i,j,2)
+                    r = great_circle_dist( p1, p2, radius )
+                    if (r < r0 .and. .not.( abs(p1(2)-p2(2)) < 1./18. .and. p2(1)-p1(1) < 5./36.) .and. k > 16) then
+                       q(i,j,k,1) = gh0
+                    else
+                       q(i,j,k,1) = 0.
+                    endif
+                 enddo
+                 enddo
+                 enddo
+              
           endif
 #endif
     ! Initialize surface Pressure
@@ -1359,8 +1413,8 @@
          if (gid==masterproc) print*,' '
       ! Surface Geopotential
          phis(:,:)=1.e25
-         do j=js,je
-            do i=is,ie
+         do j=js2,je2
+            do i=is2,ie2
                pt1 = Ubar* (COS( (eta_s-eta_0)*PI/2.0 ))**(3.0/2.0) * ( &
                               ( -2.0*(SIN(agrid(i,j,2))**6.0) *(COS(agrid(i,j,2))**2.0 + 1.0/3.0) + 10.0/63.0 ) * &
                               Ubar*COS( (eta_s-eta_0)*PI/2.0 )**(3.0/2.0) + &
@@ -1672,8 +1726,8 @@
          pcen(2) = PI/6.
 
     ! Initialize surface Pressure
-         do j=js,je
-            do i=is,ie
+         do j=js2,je2
+            do i=is2,ie2
                r = great_circle_dist( pcen, agrid(i,j,1:2), radius )
                phis(i,j) = grav*2.E3*exp( -(r/1500.E3)**2 )
                ps(i,j) = 930.E2 * exp( -radius*n2*ubar/(2.*grav*grav*kappa)*(ubar/radius+2.*omega)*   &
@@ -1779,8 +1833,8 @@
         call latlon2xyz(p1, e1)
          uu1 =  5.0E3
          uu2 = 10.0E3
-         do j=js,je
-            do i=is,ie
+         do j=js2,je2
+            do i=is2,ie2
               p2(:) = agrid(i,j,1:2)
                   r = great_circle_dist( p1, p2, radius ) 
               if ( r < pi*radius ) then
@@ -1822,6 +1876,9 @@
             rgrav = 1./ grav
             if( npz==32 ) then
                 call compute_dz_L32( npz, ztop, dz1 )
+            elseif( npz.eq.31 .or. npz.eq.41 .or. npz.eq.51 ) then
+                ztop = 16.E3
+                call hybrid_z_dz(npz, dz1, ztop, 1.0)
             else
                 if ( gid==masterproc ) write(*,*) 'Using const DZ'
                 ztop = 15.E3
@@ -1919,7 +1976,7 @@
 ! The flow is initially hydrostatic
      call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
                 pe, peln, pk, pkz, kappa, q, ng, ncnst, dry_mass, .false., mountain, &
-                moist_phys, .true., k_top, nwat)
+                moist_phys, .true., nwat)
 
 #ifdef COLUMN_TRACER
       if( ncnst>1 ) q(:,:,:,2:ncnst) = 0.0
@@ -2036,9 +2093,7 @@
       h0 = 10.157946867E3
       dp = pi / real(jm-1)
 
-     if ( .not. allocated(gh_table) ) then
-          allocate (   gh_table(jm) )
-           allocate ( lats_table(jm) )
+     if ( .not. gh_initialized ) then
 ! SP:
         gh_table(1) = grav*h0 
         lats_table(1) = -pi/2.
@@ -2050,6 +2105,7 @@
          gh_table(j) = gh_table(j-1) - uu*(radius*ft + tan(lat)*uu) * dp
          lats_table(j) = -pi/2. + real(j-1)*dp
       enddo
+      gh_initialized = .true.
      endif
 
      if ( lat_in <= lats_table(1) ) then
@@ -3524,7 +3580,7 @@
 !     init_double_periodic
 !
       subroutine init_double_periodic(u,v,w,pt,delp,q,phis, ps,pe,peln,pk,pkz,  uc,vc, ua,va, ak, bk,  &
-                                      npx, npy, npz, ng, ncnst, nwat, k_top, ndims, nregions, dry_mass, &
+                                      npx, npy, npz, ng, ncnst, nwat, ndims, nregions, dry_mass, &
                                       mountain, moist_phys, hydrostatic, hybrid_z, delz, ze0)
 
         real ,      intent(INOUT) ::    u(isd:ied  ,jsd:jed+1,npz)
@@ -3554,7 +3610,6 @@
         
         integer,      intent(IN) :: npx, npy, npz
         integer,      intent(IN) :: ng, ncnst, nwat
-        integer,      intent(IN) :: k_top
         integer,      intent(IN) :: ndims
         integer,      intent(IN) :: nregions
         
@@ -3566,7 +3621,7 @@
         real, dimension(is:ie):: pm, qs
         real :: dist, r0, f0_const, prf, rgrav
         real :: ptmp, ze, zc, zm
-        real :: t00, p00, xmax, xc, xx, yy, zz, pk0, pturb, ztop
+        real :: t00, p00, xmax, xc, xx, yy, pk0, pturb, ztop
         real :: ze1(npz+1)
          real:: dz1(npz)
         integer :: i, j, k, m, icenter, jcenter
@@ -3634,26 +3689,13 @@
 !---------------------------
            u(:,:,:) = 0.
            v(:,:,:) = 0.
-           do j=jsd,jed
-              do i=isd,ied
-                 phis(i,j) = 0.
-                   ps(i,j) = 1000.E2
-              enddo
-           enddo
+           phis(:,:) = 0.
 
-           do k=1,npz
-              do j=jsd,jed
-                 do i=isd,ied
-                    pt(i,j,k) = 250.  ! really cold start
-                    delp(i,j,k) = ak(k+1)-ak(k) + ps(i,j)*(bk(k+1)-bk(k))
-                 enddo
-              enddo
-           enddo
+           call hydro_eq(npz, is, ie, js, je, ps, phis, 1.E5,      &
+                         delp, ak, bk, pt, delz, ng, .false., hydrostatic, hybrid_z)
 
 ! *** Add Initial perturbation ***
-           r0 = 20.*sqrt(dx_const**2 + dy_const**2)
-!          icenter = npx/2
-!          jcenter = npy/2
+           r0 = 100.*sqrt(dx_const**2 + dy_const**2)
 ! Off center for spin up hurricanes
            icenter = npx/2 + 1
            jcenter = npy/2 + 1
@@ -3664,31 +3706,35 @@
                          +(j-jcenter)*dy_const*(j-jcenter)*dy_const
                  dist = min(r0,sqrt(dist))
                  do k=1,npz
-                    prf = ak(k) + ps(i,j)*bk(k)
-                    if ( prf > 100.E2 ) then
-                         pt(i,j,k) = pt(i,j,k) + 50.*(1. - (dist/r0)) * prf/ps(i,j) 
-                    endif
+                    pt(i,j,k) = pt(i,j,k) + 0.01*(1. - (dist/r0))
+!                   prf = ak(k) + ps(i,j)*bk(k)
+!                   if ( prf > 100.E2 ) then
+!                        pt(i,j,k) = pt(i,j,k) + 0.1*(1. - (dist/r0)) * prf/ps(i,j) 
+!                   endif
                  enddo
               enddo
            enddo
 
+          if ( hydrostatic ) then
           call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
                      pe, peln, pk, pkz, kappa, q, ng, ncnst, dry_mass, .false., .false., &
-                     moist_phys, .true., k_top, nwat)
+                     moist_phys, .true., nwat )
+          else
+               w(:,:,:) = 0.
+          call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
+                     pe, peln, pk, pkz, kappa, q, ng, ncnst, dry_mass, .false., .false., &
+                     moist_phys, hydrostatic, nwat, .true. )
+          endif
 
-          q = 0.
-         do k=3,npz
+         q = 0.
+         do k=1,npz
             do j=js,je
                do i=is,ie
                   pm(i) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
                enddo
                call qsmith(ie-is+1, 1, 1, pt(is:ie,j,k), pm, q(is:ie,j,k,1), qs)
                do i=is,ie
-                  if ( pm(i)>100.E2 ) then
-                       q(i,j,k,1) = 0.99*qs(i)
-                  else
-                       q(i,j,k,1) = 3.E-6
-                  endif
+                  q(i,j,k,1) = max(2.E-6, 0.1*pm(i)/ps(i,j)*qs(i) )
                enddo
             enddo
          enddo
@@ -3733,7 +3779,7 @@
 
           call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
                      pe, peln, pk, pkz, kappa, q, ng, ncnst, dry_mass, .false., .false., &
-                     moist_phys, .false., k_top, nwat)
+                     moist_phys, .false., nwat)
 
 ! *** Add Initial perturbation ***
            r0 = 5.*max(dx_const, dy_const)
@@ -3822,13 +3868,13 @@
              xc = xmax / 2.
 
          do k=1,npz
-            zz = (0.5*(ze1(k)+ze1(k+1))-3.E3) / 2.E3
+            zm = (0.5*(ze1(k)+ze1(k+1))-3.E3) / 2.E3
             do j=js,je
                do i=is,ie
 ! Impose perturbation in potential temperature: pturb
                   xx = (dx_const * (0.5+real(i-1)) - xc) / 4.E3 
                   yy = (dy_const * (0.5+real(j-1)) - xc) / 4.E3
-                  dist = sqrt( xx**2 + yy**2 + zz**2 )
+                  dist = sqrt( xx**2 + yy**2 + zm**2 )
                   if ( dist<=1. ) then
                        pt(i,j,k) = pt(i,j,k) - pturb/pkz(i,j,k)*(cos(pi*dist)+1.)/2. 
                   endif
@@ -3939,7 +3985,7 @@
       end subroutine init_double_periodic
 
       subroutine init_latlon(u,v,pt,delp,q,phis, ps,pe,peln,pk,pkz,  uc,vc, ua,va, ak, bk,  &
-                             npx, npy, npz, ng, ncnst, k_top, ndims, nregions, dry_mass,    &
+                             npx, npy, npz, ng, ncnst, ndims, nregions, dry_mass,    &
                              mountain, moist_phys, hybrid_z, delz, ze0)
 
         real ,      intent(INOUT) ::    u(isd:ied  ,jsd:jed+1,npz)
@@ -3968,7 +4014,6 @@
         
         integer,      intent(IN) :: npx, npy, npz
         integer,      intent(IN) :: ng, ncnst
-        integer,      intent(IN) :: k_top
         integer,      intent(IN) :: ndims
         integer,      intent(IN) :: nregions
         
@@ -4114,5 +4159,5 @@
         endif
      
       end subroutine init_latlon_winds
-      
+
 end module test_cases_mod

@@ -4,6 +4,7 @@ module a2b_edge_mod
                                nw_corner, ne_corner, van2, great_circle_dist
   use fv_grid_tools_mod, only: dxa, dya, grid_type, grid, agrid
   use fv_mp_mod,         only: gid
+  use fv_current_grid_mod, only: nested
   implicit none
 
   real, parameter:: r3 = 1./3.
@@ -22,8 +23,8 @@ module a2b_edge_mod
   public :: a2b_ord2, a2b_ord4
 
 !---- version number -----
-  character(len=128) :: version = '$Id: a2b_edge.F90,v 19.0 2012/01/06 19:57:00 fms Exp $'
-  character(len=128) :: tagname = '$Name: siena_201204 $'
+  character(len=128) :: version = '$Id: a2b_edge.F90,v 17.0.2.2.2.3 2012/04/30 17:08:46 Lucas.Harris Exp $'
+  character(len=128) :: tagname = '$Name: siena_201207 $'
 
 contains
 
@@ -61,6 +62,17 @@ contains
 
 ! Corners:
 ! 3-way extrapolation
+    if (nested) then
+
+    do j=js-2,je+2
+       do i=is,ie+1
+          qx(i,j) = b2*(qin(i-2,j)+qin(i+1,j)) + b1*(qin(i-1,j)+qin(i,j))
+       enddo
+    enddo
+
+
+    else
+
     if ( sw_corner ) then
           p0(1:2) = grid(1,1,1:2)
         qout(1,1) = (extrap_corner(p0, agrid(1,1,1:2), agrid( 2, 2,1:2), qin(1,1), qin( 2, 2)) + &
@@ -131,10 +143,23 @@ contains
           qx(npx-1,j) = (3.*(qin(npx-2,j)+g_in*qin(npx-1,j)) - (g_in*qx(npx,j)+qx(npx-2,j)))/(2.+2.*g_in)
        enddo
     endif
-
+    
+    end if
 !------------
 ! Y-Interior:
 !------------
+
+    if (nested) then
+
+
+    do j=js,je+1
+       do i=is-2,ie+2
+          qy(i,j) = b2*(qin(i,j-2)+qin(i,j+1)) + b1*(qin(i,j-1) + qin(i,j))
+       enddo
+    enddo
+
+    else
+
     do j=max(3,js),min(npy-2,je+1)
        do i=max(1,is-2), min(npx-1,ie+2)
           qy(i,j) = b2*(qin(i,j-2)+qin(i,j+1)) + b1*(qin(i,j-1) + qin(i,j))
@@ -177,7 +202,31 @@ contains
        enddo
     endif
 
+    end if
 !--------------------------------------
+
+    if (nested) then
+
+    do j=js, je+1
+       do i=is,ie+1
+          qxx(i,j) = a2*(qx(i,j-2)+qx(i,j+1)) + a1*(qx(i,j-1)+qx(i,j))
+       enddo
+    enddo
+
+    do j=js,je+1
+       do i=is,ie+1
+          qyy(i,j) = a2*(qy(i-2,j)+qy(i+1,j)) + a1*(qy(i-1,j)+qy(i,j))
+       enddo
+
+       do i=is,ie+1
+          qout(i,j) = 0.5*(qxx(i,j) + qyy(i,j))   ! averaging
+       enddo
+    enddo
+
+
+
+    else
+
     do j=max(3,js),min(npy-2,je+1)
        do i=max(2,is),min(npx-1,ie+1)
           qxx(i,j) = a2*(qx(i,j-2)+qx(i,j+1)) + a1*(qx(i,j-1)+qx(i,j))
@@ -207,6 +256,8 @@ contains
           qout(i,j) = 0.5*(qxx(i,j) + qyy(i,j))   ! averaging
        enddo
     enddo
+
+    end if
 
  else  ! grid_type>=3
 !------------------------
@@ -344,6 +395,17 @@ contains
 !------------
 ! X-Interior:
 !------------
+    if (nested) then
+
+    do j=js-2,je+2
+       do i=is, ie+1
+          qx(i,j) = b2*(qin(i-2,j)+qin(i+1,j)) + b1*(qin(i-1,j)+qin(i,j))
+       enddo
+    enddo
+
+
+    else
+
     do j=max(1,js-2),min(npy-1,je+2)
        do i=max(3,is), min(npx-2,ie+1)
           qx(i,j) = b2*(qin(i-2,j)+qin(i+1,j)) + b1*(qin(i-1,j)+qin(i,j))
@@ -400,9 +462,20 @@ contains
                          c1*(qx(npx,npy-2)+qx(npx,npy-1))+c2*(qout(npx,npy-2)+qout(npx,npy))
     endif
 
+    endif
 !------------
 ! Y-Interior:
 !------------
+    if (nested) then
+
+    do j=js,je+1
+       do i=is-2, ie+2
+          qy(i,j) = b2*(qin(i,j-2)+qin(i,j+1)) + b1*(qin(i,j-1)+qin(i,j))
+       enddo
+    enddo
+
+    else
+
     do j=max(3,js),min(npy-2,je+1)
        do i=max(1,is-2), min(npx-1,ie+2)
           qy(i,j) = b2*(qin(i,j-2)+qin(i,j+1)) + b1*(qin(i,j-1)+qin(i,j))
@@ -458,6 +531,29 @@ contains
        if( is==1 )  qout(2,npy) = c1*(qy(1,npy)+qy(2,npy))+c2*(qout(1,npy)+qout(3,npy))
        if((ie+1)==npx) qout(npx-1,npy) = c1*(qy(npx-2,npy)+qy(npx-1,npy))+c2*(qout(npx-2,npy)+qout(npx,npy))
     endif
+
+ end if
+
+ if (nested) then
+
+    do j=js,je+1
+       do i=is,ie+1
+          qxx(i,j) = a2*(qx(i,j-2)+qx(i,j+1)) + a1*(qx(i,j-1)+qx(i,j))
+       enddo
+    enddo
+
+    do j=js,je+1
+       do i=is,ie+1
+          qyy(i,j) = a2*(qy(i-2,j)+qy(i+1,j)) + a1*(qy(i-1,j)+qy(i,j))
+       enddo
+
+       do i=is,ie+1
+          qout(i,j) = 0.5*(qxx(i,j) + qyy(i,j))   ! averaging
+       enddo
+    enddo
+
+
+ else
     
     do j=max(3,js),min(npy-2,je+1)
        do i=max(2,is),min(npx-1,ie+1)
@@ -488,6 +584,8 @@ contains
           qout(i,j) = 0.5*(qxx(i,j) + qyy(i,j))   ! averaging
        enddo
     enddo
+
+ endif
 
  else  ! grid_type>=3
 !------------------------
@@ -539,6 +637,16 @@ contains
     integer :: is1, js1, is2, js2, ie1, je1
 
     if (grid_type < 3) then
+
+       if (nested) then
+
+          do j=js-2,je+1+2
+             do i=is-2,ie+1+2
+                qout(i,j) = 0.25*(qin(i-1,j-1)+qin(i,j-1)+qin(i-1,j)+qin(i,j))
+             enddo
+          enddo
+
+       else
 
     is1 = max(1,is-1)
     js1 = max(1,js-1)
@@ -599,6 +707,8 @@ contains
           qout(i,npy) = edge_n(i)*q1(i-1) + (1.-edge_n(i))*q1(i)
        enddo
     endif
+
+ end if
 
  else
 

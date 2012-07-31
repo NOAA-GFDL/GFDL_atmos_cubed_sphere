@@ -7,6 +7,7 @@ module tp_core_mod
  use fv_grid_utils_mod, only: sw_corner, se_corner, ne_corner, nw_corner, &
                               sina_u, sina_v, da_min, sin_sg, big_number
  use fv_grid_tools_mod, only: dx, dy, rdxc, rdyc, rarea, dxa, dya, grid_type
+ use fv_current_grid_mod, only: nested
 
  implicit none
 
@@ -49,8 +50,8 @@ module tp_core_mod
   real, parameter:: p2 = -1./12.
 
 !---- version number -----
-   character(len=128) :: version = '$Id: tp_core.F90,v 19.0 2012/01/06 19:57:56 fms Exp $'
-   character(len=128) :: tagname = '$Name: siena_201204 $'
+   character(len=128) :: version = '$Id: tp_core.F90,v 17.0.2.4.2.5 2012/04/25 22:15:01 Lucas.Harris Exp $'
+   character(len=128) :: tagname = '$Name: siena_201207 $'
 
 !
 !EOP
@@ -99,7 +100,7 @@ contains
         ord    = hord
    endif
 
-   call copy_corners(q, npx, npy, 2)
+   if (.not. nested) call copy_corners(q, npx, npy, 2)
    call ytp(fy2, q, cry, ord_in, isd, ied, js, je, npx, npy)
 
    do j=js,je+1
@@ -114,7 +115,7 @@ contains
   enddo
   call xtp(fx, q_i, crx(is,js), ord, is, ie, js,  je, npx, npy)
 
-  call copy_corners(q, npx, npy, 1)
+  if (.not. nested) call copy_corners(q, npx, npy, 1)
   call xtp(fx2, q, crx, ord_in, is, ie, jsd,jed, npx, npy)
 
   do j=jsd,jed
@@ -180,6 +181,8 @@ contains
  integer, intent(in):: npx, npy, dir
  real, intent(inout):: q(isd:ied,jsd:jed)
  integer  i,j
+
+ if (nested) return
 
  if ( dir == 1 ) then
 ! XDir:
@@ -283,7 +286,7 @@ contains
                                q(i,j) - min(q(i-1,j),q(i,j),q(i+1,j))), dm(i))
         enddo
 
-      if (grid_type < 3) then
+      if (grid_type < 3 .and. .not. nested) then
 !--------------
 ! fix the edges 
 !  NOW: interpolation to the edge (originally from PL07, appendix C) generalized first for variable dx, then for dx which differs between the two sides of the edge
@@ -383,7 +386,7 @@ contains
 !--------------
 ! Fix the edges:
 !--------------
-    if (grid_type < 3) then
+    if (grid_type < 3 .and. .not. nested) then
       if( js==1 ) then
          do i=ifirst,ilast
 !            x0 = 0.5*(3.0*(q(i,0)+q(i,1))   &
@@ -471,7 +474,11 @@ contains
 
  x0 = big_number
 
- is3 = max(3,is-1);   ie3 = min(npx-3,ie+1)
+ if (nested) then
+    is3 = is-1;          ie3 = ie+1
+ else
+    is3 = max(3,is-1);   ie3 = min(npx-3,ie+1)
+ end if
 
  if (iord<=4) then
 
@@ -484,11 +491,13 @@ contains
         enddo
 
       if (grid_type < 3) then
-        do i=max(3,is-1),min(npx-2,ie+2)
+        do i=is3,ie3+1
+!        do i=max(3,is-1),min(npx-2,ie+2)
            al(i) = 0.5*(q(i-1,j)+q(i,j)) + r3*(dm1(i-1) - dm1(i))
         enddo
 
 ! Fix the edges:
+        if (.not. nested) then
         if ( is==1 ) then
              x0L = 0.5*((2.*dxa(0,j)+dxa(-1,j))*(q(0,j))   &
                 - dxa(0,j)*(q(-1,j)))/ ( dxa(0,j)+dxa(-1,j))
@@ -528,12 +537,14 @@ contains
                                     q(npx,j) - min(q(npx,j), x0, x1)), dm1(npx))
            al(npx+1) = 0.5*(q(npx,j)+q(npx+1,j)) + r3*(dm1(npx) - dm1(npx+1))
         endif
+
+     end if !.not. nested
       else
 ! For doubly periodic BC
            do i=is-1,ie+2
               al(i) = 0.5*(q(i-1,j)+q(i,j)) + r3*(dm1(i-1) - dm1(i))
            enddo
-      endif
+        endif !grid_type
 
       if ( iord==3 ) then
            do i=is-1,ie+1
@@ -604,12 +615,12 @@ contains
 
      do j=jfirst,jlast
 
-      if ( iord==6 ) then
-          do i=is3, ie3
-             bl(i) = b5*q(i-2,j) + b4*q(i-1,j) + b3*q(i,j) + b2*q(i+1,j) + b1*q(i+2,j)
-             br(i) = b1*q(i-2,j) + b2*q(i-1,j) + b3*q(i,j) + b4*q(i+1,j) + b5*q(i+2,j)
-          enddo
-      else
+!     if ( iord==6 ) then
+!         do i=is3, ie3
+!            bl(i) = b5*q(i-2,j) + b4*q(i-1,j) + b3*q(i,j) + b2*q(i+1,j) + b1*q(i+2,j)
+!            br(i) = b1*q(i-2,j) + b2*q(i-1,j) + b3*q(i,j) + b4*q(i+1,j) + b5*q(i+2,j)
+!         enddo
+!     else
           do i=is-3,ie+2
              dq(i) = q(i+1,j) - q(i,j)
           enddo
@@ -633,11 +644,12 @@ contains
              endif
           enddo
 
-        endif
+!       endif
 
 !--------------
 ! fix the edges
 !--------------
+          if (.not. nested) then
         if ( is==1 ) then
              x0L = 0.5*((2.*dxa(0,j)+dxa(-1,j))*(q(0,j))   &
                 - dxa(0,j)*(q(-1,j)))/ ( dxa(0,j)+dxa(-1,j))
@@ -693,8 +705,9 @@ contains
              bl(npx-1) = xt - q(npx-1,j)
         endif
 
+        end if
 ! Positive definite constraint:
-        if(iord==7) call pert_ppm(ilast-ifirst+2, q(ifirst-1,j), bl(ifirst-1), br(ifirst-1), 0)
+        if(iord==7) call pert_ppm(ie3-is3+1, q(is3,j), bl(is3), br(is3), 0)
 
         do i=ifirst,ilast+1
            if(c(i,j)>0.) then
@@ -721,7 +734,8 @@ contains
                              q(i,j) - min(q(i-1,j), q(i,j), q(i+1,j))), xt)
         enddo
 
-        do i=is3,min(npx-2,ie+2)
+!        do i=is3,min(npx-2,ie+2)
+        do i=is3,ie3+1
            al(i) = 0.5*(q(i-1,j)+q(i,j)) + r3*(dm1(i-1)-dm1(i))
         enddo
 
@@ -761,6 +775,7 @@ contains
 !--------------
 ! fix the edges
 !--------------
+        if (.not. nested) then
            if ( is==1 ) then
              x0L = 0.5*((2.*dxa(0,j)+dxa(-1,j))*(q(0,j))   &
                 - dxa(0,j)*(q(-1,j)))/ ( dxa(0,j)+dxa(-1,j))
@@ -815,6 +830,7 @@ contains
               bl(npx-1) = xt - q(npx-1,j)
               call pert_ppm(3, q(npx-2,j), bl(npx-2), br(npx-2), 1)
            endif
+        end if
         else
 !---------------
 ! grid_type == 4
@@ -872,9 +888,14 @@ contains
 
           if (grid_type < 3) then
 
-             is3 = max(3,is-1);   ie3 = min(npx-3,ie+1)
+             if (nested .and. iord /= 14) then
+                is3 = is-1;     ie3 = ie+1
+             else
+                is3 = max(3,is-1);   ie3 = min(npx-3,ie+1)
+             end if
 
-             do i=is3,min(npx-2,ie+2)
+!             do i=is3,min(npx-2,ie+2)
+             do i=is3,ie3+1
                 al(i) = 0.5*(q(i-1,j)+q(i,j)) + r3*(dm1(i-1)-dm1(i))
              enddo
 
@@ -926,6 +947,8 @@ contains
 !--------------
 ! fix the edges
 !--------------
+             if (nested) then
+             else
              if ( is==1 ) then
              x0L = 0.5*((2.*dxa(0,j)+dxa(-1,j))*(q(0,j))   &
                 - dxa(0,j)*(q(-1,j)))/ ( dxa(0,j)+dxa(-1,j))
@@ -971,6 +994,8 @@ contains
                 bl(npx-1) = xt - q(npx-1,j)
                 call pert_ppm(3, q(npx-2,j), bl(npx-2), br(npx-2), 1)
              endif
+
+             end if
           else
 !--------------
 ! grid_type >=4
@@ -1045,6 +1070,12 @@ contains
  real xt, x0, x1, x0L, x0R
  integer i, j, js3, je3, jt
 
+ if (nested) then
+    js3 = js-1;        je3 = je+1
+ else
+    js3 = max(3,js-1); je3 = min(npy-3,je+1)
+ end if
+
  if (jord<=4) then
 
    do j=js-2,je+2
@@ -1064,6 +1095,7 @@ contains
 !--------------
 ! Fix the edges:
 !--------------
+   if (.not. nested) then
       if( js==1 ) then
          do i=ifirst,ilast
             x0L = 0.5*((2.*dya(i,0)+dya(i,-1))*(q(i,0))   &
@@ -1107,6 +1139,7 @@ contains
             al(i,npy+1) = 0.5*(q(i,npy)+q(i,npy+1)) + r3*(dm(i,npy) - dm(i,npy+1))
          enddo
       endif
+   end if
   else
 ! Doubly periodic BC:
       do j=js-1,je+2
@@ -1198,16 +1231,16 @@ contains
 
  elseif( jord==6 .or. jord==7 ) then
 
-   if ( jord==6 ) then
+!  if ( jord==6 ) then
 
-   do j=max(3,js-1),min(npy-3,je+1)
-      do i=ifirst,ilast
-         bl(i,j) = b5*q(i,j-2) + b4*q(i,j-1) + b3*q(i,j) + b2*q(i,j+1) + b1*q(i,j+2)
-         br(i,j) = b1*q(i,j-2) + b2*q(i,j-1) + b3*q(i,j) + b4*q(i,j+1) + b5*q(i,j+2)
-      enddo
-   enddo
+!  do j=max(3,js-1),min(npy-3,je+1)
+!     do i=ifirst,ilast
+!        bl(i,j) = b5*q(i,j-2) + b4*q(i,j-1) + b3*q(i,j) + b2*q(i,j+1) + b1*q(i,j+2)
+!        br(i,j) = b1*q(i,j-2) + b2*q(i,j-1) + b3*q(i,j) + b4*q(i,j+1) + b5*q(i,j+2)
+!     enddo
+!  enddo
 
-   else
+!  else
 
    do j=js-3,je+2
       do i=ifirst,ilast
@@ -1225,7 +1258,8 @@ contains
       enddo
    enddo
 
-   do j=max(3,js-1),min(npy-3,je+1)
+   do j=js3,je3 
+   !do j=max(3,js-1),min(npy-3,je+1)
       do i=ifirst,ilast
 !!!        if ( extm(i,j) .and. (extm(i,j-1) .or. extm(i,j+1)) ) then
          if ( extm(i,j-1) .and. extm(i,j) .and. extm(i,j+1) ) then
@@ -1239,9 +1273,9 @@ contains
       enddo
    enddo
 
-   endif
+!  endif
 
-   if( js==1 ) then
+   if( js==1 .and. .not. nested) then
          do i=ifirst,ilast
 !           br(i,2) = al(i,3) - q(i,2)
             br(i,2) = p1*(q(i,2)+q(i,3)) + p2*(q(i,1)+q(i,4)) - q(i,2)
@@ -1274,7 +1308,7 @@ contains
          enddo
    endif
 
-   if( (je+1)==npy ) then
+   if( (je+1)==npy .and. .not. nested) then
          do i=ifirst,ilast
 !           bl(i,npy-2) = al(i,npy-2) - q(i,npy-2)
             bl(i,npy-2) = p1*(q(i,npy-3)+q(i,npy-2)) + p2*(q(i,npy-4)+q(i,npy-1)) - q(i,npy-2)
@@ -1336,7 +1370,8 @@ contains
 
    if (grid_type < 3) then
 
-       do j=max(3,js-1),min(npy-2,je+2)
+!      do j=max(3,js-1),min(npy-2,je+2)
+      do j=js3,je3+1
           do i=ifirst,ilast
              al(i,j) = 0.5*(q(i,j-1)+q(i,j)) + r3*(dm(i,j-1) - dm(i,j))
           enddo
@@ -1349,7 +1384,8 @@ contains
        enddo
       
        if ( jord==8 ) then
-         do j=max(3,js-1),min(npy-3,je+1)
+!         do j=max(3,js-1),min(npy-3,je+1) 
+         do j=js3,je3
          do i=ifirst,ilast
             xt = 2.*dm(i,j)
             bl(i,j) = -sign(min(abs(xt), abs(al(i,j)-q(i,j))),   xt)
@@ -1357,7 +1393,8 @@ contains
          enddo
          enddo
        elseif( jord==9 ) then
-         do j=max(3,js-1),min(npy-3,je+1)
+!         do j=max(3,js-1),min(npy-3,je+1) 
+         do j=js3,je3
          do i=ifirst,ilast
               pmp_1 = -2.*dq(i,j) 
               lac_1 = pmp_1 + 1.5*dq(i,j+1)
@@ -1368,7 +1405,8 @@ contains
          enddo
          enddo
        else    ! jord=10
-         do j=max(3,js-1),min(npy-3,je+1)
+!         do j=max(3,js-1),min(npy-3,je+1) 
+         do j=js3,je3
             do i=ifirst,ilast
                bl(i,j) = al(i,j  ) - q(i,j)
                br(i,j) = al(i,j+1) - q(i,j)
@@ -1390,6 +1428,7 @@ contains
 !--------------
 ! Fix the edges:
 !--------------
+       if (.not. nested) then
       if( js==1 ) then
          do i=ifirst,ilast
             br(i,2) = al(i,3) - q(i,2)
@@ -1454,7 +1493,8 @@ contains
                call pert_ppm(ilast-ifirst+1, q(ifirst,j), bl(ifirst,j), br(ifirst,j), 1)
             enddo
 !         endif
-      endif
+         endif
+      end if
 
    else
 !---------------
@@ -1515,9 +1555,14 @@ contains
 
    if (grid_type < 3) then
 
-      js3 = max(3,js-1); je3 = min(npy-3,je+1)
+      if (nested) then
+         js3 = js-1 ; je3 = je+1
+      else
+         js3 = max(3,js-1); je3 = min(npy-3,je+1)
+      end if
 
-      do j=js3,min(npy-2,je+2)
+!      do j=js3,min(npy-2,je+2)
+      do j=js3,je3+1
          do i=ifirst,ilast
             al(i,j) = 0.5*(q(i,j-1)+q(i,j)) + r3*(dm(i,j-1) - dm(i,j))
          enddo
@@ -1585,6 +1630,7 @@ contains
 !--------------
 ! Fix the edges:
 !--------------
+      if (.not. nested) then
       if( js==1 ) then
          do i=ifirst,ilast
             br(i,2) = al(i,3) - q(i,2)
@@ -1639,6 +1685,7 @@ contains
             call pert_ppm(ilast-ifirst+1, q(ifirst,j), bl(ifirst,j), br(ifirst,j), 1)
          enddo
       endif
+   end if
 
    else
 

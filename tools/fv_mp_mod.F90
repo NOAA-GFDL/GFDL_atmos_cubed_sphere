@@ -7,7 +7,7 @@
 #if defined(SPMD)
 ! !USES:
       use fms_mod,         only : fms_init, fms_end
-      use mpp_mod,         only : FATAL, MPP_DEBUG, NOTE, MPP_CLOCK_SYNC,MPP_CLOCK_DETAILED
+      use mpp_mod,         only : FATAL, MPP_DEBUG, NOTE, MPP_CLOCK_SYNC,MPP_CLOCK_DETAILED, WARNING
       use mpp_mod,         only : mpp_pe, mpp_npes, mpp_node, mpp_root_pe, mpp_error, mpp_set_warn_level
       use mpp_mod,         only : mpp_declare_pelist, mpp_set_current_pelist, mpp_sync
       use mpp_mod,         only : mpp_clock_begin, mpp_clock_end, mpp_clock_id
@@ -15,7 +15,7 @@
       use mpp_mod,         only : mpp_send, mpp_recv, mpp_sync_self, EVENT_RECV, mpp_gather
       use mpp_domains_mod, only : GLOBAL_DATA_DOMAIN, BITWISE_EXACT_SUM, BGRID_NE, FOLD_NORTH_EDGE, CGRID_NE
       use mpp_domains_mod, only : MPP_DOMAIN_TIME, CYCLIC_GLOBAL_DOMAIN, NUPDATE,EUPDATE, XUPDATE, YUPDATE, SCALAR_PAIR
-      use mpp_domains_mod, only : domain1D, domain2D, DomainCommunicator2D
+      use mpp_domains_mod, only : domain1D, domain2D, DomainCommunicator2D, mpp_get_ntile_count
       use mpp_domains_mod, only : mpp_get_compute_domain, mpp_get_data_domain, mpp_domains_set_stack_size
       use mpp_domains_mod, only : mpp_global_field, mpp_global_sum, mpp_global_max, mpp_global_min
       use mpp_domains_mod, only : mpp_domains_init, mpp_domains_exit, mpp_broadcast_domain
@@ -24,6 +24,22 @@
       use mpp_domains_mod, only : NORTH, NORTH_EAST, EAST, SOUTH_EAST
       use mpp_domains_mod, only : SOUTH, SOUTH_WEST, WEST, NORTH_WEST
       use mpp_parameter_mod, only : WUPDATE, EUPDATE, SUPDATE, NUPDATE, XUPDATE, YUPDATE
+      use fv_current_grid_mod, only: switch_current_grid_pointers, domain,ng, npx, npy, current_Atm
+      use fv_current_grid_mod, only: npes_x, npes_y, grid_number
+#if defined(SPMD)
+      use fv_current_grid_mod, only: domain_for_coupler, num_contact, ntiles, npes_per_tile, tile, &
+           is, ie, js, je, isd, ied, jsd, jed, isc, iec, jsc, jec, square_domain
+#endif
+      use fv_arrays_mod, only: fv_atmos_type
+      use fms_io_mod, only: set_domain
+      use mpp_mod, only : mpp_get_current_pelist, mpp_set_current_pelist
+      use mpp_domains_mod, only : mpp_define_domains
+      use mpp_domains_mod, only : mpp_define_nest_domains, nest_domain_type
+      use mpp_domains_mod, only : mpp_get_C2F_index, mpp_update_nest_fine
+      use mpp_domains_mod, only : mpp_get_F2C_index, mpp_update_nest_coarse
+      use mpp_domains_mod, only : mpp_get_domain_shift
+      use fv_current_grid_mod, only: pelist, npes_this_grid
+      use mpi, only: 
 
       implicit none
       private
@@ -31,30 +47,34 @@
 #include "mpif.h"
       integer, parameter :: XDir=1
       integer, parameter :: YDir=2
-      integer :: npes, npes_x, npes_y, gid, masterproc, commglobal, ierror
+      integer :: commglobal, ierror, npes
       integer :: io_domain_layout(2) = (/1,1/)
+      integer :: layout(2), io_layout(2)
 
-      type(domain2D), target, save :: domain
-      type(domain2D), target, save :: domain_for_coupler ! domain used in coupled model with halo = 1.
-      integer :: num_contact, ntiles, npes_per_tile, tile
       integer, allocatable, dimension(:)       :: npes_tile, tile1, tile2
       integer, allocatable, dimension(:)       :: istart1, iend1, jstart1, jend1
       integer, allocatable, dimension(:)       :: istart2, iend2, jstart2, jend2
       integer, allocatable, dimension(:,:)     :: layout2D, global_indices
-      integer, parameter:: ng    = 3     ! Number of ghost zones required
-      integer :: is, ie, js, je, isd, ied, jsd, jed
-      integer :: numthreads
-      logical:: square_domain = .false.
+      integer :: numthreads, gid, masterproc
 
-      
-      public mp_start, mp_barrier, mp_stop, npes, npes_x, npes_y, ng, gid, masterproc
-      public io_domain_layout, square_domain
-      public domain, tile, domain_for_coupler
-      public is, ie, js, je, isd, ied, jsd, jed
+      type(nest_domain_type), allocatable, dimension(:)       :: nest_domain
+      logical :: concurrent = .true. !.true. by default; if first grid uses all PEs then this is set to false. If a later grid does not use all PEs, and this is set to false, we know there is a problem.
+      integer :: this_pe_grid = 0
+      logical, allocatable :: grids_on_this_pe(:)
+      integer, EXTERNAL :: omp_get_thread_num, omp_get_num_threads      
+
+      public mp_start, mp_assign_gid, mp_barrier, mp_stop, npes, ng, gid, masterproc, npes_x, npes_y
+      public io_domain_layout, layout, io_layout
       public domain_decomp, mp_bcst, mp_reduce_max, mp_reduce_sum, mp_gather
       public mp_reduce_min
       public fill_corners, mp_corner_comm, XDir, YDir
       public numthreads
+      public switch_current_domain, switch_current_Atm
+      !The following variables are declared public by this module for convenience;
+      !they will need to be switched when domains are switched
+      public is, ie, js, je, isd, ied, jsd, jed, isc, iec, jsc, jec
+      public domain, square_domain, tile, ntiles 
+      public nest_domain, concurrent, grids_on_this_pe, broadcast_domains
 
       INTERFACE fill_corners
         MODULE PROCEDURE fill_corners_2d
@@ -67,6 +87,8 @@
         MODULE PROCEDURE mp_bcst_r8
         MODULE PROCEDURE mp_bcst_3d_r8
         MODULE PROCEDURE mp_bcst_4d_r8
+        MODULE PROCEDURE mp_bcst_3d_i8
+        MODULE PROCEDURE mp_bcst_4d_i8
       END INTERFACE
 
       INTERFACE mp_reduce_max
@@ -80,17 +102,24 @@
         MODULE PROCEDURE mp_reduce_sum_r8_1d
       END INTERFACE
 
-      INTERFACE mp_gather
+      INTERFACE mp_gather !WARNING only works with one level (ldim == 1)
         MODULE PROCEDURE mp_gather_4d_r4
         MODULE PROCEDURE mp_gather_3d_r4
         MODULE PROCEDURE mp_gather_3d_r8
       END INTERFACE
 
 !---- version number -----
-      character(len=128) :: version = '$Id: fv_mp_mod.F90,v 19.0 2012/01/06 19:59:11 fms Exp $'
-      character(len=128) :: tagname = '$Name: siena_201204 $'
+      character(len=128) :: version = '$Id: fv_mp_mod.F90,v 17.0.4.7.2.8 2012/05/10 19:52:44 Lucas.Harris Exp $'
+      character(len=128) :: tagname = '$Name: siena_201207 $'
 
 contains
+
+        subroutine mp_assign_gid
+
+          gid = mpp_pe()
+          npes = mpp_npes()
+
+        end subroutine mp_assign_gid
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
@@ -98,12 +127,10 @@ contains
 !     mp_start :: Start SPMD processes
 !
         subroutine mp_start(commID)
-         integer, intent(in), optional :: commID
-         integer :: unit
-!$       integer :: omp_get_num_threads
+          integer, intent(in), optional :: commID
 
-         gid = mpp_pe()
-         npes = mpp_npes()
+         integer :: ios
+         integer :: unit
 
          masterproc = mpp_root_pe()
          commglobal = MPI_COMM_WORLD
@@ -117,13 +144,15 @@ contains
 !$       numthreads = omp_get_num_threads()
 !$OMP END MASTER
 !$OMP END PARALLEL
+
          if ( mpp_pe()==mpp_root_pe() ) then
            unit = stdout()
-           write(unit,*) 'Starting PEs : ', npes
+           write(unit,*) 'Starting PEs : ', mpp_npes() !Should be for current pelist
            write(unit,*) 'Starting Threads : ', numthreads
          endif
 
-         call MPI_BARRIER(commglobal, ierror)
+         if (mpp_npes() > 1)  call MPI_BARRIER(commglobal, ierror)
+
       end subroutine mp_start
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
@@ -165,18 +194,20 @@ contains
 !
 !     domain_decomp :: Setup domain decomp
 !
-      subroutine domain_decomp(npx,npy,nregions,ng,grid_type)
+      subroutine domain_decomp(npx,npy,nregions,ng,grid_type,nested)
 
          integer, intent(IN)  :: npx,npy,nregions,ng,grid_type
+         logical, intent(IN):: nested
 
-         integer :: layout(2)
          integer, allocatable :: pe_start(:), pe_end(:)
 
-         character(len=80) :: evalue
-         integer :: ios,nx,ny,n,num_alloc
+         integer :: nx,ny,n,num_alloc
          character(len=32) :: type = "unknown"
          logical :: is_symmetry 
          logical :: debug=.false.
+         integer, allocatable :: tile_id(:)
+
+         integer i
 
          nx = npx-1
          ny = npy-1
@@ -191,6 +222,21 @@ contains
          case ( 1 )  ! Lat-Lon "cyclic"
 
             select case (grid_type)
+            case (0,1,2) !Gnomonic nested grid
+               if (nested) then
+                  type = "Cubed-sphere nested grid"
+               else
+                  type = "Cubed-sphere, single face"
+               end if
+               ntiles = 1
+               num_contact = 0
+               if (concurrent) then
+                  npes_per_tile = npes_x*npes_y !/ntiles !Set up for concurrency
+               else
+                  npes_per_tile = npes/ntiles
+               endif
+               is_symmetry = .true.
+               call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
             case (3)   ! Lat-Lon "cyclic"
                type="Lat-Lon: cyclic"
                ntiles = 4
@@ -235,15 +281,13 @@ contains
 
          case ( 6 )  ! Cubed-Sphere
             type="Cubic: cubed-sphere"
+            if (nested) then
+               call mpp_error(FATAL, 'For a nested grid with grid_type < 3 ntiles_domain must equal 1.')
+            endif
             ntiles = 6
             num_contact = 12
             !--- cubic grid always have six tiles, so npes should be multiple of 6
-            if( mod(npes,ntiles) .NE. 0 .OR. npx-1 .NE. npy-1) then
-               call mpp_error(NOTE,'domain_decomp: for Cubic_grid mosaic, npes should be multiple of ntiles(6) ' // &
-                                   'and npx-1 should equal npy-1, domain_decomp is NOT done for Cubic-grid mosaic. ' )
-               return
-            end if
-            npes_per_tile = npes/ntiles
+            npes_per_tile = npes_x*npes_y
             call  mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
 
             if ( npes_x == 0 ) then 
@@ -273,7 +317,11 @@ contains
          do n = 1, ntiles
             global_indices(:,n) = (/1,npx-1,1,npy-1/)
             layout2D(:,n)         = layout
-            pe_start(n) = mpp_root_pe() + (n-1)*layout(1)*layout(2)
+            if (concurrent) then
+               pe_start(n) = current_Atm%pelist(1) + (n-1)*layout(1)*layout(2)
+            else
+               pe_start(n) = mpp_root_pe() + (n-1)*layout(1)*layout(2)               
+            endif
             pe_end(n)   = pe_start(n) + layout(1)*layout(2) -1
          end do
          num_alloc=max(1,num_contact)
@@ -286,6 +334,8 @@ contains
          case ( 1 )
 
             select case (grid_type)
+            case (0,1,2) !Gnomonic nested grid
+               !No contacts, don't need to do anything
             case (3)   ! Lat-Lon "cyclic"
                !--- Contact line 1, between tile 1 (EAST) and tile 2 (WEST)
                tile1(1) = 1; tile2(1) = 2
@@ -394,24 +444,44 @@ contains
             istart2(12) = 1;  iend2(12) = 1;  jstart2(12) = 1;  jend2(12) = ny
          end select
 
-       call mpp_define_mosaic(global_indices, layout2D, domain, ntiles, num_contact, tile1, tile2, &
-                              istart1, iend1, jstart1, jend1, istart2, iend2, jstart2, jend2,      &
-                              pe_start=pe_start, pe_end=pe_end, symmetry=is_symmetry,              &
-                              shalo = ng, nhalo = ng, whalo = ng, ehalo = ng, name = type)
-       call mpp_define_mosaic(global_indices, layout2D, domain_for_coupler, ntiles, num_contact, tile1, tile2, &
-                              istart1, iend1, jstart1, jend1, istart2, iend2, jstart2, jend2,                  &
-                              pe_start=pe_start, pe_end=pe_end, symmetry=is_symmetry,                          &
-                              shalo = 1, nhalo = 1, whalo = 1, ehalo = 1, name = type)
-
-       call mpp_define_io_domain(domain, io_domain_layout)
-       call mpp_define_io_domain(domain_for_coupler, io_domain_layout)
+         if ( ANY(current_Atm%pelist == gid) ) then
+            allocate(tile_id(ntiles))
+            if( nested ) then
+               if( ntiles .NE. 1 ) then
+                  call mpp_error(FATAL, 'domain_decomp: ntiles should be 1 for nested region, contact developer')
+               endif
+               tile_id(1) = 7   ! currently we assuming the nested tile is nested in one face of cubic sphere grid.
+                                ! we need a more general way to deal with nested grid tile id.
+            else
+               do n = 1, ntiles
+                  tile_id(n) = n
+               enddo
+            endif
+            call mpp_define_mosaic(global_indices, layout2D, domain, ntiles, num_contact, tile1, tile2, &
+                 istart1, iend1, jstart1, jend1, istart2, iend2, jstart2, jend2,      &
+                 pe_start=pe_start, pe_end=pe_end, symmetry=is_symmetry,              &
+                 shalo = ng, nhalo = ng, whalo = ng, ehalo = ng, tile_id=tile_id, name = type)
+            call mpp_define_mosaic(global_indices, layout2D, domain_for_coupler, ntiles, num_contact, tile1, tile2, &
+                 istart1, iend1, jstart1, jend1, istart2, iend2, jstart2, jend2,                  &
+                 pe_start=pe_start, pe_end=pe_end, symmetry=is_symmetry,                          &
+                 shalo = 1, nhalo = 1, whalo = 1, ehalo = 1, tile_id=tile_id, name = type)
+            deallocate(tile_id)
+            call mpp_define_io_domain(domain, io_domain_layout)
+            call mpp_define_io_domain(domain_for_coupler, io_domain_layout)
+         endif
 
        deallocate(pe_start,pe_end)
+       deallocate(layout2D, global_indices, npes_tile)
+       deallocate(tile1, tile2)
+       deallocate(istart1, iend1, jstart1, jend1)
+       deallocate(istart2, iend2, jstart2, jend2)
 
         !--- find the tile number
-         tile = (mpp_pe()-mpp_root_pe())/npes_per_tile+1
-         call mpp_get_compute_domain( domain, is,  ie,  js,  je  )
-         call mpp_get_data_domain   ( domain, isd, ied, jsd, jed )
+       tile = (gid-current_Atm%pelist(1))/npes_per_tile+1
+         if (ANY(current_Atm%pelist == gid)) then
+               call mpp_get_compute_domain( domain, is,  ie,  js,  je  )
+               call mpp_get_data_domain   ( domain, isd, ied, jsd, jed )
+         endif
 
          if (debug .and. nregions==1) then
             tile=1
@@ -425,6 +495,74 @@ contains
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
+
+subroutine broadcast_domains(Atm)
+  
+  type(fv_atmos_type), intent(INOUT) :: Atm(:)
+
+  integer :: n, i1, i2, j1, j2, i
+
+  !I think the idea is that each process needs to properly be part of a pelist,
+  !the pelist on which the domain is currently defined is ONLY for the pes which have the domain.
+
+  if (concurrent) then
+     !Pelist needst to be set to ALL PEs for broadcast_domain to work
+     call mpp_set_current_pelist((/ (i,i=0,npes-1)  /))
+     do n=1,size(Atm)
+        call mpp_broadcast_domain(Atm(n)%domain)
+        call mpp_broadcast_domain(Atm(n)%domain_for_coupler)
+     end do
+  endif
+
+end subroutine broadcast_domains
+
+subroutine switch_current_domain(new_domain,new_domain_for_coupler)
+
+  type(domain2D), intent(in), target :: new_domain, new_domain_for_coupler
+  logical, parameter :: debug = .FALSE.
+
+  !does nothing yet
+
+  domain => new_domain
+  domain_for_coupler => new_domain_for_coupler
+
+  !--- find the tile number
+  !tile = mpp_pe()/npes_per_tile+1 !these are both taken care of by switch_current_grid_pointers
+  !ntiles = mpp_get_ntile_count(new_domain)
+  call mpp_get_compute_domain( domain, is,  ie,  js,  je  )
+  isc = is ; jsc = js
+  iec = ie ; jec = je
+  call mpp_get_data_domain   ( domain, isd, ied, jsd, jed )
+!  if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  square_domain = .true.
+
+  if (debug .AND. (gid==masterproc)) write(*,200) tile, is, ie, js, je
+200 format('New domain: ', i4.4, ' ', i4.4, ' ', i4.4, ' ', i4.4, ' ', i4.4, ' ')
+
+  call set_domain(domain)
+
+
+end subroutine switch_current_domain
+
+subroutine switch_current_Atm(new_Atm, switch_domain)
+
+  type(fv_atmos_type), intent(IN), target :: new_Atm
+  logical, intent(IN), optional :: switch_domain
+  logical, parameter :: debug = .false.
+  logical :: swD
+
+  if (debug .AND. (gid==masterproc)) print*, 'SWITCHING ATM STRUCTURES', new_Atm%grid_number
+  current_Atm => new_Atm
+  call switch_current_grid_pointers(new_Atm)
+  if (present(switch_domain)) then
+     swD = switch_domain
+  else
+     swD = .true.
+  end if
+  if (swD) call switch_current_domain(new_Atm%domain, new_Atm%domain_for_coupler)
+
+  if (debug .AND. (gid==masterproc)) WRITE(*,'(A, 6I5)') 'NEW GRID DIMENSIONS: ', isd, ied, jsd, jed, npx, npy
+
+end subroutine switch_current_Atm
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !!
@@ -1070,8 +1208,8 @@ contains
          integer :: i,j,k,l,n,icnt 
          integer :: Lsize, Lsize_buf(1)
          integer :: Gsize
-         integer :: LsizeS(npes), Ldispl(npes), cnts(npes)
-         integer :: Ldims(5), Gdims(5*npes)
+         integer :: LsizeS(npes_this_grid), Ldispl(npes_this_grid), cnts(npes_this_grid)
+         integer :: Ldims(5), Gdims(5*npes_this_grid)
          real(kind=4), allocatable, dimension(:) :: larr, garr
         
          Ldims(1) = i1
@@ -1079,7 +1217,7 @@ contains
          Ldims(3) = j1
          Ldims(4) = j2
          Ldims(5) = tile 
-         do l=1,npes
+         do l=1,npes_this_grid
             cnts(l) = 5
             Ldispl(l) = 5*(l-1)
          enddo 
@@ -1087,7 +1225,7 @@ contains
 !         call MPI_GATHERV(Ldims, 5, MPI_INTEGER, Gdims, cnts, Ldispl, MPI_INTEGER, masterproc, commglobal, ierror)
       
          Lsize = ( (i2 - i1 + 1) * (j2 - j1 + 1) ) * kdim
-         do l=1,npes
+         do l=1,npes_this_grid
             cnts(l) = 1
             Ldispl(l) = l-1
          enddo 
@@ -1108,9 +1246,9 @@ contains
          enddo
          Ldispl(1) = 0.0
 !         call mp_bcst(LsizeS(1))
-         call mpp_broadcast(LsizeS, npes, masterproc)
+         call mpp_broadcast(LsizeS, npes_this_grid, masterproc)
          Gsize = LsizeS(1)
-         do l=2,npes
+         do l=2,npes_this_grid
 !            call mp_bcst(LsizeS(l))
             Ldispl(l) = Ldispl(l-1) + LsizeS(l-1)
             Gsize = Gsize + LsizeS(l)
@@ -1121,7 +1259,7 @@ contains
 !         call MPI_GATHERV(larr, Lsize, MPI_REAL, garr, LsizeS, Ldispl, MPI_REAL, masterproc, commglobal, ierror)
 
          if (gid==masterproc) then
-            do n=2,npes
+            do n=2,npes_this_grid
                icnt=1
                do l=Gdims( (n-1)*5 + 5 ), Gdims( (n-1)*5 + 5 )
                   do k=1,kdim
@@ -1156,8 +1294,8 @@ contains
          integer :: i,j,l,n,icnt 
          integer :: Lsize, Lsize_buf(1)
          integer :: Gsize
-         integer :: LsizeS(npes), Ldispl(npes), cnts(npes)
-         integer :: Ldims(5), Gdims(5*npes)
+         integer :: LsizeS(npes_this_grid), Ldispl(npes_this_grid), cnts(npes_this_grid)
+         integer :: Ldims(5), Gdims(5*npes_this_grid)
          real(kind=4), allocatable, dimension(:) :: larr, garr 
 
          Ldims(1) = i1
@@ -1165,7 +1303,7 @@ contains
          Ldims(3) = j1
          Ldims(4) = j2
          Ldims(5) = tile
-         do l=1,npes
+         do l=1,npes_this_grid
             cnts(l) = 5
             Ldispl(l) = 5*(l-1)
          enddo
@@ -1173,7 +1311,7 @@ contains
          call mpp_gather(Ldims, Gdims)
 
          Lsize = ( (i2 - i1 + 1) * (j2 - j1 + 1) )
-         do l=1,npes
+         do l=1,npes_this_grid
             cnts(l) = 1
             Ldispl(l) = l-1
          enddo 
@@ -1192,9 +1330,9 @@ contains
          enddo
          Ldispl(1) = 0.0
 !         call mp_bcst(LsizeS(1))
-         call mpp_broadcast(LsizeS, npes, masterproc)
+         call mpp_broadcast(LsizeS, npes_this_grid, masterproc)
          Gsize = LsizeS(1)
-         do l=2,npes
+         do l=2,npes_this_grid
 !            call mp_bcst(LsizeS(l))
             Ldispl(l) = Ldispl(l-1) + LsizeS(l-1)
             Gsize = Gsize + LsizeS(l)
@@ -1203,7 +1341,7 @@ contains
          call mpp_gather(larr, Lsize, garr, LsizeS)
 !         call MPI_GATHERV(larr, Lsize, MPI_REAL, garr, LsizeS, Ldispl, MPI_REAL, masterproc, commglobal, ierror)
          if (gid==masterproc) then
-            do n=2,npes
+            do n=2,npes_this_grid
                icnt=1
                do l=Gdims( (n-1)*5 + 5 ), Gdims( (n-1)*5 + 5 )
                   do j=Gdims( (n-1)*5 + 3 ), Gdims( (n-1)*5 + 4 ) 
@@ -1235,8 +1373,8 @@ contains
          integer :: i,j,l,n,icnt
          integer :: Lsize, Lsize_buf(1)
          integer :: Gsize
-         integer :: LsizeS(npes), Ldispl(npes), cnts(npes)
-         integer :: Ldims(5), Gdims(5*npes)
+         integer :: LsizeS(npes_this_grid), Ldispl(npes_this_grid), cnts(npes_this_grid)
+         integer :: Ldims(5), Gdims(5*npes_this_grid)
          real,   allocatable, dimension(:) :: larr, garr
 
          Ldims(1) = i1
@@ -1244,14 +1382,14 @@ contains
          Ldims(3) = j1
          Ldims(4) = j2
          Ldims(5) = tile
-         do l=1,npes
+         do l=1,npes_this_grid
             cnts(l) = 5
             Ldispl(l) = 5*(l-1)
          enddo
 !         call MPI_GATHER(Ldims, 5, MPI_INTEGER, Gdims, cnts, MPI_INTEGER, masterproc, commglobal, ierror)
          call mpp_gather(Ldims, Gdims)
          Lsize = ( (i2 - i1 + 1) * (j2 - j1 + 1) )
-         do l=1,npes
+         do l=1,npes_this_grid
             cnts(l) = 1
             Ldispl(l) = l-1
          enddo
@@ -1270,10 +1408,10 @@ contains
             enddo
          enddo
          Ldispl(1) = 0.0
-         call mpp_broadcast(LsizeS, npes, masterproc)
+         call mpp_broadcast(LsizeS, npes_this_grid, masterproc)
 !         call mp_bcst(LsizeS(1))
          Gsize = LsizeS(1)
-         do l=2,npes
+         do l=2,npes_this_grid
 !            call mp_bcst(LsizeS(l))
             Ldispl(l) = Ldispl(l-1) + LsizeS(l-1)
             Gsize = Gsize + LsizeS(l)
@@ -1283,7 +1421,7 @@ contains
          call mpp_gather(larr, Lsize, garr, LsizeS)
 !         call MPI_GATHERV(larr, Lsize, MPI_DOUBLE_PRECISION, garr, LsizeS, Ldispl, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
          if (gid==masterproc) then
-            do n=2,npes
+            do n=2,npes_this_grid
                icnt=1
                do l=Gdims( (n-1)*5 + 5 ), Gdims( (n-1)*5 + 5 )
                   do j=Gdims( (n-1)*5 + 3 ), Gdims( (n-1)*5 + 4 )
@@ -1364,6 +1502,39 @@ contains
 !     
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_bcst_3d_i8 :: Call SPMD broadcast
+!
+      subroutine mp_bcst_3d_i8(q, idim, jdim, kdim)
+         integer, intent(IN)  :: idim, jdim, kdim
+         integer, intent(INOUT)  :: q(idim,jdim,kdim)
+
+         call MPI_BCAST(q, idim*jdim*kdim, MPI_INTEGER, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_3d_i8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_bcst_4d_i8 :: Call SPMD broadcast
+!
+      subroutine mp_bcst_4d_i8(q, idim, jdim, kdim, ldim)
+         integer, intent(IN)  :: idim, jdim, kdim, ldim
+         integer, intent(INOUT)  :: q(idim,jdim,kdim,ldim)
+
+         call MPI_BCAST(q, idim*jdim*kdim*ldim, MPI_INTEGER, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_4d_i8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !

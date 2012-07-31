@@ -5,15 +5,13 @@ module fv_sg_mod
 !-----------------------------------------------------------------------
 use constants_mod, only: rdgas, rvgas, cp_air, hlv, hlf, kappa, grav
 use fv_mp_mod,     only: gid
+use fv_current_grid_mod, only: fv_olr, fv_abs_sw, irad
 
 implicit none
 private
 
-integer:: irad = 0
 public  fv_dry_conv, fv_sg_conv, qsmith, neg_adj3
 public  fv_olr, fv_abs_sw, irad
-
-real, allocatable:: fv_olr(:,:), fv_abs_sw(:,:)
 
   real, parameter:: esl = 0.621971831
   real, parameter:: tice = 273.16
@@ -21,8 +19,8 @@ real, allocatable:: fv_olr(:,:), fv_abs_sw(:,:)
   real, allocatable:: table(:),des(:)
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_sg.F90,v 19.0 2012/01/06 19:57:46 fms Exp $'
-  character(len=128) :: tagname = '$Name: siena_201204 $'
+  character(len=128) :: version = '$Id: fv_sg.F90,v 17.0.2.4.2.3 2012/04/30 17:08:46 Lucas.Harris Exp $'
+  character(len=128) :: tagname = '$Name: siena_201207 $'
 
 contains
 

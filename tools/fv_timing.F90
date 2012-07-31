@@ -33,8 +33,8 @@
       real , private       :: us_tmp2(nblks,2)
 
 !---- version number -----
-      character(len=128) :: version = '$Id: fv_timing.F90,v 19.0 2012/01/06 19:59:19 fms Exp $'
-      character(len=128) :: tagname = '$Name: siena_201204 $'
+      character(len=128) :: version = '$Id: fv_timing.F90,v 17.0.2.2.2.3 2012/05/14 16:26:28 Lucas.Harris Exp $'
+      character(len=128) :: tagname = '$Name: siena_201207 $'
 
       contains
          subroutine timing_init

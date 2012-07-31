@@ -3,7 +3,7 @@
       use fms_mod,           only: file_exist, check_nml_error,            &
                                    open_namelist_file, close_file, stdlog, &
                                    mpp_pe, mpp_root_pe, FATAL, error_mesg
-      use mpp_mod,           only: get_unit, input_nml_file
+      use mpp_mod,           only: get_unit, input_nml_file, mpp_error
       use mpp_domains_mod,   only: mpp_update_domains
       use constants_mod,     only: grav, radius, pi
 #ifdef MARS_GCM
@@ -16,11 +16,11 @@
       use fv_mp_mod,         only: domain, ng, is,js,ie,je, isd,jsd,ied,jed, &
                                    gid, mp_stop, mp_reduce_min, mp_reduce_max
       use fv_timing_mod,     only: timing_on, timing_off
+      use fv_current_grid_mod, only: zs_g, sgh_g, oro_g, nested, npx_global, master
 
       implicit none
 
       private
-      real, allocatable:: sgh_g(:,:), oro_g(:,:), zs_g(:,:)
 !-----------------------------------------------------------------------
 ! NAMELIST
 !    Name, resolution, and format of XXmin USGS datafile
@@ -35,6 +35,8 @@
 !         nlat = 2160
 !    surf_format:      netcdf (default)
 !                      binary
+      logical::  zs_filter = .true. 
+      logical:: zero_ocean = .true.          ! if true, no diffusive flux into water/ocean area 
       integer           ::  nlon = 21600
       integer           ::  nlat = 10800
 #ifdef MARS_GCM
@@ -49,15 +51,15 @@
 #endif
       real da_min, cos_grid
 
-      namelist /surf_map_nml/ surf_file,surf_format,nlon,nlat
+      namelist /surf_map_nml/ surf_file,surf_format,nlon,nlat, zero_ocean, zs_filter
 !
       public  sgh_g, oro_g, zs_g
       public  surfdrv
       public  del2_cubed_sphere, del4_cubed_sphere
 
 !---- version number -----
-      character(len=128) :: version = '$Id: fv_surf_map.F90,v 19.0 2012/01/06 19:59:17 fms Exp $'
-      character(len=128) :: tagname = '$Name: siena_201204 $'
+      character(len=128) :: version = '$Id: fv_surf_map.F90,v 17.0.2.1.2.5.2.7.2.1 2012/06/12 18:03:35 Lucas.Harris Exp $'
+      character(len=128) :: tagname = '$Name: siena_201207 $'
 
       contains
 
@@ -92,18 +94,21 @@
       real dx1, dx2, dy1, dy2, lats, latn, r2d
       real da_max, cd2, zmean, z2mean, delg
 !     real z_sp, f_sp, z_np, f_np
-      integer i, j, n
+      integer i, j, n, mdim
       integer igh, jt
       integer ncid, lonid, latid, ftopoid, htopoid
       integer jstart, jend, start(4), nread(4)
       integer status
+
+      phis = 0.0
 
       call read_namelist
 
 !
 ! surface file must be in NetCDF format
 !
-      if ( file_exist(surf_file) .and. surf_format == "netcdf") then
+      if ( file_exist(surf_file) ) then 
+         if (surf_format == "netcdf") then
 
           status = nf_open (surf_file, NF_NOWRITE, ncid)
           if (status .ne. NF_NOERR) call handle_err(status)
@@ -122,9 +127,12 @@
 
           if ( master ) write(*,*) 'Opening USGS datset file:', surf_file, surf_format, nlon, nlat
   
-      else
-        call error_mesg ( 'surfdrv','Raw IEEE data format no longer supported !!!', FATAL )
-      endif
+       else
+          call error_mesg ( 'surfdrv','Raw IEEE data format no longer supported !!!', FATAL )
+       endif
+    else
+       call error_mesg ( 'surfdrv','surface file '//trim(surf_file)//' not found !', FATAL )
+    endif
 
       allocate ( lat1(nlat+1) )
       allocate ( lon1(nlon+1) )
@@ -237,12 +245,13 @@
 !          call zonal_mean(nlon, ft(1,1), f_sp)
 !     endif
 
-      allocate ( oro_g(isd:ied, jsd:jed) )
-      allocate ( sgh_g(isd:ied, jsd:jed) )
                                                      call timing_on('map_to_cubed')
       call map_to_cubed_raw(igh, nlon, jt, lat1(jstart:jend+1), lon1, zs, ft, grid, agrid,  &
                             phis, oro_g, sgh_g, master, npx, npy, jstart, jend)
                                                      call timing_off('map_to_cubed')
+
+      if( zs_filter .and. zero_ocean ) call mpp_update_domains(oro_g, domain)
+
       deallocate ( zs )
       deallocate ( ft )
       deallocate ( lon1 )
@@ -251,15 +260,14 @@
 
 ! Account for small-earth test cases
       if ( abs(radius-6371.e3) > 0.1 ) then
-           do j=js,je
-              do i=is,ie
+           do j=jsd,jed
+              do i=isd,ied
                  phis(i,j) = phis(i,j) * (radius/6371.e3)
               enddo
            enddo
            if(master) write(*,*) 'Small-Earth terrain adjustment done!'
       endif
 
-      allocate (  zs_g(is:ie, js:je) )
       allocate ( z2(is:ie,js:je) )
       do j=js,je
          do i=is,ie
@@ -283,40 +291,46 @@
       if ( master ) write(*,*) 'ORO min=', da_min, ' Max=', da_max
 
       call global_mx(area, ng, da_min, da_max)
+
                                                     call timing_on('Terrain_filter')
-! Del-2:
+! Del-2: high resolution only
+      if ( zs_filter ) then
+
       cd2 = 0.20*da_min
-      if ( npx>512 ) then
-      if ( npx<=721 ) then
-           call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 1, cd2)
-      elseif( npx <= 1001 ) then
-           call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 2, cd2)
-      elseif( npx <= 2001 ) then
-           call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 4, cd2)
+      if ( npx_global>512 ) then
+      if ( npx_global<=721 ) then
+           call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 1, cd2, zero_ocean, oro_g)
+      elseif( npx_global <= 1001 ) then
+           call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 2, cd2, zero_ocean, oro_g)
+      elseif( npx_global <= 2001 ) then
+           call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 4, cd2, zero_ocean, oro_g)
       else
-           call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 6, cd2)
+           call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 6, cd2, zero_ocean, oro_g)
       endif
       endif
 
 ! MFCT Del-4:
-      if ( npx<=91 ) then
-         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 1)
-      elseif( npx<=181 ) then
-         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 2)
-      elseif( npx<=361 ) then
-         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 4)
+      mdim = nint( real(npx_global) * min(10., stretch_factor) )
+      if ( mdim<=91 ) then
+         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 1, zero_ocean, oro_g)
+      elseif( mdim<=181 ) then
+         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 2, zero_ocean, oro_g)
+      elseif( mdim<=361 ) then
+         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 4, zero_ocean, oro_g)
       else
-         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 6)
+         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 6, zero_ocean, oro_g)
       endif
 
-! Final pass
-      if( npx >= 721 .and. npx<1001 ) then
-          call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 1, cd2)
-      elseif( npx >= 1001 .and. npx<=2001 ) then
-          call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 2, cd2)
-      elseif( npx>2001 ) then
-          call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 4, cd2)
+! Final pass: high-res only: C720 or higher
+      if( mdim >= 721 .and. mdim<1001 ) then
+          call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 1, cd2, zero_ocean, oro_g)
+      elseif( mdim >= 1001 .and. mdim<=2001 ) then
+          call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 3, cd2, zero_ocean, oro_g)
+      elseif( mdim>2001 ) then
+          call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, 6, cd2, zero_ocean, oro_g)
       endif
+
+      endif          ! end terrain filter
 
       do j=js,je
          do i=is,ie
@@ -353,7 +367,9 @@
 ! Filter the standard deviation of mean terrain:
 !-----------------------------------------------
       call global_mx(area, ng, da_min, da_max)
-      call del4_cubed_sphere(npx, npy, sgh_g, area, dx, dy, dxc, dyc, 1)
+
+      if(zs_filter) call del4_cubed_sphere(npx, npy, sgh_g, area, dx, dy, dxc, dyc, 1, zero_ocean, oro_g)
+
       call global_mx(sgh_g, ng, da_min, da_max)
       if ( master ) write(*,*) 'After filter SGH min=', da_min, ' Max=', da_max
       do j=js,je
@@ -367,16 +383,18 @@
  end subroutine surfdrv
 
 
- subroutine del2_cubed_sphere(npx, npy, q, area, dx, dy, dxc, dyc, nmax, cd)
+ subroutine del2_cubed_sphere(npx, npy, q, area, dx, dy, dxc, dyc, nmax, cd, zero_ocean, oro)
       integer, intent(in):: npx, npy
       integer, intent(in):: nmax
       real, intent(in):: cd
+      logical, intent(in):: zero_ocean
     ! INPUT arrays
       real, intent(in)::area(isd:ied,  jsd:jed)
       real, intent(in)::  dx(isd:ied,  jsd:jed+1)
       real, intent(in)::  dy(isd:ied+1,jsd:jed)
       real, intent(in):: dxc(isd:ied+1,jsd:jed)
       real, intent(in):: dyc(isd:ied,  jsd:jed+1)
+      real, intent(in):: oro(isd:ied,  jsd:jed)        ! 0==water, 1==land
     ! OUTPUT arrays
       real, intent(inout):: q(is-ng:ie+ng, js-ng:je+ng)
 ! Local:
@@ -386,25 +404,25 @@
       call mpp_update_domains(q,domain,whalo=ng,ehalo=ng,shalo=ng,nhalo=ng)
 
 ! First step: average the corners:
-      if ( is==1 .and. js==1 ) then
+      if ( is==1 .and. js==1  .and. .not. nested) then
            q(1,1) = (q(1,1)*area(1,1)+q(0,1)*area(0,1)+q(1,0)*area(1,0))  &
                   / (       area(1,1)+       area(0,1)+       area(1,0) )
            q(0,1) =  q(1,1)
            q(1,0) =  q(1,1)
       endif
-      if ( (ie+1)==npx .and. js==1 ) then
+      if ( (ie+1)==npx .and. js==1  .and. .not. nested) then
            q(ie, 1) = (q(ie,1)*area(ie,1)+q(npx,1)*area(npx,1)+q(ie,0)*area(ie,0)) &
                     / (        area(ie,1)+         area(npx,1)+        area(ie,0))
            q(npx,1) =  q(ie,1)
            q(ie, 0) =  q(ie,1)
       endif
-      if ( (ie+1)==npx .and. (je+1)==npy ) then
+      if ( (ie+1)==npx .and. (je+1)==npy .and. .not. nested ) then
            q(ie, je) = (q(ie,je)*area(ie,je)+q(npx,je)*area(npx,je)+q(ie,npy)*area(ie,npy))  &
                      / (         area(ie,je)+          area(npx,je)+          area(ie,npy))
            q(npx,je) =  q(ie,je)
            q(ie,npy) =  q(ie,je)
       endif
-      if ( is==1 .and. (je+1)==npy ) then
+      if ( is==1 .and. (je+1)==npy  .and. .not. nested) then
            q(1, je) = (q(1,je)*area(1,je)+q(0,je)*area(0,je)+q(1,npy)*area(1,npy))   &
                     / (        area(1,je)+        area(0,je)+         area(1,npy))
            q(0, je) =  q(1,je)
@@ -426,6 +444,20 @@
             enddo
          enddo
 
+         if ( zero_ocean ) then
+! Limit diffusive flux over ater cells:
+            do j=js,je
+               do i=is,ie+1
+                  ddx(i,j) = max(0., min(oro(i-1,j), oro(i,j))) * ddx(i,j)
+               enddo
+            enddo
+            do j=js,je+1
+               do i=is,ie
+                  ddy(i,j) = max(0., min(oro(i,j-1), oro(i,j))) * ddy(i,j)
+               enddo
+            enddo
+         endif
+
          do j=js,je
             do i=is,ie
                q(i,j) = q(i,j) + cd/area(i,j)*(ddx(i,j)-ddx(i+1,j)+ddy(i,j)-ddy(i,j+1))
@@ -436,8 +468,10 @@
  end subroutine del2_cubed_sphere
 
 
- subroutine del4_cubed_sphere(npx, npy, q, area, dx, dy, dxc, dyc, nmax)
+ subroutine del4_cubed_sphere(npx, npy, q, area, dx, dy, dxc, dyc, nmax, zero_ocean, oro)
       integer, intent(in):: npx, npy, nmax
+      logical, intent(in):: zero_ocean
+      real, intent(in):: oro(isd:ied,  jsd:jed)        ! 0==water, 1==land
       real, intent(in)::area(isd:ied,  jsd:jed)
       real, intent(in)::  dx(isd:ied,  jsd:jed+1)
       real, intent(in)::  dy(isd:ied+1,jsd:jed)
@@ -445,56 +479,72 @@
       real, intent(in):: dyc(isd:ied,  jsd:jed+1)
       real, intent(inout):: q(is-ng:ie+ng, js-ng:je+ng)
 ! diffusivity
-      real :: diff(is-1:ie+1,js-1:je+1)
+      real :: diff(is-3:ie+2,js-3:je+2)
 ! diffusive fluxes: 
+      real :: fx1(is:ie+1,js:je), fy1(is:ie,js:je+1)
       real :: fx2(is:ie+1,js:je), fy2(is:ie,js:je+1)
       real :: fx4(is:ie+1,js:je), fy4(is:ie,js:je+1)
       real, dimension(isd:ied,jsd:jed):: d2, win, wou 
-      real, dimension(is:ie,js:je):: qlow, qmin, qmax
+      real, dimension(is:ie,js:je):: qlow, q0, qmin, qmax
       real, parameter:: esl = 1.E-20
       integer i,j, n
 
+      do j=js-1,je+1
+         do i=is-1,ie+1
+            diff(i,j) = 0.18*area(i,j) ! area dependency is needed for stretched grid
+         enddo
+     enddo
+
+
+     do j=js,je
+        do i=is,ie
+           q0(i,j) = q(i,j)
+        enddo
+     enddo
+
   do n=1,nmax
-      call mpp_update_domains(q,domain)
+     call mpp_update_domains(q,domain)
 
 ! First step: average the corners:
-      if ( is==1 .and. js==1 ) then
+      if ( is==1 .and. js==1 .and. .not. nested) then
            q(1,1) = (q(1,1)*area(1,1)+q(0,1)*area(0,1)+q(1,0)*area(1,0))  &
                   / (       area(1,1)+       area(0,1)+       area(1,0) )
-           q(0,1) =  q(1,1)
-           q(1,0) =  q(1,1)
+           q(0,1) = q(1,1)
+           q(1,0) = q(1,1)
+           q(0,0) = q(1,1)
       endif
-      if ( (ie+1)==npx .and. js==1 ) then
+      if ( (ie+1)==npx .and. js==1  .and. .not. nested) then
            q(ie, 1) = (q(ie,1)*area(ie,1)+q(npx,1)*area(npx,1)+q(ie,0)*area(ie,0)) &
                     / (        area(ie,1)+         area(npx,1)+        area(ie,0))
-           q(npx,1) =  q(ie,1)
-           q(ie, 0) =  q(ie,1)
+           q(npx,1) = q(ie,1)
+           q(ie, 0) = q(ie,1)
+           q(npx,0) = q(ie,1)
       endif
-      if ( (ie+1)==npx .and. (je+1)==npy ) then
+      if ( (ie+1)==npx .and. (je+1)==npy  .and. .not. nested) then
            q(ie, je) = (q(ie,je)*area(ie,je)+q(npx,je)*area(npx,je)+q(ie,npy)*area(ie,npy))  &
                      / (         area(ie,je)+          area(npx,je)+          area(ie,npy))
-           q(npx,je) =  q(ie,je)
-           q(ie,npy) =  q(ie,je)
+           q(npx, je) = q(ie,je)
+           q(ie, npy) = q(ie,je)
+           q(npx,npy) = q(ie,je)
       endif
-      if ( is==1 .and. (je+1)==npy ) then
+      if ( is==1 .and. (je+1)==npy  .and. .not. nested) then
            q(1, je) = (q(1,je)*area(1,je)+q(0,je)*area(0,je)+q(1,npy)*area(1,npy))   &
                     / (        area(1,je)+        area(0,je)+         area(1,npy))
            q(0, je) =  q(1,je)
            q(1,npy) =  q(1,je)
+           q(0,npy) =  q(1,je)
       endif
 
      do j=js,je
         do i=is,ie
-           qmin(i,j) = min(q(i,j-1), q(i-1,j), q(i,j), q(i+1,j), q(i,j+1))
-           qmax(i,j) = max(q(i,j-1), q(i-1,j), q(i,j), q(i+1,j), q(i,j+1))
+           qmin(i,j) = min(q0(i,j), q(i-1,j-1), q(i,j-1), q(i+1,j-1),  &
+                                    q(i-1,j  ), q(i,j  ), q(i+1,j  ),  &
+                                    q(i-1,j+1), q(i,j+1), q(i+1,j+1) )
+           qmax(i,j) = max(q0(i,j), q(i-1,j-1), q(i,j-1), q(i+1,j-1),  &
+                                    q(i-1,j  ), q(i,j  ), q(i+1,j  ),  &
+                                    q(i-1,j+1), q(i,j+1), q(i+1,j+1) )
         enddo
      enddo
-
-     do j=js-1,je+1
-        do i=is-1,ie+1
-           diff(i,j) = 0.18*area(i,j) ! area dependency is needed for stretched grid
-        enddo
-    enddo
 
 !--------------
 ! Compute del-2
@@ -518,11 +568,37 @@
       do j=js,je
          do i=is,ie
             d2(i,j) = (fx2(i,j)-fx2(i+1,j)+fy2(i,j)-fy2(i,j+1)) / area(i,j)
-! Low order monotonic solution
-            qlow(i,j) = q(i,j) + d2(i,j)
-            d2(i,j) = diff(i,j)* d2(i,j)
          enddo
       enddo
+
+! qlow == low order monotonic solution
+      if ( zero_ocean ) then
+! Limit diffusive flux over ater cells:
+            do j=js,je
+               do i=is,ie+1
+                  fx1(i,j) = max(0., min(oro(i-1,j), oro(i,j))) * fx2(i,j)
+               enddo
+            enddo
+            do j=js,je+1
+               do i=is,ie
+                  fy1(i,j) = max(0., min(oro(i,j-1), oro(i,j))) * fy2(i,j)
+               enddo
+            enddo
+            do j=js,je
+               do i=is,ie
+                  qlow(i,j) = q(i,j) + (fx1(i,j)-fx1(i+1,j)+fy1(i,j)-fy1(i,j+1)) / area(i,j)
+                  d2(i,j) = diff(i,j) * d2(i,j)
+               enddo
+            enddo
+      else
+            do j=js,je
+               do i=is,ie
+                  qlow(i,j) =    q(i,j) + d2(i,j)
+                    d2(i,j) = diff(i,j) * d2(i,j)
+               enddo
+            enddo
+      endif
+
 
       call mpp_update_domains(d2,domain)
 
@@ -547,7 +623,6 @@
 !----------------
 ! Flux limitting:
 !----------------
-#ifndef NO_MFCT_FILTER
       do j=js,je
          do i=is,ie
             win(i,j) = max(0.,fx4(i,  j)) - min(0.,fx4(i+1,j)) +   &
@@ -580,7 +655,20 @@
             endif
          enddo
       enddo
-#endif
+
+      if ( zero_ocean ) then
+! Limit diffusive flux over ocean cells:
+           do j=js,je
+              do i=is,ie+1
+                 fx4(i,j) = max(0., min(oro(i-1,j), oro(i,j))) * fx4(i,j)
+              enddo
+           enddo
+           do j=js,je+1
+              do i=is,ie
+                 fy4(i,j) = max(0., min(oro(i,j-1), oro(i,j))) * fy4(i,j)
+              enddo
+           enddo
+      endif
 
 ! Update:
       do j=js,je
@@ -614,7 +702,7 @@
 ! Local
       real :: lon_g(-igh:im+igh)
       real lat_g(jt), cos_g(jt), e2(2)
-      real grid3(3, is:ie+1, js:je+1)
+      real grid3(3, isd:ied+1, jsd:jed+1)
       real, dimension(3):: p1, p2, p3, p4, pc, pp
       real, dimension(3):: vp_12, vp_23, vp_34, vp_14
       integer i,j, np, k
@@ -646,8 +734,8 @@
          cos_g(j) = cos( lat_g(j) )
       enddo
 
-      do j=js,je+1
-         do i=is,ie+1
+      do j=jsd,jed+1
+         do i=isd,ied+1
             call latlon2xyz(grid(i,j,1:2), grid3(1,i,j))
          enddo
       enddo
@@ -726,8 +814,19 @@
      endif
 
     min_pts = 999999
-    do j=js,je
-       do i=is,ie
+    do j=jsd,jed
+       do i=isd,ied
+
+          !Do not go into corners
+          if (((i < is .and. j < js) .or. &
+               (i < is .and. j > je) .or. &
+               (i > ie .and. j < js) .or. &
+               (i > ie .and. j > je)) .and. .not. nested) then
+             q2(i,j) = 1.e25
+             f2(i,j) = 1.e25
+             h2(i,j) = 1.e25
+             goto 4444
+          end if
 
           if ( agrid(i,j,2) < -pi5+stretch_factor*pi5/real(npx-1) ) then
 ! SP:
@@ -846,6 +945,7 @@
                  write(*,*) 'min and max lat_g is ', r2d*minval(lat_g), r2d*maxval(lat_g), mpp_pe()
                  write(*,*) 'Surf_map failed for GID=', gid, i,j, '(lon,lat)=', r2d*agrid(i,j,1),r2d*agrid(i,j,2)
                  write(*,*) '[jstart, jend]', jstart, jend
+                 call mpp_error(FATAL,'Surf_map failed')
                  stop
             endif
 4444  continue
@@ -933,8 +1033,8 @@
 !     phn = -78.9999*dtr
       phn = -76.4*dtr
             
-      do j = js, je
-         do i = is, ie
+      do j = jsd, jed
+         do i = isd, ied
          if ( lat(i,j) < phn ) then
                               ! replace all below this latitude
          if ( lat(i,j) < phs ) then

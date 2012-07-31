@@ -2,7 +2,7 @@
  
 #include <fms_platform.h>
  use constants_mod,   only: pi
- use mpp_mod,         only: FATAL, mpp_error
+ use mpp_mod,         only: FATAL, mpp_error, WARNING
  use external_sst_mod, only: i_sst, j_sst, sst_ncep, sst_anom
  use mpp_domains_mod, only: mpp_update_domains, DGRID_NE, mpp_global_sum,   &
                             BITWISE_EXACT_SUM
@@ -15,6 +15,16 @@
                             mp_reduce_sum, mp_reduce_min, mp_reduce_max
  use fv_mp_mod,       only: fill_corners, XDir, YDir
  use fv_timing_mod,   only: timing_on, timing_off
+ use fv_current_grid_mod, only: edge_s, edge_n, edge_w, edge_e,&
+       edge_vect_s, edge_vect_n, edge_vect_w, edge_vect_e, ex_s,&
+       ex_n, ex_w, ex_e, divg_u, divg_v, a11, a12, a21, a22, z11,&
+       z12, z21, z22, global_area, stretch_factor, g_sum_initialized,&
+       gnomonic_grid, sw_corner, se_corner, ne_corner, nw_corner,&
+       cosa_u, cosa_v, cosa_s, sina_s, sina_u, sina_v, rsin_u,&
+       rsin_v, rsina, rsin2, ee1, ee2, ec1, ec2, ew, es, sin_sg,&
+       cos_sg, en1, en2, eww, ess, vlon, vlat, fC, f0, deglat, ptop,&
+       da_min, da_max, da_min_c, da_max_c, ks, c2l_ord,&
+       stretched_grid, nested, grid_type, npx, npy
 
  implicit none
  private
@@ -28,84 +38,12 @@
  real, parameter::  big_number=1.E35
  real, parameter:: tiny_number=1.E-35
 
-! Scalars:
- real, allocatable :: edge_s(:)
- real, allocatable :: edge_n(:)
- real, allocatable :: edge_w(:)
- real, allocatable :: edge_e(:)
-! Vector:
- real, allocatable :: edge_vect_s(:)
- real, allocatable :: edge_vect_n(:)
- real, allocatable :: edge_vect_w(:)
- real, allocatable :: edge_vect_e(:)
-! scalar:
- real, allocatable :: ex_s(:)
- real, allocatable :: ex_n(:)
- real, allocatable :: ex_w(:)
- real, allocatable :: ex_e(:)
-! Vandermonde Matrix:
- real, allocatable :: van2(:,:,:)
-! divergence Damping:
- real, allocatable :: divg_u(:,:), divg_v(:,:)    !
-! Cubed_2_latlon:
- real, allocatable :: a11(:,:)
- real, allocatable :: a12(:,:)
- real, allocatable :: a21(:,:)
- real, allocatable :: a22(:,:)
-! latlon_2_cubed:
- real, allocatable :: z11(:,:)
- real, allocatable :: z12(:,:)
- real, allocatable :: z21(:,:)
- real, allocatable :: z22(:,:)
-
- real:: global_area, da_min, da_max, da_min_c, da_max_c
- real:: stretch_factor=1.
- logical:: g_sum_initialized
- logical:: stretched_grid
- logical:: gnomonic_grid
- logical:: sw_corner, se_corner, ne_corner, nw_corner 
- real, allocatable :: cosa_u(:,:)
- real, allocatable :: cosa_v(:,:)
- real, allocatable :: cosa_s(:,:)
- real, allocatable :: sina_s(:,:)
- real, allocatable :: sina_u(:,:)
- real, allocatable :: sina_v(:,:)
- real, allocatable :: rsin_u(:,:)
- real, allocatable :: rsin_v(:,:)
- real, allocatable ::  rsina(:,:)
- real, allocatable ::  rsin2(:,:)
- real, allocatable :: ee1(:,:,:)
- real, allocatable :: ee2(:,:,:)
- real, allocatable :: ec1(:,:,:)
- real, allocatable :: ec2(:,:,:)
- real, allocatable :: ew(:,:,:,:)
- real, allocatable :: es(:,:,:,:)
-
-!- 3D Super grid to contain all geometrical factors --
-! the 3rd dimension is 9
- real, allocatable :: sin_sg(:,:,:)
- real, allocatable :: cos_sg(:,:,:)
-!--------------------------------------------------
-
-! Unit Normal vectors at cell edges:
- real, allocatable :: en1(:,:,:)
- real, allocatable :: en2(:,:,:)
-
-! Extended Cubed cross-edge winds
- real, allocatable :: eww(:,:)
- real, allocatable :: ess(:,:)
-
-! Unit vectors for lat-lon grid
- real, allocatable :: vlon(:,:,:), vlat(:,:,:)
- real, allocatable :: fC(:,:), f0(:,:)
- real :: deglat=15.
-
  real, parameter:: ptop_min=1.E-8
- real    :: ptop
- integer :: ks
  integer :: g_type, npxx, npyy
- integer :: c2l_ord
+ real, allocatable :: van2(:,:,:)
 
+
+ public npxx, npyy
  public ptop, ks, ptop_min, fC, f0, deglat, big_number, ew, es, eww, ess, ec1, ec2
  public sina_u, sina_v, cosa_u, cosa_v, cosa_s, sina_s, rsin_u, rsin_v, rsina, rsin2
  public sin_sg, cos_sg, stretched_grid, stretch_factor, cos_angle
@@ -118,18 +56,19 @@
         gnomonic_grid, van2, divg_u, divg_v
  public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, grid_utils_end, &
         spherical_angle, cell_center2, get_area, inner_prod, fill_ghost, direct_transform,  &
-        make_eta_level, expand_cell, cart_to_latlon, intp_great_circle, normalize_vect
+        make_eta_level, expand_cell, cart_to_latlon, intp_great_circle, normalize_vect, &
+        dist2side_latlon, spherical_linear_interpolation
  public z11, z12, z21, z22
 
 !---- version number -----
- character(len=128) :: version = '$Id: fv_grid_utils.F90,v 19.0 2012/01/06 19:57:42 fms Exp $'
- character(len=128) :: tagname = '$Name: siena_201204 $'
+ character(len=128) :: version = '$Id: fv_grid_utils.F90,v 17.0.2.14.2.8.4.1 2012/06/11 20:39:40 Rusty.Benson Exp $'
+ character(len=128) :: tagname = '$Name: siena_201207 $'
 
  contains
 
    subroutine grid_utils_init(Atm, npx, npy, npz, grid, agrid, area, area_c,  &
                               cosa, sina, dx, dy, dxa, dya, dxc, dyc, non_ortho,   &
-                              uniform_ppm, grid_type, c2l_order)
+                              grid_type, c2l_order)
 ! Initialize 2D memory and geometrical factors
       type(fv_atmos_type), intent(inout) :: Atm
       logical, intent(in):: non_ortho
@@ -148,7 +87,6 @@
 
       real, intent(inout):: cosa(isd:ied+1,jsd:jed+1)
       real, intent(inout):: sina(isd:ied+1,jsd:jed+1)
-      logical, intent(IN) :: uniform_ppm
 !
 ! Super (composite) grid:
  
@@ -172,9 +110,6 @@
       stretch_factor = atm%stretch_fac
       if ( Atm%do_schmidt .and. abs(stretch_factor-1.) > 1.E-5 ) stretched_grid = .true.
 
-      allocate ( Atm%ak(npz+1) )
-      allocate ( Atm%bk(npz+1) )
-
       if ( npz == 1 ) then
            Atm%ak(1) = 0.
            Atm%ak(2) = 0.
@@ -190,7 +125,7 @@
               write(*,*) 'Grid_init', npz, ks, ptop
               tmp1 = Atm%ak(ks+1)
               do k=ks+1,npz
-                 tmp1 = max(tmp1, (Atm%ak(k)-Atm%ak(k+1)) / (Atm%bk(k+1)-Atm%bk(k)) )
+                 tmp1 = max(tmp1, (Atm%ak(k)-Atm%ak(k+1))/max(1.E-9, (Atm%bk(k+1)-Atm%bk(k))) )
               enddo
               write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hpa)=', tmp1/100.
               if ( tmp1 > 420.E2 ) write(*,*) 'Warning: the chosen setting in set_eta can cause instability'
@@ -203,76 +138,27 @@
       if (.not. allocated(sst_anom)) allocate (sst_anom(i_sst,j_sst))
 #endif
 
-! Coriolis parameters:
-      allocate ( f0(isd:ied  ,jsd:jed  ) )
-      allocate ( fC(isd:ied+1,jsd:jed+1) )
-
-! Corner unit vectors:
-      allocate( ee1(3,isd:ied+1,jsd:jed+1) )
-      allocate( ee2(3,isd:ied+1,jsd:jed+1) )
-
-! Center unit vectors:
-      allocate( ec1(3,isd:ied,jsd:jed) )
-      allocate( ec2(3,isd:ied,jsd:jed) )
-
-! Edge unit vectors:
-      allocate( ew(3,isd:ied+1,jsd:jed,  2) )
-      allocate( es(3,isd:ied  ,jsd:jed+1,2) )
-
-! Edge unit "Normal" vectors: (for omega computation)
-      allocate( en1(3,is:ie,  js:je+1) )   ! E-W edges
-      allocate( en2(3,is:ie+1,js:je  ) )   ! N-S egdes
- 
-      allocate ( cosa_u(isd:ied+1,jsd:jed) )
-      allocate ( sina_u(isd:ied+1,jsd:jed) )
-      allocate ( rsin_u(isd:ied+1,jsd:jed) )
-
-      allocate ( cosa_v(isd:ied,jsd:jed+1) )
-      allocate ( sina_v(isd:ied,jsd:jed+1) )
-      allocate ( rsin_v(isd:ied,jsd:jed+1) )
-
-      allocate ( cosa_s(isd:ied,jsd:jed) )    ! cell center
-      allocate ( sina_s(isd:ied,jsd:jed) )    ! cell center
-
-      allocate (  rsina(is:ie+1,js:je+1) )    ! cell corners
-      allocate (  rsin2(isd:ied,jsd:jed) )    ! cell center
-
-! Super (composite) grid:
- 
-!     9---4---8
-!     |       |
-!     1   5   3
-!     |       |
-!     6---2---7
- 
-      allocate ( cos_sg(isd:ied,jsd:jed,9) )
-      allocate ( sin_sg(isd:ied,jsd:jed,9) )
 
       cos_sg(:,:,:) =  big_number
       sin_sg(:,:,:) = tiny_number
-
-      allocate( eww(3,4) )
-      allocate( ess(3,4) )
-
-! For diveregnce damping:
-      allocate (  divg_u(isd:ied,  jsd:jed+1) )
-      allocate (  divg_v(isd:ied+1,jsd:jed) )
 
       sw_corner = .false.
       se_corner = .false.
       ne_corner = .false.
       nw_corner = .false.
 
-      if (grid_type < 3) then
+      if (grid_type < 3 .and. .not. nested) then
          if (       is==1 .and.  js==1 )      sw_corner = .true.
          if ( (ie+1)==npx .and.  js==1 )      se_corner = .true.
          if ( (ie+1)==npx .and. (je+1)==npy ) ne_corner = .true.
          if (       is==1 .and. (je+1)==npy ) nw_corner = .true.
       endif
 
-   if (grid_type < 3) then
+  if (grid_type < 3) then
+     if ( .not. nested ) then
      call fill_corners(grid(:,:,1), npx, npy, FILL=XDir, BGRID=.true.)
      call fill_corners(grid(:,:,2), npx, npy, FILL=XDir, BGRID=.true.)
+     end if
 
      do j=jsd,jed+1
         do i=isd,ied+1
@@ -283,22 +169,24 @@
      call get_center_vect( npx, npy, grid3, ec1, ec2 )
 
 ! Fill arbitrary values in the non-existing corner regions:
+     if (.not. nested) then
      do k=1,3
         call fill_ghost(ec1(k,:,:), npx, npy, big_number)
         call fill_ghost(ec2(k,:,:), npx, npy, big_number)
      enddo
+     end if
 
      do j=jsd,jed
         do i=isd+1,ied
-        if ( (i<1   .and. j<1  ) .or. (i>npx .and. j<1  ) .or.  &
-             (i>npx .and. j>(npy-1)) .or. (i<1   .and. j>(npy-1)) ) then
+        if ( ( (i<1   .and. j<1  ) .or. (i>npx .and. j<1  ) .or.  &
+             (i>npx .and. j>(npy-1)) .or. (i<1   .and. j>(npy-1)) )  .and. .not. nested) then
              ew(1:3,i,j,1:2) = 0.
         else
            call mid_pt_cart( grid(i,j,1:2), grid(i,j+1,1:2), pp)
-           if (i==1) then
+           if (i==1 .and. .not. nested) then
               call latlon2xyz( agrid(i,j,1:2), p1)
               call vect_cross(p2, pp, p1)
-           elseif(i==npx) then
+           elseif(i==npx .and. .not. nested) then
               call latlon2xyz( agrid(i-1,j,1:2), p1)
               call vect_cross(p2, p1, pp)
            else
@@ -306,27 +194,27 @@
               call latlon2xyz( agrid(i,  j,1:2), p1)
               call vect_cross(p2, p3, p1)
            endif
-           call vect_cross(ew(1,i,j,1), p2, pp)
-           call normalize_vect(ew(1,i,j,1))
+           call vect_cross(ew(1:3,i,j,1), p2, pp)
+           call normalize_vect(ew(1:3,i,j,1))
 !---
            call vect_cross(p1, grid3(1,i,j), grid3(1,i,j+1))
-           call vect_cross(ew(1,i,j,2), p1, pp)
-           call normalize_vect(ew(1,i,j,2))
+           call vect_cross(ew(1:3,i,j,2), p1, pp)
+           call normalize_vect(ew(1:3,i,j,2))
         endif
         enddo
      enddo
 
      do j=jsd+1,jed
         do i=isd,ied
-        if ( (i<1   .and. j<1  ) .or. (i>(npx-1) .and. j<1  ) .or.  &
-             (i>(npx-1) .and. j>npy) .or. (i<1   .and. j>npy) ) then
+        if ( ( (i<1   .and. j<1  ) .or. (i>(npx-1) .and. j<1  ) .or.  &
+               (i>(npx-1) .and. j>npy) .or. (i<1   .and. j>npy) ) .and. .not. nested) then
              es(1:3,i,j,1:2) = 0.
         else
            call mid_pt_cart(grid(i,j,1:2), grid(i+1,j,1:2), pp)
-           if (j==1) then
+           if (j==1 .and. .not. nested) then
               call latlon2xyz( agrid(i,j,1:2), p1)
               call vect_cross(p2, pp, p1)
-           elseif (j==npy) then
+           elseif (j==npy .and. .not. nested) then
               call latlon2xyz( agrid(i,j-1,1:2), p1)
               call vect_cross(p2, p1, pp)
            else 
@@ -334,12 +222,12 @@
               call latlon2xyz( agrid(i,j-1,1:2), p3)
               call vect_cross(p2, p3, p1)
            endif
-           call vect_cross(es(1,i,j,2), p2, pp)
-           call normalize_vect(es(1,i,j,2))
+           call vect_cross(es(1:3,i,j,2), p2, pp)
+           call normalize_vect(es(1:3,i,j,2))
 !---
            call vect_cross(p3, grid3(1,i,j), grid3(1,i+1,j))
-           call vect_cross(es(1,i,j,1), p3, pp)
-           call normalize_vect(es(1,i,j,1))
+           call vect_cross(es(1:3,i,j,1), p3, pp)
+           call normalize_vect(es(1:3,i,j,1))
         endif
         enddo
      enddo
@@ -369,7 +257,7 @@
       enddo
 
 #ifdef SPECIAL_EDGES
-      if ( sw_corner ) then
+      if ( sw_corner .and. .not. nested) then
            do j=-2,0
               cos_sg(0,j,6) = cos_sg(*,*,*)
            enddo
@@ -405,6 +293,7 @@
 ! -------------------------------
 ! For transport operation
 ! -------------------------------
+      if (.not. nested) then
       if ( sw_corner ) then
            do i=-2,0
               sin_sg(0,i,3) = sin_sg(i,1,2) 
@@ -432,7 +321,8 @@
               sin_sg(npx,i,1) = sin_sg(i,npy-1,4) 
               sin_sg(i,npy,2) = sin_sg(npx-1,i,3) 
            enddo
-      endif
+        endif
+     endif
    else
      cos_sg(:,:,:) = 0.
      sin_sg(:,:,:) = 1.
@@ -460,7 +350,7 @@
      es(1,:,:,2)=0.
      es(2,:,:,2)=1.
      es(3,:,:,2)=0.
-   endif
+  endif
 
    if ( non_ortho ) then
            cosa_u = big_number
@@ -479,29 +369,29 @@
         do j=js,je+1
            do i=is,ie+1
 ! unit vect in X-dir: ee1
-              if (i==1) then
+              if (i==1 .and. .not. nested) then
                   call vect_cross(pp, grid3(1,i,  j), grid3(1,i+1,j))
-              elseif(i==npx) then
+              elseif(i==npx .and. .not. nested) then
                   call vect_cross(pp, grid3(1,i-1,j), grid3(1,i,  j))
               else
                   call vect_cross(pp, grid3(1,i-1,j), grid3(1,i+1,j))
               endif
-              call vect_cross(ee1(1,i,j), pp, grid3(1,i,j))
-              call normalize_vect( ee1(1,i,j) )
+              call vect_cross(ee1(1:3,i,j), pp, grid3(1,i,j))
+              call normalize_vect( ee1(1:3,i,j) )
 
 ! unit vect in Y-dir: ee2
-              if (j==1) then
+              if (j==1 .and. .not. nested) then
                   call vect_cross(pp, grid3(1,i,j  ), grid3(1,i,j+1))
-              elseif(j==npy) then
+              elseif(j==npy .and. .not. nested) then
                   call vect_cross(pp, grid3(1,i,j-1), grid3(1,i,j  ))
               else
                   call vect_cross(pp, grid3(1,i,j-1), grid3(1,i,j+1))
               endif
-              call vect_cross(ee2(1,i,j), pp, grid3(1,i,j))
-              call normalize_vect( ee2(1,i,j) )
+              call vect_cross(ee2(1:3,i,j), pp, grid3(1,i,j))
+              call normalize_vect( ee2(1:3,i,j) )
 
 #ifdef SYM_GRID
-              tmp1 = inner_prod(ee1(1,i,j), ee2(1,i,j))
+              tmp1 = inner_prod(ee1(1:3,i,j), ee2(1:3,i,j))
               cosa(i,j) = sign(min(1., abs(tmp1)), tmp1)
               sina(i,j) = sqrt(max(0.,1. -cosa(i,j)**2))
 #else
@@ -547,10 +437,10 @@
       do j=jsd,jed
          do i=isd+1,ied
 !        do i=is,ie+1
-            if ( i==1 ) then
+            if ( i==1  .and. .not. nested) then
                cosa_u(i,j) = cos_sg(i,j,1)
                sina_u(i,j) = sin_sg(i,j,1)
-            elseif ( i==npx ) then
+            elseif ( i==npx  .and. .not. nested) then
                cosa_u(i,j) = cos_sg(i-1,j,3)
                sina_u(i,j) = sin_sg(i-1,j,3)
             else
@@ -562,13 +452,13 @@
       enddo
       do j=jsd+1,jed
 !     do j=js,je+1
-         if( j==1 ) then
+         if( j==1  .and. .not. nested) then
            do i=isd,ied
               cosa_v(i,j) = cos_sg(i,j,2)
               sina_v(i,j) = sin_sg(i,j,2)
               rsin_v(i,j) =  1. / sina_v(i,j)**2
            enddo
-         elseif ( j==npy ) then
+         elseif ( j==npy .and. .not. nested ) then
            do i=isd,ied
               cosa_v(i,j) = cos_sg(i,j-1,4)
               sina_v(i,j) = sin_sg(i,j-1,4)
@@ -610,16 +500,17 @@
          enddo
       enddo
 ! Force the model to fail if incorrect corner values are to be used:
-     call fill_ghost(cosa_s, npx, npy,  big_number)
-     call fill_ghost(sina_s, npx, npy, tiny_number)
-
+      if (.not. nested) then
+         call fill_ghost(cosa_s, npx, npy,  big_number)
+         call fill_ghost(sina_s, npx, npy, tiny_number)
+      end if
 !------------------------------------
 ! Set special sin values at edges:
 !------------------------------------
       do j=js,je+1
          do i=is,ie+1
-            if ( i==npx .and. j==npy ) then
-            else if ( i==1 .or. i==npx .or. j==1 .or. j==npy ) then
+            if ( i==npx .and. j==npy .and. .not. nested) then
+            else if ( ( i==1 .or. i==npx .or. j==1 .or. j==npy ) .and. .not. nested ) then
                  rsina(i,j) = big_number
             else
                  rsina(i,j) = 1. / sina(i,j)**2
@@ -629,7 +520,7 @@
 
       do j=jsd,jed
          do i=is,ie+1
-            if ( i==1 .or. i==npx ) then
+            if ( (i==1 .or. i==npx)  .and. .not. nested ) then
                  rsin_u(i,j) = 1. / sina_u(i,j)
             endif
          enddo
@@ -637,7 +528,7 @@
 
       do j=js,je+1
          do i=isd,ied
-            if ( j==1 .or. j==npy ) then
+            if ( (j==1 .or. j==npy) .and. .not. nested ) then
                  rsin_v(i,j) = 1. / sina_v(i,j)
             endif
          enddo
@@ -645,10 +536,12 @@
 
       !EXPLANATION HERE: calling fill_ghost overwrites **SOME** of the sin_sg values along the outward-facing edge of a tile in the corners, which is incorrect. What we will do is call fill_ghost and then fill in the appropriate values
 
+      if (.not. nested) then
      do k=1,9
         call fill_ghost(sin_sg(:,:,k), npx, npy, tiny_number)  ! this will cause NAN if used
         call fill_ghost(cos_sg(:,:,k), npx, npy, big_number)
      enddo
+     end if
 
 ! -------------------------------
 ! For transport operation
@@ -659,35 +552,56 @@
               sin_sg(i,0,4) = sin_sg(1,i,1) 
               cos_sg(0,i,3) = cos_sg(i,1,2) 
               cos_sg(i,0,4) = cos_sg(1,i,1) 
+              cos_sg(0,i,7) = cos_sg(i,1,6)
+              cos_sg(0,i,8) = cos_sg(i,1,7)
+              cos_sg(i,0,8) = cos_sg(1,i,9)
+              cos_sg(i,0,9) = cos_sg(1,i,6)
            enddo
+           cos_sg(0,0,8) = 0.5*(cos_sg(0,1,7)+cos_sg(1,0,9))
+           
       endif
       if ( nw_corner ) then
            do i=npy,npy+2
               sin_sg(0,i,3) = sin_sg(npy-i,npy-1,4) 
               cos_sg(0,i,3) = cos_sg(npy-i,npy-1,4) 
+              cos_sg(0,i,7) = cos_sg(npy-i,npy-1,8)
+              cos_sg(0,i,8) = cos_sg(npy-i,npy-1,9)
            enddo
            do i=0,-2,-1
               sin_sg(i,npy,2) = sin_sg(1,npy-i,1) 
               cos_sg(i,npy,2) = cos_sg(1,npy-i,1) 
+              cos_sg(i,npy,6) = cos_sg(1,npy-i,9)
+              cos_sg(i,npy,7) = cos_sg(1,npy-i,6)
            enddo
+           cos_sg(0,npy,7) = 0.5*(cos_sg(1,npy,6)+cos_sg(0,npy-1,8))
       endif
       if ( se_corner ) then
            do j=0,-2,-1
               sin_sg(npx,j,1) = sin_sg(npx-j,1,2) 
               cos_sg(npx,j,1) = cos_sg(npx-j,1,2) 
+              cos_sg(npx,j,6) = cos_sg(npx-j,1,7) 
+              cos_sg(npx,j,9) = cos_sg(npx-j,1,6) 
            enddo
            do i=npx,npx+2
               sin_sg(i,0,4) = sin_sg(npx-1,npx-i,3) 
               cos_sg(i,0,4) = cos_sg(npx-1,npx-i,3) 
+              cos_sg(i,0,9) = cos_sg(npx-1,npx-i,8) 
+              cos_sg(i,0,8) = cos_sg(npx-1,npx-i,7) 
            enddo
+           cos_sg(npx,0,9) = 0.5*(cos_sg(npx,1,6)+cos_sg(npx-1,0,8))
       endif
       if ( ne_corner ) then
          do i=0,2
             sin_sg(npx,npy+i,1) = sin_sg(npx+i,npy-1,4)
             sin_sg(npx+i,npy,2) = sin_sg(npx-1,npy+i,3)
             cos_sg(npx,npy+i,1) = cos_sg(npx+i,npy-1,4)
+            cos_sg(npx,npy+i,6) = cos_sg(npx+i,npy-1,9)
+            cos_sg(npx,npy+i,9) = cos_sg(npx+i,npy-1,8)
             cos_sg(npx+i,npy,2) = cos_sg(npx-1,npy+i,3)
+            cos_sg(npx+i,npy,6) = cos_sg(npx-1,npy+i,7)
+            cos_sg(npx+i,npy,7) = cos_sg(npx-1,npy+i,8)
          end do
+         cos_sg(npx,npy,6) = 0.5*(cos_sg(npx-1,npy,7)+cos_sg(npx,npy-1,9))
       endif     
 
    else
@@ -712,47 +626,49 @@
 ! Make normal vect at face edges after consines are computed:
 !-------------------------------------------------------------
 ! for old d2a2c_vect routines
-     do j=js-1,je+1
-        if ( is==1 ) then
-             i=1
-             call vect_cross(ew(1,i,j,1), grid3(1,i,j+1), grid3(1,i,j)) 
-             call normalize_vect( ew(1,i,j,1) )
-        endif
-        if ( (ie+1)==npx ) then
-             i=npx
-             call vect_cross(ew(1,i,j,1), grid3(1,i,j+1), grid3(1,i,j)) 
-             call normalize_vect( ew(1,i,j,1) )
-        endif
-     enddo
+      if (.not. nested) then
+         do j=js-1,je+1
+            if ( is==1 ) then
+               i=1
+               call vect_cross(ew(1,i,j,1), grid3(1,i,j+1), grid3(1,i,j)) 
+               call normalize_vect( ew(1,i,j,1) )
+            endif
+            if ( (ie+1)==npx ) then
+               i=npx
+               call vect_cross(ew(1,i,j,1), grid3(1,i,j+1), grid3(1,i,j)) 
+               call normalize_vect( ew(1,i,j,1) )
+            endif
+         enddo
 
-     if ( js==1 ) then
-        j=1
-        do i=is-1,ie+1
-             call vect_cross(es(1,i,j,2), grid3(1,i,j),grid3(1,i+1,j)) 
-             call normalize_vect( es(1,i,j,2) )
-        enddo
-     endif
-     if ( (je+1)==npy ) then
-        j=npy
-        do i=is-1,ie+1
-             call vect_cross(es(1,i,j,2), grid3(1,i,j),grid3(1,i+1,j)) 
-             call normalize_vect( es(1,i,j,2) )
-        enddo
-     endif
+         if ( js==1 ) then
+            j=1
+            do i=is-1,ie+1
+               call vect_cross(es(1,i,j,2), grid3(1,i,j),grid3(1,i+1,j)) 
+               call normalize_vect( es(1,i,j,2) )
+            enddo
+         endif
+         if ( (je+1)==npy ) then
+            j=npy
+            do i=is-1,ie+1
+               call vect_cross(es(1,i,j,2), grid3(1,i,j),grid3(1,i+1,j)) 
+               call normalize_vect( es(1,i,j,2) )
+            enddo
+         endif
+      endif
 #endif
 
 ! For omega computation:
 ! Unit vectors:
      do j=js,je+1
         do i=is,ie
-           call vect_cross(en1(1,i,j), grid3(1,i,j), grid3(1,i+1,j))
-           call normalize_vect( en1(1,i,j) )
+           call vect_cross(en1(1:3,i,j), grid3(1,i,j), grid3(1,i+1,j))
+           call normalize_vect( en1(1:3,i,j) )
         enddo
      enddo
      do j=js,je
         do i=is,ie+1
-           call vect_cross(en2(1,i,j), grid3(1,i,j+1), grid3(1,i,j)) 
-           call normalize_vect( en2(1,i,j) )
+           call vect_cross(en2(1:3,i,j), grid3(1,i,j+1), grid3(1,i,j)) 
+           call normalize_vect( en2(1:3,i,j) )
         enddo
      enddo
 !-------------------------------------------------------------
@@ -803,7 +719,7 @@
   endif
  
   do j=jsd,jed+1
-     if (j==1 .OR. j==npy) then
+     if ((j==1 .OR. j==npy) .and. .not. nested) then
         do i=isd,ied
            divg_u(i,j) = dyc(i,j)/dx(i,j) &
                     *0.5*(sin_sg(i,j,2) + sin_sg(i,j-1,4) )
@@ -818,9 +734,9 @@
      do i=isd,ied+1
         divg_v(i,j) = sina_u(i,j)*dxc(i,j)/dy(i,j)
      enddo
-     if (is == 1) divg_v(is,j) = dxc(is,j)/dy(is,j)* &
+     if (is == 1 .and. .not. nested) divg_v(is,j) = dxc(is,j)/dy(is,j)* &
             0.5*(sin_sg(1,j,1) + sin_sg(0,j,3))
-     if (ie+1 == npx) divg_v(ie+1,j) = dxc(ie+1,j)/dy(ie+1,j)* & 
+     if (ie+1 == npx .and. .not. nested) divg_v(ie+1,j) = dxc(ie+1,j)/dy(ie+1,j)* & 
             0.5*(sin_sg(npx,j,1) + sin_sg(npx-1,j,3))
   enddo
 
@@ -838,7 +754,7 @@
 ! Initialization for interpolation at face edges
 !------------------------------------------------
 ! A->B scalar:
-     if (grid_type < 3) then
+     if (grid_type < 3 .and. .not. nested) then
         call mpp_update_domains(divg_v, divg_u, domain, flags=SCALAR_PAIR,      &
                                 gridtype=CGRID_NE_PARAM, complete=.true.)
         call edge_factors (non_ortho, grid, agrid, npx, npy)
@@ -846,20 +762,6 @@
 !       call extend_cube_s(non_ortho, grid, agrid, npx, npy, .false.)
 !       call van2d_init(grid, agrid, npx, npy)
      else
-        allocate ( edge_s(npx) )
-        allocate ( edge_n(npx) )
-        allocate ( edge_w(npy) )
-        allocate ( edge_e(npy) )
-
-        allocate ( edge_vect_s(isd:ied) )
-        allocate ( edge_vect_n(isd:ied) )
-        allocate ( edge_vect_w(jsd:jed) )
-        allocate ( edge_vect_e(jsd:jed) )
-
-        allocate ( ex_s(npx) )
-        allocate ( ex_n(npx) )
-        allocate ( ex_w(npy) )
-        allocate ( ex_e(npy) )
 
         edge_s = big_number
         edge_n = big_number
@@ -881,8 +783,7 @@
   end subroutine grid_utils_init
 
  
-  subroutine grid_utils_end(uniform_ppm)
-  logical, intent(IN) :: uniform_ppm
+  subroutine grid_utils_end
  
 ! deallocate sst_ncep (if allocated)
 #ifndef DYCORE_SOLO
@@ -890,68 +791,8 @@
       if (allocated(sst_anom)) deallocate( sst_anom )
 #endif
 
-      if( allocated(cos_sg) ) deallocate( cos_sg )
-      if( allocated(sin_sg) ) deallocate( sin_sg )
-
-      deallocate( cosa_u )
-      deallocate( cosa_v )
-      deallocate( cosa_s )
-      deallocate( sina_s )
-      deallocate( sina_u )
-      deallocate( sina_v )
-
-      deallocate( rsin_u )
-      deallocate( rsin_v )
-      deallocate( rsina  )
-      deallocate( rsin2  )
-
-      deallocate( ee1 )
-      deallocate( ee2 )
-
-      deallocate( ec1 )
-      deallocate( ec2 )
-      deallocate( ew )
-      deallocate( es )
-
-      deallocate( en1 )
-      deallocate( en2 )
-
-      deallocate( eww )
-      deallocate( ess )
-
-      deallocate( edge_s )
-      deallocate( edge_n )
-      deallocate( edge_w )
-      deallocate( edge_e )
-
-      deallocate( edge_vect_s )
-      deallocate( edge_vect_n )
-      deallocate( edge_vect_w )
-      deallocate( edge_vect_e )
-
-      if ( allocated(ex_s) ) then
-           deallocate( ex_s )
-           deallocate( ex_n )
-           deallocate( ex_w )
-           deallocate( ex_e )
-      endif
       if ( allocated(van2) ) deallocate( van2 )
 
-    if ( g_type<4 ) then
-      deallocate( a11 )
-      deallocate( a12 )
-      deallocate( a21 )
-      deallocate( a22 )
-      deallocate( vlon )
-      deallocate( vlat )
-      deallocate( z11 )
-      deallocate( z12 )
-      deallocate( z21 )
-      deallocate( z22 )
-    endif
-
-    deallocate( divg_u )
-    deallocate( divg_v )
 
   end subroutine grid_utils_end
 
@@ -992,7 +833,7 @@
           if ( abs(c2m1) > 1.E-7 ) then
                sin_lat = sin(lat(i,j)) 
                lat_t = asin( (c2m1+c2p1*sin_lat)/(c2p1+c2m1*sin_lat) )
-          else
+          else         ! no stretching
                lat_t = lat(i,j)
           endif
           sin_lat = sin(lat_t) 
@@ -1471,11 +1312,6 @@
  logical local_in, local_out
  real, parameter:: esl = 1.E-5
 
- allocate ( ex_s(npx) )
- allocate ( ex_n(npx) )
- allocate ( ex_w(npy) )
- allocate ( ex_e(npy) )
-
 
   if ( .not. non_ortho ) then
      ex_s = 0.
@@ -1488,7 +1324,7 @@
      ex_w = big_number
      ex_e = big_number
  
-     if ( npx /= npy ) call mpp_error(FATAL, 'extend_cube_s: npx /= npy')
+     if ( npx /= npy .and. .not. nested) call mpp_error(FATAL, 'extend_cube_s: npx /= npy')
      if ( (npx/2)*2 == npx ) call mpp_error(FATAL, 'extend_cube_s: npx/npy is not an odd number')
 
      im2 = (npx-1)/2
@@ -1707,10 +1543,6 @@
  integer i, j
  integer im2, jm2
 
- allocate ( edge_vect_s(isd:ied) )
- allocate ( edge_vect_n(isd:ied) )
- allocate ( edge_vect_w(jsd:jed) )
- allocate ( edge_vect_e(jsd:jed) )
 
   if ( .not. non_ortho ) then
      edge_vect_s = 0.
@@ -1723,7 +1555,7 @@
      edge_vect_w = big_number
      edge_vect_e = big_number
 
-     if ( npx /= npy ) call mpp_error(FATAL, 'efactor_a2c_v: npx /= npy')
+     if ( npx /= npy .and. .not. nested) call mpp_error(FATAL, 'efactor_a2c_v: npx /= npy')
      if ( (npx/2)*2 == npx ) call mpp_error(FATAL, 'efactor_a2c_v: npx/npy is not an odd number')
 
      im2 = (npx-1)/2
@@ -1872,12 +1704,6 @@
  real px(2,npx), py(2,npy)
  real d1, d2
  integer i, j
-
- allocate ( edge_s(npx) )
- allocate ( edge_n(npx) )
- allocate ( edge_w(npy) )
- allocate ( edge_e(npy) )
-
 
   if ( .not. non_ortho ) then
      edge_s = 0.5
@@ -2087,6 +1913,119 @@
 
  end subroutine gnomonic_ed
 
+ subroutine gnomonic_ed_limited(im, in, nghost, lL, lR, uL, uR, lamda, theta)
+   
+   !This routine creates a limited-area equidistant gnomonic grid with
+   !corners given by lL (lower-left), lR (lower-right), uL (upper-left),
+   !and uR (upper-right) with im by in cells. lamda and theta are the 
+   !latitude-longitude coordinates of the corners of the cells.
+
+   !This formulation assumes the coordinates given are on the
+   ! 'prototypical equatorial panel' given by gnomonic_ed. The
+   ! resulting gnomonic limited area grid can then be translated and
+   ! /or scaled to its appropriate location on another panel if so
+   ! desired.
+
+   integer, intent(IN) :: im, in, nghost
+   real, intent(IN), dimension(2) :: lL, lR, uL, uR
+   real, intent(OUT) :: lamda(1-nghost:im+1+nghost,1-nghost:in+1+nghost)
+   real, intent(OUT) :: theta(1-nghost:im+1+nghost,1-nghost:in+1+nghost)
+
+   ! Local:
+   real pp(3,1-nghost:im+1+nghost,1-nghost:in+1+nghost)
+   real p1(2), p2(2)
+   ! real(f_p):: rsq3, alpha, delx, dely
+   real:: rsq3, alpha, delx, dely
+   integer i, j, k, irefl
+   
+   rsq3 = 1./sqrt(3.) 
+   alpha = asin( rsq3 )
+
+   lamda(1,1) = lL(1);         theta(1,1) = lL(2)
+   lamda(im+1,1) = lR(1);      theta(im+1,1) = lR(2)
+   lamda(1,in+1) = uL(1);      theta(1,in+1) = uL(2)
+   lamda(im+1,in+1) = uR(1);   theta(im+1,in+1) = uR(2)
+
+   !Since meridians are great circles, grid spacing is equidistant in lat-lon space along the east and west edges of the grid
+   dely = (uL(2) - lL(2))/in
+   do j=2,in+1+nghost
+      theta(1,j) = theta(1,j-1) + dely
+      theta(in+1,j) = theta(in+1,j-1) + dely
+      lamda(1,j) = lamda(1,1)
+      lamda(in+1,j) = lamda(in+1,1)
+   end do
+   do j=0,1-nghost,-1
+      theta(1,j) = theta(1,j+1) - dely
+      theta(in+1,j) = theta(in+1,j+1) - dely
+      lamda(1,j) = lamda(1,1)
+      lamda(in+1,j) = lamda(in+1,1)
+   end do
+
+   lamda(1,:) = lamda(1,1)
+   lamda(in+1,:) = lamda(in+1,1)
+
+   !Here, instead of performing a reflection (as in gnomonic_ed) to get the north and south edges we interpolate along the great circle connecting the upper (or lower) two corners.
+   do i=1-nghost,im+1+nghost
+
+      if (i == 1) cycle
+
+      call spherical_linear_interpolation(real(i-1)/real(im), (/lamda(1,1),theta(1,1)/), (/lamda(im+1,1),theta(im+1,1)/), p1 )
+      call spherical_linear_interpolation(real(i-1)/real(im), (/lamda(1,in+1),theta(1,in+1)/), (/lamda(im+1,in+1),theta(im+1,in+1)/), p2 )
+
+      lamda(i,1) = p1(1); theta(i,1) = p1(2)
+      lamda(i,in+1) = p2(1); theta(i,in+1) = p2(2)
+
+   end do
+
+   !Get cartesian coordinates and project onto the cube face with x = -rsq3
+   
+   i=1
+   do j=1-nghost,in+1+nghost
+      call latlon2xyz2(lamda(i,j), theta(i,j), pp(1,i,j))
+      pp(2,i,j) = -pp(2,i,j)*rsq3/pp(1,i,j)
+      pp(3,i,j) = -pp(3,i,j)*rsq3/pp(1,i,j)
+   enddo
+
+   j=1
+   do i=1-nghost,im+1+nghost
+      call latlon2xyz2(lamda(i,j), theta(i,j), pp(1,i,1))
+      pp(2,i,1) = -pp(2,i,1)*rsq3/pp(1,i,1)
+      pp(3,i,1) = -pp(3,i,1)*rsq3/pp(1,i,1)
+   enddo
+
+   !We are now on the cube.
+
+   do j=1-nghost,in+1+nghost
+      do i=1-nghost,im+1+nghost
+         pp(1,i,j) = -rsq3
+      enddo
+   enddo
+
+   do j=1-nghost,in+1+nghost
+      do i=1-nghost,im+1+nghost
+         ! Copy y-z face of the cube along j=1
+         pp(2,i,j) = pp(2,i,1)
+         ! Copy along i=1
+         pp(3,i,j) = pp(3,1,j)
+      enddo
+   enddo
+
+   call cart_to_latlon( (im+1+2*nghost)*(in+1+2*nghost), pp(:,1-nghost:im+1+nghost,1-nghost:in+1+nghost), lamda(1-nghost:im+1+nghost,1-nghost:in+1+nghost), theta(1-nghost:im+1+nghost,1-nghost:in+1+nghost))
+   !call cart_to_latlon( (im+1)*(in+1), pp(:,1:im+1,1:in+1), lamda(1:im+1,1:in+1), theta(1:im+1,1:in+1))
+   
+   ! Compute great-circle-distance "resolution" along the face edge:
+   if ( gid==0 ) then
+      p1(1) = lamda(1,1);    p1(2) = theta(1,1)
+      p2(1) = lamda(2,1);    p2(2) = theta(2,1)
+      write(*,*) 'Grid x-distance at face edge (km)=',great_circle_dist( p1, p2, 6371. )   ! earth radius is assumed
+      p2(1) = lamda(1,2);    p2(2) = theta(1,2)
+      write(*,*) 'Grid y-distance at face edge (km)=',great_circle_dist( p1, p2, 6371. )   ! earth radius is assumed
+      !print*, 'dtheta = ', dely
+      !print*, 'dlambda = ', lamda(2,1) - lamda(1,1)
+   endif
+
+
+ end subroutine gnomonic_ed_limited
 
 
  subroutine gnomonic_angl(im, lamda, theta)
@@ -2462,6 +2401,59 @@
 
  end subroutine intp_great_circle
 
+ subroutine spherical_linear_interpolation(beta, p1, p2, pb)
+
+   !This formula interpolates along the great circle connecting points p1 and p2. This formula is taken from http://en.wikipedia.org/wiki/Slerp and is attributed to Glenn Davis based on a concept by Ken Shoemake.
+
+ real, intent(in)::  beta    ! [0,1]
+ real, intent(in)::  p1(2), p2(2)
+ real, intent(out):: pb(2)   ! between p1 and p2 along GC
+!------------------------------------------
+ real:: pm(2)
+ real:: e1(3), e2(3), eb(3)
+ real:: dd, alpha, omega
+ 
+ if ( abs(p1(1) - p2(1)) < 1.e-8 .and. abs(p1(2) - p2(2)) < 1.e-8) then
+    call mpp_error(WARNING, 'spherical_linear_interpolation was passed two colocated points.')
+    pb = p1
+    return
+ end if
+
+ call latlon2xyz(p1, e1)
+ call latlon2xyz(p2, e2)
+
+ dd = sqrt( e1(1)**2 + e1(2)**2 + e1(3)**2 )
+ 
+ e1(1) = e1(1) / dd
+ e1(2) = e1(2) / dd
+ e1(3) = e1(3) / dd
+
+ dd = sqrt( e2(1)**2 + e2(2)**2 + e2(3)**2 )
+ 
+ e2(1) = e2(1) / dd
+ e2(2) = e2(2) / dd
+ e2(3) = e2(3) / dd
+
+ alpha = 1. - beta
+
+ omega = acos( e1(1)*e2(1) + e1(2)*e2(2) + e1(3)*e2(3) )
+
+ if ( abs(omega) < 1.e-5 ) then
+    print*, 'spherical_linear_interpolation: ', omega, p1, p2
+    call mpp_error(FATAL, 'spherical_linear_interpolation: interpolation not well defined between antipodal points')
+ end if
+
+ eb(1) = sin( beta*omega )*e2(1) + sin(alpha*omega)*e1(1)
+ eb(2) = sin( beta*omega )*e2(2) + sin(alpha*omega)*e1(2)
+ eb(3) = sin( beta*omega )*e2(3) + sin(alpha*omega)*e1(3)
+
+ eb(1) = eb(1) / sin(omega)
+ eb(2) = eb(2) / sin(omega)
+ eb(3) = eb(3) / sin(omega)
+
+ call cart_to_latlon(1, eb, pb(1), pb(2))
+
+ end subroutine spherical_linear_interpolation
 
  subroutine mid_pt_sphere(p1, p2, pm)
       real , intent(IN)  :: p1(2), p2(2)
@@ -2545,6 +2537,38 @@
       endif
 
   end function great_circle_dist
+
+
+  function great_circle_dist_cart(v1, v2, radius)
+    !------------------------------------------------------------------!
+    ! author:  Michael Herzog                                          !
+    ! email:   Michael.Herzog@noaa.gov                                 !
+    ! date:    July 2006                                               !
+    ! version: 0.1                                                     !
+    !                                                                  !
+    ! calculate normalized great circle distance between v1 and v2     ! 
+    !------------------------------------------------------------------!
+    real :: great_circle_dist_cart
+    real, dimension(3), intent(in) :: v1, v2
+    real, intent(IN), optional :: radius
+    real :: norm
+
+    norm = (v1(1)*v1(1)+v1(2)*v1(2)+v1(3)*v1(3))                  &
+                *(v2(1)*v2(1)+v2(2)*v2(2)+v2(3)*v2(3))
+    
+    !if (norm <= 0.) print*, 'negative norm: ', norm, v1, v2
+
+    great_circle_dist_cart=(v1(1)*v2(1)+v1(2)*v2(2)+v1(3)*v2(3))                  &
+           /sqrt(norm)
+    great_circle_dist_cart = sign(min(1.,abs(great_circle_dist_cart)),great_circle_dist_cart)
+    great_circle_dist_cart=acos(great_circle_dist_cart)
+
+      if ( present(radius) ) then
+           great_circle_dist_cart = radius * great_circle_dist_cart
+      endif
+
+
+  end function great_circle_dist_cart
 
 
 
@@ -2650,6 +2674,90 @@
     !------------------------------------------------------------------!
   end subroutine intersect
 
+ subroutine intersect_cross(a1,a2,b1,b2,radius,x_inter,local_a,local_b)
+    !------------------------------------------------------------------!
+    ! calculate intersection of two great circles                      !
+    !                                                                  !
+    ! input:                                                           !
+    ! a1, a2,  -   pairs of points on sphere in cartesian coordinates  !
+    ! b1, b2       defining great circles                              !
+    ! radius   -   radius of the sphere                                !
+    !                                                                  !
+    ! output:                                                          !
+    ! x_inter  -   nearest intersection point of the great circles     !
+    ! local_a  -   true if x1 between (a1, a2)                         !
+    ! local_b  -   true if x1 between (b1, b2)                         !
+    !------------------------------------------------------------------!
+    real, dimension(3), intent(in)  :: a1, a2, b1, b2
+    real, intent(in) :: radius
+    real, dimension(3), intent(out) :: x_inter
+    logical, intent(out) :: local_a,local_b
+    real, dimension(3) :: v1, v2
+
+    !A great circle is the intersection of a plane through the center of the sphere 
+    !with the sphere. That plane is specified by a vector v1, which is the cross 
+    !product of any two vectors lying in the plane; here, we use position vectors, 
+    !which are unit vectors lying in the plane and rooted at the center of the sphere. 
+    !The intersection of two great circles is where the the intersection of the planes, 
+    !a line, itself intersects the sphere. Since the planes are defined by perpendicular 
+    !vectors v1, v2 respectively, the intersecting line is perpendicular to both v1 and v2, 
+    !and so lies along the cross product of v1 and v2.
+    !The two intersection points of the great circles is therefore +/- v1 x v2.
+    call vect_cross(v1, a1, a2)
+    call vect_cross(v2, b1, b2)
+
+    v1 = v1/sqrt(v1(1)**2 + v1(2)**2 + v1(3)**2)
+    v2 = v2/sqrt(v2(1)**2 + v2(2)**2 + v2(3)**2)
+    call vect_cross(x_inter, v1, v2)
+
+    !Normalize
+    x_inter = x_inter/sqrt(x_inter(1)**2 + x_inter(2)**2 + x_inter(3)**2)
+
+    ! check if intersection is between pairs of points on sphere 
+    call get_nearest()
+    call check_local(a1,a2,local_a)
+    call check_local(b1,b2,local_b)
+
+  contains
+    subroutine get_nearest()
+      real, dimension(3) :: center, dx
+      real :: dist1,dist2
+
+      center(:)=0.25*(a1(:)+a2(:)+b1(:)+b2(:))
+      dx(:)=+x_inter(:)-center(:)
+      dist1=dx(1)*dx(1)+dx(2)*dx(2)+dx(3)*dx(3)
+      dx(:)=-x_inter(:)-center(:)
+      dist2=dx(1)*dx(1)+dx(2)*dx(2)+dx(3)*dx(3)
+
+      if (dist2<dist1) x_inter(:)=-x_inter(:)
+
+    end subroutine get_nearest
+
+    subroutine check_local(x1,x2,local)
+      real, dimension(3), intent(in) :: x1,x2
+      logical, intent(out) :: local
+
+      real, dimension(3) :: dx
+      real :: dist, dist1, dist2
+
+      dx(:)=x1(:)-x2(:)
+      dist=dx(1)*dx(1)+dx(2)*dx(2)+dx(3)*dx(3)
+    
+      dx(:)=x1(:)-x_inter(:)
+      dist1=dx(1)*dx(1)+dx(2)*dx(2)+dx(3)*dx(3)
+      dx(:)=x2(:)-x_inter(:)
+      dist2=dx(1)*dx(1)+dx(2)*dx(2)+dx(3)*dx(3)
+
+      if (dist1<=dist .and. dist2<=dist) then
+         local=.true.
+      else
+         local=.false.
+      endif
+      
+    end subroutine check_local
+    !------------------------------------------------------------------!
+  end subroutine intersect_cross
+
 
 
   subroutine unit_vect_latlon(pp, elon, elat)
@@ -2700,20 +2808,6 @@
 
   if ( g_type < 4 ) then
 
-     allocate (  z11(is-1:ie+1,js-1:je+1) )
-     allocate (  z12(is-1:ie+1,js-1:je+1) )
-     allocate (  z21(is-1:ie+1,js-1:je+1) )
-     allocate (  z22(is-1:ie+1,js-1:je+1) )
-
-     allocate (  a11(is-1:ie+1,js-1:je+1) )
-     allocate (  a12(is-1:ie+1,js-1:je+1) )
-     allocate (  a21(is-1:ie+1,js-1:je+1) )
-     allocate (  a22(is-1:ie+1,js-1:je+1) )
-!     allocate ( vlon(is-1:ie+1,js-1:je+1,3) )
-!     allocate ( vlat(is-1:ie+1,js-1:je+1,3) )
-     allocate ( vlon(is-2:ie+2,js-2:je+2,3) )
-     allocate ( vlat(is-2:ie+2,js-2:je+2,3) )
-
 !     do j=js-1,je+1
 !        do i=is-1,ie+1
      do j=js-2,je+2
@@ -2724,15 +2818,15 @@
 
      do j=js-1,je+1
         do i=is-1,ie+1
-           z11(i,j) =  v_prod(ec1(1,i,j), vlon(i,j,1:3))
-           z12(i,j) =  v_prod(ec1(1,i,j), vlat(i,j,1:3))
-           z21(i,j) =  v_prod(ec2(1,i,j), vlon(i,j,1:3))
-           z22(i,j) =  v_prod(ec2(1,i,j), vlat(i,j,1:3))
+           z11(i,j) =  v_prod(ec1(1:3,i,j), vlon(i,j,1:3))
+           z12(i,j) =  v_prod(ec1(1:3,i,j), vlat(i,j,1:3))
+           z21(i,j) =  v_prod(ec2(1:3,i,j), vlon(i,j,1:3))
+           z22(i,j) =  v_prod(ec2(1:3,i,j), vlat(i,j,1:3))
 !-------------------------------------------------------------------------
-           a11(i,j) =  0.5*v_prod(ec2(1,i,j), vlat(i,j,1:3)) / sina_s(i,j)
-           a12(i,j) = -0.5*v_prod(ec1(1,i,j), vlat(i,j,1:3)) / sina_s(i,j)
-           a21(i,j) = -0.5*v_prod(ec2(1,i,j), vlon(i,j,1:3)) / sina_s(i,j)
-           a22(i,j) =  0.5*v_prod(ec1(1,i,j), vlon(i,j,1:3)) / sina_s(i,j)
+           a11(i,j) =  0.5*v_prod(ec2(1:3,i,j), vlat(i,j,1:3)) / sina_s(i,j)
+           a12(i,j) = -0.5*v_prod(ec1(1:3,i,j), vlat(i,j,1:3)) / sina_s(i,j)
+           a21(i,j) = -0.5*v_prod(ec2(1:3,i,j), vlon(i,j,1:3)) / sina_s(i,j)
+           a22(i,j) =  0.5*v_prod(ec1(1:3,i,j), vlon(i,j,1:3)) / sina_s(i,j)
         enddo
      enddo
   endif
@@ -2751,6 +2845,8 @@
  real, intent(inout):: v(isd:ied+1,jsd:jed,km)
  real, intent(out):: ua(isd:ied, jsd:jed,km)
  real, intent(out):: va(isd:ied, jsd:jed,km)
+
+ g_type = grid_type
 
  if ( c2l_ord == 2 ) then
       call c2l_ord2(u, v, ua, va, dx, dy, rdxa, rdya, km)
@@ -2793,14 +2889,26 @@
 
  do k=1,km
    if ( g_type < 4 ) then
-     do j=max(2,js),min(npyy-2,je)
-        do i=max(2,is),min(npxx-2,ie)
+!     do j=max(2,js),min(npyy-2,je)
+!        do i=max(2,is),min(npxx-2,ie)
+      if (nested) then
+     do j=max(1,js),min(npy-1,je)
+        do i=max(1,is),min(npx-1,ie)
            utmp(i,j) = c2*(u(i,j-1,k)+u(i,j+2,k)) + c1*(u(i,j,k)+u(i,j+1,k))
            vtmp(i,j) = c2*(v(i-1,j,k)+v(i+2,j,k)) + c1*(v(i,j,k)+v(i+1,j,k))
         enddo
      enddo
 
-    if ( js==1 ) then
+      else
+
+     do j=max(2,js),min(npy-2,je)
+        do i=max(2,is),min(npx-2,ie)
+           utmp(i,j) = c2*(u(i,j-1,k)+u(i,j+2,k)) + c1*(u(i,j,k)+u(i,j+1,k))
+           vtmp(i,j) = c2*(v(i-1,j,k)+v(i+2,j,k)) + c1*(v(i,j,k)+v(i+1,j,k))
+        enddo
+     enddo
+
+    if ( js==1  ) then
          do i=is,ie+1
             wv(i,1) = v(i,1,k)*dy(i,1)
          enddo
@@ -2810,8 +2918,10 @@
          enddo
     endif
 
-    if ( (je+1)==npyy ) then
-         j = npyy-1
+    if ( (je+1)==npy   ) then
+         j = npy-1
+!    if ( (je+1)==npyy ) then
+!         j = npyy-1
          do i=is,ie+1
             wv(i,j) = v(i,j,k)*dy(i,j)
          enddo
@@ -2836,8 +2946,10 @@
       enddo
     endif
 
-    if ( (ie+1)==npxx ) then
-      i = npxx-1
+    if ( (ie+1)==npx) then
+      i = npx-1
+!    if ( (ie+1)==npxx ) then
+!      i = npxx-1
       do j=js,je
          wv(i,  j) = v(i,  j,k)*dy(i,  j)
          wv(i+1,j) = v(i+1,j,k)*dy(i+1,j)
@@ -2851,6 +2963,9 @@
       enddo
     endif
 
+ endif !nested
+
+ !Transform local a-grid winds into latitude-longitude coordinates
      do j=js,je
         do i=is,ie
            ua(i,j,k) = a11(i,j)*utmp(i,j) + a12(i,j)*vtmp(i,j)
@@ -2886,6 +3001,11 @@
   real wv(is:ie+1,js:je)
   real u1(is:ie), v1(is:ie)
   integer i, j, k
+
+  wu = 0.
+  wv = 0.
+
+  g_type = grid_type
 
   do k=1,km
      if ( g_type < 4 ) then
@@ -3086,6 +3206,52 @@
  end function get_area
 
 
+  function dist2side(v1, v2, point)
+    !------------------------------------------------------------------!
+    ! calculate shortest normalized distance on sphere                 !
+    ! from point to straight line defined by v1 and v2                 !
+    ! This version uses cartesian coordinates.                         !
+    ! author:  Michael Herzog                                          !
+    ! email:   Michael.Herzog@noaa.gov                                 !
+    ! date:    Feb 2007                                                !
+    ! version: 0.1                                                     !
+    !------------------------------------------------------------------!
+    real :: dist2side
+    real, dimension(3), intent(in) :: v1, v2, point
+
+    real :: angle, side
+
+    angle = spherical_angle(v1, v2, point)
+    side = great_circle_dist_cart(v1, point)
+    dist2side = asin(sin(side)*sin(angle))
+
+  end function dist2side
+
+  function dist2side_latlon(v1,v2,point)
+    !Version of dist2side that takes points in latitude-longitude coordinates
+
+    real :: dist2side_latlon
+    real, dimension(2), intent(in) :: v1, v2, point
+
+    real,dimension(3) :: c1, c2, cpoint
+
+    real :: angle,side
+
+    !no version of spherical angle for lat-lon coords
+    call latlon2xyz(v1,c1)
+    call latlon2xyz(v2,c2)
+    call latlon2xyz(point,cpoint)
+    angle = spherical_angle(c1,c2,cpoint)
+
+    side = great_circle_dist(v1,point)
+
+    dist2side_latlon = asin(sin(side)*sin(angle))
+
+    !!dist2side_latlon = dist2side(c1,c2,cpoint)
+
+  end function dist2side_latlon
+
+
 
  real function spherical_angle(p1, p2, p3)
  
@@ -3131,6 +3297,12 @@
         ddd = (px*qx+py*qy+pz*qz) / sqrt(ddd)
         if ( abs(ddd)>1.) then
              angle = 2.*atan(1.0)    ! 0.5*pi
+           !FIX (lmh) to correctly handle co-linear points (angle near pi or 0)
+           if (ddd < 0.) then
+              angle = 4.*atan(1.0) !should be pi
+           else
+              angle = 0. 
+           end if
         else
              angle = acos( ddd )
         endif

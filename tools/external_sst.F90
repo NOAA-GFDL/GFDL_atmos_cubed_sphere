@@ -15,7 +15,7 @@ use amip_interp_mod, only: i_sst, j_sst, sst_ncep, sst_anom, &
 public i_sst, j_sst, sst_ncep, sst_anom, forecast_mode, use_ncep_sst
 
 !---- version number -----
-character(len=128) :: version = '$Id: external_sst.F90,v 19.0 2012/01/06 19:58:30 fms Exp $'
-character(len=128) :: tagname = '$Name: siena_201204 $'
+character(len=128) :: version = '$Id: external_sst.F90,v 1.1.2.3.2.3.2.3 2012/05/14 16:26:28 Lucas.Harris Exp $'
+character(len=128) :: tagname = '$Name: siena_201207 $'
 
 end module external_sst_mod

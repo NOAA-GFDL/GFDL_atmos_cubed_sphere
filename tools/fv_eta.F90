@@ -1,13 +1,14 @@
 module fv_eta_mod
  use constants_mod,  only: kappa, grav, cp_air, rdgas
  use fv_mp_mod,      only: gid, isd, ied, jsd, jed
+ use mpp_mod,        only: FATAL, mpp_error
  implicit none
  private
- public set_eta, get_eta_level, compute_dz_L32, compute_dz_L101, set_hybrid_z, compute_dz, gw_1d
+ public set_eta, get_eta_level, compute_dz_var, compute_dz_L32, compute_dz_L101, set_hybrid_z, compute_dz, gw_1d, sm1_edge, hybrid_z_dz
 
 !---- version number -----
- character(len=128) :: version = '$Id: fv_eta.F90,v 19.0 2012/01/06 19:59:05 fms Exp $'
- character(len=128) :: tagname = '$Name: siena_201204 $'
+ character(len=128) :: version = '$Id: fv_eta.F90,v 17.0.2.1.2.4.2.3.2.1 2012/05/25 17:57:58 Lucas.Harris Exp $'
+ character(len=128) :: tagname = '$Name: siena_201207 $'
 
  contains
 
@@ -931,11 +932,24 @@ data b50  / &
              ak(km+1) = 0.
              bk(km+1) = 1.
 #endif
+
+! The following 4 selections are better for non-hydrostatic
         case (31)
              ptop = 100.
-             call var_dz(km, ak, bk, ptop)
-             ks = 0
-             pint = ak(1)
+             pint = 50.E2
+             call var_dz(km, ak, bk, ptop, ks, pint, 1.04)
+        case (41)
+             ptop = 100.
+             pint = 50.E2
+             call var_dz(km, ak, bk, ptop, ks, pint, 1.035)
+        case (51)
+             ptop = 100.
+             pint = 50.E2
+             call var_dz(km, ak, bk, ptop, ks, pint, 1.035)
+        case (55)
+             ptop = 10.
+             pint = 50.E2
+             call var_dz(km, ak, bk, ptop, ks, pint, 1.035)
         case default
 
 #ifdef TEST_GWAVES
@@ -953,7 +967,8 @@ data b50  / &
          pt = 100.
 ! One pressure layer
          ks = 1
-         pint = pt + 0.5*1.E5/real(km)
+!        pint = pt + 0.5*1.E5/real(km)     ! SJL: 20120327
+         pint = pt + 1.E5/real(km)
 
          ak(1) = pt
          bk(1) = 0.
@@ -971,6 +986,392 @@ data b50  / &
       ptop = ak(1)
 
  end subroutine set_eta
+
+ subroutine var_dz(km, ak, bk, ptop, ks, pint, s_rate)
+  integer, intent(in):: km
+  real,    intent(in):: ptop
+  real,    intent(in):: s_rate        ! between [1. 1.1]
+  real,    intent(out):: ak(km+1), bk(km+1)
+  real,    intent(inout):: pint
+  integer, intent(out):: ks
+! Local
+  real, parameter:: p00 = 1.E5
+  real, dimension(km+1):: ze, pe1, peln, eta
+  real, dimension(km):: dz, s_fac, dlnp
+  real ztop, t0, dz0, sum1, tmp1
+  real ep, es, alpha, beta, gama
+  integer  k
+
+     pe1(1) = ptop
+     peln(1) = log(pe1(1))
+     pe1(km+1) = p00
+     peln(km+1) = log(pe1(km+1))
+       
+     t0 = 270.
+     ztop = rdgas/grav*t0*(peln(km+1) - peln(1))
+
+      s_fac(km  ) = 0.10
+      s_fac(km-1) = 0.20
+      s_fac(km-2) = 0.30
+      s_fac(km-3) = 0.40
+      s_fac(km-4) = 0.50
+      s_fac(km-5) = 0.60 
+      s_fac(km-6) = 0.70 
+      s_fac(km-7) = 0.80
+      s_fac(km-8) = 0.90
+      s_fac(km-9) = 0.95
+      s_fac(km-10) = 0.5*(s_fac(km-9) + s_rate)
+          
+      do k=km-11, 9, -1
+         s_fac(k) = min(10.0, s_rate * s_fac(k+1) )
+      enddo
+
+      s_fac(8) = 0.5*(1.1+s_rate)*s_fac(9)
+      s_fac(7) = 1.1 *s_fac(8)
+      s_fac(6) = 1.15*s_fac(7)
+      s_fac(5) = 1.2 *s_fac(6)
+      s_fac(4) = 1.3 *s_fac(5)
+      s_fac(3) = 1.4 *s_fac(4)
+      s_fac(2) = 1.5 *s_fac(3)
+      s_fac(1) = 1.6 *s_fac(2)
+
+      sum1 = 0.
+      do k=1,km
+         sum1 = sum1 + s_fac(k)
+      enddo
+
+      dz0 = ztop / sum1
+
+      do k=1,km
+         dz(k) = s_fac(k) * dz0
+      enddo
+
+      ze(km+1) = 0.
+      do k=km,1,-1
+         ze(k) = ze(k+1) + dz(k)
+      enddo
+
+! Re-scale dz with the stretched ztop
+      do k=1,km
+         dz(k) = dz(k) * (ztop/ze(1))
+      enddo
+
+      do k=km,1,-1
+         ze(k) = ze(k+1) + dz(k)
+      enddo
+!     ze(1) = ztop
+
+      if ( gid==0 ) write(*,*) 'var_dz: computed model top (m)=', ztop*0.001, ' bottom/top dz=', dz(km), dz(1)
+      call sm1_edge(1, 1, 1, 1, km, 1, 1, ze, 1)
+
+! Given z --> p
+      do k=1,km
+          dz(k) = ze(k) - ze(k+1)
+        dlnp(k) = grav*dz(k) / (rdgas*t0)
+      enddo
+      do k=2,km
+         peln(k) = peln(k-1) + dlnp(k-1)
+          pe1(k) = exp(peln(k))
+      enddo
+
+! Pe(k) = ak(k) + bk(k) * PS
+! Locate pint and KS
+      ks = 0
+      do k=2,km
+         if ( pint < pe1(k)) then
+              ks = k-1
+              exit
+         endif
+      enddo
+      if ( gid==0 ) then
+         write(*,*) 'For (input) PINT=', 0.01*pint, ' KS=', ks, 'pint(computed)=', 0.01*pe1(ks+1)
+      endif
+      pint = pe1(ks+1)
+
+#ifdef NO_UKMO_HB
+      do k=1,ks+1
+         ak(k) = pe1(k)
+         bk(k) = 0.
+      enddo
+
+      do k=ks+2,km+1
+         bk(k) = (pe1(k) - pint) / (pe1(km+1)-pint)  ! bk == sigma
+         ak(k) =  pe1(k) - bk(k) * pe1(km+1)
+      enddo
+      bk(km+1) = 1.
+      ak(km+1) = 0.
+#else
+! Problematic for non-hydrostatic
+      do k=1,km+1
+         eta(k) = pe1(k) / pe1(km+1)
+      enddo
+
+      ep =  eta(ks+1) 
+      es =  eta(km) 
+!     es =  1.
+      alpha = (ep**2-2.*ep*es) / (es-ep)**2
+      beta  = 2.*ep*es**2 / (es-ep)**2
+      gama = -(ep*es)**2 / (es-ep)**2
+
+! Pure pressure:
+      do k=1,ks+1
+         ak(k) = eta(k)*1.e5
+         bk(k) = 0.
+      enddo
+
+      do k=ks+2, km
+         ak(k) = alpha*eta(k) + beta + gama/eta(k)
+         ak(k) = ak(k)*1.e5
+      enddo
+         ak(km+1) = 0.
+
+      do k=ks+2, km 
+         bk(k) = (pe1(k) - ak(k))/pe1(km+1)
+      enddo
+         bk(km+1) = 1.
+#endif
+
+      if ( gid==0 ) then
+          write(*,*) 'KS=', ks, 'PINT (mb)=', pint/100.
+          do k=1,km
+             write(*,*) k, 0.5*(pe1(k)+pe1(k+1))/100., dz(k)
+          enddo
+          tmp1 = ak(ks+1)
+          do k=ks+1,km
+             tmp1 = max(tmp1, (ak(k)-ak(k+1))/max(1.E-5, (bk(k+1)-bk(k))) )
+          enddo
+          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hpa)=', tmp1/100.
+      endif
+
+
+ end subroutine var_dz
+
+
+ subroutine var55_dz(km, ak, bk, ptop, ks, pint, s_rate)
+  integer, intent(in):: km
+  real,    intent(in):: ptop
+  real,    intent(in):: s_rate        ! between [1. 1.1]
+  real,    intent(out):: ak(km+1), bk(km+1)
+  real,    intent(inout):: pint
+  integer, intent(out):: ks
+! Local
+  real, parameter:: p00 = 1.E5
+  real, dimension(km+1):: ze, pe1, peln, eta
+  real, dimension(km):: dz, s_fac, dlnp
+  real ztop, t0, dz0, sum1, tmp1
+  real ep, es, alpha, beta, gama
+  integer  k
+
+     pe1(1) = ptop
+     peln(1) = log(pe1(1))
+     pe1(km+1) = p00
+     peln(km+1) = log(pe1(km+1))
+       
+     t0 = 270.
+     ztop = rdgas/grav*t0*(peln(km+1) - peln(1))
+
+      s_fac(km  ) = 0.10
+      s_fac(km-1) = 0.15
+      s_fac(km-2) = 0.20
+      s_fac(km-3) = 0.25
+      s_fac(km-4) = 0.30
+      s_fac(km-5) = 0.35
+      s_fac(km-6) = 0.40
+      s_fac(km-7) = 0.45
+      s_fac(km-8) = 0.50
+      s_fac(km-9) = 0.55
+      s_fac(km-10) = 0.60
+      s_fac(km-11) = 0.70
+      s_fac(km-12) = 0.85
+      s_fac(km-13) = 1.00
+
+      do k=km-14, 9, -1
+         s_fac(k) = min(10.0, s_rate * s_fac(k+1) )
+      enddo
+
+      s_fac(8) = 0.5*(1.1+s_rate)*s_fac(9)
+      s_fac(7) = 1.1 *s_fac(8)
+      s_fac(6) = 1.15*s_fac(7)
+      s_fac(5) = 1.2 *s_fac(6)
+      s_fac(4) = 1.3 *s_fac(5)
+      s_fac(3) = 1.4 *s_fac(4)
+      s_fac(2) = 1.5 *s_fac(3)
+      s_fac(1) = 1.6 *s_fac(2)
+
+      sum1 = 0.
+      do k=1,km
+         sum1 = sum1 + s_fac(k)
+      enddo
+
+      dz0 = ztop / sum1
+
+      do k=1,km
+         dz(k) = s_fac(k) * dz0
+      enddo
+
+      ze(km+1) = 0.
+      do k=km,1,-1
+         ze(k) = ze(k+1) + dz(k)
+      enddo
+
+! Re-scale dz with the stretched ztop
+      do k=1,km
+         dz(k) = dz(k) * (ztop/ze(1))
+      enddo
+
+      do k=km,1,-1
+         ze(k) = ze(k+1) + dz(k)
+      enddo
+!     ze(1) = ztop
+
+      if ( gid==0 ) write(*,*) 'var55_dz: computed model top (m)=', ztop*0.001, ' bottom/top dz=', dz(km), dz(1)
+      call sm1_edge(1, 1, 1, 1, km, 1, 1, ze, 2)
+
+! Given z --> p
+      do k=1,km
+          dz(k) = ze(k) - ze(k+1)
+        dlnp(k) = grav*dz(k) / (rdgas*t0)
+      enddo
+      do k=2,km
+         peln(k) = peln(k-1) + dlnp(k-1)
+          pe1(k) = exp(peln(k))
+      enddo
+
+! Pe(k) = ak(k) + bk(k) * PS
+! Locate pint and KS
+      ks = 0
+      do k=2,km
+         if ( pint < pe1(k)) then
+              ks = k-1
+              exit
+         endif
+      enddo
+      if ( gid==0 ) then
+         write(*,*) 'For (input) PINT=', 0.01*pint, ' KS=', ks, 'pint(computed)=', 0.01*pe1(ks+1)
+      endif
+      pint = pe1(ks+1)
+
+#ifdef NO_UKMO_HB
+      do k=1,ks+1
+         ak(k) = pe1(k)
+         bk(k) = 0.
+      enddo
+
+      do k=ks+2,km+1
+         bk(k) = (pe1(k) - pint) / (pe1(km+1)-pint)  ! bk == sigma
+         ak(k) =  pe1(k) - bk(k) * pe1(km+1)
+      enddo
+      bk(km+1) = 1.
+      ak(km+1) = 0.
+#else
+! Problematic for non-hydrostatic
+      do k=1,km+1
+         eta(k) = pe1(k) / pe1(km+1)
+      enddo
+
+      ep =  eta(ks+1) 
+      es =  eta(km) 
+!     es =  1.
+      alpha = (ep**2-2.*ep*es) / (es-ep)**2
+      beta  = 2.*ep*es**2 / (es-ep)**2
+      gama = -(ep*es)**2 / (es-ep)**2
+
+! Pure pressure:
+      do k=1,ks+1
+         ak(k) = eta(k)*1.e5
+         bk(k) = 0.
+      enddo
+
+      do k=ks+2, km
+         ak(k) = alpha*eta(k) + beta + gama/eta(k)
+         ak(k) = ak(k)*1.e5
+      enddo
+         ak(km+1) = 0.
+
+      do k=ks+2, km 
+         bk(k) = (pe1(k) - ak(k))/pe1(km+1)
+      enddo
+         bk(km+1) = 1.
+#endif
+
+      if ( gid==0 ) then
+          write(*,*) 'KS=', ks, 'PINT (mb)=', pint/100.
+          do k=1,km
+             write(*,*) k, 0.5*(pe1(k)+pe1(k+1))/100., dz(k)
+          enddo
+          tmp1 = ak(ks+1)
+          do k=ks+1,km
+             tmp1 = max(tmp1, (ak(k)-ak(k+1))/max(1.E-5, (bk(k+1)-bk(k))) )
+          enddo
+          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hpa)=', tmp1/100.
+      endif
+
+
+ end subroutine var55_dz
+
+ subroutine hybrid_z_dz(km, dz, ztop, s_rate)
+  integer, intent(in):: km
+  real,    intent(in):: s_rate        ! between [1. 1.1]
+  real,    intent(in):: ztop
+  real,    intent(out):: dz(km)
+! Local
+  real, parameter:: p00 = 1.E5
+  real, dimension(km+1):: ze, pe1, peln, eta
+  real, dimension(km):: s_fac, dlnp
+  real t0, dz0, sum1, tmp1
+  real ep, es, alpha, beta, gama
+  integer  k
+
+       s_fac(km  ) = 0.12
+       s_fac(km-1) = 0.20
+       s_fac(km-2) = 0.30
+       s_fac(km-3) = 0.40
+       s_fac(km-4) = 0.50
+       s_fac(km-5) = 0.60
+       s_fac(km-6) = 0.70
+       s_fac(km-7) = 0.80
+       s_fac(km-8) = 0.90
+       s_fac(km-9) = 1.
+
+       do k=km-10, 9, -1
+          s_fac(k) = min(4.0, s_rate * s_fac(k+1) )
+       enddo
+
+       s_fac(8) = 1.05*s_fac(9)
+       s_fac(7) = 1.1 *s_fac(8)
+       s_fac(6) = 1.15*s_fac(7)
+       s_fac(5) = 1.2 *s_fac(6)
+       s_fac(4) = 1.3 *s_fac(5)
+       s_fac(3) = 1.4 *s_fac(4)
+       s_fac(2) = 1.5 *s_fac(3)
+       s_fac(1) = 1.6 *s_fac(2)
+
+       sum1 = 0.
+       do k=1,km                                                                                                        
+          sum1 = sum1 + s_fac(k)                                                                                        
+       enddo                                                                                                            
+                                                                                                                        
+       dz0 = ztop / sum1                                                                                                
+                                                                                                                        
+       do k=1,km                                                                                                        
+          dz(k) = s_fac(k) * dz0                                                                                        
+       enddo                                                                                                            
+                                                                                                                        
+       ze(km+1) = 0.                                                                                                    
+       do k=km,1,-1                                                                                                     
+          ze(k) = ze(k+1) + dz(k)                                                                                       
+       enddo                                                                                                            
+                                                                                                                        
+       ze(1) = ztop                                                                                                     
+                                                                                                                        
+       call sm1_edge(1, 1, 1, 1, km, 1, 1, ze, 2)
+                                                                                                                        
+       do k=1,km                                                                                                        
+            dz(k) = ze(k) - ze(k+1)                                                                                     
+       enddo                                                                                                            
+
+ end subroutine hybrid_z_dz                                   
+
 
 
  subroutine get_eta_level(npz, p_s, pf, ph, ak, bk, pscale)
@@ -1043,6 +1444,76 @@ data b50  / &
   endif
 
  end subroutine compute_dz
+
+ subroutine compute_dz_var(km, ztop, dz)
+
+  integer, intent(in):: km
+  real,   intent(in):: ztop        ! try 50.E3
+  real,   intent(out):: dz(km)
+!------------------------------
+  real, parameter:: s_rate = 1.0
+  real ze(km+1)
+  real s_fac(km)
+  real sum1, dz0
+  integer k
+
+      s_fac(km  ) = 0.125
+      s_fac(km-1) = 0.20
+      s_fac(km-2) = 0.30
+      s_fac(km-3) = 0.40
+      s_fac(km-4) = 0.50 
+      s_fac(km-5) = 0.60 
+      s_fac(km-6) = 0.70 
+      s_fac(km-7) = 0.80 
+      s_fac(km-8) = 0.90
+      s_fac(km-9) = 1.   
+
+      do k=km-10, 9, -1
+         s_fac(k) = s_rate * s_fac(k+1)
+      enddo
+
+      s_fac(8) = 1.05*s_fac(9)
+      s_fac(7) = 1.1 *s_fac(8)
+      s_fac(6) = 1.15*s_fac(7)
+      s_fac(5) = 1.2 *s_fac(6)
+      s_fac(4) = 1.3 *s_fac(5)
+      s_fac(3) = 1.4 *s_fac(4)
+      s_fac(2) = 1.5 *s_fac(3)
+      s_fac(1) = 1.6 *s_fac(2)
+
+      sum1 = 0.
+      do k=1,km
+         sum1 = sum1 + s_fac(k)
+      enddo
+
+      dz0 = ztop / sum1
+
+      do k=1,km
+         dz(k) = s_fac(k) * dz0
+      enddo
+
+      ze(1) = ztop
+      ze(km+1) = 0.
+      do k=km,2,-1
+         ze(k) = ze(k+1) + dz(k)
+      enddo
+
+! Re-scale dz with the stretched ztop
+      do k=1,km
+         dz(k) = dz(k) * (ztop/ze(1))
+      enddo
+
+      do k=km,2,-1
+         ze(k) = ze(k+1) + dz(k)
+      enddo
+
+      call sm1_edge(1, 1, 1, 1, km, 1, 1, ze, 2)
+
+      do k=1,km
+         dz(k) = ze(k) - ze(k+1)
+      enddo
+
+ end subroutine compute_dz_var
 
  subroutine compute_dz_L32(km, ztop, dz)
 
@@ -1195,8 +1666,8 @@ data b50  / &
  enddo
 
 ! Set interface:
-#ifdef USE_VAR_ZINT
-  zint = 10.0E3
+#ifndef USE_VAR_ZINT
+  zint = 12.0E3
   ntimes = 2
   kint = 2
   do k=2,km
@@ -1328,72 +1799,6 @@ data b50  / &
 
   end subroutine sm1_edge
 
-
-
-  subroutine var_dz(km, ak, bk, ptop)
-  integer, intent(in):: km
-  real,    intent(in):: ptop
-  real,    intent(out):: ak(km+1), bk(km+1)
-! Local
-  real, parameter:: p00 = 1.E5
-  real, dimension(km+1):: ze, pe1
-  real, dimension(km):: dz
-  real ztop, t0, n2, s0, dz0
-  integer  k
-
-! Set up vertical coordinare with constant del-z spacing:
-       t0 = 270.
-       n2 = grav**2/(cp_air*t0)
-       s0 = grav*grav / (cp_air*n2) 
-
-       ztop = grav/n2 * log( t0/s0*(kappa*log(ptop/p00)+s0/t0-1.) )
-       if ( gid==0 ) write(*,*) 'fv_eta/var_dz: computed model top (m)=', ztop
-
-! k=1:    4.0 * dz
-! k=2:    2.0 * dz
-! k=3:    1.0 * dz
-! ...
-! km-2    1.00 * dz
-! km-1    0.50 * dz
-! km:     0.25 * dz
-
-! Sum= (km-6) * dz + 8.75 * dz = (km + 2.75) * dz 
-! Compute dz: spacing
-       dz0 = ztop / ( real(km)+2.75 )
-
-       dz(1) = 4. * dz0
-       dz(2) = 2. * dz0
-       do k=3,km-2
-          dz(k) = dz0
-       enddo
-       dz(km-1) = 0.50 * dz0
-       dz(km  ) = 0.25 * dz0
-
-       ze(km+1) = 0.
-       do k=km,2,-1
-          ze(k) = ze(k+1) + dz(k)
-       enddo
-       ze(1) = ztop
-
-! Given z --> p
-! ptop = p00*( (1.-s0/t0) + s0/t0*exp(-n2*ztop/grav) )**(1./kappa)
-       pe1(1) = ptop
-       do k=2,km
-          pe1(k) = p00*( (1.-s0/t0) + s0/t0*exp(-n2*ze(k)/grav) )**(1./kappa)
-       enddo
-       pe1(km+1) = p00
-
-! Set up "sigma" coordinate 
-       ak(1) = pe1(1)
-       bk(1) = 0.
-       do k=2,km
-          bk(k) = (pe1(k) - pe1(1)) / (pe1(km+1)-pe1(1))  ! bk == sigma
-          ak(k) =  pe1(1)*(1.-bk(k)) 
-       enddo                                                
-       ak(km+1) = 0.
-       bk(km+1) = 1.
-
-  end subroutine var_dz
 
 
   subroutine gw_1d(km, p0, ak, bk, ptop, ztop, pt1)

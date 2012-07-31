@@ -6,14 +6,14 @@ module dyn_core_mod
   use mpp_parameter_mod,  only: CORNER
   use fv_mp_mod,          only: domain, isd, ied, jsd, jed, is, ie, js, je, gid, square_domain
   use fv_control_mod,     only: hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, n_sponge,  &
-                                dddmp, d2_bg, d4_bg, d_ext, vtdm4, beta,  &
-                                a2b_ord, master, fv_debug, d_con, scale_z, zd_z1, do_vort_damp, nord, &
+                                dddmp, d2_bg, d4_bg, d_ext, vtdm4, beta,        &
+                                a2b_ord, master, fv_debug, d_con, scale_z, do_vort_damp, nord, &
                                 fill_dp, nwat, inline_q, breed_vortex_inline,    &
                                 d2_bg_k1, d2_bg_k2, d2_divg_max_k1, d2_divg_max_k2, damp_k_k1, damp_k_k2, &
-                                w_max, z_min, fill_wz, convert_ke, use_old_omega
+                                m_split, w_max, z_min, fill_wz, convert_ke, use_old_omega
   use sw_core_mod,        only: c_sw, d_sw
   use a2b_edge_mod,       only: a2b_ord2, a2b_ord4
-  use nh_core_mod,        only: Riem_Solver, update_gz_c, update_dz_d
+  use nh_core_mod,        only: Riem_Solver, Riem_Solver_C, update_dz_c, update_dz_d
   use fv_grid_tools_mod,  only: rdx, rdy, rdxc, rdyc, dx, dy, area, rarea, grid_type
   use fv_grid_utils_mod,  only: edge_vect_w, edge_vect_e, edge_vect_s, edge_vect_n,  &
                                 ec1, ec2, en1, en2, vlon, vlat, da_min, da_min_c
@@ -21,9 +21,33 @@ module dyn_core_mod
                                 sw_corner, se_corner, ne_corner, nw_corner
   use tp_core_mod,        only: copy_corners
   use fv_timing_mod,      only: timing_on, timing_off
-  use fv_diagnostics_mod, only: prt_maxmin, id_zratio, id_ws, fv_time
+  use fv_diagnostics_mod, only: prt_maxmin, idiag, fv_time
   use fv_nwp_nudge_mod,   only: breed_slp_inline
   use diag_manager_mod,   only: send_data
+  use fv_mp_mod,          only: concurrent
+
+  use boundary_mod,         only: extrapolation_BC,  nested_grid_BC_apply, nested_grid_BC_apply_intT
+   use fv_current_grid_mod, only: nest_timestep, nsponge, nested, nestbctype, s_weight, k_split
+   use fv_current_grid_mod, only: h_east, h_west, h_south, h_north
+   use fv_current_grid_mod, only: q_east, q_west, q_south, q_north
+#ifndef SW_DYNAMICS
+   use fv_current_grid_mod, only: pt_east, pt_west, pt_south, pt_north
+   use fv_current_grid_mod, only: w_east, w_west, w_south, w_north
+#endif
+   use fv_current_grid_mod, only: u_east, u_west, u_south, u_north
+   use fv_current_grid_mod, only: v_east, v_west, v_south, v_north
+   use fv_current_grid_mod, only: h_east_t0, h_west_t0, h_south_t0, h_north_t0
+   use fv_current_grid_mod, only: q_east_t0, q_west_t0, q_south_t0, q_north_t0
+#ifndef SW_DYNAMICS
+   use fv_current_grid_mod, only: pt_east_t0, pt_west_t0, pt_south_t0, pt_north_t0
+   use fv_current_grid_mod, only: w_east_t0, w_west_t0, w_south_t0, w_north_t0
+#endif
+   use fv_current_grid_mod, only: u_east_t0, u_west_t0, u_south_t0, u_north_t0
+   use fv_current_grid_mod, only: v_east_t0, v_west_t0, v_south_t0, v_north_t0
+   use fv_current_grid_mod, only: uc_east_t1, uc_west_t1, uc_south_t1, uc_north_t1
+   use fv_current_grid_mod, only: vc_east_t1, vc_west_t1, vc_south_t1, vc_north_t1
+   use fv_current_grid_mod, only: uc_east_t0, uc_west_t0, uc_south_t0, uc_north_t0
+   use fv_current_grid_mod, only: vc_east_t0, vc_west_t0, vc_south_t0, vc_north_t0
 
 #ifdef SW_DYNAMICS
   use test_cases_mod,      only: test_case, case9_forcing1, case9_forcing2
@@ -37,11 +61,11 @@ public :: dyn_core, del2_cubed
   real :: ptk, rgrav
   real :: d3_damp
   real, allocatable, dimension(:,:,:) ::  ut, vt, crx, cry, xfx, yfx, divgd, &
-                                          zh, du, dv, pkc, delpc, pk3, ptc, gz, heat_source
+                                          zh, du, dv, pkc, delpc, pk3, ptc, gz
 
 !---- version number -----
-  character(len=128) :: version = '$Id: dyn_core.F90,v 19.0 2012/01/06 19:57:02 fms Exp $'
-  character(len=128) :: tagname = '$Name: siena_201204 $'
+  character(len=128) :: version = '$Id: dyn_core.F90,v 17.0.2.10.2.18 2012/05/10 20:41:48 Lucas.Harris Exp $'
+  character(len=128) :: tagname = '$Name: siena_201207 $'
 
 contains
 
@@ -50,7 +74,7 @@ contains
 !-----------------------------------------------------------------------
  
  subroutine dyn_core(npx, npy, npz, ng, sphum, nq, bdt, n_split, zvir, cp, akap, grav, hydrostatic,  &
-                     u,  v,  w, delz, pt, q, delp, pe, pk, phis, omga, ptop, pfull, ua, va, & 
+                     u,  v,  w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va, & 
                      uc, vc, mfx, mfy, cx, cy, pkz, peln, ak, bk, init_step, i_pack, end_step, time_total)
     integer, intent(IN) :: npx
     integer, intent(IN) :: npy
@@ -90,6 +114,7 @@ contains
     real,    parameter:: huge_r = 1.E40
     real,    parameter:: air_viscosity = 1.E-5   ! [m**2/sec] for T ~ 260 K
 !-----------------------------------------------------------------------
+    real, intent(out  ):: ws(is:ie,js:je)        ! w at surface
     real, intent(inout):: omga(isd:ied,jsd:jed,npz)    ! Vertical pressure velocity (pa/s)
     real, intent(inout):: uc(isd:ied+1,jsd:jed  ,npz)  ! (uc, vc) are mostly used as the C grid winds
     real, intent(inout):: vc(isd:ied  ,jsd:jed+1,npz)
@@ -104,10 +129,10 @@ contains
 ! Work:
     real, intent(inout):: pkz(is:ie,js:je,npz)  ! 
 
-    real, allocatable, dimension(:,:,:) :: pem
+    real, allocatable, dimension(:,:,:):: pem, heat_source
 ! Auto 1D & 2D arrays:
-    real:: zs(isd:ied,jsd:jed)        ! surface height (m)
-    real:: ws(is:ie,js:je)        ! w at surface
+    real:: dp_ref(npz)
+    real:: zs(is:ie,js:je)        ! surface height (m)
     real:: p1d(is:ie)
     real:: om2d(is:ie,npz)
     real wbuffer(npy+2,npz)
@@ -119,12 +144,12 @@ contains
     real wk(isd:ied,jsd:jed)
     real fz(is: ie+1,js: je+1)
     real heat_s(is:ie,js:je)
-    real damp_vt(npz)
+    real damp_vt(npz+1)
+    integer nord_v(npz+1)
 !-------------------------------------
-!
-    integer :: nord_v(npz)
     integer :: hord_m, hord_v, hord_t, hord_p, nord_k
     integer :: w_pack
+    integer :: ms
 !---------------------------------------
     integer :: i,j,k, it, iq, n_con
     integer :: iep1, jep1
@@ -134,18 +159,7 @@ contains
     real    :: diff_z0, k1k, kapag, tmcp
     logical :: last_step
     logical used
-
-! i_pack(1)  and i_pack(2) for delp and pt(isd:ied,jsd:jed,npz)
-! i_pack(3) used only                      for:  divgd(isd:ied+1,jsd:jed+1,npz)
-
-! i_pack(4) used only if .not. hydrostatic for:   pkc(isd:ied,jsd:jed,npz+1)
-! i_pack(5) used only if .not. hydrostatic for:    gz(isd:ied,jsd:jed,npz+1)
-! i_pack(6) used only for: pk3, 
-! i_pack(7) used only                       for: 
-
-! i_pack(8) used only                      for:  (u, v) pair
-! i_pack(9) used only                      for:  (uc,vc) pair
-! i_pack(10) used only                     for:  q (all tracers)
+    real :: split_timestep_bc
 
     ptk = ptop ** akap
     dt  = bdt / real(n_split)
@@ -153,11 +167,18 @@ contains
     rdt = 1.0/dt
     rgrav = 1.0/grav
 
+#ifdef SW_DYNAMICS
+    k1k = 0.
+#else
       k1k =  akap / (1.-akap)    ! rg/Cv=0.4
+#endif
     kapag = -akap / grav
 
-! New 3D form: 10-min time-scale
      diff_z0 = 0.25 * scale_z**2
+
+     do k=1,npz
+        dp_ref(k) = ak(k+1)-ak(k) + (bk(k+1)-bk(k))*1.E5  
+     enddo
 
 ! Indexes:
       iep1 = ie + 1
@@ -173,6 +194,7 @@ contains
            allocate( yfx(isd:ied,  js :je+1, npz) )
            allocate( divgd(isd:ied+1,jsd:jed+1,npz) )
            allocate( delpc(isd:ied, jsd:jed  ,npz  ) )
+                     call init_ijk_mem(isd,ied, jsd,jed, npz, delpc, 0.)
 
            allocate( ut(isd:ied, jsd:jed, npz) )
                      call init_ijk_mem(isd,ied, jsd,jed, npz, ut, 0.)
@@ -180,15 +202,18 @@ contains
                      call init_ijk_mem(isd,ied, jsd,jed, npz, vt, 0.)
 
           if ( .not. hydrostatic ) then
-               allocate( zh(isd:ied, jsd:jed, npz) )
-               call init_ijk_mem(isd,ied, jsd,jed, npz, zh, huge_r )
+               allocate( zh(isd:ied, jsd:jed, npz+1) )
+               call init_ijk_mem(isd,ied, jsd,jed, npz+1, zh, huge_r )
                allocate ( pk3(isd:ied,jsd:jed,npz+1) )
           endif
-          allocate( du(isd:ied,  jsd:jed+1,npz) )
-                    call init_ijk_mem(isd,ied,   jsd,jed+1, npz, du, 0.)
-          allocate( dv(isd:ied+1,jsd:jed,  npz) )
-                    call init_ijk_mem(isd,ied+1, jsd,jed  , npz, dv, 0.)
-      endif
+          if ( beta > near0 ) then
+               allocate( du(isd:ied,  jsd:jed+1,npz) )
+               call init_ijk_mem(isd,ied,   jsd,jed+1, npz, du, 0.)
+               allocate( dv(isd:ied+1,jsd:jed,  npz) )
+               call init_ijk_mem(isd,ied+1, jsd,jed  , npz, dv, 0.)
+          endif
+      endif    ! end init_step
+
       if ( beta < 1.e-5 ) beta = 0.
 
 ! Empty the "flux capacitors"
@@ -203,8 +228,9 @@ contains
     endif
 
     if ( .not. hydrostatic ) then
-        do j=jsd,jed
-           do i=isd,ied
+!$omp parallel do default(shared)
+        do j=js,je
+           do i=is,ie
               zs(i,j) = phis(i,j) * rgrav
            enddo
         enddo
@@ -224,6 +250,15 @@ contains
          endif
     endif
 
+
+     if (nested) then
+        if (concurrent) then
+           split_timestep_bc = real(n_split*k_split+nest_timestep)
+        else
+           split_timestep_bc = real(nest_timestep)
+        endif
+     endif
+
 !-----------------------------------------------------
   do it=1,n_split
 !-----------------------------------------------------
@@ -241,43 +276,25 @@ contains
      endif
 
      if ( .not. hydrostatic ) then
-                                        call timing_on('Riem_Solver')
-        call Riem_Solver(dt2,  is,   ie,   js,   je, npz,  ng,   &
-                         akap, cp,   ptop, phis, w,  delz, pt,   &
-                         delp, gz,   pkc,  pk, pe, peln, da_min, &
-                         diff_z0, it==1, .false., .false.)
-                                        call timing_off('Riem_Solver')
-
                              call timing_on('COMM_TOTAL')
-        i_pack(5) = mpp_start_update_domains(gz,  domain)
-        i_pack(4) = mpp_start_update_domains(pkc, domain)
-!       if ( it==1 ) then
-        w_pack = mpp_start_update_domains(w, domain)
-!       else
-!       w_pack = mpp_start_update_domains(w, domain, update_id=w_pack)
-!       endif
-
-        call mpp_complete_update_domains(i_pack(5), gz, domain)
+         w_pack = mpp_start_update_domains(w, domain)
                              call timing_off('COMM_TOTAL')
-
 !$omp parallel do default(shared)
-        do k=1,npz
-           do j=jsd,jed
-              do i=isd,ied
-                 zh(i,j,k) = gz(i,j,k) * rgrav
-              enddo
-           enddo
-        enddo
-                                                  call timing_on('COMM_TOTAL')
-        if ( it==1 ) call mpp_complete_update_domains(i_pack(1), delp, domain)
-                     call mpp_complete_update_domains(i_pack(4), pkc,  domain)
-                                                  call timing_off('COMM_TOTAL')
-
-        call nh_grad_d(u, v, pkc, gz, pk3, delp, dt2, ng, npx, npy, npz)
-                                                  call timing_on('COMM_TOTAL')
-        i_pack(8) = mpp_start_update_domains(u, v, domain, gridtype=DGRID_NE)
-                                                  call timing_off('COMM_TOTAL')
+         do j=js,je
+            do i=is,ie
+               gz(i,j,npz+1) = zs(i,j)
+            enddo
+            do k=npz,1,-1
+               do i=is,ie
+                  gz(i,j,k) = gz(i,j,k+1) - delz(i,j,k)
+               enddo
+            enddo
+         enddo
+                             call timing_on('COMM_TOTAL')
+         i_pack(5) = mpp_start_update_domains(gz,  domain)
+                             call timing_off('COMM_TOTAL')
      endif
+
 
 #ifdef SW_DYNAMICS
      if (test_case>1) then
@@ -285,10 +302,10 @@ contains
 #endif
 
      if ( it==1 ) then
-                                                       call timing_on('COMM_TOTAL')
-          if(hydrostatic) call mpp_complete_update_domains(i_pack(1), delp, domain)
-                          call mpp_complete_update_domains(i_pack(2), pt,   domain)
-                                                       call timing_off('COMM_TOTAL')
+                                       call timing_on('COMM_TOTAL')
+          call mpp_complete_update_domains(i_pack(1), delp, domain)
+          call mpp_complete_update_domains(i_pack(2), pt,   domain)
+                                      call timing_off('COMM_TOTAL')
           beta_d = 0.
      else
           beta_d = beta
@@ -313,9 +330,10 @@ contains
      else
           last_step = .false.
      endif
-
+       
                                                      call timing_on('COMM_TOTAL')
      call mpp_complete_update_domains(i_pack(8), u, v, domain, gridtype=DGRID_NE)
+     if( .not. hydrostatic ) call mpp_complete_update_domains(w_pack, w, domain)
                                                      call timing_off('COMM_TOTAL')
 
                                                      call timing_on('c_sw')
@@ -323,10 +341,10 @@ contains
       do k=1,npz
          call c_sw(delpc(isd,jsd,k), delp(isd,jsd,k),  ptc(isd,jsd,k),    &
                       pt(isd,jsd,k),    u(isd,jsd,k),    v(isd,jsd,k),    &
-                                       uc(isd,jsd,k),   vc(isd,jsd,k),    &
-                                       ua(isd,jsd,k),   va(isd,jsd,k),    &
-                                       ut(isd,jsd,k),   vt(isd,jsd,k),    &
-                   divgd(isd,jsd,k),   nord,   dt2,  hydrostatic,  .true.)
+                       w(isd,jsd,k),   uc(isd,jsd,k),   vc(isd,jsd,k),    &
+                      ua(isd,jsd,k),   va(isd,jsd,k), omga(isd,jsd,k),    &
+                      ut(isd,jsd,k),   vt(isd,jsd,k), divgd(isd,jsd,k),   &
+                      nord,   dt2,  hydrostatic,  .true.)
       enddo
                                                      call timing_off('c_sw')
       if ( nord > 0 ) then
@@ -335,63 +353,148 @@ contains
                                                   call timing_off('COMM_TOTAL')
       endif
 
-      if( fill_dp ) call mix_dp(hydrostatic, omga, delpc, ptc, npz, ak, bk, .true.)
+!     if( fill_dp ) call mix_dp(hydrostatic, omga, delpc, ptc, npz, ak, bk, .true.)
 
       if ( hydrostatic ) then
-           call geopk(ptop, pe, peln, delpc, pkc, gz, phis, ptc, pkz, npz, akap, .true.)
+           call geopk(ptop, pe, peln, delpc, pkc, gz, phis, ptc, pkz, npz, akap, .true., .false., npx, npy)
       else
-!$omp parallel do default(shared) private(p1d)
-           do j=js,je
-              do i=is,ie
-                 p1d(i) = ptop
-                 pkc(i,j,1) = ptk
-              enddo
-              do k=2,npz+1
-                 do i=is,ie
-                        p1d(i) = p1d(i) + delpc(i,j,k-1)
-                    pkc(i,j,k) = exp( akap*log(p1d(i)) )
+                                      call timing_on('COMM_TOTAL')
+           call mpp_complete_update_domains(i_pack(5), gz, domain)
+                                     call timing_off('COMM_TOTAL')
+
+!$omp parallel do default(shared)
+           do k=1,npz+1
+              do j=jsd,jed
+                 do i=isd,ied
+! Save edge heights for update_dz_d
+                    zh(i,j,k) = gz(i,j,k)
                  enddo
               enddo
            enddo
+
+                                            call timing_on('UPDATE_DZ_C')
+           call update_dz_c(is, ie, js, je, npz, ng, dt2, dp_ref, zs, area, ut, vt, gz, ws)
+                                            call timing_off('UPDATE_DZ_C')
+
+                                               call timing_on('Riem_Solver_C')
+           ms = max(1, m_split/2)
+           call Riem_Solver_C( ms, dt2,   is,  ie,   js,   je,   npz,   ng,   &
+                               akap,  cp,  ptop, phis, omga, ptc,  &
+                               delpc, gz,  pkc, ws )
+                                               call timing_off('Riem_Solver_C')
+
                                                                    call timing_on('COMM_TOTAL')
            if ( square_domain ) then
-             i_pack(1) = mpp_start_update_domains(pkc, domain,whalo=1,ehalo=1,shalo=1, nhalo=1)
+             i_pack(4) = mpp_start_update_domains(pkc, domain,whalo=1,ehalo=1,shalo=1, nhalo=1)
+             i_pack(5) = mpp_start_update_domains(gz , domain,whalo=1,ehalo=1,shalo=1, nhalo=1)
+             call mpp_complete_update_domains(i_pack(4), pkc,domain,whalo=1,ehalo=1,shalo=1, nhalo=1)
+             call mpp_complete_update_domains(i_pack(5), gz ,domain,whalo=1,ehalo=1,shalo=1, nhalo=1)
+!            call mpp_update_domains(pkc,domain,whalo=1,ehalo=1,shalo=1, nhalo=1, complete=.false.)
+!            call mpp_update_domains(gz ,domain,whalo=1,ehalo=1,shalo=1, nhalo=1, complete=.true.)
            else   
-             i_pack(1) = mpp_start_update_domains(pkc, domain)
-           endif
-                                                                   call timing_off('COMM_TOTAL')
-
-                                               call timing_on('UPDATE_DZ')
-           call update_gz_c(is, ie, js, je, npz, ng, area, ut, vt, gz)
-                                               call timing_off('UPDATE_DZ')
-
-                                                                   call timing_on('COMM_TOTAL')
-           if ( square_domain ) then
-             i_pack(2) = mpp_start_update_domains(gz ,domain,whalo=1,ehalo=1,shalo=1, nhalo=1)
-             call mpp_complete_update_domains(i_pack(1), pkc,domain,whalo=1,ehalo=1,shalo=1, nhalo=1)
-             call mpp_complete_update_domains(i_pack(2), gz ,domain,whalo=1,ehalo=1,shalo=1, nhalo=1)
-           else   
-             i_pack(5) = mpp_start_update_domains(gz ,domain)
-             call mpp_complete_update_domains(i_pack(1), pkc, domain)
+             i_pack(4) = mpp_start_update_domains(pkc, domain)
+             i_pack(5) = mpp_start_update_domains(gz,  domain)
+             call mpp_complete_update_domains(i_pack(4), pkc, domain)
              call mpp_complete_update_domains(i_pack(5), gz , domain)
+!            call mpp_update_domains(pkc, domain, complete=.false.)
+!            call mpp_update_domains(gz , domain, complete=.true.)
            endif
                                                                    call timing_off('COMM_TOTAL')
       endif   ! end hydro check
 
-      call p_grad_c(dt2, npz, delpc, pkc, gz, uc, vc, .true.)
+      call p_grad_c(dt2, npz, delpc, pkc, gz, uc, vc, hydrostatic)
+
                                                                    call timing_on('COMM_TOTAL')
       i_pack(9) = mpp_start_update_domains(uc, vc, domain, gridtype=CGRID_NE)
+                                                     call timing_off('COMM_TOTAL')
 #ifdef SW_DYNAMICS
       if (test_case==9) call case9_forcing2(phis)
       endif !test_case>1
 #endif
-!rab    if ((it==n_split .or. inline_q) .and. nq>0) call mpp_complete_update_domains(i_pack(10), q, domain)
-    if (inline_q .and. nq>0) call mpp_complete_update_domains(i_pack(10), q, domain)
 
-    if( .not. hydrostatic )  call mpp_complete_update_domains(w_pack, w, domain)
+                                                                   call timing_on('COMM_TOTAL')
+    if (inline_q .and. nq>0) call mpp_complete_update_domains(i_pack(10), q, domain)
     if ( nord > 0 )          call mpp_complete_update_domains(i_pack(3), divgd,  domain, position=CORNER)
                              call mpp_complete_update_domains(i_pack(9), uc, vc, domain, gridtype=CGRID_NE)
+
                                                                    call timing_off('COMM_TOTAL')
+      if (nested) then
+         !On a nested grid we have to do SOMETHING with uc and vc in
+         ! the boundary halo, particularly at the corners of the
+         ! domain and of each processor element. We must either
+         ! apply an interpolated BC, or extrapolate into the
+         ! boundary halo
+         ! NOTE: 
+         !The update_domains calls for uc and vc need to go BEFORE the BCs to ensure cross-restart
+         !bitwise-consistent solutions when doing the spatial extrapolation; should not make a
+         !difference for interpolated BCs from the coarse grid.
+
+
+!!$         do k=1,npz
+!!$            call extrapolation_BC(uc(:,:,k), 1, 0, npx, npy)
+!!$            call extrapolation_BC(vc(:,:,k), 0, 1, npx, npy)
+!!$         end do
+!!$
+
+
+         !vc
+            call nested_grid_BC_apply_intT(vc, &
+                 0, 1, npx, npy, npz, split_timestep_bc+0.5, real(n_split*k_split), & 
+                 var_east_t0=vc_east_t0, &
+                 var_west_t0=vc_west_t0, &
+                 var_north_t0=vc_north_t0, &
+                 var_south_t0=vc_south_t0, &
+                 var_east_t1=vc_east_t1, &
+                 var_west_t1=vc_west_t1, &
+                 var_north_t1=vc_north_t1, &
+                 var_south_t1=vc_south_t1, &
+                 bctype=nestbctype, &
+                 nsponge=nsponge, s_weight=s_weight  )
+
+            !uc
+            call nested_grid_BC_apply_intT(uc, &
+                 1, 0, npx, npy, npz, split_timestep_bc+0.5, real(n_split*k_split), &
+                 var_east_t0=uc_east_t0, &
+                 var_west_t0=uc_west_t0, &
+                 var_north_t0=uc_north_t0, &
+                 var_south_t0=uc_south_t0, &
+                 var_east_t1=uc_east_t1, &
+                 var_west_t1=uc_west_t1, &
+                 var_north_t1=uc_north_t1, &
+                 var_south_t1=uc_south_t1, &
+                 bctype=nestbctype, &
+                 nsponge=nsponge, s_weight=s_weight   )
+
+      end if
+
+    if ( inline_q ) then
+         if (nested) then
+            do iq=1,nq
+               if (concurrent) then
+                  call nested_grid_BC_apply_intT(q(isd:ied,jsd:jed,:,iq), &
+                       0, 0, npx, npy, npz, split_timestep_BC+1, real(n_split*k_split), &
+                       var_east_t0=q_east_t0(:,:,:,iq), &
+                       var_west_t0=q_west_t0(:,:,:,iq), &
+                       var_north_t0=q_north_t0(:,:,:,iq), &
+                       var_south_t0=q_south_t0(:,:,:,iq), &
+                       var_east_t1=q_east(:,:,:,iq), &
+                       var_west_t1=q_west(:,:,:,iq), &
+                       var_north_t1=q_north(:,:,:,iq), &
+                       var_south_t1=q_south(:,:,:,iq), &
+                       bctype=nestbctype, &
+                       nsponge=nsponge, s_weight=s_weight   )
+               else
+                  call nested_grid_BC_apply(q(isd:ied,jsd:jed,:,iq), &
+                       0, 0, npx, npy, npz, nest_timestep+1, n_split*k_split, &
+                       var_east=q_east(:,:,:,iq), &
+                       var_west=q_west(:,:,:,iq), &
+                       var_north=q_north(:,:,:,iq), &
+                       var_south=q_south(:,:,:,iq), bctype=nestbctype, &
+                       nsponge=nsponge, s_weight=s_weight   )
+               endif
+            end do
+         end if
+      endif
 
                                                      call timing_on('d_sw')
 !$omp parallel do default(shared) private(nord_k, damp_k, d2_divg, dd_divg, hord_m, hord_v, hord_t, hord_p, wk, heat_s, d_con_k)
@@ -414,21 +517,25 @@ contains
        if ( npz==1 .or. n_sponge<0 ) then
            d2_divg = d2_bg
        elseif ( n_sponge==0 ) then
+! New Del-2 Sponge layer: formulation
               if ( k==1 ) then
-! Sponge layer:
                    damp_k = 0.
                    nord_k = 0
-                   d2_divg = max(0.21, d2_bg, 0.05)
+                   d2_divg = max(0.21, d2_bg_k1, d2_bg, 0.05)
                    nord_v(k) = 0
                    damp_vt(k) = d2_bg_k1
               elseif ( k==2 ) then
                    damp_k = 0.
                    nord_k = 0
-!                  d2_divg = max(0.05, d2_bg)
-! Nov 9, 2010:
                    d2_divg = min(0.21, max(1.25*d2_bg_k2, d2_bg, 0.01))
                    nord_v(k) = 0
                    damp_vt(k) = d2_bg_k2
+              elseif ( k==3 .and. d2_bg_k2>0.5 ) then
+                   damp_k = 0.
+                   nord_k = 0
+                   d2_divg = max(0.2*d2_bg_k2, d2_bg, 0.01)
+                   nord_v(k) = 0
+                   damp_vt(k) = 0.2*d2_bg_k2
               endif
 
               if ( damp_vt(k) < 0.01 .and. nord_k>0 ) d_con_k = 0.
@@ -482,8 +589,8 @@ contains
                   vc(isd,jsd,k),   ua(isd,jsd,k),  va(isd,jsd,k), divgd(isd,jsd,k),   &
                   mfx(is, js, k),  mfy(is, js, k),  cx(is, jsd,k),  cy(isd,js, k),    &
                   crx(is, jsd,k),  cry(isd,js, k), xfx(is, jsd,k), yfx(isd,js, k),    &
-                  heat_s, zvir, sphum, nq,  q,  k,  npz, inline_q,  dt,     &
-                  hord_tr, hord_m, hord_v, hord_t, hord_p, nord_k, nord_v(k), damp_k,    &
+                  heat_s, zvir, sphum, nq,  q,  k,  npz, inline_q,  dt,               &
+                  hord_tr, hord_m, hord_v, hord_t, hord_p, nord_k, nord_v(k), damp_k, &
                   d2_divg, dd_divg, damp_vt(k), d_con_k, hydrostatic)
 
        if( .not. use_old_omega .and. last_step ) then
@@ -518,12 +625,8 @@ contains
                                                              call timing_on('COMM_TOTAL')
                                         i_pack(1) = mpp_start_update_domains(delp, domain)
     if ( hydrostatic .or. it/=n_split ) i_pack(2) = mpp_start_update_domains(pt,   domain)
+!                                       i_pack(2) = mpp_start_update_domains(pt,   domain)
                                                              call timing_off('COMM_TOTAL')
-
-!   if ( fv_debug ) then
-!        if ( master ) write(*,*) 'istep=', it
-!        call prt_maxmin('DELP', delp, is, ie, js, je, ng, npz, 1.E-2, master)
-!   endif
 
     if ( d_ext > 0. ) then
           d2_divg = d_ext * da_min_c
@@ -552,33 +655,90 @@ contains
           call mpp_complete_update_domains(i_pack(1), delp, domain)
           call mpp_complete_update_domains(i_pack(2), pt,   domain)
                                        call timing_off('COMM_TOTAL')
-          call geopk(ptop, pe, peln, delp, pkc, gz, phis, pt, pkz, npz, akap, .false.)
      else
                                             call timing_on('UPDATE_DZ')
         call update_dz_d(nord_v, damp_vt, hord_tm, is, ie, js, je, npz, ng, npx, npy, area,  &
-                         zs, zh, crx, cry, xfx, yfx, delz, ws, rdt, id_ws)
+                         dp_ref, zs, zh, crx, cry, xfx, yfx, delz, ws, rdt)
                                             call timing_off('UPDATE_DZ')
 
-        if (id_ws>0 .and. last_step) then
-            used=send_data(id_ws, ws, fv_time)
+        if (idiag%id_ws>0 .and. last_step) then
+            used=send_data(idiag%id_ws, ws, fv_time)
 !           call prt_maxmin('WS', ws, is, ie, js, je, 0, 1, 1., master)
         endif
-
-        if(fill_wz) call mix_wz(w, delp, delz, pt, pk, 0, npz, pkz, last_step, grav)
+        if(fill_wz) call mix_wz(w, zh, delp, delz, pt, pk, 0, npz, pkz, last_step, grav)
 
                                        call timing_on('COMM_TOTAL')
         call mpp_complete_update_domains(i_pack(1), delp, domain)
                                        call timing_off('COMM_TOTAL')
 
+     endif    ! end hydro check
+
+    if (nested) then
+
+       if (concurrent) then
+          !!! Not sure whether to use +1 or not for the timestep for this variable.
+          call nested_grid_BC_apply_intT(delp, &
+               0, 0, npx, npy, npz, split_timestep_BC+1, real(n_split*k_split), &
+               var_east_t0=h_east_t0, &
+               var_west_t0=h_west_t0, &
+               var_north_t0=h_north_t0, &
+               var_south_t0=h_south_t0, &
+               var_east_t1=h_east, &
+               var_west_t1=h_west, &
+               var_north_t1=h_north, &
+               var_south_t1=h_south, &
+               bctype=nestbctype, &
+               nsponge=nsponge, s_weight=s_weight   )
+       else
+          call nested_grid_BC_apply(delp, &
+               0, 0, npx, npy, npz, nest_timestep+1, n_split*k_split, &
+               var_east=h_east, &
+               var_west=h_west, &
+               var_north=h_north, &
+               var_south=h_south, bctype=nestbctype, &
+               nsponge=nsponge, s_weight=s_weight  )
+       endif
+
+
+#ifndef SW_DYNAMICS
+
+       if (concurrent) then
+          call nested_grid_BC_apply_intT(pt, &
+               0, 0, npx, npy, npz, split_timestep_BC+1, real(n_split*k_split), &
+               var_east_t0=pt_east_t0, &
+               var_west_t0=pt_west_t0, &
+               var_north_t0=pt_north_t0, &
+               var_south_t0=pt_south_t0, &
+               var_east_t1=pt_east, &
+               var_west_t1=pt_west, &
+               var_north_t1=pt_north, &
+               var_south_t1=pt_south, &
+               bctype=nestbctype, &
+               nsponge=nsponge, s_weight=s_weight   )
+       else
+          call nested_grid_BC_apply(pt, &
+               0, 0, npx, npy, npz, nest_timestep+1, n_split*k_split, &
+               var_east=pt_east, &
+               var_west=pt_west, &
+               var_north=pt_north, &
+               var_south=pt_south, bctype=nestbctype, &
+               nsponge=nsponge, s_weight=s_weight  )
+       endif
+#endif
+
+    end if
+
+     if ( hydrostatic ) then
+          call geopk(ptop, pe, peln, delp, pkc, gz, phis, pt, pkz, npz, akap, .false., .true., npx, npy)
+     else
 !-----------------------------------------------------------
-! mgrad_p = 1: pkc is full pressure
-! mgrad_p = 0: pkc is non-hydrostatic perturbation pressure
+! pkc is non-hydrostatic perturbation pressure
 !-----------------------------------------------------------
                                                          call timing_on('Riem_Solver')
-        call Riem_Solver(dt2,  is,   ie,   js,   je, npz,  ng,  &
-                         akap, cp,   ptop, phis, w,  delz,      &
-                         pt,   delp, gz,   pkc,  pk, pe, peln, da_min, &
-                         diff_z0, .false., it==n_split, .true.)
+        call Riem_Solver(m_split, dt,  is,  ie,   js,   je, npz,  ng,      &
+                         akap, cp,  ptop, phis, w,  delz, pt, delp, zh,    &
+                         gz,   pkc, pk, pe, peln, ws, da_min,    &
+                         diff_z0,  it==n_split)
                                                          call timing_off('Riem_Solver')
 
                                                          call timing_on('COMM_TOTAL')
@@ -595,10 +755,15 @@ contains
         i_pack(6) = mpp_start_update_domains(pk3, domain)
                                                          call timing_off('COMM_TOTAL')
      endif    ! end hydro check
-
+     if (nested) then
+                                       call timing_on('COMM_TOTAL')
+        call mpp_update_domains(pkc, domain, complete=.false.)
+        call mpp_update_domains(gz , domain, complete=.true.)
+                                       call timing_off('COMM_TOTAL')
+     end if
 
 #ifdef SW_DYNAMICS
-      if (test_case > 1) then
+      if (test_case > 1) then !! Not sure whether to keep this check or not---does this code still work for case 1?
 #else
       if ( hydrostatic .and. (breed_vortex_inline .or. it==n_split) ) then
 !$omp parallel do default(shared)
@@ -621,7 +786,13 @@ contains
          call mpp_complete_update_domains(i_pack(5), gz,  domain)
          call mpp_complete_update_domains(i_pack(6), pk3, domain)
                                                                 call timing_off('COMM_TOTAL')
-         call split_p_grad(du, dv, u, v, pkc, gz, delp, pk3, divg2, beta_d, dt, dt2, ng, npx, npy, npz)
+
+       if ( beta > 0. ) then
+         call split_p_grad(du, dv, u, v, pkc, gz, delp, pk3, divg2, beta_d, dt, ng, npx, npy, npz)
+       else
+         call nh_p_grad(u, v, pkc, gz, delp, pk3, divg2, dt, ng, npx, npy, npz)
+       endif
+
     else
       if ( beta > 0. ) then
          call grad1_p_update(divg2, u, v, du, dv, pkc, gz, dt, ng, npx, npy, npz, ptop, beta_d)
@@ -629,9 +800,9 @@ contains
          call one_grad_p(u, v, pkc, gz, divg2, delp, dt, ng, npx, npy, npz, ptop, hydrostatic)
       endif
     endif
-
                                                                        call timing_on('COMM_TOTAL')
     if (.not. hydrostatic .and. it/=n_split) call mpp_complete_update_domains(i_pack(2), pt, domain)
+!   if (.not. hydrostatic ) call mpp_complete_update_domains(i_pack(2), pt, domain)
                                                                        call timing_off('COMM_TOTAL')
 
 !-------------------------------------------------------------------------------------------------------
@@ -642,7 +813,7 @@ contains
 !-------------------------------------------------------------------------------------------------------
 
                                                      call timing_on('COMM_TOTAL')
-    if( it==n_split .and. grid_type<4 ) then
+    if( it==n_split .and. grid_type<4 .and. .not. nested) then
 ! Prevent accumulation of rounding errors at overlapped domain edges:
           call mpp_get_boundary(u, v, domain, wbuffery=wbuffer, ebuffery=ebuffer,  &
                             sbufferx=sbuffer, nbufferx=nbuffer, gridtype=DGRID_NE )
@@ -666,12 +837,18 @@ contains
 #endif
     endif
 
-    if ( hydrostatic .and. it/=n_split )   &
+    if ( it/=n_split)   &
          i_pack(8) = mpp_start_update_domains(u, v, domain, gridtype=DGRID_NE)
                                                      call timing_off('COMM_TOTAL')
 
 #ifdef SW_DYNAMICS
     endif
+#endif
+      if ( nested ) then
+         nest_timestep = nest_timestep + 1
+      endif
+
+#ifdef SW_DYNAMICS
 #else
     if ( last_step ) then
       if ( use_old_omega ) then
@@ -706,9 +883,100 @@ contains
             enddo
          enddo
       endif
+      if (idiag%id_ws>0 .and. hydrostatic) then
+!$omp parallel do default(shared) 
+          do j=js,je
+             do i=is,ie
+                ws(i,j) = delz(i,j,npz)/delp(i,j,npz) * omga(i,j,npz)
+             enddo
+          enddo
+          used=send_data(idiag%id_ws, ws, fv_time)
+      endif
     endif
 #endif
 
+    if (nested) then
+#ifdef SW_DYNAMICS
+#else
+
+
+
+         if (.not. hydrostatic) then
+            if (concurrent) then
+               call nested_grid_BC_apply_intT(w, &
+                    0, 0, npx, npy, npz, split_timestep_BC, real(n_split*k_split), &
+                    var_east_t0=w_east_t0, &
+                    var_west_t0=w_west_t0, &
+                    var_north_t0=w_north_t0, &
+                    var_south_t0=w_south_t0, &
+                    var_east_t1=w_east, &
+                    var_west_t1=w_west, &
+                    var_north_t1=w_north, &
+                    var_south_t1=w_south, &
+                    bctype=nestbctype, &
+                    nsponge=nsponge, s_weight=s_weight   )
+            else
+               call nested_grid_BC_apply(w, &
+                    0, 0, npx, npy, npz, nest_timestep, n_split*k_split, &
+                    var_east=w_east, &
+                    var_west=w_west, &
+                    var_north=w_north, &
+                    var_south=w_south, bctype=nestbctype, &
+                    nsponge=nsponge, s_weight=s_weight  )
+            endif
+
+         end if
+#endif
+         
+         
+         if (concurrent) then
+            call nested_grid_BC_apply_intT(u, &
+                 0, 1, npx, npy, npz, split_timestep_BC, real(n_split*k_split), &
+                 var_east_t0=u_east_t0, &
+                 var_west_t0=u_west_t0, &
+                 var_north_t0=u_north_t0, &
+                 var_south_t0=u_south_t0, &
+                 var_east_t1=u_east, &
+                 var_west_t1=u_west, &
+                 var_north_t1=u_north, &
+                 var_south_t1=u_south, &
+                 bctype=nestbctype, &
+                 nsponge=nsponge, s_weight=s_weight   )
+         else
+            call nested_grid_BC_apply(u, &
+                 0, 1, npx, npy, npz, nest_timestep, n_split*k_split, &
+                 var_east=u_east, &
+                 var_west=u_west, &
+                 var_north=u_north, &
+                 var_south=u_south, bctype=nestbctype, &
+                 nsponge=nsponge, s_weight=s_weight  )
+         endif
+
+         !v
+         if (concurrent) then
+            call nested_grid_BC_apply_intT(v, &
+                 1, 0, npx, npy, npz, split_timestep_BC, real(n_split*k_split), &
+                 var_east_t0=v_east_t0, &
+                 var_west_t0=v_west_t0, &
+                 var_north_t0=v_north_t0, &
+                 var_south_t0=v_south_t0, &
+                 var_east_t1=v_east, &
+                 var_west_t1=v_west, &
+                 var_north_t1=v_north, &
+                 var_south_t1=v_south, &
+                 bctype=nestbctype, &
+                 nsponge=nsponge, s_weight=s_weight   )
+         else
+            call nested_grid_BC_apply(v, &
+                 1, 0, npx, npy, npz, nest_timestep, n_split*k_split, &
+                 var_east=v_east, &
+                 var_west=v_west, &
+                 var_north=v_north, &
+                 var_south=v_south, bctype=nestbctype, &
+                 nsponge=nsponge, s_weight=s_weight   )
+         endif
+
+      end if
 !-----------------------------------------------------
   enddo   ! time split loop
 !-----------------------------------------------------
@@ -750,8 +1018,10 @@ contains
           enddo
        enddo
     endif
-       deallocate( heat_source )
-  endif
+       !deallocate( heat_source )    
+    endif
+    if (allocated(heat_source)) deallocate( heat_source ) !If ncon == 0 but d_con > 1.e-5, this would not be deallocated in earlier versions of the code
+
 
   if ( end_step ) then
     deallocate(    gz )
@@ -883,6 +1153,8 @@ contains
  integer, intent(in):: npz
  real,    intent(in):: dt2
  real, intent(in), dimension(isd:ied, jsd:jed ,npz  ):: delpc
+! pkc is pe**cappa     if hydrostatic
+! pkc is full pressure if non-hydrostatic
  real, intent(in), dimension(isd:ied, jsd:jed ,npz+1):: pkc, gz
  real, intent(inout):: uc(isd:ied+1,jsd:jed  ,npz)
  real, intent(inout):: vc(isd:ied  ,jsd:jed+1,npz)
@@ -927,127 +1199,82 @@ contains
  end subroutine p_grad_c
 
 
-
- subroutine imp_update_w(km, cd, delz, w)
- integer, intent(in) :: km
- real, intent(in) :: cd
- real, intent(in) :: delz(is :ie , js :je , km)  ! delta-height (m)
- real, intent(inout) :: w(isd:ied, jsd:jed, km)  ! vertical vel. (m/s)
+ subroutine nh_p_grad(u, v, pp, gh, delp, pk, divg2, dt, ng, npx, npy, npz)
+    integer, intent(IN) :: ng, npx, npy, npz
+    real,    intent(IN) :: dt
+    real,    intent(in) :: divg2(is:ie+1, js:je+1)
+    real, intent(inout) ::  delp(isd:ied, jsd:jed, npz)
+    real, intent(inout) ::    pp(isd:ied, jsd:jed, npz+1)  ! perturbation pressure
+    real, intent(inout) ::    pk(isd:ied, jsd:jed, npz+1)  ! p**kappa
+    real, intent(inout) ::    gh(isd:ied, jsd:jed, npz+1)  ! g * h
+    real, intent(inout) ::     u(isd:ied,  jsd:jed+1,npz) 
+    real, intent(inout) ::     v(isd:ied+1,jsd:jed,  npz)
 ! Local:
- real, dimension(is:ie,km):: c, gam, dz, wt
- real:: bet(is:ie)
- real:: a
- integer:: i, j, k
-
-!$omp parallel do default(shared) private(bet, gam, dz, wt, a, c)
-  do j=js,je
-
-     do k=2,km
-        do i=is,ie
-           dz(i,k) = 0.5*(delz(i,j,k-1)+delz(i,j,k))
-        enddo
-     enddo
-     do k=1,km-1
-        do i=is,ie
-           c(i,k) = -cd/(dz(i,k+1)*delz(i,j,k))
-        enddo
-     enddo
-
-! model top:
-     do i=is,ie
-         bet(i) = 1. - c(i,1)      ! bet(i) = b
-        wt(i,1) = w(i,j,1) / bet(i)
-     enddo
-
-! Interior:
-     do k=2,km-1
-        do i=is,ie
-           gam(i,k) = c(i,k-1)/bet(i)
-                  a = cd/(dz(i,k)*delz(i,j,k))
-             bet(i) = (1.+a-c(i,k)) + a*gam(i,k)
-            wt(i,k) = (w(i,j,k) + a*wt(i,k-1)) / bet(i)
-        enddo
-     enddo
-
-! Bottom: k = km
-     do i=is,ie
-        gam(i,km) = c(i,km-1) / bet(i)
-                a = cd/(dz(i,km)*delz(i,j,km))
-         wt(i,km) = (w(i,j,km) + a*wt(i,km-1))/(1. + a + (cd+cd)/delz(i,j,km)**2 + a*gam(i,km))
-     enddo
- 
-     do k=km-1,1,-1
-        do i=is,ie
-           wt(i,k) = wt(i,k) - gam(i,k+1)*wt(i,k+1)
-        enddo
-     enddo
-
-     do k=1,km
-        do i=is,ie
-           w(i,j,k) = wt(i,k)
-        enddo
-     enddo
-  enddo
-
- end subroutine imp_update_w
-
-
- subroutine nh_grad_d(u, v, pp, gz, gh, delp, dt, ng, npx, npy, npz)
-! Routine to cumpute non-hydrostatic part of the pressure gradient
-    integer, intent(in) :: ng, npx, npy, npz
-    real,    intent(in) :: dt
-    real, intent(  out) ::   gh(isd:ied, jsd:jed, npz+1)  ! g * h
-    real, intent(inout) ::   gz(isd:ied, jsd:jed, npz+1)  ! g * h
-    real, intent(inout) ::    u(isd:ied,  jsd:jed+1,npz) 
-    real, intent(inout) ::    v(isd:ied+1,jsd:jed,  npz)
-    real, intent(inout) :: delp(isd:ied, jsd:jed, npz)
-    real, intent(inout) ::   pp(isd:ied, jsd:jed, npz+1)  ! perturbation pressure
-! Local:
-    real wk(isd:ied, jsd:jed)
+    real wk1(isd:ied, jsd:jed)
+    real  wk(is: ie+1,js: je+1)
+    real du, dv
     integer i,j,k
 
 !$omp parallel do default(shared)
     do j=js,je+1
        do i=is,ie+1
           pp(i,j,1) = 0.
+          pk(i,j,1) = ptk
        enddo
     enddo
 
-!$omp parallel do default(shared) private(wk)
+!$omp parallel do default(shared) private(wk1)
     do k=1,npz+1
-       call a2b_ord4(gz(isd,jsd,k), gh(isd,jsd,k), npx, npy, is, ie, js, je, ng)
-       if ( k/=1 )    &
-       call a2b_ord4(pp(isd,jsd,k), wk, npx, npy, is, ie, js, je, ng, .true.)
+       if ( k/=1 ) then
+           call a2b_ord4(pp(isd,jsd,k), wk1, npx, npy, is, ie, js, je, ng, .true.)
+           call a2b_ord4(pk(isd,jsd,k), wk1, npx, npy, is, ie, js, je, ng, .true.)
+       endif
+       call a2b_ord4( gh(isd,jsd,k), wk1, npx, npy, is, ie, js, je, ng, .true.)
     enddo
 
-!$omp parallel do default(shared) private(wk)
+!$omp parallel do default(shared) private(wk1, wk, du, dv)
     do k=1,npz
-
-       call a2b_ord4(delp(isd,jsd,k), wk, npx, npy, is, ie, js, je, ng)
-
+       call a2b_ord4(delp(isd,jsd,k), wk1, npx, npy, is, ie, js, je, ng)
+       do j=js,je+1
+          do i=is,ie+1
+             wk(i,j) = pk(i,j,k+1) - pk(i,j,k)
+          enddo
+       enddo
        do j=js,je+1
           do i=is,ie
-             u(i,j,k) = u(i,j,k) + dt/(wk(i,j)+wk(i+1,j)) *  &
-                       ((gh(i,j,k+1)-gh(i+1,j,k  ))*(pp(i+1,j,k+1)-pp(i  ,j,k))    &
-                      + (gh(i,j,k  )-gh(i+1,j,k+1))*(pp(i  ,j,k+1)-pp(i+1,j,k)))*rdx(i,j)
+! hydrostatic contributions from past time-step already added in the "beta" part
+! Current gradient from "hydrostatic" components:
+             du =  dt / (wk(i,j)+wk(i+1,j)) *   &
+                  ((gh(i,j,k+1)-gh(i+1,j,k))*(pk(i+1,j,k+1)-pk(i,j,k)) +  &
+                  (gh(i,j,k)-gh(i+1,j,k+1))*(pk(i,j,k+1)-pk(i+1,j,k)))
+! Non-hydrostatic contribution for half time-step
+             u(i,j,k) = (u(i,j,k) + divg2(i,j)-divg2(i+1,j) + du +  &
+                        dt/(wk1(i,j)+wk1(i+1,j)) *  &
+                       ((gh(i,j,k+1)-gh(i+1,j,k))*(pp(i+1,j,k+1)-pp(i,j,k))    &
+                      + (gh(i,j,k)-gh(i+1,j,k+1))*(pp(i,j,k+1)-pp(i+1,j,k))))*rdx(i,j)
           enddo
        enddo
        do j=js,je
           do i=is,ie+1
-             v(i,j,k) = v(i,j,k)  + dt/(wk(i,j)+wk(i,j+1)) *  &
-                       ((gh(i,j,k+1)-gh(i,j+1,k  ))*(pp(i,j+1,k+1)-pp(i,j,  k))   &
-                      + (gh(i,j,k  )-gh(i,j+1,k+1))*(pp(i,j,  k+1)-pp(i,j+1,k)))*rdy(i,j)
+! Current gradient from "hydrostatic" components:
+             dv = dt / (wk(i,j)+wk(i,j+1)) *   &
+                 ((gh(i,j,k+1)-gh(i,j+1,k))*(pk(i,j+1,k+1)-pk(i,j,k)) +  &
+                 (gh(i,j,k)-gh(i,j+1,k+1))*(pk(i,j,k+1)-pk(i,j+1,k)))
+! Non-hydrostatic contribution for half time-step
+             v(i,j,k) = (v(i,j,k)  + divg2(i,j)-divg2(i,j+1) + dv + &
+                        dt/(wk1(i,j)+wk1(i,j+1)) *  &
+                       ((gh(i,j,k+1)-gh(i,j+1,k))*(pp(i,j+1,k+1)-pp(i,j,k))   &
+                      + (gh(i,j,k)-gh(i,j+1,k+1))*(pp(i,j,k+1)-pp(i,j+1,k))))*rdy(i,j)
           enddo
        enddo
 
     enddo    ! end k-loop
+ end subroutine nh_p_grad
 
 
- end subroutine nh_grad_d
-
- subroutine split_p_grad(du, dv, u, v, pp, gh, delp, pk, divg2, beta, dt, dt2, ng, npx, npy, npz)
+ subroutine split_p_grad(du, dv, u, v, pp, gh, delp, pk, divg2, beta, dt, ng, npx, npy, npz)
     integer, intent(IN) :: ng, npx, npy, npz
-    real,    intent(IN) :: beta, dt, dt2
+    real,    intent(IN) :: beta, dt
     real,    intent(in) :: divg2(is:ie+1, js:je+1)
     real, intent(inout) ::  delp(isd:ied, jsd:jed, npz)
     real, intent(inout) ::    pp(isd:ied, jsd:jed, npz+1)  ! perturbation pressure
@@ -1105,7 +1332,7 @@ contains
 !---------------------------------------------------------------------------------
 ! Non-hydrostatic contribution for half time-step
              u(i,j,k) = (u(i,j,k) + divg2(i,j)-divg2(i+1,j) + alpha*du(i,j,k) +  &
-                        dt2/(wk1(i,j)+wk1(i+1,j)) *  &
+                        dt/(wk1(i,j)+wk1(i+1,j)) *  &
                        ((gh(i,j,k+1)-gh(i+1,j,k))*(pp(i+1,j,k+1)-pp(i,j,k))    &
                       + (gh(i,j,k)-gh(i+1,j,k+1))*(pp(i,j,k+1)-pp(i+1,j,k))))*rdx(i,j)
           enddo
@@ -1121,7 +1348,7 @@ contains
 !---------------------------------------------------------------------------------
 ! Non-hydrostatic contribution for half time-step
              v(i,j,k) = (v(i,j,k)  + divg2(i,j)-divg2(i,j+1) + alpha*dv(i,j,k) + &
-                        dt2/(wk1(i,j)+wk1(i,j+1)) *  &
+                        dt/(wk1(i,j)+wk1(i,j+1)) *  &
                        ((gh(i,j,k+1)-gh(i,j+1,k))*(pp(i,j+1,k+1)-pp(i,j,k))   &
                       + (gh(i,j,k)-gh(i,j+1,k+1))*(pp(i,j,k+1)-pp(i,j+1,k))))*rdy(i,j)
           enddo
@@ -1247,8 +1474,8 @@ contains
     real, intent(inout) ::     u(isd:ied  ,jsd:jed+1,npz) 
     real, intent(inout) ::     v(isd:ied+1,jsd:jed  ,npz)
 
-    real, intent(out) ::    delu(isd:ied  ,jsd:jed+1,npz) 
-    real, intent(out) ::    delv(isd:ied+1,jsd:jed  ,npz)
+    real, intent(inout) ::    delu(isd:ied  ,jsd:jed+1,npz) 
+    real, intent(inout) ::    delv(isd:ied+1,jsd:jed  ,npz)
 ! Local:
     real:: wk(isd:ied,jsd:jed)
     real top_value, alpha
@@ -1315,11 +1542,12 @@ contains
  end subroutine grad1_p_update
 
 
- subroutine mix_wz(w, delp, delz, pt, pkc, ng, km, zratio, last_step, grav)
+ subroutine mix_wz(w, zh, delp, delz, pt, pkc, ng, km, zratio, last_step, grav)
   integer, intent(in):: km, ng
   real, intent(in):: grav
   real, intent(in):: pkc(is-ng:ie+ng, js-ng:je+ng, km+1)
   real, intent(in), dimension(isd:ied,jsd:jed,km):: delp
+  real, intent(inout), dimension(isd:ied,jsd:jed,km+1):: zh
   real, intent(inout), dimension(isd:ied,jsd:jed,km):: pt
   real, intent(inout) :: delz(is:ie, js:je, km)  ! delta-height (m)
   real, intent(inout), dimension(isd:ied,jsd:jed,km):: w
@@ -1327,13 +1555,13 @@ contains
   logical, intent(in):: last_step
 ! Local:
   real:: wk(is:ie,km)
-  real:: wm, tm, dz1, dz2, dz3, rat
+  real:: wm, tm, dz1, dz2
   integer::ip(js:je)
   integer i, j, k, ip_sum
   logical used
 
 
-!$omp parallel do default(shared) private(wk, wm, tm, dz1, dz2, dz3, rat)
+!$omp parallel do default(shared) private(wk, wm, tm, dz1, dz2)
      do j=js,je
 
         do k=1,km
@@ -1343,54 +1571,21 @@ contains
         enddo
 
         ip(j) = 0
-! Bottom: 
-        k = km
+        do k=km,2,-1
           do i=is,ie
              dz2 = wk(i,k)
-             zratio(i,j,k) = -delz(i,j,k)/dz2 
+             zratio(i,j,k) = (zh(i,j,k)-zh(i,j,k+1))/dz2 
              if( abs(w(i,j,k)) > w_max .or. zratio(i,j,k)<z_min ) then
-
-!               tm = (wk(i,k-1)+wk(i,k))/(pkc(i,j,k+1)-pkc(i,j,k-1))*grav
-!               pt(i,j,k-1) = tm
-!               pt(i,j,k  ) = tm
-
+                tm = (wk(i,k-1)+wk(i,k))/(pkc(i,j,k+1)-pkc(i,j,k-1))*grav
+                pt(i,j,k-1) = tm
+                pt(i,j,k  ) = tm
                 wm =  (w(i,j,k-1)*delp(i,j,k-1)+w(i,j,k)*delp(i,j,k))/(delp(i,j,k-1)+delp(i,j,k))
                 w(i,j,k-1) = wm
                 w(i,j,k  ) = wm
                 dz1 = wk(i,k-1)
-                rat = (delz(i,j,k-1) + delz(i,j,k)) / (dz1 + dz2)
-                delz(i,j,k-1) = rat * dz1
-                delz(i,j,k  ) = rat * dz2
+                zh(i,j,k) = zh(i,j,k+1) + (zh(i,j,k-1)-zh(i,j,k+1))*dz2/(dz1+dz2)
                 ip(j) = ip(j) + 1
              endif
-          enddo
-
-        do k=km-1,2,-1
-          do i=is,ie
-             dz2 = wk(i,k)
-             zratio(i,j,k) = -delz(i,j,k)/dz2 
-             if( abs(w(i,j,k)) > w_max .or. zratio(i,j,k)<z_min ) then
-
-!               tm = (wk(i,k-1)+wk(i,k)+wk(i,k+1))/(pkc(i,j,k+2)-pkc(i,j,k-1))*grav
-!               pt(i,j,k-1) = tm
-!               pt(i,j,k  ) = tm
-!               pt(i,j,k+1) = tm
-
-! totally mix w
-                wm = (w(i,j,k-1)*delp(i,j,k-1)+w(i,j,k)*delp(i,j,k)+w(i,j,k+1)*delp(i,j,k+1))   &
-                   / (delp(i,j,k-1) + delp(i,j,k) + delp(i,j,k+1))
-                w(i,j,k-1) = wm
-                w(i,j,k  ) = wm
-                w(i,j,k+1) = wm
-! local hydrostatic adjustment of dz
-                dz1 = wk(i,k-1)
-                dz3 = wk(i,k+1)
-                rat = (delz(i,j,k-1)+delz(i,j,k)+delz(i,j,k+1)) / (dz1 + dz2 + dz3)
-                delz(i,j,k-1) = rat * dz1
-                delz(i,j,k  ) = rat * dz2
-                delz(i,j,k+1) = rat * dz3
-                ip(j) = ip(j) + 1
-              endif
           enddo
         enddo
      enddo
@@ -1398,10 +1593,10 @@ contains
 ! ip_sum = sum ( ip(js:je) ) 
 ! if ( ip_sum>km*(je-js+1)*(ie-is+1)/100 ) write(*,*) 'Warning: Mix_wz for GID=', gid, ' total points=', ip_sum 
 
-  if ( id_zratio>0 .and. last_step ) then
+  if ( idiag%id_zratio>0 .and. last_step ) then
        zratio(is:ie,js:je,1) = 1.
        call prt_maxmin('DZ_ratio', zratio, is, ie, js, je, 0, km, 1., master)
-       used=send_data(id_zratio, zratio, fv_time)
+       used=send_data(idiag%id_zratio, zratio, fv_time)
   endif
 
  end subroutine  mix_wz
@@ -1469,13 +1664,13 @@ contains
 
 
 
- subroutine geopk(ptop, pe, peln, delp, pk, gh, hs, pt, pkz, km, akap, CG)
+ subroutine geopk(ptop, pe, peln, delp, pk, gh, hs, pt, pkz, km, akap, CG, computehalo, npx, npy)
 
-     integer, intent(IN) :: km
+     integer, intent(IN) :: km, npx, npy
      real   , intent(IN) :: akap, ptop
      real   , intent(IN) :: hs(isd:ied,jsd:jed)
      real, intent(IN), dimension(isd:ied,jsd:jed,km):: pt, delp
-     logical, intent(IN) :: CG
+     logical, intent(IN) :: CG, computehalo
 ! !OUTPUT PARAMETERS
      real, intent(OUT), dimension(isd:ied,jsd:jed,km+1):: gh, pk
      real, intent(OUT) :: pe(is-1:ie+1,km+1,js-1:je+1)
@@ -1484,22 +1679,31 @@ contains
 ! !DESCRIPTION:
 !    Calculates geopotential and pressure to the kappa.
 ! Local:
-     real p1d(is-2:ie+2)
-     real logp(is-2:ie+2)
+     real p1d(isd:ied)
+     real logp(isd:ied)
      real peln1
      integer i, j, k
      integer ifirst, ilast
      integer jfirst, jlast
 
+#ifndef SW_DYNAMICS
      peln1 = log(ptop)
+#endif
 
-     if ( .not. CG .and. a2b_ord==4 ) then   ! D-Grid
+     if ( (.not. CG .and. a2b_ord==4) .or. (nested .and. .not. CG) ) then   ! D-Grid
           ifirst = is-2; ilast = ie+2
           jfirst = js-2; jlast = je+2
      else
           ifirst = is-1; ilast = ie+1
           jfirst = js-1; jlast = je+1
      endif
+
+     if (nested .and. computehalo) then
+        if (is == 1)     ifirst = isd
+        if (ie == npx-1) ilast  = ied
+        if (js == 1)     jfirst = jsd
+        if (je == npy-1) jlast  = jed
+     end if
 
 !$omp parallel do default(shared) private(p1d, logp)
      do 2000 j=jfirst,jlast
@@ -1510,11 +1714,13 @@ contains
            gh(i,j,km+1) = hs(i,j)
         enddo
 
+#ifndef SW_DYNAMICS
         if( j>=js .and. j<=je) then
             do i=is,ie
                peln(i,1,j) = peln1
             enddo
         endif
+#endif
 
         if( j>(js-2) .and. j<(je+2) ) then
            do i=max(ifirst,is-1), min(ilast,ie+1) 
@@ -1526,6 +1732,12 @@ contains
         do k=2,km+1
           do i=ifirst, ilast
              p1d(i)  = p1d(i) + delp(i,j,k-1)
+#ifdef GEOPK_CHECK
+             if (p1d(i) < 1.e-10) then
+                print*, 'NEGATIVE P1D: ', i, j, k
+                print*, i, j, k, p1d(i), delp(i,j,k-1)
+             end if
+#endif
 !             pk(i,j,k) = p1d(i) ** akap
 ! Optimized form:
              logp(i) = log(p1d(i))
@@ -1552,21 +1764,16 @@ contains
            enddo
         enddo
 
-2000  continue
-
-      if ( .not. CG ) then
+      if ( .not. CG .and. j .ge. js .and. j .le. je ) then
 ! This is for hydrostatic only
-
-!$omp parallel do default(shared)
          do k=1,km
-            do j=js,je
-               do i=is,ie
-                  pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(akap*(peln(i,k+1,j)-peln(i,k,j)))
-               enddo
+            do i=is,ie
+               pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(akap*(peln(i,k+1,j)-peln(i,k,j)))
             enddo
          enddo
       endif
 
+2000  continue
  end subroutine geopk
 
 
