@@ -168,7 +168,7 @@ module fv_nwp_nudge_mod
 
 !---- version number -----
  character(len=128) :: version = '$Id: fv_nudge.F90,v 17.0.2.3.2.5.2.3 2012/05/14 16:26:28 Lucas.Harris Exp $'
- character(len=128) :: tagname = '$Name: siena_201207 $'
+ character(len=128) :: tagname = '$Name: siena_201211 $'
 
  contains
  

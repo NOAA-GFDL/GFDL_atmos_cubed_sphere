@@ -110,7 +110,7 @@
 
 !---- version number -----
       character(len=128) :: version = '$Id: fv_mp_mod.F90,v 17.0.4.7.2.8 2012/05/10 19:52:44 Lucas.Harris Exp $'
-      character(len=128) :: tagname = '$Name: siena_201207 $'
+      character(len=128) :: tagname = '$Name: siena_201211 $'
 
 contains
 

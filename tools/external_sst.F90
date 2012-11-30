@@ -16,6 +16,6 @@ public i_sst, j_sst, sst_ncep, sst_anom, forecast_mode, use_ncep_sst
 
 !---- version number -----
 character(len=128) :: version = '$Id: external_sst.F90,v 1.1.2.3.2.3.2.3 2012/05/14 16:26:28 Lucas.Harris Exp $'
-character(len=128) :: tagname = '$Name: siena_201207 $'
+character(len=128) :: tagname = '$Name: siena_201211 $'
 
 end module external_sst_mod

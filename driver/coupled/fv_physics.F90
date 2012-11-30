@@ -4,6 +4,7 @@ module fv_physics_mod
 !
 !  Interface for Cubed_sphere FV dynamics with GFDL atmospheric physics
 !  History: modified by SJL based on Memphis release
+!           tq_filter option removed, 2012/08/06
 !-----------------------------------------------------------------------
 
 !-----------------
@@ -37,8 +38,8 @@ use fv_grid_utils_mod,     only: g_sum
 use fv_arrays_mod,         only: fv_atmos_type
 use fv_control_mod,        only: npx, npy, npz, ncnst, pnats
 use fv_eta_mod,            only: get_eta_level
-use fv_update_phys_mod,    only: fv_update_phys, del2_phys
-use fv_sg_mod,             only: fv_dry_conv, fv_olr, fv_abs_sw, irad
+use fv_update_phys_mod,    only: fv_update_phys
+use fv_sg_mod,             only: fv_dry_conv
 use fv_mp_mod,             only: gid, numthreads
 use fv_timing_mod,         only: timing_on, timing_off
 use fv_current_grid_mod,   only: isc, iec, jsc, jec, ngc=>ng, isd, ied, jsd, jed, nested
@@ -61,12 +62,13 @@ public  surf_diff_type, fv_physics_restart
    real    :: zvir, rrg, ginv
    integer :: id_fv_physics_down, id_fv_physics_up, id_fv_update_phys
    integer :: isw, iew, jsw, jew  ! window start/end in global index space ! just indices
-   integer :: sphum
+   integer :: sphum, w_diff, nt_dyn
+   real, parameter :: w0_big = 50.  ! to prevent negative w-tracer diffusion
 
 
 !---- version number -----
-   character(len=128) :: version = '$Id: fv_physics.F90,v 17.0.4.1.2.1.2.9.2.1.2.3.2.1 2012/05/14 21:23:54 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: siena_201207 $'
+   character(len=128) :: version = '$Id: fv_physics.F90,v 17.0.4.1.2.1.2.9.2.1.2.3.2.1.2.2 2012/09/28 15:57:01 Rusty.Benson Exp $'
+   character(len=128) :: tagname = '$Name: siena_201211 $'
 
 contains
 
@@ -107,6 +109,13 @@ contains
     sphum = get_tracer_index (MODEL_ATMOS, 'sphum' )
     if(sphum /= 1) call error_mesg('fv_physics_init:','sphum /= 1', FATAL)
 
+    w_diff = get_tracer_index (MODEL_ATMOS, 'w_diff' )
+    if ( w_diff /= NO_TRACER ) then
+         nt_dyn = nt_prog - 1
+    else
+         nt_dyn = nt_prog
+    endif
+
 !---------- reference profile -----------
     ps1 = 101325.
     ps2 =  81060.
@@ -116,9 +125,6 @@ contains
     call get_eta_level ( npz, ps2, pref(1,2), phalf, Atm(1)%ak, Atm(1)%bk )
 
     allocate (p_edge(isc:iec,jsc:jec, npz+1))
-
-    fv_olr    = 0.
-    fv_abs_sw = 0.
 
 !------- pressure at model layer interfaces -----
     do k=1,npz+1
@@ -250,7 +256,7 @@ contains
 !-----------------------------------------------------------------------
     real :: gavg_rrv(nt_prog)
     integer:: iq, idx, phys_loop
-    integer :: is, ie, js, je
+    integer :: i, j, k
     real    :: dt 
     integer :: sec, day
 
@@ -281,7 +287,7 @@ contains
 
 
     if ( Atm%fv_sg_adj > 0 ) then
-         call fv_dry_conv( isd, ied, jsd, jed, isc, iec, jsc, jec, npz, nt_prog, dt_phys,   &
+         call fv_dry_conv( isd, ied, jsd, jed, isc, iec, jsc, jec, npz, nt_dyn, dt_phys,   &
                            Atm%fv_sg_adj, Atm%delp, Atm%pe, Atm%peln,  &
                            Atm%pkz, Atm%pt, Atm%q, Atm%ua, Atm%va,  &
                            Atm%hydrostatic, Atm%w, Atm%delz, u_dt, v_dt, t_dt, q_dt )
@@ -292,81 +298,19 @@ contains
          q_dt = 0.
     endif
 
+    if ( .not. Atm%hydrostatic .and. w_diff /= NO_TRACER ) then
+!$OMP parallel do default(shared) private(i, j, k)
+       do k=1, npz
+          do j=jsc, jec
+             do i=isc, iec
+                Atm%q(i,j,k,w_diff) = Atm%w(i,j,k) + w0_big
+                q_dt(i,j,k,w_diff) = 0.
+             enddo
+          enddo
+        enddo
+    endif
+
     call mpp_clock_begin(id_fv_physics_down)
-
-  if ( Atm%tq_filter ) then
-     
-    t_phys(:,:,:) = Atm%pt(:,:,:)
-    call del2_phys(t_phys, Atm%delp, 0.2, npx, npy, npz, isc, iec, jsc, jec, &
-                   isd, ied, jsd, jed, ngc)
-     
-    q_phys(:,:,:,:) = Atm%q(:,:,:,:)
-    do iq=1,nt_prog
-       call del2_phys(q_phys(:,:,:,iq), Atm%delp, 0.2, npx, npy, npz, isc, iec, jsc, jec, &
-                   isd, ied, jsd, jed, ngc)
-    enddo
-
-    call compute_p_z(npz, isc, jsc, nx_dom, ny_dom, Atm%phis, t_phys, &
-                     q_phys, Atm%delp, Atm%pe, Atm%peln,         &
-                     Atm%delz, Atm%phys_hydrostatic)
-!$OMP parallel do schedule(dynamic) default(shared) private(phys_loop, isw, iew, jsw, jew)
-    do phys_loop = 1, size(physics_window_y)!num_phys_windows
-       jsw = physics_window_y(phys_loop)
-       jew = jsw + ny_win - 1
-       isw = physics_window_x(phys_loop)
-       iew = isw + nx_win - 1
-
-          call physics_driver_down( isw-isc+1, iew-isc+1, jsw-jsc+1, jew-jsc+1, &
-                   Time_prev, Time, Time_next                              , &
-                   Atm%agrid(isw:iew,jsw:jew,2)                         , &
-                   Atm%agrid(isw:iew,jsw:jew,1)                         , &
-                   area(isw:iew,jsw:jew), p_half,  p_full, z_half,  z_full , &
-!   p_half(1:1,1:1,:) is extra dummy argument in interface required/used to for 
-!   grey radiation routine when using b-grid core
-                   p_half(1:1,1:1,:)                                       , &
-                   Atm%ua(isw:iew,jsw:jew,:)                            , &
-                   Atm%va(isw:iew,jsw:jew,:)                            , &
-                      t_phys(isw:iew,jsw:jew,:)                            , &
-                      q_phys(isw:iew,jsw:jew,:,1)                          , &
-                      q_phys(isw:iew,jsw:jew,:,:)                          , &
-                   Atm%ua(isw:iew,jsw:jew,:)                            , &
-                   Atm%va(isw:iew,jsw:jew,:)                            , &
-                      t_phys(isw:iew,jsw:jew,:)                            , &
-                      q_phys(isw:iew,jsw:jew,:,1)                          , &
-                      q_phys(isw:iew,jsw:jew,:,:)                          , &
-                   frac_land(isw:iew,jsw:jew), rough_vel(isw:iew,jsw:jew)  , &
-                   frac_open_sea(isw:iew,jsw:jew),                           &
-                   albedo   (isw:iew,jsw:jew)                              , &
-                   albedo_vis_dir(isw:iew,jsw:jew)                         , &
-                   albedo_nir_dir(isw:iew,jsw:jew)                         , &
-                   albedo_vis_dif(isw:iew,jsw:jew)                         , &
-                   albedo_nir_dif(isw:iew,jsw:jew)                         , &
-                   t_surf  (isw:iew,jsw:jew),  u_star(isw:iew,jsw:jew)     , &
-                   b_star  (isw:iew,jsw:jew),  q_star(isw:iew,jsw:jew)     , &
-                   dtau_du (isw:iew,jsw:jew), dtau_dv(isw:iew,jsw:jew)     , &
-                   tau_x   (isw:iew,jsw:jew),   tau_y(isw:iew,jsw:jew)     , &
-                   u_dt    (isw:iew,jsw:jew,:),  v_dt(isw:iew,jsw:jew,:)   , &
-                   t_dt    (isw:iew,jsw:jew,:),  q_dt(isw:iew,jsw:jew,:,1) , &
-                   q_dt    (isw:iew,jsw:jew,:,1:nt_prog)                   , &
-                   flux_sw               (isw:iew,jsw:jew)                 , &
-                   flux_sw_dir           (isw:iew,jsw:jew)                 , &
-                   flux_sw_dif           (isw:iew,jsw:jew)                 , &
-                   flux_sw_down_vis_dir  (isw:iew,jsw:jew)                 , &
-                   flux_sw_down_vis_dif  (isw:iew,jsw:jew)                 , &
-                   flux_sw_down_total_dir(isw:iew,jsw:jew)                 , &
-                   flux_sw_down_total_dif(isw:iew,jsw:jew)                 , &
-                   flux_sw_vis           (isw:iew,jsw:jew)                 , &
-                   flux_sw_vis_dir       (isw:iew,jsw:jew)                 , &
-                   flux_sw_vis_dif       (isw:iew,jsw:jew)                 , &
-                   flux_lw               (isw:iew,jsw:jew)                 , &
-                   coszen                (isw:iew,jsw:jew)                 , &
-                   gust                  (isw:iew,jsw:jew)                 , &
-                   Surf_diff,   gavg_rrv )
-    enddo
-
-    call physics_driver_down_endts (1, 1)
-
-  else
 
     call compute_p_z(npz, isc, jsc, nx_dom, ny_dom, Atm%phis, Atm%pt, &
                      Atm%q, Atm%delp, Atm%pe, Atm%peln,         &
@@ -433,9 +377,6 @@ contains
 
     call physics_driver_down_endts (1, 1)
 
-
-  endif !(Atm%tq_filter)
-
     call mpp_clock_end(id_fv_physics_down)
 
   end subroutine fv_physics_down
@@ -464,8 +405,9 @@ contains
     real, intent(out),   dimension(isc:iec,jsc:jec) :: lprec, fprec
     real, intent(in),    dimension(isc:iec,jsc:jec) :: u_star, b_star, q_star
     integer seconds, days
+    integer :: i, j, k
     real gmt1, gmt2
-    integer :: is, ie, js, je, phys_loop
+    integer ::  phys_loop
     integer :: sec, day
     real    :: dt
     type(time_type) :: Time_step
@@ -480,67 +422,6 @@ contains
  
     call physics_driver_up_time_vary (Time, dt)
  
-
-  if ( Atm%tq_filter ) then
-
-         call compute_p_z(npz, isc, jsc, nx_dom, ny_dom, Atm%phis, t_phys,  &
-                          q_phys,  Atm%delp, Atm%pe, Atm%peln,      &
-                          Atm%delz,  Atm%hydrostatic)
-         call physics_driver_moist_init (nx_dom, ny_dom,  npz, nt_prog) 
-!$OMP parallel  do default(shared) private(phys_loop, isw, iew, jsw, jew)
-    do phys_loop = 1, size(physics_window_y)!num_phys_windows
-       jsw = physics_window_y(phys_loop)
-       jew = jsw + ny_win - 1  
-       isw = physics_window_x(phys_loop)
-       iew = isw + nx_win - 1
-          call physics_driver_up( isw-isc+1, iew-isc+1, jsw-jsc+1, jew-jsc+1, &
-                                  Time_prev, Time, Time_next             , &
-                                  Atm%agrid(isw:iew,jsw:jew,2)        , &
-                                  Atm%agrid(isw:iew,jsw:jew,1)        , &
-                                  area(isw:iew,jsw:jew)                  , &
-                                  p_half(isw:iew,jsw:jew,:)              , &
-                                  p_full(isw:iew,jsw:jew,:)              , &
-                                  z_half(isw:iew,jsw:jew,:)              , &
-                                  z_full(isw:iew,jsw:jew,:)              , &
-                                  Atm%omga(isw:iew,jsw:jew,:)         , &
-                                  Atm%ua(isw:iew,jsw:jew,:)           , &
-                                  Atm%va(isw:iew,jsw:jew,:)           , &
-!                                 Atm%w(isw:iew,jsw:jew,:)            , &
-                                    t_phys(isw:iew,jsw:jew,:)            , &
-                                    q_phys(isw:iew,jsw:jew,:,1)          , &
-                                    q_phys(isw:iew,jsw:jew,:,1:nt_prog)  , &
-                                  Atm%ua(isw:iew,jsw:jew,:)           , &
-                                  Atm%va(isw:iew,jsw:jew,:)           , &
-                                     t_phys(isw:iew,jsw:jew,:)           , &
-                                     q_phys(isw:iew,jsw:jew,:,1)         , &
-                                     q_phys(isw:iew,jsw:jew,:,1:nt_prog) , &
-                                  frac_land(isw:iew,jsw:jew)             , &
-                                  u_star   (isw:iew,jsw:jew)             , &
-                                  b_star   (isw:iew,jsw:jew)             , &
-                                  q_star   (isw:iew,jsw:jew)             , &
-                                  u_dt     (isw:iew,jsw:jew,:)           , &
-                                  v_dt     (isw:iew,jsw:jew,:)           , &
-                                  t_dt     (isw:iew,jsw:jew,:)           , &
-                                  q_dt     (isw:iew,jsw:jew,:,1)         , &
-                                  q_dt     (isw:iew,jsw:jew,:,1:nt_prog) , &
-                                  Surf_diff                              , &
-                                  lprec    (isw:iew,jsw:jew)             , &
-                                  fprec    (isw:iew,jsw:jew)             , &
-                                  gust     (isw:iew,jsw:jew)             , &
-                                  hydrostatic=Atm%hydrostatic         , &
-                                  phys_hydrostatic=Atm%phys_hydrostatic )
-    enddo
-          call physics_driver_moist_end
-
-    if(numthreads>1) Then
-       Time_step = Time_next - Time
-       call diag_send_complete(Time_step)
-    endif
-
-       call physics_driver_up_endts (is-isc+1, js-jsc+1)
-
-  else
-
     call compute_p_z(npz, isc , jsc , nx_dom, ny_dom, Atm%phis, Atm%pt,  &
                      Atm%q, Atm%delp, Atm%pe, Atm%peln,      &
                      Atm%delz,  Atm%hydrostatic)
@@ -588,6 +469,19 @@ contains
                                   hydrostatic=Atm%hydrostatic         , &
                                   phys_hydrostatic=Atm%phys_hydrostatic )
     enddo
+
+    if ( .not.Atm%hydrostatic .and. w_diff /= NO_TRACER ) then
+!$OMP parallel do default(shared) private(i, j, k)
+       do k=1, npz
+          do j=jsc, jec
+             do i=isc, iec
+                Atm%q(i,j,k,w_diff) = q_dt(i,j,k,w_diff) ! w tendency due to phys
+                Atm%w(i,j,k) = Atm%w(i,j,k) + dt_phys*Atm%q(i,j,k,w_diff)
+             enddo
+          enddo
+        enddo
+    endif
+
     call physics_driver_moist_end
 
     if(numthreads>1) Then
@@ -595,51 +489,23 @@ contains
        call diag_send_complete(Time_step)
     endif
 
-       call physics_driver_up_endts (1, 1)
+    call physics_driver_up_endts (1, 1)
 
-
-  endif !(Atm%tq_filter)
 
     call mpp_clock_end(id_fv_physics_up)
 
     call mpp_clock_begin(id_fv_update_phys)
                                                             call timing_on('update_fv')
-#if defined (CLIMATE_NUDGE)
     call fv_update_phys( dt_phys,   isc,        iec,         jsc,    jec,   isd,       &
-                         ied,       jsd,        jed,         ngc,       nt_prog,       &
+                         ied,       jsd,        jed,         ngc,       nt_dyn,       &
                          Atm%u,  Atm%v,   Atm%delp, Atm%pt, Atm%q,      &
                          Atm%ua, Atm%va,  Atm%ps,   Atm%pe, Atm%peln,   &
                          Atm%pk, Atm%pkz, Atm%ak,   Atm%bk, Atm%phis,   &
                          Atm%u_srf, Atm%v_srf, Atm%ts, Atm%delz, Atm%hydrostatic, &
                          u_dt, v_dt, t_dt, q_dt, .true., Time_next, Atm%nudge,      &
                          Atm%agrid(:,:,1), Atm%agrid(:,:,2) )
-#else
-    call fv_update_phys( dt_phys,   isc,        iec,         jsc,    jec,   isd,       &
-                         ied,       jsd,        jed,         ngc,       nt_prog,       &
-                         Atm%u,  Atm%v,   Atm%delp, Atm%pt, Atm%q,      &
-                         Atm%ua, Atm%va,  Atm%ps,   Atm%pe, Atm%peln,   &
-                         Atm%pk, Atm%pkz, Atm%ak,   Atm%bk, Atm%phis,   &
-                         Atm%u_srf, Atm%v_srf, Atm%ts, Atm%delz, Atm%hydrostatic, &
-                         u_dt, v_dt, t_dt, q_dt, .true., Time_next, Atm%nudge )
-#endif
                                                             call timing_off('update_fv')
     call mpp_clock_end(id_fv_update_phys)
-
-#ifdef FV_MONITOR
-! fv_physics monitor:
-    call get_time (time, seconds, days)
-! SJL
-    if ( seconds == 0 ) then
-       fv_olr = fv_olr / real(irad)
-       fv_abs_sw = fv_abs_sw / real(irad)
-       gmt1 = g_sum(fv_olr,    isc, iec, jsc, jec, ngc, area, 1)
-       gmt2 = g_sum(fv_abs_sw, isc, iec, jsc, jec, ngc, area, 1)
-       if(gid==0) write(*,*) 'OLR=', gmt1, 'SW_abs=', gmt2, 'Net=', gmt2-gmt1, 'steps=', irad
-       fv_olr = 0.
-       fv_abs_sw = 0.
-       irad = 0
-    endif
-#endif
 
   end subroutine fv_physics_up
 
@@ -767,10 +633,8 @@ contains
 !---------------------------------------------------------------------
              qp = 0.0
              do k=1,npz
-! old formulation
-!                qp = qp + q(i,j,k,idx)*(pe(i,k+1,j) - pe(i,k,j))
-                qp = qp + (q(i,j,k,idx) / (1.0 - q_phys(i,j,k,sphum))) &
-                                        * (pe(i,k+1,j) - pe(i,k,j))
+! SJL 2012/08/06
+                qp = qp + q(i,j,k,idx)*(pe(i,k+1,j)-pe(i,k,j))/(1.-q(i,j,k,sphum))
              enddo
              qp_sum(i,j,1) = qp * area(i,j)
           enddo
