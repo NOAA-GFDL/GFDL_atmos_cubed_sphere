@@ -9,7 +9,7 @@ module nh_core_mod
 
 !---- version number -----
   character(len=128) :: version = '$Id: nh_core.F90,v 1.1.4.2 2012/09/20 19:20:02 rab Exp $'
-  character(len=128) :: tagname = '$Name: siena_201211 $'
+  character(len=128) :: tagname = '$Name: siena_201303 $'
 
 contains
 

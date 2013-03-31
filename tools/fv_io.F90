@@ -37,7 +37,8 @@ module fv_io_mod
   use fms_io_mod,              only: fms_io_exit, get_tile_string, &
                                      restart_file_type, register_restart_field, &
                                      save_restart, restore_state, &
-                                     set_domain, nullify_domain
+                                     set_domain, nullify_domain, &
+                                     get_mosaic_tile_file, get_instance_filename
   use mpp_mod,                 only: mpp_error, FATAL, NOTE
   use mpp_domains_mod,         only: domain2d, EAST, NORTH, mpp_get_tile_id, &
                                      mpp_get_compute_domain, mpp_get_data_domain, &
@@ -67,8 +68,8 @@ module fv_io_mod
 
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_io.F90,v 17.0.2.6.2.1.4.4.2.14 2012/05/14 16:26:28 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201211 $'
+  character(len=128) :: version = '$Id: fv_io.F90,v 17.0.2.6.2.1.4.4.2.14.4.1 2013/02/27 17:07:03 Seth.Underwood Exp $'
+  character(len=128) :: tagname = '$Name: siena_201303 $'
 
   integer ::grid_xtdimid, grid_ytdimid, haloid, pfullid !For writing BCs
   integer ::grid_xtstagdimid, grid_ytstagdimid, oneid
@@ -115,10 +116,9 @@ contains
     character(len=64)    :: fname, fname_nd, tracer_name
     character(len=3)  :: gn
     integer              :: isc, iec, jsc, jec, n, nt, nk, ntracers
-    integer              :: ntileMe
+!    integer              :: ntileMe
     integer              :: ks
     real                 :: ptop
-    integer, allocatable :: tile_id(:)
 
     character(len=128)           :: tracer_longname, tracer_units
 
@@ -128,9 +128,7 @@ contains
        gn = ''
     end if
 
-    ntileMe = size(Atm(:))  ! This will have to be modified for mult tiles per PE
-    allocate(tile_id(ntileMe))
-    tile_id = mpp_get_tile_id(fv_domain) !gets tile of the CUBED SPHERE; two definitions for 'tile' is confusing!
+!    ntileMe = size(Atm(:))  ! This will have to be modified for mult tiles per PE
  
 !   call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
     ntracers = size(Atm(1)%q,4)  ! Temporary until we get tracer manager integrated
@@ -154,21 +152,20 @@ contains
                         !will try to read from .res.tileN.nc, and crash when
                         !it can't find ak and bk in those files
   ! write_data does not (yet?) support vector data and tiles
-    fname_nd = 'INPUT/fv_core.res.nc'
+    call get_instance_filename('INPUT/fv_core.res.nc', fname_nd)
     call read_data(fname_nd, 'ak', Atm(1)%ak(:))
     call read_data(fname_nd, 'bk', Atm(1)%bk(:))
     if ( Atm(1)%reset_eta ) call set_eta(Atm(1)%npz, ks, ptop, Atm(1)%ak, Atm(1)%bk)
     call set_domain(fv_domain)
-    fname_nd = 'INPUT/fv_core'//trim(gn)//'.res.nc'
-
    
 !    do n = 1, ntileMe
     n = 1
        isc = Atm(n)%isc; iec = Atm(n)%iec; jsc = Atm(n)%jsc; jec = Atm(n)%jec
-       if (Atm(n)%nested) then
-          fname = 'INPUT/fv_core'//trim(gn)//'.res.nc'
-       else
-          call get_tile_string(fname, 'INPUT/fv_core'//trim(gn)//'.res.tile', tile_id(n), '.nc' )
+
+       fname = 'INPUT/fv_core'//trim(gn)//'.res.nc'
+       if (.not.Atm(n)%nested) then
+          call get_instance_filename(fname, fname_nd)
+          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
        end if
        if(file_exist(fname))then
          call read_data(fname, 'u', Atm(n)%u(isc:iec,jsc:jec+1,:), domain=fv_domain, position=NORTH,tile_count=n)
@@ -188,10 +185,10 @@ contains
          call mpp_error(FATAL,'==> Error from fv_read_restart: Expected file '//trim(fname)//' does not exist')
        endif
 
-       if (Atm(n)%nested) then
-          fname = 'INPUT/fv_srf_wnd'//trim(gn)//'.res.nc'
-       else
-          call get_tile_string(fname, 'INPUT/fv_srf_wnd'//trim(gn)//'.res.tile', tile_id(n), '.nc' )
+       fname = 'INPUT/fv_srf_wnd'//trim(gn)//'.res.nc'
+       if (.not.Atm(n)%nested) then
+          call get_instance_filename(fname, fname_nd)
+          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
        end if
        if(file_exist(fname))then
          call read_data(fname, 'u_srf', Atm(n)%u_srf(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
@@ -207,10 +204,10 @@ contains
   if ( Atm(n)%fv_land ) then
 !----------------------------------------------------------------------------------------------------------------
 ! Optional terrain deviation (sgh) and land fraction (oro)
-       if (Atm(n)%nested) then
-          fname = 'INPUT/mg_drag'//trim(gn)//'.res.nc'
-       else
-          call get_tile_string(fname, 'INPUT/mg_drag'//trim(gn)//'.res.tile', tile_id(n), '.nc' )
+       fname = 'INPUT/mg_drag'//trim(gn)//'.res.nc'
+       if (.not.Atm(n)%nested) then
+          call get_instance_filename(fname, fname_nd)
+          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
        end if
        if(file_exist(fname))then
          call read_data(fname, 'ghprime', Atm(n)%sgh(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
@@ -218,10 +215,10 @@ contains
          call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
        endif
 ! Land-water mask:
-       if (Atm(n)%nested) then
-          fname = 'INPUT/fv_land'//trim(gn)//'.res.nc'
-       else
-          call get_tile_string(fname, 'INPUT/fv_land'//trim(gn)//'.res.tile', tile_id(n), '.nc' )
+       fname = 'INPUT/fv_land'//trim(gn)//'.res.nc'
+       if (.not.Atm(n)%nested) then
+          call get_instance_filename(fname, fname_nd)
+          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
        end if
        if(file_exist(fname))then
          call read_data(fname, 'oro', Atm(n)%oro(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
@@ -230,10 +227,10 @@ contains
        endif
 !----------------------------------------------------------------------------------------------------------------
   endif
-       if (Atm(n)%nested) then
-          fname = 'INPUT/fv_tracer'//trim(gn)//'.res.nc'
-       else
-          call get_tile_string(fname, 'INPUT/fv_tracer'//trim(gn)//'.res.tile', tile_id(n), '.nc' )
+       fname = 'INPUT/fv_tracer'//trim(gn)//'.res.nc'
+       if (.not.Atm(n)%nested) then
+          call get_instance_filename(fname, fname_nd)
+          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
        end if
 
          DO nt = 1, ntracers
@@ -254,7 +251,6 @@ contains
 
 !    end do
  
-    deallocate(tile_id)
     call nullify_domain()
 
   end subroutine  fv_io_read_restart
@@ -269,8 +265,7 @@ contains
     character(len=64)    :: fname, fname_nd, tracer_name
     character(len=3)  :: gn
     integer              :: isc, iec, jsc, jec, n, nt, nk, ntracers
-    integer              :: ntileMe
-    integer, allocatable :: tile_id(:)
+!    integer              :: ntileMe
 
     character(len=128)           :: tracer_longname, tracer_units
 
@@ -280,9 +275,7 @@ contains
        gn = ''
     end if
 
-    ntileMe = size(Atm(:))  ! This will have to be modified for mult tiles per PE
-    allocate(tile_id(ntileMe))
-    tile_id = mpp_get_tile_id(fv_domain)
+!    ntileMe = size(Atm(:))  ! This will have to be modified for mult tiles per PE
 
 !   call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
     ntracers = size(Atm(1)%q,4)  ! Temporary until we get tracer manager integrated
@@ -292,10 +285,10 @@ contains
 !    do n = 1, ntileMe
     n = 1
        isc = Atm(n)%isc; iec = Atm(n)%iec; jsc = Atm(n)%jsc; jec = Atm(n)%jec
-       if (Atm(n)%nested) then
-          fname = 'INPUT/fv_tracer'//trim(gn)//'.res.nc'
-       else
-          call get_tile_string(fname, 'INPUT/fv_tracer'//trim(gn)//'.res.tile', tile_id(n), '.nc' )
+       fname = 'INPUT/fv_tracer'//trim(gn)//'.res.nc'
+       if (.not.Atm(n)%nested) then
+          call get_instance_filename(fname, fname_nd)
+          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
        end if
          DO nt = 2, ntracers
            call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
@@ -315,7 +308,6 @@ contains
 !    end do
 
     call nullify_domain()
-    deallocate(tile_id)
 
   end subroutine  fv_io_read_tracers
 
@@ -330,8 +322,8 @@ contains
     character(len=3)  :: gn
     integer              :: isc, iec, jsc, jec, n, nt, nk, ntracers
     integer              :: isd, ied, jsd, jed
-    integer              :: ntileMe
-    integer, allocatable :: tile_id(:)
+!    integer              :: ntileMe
+
 !
 !-------------------------------------------------------------------------
     real, allocatable:: ak_r(:), bk_r(:)
@@ -359,9 +351,7 @@ contains
 !   call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
     ntracers = size(Atm(1)%q,4)  ! Temporary until we get tracer manager integrated
 
-    ntileMe = size(Atm(:))  ! This will have to be modified for mult tiles per PE
-    allocate(tile_id(ntileMe))
-    tile_id = mpp_get_tile_id(fv_domain)
+!    ntileMe = size(Atm(:))  ! This will have to be modified for mult tiles per PE
 
 
 ! Allocate arrays for reading old restart file:
@@ -382,7 +372,7 @@ contains
            allocate ( ze0_r(isc:iec, jsc:jec,  npz_rst+1) )
     endif
 
-    fname_nd = 'INPUT/fv_core'//trim(gn)//'.res.nc'
+    call get_instance_filename('INPUT/fv_core'//trim(gn)//'.res.nc', fname_nd)
   ! write_data does not (yet?) support vector data and tiles
     call read_data(fname_nd, 'ak', ak_r(1:npz_rst+1))
     call read_data(fname_nd, 'bk', bk_r(1:npz_rst+1))
@@ -391,10 +381,10 @@ contains
 
 !    do n = 1, ntileMe
     n = 1
-       if (Atm(n)%nested) then
-          fname = 'INPUT/fv_core'//trim(gn)//'.res.nc'
-       else
-          call get_tile_string(fname, 'INPUT/fv_core'//trim(gn)//'.res.tile', tile_id(n), '.nc' )
+      fname = 'INPUT/fv_core'//trim(gn)//'.res.nc'
+       if (.not.Atm(n)%nested) then
+          call get_instance_filename(fname, fname_nd)
+          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
        end if
        if(file_exist(fname))then
          call read_data(fname, 'u', u_r(isc:iec,jsc:jec+1,:), domain=fv_domain, position=NORTH,tile_count=n)
@@ -415,10 +405,10 @@ contains
        endif
 
 
-       if (Atm(n)%nested) then
-          fname = 'INPUT/fv_srf_wnd'//trim(gn)//'.res.nc'
-       else
-          call get_tile_string(fname, 'INPUT/fv_srf_wnd'//trim(gn)//'.res.tile', tile_id(n), '.nc' )
+       fname = 'INPUT/fv_srf_wnd'//trim(gn)//'.res.nc'
+       if (.not.Atm(n)%nested) then
+          call get_instance_filename(fname, fname_nd)
+          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
        end if
        if(file_exist(fname))then
          call read_data(fname, 'u_srf', Atm(n)%u_srf(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
@@ -433,10 +423,10 @@ contains
 
      if ( Atm(n)%fv_land ) then
 ! Optional terrain deviation (sgh)
-       if (Atm(n)%nested) then
-          fname = 'INPUT/mg_drag'//trim(gn)//'.res.nc'
-       else
-          call get_tile_string(fname, 'INPUT/mg_drag'//trim(gn)//'.res.tile', tile_id(n), '.nc' )
+       fname = 'INPUT/mg_drag'//trim(gn)//'.res.nc'
+       if (.not.Atm(n)%nested) then
+          call get_instance_filename(fname, fname_nd)
+          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
        end if
        if(file_exist(fname))then
          call read_data(fname, 'ghprime', Atm(n)%sgh(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
@@ -444,10 +434,10 @@ contains
          call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
        endif
 ! Land-water mask
-       if (Atm(n)%nested) then
-          fname = 'INPUT/fv_land'//trim(gn)//'.res.nc'
-       else
-          call get_tile_string(fname, 'INPUT/fv_land'//trim(gn)//'.res.tile', tile_id(n), '.nc' )
+       fname = 'INPUT/fv_land'//trim(gn)//'.res.nc'
+       if (.not.Atm(n)%nested) then
+          call get_instance_filename(fname, fname_nd)
+          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
        end if
        if(file_exist(fname))then
          call read_data(fname, 'oro', Atm(n)%oro(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
@@ -457,10 +447,10 @@ contains
      endif
 
 
-       if (Atm(n)%nested) then
-          fname = 'INPUT/fv_tracer'//trim(gn)//'.res.nc'
-       else
-          call get_tile_string(fname, 'INPUT/fv_tracer'//trim(gn)//'.res.tile', tile_id(n), '.nc' )
+       fname = 'INPUT/fv_tracer'//trim(gn)//'.res.nc'
+       if (.not.Atm(n)%nested) then
+          call get_instance_filename(fname, fname_nd)
+          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
        end if
 
        do nt = 1, ntracers
@@ -486,7 +476,6 @@ contains
 
     call nullify_domain()
 
-    deallocate(tile_id)
     deallocate( ak_r )
     deallocate( bk_r )
     deallocate( u_r )

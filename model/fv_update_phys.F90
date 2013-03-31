@@ -6,7 +6,7 @@ module fv_update_phys_mod
   use mpp_parameter_mod,  only: AGRID_PARAM=>AGRID
   use mpp_mod,            only: FATAL, mpp_error
   use time_manager_mod,   only: time_type
-  use tracer_manager_mod, only: get_tracer_index
+  use tracer_manager_mod, only: get_tracer_index, adjust_mass
 
   use fv_arrays_mod,      only: fv_atmos_type
   use fv_control_mod,     only: npx, npy, npz, ncnst, nwat, fv_debug, &
@@ -34,8 +34,8 @@ module fv_update_phys_mod
   public :: fv_update_phys, del2_phys
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_update_phys.F90,v 17.0.2.7.2.6 2012/05/11 14:01:55 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201211 $'
+  character(len=128) :: version = '$Id: fv_update_phys.F90,v 17.0.2.7.2.6.4.1 2013/02/26 19:17:37 William.Cooke Exp $'
+  character(len=128) :: tagname = '$Name: siena_201303 $'
 
   contains
 
@@ -300,7 +300,8 @@ module fv_update_phys_mod
 !-----------------------------------------
       if ( nwat /=0 ) then
         do m=1,ncnst   
-          if( m /= cld_amt ) then  ! cloud fraction in GFDL physics
+!          if( m /= cld_amt ) then  ! cloud fraction in GFDL physics
+          if ( adjust_mass(MODEL_ATMOS,m) ) then
             do j=js,je
                do i=is,ie
                   q(i,j,k,m) = q(i,j,k,m) / ps_dt(i,j)

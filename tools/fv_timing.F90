@@ -34,7 +34,7 @@
 
 !---- version number -----
       character(len=128) :: version = '$Id: fv_timing.F90,v 17.0.2.2.2.3 2012/05/14 16:26:28 Lucas.Harris Exp $'
-      character(len=128) :: tagname = '$Name: siena_201211 $'
+      character(len=128) :: tagname = '$Name: siena_201303 $'
 
       contains
          subroutine timing_init

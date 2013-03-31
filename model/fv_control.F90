@@ -1,4 +1,4 @@
-! $Id: fv_control.F90,v 17.0.2.9.2.20.2.3 2012/06/12 18:03:35 Lucas.Harris Exp $
+! $Id: fv_control.F90,v 17.0.2.9.2.20.2.3.2.1 2013/02/27 19:49:39 Seth.Underwood Exp $
 !
 !----------------
 ! FV contro panel
@@ -115,8 +115,8 @@ module fv_control_mod
    integer :: commID, max_refinement_of_global = 1.
 
 !---- version number -----
-   character(len=128) :: version = '$Id: fv_control.F90,v 17.0.2.9.2.20.2.3 2012/06/12 18:03:35 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: siena_201211 $'
+   character(len=128) :: version = '$Id: fv_control.F90,v 17.0.2.9.2.20.2.3.2.1 2013/02/27 19:49:39 Seth.Underwood Exp $'
+   character(len=128) :: tagname = '$Name: siena_201303 $'
 
  contains
 
@@ -355,7 +355,7 @@ module fv_control_mod
       integer :: n0split
       integer :: n, i, parent_grid_num = -1
 
-      integer :: pe_counter = 0
+      integer :: pe_counter
 
 !     local version of these variables to allow PGI compiler to compile
       character(len=128) :: res_latlon_dynamics = ''
@@ -391,6 +391,7 @@ module fv_control_mod
 
       namelist /test_case_nml/test_case,alpha
 
+      pe_counter = mpp_root_pe()
 ! Make alpha = 0 the default:
       alpha = 0.
       test_case = 11   ! (USGS terrain)

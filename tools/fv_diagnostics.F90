@@ -62,7 +62,7 @@ module fv_diagnostics_mod
 
 !---- version number -----
  character(len=128) :: version = '$Id: fv_diagnostics.F90,v 17.0.6.7.2.8.2.12.2.1.2.1 2012/06/11 20:34:40 Rusty.Benson Exp $'
- character(len=128) :: tagname = '$Name: siena_201211 $'
+ character(len=128) :: tagname = '$Name: siena_201303 $'
 
 contains
 

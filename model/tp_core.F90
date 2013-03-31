@@ -51,7 +51,7 @@ module tp_core_mod
 
 !---- version number -----
    character(len=128) :: version = '$Id: tp_core.F90,v 17.0.2.4.2.5 2012/04/25 22:15:01 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: siena_201211 $'
+   character(len=128) :: tagname = '$Name: siena_201303 $'
 
 !
 !EOP
