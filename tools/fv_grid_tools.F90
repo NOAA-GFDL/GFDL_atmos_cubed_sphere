@@ -1,20 +1,16 @@
 module fv_grid_tools_mod
 
   use constants_mod, only: radius, pi, omega, grav
-  use fv_arrays_mod, only: fv_atmos_type
+  use fv_arrays_mod, only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type
   use fv_grid_utils_mod, only: gnomonic_grids, great_circle_dist,  &
                            mid_pt_sphere, spherical_angle,     &
-                           project_sphere_v,  cell_center2,    &
-                           get_area, inner_prod, deglat,       &
-                           sw_corner, se_corner, ne_corner, nw_corner, fill_ghost, &
-                           Gnomonic_grid, direct_transform, dist2side_latlon, &
+                           cell_center2,    &
+                           get_area, inner_prod, fill_ghost, &
+                           direct_transform, dist2side_latlon, &
                            spherical_linear_interpolation
   use fv_timing_mod,  only: timing_on, timing_off
-  use fv_mp_mod,      only: gid, masterproc, domain, tile, &
-                            is,js,ie,je,isd,jsd,ied,jed, ng, &
-                            fill_corners, XDir, YDir, &
-                            mp_gather, mp_bcst, mp_reduce_max, mp_stop, &
-                            npes_x, npes_y
+  use fv_mp_mod,      only: ng, is_master, fill_corners, XDir, YDir
+  use fv_mp_mod,      only: mp_gather, mp_bcst, mp_reduce_max, mp_stop
   use sorted_index_mod,  only: sorted_inta, sorted_intb
   use mpp_mod,           only: mpp_error, FATAL, get_unit, mpp_chksum, mpp_pe, stdout, &
                                mpp_send, mpp_recv, mpp_sync_self, EVENT_RECV, mpp_npes, &
@@ -24,6 +20,7 @@ module fv_grid_tools_mod
                                mpp_get_compute_domains, mpp_global_field, &
                                mpp_get_data_domain, mpp_get_compute_domain, &
                                mpp_get_global_domain, mpp_global_sum, mpp_global_max, mpp_global_min
+ use mpp_domains_mod,    only: domain2d
   use mpp_io_mod,        only: mpp_get_att_value     
 
   use mpp_parameter_mod, only: AGRID_PARAM=>AGRID,       & 
@@ -39,22 +36,6 @@ module fv_grid_tools_mod
                                get_global_att_value, get_var_att_value
   use mosaic_mod,       only : get_mosaic_ntiles
 
-  use fv_current_grid_mod, only: csFac, zeta
-  use fv_current_grid_mod, only: grid_type, stretch, dxdy_area,&
-       latlon, cubed_sphere, double_periodic, latlon_patch,&
-       latlon_strip, channel, have_south_pole, have_north_pole,&
-       interpOrder, debug_message_size,&
-       write_grid_char_file, stretched_grid, npx_g, npy_g, npz_g,&
-       ntiles_g, grid_global, parent_tile
-#ifndef NO_GRID_G
-  use fv_current_grid_mod, only: grid_g
-#endif
-  use fv_current_grid_mod, only: grid, agrid, area, area_c, sina,&
-       cosa, e1, e2, dx, dy, dxc, dyc, dxa, dya, rarea, rarea_c,&
-       rdx, rdy, rdxc, rdyc, rdxa, rdya, acapN, acapS, globalarea,&
-       iinta, jinta, iintb, jintb, dx_const, dy_const, deglon_start,&
-       deglon_stop, deglat_start, deglat_stop, nested
-  use fv_mp_mod,         only: concurrent
   use mpp_mod, only: mpp_transmit, mpp_recv
   implicit none
   private
@@ -64,43 +45,26 @@ module fv_grid_tools_mod
   real , parameter:: torad = pi/180.0          ! convert to radians
   real , parameter:: missing = 1.e25
 
-#ifndef NO_GRID_G
-  public :: grid_g
-#endif
-  public :: npx_g, npy_g, npz_g, grid, agrid, stretch, todeg, &
-            interpOrder, zeta, missing, &
-            cubed_sphere, latlon, have_south_pole, have_north_pole, &
-            double_periodic, channel, &
-            dx,dy, dxa,dya, dxc,dyc, rdx,rdy, rdxc,rdyc,  &
-            sina, cosa, area, rarea, area_c, rarea_c,  &
-            acapN, acapS, init_grid, read_grid, &
-            rdxa, rdya, d2a2c, ctoa, atod, dtoa, atoc, atob_s,   &
-            mp_update_dwinds, rotate_winds, &
-            spherical_to_cartesian, globalsum, &
-            get_unit_vector, unit_vect2
-  public :: grid_type, dx_const, dy_const
-  public :: deglon_start, deglon_stop, deglat_start, deglat_stop
-  public :: debug_message_size, write_grid_char_file
+  real :: csFac
 
-  INTERFACE get_unit_vector
-     MODULE PROCEDURE get_unit_vector_3pts
-     MODULE PROCEDURE get_unit_vector_2pts
-  END INTERFACE
+  logical, parameter :: debug_message_size = .false.
+  logical :: write_grid_char_file = .false.
 
-  INTERFACE mp_update_dwinds
-     MODULE PROCEDURE mp_update_dwinds_2d
-     MODULE PROCEDURE mp_update_dwinds_3d
-  END INTERFACE
 
-!---- version number -----
-  character(len=128) :: version = '$Id: fv_grid_tools.F90,v 17.0.2.1.2.4.4.5.2.11.2.2 2012/06/08 13:14:02 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201303 $'
+  public :: todeg, missing, &
+       init_grid, read_grid, &
+       spherical_to_cartesian, &
+       broadcast_aligned_nest
+
+  !---- version number -----
+  character(len=128) :: version = '$Id: fv_grid_tools.F90,v 17.0.2.1.2.4.4.5.2.11.2.18 2013/04/12 17:32:03 Lucas.Harris Exp $'
+  character(len=128) :: tagname = '$Name: siena_201305 $'
 
 contains
 
   subroutine read_grid(Atm, grid_name, grid_file, npx, npy, npz, ndims, nregions, ng)
     !     read_grid :: read grid from mosaic grid file.
-    type(fv_atmos_type), intent(inout) :: Atm
+    type(fv_atmos_type), intent(inout), target :: Atm
     character(len=*),    intent(IN)    :: grid_name
     character(len=*),    intent(IN)    :: grid_file
     integer,             intent(IN)    :: npx, npy, npz
@@ -131,14 +95,89 @@ contains
     real                               :: p_uR(ndims) ! upper Right
     real                               :: d1, d2, mydx, mydy
 
-    Gnomonic_grid = .true.   
+  real, pointer, dimension(:,:,:) :: agrid, grid
+  real, pointer, dimension(:,:) :: area, rarea, area_c, rarea_c
+
+  real, pointer, dimension(:,:) :: sina, cosa, dx, dy, dxc, dyc, dxa, dya, rdx, rdy, rdxc, rdyc, rdxa, rdya
+  real, pointer, dimension(:,:,:) :: e1, e2
+
+  integer, pointer, dimension(:,:,:) ::  iinta, jinta, iintb, jintb
+
+  real, pointer, dimension(:,:,:,:) :: grid_global
+
+  integer, pointer :: npx_g, npy_g, ntiles_g, tile
+  real,    pointer :: acapN, acapS
+  logical, pointer :: sw_corner, se_corner, ne_corner, nw_corner
+  logical, pointer :: latlon, cubed_sphere, have_south_pole, have_north_pole, stretched_grid
+
+  type(domain2d), pointer :: domain
+  
+  integer :: is,  ie,  js,  je
+  integer :: isd, ied, jsd, jed
+
+  is  = Atm%bd%is
+  ie  = Atm%bd%ie
+  js  = Atm%bd%js
+  je  = Atm%bd%je
+  isd = Atm%bd%isd
+  ied = Atm%bd%ied
+  jsd = Atm%bd%jsd
+  jed = Atm%bd%jed
+
+    !! Associate pointers
+    agrid => Atm%gridstruct%agrid
+    grid  => Atm%gridstruct%grid
+
+    area   => Atm%gridstruct%area
+    rarea   => Atm%gridstruct%rarea
+    area_c => Atm%gridstruct%area_c
+    rarea_c => Atm%gridstruct%rarea_c
+
+    sina   => Atm%gridstruct%sina
+    cosa   => Atm%gridstruct%cosa
+    dx     => Atm%gridstruct%dx
+    dy     => Atm%gridstruct%dy
+    dxc    => Atm%gridstruct%dxc
+    dyc    => Atm%gridstruct%dyc
+    dxa    => Atm%gridstruct%dxa
+    dya    => Atm%gridstruct%dya
+    rdx    => Atm%gridstruct%rdx
+    rdy    => Atm%gridstruct%rdy
+    rdxc   => Atm%gridstruct%rdxc
+    rdyc   => Atm%gridstruct%rdyc
+    rdxa   => Atm%gridstruct%rdxa
+    rdya   => Atm%gridstruct%rdya
+    e1     => Atm%gridstruct%e1
+    e2     => Atm%gridstruct%e2
+
+    iinta                         => Atm%gridstruct%iinta
+    jinta                         => Atm%gridstruct%jinta
+    iintb                         => Atm%gridstruct%iintb
+    jintb                         => Atm%gridstruct%jintb
+    npx_g                         => Atm%gridstruct%npx_g
+    npy_g                         => Atm%gridstruct%npy_g
+    ntiles_g                      => Atm%gridstruct%ntiles_g
+    acapN                         => Atm%gridstruct%acapN
+    acapS                         => Atm%gridstruct%acapS
+    sw_corner                     => Atm%gridstruct%sw_corner
+    se_corner                     => Atm%gridstruct%se_corner
+    ne_corner                     => Atm%gridstruct%ne_corner
+    nw_corner                     => Atm%gridstruct%nw_corner
+    latlon                        => Atm%gridstruct%latlon
+    cubed_sphere                  => Atm%gridstruct%cubed_sphere
+    have_south_pole               => Atm%gridstruct%have_south_pole
+    have_north_pole               => Atm%gridstruct%have_north_pole
+    stretched_grid                => Atm%gridstruct%stretched_grid
+
+    tile                          => Atm%tile
+    domain                        => Atm%domain
+
     cubed_sphere = .true.
     npx_g = npx
     npy_g = npy
-    npz_g = npz
     ntiles_g = nregions
 
-    if ( Atm%do_schmidt .and. abs(atm%stretch_fac-1.) > 1.E-5 ) stretched_grid = .true.
+    if ( Atm%flagstruct%do_schmidt .and. abs(atm%flagstruct%stretch_fac-1.) > 1.E-5 ) stretched_grid = .true.
 
     if(.not. file_exist(grid_file)) call mpp_error(FATAL, 'fv_grid_tools(read_grid): file '// &
          trim(grid_file)//' does not exist')
@@ -159,7 +198,7 @@ contains
        atm_mosaic = trim(grid_file)
     endif
 
-    call get_mosaic_tile_grid(atm_hgrid, atm_mosaic, domain)
+    call get_mosaic_tile_grid(atm_hgrid, atm_mosaic, Atm%domain)
 
     grid_form = "none"    
     if( get_global_att_value(atm_hgrid, "history", attvalue) ) then
@@ -213,7 +252,7 @@ contains
        call mpp_error(FATAL, 'fv_grid_tools_mod(read_grid): units must start with degree or radian')
     endif
 
-    call mpp_update_domains( grid, domain, position=CORNER)    
+    call mpp_update_domains( grid, Atm%domain, position=CORNER)    
 
     !--- geographic grid at cell center
     agrid(:,:,:) = -1.e25
@@ -233,9 +272,9 @@ contains
        enddo
     endif
     
-    call mpp_update_domains( agrid, domain)       
-    if (.not. nested) call fill_corners(agrid(:,:,1), npx, npy, XDir, AGRID=.true.)
-    if (.not. nested) call fill_corners(agrid(:,:,2), npx, npy, YDir, AGRID=.true.)
+    call mpp_update_domains( agrid, Atm%domain)       
+    if (.not. Atm%neststruct%nested) call fill_corners(agrid(:,:,1), npx, npy, XDir, AGRID=.true.)
+    if (.not. Atm%neststruct%nested) call fill_corners(agrid(:,:,2), npx, npy, YDir, AGRID=.true.)
     deallocate(tmpx, tmpy)
 
     !--- dx and dy         
@@ -248,9 +287,9 @@ contains
           dx(i,j) = great_circle_dist( p2, p1, radius )
        enddo
     enddo
-    call get_symmetry(dx(is:ie,js:je+1), dy(is:ie+1,js:je), 0, 1 )     
+    call get_symmetry(dx(is:ie,js:je+1), dy(is:ie+1,js:je), 0, 1, Atm%layout(1), Atm%layout(2), Atm%domain, Atm%tile, Atm%gridstruct%npx_g, Atm%bd)
     allocate(ebuffer(js:je), wbuffer(js:je), sbuffer(is:ie), nbuffer(is:ie))
-    call mpp_get_boundary( dy, dx, domain, ebufferx=ebuffer, wbufferx=wbuffer, sbuffery=sbuffer, nbuffery=nbuffer,&
+    call mpp_get_boundary( dy, dx, Atm%domain, ebufferx=ebuffer, wbufferx=wbuffer, sbuffery=sbuffer, nbuffery=nbuffer,&
          flags=SCALAR_PAIR+XUPDATE, gridtype=CGRID_NE_PARAM)
     if(is == 1 .AND. mod(tile,2) .NE. 0) then ! on the west boundary
        dy(is, js:je) = wbuffer(js:je)
@@ -260,10 +299,10 @@ contains
     endif
     deallocate(wbuffer, ebuffer, sbuffer, nbuffer)
 
-    call mpp_update_domains( dy, dx, domain, flags=SCALAR_PAIR,      &
+    call mpp_update_domains( dy, dx, Atm%domain, flags=SCALAR_PAIR,      &
          gridtype=CGRID_NE_PARAM, complete=.true.)
 
-    if (.not. nested) call fill_corners(dx, dy, npx, npy, DGRID=.true.)
+    if (.not. Atm%neststruct%nested) call fill_corners(dx, dy, npx, npy, DGRID=.true.)
 
     !--- dxa and dya
 
@@ -280,8 +319,8 @@ contains
           dya(i,j) = great_circle_dist( p2, p1, radius )
        enddo
     enddo
-    !      call mpp_update_domains( dxa, dya, domain, flags=SCALAR_PAIR, gridtype=AGRID_PARAM)
-    if (.not. nested) call fill_corners(dxa, dya, npx, npy, AGRID=.true.)
+    !      call mpp_update_domains( dxa, dya, Atm%domain, flags=SCALAR_PAIR, gridtype=AGRID_PARAM)
+    if (.not. Atm%neststruct%nested) call fill_corners(dxa, dya, npx, npy, AGRID=.true.)
 
     !--- dxc and dyc
     do j=js,je
@@ -309,7 +348,7 @@ contains
     call sorted_inta(isd, ied, jsd, jed, cubed_sphere, grid, iinta, jinta)
     call sorted_intb(isd, ied, jsd, jed, is, ie, js, je, npx, npy, &
          cubed_sphere, agrid, iintb, jintb)
-    call grid_area( npx, npy, ndims, nregions )
+    call grid_area( npx, npy, ndims, nregions, Atm%neststruct%nested, Atm%gridstruct, Atm%domain, Atm%bd )
 !    deallocate(iintb, jintb)
 
 #ifndef ORIG_AREA_C
@@ -408,16 +447,16 @@ contains
     endif
 #endif
 
-    call mpp_update_domains( dxc, dyc, domain, flags=SCALAR_PAIR,   &
+    call mpp_update_domains( dxc, dyc, Atm%domain, flags=SCALAR_PAIR,   &
          gridtype=CGRID_NE_PARAM, complete=.true.)
-    if (.not. nested) call fill_corners(dxc, dyc, npx, npy, CGRID=.true.)
+    if (.not. Atm%neststruct%nested) call fill_corners(dxc, dyc, npx, npy, CGRID=.true.)
 
-    call mpp_update_domains( area,   domain, complete=.true. )
-    call mpp_update_domains( area_c, domain, position=CORNER, complete=.true.)
+    call mpp_update_domains( area,   Atm%domain, complete=.true. )
+    call mpp_update_domains( area_c, Atm%domain, position=CORNER, complete=.true.)
 
     ! Handle corner Area ghosting
-    if (.not. nested) call fill_ghost(area, npx, npy, -1.E35)  ! fill in garbage values
-    if (.not. nested) call fill_corners(area_c, npx, npy, FILL=XDir, BGRID=.true.)
+    if (.not. Atm%neststruct%nested) call fill_ghost(area, npx, npy, -1.E35, Atm%bd)  ! fill in garbage values
+    if (.not. Atm%neststruct%nested) call fill_corners(area_c, npx, npy, FILL=XDir, BGRID=.true.)
 
     do j=jsd,jed+1
        do i=isd,ied
@@ -515,7 +554,7 @@ contains
     call mpp_max(aspM)
     call mpp_min(aspN)
 
-    if( gid==masterproc ) then
+    if( is_master() ) then
        angAV = angAV / ( (ceiling(npy/2.0))*(ceiling(npx/2.0)) - 1 )
        dxAV  = dxAV  / ( (ceiling(npy/2.0))*(ceiling(npx/2.0)) )
        aspAV = aspAV / ( (ceiling(npy/2.0))*(ceiling(npx/2.0)) )
@@ -529,8 +568,8 @@ contains
 
     if(write_grid_char_file) then
        allocate(g_tmp(npx-1,npy-1))
-       call mpp_global_field(domain, angs, g_tmp)
-       if( gid==masterproc ) then
+       call mpp_global_field(Atm%domain, angs, g_tmp)
+       if( is_master() ) then
           write(gcharFile,202) TRIM(grid_name),'_chars_',npx,'x',npy,'.dat'
           fileLun=get_unit()
           open(unit=fileLun,file=gcharFile, form='unformatted', access='direct',  &
@@ -544,8 +583,8 @@ contains
           write(fileLun,rec=1) tmp
        endif
 
-       call mpp_global_field(domain, asps, g_tmp)
-       if( gid==masterproc ) then
+       call mpp_global_field(Atm%domain, asps, g_tmp)
+       if( is_master() ) then
           do j = 1,ceiling(npy/2.)
              do i=1,ceiling(npx/2.)
                 tmp(i,j) = g_tmp(i,j)
@@ -554,8 +593,8 @@ contains
           write(fileLun,rec=2) tmp
        endif
 
-       call mpp_global_field(domain, dxs,  g_tmp)
-       if( gid==masterproc ) then
+       call mpp_global_field(Atm%domain, dxs,  g_tmp)
+       if( is_master() ) then
           do j = 1,ceiling(npy/2.)
              do i=1,ceiling(npx/2.)
                 tmp(i,j) = g_tmp(i,j)
@@ -574,7 +613,7 @@ contains
                    p_lR(n) = grid(i+1,j  ,n)
                    p_uR(n) = grid(i+1,j+1,n)
                 enddo
-                if ((latlon) .or. (dxdy_area)) then
+                if ((latlon)) then
                    ! DX_*DY_
                    d1 = dx(i  ,j  )
                    d2 = dx(i  ,j+1)
@@ -592,8 +631,8 @@ contains
        else
           angs = 0
        endif
-       call mpp_global_field(domain, angs,  g_tmp)
-       if( gid==masterproc ) then
+       call mpp_global_field(Atm%domain, angs,  g_tmp)
+       if( is_master() ) then
           do j = 1,npy/2+1
              do i=1,npx/2+1
                 tmp(i,j) = g_tmp(i,j)
@@ -611,15 +650,64 @@ contains
          trim(grid_file)//', -DGLOBAL_TRIG should not be present when compiling')
 #endif
 
+    !! Nullify pointers
+    nullify(agrid)
+    nullify(grid)
+    
+    nullify( area)
+    nullify(rarea)
+    nullify( area_c)
+    nullify(rarea_c)
+
+     nullify(sina)
+     nullify(cosa)
+     nullify(dx)  
+     nullify(dy)  
+     nullify(dxc) 
+     nullify(dyc) 
+     nullify(dxa) 
+     nullify(dya) 
+     nullify(rdx) 
+     nullify(rdy) 
+     nullify(rdxc)
+     nullify(rdyc)
+     nullify(rdxa)
+     nullify(rdya)
+     nullify(e1)  
+     nullify(e2)  
+    
+    nullify(iinta)           
+    nullify(jinta)           
+    nullify(iintb)           
+    nullify(jintb)           
+    nullify(npx_g)           
+    nullify(npy_g)           
+    nullify(ntiles_g)        
+    nullify(acapN)           
+    nullify(acapS)           
+    nullify(sw_corner)       
+    nullify(se_corner)       
+    nullify(ne_corner)       
+    nullify(nw_corner)       
+    nullify(latlon)          
+    nullify(cubed_sphere)    
+    nullify(have_south_pole) 
+    nullify(have_north_pole) 
+    nullify(stretched_grid)  
+
+    nullify(tile)
+    nullify(domain)
+
   end subroutine read_grid
 
 
 
   !#################################################################################
-  subroutine get_symmetry(data_in, data_out, ishift, jshift)
-    integer,                                            intent(in)  :: ishift, jshift
-    real, dimension(is:ie+ishift, js:je+jshift ), intent(in)  :: data_in
-    real, dimension(is:ie+jshift,js:je+ishift  ), intent(out) :: data_out      
+  subroutine get_symmetry(data_in, data_out, ishift, jshift, npes_x, npes_y, domain, tile, npx_g, bd)
+    type(fv_grid_bounds_type), intent(IN) :: bd
+    integer,                                      intent(in)  :: ishift, jshift, npes_x, npes_y
+    real, dimension(bd%is:bd%ie+ishift, bd%js:bd%je+jshift ), intent(in)  :: data_in
+    real, dimension(bd%is:bd%ie+jshift, bd%js:bd%je+ishift ), intent(out) :: data_out      
     real,    dimension(:), allocatable :: send_buffer
     real,    dimension(:), allocatable :: recv_buffer
     integer, dimension(:), allocatable :: is_recv, ie_recv, js_recv, je_recv, pe_recv
@@ -632,6 +720,19 @@ contains
     integer                            :: is2, ie2, js2, je2
     integer                            :: i, j, p, nrecv, nsend, tile_you, is3, ie3, nlist
     integer                            :: start_pe, ipos, jpos, from_pe, to_pe
+    type(domain2d)                     :: domain
+    integer                            :: tile, npx_g
+    integer :: is,  ie,  js,  je
+    integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
     
     !--- This routine will be called only for cubic sphere grid. so 6 tiles will be assumed
     !--- also number of processors on each tile will be the same.
@@ -828,7 +929,7 @@ contains
 !     init_grid :: read grid from input file and setup grid descriptors
  
 !--------------------------------------------------------
-    type(fv_atmos_type), intent(inout) :: Atm
+    type(fv_atmos_type), intent(inout), target :: Atm
     character(len=80), intent(IN) :: grid_name
     character(len=120),intent(IN) :: grid_file
     integer,      intent(IN) :: npx, npy, npz
@@ -882,24 +983,97 @@ contains
     integer :: tmplun
     character(len=80) :: tmpFile   
 
+    real, pointer, dimension(:,:,:) :: agrid, grid
+    real, pointer, dimension(:,:) :: area, rarea, area_c, rarea_c
+
+    real, pointer, dimension(:,:) :: sina, cosa, dx, dy, dxc, dyc, dxa, dya, rdx, rdy, rdxc, rdyc, rdxa, rdya
+    real, pointer, dimension(:,:,:) :: e1, e2
+
+    integer, pointer, dimension(:,:,:) ::  iinta, jinta, iintb, jintb
+
+    real, pointer, dimension(:,:,:,:) :: grid_global
+
+    integer, pointer :: npx_g, npy_g, ntiles_g, tile
+    real,    pointer :: acapN, acapS
+    logical, pointer :: sw_corner, se_corner, ne_corner, nw_corner
+    logical, pointer :: latlon, cubed_sphere, have_south_pole, have_north_pole, stretched_grid
+
+    type(domain2d), pointer :: domain
+    integer :: is,  ie,  js,  je
+    integer :: isd, ied, jsd, jed
+
+    is  = Atm%bd%is
+    ie  = Atm%bd%ie
+    js  = Atm%bd%js
+    je  = Atm%bd%je
+    isd = Atm%bd%isd
+    ied = Atm%bd%ied
+    jsd = Atm%bd%jsd
+    jed = Atm%bd%jed
+
+    !!! Associate pointers
+    agrid => Atm%gridstruct%agrid
+    grid  => Atm%gridstruct%grid
+
+     area   => Atm%gridstruct%area
+    rarea   => Atm%gridstruct%rarea
+     area_c => Atm%gridstruct%area_c
+    rarea_c => Atm%gridstruct%rarea_c
+
+     sina   => Atm%gridstruct%sina
+     cosa   => Atm%gridstruct%cosa
+     dx     => Atm%gridstruct%dx
+     dy     => Atm%gridstruct%dy
+     dxc    => Atm%gridstruct%dxc
+     dyc    => Atm%gridstruct%dyc
+     dxa    => Atm%gridstruct%dxa
+     dya    => Atm%gridstruct%dya
+     rdx    => Atm%gridstruct%rdx
+     rdy    => Atm%gridstruct%rdy
+     rdxc   => Atm%gridstruct%rdxc
+     rdyc   => Atm%gridstruct%rdyc
+     rdxa   => Atm%gridstruct%rdxa
+     rdya   => Atm%gridstruct%rdya
+     e1     => Atm%gridstruct%e1
+     e2     => Atm%gridstruct%e2
+
+     grid_global => Atm%grid_global
+    
+    iinta                         => Atm%gridstruct%iinta
+    jinta                         => Atm%gridstruct%jinta
+    iintb                         => Atm%gridstruct%iintb
+    jintb                         => Atm%gridstruct%jintb
+    npx_g                         => Atm%gridstruct%npx_g
+    npy_g                         => Atm%gridstruct%npy_g
+    ntiles_g                      => Atm%gridstruct%ntiles_g
+    acapN                         => Atm%gridstruct%acapN
+    acapS                         => Atm%gridstruct%acapS
+    sw_corner                     => Atm%gridstruct%sw_corner
+    se_corner                     => Atm%gridstruct%se_corner
+    ne_corner                     => Atm%gridstruct%ne_corner
+    nw_corner                     => Atm%gridstruct%nw_corner
+    latlon                        => Atm%gridstruct%latlon
+    cubed_sphere                  => Atm%gridstruct%cubed_sphere
+    have_south_pole               => Atm%gridstruct%have_south_pole
+    have_north_pole               => Atm%gridstruct%have_north_pole
+    stretched_grid                => Atm%gridstruct%stretched_grid
+
+    tile                          => Atm%tile
+
+    domain                        => Atm%domain
+
     npx_g = npx
     npy_g = npy
-    npz_g = npz
     ntiles_g = nregions
     latlon = .false.
     cubed_sphere = .false.
-    if ( grid_type < 0 ) then
-       Gnomonic_grid = .false.
-    else
-       Gnomonic_grid = .true.
-    endif
 
-    if ( Atm%do_schmidt .and. abs(atm%stretch_fac-1.) > 1.E-5 ) stretched_grid = .true.
+    if ( Atm%flagstruct%do_schmidt .and. abs(atm%flagstruct%stretch_fac-1.) > 1.E-5 ) stretched_grid = .true.
         
-    if (grid_type>3) then
-       if (grid_type == 4) then
-          double_periodic = .true.
-          call setup_cartesian(npx, npy)
+    if (Atm%flagstruct%grid_type>3) then
+       if (Atm%flagstruct%grid_type == 4) then
+          call setup_cartesian(npx, npy, Atm%flagstruct%dx_const, Atm%flagstruct%dy_const, &
+               Atm%flagstruct%deglat, Atm%bd)
        else
           call mpp_error(FATAL, 'init_grid: unsupported grid type')
        endif
@@ -907,14 +1081,14 @@ contains
 
           cubed_sphere = .true.
           
-          if (Atm%nested) then
-             call setup_aligned_nest
+          if (Atm%neststruct%nested) then
+             call setup_aligned_nest(Atm)
           else
-             if (grid_type>=0) call gnomonic_grids(grid_type, npx-1, xs, ys)
+             if (Atm%flagstruct%grid_type>=0) call gnomonic_grids(Atm%flagstruct%grid_type, npx-1, xs, ys)
 
-          if (gid == masterproc) then
+          if (is_master()) then
 
-             if (grid_type>=0) then
+             if (Atm%flagstruct%grid_type>=0) then
                 do j=1,npy
                    do i=1,npx
                       grid_global(i,j,1,1) = xs(i,j)
@@ -930,8 +1104,8 @@ contains
 ! Shift the corner away from Japan
 !---------------------------------
 !--------------------- This will result in the corner close to east coast of China ------------------
-                         if ( .not.Atm%do_schmidt .and. (Atm%shift_fac)>1.E-4 )   &
-                              grid_global(i,j,1,n) = grid_global(i,j,1,n) - pi/Atm%shift_fac
+                         if ( .not.Atm%flagstruct%do_schmidt .and. (Atm%flagstruct%shift_fac)>1.E-4 )   &
+                              grid_global(i,j,1,n) = grid_global(i,j,1,n) - pi/Atm%flagstruct%shift_fac
 !----------------------------------------------------------------------------------------------------
                          if ( grid_global(i,j,1,n) < 0. )              &
                               grid_global(i,j,1,n) = grid_global(i,j,1,n) + 2.*pi
@@ -965,9 +1139,10 @@ contains
 !------------------------
 ! Schmidt transformation:
 !------------------------
-             if ( Atm%do_schmidt ) then
+             if ( Atm%flagstruct%do_schmidt ) then
              do n=1,nregions
-                call direct_transform(Atm%stretch_fac, 1, npx, 1, npy, Atm%target_lon, Atm%target_lat, &
+                call direct_transform(Atm%flagstruct%stretch_fac, 1, npx, 1, npy, &
+                                      Atm%flagstruct%target_lon, Atm%flagstruct%target_lat, &
                                       n, grid_global(1:npx,1:npy,1,n), grid_global(1:npx,1:npy,2,n))
              enddo
              endif
@@ -1017,9 +1192,9 @@ contains
              
         endif ! masterproc
 
-       call mpp_broadcast(grid_global, size(grid_global), masterproc)
-       call mpp_broadcast(dx_global, size(dx_global), masterproc)
-       call mpp_broadcast(dy_global, size(dy_global), masterproc)
+       call mpp_broadcast(grid_global, size(grid_global), mpp_root_pe())
+       call mpp_broadcast(dx_global, size(dx_global), mpp_root_pe())
+       call mpp_broadcast(dy_global, size(dy_global), mpp_root_pe())
       
        do n=1,ndims
           do j=js,je+1
@@ -1031,17 +1206,9 @@ contains
 !
 ! SJL: For phys/exchange grid, etc
 !
-#ifndef NO_GRID_G
-       do j=1,npy
-          do i=1,npx
-             grid_g(i,j,1) = grid_global(i,j,1,tile)
-             grid_g(i,j,2) = grid_global(i,j,2,tile)
-          enddo
-       enddo
-#endif
-       call mpp_update_domains( grid, domain, position=CORNER)
-       if (.not. nested) call fill_corners(grid(:,:,1), npx, npy, FILL=XDir, BGRID=.true.)
-       if (.not. nested) call fill_corners(grid(:,:,2), npx, npy, FILL=XDir, BGRID=.true.)
+       call mpp_update_domains( grid, Atm%domain, position=CORNER)
+       if (.not. Atm%neststruct%nested) call fill_corners(grid(:,:,1), npx, npy, FILL=XDir, BGRID=.true.)
+       if (.not. Atm%neststruct%nested) call fill_corners(grid(:,:,2), npx, npy, FILL=XDir, BGRID=.true.)
 
        if( .not. stretched_grid )         &
        call sorted_inta(isd, ied, jsd, jed, cubed_sphere, grid, iinta, jinta)
@@ -1064,9 +1231,9 @@ contains
           enddo
        enddo
 
-       call mpp_update_domains( agrid, domain, position=CENTER, complete=.true. )
-       if (.not. nested) call fill_corners(agrid(:,:,1), npx, npy, XDir, AGRID=.true.)
-       if (.not. nested) call fill_corners(agrid(:,:,2), npx, npy, YDir, AGRID=.true.)
+       call mpp_update_domains( agrid, Atm%domain, position=CENTER, complete=.true. )
+       if (.not. Atm%neststruct%nested) call fill_corners(agrid(:,:,1), npx, npy, XDir, AGRID=.true.)
+       if (.not. Atm%neststruct%nested) call fill_corners(agrid(:,:,2), npx, npy, YDir, AGRID=.true.)
 
        do j=js,je+1
           do i=is,ie
@@ -1079,9 +1246,9 @@ contains
           enddo
        enddo
 
-       call mpp_update_domains( dy, dx, domain, flags=SCALAR_PAIR,      &
+       call mpp_update_domains( dy, dx, Atm%domain, flags=SCALAR_PAIR,      &
                                 gridtype=CGRID_NE_PARAM, complete=.true.)
-       if (cubed_sphere .and. .not. nested) call fill_corners(dx, dy, npx, npy, DGRID=.true.)
+       if (cubed_sphere .and. .not. Atm%neststruct%nested) call fill_corners(dx, dy, npx, npy, DGRID=.true.)
 
        do j=jsd,jed
           do i=isd,ied
@@ -1094,8 +1261,8 @@ contains
              dya(i,j) = great_circle_dist( p2, p1, radius )
           enddo
        enddo
-!      call mpp_update_domains( dxa, dya, domain, flags=SCALAR_PAIR, gridtype=AGRID_PARAM)
-       if (cubed_sphere  .and. .not. nested) call fill_corners(dxa, dya, npx, npy, AGRID=.true.)
+!      call mpp_update_domains( dxa, dya, Atm%domain, flags=SCALAR_PAIR, gridtype=AGRID_PARAM)
+       if (cubed_sphere  .and. .not. Atm%neststruct%nested) call fill_corners(dxa, dya, npx, npy, AGRID=.true.)
 
 
     end if !if nested
@@ -1127,13 +1294,13 @@ contains
        call sorted_intb(isd, ied, jsd, jed, is, ie, js, je, npx, npy, &
                         cubed_sphere, agrid, iintb, jintb)
 
-       call grid_area( npx, npy, ndims, nregions )
+       call grid_area( npx, npy, ndims, nregions, Atm%neststruct%nested, Atm%gridstruct, Atm%domain, Atm%bd )
 !      stretched_grid = .false.
 
 !----------------------------------
 ! Compute area_c, rarea_c, dxc, dyc
 !----------------------------------
-  if ( .not. stretched_grid .and. .not. nested) then
+  if ( .not. stretched_grid .and. .not. Atm%neststruct%nested) then
 ! For symmetrical grids:
        if ( is==1 ) then
           i = 1
@@ -1231,15 +1398,15 @@ contains
    endif
 !-----------------
 
-       call mpp_update_domains( dxc, dyc, domain, flags=SCALAR_PAIR,   &
+       call mpp_update_domains( dxc, dyc, Atm%domain, flags=SCALAR_PAIR,   &
                                 gridtype=CGRID_NE_PARAM, complete=.true.)
-       if (cubed_sphere  .and. .not. nested) call fill_corners(dxc, dyc, npx, npy, CGRID=.true.)
+       if (cubed_sphere  .and. .not. Atm%neststruct%nested) call fill_corners(dxc, dyc, npx, npy, CGRID=.true.)
        
-       call mpp_update_domains( area,   domain, complete=.true. )
+       call mpp_update_domains( area,   Atm%domain, complete=.true. )
 
 
        !Handling outermost ends for area_c
-       if (nested) then
+       if (Atm%neststruct%nested) then
           if (is == 1) then
              do j=jsd,jed
                 area_c(isd,j) = area_c(isd+1,j)
@@ -1266,11 +1433,11 @@ contains
           end if
        end if
 
-       call mpp_update_domains( area_c, domain, position=CORNER, complete=.true.)
+       call mpp_update_domains( area_c, Atm%domain, position=CORNER, complete=.true.)
        
        ! Handle corner Area ghosting
-       if (cubed_sphere .and. .not. nested) then
-          call fill_ghost(area, npx, npy, -1.E35)  ! fill in garbage values
+       if (cubed_sphere .and. .not. Atm%neststruct%nested) then
+          call fill_ghost(area, npx, npy, -1.E35, Atm%bd)  ! fill in garbage values
           call fill_corners(area_c, npx, npy, FILL=XDir, BGRID=.true.)
        endif
        
@@ -1312,7 +1479,7 @@ contains
 202    format(A,A,i4.4,A,i4.4,A)
        
 ! Get and print Grid Statistics
-       if ((gid==masterproc) .and. (cubed_sphere)) then
+       if ((is_master()) .and. (cubed_sphere)) then
           dxAV =0.0
           angAV=0.0
           aspAV=0.0
@@ -1389,12 +1556,74 @@ contains
        endif
  endif!if gridtype > 3
 
+    nullify(agrid)
+    nullify(grid)
+
+    nullify( area)
+    nullify(rarea)
+    nullify( area_c)
+    nullify(rarea_c)
+
+     nullify(sina)
+     nullify(cosa)
+     nullify(dx)  
+     nullify(dy)  
+     nullify(dxc) 
+     nullify(dyc) 
+     nullify(dxa) 
+     nullify(dya) 
+     nullify(rdx) 
+     nullify(rdy) 
+     nullify(rdxc)
+     nullify(rdyc)
+     nullify(rdxa)
+     nullify(rdya)
+     nullify(e1)  
+     nullify(e2)  
+    
+    nullify(iinta)           
+    nullify(jinta)           
+    nullify(iintb)           
+    nullify(jintb)           
+    nullify(npx_g)           
+    nullify(npy_g)           
+    nullify(ntiles_g)        
+    nullify(acapN)           
+    nullify(acapS)           
+    nullify(sw_corner)       
+    nullify(se_corner)       
+    nullify(ne_corner)       
+    nullify(nw_corner)       
+    nullify(latlon)          
+    nullify(cubed_sphere)    
+    nullify(have_south_pole) 
+    nullify(have_north_pole) 
+    nullify(stretched_grid)  
+
+    nullify(tile)
+
+    nullify(domain)
+
   contains
 
-    subroutine setup_cartesian(npx, npy)
+    subroutine setup_cartesian(npx, npy, dx_const, dy_const, deglat, bd)
+      
+      type(fv_grid_bounds_type), intent(IN) :: bd
        integer, intent(in):: npx, npy
+       real, intent(IN) :: dx_const, dy_const, deglat
        real lat_rad, lon_rad, domain_rad
        integer i,j
+       integer :: is,  ie,  js,  je
+       integer :: isd, ied, jsd, jed
+
+       is  = bd%is
+       ie  = bd%ie
+       js  = bd%js
+       je  = bd%je
+       isd = bd%isd
+       ied = bd%ied
+       jsd = bd%jsd
+       jed = bd%jed
 
        domain_rad = pi/16.   ! arbitrary
        lat_rad = deglat * pi/180.
@@ -1445,29 +1674,62 @@ contains
 
     end subroutine setup_cartesian
 
-    subroutine setup_aligned_nest
+    subroutine setup_aligned_nest(Atm)
 
-      use fv_current_grid_mod, only: parent_grid, ioffset, joffset, refinement, &
-           ind_h, ind_update_h, ind_u, ind_v, wt_h, wt_u, wt_v, twowaynest, grid_number
+      type(fv_atmos_type), intent(INOUT), target :: Atm
 
       integer :: isd_p, ied_p, jsd_p, jed_p
       integer :: isg, ieg, jsg, jeg
       integer :: ic, jc, imod, jmod
+      
 
       real, allocatable, dimension(:,:,:) :: p_grid_u, p_grid_v, pa_grid, p_grid, c_grid_u, c_grid_v
       integer ::    p_ind(1-ng:npx  +ng,1-ng:npy  +ng,4) !First two entries along dim 3 are
                                                          !for the corner source indices;
                                                          !the last two are for the remainders
 
-
       integer i,j,k, p
       real sum
       real :: dist1, dist2, dist3, dist4
       real, dimension(2) :: q1, q2
 
-      call mpp_get_data_domain( parent_grid%domain, &
+      integer, pointer :: parent_tile, refinement, ioffset, joffset
+      integer, pointer, dimension(:,:,:) :: ind_h, ind_u, ind_v, ind_update_h
+      real,    pointer, dimension(:,:,:) :: wt_h, wt_u, wt_v
+
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = Atm%bd%is
+      ie  = Atm%bd%ie
+      js  = Atm%bd%js
+      je  = Atm%bd%je
+      isd = Atm%bd%isd
+      ied = Atm%bd%ied
+      jsd = Atm%bd%jsd
+      jed = Atm%bd%jed
+
+
+
+      parent_tile => Atm%neststruct%parent_tile
+      refinement => Atm%neststruct%refinement
+      ioffset => Atm%neststruct%ioffset
+      joffset => Atm%neststruct%joffset
+
+      ind_h => Atm%neststruct%ind_h
+      ind_u => Atm%neststruct%ind_u
+      ind_v => Atm%neststruct%ind_v
+
+      ind_update_h => Atm%neststruct%ind_update_h
+
+      wt_h => Atm%neststruct%wt_h
+      wt_u => Atm%neststruct%wt_u
+      wt_v => Atm%neststruct%wt_v
+
+      call mpp_get_data_domain( Atm%parent_grid%domain, &
            isd_p,  ied_p,  jsd_p,  jed_p  )
-      call mpp_get_global_domain( parent_grid%domain, &
+      call mpp_get_global_domain( Atm%parent_grid%domain, &
            isg, ieg, jsg, jeg)
 
       allocate(p_grid_u(isg:ieg  ,jsg:jeg+1,1:2))
@@ -1476,32 +1738,20 @@ contains
 !      allocate(p_grid( isg:ieg+1, jsg:jeg+1,1:2) )
       allocate(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2) )
       p_grid = 1.e25
-
-      if (concurrent) then
+      p_ind = -1000000000
 
          !Need to RECEIVE grid_global; matching mpp_send of grid_global from parent grid is in fv_control
-         call mpp_recv(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2), size(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2)), parent_grid%pelist(1))
+         call mpp_recv(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2), size(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2)), Atm%parent_grid%pelist(1))
          
-      else
 
-         do j=jsg,jeg+1
-            do i=isg,ieg+1
-               
-               p_grid(i, j, 1) = parent_grid%grid_global(i,j,1,parent_tile)
-               p_grid(i, j, 2) = parent_grid%grid_global(i,j,2,parent_tile)
-               
-            end do
-         end do
-      endif
-
-      if (gid /= masterproc) then
+      if (.not. is_master()) then
          deallocate(p_grid)
       else
          !Check that the grid does not lie outside its parent
          if ( joffset + floor( real(1-ng) / real(refinement) ) < 1 .or. &
               ioffset + floor( real(1-ng) / real(refinement) ) < 1 .or. &
-              joffset + floor( real(npy+ng) / real(refinement) ) > parent_grid%npy .or. &
-              ioffset + floor( real(npx+ng) / real(refinement) ) > parent_grid%npx ) then
+              joffset + floor( real(npy+ng) / real(refinement) ) > Atm%parent_grid%npy .or. &
+              ioffset + floor( real(npx+ng) / real(refinement) ) > Atm%parent_grid%npx ) then
             call mpp_error(FATAL, 'nested grid lies outside its parent')
          end if
 
@@ -1601,24 +1851,24 @@ contains
       end if
 
       call mpp_broadcast(grid_global(1-ng:npx+ng,  1-ng:npy+ng  ,:,1), &
-           ((npx+ng)-(1-ng)+1)*((npy+ng)-(1-ng)+1)*ndims, masterproc )
+           ((npx+ng)-(1-ng)+1)*((npy+ng)-(1-ng)+1)*ndims, mpp_root_pe() )
       call mpp_broadcast(  dx_global(1-ng:npx+ng-1,1-ng:npy+ng  ,1:1), &
-           ((npx+ng)-(1-ng))*((npy+ng)-(1-ng)+1), masterproc )
+           ((npx+ng)-(1-ng))*((npy+ng)-(1-ng)+1), mpp_root_pe() )
       call mpp_broadcast(  dy_global(1-ng:npx+ng,  1-ng:npy+ng-1,1:1), &
-           ((npx+ng)-(1-ng)+1)*( (npy+ng)-(1-ng) ), masterproc )
+           ((npx+ng)-(1-ng)+1)*( (npy+ng)-(1-ng) ), mpp_root_pe() )
       call mpp_broadcast(      p_ind(1-ng:npx+ng,  1-ng:npy+ng  ,1:4),   &
-           ((npx+ng)-(1-ng)+1)*((npy+ng)-(1-ng)+1)*4, masterproc )
+           ((npx+ng)-(1-ng)+1)*((npy+ng)-(1-ng)+1)*4, mpp_root_pe() )
       call mpp_broadcast(    pa_grid( isg:ieg  , jsg:jeg  , :), &
-           ((ieg-isg+1))*(jeg-jsg+1)*ndims, masterproc)
+           ((ieg-isg+1))*(jeg-jsg+1)*ndims, mpp_root_pe())
       call mpp_broadcast(  p_grid_u( isg:ieg  , jsg:jeg+1, :), &
-           (ieg-isg+1)*(jeg-jsg+2)*ndims, masterproc)
+           (ieg-isg+1)*(jeg-jsg+2)*ndims, mpp_root_pe())
       call mpp_broadcast(  p_grid_v( isg:ieg+1, jsg:jeg  , :), &
-           (ieg-isg+2)*(jeg-jsg+1)*ndims, masterproc)
+           (ieg-isg+2)*(jeg-jsg+1)*ndims, mpp_root_pe())
 
       !if two-way nested send p_ind to parent processes so they can set up ind_update_h in fv_control
-      if (twowaynest .and. concurrent .and. gid == masterproc) then
-         do p=1,size(parent_grid%pelist)
-            call mpp_send(p_ind(1-ng:npx+ng, 1-ng:npy+ng, 1:2), size(p_ind(1-ng:npx+ng, 1-ng:npy+ng, 1:2)), parent_grid%pelist(p))
+      if (Atm%neststruct%twowaynest .and. is_master()) then
+         do p=1,size(Atm%parent_grid%pelist)
+            call mpp_send(p_ind(1-ng:npx+ng, 1-ng:npy+ng, 1:2), size(p_ind(1-ng:npx+ng, 1-ng:npy+ng, 1:2)), Atm%parent_grid%pelist(p))
          enddo
       endif
       call mpp_sync_self
@@ -1631,6 +1881,7 @@ contains
          enddo
       enddo
 
+      ind_h = -999999999
       do j=jsd,jed
          do i=isd,ied
             ic = p_ind(i,j,1)
@@ -1640,6 +1891,10 @@ contains
 
 
             if (imod < refinement/2) then
+!!$               !!! DEBUG CODE
+!!$               if (ic /= ic) print*, gid, ' Bad ic ', i, j
+!!$               print*, i, j, ic
+!!$               !!! END DEBUG CODE
                ind_h(i,j,1) = ic - 1
             else
                ind_h(i,j,1) = ic
@@ -1654,8 +1909,6 @@ contains
          end do
       end do
 
-      if (twowaynest .and. .not. concurrent) then
-
          !!NEW IDEA: Instead of coming up with error-prone,
          !! implementation-specific formulas for update indices,
          !! we can just use the interpolation source indices to
@@ -1667,27 +1920,7 @@ contains
 
          !In a concurrent simulation, p_ind was passed off to the parent processes above, so they can create ind_update_h
 
-         ind_update_h = 1000000
-
-         if (parent_grid%tile == parent_tile) then
-            do j=1,npy
-               do i=1,npx
-
-                  ic = p_ind(i,j,1)
-                  jc = p_ind(i,j,2)
-
-                  if (ic < isd_p .or. ic > ied_p .or. jc < jsd_p .or. jc > jed_p) cycle
-
-                  if (i < ind_update_h(ic,jc,1) .and. &
-                       j < ind_update_h(ic,jc,2) ) then
-                     ind_update_h(ic,jc,:) = (/i, j/)
-                  end if
-
-               end do
-            end do
-         end if
-
-      end if !twowaynest .and. .not. concurrent
+      ind_u = -99999999
 
       do j=jsd,jed+1
          do i=isd,ied
@@ -1696,6 +1929,9 @@ contains
             imod = p_ind(i,j,3)
 
             if (imod < refinement/2) then
+!!$               !!! DEBUG CODE
+!!$               print*, i, j, ic
+!!$               !!! END DEBUG CODE
                ind_u(i,j,1) = ic - 1
             else
                ind_u(i,j,1) = ic
@@ -1705,6 +1941,8 @@ contains
 
          end do
       end do
+
+      ind_v = -999999999
 
       do j=jsd,jed
          do i=isd,ied+1
@@ -1736,7 +1974,7 @@ contains
          enddo
       enddo
 
-      call mpp_update_domains( agrid, domain, position=CENTER, complete=.true. )
+      call mpp_update_domains( agrid, Atm%domain, position=CENTER, complete=.true. )
 
 
       do j=jsd,jed+1
@@ -1881,10 +2119,10 @@ contains
       deallocate(p_grid_u)
       deallocate(p_grid_v)
 
-      if (gid == masterproc) then
-         if (nested) then
+      if (is_master()) then
+         if (Atm%neststruct%nested) then
             !Nesting position information
-            write(*,*) 'NESTED GRID ', grid_number
+            write(*,*) 'NESTED GRID ', Atm%grid_number
             ic = p_ind(1,1,1) ; jc = p_ind(1,1,1)
             write(*,'(A, 2I5, 4F10.4)') 'SW CORNER: ', ic, jc, grid_global(1,1,:,1)*90./pi
             ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,1)
@@ -1894,23 +2132,38 @@ contains
             ic = p_ind(npy,1,1) ; jc = p_ind(npy,1,1)
             write(*,'(A, 2I5, 4F10.4)') 'SE CORNER: ', ic, jc, grid_global(npx,1,:,1)*90./pi
          else         
-            write(*,*) 'PARENT GRID ', parent_grid%grid_number, parent_grid%tile
+            write(*,*) 'PARENT GRID ', Atm%parent_grid%grid_number, Atm%parent_grid%tile
             ic = p_ind(1,1,1) ; jc = p_ind(1,1,1)
-            write(*,'(A, 2I5, 4F10.4)') 'SW CORNER: ', ic, jc, parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
+            write(*,'(A, 2I5, 4F10.4)') 'SW CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
             ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,1)
-            write(*,'(A, 2I5, 4F10.4)') 'NW CORNER: ', ic, jc, parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
+            write(*,'(A, 2I5, 4F10.4)') 'NW CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
             ic = p_ind(npy,npy,1) ; jc = p_ind(npy,npy,1)
-            write(*,'(A, 2I5, 4F10.4)') 'NE CORNER: ', ic, jc, parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
+            write(*,'(A, 2I5, 4F10.4)') 'NE CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
             ic = p_ind(npy,1,1) ; jc = p_ind(npy,1,1)
-            write(*,'(A, 2I5, 4F10.4)') 'SE CORNER: ', ic, jc, parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
+            write(*,'(A, 2I5, 4F10.4)') 'SE CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
          endif
       end if
 
     end subroutine setup_aligned_nest
 
-    subroutine setup_latlon()
+    subroutine setup_latlon(deglon_start,deglon_stop, deglat_start, deglat_stop, bd )
+
+      type(fv_grid_bounds_type), intent(IN) :: bd
       real, parameter :: big_number = 1.e30
+      real, intent(IN) :: deglon_start,deglon_stop, deglat_start, deglat_stop
       real :: lon_start, lat_start, area_j
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+
 
       dl = (deglon_stop-deglon_start)*pi/(180.*(npx-1))
       dp = (deglat_stop-deglat_start)*pi/(180.*(npy-1))
@@ -1999,7 +2252,7 @@ contains
             rarea_c(i,j) = 1./area_j
          enddo
       endif
-      call mpp_update_domains( area_c, domain, position=CORNER, complete=.true.)
+      call mpp_update_domains( area_c, Atm%domain, position=CORNER, complete=.true.)
 
       sina(:,:) = 1.
       cosa(:,:) = 0.
@@ -2167,15 +2420,19 @@ contains
 !                    (determined by ndims argument 2=lat/lon, 3=xyz)
 !                    [area is returned in m^2 on Unit sphere]
 !
-      subroutine grid_area(nx, ny, ndims, nregions )
+      subroutine grid_area(nx, ny, ndims, nregions, nested, gridstruct, domain, bd )
 
-         integer, intent(IN) :: nx, ny, ndims, nregions
+        type(fv_grid_bounds_type), intent(IN) :: bd
+        integer, intent(IN) :: nx, ny, ndims, nregions
+        logical, intent(IN) :: nested
+        type(fv_grid_type), intent(IN), target :: gridstruct
+        type(domain2d), intent(INOUT) :: domain
 
          real  :: p_lL(ndims) ! lower Left
          real  :: p_uL(ndims) ! upper Left
          real  :: p_lR(ndims) ! lower Right
          real  :: p_uR(ndims) ! upper Right
-         real  :: a1, d1, d2, mydx, mydy
+         real  :: a1, d1, d2, mydx, mydy, globalarea
 
          real  :: p1(ndims), p2(ndims), p3(ndims), pi1(ndims), pi2(ndims)
 
@@ -2186,6 +2443,32 @@ contains
 
          real, allocatable :: p_R8(:,:,:) 
 
+         real,    pointer, dimension(:,:,:) :: grid, agrid
+         integer, pointer, dimension(:,:,:) :: iinta, jinta, iintb, jintb
+         real,    pointer, dimension(:,:)   :: area, area_c
+         
+         integer :: is,  ie,  js,  je
+         integer :: isd, ied, jsd, jed
+
+         is  = bd%is
+         ie  = bd%ie
+         js  = bd%js
+         je  = bd%je
+         isd = bd%isd
+         ied = bd%ied
+         jsd = bd%jsd
+         jed = bd%jed
+
+         grid  => gridstruct%grid
+         agrid => gridstruct%agrid
+         iinta => gridstruct%iinta
+         jinta => gridstruct%jinta
+         iintb => gridstruct%iintb
+         jintb => gridstruct%jintb
+
+         area   => gridstruct%area
+         area_c => gridstruct%area_c
+
          if (nested) nh = ng
 
          maxarea = -1.e25
@@ -2195,7 +2478,7 @@ contains
          do j=js-nh,je+nh
             do i=is-nh,ie+nh
                do n=1,ndims
-               if ( stretched_grid .or. nested ) then
+               if ( gridstruct%stretched_grid .or. nested ) then
                   p_lL(n) = grid(i  ,j  ,n)
                   p_uL(n) = grid(i  ,j+1,n)
                   p_lR(n) = grid(i+1,j  ,n)
@@ -2223,7 +2506,7 @@ contains
 !!$            enddo
 !!$         enddo
 !!$         call mp_gather(p_R8, is,ie, js,je, nx-1, ny-1, ntiles_g)
-!!$         if (gid == masterproc) then
+!!$         if (is_master()) then
 !!$            globalarea = 0.0
 !!$            do n=1,ntiles_g
 !!$               do j=1,ny-1
@@ -2234,7 +2517,7 @@ contains
 !!$            enddo
 !!$         endif
 !!$
-!!$         call mpp_broadcast(globalarea, masterproc)
+!!$         call mpp_broadcast(globalarea, mpp_root_pe())
 !!$
 !!$         deallocate( p_R8 )
 !!$
@@ -2247,8 +2530,8 @@ contains
          maxarea = mpp_global_max(domain, area)
          minarea = mpp_global_min(domain, area)
 
-        if (gid == masterproc) write(*,209) 'MAX    AREA (m*m):', maxarea,            '          MIN AREA (m*m):', minarea
-        if (gid == masterproc) write(*,209) 'GLOBAL AREA (m*m):', globalarea, ' IDEAL GLOBAL AREA (m*m):', 4.0*pi*radius**2
+        if (is_master()) write(*,209) 'MAX    AREA (m*m):', maxarea,            '          MIN AREA (m*m):', minarea
+        if (is_master()) write(*,209) 'GLOBAL AREA (m*m):', globalarea, ' IDEAL GLOBAL AREA (m*m):', 4.0*pi*radius**2
  209  format(A,e21.14,A,e21.14)
 
         if (nested) then
@@ -2259,7 +2542,7 @@ contains
          do j=js-nh,je+nh+1
             do i=is-nh,ie+nh+1
                do n=1,ndims
-               if ( stretched_grid .or. nested ) then
+               if ( gridstruct%stretched_grid .or. nested ) then
                   p_lL(n) = agrid(i-1,j-1,n)
                   p_lR(n) = agrid(i  ,j-1,n)
                   p_uL(n) = agrid(i-1,j  ,n)
@@ -2277,13 +2560,13 @@ contains
          enddo
 
 ! Corners: assuming triangular cells
-         if (cubed_sphere .and. .not. nested) then
+         if (gridstruct%cubed_sphere .and. .not. nested) then
 ! SW:
             i=1
             j=1
             if ( (is==1) .and. (js==1) ) then
               do n=1,ndims
-               if ( stretched_grid ) then
+               if ( gridstruct%stretched_grid ) then
                     p1(n) = agrid(i-1,j  ,n)
                     p2(n) = agrid(i  ,j  ,n)
                     p3(n) = agrid(i  ,j-1,n)
@@ -2300,7 +2583,7 @@ contains
             j=1
             if ( (ie+1==nx) .and. (js==1) ) then
               do n=1,ndims
-               if ( stretched_grid ) then
+               if ( gridstruct%stretched_grid ) then
                p1(n) = agrid(i  ,j  ,n)
                p2(n) = agrid(i-1,j  ,n)
                p3(n) = agrid(i-1,j-1,n)
@@ -2317,7 +2600,7 @@ contains
             j=ny
             if ( (ie+1==nx) .and. (je+1==ny) ) then
               do n=1,ndims
-               if ( stretched_grid ) then
+               if ( gridstruct%stretched_grid ) then
                p1(n) = agrid(i-1,j  ,n)
                p2(n) = agrid(i-1,j-1,n)
                p3(n) = agrid(i  ,j-1,n)
@@ -2334,7 +2617,7 @@ contains
             j=ny
             if ( (is==1) .and. (je+1==ny) ) then
               do n=1,ndims
-               if ( stretched_grid ) then
+               if ( gridstruct%stretched_grid ) then
                p1(n) = agrid(i  ,j  ,n)
                p2(n) = agrid(i  ,j-1,n)
                p3(n) = agrid(i-1,j-1,n)
@@ -2384,493 +2667,6 @@ contains
  
 
  
-      subroutine mp_update_dwinds_2d(u, v, npx, npy)
-        use mpp_parameter_mod, only: DGRID_NE
-         real  , intent(INOUT)   :: u(isd:ied  ,jsd:jed+1) ! D-grid u-wind field
-         real  , intent(INOUT)   :: v(isd:ied+1,jsd:jed  ) ! D-grid v-wind field
-         integer,      intent(IN) :: npx, npy
-
-         call mpp_update_domains( u, v, domain, gridtype=DGRID_NE, complete=.true.)
-!        if (.not. nested) call fill_corners(u , v , npx, npy, VECTOR=.true., DGRID=.true.)
-
-      end subroutine mp_update_dwinds_2d
-!
-! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
-!-------------------------------------------------------------------------------
-
-!-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-      subroutine mp_update_dwinds_3d(u, v, npx, npy, npz)
-        use mpp_parameter_mod, only: DGRID_NE
-         real  , intent(INOUT)   :: u(isd:ied  ,jsd:jed+1,npz) ! D-grid u-wind field
-         real  , intent(INOUT)   :: v(isd:ied+1,jsd:jed  ,npz) ! D-grid v-wind field
-         integer,      intent(IN) :: npx, npy, npz
-         integer k
-
-      call mpp_update_domains( u, v, domain, gridtype=DGRID_NE, complete=.true.)
-!     do k=1,npz
-!        if (.not. nested) call fill_corners(u(isd:,jsd:,k) , v(isd:,jsd:,k) , npx, npy, VECTOR=.true., DGRID=.true.)
-!     enddo
-
-      end subroutine mp_update_dwinds_3d
-
-
-
-      subroutine atob_s(qin, qout, npx, npy, altInterp)
-
-!     atob_s :: interpolate scalar from the A-Grid to the B-grid
-!
-         integer,      intent(IN) :: npx, npy
-         real  , intent(IN)    ::  qin(isd:ied  ,jsd:jed  )    ! A-grid field
-         real  , intent(OUT)   :: qout(isd:ied+1,jsd:jed+1)    ! Output  B-grid field
-         integer, OPTIONAL, intent(IN) :: altInterp 
-
-         integer :: i,j,n
-
-         real :: tmp1j(jsd:jed+1)
-         real :: tmp2j(jsd:jed+1)
-         real :: tmp3j(jsd:jed+1)
-         real :: tmp1i(isd:ied+1)
-         real :: tmp2i(isd:ied+1)
-         real :: tmp3i(isd:ied+1)
-         real :: tmpq(isd:ied  ,jsd:jed  )
-         real :: tmpq1(isd:ied+1,jsd:jed+1)
-         real :: tmpq2(isd:ied+1,jsd:jed+1)
-
-         if (present(altInterp)) then
-
-         tmpq(:,:) = qin(:,:)
-
-         if (.not. nested) call fill_corners(tmpq  , npx, npy, FILL=XDir, AGRID=.true.)
-! ATOC
-         do j=jsd,jed
-            call interp_left_edge_1d(tmpq1(:,j), tmpq(:,j), dxa(:,j), isd, ied, altInterp) 
-         enddo
-
-         if (.not. nested) call fill_corners(tmpq  , npx, npy, FILL=YDir, AGRID=.true.)
-! ATOD
-         do i=isd,ied
-            tmp1j(jsd:jed) = 0.0 
-            tmp2j(jsd:jed) = tmpq(i,jsd:jed)
-            tmp3j(jsd:jed) = dya(i,jsd:jed)
-            call interp_left_edge_1d(tmp1j, tmp2j, tmp3j, jsd, jed, altInterp)
-            tmpq2(i,jsd:jed) = tmp1j(jsd:jed)
-         enddo
-
-! CTOB
-         do i=isd,ied
-            tmp1j(:) = tmpq1(i,:)
-            tmp2j(:) = tmpq1(i,:)
-            tmp3j(:) = 1.0  ! Uniform Weighting missing first value so will not reproduce
-            call interp_left_edge_1d(tmp1j, tmp2j, tmp3j, jsd, jed+1, altInterp) 
-            tmpq1(i,:) = tmp1j(:)
-         enddo
-
-! DTOB
-         do j=jsd,jed
-            tmp1i(:) = tmpq2(:,j)
-            tmp2i(:) = tmpq2(:,j)
-            tmp3i(:) = 1.0  ! Uniform Weighting missing first value so will not reproduce
-            call interp_left_edge_1d(tmp1i, tmp2i, tmp3i, isd, ied+1, altInterp)
-            tmpq2(:,j) = tmp1i(:)
-         enddo
-
-! Average 
-         do j=jsd,jed+1
-            do i=isd,ied+1
-               qout(i,j) = 0.5 * (tmpq1(i,j) + tmpq2(i,j))
-            enddo
-         enddo
-
-! Fix Corners
-         if (cubed_sphere  .and. .not. nested) then
-            i=1
-            j=1
-            if ( (is==i) .and. (js==j) ) then
-               qout(i,j) = (1./3.) * (qin(i,j) + qin(i-1,j) + qin(i,j-1))
-            endif
-
-            i=npx
-            j=1
-            if ( (ie+1==i) .and. (js==j) ) then
-               qout(i,j) = (1./3.) * (qin(i-1,j) + qin(i-1,j-1) + qin(i,j))
-            endif
-
-            i=1
-            j=npy
-            if ( (is==i) .and. (je+1==j) ) then
-               qout(i,j) = (1./3.) * (qin(i,j-1) + qin(i-1,j-1) + qin(i,j))
-            endif
-
-            i=npx
-            j=npy
-            if ( (ie+1==i) .and. (je+1==j) ) then
-               qout(i,j) = (1./3.) * (qin(i-1,j-1) + qin(i,j-1) + qin(i-1,j))
-            endif
-        endif
-
-        else ! altInterp
-
-            do j=js,je+1
-               do i=is,ie+1
-                  qout(i,j) = 0.25 * (qin(i-1,j) + qin(i-1,j-1) + &
-                                      qin(i  ,j) + qin(i  ,j-1))
-               enddo
-            enddo
-
-            if (.not. nested) then
-            i=1
-            j=1
-            if ( (is==i) .and. (js==j) ) then
-               qout(i,j) = (1./3.) * (qin(i,j) + qin(i-1,j) + qin(i,j-1))
-            endif
-
-            i=npx
-            j=1
-            if ( (ie+1==i) .and. (js==j) ) then
-               qout(i,j) = (1./3.) * (qin(i-1,j) + qin(i-1,j-1) + qin(i,j))
-            endif
-
-            i=1
-            j=npy
-            if ( (is==i) .and. (je+1==j) ) then
-               qout(i,j) = (1./3.) * (qin(i,j-1) + qin(i-1,j-1) + qin(i,j))
-            endif
-
-            i=npx
-            j=npy
-            if ( (ie+1==i) .and. (je+1==j) ) then
-               qout(i,j) = (1./3.) * (qin(i-1,j-1) + qin(i,j-1) + qin(i-1,j))
-            endif
-            endif !not nested
-
-        endif ! altInterp
-
-      end subroutine atob_s
-!
-! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
-!-------------------------------------------------------------------------------
-
-!-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     atod :: interpolate from the A-Grid to the D-grid
-!
-      subroutine atod(uin, vin, uout, vout, npx, npy, ng)
-
-
-         integer,      intent(IN) :: npx, npy, ng
-         real  , intent(IN)    ::  uin(isd:ied  ,jsd:jed  ) ! A-grid u-wind field
-         real  , intent(IN)    ::  vin(isd:ied  ,jsd:jed  ) ! A-grid v-wind field
-         real  , intent(OUT)   :: uout(isd:ied  ,jsd:jed+1) ! D-grid u-wind field
-         real  , intent(OUT)   :: vout(isd:ied+1,jsd:jed  ) ! D-grid v-wind field
-
-         integer :: i,j
-         real :: tmp1i(isd:ied+1)
-         real :: tmp2i(isd:ied)
-         real :: tmp3i(isd:ied)
-         real :: tmp1j(jsd:jed+1)
-         real :: tmp2j(jsd:jed)
-         real :: tmp3j(jsd:jed)
-
-         do j=jsd+1,jed
-            tmp1i(:) = 0.0
-            tmp2i(:) = vin(:,j)*dxa(:,j)
-            tmp3i(:) = dxa(:,j)
-            call interp_left_edge_1d(tmp1i, tmp2i, tmp3i, isd, ied, interpOrder)
-            vout(:,j) = tmp1i(:)/dxc(:,j)
-         enddo
-         do i=isd+1,ied
-            tmp1j(:) = 0.0
-            tmp2j(:) = uin(i,:)*dya(i,:)
-            tmp3j(:) = dya(i,:)
-            call interp_left_edge_1d(tmp1j, tmp2j, tmp3j, jsd, jed, interpOrder)
-            uout(i,:) = tmp1j(:)/dyc(i,:)
-         enddo
-         call mp_update_dwinds(uout, vout, npx, npy)
-         if (.not. nested) call fill_corners(uout, vout, npx, npy, VECTOR=.true., DGRID=.true.)
-      end subroutine atod
-!
-! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
-!-------------------------------------------------------------------------------
-
-!-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     dtoa :: interpolate from the D-Grid to the A-grid
-!
-      subroutine dtoa(uin, vin, uout, vout, npx, npy, ng)
-
-         integer,      intent(IN) :: npx, npy, ng
-         real  , intent(IN)    ::  uin(isd:ied  ,jsd:jed+1)    ! D-grid u-wind field
-         real  , intent(IN)    ::  vin(isd:ied+1,jsd:jed  )    ! D-grid v-wind field
-         real  , intent(OUT)   :: uout(isd:ied  ,jsd:jed  )    ! A-grid u-wind field
-         real  , intent(OUT)   :: vout(isd:ied  ,jsd:jed  )    ! A-grid v-wind field
-
-         integer :: i,j,n
-
-         real :: tmp1i(isd:ied+1)
-         real :: tmp2i(isd:ied+1)
-         real :: tmp3i(isd:ied+1)
-         real :: tmp1j(jsd:jed+1)
-         real :: tmp2j(jsd:jed+1)
-         real :: tmp3j(jsd:jed+1)
-
-#ifdef VORT_ON
-! circulation (therefore, vort) conserving:
-         do j=jsd,jed
-            do i=isd,ied
-                uout(i,j) = 0.5*(uin(i,j)*dx(i,j)+uin(i,j+1)*dx(i,j+1))/dxa(i,j)
-                vout(i,j) = 0.5*(vin(i,j)*dy(i,j)+vin(i+1,j)*dy(i+1,j))/dya(i,j)
-            enddo
-         enddo
-#else
-         do i=isd,ied
-            tmp1j(:) = 0.0
-            tmp2j(:) = uin(i,:)*dyc(i,:)
-            tmp3j(:) = dyc(i,:)
-            call interp_left_edge_1d(tmp1j, tmp2j, tmp3j, jsd, jed+1, interpOrder) 
-            uout(i,jsd:jed) = tmp1j(jsd+1:jed+1)/dya(i,jsd:jed)
-         enddo
-         do j=jsd,jed
-            tmp1i(:) = 0.0
-            tmp2i(:) = vin(:,j)*dxc(:,j)
-            tmp3i(:) = dxc(:,j)
-            call interp_left_edge_1d(tmp1i, tmp2i, tmp3i, isd, ied+1, interpOrder) 
-            vout(isd:ied,j) = tmp1i(isd+1:ied+1)/dxa(isd:ied,j)
-         enddo
-#endif
-
-      end subroutine dtoa
-!
-! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
-!-------------------------------------------------------------------------------
-
-!-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     atoc :: interpolate from the A-Grid to the C-grid
-!
-      subroutine atoc(uin, vin, uout, vout, npx, npy, ng, noComm)
-
-
-         integer,      intent(IN) :: npx, npy, ng
-         real  , intent(IN)    ::  uin(isd:ied  ,jsd:jed  ) ! A-grid u-wind field
-         real  , intent(IN)    ::  vin(isd:ied  ,jsd:jed  ) ! A-grid v-wind field
-         real  , intent(OUT)   :: uout(isd:ied+1,jsd:jed  ) ! C-grid u-wind field
-         real  , intent(OUT)   :: vout(isd:ied  ,jsd:jed+1) ! C-grid v-wind field
-         logical, OPTIONAL, intent(IN)   :: noComm
-
-         real :: ang1
-         integer :: i,j,n
-
-         real :: tmp1i(isd:ied+1)
-         real :: tmp2i(isd:ied)
-         real :: tmp3i(isd:ied)
-         real :: tmp1j(jsd:jed+1)
-         real :: tmp2j(jsd:jed)
-         real :: tmp3j(jsd:jed)
-
-#if !defined(ALT_INTERP)
-#ifdef VORT_ON
-! Circulation conserving
-         do j=jsd,jed
-            do i=isd+1,ied
-               uout(i,j) = ( uin(i,j)*dxa(i,j) + uin(i-1,j)*dxa(i-1,j) )    &
-                           /        ( dxa(i,j) +            dxa(i-1,j) )
-            enddo
-         enddo
-         do j=jsd+1,jed
-            do i=isd,ied
-               vout(i,j) = ( vin(i,j)*dya(i,j) + vin(i,j-1)*dya(i,j-1) )    &
-                           /        ( dya(i,j) +            dya(i,j-1) )
-            enddo
-         enddo
-#else
-         do j=jsd,jed
-            call interp_left_edge_1d(uout(:,j), uin(:,j), dxa(:,j), isd, ied, interpOrder)
-         enddo
-         do i=isd,ied
-!!$            tmp1j(:) = vout(i,:)
-            tmp2j(:) = vin(i,:)
-            tmp3j(:) = dya(i,:)
-            call interp_left_edge_1d(tmp1j, tmp2j, tmp3j, jsd, jed, interpOrder)
-            vout(i,:) = tmp1j(:)
-         enddo 
-#endif
-#else
-
-         do j=jsd,jed
-!!$            tmp1i(:) = uout(:,j)
-            tmp2i(:) = uin(:,j)*dya(:,j)
-            tmp3i(:) = dxa(:,j)
-            call interp_left_edge_1d(tmp1i, tmp2i, tmp3i, isd, ied, interpOrder)
-            uout(:,j) = tmp1i(:)/dy(:,j)
-         enddo
-         do i=isd,ied
-!!$            tmp1j(:) = vout(i,:)
-            tmp2j(:) = vin(i,:)*dxa(i,:)
-            tmp3j(:) = dya(i,:)
-            call interp_left_edge_1d(tmp1j, tmp2j, tmp3j, jsd, jed, interpOrder)
-            vout(i,:) = tmp1j(:)/dx(i,:)
-         enddo
-
-       if (cubed_sphere .and. .not. nested) then
-         csFac = COS(30.0*PI/180.0)
-      ! apply Corner scale factor for interp on Cubed-Sphere
-         if ( (is==1) .and. (js==1) ) then
-            i=1
-            j=1
-            uout(i,j)=uout(i,j)*csFac
-            uout(i,j-1)=uout(i,j-1)*csFac
-            vout(i,j)=vout(i,j)*csFac
-            vout(i-1,j)=vout(i-1,j)*csFac
-         endif
-         if ( (is==1) .and. (je==npy-1) ) then
-            i=1
-            j=npy-1
-            uout(i,j)=uout(i,j)*csFac
-            uout(i,j+1)=uout(i,j+1)*csFac
-            vout(i,j+1)=vout(i,j+1)*csFac
-            vout(i-1,j+1)=vout(i-1,j+1)*csFac
-         endif
-         if ( (ie==npx-1) .and. (je==npy-1) ) then
-            i=npx-1
-            j=npy-1
-            uout(i+1,j)=uout(i+1,j)*csFac
-            uout(i+1,j+1)=uout(i+1,j+1)*csFac
-            vout(i,j+1)=vout(i,j+1)*csFac
-            vout(i+1,j+1)=vout(i+1,j+1)*csFac
-         endif
-         if ( (ie==npx-1) .and. (js==1) ) then
-            i=npx-1
-            j=1
-            uout(i+1,j)=uout(i+1,j)*csFac
-            uout(i+1,j-1)=uout(i+1,j-1)*csFac
-            vout(i,j)=vout(i,j)*csFac
-            vout(i+1,j)=vout(i+1,j)*csFac
-         endif
-       endif
-
-#endif
-
-         if (present(noComm)) then
-            if (.not. noComm) call mpp_update_domains( uout,vout, domain, gridtype=CGRID_NE_PARAM, complete=.true.)
-         else
-            call mpp_update_domains( uout,vout, domain, gridtype=CGRID_NE_PARAM, complete=.true.)
-         endif
-         if (.not. nested) call fill_corners(uout, vout, npx, npy, VECTOR=.true., CGRID=.true.)
-
-      end subroutine atoc
-!
-! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
-!-------------------------------------------------------------------------------
-
-!-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     ctoa :: interpolate from the C-Grid to the A-grid
-!
-      subroutine ctoa(uin, vin, uout, vout, npx, npy, ng)
-
-
-         integer,      intent(IN) :: npx, npy, ng 
-         real  , intent(IN)    ::  uin(isd:ied+1,jsd:jed  )    ! C-grid u-wind field
-         real  , intent(IN)    ::  vin(isd:ied  ,jsd:jed+1)    ! C-grid v-wind field
-         real  , intent(OUT)   :: uout(isd:ied  ,jsd:jed  )    ! A-grid u-wind field
-         real  , intent(OUT)   :: vout(isd:ied  ,jsd:jed  )    ! A-grid v-wind field
-
-         integer :: i,j
-
-         real :: tmp1i(isd:ied+1)
-         real :: tmp2i(isd:ied+1)
-         real :: tmp3i(isd:ied+1)
-         real :: tmp1j(jsd:jed+1)
-         real :: tmp2j(jsd:jed+1)
-         real :: tmp3j(jsd:jed+1)
-
-        ! do j=jsd,jed
-        !    do i=isd,ied
-        !       uout(i,j) = 0.5 * (uin(i,j)*dy(i,j) + uin(i+1,j)*dy(i+1,j))/dya(i,j)
-        !    enddo
-        !  enddo
-        ! do j=jsd,jed
-        !    do i=isd,ied
-        !       vout(i,j) = 0.5 * (vin(i,j)*dx(i,j) + vin(i,j+1)*dx(i,j+1))/dxa(i,j)
-        !    enddo
-        ! enddo
-         do i=isd,ied
-            tmp1j(:) = 0.0
-            tmp2j(:) = vin(i,:)*dx(i,:)
-            tmp3j(:) = dyc(i,:)
-            call interp_left_edge_1d(tmp1j, tmp2j, tmp3j, jsd, jed+1, interpOrder)
-            vout(i,jsd:jed) = tmp1j(jsd+1:jed+1)/dxa(i,jsd:jed)
-         enddo
-         do j=jsd,jed
-            tmp1i(:) = 0.0
-            tmp2i(:) = uin(:,j)*dy(:,j)
-            tmp3i(:) = dxc(:,j)
-            call interp_left_edge_1d(tmp1i, tmp2i, tmp3i, isd, ied+1, interpOrder)
-            uout(isd:ied,j) = tmp1i(isd+1:ied+1)/dya(isd:ied,j)
-         enddo
-
-      end subroutine ctoa
-!
-! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
-!-------------------------------------------------------------------------------
-
-!-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     rotate_winds :: rotate winds from the sphere-to-cube || cube-to-sphere
-!
-      subroutine rotate_winds(myU, myV, p1, p2, p3, p4, t1, ndims, dir)
-
-
-         integer,      intent(IN) :: ndims
-         real  , intent(INOUT) :: myU    ! u-wind field
-         real  , intent(INOUT) :: myV    ! v-wind field
-         real  , intent(IN)    :: p1(ndims)    !             p4     
-         real  , intent(IN)    :: p2(ndims)    !                    
-         real  , intent(IN)    :: p3(ndims)    !        p1   t1   p3
-         real  , intent(IN)    :: p4(ndims)    !                    
-         real  , intent(IN)    :: t1(ndims)    !             p2     
-         integer,   intent(IN)    :: dir   ! Direction ; 1=>sphere-to-cube  2=> cube-to-sphere
-
-         real :: ee1(3), ee2(3), ee3(3), elon(3), elat(3)
-
-         real :: g11, g12, g21, g22
-
-         real :: newu, newv
-
-         call get_unit_vector(p3, t1, p1, ee1)
-         call get_unit_vector(p4, t1, p2, ee2)
-         elon(1) = -SIN(t1(1) - pi)
-         elon(2) =  COS(t1(1) - pi)
-         elon(3) = 0.0
-         elat(1) = -SIN(t1(2))*COS(t1(1) - pi)
-         elat(2) = -SIN(t1(2))*SIN(t1(1) - pi)
-         elat(3) =  COS(t1(2))
-
-         g11 = inner_prod(ee1,elon)
-         g12 = inner_prod(ee1,elat)
-         g21 = inner_prod(ee2,elon)
-         g22 = inner_prod(ee2,elat)
-
-         if (dir == 1) then    ! Sphere to Cube Rotation
-            newu = myU*g11 + myV*g12
-            newv = myU*g21 + myV*g22
-         else
-            newu = ( myU*g22 - myV*g12)/(g11*g22 - g21*g12) 
-            newv = (-myU*g21 + myV*g11)/(g11*g22 - g21*g12)
-         endif
-         myU = newu
-         myV = newv
-
-      end subroutine rotate_winds
-
-
 
 
       subroutine mirror_grid(grid_global,ng,npx,npy,ndims,nregions)
@@ -3006,608 +2802,82 @@ contains
 
   end subroutine mirror_grid
 
-
-
-
- subroutine d2a2c(im,jm,km, ifirst,ilast, jfirst,jlast, ng, &
-                  u,v, ua,va, uc,vc)
-
-! Input
-  integer, intent(IN) :: im,jm,km
-  integer, intent(IN) :: ifirst,ilast
-  integer, intent(IN) :: jfirst,jlast
-  integer, intent(IN) :: ng
-  !real   , intent(in) :: sinlon(im,jm)
-  !real   , intent(in) :: coslon(im,jm)
-  !real   , intent(in) :: sinl5(im,jm)
-  !real   , intent(in) :: cosl5(im,jm)
-
-! Output
- ! real   , intent(inout) ::  u(ifirst-ng:ilast+ng,jfirst-ng:jlast+1+ng)
- ! real   , intent(inout) ::  v(ifirst-ng:ilast+1+ng,jfirst-ng:jlast+ng)
- ! real   , intent(inout) :: ua(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)
- ! real   , intent(inout) :: va(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)
- ! real   , intent(inout) :: uc(ifirst-ng:ilast+1+ng,jfirst-ng:jlast+ng)
- ! real   , intent(inout) :: vc(ifirst-ng:ilast+ng,jfirst-ng:jlast+1+ng)
-
-  real   , intent(inout) ::  u(isd:ied,jsd:jed+1) !ifirst-ng:ilast+ng,jfirst-ng:jlast+1+ng)
-  real   , intent(inout) ::  v(isd:ied+1,jsd:jed) !ifirst-ng:ilast+1+ng,jfirst-ng:jlast+ng)
-  real   , intent(inout) :: ua(isd:ied,jsd:jed)   !ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)
-  real   , intent(inout) :: va(isd:ied,jsd:jed)   !(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)
-  real   , intent(inout) :: uc(isd:ied+1,jsd:jed) !(ifirst-ng:ilast+1+ng,jfirst-ng:jlast+ng)
-  real   , intent(inout) :: vc(isd:ied,jsd:jed+1) !(ifirst-ng:ilast+ng,jfirst-ng:jlast+1+ng)
-
-!--------------------------------------------------------------
-! Local 
-
-  real   :: sinlon(im,jm)
-  real   :: coslon(im,jm)
-  real   :: sinl5(im,jm)
-  real   :: cosl5(im,jm)
-
-    real :: tmp1(jsd:jed+1)
-    real :: tmp2(jsd:jed)
-    real :: tmp3(jsd:jed)
-
-    real  mag,mag1,mag2, ang,ang1,ang2 
-    real  us, vs, un, vn
-    integer i, j, k, im2
-    integer js1g1
-    integer js2g1
-    integer js2g2
-    integer js2gc
-    integer js2gc1
-    integer js2gcp1
-    integer js2gd
-    integer jn2gc
-    integer jn1g1
-    integer jn1g2
-    integer jn2gd
-    integer jn2gsp1
-
- if (cubed_sphere) then
-
-    call dtoa( u, v,ua,va,im,jm,ng)
-    if (.not. nested) call fill_corners(ua, va, im, jm, VECTOR=.true., AGRID=.true.)
-    call atoc(ua,va,uc,vc,im,jm,ng, noComm=.true.)
-    if (.not. nested) call fill_corners(uc, vc, im, jm, VECTOR=.true., CGRID=.true.)
-
- else  ! Lat-Lon
-
-    im2 = im/2
-
-! Set loop limits
-
-    js1g1   = jfirst-1
-    js2g1   = jfirst-1
-    js2g2   = jfirst-2
-    js2gc   = jfirst-ng
-    js2gcp1 = jfirst-ng-1
-    js2gd   = jfirst-ng
-    jn1g1   = jlast+1
-    jn1g2   = jlast+2
-    jn2gc   = jlast+ng
-    jn2gd   = jlast+ng-1
-    jn2gsp1 = jlast+ng-1
-
-    if (have_south_pole) then
-       js1g1   = 1
-       js2g1   = 2
-       js2g2   = 2
-       js2gc   = 2
-       js2gcp1 = 2   ! NG-1 latitudes on S (starting at 2)
-       js2gd   = 2
-    endif
-    if (have_north_pole) then
-       jn1g1   = jm
-       jn1g2   = jm
-       jn2gc   = jm-1  ! NG latitudes on N (ending at jm-1)
-       jn2gd   = jm-1
-       jn2gsp1 = jm-1
-    endif
-!
-! Treat the special case of ng = 1
-!
-    if ( ng == 1 .AND. ng > 1 ) THEN
-        js2gc1 = js2gc
-    else
-        js2gc1 = jfirst-ng+1
-        if (have_south_pole) js2gc1 = 2  ! NG-1 latitudes on S (starting at 2)
-    endif
-
-  do k=1,km
-
-       if ((have_south_pole) .or. (have_north_pole)) then
-! Get D-grid V-wind at the poles.
-          call vpol5(u(1:im,:), v(1:im,:), im, jm,            &
-                     coslon, sinlon, cosl5, sinl5, ng, ng, jfirst, jlast )
-          call mp_ghost_ew(im,jm,1,1, ifirst,ilast, jfirst,jlast, 1,1, ng,ng, ng,ng, v(:,:))
-       endif
-
-       call dtoa(u, v, ua, va, im, jm, ng)
-       if (.not. nested) call fill_corners(ua, va, im, jm, VECTOR=.true., AGRID=.true.)
-
-       if ( have_south_pole ) then
-! Projection at SP
-          us = 0.
-          vs = 0.
-          do i=1,im2
-            us = us + (ua(i+im2,2)-ua(i,2))*sinlon(i,2)         &
-                    + (va(i,2)-va(i+im2,2))*coslon(i,2)
-            vs = vs + (ua(i+im2,2)-ua(i,2))*coslon(i,2)         &
-                    + (va(i+im2,2)-va(i,2))*sinlon(i,2)
-          enddo
-          us = us/im
-          vs = vs/im
-! SP
-          do i=1,im2
-            ua(i,1)  = -us*sinlon(i,1) - vs*coslon(i,1)
-            va(i,1)  =  us*coslon(i,1) - vs*sinlon(i,1)
-            ua(i+im2,1)  = -ua(i,1)
-            va(i+im2,1)  = -va(i,1)
-          enddo
-          ua(0   ,1) = ua(im,1)
-          ua(im+1,1) = ua(1 ,1)
-          va(im+1,1) = va(1 ,1)
-        endif
-
-        if ( have_north_pole ) then
-! Projection at NP
-          un = 0.
-          vn = 0.
-          j = jm-1
-          do i=1,im2
-            un = un + (ua(i+im2,j)-ua(i,j))*sinlon(i,j)        &
-                    + (va(i+im2,j)-va(i,j))*coslon(i,j)
-            vn = vn + (ua(i,j)-ua(i+im2,j))*coslon(i,j)        &
-                    + (va(i+im2,j)-va(i,j))*sinlon(i,j)
-          enddo
-          un = un/im
-          vn = vn/im
-! NP
-          do i=1,im2
-            ua(i,jm) = -un*sinlon(i,jm) + vn*coslon(i,jm)
-            va(i,jm) = -un*coslon(i,jm) - vn*sinlon(i,jm)
-            ua(i+im2,jm) = -ua(i,jm)
-            va(i+im2,jm) = -va(i,jm)
-          enddo
-          ua(0   ,jm) = ua(im,jm)
-          ua(im+1,jm) = ua(1 ,jm)
-          va(im+1,jm) = va(1 ,jm)
-        endif
-
-        if (latlon) call mp_ghost_ew(im,jm,1,1, ifirst,ilast, jfirst,jlast, 1,1, ng,ng, ng,ng, ua(:,:))
-        if (latlon) call mp_ghost_ew(im,jm,1,1, ifirst,ilast, jfirst,jlast, 1,1, ng,ng, ng,ng, va(:,:))
-
-! A -> C
-        call atoc(ua, va, uc, vc, im, jm, ng, noComm=.true.)
-
-     enddo ! km loop
-
-     if (.not. nested) call fill_corners(uc, vc, im, jm, VECTOR=.true., CGRID=.true.)
-   endif
-
-
- end subroutine d2a2c
-
 !----------------------------------------------------------------------- 
-!----------------------------------------------------------------------- 
-!BOP
-!
- subroutine vpol5(u, v, im, jm, coslon, sinlon, cosl5, sinl5,    &
-                  ng_d,  ng_s,  jfirst, jlast)
 
-! !INPUT PARAMETERS:
-      integer im                       ! Total longitudes
-      integer jm                       ! Total latitudes
-      integer jfirst                   ! First PE latitude (no ghosting)
-      integer jlast                    ! Last  PE latitude (no ghosting)
-      integer, intent(in):: ng_s, ng_d
-      real, intent(in):: coslon(im,jm), sinlon(im,jm)
-      real, intent(in):: cosl5(im,jm),sinl5(im,jm)
-      real, intent(in):: u(im,jfirst-ng_d:jlast+ng_s)
+    subroutine broadcast_aligned_nest(Atm)
 
-! !INPUT/OUTPUT PARAMETERS:
-      real, intent(inout):: v(im,jfirst-ng_d:jlast+ng_d)
+      !SEND grid_global to child grids; RECEIVE ind_p from child grids, and set up ind_update_h
 
-! !DESCRIPTION:
-!
-!   Treat the V winds at the poles.  This requires an average 
-!   of the U- and V-winds, weighted by their angles of incidence
-!   at the pole points.     
-!
-! !REVISION HISTORY:
-!
-!EOP
-!-----------------------------------------------------------------------
-!BOC
-!
-! !LOCAL VARIABLES:
+      type(fv_atmos_type), intent(INOUT), target :: Atm
 
-      integer i, imh
-      real  uanp(im), uasp(im), vanp(im), vasp(im)
-      real  un, vn, us, vs, r2im
+      integer :: isd_p, ied_p, jsd_p, jed_p
+      integer :: isg, ieg, jsg, jeg
+      integer :: ic, jc, imod, jmod
+      integer :: p, i, j
+      integer, allocatable :: p_ind(:,:,:)
 
-! WS 99.05.25 :  Replaced conversions of IMR with IM
-      r2im = 0.5d0/dble(im)
-      imh  = im / 2
+      integer, pointer :: parent_tile
 
-! WS 990726 :  Added condition to decide if poles are on this processor
+      parent_tile => Atm%neststruct%parent_tile
 
-   if ( jfirst-ng_d <= 1 ) then
-         do i=1,im
-            uasp(i) = u(i,  2) + u(i,3)
+      call mpp_get_global_domain( Atm%parent_grid%domain, &
+           isg, ieg, jsg, jeg)
+
+      if (mpp_pe() == Atm%parent_grid%pelist(1)) then
+         do p=1,size(Atm%pelist)
+         !!! DEBUG CODE
+         print*, 'SEND: ', mpp_pe(), size(Atm%parent_grid%grid_global(isg-ng:ieg+1+ng,jsg-ng:jeg+1+ng,1:2,parent_tile)), Atm%pelist(p)
+         !!! END DEBUG CODE
+            call mpp_send(Atm%parent_grid%grid_global(isg-ng:ieg+1+ng,jsg-ng:jeg+1+ng,1:2,parent_tile), &
+                 size(Atm%parent_grid%grid_global(isg-ng:ieg+1+ng,jsg-ng:jeg+1+ng,1:2,parent_tile)), &
+                 Atm%pelist(p)) !send to p_ind in setup_aligned_nest
+            call mpp_sync_self
          enddo
-
-         do i=1,im-1
-            vasp(i)  = v(i,  2) + v(i+1,2)
-         enddo
-            vasp(im) = v(im,2) + v(1,2)
-
-! Projection at SP
-      us = 0.; vs = 0.
-
-      do i=1,imh
-         us = us + (uasp(i+imh)-uasp(i))*sinlon(i,1)    &
-                 + (vasp(i)-vasp(i+imh))*coslon(i,1)
-         vs = vs + (uasp(i+imh)-uasp(i))*coslon(i,1)    &
-                 + (vasp(i+imh)-vasp(i))*sinlon(i,1)
-      enddo
-      us = us*r2im
-      vs = vs*r2im
-
-! get V-wind at SP
-
-      do i=1,imh
-         v(i,    1) =  us*cosl5(i,1) - vs*sinl5(i,1)
-         v(i+imh,1) = -v(i,1)
-      enddo
-
-   endif
-
-   if ( jlast+ng_d >= jm ) then
-
-      do i=1,im
-         uanp(i) = u(i,jm-1) + u(i,jm)
-      enddo
-
-      do i=1,im-1
-         vanp(i) = v(i,jm-1) + v(i+1,jm-1)
-      enddo
-         vanp(im) = v(im,jm-1) + v(1,jm-1)
-
-! Projection at NP
-
-      un = 0.
-      vn = 0.
-      do i=1,imh
-         un = un + (uanp(i+imh)-uanp(i))*sinlon(i,jm)   &
-                 + (vanp(i+imh)-vanp(i))*coslon(i,jm)
-         vn = vn + (uanp(i)-uanp(i+imh))*coslon(i,jm)   &
-                 + (vanp(i+imh)-vanp(i))*sinlon(i,jm)
-      enddo
-      un = un*r2im
-      vn = vn*r2im
-
-! get V-wind at NP
-
-      do i=1,imh
-         v(i,    jm) = -un*cosl5(i,jm) - vn*sinl5(i,jm)
-         v(i+imh,jm) = -v(i,jm)
-      enddo
-
-   endif
-
- end subroutine vpol5
-
-!------------------------------------------------------------------------------
-!BOP
-! !ROUTINE: mp_ghost_ew --- Ghost 4d east/west "lat/lon periodic
-!
-! !INTERFACE:
-      subroutine mp_ghost_ew(im, jm, km, nq, ifirst, ilast, jfirst, jlast, &
-                              kfirst, klast, ng_w, ng_e, ng_s, ng_n, q_ghst, q)
-!
-! !INPUT PARAMETERS:
-      integer, intent(in):: im, jm, km, nq
-      integer, intent(in):: ifirst, ilast
-      integer, intent(in):: jfirst, jlast
-      integer, intent(in):: kfirst, klast
-      integer, intent(in):: ng_e      ! eastern  zones to ghost
-      integer, intent(in):: ng_w      ! western  zones to ghost
-      integer, intent(in):: ng_s      ! southern zones to ghost
-      integer, intent(in):: ng_n      ! northern zones to ghost
-      real, intent(inout):: q_ghst(ifirst-ng_w:ilast+ng_e,jfirst-ng_s:jlast+ng_n,kfirst:klast,nq)
-      real, optional, intent(in):: q(ifirst:ilast,jfirst:jlast,kfirst:klast,nq)
-!
-! !DESCRIPTION:
-!
-!     Ghost 4d east/west 
-!
-! !REVISION HISTORY:
-!    2005.08.22   Putman
-!
-!EOP
-!------------------------------------------------------------------------------
-!BOC
-      integer :: i,j,k,n
-
-      if (present(q)) then
-         q_ghst(ifirst:ilast,jfirst:jlast,kfirst:klast,1:nq) = &
-              q(ifirst:ilast,jfirst:jlast,kfirst:klast,1:nq)
       endif
 
-!      Assume Periodicity in X-dir and not overlapping
-      do n=1,nq
-         do k=kfirst,klast
-            do j=jfirst-ng_s,jlast+ng_n
-               do i=1, ng_w
-                  q_ghst(ifirst-i,j,k,n) = q_ghst(ilast-i+1,j,k,n)
-               enddo
-               do i=1, ng_e
-                  q_ghst(ilast+i,j,k,n) = q_ghst(ifirst+i-1,j,k,n)
-               enddo
-            enddo
-         enddo
-      enddo
+      if (Atm%neststruct%twowaynest) then
 
-!EOC
-      end subroutine mp_ghost_ew
+         !Also need to receive P_IND from child grids to set up ind_update_h
+         isd_p = Atm%parent_grid%bd%isd
+         ied_p = Atm%parent_grid%bd%ied
+         jsd_p = Atm%parent_grid%bd%jsd
+         jed_p = Atm%parent_grid%bd%jed
+         !               allocate(Atm%ind_update_h(isd_p:ied_p+1,jsd_p:jed_p+1,2))
+         allocate(p_ind(1-ng:Atm%npx+ng,1-ng:Atm%npy+ng,1:2))
+         !!! DEBUG CODE
+         print*, 'RECEIVE: ', mpp_pe(), size(p_ind)
+         !!! END DEBUG CODE
+         call mpp_recv(p_ind,size(p_ind),Atm%pelist(1)) !receiving from p_ind setup_aligned_grids 
+         call mpp_sync_self
 
+         Atm%neststruct%ind_update_h = 1000000
 
+         if (Atm%parent_grid%tile == Atm%neststruct%parent_tile) then
+            do j=1,Atm%npy
+            do i=1,Atm%npx
 
+               ic = p_ind(i,j,1)
+               jc = p_ind(i,j,2)
+               
+               if (ic < isd_p .or. ic > ied_p .or. jc < jsd_p .or. jc > jed_p) cycle
+               
+               if (i < Atm%neststruct%ind_update_h(ic,jc,1) .and. &
+                    j < Atm%neststruct%ind_update_h(ic,jc,2) ) then
+                  Atm%neststruct%ind_update_h(ic,jc,:) = (/i, j/)
+               end if
 
+            end do
+            end do
+         end if
 
-      subroutine unit_vect2( p1, p2, uvect )
-! No normal projection version
-      real, intent(in):: p1(2), p2(2)        ! input position unit vectors (spherical coordinates)
-      real, intent(out):: uvect(3)           ! output unit vspherical cartesian
-! local        
-      integer :: n
-      real :: xyz1(3), xyz2(3)
+         deallocate(p_ind)
 
-      call spherical_to_cartesian(p1(1), p1(2), 1.0, xyz1(1), xyz1(2), xyz1(3))
-      call spherical_to_cartesian(p2(1), p2(2), 1.0, xyz2(1), xyz2(2), xyz2(3))
-      do n=1,3
-         uvect(n) = xyz2(n)-xyz1(n)
-      enddo
-      call normalize_vect(1, uvect)
-
-      end subroutine unit_vect2
-
-
- subroutine get_unit_vector_3pts( p1, p2, p3, uvect )
- real, intent(in):: p1(2), p2(2), p3(2) ! input position unit vectors (spherical coordinates)
- real, intent(out):: uvect(3)           ! output unit vspherical cartesian
-! local
- integer :: n 
- real :: xyz1(3), xyz2(3), xyz3(3)
- real :: dp(3) 
- real :: dp_dot_p2
-
-  call spherical_to_cartesian(p1(1), p1(2), 1.0, xyz1(1), xyz1(2), xyz1(3))
-  call spherical_to_cartesian(p2(1), p2(2), 1.0, xyz2(1), xyz2(2), xyz2(3))
-  call spherical_to_cartesian(p3(1), p3(2), 1.0, xyz3(1), xyz3(2), xyz3(3))
-  do n=1,3
-     uvect(n) = xyz3(n)-xyz1(n)
-  enddo
-  call project_sphere_v(1, uvect,xyz2)
-  call normalize_vect(1, uvect)
-
- end subroutine get_unit_vector_3pts
+      end if
 
 
- subroutine get_unit_vector_2pts( p1, p2, uvect )
- real, intent(in):: p1(2), p2(2)        ! input position unit vectors (spherical coordinates)
- real, intent(out):: uvect(3)           ! output unit vspherical cartesian
-! local        
- integer :: n 
- real :: xyz1(3), xyz2(3)         
- real :: dp_dot_xyz1
-                  
-  call spherical_to_cartesian(p1(1), p1(2), 1.0, xyz1(1), xyz1(2), xyz1(3))
-  call spherical_to_cartesian(p2(1), p2(2), 1.0, xyz2(1), xyz2(2), xyz2(3))
-  do n=1,3                 
-     uvect(n) = xyz2(n)-xyz1(n)   
-  enddo                 
-  call project_sphere_v(1, uvect,xyz1)
-  call normalize_vect(1, uvect)
-
- end subroutine get_unit_vector_2pts
+    end subroutine broadcast_aligned_nest
 
 
-
-
- subroutine normalize_vect(np, e)
-!
-! Make e an unit vector
-!
- implicit none
- integer, intent(in):: np
- real, intent(inout):: e(3,np)
-! local:
- integer k, n
- real pdot
-
- do n=1,np
-    pdot = sqrt(e(1,n)**2+e(2,n)**2+e(3,n)**2)
-    do k=1,3
-       e(k,n) = e(k,n) / pdot
-    enddo
- enddo
-
- end subroutine normalize_vect
-
-!-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!     
-!     interp_left_edge_1d :: interpolate to left edge of a cell either
-!               order = 1 -> Linear average
-!               order = 2 -> Uniform PPM
-!               order = 3 -> Non-Uniform PPM  
-!
- subroutine interp_left_edge_1d(qout, qin, dx, ifirst, ilast, order)
- integer, intent(in):: ifirst,ilast
- real, intent(out)  :: qout(ifirst:)
- real, intent(in)   ::  qin(ifirst:)
- real, intent(in)   ::   dx(ifirst:)
- integer, intent(in):: order
- integer :: i
-
- real :: dm(ifirst:ilast),qmax,qmin
- real :: r3, da1, da2, a6da, a6, al, ar  
- real :: qLa, qLb1, qLb2
- real :: x
-
- r3 = 1./3.
-
- qout(:) = 0.0 
- if (order==1) then 
-! 1st order Uniform linear averaging
-    do i=ifirst+1,ilast
-       qout(i) = 0.5 * (qin(i-1) + qin(i))
-    enddo
- elseif (order==2) then
-! Non-Uniform 1st order average 
-    do i=ifirst+1,ilast
-       qout(i) = (dx(i-1)*qin(i-1) + dx(i)*qin(i))/(dx(i-1)+dx(i))
-    enddo
- elseif (order==3) then 
-
-! PPM - Uniform 
-    do i=ifirst+1,ilast-1
-       dm(i) = 0.25*(qin(i+1) - qin(i-1))
-    enddo
-!
-! Applies monotonic slope constraint
-!
-     do i=ifirst+1,ilast-1
-        qmax = max(qin(i-1),qin(i),qin(i+1)) - qin(i)
-        qmin = qin(i) - min(qin(i-1),qin(i),qin(i+1))
-        dm(i) = sign(min(abs(dm(i)),qmin,qmax),dm(i))
-     enddo
-
-     do i=ifirst+1,ilast-1
-         qout(i) = 0.5*(qin(i-1)+qin(i)) + r3*(dm(i-1) - dm(i))
-       ! al = 0.5*(qin(i-1)+qin(i)) + r3*(dm(i-1) - dm(i))
-       ! da1 = dm(i) + dm(i)
-       ! qout(i) = qin(i) - sign(min(abs(da1),abs(al-qin(i))), da1)
-     enddo
-
-! First order average to fill in end points
-     qout(ifirst+1) = 0.5 * (qin(ifirst) + qin(ifirst+1))
-     qout(ilast) = 0.5 * (qin(ilast-1) + qin(ilast))
-
- elseif (order==4) then
-
-  ! Non-Uniform PPM
-     do i=ifirst+1,ilast-1
-        dm(i) = ( (2.*dx(i-1) + dx(i) ) /                         &
-                  (   dx(i+1) + dx(i) )  )  * ( qin(i+1) - qin(i) ) + &
-                ( (dx(i)   + 2.*dx(i+1)) /                        &
-                  (dx(i-1) +    dx(i)  )  ) * ( qin(i) - qin(i-1) )
-        dm(i) = ( dx(i) / ( dx(i-1) + dx(i) + dx(i+1) ) ) * dm(i)
-        if ( (qin(i+1)-qin(i))*(qin(i)-qin(i-1)) > 0.) then
-           dm(i) = SIGN( MIN( ABS(dm(i)), 2.*ABS(qin(i)-qin(i-1)), 2.*ABS(qin(i+1)-qin(i)) ) , dm(i) )
-        else
-           dm(i) = 0.
-        endif
-     enddo
-
-     do i=ifirst+2,ilast-1
-        qLa = ( (dx(i-2) + dx(i-1)) / (2.*dx(i-1) +  dx(i)) ) - &
-              ( (dx(i+1) + dx(i)) / (2.*dx(i) +  dx(i-1)) )
-        qLa = ( (2.*dx(i) * dx(i-1))  / (dx(i-1) + dx(i)) ) * qLa * &
-                (qin(i) - qin(i-1))
-        qLb1 = dx(i-1) * ( (dx(i-2) + dx(i-1)) / (2.*dx(i-1) + dx(i)) ) * &
-              dm(i)
-        qLb2 = dx(i) * ( (dx(i) + dx(i+1)) / (dx(i-1) + 2.*dx(i)) ) * &
-              dm(i-1)
-
-        qout(i) = 1. / ( dx(i-2) + dx(i-1) + dx(i) + dx(i+1) )
-        qout(i) = qout(i) * ( qLa - qLb1 + qLb2 )
-        qout(i) = qin(i-1) + ( dx(i-1) / ( dx(i-1) + dx(i) ) ) * (qin(i) - qin(i-1)) + qout(i)
-     enddo
-
- elseif (order==5) then
-  
-     ! Linear Spline
-    do i=ifirst+1,ilast-1
-       x = FLOAT(i-(ifirst+1))*FLOAT(ilast-ifirst+1-1)/FLOAT(ilast-ifirst-1) 
-       qout(i) = qin(ifirst+NINT(x)) + (x - NINT(x)) * (qin(ifirst+NINT(x+1)) - qin(ifirst+NINT(x)))
-      ! if (tile==1) print*, ifirst+NINT(x+1), ifirst+NINT(x), (x - NINT(x)) 
-      ! if (tile==1) print*, 0.5*(qin(i-1)+qin(i)), qout(i)
-    enddo
-
-   if (tile==1) print*,'x=fltarr(28)'
-    do i=ifirst,ilast
-       if (tile==1) print*, 'x(',i-ifirst,')=',qin(i)
-    enddo
-
-
-	call mp_stop
-	stop
-
- endif
-
- end subroutine interp_left_edge_1d
-!------------------------------------------------------------------------------
-
-!-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     gsum :: get global sum
-!
-      real  function globalsum(p, npx, npy, ifirst, ilast, jfirst, jlast) result (gsum)
-             
-         integer,   intent(IN)    :: npx, npy
-         integer,   intent(IN)    :: ifirst, ilast
-         integer,   intent(IN)    :: jfirst, jlast
-         real  , intent(IN)    :: p(ifirst:ilast,jfirst:jlast)      ! field to be summed
-         
-         integer :: i,j,k,n
-         integer :: j1, j2
-         real  :: gsum0
-         real :: p_R8(npx-1,npy-1,ntiles_g)
-         
-         gsum = 0.
-            
-         if (latlon) then          
-            j1 = 2                          
-            j2 = npy-2
-            gsum = gsum + p(1,1)*acapS
-            gsum = gsum + p(1,npy-1)*acapN
-            do j=j1,j2
-               do i=1,npx-1
-                  gsum = gsum + p(i,j)*cos(agrid(i,j,2))
-               enddo
-            enddo
-         else
-
-            do n=tile,tile            
-               do j=jfirst,jlast
-                  do i=ifirst,ilast
-                     p_R8(i,j,n) = p(i,j)*area(i,j)
-                  enddo
-               enddo
-            enddo
-            call mp_gather(p_R8, ifirst,ilast, jfirst,jlast, npx-1, npy-1, ntiles_g)
-            if (gid == masterproc) then
-               do n=1,ntiles_g
-                  do j=1,npy-1
-                     do i=1,npx-1
-                        gsum = gsum + p_R8(i,j,n)
-                     enddo
-                  enddo
-               enddo
-               gsum = gsum/globalarea
-            endif
-            call mpp_broadcast(gsum, masterproc)
-
-         endif
-
-      end function globalsum
- 
 
       end module fv_grid_tools_mod
 

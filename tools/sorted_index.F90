@@ -23,7 +23,7 @@ module sorted_index_mod
 
   !---- version number -----
   character(len=128) :: version = '$Id: sorted_index.F90,v 14.0.8.1.2.3 2012/05/14 16:26:28 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201303 $'
+  character(len=128) :: tagname = '$Name: siena_201305 $'
 
 contains
   !#####################################################################

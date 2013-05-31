@@ -12,7 +12,7 @@ module sim_nc_mod
 
  private
  public  open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var2_double,   &
-         get_var3_real, get_var3_double, get_var3_r4,  get_var2_real, handle_err
+         get_var3_real, get_var3_double, get_var3_r4,  get_var2_real, handle_err, check_var
 
  contains
 
@@ -283,6 +283,17 @@ module sim_nc_mod
 
       end subroutine get_real3
 !------------------------------------------------------------------------
+
+      logical function check_var( ncid, var3_name)
+      integer, intent(in):: ncid
+      character(len=*), intent(in)::  var3_name
+
+      integer::  status, var3id
+
+      status = nf_inq_varid (ncid, var3_name, var3id)
+      check_var = (status == NF_NOERR) 
+
+      end function check_var
 
       subroutine get_var_att_str(ncid, var_name, att_name, att)
       implicit none

@@ -1,18 +1,21 @@
 module nh_core_mod
-
+! Developer: S.-J. Lin, NOAA/GFDL
 ! To do list:
 ! include moisture effect in pt
 !------------------------------
 
+#ifdef GEOPK_CHECK
+   use mpp_mod,        only: mpp_pe  
+#endif
    use constants_mod,  only: rdgas, grav
-   use fv_control_mod, only: p_fac, a_imp, m_split, master
    use tp_core_mod,    only: fv_tp_2d, copy_corners
+   use fv_arrays_mod,  only: fv_grid_type, fv_grid_bounds_type
 
    implicit none
    private
 
-   public Riem_Solver, Riem_Solver_c, update_dz_c, update_dz_d
-   real, parameter:: dz_min = 1.
+   public Riem_Solver, Riem_Solver_c, update_dz_c, update_dz_d, geopk_halo_nh
+   real, parameter:: dz_min = 2.
 
 CONTAINS 
 
@@ -24,7 +27,7 @@ CONTAINS
   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: ut, vt
   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng):: area
   real, intent(inout):: gz(is-ng:ie+ng,js-ng:je+ng,km+1)
-  real, intent(in   ):: zs(is:ie, js:je)
+  real, intent(in   ):: zs(is-ng:ie+ng, js-ng:je+ng)
   real, intent(  out):: ws(is:ie, js:je)
 ! Local Work array:
   real, dimension(is:ie+1,js:je  ):: xfx, fx
@@ -116,6 +119,7 @@ CONTAINS
                      / (          area(i,j) + xfx(i,j)-xfx(i+1,j)+yfx(i,j)-yfx(i,j+1))
         enddo
      enddo
+
      if ( k==km+1 ) then
         do j=js,je
            do i=is,ie
@@ -126,25 +130,39 @@ CONTAINS
 
 6000 continue
 
+! Enforce monotonicity of height to prevent blowup
+!$omp parallel do default(shared)
+  do j=js, je
+     do k=km, 1, -1
+        do i=is, ie
+           gz(i,j,k) = max( gz(i,j,k), gz(i,j,k+1) + dz_min )
+        enddo
+     enddo
+  enddo
+
   end subroutine update_dz_c
 
 
-  subroutine update_dz_d(ndif, damp, hord, is, ie, js, je, km, ng, npx, npy, area,    &
-                         dp0, zs, zh, crx, cry, xfx, yfx, delz, ws, rdt)
+  subroutine update_dz_d(ndif, damp, hord, is, ie, js, je, km, ng, npx, npy, area, rarea,   &
+                         dp0, zs, zh, crx, cry, xfx, yfx, delz, ws, rdt, gridstruct, bd)
 
+  type(fv_grid_bounds_type), intent(IN) :: bd
   integer, intent(in):: is, ie, js, je, ng, km, npx, npy
   integer, intent(in):: hord
   real, intent(in)   :: rdt
   real, intent(in)   :: dp0(km)
   real, intent(in)   :: area(is-ng:ie+ng,js-ng:je+ng)
+  real, intent(in)   :: rarea(is-ng:ie+ng,js-ng:je+ng)
   real,    intent(inout):: damp(km+1)
   integer, intent(inout):: ndif(km+1)
-  real, intent(inout) ::  zs(is:ie,js:je)
+  real, intent(in   ) ::  zs(is-ng:ie+ng,js-ng:je+ng)
   real, intent(inout) ::  zh(is-ng:ie+ng,js-ng:je+ng,km+1)
-  real, intent(  out) ::delz(is:ie,js:je,km)
+  real, intent(  out) ::delz(is-ng:ie+ng,js-ng:je+ng,km)
   real, intent(inout), dimension(is:ie+1,js-ng:je+ng,km):: crx, xfx
   real, intent(inout), dimension(is-ng:ie+ng,js:je+1,km):: cry, yfx
   real, intent(inout)   :: ws(is:ie,js:je)
+
+  type(fv_grid_type), intent(IN) :: gridstruct
 !-----------------------------------------------------
 ! Local array:
   real, dimension(is:   ie+1, js-ng:je+ng,km+1):: crx_adv, xfx_adv
@@ -186,8 +204,9 @@ CONTAINS
      enddo
 
      call fv_tp_2d(zh(isd,jsd,k), crx_adv(is,jsd,k), cry_adv(isd,js,k), npx,  npy, hord, &
-                   fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), area, ra_x, ra_y,       &
+                   fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y,       &
                    nord=ndif(k), damp_c=damp(k))
+
      do j=js,je
         do i=is,ie
            zh(i,j,k) = (zh(i,j,k)*area(i,j)+fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))   &
@@ -209,6 +228,7 @@ CONTAINS
   do j=js, je
      do k=km, 1, -1
         do i=is, ie
+! Enforce monotonicity of height to prevent blowup
            zh(i,j,k) = max( zh(i,j,k), zh(i,j,k+1) + dz_min )
         enddo
      enddo
@@ -216,21 +236,20 @@ CONTAINS
 
   end subroutine update_dz_d
 
-
-  subroutine Riem_Solver_C(ms,   dt,  is,   ie,   js, je, km,   ng,  &
+  subroutine Riem_Solver_c(ms,   dt,  is,   ie,   js, je, km,   ng,  &
                            akap, cp,  ptop, hs, w3,  pt,  &
-                           delp, gz,  pef,  ws)
+                           delp, gz,  pef,  ws, p_fac, a_imp)
 
    integer, intent(in):: is, ie, js, je, ng, km
    integer, intent(in):: ms
-   real, intent(in):: dt,  akap, cp, ptop
+   real, intent(in):: dt,  akap, cp, ptop, p_fac, a_imp
    real, intent(in):: ws(is:ie,js:je)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, delp
    real, intent(in)::   hs(is-ng:ie+ng,js-ng:je+ng)
    real, intent(inout):: w3(is-ng:ie+ng,js-ng:je+ng,km)
 ! OUTPUT PARAMETERS 
    real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: gz
-   real, intent(  out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: pef
+   real, intent(  out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: pef !full NH pressure
 ! Local:
   real, dimension(is:ie,km  ):: pm, dm, dz2, w2, pt2
   real, dimension(is:ie,km+1):: pem, peln, pe2
@@ -260,6 +279,11 @@ CONTAINS
       do k=2,km+1
          do i=is,ie
             pem(i,k) = pem(i,k-1) + dm(i,k-1)
+#ifdef GEOPK_CHECK
+            if (pem(i,k) < 0.) then
+               print*, mpp_pe(),i,j,k, 'PEM = ', pem(i,k), dm(i,k-1)
+            endif
+#endif
             peln(i,k) = log( pem(i,k) )
          enddo
       enddo
@@ -279,7 +303,7 @@ CONTAINS
                         dm, pm, pem, w2, dz2, pt2, ws(is,j), .true.)
       else
            call SIMPLEST_solver(dt, is, ie, km, rdgas, gama, akap, pe2,  &
-                                dm, pm, pem, w2, dz2, pt2, ws(is,j))
+                                dm, pm, pem, w2, dz2, pt2, ws(is,j), p_fac)
       endif
 
       do i=is,ie
@@ -311,7 +335,7 @@ CONTAINS
   subroutine Riem_Solver(ms, dt,   is,   ie,   js, je, km, ng,    &
                          akap, cp,   ptop, hs, w,  delz, pt,  &
                          delp, zh, gz,  ppe, pk, pe, peln, &
-                         ws, da_min, diff_z0, last_call)
+                         ws, da_min, diff_z0, p_fac, a_imp, last_call)
 !--------------------------------------------
 ! !OUTPUT PARAMETERS
 ! Ouput: gz: grav*height at edges
@@ -321,15 +345,15 @@ CONTAINS
    integer, intent(in):: ms, is, ie, js, je, km, ng
    real, intent(in):: dt         ! the BIG horizontal Lagrangian time step
    real, intent(in):: akap, cp, ptop
-   real, intent(in):: da_min, diff_z0
+   real, intent(in):: da_min, diff_z0, p_fac, a_imp
    real, intent(in):: hs(is-ng:ie+ng,js-ng:je+ng)
    logical, intent(in):: last_call
    real, intent(in):: ws(is:ie,js:je)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: zh
    real, intent(inout):: peln(is:ie,km+1,js:je)          ! ln(pe)
    real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,km):: w, delp, pt
-   real, intent(out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: ppe
-   real, intent(out):: delz(is:ie,js:je,km)
+   real, intent(out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: ppe ! NH pert'n
+   real, intent(out):: delz(is-ng:ie+ng,js-ng:je+ng,km)
    real, intent(out):: pe(is-1:ie+1,km+1,js-1:je+1)
    real, intent(out):: pk(is:ie,js:je,km+1)
    real, intent(out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: gz
@@ -345,7 +369,7 @@ CONTAINS
    peln1 = log(ptop)
      rcp = 1./cp
 
-!$omp parallel do default(shared) private(dm, dz2, w2, pt2, pem, pm)
+!$omp parallel do default(shared) private(dm, dz2, w2, pt2, pem, pm, pe2)
    do 2000 j=js,je
 
       do k=1,km
@@ -370,7 +394,7 @@ CONTAINS
       do k=2,km+1
          do i=is,ie
             peln(i,k,j) = log(pem(i,k))
-            pk(i,j,k) = exp( akap*peln(i,k,j) )
+              pk(i,j,k) = exp( akap*peln(i,k,j) )
          enddo
       enddo
 
@@ -389,10 +413,10 @@ CONTAINS
                         dm, pm, pem, w2, dz2, pt2, ws(is,j), .false.)
       elseif ( a_imp > 0.999 ) then
            call SIMPLEST_solver(dt, is, ie, km, rdgas, gama, akap, pe2, dm,   &
-                                pm, pem, w2, dz2, pt2, ws(is,j))
+                                pm, pem, w2, dz2, pt2, ws(is,j), p_fac)
       else
            call SIM_solver(dt, is, ie, km, rdgas, gama, akap, pe2, dm,  &
-                                pm, pem, w2, dz2, pt2, ws(is,j), a_imp)
+                                pm, pem, w2, dz2, pt2, ws(is,j), p_fac, a_imp)
       endif
 
       do k=1,km+1
@@ -746,9 +770,9 @@ CONTAINS
  end subroutine RIM_2D
 
  subroutine SIMPLEST_solver(dt,  is,  ie, km, rgas,  gama, cappa, pe, dm2,   &
-                            pm2, pem, w2, dz2, pt2, ws)
+                            pm2, pem, w2, dz2, pt2, ws, p_fac)
    integer, intent(in):: is, ie, km
-   real,    intent(in):: dt, rgas, gama, cappa
+   real,    intent(in):: dt, rgas, gama, cappa, p_fac
    real, intent(in   ), dimension(is:ie,km):: dm2, pt2, pm2
    real, intent(in )::  ws(is:ie)
    real, intent(in ):: pem(is:ie,km+1)
@@ -857,9 +881,9 @@ CONTAINS
 
 
  subroutine SIM_solver(dt,  is,  ie, km, rgas, gama, cappa, pe2, dm2,   &
-                       pm2, pem, w2, dz2, pt2, ws, alpha)
+                       pm2, pem, w2, dz2, pt2, ws, p_fac, alpha)
    integer, intent(in):: is, ie, km
-   real, intent(in):: dt, rgas, gama, cappa, alpha
+   real, intent(in):: dt, rgas, gama, cappa, p_fac, alpha
    real, intent(in   ), dimension(is:ie,km):: dm2, pt2, pm2
    real, intent(in )::  ws(is:ie)
    real, intent(in ):: pem(is:ie,km+1)
@@ -882,7 +906,7 @@ CONTAINS
 
    do k=1,km
       do i=is, ie
-         w1(i,k) = w2(i,k)
+          w1(i,k) = w2(i,k)
          pe2(i,k) = exp(gama*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
       enddo
    enddo
@@ -1144,6 +1168,576 @@ CONTAINS
     enddo
 
  end subroutine edge_profile
+
+    subroutine geopk_halo_nh(ptop, grav, kappa, cp, delp, delz, pt, phis, pkc, gz, pk3, &
+         npx, npy, npz, nested, pkc_pertn, computepk3, fullhalo, bd)
+
+      !INPUT: delp, delz, pt
+      !OUTPUT: gz, pkc, pk3 (optional)
+      integer, intent(IN) :: npx, npy, npz
+      logical, intent(IN) :: pkc_pertn, computepk3, fullhalo, nested
+      real, intent(IN) :: ptop, kappa, cp, grav
+      type(fv_grid_bounds_type), intent(IN) :: bd
+      real, intent(IN) :: phis(bd%isd:bd%ied,bd%jsd:bd%jed)
+      real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: pt, delp, delz
+      real, intent(INOUT), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz+1):: gz, pkc, pk3
+
+      integer :: i,j,k
+      real :: gama !'gamma'
+      real :: rcp
+      real :: ptk, rgrav, rkap
+      real :: peln1
+
+      real, dimension(bd%isd:bd%ied, npz+1, bd%jsd:bd%jed ) :: pe, peln
+      real, dimension(bd%isd:bd%ied, npz) :: gam, bb, dd, pkz
+      real, dimension(bd%isd:bd%ied, npz-1) :: g_rat
+      real, dimension(bd%isd:bd%ied) :: bet
+      real :: pm
+
+      integer :: ifirst, ilast, jfirst, jlast
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+
+      if (.not. nested) return
+
+!!$   if (fullhalo) then
+!!$      ifirst = is
+!!$      if (is == 1) ifirst = isd
+!!$      ilast =  ie
+!!$      if (ie == npx-1) ilast  = ied
+!!$      jfirst = js
+!!$      if (js == 1) jfirst = jsd
+!!$      jlast =  je
+!!$      if (je == npy-1) jlast  = jed
+!!$   else
+!!$      ifirst = is
+!!$      if (is == 1) ifirst = is-1
+!!$      ilast =  ie
+!!$      if (ie == npx-1) ilast  = ie+1
+!!$      jfirst = js
+!!$      if (js == 1) jfirst = js-1
+!!$      jlast =  je
+!!$      if (je == npy-1) jlast  = je+1
+!!$   endif
+      ifirst = isd
+      jfirst = jsd
+      ilast = ied
+      jlast = jed
+
+      !Remember we want to compute these in the HALO. Note also this routine
+      !requires an appropriate
+
+      rgrav = 1./grav
+      gama = 1./(1.-kappa)
+      rcp = 1./cp !not R/cp
+      ptk = ptop ** kappa
+      rkap = 1./kappa
+      peln1 = log(ptop)
+
+!!$      do j=jfirst,jlast
+!!$
+!!$         !GZ
+!!$         do i=ifirst,ilast
+!!$            gz(i,j,npz+1) = phis(i,j)
+!!$         enddo
+!!$         do k=npz,1,-1
+!!$         do i=ifirst,ilast
+!!$               gz(i,j,k) = gz(i,j,k+1) - delz(i,j,k)*grav
+!!$         enddo
+!!$         enddo
+!!$         
+!!$         !Hydrostatic interface pressure
+!!$         do i=ifirst,ilast
+!!$            pe(i,1,j) = ptop
+!!$            peln(i,1,j) = peln1
+!!$         enddo
+!!$         do k=2,npz+1
+!!$         do i=ifirst,ilast
+!!$            pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+!!$            peln(i,k,j) = log(pe(i,k,j))
+!!$         enddo
+!!$         enddo
+!!$
+!!$         !Perturbation nonhydro layer-mean pressure (NOT to the kappa)
+!!$         do k=1,npz
+!!$         do i=ifirst,ilast
+!!$            !Full p
+!!$            pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)*rcp))
+!!$            !hydro
+!!$            pm = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
+!!$            !Remove hydro cell-mean pressure
+!!$            pkz(i,k) = pkz(i,k) - pm
+!!$         enddo
+!!$         enddo
+!!$
+!!$         !Reversible interpolation on layer NH pressure perturbation
+!!$         !                 to recover  lastge NH pressure perturbation
+!!$         do k=1,npz-1
+!!$         do i=ifirst,ilast
+!!$            g_rat(i,k) = delp(i,j,k)/delp(i,j,k+1)
+!!$            bb(i,k) = 2.*(1. + g_rat(i,k))
+!!$            dd(i,k) = 3.*(pkz(i,k) + g_rat(i,k)*pkz(i,k+1))
+!!$         enddo
+!!$         enddo
+!!$
+!!$         do i=ifirst,ilast
+!!$            bet(i) = bb(i,1)
+!!$            pkc(i,j,1) = 0.
+!!$            pkc(i,j,2) = dd(i,1)/bet(i)
+!!$            bb(i,npz) = 2.
+!!$            dd(i,npz) = 3.*pkz(i,npz)
+!!$         enddo
+!!$         do k=2,npz
+!!$         do i=ifirst,ilast
+!!$            gam(i,k) = g_rat(i,k-1)/bet(i)
+!!$            bet(i) = bb(i,k) - gam(i,k)
+!!$            pkc(i,j,k+1) = (dd(i,k) - pkc(i,j,k))/bet(i)
+!!$         enddo
+!!$         enddo
+!!$         do k=npz,2,-1
+!!$         do i=ifirst,ilast
+!!$            pkc(i,j,k) = pkc(i,j,k) - gam(i,k)*pkc(i,j,k+1)
+!!$         enddo
+!!$         enddo
+!!$
+!!$      enddo
+!!$
+!!$      do j=jfirst,jlast
+!!$
+!!$         if (.not. pkc_pertn) then
+!!$            do k=npz+1,1,-1
+!!$            do i=ifirst,ilast
+!!$               pkc(i,j,k) = pkc(i,j,k) + pe(i,k,j)
+!!$            enddo
+!!$            enddo
+!!$         endif
+!!$
+!!$         !pk3 if necessary
+!!$         if (computepk3) then
+!!$            do i=ifirst,ilast
+!!$               pk3(i,j,1) = ptk
+!!$            enddo
+!!$            do k=2,npz+1
+!!$               do i=ifirst,ilast
+!!$                  pk3(i,j,k) = exp(kappa*log(pe(i,k,j)))
+!!$               enddo
+!!$            enddo
+!!$         endif
+!!$
+!!$      enddo
+
+
+      !NOTE: Compiler does NOT like this sort of nested-grid BC code. Is it trying to do some ugly optimization?
+
+      if (is == 1) then
+
+         do j=jfirst,jlast
+
+            !GZ
+            do i=ifirst,0
+               gz(i,j,npz+1) = phis(i,j)
+            enddo
+            do k=npz,1,-1
+               do i=ifirst,0
+                  gz(i,j,k) = gz(i,j,k+1) - delz(i,j,k)*grav
+               enddo
+            enddo
+
+            !Hydrostatic interface pressure
+            do i=ifirst,0
+               pe(i,1,j) = ptop
+               peln(i,1,j) = peln1
+            enddo
+            do k=2,npz+1
+               do i=ifirst,0
+                  pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+                  peln(i,k,j) = log(pe(i,k,j))
+               enddo
+            enddo
+
+            !Perturbation nonhydro layer-mean pressure (NOT to the kappa)
+            do k=1,npz
+               do i=ifirst,0
+                  !Full p
+                  pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)*rcp))
+                  !hydro
+                  pm = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
+                  !Remove hydro cell-mean pressure
+                  pkz(i,k) = pkz(i,k) - pm
+               enddo
+            enddo
+
+            !Reversible interpolation on layer NH pressure perturbation
+            !                 to recover  edge NH pressure perturbation
+            do k=1,npz-1
+               do i=ifirst,0
+                  g_rat(i,k) = delp(i,j,k)/delp(i,j,k+1)
+                  bb(i,k) = 2.*(1. + g_rat(i,k))
+                  dd(i,k) = 3.*(pkz(i,k) + g_rat(i,k)*pkz(i,k+1))
+               enddo
+            enddo
+
+            do i=ifirst,0
+               bet(i) = bb(i,1)
+               pkc(i,j,1) = 0.
+               pkc(i,j,2) = dd(i,1)/bet(i)
+               bb(i,npz) = 2.
+               dd(i,npz) = 3.*pkz(i,npz)
+            enddo
+            do k=2,npz
+               do i=ifirst,0
+                  gam(i,k) = g_rat(i,k-1)/bet(i)
+                  bet(i) = bb(i,k) - gam(i,k)
+                  pkc(i,j,k+1) = (dd(i,k) - pkc(i,j,k))/bet(i)
+               enddo
+            enddo
+            do k=npz,2,-1
+               do i=ifirst,0
+                  pkc(i,j,k) = pkc(i,j,k) - gam(i,k)*pkc(i,j,k+1)
+#ifdef NHNEST_DEBUG
+                  if (abs(pkc(i,j,k)) > 1.e5) then
+                     print*, mpp_pe(), i,j,k, 'PKC: ', pkc(i,j,k)
+                  endif
+#endif
+               enddo
+            enddo
+
+         enddo
+
+         do j=jfirst,jlast
+
+            if (.not. pkc_pertn) then
+               do k=npz+1,1,-1
+                  do i=ifirst,0
+                     pkc(i,j,k) = pkc(i,j,k) + pe(i,k,j)
+                  enddo
+               enddo
+            endif
+
+            !pk3 if necessary
+            if (computepk3) then
+               do i=ifirst,0
+                  pk3(i,j,1) = ptk
+               enddo
+               do k=2,npz+1
+                  do i=ifirst,0
+                     pk3(i,j,k) = exp(kappa*log(pe(i,k,j)))
+                  enddo
+               enddo
+            endif
+
+         enddo
+
+      endif
+
+      if (ie == npx-1) then
+
+         do j=jfirst,jlast
+
+            !GZ
+            do i=npx,ilast
+               gz(i,j,npz+1) = phis(i,j)
+            enddo
+            do k=npz,1,-1
+               do i=npx,ilast
+                  gz(i,j,k) = gz(i,j,k+1) - delz(i,j,k)*grav
+               enddo
+            enddo
+
+            !Hydrostatic interface pressure
+            do i=npx,ilast
+               pe(i,1,j) = ptop
+               peln(i,1,j) = peln1
+            enddo
+            do k=2,npz+1
+               do i=npx,ilast
+                  pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+                  peln(i,k,j) = log(pe(i,k,j))
+               enddo
+            enddo
+
+            !Perturbation nonhydro layer-mean pressure (NOT to the kappa)
+            do k=1,npz
+               do i=npx,ilast
+                  !Full p
+                  pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)*rcp))
+                  !hydro
+                  pm = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
+                  !Remove hydro cell-mean pressure
+                  pkz(i,k) = pkz(i,k) - pm
+               enddo
+            enddo
+
+            !Reversible interpolation on layer NH pressure perturbation
+            !                 to recover  edge NH pressure perturbation
+            do k=1,npz-1
+               do i=npx,ilast
+                  g_rat(i,k) = delp(i,j,k)/delp(i,j,k+1)
+                  bb(i,k) = 2.*(1. + g_rat(i,k))
+                  dd(i,k) = 3.*(pkz(i,k) + g_rat(i,k)*pkz(i,k+1))
+               enddo
+            enddo
+
+            do i=npx,ilast
+               bet(i) = bb(i,1)
+               pkc(i,j,1) = 0.
+               pkc(i,j,2) = dd(i,1)/bet(i)
+               bb(i,npz) = 2.
+               dd(i,npz) = 3.*pkz(i,npz)
+            enddo
+            do k=2,npz
+               do i=npx,ilast
+                  gam(i,k) = g_rat(i,k-1)/bet(i)
+                  bet(i) = bb(i,k) - gam(i,k)
+                  pkc(i,j,k+1) = (dd(i,k) - pkc(i,j,k))/bet(i)
+               enddo
+            enddo
+            do k=npz,2,-1
+               do i=npx,ilast
+                  pkc(i,j,k) = pkc(i,j,k) - gam(i,k)*pkc(i,j,k+1)
+               enddo
+            enddo
+
+
+         enddo
+
+         do j=jfirst,jlast
+
+            if (.not. pkc_pertn) then
+               do k=npz+1,1,-1
+                  do i=npx,ilast
+                     pkc(i,j,k) = pkc(i,j,k) + pe(i,k,j)
+                  enddo
+               enddo
+            endif
+
+            !pk3 if necessary
+            if (computepk3) then
+               do i=npx,ilast
+                  pk3(i,j,1) = ptk
+               enddo
+               do k=2,npz+1
+                  do i=npx,ilast
+                     pk3(i,j,k) = exp(kappa*log(pe(i,k,j)))
+                  enddo
+               enddo
+            endif
+
+         enddo
+
+      endif
+
+      if (js == 1) then
+
+         do j=jfirst,0
+
+            !GZ
+            do i=ifirst,ilast
+               gz(i,j,npz+1) = phis(i,j)
+            enddo
+            do k=npz,1,-1
+               do i=ifirst,ilast
+                  gz(i,j,k) = gz(i,j,k+1) - delz(i,j,k)*grav
+               enddo
+            enddo
+
+            !Hydrostatic interface pressure
+            do i=ifirst,ilast
+               pe(i,1,j) = ptop
+               peln(i,1,j) = peln1
+            enddo
+            do k=2,npz+1
+               do i=ifirst,ilast
+                  pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+                  peln(i,k,j) = log(pe(i,k,j))
+               enddo
+            enddo
+
+            !Perturbation nonhydro layer-mean pressure (NOT to the kappa)
+            do k=1,npz
+               do i=ifirst,ilast
+                  !Full p
+                  pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)*rcp))
+                  !hydro
+                  pm = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
+                  !Remove hydro cell-mean pressure
+                  pkz(i,k) = pkz(i,k) - pm
+               enddo
+            enddo
+
+            !Reversible interpolation on layer NH pressure perturbation
+            !                 to recover  edge NH pressure perturbation
+            do k=1,npz-1
+               do i=ifirst,ilast
+                  g_rat(i,k) = delp(i,j,k)/delp(i,j,k+1)
+                  bb(i,k) = 2.*(1. + g_rat(i,k))
+                  dd(i,k) = 3.*(pkz(i,k) + g_rat(i,k)*pkz(i,k+1))
+               enddo
+            enddo
+
+            do i=ifirst,ilast
+               bet(i) = bb(i,1)
+               pkc(i,j,1) = 0.
+               pkc(i,j,2) = dd(i,1)/bet(i)
+               bb(i,npz) = 2.
+               dd(i,npz) = 3.*pkz(i,npz)
+            enddo
+            do k=2,npz
+               do i=ifirst,ilast
+                  gam(i,k) = g_rat(i,k-1)/bet(i)
+                  bet(i) = bb(i,k) - gam(i,k)
+                  pkc(i,j,k+1) = (dd(i,k) - pkc(i,j,k))/bet(i)
+               enddo
+            enddo
+            do k=npz,2,-1
+               do i=ifirst,ilast
+                  pkc(i,j,k) = pkc(i,j,k) - gam(i,k)*pkc(i,j,k+1)
+#ifdef NHNEST_DEBUG
+                  if (abs(pkc(i,j,k)) > 1.e5) then
+                     print*, mpp_pe(), i,j,k, 'PKC: ', pkc(i,j,k)
+                  endif
+#endif
+               enddo
+            enddo
+
+         enddo
+
+         do j=jfirst,0
+
+            if (.not. pkc_pertn) then
+               do k=npz+1,1,-1
+                  do i=ifirst,ilast
+                     pkc(i,j,k) = pkc(i,j,k) + pe(i,k,j)
+                  enddo
+               enddo
+            endif
+
+            !pk3 if necessary
+            if (computepk3) then
+               do i=ifirst,ilast
+                  pk3(i,j,1) = ptk
+               enddo
+               do k=2,npz+1
+                  do i=ifirst,ilast
+                     pk3(i,j,k) = exp(kappa*log(pe(i,k,j)))
+                  enddo
+               enddo
+            endif
+
+         enddo
+
+      endif
+
+      if (je == npy-1) then
+
+         do j=npy,jlast
+
+            !GZ
+            do i=ifirst,ilast
+               gz(i,j,npz+1) = phis(i,j)
+            enddo
+            do k=npz,1,-1
+               do i=ifirst,ilast
+                  gz(i,j,k) = gz(i,j,k+1) - delz(i,j,k)*grav
+               enddo
+            enddo
+
+            !Hydrostatic interface pressure
+            do i=ifirst,ilast
+               pe(i,1,j) = ptop
+               peln(i,1,j) = peln1
+            enddo
+            do k=2,npz+1
+               do i=ifirst,ilast
+                  pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+                  peln(i,k,j) = log(pe(i,k,j))
+               enddo
+            enddo
+
+            !Perturbation nonhydro layer-mean pressure (NOT to the kappa)
+            do k=1,npz
+               do i=ifirst,ilast
+                  !Full p
+                  pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)*rcp))
+                  !hydro
+                  pm = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
+                  !Remove hydro cell-mean pressure
+                  pkz(i,k) = pkz(i,k) - pm
+               enddo
+            enddo
+
+            !Reversible interpolation on layer NH pressure perturbation
+            !                 to recover  lastge NH pressure perturbation
+            do k=1,npz-1
+               do i=ifirst,ilast
+                  g_rat(i,k) = delp(i,j,k)/delp(i,j,k+1)
+                  bb(i,k) = 2.*(1. + g_rat(i,k))
+                  dd(i,k) = 3.*(pkz(i,k) + g_rat(i,k)*pkz(i,k+1))
+               enddo
+            enddo
+
+            do i=ifirst,ilast
+               bet(i) = bb(i,1)
+               pkc(i,j,1) = 0.
+               pkc(i,j,2) = dd(i,1)/bet(i)
+               bb(i,npz) = 2.
+               dd(i,npz) = 3.*pkz(i,npz)
+            enddo
+            do k=2,npz
+               do i=ifirst,ilast
+                  gam(i,k) = g_rat(i,k-1)/bet(i)
+                  bet(i) = bb(i,k) - gam(i,k)
+                  pkc(i,j,k+1) = (dd(i,k) - pkc(i,j,k))/bet(i)
+               enddo
+            enddo
+            do k=npz,2,-1
+               do i=ifirst,ilast
+                  pkc(i,j,k) = pkc(i,j,k) - gam(i,k)*pkc(i,j,k+1)
+               enddo
+            enddo
+
+
+         enddo
+
+         do j=npy,jlast
+
+            if (.not. pkc_pertn) then
+               do k=npz+1,1,-1
+                  do i=ifirst,ilast
+                     pkc(i,j,k) = pkc(i,j,k) + pe(i,k,j)
+                  enddo
+               enddo
+            endif
+
+            !pk3 if necessary
+            if (computepk3) then
+               do i=ifirst,ilast
+                  pk3(i,j,1) = ptk
+               enddo
+               do k=2,npz+1
+                  do i=ifirst,ilast
+                     pk3(i,j,k) = exp(kappa*log(pe(i,k,j)))
+                  enddo
+               enddo
+            endif
+
+         enddo
+
+      endif
+
+
+
+    end subroutine geopk_halo_nh
 
 
 end module nh_core_mod

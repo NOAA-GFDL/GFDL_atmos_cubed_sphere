@@ -1,23 +1,20 @@
 module boundary_mod
 
-  use fv_mp_mod,         only: ng, isc,jsc,iec,jec, isd,jsd,ied,jed, is,js,ie,je
-  use fv_mp_mod,         only: gid
+  use fv_mp_mod,         only: ng, isc,jsc,iec,jec, isd,jsd,ied,jed, is,js,ie,je, is_master
   use constants_mod,     only: grav
 
   use mpp_domains_mod,    only: mpp_get_compute_domain, mpp_get_data_domain, mpp_get_global_domain
   use mpp_domains_mod,    only: CENTER, CORNER, NORTH, EAST
   use mpp_domains_mod,    only: mpp_global_field, mpp_get_pelist
-  use mpp_mod,            only: mpp_error, FATAL, mpp_sum, mpp_sync, mpp_npes, mpp_broadcast, WARNING
+  use mpp_mod,            only: mpp_error, FATAL, mpp_sum, mpp_sync, mpp_npes, mpp_broadcast, WARNING, mpp_pe
 
-  use fv_mp_mod,          only: mp_bcst, domain
-  use fv_arrays_mod,      only: fv_atmos_type
+  use fv_mp_mod,          only: mp_bcst
+  use fv_arrays_mod,      only: fv_atmos_type, fv_nest_BC_type_3D, fv_grid_bounds_type
   use mpp_mod,            only: mpp_send, mpp_recv
-  use fv_current_grid_mod, only: npx, npy, area, rarea, dx, dy, rdx, rdy, parent_proc, child_proc, parent_grid
   use fv_timing_mod,      only: timing_on, timing_off
   use mpp_domains_mod, only : nest_domain_type, WEST, SOUTH
   use mpp_domains_mod, only : mpp_get_C2F_index, mpp_update_nest_fine
   use mpp_domains_mod, only : mpp_get_F2C_index, mpp_update_nest_coarse
-  use fv_mp_mod,       only : concurrent
   !use mpp_domains_mod, only : mpp_get_domain_shift
 
   implicit none
@@ -75,18 +72,31 @@ contains
   !Outflow BC routines based off of the formulations of Klemp and
   ! Wilhelmson (1978), modified for d-grid or c-grid as necessary.
 
-  subroutine outflow_u(u, rdx, dt, npx, cgrid, outflow_east, outflow_west)
+  subroutine outflow_u(u, rdx, dt, npx, cgrid, outflow_east, outflow_west, bd)
 
     implicit none
+    type(fv_grid_bounds_type), intent(IN) :: bd
     integer, intent(in) :: cgrid     ! 0 if d-grid, 1 if c-grid
     integer, intent(in) :: npx
-    real, intent(inout), dimension(isd:ied+cgrid  ,jsd:jed+1-cgrid) :: u
-    real, intent(in), dimension(isd:ied+cgrid  ,jsd:jed+1-cgrid) :: rdx
+    real, intent(inout), dimension(bd%isd:bd%ied+cgrid  ,bd%jsd:bd%jed+1-cgrid) :: u
+    real, intent(in), dimension(bd%isd:bd%ied+cgrid  ,bd%jsd:bd%jed+1-cgrid) :: rdx
     real, intent(in) :: dt
     logical, intent(in) :: outflow_east, outflow_west
 
     integer :: j, ix
     real :: ul, ur
+
+    integer :: is,  ie,  js,  je
+    integer :: isd, ied, jsd, jed
+
+    is  = bd%is
+    ie  = bd%ie
+    js  = bd%js
+    je  = bd%je
+    isd = bd%isd
+    ied = bd%ied
+    jsd = bd%jsd
+    jed = bd%jed
 
     !do we need to include any metric terms when computing these derivatives? 
     !Also these routines assume the coordinate line is perpendicular to the boundary
@@ -113,18 +123,31 @@ contains
 
   end subroutine outflow_u
 
-  subroutine outflow_v(v, rdy, dt, npy, cgrid, outflow_north, outflow_south)
+  subroutine outflow_v(v, rdy, dt, npy, cgrid, outflow_north, outflow_south, bd)
 
     implicit none
+    type(fv_grid_bounds_type), intent(IN) :: bd
     integer, intent(in) :: cgrid     ! 0 if d-grid, 1 if c-grid
     integer, intent(in) :: npy
-    real, intent(inout), dimension(isd:ied+1-cgrid  ,jsd:jed+cgrid) :: v
-    real, intent(in), dimension(isd:ied+1-cgrid  ,jsd:jed+cgrid) :: rdy
+    real, intent(inout), dimension(bd%isd:bd%ied+1-cgrid  ,bd%jsd:bd%jed+cgrid) :: v
+    real, intent(in), dimension(bd%isd:bd%ied+1-cgrid  ,bd%jsd:bd%jed+cgrid) :: rdy
     real, intent(in) :: dt
     logical, intent(in) :: outflow_north, outflow_south
 
     integer :: i, jx
     real :: vn, vs
+
+    integer :: is,  ie,  js,  je
+    integer :: isd, ied, jsd, jed
+
+    is  = bd%is
+    ie  = bd%ie
+    js  = bd%js
+    je  = bd%je
+    isd = bd%isd
+    ied = bd%ied
+    jsd = bd%jsd
+    jed = bd%jed
 
     if (outflow_south .AND. jsc == 1) then
 
@@ -153,17 +176,30 @@ contains
   ! The outflow wave speed is not used for non-normal flow components nor scalars.
   ! The flow speed used is that of the boundary point of the variable in question
   ! (hence the collocation); the differencing for the variable is first-order upstream
-  subroutine outflow_x(u, q, rdx, dt, npx, istag, jstag, outflow_east, outflow_west)
+  subroutine outflow_x(u, q, rdx, dt, npx, istag, jstag, outflow_east, outflow_west, bd)
 
     implicit none
+    type(fv_grid_bounds_type), intent(IN) :: bd
     integer, intent(in) :: istag, jstag, npx
-    real, intent(in), dimension(isd:ied+istag, jsd:jed+jstag) :: u, rdx
-    real, intent(inout), dimension(isd:ied+istag, jsd:jed+jstag) :: q
+    real, intent(in), dimension(bd%isd:bd%ied+istag, bd%jsd:bd%jed+jstag) :: u, rdx
+    real, intent(inout), dimension(bd%isd:bd%ied+istag, bd%jsd:bd%jed+jstag) :: q
     real, intent(in) :: dt
     logical, intent(in) :: outflow_east, outflow_west
 
     integer :: j, ix
     real :: ul, ur
+
+    integer :: is,  ie,  js,  je
+    integer :: isd, ied, jsd, jed
+
+    is  = bd%is
+    ie  = bd%ie
+    js  = bd%js
+    je  = bd%je
+    isd = bd%isd
+    ied = bd%ied
+    jsd = bd%jsd
+    jed = bd%jed
 
     !For scalars, we need to have u interpolated to the a-grid
     !For c-grid v, we need to have u interpolated to the d-grid
@@ -192,17 +228,30 @@ contains
 
   end subroutine outflow_x
 
-  subroutine outflow_y(v, q, rdy, dt, npy, istag, jstag, outflow_north, outflow_south)
+  subroutine outflow_y(v, q, rdy, dt, npy, istag, jstag, outflow_north, outflow_south, bd)
 
     implicit none
+    type(fv_grid_bounds_type), intent(IN) :: bd
     integer, intent(in) :: istag, jstag, npy
-    real, intent(inout), dimension(isd:ied+istag, jsd:jed+jstag) :: q
-    real, intent(in), dimension(isd:ied+istag, jsd:jed+jstag) :: v, rdy
+    real, intent(inout), dimension(bd%isd:bd%ied+istag, bd%jsd:bd%jed+jstag) :: q
+    real, intent(in), dimension(bd%isd:bd%ied+istag, bd%jsd:bd%jed+jstag) :: v, rdy
     real, intent(in) :: dt
     logical, intent(in) :: outflow_north, outflow_south
 
     integer :: i, jx
     real :: vn, vs
+
+    integer :: is,  ie,  js,  je
+    integer :: isd, ied, jsd, jed
+
+    is  = bd%is
+    ie  = bd%ie
+    js  = bd%js
+    je  = bd%je
+    isd = bd%isd
+    ied = bd%ied
+    jsd = bd%jsd
+    jed = bd%jed
 
     if (outflow_south .AND. jsc == 1) then
 
@@ -227,14 +276,27 @@ contains
   end subroutine outflow_y
 
   !Linear extrapolation into halo region
-  subroutine extrapolation_BC(q, istag, jstag, npx, npy, pd_in, debug_in)
+  subroutine extrapolation_BC(q, istag, jstag, npx, npy, bd, pd_in, debug_in)
 
+    type(fv_grid_bounds_type), intent(IN) :: bd
     integer, intent(in) :: istag, jstag, npx, npy
-    real, intent(inout), dimension(isd:ied+istag, jsd:jed+jstag) :: q
+    real, intent(inout), dimension(bd%isd:bd%ied+istag, bd%jsd:bd%jed+jstag) :: q
     logical, intent(in), OPTIONAL :: pd_in, debug_in
 
     integer :: i,j, istart, iend, jstart, jend
     logical :: pd, debug
+
+    integer :: is,  ie,  js,  je
+    integer :: isd, ied, jsd, jed
+
+    is  = bd%is
+    ie  = bd%ie
+    js  = bd%js
+    je  = bd%je
+    isd = bd%isd
+    ied = bd%ied
+    jsd = bd%jsd
+    jed = bd%jed
 
     istart = max(isd, 1)
     iend = min(ied,npx-1)
@@ -430,7 +492,9 @@ contains
                 q(i,j) = 0.5*( real(2-i)*q(1,j) - real(1-i)*q(2,j) )
              end if
 
-             if (real(j) >= je+jstag -+q(i,je+jstag)/(q(i,je+jstag-1)-q(i,je+jstag)+1.e-12) .and. &
+             !'Unary plus' removed to appease IBM compiler
+             !if (real(j) >= je+jstag - q(i,je+jstag)/(q(i,je+jstag-1)-q(i,je+jstag)+1.e-12) .and. &
+             if (real(j) >= je+jstag - q(i,je+jstag)/(q(i,je+jstag-1)-q(i,je+jstag)+1.e-12) .and. &
                   q(i,je+jstag-1) > q(i,je+jstag) ) then
                 q(i,j) = q(i,j) + 0.5*q(i,j-1)
              else
@@ -540,17 +604,30 @@ contains
   end subroutine extrapolation_BC
 
   subroutine fill_nested_grid_2D(var_nest, var_coarse, ind, wt, istag, jstag,  &
-      isg, ieg, jsg, jeg, istart_in, iend_in, jstart_in, jend_in)
+      isg, ieg, jsg, jeg, bd, istart_in, iend_in, jstart_in, jend_in)
 
-   real, dimension(isd:ied+istag,jsd:jed+jstag), intent(INOUT) :: var_nest
-   real, dimension(isg:ieg+istag,isg:ieg+jstag), intent(IN) :: var_coarse
-   integer, dimension(isd:ied+istag,jsd:jed+jstag,2), intent(IN) :: ind
-   real, dimension(isd:ied+istag,jsd:jed+jstag,4), intent(IN) :: wt
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag), intent(INOUT) :: var_nest
+   real, dimension(isg:ieg+istag,jsg:jeg+jstag), intent(IN) :: var_coarse 
+   integer, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,2), intent(IN) :: ind
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,4), intent(IN) :: wt
    integer, intent(IN) :: istag, jstag, isg, ieg, jsg, jeg
    integer, intent(IN), OPTIONAL :: istart_in, iend_in, jstart_in, jend_in
 
    integer :: i,j, ic, jc
    integer :: istart, iend, jstart, jend
+
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
 
    if (present(istart_in)) then
       istart = istart_in
@@ -592,17 +669,30 @@ contains
  end subroutine fill_nested_grid_2D
  
   subroutine fill_nested_grid_3D(var_nest, var_coarse, ind, wt, istag, jstag,  &
-      isg, ieg, jsg, jeg, npz, istart_in, iend_in, jstart_in, jend_in)
+      isg, ieg, jsg, jeg, npz, bd, istart_in, iend_in, jstart_in, jend_in)
 
-   real, dimension(isd:ied+istag,jsd:jed+jstag,npz), intent(INOUT) :: var_nest
-   real, dimension(isg:ieg+istag,isg:ieg+jstag,npz), intent(IN) :: var_coarse
-   integer, dimension(isd:ied+istag,jsd:jed+jstag,2), intent(IN) :: ind
-   real, dimension(isd:ied+istag,jsd:jed+jstag,4), intent(IN) :: wt
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,npz), intent(INOUT) :: var_nest
+   real, dimension(isg:ieg+istag,jsg:jeg+jstag,npz), intent(IN) :: var_coarse
+   integer, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,2), intent(IN) :: ind
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,4), intent(IN) :: wt
    integer, intent(IN) :: istag, jstag, isg, ieg, jsg, jeg, npz
    integer, intent(IN), OPTIONAL :: istart_in, iend_in, jstart_in, jend_in
 
    integer :: i,j, ic, jc, k
    integer :: istart, iend, jstart, jend
+
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
 
    if (present(istart_in)) then
       istart = istart_in
@@ -648,13 +738,14 @@ contains
  end subroutine fill_nested_grid_3D
  
  subroutine nested_grid_BC_mpp(var_nest, var_coarse, nest_domain, ind, wt, istag, jstag, &
-      npx, npy, npz, isg, ieg, jsg, jeg, nstep_in, nsplit_in, proc_in)
+      npx, npy, npz, bd, isg, ieg, jsg, jeg, nstep_in, nsplit_in, proc_in)
 
-   real, dimension(isd:ied+istag,jsd:jed+jstag,npz), intent(INOUT) :: var_nest
-   real, dimension(isg:ieg+istag,isg:ieg+jstag,npz), intent(IN) :: var_coarse
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,npz), intent(INOUT) :: var_nest
+   real, dimension(isg:ieg+istag,jsg:jeg+jstag,npz), intent(IN) :: var_coarse
    type(nest_domain_type), intent(INOUT) :: nest_domain
-   integer, dimension(isd:ied+istag,jsd:jed+jstag,2), intent(IN) :: ind
-   real, dimension(isd:ied+istag,jsd:jed+jstag,4), intent(IN) :: wt
+   integer, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,2), intent(IN) :: ind
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,4), intent(IN) :: wt
    integer, intent(IN) :: istag, jstag, npx, npy, npz, isg, ieg, jsg, jeg
    integer, intent(IN), OPTIONAL :: nstep_in, nsplit_in
    logical, intent(IN), OPTIONAL :: proc_in
@@ -672,6 +763,18 @@ contains
 
    integer :: position
    logical :: process
+
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
 
    if (PRESENT(proc_in)) then
       process = proc_in
@@ -861,12 +964,11 @@ contains
 
  end subroutine nested_grid_BC_mpp
 
- subroutine nested_grid_BC_mpp_send(var_coarse, nest_domain, istag, jstag, &
-      isg, ieg, jsg, jeg, npz)
+ subroutine nested_grid_BC_mpp_send(var_coarse, nest_domain, istag, jstag)
 
-   real, dimension(isg:ieg+istag,isg:ieg+jstag,npz), intent(IN) :: var_coarse
+   real, dimension(:,:,:), intent(IN) :: var_coarse
    type(nest_domain_type), intent(INOUT) :: nest_domain
-   integer, intent(IN) :: istag, jstag, isg, ieg, jsg, jeg, npz
+   integer, intent(IN) :: istag, jstag
 
    real,    allocatable         :: wbuffer(:,:,:)
    real,    allocatable         :: ebuffer(:,:,:)
@@ -908,13 +1010,14 @@ contains
  end subroutine nested_grid_BC_mpp_send
 
  subroutine nested_grid_BC_2D_mpp(var_nest, var_coarse, nest_domain, ind, wt, istag, jstag, &
-      npx, npy, isg, ieg, jsg, jeg, nstep_in, nsplit_in, proc_in)
+      npx, npy, bd, isg, ieg, jsg, jeg, nstep_in, nsplit_in, proc_in)
 
-   real, dimension(isd:ied+istag,jsd:jed+jstag), intent(INOUT) :: var_nest
-   real, dimension(isg:ieg+istag,isg:ieg+jstag), intent(IN) :: var_coarse
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag), intent(INOUT) :: var_nest
+   real, dimension(isg:ieg+istag,jsg:jeg+jstag), intent(IN) :: var_coarse
    type(nest_domain_type), intent(INOUT) :: nest_domain
-   integer, dimension(isd:ied+istag,jsd:jed+jstag,2), intent(IN) :: ind
-   real, dimension(isd:ied+istag,jsd:jed+jstag,4), intent(IN) :: wt
+   integer, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,2), intent(IN) :: ind
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,4), intent(IN) :: wt
    integer, intent(IN) :: istag, jstag, npx, npy, isg, ieg, jsg, jeg
    integer, intent(IN), OPTIONAL :: nstep_in, nsplit_in
    logical, intent(IN), OPTIONAL :: proc_in
@@ -932,6 +1035,18 @@ contains
 
    integer :: position
    logical :: process
+
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
 
    if (PRESENT(proc_in)) then
       process = proc_in
@@ -1113,18 +1228,31 @@ contains
  end subroutine nested_grid_BC_2D_mpp
 
  subroutine nested_grid_BC_2D(var_nest, var_coarse, ind, wt, istag, jstag, &
-      npx, npy, isg, ieg, jsg, jeg, nstep_in, nsplit_in)
+      npx, npy, bd, isg, ieg, jsg, jeg, nstep_in, nsplit_in)
 
-   real, dimension(isd:ied+istag,jsd:jed+jstag), intent(INOUT) :: var_nest
-   real, dimension(isg:ieg+istag,isg:ieg+jstag), intent(IN) :: var_coarse
-   integer, dimension(isd:ied+istag,jsd:jed+jstag,2), intent(IN) :: ind
-   real, dimension(isd:ied+istag,jsd:jed+jstag,4), intent(IN) :: wt
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag), intent(INOUT) :: var_nest
+   real, dimension(isg:ieg+istag,jsg:jeg+jstag), intent(IN) :: var_coarse
+   integer, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,2), intent(IN) :: ind
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,4), intent(IN) :: wt
    integer, intent(IN) :: istag, jstag, npx, npy, isg, ieg, jsg, jeg
    integer, intent(IN), OPTIONAL :: nstep_in, nsplit_in
 
    integer :: nstep, nsplit
 
    integer :: i,j, ic, jc, istart, iend
+
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
 
    if ( .not. present(nstep_in) .or. .not. present(nsplit_in) ) then
       nstep = 1
@@ -1235,18 +1363,31 @@ contains
  end subroutine nested_grid_BC_2D
 
  subroutine nested_grid_BC_3D(var_nest, var_coarse, ind, wt, istag, jstag, &
-      npx, npy, npz, isg, ieg, jsg, jeg, nstep_in, nsplit_in)
+      npx, npy, npz, bd, isg, ieg, jsg, jeg, nstep_in, nsplit_in)
 
-   real, dimension(isd:ied+istag,jsd:jed+jstag,npz), intent(INOUT) :: var_nest
-   real, dimension(isg:ieg+istag,isg:ieg+jstag,npz), intent(IN) :: var_coarse
-   integer, dimension(isd:ied+istag,jsd:jed+jstag,2), intent(IN) :: ind
-   real, dimension(isd:ied+istag,jsd:jed+jstag,4), intent(IN) :: wt
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,npz), intent(INOUT) :: var_nest
+   real, dimension(isg:ieg+istag,jsg:jeg+jstag,npz), intent(IN) :: var_coarse
+   integer, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,2), intent(IN) :: ind
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,4), intent(IN) :: wt
    integer, intent(IN) :: istag, jstag, npx, npy, isg, ieg, jsg, jeg, npz
    integer, intent(IN), OPTIONAL :: nstep_in, nsplit_in
 
    integer :: nstep, nsplit
 
    integer :: i,j, ic, jc, istart, iend, k
+
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
 
    if ( .not. present(nstep_in) .or. .not. present(nsplit_in) ) then
       nstep = 1
@@ -1363,22 +1504,29 @@ contains
 
  end subroutine nested_grid_BC_3D
 
- subroutine nested_grid_BC_save_mpp(var_coarse, nest_domain, ind, wt, istag, jstag, &
-      npx, npy, npz, isg, ieg, jsg, jeg, var_east, var_west, var_north, var_south, ns, &
-      proc_in)
+ subroutine nested_grid_BC_save_mpp(nest_domain, ind, wt, istag, jstag, &
+      npx, npy, npz, bd, nest_BC, &
+      proc_in, ns_in)
 
-   real, dimension(isg:ieg+istag,jsg:jeg+jstag,npz), intent(IN) :: var_coarse
+   type(fv_grid_bounds_type), intent(IN) :: bd
    type(nest_domain_type), intent(INOUT) :: nest_domain
-   integer, dimension(isd:ied+istag,jsd:jed+jstag,2), intent(IN) :: ind
-   real, dimension(isd:ied+istag,jsd:jed+jstag,4), intent(IN) :: wt
-   integer, intent(IN) :: istag, jstag, npx, npy, isg, ieg, jsg, jeg, npz
-   integer, intent(IN) :: ns
+   integer, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,2), intent(IN) :: ind
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,4), intent(IN) :: wt
+   integer, intent(IN) :: istag, jstag, npx, npy, npz
+   integer, intent(IN), OPTIONAL :: ns_in
    logical, intent(IN), OPTIONAL :: proc_in
+
+   !!NOTE: if declaring an ALLOCATABLE array with intent(OUT), the resulting dummy array
+   !!      will NOT be allocated! This goes for allocatable members of derived types as well.
+   type(fv_nest_BC_type_3d), intent(INOUT), target :: nest_BC
    
-   real, dimension(ie+1+istag-ns:ied+istag,jsd:jed+jstag,npz), intent(out) :: var_east
-   real, dimension(isd:is-1+ns,jsd:jed+jstag,npz), intent(out) :: var_west
-   real, dimension(isd:ied+istag,jsd:js-1+ns,npz), intent(out) :: var_south
-   real, dimension(isd:ied+istag,je+1+jstag-ns:jed+jstag,npz), intent(out) :: var_north
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,npz) :: var_coarse_dummy
+
+   real, dimension(:,:,:), pointer :: var_east, var_west, var_south, var_north
+   !real, dimension(bd%ie+1+istag-ns:bd%ied+istag,bd%jsd:bd%jed+jstag,npz), intent(out) :: var_east
+   !real, dimension(bd%isd:bd%is-1+ns,bd%jsd:bd%jed+jstag,npz), intent(out) :: var_west
+   !real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%js-1+ns,npz), intent(out) :: var_south
+   !real, dimension(bd%isd:bd%ied+istag,bd%je+1+jstag-ns:bd%jed+jstag,npz), intent(out) :: var_north
 
    integer                      :: position
 
@@ -1392,12 +1540,29 @@ contains
    real,    allocatable         :: nbuffer(:,:,:)
 
    integer :: i,j, k, ic, jc, istart, iend
+   integer :: ns = 0
    logical :: process
+
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
 
    if (present(proc_in)) then
       process = proc_in
    else
       process = .true.
+   endif
+
+   if (present(ns_in)) then
+      ns = ns_in
    endif
 
    if (istag == 1 .and. jstag == 1) then
@@ -1447,12 +1612,16 @@ contains
    endif
    nbuffer = 0
 
-
        call timing_on ('COMM_TOTAL')
-   call mpp_update_nest_fine(var_coarse, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer,  position=position)
+   call mpp_update_nest_fine(var_coarse_dummy, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer,  position=position)
        call timing_off('COMM_TOTAL')
 
    if (process) then
+
+      var_east  => nest_BC%east_t1
+      var_west  => nest_BC%west_t1
+      var_north => nest_BC%north_t1
+      var_south => nest_BC%south_t1
 
    ! ?buffer has uninterpolated coarse-grid data; need to perform interpolation ourselves
    !To do this more securely, instead of using is/etc we could use the fine-grid indices defined above
@@ -1650,7 +1819,7 @@ contains
 
 
        call timing_on ('COMM_TOTAL')
-!!$       print*, gid, 'CALLING UPDATE_NEST_FINE'
+!!$       print*, mpp_pe, 'CALLING UPDATE_NEST_FINE'
    call mpp_update_nest_fine(var_coarse, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer,  position=position)
        call timing_off('COMM_TOTAL')
 
@@ -1663,20 +1832,33 @@ contains
  end subroutine nested_grid_BC_save_send
 
  subroutine nested_grid_BC_save_2D(var_coarse, ind, wt, istag, jstag, &
-      npx, npy, isg, ieg, jsg, jeg, var_east, var_west, var_north, var_south, ns)
+      npx, npy, bd, isg, ieg, jsg, jeg, var_east, var_west, var_north, var_south, ns)
 
-   real, dimension(isg:ieg+istag,isg:ieg+jstag), intent(IN) :: var_coarse
-   integer, dimension(isd:ied+istag,jsd:jed+jstag,2), intent(IN) :: ind
-   real, dimension(isd:ied+istag,jsd:jed+jstag,4), intent(IN) :: wt
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   real, dimension(isg:ieg+istag,jsg:jeg+jstag), intent(IN) :: var_coarse
+   integer, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,2), intent(IN) :: ind
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,4), intent(IN) :: wt
    integer, intent(IN) :: istag, jstag, npx, npy, isg, ieg, jsg, jeg
    integer, intent(IN) :: ns
    
-   real, dimension(ie+1+istag-ns:ied+istag,jsd:jed+jstag), intent(out) :: var_east
-   real, dimension(isd:is-1+ns,jsd:jed+jstag), intent(out) :: var_west
-   real, dimension(isd:ied+istag,jsd:js-1+ns), intent(out) :: var_south
-   real, dimension(isd:ied+istag,je+1+jstag-ns:jed+jstag), intent(out) :: var_north
+   real, dimension(bd%ie+1+istag-ns:bd%ied+istag,bd%jsd:bd%jed+jstag), intent(out) :: var_east
+   real, dimension(bd%isd:bd%is-1+ns,bd%jsd:bd%jed+jstag), intent(out) :: var_west
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%js-1+ns), intent(out) :: var_south
+   real, dimension(bd%isd:bd%ied+istag,bd%je+1+jstag-ns:bd%jed+jstag), intent(out) :: var_north
 
    integer :: i,j, ic, jc, istart, iend
+
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
 
    if (is == 1  ) then
       do j=jsd,jed+jstag
@@ -1779,20 +1961,33 @@ contains
  end subroutine nested_grid_BC_save_2D
 
  subroutine nested_grid_BC_save_3D(var_coarse, ind, wt, istag, jstag, &
-      npx, npy, npz, isg, ieg, jsg, jeg, var_east, var_west, var_north, var_south, ns)
+      npx, npy, npz, bd, isg, ieg, jsg, jeg, var_east, var_west, var_north, var_south, ns)
 
-   real, dimension(isg:ieg+istag,isg:ieg+jstag,npz), intent(IN) :: var_coarse
-   integer, dimension(isd:ied+istag,jsd:jed+jstag,2), intent(IN) :: ind
-   real, dimension(isd:ied+istag,jsd:jed+jstag,4), intent(IN) :: wt
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   real, dimension(isg:ieg+istag,jsg:jeg+jstag,npz), intent(IN) :: var_coarse
+   integer, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,2), intent(IN) :: ind
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,4), intent(IN) :: wt
    integer, intent(IN) :: istag, jstag, npx, npy, isg, ieg, jsg, jeg, npz
    integer, intent(IN) :: ns
    
-   real, dimension(ie+1+istag-ns:ied+istag,jsd:jed+jstag,npz), intent(out) :: var_east
-   real, dimension(isd:is-1+ns,jsd:jed+jstag,npz), intent(out) :: var_west
-   real, dimension(isd:ied+istag,jsd:js-1+ns,npz), intent(out) :: var_south
-   real, dimension(isd:ied+istag,je+1+jstag-ns:jed+jstag,npz), intent(out) :: var_north
+   real, dimension(bd%ie+1+istag-ns:bd%ied+istag,bd%jsd:bd%jed+jstag,npz), intent(out) :: var_east
+   real, dimension(bd%isd:bd%is-1+ns,bd%jsd:bd%jed+jstag,npz), intent(out) :: var_west
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%js-1+ns,npz), intent(out) :: var_south
+   real, dimension(bd%isd:bd%ied+istag,bd%je+1+jstag-ns:bd%jed+jstag,npz), intent(out) :: var_north
 
    integer :: i,j, ic, jc, istart, iend, k
+
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
 
    if (is == 1  ) then
       do k=1,npz
@@ -1914,18 +2109,19 @@ contains
  ! is available use nested_grid_BC.
 
  subroutine nested_grid_BC_apply_3D(var_nest, istag, jstag, &
-      npx, npy, npz, step, split, var_east, var_west, var_north, var_south, bctype, nsponge, s_weight)
+      npx, npy, npz, bd, step, split, var_east, var_west, var_north, var_south, bctype, nsponge, s_weight)
 
-   real, dimension(isd:ied+istag,jsd:jed+jstag, npz), intent(INOUT) :: var_nest
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag, npz), intent(INOUT) :: var_nest
    integer, intent(IN) :: istag, jstag, npx, npy, npz
    integer, intent(IN) :: split, step
    integer, intent(IN) :: bctype, nsponge
    real, intent(IN) :: s_weight
    
-   real, dimension(ie+1+istag-nsponge:ied+istag,jsd:jed+jstag,npz), intent(in) :: var_east
-   real, dimension(isd:is-1+nsponge,jsd:jed+jstag,npz), intent(in) :: var_west
-   real, dimension(isd:ied+istag,jsd:js-1+nsponge,npz), intent(in) :: var_south
-   real, dimension(isd:ied+istag,je+1+jstag-nsponge:jed+jstag,npz), intent(in) :: var_north
+   real, dimension(bd%ie+1+istag-nsponge:bd%ied+istag,bd%jsd:bd%jed+jstag,npz), intent(in) :: var_east
+   real, dimension(bd%isd:bd%is-1+nsponge,bd%jsd:bd%jed+jstag,npz), intent(in) :: var_west
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%js-1+nsponge,npz), intent(in) :: var_south
+   real, dimension(bd%isd:bd%ied+istag,bd%je+1+jstag-nsponge:bd%jed+jstag,npz), intent(in) :: var_north
 
    integer :: i,j, istart, iend, k
    real :: denom
@@ -1933,13 +2129,25 @@ contains
 
    logical, save :: printdiag = .true.
 
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
+
    denom = 1./real(split - step + 1)
 
    do i=1,nsponge
       weights(i) = s_weight*(1. + real(nsponge - i))/real(nsponge)
    end do
 
-   if (printdiag .and. gid == 0 .and. nsponge > 0) then
+   if (printdiag .and. is_master() .and. nsponge > 0) then
       print*, 'SPONGE WEIGHTS'
       do i=1,nsponge
          write(*,'(I2, E14.8)') i, weights(i)
@@ -2075,18 +2283,19 @@ contains
  end subroutine nested_grid_BC_apply_3D
 
  subroutine nested_grid_BC_apply_2D(var_nest, istag, jstag, &
-      npx, npy, step, split, var_east, var_west, var_north, var_south, bctype, nsponge, s_weight)
+      npx, npy, bd, step, split, var_east, var_west, var_north, var_south, bctype, nsponge, s_weight)
 
-   real, dimension(isd:ied+istag,jsd:jed+jstag), intent(INOUT) :: var_nest
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag), intent(INOUT) :: var_nest
    integer, intent(IN) :: istag, jstag, npx, npy
    integer, intent(IN) :: split, step
    integer, intent(IN) :: bctype, nsponge
    real, intent(IN) :: s_weight
    
-   real, dimension(ie+1+istag-nsponge:ied+istag,jsd:jed+jstag), intent(in) :: var_east
-   real, dimension(isd:is-1+nsponge,jsd:jed+jstag), intent(in) :: var_west
-   real, dimension(isd:ied+istag,jsd:js-1+nsponge), intent(in) :: var_south
-   real, dimension(isd:ied+istag,je+1+jstag-nsponge:jed+jstag), intent(in) :: var_north
+   real, dimension(bd%ie+1+istag-nsponge:bd%ied+istag,bd%jsd:bd%jed+jstag), intent(in) :: var_east
+   real, dimension(bd%isd:bd%is-1+nsponge,bd%jsd:bd%jed+jstag), intent(in) :: var_west
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%js-1+nsponge), intent(in) :: var_south
+   real, dimension(bd%isd:bd%ied+istag,bd%je+1+jstag-nsponge:bd%jed+jstag), intent(in) :: var_north
 
    integer :: i,j, istart, iend
    real :: denom
@@ -2094,13 +2303,25 @@ contains
 
    logical, save :: printdiag = .true.
 
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
+
    denom = 1./real(split - step + 1)
 
    do i=1,nsponge
       weights(i) = s_weight*(1. + real(nsponge - i))/real(nsponge)
    end do
 
-   if (printdiag .and. gid == 0 .and. nsponge > 0) then
+   if (printdiag .and. is_master() .and. nsponge > 0) then
       print*, 'SPONGE WEIGHTS'
       do i=1,nsponge
          write(*,'(I2, E12.8)') i, weights(i)
@@ -2222,32 +2443,45 @@ contains
 
 
  subroutine nested_grid_BC_apply_intT_3D(var_nest, istag, jstag, &
-      npx, npy, npz, step, split, &
+      npx, npy, npz, bd, step, split, &
       var_east_t0, var_west_t0, var_north_t0, var_south_t0, &
       var_east_t1, var_west_t1, var_north_t1, var_south_t1, &
       bctype, nsponge, s_weight)
 
-   real, dimension(isd:ied+istag,jsd:jed+jstag, npz), intent(INOUT) :: var_nest
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag, npz), intent(INOUT) :: var_nest
    integer, intent(IN) :: istag, jstag, npx, npy, npz
    real, intent(IN) :: split, step
    integer, intent(IN) :: bctype, nsponge
    real, intent(IN) :: s_weight
    
-   real, dimension(ie+1+istag-nsponge:ied+istag,jsd:jed+jstag,npz), intent(in) :: var_east_t0
-   real, dimension(isd:is-1+nsponge,jsd:jed+jstag,npz), intent(in) :: var_west_t0
-   real, dimension(isd:ied+istag,jsd:js-1+nsponge,npz), intent(in) :: var_south_t0
-   real, dimension(isd:ied+istag,je+1+jstag-nsponge:jed+jstag,npz), intent(in) :: var_north_t0
+   real, dimension(bd%ie+1+istag-nsponge:bd%ied+istag,bd%jsd:bd%jed+jstag,npz), intent(in) :: var_east_t0
+   real, dimension(bd%isd:bd%is-1+nsponge,bd%jsd:bd%jed+jstag,npz), intent(in) :: var_west_t0
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%js-1+nsponge,npz), intent(in) :: var_south_t0
+   real, dimension(bd%isd:bd%ied+istag,bd%je+1+jstag-nsponge:bd%jed+jstag,npz), intent(in) :: var_north_t0
 
-   real, dimension(ie+1+istag-nsponge:ied+istag,jsd:jed+jstag,npz), intent(in) :: var_east_t1
-   real, dimension(isd:is-1+nsponge,jsd:jed+jstag,npz), intent(in) :: var_west_t1
-   real, dimension(isd:ied+istag,jsd:js-1+nsponge,npz), intent(in) :: var_south_t1
-   real, dimension(isd:ied+istag,je+1+jstag-nsponge:jed+jstag,npz), intent(in) :: var_north_t1
+   real, dimension(bd%ie+1+istag-nsponge:bd%ied+istag,bd%jsd:bd%jed+jstag,npz), intent(in) :: var_east_t1
+   real, dimension(bd%isd:bd%is-1+nsponge,bd%jsd:bd%jed+jstag,npz), intent(in) :: var_west_t1
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%js-1+nsponge,npz), intent(in) :: var_south_t1
+   real, dimension(bd%isd:bd%ied+istag,bd%je+1+jstag-nsponge:bd%jed+jstag,npz), intent(in) :: var_north_t1
 
    integer :: i,j, istart, iend, k
    real :: denom
    real :: weights(nsponge)
 
    logical, save :: printdiag = .true.
+
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
 
    denom = 1./split
 
@@ -2383,32 +2617,45 @@ contains
  end subroutine nested_grid_BC_apply_intT_3D
  
  subroutine nested_grid_BC_apply_intT_2D(var_nest, istag, jstag, &
-      npx, npy, step, split, &
+      npx, npy, bd, step, split, &
       var_east_t0, var_west_t0, var_north_t0, var_south_t0, &
       var_east_t1, var_west_t1, var_north_t1, var_south_t1, &
       bctype, nsponge, s_weight)
 
-   real, dimension(isd:ied+istag,jsd:jed+jstag), intent(INOUT) :: var_nest
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag), intent(INOUT) :: var_nest
    integer, intent(IN) :: istag, jstag, npx, npy
    real, intent(IN) :: split, step
    integer, intent(IN) :: bctype, nsponge
    real, intent(IN) :: s_weight
    
-   real, dimension(ie+1+istag-nsponge:ied+istag,jsd:jed+jstag), intent(in) :: var_east_t0
-   real, dimension(isd:is-1+nsponge,jsd:jed+jstag), intent(in) :: var_west_t0
-   real, dimension(isd:ied+istag,jsd:js-1+nsponge), intent(in) :: var_south_t0
-   real, dimension(isd:ied+istag,je+1+jstag-nsponge:jed+jstag), intent(in) :: var_north_t0
+   real, dimension(bd%ie+1+istag-nsponge:bd%ied+istag,bd%jsd:bd%jed+jstag), intent(in) :: var_east_t0
+   real, dimension(bd%isd:bd%is-1+nsponge,bd%jsd:bd%jed+jstag), intent(in) :: var_west_t0
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%js-1+nsponge), intent(in) :: var_south_t0
+   real, dimension(bd%isd:bd%ied+istag,bd%je+1+jstag-nsponge:bd%jed+jstag), intent(in) :: var_north_t0
 
-   real, dimension(ie+1+istag-nsponge:ied+istag,jsd:jed+jstag), intent(in) :: var_east_t1
-   real, dimension(isd:is-1+nsponge,jsd:jed+jstag), intent(in) :: var_west_t1
-   real, dimension(isd:ied+istag,jsd:js-1+nsponge), intent(in) :: var_south_t1
-   real, dimension(isd:ied+istag,je+1+jstag-nsponge:jed+jstag), intent(in) :: var_north_t1
+   real, dimension(bd%ie+1+istag-nsponge:bd%ied+istag,bd%jsd:bd%jed+jstag), intent(in) :: var_east_t1
+   real, dimension(bd%isd:bd%is-1+nsponge,bd%jsd:bd%jed+jstag), intent(in) :: var_west_t1
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%js-1+nsponge), intent(in) :: var_south_t1
+   real, dimension(bd%isd:bd%ied+istag,bd%je+1+jstag-nsponge:bd%jed+jstag), intent(in) :: var_north_t1
 
    integer :: i,j, istart, iend
    real :: denom
    real :: weights(nsponge)
 
    logical, save :: printdiag = .true.
+
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
 
    denom = 1./split
 
@@ -2530,18 +2777,19 @@ contains
 
 
  subroutine nested_grid_sponge_apply(var_nest, istag, jstag, &
-      npx, npy, step, split, var_east, var_west, var_north, var_south, nsponge)
+      npx, npy, bd, step, split, var_east, var_west, var_north, var_south, nsponge)
    !sponge BC: just relaxing to the advanced (not time-interpolated) coarse-grid solution.
 
-   real, dimension(isd:ied+istag,jsd:jed+jstag), intent(INOUT) :: var_nest
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag), intent(INOUT) :: var_nest
    integer, intent(IN) :: istag, jstag, npx, npy
    integer, intent(IN) :: split, step
    integer, intent(in) :: nsponge
    
-   real, dimension(npx-nsponge:ied+istag,jsd:jed+jstag)        , intent(in) :: var_east
-   real, dimension(isd:nsponge          ,jsd:jed+jstag)        , intent(in) :: var_west
-   real, dimension(isd:ied+istag        ,jsd:nsponge)          , intent(in) :: var_south
-   real, dimension(isd:ied+istag        ,npy-nsponge:jed+jstag), intent(in) :: var_north
+   real, dimension(npx-nsponge:bd%ied+istag,bd%jsd:bd%jed+jstag)        , intent(in) :: var_east
+   real, dimension(bd%isd:nsponge          ,bd%jsd:bd%jed+jstag)        , intent(in) :: var_west
+   real, dimension(bd%isd:bd%ied+istag        ,bd%jsd:nsponge)          , intent(in) :: var_south
+   real, dimension(bd%isd:bd%ied+istag        ,npy-nsponge:bd%jed+jstag), intent(in) :: var_north
 
    integer :: i,j, istart, iend, bctype
    real, parameter :: s_weight = 0.1
@@ -2549,6 +2797,18 @@ contains
    real :: weights(nsponge)
 
    logical, save :: printdiag = .true.
+
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
 
    if (nsponge == 0) return
 
@@ -2558,7 +2818,7 @@ contains
       weights(i) = s_weight*(1. + real(nsponge - i))/real(nsponge)
    end do
 
-   if (printdiag .and. gid == 0 .and. nsponge > 0) then
+   if (printdiag .and. is_master() .and. nsponge > 0) then
       print*, 'SPONGE WEIGHTS'
       do i=1,nsponge
          write(*,'(I2, E14.8)') i, weights(i)
@@ -2633,6 +2893,7 @@ contains
 
  end subroutine nested_grid_sponge_apply
  
+ !!! CLEANUP: remove concurrent argument?
  subroutine gather_grid_2d(parent_grid, var_coarse_this_grid, var_coarse, &
       isd_p, ied_p, jsd_p, jed_p, isg, ieg, jsg, jeg, istag, jstag, &
       parent_tile, concurrent, recv_pes, recv_npes)
@@ -2660,17 +2921,17 @@ contains
 
        !Call gather grid on the procs that have the required data.
        !Then broadcast from the head PE to the receiving PEs
-       if (ANY(parent_grid%pelist == gid) .and. parent_tile == parent_grid%tile) then
+       if (ANY(parent_grid%pelist == mpp_pe()) .and. parent_tile == parent_grid%tile) then
           call mpp_global_field( &
                parent_grid%domain, &
                var_coarse_this_grid, var_coarse(:,:,1), position=position)
-          if (gid == sending_proc) then 
+          if (mpp_pe() == sending_proc) then 
              do p=1,recv_npes
                 call mpp_send(var_coarse,size(var_coarse),recv_pes(p))
              enddo
           endif
        endif
-       if (ANY(recv_pes == gid)) then
+       if (ANY(recv_pes == mpp_pe())) then
           call mpp_recv(var_coarse, size(var_coarse), sending_proc)
        endif
 
@@ -2686,7 +2947,7 @@ contains
 
       allocate(tilelist(0:mpp_npes()-1))
       tilelist = 0
-      tilelist(gid) = parent_grid%tile
+      tilelist(mpp_pe()) = parent_grid%tile
       call mpp_sum(tilelist,mpp_npes())
 !!$   if (gid == 0) then
 !!$      print*, 'tilelist:'
@@ -2701,7 +2962,7 @@ contains
 
       do n=0,mpp_npes()-1
          if (tilelist(n) == parent_tile) then
-            if (gid == n) then
+            if (mpp_pe() == n) then
                !            print*, 'gather_grid: proc ', gid, ' broadcasting '
                !            print*, 'gather_grid: SIZE: ', size(var_coarse), npx, npy
                call mpp_broadcast(var_coarse, npx*npy, n, parent_grid%pelist)
@@ -2756,17 +3017,17 @@ contains
 
        !Call gather grid on the procs that have the required data.
        !Then broadcast from the head PE to the receiving PEs
-       if (ANY(parent_grid%pelist == gid) .and. parent_tile == parent_grid%tile) then
+       if (ANY(parent_grid%pelist == mpp_pe()) .and. parent_tile == parent_grid%tile) then
           call mpp_global_field( &
                parent_grid%domain, &
                var_coarse_this_grid, var_coarse, position=position)
-          if (gid == sending_proc) then 
+          if (mpp_pe() == sending_proc) then 
              do p=1,recv_npes
                 call mpp_send(var_coarse,size(var_coarse),recv_pes(p))
              enddo
           endif
        endif
-       if (ANY(recv_pes == gid)) then
+       if (ANY(recv_pes == mpp_pe())) then
           call mpp_recv(var_coarse, size(var_coarse), sending_proc)
        endif
 
@@ -2785,7 +3046,7 @@ contains
 
       allocate(tilelist(0:mpp_npes()-1))
       tilelist = 0
-      tilelist(gid) = parent_grid%tile
+      tilelist(mpp_pe()) = parent_grid%tile
       call mpp_sum(tilelist,mpp_npes())
 !!$   if (gid == 0) then
 !!$      print*, 'tilelist:'
@@ -2800,7 +3061,7 @@ contains
 
       do n=0,mpp_npes()-1
          if (tilelist(n) == parent_tile) then
-            if (gid == n) then
+            if (mpp_pe() == n) then
                !            print*, 'gather_grid: proc ', gid, ' broadcasting '
                !            print*, 'gather_grid: SIZE: ', size(var_coarse), npx, npy
                call mpp_broadcast(var_coarse, npx*npy*npz, n, parent_grid%pelist)
@@ -2816,45 +3077,57 @@ contains
 
  end subroutine gather_grid_3d
 
- subroutine update_coarse_grid_mpp_2d(var_coarse, var_nest, nest_domain, ind_update, &
-      isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n, &
-      istag, jstag, r, nestupdate, upoff, nsponge)
+ subroutine update_coarse_grid_mpp_2d(var_coarse, var_nest, nest_domain, ind_update, dx, dy, area, &
+      isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n, npx, npy, &
+      istag, jstag, r, nestupdate, upoff, nsponge, parent_proc, child_proc, parent_grid)
 
    integer, intent(IN) :: isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n
    integer, intent(IN) :: istag, jstag, r, nestupdate, upoff, nsponge
    integer, intent(IN) :: ind_update(isd_p:ied_p+1,jsd_p:jed_p+1,2)
+   integer, intent(IN) :: npx, npy
    real, intent(IN)    :: var_nest(is_n:ie_n+istag,js_n:je_n+jstag)
    real, intent(INOUT) :: var_coarse(isd_p:ied_p+istag,jsd_p:jed_p+jstag)
+   real, intent(IN)    :: dx(isd:ied,jsd:jed+1)
+   real, intent(IN)    :: dy(isd:ied+1,jsd:jed)
+   real, intent(IN)    :: area(isd:ied,jsd:jed)
+   logical, intent(IN) :: parent_proc, child_proc
+   type(fv_atmos_type), intent(INOUT) :: parent_grid
    type(nest_domain_type), intent(INOUT) :: nest_domain
 
    real :: var_nest_3d(is_n:ie_n+istag,js_n:je_n+jstag,1)
    real :: var_coarse_3d(isd_p:ied_p+istag,jsd_p:jed_p+jstag,1)
 
-   if (size(var_nest) > 1) var_nest_3d(is_n:ie_n+istag,js_n:je_n+jstag,1) = var_nest(is_n:ie_n+istag,js_n:je_n+jstag)
-   if (size(var_coarse) > 1) var_coarse_3d(isd_p:ied_p+istag,jsd_p:jed_p,1) = var_coarse(isd_p:ied_p+istag,jsd_p:jed_p+jstag)
+   if (child_proc .and. size(var_nest) > 1) var_nest_3d(is_n:ie_n+istag,js_n:je_n+jstag,1) = var_nest(is_n:ie_n+istag,js_n:je_n+jstag)
+   if (parent_proc .and. size(var_coarse) > 1) var_coarse_3d(isd_p:ied_p+istag,jsd_p:jed_p,1) = var_coarse(isd_p:ied_p+istag,jsd_p:jed_p+jstag)
 
-   call update_coarse_grid_mpp(var_coarse_3d, var_nest_3d, nest_domain, ind_update, &
-      isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n, 1, &
-      istag, jstag, r, nestupdate, upoff, nsponge)
+   call update_coarse_grid_mpp(var_coarse_3d, var_nest_3d, nest_domain, ind_update, dx, dy, area, &
+      isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n, npx, npy, 1, &
+      istag, jstag, r, nestupdate, upoff, nsponge, parent_proc, child_proc, parent_grid)
 
-   if (size(var_coarse) > 1) var_coarse(isd_p:ied_p+istag,jsd_p:jed_p+jstag) = var_coarse_3d(isd_p:ied_p+istag,jsd_p:jed_p,1)
+   if (size(var_coarse) > 1 .and. parent_proc) var_coarse(isd_p:ied_p+istag,jsd_p:jed_p+jstag) = var_coarse_3d(isd_p:ied_p+istag,jsd_p:jed_p,1)
 
  end subroutine update_coarse_grid_mpp_2d
 
 
-  subroutine update_coarse_grid_mpp(var_coarse, var_nest, nest_domain, ind_update, &
-      isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n, npz, &
-      istag, jstag, r, nestupdate, upoff, nsponge)
+  subroutine update_coarse_grid_mpp(var_coarse, var_nest, nest_domain, ind_update, dx, dy, area, &
+      isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n, npx, npy, npz, &
+      istag, jstag, r, nestupdate, upoff, nsponge, parent_proc, child_proc, parent_grid)
 
    !This routine assumes the coarse and nested grids are properly
    ! aligned, and that in particular for odd refinement ratios all
    ! coarse-grid points coincide with nested-grid points
 
    integer, intent(IN) :: isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n
-   integer, intent(IN) :: istag, jstag, npz, r, nestupdate, upoff, nsponge
+   integer, intent(IN) :: istag, jstag, npx, npy, npz, r, nestupdate, upoff, nsponge
    integer, intent(IN) :: ind_update(isd_p:ied_p+1,jsd_p:jed_p+1,2)
    real, intent(IN)    :: var_nest(is_n:ie_n+istag,js_n:je_n+jstag,npz)
    real, intent(INOUT) :: var_coarse(isd_p:ied_p+istag,jsd_p:jed_p+jstag,npz)
+   real, intent(IN)    :: area(isd:ied,jsd:jed)
+   real, intent(IN)    :: dx(isd:ied,jsd:jed+1)
+   real, intent(IN)    :: dy(isd:ied+1,jsd:jed)
+   logical, intent(IN) :: parent_proc, child_proc
+   type(fv_atmos_type), intent(INOUT) :: parent_grid
+
    type(nest_domain_type), intent(INOUT) :: nest_domain
 
    integer :: in, jn, ini, jnj, s, qr
@@ -2899,7 +3172,7 @@ contains
          end do
          end do
 
-      case (1,2,6)
+      case (1,2,6,7,8)
          
          do k=1,npz
          do j=js_n,je_n
@@ -2927,7 +3200,7 @@ contains
          end do
          end do
 
-      case (1,6)
+      case (1,6,7,8)
 
          do k=1,npz
          do j=js_n,je_n+1
@@ -2959,7 +3232,7 @@ contains
          end do
          end do
 
-      case (1,6)   !averaging update; in-line average for face-averaged values instead of areal average
+      case (1,6,7,8)   !averaging update; in-line average for face-averaged values instead of areal average
 
          do k=1,npz
          do j=js_n,je_n
@@ -2970,7 +3243,6 @@ contains
          end do
          end do
          end do
-
 
       case default
 
@@ -3022,7 +3294,7 @@ contains
          end do
          end do
 
-      case (1,2,6) ! 1 = Conserving update on all variables; 2 = conserving update for cell-centered values; 6 = conserving remap-update
+      case (1,2,6,7,8) ! 1 = Conserving update on all variables; 2 = conserving update for cell-centered values; 6 = conserving remap-update
 
          do k=1,npz
          do j=jsd_p,jed_p
@@ -3042,7 +3314,10 @@ contains
             end do            
 
             !var_coarse(i,j,k) = val/r**2.
-            var_coarse(i,j,k) = val*parent_grid%rarea(i,j)
+
+            !!! CLEANUP: Couldn't rarea and rdx and rdy be built into the weight arrays?
+            !!!    Two-way updates do not yet have weights, tho
+            var_coarse(i,j,k) = val*parent_grid%gridstruct%rarea(i,j)
 
          end do
          end do
@@ -3082,7 +3357,7 @@ contains
          end do
          end do
 
-      case (1,6)
+      case (1,6,7,8)
 
          do k=1,npz
          do j=jsd_p,jed_p+1
@@ -3100,7 +3375,7 @@ contains
                end do
 
 !            var_coarse(i,j,k) = val/r
-            var_coarse(i,j,k) = val*parent_grid%rdx(i,j)
+            var_coarse(i,j,k) = val*parent_grid%gridstruct%rdx(i,j)
 
          end do
          end do
@@ -3138,7 +3413,7 @@ contains
          end do
          end do
 
-      case (1,6)   !averaging update; in-line average for face-averaged values instead of areal average
+      case (1,6,7,8)   !averaging update; in-line average for face-averaged values instead of areal average
 
          do k=1,npz
          do j=jsd_p,jed_p
@@ -3156,7 +3431,7 @@ contains
             end do
 
 !            var_coarse(i,j,k) = val/r
-            var_coarse(i,j,k) = val*parent_grid%rdy(i,j)
+            var_coarse(i,j,k) = val*parent_grid%gridstruct%rdy(i,j)
 
          end do
          end do
@@ -3169,6 +3444,8 @@ contains
       end select
 
    end if
+
+
    endif
    deallocate(nest_dat)
    

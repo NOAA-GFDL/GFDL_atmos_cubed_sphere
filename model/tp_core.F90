@@ -3,11 +3,9 @@ module tp_core_mod
 !
 ! !MODULE: tp_core --- A collection of routines to support FV transport
 !
- use fv_mp_mod,         only: is,js,ie,je, ng, isd,jsd,ied,jed
- use fv_grid_utils_mod, only: sw_corner, se_corner, ne_corner, nw_corner, &
-                              sina_u, sina_v, da_min, sin_sg, big_number
- use fv_grid_tools_mod, only: dx, dy, rdxc, rdyc, rarea, dxa, dya, grid_type
- use fv_current_grid_mod, only: nested
+ use fv_mp_mod,         only: ng 
+ use fv_grid_utils_mod, only: big_number
+ use fv_arrays_mod, only: fv_grid_type, fv_grid_bounds_type
 
  implicit none
 
@@ -50,8 +48,8 @@ module tp_core_mod
   real, parameter:: p2 = -1./12.
 
 !---- version number -----
-   character(len=128) :: version = '$Id: tp_core.F90,v 17.0.2.4.2.5 2012/04/25 22:15:01 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: siena_201303 $'
+   character(len=128) :: version = '$Id: tp_core.F90,v 17.0.2.4.2.5.2.6 2013/03/18 21:49:26 Lucas.Harris Exp $'
+   character(len=128) :: tagname = '$Name: siena_201305 $'
 
 !
 !EOP
@@ -60,37 +58,55 @@ module tp_core_mod
 contains
 
  subroutine fv_tp_2d(q, crx, cry, npx, npy, hord, fx, fy, xfx, yfx,  &
-                     area, ra_x, ra_y, mfx, mfy, mass, nord, damp_c)
+                     gridstruct, bd, ra_x, ra_y, mfx, mfy, mass, nord, damp_c)
+   type(fv_grid_bounds_type), intent(IN) :: bd
    integer, intent(in):: npx, npy
    integer, intent(in)::hord
 
-   real, intent(in)::  crx(is:ie+1,jsd:jed)  !
-   real, intent(in)::  xfx(is:ie+1,jsd:jed)  !
-   real, intent(in)::  cry(isd:ied,js:je+1 )  !
-   real, intent(in)::  yfx(isd:ied,js:je+1 )  !
-   real, intent(in):: area(isd:ied,jsd:jed)
-   real, intent(in):: ra_x(is:ie,jsd:jed)
-   real, intent(in):: ra_y(isd:ied,js:je)
-   real, intent(inout):: q(isd:ied,jsd:jed)  ! transported scalar
-   real, intent(out)::fx(is:ie+1 ,js:je)    ! Flux in x ( E )
-   real, intent(out)::fy(is:ie,   js:je+1 )    ! Flux in y ( N )
+   real, intent(in)::  crx(bd%is:bd%ie+1,bd%jsd:bd%jed)  !
+   real, intent(in)::  xfx(bd%is:bd%ie+1,bd%jsd:bd%jed)  !
+   real, intent(in)::  cry(bd%isd:bd%ied,bd%js:bd%je+1 )  !
+   real, intent(in)::  yfx(bd%isd:bd%ied,bd%js:bd%je+1 )  !
+   real, intent(in):: ra_x(bd%is:bd%ie,bd%jsd:bd%jed)
+   real, intent(in):: ra_y(bd%isd:bd%ied,bd%js:bd%je)
+   real, intent(inout):: q(bd%isd:bd%ied,bd%jsd:bd%jed)  ! transported scalar
+   real, intent(out)::fx(bd%is:bd%ie+1 ,bd%js:bd%je)    ! Flux in x ( E )
+   real, intent(out)::fy(bd%is:bd%ie,   bd%js:bd%je+1 )    ! Flux in y ( N )
+
+   type(fv_grid_type), intent(IN), target :: gridstruct
 ! optional Arguments:
-   real, OPTIONAL, intent(in):: mfx(is:ie+1,js:je  )  ! Mass Flux X-Dir
-   real, OPTIONAL, intent(in):: mfy(is:ie  ,js:je+1)  ! Mass Flux Y-Dir
-   real, OPTIONAL, intent(in):: mass(isd:ied,jsd:jed)
+   real, OPTIONAL, intent(in):: mfx(bd%is:bd%ie+1,bd%js:bd%je  )  ! Mass Flux X-Dir
+   real, OPTIONAL, intent(in):: mfy(bd%is:bd%ie  ,bd%js:bd%je+1)  ! Mass Flux Y-Dir
+   real, OPTIONAL, intent(in):: mass(bd%isd:bd%ied,bd%jsd:bd%jed)
    real, OPTIONAL, intent(in):: damp_c
    integer, OPTIONAL, intent(in):: nord
 ! Local:
    integer ord, ord_in
-   real q_i(isd:ied,js:je)
-   real q_j(is:ie,jsd:jed)
-   real   fx2(is:ie+1,jsd:jed)
-   real   fy2(isd:ied,js:je+1)
-   real   fyy(isd:ied,js:je+1)
-   real   fx1(is:ie+1)
+   real q_i(bd%isd:bd%ied,bd%js:bd%je)
+   real q_j(bd%is:bd%ie,bd%jsd:bd%jed)
+   real   fx2(bd%is:bd%ie+1,bd%jsd:bd%jed)
+   real   fy2(bd%isd:bd%ied,bd%js:bd%je+1)
+   real   fyy(bd%isd:bd%ied,bd%js:bd%je+1)
+   real   fx1(bd%is:bd%ie+1)
    real   damp
    integer i, j
 
+   real, pointer, dimension(:,:) :: area, rarea
+
+   integer :: is, ie, js, je, isd, ied, jsd, jed
+
+   !! Initalize pointers
+   area    => gridstruct%area  
+   rarea   => gridstruct%rarea 
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
 
    if ( hord < 0 ) then
         ord_in = 2 ! more dissipation
@@ -100,8 +116,9 @@ contains
         ord    = hord
    endif
 
-   if (.not. nested) call copy_corners(q, npx, npy, 2)
-   call ytp(fy2, q, cry, ord_in, isd, ied, js, je, npx, npy)
+   if (.not. gridstruct%nested) call copy_corners(q, npx, npy, 2, gridstruct%nested, bd, &
+      gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
+   call ytp(fy2, q, cry, ord_in, isd, ied, js, je, npx, npy, bd, gridstruct%dya, gridstruct%nested, gridstruct%grid_type)
 
    do j=js,je+1
       do i=isd,ied
@@ -113,10 +130,11 @@ contains
          q_i(i,j) = (q(i,j)*area(i,j) + fyy(i,j)-fyy(i,j+1))/ra_y(i,j)
       enddo
   enddo
-  call xtp(fx, q_i, crx(is,js), ord, is, ie, js,  je, npx, npy)
+  call xtp(fx, q_i, crx(is,js), ord, is, ie, js,  je, npx, npy, bd, gridstruct%dxa, gridstruct%nested, gridstruct%grid_type)
 
-  if (.not. nested) call copy_corners(q, npx, npy, 1)
-  call xtp(fx2, q, crx, ord_in, is, ie, jsd,jed, npx, npy)
+  if (.not. gridstruct%nested) call copy_corners(q, npx, npy, 1, gridstruct%nested, bd, &
+      gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
+  call xtp(fx2, q, crx, ord_in, is, ie, jsd,jed, npx, npy, bd, gridstruct%dxa, gridstruct%nested, gridstruct%grid_type)
 
   do j=jsd,jed
      do i=is,ie+1
@@ -126,7 +144,7 @@ contains
         q_j(i,j) = (q(i,j)*area(i,j) + fx1(i)-fx1(i+1))/ra_x(i,j)
      enddo
   enddo
-  call ytp(fy, q_j, cry, ord, is, ie, js, je, npx, npy)
+  call ytp(fy, q_j, cry, ord, is, ie, js, je, npx, npy, bd, gridstruct%dya, gridstruct%nested, gridstruct%grid_type)
 
 !----------------
 ! Flux averaging:
@@ -148,8 +166,8 @@ contains
       enddo
       if ( present(nord) .and. present(damp_c) .and. present(mass) ) then
         if ( damp_c > 1.e-4 ) then
-           damp = (damp_c * da_min)**(nord+1)
-           call deln_flux( nord, npx, npy, damp, q, fx, fy, mass )
+           damp = (damp_c * gridstruct%da_min)**(nord+1)
+           call deln_flux( nord, npx, npy, damp, q, fx, fy, gridstruct, bd, mass )
         endif
       endif
    else
@@ -168,18 +186,22 @@ contains
       enddo
       if ( present(nord) .and. present(damp_c) ) then
            if ( damp_c > 1.E-4 ) then
-                damp = (damp_c * da_min)**(nord+1)
-                call deln_flux( nord, npx, npy, damp, q, fx, fy )
+                damp = (damp_c * gridstruct%da_min)**(nord+1)
+                call deln_flux( nord, npx, npy, damp, q, fx, fy, gridstruct, bd)
            endif
       endif
    endif
 
  end subroutine fv_tp_2d
 
-
- subroutine copy_corners(q, npx, npy, dir)
+ !Weird arguments are because this routine is called in a lot of
+ !places outside of tp_core, sometimes very deeply nested in the call tree.
+ subroutine copy_corners(q, npx, npy, dir, nested, bd, &
+      sw_corner, se_corner, nw_corner, ne_corner)
+ type(fv_grid_bounds_type), intent(IN) :: bd
  integer, intent(in):: npx, npy, dir
- real, intent(inout):: q(isd:ied,jsd:jed)
+ real, intent(inout):: q(bd%isd:bd%ied,bd%jsd:bd%jed)
+ logical, intent(IN) :: nested, sw_corner, se_corner, nw_corner, ne_corner
  integer  i,j
 
  if (nested) return
@@ -252,18 +274,29 @@ contains
  end subroutine copy_corners
 
 
- subroutine xtp(fx,  q,  c, iord, ifirst, ilast, jfirst, jlast, npx, npy)
+ subroutine xtp(fx,  q,  c, iord, ifirst, ilast, jfirst, jlast, npx, npy, bd, dxa, nested, grid_type)
+   type(fv_grid_bounds_type), intent(IN) :: bd
    integer, intent(IN):: ifirst, ilast   !  X-Dir strip
    integer, intent(IN):: jfirst, jlast   !  Y-Dir strip
    integer, intent(IN):: npx, npy
    integer, intent(IN):: iord
-   real   , intent(in):: c(is :ie+1, jfirst:jlast)      ! Courant numbers
-   real   , intent(in):: q(isd:ied,  jfirst:jlast)
+   real   , intent(in):: c(bd%is :bd%ie+1, jfirst:jlast)      ! Courant numbers
+   real   , intent(in):: q(bd%isd:bd%ied,  jfirst:jlast)
    real   , intent(out):: fx(ifirst:ilast+1,jfirst:jlast)           
+   real   , intent(IN) :: dxa(bd%isd:bd%ied,bd%jsd:bd%jed)
+   logical, intent(IN) :: nested
+   integer, intent(IN) :: grid_type
 ! Local:
-   real   dm(is-2:ie+2)
+   real   dm(bd%is-2:bd%ie+2)
    real   x0L, x0R, x1
    integer i, j
+
+   integer :: is, ie, js, je
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
 
    if (iord==1) then
 
@@ -342,25 +375,36 @@ contains
      enddo
 
    else
-      call fxppm(c, q, fx, iord, ifirst, ilast, jfirst, jlast, npx, npy)
+      call fxppm(c, q, fx, iord, ifirst, ilast, jfirst, jlast, npx, npy, bd, dxa, nested, grid_type)
    endif
 
  end subroutine xtp
 
 
 
- subroutine ytp(fy, q, c, jord, ifirst, ilast, jfirst, jlast, npx, npy)
+ subroutine ytp(fy, q, c, jord, ifirst, ilast, jfirst, jlast, npx, npy, bd, dya, nested, grid_type)
+ type(fv_grid_bounds_type), intent(IN) :: bd
  integer, intent(in) :: npx, npy
  integer, INTENT(IN) :: ifirst, ilast  !  X-Dir strip
  integer, INTENT(IN) :: jfirst, jlast  !  Y-Dir strip
  integer, intent(in):: jord
  real, intent(in)::   q(ifirst:ilast,jfirst-ng:jlast+ng) 
- real, intent(in)::   c(isd:ied,js:je+1 )  ! Courant number
+ real, intent(in)::   c(bd%isd:bd%ied,bd%js:bd%je+1 )  ! Courant number
  real, intent(out):: fy(ifirst:ilast,jfirst:jlast+1)     !  Flux
+ real   , intent(IN) :: dya(bd%isd:bd%ied,bd%jsd:bd%jed)
+ logical, intent(IN) :: nested
+ integer, intent(IN) :: grid_type
 ! !LOCAL VARIABLES:
  real   dm(ifirst:ilast,jfirst-2:jlast+2)
  real   x0L, x0R, x1
  integer i, j
+
+   integer :: is, ie, js, je
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
 
    if(jord==1) then
 
@@ -443,21 +487,25 @@ contains
       enddo
 
    else
-      call fyppm(c, q, fy, jord, ifirst,ilast,jfirst,jlast, npx, npy, dm)
+      call fyppm(c, q, fy, jord, ifirst,ilast,jfirst,jlast, npx, npy, dm, bd, dya, nested, grid_type)
    endif
 
  end subroutine ytp
 
 
 
- subroutine fxppm(c, q, flux, iord, ifirst, ilast, jfirst, jlast, npx, npy)
+ subroutine fxppm(c, q, flux, iord, ifirst, ilast, jfirst, jlast, npx, npy, bd, dxa, nested, grid_type)
 ! !INPUT PARAMETERS:
+ type(fv_grid_bounds_type), intent(IN) :: bd
  integer, INTENT(IN) :: ifirst, ilast               !  X-Dir strip
  integer, INTENT(IN) :: jfirst, jlast               !  Y-Dir strip
  integer, INTENT(IN) :: iord
  integer, INTENT(IN) :: npx, npy
  real   , INTENT(IN) :: q(ifirst-ng:ilast+ng,jfirst:jlast)
  real   , INTENT(IN) :: c(ifirst   :ilast+1 ,jfirst:jlast) ! Courant   N (like FLUX)
+ real   , intent(IN) :: dxa(bd%isd:bd%ied,bd%jsd:bd%jed)
+ logical, intent(IN) :: nested
+ integer, intent(IN) :: grid_type
 ! !OUTPUT PARAMETERS:
  real   , INTENT(OUT) :: flux(ifirst:ilast+1,jfirst:jlast) !  Flux
 ! Local
@@ -471,6 +519,13 @@ contains
  real pmp_1, lac_1, pmp_2, lac_2
  real xt, x1, x0, x0L, x0R
  integer i, j, is3, ie3, it
+ 
+ integer :: is, ie, js, je
+
+ is  = bd%is
+ ie  = bd%ie
+ js  = bd%js
+ je  = bd%je
 
  x0 = big_number
 
@@ -1050,15 +1105,19 @@ contains
 
 
 
- subroutine fyppm(c,  q,  flux, jord, ifirst, ilast, jfirst, jlast, npx, npy, dm)
+ subroutine fyppm(c,  q,  flux, jord, ifirst, ilast, jfirst, jlast, npx, npy, dm, bd, dya, nested, grid_type)
+ type(fv_grid_bounds_type), intent(IN) :: bd
  integer, INTENT(IN) :: ifirst, ilast               !  X-Dir strip
  integer, INTENT(IN) :: jfirst, jlast               !  Y-Dir strip
  integer, INTENT(IN) :: jord
  integer, INTENT(IN) :: npx, npy
  real   , INTENT(IN) :: q(ifirst:ilast,jfirst-ng:jlast+ng)
- real   , intent(in) :: c(isd:ied,js:je+1 )  ! Courant number
+ real   , intent(in) :: c(bd%isd:bd%ied,bd%js:bd%je+1 )  ! Courant number
  real   , INTENT(OUT):: flux(ifirst:ilast,jfirst:jlast+1)   !  Flux
  real   , INTENT(OUT)::   dm(ifirst:ilast,jfirst-2:jlast+2)
+ real   , intent(IN) :: dya(bd%isd:bd%ied,bd%jsd:bd%jed)
+ logical, intent(IN) :: nested
+ integer, intent(IN) :: grid_type
 ! Local:
  logical extm(ifirst:ilast,jfirst-2:jlast+2)
  real al(ifirst:ilast,jfirst-1:jlast+2)
@@ -1069,6 +1128,13 @@ contains
  real pmp_1, lac_1, pmp_2, lac_2
  real xt, x0, x1, x0L, x0R
  integer i, j, js3, je3, jt
+
+  integer :: is, ie, js, je
+
+ is  = bd%is
+ ie  = bd%ie
+ js  = bd%js
+ je  = bd%je
 
  if (nested) then
     js3 = js-1;        je3 = je+1
@@ -1863,7 +1929,7 @@ contains
  end subroutine pert_ppm
 
 
- subroutine deln_flux( nord, npx, npy, damp, q, fx, fy, mass )
+ subroutine deln_flux( nord, npx, npy, damp, q, fx, fy, gridstruct, bd, mass )
 ! Del-n damping for the cell-mean values (A grid)
 !------------------
 ! nord = 0:   del-2
@@ -1871,18 +1937,37 @@ contains
 ! nord = 2:   del-6
 ! nord = 3:   del-8 --> requires more ghosting than current
 !------------------
+   type(fv_grid_bounds_type), intent(IN) :: bd
    integer, intent(in):: nord            ! del-n
    integer, intent(in):: npx, npy
    real, intent(in):: damp
-   real, intent(in):: q(is-ng:ie+ng, js-ng:je+ng)  ! q ghosted on input
-   real, optional, intent(in):: mass(isd:ied, jsd:jed)  ! q ghosted on input
+   real, intent(in):: q(bd%is-ng:bd%ie+ng, bd%js-ng:bd%je+ng)  ! q ghosted on input
+   type(fv_grid_type), intent(IN), target :: gridstruct
+   real, optional, intent(in):: mass(bd%isd:bd%ied, bd%jsd:bd%jed)  ! q ghosted on input
 ! diffusive fluxes:
-   real, intent(inout):: fx(is:ie+1,js:je), fy(is:ie,js:je+1)
+   real, intent(inout):: fx(bd%is:bd%ie+1,bd%js:bd%je), fy(bd%is:bd%ie,bd%js:bd%je+1)
 ! local:
-   real fx2(isd:ied+1,jsd:jed), fy2(isd:ied,jsd:jed+1)
-   real d2(isd:ied,jsd:jed)
+   real fx2(bd%isd:bd%ied+1,bd%jsd:bd%jed), fy2(bd%isd:bd%ied,bd%jsd:bd%jed+1)
+   real d2(bd%isd:bd%ied,bd%jsd:bd%jed)
    real damp2
    integer i,j, n, nt, i1, i2, j1, j2
+
+   real, pointer, dimension(:,:)   :: rarea, dx, dy, rdxc, rdyc
+   real, pointer, dimension(:,:,:) :: sin_sg
+
+   integer :: is, ie, js, je
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+
+   rarea    => gridstruct%rarea  
+   dx       => gridstruct%dx     
+   dy       => gridstruct%dy     
+   rdxc     => gridstruct%rdxc   
+   rdyc     => gridstruct%rdyc   
+   sin_sg   => gridstruct%sin_sg 
 
    i1 = is-1-nord;    i2 = ie+1+nord
    j1 = js-1-nord;    j2 = je+1+nord
@@ -1901,7 +1986,8 @@ contains
      enddo
    endif
 
-   if( nord>0 ) call copy_corners(d2, npx, npy, 1)
+   if( nord>0 ) call copy_corners(d2, npx, npy, 1, gridstruct%nested, bd, &
+      gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
    do j=js-nord,je+nord
       do i=is-nord,ie+nord+1
@@ -1910,7 +1996,8 @@ contains
       enddo
    enddo
 
-   if( nord>0 ) call copy_corners(d2, npx, npy, 2)
+   if( nord>0 ) call copy_corners(d2, npx, npy, 2, gridstruct%nested, bd, &
+      gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
    do j=js-nord,je+nord+1
          do i=is-nord,ie+nord
 !           fy2(i,j) = dx(i,j)*sina_v(i,j)*(d2(i,j-1)-d2(i,j))*rdyc(i,j)
@@ -1934,14 +2021,16 @@ contains
          enddo
       enddo
 
-      call copy_corners(d2, npx, npy, 1)
+      call copy_corners(d2, npx, npy, 1, gridstruct%nested, bd, &
+           gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
       do j=js-nt,je+nt
          do i=is-nt,ie+nt+1
             fx2(i,j) = 0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))*dy(i,j)*(d2(i,j)-d2(i-1,j))*rdxc(i,j)
          enddo
       enddo
 
-      call copy_corners(d2, npx, npy, 2)
+      call copy_corners(d2, npx, npy, 2, gridstruct%nested, bd, &
+           gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
       do j=js-nt,je+nt+1
             do i=is-nt,ie+nt
                fy2(i,j) = dx(i,j)*(d2(i,j)-d2(i,j-1))*rdyc(i,j) &

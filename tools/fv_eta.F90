@@ -1,14 +1,14 @@
 module fv_eta_mod
  use constants_mod,  only: kappa, grav, cp_air, rdgas
- use fv_mp_mod,      only: gid, isd, ied, jsd, jed
+ use fv_mp_mod,      only: is_master
  use mpp_mod,        only: FATAL, mpp_error
  implicit none
  private
  public set_eta, get_eta_level, compute_dz_var, compute_dz_L32, compute_dz_L101, set_hybrid_z, compute_dz, gw_1d, sm1_edge, hybrid_z_dz
 
 !---- version number -----
- character(len=128) :: version = '$Id: fv_eta.F90,v 17.0.2.1.2.4.2.3.2.1 2012/05/25 17:57:58 Lucas.Harris Exp $'
- character(len=128) :: tagname = '$Name: siena_201303 $'
+ character(len=128) :: version = '$Id: fv_eta.F90,v 17.0.2.1.2.4.2.3.2.7 2013/05/14 19:53:50 Lucas.Harris Exp $'
+ character(len=128) :: tagname = '$Name: siena_201305 $'
 
  contains
 
@@ -206,6 +206,7 @@ data b50  / &
 
 
 ! High-resolution troposphere setup
+#ifdef OLD_32
 ! Revised Apr 14, 2004: PINT = 245.027 mb
       data a32/100.00000,     400.00000,     818.60211, &
               1378.88653,    2091.79519,    2983.64084, &
@@ -230,6 +231,36 @@ data b50  / &
                0.78516,       0.83217,       0.87197, &
                0.90546,       0.93349,       0.95685, &
                0.97624,       0.99223,       1.00000  /
+#else
+! Better for high-resolution; uses a higher level for starting pure
+! pressure coordinate, to ensure high enough above Himalayas
+! when the high terrain is sufficiently well-resolved
+! SJL June 26, 2012
+! pint=  55.7922
+      data a32/100.00000,     400.00000,     818.60211,  &
+              1378.88653,    2091.79519,    2983.64084,  &
+              4121.78960,    5579.22148,    6907.19063,  &
+              7735.78639,    8197.66476,    8377.95525,  &
+              8331.69594,    8094.72213,    7690.85756,  &
+              7139.01788,    6464.80251,    5712.35727,  &
+              4940.05347,    4198.60465,    3516.63294,  &
+              2905.19863,    2366.73733,    1899.19455,  &
+              1497.78137,    1156.25252,     867.79199,  &
+               625.59324,     423.21322,     254.76613,  &
+               115.06646,       0.00000,       0.00000  /
+
+      data b32/0.00000,       0.00000,       0.00000,  &
+               0.00000,       0.00000,       0.00000,  &
+               0.00000,       0.00000,       0.00513,  &
+               0.01969,       0.04299,       0.07477,  &
+               0.11508,       0.16408,       0.22198,  &
+               0.28865,       0.36281,       0.44112,  &
+               0.51882,       0.59185,       0.65810,  &
+               0.71694,       0.76843,       0.81293,  &
+               0.85100,       0.88331,       0.91055,  &
+               0.93338,       0.95244,       0.96828,  &
+               0.98142,       0.99223,       1.00000  /
+#endif
 
 !---------------------
 ! Wilson's 32L settings:
@@ -256,7 +287,8 @@ data b50  / &
                 1.0000 /
 
 
-! QBO setting with ptop = 0.1 mb and p_full=0.17 mb
+#ifdef OLD_L47
+! QBO setting with ptop = 0.1 mb and p_full=0.17 mb; pint ~ 100 mb
       data a47/   10.00000,      24.45365,      48.76776,  &
                   85.39458,     133.41983,     191.01402,  &
                  257.94919,     336.63306,     431.52741,  &
@@ -290,6 +322,42 @@ data b50  / &
                 0.78834,       0.83418,       0.87320,     &
                 0.90622,       0.93399,       0.95723,     &
                 0.97650,       0.99223,       1.00000   /
+#else
+! Oct 23, 2012
+! QBO setting with ptop = 0.1 mb, pint ~ 60 mb
+      data a47/   10.00000,      24.45365,      48.76776,  &
+                  85.39458,     133.41983,     191.01402,  &
+                 257.94919,     336.63306,     431.52741,  &
+                 548.18995,     692.78825,     872.16512,  &
+                1094.18467,    1368.11917,    1704.99489,  &
+                2117.91945,    2622.42986,    3236.88281,  &
+                3982.89623,    4885.84733,    5975.43260,  &
+                7019.26669,    7796.15848,    8346.60209,  &
+                8700.31838,    8878.27554,    8894.27179,  &
+                8756.46404,    8469.60171,    8038.92687,  &
+                7475.89006,    6803.68067,    6058.68992,  &
+                5285.28859,    4526.01565,    3813.00206,  &
+                3164.95553,    2589.26318,    2085.96929,  &
+                1651.11596,    1278.81205,     962.38875,  &
+                 695.07046,     470.40784,     282.61654,  &
+                 126.92745,       0.00000,       0.00000   /
+      data b47/ 0.0000,        0.0000,        0.0000,      &
+                0.00000,       0.00000,       0.00000,     &
+                0.00000,       0.00000,       0.00000,     &
+                0.00000,       0.00000,       0.00000,     &
+                0.00000,       0.00000,       0.00000,     &
+                0.00000,       0.00000,       0.00000,     &
+                0.00000,       0.00000,       0.00000,     &
+                0.00267,       0.01063,       0.02393,     &
+                0.04282,       0.06771,       0.09917,     &
+                0.13786,       0.18444,       0.23925,     &
+                0.30193,       0.37100,       0.44379,     &
+                0.51695,       0.58727,       0.65236,     &
+                0.71094,       0.76262,       0.80757,     &
+                0.84626,       0.87930,       0.90731,     &
+                0.93094,       0.95077,       0.96733,     &
+                0.98105,       0.99223,       1.00000      /
+#endif
 
            data a48/                                &
                    1.00000,       2.69722,       5.17136,   &
@@ -328,47 +396,6 @@ data b50  / &
                    0.88127,       0.91217,       0.93803,   &
                    0.95958,       0.97747,       0.99223,   &
                    1.00000   /
-
-#ifdef TTT
-      data a52/10.00000,      28.03821,      47.30985,
-               73.04316,     104.06818,     138.87408,
-              176.68177,     217.95192,     264.18103,
-              317.38922,     379.72218,     453.32332,
-              540.40931,     643.41528,     765.12346,
-              908.75865,    1078.06815,    1277.40350,
-             1511.81203,    1787.14119,    2110.15735,
-             2488.68103,    2931.74058,    3449.74671,
-             4054.69027,    4760.36642,    5582.62804,
-             6539.67222,    7652.36351,    8944.59841,
-            10443.71572,   12180.95818,   14191.99107,
-            16517.48428,   19203.76464,   22303.54062,
-            25055.65282,   26711.91307,   27331.21218,
-            26954.08613,   25620.43358,   23404.71758,
-            20462.02531,   17054.81751,   13523.60500,
-            10200.47371,    7317.24740,    4967.87694,
-             3135.41449,    1747.40389,     722.93629,
-                0.00000,       0.00000 /
-
-
-      data b52 /0.00000,       0.00000,       0.00000,     &
-                0.00000,       0.00000,       0.00000,
-                0.00000,       0.00000,       0.00000,
-                0.00000,       0.00000,       0.00000,
-                0.00000,       0.00000,       0.00000,
-                0.00000,       0.00000,       0.00000,
-                0.00000,       0.00000,       0.00000,
-                0.00000,       0.00000,       0.00000,
-                0.00000,       0.00000,       0.00000,
-                0.00000,       0.00000,       0.00000,
-                0.00000,       0.00000,       0.00000,
-                0.00000,       0.00000,       0.00000,
-                0.00821,       0.03278,       0.07386,
-                0.13169,       0.20624,       0.29626,
-                0.39833,       0.50628,       0.61217,
-                0.70842,       0.79008,       0.85568,
-                0.90635,       0.94448,       0.97251,
-                0.99223,       1.00000 /
-#endif
 
 ! High PBL resolution with top at 1 mb
       data a54/100.00000,     254.83931,     729.54278,   &
@@ -756,8 +783,11 @@ data b50  / &
           enddo
 
         case (32)
-!         ks = 11              ! John Wilson's setup
+#ifdef OLD_32
           ks = 13              ! high-res trop_32 setup
+#else
+          ks = 7
+#endif
           do k=1,km+1
             ak(k) = a32(k)
             bk(k) = b32(k)
@@ -800,7 +830,7 @@ data b50  / &
             ak(k) = a50(k) * 92.E5
             bk(k) = b50(k)
           enddo
-       if ( gid==0 ) then
+       if ( is_master() ) then
             write(*,*) 'Venus pressure levels'
                do k=1,km+1
                  write(*,*) k, ak(k), bk(k)
@@ -809,7 +839,8 @@ data b50  / &
 #endif VENUS_GCM
 
         case (47)
-          ks = 27       ! high-res trop-strat
+!         ks = 27       ! high-res trop-strat
+          ks = 20       ! Oct 23, 2012
           do k=1,km+1
             ak(k) = a47(k)
             bk(k) = b47(k)
@@ -823,6 +854,8 @@ data b50  / &
           enddo
 
         case (52)
+           call mpp_error(FATAL, '52 level not defined.')
+
           ks = 35         ! pint = 223
           do k=1,km+1
             ak(k) = a52(k)
@@ -935,9 +968,9 @@ data b50  / &
 
 ! The following 4 selections are better for non-hydrostatic
         case (31)
-             ptop = 100.
+             ptop = 300.
              pint = 50.E2
-             call var_dz(km, ak, bk, ptop, ks, pint, 1.04)
+             call var_dz(km, ak, bk, ptop, ks, pint, 1.035)
         case (41)
              ptop = 100.
              pint = 50.E2
@@ -947,6 +980,10 @@ data b50  / &
              pint = 50.E2
              call var_dz(km, ak, bk, ptop, ks, pint, 1.035)
         case (55)
+             ptop = 10.
+             pint = 50.E2
+             call var_dz(km, ak, bk, ptop, ks, pint, 1.035)
+        case (63)
              ptop = 10.
              pint = 50.E2
              call var_dz(km, ak, bk, ptop, ks, pint, 1.035)
@@ -984,6 +1021,7 @@ data b50  / &
 #endif
       end select
       ptop = ak(1)
+      pint = ak(ks+1)
 
  end subroutine set_eta
 
@@ -1061,7 +1099,7 @@ data b50  / &
       enddo
 !     ze(1) = ztop
 
-      if ( gid==0 ) write(*,*) 'var_dz: computed model top (m)=', ztop*0.001, ' bottom/top dz=', dz(km), dz(1)
+      if ( is_master() ) write(*,*) 'var_dz: computed model top (m)=', ztop*0.001, ' bottom/top dz=', dz(km), dz(1)
       call sm1_edge(1, 1, 1, 1, km, 1, 1, ze, 1)
 
 ! Given z --> p
@@ -1083,8 +1121,9 @@ data b50  / &
               exit
          endif
       enddo
-      if ( gid==0 ) then
+      if ( is_master() ) then
          write(*,*) 'For (input) PINT=', 0.01*pint, ' KS=', ks, 'pint(computed)=', 0.01*pe1(ks+1)
+         write(*,*) 'ptop =', ptop
       endif
       pint = pe1(ks+1)
 
@@ -1131,7 +1170,7 @@ data b50  / &
          bk(km+1) = 1.
 #endif
 
-      if ( gid==0 ) then
+      if ( is_master() ) then
           write(*,*) 'KS=', ks, 'PINT (mb)=', pint/100.
           do k=1,km
              write(*,*) k, 0.5*(pe1(k)+pe1(k+1))/100., dz(k)
@@ -1224,7 +1263,7 @@ data b50  / &
       enddo
 !     ze(1) = ztop
 
-      if ( gid==0 ) write(*,*) 'var55_dz: computed model top (m)=', ztop*0.001, ' bottom/top dz=', dz(km), dz(1)
+      if ( is_master() ) write(*,*) 'var55_dz: computed model top (m)=', ztop*0.001, ' bottom/top dz=', dz(km), dz(1)
       call sm1_edge(1, 1, 1, 1, km, 1, 1, ze, 2)
 
 ! Given z --> p
@@ -1246,7 +1285,7 @@ data b50  / &
               exit
          endif
       enddo
-      if ( gid==0 ) then
+      if ( is_master() ) then
          write(*,*) 'For (input) PINT=', 0.01*pint, ' KS=', ks, 'pint(computed)=', 0.01*pe1(ks+1)
       endif
       pint = pe1(ks+1)
@@ -1294,7 +1333,7 @@ data b50  / &
          bk(km+1) = 1.
 #endif
 
-      if ( gid==0 ) then
+      if ( is_master() ) then
           write(*,*) 'KS=', ks, 'PINT (mb)=', pint/100.
           do k=1,km
              write(*,*) k, 0.5*(pe1(k)+pe1(k+1))/100., dz(k)
@@ -1435,7 +1474,7 @@ data b50  / &
      ze(k) = ze(k+1) + dz(k)
   enddo
 
-  if ( gid==0 ) then
+  if ( is_master() ) then
        write(*,*) 'Hybrid_z:  dz, zm'
        do k=1,km
           dzt(k) = 0.5*(ze(k)+ze(k+1)) / 1000.
@@ -1574,7 +1613,7 @@ data b50  / &
            ze(k) = ze(k+1) + dz(k)
         enddo
 
-!       if ( gid==0 ) then
+!       if ( is_master() ) then
 !          write(*,*) 'Hybrid_z:  dz, zm'
 !          do k=1,km
 !             dzt(k) = 0.5*(ze(k)+ze(k+1)) / 1000.
@@ -1615,7 +1654,7 @@ data b50  / &
         ze(1) = ze(2) + dz(1)
         ztop = ze(1)
 
-        if ( gid==0 ) then
+        if ( is_master() ) then
            write(*,*) 'Hybrid_z:  dz, ze'
            do k=1,km
               write(*,*) k, 0.001*dz(k), 0.001*ze(k)
@@ -1633,7 +1672,7 @@ data b50  / &
  real, intent(in):: dz(km)       ! Reference vertical resolution for zs=0
  real, intent(in):: hs(is-ng:ie+ng,js-ng:je+ng)
  real, intent(inout)::  ze(is:ie,js:je,km+1)
- real, optional, intent(out):: dz3(is:ie,js:je,km)
+ real, optional, intent(out):: dz3(is-ng:ie+ng,js-ng:je+ng,km)
 ! local
  logical:: filter_xy = .false.
  real, allocatable:: delz(:,:,:)
@@ -1677,7 +1716,7 @@ data b50  / &
      endif
   enddo
 
-  if ( gid==0 ) write(*,*) 'Z_coord interface set at k=',kint, ' ZE=', z(kint)
+  if ( is_master() ) write(*,*) 'Z_coord interface set at k=',kint, ' ZE=', z(kint)
 
   do j=js,je
      do i=is,ie
@@ -1838,7 +1877,7 @@ data b50  / &
        enddo
 
        ptop = pe1(1) 
-!      if ( gid==0 ) write(*,*) 'GW_1D: computed model top (pa)=', ptop
+!      if ( is_master() ) write(*,*) 'GW_1D: computed model top (pa)=', ptop
 
 ! Set up "sigma" coordinate 
        ak(1) = pe1(1)

@@ -1,29 +1,23 @@
 module fv_tracer2d_mod
    use tp_core_mod,       only: fv_tp_2d, copy_corners
-   use fv_grid_tools_mod, only: area, rarea, dxa, dya, dx, dy, area
-   use fv_grid_utils_mod, only: sina_u, sina_v, sin_sg
-   use fv_mp_mod,         only: gid, domain, mp_reduce_max,   &
-                                ng,isd,ied,jsd,jed,is,js,ie,je, concurrent, masterproc, mp_gather
-   use mpp_domains_mod,   only: mpp_start_update_domains, mpp_complete_update_domains, mpp_update_domains, CGRID_NE
+   use fv_mp_mod,         only: mp_reduce_max
+   use fv_mp_mod,         only: ng, mp_gather, is_master
+   use mpp_domains_mod,   only: mpp_start_update_domains, mpp_complete_update_domains, mpp_update_domains, CGRID_NE, domain2d
    use fv_timing_mod,     only: timing_on, timing_off
    use boundary_mod,      only: nested_grid_BC_apply, nested_grid_BC_apply_intT
-   use fv_current_grid_mod,only:nestbctype, nested, q_east, q_north, q_west, q_south, &
-           s_weight, tracer_nest_timestep, nsponge, &
-           q_east_t0, q_north_t0, q_west_t0, q_south_t0, k_split
-   use fv_current_grid_mod,only:parent_grid, child_grids, master, &
-        nest_fx_west_accum, nest_fx_east_accum, nest_fx_south_accum, nest_fx_north_accum, ind_update_h, &
-        do_flux_BCs, do_2way_flux_BCs, refinement, pelist, tile, ioffset, joffset
-   use fv_arrays_mod,     only: Atm
-   use mpp_mod,           only: mpp_error, FATAL, mpp_broadcast, mpp_send, mpp_recv, mpp_sum
+   use fv_arrays_mod,     only: fv_grid_type, fv_nest_type, fv_atmos_type, fv_grid_bounds_type
+   use mpp_mod,           only: mpp_error, FATAL, mpp_broadcast, mpp_send, mpp_recv, mpp_sum, mpp_max
 
 implicit none
 private
 
 public :: tracer_2d, tracer_2d_nested, tracer_2d_1L
 
+real, allocatable, dimension(:,:,:) :: nest_fx_west_accum, nest_fx_east_accum, nest_fx_south_accum, nest_fx_north_accum
+
 !---- version number -----
-   character(len=128) :: version = '$Id: fv_tracer2d.F90,v 17.0.2.3.2.13 2012/05/08 20:49:08 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: siena_201303 $'
+   character(len=128) :: version = '$Id: fv_tracer2d.F90,v 17.0.2.3.2.13.2.19 2013/04/19 13:14:10 Lucas.Harris Exp $'
+   character(len=128) :: tagname = '$Name: siena_201305 $'
 
 contains
 
@@ -31,42 +25,74 @@ contains
 ! !ROUTINE: Perform 2D horizontal-to-lagrangian transport
 !-----------------------------------------------------------------------
 
-subroutine tracer_2d_1L(q, dp0, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
-                        q_split, k, q3, dt, id_divg)
+subroutine tracer_2d_1L(q, dp0, mfx, mfy, cx, cy, gridstruct, neststruct, bd, domain, npx, npy, npz, nq, hord,  &
+     q_split, k, q3, dt, id_divg, k_split)
+      type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(IN) :: npx, npy, npz
       integer, intent(IN) :: k
       integer, intent(IN) :: nq    ! number of tracers to be advected
       integer, intent(IN) :: hord
-      integer, intent(IN) :: q_split
+      integer, intent(IN) :: q_split, k_split
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt
-      real   , intent(INOUT) :: q(isd:ied,jsd:jed,nq)       ! 2D Tracers
-      real   , intent(INOUT) ::q3(isd:ied,jsd:jed,npz,nq)   ! Tracers
-      real   , intent(INOUT) :: dp0(is:ie,js:je)        ! DELP before dyn_core
-      real   , intent(IN) :: mfx(is:ie+1,js:je)    ! Mass Flux X-Dir
-      real   , intent(IN) :: mfy(is:ie  ,js:je+1)    ! Mass Flux Y-Dir
-      real   , intent(IN) ::  cx(is:ie+1,jsd:jed)  ! Courant Number X-Dir
-      real   , intent(IN) ::  cy(isd:ied,js :je +1)  ! Courant Number Y-Dir
+      real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,nq)       ! 2D Tracers
+      real   , intent(INOUT) ::q3(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   ! Tracers
+      real   , intent(INOUT) :: dp0(bd%is:bd%ie,bd%js:bd%je)        ! DELP before dyn_core
+      real   , intent(IN) :: mfx(bd%is:bd%ie+1,bd%js:bd%je)    ! Mass Flux X-Dir
+      real   , intent(IN) :: mfy(bd%is:bd%ie  ,bd%js:bd%je+1)    ! Mass Flux Y-Dir
+      real   , intent(IN) ::  cx(bd%is:bd%ie+1,bd%jsd:bd%jed)  ! Courant Number X-Dir
+      real   , intent(IN) ::  cy(bd%isd:bd%ied,bd%js :bd%je +1)  ! Courant Number Y-Dir
+      type(fv_grid_type), intent(IN), target :: gridstruct
+      type(fv_nest_type), intent(INOUT) :: neststruct
+      type(domain2d), intent(INOUT) :: domain
 
 ! Local Arrays
-      real :: mfx2(is:ie+1,js:je)
-      real :: mfy2(is:ie  ,js:je+1)
-      real ::  cx2(is:ie+1,jsd:jed)
-      real ::  cy2(isd:ied,js :je +1)
+      real :: mfx2(bd%is:bd%ie+1,bd%js:bd%je)
+      real :: mfy2(bd%is:bd%ie  ,bd%js:bd%je+1)
+      real ::  cx2(bd%is:bd%ie+1,bd%jsd:bd%jed)
+      real ::  cy2(bd%isd:bd%ied,bd%js :bd%je +1)
 
-      real :: dp1(is:ie,js:je)
-      real :: dp2(is:ie,js:je)
-      real :: fx(is:ie+1,js:je )
-      real :: fy(is:ie , js:je+1)
-      real :: ra_x(is:ie,jsd:jed)
-      real :: ra_y(isd:ied,js:je)
-      real :: xfx(is:ie+1,jsd:jed)
-      real :: yfx(isd:ied,js: je+1)
+      real :: dp1(bd%is:bd%ie,bd%js:bd%je)
+      real :: dp2(bd%is:bd%ie,bd%js:bd%je)
+      real :: fx(bd%is:bd%ie+1,bd%js:bd%je )
+      real :: fy(bd%is:bd%ie , bd%js:bd%je+1)
+      real :: ra_x(bd%is:bd%ie,bd%jsd:bd%jed)
+      real :: ra_y(bd%isd:bd%ied,bd%js:bd%je)
+      real :: xfx(bd%is:bd%ie+1,bd%jsd:bd%jed)
+      real :: yfx(bd%isd:bd%ied,bd%js: bd%je+1)
       real :: cmax
       real :: frac, rdt
       integer :: nsplt
       integer :: i,j,it,iq
       integer :: i_pack
+
+      real, pointer, dimension(:,:) :: area, rarea, sina_u, sina_v
+      real, pointer, dimension(:,:) :: dxa, dya, dx, dy
+      real, pointer, dimension(:,:,:) :: sin_sg
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+
+       area => gridstruct%area
+      rarea => gridstruct%rarea
+
+      sina_u => gridstruct%sina_u
+      sina_v => gridstruct%sina_v
+
+      sin_sg => gridstruct%sin_sg
+      dxa    => gridstruct%dxa 
+      dya    => gridstruct%dya 
+      dx     => gridstruct%dx  
+      dy     => gridstruct%dy  
 
       i_pack = mpp_start_update_domains(q, domain)
 
@@ -102,7 +128,7 @@ subroutine tracer_2d_1L(q, dp0, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
          enddo
          call mp_reduce_max(cmax)
          nsplt = int(1.01 + cmax)
-         if ( gid == 0 .and. nsplt > 5 )  write(6,*) k, 'Tracer_2d_split=', nsplt, cmax
+         if ( is_master() .and. nsplt > 5 )  write(*,*) k, 'Tracer_2d_split=', nsplt, cmax
       else
          nsplt = q_split
       endif
@@ -167,7 +193,7 @@ subroutine tracer_2d_1L(q, dp0, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
 
          do iq=1,nq
             call fv_tp_2d( q(isd,jsd,iq), cx2, cy2, npx, npy, hord, fx, fy, &
-                           xfx, yfx, area, ra_x, ra_y, mfx=mfx2, mfy=mfy2 )
+                           xfx, yfx, gridstruct, bd, ra_x, ra_y, mfx=mfx2, mfy=mfy2 )
             if( it==nsplt ) then
             do j=js,je
                do i=is,ie
@@ -185,29 +211,21 @@ subroutine tracer_2d_1L(q, dp0, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
            endif
 
            !Apply nested-grid BCs
-           if ( nested ) then
+           if ( gridstruct%nested ) then
 
-              if (concurrent) then
                  call nested_grid_BC_apply_intT(q(isd:ied,jsd:jed,iq), &
-                      0, 0, npx, npy, real(tracer_nest_timestep)+real(nsplt*k_split), real(nsplt*k_split), &
-                      var_east_t0=q_east_t0(:,:,k,iq), &
-                      var_west_t0=q_west_t0(:,:,k,iq), &
-                      var_north_t0=q_north_t0(:,:,k,iq), &
-                      var_south_t0=q_south_t0(:,:,k,iq), &
-                      var_east_t1=q_east(:,:,k,iq), &
-                      var_west_t1=q_west(:,:,k,iq), &
-                      var_north_t1=q_north(:,:,k,iq), &
-                      var_south_t1=q_south(:,:,k,iq), &
-                      bctype=nestbctype, &
-                      nsponge=nsponge, s_weight=s_weight   )
-              else
-                 call nested_grid_BC_apply(q(isd:ied,jsd:jed,iq), &
-                      0, 0, npx, npy, tracer_nest_timestep, nsplt*k_split, &
-                      var_east=q_east(:,:,k,iq), &
-                      var_west=q_west(:,:,k,iq), &
-                      var_north=q_north(:,:,k,iq), &
-                      var_south=q_south(:,:,k,iq), bctype=nestbctype, nsponge=nsponge, s_weight=s_weight     )
-              endif
+                      0, 0, npx, npy, bd, &
+                      real(neststruct%tracer_nest_timestep)+real(nsplt*k_split), real(nsplt*k_split), &
+                      var_east_t0=neststruct%q_BC(iq)%east_t0(:,:,k), &
+                      var_west_t0=neststruct%q_BC(iq)%west_t0(:,:,k), &
+                      var_north_t0=neststruct%q_BC(iq)%north_t0(:,:,k), &
+                      var_south_t0=neststruct%q_BC(iq)%south_t0(:,:,k), &
+                      var_east_t1=neststruct%q_BC(iq)%east_t1(:,:,k), &
+                      var_west_t1=neststruct%q_BC(iq)%west_t1(:,:,k), &
+                      var_north_t1=neststruct%q_BC(iq)%north_t1(:,:,k), &
+                      var_south_t1=neststruct%q_BC(iq)%south_t1(:,:,k), &
+                      bctype=neststruct%nestbctype, &
+                      nsponge=neststruct%nsponge, s_weight=neststruct%s_weight   )
            end if
 
         enddo!q-loop
@@ -222,8 +240,8 @@ subroutine tracer_2d_1L(q, dp0, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
          endif
      enddo  ! nsplt
 
-     if ( nested .and. k == npz) then
-        tracer_nest_timestep = tracer_nest_timestep + 1
+     if ( gridstruct%nested .and. k == npz) then
+        neststruct%tracer_nest_timestep = neststruct%tracer_nest_timestep + 1
      end if
 
      if ( id_divg > 0 ) then
@@ -239,40 +257,68 @@ subroutine tracer_2d_1L(q, dp0, mfx, mfy, cx, cy, npx, npy, npz, nq, hord,  &
 end subroutine tracer_2d_1L
 
 
-subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
-                     nq,  hord, q_split, dt, id_divg, q_pack, z_tracer)
+subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
+                     nq,  hord, q_split, dt, id_divg, q_pack, z_tracer, k_split)
 
+      type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(IN) :: npx
       integer, intent(IN) :: npy
       integer, intent(IN) :: npz
       integer, intent(IN) :: nq    ! number of tracers to be advected
       integer, intent(IN) :: hord
-      integer, intent(IN) :: q_split
+      integer, intent(IN) :: q_split, k_split
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt
       logical, intent(IN) :: z_tracer
       integer, intent(inout) :: q_pack
-      real   , intent(INOUT) :: q(isd:ied,jsd:jed,npz,nq)   ! Tracers
-      real   , intent(INOUT) :: dp1(is:ie,js:je,npz)        ! DELP before dyn_core
-      real   , intent(INOUT) :: mfx(is:ie+1,js:je,  npz)    ! Mass Flux X-Dir
-      real   , intent(INOUT) :: mfy(is:ie  ,js:je+1,npz)    ! Mass Flux Y-Dir
-      real   , intent(INOUT) ::  cx(is:ie+1,jsd:jed  ,npz)  ! Courant Number X-Dir
-      real   , intent(INOUT) ::  cy(isd:ied,js :je +1,npz)  ! Courant Number Y-Dir
+      real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   ! Tracers
+      real   , intent(INOUT) :: dp1(bd%is:bd%ie,bd%js:bd%je,npz)        ! DELP before dyn_core
+      real   , intent(INOUT) :: mfx(bd%is:bd%ie+1,bd%js:bd%je,  npz)    ! Mass Flux X-Dir
+      real   , intent(INOUT) :: mfy(bd%is:bd%ie  ,bd%js:bd%je+1,npz)    ! Mass Flux Y-Dir
+      real   , intent(INOUT) ::  cx(bd%is:bd%ie+1,bd%jsd:bd%jed  ,npz)  ! Courant Number X-Dir
+      real   , intent(INOUT) ::  cy(bd%isd:bd%ied,bd%js :bd%je +1,npz)  ! Courant Number Y-Dir
+      type(fv_grid_type), intent(IN), target :: gridstruct
+      type(domain2d), intent(INOUT) :: domain
 
 ! Local Arrays
-      real :: dp2(is:ie,js:je,npz)
-      real :: fx(is:ie+1,js:je )
-      real :: fy(is:ie , js:je+1)
-      real :: ra_x(is:ie,jsd:jed)
-      real :: ra_y(isd:ied,js:je)
-      real :: xfx(is:ie+1,jsd:jed  ,npz)
-      real :: yfx(isd:ied,js: je+1, npz)
+      real :: dp2(bd%is:bd%ie,bd%js:bd%je,npz)
+      real :: fx(bd%is:bd%ie+1,bd%js:bd%je )
+      real :: fy(bd%is:bd%ie , bd%js:bd%je+1)
+      real :: ra_x(bd%is:bd%ie,bd%jsd:bd%jed)
+      real :: ra_y(bd%isd:bd%ied,bd%js:bd%je)
+      real :: xfx(bd%is:bd%ie+1,bd%jsd:bd%jed  ,npz)
+      real :: yfx(bd%isd:bd%ied,bd%js: bd%je+1, npz)
       real :: cmax(npz)
       real :: cmax_t
       real :: c_global
       real :: frac, rdt
       integer :: nsplt
       integer :: i,j,k,it,iq
+
+      real, pointer, dimension(:,:) :: area, rarea
+      real, pointer, dimension(:,:,:) :: sin_sg
+      real, pointer, dimension(:,:) :: dxa, dya, dx, dy
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+
+       area => gridstruct%area
+      rarea => gridstruct%rarea
+
+      sin_sg => gridstruct%sin_sg
+      dxa    => gridstruct%dxa 
+      dya    => gridstruct%dya 
+      dx     => gridstruct%dx  
+      dy     => gridstruct%dy  
 
 !$omp parallel do default(shared)
       do k=1,npz
@@ -329,7 +375,7 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
          enddo
       endif
       nsplt = int(1. + c_global)
-      if ( gid == 0 .and. nsplt > 3 )  write(6,*) 'Tracer_2d_split=', nsplt, c_global
+      if ( is_master() .and. nsplt > 3 )  write(*,*) 'Tracer_2d_split=', nsplt, c_global
    else
       nsplt = q_split
    endif
@@ -401,7 +447,7 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
          do iq=1,nq
             call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
                           npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
-                          area, ra_x, ra_y, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
+                          gridstruct, bd, ra_x, ra_y, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
             do j=js,je
                do i=is,ie
                   q(i,j,k,iq) = ( q(i,j,k,iq)*dp1(i,j,k) + &
@@ -447,34 +493,44 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
 
 end subroutine tracer_2d
 
-subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
-                     nq,  hord, q_split, dt, id_divg, q_pack, z_tracer)
+subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
+                     nq,  hord, q_split, dt, id_divg, q_pack, z_tracer, k_split, neststruct, parent_grid)
 
+      type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(IN) :: npx
       integer, intent(IN) :: npy
       integer, intent(IN) :: npz
       integer, intent(IN) :: nq    ! number of tracers to be advected
       integer, intent(IN) :: hord
-      integer, intent(IN) :: q_split
+      integer, intent(IN) :: q_split, k_split
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt
       logical, intent(IN) :: z_tracer
       integer, intent(inout) :: q_pack
-      real   , intent(INOUT) :: q(isd:ied,jsd:jed,npz,nq)   ! Tracers
-      real   , intent(INOUT) :: dp1(is:ie,js:je,npz)        ! DELP before dyn_core
-      real   , intent(INOUT) :: mfx(is:ie+1,js:je,  npz)    ! Mass Flux X-Dir
-      real   , intent(INOUT) :: mfy(is:ie  ,js:je+1,npz)    ! Mass Flux Y-Dir
-      real   , intent(INOUT) ::  cx(is:ie+1,jsd:jed  ,npz)  ! Courant Number X-Dir
-      real   , intent(INOUT) ::  cy(isd:ied,js :je +1,npz)  ! Courant Number Y-Dir
+      real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   ! Tracers
+      real   , intent(INOUT) :: dp1(bd%is:bd%ie,bd%js:bd%je,npz)        ! DELP before dyn_core
+      real   , intent(INOUT) :: mfx(bd%is:bd%ie+1,bd%js:bd%je,  npz)    ! Mass Flux X-Dir
+      real   , intent(INOUT) :: mfy(bd%is:bd%ie  ,bd%js:bd%je+1,npz)    ! Mass Flux Y-Dir
+      real   , intent(INOUT) ::  cx(bd%is:bd%ie+1,bd%jsd:bd%jed  ,npz)  ! Courant Number X-Dir
+      real   , intent(INOUT) ::  cy(bd%isd:bd%ied,bd%js :bd%je +1,npz)  ! Courant Number Y-Dir
+      type(fv_grid_type), intent(IN), target :: gridstruct
+      type(fv_nest_type), intent(INOUT) :: neststruct
+      type(fv_atmos_type), intent(INOUT) :: parent_grid
+      type(domain2d), intent(INOUT) :: domain
 
 ! Local Arrays
-      real :: dp2(is:ie,js:je,npz)
-      real :: fx(is:ie+1,js:je  ,npz,nq)
-      real :: fy(is:ie , js:je+1,npz,nq)
-      real :: ra_x(is:ie,jsd:jed)
-      real :: ra_y(isd:ied,js:je)
-      real :: xfx(is:ie+1,jsd:jed  ,npz)
-      real :: yfx(isd:ied,js: je+1, npz)
+      real :: dp2(bd%is:bd%ie,bd%js:bd%je,npz)
+#ifdef FLUXBCS
+      real :: fx(bd%is:bd%ie+1,bd%js:bd%je  ,npz,nq)
+      real :: fy(bd%is:bd%ie , bd%js:bd%je+1,npz,nq)
+#else
+      real :: fx(bd%is:bd%ie+1,bd%js:bd%je  )
+      real :: fy(bd%is:bd%ie , bd%js:bd%je+1)
+#endif
+      real :: ra_x(bd%is:bd%ie,bd%jsd:bd%jed)
+      real :: ra_y(bd%isd:bd%ied,bd%js:bd%je)
+      real :: xfx(bd%is:bd%ie+1,bd%jsd:bd%jed  ,npz)
+      real :: yfx(bd%isd:bd%ied,bd%js: bd%je+1, npz)
       real :: cmax(npz)
       real :: cmax_t
       real :: c_global
@@ -482,6 +538,31 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
       real, parameter :: esl = 1.E-24
       integer :: nsplt, nsplt_parent, msg_split_steps = 1
       integer :: i,j,k,it,iq,n
+
+      real, pointer, dimension(:,:) :: area, rarea
+      real, pointer, dimension(:,:,:) :: sin_sg
+      real, pointer, dimension(:,:) :: dxa, dya, dx, dy
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+
+       area => gridstruct%area
+      rarea => gridstruct%rarea
+
+      sin_sg => gridstruct%sin_sg
+      dxa    => gridstruct%dxa 
+      dya    => gridstruct%dya 
+      dx     => gridstruct%dx  
+      dy     => gridstruct%dy  
 
 !$omp parallel do default(shared)
       do k=1,npz
@@ -540,32 +621,42 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
       endif
       nsplt = int(1. + c_global)
 
+#ifdef FLUXBCS
+      !!*****NOTE*****
+      !! If setting the FLUXBCS directive do note that the current
+      !!  version of the code requires that Atm, tile, and pelist be
+      !!  brought in through use statements. This code will need re
+      !! -writing to avoid this.
+
       !If using flux BCs, nested grid nsplit must be an
       !even multiple of that on the coarse grid
-      if (do_flux_BCs .or. (nested .and. nestbctype > 1)) then
+      if (neststruct%do_flux_BCs .or. (gridstruct%nested .and. neststruct%nestbctype > 1)) then
          !Receive from all parent grids
-         if (nested) then
+         if (gridstruct%nested) then
             !!NOTE about mpp_recv/mpp_send and scalars:
             !! When passing a scalar, the second argument is not SIZE (which is known to be 1) but a process ID
             call mpp_recv(nsplt_parent,parent_grid%pelist(1))
             nsplt = ceiling(real(nsplt)/real(nsplt_parent))*nsplt
+            nsplt = max(nsplt,nsplt_parent)
             msg_split_steps = nsplt/nsplt_parent
          endif
       endif
-      !if ( gid == masterproc )  write(6,*) 'Tracer_2d_split=', nsplt, c_global 
-      if ( gid == masterproc .and. nsplt > 3 )  write(6,*) 'Tracer_2d_split=', nsplt, c_global 
+#endif
+      !if ( master )  write(*,*) 'Tracer_2d_split=', nsplt, c_global 
+      if ( is_master() .and. nsplt > 3 )  write(*,*) 'Tracer_2d_split=', nsplt, c_global 
    else
       nsplt = q_split
-      if (nested .and. nestbctype > 1) msg_split_steps = q_split/parent_grid%q_split
+      if (gridstruct%nested .and. neststruct%nestbctype > 1) msg_split_steps = max(q_split/parent_grid%flagstruct%q_split,1)
    endif
 
+#ifdef FLUXBCS
    !Make sure to send to any nested grids which might be expecting a coarse-grid nsplit.
    !(This is outside the if statement since it could be that the coarse grid uses
    !q_split > 0 but the nested grid has q_split = 0)
-   if (do_flux_BCs .or. (nested .and. nestbctype > 1)) then
-      if (ANY(child_grids) .and. masterproc == gid) then
-         do n=1,size(child_grids)
-            if (child_grids(n) .and. Atm(n)%q_split == 0) then
+   if (neststruct%do_flux_BCs .or. (gridstruct%nested .and. neststruct%nestbctype > 1)) then
+      if (ANY(neststruct%child_grids) .and. is_master()) then
+         do n=1,size(neststruct%child_grids)
+            if (neststruct%child_grids(n) .and. Atm(n)%flagstruct%q_split == 0) then
                do i=1,Atm(n)%npes_this_grid
                   call mpp_send(nsplt,Atm(n)%pelist(i))
                enddo
@@ -573,6 +664,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
          enddo
       endif
    endif
+#endif FLUXBCS
 
 !--------------------------------------------------------------------------------
 
@@ -619,8 +711,8 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
       enddo
 
     do it=1,nsplt
-       if ( nested ) then
-          tracer_nest_timestep = tracer_nest_timestep + 1
+       if ( gridstruct%nested ) then
+          neststruct%tracer_nest_timestep = neststruct%tracer_nest_timestep + 1
        end if
                         call timing_on('COMM_TOTAL')
                             call timing_on('COMM_TRACER')
@@ -628,25 +720,29 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
                            call timing_off('COMM_TRACER')
                        call timing_off('COMM_TOTAL')
 	    
-              if (nested .and. concurrent) then
+      if (gridstruct%nested) then
             do iq=1,nq
                  call nested_grid_BC_apply_intT(q(isd:ied,jsd:jed,:,iq), &
                       !0, 0, npx, npy, npz, real(tracer_nest_timestep), real(nsplt), &
-                      0, 0, npx, npy, npz, real(tracer_nest_timestep)+real(nsplt*k_split), real(nsplt*k_split), &
-                      var_east_t0=q_east_t0(:,:,:,iq), &
-                      var_west_t0=q_west_t0(:,:,:,iq), &
-                      var_north_t0=q_north_t0(:,:,:,iq), &
-                      var_south_t0=q_south_t0(:,:,:,iq), &
-                      var_east_t1=q_east(:,:,:,iq), &
-                      var_west_t1=q_west(:,:,:,iq), &
-                      var_north_t1=q_north(:,:,:,iq), &
-                      var_south_t1=q_south(:,:,:,iq), &
-                      bctype=nestbctype, &
-                      nsponge=nsponge, s_weight=s_weight   )
+                      0, 0, npx, npy, npz, bd, &
+                      real(neststruct%tracer_nest_timestep)+real(nsplt*k_split), real(nsplt*k_split), &
+                      var_east_t0=neststruct%q_BC(iq)%east_t0, &
+                      var_west_t0=neststruct%q_BC(iq)%west_t0, &
+                      var_north_t0=neststruct%q_BC(iq)%north_t0, &
+                      var_south_t0=neststruct%q_BC(iq)%south_t0, &
+                      var_east_t1=neststruct%q_BC(iq)%east_t1, &
+                      var_west_t1=neststruct%q_BC(iq)%west_t1, &
+                      var_north_t1=neststruct%q_BC(iq)%north_t1, &
+                      var_south_t1=neststruct%q_BC(iq)%south_t1, &
+                      bctype=neststruct%nestbctype, &
+                      nsponge=neststruct%nsponge, s_weight=neststruct%s_weight   )
            enddo
-              endif
+      endif
 
-!$omp parallel do default(shared) private(ra_x, ra_y, fx, fy)
+
+#ifdef FLUXBCS
+
+! NULL !$omp parallel do default(shared) private(ra_x, ra_y, fx, fy)
       do k=1,npz
 
          do j=jsd,jed
@@ -663,20 +759,19 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
          do iq=1,nq
             call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
                           npx, npy, hord, fx(is,js,k,iq), fy(is,js,k,iq), xfx(is,jsd,k), yfx(isd,js,k), &
-                          area, ra_x, ra_y, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
+                          gridstruct, bd, ra_x, ra_y, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
          enddo
       enddo
 
+      if (neststruct%do_flux_BCs .or. (gridstruct%nested .and. neststruct%nestbctype > 1) ) then
 
-      if (concurrent .and. (do_flux_BCs .or. (nested .and. nestbctype > 1) )) then
+         !call FCT_PD(q,fx,fy,dp1,npx,npy,npz,nq,area, domain)
 
-         call FCT_PD(q,fx,fy,dp1,npx,npy,npz,nq)
-
-         call flux_BCs(fx, fy, it, msg_split_steps, npx, npy, npz, nq, q, dp1, dp2, cx, cy)
+         call flux_BCs(fx, fy, it, msg_split_steps, npx, npy, npz, nq, q, dp1, dp2, cx, cy, gridstruct%nested, neststruct, parent_grid)
+         !call flux_BCs(fx, fy, it, nsplt, npx, npy, npz, nq, q, dp1, dp2, cx, cy)
 
       endif
-
-!$omp parallel do default(shared) private(ra_x, ra_y, fx, fy)
+!NULL !$omp parallel do default(shared) private(ra_x, ra_y, fx, fy)
       do k=1,npz
          do iq=1,nq
 
@@ -690,6 +785,36 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
          enddo
       enddo ! npz
 
+#else
+!$omp parallel do default(shared) private(ra_x, ra_y, fx, fy)
+      do k=1,npz
+
+         do j=jsd,jed
+            do i=is,ie
+               ra_x(i,j) = area(i,j) + xfx(i,j,k) - xfx(i+1,j,k)
+            enddo
+         enddo
+         do j=js,je
+            do i=isd,ied
+               ra_y(i,j) = area(i,j) + yfx(i,j,k) - yfx(i,j+1,k)
+            enddo
+         enddo
+
+         do iq=1,nq
+            call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
+                          npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
+                          gridstruct, bd, ra_x, ra_y, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
+            do j=js,je
+               do i=is,ie
+                  q(i,j,k,iq) = ( q(i,j,k,iq)*dp1(i,j,k) + &
+                                (fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j) )/dp2(i,j,k)
+               enddo
+            enddo
+
+         enddo
+      enddo ! npz
+
+#endif
       if ( it /= nsplt ) then
                       call timing_on('COMM_TOTAL')
                           call timing_on('COMM_TRACER')
@@ -708,33 +833,24 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
            enddo 
       endif
            !Apply nested-grid BCs
-           if ( nested ) then
+           if ( gridstruct%nested ) then
               do iq=1,nq
 
 
-              if (concurrent) then
                  call nested_grid_BC_apply_intT(q(isd:ied,jsd:jed,:,iq), &
-                      0, 0, npx, npy, npz, real(tracer_nest_timestep), real(nsplt*k_split), &
+                      0, 0, npx, npy, npz, bd, &
+                      real(neststruct%tracer_nest_timestep), real(nsplt*k_split), &
                       !0, 0, npx, npy, npz, real(tracer_nest_timestep)+real(nsplt), real(nsplt), &
-                      var_east_t0=q_east_t0(:,:,:,iq), &
-                      var_west_t0=q_west_t0(:,:,:,iq), &
-                      var_north_t0=q_north_t0(:,:,:,iq), &
-                      var_south_t0=q_south_t0(:,:,:,iq), &
-                      var_east_t1=q_east(:,:,:,iq), &
-                      var_west_t1=q_west(:,:,:,iq), &
-                      var_north_t1=q_north(:,:,:,iq), &
-                      var_south_t1=q_south(:,:,:,iq), &
-                      bctype=nestbctype, &
-                      nsponge=nsponge, s_weight=s_weight   )
-              else
-              call nested_grid_BC_apply(q(isd:ied,jsd:jed,:,iq), &
-                   0, 0, npx, npy, 1, tracer_nest_timestep, nsplt*k_split, &
-                   var_east=q_east(:,:,:,iq), &
-                   var_west=q_west(:,:,:,iq), &
-                   var_north=q_north(:,:,:,iq), &
-                   var_south=q_south(:,:,:,iq), bctype=nestbctype, &
-                   nsponge=nsponge, s_weight=s_weight   )
-              endif
+                      var_east_t0=neststruct%q_BC(iq)%east_t0, &
+                      var_west_t0=neststruct%q_BC(iq)%west_t0, &
+                      var_north_t0=neststruct%q_BC(iq)%north_t0, &
+                      var_south_t0=neststruct%q_BC(iq)%south_t0, &
+                      var_east_t1=neststruct%q_BC(iq)%east_t1, &
+                      var_west_t1=neststruct%q_BC(iq)%west_t1, &
+                      var_north_t1=neststruct%q_BC(iq)%north_t1, &
+                      var_south_t1=neststruct%q_BC(iq)%south_t1, &
+                      bctype=neststruct%nestbctype, &
+                      nsponge=neststruct%nsponge, s_weight=neststruct%s_weight   )
 
               end do
            end if
@@ -757,6 +873,8 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
 
  end subroutine tracer_2d_nested
 
+#ifdef FLUXBCS
+
 !! nestbctype == 2: use just coarse-grid fluxes on nested grid.
 !! nestbctype == 3: use incoming fluxes: when flow is into
 !!                  nested grid, nested grid uses coarse-grid fluxes,
@@ -768,7 +886,20 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, npx, npy, npz,   &
 !! remap BC, the vertical remapping must not change the column's
 !! tracer mass. See fv_dynamics.F90 .
 
-subroutine flux_BCs(fx, fy, it, msg_split_steps, npx, npy, npz, nq, q, dp1, dp2, cx, cy)
+!! The new way (to be implemented):
+!! 1. on first split timestep, send coarse grid fluxes to nested grid.
+!! 2. Split up coarse grid fluxes onto nested-grid faces.
+!! 3. Run tracer advection on both grids, accumulating the boundary fluxes
+!!    on both grids, for all split timesteps except the last on the coarse grid.
+!! 4. If two-way BCs, send accumulated nested-grid fluxes to coarse grid
+!! 5. Do correction step on coarse grid: add difference in to fluxes taken on
+!!    last coarse-grid split timestep
+!!
+!! For two-way BCs we do not replace an incoming flux with an outgoing flux.
+ !! (Should we also not INCREASE any outgoing flux?)
+
+subroutine flux_BCs(fx, fy, it, msg_split_steps, npx, npy, npz, nq, &
+     q, dp1, dp2, cx, cy, nested, neststruct, parent_grid)
 
   integer, intent(IN) :: it, msg_split_steps, npx, npy, npz, nq
 
@@ -780,28 +911,101 @@ subroutine flux_BCs(fx, fy, it, msg_split_steps, npx, npy, npz, nq, q, dp1, dp2,
   real, intent(IN) :: cx(is:ie+1,jsd:jed  ,npz)  ! Courant Number X-Dir
   real, intent(IN) ::  cy(isd:ied,js :je +1,npz)  ! Courant Number Y-Dir
 
+  logical, intent(IN) :: nested
+
+  type(fv_nest_type), intent(INOUT), target :: neststruct
+  type(fv_atmos_type), intent(INOUT) :: parent_grid
+
   real, save, allocatable, dimension(:,:,:) :: coarse_fluxes_west, coarse_fluxes_east, coarse_fluxes_south, coarse_fluxes_north
   real, allocatable, dimension(:,:,:) :: nested_data_west, nested_data_east, nested_data_south, nested_data_north
 
   real :: ebuffer(js:je,npz,nq), wbuffer(js:je,npz,nq)
   real :: sbuffer(is:ie,npz,nq), nbuffer(is:ie,npz,nq)
 
-  real :: fxd(isd:ied+1,jsd:jed  ,npz,nq)
-  real :: fyd(isd:ied  ,jsd:jed+1,npz,nq)
+  !Divided fluxes for nested-grid boundary
+  real :: fxWd(npy-1,npz,nq)
+  real :: fxEd(npy-1,npz,nq)
+  real :: fySd(npx-1,npz,nq)
+  real :: fyNd(npx-1,npz,nq)
+!!$  real :: fxWd(jsd:jed,npz,nq)
+!!$  real :: fxEd(jsd:jed,npz,nq)
+!!$  real :: fySd(isd:ied,npz,nq)
+!!$  real :: fyNd(isd:ied,npz,nq)
 
   integer n, iq, i, j, k, ic, jc
   integer js1, je1, is1, ie1
   real fluxsplit, corr
 
+  integer, parameter :: iflux_div = 3
+
+  integer, pointer :: refinement, nestbctype, ioffset, joffset
+  logical, pointer :: do_flux_BCs, do_2way_flux_BCs
+
+  logical, dimension(:), pointer :: child_grids
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+
   !Note that sends and receipts are only done when mod(it,msg_split_steps) == 1 or 0
 
-  if (.not. concurrent) call mpp_error(FATAL, "Nested flux BCs can only be used with CONCURRENT nesting.")
+  !if (.not. concurrent) call mpp_error(FATAL, "Nested flux BCs can only be used with CONCURRENT nesting.")
 
+  !! Set up local pointers
+  refinement          => neststruct%refinement
+  do_flux_BCs         => neststruct%do_flux_BCs
+  do_2way_flux_BCs    => neststruct%do_2way_flux_BCs
+  nestbctype          => neststruct%nestbctype
+
+  ioffset     => neststruct%ioffset     
+  joffset     => neststruct%joffset     
+  child_grids => neststruct%child_grids 
+
+  if (.not. allocated(nest_fx_west_accum)) then
+
+     if (is == 1) then
+        allocate(nest_fx_west_accum(js:je,npz,nq))
+     else
+        allocate(nest_fx_west_accum(1,1,1))
+     endif
+     if (ie == npx-1) then
+        allocate(nest_fx_east_accum(js:je,npz,nq))
+     else
+        allocate(nest_fx_east_accum(1,1,1))
+     endif
+
+     if (js == 1) then
+        allocate(nest_fx_south_accum(is:ie,npz,nq))
+     else
+        allocate(nest_fx_south_accum(1,1,1))
+     endif
+     if (je == npy-1) then
+        allocate(nest_fx_north_accum(is:ie,npz,nq))
+     else
+        allocate(nest_fx_north_accum(1,1,1))
+     endif
+
+  end if
+
+  !NOTE: changing bounds on coarse_fluxes* to include one extra point at each end
+  !      changes answers for nestbctype == 2, but not for 3
   if (nested .and. .not. allocated(coarse_fluxes_west) .and. nestbctype /= 4) then
-     allocate(coarse_fluxes_west(npy/refinement,npz,nq))
-     allocate(coarse_fluxes_east(npy/refinement,npz,nq))
-     allocate(coarse_fluxes_south(npx/refinement,npz,nq))
-     allocate(coarse_fluxes_north(npx/refinement,npz,nq))
+     allocate(coarse_fluxes_west(-1:npy/refinement+2,npz,nq))
+     allocate(coarse_fluxes_east(-1:npy/refinement+2,npz,nq))
+     allocate(coarse_fluxes_south(-1:npx/refinement+2,npz,nq))
+     allocate(coarse_fluxes_north(-1:npx/refinement+2,npz,nq))
+!!$     allocate(coarse_fluxes_west(0:npy/refinement+1,npz,nq))
+!!$     allocate(coarse_fluxes_east(0:npy/refinement+1,npz,nq))
+!!$     allocate(coarse_fluxes_south(0:npx/refinement+1,npz,nq))
+!!$     allocate(coarse_fluxes_north(0:npx/refinement+1,npz,nq))
   endif
 
 !!! Flux BCs: Do transfers, if necessary
@@ -810,6 +1014,7 @@ subroutine flux_BCs(fx, fy, it, msg_split_steps, npx, npy, npz, nq, q, dp1, dp2,
      if (nested) then
 
         if ( (mod(it,msg_split_steps) == 1 .or. msg_split_steps == 1) .and. nestbctype /= 4 ) then
+        !if (  it == 1 .and. nestbctype /= 4 ) then
            coarse_fluxes_west = 0.
            coarse_fluxes_east = 0.
            coarse_fluxes_south = 0.
@@ -825,31 +1030,262 @@ subroutine flux_BCs(fx, fy, it, msg_split_steps, npx, npy, npz, nq, q, dp1, dp2,
            call mpp_sum(coarse_fluxes_north, size(coarse_fluxes_north), (/ parent_grid%pelist, pelist /) )
                            call timing_off('COMM_TRACER')
                        call timing_off('COMM_TOTAL')
+
         endif
 
-        is1 = max(is,2)
-        ie1 = min(ie,npx-2)
-        js1 = max(js,2)
-        je1 = min(je,npy-2)
+        is1 = max(is,1)
+        ie1 = min(ie,npx-1)
+        js1 = max(js,1)
+        je1 = min(je,npy-1)
 
         fluxsplit = 1./real(refinement*msg_split_steps)
+
+        !Divide up fluxes depending on the division method
+        select case (iflux_div)
+        case (1)
+           if (is == 1) then
+              do iq=1,nq
+              do k=1,npz
+              do j=max(js,1),min(je,npy-1)
+                 fxWd(j,k,iq) = coarse_fluxes_west((j-1)/refinement + 1,k,iq)*fluxsplit
+              enddo
+              enddo
+              enddo
+           endif
+           if (ie == npx-1) then
+              do iq=1,nq
+              do k=1,npz
+              do j=max(js,1),min(je,npy-1)
+                 fxEd(j,k,iq) = coarse_fluxes_east((j-1)/refinement + 1,k,iq)*fluxsplit
+              enddo
+              enddo
+              enddo
+           endif
+           if (js == 1) then
+              do iq=1,nq
+              do k=1,npz
+              do i=max(is,1),min(ie,npx-1)
+                 fySd(i,k,iq) = coarse_fluxes_south((i-1)/refinement + 1,k,iq)*fluxsplit
+              enddo
+              enddo
+              enddo
+           endif
+           if (je == npy-1) then
+              do iq=1,nq
+              do k=1,npz
+              do i=max(is,1),min(ie,npx-1)
+                 fyNd(i,k,iq) = coarse_fluxes_north((i-1)/refinement + 1,k,iq)*fluxsplit
+              enddo
+              enddo
+              enddo
+           endif
+
+        case (2)
+           if (is == 1) then
+              call PLM_flux_division(coarse_fluxes_west, fxWd, npy/refinement, &
+                   npy-1, npz, nq, refinement, msg_split_steps)
+           endif
+           if (ie == npx-1) then
+              call PLM_flux_division(coarse_fluxes_east, fxEd, npy/refinement, &
+                   npy-1, npz, nq, refinement, msg_split_steps)
+           endif
+           if (js == 1) then
+              call PLM_flux_division(coarse_fluxes_south, fySd, npx/refinement, &
+                   npx-1, npz, nq, refinement, msg_split_steps)
+           endif
+           if (je == npy-1) then
+              call PLM_flux_division(coarse_fluxes_north, fyNd, npx/refinement, &
+                   npx-1, npz, nq, refinement, msg_split_steps)
+           endif
+
+        case (3)
+           if (is == 1) then
+              call PPM_flux_division(coarse_fluxes_west, fxWd, npy/refinement, &
+                   npy-1, npz, nq, refinement, msg_split_steps)
+           endif
+           if (ie == npx-1) then
+              call PPM_flux_division(coarse_fluxes_east, fxEd, npy/refinement, &
+                   npy-1, npz, nq, refinement, msg_split_steps)
+           endif
+           if (js == 1) then
+              call PPM_flux_division(coarse_fluxes_south, fySd, npx/refinement, &
+                   npx-1, npz, nq, refinement, msg_split_steps)
+           endif
+           if (je == npy-1) then
+              call PPM_flux_division(coarse_fluxes_north, fyNd, npx/refinement, &
+                   npx-1, npz, nq, refinement, msg_split_steps)
+           endif
+
+        case DEFAULT
+           call mpp_error(FATAL, 'iflux_div value not implemented')
+        end select
+
         !replace nested-grid fluxes as desired; note that grids are aligned, making this easier.
-        !Also perform FCT so as to ensure positivity is not violated by the replacement fluxes
-        !Just correcting for positivity for now
+
         if (nestbctype == 2) then
            if (is == 1) then
               do iq=1,nq
               do k=1,npz
+              do j=js1,je1
+                 fx(1,j,k,iq) = fxWd(j,k,iq) !coarse_fluxes_west((j-1)/refinement + 1,k,iq)*fluxsplit
+              enddo
+              enddo
+              enddo
+           endif
+           if (ie == npx-1) then
+              do iq=1,nq
+              do k=1,npz
+              do j=js1,je1
+                 fx(npx,j,k,iq) = fxEd(j,k,iq) !coarse_fluxes_east((j-1)/refinement + 1,k,iq)*fluxsplit
+              enddo
+              enddo
+              enddo
+           endif
+
+           if (js == 1) then
+              do iq=1,nq
+              do k=1,npz
+              do i=is1,ie1
+                 fy(i,1,k,iq) = fySd(i,k,iq) !coarse_fluxes_south((i-1)/refinement + 1,k,iq)*fluxsplit
+              enddo
+              enddo
+              enddo
+           endif
+           if (je == npy-1) then
+              do iq=1,nq
+              do k=1,npz
+              do i=is1,ie1
+                 fy(i,npy,k,iq) = fyNd(i,k,iq) !coarse_fluxes_north((i-1)/refinement + 1,k,iq)*fluxsplit
+              enddo
+              enddo
+              enddo
+           endif 
+       else if (nestbctype == 3) then
+          ! At the boundary, use the flux directed outward from the
+          ! grid it is from. In particular a cell's inward flux
+          ! (regardless of whether that cell is on the nested or the
+          ! coarse grid) should never be replaced by an outward flux,
+          ! lest positivity be violated. If BOTH fluxes are directed
+          ! inward from their grid, set the boundary flux to
+          ! zero. When both are directed outward, the choice is
+          ! arbitrary; use the flux of smaller magnitude. If both are in
+          ! the same direction we use the smaller of the fluxes.
+
+           if (is == 1) then
+              do iq=1,nq
+              do k=1,npz
+              do j=js,je
+                 if (fxWd(j,k,iq)*fx(1,j,k,iq) <= 0.) then
+                    !Two incoming fluxes => set to zero
+                    !This could most efficiently be represented by
+                    ! fx = sign(min(fxWd,-fx,0),-(fxwd+fx)) 
+                    ! but I have not yet tested this
+                    if (fxWd(j,k,iq) < 0.) then
+                       fx(1,j,k,iq) = 0.
+                    else
+                       fx(1,j,k,iq) = sign(min(fxWd(j,k,iq),-fx(1,j,k,iq)),-(fxWd(j,k,iq)+fx(1,j,k,iq)))
+                    endif
+                 else
+                    !Go with the flux of smaller magnitude
+                    fx(1,j,k,iq) = sign(min(abs(fx(1,j,k,iq)),abs(fxWd(j,k,iq))), fx(1,j,k,iq))
+                 endif
+!!$                 jc = (j-1)/refinement + 1
+!!$                 if ( cx(1,j,k) > 0. ) then
+!!$                    fx(1,j,k,iq) = fxWd(j,k,iq)
+!!$                 endif
+              enddo
+              enddo
+              enddo
+           endif
+           if (ie == npx-1) then
+              do iq=1,nq
+              do k=1,npz
+              do j=js,je
+                 if (fxEd(j,k,iq)*fx(npx,j,k,iq) <= 0.) then
+                    if (fxEd(j,k,iq) > 0.) then
+                       fx(npx,j,k,iq) = 0.
+                    else
+                       fx(npx,j,k,iq) = sign(min(-fxEd(j,k,iq),fx(npx,j,k,iq)),-(fxEd(j,k,iq)+fx(npx,j,k,iq)))
+                    endif
+                 else
+                    !Go with the flux of smaller magnitude
+                    fx(npx,j,k,iq) = sign(min(abs(fx(npx,j,k,iq)),abs(fxEd(j,k,iq))), fx(npx,j,k,iq))
+                 endif
+!!$                 jc = (j-1)/refinement + 1
+!!$                 if ( cx(npx,j,k) < 0. ) then
+!!$                    fx(npx,j,k,iq) = fxEd(j,k,iq)
+!!$                 endif
+              enddo
+              enddo
+              enddo
+           endif
+
+           if (js == 1) then
+              do iq=1,nq
+              do k=1,npz
+              do i=is,ie
+                 if (fySd(i,k,iq)*fy(i,1,k,iq) <= 0.) then
+                    if (fySd(i,k,iq) < 0.) then
+                       fy(i,1,k,iq) = 0.
+                    else
+                       fy(i,1,k,iq) = sign(min(fySd(i,k,iq),-fy(i,1,k,iq)),-(fySd(i,k,iq)+fy(i,1,k,iq)))
+                    endif
+                 else
+                    !Go with the flux of smaller magnitude
+                    fy(i,1,k,iq) = sign(min(abs(fy(i,1,k,iq)),abs(fySd(i,k,iq))), fy(i,1,k,iq))
+                 endif
+!!$                 ic = (i-1)/refinement + 1
+!!$                 if ( cy(i,1,k) > 0. ) then
+!!$                    fy(i,1,k,iq) = fySd(i,k,iq)
+!!$                 endif
+              enddo
+              enddo
+              enddo
+           endif
+           if (je == npy-1) then
+              do iq=1,nq
+              do k=1,npz
+              do i=is,ie
+                 if (fyNd(i,k,iq)*fy(i,npy,k,iq) <= 0.) then
+                    if (fyNd(i,k,iq) > 0.) then
+                       fy(i,npy,k,iq) = 0.
+                    else
+                       fy(i,npy,k,iq) = sign(min(-fyNd(i,k,iq),fy(i,npy,k,iq)),-(fyNd(i,k,iq)+fy(i,npy,k,iq)))
+                    endif
+                 else
+                    !Go with the flux of smaller magnitude
+                    fy(i,npy,k,iq) = sign(min(abs(fy(i,npy,k,iq)),abs(fyNd(i,k,iq))), fy(i,npy,k,iq))
+                 endif
+!!$                 ic = (i-1)/refinement + 1
+!!$                 if ( cy(i,npy,k) < 0. ) then
+!!$                    fy(i,npy,k,iq) = fyNd(i,k,iq)
+!!$                 endif
+              enddo
+              enddo
+              enddo
+           endif            
+        else if (nestbctype == 5) then
+           !Same as 2, except we do the same test as before: never replace an incoming flux with an outgoing flux
+           !ie. if fx(i,j,k) <0. .or. coarse(i,j,k) > 0. then...
+           !(Not fully implemented)
+           if (is == 1) then
+              do iq=1,nq
+              do k=1,npz
                  if (js == 1) then
-                    fx(1,1,k,iq) =  coarse_fluxes_west(1,k,iq)*fluxsplit
-                    fy(1,1,k,iq) =  coarse_fluxes_south(1,k,iq)*fluxsplit
+                    if (fx(1,1,k,iq) < 0. .or. coarse_fluxes_west(1,k,iq) > 0.) &
+                         fx(1,1,k,iq) =  coarse_fluxes_west(1,k,iq)*fluxsplit
+                    if (fy(1,1,k,iq) < 0. .or. coarse_fluxes_south(1,k,iq) > 0.) &
+                         fy(1,1,k,iq) =  coarse_fluxes_south(1,k,iq)*fluxsplit
                  endif
                  if (je == npy-1) then
-                    fx(1,npy-1,k,iq) =  coarse_fluxes_west(npy/refinement,k,iq)*fluxsplit
-                    fy(1,npy,k,iq) =  coarse_fluxes_north(1,k,iq)*fluxsplit
+                    if (fx(1,npy-1,k,iq) < 0. .or. coarse_fluxes_west(npy/refinement,k,iq) > 0.) &
+                         fx(1,npy-1,k,iq) =  coarse_fluxes_west(npy/refinement,k,iq)*fluxsplit
+                    if (fy(1,npy,k,iq) > 0. .or. coarse_fluxes_north(1,k,iq) < 0.) &
+                         fy(1,npy,k,iq) =  coarse_fluxes_north(1,k,iq)*fluxsplit
                  endif
               do j=js1,je1
-                 fx(1,j,k,iq) = coarse_fluxes_west((j-1)/refinement + 1,k,iq)*fluxsplit
+                 if (fx(1,j,k,iq) < 0. .or. coarse_fluxes_west((j-1)/refinement + 1,k,iq) > 0.) &
+                         fx(1,j,k,iq) = coarse_fluxes_west((j-1)/refinement + 1,k,iq)*fluxsplit
               enddo
               enddo
               enddo
@@ -858,15 +1294,20 @@ subroutine flux_BCs(fx, fy, it, msg_split_steps, npx, npy, npz, nq, q, dp1, dp2,
               do iq=1,nq
               do k=1,npz
                  if (js == 1) then
-                    fx(npx,1,k,iq) =  coarse_fluxes_east(1,k,iq)*fluxsplit
-                    fy(npx-1,1,k,iq) =  coarse_fluxes_south(npx/refinement,k,iq)*fluxsplit
+                    if (fx(npx,1,k,iq) > 0. .or. coarse_fluxes_east(1,k,iq) < 0.) &
+                         fx(npx,1,k,iq) =  coarse_fluxes_east(1,k,iq)*fluxsplit
+                    if (fy(npx-1,1,k,iq) < 0. .or. coarse_fluxes_south(npx/refinement,k,iq) > 0.) &
+                         fy(npx-1,1,k,iq) =  coarse_fluxes_south(npx/refinement,k,iq)*fluxsplit
                  endif
                  if (je == npy-1) then
-                    fx(npx,npy-1,k,iq) =  coarse_fluxes_east(npy/refinement,k,iq)*fluxsplit
-                    fy(npx-1,npy,k,iq) =  coarse_fluxes_north(npx/refinement,k,iq)*fluxsplit
+                    if (fx(npx,npy-1,k,iq) > 0. .or. coarse_fluxes_east(npy/refinement,k,iq) < 0.) &
+                         fx(npx,npy-1,k,iq) =  coarse_fluxes_east(npy/refinement,k,iq)*fluxsplit
+                    if (fy(npx-1,npy,k,iq) > 0. .or. coarse_fluxes_north(npx/refinement,k,iq) < 0.) &
+                         fy(npx-1,npy,k,iq) =  coarse_fluxes_north(npx/refinement,k,iq)*fluxsplit
                  endif
               do j=js1,je1
-                 fx(npx,j,k,iq) = coarse_fluxes_east((j-1)/refinement + 1,k,iq)*fluxsplit
+                 if (fx(1,j,k,iq) > 0. .or. coarse_fluxes_west((j-1)/refinement + 1,k,iq) < 0.) &
+                         fx(npx,j,k,iq) = coarse_fluxes_east((j-1)/refinement + 1,k,iq)*fluxsplit
               enddo
               enddo
               enddo
@@ -890,75 +1331,6 @@ subroutine flux_BCs(fx, fy, it, msg_split_steps, npx, npy, npz, nq, q, dp1, dp2,
               enddo
               enddo
            endif 
-       else if (nestbctype == 3) then
-          ! At the boundary, use the flux directed outward from the
-          ! grid it is from. In particular a cell's inward flux
-          ! (regardless of whether that cell is on the nested or the
-          ! coarse grid) should never be replaced by an outward flux,
-          ! lest positivity be violated. If BOTH fluxes are directed
-          ! inward from their grid, set the boundary flux to
-          ! zero. When both are directed inward, the choice is
-          ! arbitrary; here we use the coarse grid's flux
-
-           if (is == 1) then
-              do iq=1,nq
-              do k=1,npz
-              do j=js,je
-                 jc = (j-1)/refinement + 1
-                 if ( coarse_fluxes_west(jc,k,iq) > 0. ) then
-                    fx(1,j,k,iq) = coarse_fluxes_west(jc,k,iq)*fluxsplit
-                 else
-                    fx(1,j,k,iq) = min(fx(1,j,k,iq),0.)
-                 endif
-              enddo
-              enddo
-              enddo
-           endif
-           if (ie == npx-1) then
-              do iq=1,nq
-              do k=1,npz
-              do j=js,je
-                 jc = (j-1)/refinement + 1
-                 if ( coarse_fluxes_east(jc,k,iq) < 0. ) then
-                    fx(npx,j,k,iq) = coarse_fluxes_east(jc,k,iq)*fluxsplit
-                 else
-                    fx(npx,j,k,iq) = max(fx(npx,j,k,iq),0.)
-                 endif
-              enddo
-              enddo
-              enddo
-           endif
-
-           if (js == 1) then
-              do iq=1,nq
-              do k=1,npz
-              do i=is,ie
-                 ic = (i-1)/refinement + 1
-                 if ( coarse_fluxes_south(ic,k,iq) > 0. ) then
-                    fy(i,1,k,iq) = coarse_fluxes_south(ic,k,iq)*fluxsplit
-                 else
-                    fy(i,1,k,iq) = min(fy(i,1,k,iq),0.)
-                 endif
-              enddo
-              enddo
-              enddo
-           endif
-           if (je == npy-1) then
-              do iq=1,nq
-              do k=1,npz
-              do i=is,ie
-                 ic = (i-1)/refinement + 1
-                 if ( coarse_fluxes_north(ic,k,iq) < 0. ) then
-                    fy(i,npy,k,iq) = coarse_fluxes_north(ic,k,iq)*fluxsplit
-                 else
-                    fy(i,npy,k,iq) = max(fy(i,npy,k,iq),0.)
-                 endif
-              enddo
-              enddo
-              enddo
-           endif            
-        else if (nestbctype == 4) then
-           !Do nothing to coarse grid (Berger and Colella flux BCs)
         else
            call mpp_error(FATAL, 'nestbctype used is not supported.')
         endif
@@ -966,7 +1338,8 @@ subroutine flux_BCs(fx, fy, it, msg_split_steps, npx, npy, npz, nq, q, dp1, dp2,
      endif
 
   !For TWO-WAY flux BCs:
-  if (nested .and. (nestbctype == 3 .or. nestbctype == 4)) then
+  !if (nested .and. (nestbctype == 3 .or. nestbctype == 4)) then
+  if ( nested ) then
      
      !Nested-grid: ACCUMULATE boundary fluxes at outflow points
 
@@ -1020,32 +1393,82 @@ subroutine flux_BCs(fx, fy, it, msg_split_steps, npx, npy, npz, nq, q, dp1, dp2,
      !Send coarse-grid boundary fluxes to nested grid
      if (do_flux_BCs .and.  (mod(it,msg_split_steps) == 1 .or. msg_split_steps == 1) .and. nestbctype /= 4) then
         do n=1,size(child_grids)
-           if (child_grids(n) .and. Atm(n)%nestbctype > 1 .and. Atm(n)%nestbctype /= 4) &
-                call send_coarse_fluxes(fx, fy, Atm(n)%npx, Atm(n)%npy, Atm(n)%ioffset, Atm(n)%joffset, &
-                Atm(n)%refinement, Atm(n)%pelist, Atm(n)%npes_this_grid, npx, npy, npz, nq, Atm(n)%parent_tile)
+           if (child_grids(n) .and. nestbctype > 1 .and. nestbctype /= 4) &
+                call send_coarse_fluxes(fx, fy, Atm(n)%npx, Atm(n)%npy, ioffset, joffset, &
+                refinement, Atm(n)%pelist, Atm(n)%npes_this_grid, npx, npy, npz, nq, neststruct%parent_tile)
         enddo
      endif
 
   endif
 
-  if ((do_2way_flux_BCs .or. (nested .and. (nestbctype == 3 .or. nestbctype == 4))) ) then
+!  if ((do_2way_flux_BCs .or. (nested .and. (nestbctype == 3 .or. nestbctype == 4))) ) then
+  if (do_2way_flux_BCs .or. nested ) then
+
+!!$     !Flux check
+!!$     if (nested) then
+!!$        sumW = 0.
+!!$        sumE = 0.
+!!$        sumS = 0.
+!!$        sumN = 0.
+!!$        if (is == 1)     sumW = sum(nest_fx_west_accum(js:je,:,1))
+!!$        if (ie == npx-1) sumE = sum(nest_fx_east_accum(js:je,:,1))
+!!$        if (js == 1)     sumS = sum(nest_fx_south_accum(is:ie,:,1))
+!!$        if (je == npy-1) sumN = sum(nest_fx_north_accum(is:ie,:,1))
+!!$        call mpp_sum(sumW)
+!!$        call mpp_sum(sumE)
+!!$        call mpp_sum(sumS)
+!!$        call mpp_sum(sumW)
+!!$        if (master) then
+!!$           print*, 'Accumulated nested fluxes:'
+!!$           print*, 'WEST: ', sumW
+!!$           print*, 'EAST: ', sumE
+!!$           print*, 'SOUTH: ', sumS
+!!$           print*, 'NORTH: ', sumN
+!!$        endif
+!!$     endif
 
      if (do_2way_flux_BCs) then
         do n=1,size(child_grids)
-           if (child_grids(n) .and. (Atm(n)%nestbctype == 3 .or. Atm(n)%nestbctype == 4)) then
+           if (child_grids(n) .and. (nestbctype == 3 .or. nestbctype == 4)) then
               !RECEIVE fluxes; note that this will wait until the child grid is on its last split timestep
               !REPLACE fluxes as necessary
-
-              call receive_nested_fluxes(fx,fy,Atm(n)%npx, Atm(n)%npy, Atm(n)%ioffset, Atm(n)%joffset, &
-                   Atm(n)%refinement, Atm(n)%pelist, Atm(n)%npes_this_grid, &
-                   npz, nq, Atm(n)%parent_tile, Atm(n)%nestbctype, q, dp1)
+              
+              call receive_nested_fluxes(fx,fy,Atm(n)%npx, Atm(n)%npy, ioffset, joffset, &
+                   refinement, Atm(n)%pelist, Atm(n)%npes_this_grid, &
+                   npz, nq, neststruct%parent_tile, nestbctype, q, dp1)
               
            endif
         enddo
 
      endif
 
-     if (nested .and. (nestbctype == 3 .or. nestbctype == 4)  .and. mod(it,msg_split_steps) == 0) then
+     if (ANY(child_grids)) then
+
+!!$        !Flux check
+!!$        sumW = 0.
+!!$        sumE = 0.
+!!$        sumS = 0.
+!!$        sumN = 0.
+!!$        if (is == 1)     sumW = sum(nest_fx_west_accum(js:je,:,1))
+!!$        if (ie == npx-1) sumE = sum(nest_fx_east_accum(js:je,:,1))
+!!$        if (js == 1)     sumS = sum(nest_fx_south_accum(is:ie,:,1))
+!!$        if (je == npy-1) sumN = sum(nest_fx_north_accum(is:ie,:,1))
+!!$        call mpp_sum(sumW)
+!!$        call mpp_sum(sumE)
+!!$        call mpp_sum(sumS)
+!!$        call mpp_sum(sumW)
+!!$        if (master) then
+!!$           print*, 'Ending coarse fluxes:'
+!!$           print*, 'WEST: ', sumW
+!!$           print*, 'EAST: ', sumE
+!!$           print*, 'SOUTH: ', sumS
+!!$           print*, 'NORTH: ', sumN
+!!$        endif
+
+     endif
+
+
+     if ( nested .and. (nestbctype == 3 .or. nestbctype == 4)  .and. mod(it,msg_split_steps) == 0) then
         call send_nested_fluxes(ioffset, joffset, refinement, parent_grid%pelist, &
              parent_grid%npes_this_grid, npx, npy, npz, nq)
      endif
@@ -1054,21 +1477,137 @@ subroutine flux_BCs(fx, fy, it, msg_split_steps, npx, npy, npz, nq, q, dp1, dp2,
 
 end subroutine flux_BCs
 
+subroutine PLM_flux_division(coarse_flux, out_flux, npts_coarse, npts_out, npz, nq, R, split_steps)
+
+  real, intent(IN) :: coarse_flux(-1:npts_coarse+2, npz, nq) !Will need an extra point in both directions
+  real, intent(OUT) :: out_flux(npts_out, npz, nq)
+  integer, intent(IN) ::  npts_coarse, npts_out, npz, nq, R, split_steps
+
+  integer :: i, n, k, iq
+
+  real :: slope, B, rR, rsplit
+
+  rR = 1./real(R)
+  rsplit = 1./real(split_steps)
+  
+  !Assume evenly spaced cells
+  do iq=1,nq
+  do k=1,npz
+  do i=1,npts_coarse
+
+     !Need to limit slopes to ensure fluxes do not change sign?
+!!$     B = coarse_flux(i,k,iq)
+!!$     slope = coarse_flux(i+1,k,iq) - coarse_flux(i-1,k,iq)
+     B = coarse_flux(i,k,iq)
+     slope = min(max(coarse_flux(i+1,k,iq) - coarse_flux(i-1,k,iq),-2.*abs(B)),2.*abs(B))
+
+
+     do n=0,R-1
+        out_flux((i-1)*R+n+1,k,iq) = rsplit * rR * ( 0.5*slope*rR * real(2*n - R + 1)  + B )
+     enddo
+
+  enddo
+  enddo
+  enddo  
+
+end subroutine PLM_flux_division
+
+subroutine PPM_flux_division(coarse_flux, out_flux, npts_coarse, npts_out, npz, nq, R, split_steps)
+
+  real, intent(IN) :: coarse_flux(-1:npts_coarse+2, npz, nq) !Will need an extra point in both directions
+  real, intent(OUT) :: out_flux(npts_out, npz, nq)
+  integer, intent(IN) ::  npts_coarse, npts_out, npz, nq, R, split_steps
+
+  integer :: i, n, k, iq
+
+  real :: rR, rsplit, a0, a1, a2, viol, scal, d
+  real :: fhat(0:npts_coarse) !Interpolated cell-face values: fhat(i) = \hat{f}_{i+1/2}
+
+!----------------------
+! PPM volume mean form:
+!----------------------
+  real, parameter:: p1 =  7./12.     ! 0.58333333
+  real, parameter:: p2 = -1./12.
+  real, parameter:: r3 =  1./3.
+
+  rR = 1./real(R)
+  rsplit = 1./real(split_steps)
+  
+  !Assume evenly spaced cells
+  do iq=1,nq
+  do k=1,npz
+
+     do i=0,npts_coarse
+        fhat(i) = p1*(coarse_flux(i,k,iq)+coarse_flux(i+1,k,iq)) + p2*(coarse_flux(i-1,k,iq)+coarse_flux(i+2,k,iq))
+!!$        !Limiting process (see explanation below)
+!!$        if (coarse_flux(i,k,iq)*coarse_flux(i+1,k,iq) < 0.) then
+!!$           !If signs differ set to zero
+!!$           fhat(i) = 0.
+!!$        else if (coarse_flux(i,k,iq) > 0.) then
+!!$           fhat(i) = max(fhat(i),0.)
+!!$        else
+!!$           fhat(i) = min(fhat(i),0.)
+!!$        endif
+     enddo
+
+     do i=1,npts_coarse
+
+        !Construct integral; using my formulation where 0 = midpoint of interval [-1/2,1/2]
+        a0 = coarse_flux(i,k,iq)*1.5 - 0.25*(fhat(i)+fhat(i-1))
+        a1 = 2.*(fhat(i)-fhat(i-1))
+        a2 = 3.*(fhat(i)+fhat(i-1)) - 6.*coarse_flux(i,k,iq)
+
+        !Limit to avoid sign changes
+        !Note that this assumes that the reconstruction is zero at
+        ! the cell faces between when fluxes change sign. (Something we took care of earlier) We may want
+        ! to relax this restriction so that, instead of the entire
+        ! reconstructions being positive definite (for positive
+        ! fluxes) that merely the divided fluxes are positive
+        ! -definite
+
+        !Here, we just need to check whether the extremum is inside the cell and then scale appropriately
+
+
+        do n=0,R-1
+           d = 0.5 - real(n+1)*rR
+           out_flux((i-1)*R+n+1,k,iq) = (a0 + a1*d + a2*d**2.)*rR + 0.5*rR**2.*(a1 + 2.*a2*d) + r3*rR**3.*a2
+        enddo
+        
+     enddo
+  enddo
+  enddo  
+
+end subroutine PPM_flux_division
+
 !do_FCT
 !subroutine FCT_PD(q,fx,fy,dp1,npx,npy,npz,nq,wou)
-subroutine FCT_PD(q,fx,fy,dp1,npx,npy,npz,nq)
+subroutine FCT_PD(q,fx,fy,dp1,npx,npy,npz,nq, area, domain)
 
   real, intent(inOUT):: q(isd:ied, jsd:jed,npz,nq)
   real, intent(INOUT) :: fx(is:ie+1,js:je  ,npz,nq)
   real, intent(INOUT) :: fy(is:ie , js:je+1,npz,nq)
   real, intent(IN) :: dp1(is:ie,js:je,npz)
   integer, intent(in) :: npx, npy, npz, nq
+  real, intent(IN) :: area(isd:ied,jsd:jed)
+  type(domain2d), intent(INOUT) :: domain
 
   !real, dimension(isd:ied,jsd:jed,npz,nq), INTENT(OUT):: wou 
   real, dimension(isd:ied,jsd:jed,npz,nq) :: wou 
   real, parameter:: esl = 1.E-100
 
   integer i,j,k, n
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
   
   wou = 1.
 
@@ -1126,18 +1665,36 @@ subroutine send_coarse_fluxes(fx,fy,npx_n,npy_n,ioffset,joffset,refinement, chil
   integer :: i, j, k, iq
   integer :: instart, inend, jnstart, jnend
 
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+
   !Get starting and stopping indices for nested grid
-  instart = ioffset
+  instart = ioffset 
   inend   = ioffset + npx_n/refinement - 1
-  jnstart = joffset
+  jnstart = joffset 
   jnend   = joffset + npy_n/refinement - 1
 
-  allocate(coarse_fluxes_south(instart:inend,npz,nq))
-  allocate(coarse_fluxes_north(instart:inend,npz,nq))
+  allocate(coarse_fluxes_south(instart-2:inend+2,npz,nq))
+  allocate(coarse_fluxes_north(instart-2:inend+2,npz,nq))
 
-  allocate(coarse_fluxes_west(jnstart:jnend,npz,nq))
-  allocate(coarse_fluxes_east(jnstart:jnend,npz,nq))
+  allocate(coarse_fluxes_west(jnstart-2:jnend+2,npz,nq))
+  allocate(coarse_fluxes_east(jnstart-2:jnend+2,npz,nq))
 
+!!$  allocate(coarse_fluxes_south(instart-1:inend+1,npz,nq))
+!!$  allocate(coarse_fluxes_north(instart-1:inend+1,npz,nq))
+!!$
+!!$  allocate(coarse_fluxes_west(jnstart-1:jnend+1,npz,nq))
+!!$  allocate(coarse_fluxes_east(jnstart-1:jnend+1,npz,nq))
+!!$
   coarse_fluxes_west  = 0.
   coarse_fluxes_east  = 0.
   coarse_fluxes_south = 0.
@@ -1145,10 +1702,10 @@ subroutine send_coarse_fluxes(fx,fy,npx_n,npy_n,ioffset,joffset,refinement, chil
 
   if (tile == tile_with_nest) then
 
-  if (is <= instart .and. ie > instart) then
+  if (is <= instart .and. ie >= instart) then
      do iq=1,nq
      do k=1,npz
-     do j=max(js,jnstart),min(je,jnend)
+     do j=max(js,jnstart-2),min(je,jnend+2)
         coarse_fluxes_west(j,k,iq) = fx(instart,j,k,iq)
      enddo
      enddo
@@ -1160,7 +1717,7 @@ subroutine send_coarse_fluxes(fx,fy,npx_n,npy_n,ioffset,joffset,refinement, chil
      !if ie == inend+1 then on the adjacent pe is == inend+2 > inend+1 so no double counting!!
      do iq=1,nq
      do k=1,npz
-     do j=max(js,jnstart),min(je,jnend)
+     do j=max(js,jnstart-2),min(je,jnend+2)
         coarse_fluxes_east(j,k,iq) = fx(inend+1,j,k,iq)
      enddo
      enddo
@@ -1168,10 +1725,10 @@ subroutine send_coarse_fluxes(fx,fy,npx_n,npy_n,ioffset,joffset,refinement, chil
   endif
 
 
-  if (js <= jnstart .and. je > jnstart) then
+  if (js <= jnstart .and. je >= jnstart) then
      do iq=1,nq
      do k=1,npz
-     do i=max(is,instart),min(ie,inend)
+     do i=max(is,instart-2),min(ie,inend+2)
         coarse_fluxes_south(i,k,iq) = fy(i,jnstart,k,iq)
      enddo
      enddo
@@ -1180,7 +1737,7 @@ subroutine send_coarse_fluxes(fx,fy,npx_n,npy_n,ioffset,joffset,refinement, chil
   if (js <= jnend+1 .and. je >= jnend+1) then
      do iq=1,nq
      do k=1,npz
-     do i=max(is,instart),min(ie,inend)
+     do i=max(is,instart-2),min(ie,inend+2)
         coarse_fluxes_north(i,k,iq) = fy(i,jnend+1,k,iq)
      enddo
      enddo
@@ -1191,6 +1748,7 @@ endif
 
   !Gather the fluxes
   !Using the simplest solution right now
+
                         call timing_on('COMM_TOTAL')
                             call timing_on('COMM_TRACER')
   call mpp_sum(coarse_fluxes_west,  size(coarse_fluxes_west),  (/ pelist, child_pelist /) )
@@ -1215,6 +1773,18 @@ subroutine send_nested_fluxes(ioffset,joffset,refinement, parent_pelist, npes_n,
   real :: val
 
   real, allocatable, dimension(:,:,:) :: nested_fluxes_south, nested_fluxes_north, nested_fluxes_west, nested_fluxes_east
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
 
   allocate(nested_fluxes_south((npx-1)/refinement, npz, nq))
   allocate(nested_fluxes_north((npx-1)/refinement, npz, nq))
@@ -1295,7 +1865,22 @@ subroutine receive_nested_fluxes(fx,fy, npx_n, npy_n, ioffset, joffset, refineme
 
   real :: outflux, Ry(js-1:je+1), Rx(is-1:ie+1)
 
+  real :: sumN, sumS, sumE, sumW
+  real :: maxN, maxS, maxE, maxW
+
   real, allocatable, dimension(:,:,:) :: nested_fluxes_south, nested_fluxes_north, nested_fluxes_west, nested_fluxes_east
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
 
   allocate(nested_fluxes_south((npx_n-1)/refinement, npz, nq))
   allocate(nested_fluxes_north((npx_n-1)/refinement, npz, nq))
@@ -1319,6 +1904,15 @@ subroutine receive_nested_fluxes(fx,fy, npx_n, npy_n, ioffset, joffset, refineme
                            call timing_off('COMM_TRACER')
                        call timing_off('COMM_TOTAL')
 
+  sumN = 0.
+  sumS = 0.
+  sumE = 0.
+  sumW = 0.
+  maxN = 0.
+  maxS = 0.
+  maxE = 0.
+  maxW = 0.
+
   if (tile == tile_with_nest) then
 
   !Get starting and stopping indices for nested grid
@@ -1328,6 +1922,8 @@ subroutine receive_nested_fluxes(fx,fy, npx_n, npy_n, ioffset, joffset, refineme
   jnend   = joffset + npy_n/refinement - 1
 
   if (nestbctype_n == 2) then
+     
+     !I don't recall what this section of code is supposed to do.
 
       if (is <= instart .and. ie > instart) then
          do iq=1,nq
@@ -1370,12 +1966,16 @@ subroutine receive_nested_fluxes(fx,fy, npx_n, npy_n, ioffset, joffset, refineme
 
    else
 
+      !This outright replaces the coarse fluxes with nested-grid fluxes
+      
     if (is <= instart .and. ie >= instart) then
        do iq=1,nq
        do k=1,npz
-          Ry = 1.
+          !Ry = 1.
        do j=max(js,jnstart),min(je,jnend)
+          !if (iq == 1) maxW = max(maxW,(fx(instart,j,k,iq) - nested_fluxes_west(j-joffset+1,k,iq)))
           fx(instart,j,k,iq) = nested_fluxes_west(j-joffset+1,k,iq)
+          !if (iq == 1) sumW = sumW + fx(instart,j,k,iq)
        enddo
        enddo
        enddo
@@ -1383,10 +1983,12 @@ subroutine receive_nested_fluxes(fx,fy, npx_n, npy_n, ioffset, joffset, refineme
     if (is <= inend+1 .and. ie >= inend+1) then
        do iq=1,nq
        do k=1,npz
-          Ry = 1.
+          !Ry = 1.
           i = inend+1
        do j=max(js,jnstart),min(je,jnend)
+          !if (iq == 1) maxE = max(maxE,fx(i,j,k,iq) - nested_fluxes_east(j-joffset+1,k,iq))
           fx(i,j,k,iq) = nested_fluxes_east(j-joffset+1,k,iq)
+          !if (iq == 1) sumE = sumE + fx(i,j,k,iq)
        enddo
        enddo
        enddo
@@ -1396,9 +1998,11 @@ subroutine receive_nested_fluxes(fx,fy, npx_n, npy_n, ioffset, joffset, refineme
     if (js <= jnstart .and. je >= jnstart) then
        do iq=1,nq
        do k=1,npz
-          Rx = 1.
+          !Rx = 1.
        do i=max(is,instart),min(ie,inend)
+          !if (iq == 1) maxS = max(maxS, fy(i,jnstart,k,iq) - nested_fluxes_south(i-ioffset+1,k,iq))
           fy(i,jnstart,k,iq) = nested_fluxes_south(i-ioffset+1,k,iq)
+          !if (iq == 1) sumS = sumS + fy(i,jnstart,k,iq)
        enddo
        enddo
        enddo
@@ -1408,7 +2012,9 @@ subroutine receive_nested_fluxes(fx,fy, npx_n, npy_n, ioffset, joffset, refineme
        do k=1,npz
           j=jnend+1
        do i=max(is,instart),min(ie,inend)
+          !if (iq == 1) maxN = max(maxN, fy(i,j,k,iq) - nested_fluxes_north(i-ioffset+1,k,iq))
           fy(i,j,k,iq) = nested_fluxes_north(i-ioffset+1,k,iq)
+          !if (iq == 1) sumN = sumN + fy(i,j,k,iq)
        enddo
        enddo
        enddo
@@ -1417,13 +2023,23 @@ subroutine receive_nested_fluxes(fx,fy, npx_n, npy_n, ioffset, joffset, refineme
  endif
 
 
+    !Flux check
+    !if (master) then
+!!$    if (max(maxW, maxE, maxS, maxN) > 0.) then
+!!$       write(gid+100,*) ''
+!!$       if (maxW > 0) write(gid+100,*) 'WEST: ', maxW/maxval(abs(fx(instart,:,:,1)))
+!!$       if (maxE > 0) write(gid+100,*) 'EAST: ', maxE/maxval(abs(fx(inend+1,:,:,1)))
+!!$       if (maxS > 0) write(gid+100,*) 'SOUTH: ', maxS/maxval(abs(fy(:,jnstart,:,1)))
+!!$       if (maxN > 0) write(gid+100,*) 'NORTH: ', maxN/maxval(abs(fy(:,jnend+1,:,1)))
+!!$    endif
+    !endif
+
 endif
-
-
 
   deallocate( nested_fluxes_south, nested_fluxes_north, nested_fluxes_west, nested_fluxes_east )
 
 end subroutine receive_nested_fluxes
 
+#endif FLUXBCS
 
 end module fv_tracer2d_mod

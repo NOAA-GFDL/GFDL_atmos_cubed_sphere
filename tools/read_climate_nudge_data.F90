@@ -23,8 +23,8 @@ interface read_climate_nudge_data
    module procedure read_climate_nudge_data_3d
 end interface
 
-  character(len=128) :: version = '$Id: read_climate_nudge_data.F90,v 1.1.2.3.2.1.2.3.4.1 2012/09/28 16:12:57 Rusty.Benson Exp $'
-  character(len=128) :: tagname = '$Name: siena_201303 $'
+  character(len=128) :: version = '$Id: read_climate_nudge_data.F90,v 1.1.2.3.2.1.2.3.2.1 2013/05/14 19:53:50 Lucas.Harris Exp $'
+  character(len=128) :: tagname = '$Name: siena_201305 $'
   real, parameter :: P0 = 1.e5
   real, parameter :: D608 = RVGAS/RDGAS - 1.
 
@@ -39,7 +39,7 @@ end interface
                         INDEX_T  = 6, INDEX_Q  = 7,               &
                         INDEX_U  = 8, INDEX_V  = 9
   character(len=8), dimension(NUM_REQ_FLDS) :: required_field_names = &
-                 (/ 'P0  ', 'hyai', 'hybi', 'PHI ', 'PS  ', 'T   ', 'Q   ', 'U   ', 'V   ' /)
+       (/ 'P0  ', 'hyai', 'hybi', 'PHI ', 'PS  ', 'T   ', 'Q   ', 'U   ', 'V   ' /)
  
   integer, parameter :: MAXFILES = 53
   character(len=256) :: filenames(MAXFILES)

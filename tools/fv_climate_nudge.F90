@@ -25,8 +25,8 @@ private
 public :: fv_climate_nudge_init, fv_climate_nudge,  &
           fv_climate_nudge_end, do_ps
 
-character(len=128), parameter :: version = '$Id: fv_climate_nudge.F90,v 1.1.2.1.2.3 2012/05/14 16:26:28 Lucas.Harris Exp $'
-character(len=128), parameter :: tagname = '$Name: siena_201303 $'
+character(len=128), parameter :: version = '$Id: fv_climate_nudge.F90,v 1.1.2.1.2.3.2.2 2013/05/14 19:53:50 Lucas.Harris Exp $'
+character(len=128), parameter :: tagname = '$Name: siena_201305 $'
 
 type var_state_type
    integer :: is, ie, js, je, npz
@@ -253,11 +253,12 @@ end subroutine fv_climate_nudge_init
 !###################################################################################
 
 subroutine fv_climate_nudge (Time, dt, is, ie, js, je, npz, pfull, &
-                                   lon, lat, phis, ak, bk,        &
+                                   lon, lat, phis, ptop, ak, bk,        &
                                    ps, u, v, t, q, psdt, udt, vdt, tdt, qdt )
 type(time_type), intent(in) :: Time
 real,            intent(in) :: dt
 integer,         intent(in) :: is, ie, js, je, npz
+real,            intent(IN) :: ptop
 
 real, intent(in)    :: phis(is:ie,js:je)
 real, intent(in)    :: lon (is:ie,js:je)
@@ -423,15 +424,15 @@ logical :: virtual_temp_obs = .false.
           enddo
 
           if (get_wind) then
-             call remap_3d (is, ie, js, je, nlev_obs, npz, phaf_obs, u_obs, phaf, State(n)%u, -1)
-             call remap_3d (is, ie, js, je, nlev_obs, npz, phaf_obs, v_obs, phaf, State(n)%v, -1)
+             call remap_3d (is, ie, js, je, nlev_obs, npz, phaf_obs, u_obs, phaf, State(n)%u, -1, ptop)
+             call remap_3d (is, ie, js, je, nlev_obs, npz, phaf_obs, v_obs, phaf, State(n)%v, -1, ptop)
           endif
           if (get_qhum .or. get_temp) then
-             call remap_3d (is, ie, js, je, nlev_obs, npz, phaf_obs, q_obs, phaf, State(n)%q(:,:,:,1), 0)
+             call remap_3d (is, ie, js, je, nlev_obs, npz, phaf_obs, q_obs, phaf, State(n)%q(:,:,:,1), 0, ptop)
           endif
           if (get_temp) then
              ! use logp
-             call remap_3d (is, ie, js, je, nlev_obs, npz, lphaf_obs, t_obs, lphaf, State(n)%t, 1)
+             call remap_3d (is, ie, js, je, nlev_obs, npz, lphaf_obs, t_obs, lphaf, State(n)%t, 1, ptop)
              State(n)%t = State(n)%t/(1.+ZVIR*State(n)%q(:,:,:,1)) ! virtual effect
           endif
 
@@ -667,7 +668,7 @@ end subroutine var_state_init
 !-----------------------------------------------------
 
 subroutine var_state_assignment (State1,State2)
-type(var_state_type), intent(out) :: State1
+type(var_state_type), intent(inout) :: State1
 type(var_state_type), intent(in)  :: State2
 
  ! resolution must match
@@ -1007,7 +1008,7 @@ end subroutine prt_minmax_3d
 !---------------------------------------------------
 
   subroutine remap_3d( is, ie, js, je, km, npz, &
-                       pe0, qn0, pe1, qn1, n )
+                       pe0, qn0, pe1, qn1, n, ptop )
 
 !--------
 ! Input:
@@ -1019,6 +1020,7 @@ end subroutine prt_minmax_3d
     real,  intent(in):: qn0(is:ie,js:je,km)    ! scalar quantity on input data levels
     real,  intent(in):: pe1(is:ie,js:je,npz+1) ! pressure at layer interfaces for model data
   integer, intent(in):: n                      ! -1 wind; 0 sphum; +1 ptemp
+    real,  intent(IN):: ptop
 
 !--------
 ! Output:
@@ -1029,7 +1031,7 @@ end subroutine prt_minmax_3d
   integer :: i, j, k
 
     do j = js,je
-       call mappm(km, pe0(is:ie,j,:), qn0(is:ie,j,:), npz, pe1(is:ie,j,:), qn1(is:ie,j,:), is,ie, n, 8)
+       call mappm(km, pe0(is:ie,j,:), qn0(is:ie,j,:), npz, pe1(is:ie,j,:), qn1(is:ie,j,:), is,ie, n, 8, ptop)
     enddo
 
   end subroutine remap_3d

@@ -1,10 +1,12 @@
 module a2b_edge_mod
 
-  use fv_grid_utils_mod, only: edge_w, edge_e, edge_s, edge_n, sw_corner, se_corner,  &
-                               nw_corner, ne_corner, van2, great_circle_dist
-  use fv_grid_tools_mod, only: dxa, dya, grid_type, grid, agrid
-  use fv_mp_mod,         only: gid
-  use fv_current_grid_mod, only: nested
+  use fv_grid_utils_mod, only: great_circle_dist
+#ifdef VAN2
+  use fv_grid_utils_mod, only: van2
+#endif
+
+  use fv_arrays_mod,     only: fv_grid_type
+
   implicit none
 
   real, parameter:: r3 = 1./3.
@@ -23,16 +25,17 @@ module a2b_edge_mod
   public :: a2b_ord2, a2b_ord4
 
 !---- version number -----
-  character(len=128) :: version = '$Id: a2b_edge.F90,v 17.0.2.2.2.3 2012/04/30 17:08:46 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201303 $'
+  character(len=128) :: version = '$Id: a2b_edge.F90,v 17.0.2.2.2.3.2.5 2013/01/24 18:16:50 Lucas.Harris Exp $'
+  character(len=128) :: tagname = '$Name: siena_201305 $'
 
 contains
 
 #ifndef USE_OLD_ALGORITHM
-  subroutine a2b_ord4(qin, qout, npx, npy, is, ie, js, je, ng, replace)
+  subroutine a2b_ord4(qin, qout, gridstruct, npx, npy, is, ie, js, je, ng, replace)
   integer, intent(IN):: npx, npy, is, ie, js, je, ng
   real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   ! A-grid field
   real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   ! Output  B-grid field
+  type(fv_grid_type), intent(IN), target :: gridstruct
   logical, optional, intent(IN):: replace
 ! local: compact 4-pt cubic
   real, parameter:: c1 =  2./3.
@@ -50,7 +53,21 @@ contains
   real:: q1(is-1:ie+1), q2(js-1:je+1)
   integer:: i, j, is1, js1, is2, js2, ie1, je1
 
-  if (grid_type < 3) then
+  real, pointer, dimension(:,:,:) :: grid, agrid
+  real, pointer, dimension(:,:)   :: dxa, dya
+  real, pointer, dimension(:) :: edge_w, edge_e, edge_s, edge_n
+
+  edge_w => gridstruct%edge_w
+  edge_e => gridstruct%edge_e
+  edge_s => gridstruct%edge_s
+  edge_n => gridstruct%edge_n
+
+  grid => gridstruct%grid
+  agrid => gridstruct%agrid
+  dxa => gridstruct%dxa
+  dya => gridstruct%dya
+
+  if (gridstruct%grid_type < 3) then
 
     is1 = max(1,is-1)
     js1 = max(1,js-1)
@@ -62,7 +79,7 @@ contains
 
 ! Corners:
 ! 3-way extrapolation
-    if (nested) then
+    if (gridstruct%nested) then
 
     do j=js-2,je+2
        do i=is,ie+1
@@ -73,26 +90,26 @@ contains
 
     else
 
-    if ( sw_corner ) then
+    if ( gridstruct%sw_corner ) then
           p0(1:2) = grid(1,1,1:2)
         qout(1,1) = (extrap_corner(p0, agrid(1,1,1:2), agrid( 2, 2,1:2), qin(1,1), qin( 2, 2)) + &
                      extrap_corner(p0, agrid(0,1,1:2), agrid(-1, 2,1:2), qin(0,1), qin(-1, 2)) + &
                      extrap_corner(p0, agrid(1,0,1:2), agrid( 2,-1,1:2), qin(1,0), qin( 2,-1)))*r3
 
     endif
-    if ( se_corner ) then
+    if ( gridstruct%se_corner ) then
             p0(1:2) = grid(npx,1,1:2)
         qout(npx,1) = (extrap_corner(p0, agrid(npx-1,1,1:2), agrid(npx-2, 2,1:2), qin(npx-1,1), qin(npx-2, 2)) + &
                        extrap_corner(p0, agrid(npx-1,0,1:2), agrid(npx-2,-1,1:2), qin(npx-1,0), qin(npx-2,-1)) + &
                        extrap_corner(p0, agrid(npx  ,1,1:2), agrid(npx+1, 2,1:2), qin(npx  ,1), qin(npx+1, 2)))*r3
     endif
-    if ( ne_corner ) then
+    if ( gridstruct%ne_corner ) then
               p0(1:2) = grid(npx,npy,1:2)
         qout(npx,npy) = (extrap_corner(p0, agrid(npx-1,npy-1,1:2), agrid(npx-2,npy-2,1:2), qin(npx-1,npy-1), qin(npx-2,npy-2)) + &
                          extrap_corner(p0, agrid(npx  ,npy-1,1:2), agrid(npx+1,npy-2,1:2), qin(npx  ,npy-1), qin(npx+1,npy-2)) + &
                          extrap_corner(p0, agrid(npx-1,npy  ,1:2), agrid(npx-2,npy+1,1:2), qin(npx-1,npy  ), qin(npx-2,npy+1)))*r3
     endif
-    if ( nw_corner ) then
+    if ( gridstruct%nw_corner ) then
             p0(1:2) = grid(1,npy,1:2)
         qout(1,npy) = (extrap_corner(p0, agrid(1,npy-1,1:2), agrid( 2,npy-2,1:2), qin(1,npy-1), qin( 2,npy-2)) + &
                        extrap_corner(p0, agrid(0,npy-1,1:2), agrid(-1,npy-2,1:2), qin(0,npy-1), qin(-1,npy-2)) + &
@@ -149,7 +166,7 @@ contains
 ! Y-Interior:
 !------------
 
-    if (nested) then
+    if (gridstruct%nested) then
 
 
     do j=js,je+1
@@ -205,7 +222,7 @@ contains
     end if
 !--------------------------------------
 
-    if (nested) then
+    if (gridstruct%nested) then
 
     do j=js, je+1
        do i=is,ie+1
@@ -299,10 +316,11 @@ contains
 #else
 
 ! Working version:
-  subroutine a2b_ord4(qin, qout, npx, npy, is, ie, js, je, ng, replace)
+  subroutine a2b_ord4(qin, qout, gridstruct, npx, npy, is, ie, js, je, ng, replace)
   integer, intent(IN):: npx, npy, is, ie, js, je, ng
   real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   ! A-grid field
   real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   ! Output  B-grid field
+  type(fv_grid_type), intent(IN), target :: gridstruct
   logical, optional, intent(IN):: replace
 ! local: compact 4-pt cubic
   real, parameter:: c1 =  2./3.
@@ -326,7 +344,22 @@ contains
   real q1(npx), q2(npy)
   integer:: i, j, is1, js1, is2, js2, ie1, je1
 
-  if (grid_type < 3) then
+  real, pointer, dimension(:,:,:) :: grid, agrid
+  real, pointer, dimension(:,:)   :: dxa, dya
+  real, pointer, dimension(:) :: edge_w, edge_e, edge_s, edge_n
+
+  edge_w => gridstruct%edge_w
+  edge_e => gridstruct%edge_e
+  edge_s => gridstruct%edge_s
+  edge_n => gridstruct%edge_n
+
+
+  grid => gridstruct%grid
+  agrid => gridstruct%agrid
+  dxa => gridstruct%dxa
+  dya => gridstruct%dya
+
+  if (gridstruct%grid_type < 3) then
 
     is1 = max(1,is-1)
     js1 = max(1,js-1)
@@ -338,52 +371,52 @@ contains
 
 ! Corners:
 #ifdef USE_3PT
-   if ( sw_corner ) qout(1,    1) = r3*(qin(1,        1)+qin(1,      0)+qin(0,      1))
-   if ( se_corner ) qout(npx,  1) = r3*(qin(npx-1,    1)+qin(npx-1,  0)+qin(npx,    1))
-   if ( ne_corner ) qout(npx,npy) = r3*(qin(npx-1,npy-1)+qin(npx,npy-1)+qin(npx-1,npy))
-   if ( nw_corner ) qout(1,  npy) = r3*(qin(1,    npy-1)+qin(0,  npy-1)+qin(1,    npy))
+   if ( gridstruct%sw_corner ) qout(1,    1) = r3*(qin(1,        1)+qin(1,      0)+qin(0,      1))
+   if ( gridstruct%se_corner ) qout(npx,  1) = r3*(qin(npx-1,    1)+qin(npx-1,  0)+qin(npx,    1))
+   if ( gridstruct%ne_corner ) qout(npx,npy) = r3*(qin(npx-1,npy-1)+qin(npx,npy-1)+qin(npx-1,npy))
+   if ( gridstruct%nw_corner ) qout(1,  npy) = r3*(qin(1,    npy-1)+qin(0,  npy-1)+qin(1,    npy))
 #else
 
 #ifdef SYMM_GRID
 ! Symmetrical 6-point formular:
-    if ( sw_corner ) then
+    if ( gridstruct%sw_corner ) then
         qout(1,1) = d1*(qin(1, 0) + qin( 0,1) + qin(1,1)) +  &
                     d2*(qin(2,-1) + qin(-1,2) + qin(2,2))
     endif
-    if ( se_corner ) then
+    if ( gridstruct%se_corner ) then
         qout(npx,1) = d1*(qin(npx-1, 0) + qin(npx-1,1) + qin(npx,  1)) +  &
                       d2*(qin(npx-2,-1) + qin(npx-2,2) + qin(npx+1,2))
     endif
-    if ( ne_corner ) then
+    if ( gridstruct%ne_corner ) then
         qout(npx,npy) = d1*(qin(npx-1,npy-1) + qin(npx,  npy-1) + qin(npx-1,npy)) +  &
                         d2*(qin(npx-2,npy-2) + qin(npx+1,npy-2) + qin(npx-2,npy+1))
     endif
-    if ( nw_corner ) then
+    if ( gridstruct%nw_corner ) then
         qout(1,npy) = d1*(qin( 0,npy-1) + qin(1,npy-1) + qin(1,npy)) +   &
                       d2*(qin(-1,npy-2) + qin(2,npy-2) + qin(2,npy+1))
     endif
 #else
 ! 3-way extrapolation
-    if ( sw_corner ) then
+    if ( gridstruct%sw_corner ) then
           p0(1:2) = grid(1,1,1:2)
         qout(1,1) = (extrap_corner(p0, agrid(1,1,1:2), agrid( 2, 2,1:2), qin(1,1), qin( 2, 2)) + &
                      extrap_corner(p0, agrid(0,1,1:2), agrid(-1, 2,1:2), qin(0,1), qin(-1, 2)) + &
                      extrap_corner(p0, agrid(1,0,1:2), agrid( 2,-1,1:2), qin(1,0), qin( 2,-1)))*r3
 
     endif
-    if ( se_corner ) then
+    if ( gridstruct%se_corner ) then
             p0(1:2) = grid(npx,1,1:2)
         qout(npx,1) = (extrap_corner(p0, agrid(npx-1,1,1:2), agrid(npx-2, 2,1:2), qin(npx-1,1), qin(npx-2, 2)) + &
                        extrap_corner(p0, agrid(npx-1,0,1:2), agrid(npx-2,-1,1:2), qin(npx-1,0), qin(npx-2,-1)) + &
                        extrap_corner(p0, agrid(npx  ,1,1:2), agrid(npx+1, 2,1:2), qin(npx  ,1), qin(npx+1, 2)))*r3
     endif
-    if ( ne_corner ) then
+    if ( gridstruct%ne_corner ) then
               p0(1:2) = grid(npx,npy,1:2)
         qout(npx,npy) = (extrap_corner(p0, agrid(npx-1,npy-1,1:2), agrid(npx-2,npy-2,1:2), qin(npx-1,npy-1), qin(npx-2,npy-2)) + &
                          extrap_corner(p0, agrid(npx  ,npy-1,1:2), agrid(npx+1,npy-2,1:2), qin(npx  ,npy-1), qin(npx+1,npy-2)) + &
                          extrap_corner(p0, agrid(npx-1,npy  ,1:2), agrid(npx-2,npy+1,1:2), qin(npx-1,npy  ), qin(npx-2,npy+1)))*r3
     endif
-    if ( nw_corner ) then
+    if ( gridstruct%nw_corner ) then
             p0(1:2) = grid(1,npy,1:2)
         qout(1,npy) = (extrap_corner(p0, agrid(1,npy-1,1:2), agrid( 2,npy-2,1:2), qin(1,npy-1), qin( 2,npy-2)) + &
                        extrap_corner(p0, agrid(0,npy-1,1:2), agrid(-1,npy-2,1:2), qin(0,npy-1), qin(-1,npy-2)) + &
@@ -395,7 +428,7 @@ contains
 !------------
 ! X-Interior:
 !------------
-    if (nested) then
+    if (gridstruct%nested) then
 
     do j=js-2,je+2
        do i=is, ie+1
@@ -466,7 +499,7 @@ contains
 !------------
 ! Y-Interior:
 !------------
-    if (nested) then
+    if (gridstruct%nested) then
 
     do j=js,je+1
        do i=is-2, ie+2
@@ -534,7 +567,7 @@ contains
 
  end if
 
- if (nested) then
+ if (gridstruct%nested) then
 
     do j=js,je+1
        do i=is,ie+1
@@ -626,19 +659,35 @@ contains
 #endif
 
 
-  subroutine a2b_ord2(qin, qout, npx, npy, is, ie, js, je, ng, replace)
+  subroutine a2b_ord2(qin, qout, gridstruct, npx, npy, is, ie, js, je, ng, replace)
     integer, intent(IN   ) :: npx, npy, is, ie, js, je, ng
     real   , intent(INOUT) ::  qin(is-ng:ie+ng,js-ng:je+ng)   ! A-grid field
     real   , intent(  OUT) :: qout(is-ng:ie+ng,js-ng:je+ng)   ! Output  B-grid field
+    type(fv_grid_type), intent(IN), target :: gridstruct
     logical, optional, intent(IN) ::  replace
     ! local:
     real q1(npx), q2(npy)
     integer :: i,j
     integer :: is1, js1, is2, js2, ie1, je1
+    
+    real, pointer, dimension(:,:,:) :: grid, agrid
+    real, pointer, dimension(:,:)   :: dxa, dya
 
-    if (grid_type < 3) then
+  real, pointer, dimension(:) :: edge_w, edge_e, edge_s, edge_n
 
-       if (nested) then
+  edge_w => gridstruct%edge_w
+  edge_e => gridstruct%edge_e
+  edge_s => gridstruct%edge_s
+  edge_n => gridstruct%edge_n
+
+    grid => gridstruct%grid
+    agrid => gridstruct%agrid
+    dxa => gridstruct%dxa
+    dya => gridstruct%dya
+
+    if (gridstruct%grid_type < 3) then
+
+       if (gridstruct%nested) then
 
           do j=js-2,je+1+2
              do i=is-2,ie+1+2
@@ -663,10 +712,10 @@ contains
     enddo
 
 ! Fix the 4 Corners:
-    if ( sw_corner ) qout(1,    1) = r3*(qin(1,        1)+qin(1,      0)+qin(0,      1))
-    if ( se_corner ) qout(npx,  1) = r3*(qin(npx-1,    1)+qin(npx-1,  0)+qin(npx,    1))
-    if ( ne_corner ) qout(npx,npy) = r3*(qin(npx-1,npy-1)+qin(npx,npy-1)+qin(npx-1,npy))
-    if ( nw_corner ) qout(1,  npy) = r3*(qin(1,    npy-1)+qin(0,  npy-1)+qin(1,    npy))
+    if ( gridstruct%sw_corner ) qout(1,    1) = r3*(qin(1,        1)+qin(1,      0)+qin(0,      1))
+    if ( gridstruct%se_corner ) qout(npx,  1) = r3*(qin(npx-1,    1)+qin(npx-1,  0)+qin(npx,    1))
+    if ( gridstruct%ne_corner ) qout(npx,npy) = r3*(qin(npx-1,npy-1)+qin(npx,npy-1)+qin(npx-1,npy))
+    if ( gridstruct%nw_corner ) qout(1,  npy) = r3*(qin(1,    npy-1)+qin(0,  npy-1)+qin(1,    npy))
 
     ! *** West Edges:
     if ( is==1 ) then
@@ -746,19 +795,36 @@ contains
   end function extrap_corner
 
 #ifdef TEST_VAND2
-  subroutine a2b_ord4(qin, qout, npx, npy, is, ie, js, je, ng, replace)
+  subroutine a2b_ord4(qin, qout, grid, agrid, npx, npy, is, ie, js, je, ng, replace)
 ! use  tp_core_mod,      only: copy_corners
   integer, intent(IN):: npx, npy, is, ie, js, je, ng
   real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   ! A-grid field
   real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   ! Output  B-grid field
+  real,    intent(in) ::  grid(is-ng:ie+ng+1,js-ng:je+ng+1,2)
+  real,    intent(in) :: agrid(is-ng:ie+ng,js-ng:je+ng,2)
   logical, optional, intent(IN):: replace
   real qx(is:ie+1,js-ng:je+ng)
   real qy(is-ng:ie+ng,js:je+1)
   real:: p0(2)
   integer :: i, j
 
+  real, pointer, dimension(:,:,:) :: grid, agrid
+  real, pointer, dimension(:,:)   :: dxa, dya
 
-  if (grid_type < 3) then
+  real, pointer, dimension(:) :: edge_w, edge_e, edge_s, edge_n
+
+  edge_w => gridstruct%edge_w
+  edge_e => gridstruct%edge_e
+  edge_s => gridstruct%edge_s
+  edge_n => gridstruct%edge_n
+
+  grid => gridstruct%grid
+  agrid => gridstruct%agrid
+  dxa => gridstruct%dxa
+  dya => gridstruct%dya
+
+
+  if (gridstruct%grid_type < 3) then
 
 !------------------------------------------
 ! Copy fields to the phantom corner region:
@@ -833,26 +899,26 @@ contains
   enddo
 
 ! 3-way extrapolation
-    if ( sw_corner ) then
+    if ( gridstruct%sw_corner ) then
           p0(1:2) = grid(1,1,1:2)
         qout(1,1) = (extrap_corner(p0, agrid(1,1,1:2), agrid( 2, 2,1:2), qin(1,1), qin( 2, 2)) + &
                      extrap_corner(p0, agrid(0,1,1:2), agrid(-1, 2,1:2), qin(0,1), qin(-1, 2)) + &
                      extrap_corner(p0, agrid(1,0,1:2), agrid( 2,-1,1:2), qin(1,0), qin( 2,-1)))*r3
 
     endif
-    if ( se_corner ) then
+    if ( gridstruct%se_corner ) then
             p0(1:2) = grid(npx,1,1:2)
         qout(npx,1) = (extrap_corner(p0, agrid(npx-1,1,1:2), agrid(npx-2, 2,1:2), qin(npx-1,1), qin(npx-2, 2)) + &
                        extrap_corner(p0, agrid(npx-1,0,1:2), agrid(npx-2,-1,1:2), qin(npx-1,0), qin(npx-2,-1)) + &
                        extrap_corner(p0, agrid(npx  ,1,1:2), agrid(npx+1, 2,1:2), qin(npx  ,1), qin(npx+1, 2)))*r3
     endif
-    if ( ne_corner ) then
+    if ( gridstruct%ne_corner ) then
               p0(1:2) = grid(npx,npy,1:2)
         qout(npx,npy) = (extrap_corner(p0, agrid(npx-1,npy-1,1:2), agrid(npx-2,npy-2,1:2), qin(npx-1,npy-1), qin(npx-2,npy-2)) + &
                          extrap_corner(p0, agrid(npx  ,npy-1,1:2), agrid(npx+1,npy-2,1:2), qin(npx  ,npy-1), qin(npx+1,npy-2)) + &
                          extrap_corner(p0, agrid(npx-1,npy  ,1:2), agrid(npx-2,npy+1,1:2), qin(npx-1,npy  ), qin(npx-2,npy+1)))*r3
     endif
-    if ( nw_corner ) then
+    if ( gridstruct%nw_corner ) then
             p0(1:2) = grid(1,npy,1:2)
         qout(1,npy) = (extrap_corner(p0, agrid(1,npy-1,1:2), agrid( 2,npy-2,1:2), qin(1,npy-1), qin( 2,npy-2)) + &
                        extrap_corner(p0, agrid(0,npy-1,1:2), agrid(-1,npy-2,1:2), qin(0,npy-1), qin(-1,npy-2)) + &

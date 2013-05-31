@@ -4,13 +4,12 @@
 module fv_mapz_mod
 
   use constants_mod,     only: radius, pi, rvgas, rdgas, grav
-  use fv_grid_tools_mod, only: area, dx, dy, rdxa, rdya
-  use fv_grid_utils_mod, only: g_sum, ptop, ptop_min, cosa_s, rsin2
+  use fv_grid_utils_mod, only: g_sum, ptop_min
   use fv_fill_mod,       only: fillz
   use fv_eta_mod ,       only: compute_dz_L32, hybrid_z_dz
-  use fv_mp_mod,         only: gid, domain, square_domain
-  use mpp_domains_mod,   only: mpp_update_domains
-  use mpp_mod,           only: FATAL, mpp_error, get_unit, stdlog, mpp_root_pe, mpp_pe
+  use mpp_domains_mod,   only: mpp_update_domains, domain2d
+  use mpp_mod,           only: FATAL, mpp_error, get_unit, mpp_root_pe, mpp_pe
+  use fv_arrays_mod,     only: fv_grid_type
 
   implicit none
   real, parameter::  r3 = 1./3., r23 = 2./3., r12 = 1./12.
@@ -21,8 +20,8 @@ module fv_mapz_mod
          rst_remap, mappm, E_Flux, E_Flux_nest
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_mapz.F90,v 17.0.4.7.2.6 2012/05/08 20:49:08 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201303 $'
+  character(len=128) :: version = '$Id: fv_mapz.F90,v 17.0.4.7.2.6.2.9 2013/04/03 20:15:42 Lucas.Harris Exp $'
+  character(len=128) :: tagname = '$Name: siena_201305 $'
 
 contains
 
@@ -31,7 +30,7 @@ contains
                       nq, sphum, u, v, w, delz, pt, q, hs, r_vir, cp,  &
                       akap, kord_mt, kord_wz, kord_tr, kord_tm,  peln, te0_2d,        &
                       ng, ua, va, omga, te, ws, fill, reproduce_sum,        &
-                      ak, bk, ze0, remap_t, hydrostatic, hybrid_z, do_omega)
+                      ptop, ak, bk, gridstruct, domain, ze0, remap_t, hydrostatic, hybrid_z, do_omega)
   logical, intent(in):: do_consv
   real,    intent(in):: pdt                   ! phys time step
   integer, intent(in):: km
@@ -56,8 +55,11 @@ contains
   logical, intent(in):: fill                  ! fill negative tracers
   logical, intent(in):: reproduce_sum
   logical, intent(in):: do_omega
+  real, intent(in) :: ptop
   real, intent(in) :: ak(km+1)
   real, intent(in) :: bk(km+1)
+  type(fv_grid_type), intent(IN), target :: gridstruct
+  type(domain2d), intent(INOUT) :: domain
 
 ! !INPUT/OUTPUT
   real, intent(inout):: pk(is:ie,js:je,km+1) ! pe to the kappa
@@ -73,7 +75,7 @@ contains
   real, intent(inout)::  w(isd:ied  ,jsd:jed  ,km)   ! vertical velocity (m/s)
   real, intent(inout):: pt(isd:ied  ,jsd:jed  ,km)   ! cp*virtual potential temperature 
                                                      ! as input; output: temperature
-  real, intent(inout):: delz(is:ie,js:je,km)   ! delta-height (m)
+  real, intent(inout):: delz(isd:ied,jsd:jed,km)   ! delta-height (m)
   logical, intent(in):: remap_t
   logical, intent(in):: hydrostatic
   logical, intent(in):: hybrid_z
@@ -116,6 +118,11 @@ contains
       integer iq, n, kp, k_next
       logical te_map
       real k1k, kapag
+
+      real, pointer, dimension(:,:) :: cosa_s, rsin2
+
+      cosa_s => gridstruct%cosa_s
+      rsin2 => gridstruct%rsin2
 
         k1k = akap / (1.-akap)    ! rg/Cv=0.4
       kapag = -akap / grav
@@ -167,7 +174,7 @@ contains
              endif         ! hydro test
           endif            ! remap_t test
        else
-           call pkez(km, is, ie, js, je, j, pe, pk, akap, peln, pkz)
+           call pkez(km, is, ie, js, je, j, pe, pk, akap, peln, pkz, ptop)
 ! Compute cp*T + KE
            do k=1,km
                  do i=is,ie
@@ -368,7 +375,7 @@ contains
 !----------------
 ! Map Total Energy
 !----------------
-        call map1_ppm (km,   pe1,  te,       &
+        call map1_ppm (km,   pe1,  te, gz,   &
                        km,   pe2,  te,       &
                        is, ie, j, is, ie, js, je, 1, kord_tm)
    else
@@ -390,30 +397,30 @@ contains
               enddo
            enddo
        else
-         call map1_ppm (km,  peln(is,1,j),  pt,    &
-                        km,  pn2,           pt,    &
+         call map1_ppm (km,  peln(is,1,j),  pt, gz,   &
+                        km,  pn2,           pt,              &
                         is, ie, j, isd, ied, jsd, jed, 1, abs(kord_tm))
        endif
      else
 !----------------
 ! Map pt using pk
 !----------------
-       call map1_ppm (km,  pk1,  pt,           &
-                      km,  pk2,  pt,           &
+       call map1_ppm (km,  pk1,  pt,  gz,       &
+                      km,  pk2,  pt,                  &
                       is, ie, j, isd, ied, jsd, jed, 1, abs(kord_tm))
      endif
    endif
 
    if ( .not. hydrostatic ) then
 ! Remap vertical wind:
-        call map1_ppm (km,   pe1,  w,       &
-                       km,   pe2,  w,       &
+        call map1_ppm (km,   pe1,  w,  ws(is,j),   &
+                       km,   pe2,  w,              &
                        is, ie, j, isd, ied, jsd, jed, -2, kord_wz)
      if ( .not. hybrid_z ) then
 ! Remap delz for hybrid sigma-p coordinate
-        call map1_ppm (km,   pe1, delz,    &
-                       km,   pe2, delz,    &
-                       is, ie, j, is,  ie,  js,  je,  1, abs(kord_tm))
+        call map1_ppm (km,   pe1, delz,  gz,   &
+                       km,   pe2, delz,              &
+                       is, ie, j, isd,  ied,  jsd,  jed,  1, abs(kord_tm))
         do k=1,km
            do i=is,ie
               delz(i,j,k) = -delz(i,j,k)*dp2(i,k)
@@ -524,8 +531,8 @@ contains
          enddo
       enddo
 
-      call map1_ppm( km, pe0(is:ie,:),   u,       &
-                     km, pe3(is:ie,:),   u,       &
+      call map1_ppm( km, pe0(is:ie,:),   u,   gz,   &
+                     km, pe3(is:ie,:),   u,               &
                      is, ie, j, isd, ied, jsd, jed+1, -1, kord_mt)
 
    if (j < je+1) then
@@ -544,7 +551,7 @@ contains
           enddo
        enddo
 
-       call map1_ppm (km, pe0,  v,              &
+       call map1_ppm (km, pe0,  v, gz,    &
                       km, pe3,  v, is, ie+1,    &
                       j, isd, ied+1, jsd, jed, -1, kord_mt)
    endif ! (j < je+1)
@@ -560,7 +567,7 @@ contains
 
 if ( hybrid_z ) then   
 !------- Hybrid_z section ---------------
-   if ( square_domain ) then
+   if ( gridstruct%square_domain ) then
      call mpp_update_domains(ua , domain,  whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
    else
      call mpp_update_domains(ua , domain, complete=.true.)
@@ -582,8 +589,8 @@ if ( hybrid_z ) then
          enddo
       enddo
 
-      call map1_ppm( km, pe1,   u,       &
-                     km, pe2,   u,       &
+      call map1_ppm( km, pe1,   u,  gz, &
+                     km, pe2,   u,            &
                      is, ie, j, isd, ied, jsd, jed+1, -1, kord_mt)
    enddo
 
@@ -602,7 +609,7 @@ if ( hybrid_z ) then
          enddo
       enddo
 
-      call map1_ppm (km, pe0,  v,              &
+      call map1_ppm (km, pe0,  v,  gz,   &
                      km, pe3,  v, is, ie+1,    &
                      j, isd, ied+1, jsd, jed, -1, kord_mt)
    enddo
@@ -618,7 +625,7 @@ endif
      enddo
   enddo
 
-!  call cubed_to_latlon(u,  v, ua, va, dx, dy, rdxa, rdya, km, 1)
+!  call cubed_to_latlon(u,  v, ua, va, dx, dy, rdxa, rdya, km, 1, flagstruct%c2l_ord)
 
   if( do_consv .and. consv > 0. ) then
 
@@ -743,14 +750,14 @@ endif
          enddo
       enddo
 
-         tpe = consv*g_sum(te_2d, is, ie, js, je, ng, area, 0)
+         tpe = consv*g_sum(domain, te_2d, is, ie, js, je, ng, gridstruct%area, 0)
       E_Flux = tpe / (grav*pdt*4.*pi*radius**2)    ! unit: W/m**2
                                                    ! Note pdt is "phys" time step
 
       if ( hydrostatic ) then
-           dtmp = tpe / (cp*g_sum(zsum0,  is, ie, js, je, ng, area, 0))
+           dtmp = tpe / (cp*g_sum(domain, zsum0,  is, ie, js, je, ng, gridstruct%area, 0))
       else
-           dtmp = tpe / (cv*g_sum(zsum1,  is, ie, js, je, ng, area, 0))
+           dtmp = tpe / (cv*g_sum(domain, zsum1,  is, ie, js, je, ng, gridstruct%area, 0))
       endif
 !-------------------------------------------------------------------------------
 ! One may use this quick fix to ensure reproducibility at the expense of a lower
@@ -816,9 +823,13 @@ endif
     endif
   endif
 
-! call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km, 1)
+! call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km, 1, flagstruct%c2l_ord)
+
+  nullify(cosa_s)
+  nullify(rsin2)
 
  end subroutine Lagrangian_to_Eulerian
+
 
  subroutine compute_total_energy(is, ie, js, je, isd, ied, jsd, jed, km,       &
                                  u, v, w, delz, pt, delp, q, qc, pe, peln, hs, &
@@ -837,13 +848,13 @@ endif
    real, intent(inout)::  u(isd:ied,  jsd:jed+1,km)
    real, intent(inout)::  v(isd:ied+1,jsd:jed,  km)
    real, intent(in)::  w(isd:ied,jsd:jed,km)   ! vertical velocity (m/s)
-   real, intent(in):: delz(is:ie,js:je,km)
+   real, intent(in):: delz(isd:ied,jsd:jed,km)
    real, intent(in):: hs(isd:ied,jsd:jed)  ! surface geopotential
    real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) ! pressure at layer edges
    real, intent(in):: peln(is:ie,km+1,js:je)  ! log(pe)
    real, intent(in):: cp, rg, r_vir, hlv
-   real, intent(inout) :: rsin2_l(isd:ied, jsd:jed)
-   real, intent(inout) :: cosa_s_l(isd:ied, jsd:jed)
+   real, intent(in) :: rsin2_l(isd:ied, jsd:jed)
+   real, intent(in) :: cosa_s_l(isd:ied, jsd:jed)
    logical, intent(in):: moist_phys, hydrostatic
 ! Output:
    real, intent(out):: te_2d(is:ie,js:je)   ! vertically integrated TE
@@ -859,7 +870,7 @@ endif
 !----------------------
 ! Output lat-lon winds:
 !----------------------
-!  call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km)
+!  call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km, flagstruct%c2l_ord)
 
 !$omp parallel do default(shared) private(phiz, tv)
   do j=js,je
@@ -943,7 +954,7 @@ endif
 
 
   subroutine pkez(km, ifirst, ilast, jfirst, jlast, j, &
-                  pe, pk, akap, peln, pkz)
+                  pe, pk, akap, peln, pkz, ptop)
 
 ! !INPUT PARAMETERS:
    integer, intent(in):: km, j
@@ -952,6 +963,7 @@ endif
    real, intent(in):: akap
    real, intent(in):: pe(ifirst-1:ilast+1,km+1,jfirst-1:jlast+1)
    real, intent(in):: pk(ifirst:ilast,jfirst:jlast,km+1)
+   real, intent(IN):: ptop
 ! !OUTPUT
    real, intent(out):: pkz(ifirst:ilast,jfirst:jlast,km)
    real, intent(inout):: peln(ifirst:ilast, km+1, jfirst:jlast)   ! log (pe)
@@ -1020,6 +1032,7 @@ endif
       real, intent(inout)::  q2(i1:i2,kn)      ! Field output
 
 ! !LOCAL VARIABLES:
+      real   qs(i1:i2)
       real  dp1(  i1:i2,km)
       real   q4(4,i1:i2,km)
       real   pl, pr, qsum, delp, esl
@@ -1034,7 +1047,7 @@ endif
 
 ! Compute vertical subgrid distribution
    if ( kord >7 ) then
-        call  cs_profile( q4, dp1, km, i1, i2, iv, kord )
+        call  cs_profile( qs, q4, dp1, km, i1, i2, iv, kord )
    else
         call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
    endif
@@ -1084,7 +1097,7 @@ endif
  end subroutine remap_z
 
 
- subroutine map1_ppm( km,   pe1,    q1,                 &
+ subroutine map1_ppm( km,   pe1,    q1,   qs,           &
                       kn,   pe2,    q2,   i1, i2,       &
                       j,    ibeg, iend, jbeg, jend, iv,  kord)
  integer, intent(in) :: i1                ! Starting longitude
@@ -1096,6 +1109,7 @@ endif
  integer, intent(in) :: ibeg, iend, jbeg, jend
  integer, intent(in) :: km                ! Original vertical dimension
  integer, intent(in) :: kn                ! Target vertical dimension
+ real, intent(in) ::   qs(i1:i2)       ! bottom BC
  real, intent(in) ::  pe1(i1:i2,km+1)  ! pressure at layer edges 
                                        ! (from model top to bottom surface)
                                        ! in the original vertical coordinate
@@ -1127,7 +1141,7 @@ endif
 
 ! Compute vertical subgrid distribution
    if ( kord >7 ) then
-        call  cs_profile( q4, dp1, km, i1, i2, iv, kord )
+        call  cs_profile( qs, q4, dp1, km, i1, i2, iv, kord )
    else
         call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
    endif
@@ -1202,6 +1216,7 @@ endif
 ! !INPUT/OUTPUT PARAMETERS:
       real, intent(inout):: q2(i1:i2,kn) ! Field output
 ! !LOCAL VARIABLES:
+      real   qs(i1:i2)
       real   dp1(i1:i2,km)
       real   q4(4,i1:i2,km)
       real   pl, pr, qsum, dp, esl
@@ -1217,7 +1232,7 @@ endif
 
 ! Compute vertical subgrid distribution
    if ( kord >7 ) then
-        call  cs_profile( q4, dp1, km, i1, i2, iv, kord )
+        call  cs_profile( qs, q4, dp1, km, i1, i2, iv, kord )
    else
         call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
    endif
@@ -1270,7 +1285,7 @@ endif
 
  subroutine remap_2d(km,   pe1,   q1,        &
                      kn,   pe2,   q2,        &
-                     i1,   i2,    iv,   kord )
+                     i1,   i2,    iv,   kord, ptop )
    integer, intent(in):: i1, i2
    integer, intent(in):: iv               ! Mode: 0 ==  constituents 1 ==others
    integer, intent(in):: kord
@@ -1284,7 +1299,9 @@ endif
                                           ! in the new vertical coordinate
    real, intent(in) :: q1(i1:i2,km) ! Field input
    real, intent(out):: q2(i1:i2,kn) ! Field output
+   real, intent(IN) :: ptop
 ! !LOCAL VARIABLES:
+   real   qs(i1:i2)
    real   dp1(i1:i2,km)
    real   q4(4,i1:i2,km)
    real   pl, pr, qsum, dp, esl
@@ -1299,7 +1316,7 @@ endif
 
 ! Compute vertical subgrid distribution
    if ( kord >7 ) then
-        call  cs_profile( q4, dp1, km, i1, i2, iv, kord )
+        call  cs_profile( qs, q4, dp1, km, i1, i2, iv, kord )
    else
         call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
    endif
@@ -1356,7 +1373,7 @@ endif
  end subroutine remap_2d
 
 
- subroutine cs_profile(a4, delp, km, i1, i2, iv, kord)
+ subroutine cs_profile(qs, a4, delp, km, i1, i2, iv, kord)
 ! Optimized vertical profile reconstruction:
 ! Latest: Apr 2008 S.-J. Lin, NOAA/GFDL
  integer, intent(in):: i1, i2
@@ -1365,6 +1382,7 @@ endif
                                ! iv = 0: positive definite scalars
                                ! iv = 1: others
  integer, intent(in):: kord
+ real, intent(in)   ::   qs(i1:i2)
  real, intent(in)   :: delp(i1:i2,km)     ! layer pressure thickness
  real, intent(inout):: a4(4,i1:i2,km)     ! Interpolated values
 !-----------------------------------------------------------------------
@@ -1376,6 +1394,31 @@ endif
  real   pmp_1, lac_1, pmp_2, lac_2
  integer i, k, im
 
+ if ( iv .eq. -2 ) then
+      do i=i1,i2
+         gam(i,2) = 0.5
+           q(i,1) = 1.5*a4(1,i,1)
+      enddo
+      do k=2,km-1
+         do i=i1, i2
+                  grat = delp(i,k-1) / delp(i,k)
+                   bet =  2. + grat + grat - gam(i,k)
+                q(i,k) = (3.*(a4(1,i,k-1)+a4(1,i,k)) - q(i,k-1))/bet
+            gam(i,k+1) = grat / bet
+         enddo
+      enddo
+      do i=i1,i2
+            grat = delp(i,km-1) / delp(i,km) 
+         q(i,km) = (3.*(a4(1,i,km-1)+a4(1,i,km)) - grat*qs(i) - q(i,km-1)) /  &
+                   (2. + grat + grat - gam(i,km))
+         q(i,km+1) = qs(i)
+      enddo
+      do k=km-1,1,-1
+        do i=i1,i2
+           q(i,k) = q(i,k) - gam(i,k+1)*q(i,k+1)
+        enddo
+      enddo
+ else
   do i=i1,i2
          grat = delp(i,2) / delp(i,1)   ! grid ratio
           bet = grat*(grat+0.5)
@@ -1403,6 +1446,7 @@ endif
         q(i,k) = q(i,k) - gam(i,k)*q(i,k+1)
      enddo
   enddo
+ endif
 
 !------------------
 ! Apply constraints
@@ -1478,7 +1522,7 @@ endif
       do i=i1,i2
          if ( a4(2,i,1)*a4(1,i,1) <= 0. ) a4(2,i,1) = 0.
       enddo
-  elseif ( abs(iv)==2 ) then
+  elseif ( iv==2 ) then
      do i=i1,i2
         a4(2,i,1) = a4(1,i,1)
         a4(3,i,1) = a4(1,i,1)
@@ -1486,7 +1530,7 @@ endif
      enddo
   endif
 
-  if ( abs(iv)/=2 ) then
+  if ( iv/=2 ) then
      do i=i1,i2
         a4(4,i,1) = 3.*(2.*a4(1,i,1) - (a4(2,i,1)+a4(3,i,1)))
      enddo
@@ -1595,7 +1639,7 @@ endif
      do i=i1,i2
         a4(3,i,km) = max(0., a4(3,i,km))
      enddo
-  elseif ( iv<0 ) then 
+  elseif ( iv .eq. -1 ) then 
       do i=i1,i2
          if ( a4(3,i,km)*a4(1,i,km) <= 0. )  a4(3,i,km) = 0.
       enddo
@@ -2095,7 +2139,8 @@ endif
  subroutine rst_remap(km, kn, is,ie,js,je, isd,ied,jsd,jed, nq,  &
                       delp_r, u_r, v_r, w_r, delz_r, pt_r, q_r,      &
                       delp,   u,   v,   w,   delz,   pt,   q,        &
-                      ak_r, bk_r, ak, bk, hydrostatic)
+                      ak_r, bk_r, ptop, ak, bk, hydrostatic, make_nh, &
+                      domain, square_domain)
 !------------------------------------
 ! Assuming hybrid sigma-P coordinate:
 !------------------------------------
@@ -2105,7 +2150,8 @@ endif
   integer, intent(in):: nq                    ! number of tracers (including h2o)
   integer, intent(in):: is,ie,isd,ied         ! starting & ending X-Dir index
   integer, intent(in):: js,je,jsd,jed         ! starting & ending Y-Dir index
-  logical, intent(in):: hydrostatic
+  logical, intent(in):: hydrostatic, make_nh, square_domain
+  real, intent(IN) :: ptop
   real, intent(in) :: ak_r(km+1)
   real, intent(in) :: bk_r(km+1)
   real, intent(in) :: ak(kn+1)
@@ -2117,6 +2163,7 @@ endif
   real, intent(in)::   w_r(is:ie,js:je,km)
   real, intent(in)::   q_r(is:ie,js:je,km,*)
   real, intent(inout)::delz_r(is:ie,js:je,km)
+  type(domain2d), intent(INOUT) :: domain
 ! Output:
   real, intent(out):: delp(isd:ied,jsd:jed,kn) ! pressure thickness
   real, intent(out)::  u(isd:ied  ,jsd:jed+1,kn)   ! u-wind (m/s)
@@ -2124,7 +2171,7 @@ endif
   real, intent(out)::  w(isd:ied  ,jsd:jed  ,kn)   ! vertical velocity (m/s)
   real, intent(out):: pt(isd:ied  ,jsd:jed  ,kn)   ! temperature
   real, intent(out):: q(isd:ied,jsd:jed,kn,*)
-  real, intent(out):: delz(is:ie,js:je,kn)   ! delta-height (m)
+  real, intent(out):: delz(isd:ied,jsd:jed,kn)   ! delta-height (m)
 !-----------------------------------------------------------------------
   real r_vir
   real ps(isd:ied,jsd:jed)  ! surface pressure
@@ -2191,7 +2238,7 @@ endif
 
      call remap_2d(km, pe1, u_r(is:ie,j:j,1:km),       &
                    kn, pe2,   u(is:ie,j:j,1:kn),       &
-                   is, ie, -1, kord)
+                   is, ie, -1, kord, ptop)
 
   if ( j /= (je+1) )  then 
 
@@ -2226,15 +2273,15 @@ endif
           do iq=1,nq
              call remap_2d(km, pe1, q_r(is:ie,j:j,1:km,iq:iq),  &
                            kn, pe2,   q(is:ie,j:j,1:kn,iq:iq),  &
-                           is, ie, 0, kord)
+                           is, ie, 0, kord, ptop)
           enddo
       endif
 
-      if ( .not. hydrostatic ) then
+      if ( .not. hydrostatic .and. .not. make_nh) then
 ! Remap vertical wind:
          call remap_2d(km, pe1, w_r(is:ie,j:j,1:km),       &
                        kn, pe2,   w(is:ie,j:j,1:kn),       &
-                       is, ie, -1, kord)
+                       is, ie, -1, kord, ptop)
 ! Remap delz for hybrid sigma-p coordinate
          do k=1,km
             do i=is,ie
@@ -2243,7 +2290,7 @@ endif
          enddo
          call remap_2d(km, pe1, delz_r(is:ie,j:j,1:km),       &
                        kn, pe2,   delz(is:ie,j:j,1:kn),       &
-                       is, ie, 1, kord)
+                       is, ie, 1, kord, ptop)
          do k=1,kn
             do i=is,ie
                delz(i,j,k) = -delz(i,j,k)*delp(i,j,k)
@@ -2265,7 +2312,7 @@ endif
 
        call remap_2d(km, pe1, pt_r(is:ie,j:j,1:km),       &
                      kn, pe2,   pt(is:ie,j:j,1:kn),       &
-                     is, ie, 1, kord)
+                     is, ie, 1, kord, ptop)
 !------
 ! map v
 !------
@@ -2282,7 +2329,7 @@ endif
 
        call remap_2d(km, pv1, v_r(is:ie+1,j:j,1:km),       &
                      kn, pv2,   v(is:ie+1,j:j,1:kn),       &
-                     is, ie+1, -1, kord)
+                     is, ie+1, -1, kord, ptop)
 
   endif !(j < je+1)
 1000  continue
@@ -2300,7 +2347,7 @@ endif
 
 
 
- subroutine mappm(km, pe1, q1, kn, pe2, q2, i1, i2, iv, kord)
+ subroutine mappm(km, pe1, q1, kn, pe2, q2, i1, i2, iv, kord, ptop)
 
 ! IV = 0: constituents
 ! IV = 1: potential temp
@@ -2317,7 +2364,9 @@ endif
  real, intent(in ):: pe1(i1:i2,km+1), pe2(i1:i2,kn+1)
  real, intent(in )::  q1(i1:i2,km)
  real, intent(out)::  q2(i1:i2,kn)
+ real, intent(IN) :: ptop
 ! local
+      real  qs(i1:i2)
       real dp1(i1:i2,km)
       real a4(4,i1:i2,km)
       integer i, k, l
@@ -2332,7 +2381,7 @@ endif
       enddo
 
       if ( kord >7 ) then
-           call  cs_profile( a4, dp1, km, i1, i2, iv, kord )
+           call  cs_profile( qs, a4, dp1, km, i1, i2, iv, kord )
       else
            call ppm_profile( a4, dp1, km, i1, i2, iv, kord )
       endif

@@ -1,7 +1,7 @@
       module fv_timing_mod
 
 #if defined(SPMD)
-      use fv_mp_mod, only: masterproc, mp_reduce_max
+      use fv_mp_mod, only: is_master, mp_reduce_max
 #endif
 !
 ! ... Use system etime() function for timing
@@ -33,8 +33,8 @@
       real , private       :: us_tmp2(nblks,2)
 
 !---- version number -----
-      character(len=128) :: version = '$Id: fv_timing.F90,v 17.0.2.2.2.3 2012/05/14 16:26:28 Lucas.Harris Exp $'
-      character(len=128) :: tagname = '$Name: siena_201303 $'
+      character(len=128) :: version = '$Id: fv_timing.F90,v 17.0.2.2.2.3.2.1 2013/01/24 18:16:53 Lucas.Harris Exp $'
+      character(len=128) :: tagname = '$Name: siena_201305 $'
 
       contains
          subroutine timing_init
@@ -231,7 +231,7 @@
            call mp_reduce_max(tmpmax)
            tmp(n)%sys = tmpmax
         enddo
-        if ( gid .eq. masterproc ) then
+        if ( is_master() ) then
 #else
         do n = 1, nblks
            tmp(n)%usr = accum(n)%usr

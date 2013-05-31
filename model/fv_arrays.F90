@@ -5,6 +5,7 @@ module fv_arrays_mod
   use time_manager_mod, only: time_type
   use horiz_interp_type_mod, only:  horiz_interp_type
   use mpp_domains_mod, only : nest_domain_type
+  use mpp_mod, only: mpp_broadcast
   public
 
   !Several 'auxiliary' structures are introduced here. These are for
@@ -74,92 +75,131 @@ module fv_arrays_mod
   end type fv_diag_type
 
 
-  type fv_atmos_type
+  !fv_grid_type is made up of grid-dependent information from fv_grid_tools and fv_grid_utils.
+  ! It should not contain any user options (that goes in a different structure) nor data which
+  ! is altered outside of those two modules.
+  type fv_grid_type
+     real, allocatable, dimension(:,:,:) :: grid, agrid
+     real, allocatable, dimension(:,:) :: area, area_c
+     real, allocatable, dimension(:,:) :: rarea, rarea_c     
 
-     logical :: allocated = .false.
-     logical :: dummy = .false.
-     integer :: grid_number = 1
+  real, allocatable, dimension(:,:) :: sina, cosa
+  real, allocatable, dimension(:,:,:) :: e1,e2
+  real, allocatable, dimension(:,:) :: dx, dy
+  real, allocatable, dimension(:,:) :: dxc, dyc
+  real, allocatable, dimension(:,:) :: dxa, dya
+  real, allocatable, dimension(:,:) :: rdx, rdy
+  real, allocatable, dimension(:,:) :: rdxc, rdyc
+  real, allocatable, dimension(:,:) :: rdxa, rdya
 
-     !Timestep-related variables.
-     !Each grid should have its own set of timing utilities
-     real :: dt_grid
-     integer :: refinement ! number of this grid's timesteps per model-wide dt_atmos
-     type(time_type) :: Time_init, Time, Run_length, Time_end, Time_step_atmos
+     ! Scalars:
+     real, allocatable :: edge_s(:)
+     real, allocatable :: edge_n(:)
+     real, allocatable :: edge_w(:)
+     real, allocatable :: edge_e(:)
+     ! Vector:
+     real, allocatable :: edge_vect_s(:)
+     real, allocatable :: edge_vect_n(:)
+     real, allocatable :: edge_vect_w(:)
+     real, allocatable :: edge_vect_e(:)
+     ! scalar:
+     real, allocatable :: ex_s(:)
+     real, allocatable :: ex_n(:)
+     real, allocatable :: ex_w(:)
+     real, allocatable :: ex_e(:)
 
-     logical :: grid_active = .true. !Always active for now
+     ! divergence Damping:
+     real, allocatable :: divg_u(:,:), divg_v(:,:)    !
+     ! Cubed_2_latlon:
+     real, allocatable :: a11(:,:)
+     real, allocatable :: a12(:,:)
+     real, allocatable :: a21(:,:)
+     real, allocatable :: a22(:,:)
+     ! latlon_2_cubed:
+     real, allocatable :: z11(:,:)
+     real, allocatable :: z12(:,:)
+     real, allocatable :: z21(:,:)
+     real, allocatable :: z22(:,:)
 
-!-----------------------------------------------------------------------
-! Five prognostic state variables for the f-v dynamics
-!-----------------------------------------------------------------------
-! dyn_state:
-! D-grid prognostatic variables: u, v, and delp (and other scalars)
-!
-!     o--------u(i,j+1)----------o
-!     |           |              |
-!     |           |              |
-!  v(i,j)------scalar(i,j)----v(i+1,j)
-!     |           |              |
-!     |           |              |
-!     o--------u(i,j)------------o
-!
-! The C grid component is "diagnostic" in that it is predicted every time step
-! from the D grid variables.
-    real, _ALLOCATABLE :: u(:,:,:)    _NULL  ! D grid zonal wind (m/s)
-    real, _ALLOCATABLE :: v(:,:,:)    _NULL  ! D grid meridional wind (m/s)
-    real, _ALLOCATABLE :: pt(:,:,:)   _NULL  ! temperature (K)
-    real, _ALLOCATABLE :: delp(:,:,:) _NULL  ! pressure thickness (pascal)
-    real, _ALLOCATABLE :: q(:,:,:,:)  _NULL  ! specific humidity and constituents
+     real, allocatable :: cosa_u(:,:)
+     real, allocatable :: cosa_v(:,:)
+     real, allocatable :: cosa_s(:,:)
+     real, allocatable :: sina_s(:,:)
+     real, allocatable :: sina_u(:,:)
+     real, allocatable :: sina_v(:,:)
+     real, allocatable :: rsin_u(:,:)
+     real, allocatable :: rsin_v(:,:)
+     real, allocatable ::  rsina(:,:)
+     real, allocatable ::  rsin2(:,:)
+     real, allocatable :: ee1(:,:,:)
+     real, allocatable :: ee2(:,:,:)
+     real, allocatable :: ec1(:,:,:)
+     real, allocatable :: ec2(:,:,:)
+     real, allocatable :: ew(:,:,:,:)
+     real, allocatable :: es(:,:,:,:)
 
-!----------------------
-! non-hydrostatic state:
-!----------------------------------------------------------------------
-    real, _ALLOCATABLE ::     w(:,:,:)  _NULL  ! cell center vertical wind (m/s)
-    real, _ALLOCATABLE ::  delz(:,:,:)  _NULL  ! layer thickness (meters)
-    real, _ALLOCATABLE ::   ze0(:,:,:)  _NULL  ! height at layer edges for remapping
 
-!-----------------------------------------------------------------------
-! Auxilliary pressure arrays:
-! The 5 vars below can be re-computed from delp and ptop.
-!-----------------------------------------------------------------------
-! dyn_aux:
-    real, _ALLOCATABLE :: ps (:,:)      _NULL  ! Surface pressure (pascal)
-    real, _ALLOCATABLE :: pe (:,:,: )   _NULL  ! edge pressure (pascal)
-    real, _ALLOCATABLE :: pk  (:,:,:)   _NULL  ! pe**cappa
-    real, _ALLOCATABLE :: peln(:,:,:)   _NULL  ! ln(pe)
-    real, _ALLOCATABLE :: pkz (:,:,:)   _NULL  ! finite-volume mean pk
+     !- 3D Super grid to contain all geometrical factors --
+     ! the 3rd dimension is 9
+     real, allocatable :: sin_sg(:,:,:)
+     real, allocatable :: cos_sg(:,:,:)
+     !--------------------------------------------------
 
-! For phys coupling:
-    real, _ALLOCATABLE :: u_srf(:,:)    _NULL  ! Surface u-wind
-    real, _ALLOCATABLE :: v_srf(:,:)    _NULL  ! Surface v-wind
-    real, _ALLOCATABLE :: sgh(:,:)      _NULL  ! Terrain standard deviation
-    real, _ALLOCATABLE :: oro(:,:)      _NULL  ! land fraction (1: all land; 0: all water)
-    real, _ALLOCATABLE :: ts(:,:)       _NULL  ! skin temperature (sst) from NCEP/GFS (K) -- tile
- 
-!-----------------------------------------------------------------------
-! Others:
-!-----------------------------------------------------------------------
-    real, _ALLOCATABLE :: phis(:,:)     _NULL  ! Surface geopotential (g*Z_surf)
-    real, _ALLOCATABLE :: omga(:,:,:)   _NULL  ! Vertical pressure velocity (pa/s)
-    real, _ALLOCATABLE :: ua(:,:,:)     _NULL  ! (ua, va) are mostly used as the A grid winds
-    real, _ALLOCATABLE :: va(:,:,:)     _NULL
-    real, _ALLOCATABLE :: uc(:,:,:)     _NULL  ! (uc, vc) are mostly used as the C grid winds
-    real, _ALLOCATABLE :: vc(:,:,:)     _NULL
+     ! Unit Normal vectors at cell edges:
+     real, allocatable :: en1(:,:,:)
+     real, allocatable :: en2(:,:,:)
 
-    real, _ALLOCATABLE :: ak(:)  _NULL
-    real, _ALLOCATABLE :: bk(:)  _NULL
+     ! Extended Cubed cross-edge winds
+     real, allocatable :: eww(:,:)
+     real, allocatable :: ess(:,:)
 
-! Accumulated Mass flux arrays
-    real, _ALLOCATABLE ::  mfx(:,:,:)  _NULL
-    real, _ALLOCATABLE ::  mfy(:,:,:)  _NULL
-! Accumulated Courant number arrays
-    real, _ALLOCATABLE ::  cx(:,:,:)  _NULL
-    real, _ALLOCATABLE ::  cy(:,:,:)  _NULL
+     ! Unit vectors for lat-lon grid
+     real, allocatable :: vlon(:,:,:), vlat(:,:,:)
+     real, allocatable :: fC(:,:), f0(:,:)
 
-    integer :: isd, ied, jsd, jed
-    integer :: is, ie, js, je
-    integer :: isc, iec, jsc, jec 
+     integer, dimension(:,:,:), allocatable :: iinta, jinta, iintb, jintb
+  
+     !Scalar data
+     
+     integer :: npx_g, npy_g, ntiles_g ! global domain
 
-!!!!! fv_control
+     real :: global_area
+     logical :: g_sum_initialized = .false. !Not currently used but can be useful
+     logical:: sw_corner, se_corner, ne_corner, nw_corner
+
+     real :: da_min, da_max, da_min_c, da_max_c
+
+     real  :: acapN, acapS
+     real  :: globalarea  ! total Global Area
+     
+     logical :: latlon = .false.
+     logical :: cubed_sphere = .false.
+     logical :: have_south_pole = .false.
+     logical :: have_north_pole = .false.
+     logical :: stretched_grid = .false.
+
+     logical :: square_domain = .false.
+
+
+     !! Convenience pointers
+
+     integer, pointer :: grid_type
+     logical, pointer :: nested
+
+  end type fv_grid_type
+
+  type fv_flags_type
+
+     !! FOR EACH VARIABLE IN FV_FLAGS:
+     !! 1. Must be defined here:
+     !! 2. Must be broadcast in fv_atmos_data
+     !! 3. If a namelist entry, a pointer must
+     !!    be defined and associated in fv_control
+     !! 4. Must NOT appear in fv_current_grid_mod.
+     !!    (this module will soon be removed)
+     !! 5. Must be referenced through Atm%flagstruct,
+     !!    not Atm%, unless a convenience
+     !!    pointer is defined
 
 !-----------------------------------------------------------------------
 ! Grid descriptor file setup
@@ -194,9 +234,9 @@ module fv_arrays_mod
                              !    positive definite (Lin & Rood 1996); slower
                              !>12: positive definite only (Lin & Rood 1996); fastest
    integer :: kord_tr = 8    ! 
-   real    :: scale_z = 0.  ! diff_z = scale_z**2 * 0.25
+   real    :: scale_z = 0.   ! diff_z = scale_z**2 * 0.25
    real    :: w_max = 75.    ! max w (m/s) threshold for hydostatiic adjustment 
-   real    :: z_min = 0.05   ! min ration of dz_nonhydrostatic/dz_hydrostatic
+   real    :: z_min = 0.05   ! min ratio of dz_nonhydrostatic/dz_hydrostatic
 
    integer :: nord=1         ! 0: del-2, 1: del-4, 2: del-6, 3: del-8 divergence damping
                              ! Alternative setting for high-res: nord=1; d4_bg = 0.075
@@ -284,6 +324,7 @@ module fv_arrays_mod
 ! For a 1024 system: try 6 x 13 * 13 = 1014 CPUs
   
    integer :: q_split = 0    ! Number of time splits for tracer transport
+
    integer :: print_freq = 0 ! Print max/min of selected fields
                              ! 0: off
                              ! positive n: every n hours
@@ -336,6 +377,8 @@ module fv_arrays_mod
    logical :: adiabatic = .false.     ! Run without physics (full or idealized).
    logical :: moist_phys = .true.     ! Run with moist physics
    logical :: do_Held_Suarez = .false.
+   logical :: do_reed_physics = .false.
+   logical :: reed_cond_only = .false.
    logical :: reproduce_sum = .true.  ! Make global sum for consv_te reproduce
    logical :: adjust_dry_mass = .false.
    logical :: fv_debug  = .false.
@@ -356,7 +399,6 @@ module fv_arrays_mod
                                       !    d2_bg_k1 = 4.           d2_bg_k2 = 2.
                                       !    d2_divg_max_k1 = 0.15   d2_divg_max_k2 = 0.08
                                       !    damp_k_k1 = 0.2         damp_k_k2 = 0.12
-   logical :: master
 
    logical :: fv_land = .false.       ! To cold starting the model with USGS terrain
 !--------------------------------------------------------------------------------------
@@ -385,260 +427,69 @@ module fv_arrays_mod
    integer :: a2b_ord = 4    ! order for interpolation from A to B Grid (corners)
    integer :: c2l_ord = 4    ! order for interpolation from D to lat-lon A winds for phys & output
 
-   integer :: ks
-
-!!!!!!!!!!!!!!!!!!
-     ! From fv_mp_mod !
-!!!!!!!!!!!!!!!!!!
-
-     integer :: ng = 3 !this SHOULD be a constant, but structure elements are not allowed to be constants
-     type(domain2D) :: domain
-#if defined(SPMD)
-
-     type(domain2D) :: domain_for_coupler ! domain used in coupled model with halo = 1.
-
-     integer :: num_contact, npes_per_tile, tile, npes_this_grid
-     logical :: square_domain = .false.
-     integer :: npes_x, npes_y
-     integer :: layout(2), io_layout(2) = (/ 1,1 /)
-
-#endif
-     !These do not actually belong to the grid, but to the process
-     !integer :: masterproc
-     !integer :: gid 
-
-     type(nest_domain_type) :: nest_domain !Structure holding link from this grid to its parent
-     logical :: this_proc_sends, this_proc_recvs
-
-!!!!!!!!!!!!!!!!
-! From fv_grid_tools
-!!!!!!!!!!!!!!!!
-
-     
-  real :: csFac = -999
-  real            :: zeta = 1.0                ! non-linear flag 
-  real    :: stretch               ! Optional stretching factor for the grid 
-  logical :: dxdy_area = .false.   ! define area using dx*dy else spherical excess formula
-  logical :: latlon = .false.
-  logical :: cubed_sphere = .false.
-  logical :: double_periodic = .false.
-  logical :: latlon_patch = .false.
-  logical :: latlon_strip = .false.
-  logical :: channel = .false.
-  logical :: have_south_pole = .false.
-  logical :: have_north_pole = .false.
-  integer :: interpOrder = 1
-  logical :: debug_message_size = .false.
-  logical :: write_grid_char_file = .false.
-  logical :: stretched_grid = .false.
-  ! grid descriptors
-
-  ! Horizontal
-  integer :: npx_g, npy_g, npz_g, ntiles_g ! global domain
-#ifndef NO_GRID_G
-  real, allocatable, dimension(:,:,:) :: grid_g
-#endif
-  real, allocatable, dimension(:,:,:) :: grid, agrid
-  real, allocatable, dimension(:,:) :: area, area_c
-  real, allocatable, dimension(:,:) :: sina, cosa
-  real, allocatable, dimension(:,:,:) :: e1,e2
-  real, allocatable, dimension(:,:) :: dx, dy
-  real, allocatable, dimension(:,:) :: dxc, dyc
-  real, allocatable, dimension(:,:) :: dxa, dya
-  real, allocatable, dimension(:,:) :: rarea, rarea_c
-  real, allocatable, dimension(:,:) :: rdx, rdy
-  real, allocatable, dimension(:,:) :: rdxc, rdyc
-  real, allocatable, dimension(:,:) :: rdxa, rdya
-  real  :: acapN, acapS
-  real  :: globalarea  ! total Global Area
-  
-  integer, dimension(:,:,:), allocatable :: iinta, jinta, iintb, jintb
-
   real :: dx_const = 1000.    ! spatial resolution for double periodic boundary configuration [m]
   real :: dy_const = 1000.
   real :: deglon_start = -30., deglon_stop = 30., &  ! boundaries of latlon patch
           deglat_start = -30., deglat_stop = 30.
+  real :: deglat=15.
 
-!!!!!!!!!!!!!!!!
-!fv_diagnostics!
-!!!!!!!!!!!!!!!!
+  !Convenience pointers
+  integer, pointer :: grid_number
 
-     type(fv_diag_type) :: idiag
-     integer steps
-     real(kind=4):: efx(max_step), efx_nest(max_step), mtq(max_step)
-     real(kind=4):: efx_sum,       efx_sum_nest, mtq_sum
+  
+  !integer, pointer :: test_case
+  !real,    pointer :: alpha
 
+  end type fv_flags_type
 
-!!!!!!!!!!!!!!!!!!!!!!
-     ! From fv_grid_utils !
-!!!!!!!!!!!!!!!!!!!!!!
+  type fv_nest_BC_type_3D
 
-     ! Scalars:
-     real, allocatable :: edge_s(:)
-     real, allocatable :: edge_n(:)
-     real, allocatable :: edge_w(:)
-     real, allocatable :: edge_e(:)
-     ! Vector:
-     real, allocatable :: edge_vect_s(:)
-     real, allocatable :: edge_vect_n(:)
-     real, allocatable :: edge_vect_w(:)
-     real, allocatable :: edge_vect_e(:)
-     ! scalar:
-     real, allocatable :: ex_s(:)
-     real, allocatable :: ex_n(:)
-     real, allocatable :: ex_w(:)
-     real, allocatable :: ex_e(:)
+     !!! CLEANUP: could we have pointers to np[xyz], nest_domain, and the index/weight arrays?
 
-     ! divergence Damping:
-     real, allocatable :: divg_u(:,:), divg_v(:,:)    !
-     ! Cubed_2_latlon:
-     real, allocatable :: a11(:,:)
-     real, allocatable :: a12(:,:)
-     real, allocatable :: a21(:,:)
-     real, allocatable :: a22(:,:)
-     ! latlon_2_cubed:
-     real, allocatable :: z11(:,:)
-     real, allocatable :: z12(:,:)
-     real, allocatable :: z21(:,:)
-     real, allocatable :: z22(:,:)
+     real, allocatable, dimension(:,:,:) :: west_t1, east_t1, south_t1, north_t1
+     real, allocatable, dimension(:,:,:) :: west_t0, east_t0, south_t0, north_t0
 
-     real :: global_area
-     real:: stretch_factor = 1.
-     logical :: g_sum_initialized = .false. !Not currently used but can be useful
-     logical:: gnomonic_grid
-     logical:: sw_corner, se_corner, ne_corner, nw_corner
-     real, allocatable :: cosa_u(:,:)
-     real, allocatable :: cosa_v(:,:)
-     real, allocatable :: cosa_s(:,:)
-     real, allocatable :: sina_s(:,:)
-     real, allocatable :: sina_u(:,:)
-     real, allocatable :: sina_v(:,:)
-     real, allocatable :: rsin_u(:,:)
-     real, allocatable :: rsin_v(:,:)
-     real, allocatable ::  rsina(:,:)
-     real, allocatable ::  rsin2(:,:)
-     real, allocatable :: ee1(:,:,:)
-     real, allocatable :: ee2(:,:,:)
-     real, allocatable :: ec1(:,:,:)
-     real, allocatable :: ec2(:,:,:)
-     real, allocatable :: ew(:,:,:,:)
-     real, allocatable :: es(:,:,:,:)
+     integer :: istag, jstag
 
+     logical :: allocated = .false.
 
-     !- 3D Super grid to contain all geometrical factors --
-     ! the 3rd dimension is 9
-     real, allocatable :: sin_sg(:,:,:)
-     real, allocatable :: cos_sg(:,:,:)
-     !--------------------------------------------------
+  end type fv_nest_BC_type_3D
 
-     ! Unit Normal vectors at cell edges:
-     real, allocatable :: en1(:,:,:)
-     real, allocatable :: en2(:,:,:)
+  type fv_nest_BC_type_4D
 
-     ! Extended Cubed cross-edge winds
-     real, allocatable :: eww(:,:)
-     real, allocatable :: ess(:,:)
+     real, allocatable, dimension(:,:,:,:) :: west_t1, east_t1, south_t1, north_t1
+     real, allocatable, dimension(:,:,:,:) :: west_t0, east_t0, south_t0, north_t0
 
-     ! Unit vectors for lat-lon grid
-     real, allocatable :: vlon(:,:,:), vlat(:,:,:)
-     real, allocatable :: fC(:,:), f0(:,:)
+     integer :: istag, jstag
 
-     real :: deglat=15.
+     logical :: allocated = .false.
 
-     real    :: ptop
-     real :: da_min, da_max, da_min_c, da_max_c
+  end type fv_nest_BC_type_4D
 
+  type fv_nest_type
 
-!!!!!!!!!!!!!!
-! From fv_sg !
-!!!!!!!!!!!!!!
+!nested grid flags:
 
-     real, allocatable :: fv_olr(:,:), fv_abs_sw(:,:)
-     integer:: irad = 0
+     integer :: refinement = 3  !Refinement wrt parent
 
-!!!!!!!!!!!!!!!!!!!!
-! From fv_surf_map !
-!!!!!!!!!!!!!!!!!!!!
-
-     real, allocatable:: zs_g(:,:)
-     real, allocatable:: sgh_g(:,:), oro_g(:,:)
-
-!!!!!!!!!!!!!!!!!!!
-! From test_cases !
-!!!!!!!!!!!!!!!!!!!
-
-     integer :: test_case = -999 !If not specified, this at least tells us
-                                 !that the nested-grid halo topography needs
-                                 !to be filled by interpolating from the coarse grid.
-     ! alpha = angle of axis rotation about the poles
-     real   :: alpha = 0.
-     ! Ubar = initial wind speed parameter
-     real   :: Ubar
-     ! gh0 = initial surface height parameter
-     real   :: gh0
-
-     !  case 9 parameters
-     real  , allocatable :: case9_B(:,:)
-     real   :: AofT(2)
-
-
-     !  Validating fields used in statistics
-     real  , allocatable :: phi0(:,:,:) ! Validating Field
-     real  , allocatable :: ua0(:,:,:)  ! Validating U-Wind
-     real  , allocatable :: va0(:,:,:)  ! Validating V-Windfms_io_exit, get_tile_string, &
-
-     real  , allocatable :: gh_table(:), lats_table(:)
-     logical :: gh_initialized = .false.
-
-     !  Initial Conservation statistics ; total mass ; enstrophy ; energy
-     real   :: tmass_orig
-     real   :: tvort_orig
-     real   :: tener_orig
-
-
-
-!!!!!!!!!!!!!!!!
-! From fv_phys !
-!!!!!!!!!!!!!!!!
-     !This is exclusively for nudging
-
-     logical :: nudge_initialized
-     real, allocatable:: u0(:,:,:), v0(:,:,:), t0(:,:,:), dp(:,:,:)
-
-!!!!!!!!!!!!!
-! From hswf !
-!!!!!!!!!!!!!
-
-#ifdef MARS_GCM
-     logical :: tmars_initialized = .false.
-     real,  allocatable, dimension(:,:,:):: tmars
-#endif
-
-!!!!!!!!!!!!!!
-! From fv_io !
-!!!!!!!!!!!!!!
-     type(restart_file_type) :: Fv_restart, SST_restart, Fv_tile_restart, &
-          Rsf_restart, Mg_restart, Lnd_restart, Tra_restart
-
-!!!!!!!!!!!!!!!!!!!!!!!
-! Nesting information !
-!!!!!!!!!!!!!!!!!!!!!!!
-
-     type(fv_atmos_type), pointer :: parent_grid _NULL
      integer :: parent_tile = 1     !Tile (of cubed sphere) in which nested grid lies 
-     integer :: nest_refinement = 3 !Refinement wrt parent
      logical :: nested = .false.
      integer :: nestbctype = 1
      integer :: nsponge = 0
      integer :: nestupdate = 0       
      logical :: twowaynest = .false. 
      integer :: ioffset, joffset !Position of nest within parent grid
+
      integer :: nest_timestep = 0 !Counter for nested-grid timesteps
      integer :: tracer_nest_timestep = 0 !Counter for nested-grid timesteps
      real    :: s_weight = 1.e-6 !sponge weight
      logical :: first_step = .true.
      integer :: refinement_of_global = 1
      integer :: npx_global
+     
+
+     type(nest_domain_type) :: nest_domain !Structure holding link from this grid to its parent
+     type(nest_domain_type), allocatable :: nest_domain_all(:)
 
      !Interpolation arrays for grid nesting
      integer, allocatable, dimension(:,:,:) :: ind_h, ind_u, ind_v
@@ -649,83 +500,196 @@ module fv_arrays_mod
      !allocated for all grids, regardless of whether the grid is
      !on a PE of a concurrent run.
      logical, allocatable, dimension(:) :: child_grids
-     integer, allocatable, dimension(:) :: pelist
 
      logical :: parent_proc, child_proc
-
-!!$     !Indices for coarse-to-nested interpolation
-!!$   integer                      :: isw_f, iew_f, jsw_f, jew_f, isw_c, iew_c, jsw_c, jew_c
-!!$   integer                      :: ise_f, iee_f, jse_f, jee_f, ise_c, iee_c, jse_c, jee_c
-!!$   integer                      :: iss_f, ies_f, jss_f, jes_f, iss_c, ies_c, jss_c, jes_c
-!!$   integer                      :: isn_f, ien_f, jsn_f, jen_f, isn_c, ien_c, jsn_c, jen_c
-
-     !Arrays to hold data for time interpolation
-     real, allocatable, dimension(:,:,:) :: h_west, h_east, h_north, h_south
-     real, allocatable, dimension(:,:,:) :: u_west, u_east, u_north, u_south
-     real, allocatable, dimension(:,:,:) :: v_west, v_east, v_north, v_south
-
-     !These are for time-extrapolated BCs when doing concurrent nesting
-     real, allocatable, dimension(:,:,:) :: h_west_t0, h_east_t0, h_north_t0, h_south_t0
-     real, allocatable, dimension(:,:,:) :: u_west_t0, u_east_t0, u_north_t0, u_south_t0
-     real, allocatable, dimension(:,:,:) :: v_west_t0, v_east_t0, v_north_t0, v_south_t0
-     !uc and vc always need two time levels because they are interpolated to half-timesteps, not full ones
-     real, allocatable, dimension(:,:,:) :: uc_west_t0, uc_east_t0, uc_north_t0, uc_south_t0
-     real, allocatable, dimension(:,:,:) :: vc_west_t0, vc_east_t0, vc_north_t0, vc_south_t0
-     real, allocatable, dimension(:,:,:) :: uc_west_t1, uc_east_t1, uc_north_t1, uc_south_t1
-     real, allocatable, dimension(:,:,:) :: vc_west_t1, vc_east_t1, vc_north_t1, vc_south_t1
-     real, allocatable, dimension(:,:,:,:) :: q_west, q_east, q_north, q_south
-     real, allocatable, dimension(:,:,:,:) :: q_west_t0, q_east_t0, q_north_t0, q_south_t0
+     logical :: parent_of_twoway = .false.
+   
+     !These are for time-extrapolated BCs
+     type(fv_nest_BC_type_3D) :: delp_BC, u_BC, v_BC, uc_BC, vc_BC
+     type(fv_nest_BC_type_3D), allocatable, dimension(:) :: q_BC
 #ifndef SW_DYNAMICS
-     real, allocatable, dimension(:,:,:) :: pt_west, pt_east, pt_north, pt_south
-     real, allocatable, dimension(:,:,:) :: w_west, w_east, w_north, w_south
-     real, allocatable, dimension(:,:,:) :: pt_west_t0, pt_east_t0, pt_north_t0, pt_south_t0
-     real, allocatable, dimension(:,:,:) :: w_west_t0, w_east_t0, w_north_t0, w_south_t0
+     type(fv_nest_BC_type_3D) :: pt_BC, w_BC, delz_BC
 #endif
 
      !These are for tracer flux BCs
-     real, allocatable, dimension(:,:,:) :: nest_fx_west_accum, nest_fx_east_accum, nest_fx_south_accum, nest_fx_north_accum
      logical :: do_flux_BCs, do_2way_flux_BCs !For a parent grid; determine whether there is a need to send BCs
 
-     integer, allocatable, dimension(:,:) :: process_bounds
+  end type fv_nest_type
+
+  interface allocate_fv_nest_BC_type
+     module procedure allocate_fv_nest_BC_type_3D
+     module procedure allocate_fv_nest_BC_type_3D_Atm
+  end interface
+
+  interface deallocate_fv_nest_BC_type
+     module procedure deallocate_fv_nest_BC_type_3D
+  end interface
+
+  type fv_grid_bounds_type
+
+     integer :: is,  ie,  js,  je
+     integer :: isd, ied, jsd, jed
+     integer :: isc, iec, jsc, jec
+
+     integer :: ng
+
+  end type fv_grid_bounds_type
+
+  type fv_atmos_type
+
+     logical :: allocated = .false.
+     logical :: dummy = .false.
+     integer :: grid_number = 1
+
+     !Timestep-related variables.
+
+     type(time_type) :: Time_init, Time, Run_length, Time_end, Time_step_atmos
+
+     logical :: grid_active = .true. !Always active for now
+
+     !This is kept here instead of in neststruct% simply for convenience
+     type(fv_atmos_type), pointer :: parent_grid _NULL
+
+!-----------------------------------------------------------------------
+! Five prognostic state variables for the f-v dynamics
+!-----------------------------------------------------------------------
+! dyn_state:
+! D-grid prognostatic variables: u, v, and delp (and other scalars)
+!
+!     o--------u(i,j+1)----------o
+!     |           |              |
+!     |           |              |
+!  v(i,j)------scalar(i,j)----v(i+1,j)
+!     |           |              |
+!     |           |              |
+!     o--------u(i,j)------------o
+!
+! The C grid component is "diagnostic" in that it is predicted every time step
+! from the D grid variables.
+    real, _ALLOCATABLE :: u(:,:,:)    _NULL  ! D grid zonal wind (m/s)
+    real, _ALLOCATABLE :: v(:,:,:)    _NULL  ! D grid meridional wind (m/s)
+    real, _ALLOCATABLE :: pt(:,:,:)   _NULL  ! temperature (K)
+    real, _ALLOCATABLE :: delp(:,:,:) _NULL  ! pressure thickness (pascal)
+    real, _ALLOCATABLE :: q(:,:,:,:)  _NULL  ! specific humidity and constituents
+
+!----------------------
+! non-hydrostatic state:
+!----------------------------------------------------------------------
+    real, _ALLOCATABLE ::     w(:,:,:)  _NULL  ! cell center vertical wind (m/s)
+    real, _ALLOCATABLE ::  delz(:,:,:)  _NULL  ! layer thickness (meters)
+    real, _ALLOCATABLE ::   ze0(:,:,:)  _NULL  ! height at layer edges for remapping
+
+!-----------------------------------------------------------------------
+! Auxilliary pressure arrays:
+! The 5 vars below can be re-computed from delp and ptop.
+!-----------------------------------------------------------------------
+! dyn_aux:
+    real, _ALLOCATABLE :: ps (:,:)      _NULL  ! Surface pressure (pascal)
+    real, _ALLOCATABLE :: pe (:,:,: )   _NULL  ! edge pressure (pascal)
+    real, _ALLOCATABLE :: pk  (:,:,:)   _NULL  ! pe**cappa
+    real, _ALLOCATABLE :: peln(:,:,:)   _NULL  ! ln(pe)
+    real, _ALLOCATABLE :: pkz (:,:,:)   _NULL  ! finite-volume mean pk
+#ifdef PKC
+    real, _ALLOCATABLE :: pkc (:,:,:)   _NULL  ! finite-volume edge pk
+#endif
+
+! For phys coupling:
+    real, _ALLOCATABLE :: u_srf(:,:)    _NULL  ! Surface u-wind
+    real, _ALLOCATABLE :: v_srf(:,:)    _NULL  ! Surface v-wind
+    real, _ALLOCATABLE :: sgh(:,:)      _NULL  ! Terrain standard deviation
+    real, _ALLOCATABLE :: oro(:,:)      _NULL  ! land fraction (1: all land; 0: all water)
+    real, _ALLOCATABLE :: ts(:,:)       _NULL  ! skin temperature (sst) from NCEP/GFS (K) -- tile
+ 
+!-----------------------------------------------------------------------
+! Others:
+!-----------------------------------------------------------------------
+    real, _ALLOCATABLE :: phis(:,:)     _NULL  ! Surface geopotential (g*Z_surf)
+    real, _ALLOCATABLE :: omga(:,:,:)   _NULL  ! Vertical pressure velocity (pa/s)
+    real, _ALLOCATABLE :: ua(:,:,:)     _NULL  ! (ua, va) are mostly used as the A grid winds
+    real, _ALLOCATABLE :: va(:,:,:)     _NULL
+    real, _ALLOCATABLE :: uc(:,:,:)     _NULL  ! (uc, vc) are mostly used as the C grid winds
+    real, _ALLOCATABLE :: vc(:,:,:)     _NULL
+
+    real, _ALLOCATABLE :: ak(:)  _NULL
+    real, _ALLOCATABLE :: bk(:)  _NULL
+
+   integer :: ks
+
+! Accumulated Mass flux arrays
+    real, _ALLOCATABLE ::  mfx(:,:,:)  _NULL
+    real, _ALLOCATABLE ::  mfy(:,:,:)  _NULL
+! Accumulated Courant number arrays
+    real, _ALLOCATABLE ::  cx(:,:,:)  _NULL
+    real, _ALLOCATABLE ::  cy(:,:,:)  _NULL
+
+    type(fv_flags_type) :: flagstruct
+    
+    !! Convenience pointers
+    integer, pointer :: npx, npy, npz, ncnst, ng
+
+     integer, allocatable, dimension(:) :: pelist
+
+     type(fv_grid_bounds_type) :: bd
+
+     type(domain2D) :: domain
+#if defined(SPMD)
+
+     type(domain2D) :: domain_for_coupler ! domain used in coupled model with halo = 1.
+
+     integer :: num_contact, npes_per_tile, tile, npes_this_grid
+     integer :: layout(2), io_layout(2) = (/ 1,1 /)
+
+#endif
+     !These do not actually belong to the grid, but to the process
+     !integer :: masterproc
+     !integer :: gid 
+
+!!!!!!!!!!!!!!!!
+! From fv_grid_tools
+!!!!!!!!!!!!!!!!
+
+
+     real    :: ptop
+
+  type(fv_grid_type) :: gridstruct
+  
+
+!!!!!!!!!!!!!!!!
+!fv_diagnostics!
+!!!!!!!!!!!!!!!!
+
+     type(fv_diag_type) :: idiag
+
+!!!!!!!!!!!!!!
+! From fv_io !
+!!!!!!!!!!!!!!
+     type(restart_file_type) :: Fv_restart, SST_restart, Fv_tile_restart, &
+          Rsf_restart, Mg_restart, Lnd_restart, Tra_restart
+
+     type(fv_nest_type) :: neststruct
 
      !Hold on to coarse-grid global grid, so we don't have to waste processor time getting it again when starting to do grid nesting
      real, allocatable, dimension(:,:,:,:) :: grid_global
-
-!!!!!!!!!!!!!!!!!!!
-! From fv_physics !
-!!!!!!!!!!!!!!!!!!!
-     
-   real, allocatable, dimension(:,:,:)   :: t_phys
-   real, allocatable, dimension(:,:,:,:) :: q_phys
-   real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt
-   real, allocatable, dimension(:,:,:,:) :: q_dt  ! potentially a huge array
-   real, allocatable, dimension(:,:,:)   :: p_full, z_full, p_half, z_half
-   integer :: nx_win, ny_win      ! iew-isw+1, jew-jsw+1 (window sizes)
-   integer :: nx_dom, ny_dom      ! ie-is+1, je-js+1 (compute domain sizes)
-   integer, allocatable, dimension(:)  :: physics_window_x, physics_window_y !Allocated in fv_physics
-   integer :: ny_per_thread, num_phys_windows
 
   integer :: atmos_axes(4)
 
 
   end type fv_atmos_type
 
-  type(fv_atmos_type), allocatable :: Atm(:)
-
 contains
 
   subroutine allocate_fv_atmos_type(Atm, isd_in, ied_in, jsd_in, jed_in, is_in, ie_in, js_in, je_in, &
-       npx_in, npy_in, npz_in, ndims_in, ncnst_in, ng_in, dummy, concurrent, alloc_2d)
+       npx_in, npy_in, npz_in, ndims_in, ncnst_in, ng_in, dummy, alloc_2d)
 
     !WARNING: Before calling this routine, be sure to have set up the
     ! proper domain parameters from the namelists (as is done in
     ! fv_control.F90)
 
     implicit none
-    type(fv_atmos_type), intent(INOUT) :: Atm
+    type(fv_atmos_type), intent(INOUT), target :: Atm
     integer, intent(IN) :: isd_in, ied_in, jsd_in, jed_in, is_in, ie_in, js_in, je_in
     integer, intent(IN) :: npx_in, npy_in, npz_in, ndims_in, ncnst_in, ng_in
-    logical, intent(IN) :: dummy, concurrent, alloc_2d
+    logical, intent(IN) :: dummy, alloc_2d
     integer:: isd, ied, jsd, jed, is, ie, js, je
     integer:: npx, npy, npz, ndims, ncnst, ng
 
@@ -733,7 +697,7 @@ contains
     integer:: isd_2d, ied_2d, jsd_2d, jed_2d, is_2d, ie_2d, js_2d, je_2d
     integer:: npx_2d, npy_2d, npz_2d, ndims_2d, ncnst_2d, ng_2d
 
-    integer :: ns
+    integer :: ns, n
 
     if (Atm%allocated) return
 
@@ -801,6 +765,37 @@ contains
        ng_2d     =   1        
     endif
 
+!This should be set up in fv_mp_mod
+!!$    Atm%bd%isd = isd_in
+!!$    Atm%bd%ied = ied_in
+!!$    Atm%bd%jsd = jsd_in
+!!$    Atm%bd%jed = jed_in
+!!$
+!!$    Atm%bd%is = is_in
+!!$    Atm%bd%ie = ie_in
+!!$    Atm%bd%js = js_in
+!!$    Atm%bd%je = je_in
+!!$
+!!$    Atm%bd%isc = Atm%bd%is
+!!$    Atm%bd%iec = Atm%bd%ie
+!!$    Atm%bd%jsc = Atm%bd%js
+!!$    Atm%bd%jec = Atm%bd%je
+
+    Atm%bd%ng  = ng
+
+    !Convenience pointers
+    Atm%npx => Atm%flagstruct%npx
+    Atm%npy => Atm%flagstruct%npy
+    Atm%npz => Atm%flagstruct%npz
+    Atm%ncnst => Atm%flagstruct%ncnst
+
+    Atm%ng => Atm%bd%ng
+
+!!$    Atm%npx = npx_in
+!!$    Atm%npy = npy_in
+!!$    Atm%npz = npz_in
+    Atm%flagstruct%ndims = ndims_in
+
     allocate (    Atm%u(isd:ied  ,jsd:jed+1,npz) )
     allocate (    Atm%v(isd:ied+1,jsd:jed  ,npz) )
 
@@ -814,11 +809,14 @@ contains
     allocate (   Atm%pk(is:ie    ,js:je  , npz+1) )
     allocate ( Atm%peln(is:ie,npz+1,js:je) )
     allocate (  Atm%pkz(is:ie,js:je,npz) )
+#ifdef PKC
+    allocate (  Atm%pkc(isd:ied,jsd:jed,npz+1) )
+#endif
 
     allocate ( Atm%u_srf(is:ie,js:je) )
     allocate ( Atm%v_srf(is:ie,js:je) )
 
-    if ( Atm%fv_land ) then
+    if ( Atm%flagstruct%fv_land ) then
        allocate ( Atm%sgh(is:ie,js:je) )
        allocate ( Atm%oro(is:ie,js:je) )
     else
@@ -845,14 +843,14 @@ contains
     !--------------------------
     ! Non-hydrostatic dynamics:
     !--------------------------
-    if ( Atm%hydrostatic ) then
+    if ( Atm%flagstruct%hydrostatic ) then
        allocate (    Atm%w(1, 1  ,1) )
        allocate ( Atm%delz(1, 1  ,1) )
        allocate (  Atm%ze0(1, 1  ,1) )
     else
        allocate (    Atm%w(isd:ied, jsd:jed  ,npz  ) )
-       allocate ( Atm%delz(is:ie, js:je  ,npz) )
-       if( Atm%hybrid_z ) then
+       allocate ( Atm%delz(isd:ied, jsd:jed  ,npz) )
+       if( Atm%flagstruct%hybrid_z ) then
           allocate (  Atm%ze0(is:ie, js:je ,npz+1) )
        else
           allocate (  Atm%ze0(1, 1  ,1) )
@@ -860,108 +858,104 @@ contains
        !         allocate ( mono(isd:ied, jsd:jed, npz))
     endif
 
-    allocate ( Atm% area(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )   ! Cell Centered
-    allocate ( Atm%rarea(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )   ! Cell Centered
+    allocate ( Atm%gridstruct% area(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )   ! Cell Centered
+    allocate ( Atm%gridstruct%rarea(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )   ! Cell Centered
     
-    allocate ( Atm% area_c(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )  ! Cell Corners
-    allocate ( Atm%rarea_c(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )  ! Cell Corners
+    allocate ( Atm%gridstruct% area_c(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )  ! Cell Corners
+    allocate ( Atm%gridstruct%rarea_c(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )  ! Cell Corners
     
-    allocate ( Atm% dx(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
-    allocate ( Atm%rdx(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
-    allocate ( Atm% dy(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
-    allocate ( Atm%rdy(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
+    allocate ( Atm%gridstruct% dx(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
+    allocate ( Atm%gridstruct%rdx(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
+    allocate ( Atm%gridstruct% dy(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
+    allocate ( Atm%gridstruct%rdy(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
     
-    allocate ( Atm% dxc(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
-    allocate ( Atm%rdxc(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
-    allocate ( Atm% dyc(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
-    allocate ( Atm%rdyc(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
+    allocate ( Atm%gridstruct% dxc(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
+    allocate ( Atm%gridstruct%rdxc(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
+    allocate ( Atm%gridstruct% dyc(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
+    allocate ( Atm%gridstruct%rdyc(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
     
-    allocate ( Atm% dxa(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
-    allocate ( Atm%rdxa(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
-    allocate ( Atm% dya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
-    allocate ( Atm%rdya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
+    allocate ( Atm% gridstruct%dxa(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
+    allocate ( Atm%gridstruct%rdxa(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
+    allocate ( Atm% gridstruct%dya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
+    allocate ( Atm%gridstruct%rdya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
     
-    allocate ( Atm%grid (isd_2d:ied_2d+1,jsd_2d:jed_2d+1,1:ndims_2d) )
-    allocate ( Atm%agrid(isd_2d:ied_2d  ,jsd_2d:jed_2d  ,1:ndims_2d) )
-    allocate ( Atm%sina(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )   ! SIN(angle of intersection)
-    allocate ( Atm%rsina(is_2d:ie_2d+1,js_2d:je_2d+1) )      ! Why is the size different?
-    allocate ( Atm%cosa(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )   ! COS(angle of intersection)
+    allocate ( Atm%gridstruct%grid (isd_2d:ied_2d+1,jsd_2d:jed_2d+1,1:ndims_2d) )
+    allocate ( Atm%gridstruct%agrid(isd_2d:ied_2d  ,jsd_2d:jed_2d  ,1:ndims_2d) )
+    allocate ( Atm%gridstruct%sina(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )   ! SIN(angle of intersection)
+    allocate ( Atm%gridstruct%rsina(is_2d:ie_2d+1,js_2d:je_2d+1) )      ! Why is the size different?
+    allocate ( Atm%gridstruct%cosa(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )   ! COS(angle of intersection)
     
-    allocate ( Atm%  e1(3,isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
-    allocate ( Atm%  e2(3,isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
+    allocate ( Atm%gridstruct%  e1(3,isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
+    allocate ( Atm%gridstruct%  e2(3,isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
 
-    allocate (Atm%iinta(4, isd_2d:ied_2d ,jsd_2d:jed_2d), &
-         Atm%jinta(4, isd_2d:ied_2d ,jsd_2d:jed_2d),  &
-         Atm%iintb(4, is_2d:ie_2d+1 ,js_2d:je_2d+1), &
-         Atm%jintb(4, is_2d:ie_2d+1 ,js_2d:je_2d+1) )
+    allocate (Atm%gridstruct%iinta(4, isd_2d:ied_2d ,jsd_2d:jed_2d), &
+         Atm%gridstruct%jinta(4, isd_2d:ied_2d ,jsd_2d:jed_2d),  &
+         Atm%gridstruct%iintb(4, is_2d:ie_2d+1 ,js_2d:je_2d+1), &
+         Atm%gridstruct%jintb(4, is_2d:ie_2d+1 ,js_2d:je_2d+1) )
 
-#ifndef NO_GRID_G
-    allocate ( Atm%grid_g(1:npx_2d,1:npy_2d,1:ndims_2d) )
-#endif
+    allocate ( Atm%gridstruct%edge_s(npx_2d) )
+    allocate ( Atm%gridstruct%edge_n(npx_2d) )
+    allocate ( Atm%gridstruct%edge_w(npy_2d) )
+    allocate ( Atm%gridstruct%edge_e(npy_2d) )
 
-    allocate ( Atm%edge_s(npx_2d) )
-    allocate ( Atm%edge_n(npx_2d) )
-    allocate ( Atm%edge_w(npy_2d) )
-    allocate ( Atm%edge_e(npy_2d) )
+    allocate ( Atm%gridstruct%edge_vect_s(isd_2d:ied_2d) )
+    allocate ( Atm%gridstruct%edge_vect_n(isd_2d:ied_2d) )
+    allocate ( Atm%gridstruct%edge_vect_w(jsd_2d:jed_2d) )
+    allocate ( Atm%gridstruct%edge_vect_e(jsd_2d:jed_2d) )
 
-    allocate ( Atm%edge_vect_s(isd_2d:ied_2d) )
-    allocate ( Atm%edge_vect_n(isd_2d:ied_2d) )
-    allocate ( Atm%edge_vect_w(jsd_2d:jed_2d) )
-    allocate ( Atm%edge_vect_e(jsd_2d:jed_2d) )
-
-    allocate ( Atm%ex_s(npx_2d) )
-    allocate ( Atm%ex_n(npx_2d) )
-    allocate ( Atm%ex_w(npy_2d) )
-    allocate ( Atm%ex_e(npy_2d) )
+    allocate ( Atm%gridstruct%ex_s(npx_2d) )
+    allocate ( Atm%gridstruct%ex_n(npx_2d) )
+    allocate ( Atm%gridstruct%ex_w(npy_2d) )
+    allocate ( Atm%gridstruct%ex_e(npy_2d) )
 
 
     ! For diveregnce damping:
-    allocate (  Atm%divg_u(isd_2d:ied_2d,  jsd_2d:jed_2d+1) )
-    allocate (  Atm%divg_v(isd_2d:ied_2d+1,jsd_2d:jed_2d) )
+    allocate (  Atm%gridstruct%divg_u(isd_2d:ied_2d,  jsd_2d:jed_2d+1) )
+    allocate (  Atm%gridstruct%divg_v(isd_2d:ied_2d+1,jsd_2d:jed_2d) )
 
-    allocate (  Atm%z11(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
-    allocate (  Atm%z12(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
-    allocate (  Atm%z21(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
-    allocate (  Atm%z22(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
+    allocate (  Atm%gridstruct%z11(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
+    allocate (  Atm%gridstruct%z12(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
+    allocate (  Atm%gridstruct%z21(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
+    allocate (  Atm%gridstruct%z22(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
 
-    allocate (  Atm%a11(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
-    allocate (  Atm%a12(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
-    allocate (  Atm%a21(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
-    allocate (  Atm%a22(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
-    allocate ( Atm%vlon(is_2d-2:ie_2d+2,js_2d-2:je_2d+2,3) )
-    allocate ( Atm%vlat(is_2d-2:ie_2d+2,js_2d-2:je_2d+2,3) )
+    allocate (  Atm%gridstruct%a11(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
+    allocate (  Atm%gridstruct%a12(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
+    allocate (  Atm%gridstruct%a21(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
+    allocate (  Atm%gridstruct%a22(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
+    allocate ( Atm%gridstruct%vlon(is_2d-2:ie_2d+2,js_2d-2:je_2d+2,3) )
+    allocate ( Atm%gridstruct%vlat(is_2d-2:ie_2d+2,js_2d-2:je_2d+2,3) )
     ! Coriolis parameters:
-    allocate ( Atm%f0(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
-    allocate ( Atm%fC(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
+    allocate ( Atm%gridstruct%f0(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
+    allocate ( Atm%gridstruct%fC(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
 
     ! Corner unit vectors:
-    allocate( Atm%ee1(3,isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
-    allocate( Atm%ee2(3,isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
+    allocate( Atm%gridstruct%ee1(3,isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
+    allocate( Atm%gridstruct%ee2(3,isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
 
     ! Center unit vectors:
-    allocate( Atm%ec1(3,isd_2d:ied_2d,jsd_2d:jed_2d) )
-    allocate( Atm%ec2(3,isd_2d:ied_2d,jsd_2d:jed_2d) )
+    allocate( Atm%gridstruct%ec1(3,isd_2d:ied_2d,jsd_2d:jed_2d) )
+    allocate( Atm%gridstruct%ec2(3,isd_2d:ied_2d,jsd_2d:jed_2d) )
 
     ! Edge unit vectors:
-    allocate( Atm%ew(3,isd_2d:ied_2d+1,jsd_2d:jed_2d,  2) )
-    allocate( Atm%es(3,isd_2d:ied_2d  ,jsd_2d:jed_2d+1,2) )
+    allocate( Atm%gridstruct%ew(3,isd_2d:ied_2d+1,jsd_2d:jed_2d,  2) )
+    allocate( Atm%gridstruct%es(3,isd_2d:ied_2d  ,jsd_2d:jed_2d+1,2) )
 
     ! Edge unit "Normal" vectors: (for omega computation)
-    allocate( Atm%en1(3,is_2d:ie_2d,  js_2d:je_2d+1) )   ! E-W edges
-    allocate( Atm%en2(3,is_2d:ie_2d+1,js_2d:je_2d  ) )   ! N-S egdes
+    allocate( Atm%gridstruct%en1(3,is_2d:ie_2d,  js_2d:je_2d+1) )   ! E-W edges
+    allocate( Atm%gridstruct%en2(3,is_2d:ie_2d+1,js_2d:je_2d  ) )   ! N-S egdes
 
-    allocate ( Atm%cosa_u(isd_2d:ied_2d+1,jsd_2d:jed_2d) )
-    allocate ( Atm%sina_u(isd_2d:ied_2d+1,jsd_2d:jed_2d) )
-    allocate ( Atm%rsin_u(isd_2d:ied_2d+1,jsd_2d:jed_2d) )
+    allocate ( Atm%gridstruct%cosa_u(isd_2d:ied_2d+1,jsd_2d:jed_2d) )
+    allocate ( Atm%gridstruct%sina_u(isd_2d:ied_2d+1,jsd_2d:jed_2d) )
+    allocate ( Atm%gridstruct%rsin_u(isd_2d:ied_2d+1,jsd_2d:jed_2d) )
 
-    allocate ( Atm%cosa_v(isd_2d:ied_2d,jsd_2d:jed_2d+1) )
-    allocate ( Atm%sina_v(isd_2d:ied_2d,jsd_2d:jed_2d+1) )
-    allocate ( Atm%rsin_v(isd_2d:ied_2d,jsd_2d:jed_2d+1) )
+    allocate ( Atm%gridstruct%cosa_v(isd_2d:ied_2d,jsd_2d:jed_2d+1) )
+    allocate ( Atm%gridstruct%sina_v(isd_2d:ied_2d,jsd_2d:jed_2d+1) )
+    allocate ( Atm%gridstruct%rsin_v(isd_2d:ied_2d,jsd_2d:jed_2d+1) )
 
-    allocate ( Atm%cosa_s(isd_2d:ied_2d,jsd_2d:jed_2d) )    ! cell center
-    allocate ( Atm%sina_s(isd_2d:ied_2d,jsd_2d:jed_2d) )    ! cell center
+    allocate ( Atm%gridstruct%cosa_s(isd_2d:ied_2d,jsd_2d:jed_2d) )    ! cell center
+    allocate ( Atm%gridstruct%sina_s(isd_2d:ied_2d,jsd_2d:jed_2d) )    ! cell center
 
-    allocate (  Atm%rsin2(isd_2d:ied_2d,jsd_2d:jed_2d) )    ! cell center
+    allocate (  Atm%gridstruct%rsin2(isd_2d:ied_2d,jsd_2d:jed_2d) )    ! cell center
 
 
     ! Super (composite) grid:
@@ -972,323 +966,62 @@ contains
     !     |       |
     !     6---2---7
 
-    allocate ( Atm%cos_sg(isd_2d:ied_2d,jsd_2d:jed_2d,9) )
-    allocate ( Atm%sin_sg(isd_2d:ied_2d,jsd_2d:jed_2d,9) )
+    allocate ( Atm%gridstruct%cos_sg(isd_2d:ied_2d,jsd_2d:jed_2d,9) )
+    allocate ( Atm%gridstruct%sin_sg(isd_2d:ied_2d,jsd_2d:jed_2d,9) )
 
-    allocate( Atm%eww(3,4) )
-    allocate( Atm%ess(3,4) )
+    allocate( Atm%gridstruct%eww(3,4) )
+    allocate( Atm%gridstruct%ess(3,4) )
 
-    allocate ( Atm%   fv_olr(is:ie,js:je) )
-    allocate ( Atm%fv_abs_sw(is:ie,js:je) )
+    if (Atm%neststruct%nested) then
 
-    allocate ( Atm% zs_g(is:ie, js:je) )
-    allocate ( Atm%oro_g(isd:ied, jsd:jed) )
-    allocate ( Atm%sgh_g(isd:ied, jsd:jed) )
+       allocate(Atm%neststruct%ind_h(isd:ied,jsd:jed,2))
+       allocate(Atm%neststruct%ind_u(isd:ied,jsd:jed+1,2))
+       allocate(Atm%neststruct%ind_v(isd:ied+1,jsd:jed,2))
 
-    allocate ( Atm%phi0(isd:ied  ,jsd:jed  ,npz) )
-    allocate (  Atm%ua0(isd:ied  ,jsd:jed  ,npz) )
-    allocate (  Atm%va0(isd:ied  ,jsd:jed  ,npz) )
+       allocate(Atm%neststruct%wt_h(isd:ied,   jsd:jed,  4))
+       allocate(Atm%neststruct%wt_u(isd:ied,   jsd:jed+1,4))
+       allocate(Atm%neststruct%wt_v(isd:ied+1, jsd:jed,  4))
 
-    if (Atm%test_case == 9) then
-       allocate( Atm%case9_B(isd:ied,jsd:jed) )
-    end if
+       ns = Atm%neststruct%nsponge
 
-    if (Atm%test_case == 7) then
-       allocate (   Atm%gh_table(4*npy) )
-       allocate ( Atm%lats_table(4*npy) )
-    end if
+       call allocate_fv_nest_BC_type(Atm%neststruct%delp_BC,Atm,ns,0,0,dummy)
+       call allocate_fv_nest_BC_type(Atm%neststruct%u_BC,Atm,ns,0,1,dummy)
+       call allocate_fv_nest_BC_type(Atm%neststruct%v_BC,Atm,ns,1,0,dummy)
+       call allocate_fv_nest_BC_type(Atm%neststruct%uc_BC,Atm,ns,1,0,dummy)
+       call allocate_fv_nest_BC_type(Atm%neststruct%vc_BC,Atm,ns,0,1,dummy)
 
-    allocate ( Atm%u0(is:ie,  js:je+1,npz) )
-    allocate ( Atm%v0(is:ie+1,js:je  ,npz) )
-    allocate ( Atm%dp(is:ie,js:je,npz) )
-    allocate ( Atm%t0(is:ie,js:je,npz) )
-
-    if (Atm%nested) then
-
-       allocate(Atm%ind_h(isd:ied,jsd:jed,2))
-       allocate(Atm%ind_u(isd:ied,jsd:jed+1,2))
-       allocate(Atm%ind_v(isd:ied+1,jsd:jed,2))
-
-       allocate(Atm%wt_h(isd:ied,   jsd:jed,  4))
-       allocate(Atm%wt_u(isd:ied,   jsd:jed+1,4))
-       allocate(Atm%wt_v(isd:ied+1, jsd:jed,  4))
-
-       ns = Atm%nsponge
-
-       if (ie == npx-1) then
-          allocate(Atm%h_east(ie+1-ns:ied,jsd:jed,npz))
-          allocate(Atm%u_east(ie+1-ns:ied,jsd:jed+1,npz))
-          allocate(Atm%v_east(ie+2-ns:ied+1,jsd:jed,npz))
-          if (concurrent) then
-             allocate(Atm%h_east_t0(ie+1-ns:ied,jsd:jed,npz))
-             allocate(Atm%u_east_t0(ie+1-ns:ied,jsd:jed+1,npz))
-             allocate(Atm%v_east_t0(ie+2-ns:ied+1,jsd:jed,npz))
-          endif
-          allocate(Atm%vc_east_t0(ie+1-ns:ied,jsd:jed+1,npz))
-          allocate(Atm%uc_east_t0(ie+2-ns:ied+1,jsd:jed,npz))
-          allocate(Atm%vc_east_t1(ie+1-ns:ied,jsd:jed+1,npz))
-          allocate(Atm%uc_east_t1(ie+2-ns:ied+1,jsd:jed,npz))
-          if (ncnst > 0) allocate(Atm%q_east(ie+1-ns:ied,jsd:jed,npz,ncnst))
-          if (ncnst > 0) allocate(Atm%q_east_t0(ie+1-ns:ied,jsd:jed,npz,ncnst))
-       else
-          allocate(Atm%h_east(1,1,npz))
-          allocate(Atm%u_east(1,1,npz))
-          allocate(Atm%v_east(1,1,npz))
-          if (concurrent) then
-             allocate(Atm%h_east_t0(1,1,npz))
-             allocate(Atm%u_east_t0(1,1,npz))
-             allocate(Atm%v_east_t0(1,1,npz))
-          endif
-          allocate(Atm%uc_east_t0(1,1,npz))
-          allocate(Atm%vc_east_t0(1,1,npz))
-          allocate(Atm%uc_east_t1(1,1,npz))
-          allocate(Atm%vc_east_t1(1,1,npz))
-          if (ncnst > 0) allocate(Atm%q_east(1,1,npz,ncnst))          
-          if (ncnst > 0) allocate(Atm%q_east_t0(1,1,npz,ncnst))          
-       end if
-
-       if (js == 1) then
-          allocate(Atm%h_south(isd:ied,jsd:js-1+ns,npz))
-          allocate(Atm%u_south(isd:ied,jsd:js-1+ns,npz))
-          allocate(Atm%v_south(isd:ied+1,jsd:js-1+ns,npz))
-          if (concurrent) then
-             allocate(Atm%h_south_t0(isd:ied,jsd:js-1+ns,npz))
-             allocate(Atm%u_south_t0(isd:ied,jsd:js-1+ns,npz))
-             allocate(Atm%v_south_t0(isd:ied+1,jsd:js-1+ns,npz))
-          endif
-          allocate(Atm%vc_south_t0(isd:ied,jsd:js-1+ns,npz))
-          allocate(Atm%uc_south_t0(isd:ied+1,jsd:js-1+ns,npz))
-          allocate(Atm%vc_south_t1(isd:ied,jsd:js-1+ns,npz))
-          allocate(Atm%uc_south_t1(isd:ied+1,jsd:js-1+ns,npz))
-          if (ncnst > 0) allocate(Atm%q_south(isd:ied,jsd:js-1+ns,npz,ncnst))
-          if (ncnst > 0) allocate(Atm%q_south_t0(isd:ied,jsd:js-1+ns,npz,ncnst))
-       else
-          allocate(Atm%h_south(1,1,npz))
-          allocate(Atm%u_south(1,1,npz))
-          allocate(Atm%v_south(1,1,npz))
-          if (concurrent) then
-             allocate(Atm%h_south_t0(1,1,npz))
-             allocate(Atm%u_south_t0(1,1,npz))
-             allocate(Atm%v_south_t0(1,1,npz))
-          endif
-          allocate(Atm%uc_south_t0(1,1,npz))
-          allocate(Atm%vc_south_t0(1,1,npz))
-          allocate(Atm%uc_south_t1(1,1,npz))
-          allocate(Atm%vc_south_t1(1,1,npz))
-          if (ncnst > 0) allocate(Atm%q_south(1,1,npz,ncnst))
-          if (ncnst > 0) allocate(Atm%q_south_t0(1,1,npz,ncnst))
-       end if
-
-       if (is == 1) then
-          allocate(Atm%h_west(isd:is-1+ns,jsd:jed,npz))
-          allocate(Atm%u_west(isd:is-1+ns,jsd:jed+1,npz))
-          allocate(Atm%v_west(isd:is-1+ns,jsd:jed,npz))
-          if (concurrent) then
-             allocate(Atm%h_west_t0(isd:is-1+ns,jsd:jed,npz))
-             allocate(Atm%u_west_t0(isd:is-1+ns,jsd:jed+1,npz))
-             allocate(Atm%v_west_t0(isd:is-1+ns,jsd:jed,npz))
-          endif
-          allocate(Atm%vc_west_t0(isd:is-1+ns,jsd:jed+1,npz))
-          allocate(Atm%uc_west_t0(isd:is-1+ns,jsd:jed,npz))
-          allocate(Atm%vc_west_t1(isd:is-1+ns,jsd:jed+1,npz))
-          allocate(Atm%uc_west_t1(isd:is-1+ns,jsd:jed,npz))
-          if (ncnst > 0) allocate(Atm%q_west(isd:is-1+ns,jsd:jed,npz,ncnst))
-          if (ncnst > 0) allocate(Atm%q_west_t0(isd:is-1+ns,jsd:jed,npz,ncnst))
-       else
-          allocate(Atm%h_west(1,1,npz))
-          allocate(Atm%u_west(1,1,npz))
-          allocate(Atm%v_west(1,1,npz))
-          if (concurrent) then
-             allocate(Atm%h_west_t0(1,1,npz))
-             allocate(Atm%u_west_t0(1,1,npz))
-             allocate(Atm%v_west_t0(1,1,npz))
-          endif
-          allocate(Atm%uc_west_t0(1,1,npz))
-          allocate(Atm%vc_west_t0(1,1,npz))
-          allocate(Atm%uc_west_t1(1,1,npz))
-          allocate(Atm%vc_west_t1(1,1,npz))
-          if (ncnst > 0) allocate(Atm%q_west(1,1,npz,ncnst))
-          if (ncnst > 0) allocate(Atm%q_west_t0(1,1,npz,ncnst))
-       end if
-
-       if (je == npy-1) then
-          allocate(Atm%h_north(isd:ied,je+1-ns:jed,npz))
-          allocate(Atm%u_north(isd:ied,je+2-ns:jed+1,npz))
-          allocate(Atm%v_north(isd:ied+1,je+1-ns:jed,npz))
-          if (concurrent) then
-             allocate(Atm%h_north_t0(isd:ied,je+1-ns:jed,npz))
-             allocate(Atm%u_north_t0(isd:ied,je+2-ns:jed+1,npz))
-             allocate(Atm%v_north_t0(isd:ied+1,je+1-ns:jed,npz))
-          endif
-          allocate(Atm%vc_north_t0(isd:ied,je+2-ns:jed+1,npz))
-          allocate(Atm%uc_north_t0(isd:ied+1,je+1-ns:jed,npz))
-          allocate(Atm%vc_north_t1(isd:ied,je+2-ns:jed+1,npz))
-          allocate(Atm%uc_north_t1(isd:ied+1,je+1-ns:jed,npz))
-          if (ncnst > 0) allocate(Atm%q_north(isd:ied,je+1-ns:jed,npz,ncnst))
-          if (ncnst > 0) allocate(Atm%q_north_t0(isd:ied,je+1-ns:jed,npz,ncnst))
-       else
-          allocate(Atm%h_north(1,1,npz))
-          allocate(Atm%u_north(1,1,npz))
-          allocate(Atm%v_north(1,1,npz))
-          if (concurrent) then
-             allocate(Atm%h_north_t0(1,1,npz))
-             allocate(Atm%u_north_t0(1,1,npz))
-             allocate(Atm%v_north_t0(1,1,npz))
-          endif
-          allocate(Atm%uc_north_t0(1,1,npz))
-          allocate(Atm%vc_north_t0(1,1,npz))
-          allocate(Atm%uc_north_t1(1,1,npz))
-          allocate(Atm%vc_north_t1(1,1,npz))
-          if (ncnst > 0) allocate(Atm%q_north(1,1,npz,ncnst))
-          if (ncnst > 0) allocate(Atm%q_north_t0(1,1,npz,ncnst))
-       end if
-
-       if (Atm%twowaynest) allocate(Atm%ind_update_h(Atm%parent_grid%isd:Atm%parent_grid%ied+1,Atm%parent_grid%jsd:Atm%parent_grid%jed+1,2))
+       if (ncnst > 0) then
+          allocate(Atm%neststruct%q_BC(ncnst))
+          do n=1,ncnst
+             call allocate_fv_nest_BC_type(Atm%neststruct%q_BC(n),Atm,ns,0,0,dummy)
+          enddo
+       endif
 
 #ifndef SW_DYNAMICS
 
-       if (ie == npx-1) then
-          allocate(Atm%pt_east(ie+1-ns:ied,jsd:jed,npz))
-          if (.not. Atm%hydrostatic) allocate(Atm%w_east(ie+1-ns:ied,jsd:jed+1,npz))
-          if (concurrent) then
-             allocate(Atm%pt_east_t0(ie+1-ns:ied,jsd:jed,npz))
-             if (.not. Atm%hydrostatic) allocate(Atm%w_east_t0(ie+1-ns:ied,jsd:jed+1,npz))
-          endif
-       else
-          allocate(Atm%pt_east(1,1,npz))
-          if (.not. Atm%hydrostatic) allocate(Atm%w_east(1,1,npz))
-          if (concurrent) then
-             allocate(Atm%pt_east_t0(1,1,npz))
-             if (.not. Atm%hydrostatic) allocate(Atm%w_east_t0(1,1,npz))
-          endif
-       end if
-
-       if (js == 1) then
-          allocate(Atm%pt_south(isd:ied,jsd:js-1+ns,npz))
-          if (.not. Atm%hydrostatic) allocate(Atm%w_south(isd:ied,jsd:js-1+ns,npz))
-          if (concurrent) then
-             allocate(Atm%pt_south_t0(isd:ied,jsd:js-1+ns,npz))
-             if (.not. Atm%hydrostatic) allocate(Atm%w_south_t0(isd:ied,jsd:js-1+ns,npz))
-          endif
-       else
-          allocate(Atm%pt_south(1,1,npz))
-          if (.not. Atm%hydrostatic) allocate(Atm%w_south(1,1,npz))
-          if (concurrent) then
-             allocate(Atm%pt_south_t0(1,1,npz))
-             if (.not. Atm%hydrostatic) allocate(Atm%w_south_t0(1,1,npz))
-          endif
-       end if
-
-       if (is == 1) then
-          allocate(Atm%pt_west(isd:is-1+ns,jsd:jed,npz))
-          if (.not. Atm%hydrostatic) allocate(Atm%w_west(isd:is-1+ns,jsd:jed+1,npz))
-          if (concurrent) then
-             allocate(Atm%pt_west_t0(isd:is-1+ns,jsd:jed,npz))
-             if (.not. Atm%hydrostatic) allocate(Atm%w_west_t0(isd:is-1+ns,jsd:jed+1,npz))
-          endif
-       else
-          allocate(Atm%pt_west(1,1,npz))
-          if (.not. Atm%hydrostatic) allocate(Atm%w_west(1,1,npz))
-          if (concurrent) then
-             allocate(Atm%pt_west_t0(1,1,npz))
-             if (.not. Atm%hydrostatic) allocate(Atm%w_west_t0(1,1,npz))
-          endif
-       end if
-
-       if (je == npy-1) then
-          allocate(Atm%pt_north(isd:ied,je+1-ns:jed,npz))
-          if (.not. Atm%hydrostatic) allocate(Atm%w_north(isd:ied,je+2-ns:jed+1,npz))
-          if (concurrent) then
-             allocate(Atm%pt_north_t0(isd:ied,je+1-ns:jed,npz))
-             if (.not. Atm%hydrostatic) allocate(Atm%w_north_t0(isd:ied,je+2-ns:jed+1,npz))
-          endif
-       else
-          allocate(Atm%pt_north(1,1,npz))
-          if (.not. Atm%hydrostatic) allocate(Atm%w_north(1,1,npz))
-          if (concurrent) then
-             allocate(Atm%pt_north_t0(1,1,npz))
-             if (.not. Atm%hydrostatic) allocate(Atm%w_north_t0(1,1,npz))
-          endif
-       end if
+       call allocate_fv_nest_BC_type(Atm%neststruct%pt_BC,Atm,ns,0,0,dummy)
+       if (.not.Atm%flagstruct%hydrostatic) then
+          call allocate_fv_nest_BC_type(Atm%neststruct%w_BC,Atm,ns,0,0,dummy)
+          call allocate_fv_nest_BC_type(Atm%neststruct%delz_BC,Atm,ns,0,0,dummy)
+       endif
 
 #endif
 
-       if (Atm%nestbctype > 1 .and. ncnst > 0) then
-          if (is == 1) then
-             allocate(Atm%nest_fx_west_accum(js:je,npz,ncnst))
-          else
-             allocate(Atm%nest_fx_west_accum(1,1,1))
-          endif
-          if (ie == npx-1) then
-             allocate(Atm%nest_fx_east_accum(js:je,npz,ncnst))
-          else
-             allocate(Atm%nest_fx_east_accum(1,1,1))
-          endif
-
-          if (js == 1) then
-             allocate(Atm%nest_fx_south_accum(is:ie,npz,ncnst))
-          else
-             allocate(Atm%nest_fx_south_accum(1,1,1))
-          endif
-          if (je == npy-1) then
-             allocate(Atm%nest_fx_north_accum(is:ie,npz,ncnst))
-          else
-             allocate(Atm%nest_fx_north_accum(1,1,1))
-          endif
-       endif
+       if (Atm%neststruct%twowaynest) allocate(&
+            Atm%neststruct%ind_update_h( &
+              Atm%parent_grid%bd%isd:Atm%parent_grid%bd%ied+1, &
+              Atm%parent_grid%bd%jsd:Atm%parent_grid%bd%jed+1,2))
 
     end if
 
-       if (Atm%grid_type < 4) then
-          if (Atm%nested) then
+       if (Atm%flagstruct%grid_type < 4) then
+          if (Atm%neststruct%nested) then
              allocate(Atm%grid_global(1-ng_2d:npx_2d  +ng_2d,1-ng_2d:npy_2d  +ng_2d,2,1))
           else
              allocate(Atm%grid_global(1-ng_2d:npx_2d  +ng_2d,1-ng_2d:npy_2d  +ng_2d,2,1:6))
           endif
        end if
 
-
-#ifdef MARS_GCM
-    allocate( Atm%tmars(is:ie,js:je,npz) )
-#endif
-
-#ifndef SW_DYNAMICS
-    allocate( Atm%u_dt(isd:ied,jsd:jed, npz) )
-    allocate( Atm%v_dt(isd:ied,jsd:jed, npz) )
-    allocate( Atm%t_dt(is:ie,js:je, npz) )
-    allocate( Atm%q_dt(is:ie,js:je, npz, Atm%nt_prog) )
-    allocate( Atm%p_full(is:ie,js:je,npz) )
-    allocate( Atm%z_full(is:ie,js:je,npz) )
-    allocate( Atm%p_half(is:ie,js:je,npz+1) )
-    allocate( Atm%z_half(is:ie,js:je,npz+1) )
-! For phys_filter:
-    if ( Atm%tq_filter ) then
-         allocate (  Atm%t_phys(isd:ied,jsd:jed,npz) )
-         allocate (  Atm%q_phys(isd:ied,jsd:jed,npz,Atm%nt_prog) )
-    endif
-
-#endif
-
-
-    Atm%isd = isd_in
-    Atm%ied = ied_in
-    Atm%jsd = jsd_in
-    Atm%jed = jed_in
-
-    Atm%is = is_in
-    Atm%ie = ie_in
-    Atm%js = js_in
-    Atm%je = je_in
-
-    Atm%isc = Atm%is
-    Atm%iec = Atm%ie
-    Atm%jsc = Atm%js
-    Atm%jec = Atm%je
-
-    Atm%npx = npx_in
-    Atm%npy = npy_in
-    Atm%npz = npz_in
-    Atm%ndims = ndims_in
 
     Atm%allocated = .true.
     if (dummy) Atm%dummy = .true.
@@ -1299,6 +1032,8 @@ contains
 
     implicit none
     type(fv_atmos_type), intent(INOUT) :: Atm
+
+    integer :: n
 
     if (.not.Atm%allocated) return
 
@@ -1312,6 +1047,9 @@ contains
     deallocate (   Atm%pk )
     deallocate ( Atm%peln )
     deallocate (  Atm%pkz )
+#ifdef PKC
+    deallocate (  Atm%pkc )
+#endif
     deallocate ( Atm%phis )
     deallocate ( Atm%omga )
     deallocate (   Atm%ua )
@@ -1327,117 +1065,113 @@ contains
 
     deallocate ( Atm%u_srf )
     deallocate ( Atm%v_srf )
-    if( Atm%fv_land ) deallocate ( Atm%sgh )
+    if( Atm%flagstruct%fv_land ) deallocate ( Atm%sgh )
     deallocate ( Atm%oro )
 
     deallocate ( Atm%w )
     deallocate ( Atm%delz  )
     deallocate ( Atm%ze0   )
 
-    deallocate ( Atm% area )   ! Cell Centered
-    deallocate ( Atm%rarea )   ! Cell Centered
+    deallocate ( Atm%gridstruct% area )   ! Cell Centered
+    deallocate ( Atm%gridstruct%rarea )   ! Cell Centered
     
-    deallocate ( Atm% area_c )  ! Cell Corners
-    deallocate ( Atm%rarea_c )  ! Cell Corners
+    deallocate ( Atm%gridstruct% area_c )  ! Cell Corners
+    deallocate ( Atm%gridstruct%rarea_c )  ! Cell Corners
     
-    deallocate ( Atm% dx )
-    deallocate ( Atm%rdx )
-    deallocate ( Atm% dy )
-    deallocate ( Atm%rdy )
+    deallocate ( Atm%gridstruct% dx )
+    deallocate ( Atm%gridstruct%rdx )
+    deallocate ( Atm%gridstruct% dy )
+    deallocate ( Atm%gridstruct%rdy )
     
-    deallocate ( Atm% dxc )
-    deallocate ( Atm%rdxc )
-    deallocate ( Atm% dyc )
-    deallocate ( Atm%rdyc )
+    deallocate ( Atm%gridstruct% dxc )
+    deallocate ( Atm%gridstruct%rdxc )
+    deallocate ( Atm%gridstruct% dyc )
+    deallocate ( Atm%gridstruct%rdyc )
     
-    deallocate ( Atm% dxa )
-    deallocate ( Atm%rdxa )
-    deallocate ( Atm% dya )
-    deallocate ( Atm%rdya )
+    deallocate ( Atm%gridstruct% dxa )
+    deallocate ( Atm%gridstruct%rdxa )
+    deallocate ( Atm%gridstruct% dya )
+    deallocate ( Atm%gridstruct%rdya )
     
-    deallocate ( Atm%grid  )
-    deallocate ( Atm%agrid )
-    deallocate ( Atm%sina )   ! SIN(angle of intersection)
-    deallocate ( Atm%cosa )   ! COS(angle of intersection)
+    deallocate ( Atm%gridstruct%grid  )
+    deallocate ( Atm%gridstruct%agrid )
+    deallocate ( Atm%gridstruct%sina )   ! SIN(angle of intersection)
+    deallocate ( Atm%gridstruct%cosa )   ! COS(angle of intersection)
     
-    deallocate ( Atm%  e1 )
-    deallocate ( Atm%  e2 )
+    deallocate ( Atm%gridstruct%  e1 )
+    deallocate ( Atm%gridstruct%  e2 )
 
 
 
 
-    deallocate (Atm%iinta, &
-         Atm%jinta,  &
-         Atm%iintb, &
-         Atm%jintb )
+    deallocate (Atm%gridstruct%iinta, &
+         Atm%gridstruct%jinta,  &
+         Atm%gridstruct%iintb, &
+         Atm%gridstruct%jintb )
 
-#ifndef NO_GRID_G
-    deallocate ( Atm%grid_g )
-#endif
+    deallocate ( Atm%gridstruct%edge_s )
+    deallocate ( Atm%gridstruct%edge_n )
+    deallocate ( Atm%gridstruct%edge_w )
+    deallocate ( Atm%gridstruct%edge_e )
 
-    deallocate ( Atm%edge_s )
-    deallocate ( Atm%edge_n )
-    deallocate ( Atm%edge_w )
-    deallocate ( Atm%edge_e )
+    deallocate ( Atm%gridstruct%edge_vect_s )
+    deallocate ( Atm%gridstruct%edge_vect_n )
+    deallocate ( Atm%gridstruct%edge_vect_w )
+    deallocate ( Atm%gridstruct%edge_vect_e )
 
-    deallocate ( Atm%edge_vect_s )
-    deallocate ( Atm%edge_vect_n )
-    deallocate ( Atm%edge_vect_w )
-    deallocate ( Atm%edge_vect_e )
-
-    deallocate ( Atm%ex_s )
-    deallocate ( Atm%ex_n )
-    deallocate ( Atm%ex_w )
-    deallocate ( Atm%ex_e )
+    deallocate ( Atm%gridstruct%ex_s )
+    deallocate ( Atm%gridstruct%ex_n )
+    deallocate ( Atm%gridstruct%ex_w )
+    deallocate ( Atm%gridstruct%ex_e )
 
 
     ! For diveregnce damping:
-    deallocate (  Atm%divg_u )
-    deallocate (  Atm%divg_v )
+    deallocate (  Atm%gridstruct%divg_u )
+    deallocate (  Atm%gridstruct%divg_v )
 
-    deallocate (  Atm%z11 )
-    deallocate (  Atm%z12 )
-    deallocate (  Atm%z21 )
-    deallocate (  Atm%z22 )
+    deallocate (  Atm%gridstruct%z11 )
+    deallocate (  Atm%gridstruct%z12 )
+    deallocate (  Atm%gridstruct%z21 )
+    deallocate (  Atm%gridstruct%z22 )
 
-    deallocate (  Atm%a11 )
-    deallocate (  Atm%a12 )
-    deallocate (  Atm%a21 )
-    deallocate (  Atm%a22 )
-    deallocate ( Atm%vlon )
-    deallocate ( Atm%vlat )
+    deallocate (  Atm%gridstruct%a11 )
+    deallocate (  Atm%gridstruct%a12 )
+    deallocate (  Atm%gridstruct%a21 )
+    deallocate (  Atm%gridstruct%a22 )
+    deallocate ( Atm%gridstruct%vlon )
+    deallocate ( Atm%gridstruct%vlat )
     ! Coriolis parameters:
-    deallocate ( Atm%f0 )
-    deallocate ( Atm%fC )
+    deallocate ( Atm%gridstruct%f0 )
+    deallocate ( Atm%gridstruct%fC )
 
     ! Corner unit vectors:
-    deallocate( Atm%ee1 )
-    deallocate( Atm%ee2 )
+    deallocate( Atm%gridstruct%ee1 )
+    deallocate( Atm%gridstruct%ee2 )
 
     ! Center unit vectors:
-    deallocate( Atm%ec1 )
-    deallocate( Atm%ec2 )
+    deallocate( Atm%gridstruct%ec1 )
+    deallocate( Atm%gridstruct%ec2 )
 
     ! Edge unit vectors:
-    deallocate( Atm%ew )
-    deallocate( Atm%es )
+    deallocate( Atm%gridstruct%ew )
+    deallocate( Atm%gridstruct%es )
 
     ! Edge unit "Normal" vectors: (for omega computation)
-    deallocate( Atm%en1 )   ! E-W edges
-    deallocate( Atm%en2 )   ! N-S egdes
+    deallocate( Atm%gridstruct%en1 )   ! E-W edges
+    deallocate( Atm%gridstruct%en2 )   ! N-S egdes
 
-    deallocate ( Atm%cosa_u )
-    deallocate ( Atm%sina_u )
-    deallocate ( Atm%rsin_u )
+    deallocate ( Atm%gridstruct%cosa_u )
+    deallocate ( Atm%gridstruct%sina_u )
+    deallocate ( Atm%gridstruct%rsin_u )
 
-    deallocate ( Atm%cosa_v )
-    deallocate ( Atm%sina_v )
-    deallocate ( Atm%rsin_v )
+    deallocate ( Atm%gridstruct%cosa_v )
+    deallocate ( Atm%gridstruct%sina_v )
+    deallocate ( Atm%gridstruct%rsin_v )
 
-    deallocate ( Atm%cosa_s )    ! cell center
-    deallocate ( Atm%sina_s )    ! cell center
+    deallocate ( Atm%gridstruct%cosa_s )    ! cell center
+    deallocate ( Atm%gridstruct%sina_s )    ! cell center
 
-    deallocate (  Atm%rsin2 )    ! cell center
+    deallocate (  Atm%gridstruct%rsin2 )    ! cell center
 
 
     ! Super (composite) grid:
@@ -1448,132 +1182,334 @@ contains
     !     |       |
     !     6---2---7
 
-    deallocate ( Atm%cos_sg )
-    deallocate ( Atm%sin_sg )
+    deallocate ( Atm%gridstruct%cos_sg )
+    deallocate ( Atm%gridstruct%sin_sg )
 
-    deallocate( Atm%eww )
-    deallocate( Atm%ess )
+    deallocate( Atm%gridstruct%eww )
+    deallocate( Atm%gridstruct%ess )
 
-    deallocate ( Atm%   fv_olr )
-    deallocate ( Atm%fv_abs_sw )
+    if (Atm%neststruct%nested) then
+       deallocate(Atm%neststruct%ind_h)
+       deallocate(Atm%neststruct%ind_u)
+       deallocate(Atm%neststruct%ind_v)
 
-    deallocate ( Atm% zs_g )
-    deallocate ( Atm%oro_g )
-    deallocate ( Atm%sgh_g )
+       deallocate(Atm%neststruct%wt_h)
+       deallocate(Atm%neststruct%wt_u)
+       deallocate(Atm%neststruct%wt_v)
 
-    deallocate ( Atm%phi0 )
-    deallocate (  Atm%ua0 )
-    deallocate (  Atm%va0 )
-
-    if (Atm%test_case == 9) then
-       deallocate( Atm%case9_B )
-    end if
-
-    if (Atm%test_case == 7) then
-       deallocate (   Atm%gh_table )
-       deallocate ( Atm%lats_table )
-    end if
-
-    deallocate(Atm%u0)
-    deallocate ( Atm%v0)
-    deallocate ( Atm%dp)
-    deallocate ( Atm%t0)
-
-    if (Atm%nested) then
-       deallocate(Atm%ind_h)
-       deallocate(Atm%ind_u)
-       deallocate(Atm%ind_v)
-
-       deallocate(Atm%wt_h)
-       deallocate(Atm%wt_u)
-       deallocate(Atm%wt_v)
-
-          deallocate(Atm%h_east)
-          deallocate(Atm%u_east)
-          deallocate(Atm%v_east)
-          deallocate(Atm%uc_east_t0)
-          deallocate(Atm%vc_east_t0)
-          deallocate(Atm%uc_east_t1)
-          deallocate(Atm%vc_east_t1)
-          if (Atm%ncnst > 0) deallocate(Atm%q_east)
-          if (Atm%ncnst > 0) deallocate(Atm%q_east_t0)
-
-          deallocate(Atm%h_south)
-          deallocate(Atm%u_south)
-          deallocate(Atm%v_south)
-          deallocate(Atm%uc_south_t0)
-          deallocate(Atm%vc_south_t0)
-          deallocate(Atm%uc_south_t1)
-          deallocate(Atm%vc_south_t1)
-          if (Atm%ncnst > 0) deallocate(Atm%q_south)
-          if (Atm%ncnst > 0) deallocate(Atm%q_south_t0)
-
-          deallocate(Atm%h_west)
-          deallocate(Atm%u_west)
-          deallocate(Atm%v_west)
-          deallocate(Atm%uc_west_t0)
-          deallocate(Atm%vc_west_t0)
-          deallocate(Atm%uc_west_t1)
-          deallocate(Atm%vc_west_t1)
-          if (Atm%ncnst > 0) deallocate(Atm%q_west)
-          if (Atm%ncnst > 0) deallocate(Atm%q_west_t0)
-
-          deallocate(Atm%h_north)
-          deallocate(Atm%u_north)
-          deallocate(Atm%v_north)
-          deallocate(Atm%uc_north_t0)
-          deallocate(Atm%vc_north_t0)
-          deallocate(Atm%uc_north_t1)
-          deallocate(Atm%vc_north_t1)
-          if (Atm%ncnst > 0) deallocate(Atm%q_north)
-          if (Atm%ncnst > 0) deallocate(Atm%q_north_t0)
-
-          if (Atm%ncnst > 0 .and. Atm%nestbctype > 1) deallocate( Atm%nest_fx_west_accum, Atm%nest_fx_east_accum, Atm%nest_fx_south_accum, Atm%nest_fx_north_accum) 
-
-       if (Atm%twowaynest) deallocate(Atm%ind_update_h)
+       call deallocate_fv_nest_BC_type(Atm%neststruct%delp_BC)
+       call deallocate_fv_nest_BC_type(Atm%neststruct%u_BC)
+       call deallocate_fv_nest_BC_type(Atm%neststruct%v_BC)
+       call deallocate_fv_nest_BC_type(Atm%neststruct%uc_BC)
+       call deallocate_fv_nest_BC_type(Atm%neststruct%vc_BC)
+       if (allocated(Atm%neststruct%q_BC)) then
+          do n=1,size(Atm%neststruct%q_BC)
+             call deallocate_fv_nest_BC_type(Atm%neststruct%q_BC(n))
+          enddo
+       endif
 
 #ifndef SW_DYNAMICS
-
-          deallocate(Atm%pt_east    )
-          if (.not. Atm%hydrostatic) deallocate(Atm%w_east      )
-
-          deallocate(Atm%pt_south    )
-          if (.not. Atm%hydrostatic) deallocate(Atm%w_south      )
-
-          deallocate(Atm%pt_west  )
-          if (.not. Atm%hydrostatic) deallocate(Atm%w_west   )
-
-          deallocate(Atm%pt_north    )
-          if (.not. Atm%hydrostatic) deallocate(Atm%w_north      )
-
+       call deallocate_fv_nest_BC_type(Atm%neststruct%pt_BC)
+       if (.not.Atm%flagstruct%hydrostatic) then
+          call deallocate_fv_nest_BC_type(Atm%neststruct%w_BC)
+          call deallocate_fv_nest_BC_type(Atm%neststruct%delz_BC)
+       endif
 #endif
+
+
+       if (Atm%neststruct%twowaynest) deallocate(Atm%neststruct%ind_update_h)
+
     end if
 
-#ifdef MARS_GCM
-    deallocate( Atm%tmars)
-#endif
-
-#ifndef SW_DYNAMICS
-    deallocate( Atm%u_dt)
-    deallocate( Atm%v_dt)
-    deallocate( Atm%t_dt)
-    deallocate( Atm%q_dt)
-    deallocate( Atm%p_full)
-    deallocate( Atm%z_full)
-    deallocate( Atm%p_half)
-    deallocate( Atm%z_half)
-    if ( Atm%tq_filter ) then
-         deallocate (  Atm%t_phys)
-         deallocate (  Atm%q_phys)
-    endif
-#endif
-
-       if (Atm%grid_type < 4) then
-          deallocate(Atm%grid_global)
-       end if
-
-       Atm%allocated = .false.
+    if (Atm%flagstruct%grid_type < 4) then
+       deallocate(Atm%grid_global)
+    end if
+    
+    Atm%allocated = .false.
 
   end subroutine deallocate_fv_atmos_type
+
+
+subroutine allocate_fv_nest_BC_type_3D_Atm(BC,Atm,ns,istag,jstag,dummy)
+
+  type(fv_nest_BC_type_3D), intent(INOUT) :: BC
+  type(fv_atmos_type), intent(IN) :: Atm
+  integer, intent(IN) :: ns, istag, jstag
+  logical, intent(IN) :: dummy
+
+  integer :: is, ie, js, je, isd, ied, jsd, jed, npx, npy, npz, ng
+
+  if (BC%allocated) return
+
+  is = Atm%bd%is
+  ie = Atm%bd%ie
+  js = Atm%bd%js
+  je = Atm%bd%je
+
+  isd = Atm%bd%isd
+  ied = Atm%bd%ied
+  jsd = Atm%bd%jsd
+  jed = Atm%bd%jed
+
+  npx = Atm%npx
+  npy = Atm%npy
+  npz = Atm%npz
+
+  ng = Atm%ng
+
+  call allocate_fv_nest_BC_type_3D(BC,is,ie,js,je,isd,ied,jsd,jed,npx,npy,npz,ng,ns,istag,jstag,dummy)
+
+
+end subroutine allocate_fv_nest_BC_type_3D_Atm
+
+subroutine allocate_fv_nest_BC_type_3D(BC,is,ie,js,je,isd,ied,jsd,jed,npx,npy,npz,ng,ns,istag,jstag,dummy)
+
+  type(fv_nest_BC_type_3D), intent(INOUT) :: BC
+  integer, intent(IN) :: ns, istag, jstag
+  logical, intent(IN) :: dummy
+
+  integer, intent(IN) :: is, ie, js, je, isd, ied, jsd, jed, npx, npy, npz, ng
+
+  if (BC%allocated) return
+
+
+  if (ie == npx-1 .and. .not. dummy) then
+     allocate(BC%east_t1(ie+1-ns+istag:ied+istag,jsd:jed+jstag,npz))
+     allocate(BC%east_t0(ie+1-ns+istag:ied+istag,jsd:jed+jstag,npz))
+  else
+     allocate(BC%east_t1(1,1,npz))
+     allocate(BC%east_t0(1,1,npz))
+  end if
+
+  if (js == 1 .and. .not. dummy) then
+     allocate(BC%south_t1(isd:ied+istag,jsd:js-1+ns,npz))
+     allocate(BC%south_t0(isd:ied+istag,jsd:js-1+ns,npz))
+  else
+     allocate(BC%south_t1(1,1,npz))
+     allocate(BC%south_t0(1,1,npz))
+  end if
+
+  if (is == 1 .and. .not. dummy) then
+     allocate(BC%west_t1(isd:is-1+ns,jsd:jed+jstag,npz))
+     allocate(BC%west_t0(isd:is-1+ns,jsd:jed+jstag,npz))
+  else
+     allocate(BC%west_t1(1,1,npz))
+     allocate(BC%west_t0(1,1,npz))
+  end if
+
+  if (je == npy-1 .and. .not. dummy) then
+     allocate(BC%north_t1(isd:ied+istag,je+1-ns+jstag:jed+jstag,npz))
+     allocate(BC%north_t0(isd:ied+istag,je+1-ns+jstag:jed+jstag,npz))
+  else
+     allocate(BC%north_t1(1,1,npz))
+     allocate(BC%north_t0(1,1,npz))
+  end if
+
+  BC%allocated = .true.
+
+end subroutine allocate_fv_nest_BC_type_3D
+
+subroutine deallocate_fv_nest_BC_type_3d(BC)
+
+  type(fv_nest_BC_type_3d) :: BC
+
+  if (.not. BC%allocated) return
+
+     deallocate(BC%north_t1)
+     deallocate(BC%south_t1)
+     deallocate(BC%west_t1)
+     deallocate(BC%east_t1)
+
+  if (allocated(BC%north_t0)) then
+     deallocate(BC%north_t0)
+     deallocate(BC%south_t0)
+     deallocate(BC%west_t0)
+     deallocate(BC%east_t0)
+  endif
+
+  BC%allocated = .false.
+
+end subroutine deallocate_fv_nest_BC_type_3d
+
+  subroutine broadcast_fv_atmos_data(Atm, fromproc, to_pelist)
+
+    type(fv_atmos_type) :: Atm
+    integer, intent(IN) :: fromproc, to_pelist(:)
+
+    character(len=128) :: sendchar(4)
+
+     call mpp_broadcast( Atm%grid_number, fromproc, to_pelist)
+     call mpp_broadcast( Atm%grid_active, fromproc, to_pelist)
+
+     !NOTE: mpp_broadcast can only send ARRAYS of character strings, and not individual
+     !character strings. The code here is a work-around.
+     sendchar(1) = Atm%flagstruct%grid_name
+     sendchar(2) = Atm%flagstruct%grid_file
+     sendchar(3) = Atm%flagstruct%res_latlon_dynamics
+     sendchar(4) = Atm%flagstruct%res_latlon_tracers
+     call mpp_broadcast( sendchar, size(sendchar), fromproc, to_pelist)
+     Atm%flagstruct%grid_name = sendchar(1)
+     Atm%flagstruct%grid_file = sendchar(2)
+     Atm%flagstruct%res_latlon_dynamics = sendchar(3)
+     Atm%flagstruct%res_latlon_tracers = sendchar(4)
+     call mpp_broadcast( Atm%flagstruct%grid_type, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%hord_mt, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%kord_mt, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%kord_wz, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%hord_vt, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%hord_tm, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%hord_dp, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%kord_tm, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%hord_tr, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%kord_tr, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%scale_z, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%w_max, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%scale_z, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%w_max, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%z_min, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%nord, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%dddmp, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%d2_bg, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%d4_bg, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%vtdm4, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%d2_bg_k1, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%d2_bg_k2, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%d2_divg_max_k1, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%d2_divg_max_k2, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%damp_k_k1, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%damp_k_k2, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%n_zs_filter, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%nord_zs_filter, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%no_dycore, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%replace_w, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%convert_ke, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%do_vort_damp, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%use_old_omega, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%beta, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%n_sponge, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%d_ext, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%nwat, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%warm_start, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%inline_q, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%n_sponge, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%d_ext, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%nwat, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%warm_start, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%inline_q, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%shift_fac, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%do_schmidt, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%stretch_fac, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%target_lat, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%target_lon, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%reset_eta, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%p_fac, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%a_imp, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%n_split, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%m_split, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%k_split, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%q_split, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%print_freq, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%npx, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%npy, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%npz, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%npz_rst, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%ncnst, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%pnats, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%ntiles, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%ndims, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%nf_omega, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%fv_sg_adj, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%na_init, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%p_ref, fromproc, to_pelist)
+#ifdef MARS_GCM
+     call mpp_broadcast( Atm%flagstruct%reference_sfc_pres, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%sponge_damp, fromproc, to_pelist)
+#endif
+     call mpp_broadcast( Atm%flagstruct%dry_mass, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%p_ref, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%nt_prog, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%nt_phys, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%tau_h2o, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%d_con, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%consv_te, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%tau, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%rf_center, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%tq_filter, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%filter_phys, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%dwind_2d, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%breed_vortex_inline, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%range_warn, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%fill, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%fill_dp, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%fill_wz, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%non_ortho, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%adiabatic, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%moist_phys, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%do_Held_Suarez, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%reproduce_sum, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%adjust_dry_mass, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%fv_debug, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%srf_init, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%mountain, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%remap_t, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%z_tracer, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%old_divg_damp, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%fv_land, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%nudge, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%ncep_ic, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%fv_diag_ic, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%external_ic, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%hydrostatic, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%phys_hydrostatic, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%hybrid_z, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%Make_NH, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%make_hybrid_z, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%a2b_ord, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%c2l_ord, fromproc, to_pelist)
+     call mpp_broadcast( Atm%ks, fromproc, to_pelist)
+     call mpp_broadcast( Atm%bd%ng, fromproc, to_pelist)
+     call mpp_broadcast( Atm%num_contact, fromproc, to_pelist)
+     call mpp_broadcast( Atm%npes_per_tile, fromproc, to_pelist)
+     call mpp_broadcast( Atm%tile, fromproc, to_pelist)
+     call mpp_broadcast( Atm%npes_this_grid, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%square_domain, fromproc, to_pelist)
+     call mpp_broadcast( Atm%layout, 2, fromproc, to_pelist)
+     call mpp_broadcast( Atm%io_layout, 2, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%latlon, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%cubed_sphere, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%have_south_pole, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%have_north_pole, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%stretched_grid, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%npx_g, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%npy_g, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%ntiles_g, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%acapN, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%acapS, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%globalarea, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%dx_const, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%dy_const, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%deglon_start, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%deglon_stop, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%deglat_start, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%deglat_stop, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%deglat, fromproc, to_pelist)
+     call mpp_broadcast( Atm%ptop, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%da_min, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%da_max, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%da_min_c, fromproc, to_pelist)
+     call mpp_broadcast( Atm%gridstruct%da_max_c, fromproc, to_pelist)
+     call mpp_broadcast( Atm%neststruct%parent_tile, fromproc, to_pelist)
+     call mpp_broadcast( Atm%neststruct%refinement, fromproc, to_pelist)
+     call mpp_broadcast( Atm%neststruct%nested, fromproc, to_pelist)
+     call mpp_broadcast( Atm%neststruct%nestbctype, fromproc, to_pelist)
+     call mpp_broadcast( Atm%neststruct%nsponge, fromproc, to_pelist)
+     call mpp_broadcast( Atm%neststruct%nestupdate, fromproc, to_pelist)
+     call mpp_broadcast( Atm%neststruct%twowaynest, fromproc, to_pelist)
+     call mpp_broadcast( Atm%neststruct%ioffset, fromproc, to_pelist)
+     call mpp_broadcast( Atm%neststruct%joffset, fromproc, to_pelist)
+     call mpp_broadcast( Atm%neststruct%s_weight, fromproc, to_pelist)
+
+   end subroutine broadcast_fv_atmos_data
+
 
 end module fv_arrays_mod

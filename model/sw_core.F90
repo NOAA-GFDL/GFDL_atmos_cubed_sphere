@@ -1,20 +1,9 @@
  module sw_core_mod
 
- use fv_mp_mod,         only: ng, is,js,ie,je, isd,jsd,ied,jed,  &
-                              mp_corner_comm, domain, gid
- use fv_grid_tools_mod, only: npx=>npx_g,npy=>npy_g, cosa, sina,  &
-                              rdxc, rdyc, dx,dy, dxc,dyc, dxa,dya,  &
-                              rdxa, rdya, area, area_c, rarea, rarea_c, rdx, rdy
- use fv_grid_tools_mod, only: grid_type
+ use fv_mp_mod,         only: ng
  use tp_core_mod,       only: fv_tp_2d, pert_ppm, copy_corners
- use fv_grid_utils_mod, only: edge_vect_s,edge_vect_n,edge_vect_w,edge_vect_e,  &
-                              sw_corner, se_corner, ne_corner, nw_corner,       &
-                              cosa_u, cosa_v, cosa_s, sina_s, sina_u, sina_v,   &
-                              rsin_u, rsin_v, rsina, ec1, ec2, ew, es,          &
-                              big_number, da_min_c, da_min, fC, f0, stretched_grid, &
-                              rsin2, divg_u, divg_v, gnomonic_grid, cos_sg, sin_sg
  use fv_mp_mod, only: fill_corners, XDir, YDir
- use fv_current_grid_mod, only: nested
+ use fv_arrays_mod, only: fv_grid_type, fv_grid_bounds_type, fv_flags_type
 
 #ifdef SW_DYNAMICS
  use test_cases_mod,   only: test_case
@@ -54,45 +43,95 @@
   real, parameter:: b5 = -0.05
 
 !---- version number -----
-  character(len=128) :: version = '$Id: sw_core.F90,v 17.0.2.5.2.12 2012/05/02 14:22:58 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201303 $'
+  character(len=128) :: version = '$Id: sw_core.F90,v 17.0.2.5.2.12.2.10 2013/03/18 21:49:25 Lucas.Harris Exp $'
+  character(len=128) :: tagname = '$Name: siena_201305 $'
 
       private
-      public :: c_sw, d_sw, d2a2c, d2a2c_vect,  divergence_corner, divergence_corner_nest
+      public :: c_sw, d_sw, d2a2c_vect,  divergence_corner, divergence_corner_nest, fill_4corners
 
   contains
 
 
    subroutine c_sw(delpc, delp, ptc, pt, u,v, w, uc,vc, ua,va, wc,  &
-                   ut, vt, divg_d, nord, dt2, hydrostatic, dord4)
+                   ut, vt, divg_d, nord, dt2, hydrostatic, dord4, &
+                   bd, gridstruct, flagstruct)
 
-      real, intent(INOUT), dimension(isd:ied,  jsd:jed+1):: u, vc
-      real, intent(INOUT), dimension(isd:ied+1,jsd:jed  ):: v, uc
-      real, intent(INOUT), dimension(isd:ied, jsd:jed):: delp,  pt,  ua, va, ut, vt, w
-      real, intent(OUT  ), dimension(isd:ied, jsd:jed):: delpc, ptc, wc
-      real, intent(OUT), dimension(isd:ied+1,jsd:jed+1):: divg_d
+      type(fv_grid_bounds_type), intent(IN) :: bd
+      real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed+1) :: u, vc
+      real, intent(INOUT), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ) :: v, uc
+      real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed  ) :: delp,  pt,  ua, va, ut, vt, w
+      real, intent(OUT  ), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed  ) :: delpc, ptc, wc
+      real, intent(OUT  ), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) :: divg_d
       integer, intent(IN) :: nord
       real,    intent(IN) :: dt2
       logical, intent(IN) :: hydrostatic
       logical, intent(IN) :: dord4
+      type(fv_grid_type),  intent(IN), target :: gridstruct
+      type(fv_flags_type), intent(IN), target :: flagstruct
+
 ! Local:
-      real, dimension(is-1:ie+1,js-1:je+1):: vort, ke
-      real, dimension(is-1:ie+2,js-1:je+1):: fx, fx1, fx2
-      real, dimension(is-1:ie+1,js-1:je+2):: fy, fy1, fy2
+      real, dimension(bd%is-1:bd%ie+1,bd%js-1:bd%je+1):: vort, ke
+      real, dimension(bd%is-1:bd%ie+2,bd%js-1:bd%je+1):: fx, fx1, fx2
+      real, dimension(bd%is-1:bd%ie+1,bd%js-1:bd%je+2):: fy, fy1, fy2
       real :: dt4
       integer :: i,j, is2, ie1
       integer iep1, jep1
 
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+      integer :: npx, npy
+      logical :: nested
+
+      real, pointer, dimension(:,:)   :: rarea, rarea_c
+      real, pointer, dimension(:,:,:) :: sin_sg, cos_sg
+      real, pointer, dimension(:,:)   :: cosa_u, cosa_v
+      real, pointer, dimension(:,:)   :: sina_u, sina_v
+
+      real, pointer, dimension(:,:) :: fC
+      real, pointer, dimension(:,:) :: rdxc, rdyc, dx, dy, dxc, dyc
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+
+      npx = flagstruct%npx
+      npy = flagstruct%npy
+      nested = gridstruct%nested
+
+      rarea   => gridstruct%rarea
+      rarea_c => gridstruct%rarea_c
+      sin_sg  => gridstruct%sin_sg
+      cos_sg  => gridstruct%cos_sg
+      cosa_u  => gridstruct%cosa_u
+      cosa_v  => gridstruct%cosa_v
+      sina_u  => gridstruct%sina_u
+      sina_v  => gridstruct%sina_v
+      fC      => gridstruct%fC
+      rdxc    => gridstruct%rdxc
+      rdyc    => gridstruct%rdyc
+      dx      => gridstruct%dx
+      dy      => gridstruct%dy
+      dxc     => gridstruct%dxc
+      dyc     => gridstruct%dyc
+
 !     iep1 = ie;   jep1 = je
       iep1 = ie+1; jep1 = je+1
 
-      call d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4)  
+      call d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4, gridstruct, bd, &
+           npx, npy, nested, flagstruct%grid_type, &
+           gridstruct%sw_corner, gridstruct%se_corner, &
+           gridstruct%nw_corner, gridstruct%ne_corner)  
 
       if( nord > 0 ) then
          if (nested) then
-            call divergence_corner_nest(u, v, ua, va, divg_d)
+            call divergence_corner_nest(u, v, ua, va, divg_d, gridstruct, flagstruct, bd)
          else
-            call divergence_corner(u, v, ua, va, divg_d)
+            call divergence_corner(u, v, ua, va, divg_d, gridstruct, flagstruct, bd)
          endif
       endif
 
@@ -143,7 +182,7 @@
 ! Transport delp:
 !----------------
 ! Xdir:
-      if (grid_type < 3 .and. .not. nested) call fill2_4corners(delp, pt, 1)
+      if (flagstruct%grid_type < 3 .and. .not. nested) call fill2_4corners(delp, pt, 1, bd, npx, npy, gridstruct%sw_corner, gridstruct%se_corner, gridstruct%ne_corner, gridstruct%nw_corner)
       if ( hydrostatic ) then
 #ifdef SW_DYNAMICS
            do j=js-1,jep1
@@ -172,7 +211,7 @@
            enddo
 #endif
       else
-           if (grid_type < 3) call fill_4corners(w, 1)
+           if (flagstruct%grid_type < 3) call fill_4corners(w, 1, bd, npx, npy, gridstruct%sw_corner, gridstruct%se_corner, gridstruct%ne_corner, gridstruct%nw_corner)
            do j=js-1,je+1
               do i=is-1,ie+2      
                  if ( ut(i,j) > 0. ) then
@@ -192,7 +231,7 @@
       endif
 
 ! Ydir:
-      if (grid_type < 3 .and. .not. nested) call fill2_4corners(delp, pt, 2)
+      if (flagstruct%grid_type < 3 .and. .not. nested) call fill2_4corners(delp, pt, 2, bd, npx, npy, gridstruct%sw_corner, gridstruct%se_corner, gridstruct%ne_corner, gridstruct%nw_corner)
       if ( hydrostatic ) then
            do j=js-1,jep1+1
               do i=is-1,iep1      
@@ -219,7 +258,7 @@
               enddo
            enddo
       else
-           if (grid_type < 3) call fill_4corners(w, 2)
+           if (flagstruct%grid_type < 3) call fill_4corners(w, 2, bd, npx, npy, gridstruct%sw_corner, gridstruct%se_corner, gridstruct%ne_corner, gridstruct%nw_corner)
            do j=js-1,je+2
               do i=is-1,ie+1      
                  if ( vt(i,j) > 0. ) then
@@ -351,10 +390,10 @@
       enddo
 
 ! Remove the extra term at the corners:
-      if ( sw_corner ) vort(1,    1) = vort(1,    1) + fy(0,   1)
-      if ( se_corner ) vort(npx  ,1) = vort(npx,  1) - fy(npx, 1)
-      if ( ne_corner ) vort(npx,npy) = vort(npx,npy) - fy(npx,npy)
-      if ( nw_corner ) vort(1,  npy) = vort(1,  npy) + fy(0,  npy)
+      if ( gridstruct%sw_corner ) vort(1,    1) = vort(1,    1) + fy(0,   1)
+      if ( gridstruct%se_corner ) vort(npx  ,1) = vort(npx,  1) - fy(npx, 1)
+      if ( gridstruct%ne_corner ) vort(npx,npy) = vort(npx,npy) - fy(npx,npy)
+      if ( gridstruct%nw_corner ) vort(1,  npy) = vort(1,  npy) + fy(0,  npy)
 
 !----------------------------
 ! Compute absolute vorticity
@@ -435,7 +474,8 @@
                    crx_adv, cry_adv,  xfx_adv, yfx_adv, heat_source,    &
                    zvir, sphum, nq, q, k, km, inline_q,  &
                    dt, hord_tr, hord_mt, hord_vt, hord_tm, hord_dp, nord,   &
-                   nord_v, dddmp, d2_bg, d4_bg, vtdm4, d_con, hydrostatic)
+                   nord_v, dddmp, d2_bg, d4_bg, vtdm4, d_con, hydrostatic, &
+                   gridstruct, flagstruct, bd)
 
       integer, intent(IN):: hord_tr, hord_mt, hord_vt, hord_tm, hord_dp
       integer, intent(IN):: nord   ! nord=1 (del-4) or 3 (del-8)
@@ -443,41 +483,44 @@
       integer, intent(IN):: sphum, nq, k, km
       real   , intent(IN):: dt, dddmp, d2_bg, d4_bg, vtdm4, d_con
       real   , intent(IN):: zvir
-      real, intent(inout):: divg_d(isd:ied+1,jsd:jed+1) ! divergence
-      real, intent(INOUT), dimension(isd:ied,  jsd:jed):: delp, pt, ua, va, w
-      real, intent(INOUT), dimension(isd:ied  ,jsd:jed+1):: u, vc
-      real, intent(INOUT), dimension(isd:ied+1,jsd:jed  ):: v, uc
-      real, intent(INOUT):: q(isd:ied,jsd:jed,km,nq)
-      real, intent(OUT),   dimension(isd:ied,  jsd:jed)  :: delpc, ptc
-      real, intent(OUT),   dimension(is:ie,js:je):: heat_source
+      type(fv_grid_bounds_type), intent(IN) :: bd
+      real, intent(inout):: divg_d(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) ! divergence
+      real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: delp, pt, ua, va, w
+      real, intent(INOUT), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1):: u, vc
+      real, intent(INOUT), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: v, uc
+      real, intent(INOUT):: q(bd%isd:bd%ied,bd%jsd:bd%jed,km,nq)
+      real, intent(OUT),   dimension(bd%isd:bd%ied,  bd%jsd:bd%jed)  :: delpc, ptc
+      real, intent(OUT),   dimension(bd%is:bd%ie,bd%js:bd%je):: heat_source
 ! The flux capacitors:
-      real, intent(INOUT):: xflux(is:ie+1,js:je  )
-      real, intent(INOUT):: yflux(is:ie  ,js:je+1)
+      real, intent(INOUT):: xflux(bd%is:bd%ie+1,bd%js:bd%je  )
+      real, intent(INOUT):: yflux(bd%is:bd%ie  ,bd%js:bd%je+1)
 !------------------------
-      real, intent(INOUT)::    cx(is:ie+1,jsd:jed  )
-      real, intent(INOUT)::    cy(isd:ied,js:je+1)
+      real, intent(INOUT)::    cx(bd%is:bd%ie+1,bd%jsd:bd%jed  )
+      real, intent(INOUT)::    cy(bd%isd:bd%ied,bd%js:bd%je+1)
       logical, intent(IN):: hydrostatic
       logical, intent(IN):: inline_q
-      real, intent(OUT), dimension(is:ie+1,jsd:jed):: crx_adv, xfx_adv
-      real, intent(OUT), dimension(isd:ied,js:je+1):: cry_adv, yfx_adv
+      real, intent(OUT), dimension(bd%is:bd%ie+1,bd%jsd:bd%jed):: crx_adv, xfx_adv
+      real, intent(OUT), dimension(bd%isd:bd%ied,bd%js:bd%je+1):: cry_adv, yfx_adv
+      type(fv_grid_type), intent(IN), target :: gridstruct
+      type(fv_flags_type), intent(IN), target :: flagstruct
 ! Local:
-      real :: ut(isd:ied+1,jsd:jed)
-      real :: vt(isd:ied,  jsd:jed+1)
+      real :: ut(bd%isd:bd%ied+1,bd%jsd:bd%jed)
+      real :: vt(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
 !---
-      real :: fx2(isd:ied+1,jsd:jed)
-      real :: fy2(isd:ied,  jsd:jed+1)
-      real :: dw(is:ie,js:je) !  work array
+      real :: fx2(bd%isd:bd%ied+1,bd%jsd:bd%jed)
+      real :: fy2(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
+      real :: dw(bd%is:bd%ie,bd%js:bd%je) !  work array
 !---
-      real, dimension(is:ie+1,js:je+1):: ub, vb
-      real :: wk(isd:ied,jsd:jed) !  work array
-      real :: ke(isd:ied+1,jsd:jed+1) !  needs this for corner_comm
-      real :: vort(isd:ied,jsd:jed)     ! Vorticity
-      real ::   fx(is:ie+1,js:je  )  ! 1-D X-direction Fluxes
-      real ::   fy(is:ie  ,js:je+1)  ! 1-D Y-direction Fluxes
-      real :: ra_x(is:ie,jsd:jed)
-      real :: ra_y(isd:ied,js:je)
-      real :: gx(is:ie+1,js:je  ) 
-      real :: gy(is:ie  ,js:je+1)  ! work Y-dir flux array
+      real, dimension(bd%is:bd%ie+1,bd%js:bd%je+1):: ub, vb
+      real :: wk(bd%isd:bd%ied,bd%jsd:bd%jed) !  work array
+      real :: ke(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) !  needs this for corner_comm
+      real :: vort(bd%isd:bd%ied,bd%jsd:bd%jed)     ! Vorticity
+      real ::   fx(bd%is:bd%ie+1,bd%js:bd%je  )  ! 1-D X-direction Fluxes
+      real ::   fy(bd%is:bd%ie  ,bd%js:bd%je+1)  ! 1-D Y-direction Fluxes
+      real :: ra_x(bd%is:bd%ie,bd%jsd:bd%jed)
+      real :: ra_y(bd%isd:bd%ied,bd%js:bd%je)
+      real :: gx(bd%is:bd%ie+1,bd%js:bd%je  ) 
+      real :: gy(bd%is:bd%ie  ,bd%js:bd%je+1)  ! work Y-dir flux array
       logical :: fill_c
 
       real :: dt4, dt5, dt6
@@ -485,7 +528,62 @@
       real :: damp_v, damp_t, damp_m
       integer :: i,j, is2, ie1, js2, je1, n, nt, n2, iq
 
-      logical, SAVE :: writegeo = .true.
+      real, pointer, dimension(:,:) :: area, area_c, rarea, rarea_c
+
+      real, pointer, dimension(:,:,:) :: sin_sg
+      real, pointer, dimension(:,:)   :: cosa_u, cosa_v, cosa_s
+      real, pointer, dimension(:,:)   :: sina_u, sina_v
+      real, pointer, dimension(:,:)   :: rsin_u, rsin_v, rsina
+      real, pointer, dimension(:,:)   :: f0, rsin2, divg_u, divg_v
+
+      real, pointer, dimension(:,:) ::  cosa, dx, dy, dxc, dyc, rdxa, rdya, rdx, rdy
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+      integer :: npx, npy
+      logical :: nested
+      real    :: da_min, da_min_c
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+
+      npx      = flagstruct%npx
+      npy      = flagstruct%npy
+      nested   = gridstruct%nested
+      da_min   = gridstruct%da_min
+      da_min_c = gridstruct%da_min_c
+
+      area      => gridstruct%area   
+      rarea     => gridstruct%rarea  
+      rarea_c   => gridstruct%rarea_c
+      sin_sg    => gridstruct%sin_sg 
+      cosa_u    => gridstruct%cosa_u 
+      cosa_v    => gridstruct%cosa_v 
+      cosa_s    => gridstruct%cosa_s 
+      sina_u    => gridstruct%sina_u 
+      sina_v    => gridstruct%sina_v 
+      rsin_u    => gridstruct%rsin_u 
+      rsin_v    => gridstruct%rsin_v 
+      rsina     => gridstruct%rsina  
+      f0        => gridstruct%f0     
+      rsin2     => gridstruct%rsin2  
+      divg_u    => gridstruct%divg_u 
+      divg_v    => gridstruct%divg_v 
+      cosa      => gridstruct%cosa   
+      dx        => gridstruct%dx     
+      dy        => gridstruct%dy     
+      dxc       => gridstruct%dxc    
+      dyc       => gridstruct%dyc    
+      rdxa      => gridstruct%rdxa   
+      rdya      => gridstruct%rdya   
+      rdx       => gridstruct%rdx    
+      rdy       => gridstruct%rdy    
 
       damp_v = vtdm4     ! vorticity & w 
       damp_t = vtdm4     ! potential temperature
@@ -518,7 +616,7 @@
         enddo
       else
 #endif
-     if ( grid_type < 3 ) then
+     if ( flagstruct%grid_type < 3 ) then
 
         do j=jsd,jed
            if( (j/=0 .and. j/=1 .and. j/=(npy-1) .and. j/=npy) .or. nested) then
@@ -621,7 +719,7 @@
        !  vt(1,2) = vc(1,2) - avg(ut)*cosa_v(1,2)
        ! in which avg(vt) includes vt(1,2) and avg(ut) includes ut(2,1)
 
-        if( sw_corner ) then
+        if( gridstruct%sw_corner ) then
             damp = 1. / (1.-0.0625*cosa_u(2,0)*cosa_v(1,0))
             ut(2,0) = (uc(2,0)-0.25*cosa_u(2,0)*(vt(1,1)+vt(2,1)+vt(2,0) +vc(1,0) -   &
                       0.25*cosa_v(1,0)*(ut(1,0)+ut(1,-1)+ut(2,-1))) ) * damp
@@ -646,7 +744,7 @@
 
         endif
 
-        if( se_corner ) then
+        if( gridstruct%se_corner ) then
             damp = 1. / (1. - 0.0625*cosa_u(npx-1,0)*cosa_v(npx-1,0))
             ut(npx-1,0) = ( uc(npx-1,0)-0.25*cosa_u(npx-1,0)*(   &
                             vt(npx-1,1)+vt(npx-2,1)+vt(npx-2,0)+vc(npx-1,0) -   &
@@ -674,7 +772,7 @@
 
         endif
 
-        if( ne_corner ) then
+        if( gridstruct%ne_corner ) then
             damp = 1. / (1. - 0.0625*cosa_u(npx-1,npy)*cosa_v(npx-1,npy+1))
             ut(npx-1,npy) = ( uc(npx-1,npy)-0.25*cosa_u(npx-1,npy)*(   &
                               vt(npx-1,npy)+vt(npx-2,npy)+vt(npx-2,npy+1)+vc(npx-1,npy+1) -   &
@@ -701,7 +799,7 @@
 
         endif
 
-        if( nw_corner ) then
+        if( gridstruct%nw_corner ) then
             damp = 1. / (1. - 0.0625*cosa_u(2,npy)*cosa_v(1,npy+1))
             ut(2,npy) = ( uc(2,npy)-0.25*cosa_u(2,npy)*(   &
                           vt(1,npy)+vt(2,npy)+vt(2,npy+1)+vc(1,npy+1) -   &
@@ -731,7 +829,7 @@
        end if !.not. nested
 
      else
-! grid_type >= 3
+! flagstruct%grid_type >= 3
         do j=jsd,jed
            do i=is,ie+1
               ut(i,j) =  uc(i,j)
@@ -819,7 +917,7 @@
 
 
       call fv_tp_2d(delp, crx_adv, cry_adv, npx, npy, hord_dp, fx, fy,  &
-                    xfx_adv,yfx_adv, area, ra_x, ra_y, nord=nord_v, damp_c=damp_m)
+                    xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, nord=nord_v, damp_c=damp_m)
 
 #ifdef SW_DYNAMICS
         do j=js,je
@@ -855,7 +953,7 @@
      if ( inline_q ) then
         do iq=1,nq
            call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv, npx, npy, hord_tr, gx, gy,  &
-                         xfx_adv,yfx_adv, area, ra_x, ra_y, mfx=fx, mfy=fy)
+                         xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, mfx=fx, mfy=fy)
            do j=js,je
               do i=is,ie
                  q(i,j,k,iq) = (q(i,j,k,iq)*wk(i,j) +               &
@@ -899,7 +997,7 @@
         if ( .not. hydrostatic ) then
             if ( damp_v>1.E-5 ) then
                  damp4 = (damp_v*da_min_c)**(nord_v+1)
-                 call del6_vt_flux(nord_v, npx, npy, damp4, w, wk, fx2, fy2)
+                 call del6_vt_flux(nord_v, npx, npy, damp4, w, wk, fx2, fy2, gridstruct, bd)
                 do j=js,je
                    do i=is,ie
                       dw(i,j) = (fx2(i,j)-fx2(i+1,j)+fy2(i,j)-fy2(i,j+1))*rarea(i,j)
@@ -909,7 +1007,7 @@
                 enddo
             endif
             call fv_tp_2d(w, crx_adv,cry_adv, npx, npy, hord_vt, gx, gy, xfx_adv, yfx_adv, &
-                          area, ra_x, ra_y, mfx=fx, mfy=fy)
+                          gridstruct, bd, ra_x, ra_y, mfx=fx, mfy=fy)
             do j=js,je
                do i=is,ie
                   w(i,j) = delp(i,j)*w(i,j) + (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
@@ -926,7 +1024,8 @@
      endif
 
         call fv_tp_2d(pt, crx_adv,cry_adv, npx, npy, hord_tm, gx, gy,  &
-                      xfx_adv,yfx_adv, area, ra_x, ra_y, mfx=fx, mfy=fy, mass=delp, nord=nord_v, damp_c=damp_t)
+                      xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y,     &
+                      mfx=fx, mfy=fy, mass=delp, nord=nord_v, damp_c=damp_t)
 
      if ( inline_q ) then
         do j=js,je
@@ -939,7 +1038,7 @@
         enddo
         do iq=1,nq
            call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv, npx, npy, hord_tr, gx, gy,  &
-                         xfx_adv,yfx_adv, area, ra_x, ra_y, mfx=fx, mfy=fy)
+                         xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, mfx=fx, mfy=fy)
            do j=js,je
               do i=is,ie
                  q(i,j,k,iq) = (q(i,j,k,iq)*wk(i,j) +               &
@@ -1001,7 +1100,7 @@
          js2 = max(2,js); je1 = min(npy-1,je+1)
       end if
 
-      if (grid_type < 3) then
+      if (flagstruct%grid_type < 3) then
 
          if ( js==1 .and. .not. nested ) then
             do i=is,ie+1
@@ -1039,7 +1138,8 @@
          enddo
       endif
 
-      call ytp_v(vb, u, v, ub, hord_mt)
+      call ytp_v(vb, u, v, ub, hord_mt, gridstruct%cosa, gridstruct%dy, gridstruct%rdy, &
+           bd, npx, npy, flagstruct%grid_type, nested)
 
       do j=js,je+1
          do i=is,ie+1
@@ -1047,7 +1147,7 @@
          enddo
       enddo
 
-      if (grid_type < 3) then
+      if (flagstruct%grid_type < 3) then
          if ( is==1  .and. .not. nested) then
             do j=js,je+1
                ub(1,j) = dt5*(ut(1,j-1)+ut(1,j))       ! corner values are incorrect
@@ -1082,7 +1182,8 @@
          enddo
       endif
 
-      call xtp_u(ub, u, v, vb, hord_mt)
+      call xtp_u(ub, u, v, vb, hord_mt, gridstruct%cosa, gridstruct%dx, gridstruct%rdx, &
+           bd, npx, npy, flagstruct%grid_type, nested)
 
       do j=js,je+1
          do i=is,ie+1
@@ -1093,40 +1194,32 @@
 !-----------------------------------------
 ! Fix KE at the 4 corners of the face:
 !-----------------------------------------
-!  if ( gnomonic_grid ) then
     if (.not. nested) then
       dt6 = dt / 6.
-      if ( sw_corner ) then
+      if ( gridstruct%sw_corner ) then
            ke(1,1) = dt6*( (ut(1,1) + ut(1,0)) * u(1,1) +  &
                            (vt(1,1) + vt(0,1)) * v(1,1) +  &
                            (ut(1,1) + vt(1,1)) * u(0,1) )
       endif
-      if ( se_corner ) then
+      if ( gridstruct%se_corner ) then
            i = npx
            ke(i,1) = dt6*( (ut(i,1) + ut(i,  0)) * u(i-1,1) + &
                            (vt(i,1) + vt(i-1,1)) * v(i,  1) + &
                            (ut(i,1) - vt(i-1,1)) * u(i,  1) )
       endif
-      if ( ne_corner ) then
+      if ( gridstruct%ne_corner ) then
            i = npx;      j = npy
            ke(i,j) = dt6*( (ut(i,j  ) + ut(i,j-1)) * u(i-1,j) +  &
                            (vt(i,j  ) + vt(i-1,j)) * v(i,j-1) +  &
                            (ut(i,j-1) + vt(i-1,j)) * u(i,j  )  )
       endif
-      if ( nw_corner ) then
+      if ( gridstruct%nw_corner ) then
            j = npy
            ke(1,j) = dt6*( (ut(1,  j) + ut(1,j-1)) * u(1,j  ) +  &
                            (vt(1,  j) + vt(0,  j)) * v(1,j-1) +  &
                            (ut(1,j-1) - vt(1,  j)) * u(0,j  )  )
       endif
     end if
-!  elseif (grid_type < 3) then
-!     call mp_corner_comm(ke, npx, npy) 
-!     if (sw_corner) ke(1,    1) = r3*(ke(2,      1)+ke(1,      2)+ke(0,      1))
-!     if (se_corner) ke(npx,  1) = r3*(ke(npx+1,  1)+ke(npx,    2)+ke(npx-1,  1))
-!     if (ne_corner) ke(npx,npy) = r3*(ke(npx+1,npy)+ke(npx,npy-1)+ke(npx-1,npy))
-!     if (nw_corner) ke(1,  npy) = r3*(ke(2,    npy)+ke(1,  npy-1)+ke(0,    npy))
-!  endif
 
 ! Compute vorticity:
        do j=jsd,jed+1
@@ -1201,10 +1294,10 @@
       enddo
 
 ! Remove the extra term at the corners:
-      if (sw_corner) delpc(1,    1) = delpc(1,    1) - vort(1,    0)
-      if (se_corner) delpc(npx,  1) = delpc(npx,  1) - vort(npx,  0)
-      if (ne_corner) delpc(npx,npy) = delpc(npx,npy) + vort(npx,npy)
-      if (nw_corner) delpc(1,  npy) = delpc(1,  npy) + vort(1,  npy)
+      if (gridstruct%sw_corner) delpc(1,    1) = delpc(1,    1) - vort(1,    0)
+      if (gridstruct%se_corner) delpc(npx,  1) = delpc(npx,  1) - vort(npx,  0)
+      if (gridstruct%ne_corner) delpc(npx,npy) = delpc(npx,npy) + vort(npx,npy)
+      if (gridstruct%nw_corner) delpc(1,  npy) = delpc(1,  npy) + vort(1,  npy)
 
       do j=js,je+1
          do i=is,ie+1
@@ -1229,8 +1322,8 @@
      do n=1,nord
         nt = nord-n
 
-        fill_c = (nt/=0) .and. (grid_type<3) .and.               &
-                 ( sw_corner .or. se_corner .or. ne_corner .or. nw_corner ) &
+        fill_c = (nt/=0) .and. (flagstruct%grid_type<3) .and.               &
+                 ( gridstruct%sw_corner .or. gridstruct%se_corner .or. gridstruct%ne_corner .or. gridstruct%nw_corner ) &
                   .and. .not. nested
 
         if ( fill_c ) call fill_corners(divg_d, npx, npy, FILL=XDir, BGRID=.true.)
@@ -1255,12 +1348,12 @@
         enddo
 
 ! Remove the extra term at the corners:
-        if (sw_corner) divg_d(1,    1) = divg_d(1,    1) - uc(1,    0)
-        if (se_corner) divg_d(npx,  1) = divg_d(npx,  1) - uc(npx,  0)
-        if (ne_corner) divg_d(npx,npy) = divg_d(npx,npy) + uc(npx,npy)
-        if (nw_corner) divg_d(1,  npy) = divg_d(1,  npy) + uc(1,  npy)
+        if (gridstruct%sw_corner) divg_d(1,    1) = divg_d(1,    1) - uc(1,    0)
+        if (gridstruct%se_corner) divg_d(npx,  1) = divg_d(npx,  1) - uc(npx,  0)
+        if (gridstruct%ne_corner) divg_d(npx,npy) = divg_d(npx,npy) + uc(npx,npy)
+        if (gridstruct%nw_corner) divg_d(1,  npy) = divg_d(1,  npy) + uc(1,  npy)
 
-     if ( .not. stretched_grid ) then
+     if ( .not. gridstruct%stretched_grid ) then
         do j=js-nt,je+1+nt
            do i=is-nt,ie+1+nt
               divg_d(i,j) = divg_d(i,j)*rarea_c(i,j)
@@ -1280,7 +1373,7 @@
         enddo
      endif
 
-     if (stretched_grid ) then
+     if (gridstruct%stretched_grid ) then
 ! Stretched grid with variable damping ~ area
          dd8 = da_min * d4_bg**n2
      else
@@ -1318,7 +1411,7 @@
     enddo
 
     call fv_tp_2d(vort, crx_adv, cry_adv, npx, npy, hord_vt, fx, fy, &
-                  xfx_adv,yfx_adv, area, ra_x, ra_y)
+                  xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y)
     do j=js,je+1
        do i=is,ie
           u(i,j) = vt(i,j) + ke(i,j) - ke(i+1,j) + fy(i,j)
@@ -1330,11 +1423,12 @@
        enddo
     enddo
 
+
 !--------------------------------------------------------
 ! damping applied to relative vorticity (wk):
    if ( damp_v>1.E-5 ) then
         damp4 = (damp_v*da_min_c)**(nord_v+1)
-        call del6_vt_flux(nord_v, npx, npy, damp4, wk, vort, ut, vt)
+        call del6_vt_flux(nord_v, npx, npy, damp4, wk, vort, ut, vt, gridstruct, bd)
    endif
 
    if ( d_con > 1.e-5 ) then
@@ -1392,8 +1486,7 @@
 
  end subroutine d_sw
 
-
- subroutine del6_vt_flux(nord, npx, npy, damp, q, d2, fx2, fy2)
+ subroutine del6_vt_flux(nord, npx, npy, damp, q, d2, fx2, fy2, gridstruct, bd)
 ! Del-nord damping for the relative vorticity
 ! nord must be <= 2
 !------------------
@@ -1403,12 +1496,38 @@
 !------------------
    integer, intent(in):: nord, npx, npy
    real, intent(in):: damp
-   real, intent(inout):: q(isd:ied, jsd:jed)  ! rel. vorticity ghosted on input
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   real, intent(inout):: q(bd%isd:bd%ied, bd%jsd:bd%jed)  ! rel. vorticity ghosted on input
+   type(fv_grid_type), intent(IN), target :: gridstruct
 ! Work arrays:
-   real, intent(out):: d2(isd:ied, jsd:jed)
-   real, intent(out):: fx2(isd:ied+1,jsd:jed), fy2(isd:ied,jsd:jed+1)
+   real, intent(out):: d2(bd%isd:bd%ied, bd%jsd:bd%jed)
+   real, intent(out):: fx2(bd%isd:bd%ied+1,bd%jsd:bd%jed), fy2(bd%isd:bd%ied,bd%jsd:bd%jed+1)
    integer i,j, nt, n, i1, i2, j1, j2
 
+   logical :: nested
+
+  real, pointer, dimension(:,:) :: rarea
+  real, pointer, dimension(:,:,:) :: sin_sg
+  real, pointer, dimension(:,:)   :: sina_u, sina_v
+  real, pointer, dimension(:,:) ::  rdxc, rdyc, dx,dy
+
+   integer :: is,  ie,  js,  je
+
+   rarea    => gridstruct%rarea 
+   sin_sg   => gridstruct%sin_sg
+   sina_u   => gridstruct%sina_u
+   sina_v   => gridstruct%sina_v
+   rdxc     => gridstruct%rdxc  
+   rdyc     => gridstruct%rdyc  
+   dx       => gridstruct%dx    
+   dy       => gridstruct%dy    
+   nested = gridstruct%nested
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   
    i1 = is-1-nord;    i2 = ie+1+nord
    j1 = js-1-nord;    j2 = je+1+nord
 
@@ -1418,7 +1537,9 @@
       enddo
    enddo
 
-   if( nord>0 ) call copy_corners(d2, npx, npy, 1)
+   if( nord>0 ) call copy_corners(d2, npx, npy, 1, nested, bd, &
+      gridstruct%sw_corner, gridstruct%se_corner, &
+      gridstruct%nw_corner, gridstruct%ne_corner)
    do j=js-nord,je+nord
       do i=is-nord,ie+nord+1
 !        fx2(i,j) = dy(i,j)*sina_u(i,j)*(d2(i-1,j)-d2(i,j))*rdxc(i,j)
@@ -1426,7 +1547,9 @@
       enddo
    enddo
 
-   if( nord>0 ) call copy_corners(d2, npx, npy, 2)
+   if( nord>0 ) call copy_corners(d2, npx, npy, 2, nested, bd, &
+      gridstruct%sw_corner, gridstruct%se_corner,  &
+      gridstruct%nw_corner, gridstruct%ne_corner)
    do j=js-nord,je+nord+1
       do i=is-nord,ie+nord
 !        fy2(i,j) = dx(i,j)*sina_v(i,j)*(d2(i,j-1)-d2(i,j))*rdyc(i,j)
@@ -1443,7 +1566,8 @@
          enddo
       enddo
 
-      call copy_corners(d2, npx, npy, 1)
+      call copy_corners(d2, npx, npy, 1, nested, bd, &
+      gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
       do j=js-nt,je+nt
          do i=is-nt,ie+nt+1
@@ -1452,7 +1576,8 @@
          enddo
       enddo
 
-      call copy_corners(d2, npx, npy, 2)
+      call copy_corners(d2, npx, npy, 2, nested, bd, &
+      gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
       do j=js-nt,je+nt+1
          do i=is-nt,ie+nt
@@ -1467,16 +1592,49 @@
 
 
 
- subroutine divergence_corner(u, v, ua, va, divg_d)
- real, intent(in),  dimension(isd:ied,  jsd:jed+1):: u
- real, intent(in),  dimension(isd:ied+1,jsd:jed  ):: v
- real, intent(in),  dimension(isd:ied,jsd:jed):: ua, va
- real, intent(out), dimension(isd:ied+1,jsd:jed+1):: divg_d
+ subroutine divergence_corner(u, v, ua, va, divg_d, gridstruct, flagstruct, bd)
+ type(fv_grid_bounds_type), intent(IN) :: bd
+ real, intent(in),  dimension(bd%isd:bd%ied,  bd%jsd:bd%jed+1):: u
+ real, intent(in),  dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: v
+ real, intent(in),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: ua, va
+ real, intent(out), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed+1):: divg_d
+ type(fv_grid_type), intent(IN), target :: gridstruct
+ type(fv_flags_type), intent(IN), target :: flagstruct
 ! local
- real uf(is-2:ie+2,js-1:je+2)
- real vf(is-1:ie+2,js-2:je+2)
+ real uf(bd%is-2:bd%ie+2,bd%js-1:bd%je+2)
+ real vf(bd%is-1:bd%ie+2,bd%js-2:bd%je+2)
  integer i,j
  integer is2, ie1
+
+  real, pointer, dimension(:,:) :: rarea_c
+
+  real, pointer, dimension(:,:,:) :: sin_sg, cos_sg
+  real, pointer, dimension(:,:)   :: cosa_u, cosa_v
+  real, pointer, dimension(:,:)   :: sina_u, sina_v
+  real, pointer, dimension(:,:) ::  dxc,dyc
+
+      integer :: is,  ie,  js,  je
+      integer :: npx, npy
+      logical :: nested
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+
+      npx = flagstruct%npx
+      npy = flagstruct%npy
+      nested = gridstruct%nested
+
+      rarea_c    => gridstruct%rarea_c
+      sin_sg     => gridstruct%sin_sg 
+      cos_sg     => gridstruct%cos_sg 
+      cosa_u     => gridstruct%cosa_u 
+      cosa_v     => gridstruct%cosa_v 
+      sina_u     => gridstruct%sina_u 
+      sina_v     => gridstruct%sina_v 
+      dxc        => gridstruct%dxc    
+      dyc        => gridstruct%dyc    
 
  if (nested) then
     is2 = is;        ie1 = ie+1
@@ -1484,7 +1642,7 @@
     is2 = max(2,is); ie1 = min(npx-1,ie+1)
  end if
 
-    if (grid_type==4) then
+    if (flagstruct%grid_type==4) then
         do j=js-1,je+2
            do i=is-2,ie+2
               uf(i,j) = u(i,j)*dyc(i,j)
@@ -1575,10 +1733,10 @@
     enddo
 
 ! Remove the extra term at the corners:
-    if (sw_corner) divg_d(1,    1) = divg_d(1,    1) - vf(1,    0)
-    if (se_corner) divg_d(npx,  1) = divg_d(npx,  1) - vf(npx,  0)
-    if (ne_corner) divg_d(npx,npy) = divg_d(npx,npy) + vf(npx,npy)
-    if (nw_corner) divg_d(1,  npy) = divg_d(1,  npy) + vf(1,  npy)
+    if (gridstruct%sw_corner) divg_d(1,    1) = divg_d(1,    1) - vf(1,    0)
+    if (gridstruct%se_corner) divg_d(npx,  1) = divg_d(npx,  1) - vf(npx,  0)
+    if (gridstruct%ne_corner) divg_d(npx,npy) = divg_d(npx,npy) + vf(npx,npy)
+    if (gridstruct%nw_corner) divg_d(1,  npy) = divg_d(1,  npy) + vf(1,  npy)
 
     do j=js,je+1
        do i=is,ie+1
@@ -1590,19 +1748,54 @@
 
  end subroutine divergence_corner
 
- subroutine divergence_corner_nest(u, v, ua, va, divg_d)
- real, intent(in),  dimension(isd:ied,  jsd:jed+1):: u
- real, intent(in),  dimension(isd:ied+1,jsd:jed):: v
- real, intent(in),  dimension(isd:ied,jsd:jed):: ua, va
- real, intent(out), dimension(isd:ied+1,jsd:jed+1):: divg_d
+ subroutine divergence_corner_nest(u, v, ua, va, divg_d, gridstruct, flagstruct, bd)
+ type(fv_grid_bounds_type), intent(IN) :: bd
+ real, intent(in),  dimension(bd%isd:bd%ied,  bd%jsd:bd%jed+1):: u
+ real, intent(in),  dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed):: v
+ real, intent(in),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: ua, va
+ real, intent(out), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed+1):: divg_d
+ type(fv_grid_type), intent(IN), target :: gridstruct
+ type(fv_flags_type), intent(IN), target :: flagstruct
+
 ! local
- real uf(isd:ied,jsd:jed+1)
- real vf(isd:ied+1,jsd:jed)
+ real uf(bd%isd:bd%ied,bd%jsd:bd%jed+1)
+ real vf(bd%isd:bd%ied+1,bd%jsd:bd%jed)
  integer i,j
+
+
+  real, pointer, dimension(:,:) :: rarea_c
+
+  real, pointer, dimension(:,:,:) :: sin_sg, cos_sg
+  real, pointer, dimension(:,:)   :: cosa_u, cosa_v
+  real, pointer, dimension(:,:)   :: sina_u, sina_v
+  real, pointer, dimension(:,:) ::  dxc,dyc
+
+      integer :: isd, ied, jsd, jed
+      integer :: npx, npy
+      logical :: nested
+
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+
+      npx = flagstruct%npx
+      npy = flagstruct%npy
+      nested = gridstruct%nested
+
+      rarea_c    => gridstruct%rarea_c
+      sin_sg     => gridstruct%sin_sg 
+      cos_sg     => gridstruct%cos_sg 
+      cosa_u     => gridstruct%cosa_u 
+      cosa_v     => gridstruct%cosa_v 
+      sina_u     => gridstruct%sina_u 
+      sina_v     => gridstruct%sina_v 
+      dxc        => gridstruct%dxc    
+      dyc        => gridstruct%dyc    
 
  divg_d = 1.e25
 
-    if (grid_type==4) then
+    if (flagstruct%grid_type==4) then
         do j=jsd,jed
            do i=isd,ied
               uf(i,j) = u(i,j)*dyc(i,j)
@@ -1620,33 +1813,18 @@
         enddo
     else
 
-! divg_u(i,j) = sina_v(i,j)*dyc(i,j)/dx(i,j)
        do j=jsd+1,jed
           do i=isd,ied
             uf(i,j) = (u(i,j)-0.25*(va(i,j-1)+va(i,j))*(cos_sg(i,j-1,4)+cos_sg(i,j,2)))   &
                                         * dyc(i,j)*0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))
           enddo
        enddo
-!!$       do i=isd,ied
-!!$          j = jsd
-!!$          uf(i,j) = (u(i,j)-va(i,j)*cosa_v(i,j+1))   &
-!!$                  *dyc(i,j)*sina_v(i,j+1)
-!!$          j = jed+1
-!!$          uf(i,j) = (u(i,j)-va(i,j-1)*cosa_v(i,j))   &
-!!$                  *dyc(i,j)*sina_v(i,j)
-!!$       end do
 
        do j=jsd,jed
           do i=isd+1,ied
              vf(i,j) = (v(i,j) - 0.25*(ua(i-1,j)+ua(i,j))*(cos_sg(i-1,j,3)+cos_sg(i,j,1)))  &
                   *dxc(i,j)*0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))
           enddo
-!!$          i = isd
-!!$          vf(i,j) = (v(i,j) - ua(i,j)*cosa_u(i+1,j))  &
-!!$               *dxc(i,j)*sina_u(i+1,j)
-!!$          i = ied+1
-!!$          vf(i,j) = (v(i,j) - ua(i-1,j)*cosa_u(i,j))  &
-!!$               *dxc(i,j)*sina_u(i,j)
        enddo
 
        do j=jsd+1,jed
@@ -1681,24 +1859,35 @@
 end subroutine divergence_corner_nest
 
 
- subroutine xtp_u(c, u, v, flux, iord)
+ subroutine xtp_u(c, u, v, flux, iord, cosa, dx, rdx, bd, npx, npy, grid_type, nested)
 
- real, INTENT(IN)  ::   u(isd:ied,jsd:jed+1)
- real, INTENT(IN)  ::   v(isd:ied+1,jsd:jed)
- real, INTENT(IN)  ::   c(is:ie+1,js:je+1)
- real, INTENT(out):: flux(is:ie+1,js:je+1)
- integer, INTENT(IN) :: iord
+ type(fv_grid_bounds_type), intent(IN) :: bd
+ real, INTENT(IN)  ::   u(bd%isd:bd%ied,bd%jsd:bd%jed+1)
+ real, INTENT(IN)  ::   v(bd%isd:bd%ied+1,bd%jsd:bd%jed)
+ real, INTENT(IN)  ::   c(bd%is:bd%ie+1,bd%js:bd%je+1)
+ real, INTENT(out):: flux(bd%is:bd%ie+1,bd%js:bd%je+1)
+ real, INTENT(IN) ::   dx(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
+ real, INTENT(IN) ::  rdx(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
+ real, INTENT(IN) :: cosa(bd%isd:bd%ied+1,bd%jsd:bd%jed+1)
+ integer, INTENT(IN) :: iord, npx, npy, grid_type
+ logical, INTENT(IN) :: nested
 ! Local
- logical extm(is-2:ie+2)
- real al(is-1:ie+2), dm(is-2:ie+2)
- real bl(is-1:ie+1)
- real br(is-1:ie+1)
- real dq(is-3:ie+2)
+ logical extm(bd%is-2:bd%ie+2)
+ real al(bd%is-1:bd%ie+2), dm(bd%is-2:bd%ie+2)
+ real bl(bd%is-1:bd%ie+1)
+ real br(bd%is-1:bd%ie+1)
+ real dq(bd%is-3:bd%ie+2)
  real dl, dr, xt, pmp, lac, cfl
  real pmp_1, lac_1, pmp_2, lac_2
  real x0, x1, x0L, x0R
  integer i, j
  integer is3, ie3
+      integer :: is,  ie,  js,  je
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
 
 ! if (nested .or. (iord >= 8 .and. iord <= 10)) then
  if (nested) then
@@ -2143,23 +2332,36 @@ end subroutine divergence_corner_nest
  end subroutine xtp_u
 
 
- subroutine ytp_v(c, u, v, flux, jord)
+ subroutine ytp_v(c, u, v, flux, jord, cosa, dy, rdy, bd, npx, npy, grid_type, nested)
+ type(fv_grid_bounds_type), intent(IN) :: bd
  integer, intent(IN):: jord
- real, INTENT(IN)  ::   u(isd:ied,jsd:jed+1)
- real, INTENT(IN)  ::   v(isd:ied+1,jsd:jed)
- real, INTENT(IN) ::    c(is:ie+1,js:je+1)   !  Courant   N (like FLUX)
- real, INTENT(OUT):: flux(is:ie+1,js:je+1)
+ real, INTENT(IN)  ::   u(bd%isd:bd%ied,bd%jsd:bd%jed+1)
+ real, INTENT(IN)  ::   v(bd%isd:bd%ied+1,bd%jsd:bd%jed)
+ real, INTENT(IN) ::    c(bd%is:bd%ie+1,bd%js:bd%je+1)   !  Courant   N (like FLUX)
+ real, INTENT(OUT):: flux(bd%is:bd%ie+1,bd%js:bd%je+1)
+ real, INTENT(IN) ::   dy(bd%isd:bd%ied+1,bd%jsd:bd%jed)
+ real, INTENT(IN) ::  rdy(bd%isd:bd%ied+1,bd%jsd:bd%jed)
+ real, INTENT(IN) :: cosa(bd%isd:bd%ied+1,bd%jsd:bd%jed+1)
+ integer, INTENT(IN) :: npx, npy, grid_type
+ logical, INTENT(IN) :: nested
 ! Local:
- logical extm(is:ie+1,js-2:je+2)
- real dm(is:ie+1,js-2:je+2)
- real al(is:ie+1,js-1:je+2)
- real bl(is:ie+1,js-1:je+1)
- real br(is:ie+1,js-1:je+1)
- real dq(is:ie+1,js-3:je+2)
+ logical extm(bd%is:bd%ie+1,bd%js-2:bd%je+2)
+ real dm(bd%is:bd%ie+1,bd%js-2:bd%je+2)
+ real al(bd%is:bd%ie+1,bd%js-1:bd%je+2)
+ real bl(bd%is:bd%ie+1,bd%js-1:bd%je+1)
+ real br(bd%is:bd%ie+1,bd%js-1:bd%je+1)
+ real dq(bd%is:bd%ie+1,bd%js-3:bd%je+2)
  real xt, dl, dr, pmp, lac, cfl
  real pmp_1, lac_1, pmp_2, lac_2
  real x0, x1, x0R, x0L
  integer i, j, js3, je3
+
+ integer :: is,  ie,  js,  je
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
 
 ! if (nested .or. (jord >= 8 .and. jord <= 10) ) then
  if (nested ) then
@@ -2702,16 +2904,49 @@ end subroutine ytp_v
 !   is needed after c_sw is completed if these variables are needed
 !    in the halo
 
- subroutine d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4)
+ subroutine d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4, gridstruct, &
+      bd, npx, npy, nested, grid_type, &
+      sw_corner, se_corner, nw_corner, ne_corner)
+  type(fv_grid_bounds_type), intent(IN) :: bd
   logical, intent(in):: dord4
-  real, intent(in) ::  u(isd:ied,jsd:jed+1)
-  real, intent(in) ::  v(isd:ied+1,jsd:jed)
-  real, intent(out), dimension(isd:ied+1,jsd:jed  ):: uc
-  real, intent(out), dimension(isd:ied  ,jsd:jed+1):: vc
-  real, intent(out), dimension(isd:ied  ,jsd:jed  ):: ua, va, ut, vt
+  real, intent(in) ::  u(bd%isd:bd%ied,bd%jsd:bd%jed+1)
+  real, intent(in) ::  v(bd%isd:bd%ied+1,bd%jsd:bd%jed)
+  real, intent(out), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: uc
+  real, intent(out), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1):: vc
+  real, intent(out), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed  ):: ua, va, ut, vt
+  integer, intent(IN) :: npx, npy, grid_type
+  logical, intent(IN) :: sw_corner, se_corner, nw_corner, ne_corner, nested
+  type(fv_grid_type), intent(IN), target :: gridstruct
 ! Local 
-  real, dimension(isd:ied,jsd:jed):: utmp, vtmp
+  real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: utmp, vtmp
   integer npt, i, j, ifirst, ilast, id
+
+  real, pointer, dimension(:,:,:) :: sin_sg
+  real, pointer, dimension(:,:)   :: cosa_u, cosa_v, cosa_s
+  real, pointer, dimension(:,:)   :: rsin_u, rsin_v, rsin2
+  real, pointer, dimension(:,:)   ::  dxa,dya
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+
+      sin_sg    => gridstruct%sin_sg  
+      cosa_u    => gridstruct%cosa_u  
+      cosa_v    => gridstruct%cosa_v  
+      cosa_s    => gridstruct%cosa_s  
+      rsin_u    => gridstruct%rsin_u  
+      rsin_v    => gridstruct%rsin_v  
+      rsin2     => gridstruct%rsin2   
+      dxa       => gridstruct%dxa     
+      dya       => gridstruct%dya     
 
   if ( dord4 ) then
        id = 1
@@ -3094,145 +3329,9 @@ end subroutine ytp_v
     endif
 
  end subroutine d2a2c_vect
+
  
-
- subroutine d2a2c_vect_v2( u, v, ua, va, uc, vc, ut, vt )
-  real, intent(in) ::  u(isd:ied,jsd:jed+1)
-  real, intent(in) ::  v(isd:ied+1,jsd:jed)
-  real, intent(out), dimension(isd:ied+1,jsd:jed  ):: uc
-  real, intent(out), dimension(isd:ied  ,jsd:jed+1):: vc
-  real, intent(out), dimension(isd:ied  ,jsd:jed  ):: ua, va, ut, vt
-! Local 
-    real, dimension(is-2:ie+2,js-2:je+2):: wk
-    real :: utmp, vtmp
-    integer i, j
-
-! needs only ut[is-1:ie+2,js-1:je+1], vt[is-1:ie+1,js-1:je+2]
-
-     do j=js-2,je+2
-        do i=is-2,ie+3
-           uc(i,j) = v(i,j)*dy(i,j)
-        enddo
-     enddo
-     do j=js-2,je+3
-        do i=is-2,ie+2
-           vc(i,j) = u(i,j)*dx(i,j)
-        enddo
-     enddo
-
-! D --> A
-! Co-variant to Co-variant "vorticity-conserving" interpolation
-     do j=js-2,je+2
-        do i=is-2,ie+2
-           utmp = 0.5*(vc(i,j) + vc(i,j+1)) * rdxa(i,j)
-           vtmp = 0.5*(uc(i,j) + uc(i+1,j)) * rdya(i,j)
-           ua(i,j) = (utmp-vtmp*cosa_s(i,j))*rsin2(i,j)
-           va(i,j) = (vtmp-utmp*cosa_s(i,j))*rsin2(i,j)
-        enddo
-     enddo
-
-! Xdir:
-     if( sw_corner ) then
-         ua(-1,0) = -va(0,2)
-         ua( 0,0) = -va(0,1) 
-     endif
-     if( se_corner ) then
-         ua(npx,  0) = va(npx,1)
-         ua(npx+1,0) = va(npx,2) 
-     endif
-     if( ne_corner ) then
-         ua(npx,  npy) = -va(npx,npy-1)
-         ua(npx+1,npy) = -va(npx,npy-2) 
-     endif
-     if( nw_corner ) then
-         ua(-1,npy) = va(0,npy-2)
-         ua( 0,npy) = va(0,npy-1) 
-     endif
-
-! A -> C
-!--------------------------------------------
-! Divergence conserving interp to cell walls
-!--------------------------------------------
-     do j=js-1,je+1
-        do i=is-2,ie+2
-           wk(i,j) = ua(i,j)*dya(i,j)*sina_s(i,j)
-        enddo
-     enddo
-     do j=js-1,je+1
-        do i=is-1,ie+2
-           ut(i,j) = 0.5*(wk(i-1,j)+wk(i,j)) / (dy(i,j)*sina_u(i,j))
-           uc(i,j) = ut(i,j) + 0.5*(va(i-1,j)*cosa_s(i-1,j)+va(i,j)*cosa_s(i,j))
-        enddo
-     enddo
-
-     if (grid_type < 3) then
-     if ( is==1 ) then
-        i=1
-        do j=js-1,je+1
-           ut(i,j) = 0.25*(-ua(-1,j) + 3.*(ua(0,j)+ua(1,j)) - ua(2,j))
-           uc(i,j) = ut(i,j)*sina_u(i,j)
-        enddo
-     endif
-
-     if ( (ie+1)==npx ) then
-        i=npx
-        do j=js-1,je+1
-           ut(i,j) = 0.25*(-ua(i-2,j) + 3.*(ua(i-1,j)+ua(i,j)) - ua(i+1,j))
-           uc(i,j) = ut(i,j)*sina_u(i,j)
-        enddo
-     endif
-     endif
-
-! Ydir:
-     if( sw_corner ) then
-         va(0,-1) = -ua(2,0)
-         va(0, 0) = -ua(1,0)
-     endif
-     if( se_corner ) then
-         va(npx, 0) = ua(npx-1,0)
-         va(npx,-1) = ua(npx-2,0)
-     endif
-     if( ne_corner ) then
-         va(npx,npy  ) = -ua(npx-1,npy)
-         va(npx,npy+1) = -ua(npx-2,npy)
-     endif
-     if( nw_corner ) then
-         va(0,npy)   = ua(1,npy)
-         va(0,npy+1) = ua(2,npy)
-     endif
-
-     do j=js-2,je+2
-        do i=is-1,ie+1
-           wk(i,j) = va(i,j)*dxa(i,j)*sina_s(i,j)
-        enddo
-     enddo
-
-     if (grid_type < 3) then
-     do j=js-1,je+2
-        if ( j==1 .or. j==npy ) then
-          do i=is-1,ie+1
-             vt(i,j) = 0.25*(-va(i,j-2) + 3.*(va(i,j-1)+va(i,j)) - va(i,j+1))
-             vc(i,j) = vt(i,j)*sina_v(i,j)
-          enddo
-        else
-          do i=is-1,ie+1
-             vt(i,j) = 0.5*(wk(i,j-1)+wk(i,j)) / (dx(i,j)*sina_v(i,j))
-             vc(i,j) = vt(i,j) + 0.5*(ua(i,j-1)*cosa_s(i,j-1)+ua(i,j)*cosa_s(i,j))
-          enddo
-        endif
-     enddo
-     else
-        do j=js-1,je+2
-           do i=is-1,ie+1
-              vt(i,j) = 0.5*(wk(i,j-1)+wk(i,j)) / (dx(i,j)*sina_v(i,j))
-              vc(i,j) = vt(i,j) + 0.5*(ua(i,j-1)*cosa_s(i,j-1)+ua(i,j)*cosa_s(i,j))
-           enddo
-        enddo
-     endif
-
- end subroutine d2a2c_vect_v2
-
-  real function edge_interpolate4(ua, dxa)
+ real function edge_interpolate4(ua, dxa)
 
    real, intent(in) :: ua(4)
    real, intent(in) :: dxa(4)
@@ -3246,169 +3345,36 @@ end subroutine ytp_v
    !This is the original edge-interpolation code, which makes
    ! a relatively small increase in the error in unstretched case 2.
 
-!   edge_interpolate4 = 0.25*( 3*(ua(2)+ua(3)) - (ua(1)+ua(4))  )
+   !   edge_interpolate4 = 0.25*( 3*(ua(2)+ua(3)) - (ua(1)+ua(4))  )
 
  end function edge_interpolate4
 
-      
- subroutine d2a2c_vect_v1( u,v, ua,va, uc,vc, ut,vt )
-  real, intent(in) ::  u(isd:ied,jsd:jed+1)
-  real, intent(in) ::  v(isd:ied+1,jsd:jed)
-  real, intent(out), dimension(isd:ied+1,jsd:jed  ):: uc
-  real, intent(out), dimension(isd:ied  ,jsd:jed+1):: vc
-  real, intent(out), dimension(isd:ied  ,jsd:jed  ):: ua, va, ut, vt
-! Local 
-  real, dimension(isd:ied,jsd:jed):: v1, v2, v3
-  real, dimension(isd:ied,jsd:jed):: utmp, vtmp
-    real vw1, vw2, vw3
-    real vs1, vs2, vs3
-    real up, vp
-    integer i, j
 
-! Needs ut[is-1:ie+2,js-1:je+1], vt[is-1:ie+1,js-1:je+2]
-
-     do j=jsd,jed
-        do i=isd,ied+1
-           uc(i,j) = v(i,j)*dy(i,j)
-        enddo
-     enddo
-     do j=jsd,jed+1
-        do i=isd,ied
-           vc(i,j) = u(i,j)*dx(i,j)
-        enddo
-     enddo
-
-! D --> A
-     do j=jsd,jed
-        do i=isd,ied
-           up = 0.5*(vc(i,j) + vc(i,j+1)) * rdxa(i,j)
-           vp = 0.5*(uc(i,j) + uc(i+1,j)) * rdya(i,j)
-           ua(i,j) = (up-vp*cosa_s(i,j)) * rsin2(i,j)
-           va(i,j) = (vp-up*cosa_s(i,j)) * rsin2(i,j)
-           v1(i,j) = ua(i,j)*ec1(1,i,j) + va(i,j)*ec2(1,i,j)
-           v2(i,j) = ua(i,j)*ec1(2,i,j) + va(i,j)*ec2(2,i,j)
-           v3(i,j) = ua(i,j)*ec1(3,i,j) + va(i,j)*ec2(3,i,j)
-        enddo
-     enddo
-
-! A -> C (across face averaging taking place here):
-! Xdir
-     call fill3_4corners(v1, v2, v3, 1)
-!    call copy_corners(v1, npx, npy, 1)
-!    call copy_corners(v2, npx, npy, 1)
-!    call copy_corners(v3, npx, npy, 1)
-
-! 4th order interpolation:
-     do j=js-1,je+1
-        do i=max(3,is-1),min(npx-2,ie+2)
-           vw1 = a2*(v1(i-2,j)+v1(i+1,j)) + a1*(v1(i-1,j)+v1(i,j))
-           vw2 = a2*(v2(i-2,j)+v2(i+1,j)) + a1*(v2(i-1,j)+v2(i,j))
-           vw3 = a2*(v3(i-2,j)+v3(i+1,j)) + a1*(v3(i-1,j)+v3(i,j))
-           uc(i,j) = vw1*ew(1,i,j,1) + vw2*ew(2,i,j,1) + vw3*ew(3,i,j,1)
-           ut(i,j) = (uc(i,j)-v(i,j)*cosa_u(i,j)) * rsin_u(i,j)
-        enddo
-     enddo
-
-! Fix the edge:
-     if ( is==1 ) then
-        do j=js-1,je+1
-        i=0
-           vw1 = c1*v1(-2,j) + c2*v1(-1,j) + c3*v1(0,j) 
-           vw2 = c1*v2(-2,j) + c2*v2(-1,j) + c3*v2(0,j) 
-           vw3 = c1*v3(-2,j) + c2*v3(-1,j) + c3*v3(0,j) 
-           uc(i,j) = vw1*ew(1,i,j,1) + vw2*ew(2,i,j,1) + vw3*ew(3,i,j,1)
-           ut(i,j) = (uc(i,j)-v(i,j)*cosa_u(i,j)) * rsin_u(i,j)
-        i=1
-           vw1 = 3.*(v1(0,j)+v1(1,j)) - (v1(-1,j)+v1(2,j))
-           vw2 = 3.*(v2(0,j)+v2(1,j)) - (v2(-1,j)+v2(2,j))
-           vw3 = 3.*(v3(0,j)+v3(1,j)) - (v3(-1,j)+v3(2,j))
-           uc(i,j) = 0.25*(vw1*ew(1,i,j,1) + vw2*ew(2,i,j,1) + vw3*ew(3,i,j,1))
-           ut(i,j) = uc(i,j)*rsin_u(i,j)
-        i=2
-           vw1 = c3*v1(1,j) + c2*v1(2,j) + c1*v1(3,j)
-           vw2 = c3*v2(1,j) + c2*v2(2,j) + c1*v2(3,j)
-           vw3 = c3*v3(1,j) + c2*v3(2,j) + c1*v3(3,j)
-           uc(i,j) = vw1*ew(1,i,j,1) + vw2*ew(2,i,j,1) + vw3*ew(3,i,j,1)
-           ut(i,j) = (uc(i,j)-v(i,j)*cosa_u(i,j)) * rsin_u(i,j)
-        enddo
-     endif
-
-     if ( (ie+1)==npx ) then
-        do j=js-1,je+1
-        i=npx-1
-           vw1 = c1*v1(npx-3,j) + c2*v1(npx-2,j) + c3*v1(npx-1,j) 
-           vw2 = c1*v2(npx-3,j) + c2*v2(npx-2,j) + c3*v2(npx-1,j) 
-           vw3 = c1*v3(npx-3,j) + c2*v3(npx-2,j) + c3*v3(npx-1,j) 
-           uc(i,j) = vw1*ew(1,i,j,1) + vw2*ew(2,i,j,1) + vw3*ew(3,i,j,1)
-           ut(i,j) = (uc(i,j)-v(i,j)*cosa_u(i,j)) * rsin_u(i,j)
-        i=npx
-           vw1 = 3.*(v1(i-1,j)+v1(i,j)) - (v1(i-2,j)+v1(i+1,j))
-           vw2 = 3.*(v2(i-1,j)+v2(i,j)) - (v2(i-2,j)+v2(i+1,j))
-           vw3 = 3.*(v3(i-1,j)+v3(i,j)) - (v3(i-2,j)+v3(i+1,j))
-           uc(i,j) = 0.25*(vw1*ew(1,i,j,1) + vw2*ew(2,i,j,1) + vw3*ew(3,i,j,1))
-           ut(i,j) = uc(i,j)*rsin_u(i,j)
-        i=npx+1
-           vw1 = c3*v1(npx,j) + c2*v1(npx+1,j) + c1*v1(npx+2,j) 
-           vw2 = c3*v2(npx,j) + c2*v2(npx+1,j) + c1*v2(npx+2,j) 
-           vw3 = c3*v3(npx,j) + c2*v3(npx+1,j) + c1*v3(npx+2,j) 
-           uc(i,j) = vw1*ew(1,i,j,1) + vw2*ew(2,i,j,1) + vw3*ew(3,i,j,1)
-           ut(i,j) = (uc(i,j)-v(i,j)*cosa_u(i,j)) * rsin_u(i,j)
-        enddo
-     endif
-
-! Ydir:
-     call fill3_4corners(v1, v2, v3, 2)
-!    call copy_corners(v1, npx, npy, 2)
-!    call copy_corners(v2, npx, npy, 2)
-!    call copy_corners(v3, npx, npy, 2)
-
-     do j=js-1,je+2
-        if( j==0 .or. j==(npy-1) ) then
-          do i=is-1,ie+1
-             vs1 = c1*v1(i,j-2) + c2*v1(i,j-1) + c3*v1(i,j)
-             vs2 = c1*v2(i,j-2) + c2*v2(i,j-1) + c3*v2(i,j)
-             vs3 = c1*v3(i,j-2) + c2*v3(i,j-1) + c3*v3(i,j)
-             vc(i,j) = vs1*es(1,i,j,2) + vs2*es(2,i,j,2) + vs3*es(3,i,j,2)
-             vt(i,j) = (vc(i,j)-u(i,j)*cosa_v(i,j)) * rsin_v(i,j)
-          enddo
-        elseif ( j==2 .or. j==(npy+1) ) then
-          do i=is-1,ie+1
-             vs1 = c3*v1(i,j-1) + c2*v1(i,j) + c1*v1(i,j+1)
-             vs2 = c3*v2(i,j-1) + c2*v2(i,j) + c1*v2(i,j+1)
-             vs3 = c3*v3(i,j-1) + c2*v3(i,j) + c1*v3(i,j+1)
-             vc(i,j) = vs1*es(1,i,j,2) + vs2*es(2,i,j,2) + vs3*es(3,i,j,2)
-             vt(i,j) = (vc(i,j)-u(i,j)*cosa_v(i,j)) * rsin_v(i,j)
-          enddo
-        elseif ( j==1 .or. j==npy ) then
-          do i=is-1,ie+1
-              vs1 = 3.*(v1(i,j-1)+v1(i,j)) - (v1(i,j-2)+v1(i,j+1))
-              vs2 = 3.*(v2(i,j-1)+v2(i,j)) - (v2(i,j-2)+v2(i,j+1))
-              vs3 = 3.*(v3(i,j-1)+v3(i,j)) - (v3(i,j-2)+v3(i,j+1))
-              vc(i,j) = 0.25*(vs1*es(1,i,j,2) + vs2*es(2,i,j,2) + vs3*es(3,i,j,2))
-              vt(i,j) = vc(i,j)*rsin_v(i,j)
-          enddo
-        else
-! Interior: 4th order
-          do i=is-1,ie+1
-             vs1 = a2*(v1(i,j-2)+v1(i,j+1)) + a1*(v1(i,j-1)+v1(i,j))
-             vs2 = a2*(v2(i,j-2)+v2(i,j+1)) + a1*(v2(i,j-1)+v2(i,j))
-             vs3 = a2*(v3(i,j-2)+v3(i,j+1)) + a1*(v3(i,j-1)+v3(i,j))
-             vc(i,j) = vs1*es(1,i,j,2) + vs2*es(2,i,j,2) + vs3*es(3,i,j,2)
-             vt(i,j) = (vc(i,j)-u(i,j)*cosa_v(i,j)) * rsin_v(i,j)
-          enddo
-        endif
-     enddo
-
- end subroutine d2a2c_vect_v1
+!Subroutines d2a2c and d2a2c_vect_v? have been deleted. Look at older code versions if you are interested.
       
 
- subroutine fill3_4corners(q1, q2, q3, dir)
+ subroutine fill3_4corners(q1, q2, q3, dir, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
+  type(fv_grid_bounds_type), intent(IN) :: bd
 ! This routine fill the 4 corners of the scalar fileds only as needed by c_core
   integer, intent(in):: dir                ! 1: x-dir; 2: y-dir
-  real, intent(inout):: q1(isd:ied,jsd:jed)
-  real, intent(inout):: q2(isd:ied,jsd:jed)
-  real, intent(inout):: q3(isd:ied,jsd:jed)
+  real, intent(inout):: q1(bd%isd:bd%ied,bd%jsd:bd%jed)
+  real, intent(inout):: q2(bd%isd:bd%ied,bd%jsd:bd%jed)
+  real, intent(inout):: q3(bd%isd:bd%ied,bd%jsd:bd%jed)
+  logical, intent(IN) :: sw_corner, se_corner, ne_corner, nw_corner
+  integer, intent(IN) :: npx, npy
   integer i,j
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
 
   select case(dir)
   case(1)
@@ -3459,11 +3425,26 @@ end subroutine ytp_v
  end subroutine fill3_4corners
 
 
- subroutine fill2_4corners(q1, q2, dir)
+ subroutine fill2_4corners(q1, q2, dir, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
+  type(fv_grid_bounds_type), intent(IN) :: bd
 ! This routine fill the 4 corners of the scalar fileds only as needed by c_core
   integer, intent(in):: dir                ! 1: x-dir; 2: y-dir
-  real, intent(inout):: q1(isd:ied,jsd:jed)
-  real, intent(inout):: q2(isd:ied,jsd:jed)
+  real, intent(inout):: q1(bd%isd:bd%ied,bd%jsd:bd%jed)
+  real, intent(inout):: q2(bd%isd:bd%ied,bd%jsd:bd%jed)
+  logical, intent(IN) :: sw_corner, se_corner, ne_corner, nw_corner
+  integer, intent(IN) :: npx, npy
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
 
   select case(dir)
   case(1)
@@ -3506,10 +3487,25 @@ end subroutine ytp_v
 
  end subroutine fill2_4corners
 
- subroutine fill_4corners(q, dir)
+ subroutine fill_4corners(q, dir, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
+  type(fv_grid_bounds_type), intent(IN) :: bd
 ! This routine fill the 4 corners of the scalar fileds only as needed by c_core
   integer, intent(in):: dir                ! 1: x-dir; 2: y-dir
-  real, intent(inout):: q(isd:ied,jsd:jed)
+  real, intent(inout):: q(bd%isd:bd%ied,bd%jsd:bd%jed)
+  logical, intent(IN) :: sw_corner, se_corner, ne_corner, nw_corner
+  integer, intent(IN) :: npx, npy
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
 
   select case(dir)
   case(1)
@@ -3551,282 +3547,5 @@ end subroutine ytp_v
   end select
 
  end subroutine fill_4corners
-
-
-
- subroutine d2a2c(u, v, um, vm,  ua, va, uc, vc, dord4)
-  real, intent(in), dimension(isd:ied,jsd:jed+1):: u, um
-  real, intent(in), dimension(isd:ied+1,jsd:jed):: v, vm
-  logical, intent(in):: dord4
-  real, intent(out), dimension(isd:ied+1,jsd:jed  ):: uc
-  real, intent(out), dimension(isd:ied  ,jsd:jed+1):: vc
-  real, intent(out), dimension(isd:ied  ,jsd:jed  ):: ua, va
-! Local 
-  real, dimension(isd:ied,jsd:jed):: utmp, vtmp
-  integer npt, i, j, ifirst, ilast, id
-
-  if ( dord4 ) then
-       id = 1
-  else
-       id = 0
-  endif
-
-
-  if (grid_type < 3) then
-     npt = 4
-  else
-     npt = -2
-  endif
-
-!----------
-! Interior:
-!----------
-  do j=max(npt,js-1),min(npy-npt,je+1)
-     do i=max(npt,isd),min(npx-npt,ied)
-        utmp(i,j) = a2*(u(i,j-1)+u(i,j+2)) + a1*(u(i,j)+u(i,j+1))
-     enddo
-  enddo
-  do j=max(npt,jsd),min(npy-npt,jed)
-     do i=max(npt,is-1),min(npx-npt,ie+1)
-        vtmp(i,j) = a2*(v(i-1,j)+v(i+2,j)) + a1*(v(i,j)+v(i+1,j))
-     enddo
-  enddo
-
-!----------
-! edges:
-!----------
-  if (grid_type < 3) then
-
-  if ( js==1 .or. jsd<npt) then
-      do j=jsd,npt-1
-         do i=isd,ied
-            utmp(i,j) = 0.5*(u(i,j) + u(i,j+1))
-            vtmp(i,j) = 0.5*(v(i,j) + v(i+1,j))
-         enddo
-      enddo
-  endif
-  if ( (je+1)==npy .or. jed>=(npy-npt)) then
-      do j=npy-npt+1,jed
-         do i=isd,ied
-            utmp(i,j) = 0.5*(u(i,j) + u(i,j+1))
-            vtmp(i,j) = 0.5*(v(i,j) + v(i+1,j))
-         enddo
-      enddo
-  endif
-  if ( is==1 .or. isd<npt ) then
-      do j=max(npt,jsd),min(npy-npt,jed)
-         do i=isd,npt-1
-            utmp(i,j) = 0.5*(u(i,j) + u(i,j+1))
-            vtmp(i,j) = 0.5*(v(i,j) + v(i+1,j))
-         enddo
-      enddo
-  endif
-  if ( (ie+1)==npx .or. ied>=(npx-npt)) then
-      do j=max(npt,jsd),min(npy-npt,jed)
-         do i=npx-npt+1,ied
-            utmp(i,j) = 0.5*(u(i,j) + u(i,j+1))
-            vtmp(i,j) = 0.5*(v(i,j) + v(i+1,j))
-         enddo
-      enddo
-  endif
-
-  endif
-
-  do j=js-1-id,je+1+id
-     do i=is-1-id,ie+1+id
-        ua(i,j) = (utmp(i,j)-vtmp(i,j)*cosa_s(i,j)) * rsin2(i,j)
-        va(i,j) = (vtmp(i,j)-utmp(i,j)*cosa_s(i,j)) * rsin2(i,j)
-     enddo
-  enddo
-
-! Re-compute (utmp, vtmp) using (um,vm)
-!----------
-! Interior:
-!----------
-  do j=max(npt,js-1),min(npy-npt,je+1)
-     do i=max(npt,isd),min(npx-npt,ied)
-        utmp(i,j) = a2*(um(i,j-1)+um(i,j+2)) + a1*(um(i,j)+um(i,j+1))
-     enddo
-  enddo
-  do j=max(npt,jsd),min(npy-npt,jed)
-     do i=max(npt,is-1),min(npx-npt,ie+1)
-        vtmp(i,j) = a2*(vm(i-1,j)+vm(i+2,j)) + a1*(vm(i,j)+vm(i+1,j))
-     enddo
-  enddo
-
-!----------
-! edges:
-!----------
-  if (grid_type < 3) then
-
-  if ( js==1 .or. jsd<npt) then
-      do j=jsd,npt-1
-         do i=isd,ied
-            utmp(i,j) = 0.5*(um(i,j) + um(i,j+1))
-            vtmp(i,j) = 0.5*(vm(i,j) + vm(i+1,j))
-         enddo
-      enddo
-  endif
-  if ( (je+1)==npy .or. jed>=(npy-npt)) then
-      do j=npy-npt+1,jed
-         do i=isd,ied
-            utmp(i,j) = 0.5*(um(i,j) + um(i,j+1))
-            vtmp(i,j) = 0.5*(vm(i,j) + vm(i+1,j))
-         enddo
-      enddo
-  endif
-  if ( is==1 .or. isd<npt ) then
-      do j=max(npt,jsd),min(npy-npt,jed)
-         do i=isd,npt-1
-            utmp(i,j) = 0.5*(um(i,j) + um(i,j+1))
-            vtmp(i,j) = 0.5*(vm(i,j) + vm(i+1,j))
-         enddo
-      enddo
-  endif
-  if ( (ie+1)==npx .or. ied>=(npx-npt)) then
-      do j=max(npt,jsd),min(npy-npt,jed)
-         do i=npx-npt+1,ied
-            utmp(i,j) = 0.5*(um(i,j) + um(i,j+1))
-            vtmp(i,j) = 0.5*(vm(i,j) + vm(i+1,j))
-         enddo
-      enddo
-  endif
-
-  endif
-
-! A -> C
-!--------------
-! Fix the edges
-!--------------
-! Xdir:
-     if( sw_corner ) then
-         do i=-2,0
-            utmp(i,0) = -vtmp(0,1-i)
-         enddo
-     endif
-     if( se_corner ) then
-         do i=0,2
-            utmp(npx+i,0) = vtmp(npx,i+1)
-         enddo
-     endif
-     if( ne_corner ) then
-         do i=0,2
-            utmp(npx+i,npy) = -vtmp(npx,je-i)
-         enddo
-     endif
-     if( nw_corner ) then
-         do i=-2,0
-            utmp(i,npy) = vtmp(0,je+i)
-         enddo
-     endif
-
-  if (grid_type < 3) then
-     ifirst = max(3,    is  )
-     ilast  = min(npx-2,ie+1)
-  else
-     ifirst = is
-     ilast  = ie+1
-  endif
-!---------------------------------------------
-! 4th order interpolation for interior points:
-!---------------------------------------------
-     do j=js,je
-        do i=ifirst,ilast
-           uc(i,j) = a1*(utmp(i-1,j)+utmp(i,j))+a2*(utmp(i-2,j)+utmp(i+1,j))
-        enddo
-     enddo
-
-     if (grid_type < 3) then
-
-     if( is==1 ) then
-        do j=js,je
-! 3-pt extrapolation --------------------------------------------------
-           uc(1,j) = ( t14*(utmp( 0,j)+utmp(1,j))    &
-                     + t12*(utmp(-1,j)+utmp(2,j))    &
-                     + t15*(utmp(-2,j)+utmp(3,j)) )*rsin_u(1,j)
-           uc(2,j) = c1*utmp(3,j) + c2*utmp(2,j) + c3*utmp(1,j)
-        enddo
-     endif
-
-     if( (ie+1)==npx ) then
-        do j=js,je
-           uc(npx-1,j) = c1*utmp(npx-3,j)+c2*utmp(npx-2,j)+c3*utmp(npx-1,j) 
-! 3-pt extrapolation --------------------------------------------------------
-           uc(npx,j) = (t14*(utmp(npx-1,j)+utmp(npx,j))+      &
-                        t12*(utmp(npx-2,j)+utmp(npx+1,j))     &
-                      + t15*(utmp(npx-3,j)+utmp(npx+2,j)))*rsin_u(npx,j)
-        enddo
-     endif
-
-     endif
-
-!------
-! Ydir:
-!------
-     if( sw_corner ) then
-         do j=-2,0
-            vtmp(0,j) = -utmp(1-j,0)
-         enddo
-     endif
-     if( nw_corner ) then
-         do j=0,2
-            vtmp(0,npy+j) = utmp(j+1,npy)
-         enddo
-     endif
-     if( se_corner ) then
-         do j=-2,0
-            vtmp(npx,j) = utmp(ie+j,0)
-         enddo
-     endif
-     if( ne_corner ) then
-         do j=0,2
-            vtmp(npx,npy+j) = -utmp(ie-j,npy)
-         enddo
-     endif
-
-     if (grid_type < 3) then
-
-     do j=js,je+1
-      if ( j==1 ) then
-        do i=is,ie
-! 3-pt extrapolation -----------------------------------------
-           vc(i,1) = (t14*(vtmp(i, 0)+vtmp(i,1))    &
-                    + t12*(vtmp(i,-1)+vtmp(i,2))    &
-                    + t15*(vtmp(i,-2)+vtmp(i,3)))*rsin_v(i,1)
-        enddo
-      elseif ( j==(npy-1) ) then
-        do i=is,ie
-           vc(i,j) = c1*vtmp(i,j-2) + c2*vtmp(i,j-1) + c3*vtmp(i,j)
-        enddo
-      elseif ( j==2 ) then
-        do i=is,ie
-!          vc(i,j) = c1*vtmp(i,j+1) + c2*vtmp(i,j) + c3*vtmp(i,j-1)
-           vc(i,j) = c3*vtmp(i,j-1) + c2*vtmp(i,j) + c1*vtmp(i,j+1)
-        enddo
-      elseif ( j==npy ) then
-        do i=is,ie
-! 3-pt extrapolation --------------------------------------------------------
-           vc(i,npy) = (t14*(vtmp(i,npy-1)+vtmp(i,npy))    &
-                      + t12*(vtmp(i,npy-2)+vtmp(i,npy+1))  &
-                      + t15*(vtmp(i,npy-3)+vtmp(i,npy+2)))*rsin_v(i,npy)
-        enddo
-      else
-! 4th order interpolation for interior points:
-        do i=is,ie
-           vc(i,j) = a2*(vtmp(i,j-2)+vtmp(i,j+1))+a1*(vtmp(i,j-1)+vtmp(i,j))
-        enddo
-      endif
-     enddo
-
-    else
-! 4th order interpolation:
-       do j=js,je+1
-          do i=is,ie
-             vc(i,j) = a2*(vtmp(i,j-2)+vtmp(i,j+1))+a1*(vtmp(i,j-1)+vtmp(i,j))
-          enddo
-       enddo
-    endif
-
- end subroutine d2a2c
 
  end module sw_core_mod
