@@ -33,7 +33,7 @@ module fv_update_phys_mod
 
 !---- version number -----
   character(len=128) :: version = '$Id: fv_update_phys.F90,v 17.0.2.7.2.6.2.17 2013/04/16 14:14:00 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201305 $'
+  character(len=128) :: tagname = '$Name: siena_201308 $'
 
   contains
 

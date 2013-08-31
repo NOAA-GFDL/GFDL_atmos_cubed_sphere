@@ -44,7 +44,7 @@
 
 !---- version number -----
   character(len=128) :: version = '$Id: sw_core.F90,v 17.0.2.5.2.12.2.10 2013/03/18 21:49:25 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201305 $'
+  character(len=128) :: tagname = '$Name: siena_201308 $'
 
       private
       public :: c_sw, d_sw, d2a2c_vect,  divergence_corner, divergence_corner_nest, fill_4corners

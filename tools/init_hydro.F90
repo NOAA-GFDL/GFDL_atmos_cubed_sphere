@@ -18,7 +18,7 @@ module init_hydro_mod
 
 !---- version number -----
       character(len=128) :: version = '$Id: init_hydro.F90,v 17.0.2.3.2.4.2.8 2013/04/11 20:37:49 Lucas.Harris Exp $'
-      character(len=128) :: tagname = '$Name: siena_201305 $'
+      character(len=128) :: tagname = '$Name: siena_201308 $'
 
 contains
 

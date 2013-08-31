@@ -24,7 +24,7 @@ interface read_climate_nudge_data
 end interface
 
   character(len=128) :: version = '$Id: read_climate_nudge_data.F90,v 1.1.2.3.2.1.2.3.2.1 2013/05/14 19:53:50 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201305 $'
+  character(len=128) :: tagname = '$Name: siena_201308 $'
   real, parameter :: P0 = 1.e5
   real, parameter :: D608 = RVGAS/RDGAS - 1.
 

@@ -213,7 +213,7 @@ module fv_control_mod
 
 !---- version number -----
    character(len=128) :: version = '$Id: fv_control.F90,v 17.0.2.9.2.20.2.24 2013/05/14 19:53:49 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: siena_201305 $'
+   character(len=128) :: tagname = '$Name: siena_201308 $'
 
  contains
 
