@@ -38,7 +38,7 @@
 
 !---- version number -----
    character(len=128) :: version = '$Id: external_ic.F90,v 17.0.2.2.2.4.2.8.2.17 2013/04/12 17:32:02 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: siena_201308 $'
+   character(len=128) :: tagname = '$Name: siena_201309 $'
 
 contains
 

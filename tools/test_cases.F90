@@ -116,7 +116,7 @@
 
  !---- version number -----
       character(len=128) :: version = '$Id: test_cases.F90,v 17.0.2.2.2.2.2.13.2.18 2013/05/14 19:53:50 Lucas.Harris Exp $'
-      character(len=128) :: tagname = '$Name: siena_201308 $'
+      character(len=128) :: tagname = '$Name: siena_201309 $'
 
   INTERFACE mp_update_dwinds
      MODULE PROCEDURE mp_update_dwinds_2d

@@ -22,6 +22,8 @@ module fv_update_phys_mod
   use atmos_nudge_mod,    only: get_atmos_nudge, do_ps
 #elif defined (CLIMATE_NUDGE)
   use fv_climate_nudge_mod, only: fv_climate_nudge, do_ps
+#elif defined (ADA_NUDGE)
+  use fv_ada_nudge_mod,   only: fv_ada_nudge
 #else
   use fv_nwp_nudge_mod,   only: fv_nwp_nudge
 #endif
@@ -32,8 +34,8 @@ module fv_update_phys_mod
   public :: fv_update_phys, del2_phys
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_update_phys.F90,v 17.0.2.7.2.6.2.17 2013/04/16 14:14:00 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201308 $'
+  character(len=128) :: version = '$Id: fv_update_phys.F90,v 17.0.2.7.2.6.2.17.4.1 2013/07/29 13:38:39 Seth.Underwood Exp $'
+  character(len=128) :: tagname = '$Name: siena_201309 $'
 
   contains
 
@@ -443,6 +445,22 @@ module fv_update_phys_mod
                enddo
             enddo
         endif
+#elif defined (ADA_NUDGE)
+! All fields will be updated except winds; wind tendencies added
+!$omp parallel do default(shared) 
+        do j=js,je
+         do k=2,npz+1                                                                             
+          do i=is,ie
+            pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+          enddo
+         enddo
+         do i=is,ie
+           ps(i,j) = pe(i,npz+1,j)
+         enddo
+        enddo
+        call fv_ada_nudge ( Time, dt, npx, npy, npz,  ps_dt, u_dt, v_dt, t_dt, q_dt,   &
+                            zvir, ptop, ak, bk, ts, ps, delp, ua, va, pt,    &
+                            flagstruct%nwat, q,  phis, gridstruct, bd, domain )
 #else
 ! All fields will be updated except winds; wind tendencies added
 !$omp parallel do default(shared) 

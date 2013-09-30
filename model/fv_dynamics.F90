@@ -33,7 +33,7 @@ public :: fv_dynamics
 
 !---- version number -----
    character(len=128) :: version = '$Id: fv_dynamics.F90,v 17.1.2.7.2.27.2.24 2013/04/12 17:32:02 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: siena_201308 $'
+   character(len=128) :: tagname = '$Name: siena_201309 $'
 
 contains
 

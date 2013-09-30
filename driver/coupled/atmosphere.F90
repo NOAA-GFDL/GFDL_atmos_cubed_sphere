@@ -51,6 +51,8 @@ use fv_mp_mod,          only: switch_current_Atm
 use atmos_nudge_mod,      only: atmos_nudge_init, atmos_nudge_end
 #elif defined (CLIMATE_NUDGE)
 use fv_climate_nudge_mod, only: fv_climate_nudge_init,fv_climate_nudge_end
+#elif defined (ADA_NUDGE)
+use fv_ada_nudge_mod, only: fv_ada_nudge_init, fv_ada_nudge_end
 #else
 use fv_nwp_nudge_mod,     only: fv_nwp_nudge_init, fv_nwp_nudge_end
 #endif
@@ -71,8 +73,8 @@ public  atmosphere_down,       atmosphere_up,       &
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id: atmosphere.F90,v 17.0.2.3.4.6.2.1.2.5.2.27 2013/05/09 16:37:24 Lucas.Harris Exp $'
-character(len=128) :: tagname = '$Name: siena_201308 $'
+character(len=128) :: version = '$Id: atmosphere.F90,v 17.0.2.3.4.6.2.1.2.5.2.27.4.1 2013/07/29 13:35:06 Seth.Underwood Exp $'
+character(len=128) :: tagname = '$Name: siena_201309 $'
 character(len=7)   :: mod_name = 'atmos'
 
 !---- namelist (saved in file input.nml) ----
@@ -260,6 +262,12 @@ contains
          call mpp_error(NOTE, 'Code compiled with and using climate nudging')
     endif
     Atm(mytile)%flagstruct%nudge = do_atmos_nudge
+#elif defined (ADA_NUDGE)
+    if ( Atm(1)%flagstruct%nudge ) then
+        call fv_ada_nudge_init( Time, Atm(mytile)%atmos_axes, npz, zvir, Atm(1)%ak, Atm(1)%bk, Atm(1)%ts, &
+           Atm(1)%phis, Atm(1)%gridstruct, Atm(1)%ks, Atm(1)%npx, Atm(1)%neststruct, Atm(1)%bd)
+        call mpp_error(NOTE, 'ADA nudging is active')
+     endif
 #else
    if ( Atm(mytile)%flagstruct%nudge ) then
       call fv_nwp_nudge_init( Time, Atm(mytile)%atmos_axes, npz, zvir, Atm(1)%ak, Atm(1)%bk, Atm(1)%ts, &
@@ -587,6 +595,8 @@ contains
    if ( Atm(1)%flagstruct%nudge ) call atmos_nudge_end
 #elif defined (CLIMATE_NUDGE)
    if ( Atm(1)%flagstruct%nudge ) call fv_climate_nudge_end
+#elif defined (ADA_NUDGE)
+   if ( Atm(1)%flagstruct%nudge ) call fv_ada_nudge_end
 #else
    if ( Atm(1)%flagstruct%nudge ) call fv_nwp_nudge_end
 #endif

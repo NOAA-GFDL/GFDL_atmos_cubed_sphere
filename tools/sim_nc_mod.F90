@@ -12,7 +12,8 @@ module sim_nc_mod
 
  private
  public  open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var2_double,   &
-         get_var3_real, get_var3_double, get_var3_r4,  get_var2_real, handle_err, check_var
+         get_var3_real, get_var3_double, get_var3_r4, get_var2_real, get_var2_r4,   &
+         handle_err, check_var
 
  contains
 
@@ -111,7 +112,33 @@ module sim_nc_mod
 
       end subroutine get_var2_real
 
+      subroutine get_var2_r4( ncid, var2_name, is,ie, js,je, var2, time_slice )
+      integer, intent(in):: ncid
+      character(len=*), intent(in)::  var2_name
+      integer, intent(in):: is, ie, js, je
+      real(kind=4), intent(out):: var2(is:ie,js:je)
+      integer, intent(in), optional :: time_slice
+!
+      real(kind=4), dimension(1) :: time
+      integer, dimension(3):: start, nreco
+      integer:: status, var2id
 
+      status = nf_inq_varid (ncid, var2_name, var2id)
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      start(1) = is; start(2) = js; start(3) = 1
+      if ( present(time_slice) ) then
+         start(3) = time_slice
+      end if
+
+      nreco(1) = ie - is + 1
+      nreco(2) = je - js + 1
+      nreco(3) = 1
+
+      status = nf_get_vara_real(ncid, var2id, start, nreco, var2)
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      end subroutine get_var2_r4
 
       subroutine get_var2_double( ncid, var2_name, im, jm, var2 )
       integer, intent(in):: ncid
@@ -166,12 +193,14 @@ module sim_nc_mod
       end subroutine get_var3_real
 
 
-      subroutine get_var3_r4( ncid, var3_name, is,ie, js,je, ks,ke, var3 )
+      subroutine get_var3_r4( ncid, var3_name, is,ie, js,je, ks,ke, var3, time_slice )
       integer, intent(in):: ncid
       character(len=*), intent(in)::  var3_name
       integer, intent(in):: is, ie, js, je, ks,ke
       real(kind=4), intent(out):: var3(is:ie,js:je,ks:ke)
+      integer, intent(in), optional :: time_slice
 !
+      real(kind=4), dimension(1) :: time
       integer, dimension(4):: start, nreco
       integer:: status, var3id
 
@@ -179,6 +208,9 @@ module sim_nc_mod
       if (status .ne. NF_NOERR) call handle_err(status)
 
       start(1) = is; start(2) = js; start(3) = ks; start(4) = 1
+      if ( present(time_slice) ) then
+         start(4) = time_slice
+      end if
 
       nreco(1) = ie - is + 1 
       nreco(2) = je - js + 1

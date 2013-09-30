@@ -12,7 +12,11 @@ module dyn_core_mod
   use tp_core_mod,        only: copy_corners
   use fv_timing_mod,      only: timing_on, timing_off
   use fv_diagnostics_mod, only: prt_maxmin, fv_time
+#if defined (ADA_NUDGE)
+  use fv_ada_nudge_mod,   only: breed_slp_inline_ada
+#else
   use fv_nwp_nudge_mod,   only: breed_slp_inline
+#endif
   use diag_manager_mod,   only: send_data
   use fv_arrays_mod,      only: fv_grid_type, fv_flags_type, fv_nest_type, fv_diag_type, fv_grid_bounds_type
 
@@ -37,8 +41,8 @@ public :: dyn_core, del2_cubed
 #endif
 
 !---- version number -----
-  character(len=128) :: version = '$Id: dyn_core.F90,v 17.0.2.10.2.18.2.23 2013/05/10 13:22:41 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201308 $'
+  character(len=128) :: version = '$Id: dyn_core.F90,v 17.0.2.10.2.18.2.23.4.2 2013/09/10 19:29:25 Seth.Underwood Exp $'
+  character(len=128) :: tagname = '$Name: siena_201309 $'
 
 contains
 
@@ -865,8 +869,14 @@ contains
 
 !-------------------------------------------------------------------------------------------------------
     if ( flagstruct%breed_vortex_inline ) then
+#if defined (ADA_NUDGE)
+         call breed_slp_inline_ada( it, dt, npz, ak, bk, phis, pe, pk, peln, pkz,     &
+                                delp, u, v, pt, q, flagstruct%nwat, zvir, gridstruct, ks, domain, bd )
+#else
          call breed_slp_inline( it, dt, npz, ak, bk, phis, pe, pk, peln, pkz,     &
                                 delp, u, v, pt, q, flagstruct%nwat, zvir, gridstruct, ks, domain, bd )
+
+#endif
     endif
 !-------------------------------------------------------------------------------------------------------
 
