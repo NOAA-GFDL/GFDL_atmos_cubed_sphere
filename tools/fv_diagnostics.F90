@@ -63,8 +63,8 @@ module fv_diagnostics_mod
  public :: prt_mass
 
 !---- version number -----
- character(len=128) :: version = '$Id: fv_diagnostics.F90,v 17.0.6.7.2.8.2.12.2.13 2013/04/10 03:04:18 Lucas.Harris Exp $'
- character(len=128) :: tagname = '$Name: siena_201309 $'
+ character(len=128) :: version = '$Id: fv_diagnostics.F90,v 20.0 2013/12/13 23:07:24 fms Exp $'
+ character(len=128) :: tagname = '$Name: tikal $'
 
 contains
 
@@ -135,7 +135,7 @@ contains
     vsrange = (/ -200.,  200. /)  ! surface (lowest layer) winds
 
     vrange = (/ -330.,  330. /)  ! winds
-    wrange = (/ -150.,  150. /)  ! vertical wind
+    wrange = (/ -100.,  100. /)  ! vertical wind
    rhrange = (/  -10.,  150. /)  ! RH
 
 #if defined(MARS_GCM)
@@ -533,6 +533,9 @@ contains
 ! Total energy (only when moist_phys = .T.)
        idiag%id_te    = register_diag_field ( trim(field), 'te', axes(1:2), Time,      &
             'Total Energy', 'J/kg', missing_value=missing_value )
+! Total Kinetic energy
+       idiag%id_ke    = register_diag_field ( trim(field), 'ke', axes(1:2), Time,      &
+            'Total KE', 'm^2/s^2', missing_value=missing_value )
        idiag%id_delp = register_diag_field ( trim(field), 'delp', axes(1:3), Time,        &
             'pressure thickness', 'pa', missing_value=missing_value )
        idiag%id_delz = register_diag_field ( trim(field), 'delz', axes(1:3), Time,        &
@@ -577,6 +580,10 @@ contains
             'surface v-wind', 'm/sec', missing_value=missing_value, range=vsrange )
        idiag%id_tq = register_diag_field ( trim(field), 'tq', axes(1:2), Time,        &
             'Total water path', 'kg/m**2', missing_value=missing_value )
+       idiag%id_iw = register_diag_field ( trim(field), 'iw', axes(1:2), Time,        &
+            'Ice water path', 'kg/m**2', missing_value=missing_value )
+       idiag%id_lw = register_diag_field ( trim(field), 'lw', axes(1:2), Time,        &
+            'Liquid water path', 'kg/m**2', missing_value=missing_value )
        idiag%id_ts = register_diag_field ( trim(field), 'ts', axes(1:2), Time,  &
                                         'Skin temperature', 'K' )
 
@@ -662,6 +669,13 @@ contains
                            '850-mb v-wind', '1/s', missing_value=missing_value )
        idiag%id_w850 = register_diag_field ( trim(field), 'w850', axes(1:2), Time,       &
                            '850-mb w-wind', '1/s', missing_value=missing_value )
+! helicity
+       idiag%id_x850 = register_diag_field ( trim(field), 'x850', axes(1:2), Time,       &
+                           '850-mb vertical comp. of helicity', 'm/s**2', missing_value=missing_value )
+
+! Storm Relative Helicity
+       idiag%id_srh = register_diag_field ( trim(field), 'srh', axes(1:2), Time,       &
+                           'Storm Relative Helicity', 'm/s**2', missing_value=missing_value )
 !--------------------------
 ! 1000-mb winds:
 !--------------------------
@@ -921,11 +935,11 @@ contains
 
     real, allocatable :: a2(:,:),a3(:,:,:), wk(:,:,:), wz(:,:,:), ucoor(:,:,:), vcoor(:,:,:)
     real, allocatable :: slp(:,:), depress(:,:), ws_max(:,:), tc_count(:,:)
-    real, allocatable :: u2(:,:), v2(:,:)
+    real, allocatable :: u2(:,:), v2(:,:), x850(:,:)
     real, allocatable :: dmmr(:,:,:), dvmr(:,:,:)
     real height(2)
     real plevs(10)
-    real tot_mq, tmp
+    real    :: tot_mq, tmp, sar, slon, slat
     logical :: used
     logical :: bad_range
     logical :: prt_minmax
@@ -969,6 +983,10 @@ contains
         allocate (  ws_max(isc:iec,jsc:jec) )
         allocate ( cat_crt(isc:iec,jsc:jec) )
         allocate (tc_count(isc:iec,jsc:jec) )
+    endif
+
+    if( idiag%id_x850>0 ) then
+        allocate ( x850(isc:iec,jsc:jec) )
     endif
 
     fv_time = Time
@@ -1015,7 +1033,7 @@ contains
 
     if( prt_minmax ) then
 
-        call prt_maxmin('ZS', idiag%zsurf,     isc, iec, jsc, jec, 0,   1, 1.0)
+        call prt_mxm('ZS', idiag%zsurf,     isc, iec, jsc, jec, 0,   1, 1.0, Atm(n)%gridstruct%area, Atm(n)%domain)
         call prt_maxmin('PS', Atm(n)%ps, isc, iec, jsc, jec, ngc, 1, 0.01)
 
 #ifdef TEST_TRACER
@@ -1127,7 +1145,7 @@ contains
                         Atm(n)%va(isc:iec,jsc:jec,npz), ws_max, Atm(n)%domain)
           do j=jsc,jec
              do i=isc,iec
-                if( abs(Atm(n)%gridstruct%agrid(i,j,2)*rad2deg)<60.0 .and.     &
+                if( abs(Atm(n)%gridstruct%agrid(i,j,2)*rad2deg)<45.0 .and.     &
                     Atm(n)%phis(i,j)*ginv<500.0 .and. ws_max(i,j)>ws_0 ) then
                     storm(i,j) = .true.
                 else
@@ -1137,7 +1155,7 @@ contains
           enddo
        endif
 
-       if ( idiag%id_vort850>0 .or. idiag%id_vorts>0 .or. idiag%id_vort>0 .or. idiag%id_pv>0 .or. idiag%id_rh>0 ) then
+       if ( idiag%id_vort850>0 .or. idiag%id_vorts>0 .or. idiag%id_vort>0 .or. idiag%id_pv>0 .or. idiag%id_rh>0 .or. idiag%id_x850>0 ) then
           call get_vorticity(isc, iec, jsc, jec, isd, ied, jsd, jed, npz, Atm(n)%u, Atm(n)%v, wk, &
                Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy, Atm(n)%gridstruct%rarea)
 
@@ -1155,10 +1173,11 @@ contains
           endif
 
 
-          if(idiag%id_vort850>0) then
+          if(idiag%id_vort850>0 .or. idiag%id_c15>0 .or. idiag%id_x850>0) then
              call interpolate_vertical(isc, iec, jsc, jec, npz,   &
                                        850.e2, Atm(n)%peln, wk, a2)
              used=send_data(idiag%id_vort850, a2, Time)
+             if ( idiag%id_x850>0 ) x850(:,:) = a2(:,:) 
 
              if(idiag%id_c15>0) then
              do j=jsc,jec
@@ -1170,6 +1189,25 @@ contains
              enddo
              endif
 
+          endif
+
+          if ( idiag%id_srh > 0 ) then
+             call helicity_relative(isc, iec, jsc, jec, ngc, npz, zvir, sphum, a2, &
+                  Atm(n)%ua, Atm(n)%va, Atm(n)%delz, Atm(n)%q,   &
+                  Atm(n)%flagstruct%hydrostatic, Atm(n)%pt, Atm(n)%peln, Atm(n)%phis, grav)
+             used = send_data ( idiag%id_srh, a2, Time )
+             if(prt_minmax) then
+                do j=jsc,jec
+                   do i=isc,iec
+                      tmp = rad2deg * Atm(n)%gridstruct%agrid(i,j,1)
+                      if (  Atm(n)%gridstruct%agrid(i,j,2)>25. .and. Atm(n)%gridstruct%agrid(i,j,2)<50.    &
+                           .and. tmp>235. .and. tmp<300. ) then
+                         a2(i,j) = 0.
+                      endif
+                   enddo
+                enddo
+                call prt_maxmin('SRH over CONUS', a2, isc, iec, jsc, jec, 0,   1, 1.)
+             endif
           endif
 
           if ( idiag%id_pv > 0 ) then
@@ -1394,9 +1432,35 @@ contains
              used = send_data(idiag%id_c15, depress, Time)
              if(idiag%id_f15>0) used = send_data(idiag%id_f15, tc_count, Time)
              if(prt_minmax) then
-!               tmp = g_sum(depress, isc, iec, jsc, jec, ngc, area, 1) 
-!               if(master) write(*,*) 'Mean Tropical Cyclone depression (mb)=', tmp
-                call prt_maxmin('Depression', depress, isc, iec, jsc, jec, 0,   1, 1.)
+                do j=jsc,jec
+                   do i=isc,iec
+                      tmp = rad2deg * Atm(n)%gridstruct%agrid(i,j,1)
+! Western Pac: negative; positive elsewhere
+                      if ( Atm(n)%gridstruct%agrid(i,j,2)>0. .and. tmp>105. .and. tmp<180. ) then
+                           depress(i,j) = -depress(i,j)
+                      endif
+                   enddo
+                enddo
+                call prt_maxmin('Depress', depress, isc, iec, jsc, jec, 0,   1, 1.)
+                do j=jsc,jec
+                   do i=isc,iec
+                      if ( Atm(n)%gridstruct%agrid(i,j,2)<0.) then
+! Excluding the SH cyclones
+                           depress(i,j) = 0.
+                      endif
+                   enddo
+                enddo
+                call prt_maxmin('NH Deps', depress, isc, iec, jsc, jec, 0,   1, 1.)
+
+! ATL basin cyclones
+                do j=jsc,jec
+                   do i=isc,iec
+                      if ( tmp<280. ) then
+                           depress(i,j) = 0.
+                      endif
+                   enddo
+                enddo
+                call prt_maxmin('ATL Deps', depress, isc, iec, jsc, jec, 0,   1, 1.)
              endif
             endif
 
@@ -1525,6 +1589,28 @@ contains
 
        if(idiag%id_ua > 0) used=send_data(idiag%id_ua, Atm(n)%ua(isc:iec,jsc:jec,:), Time)
        if(idiag%id_va > 0) used=send_data(idiag%id_va, Atm(n)%va(isc:iec,jsc:jec,:), Time)
+
+       if(idiag%id_ke > 0) then
+          a2(:,:) = 0.
+          do k=1,npz
+          do j=jsc,jec
+             do i=isc,iec
+                a2(i,j) = a2(i,j) + Atm(n)%delp(i,j,k)*(Atm(n)%ua(i,j,k)**2+Atm(n)%va(i,j,k)**2)
+             enddo
+          enddo
+          enddo
+! Mass weighted KE 
+          do j=jsc,jec
+             do i=isc,iec
+                a2(i,j) = 0.5*a2(i,j)/(Atm(n)%ps(i,j)-ptop)
+             enddo
+          enddo
+          used=send_data(idiag%id_ke, a2, Time)
+          if(prt_minmax) then
+             tot_mq  = g_sum( Atm(n)%domain, a2, isc, iec, jsc, jec, ngc, Atm(n)%gridstruct%area, 1) 
+             if (master) write(*,*) 'SQRT(2.*KE; m/s)=', sqrt(2.*tot_mq)  
+          endif
+       endif
 
        if(idiag%id_delp > 0) used=send_data(idiag%id_delp, Atm(n)%delp(isc:iec,jsc:jec,:), Time)
        if(idiag%id_delz > 0) used=send_data(idiag%id_delz, Atm(n)%delz(isc:iec,jsc:jec,:), Time)
@@ -1679,6 +1765,8 @@ contains
             call interpolate_vertical(isc, iec, jsc, jec, npz,   &
                                       200.e2, Atm(n)%peln, Atm(n)%pt(isc:iec,jsc:jec,:), a2)
             used=send_data(idiag%id_t200, a2, Time)
+            if( prt_minmax )   &
+                 call prt_maxmin('T200', a2, isc, iec, jsc, jec, 0, 1, 1.)
        endif
        if ( idiag%id_q200>0 ) then
             call interpolate_vertical(isc, iec, jsc, jec, npz,   &
@@ -1779,10 +1867,16 @@ contains
                                       850.e2, Atm(n)%peln, Atm(n)%va(isc:iec,jsc:jec,:), a2)
             used=send_data(idiag%id_v850, a2, Time)
        endif
-       if ( idiag%id_w850>0 ) then
+       if ( idiag%id_w850>0 .or. idiag%id_x850>0) then
             call interpolate_vertical(isc, iec, jsc, jec, npz,   &
                                       850.e2, Atm(n)%peln, Atm(n)%w(isc:iec,jsc:jec,:), a2)
             used=send_data(idiag%id_w850, a2, Time)
+
+            if ( idiag%id_x850 .and. idiag%id_vort850>0 ) then
+                 x850(:,:) = x850(:,:)*a2(:,:) 
+                 used=send_data(idiag%id_x850, x850, Time)
+                 deallocate ( x850 )
+            endif
        endif
        if ( idiag%id_t850>0 ) then
             call interpolate_vertical(isc, iec, jsc, jec, npz,   &
@@ -2097,6 +2191,45 @@ contains
 
  end subroutine prt_maxmin
 
+ subroutine prt_mxm(qname, q, is, ie, js, je, n_g, km, fac, area, domain)
+      character(len=*), intent(in)::  qname
+      integer, intent(in):: is, ie, js, je
+      integer, intent(in):: n_g, km
+      real, intent(in)::    q(is-n_g:ie+n_g, js-n_g:je+n_g, km)
+      real, intent(in)::    fac
+      real, intent(IN)::    area(is-n_g:ie+n_g, js-n_g:je+n_g, km)
+      type(domain2d), intent(INOUT) :: domain
+!
+      real qmin, qmax, gmean
+      integer i,j,k
+
+      qmin = q(is,js,1)
+      qmax = qmin
+      gmean = 0.
+
+      do k=1,km
+      do j=js,je
+         do i=is,ie
+!           qmin = min(qmin, q(i,j,k))
+!           qmax = max(qmax, q(i,j,k))
+            if( q(i,j,k) < qmin ) then
+                qmin = q(i,j,k)
+            elseif( q(i,j,k) > qmax ) then
+                qmax = q(i,j,k)
+            endif
+          enddo
+      enddo
+      enddo
+
+      call mp_reduce_min(qmin)
+      call mp_reduce_max(qmax)
+
+      gmean = g_sum(domain, q(is,js,km), is, ie, js, je, 3, area, 1) 
+
+      if(master) write(6,*) qname, qmax*fac, qmin*fac, gmean
+
+ end subroutine prt_mxm
+
  !Added nwat == 1 case for water vapor diagnostics
  subroutine prt_mass(km, nq, is, ie, js, je, n_g, nwat, ps, delp, q, area, domain)
 
@@ -2371,6 +2504,77 @@ contains
  enddo
 
  end subroutine interpolate_vertical
+
+ subroutine helicity_relative(is, ie, js, je, ng, km, zvir, sphum, srh,   &
+                              ua, va, delz, q, hydrostatic, pt, peln, phis, grav)
+! !INPUT PARAMETERS:
+   integer, intent(in):: is, ie, js, je, ng, km, sphum
+   real, intent(in):: grav, zvir
+   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, ua, va
+   real, intent(in):: delz(is-ng:ie+ng,js-ng:je+ng,km)
+   real, intent(in):: q(is-ng:ie+ng,js-ng:je+ng,km,*)
+   real, intent(in):: phis(is-ng:ie+ng,js-ng:je+ng)
+   real, intent(in):: peln(is:ie,km+1,js:je) 
+   logical, intent(in):: hydrostatic
+   real, intent(out):: srh(is:ie,js:je)   ! unit: (m/s)**2
+   real, parameter:: z_crit = 3.e3   ! lowest 3-km
+!---------------------------------------------------------------------------------
+! SRH = 150-299 ... supercells possible with weak tornadoes
+! SRH = 300-449 ... very favourable to supercells development and strong tornadoes
+! SRH > 450 ... violent tornadoes
+!---------------------------------------------------------------------------------
+! if z_crit = 1E3, the threshold for supercells is 100 (m/s)**2
+! Coded by S.-J. Lin for CONUS regional climate simulations
+!
+   real:: rdg
+   real, dimension(is:ie):: zh, uc, vc, dz
+   integer i, j, k, k0
+
+   rdg = rdgas / grav
+
+!$omp parallel do default(shared), private(i,j,k,zh,uc,vc,dz,k0)
+   do j=js,je
+
+      do i=is,ie
+         uc(i) = 0.
+         vc(i) = 0.
+         zh(i) = 0.
+         srh(i,j) = 0.
+
+!        if ( phis(i,j)/grav < 1.E3 ) then
+         do k=km,1,-1
+            if ( hydrostatic ) then
+                 dz(i) = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
+            else
+                 dz(i) = - delz(i,j,k)
+            endif
+            zh(i) = zh(i) + dz(i)
+! Compute mean winds below z_crit
+            if ( zh(i) < z_crit ) then
+                uc(i) = uc(i) + ua(i,j,k)*dz(i)
+                vc(i) = vc(i) + va(i,j,k)*dz(i)
+                k0 = k
+            else
+                uc(i) = uc(i) / (zh(i)-dz(i))
+                vc(i) = vc(i) / (zh(i)-dz(i))
+                goto 123
+            endif
+         enddo
+123      continue
+
+! Lowest layer wind shear computed betw top edge and mid-layer
+         k = km
+         srh(i,j) = 0.5*(va(i,j,km)-vc(i))*(ua(i,j,km-1)-ua(i,j,km))  -  &
+                    0.5*(ua(i,j,km)-uc(i))*(va(i,j,km-1)-va(i,j,km))
+         do k=k0, km-1
+            srh(i,j) = srh(i,j) + 0.5*(va(i,j,k)-vc(i))*(ua(i,j,k-1)-ua(i,j,k+1)) -  &
+                                  0.5*(ua(i,j,k)-uc(i))*(va(i,j,k-1)-va(i,j,k+1))
+         enddo
+!        endif
+      enddo  ! i-loop
+   enddo   ! j-loop
+
+ end subroutine helicity_relative
 
 
 

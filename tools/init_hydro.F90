@@ -1,10 +1,12 @@
-! $Id: init_hydro.F90,v 17.0.2.3.2.4.2.8 2013/04/11 20:37:49 Lucas.Harris Exp $
+! $Id: init_hydro.F90,v 20.0 2013/12/13 23:07:44 fms Exp $
 
 module init_hydro_mod
 
       use constants_mod, only: grav, rdgas, rvgas
       use fv_grid_utils_mod,    only: g_sum
       use fv_mp_mod,        only: is_master
+      use field_manager_mod,  only: MODEL_ATMOS
+      use tracer_manager_mod, only: get_tracer_index
       use mpp_domains_mod, only: domain2d
 !     use fv_diagnostics_mod, only: prt_maxmin
 !!! DEBUG CODE
@@ -17,8 +19,8 @@ module init_hydro_mod
       public :: p_var, hydro_eq
 
 !---- version number -----
-      character(len=128) :: version = '$Id: init_hydro.F90,v 17.0.2.3.2.4.2.8 2013/04/11 20:37:49 Lucas.Harris Exp $'
-      character(len=128) :: tagname = '$Name: siena_201309 $'
+      character(len=128) :: version = '$Id: init_hydro.F90,v 20.0 2013/12/13 23:07:44 fms Exp $'
+      character(len=128) :: tagname = '$Name: tikal $'
 
 contains
 
@@ -59,6 +61,8 @@ contains
    type(domain2d), intent(IN) :: domain
 
 ! Local
+   integer  sphum, liq_wat, ice_wat
+   integer  rainwat, snowwat, graupel          ! Lin Micro-physics
    real ratio(ifirst:ilast)
    real pek, lnp, ak1, rdg, dpd, zvir
    integer i, j, k
@@ -70,6 +74,7 @@ contains
 
    pek = ptop ** cappa
 
+!$omp parallel do default(shared) private(ratio, ak1, lnp)
    do j=jfirst,jlast
       do i=ifirst,ilast
          pe(i,1,j) = ptop
@@ -92,7 +97,6 @@ contains
             pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
             peln(i,k,j) = log(pe(i,k,j))
             pk(i,j,k) = exp( cappa*peln(i,k,j) )
-!            pk(i,j,k) = pe(i,k,j)**cappa
          enddo
       enddo
 
@@ -129,6 +133,7 @@ contains
       if ( present(make_nh) ) then
           if ( make_nh ) then
              delz = 1.e25 
+!$omp parallel do default(shared)
              do k=1,km
                 do j=jfirst,jlast
                    do i=ifirst,ilast
@@ -143,19 +148,20 @@ contains
      if ( moist_phys ) then
 !------------------------------------------------------------------
 ! The following form is the same as in "fv_update_phys.F90"
-! Therefore, restart reproducibility is only enforced in diabatic cases
 !------------------------------------------------------------------
-! For adiabatic runs, use "-DSOLO_REPRO" to enforce reproducibility
        zvir = rvgas/rdgas - 1.
+       sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
+!$omp parallel do default(shared)
        do k=1,km
           do j=jfirst,jlast
              do i=ifirst,ilast
                 pkz(i,j,k) = exp( cappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
-                                (1.+zvir*q(i,j,k,1))/delz(i,j,k)) )
+                                (1.+zvir*q(i,j,k,sphum))/delz(i,j,k)) )
              enddo
           enddo
        enddo
      else
+!$omp parallel do default(shared)
        do k=1,km
           do j=jfirst,jlast
              do i=ifirst,ilast
@@ -461,11 +467,6 @@ contains
       enddo
    enddo    ! j-loop
 
-   if ( hybrid_z ) then 
-!      call prt_maxmin('INIT_hydro: delz', delz, is, ie, js, je,  0, km, 1., is_master())
-!      call prt_maxmin('INIT_hydro: DELP', delp, is, ie, js, je, ng, km, 1., is_master())
-   endif
-!  call prt_maxmin('INIT_hydro: PT  ', pt,   is, ie, js, je, ng, km, 1., is_master())
 
 #endif
 

@@ -67,6 +67,10 @@ module boundary_mod
      module procedure update_coarse_grid_mpp_2d
   end interface
 
+  !---- version number -----
+  character(len=128) :: version = '$Id: boundary.F90,v 20.0 2013/12/13 23:04:16 fms Exp $'
+  character(len=128) :: tagname = '$Name: tikal $'
+
 contains
 
   !Outflow BC routines based off of the formulations of Klemp and

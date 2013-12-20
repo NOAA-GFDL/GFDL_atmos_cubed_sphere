@@ -35,6 +35,9 @@
 !         nlat = 2160
 !    surf_format:      netcdf (default)
 !                      binary
+! New NASA SRTM30 data: SRTM30.nc
+!         nlon = 43200
+!         nlat = 21600
       logical::  zs_filter = .true. 
       logical:: zero_ocean = .true.          ! if true, no diffusive flux into water/ocean area 
       integer           ::  nlon = 21600
@@ -64,8 +67,8 @@
 #endif
 
 !---- version number -----
-      character(len=128) :: version = '$Id: fv_surf_map.F90,v 17.0.2.1.2.5.2.7.2.16 2013/04/14 04:47:01 Lucas.Harris Exp $'
-      character(len=128) :: tagname = '$Name: siena_201309 $'
+      character(len=128) :: version = '$Id: fv_surf_map.F90,v 20.0 2013/12/13 23:07:40 fms Exp $'
+      character(len=128) :: tagname = '$Name: tikal $'
 
       contains
 
@@ -110,7 +113,7 @@
       real dx1, dx2, dy1, dy2, lats, latn, r2d
       real da_max, cd2, zmean, z2mean, delg
 !     real z_sp, f_sp, z_np, f_np
-      integer i, j, n, mdim
+      integer i, j, n, mdim, n_del2, n_del4
       integer igh, jt
       integer ncid, lonid, latid, ftopoid, htopoid
       integer jstart, jend, start(4), nread(4)
@@ -172,7 +175,13 @@
           if (status .ne. NF_NOERR) call handle_err(status)
           nlat = latdim
 
-          if ( is_master() ) write(*,*) 'Opening USGS datset file:', surf_file, surf_format, nlon, nlat
+          if ( is_master() ) then
+              if ( nlon==43200 ) then
+                write(*,*) 'Opening NASA datset file:', surf_file, surf_format, nlon, nlat
+              else
+                write(*,*) 'Opening USGS datset file:', surf_file, surf_format, nlon, nlat
+              endif
+          endif
   
        else
           call error_mesg ( 'surfdrv','Raw IEEE data format no longer supported !!!', FATAL )
@@ -321,15 +330,13 @@
                                                      call timing_on('map_to_cubed')
       call map_to_cubed_raw(igh, nlon, jt, lat1(jstart:jend+1), lon1, zs, ft, grid, agrid,  &
                             phis, oro_g, sgh_g, npx, npy, jstart, jend, stretch_fac, nested, npx_global, bd)
+      if (is_master()) write(*,*) 'map_to_cubed_raw: master PE done'
                                                      call timing_off('map_to_cubed')
-
-      if( zs_filter .and. zero_ocean ) call mpp_update_domains(oro_g, domain)
 
       deallocate ( zs )
       deallocate ( ft )
       deallocate ( lon1 )
       deallocate ( lat1 )
-      if(is_master()) write(*,*) 'map_to_cubed_raw:', trim(grid_string), ' master PE done'
 
 #ifndef MARS_GCM
 ! Account for small-earth test cases
@@ -372,41 +379,49 @@
                                                     call timing_on('Terrain_filter')
 ! Del-2: high resolution only
       if ( zs_filter ) then
+         if(is_master()) write(*,*) 'Applying terrain filters. zero_ocean is', zero_ocean
+         
+         cd2 = 0.20*da_min
+         if ( npx_global>512 ) then
+           if ( npx_global<=721 ) then
+              n_del2 = 1
+           elseif( npx_global <= 1001 ) then
+              n_del2 = 2
+           elseif( npx_global <= 2001 ) then
+              n_del2 = 4
+           else
+              n_del2 = 6
+           endif
+           call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, n_del2, cd2, zero_ocean, oro_g, nested, domain, bd)
+         endif
 
-      cd2 = 0.20*da_min
-      if ( npx_global>512 ) then
-      if ( npx_global<=721 ) then
-           call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, 1, cd2, zero_ocean, oro_g, nested, domain, bd)
-      elseif( npx_global <= 1001 ) then
-           call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, 2, cd2, zero_ocean, oro_g, nested, domain, bd)
-      elseif( npx_global <= 2001 ) then
-           call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, 4, cd2, zero_ocean, oro_g, nested, domain, bd)
-      else
-           call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, 6, cd2, zero_ocean, oro_g, nested, domain, bd)
-      endif
-      endif
+         ! MFCT Del-4:
+         mdim = nint( real(npx_global) * min(10., stretch_fac) )
+         if ( mdim<=97 ) then
+            n_del4 = 1
+         elseif( mdim<=181 ) then
+            n_del4 = 2
+         elseif( mdim<=360 ) then
+            n_del4 = 3
+         elseif( mdim<=361 ) then
+            n_del4 = 4
+         elseif( mdim<=385 ) then
+            n_del4 = 5
+         else
+            n_del4 = 6
+         endif
+         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, n_del4, zero_ocean, oro_g, nested, domain, bd)
 
-! MFCT Del-4:
-      mdim = nint( real(npx_global) * min(10., stretch_fac) )
-      if ( mdim<=91 ) then
-         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, 1, zero_ocean, oro_g, nested, domain, bd)
-      elseif( mdim<=181 ) then
-         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, 2, zero_ocean, oro_g, nested, domain, bd)
-      elseif( mdim<=361 ) then
-         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, 4, zero_ocean, oro_g, nested, domain, bd)
-      else
-         call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, 6, zero_ocean, oro_g, nested, domain, bd)
-      endif
+         ! Final pass: high-res only: C720 or higher
+         if( mdim >= 721 .and. mdim<1001 ) then
+            call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, 2, cd2, zero_ocean, oro_g, nested, domain, bd)
+         elseif( mdim >= 1001 .and. mdim<=2001 ) then
+            call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, 4, cd2, zero_ocean, oro_g, nested, domain, bd)
+         elseif( mdim>2001 ) then
+            call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, 6, cd2, zero_ocean, oro_g, nested, domain, bd)
+         endif
 
-! Final pass: high-res only: C720 or higher
-      if( mdim >= 721 .and. mdim<1001 ) then
-          call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, 2, cd2, zero_ocean, oro_g, nested, domain, bd)
-      elseif( mdim >= 1001 .and. mdim<=2001 ) then
-          call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, 4, cd2, zero_ocean, oro_g, nested, domain, bd)
-      elseif( mdim>2001 ) then
-          call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, 6, cd2, zero_ocean, oro_g, nested, domain, bd)
-      endif
-
+                                                    call timing_off('Terrain_filter')
       endif          ! end terrain filter
 
       do j=js,je
@@ -475,7 +490,6 @@
             sgh_g(i,j) = max(0., sgh_g(i,j))
          enddo
       enddo
-                                                    call timing_off('Terrain_filter')
 
  end subroutine surfdrv
 
@@ -1238,7 +1252,7 @@
       real lon_g(-im/32:im+im/32)
       real lat_g(jm)
 
-      real pc(3), p2(2), pp(3), grid3(3,is-ng:ie+ng+1, js-ng:je+ng+1)
+      real pc(3), p2(2), pp(3), grid3(3,bd%is-ng:bd%ie+ng+1, bd%js-ng:bd%je+ng+1)
       integer i,j, np
       integer ii, jj, i1, i2, j1, j2
       integer ifirst, ilast

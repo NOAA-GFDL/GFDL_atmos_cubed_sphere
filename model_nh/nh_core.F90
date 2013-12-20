@@ -7,33 +7,47 @@ module nh_core_mod
 #ifdef GEOPK_CHECK
    use mpp_mod,        only: mpp_pe  
 #endif
-   use constants_mod,  only: rdgas, grav
-   use tp_core_mod,    only: fv_tp_2d, copy_corners
-   use fv_arrays_mod,  only: fv_grid_type, fv_grid_bounds_type
+   use constants_mod,     only: rdgas, grav
+   use tp_core_mod,       only: fv_tp_2d, copy_corners
+   use sw_core_mod,       only: fill_4corners
+   use fv_arrays_mod,     only: fv_grid_bounds_type, fv_grid_type
+!!! DEBUG CODE
+   use fv_mp_mod, only: is_master
+!!! END DEBUG CODE
+
+
 
    implicit none
    private
 
-   public Riem_Solver, Riem_Solver_c, update_dz_c, update_dz_d, geopk_halo_nh
+   public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, geopk_halo_nh
    real, parameter:: dz_min = 2.
+   real, parameter:: r3 = 1./3.
+   real, parameter:: nu = 0.25
 
 CONTAINS 
 
-  subroutine update_dz_c(is, ie, js, je, km, ng, dt, dp0, zs, area, ut, vt, gz, ws)
+  subroutine update_dz_c(is, ie, js, je, km, ng, dt, dp0, zs, area, ut, vt, gz, ws, &
+       npx, npy, sw_corner, se_corner, ne_corner, nw_corner, bd, grid_type)
 ! !INPUT PARAMETERS:
-  integer, intent(in):: is, ie, js, je, ng, km
+  type(fv_grid_bounds_type), intent(IN) :: bd
+  integer, intent(in):: is, ie, js, je, ng, km, npx, npy, grid_type
+  logical, intent(IN):: sw_corner, se_corner, ne_corner, nw_corner
   real, intent(in):: dt
   real, intent(in):: dp0(km)
   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: ut, vt
   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng):: area
   real, intent(inout):: gz(is-ng:ie+ng,js-ng:je+ng,km+1)
   real, intent(in   ):: zs(is-ng:ie+ng, js-ng:je+ng)
-  real, intent(  out):: ws(is:ie, js:je)
+  real, intent(  out):: ws(is-ng:ie+ng, js-ng:je+ng)
 ! Local Work array:
-  real, dimension(is:ie+1,js:je  ):: xfx, fx
-  real, dimension(is:ie  ,js:je+1):: yfx, fy
+  real:: gz2(is-ng:ie+ng,js-ng:je+ng)
+  real, dimension(is-1:ie+2,js-1:je+1):: xfx, fx
+  real, dimension(is-1:ie+1,js-1:je+2):: yfx, fy
   real, parameter:: r14 = 1./14.
   integer  i, j, k
+  integer:: is1, ie1, js1, je1
+  integer:: ie2, je2
   real:: rdt, top_ratio, bot_ratio, int_ratio
 !--------------------------------------------------------------------
 
@@ -42,105 +56,119 @@ CONTAINS
   top_ratio = dp0(1 ) / (dp0(   1)+dp0(2 ))
   bot_ratio = dp0(km) / (dp0(km-1)+dp0(km))
 
-!$omp parallel do default(shared) private(xfx, yfx, fx, fy, int_ratio)
+  is1 = is - 1
+  js1 = js - 1
+
+  ie1 = ie + 1
+  je1 = je + 1
+
+  ie2 = ie + 2
+  je2 = je + 2
+
+!$omp parallel do default(shared) private(gz2, xfx, yfx, fx, fy, int_ratio)
   do 6000 k=1,km+1
 
      if ( k==1 ) then
-        do j=js,je
-           do i=is,ie+1
+        do j=js1, je1
+           do i=is1, ie2
 !             xfx(i,j) = 1.5*ut(i,j,1)-0.5*ut(i,j,2)
               xfx(i,j) = ut(i,j,1) + (ut(i,j,1)-ut(i,j,2))*top_ratio
            enddo
         enddo
-        do j=js,je+1
-           do i=is,ie
+        do j=js1, je2
+           do i=is1, ie1
 !             yfx(i,j) = 1.5*vt(i,j,1)-0.5*vt(i,j,2)
               yfx(i,j) = vt(i,j,1) + (vt(i,j,1)-vt(i,j,2))*top_ratio
            enddo
         enddo
      elseif ( k==km+1 ) then
 ! Bottom extrapolation
-        do j=js,je
-           do i=is,ie+1
+        do j=js1, je1
+           do i=is1, ie2
 !             xfx(i,j) = 1.5*ut(i,j,km)-0.5*ut(i,j,km-1)
-              xfx(i,j) = ut(i,j,km) + (ut(i,j,km)-ut(i,j,km-1))*bot_ratio
-!             xfx(i,j) = r14*(3.*ut(i,j,km-2)-13.*ut(i,j,km-1)+24.*ut(i,j,km))
-!             if ( xfx(i,j)*ut(i,j,km)<0. ) xfx(i,j) = 0.
+!             xfx(i,j) = ut(i,j,km) + (ut(i,j,km)-ut(i,j,km-1))*bot_ratio
+!--------------------------------------------------------------------------
+              xfx(i,j) = r14*(3.*ut(i,j,km-2)-13.*ut(i,j,km-1)+24.*ut(i,j,km))
+              if ( xfx(i,j)*ut(i,j,km)<0. ) xfx(i,j) = 0.
            enddo
         enddo
-        do j=js,je+1
-           do i=is,ie
+        do j=js1, je2
+           do i=is1, ie1
 !             yfx(i,j) = 1.5*vt(i,j,km)-0.5*vt(i,j,km-1)
-              yfx(i,j) = vt(i,j,km) + (vt(i,j,km)-vt(i,j,km-1))*bot_ratio
-!             yfx(i,j) = r14*(3.*vt(i,j,km-2)-13.*vt(i,j,km-1)+24.*vt(i,j,km))
-!             if ( yfx(i,j)*vt(i,j,km)<0. ) yfx(i,j) = 0.
+!             yfx(i,j) = vt(i,j,km) + (vt(i,j,km)-vt(i,j,km-1))*bot_ratio
+              yfx(i,j) = r14*(3.*vt(i,j,km-2)-13.*vt(i,j,km-1)+24.*vt(i,j,km))
+              if ( yfx(i,j)*vt(i,j,km)<0. ) yfx(i,j) = 0.
            enddo
         enddo
      else
         int_ratio = 1./(dp0(k-1)+dp0(k))
-        do j=js,je
-           do i=is,ie+1
+        do j=js1, je1
+           do i=is1, ie2
 !             xfx(i,j) = 0.5*(ut(i,j,k-1) + ut(i,j,k))
               xfx(i,j) = (dp0(k)*ut(i,j,k-1)+dp0(k-1)*ut(i,j,k))*int_ratio
            enddo
         enddo
-        do j=js,je+1
-           do i=is,ie
+        do j=js1, je2
+           do i=is1, ie1
 !             yfx(i,j) = 0.5*(vt(i,j,k-1) + vt(i,j,k))
               yfx(i,j) = (dp0(k)*vt(i,j,k-1)+dp0(k-1)*vt(i,j,k))*int_ratio
            enddo
         enddo
      endif
 
-     do j=js,je
-        do i=is,ie+1
+     do j=js-ng, je+ng
+        do i=is-ng, ie+ng
+           gz2(i,j) = gz(i,j,k)
+        enddo
+     enddo
+
+     if (grid_type < 3) call fill_4corners(gz2, 1, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
+     do j=js1, je1
+        do i=is1, ie2
            if( xfx(i,j) > 0. ) then
-               fx(i,j) = gz(i-1,j,k)
+               fx(i,j) = gz2(i-1,j)
            else
-               fx(i,j) = gz(i  ,j,k)
+               fx(i,j) = gz2(i  ,j)
            endif
            fx(i,j) = xfx(i,j)*fx(i,j)
         enddo
      enddo
-     do j=js,je+1
-        do i=is,ie
+
+     if (grid_type < 3) call fill_4corners(gz2, 2, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
+     do j=js1,je2
+        do i=is1,ie1
            if( yfx(i,j) > 0. ) then
-               fy(i,j) = gz(i,j-1,k)
+               fy(i,j) = gz2(i,j-1)
            else
-               fy(i,j) = gz(i,j  ,k)
+               fy(i,j) = gz2(i,j)
            endif
            fy(i,j) = yfx(i,j)*fy(i,j)
         enddo
      enddo
 
-     do j=js,je
-        do i=is,ie
-           gz(i,j,k) = (gz(i,j,k)*area(i,j) +  fx(i,j)- fx(i+1,j)+ fy(i,j)- fy(i,j+1)) &
-                     / (          area(i,j) + xfx(i,j)-xfx(i+1,j)+yfx(i,j)-yfx(i,j+1))
+     do j=js1, je1
+        do i=is1,ie1
+           gz(i,j,k) = (gz2(i,j)*area(i,j) +  fx(i,j)- fx(i+1,j)+ fy(i,j)- fy(i,j+1)) &
+                     / (         area(i,j) + xfx(i,j)-xfx(i+1,j)+yfx(i,j)-yfx(i,j+1))
         enddo
      enddo
-
-     if ( k==km+1 ) then
-        do j=js,je
-           do i=is,ie
-              ws(i,j) = ( zs(i,j) - gz(i,j,k) ) * rdt
-           enddo
-        enddo
-     endif
-
 6000 continue
 
 ! Enforce monotonicity of height to prevent blowup
 !$omp parallel do default(shared)
-  do j=js, je
+  do j=js1, je1
+     do i=is1, ie1
+        ws(i,j) = ( zs(i,j) - gz(i,j,km+1) ) * rdt
+     enddo
      do k=km, 1, -1
-        do i=is, ie
+        do i=is1, ie1
            gz(i,j,k) = max( gz(i,j,k), gz(i,j,k+1) + dz_min )
         enddo
      enddo
   enddo
 
   end subroutine update_dz_c
+
 
 
   subroutine update_dz_d(ndif, damp, hord, is, ie, js, je, km, ng, npx, npy, area, rarea,   &
@@ -161,8 +189,7 @@ CONTAINS
   real, intent(inout), dimension(is:ie+1,js-ng:je+ng,km):: crx, xfx
   real, intent(inout), dimension(is-ng:ie+ng,js:je+1,km):: cry, yfx
   real, intent(inout)   :: ws(is:ie,js:je)
-
-  type(fv_grid_type), intent(IN) :: gridstruct
+  type(fv_grid_type), intent(IN), target :: gridstruct
 !-----------------------------------------------------
 ! Local array:
   real, dimension(is:   ie+1, js-ng:je+ng,km+1):: crx_adv, xfx_adv
@@ -173,6 +200,9 @@ CONTAINS
   real:: ra_y(is-ng:ie+ng,js:je)
 !--------------------------------------------------------------------
   integer  i, j, k, isd, ied, jsd, jed
+  logical:: uniform_grid
+
+  uniform_grid = .false.
 
   damp(km+1) = damp(km)
   ndif(km+1) = ndif(km)
@@ -183,10 +213,10 @@ CONTAINS
 !$omp parallel do default(shared)
   do j=jsd,jed
      call edge_profile(crx, xfx, crx_adv, xfx_adv, is,  ie+1, jsd, jed, j, km, &
-                            dp0, .true., 0)
+                            dp0, uniform_grid, 0)
      if ( j<=je+1 .and. j>=js )      &
      call edge_profile(cry, yfx, cry_adv, yfx_adv, isd, ied,  js, je+1, j, km, &
-                            dp0, .true., 0)
+                            dp0, uniform_grid, 0)
   enddo
 
 !$omp parallel do default(shared) private(ra_x, ra_y, fx, fy)
@@ -206,26 +236,19 @@ CONTAINS
      call fv_tp_2d(zh(isd,jsd,k), crx_adv(is,jsd,k), cry_adv(isd,js,k), npx,  npy, hord, &
                    fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y,       &
                    nord=ndif(k), damp_c=damp(k))
-
      do j=js,je
         do i=is,ie
            zh(i,j,k) = (zh(i,j,k)*area(i,j)+fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))   &
                      / (ra_x(i,j) + yfx_adv(i,j,k)-yfx_adv(i,j+1,k))
         enddo
      enddo
-
-     if ( k==km+1 ) then
-         do j=js,je
-            do i=is,ie
-               ws(i,j) = (zs(i,j) - zh(i,j,k)) * rdt
-            enddo
-         enddo
-     endif
   enddo
 
-! Enforce monotonicity of height to prevent blowup
 !$omp parallel do default(shared)
   do j=js, je
+     do i=is,ie
+        ws(i,j) = ( zs(i,j) - zh(i,j,km+1) ) * rdt
+     enddo
      do k=km, 1, -1
         do i=is, ie
 ! Enforce monotonicity of height to prevent blowup
@@ -238,23 +261,24 @@ CONTAINS
 
   subroutine Riem_Solver_c(ms,   dt,  is,   ie,   js, je, km,   ng,  &
                            akap, cp,  ptop, hs, w3,  pt,  &
-                           delp, gz,  pef,  ws, p_fac, a_imp)
+                           delp, gz,  pef,  ws, p_fac, a_imp, scale_z)
 
    integer, intent(in):: is, ie, js, je, ng, km
    integer, intent(in):: ms
-   real, intent(in):: dt,  akap, cp, ptop, p_fac, a_imp
-   real, intent(in):: ws(is:ie,js:je)
+   real, intent(in):: dt,  akap, cp, ptop, p_fac, a_imp, scale_z
+   real, intent(in):: ws(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, delp
    real, intent(in)::   hs(is-ng:ie+ng,js-ng:je+ng)
-   real, intent(inout):: w3(is-ng:ie+ng,js-ng:je+ng,km)
+   real, intent(in):: w3(is-ng:ie+ng,js-ng:je+ng,km)
 ! OUTPUT PARAMETERS 
    real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: gz
-   real, intent(  out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: pef !full NH pressure
+   real, intent(  out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: pef
 ! Local:
-  real, dimension(is:ie,km  ):: pm, dm, dz2, w2, pt2
-  real, dimension(is:ie,km+1):: pem, peln, pe2
+  real, dimension(is-1:ie+1,km  ):: dm, dz2, w2, pt2, pm2
+  real, dimension(is-1:ie+1,km+1):: pem, peln, pe2
   real gama, rgrav, peln1, rcp
   integer i, j, k
+  integer is1, ie1
 
     gama = 1./(1.-akap)
    rgrav = 1./grav
@@ -262,80 +286,83 @@ CONTAINS
 
    peln1 = log(ptop)
 
-!$omp parallel do default(shared) private(dm, dz2, w2, pt2, pe2, pem, pm, peln)
-   do 2000 j=js,je
+   is1 = is - 1
+   ie1 = ie + 1
+
+!$omp parallel do default(shared) private(dm, dz2, w2, pm2, pt2, pe2, pem, peln)
+   do 2000 j=js-1, je+1
 
       do k=1,km
-         do i=is,ie
+         do i=is1, ie1
             dm(i,k) = delp(i,j,k)
          enddo
       enddo
 
-      do i=is,ie
+      do i=is1, ie1
          pem(i,1) = ptop
          peln(i,1) = peln1
       enddo
 
       do k=2,km+1
-         do i=is,ie
+         do i=is1, ie1
             pem(i,k) = pem(i,k-1) + dm(i,k-1)
-#ifdef GEOPK_CHECK
-            if (pem(i,k) < 0.) then
-               print*, mpp_pe(),i,j,k, 'PEM = ', pem(i,k), dm(i,k-1)
-            endif
-#endif
             peln(i,k) = log( pem(i,k) )
          enddo
       enddo
 
       do k=1,km
-         do i=is,ie
+         do i=is1, ie1
             dz2(i,k) = gz(i,j,k+1) - gz(i,j,k)
-             pm(i,k) = dm(i,k) / (peln(i,k+1)-peln(i,k))
+            pm2(i,k) = dm(i,k)/(peln(i,k+1)-peln(i,k))
              dm(i,k) = dm(i,k) * rgrav
              w2(i,k) = w3(i,j,k)
             pt2(i,k) = pt(i,j,k) * rcp
          enddo
       enddo
 
-      if ( a_imp <= 0.5 ) then
-           call RIM_2D(ms, dt, is, ie, km, rdgas, gama, akap, pe2, &
-                        dm, pm, pem, w2, dz2, pt2, ws(is,j), .true.)
+
+      if ( a_imp < -0.01 ) then
+           call SIM3p0_solver(dt, is1, ie1, km, rdgas, gama, akap, pe2, dm, &
+                              pem, w2, dz2, pt2, ws(is1,j), p_fac, scale_z)
+      elseif ( a_imp <= 0.5 ) then
+           call RIM_2D(ms, dt, is1, ie1, km, rdgas, gama, akap, pe2, &
+                       dm, pm2, w2, dz2, pt2, ws(is1,j), .true.)
       else
-           call SIMPLEST_solver(dt, is, ie, km, rdgas, gama, akap, pe2,  &
-                                dm, pm, pem, w2, dz2, pt2, ws(is,j), p_fac)
+           call SIM1_solver(dt, is1, ie1, km, rdgas, gama, akap, pe2,  &
+                            dm, pm2, pem, w2, dz2, pt2, ws(is1,j), p_fac)
       endif
 
-      do i=is,ie
+      do i=is1, ie1
          pef(i,j,1) = ptop                     ! full pressure at top
       enddo
       do k=2,km+1
-         do i=is,ie
+         do i=is1, ie1
             pef(i,j,k) = pe2(i,k) + pem(i,k)  ! add hydrostatic component
          enddo
       enddo
 
 ! Compute Height * grav (for p-gradient computation)
-      do i=is,ie
+      do i=is1, ie1
          gz(i,j,km+1) = hs(i,j)
       enddo
 
       do k=km,1,-1
-         do i=is,ie
+         do i=is1, ie1
             gz(i,j,k) = gz(i,j,k+1) - dz2(i,k)*grav
          enddo
       enddo
 
 2000  continue
 
-  end subroutine Riem_Solver_C
+  end subroutine Riem_Solver_c
 
 
-
-  subroutine Riem_Solver(ms, dt,   is,   ie,   js, je, km, ng,    &
-                         akap, cp,   ptop, hs, w,  delz, pt,  &
-                         delp, zh, gz,  ppe, pk, pe, peln, &
-                         ws, da_min, diff_z0, p_fac, a_imp, last_call)
+  subroutine Riem_Solver3(ms, dt,   is,   ie,   js, je, km, ng,    &
+                          isd, ied, jsd, jed,        &
+                          akap, cp,   ptop, hs, w,  delz, pt,  &
+                          delp, zh, gz,  ppe, pk3, pk, pe, peln, &
+                          ws, p_fac, a_imp, &
+                          scale_z, use_logp, last_call)
 !--------------------------------------------
 ! !OUTPUT PARAMETERS
 ! Ouput: gz: grav*height at edges
@@ -343,23 +370,24 @@ CONTAINS
 !       ppe: non-hydrostatic pressure perturbation
 !--------------------------------------------
    integer, intent(in):: ms, is, ie, js, je, km, ng
+   integer, intent(in):: isd, ied, jsd, jed
    real, intent(in):: dt         ! the BIG horizontal Lagrangian time step
-   real, intent(in):: akap, cp, ptop
-   real, intent(in):: da_min, diff_z0, p_fac, a_imp
-   real, intent(in):: hs(is-ng:ie+ng,js-ng:je+ng)
-   logical, intent(in):: last_call
-   real, intent(in):: ws(is:ie,js:je)
-   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: zh
+   real, intent(in):: akap, cp, ptop, p_fac, a_imp, scale_z
+   real, intent(in):: hs(isd:ied,jsd:jed)
+   logical, intent(in):: last_call, use_logp
+   real, intent(in):: ws(isd:ied,jsd:jed)
+   real, intent(inout), dimension(isd:ied,jsd:jed,km+1):: zh
    real, intent(inout):: peln(is:ie,km+1,js:je)          ! ln(pe)
-   real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,km):: w, delp, pt
-   real, intent(out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: ppe ! NH pert'n
+   real, intent(inout), dimension(isd:ied,jsd:jed,km):: w, delp, pt
+   real, intent(out), dimension(isd:ied,jsd:jed,km+1):: ppe
    real, intent(out):: delz(is-ng:ie+ng,js-ng:je+ng,km)
-   real, intent(out):: pe(is-1:ie+1,km+1,js-1:je+1)
    real, intent(out):: pk(is:ie,js:je,km+1)
-   real, intent(out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: gz
+   real, intent(out):: pe(is-1:ie+1,km+1,js-1:je+1)
+   real, intent(out):: pk3(isd:ied,jsd:jed,km+1)
+   real, intent(out), dimension(isd:ied,jsd:jed,km+1):: gz
 ! Local:
-  real, dimension(is:ie,km):: pm, dm, dz2, w2, pt2
-  real, dimension(is:ie,km+1)::pem, pe2
+  real, dimension(isd:ied,km):: dm, dz2, pt2, pm2, w2
+  real, dimension(isd:ied,km+1)::pem, pe2, peln2
   real gama, rgrav, ptk, peln1, rcp
   integer i, j, k
 
@@ -369,113 +397,128 @@ CONTAINS
    peln1 = log(ptop)
      rcp = 1./cp
 
-!$omp parallel do default(shared) private(dm, dz2, w2, pt2, pem, pm, pe2)
-   do 2000 j=js,je
+!$omp parallel do default(shared) private(dm, dz2, pm2, pt2, pem, pe2, peln2, w2)
+   do 2000 j=jsd, jed
 
       do k=1,km
-         do i=is,ie
+         do i=isd, ied
             dm(i,k) = delp(i,j,k)
          enddo
       enddo
 
-      do i=is,ie
+      do i=isd,ied
          pem(i,1) = ptop
       enddo
       do k=2,km+1
-         do i=is,ie
+         do i=isd, ied
             pem(i,k) = pem(i,k-1) + dm(i,k-1)
          enddo
       enddo
 
-      do i=is,ie
-         pk(i,j,1) = ptk
-         peln(i,1,j) = peln1
+      do i=isd,ied
+         pk3(i,j,1) = ptk
+         peln2(i,1) = peln1
       enddo
       do k=2,km+1
-         do i=is,ie
-            peln(i,k,j) = log(pem(i,k))
-              pk(i,j,k) = exp( akap*peln(i,k,j) )
+         do i=isd, ied
+            peln2(i,k) = log(pem(i,k))
+            pk3(i,j,k) = exp(akap*peln2(i,k))
          enddo
       enddo
 
       do k=1,km
-         do i=is,ie
-            pm(i,k) = dm(i,k) / (peln(i,k+1,j)-peln(i,k,j))
-            dm(i,k) = dm(i,k) * rgrav
+         do i=isd, ied
+            pm2(i,k) = dm(i,k)/(peln2(i,k+1)-peln2(i,k))
+             dm(i,k) = dm(i,k) * rgrav
             dz2(i,k) = zh(i,j,k+1) - zh(i,j,k)
-             w2(i,k) = w(i,j,k)
             pt2(i,k) = pt(i,j,k) * rcp
+             w2(i,k) = w(i,j,k)
          enddo
       enddo
 
-      if ( a_imp <= 0.5 ) then
-           call RIM_2D(ms, dt, is, ie, km, rdgas, gama, akap, pe2,   &
-                        dm, pm, pem, w2, dz2, pt2, ws(is,j), .false.)
+      if ( a_imp < -0.99 ) then
+           call SIM3p0_solver(dt, isd, ied, km, rdgas, gama, akap, pe2, dm,  &
+                              pem, w2, dz2, pt2, ws(isd,j), p_fac, scale_z)
+      elseif ( a_imp < -0.5 ) then
+           call SIM3_solver(dt, isd, ied, km, rdgas, gama, akap, pe2, dm,   &
+                        pem, w2, dz2, pt2, ws(isd,j), abs(a_imp), p_fac, scale_z)
+      elseif ( a_imp <= 0.5 ) then
+           call RIM_2D(ms, dt, isd, ied, km, rdgas, gama, akap, pe2,   &
+                       dm, pm2, w2, dz2, pt2, ws(isd,j), .false.)
       elseif ( a_imp > 0.999 ) then
-           call SIMPLEST_solver(dt, is, ie, km, rdgas, gama, akap, pe2, dm,   &
-                                pm, pem, w2, dz2, pt2, ws(is,j), p_fac)
+           call SIM1_solver(dt, isd, ied, km, rdgas, gama, akap, pe2, dm,   &
+                            pm2, pem, w2, dz2, pt2, ws(isd,j), p_fac)
       else
-           call SIM_solver(dt, is, ie, km, rdgas, gama, akap, pe2, dm,  &
-                                pm, pem, w2, dz2, pt2, ws(is,j), p_fac, a_imp)
+           call SIM_solver(dt, isd, ied, km, rdgas, gama, akap, pe2, dm,  &
+                           pm2, pem, w2, dz2, pt2, ws(isd,j), &
+                           a_imp, p_fac, scale_z)
+      endif
+
+      do k=1, km
+         do i=isd, ied
+            w(i,j,k) = w2(i,k)
+         enddo
+      enddo
+
+      if ( j>=js .and. j<=je ) then
+         do k=1,km
+            do i=is,ie
+               delz(i,j,k) = dz2(i,k)
+            enddo
+         enddo
+         if ( last_call ) then
+            do k=1,km+1
+               do i=is,ie
+                  peln(i,k,j) = peln2(i,k)
+                    pk(i,j,k) = pk3(i,j,k)
+               enddo
+            enddo
+         endif
       endif
 
       do k=1,km+1
-         do i=is,ie
+         do i=isd, ied
             ppe(i,j,k) = pe2(i,k)
          enddo
       enddo
 
-      do k=1,km
-         do i=is,ie
-            delz(i,j,k) = dz2(i,k)
+if ( use_logp ) then
+      do k=1,km+1
+         do i=isd, ied
+            pk3(i,j,k) = peln2(i,k)
          enddo
       enddo
+endif
 
-      do i=is,ie
+      do i=isd, ied
          gz(i,j,km+1) = hs(i,j)
+         zh(i,j,km+1) = hs(i,j) * rgrav
       enddo
 
       do k=km,1,-1
-         do i=is,ie
-            gz(i,j,k) = gz(i,j,k+1) - dz2(i,k)*grav
+         do i=isd, ied
+            zh(i,j,k) = zh(i,j,k+1) - dz2(i,k)
+            gz(i,j,k) = zh(i,j,k)*grav
          enddo
       enddo
 
-      if ( diff_z0 > 1.E-3 ) then
-            call imp_diff_w(j, is, ie, js, je, ng, km, diff_z0, dz2, ws(is,j), w2, w)
-      else
-          do k=1,km
-             do i=is,ie
-                w(i,j,k) = w2(i,k)
-             enddo
-          enddo
+      if ( last_call .and. j>=js-1 .and. j<=je+1 ) then
+         do k=1,km+1
+            do i=is-1,ie+1
+               pe(i,k,j) = pem(i,k)
+            enddo
+         enddo
       endif
 
 2000  continue
 
-  if ( last_call ) then
-
-!$omp parallel do default(shared) 
-    do j=js-1,je+1
-       do i=is-1,ie+1
-          pe(i,1,j) = ptop
-       enddo
-       do k=2,km+1
-          do i=is-1,ie+1
-             pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
-          enddo
-       enddo
-    enddo
-
-  endif
-
-  end subroutine Riem_Solver
+  end subroutine Riem_Solver3
 
 
   subroutine imp_diff_w(j, is, ie, js, je, ng, km, cd, delz, ws, w, w3)
   integer, intent(in) :: j, is, ie, js, je, km, ng
   real, intent(in) :: cd
-  real, intent(in) :: delz(is:ie, km)  ! delta-height (m)
+  real, intent(in) :: delz(is-ng:ie+ng, km)  ! delta-height (m)
   real, intent(in) :: w(is:ie, km)  ! vertical vel. (m/s)
   real, intent(in) :: ws(is:ie)
   real, intent(out) :: w3(is-ng:ie+ng,js-ng:je+ng,km)
@@ -535,20 +578,19 @@ CONTAINS
   end subroutine imp_diff_w
 
 
-  subroutine RIM_2D(ms, bdt, is, ie, km, rgas, gama, cappa, p3, &
-                     dm2, pm2, pe2, w2, dz2, pt2, ws, c_core )
+  subroutine RIM_2D(ms, bdt, is, ie, km, rgas, gama, cappa, pe2, &
+                    dm2, pm2, w2, dz2, pt2, ws, c_core )
 
   integer, intent(in):: ms, is, ie, km
   real,    intent(in):: bdt, gama, cappa, rgas
   real,    intent(in), dimension(is:ie,km):: dm2, pm2
   logical, intent(in):: c_core
   real, intent(in  ) :: pt2(is:ie,km)
-  real, intent(in  ) :: pe2(is:ie,km+1)
   real, intent(in  ) :: ws(is:ie)
 ! IN/OUT:
   real, intent(inout):: dz2(is:ie,km)
   real, intent(inout)::  w2(is:ie,km)
-  real, intent(out  )::  p3(is:ie,km+1)
+  real, intent(out  ):: pe2(is:ie,km+1)
 ! Local:
   real:: ws2(is:ie)
   real, dimension(km+1):: m_bot, m_top, r_bot, r_top, pe1, pbar, wbar
@@ -622,9 +664,9 @@ CONTAINS
                        w2(i,k) = (wm(k)+pbar(k+1)-pbar(k))/dm(k)
                    enddo
               endif
-              p3(i,1) = 0.
+              pe2(i,1) = 0.
               do k=2,km+1
-                 p3(i,k) = pbar(k)*rdt
+                 pe2(i,k) = pbar(k)*rdt
               enddo
               goto 6000  ! next i
          else
@@ -760,26 +802,321 @@ CONTAINS
   endif
 
 5000  continue
-      p3(i,1) = 0.
+      pe2(i,1) = 0.
    do k=2,km+1
-      p3(i,k) = pe1(k)*rdt
+      pe2(i,k) = pe1(k)*rdt
    enddo
 
 6000  continue        ! end i-loop
 
  end subroutine RIM_2D
 
- subroutine SIMPLEST_solver(dt,  is,  ie, km, rgas,  gama, cappa, pe, dm2,   &
-                            pm2, pem, w2, dz2, pt2, ws, p_fac)
+ subroutine SIM3_solver(dt,  is,  ie, km, rgas, gama, cappa, pe2, dm,   &
+                        pem, w2, dz2, pt2, ws, alpha, p_fac, scale_z)
+   integer, intent(in):: is, ie, km
+   real, intent(in):: dt, rgas, gama, cappa, alpha, p_fac
+   real, intent(in   ), dimension(is:ie,km):: dm, pt2
+   real, intent(in )::  ws(is:ie)
+   real, intent(in ), dimension(is:ie,km+1):: pem
+   real, intent(out):: pe2(is:ie,km+1)
+   real, intent(inout), dimension(is:ie,km):: dz2, w2
+   real, intent(IN) :: scale_z
+! Local
+   real, dimension(is:ie,km  ):: aa, bb, dd, w1, wk, g_rat, gam
+   real, dimension(is:ie,km+1):: pp
+   real, dimension(is:ie):: p1, wk1, bet
+   real  beta, t2, t1g, rdt, ra, capa1, r2g, r6g, nu0
+   integer i, k
+
+    beta = 1. - alpha
+      ra = 1. / alpha
+      t2 = beta / alpha
+     t1g = gama * 2.*(alpha*dt)**2
+     rdt = 1. / dt
+   capa1 = cappa - 1.
+   r2g = grav / 2.
+   r6g = grav / 6.
+   nu0 = nu*scale_z
+
+   do k=1,km
+      do i=is, ie
+         w1(i,k) = w2(i,k)
+! Full pressure at center
+         aa(i,k) = exp(gama*log(-dm(i,k)/dz2(i,k)*rgas*pt2(i,k)))
+      enddo
+   enddo
+
+   do k=1,km-1
+      do i=is, ie
+         g_rat(i,k) = dm(i,k)/dm(i,k+1)    ! for profile reconstruction
+            bb(i,k) = 2.*(1.+g_rat(i,k))
+            dd(i,k) = 3.*(aa(i,k) + g_rat(i,k)*aa(i,k+1))
+      enddo
+   enddo
+
+! pe2 is full p at edges
+   do i=is, ie
+! Top:
+      bet(i) = bb(i,1)
+      pe2(i,1) = pem(i,1)
+      pe2(i,2) = (dd(i,1)-pem(i,1)) / bet(i)
+! Bottom:
+      bb(i,km) = 2.
+      dd(i,km) = 3.*aa(i,km) + r2g*dm(i,km)
+    enddo
+
+    do k=2,km
+       do i=is, ie
+          gam(i,k) =  g_rat(i,k-1) / bet(i)
+            bet(i) =  bb(i,k) - gam(i,k)
+         pe2(i,k+1) = (dd(i,k) - pe2(i,k) ) / bet(i)
+      enddo
+    enddo
+
+    do k=km, 2, -1
+       do i=is, ie
+          pe2(i,k) = pe2(i,k) - gam(i,k)*pe2(i,k+1)
+       enddo
+    enddo
+! done reconstruction of full:
+
+! pp is pert. p at edges
+    do k=1, km+1
+       do i=is, ie
+           pp(i,k) = pe2(i,k) - pem(i,k)
+       enddo
+    enddo
+
+    do k=2, km
+       do i=is, ie
+          aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k))*pe2(i,k)
+          wk(i,k) = t2*aa(i,k)*(w1(i,k-1)-w1(i,k))
+          aa(i,k) = aa(i,k) - nu0
+       enddo
+    enddo
+    do i=is, ie
+       bet(i)  =  dm(i,1) - aa(i,2)
+       w2(i,1) = (dm(i,1)*w1(i,1)+dt*pp(i,2) + wk(i,2)) / bet(i)
+    enddo
+    do k=2,km-1
+       do i=is, ie
+          gam(i,k) = aa(i,k) / bet(i)
+            bet(i) =  dm(i,k) - (aa(i,k)+aa(i,k+1) + aa(i,k)*gam(i,k))
+           w2(i,k) = (dm(i,k)*w1(i,k)+dt*(pp(i,k+1)-pp(i,k)) + wk(i,k+1)-wk(i,k)  &
+                    - aa(i,k)*w2(i,k-1)) / bet(i)
+       enddo
+    enddo
+    do i=is, ie
+          wk1(i) = t1g/dz2(i,km)*pe2(i,km+1)
+       gam(i,km) = aa(i,km) / bet(i)
+          bet(i) =  dm(i,km) - (aa(i,km)+wk1(i) + aa(i,km)*gam(i,km))
+        w2(i,km) = (dm(i,km)*w1(i,km)+dt*(pp(i,km+1)-pp(i,km))-wk(i,km) +  &
+                    wk1(i)*(t2*w1(i,km)-ra*ws(i)) - aa(i,km)*w2(i,km-1)) / bet(i)
+    enddo
+    do k=km-1, 1, -1
+      do i=is, ie
+         w2(i,k) = w2(i,k) - gam(i,k+1)*w2(i,k+1)
+      enddo
+    enddo
+
+! pe2 is updated perturbation p at edges
+    do i=is, ie
+       pe2(i,1) = 0.
+    enddo
+    do k=1,km
+       do i=is, ie
+          pe2(i,k+1) = pe2(i,k) + ( dm(i,k)*(w2(i,k)-w1(i,k))*rdt   &
+                                  - beta*(pp(i,k+1)-pp(i,k)) )*ra
+       enddo
+    enddo
+
+! Full non-hydro pressure at edges:
+    do i=is, ie
+       pe2(i,1) = pem(i,1)
+    enddo
+    do k=2,km+1
+       do i=is, ie
+          pe2(i,k) = max(p_fac*pem(i,k), pe2(i,k)+pem(i,k))
+       enddo
+    enddo
+
+    do i=is, ie
+! Recover cell-averaged pressure
+           p1(i) = (pe2(i,km)+ 2.*pe2(i,km+1))*r3 - r6g*dm(i,km)
+       dz2(i,km) = -dm(i,km)*rgas*pt2(i,km)*exp( capa1*log(p1(i)) )
+    enddo
+
+    do k=km-1, 1, -1
+       do i=is, ie
+             p1(i) = (pe2(i,k)+bb(i,k)*pe2(i,k+1)+g_rat(i,k)*pe2(i,k+2))*r3 - g_rat(i,k)*p1(i)
+          dz2(i,k) = -dm(i,k)*rgas*pt2(i,k)*exp( capa1*log(p1(i)) )
+       enddo
+    enddo
+
+    do k=1,km+1
+       do i=is, ie
+          pe2(i,k) = pe2(i,k) - pem(i,k)
+          pe2(i,k) = pe2(i,k) + beta*(pp(i,k) - pe2(i,k))
+       enddo
+    enddo
+
+ end subroutine SIM3_solver
+
+ subroutine SIM3p0_solver(dt,  is,  ie, km, rgas, gama, cappa, pe2, dm, &
+                          pem, w2, dz2, pt2, ws, p_fac, scale_z)
+! Sa SIM3, but for beta==0
+   integer, intent(in):: is, ie, km
+   real, intent(in):: dt, rgas, gama, cappa, p_fac
+   real, intent(in   ), dimension(is:ie,km):: dm, pt2
+   real, intent(in )::  ws(is:ie)
+   real, intent(in ):: pem(is:ie,km+1)
+   real, intent(out):: pe2(is:ie,km+1)
+   real, intent(inout), dimension(is:ie,km):: dz2, w2
+   real, intent(IN) :: scale_z
+! Local
+   real, dimension(is:ie,km  ):: aa, bb, dd, w1, g_rat, gam
+   real, dimension(is:ie,km+1):: pp
+   real, dimension(is:ie):: p1, wk1, bet
+   real  t1g, rdt, capa1, r2g, r6g, nu0
+   integer i, k
+
+     t1g = 2.*gama*dt**2
+     rdt = 1. / dt
+   capa1 = cappa - 1.
+   r2g = grav / 2.
+   r6g = grav / 6.
+   nu0 = nu*scale_z
+
+   do k=1,km
+      do i=is, ie
+         w1(i,k) = w2(i,k)
+! Full pressure at center
+         aa(i,k) = exp(gama*log(-dm(i,k)/dz2(i,k)*rgas*pt2(i,k)))
+      enddo
+   enddo
+
+   do k=1,km-1
+      do i=is, ie
+         g_rat(i,k) = dm(i,k)/dm(i,k+1)    ! for profile reconstruction
+            bb(i,k) = 2.*(1.+g_rat(i,k))
+            dd(i,k) = 3.*(aa(i,k) + g_rat(i,k)*aa(i,k+1))
+      enddo
+   enddo
+
+! pe2 is full p at edges
+   do i=is, ie
+! Top:
+      bet(i) = bb(i,1)
+      pe2(i,1) = pem(i,1)
+      pe2(i,2) = (dd(i,1)-pem(i,1)) / bet(i)
+! Bottom:
+      bb(i,km) = 2.
+      dd(i,km) = 3.*aa(i,km) + r2g*dm(i,km)
+    enddo
+
+    do k=2,km
+       do i=is, ie
+          gam(i,k) =  g_rat(i,k-1) / bet(i)
+            bet(i) =  bb(i,k) - gam(i,k)
+         pe2(i,k+1) = (dd(i,k) - pe2(i,k) ) / bet(i)
+      enddo
+    enddo
+
+    do k=km, 2, -1
+       do i=is, ie
+          pe2(i,k) = pe2(i,k) - gam(i,k)*pe2(i,k+1)
+       enddo
+    enddo
+! done reconstruction of full:
+
+! pp is pert. p at edges
+    do k=1, km+1
+       do i=is, ie
+           pp(i,k) = pe2(i,k) - pem(i,k)
+       enddo
+    enddo
+
+    do k=2, km
+       do i=is, ie
+          aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k))*pe2(i,k) - nu0
+       enddo
+    enddo
+    do i=is, ie
+       bet(i)  =  dm(i,1) - aa(i,2)
+       w2(i,1) = (dm(i,1)*w1(i,1)+dt*pp(i,2)) / bet(i)
+    enddo
+    do k=2,km-1
+       do i=is, ie
+          gam(i,k) = aa(i,k) / bet(i)
+            bet(i) =  dm(i,k) - (aa(i,k)+aa(i,k+1) + aa(i,k)*gam(i,k))
+           w2(i,k) = (dm(i,k)*w1(i,k)+dt*(pp(i,k+1)-pp(i,k))-aa(i,k)*w2(i,k-1))/bet(i)
+       enddo
+    enddo
+    do i=is, ie
+          wk1(i) = t1g/dz2(i,km)*pe2(i,km+1)
+       gam(i,km) = aa(i,km) / bet(i)
+          bet(i) =  dm(i,km) - (aa(i,km)+wk1(i) + aa(i,km)*gam(i,km))
+        w2(i,km) = (dm(i,km)*w1(i,km)+dt*(pp(i,km+1)-pp(i,km))-wk1(i)*ws(i) - &
+                     aa(i,km)*w2(i,km-1)) / bet(i)
+    enddo
+    do k=km-1, 1, -1
+      do i=is, ie
+         w2(i,k) = w2(i,k) - gam(i,k+1)*w2(i,k+1)
+      enddo
+    enddo
+
+! pe2 is updated perturbation p at edges
+    do i=is, ie
+       pe2(i,1) = 0.
+    enddo
+    do k=1,km
+       do i=is, ie
+          pe2(i,k+1) = pe2(i,k) + dm(i,k)*(w2(i,k)-w1(i,k))*rdt
+       enddo
+    enddo
+
+! Full non-hydro pressure at edges:
+    do i=is, ie
+       pe2(i,1) = pem(i,1)
+    enddo
+    do k=2,km+1
+       do i=is, ie
+          pe2(i,k) = max(p_fac*pem(i,k), pe2(i,k)+pem(i,k))
+       enddo
+    enddo
+
+    do i=is, ie
+! Recover cell-averaged pressure
+           p1(i) = (pe2(i,km)+ 2.*pe2(i,km+1))*r3 - r6g*dm(i,km)
+       dz2(i,km) = -dm(i,km)*rgas*pt2(i,km)*exp( capa1*log(p1(i)) )
+    enddo
+
+    do k=km-1, 1, -1
+       do i=is, ie
+             p1(i) = (pe2(i,k)+bb(i,k)*pe2(i,k+1)+g_rat(i,k)*pe2(i,k+2))*r3-g_rat(i,k)*p1(i)
+          dz2(i,k) = -dm(i,k)*rgas*pt2(i,k)*exp( capa1*log(p1(i)) )
+       enddo
+    enddo
+
+    do k=1,km+1
+       do i=is, ie
+          pe2(i,k) = pe2(i,k) - pem(i,k)
+       enddo
+    enddo
+
+ end subroutine SIM3p0_solver
+
+!new subroutine
+ subroutine SIM1_solver(dt,  is,  ie, km, rgas,  gama, cappa, pe, dm2,   &
+                        pm2, pem, w2, dz2, pt2, ws, p_fac)
    integer, intent(in):: is, ie, km
    real,    intent(in):: dt, rgas, gama, cappa, p_fac
    real, intent(in   ), dimension(is:ie,km):: dm2, pt2, pm2
    real, intent(in )::  ws(is:ie)
-   real, intent(in ):: pem(is:ie,km+1)
+   real, intent(in ), dimension(is:ie,km+1):: pem
    real, intent(out)::  pe(is:ie,km+1)
    real, intent(inout), dimension(is:ie,km):: dz2, w2
 ! Local
-   real, parameter:: r3 = 1./3.
    real, dimension(is:ie,km  ):: aa, bb, dd, w1, g_rat, gam
    real, dimension(is:ie,km+1):: pp
    real, dimension(is:ie):: p1, bet
@@ -822,9 +1159,9 @@ CONTAINS
     enddo
 
     do k=km, 2, -1
-      do i=is, ie
-         pp(i,k) = pp(i,k) - gam(i,k)*pp(i,k+1)
-      enddo
+       do i=is, ie
+          pp(i,k) = pp(i,k) - gam(i,k)*pp(i,k+1)
+       enddo
     enddo
 
 ! Start the w-solver
@@ -877,32 +1214,34 @@ CONTAINS
        enddo
     enddo
 
- end subroutine SIMPLEST_solver
-
+ end subroutine SIM1_solver
 
  subroutine SIM_solver(dt,  is,  ie, km, rgas, gama, cappa, pe2, dm2,   &
-                       pm2, pem, w2, dz2, pt2, ws, p_fac, alpha)
+                       pm2, pem, w2, dz2, pt2, ws, alpha, p_fac, scale_z)
    integer, intent(in):: is, ie, km
    real, intent(in):: dt, rgas, gama, cappa, p_fac, alpha
    real, intent(in   ), dimension(is:ie,km):: dm2, pt2, pm2
    real, intent(in )::  ws(is:ie)
-   real, intent(in ):: pem(is:ie,km+1)
+   real, intent(in ), dimension(is:ie,km+1):: pem
    real, intent(out):: pe2(is:ie,km+1)
    real, intent(inout), dimension(is:ie,km):: dz2, w2
+   real, intent(IN) :: scale_z
 ! Local
-   real, parameter:: r3 = 1./3.
    real, dimension(is:ie,km  ):: aa, bb, dd, w1, wk, g_rat, gam
    real, dimension(is:ie,km+1):: pp
    real, dimension(is:ie):: p1, wk1, bet
-   real  beta, t2, t1g, rdt, ra, capa1
+   real  beta, t2, t1g, rdt, ra, capa1, nu0
    integer i, k
 
     beta = 1. - alpha
       ra = 1. / alpha
       t2 = beta / alpha
-     t1g = gama * 2.*(alpha*dt)**2
+     t1g = 2.*gama*(alpha*dt)**2
      rdt = 1. / dt
    capa1 = cappa - 1.
+
+! [scale_z] = Pa/grav
+   nu0 = nu*scale_z
 
    do k=1,km
       do i=is, ie
@@ -941,6 +1280,7 @@ CONTAINS
        enddo
     enddo
 
+! Full p
     do k=1, km+1
        do i=is, ie
           pe2(i,k) = pem(i,k) + pp(i,k)
@@ -951,12 +1291,15 @@ CONTAINS
        do i=is, ie
           aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k))*pe2(i,k)
           wk(i,k) = t2*aa(i,k)*(w1(i,k-1)-w1(i,k))
+          aa(i,k) = aa(i,k) - nu0
        enddo
     enddo
+! Top:
     do i=is, ie
        bet(i)  =  dm2(i,1) - aa(i,2)
        w2(i,1) = (dm2(i,1)*w1(i,1) + dt*pp(i,2) + wk(i,2)) / bet(i)
     enddo
+! Interior:
     do k=2,km-1
        do i=is, ie
           gam(i,k) = aa(i,k) / bet(i)
@@ -965,12 +1308,13 @@ CONTAINS
                     - aa(i,k)*w2(i,k-1)) / bet(i)
        enddo
     enddo
+! Bottom: k=km
     do i=is, ie
           wk1(i) = t1g/dz2(i,km)*pe2(i,km+1)
        gam(i,km) = aa(i,km) / bet(i)
           bet(i) =  dm2(i,km) - (aa(i,km)+wk1(i) + aa(i,km)*gam(i,km))
-        w2(i,km) = (dm2(i,km)*w1(i,km) + dt*(pp(i,km+1)-pp(i,km))-wk1(i)*ws(i)*ra - &
-                     wk(i,km) + t2*wk1(i)*w1(i,km) -aa(i,km)*w2(i,km-1)) / bet(i)
+        w2(i,km) = (dm2(i,km)*w1(i,km) + dt*(pp(i,km+1)-pp(i,km)) - wk(i,km) +  &
+                    wk1(i)*(t2*w1(i,km)-ra*ws(i)) - aa(i,km)*w2(i,km-1)) / bet(i)
     enddo
     do k=km-1, 1, -1
       do i=is, ie
@@ -1011,7 +1355,6 @@ CONTAINS
 
  subroutine edge_scalar(q1, qe, i1, i2, km, id)
 ! Optimized for wind profile reconstruction:
-! Developer: S.-J. Lin, NOAA/GFDL
  integer, intent(in):: i1, i2, km
  integer, intent(in):: id                       ! 0: pp 1: wind
  real, intent(in ), dimension(i1:i2,km):: q1
@@ -1062,7 +1405,6 @@ CONTAINS
 
  subroutine edge_profile(q1, q2, q1e, q2e, i1, i2, j1, j2, j, km, dp0, uniform_grid, limiter)
 ! Optimized for wind profile reconstruction:
-! Developer: S.-J. Lin, NOAA/GFDL
  integer, intent(in):: i1, i2, j1, j2
  integer, intent(in):: j, km
  integer, intent(in):: limiter
@@ -1209,26 +1551,6 @@ CONTAINS
       jed = bd%jed
 
       if (.not. nested) return
-
-!!$   if (fullhalo) then
-!!$      ifirst = is
-!!$      if (is == 1) ifirst = isd
-!!$      ilast =  ie
-!!$      if (ie == npx-1) ilast  = ied
-!!$      jfirst = js
-!!$      if (js == 1) jfirst = jsd
-!!$      jlast =  je
-!!$      if (je == npy-1) jlast  = jed
-!!$   else
-!!$      ifirst = is
-!!$      if (is == 1) ifirst = is-1
-!!$      ilast =  ie
-!!$      if (ie == npx-1) ilast  = ie+1
-!!$      jfirst = js
-!!$      if (js == 1) jfirst = js-1
-!!$      jlast =  je
-!!$      if (je == npy-1) jlast  = je+1
-!!$   endif
       ifirst = isd
       jfirst = jsd
       ilast = ied
@@ -1243,98 +1565,6 @@ CONTAINS
       ptk = ptop ** kappa
       rkap = 1./kappa
       peln1 = log(ptop)
-
-!!$      do j=jfirst,jlast
-!!$
-!!$         !GZ
-!!$         do i=ifirst,ilast
-!!$            gz(i,j,npz+1) = phis(i,j)
-!!$         enddo
-!!$         do k=npz,1,-1
-!!$         do i=ifirst,ilast
-!!$               gz(i,j,k) = gz(i,j,k+1) - delz(i,j,k)*grav
-!!$         enddo
-!!$         enddo
-!!$         
-!!$         !Hydrostatic interface pressure
-!!$         do i=ifirst,ilast
-!!$            pe(i,1,j) = ptop
-!!$            peln(i,1,j) = peln1
-!!$         enddo
-!!$         do k=2,npz+1
-!!$         do i=ifirst,ilast
-!!$            pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
-!!$            peln(i,k,j) = log(pe(i,k,j))
-!!$         enddo
-!!$         enddo
-!!$
-!!$         !Perturbation nonhydro layer-mean pressure (NOT to the kappa)
-!!$         do k=1,npz
-!!$         do i=ifirst,ilast
-!!$            !Full p
-!!$            pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)*rcp))
-!!$            !hydro
-!!$            pm = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
-!!$            !Remove hydro cell-mean pressure
-!!$            pkz(i,k) = pkz(i,k) - pm
-!!$         enddo
-!!$         enddo
-!!$
-!!$         !Reversible interpolation on layer NH pressure perturbation
-!!$         !                 to recover  lastge NH pressure perturbation
-!!$         do k=1,npz-1
-!!$         do i=ifirst,ilast
-!!$            g_rat(i,k) = delp(i,j,k)/delp(i,j,k+1)
-!!$            bb(i,k) = 2.*(1. + g_rat(i,k))
-!!$            dd(i,k) = 3.*(pkz(i,k) + g_rat(i,k)*pkz(i,k+1))
-!!$         enddo
-!!$         enddo
-!!$
-!!$         do i=ifirst,ilast
-!!$            bet(i) = bb(i,1)
-!!$            pkc(i,j,1) = 0.
-!!$            pkc(i,j,2) = dd(i,1)/bet(i)
-!!$            bb(i,npz) = 2.
-!!$            dd(i,npz) = 3.*pkz(i,npz)
-!!$         enddo
-!!$         do k=2,npz
-!!$         do i=ifirst,ilast
-!!$            gam(i,k) = g_rat(i,k-1)/bet(i)
-!!$            bet(i) = bb(i,k) - gam(i,k)
-!!$            pkc(i,j,k+1) = (dd(i,k) - pkc(i,j,k))/bet(i)
-!!$         enddo
-!!$         enddo
-!!$         do k=npz,2,-1
-!!$         do i=ifirst,ilast
-!!$            pkc(i,j,k) = pkc(i,j,k) - gam(i,k)*pkc(i,j,k+1)
-!!$         enddo
-!!$         enddo
-!!$
-!!$      enddo
-!!$
-!!$      do j=jfirst,jlast
-!!$
-!!$         if (.not. pkc_pertn) then
-!!$            do k=npz+1,1,-1
-!!$            do i=ifirst,ilast
-!!$               pkc(i,j,k) = pkc(i,j,k) + pe(i,k,j)
-!!$            enddo
-!!$            enddo
-!!$         endif
-!!$
-!!$         !pk3 if necessary
-!!$         if (computepk3) then
-!!$            do i=ifirst,ilast
-!!$               pk3(i,j,1) = ptk
-!!$            enddo
-!!$            do k=2,npz+1
-!!$               do i=ifirst,ilast
-!!$                  pk3(i,j,k) = exp(kappa*log(pe(i,k,j)))
-!!$               enddo
-!!$            enddo
-!!$         endif
-!!$
-!!$      enddo
 
 
       !NOTE: Compiler does NOT like this sort of nested-grid BC code. Is it trying to do some ugly optimization?
@@ -1738,6 +1968,7 @@ CONTAINS
 
 
     end subroutine geopk_halo_nh
+
 
 
 end module nh_core_mod

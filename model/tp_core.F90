@@ -48,8 +48,8 @@ module tp_core_mod
   real, parameter:: p2 = -1./12.
 
 !---- version number -----
-   character(len=128) :: version = '$Id: tp_core.F90,v 17.0.2.4.2.5.2.6 2013/03/18 21:49:26 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: siena_201309 $'
+   character(len=128) :: version = '$Id: tp_core.F90,v 20.0 2013/12/13 23:07:14 fms Exp $'
+   character(len=128) :: tagname = '$Name: tikal $'
 
 !
 !EOP
@@ -599,7 +599,7 @@ contains
            do i=is-1,ie+2
               al(i) = 0.5*(q(i-1,j)+q(i,j)) + r3*(dm1(i-1) - dm1(i))
            enddo
-        endif !grid_type
+      endif
 
       if ( iord==3 ) then
            do i=is-1,ie+1

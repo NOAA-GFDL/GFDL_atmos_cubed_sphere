@@ -25,8 +25,8 @@ private
 public :: fv_climate_nudge_init, fv_climate_nudge,  &
           fv_climate_nudge_end, do_ps
 
-character(len=128), parameter :: version = '$Id: fv_climate_nudge.F90,v 1.1.2.1.2.3.2.2 2013/05/14 19:53:50 Lucas.Harris Exp $'
-character(len=128), parameter :: tagname = '$Name: siena_201309 $'
+character(len=128), parameter :: version = '$Id: fv_climate_nudge.F90,v 20.0 2013/12/13 23:07:22 fms Exp $'
+character(len=128), parameter :: tagname = '$Name: tikal $'
 
 type var_state_type
    integer :: is, ie, js, je, npz
@@ -297,6 +297,8 @@ logical :: sent
 integer :: itime(2), k, n
 character(len=128) :: str
 character(len=8)   :: rstr(2)
+character(len=256) :: err_msg
+
 ! this variable addresses a bug with high resolution GFS analyses
 ! before a certain date preprocessing scripts did not convert virtual temperature to temperature
 logical :: virtual_temp_obs = .false.
@@ -342,7 +344,11 @@ logical :: virtual_temp_obs = .false.
 !//////////////////////////////////////////////////////
 
   ! get the time indices needed
-    call time_interp (Time, Timelist, wght(2), itime(1), itime(2))
+    call time_interp (Time, Timelist, wght(2), itime(1), itime(2), err_msg=err_msg)
+    if(err_msg /= '') then
+       call error_mesg('fv_climate_nudge_mod',trim(err_msg), FATAL)
+    endif
+
     wght(1) = 1. - wght(2)
     if (verbose .gt. 1 .and. mpp_pe() .eq. mpp_root_pe()) then
        write (rstr(1),'(f8.6)') wght(1)

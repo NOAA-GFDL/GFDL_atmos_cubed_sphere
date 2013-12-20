@@ -48,8 +48,8 @@
         dist2side_latlon, spherical_linear_interpolation
 
 !---- version number -----
- character(len=128) :: version = '$Id: fv_grid_utils.F90,v 17.0.2.14.2.8.2.10 2013/05/14 19:53:50 Lucas.Harris Exp $'
- character(len=128) :: tagname = '$Name: siena_201309 $'
+ character(len=128) :: version = '$Id: fv_grid_utils.F90,v 20.0 2013/12/13 23:04:29 fms Exp $'
+ character(len=128) :: tagname = '$Name: tikal $'
 
  contains
 
@@ -278,6 +278,7 @@
 !     |       |
 !     6---2---7
 
+#ifdef OLD_COS_SG
       do j=jsd,jed
          do i=isd,ied
 ! Testing using spherical formular: exact if coordinate lines are along great circles
@@ -295,14 +296,6 @@
             cos_sg(i,j,ip) = -cos_angle( grid3(1,i,j+1), grid3(1,i,j), grid3(1,i+1,j+1) )
          enddo
       enddo
-
-#ifdef SPECIAL_EDGES
-      if ( sw_corner .and. .not. Atm%neststruct%nested) then
-           do j=-2,0
-              cos_sg(0,j,6) = cos_sg(*,*,*)
-           enddo
-      endif
-#endif
 !
 ! Mid-points by averaging:
 !
@@ -321,6 +314,29 @@
             cos_sg(i,j,ip) = 0.5*( cos_sg(i,j,1) + cos_sg(i,j,3) ) 
          enddo
       enddo
+#else
+      do j=jsd,jed
+         do i=isd,ied
+! Testing using spherical formular: exact if coordinate lines are along great circles
+! SW corner:
+            cos_sg(i,j,6) = cos_angle( grid3(1,i,j), grid3(1,i+1,j), grid3(1,i,j+1) )
+! SE corner:
+            cos_sg(i,j,7) = -cos_angle( grid3(1,i+1,j), grid3(1,i,j), grid3(1,i+1,j+1) )
+! NE corner:
+            cos_sg(i,j,8) = cos_angle( grid3(1,i+1,j+1), grid3(1,i+1,j), grid3(1,i,j+1) )
+! NW corner:
+            cos_sg(i,j,9) = -cos_angle( grid3(1,i,j+1), grid3(1,i,j), grid3(1,i+1,j+1) )
+! Mid-points by averaging:
+            cos_sg(i,j,1) = 0.5*( cos_sg(i,j,6) + cos_sg(i,j,9) ) 
+            cos_sg(i,j,2) = 0.5*( cos_sg(i,j,6) + cos_sg(i,j,7) ) 
+            cos_sg(i,j,3) = 0.5*( cos_sg(i,j,7) + cos_sg(i,j,8) ) 
+            cos_sg(i,j,4) = 0.5*( cos_sg(i,j,8) + cos_sg(i,j,9) ) 
+! Center point:
+!           cos_sg(i,j,5) = 0.5*( cos_sg(i,j,1) + cos_sg(i,j,3) ) 
+            cos_sg(i,j,5) = 0.25*(cos_sg(i,j,6)+cos_sg(i,j,7)+cos_sg(i,j,8)+cos_sg(i,j,9)) 
+         enddo
+      enddo
+#endif
 
       do ip=1,9
          do j=jsd,jed
@@ -430,53 +446,29 @@
               call vect_cross(ee2(1:3,i,j), pp, grid3(1,i,j))
               call normalize_vect( ee2(1:3,i,j) )
 
-#ifdef SYM_GRID
-              tmp1 = inner_prod(ee1(1:3,i,j), ee2(1:3,i,j))
-              cosa(i,j) = sign(min(1., abs(tmp1)), tmp1)
-              sina(i,j) = sqrt(max(0.,1. -cosa(i,j)**2))
-#else
+#ifdef OLD_COS_SG
               cosa(i,j) = cos_sg(i,j,6)
               sina(i,j) = sin_sg(i,j,6)
+#else
+! symmetrical grid
+!             tmp1 = inner_prod(ee1(1,i,j), ee2(1,i,j))
+!             cosa(i,j) = sign(min(1., abs(tmp1)), tmp1)
+!             sina(i,j) = sqrt(max(0.,1. -cosa(i,j)**2))
+! symmetrical grid
+              cosa(i,j) = 0.5*(cos_sg(i-1,j-1,8)+cos_sg(i,j,6))
+              sina(i,j) = 0.5*(sin_sg(i-1,j-1,8)+sin_sg(i,j,6))
 #endif
            enddo
         enddo
 
-! call mpp_update_domains(cosa, domain, position=CORNER)
-! The above does not work because cosa at edges should have two values (left and right)
-
-#ifdef TEST_T3
-      do j=jsd,jed
-         do i=isd+1,ied
-                   tmp1 = inner_prod(ew(1,i,j,1), ew(1,i,j,2))
-            cosa_u(i,j) = sign( min(1., abs(tmp1)), tmp1 )
-            sin2 = 1. - cosa_u(i,j)**2
-            sin2 = min(1., sin2)
-            sin2 = max(tiny_number, sin2)  ! sin(alpha)**2 >= 0.75
-            sina_u(i,j) = sqrt( sin2 )
-            rsin_u(i,j) =  1. / sin2
-         enddo
-      enddo
-
-      do j=jsd+1,jed
-         do i=isd,ied
-                   tmp1 = inner_prod(es(1,i,j,1), es(1,i,j,2))
-            cosa_v(i,j) = sign( min(1., abs(tmp1)), tmp1 )
-            sin2 = 1. - cosa_v(i,j)**2
-            sin2 = min(1., sin2)
-            sin2 = max(tiny_number, sin2)
-            sina_v(i,j) = sqrt( sin2 )
-            rsin_v(i,j) =  1. / sin2
-         enddo
-      enddo
-#else
 !     9---4---8
 !     |       |
 !     1   5   3
 !     |       |
 !     6---2---7
+#ifdef OLD_COS_SG
       do j=jsd,jed
          do i=isd+1,ied
-!        do i=is,ie+1
             if ( i==1  .and. .not. Atm%neststruct%nested) then
                cosa_u(i,j) = cos_sg(i,j,1)
                sina_u(i,j) = sin_sg(i,j,1)
@@ -491,7 +483,6 @@
          enddo
       enddo
       do j=jsd+1,jed
-!     do j=js,je+1
          if( j==1  .and. .not. Atm%neststruct%nested) then
            do i=isd,ied
               cosa_v(i,j) = cos_sg(i,j,2)
@@ -511,32 +502,29 @@
               rsin_v(i,j) =  1. / sina_v(i,j)**2
            enddo
          endif
+      enddo        
+#else
+      do j=jsd,jed
+         do i=isd+1,ied
+            cosa_u(i,j) = 0.5*(cos_sg(i-1,j,3)+cos_sg(i,j,1))
+            sina_u(i,j) = 0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))
+            rsin_u(i,j) =  1. / sina_u(i,j)**2
+         enddo
+      enddo
+      do j=jsd+1,jed
+         do i=isd,ied
+            cosa_v(i,j) = 0.5*(cos_sg(i,j-1,4)+cos_sg(i,j,2))
+            sina_v(i,j) = 0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))
+            rsin_v(i,j) =  1. / sina_v(i,j)**2
+         enddo
       enddo
 #endif
-
-!     if ( is==1 ) then
-!          write(*,*) 'Super Grid:', is, js, grid(is,js,1)*180./pi, grid(is,js,2)*180./pi
-! j=0: problem
-!          do j=jsd,jed
-!             write(*,*) j, sin_sg(1,j,1), ' sin_diff=', sin_sg(1,j,1)-sin_sg(0,j,3)
-!          enddo
-!     endif
      
       do j=jsd,jed
          do i=isd,ied
-#ifdef TEST_TEST
-                  tmp1  = inner_prod(ec1(1,i,j), ec2(1,i,j))
-            cosa_s(i,j) = sign(min(1., abs(tmp1)), tmp1 )
-            sin2 = 1. - cosa_s(i,j)**2
-            sin2 = min(1., sin2)
-            sin2 = max(tiny_number, sin2)
-            sina_s(i,j) = min(1., sqrt(sin2))
-            rsin2(i,j) = 1. / sin2
-#else
             cosa_s(i,j) = cos_sg(i,j,5)
             sina_s(i,j) = sin_sg(i,j,5)
             rsin2(i,j) = 1. / sina_s(i,j)**2
-#endif
          enddo
       enddo
 ! Force the model to fail if incorrect corner values are to be used:

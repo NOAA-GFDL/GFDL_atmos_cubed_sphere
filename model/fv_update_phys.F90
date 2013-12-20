@@ -1,12 +1,12 @@
 module fv_update_phys_mod
 
-  use constants_mod,      only: kappa, rdgas, rvgas, grav, cp_air, pi
+  use constants_mod,      only: kappa, rdgas, rvgas, grav, cp_air, cp_vapor, pi
   use field_manager_mod,  only: MODEL_ATMOS
   use mpp_domains_mod,    only: mpp_update_domains, mpp_start_update_domains, mpp_complete_update_domains, domain2d
   use mpp_parameter_mod,  only: AGRID_PARAM=>AGRID
   use mpp_mod,            only: FATAL, mpp_error
   use time_manager_mod,   only: time_type
-  use tracer_manager_mod, only: get_tracer_index
+  use tracer_manager_mod, only: get_tracer_index, adjust_mass
 
   use fv_arrays_mod,      only: fv_flags_type, fv_nest_type
   use boundary_mod,        only: nested_grid_BC
@@ -34,8 +34,8 @@ module fv_update_phys_mod
   public :: fv_update_phys, del2_phys
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_update_phys.F90,v 17.0.2.7.2.6.2.17.4.1 2013/07/29 13:38:39 Seth.Underwood Exp $'
-  character(len=128) :: tagname = '$Name: siena_201309 $'
+  character(len=128) :: version = '$Id: fv_update_phys.F90,v 20.0 2013/12/13 23:04:38 fms Exp $'
+  character(len=128) :: tagname = '$Name: tikal $'
 
   contains
 
@@ -94,6 +94,7 @@ module fv_update_phys_mod
     real, intent(inout):: pk  (is:ie,js:je  , npz+1)        ! pe**cappa
     real, intent(inout):: peln(is:ie,npz+1,js:je)           ! ln(pe)
     real, intent(inout):: pkz (is:ie,js:je,npz)             ! finite-volume mean pk
+    real, parameter:: tice = 273.16
 
     type(fv_grid_type) :: gridstruct
     type(fv_nest_type) :: neststruct
@@ -109,6 +110,9 @@ module fv_update_phys_mod
     real, parameter:: q1000_h2o = 3.1E-6
     real, parameter:: q2000_h2o = 2.8E-6
     real, parameter:: q3000_h2o = 3.0E-6
+!
+    real, parameter:: c_ice = 2106.
+    real, parameter:: c_liq = 4190.
 
 ! Local arrays:
     real  ps_dt(is:ie,js:je)
@@ -119,7 +123,7 @@ module fv_update_phys_mod
     integer  sphum, liq_wat, ice_wat, cld_amt   ! GFDL AM physics
     integer  rainwat, snowwat, graupel          ! Lin Micro-physics
     integer  w_diff                             ! w-tracer for PBL diffusion
-    real     qstar, dbk, rdg, gama_dt, zvir, p_fac
+    real     qstar, dbk, rdg, gama_dt, zvir, p_fac, cp_vap, cv_air, cv_vap, q_v, q_liq, q_sol
 
     real, dimension(1,1,1) :: parent_u_dt, parent_v_dt ! dummy variables for nesting
 
@@ -135,17 +139,15 @@ module fv_update_phys_mod
                                                                 call timing_off('COMM_TOTAL')
     endif
 
-    if ( flagstruct%filter_phys ) then
-         call del2_phys(t_dt, delp, gridstruct, 0.2, npx, npy, npz, is, ie, js, je, &
-                        isd, ied, jsd, jed, 0, domain)
-         do m=1,nq
-            call del2_phys(q_dt(:,:,:,m), delp, gridstruct, 0.2, npx, npy, npz, is, ie, js, je, &
-                           isd, ied, jsd, jed, 0, domain)
-         enddo
-    endif
+! CP_VAPOR = 4.*RVGAS ~ 1846;  CV_VAPOR = 3*RVGAS? = 1384.5
+! cp_liq = 4218 (0 C); cp_ice = 2106 (0 C) ; rdgas=287.04
+    cv_air = cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
+    cp_vap = 4.*rvgas
+    cv_vap = 3.*rvgas      ! 1384.5
+!   gama_dt = dt
+    gama_dt = dt * cp_air / cv_air
 
     rdg = -rdgas / grav
-    gama_dt = dt * cp_air / (cp_air-rdgas)
 
 #if defined(MARS_GCM) || defined(VENUS_GCM)
 !$omp parallel do default(shared) private(qstar, ps_dt, p_fac)
@@ -239,7 +241,7 @@ module fv_update_phys_mod
 
     call get_eta_level(npz, 1.0E5, pfull, phalf, ak, bk)
 
-!$omp parallel do default(shared) private(qstar, ps_dt, p_fac)
+!$omp parallel do default(shared) private(qstar, ps_dt, q_liq, q_sol, q_v)
     do k=1, npz
 
        if ( flagstruct%tau_h2o<0.0 .and. pfull(k) < 100.E2 ) then
@@ -287,37 +289,6 @@ module fv_update_phys_mod
              va(i,j,k) = va(i,j,k) + dt*v_dt(i,j,k)
           enddo
        enddo
-
-       if ( hydrostatic ) then
-          do j=js,je
-             do i=is,ie
-!               pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k) /     &
-!                           (1.-kappa*ak(1)/delp(i,j,k)*(peln(i,k+1,j)-peln(i,k,j)))
-                pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k)
-             enddo
-          enddo
-       else
-         if ( flagstruct%phys_hydrostatic ) then
-! Heating/cooling from physics is assumed to be isobaric hydrostatic proc
-! "negative" definiteness of delz is maintained.
-             do j=js,je
-                do i=is,ie
-                   delz(i,j,k) = delz(i,j,k) / pt(i,j,k)
-!                     pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k) /     &
-!                              (1.-kappa*ak(1)/delp(i,j,k)*(peln(i,k+1,j)-peln(i,k,j)))
-               pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k)
-                   delz(i,j,k) = delz(i,j,k) * pt(i,j,k)
-                enddo
-             enddo
-         else
-! Convert tendency from constant-p to constant-volume
-             do j=js,je
-                do i=is,ie
-                   pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*gama_dt
-                enddo
-             enddo
-         endif
-       endif
 
 !----------------
 ! Update tracers:
@@ -373,7 +344,8 @@ module fv_update_phys_mod
 !-----------------------------------------
       if ( flagstruct%nwat /=0 ) then
         do m=1,flagstruct%ncnst   
-          if( m /= cld_amt .and. m /= w_diff ) then 
+!-- check to query field_table to determine if tracer needs mass adjustment
+          if( m /= cld_amt .and. m /= w_diff .and. adjust_mass(MODEL_ATMOS,m)) then 
             do j=js,je
                do i=is,ie
                   q(i,j,k,m) = q(i,j,k,m) / ps_dt(i,j)
@@ -382,10 +354,63 @@ module fv_update_phys_mod
           endif
         enddo
       endif
-   enddo ! k-loop
+
+#ifdef USE_COMPOSITE_C
+       if ( hydrostatic .or. flagstruct%phys_hydrostatic ) then
+          do j=js,je
+             do i=is,ie
+                q_v   = q(i,j,k,sphum)
+                q_liq = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
+                q_sol = q(i,j,k,ice_wat) + q(i,j,k,snowwat)
+                t_dt(i,j,k) = t_dt(i,j,k)*cp_air / (           &
+                (1.-(q_v+q_liq+q_sol))*cp_air + q_v*cp_vap +   &
+                                                q_liq*(c_liq+14.5*dim(tice,pt(i,j,k)))+q_sol*(c_ice+7.3*(pt(i,j,k)-tice)) )
+             enddo
+          enddo
+!         endif
+       endif
+#endif
+
 
 #endif ! Mars and Venus GCM
 
+       if ( hydrostatic ) then
+          do j=js,je
+             do i=is,ie
+                pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k)
+             enddo
+          enddo
+       else
+         if ( flagstruct%phys_hydrostatic ) then
+             do j=js,je
+                do i=is,ie
+                   delz(i,j,k) = delz(i,j,k) / pt(i,j,k)
+                   pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k)
+                   delz(i,j,k) = delz(i,j,k) * pt(i,j,k)
+                enddo
+             enddo
+         else
+             do j=js,je
+                do i=is,ie
+#ifdef USE_COMPOSITE_C
+                   q_v   = q(i,j,k,sphum)
+                   q_sol = q(i,j,k,ice_wat) + q(i,j,k,snowwat)
+                   q_liq = q(i,j,k,rainwat) + q(i,j,k,liq_wat)
+                   q_sol = q(i,j,k,ice_wat)
+                   pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*cp_air / (    &
+             (1.-(q_v+q_liq+q_sol))*cv_air + q_v*cv_vap +   &
+                      q_liq*(c_liq+14.5*dim(tice,pt(i,j,k))) + q_sol*(c_ice+7.3*(pt(i,j,k)-tice)) )
+#else
+!--------------------------------------------------------------
+                   pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*gama_dt
+!--------------------------------------------------------------
+#endif
+                enddo
+             enddo
+         endif
+       endif
+
+   enddo ! k-loop
 ! [delp, (ua, va), pt, q] updated. Perform nudging if requested
 
 !------- nudging of atmospheric variables toward specified data --------
@@ -447,9 +472,9 @@ module fv_update_phys_mod
         endif
 #elif defined (ADA_NUDGE)
 ! All fields will be updated except winds; wind tendencies added
-!$omp parallel do default(shared) 
+!$omp parallel do default(shared)
         do j=js,je
-         do k=2,npz+1                                                                             
+         do k=2,npz+1
           do i=is,ie
             pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
           enddo
@@ -534,10 +559,14 @@ module fv_update_phys_mod
       do k=1,npz
          do j=js,je
             do i=is,ie
+#ifndef NEW_T
 ! perfect gas law: p = density * rdgas * virtual_temperature
 !              pkz(i,j,k) = ( rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k) )**kappa
                pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
                                            (1.+zvir*q(i,j,k,sphum))/delz(i,j,k)) )
+#else
+               pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)) )
+#endif
             enddo
          enddo
       enddo
@@ -559,30 +588,19 @@ module fv_update_phys_mod
        call mpp_complete_update_domains(i_pack(1), v_dt, domain, complete=.true.)
     endif
 
-!!! DEBUG CODE
     if (size(neststruct%child_grids) > 1) then
-#ifdef NESTNOCOMM
-       call mpp_error(NOTE, 'NOT DOING NEST BC UPDATE OF PHYSICS TENDENCIES')
-       u_dt = 0.
-       v_dt = 0.
-!!$       do k=1,npz
-!!$          call extrapolation_BC(u_dt(:,:,k), 0, 0, npx, npy, bd)
-!!$          call extrapolation_BC(v_dt(:,:,k), 0, 0, npx, npy, bd)
-!!$       end do
-#else
        if (gridstruct%nested) then
           call nested_grid_BC(u_dt, parent_u_dt, neststruct%nest_domain, neststruct%ind_h, neststruct%wt_h, 0, 0, &
                npx, npy, npz, bd, 1, npx-1, 1, npy-1)
           call nested_grid_BC(v_dt, parent_v_dt, neststruct%nest_domain, neststruct%ind_h, neststruct%wt_h, 0, 0, &
                npx, npy, npz, bd, 1, npx-1, 1, npy-1)
        endif
-          do n=1,size(neststruct%child_grids)
-             if (neststruct%child_grids(n)) then
-                call nested_grid_BC(u_dt, neststruct%nest_domain_all(n), 0, 0)
-                call nested_grid_BC(v_dt, neststruct%nest_domain_all(n), 0, 0)
-             endif
-          enddo
-#endif
+       do n=1,size(neststruct%child_grids)
+          if (neststruct%child_grids(n)) then
+             call nested_grid_BC(u_dt, neststruct%nest_domain_all(n), 0, 0)
+             call nested_grid_BC(v_dt, neststruct%nest_domain_all(n), 0, 0)
+          endif
+       enddo
     endif
 
     call timing_off('COMM_TOTAL')
@@ -754,17 +772,6 @@ module fv_update_phys_mod
              v(i,j,k) = v(i,j,k) + dt5*(v_dt(i-1,j,k) + v_dt(i,j,k))
           enddo
        enddo
-
-        if (js == 1) then
-           do i=is,ie
-              u(i,1,k) = u(i,1,k) + dt5*u_dt(i,1,k)
-           enddo
-        endif
-        if (is == 1) then
-           do j=js,je
-              v(1,j,k) = v(1,j,k) + dt5*v_dt(1,j,k)
-           enddo
-        endif
 
      else
 ! Compute 3D wind tendency on A grid

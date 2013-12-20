@@ -8,7 +8,7 @@ module fv_ada_nudge_mod
 !!! CLEANUP: This file compiles but has not been tested.
 
 !!! CLEANUP: Also see  /ncrc/home1/Lucas.Harris/forecast/AM2p12b/quebec/input_quebec/hiram_quebec_updates/fv_nudge.F90 for auto-inputs
-!!! (copy added in this directory: see fv_nudge.F90-auto ) 
+!!! (copy added in this directory: see fv_nudge.F90-auto )
 
  use external_sst_mod,  only: i_sst, j_sst, sst_ncep, sst_anom, forecast_mode
  use diag_manager_mod,  only: register_diag_field, send_data
@@ -17,10 +17,14 @@ module fv_ada_nudge_mod
                               check_nml_error, file_exist, close_file
 !use fms_io_mod,        only: field_size
  use mpp_mod,           only: mpp_error, FATAL, stdlog, get_unit, mpp_pe, input_nml_file
+ use mpp_mod,           only: mpp_root_pe, stdout ! snz
  use mpp_mod,           only: mpp_clock_id, mpp_clock_begin, mpp_clock_end
  use mpp_mod,           only: CLOCK_COMPONENT, CLOCK_SUBCOMPONENT, CLOCK_MODULE, CLOCK_ROUTINE
  use mpp_domains_mod,   only: mpp_update_domains, domain2d
+ use mpp_domains_mod,   only: mpp_get_data_domain ! snz
  use time_manager_mod,  only: time_type,  get_time, get_date, set_date, increment_time
+
+ use grid_mod, only : define_cube_mosaic ! snz
 
  use fv_grid_utils_mod, only: great_circle_dist, intp_great_circle
  use fv_grid_utils_mod, only: latlon2xyz, vect_cross, normalize_vect
@@ -32,21 +36,28 @@ module fv_ada_nudge_mod
 
  use sim_nc_mod,        only: open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var3_r4, get_var2_r4
  use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, fv_nest_type
+
+ use fms_io_mod, only: register_restart_field, restart_file_type, restore_state
+ use fms_io_mod, only: save_restart, get_mosaic_tile_file
+ use axis_utils_mod, only : frac_index
+
 #ifdef ENABLE_ADA
-  use ada_types_mod, only : model_data_type
-  use ada_driver_fv_mod, only : init_fv_ada, fv_ada, ada_end
+ use ada_types_mod, only : model_data_type
+ use ada_driver_fv_mod, only : init_fv_ada, fv_ada, ada_end
 #endif
 
  implicit none
  private
 
- character(len=128) :: version = ''
- character(len=128) :: tagname = ''
+ character(len=*), parameter :: VERSION =&
+      & '$Id: fv_ada_nudge.F90,v 20.0 2013/12/13 23:07:20 fms Exp $'
+ character(len=*), parameter :: TAGNAME =&
+      & '$Name: tikal $'
  logical :: do_adiabatic_init
 
  public fv_ada_nudge, fv_ada_nudge_init, fv_ada_nudge_end, breed_slp_inline_ada
  public do_adiabatic_init
- 
+
  !!! CLEANUP: Are these OK as module variables? They are not thread private.
  integer im     ! Data x-dimension
  integer jm     ! Data y-dimension
@@ -81,7 +92,7 @@ module fv_ada_nudge_mod
  character(len=128):: file_names(nfile_max)
  character(len=128):: track_file_name
  integer :: nfile_total = 0       ! =5 for 1-day (if datasets are 6-hr apart)
- real    :: p_wvp = 100.E2        ! cutoff level for specific humidity nudging 
+ real    :: p_wvp = 100.E2        ! cutoff level for specific humidity nudging
  integer :: kord_data = 8
 
  real    :: mask_fac = 0.25        ! [0,1]  0: no mask;  1: full strength
@@ -93,11 +104,12 @@ module fv_ada_nudge_mod
  logical :: conserve_mom = .true.
  logical :: conserve_hgt = .true.
  logical :: tc_mask = .false.
- logical :: strong_mask = .false. 
- logical :: ibtrack = .true. 
+ logical :: strong_mask = .false.
+ logical :: ibtrack = .true.
  logical :: nudge_debug = .false.
  logical :: do_ps_bias  = .false.
  logical :: nudge_ps    = .false.
+ logical :: nudge_t    = .false.
  logical :: nudge_q     = .false.
  logical :: nudge_winds = .true.
  logical :: nudge_virt  = .true.
@@ -107,6 +119,7 @@ module fv_ada_nudge_mod
  logical :: print_end_nudge = .true.
  logical :: one_year_files = .false. ! Setting to true indicates the files to be read in have 1 year of time data
                                      ! Otherwise, assuming a single time per file (as originally written)
+ logical :: ps_impact_uvt = .false.
 
 
 ! Nudging time-scales (seconds): note, however, the effective time-scale is 2X smaller (stronger) due
@@ -114,24 +127,25 @@ module fv_ada_nudge_mod
  real :: tau_ps     = 21600.       ! 1-day
  real :: tau_q      = 86400.       ! 1-day
  real :: tau_winds  = 21600.       !  6-hr
- real :: tau_virt   = 43200. 
+ real :: tau_t      = 86400.       !  6-hr
+ real :: tau_virt   = 43200.
  real :: tau_hght   = 43200.
 
  real :: q_min      = 1.E-8
 
  integer :: jbeg, jend
- integer :: nf_uv = 0 
- integer :: nf_ps = 0 
- integer :: nf_t  = 2 
- integer :: nf_ht = 2 
+ integer :: nf_uv = 0
+ integer :: nf_ps = 0
+ integer :: nf_t  = 2
+ integer :: nf_ht = 2
 
 ! starting layer (top layer is sponge layer and is skipped)
- integer :: kstart = 2 
+ integer :: kstart = 2
 
 ! skip "kbot" layers
- integer :: kbot_winds = 0 
- integer :: kbot_t     = 0 
- integer :: kbot_q     = 1 
+ integer :: kbot_winds = 0
+ integer :: kbot_t     = 0
+ integer :: kbot_q     = 1
  logical :: analysis_time
 
 !-- Tropical cyclones  --------------------------------------------------------------------
@@ -142,7 +156,7 @@ module fv_ada_nudge_mod
   real :: grid_size     = 28.E3
   real :: tau_vt_slp    = 900.
   real :: tau_vt_wind   = 900.
-  real :: tau_vt_rad    = 4.0  
+  real :: tau_vt_rad    = 4.0
 
   real :: pt_lim =  0.2
   real ::  slp_env = 101010.    ! storm environment pressure (pa)
@@ -157,7 +171,7 @@ module fv_ada_nudge_mod
   real :: r_inc =  25.E3
   real, parameter:: del_r = 50.E3
   real:: elapsed_time = 0.0
-  real:: nudged_time = 1.E12 ! seconds 
+  real:: nudged_time = 1.E12 ! seconds
                              ! usage example: set to 43200. to do inline vortex breeding
                              ! for only the first 12 hours
                              ! In addition, specify only 3 analysis files (12 hours)
@@ -178,28 +192,46 @@ module fv_ada_nudge_mod
   real(KIND=4)::   time_tc(nobs_max,max_storm)           ! start time of the track
 !------------------------------------------------------------------------------------------
   integer :: id_ht_err
- !------ Diagnostic variables for ADA increments
- integer :: id_u_adj, id_v_adj, id_t_adj, id_q_adj, id_ps_adj
- integer :: id_u_ncep, id_v_ncep, id_t_ncep, id_q_ncep, id_ps_ncep
- integer :: id_u_da, id_v_da, id_t_da, id_q_da, id_ps_da, id_ada
+  real :: mslp_obs_arg
+
+  integer, dimension(2) :: atm_layout ! snz
+  integer :: filt_halo0 ! snz
+  integer :: filt_halo  ! snz
+  integer :: isd_filt, ied_filt, jsd_filt, jed_filt ! snz
+
+!------snz add diag variables for ada increments
+  integer :: id_u_ncep, id_v_ncep, id_t_ncep, id_q_ncep, id_ps_ncep ! snz
+  integer :: id_u_damb, id_v_damb, id_t_damb, id_q_damb, id_ps_damb ! snz
+  integer :: id_u_adj, id_v_adj, id_t_adj, id_q_adj, id_ps_adj ! snz
+  integer :: id_u_a, id_v_a, id_t_a, id_q_a, id_ps_a ! snz
+  integer :: id_u_da, id_v_da, id_t_da, id_q_da, id_ps_da ! snz
+  integer :: id_ada
+
+  type(restart_file_type) :: ada_driver_restart ! snz
+  character(len=*), parameter :: restart_file="ada_driver.res.nc" ! snz
 
 #ifdef ENABLE_ADA ! snz
-  type(model_data_type) :: Atm_var, Atm_obs
+  type(model_data_type) :: Atm_var
+  type(domain2d), private, save :: filt_domain
+  real, allocatable :: weight(:,:,:)
+  real :: weight_sum, alat(361)
+  integer :: i_sm, j_sm, jlat
 #endif
 
   !!! CLEANUP Module pointers
 
- namelist /fv_ada_nudge_nml/T_is_Tv, nudge_ps, nudge_virt, nudge_hght, nudge_q, nudge_winds,  &
-                          do_ps_bias, tau_ps, tau_winds, tau_q, tau_virt, tau_hght,  kstart, kbot_winds, &
+ namelist /fv_ada_nudge_nml/T_is_Tv, nudge_ps, nudge_virt, nudge_hght, nudge_q, nudge_t, nudge_winds,  &
+                          do_ps_bias, tau_ps, tau_winds, tau_t, tau_q, tau_virt, tau_hght,  kstart, kbot_winds, &
                           k_breed, k_trop, p_trop, dps_min, kord_data, tc_mask, nudge_debug, nf_ps, nf_t, nf_ht,  &
                           nf_uv, breed_vortex, tau_vt_wind, tau_vt_slp, strong_mask, mask_fac, del2_cd,   &
                           kbot_t, kbot_q, p_wvp, time_varying, time_interval, use_pt_inc, pt_lim,  &
                           tau_vt_rad, r_lo, r_hi, use_high_top, add_bg_wind, conserve_mom, conserve_hgt,  &
                           min_nobs, min_mslp, nudged_time, r_fac, r_min, r_inc, ibtrack, track_file_name, file_names, &
-                          one_year_files
+                          one_year_files, &
+                          atm_layout, filt_halo0, ps_impact_uvt
 
  contains
- 
+
 
   subroutine fv_ada_nudge ( Time, dt, npx, npy, npz, ps_dt, u_dt, v_dt, t_dt, q_dt, zvir, ptop, &
                             ak, bk, ts, ps, delp, ua, va, pt, nwat, q, phis, gridstruct, &
@@ -255,17 +287,17 @@ module fv_ada_nudge_mod
 
   real, pointer, dimension(:,:) :: sina_u, sina_v
   real, pointer, dimension(:,:,:) :: vlon, vlat, sin_sg
-  
+
   real, pointer, dimension(:,:) :: dx, dy, rdxc, rdyc
 
   real, pointer :: da_min
 
   logical, pointer :: nested, sw_corner, se_corner, nw_corner, ne_corner
 
-  if ( .not. module_is_initialized ) then 
+  if ( .not. module_is_initialized ) then
         call mpp_error(FATAL,'==> Error from fv_ada_nudge: module not initialized')
   endif
-  
+
   is  = bd%is
   ie  = bd%ie
   js  = bd%js
@@ -297,7 +329,7 @@ module fv_ada_nudge_mod
   se_corner => gridstruct%se_corner
   nw_corner => gridstruct%nw_corner
   ne_corner => gridstruct%ne_corner
-  
+
   if ( no_obs ) then
 #ifndef DYCORE_SOLO
        forecast_mode = .true.
@@ -323,7 +355,7 @@ module fv_ada_nudge_mod
   do k=1,npz
      press(k) = 0.5*(ak(k) + ak(k+1)) + 0.5*(bk(k)+bk(k+1))*1.E5
      if ( press(k) < 30.E2 ) then
-          profile(k) =  max(0.01, press(k)/30.E2) 
+          profile(k) =  max(0.01, press(k)/30.E2)
      endif
   enddo
   profile(1) = 0.
@@ -333,17 +365,17 @@ module fv_ada_nudge_mod
 !$omp parallel do default(shared)
   do k=1,npz
      if ( press(k) < 30.E2 ) then
-          prof_t(k) =  max(0.01, press(k)/30.E2) 
+          prof_t(k) =  max(0.01, press(k)/30.E2)
      endif
   enddo
   prof_t(1) = 0.
- 
+
 ! Water vapor:
   prof_q(:) = 1.
 !$omp parallel do default(shared)
   do k=1,npz
      if ( press(k) < 300.E2 ) then
-          prof_q(k) =  max(0., press(k)/300.E2) 
+          prof_q(k) =  max(0., press(k)/300.E2)
      endif
   enddo
   prof_q(1) = 0.
@@ -355,7 +387,7 @@ module fv_ada_nudge_mod
           ptmp = ak(k+1) + bk(k+1)*1.E5
           if ( ptmp > p_trop ) then
                k_trop = k
-               exit              
+               exit
           endif
        enddo
   endif
@@ -388,87 +420,227 @@ module fv_ada_nudge_mod
 !  call get_time (time, seconds, days)
 
   if (mod(seconds, 21600) == 0) then
-     Atm_obs%u(is:ie,js:je,1:npz) = u_obs(is:ie,js:je,1:npz)
-     Atm_obs%v(is:ie,js:je,1:npz) = v_obs(is:ie,js:je,1:npz)
-     Atm_obs%t(is:ie,js:je,1:npz) = t_obs(is:ie,js:je,1:npz)
-     ! Atm_obs%q(is:ie,js:je,1:npz) = q_obs(is:ie,js:je,1:npz)
-     ! Atm_obs%ps(is:ie,js:je) = ps_obs(is:ie,js:je)
-     Atm_var%u(:,:,:) = ua(:,:,:)
-     Atm_var%v(:,:,:) = va(:,:,:)
-     Atm_var%t(:,:,:) = pt(:,:,:)
-     ! Atm_var%q(:,:,:) = q(:,:,:,1)
-     ! Atm_var%ps(:,:) = ps(:,:)
-     Atm_var%u_adj(:,:,:) = ua(:,:,:)
-     Atm_var%v_adj(:,:,:) = va(:,:,:)
-     Atm_var%t_adj(:,:,:) = pt(:,:,:)
-     ! Atm_var%q_adj(:,:,:) = q(:,:,:,1)
-     ! Atm_var%ps_adj(:,:) = ps(:,:)
 
-     call mpp_update_domains(Atm_obs%u(:,:,:), domain, complete=.false.)
-     call mpp_update_domains(Atm_obs%v(:,:,:), domain, complete=.false.)
-     ! call mpp_update_domains(Atm_obs%q(:,:,:), domain, complete=.false.)
-     call mpp_update_domains(Atm_obs%t(:,:,:), domain, complete=.true.)
-     ! call mpp_update_domains(Atm_obs%ps(:,:), domain, complete=.true.)
+     Atm_var%u(is:ie,js:je,:) = ua(is:ie,js:je,:)
+     Atm_var%v(is:ie,js:je,:) = va(is:ie,js:je,:)
+     Atm_var%t(is:ie,js:je,:) = pt(is:ie,js:je,:)
+     Atm_var%q(is:ie,js:je,:) = q(is:ie,js:je,:,1)
+     Atm_var%dp(is:ie,js:je,:) = delp(is:ie,js:je,:)
+     Atm_var%ps(is:ie,js:je) = ps(is:ie,js:je)
+     Atm_var%phis(is:ie,js:je) = phis(is:ie,js:je)
 
-     call fv_ada(time, Atm_obs, Atm_var)
+     call mpp_update_domains(Atm_var%u(:,:,:), filt_domain, complete=.false.)
+     call mpp_update_domains(Atm_var%v(:,:,:), filt_domain, complete=.false.)
+     call mpp_update_domains(Atm_var%t(:,:,:), filt_domain, complete=.false.)
+     call mpp_update_domains(Atm_var%q(:,:,:), filt_domain, complete=.false.)
+     call mpp_update_domains(Atm_var%dp(:,:,:), filt_domain, complete=.true.)
+     call mpp_update_domains(Atm_var%ps(:,:), filt_domain, complete=.false.)
+     call mpp_update_domains(Atm_var%phis(:,:), filt_domain, complete=.true.)
 
-     Atm_var%u_adj(:,:,:) = Atm_var%u(:,:,:) - Atm_var%u_adj(:,:,:)
-     Atm_var%v_adj(:,:,:) = Atm_var%v(:,:,:) - Atm_var%v_adj(:,:,:)
-     Atm_var%t_adj(:,:,:) = Atm_var%t(:,:,:) - Atm_var%t_adj(:,:,:)
-     ! Atm_var%q_adj(:,:,:) = Atm_var%q(:,:,:) - Atm_var%q_adj(:,:,:)
-     ! Atm_var%ps_adj(:,:) = Atm_var%ps(:,:) - Atm_var%ps_adj(:,:)
+     ! handle the lower-left corner
+     if (is == 1 .and. js == 1) then
+       do k = 1, npz
+       do j = js-filt_halo, js-1
+       do i = is-filt_halo, is-1
+         Atm_var%u(i,j,k) = Atm_var%u(is-i,js-j,k)
+         Atm_var%v(i,j,k) = Atm_var%v(is-i,js-j,k)
+         Atm_var%t(i,j,k) = Atm_var%t(is-i,js-j,k)
+         Atm_var%q(i,j,k) = Atm_var%q(is-i,js-j,k)
+         Atm_var%dp(i,j,k) = Atm_var%dp(is-i,js-j,k)
+       end do
+       end do
+       end do
+       do j = js-filt_halo, js-1
+       do i = is-filt_halo, is-1
+         Atm_var%ps(i,j) = Atm_var%ps(is-i,js-j)
+         Atm_var%phis(i,j) = Atm_var%phis(is-i,js-j)
+       end do
+       end do
+     end if
+     ! handle the lower-right corner
+     if (ie == npx-1 .and. js == 1) then
+       do k = 1, npz
+       do j = js-filt_halo, js-1
+       do i = ie+1, ie+filt_halo
+         Atm_var%u(i,j,k) = Atm_var%u(ie-i+ie+1,js-j,k)
+         Atm_var%v(i,j,k) = Atm_var%v(ie-i+ie+1,js-j,k)
+         Atm_var%t(i,j,k) = Atm_var%t(ie-i+ie+1,js-j,k)
+         Atm_var%q(i,j,k) = Atm_var%q(ie-i+ie+1,js-j,k)
+         Atm_var%dp(i,j,k) = Atm_var%dp(ie-i+ie+1,js-j,k)
+       end do
+       end do
+       end do
+       do j = js-filt_halo, js-1
+       do i = ie+1, ie+filt_halo
+         Atm_var%ps(i,j) = Atm_var%ps(ie-i+ie+1,js-j)
+         Atm_var%phis(i,j) = Atm_var%phis(ie-i+ie+1,js-j)
+       end do
+       end do
+     end if
+     ! handle the upper-right corner
+     if (ie == npx-1 .and. je == npy-1) then
+       do k = 1, npz
+       do j = je+1, je+filt_halo
+       do i = ie+1, ie+filt_halo
+         Atm_var%u(i,j,k) = Atm_var%u(ie-i+ie+1,je-j+je+1,k)
+         Atm_var%v(i,j,k) = Atm_var%v(ie-i+ie+1,je-j+je+1,k)
+         Atm_var%t(i,j,k) = Atm_var%t(ie-i+ie+1,je-j+je+1,k)
+         Atm_var%q(i,j,k) = Atm_var%q(ie-i+ie+1,je-j+je+1,k)
+         Atm_var%dp(i,j,k) = Atm_var%dp(ie-i+ie+1,je-j+je+1,k)
+       end do
+       end do
+       end do
+       do j = je+1, je+filt_halo
+       do i = ie+1, ie+filt_halo
+         Atm_var%ps(i,j) = Atm_var%ps(ie-i+ie+1,je-j+je+1)
+         Atm_var%phis(i,j) = Atm_var%phis(ie-i+ie+1,je-j+je+1)
+       end do
+       end do
+     end if
+     ! end of handling corners
+
+     if (filt_halo0 > 0) then ! for smooth
+
+     do k = 1, npz
+     do j = js, je
+     do i = is, ie
+       jlat = floor(frac_index(agrid(i,j,2)*rad2deg, alat(:)))
+       Atm_var%u_a(i,j,k) = 0.0
+       Atm_var%v_a(i,j,k) = 0.0
+       Atm_var%t_a(i,j,k) = 0.0
+       Atm_var%q_a(i,j,k) = 0.0
+       do j_sm = j-filt_halo,j+filt_halo
+       do i_sm = i-filt_halo,i+filt_halo
+         Atm_var%u_a(i,j,k) = Atm_var%u_a(i,j,k)+weight(i_sm-i,j_sm-j,jlat)*Atm_var%u(i_sm,j_sm,k)
+         Atm_var%v_a(i,j,k) = Atm_var%v_a(i,j,k)+weight(i_sm-i,j_sm-j,jlat)*Atm_var%v(i_sm,j_sm,k)
+         Atm_var%t_a(i,j,k) = Atm_var%t_a(i,j,k)+weight(i_sm-i,j_sm-j,jlat)*Atm_var%t(i_sm,j_sm,k)
+         Atm_var%q_a(i,j,k) = Atm_var%q_a(i,j,k)+weight(i_sm-i,j_sm-j,jlat)*Atm_var%q(i_sm,j_sm,k)
+       end do
+       end do
+     end do
+     end do
+     end do
+     do j = js, je
+     do i = is, ie
+       jlat = floor(frac_index(agrid(i,j,2)*rad2deg, alat(:)))
+       Atm_var%ps_a(i,j) = 0.0
+       do j_sm = j-filt_halo,j+filt_halo
+       do i_sm = i-filt_halo,i+filt_halo
+         Atm_var%ps_a(i,j) = Atm_var%ps_a(i,j)+weight(i_sm-i,j_sm-j,jlat)*Atm_var%ps(i_sm,j_sm)
+       end do
+       end do
+     end do
+     end do
+     ua(is:ie,js:je,:)  = Atm_var%u_a(is:ie,js:je,:)
+     va(is:ie,js:je,:)  = Atm_var%v_a(is:ie,js:je,:)
+     pt(is:ie,js:je,:)  = Atm_var%t_a(is:ie,js:je,:)
+     q(is:ie,js:je,:,1) = Atm_var%q_a(is:ie,js:je,:)
+     ps(is:ie,js:je)    = Atm_var%ps_a(is:ie,js:je)
+
+     call mpp_update_domains(ua(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(va(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(pt(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(q(:,:,:,1), domain, complete=.true.)
+     call mpp_update_domains(ps(:,:), domain, complete=.true.)
+
+     Atm_var%u_a(is:ie,js:je,:)  = Atm_var%u(is:ie,js:je,:) - Atm_var%u_a(is:ie,js:je,:)
+     Atm_var%v_a(is:ie,js:je,:)  = Atm_var%v(is:ie,js:je,:) - Atm_var%v_a(is:ie,js:je,:)
+     Atm_var%t_a(is:ie,js:je,:)  = Atm_var%t(is:ie,js:je,:) - Atm_var%t_a(is:ie,js:je,:)
+     Atm_var%q_a(is:ie,js:je,:)  = Atm_var%q(is:ie,js:je,:) - Atm_var%q_a(is:ie,js:je,:)
+     Atm_var%ps_a(is:ie,js:je)   = Atm_var%ps(is:ie,js:je) - Atm_var%ps_a(is:ie,js:je)
+
+     call mpp_update_domains(Atm_var%u_a(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(Atm_var%v_a(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(Atm_var%t_a(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(Atm_var%q_a(:,:,:), domain, complete=.true.)
+     call mpp_update_domains(Atm_var%ps_a(:,:), domain, complete=.true.)
+
+     else ! no smooth
+
+     Atm_var%u_a(is:ie,js:je,:)  = 0.0
+     Atm_var%v_a(is:ie,js:je,:)  = 0.0
+     Atm_var%t_a(is:ie,js:je,:)  = 0.0
+     Atm_var%q_a(is:ie,js:je,:)  = 0.0
+     Atm_var%ps_a(is:ie,js:je)   = 0.0
+
+     end if ! for smooth or not
+
+     if ( id_u_ncep > 0 ) used=send_data(id_u_ncep, u_obs(is:ie,js:je,:), Time)
+     if ( id_v_ncep > 0 ) used=send_data(id_v_ncep, v_obs(is:ie,js:je,:), Time)
+     if ( id_t_ncep > 0 ) used=send_data(id_t_ncep, t_obs(is:ie,js:je,:), Time)
+     if ( id_q_ncep > 0 ) used=send_data(id_q_ncep, q_obs(is:ie,js:je,:), Time)
+     if ( id_ps_ncep > 0 ) used=send_data(id_ps_ncep, ps_obs(is:ie,js:je), Time)
+
+     if ( id_u_damb > 0 ) used=send_data(id_u_damb, ua(is:ie,js:je,:), Time)
+     if ( id_v_damb > 0 ) used=send_data(id_v_damb, va(is:ie,js:je,:), Time)
+     if ( id_t_damb > 0 ) used=send_data(id_t_damb, pt(is:ie,js:je,:), Time)
+     if ( id_q_damb > 0 ) used=send_data(id_q_damb, q(is:ie,js:je,:,1), Time)
+     if ( id_ps_damb > 0 ) used=send_data(id_ps_damb, ps(is:ie,js:je), Time)
+
+     if ( id_u_a > 0 ) used=send_data(id_u_a, Atm_var%u_a(is:ie,js:je,:), Time)
+     if ( id_v_a > 0 ) used=send_data(id_v_a, Atm_var%v_a(is:ie,js:je,:), Time)
+     if ( id_t_a > 0 ) used=send_data(id_t_a, Atm_var%t_a(is:ie,js:je,:), Time)
+     if ( id_q_a > 0 ) used=send_data(id_q_a, Atm_var%q_a(is:ie,js:je,:), Time)
+     if ( id_ps_a > 0 ) used=send_data(id_ps_a, Atm_var%ps_a(is:ie,js:je), Time)
+
+     call fv_ada(time, ak, bk, Atm_var)
+
+     Atm_var%u_adj(is:ie,js:je,1:npz) = Atm_var%u(is:ie,js:je,1:npz) - ua(is:ie,js:je,1:npz)
+     Atm_var%v_adj(is:ie,js:je,1:npz) = Atm_var%v(is:ie,js:je,1:npz) - va(is:ie,js:je,1:npz)
+     Atm_var%t_adj(is:ie,js:je,1:npz) = Atm_var%t(is:ie,js:je,1:npz) - pt(is:ie,js:je,1:npz)
+     Atm_var%q_adj(is:ie,js:je,1:npz) = Atm_var%q(is:ie,js:je,1:npz) - q(is:ie,js:je,1:npz,1)
+     Atm_var%ps_adj(is:ie,js:je) = Atm_var%ps(is:ie,js:je) - ps(is:ie,js:je)
 
      call mpp_update_domains(Atm_var%u_adj(:,:,:), domain, complete=.false.)
      call mpp_update_domains(Atm_var%v_adj(:,:,:), domain, complete=.false.)
-     ! call mpp_update_domains(Atm_var%q_adj(:,:,:), domain, complete=.false.)
-     call mpp_update_domains(Atm_var%t_adj(:,:,:), domain, complete=.true.)
-     ! call mpp_update_domains(Atm_var%ps_adj(:,:), domain, complete=.true.)
+     call mpp_update_domains(Atm_var%t_adj(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(Atm_var%q_adj(:,:,:), domain, complete=.true.)
+     call mpp_update_domains(Atm_var%ps_adj(:,:), domain, complete=.true.)
 
      if ( id_u_adj > 0 ) used=send_data(id_u_adj, Atm_var%u_adj(is:ie,js:je,:), Time)
      if ( id_v_adj > 0 ) used=send_data(id_v_adj, Atm_var%v_adj(is:ie,js:je,:), Time)
      if ( id_t_adj > 0 ) used=send_data(id_t_adj, Atm_var%t_adj(is:ie,js:je,:), Time)
-     ! if ( id_q_adj > 0 ) used=send_data(id_q_adj, Atm_var%q_adj(is:ie,js:je,:), Time)
-     ! if ( id_ps_adj > 0 ) used=send_data(id_ps_adj, Atm_var%ps_adj(is:ie,js:je), Time)
-     if ( id_u_ncep > 0 ) used=send_data(id_u_ncep, Atm_obs%u(is:ie,js:je,:), Time)
-     if ( id_v_ncep > 0 ) used=send_data(id_v_ncep, Atm_obs%v(is:ie,js:je,:), Time)
-     if ( id_t_ncep > 0 ) used=send_data(id_t_ncep, Atm_obs%t(is:ie,js:je,:), Time)
-     ! if ( id_q_ncep > 0 ) used=send_data(id_q_ncep, Atm_obs%q(is:ie,js:je,:), Time)
-     ! if ( id_ps_ncep > 0 ) used=send_data(id_ps_ncep, Atm_obs%ps(is:ie,js:je), Time)
-     if ( id_u_da > 0 ) used=send_data(id_u_da, ua(is:ie,js:je,:), Time)
-     if ( id_v_da > 0 ) used=send_data(id_v_da, va(is:ie,js:je,:), Time)
-     if ( id_t_da > 0 ) used=send_data(id_t_da, pt(is:ie,js:je,:), Time)
-     ! if ( id_q_da > 0 ) used=send_data(id_q_da, q(is:ie,js:je,:,1), Time)
-     ! if ( id_ps_da > 0 ) used=send_data(id_ps_da, ps(is:ie,js:je), Time)
+     if ( id_q_adj > 0 ) used=send_data(id_q_adj, Atm_var%q_adj(is:ie,js:je,:), Time)
+     if ( id_ps_adj > 0 ) used=send_data(id_ps_adj, Atm_var%ps_adj(is:ie,js:je), Time)
 
+     ua(is:ie,js:je,:) = ua(is:ie,js:je,:) + Atm_var%u_a(is:ie,js:je,:)
+     va(is:ie,js:je,:) = va(is:ie,js:je,:) + Atm_var%v_a(is:ie,js:je,:)
+     pt(is:ie,js:je,:) = pt(is:ie,js:je,:) + Atm_var%t_a(is:ie,js:je,:)
+
+  end if ! for 6-hour reanalysis data
+
+  diff_t = 18.0-mod(seconds,21600)/1200.0
+  dt_const = 1./171.*diff_t
+
+  ! update delp and ps
+  do j=js,je
+  do i=is,ie
+    ps(i,j) = ak(1)
+  enddo
+  enddo
+
+  do k = 1, npz
+    dbk = (bk(k+1) - bk(k))*dt_const
+    do j = js, je
+    do i = is, ie
+      delp(i,j,k) = delp(i,j,k) + dbk*Atm_var%ps_adj(i,j)
+          ps(i,j) = delp(i,j,k) + ps(i,j)
+    end do
+    end do
+  end do
+
+  ! if ps_inpact_uvt, then update u, v, pt
+  if (ps_impact_uvt) then
+    ua(is:ie,js:je,:) = ua(is:ie,js:je,:) + Atm_var%u_adj(is:ie,js:je,:)*dt_const
+    va(is:ie,js:je,:) = va(is:ie,js:je,:) + Atm_var%v_adj(is:ie,js:je,:)*dt_const
+    pt(is:ie,js:je,:) = pt(is:ie,js:je,:) + Atm_var%t_adj(is:ie,js:je,:)*dt_const
+    call mpp_update_domains(ua(:,:,:), domain, complete=.false.)
+    call mpp_update_domains(va(:,:,:), domain, complete=.false.)
+    call mpp_update_domains(pt(:,:,:), domain, complete=.true.)
   end if
 
-  diff_t = real(mod(seconds,21600))/21600.0
-  dt_const = 1./18.*cos(3.1415926/2.*diff_t)
-
-  ua(:,:,:) = ua(:,:,:) + Atm_var%u_adj(:,:,:)*dt_const
-  va(:,:,:) = va(:,:,:) + Atm_var%v_adj(:,:,:)*dt_const
-  pt(:,:,:) = pt(:,:,:) + Atm_var%t_adj(:,:,:)*dt_const
-
-  ! profile(1) = 0.01
-  ! prof_t(1) = 0.01
-  ! do k = 1, npz
-  !   do j = js, je
-  !   do i = is, ie
-  !     ua(i,j,k) = ua(i,j,k) + profile(k)*Atm_var%u_adj(i,j,k)*dt_const
-  !     va(i,j,k) = va(i,j,k) + profile(k)*Atm_var%v_adj(i,j,k)*dt_const
-  !     pt(i,j,k) = pt(i,j,k) + prof_t(k)*Atm_var%t_adj(i,j,k)*dt_const
-  !     q(i,j,k,1) = q(i,j,k,1) + Atm_var%q_adj(i,j,k)*dt_const
-  !   end do
-  !   end do
-  ! end do
-  ! profile(1) = 0.0
-  ! prof_t(1) = 0.0
-
-  call mpp_update_domains(ua(:,:,:), domain, complete=.false.)
-  call mpp_update_domains(va(:,:,:), domain, complete=.false.)
-  call mpp_update_domains(pt(:,:,:), domain, complete=.true.)
-
   call mpp_clock_end(id_ada)
+
 #endif ! snz
 
   if ( no_obs ) then
@@ -487,7 +659,7 @@ module fv_ada_nudge_mod
 
   if( analysis_time ) then
 !-------------------------------------------
-! Compute RMSE, bias, and correlation of SLP 
+! Compute RMSE, bias, and correlation of SLP
 !-------------------------------------------
       do j=js,je
          do i=is,ie
@@ -516,7 +688,7 @@ module fv_ada_nudge_mod
             endif
          enddo
       enddo
-     
+
       call rmse_bias(m_err, rms, bias, bd, area)
       call corr(slp_m, slp_n, co, bd, area)
 
@@ -585,7 +757,7 @@ module fv_ada_nudge_mod
 
 !$omp parallel do default(shared) private(pe1, peln, pk, gz)
         do j=js,je
- 
+
            do i=is,ie
               pe1(i) = ak(1)
               peln(i,1) = log(pe1(i))
@@ -674,7 +846,7 @@ endif
 ! Compute RMSE of height
 !-----------------------
         if( analysis_time ) then
-!$omp parallel do default(shared) 
+!$omp parallel do default(shared)
             do j=js,je
                do i=is,ie
                   m_err(i,j) = (hght2(i,j) - gz_int(i,j)) / grav
@@ -691,7 +863,7 @@ endif
 
   if ( nudge_virt ) then
         rdt = 1./(tau_virt/factor + dt)
-!$omp parallel do default(shared) 
+!$omp parallel do default(shared)
      do k=kstart, kht
         do j=js,je
            do i=is,ie
@@ -706,7 +878,7 @@ endif
 ! Filter t_dt here:
        if ( nf_t>0 ) call del2_scalar(t_dt, del2_cd, npz, nf_t, bd, npx, npy, gridstruct, domain)
 
-!$omp parallel do default(shared) 
+!$omp parallel do default(shared)
        do k=kstart, kht
           do j=js,je
              do i=is,ie
@@ -719,7 +891,7 @@ endif
   q_dt(:,:,:) = 0.
   if ( nudge_q ) then
        rdt = 1./(tau_q/factor + dt)
-!$omp parallel do default(shared) 
+!$omp parallel do default(shared)
      do k=kstart, npz - kbot_q
         if ( press(k) > p_wvp ) then
             do iq=2,nwat
@@ -767,8 +939,8 @@ endif
   nullify(area)
   nullify(rarea)
 
-  nullify(vlon)  
-  nullify(vlat)  
+  nullify(vlon)
+  nullify(vlat)
   nullify(sina_u)
   nullify(sina_v)
   nullify(sin_sg)
@@ -910,7 +1082,7 @@ endif
             ps(i,j) = ak(1)
          enddo
       enddo
- 
+
       rdt = dt / (tau_ps/factor + dt)
       do k=1,npz
          dbk = rdt*(bk(k+1) - bk(k))
@@ -982,14 +1154,14 @@ endif
       if(master .and. nudge_debug) write(*,*) 'Significant PS bias=', -bias
  endif
 
- if ( bias > 0. ) then    
+ if ( bias > 0. ) then
      psum = 0.
      do j=js,je
         do i=is,ie
            if ( ps_dt(i,j) > 0. ) then
                 psum = psum + area(i,j)
            endif
-        enddo 
+        enddo
      enddo
 
      call mp_reduce_sum( psum )
@@ -1000,7 +1172,7 @@ endif
            if ( ps_dt(i,j) > 0.0 ) then
                 ps_dt(i,j) = max(0.0, ps_dt(i,j) - bias)
            endif
-        enddo 
+        enddo
      enddo
  else
      psum = 0.
@@ -1009,18 +1181,18 @@ endif
            if ( ps_dt(i,j) < 0. ) then
                 psum = psum + area(i,j)
            endif
-        enddo 
+        enddo
      enddo
 
      call mp_reduce_sum( psum )
-     bias = bias * total_area / psum 
+     bias = bias * total_area / psum
 
      do j=js,je
         do i=is,ie
            if ( ps_dt(i,j) < 0.0 ) then
                 ps_dt(i,j) = min(0.0, ps_dt(i,j) - bias)
            endif
-        enddo 
+        enddo
      enddo
  endif
 
@@ -1193,12 +1365,12 @@ endif
   ps_obs(:,:)  = alpha*ps_dat(:,:,1) + beta*ps_dat(:,:,2)
 
 !---------------------------------
-!*** nudge & update ps & delp here 
+!*** nudge & update ps & delp here
 !---------------------------------
   if (nudge_ps) then
 
       allocate ( wt(is:ie,js:je,km) )
-      wt(:,:,:) = alpha*t_dat(:,:,:,1) + beta*t_dat(:,:,:,2) 
+      wt(:,:,:) = alpha*t_dat(:,:,:,1) + beta*t_dat(:,:,:,2)
       do j=js,je
          do i=is,ie
             tm(i,j)  = wt(i,j,km)
@@ -1206,7 +1378,7 @@ endif
       enddo
 
       call get_int_hght(gz_int, npz, ak, bk, ps(is:ie,js:je), delp, ps_obs(is:ie,js:je), wt(:,:,:), .false., bd)
-      deallocate ( wt ) 
+      deallocate ( wt )
 
       allocate ( uu(isd:ied,jsd:jed,npz) )
       allocate ( vv(isd:ied,jsd:jed,npz) )
@@ -1216,13 +1388,13 @@ endif
       do k=1,npz
       do j=js,je
          do i=is,ie
-            u_dt(i,j,k) = u_dt(i,j,k) + (uu(i,j,k) - ua(i,j,k)) / dt 
-            v_dt(i,j,k) = v_dt(i,j,k) + (vv(i,j,k) - va(i,j,k)) / dt 
+            u_dt(i,j,k) = u_dt(i,j,k) + (uu(i,j,k) - ua(i,j,k)) / dt
+            v_dt(i,j,k) = v_dt(i,j,k) + (vv(i,j,k) - va(i,j,k)) / dt
         enddo
       enddo
       enddo
-      deallocate (uu ) 
-      deallocate (vv ) 
+      deallocate (uu )
+      deallocate (vv )
   endif
 
   allocate ( ut(is:ie,js:je,npz) )
@@ -1255,29 +1427,30 @@ endif
        t_obs(:,:,:) = t_obs(:,:,:) + beta*ut(:,:,:)
        q_obs(:,:,:) = q_obs(:,:,:) + beta*vt(:,:,:)
 
-  deallocate ( ut ) 
-  deallocate ( vt ) 
+  deallocate ( ut )
+  deallocate ( vt )
 
   if ( nudge_hght ) then
        allocate ( wt(is:ie,js:je,km) )
-       wt(:,:,:) = alpha*t_dat(:,:,:,1) + beta*t_dat(:,:,:,2) 
+       wt(:,:,:) = alpha*t_dat(:,:,:,1) + beta*t_dat(:,:,:,2)
        call get_int_hght(gz_int, npz, ak, bk, ps(is:ie,js:je), delp, ps_obs(is:ie,js:je), wt(:,:,:), .true., bd)
-       deallocate ( wt ) 
+       deallocate ( wt )
   endif
 
  end subroutine get_obs
 
 
- subroutine fv_ada_nudge_init(time, axes, npz, zvir, ak, bk, ts, phis, gridstruct, ks, npx, neststruct, bd)
- character(len=17) :: mod_name = 'fv_nudge'
+ subroutine fv_ada_nudge_init(time, axes, npz, zvir, ak, bk, ts, phis, gridstruct, ks, npx, neststruct, bd, domain)
+ character(len=17) :: mod_name = 'fv_ada_nudge'
   type(time_type), intent(in):: time
   integer,         intent(in):: axes(4)
-  integer,  intent(in):: npz           ! vertical dimension 
+  integer,  intent(in):: npz           ! vertical dimension
   real,     intent(in):: zvir
   type(fv_grid_bounds_type), intent(IN) :: bd
   real, intent(in), dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: phis
   real, intent(in), dimension(npz+1):: ak, bk
   real, intent(out), dimension(bd%is:bd%ie,bd%js:bd%je):: ts
+  type(domain2d), intent(in) :: domain
   type(fv_grid_type), target :: gridstruct
   integer,  intent(in) :: ks, npx
   type(fv_nest_type) :: neststruct
@@ -1289,10 +1462,19 @@ endif
   integer :: ncid
   integer :: year, month, day, hour, minute, second
 
+  integer :: id_restart !< Currently not used for anything other than a return
+  !value.
+  character(len=256) :: restart_file_instance
+
   real, pointer, dimension(:,:,:) :: agrid
 
   integer :: is,  ie,  js,  je
   integer :: isd, ied, jsd, jed
+
+  integer :: stdout_unit
+
+  stdout_unit = stdout()
+
   is  = bd%is
   ie  = bd%ie
   js  = bd%js
@@ -1303,7 +1485,7 @@ endif
   jed = bd%jed
 
    agrid => gridstruct%agrid
-  
+
    master = is_master()
    do_adiabatic_init = .false.
    deg2rad = pi/180.
@@ -1336,7 +1518,7 @@ endif
 10     call close_file ( unit )
     end if
 #endif
-    call write_version_number (version, tagname)
+    call write_version_number (VERSION, TAGNAME)
     if ( master ) then
          f_unit=stdlog()
          write( f_unit, nml = fv_ada_nudge_nml )
@@ -1388,7 +1570,7 @@ endif
     do j=1,jm
        lat(j) = lat(j) * deg2rad
     enddo
- 
+
     allocate ( ak0(km+1) )
     allocate ( bk0(km+1) )
 
@@ -1400,7 +1582,7 @@ endif
 
 ! Note: definition of NCEP hybrid is p(k) = a(k)*1.E5 + b(k)*ps
     ak0(:) = ak0(:) * 1.E5
-! Limiter to prevent NAN at top during remapping 
+! Limiter to prevent NAN at top during remapping
     if ( bk0(1) < 1.E-9 ) ak0(1) = max(1.e-9, ak0(1))
 
    if ( master ) then
@@ -1423,7 +1605,7 @@ endif
     do j=js,je
        do i=is,ie
             j1 = jdc(i,j)
-          jbeg = min(jbeg, j1) 
+          jbeg = min(jbeg, j1)
           jend = max(jend, j1+1)
        enddo
     enddo
@@ -1450,69 +1632,174 @@ endif
 
 #ifdef ENABLE_ADA
 
-    allocate(Atm_obs%u(isd:ied,jsd:jed,npz),Atm_obs%v(isd:ied,jsd:jed,npz),Atm_obs%t(isd:ied,jsd:jed,npz))
-    allocate(Atm_obs%q(isd:ied,jsd:jed,npz),Atm_obs%ps(isd:ied,jsd:jed))
+    do j = 1, 361
+      alat(j) = -90 + (j-1)*0.5
+    end do
 
-    allocate(Atm_var%u(isd:ied,jsd:jed,npz),Atm_var%v(isd:ied,jsd:jed,npz),Atm_var%t(isd:ied,jsd:jed,npz))
-    allocate(Atm_var%q(isd:ied,jsd:jed,npz),Atm_var%ps(isd:ied,jsd:jed))
-    allocate(Atm_var%u_adj(isd:ied,jsd:jed,npz),Atm_var%v_adj(isd:ied,jsd:jed,npz),Atm_var%t_adj(isd:ied,jsd:jed,npz))
+    if (filt_halo0 >= 1) then
+       filt_halo = filt_halo0
+    else
+       filt_halo = 1
+    end if
+
+    allocate(weight(-filt_halo:filt_halo,-filt_halo:filt_halo,1:size(alat)))
+    weight(:,:,:) = 0.0
+
+    do j = 1, size(alat) ! loop for latitude
+
+    weight_sum = 0.0
+    do j_sm = -filt_halo, filt_halo
+    do i_sm = -filt_halo, filt_halo
+      if (abs(alat(j)) <= 35.0) then
+         weight(i_sm,j_sm,j) = exp(-(i_sm**2+j_sm**2)/(2.*filt_halo**2))
+      elseif (abs(alat(j)) < 45.0) then
+         weight(i_sm,j_sm,j) = exp(-(i_sm**2+j_sm**2)/(2.*(filt_halo*((45.-abs(alat(j)))/10.))**2))
+      else
+         if (abs(i_sm) == 0 .and. abs(j_sm) == 0) then
+            weight(i_sm,j_sm,j) = 1.0
+         else
+            weight(i_sm,j_sm,j) = 0.0
+         end if
+      end if
+      weight_sum = weight_sum + weight(i_sm,j_sm,j)
+    end do
+    end do
+    do j_sm = -filt_halo, filt_halo
+    do i_sm = -filt_halo, filt_halo
+      weight(i_sm,j_sm,j) = weight(i_sm,j_sm,j)/weight_sum
+    end do
+    end do
+
+    weight_sum = 0.0
+    do j_sm = -filt_halo, filt_halo
+    do i_sm = -filt_halo, filt_halo
+      weight_sum = weight_sum+weight(i_sm,j_sm,j)
+    end do
+    end do
+    if (abs(weight_sum-1.0) > 1.e-5) then
+      print*,'weight_sum=',weight_sum
+      call mpp_error(FATAL,'==> Error in weight_sum: is not 1.0')
+    end if
+
+    end do ! loop for latitude
+
+    call define_cube_mosaic ('ATM', filt_domain, atm_layout, halo=filt_halo)
+    call mpp_get_data_domain(filt_domain, isd_filt,ied_filt,jsd_filt,jed_filt)
+
+    allocate(Atm_var%u_a(isd:ied,jsd:jed,npz))
+    allocate(Atm_var%v_a(isd:ied,jsd:jed,npz))
+    allocate(Atm_var%t_a(isd:ied,jsd:jed,npz))
+    allocate(Atm_var%q_a(isd:ied,jsd:jed,npz),Atm_var%ps_a(isd:ied,jsd:jed))
+
+    allocate(Atm_var%u_adj(isd:ied,jsd:jed,npz))
+    allocate(Atm_var%v_adj(isd:ied,jsd:jed,npz))
+    allocate(Atm_var%t_adj(isd:ied,jsd:jed,npz))
     allocate(Atm_var%q_adj(isd:ied,jsd:jed,npz),Atm_var%ps_adj(isd:ied,jsd:jed))
 
-    Atm_obs%u(:,:,:) = 0.0
-    Atm_obs%v(:,:,:) = 0.0
-    Atm_obs%t(:,:,:) = 0.0
-    ! Atm_obs%q(:,:,:) = 0.0
-    ! Atm_obs%ps(:,:) = 0.0
+    allocate(Atm_var%u(isd_filt:ied_filt,jsd_filt:jed_filt,npz))
+    allocate(Atm_var%v(isd_filt:ied_filt,jsd_filt:jed_filt,npz))
+    allocate(Atm_var%t(isd_filt:ied_filt,jsd_filt:jed_filt,npz))
+    allocate(Atm_var%q(isd_filt:ied_filt,jsd_filt:jed_filt,npz),Atm_var%ps(isd_filt:ied_filt,jsd_filt:jed_filt))
+    allocate(Atm_var%dp(isd_filt:ied_filt,jsd_filt:jed_filt,npz),Atm_var%phis(isd_filt:ied_filt,jsd_filt:jed_filt))
+
+    Atm_var%u_a(:,:,:) = 0.0
+    Atm_var%v_a(:,:,:) = 0.0
+    Atm_var%t_a(:,:,:) = 0.0
+    Atm_var%q_a(:,:,:) = 0.0
+    Atm_var%ps_a(:,:) = 0.0
+    Atm_var%u_adj(:,:,:) = 0.0
+    Atm_var%v_adj(:,:,:) = 0.0
+    Atm_var%t_adj(:,:,:) = 0.0
+    Atm_var%q_adj(:,:,:) = 0.0
+    Atm_var%ps_adj(:,:) = 0.0
 
     Atm_var%u(:,:,:) = 0.0
     Atm_var%v(:,:,:) = 0.0
     Atm_var%t(:,:,:) = 0.0
-    ! Atm_var%q(:,:,:) = 0.0
-    ! Atm_var%ps(:,:) = 0.0
-    Atm_var%u_adj(:,:,:) = 0.0
-    Atm_var%v_adj(:,:,:) = 0.0
-    Atm_var%t_adj(:,:,:) = 0.0
-    ! Atm_var%q_adj(:,:,:) = 0.0
-    ! Atm_var%ps_adj(:,:) = 0.0
+    Atm_var%q(:,:,:) = 0.0
+    Atm_var%dp(:,:,:) = 0.0
+    Atm_var%ps(:,:) = 0.0
+    Atm_var%phis(:,:) = 0.0
 
     call init_fv_ada(time, agrid)
 
-    id_ada = mpp_clock_id('(FV_NUDGE ADA)', grain=CLOCK_SUBCOMPONENT)
-
-    id_u_adj = register_diag_field ( mod_name, 'u_adj', axes(1:3), time, &
-         'ada u increments', 'm/s', missing_value=missing_value )
-    id_v_adj = register_diag_field ( mod_name, 'v_adj', axes(1:3), time, &
-         'ada v increments', 'm/s', missing_value=missing_value )
-    id_t_adj = register_diag_field ( mod_name, 't_adj', axes(1:3), time, &
-         'ada t increments', 'DEG K', missing_value=missing_value )
-    ! id_q_adj = register_diag_field ( mod_name, 'q_adj', axes(1:3), time, &
-    !      'ada q increments', 'g/kg', missing_value=missing_value )
-    ! id_ps_adj = register_diag_field ( mod_name, 'ps_adj', axes(1:2), time, &
-    !      'ada ps increments', 'Pa', missing_value=missing_value )
     id_u_ncep = register_diag_field ( mod_name, 'u_ncep', axes(1:3), time, &
-         'ncep ucomp', 'm/s', missing_value=missing_value )
+               'ncep ucomp', 'm/s', missing_value=missing_value )
     id_v_ncep = register_diag_field ( mod_name, 'v_ncep', axes(1:3), time, &
-         'ncep vcomp', 'm/s', missing_value=missing_value )
+               'ncep vcomp', 'm/s', missing_value=missing_value )
     id_t_ncep = register_diag_field ( mod_name, 't_ncep', axes(1:3), time, &
-         'ncep temp', 'DEG K', missing_value=missing_value )
-    ! id_q_ncep = register_diag_field ( mod_name, 'q_ncep', axes(1:3), time, &
-    !      'ncep moist', 'g/kg', missing_value=missing_value )
-    ! id_ps_ncep = register_diag_field ( mod_name, 'ps_ncep', axes(1:2), time, &
-    !      'ncep ps', 'Pa', missing_value=missing_value )
+               'ncep temp', 'DEG K', missing_value=missing_value )
+    id_q_ncep = register_diag_field ( mod_name, 'q_ncep', axes(1:3), time, &
+               'ncep moist', 'g/kg', missing_value=missing_value )
+    id_ps_ncep = register_diag_field ( mod_name, 'ps_ncep', axes(1:2), time, &
+               'ncep ps', 'Pa', missing_value=missing_value )
+!    id_u_damb = register_diag_field ( mod_name, 'u_damb', axes(1:3), time, &
+!               'damb ucomp', 'm/s', missing_value=missing_value )
+!    id_v_damb = register_diag_field ( mod_name, 'v_damb', axes(1:3), time, &
+!               'damb vcomp', 'm/s', missing_value=missing_value )
+!    id_t_damb = register_diag_field ( mod_name, 't_damb', axes(1:3), time, &
+!               'damb temp', 'DEG K', missing_value=missing_value )
+!    id_q_damb = register_diag_field ( mod_name, 'q_damb', axes(1:3), time, &
+!               'damb moist', 'g/kg', missing_value=missing_value )
+!    id_ps_damb = register_diag_field ( mod_name, 'ps_damb', axes(1:2), time, &
+!               'damb ps', 'Pa', missing_value=missing_value )
+    id_u_adj = register_diag_field ( mod_name, 'u_adj', axes(1:3), time, &
+               'ada u increments', 'm/s', missing_value=missing_value )
+    id_v_adj = register_diag_field ( mod_name, 'v_adj', axes(1:3), time, &
+               'ada v increments', 'm/s', missing_value=missing_value )
+    id_t_adj = register_diag_field ( mod_name, 't_adj', axes(1:3), time, &
+               'ada t increments', 'DEG K', missing_value=missing_value )
+    id_q_adj = register_diag_field ( mod_name, 'q_adj', axes(1:3), time, &
+               'ada q increments', 'g/kg', missing_value=missing_value )
+    id_ps_adj = register_diag_field ( mod_name, 'ps_adj', axes(1:2), time, &
+               'ada ps increments', 'Pa', missing_value=missing_value )
+    id_u_a = register_diag_field ( mod_name, 'u_a', axes(1:3), time, &
+               'pert ucomp', 'm/s', missing_value=missing_value )
+    id_v_a = register_diag_field ( mod_name, 'v_a', axes(1:3), time, &
+               'pert vcomp', 'm/s', missing_value=missing_value )
+    id_t_a = register_diag_field ( mod_name, 't_a', axes(1:3), time, &
+               'pert temp', 'DEG K', missing_value=missing_value )
+    id_q_a = register_diag_field ( mod_name, 'q_a', axes(1:3), time, &
+               'pert moist', 'g/kg', missing_value=missing_value )
+    id_ps_a = register_diag_field ( mod_name, 'ps_a', axes(1:2), time, &
+               'pert ps', 'Pa', missing_value=missing_value )
     id_u_da = register_diag_field ( mod_name, 'u_da', axes(1:3), time, &
-         'da ucomp', 'm/s', missing_value=missing_value )
+               'da ucomp', 'm/s', missing_value=missing_value )
     id_v_da = register_diag_field ( mod_name, 'v_da', axes(1:3), time, &
-         'da vcomp', 'm/s', missing_value=missing_value )
+               'da vcomp', 'm/s', missing_value=missing_value )
     id_t_da = register_diag_field ( mod_name, 't_da', axes(1:3), time, &
-         'da temp', 'DEG K', missing_value=missing_value )
-    ! id_q_da = register_diag_field ( mod_name, 'q_da', axes(1:3), time, &
-    !      'da moist', 'g/kg', missing_value=missing_value )
-    ! id_ps_da = register_diag_field ( mod_name, 'ps_da', axes(1:2), time, &
-    !      'da ps', 'Pa', missing_value=missing_value )
-#endif
+               'da temp', 'DEG K', missing_value=missing_value )
+    id_q_da = register_diag_field ( mod_name, 'q_da', axes(1:3), time, &
+               'da moist', 'g/kg', missing_value=missing_value )
+    id_ps_da = register_diag_field ( mod_name, 'ps_da', axes(1:2), time, &
+               'da ps', 'Pa', missing_value=missing_value )
+
+! snz add the following lines for recording the return values from the previous assim run
+    call get_mosaic_tile_file(restart_file, restart_file_instance,&
+         & .FALSE., domain)
+
+    id_restart = register_restart_field(ada_driver_restart, restart_file_instance, &
+         & "u_adj", Atm_var%u_adj(:,:,:), domain=domain)
+    id_restart = register_restart_field(ada_driver_restart, restart_file_instance, &
+         & "v_adj", Atm_var%v_adj(:,:,:), domain=domain)
+    id_restart = register_restart_field(ada_driver_restart, restart_file_instance, &
+         & "t_adj", Atm_var%t_adj(:,:,:), domain=domain)
+    id_restart = register_restart_field(ada_driver_restart, restart_file_instance, &
+         & "q_adj", Atm_var%q_adj(:,:,:), domain=domain)
+    id_restart = register_restart_field(ada_driver_restart, restart_file_instance, &
+         & "ps_adj", Atm_var%ps_adj(:,:), domain=domain)
+
+    if ( file_exist('INPUT/'//trim(restart_file_instance), domain=domain) ) then
+       if ( mpp_pe() .eq. mpp_root_pe() ) then
+          write (stdout_unit,*) 'Reading ada restart information from ', 'INPUT/'//trim(restart_file_instance)
+       end if
+       call restore_state(ada_driver_restart, DIRECTORY='INPUT')
+    end if
+
+#endif ! snz for ENABLE_ADA
 
     module_is_initialized = .true.
-    
+
     nullify(agrid)
 
  end subroutine fv_ada_nudge_init
@@ -1547,9 +1834,9 @@ endif
      call mpp_error(FATAL,'==> Error from get_ncep_analysis: file not found')
   else
      call open_ncfile( fname, ncid )        ! open the file
-     if(master) write(*,*) 'Reading NCEP anlysis file:', fname 
+     if(master) write(*,*) 'Reading NCEP anlysis file:', fname
   endif
-  
+
   is  = bd%is
   ie  = bd%ie
   js  = bd%js
@@ -1593,7 +1880,7 @@ endif
                  endif
               enddo
 !-------------------------------------------------------
-! Replace TS over interior land with zonal mean SST/Ice 
+! Replace TS over interior land with zonal mean SST/Ice
 !-------------------------------------------------------
               if ( npt /= 0 ) then
                    tmean= tmean / real(npt)
@@ -1617,7 +1904,7 @@ endif
                    enddo
               endif
            enddo
-           deallocate ( wk0 ) 
+           deallocate ( wk0 )
       endif   ! land_ts
 
       do j=js,je
@@ -1637,7 +1924,7 @@ endif
       if(master) call pmaxmin( 'SST_ncep', sst_ncep, i_sst, j_sst, 1.)
 !     if(nfile/=1 .and. master) call pmaxmin( 'SST_anom', sst_anom, i_sst, j_sst, 1.)
 #endif
-       deallocate ( wk1 ) 
+       deallocate ( wk1 )
        if (master) write(*,*) 'Done processing NCEP SST'
 
   endif     ! read_ts
@@ -1756,7 +2043,7 @@ endif
 
 !  endif
 
-   deallocate ( wk3 ) 
+   deallocate ( wk3 )
 
 ! nfile = nfile + 1
 
@@ -1873,8 +2160,8 @@ endif
 ! lon: 0.5, 1.5, ..., 359.5
 ! lat: -89.5, -88.5, ... , 88.5, 89.5
 
-  delx = 360./real(i_sst) 
-  dely = 180./real(j_sst) 
+  delx = 360./real(i_sst)
+  dely = 180./real(j_sst)
 
   jt = 1
   do 5000 j=1,j_sst
@@ -1951,7 +2238,7 @@ endif
   integer i,j,k
 
   integer :: is,  ie,  js,  je
-  
+
   is  = bd%is
   ie  = bd%ie
   js  = bd%js
@@ -1965,7 +2252,7 @@ endif
         do i=is,ie
            pn0(i,k) = log( ak0(k) + bk0(k)*ps0(i,j) )
         enddo
-     enddo 
+     enddo
 !------
 ! Model
 !------
@@ -2045,7 +2332,7 @@ endif
            pe0(i,k) = ak0(k) + bk0(k)*ps0(i,j)
            pn0(i,k) = log(pe0(i,k))
        enddo
-     enddo 
+     enddo
 !------
 ! Model
 !------
@@ -2078,6 +2365,8 @@ endif
               q(i,j,k) = qn1(i,k)
            enddo
         enddo
+   else
+      q(:,:,:) = 0.0
    endif
 
    do k=1,kmd
@@ -2201,16 +2490,18 @@ endif
 
     deallocate ( ak0 )
     deallocate ( bk0 )
-    deallocate ( lat ) 
-    deallocate ( lon ) 
+    deallocate ( lat )
+    deallocate ( lon )
 
-    deallocate ( gz3 ) 
-    deallocate ( gz0 ) 
+    deallocate ( gz3 )
+    deallocate ( gz0 )
 
 #ifdef ENABLE_ADA ! snz
+
+    call save_restart(ada_driver_restart)
+
     deallocate ( Atm_var%u, Atm_var%v, Atm_var%t, Atm_var%u_adj, Atm_var%v_adj, Atm_var%t_adj)
     deallocate ( Atm_var%q, Atm_var%ps, Atm_var%q_adj, Atm_var%ps_adj)
-    deallocate ( Atm_obs%u, Atm_obs%v, Atm_obs%t, Atm_obs%q, Atm_obs%ps)
 
     call ada_end()
 #endif ! snz
@@ -2257,7 +2548,7 @@ endif
       do j=js, je
          do i=is, ie
             dist = great_circle_dist(pos, agrid(i,j,1:2), radius)
-            if( dist < 6.*r_vor  ) then 
+            if( dist < 6.*r_vor  ) then
                 mask(i,j) = mask(i,j) * ( 1. - mask_fac*exp(-(0.5*dist/r_vor)**2)*min(1.,(slp_env-slp_o)/10.E2) )
             endif
          enddo             ! i-loop
@@ -2289,7 +2580,7 @@ endif
 
       real, intent(inout):: pk(bd%is:bd%ie,bd%js:bd%je, npz+1)          ! pe**kappa
       real, intent(inout):: pe(bd%is-1:bd%ie+1, npz+1,bd%js-1:bd%je+1)  ! edge pressure (pascal)
-      real, intent(inout):: pkz(bd%is:bd%ie,bd%js:bd%je,npz) 
+      real, intent(inout):: pkz(bd%is:bd%ie,bd%js:bd%je,npz)
       real, intent(out):: peln(bd%is:bd%ie,npz+1,bd%js:bd%je)           ! ln(pe)
 
       type(fv_grid_type), target :: gridstruct
@@ -2335,7 +2626,7 @@ endif
 ! Advance (local) time
     call get_date(fv_time, year, month, day, hour, minute, second)
     if ( year /= year_track_data ) then
-        if (master) write(*,*) 'Warning: The year in storm track data is not the same as model year' 
+        if (master) write(*,*) 'Warning: The year in storm track data is not the same as model year'
         return
      endif
     time = fv_time   ! fv_time is the time at past time step (set in fv_diag)
@@ -2414,7 +2705,8 @@ endif
 ! Check min MSLP
       mslp0 = 1013.E2
       do i=1,nobs_tc(n)
-         mslp0 = min( mslp0, mslp_obs(i,n) )
+         mslp_obs_arg = mslp_obs(i,n)
+         mslp0 = min( mslp0, mslp_obs_arg )
       enddo
       if ( mslp0 > min_mslp ) goto 5000
 
@@ -2453,7 +2745,7 @@ endif
    else
 ! Lower top for vrotex breeding
       if ( slp_o > 1000.E2 ) then
-           pbtop = 900.E2 
+           pbtop = 900.E2
       else
            pbtop = max(500.E2, 900.E2-5.*(1000.E2-slp_o))  ! mp48
       endif
@@ -2487,10 +2779,10 @@ endif
         a_sum = 0.
       do j=js, je
          do i=is, ie
-            if( dist(i,j)<(r_vor+del_r) .and. dist(i,j)>r_vor .and. phis(i,j)<250.*grav ) then 
+            if( dist(i,j)<(r_vor+del_r) .and. dist(i,j)>r_vor .and. phis(i,j)<250.*grav ) then
                 p_count = p_count + 1.
-                  p_sum = p_sum + slp(i,j)*area(i,j) 
-                  a_sum = a_sum + area(i,j) 
+                  p_sum = p_sum + slp(i,j)*area(i,j)
+                  a_sum = a_sum + area(i,j)
             endif
          enddo
       enddo
@@ -2560,7 +2852,7 @@ endif
                 p_hi = p_env - (p_env-slp_o) * exp( -r_hi*f1**2 )    ! upper bound
                 p_lo = p_env - (p_env-slp_o) * exp( -r_lo*f1**2 )    ! lower bound
 
-                if ( ps(i,j) > p_hi .and. tm(i,j) < tm_max ) then 
+                if ( ps(i,j) > p_hi .and. tm(i,j) < tm_max ) then
 !                                         do nothing if lowest layer is too hot
 ! Under-development:
                       relx = relx0*exp( -tau_vt_rad*f1**2 )
@@ -2577,7 +2869,7 @@ endif
                      delps = relx*(slp(i,j) - p_lo)  ! Note: slp is used here
                 else
                      goto 400        ! do nothing; proceed to next storm
-                endif 
+                endif
 
 #ifdef SIM_TEST
                 pbreed = ak(1)
@@ -2619,7 +2911,7 @@ endif
 #endif
 
             endif
-400     continue 
+400     continue
         enddo        ! end i-loop
       enddo        ! end j-loop
 
@@ -2633,7 +2925,7 @@ endif
       do j=js, je
          do i=is, ie
             if( dist(i,j)<r3 .and. dist(i,j)>r2 ) then
-                p_sum = p_sum + area(i,j) 
+                p_sum = p_sum + area(i,j)
             endif
          enddo
       enddo
@@ -2745,7 +3037,7 @@ endif
 
     nullify(agrid)
     nullify(area)
-    
+
   end subroutine breed_slp_inline_ada
 
 
@@ -2820,7 +3112,8 @@ endif
 ! Check min MSLP
       mslp0 = 1013.E2
       do i=1,nobs_tc(n)
-         mslp0 = min( mslp0, mslp_obs(i,n) )
+         mslp_obs_arg = mslp_obs(i,n)
+         mslp0 = min( mslp0, mslp_obs_arg )
       enddo
       if ( mslp0 > min_mslp ) goto 3000
 
@@ -2831,7 +3124,7 @@ endif
                        time_tc(1,n), pos(1), pos(2), w10_o, slp_o, r_vor, p_env)
 
       if ( slp_o<90000. .or. slp_o>slp_env .or. abs(pos(2))*rad2deg>35. ) goto 3000         ! next storm
- 
+
 
       do j=js, je
          do i=is, ie
@@ -2887,7 +3180,7 @@ endif
     if( r_max<0. ) call mpp_error(FATAL,'==> Error in r_max')
 
 ! ---------------------------------------------------
-! Determine surface wind speed and radius for nudging 
+! Determine surface wind speed and radius for nudging
 ! ---------------------------------------------------
 
 ! Compute surface roughness z0 from w10, based on Eq (4) & (5) from Moon et al. 2007
@@ -2982,7 +3275,7 @@ endif
                 ua(i,j,k) = ua(i,j,k) + relx*(ut-ua(i,j,k))
                 va(i,j,k) = va(i,j,k) + relx*(vt-va(i,j,k))
             endif
-400     continue 
+400     continue
         enddo        ! end i-loop
       enddo        ! end j-loop
 
@@ -3028,12 +3321,12 @@ endif
     real(KIND=4), intent(in)::      w10(nobs)        ! observed 10-m widn speed
     real(KIND=4), intent(in)::     mslp(nobs)        ! observed SLP in pa
     real(KIND=4), intent(in)::  slp_out(nobs)        ! slp at r_out
-    real(KIND=4), intent(in)::    r_out(nobs)        ! 
+    real(KIND=4), intent(in)::    r_out(nobs)        !
     real(KIND=4), intent(in):: time_obs(nobs)
     real, optional, intent(in):: stime
     real, optional, intent(out):: fact
 ! Output
-    real, intent(out):: x_o , y_o      ! position of the storm center 
+    real, intent(out):: x_o , y_o      ! position of the storm center
     real, intent(out):: w10_o          ! 10-m wind speed
     real, intent(out):: slp_o          ! Observed sea-level-pressure (pa)
     real, intent(out):: r_vor, p_vor
@@ -3059,7 +3352,7 @@ endif
       call get_date(time, year, month, day, hour, minute, second)
 
       if ( year /= year_track_data ) then
-           if (master) write(*,*) 'Warning: The year in storm track data is not the same as model year' 
+           if (master) write(*,*) 'Warning: The year in storm track data is not the same as model year'
            return
       endif
 
@@ -3160,7 +3453,7 @@ endif
          call mpp_error(FATAL,'==> Error in reading best track data')
     endif
 
-    do while ( ts_name=='start' ) 
+    do while ( ts_name=='start' )
 
                nstorms  = nstorms + 1
        nobs_tc(nstorms) = nobs       ! observation count for this storm
@@ -3210,7 +3503,7 @@ endif
              y_obs(nobs,nstorms) = lat_deg * deg2rad
           if ( GMT == 'GMT' ) then
 !                                  Transfrom x from (-180 , 180) to (0, 360) then to radian
-             if ( lon_deg < 0 ) then 
+             if ( lon_deg < 0 ) then
                   x_obs(nobs,nstorms) = (360.+lon_deg) * deg2rad
              else
                   x_obs(nobs,nstorms) = (360.-lon_deg) * deg2rad
@@ -3226,7 +3519,7 @@ endif
 
   close(unit)
 
-  if(master) then 
+  if(master) then
      write(*,*) 'TC vortex breeding: total storms=', nstorms
      if ( nstorms/=0 ) then
           do n=1,nstorms
@@ -3255,7 +3548,7 @@ endif
 
       if( month /= 1 ) then
           do m=1, month-1
-            if( m==2  .and. leap_year(year) ) then 
+            if( m==2  .and. leap_year(year) ) then
                 ds = ds + 29
             else
                 ds = ds + days(m)
@@ -3283,7 +3576,7 @@ endif
 !
 ! No leap years prior to 0000
 !
-      parameter ( ny00 = 0000 )   ! The threshold for starting leap-year 
+      parameter ( ny00 = 0000 )   ! The threshold for starting leap-year
 
       if( ny >= ny00 ) then
          if( mod(ny,100) == 0. .and. mod(ny,400) == 0. ) then
@@ -3395,7 +3688,7 @@ endif
  subroutine del2_scalar(qdt, cd, kmd, nmax, bd,  npx, npy, gridstruct, domain)
 ! This routine is for filtering the physics tendency
    integer, intent(in):: kmd
-   integer, intent(in):: nmax          ! must be no greater than 3 
+   integer, intent(in):: nmax          ! must be no greater than 3
    real,    intent(in):: cd            ! cd = K * da_min;   0 < K < 0.25
    type(fv_grid_bounds_type), intent(IN) :: bd
    real, intent(inout):: qdt(bd%is:bd%ie,bd%js:bd%je,kmd)
@@ -3415,7 +3708,7 @@ endif
 
   real, pointer, dimension(:,:) :: sina_u, sina_v
   real, pointer, dimension(:,:,:) :: sin_sg
-  
+
   real, pointer, dimension(:,:) :: dx, dy, rdxc, rdyc
 
   real, pointer :: da_min
@@ -3450,7 +3743,7 @@ endif
   se_corner => gridstruct%se_corner
   nw_corner => gridstruct%nw_corner
   ne_corner => gridstruct%ne_corner
-  
+
    ntimes = min(3, nmax)
 
    damp = cd * da_min
@@ -3482,7 +3775,7 @@ endif
          enddo
          if (is == 1) fx(i,j) = dy(is,j)*(q(is-1,j,k)-q(is,j,k))*rdxc(is,j)* &
             0.5*(sin_sg(1,j,1) + sin_sg(0,j,3))
-         if (ie+1 == npx) fx(i,j) = dy(ie+1,j)*(q(ie,j,k)-q(ie+1,j,k))*rdxc(ie+1,j)* & 
+         if (ie+1 == npx) fx(i,j) = dy(ie+1,j)*(q(ie,j,k)-q(ie+1,j,k))*rdxc(ie+1,j)* &
             0.5*(sin_sg(npx,j,1) + sin_sg(npx-1,j,3))
       enddo
 
@@ -3529,7 +3822,7 @@ endif
    real:: total_area
 
    integer :: is,  ie,  js,  je
-   
+
    is  = bd%is
    ie  = bd%ie
    js  = bd%js
@@ -3564,7 +3857,7 @@ endif
  real:: total_area
 
    integer :: is,  ie,  js,  je
-   
+
    is  = bd%is
    ie  = bd%ie
    js  = bd%js
@@ -3576,7 +3869,7 @@ endif
    call std(a, m_a, std_a, bd, area)
    call std(b, m_b, std_b, bd, area)
 
-! Compute correlation: 
+! Compute correlation:
    co = 0.
    do j=js,je
       do i=is,ie
@@ -3597,7 +3890,7 @@ endif
  real:: total_area
 
    integer :: is,  ie,  js,  je
-   
+
    is  = bd%is
    ie  = bd%ie
    js  = bd%js
@@ -3612,7 +3905,7 @@ endif
       enddo
    enddo
    call mp_reduce_sum(mean)
-   mean = mean / total_area 
+   mean = mean / total_area
 
    stdv = 0.
    do j=js,je

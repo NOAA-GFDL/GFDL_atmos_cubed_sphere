@@ -37,8 +37,8 @@
    public get_external_ic, get_cubed_sphere_terrain
 
 !---- version number -----
-   character(len=128) :: version = '$Id: external_ic.F90,v 17.0.2.2.2.4.2.8.2.17 2013/04/12 17:32:02 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: siena_201309 $'
+   character(len=128) :: version = '$Id: external_ic.F90,v 20.0 2013/12/13 23:07:17 fms Exp $'
+   character(len=128) :: tagname = '$Name: tikal $'
 
 contains
 
@@ -1226,6 +1226,16 @@ contains
             Atm%pt(i,j,k) = qn1(i,k)/(1.+zvir*Atm%q(i,j,k,sphum))
          enddo
       enddo
+
+      if ( .not. Atm%flagstruct%hydrostatic .and. Atm%flagstruct%ncep_ic ) then
+! Replace delz with NCEP hydrostatic state
+         rdg = -rdgas / grav
+         do k=1,npz
+            do i=is,ie
+               atm%delz(i,j,k) = rdg*qn1(i,k)*(pn1(i,k+1)-pn1(i,k))
+            enddo
+         enddo
+      endif
 
 5000 continue
 

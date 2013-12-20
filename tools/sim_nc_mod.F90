@@ -15,6 +15,10 @@ module sim_nc_mod
          get_var3_real, get_var3_double, get_var3_r4, get_var2_real, get_var2_r4,   &
          handle_err, check_var
 
+!---- version number -----
+ character(len=128) :: version = '$Id: sim_nc_mod.F90,v 20.0 2013/12/13 23:07:48 fms Exp $'
+ character(len=128) :: tagname = '$Name: tikal $'
+
  contains
 
       subroutine open_ncfile( iflnm, ncid )

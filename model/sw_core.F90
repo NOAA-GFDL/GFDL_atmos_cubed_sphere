@@ -4,6 +4,7 @@
  use tp_core_mod,       only: fv_tp_2d, pert_ppm, copy_corners
  use fv_mp_mod, only: fill_corners, XDir, YDir
  use fv_arrays_mod, only: fv_grid_type, fv_grid_bounds_type, fv_flags_type
+ use a2b_edge_mod, only: a2b_ord4
 
 #ifdef SW_DYNAMICS
  use test_cases_mod,   only: test_case
@@ -43,8 +44,8 @@
   real, parameter:: b5 = -0.05
 
 !---- version number -----
-  character(len=128) :: version = '$Id: sw_core.F90,v 17.0.2.5.2.12.2.10 2013/03/18 21:49:25 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201309 $'
+  character(len=128) :: version = '$Id: sw_core.F90,v 20.0 2013/12/13 23:07:12 fms Exp $'
+  character(len=128) :: tagname = '$Name: tikal $'
 
       private
       public :: c_sw, d_sw, d2a2c_vect,  divergence_corner, divergence_corner_nest, fill_4corners
@@ -733,12 +734,6 @@
 
             vt(1,2) = (vc(1,2)-0.25*cosa_v(1,2)*(ut(1,1)+ut(1,2)+ut(2,2)+uc(2,1) -   &
                       0.25*cosa_u(2,1)*(vt(1,1)+vt(2,1)+vt(2,2))) ) * damp
-!!$
-!!$           !*********DEBUG CODE************
-!!$           ut(2,0) = uc(2,0)
-!!$           vt(0,2) = vc(0,2)
-!!$           ut(2,1) = uc(2,1)
-!!$           vt(1,2) = vc(1,2)
 
 
 
@@ -762,13 +757,6 @@
                             ut(npx,1)+ut(npx,2)+ut(npx-1,2)+uc(npx-1,1) -   &
                       0.25*cosa_u(npx-1,1)*(vt(npx-1,1)+vt(npx-2,1)+vt(npx-2,2))) ) * damp
 
-!!$           !*********DEBUG CODE************
-!!$           ut(npx-1,0) = uc(npx-1,0)
-!!$           vt(npx,2) = vc(npx,2)
-!!$           ut(npx-1,1) = uc(npx-1,1)
-!!$           vt(npx-1,2) = vc(npx-1,2)
-
-           
 
         endif
 
@@ -790,11 +778,6 @@
                                 ut(npx,npy-1)+ut(npx,npy-2)+ut(npx-1,npy-2)+uc(npx-1,npy-1) -  &
                 0.25*cosa_u(npx-1,npy-1)*(vt(npx-1,npy)+vt(npx-2,npy)+vt(npx-2,npy-1))) ) * damp
 
-!!$           !*********DEBUG CODE************
-!!$           ut(npx-1, npy) = uc(npx-1,npy)
-!!$           vt(npx, npy-1) = vc(npx,npy-1)
-!!$           ut(npx-1,npy-1) = uc(npx-1,npy-1)
-!!$           vt(npx-1,npy-1) = vc(npx-1,npy-1)
 
 
         endif
@@ -817,12 +800,6 @@
             vt(1,npy-1) = ( vc(1,npy-1)-0.25*cosa_v(1,npy-1)*(  &
                             ut(1,npy-1)+ut(1,npy-2)+ut(2,npy-2)+uc(2,npy-1) -   &
                       0.25*cosa_u(2,npy-1)*(vt(1,npy)+vt(2,npy)+vt(2,npy-1))) ) * damp
-!!$
-!!$           !*********DEBUG CODE************
-!!$           ut(2,npy) = uc(2,npy)
-!!$           vt(0,npy-1) = vc(0,npy-1)
-!!$           ut(2,npy-1) = uc(2,npy-1)
-!!$           vt(1,npy-1) = vc(1,npy-1)
 
         endif
 
@@ -865,37 +842,21 @@
            do i=is,ie+1
               if ( xfx_adv(i,j) > 0. ) then
                    crx_adv(i,j) = xfx_adv(i,j) * rdxa(i-1,j)
-                   !if (i == 1 .OR. i == npx) then
-                   !   xfx_adv(i,j) = dy(i,j)*xfx_adv(i,j)
-                   !else
-                      xfx_adv(i,j) = dy(i,j)*xfx_adv(i,j)*sin_sg(i-1,j,3)
-                   !end if
+                   xfx_adv(i,j) = dy(i,j)*xfx_adv(i,j)*sin_sg(i-1,j,3)
               else
                    crx_adv(i,j) = xfx_adv(i,j) * rdxa(i,j)
-                   !if (i == 1 .OR. i == npx) then
-                   !   xfx_adv(i,j) = dy(i,j)*xfx_adv(i,j)
-                   !else
-                      xfx_adv(i,j) = dy(i,j)*xfx_adv(i,j)*sin_sg(i,j,1)
-                   !end if
-             endif
-           enddo
+                   xfx_adv(i,j) = dy(i,j)*xfx_adv(i,j)*sin_sg(i,j,1)
+                   end if
+              enddo
         enddo
         do j=js,je+1
            do i=isd,ied
               if ( yfx_adv(i,j) > 0. ) then
                    cry_adv(i,j) = yfx_adv(i,j) * rdya(i,j-1)
-                   !if (j == 1 .OR. j == npy) then
-                   !   yfx_adv(i,j) = dx(i,j)*yfx_adv(i,j)
-                   !else
                       yfx_adv(i,j) = dx(i,j)*yfx_adv(i,j)*sin_sg(i,j-1,4)
-                   !end if
               else
                    cry_adv(i,j) = yfx_adv(i,j) * rdya(i,j)
-                   !if (j == 1 .OR. j == npy) then
-                   !   yfx_adv(i,j) = dx(i,j)*yfx_adv(i,j)
-                   !else
                       yfx_adv(i,j) = dx(i,j)*yfx_adv(i,j)*sin_sg(i,j,2) 
-                   !end if
               endif
            enddo
         enddo
@@ -1318,7 +1279,7 @@
         enddo
      enddo
 
-     n2 = nord + 1
+     n2 = nord + 1    ! N > 1
      do n=1,nord
         nt = nord-n
 
@@ -1361,16 +1322,17 @@
         enddo
      endif
 
-     enddo
+     enddo ! n-loop
 
      if ( dddmp<1.E-5) then
-          vort = 0.
+          vort(:,:) = 0.
      else
         do j=js,je+1
            do i=is,ie+1
               vort(i,j) = abs(dt*delpc(i,j))
            enddo
         enddo
+!!!!    call smag_corner(abs(dt), u, v, ua, va, vort)
      endif
 
      if (gridstruct%stretched_grid ) then
@@ -1384,6 +1346,12 @@
         do i=is,ie+1
            damp2 =  da_min_c*max(d2_bg, min(0.20, dddmp*vort(i,j)))  ! del-2
            vort(i,j) = damp2*delpc(i,j) + dd8*divg_d(i,j)
+!-Dynamic coeff 
+!!!        damp2 =  min(0.16, d4_bg*vort(i,j))
+!!!        dd8 = (da_min_c*damp2)**n2
+!!!        damp2 =  da_min_c*min(0.20, dddmp*vort(i,j))
+!!!        vort(i,j) = damp2*delpc(i,j) + dd8*divg_d(i,j)
+!---------------
              ke(i,j) = ke(i,j) + vort(i,j)
         enddo
      enddo
@@ -1859,6 +1827,96 @@
 end subroutine divergence_corner_nest
 
 
+
+ subroutine smag_corner(dt, u, v, ua, va, smag_c, bd, npx, npy, gridstruct, ng)
+! Compute the Tension_Shear strain at cell corners for Smagorinsky diffusion
+!!!  work only if (grid_type==4)
+ type(fv_grid_bounds_type), intent(IN) :: bd
+ real, intent(in):: dt
+ integer, intent(IN) :: npx, npy, ng
+ real, intent(in),  dimension(bd%isd:bd%ied,  bd%jsd:bd%jed+1):: u
+ real, intent(in),  dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: v
+ real, intent(in),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: ua, va
+ real, intent(out), dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: smag_c
+ type(fv_grid_type), intent(IN), target :: gridstruct
+! local
+ real:: ut(bd%isd:bd%ied+1,bd%jsd:bd%jed)
+ real:: vt(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
+ real:: wk(bd%isd:bd%ied,bd%jsd:bd%jed) !  work array
+ real:: sh(bd%isd:bd%ied,bd%jsd:bd%jed)
+ integer i,j
+ integer is2, ie1
+
+ real, pointer, dimension(:,:) :: dxc, dyc, dx, dy, rarea, rarea_c
+
+ integer :: is,  ie,  js,  je
+ integer :: isd, ied, jsd, jed
+      
+ is  = bd%is
+ ie  = bd%ie
+ js  = bd%js
+ je  = bd%je
+
+ isd  = bd%isd
+ ied  = bd%ied
+ jsd  = bd%jsd
+ jed  = bd%jed
+
+ dxc => gridstruct%dxc
+ dyc => gridstruct%dyc
+ dx  => gridstruct%dx
+ dy  => gridstruct%dy
+ rarea   => gridstruct%rarea
+ rarea_c => gridstruct%rarea_c
+
+  is2 = max(2,is); ie1 = min(npx-1,ie+1)
+
+! Smag = sqrt [ T*82 + S**2 ]:  unit = 1/s
+! where T = du/dx - dv/dy;   S = du/dy + dv/dx
+! Compute tension strain at corners:
+       do j=js,je+1
+          do i=is-1,ie+1
+             ut(i,j) = u(i,j)*dyc(i,j)
+          enddo
+       enddo
+       do j=js-1,je+1
+          do i=is,ie+1
+             vt(i,j) = v(i,j)*dxc(i,j)
+          enddo
+       enddo
+       do j=js,je+1
+          do i=is,ie+1
+             smag_c(i,j) = rarea_c(i,j)*(vt(i,j-1)-vt(i,j)-ut(i-1,j)+ut(i,j))
+          enddo
+       enddo
+
+! Compute shear strain:
+       do j=jsd,jed+1
+          do i=isd,ied
+             vt(i,j) = u(i,j)*dx(i,j)
+          enddo
+       enddo
+       do j=jsd,jed
+          do i=isd,ied+1
+             ut(i,j) = v(i,j)*dy(i,j)
+          enddo
+       enddo
+
+       do j=jsd,jed
+          do i=isd,ied
+             wk(i,j) = rarea(i,j)*(vt(i,j)-vt(i,j+1)+ut(i,j)-ut(i+1,j))
+          enddo
+       enddo
+       call a2b_ord4(wk, sh, gridstruct, npx, npy, is, ie, js, je, ng, .false.)
+       do j=js,je+1
+          do i=is,ie+1
+             smag_c(i,j) = dt*sqrt( sh(i,j)**2 + smag_c(i,j)**2 )
+          enddo
+       enddo
+
+ end subroutine smag_corner
+
+
  subroutine xtp_u(c, u, v, flux, iord, cosa, dx, rdx, bd, npx, npy, grid_type, nested)
 
  type(fv_grid_bounds_type), intent(IN) :: bd
@@ -2261,8 +2319,6 @@ end subroutine divergence_corner_nest
                  xt = x0L + x0R
                  br(0) = xt - u(0,j)
                  bl(1) = xt - u(1,j)
-!                 br(0) = xt - 0.5*(v(1,j-1)+v(1,j))*cosa(1,j) - u(0,j)
-!                 bl(1) = xt + 0.5*(v(1,j-1)+v(1,j))*cosa(1,j) - u(1,j)
 #endif
 !---------------------------------------------------------------
                  endif
@@ -2294,8 +2350,6 @@ end subroutine divergence_corner_nest
                  xt = x0L + x0R
                  br(npx-1) = xt - u(npx-1,j)
                  bl(npx  ) = xt - u(npx  ,j)
-!                 br(npx-1) = xt + 0.5*(v(npx,j-1)+v(npx,j))*cosa(npx,j) - u(npx-1,j)
-!                 bl(npx  ) = xt - 0.5*(v(npx,j-1)+v(npx,j))*cosa(npx,j) - u(npx  ,j)
 #endif
                  endif
                  call pert_ppm(1, u(npx-2,j), bl(npx-2), br(npx-2), -1)
@@ -2799,8 +2853,6 @@ endif !nested
 
              bl(i,1) = xt - v(i,1)
              br(i,0) = xt - v(i,0)
-!             br(i,0) = xt - 0.5*(u(i-1,1)+u(i,1))*cosa(i,1) - v(i,0)
-!             bl(i,1) = xt + 0.5*(u(i-1,1)+u(i,1))*cosa(i,1) - v(i,1)
 #endif
          enddo
          if ( is==1 ) then
@@ -2840,8 +2892,6 @@ endif !nested
 
             br(i,npy-1) = xt - v(i,npy-1)
             bl(i,npy  ) = xt - v(i,npy)
-!            br(i,npy-1) = xt + 0.5*(u(i-1,npy)+u(i,npy))*cosa(i,npy) - v(i,npy-1)
-!            bl(i,npy  ) = xt - 0.5*(u(i-1,npy)+u(i,npy))*cosa(i,npy) - v(i,npy)
 #endif
          enddo
          if ( is==1 ) then

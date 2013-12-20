@@ -7,11 +7,79 @@ module fv_eta_mod
  public set_eta, get_eta_level, compute_dz_var, compute_dz_L32, compute_dz_L101, set_hybrid_z, compute_dz, gw_1d, sm1_edge, hybrid_z_dz
 
 !---- version number -----
- character(len=128) :: version = '$Id: fv_eta.F90,v 17.0.2.1.2.4.2.3.2.7 2013/05/14 19:53:50 Lucas.Harris Exp $'
- character(len=128) :: tagname = '$Name: siena_201309 $'
+ character(len=128) :: version = '$Id: fv_eta.F90,v 20.0 2013/12/13 23:07:26 fms Exp $'
+ character(len=128) :: tagname = '$Name: tikal $'
+! Developer: Shian-Jiann Lin, NOAA/GFDL
 
  contains
 
+#ifdef USE_VAR_ETA
+ subroutine set_eta(km, ks, ptop, ak, bk)
+! This is the easy to use version of the set_eta
+      integer,  intent(in)::  km           ! vertical dimension
+      integer,  intent(out):: ks           ! number of pure p layers
+      real, intent(out):: ak(km+1)
+      real, intent(out):: bk(km+1)
+      real, intent(out):: ptop         ! model top (Pa)
+      real pint, stretch_fac
+      integer  k
+
+      pint = 100.E2
+
+!- Notes ---------------------------------
+!  low-top:  ptop = 100.   ! ~45 km
+!  mid-top:  ptop = 10.    ! ~60 km
+!  hi -top:  ptop = 1.     ! ~80 km
+!-----------------------------------------
+      select case (km)
+
+! Optimal number = 8 * N -1 (for  8 openMP threads)
+!                 16 * M -1 (for 16 openMP threads)
+
+! Low-top:
+        case (31)               ! N = 4, M=2
+             ptop = 100.
+             stretch_fac = 1.035
+        case (39)               ! N = 5
+             ptop = 100.
+             stretch_fac = 1.035
+        case (41)
+             ptop = 100.
+             stretch_fac = 1.035
+        case (47)               ! N = 6, M=3
+             ptop = 100.
+             stretch_fac = 1.035
+        case (51)
+             ptop = 100.
+             stretch_fac = 1.03
+! Mid-top:
+        case (55)               ! N = 7
+             ptop = 10.
+             stretch_fac = 1.035
+        case (63)               ! N = 8, M=4
+             ptop = 10.         ! Use this for seasonal predictions
+                                ! c360 or c384
+             stretch_fac = 1.03
+! Hi-top:
+        case (71)               ! N = 9
+             ptop = 1.
+             stretch_fac = 1.03
+        case (79)               ! N = 10, M=5
+             ptop = 1.
+             stretch_fac = 1.03
+        case default
+             ptop = 1.
+             stretch_fac = 1.035
+      end select
+
+      call var_hi(km, ak, bk, ptop, ks, pint, stretch_fac)
+
+      ptop = ak(1)
+      pint = ak(ks+1)
+
+ end subroutine set_eta
+
+#else
  subroutine set_eta(km, ks, ptop, ak, bk)
 
       integer,  intent(in)::  km           ! vertical dimension
@@ -31,6 +99,8 @@ module fv_eta_mod
       real a56(57),b56(57)            ! For Mars GCM
       real a60(61),b60(61)
       real a64(65),b64(65)
+      real a68(69),b68(69)            ! cjg: grid with enhanced PBL resolution
+      real a96(97),b96(97)            ! cjg: grid with enhanced PBL resolution
       real a100(101),b100(101)
       real a104(105),b104(105)
 
@@ -232,9 +302,6 @@ data b50  / &
                0.90546,       0.93349,       0.95685, &
                0.97624,       0.99223,       1.00000  /
 #else
-! Better for high-resolution; uses a higher level for starting pure
-! pressure coordinate, to ensure high enough above Himalayas
-! when the high terrain is sufficiently well-resolved
 ! SJL June 26, 2012
 ! pint=  55.7922
       data a32/100.00000,     400.00000,     818.60211,  &
@@ -398,44 +465,45 @@ data b50  / &
                    1.00000   /
 
 ! High PBL resolution with top at 1 mb
+! SJL modified May 7, 2013  to  ptop ~ 100 mb
       data a54/100.00000,     254.83931,     729.54278,   &
               1602.41121,    2797.50667,    4100.18977,   &
               5334.87140,    6455.24153,    7511.80944,   &
               8580.26355,    9714.44293,   10938.62253,   &
-             12260.23793,   13681.38045,   15202.98892,   &
-             16825.44410,   18548.56604,   20371.61864,   &
-             22293.32079,   24033.35009,   25351.40415,   &
-             26299.18673,   26920.83214,   27254.25434,   &
-             27332.23371,   27183.29496,   26832.41840,   &
-             26301.61755,   25610.40943,   24776.19833,   &
-             23814.58975,   22739.64777,   21564.10661,   &
-             20299.54484,   18956.61643,   17545.95425,   &
-             16081.13773,   14583.85910,   13086.91505,   &
-             11629.08518,   10243.59383,    8949.94267,   &
-              7754.77820,    6657.52188,    5654.67945,   &
-              4741.55941,    3912.82209,    3162.77710,   &
-              2485.60664,    1875.52987,    1326.92552,   &
-               834.46138,     393.36354,       0.00000,   &
+             12080.36051,   12987.13921,   13692.75084,   &
+             14224.92180,   14606.55444,   14856.69953,   &
+             14991.32121,   15023.90075,   14965.91493,   &
+             14827.21612,   14616.33505,   14340.72252,   &
+             14006.94280,   13620.82849,   13187.60470,   &
+             12711.98873,   12198.27003,   11650.37451,   &
+             11071.91608,   10466.23819,    9836.44706,   &
+              9185.43852,    8515.96231,    7831.01080,   &
+              7135.14301,    6436.71659,    5749.00215,   &
+              5087.67188,    4465.67510,    3889.86419,   &
+              3361.63433,    2879.51065,    2441.02496,   &
+              2043.41345,    1683.80513,    1359.31122,   &
+              1067.09135,     804.40101,     568.62625,   &
+               357.32525,     168.33263,       0.00000,   &
                  0.00000 /
 
       data b54/0.00000,       0.00000,       0.00000,  &
                0.00000,       0.00000,       0.00000,  &
                0.00000,       0.00000,       0.00000,  &
                0.00000,       0.00000,       0.00000,  &
-               0.00000,       0.00000,       0.00000,  &
-               0.00000,       0.00000,       0.00000,  &
-               0.00000,       0.00279,       0.01074,  &
-               0.02331,       0.04002,       0.06047,  &
-               0.08428,       0.11112,       0.14071,  &
-               0.17276,       0.20703,       0.24330,  &
-               0.28136,       0.32101,       0.36207,  &
-               0.40437,       0.44775,       0.49201,  &
-               0.53690,       0.58187,       0.62608,  &
-               0.66854,       0.70844,       0.74534,  &
-               0.77916,       0.81002,       0.83807,  &
-               0.86349,       0.88647,       0.90721,  &
-               0.92587,       0.94265,       0.95770,  &
-               0.97119,       0.98326,       0.99400,  &
+               0.00180,       0.00694,       0.01510,  &
+               0.02601,       0.03942,       0.05515,  &
+               0.07302,       0.09288,       0.11459,  &
+               0.13803,       0.16307,       0.18960,  &
+               0.21753,       0.24675,       0.27716,  &
+               0.30866,       0.34115,       0.37456,  &
+               0.40879,       0.44375,       0.47935,  &
+               0.51551,       0.55215,       0.58916,  &
+               0.62636,       0.66334,       0.69946,  &
+               0.73395,       0.76622,       0.79594,  &
+               0.82309,       0.84780,       0.87020,  &
+               0.89047,       0.90876,       0.92524,  &
+               0.94006,       0.95336,       0.96529,  &
+               0.97596,       0.98551,       0.99400,  &
                1.00000   /
 
 
@@ -613,6 +681,125 @@ data b50  / &
                0.71703,       0.77754,       0.82827,      &
                0.87352,       0.91502,       0.95235,      &
                0.98511,       1.00000 /
+
+!-->cjg
+          data a68/1.00000,      2.68881,      5.15524,   &
+                   8.86683,     14.20349,     22.00278,   &
+                  33.50807,     50.32362,     74.56680,   &
+                 109.05958,    157.51214,    224.73844,   &
+                 316.90481,    441.81219,    609.21090,   &
+                 831.14537,   1122.32514,   1500.51628,   &
+                1986.94617,   2606.71274,   3389.18802,   &
+                4368.40473,   5583.41379,   7078.60015,   &
+                8903.94455,  11115.21886,  13774.60566,   &
+               16936.82070,  20340.47045,  23193.71492,   &
+               24870.36141,  25444.59363,  25252.57081,   &
+               24544.26211,  23474.29096,  22230.65331,   &
+               20918.50731,  19589.96280,  18296.26682,   &
+               17038.02866,  15866.85655,  14763.18943,   &
+               13736.83624,  12794.11850,  11930.72442,   &
+               11137.17217,  10404.78946,   9720.03954,   &
+                9075.54055,   8466.72650,   7887.12346,   &
+                7333.90490,   6805.43028,   6297.33773,   &
+                5805.78227,   5327.94995,   4859.88765,   &
+                4398.63854,   3942.81761,   3491.08449,   &
+                3043.04531,   2598.71608,   2157.94527,   &
+                1720.87444,   1287.52805,    858.02944,   &
+                 432.71276,      8.10905,      0.00000 /
+
+          data b68/0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00283,      0.01590,   &
+                   0.04412,      0.08487,      0.13284,   &
+                   0.18470,      0.23828,      0.29120,   &
+                   0.34211,      0.39029,      0.43518,   &
+                   0.47677,      0.51536,      0.55091,   &
+                   0.58331,      0.61263,      0.63917,   &
+                   0.66333,      0.68552,      0.70617,   &
+                   0.72555,      0.74383,      0.76117,   &
+                   0.77765,      0.79335,      0.80838,   &
+                   0.82287,      0.83693,      0.85069,   &
+                   0.86423,      0.87760,      0.89082,   &
+                   0.90392,      0.91689,      0.92973,   &
+                   0.94244,      0.95502,      0.96747,   &
+                   0.97979,      0.99200,      1.00000 /
+
+          data a96/1.00000,      2.35408,      4.51347,   &
+                   7.76300,     12.43530,     19.26365,   &
+                  29.33665,     44.05883,     65.28397,   &
+                  95.48274,    137.90344,    196.76073,   &
+                 277.45330,    386.81095,    533.37018,   &
+                 727.67600,    982.60677,   1313.71685,   &
+                1739.59104,   2282.20281,   2967.26766,   &
+                3824.58158,   4888.33404,   6197.38450,   &
+                7795.49158,   9731.48414,  11969.71024,   &
+               14502.88894,  17304.52434,  20134.76139,   &
+               22536.63814,  24252.54459,  25230.65591,   &
+               25585.72044,  25539.91412,  25178.87141,   &
+               24644.84493,  23978.98781,  23245.49366,   &
+               22492.11600,  21709.93990,  20949.64473,   &
+               20225.94258,  19513.31158,  18829.32485,   &
+               18192.62250,  17589.39396,  17003.45386,   &
+               16439.01774,  15903.91204,  15396.39758,   &
+               14908.02140,  14430.65897,  13967.88643,   &
+               13524.16667,  13098.30227,  12687.56457,   &
+               12287.08757,  11894.41553,  11511.54106,   &
+               11139.22483,  10776.01912,  10419.75711,   &
+               10067.11881,   9716.63489,   9369.61967,   &
+                9026.69066,   8687.29884,   8350.04978,   &
+                8013.20925,   7677.12187,   7343.12994,   &
+                7011.62844,   6681.98102,   6353.09764,   &
+                6025.10535,   5699.10089,   5375.54503,   &
+                5053.63074,   4732.62740,   4413.38037,   &
+                4096.62775,   3781.79777,   3468.45371,   &
+                3157.19882,   2848.25306,   2541.19150,   &
+                2236.21942,   1933.50628,   1632.83741,   &
+                1334.35954,   1038.16655,    744.22318,   &
+                 452.71094,    194.91899,      0.00000,   &
+                   0.00000 /
+
+          data b96/0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00000,   &
+                   0.00000,      0.00000,      0.00193,   &
+                   0.00974,      0.02538,      0.04876,   &
+                   0.07817,      0.11081,      0.14514,   &
+                   0.18007,      0.21486,      0.24866,   &
+                   0.28088,      0.31158,      0.34030,   &
+                   0.36701,      0.39210,      0.41554,   &
+                   0.43733,      0.45774,      0.47707,   &
+                   0.49540,      0.51275,      0.52922,   &
+                   0.54495,      0.56007,      0.57459,   &
+                   0.58850,      0.60186,      0.61471,   &
+                   0.62715,      0.63922,      0.65095,   &
+                   0.66235,      0.67348,      0.68438,   &
+                   0.69510,      0.70570,      0.71616,   &
+                   0.72651,      0.73675,      0.74691,   &
+                   0.75700,      0.76704,      0.77701,   &
+                   0.78690,      0.79672,      0.80649,   &
+                   0.81620,      0.82585,      0.83542,   &
+                   0.84492,      0.85437,      0.86375,   &
+                   0.87305,      0.88229,      0.89146,   &
+                   0.90056,      0.90958,      0.91854,   &
+                   0.92742,      0.93623,      0.94497,   &
+                   0.95364,      0.96223,      0.97074,   &
+                   0.97918,      0.98723,      0.99460,   &
+                   1.00000 /
+!<--cjg
+
 !
 ! Ultra high troposphere resolution
       data a100/100.00000,     300.00000,     800.00000,   &
@@ -854,8 +1041,6 @@ data b50  / &
           enddo
 
         case (52)
-           call mpp_error(FATAL, '52 level not defined.')
-
           ks = 35         ! pint = 223
           do k=1,km+1
             ak(k) = a52(k)
@@ -863,7 +1048,7 @@ data b50  / &
           enddo
 
         case (54)
-          ks = 18         ! pint =  222.9332
+          ks = 11         ! pint =  109.4
           do k=1,km+1
             ak(k) = a54(k)
             bk(k) = b54(k)
@@ -891,13 +1076,28 @@ data b50  / &
             bk(k) = b60(k)
           enddo
 
-
         case (64)
           ks = 46
           do k=1,km+1
             ak(k) = a64(k)
             bk(k) = b64(k)
           enddo
+
+!-->cjg
+        case (68)
+          ks = 27
+          do k=1,km+1
+            ak(k) = a68(k)
+            bk(k) = b68(k)
+          enddo
+
+        case (96)
+          ks = 27
+          do k=1,km+1
+            ak(k) = a96(k)
+            bk(k) = b96(k)
+          enddo
+!<--cjg
 
         case (100)
           ks = 38
@@ -967,26 +1167,38 @@ data b50  / &
 #endif
 
 ! The following 4 selections are better for non-hydrostatic
+! Low top:
         case (31)
              ptop = 300.
-             pint = 50.E2
+             pint = 100.E2
              call var_dz(km, ak, bk, ptop, ks, pint, 1.035)
         case (41)
              ptop = 100.
-             pint = 50.E2
-             call var_dz(km, ak, bk, ptop, ks, pint, 1.035)
+             pint = 100.E2
+             call var_hi(km, ak, bk, ptop, ks, pint, 1.035)
         case (51)
              ptop = 100.
-             pint = 50.E2
-             call var_dz(km, ak, bk, ptop, ks, pint, 1.035)
+             pint = 100.E2
+             call var_hi(km, ak, bk, ptop, ks, pint, 1.035)
+! Mid-top:
         case (55)
              ptop = 10.
-             pint = 50.E2
-             call var_dz(km, ak, bk, ptop, ks, pint, 1.035)
+             pint = 100.E2
+!            call var_dz(km, ak, bk, ptop, ks, pint, 1.035)
+             call var_hi(km, ak, bk, ptop, ks, pint, 1.035)
         case (63)
              ptop = 10.
-             pint = 50.E2
-             call var_dz(km, ak, bk, ptop, ks, pint, 1.035)
+             pint = 100.E2
+             call var_hi(km, ak, bk, ptop, ks, pint, 1.03)
+! Hi-top:
+        case (71)
+             ptop = 1.
+             pint = 100.E2
+             call var_hi(km, ak, bk, ptop, ks, pint, 1.03)
+        case (79)
+             ptop = 1.
+             pint = 100.E2
+             call var_hi(km, ak, bk, ptop, ks, pint, 1.03)
         case default
 
 #ifdef TEST_GWAVES
@@ -1024,6 +1236,176 @@ data b50  / &
       pint = ak(ks+1)
 
  end subroutine set_eta
+#endif
+
+ subroutine var_hi(km, ak, bk, ptop, ks, pint, s_rate)
+  integer, intent(in):: km
+  real,    intent(in):: ptop
+  real,    intent(in):: s_rate        ! between [1. 1.1]
+  real,    intent(out):: ak(km+1), bk(km+1)
+  real,    intent(inout):: pint
+  integer, intent(out):: ks
+! Local
+  real, parameter:: p00 = 1.E5
+  real, dimension(km+1):: ze, pe1, peln, eta
+  real, dimension(km):: dz, s_fac, dlnp
+  real ztop, t0, dz0, sum1, tmp1
+  real ep, es, alpha, beta, gama
+!---- Tunable parameters:
+  real   :: s0 = 0.10    ! lowest layer stretch factor
+  integer:: k_inc = 15   ! # of layers from bottom up to near const dz region
+!-----------------------
+  real:: s_inc
+  integer  k
+
+     pe1(1) = ptop
+     peln(1) = log(pe1(1))
+     pe1(km+1) = p00
+     peln(km+1) = log(pe1(km+1))
+       
+     t0 = 270.
+     ztop = rdgas/grav*t0*(peln(km+1) - peln(1))
+
+      s_inc = (1.-s0) / real(k_inc)
+      s_fac(km)  = s0
+
+      do k=km-1, km-k_inc, -1
+         s_fac(k)  = s_fac(k+1) + s_inc
+      enddo
+
+      s_fac(km-k_inc-1) = 0.5*(s_fac(km-k_inc) + s_rate)
+          
+      do k=km-k_inc-2, 9, -1
+         s_fac(k) = s_rate * s_fac(k+1)
+      enddo
+
+      s_fac(8) = 0.5*(1.1+s_rate)*s_fac(9)
+      s_fac(7) = 1.1 *s_fac(8)
+      s_fac(6) = 1.15*s_fac(7)
+      s_fac(5) = 1.2 *s_fac(6)
+      s_fac(4) = 1.3 *s_fac(5)
+      s_fac(3) = 1.4 *s_fac(4)
+      s_fac(2) = 1.45 *s_fac(3)
+      s_fac(1) = 1.5 *s_fac(2)
+
+      sum1 = 0.
+      do k=1,km
+         sum1 = sum1 + s_fac(k)
+      enddo
+
+      dz0 = ztop / sum1
+
+      do k=1,km
+         dz(k) = s_fac(k) * dz0
+      enddo
+
+      ze(km+1) = 0.
+      do k=km,1,-1
+         ze(k) = ze(k+1) + dz(k)
+      enddo
+
+! Re-scale dz with the stretched ztop
+      do k=1,km
+         dz(k) = dz(k) * (ztop/ze(1))
+      enddo
+
+      do k=km,1,-1
+         ze(k) = ze(k+1) + dz(k)
+      enddo
+!     ze(1) = ztop
+
+      if ( is_master() ) then
+           write(*,*) 'var_hi: computed model top (m)=', ztop*0.001, ' bottom/top dz=', dz(km), dz(1)
+!          do k=1,km
+!             write(*,*) k, s_fac(k)
+!          enddo
+      endif
+
+      call sm1_edge(1, 1, 1, 1, km, 1, 1, ze, 1)
+
+! Given z --> p
+      do k=1,km
+          dz(k) = ze(k) - ze(k+1)
+        dlnp(k) = grav*dz(k) / (rdgas*t0)
+      enddo
+      do k=2,km
+         peln(k) = peln(k-1) + dlnp(k-1)
+          pe1(k) = exp(peln(k))
+      enddo
+
+! Pe(k) = ak(k) + bk(k) * PS
+! Locate pint and KS
+      ks = 0
+      do k=2,km
+         if ( pint < pe1(k)) then
+              ks = k-1
+              exit
+         endif
+      enddo
+      if ( is_master() ) then
+         write(*,*) 'For (input) PINT=', 0.01*pint, ' KS=', ks, 'pint(computed)=', 0.01*pe1(ks+1)
+         write(*,*) 'ptop =', ptop
+      endif
+      pint = pe1(ks+1)
+
+#ifdef NO_UKMO_HB
+      do k=1,ks+1
+         ak(k) = pe1(k)
+         bk(k) = 0.
+      enddo
+
+      do k=ks+2,km+1
+         bk(k) = (pe1(k) - pint) / (pe1(km+1)-pint)  ! bk == sigma
+         ak(k) =  pe1(k) - bk(k) * pe1(km+1)
+      enddo
+      bk(km+1) = 1.
+      ak(km+1) = 0.
+#else
+! Problematic for non-hydrostatic
+      do k=1,km+1
+         eta(k) = pe1(k) / pe1(km+1)
+      enddo
+
+      ep =  eta(ks+1) 
+      es =  eta(km) 
+!     es =  1.
+      alpha = (ep**2-2.*ep*es) / (es-ep)**2
+      beta  = 2.*ep*es**2 / (es-ep)**2
+      gama = -(ep*es)**2 / (es-ep)**2
+
+! Pure pressure:
+      do k=1,ks+1
+         ak(k) = eta(k)*1.e5
+         bk(k) = 0.
+      enddo
+
+      do k=ks+2, km
+         ak(k) = alpha*eta(k) + beta + gama/eta(k)
+         ak(k) = ak(k)*1.e5
+      enddo
+         ak(km+1) = 0.
+
+      do k=ks+2, km 
+         bk(k) = (pe1(k) - ak(k))/pe1(km+1)
+      enddo
+         bk(km+1) = 1.
+#endif
+
+      if ( is_master() ) then
+          write(*,*) 'KS=', ks, 'PINT (mb)=', pint/100.
+          do k=1,km
+             write(*,*) k, 0.5*(pe1(k)+pe1(k+1))/100., dz(k)
+          enddo
+          tmp1 = ak(ks+1)
+          do k=ks+1,km
+             tmp1 = max(tmp1, (ak(k)-ak(k+1))/max(1.E-5, (bk(k+1)-bk(k))) )
+          enddo
+          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hpa)=', tmp1/100.
+      endif
+
+
+ end subroutine var_hi
+
 
  subroutine var_dz(km, ak, bk, ptop, ks, pint, s_rate)
   integer, intent(in):: km

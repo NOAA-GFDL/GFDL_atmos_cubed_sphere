@@ -1,4 +1,4 @@
-! $Id: fv_control.F90,v 17.0.2.9.2.20.2.24 2013/05/14 19:53:49 Lucas.Harris Exp $
+! $Id: fv_control.F90,v 20.0 2013/12/13 23:04:22 fms Exp $
 !
 !----------------
 ! FV contro panel
@@ -82,6 +82,7 @@ module fv_control_mod
    integer , pointer ::    n_zs_filter
    integer , pointer :: nord_zs_filter
 
+   logical , pointer :: do_sat_adj
    logical , pointer :: no_dycore 
    logical , pointer :: replace_w 
    logical , pointer :: convert_ke 
@@ -115,6 +116,7 @@ module fv_control_mod
                              ! Default 
    integer , pointer :: m_split 
    integer , pointer :: k_split 
+   logical , pointer :: use_logp
 
    integer , pointer :: q_split 
    integer , pointer :: print_freq 
@@ -148,7 +150,7 @@ module fv_control_mod
    real    , pointer :: consv_te 
    real    , pointer :: tau 
    real    , pointer :: rf_center 
-   logical , pointer :: tq_filter 
+   real    , pointer :: rf_cutoff
    logical , pointer :: filter_phys 
    logical , pointer :: dwind_2d 
    logical , pointer :: breed_vortex_inline 
@@ -183,6 +185,7 @@ module fv_control_mod
    logical , pointer :: hybrid_z    
    logical , pointer :: Make_NH     
    logical , pointer :: make_hybrid_z  
+   real,     pointer :: add_noise
 
    integer , pointer :: a2b_ord 
    integer , pointer :: c2l_ord 
@@ -212,8 +215,8 @@ module fv_control_mod
    integer :: gid
 
 !---- version number -----
-   character(len=128) :: version = '$Id: fv_control.F90,v 17.0.2.9.2.20.2.24 2013/05/14 19:53:49 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: siena_201309 $'
+   character(len=128) :: version = '$Id: fv_control.F90,v 20.0 2013/12/13 23:04:22 fms Exp $'
+   character(len=128) :: tagname = '$Name: tikal $'
 
  contains
 
@@ -332,6 +335,7 @@ module fv_control_mod
                if (nord==3) write(*,*) 'Internal mode del-8 background diff=', d4_bg
 
                write(*,*) 'Vorticity del-4 (m**4/s)=', (vtdm4*Atm(n)%gridstruct%da_min)**2/sdt*1.E-6
+               write(*,*) 'beta=', beta
                write(*,*) ' '
             endif
 
@@ -487,24 +491,24 @@ module fv_control_mod
       namelist /mpi_nml/ i  ! Use of this namelist is deprecated; filled with a dummy variable
       namelist /fv_grid_nml/ grid_name, grid_file
       namelist /fv_core_nml/npx, npy, ntiles, npz, npz_rst, layout, io_layout, ncnst, nwat,  &
-                            p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, do_schmidt,      &
+                            use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, do_schmidt,      &
                             hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
-                            kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge,  &
+                            kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, &
                             external_ic, ncep_ic, fv_diag_ic, res_latlon_dynamics, res_latlon_tracers, &
                             scale_z, w_max, z_min, dddmp, d2_bg, d4_bg, vtdm4, d_ext, beta, non_ortho, n_sponge, &
                             warm_start, adjust_dry_mass, mountain, d_con, nord, convert_ke, use_old_omega, &
                             dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
-                            consv_te, fill, tq_filter, filter_phys, fill_dp, fill_wz, &
+                            consv_te, fill, filter_phys, fill_dp, fill_wz, &
                             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
-                            replace_w, tau, tau_h2o, rf_center, nf_omega, hydrostatic, fv_sg_adj, breed_vortex_inline,  &
+                            replace_w, tau, tau_h2o, rf_center, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, breed_vortex_inline,  &
                             na_init, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, reset_eta,         &
-                            a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
+                            pnats, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
 #ifdef MARS_GCM
                             sponge_damp, reference_sfc_pres,                     &
 #endif
                             c2l_ord, dx_const, dy_const, umax, deglat,      &
                             deglon_start, deglon_stop, deglat_start, deglat_stop, &
-                            phys_hydrostatic, make_hybrid_z, old_divg_damp, &
+                            phys_hydrostatic, make_hybrid_z, old_divg_damp, add_noise, &
                             nested, twowaynest, parent_grid_num, parent_tile, &
                             refinement, nestbctype, nestupdate, nsponge, s_weight, &
                             ioffset, joffset
@@ -741,11 +745,9 @@ module fv_control_mod
               m_split = 1. + abs(dt_atmos)/real(k_split*n_split*p_split)
          endif
          if(is_master()) write(*,198) 'm_split is set to ', m_split
-         if ( a_imp > 0.5 ) then
-              if(is_master()) then
-                 write(*,*) 'Off center implicit scheme param=', a_imp
-                 write(*,*) ' p_fac=', p_fac
-              endif
+         if(is_master()) then
+            write(*,*) 'Off center implicit scheme param=', a_imp
+            write(*,*) ' p_fac=', p_fac
          endif
       endif
 
@@ -1014,6 +1016,7 @@ module fv_control_mod
      damp_k_k2                     => Atm%flagstruct%damp_k_k2
      n_zs_filter                   => Atm%flagstruct%n_zs_filter
      nord_zs_filter                => Atm%flagstruct%nord_zs_filter
+     do_sat_adj                    => Atm%flagstruct%do_sat_adj
      no_dycore                     => Atm%flagstruct%no_dycore
      replace_w                     => Atm%flagstruct%replace_w
      convert_ke                    => Atm%flagstruct%convert_ke
@@ -1023,6 +1026,7 @@ module fv_control_mod
      n_sponge                      => Atm%flagstruct%n_sponge
      d_ext                         => Atm%flagstruct%d_ext
      nwat                          => Atm%flagstruct%nwat
+     use_logp                      => Atm%flagstruct%use_logp
      warm_start                    => Atm%flagstruct%warm_start
      inline_q                      => Atm%flagstruct%inline_q
      shift_fac                     => Atm%flagstruct%shift_fac
@@ -1036,6 +1040,7 @@ module fv_control_mod
      n_split                       => Atm%flagstruct%n_split
      m_split                       => Atm%flagstruct%m_split
      k_split                       => Atm%flagstruct%k_split
+     use_logp                      => Atm%flagstruct%use_logp
      q_split                       => Atm%flagstruct%q_split
      print_freq                    => Atm%flagstruct%print_freq
      npx                           => Atm%flagstruct%npx
@@ -1061,7 +1066,7 @@ module fv_control_mod
      consv_te                      => Atm%flagstruct%consv_te
      tau                           => Atm%flagstruct%tau
      rf_center                     => Atm%flagstruct%rf_center
-     tq_filter                     => Atm%flagstruct%tq_filter
+     rf_cutoff                     => Atm%flagstruct%rf_cutoff
      filter_phys                   => Atm%flagstruct%filter_phys
      dwind_2d                      => Atm%flagstruct%dwind_2d
      breed_vortex_inline           => Atm%flagstruct%breed_vortex_inline
@@ -1094,6 +1099,7 @@ module fv_control_mod
      hybrid_z                      => Atm%flagstruct%hybrid_z
      Make_NH                       => Atm%flagstruct%Make_NH
      make_hybrid_z                 => Atm%flagstruct%make_hybrid_z
+     add_noise                     => Atm%flagstruct%add_noise
      a2b_ord                       => Atm%flagstruct%a2b_ord
      c2l_ord                       => Atm%flagstruct%c2l_ord
      ndims                         => Atm%flagstruct%ndims

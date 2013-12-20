@@ -112,8 +112,8 @@
       END INTERFACE
 
 !---- version number -----
-      character(len=128) :: version = '$Id: fv_mp_mod.F90,v 17.0.4.7.2.8.2.10 2013/05/21 20:16:11 Lucas.Harris Exp $'
-      character(len=128) :: tagname = '$Name: siena_201309 $'
+      character(len=128) :: version = '$Id: fv_mp_mod.F90,v 20.0 2013/12/13 23:07:34 fms Exp $'
+      character(len=128) :: tagname = '$Name: tikal $'
 
 contains
 

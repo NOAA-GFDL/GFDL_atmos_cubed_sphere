@@ -1,40 +1,51 @@
 ! SJL: Apr 12, 2012
-! This revision may actually produce rouding level differences due to the ellimination of KS to compute
+! This revision may actually produce rounding level differences due to the elimination of KS to compute
 ! pressure level for remapping.
 module fv_mapz_mod
 
-  use constants_mod,     only: radius, pi, rvgas, rdgas, grav
+  use constants_mod,     only: radius, pi, rvgas, rdgas, grav, hlv, hlf, cp_air
+  use tracer_manager_mod,only: get_tracer_index
+  use field_manager_mod, only: MODEL_ATMOS
   use fv_grid_utils_mod, only: g_sum, ptop_min
   use fv_fill_mod,       only: fillz
   use fv_eta_mod ,       only: compute_dz_L32, hybrid_z_dz
   use mpp_domains_mod,   only: mpp_update_domains, domain2d
   use mpp_mod,           only: FATAL, mpp_error, get_unit, mpp_root_pe, mpp_pe
   use fv_arrays_mod,     only: fv_grid_type
+  use lin_cld_microphys_mod, only: sat_adj2
 
   implicit none
+  real, parameter:: cv_vap = 3.*rvgas      ! 1384.5
+  real, parameter:: cv_air =  cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
   real, parameter::  r3 = 1./3., r23 = 2./3., r12 = 1./12.
-  real(kind=4) :: E_Flux, E_Flux_nest
+  real, parameter:: c_ice = 2106.           ! heat capacity of ice at 0.C: c=c_ice+7.3*(t-tice) 
+  real, parameter:: c_liq = 4190.
+  real, parameter:: tice  = 273.16
+  real(kind=4) :: E_Flux, E_Flux_Nest
   private
 
   public compute_total_energy, Lagrangian_to_Eulerian,    &
          rst_remap, mappm, E_Flux, E_Flux_nest
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_mapz.F90,v 17.0.4.7.2.6.2.9 2013/04/03 20:15:42 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201309 $'
+  character(len=128) :: version = '$Id: fv_mapz.F90,v 20.0 2013/12/13 23:04:31 fms Exp $'
+  character(len=128) :: tagname = '$Name: tikal $'
 
 contains
 
- subroutine Lagrangian_to_Eulerian(do_consv, consv, ps, pe, delp, pkz, pk,   &
-                      pdt, km, is,ie,js,je, isd,ied,jsd,jed,       &
-                      nq, sphum, u, v, w, delz, pt, q, hs, r_vir, cp,  &
+ subroutine Lagrangian_to_Eulerian(last_step, consv, ps, pe, delp, pkz, pk,   &
+                      mdt, pdt, km, is,ie,js,je, isd,ied,jsd,jed,       &
+                      nq, nwat, sphum, u, v, w, delz, pt, q, hs, r_vir, cp,  &
                       akap, kord_mt, kord_wz, kord_tr, kord_tm,  peln, te0_2d,        &
                       ng, ua, va, omga, te, ws, fill, reproduce_sum,        &
-                      ptop, ak, bk, gridstruct, domain, ze0, remap_t, hydrostatic, hybrid_z, do_omega)
-  logical, intent(in):: do_consv
+                      ptop, ak, bk, gridstruct, domain, ze0, remap_t, do_sat_adj, &
+                      hydrostatic, hybrid_z, do_omega)
+  logical, intent(in):: last_step
+  real,    intent(in):: mdt                   ! remap time step
   real,    intent(in):: pdt                   ! phys time step
   integer, intent(in):: km
   integer, intent(in):: nq                    ! number of tracers (including h2o)
+  integer, intent(in):: nwat
   integer, intent(in):: sphum                 ! index for water vapor (specific humidity)
   integer, intent(in):: ng
   integer, intent(in):: is,ie,isd,ied         ! starting & ending X-Dir index
@@ -49,9 +60,10 @@ contains
   real, intent(in):: cp
   real, intent(in):: akap
   real, intent(in):: hs(isd:ied,jsd:jed)  ! surface geopotential
-  real, intent(in):: te0_2d(is:ie,js:je)
+  real, intent(inout):: te0_2d(is:ie,js:je)
   real, intent(in):: ws(is:ie,js:je)
 
+  logical, intent(in):: do_sat_adj
   logical, intent(in):: fill                  ! fill negative tracers
   logical, intent(in):: reproduce_sum
   logical, intent(in):: do_omega
@@ -113,11 +125,12 @@ contains
 ! for nonhydrostatic option with hybrid_z coordinate
       real ze1(is:ie,km+1), ze2(is:ie,km+1), deng(is:ie,km)
       real dz1(km), ztop, z_rat
-      real rcp, rg, ak1, tmp, tpe, cv, rgama, rrg
+      real rcp, rg, ak1, tmp, tpe, cv, cvm, rgama, rrg
       real bkh, dtmp, dlnp
       integer iq, n, kp, k_next
       logical te_map
       real k1k, kapag
+      integer liq_wat, ice_wat, rainwat, snowwat, cld_amt
 
       real, pointer, dimension(:,:) :: cosa_s, rsin2
 
@@ -137,6 +150,16 @@ contains
            te_map = .false.
       else
            te_map = .true.
+      endif
+
+      if ( nwat>=3 ) then
+           liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
+           ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
+           cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
+      endif
+      if ( nwat.eq.6 ) then
+           rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
+           snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
       endif
 
 !$omp parallel do default(shared) private(z_rat, kp, k_next, bkh, deng, dp2, pe0, pe1, pe2, pe3, pk1, pk2, pn2, phis, q2, ze1, ze2)
@@ -627,7 +650,7 @@ endif
 
 !  call cubed_to_latlon(u,  v, ua, va, dx, dy, rdxa, rdya, km, 1, flagstruct%c2l_ord)
 
-  if( do_consv .and. consv > 0. ) then
+  if( last_step .and. consv > 0. ) then
 
     if ( te_map ) then
 !$omp parallel do default(shared) 
@@ -678,7 +701,8 @@ endif
            do k=1,km
               do i=is,ie
 ! KE using 3D winds:
-                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv*pt(i,j,k) +  &
+! cvm?
+                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum)) +  &
                               0.5*(phis(i,k)+phis(i,k+1) + w(i,j,k)**2 + 0.5*rsin2(i,j)*( &
                               u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -  &
                              (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j))))
@@ -721,7 +745,7 @@ endif
            do k=1,km
               do i=is,ie
 ! KE using 3D winds:
-                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( rgama*pt(i,j,k)*pkz(i,j,k) +  &
+                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(rgama*pt(i,j,k)*pkz(i,j,k)/(1.+r_vir*q(i,j,k,sphum)) +  &
                               0.5*(phis(i,k)+phis(i,k+1) + w(i,j,k)**2 + 0.5*rsin2(i,j)*( &
                               u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -  &
                              (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j))))
@@ -769,7 +793,7 @@ endif
       E_Flux = 0.
   endif        ! end consv check
 
-  if ( te_map ) then
+  if ( te_map ) then !kord_mt >= 0
 !$omp parallel do default(shared) private(gz, tpe, tmp, dlnp)
       do j=js,je
          do i=is,ie
@@ -781,46 +805,67 @@ endif
                      u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -  &
                     (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j) )
                dlnp = rg*(peln(i,k+1,j) - peln(i,k,j))
-#ifdef CONVERT_T
-               tmp = tpe / ((cp - pe(i,k,j)*dlnp/delp(i,j,k))*(1.+r_vir*q(i,j,k,sphum)) )
-               pt(i,j,k) =  tmp + dtmp*pkz(i,j,k) / (1.+r_vir*q(i,j,k,sphum))
-               gz(i) = gz(i) + dlnp*tmp*(1.+r_vir*q(i,j,k,sphum))
-#else
                tmp = tpe / (cp - pe(i,k,j)*dlnp/delp(i,j,k))
                pt(i,j,k) = cp*(tmp/pkz(i,j,k) + dtmp)
                gz(i) = gz(i) + dlnp*tmp
-#endif
             enddo
          enddo           ! end k-loop
       enddo
   else
     if ( remap_t ) then
-!$omp parallel do default(shared) 
-      do k=1,km
-         do j=js,je
-            do i=is,ie
-#ifdef CONVERT_T
-               pt(i,j,k) = (pt(i,j,k) + dtmp*pkz(i,j,k))/(1.+r_vir*q(i,j,k,sphum))
-#else
-               pt(i,j,k) = cp*(pt(i,j,k)/pkz(i,j,k) + dtmp)
+        ! Note: pt at this stage is T_v
+        if ( do_sat_adj ) then
+           !$omp parallel do default(shared) 
+           do k=1,km
+              call sat_adj2(mdt, is, ie, js, je, ng, km, k, hydrostatic, consv>0., &
+                   te0_2d, q(is-ng,js-ng,k,sphum), q(is-ng,js-ng,k,liq_wat),   &
+                      q(is-ng,js-ng,k,ice_wat), q(is-ng,js-ng,k,rainwat),    &
+                      q(is-ng,js-ng,k,snowwat), q(is-ng,js-ng,k,cld_amt), gridstruct%area(is-ng,js-ng), &
+                      peln, delz(is,js,k), pt(is-ng,js-ng,k), delp(is-ng,js-ng,k), last_step)
+              if ( .not. hydrostatic  ) then
+                 do j=js,je
+                    do i=is,ie
+                       pkz(i,j,k) = exp(akap*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+                    enddo
+                 enddo
+              endif
+           enddo
+        endif
+
+#ifndef OLD_PT_TO_T
+        if ( last_step ) then
+           !$omp parallel do default(shared) 
+           do k=1,km
+              do j=js,je
+                 do i=is,ie
+                    ! Output temperature if last_step
+                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k))/(1.+r_vir*q(i,j,k,sphum))
+                 enddo
+              enddo
+           enddo
+        else
 #endif
-            enddo
-         enddo   
-      enddo
-    else
-!$omp parallel do default(shared) 
-      do k=1,km
-         do j=js,je
-            do i=is,ie
-#ifdef CONVERT_T
-               pt(i,j,k) = (rcp*pt(i,j,k) + dtmp)*pkz(i,j,k)/(1.+r_vir*q(i,j,k,sphum))
-#else
-               pt(i,j,k) = pt(i,j,k) + cp*dtmp
+           !$omp parallel do default(shared) 
+           do k=1,km
+              do j=js,je
+                 do i=is,ie
+                    pt(i,j,k) = cp*(pt(i,j,k)/pkz(i,j,k) + dtmp)
+                 enddo
+              enddo
+           enddo
+#ifndef OLD_PT_TO_T
+        endif
 #endif
-            enddo
-         enddo   
-      enddo
-    endif
+     else
+        !$omp parallel do default(shared) 
+        do k=1,km
+           do j=js,je
+              do i=is,ie
+                 pt(i,j,k) = pt(i,j,k) + cp*dtmp
+              enddo
+           enddo
+        enddo
+     endif
   endif
 
 ! call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km, 1, flagstruct%c2l_ord)
@@ -835,12 +880,13 @@ endif
                                  u, v, w, delz, pt, delp, q, qc, pe, peln, hs, &
                                  rsin2_l, cosa_s_l, &
                                  r_vir,  cp, rg, hlv, te_2d, ua, va, teq, &
-                                 moist_phys, sphum, hydrostatic, id_te)
+                                 moist_phys, sphum, liq_wat, ice_wat, hydrostatic, id_te)
 !------------------------------------------------------
 ! Compute vertically integrated total energy per column
 !------------------------------------------------------
 ! !INPUT PARAMETERS:
-   integer,  intent(in):: km, is, ie, js, je, isd, ied, jsd, jed, id_te, sphum
+   integer,  intent(in):: km, is, ie, js, je, isd, ied, jsd, jed, id_te
+   integer,  intent(in):: sphum, liq_wat, ice_wat
    real, intent(inout), dimension(isd:ied,jsd:jed,km):: ua, va
    real, intent(in), dimension(isd:ied,jsd:jed,km):: pt, delp
    real, intent(in), dimension(isd:ied,jsd:jed,km,sphum):: q
@@ -862,7 +908,7 @@ endif
 ! Local
    real, dimension(is:ie,km):: tv
    real  phiz(is:ie,km+1)
-   real cv
+   real cv, cvm
    integer i, j, k
 
    cv = cp - rg
@@ -872,7 +918,7 @@ endif
 !----------------------
 !  call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km, flagstruct%c2l_ord)
 
-!$omp parallel do default(shared) private(phiz, tv)
+!$omp parallel do default(shared) private(phiz, tv, cvm)
   do j=js,je
 
      if ( hydrostatic ) then
@@ -913,13 +959,25 @@ endif
      do i=is,ie
         te_2d(i,j) = 0.
      enddo
+     if ( moist_phys ) then
      do k=1,km
         do i=is,ie
-           te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv*pt(i,j,k)*(1.+qc(i,j,k)) +  &
+!            cvm = (1.-(q(i,j,k,sphum)+q(i,j,k,liq_wat)+q(i,j,k,ice_wat)))*cv_air + q(i,j,k,sphum)*cv_vap +   &
+!                       q(i,j,k,liq_wat)*c_liq + q(i,j,k,ice_wat)*(c_ice+7.3*(pt(i,j,k)-tice))
+           te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv*pt(i,j,k) +  &
                         0.5*(phiz(i,k)+phiz(i,k+1)+w(i,j,k)**2+0.5*rsin2_l(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
                         v(i,j,k)**2+v(i+1,j,k)**2-(u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s_l(i,j))))
         enddo
      enddo
+     else
+       do k=1,km
+          do i=is,ie
+             te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv*pt(i,j,k) +  &
+                          0.5*(phiz(i,k)+phiz(i,k+1)+w(i,j,k)**2+0.5*rsin2_l(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
+                          v(i,j,k)**2+v(i+1,j,k)**2-(u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s_l(i,j))))
+          enddo
+       enddo
+     endif
      endif
   enddo
 

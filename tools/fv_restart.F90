@@ -41,7 +41,7 @@ module fv_restart_mod
   use fv_diagnostics_mod,  only: prt_maxmin
   use init_hydro_mod,      only: p_var
   use mpp_domains_mod,     only: mpp_update_domains, domain2d, DGRID_NE
-  use mpp_mod,             only: mpp_chksum, stdout, mpp_error, FATAL, NOTE, get_unit
+  use mpp_mod,             only: mpp_chksum, stdout, mpp_error, FATAL, NOTE, get_unit, mpp_sum
   use test_cases_mod,      only: test_case, alpha, init_case, init_double_periodic, init_latlon
   use fv_mp_mod,           only: is_master, switch_current_Atm
   use fv_surf_map_mod,     only: sgh_g, oro_g
@@ -73,8 +73,8 @@ module fv_restart_mod
   logical                       :: module_is_initialized = .FALSE.
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_restart.F90,v 17.0.2.2.2.4.2.20.2.28 2013/04/12 17:32:03 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201309 $'
+  character(len=128) :: version = '$Id: fv_restart.F90,v 20.0 2013/12/13 23:07:38 fms Exp $'
+  character(len=128) :: tagname = '$Name: tikal $'
 
 contains 
 
@@ -118,10 +118,13 @@ contains
 
     integer :: unit
     real, allocatable :: dz1(:)
-    real rgrav, f00, ztop
+    real rgrav, f00, ztop, pertn
     logical :: hybrid
     character(len=128):: tname, errstring, fname, tracer_name
     character(len=3) :: gn
+
+    integer :: npts
+    real    :: sumpertn
 
     rgrav = 1. / grav
 
@@ -194,6 +197,7 @@ contains
              call remap_restart( Atm(n)%domain, Atm(n:n) )
              if( is_master() ) write(*,*) 'Done remapping dynamical IC'
         else
+             if( is_master() ) write(*,*) 'Warm starting, calling fv_io_restart'
              call fv_io_read_restart(Atm(n)%domain,Atm(n:n))
         endif
     endif
@@ -202,6 +206,7 @@ contains
 ! Read, interpolate (latlon to cubed), then remap vertically with terrain adjustment if needed
 !---------------------------------------------------------------------------------------------
     if ( Atm(n)%flagstruct%external_ic ) then
+         if( is_master() ) write(*,*) 'Calling get_external_ic'
          call get_external_ic(Atm(n:n), Atm(n)%domain) 
          if( is_master() ) write(*,*) 'IC generated from the specified external source'
     endif
@@ -393,6 +398,7 @@ contains
         if (Atm(n)%neststruct%nested) call fill_nested_grid_data(Atm(n:n))
 
      endif  !end cold_start check
+
          if ( (.not.Atm(n)%flagstruct%hydrostatic) .and. Atm(n)%flagstruct%make_nh .and. Atm(n)%neststruct%nested) then
             call nested_grid_BC(Atm(n)%delz, Atm(n)%parent_grid%delz, Atm(n)%neststruct%nest_domain, &
                  Atm(n)%neststruct%ind_h, Atm(n)%neststruct%wt_h, 0, 0, &
@@ -441,6 +447,29 @@ contains
 !      call make_eta_level(npz, Atm(n)%pe, area, Atm(n)%ks, Atm(n)%ak, Atm(n)%bk, Atm(n)%ptop)
      endif
 !---------------------------------------------------------------------------------------------
+
+     if (Atm(n)%flagstruct%add_noise > 0.) then
+        write(errstring,'(A, E)') "Adding thermal noise of amplitude ", Atm(n)%flagstruct%add_noise
+        call mpp_error(NOTE, errstring)
+        call random_seed
+        npts = 0
+        sumpertn = 0.
+        do k=1,npz
+        do j=jsc,jec
+        do i=isc,iec
+           call random_number(pertn)
+           Atm(n)%pt(i,j,k) = Atm(n)%pt(i,j,k) + pertn*Atm(n)%flagstruct%add_noise
+           npts = npts + 1
+           sumpertn = sumpertn + pertn*Atm(n)%flagstruct%add_noise ** 2
+        enddo
+        enddo
+        enddo
+        call mpp_update_domains(Atm(n)%pt, Atm(n)%domain)
+        call mpp_sum(sumpertn)
+        call mpp_sum(npts)
+        write(errstring,'(A, E)') "RMS added noise: ", sqrt(sumpertn/npts)
+        call mpp_error(NOTE, errstring)
+     endif
 
       if (Atm(n)%grid_number > 1) then
          write(gn,'(A2, I1)') " g", Atm(n)%grid_number

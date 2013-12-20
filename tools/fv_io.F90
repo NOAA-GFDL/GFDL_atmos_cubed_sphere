@@ -66,8 +66,8 @@ module fv_io_mod
 
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_io.F90,v 17.0.2.6.2.1.4.4.2.14.2.17 2013/03/12 21:49:16 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201309 $'
+  character(len=128) :: version = '$Id: fv_io.F90,v 20.0 2013/12/13 23:07:30 fms Exp $'
+  character(len=128) :: tagname = '$Name: tikal $'
 
   integer ::grid_xtdimid, grid_ytdimid, haloid, pfullid !For writing BCs
   integer ::grid_xtstagdimid, grid_ytstagdimid, oneid
@@ -115,7 +115,7 @@ contains
     character(len=3)  :: gn
     integer              :: isc, iec, jsc, jec, n, nt, nk, ntracers
 !    integer              :: ntileMe
-    integer              :: ks
+    integer              :: ks, ntiles
     real                 :: ptop
 
     character(len=128)           :: tracer_longname, tracer_units
@@ -151,8 +151,12 @@ contains
                         !it can't find ak and bk in those files
   ! write_data does not (yet?) support vector data and tiles
     call get_instance_filename('INPUT/fv_core.res.nc', fname_nd)
-    call read_data(fname_nd, 'ak', Atm(1)%ak(:))
-    call read_data(fname_nd, 'bk', Atm(1)%bk(:))
+    if(file_exist(fname_nd)) then 
+       call read_data(fname_nd, 'ak', Atm(1)%ak(:))
+       call read_data(fname_nd, 'bk', Atm(1)%bk(:))
+    else
+       call set_eta(Atm(1)%npz, ks, ptop, Atm(1)%ak, Atm(1)%bk)
+    endif
     if ( Atm(1)%flagstruct%reset_eta ) then
        call set_eta(Atm(1)%npz, ks, ptop, Atm(1)%ak, Atm(1)%bk)
     endif
@@ -162,7 +166,13 @@ contains
     n = 1
        isc = Atm(n)%bd%isc; iec = Atm(n)%bd%iec; jsc = Atm(n)%bd%jsc; jec = Atm(n)%bd%jec
 
-       fname = 'INPUT/fv_core'//trim(gn)//'.res.nc'
+       ntiles = mpp_get_ntile_count(fv_domain)
+       if ( ntiles == 1 .and. .not. Atm(n)%neststruct%nested ) then
+          ! fix for single tile runs.
+          fname = 'INPUT/fv_core.res.tile1.nc'
+       else
+          fname = 'INPUT/fv_core'//trim(gn)//'.res.nc'
+       endif
        if (.not.Atm(n)%neststruct%nested) then
           call get_instance_filename(fname, fname_nd)
           call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
@@ -372,6 +382,10 @@ contains
            allocate ( ze0_r(isc:iec, jsc:jec,  npz_rst+1) )
     endif
 
+    call nullify_domain !Needed for the following read_data calls; else they
+                        !will try to read from .res.tileN.nc, and crash when
+                        !it can't find ak and bk in those files
+  ! write_data does not (yet?) support vector data and tiles
     call get_instance_filename('INPUT/fv_core'//trim(gn)//'.res.nc', fname_nd)
   ! write_data does not (yet?) support vector data and tiles
     call read_data(fname_nd, 'ak', ak_r(1:npz_rst+1))
@@ -530,6 +544,7 @@ contains
 
     character(len=64) :: fname_nd, tracer_name
     character(len=3)  :: gn
+    character(len=6)  :: stile_name
     integer           :: id_restart
     integer           :: n, nt, ntracers, ntileMe, ntiles
 
@@ -562,10 +577,14 @@ contains
        call set_domain(Atm(1)%domain)
 
 ! fix for single tile runs where you need fv_core.res.nc and fv_core.res.tile1.nc
-    fname_nd = 'fv_core'//trim(gn)//'.res.nc'
     ntiles = mpp_get_ntile_count(fv_domain)
-    !if(ntiles == 1) fname_nd =  'fv_core'//trim(gn)//'.res.tile1.nc'
+    if(ntiles == 1 .and. .not. Atm(1)%neststruct%nested) then
+       stile_name = '.tile1'
+    else
+       stile_name = ''
+    endif
 
+    fname_nd = 'fv_core'//trim(gn)//'.res'//trim(stile_name)//'.nc'
     do n = 1, ntileMe
 !    n = 1
        id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname_nd, 'u', Atm(n)%u, &
@@ -642,7 +661,7 @@ contains
     
     call set_domain(Atm(1)%domain)
 
-    if (Atm(1)%flagstruct%ntiles > 1) then
+    if (.not. Atm(1)%neststruct%nested) then
        call save_restart(Atm(1)%Fv_restart, timestamp)
     endif
 

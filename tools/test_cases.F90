@@ -53,6 +53,7 @@
 !                   20 = 3D non-hydrostatic lee vortices; non-rotating (small planet)
 !                   21 = 3D non-hydrostatic lee vortices; rotating     (small planet)
 !                   51 = 3D tracer advection (deformational nondivergent flow)
+!                   55 = TC 
 !                  101 = 3D non-hydrostatic Large-Eddy-Simulation (LES) with hybrid_z IC
 
       integer :: test_case
@@ -115,8 +116,8 @@
       public :: project_sphere_v
 
  !---- version number -----
-      character(len=128) :: version = '$Id: test_cases.F90,v 17.0.2.2.2.2.2.13.2.18 2013/05/14 19:53:50 Lucas.Harris Exp $'
-      character(len=128) :: tagname = '$Name: siena_201309 $'
+      character(len=128) :: version = '$Id: test_cases.F90,v 20.1 2013/12/16 23:50:24 fms Exp $'
+      character(len=128) :: tagname = '$Name: tikal $'
 
   INTERFACE mp_update_dwinds
      MODULE PROCEDURE mp_update_dwinds_2d
@@ -723,7 +724,7 @@
      ! call mpp_update_domains( divg, domain )
      ! call mpp_update_domains( vort, domain )
       call get_scalar_stats( divg, div0, npx, npy, ndims, nregions, &
-                             pmin, pmax, L1_norm, L2_norm, Linf_norm, tile)
+                             pmin, pmax, L1_norm, L2_norm, Linf_norm, gridstruct, tile)
  200  format(i4.4,'x',i4.4,'x',i4.4,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14,' ',e21.14)
  201  format('          ',A,e21.14,' ',e21.14)
  202  format('          ',A,i4.4,'x',i4.4,'x',i4.4)
@@ -756,7 +757,7 @@
         va0 = va
         div0(:,:) = 1.e-20
       call get_scalar_stats( divg, div0, npx, npy, ndims, nregions, &
-                             pmin, pmax, L1_norm, L2_norm, Linf_norm, tile)
+                             pmin, pmax, L1_norm, L2_norm, Linf_norm, gridstruct, tile)
       if ( is_master() ) then
           write(*,*) ' Error Norms of Analytical Divergence field A-Winds initialized'
           write(*,201) 'Divergence MAX error     : ', pmax
@@ -786,7 +787,7 @@
         enddo
         div0(:,:) = 1.e-20
       call get_scalar_stats( divg, div0, npx, npy, ndims, nregions, &
-                             pmin, pmax, L1_norm, L2_norm, Linf_norm, tile)
+                             pmin, pmax, L1_norm, L2_norm, Linf_norm, gridstruct, tile)
       if ( is_master() ) then
           write(*,*) ' Error Norms of Analytical Divergence field D-Winds initialized'
           write(*,201) 'Divergence MAX error     : ', pmax
@@ -3416,7 +3417,7 @@
                x1 = agrid(i,j,1)
                y1 = agrid(i,j,2)
                z1 = radius
-               p = p0 * cos(y1)
+               p = p0_c0 * cos(y1)
                Vtx = ((3.0*SQRT(2.0))/2.0) * (( 1.0/cosh(p) )**2.0) * tanh(p)
                w_p = 0.0
                if (p /= 0.0) w_p = Vtx/p
@@ -4376,7 +4377,7 @@
                x1 = agrid(i,j,1)
                y1 = agrid(i,j,2)
                z1 = radius
-               p = p0 * cos(y1)
+               p = p0_c0 * cos(y1)
                Vtx = ((3.0*SQRT(2.0))/2.0) * (( 1.0/cosh(p) )**2.0) * tanh(p)
                w_p = 0.0
                if (p /= 0.0) w_p = Vtx/p
@@ -4640,7 +4641,7 @@
                x1 = agrid(i,j,1) 
                y1 = agrid(i,j,2)
                z1 = radius
-               p = p0 * cos(y1)
+               p = p0_c0 * cos(y1)
                Vtx = ((3.0*SQRT(2.0))/2.0) * (( 1.0/cosh(p) )**2.0) * tanh(p)
                w_p = 0.0
                if (p /= 0.0) w_p = Vtx/p
@@ -4914,11 +4915,14 @@
         type(fv_flags_type), target :: flagstruct
 
         real, dimension(bd%is:bd%ie):: pm, qs
+        real, dimension(1:npz):: pk1, ts1, qs1
+        real :: us0 = 30.
         real :: dist, r0, f0_const, prf, rgrav
-        real :: ptmp, ze, zc, zm
+        real :: ptmp, ze, zc, zm, utmp, vtmp
         real :: t00, p00, xmax, xc, xx, yy, pk0, pturb, ztop
         real :: ze1(npz+1)
          real:: dz1(npz)
+        real:: zvir
         integer :: i, j, k, m, icenter, jcenter
 
         real, pointer, dimension(:,:,:)   :: agrid, grid
@@ -5251,6 +5255,202 @@
             enddo
           enddo
 
+      case ( 17 )
+!---------------------------
+! Doubly periodic SuperCell, straight wind (v==0)
+!--------------------------
+        zvir = rvgas/rdgas - 1.
+        p00 = 1000.E2
+          ps(:,:) = p00
+        phis(:,:) = 0.
+        do j=js,je
+           do i=is,ie
+                pk(i,j,1) = ptop**kappa
+                pe(i,1,j) = ptop
+              peln(i,1,j) = log(ptop)
+           enddo
+        enddo
+
+        do k=1,npz
+           do j=js,je
+              do i=is,ie
+                 delp(i,j,k) = ak(k+1)-ak(k) + ps(i,j)*(bk(k+1)-bk(k))
+                 pe(i,k+1,j) = ak(k+1) + ps(i,j)*bk(k+1)
+                 peln(i,k+1,j) = log(pe(i,k+1,j))
+                   pk(i,j,k+1) = exp( kappa*peln(i,k+1,j) )
+              enddo
+           enddo
+        enddo
+
+        i = is
+        j = js
+        do k=1,npz
+           pk1(k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
+        enddo
+
+        call SuperCell_Sounding(npz, p00, pk1, ts1, qs1)
+
+        v(:,:,:) = 0.
+        w(:,:,:) = 0.
+        q(:,:,:,:) = 0.
+
+        do k=1,npz
+           do j=js,je
+              do i=is,ie
+                 pt(i,j,k)   = ts1(k)
+                  q(i,j,k,1) = qs1(k)
+                 delz(i,j,k) = rdgas/grav*ts1(k)*(1.+zvir*qs1(k))*(peln(i,k,j)-peln(i,k+1,j))
+                enddo
+             enddo
+          enddo
+
+        ze1(npz+1) = 0.
+        do k=npz,1,-1
+           ze1(k) = ze1(k+1) - delz(is,js,k)
+        enddo
+
+        do k=1,npz
+             zm = 0.5*(ze1(k)+ze1(k+1))
+           utmp = us0*tanh(zm/3.E3)
+           do j=js,je+1
+              do i=is,ie
+                 u(i,j,k) = utmp
+             enddo
+           enddo
+        enddo
+
+        call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
+                   pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass, .false., .false., &
+                   .true., hydrostatic, nwat, domain)
+
+! *** Add Initial perturbation ***
+        pturb = 2.
+        r0 = 10.e3
+        zc = 1.4e3         ! center of bubble  from surface
+        icenter = (npx-1)/3 + 1
+        jcenter = (npy-1)/2 + 1
+        do k=1, npz
+           zm = 0.5*(ze1(k)+ze1(k+1))
+           ptmp = ( (zm-zc)/zc ) **2
+           if ( ptmp < 1. ) then
+              do j=js,je
+                 do i=is,ie
+                   dist = ptmp+((i-icenter)*dx_const/r0)**2+((j-jcenter)*dy_const/r0)**2
+                   if ( dist < 1. ) then
+                        pt(i,j,k) = pt(i,j,k) + pturb*(1.-sqrt(dist))
+                   endif
+                 enddo
+              enddo
+           endif
+        enddo
+
+      case ( 18 )
+!---------------------------
+! Doubly periodic SuperCell, quarter circle hodograph
+! M. Toy, Apr 2013, MWR
+        pturb = 2.5
+        zvir = rvgas/rdgas - 1.
+        p00 = 1000.E2
+          ps(:,:) = p00
+        phis(:,:) = 0.
+        do j=js,je
+           do i=is,ie
+                pk(i,j,1) = ptop**kappa
+                pe(i,1,j) = ptop
+              peln(i,1,j) = log(ptop)
+           enddo
+        enddo
+
+        do k=1,npz
+           do j=js,je
+              do i=is,ie
+                 delp(i,j,k) = ak(k+1)-ak(k) + ps(i,j)*(bk(k+1)-bk(k))
+                 pe(i,k+1,j) = ak(k+1) + ps(i,j)*bk(k+1)
+                 peln(i,k+1,j) = log(pe(i,k+1,j))
+                   pk(i,j,k+1) = exp( kappa*peln(i,k+1,j) )
+              enddo
+           enddo
+        enddo
+
+        i = is
+        j = js
+        do k=1,npz
+           pk1(k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
+        enddo
+
+        call SuperCell_Sounding(npz, p00, pk1, ts1, qs1)
+
+        w(:,:,:) = 0.
+        q(:,:,:,:) = 0.
+
+        do k=1,npz
+           do j=js,je
+              do i=is,ie
+                 pt(i,j,k)   = ts1(k)
+                  q(i,j,k,1) = qs1(k)
+                 delz(i,j,k) = rdgas/grav*ts1(k)*(1.+zvir*qs1(k))*(peln(i,k,j)-peln(i,k+1,j))
+                enddo
+             enddo
+          enddo
+
+        ze1(npz+1) = 0.
+        do k=npz,1,-1
+           ze1(k) = ze1(k+1) - delz(is,js,k)
+        enddo
+
+! Quarter-circle hodograph (Harris approximation)
+        us0 = 30.
+        do k=1,npz
+           zm = 0.5*(ze1(k)+ze1(k+1))
+           if ( zm .le. 2.e3 ) then
+               utmp = 8.*(1.-cos(pi*zm/4.e3)) 
+               vtmp = 8.*sin(pi*zm/4.e3)
+           elseif (zm .le. 6.e3 ) then
+               utmp = 8. + (us0-8.)*(zm-2.e3)/4.e3
+               vtmp = 8.
+           else
+               utmp = us0
+               vtmp = 8.
+           endif
+! u-wind
+           do j=js,je+1
+              do i=is,ie
+                 u(i,j,k) = utmp - 8.
+             enddo
+           enddo
+! v-wind
+           do j=js,je
+              do i=is,ie+1
+                 v(i,j,k) = vtmp - 4.
+             enddo
+           enddo
+        enddo
+
+
+        call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
+                   pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass, .false., .false., &
+                   .true., hydrostatic, nwat, domain)
+
+! *** Add Initial perturbation ***
+        r0 = 10.e3
+        zc = 1.4e3         ! center of bubble  from surface
+        icenter = (npx-1)/2 + 1
+        jcenter = (npy-1)/2 + 1
+        do k=1, npz
+           zm = 0.5*(ze1(k)+ze1(k+1))
+           ptmp = ( (zm-zc)/zc ) **2
+           if ( ptmp < 1. ) then
+              do j=js,je
+                 do i=is,ie
+                   dist = ptmp+((i-icenter)*dx_const/r0)**2+((j-jcenter)*dy_const/r0)**2
+                   if ( dist < 1. ) then
+                        pt(i,j,k) = pt(i,j,k) + pturb*(1.-sqrt(dist))
+                   endif
+                 enddo
+              enddo
+           endif
+        enddo
+
         case ( 101 )
 
 ! IC for LES
@@ -5388,6 +5588,120 @@
       nullify(globalarea)      
 
       end subroutine init_double_periodic
+
+
+ subroutine SuperCell_Sounding(km, ps, pk1, tp, qp)
+ use lin_cld_microphys_mod, only: wqsat_moist, qsmith_init
+! Morris Weisman & J. Klemp 2002 sounding
+! Output sounding on pressure levels:
+ integer, intent(in):: km
+ real, intent(in):: ps     ! surface pressure (Pa)
+ real, intent(in), dimension(km):: pk1
+ real, intent(out), dimension(km):: tp, qp
+! Local:
+ integer, parameter:: ns = 401
+ integer, parameter:: nx = 3
+ real, dimension(ns):: zs, pt, qs, us, rh, pp, pk, dpk
+ real, parameter:: Tmin = 175.
+ real, parameter:: p00 = 1.0e5
+ real, parameter:: qst = 3.0e-6
+ real, parameter:: qv0 = 1.4e-2
+ real, parameter:: ztr = 12.E3
+ real, parameter:: ttr = 213.
+ real, parameter:: ptr = 343.    ! Tropopause potential temp.
+ real, parameter:: pt0 = 300.    ! surface potential temperature
+ real:: dz0, zvir, fac_z, pk0, temp1, p2
+ integer:: k, n, kk
+
+ zvir = rvgas/rdgas - 1.
+ pk0 = p00**kappa
+ pp(ns) = ps
+ pk(ns) = ps**kappa
+ if ( (is_master()) ) then
+     write(*,*) 'Computing sounding for super-cell test'
+ endif
+
+ call qsmith_init
+
+ dz0 = 50.
+ zs(ns) = 0.
+ qs(:) = qst
+ rh(:) = 0.25
+
+ do k=ns-1, 1, -1
+    zs(k) = zs(k+1) + dz0
+ enddo
+
+ do k=1,ns
+! Potential temperature
+    if ( zs(k) .gt. ztr ) then
+! Stratosphere:
+         pt(k) = ptr*exp(grav*(zs(k)-ztr)/(cp_air*ttr))
+    else
+! Troposphere:
+         fac_z = (zs(k)/ztr)**1.25
+         pt(k) = pt0 + (ptr-pt0)* fac_z
+         rh(k) =  1. -     0.75 * fac_z
+! First guess on q:
+         qs(k) = qv0 - (qv0-qst)*fac_z
+    endif
+    pt(k) = pt(k) / pk0
+ enddo
+
+!--------------------------------------
+! Iterate nx times with virtual effect:
+!--------------------------------------
+ do n=1, nx
+    do k=1,ns-1
+        temp1 = 0.5*(pt(k)*(1.+zvir*qs(k)) + pt(k+1)*(1.+zvir*qs(k+1)))
+       dpk(k) = grav*(zs(k)-zs(k+1))/(cp_air*temp1)   ! DPK > 0
+    enddo
+
+    do k=ns-1,1,-1
+       pk(k) = pk(k+1) - dpk(k)
+    enddo
+
+    do k=1, ns
+       temp1 = pt(k)*pk(k)
+!      if ( (is_master()) ) write(*,*) k, temp1, rh(k)
+       if ( pk(k) > 0. ) then
+            pp(k) = exp(log(pk(k))/kappa) 
+            qs(k) = min(qv0, rh(k)*wqsat_moist(temp1, qs(k), pp(k)))
+!           if ( (is_master()) ) write(*,*) 0.01*pp(k), qs(k)
+       else
+            if ( (is_master()) ) write(*,*) n, k, pk(k)
+            call mpp_error(FATAL, 'Super-Cell case: pk < 0')
+       endif
+    enddo
+ enddo
+
+! Interpolate to p levels using pk1: p**kappa
+ do 555 k=1, km
+    if ( pk1(k) .le. pk(1) ) then
+         tp(k) = pt(1)*pk(1)/pk1(k)   ! isothermal above
+         qp(k) = qst                  ! set to stratosphere value
+    elseif ( pk1(k) .ge. pk(ns) ) then
+         tp(k) = pt(ns)
+         qp(k) = qs(ns)
+    else
+      do kk=1,ns-1
+         if( (pk1(k).le.pk(kk+1)) .and. (pk1(k).ge.pk(kk)) ) then
+             fac_z = (pk1(k)-pk(kk))/(pk(kk+1)-pk(kk)) 
+             tp(k) = pt(kk) + (pt(kk+1)-pt(kk))*fac_z
+             qp(k) = qs(kk) + (qs(kk+1)-qs(kk))*fac_z
+             goto 555
+         endif
+      enddo 
+    endif
+555  continue
+
+ do k=1,km
+    tp(k) = tp(k)*pk1(k)    ! temperature
+    tp(k) = max(Tmin, tp(k))
+ enddo
+
+ end subroutine SuperCell_Sounding
+
 
 #ifdef PKC
       subroutine init_latlon(u,v,pt,delp,q,phis, ps,pe,peln,pk,pkz, pkc, uc,vc, ua,va, ak, bk,  &

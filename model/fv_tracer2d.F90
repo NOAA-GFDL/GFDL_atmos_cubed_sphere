@@ -16,8 +16,8 @@ public :: tracer_2d, tracer_2d_nested, tracer_2d_1L
 real, allocatable, dimension(:,:,:) :: nest_fx_west_accum, nest_fx_east_accum, nest_fx_south_accum, nest_fx_north_accum
 
 !---- version number -----
-   character(len=128) :: version = '$Id: fv_tracer2d.F90,v 17.0.2.3.2.13.2.19 2013/04/19 13:14:10 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: siena_201309 $'
+   character(len=128) :: version = '$Id: fv_tracer2d.F90,v 20.0 2013/12/13 23:04:36 fms Exp $'
+   character(len=128) :: tagname = '$Name: tikal $'
 
 contains
 

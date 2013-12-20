@@ -35,8 +35,8 @@ private
 public :: twoway_nesting, setup_nested_grid_BCs
 
 !---- version number -----
-   character(len=128) :: version = '$Id: fv_nesting.F90,v 1.1.4.28 2013/05/21 17:44:34 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: siena_201309 $'
+   character(len=128) :: version = '$Id: fv_nesting.F90,v 20.0 2013/12/13 23:04:32 fms Exp $'
+   character(len=128) :: tagname = '$Name: tikal $'
 
 contains
 
@@ -979,7 +979,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, kappa, cp_air, zvir, dt
     integer i, j, k, iq
     real rg
 
-    integer :: sphum
+    integer :: sphum, liq_wat, ice_wat
     logical :: used
     integer :: is,  ie,  js,  je
     integer :: isd, ied, jsd, jed
@@ -995,6 +995,13 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, kappa, cp_air, zvir, dt
 
 
     sphum = get_tracer_index(MODEL_ATMOS, 'sphum')
+    if (flagstruct%nwat >= 3) then
+       liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
+       ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
+    else
+       liq_wat = -1
+       ice_wat = -1
+    endif
 
    !Calculate cubed-sphere a-grid winds
    
@@ -1023,7 +1030,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, kappa, cp_air, zvir, dt
    call compute_total_energy(is, ie, js, je, isd, ied, jsd, jed, npz,  &
         u, v, w, delz, pt, delp, q, dp1_coarse, pe, &
         peln, phis, gridstruct%rsin2, gridstruct%cosa_s, zvir, cp_air,  rg, hlv, te_2d_coarse, &
-        ua, va, teq, flagstruct%moist_phys, sphum, flagstruct%hydrostatic,idiag%id_te)
+        ua, va, teq, flagstruct%moist_phys, sphum, liq_wat, ice_wat, flagstruct%hydrostatic,idiag%id_te)
 
 #endif
 
@@ -1085,7 +1092,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, kappa, cp_air, zvir, dt
     integer:: kord_tracer(ncnst), cld_amt, iq
     real te_2d_coarse_after(bd%is:bd%ie,bd%js:bd%je)
     
-    integer :: sphum, i, j, k
+    integer :: sphum, liq_wat, ice_wat, i, j, k
     real::   teq(bd%is:bd%ie,bd%js:bd%je)
 
     integer :: is,  ie,  js,  je
@@ -1101,6 +1108,13 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, kappa, cp_air, zvir, dt
     jed = bd%jed
 
     sphum = get_tracer_index(MODEL_ATMOS, 'sphum')
+    if (flagstruct%nwat >= 3) then
+       liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
+       ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
+    else
+       liq_wat = -1
+       ice_wat = -1
+    endif
 
     cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
     akap  = kappa
@@ -1142,7 +1156,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, kappa, cp_air, zvir, dt
    call compute_total_energy(is, ie, js, je, isd, ied, jsd, jed, npz,  &
         u, v, w, delz, pt, delp, q, dp1_coarse, pe, &
         peln, phis, gridstruct%rsin2, gridstruct%cosa_s, zvir, cp_air,  rg, hlv, te_2d_coarse_after, &
-        ua, va, teq, flagstruct%moist_phys, sphum, flagstruct%hydrostatic,idiag%id_te)
+        ua, va, teq, flagstruct%moist_phys, sphum, liq_wat, ice_wat, flagstruct%hydrostatic,idiag%id_te)
 
    te_2d_coarse = te_2d_coarse - te_2d_coarse_after
    tpe = g_sum(domain, te_2d_coarse, is, ie, js, je, ng, gridstruct%area, 0)

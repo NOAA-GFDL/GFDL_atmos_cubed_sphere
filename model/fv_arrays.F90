@@ -19,14 +19,14 @@ module fv_arrays_mod
 
  integer ::id_ps, id_slp, id_ua, id_va, id_pt, id_omga, id_vort,  &
            id_tm, id_pv, id_zsurf, id_oro, id_sgh, id_divg, id_w, &
-           id_te, id_zs, id_ze, id_mq, id_vorts, id_us, id_vs,    &
+           id_ke, id_te, id_zs, id_ze, id_mq, id_vorts, id_us, id_vs,    &
            id_tq, id_rh, id_c15, id_c25, id_c35, id_c45,          &
                          id_f15, id_f25, id_f35, id_f45,          &
            id_ppt, id_ts, id_pmask, id_pmaskv2,                   &
-           id_delp, id_delz, id_zratio, id_ws
+           id_delp, id_delz, id_zratio, id_ws, id_iw, id_lw
 
 ! Selected p-level fields from 3D variables:
- integer :: id_vort850, id_w850,  &
+ integer :: id_vort850, id_w850, id_x850, id_srh,  &
             id_w200, id_s200, id_sl12, id_sl13
 ! IPCC diag
  integer :: id_u10,  id_v10,  id_t10,  id_q10,  id_rh10,  id_omg10,  id_h10,  &
@@ -257,6 +257,7 @@ module fv_arrays_mod
    integer ::    n_zs_filter=0      !  number of application of the terrain filter
    integer :: nord_zs_filter=4      !  use del-2 (2) OR del-4 (4)
 
+   logical :: do_sat_adj= .false.   ! 
    logical :: no_dycore = .false.   ! skip the dycore
    logical :: replace_w = .false.   ! replace w (m/sec) with omega (pa/sec) 
                                     ! this is useful for getting a good initial estimate of w
@@ -308,6 +309,8 @@ module fv_arrays_mod
                              ! Default = 0 (automatic computation of best value)
    integer :: m_split = 0    ! Number of time splits for Riemann solver
    integer :: k_split = 1    ! Number of time splits for Remapping
+
+   logical :: use_logp = .false.
 
 !            For doubly periodic domain with sim_phys
 !                     5km        150         20 (7.5 s)  2
@@ -365,7 +368,7 @@ module fv_arrays_mod
    real    :: rf_center = 0.          ! Center position of the hyper-tan profile
                                       ! 0: use the top layer center
                                       ! > 0, [Pascal]
-   logical :: tq_filter = .false.
+   real    :: rf_cutoff = 30.E2       ! cutoff pressure level for RF
    logical :: filter_phys = .false.
    logical :: dwind_2d = .false.
    logical :: breed_vortex_inline = .false.
@@ -419,19 +422,21 @@ module fv_arrays_mod
 ! Parameters related to non-hydrostatic dynamics:
 !------------------------------------------------
    logical :: hydrostatic = .true.
-   logical :: phys_hydrostatic = .true.    ! heating/cooling term from the physics is hydrostatic
-   logical :: hybrid_z    = .false. ! use hybrid_z for remapping
-   logical :: Make_NH     = .false. ! Initialize (w, delz) from hydro restart file 
-   logical :: make_hybrid_z  = .false. ! transform hydrostatic eta-coord IC into non-hydrostatic hybrid_z
+   logical :: phys_hydrostatic = .true.  ! heating/cooling term from the physics is hydrostatic
+   logical :: hybrid_z    = .false.      ! use hybrid_z for remapping
+   logical :: Make_NH     = .false.      ! Initialize (w, delz) from hydro restart file 
+   logical :: make_hybrid_z  = .false.   ! transform hydrostatic eta-coord IC into non-hydrostatic hybrid_z
+   real    :: add_noise = -1.            !Amplitude of random noise added upon model startup; <=0 means no noise added
 
    integer :: a2b_ord = 4    ! order for interpolation from A to B Grid (corners)
    integer :: c2l_ord = 4    ! order for interpolation from D to lat-lon A winds for phys & output
 
   real :: dx_const = 1000.    ! spatial resolution for double periodic boundary configuration [m]
   real :: dy_const = 1000.
+  real :: deglat=15.
+  !The following deglat_*, deglon_* options are not used.
   real :: deglon_start = -30., deglon_stop = 30., &  ! boundaries of latlon patch
           deglat_start = -30., deglat_stop = 30.
-  real :: deglat=15.
 
   !Convenience pointers
   integer, pointer :: grid_number
@@ -675,6 +680,10 @@ module fv_arrays_mod
 
 
   end type fv_atmos_type
+
+!---- version number -----
+  character(len=128) :: version = '$Id: fv_arrays.F90,v 20.0 2013/12/13 23:04:20 fms Exp $'
+  character(len=128) :: tagname = '$Name: tikal $'
 
 contains
 
@@ -1364,8 +1373,6 @@ end subroutine deallocate_fv_nest_BC_type_3d
      call mpp_broadcast( Atm%flagstruct%kord_tr, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%scale_z, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%w_max, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%scale_z, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%w_max, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%z_min, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%nord, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%dddmp, fromproc, to_pelist)
@@ -1380,6 +1387,7 @@ end subroutine deallocate_fv_nest_BC_type_3d
      call mpp_broadcast( Atm%flagstruct%damp_k_k2, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%n_zs_filter, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%nord_zs_filter, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%do_sat_adj, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%no_dycore, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%replace_w, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%convert_ke, fromproc, to_pelist)
@@ -1434,7 +1442,7 @@ end subroutine deallocate_fv_nest_BC_type_3d
      call mpp_broadcast( Atm%flagstruct%consv_te, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%tau, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%rf_center, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%tq_filter, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%rf_cutoff, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%filter_phys, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%dwind_2d, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%breed_vortex_inline, fromproc, to_pelist)
@@ -1464,6 +1472,7 @@ end subroutine deallocate_fv_nest_BC_type_3d
      call mpp_broadcast( Atm%flagstruct%hybrid_z, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%Make_NH, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%make_hybrid_z, fromproc, to_pelist)
+     call mpp_broadcast( Atm%flagstruct%add_noise, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%a2b_ord, fromproc, to_pelist)
      call mpp_broadcast( Atm%flagstruct%c2l_ord, fromproc, to_pelist)
      call mpp_broadcast( Atm%ks, fromproc, to_pelist)

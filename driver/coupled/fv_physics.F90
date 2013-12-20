@@ -13,7 +13,7 @@ module fv_physics_mod
 use atmos_co2_mod,         only: atmos_co2_rad, co2_radiation_override
 use constants_mod,         only: rdgas, grav, rvgas, WTMAIR, WTMCO2, cp_air
 use time_manager_mod,      only: time_type, get_time, operator(-)
-use fms_mod,               only: error_mesg, FATAL, NOTE, write_version_number,clock_flag_default
+use fms_mod,               only: error_mesg, FATAL, NOTE, WARNING, write_version_number,clock_flag_default
 use physics_driver_mod,    only: physics_driver_init, physics_driver_end,   &
                                  physics_driver_moist_init, &
                                  physics_driver_moist_end, &
@@ -71,8 +71,8 @@ public  surf_diff_type, fv_physics_restart
 !   integer, EXTERNAL :: omp_get_thread_num, omp_get_num_threads      
 
 !---- version number -----
-   character(len=128) :: version = '$Id: fv_physics.F90,v 17.0.4.1.2.1.2.9.2.1.2.3.2.21 2013/05/09 16:37:24 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: siena_201309 $'
+   character(len=128) :: version = '$Id: fv_physics.F90,v 20.0 2013/12/13 23:04:04 fms Exp $'
+   character(len=128) :: tagname = '$Name: tikal $'
 
 contains
 
@@ -160,6 +160,8 @@ contains
 
     call physics_driver_init(Time, Atm(1)%gridstruct%grid(isc:iec+1,jsc:jec+1,1),             &
                                    Atm(1)%gridstruct%grid(isc:iec+1,jsc:jec+1,2),             &
+                                   Atm(1)%gridstruct%agrid(isc:iec,jsc:jec,1),                &
+                                   Atm(1)%gridstruct%agrid(isc:iec,jsc:jec,2),                &
                              axes, pref, Atm(1)%q(isc:iec,jsc:jec,1:Atm(1)%npz,1:Atm(1)%ncnst),  &
                              Surf_diff,  p_edge )
     deallocate ( p_edge )
@@ -176,8 +178,11 @@ contains
     nx_win = window(1)
     ny_win = window(2)
 
-    if( nx_win.LE.0 .or. Atm(1)%neststruct%nested) nx_win = nx_dom
-    if( ny_win.LE.0 .or. Atm(1)%neststruct%nested) ny_win = ny_dom
+    if( nx_win.LE.0) nx_win = nx_dom
+    if( ny_win.LE.0) ny_win = ny_dom
+
+!!$    if( nx_win.LE.0 .or. Atm(1)%neststruct%nested) nx_win = nx_dom
+!!$    if( ny_win.LE.0 .or. Atm(1)%neststruct%nested) ny_win = ny_dom
 
 ! Consistency check:
     if( mod(nx_dom,nx_win).NE.0 )then
@@ -215,7 +220,7 @@ contains
 
     num_phys_windows = (nx_dom/nx_win)*(ny_dom/ny_win) 
     write(text,'(a,2i4)') 'num_phys_windows, numthreads',num_phys_windows,numthreads
-    call error_mesg ('fv_physics_init', trim(text), NOTE)
+    call error_mesg ('fv_physics_init', trim(text), WARNING) ! NOTE)
     allocate(physics_window_x(num_phys_windows))
     allocate(physics_window_y(num_phys_windows))
     i = 1 
@@ -453,14 +458,13 @@ contains
     call get_time (Time_next-Time_prev, sec, day)
     dt = real(sec+day*86400)
  
-    call physics_driver_up_time_vary (Time, dt)
- 
+    call physics_driver_up_time_vary (Time, Time_next, dt)
 
     call compute_p_z(Atm%npz, isc , jsc , nx_dom, ny_dom, Atm%phis, Atm%pt,  &
                      Atm%q, Atm%delp, Atm%pe, Atm%peln,      &
                      Atm%delz, Atm%flagstruct%phys_hydrostatic)
 
-    call physics_driver_moist_init (nx_dom, ny_dom,  Atm%npz, nt_prog) 
+    call physics_driver_moist_init (nx_dom, ny_dom,  Atm%npz, nt_prog, Atm%ncnst) 
 
 !$OMP parallel  do default(shared) private(phys_loop, isw, iew, jsw, jew)
     do phys_loop = 1, size(physics_window_y)!num_phys_windows
@@ -483,12 +487,12 @@ contains
                                   Atm%va(isw:iew,jsw:jew,:)           , &
                                   Atm%pt(isw:iew,jsw:jew,:)           , &
                                   Atm%q(isw:iew,jsw:jew,:,1)          , &
-                                  Atm%q(isw:iew,jsw:jew,:,1:nt_prog)  , &
+                                  Atm%q(isw:iew,jsw:jew,:,:)          , &   ! cjg: pass all tracers
                                   Atm%ua(isw:iew,jsw:jew,:)           , &
                                   Atm%va(isw:iew,jsw:jew,:)           , &
                                   Atm%pt(isw:iew,jsw:jew,:)           , &
                                   Atm%q(isw:iew,jsw:jew,:,1)          , &
-                                  Atm%q(isw:iew,jsw:jew,:,1:nt_prog)  , &
+                                  Atm%q(isw:iew,jsw:jew,:,:)          , &   ! cjg: pass all tracers
                                   frac_land(isw:iew,jsw:jew)             , &
                                   u_star   (isw:iew,jsw:jew)             , &
                                   b_star   (isw:iew,jsw:jew)             , &

@@ -23,8 +23,8 @@ interface read_climate_nudge_data
    module procedure read_climate_nudge_data_3d
 end interface
 
-  character(len=128) :: version = '$Id: read_climate_nudge_data.F90,v 1.1.2.3.2.1.2.3.2.1 2013/05/14 19:53:50 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: siena_201309 $'
+  character(len=128) :: version = '$Id: read_climate_nudge_data.F90,v 20.0 2013/12/13 23:07:46 fms Exp $'
+  character(len=128) :: tagname = '$Name: tikal $'
   real, parameter :: P0 = 1.e5
   real, parameter :: D608 = RVGAS/RDGAS - 1.
 
@@ -176,6 +176,7 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
 
         ! special case for surface geopotential (sometimes the name is PHIS)
         ! z1l: the following is not needed
+!       ! rab: if not needed, should we remove?
 !        if (trim(name) .eq. 'PHIS') then
 !           Files(n)%field_index(INDEX_ZS) = i
 !           call check_resolution (siz(1:nd))
@@ -270,7 +271,7 @@ real, intent(out), dimension(:) :: lon, lat, ak, bk
       if (Files(1)%field_index(INDEX_AK) .gt. 0) then
          call mpp_read(Files(1)%ncid, Files(1)%fields(INDEX_AK), ak)
          if (Files(1)%field_index(INDEX_P0) .gt. 0) then
-            call mpp_read(Files(1)%ncid, Files(1)%fields(INDEX_P0), ak)
+            call mpp_read(Files(1)%ncid, Files(1)%fields(INDEX_P0), pref)
          else
             pref = P0
          endif

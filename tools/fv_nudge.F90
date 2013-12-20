@@ -29,8 +29,6 @@ module fv_nwp_nudge_mod
  implicit none
  private
 
- character(len=128) :: version = ''
- character(len=128) :: tagname = ''
  logical :: do_adiabatic_init
 
 !!! CLEANUP: T_is_Tv should not be public
@@ -168,13 +166,17 @@ module fv_nwp_nudge_mod
 
   !!! CLEANUP Module pointers
 
- namelist /fv_nwp_nudge_nml/T_is_Tv, nudge_ps, nudge_virt, nudge_hght, nudge_q, nudge_winds,  &
+  namelist /fv_nwp_nudge_nml/T_is_Tv, nudge_ps, nudge_virt, nudge_hght, nudge_q, nudge_winds,  &
                           do_ps_bias, tau_ps, tau_winds, tau_q, tau_virt, tau_hght,  kstart, kbot_winds, &
                           k_breed, k_trop, p_trop, dps_min, kord_data, tc_mask, nudge_debug, nf_ps, nf_t, nf_ht,  &
                           nf_uv, breed_vortex, tau_vt_wind, tau_vt_slp, strong_mask, mask_fac, del2_cd,   &
                           kbot_t, kbot_q, p_wvp, time_varying, time_interval, use_pt_inc, pt_lim,  &
                           tau_vt_rad, r_lo, r_hi, use_high_top, add_bg_wind, conserve_mom, conserve_hgt,  &
                           min_nobs, min_mslp, nudged_time, r_fac, r_min, r_inc, ibtrack, track_file_name, file_names
+
+!---- version number -----
+  character(len=128) :: version = '$Id: fv_nudge.F90,v 20.0 2013/12/13 23:07:36 fms Exp $'
+  character(len=128) :: tagname = '$Name: tikal $'
 
  contains
  
@@ -2082,6 +2084,7 @@ endif
       real:: ratio, p_count, p_sum, a_sum, mass_sink, delps
       real:: p_lo, p_hi, tau_vt, mslp0
       real:: split_time, fac, pdep, r2, r3
+      real:: mslp_obs_arg 
       integer year, month, day, hour, minute, second
       integer n, i, j, k, iq, k0
 
@@ -2189,7 +2192,8 @@ endif
 ! Check min MSLP
       mslp0 = 1013.E2
       do i=1,nobs_tc(n)
-         mslp0 = min( mslp0, mslp_obs(i,n) )
+         mslp_obs_arg = mslp_obs(i,n)         
+         mslp0 = min( mslp0, mslp_obs_arg )  
       enddo
       if ( mslp0 > min_mslp ) goto 5000
 
@@ -2555,6 +2559,7 @@ endif
       real:: z0, mslp0
       real:: zz = 35.           ! mid-layer height at the lowest model level
       real:: wind_fac           ! Computed ( ~ 1.2)
+      real:: mslp_obs_arg 
       integer n, i, j, k, iq
 
       real, pointer :: area(:,:), vlon(:,:,:), vlat(:,:,:), agrid(:,:,:)
@@ -2595,7 +2600,8 @@ endif
 ! Check min MSLP
       mslp0 = 1013.E2
       do i=1,nobs_tc(n)
-         mslp0 = min( mslp0, mslp_obs(i,n) )
+         mslp_obs_arg = mslp_obs(i,n)         
+         mslp0 = min( mslp0, mslp_obs_arg )  
       enddo
       if ( mslp0 > min_mslp ) goto 3000
 

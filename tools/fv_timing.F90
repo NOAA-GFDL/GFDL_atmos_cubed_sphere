@@ -1,5 +1,6 @@
       module fv_timing_mod
 
+      use mpp_mod, only: mpp_error, FATAL
 #if defined(SPMD)
       use fv_mp_mod, only: is_master, mp_reduce_max
 #endif
@@ -32,9 +33,11 @@
       real , private       :: us_tmp1(nblks,2)
       real , private       :: us_tmp2(nblks,2)
 
+      logical, private :: module_initialized = .false.
+
 !---- version number -----
-      character(len=128) :: version = '$Id: fv_timing.F90,v 17.0.2.2.2.3.2.1 2013/01/24 18:16:53 Lucas.Harris Exp $'
-      character(len=128) :: tagname = '$Name: siena_201309 $'
+      character(len=128) :: version = '$Id: fv_timing.F90,v 20.0 2013/12/13 23:07:42 fms Exp $'
+      character(len=128) :: tagname = '$Name: tikal $'
 
       contains
          subroutine timing_init
@@ -48,6 +51,7 @@
 
          integer  n
 
+         if ( module_initialized ) return
 
          tblk=0
          do n = 1, nblks
@@ -72,6 +76,7 @@
 #   endif
 #endif
 
+         module_initialized = .true.
          end subroutine timing_init
 
 
@@ -95,6 +100,10 @@
          real (kind=8)  :: wclk
 
          integer ierr
+
+         if ( .not. module_initialized ) then
+            call timing_init()
+         end if
 
          UC_blk_name = blk_name
 
@@ -171,6 +180,7 @@
       
 !         write(*,*) 'timing_off ', ctmp, tblk, tblk
         if ( iblk .eq. 0 ) then
+            call mpp_error(FATAL,'fv_timing_mod: timing_off called before timing_on for: '//trim(blk_name))
 !           write(*,*) 'stop in timing off in ', ctmp
 !           stop 
         endif
