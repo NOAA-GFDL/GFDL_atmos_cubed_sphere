@@ -26,7 +26,7 @@ public :: fv_climate_nudge_init, fv_climate_nudge,  &
           fv_climate_nudge_end, do_ps
 
 character(len=128), parameter :: version = '$Id: fv_climate_nudge.F90,v 20.0 2013/12/13 23:07:22 fms Exp $'
-character(len=128), parameter :: tagname = '$Name: tikal $'
+character(len=128), parameter :: tagname = '$Name: tikal_201403 $'
 
 type var_state_type
    integer :: is, ie, js, je, npz

@@ -33,23 +33,26 @@ module fv_io_mod
   ! for the model.
   !</DESCRIPTION>
 
-  use fms_mod,                 only: file_exist, read_data, write_data, field_exist    
+  use fms_mod,                 only: file_exist
   use fms_io_mod,              only: fms_io_exit, get_tile_string, &
                                      restart_file_type, register_restart_field, &
                                      save_restart, restore_state, &
                                      set_domain, nullify_domain, &
-                                     get_mosaic_tile_file, get_instance_filename
-  use mpp_mod,                 only: mpp_error, FATAL, NOTE, WARNING, mpp_root_pe
-  use mpp_domains_mod,         only: domain2d, EAST, NORTH, mpp_get_tile_id, &
-                                     mpp_get_compute_domain, mpp_get_data_domain, &
-                                     mpp_get_ntile_count
+                                     get_mosaic_tile_file, get_instance_filename, & 
+                                     save_restart_border, restore_state_border
+  use mpp_mod,                 only: mpp_error, FATAL, NOTE, WARNING, mpp_root_pe, &
+                                     mpp_sync, mpp_pe, mpp_declare_pelist
+  use mpp_domains_mod,         only: domain2d, EAST, WEST, NORTH, CENTER, SOUTH, CORNER, &
+                                     mpp_get_compute_domain, mpp_get_data_domain, & 
+                                     mpp_get_layout, mpp_get_ntile_count, &
+                                     mpp_get_global_domain
   use tracer_manager_mod,      only: tr_get_tracer_names=>get_tracer_names, &
                                      get_tracer_names, get_number_tracers, &
                                      set_tracer_profile, &
                                      get_tracer_index
   use field_manager_mod,       only: MODEL_ATMOS  
   use external_sst_mod,        only: sst_ncep, sst_anom, use_ncep_sst
-  use fv_arrays_mod,           only: fv_atmos_type
+  use fv_arrays_mod,           only: fv_atmos_type, fv_nest_BC_type_3D
   use fv_eta_mod,              only: set_eta
 
   use fv_mp_mod,               only: ng, mp_gather, is_master
@@ -60,14 +63,14 @@ module fv_io_mod
 
   public :: fv_io_init, fv_io_exit, fv_io_read_restart, remap_restart, fv_io_write_restart
   public :: fv_io_read_tracers, fv_io_register_restart, fv_io_register_nudge_restart
-  public :: fv_io_write_BCs, fv_io_read_BCs
+  public :: fv_io_register_restart_BCs, fv_io_write_BCs, fv_io_read_BCs
 
   logical                       :: module_is_initialized = .FALSE.
 
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_io.F90,v 20.0 2013/12/13 23:07:30 fms Exp $'
-  character(len=128) :: tagname = '$Name: tikal $'
+  character(len=128) :: version = '$Id: fv_io.F90,v 20.0.2.3 2014/03/06 17:53:38 Rusty.Benson Exp $'
+  character(len=128) :: tagname = '$Name: tikal_201403 $'
 
   integer ::grid_xtdimid, grid_ytdimid, haloid, pfullid !For writing BCs
   integer ::grid_xtstagdimid, grid_ytstagdimid, oneid
@@ -114,7 +117,7 @@ contains
     character(len=64)    :: fname, fname_nd, tracer_name
     character(len=3)  :: gn
     integer              :: isc, iec, jsc, jec, n, nt, nk, ntracers
-!    integer              :: ntileMe
+    integer              :: ntileMe
     integer              :: ks, ntiles
     real                 :: ptop
 
@@ -126,142 +129,50 @@ contains
        gn = ''
     end if
 
-!    ntileMe = size(Atm(:))  ! This will have to be modified for mult tiles per PE
+    ntileMe = size(Atm(:))  ! This will need mods for more than 1 tile per pe
+    
+    call set_domain(Atm(1)%domain)
+
+    if (.not. Atm(1)%neststruct%nested) then
+       call restore_state(Atm(1)%Fv_restart)
+    endif
+
+    if ( use_ncep_sst .or. Atm(1)%flagstruct%nudge .or. Atm(1)%flagstruct%ncep_ic ) then
+       call mpp_error(NOTE, 'READING FROM SST_RESTART DISABLED')
+       !call restore_state(Atm(1)%SST_restart)
+    endif
+
+    call nullify_domain
  
-!   call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
-    ntracers = size(Atm(1)%q,4)  ! Temporary until we get tracer manager integrated
-
-#ifndef DYCORE_SOLO
-    call mpp_error(NOTE, 'READING FROM INPUT/sst_ncep DISABLED')
-!    fname_nd = 'INPUT/sst_ncep'//trim(gn)//'.res.nc'
-!    if(file_exist(fname_nd))then
-! sst_ncep may be used in free-running forecast mode
-!       call read_data(fname_nd, 'sst_ncep', sst_ncep)
-!       if (field_exist(fname_nd,'sst_anom')) then
-!           call read_data(fname_nd, 'sst_anom', sst_anom)
-!       else
-!           sst_anom(:,:) = 1.E35   ! make it big enough to cause blowup if used
-!       endif
-!    elseif ( use_ncep_sst .and. (.not. Atm(1)%flagstruct%nudge) ) then
-!       call mpp_error(FATAL,'==> Error:'//trim(fname_nd)//' does not exist')
-!    endif
-#endif 
-    call nullify_domain !Needed for the following read_data calls; else they
-                        !will try to read from .res.tileN.nc, and crash when
-                        !it can't find ak and bk in those files
-  ! write_data does not (yet?) support vector data and tiles
-    call get_instance_filename('INPUT/fv_core.res.nc', fname_nd)
-    if(file_exist(fname_nd)) then 
-       call read_data(fname_nd, 'ak', Atm(1)%ak(:))
-       call read_data(fname_nd, 'bk', Atm(1)%bk(:))
-    else
-       call set_eta(Atm(1)%npz, ks, ptop, Atm(1)%ak, Atm(1)%bk)
-    endif
-    if ( Atm(1)%flagstruct%reset_eta ) then
-       call set_eta(Atm(1)%npz, ks, ptop, Atm(1)%ak, Atm(1)%bk)
-    endif
-    call set_domain(fv_domain)
-   
-!    do n = 1, ntileMe
-    n = 1
-       isc = Atm(n)%bd%isc; iec = Atm(n)%bd%iec; jsc = Atm(n)%bd%jsc; jec = Atm(n)%bd%jec
-
-       ntiles = mpp_get_ntile_count(fv_domain)
-       if ( ntiles == 1 .and. .not. Atm(n)%neststruct%nested ) then
-          ! fix for single tile runs.
-          fname = 'INPUT/fv_core.res.tile1.nc'
-       else
-          fname = 'INPUT/fv_core'//trim(gn)//'.res.nc'
-       endif
-       if (.not.Atm(n)%neststruct%nested) then
-          call get_instance_filename(fname, fname_nd)
-          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
-       end if
-       if(file_exist(fname))then
-         call read_data(fname, 'u', Atm(n)%u(isc:iec,jsc:jec+1,:), domain=fv_domain, position=NORTH,tile_count=n)
-         call read_data(fname, 'v', Atm(n)%v(isc:iec+1,jsc:jec,:), domain=fv_domain, position=EAST,tile_count=n)
-
-         if ( (.not.Atm(n)%flagstruct%hydrostatic) .and. (.not.Atm(n)%flagstruct%make_nh) ) then
-              call read_data(fname, 'W',     Atm(n)%w(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
-              call read_data(fname, 'DZ', Atm(n)%delz(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
-              if ( Atm(n)%flagstruct%hybrid_z .and. (.not. Atm(n)%flagstruct%make_hybrid_z) )   &
-              call read_data(fname, 'ZE0', Atm(n)%ze0(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
-         endif
-
-         call read_data(fname, 'T', Atm(n)%pt(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
-         call read_data(fname, 'delp', Atm(n)%delp(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
-         call read_data(fname, 'phis', Atm(n)%phis(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
-       else
-         call mpp_error(FATAL,'==> Error from fv_read_restart: Expected file '//trim(fname)//' does not exist')
-       endif
-
+    do n = 1, ntileMe
+!    n = 1
+       call set_domain(Atm(n)%domain)
+       call restore_state(Atm(n)%Fv_tile_restart)
+       call restore_state(Atm(n)%Rsf_restart)
        fname = 'INPUT/fv_srf_wnd'//trim(gn)//'.res.nc'
        if (.not.Atm(n)%neststruct%nested) then
-          call get_instance_filename(fname, fname_nd)
-          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
+         call get_instance_filename(fname, fname_nd)
+         call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
        end if
-       if(file_exist(fname))then
-         call read_data(fname, 'u_srf', Atm(n)%u_srf(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
-         call read_data(fname, 'v_srf', Atm(n)%v_srf(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
-         if (field_exist(fname,'ts'))   &
-               call read_data(fname, 'ts', Atm(n)%ts(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
+       if (file_exist(fname)) then
          Atm(n)%flagstruct%srf_init = .true.
        else
          call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
          Atm(n)%flagstruct%srf_init = .false.
        endif
 
-  if ( Atm(n)%flagstruct%fv_land ) then
-!----------------------------------------------------------------------------------------------------------------
-! Optional terrain deviation (sgh) and land fraction (oro)
-       fname = 'INPUT/mg_drag'//trim(gn)//'.res.nc'
-       if (.not.Atm(n)%neststruct%nested) then
-          call get_instance_filename(fname, fname_nd)
-          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
-       end if
-       if(file_exist(fname))then
-         call read_data(fname, 'ghprime', Atm(n)%sgh(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
-       else
-         call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
+       if ( Atm(n)%flagstruct%fv_land ) then
+          call restore_state(Atm(n)%Mg_restart)
+          call restore_state(Atm(n)%Lnd_restart)
        endif
-! Land-water mask:
-       fname = 'INPUT/fv_land'//trim(gn)//'.res.nc'
-       if (.not.Atm(n)%neststruct%nested) then
-          call get_instance_filename(fname, fname_nd)
-          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
-       end if
-       if(file_exist(fname))then
-         call read_data(fname, 'oro', Atm(n)%oro(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
-       else
-         call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
-       endif
-!----------------------------------------------------------------------------------------------------------------
-  endif
-       fname = 'INPUT/fv_tracer'//trim(gn)//'.res.nc'
-       if (.not.Atm(n)%neststruct%nested) then
-          call get_instance_filename(fname, fname_nd)
-          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
-       end if
 
-         DO nt = 1, ntracers
-           call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
+       call restore_state(Atm(n)%Tra_restart)
 
-           if (file_exist(fname)) then
-              if (field_exist(fname,tracer_name)) then
-                 call read_data(fname, tracer_name, Atm(n)%q(isc:iec,jsc:jec,:,nt), &
-                                                      domain=fv_domain, tile_count=n)
-                 call mpp_error(NOTE,'==>  Have read tracer '//trim(tracer_name)//' from fv_tracer.res')
-                 cycle
-              endif
-           endif
+       call nullify_domain
 
-           call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%q(isc:iec,jsc:jec,:,nt)  )
-           call mpp_error(NOTE,'==>  Setting tracer '//trim(tracer_name)//' from set_tracer')
-         ENDDO
+    end do
 
-!    end do
- 
-    call nullify_domain()
+    return
 
   end subroutine  fv_io_read_restart
   ! </SUBROUTINE> NAME="fv_io_read_restart"
@@ -271,53 +182,40 @@ contains
   subroutine fv_io_read_tracers(fv_domain,Atm)
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
+    integer :: n, ntracers, nt, isc, iec, jsc, jec, id_restart
+    character(len=3) :: gn
+    character(len=64):: fname, fname_nd, tracer_name
+    type(restart_file_type) :: Tra_restart_r
 
-    character(len=64)    :: fname, fname_nd, tracer_name
-    character(len=3)  :: gn
-    integer              :: isc, iec, jsc, jec, n, nt, nk, ntracers
-!    integer              :: ntileMe
+    n = 1
+    isc = Atm(n)%bd%isc
+    iec = Atm(n)%bd%iec
+    jsc = Atm(n)%bd%jsc
+    jec = Atm(n)%bd%jec
+    call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
 
-    character(len=128)           :: tracer_longname, tracer_units
-
-    if (Atm(1)%grid_number > 1) then
+    if (Atm(n)%grid_number > 1) then
        write(gn,'(A2, I1)') "_g", Atm(1)%grid_number
     else
        gn = ''
     end if
 
-!    ntileMe = size(Atm(:))  ! This will have to be modified for mult tiles per PE
-
-!   call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
-    ntracers = size(Atm(1)%q,4)  ! Temporary until we get tracer manager integrated
     call set_domain(fv_domain)
-
-! skip the first tracer, which is sphum
-!    do n = 1, ntileMe
-    n = 1
-       isc = Atm(n)%bd%isc; iec = Atm(n)%bd%iec; jsc = Atm(n)%bd%jsc; jec = Atm(n)%bd%jec
-       fname = 'INPUT/fv_tracer'//trim(gn)//'.res.nc'
-       if (.not.Atm(n)%neststruct%nested) then
-          call get_instance_filename(fname, fname_nd)
-          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
-       end if
-         DO nt = 2, ntracers
-           call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
-
-           if (file_exist(fname)) then
-              if (field_exist(fname,tracer_name)) then
-                 call read_data(fname, tracer_name, Atm(n)%q(isc:iec,jsc:jec,:,nt), &
-                                                      domain=fv_domain, tile_count=n)
-                 call mpp_error(NOTE,'==>  Have read tracer '//trim(tracer_name)//' from fv_tracer.res')
-                 cycle
-              endif
-           endif
-
-           call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%q(isc:iec,jsc:jec,:,nt)  )
-           call mpp_error(NOTE,'==>  Setting tracer '//trim(tracer_name)//' from set_tracer')
-         ENDDO
-!    end do
-
+    fname = 'fv_tracer'//trim(gn)//'.res.nc'
+    if (.not.Atm(n)%neststruct%nested) then
+       call get_instance_filename(fname, fname_nd)
+       call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
+    end if
+    do nt = 2, ntracers
+       call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
+       call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%q(isc:iec,jsc:jec,:,nt)  )
+       id_restart = register_restart_field(Tra_restart_r, fname_nd, tracer_name, Atm(n)%q(:,:,:,nt), &
+                    domain=fv_domain, mandatory=.false., tile_count=n)
+    enddo
+    if (file_exist(fname_nd)) call restore_state(Tra_restart_r)
     call nullify_domain()
+
+    return
 
   end subroutine  fv_io_read_tracers
 
@@ -333,6 +231,9 @@ contains
     integer              :: isc, iec, jsc, jec, n, nt, nk, ntracers
     integer              :: isd, ied, jsd, jed
 !    integer              :: ntileMe
+    type(restart_file_type) :: FV_restart_r, FV_tile_restart_r, Tra_restart_r
+    integer :: id_restart
+
 
 !
 !-------------------------------------------------------------------------
@@ -382,105 +283,72 @@ contains
            allocate ( ze0_r(isc:iec, jsc:jec,  npz_rst+1) )
     endif
 
-    call nullify_domain !Needed for the following read_data calls; else they
-                        !will try to read from .res.tileN.nc, and crash when
-                        !it can't find ak and bk in those files
-  ! write_data does not (yet?) support vector data and tiles
-    call get_instance_filename('INPUT/fv_core'//trim(gn)//'.res.nc', fname_nd)
-  ! write_data does not (yet?) support vector data and tiles
-    call read_data(fname_nd, 'ak', ak_r(1:npz_rst+1))
-    call read_data(fname_nd, 'bk', bk_r(1:npz_rst+1))
+    call set_domain(Atm(1)%domain)
 
-    call set_domain(fv_domain)
+    fname_nd = 'fv_core.res.nc'
+    id_restart = register_restart_field(Fv_restart_r, fname_nd, 'ak', ak_r(:), no_domain=.true.)
+    id_restart = register_restart_field(Fv_restart_r, fname_nd, 'bk', bk_r(:), no_domain=.true.)
+    call restore_state(Fv_restart_r)
 
 !    do n = 1, ntileMe
     n = 1
-      fname = 'INPUT/fv_core'//trim(gn)//'.res.nc'
+       fname = 'fv_core'//trim(gn)//'.res.nc'
        if (.not.Atm(n)%neststruct%nested) then
           call get_instance_filename(fname, fname_nd)
           call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
        end if
-       if(file_exist(fname))then
-         call read_data(fname, 'u', u_r(isc:iec,jsc:jec+1,:), domain=fv_domain, position=NORTH,tile_count=n)
-         call read_data(fname, 'v', v_r(isc:iec+1,jsc:jec,:), domain=fv_domain, position=EAST,tile_count=n)
-
-         if ( (.not.Atm(n)%flagstruct%hydrostatic) .and. (.not.Atm(n)%flagstruct%make_nh) ) then
-              call read_data(fname, 'W',     w_r(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
-              call read_data(fname, 'DZ', delz_r(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
-              if ( Atm(n)%flagstruct%hybrid_z )   &
-              call read_data(fname, 'ZE0', ze0_r(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
-         endif
-
-         call read_data(fname, 'T', pt_r(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
-         call read_data(fname, 'delp', delp_r(isc:iec,jsc:jec,:), domain=fv_domain, tile_count=n)
-         call read_data(fname, 'phis', Atm(n)%phis(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
-       else
-         call mpp_error(FATAL,'==> Error from fv_read_restart: Expected file '//trim(fname)//' does not exist')
+       id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'u', u_r, &
+                     domain=fv_domain, position=NORTH,tile_count=n)
+       id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'v', v_r, &
+                     domain=fv_domain, position=EAST,tile_count=n)
+       if (.not.Atm(n)%flagstruct%hydrostatic) then
+          id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'W', w_r, &
+                        domain=fv_domain, mandatory=.false., tile_count=n)
+          id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'DZ', delz_r, &
+                        domain=fv_domain, mandatory=.false., tile_count=n)
+          if ( Atm(n)%flagstruct%hybrid_z ) then
+             id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'ZE0', ze0_r, &
+                           domain=fv_domain, mandatory=.false., tile_count=n)
+          endif
        endif
+       id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'T', pt_r, &
+                     domain=fv_domain, tile_count=n)
+       id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'delp', delp_r, &
+                     domain=fv_domain, tile_count=n)
+       id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'phis', Atm(n)%phis, &
+                     domain=fv_domain, tile_count=n)
+       call restore_state(FV_tile_restart_r)
 
-
-       fname = 'INPUT/fv_srf_wnd'//trim(gn)//'.res.nc'
+       fname = 'fv_srf_wnd'//trim(gn)//'.res.nc'
        if (.not.Atm(n)%neststruct%nested) then
-          call get_instance_filename(fname, fname_nd)
-          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
+         call get_instance_filename(fname, fname_nd)
+         call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
        end if
-       if(file_exist(fname))then
-         call read_data(fname, 'u_srf', Atm(n)%u_srf(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
-         call read_data(fname, 'v_srf', Atm(n)%v_srf(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
-         if (field_exist(fname,'ts'))   &
-               call read_data(fname, 'ts', Atm(n)%ts(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
+       if (file_exist(fname)) then
          Atm(n)%flagstruct%srf_init = .true.
        else
          call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
          Atm(n)%flagstruct%srf_init = .false.
        endif
 
-     if ( Atm(n)%flagstruct%fv_land ) then
+       if ( Atm(n)%flagstruct%fv_land ) then
 ! Optional terrain deviation (sgh)
-       fname = 'INPUT/mg_drag'//trim(gn)//'.res.nc'
-       if (.not.Atm(n)%neststruct%nested) then
-          call get_instance_filename(fname, fname_nd)
-          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
-       end if
-       if(file_exist(fname))then
-         call read_data(fname, 'ghprime', Atm(n)%sgh(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
-       else
-         call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
+          call restore_state(Atm(n)%Mg_restart)
+          call restore_state(Atm(n)%Lnd_restart)
        endif
-! Land-water mask
-       fname = 'INPUT/fv_land'//trim(gn)//'.res.nc'
+
+       fname = 'fv_tracer'//trim(gn)//'.res.nc'
        if (.not.Atm(n)%neststruct%nested) then
           call get_instance_filename(fname, fname_nd)
           call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
        end if
-       if(file_exist(fname))then
-         call read_data(fname, 'oro', Atm(n)%oro(isc:iec,jsc:jec), domain=fv_domain, tile_count=n)
-       else
-         call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
-       endif
-     endif
-
-
-       fname = 'INPUT/fv_tracer'//trim(gn)//'.res.nc'
-       if (.not.Atm(n)%neststruct%nested) then
-          call get_instance_filename(fname, fname_nd)
-          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
-       end if
-
        do nt = 1, ntracers
-           call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
-
-          if(file_exist(fname))then
-              if (field_exist(fname,tracer_name)) then
-                 call read_data(fname, tracer_name, q_r(isc:iec,jsc:jec,:,nt), domain=fv_domain, tile_count=n)
-                 call mpp_error(NOTE,'==>  Have read tracer '//trim(tracer_name)//' from fv_tracer.res')
-                 cycle
-              endif
-          endif
-
+          call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
           call set_tracer_profile (MODEL_ATMOS, nt, q_r(isc:iec,jsc:jec,:,nt)  )
-          call mpp_error(NOTE,'==>  Setting tracer '//trim(tracer_name)//' from set_tracer')
+          id_restart = register_restart_field(Tra_restart_r, fname_nd, tracer_name, q_r(:,:,:,nt), &
+                       domain=fv_domain, mandatory=.false., tile_count=n)
        enddo
+       call restore_state(Tra_restart_r)
 
        call rst_remap(npz_rst, npz, isc, iec, jsc, jec, isd, ied, jsd, jed, ntracers,              &
                       delp_r,      u_r,      v_r,      w_r,      delz_r,      pt_r,      q_r,      &
@@ -557,12 +425,11 @@ contains
        gn = ''
     end if
 
-    call nullify_domain !should this go here or before the previous 2 register_restart_field calls?
+    call set_domain(Atm(1)%domain)
 
     fname_nd = 'fv_core.res.nc'
-
-    id_restart = register_restart_field(Atm(1)%Fv_restart, fname_nd, 'ak', Atm(1)%ak(:))
-    id_restart = register_restart_field(Atm(1)%Fv_restart, fname_nd, 'bk', Atm(1)%bk(:)) 
+    id_restart = register_restart_field(Atm(1)%Fv_restart, fname_nd, 'ak', Atm(1)%ak(:), no_domain=.true.)
+    id_restart = register_restart_field(Atm(1)%Fv_restart, fname_nd, 'bk', Atm(1)%bk(:), no_domain=.true.) 
 
 ! use_ncep_sst may not be initialized at this point?
 #ifndef DYCORE_SOLO
@@ -573,8 +440,6 @@ contains
 !!$       id_restart = register_restart_field(Atm(1)%SST_restart, fname_nd, 'sst_anom', sst_anom)
 !!$   endif
 #endif
-
-       call set_domain(Atm(1)%domain)
 
 ! fix for single tile runs where you need fv_core.res.nc and fv_core.res.tile1.nc
     ntiles = mpp_get_ntile_count(fv_domain)
@@ -634,6 +499,8 @@ contains
        !if(ntiles == 1) fname_nd = 'fv_tracer'//trim(gn)//'.res.tile1.nc'
        do nt = 1, ntracers
           call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
+          ! set all tracers to an initial profile value
+          call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%q(:,:,:,nt)  )
           id_restart = register_restart_field(Atm(n)%Tra_restart, fname_nd, tracer_name, Atm(n)%q(:,:,:,nt), &
                        domain=fv_domain, mandatory=.false., tile_count=n)
        enddo
@@ -690,1017 +557,370 @@ contains
     end do
 
   end subroutine  fv_io_write_restart
-  ! </SUBROUTINE> NAME="fv_io_write_restart"
+
+  subroutine register_bcs_2d(Atm, BCfile_ne, BCfile_sw, fname_ne, fname_sw, &
+                             var_name, var, var_bc, istag, jstag)
+    type(fv_atmos_type),      intent(in)    :: Atm
+    type(restart_file_type),  intent(inout) :: BCfile_ne, BCfile_sw
+    character(len=120),       intent(in)    :: fname_ne, fname_sw
+    character(len=*),         intent(in)    :: var_name
+    real, dimension(:,:),     intent(in), optional :: var
+    type(fv_nest_BC_type_3D), intent(in), optional :: var_bc
+    integer,                  intent(in), optional :: istag, jstag
+
+    integer :: npx, npy, i_stag, j_stag
+    integer :: is, ie, js, je, isd, ied, jsd, jed, n
+    integer :: x_halo, y_halo, x_halo_ns, id_restart
+    integer :: layout(2), global_size(2), indices(4)
+    integer, allocatable, dimension(:) :: x1_pelist, y1_pelist
+    integer, allocatable, dimension(:) :: x2_pelist, y2_pelist
+    logical :: is_root_pe
+
+    i_stag = 0 
+    j_stag = 0 
+    if (present(istag)) i_stag = i_stag
+    if (present(jstag)) j_stag = j_stag
+    call mpp_get_global_domain(Atm%domain, xsize = npx, ysize = npy, position=CORNER )
+    call mpp_get_data_domain(Atm%domain, isd, ied, jsd, jed )
+    call mpp_get_compute_domain(Atm%domain, is, ie, js, je )
+    call mpp_get_layout(Atm%domain, layout)
+    allocate (x1_pelist(layout(1)))
+    allocate (y1_pelist(layout(2)))
+    allocate (x2_pelist(layout(1)))
+    allocate (y2_pelist(layout(2)))
+    x_halo = is-isd
+    y_halo = js-jsd
+! define west and east pelist
+    do n = 1,layout(2)
+      y1_pelist(n)=mpp_root_pe()+layout(1)*n-1
+      y2_pelist(n)=mpp_root_pe()+layout(1)*(n-1)
+    enddo
+! define south and north pelist
+    do n = 1,layout(1)
+      x1_pelist(n)=mpp_root_pe()+layout(1)*(layout(2)-1)+(n-1)
+      x2_pelist(n)=mpp_root_pe()+(n-1)
+    enddo
+! declare the pelists inside of mpp (creates the MPI communicator)
+    call mpp_declare_pelist(x1_pelist)
+    call mpp_declare_pelist(x2_pelist)
+    call mpp_declare_pelist(y1_pelist)
+    call mpp_declare_pelist(y2_pelist)
+
+!EAST & WEST
+!set defaults for west/east halo regions
+    indices(1) = 1
+    indices(2) = x_halo
+    indices(3) = jsd
+    indices(4) = jed+j_stag
+    global_size(1) = x_halo
+    global_size(2) = npy-1+2*y_halo+j_stag
+
+!define west root_pe
+    is_root_pe = .FALSE.
+    if (is.eq.1 .and. js.eq.1) is_root_pe = .TRUE.
+!register west halo data in t1
+    if (present(var_bc)) id_restart = register_restart_field(BCfile_sw, trim(fname_sw), &
+                                        trim(var_name)//'_west_t1', &
+                                        var_bc%west_t1, & 
+                                        indices, global_size, y2_pelist, &
+                                        is_root_pe, jshift=y_halo)
+!register west prognostic halo data
+    if (present(var)) id_restart = register_restart_field(BCfile_sw, trim(fname_sw), &
+                                        trim(var_name)//'_west', &
+                                        var, indices, global_size, &
+                                        y2_pelist, is_root_pe, jshift=y_halo)
+
+!define east root_pe
+    is_root_pe = .FALSE.
+    if (ie.eq.npx-1 .and. je.eq.npy-1) is_root_pe = .TRUE.
+!register east halo data in t1
+    if (present(var_bc)) id_restart = register_restart_field(BCfile_ne, trim(fname_ne), &
+                                        trim(var_name)//'_east_t1', &
+                                        var_bc%east_t1, & 
+                                        indices, global_size, y1_pelist, &
+                                        is_root_pe, jshift=y_halo)
+
+!reset indices for prognostic variables in the east halo
+    indices(1) = ied-x_halo+1+i_stag
+    indices(2) = ied+i_stag
+!register east prognostic halo data
+    if (present(var)) id_restart = register_restart_field(BCfile_ne, trim(fname_ne), &
+                                        trim(var_name)//'_east', &
+                                        var, indices, global_size, &
+                                        y1_pelist, is_root_pe, jshift=y_halo, &
+                                        x_halo=(size(var,1)-x_halo), ishift=-(ie+i_stag))
+
+!NORTH & SOUTH
+!set defaults for north/south halo regions
+    indices(1) = isd
+    indices(2) = ied+i_stag
+    indices(3) = 1
+    indices(4) = y_halo
+    global_size(1) = npx-1+i_stag
+    global_size(2) = y_halo
+!modify starts and ends for certain pes
+    if (is.eq.1)     indices(1) = is
+    if (ie.eq.npx-1) indices(2) = ie+i_stag
+    x_halo_ns = 0
+    if (is.eq.1) x_halo_ns=x_halo
+
+!define south root_pe
+    is_root_pe = .FALSE.
+    if (is.eq.1 .and. js.eq.1) is_root_pe = .TRUE.
+!register south halo data in t1
+    if (present(var_bc)) id_restart = register_restart_field(BCfile_sw, trim(fname_sw), &
+                                        trim(var_name)//'_south_t1', &
+                                        var_bc%south_t1, & 
+                                        indices, global_size, x2_pelist, &
+                                        is_root_pe, x_halo=x_halo_ns)
+!register south prognostic halo data
+    if (present(var)) id_restart = register_restart_field(BCfile_sw, trim(fname_sw), &
+                                        trim(var_name)//'_south', &
+                                        var, indices, global_size, &
+                                        x2_pelist, is_root_pe, x_halo=x_halo_ns)
+
+!define north root_pe
+    is_root_pe = .FALSE.
+    if (ie.eq.npx-1 .and. je.eq.npy-1) is_root_pe = .TRUE.
+!register north halo data in t1
+    if (present(var_bc)) id_restart = register_restart_field(BCfile_ne, trim(fname_ne), &
+                                        trim(var_name)//'_north_t1', &
+                                        var_bc%north_t1, & 
+                                        indices, global_size, x1_pelist, &
+                                        is_root_pe, x_halo=x_halo_ns)
+
+!reset indices for prognostic variables in the north halo
+    indices(3) = jed-y_halo+1+j_stag
+    indices(4) = jed+j_stag
+!register north prognostic halo data
+    if (present(var)) id_restart = register_restart_field(BCfile_ne, trim(fname_ne), &
+                                        trim(var_name)//'_north', &
+                                        var, indices, global_size, &
+                                        x1_pelist, is_root_pe, x_halo=x_halo_ns, &
+                                        y_halo=(size(var,2)-y_halo), jshift=-(je+j_stag))
+
+  end subroutine register_bcs_2d
+
+
+  subroutine register_bcs_3d(Atm, BCfile_ne, BCfile_sw, fname_ne, fname_sw, &
+                             var_name, var, var_bc, istag, jstag)
+    type(fv_atmos_type),      intent(in)    :: Atm
+    type(restart_file_type),  intent(inout) :: BCfile_ne, BCfile_sw
+    character(len=120),       intent(in)    :: fname_ne, fname_sw
+    character(len=*),         intent(in)    :: var_name
+    real, dimension(:,:,:),   intent(in), optional :: var
+    type(fv_nest_BC_type_3D), intent(in), optional :: var_bc
+    integer,                  intent(in), optional :: istag, jstag
+
+    integer :: npx, npy, i_stag, j_stag
+    integer :: is, ie, js, je, isd, ied, jsd, jed, n
+    integer :: x_halo, y_halo, x_halo_ns, id_restart
+    integer :: layout(2), global_size(3), indices(4)
+    integer, allocatable, dimension(:) :: x1_pelist, y1_pelist
+    integer, allocatable, dimension(:) :: x2_pelist, y2_pelist
+    logical :: is_root_pe
+
+    i_stag = 0
+    j_stag = 0
+    if (present(istag)) i_stag = istag
+    if (present(jstag)) j_stag = jstag
+    call mpp_get_global_domain(Atm%domain, xsize = npx, ysize = npy, position=CORNER )
+    call mpp_get_data_domain(Atm%domain, isd, ied, jsd, jed )
+    call mpp_get_compute_domain(Atm%domain, is, ie, js, je )
+    call mpp_get_layout(Atm%domain, layout)
+    allocate (x1_pelist(layout(1)))
+    allocate (y1_pelist(layout(2)))
+    allocate (x2_pelist(layout(1)))
+    allocate (y2_pelist(layout(2)))
+    x_halo = is-isd
+    y_halo = js-jsd
+! define west and east pelist
+    do n = 1,layout(2)
+      y1_pelist(n)=mpp_root_pe()+layout(1)*n-1
+      y2_pelist(n)=mpp_root_pe()+layout(1)*(n-1)
+    enddo
+! define south and north pelist
+    do n = 1,layout(1)
+      x1_pelist(n)=mpp_root_pe()+layout(1)*(layout(2)-1)+(n-1)
+      x2_pelist(n)=mpp_root_pe()+(n-1)
+    enddo
+! declare the pelists inside of mpp (creates the MPI communicator)
+    call mpp_declare_pelist(x1_pelist)
+    call mpp_declare_pelist(x2_pelist)
+    call mpp_declare_pelist(y1_pelist)
+    call mpp_declare_pelist(y2_pelist)
+
+!EAST & WEST
+!set defaults for west/east halo regions
+    indices(1) = 1
+    indices(2) = x_halo
+    indices(3) = jsd
+    indices(4) = jed + j_stag
+    global_size(1) = x_halo
+    global_size(2) = npy-1+2*y_halo + j_stag
+    global_size(3) = Atm%npz
+
+!define west root_pe
+    is_root_pe = .FALSE.
+    if (is.eq.1 .and. js.eq.1) is_root_pe = .TRUE.
+!register west halo data in t1
+    if (present(var_bc)) id_restart = register_restart_field(BCfile_sw, trim(fname_sw), &
+                                        trim(var_name)//'_west_t1', &
+                                        var_bc%west_t1, & 
+                                        indices, global_size, y2_pelist, &
+                                        is_root_pe, jshift=y_halo)
+!register west prognostic halo data
+    if (present(var)) id_restart = register_restart_field(BCfile_sw, trim(fname_sw), &
+                                        trim(var_name)//'_west', &
+                                        var, indices, global_size, &
+                                        y2_pelist, is_root_pe, jshift=y_halo)
+
+!define east root_pe
+    is_root_pe = .FALSE.
+    if (ie.eq.npx-1 .and. je.eq.npy-1) is_root_pe = .TRUE.
+!register east halo data in t1
+    if (present(var_bc)) id_restart = register_restart_field(BCfile_ne, trim(fname_ne), &
+                                        trim(var_name)//'_east_t1', &
+                                        var_bc%east_t1, & 
+                                        indices, global_size, y1_pelist, &
+                                        is_root_pe, jshift=y_halo)
+
+!reset indices for prognostic variables in the east halo
+    indices(1) = ied-x_halo+1+i_stag
+    indices(2) = ied+i_stag
+!register east prognostic halo data
+    if (present(var)) id_restart = register_restart_field(BCfile_ne, trim(fname_ne), &
+                                        trim(var_name)//'_east', &
+                                        var, indices, global_size, &
+                                        y1_pelist, is_root_pe, jshift=y_halo, &
+                                        x_halo=(size(var,1)-x_halo), ishift=-(ie+i_stag))
+
+!NORTH & SOUTH
+!set defaults for north/south halo regions
+    indices(1) = isd
+    indices(2) = ied+i_stag
+    indices(3) = 1
+    indices(4) = y_halo
+    global_size(1) = npx-1+i_stag
+    global_size(2) = y_halo
+    global_size(3) = Atm%npz
+!modify starts and ends for certain pes
+    if (is.eq.1)     indices(1) = is
+    if (ie.eq.npx-1) indices(2) = ie+i_stag
+    x_halo_ns = 0
+    if (is.eq.1) x_halo_ns=x_halo
+
+!define south root_pe
+    is_root_pe = .FALSE.
+    if (is.eq.1 .and. js.eq.1) is_root_pe = .TRUE.
+!register south halo data in t1
+    if (present(var_bc)) id_restart = register_restart_field(BCfile_sw, trim(fname_sw), &
+                                        trim(var_name)//'_south_t1', &
+                                        var_bc%south_t1, & 
+                                        indices, global_size, x2_pelist, &
+                                        is_root_pe, x_halo=x_halo_ns)
+!register south prognostic halo data
+    if (present(var)) id_restart = register_restart_field(BCfile_sw, trim(fname_sw), &
+                                        trim(var_name)//'_south', &
+                                        var, indices, global_size, &
+                                        x2_pelist, is_root_pe, x_halo=x_halo_ns)
+
+!define north root_pe
+    is_root_pe = .FALSE.
+    if (ie.eq.npx-1 .and. je.eq.npy-1) is_root_pe = .TRUE.
+!register north halo data in t1
+    if (present(var_bc)) id_restart = register_restart_field(BCfile_ne, trim(fname_ne), &
+                                        trim(var_name)//'_north_t1', &
+                                        var_bc%north_t1, & 
+                                        indices, global_size, x1_pelist, &
+                                        is_root_pe, x_halo=x_halo_ns)
+
+!reset indices for prognostic variables in the north halo
+    indices(3) = jed-y_halo+1+j_stag
+    indices(4) = jed+j_stag
+!register north prognostic halo data
+    if (present(var)) id_restart = register_restart_field(BCfile_ne, trim(fname_ne), &
+                                        trim(var_name)//'_north', &
+                                        var, indices, global_size, &
+                                        x1_pelist, is_root_pe, x_halo=x_halo_ns, &
+                                        y_halo=(size(var,2)-y_halo), jshift=-(je+j_stag))
+
+  end subroutine register_bcs_3d
+
+
+  ! </SUBROUTINE> NAME="fv_io_regsiter_restart_BCs"
   !#####################################################################
 
-!!! CLEANUP: the I/O here is extremely slow. There MUST be a better way!!
-  subroutine fv_io_write_BCs(Atm)
-
-    use sim_nc_mod, only: handle_err
-    use mpp_domains_mod, only: mpp_get_global_domain, CORNER
-    use tracer_manager_mod, only: get_tracer_names
-    use field_manager_mod,       only: MODEL_ATMOS
-#include <netcdf.inc>
-
+  subroutine fv_io_register_restart_BCs(Atm)
+!!! CLEANUP: The make_nh option does not yet work with nesting since we don't have a routine yet to fill the halo with just w = 0 and setting up delz.
     type(fv_atmos_type),        intent(inout) :: Atm
-    character(len=120) :: fname, tname
-    integer :: BCfileid, status
-    character(len=3) :: gn
-    integer :: npx, npy
-    integer :: is, ie, js, je, isd, ied, jsd, jed, n
+
+    integer :: n
+    character(len=120) :: tname, fname_ne, fname_sw
+    character(len=2) :: gn
+
+    if (Atm%grid_number > 1) then
+      write(gn,'(i2.2)') Atm%grid_number
+    else
+      gn = ''
+    end if
+    fname_ne = 'fv_BCnest'//gn//'_ne.res.nc'
+    fname_sw = 'fv_BCnest'//gn//'_sw.res.nc'
 
     call set_domain(Atm%domain)
-    !Easiest way to handle this: send all BC data to one PE.
-    !Remember we need to save TWO times for concurrent simulations
 
-    call mpp_get_global_domain(Atm%domain, xsize = npx, ysize = npy, position=CORNER )
-    call mpp_get_data_domain( Atm%domain, isd, ied, jsd, jed )
-    call mpp_get_compute_domain( Atm%domain, is, ie, js, je )
-
-    if (is_master()) then
-
-       !Now save the data
-    
-       if (Atm%grid_number > 1) then
-          write(gn,'(A2, I1)') "_g", Atm%grid_number
-       else
-          gn = ''
-       end if
-       fname = 'RESTART/fv_BCFile'//gn//'.nc'
-
-       status = nf_create(trim(fname), NF_CLOBBER, BCfileid)
-       if (status .ne. NF_NOERR) then
-          print*, 'Could not create nested BC file ', trim(fname)
-          call handle_err(status)
-       endif
-
-       !print*, 'Creating ', trim(fname), Atm%npz
-
-       status = nf_def_dim(BCfileid, 'grid_xt'//gn, npx-1, grid_xtdimid) 
-       if (status .ne. NF_NOERR) call handle_err(status)
-       status = nf_def_dim(BCfileid, 'grid_yt'//gn, npy+2*ng-1, grid_ytdimid)
-       if (status .ne. NF_NOERR) call handle_err(status)
-       status = nf_def_dim(BCfileid, 'grid_xtstag'//gn, npx, grid_xtstagdimid) 
-       if (status .ne. NF_NOERR) call handle_err(status)
-       status = nf_def_dim(BCfileid, 'grid_ytstag'//gn, npy+2*ng, grid_ytstagdimid)
-       if (status .ne. NF_NOERR) call handle_err(status)
-       status = nf_def_dim(BCfileid, 'halo'//gn, ng, haloid)
-       if (status .ne. NF_NOERR) call handle_err(status)
-       status = nf_def_dim(BCfileid, 'pfull'//gn, Atm%npz, pfullid)
-       if (status .ne. NF_NOERR) call handle_err(status)
-
-    endif
-
-    call fv_io_write_a_BC_2D(BCfileid, Atm%grid_number, 'phis', Atm%phis, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, 0, 0, is_master())
-
-    !!! These are to save the nested-grid boundary haloes, to ensure cross-restart consistency. Do not remove!!
+    call register_bcs_2d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                         fname_ne, fname_sw, 'phis', var=Atm%phis)
+    call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                         fname_ne, fname_sw, 'delp', Atm%delp, Atm%neststruct%delp_BC)
     do n=1,Atm%ncnst
        call get_tracer_names(MODEL_ATMOS, n, tname)
-       call fv_io_write_a_BC_3D(BCfileid, Atm%grid_number, trim(tname), &
-            Atm%q(:,:,:,n), &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())       
+       call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                            fname_ne, fname_sw, trim(tname), Atm%q(:,:,:,n), Atm%neststruct%q_BC(n))
     enddo
 #ifndef SW_DYNAMICS
-    call fv_io_write_a_BC_3D(BCfileid, Atm%grid_number, 'pt', &
-         Atm%pt, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
-    if (.not.Atm%flagstruct%hydrostatic) then
-       call fv_io_write_a_BC_3D(BCfileid, Atm%grid_number, 'w', &
-            Atm%w, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
-       call fv_io_write_a_BC_3D(BCfileid, Atm%grid_number, 'delz', &
-            Atm%delz, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
+    call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                         fname_ne, fname_sw, 'pt', Atm%pt, Atm%neststruct%pt_BC)
+    if ((.not.Atm%flagstruct%hydrostatic) .and. (.not.Atm%flagstruct%make_nh)) then
+      call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                           fname_ne, fname_sw, 'w', Atm%w, Atm%neststruct%w_BC)
+      call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                           fname_ne, fname_sw, 'delz', Atm%delz, Atm%neststruct%delz_BC)
     endif
 #endif
-
-
-    call fv_io_write_a_BC_3D(BCfileid, Atm%grid_number, 'delp', &
-         Atm%delp, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master()) 
-    call fv_io_write_a_BC_3D(BCfileid, Atm%grid_number, 'v', &
-         Atm%v, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 1, 0, is_master())
-    call fv_io_write_a_BC_3D(BCfileid, Atm%grid_number, 'u', &
-         Atm%u, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 1, is_master())
-
-
-    call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'vc', &
-         Atm%neststruct%vc_BC%west_t1, Atm%neststruct%vc_BC%east_t1, Atm%neststruct%vc_BC%south_t1, Atm%neststruct%vc_BC%north_t1, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 1, is_master())
-    call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'uc', &
-         Atm%neststruct%uc_BC%west_t1, Atm%neststruct%uc_BC%east_t1, Atm%neststruct%uc_BC%south_t1, Atm%neststruct%uc_BC%north_t1, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 1, 0, is_master())
-    do n=1,Atm%ncnst
-       call get_tracer_names(MODEL_ATMOS, n, tname)
-       call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, trim(tname), &
-            Atm%neststruct%q_BC(n)%west_t1, Atm%neststruct%q_BC(n)%east_t1, Atm%neststruct%q_BC(n)%south_t1, Atm%neststruct%q_BC(n)%north_t1, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())       
-    enddo
-#ifndef SW_DYNAMICS
-    call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'pt', &
-         Atm%neststruct%pt_BC%west_t1, Atm%neststruct%pt_BC%east_t1, Atm%neststruct%pt_BC%south_t1, Atm%neststruct%pt_BC%north_t1, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
-    if (.not.Atm%flagstruct%hydrostatic) then
-       call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'w', &
-            Atm%neststruct%w_BC%west_t1, Atm%neststruct%w_BC%east_t1, Atm%neststruct%w_BC%south_t1, Atm%neststruct%w_BC%north_t1, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
-       call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'delz', &
-            Atm%neststruct%delz_BC%west_t1, Atm%neststruct%delz_BC%east_t1, Atm%neststruct%delz_BC%south_t1, Atm%neststruct%delz_BC%north_t1, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
-    endif
-#endif
-
-
-    call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'delp', &
-         Atm%neststruct%delp_BC%west_t1, Atm%neststruct%delp_BC%east_t1, Atm%neststruct%delp_BC%south_t1, Atm%neststruct%delp_BC%north_t1, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master()) 
-    call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'v', &
-         Atm%neststruct%v_BC%west_t1, Atm%neststruct%v_BC%east_t1, Atm%neststruct%v_BC%south_t1, Atm%neststruct%v_BC%north_t1, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 1, 0, is_master())
-    call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'u', &
-         Atm%neststruct%u_BC%west_t1, Atm%neststruct%u_BC%east_t1, Atm%neststruct%u_BC%south_t1, Atm%neststruct%u_BC%north_t1, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 1, is_master())
-    call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'vc0', &
-         Atm%neststruct%vc_BC%west_t0, Atm%neststruct%vc_BC%east_t0, Atm%neststruct%vc_BC%south_t0, Atm%neststruct%vc_BC%north_t0, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 1, is_master())
-    call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'uc0', &
-         Atm%neststruct%uc_BC%west_t0, Atm%neststruct%uc_BC%east_t0, Atm%neststruct%uc_BC%south_t0, Atm%neststruct%uc_BC%north_t0, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 1, 0, is_master())
-
-       call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'delp0', &
-            Atm%neststruct%delp_BC%west_t0, Atm%neststruct%delp_BC%east_t0, Atm%neststruct%delp_BC%south_t0, Atm%neststruct%delp_BC%north_t0, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master()) 
-       call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'v0', &
-            Atm%neststruct%v_BC%west_t0, Atm%neststruct%v_BC%east_t0, Atm%neststruct%v_BC%south_t0, Atm%neststruct%v_BC%north_t0, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 1, 0, is_master())
-       call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'u0', &
-            Atm%neststruct%u_BC%west_t0, Atm%neststruct%u_BC%east_t0, Atm%neststruct%u_BC%south_t0, Atm%neststruct%u_BC%north_t0, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 1, is_master())
-       do n=1,Atm%ncnst
-          call get_tracer_names(MODEL_ATMOS, n, tname)
-          call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, trim(tname)//'0', &
-               Atm%neststruct%q_BC(n)%west_t0, Atm%neststruct%q_BC(n)%east_t0, Atm%neststruct%q_BC(n)%south_t0, Atm%neststruct%q_BC(n)%north_t0, &
-               is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())       
-       enddo
-#ifndef SW_DYNAMICS
-       call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'pt0', &
-            Atm%neststruct%pt_BC%west_t0, Atm%neststruct%pt_BC%east_t0, Atm%neststruct%pt_BC%south_t0, Atm%neststruct%pt_BC%north_t0, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
-       if (.not.Atm%flagstruct%hydrostatic) then
-          call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'w0', &
-               Atm%neststruct%w_BC%west_t0, Atm%neststruct%w_BC%east_t0, Atm%neststruct%w_BC%south_t0, Atm%neststruct%w_BC%north_t0, &
-               is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
-          call fv_io_write_a_BC_direct(BCfileid, Atm%grid_number, 'delz0', &
-               Atm%neststruct%delz_BC%west_t0, Atm%neststruct%delz_BC%east_t0, Atm%neststruct%delz_BC%south_t0, Atm%neststruct%delz_BC%north_t0, &
-               is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
-       endif
-#endif
-
-    if (is_master()) then
-
-       status = nf_close(BCfileid)
-       if (status .ne. NF_NOERR) call handle_err(status)
-
-    endif
+    call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                         fname_ne, fname_sw, 'u', Atm%u, Atm%neststruct%u_BC, jstag=1)
+    call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                         fname_ne, fname_sw, 'v', Atm%v, Atm%neststruct%v_BC, istag=1)
+    call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                         fname_ne, fname_sw, 'uc', var_bc=Atm%neststruct%uc_BC, istag=1)
+    call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                         fname_ne, fname_sw, 'vc', var_bc=Atm%neststruct%vc_BC, jstag=1)
 
     call nullify_domain
 
+    return
+  end subroutine fv_io_register_restart_BCs
+
+
+  subroutine fv_io_write_BCs(Atm, timestamp)
+    type(fv_atmos_type), intent(inout) :: Atm
+    character(len=*),    intent(in), optional :: timestamp
+
+    call save_restart_border(Atm%neststruct%BCfile_ne, timestamp)
+    call save_restart_border(Atm%neststruct%BCfile_sw, timestamp)
+
+    return
   end subroutine fv_io_write_BCs
 
-  subroutine fv_io_write_a_BC_3D(BCfileid, gridnum, varname, var, &
-       is, ie, js, je, isd, ied, jsd, jed, npx, npy, npz, istag, jstag, master)
 
-    use sim_nc_mod, only: handle_err
-    use mpp_domains_mod, only: mpp_get_layout, mpp_get_data_domain, mpp_get_compute_domain, mpp_get_global_domain
-    use mpp_mod, only: mpp_npes, mpp_recv, mpp_send, mpp_sync_self, mpp_sync
-
-#include <netcdf.inc>
-
-    integer, intent(IN) :: BCfileid, gridnum, npz, istag, jstag
-    character(len=*), intent(IN) :: varname
-    logical, intent(IN) :: master
-    integer, intent(IN) :: is, ie, js, je, isd, ied, jsd, jed
-    integer, intent(IN) :: npx, npy
-    real, allocatable, dimension(:,:,:) :: alldat
-    real, intent(IN) :: var(isd:ied+istag,jsd:jed+jstag,npz)
-    character(len=3) :: gn
-    integer :: status, westid, eastid, southid, northid
-    integer :: isd2, ied2, jsd2, jed2
-    integer :: k
-    
-    if (gridnum > 1) then
-       write(gn,'(A2, I1)') "_g", gridnum
-    else
-       gn = ''
-    end if
-
-    allocate(alldat(npx+2*ng-1+istag,npy+2*ng-1+jstag,npz))
-    alldat = -1000.
-
-    isd2 = is
-    jsd2 = js
-    ied2 = ie
-    jed2 = je
-    if (is == 1) isd2 = isd
-    if (js == 1) jsd2 = jsd
-    if (ie == npx-1) ied2 = ied + istag
-    if (je == npy-1) jed2 = jed + jstag
-
-    if (master) then
-
-!       print*, 'WRITING ', trim(varname) !! DEBUG
-
-       if (jstag > 0) then
-          status = nf_def_var(BCfileid, trim(varname)//'west'//gn, NF_DOUBLE, 3, (/ haloid, grid_ytstagdimid, pfullid /), westid)
-          if (status .ne. NF_NOERR) call handle_err(status)
-          status = nf_def_var(BCfileid, trim(varname)//'east'//gn, NF_DOUBLE, 3, (/ haloid, grid_ytstagdimid, pfullid /), eastid)
-       else
-          status = nf_def_var(BCfileid, trim(varname)//'west'//gn, NF_DOUBLE, 3, (/ haloid, grid_ytdimid, pfullid /), westid)
-          if (status .ne. NF_NOERR) call handle_err(status)
-          status = nf_def_var(BCfileid, trim(varname)//'east'//gn, NF_DOUBLE, 3, (/ haloid, grid_ytdimid, pfullid /), eastid)
-       endif
-       if (status .ne. NF_NOERR) call handle_err(status)
-
-       if (istag > 0) then
-          status = nf_def_var(BCfileid, trim(varname)//'south'//gn, NF_DOUBLE, 3, (/ grid_xtstagdimid, haloid, pfullid /), southid)
-          if (status .ne. NF_NOERR) call handle_err(status)
-          status = nf_def_var(BCfileid, trim(varname)//'north'//gn, NF_DOUBLE, 3, (/ grid_xtstagdimid, haloid, pfullid /), northid)
-       else
-          status = nf_def_var(BCfileid, trim(varname)//'south'//gn, NF_DOUBLE, 3, (/ grid_xtdimid, haloid, pfullid /), southid)
-          if (status .ne. NF_NOERR) call handle_err(status)
-          status = nf_def_var(BCfileid, trim(varname)//'north'//gn, NF_DOUBLE, 3, (/ grid_xtdimid, haloid, pfullid /), northid)
-       endif
-       if (status .ne. NF_NOERR) call handle_err(status)
-
-       status = nf_enddef(BCfileid)
-
-    endif
-
-       do k=1,npz
-
-          alldat(isd2+ng:ied2+ng,jsd2+ng:jed2+ng,k) = var(isd2:ied2,jsd2:jed2,k)
-          call mp_gather(alldat(:,:,k:k), isd2+ng, ied2+ng, jsd2+ng, jed2+ng, npx+2*ng-1+istag, npy+2*ng-1+jstag,1)
-
-          if (master) then
-
-          status = nf_put_vara_double(BCfileid, westid, (/1,1,k/), (/ng, npy+2*ng-1+jstag, 1/), &
-               alldat(1:ng,1:npy+2*ng-1+jstag,k))
-          if (status .ne. NF_NOERR) call handle_err(status)
-          status = nf_put_vara_double(BCfileid, eastid, (/1,1,k/), (/ng, npy+2*ng-1+jstag, 1/), &
-               alldat(npx+ng+istag:npx+2*ng-1+istag,1:npy+2*ng-1+jstag,k))
-          if (status .ne. NF_NOERR) call handle_err(status)
-          status = nf_put_vara_double(BCfileid, southid, (/1,1,k/), (/npx-1+istag, ng, 1/), &
-               alldat(ng+1:npx+ng-1+istag,1:ng,k))
-          if (status .ne. NF_NOERR) call handle_err(status)
-          status = nf_put_vara_double(BCfileid, northid, (/1,1,k/), (/npx-1+istag, ng, 1/), &
-               alldat(ng+1:npx+ng-1+istag,npy+ng+jstag:npy+2*ng-1+jstag,k))
-          if (status .ne. NF_NOERR) call handle_err(status)
-
-          endif
-
-       enddo
-
-       status = nf_sync(BCfileid)
-       status = nf_redef(BCfileid)
-
-!       if (master) print*, 'DONE WRITING ', trim(varname) !! DEBUG
-
-    deallocate(alldat)
-
-  end subroutine fv_io_write_a_BC_3D
-
-  subroutine fv_io_write_a_BC_direct(BCfileid, gridnum, varname, BCwest, BCeast, BCsouth, BCnorth, &
-       is, ie, js, je, isd, ied, jsd, jed, npx, npy, npz, istag, jstag, master)
-
-    use sim_nc_mod, only: handle_err
-    use mpp_domains_mod, only: mpp_get_layout, mpp_get_data_domain, mpp_get_compute_domain, mpp_get_global_domain
-    use mpp_mod, only: mpp_npes, mpp_recv, mpp_send, mpp_sync_self, mpp_sync
-
-#include <netcdf.inc>
-
-    integer, intent(IN) :: BCfileid, gridnum, npz, istag, jstag
-    character(len=*), intent(IN) :: varname
-    logical, intent(IN) :: master
-    integer, intent(IN) :: is, ie, js, je, isd, ied, jsd, jed
-    integer, intent(IN) :: npx, npy
-    real, dimension(ie+1+istag:ied+istag,jsd:jed+jstag,npz), intent(in) :: BCeast
-    real, dimension(isd:is-1,jsd:jed+jstag,npz), intent(in) :: BCwest
-    real, dimension(isd:ied+istag,jsd:js-1,npz), intent(in) :: BCsouth
-    real, dimension(isd:ied+istag,je+1+jstag:jed+jstag,npz), intent(in) :: BCnorth
-    real, allocatable, dimension(:,:,:) :: alldat
-    character(len=3) :: gn
-    integer :: status, westid, eastid, southid, northid
-    integer :: isd2, ied2, jsd2, jed2
-    integer :: k
-    
-    if (gridnum > 1) then
-       write(gn,'(A2, I1)') "_g", gridnum
-    else
-       gn = ''
-    end if
-
-    allocate(alldat(npx+2*ng-1+istag,npy+2*ng-1+jstag,npz))
-    alldat = -1000.
-
-    isd2 = is
-    jsd2 = js
-    ied2 = ie
-    jed2 = je
-    if (is == 1) isd2 = isd
-    if (js == 1) jsd2 = jsd
-    if (ie == npx-1) ied2 = ied + istag
-    if (je == npy-1) jed2 = jed + jstag
-
-    if (master) then
-
-!       print*, 'WRITING ', trim(varname) !! DEBUG
-
-       if (jstag > 0) then
-          status = nf_def_var(BCfileid, trim(varname)//'west_BC'//gn, NF_DOUBLE, 3, (/ haloid, grid_ytstagdimid, pfullid /), westid)
-          if (status .ne. NF_NOERR) call handle_err(status)
-          status = nf_def_var(BCfileid, trim(varname)//'east_BC'//gn, NF_DOUBLE, 3, (/ haloid, grid_ytstagdimid, pfullid /), eastid)
-       else
-          status = nf_def_var(BCfileid, trim(varname)//'west_BC'//gn, NF_DOUBLE, 3, (/ haloid, grid_ytdimid, pfullid /), westid)
-          if (status .ne. NF_NOERR) call handle_err(status)
-          status = nf_def_var(BCfileid, trim(varname)//'east_BC'//gn, NF_DOUBLE, 3, (/ haloid, grid_ytdimid, pfullid /), eastid)
-       endif
-       if (status .ne. NF_NOERR) call handle_err(status)
-
-       if (istag > 0) then
-          status = nf_def_var(BCfileid, trim(varname)//'south_BC'//gn, NF_DOUBLE, 3, (/ grid_xtstagdimid, haloid, pfullid /), southid)
-          if (status .ne. NF_NOERR) call handle_err(status)
-          status = nf_def_var(BCfileid, trim(varname)//'north_BC'//gn, NF_DOUBLE, 3, (/ grid_xtstagdimid, haloid, pfullid /), northid)
-       else
-          status = nf_def_var(BCfileid, trim(varname)//'south_BC'//gn, NF_DOUBLE, 3, (/ grid_xtdimid, haloid, pfullid /), southid)
-          if (status .ne. NF_NOERR) call handle_err(status)
-          status = nf_def_var(BCfileid, trim(varname)//'north_BC'//gn, NF_DOUBLE, 3, (/ grid_xtdimid, haloid, pfullid /), northid)
-       endif
-       if (status .ne. NF_NOERR) call handle_err(status)
-
-       status = nf_enddef(BCfileid)
-
-    endif
-
-       do k=1,npz
-
-          if (is == 1)     alldat(isd+ng:is-1+ng,jsd2+ng:jed2+ng,k)             = BCwest(isd:is-1,jsd2:jed2,k)
-          if (ie == npx-1) alldat(ie+1+istag+ng:ied+istag+ng,jsd2+ng:jed2+ng,k) = BCeast(ie+1+istag:ied+istag,jsd2:jed2,k)
-          if (js == 1)     alldat(is+ng:ie+istag+ng,jsd+ng:js-1+ng,k)             = BCsouth(is:ie+istag,jsd:js-1,k)
-          if (je == npy-1) alldat(is+ng:ie+istag+ng,je+1+jstag+ng:jed+jstag+ng,k) = BCnorth(is:ie+istag,je+1+jstag:jed+jstag,k)
-
-          call mp_gather(alldat(:,:,k:k), isd2+ng, ied2+ng, jsd2+ng, jed2+ng, npx+2*ng-1+istag, npy+2*ng-1+jstag,1)
-
-          if (master) then
-          status = nf_put_vara_double(BCfileid, westid, (/1,1,k/), (/ng, npy+2*ng-1+jstag, 1/), &
-               alldat(1:ng,1:npy+2*ng-1+jstag,k))
-          if (status .ne. NF_NOERR) call handle_err(status)
-          status = nf_put_vara_double(BCfileid, eastid, (/1,1,k/), (/ng, npy+2*ng-1+jstag, 1/), &
-               alldat(npx+ng+istag:npx+2*ng-1+istag,1:npy+2*ng-1+jstag,k))
-          if (status .ne. NF_NOERR) call handle_err(status)
-          status = nf_put_vara_double(BCfileid, southid, (/1,1,k/), (/npx-1+istag, ng, 1/), &
-               alldat(ng+1:npx+ng-1+istag,1:ng,k))
-          if (status .ne. NF_NOERR) call handle_err(status)
-          status = nf_put_vara_double(BCfileid, northid, (/1,1,k/), (/npx-1+istag, ng, 1/), &
-               alldat(ng+1:npx+ng-1+istag,npy+ng+jstag:npy+2*ng-1+jstag,k))
-          if (status .ne. NF_NOERR) call handle_err(status)
-
-          endif
-
-       enddo
-
-       status = nf_sync(BCfileid)
-       status = nf_redef(BCfileid)
-
-    deallocate(alldat)
-
-  end subroutine fv_io_write_a_BC_direct
-
-  subroutine fv_io_write_a_BC_2D(BCfileid, gridnum, varname, var, &
-       is, ie, js, je, isd, ied, jsd, jed, npx, npy, istag, jstag, master)
-
-    use sim_nc_mod, only: handle_err
-    use mpp_domains_mod, only: mpp_get_layout, mpp_get_data_domain, mpp_get_compute_domain, mpp_get_global_domain
-    use mpp_mod, only: mpp_npes, mpp_recv, mpp_send, mpp_sync_self, mpp_sync
-
-#include <netcdf.inc>
-
-    integer, intent(IN) :: BCfileid, gridnum, istag, jstag
-    character(len=*), intent(IN) :: varname
-    logical, intent(IN) :: master
-    integer, intent(IN) :: is, ie, js, je, isd, ied, jsd, jed
-    integer, intent(IN) :: npx, npy
-    real, allocatable, dimension(:,:,:) :: alldat
-    real, intent(IN) :: var(isd:ied+istag,jsd:jed+jstag)
-    character(len=3) :: gn
-    integer :: status, westid, eastid, southid, northid
-    integer :: isd2, ied2, jsd2, jed2
-    
-    if (gridnum > 1) then
-       write(gn,'(A2, I1)') "_g", gridnum
-    else
-       gn = ''
-    end if
-
-    allocate(alldat(npx+2*ng-1+istag,npy+2*ng-1+jstag,1))
-    alldat = 0.
-
-    isd2 = is
-    jsd2 = js
-    ied2 = ie
-    jed2 = je
-    if (is == 1) isd2 = isd
-    if (js == 1) jsd2 = jsd
-    if (ie == npx-1) ied2 = ied + istag
-    if (je == npy-1) jed2 = jed + jstag
-
-    alldat(isd2+ng:ied2+ng,jsd2+ng:jed2+ng,1) = var(isd2:ied2,jsd2:jed2)
-
-    call mp_gather(alldat, isd2+ng, ied2+ng, jsd2+ng, jed2+ng, npx+2*ng-1+istag, npy+2*ng-1+jstag, 1)
-
-    if (master) then
-
-!       print*, 'WRITING ', trim(varname) !! DEBUG
-
-       status = nf_def_var(BCfileid, trim(varname)//'west'//gn, NF_DOUBLE, 2, (/ haloid, grid_ytdimid /), westid)
-       if (status .ne. NF_NOERR) call handle_err(status)
-       if (jstag > 0) then
-          status = nf_def_var(BCfileid, trim(varname)//'east'//gn, NF_DOUBLE, 2, (/ haloid, grid_ytstagdimid /), eastid)
-       else
-          status = nf_def_var(BCfileid, trim(varname)//'east'//gn, NF_DOUBLE, 2, (/ haloid, grid_ytdimid /), eastid)
-       endif
-       if (status .ne. NF_NOERR) call handle_err(status)
-       status = nf_def_var(BCfileid, trim(varname)//'south'//gn, NF_DOUBLE, 2, (/ grid_xtdimid, haloid /), southid)
-       if (status .ne. NF_NOERR) call handle_err(status)
-       if (istag > 0) then
-          status = nf_def_var(BCfileid, trim(varname)//'north'//gn, NF_DOUBLE, 2, (/ grid_xtstagdimid, haloid /), northid)
-       else
-          status = nf_def_var(BCfileid, trim(varname)//'north'//gn, NF_DOUBLE, 2, (/ grid_xtdimid, haloid /), northid)
-       endif
-       if (status .ne. NF_NOERR) call handle_err(status)
-
-       status = nf_enddef(BCfileid)
-
-       status = nf_put_var_double(BCfileid, westid, alldat(1:ng,1:npy+2*ng-1+jstag,1))
-       if (status .ne. NF_NOERR) call handle_err(status)
-       status = nf_put_var_double(BCfileid, eastid, alldat(npx+ng+istag:npx+2*ng-1+istag,1:npy+2*ng-1+jstag,1))
-       if (status .ne. NF_NOERR) call handle_err(status)
-       status = nf_put_var_double(BCfileid, southid, alldat(ng+1:npx+ng-1+istag,1:ng,1))
-       if (status .ne. NF_NOERR) call handle_err(status)
-       status = nf_put_var_double(BCfileid, northid, alldat(ng+1:npx+ng-1+istag,npy+ng+jstag:npy+2*ng-1+jstag,1))
-       if (status .ne. NF_NOERR) call handle_err(status)
-
-       status = nf_redef(BCfileid)
-
-!       print*, 'DONE WRITING ', trim(varname) !! DEBUG
-
-    end if
-
-    deallocate(alldat)
-
-
-  end subroutine fv_io_write_a_BC_2D
-
-  !!! CLEANUP: The make_nh option does not yet work with nesting since we don't have a routine yet to fill the halo with just w = 0 and setting up delz.
   subroutine fv_io_read_BCs(Atm)
+    type(fv_atmos_type), intent(inout) :: Atm
 
-    use sim_nc_mod, only: handle_err
-    use mpp_domains_mod, only: mpp_get_global_domain, CORNER
-    use tracer_manager_mod, only: get_tracer_names
-    use field_manager_mod,       only: MODEL_ATMOS
-    use boundary_mod, only : nested_grid_BC_apply
+    call restore_state_border(Atm%neststruct%BCfile_ne)
+    call restore_state_border(Atm%neststruct%BCfile_sw)
 
-#include <netcdf.inc>
-
-    type(fv_atmos_type),        intent(inout) :: Atm
-    character(len=120) :: fname, tname
-    integer :: BCfileid, status
-    character(len=3) :: gn
-    integer :: npx, npy
-    integer :: is, ie, js, je, isd, ied, jsd, jed
-    integer :: nxf, nyf, nzf, ngf
-    integer :: n
-
-    call mpp_get_global_domain(Atm%domain, xsize = npx, ysize = npy, position=CORNER )
-    call mpp_get_data_domain( Atm%domain, isd, ied, jsd, jed )
-    call mpp_get_compute_domain( Atm%domain, is, ie, js, je )
-
-       !Now save the data
-    
-    if (Atm%grid_number > 1) then
-       write(gn,'(A2, I1)') "_g", Atm%grid_number
-    else
-       gn = ''
-    end if
-    fname = 'INPUT/fv_BCFile'//gn//'.nc'
-
-    if (is_master()) then
-       print*, 'Opening ', trim(fname)
-
-       status = nf_open(trim(fname), NF_CLOBBER, BCfileid)
-       if (status .ne. NF_NOERR) then
-          print*, 'Could not open nested BC file ', trim(fname)
-          call handle_err(status)
-       endif
-
-       !Check file
-  
-       status = nf_inq_dimid (BCfileid, 'grid_xt'//gn, grid_xtdimid)
-       if (status .ne. NF_NOERR) call handle_err(status)
-       status = nf_inq_dimlen (BCfileid, grid_xtdimid, nxf)
-       if (status .ne. NF_NOERR) call handle_err(status)
-       if (nxf /= npx-1) then
-          print*, 'NX = ', nxf, ' NPX = ', npx
-          call mpp_error(FATAL, 'NX in BC file does not match npx for the simulation')
-       endif
-       
-       status = nf_inq_dimid (BCfileid, 'grid_yt'//gn, grid_ytdimid)
-       if (status .ne. NF_NOERR) call handle_err(status)
-       status = nf_inq_dimlen (BCfileid, grid_ytdimid, nyf)
-       if (status .ne. NF_NOERR) call handle_err(status)
-       if (nyf /= npy-1+2*ng) then
-          print*, 'NY = ', nyf, ' NPY = ', npy
-          call mpp_error(FATAL, 'NY in BC file does not match npy for the simulation')
-       endif
-
-       status = nf_inq_dimid (BCfileid, 'pfull'//gn, pfullid)
-       if (status .ne. NF_NOERR) call handle_err(status)
-       status = nf_inq_dimlen (BCfileid, pfullid, nzf)
-       if (status .ne. NF_NOERR) call handle_err(status)
-       if (nzf /= Atm%npz) then
-          print*, 'NZ = ', nzf, ' NPZ = ', Atm%npz
-          call mpp_error(FATAL, 'NZ in BC file does not match npz for the simulation')
-       endif
-
-       status = nf_inq_dimid (BCfileid, 'halo'//gn, haloid)
-       if (status .ne. NF_NOERR) call handle_err(status)
-       status = nf_inq_dimlen (BCfileid, haloid, ngf)
-       if (status .ne. NF_NOERR) call handle_err(status)
-       if (ngf /= ng) then
-          print*, 'NG = ', ngf, ' ng = ', ng
-          call mpp_error(FATAL, 'NG in BC file does not match ng for the simulation')
-       endif
-       
-    end if
-
-    !These read in the actual halo values, for cross-restart consistency. Do not remove!!
-    call fv_io_read_a_BC_3D(BCfileid, fname, Atm%grid_number, 'delp', Atm%delp, &
-          is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())
-    call fv_io_read_a_BC_3D(BCfileid, fname, Atm%grid_number, 'u', Atm%u, &
-          is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 1, is_master())
-    call fv_io_read_a_BC_3D(BCfileid, fname, Atm%grid_number, 'v', Atm%v, &
-          is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 1, 0, is_master())
-    do n=1,Atm%ncnst
-       call get_tracer_names(MODEL_ATMOS, n, tname)
-       call fv_io_read_a_BC_3D(BCfileid, fname, Atm%grid_number, trim(tname), Atm%q, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master(), .true.)       
-    enddo
-#ifndef SW_DYNAMICS
-    call fv_io_read_a_BC_3D(BCfileid, fname, Atm%grid_number, 'pt', Atm%pt, &
-          is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
-    if (.not. Atm%flagstruct%hydrostatic .and. .not. Atm%flagstruct%make_nh) then
-        call fv_io_read_a_BC_3D(BCfileid, fname, Atm%grid_number, 'w', Atm%w, &
-             is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master()) 
-        call fv_io_read_a_BC_3D(BCfileid, fname, Atm%grid_number, 'delz', Atm%delz, &
-             is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master()) 
-    endif
-#endif
-    call fv_io_read_a_BC_2D(BCfileid, fname, Atm%grid_number, 'phis', Atm%phis, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, 0, 0, is_master())
-
-
-
-    call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'delp', &
-         Atm%neststruct%delp_BC%west_t1, Atm%neststruct%delp_BC%east_t1, Atm%neststruct%delp_BC%south_t1, Atm%neststruct%delp_BC%north_t1, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master()) 
-    call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'v', &
-         Atm%neststruct%v_BC%west_t1, Atm%neststruct%v_BC%east_t1, Atm%neststruct%v_BC%south_t1, Atm%neststruct%v_BC%north_t1, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 1, 0, is_master())
-    call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'u', &
-         Atm%neststruct%u_BC%west_t1, Atm%neststruct%u_BC%east_t1, Atm%neststruct%u_BC%south_t1, Atm%neststruct%u_BC%north_t1, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 1, is_master())
-    call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'vc0', &
-         Atm%neststruct%vc_BC%west_t0, Atm%neststruct%vc_BC%east_t0, Atm%neststruct%vc_BC%south_t0, Atm%neststruct%vc_BC%north_t0, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 1, is_master())
-    call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'uc0', &
-         Atm%neststruct%uc_BC%west_t0, Atm%neststruct%uc_BC%east_t0, Atm%neststruct%uc_BC%south_t0, Atm%neststruct%uc_BC%north_t0, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 1, 0, is_master())
-    call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'vc', &
-         Atm%neststruct%vc_BC%west_t1, Atm%neststruct%vc_BC%east_t1, Atm%neststruct%vc_BC%south_t1, Atm%neststruct%vc_BC%north_t1, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 1, is_master())
-    call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'uc', &
-         Atm%neststruct%uc_BC%west_t1, Atm%neststruct%uc_BC%east_t1, Atm%neststruct%uc_BC%south_t1, Atm%neststruct%uc_BC%north_t1, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 1, 0, is_master())
-    do n=1,Atm%ncnst
-       call get_tracer_names(MODEL_ATMOS, n, tname)
-       call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, trim(tname), &
-            Atm%neststruct%q_BC(n)%west_t1, Atm%neststruct%q_BC(n)%east_t1, Atm%neststruct%q_BC(n)%south_t1, Atm%neststruct%q_BC(n)%north_t1, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master(), .true.)       
-    enddo
-#ifndef SW_DYNAMICS
-    call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'pt', &
-         Atm%neststruct%pt_BC%west_t1, Atm%neststruct%pt_BC%east_t1, Atm%neststruct%pt_BC%south_t1, Atm%neststruct%pt_BC%north_t1, &
-         is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
-    if (.not.Atm%flagstruct%hydrostatic .and. .not. Atm%flagstruct%make_nh) then
-       call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'w', &
-            Atm%neststruct%w_BC%west_t1, Atm%neststruct%w_BC%east_t1, Atm%neststruct%w_BC%south_t1, Atm%neststruct%w_BC%north_t1, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
-       call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'delz', &
-            Atm%neststruct%delz_BC%west_t1, Atm%neststruct%delz_BC%east_t1, Atm%neststruct%delz_BC%south_t1, Atm%neststruct%delz_BC%north_t1, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
-    endif
-#endif
-
-       call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'delp0', &
-            Atm%neststruct%delp_BC%west_t0, Atm%neststruct%delp_BC%east_t0, Atm%neststruct%delp_BC%south_t0, Atm%neststruct%delp_BC%north_t0, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master()) 
-       call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'v0', &
-            Atm%neststruct%v_BC%west_t0, Atm%neststruct%v_BC%east_t0, Atm%neststruct%v_BC%south_t0, Atm%neststruct%v_BC%north_t0, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 1, 0, is_master())
-       call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'u0', &
-            Atm%neststruct%u_BC%west_t0, Atm%neststruct%u_BC%east_t0, Atm%neststruct%u_BC%south_t0, Atm%neststruct%u_BC%north_t0, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 1, is_master())
-       do n=1,Atm%ncnst
-          call get_tracer_names(MODEL_ATMOS, n, tname)
-          call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, trim(tname)//'0', &
-               Atm%neststruct%q_BC(n)%west_t0, Atm%neststruct%q_BC(n)%east_t0, Atm%neststruct%q_BC(n)%south_t0, Atm%neststruct%q_BC(n)%north_t0, &
-               is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master(), .true.)       
-       enddo
-#ifndef SW_DYNAMICS
-       call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'pt0', &
-            Atm%neststruct%pt_BC%west_t0, Atm%neststruct%pt_BC%east_t0, Atm%neststruct%pt_BC%south_t0, Atm%neststruct%pt_BC%north_t0, &
-            is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
-       if (.not.Atm%flagstruct%hydrostatic .and. .not. Atm%flagstruct%make_nh) then
-          call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'w0', &
-               Atm%neststruct%w_BC%west_t0, Atm%neststruct%w_BC%east_t0, Atm%neststruct%w_BC%south_t0, Atm%neststruct%w_BC%north_t0, &
-               is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
-          call fv_io_read_a_BC_direct(BCfileid, fname, Atm%grid_number, 'delz0', &
-               Atm%neststruct%delz_BC%west_t0, Atm%neststruct%delz_BC%east_t0, Atm%neststruct%delz_BC%south_t0, Atm%neststruct%delz_BC%north_t0, &
-               is, ie, js, je, isd, ied, jsd, jed, npx, npy, Atm%npz, 0, 0, is_master())    
-       endif
-#endif
-
-
+    return
   end subroutine fv_io_read_BCs
     
-  subroutine fv_io_read_a_BC_3D(BCfileid, fname, gridnum, varname, var, &
-       is, ie, js, je, isd, ied, jsd, jed, npx, npy, npz, istag, jstag, &
-       master, var_is_optional_in)
-
-    use sim_nc_mod, only: get_var3_double, get_var2_double, check_var
-    use mpp_mod, only: mpp_broadcast
-
-#include <netcdf.inc>
-
-    integer, intent(IN) :: BCfileid, gridnum, npz, istag, jstag
-    character(len=*), intent(IN) :: varname
-    character(len=120), intent(IN) :: fname
-    logical, intent(IN) :: master
-    integer, intent(IN) :: is, ie, js, je, isd, ied, jsd, jed
-    integer, intent(IN) :: npx, npy
-    real, intent(INOUT) :: var(isd:ied+istag,jsd:jed+jstag,npz)
-    logical, OPTIONAL, intent(IN) :: var_is_optional_in
-
-    real :: varwest(-ng+1:0,-ng+1:npy+ng-1+jstag,npz)
-    real :: vareast(npx+istag:npx+istag+ng-1,-ng+1:npy+ng-1+jstag,npz)
-    real :: varsouth(1:npx-1+istag,-ng+1:0,npz)
-    real :: varnorth(1:npx-1+istag,npy+jstag:npy+jstag+ng-1,npz)
-    character(len=3) :: gn
-    integer :: status, i, j, k
-    integer is2, ie2, js2, je2
-    
-    logical :: var_is_optional = .false.
-
-    if (present(var_is_optional_in)) then
-       var_is_optional = var_is_optional_in
-    endif
-
-    if (gridnum > 1) then
-       write(gn,'(A2, I1)') "_g", gridnum
-    else
-       gn = ''
-    end if
-
-    varwest = -1.e25
-    vareast = -1.e25
-    varsouth = -1.e25
-    varnorth = -1.e25
-
-    !This is rather simpler than collecting the BCs. What we can do here is just
-    !load the BCs on the head PE, and then broadcast the data to every PE.
-
-    if (field_exist(trim(fname), varname//'west'//gn)) then
-
-       if (master) then
-          
-!          print*, 'READING ', trim(varname) !! DEBUG
-
-          call get_var3_double( BCfileid, varname//'west'//gn, ng, npy+2*ng-1+jstag, npz, varwest)
-          call get_var3_double( BCfileid, varname//'east'//gn, ng, npy+2*ng-1+jstag, npz, vareast)
-          call get_var3_double( BCfileid, varname//'north'//gn, npx-1+istag, ng, npz, varnorth)
-          call get_var3_double( BCfileid, varname//'south'//gn, npx-1+istag, ng, npz, varsouth)
-          
-       endif
-
-
-       call mpp_broadcast(varwest,  size(varwest),  mpp_root_pe())
-       call mpp_broadcast(vareast,  size(vareast),  mpp_root_pe())
-       call mpp_broadcast(varnorth, size(varnorth), mpp_root_pe())
-       call mpp_broadcast(varsouth, size(varsouth), mpp_root_pe())
-
-    elseif (var_is_optional) then
-
-       call mpp_error(NOTE, 'BCs for variable '//trim(varname)//' not found in '//trim(fname)//', SKIPPING')
-       varwest = 0.
-       vareast = 0.
-       varsouth = 0.
-       varnorth = 0.
-
-    else
-
-       call mpp_error(NOTE, 'BCs for variable '//trim(varname)//' not found in '//trim(fname))
-
-    endif
-
-    is2 = max(1,isd)
-    ie2 = min(npx-1,ied)+istag
-       
-    if (is == 1) then
-       do k=1,npz
-       do j=jsd,jed+jstag
-       do i=isd,0
-          var(i,j,k) = varwest(i,j,k)
-       enddo
-       enddo
-       enddo
-    endif
-    if (ie == npx-1) then
-       do k=1,npz
-       do j=jsd,jed+jstag
-       do i=npx+istag,ied+istag
-          var(i,j,k) = vareast(i,j,k)
-       enddo
-       enddo
-       enddo
-    endif
-
-    if (js == 1) then
-       do k=1,npz
-       do j=jsd,0
-       do i=is2,ie2
-          var(i,j,k) = varsouth(i,j,k)
-       enddo
-       enddo
-       enddo
-    endif
-    if (je == npy-1) then
-       do k=1,npz
-       do j=npy+jstag,jed+jstag
-       do i=is2,ie2
-          var(i,j,k) = varnorth(i,j,k)
-       enddo
-       enddo
-       enddo
-    endif
-
-  end subroutine fv_io_read_a_BC_3D
-    
-  subroutine fv_io_read_a_BC_direct(BCfileid, fname, gridnum, varname, BCwest, BCeast, BCsouth, BCnorth, &
-       is, ie, js, je, isd, ied, jsd, jed, npx, npy, npz, istag, jstag, master, var_is_optional_in)
-
-    use sim_nc_mod, only: get_var3_double, get_var2_double, check_var
-    use mpp_mod, only: mpp_broadcast
-
-#include <netcdf.inc>
-
-    integer, intent(IN) :: BCfileid, gridnum, npz, istag, jstag
-    character(len=*), intent(IN) :: varname
-    character(len=120), intent(IN) :: fname
-    logical, intent(IN) :: master
-    integer, intent(IN) :: is, ie, js, je, isd, ied, jsd, jed
-    integer, intent(IN) :: npx, npy
-    real, dimension(ie+1+istag:ied+istag,jsd:jed+jstag,npz), intent(out) :: BCeast
-    real, dimension(isd:is-1,jsd:jed+jstag,npz), intent(out) :: BCwest
-    real, dimension(isd:ied+istag,jsd:js-1,npz), intent(out) :: BCsouth
-    real, dimension(isd:ied+istag,je+1+jstag:jed+jstag,npz), intent(out) :: BCnorth
-    logical, OPTIONAL, intent(IN) :: var_is_optional_in
-
-    real :: varwest(-ng+1:0,-ng+1:npy+ng-1+jstag,npz)
-    real :: vareast(npx+istag:npx+istag+ng-1,-ng+1:npy+ng-1+jstag,npz)
-    real :: varsouth(1:npx-1+istag,-ng+1:0,npz)
-    real :: varnorth(1:npx-1+istag,npy+jstag:npy+jstag+ng-1,npz)
-    character(len=3) :: gn
-    integer :: status, i, j, k
-    integer is2, ie2, js2, je2
-
-    logical :: var_is_optional = .false.
-
-    if (present(var_is_optional_in)) then
-       var_is_optional = var_is_optional_in
-    endif
-
-    if (gridnum > 1) then
-       write(gn,'(A2, I1)') "_g", gridnum
-    else
-       gn = ''
-    end if
-
-    varwest = -1.e25
-    vareast = -1.e25
-    varsouth = -1.e25
-    varnorth = -1.e25
-
-    !This is rather simpler than collecting the BCs. What we can do here is just
-    !load the BCs on the head PE, and then broadcast the data to every PE.
-
-    if (field_exist(trim(fname), varname//'west_BC'//gn)) then
-
-       if (master) then
-
-!          print*, 'READING ', trim(varname) !! DEBUG
-
-          call get_var3_double( BCfileid, varname//'west_BC'//gn, ng, npy+2*ng-1+jstag, npz, varwest)
-          call get_var3_double( BCfileid, varname//'east_BC'//gn, ng, npy+2*ng-1+jstag, npz, vareast)
-          call get_var3_double( BCfileid, varname//'north_BC'//gn, npx-1+istag, ng, npz, varnorth)
-          call get_var3_double( BCfileid, varname//'south_BC'//gn, npx-1+istag, ng, npz, varsouth)
-
-       endif
-
-       call mpp_broadcast(varwest,  size(varwest),  mpp_root_pe())
-       call mpp_broadcast(vareast,  size(vareast),  mpp_root_pe())
-       call mpp_broadcast(varnorth, size(varnorth), mpp_root_pe())
-       call mpp_broadcast(varsouth, size(varsouth), mpp_root_pe())
-       
-    elseif (var_is_optional) then
-
-       call mpp_error(WARNING, 'BCs for variable '//trim(varname)//' not found in '//trim(fname)//', SKIPPING')
-       varwest = 0.
-       vareast = 0.
-       varsouth = 0.
-       varnorth = 0.
-
-    else
-
-       call mpp_error(WARNING, 'BCs for variable '//trim(varname)//' not found in '//trim(fname))
-
-    endif
-
-    is2 = max(1,isd)
-    ie2 = min(npx-1,ied)+istag
-
-    if (is == 1) then
-       do k=1,npz
-       do j=jsd,jed+jstag
-       do i=isd,0
-          BCwest(i,j,k) = varwest(i,j,k)
-       enddo
-       enddo
-       enddo
-    endif
-    if (ie == npx-1) then
-       do k=1,npz
-       do j=jsd,jed+jstag
-       do i=npx+istag,ied+istag
-          BCeast(i,j,k) = vareast(i,j,k)
-       enddo
-       enddo
-       enddo
-    endif
-
-    if (js == 1) then
-       do k=1,npz
-       do j=jsd,0
-       do i=is2,ie2
-          BCsouth(i,j,k) = varsouth(i,j,k)
-       enddo
-       enddo
-       enddo
-    endif
-    if (je == npy-1) then
-       do k=1,npz
-       do j=npy+jstag,jed+jstag
-       do i=is2,ie2
-          BCnorth(i,j,k) = varnorth(i,j,k)
-       enddo
-       enddo
-       enddo
-    endif
-
-  end subroutine fv_io_read_a_BC_direct
-
-
-  subroutine fv_io_read_a_BC_2D(BCfileid, fname, gridnum, varname, var, &
-       is, ie, js, je, isd, ied, jsd, jed, npx, npy, istag, jstag, master, var_is_optional_in)
-
-    use sim_nc_mod, only: get_var3_double, get_var2_double, check_var
-    use mpp_mod, only: mpp_broadcast
-
-#include <netcdf.inc>
-
-    integer, intent(IN) :: BCfileid, gridnum, istag, jstag
-    character(len=*), intent(IN) :: varname
-    character(len=120), intent(IN) :: fname
-    logical, intent(IN) :: master
-    integer, intent(IN) :: is, ie, js, je, isd, ied, jsd, jed
-    integer, intent(IN) :: npx, npy
-    real, intent(INOUT) :: var(isd:ied+istag,jsd:jed+jstag)
-    real :: varwest(-ng+1:0,-ng+1:npy+ng-1+jstag)
-    real :: vareast(npx+istag:npx+istag+ng-1,-ng+1:npy+ng-1+jstag)
-    real :: varsouth(1:npx-1+istag,-ng+1:0)
-    real :: varnorth(1:npx-1+istag,npy+jstag:npy+jstag+ng-1)
-    character(len=3) :: gn
-    integer :: status, i, j, k
-    integer is2, ie2, js2, je2
-    logical, OPTIONAL, intent(IN) :: var_is_optional_in
-
-    
-    logical :: var_is_optional = .false.
-
-    if (present(var_is_optional_in)) then
-       var_is_optional = var_is_optional_in
-    endif
-
-    if (gridnum > 1) then
-       write(gn,'(A2, I1)') "_g", gridnum
-    else
-       gn = ''
-    end if
-
-    varwest = -1.e25
-    vareast = -1.e25
-    varsouth = -1.e25
-    varnorth = -1.e25
-
-    !This is rather simpler than collecting the BCs. What we can do here is just
-    !load the BCs on the head PE, and then broadcast the data to every PE.
-
-    if (field_exist(trim(fname), varname//'west'//gn)) then
-
-       if (master) then
-
-!          print*, 'READING ', trim(varname) !! DEBUG
-
-          call get_var2_double( BCfileid, varname//'west'//gn, ng, npy+2*ng-1+jstag, varwest)
-          call get_var2_double( BCfileid, varname//'east'//gn, ng, npy+2*ng-1+jstag, vareast)
-          call get_var2_double( BCfileid, varname//'north'//gn, npx-1+istag, ng, varnorth)
-          call get_var2_double( BCfileid, varname//'south'//gn, npx-1+istag, ng, varsouth)
-          
-       endif
-
-       call mpp_broadcast(varwest,  size(varwest),  mpp_root_pe())
-       call mpp_broadcast(vareast,  size(vareast),  mpp_root_pe())
-       call mpp_broadcast(varnorth, size(varnorth), mpp_root_pe())
-       call mpp_broadcast(varsouth, size(varsouth), mpp_root_pe())
-       
-    elseif (var_is_optional) then
-
-       call mpp_error(WARNING, 'BCs for variable '//trim(varname)//' not found in '//trim(fname)//', SKIPPING')
-       varwest = 0.
-       vareast = 0.
-       varsouth = 0.
-       varnorth = 0.
-
-    else
-
-       call mpp_error(WARNING, 'BCs for variable '//trim(varname)//' not found in '//trim(fname))
-
-    endif
-
-    is2 = max(1,isd)
-    ie2 = min(npx-1,ied)+istag
-
-    if (is == 1) then
-       do j=jsd,jed+jstag
-       do i=isd,0
-          var(i,j) = varwest(i,j)
-       enddo
-       enddo
-    endif
-    if (ie == npx-1) then
-       do j=jsd,jed+jstag
-       do i=npx+istag,ied+istag
-          var(i,j) = vareast(i,j)
-       enddo
-       enddo
-    endif
-
-    if (js == 1) then
-       do j=jsd,0
-       do i=is2,ie2
-          var(i,j) = varsouth(i,j)
-       enddo
-       enddo
-    endif
-    if (je == npy-1) then
-       do j=npy+jstag,jed+jstag
-       do i=is2,ie2
-          var(i,j) = varnorth(i,j)
-       enddo
-       enddo
-    endif
-
-  end subroutine fv_io_read_a_BC_2D
-
 end module fv_io_mod

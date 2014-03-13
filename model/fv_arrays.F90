@@ -518,6 +518,7 @@ module fv_arrays_mod
 
      !These are for tracer flux BCs
      logical :: do_flux_BCs, do_2way_flux_BCs !For a parent grid; determine whether there is a need to send BCs
+     type(restart_file_type) :: BCfile_ne, BCfile_sw
 
   end type fv_nest_type
 
@@ -682,8 +683,8 @@ module fv_arrays_mod
   end type fv_atmos_type
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_arrays.F90,v 20.0 2013/12/13 23:04:20 fms Exp $'
-  character(len=128) :: tagname = '$Name: tikal $'
+  character(len=128) :: version = '$Id: fv_arrays.F90,v 20.0.2.1 2014/02/07 00:17:12 Rusty.Benson Exp $'
+  character(len=128) :: tagname = '$Name: tikal_201403 $'
 
 contains
 

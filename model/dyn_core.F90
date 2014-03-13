@@ -42,7 +42,7 @@ public :: dyn_core, del2_cubed
 
 !---- version number -----
   character(len=128) :: version = '$Id: dyn_core.F90,v 20.0 2013/12/13 23:04:18 fms Exp $'
-  character(len=128) :: tagname = '$Name: tikal $'
+  character(len=128) :: tagname = '$Name: tikal_201403 $'
 
 contains
 

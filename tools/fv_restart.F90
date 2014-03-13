@@ -34,8 +34,8 @@ module fv_restart_mod
   use constants_mod,       only: kappa, pi, omega, rdgas, grav, rvgas, cp_air, radius
   use fv_arrays_mod,       only: fv_atmos_type, fv_nest_type, fv_grid_bounds_type
   use fv_io_mod,           only: fv_io_init, fv_io_read_restart, fv_io_write_restart, &
-                                 remap_restart, fv_io_register_restart, fv_io_write_BCs, &
-                                 fv_io_read_BCs, fv_io_register_nudge_restart
+                                 remap_restart, fv_io_register_restart, fv_io_register_nudge_restart, &
+                                 fv_io_register_restart_BCs, fv_io_write_BCs, fv_io_read_BCs
   use fv_grid_utils_mod,   only: ptop_min, fill_ghost, &
                                  make_eta_level, cubed_to_latlon, great_circle_dist
   use fv_diagnostics_mod,  only: prt_maxmin
@@ -73,8 +73,8 @@ module fv_restart_mod
   logical                       :: module_is_initialized = .FALSE.
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_restart.F90,v 20.0 2013/12/13 23:07:38 fms Exp $'
-  character(len=128) :: tagname = '$Name: tikal $'
+  character(len=128) :: version = '$Id: fv_restart.F90,v 20.0.2.1 2014/02/07 00:17:11 Rusty.Benson Exp $'
+  character(len=128) :: tagname = '$Name: tikal_201403 $'
 
 contains 
 
@@ -180,6 +180,7 @@ contains
 
     !--- call fv_io_register_restart to register restart field to be written out in fv_io_write_restart
     call fv_io_register_restart(Atm(n)%domain,Atm(n:n))
+    if (Atm(n)%neststruct%nested) call fv_io_register_restart_BCs(Atm(n))
     if( .not.cold_start .and. (.not. Atm(n)%flagstruct%external_ic) ) then
 
        !This is needed for the idealized test cases
