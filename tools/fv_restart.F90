@@ -73,8 +73,8 @@ module fv_restart_mod
   logical                       :: module_is_initialized = .FALSE.
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_restart.F90,v 20.0.2.1 2014/02/07 00:17:11 Rusty.Benson Exp $'
-  character(len=128) :: tagname = '$Name: tikal_201403 $'
+  character(len=128) :: version = '$Id: fv_restart.F90,v 20.0.2.1.2.1.2.2 2014/06/18 12:46:58 Rusty.Benson Exp $'
+  character(len=128) :: tagname = '$Name: tikal_201409 $'
 
 contains 
 
@@ -450,7 +450,7 @@ contains
 !---------------------------------------------------------------------------------------------
 
      if (Atm(n)%flagstruct%add_noise > 0.) then
-        write(errstring,'(A, E)') "Adding thermal noise of amplitude ", Atm(n)%flagstruct%add_noise
+        write(errstring,'(A, E16.9)') "Adding thermal noise of amplitude ", Atm(n)%flagstruct%add_noise
         call mpp_error(NOTE, errstring)
         call random_seed
         npts = 0
@@ -468,7 +468,7 @@ contains
         call mpp_update_domains(Atm(n)%pt, Atm(n)%domain)
         call mpp_sum(sumpertn)
         call mpp_sum(npts)
-        write(errstring,'(A, E)') "RMS added noise: ", sqrt(sumpertn/npts)
+        write(errstring,'(A, E16.9)') "RMS added noise: ", sqrt(sumpertn/npts)
         call mpp_error(NOTE, errstring)
      endif
 
@@ -1444,17 +1444,17 @@ contains
     character(len=128):: tracer_name
     character(len=3):: gn
 
+
     ntileMe = size(Atm(:))
 
-    allocate(pelist(mpp_npes()))
-    call mpp_get_current_pelist(pelist)
     do n = 1, ntileMe
 
-       if (.not. grids_on_this_pe(n)) then
-          cycle
-       endif
+      if (.not. grids_on_this_pe(n)) then
+         cycle
+      endif
 
-       call mpp_set_current_pelist(Atm(n)%pelist)
+      call mpp_set_current_pelist(Atm(n)%pelist)
+
       isc = Atm(n)%bd%isc; iec = Atm(n)%bd%iec; jsc = Atm(n)%bd%jsc; jec = Atm(n)%bd%jec
 
       isd = Atm(n)%bd%isd
@@ -1505,13 +1505,8 @@ contains
 
 
       call fv_io_write_restart(Atm(n:n))
-       if (Atm(n)%neststruct%nested) then
-          call mpp_set_current_pelist(Atm(n)%pelist)
-          call fv_io_write_BCs(Atm(n))
-      endif
+      if (Atm(n)%neststruct%nested) call fv_io_write_BCs(Atm(n))
     end do
-
-    call mpp_set_current_pelist(pelist)   
 
     module_is_initialized = .FALSE.
 

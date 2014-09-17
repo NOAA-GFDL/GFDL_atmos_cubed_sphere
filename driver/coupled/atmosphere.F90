@@ -20,7 +20,8 @@ use fms_mod,            only: file_exist, open_namelist_file,    &
                               mpp_clock_end, CLOCK_SUBCOMPONENT, &
                               clock_flag_default, nullify_domain
 use mpp_mod,            only: mpp_error, FATAL, NOTE, input_nml_file, &
-                              mpp_npes, mpp_get_current_pelist, mpp_set_current_pelist, stdout, mpp_pe, mpp_chksum
+                              mpp_npes, stdout, mpp_pe, mpp_chksum, &
+                              mpp_get_current_pelist, mpp_set_current_pelist
 use mpp_domains_mod,    only: domain2d
 use xgrid_mod,          only: grid_box_type
 !miz
@@ -73,8 +74,8 @@ public  atmosphere_down,       atmosphere_up,       &
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id: atmosphere.F90,v 20.0 2013/12/13 23:04:02 fms Exp $'
-character(len=128) :: tagname = '$Name: tikal_201403 $'
+character(len=128) :: version = '$Id: atmosphere.F90,v 20.0.2.1.2.2 2014/06/17 23:20:33 Rusty.Benson Exp $'
+character(len=128) :: tagname = '$Name: tikal_201409 $'
 character(len=7)   :: mod_name = 'atmos'
 
 !---- namelist (saved in file input.nml) ----
@@ -138,9 +139,10 @@ contains
    logical :: do_atmos_nudge
    character(len=32) :: tracer_name, tracer_units
 
-                    call timing_on('ATMOS_INIT')
    allocate(pelist(mpp_npes()))
    call mpp_get_current_pelist(pelist)
+
+                    call timing_on('ATMOS_INIT')
 
    call get_number_tracers(MODEL_ATMOS, num_prog= num_tracers)
 
@@ -238,7 +240,6 @@ contains
        !I've had trouble getting this to work with multiple grids at a time; worth revisiting?
    call fv_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time, npx, npy, npz, Atm(mytile)%flagstruct%p_ref)
 
-   call mpp_set_current_pelist(pelist)
    call set_domain ( Atm(mytile)%domain )
 
 !----- initialize physics interface -----
@@ -332,8 +333,6 @@ contains
                                   allocate(qtend(isc:iec, jsc:jec, 1:npz, 4))
 !miz
 
-   call mpp_set_current_pelist(pelist)
-
 !  --- initialize clocks for dynamics, physics_down and physics_up
    id_dynam     = mpp_clock_id ('FV dynamical core',   &
           flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
@@ -356,8 +355,9 @@ contains
 
 
 
- subroutine atmosphere_down ( Time,    frac_land,          &
-                           t_surf,  albedo,                &
+ subroutine atmosphere_down ( Time, frac_land, t_surf,     &
+                           t_ref, q_ref,       &  ! cjg: PBL depth mods
+                           albedo,                         &
                            albedo_vis_dir, albedo_nir_dir, &
                            albedo_vis_dif, albedo_nir_dif, &
                            rough_mom,                      &
@@ -379,7 +379,9 @@ contains
 !        Time = time at the current time level
 !
    type(time_type),intent(in)      :: Time
-   real, intent(inout), dimension(:,:):: frac_land, t_surf, albedo,      &
+   real, intent(inout), dimension(:,:):: frac_land, t_surf, &
+                                      t_ref, q_ref,                   & ! cjg: PBL depth mods
+                                      albedo,                         &
                                       albedo_vis_dir, albedo_nir_dir, &
                                       albedo_vis_dif, albedo_nir_dif, &
                                       rough_mom, u_star, b_star,      &
@@ -400,6 +402,7 @@ contains
    integer         :: itrac, n, outunit, p, sphum, unit
    integer :: psc ! p_split counter
 
+   call mpp_set_current_pelist(Atm(mytile)%pelist)
 
                     call timing_on('ATMOSPHERE')
                     call timing_on('ATMOSPHERE_DOWN')
@@ -427,7 +430,6 @@ contains
                     call timing_on('ATMOSPHERE_DOWN_ETC')
    n = mytile
    !call switch_current_Atm(Atm(n)) 
-!   call mpp_set_current_pelist(pelist)
                     call timing_off('ATMOSPHERE_DOWN_ETC')
 
                     call timing_on('fv_dynamics')
@@ -457,7 +459,6 @@ contains
      call timing_off('fv_dynamics')
 
 !!$                    call timing_on('ATMOSPHERE_DOWN_ETC')
-!!$      call mpp_set_current_pelist(pelist)
 !!$                    call timing_off('ATMOSPHERE_DOWN_ETC')
 
     if (ngrids > 1 .and. psc < p_split) then
@@ -529,6 +530,7 @@ contains
                          albedo_vis_dir, albedo_nir_dir, &
                          albedo_vis_dif, albedo_nir_dif, &
                          rough_mom,  t_surf,             &
+                         t_ref, q_ref,                   &  ! cjg: PBL depth mods
                          u_star,  b_star, q_star,        &
                          dtau_du, dtau_dv, tau_x, tau_y, &
                          flux_sw, flux_sw_dir,           &
@@ -545,13 +547,13 @@ contains
 
 
                     call timing_on('ATMOSPHERE_DOWN_ETC')
-!!$   call mpp_set_current_pelist(pelist)
    call mpp_clock_end (id_phys_down)
    call nullify_domain ( )
                     call timing_off('ATMOSPHERE_DOWN_ETC')
 
                     call timing_off('ATMOSPHERE_DOWN')
                     call timing_off('ATMOSPHERE')
+   call mpp_set_current_pelist(pelist)
  end subroutine atmosphere_down
 
 
@@ -569,6 +571,8 @@ contains
    integer :: itrac
    type(time_type) :: Time_prev, Time_next
    integer :: n, p, sphum, outunit, unit
+
+   call mpp_set_current_pelist(Atm(mytile)%pelist)
 
                     call timing_on('ATMOSPHERE')
                     call timing_on('ATMOSPHERE_UP')
@@ -636,11 +640,10 @@ contains
 
    call nullify_domain ( )
 
-!  call mpp_set_current_pelist(pelist)
-
                     call timing_off('ATMOSPHERE_UP_ETC')
                     call timing_off('ATMOSPHERE_UP')
                     call timing_off('ATMOSPHERE')
+   call mpp_set_current_pelist(pelist)
  end subroutine atmosphere_up
 
 
@@ -649,6 +652,7 @@ contains
    type (time_type),       intent(in) :: Time
    type(grid_box_type), intent(inout) :: Grid_box
 
+   call mpp_set_current_pelist(Atm(mytile)%pelist)
   ! initialize domains for writing global physics data
    call set_domain ( Atm(mytile)%domain )
 

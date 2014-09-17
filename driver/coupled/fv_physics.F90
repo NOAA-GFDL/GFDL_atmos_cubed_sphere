@@ -71,8 +71,8 @@ public  surf_diff_type, fv_physics_restart
 !   integer, EXTERNAL :: omp_get_thread_num, omp_get_num_threads      
 
 !---- version number -----
-   character(len=128) :: version = '$Id: fv_physics.F90,v 20.0 2013/12/13 23:04:04 fms Exp $'
-   character(len=128) :: tagname = '$Name: tikal_201403 $'
+   character(len=128) :: version = '$Id: fv_physics.F90,v 20.0.4.1.2.1 2014/09/04 19:06:26 Rusty.Benson Exp $'
+   character(len=128) :: tagname = '$Name: tikal_201409 $'
 
 contains
 
@@ -246,6 +246,7 @@ contains
                              albedo_vis_dir, albedo_nir_dir, &
                              albedo_vis_dif, albedo_nir_dif, &
                              rough_vel,   t_surf,            &
+                             t_ref, q_ref,                   &  ! cjg: PBL depth mods
                              u_star, b_star, q_star,         &
                              dtau_du, dtau_dv, tau_x, tau_y, &
                              flux_sw,                        &
@@ -274,8 +275,10 @@ contains
     real, intent(in), dimension(isc:iec,jsc:jec):: frac_land,  albedo, &
                                        albedo_vis_dir, albedo_nir_dir, &
                                        albedo_vis_dif, albedo_nir_dif, &
-                                       rough_vel, t_surf, u_star,      &
-                                       b_star, q_star, dtau_du, dtau_dv,&
+                                       rough_vel, t_surf,              &
+                                       t_ref, q_ref,                   &  ! cjg: PBL depth mods
+                                       u_star, b_star, q_star,         &
+                                       dtau_du, dtau_dv,               &
                                        frac_open_sea
 
     type(surf_diff_type), intent(inout) :: Surf_diff
@@ -291,6 +294,9 @@ contains
                                    flux_sw_vis_dif, flux_lw, coszen, gust
 !-----------------------------------------------------------------------
     real :: gavg_rrv(nt_prog)
+    real :: gavg_rrvp(nt_prog+1)
+    real :: atm_mass
+    real, dimension(isc:iec,jsc:jec,1):: sum1
     integer:: iq, idx, phys_loop
     integer:: i, j, k
     real    :: dt 
@@ -308,6 +314,18 @@ contains
     elseif (idx /= NO_TRACER) then
       call compute_g_avg(gavg_rrv, 'co2', Atm%pe, Atm%q, Atm%gridstruct%area, Atm%domain, Atm%npz, Atm%ncnst)
     endif
+
+!------------------------------------------------------------------------
+!  compute global mean atmospheric mass to be used later in diagnostic.
+!------------------------------------------------------------------------
+    sum1 = 0.
+    do j=jsc,jec
+      do i=isc,iec
+        sum1(i,j,1) = Atm%pe(i,Atm%npz+1,j)*Atm%gridstruct%area(i,j)
+      end do
+    end do
+    atm_mass = REAL(mpp_global_sum(Atm%domain, sum1,   &
+                                    flags=NON_BITWISE_EXACT_SUM),KIND=4)
 
 !---------------------------------------------------------------------
 ! compute the physics time step (from tau-1 to tau+1).
@@ -354,6 +372,9 @@ contains
                      Atm%q, Atm%delp, Atm%pe, Atm%peln,         &
                      Atm%delz, Atm%flagstruct%phys_hydrostatic)
 
+    gavg_rrvp(1:nt_prog) = gavg_rrv(:)
+    gavg_rrvp(nt_prog+1) = atm_mass   
+
 !$OMP parallel do schedule(dynamic) default(shared) private(phys_loop, isw, iew, jsw, jew)
     do phys_loop = 1, size(physics_window_y)!num_phys_windows
        jsw = physics_window_y(phys_loop)
@@ -386,7 +407,9 @@ contains
                    albedo_nir_dir(isw:iew,jsw:jew)                         , &
                    albedo_vis_dif(isw:iew,jsw:jew)                         , &
                    albedo_nir_dif(isw:iew,jsw:jew)                         , &
-                   t_surf  (isw:iew,jsw:jew),  u_star(isw:iew,jsw:jew)     , &
+                   t_surf  (isw:iew,jsw:jew)                               , &
+                   t_ref(isw:iew,jsw:jew), q_ref(isw:iew,jsw:jew)          , & ! cjg: PBL depth mods  
+                   u_star(isw:iew,jsw:jew)                                 , &
                    b_star  (isw:iew,jsw:jew),  q_star(isw:iew,jsw:jew)     , &
                    dtau_du (isw:iew,jsw:jew), dtau_dv(isw:iew,jsw:jew)     , &
                    tau_x   (isw:iew,jsw:jew),   tau_y(isw:iew,jsw:jew)     , &
@@ -406,7 +429,7 @@ contains
                    flux_lw               (isw:iew,jsw:jew)                 , &
                    coszen                (isw:iew,jsw:jew)                 , &
                    gust                  (isw:iew,jsw:jew)                 , &
-                   Surf_diff,   gavg_rrv )
+                   Surf_diff,   gavg_rrvp )
     enddo
 
 

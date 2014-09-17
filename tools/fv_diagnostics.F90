@@ -63,8 +63,8 @@ module fv_diagnostics_mod
  public :: prt_mass
 
 !---- version number -----
- character(len=128) :: version = '$Id: fv_diagnostics.F90,v 20.0 2013/12/13 23:07:24 fms Exp $'
- character(len=128) :: tagname = '$Name: tikal_201403 $'
+ character(len=128) :: version = '$Id: fv_diagnostics.F90,v 20.0.2.1 2014/03/25 20:21:55 Niki.Zadeh Exp $'
+ character(len=128) :: tagname = '$Name: tikal_201409 $'
 
 contains
 
@@ -1872,7 +1872,7 @@ contains
                                       850.e2, Atm(n)%peln, Atm(n)%w(isc:iec,jsc:jec,:), a2)
             used=send_data(idiag%id_w850, a2, Time)
 
-            if ( idiag%id_x850 .and. idiag%id_vort850>0 ) then
+            if ( idiag%id_x850>0 .and. idiag%id_vort850>0 ) then
                  x850(:,:) = x850(:,:)*a2(:,:) 
                  used=send_data(idiag%id_x850, x850, Time)
                  deallocate ( x850 )

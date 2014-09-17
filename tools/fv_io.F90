@@ -37,7 +37,7 @@ module fv_io_mod
   use fms_io_mod,              only: fms_io_exit, get_tile_string, &
                                      restart_file_type, register_restart_field, &
                                      save_restart, restore_state, &
-                                     set_domain, nullify_domain, &
+                                     set_domain, nullify_domain, set_filename_appendix, &
                                      get_mosaic_tile_file, get_instance_filename, & 
                                      save_restart_border, restore_state_border
   use mpp_mod,                 only: mpp_error, FATAL, NOTE, WARNING, mpp_root_pe, &
@@ -69,8 +69,8 @@ module fv_io_mod
 
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_io.F90,v 20.0.2.3 2014/03/06 17:53:38 Rusty.Benson Exp $'
-  character(len=128) :: tagname = '$Name: tikal_201403 $'
+  character(len=128) :: version = '$Id: fv_io.F90,v 20.0.2.3.4.2 2014/06/18 21:09:50 Rusty.Benson Exp $'
+  character(len=128) :: tagname = '$Name: tikal_201409 $'
 
   integer ::grid_xtdimid, grid_ytdimid, haloid, pfullid !For writing BCs
   integer ::grid_xtstagdimid, grid_ytstagdimid, oneid
@@ -114,8 +114,8 @@ contains
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
 
-    character(len=64)    :: fname, fname_nd, tracer_name
-    character(len=3)  :: gn
+    character(len=64)    :: fname, tracer_name
+    character(len=6)  :: stile_name
     integer              :: isc, iec, jsc, jec, n, nt, nk, ntracers
     integer              :: ntileMe
     integer              :: ks, ntiles
@@ -123,38 +123,38 @@ contains
 
     character(len=128)           :: tracer_longname, tracer_units
 
-    if (Atm(1)%grid_number > 1) then
-       write(gn,'(A2, I1)') "_g", Atm(1)%grid_number
-    else
-       gn = ''
-    end if
-
     ntileMe = size(Atm(:))  ! This will need mods for more than 1 tile per pe
-    
-    call set_domain(Atm(1)%domain)
 
-    if (.not. Atm(1)%neststruct%nested) then
-       call restore_state(Atm(1)%Fv_restart)
-    endif
+    call restore_state(Atm(1)%Fv_restart)
 
     if ( use_ncep_sst .or. Atm(1)%flagstruct%nudge .or. Atm(1)%flagstruct%ncep_ic ) then
        call mpp_error(NOTE, 'READING FROM SST_RESTART DISABLED')
        !call restore_state(Atm(1)%SST_restart)
     endif
 
-    call nullify_domain
+! fix for single tile runs where you need fv_core.res.nc and fv_core.res.tile1.nc
+    ntiles = mpp_get_ntile_count(fv_domain)
+    if(ntiles == 1 .and. .not. Atm(1)%neststruct%nested) then
+       stile_name = '.tile1'
+    else
+       stile_name = ''
+    endif
  
     do n = 1, ntileMe
-!    n = 1
-       call set_domain(Atm(n)%domain)
        call restore_state(Atm(n)%Fv_tile_restart)
-       call restore_state(Atm(n)%Rsf_restart)
-       fname = 'INPUT/fv_srf_wnd'//trim(gn)//'.res.nc'
-       if (.not.Atm(n)%neststruct%nested) then
-         call get_instance_filename(fname, fname_nd)
-         call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
-       end if
+
+!--- restore data for fv_tracer - if it exists
+       fname = 'INPUT/fv_tracer.res'//trim(stile_name)//'.nc'
        if (file_exist(fname)) then
+         call restore_state(Atm(n)%Tra_restart)
+       else
+         call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
+       endif
+
+!--- restore data for surface winds - if it exists
+       fname = 'INPUT/fv_srf_wnd.res'//trim(stile_name)//'.nc'
+       if (file_exist(fname)) then
+         call restore_state(Atm(n)%Rsf_restart)
          Atm(n)%flagstruct%srf_init = .true.
        else
          call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
@@ -162,13 +162,21 @@ contains
        endif
 
        if ( Atm(n)%flagstruct%fv_land ) then
-          call restore_state(Atm(n)%Mg_restart)
-          call restore_state(Atm(n)%Lnd_restart)
+!--- restore data for mg_drag - if it exists
+         fname = 'INPUT/mg_drag.res'//trim(stile_name)//'.nc'
+         if (file_exist(fname)) then
+           call restore_state(Atm(n)%Mg_restart)
+         else
+           call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
+         endif
+!--- restore data for fv_land - if it exists
+         fname = 'INPUT/fv_land.res'//trim(stile_name)//'.nc'
+         if (file_exist(fname)) then
+           call restore_state(Atm(n)%Lnd_restart)
+         else
+           call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
+         endif
        endif
-
-       call restore_state(Atm(n)%Tra_restart)
-
-       call nullify_domain
 
     end do
 
@@ -183,9 +191,10 @@ contains
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
     integer :: n, ntracers, nt, isc, iec, jsc, jec, id_restart
-    character(len=3) :: gn
-    character(len=64):: fname, fname_nd, tracer_name
+    character(len=6) :: stile_name
+    character(len=64):: fname, tracer_name
     type(restart_file_type) :: Tra_restart_r
+    integer :: ntiles
 
     n = 1
     isc = Atm(n)%bd%isc
@@ -194,26 +203,26 @@ contains
     jec = Atm(n)%bd%jec
     call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
 
-    if (Atm(n)%grid_number > 1) then
-       write(gn,'(A2, I1)') "_g", Atm(1)%grid_number
+! fix for single tile runs where you need fv_core.res.nc and fv_core.res.tile1.nc
+    ntiles = mpp_get_ntile_count(fv_domain)
+    if(ntiles == 1 .and. .not. Atm(1)%neststruct%nested) then
+       stile_name = '.tile1'
     else
-       gn = ''
-    end if
+       stile_name = ''
+    endif
 
-    call set_domain(fv_domain)
-    fname = 'fv_tracer'//trim(gn)//'.res.nc'
-    if (.not.Atm(n)%neststruct%nested) then
-       call get_instance_filename(fname, fname_nd)
-       call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
-    end if
+    fname = 'fv_tracer.res'//trim(stile_name)//'.nc'
     do nt = 2, ntracers
        call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
        call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%q(isc:iec,jsc:jec,:,nt)  )
-       id_restart = register_restart_field(Tra_restart_r, fname_nd, tracer_name, Atm(n)%q(:,:,:,nt), &
+       id_restart = register_restart_field(Tra_restart_r, fname, tracer_name, Atm(n)%q(:,:,:,nt), &
                     domain=fv_domain, mandatory=.false., tile_count=n)
     enddo
-    if (file_exist(fname_nd)) call restore_state(Tra_restart_r)
-    call nullify_domain()
+    if (file_exist('INPUT'//trim(fname))) then
+      call restore_state(Tra_restart_r)
+    else
+      call mpp_error(NOTE,'==> Warning from fv_io_read_tracers: Expected file '//trim(fname)//' does not exist')
+    endif
 
     return
 
@@ -226,14 +235,13 @@ contains
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
 
-    character(len=64)    :: fname, fname_nd, tracer_name
-    character(len=3)  :: gn
+    character(len=64)    :: fname, tracer_name
+    character(len=6)     :: stile_name
     integer              :: isc, iec, jsc, jec, n, nt, nk, ntracers
     integer              :: isd, ied, jsd, jed
-!    integer              :: ntileMe
+    integer              :: ntiles
     type(restart_file_type) :: FV_restart_r, FV_tile_restart_r, Tra_restart_r
     integer :: id_restart
-
 
 !
 !-------------------------------------------------------------------------
@@ -243,12 +251,6 @@ contains
     real, allocatable:: q_r(:,:,:,:)
 !-------------------------------------------------------------------------
     integer npz, npz_rst, ng
-
-    if (Atm(1)%grid_number > 1) then
-       write(gn,'(A2, I1)') "_g", Atm(1)%grid_number
-    else
-       gn = ''
-    end if
 
     npz     = Atm(1)%npz       ! run time z dimension
     npz_rst = Atm(1)%flagstruct%npz_rst   ! restart z dimension
@@ -283,72 +285,82 @@ contains
            allocate ( ze0_r(isc:iec, jsc:jec,  npz_rst+1) )
     endif
 
-    call set_domain(Atm(1)%domain)
-
-    fname_nd = 'fv_core.res.nc'
-    id_restart = register_restart_field(Fv_restart_r, fname_nd, 'ak', ak_r(:), no_domain=.true.)
-    id_restart = register_restart_field(Fv_restart_r, fname_nd, 'bk', bk_r(:), no_domain=.true.)
+    fname = 'fv_core.res.nc'
+    id_restart = register_restart_field(Fv_restart_r, fname, 'ak', ak_r(:), no_domain=.true.)
+    id_restart = register_restart_field(Fv_restart_r, fname, 'bk', bk_r(:), no_domain=.true.)
     call restore_state(Fv_restart_r)
+
+! fix for single tile runs where you need fv_core.res.nc and fv_core.res.tile1.nc
+    ntiles = mpp_get_ntile_count(fv_domain)
+    if(ntiles == 1 .and. .not. Atm(1)%neststruct%nested) then
+       stile_name = '.tile1'
+    else
+       stile_name = ''
+    endif
 
 !    do n = 1, ntileMe
     n = 1
-       fname = 'fv_core'//trim(gn)//'.res.nc'
-       if (.not.Atm(n)%neststruct%nested) then
-          call get_instance_filename(fname, fname_nd)
-          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
-       end if
-       id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'u', u_r, &
+       fname = 'fv_core.res'//trim(stile_name)//'.nc'
+       id_restart =  register_restart_field(Fv_tile_restart_r, fname, 'u', u_r, &
                      domain=fv_domain, position=NORTH,tile_count=n)
-       id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'v', v_r, &
+       id_restart =  register_restart_field(Fv_tile_restart_r, fname, 'v', v_r, &
                      domain=fv_domain, position=EAST,tile_count=n)
        if (.not.Atm(n)%flagstruct%hydrostatic) then
-          id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'W', w_r, &
+          id_restart =  register_restart_field(Fv_tile_restart_r, fname, 'W', w_r, &
                         domain=fv_domain, mandatory=.false., tile_count=n)
-          id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'DZ', delz_r, &
+          id_restart =  register_restart_field(Fv_tile_restart_r, fname, 'DZ', delz_r, &
                         domain=fv_domain, mandatory=.false., tile_count=n)
           if ( Atm(n)%flagstruct%hybrid_z ) then
-             id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'ZE0', ze0_r, &
+             id_restart =  register_restart_field(Fv_tile_restart_r, fname, 'ZE0', ze0_r, &
                            domain=fv_domain, mandatory=.false., tile_count=n)
           endif
        endif
-       id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'T', pt_r, &
+       id_restart =  register_restart_field(Fv_tile_restart_r, fname, 'T', pt_r, &
                      domain=fv_domain, tile_count=n)
-       id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'delp', delp_r, &
+       id_restart =  register_restart_field(Fv_tile_restart_r, fname, 'delp', delp_r, &
                      domain=fv_domain, tile_count=n)
-       id_restart =  register_restart_field(Fv_tile_restart_r, fname_nd, 'phis', Atm(n)%phis, &
+       id_restart =  register_restart_field(Fv_tile_restart_r, fname, 'phis', Atm(n)%phis, &
                      domain=fv_domain, tile_count=n)
        call restore_state(FV_tile_restart_r)
 
-       fname = 'fv_srf_wnd'//trim(gn)//'.res.nc'
-       if (.not.Atm(n)%neststruct%nested) then
-         call get_instance_filename(fname, fname_nd)
-         call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
-       end if
+       fname = 'INPUT/fv_srf_wnd.res'//trim(stile_name)//'.nc'
        if (file_exist(fname)) then
+         call restore_state(Atm(n)%Rsf_restart)
          Atm(n)%flagstruct%srf_init = .true.
        else
-         call mpp_error(NOTE,'==> Warning from fv_read_restart: Expected file '//trim(fname)//' does not exist')
+         call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
          Atm(n)%flagstruct%srf_init = .false.
        endif
 
        if ( Atm(n)%flagstruct%fv_land ) then
-! Optional terrain deviation (sgh)
-          call restore_state(Atm(n)%Mg_restart)
-          call restore_state(Atm(n)%Lnd_restart)
+!--- restore data for mg_drag - if it exists
+         fname = 'INPUT/mg_drag.res'//trim(stile_name)//'.nc'
+         if (file_exist(fname)) then
+           call restore_state(Atm(n)%Mg_restart)
+         else
+           call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
+         endif
+!--- restore data for fv_land - if it exists
+         fname = 'INPUT/fv_land.res'//trim(stile_name)//'.nc'
+         if (file_exist(fname)) then
+           call restore_state(Atm(n)%Lnd_restart)
+         else
+           call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
+         endif
        endif
 
-       fname = 'fv_tracer'//trim(gn)//'.res.nc'
-       if (.not.Atm(n)%neststruct%nested) then
-          call get_instance_filename(fname, fname_nd)
-          call get_mosaic_tile_file(fname_nd, fname, .FALSE., fv_domain, n)
-       end if
-       do nt = 1, ntracers
-          call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
-          call set_tracer_profile (MODEL_ATMOS, nt, q_r(isc:iec,jsc:jec,:,nt)  )
-          id_restart = register_restart_field(Tra_restart_r, fname_nd, tracer_name, q_r(:,:,:,nt), &
-                       domain=fv_domain, mandatory=.false., tile_count=n)
-       enddo
-       call restore_state(Tra_restart_r)
+       fname = 'fv_tracer.res'//trim(stile_name)//'.nc'
+       if (file_exist('INPUT'//trim(fname))) then
+         do nt = 1, ntracers
+            call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
+            call set_tracer_profile (MODEL_ATMOS, nt, q_r(isc:iec,jsc:jec,:,nt)  )
+            id_restart = register_restart_field(Tra_restart_r, fname, tracer_name, q_r(:,:,:,nt), &
+                         domain=fv_domain, mandatory=.false., tile_count=n)
+         enddo
+         call restore_state(Tra_restart_r)
+       else
+         call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
+       endif
 
        call rst_remap(npz_rst, npz, isc, iec, jsc, jec, isd, ied, jsd, jed, ntracers,              &
                       delp_r,      u_r,      v_r,      w_r,      delz_r,      pt_r,      q_r,      &
@@ -357,8 +369,6 @@ contains
                       Atm(n)%flagstruct%hydrostatic, Atm(n)%flagstruct%make_nh, Atm(n)%domain,     &
                       Atm(n)%gridstruct%square_domain)
     !end do
-
-    call nullify_domain()
 
     deallocate( ak_r )
     deallocate( bk_r )
@@ -385,15 +395,15 @@ contains
   ! </DESCRIPTION>
   subroutine  fv_io_register_nudge_restart(Atm)
     type(fv_atmos_type), intent(inout) :: Atm(:)
-    character(len=64) :: fname_nd
+    character(len=64) :: fname
     integer           :: id_restart
 
 ! use_ncep_sst may not be initialized at this point?
     call mpp_error(NOTE, 'READING FROM SST_restart DISABLED')
 !!$    if ( use_ncep_sst .or. Atm(1)%nudge .or. Atm(1)%ncep_ic ) then
-!!$       fname_nd = 'sst_ncep.res.nc'
-!!$       id_restart = register_restart_field(Atm(1)%SST_restart, fname_nd, 'sst_ncep', sst_ncep)
-!!$       id_restart = register_restart_field(Atm(1)%SST_restart, fname_nd, 'sst_anom', sst_anom)
+!!$       fname = 'sst_ncep.res.nc'
+!!$       id_restart = register_restart_field(Atm(1)%SST_restart, fname, 'sst_ncep', sst_ncep)
+!!$       id_restart = register_restart_field(Atm(1)%SST_restart, fname, 'sst_anom', sst_anom)
 !!$    endif
 
   end subroutine  fv_io_register_nudge_restart
@@ -410,38 +420,23 @@ contains
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
 
-    character(len=64) :: fname_nd, tracer_name
-    character(len=3)  :: gn
-    character(len=6)  :: stile_name
+    character(len=64) :: fname, tracer_name
+    character(len=6)  :: gn, stile_name
     integer           :: id_restart
     integer           :: n, nt, ntracers, ntileMe, ntiles
 
     ntileMe = size(Atm(:)) 
     ntracers = size(Atm(1)%q,4) 
 
+!--- set the 'nestXX' appendix for all files using fms_io
     if (Atm(1)%grid_number > 1) then
-       write(gn,'(A2, I1)') "_g", Atm(1)%grid_number
+       write(gn,'(A4, I2.2)') "nest", Atm(1)%grid_number
     else
        gn = ''
     end if
+    call set_filename_appendix(gn)
 
-    call set_domain(Atm(1)%domain)
-
-    fname_nd = 'fv_core.res.nc'
-    id_restart = register_restart_field(Atm(1)%Fv_restart, fname_nd, 'ak', Atm(1)%ak(:), no_domain=.true.)
-    id_restart = register_restart_field(Atm(1)%Fv_restart, fname_nd, 'bk', Atm(1)%bk(:), no_domain=.true.) 
-
-! use_ncep_sst may not be initialized at this point?
-#ifndef DYCORE_SOLO
-    call mpp_error(NOTE, 'READING FROM SST_RESTART DISABLED')
-!!$   if ( use_ncep_sst .or. Atm(1)%flagstruct%nudge .or. Atm(1)%flagstruct%ncep_ic ) then
-!!$       fname_nd = 'sst_ncep'//trim(gn)//'.res.nc'
-!!$       id_restart = register_restart_field(Atm(1)%SST_restart, fname_nd, 'sst_ncep', sst_ncep)
-!!$       id_restart = register_restart_field(Atm(1)%SST_restart, fname_nd, 'sst_anom', sst_anom)
-!!$   endif
-#endif
-
-! fix for single tile runs where you need fv_core.res.nc and fv_core.res.tile1.nc
+!--- fix for single tile runs where you need fv_core.res.nc and fv_core.res.tile1.nc
     ntiles = mpp_get_ntile_count(fv_domain)
     if(ntiles == 1 .and. .not. Atm(1)%neststruct%nested) then
        stile_name = '.tile1'
@@ -449,59 +444,71 @@ contains
        stile_name = ''
     endif
 
-    fname_nd = 'fv_core'//trim(gn)//'.res'//trim(stile_name)//'.nc'
+! use_ncep_sst may not be initialized at this point?
+#ifndef DYCORE_SOLO
+    call mpp_error(NOTE, 'READING FROM SST_RESTART DISABLED')
+!!$   if ( use_ncep_sst .or. Atm(1)%flagstruct%nudge .or. Atm(1)%flagstruct%ncep_ic ) then
+!!$       fname = 'sst_ncep'//trim(gn)//'.res.nc'
+!!$       id_restart = register_restart_field(Atm(1)%SST_restart, fname, 'sst_ncep', sst_ncep)
+!!$       id_restart = register_restart_field(Atm(1)%SST_restart, fname, 'sst_anom', sst_anom)
+!!$   endif
+#endif
+
+    fname = 'fv_core.res.nc'
+    id_restart = register_restart_field(Atm(1)%Fv_restart, fname, 'ak', Atm(1)%ak(:), no_domain=.true.)
+    id_restart = register_restart_field(Atm(1)%Fv_restart, fname, 'bk', Atm(1)%bk(:), no_domain=.true.) 
+
     do n = 1, ntileMe
-!    n = 1
-       id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname_nd, 'u', Atm(n)%u, &
+       fname = 'fv_core.res'//trim(stile_name)//'.nc'
+       id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname, 'u', Atm(n)%u, &
                      domain=fv_domain, position=NORTH,tile_count=n)
-       id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname_nd, 'v', Atm(n)%v, &
+       id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname, 'v', Atm(n)%v, &
                      domain=fv_domain, position=EAST,tile_count=n)
        if (.not.Atm(n)%flagstruct%hydrostatic) then
-          id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname_nd, 'W', Atm(n)%w, &
+          id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname, 'W', Atm(n)%w, &
                         domain=fv_domain, mandatory=.false., tile_count=n)
-          id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname_nd, 'DZ', Atm(n)%delz, &
+          id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname, 'DZ', Atm(n)%delz, &
                         domain=fv_domain, mandatory=.false., tile_count=n)
           if ( Atm(n)%flagstruct%hybrid_z ) then
-             id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname_nd, 'ZE0', Atm(n)%ze0, &
+             id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname, 'ZE0', Atm(n)%ze0, &
                            domain=fv_domain, mandatory=.false., tile_count=n)
           endif
        endif
-       id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname_nd, 'T', Atm(n)%pt, &
+       id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname, 'T', Atm(n)%pt, &
                      domain=fv_domain, tile_count=n)
-       id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname_nd, 'delp', Atm(n)%delp, &
+       id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname, 'delp', Atm(n)%delp, &
                      domain=fv_domain, tile_count=n)
-       id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname_nd, 'phis', Atm(n)%phis, &
+       id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname, 'phis', Atm(n)%phis, &
                      domain=fv_domain, tile_count=n)
 
-       fname_nd = 'fv_srf_wnd'//trim(gn)//'.res.nc'
-       !if(ntiles == 1) fname_nd = 'fv_srf_wnd'//trim(gn)//'.res.tile1.nc'
-       id_restart =  register_restart_field(Atm(n)%Rsf_restart, fname_nd, 'u_srf', Atm(n)%u_srf, &
+       fname = 'fv_srf_wnd.res'//trim(stile_name)//'.nc'
+       id_restart =  register_restart_field(Atm(n)%Rsf_restart, fname, 'u_srf', Atm(n)%u_srf, &
                      domain=fv_domain, tile_count=n)
-       id_restart =  register_restart_field(Atm(n)%Rsf_restart, fname_nd, 'v_srf', Atm(n)%v_srf, &
+       id_restart =  register_restart_field(Atm(n)%Rsf_restart, fname, 'v_srf', Atm(n)%v_srf, &
                      domain=fv_domain, tile_count=n)
 #ifdef SIM_PHYS
-       id_restart =  register_restart_field(Rsf_restart(n), fname_nd, 'ts', Atm(n)%ts, &
+       id_restart =  register_restart_field(Rsf_restart(n), fname, 'ts', Atm(n)%ts, &
                      domain=fv_domain, tile_count=n)
 #endif
 
        if ( Atm(n)%flagstruct%fv_land ) then
           !-------------------------------------------------------------------------------------------------
           ! Optional terrain deviation (sgh) and land fraction (oro)
-          fname_nd = 'mg_drag'//trim(gn)//'.res.nc'
-          id_restart =  register_restart_field(Atm(n)%Mg_restart, fname_nd, 'ghprime', Atm(n)%sgh, &
+          fname = 'mg_drag.res'//trim(stile_name)//'.nc'
+          id_restart =  register_restart_field(Atm(n)%Mg_restart, fname, 'ghprime', Atm(n)%sgh, &
                         domain=fv_domain, tile_count=n)  
 
-          fname_nd = 'fv_land'//trim(gn)//'.res.nc'
-          id_restart = register_restart_field(Atm(n)%Lnd_restart, fname_nd, 'oro', Atm(n)%oro, &
+          fname = 'fv_land.res'//trim(stile_name)//'.nc'
+          id_restart = register_restart_field(Atm(n)%Lnd_restart, fname, 'oro', Atm(n)%oro, &
                         domain=fv_domain, tile_count=n)
        endif
-       fname_nd = 'fv_tracer'//trim(gn)//'.res.nc'
-       !if(ntiles == 1) fname_nd = 'fv_tracer'//trim(gn)//'.res.tile1.nc'
+
+       fname = 'fv_tracer.res'//trim(stile_name)//'.nc'
        do nt = 1, ntracers
           call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
           ! set all tracers to an initial profile value
           call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%q(:,:,:,nt)  )
-          id_restart = register_restart_field(Atm(n)%Tra_restart, fname_nd, tracer_name, Atm(n)%q(:,:,:,nt), &
+          id_restart = register_restart_field(Atm(n)%Tra_restart, fname, tracer_name, Atm(n)%q(:,:,:,nt), &
                        domain=fv_domain, mandatory=.false., tile_count=n)
        enddo
 
@@ -525,23 +532,15 @@ contains
     integer                                :: n, ntileMe
 
     ntileMe = size(Atm(:))  ! This will need mods for more than 1 tile per pe
-    
-    call set_domain(Atm(1)%domain)
-
-    if (.not. Atm(1)%neststruct%nested) then
-       call save_restart(Atm(1)%Fv_restart, timestamp)
-    endif
 
     if ( use_ncep_sst .or. Atm(1)%flagstruct%nudge .or. Atm(1)%flagstruct%ncep_ic ) then
        call mpp_error(NOTE, 'READING FROM SST_RESTART DISABLED')
        !call save_restart(Atm(1)%SST_restart, timestamp)
     endif
-
-    call nullify_domain
  
     do n = 1, ntileMe
 !    n = 1
-       call set_domain(Atm(n)%domain)
+       call save_restart(Atm(n)%Fv_restart, timestamp)
        call save_restart(Atm(n)%Fv_tile_restart, timestamp)
        call save_restart(Atm(n)%Rsf_restart, timestamp)
 
@@ -551,8 +550,6 @@ contains
        endif
 
        call save_restart(Atm(n)%Tra_restart, timestamp)
-
-       call nullify_domain
 
     end do
 
@@ -857,15 +854,9 @@ contains
 
     integer :: n
     character(len=120) :: tname, fname_ne, fname_sw
-    character(len=2) :: gn
 
-    if (Atm%grid_number > 1) then
-      write(gn,'(i2.2)') Atm%grid_number
-    else
-      gn = ''
-    end if
-    fname_ne = 'fv_BCnest'//gn//'_ne.res.nc'
-    fname_sw = 'fv_BCnest'//gn//'_sw.res.nc'
+    fname_ne = 'fv_BC_ne.res.nc'
+    fname_sw = 'fv_BC_sw.res.nc'
 
     call set_domain(Atm%domain)
 
@@ -896,8 +887,6 @@ contains
                          fname_ne, fname_sw, 'uc', var_bc=Atm%neststruct%uc_BC, istag=1)
     call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
                          fname_ne, fname_sw, 'vc', var_bc=Atm%neststruct%vc_BC, jstag=1)
-
-    call nullify_domain
 
     return
   end subroutine fv_io_register_restart_BCs
