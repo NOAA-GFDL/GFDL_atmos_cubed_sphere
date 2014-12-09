@@ -1,7 +1,7 @@
  module fv_grid_utils_mod
  
 #include <fms_platform.h>
- use constants_mod,   only: pi
+ use constants_mod,   only: pi, omega
  use mpp_mod,         only: FATAL, mpp_error, WARNING
  use external_sst_mod, only: i_sst, j_sst, sst_ncep, sst_anom
  use mpp_domains_mod, only: mpp_update_domains, DGRID_NE, mpp_global_sum
@@ -29,27 +29,23 @@
  real, parameter:: tiny_number=1.E-35
 
  real, parameter:: ptop_min=1.E-8
-#ifdef VAN2
- real, allocatable:: van2(:,:,:)
-#endif
 
 
  public f_p 
  public ptop_min, big_number !CLEANUP: OK to keep since they are constants?
  public cos_angle
  public latlon2xyz, gnomonic_grids, &
-        global_mx,              &
-        unit_vect_latlon,  &
+        global_mx, unit_vect_latlon,  &
         cubed_to_latlon, c2l_ord2, g_sum, global_qsum, great_circle_dist,  &
-        v_prod
+        v_prod, get_unit_vect2, project_sphere_v
  public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, grid_utils_end, &
         spherical_angle, cell_center2, get_area, inner_prod, fill_ghost, direct_transform,  &
         make_eta_level, expand_cell, cart_to_latlon, intp_great_circle, normalize_vect, &
-        dist2side_latlon, spherical_linear_interpolation
+        dist2side_latlon, spherical_linear_interpolation, get_latlon_vector
 
 !---- version number -----
- character(len=128) :: version = '$Id: fv_grid_utils.F90,v 20.0 2013/12/13 23:04:29 fms Exp $'
- character(len=128) :: tagname = '$Name: tikal_201409 $'
+ character(len=128) :: version = '$Id: fv_grid_utils.F90,v 20.0.2.2.2.1 2014/09/22 02:51:05 Rusty.Benson Exp $'
+ character(len=128) :: tagname = '$Name: testing $'
 
  contains
 
@@ -85,7 +81,8 @@
 
  
       real grid3(3,Atm%bd%isd:Atm%bd%ied+1,Atm%bd%jsd:Atm%bd%jed+1)
-      real p1(3), p2(3), p3(3), p4(3), pp(3)
+      real p1(3), p2(3), p3(3), p4(3), pp(3), ex(3), ey(3), e1(3), e2(3)
+      real pp1(2), pp2(2), pp3(2)
       real sin2, tmp1, tmp2
       integer i, j, k, n, ip
 
@@ -95,7 +92,7 @@
       !Local pointers
       real, pointer, dimension(:,:) :: divg_u, divg_v
       real, pointer, dimension(:,:) :: cosa_u, cosa_v, cosa_s
-      real, pointer, dimension(:,:) :: sina_u, sina_v, sina_s
+      real, pointer, dimension(:,:) :: sina_u, sina_v
       real, pointer, dimension(:,:) :: rsin_u, rsin_v
       real, pointer, dimension(:,:) :: rsina, rsin2
       real, pointer, dimension(:,:,:) :: ee1, ee2, ec1, ec2
@@ -103,7 +100,7 @@
 
       real, pointer, dimension(:,:,:) :: sin_sg, cos_sg
       real, pointer, dimension(:,:,:) :: en1, en2
-      real, pointer, dimension(:,:) :: eww, ess
+!     real, pointer, dimension(:,:) :: eww, ess
       logical, pointer :: sw_corner, se_corner, ne_corner, nw_corner
 
 
@@ -125,7 +122,6 @@
       cosa_s => Atm%gridstruct%cosa_s
       sina_u => Atm%gridstruct%sina_u
       sina_v => Atm%gridstruct%sina_v
-      sina_s => Atm%gridstruct%sina_s
       rsin_u => Atm%gridstruct%rsin_u
       rsin_v => Atm%gridstruct%rsin_v
       rsina => Atm%gridstruct%rsina
@@ -140,8 +136,8 @@
       cos_sg => Atm%gridstruct%cos_sg
       en1 => Atm%gridstruct%en1
       en2 => Atm%gridstruct%en2
-      eww => Atm%gridstruct%eww
-      ess => Atm%gridstruct%ess
+!     eww => Atm%gridstruct%eww
+!     ess => Atm%gridstruct%ess
 
       sw_corner                     => Atm%gridstruct%sw_corner
       se_corner                     => Atm%gridstruct%se_corner
@@ -278,70 +274,43 @@
 !     |       |
 !     6---2---7
 
-#ifdef OLD_COS_SG
       do j=jsd,jed
          do i=isd,ied
 ! Testing using spherical formular: exact if coordinate lines are along great circles
 ! SW corner:
-            ip = 6
-            cos_sg(i,j,ip) = cos_angle( grid3(1,i,j), grid3(1,i+1,j), grid3(1,i,j+1) )
+            cos_sg(6,i,j) = cos_angle( grid3(1,i,j), grid3(1,i+1,j), grid3(1,i,j+1) )
 ! SE corner:
-            ip = 7
-            cos_sg(i,j,ip) = -cos_angle( grid3(1,i+1,j), grid3(1,i,j), grid3(1,i+1,j+1) )
+            cos_sg(7,i,j) = -cos_angle( grid3(1,i+1,j), grid3(1,i,j), grid3(1,i+1,j+1) )
 ! NE corner:
-            ip = 8
-            cos_sg(i,j,ip) = cos_angle( grid3(1,i+1,j+1), grid3(1,i+1,j), grid3(1,i,j+1) )
+            cos_sg(8,i,j) = cos_angle( grid3(1,i+1,j+1), grid3(1,i+1,j), grid3(1,i,j+1) )
 ! NW corner:
-            ip = 9
-            cos_sg(i,j,ip) = -cos_angle( grid3(1,i,j+1), grid3(1,i,j), grid3(1,i+1,j+1) )
-         enddo
-      enddo
-!
+            cos_sg(9,i,j) = -cos_angle( grid3(1,i,j+1), grid3(1,i,j), grid3(1,i+1,j+1) )
 ! Mid-points by averaging:
-!
-      do j=jsd,jed
-         do i=isd,ied
-            ip = 1
-            cos_sg(i,j,ip) = 0.5*( cos_sg(i,j,6) + cos_sg(i,j,9) ) 
-            ip = 2
-            cos_sg(i,j,ip) = 0.5*( cos_sg(i,j,6) + cos_sg(i,j,7) ) 
-            ip = 3
-            cos_sg(i,j,ip) = 0.5*( cos_sg(i,j,7) + cos_sg(i,j,8) ) 
-            ip = 4
-            cos_sg(i,j,ip) = 0.5*( cos_sg(i,j,8) + cos_sg(i,j,9) ) 
+!!!         cos_sg(i,j,1) = 0.5*( cos_sg(i,j,6) + cos_sg(i,j,9) )
+!!!         cos_sg(i,j,2) = 0.5*( cos_sg(i,j,6) + cos_sg(i,j,7) )
+!!!         cos_sg(i,j,3) = 0.5*( cos_sg(i,j,7) + cos_sg(i,j,8) )
+!!!         cos_sg(i,j,4) = 0.5*( cos_sg(i,j,8) + cos_sg(i,j,9) )
+!!!!!       cos_sg(i,j,5) = 0.25*(cos_sg(i,j,6)+cos_sg(i,j,7)+cos_sg(i,j,8)+cos_sg(i,j,9))
+! No averaging -----
+            call latlon2xyz(agrid(i,j,1:2), p3)   ! righ-hand system consistent with grid3
+               call mid_pt3_cart(grid3(1,i,j), grid3(1,i,j+1), p1)
+            cos_sg(1,i,j) = cos_angle( p1, p3, grid3(1,i,j+1) )
+               call mid_pt3_cart(grid3(1,i,j), grid3(1,i+1,j), p1)
+            cos_sg(2,i,j) = cos_angle( p1, grid3(1,i+1,j), p3 )
+               call mid_pt3_cart(grid3(1,i+1,j), grid3(1,i+1,j+1), p1)
+            cos_sg(3,i,j) = cos_angle( p1, p3, grid3(1,i+1,j) )
+               call mid_pt3_cart(grid3(1,i,j+1), grid3(1,i+1,j+1), p1)
+            cos_sg(4,i,j) = cos_angle( p1, grid3(1,i,j+1), p3 )
 ! Center point:
-            ip = 5
-            cos_sg(i,j,ip) = 0.5*( cos_sg(i,j,1) + cos_sg(i,j,3) ) 
+! Using center_vect: [ec1, ec2]
+            cos_sg(5,i,j) = inner_prod( ec1(1:3,i,j), ec2(1:3,i,j) )
          enddo
       enddo
-#else
-      do j=jsd,jed
-         do i=isd,ied
-! Testing using spherical formular: exact if coordinate lines are along great circles
-! SW corner:
-            cos_sg(i,j,6) = cos_angle( grid3(1,i,j), grid3(1,i+1,j), grid3(1,i,j+1) )
-! SE corner:
-            cos_sg(i,j,7) = -cos_angle( grid3(1,i+1,j), grid3(1,i,j), grid3(1,i+1,j+1) )
-! NE corner:
-            cos_sg(i,j,8) = cos_angle( grid3(1,i+1,j+1), grid3(1,i+1,j), grid3(1,i,j+1) )
-! NW corner:
-            cos_sg(i,j,9) = -cos_angle( grid3(1,i,j+1), grid3(1,i,j), grid3(1,i+1,j+1) )
-! Mid-points by averaging:
-            cos_sg(i,j,1) = 0.5*( cos_sg(i,j,6) + cos_sg(i,j,9) ) 
-            cos_sg(i,j,2) = 0.5*( cos_sg(i,j,6) + cos_sg(i,j,7) ) 
-            cos_sg(i,j,3) = 0.5*( cos_sg(i,j,7) + cos_sg(i,j,8) ) 
-            cos_sg(i,j,4) = 0.5*( cos_sg(i,j,8) + cos_sg(i,j,9) ) 
-! Center point:
-!           cos_sg(i,j,5) = 0.5*( cos_sg(i,j,1) + cos_sg(i,j,3) ) 
-            cos_sg(i,j,5) = 0.25*(cos_sg(i,j,6)+cos_sg(i,j,7)+cos_sg(i,j,8)+cos_sg(i,j,9)) 
-         enddo
-      enddo
-#endif
 
-      do ip=1,9
-         do j=jsd,jed
-            do i=isd,ied
-               sin_sg(i,j,ip) = min(1.0, sqrt( max(0., 1.-cos_sg(i,j,ip)**2) ) )
+      do j=jsd,jed
+         do i=isd,ied
+            do ip=1,9
+               sin_sg(ip,i,j) = min(1.0, sqrt( max(0., 1.-cos_sg(ip,i,j)**2) ) )
             enddo
          enddo
       enddo
@@ -352,33 +321,56 @@
       if (.not. Atm%neststruct%nested) then
       if ( sw_corner ) then
            do i=-2,0
-              sin_sg(0,i,3) = sin_sg(i,1,2) 
-              sin_sg(i,0,4) = sin_sg(1,i,1) 
+              sin_sg(3,0,i) = sin_sg(2,i,1) 
+              sin_sg(4,i,0) = sin_sg(1,1,i) 
            enddo
       endif
       if ( nw_corner ) then
            do i=npy,npy+2
-              sin_sg(0,i,3) = sin_sg(npy-i,npy-1,4) 
+              sin_sg(3,0,i) = sin_sg(4,npy-i,npy-1) 
            enddo
            do i=-2,0
-              sin_sg(i,npy,2) = sin_sg(1,npx+i,1) 
+              sin_sg(2,i,npy) = sin_sg(1,1,npx+i) 
            enddo
       endif
       if ( se_corner ) then
            do j=-2,0
-              sin_sg(npx,j,1) = sin_sg(npx-j,1,2) 
+              sin_sg(1,npx,j) = sin_sg(2,npx-j,1) 
            enddo
            do i=npx,npx+2
-              sin_sg(i,0,4) = sin_sg(npx-1,npx-i,3) 
+              sin_sg(4,i,0) = sin_sg(3,npx-1,npx-i) 
            enddo
       endif
       if ( ne_corner ) then
            do i=npy,npy+2
-              sin_sg(npx,i,1) = sin_sg(i,npy-1,4) 
-              sin_sg(i,npy,2) = sin_sg(npx-1,i,3) 
+              sin_sg(1,npx,i) = sin_sg(4,i,npy-1) 
+              sin_sg(2,i,npy) = sin_sg(3,npx-1,i) 
            enddo
         endif
      endif
+
+! For AAM correction:
+     do j=js,je
+        do i=is,ie+1
+           pp1(:) = grid(i  ,j ,1:2)
+           pp2(:) = grid(i,j+1 ,1:2)
+           call mid_pt_sphere(pp1, pp2, pp3)
+           call get_unit_vect2(pp1, pp2, e2)
+           call get_latlon_vector(pp3, ex, ey)
+           Atm%gridstruct%l2c_v(i,j) = cos(pp3(2)) * inner_prod(e2, ex)
+        enddo
+     enddo
+     do j=js,je+1
+        do i=is,ie
+           pp1(:) = grid(i,  j,1:2)
+           pp2(:) = grid(i+1,j,1:2)
+           call mid_pt_sphere(pp1, pp2, pp3)
+           call get_unit_vect2(pp1, pp2, e1)
+           call get_latlon_vector(pp3, ex, ey)
+           Atm%gridstruct%l2c_u(i,j) = cos(pp3(2)) * inner_prod(e1, ex)
+        enddo
+     enddo
+
    else
      cos_sg(:,:,:) = 0.
      sin_sg(:,:,:) = 1.
@@ -412,7 +404,6 @@
            cosa_u = big_number
            cosa_v = big_number
            cosa_s = big_number
-           sina_s = big_number
            sina_u = big_number
            sina_v = big_number
            rsin_u = big_number
@@ -432,32 +423,27 @@
               else
                   call vect_cross(pp, grid3(1,i-1,j), grid3(1,i+1,j))
               endif
-              call vect_cross(ee1(1:3,i,j), pp, grid3(1,i,j))
+              call vect_cross(ee1(1:3,i,j), pp, grid3(1:3,i,j))
               call normalize_vect( ee1(1:3,i,j) )
 
 ! unit vect in Y-dir: ee2
               if (j==1 .and. .not. Atm%neststruct%nested) then
-                  call vect_cross(pp, grid3(1,i,j  ), grid3(1,i,j+1))
+                  call vect_cross(pp, grid3(1:3,i,j  ), grid3(1:3,i,j+1))
               elseif(j==npy .and. .not. Atm%neststruct%nested) then
-                  call vect_cross(pp, grid3(1,i,j-1), grid3(1,i,j  ))
+                  call vect_cross(pp, grid3(1:3,i,j-1), grid3(1:3,i,j  ))
               else
-                  call vect_cross(pp, grid3(1,i,j-1), grid3(1,i,j+1))
+                  call vect_cross(pp, grid3(1:3,i,j-1), grid3(1:3,i,j+1))
               endif
-              call vect_cross(ee2(1:3,i,j), pp, grid3(1,i,j))
+              call vect_cross(ee2(1:3,i,j), pp, grid3(1:3,i,j))
               call normalize_vect( ee2(1:3,i,j) )
 
-#ifdef OLD_COS_SG
-              cosa(i,j) = cos_sg(i,j,6)
-              sina(i,j) = sin_sg(i,j,6)
-#else
 ! symmetrical grid
 !             tmp1 = inner_prod(ee1(1,i,j), ee2(1,i,j))
 !             cosa(i,j) = sign(min(1., abs(tmp1)), tmp1)
 !             sina(i,j) = sqrt(max(0.,1. -cosa(i,j)**2))
 ! symmetrical grid
-              cosa(i,j) = 0.5*(cos_sg(i-1,j-1,8)+cos_sg(i,j,6))
-              sina(i,j) = 0.5*(sin_sg(i-1,j-1,8)+sin_sg(i,j,6))
-#endif
+              cosa(i,j) = 0.5*(cos_sg(8,i-1,j-1)+cos_sg(6,i,j))
+              sina(i,j) = 0.5*(sin_sg(8,i-1,j-1)+sin_sg(6,i,j))
            enddo
         enddo
 
@@ -466,71 +452,33 @@
 !     1   5   3
 !     |       |
 !     6---2---7
-#ifdef OLD_COS_SG
       do j=jsd,jed
          do i=isd+1,ied
-            if ( i==1  .and. .not. Atm%neststruct%nested) then
-               cosa_u(i,j) = cos_sg(i,j,1)
-               sina_u(i,j) = sin_sg(i,j,1)
-            elseif ( i==npx  .and. .not. Atm%neststruct%nested) then
-               cosa_u(i,j) = cos_sg(i-1,j,3)
-               sina_u(i,j) = sin_sg(i-1,j,3)
-            else
-               cosa_u(i,j) = 0.5*(cos_sg(i-1,j,3)+cos_sg(i,j,1))
-               sina_u(i,j) = 0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))
-            endif
-            rsin_u(i,j) =  1. / sina_u(i,j)**2
-         enddo
-      enddo
-      do j=jsd+1,jed
-         if( j==1  .and. .not. Atm%neststruct%nested) then
-           do i=isd,ied
-              cosa_v(i,j) = cos_sg(i,j,2)
-              sina_v(i,j) = sin_sg(i,j,2)
-              rsin_v(i,j) =  1. / sina_v(i,j)**2
-           enddo
-         elseif ( j==npy .and. .not. Atm%neststruct%nested ) then
-           do i=isd,ied
-              cosa_v(i,j) = cos_sg(i,j-1,4)
-              sina_v(i,j) = sin_sg(i,j-1,4)
-              rsin_v(i,j) =  1. / sina_v(i,j)**2
-           enddo
-         else
-           do i=isd,ied
-              cosa_v(i,j) = 0.5*(cos_sg(i,j-1,4)+cos_sg(i,j,2))
-              sina_v(i,j) = 0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))
-              rsin_v(i,j) =  1. / sina_v(i,j)**2
-           enddo
-         endif
-      enddo        
-#else
-      do j=jsd,jed
-         do i=isd+1,ied
-            cosa_u(i,j) = 0.5*(cos_sg(i-1,j,3)+cos_sg(i,j,1))
-            sina_u(i,j) = 0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))
-            rsin_u(i,j) =  1. / sina_u(i,j)**2
+            cosa_u(i,j) = 0.5*(cos_sg(3,i-1,j)+cos_sg(1,i,j))
+            sina_u(i,j) = 0.5*(sin_sg(3,i-1,j)+sin_sg(1,i,j))
+!           rsin_u(i,j) =  1. / sina_u(i,j)**2
+            rsin_u(i,j) =  1. / max(1.e-30, sina_u(i,j)**2)
          enddo
       enddo
       do j=jsd+1,jed
          do i=isd,ied
-            cosa_v(i,j) = 0.5*(cos_sg(i,j-1,4)+cos_sg(i,j,2))
-            sina_v(i,j) = 0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))
-            rsin_v(i,j) =  1. / sina_v(i,j)**2
+            cosa_v(i,j) = 0.5*(cos_sg(4,i,j-1)+cos_sg(2,i,j))
+            sina_v(i,j) = 0.5*(sin_sg(4,i,j-1)+sin_sg(2,i,j))
+!           rsin_v(i,j) =  1. / sina_v(i,j)**2
+            rsin_v(i,j) =  1. / max(1.e-30, sina_v(i,j)**2)
          enddo
       enddo
-#endif
      
       do j=jsd,jed
          do i=isd,ied
-            cosa_s(i,j) = cos_sg(i,j,5)
-            sina_s(i,j) = sin_sg(i,j,5)
-            rsin2(i,j) = 1. / sina_s(i,j)**2
+            cosa_s(i,j) = cos_sg(5,i,j)
+!           rsin2(i,j) = 1. / sina_sg(i,j)**2
+            rsin2(i,j) = 1. / max(1.e-30, sin_sg(5,i,j)**2)
          enddo
       enddo
 ! Force the model to fail if incorrect corner values are to be used:
       if (.not. Atm%neststruct%nested) then
          call fill_ghost(cosa_s, npx, npy,  big_number, Atm%bd)
-         call fill_ghost(sina_s, npx, npy, tiny_number, Atm%bd)
       end if
 !------------------------------------
 ! Set special sin values at edges:
@@ -541,7 +489,8 @@
             else if ( ( i==1 .or. i==npx .or. j==1 .or. j==npy ) .and. .not. Atm%neststruct%nested ) then
                  rsina(i,j) = big_number
             else
-                 rsina(i,j) = 1. / sina(i,j)**2
+!                rsina(i,j) = 1. / sina(i,j)**2
+                 rsina(i,j) = 1. / max(1.e-30, sina(i,j)**2)
             endif
          enddo
       enddo
@@ -549,7 +498,8 @@
       do j=jsd,jed
          do i=is,ie+1
             if ( (i==1 .or. i==npx)  .and. .not. Atm%neststruct%nested ) then
-                 rsin_u(i,j) = 1. / sina_u(i,j)
+!                rsin_u(i,j) = 1. / sina_u(i,j)
+                 rsin_u(i,j) = 1. / sign(max(1.e-30,abs(sina_u(i,j))), sina_u(i,j))
             endif
          enddo
       enddo
@@ -557,7 +507,8 @@
       do j=js,je+1
          do i=isd,ied
             if ( (j==1 .or. j==npy) .and. .not. Atm%neststruct%nested ) then
-                 rsin_v(i,j) = 1. / sina_v(i,j)
+!                rsin_v(i,j) = 1. / sina_v(i,j)
+                 rsin_v(i,j) = 1. / sign(max(1.e-30,abs(sina_v(i,j))), sina_v(i,j))
             endif
          enddo
       enddo
@@ -566,8 +517,8 @@
 
       if (.not. Atm%neststruct%nested) then
      do k=1,9
-        call fill_ghost(sin_sg(:,:,k), npx, npy, tiny_number, Atm%bd)  ! this will cause NAN if used
-        call fill_ghost(cos_sg(:,:,k), npx, npy, big_number, Atm%bd)
+        call fill_ghost(sin_sg(k,:,:), npx, npy, tiny_number, Atm%bd)  ! this will cause NAN if used
+        call fill_ghost(cos_sg(k,:,:), npx, npy, big_number, Atm%bd)
      enddo
      end if
 
@@ -576,60 +527,60 @@
 ! -------------------------------
       if ( sw_corner ) then
            do i=0,-2,-1
-              sin_sg(0,i,3) = sin_sg(i,1,2) 
-              sin_sg(i,0,4) = sin_sg(1,i,1) 
-              cos_sg(0,i,3) = cos_sg(i,1,2) 
-              cos_sg(i,0,4) = cos_sg(1,i,1) 
-              cos_sg(0,i,7) = cos_sg(i,1,6)
-              cos_sg(0,i,8) = cos_sg(i,1,7)
-              cos_sg(i,0,8) = cos_sg(1,i,9)
-              cos_sg(i,0,9) = cos_sg(1,i,6)
+              sin_sg(3,0,i) = sin_sg(2,i,1) 
+              sin_sg(4,i,0) = sin_sg(1,1,i) 
+              cos_sg(3,0,i) = cos_sg(2,i,1) 
+              cos_sg(4,i,0) = cos_sg(1,1,i) 
+!!!           cos_sg(7,0,i) = cos_sg(6,i,1)
+!!!           cos_sg(8,0,i) = cos_sg(7,i,1)
+!!!           cos_sg(8,i,0) = cos_sg(9,1,i)
+!!!           cos_sg(9,i,0) = cos_sg(6,1,i)
            enddo
-           cos_sg(0,0,8) = 0.5*(cos_sg(0,1,7)+cos_sg(1,0,9))
+!!!        cos_sg(8,0,0) = 0.5*(cos_sg(7,0,1)+cos_sg(9,1,0))
            
       endif
       if ( nw_corner ) then
            do i=npy,npy+2
-              sin_sg(0,i,3) = sin_sg(npy-i,npy-1,4) 
-              cos_sg(0,i,3) = cos_sg(npy-i,npy-1,4) 
-              cos_sg(0,i,7) = cos_sg(npy-i,npy-1,8)
-              cos_sg(0,i,8) = cos_sg(npy-i,npy-1,9)
+              sin_sg(3,0,i) = sin_sg(4,npy-i,npy-1) 
+              cos_sg(3,0,i) = cos_sg(4,npy-i,npy-1) 
+!!!           cos_sg(7,0,i) = cos_sg(8,npy-i,npy-1)
+!!!           cos_sg(8,0,i) = cos_sg(9,npy-i,npy-1)
            enddo
            do i=0,-2,-1
-              sin_sg(i,npy,2) = sin_sg(1,npy-i,1) 
-              cos_sg(i,npy,2) = cos_sg(1,npy-i,1) 
-              cos_sg(i,npy,6) = cos_sg(1,npy-i,9)
-              cos_sg(i,npy,7) = cos_sg(1,npy-i,6)
+              sin_sg(2,i,npy) = sin_sg(1,1,npy-i) 
+              cos_sg(2,i,npy) = cos_sg(1,1,npy-i) 
+!!!           cos_sg(6,i,npy) = cos_sg(9,1,npy-i)
+!!!           cos_sg(7,i,npy) = cos_sg(6,1,npy-i)
            enddo
-           cos_sg(0,npy,7) = 0.5*(cos_sg(1,npy,6)+cos_sg(0,npy-1,8))
+!!!        cos_sg(7,0,npy) = 0.5*(cos_sg(6,1,npy)+cos_sg(8,0,npy-1))
       endif
       if ( se_corner ) then
            do j=0,-2,-1
-              sin_sg(npx,j,1) = sin_sg(npx-j,1,2) 
-              cos_sg(npx,j,1) = cos_sg(npx-j,1,2) 
-              cos_sg(npx,j,6) = cos_sg(npx-j,1,7) 
-              cos_sg(npx,j,9) = cos_sg(npx-j,1,6) 
+              sin_sg(1,npx,j) = sin_sg(2,npx-j,1) 
+              cos_sg(1,npx,j) = cos_sg(2,npx-j,1) 
+!!!           cos_sg(6,npx,j) = cos_sg(7,npx-j,1) 
+!!!           cos_sg(9,npx,j) = cos_sg(6,npx-j,1) 
            enddo
            do i=npx,npx+2
-              sin_sg(i,0,4) = sin_sg(npx-1,npx-i,3) 
-              cos_sg(i,0,4) = cos_sg(npx-1,npx-i,3) 
-              cos_sg(i,0,9) = cos_sg(npx-1,npx-i,8) 
-              cos_sg(i,0,8) = cos_sg(npx-1,npx-i,7) 
+              sin_sg(4,i,0) = sin_sg(3,npx-1,npx-i) 
+              cos_sg(4,i,0) = cos_sg(3,npx-1,npx-i) 
+!!!           cos_sg(9,i,0) = cos_sg(8,npx-1,npx-i) 
+!!!           cos_sg(8,i,0) = cos_sg(7,npx-1,npx-i) 
            enddo
-           cos_sg(npx,0,9) = 0.5*(cos_sg(npx,1,6)+cos_sg(npx-1,0,8))
+           cos_sg(9,npx,0) = 0.5*(cos_sg(6,npx,1)+cos_sg(8,npx-1,0))
       endif
       if ( ne_corner ) then
          do i=0,2
-            sin_sg(npx,npy+i,1) = sin_sg(npx+i,npy-1,4)
-            sin_sg(npx+i,npy,2) = sin_sg(npx-1,npy+i,3)
-            cos_sg(npx,npy+i,1) = cos_sg(npx+i,npy-1,4)
-            cos_sg(npx,npy+i,6) = cos_sg(npx+i,npy-1,9)
-            cos_sg(npx,npy+i,9) = cos_sg(npx+i,npy-1,8)
-            cos_sg(npx+i,npy,2) = cos_sg(npx-1,npy+i,3)
-            cos_sg(npx+i,npy,6) = cos_sg(npx-1,npy+i,7)
-            cos_sg(npx+i,npy,7) = cos_sg(npx-1,npy+i,8)
+            sin_sg(1,npx,npy+i) = sin_sg(4,npx+i,npy-1)
+            sin_sg(2,npx+i,npy) = sin_sg(3,npx-1,npy+i)
+            cos_sg(1,npx,npy+i) = cos_sg(4,npx+i,npy-1)
+!!!         cos_sg(6,npx,npy+i) = cos_sg(9,npx+i,npy-1)
+!!!         cos_sg(9,npx,npy+i) = cos_sg(8,npx+i,npy-1)
+            cos_sg(2,npx+i,npy) = cos_sg(3,npx-1,npy+i)
+!!!         cos_sg(6,npx+i,npy) = cos_sg(7,npx-1,npy+i)
+!!!         cos_sg(7,npx+i,npy) = cos_sg(8,npx-1,npy+i)
          end do
-         cos_sg(npx,npy,6) = 0.5*(cos_sg(npx-1,npy,7)+cos_sg(npx,npy-1,9))
+         cos_sg(6,npx,npy) = 0.5*(cos_sg(7,npx-1,npy)+cos_sg(9,npx,npy-1))
       endif     
 
    else
@@ -642,7 +593,6 @@
            cosa_u = 0.        
            cosa_v = 0.        
            cosa_s = 0.        
-           sina_s = 1.        
            rsin_u = 1.
            rsin_v = 1.
    endif
@@ -702,55 +652,13 @@
 !-------------------------------------------------------------
 ! Make unit vectors for the coordinate extension:
 !-------------------------------------------------------------
-#ifdef EXTEND_VG
-     if ( sw_corner ) then
-        do k=1,3
-           ess(k,1) = grid3(k,1,1) - grid3(k,0,2)
-        enddo
-        call normalize_vect( ess(1,1) )
-        do k=1,3
-           eww(k,1) = grid3(k,1,1) - grid3(k,2,0)
-        enddo
-        call normalize_vect( eww(1,1) )
-     endif
-     if ( se_corner ) then
-        do k=1,3
-           ess(k,2) = grid3(k,npx+1,2) - grid3(k,npx,1)
-        enddo
-        call normalize_vect( ess(1,2) )
-        do k=1,3
-           eww(k,2) = grid3(k,npx,1) - grid3(k,npx-1,0)
-        enddo
-        call normalize_vect( eww(1,2) )
-     endif
-     if ( ne_corner ) then
-        do k=1,3
-           ess(k,3) = grid3(k,npx+1,npy-1) - grid3(k,npx,npy)
-        enddo
-        call normalize_vect( ess(1,3) )
-        do k=1,3
-           eww(k,3) = grid3(k,npx-1,npy+1) - grid3(k,npx,npy)
-        enddo
-        call normalize_vect( eww(1,3) )
-     endif
-     if ( nw_corner ) then
-        do k=1,3
-           ess(k,4) = grid3(k,1,npy) - grid3(k,0,npy-1)
-        enddo
-        call normalize_vect( ess(1,4) )
-        do k=1,3
-           eww(k,4) = grid3(k,2,npy+1) - grid3(k,1,npy)
-        enddo
-        call normalize_vect( eww(1,4) )
-     endif
-#endif
   endif
  
   do j=jsd,jed+1
      if ((j==1 .OR. j==npy) .and. .not. Atm%neststruct%nested) then
         do i=isd,ied
            divg_u(i,j) = dyc(i,j)/dx(i,j) &
-                    *0.5*(sin_sg(i,j,2) + sin_sg(i,j-1,4) )
+                    *0.5*(sin_sg(2,i,j) + sin_sg(4,i,j-1) )
         enddo
      else
         do i=isd,ied
@@ -763,13 +671,13 @@
         divg_v(i,j) = sina_u(i,j)*dxc(i,j)/dy(i,j)
      enddo
      if (is == 1 .and. .not. Atm%neststruct%nested) divg_v(is,j) = dxc(is,j)/dy(is,j)* &
-            0.5*(sin_sg(1,j,1) + sin_sg(0,j,3))
+            0.5*(sin_sg(1,1,j) + sin_sg(3,0,j))
      if (ie+1 == npx .and. .not. Atm%neststruct%nested) divg_v(ie+1,j) = dxc(ie+1,j)/dy(ie+1,j)* & 
-            0.5*(sin_sg(npx,j,1) + sin_sg(npx-1,j,3))
+            0.5*(sin_sg(1,npx,j) + sin_sg(3,npx-1,j))
   enddo
 
 ! Initialize cubed_sphere to lat-lon transformation:
-     call init_cubed_to_latlon( Atm%gridstruct, agrid, grid_type, c2l_order, Atm%bd )
+     call init_cubed_to_latlon( Atm%gridstruct, Atm%flagstruct%hydrostatic, agrid, grid_type, c2l_order, Atm%bd )
 
      call global_mx(area, ng, Atm%gridstruct%da_min, Atm%gridstruct%da_max, Atm%bd)
      if( is_master() ) write(*,*) 'da_max/da_min=', Atm%gridstruct%da_max/Atm%gridstruct%da_min
@@ -804,13 +712,6 @@
         Atm%gridstruct%edge_vect_w = big_number
         Atm%gridstruct%edge_vect_e = big_number
 
-#ifdef USE_EXTEND_CUBE
-        Atm%gridstruct%ex_s(npx) = big_number
-        Atm%gridstruct%ex_n(npx) = big_number
-        Atm%gridstruct%ex_w(npy) = big_number
-        Atm%gridstruct%ex_e(npy) = big_number
-#endif
-
      endif
 
   end subroutine grid_utils_init
@@ -824,9 +725,6 @@
       if (allocated(sst_anom)) deallocate( sst_anom )
 #endif
 
-#ifdef VAN2
-      if ( allocated(van2) ) deallocate( van2 )
-#endif
 
 
   end subroutine grid_utils_end
@@ -906,660 +804,6 @@
 
   end function inner_prod
 
-#ifdef VAN2
- subroutine van2d_init(grid, agrid0, npx, npy)
-  integer, intent(in):: npx, npy
-  real,    intent(in)::  grid(isd:ied+1,jsd:jed+1,2)
-  real,    intent(in):: agrid0(isd:ied ,jsd:jed  ,2)
-!
-  integer, parameter:: n16 = 16
-  real:: agrid(is-2:ie+2 ,js-2:je+2,2)
-  real:: a(n16,n16), b(n16,n16), x(n16), y(n16)
-  real:: x3, x2, x1, y3, y2, y1, lat, lon, lat0, lon0, sum0
-  real:: cos_lat, sin_lat, cos_lat0, sin_lat0, cosc, mfactor
-  integer i, j, k, ip, jp
-
-  do j=js-2, je+2
-     do i=is-2, ie+2
-        agrid(i,j,1) = agrid0(i,j,1)
-        agrid(i,j,2) = agrid0(i,j,2)
-     enddo
-  enddo
-
-  allocate ( van2(n16,is:ie+1,js:je+1) )
-
-  van2 = 0.
-  do 2500 j=js, je+1
-     do 2500 i=is, ie+1
-            lon0 = grid(i,j,1)
-            lat0 = grid(i,j,2)
-        cos_lat0 = cos(lat0)
-        sin_lat0 = sin(lat0)
-
-!--------------
-! fill corners:
-!--------------
-! SW:
-        if ( i==1 .and. j==1 ) go to 2000       ! 12-pt matrix
-        if ( i==2 .and. j==1 ) then 
-!rab             go to 2000
-! shift the commom point
-             agrid(-1,-1,1:2) = agrid(2,-1,1:2)    ! k=1
-             agrid( 0,-1,1:2) = agrid(2, 0,1:2)    ! k=2
-             agrid(-1, 0,1:2) = agrid(1,-1,1:2)    ! k=3
-             agrid( 0, 0,1:2) = agrid(1, 0,1:2)    ! k=4
-        endif
-! shift the commom point
-        if ( i==1 .and. j==2 ) goto 2000
-        if ( i==2 .and. j==2 ) agrid(0,0,1:2) = agrid(4,4,1:2) ! k=1 
-
-! SE:
-        if ( i==npx-1 .and. j==1 ) goto 2000
-        if ( i==npx   .and. j==1 ) goto 2000    ! 12-pt matrix
-        if ( i==npx-1 .and. j==2 ) agrid(npx,0,1:2) = agrid(npx-4,4,1:2) ! k=4
-        if ( i==npx   .and. j==2 ) goto 2000
-
-! NE:
-        if ( i==npx-1 .and. j==npy-1) agrid(npx,npy,1:2) = agrid(npx-4,npy-4,1:2) ! k=16
-        if ( i==npx   .and. j==npy-1) goto 2000
-        if ( i==npx-1 .and. j==npy)   goto 2000
-        if ( i==npx   .and. j==npy )  goto 2000 ! 12-pt matrix
-
-! NW:
-        if ( i==1 .and. j==npy-1 ) goto 2000
-        if ( i==2 .and. j==npy-1 ) agrid(0,npy,1:2) = agrid(4,npy-4,1:2) ! k=13
-        if ( i==1 .and. j==npy )   goto 2000     ! 12-pt matrix
-        if ( i==2 .and. j==npy )   goto 2000
-
-        do k=1,n16
-           if    ( k==1 ) then
-                               ip = i-2; jp = j-2
-           elseif( k==2 ) then
-                               ip = i-1; jp = j-2
-           elseif( k==3 ) then
-                               ip = i;   jp = j-2
-           elseif( k==4 ) then
-                               ip = i+1; jp = j-2
-           elseif( k==5 ) then
-                               ip = i-2; jp = j-1
-           elseif( k==6 ) then
-                               ip = i-1; jp = j-1
-           elseif( k==7 ) then
-                               ip = i  ; jp = j-1
-           elseif( k==8 ) then
-                               ip = i+1; jp = j-1
-           elseif( k==9 ) then
-                               ip = i-2; jp = j
-           elseif( k==10 ) then
-                               ip = i-1; jp = j
-           elseif( k==11 ) then
-                               ip = i;   jp = j
-           elseif( k==12 ) then
-                               ip = i+1; jp = j
-           elseif( k==13 ) then
-                               ip = i-2; jp = j+1
-           elseif( k==14 ) then
-                               ip = i-1; jp = j+1
-           elseif( k==15 ) then
-                               ip = i;   jp = j+1
-           elseif( k==16 ) then
-                               ip = i+1; jp = j+1
-           endif
-
-           lon = agrid(ip,jp,1) 
-           lat = agrid(ip,jp,2) 
-  
-           cos_lat = cos(lat)
-           sin_lat = sin(lat)
-! Gnomonic projection:
-           mfactor = 1. / (sin_lat*sin_lat0 + cos_lat*cos_lat0*cos(lon-lon0))
-           x(k) =  cos_lat *sin(lon-lon0)*mfactor
-           y(k) = (cos_lat0*sin_lat-sin_lat0*cos_lat*cos(lon-lon0))*mfactor
-        enddo
-
-        do k=1,n16
-!-------------------------------------
-! Full 16x16 "Vandermonde" Matrix
-!-------------------------------------
-           x1 = x(k)
-           x2 = x1*x1
-           x3 = x1*x2
-           y1 = y(k)
-           y2 = y1*y1
-           y3 = y1*y2
-           a( 1,k) = x3 * y3
-           a( 2,k) = x3 * y2
-           a( 3,k) = x2 * y3
-           a( 4,k) = x2 * y2
-           a( 5,k) = x3 * y1
-           a( 6,k) = x2 * y1
-           a( 7,k) = x1 * y3
-           a( 8,k) = x1 * y2
-           a( 9,k) = x1 * y1
-           a(10,k) = x3
-           a(11,k) = x2
-           a(12,k) = x1
-           a(13,k) = y3
-           a(14,k) = y2
-           a(15,k) = y1
-           a(16,k) = 1.
-        enddo
-
-        call invert_matrix(n16, a, b)
-
-        do k=1,n16
-           van2(k,i,j) = b(k,n16)
-        enddo
-
-        sum0 = 0.
-        do k=1,n16
-           sum0 = sum0 + b(k,n16)
-#ifdef CHECK_VAN2
-           if ( k==1 .and. i==3 .and. j==3 ) then
-                write(*,*) k,'Van2(3,3):', van2(k,i,j)
-!               write(*,*) '          ', lon0, lat0
-           endif
-#endif
-        enddo
-        if (abs(sum0-1.)>1.e-10) call mpp_error(FATAL, 'van2_init')
-2000 continue
-2500 continue
-
-
- end subroutine van2d_init
-
-  subroutine van2_init(xs, ys, npx, npy)
-  integer, intent(in):: npx, npy
-  real,    intent(in), dimension(npx,npy):: xs, ys   ! coner positions
-! Local:
-  real, dimension(npx,npy):: lon2, lat2
-  real::  grid(isd:ied+1,jsd:jed+1,2)
-  real:: agrid(is-2:ie+2,js-2:je+2,2)
-  integer, parameter:: n16 = 16
-  real:: a(n16,n16), b(n16,n16), x(n16), y(n16)
-  real:: x3, x2, x1, y3, y2, y1, lat, lon, lat0, lon0, sum0, xk
-  real:: cos_lat, sin_lat, cos_lat0, sin_lat0, cosc, mfactor
-  integer i, j, k, ip, jp
-
-  do j=1,npy
-     do i=1,npx
-        lat2(i,j) = ys(i,j)
-        lon2(i,j) = xs(i,j)
-        if ( lon2(i,j) < 0. ) lon2(i,j) = lon2(i,j) + 2.*pi
-     enddo
-  enddo
-
-  do j=max(1,jsd), min(npy,jed+1)
-     do i=max(1,isd), min(npx,ied+1)
-        grid(i,j,1) = lon2(i,j)
-        grid(i,j,2) = lat2(i,j)
-     enddo
-  enddo
-
-! agrid = 0.
-  do j=max(1,js-2), min(npy-1,je+2)
-     do i=max(1,is-2), min(npx-1,ie+2)
-        call cell_center2( grid(i,j,  1:2), grid(i+1,j,  1:2),                &
-                           grid(i,j+1,1:2), grid(i+1,j+1,1:2), agrid(i,j,1:2) )
-     enddo
-  enddo
-
-! Fill outer edges
-  if ( is==1 ) then 
-       do j=max(1,js-2), min(npy-1,je+2)
-          call mirror_latlon(lon2(1,1), lat2(1,1), lon2(1,npy), lat2(1,npy),   &
-                             agrid(1,j,1), agrid(1,j,2), agrid(0,j,1), agrid(0,j,2))
-          call mirror_latlon(lon2(1,1), lat2(1,1), lon2(1,npy), lat2(1,npy),   &
-                             agrid(2,j,1), agrid(2,j,2), agrid(-1,j,1), agrid(-1,j,2))
-       enddo
-  endif
-  if ( (ie+1)==npx ) then 
-       do j=max(1,js-2), min(npy-1,je+2)
-          call mirror_latlon(lon2(npx,1), lat2(npx,1), lon2(npx,npy), lat2(npx,npy),   &
-                             agrid(npx-1,j,1), agrid(npx-1,j,2), agrid(npx,j,1), agrid(npx,j,2))
-          call mirror_latlon(lon2(npx,1), lat2(npx,1), lon2(npx,npy), lat2(npx,npy),   &
-                             agrid(npx-2,j,1), agrid(npx-2,j,2), agrid(npx+1,j,1), agrid(npx+1,j,2))
-       enddo
-  endif
-  if ( js==1 ) then 
-       do i=max(1,is-2), min(npx-1,ie+2)
-          call mirror_latlon(lon2(1,1), lat2(1,1), lon2(npx,1), lat2(npx,1),   &
-                             agrid(i,1,1), agrid(i,1,2), agrid(i,0,1), agrid(i,0,2))
-          call mirror_latlon(lon2(1,1), lat2(1,1), lon2(npx,1), lat2(npx,1),   &
-                             agrid(i,2,1), agrid(i,2,2), agrid(i,-1,1), agrid(i,-1,2))
-       enddo
-  endif
-  if ( (je+1)==npy ) then 
-       do i=max(1,is-2), min(npx-1,ie+2)
-          call mirror_latlon(lon2(1,npy), lat2(1,npy), lon2(npx,npy), lat2(npx,npy),   &
-                             agrid(i,npy-1,1), agrid(i,npy-1,2), agrid(i,npy,1), agrid(i,npy,2))
-          call mirror_latlon(lon2(1,npy), lat2(1,npy), lon2(npx,npy), lat2(npx,npy),   &
-                             agrid(i,npy-2,1), agrid(i,npy-2,2), agrid(i,npy+1,1), agrid(i,npy+1,2))
-       enddo
-  endif
-
-  allocate ( van2(n16,is:ie+1,js:je+1) )
-
-  van2 = 0.
-  do 2500 j=js, je+1
-     do 2500 i=is, ie+1
-            lon0 = grid(i,j,1)
-            lat0 = grid(i,j,2)
-        cos_lat0 = cos(lat0)
-        sin_lat0 = sin(lat0)
-!----
-! SW:
-!----
-        if ( i==1 .and. j==1 ) then 
-             go to 2000
-        endif
-        if ( i==2 .and. j==1 ) then 
-             agrid(0,-1,1:2) = agrid(-1,2,1:2)
-             agrid(0, 0,1:2) = agrid(-1,1,1:2)
-        endif
-        if ( i==1 .and. j==2 ) then 
-             agrid(-1,0,1:2) = agrid(2,-1,1:2)
-             agrid( 0,0,1:2) = agrid(1,-1,1:2)
-        endif
-        if ( i==2 .and. j==2 ) then 
-             agrid(0,0,1:2) = agrid(4,4,1:2)   ! add extra point to make it 16
-        endif
-!----
-! SE:
-!----
-        if ( i==npx   .and. j==1 ) then 
-             go to 2000
-        endif
-        if ( i==npx-1 .and. j==1 ) then 
-             agrid(npx,-1,1:2) = agrid(npx+1,2,1:2)
-             agrid(npx, 0,1:2) = agrid(npx+1,1,1:2)
-        endif
-        if ( i==npx-1 .and. j==2 ) then 
-             agrid(npx,0,1:2) = agrid(npx-4,4,1:2)
-        endif
-        if ( i==npx   .and. j==2 ) then 
-             agrid(npx+1,0,1:2) = agrid(npx-2,-1,1:2)
-             agrid(npx,  0,1:2) = agrid(npx-1,-1,1:2)
-        endif
-!----
-! NE:
-!----
-        if ( i==npx   .and. j==npy ) then 
-             go to 2000
-        endif
-        if ( i==npx-1 .and. j==npy-1) then 
-             agrid(npx,npy,1:2) = agrid(npx-4,npy-4,1:2)
-        endif
-        if ( i==npx   .and. j==npy-1) then 
-             agrid(npx+1,npy,1:2) = agrid(npx-2,npy+1,1:2)
-             agrid(npx,  npy,1:2) = agrid(npx-1,npy+1,1:2)
-        endif
-        if ( i==npx-1 .and. j==npy) then 
-             agrid(npx,npy+1,1:2) = agrid(npx+1,npy-2,1:2)
-             agrid(npx,npy,  1:2) = agrid(npx+1,npy-1,1:2)
-        endif
-!----
-! NW:
-!----
-        if ( i==1 .and. j==npy ) then 
-             go to 2000
-        endif
-        if ( i==1 .and. j==npy-1 ) then 
-             agrid(-1,npy,1:2) = agrid(2,npy+1,1:2)
-             agrid( 0,npy,1:2) = agrid(1,npy+1,1:2)
-        endif
-        if ( i==2 .and. j==npy-1 ) then 
-             agrid(0,npy,1:2) = agrid(4,npy-4,1:2)
-        endif
-        if ( i==2 .and. j==npy ) then 
-             agrid(0,npy+1,1:2) = agrid(-1,npy-2,1:2)
-             agrid(0,npy,  1:2) = agrid(-1,npy-1,1:2)
-        endif
-
-        do k=1,n16
-           if    ( k==1 ) then
-                               ip = i-2; jp = j-2
-           elseif( k==2 ) then
-                               ip = i-1; jp = j-2
-           elseif( k==3 ) then
-                               ip = i;   jp = j-2
-           elseif( k==4 ) then
-                               ip = i+1; jp = j-2
-           elseif( k==5 ) then
-                               ip = i-2; jp = j-1
-           elseif( k==6 ) then
-                               ip = i-1; jp = j-1
-           elseif( k==7 ) then
-                               ip = i  ; jp = j-1
-           elseif( k==8 ) then
-                               ip = i+1; jp = j-1
-           elseif( k==9 ) then
-                               ip = i-2; jp = j
-           elseif( k==10 ) then
-                               ip = i-1; jp = j
-           elseif( k==11 ) then
-                               ip = i;   jp = j
-           elseif( k==12 ) then
-                               ip = i+1; jp = j
-           elseif( k==13 ) then
-                               ip = i-2; jp = j+1
-           elseif( k==14 ) then
-                               ip = i-1; jp = j+1
-           elseif( k==15 ) then
-                               ip = i;   jp = j+1
-           elseif( k==16 ) then
-                               ip = i+1; jp = j+1
-           endif
-
-           lon = agrid(ip,jp,1) 
-           lat = agrid(ip,jp,2) 
-  
-           cos_lat = cos(lat)
-           sin_lat = sin(lat)
-! Gnomonic projection:
-           mfactor = 1. / (sin_lat*sin_lat0 + cos_lat*cos_lat0*cos(lon-lon0))
-           x(k) =  cos_lat *sin(lon-lon0)*mfactor
-           y(k) = (cos_lat0*sin_lat - sin_lat0*cos_lat*cos(lon-lon0))*mfactor
-#ifdef MIRROR_V
-           if ( j==1 .or. j==npy ) then
-                  xk = x(k)
-                x(k) = y(k)
-                y(k) = xk
-           endif
-#endif
-
-        enddo
-
-        do k=1,n16
-!-------------------------------------
-! Full 16x16 "Vandermonde" Matrix
-!-------------------------------------
-           x1 = x(k)
-           x2 = x1*x1
-           x3 = x1*x2
-           y1 = y(k)
-           y2 = y1*y1
-           y3 = y1*y2
-!---------------------
-           a( 1,k) = x3 * y3
-           a( 2,k) = x3 * y2
-           a( 3,k) = x2 * y3
-           a( 4,k) = x2 * y2
-           a( 5,k) = x3 * y1
-           a( 6,k) = x2 * y1
-           a( 7,k) = x1 * y3
-           a( 8,k) = x1 * y2
-           a( 9,k) = x1 * y1
-           a(10,k) = x3
-           a(11,k) = x2
-           a(12,k) = x1
-           a(13,k) = y3
-           a(14,k) = y2
-           a(15,k) = y1
-           a(16,k) = 1.
-        enddo
-
-        call invert_matrix(n16, a, b)
-
-        do k=1,n16
-           van2(k,i,j) = b(k,n16)
-        enddo
-
-        sum0 = 0.
-        do k=1,n16
-           sum0 = sum0 + b(k,n16)
-#ifdef CHECK_VAN2
-           if ( k==1 .and. i==3 .and. j==3 ) then
-                write(*,*) k,'Van2(3,3):', van2(k,i,j)
-!               write(*,*) '          ', lon0, lat0
-           endif
-#endif
-        enddo
-        if (abs(sum0-1.)>1.e-12) then
-            write(*,*) 'Failed van point:', i,j
-            call mpp_error(FATAL, 'van2_init')
-        endif
-2000 continue
-2500 continue
-
-
- end subroutine van2_init
-#endif
-
-#ifdef USE_EXTEND_CUBE
- subroutine extend_cube_s(non_ortho, grid, agrid, npx, npy, symm, nested)
- 
-! Initialization of interpolation factors for the extended cubed sphere
-! for interpolating cell mean scalars beyond the cubed face
- 
- logical, intent(in):: non_ortho
- real,    intent(in)::  grid(isd:ied+1,jsd:jed+1,2)
- real,    intent(in):: agrid(isd:ied  ,jsd:jed  ,2)
- integer, intent(in):: npx, npy
- logical, intent(in):: symm  ! Not working; requires global grids
- logical, intent(IN) :: nested
-
- real p1(3), p2(3), p3(3), p4(3), p5(3), pp(3)
- real q1(2), q2(2)
- real d1, d2, d3
- integer i, j
- integer im2, jm2
- logical local_in, local_out
- real, parameter:: esl = 1.E-5
-
-
-  if ( .not. non_ortho ) then
-     ex_s = 0.
-     ex_n = 0.
-     ex_w = 0.
-     ex_e = 0.
-  else
-     ex_s = big_number 
-     ex_n = big_number
-     ex_w = big_number
-     ex_e = big_number
- 
-     if ( npx /= npy .and. .not. nested) call mpp_error(FATAL, 'extend_cube_s: npx /= npy')
-     if ( (npx/2)*2 == npx ) call mpp_error(FATAL, 'extend_cube_s: npx/npy is not an odd number')
-
-     im2 = (npx-1)/2
-     jm2 = (npy-1)/2
-
- if ( is==1 ) then
-    i=1
-    do j=js,je
-         call latlon2xyz( agrid(i,  j,  1:2), p1)
-         call mid_pt_cart(grid(i,j,1:2), grid(i,j+1,1:2), p2)
-       if ( j<=jm2 ) then
-! q_w(j) = (1.-ex_w(j)) * q(j) + ex_w(j) * q(j+1)
-! 1st column
-          call latlon2xyz( agrid(i-1,j,  1:2), p3)
-          call latlon2xyz( agrid(i-1,j+1,1:2), p4)
-          call intersect(p1, p2, p3, p4, 1., pp, local_in, local_out)
-          call cart_to_latlon(1, pp, q1(1), q1(2))
-          d1 = great_circle_dist( q1, agrid(i-1,j,  1:2) )
-          d2 = great_circle_dist( q1, agrid(i-1,j+1,1:2) )
-          d3 = great_circle_dist( agrid(i-1,j,1:2), agrid(i-1,j+1,1:2) )
-          if ( d1 > d3 ) then
-               call mpp_error(FATAL, 'extend_cube_s: 1st column intp violated')
-          else
-               ex_w(j) = d1 / ( d1 + d2 )
-          endif
-          if( ex_w(j) < esl ) ex_w(j) = 0.
-!         if(is_master()) write(*,*) i,j, ex_w(j)
-       else
-!
-! q_w(j) = (1.-ex_w(j)) * q(j) + ex_w(j) * q(j-1)
-! 1st column
-          call latlon2xyz( agrid(i-1,j,  1:2), p3)
-          call latlon2xyz( agrid(i-1,j-1,1:2), p4)
-          call intersect(p1, p2, p3, p4, 1., pp, local_in, local_out)
-          call cart_to_latlon(1, pp, q1(1), q1(2))
-          d1 = great_circle_dist( q1, agrid(i-1,j,  1:2) )
-          d2 = great_circle_dist( q1, agrid(i-1,j-1,1:2) )
-          d3 = great_circle_dist( agrid(i-1,j,1:2), agrid(i-1,j-1,1:2) )
-          if ( d1 > d3 ) then
-               call mpp_error(FATAL, 'extend_cube_s: 1st column intp violated')
-          else
-               ex_w(j) = d1 / ( d1 + d2 )
-          endif
-          if( ex_w(j) < esl ) ex_w(j) = 0.
-!         if(is_master()) write(*,*) i,j, ex_w(j)
-       endif
-    enddo
- endif
-
- if ( (ie+1)==npx ) then
-    i=npx-1
-    do j=js,je
-         call latlon2xyz( agrid(i  ,j, 1:2), p1)
-         call mid_pt_cart(grid(i+1,j,1:2), grid(i+1,j+1,1:2), p2)
-       if ( j<=jm2 ) then
-! q_e(j) = (1.-ex_e(j)) * q(j) + ex_e(j) * q(j+1)
-! 1st column
-          call latlon2xyz( agrid(i+1,j,  1:2), p3)
-          call latlon2xyz( agrid(i+1,j+1,1:2), p4)
-          call intersect(p1, p2, p3, p4, 1., pp, local_in, local_out)
-          call cart_to_latlon(1, pp, q1(1), q1(2))
-          d1 = great_circle_dist( q1, agrid(i+1,j,  1:2) )
-          d2 = great_circle_dist( q1, agrid(i+1,j+1,1:2) )
-          d3 = great_circle_dist( agrid(i+1,j,1:2), agrid(i+1,j+1,1:2) )
-          if ( d1 > d3 ) then
-               call mpp_error(FATAL, 'extend_cube_s: 1st column intp violated')
-          else
-               ex_e(j) = d1 / ( d1 + d2 )
-          endif
-          if( ex_e(j) < esl ) ex_e(j) = 0.
-!         if(is_master()) write(*,*) i,j, ex_e(j) - ex_w(j)
-       else
-!
-! q_e(j) = (1.-ex_e(j)) * q(j) + ex_e(j) * q(j-1)
-! 1st column
-          call latlon2xyz( agrid(i+1,j,  1:2), p3)
-          call latlon2xyz( agrid(i+1,j-1,1:2), p4)
-          call intersect(p1, p2, p3, p4, 1., pp, local_in, local_out)
-          call cart_to_latlon(1, pp, q1(1), q1(2))
-          d1 = great_circle_dist( q1, agrid(i+1,j,  1:2) )
-          d2 = great_circle_dist( q1, agrid(i+1,j-1,1:2) )
-          d3 = great_circle_dist( agrid(i+1,j,1:2), agrid(i+1,j-1,1:2) )
-          if ( d1 > d3 ) then
-               call mpp_error(FATAL, 'extend_cube_s: 1st column intp violated')
-          else
-               ex_e(j) = d1 / ( d1 + d2 )
-          endif
-          if( ex_e(j) < esl ) ex_e(j) = 0.
-!         if(is_master()) write(*,*) i,j, ex_e(j) - ex_w(j)
-       endif
-    enddo
- endif
-
-! Make it symmetrical
- if ( symm) then
-    do j=js,je
-       ex_e(j) = 0.5*(ex_e(j) + ex_w(j))
-       ex_w(j) = ex_e(j)
-    enddo
- endif
-
- if ( js==1 ) then
-    j=1
-    do i=is,ie
-          call latlon2xyz( agrid(i,j,  1:2), p1)
-          call mid_pt_cart(grid(i,j,1:2), grid(i+1,j,1:2), p2)
-       if ( i<=im2 ) then
-! q_s(i) = (1.-ex_s(i)) * q(i) + ex_s(i) * q(i+1)
-! 1st row
-          call latlon2xyz( agrid(i,  j-1,1:2), p3)
-          call latlon2xyz( agrid(i+1,j-1,1:2), p4)
-          call intersect(p1, p2, p3, p4, 1., pp, local_in, local_out)
-          call cart_to_latlon(1, pp, q1(1), q1(2))
-          d1 = great_circle_dist( q1, agrid(i,  j-1,1:2) )
-          d2 = great_circle_dist( q1, agrid(i+1,j-1,1:2) )
-          d3 = great_circle_dist( agrid(i,j-1,1:2), agrid(i+1,j-1,1:2) )
-          if ( d1 > d3 ) then
-               call mpp_error(FATAL, 'extend_cube_s: 1st column intp violated')
-          else
-               ex_s(i) = d1 / ( d1 + d2 )
-          endif
-          if( ex_s(i) < esl ) ex_s(i) = 0.
-!         if(is_master()) write(*,*) i,j, ex_s(i)
-       else
-! q_s(i) = (1.-ex_s(i)) * q(i) + ex_s(i) * q(i-1)
-! 1st row
-          call latlon2xyz( agrid(i,  j-1,1:2), p3)
-          call latlon2xyz( agrid(i-1,j-1,1:2), p4)
-          call intersect(p1, p2, p3, p4, 1., pp, local_in, local_out)
-          call cart_to_latlon(1, pp, q1(1), q1(2))
-          d1 = great_circle_dist( q1, agrid(i,  j-1,1:2) )
-          d2 = great_circle_dist( q1, agrid(i-1,j-1,1:2) )
-          d3 = great_circle_dist( agrid(i,j-1,1:2), agrid(i-1,j-1,1:2) )
-          if ( d1 > d3 ) then
-               call mpp_error(FATAL, 'extend_cube_s: 1st column intp violated')
-          else
-               ex_s(i) = d1 / ( d1 + d2 )
-          endif
-          if( ex_s(i) < esl ) ex_s(i) = 0.
-!         if(is_master()) write(*,*) i,j, ex_s(i)
-       endif
-    enddo
- endif
-
-
- if ( (je+1)==npy ) then
-    j=npy-1
-    do i=is,ie
-          call latlon2xyz( agrid(i,j,  1:2), p1)
-          call mid_pt_cart(grid(i,j+1,1:2), grid(i+1,j+1,1:2), p2)
-       if ( i<=im2 ) then
-! q_n(i) = (1.-ex_n(i)) * q(i) + ex_n(i) * q(i+1)
-! 1st row
-          call latlon2xyz( agrid(i,  j+1,1:2), p3)
-          call latlon2xyz( agrid(i+1,j+1,1:2), p4)
-          call intersect(p1, p2, p3, p4, 1., pp, local_in, local_out)
-          call cart_to_latlon(1, pp, q1(1), q1(2))
-          d1 = great_circle_dist( q1, agrid(i,  j+1,1:2) )
-          d2 = great_circle_dist( q1, agrid(i+1,j+1,1:2) )
-          d3 = great_circle_dist( agrid(i,j+1,1:2), agrid(i+1,j+1,1:2) )
-          if ( d1 > d3 ) then
-               call mpp_error(FATAL, 'extend_cube_s: 1st column intp violated')
-          else
-               ex_n(i) = d1 / ( d1 + d2 )
-          endif
-          if( ex_n(i) < esl ) ex_n(i) = 0.
-!         if(is_master()) write(*,*) i,j, ex_n(i) - ex_s(i)
-       else
-! q_n(i) = (1.-ex_n(i)) * q(i) + ex_n(i) * q(i-1)
-! 1st row
-          call latlon2xyz( agrid(i,  j+1,1:2), p3)
-          call latlon2xyz( agrid(i-1,j+1,1:2), p4)
-          call intersect(p1, p2, p3, p4, 1., pp, local_in, local_out)
-          call cart_to_latlon(1, pp, q1(1), q1(2))
-          d1 = great_circle_dist( q1, agrid(i,  j+1,1:2) )
-          d2 = great_circle_dist( q1, agrid(i-1,j+1,1:2) )
-          d3 = great_circle_dist( agrid(i,j+1,1:2), agrid(i-1,j+1,1:2) )
-          if ( d1 > d3 ) then
-               call mpp_error(FATAL, 'extend_cube_s: 1st column intp violated')
-          else
-               ex_n(i) = d1 / ( d1 + d2 )
-          endif
-          if( ex_n(i) < esl ) ex_n(i) = 0.
-!         if(is_master()) write(*,*) i,j, ex_n(i) - ex_s(i)
-       endif
-    enddo
- endif
-
-! Make it symmetrical
- if ( symm) then
-    do i=is,ie
-       ex_n(i) = 0.5*(ex_n(i) + ex_s(i))
-       ex_s(i) = ex_n(i)
-    enddo
- endif
-
- endif
-
- end subroutine extend_cube_s
-#endif
 
  subroutine efactor_a2c_v(edge_vect_s, edge_vect_n, edge_vect_w, edge_vect_e, non_ortho, grid, agrid, npx, npy, nested, bd)
 !
@@ -2203,12 +1447,13 @@
  end subroutine latlon2xyz2
 
 
- subroutine latlon2xyz(p, e)
+ subroutine latlon2xyz(p, e, id)
 !
 ! Routine to map (lon, lat) to (x,y,z)
 !
  real, intent(in) :: p(2)
  real, intent(out):: e(3)
+ integer, optional, intent(in):: id   ! id=0 do nothing; id=1, right_hand
 
  integer n
  real (f_p):: q(2)
@@ -2329,6 +1574,7 @@
      endif
 
      if ( lon < 0.) lon = 2.*pi + lon
+! RIGHT_HAND system:
      lat = asin(p(3))
      
      xs(i) = lon
@@ -2381,7 +1627,14 @@
              u1(1:3,i,j) = 0.
              u2(1:3,i,j) = 0.
         else
-#ifdef NEW_VECT
+#ifdef OLD_VECT
+          do k=1,3
+             u1(k,i,j) = pp(k,i+1,j)+pp(k,i+1,j+1) - pp(k,i,j)-pp(k,i,j+1)
+             u2(k,i,j) = pp(k,i,j+1)+pp(k,i+1,j+1) - pp(k,i,j)-pp(k,i+1,j)
+          enddo
+          call normalize_vect( u1(1,i,j) )
+          call normalize_vect( u2(1,i,j) )
+#else
           call cell_center3(pp(1,i,j), pp(1,i+1,j), pp(1,i,j+1), pp(1,i+1,j+1), pc)
 ! e1:
           call mid_pt3_cart(pp(1,i,j),   pp(1,i,j+1),   p1)
@@ -2395,19 +1648,41 @@
           call vect_cross(p3, p2, p1)
           call vect_cross(u2(1,i,j), pc, p3)
           call normalize_vect( u2(1,i,j) )
-#else
-          do k=1,3
-             u1(k,i,j) = pp(k,i+1,j)+pp(k,i+1,j+1) - pp(k,i,j)-pp(k,i,j+1)
-             u2(k,i,j) = pp(k,i,j+1)+pp(k,i+1,j+1) - pp(k,i,j)-pp(k,i+1,j) 
-          enddo
-          call normalize_vect( u1(1,i,j) )
-          call normalize_vect( u2(1,i,j) )
 #endif
         endif
        enddo
     enddo
 
  end subroutine get_center_vect
+ subroutine get_unit_vect2( e1, e2, uc )
+   real, intent(in) :: e1(2), e2(2)
+   real, intent(out):: uc(3) ! unit vector e1--->e2
+! Local:
+   real, dimension(3):: pc, p1, p2, p3
+
+! RIGHT_HAND system:
+   call latlon2xyz(e1, p1)
+   call latlon2xyz(e2, p2)
+
+   call mid_pt3_cart(p1, p2,  pc)
+   call vect_cross(p3, p2, p1)
+   call vect_cross(uc, pc, p3)
+   call normalize_vect( uc )
+
+ end subroutine get_unit_vect2
+
+ subroutine get_unit_vect3( p1, p2, uc )
+   real, intent(in) :: p1(3), p2(3)
+   real, intent(out):: uc(3)
+! Local:
+   real, dimension(3):: pc, p3
+
+   call mid_pt3_cart(p1, p2,  pc)
+   call vect_cross(p3, p2, p1)
+   call vect_cross(uc, pc, p3)
+   call normalize_vect( uc )
+
+ end subroutine get_unit_vect3
 
 
  subroutine normalize_vect(e)
@@ -2467,7 +1742,7 @@
 !------------------------------------------
  real:: pm(2)
  real:: e1(3), e2(3), eb(3)
- real:: dd, alpha, omega
+ real:: dd, alpha, omg
  
  if ( abs(p1(1) - p2(1)) < 1.e-8 .and. abs(p1(2) - p2(2)) < 1.e-8) then
     call mpp_error(WARNING, 'spherical_linear_interpolation was passed two colocated points.')
@@ -2492,20 +1767,20 @@
 
  alpha = 1. - beta
 
- omega = acos( e1(1)*e2(1) + e1(2)*e2(2) + e1(3)*e2(3) )
+ omg = acos( e1(1)*e2(1) + e1(2)*e2(2) + e1(3)*e2(3) )
 
- if ( abs(omega) < 1.e-5 ) then
-    print*, 'spherical_linear_interpolation: ', omega, p1, p2
+ if ( abs(omg) < 1.e-5 ) then
+    print*, 'spherical_linear_interpolation: ', omg, p1, p2
     call mpp_error(FATAL, 'spherical_linear_interpolation: interpolation not well defined between antipodal points')
  end if
 
- eb(1) = sin( beta*omega )*e2(1) + sin(alpha*omega)*e1(1)
- eb(2) = sin( beta*omega )*e2(2) + sin(alpha*omega)*e1(2)
- eb(3) = sin( beta*omega )*e2(3) + sin(alpha*omega)*e1(3)
+ eb(1) = sin( beta*omg )*e2(1) + sin(alpha*omg)*e1(1)
+ eb(2) = sin( beta*omg )*e2(2) + sin(alpha*omg)*e1(2)
+ eb(3) = sin( beta*omg )*e2(3) + sin(alpha*omg)*e1(3)
 
- eb(1) = eb(1) / sin(omega)
- eb(2) = eb(2) / sin(omega)
- eb(3) = eb(3) / sin(omega)
+ eb(1) = eb(1) / sin(omg)
+ eb(2) = eb(2) / sin(omg)
+ eb(3) = eb(3) / sin(omg)
 
  call cart_to_latlon(1, eb, pb(1), pb(2))
 
@@ -2855,10 +2130,10 @@
   end function v_prod
 
 
-! sets up a??, z??
-  subroutine init_cubed_to_latlon( gridstruct, agrid, grid_type, ord, bd )
+  subroutine init_cubed_to_latlon( gridstruct, hydrostatic, agrid, grid_type, ord, bd )
 
   type(fv_grid_bounds_type), intent(IN) :: bd
+  logical, intent(in):: hydrostatic
   real,    intent(in) :: agrid(bd%isd:bd%ied,bd%jsd:bd%jed,2)
   integer, intent(in) :: grid_type
   integer, intent(in) :: ord
@@ -2872,8 +2147,6 @@
   real, pointer, dimension(:,:) :: z11, z12, z21, z22
   real, pointer, dimension(:,:,:) :: vlon, vlat
   real, pointer, dimension(:,:,:) :: ee1, ee2, ec1, ec2
-  real, pointer, dimension(:,:,:,:) :: ew, es
-  real, pointer, dimension(:,:) :: sina_s
 
       is  = bd%is
       ie  = bd%ie
@@ -2896,27 +2169,26 @@
      ee2    => gridstruct%ee2
      ec1    => gridstruct%ec1
      ec2    => gridstruct%ec2
-     ew     => gridstruct%ew
-     es     => gridstruct%es
-     sina_s => gridstruct%sina_s
 
      do j=js-2,je+2
         do i=is-2,ie+2
-           call unit_vect_latlon(agrid(i,j,1:2), vlon(i,j,1:3), vlat(i,j,1:3))
+           call unit_vect_latlon(agrid(i,j,1:2), vlon(1:3,i,j), vlat(1:3,i,j))
         enddo
      enddo
 
      do j=js-1,je+1
         do i=is-1,ie+1
-           z11(i,j) =  v_prod(ec1(1:3,i,j), vlon(i,j,1:3))
-           z12(i,j) =  v_prod(ec1(1:3,i,j), vlat(i,j,1:3))
-           z21(i,j) =  v_prod(ec2(1:3,i,j), vlon(i,j,1:3))
-           z22(i,j) =  v_prod(ec2(1:3,i,j), vlat(i,j,1:3))
+           z11(i,j) =  v_prod(ec1(1:3,i,j), vlon(1:3,i,j))
+           z12(i,j) =  v_prod(ec1(1:3,i,j), vlat(1:3,i,j))
+           z21(i,j) =  v_prod(ec2(1:3,i,j), vlon(1:3,i,j))
+           z22(i,j) =  v_prod(ec2(1:3,i,j), vlat(1:3,i,j))
 !-------------------------------------------------------------------------
-           a11(i,j) =  0.5*v_prod(ec2(1:3,i,j), vlat(i,j,1:3)) / sina_s(i,j)
-           a12(i,j) = -0.5*v_prod(ec1(1:3,i,j), vlat(i,j,1:3)) / sina_s(i,j)
-           a21(i,j) = -0.5*v_prod(ec2(1:3,i,j), vlon(i,j,1:3)) / sina_s(i,j)
-           a22(i,j) =  0.5*v_prod(ec1(1:3,i,j), vlon(i,j,1:3)) / sina_s(i,j)
+           a11(i,j) =  0.5*z22(i,j) / gridstruct%sin_sg(5,i,j)
+           a12(i,j) = -0.5*z12(i,j) / gridstruct%sin_sg(5,i,j)
+           a21(i,j) = -0.5*z21(i,j) / gridstruct%sin_sg(5,i,j)
+           a22(i,j) =  0.5*z11(i,j) / gridstruct%sin_sg(5,i,j)
+! For 3D Coriolis force
+!          if(.not.hydrostatic) gridstruct%w00(i,j) = 2.*omega*cos(agrid(i,j,2))
         enddo
      enddo
   endif
@@ -2959,30 +2231,16 @@
   logical, intent(IN) :: nested
 ! Local 
 ! 4-pt Lagrange interpolation
-  real, parameter:: a1 =  0.5625
-  real, parameter:: a2 = -0.0625
-  real, parameter:: c1 =  1.125
-  real, parameter:: c2 = -0.125
+  real :: a1 =  0.5625
+  real :: a2 = -0.0625
+  real :: c1 =  1.125
+  real :: c2 = -0.125
   real utmp(bd%is:bd%ie,  bd%js:bd%je+1)
   real vtmp(bd%is:bd%ie+1,bd%js:bd%je)
   real wu(bd%is:bd%ie,  bd%js:bd%je+1)
   real wv(bd%is:bd%ie+1,bd%js:bd%je)
   integer i, j, k
-
-  real, dimension(:,:), pointer :: a11, a12, a21, a22
-  real, dimension(:,:), pointer :: dx, dy, rdxa, rdya
-
   integer :: is,  ie,  js,  je
-
-  a11 => gridstruct%a11
-  a12 => gridstruct%a12
-  a21 => gridstruct%a21
-  a22 => gridstruct%a22
-
-  dx   => gridstruct%dx
-  dy   => gridstruct%dy
-  rdxa => gridstruct%rdxa
-  rdya => gridstruct%rdya
 
   is  = bd%is
   ie  = bd%ie
@@ -2995,79 +2253,84 @@
                                   call timing_off('COMM_TOTAL')
   endif
 
+!$omp parallel do default(shared) private(utmp, vtmp, wu, wv)
  do k=1,km
    if ( grid_type < 4 ) then
-!     do j=max(2,js),min(npyy-2,je)
-!        do i=max(2,is),min(npxx-2,ie)
       if (nested) then
-     do j=max(1,js),min(npy-1,je)
-        do i=max(1,is),min(npx-1,ie)
+        do j=max(1,js),min(npy-1,je)
+          do i=max(1,is),min(npx-1,ie)
            utmp(i,j) = c2*(u(i,j-1,k)+u(i,j+2,k)) + c1*(u(i,j,k)+u(i,j+1,k))
            vtmp(i,j) = c2*(v(i-1,j,k)+v(i+2,j,k)) + c1*(v(i,j,k)+v(i+1,j,k))
+          enddo
         enddo
-     enddo
 
       else
 
-     do j=max(2,js),min(npy-2,je)
-        do i=max(2,is),min(npx-2,ie)
+       do j=max(2,js),min(npy-2,je)
+         do i=max(2,is),min(npx-2,ie)
            utmp(i,j) = c2*(u(i,j-1,k)+u(i,j+2,k)) + c1*(u(i,j,k)+u(i,j+1,k))
            vtmp(i,j) = c2*(v(i-1,j,k)+v(i+2,j,k)) + c1*(v(i,j,k)+v(i+1,j,k))
-        enddo
-     enddo
+         enddo
+       enddo
 
     if ( js==1  ) then
          do i=is,ie+1
-            wv(i,1) = v(i,1,k)*dy(i,1)
+            wv(i,1) = v(i,1,k)*gridstruct%dy(i,1)
          enddo
          do i=is,ie
-            vtmp(i,1) = (wv(i,1) + wv(i+1,1)) * rdya(i,1)
-            utmp(i,1) = (u(i,1,k)*dx(i,1) + u(i,2,k)*dx(i,2)) * rdxa(i,1)
+            vtmp(i,1) = 2.*(wv(i,1) + wv(i+1,1)) / (gridstruct%dy(i,1)+gridstruct%dy(i+1,1))
+            utmp(i,1) = 2.*(u(i,1,k)*gridstruct%dx(i,1) + u(i,2,k)*gridstruct%dx(i,2))   &
+                         / (         gridstruct%dx(i,1) +          gridstruct%dx(i,2))
+!!!         vtmp(i,1) = (wv(i,1) + wv(i+1,1)) * gridstruct%rdya(i,1)
+!!!         utmp(i,1) = (u(i,1,k)*gridstruct%dx(i,1) + u(i,2,k)*gridstruct%dx(i,2)) * gridstruct%rdxa(i,1)
          enddo
     endif
 
     if ( (je+1)==npy   ) then
          j = npy-1
-!    if ( (je+1)==npyy ) then
-!         j = npyy-1
          do i=is,ie+1
-            wv(i,j) = v(i,j,k)*dy(i,j)
+            wv(i,j) = v(i,j,k)*gridstruct%dy(i,j)
          enddo
          do i=is,ie
-            vtmp(i,j) = (wv(i,j) + wv(i+1,j)) * rdya(i,j)
-            utmp(i,j) = (u(i,j,k)*dx(i,j) + u(i,j+1,k)*dx(i,j+1)) * rdxa(i,j)
+            vtmp(i,j) = 2.*(wv(i,j) + wv(i+1,j)) / (gridstruct%dy(i,j)+gridstruct%dy(i+1,j))
+            utmp(i,j) = 2.*(u(i,j,k)*gridstruct%dx(i,j) + u(i,j+1,k)*gridstruct%dx(i,j+1))   &
+                         / (         gridstruct%dx(i,j) +            gridstruct%dx(i,j+1))
+!!!         vtmp(i,j) = (wv(i,j) + wv(i+1,j)) * gridstruct%rdya(i,j)
+!!!         utmp(i,j) = (u(i,j,k)*gridstruct%dx(i,j) + u(i,j+1,k)*gridstruct%dx(i,j+1)) * gridstruct%rdxa(i,j)
          enddo
     endif
 
     if ( is==1 ) then
       i = 1
       do j=js,je
-         wv(1,j) = v(1,j,k)*dy(1,j)
-         wv(2,j) = v(2,j,k)*dy(2,j)
+         wv(1,j) = v(1,j,k)*gridstruct%dy(1,j)
+         wv(2,j) = v(2,j,k)*gridstruct%dy(2,j)
       enddo
       do j=js,je+1
-         wu(i,j) = u(i,j,k)*dx(i,j)
+         wu(i,j) = u(i,j,k)*gridstruct%dx(i,j)
       enddo
       do j=js,je
-         utmp(i,j) = (wu(i,j) + wu(i,  j+1)) * rdxa(i,j)
-         vtmp(i,j) = (wv(i,j) + wv(i+1,j  )) * rdya(i,j)
+         utmp(i,j) = 2.*(wu(i,j) + wu(i,j+1))/(gridstruct%dx(i,j)+gridstruct%dx(i,j+1))
+         vtmp(i,j) = 2.*(wv(1,j) + wv(2,j  ))/(gridstruct%dy(1,j)+gridstruct%dy(2,j))
+!!!      utmp(i,j) = (wu(i,j) + wu(i,  j+1)) * gridstruct%rdxa(i,j)
+!!!      vtmp(i,j) = (wv(i,j) + wv(i+1,j  )) * gridstruct%rdya(i,j)
       enddo
     endif
 
     if ( (ie+1)==npx) then
       i = npx-1
-!    if ( (ie+1)==npxx ) then
-!      i = npxx-1
       do j=js,je
-         wv(i,  j) = v(i,  j,k)*dy(i,  j)
-         wv(i+1,j) = v(i+1,j,k)*dy(i+1,j)
+         wv(i,  j) = v(i,  j,k)*gridstruct%dy(i,  j)
+         wv(i+1,j) = v(i+1,j,k)*gridstruct%dy(i+1,j)
       enddo
       do j=js,je+1
-         wu(i,j) = u(i,j,k)*dx(i,j)
+         wu(i,j) = u(i,j,k)*gridstruct%dx(i,j)
       enddo
       do j=js,je
-         utmp(i,j) = (wu(i,j) + wu(i,  j+1)) * rdxa(i,j)
-         vtmp(i,j) = (wv(i,j) + wv(i+1,j  )) * rdya(i,j)
+         utmp(i,j) = 2.*(wu(i,j) + wu(i,  j+1))/(gridstruct%dx(i,j)+gridstruct%dx(i,j+1))
+         vtmp(i,j) = 2.*(wv(i,j) + wv(i+1,j  ))/(gridstruct%dy(i,j)+gridstruct%dy(i+1,j))
+!!!      utmp(i,j) = (wu(i,j) + wu(i,  j+1)) * gridstruct%rdxa(i,j)
+!!!      vtmp(i,j) = (wv(i,j) + wv(i+1,j  )) * gridstruct%rdya(i,j)
       enddo
     endif
 
@@ -3076,8 +2339,8 @@
  !Transform local a-grid winds into latitude-longitude coordinates
      do j=js,je
         do i=is,ie
-           ua(i,j,k) = a11(i,j)*utmp(i,j) + a12(i,j)*vtmp(i,j)
-           va(i,j,k) = a21(i,j)*utmp(i,j) + a22(i,j)*vtmp(i,j)
+           ua(i,j,k) = gridstruct%a11(i,j)*utmp(i,j) + gridstruct%a12(i,j)*vtmp(i,j)
+           va(i,j,k) = gridstruct%a21(i,j)*utmp(i,j) + gridstruct%a22(i,j)*vtmp(i,j)
         enddo
      enddo
    else
@@ -3127,9 +2390,7 @@
   js  = bd%js
   je  = bd%je
 
-  wu = 0.
-  wv = 0.
-
+!$omp parallel do default(shared) private(u1, v1, wu, wv)
   do k=1,km
      if ( grid_type < 4 ) then
        do j=js,je+1
@@ -3146,8 +2407,10 @@
        do j=js,je
           do i=is,ie
 ! Co-variant to Co-variant "vorticity-conserving" interpolation
-             u1(i) = (wu(i,j) + wu(i,j+1)) * rdxa(i,j)
-             v1(i) = (wv(i,j) + wv(i+1,j)) * rdya(i,j)
+             u1(i) = 2.*(wu(i,j) + wu(i,j+1)) / (dx(i,j)+dx(i,j+1))
+             v1(i) = 2.*(wv(i,j) + wv(i+1,j)) / (dy(i,j)+dy(i+1,j))
+!!!          u1(i) = (wu(i,j) + wu(i,j+1)) * rdxa(i,j)
+!!!          v1(i) = (wv(i,j) + wv(i+1,j)) * rdya(i,j)
 ! Cubed (cell center co-variant winds) to lat-lon:
              ua(i,j,k) = a11(i,j)*u1(i) + a12(i,j)*v1(i)
              va(i,j,k) = a21(i,j)*u1(i) + a22(i,j)*v1(i)
@@ -3821,5 +3084,109 @@
   end do
  
  end subroutine elgs
+
+ subroutine get_latlon_vector(pp, elon, elat)
+ real, intent(IN)  :: pp(2)
+ real, intent(OUT) :: elon(3), elat(3)
+
+         elon(1) = -SIN(pp(1))
+         elon(2) =  COS(pp(1))
+         elon(3) =  0.0
+         elat(1) = -SIN(pp(2))*COS(pp(1))
+         elat(2) = -SIN(pp(2))*SIN(pp(1))
+!!! RIGHT_HAND
+         elat(3) =  COS(pp(2))
+! Left-hand system needed to be consistent with rest of the codes
+!        elat(3) = -COS(pp(2))
+
+ end subroutine get_latlon_vector
+
+
+ subroutine project_sphere_v( np, f, e )
+!---------------------------------
+ integer, intent(in):: np           ! total number of points
+ real,    intent(in):: e(3,np)      ! input position unit vector
+ real, intent(inout):: f(3,np)
+! local
+ real(f_p):: ap
+ integer i
+
+ do i=1,np
+    ap = f(1,i)*e(1,i) + f(2,i)*e(2,i) + f(3,i)*e(3,i)
+    f(1,i) = f(1,i) - ap*e(1,i)
+    f(2,i) = f(2,i) - ap*e(2,i)
+    f(3,i) = f(3,i) - ap*e(3,i)
+ enddo
+
+ end subroutine project_sphere_v
+
+#ifdef TO_DO_MQ
+ subroutine init_mq(phis, gridstruct, npx, npy, is, ie, js, je, ng)
+    integer, intent(in):: npx, npy, is, ie, js, je, ng
+    real, intent(in):: phis(is-ng:ie+ng, js-ng:je+ng)
+    type(fv_grid_type), intent(IN), target :: gridstruct
+
+! local:
+    real zs(is-ng:ie+ng, js-ng:je+ng)
+    real zb(is-ng:ie+ng, js-ng:je+ng)
+    real pdx(3,is:ie,js:je+1)
+    real pdy(3,is:ie+1,js:je)
+    integer i, j, n
+
+    real, pointer :: rarea(:,:)
+    real, pointer, dimension(:,:) :: dx, dy
+    real, pointer, dimension(:,:,:) :: en1, en2, agrid, vlon, vlat
+
+    rarea => gridstruct%rarea
+    dx    => gridstruct%dx
+    dy    => gridstruct%dy
+    en1   => gridstruct%en1
+    en2   => gridstruct%en2
+    agrid => gridstruct%agrid
+    vlon  => gridstruct%vlon
+    vlat  => gridstruct%vlat
+
+!   do j=js,je
+!      do i=is,ie
+    do j=js-ng,je+ng
+       do i=is-ng,ie+ng
+          zs(i,j) = phis(i,j) / grav
+       enddo
+    enddo
+!   call mpp_update_domains( zs, domain )
+
+!   call a2b_ord2(zs, zb, gridstruct, npx, npy, is, ie, js, je, ng)
+    call a2b_ord4(zs, zb, gridstruct, npx, npy, is, ie, js, je, ng)
+
+    do j=js,je+1
+       do i=is,ie
+          do n=1,3
+             pdx(n,i,j) = 0.5*(zb(i,j)+zb(i+1,j))*dx(i,j)*en1(n,i,j)
+          enddo
+       enddo
+    enddo
+    do j=js,je
+       do i=is,ie+1
+          do n=1,3
+             pdy(n,i,j) = 0.5*(zb(i,j)+zb(i,j+1))*dy(i,j)*en2(n,i,j)
+          enddo
+       enddo
+    enddo
+
+! Compute "volume-mean" gradient by Green's theorem
+    do j=js,je
+       do i=is,ie
+          idiag%zxg(i,j) = vlon(i,j,1)*(pdx(1,i,j+1)-pdx(1,i,j)-pdy(1,i,j)+pdy(1,i+1,j))  &
+                         + vlon(i,j,2)*(pdx(2,i,j+1)-pdx(2,i,j)-pdy(2,i,j)+pdy(2,i+1,j))  &
+                         + vlon(i,j,3)*(pdx(3,i,j+1)-pdx(3,i,j)-pdy(3,i,j)+pdy(3,i+1,j))
+! dF/d(lamda) = radius*cos(agrid(i,j,2)) * dF/dx, F is a scalar
+!                                                       ________________________
+          idiag%zxg(i,j) =  idiag%zxg(i,j)*rarea(i,j) * radius*cos(agrid(i,j,2))
+!                                                       ^^^^^^^^^^^^^^^^^^^^^^^^
+       enddo
+    enddo
+
+ end subroutine init_mq
+#endif
 
  end module fv_grid_utils_mod

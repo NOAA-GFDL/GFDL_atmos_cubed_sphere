@@ -1,4 +1,4 @@
-! $Id: init_hydro.F90,v 20.0 2013/12/13 23:07:44 fms Exp $
+! $Id: init_hydro.F90,v 17.0.2.3.2.4.2.9.2.3 2014/04/18 13:38:42 Lucas.Harris Exp $
 
 module init_hydro_mod
 
@@ -19,18 +19,14 @@ module init_hydro_mod
       public :: p_var, hydro_eq
 
 !---- version number -----
-      character(len=128) :: version = '$Id: init_hydro.F90,v 20.0 2013/12/13 23:07:44 fms Exp $'
-      character(len=128) :: tagname = '$Name: tikal_201409 $'
+      character(len=128) :: version = '$Id: init_hydro.F90,v 17.0.2.3.2.4.2.9.2.3 2014/04/18 13:38:42 Lucas.Harris Exp $'
+      character(len=128) :: tagname = '$Name: testing $'
 
 contains
 
 !-------------------------------------------------------------------------------
  subroutine p_var(km, ifirst, ilast, jfirst, jlast, ptop, ptop_min,    &
-#ifdef PKC
-                  delp, delz, pt, ps,  pe, peln, pk, pkz, pkc, cappa, q, ng, nq, area,   &
-#else
                   delp, delz, pt, ps,  pe, peln, pk, pkz, cappa, q, ng, nq, area,   &
-#endif
                   dry_mass, adjust_dry_mass, mountain, moist_phys,      &
                   hydrostatic, nwat, domain, make_nh)
                
@@ -55,9 +51,6 @@ contains
    real, intent(out) ::   pe(ifirst-1:ilast+1,km+1,jfirst-1:jlast+1) ! Ghosted Edge pressure
    real, intent(out) :: peln(ifirst:ilast, km+1, jfirst:jlast)    ! Edge pressure
    real, intent(out) ::  pkz(ifirst:ilast, jfirst:jlast, km)
-#ifdef PKC
-   real, intent(out) ::  pkc(ifirst-ng:ilast+ng, jfirst-ng:jlast+ng, km+1)
-#endif
    type(domain2d), intent(IN) :: domain
 
 ! Local
@@ -383,7 +376,7 @@ contains
      if(is_master()) write(*,*) 'Computed mean ps=', psm
      if(is_master()) write(*,*) 'Correction delta-ps=', dps
   else
-     mslp = 1000.E2
+     mslp = drym  ! 1000.E2
      do j=js,je
         do i=is,ie
            ps(i,j) = mslp

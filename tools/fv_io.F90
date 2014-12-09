@@ -1,4 +1,3 @@
-! These routines may need some thought before they work with multiple grids. For now, just outputting one grid
 
 module fv_io_mod
   !-----------------------------------------------------------------------
@@ -63,14 +62,15 @@ module fv_io_mod
 
   public :: fv_io_init, fv_io_exit, fv_io_read_restart, remap_restart, fv_io_write_restart
   public :: fv_io_read_tracers, fv_io_register_restart, fv_io_register_nudge_restart
-  public :: fv_io_register_restart_BCs, fv_io_write_BCs, fv_io_read_BCs
+  public :: fv_io_register_restart_BCs, fv_io_register_restart_BCs_NH
+  public :: fv_io_write_BCs, fv_io_read_BCs
 
   logical                       :: module_is_initialized = .FALSE.
 
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_io.F90,v 20.0.2.3.4.2 2014/06/18 21:09:50 Rusty.Benson Exp $'
-  character(len=128) :: tagname = '$Name: tikal_201409 $'
+  character(len=128) :: version = '$Id: fv_io.F90,v 20.0.2.3.6.2.2.1.4.1.2.1 2014/11/24 19:16:18 Lucas.Harris Exp $'
+  character(len=128) :: tagname = '$Name: testing $'
 
   integer ::grid_xtdimid, grid_ytdimid, haloid, pfullid !For writing BCs
   integer ::grid_xtstagdimid, grid_ytstagdimid, oneid
@@ -190,7 +190,7 @@ contains
   subroutine fv_io_read_tracers(fv_domain,Atm)
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
-    integer :: n, ntracers, nt, isc, iec, jsc, jec, id_restart
+    integer :: n, ntracers, ntprog, nt, isc, iec, jsc, jec, id_restart
     character(len=6) :: stile_name
     character(len=64):: fname, tracer_name
     type(restart_file_type) :: Tra_restart_r
@@ -201,7 +201,7 @@ contains
     iec = Atm(n)%bd%iec
     jsc = Atm(n)%bd%jsc
     jec = Atm(n)%bd%jec
-    call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
+    call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
 
 ! fix for single tile runs where you need fv_core.res.nc and fv_core.res.tile1.nc
     ntiles = mpp_get_ntile_count(fv_domain)
@@ -212,10 +212,16 @@ contains
     endif
 
     fname = 'fv_tracer.res'//trim(stile_name)//'.nc'
-    do nt = 2, ntracers
+    do nt = 2, ntprog
        call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
        call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%q(isc:iec,jsc:jec,:,nt)  )
        id_restart = register_restart_field(Tra_restart_r, fname, tracer_name, Atm(n)%q(:,:,:,nt), &
+                    domain=fv_domain, mandatory=.false., tile_count=n)
+    enddo
+    do nt = ntprog+1, ntracers
+       call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
+       call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%qdiag(isc:iec,jsc:jec,:,nt)  )
+       id_restart = register_restart_field(Tra_restart_r, fname, tracer_name, Atm(n)%qdiag(:,:,:,nt), &
                     domain=fv_domain, mandatory=.false., tile_count=n)
     enddo
     if (file_exist('INPUT'//trim(fname))) then
@@ -237,7 +243,7 @@ contains
 
     character(len=64)    :: fname, tracer_name
     character(len=6)     :: stile_name
-    integer              :: isc, iec, jsc, jec, n, nt, nk, ntracers
+    integer              :: isc, iec, jsc, jec, n, nt, nk, ntracers, ntprog, ntdiag
     integer              :: isd, ied, jsd, jed
     integer              :: ntiles
     type(restart_file_type) :: FV_restart_r, FV_tile_restart_r, Tra_restart_r
@@ -248,7 +254,7 @@ contains
     real, allocatable:: ak_r(:), bk_r(:)
     real, allocatable:: u_r(:,:,:), v_r(:,:,:), pt_r(:,:,:), delp_r(:,:,:)
     real, allocatable:: w_r(:,:,:), delz_r(:,:,:), ze0_r(:,:,:)
-    real, allocatable:: q_r(:,:,:,:)
+    real, allocatable:: q_r(:,:,:,:), qdiag_r(:,:,:,:)
 !-------------------------------------------------------------------------
     integer npz, npz_rst, ng
 
@@ -262,7 +268,9 @@ contains
 
 
 !   call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
-    ntracers = size(Atm(1)%q,4)  ! Temporary until we get tracer manager integrated
+    ntprog = size(Atm(1)%q,4)  ! Temporary until we get tracer manager integrated
+    ntdiag = size(Atm(1)%qdiag,4)
+    ntracers = ntprog+ntdiag
 
 !    ntileMe = size(Atm(:))  ! This will have to be modified for mult tiles per PE
 
@@ -276,7 +284,8 @@ contains
 
     allocate (   pt_r(isc:iec, jsc:jec,  npz_rst) )
     allocate ( delp_r(isc:iec, jsc:jec,  npz_rst) )
-    allocate (    q_r(isc:iec, jsc:jec,  npz_rst, ntracers) )
+    allocate (    q_r(isc:iec, jsc:jec,  npz_rst, ntprog) )
+    allocate (qdiag_r(isc:iec, jsc:jec,  npz_rst, ntprog+1:ntracers) )
 
     if ( (.not.Atm(1)%flagstruct%hydrostatic) .and. (.not.Atm(1)%flagstruct%make_nh) ) then
            allocate (    w_r(isc:iec, jsc:jec,  npz_rst) )
@@ -351,10 +360,16 @@ contains
 
        fname = 'fv_tracer.res'//trim(stile_name)//'.nc'
        if (file_exist('INPUT'//trim(fname))) then
-         do nt = 1, ntracers
+         do nt = 1, ntprog
             call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
             call set_tracer_profile (MODEL_ATMOS, nt, q_r(isc:iec,jsc:jec,:,nt)  )
             id_restart = register_restart_field(Tra_restart_r, fname, tracer_name, q_r(:,:,:,nt), &
+                         domain=fv_domain, mandatory=.false., tile_count=n)
+         enddo
+         do nt = ntprog+1, ntracers
+            call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
+            call set_tracer_profile (MODEL_ATMOS, nt, qdiag_r(isc:iec,jsc:jec,:,nt)  )
+            id_restart = register_restart_field(Tra_restart_r, fname, tracer_name, qdiag_r(:,:,:,nt), &
                          domain=fv_domain, mandatory=.false., tile_count=n)
          enddo
          call restore_state(Tra_restart_r)
@@ -362,10 +377,10 @@ contains
          call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
        endif
 
-       call rst_remap(npz_rst, npz, isc, iec, jsc, jec, isd, ied, jsd, jed, ntracers,              &
-                      delp_r,      u_r,      v_r,      w_r,      delz_r,      pt_r,      q_r,      &
+       call rst_remap(npz_rst, npz, isc, iec, jsc, jec, isd, ied, jsd, jed, ntracers, ntprog,      &
+                      delp_r,      u_r,      v_r,      w_r,      delz_r,      pt_r,  q_r,  qdiag_r,&
                       Atm(n)%delp, Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%pt, Atm(n)%q, &
-                      ak_r,  bk_r, Atm(n)%ptop, Atm(n)%ak, Atm(n)%bk,                              &
+                      Atm(n)%qdiag, ak_r,  bk_r, Atm(n)%ptop, Atm(n)%ak, Atm(n)%bk,                &
                       Atm(n)%flagstruct%hydrostatic, Atm(n)%flagstruct%make_nh, Atm(n)%domain,     &
                       Atm(n)%gridstruct%square_domain)
     !end do
@@ -377,6 +392,7 @@ contains
     deallocate( pt_r )
     deallocate( delp_r )
     deallocate( q_r )
+    deallocate( qdiag_r )
 
     if ( (.not.Atm(1)%flagstruct%hydrostatic) .and. (.not.Atm(1)%flagstruct%make_nh) ) then
          deallocate ( w_r )
@@ -423,10 +439,12 @@ contains
     character(len=64) :: fname, tracer_name
     character(len=6)  :: gn, stile_name
     integer           :: id_restart
-    integer           :: n, nt, ntracers, ntileMe, ntiles
+    integer           :: n, nt, ntracers, ntprog, ntdiag, ntileMe, ntiles
 
     ntileMe = size(Atm(:)) 
-    ntracers = size(Atm(1)%q,4) 
+    ntprog = size(Atm(1)%q,4) 
+    ntdiag = size(Atm(1)%qdiag,4) 
+    ntracers = ntprog+ntdiag
 
 !--- set the 'nestXX' appendix for all files using fms_io
     if (Atm(1)%grid_number > 1) then
@@ -504,11 +522,18 @@ contains
        endif
 
        fname = 'fv_tracer.res'//trim(stile_name)//'.nc'
-       do nt = 1, ntracers
+       do nt = 1, ntprog
           call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
           ! set all tracers to an initial profile value
           call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%q(:,:,:,nt)  )
           id_restart = register_restart_field(Atm(n)%Tra_restart, fname, tracer_name, Atm(n)%q(:,:,:,nt), &
+                       domain=fv_domain, mandatory=.false., tile_count=n)
+       enddo
+       do nt = ntprog+1, ntracers
+          call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
+          ! set all tracers to an initial profile value
+          call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%qdiag(:,:,:,nt)  )
+          id_restart = register_restart_field(Atm(n)%Tra_restart, fname, tracer_name, Atm(n)%qdiag(:,:,:,nt), &
                        domain=fv_domain, mandatory=.false., tile_count=n)
        enddo
 
@@ -849,14 +874,17 @@ contains
   !#####################################################################
 
   subroutine fv_io_register_restart_BCs(Atm)
-!!! CLEANUP: The make_nh option does not yet work with nesting since we don't have a routine yet to fill the halo with just w = 0 and setting up delz.
     type(fv_atmos_type),        intent(inout) :: Atm
 
-    integer :: n
+    integer :: n, ntracers, ntprog, ntdiag
     character(len=120) :: tname, fname_ne, fname_sw
 
     fname_ne = 'fv_BC_ne.res.nc'
     fname_sw = 'fv_BC_sw.res.nc'
+
+    ntprog=size(Atm%q,4)
+    ntdiag=size(Atm%qdiag,4)
+    ntracers=ntprog+ntdiag
 
     call set_domain(Atm%domain)
 
@@ -864,10 +892,15 @@ contains
                          fname_ne, fname_sw, 'phis', var=Atm%phis)
     call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
                          fname_ne, fname_sw, 'delp', Atm%delp, Atm%neststruct%delp_BC)
-    do n=1,Atm%ncnst
+    do n=1,ntprog
        call get_tracer_names(MODEL_ATMOS, n, tname)
        call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
                             fname_ne, fname_sw, trim(tname), Atm%q(:,:,:,n), Atm%neststruct%q_BC(n))
+    enddo
+    do n=ntprog+1,ntracers
+       call get_tracer_names(MODEL_ATMOS, n, tname)
+       call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                            fname_ne, fname_sw, trim(tname), var=Atm%qdiag(:,:,:,n))
     enddo
 #ifndef SW_DYNAMICS
     call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
@@ -892,6 +925,28 @@ contains
   end subroutine fv_io_register_restart_BCs
 
 
+  subroutine fv_io_register_restart_BCs_NH(Atm)
+    type(fv_atmos_type),        intent(inout) :: Atm
+
+    integer :: n
+    character(len=120) :: tname, fname_ne, fname_sw
+
+    fname_ne = 'fv_BC_ne.res.nc'
+    fname_sw = 'fv_BC_sw.res.nc'
+
+    call set_domain(Atm%domain)
+
+#ifndef SW_DYNAMICS
+    call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+         fname_ne, fname_sw, 'w', Atm%w, Atm%neststruct%w_BC)
+    call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+         fname_ne, fname_sw, 'delz', Atm%delz, Atm%neststruct%delz_BC)
+#endif
+
+    return
+  end subroutine fv_io_register_restart_BCs_NH
+
+
   subroutine fv_io_write_BCs(Atm, timestamp)
     type(fv_atmos_type), intent(inout) :: Atm
     character(len=*),    intent(in), optional :: timestamp
@@ -911,5 +966,5 @@ contains
 
     return
   end subroutine fv_io_read_BCs
-    
+
 end module fv_io_mod

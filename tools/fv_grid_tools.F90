@@ -1,11 +1,10 @@
 module fv_grid_tools_mod
 
-  use constants_mod, only: radius, pi, omega, grav
+  use constants_mod, only: radius, pi, grav
   use fv_arrays_mod, only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type
   use fv_grid_utils_mod, only: gnomonic_grids, great_circle_dist,  &
                            mid_pt_sphere, spherical_angle,     &
-                           cell_center2,    &
-                           get_area, inner_prod, fill_ghost, &
+                               cell_center2, get_area, inner_prod, fill_ghost, &
                            direct_transform, dist2side_latlon, &
                            spherical_linear_interpolation
   use fv_timing_mod,  only: timing_on, timing_off
@@ -53,12 +52,11 @@ module fv_grid_tools_mod
 
   public :: todeg, missing, &
        init_grid, read_grid, &
-       spherical_to_cartesian, &
-       broadcast_aligned_nest
+       broadcast_aligned_nest, spherical_to_cartesian
 
   !---- version number -----
-  character(len=128) :: version = '$Id: fv_grid_tools.F90,v 20.0 2013/12/13 23:07:28 fms Exp $'
-  character(len=128) :: tagname = '$Name: tikal_201409 $'
+  character(len=128) :: version = '$Id: fv_grid_tools.F90,v 17.0.2.1.2.4.4.5.2.11.2.18.6.3.2.1 2014/09/29 16:51:22 Lucas.Harris Exp $'
+  character(len=128) :: tagname = '$Name: testing $'
 
 contains
 
@@ -325,20 +323,12 @@ contains
     !--- dxc and dyc
     do j=js,je
        do i=is,ie+1
-          p1(1) = agrid(i-1,j,1)
-          p1(2) = agrid(i-1,j,2)
-          p2(1) = agrid(i  ,j,1)
-          p2(2) = agrid(i  ,j,2)
-          dxc(i,j) = great_circle_dist( p2, p1, radius )
+          dxc(i,j) = great_circle_dist( agrid(i-1,j,1:2), agrid(i,j,1:2), radius )
        enddo
     enddo
     do j=js,je+1
        do i=is,ie
-          p1(1) = agrid(i,j-1,1)
-          p1(2) = agrid(i,j-1,2)
-          p2(1) = agrid(i,j  ,1)
-          p2(2) = agrid(i,j  ,2)
-          dyc(i,j) = great_circle_dist( p2, p1, radius )
+          dyc(i,j) = great_circle_dist( agrid(i,j-1,1:2), agrid(i,j,1:2), radius )
        enddo
     enddo
 
@@ -364,8 +354,10 @@ contains
        enddo
        do j=js,je
           call mid_pt_sphere(grid(i,j,1:2), grid(i,j+1,1:2), p1)
-          p2(1:2) = agrid(i,j,1:2)
-          dxc(i,j) = 2.*great_circle_dist( p1, p2, radius )
+!         dxc(i,j) = 2.*great_circle_dist( p1, agrid(i,j,1:2), radius )
+!For general (may be stretched) grids:
+          dxc(i,j) = great_circle_dist( p1, agrid(i-1,j,1:2), radius ) +   &
+                     great_circle_dist( p1, agrid(i,  j,1:2), radius )
        enddo
     endif
     if ( (ie+1)==npx ) then
@@ -378,9 +370,11 @@ contains
           area_c(i,j) = 2.*get_area(p1, p4, p2, p3, radius)
        enddo
        do j=js,je
-          p1(1:2) = agrid(i-1,j,1:2)
           call mid_pt_sphere(grid(i,j,1:2), grid(i,j+1,1:2), p2)
-          dxc(i,j) = 2.*great_circle_dist( p1, p2, radius )
+!         dxc(i,j) = 2.*great_circle_dist( agrid(i-1,j,1:2), p2, radius )
+!For general (may be stretched) grids:
+          dxc(i,j) = great_circle_dist( agrid(i-1,j,1:2), p2, radius ) +  &
+                     great_circle_dist( agrid(i,  j,1:2), p2, radius )
        enddo
     endif
     if ( js==1 ) then
@@ -394,8 +388,9 @@ contains
        enddo
        do i=is,ie
           call mid_pt_sphere(grid(i,j,1:2), grid(i+1,j,1:2), p1)
-          p2(1:2) = agrid(i,j,1:2)
-          dyc(i,j) = 2.*great_circle_dist( p1, p2, radius )
+!         dyc(i,j) = 2.*great_circle_dist( p1, agrid(i,j,1:2), radius )
+          dyc(i,j) = great_circle_dist( p1, agrid(i,j-1,1:2), radius ) +  &
+                     great_circle_dist( p1, agrid(i,j,  1:2), radius )
        enddo
     endif
     if ( (je+1)==npy ) then
@@ -408,9 +403,10 @@ contains
           area_c(i,j) = 2.*get_area(p1, p4, p2, p3, radius)
        enddo
        do i=is,ie
-          p1(1:2) = agrid(i,j-1,1:2)
           call mid_pt_sphere(grid(i,j,1:2), grid(i+1,j,1:2), p2)
-          dyc(i,j) = 2.*great_circle_dist( p1, p2, radius )
+!         dyc(i,j) = 2.*great_circle_dist( agrid(i,j-1,1:2), p2, radius )
+          dyc(i,j) = great_circle_dist( agrid(i,j-1,1:2), p2, radius ) +  &
+                     great_circle_dist( agrid(i,j  ,1:2), p2, radius )
        enddo
     endif
     if ( sw_corner ) then
@@ -2127,9 +2123,9 @@ contains
             write(*,'(A, 2I5, 4F10.4)') 'SW CORNER: ', ic, jc, grid_global(1,1,:,1)*90./pi
             ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,1)
             write(*,'(A, 2I5, 4F10.4)') 'NW CORNER: ', ic, jc, grid_global(1,npy,:,1)*90./pi
-            ic = p_ind(npy,npy,1) ; jc = p_ind(npy,npy,1)
+            ic = p_ind(npx,npy,1) ; jc = p_ind(npx,npy,1)
             write(*,'(A, 2I5, 4F10.4)') 'NE CORNER: ', ic, jc, grid_global(npx,npy,:,1)*90./pi
-            ic = p_ind(npy,1,1) ; jc = p_ind(npy,1,1)
+            ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,1)
             write(*,'(A, 2I5, 4F10.4)') 'SE CORNER: ', ic, jc, grid_global(npx,1,:,1)*90./pi
          else         
             write(*,*) 'PARENT GRID ', Atm%parent_grid%grid_number, Atm%parent_grid%tile
@@ -2137,9 +2133,9 @@ contains
             write(*,'(A, 2I5, 4F10.4)') 'SW CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
             ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,1)
             write(*,'(A, 2I5, 4F10.4)') 'NW CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
-            ic = p_ind(npy,npy,1) ; jc = p_ind(npy,npy,1)
+            ic = p_ind(npx,npy,1) ; jc = p_ind(npx,npy,1)
             write(*,'(A, 2I5, 4F10.4)') 'NE CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
-            ic = p_ind(npy,1,1) ; jc = p_ind(npy,1,1)
+            ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,1)
             write(*,'(A, 2I5, 4F10.4)') 'SE CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
          endif
       end if
@@ -2287,31 +2283,19 @@ contains
 #endif
 
       end subroutine cartesian_to_spherical
- 
-
-!-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     spherical_to_cartesian :: convert from spheircal coordinates to xyz coords
-! 
-      subroutine spherical_to_cartesian(lon, lat, r, x, y, z)
-
+ subroutine spherical_to_cartesian(lon, lat, r, x, y, z)
          real , intent(IN)  :: lon, lat, r
          real , intent(OUT) :: x, y, z
 
          x = r * COS(lon) * cos(lat)
          y = r * SIN(lon) * cos(lat)
-
 #ifdef RIGHT_HAND
          z =  r * SIN(lat)
 #else
          z = -r * sin(lat)
 #endif
-
-      end subroutine spherical_to_cartesian
-
-
-
+ end subroutine spherical_to_cartesian
+ 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
@@ -2825,9 +2809,9 @@ contains
 
       if (mpp_pe() == Atm%parent_grid%pelist(1)) then
          do p=1,size(Atm%pelist)
-         !!! DEBUG CODE
-         print*, 'SEND: ', mpp_pe(), size(Atm%parent_grid%grid_global(isg-ng:ieg+1+ng,jsg-ng:jeg+1+ng,1:2,parent_tile)), Atm%pelist(p)
-         !!! END DEBUG CODE
+!!$         !!! DEBUG CODE
+!!$         print*, 'SEND: ', mpp_pe(), size(Atm%parent_grid%grid_global(isg-ng:ieg+1+ng,jsg-ng:jeg+1+ng,1:2,parent_tile)), Atm%pelist(p)
+!!$         !!! END DEBUG CODE
             call mpp_send(Atm%parent_grid%grid_global(isg-ng:ieg+1+ng,jsg-ng:jeg+1+ng,1:2,parent_tile), &
                  size(Atm%parent_grid%grid_global(isg-ng:ieg+1+ng,jsg-ng:jeg+1+ng,1:2,parent_tile)), &
                  Atm%pelist(p)) !send to p_ind in setup_aligned_nest
@@ -2844,9 +2828,9 @@ contains
          jed_p = Atm%parent_grid%bd%jed
          !               allocate(Atm%ind_update_h(isd_p:ied_p+1,jsd_p:jed_p+1,2))
          allocate(p_ind(1-ng:Atm%npx+ng,1-ng:Atm%npy+ng,1:2))
-         !!! DEBUG CODE
-         print*, 'RECEIVE: ', mpp_pe(), size(p_ind)
-         !!! END DEBUG CODE
+!!$         !!! DEBUG CODE
+!!$         print*, 'RECEIVE: ', mpp_pe(), size(p_ind)
+!!$         !!! END DEBUG CODE
          call mpp_recv(p_ind,size(p_ind),Atm%pelist(1)) !receiving from p_ind setup_aligned_grids 
          call mpp_sync_self
 

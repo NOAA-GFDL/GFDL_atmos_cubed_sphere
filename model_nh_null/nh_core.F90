@@ -10,8 +10,8 @@ module nh_core_mod
   public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, geopk_halo_nh
 
 !---- version number -----
-  character(len=128) :: version = '$Id: nh_core.F90,v 20.0 2013/12/13 23:07:15 fms Exp $'
-  character(len=128) :: tagname = '$Name: tikal_201409 $'
+  character(len=128) :: version = '$Id: nh_core.F90,v 20.0.2.1 2014/09/22 13:35:07 Lucas.Harris Exp $'
+  character(len=128) :: tagname = '$Name: testing $'
 
 contains
 
@@ -59,24 +59,33 @@ contains
   end subroutine update_dz_d
 
 
+
+
   subroutine Riem_Solver3(ms, dt,   is,   ie,   js, je, km, ng,    &
-                          isd, ied, jsd, jed,        &
-                          akap, cp,   ptop, hs, w,  delz, pt,  &
+                          isd, ied, jsd, jed, akap, cp,       &
+                          ptop, hs, q_con, w,  delz, pt,  &
                           delp, zh, gz,  ppe, pk3, pk, pe, peln, &
-                          ws, p_fac, a_imp, &
-                          scale_z, use_logp, last_call)
+                          ws, scale_m,  p_fac, a_imp, &
+                          use_logp, last_call, fp_out)
+!--------------------------------------------
+! !OUTPUT PARAMETERS
+! Ouput: gz: grav*height at edges
+!        pe: full     hydrostatic pressure
+!       ppe: non-hydrostatic pressure perturbation
+!--------------------------------------------
    integer, intent(in):: ms, is, ie, js, je, km, ng
    integer, intent(in):: isd, ied, jsd, jed
    real, intent(in):: dt         ! the BIG horizontal Lagrangian time step
-   real, intent(in):: akap, cp, ptop, p_fac, a_imp, scale_z
+   real, intent(in):: akap, cp, ptop, p_fac, a_imp, scale_m
    real, intent(in):: hs(isd:ied,jsd:jed)
-   logical, intent(in):: last_call, use_logp
+   logical, intent(in):: last_call, use_logp, fp_out
    real, intent(in):: ws(isd:ied,jsd:jed)
    real, intent(inout), dimension(isd:ied,jsd:jed,km+1):: zh
    real, intent(inout):: peln(is:ie,km+1,js:je)          ! ln(pe)
-   real, intent(inout), dimension(isd:ied,jsd:jed,km):: w, delp, pt
+   real, intent(inout), dimension(isd:   ,jsd:   ,1:):: w ! km
+   real, intent(inout), dimension(isd:ied,jsd:jed,km):: delp, pt, q_con
    real, intent(out), dimension(isd:ied,jsd:jed,km+1):: ppe
-   real, intent(out):: delz(is-ng:ie+ng,js-ng:je+ng,km)
+   real, intent(out):: delz(is-ng:,js-ng:,1:) ! km
    real, intent(out):: pk(is:ie,js:je,km+1)
    real, intent(out):: pe(is-1:ie+1,km+1,js-1:je+1)
    real, intent(out):: pk3(isd:ied,jsd:jed,km+1)
@@ -89,15 +98,15 @@ contains
 
 
   subroutine Riem_Solver_c(ms,   dt,  is,   ie,   js, je, km,   ng,  &
-                           akap, cp,  ptop, hs, w3,  pt,  &
-                           delp, gz,  pef,  ws, p_fac, a_imp, scale_z)
+                           akap, cp,  ptop, hs, w3,  pt, q_con, &
+                           delp, gz,  pef,  ws, p_fac, a_imp, scale_m)
    integer, intent(in):: is, ie, js, je, ng, km
    integer, intent(in):: ms
-   real, intent(in):: dt,  akap, cp, ptop, p_fac, a_imp, scale_z
+   real, intent(in):: dt,  akap, cp, ptop, p_fac, a_imp, scale_m
    real, intent(in):: ws(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, delp
    real, intent(in)::   hs(is-ng:ie+ng,js-ng:je+ng)
-   real, intent(in):: w3(is-ng:ie+ng,js-ng:je+ng,km)
+   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: w3, q_con
 ! OUTPUT PARAMETERS
    real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: gz
    real, intent(  out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: pef

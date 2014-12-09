@@ -13,12 +13,13 @@ module fv_mapz_mod
   use mpp_mod,           only: FATAL, mpp_error, get_unit, mpp_root_pe, mpp_pe
   use fv_arrays_mod,     only: fv_grid_type
   use lin_cld_microphys_mod, only: sat_adj2
+  use fv_mp_mod,         only: is_master
 
   implicit none
-  real, parameter:: cv_vap = 3.*rvgas      ! 1384.5
+  real, parameter:: cv_vap = 1410.
   real, parameter:: cv_air =  cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
   real, parameter::  r3 = 1./3., r23 = 2./3., r12 = 1./12.
-  real, parameter:: c_ice = 2106.           ! heat capacity of ice at 0.C: c=c_ice+7.3*(t-tice) 
+  real, parameter:: c_ice = 2106.           ! heat capacity of ice at 0.C
   real, parameter:: c_liq = 4190.
   real, parameter:: tice  = 273.16
   real(kind=4) :: E_Flux, E_Flux_Nest
@@ -28,18 +29,18 @@ module fv_mapz_mod
          rst_remap, mappm, E_Flux, E_Flux_nest
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_mapz.F90,v 20.0 2013/12/13 23:04:31 fms Exp $'
-  character(len=128) :: tagname = '$Name: tikal_201409 $'
+  character(len=128) :: version = '$Id: fv_mapz.F90,v 20.0.2.1.2.1 2014/09/22 02:52:19 Rusty.Benson Exp $'
+  character(len=128) :: tagname = '$Name: testing $'
 
 contains
 
  subroutine Lagrangian_to_Eulerian(last_step, consv, ps, pe, delp, pkz, pk,   &
                       mdt, pdt, km, is,ie,js,je, isd,ied,jsd,jed,       &
-                      nq, nwat, sphum, u, v, w, delz, pt, q, hs, r_vir, cp,  &
+                      nq, nwat, sphum, q_con, u, v, w, delz, pt, q, hs, r_vir, cp,  &
                       akap, kord_mt, kord_wz, kord_tr, kord_tm,  peln, te0_2d,        &
-                      ng, ua, va, omga, te, ws, fill, reproduce_sum,        &
+                      ng, ua, va, omga, te, ws, fill, reproduce_sum, out_dt, dtdt,      &
                       ptop, ak, bk, gridstruct, domain, ze0, remap_t, do_sat_adj, &
-                      hydrostatic, hybrid_z, do_omega)
+                      hydrostatic, hybrid_z, do_omega, do_adiabatic_init)
   logical, intent(in):: last_step
   real,    intent(in):: mdt                   ! remap time step
   real,    intent(in):: pdt                   ! phys time step
@@ -66,7 +67,7 @@ contains
   logical, intent(in):: do_sat_adj
   logical, intent(in):: fill                  ! fill negative tracers
   logical, intent(in):: reproduce_sum
-  logical, intent(in):: do_omega
+  logical, intent(in):: do_omega, do_adiabatic_init
   real, intent(in) :: ptop
   real, intent(in) :: ak(km+1)
   real, intent(in) :: bk(km+1)
@@ -79,23 +80,26 @@ contains
   real, intent(inout):: delp(isd:ied,jsd:jed,km) ! pressure thickness
   real, intent(inout)::  pe(is-1:ie+1,km+1,js-1:je+1) ! pressure at layer edges
   real, intent(inout):: ps(isd:ied,jsd:jed)      ! surface pressure
-  real, intent(inout):: ze0(is:ie,js:je,km+1)    ! Specified height at edges (m)
+  real, intent(inout):: ze0(is:,js:,1:)    ! Specified height at edges (m)
 
 ! u-wind will be ghosted one latitude to the north upon exit
   real, intent(inout)::  u(isd:ied  ,jsd:jed+1,km)   ! u-wind (m/s)
   real, intent(inout)::  v(isd:ied+1,jsd:jed  ,km)   ! v-wind (m/s)
-  real, intent(inout)::  w(isd:ied  ,jsd:jed  ,km)   ! vertical velocity (m/s)
+  real, intent(inout)::  w(isd:     ,jsd:     ,1:)   ! vertical velocity (m/s)
   real, intent(inout):: pt(isd:ied  ,jsd:jed  ,km)   ! cp*virtual potential temperature 
                                                      ! as input; output: temperature
-  real, intent(inout):: delz(isd:ied,jsd:jed,km)   ! delta-height (m)
+  real, intent(inout):: q_con(isd:,jsd:,1:)
+  real, intent(inout):: delz(isd:   ,jsd:   ,1:)   ! delta-height (m)
   logical, intent(in):: remap_t
   logical, intent(in):: hydrostatic
   logical, intent(in):: hybrid_z
+  logical, intent(in):: out_dt
 
   real, intent(inout)::   ua(isd:ied,jsd:jed,km)   ! u-wind (m/s) on physics grid
   real, intent(inout)::   va(isd:ied,jsd:jed,km)   ! v-wind (m/s) on physics grid
   real, intent(inout):: omga(isd:ied,jsd:jed,km)   ! vertical press. velocity (pascal/sec)
   real, intent(inout)::   peln(is:ie,km+1,js:je)     ! log(pe)
+  real, intent(inout)::   dtdt(is:ie,js:je,km)
   real, intent(out)::    pkz(is:ie,js:je,km)       ! layer-mean pk for converting t to pt
   real, intent(out)::     te(is:ie,js:je,km)
 
@@ -129,8 +133,8 @@ contains
       real bkh, dtmp, dlnp
       integer iq, n, kp, k_next
       logical te_map
-      real k1k, kapag
-      integer liq_wat, ice_wat, rainwat, snowwat, cld_amt
+      real k1k, kapag, q_liq, q_sol
+      integer liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel
 
       real, pointer, dimension(:,:) :: cosa_s, rsin2
 
@@ -160,9 +164,10 @@ contains
       if ( nwat.eq.6 ) then
            rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
            snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
+           graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
       endif
 
-!$omp parallel do default(shared) private(z_rat, kp, k_next, bkh, deng, dp2, pe0, pe1, pe2, pe3, pk1, pk2, pn2, phis, q2, ze1, ze2)
+!$omp parallel do default(shared) private(q_liq,q_sol,z_rat, kp, k_next, bkh, deng, dp2, pe0, pe1, pe2, pe3, pk1, pk2, pn2, phis, q2, ze1, ze2)
   do 1000 j=js,je+1
 
      do k=1,km+1
@@ -367,7 +372,6 @@ contains
 
    do k=2,km
       do i=is,ie
-!        pk2(i,k) = pe2(i,k) ** akap
          pn2(i,k) = log(pe2(i,k))
          pk2(i,k) = exp(akap*pn2(i,k))
       enddo
@@ -493,7 +497,7 @@ contains
       enddo
    else
       if ( remap_t ) then
-! Note: pt at this stage is T_v
+! Note: pt at this stage is T_v or T_m
          do k=1,km
          do i=is,ie
             pkz(i,j,k) = exp(akap*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
@@ -650,7 +654,7 @@ endif
 
 !  call cubed_to_latlon(u,  v, ua, va, dx, dy, rdxa, rdya, km, 1, flagstruct%c2l_ord)
 
-  if( last_step .and. consv > 0. ) then
+  if( last_step .and. consv > 0.  .and. (.not.do_adiabatic_init)  ) then
 
     if ( te_map ) then
 !$omp parallel do default(shared) 
@@ -665,7 +669,7 @@ endif
           enddo
       enddo
     else
-!$omp parallel do default(shared) private(gz, phis)
+!$omp parallel do default(shared) private(cvm, q_liq, q_sol, gz, phis)
       do j=js,je
         if ( remap_t ) then
          if ( hydrostatic ) then
@@ -701,8 +705,27 @@ endif
            do k=1,km
               do i=is,ie
 ! KE using 3D winds:
-! cvm?
-                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum)) +  &
+#ifdef USE_COND
+#ifdef USE_NWAT3
+! nwat == 3
+           q_liq = q(i,j,k,liq_wat)
+           q_sol = q(i,j,k,ice_wat)
+#else
+! nwat == 6
+           q_liq = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
+           q_sol = q(i,j,k,ice_wat) + q(i,j,k,snowwat) + q(i,j,k,graupel)
+#endif
+           q_con(i,j,k) = q_liq + q_sol
+#ifdef USE_CVM
+           cvm = (1.-(q(i,j,k,sphum)+q_liq+q_sol))*cv_air + q(i,j,k,sphum)*cv_vap +   &
+                 q_liq*c_liq + q_sol*c_ice
+#else
+           cvm = cv_air
+#endif
+                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cvm*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum)-q_con(i,j,k)) + &
+#else
+                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cv_air*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum)) + &
+#endif
                               0.5*(phis(i,k)+phis(i,k+1) + w(i,j,k)**2 + 0.5*rsin2(i,j)*( &
                               u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -  &
                              (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j))))
@@ -745,7 +768,17 @@ endif
            do k=1,km
               do i=is,ie
 ! KE using 3D winds:
-                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(rgama*pt(i,j,k)*pkz(i,j,k)/(1.+r_vir*q(i,j,k,sphum)) +  &
+#ifdef USE_COND
+#ifdef USE_NWAT3
+                 q_con(i,j,k) = q(i,j,k,liq_wat) + q(i,j,k,ice_wat)
+#else
+                 q_con(i,j,k) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) + q(i,j,k,ice_wat)  &
+                              + q(i,j,k,snowwat) + q(i,j,k,graupel)
+#endif
+                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(rgama*pt(i,j,k)*pkz(i,j,k)/(1.+r_vir*q(i,j,k,sphum)-q_con(i,j,k)) + &
+#else
+                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(rgama*pt(i,j,k)*pkz(i,j,k)/(1.+r_vir*q(i,j,k,sphum)) + &
+#endif
                               0.5*(phis(i,k)+phis(i,k+1) + w(i,j,k)**2 + 0.5*rsin2(i,j)*( &
                               u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -  &
                              (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j))))
@@ -791,6 +824,21 @@ endif
   else
       dtmp   = 0.
       E_Flux = 0.
+#ifdef USE_COND
+!$omp parallel do default(shared)
+      do k=1,km
+         do j=js,je
+         do i=is,ie
+#ifdef USE_NWAT3
+            q_con(i,j,k) = q(i,j,k,liq_wat) + q(i,j,k,ice_wat)
+#else
+            q_con(i,j,k) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) + q(i,j,k,ice_wat)  &
+                         + q(i,j,k,snowwat) + q(i,j,k,graupel)
+#endif
+         enddo
+         enddo
+      enddo
+#endif
   endif        ! end consv check
 
   if ( te_map ) then !kord_mt >= 0
@@ -814,14 +862,15 @@ endif
   else
     if ( remap_t ) then
         ! Note: pt at this stage is T_v
-        if ( do_sat_adj ) then
+      if ( do_sat_adj .and. (.not.do_adiabatic_init) ) then
            !$omp parallel do default(shared) 
            do k=1,km
               call sat_adj2(mdt, is, ie, js, je, ng, km, k, hydrostatic, consv>0., &
                    te0_2d, q(is-ng,js-ng,k,sphum), q(is-ng,js-ng,k,liq_wat),   &
                       q(is-ng,js-ng,k,ice_wat), q(is-ng,js-ng,k,rainwat),    &
-                      q(is-ng,js-ng,k,snowwat), q(is-ng,js-ng,k,cld_amt), gridstruct%area(is-ng,js-ng), &
-                      peln, delz(is,js,k), pt(is-ng,js-ng,k), delp(is-ng,js-ng,k), last_step)
+                      q(is-ng,js-ng,k,snowwat), q(is-ng,js-ng,k,graupel), q(is-ng,js-ng,k,cld_amt), gridstruct%area(is-ng,js-ng), &
+                      peln, delz(is-ng:,js-ng:,k), pt(is-ng,js-ng,k), delp(is-ng,js-ng,k),           &
+                      q_con(is-ng:,js-ng:,k), dtdt(is,js,k), out_dt, last_step)
               if ( .not. hydrostatic  ) then
                  do j=js,je
                     do i=is,ie
@@ -831,20 +880,21 @@ endif
               endif
            enddo
         endif
-
-#ifndef OLD_PT_TO_T
         if ( last_step ) then
            !$omp parallel do default(shared) 
            do k=1,km
               do j=js,je
                  do i=is,ie
                     ! Output temperature if last_step
+#ifdef USE_COND
+                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k))/(1.+r_vir*q(i,j,k,sphum)-q_con(i,j,k))
+#else
                     pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k))/(1.+r_vir*q(i,j,k,sphum))
+#endif
                  enddo
               enddo
            enddo
         else
-#endif
            !$omp parallel do default(shared) 
            do k=1,km
               do j=js,je
@@ -853,10 +903,8 @@ endif
                  enddo
               enddo
            enddo
-#ifndef OLD_PT_TO_T
         endif
-#endif
-     else
+    else
         !$omp parallel do default(shared) 
         do k=1,km
            do j=js,je
@@ -880,21 +928,21 @@ endif
                                  u, v, w, delz, pt, delp, q, qc, pe, peln, hs, &
                                  rsin2_l, cosa_s_l, &
                                  r_vir,  cp, rg, hlv, te_2d, ua, va, teq, &
-                                 moist_phys, sphum, liq_wat, ice_wat, hydrostatic, id_te)
+                                 moist_phys, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hydrostatic, id_te)
 !------------------------------------------------------
 ! Compute vertically integrated total energy per column
 !------------------------------------------------------
 ! !INPUT PARAMETERS:
    integer,  intent(in):: km, is, ie, js, je, isd, ied, jsd, jed, id_te
-   integer,  intent(in):: sphum, liq_wat, ice_wat
+   integer,  intent(in):: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel
    real, intent(inout), dimension(isd:ied,jsd:jed,km):: ua, va
    real, intent(in), dimension(isd:ied,jsd:jed,km):: pt, delp
    real, intent(in), dimension(isd:ied,jsd:jed,km,sphum):: q
    real, intent(in), dimension(is:ie,js:je,km):: qc
    real, intent(inout)::  u(isd:ied,  jsd:jed+1,km)
    real, intent(inout)::  v(isd:ied+1,jsd:jed,  km)
-   real, intent(in)::  w(isd:ied,jsd:jed,km)   ! vertical velocity (m/s)
-   real, intent(in):: delz(isd:ied,jsd:jed,km)
+   real, intent(in)::  w(isd:,jsd:,1:)   ! vertical velocity (m/s)
+   real, intent(in):: delz(isd:,jsd:,1:)
    real, intent(in):: hs(isd:ied,jsd:jed)  ! surface geopotential
    real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) ! pressure at layer edges
    real, intent(in):: peln(is:ie,km+1,js:je)  ! log(pe)
@@ -908,17 +956,16 @@ endif
 ! Local
    real, dimension(is:ie,km):: tv
    real  phiz(is:ie,km+1)
-   real cv, cvm
+   real cvm, q_liq, q_sol
    integer i, j, k
 
-   cv = cp - rg
 
 !----------------------
 ! Output lat-lon winds:
 !----------------------
 !  call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km, flagstruct%c2l_ord)
 
-!$omp parallel do default(shared) private(phiz, tv, cvm)
+!$omp parallel do default(shared) private(phiz, tv, cvm, q_sol, q_liq)
   do j=js,je
 
      if ( hydrostatic ) then
@@ -962,9 +1009,15 @@ endif
      if ( moist_phys ) then
      do k=1,km
         do i=is,ie
-!            cvm = (1.-(q(i,j,k,sphum)+q(i,j,k,liq_wat)+q(i,j,k,ice_wat)))*cv_air + q(i,j,k,sphum)*cv_vap +   &
-!                       q(i,j,k,liq_wat)*c_liq + q(i,j,k,ice_wat)*(c_ice+7.3*(pt(i,j,k)-tice))
-           te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv*pt(i,j,k) +  &
+#if defined(USE_COND) && defined(USE_CVM)
+           q_liq = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
+           q_sol = q(i,j,k,ice_wat) + q(i,j,k,snowwat) + q(i,j,k,graupel)
+           cvm = (1.-(q(i,j,k,sphum)+q_liq+q_sol))*cv_air + q(i,j,k,sphum)*cv_vap +   &
+                 q_liq*c_liq + q_sol*c_ice
+           te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cvm*pt(i,j,k) +  &
+#else
+           te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv_air*pt(i,j,k) +  &
+#endif
                         0.5*(phiz(i,k)+phiz(i,k+1)+w(i,j,k)**2+0.5*rsin2_l(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
                         v(i,j,k)**2+v(i+1,j,k)**2-(u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s_l(i,j))))
         enddo
@@ -972,7 +1025,7 @@ endif
      else
        do k=1,km
           do i=is,ie
-             te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv*pt(i,j,k) +  &
+             te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv_air*pt(i,j,k) +  &
                           0.5*(phiz(i,k)+phiz(i,k+1)+w(i,j,k)**2+0.5*rsin2_l(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
                           v(i,j,k)**2+v(i+1,j,k)**2-(u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s_l(i,j))))
           enddo
@@ -1343,7 +1396,7 @@ endif
 
  subroutine remap_2d(km,   pe1,   q1,        &
                      kn,   pe2,   q2,        &
-                     i1,   i2,    iv,   kord, ptop )
+                     i1,   i2,    iv,   kord)
    integer, intent(in):: i1, i2
    integer, intent(in):: iv               ! Mode: 0 ==  constituents 1 ==others
    integer, intent(in):: kord
@@ -1357,7 +1410,6 @@ endif
                                           ! in the new vertical coordinate
    real, intent(in) :: q1(i1:i2,km) ! Field input
    real, intent(out):: q2(i1:i2,kn) ! Field output
-   real, intent(IN) :: ptop
 ! !LOCAL VARIABLES:
    real   qs(i1:i2)
    real   dp1(i1:i2,km)
@@ -1382,12 +1434,18 @@ endif
    do i=i1,i2
       k0 = 1
       do 555 k=1,kn
+#ifdef OLD_TOP_EDGE
          if( pe2(i,k+1) <= pe1(i,1) ) then
 ! Entire grid above old ptop
              q2(i,k) = q4(2,i,1)
          elseif( pe2(i,k) < pe1(i,1) .and. pe2(i,k+1)>pe1(i,1) ) then
 ! Partially above old ptop:
              q2(i,k) = q1(i,1)
+#else
+         if( pe2(i,k) <= pe1(i,1) ) then
+! above old ptop:
+             q2(i,k) = q1(i,1)
+#endif
          else
            do l=k0,km
 ! locate the top edge: pe2(i,k)
@@ -1672,7 +1730,11 @@ endif
             endif
           endif
        enddo
-     else      ! kord = 11, ...
+     elseif ( abs(kord)==14 ) then
+       do i=i1,i2
+          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+       enddo
+     else      ! kord = 11, 12, 13
        do i=i1,i2
          if ( extm(i,k) .and. (extm(i,k-1) .or. extm(i,k+1)) ) then
 ! Noisy region:
@@ -2194,9 +2256,9 @@ endif
 
 
 
- subroutine rst_remap(km, kn, is,ie,js,je, isd,ied,jsd,jed, nq,  &
-                      delp_r, u_r, v_r, w_r, delz_r, pt_r, q_r,      &
-                      delp,   u,   v,   w,   delz,   pt,   q,        &
+ subroutine rst_remap(km, kn, is,ie,js,je, isd,ied,jsd,jed, nq, ntp, &
+                      delp_r, u_r, v_r, w_r, delz_r, pt_r, q_r, qdiag_r, &
+                      delp,   u,   v,   w,   delz,   pt,   q,   qdiag,   &
                       ak_r, bk_r, ptop, ak, bk, hydrostatic, make_nh, &
                       domain, square_domain)
 !------------------------------------
@@ -2205,7 +2267,7 @@ endif
 ! !INPUT PARAMETERS:
   integer, intent(in):: km                    ! Restart z-dimension
   integer, intent(in):: kn                    ! Run time dimension
-  integer, intent(in):: nq                    ! number of tracers (including h2o)
+  integer, intent(in):: nq, ntp               ! number of tracers (including h2o)
   integer, intent(in):: is,ie,isd,ied         ! starting & ending X-Dir index
   integer, intent(in):: js,je,jsd,jed         ! starting & ending Y-Dir index
   logical, intent(in):: hydrostatic, make_nh, square_domain
@@ -2219,19 +2281,21 @@ endif
   real, intent(in)::   v_r(is:ie+1,js:je  ,km)   ! v-wind (m/s)
   real, intent(inout)::  pt_r(is:ie,js:je,km)
   real, intent(in)::   w_r(is:ie,js:je,km)
-  real, intent(in)::   q_r(is:ie,js:je,km,*)
+  real, intent(in)::   q_r(is:ie,js:je,km,1:ntp)
+  real, intent(in)::   qdiag_r(is:ie,js:je,km,ntp+1:nq)
   real, intent(inout)::delz_r(is:ie,js:je,km)
   type(domain2d), intent(INOUT) :: domain
 ! Output:
   real, intent(out):: delp(isd:ied,jsd:jed,kn) ! pressure thickness
   real, intent(out)::  u(isd:ied  ,jsd:jed+1,kn)   ! u-wind (m/s)
   real, intent(out)::  v(isd:ied+1,jsd:jed  ,kn)   ! v-wind (m/s)
-  real, intent(out)::  w(isd:ied  ,jsd:jed  ,kn)   ! vertical velocity (m/s)
+  real, intent(out)::  w(isd:     ,jsd:     ,1:)   ! vertical velocity (m/s)
   real, intent(out):: pt(isd:ied  ,jsd:jed  ,kn)   ! temperature
-  real, intent(out):: q(isd:ied,jsd:jed,kn,*)
-  real, intent(out):: delz(isd:ied,jsd:jed,kn)   ! delta-height (m)
+  real, intent(out):: q(isd:ied,jsd:jed,kn,1:ntp)
+  real, intent(out):: qdiag(isd:ied,jsd:jed,kn,ntp+1:nq)
+  real, intent(out):: delz(isd:,jsd:,1:)   ! delta-height (m)
 !-----------------------------------------------------------------------
-  real r_vir
+  real r_vir, rgrav
   real ps(isd:ied,jsd:jed)  ! surface pressure
   real  pe1(is:ie,km+1)
   real  pe2(is:ie,kn+1)
@@ -2241,7 +2305,32 @@ endif
   integer i,j,k , iq
   integer, parameter:: kord=4
 
+#ifdef HYDRO_DELZ_REMAP
+  if (is_master() .and. .not. hydrostatic) then
+     print*, ''
+     print*, ' REMAPPING IC: INITIALIZING DELZ WITH HYDROSTATIC STATE  '
+     print*, ''
+  endif
+#endif
+
+#ifdef HYDRO_DELZ_EXTRAP
+  if (is_master() .and. .not. hydrostatic) then
+     print*, ''
+     print*, ' REMAPPING IC: INITIALIZING DELZ WITH HYDROSTATIC STATE ABOVE INPUT MODEL TOP  '
+     print*, ''
+  endif
+#endif
+
+#ifdef ZERO_W_EXTRAP
+  if (is_master() .and. .not. hydrostatic) then
+     print*, ''
+     print*, ' REMAPPING IC: INITIALIZING W TO ZERO ABOVE INPUT MODEL TOP  '
+     print*, ''
+  endif
+#endif
+
   r_vir = rvgas/rdgas - 1.
+  rgrav = 1./grav
 
 !$omp parallel do default(shared)
   do j=js,je
@@ -2296,7 +2385,7 @@ endif
 
      call remap_2d(km, pe1, u_r(is:ie,j:j,1:km),       &
                    kn, pe2,   u(is:ie,j:j,1:kn),       &
-                   is, ie, -1, kord, ptop)
+                   is, ie, -1, kord)
 
   if ( j /= (je+1) )  then 
 
@@ -2328,10 +2417,15 @@ endif
 ! Map constituents
 !----------------
       if( nq /= 0 ) then
-          do iq=1,nq
+          do iq=1,ntp
              call remap_2d(km, pe1, q_r(is:ie,j:j,1:km,iq:iq),  &
                            kn, pe2,   q(is:ie,j:j,1:kn,iq:iq),  &
-                           is, ie, 0, kord, ptop)
+                           is, ie, 0, kord)
+          enddo
+          do iq=ntp+1,nq
+             call remap_2d(km, pe1, qdiag_r(is:ie,j:j,1:km,iq:iq),  &
+                           kn, pe2,   qdiag(is:ie,j:j,1:kn,iq:iq),  &
+                           is, ie, 0, kord)
           enddo
       endif
 
@@ -2339,7 +2433,19 @@ endif
 ! Remap vertical wind:
          call remap_2d(km, pe1, w_r(is:ie,j:j,1:km),       &
                        kn, pe2,   w(is:ie,j:j,1:kn),       &
-                       is, ie, -1, kord, ptop)
+                       is, ie, -1, kord)
+
+#ifdef ZERO_W_EXTRAP
+       do k=1,kn
+       do i=is,ie
+          if (pe2(i,k) < pe1(i,1)) then
+             w(i,j,k) = 0.
+          endif
+       enddo
+       enddo         
+#endif
+
+#ifndef HYDRO_DELZ_REMAP
 ! Remap delz for hybrid sigma-p coordinate
          do k=1,km
             do i=is,ie
@@ -2348,12 +2454,13 @@ endif
          enddo
          call remap_2d(km, pe1, delz_r(is:ie,j:j,1:km),       &
                        kn, pe2,   delz(is:ie,j:j,1:kn),       &
-                       is, ie, 1, kord, ptop)
+                       is, ie, 1, kord)
          do k=1,kn
             do i=is,ie
                delz(i,j,k) = -delz(i,j,k)*delp(i,j,k)
             enddo
          enddo
+#endif
       endif
 
 ! Geopotential conserving remap of virtual temperature:
@@ -2370,7 +2477,26 @@ endif
 
        call remap_2d(km, pe1, pt_r(is:ie,j:j,1:km),       &
                      kn, pe2,   pt(is:ie,j:j,1:kn),       &
-                     is, ie, 1, kord, ptop)
+                     is, ie, 1, kord)
+
+#ifdef HYDRO_DELZ_REMAP
+       !initialize delz from the hydrostatic state
+       do k=1,kn
+       do i=is,ie
+          delz(i,j,k) = (rdgas*rgrav)*pt(i,j,k)*(pe2(i,k)-pe2(i,k+1))
+       enddo
+       enddo
+#endif
+#ifdef HYDRO_DELZ_EXTRAP
+       !initialize delz from the hydrostatic state
+       do k=1,kn
+       do i=is,ie
+          if (pe2(i,k) < pe1(i,1)) then
+             delz(i,j,k) = (rdgas*rgrav)*pt(i,j,k)*(pe2(i,k)-pe2(i,k+1))
+          endif
+       enddo
+       enddo
+#endif
 !------
 ! map v
 !------
@@ -2387,7 +2513,7 @@ endif
 
        call remap_2d(km, pv1, v_r(is:ie+1,j:j,1:km),       &
                      kn, pv2,   v(is:ie+1,j:j,1:kn),       &
-                     is, ie+1, -1, kord, ptop)
+                     is, ie+1, -1, kord)
 
   endif !(j < je+1)
 1000  continue
@@ -2457,6 +2583,7 @@ endif
          k0 = 1
       do 555 k=1,kn
 
+#ifdef OLD_TOP_EDGE
          if(pe2(i,k+1) .le. pe1(i,1)) then
 ! Entire grid above old ptop
             q2(i,k) = a4(2,i,1)
@@ -2467,6 +2594,14 @@ endif
                 pe2(i,k+1) .gt. pe1(i,1))  then
 ! Part of the grid above ptop
             q2(i,k) = a4(1,i,1)
+#else
+         if(pe2(i,k) .le. pe1(i,1)) then
+! above old ptop
+            q2(i,k) = q1(i,1)
+         elseif(pe2(i,k) .ge. pe1(i,km+1)) then
+! Entire grid below old ps
+            q2(i,k) = a4(3,i,km)
+#endif
          else
 
          do 45 L=k0,km
@@ -2526,5 +2661,4 @@ endif
 5555  continue
 
  end subroutine mappm
-
 end module fv_mapz_mod

@@ -1,4 +1,4 @@
-! $Id: fv_control.F90,v 20.0 2013/12/13 23:04:22 fms Exp $
+! $Id: fv_control.F90,v 20.0.2.1.2.1.2.1.2.2.4.1 2014/11/24 19:16:18 Lucas.Harris Exp $
 !
 !----------------
 ! FV contro panel
@@ -25,7 +25,7 @@ module fv_control_mod
 
    use fv_io_mod,           only: fv_io_exit
    use fv_restart_mod,      only: fv_restart_init, fv_restart_end
-   use fv_arrays_mod,       only: fv_atmos_type, allocate_fv_atmos_type, deallocate_fv_atmos_type, broadcast_fv_atmos_data
+   use fv_arrays_mod,       only: fv_atmos_type, allocate_fv_atmos_type, deallocate_fv_atmos_type
    use fv_grid_utils_mod,   only: grid_utils_init, grid_utils_end, ptop_min
    use fv_eta_mod,          only: set_eta
    use fv_grid_tools_mod,   only: init_grid, read_grid, broadcast_aligned_nest
@@ -82,7 +82,9 @@ module fv_control_mod
    integer , pointer ::    n_zs_filter
    integer , pointer :: nord_zs_filter
 
+   logical , pointer :: consv_am
    logical , pointer :: do_sat_adj
+   logical , pointer :: do_f3d
    logical , pointer :: no_dycore 
    logical , pointer :: replace_w 
    logical , pointer :: convert_ke 
@@ -90,19 +92,11 @@ module fv_control_mod
    logical , pointer :: use_old_omega 
 ! PG off centering:
    real    , pointer :: beta  
-#ifdef SW_DYNAMICS
    integer , pointer :: n_sponge 
    real    , pointer :: d_ext 
    integer , pointer :: nwat  
    logical , pointer :: warm_start 
    logical , pointer :: inline_q 
-#else
-   integer , pointer :: n_sponge 
-   real    , pointer :: d_ext 
-   integer , pointer :: nwat  
-   logical , pointer :: warm_start 
-   logical , pointer :: inline_q 
-#endif
    real , pointer :: shift_fac   
    logical , pointer :: do_schmidt 
    real , pointer :: stretch_fac 
@@ -128,20 +122,14 @@ module fv_control_mod
                                       
    integer , pointer :: ncnst 
    integer , pointer :: pnats 
+   integer , pointer :: dnats 
    integer , pointer :: ntiles        
    integer , pointer :: nf_omega  
    integer , pointer :: fv_sg_adj 
                                       
    integer , pointer :: na_init 
-#ifdef MARS_GCM
-   real    , pointer :: p_ref 
-   real    , pointer :: reference_sfc_pres 
-   real    , pointer :: sponge_damp
-   real    , pointer :: dry_mass 
-#else
    real    , pointer :: p_ref 
    real    , pointer :: dry_mass 
-#endif
    integer , pointer :: nt_prog 
    integer , pointer :: nt_phys 
    real    , pointer :: tau_h2o 
@@ -149,7 +137,6 @@ module fv_control_mod
    real    , pointer :: d_con 
    real    , pointer :: consv_te 
    real    , pointer :: tau 
-   real    , pointer :: rf_center 
    real    , pointer :: rf_cutoff
    logical , pointer :: filter_phys 
    logical , pointer :: dwind_2d 
@@ -158,6 +145,7 @@ module fv_control_mod
    logical , pointer :: fill 
    logical , pointer :: fill_dp 
    logical , pointer :: fill_wz 
+   logical , pointer :: check_negative
    logical , pointer :: non_ortho 
    logical , pointer :: adiabatic 
    logical , pointer :: moist_phys 
@@ -175,6 +163,7 @@ module fv_control_mod
    logical , pointer :: old_divg_damp 
    logical , pointer :: fv_land 
    logical , pointer :: nudge 
+   logical , pointer :: nudge_ic
    logical , pointer :: ncep_ic 
    logical , pointer :: fv_diag_ic 
    logical , pointer :: external_ic 
@@ -215,8 +204,36 @@ module fv_control_mod
    integer :: gid
 
 !---- version number -----
-   character(len=128) :: version = '$Id: fv_control.F90,v 20.0 2013/12/13 23:04:22 fms Exp $'
-   character(len=128) :: tagname = '$Name: tikal_201409 $'
+   character(len=128) :: version = '$Id: fv_control.F90,v 20.0.2.1.2.1.2.1.2.2.4.1 2014/11/24 19:16:18 Lucas.Harris Exp $'
+   character(len=128) :: tagname = '$Name: testing $'
+
+
+   integer dumm
+   real :: umax = 350.           ! max wave speed for grid_type>3
+   integer :: parent_grid_num = -1
+
+   namelist /fv_grid_nml/ grid_name, grid_file
+   namelist /fv_core_nml/npx, npy, ntiles, npz, npz_rst, layout, io_layout, ncnst, nwat,  &
+                         use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, do_schmidt,      &
+                         hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
+                         kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, do_f3d, &
+                         external_ic, ncep_ic, fv_diag_ic, res_latlon_dynamics, res_latlon_tracers, &
+                         scale_z, w_max, z_min, dddmp, d2_bg, d4_bg, vtdm4, d_ext, beta, non_ortho, n_sponge, &
+                         warm_start, adjust_dry_mass, mountain, d_con, nord, convert_ke, use_old_omega, &
+                         dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
+                         consv_te, fill, filter_phys, fill_dp, fill_wz, consv_am, &
+                         range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
+                         replace_w, tau, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, breed_vortex_inline,  &
+                         na_init, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, reset_eta,         &
+                         pnats, dnats, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
+                         c2l_ord, dx_const, dy_const, umax, deglat,      &
+                         deglon_start, deglon_stop, deglat_start, deglat_stop, &
+                         phys_hydrostatic, make_hybrid_z, old_divg_damp, add_noise, &
+                         nested, twowaynest, parent_grid_num, parent_tile, &
+                         refinement, nestbctype, nestupdate, nsponge, s_weight, &
+                         ioffset, joffset, check_negative, nudge_ic
+
+   namelist /test_case_nml/test_case,alpha
 
  contains
 
@@ -275,13 +292,14 @@ module fv_control_mod
 
          !not sure if this works with multiple grids
          call tm_register_tracers (MODEL_ATMOS, ncnst, nt_prog, pnats, num_family)
-         if(is_master()) write(*,*) 'ncnst=', ncnst,' num_prog=',nt_prog,' pnats=',pnats,' num_family=',num_family
+         if(is_master()) then
+            write(*,*) 'ncnst=', ncnst,' num_prog=',nt_prog,' pnats=',pnats,' dnats=',dnats,' num_family=',num_family         
+            print*, ''
+         endif
 
-         
-         if (is_master()) print*, ''
          if (grids_on_this_pe(n)) then
             call allocate_fv_atmos_type(Atm(n), Atm(n)%bd%isd, Atm(n)%bd%ied, Atm(n)%bd%jsd, Atm(n)%bd%jed, Atm(n)%bd%isc, Atm(n)%bd%iec, Atm(n)%bd%jsc, Atm(n)%bd%jec, &
-                 npx, npy, npz, ndims, ncnst, ng, .false., grids_on_this_pe(n))
+                 npx, npy, npz, ndims, ncnst, ncnst-pnats, ng, .false., grids_on_this_pe(n))
 
             if (grids_on_this_pe(n)) then
 
@@ -324,13 +342,16 @@ module fv_control_mod
             if ( is_master() ) then
                sdt =  dt_atmos/real(n_split*k_split*p_split)
                write(*,*) ' '
-               write(*,*) 'Divergence damping Coefficients * 1.E6:'
+               write(*,*) 'Divergence damping Coefficients'
                write(*,*) 'For small dt=', sdt
-               write(*,*) 'External mode del-2 (m**2/s)=',  d_ext*Atm(n)%gridstruct%da_min_c     /sdt*1.E-6
+               write(*,*) 'External mode del-2 (m**2/s)=',  d_ext*Atm(n)%gridstruct%da_min_c/sdt
                write(*,*) 'Internal mode del-2 SMAG dimensionless coeff=',  dddmp
-               write(*,*) 'Internal mode del-2 background diff=', d2_bg
+               write(*,*) 'Internal mode del-2 background diff=', d2_bg*Atm(n)%gridstruct%da_min_c/sdt
 
-               if (nord==1) write(*,*) 'Internal mode del-4 background diff=', d4_bg
+               if (nord==1) then
+                   write(*,*) 'Internal mode del-4 background diff=', d4_bg
+                   write(*,*) 'Vorticity del-4 (m**4/s)=', (vtdm4*Atm(n)%gridstruct%da_min)**2/sdt*1.E-6
+               endif
                if (nord==2) write(*,*) 'Internal mode del-6 background diff=', d4_bg
                if (nord==3) write(*,*) 'Internal mode del-8 background diff=', d4_bg
 
@@ -353,7 +374,7 @@ module fv_control_mod
 
             !Allocate dummy arrays
             call allocate_fv_atmos_type(Atm(n),  Atm(n)%bd%isd, Atm(n)%bd%ied, Atm(n)%bd%jsd, Atm(n)%bd%jed, Atm(n)%bd%isc, Atm(n)%bd%iec, Atm(n)%bd%jsc, Atm(n)%bd%jec, &
-                 npx, npy, npz, ndims, ncnst, ng, .true., .false.)
+                 npx, npy, npz, ndims, ncnst, ncnst-pnats, ng, .true., .false.)
 
             !Need to SEND grid_global to any child grids; this is received in setup_aligned_nest in fv_grid_tools
             if (Atm(n)%neststruct%nested) then
@@ -464,7 +485,7 @@ module fv_control_mod
       logical, intent(INOUT) :: grids_on_this_pe(:)
       integer, intent(INOUT) :: p_split
 
-      character(len=80) :: filename, tracerName, errString, nested_nml_filename
+      character(len=80) :: filename, tracerName, errString, nested_grid_filename
       integer :: ios, ierr, f_unit, unit
       logical :: exists
 
@@ -472,11 +493,11 @@ module fv_control_mod
       real :: dt0  = 1800.          ! base time step
       real :: ns0  = 5.             ! base nsplit for base dimension 
                                     ! For cubed sphere 5 is better
-      real :: umax = 350.           ! max wave speed for grid_type>3
+      !real :: umax = 350.           ! max wave speed for grid_type>3 ! Now defined above
       real :: dimx, dl, dp, dxmin, dymin, d_fac
 
       integer :: n0split
-      integer :: n, nn, i, parent_grid_num = -1
+      integer :: n, nn, i
 
       integer :: pe_counter
 
@@ -485,35 +506,6 @@ module fv_control_mod
       character(len=128) :: res_latlon_tracers  = ''
       character(len=80)  :: grid_name = ''
       character(len=120) :: grid_file = ''
-
-      character(len=INPUT_STR_LENGTH), dimension(:), allocatable :: nested_nml_file
-
-      namelist /mpi_nml/ i  ! Use of this namelist is deprecated; filled with a dummy variable
-      namelist /fv_grid_nml/ grid_name, grid_file
-      namelist /fv_core_nml/npx, npy, ntiles, npz, npz_rst, layout, io_layout, ncnst, nwat,  &
-                            use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, do_schmidt,      &
-                            hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
-                            kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, &
-                            external_ic, ncep_ic, fv_diag_ic, res_latlon_dynamics, res_latlon_tracers, &
-                            scale_z, w_max, z_min, dddmp, d2_bg, d4_bg, vtdm4, d_ext, beta, non_ortho, n_sponge, &
-                            warm_start, adjust_dry_mass, mountain, d_con, nord, convert_ke, use_old_omega, &
-                            dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
-                            consv_te, fill, filter_phys, fill_dp, fill_wz, &
-                            range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
-                            replace_w, tau, tau_h2o, rf_center, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, breed_vortex_inline,  &
-                            na_init, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, reset_eta,         &
-                            pnats, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
-#ifdef MARS_GCM
-                            sponge_damp, reference_sfc_pres,                     &
-#endif
-                            c2l_ord, dx_const, dy_const, umax, deglat,      &
-                            deglon_start, deglon_stop, deglat_start, deglat_stop, &
-                            phys_hydrostatic, make_hybrid_z, old_divg_damp, add_noise, &
-                            nested, twowaynest, parent_grid_num, parent_tile, &
-                            refinement, nestbctype, nestupdate, nsponge, s_weight, &
-                            ioffset, joffset
-
-      namelist /test_case_nml/test_case,alpha
 
       pe_counter = mpp_root_pe()
 
@@ -537,30 +529,17 @@ module fv_control_mod
    ! Read Test_Case namelist
       read (input_nml_file,test_case_nml,iostat=ios)
       ierr = check_nml_error(ios,'test_case_nml')
-   ! Look for deprecated mpi_nml
-      read (input_nml_file,mpi_nml,iostat=ios)
-      if (ios == 0) call mpp_error(FATAL,'mpi_nml is deprecated. Use layout in fv_core_nml')
-!      rewind (f_unit)
 #else
       f_unit=open_namelist_file()
       rewind (f_unit)
    ! Read Main namelist
       read (f_unit,fv_grid_nml,iostat=ios)
       ierr = check_nml_error(ios,'fv_grid_nml')
-   ! Read Test_Case namelist
-      rewind (f_unit)
-      read (f_unit,test_case_nml,iostat=ios)
-      ierr = check_nml_error(ios,'test_case_nml')
-   ! Look for deprecated mpi_nml
-      rewind (f_unit)
-      read (f_unit,mpi_nml,iostat=ios)
-      if (ios == 0) call mpp_error(FATAL,'mpi_nml is deprecated. Use layout in fv_core_nml')
       rewind (f_unit)
 #endif
 
       unit = stdlog()
       write(unit, nml=fv_grid_nml)
-      write(unit, nml=test_case_nml)
 
       do n=1,size(Atm)
 
@@ -568,15 +547,35 @@ module fv_control_mod
          call setup_pointers(Atm(n))
          Atm(n)%grid_number = n
 
-         if (grids_on_this_pe(n)) then
 #ifdef INTERNAL_FILE_NML
+         if (size(Atm) > 1) then
+            call mpp_error(FATAL, "Nesting not implemented with INTERNAL_FILE_NML")
+         endif
    ! Read FVCORE namelist 
       read (input_nml_file,fv_core_nml,iostat=ios)
       ierr = check_nml_error(ios,'fv_core_nml')
+   ! Read Test_Case namelist
+      read (input_nml_file,test_case_nml,iostat=ios)
+      ierr = check_nml_error(ios,'test_case_nml')
 #else
+      if (size(Atm) == 1) then
+         f_unit = open_namelist_file()
+      else if (n == 1) then
+         f_unit = open_namelist_file('input.nml')
+      else 
+         write(nested_grid_filename,'(A10, I2.2, A4)') 'input_nest', n, '.nml'
+         f_unit = open_namelist_file(nested_grid_filename)
+      endif
+
    ! Read FVCORE namelist 
       read (f_unit,fv_core_nml,iostat=ios)
       ierr = check_nml_error(ios,'fv_core_nml')
+
+   ! Read Test_Case namelist
+      rewind (f_unit)
+      read (f_unit,test_case_nml,iostat=ios)
+      ierr = check_nml_error(ios,'test_case_nml')
+
       call close_file(f_unit)
 #endif         
           if (len_trim(grid_file) /= 0) Atm(n)%flagstruct%grid_file = grid_file
@@ -585,19 +584,7 @@ module fv_control_mod
           if (len_trim(res_latlon_tracers)  /= 0) Atm(n)%flagstruct%res_latlon_tracers = res_latlon_tracers
 
          write(unit, nml=fv_core_nml)
-      endif
-
-      !Temporarily set pelist to all
-         call mpp_set_current_pelist(pelist_all)
-         call broadcast_fv_atmos_data(Atm(n), Atm(n)%pelist(1), pelist_all)
-         !Need to broadcast some local variables as well
-         call mpp_broadcast(parent_grid_num, Atm(n)%pelist(1), pelist_all)
-         
-         if (n == 1) then
-            call mpp_broadcast(test_case, Atm(1)%pelist(1), pelist_all)
-            call mpp_broadcast(alpha,     Atm(1)%pelist(1), pelist_all)
-            call mpp_broadcast(p_split,   Atm(1)%pelist(1), pelist_all)
-         endif
+         write(unit, nml=test_case_nml)
 
          !*** single tile for Cartesian grids
          if (grid_type>3) then
@@ -611,9 +598,6 @@ module fv_control_mod
          ! Define n_split if not in namelist
          if (ntiles==6) then
             dimx = 4.0*(npx-1)
-#ifdef MARS_GCM
-         ns0 = 8
-#else
          if ( hydrostatic ) then
             if ( npx >= 120 ) ns0 = 6
          else
@@ -625,7 +609,6 @@ module fv_control_mod
                  ns0 = 8
             endif
          endif
-#endif
       else
          dimx = max ( npx, 2*(npy-1) )
       endif
@@ -738,7 +721,7 @@ module fv_control_mod
         if ( d2_bg_k2 > 1. ) d2_bg_k2 = 0.015
       endif
 
-      if ( beta < 1.e-5 ) beta = 0.
+!     if ( beta < 1.e-5 ) beta = 0.   ! beta < 0 is used for non-hydrostatic "one_grad_p"
 
       if ( .not.hydrostatic ) then
          if ( m_split==0 ) then
@@ -1016,7 +999,9 @@ module fv_control_mod
      damp_k_k2                     => Atm%flagstruct%damp_k_k2
      n_zs_filter                   => Atm%flagstruct%n_zs_filter
      nord_zs_filter                => Atm%flagstruct%nord_zs_filter
+     consv_am                      => Atm%flagstruct%consv_am
      do_sat_adj                    => Atm%flagstruct%do_sat_adj
+     do_f3d                        => Atm%flagstruct%do_f3d
      no_dycore                     => Atm%flagstruct%no_dycore
      replace_w                     => Atm%flagstruct%replace_w
      convert_ke                    => Atm%flagstruct%convert_ke
@@ -1049,14 +1034,11 @@ module fv_control_mod
      npz_rst                       => Atm%flagstruct%npz_rst
      ncnst                         => Atm%flagstruct%ncnst
      pnats                         => Atm%flagstruct%pnats
+     dnats                         => Atm%flagstruct%dnats
      ntiles                        => Atm%flagstruct%ntiles
      nf_omega                      => Atm%flagstruct%nf_omega
      fv_sg_adj                     => Atm%flagstruct%fv_sg_adj
      na_init                       => Atm%flagstruct%na_init
-#ifdef MARS_GCM
-     reference_sfc_pres            => Atm%flagstruct%reference_sfc_pres
-     sponge_damp                   => Atm%flagstruct%sponge_damp
-#endif
      p_ref                         => Atm%flagstruct%p_ref
      dry_mass                      => Atm%flagstruct%dry_mass
      nt_prog                       => Atm%flagstruct%nt_prog
@@ -1065,7 +1047,6 @@ module fv_control_mod
      d_con                         => Atm%flagstruct%d_con
      consv_te                      => Atm%flagstruct%consv_te
      tau                           => Atm%flagstruct%tau
-     rf_center                     => Atm%flagstruct%rf_center
      rf_cutoff                     => Atm%flagstruct%rf_cutoff
      filter_phys                   => Atm%flagstruct%filter_phys
      dwind_2d                      => Atm%flagstruct%dwind_2d
@@ -1074,6 +1055,7 @@ module fv_control_mod
      fill                          => Atm%flagstruct%fill
      fill_dp                       => Atm%flagstruct%fill_dp
      fill_wz                       => Atm%flagstruct%fill_wz
+     check_negative                => Atm%flagstruct%check_negative
      non_ortho                     => Atm%flagstruct%non_ortho
      adiabatic                     => Atm%flagstruct%adiabatic
      moist_phys                    => Atm%flagstruct%moist_phys
@@ -1090,6 +1072,7 @@ module fv_control_mod
      old_divg_damp                 => Atm%flagstruct%old_divg_damp
      fv_land                       => Atm%flagstruct%fv_land
      nudge                         => Atm%flagstruct%nudge
+     nudge_ic                      => Atm%flagstruct%nudge_ic
      ncep_ic                       => Atm%flagstruct%ncep_ic
      fv_diag_ic                    => Atm%flagstruct%fv_diag_ic
      external_ic                   => Atm%flagstruct%external_ic
