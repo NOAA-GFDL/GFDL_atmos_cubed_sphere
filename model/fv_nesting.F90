@@ -39,8 +39,8 @@ private
 public :: twoway_nesting, setup_nested_grid_BCs
 
 !---- version number -----
-   character(len=128) :: version = '$Id: fv_nesting.F90,v 1.1.4.31.2.5.4.1 2014/10/14 18:26:17 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: testing $'
+   character(len=128) :: version = '$Id$'
+   character(len=128) :: tagname = '$Name$'
 
 contains
 

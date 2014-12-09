@@ -58,8 +58,8 @@
       public  del2_cubed_sphere, del4_cubed_sphere
 
 !---- version number -----
-      character(len=128) :: version = '$Id: fv_surf_map.F90,v 20.0.2.1.2.1.4.1 2014/10/16 13:44:49 Lucas.Harris Exp $'
-      character(len=128) :: tagname = '$Name: testing $'
+      character(len=128) :: version = '$Id$'
+      character(len=128) :: tagname = '$Name$'
 
       contains
 

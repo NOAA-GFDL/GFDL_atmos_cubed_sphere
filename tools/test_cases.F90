@@ -123,8 +123,8 @@
       public :: init_double_periodic, init_latlon
 
  !---- version number -----
-      character(len=128) :: version = '$Id: test_cases.F90,v 17.0.2.2.2.2.2.13.2.22.2.12.4.1 2014/11/24 19:16:18 Lucas.Harris Exp $'
-      character(len=128) :: tagname = '$Name: testing $'
+      character(len=128) :: version = '$Id$'
+      character(len=128) :: tagname = '$Name$'
 
   INTERFACE mp_update_dwinds
      MODULE PROCEDURE mp_update_dwinds_2d

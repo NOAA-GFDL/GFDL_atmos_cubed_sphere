@@ -55,8 +55,8 @@ module fv_grid_tools_mod
        broadcast_aligned_nest, spherical_to_cartesian
 
   !---- version number -----
-  character(len=128) :: version = '$Id: fv_grid_tools.F90,v 17.0.2.1.2.4.4.5.2.11.2.18.6.3.2.1 2014/09/29 16:51:22 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: testing $'
+  character(len=128) :: version = '$Id$'
+  character(len=128) :: tagname = '$Name$'
 
 contains
 

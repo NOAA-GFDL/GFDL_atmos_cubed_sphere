@@ -1,4 +1,4 @@
-! $Id: init_hydro.F90,v 17.0.2.3.2.4.2.9.2.3 2014/04/18 13:38:42 Lucas.Harris Exp $
+! $Id$
 
 module init_hydro_mod
 
@@ -19,8 +19,8 @@ module init_hydro_mod
       public :: p_var, hydro_eq
 
 !---- version number -----
-      character(len=128) :: version = '$Id: init_hydro.F90,v 17.0.2.3.2.4.2.9.2.3 2014/04/18 13:38:42 Lucas.Harris Exp $'
-      character(len=128) :: tagname = '$Name: testing $'
+      character(len=128) :: version = '$Id$'
+      character(len=128) :: tagname = '$Name$'
 
 contains
 

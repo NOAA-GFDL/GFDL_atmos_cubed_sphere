@@ -69,8 +69,8 @@ module fv_io_mod
 
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_io.F90,v 20.0.2.3.6.2.2.1.4.1.2.1 2014/11/24 19:16:18 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: testing $'
+  character(len=128) :: version = '$Id$'
+  character(len=128) :: tagname = '$Name$'
 
   integer ::grid_xtdimid, grid_ytdimid, haloid, pfullid !For writing BCs
   integer ::grid_xtstagdimid, grid_ytstagdimid, oneid

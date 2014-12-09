@@ -10,8 +10,8 @@ module nh_core_mod
   public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, geopk_halo_nh
 
 !---- version number -----
-  character(len=128) :: version = '$Id: nh_core.F90,v 20.0.2.1 2014/09/22 13:35:07 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: testing $'
+  character(len=128) :: version = '$Id$'
+  character(len=128) :: tagname = '$Name$'
 
 contains
 

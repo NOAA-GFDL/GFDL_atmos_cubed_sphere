@@ -50,9 +50,9 @@ module fv_ada_nudge_mod
  private
 
  character(len=*), parameter :: VERSION =&
-      & '$Id: fv_ada_nudge.F90,v 20.0.2.2 2014/09/02 20:38:19 Rusty.Benson Exp $'
+      & '$Id$'
  character(len=*), parameter :: TAGNAME =&
-      & '$Name: testing $'
+      & '$Name$'
  logical :: do_adiabatic_init
 
  public fv_ada_nudge, fv_ada_nudge_init, fv_ada_nudge_end, breed_slp_inline_ada

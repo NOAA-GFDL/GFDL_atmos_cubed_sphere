@@ -689,8 +689,8 @@ module fv_arrays_mod
   end type fv_atmos_type
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_arrays.F90,v 20.0.2.1.2.1.2.2.2.1 2014/09/22 02:51:05 Rusty.Benson Exp $'
-  character(len=128) :: tagname = '$Name: testing $'
+  character(len=128) :: version = '$Id$'
+  character(len=128) :: tagname = '$Name$'
 
 contains
 

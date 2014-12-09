@@ -1,4 +1,4 @@
-! $Id: fv_control.F90,v 20.0.2.1.2.1.2.1.2.2.4.1 2014/11/24 19:16:18 Lucas.Harris Exp $
+! $Id$
 !
 !----------------
 ! FV contro panel
@@ -204,8 +204,8 @@ module fv_control_mod
    integer :: gid
 
 !---- version number -----
-   character(len=128) :: version = '$Id: fv_control.F90,v 20.0.2.1.2.1.2.1.2.2.4.1 2014/11/24 19:16:18 Lucas.Harris Exp $'
-   character(len=128) :: tagname = '$Name: testing $'
+   character(len=128) :: version = '$Id$'
+   character(len=128) :: tagname = '$Name$'
 
 
    integer dumm

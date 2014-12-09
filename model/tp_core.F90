@@ -49,8 +49,8 @@ module tp_core_mod
 !   q(i+0.5) = p1*(q(i-1)+q(i)) + p2*(q(i-2)+q(i+1))
 
 !---- version number -----
-   character(len=128) :: version = '$Id: tp_core.F90,v 20.0.2.1.2.1 2014/09/22 02:51:05 Rusty.Benson Exp $'
-   character(len=128) :: tagname = '$Name: testing $'
+   character(len=128) :: version = '$Id$'
+   character(len=128) :: tagname = '$Name$'
 
 !
 !EOP

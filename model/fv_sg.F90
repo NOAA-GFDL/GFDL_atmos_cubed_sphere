@@ -32,8 +32,8 @@ public  fv_dry_conv, qsmith, neg_adj3
   real, allocatable:: table(:),des(:)
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_sg.F90,v 17.0.2.4.2.3.2.6.2.10.6.1 2014/11/24 19:16:18 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: testing $'
+  character(len=128) :: version = '$Id$'
+  character(len=128) :: tagname = '$Name$'
 
 contains
 

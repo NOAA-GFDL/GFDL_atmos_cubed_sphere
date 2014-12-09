@@ -46,8 +46,8 @@
   logical:: sw_corner, se_corner, ne_corner, nw_corner 
 
 !---- version number -----
-  character(len=128) :: version = '$Id: sw_core.F90,v 20.0.2.1.2.1.4.1.2.1 2014/11/24 19:16:18 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: testing $'
+  character(len=128) :: version = '$Id$'
+  character(len=128) :: tagname = '$Name$'
 
       private
       public :: c_sw, d_sw, fill_4corners, del6_vt_flux

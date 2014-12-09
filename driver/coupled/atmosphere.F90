@@ -89,8 +89,8 @@ public :: atmos_radiation_driver_inputs, atmos_physics_driver_inputs
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id: atmosphere.F90,v 20.0.2.1.4.4.2.5.2.1.2.1 2014/10/01 16:16:53 Rusty.Benson Exp $'
-character(len=128) :: tagname = '$Name: testing $'
+character(len=128) :: version = '$Id$'
+character(len=128) :: tagname = '$Name$'
 character(len=7)   :: mod_name = 'atmos'
 
 !---- private data ----

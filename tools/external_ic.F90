@@ -37,8 +37,8 @@
    public get_external_ic, get_cubed_sphere_terrain
 
 !---- version number -----
-   character(len=128) :: version = '$Id: external_ic.F90,v 20.0.2.1.2.1 2014/09/22 02:51:05 Rusty.Benson Exp $'
-   character(len=128) :: tagname = '$Name: testing $'
+   character(len=128) :: version = '$Id$'
+   character(len=128) :: tagname = '$Name$'
 
 contains
 

@@ -22,8 +22,8 @@ module sim_nc_mod
          handle_err, check_var
 
 !---- version number -----
- character(len=128) :: version = '$Id: sim_nc_mod.F90,v 20.0.2.1 2014/10/07 20:10:07 Rusty.Benson Exp $'
- character(len=128) :: tagname = '$Name: testing $'
+ character(len=128) :: version = '$Id$'
+ character(len=128) :: tagname = '$Name$'
 
  contains
 

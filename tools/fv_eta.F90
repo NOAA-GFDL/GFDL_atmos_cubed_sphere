@@ -7,8 +7,8 @@ module fv_eta_mod
  public set_eta, get_eta_level, compute_dz_var, compute_dz_L32, compute_dz_L101, set_hybrid_z, compute_dz, gw_1d, sm1_edge, hybrid_z_dz
 
 !---- version number -----
- character(len=128) :: version = '$Id: fv_eta.F90,v 17.0.2.1.2.4.2.3.2.12.2.4.4.1 2014/11/24 19:16:18 Lucas.Harris Exp $'
- character(len=128) :: tagname = '$Name: testing $'
+ character(len=128) :: version = '$Id$'
+ character(len=128) :: tagname = '$Name$'
 ! Developer: Shian-Jiann Lin, NOAA/GFDL
 
  contains

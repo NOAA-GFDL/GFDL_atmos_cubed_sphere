@@ -40,8 +40,8 @@ public :: dyn_core, del2_cubed
                                           zh, du, dv, pkc, delpc, pk3, ptc, gz
 
 !---- version number -----
-  character(len=128) :: version = '$Id: dyn_core.F90,v 17.0.2.10.2.18.2.28.2.13.4.1.2.1 2014/11/24 19:16:17 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name: testing $'
+  character(len=128) :: version = '$Id$'
+  character(len=128) :: tagname = '$Name$'
 
 contains
 
