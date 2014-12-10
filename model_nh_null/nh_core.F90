@@ -7,7 +7,7 @@ module nh_core_mod
   implicit none
   private
 
-  public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, geopk_halo_nh
+  public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, nest_halo_nh
 
 !---- version number -----
   character(len=128) :: version = '$Id$'
@@ -117,7 +117,7 @@ contains
 
 
 
-  subroutine geopk_halo_nh(ptop, grav, kappa, cp, delp, delz, pt, phis, pkc, gz, pk3, &
+  subroutine nest_halo_nh(ptop, grav, kappa, cp, delp, delz, pt, phis, pkc, gz, pk3, &
                            npx, npy, npz, nested, pkc_pertn, computepk3, fullhalo, bd)
 
    integer, intent(in) :: npx, npy, npz
@@ -128,8 +128,8 @@ contains
    real, intent(in),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: pt, delp, delz
    real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz+1):: gz, pkc, pk3
 
-   call error_mesg('geopk_halo_nh','The null version of geopk_halo_nh should not be called.',FATAL)
+   call error_mesg('nest_halo_nh','The null version of nest_halo_nh should not be called.',FATAL)
 
-  end subroutine geopk_halo_nh
+  end subroutine nest_halo_nh
 
 end module nh_core_mod
