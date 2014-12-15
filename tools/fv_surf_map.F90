@@ -42,33 +42,24 @@
       logical:: zero_ocean = .true.          ! if true, no diffusive flux into water/ocean area 
       integer           ::  nlon = 21600
       integer           ::  nlat = 10800
-#ifdef MARS_GCM
-      character(len=128)::  surf_file = "INPUT/mars_topo.nc"
-      character(len=6)  ::  surf_format = 'netcdf'
-      character(len=80) :: field_name 
-      integer           :: fld_dims(4)
-#else
+      real:: peak_fac = 1.0  ! overshoot factor for the mountain peak
       character(len=128)::  surf_file = "INPUT/topo1min.nc"
       character(len=6)  ::  surf_format = 'netcdf'
-#endif
+
       real da_min, cos_grid
       character(len=3) :: grid_string = ''
 
-      namelist /surf_map_nml/ surf_file,surf_format,nlon,nlat, zero_ocean, zs_filter
+      namelist /surf_map_nml/ surf_file,surf_format,nlon,nlat, zero_ocean, zs_filter, peak_fac
 !
-      real, allocatable:: zs_g(:,:)
-      real, allocatable:: sgh_g(:,:), oro_g(:,:)
+      real, allocatable:: zs_g(:,:), sgh_g(:,:), oro_g(:,:)
 
       public  sgh_g, oro_g, zs_g
       public  surfdrv
       public  del2_cubed_sphere, del4_cubed_sphere
-#ifdef MARS_GCM
-      public  map_to_cubed_simple
-#endif
 
 !---- version number -----
-      character(len=128) :: version = '$Id: fv_surf_map.F90,v 20.0 2013/12/13 23:07:40 fms Exp $'
-      character(len=128) :: tagname = '$Name: tikal_201409 $'
+      character(len=128) :: version = '$Id$'
+      character(len=128) :: tagname = '$Name$'
 
       contains
 
@@ -93,7 +84,7 @@
 
       real, intent(in):: grid(bd%is-ng:bd%ie+ng+1, bd%js-ng:bd%je+ng+1,2)
       real, intent(in):: agrid(bd%is-ng:bd%ie+ng, bd%js-ng:bd%je+ng,2)
-      real, intent(IN):: sin_sg(bd%isd:bd%ied,bd%jsd:bd%jed,9)
+      real, intent(IN):: sin_sg(9,bd%isd:bd%ied,bd%jsd:bd%jed)
       real, intent(IN):: stretch_fac
       logical, intent(IN) :: nested
       integer, intent(IN) :: npx_global
@@ -137,23 +128,7 @@
 
       if (grid_number > 1) write(grid_string, '(A, I1)') ' g', grid_number
 
-#ifdef MARS_GCM
-      if (file_exist(surf_file)) then
-         field_name = 'topo'
- 
-         status = nf_open (surf_file, NF_NOWRITE, ncid)
-         if (status .ne. NF_NOERR) call handle_err(status)
 
-         call field_size( trim(surf_file), trim(field_name), fld_dims )
-         nlon= fld_dims(1);  nlat= fld_dims(2);
-
-         if(is_master()) write(*,*) 'Mars Terrain dataset dims=', nlon, nlat
-
-      else
-         call error_mesg ( 'surfdrv', 'mars_topo not found in INPUT', FATAL )
-      endif
-
-#else
 !
 ! surface file must be in NetCDF format
 !
@@ -189,7 +164,6 @@
     else
        call error_mesg ( 'surfdrv','surface file '//trim(surf_file)//' not found !', FATAL )
     endif
-#endif
 
       allocate ( lat1(nlat+1) )
       allocate ( lon1(nlon+1) )
@@ -506,7 +480,7 @@
       real, intent(in)::  dy(bd%isd:bd%ied+1,bd%jsd:bd%jed)
       real, intent(in):: dxc(bd%isd:bd%ied+1,bd%jsd:bd%jed)
       real, intent(in):: dyc(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
-      real, intent(IN):: sin_sg(bd%isd:bd%ied,bd%jsd:bd%jed,9)
+      real, intent(IN):: sin_sg(9,bd%isd:bd%ied,bd%jsd:bd%jed)
       real, intent(in):: oro(bd%isd:bd%ied,  bd%jsd:bd%jed)        ! 0==water, 1==land
       logical, intent(IN) :: nested
       type(domain2d), intent(INOUT) :: domain
@@ -562,13 +536,13 @@
          if( n>1 ) call mpp_update_domains(q,domain,whalo=ng,ehalo=ng,shalo=ng,nhalo=ng)
          do j=js,je
             do i=is,ie+1
-               ddx(i,j) = 0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))*dy(i,j)*(q(i-1,j)-q(i,j))/dxc(i,j)
+               ddx(i,j) = 0.5*(sin_sg(3,i-1,j)+sin_sg(1,i,j))*dy(i,j)*(q(i-1,j)-q(i,j))/dxc(i,j)
             enddo
          enddo
          do j=js,je+1
             do i=is,ie
                ddy(i,j) = dx(i,j)*(q(i,j-1)-q(i,j))/dyc(i,j) &
-                        *0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))
+                        *0.5*(sin_sg(4,i,j-1)+sin_sg(2,i,j))
             enddo
          enddo
 
@@ -606,7 +580,7 @@
       real, intent(in)::  dy(bd%isd:bd%ied+1,bd%jsd:bd%jed)
       real, intent(in):: dxc(bd%isd:bd%ied+1,bd%jsd:bd%jed)
       real, intent(in):: dyc(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
-      real, intent(IN):: sin_sg(bd%isd:bd%ied,bd%jsd:bd%jed,9)
+      real, intent(IN):: sin_sg(9,bd%isd:bd%ied,bd%jsd:bd%jed)
       real, intent(inout):: q(bd%is-ng:bd%ie+ng, bd%js-ng:bd%je+ng)
       logical, intent(IN) :: nested
       type(domain2d), intent(INOUT) :: domain
@@ -688,7 +662,7 @@
            qmin(i,j) = min(q0(i,j), q(i-1,j-1), q(i,j-1), q(i+1,j-1),  &
                                     q(i-1,j  ), q(i,j  ), q(i+1,j  ),  &
                                     q(i-1,j+1), q(i,j+1), q(i+1,j+1) )
-           qmax(i,j) = max(q0(i,j), q(i-1,j-1), q(i,j-1), q(i+1,j-1),  &
+           qmax(i,j) = max(peak_fac*q0(i,j), q(i-1,j-1), q(i,j-1), q(i+1,j-1),  &
                                     q(i-1,j  ), q(i,j  ), q(i+1,j  ),  &
                                     q(i-1,j+1), q(i,j+1), q(i+1,j+1) )
         enddo
@@ -701,7 +675,7 @@
       do j=js,je
          do i=is,ie+1
             fx2(i,j) = 0.25*(diff(i-1,j)+diff(i,j))*dy(i,j)*(q(i-1,j)-q(i,j))/dxc(i,j)          &
-                           *(sin_sg(i,j,1)+sin_sg(i-1,j,3))
+                           *(sin_sg(1,i,j)+sin_sg(3,i-1,j))
          enddo
       enddo
 
@@ -709,7 +683,7 @@
       do j=js,je+1
          do i=is,ie
             fy2(i,j) = 0.25*(diff(i,j-1)+diff(i,j))*dx(i,j)*(q(i,j-1)-q(i,j))/dyc(i,j) &
-                           *(sin_sg(i,j,2)+sin_sg(i,j-1,4))
+                           *(sin_sg(2,i,j)+sin_sg(4,i,j-1))
          enddo
       enddo
 
@@ -755,7 +729,7 @@
 !     call copy_corners(d2, npx, npy, 1)
       do j=js,je
          do i=is,ie+1
-            fx4(i,j) = 0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))*dy(i,j)*(d2(i,j)-d2(i-1,j))/dxc(i,j)-fx2(i,j)
+            fx4(i,j) = 0.5*(sin_sg(3,i-1,j)+sin_sg(1,i,j))*dy(i,j)*(d2(i,j)-d2(i-1,j))/dxc(i,j)-fx2(i,j)
          enddo
       enddo
 
@@ -763,7 +737,7 @@
       do j=js,je+1
          do i=is,ie
             fy4(i,j) = dx(i,j)*(d2(i,j)-d2(i,j-1))/dyc(i,j) &
-                     *0.5*(sin_sg(i,j,2)+sin_sg(i,j-1,4))-fy2(i,j)
+                     *0.5*(sin_sg(2,i,j)+sin_sg(4,i,j-1))-fy2(i,j)
          enddo
       enddo
 
@@ -1162,231 +1136,6 @@
       inside_p4 = .true.
 
  end function inside_p4
-
-#ifdef MARS_GCM
-
- logical function inside_p4_old(p1, p2, p3, p4, pp)
-!
-!            4----------3
-!           /          /
-!          /    pp    /
-!         /          /
-!        1----------2
-!
-! A * B = |A| |B| cos(angle)
-
-      real, intent(in):: p1(3), p2(3), p3(3), p4(3)
-      real, intent(in):: pp(3)
-! Local:
-      real v1(3), v2(3), vp(3)
-      real a1, a2, aa, s1, s2, ss
-      integer k
-
-! S-W:
-      do k=1,3
-         v1(k) = p2(k) - p1(k) 
-         v2(k) = p4(k) - p1(k) 
-         vp(k) = pp(k) - p1(k) 
-      enddo
-      s1 = sqrt( v1(1)**2 + v1(2)**2 + v1(3)**2 )
-      s2 = sqrt( v2(1)**2 + v2(2)**2 + v2(3)**2 )
-      ss = sqrt( vp(1)**2 + vp(2)**2 + vp(3)**2 )
-
-! Compute cos(angle):
-      aa = v_prod(v1, v2) / (s1*s2)
-      a1 = v_prod(v1, vp) / (s1*ss)
-      a2 = v_prod(v2, vp) / (s2*ss)
-
-      if ( a1<aa  .or.  a2<aa ) then
-           inside_p4_old = .false.
-           return
-      endif
-
-! N-E:
-      do k=1,3
-         v1(k) = p2(k) - p3(k) 
-         v2(k) = p4(k) - p3(k) 
-         vp(k) = pp(k) - p3(k) 
-      enddo
-      s1 = sqrt( v1(1)**2 + v1(2)**2 + v1(3)**2 )
-      s2 = sqrt( v2(1)**2 + v2(2)**2 + v2(3)**2 )
-      ss = sqrt( vp(1)**2 + vp(2)**2 + vp(3)**2 )
-
-! Compute cos(angle):
-      aa = v_prod(v1, v2) / (s1*s2)
-      a1 = v_prod(v1, vp) / (s1*ss)
-      a2 = v_prod(v2, vp) / (s2*ss)
-
-      if ( a1<aa  .or.  a2<aa ) then
-           inside_p4_old = .false.
-      else
-           inside_p4_old = .true.
-      endif
-
- end function inside_p4_old
-
-    subroutine map_to_cubed_simple(im, jm, lat1, lon1, q1, grid, agrid, q2, npx, npy, npx_global, bd)
-
-
-! Input
-      type(fv_grid_bounds_type), intent(IN) :: bd
-      integer, intent(in):: im,jm         ! original dimensions
-      integer, intent(in):: npx, npy, npx_global
-!rjw      logical, intent(in):: master
-      real, intent(in):: lat1(jm+1)       ! original southern edge of the cell [-pi/2:pi/2]
-      real, intent(in):: lon1(im+1)       ! original western edge of the cell [0:2*pi]
-      real(kind=4), intent(in):: q1(im,jm)        ! original data at center of the cell
-!rjw      real(kind=4), intent(in):: f1(im,jm)        !
-
-      real, intent(in)::  grid(bd%is-ng:bd%ie+ng+1, bd%js-ng:bd%je+ng+1,2)
-      real, intent(in):: agrid(bd%is-ng:bd%ie+ng,   bd%js-ng:bd%je+ng,  2)
-
-! Output
-      real, intent(out):: q2(bd%is-ng:bd%ie+ng, bd%js-ng:bd%je+ng) ! Mapped data at the target resolution
-!rjw      real, intent(out):: f2(bd%isd:bd%ied,bd%jsd:bd%jed) ! oro
-!rjw      real, intent(out):: h2(bd%isd:bd%ied,bd%jsd:bd%jed) ! variances of terrain
-
-! Local
-      real(kind=4)  qt(-im/32:im+im/32,jm)    ! ghosted east-west
-!rjw      real(kind=4)  ft(-im/32:im+im/32,jm)    ! 
-      real lon_g(-im/32:im+im/32)
-      real lat_g(jm)
-
-      real pc(3), p2(2), pp(3), grid3(3,bd%is-ng:bd%ie+ng+1, bd%js-ng:bd%je+ng+1)
-      integer i,j, np
-      integer ii, jj, i1, i2, j1, j2
-      integer ifirst, ilast
-      real ddeg, latitude, qsum, fsum, hsum, lon_w, lon_e, lat_s, lat_n, r2d
-      real delg
-
-      integer :: is,  ie,  js,  je
-      integer :: isd, ied, jsd, jed
-
-      is  = bd%is
-      ie  = bd%ie
-      js  = bd%js
-      je  = bd%je
-      isd = bd%isd
-      ied = bd%ied
-      jsd = bd%jsd
-      jed = bd%jed
-
-!!!      pi = 4.0 * datan(1.0d0)
-
-      r2d = 180./pi
-      ddeg = 2.*pi/real(4*npx_global)
-
-! Ghost the input coordinates:
-      do i=1,im
-         lon_g(i) = 0.5*(lon1(i)+lon1(i+1))
-      enddo
-
-      do i=-im/32,0
-         lon_g(i) = lon_g(i+im)
-      enddo
-      do i=im+1,im+im/32
-         lon_g(i) = lon_g(i-im)
-      enddo
-
-      do j=1,jm
-         lat_g(j) = 0.5*(lat1(j)+lat1(j+1))
-      enddo
-
-      if ( 2*(im/2) /= im ) then
-           write(*,*) 'Warning: Terrain datset must have an even nlon dimension'
-      endif
-! Ghost Data
-      do j=1,jm
-         do i=1,im
-            qt(i,j) = q1(i,j)
-!rjw            ft(i,j) = f1(i,j)
-         enddo
-         do i=-im/32,0
-            qt(i,j) = qt(i+im,j)
-!rjw            ft(i,j) = ft(i+im,j)
-         enddo
-         do i=im+1,im+im/32
-            qt(i,j) = qt(i-im,j)
-!rjw            ft(i,j) = ft(i-im,j)
-         enddo
-      enddo
-      
-      do j=js,je+1
-         do i=is,ie+1
-            call latlon2xyz(grid(i,j,1:2), grid3(1,i,j))
-         enddo
-      enddo
-
-!rjw     if(is_master()) write(*,*) 'surf_map: Search started ....'
-! Mapping:
-      do j=js,je
-         do i=is,ie
-! Determine the approximate local loop bounds (slightly larger than needed)
-            lon_w = min( grid(i,j,1), grid(i+1,j,1), grid(i,j+1,1), grid(i+1,j+1,1) ) - ddeg
-            lon_e = max( grid(i,j,1), grid(i+1,j,1), grid(i,j+1,1), grid(i+1,j+1,1) ) + ddeg
-            if ( (lon_e - lon_w) > pi ) then
-                 delg = max( abs(lon_e-2.*pi), abs(lon_w) ) + ddeg
-                 i1 = -delg / (2.*pi/real(im)) - 1
-                 i2 = -i1 + 1
-            else 
-                 i1 = lon_w / (2.*pi/real(im)) - 1
-                 i2 = lon_e / (2.*pi/real(im)) + 2
-            endif
-            i1 = max(-im/32, i1)
-            i2 = min(im+im/32, i2)
-!           
-            lat_s = min( grid(i,j,2), grid(i+1,j,2), grid(i,j+1,2), grid(i+1,j+1,2) ) - ddeg
-            lat_n = max( grid(i,j,2), grid(i+1,j,2), grid(i,j+1,2), grid(i+1,j+1,2) ) + ddeg
-            j1 = (0.5*pi + lat_s) / (pi/real(jm)) - 1
-            j2 = (0.5*pi + lat_n) / (pi/real(jm)) + 2
-              
-              np = 0
-            qsum = 0.
-!rjw            fsum = 0.
-!rjw            hsum = 0.
-!           call latlon2xyz(agrid(i,j,1:2), pc)
-
-!rjw             print *, 'Interior loop:  ',  i, j, i1, i2, j1, j2,  grid(i,j,1:2)*r2d,  agrid(i,j,1:2)*r2d
-
-            do jj=max(1,j1),min(jm,j2)
-                  p2(2) = lat_g(jj)
-                  latitude =  p2(2)*r2d
-               if ( abs(latitude) > 80.  ) then
-                  ifirst = 1; ilast = im
-               else
-                  ifirst = i1; ilast = i2
-               endif
-
-               do ii=ifirst, ilast
-                  p2(1) = lon_g(ii)
-                  call latlon2xyz(p2, pp)
-                  if (inside_p4_old(grid3(1,i,j), grid3(1,i+1,j), grid3(1,i+1,j+1), grid3(1,i,j+1), pp)) then
-                       np = np + 1
-                       qsum = qsum + qt(ii,jj)
-!rjw                       fsum = fsum + ft(ii,jj)
-!rjw                       hsum = hsum + qt(ii,jj)**2
-                  endif
-
-               enddo
-            enddo
-! Compute weighted average:
-            if ( np > 0 ) then
-                 q2(i,j) = qsum / real(np)
-!rjw                 f2(i,j) = fsum / real(np)
-!rjw                 h2(i,j) = hsum / real(np) - q2(i,j)**2
-            else                    ! the subdomain could be totally flat
-!rjw            if(is_master()) write(*,*) 'Warning: surf_map failed'
-                write(*,*) 'Warning: surf_map_simple failed'
-                q2(i,j) = 1.E8
-                call mp_stop
-
-            endif
-         enddo
-      enddo
-      end subroutine map_to_cubed_simple
-
-
-#endif
 
  subroutine handle_err(status)
 #include <netcdf.inc>

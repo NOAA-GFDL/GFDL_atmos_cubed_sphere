@@ -4,7 +4,7 @@ module fv_tracer2d_mod
    use fv_mp_mod,         only: ng, mp_gather, is_master
    use mpp_domains_mod,   only: mpp_start_update_domains, mpp_complete_update_domains, mpp_update_domains, CGRID_NE, domain2d
    use fv_timing_mod,     only: timing_on, timing_off
-   use boundary_mod,      only: nested_grid_BC_apply, nested_grid_BC_apply_intT
+   use boundary_mod,      only: nested_grid_BC_apply_intT
    use fv_arrays_mod,     only: fv_grid_type, fv_nest_type, fv_atmos_type, fv_grid_bounds_type
    use mpp_mod,           only: mpp_error, FATAL, mpp_broadcast, mpp_send, mpp_recv, mpp_sum, mpp_max
 
@@ -16,8 +16,8 @@ public :: tracer_2d, tracer_2d_nested, tracer_2d_1L
 real, allocatable, dimension(:,:,:) :: nest_fx_west_accum, nest_fx_east_accum, nest_fx_south_accum, nest_fx_north_accum
 
 !---- version number -----
-   character(len=128) :: version = '$Id: fv_tracer2d.F90,v 20.0 2013/12/13 23:04:36 fms Exp $'
-   character(len=128) :: tagname = '$Name: tikal_201409 $'
+   character(len=128) :: version = '$Id$'
+   character(len=128) :: tagname = '$Name$'
 
 contains
 
@@ -99,9 +99,9 @@ subroutine tracer_2d_1L(q, dp0, mfx, mfy, cx, cy, gridstruct, neststruct, bd, do
       do j=jsd,jed
          do i=is,ie+1
             if (cx(i,j) > 0.) then
-                xfx(i,j) = cx(i,j)*dxa(i-1,j)*dy(i,j)*sin_sg(i-1,j,3)
+                xfx(i,j) = cx(i,j)*dxa(i-1,j)*dy(i,j)*sin_sg(3,i-1,j)
             else
-                xfx(i,j) = cx(i,j)*dxa(i,j)*dy(i,j)*sin_sg(i,j,1)
+                xfx(i,j) = cx(i,j)*dxa(i,j)*dy(i,j)*sin_sg(1,i,j)
             endif
          enddo
       enddo
@@ -109,9 +109,9 @@ subroutine tracer_2d_1L(q, dp0, mfx, mfy, cx, cy, gridstruct, neststruct, bd, do
       do j=js,je+1
          do i=isd,ied
             if (cy(i,j) > 0.) then
-                yfx(i,j) = cy(i,j)*dya(i,j-1)*dx(i,j)*sin_sg(i,j-1,4)
+                yfx(i,j) = cy(i,j)*dya(i,j-1)*dx(i,j)*sin_sg(4,i,j-1)
             else
-                yfx(i,j) = cy(i,j)*dya(i,j)*dx(i,j)*sin_sg(i,j,2)
+                yfx(i,j) = cy(i,j)*dya(i,j)*dx(i,j)*sin_sg(2,i,j)
             endif
          enddo
       enddo
@@ -214,18 +214,9 @@ subroutine tracer_2d_1L(q, dp0, mfx, mfy, cx, cy, gridstruct, neststruct, bd, do
            if ( gridstruct%nested ) then
 
                  call nested_grid_BC_apply_intT(q(isd:ied,jsd:jed,iq), &
-                      0, 0, npx, npy, bd, &
+                   0, 0, npx, npy, npz, bd, &
                       real(neststruct%tracer_nest_timestep)+real(nsplt*k_split), real(nsplt*k_split), &
-                      var_east_t0=neststruct%q_BC(iq)%east_t0(:,:,k), &
-                      var_west_t0=neststruct%q_BC(iq)%west_t0(:,:,k), &
-                      var_north_t0=neststruct%q_BC(iq)%north_t0(:,:,k), &
-                      var_south_t0=neststruct%q_BC(iq)%south_t0(:,:,k), &
-                      var_east_t1=neststruct%q_BC(iq)%east_t1(:,:,k), &
-                      var_west_t1=neststruct%q_BC(iq)%west_t1(:,:,k), &
-                      var_north_t1=neststruct%q_BC(iq)%north_t1(:,:,k), &
-                      var_south_t1=neststruct%q_BC(iq)%south_t1(:,:,k), &
-                      bctype=neststruct%nestbctype, &
-                      nsponge=neststruct%nsponge, s_weight=neststruct%s_weight   )
+                   neststruct%q_BC(iq), bctype=neststruct%nestbctype )
            end if
 
         enddo!q-loop
@@ -325,18 +316,18 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy,
          do j=jsd,jed
             do i=is,ie+1
                if (cx(i,j,k) > 0.) then
-                  xfx(i,j,k) = cx(i,j,k)*dxa(i-1,j)*dy(i,j)*sin_sg(i-1,j,3)
+                  xfx(i,j,k) = cx(i,j,k)*dxa(i-1,j)*dy(i,j)*sin_sg(3,i-1,j)
                else
-                  xfx(i,j,k) = cx(i,j,k)*dxa(i,j)*dy(i,j)*sin_sg(i,j,1)
+                  xfx(i,j,k) = cx(i,j,k)*dxa(i,j)*dy(i,j)*sin_sg(1,i,j)
                endif
             enddo
          enddo
          do j=js,je+1
             do i=isd,ied
                if (cy(i,j,k) > 0.) then
-                  yfx(i,j,k) = cy(i,j,k)*dya(i,j-1)*dx(i,j)*sin_sg(i,j-1,4)
+                  yfx(i,j,k) = cy(i,j,k)*dya(i,j-1)*dx(i,j)*sin_sg(4,i,j-1)
                else
-                  yfx(i,j,k) = cy(i,j,k)*dya(i,j)*dx(i,j)*sin_sg(i,j,2)
+                  yfx(i,j,k) = cy(i,j,k)*dya(i,j)*dx(i,j)*sin_sg(2,i,j)
                endif
             enddo
          enddo
@@ -359,7 +350,7 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy,
          else
             do j=js,je
                do i=is,ie
-                  cmax_t  = max(abs(cx(i,j,k)), abs(cy(i,j,k))) + 1.-sin_sg(i,j,5)
+                  cmax_t  = max(abs(cx(i,j,k)), abs(cy(i,j,k))) + 1.-sin_sg(5,i,j)
                   cmax(k) = max( cmax_t, cmax(k) )
                enddo
             enddo
@@ -452,6 +443,11 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy,
                do i=is,ie
                   q(i,j,k,iq) = ( q(i,j,k,iq)*dp1(i,j,k) + &
                                 (fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j) )/dp2(i,j,k)
+#ifdef TRACER_CHECK
+      if (q(i,j,k,iq) <= -1.e-9) then
+         print*, i,j,k,iq, q(i,j,k,iq), fx(i:i+1,j), fy(i,j:j+1)
+      endif
+#endif
                enddo
             enddo
 
@@ -569,18 +565,18 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
          do j=jsd,jed
             do i=is,ie+1
                if (cx(i,j,k) > 0.) then
-                  xfx(i,j,k) = cx(i,j,k)*dxa(i-1,j)*dy(i,j)*sin_sg(i-1,j,3)
+                  xfx(i,j,k) = cx(i,j,k)*dxa(i-1,j)*dy(i,j)*sin_sg(3,i-1,j)
                else
-                  xfx(i,j,k) = cx(i,j,k)*dxa(i,j)*dy(i,j)*sin_sg(i,j,1)
+                  xfx(i,j,k) = cx(i,j,k)*dxa(i,j)*dy(i,j)*sin_sg(1,i,j)
                endif
             enddo
          enddo
          do j=js,je+1
             do i=isd,ied
                if (cy(i,j,k) > 0.) then
-                  yfx(i,j,k) = cy(i,j,k)*dya(i,j-1)*dx(i,j)*sin_sg(i,j-1,4)
+                  yfx(i,j,k) = cy(i,j,k)*dya(i,j-1)*dx(i,j)*sin_sg(4,i,j-1)
                else
-                  yfx(i,j,k) = cy(i,j,k)*dya(i,j)*dx(i,j)*sin_sg(i,j,2)
+                  yfx(i,j,k) = cy(i,j,k)*dya(i,j)*dx(i,j)*sin_sg(2,i,j)
                endif
             enddo
          enddo
@@ -604,7 +600,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
          else
             do j=js,je
                do i=is,ie
-                  cmax_t  = max(abs(cx(i,j,k)), abs(cy(i,j,k))) + 1.-sin_sg(i,j,5)
+                  cmax_t  = max(abs(cx(i,j,k)), abs(cy(i,j,k))) + 1.-sin_sg(5,i,j)
                   cmax(k) = max( cmax_t, cmax(k) )
                enddo
             enddo
@@ -723,19 +719,9 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       if (gridstruct%nested) then
             do iq=1,nq
                  call nested_grid_BC_apply_intT(q(isd:ied,jsd:jed,:,iq), &
-                      !0, 0, npx, npy, npz, real(tracer_nest_timestep), real(nsplt), &
                       0, 0, npx, npy, npz, bd, &
                       real(neststruct%tracer_nest_timestep)+real(nsplt*k_split), real(nsplt*k_split), &
-                      var_east_t0=neststruct%q_BC(iq)%east_t0, &
-                      var_west_t0=neststruct%q_BC(iq)%west_t0, &
-                      var_north_t0=neststruct%q_BC(iq)%north_t0, &
-                      var_south_t0=neststruct%q_BC(iq)%south_t0, &
-                      var_east_t1=neststruct%q_BC(iq)%east_t1, &
-                      var_west_t1=neststruct%q_BC(iq)%west_t1, &
-                      var_north_t1=neststruct%q_BC(iq)%north_t1, &
-                      var_south_t1=neststruct%q_BC(iq)%south_t1, &
-                      bctype=neststruct%nestbctype, &
-                      nsponge=neststruct%nsponge, s_weight=neststruct%s_weight   )
+                 neststruct%q_BC(iq), bctype=neststruct%nestbctype  )
            enddo
       endif
 
@@ -840,17 +826,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
                  call nested_grid_BC_apply_intT(q(isd:ied,jsd:jed,:,iq), &
                       0, 0, npx, npy, npz, bd, &
                       real(neststruct%tracer_nest_timestep), real(nsplt*k_split), &
-                      !0, 0, npx, npy, npz, real(tracer_nest_timestep)+real(nsplt), real(nsplt), &
-                      var_east_t0=neststruct%q_BC(iq)%east_t0, &
-                      var_west_t0=neststruct%q_BC(iq)%west_t0, &
-                      var_north_t0=neststruct%q_BC(iq)%north_t0, &
-                      var_south_t0=neststruct%q_BC(iq)%south_t0, &
-                      var_east_t1=neststruct%q_BC(iq)%east_t1, &
-                      var_west_t1=neststruct%q_BC(iq)%west_t1, &
-                      var_north_t1=neststruct%q_BC(iq)%north_t1, &
-                      var_south_t1=neststruct%q_BC(iq)%south_t1, &
-                      bctype=neststruct%nestbctype, &
-                      nsponge=neststruct%nsponge, s_weight=neststruct%s_weight   )
+                 neststruct%q_BC(iq), bctype=neststruct%nestbctype  )
 
               end do
            end if

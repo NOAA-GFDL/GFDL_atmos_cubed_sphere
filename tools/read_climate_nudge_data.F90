@@ -23,8 +23,8 @@ interface read_climate_nudge_data
    module procedure read_climate_nudge_data_3d
 end interface
 
-  character(len=128) :: version = '$Id: read_climate_nudge_data.F90,v 20.0 2013/12/13 23:07:46 fms Exp $'
-  character(len=128) :: tagname = '$Name: tikal_201409 $'
+  character(len=128) :: version = '$Id$'
+  character(len=128) :: tagname = '$Name$'
   real, parameter :: P0 = 1.e5
   real, parameter :: D608 = RVGAS/RDGAS - 1.
 

@@ -14,6 +14,7 @@ module fv_arrays_mod
   !   is performed by the module in question.
 
   integer, parameter:: max_step = 1000
+  real, parameter:: real_big = 1.e30   ! big enough to cause blowup if used
   type fv_diag_type
 
 
@@ -22,12 +23,13 @@ module fv_arrays_mod
            id_ke, id_te, id_zs, id_ze, id_mq, id_vorts, id_us, id_vs,    &
            id_tq, id_rh, id_c15, id_c25, id_c35, id_c45,          &
                          id_f15, id_f25, id_f35, id_f45,          &
-           id_ppt, id_ts, id_pmask, id_pmaskv2,                   &
-           id_delp, id_delz, id_zratio, id_ws, id_iw, id_lw
+           id_ppt, id_ts, id_tb, id_pmask, id_pmaskv2,            &
+           id_delp, id_delz, id_zratio, id_ws, id_iw, id_lw,      &
+           id_qn, id_qp, id_mdt, id_aam, id_amdt
 
 ! Selected p-level fields from 3D variables:
  integer :: id_vort850, id_w850, id_x850, id_srh,  &
-            id_w200, id_s200, id_sl12, id_sl13
+            id_w200, id_s200, id_sl12, id_sl13, id_w5km
 ! IPCC diag
  integer :: id_u10,  id_v10,  id_t10,  id_q10,  id_rh10,  id_omg10,  id_h10,  &
             id_u50,  id_v50,  id_t50,  id_q50,  id_rh50,  id_omg50,  id_h50,  &
@@ -108,6 +110,7 @@ module fv_arrays_mod
      real, allocatable :: ex_w(:)
      real, allocatable :: ex_e(:)
 
+     real, allocatable :: l2c_u(:,:), l2c_v(:,:)
      ! divergence Damping:
      real, allocatable :: divg_u(:,:), divg_v(:,:)    !
      ! Cubed_2_latlon:
@@ -121,10 +124,11 @@ module fv_arrays_mod
      real, allocatable :: z21(:,:)
      real, allocatable :: z22(:,:)
 
+!    real, allocatable :: w00(:,:)
+
      real, allocatable :: cosa_u(:,:)
      real, allocatable :: cosa_v(:,:)
      real, allocatable :: cosa_s(:,:)
-     real, allocatable :: sina_s(:,:)
      real, allocatable :: sina_u(:,:)
      real, allocatable :: sina_v(:,:)
      real, allocatable :: rsin_u(:,:)
@@ -257,7 +261,9 @@ module fv_arrays_mod
    integer ::    n_zs_filter=0      !  number of application of the terrain filter
    integer :: nord_zs_filter=4      !  use del-2 (2) OR del-4 (4)
 
+   logical :: consv_am  = .false.   ! Apply Angular Momentum Correction (to zonal wind component)
    logical :: do_sat_adj= .false.   ! 
+   logical :: do_f3d    = .false.   ! 
    logical :: no_dycore = .false.   ! skip the dycore
    logical :: replace_w = .false.   ! replace w (m/sec) with omega (pa/sec) 
                                     ! this is useful for getting a good initial estimate of w
@@ -274,6 +280,7 @@ module fv_arrays_mod
    integer :: nwat  = 0      ! Number of water species
    logical :: warm_start = .false. 
    logical :: inline_q = .true.
+   logical :: adiabatic = .true.     ! Run without physics (full or idealized).
 #else
    integer :: n_sponge = 1   ! Number of sponge layers at the top of the atmosphere
    real    :: d_ext = 0.02   ! External model damping (was 0.02)
@@ -281,6 +288,7 @@ module fv_arrays_mod
    logical :: warm_start = .true. 
                              ! Set to .F. if cold_start is desired (including terrain generation)
    logical :: inline_q = .false.
+   logical :: adiabatic = .false.     ! Run without physics (full or idealized).
 #endif
 !-----------------------------------------------------------
 ! Grid shifting, rotation, and the Schmidt transformation:
@@ -343,6 +351,7 @@ module fv_arrays_mod
                                       ! 0: no change (default)
    integer :: ncnst = 0               ! Number of advected consituents
    integer :: pnats = 0               ! Number of non-advected consituents
+   integer :: dnats = 0               ! Number of non-advected consituents (as seen by dynamics)
    integer :: ntiles = 1                 ! Number or tiles that make up the Grid 
    integer :: ndims = 2     ! Lat-Lon Dims for Grid in Radians
    integer :: nf_omega  = 1           ! Filter omega "nf_omega" times
@@ -365,9 +374,6 @@ module fv_arrays_mod
    real    :: d_con = 0.
    real    :: consv_te = 0.
    real    :: tau = 0.                ! Time scale (days) for Rayleigh friction
-   real    :: rf_center = 0.          ! Center position of the hyper-tan profile
-                                      ! 0: use the top layer center
-                                      ! > 0, [Pascal]
    real    :: rf_cutoff = 30.E2       ! cutoff pressure level for RF
    logical :: filter_phys = .false.
    logical :: dwind_2d = .false.
@@ -376,8 +382,8 @@ module fv_arrays_mod
    logical :: fill = .false.
    logical :: fill_dp = .false.
    logical :: fill_wz = .false.
+   logical :: check_negative = .false.
    logical :: non_ortho = .true.
-   logical :: adiabatic = .false.     ! Run without physics (full or idealized).
    logical :: moist_phys = .true.     ! Run with moist physics
    logical :: do_Held_Suarez = .false.
    logical :: do_reed_physics = .false.
@@ -408,6 +414,7 @@ module fv_arrays_mod
 ! The following options are useful for NWP experiments using datasets on the lat-lon grid
 !--------------------------------------------------------------------------------------
    logical :: nudge = .false.         ! Perform nudging
+   logical :: nudge_ic = .false.      ! Perform nudging on IC
    logical :: ncep_ic = .false.       ! use NCEP ICs 
    logical :: fv_diag_ic = .false.    ! reconstruct IC from fv_diagnostics on lat-lon grid
    logical :: external_ic = .false.   ! use ICs from external sources; e.g. lat-lon FV core
@@ -576,7 +583,8 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: v(:,:,:)    _NULL  ! D grid meridional wind (m/s)
     real, _ALLOCATABLE :: pt(:,:,:)   _NULL  ! temperature (K)
     real, _ALLOCATABLE :: delp(:,:,:) _NULL  ! pressure thickness (pascal)
-    real, _ALLOCATABLE :: q(:,:,:,:)  _NULL  ! specific humidity and constituents
+    real, _ALLOCATABLE :: q(:,:,:,:)  _NULL  ! specific humidity and prognostic constituents
+    real, _ALLOCATABLE :: qdiag(:,:,:,:)  _NULL  ! diagnostic tracers
 
 !----------------------
 ! non-hydrostatic state:
@@ -584,6 +592,7 @@ module fv_arrays_mod
     real, _ALLOCATABLE ::     w(:,:,:)  _NULL  ! cell center vertical wind (m/s)
     real, _ALLOCATABLE ::  delz(:,:,:)  _NULL  ! layer thickness (meters)
     real, _ALLOCATABLE ::   ze0(:,:,:)  _NULL  ! height at layer edges for remapping
+    real, _ALLOCATABLE ::  q_con(:,:,:) _NULL  ! total condensates
 
 !-----------------------------------------------------------------------
 ! Auxilliary pressure arrays:
@@ -595,9 +604,6 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: pk  (:,:,:)   _NULL  ! pe**cappa
     real, _ALLOCATABLE :: peln(:,:,:)   _NULL  ! ln(pe)
     real, _ALLOCATABLE :: pkz (:,:,:)   _NULL  ! finite-volume mean pk
-#ifdef PKC
-    real, _ALLOCATABLE :: pkc (:,:,:)   _NULL  ! finite-volume edge pk
-#endif
 
 ! For phys coupling:
     real, _ALLOCATABLE :: u_srf(:,:)    _NULL  ! Surface u-wind
@@ -683,13 +689,13 @@ module fv_arrays_mod
   end type fv_atmos_type
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_arrays.F90,v 20.0.2.1 2014/02/07 00:17:12 Rusty.Benson Exp $'
-  character(len=128) :: tagname = '$Name: tikal_201409 $'
+  character(len=128) :: version = '$Id$'
+  character(len=128) :: tagname = '$Name$'
 
 contains
 
   subroutine allocate_fv_atmos_type(Atm, isd_in, ied_in, jsd_in, jed_in, is_in, ie_in, js_in, je_in, &
-       npx_in, npy_in, npz_in, ndims_in, ncnst_in, ng_in, dummy, alloc_2d)
+       npx_in, npy_in, npz_in, ndims_in, ncnst_in, nq_in, ng_in, dummy, alloc_2d)
 
     !WARNING: Before calling this routine, be sure to have set up the
     ! proper domain parameters from the namelists (as is done in
@@ -698,16 +704,16 @@ contains
     implicit none
     type(fv_atmos_type), intent(INOUT), target :: Atm
     integer, intent(IN) :: isd_in, ied_in, jsd_in, jed_in, is_in, ie_in, js_in, je_in
-    integer, intent(IN) :: npx_in, npy_in, npz_in, ndims_in, ncnst_in, ng_in
+    integer, intent(IN) :: npx_in, npy_in, npz_in, ndims_in, ncnst_in, nq_in, ng_in
     logical, intent(IN) :: dummy, alloc_2d
     integer:: isd, ied, jsd, jed, is, ie, js, je
-    integer:: npx, npy, npz, ndims, ncnst, ng
+    integer:: npx, npy, npz, ndims, ncnst, nq, ng
 
     !For 2D utility arrays
     integer:: isd_2d, ied_2d, jsd_2d, jed_2d, is_2d, ie_2d, js_2d, je_2d
-    integer:: npx_2d, npy_2d, npz_2d, ndims_2d, ncnst_2d, ng_2d
+    integer:: npx_2d, npy_2d, npz_2d, ndims_2d, ncnst_2d, nq_2d, ng_2d
 
-    integer :: ns, n
+    integer :: i,j,k, ns, n
 
     if (Atm%allocated) return
 
@@ -725,6 +731,7 @@ contains
        npz=   1   
        ndims=   1 
        ncnst=   1 
+       nq=   1
        ng     =   1   
     else
        isd     =  isd_in   
@@ -740,6 +747,7 @@ contains
        npz=   npz_in   
        ndims=   ndims_in 
        ncnst=   ncnst_in 
+       nq=   nq_in
        ng     =   ng_in    
     endif
 
@@ -757,6 +765,7 @@ contains
        npz_2d=   npz_in   
        ndims_2d=   ndims_in 
        ncnst_2d=   ncnst_in 
+       nq_2d=   nq_in 
        ng_2d     =   ng_in 
     else
        isd_2d     =  0   
@@ -772,6 +781,7 @@ contains
        npz_2d=   0 !for ak, bk   
        ndims_2d=   1 
        ncnst_2d=   1 
+       nq_2d=   1 
        ng_2d     =   1        
     endif
 
@@ -811,7 +821,8 @@ contains
 
     allocate (   Atm%pt(isd:ied  ,jsd:jed  ,npz) )
     allocate ( Atm%delp(isd:ied  ,jsd:jed  ,npz) )
-    allocate (    Atm%q(isd:ied  ,jsd:jed  ,npz, ncnst) )
+    allocate (    Atm%q(isd:ied  ,jsd:jed  ,npz, nq) )
+    allocate (Atm%qdiag(isd:ied  ,jsd:jed  ,npz, nq+1:ncnst) )
 
     ! Allocate Auxilliary pressure arrays
     allocate (   Atm%ps(isd:ied  ,jsd:jed) )
@@ -819,9 +830,6 @@ contains
     allocate (   Atm%pk(is:ie    ,js:je  , npz+1) )
     allocate ( Atm%peln(is:ie,npz+1,js:je) )
     allocate (  Atm%pkz(is:ie,js:je,npz) )
-#ifdef PKC
-    allocate (  Atm%pkc(isd:ied,jsd:jed,npz+1) )
-#endif
 
     allocate ( Atm%u_srf(is:ie,js:je) )
     allocate ( Atm%v_srf(is:ie,js:je) )
@@ -854,19 +862,76 @@ contains
     ! Non-hydrostatic dynamics:
     !--------------------------
     if ( Atm%flagstruct%hydrostatic ) then
-       allocate (    Atm%w(1, 1  ,1) )
-       allocate ( Atm%delz(1, 1  ,1) )
-       allocate (  Atm%ze0(1, 1  ,1) )
+       !Note length-one initialization if hydrostatic = .true.
+       allocate (    Atm%w(isd:isd, jsd:jsd  ,1) )
+       allocate ( Atm%delz(isd:isd, jsd:jsd  ,1) )
+       allocate (  Atm%ze0(is:is, js:js  ,1) )
     else
        allocate (    Atm%w(isd:ied, jsd:jed  ,npz  ) )
        allocate ( Atm%delz(isd:ied, jsd:jed  ,npz) )
        if( Atm%flagstruct%hybrid_z ) then
           allocate (  Atm%ze0(is:ie, js:je ,npz+1) )
        else
-          allocate (  Atm%ze0(1, 1  ,1) )
+          allocate (  Atm%ze0(is:is, js:js  ,1) )
        endif
        !         allocate ( mono(isd:ied, jsd:jed, npz))
     endif
+#ifdef USE_COND
+      allocate ( Atm%q_con(isd:ied,jsd:jed,1:npz) )
+#else
+      allocate ( Atm%q_con(isd:isd,jsd:jsd,1) )
+#endif
+
+#ifndef NO_TOUCH_MEM
+! Notes by SJL
+! Place the memory in the optimal shared mem space
+! This will help the scaling with OpenMP
+!$omp parallel do default(shared)
+     do k=1, npz
+        do j=jsd, jed
+           do i=isd, ied
+                Atm%ua(i,j,k) = real_big
+                Atm%va(i,j,k) = real_big
+                Atm%pt(i,j,k) = real_big
+              Atm%delp(i,j,k) = real_big
+           enddo
+        enddo
+        do j=jsd, jed+1
+           do i=isd, ied
+               Atm%u(i,j,k) = real_big
+              Atm%vc(i,j,k) = real_big
+           enddo
+        enddo
+        do j=jsd, jed
+           do i=isd, ied+1
+               Atm%v(i,j,k) = real_big
+              Atm%uc(i,j,k) = real_big
+           enddo
+        enddo
+        if ( .not. Atm%flagstruct%hydrostatic ) then
+           do j=jsd, jed
+              do i=isd, ied
+                    Atm%w(i,j,k) = real_big
+                 Atm%delz(i,j,k) = real_big
+              enddo
+           enddo
+        endif
+        do n=1,nq
+        do j=jsd, jed
+           do i=isd, ied
+              Atm%q(i,j,k,n) = real_big
+           enddo
+        enddo
+        enddo
+        do n=nq+1,ncnst
+        do j=jsd, jed
+           do i=isd, ied
+              Atm%qdiag(i,j,k,n) = real_big
+           enddo
+        enddo
+        enddo
+     enddo
+#endif
 
     allocate ( Atm%gridstruct% area(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )   ! Cell Centered
     allocate ( Atm%gridstruct%rarea(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )   ! Cell Centered
@@ -884,16 +949,16 @@ contains
     allocate ( Atm%gridstruct% dyc(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
     allocate ( Atm%gridstruct%rdyc(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
     
-    allocate ( Atm% gridstruct%dxa(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
+    allocate ( Atm%gridstruct% dxa(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
     allocate ( Atm%gridstruct%rdxa(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
-    allocate ( Atm% gridstruct%dya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
+    allocate ( Atm%gridstruct% dya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
     allocate ( Atm%gridstruct%rdya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
     
     allocate ( Atm%gridstruct%grid (isd_2d:ied_2d+1,jsd_2d:jed_2d+1,1:ndims_2d) )
     allocate ( Atm%gridstruct%agrid(isd_2d:ied_2d  ,jsd_2d:jed_2d  ,1:ndims_2d) )
-    allocate ( Atm%gridstruct%sina(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )   ! SIN(angle of intersection)
+    allocate ( Atm%gridstruct% sina(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )   ! SIN(angle of intersection)
     allocate ( Atm%gridstruct%rsina(is_2d:ie_2d+1,js_2d:je_2d+1) )      ! Why is the size different?
-    allocate ( Atm%gridstruct%cosa(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )   ! COS(angle of intersection)
+    allocate ( Atm%gridstruct% cosa(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )   ! COS(angle of intersection)
     
     allocate ( Atm%gridstruct%  e1(3,isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
     allocate ( Atm%gridstruct%  e2(3,isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
@@ -919,6 +984,9 @@ contains
     allocate ( Atm%gridstruct%ex_e(npy_2d) )
 
 
+    allocate (  Atm%gridstruct%l2c_u(is_2d:ie_2d,  js_2d:je_2d+1) )
+    allocate (  Atm%gridstruct%l2c_v(is_2d:ie_2d+1,js_2d:je_2d) )
+
     ! For diveregnce damping:
     allocate (  Atm%gridstruct%divg_u(isd_2d:ied_2d,  jsd_2d:jed_2d+1) )
     allocate (  Atm%gridstruct%divg_v(isd_2d:ied_2d+1,jsd_2d:jed_2d) )
@@ -928,12 +996,15 @@ contains
     allocate (  Atm%gridstruct%z21(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
     allocate (  Atm%gridstruct%z22(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
 
+!   if (.not.Atm%flagstruct%hydrostatic)    &
+!   allocate (  Atm%gridstruct%w00(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
+
     allocate (  Atm%gridstruct%a11(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
     allocate (  Atm%gridstruct%a12(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
     allocate (  Atm%gridstruct%a21(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
     allocate (  Atm%gridstruct%a22(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
-    allocate ( Atm%gridstruct%vlon(is_2d-2:ie_2d+2,js_2d-2:je_2d+2,3) )
-    allocate ( Atm%gridstruct%vlat(is_2d-2:ie_2d+2,js_2d-2:je_2d+2,3) )
+    allocate ( Atm%gridstruct%vlon(3,is_2d-2:ie_2d+2,js_2d-2:je_2d+2) )
+    allocate ( Atm%gridstruct%vlat(3,is_2d-2:ie_2d+2,js_2d-2:je_2d+2) )
     ! Coriolis parameters:
     allocate ( Atm%gridstruct%f0(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
     allocate ( Atm%gridstruct%fC(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
@@ -963,7 +1034,6 @@ contains
     allocate ( Atm%gridstruct%rsin_v(isd_2d:ied_2d,jsd_2d:jed_2d+1) )
 
     allocate ( Atm%gridstruct%cosa_s(isd_2d:ied_2d,jsd_2d:jed_2d) )    ! cell center
-    allocate ( Atm%gridstruct%sina_s(isd_2d:ied_2d,jsd_2d:jed_2d) )    ! cell center
 
     allocate (  Atm%gridstruct%rsin2(isd_2d:ied_2d,jsd_2d:jed_2d) )    ! cell center
 
@@ -976,8 +1046,8 @@ contains
     !     |       |
     !     6---2---7
 
-    allocate ( Atm%gridstruct%cos_sg(isd_2d:ied_2d,jsd_2d:jed_2d,9) )
-    allocate ( Atm%gridstruct%sin_sg(isd_2d:ied_2d,jsd_2d:jed_2d,9) )
+    allocate ( Atm%gridstruct%cos_sg(9,isd_2d:ied_2d,jsd_2d:jed_2d) )
+    allocate ( Atm%gridstruct%sin_sg(9,isd_2d:ied_2d,jsd_2d:jed_2d) )
 
     allocate( Atm%gridstruct%eww(3,4) )
     allocate( Atm%gridstruct%ess(3,4) )
@@ -1052,14 +1122,12 @@ contains
     deallocate (   Atm%pt )
     deallocate ( Atm%delp )
     deallocate (    Atm%q )
+    deallocate (    Atm%qdiag )
     deallocate (   Atm%ps )
     deallocate (   Atm%pe )
     deallocate (   Atm%pk )
     deallocate ( Atm%peln )
     deallocate (  Atm%pkz )
-#ifdef PKC
-    deallocate (  Atm%pkc )
-#endif
     deallocate ( Atm%phis )
     deallocate ( Atm%omga )
     deallocate (   Atm%ua )
@@ -1081,6 +1149,7 @@ contains
     deallocate ( Atm%w )
     deallocate ( Atm%delz  )
     deallocate ( Atm%ze0   )
+    deallocate ( Atm%q_con )
 
     deallocate ( Atm%gridstruct% area )   ! Cell Centered
     deallocate ( Atm%gridstruct%rarea )   ! Cell Centered
@@ -1135,6 +1204,8 @@ contains
     deallocate ( Atm%gridstruct%ex_e )
 
 
+    deallocate (  Atm%gridstruct%l2c_u )
+    deallocate (  Atm%gridstruct%l2c_v )
     ! For diveregnce damping:
     deallocate (  Atm%gridstruct%divg_u )
     deallocate (  Atm%gridstruct%divg_v )
@@ -1179,7 +1250,6 @@ contains
     deallocate ( Atm%gridstruct%rsin_v )
 
     deallocate ( Atm%gridstruct%cosa_s )    ! cell center
-    deallocate ( Atm%gridstruct%sina_s )    ! cell center
 
     deallocate (  Atm%gridstruct%rsin2 )    ! cell center
 
@@ -1340,186 +1410,6 @@ subroutine deallocate_fv_nest_BC_type_3d(BC)
   BC%allocated = .false.
 
 end subroutine deallocate_fv_nest_BC_type_3d
-
-  subroutine broadcast_fv_atmos_data(Atm, fromproc, to_pelist)
-
-    type(fv_atmos_type) :: Atm
-    integer, intent(IN) :: fromproc, to_pelist(:)
-
-    character(len=128) :: sendchar(4)
-
-     call mpp_broadcast( Atm%grid_number, fromproc, to_pelist)
-     call mpp_broadcast( Atm%grid_active, fromproc, to_pelist)
-
-     !NOTE: mpp_broadcast can only send ARRAYS of character strings, and not individual
-     !character strings. The code here is a work-around.
-     sendchar(1) = Atm%flagstruct%grid_name
-     sendchar(2) = Atm%flagstruct%grid_file
-     sendchar(3) = Atm%flagstruct%res_latlon_dynamics
-     sendchar(4) = Atm%flagstruct%res_latlon_tracers
-     call mpp_broadcast( sendchar, size(sendchar), fromproc, to_pelist)
-     Atm%flagstruct%grid_name = sendchar(1)
-     Atm%flagstruct%grid_file = sendchar(2)
-     Atm%flagstruct%res_latlon_dynamics = sendchar(3)
-     Atm%flagstruct%res_latlon_tracers = sendchar(4)
-     call mpp_broadcast( Atm%flagstruct%grid_type, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%hord_mt, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%kord_mt, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%kord_wz, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%hord_vt, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%hord_tm, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%hord_dp, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%kord_tm, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%hord_tr, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%kord_tr, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%scale_z, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%w_max, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%z_min, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%nord, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%dddmp, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%d2_bg, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%d4_bg, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%vtdm4, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%d2_bg_k1, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%d2_bg_k2, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%d2_divg_max_k1, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%d2_divg_max_k2, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%damp_k_k1, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%damp_k_k2, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%n_zs_filter, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%nord_zs_filter, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%do_sat_adj, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%no_dycore, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%replace_w, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%convert_ke, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%do_vort_damp, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%use_old_omega, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%beta, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%n_sponge, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%d_ext, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%nwat, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%warm_start, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%inline_q, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%n_sponge, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%d_ext, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%nwat, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%warm_start, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%inline_q, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%shift_fac, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%do_schmidt, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%stretch_fac, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%target_lat, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%target_lon, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%reset_eta, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%p_fac, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%a_imp, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%n_split, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%m_split, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%k_split, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%q_split, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%print_freq, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%npx, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%npy, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%npz, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%npz_rst, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%ncnst, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%pnats, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%ntiles, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%ndims, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%nf_omega, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%fv_sg_adj, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%na_init, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%p_ref, fromproc, to_pelist)
-#ifdef MARS_GCM
-     call mpp_broadcast( Atm%flagstruct%reference_sfc_pres, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%sponge_damp, fromproc, to_pelist)
-#endif
-     call mpp_broadcast( Atm%flagstruct%dry_mass, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%p_ref, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%nt_prog, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%nt_phys, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%tau_h2o, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%d_con, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%consv_te, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%tau, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%rf_center, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%rf_cutoff, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%filter_phys, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%dwind_2d, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%breed_vortex_inline, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%range_warn, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%fill, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%fill_dp, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%fill_wz, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%non_ortho, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%adiabatic, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%moist_phys, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%do_Held_Suarez, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%reproduce_sum, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%adjust_dry_mass, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%fv_debug, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%srf_init, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%mountain, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%remap_t, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%z_tracer, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%old_divg_damp, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%fv_land, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%nudge, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%ncep_ic, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%fv_diag_ic, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%external_ic, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%hydrostatic, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%phys_hydrostatic, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%hybrid_z, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%Make_NH, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%make_hybrid_z, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%add_noise, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%a2b_ord, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%c2l_ord, fromproc, to_pelist)
-     call mpp_broadcast( Atm%ks, fromproc, to_pelist)
-     call mpp_broadcast( Atm%bd%ng, fromproc, to_pelist)
-     call mpp_broadcast( Atm%num_contact, fromproc, to_pelist)
-     call mpp_broadcast( Atm%npes_per_tile, fromproc, to_pelist)
-     call mpp_broadcast( Atm%tile, fromproc, to_pelist)
-     call mpp_broadcast( Atm%npes_this_grid, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%square_domain, fromproc, to_pelist)
-     call mpp_broadcast( Atm%layout, 2, fromproc, to_pelist)
-     call mpp_broadcast( Atm%io_layout, 2, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%latlon, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%cubed_sphere, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%have_south_pole, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%have_north_pole, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%stretched_grid, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%npx_g, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%npy_g, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%ntiles_g, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%acapN, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%acapS, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%globalarea, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%dx_const, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%dy_const, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%deglon_start, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%deglon_stop, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%deglat_start, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%deglat_stop, fromproc, to_pelist)
-     call mpp_broadcast( Atm%flagstruct%deglat, fromproc, to_pelist)
-     call mpp_broadcast( Atm%ptop, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%da_min, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%da_max, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%da_min_c, fromproc, to_pelist)
-     call mpp_broadcast( Atm%gridstruct%da_max_c, fromproc, to_pelist)
-     call mpp_broadcast( Atm%neststruct%parent_tile, fromproc, to_pelist)
-     call mpp_broadcast( Atm%neststruct%refinement, fromproc, to_pelist)
-     call mpp_broadcast( Atm%neststruct%nested, fromproc, to_pelist)
-     call mpp_broadcast( Atm%neststruct%nestbctype, fromproc, to_pelist)
-     call mpp_broadcast( Atm%neststruct%nsponge, fromproc, to_pelist)
-     call mpp_broadcast( Atm%neststruct%nestupdate, fromproc, to_pelist)
-     call mpp_broadcast( Atm%neststruct%twowaynest, fromproc, to_pelist)
-     call mpp_broadcast( Atm%neststruct%ioffset, fromproc, to_pelist)
-     call mpp_broadcast( Atm%neststruct%joffset, fromproc, to_pelist)
-     call mpp_broadcast( Atm%neststruct%s_weight, fromproc, to_pelist)
-
-   end subroutine broadcast_fv_atmos_data
 
 
 end module fv_arrays_mod

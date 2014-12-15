@@ -6,6 +6,8 @@ module fv_sg_mod
   use constants_mod,      only: rdgas, rvgas, cp_air, cp_vapor, hlv, hlf, kappa, grav
   use tracer_manager_mod, only: get_tracer_index
   use field_manager_mod,  only: MODEL_ATMOS
+  use lin_cld_microphys_mod, only: wqs1, wqs2, wqsat2_moist
+  use fv_mp_mod,          only: mp_reduce_min, is_master
 
 implicit none
 private
@@ -14,12 +16,24 @@ public  fv_dry_conv, qsmith, neg_adj3
 
   real, parameter:: esl = 0.621971831
   real, parameter:: tice = 273.16
+  real, parameter:: c_ice = 2106.  ! Emanuel table, page 566
+  real, parameter:: c_liq = 4190.
+
+  real, parameter:: cv_vap = 1410.
+  real, parameter:: dc_vap =  cp_vapor - c_liq     ! = -2368.
+  real, parameter:: dc_ice =  c_liq - c_ice      ! = 2112.
+  real, parameter:: hlv0 = 2.501e6   ! Emanual Appendix-2
+  real, parameter:: hlf0 = 3.337e5   ! Emanual
+  real, parameter:: t_ice = 273.15
+  real, parameter:: Lv0 =  hlv0 - dc_vap*t_ice   ! = 3.147782e6
+  real, parameter:: Li0 =  hlf0 - dc_ice*t_ice   ! = -2.431928e5 
+
   real, parameter:: zvir =  rvgas/rdgas - 1.     ! = 0.607789855
   real, allocatable:: table(:),des(:)
 
 !---- version number -----
-  character(len=128) :: version = '$Id: fv_sg.F90,v 20.0 2013/12/13 23:04:34 fms Exp $'
-  character(len=128) :: tagname = '$Name: tikal_201409 $'
+  character(len=128) :: version = '$Id$'
+  character(len=128) :: tagname = '$Name$'
 
 contains
 
@@ -35,13 +49,13 @@ contains
       real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) 
       real, intent(in):: peln(is  :ie,  km+1,js  :je)
       real, intent(in):: delp(isd:ied,jsd:jed,km)      ! Delta p at each model level
-      real, intent(in)::  pkz(is:ie,js:je,km)      ! Delta p at each model level
-      real, intent(in):: delz(isd:ied,jsd:jed,km)      ! Delta p at each model level
+      real, intent(in):: delz(isd:,jsd:,1:)      ! Delta z at each model level
+      real, intent(in)::  pkz(is:ie,js:je,km)
       logical, intent(in)::  hydrostatic
 ! 
       real, intent(inout):: ua(isd:ied,jsd:jed,km)
       real, intent(inout):: va(isd:ied,jsd:jed,km)
-      real, intent(inout)::  w(isd:ied,jsd:jed,km)      ! Delta p at each model level
+      real, intent(inout)::  w(isd:,jsd:,1:)
       real, intent(inout):: ta(isd:ied,jsd:jed,km)      ! Temperature
       real, intent(inout):: qa(isd:ied,jsd:jed,km,nq)   ! Specific humidity & tracers
       real, intent(inout):: u_dt(isd:ied,jsd:jed,km) 
@@ -49,20 +63,24 @@ contains
       real, intent(inout):: t_dt(is:ie,js:je,km) 
       real, intent(inout):: q_dt(is:ie,js:je,km,nq) 
 !---------------------------Local variables-----------------------------
-      real, dimension(is:ie,km):: u0, v0, w0, t0, hd, te, gz, tvm, pm
+      real, dimension(is:ie,km):: u0, v0, w0, t0, hd, te, gz, tvm, pm, den
       real q0(is:ie,km,nq), qcon(is:ie,km) 
-      real gzh(is:ie)
-      real ri, pt1, pt2, ratio, tv, cv
-      real qmix, h0, mc, fra, rk, rz, rcv, rdt
-      real qs1, qs2, lf, dh, dhs, wz
+      real, dimension(is:ie):: gzh, lcp2, icp2
+      real ri, pt1, pt2, ratio, tv, cv, tmp, q_liq, q_sol, cpm, cvm
+      real tv1, tv2, g2, h0, mc, fra, rk, rz, rdt
+      real dh, dhs, dq, qsw, dqsdt, tcp3
       integer i, j, k, kk, n, m, iq, km1
       real, parameter:: ustar2 = 1.E-4
+      real:: cv_air
       integer :: sphum, liq_wat, rainwat, snowwat, graupel, ice_wat, cld_amt
 
+      cv_air = cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
+!     cv_vap = 3.*rvgas      ! 1384.5
         rz = rvgas - rdgas          ! rz = zvir * rdgas
         rk = cp_air/rdgas + 1.
         cv = cp_air - rdgas
-       rcv = 1./cv
+
+      g2 = 0.5*grav
 
       rdt = 1./ dt
 
@@ -84,7 +102,7 @@ contains
    m = 4
    fra = dt/real(tau)
 
-!$omp parallel do default(shared) private(kk,qcon, q0, t0, u0, v0, w0, h0, pm, gzh, tvm, tv, gz, hd, te, ratio, pt1, pt2,ri, mc)
+!$omp parallel do default(shared) private(kk,lcp2,icp2,tcp3,dh,dhs,dq,den,qsw,dqsdt,qcon,q0,t0,u0,v0,w0,h0,pm,gzh,tvm,tmp,cpm,cvm, q_liq,q_sol,tv,gz,hd,te,ratio,pt1,pt2,tv1,tv2,ri,mc)
   do 1000 j=js,je  
 
     do iq=1, nq
@@ -113,6 +131,7 @@ contains
        do k=km, 1,-1
           do i=is,ie
                 tv  = rdgas*tvm(i,k)
+           den(i,k) = pm(i,k)/tv
             gz(i,k) = gzh(i) + tv*(1.-pe(i,k,j)/pm(i,k))
             hd(i,k) = cp_air*tvm(i,k)+gz(i,k)+0.5*(u0(i,k)**2+v0(i,k)**2)
              gzh(i) = gzh(i) + tv*(peln(i,k+1,j)-peln(i,k,j))
@@ -121,11 +140,16 @@ contains
     else
        do k=km, 1, -1
           do i=is,ie
+           den(i,k) = -delp(i,j,k)/(grav*delz(i,j,k))
              w0(i,k) = w(i,j,k)
-             gz(i,k) = gzh(i)  - 0.5*grav*delz(i,j,k)
-                 tv  = gz(i,k) + 0.5*(u0(i,k)**2+v0(i,k)**2+w0(i,k)**2)
-             hd(i,k) = cp_air*tvm(i,k) + tv
-             te(i,k) =     cv*tvm(i,k) + tv
+             gz(i,k) = gzh(i)  - g2*delz(i,j,k)
+                tmp  = gz(i,k) + 0.5*(u0(i,k)**2+v0(i,k)**2+w0(i,k)**2)
+             q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
+             q_sol = q0(i,k,ice_wat) + q0(i,k,snowwat)
+          cpm = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
+          cvm = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
+             hd(i,k) = cpm*t0(i,k) + tmp
+             te(i,k) = cvm*t0(i,k) + tmp
               gzh(i) = gzh(i) - grav*delz(i,j,k)
           enddo
        enddo
@@ -155,7 +179,7 @@ contains
    else
       do k=1,km
          do i=is,ie
-            qcon(i,k) = q0(i,k,liq_wat) + q0(i,k,ice_wat) + q0(i,k,snowwat) + q0(i,k,rainwat) + q0(i,k,graupel)
+            qcon(i,k) = q0(i,k,liq_wat)+q0(i,k,ice_wat)+q0(i,k,snowwat)+q0(i,k,rainwat)+q0(i,k,graupel)
          enddo
       enddo
    endif
@@ -164,26 +188,35 @@ contains
          km1 = k-1
          do i=is,ie
 ! Richardson number = g*delz * del_theta/theta / (del_u**2 + del_v**2)
-            pt1 = t0(i,km1)/pkz(i,j,km1)*(1.+zvir*q0(i,km1,sphum)-qcon(i,km1))
-            pt2 = t0(i,k  )/pkz(i,j,k  )*(1.+zvir*q0(i,k  ,sphum)-qcon(i,k))
+! Use exact form for "density temperature"
+            tv1 = t0(i,km1)*(1.+zvir*q0(i,km1,sphum)-qcon(i,km1))
+            tv2 = t0(i,k  )*(1.+zvir*q0(i,k  ,sphum)-qcon(i,k))
+            pt1 = tv1 / pkz(i,j,km1)
+            pt2 = tv2 / pkz(i,j,k  )
             ri = (gz(i,k-1)-gz(i,k))*(pt1-pt2)/( 0.5*(pt1+pt2)*        &
                 ((u0(i,k-1)-u0(i,k))**2+(v0(i,k-1)-v0(i,k))**2+ustar2) )
+
 ! Dry convective adjustment for K-H instability:
 ! Compute equivalent mass flux: mc
-#ifndef RI_THRESH
-            if ( ri < 1. ) then
-                 mc = ratio*(1.-max(0.0,ri)) ** 2
-#else
-            if ( ri < 0.25 ) then
-                 mc = (1.-4.*max(0.0,ri)) ** 2
+            mc = 0.
+            if ( ri < 1. ) then                ! Dry case:
+               mc = ratio*delp(i,j,km1)*delp(i,j,k)/(delp(i,j,km1)+delp(i,j,k))*(1.-max(0.0,ri))**2
+#ifdef DO_MOIST_ADJ
+            elseif ( pm(i,k) > 75.e2 ) then   ! Moist case:
+              tcp3 = hlv + hlf * min(1., dim(tice,t0(i,km1))/44.)**2
+               qsw = wqs1(t0(i,km1), den(i,km1))
+               dh  = cp_air*(tv2-tv1) + (gz(i,k)-gz(i,km1))
+               dhs = dh + tcp3*(q0(i,k,sphum) - qsw)
+! For ri>1 generally implies dh<0
+! dhs > 0 implies q0(k)>qsw (if dh<0)
+! Therefore, q0(k) > qsw > q0(k-1)
+               if ( dhs>0.0 .and. q0(i,km1,sphum)<qsw ) then
+                    mc = delp(i,j,k)*min( ratio*dhs/(tcp3*q0(i,k,sphum)),  &
+                                          0.5*delp(i,j,km1)/(delp(i,j,km1)+delp(i,j,k)) )
+               endif
+            endif
+            if ( mc > 1.e-5 ) then
 #endif
-                 mc = mc*delp(i,j,k-1)*delp(i,j,k)/(delp(i,j,k-1)+delp(i,j,k))
-!                if ( .not. hydrostatic ) then
-!                   wz = abs(dt*w0(i,k)/delz(i,j,k))
-!                   if ( wz > 1. ) then
-!                        mc = delp(i,j,k-1)*delp(i,j,k)/(delp(i,j,k-1)+delp(i,j,k))
-!                   endif
-!                endif
                  do iq=1,nq
                     h0 = mc*(q0(i,k,iq)-q0(i,km1,iq))
                     q0(i,km1,iq) = q0(i,km1,iq) + h0/delp(i,j,km1)
@@ -195,7 +228,8 @@ contains
                  elseif ( nq .le. 5 ) then
                     qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,ice_wat)
                  else
-                    qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,ice_wat) + q0(i,km1,snowwat) + q0(i,km1,rainwat) + q0(i,km1,graupel)
+                    qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,ice_wat) +                  &
+                                  q0(i,km1,snowwat) + q0(i,km1,rainwat) + q0(i,km1,graupel)
                  endif
 ! u:
                  h0 = mc*(u0(i,k)-u0(i,k-1))
@@ -205,8 +239,10 @@ contains
                  h0 = mc*(v0(i,k)-v0(i,k-1))
                  v0(i,k-1) = v0(i,k-1) + h0/delp(i,j,k-1)
                  v0(i,k  ) = v0(i,k  ) - h0/delp(i,j,k  )
+
               if ( hydrostatic ) then
-                 h0 = mc*(hd(i,k)-hd(i,k-1))
+! Static energy
+                        h0 = mc*(hd(i,k)-hd(i,k-1))
                  hd(i,k-1) = hd(i,k-1) + h0/delp(i,j,k-1)
                  hd(i,k  ) = hd(i,k  ) - h0/delp(i,j,k  )
               else
@@ -219,7 +255,7 @@ contains
                  w0(i,k-1) = w0(i,k-1) + h0/delp(i,j,k-1)
                  w0(i,k  ) = w0(i,k  ) - h0/delp(i,j,k  )
               endif
-            endif    ! Ri condition check
+            endif
          enddo
 
 !-------------- 
@@ -243,16 +279,17 @@ contains
          do kk=k-1,k
             do i=is,ie
                tv = gz(i,kk) + 0.5*(u0(i,kk)**2+v0(i,kk)**2+w0(i,kk)**2)
-               tvm(i,kk) = rcv*(te(i,kk)- tv)
-                hd(i,kk) = cp_air*tvm(i,kk) + tv
-                t0(i,kk) = tvm(i,kk)/(1.+zvir*q0(i,kk,sphum))
+               q_liq = q0(i,kk,liq_wat) + q0(i,kk,rainwat)
+               q_sol = q0(i,kk,ice_wat) + q0(i,kk,snowwat)
+         cpm = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cp_air + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
+         cvm = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cv_air + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
+               t0(i,kk) = (te(i,kk)- tv) / cvm
+               hd(i,kk) = cpm*t0(i,kk) + tv
             enddo
          enddo
        endif
       enddo   ! k-loop
-
    enddo       ! n-loop
-
 
 !--------------------
    if ( fra < 1. ) then
@@ -280,7 +317,55 @@ contains
          enddo
       enddo
    endif
-!--------------------
+
+!----------------------
+! Saturation adjustment
+!----------------------
+    do k=1, km
+      if ( hydrostatic ) then
+        do i=is, ie
+! Compute pressure hydrostatically
+           den(i,k) = pm(i,k)/(rdgas*t0(i,k)*(1.+zvir*q0(i,k,sphum)))
+           q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
+           q_sol = q0(i,k,ice_wat) + q0(i,k,snowwat)
+           cpm = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
+           lcp2(i) = hlv / cpm
+           icp2(i) = hlf / cpm
+        enddo
+      else
+        do i=is, ie
+           den(i,k) = -delp(i,j,k)/(grav*delz(i,j,k))
+           q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
+           q_sol = q0(i,k,ice_wat) + q0(i,k,snowwat)
+           cvm = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap + q_liq*c_liq + q_sol*c_ice
+           lcp2(i) = (Lv0+dc_vap*t0(i,k)) / cvm
+           icp2(i) = (Li0+dc_ice*t0(i,k)) / cvm
+        enddo
+      endif
+
+! Prevent super saturation over water:
+       do i=is, ie
+          qsw = wqs2(t0(i,k), den(i,k), dqsdt)
+           dq = q0(i,k,sphum) - qsw
+          if ( dq > 0. ) then   ! remove super-saturation
+             tcp3 = lcp2(i) + icp2(i)*min(1., dim(tice,t0(i,k))/40.)
+              tmp = dq/(1.+tcp3*dqsdt)
+             t0(i,k) = t0(i,k) + tmp*lcp2(i)
+             q0(i,k,  sphum) = q0(i,k,  sphum) - tmp
+             q0(i,k,liq_wat) = q0(i,k,liq_wat) + tmp
+! Grid box mean is saturated; 50% or higher cloud cover
+             qa(i,j,k,cld_amt) = max(0.5, min(1., qa(i,j,k,cld_amt)+25.*tmp/qsw))
+          endif
+! Freezing
+          tmp = tice-40. - t0(i,k)
+          if( tmp>0.0 .and. q0(i,k,liq_wat)>0. ) then
+              dh = min( q0(i,k,liq_wat), q0(i,k,liq_wat)*tmp*0.125, tmp/icp2(i) )
+              q0(i,k,liq_wat) = q0(i,k,liq_wat) - dh
+              q0(i,k,ice_wat) = q0(i,k,ice_wat) + dh
+              t0(i,k) =  t0(i,k) + dh*icp2(i)
+          endif
+       enddo
+    enddo
 
    do k=1,km
       do i=is,ie
@@ -290,9 +375,15 @@ contains
            ta(i,j,k) = t0(i,k)   ! *** temperature updated ***
       enddo
       do iq=1,nq
-         do i=is,ie
-            q_dt(i,j,k,iq) = rdt*(q0(i,k,iq)-qa(i,j,k,iq))
-         enddo
+         if (iq .eq. cld_amt ) then
+            do i=is,ie
+               q_dt(i,j,k,iq) = 0.
+            enddo
+         else
+            do i=is,ie
+               q_dt(i,j,k,iq) = rdt*(q0(i,k,iq)-qa(i,j,k,iq))
+            enddo
+         endif 
       enddo
    enddo
 
@@ -390,7 +481,34 @@ contains
   end subroutine qsmith
  
 
-  subroutine qs_table(n,table)
+ subroutine qs_table(n,table)
+      integer, intent(in):: n
+      real table (n)
+      real:: dt=0.1
+      real esbasw, tbasw, esbasi, tbasi, Tmin, tem, aa, b, c, d, e, esh20 
+      real wice, wh2o
+      integer i
+! Constants
+      esbasw = 1013246.0
+      tbasw =   373.16
+      tbasi =   273.16
+      Tmin = tbasi - 160.
+!  Compute es over water
+!  see smithsonian meteorological tables page 350.
+      do  i=1,n
+          tem = Tmin+dt*real(i-1)
+          aa  = -7.90298*(tbasw/tem-1)
+          b   =  5.02808*alog10(tbasw/tem)
+          c   = -1.3816e-07*(10**((1-tem/tbasw)*11.344)-1)
+          d   =  8.1328e-03*(10**((tbasw/tem-1)*(-3.49149))-1)
+          e   = alog10(esbasw)
+          table(i)  = 0.1*10**(aa+b+c+d+e)
+      enddo
+
+ end subroutine qs_table
+
+ subroutine qs_table_m(n,table)
+! Mixed (blended) table
       integer, intent(in):: n
       real table (n)
       real esupc(200)
@@ -446,35 +564,46 @@ contains
          table(i) = table(i)*0.1
       enddo
 
- end subroutine qs_table
+ end subroutine qs_table_m
 
  subroutine neg_adj3(is, ie, js, je, ng, kbot, hydrostatic,   &
-                     peln, delz, pt, dp, qv, ql, qr, qi, qs, qg, qa)
+                     peln, delz, pt, dp, qv, ql, qr, qi, qs, qg, qa, check_negative)
 
 ! This is designed for 6-class micro-physics schemes
- use lin_cld_microphys_mod, only: wqsat2_moist
  integer, intent(in):: is, ie, js, je, ng, kbot
  logical, intent(in):: hydrostatic
  real, intent(in):: dp(is-ng:ie+ng,js-ng:je+ng,kbot)  ! total delp-p
- real, intent(in):: delz(is-ng:ie+ng,js-ng:je+ng,kbot)      ! Delta p at each model level
+ real, intent(in):: delz(is-ng:,js-ng:,1:)
  real, intent(in):: peln(is:ie,kbot+1,js:je)           ! ln(pe)
+ logical, intent(in), OPTIONAL :: check_negative
  real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::    &
-                                 pt, qv, ql, qr, qi, qs, qg, qa
+                                 pt, qv, ql, qr, qi, qs, qg
+ real, intent(inout), OPTIONAL, dimension(is-ng:ie+ng,js-ng:je+ng,kbot):: qa
 ! Local:
  logical:: sat_adj = .false.
- real, parameter :: c_ice = 2106.
- real, parameter :: c_liq = 4190.
  real, parameter :: t48 = tice - 48.
  real, dimension(is:ie,kbot):: dpk, q2
-real, dimension(is:ie,js:je):: t0, pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk, lcpk
- real:: cv_air, cv_vap
+real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk, lcpk
+ real:: cv_air
  real:: dq, qsum, dq1, q_liq, q_sol, cpm, sink, qsw, dwsdt
  integer i, j, k
 
  cv_air = cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
- cv_vap = 3.*rvgas      ! 1384.5
+!cv_vap = 3.*rvgas      ! 1384.5
 
-!$omp parallel do default(shared) private(dq,dq1,qsum,dp2,p2,t0,pt2,qv2,ql2,qi2,qs2,qg2,qr2,lcpk,icpk,qsw,dwsdt,sink,q_liq,q_sol,cpm)
+  if ( present(check_negative) ) then
+  if ( check_negative ) then
+     call prt_negative('Temperature', pt, is, ie, js, je, ng, kbot, 165.)
+     call prt_negative('sphum',   qv, is, ie, js, je, ng, kbot, -1.e-8)
+     call prt_negative('liq_wat', ql, is, ie, js, je, ng, kbot, -1.e-7)
+     call prt_negative('rainwat', qr, is, ie, js, je, ng, kbot, -1.e-7)
+     call prt_negative('ice_wat', qi, is, ie, js, je, ng, kbot, -1.e-7)
+     call prt_negative('snowwat', qs, is, ie, js, je, ng, kbot, -1.e-7)
+     call prt_negative('graupel', qg, is, ie, js, je, ng, kbot, -1.e-7)
+  endif
+  endif
+
+!$omp parallel do default(shared) private(dq,dq1,qsum,dp2,p2,pt2,qv2,ql2,qi2,qs2,qg2,qr2,lcpk,icpk,qsw,dwsdt,sink,q_liq,q_sol,cpm)
   do k=1, kbot
      do j=js, je
         do i=is, ie
@@ -486,7 +615,6 @@ real, dimension(is:ie,js:je):: t0, pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, i
         qg2(i,j) = qg(i,j,k)
         dp2(i,j) = dp(i,j,k)
         pt2(i,j) = pt(i,j,k)
-         t0(i,j) = pt2(i,j)
         enddo
      enddo
 
@@ -494,9 +622,9 @@ real, dimension(is:ie,js:je):: t0, pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, i
        do j=js, je
           do i=is, ie
              p2(i,j) = dp2(i,j)/(peln(i,k+1,j)-peln(i,k,j))
-             q_liq = ql2(i,j)
-             q_sol = qi2(i,j)
-             cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cp_air + qv2(i,j)*cp_vapor + q_liq*c_liq + q_sol*c_ice 
+             q_liq = max(0., ql2(i,j) + qr2(i,j))
+             q_sol = max(0., qi2(i,j) + qs2(i,j))
+             cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cp_air + qv2(i,j)*cp_vapor + q_liq*c_liq + q_sol*c_ice
              lcpk(i,j) = hlv / cpm
              icpk(i,j) = hlf / cpm
           enddo
@@ -505,11 +633,11 @@ real, dimension(is:ie,js:je):: t0, pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, i
        do j=js, je
           do i=is, ie
              p2(i,j) = -dp2(i,j)/(grav*delz(i,j,k))*rdgas*pt2(i,j)*(1.+zvir*qv2(i,j))
-             q_liq = ql2(i,j)
-             q_sol = qi2(i,j)
-             cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cv_air + qv2(i,j)*cv_vap + q_liq*c_liq + q_sol*c_ice 
-             lcpk(i,j) = hlv / cpm
-             icpk(i,j) = hlf / cpm
+             q_liq = max(0., ql2(i,j) + qr2(i,j))
+             q_sol = max(0., qi2(i,j) + qs2(i,j))
+             cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cv_air + qv2(i,j)*cv_vap + q_liq*c_liq + q_sol*c_ice
+             lcpk(i,j) = (Lv0+dc_vap*pt2(i,j)) / cpm
+             icpk(i,j) = (Li0+dc_ice*pt2(i,j)) / cpm
           enddo
        enddo
      endif
@@ -645,9 +773,10 @@ real, dimension(is:ie,js:je):: t0, pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, i
         endif ! significant ql existed
      enddo
    enddo
+ endif
 
 !----------------------------------------------------------------
-! Convert back to moist mixing ratios:
+! Update fields:
    do j=js, je
      do i=is, ie
         qv(i,j,k) = qv2(i,j)
@@ -659,7 +788,6 @@ real, dimension(is:ie,js:je):: t0, pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, i
         pt(i,j,k) = pt2(i,j)
      enddo
    enddo
- endif
 
  enddo
 
@@ -743,6 +871,8 @@ real, dimension(is:ie,js:je):: t0, pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, i
      enddo ! i-loop
  enddo   ! j-loop
 
+ 
+ if (present(qa)) then
 !-----------------------------------
 ! Fix negative cloud fraction
 !-----------------------------------
@@ -773,6 +903,7 @@ real, dimension(is:ie,js:je):: t0, pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, i
    enddo
  enddo
 
+ endif
 
  end subroutine neg_adj3
 
@@ -810,5 +941,28 @@ real, dimension(is:ie,js:je):: t0, pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, i
 500  continue
 
  end subroutine fillq
+
+ subroutine prt_negative(qname, q, is, ie, js, je, n_g, km, threshold)
+      character(len=*), intent(in)::  qname
+      integer, intent(in):: is, ie, js, je
+      integer, intent(in):: n_g, km
+      real, intent(in)::    q(is-n_g:ie+n_g, js-n_g:je+n_g, km)
+      real, intent(in)::    threshold
+      real qmin
+      integer i,j,k
+
+      qmin = q(is,js,1)
+      do k=1,km
+      do j=js,je
+         do i=is,ie
+            qmin = min(qmin, q(i,j,k))
+         enddo
+      enddo
+      enddo
+      call mp_reduce_min(qmin)
+      if(is_master() .and. qmin<threshold) write(6,*) qname, ' min (negative) = ', qmin
+
+ end subroutine prt_negative
+
 
 end module fv_sg_mod

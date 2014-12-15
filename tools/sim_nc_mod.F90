@@ -5,6 +5,12 @@ module sim_nc_mod
 ! memory usage and too many files openned. Perhaps lower-level FMS IO
 ! calls should be used instead.
 
+#if defined(OLD_PT_TO_T) || defined(OLD_COS_SG)
+#error
+#error Compile time options -DOLD_PT_TO_T and -DOLD_COS_SG are no longer supported. Please remove them from your XML.
+#error
+#endif
+
  use mpp_mod,     only: mpp_error, FATAL
 
  implicit none
@@ -16,8 +22,8 @@ module sim_nc_mod
          handle_err, check_var
 
 !---- version number -----
- character(len=128) :: version = '$Id: sim_nc_mod.F90,v 20.0 2013/12/13 23:07:48 fms Exp $'
- character(len=128) :: tagname = '$Name: tikal_201409 $'
+ character(len=128) :: version = '$Id$'
+ character(len=128) :: tagname = '$Name$'
 
  contains
 

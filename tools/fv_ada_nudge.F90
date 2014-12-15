@@ -50,9 +50,9 @@ module fv_ada_nudge_mod
  private
 
  character(len=*), parameter :: VERSION =&
-      & '$Id: fv_ada_nudge.F90,v 20.0 2013/12/13 23:07:20 fms Exp $'
+      & '$Id$'
  character(len=*), parameter :: TAGNAME =&
-      & '$Name: tikal_201409 $'
+      & '$Name$'
  logical :: do_adiabatic_init
 
  public fv_ada_nudge, fv_ada_nudge_init, fv_ada_nudge_end, breed_slp_inline_ada
@@ -3266,7 +3266,7 @@ endif
                 else
                     speed_local = speed / f1**0.75
                 endif
-                call tangent_wind(vlon(i,j,1:3), vlat(i,j,1:3), speed_local, pos, agrid(i,j,1:2), ut, vt)
+                call tangent_wind(vlon(1:3,i,j), vlat(1:3,i,j), speed_local, pos, agrid(i,j,1:2), ut, vt)
                 ut = ut + u_bg
                 vt = vt + v_bg
                 u_dt(i,j,k) = u_dt(i,j,k) + relx*(ut-ua(i,j,k)) * rdt
@@ -3660,9 +3660,9 @@ endif
    do k=1,kmd
       do j=js,je
          do i=is,ie
-            v1(i,j,k) = du(i,j,k)*vlon(i,j,1) + dv(i,j,k)*vlat(i,j,1)
-            v2(i,j,k) = du(i,j,k)*vlon(i,j,2) + dv(i,j,k)*vlat(i,j,2)
-            v3(i,j,k) = du(i,j,k)*vlon(i,j,3) + dv(i,j,k)*vlat(i,j,3)
+            v1(i,j,k) = du(i,j,k)*vlon(1,i,j) + dv(i,j,k)*vlat(1,i,j)
+            v2(i,j,k) = du(i,j,k)*vlon(2,i,j) + dv(i,j,k)*vlat(2,i,j)
+            v3(i,j,k) = du(i,j,k)*vlon(3,i,j) + dv(i,j,k)*vlat(3,i,j)
          enddo
       enddo
    enddo
@@ -3677,8 +3677,8 @@ endif
    do k=1,kmd
       do j=js,je
          do i=is,ie
-            du(i,j,k) = v1(i,j,k)*vlon(i,j,1) + v2(i,j,k)*vlon(i,j,2) + v3(i,j,k)*vlon(i,j,3)
-            dv(i,j,k) = v1(i,j,k)*vlat(i,j,1) + v2(i,j,k)*vlat(i,j,2) + v3(i,j,k)*vlat(i,j,3)
+            du(i,j,k) = v1(i,j,k)*vlon(1,i,j) + v2(i,j,k)*vlon(2,i,j) + v3(i,j,k)*vlon(3,i,j)
+            dv(i,j,k) = v1(i,j,k)*vlat(1,i,j) + v2(i,j,k)*vlat(2,i,j) + v3(i,j,k)*vlat(3,i,j)
          enddo
       enddo
    enddo
@@ -3774,9 +3774,9 @@ endif
             fx(i,j) = dy(i,j)*sina_u(i,j)*(q(i-1,j,k)-q(i,j,k))*rdxc(i,j)
          enddo
          if (is == 1) fx(i,j) = dy(is,j)*(q(is-1,j,k)-q(is,j,k))*rdxc(is,j)* &
-            0.5*(sin_sg(1,j,1) + sin_sg(0,j,3))
+            0.5*(sin_sg(1,1,j) + sin_sg(3,0,j))
          if (ie+1 == npx) fx(i,j) = dy(ie+1,j)*(q(ie,j,k)-q(ie+1,j,k))*rdxc(ie+1,j)* &
-            0.5*(sin_sg(npx,j,1) + sin_sg(npx-1,j,3))
+            0.5*(sin_sg(1,npx,j) + sin_sg(3,npx-1,j))
       enddo
 
       if(nt>0) call copy_corners(q(isd,jsd,k), npx, npy, 2, nested, bd, &
@@ -3785,7 +3785,7 @@ endif
          if (j == 1 .OR. j == npy) then
             do i=is-nt,ie+nt
                fy(i,j) = dx(i,j)*(q(i,j-1,k)-q(i,j,k))*rdyc(i,j) &
-                    *0.5*(sin_sg(i,j,2) + sin_sg(i,j-1,4) )
+                    *0.5*(sin_sg(2,i,j) + sin_sg(4,i,j-1) )
             enddo
          else
             do i=is-nt,ie+nt

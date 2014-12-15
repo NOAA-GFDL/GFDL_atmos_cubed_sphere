@@ -25,7 +25,7 @@
 ! The "T" field in NCEP analysis is actually virtual temperature (Larry H. post processing)
 ! BEFORE 20051201
 
-   use boundary_mod,      only: gather_grid, nested_grid_BC
+   use boundary_mod,      only: nested_grid_BC
    use mpp_domains_mod,       only: mpp_get_data_domain, mpp_get_global_domain, mpp_get_compute_domain
 
    implicit none
@@ -37,15 +37,16 @@
    public get_external_ic, get_cubed_sphere_terrain
 
 !---- version number -----
-   character(len=128) :: version = '$Id: external_ic.F90,v 20.0 2013/12/13 23:07:17 fms Exp $'
-   character(len=128) :: tagname = '$Name: tikal_201409 $'
+   character(len=128) :: version = '$Id$'
+   character(len=128) :: tagname = '$Name$'
 
 contains
 
-   subroutine get_external_ic( Atm, fv_domain )
+   subroutine get_external_ic( Atm, fv_domain, cold_start )
 
       type(fv_atmos_type), intent(inout), target :: Atm(:)
       type(domain2d),      intent(inout) :: fv_domain
+      logical, intent(IN) :: cold_start
       real:: alpha = 0.
       real rdg
       integer i,j,k,nq
@@ -104,8 +105,10 @@ contains
            call get_ncep_ic( Atm, fv_domain, nq )
                              call timing_off('NCEP_IC')
 #ifndef NO_FV_TRACERS
-           call fv_io_read_tracers( fv_domain, Atm )
-           if(is_master()) write(*,*) 'All tracers except sphum replaced by FV IC'
+           if (.not. cold_start) then
+              call fv_io_read_tracers( fv_domain, Atm )
+              if(is_master()) write(*,*) 'All tracers except sphum replaced by FV IC'
+           endif
 #endif
       elseif ( Atm(1)%flagstruct%fv_diag_ic ) then
 ! Interpolate/remap diagnostic output from a FV model diagnostic output file on uniform lat-lon A grid:
@@ -125,11 +128,7 @@ contains
 
       call p_var(Atm(1)%npz,  is, ie, js, je, Atm(1)%ak(1),  ptop_min,         &
                  Atm(1)%delp, Atm(1)%delz, Atm(1)%pt, Atm(1)%ps,               &
-#ifdef PKC
-                 Atm(1)%pe,   Atm(1)%peln, Atm(1)%pk, Atm(1)%pkz, Atm(1)%pkc,  &
-#else
                  Atm(1)%pe,   Atm(1)%peln, Atm(1)%pk, Atm(1)%pkz,              &
-#endif
                  kappa, Atm(1)%q, ng, Atm(1)%ncnst, Atm(1)%gridstruct%area, Atm(1)%flagstruct%dry_mass,           &
                  Atm(1)%flagstruct%adjust_dry_mass, Atm(1)%flagstruct%mountain, Atm(1)%flagstruct%moist_phys,   &
                  Atm(1)%flagstruct%hydrostatic, Atm(1)%flagstruct%nwat, Atm(1)%domain, Atm(1)%flagstruct%make_nh)
@@ -1655,9 +1654,9 @@ contains
   type(fv_grid_type), intent(IN), target :: gridstruct
   type(domain2d), intent(INOUT) :: fv_domain
 ! local:
-  real v3(bd%is-1:bd%ie+1,bd%js-1:bd%je+1,3)
-  real ue(bd%is-1:bd%ie+1,bd%js:bd%je+1,3)    ! 3D winds at edges
-  real ve(bd%is:bd%ie+1,bd%js-1:bd%je+1,  3)    ! 3D winds at edges
+  real v3(3,bd%is-1:bd%ie+1,bd%js-1:bd%je+1)
+  real ue(3,bd%is-1:bd%ie+1,bd%js:bd%je+1)    ! 3D winds at edges
+  real ve(3,bd%is:bd%ie+1,bd%js-1:bd%je+1)    ! 3D winds at edges
   real, dimension(bd%is:bd%ie):: ut1, ut2, ut3
   real, dimension(bd%js:bd%je):: vt1, vt2, vt3
   integer i, j, k, im2, jm2
@@ -1699,9 +1698,9 @@ contains
 ! Compute 3D wind on A grid
        do j=js-1,je+1
           do i=is-1,ie+1
-             v3(i,j,1) = ua(i,j,k)*vlon(i,j,1) + va(i,j,k)*vlat(i,j,1)
-             v3(i,j,2) = ua(i,j,k)*vlon(i,j,2) + va(i,j,k)*vlat(i,j,2)
-             v3(i,j,3) = ua(i,j,k)*vlon(i,j,3) + va(i,j,k)*vlat(i,j,3)
+             v3(1,i,j) = ua(i,j,k)*vlon(1,i,j) + va(i,j,k)*vlat(1,i,j)
+             v3(2,i,j) = ua(i,j,k)*vlon(2,i,j) + va(i,j,k)*vlat(2,i,j)
+             v3(3,i,j) = ua(i,j,k)*vlon(3,i,j) + va(i,j,k)*vlat(3,i,j)
           enddo
        enddo
 
@@ -1709,17 +1708,17 @@ contains
 ! Interpolate to cell edges
        do j=js,je+1
           do i=is-1,ie+1
-             ue(i,j,1) = 0.5*(v3(i,j-1,1) + v3(i,j,1))
-             ue(i,j,2) = 0.5*(v3(i,j-1,2) + v3(i,j,2))
-             ue(i,j,3) = 0.5*(v3(i,j-1,3) + v3(i,j,3))
+             ue(1,i,j) = 0.5*(v3(1,i,j-1) + v3(1,i,j))
+             ue(2,i,j) = 0.5*(v3(2,i,j-1) + v3(2,i,j))
+             ue(3,i,j) = 0.5*(v3(3,i,j-1) + v3(3,i,j))
           enddo
        enddo
 
        do j=js-1,je+1
           do i=is,ie+1
-             ve(i,j,1) = 0.5*(v3(i-1,j,1) + v3(i,j,1))
-             ve(i,j,2) = 0.5*(v3(i-1,j,2) + v3(i,j,2))
-             ve(i,j,3) = 0.5*(v3(i-1,j,3) + v3(i,j,3))
+             ve(1,i,j) = 0.5*(v3(1,i-1,j) + v3(1,i,j))
+             ve(2,i,j) = 0.5*(v3(2,i-1,j) + v3(2,i,j))
+             ve(3,i,j) = 0.5*(v3(3,i-1,j) + v3(3,i,j))
           enddo
        enddo
 
@@ -1729,19 +1728,19 @@ contains
        i = 1
        do j=js,je
         if ( j>jm2 ) then
-             vt1(j) = edge_vect_w(j)*ve(i,j-1,1)+(1.-edge_vect_w(j))*ve(i,j,1)
-             vt2(j) = edge_vect_w(j)*ve(i,j-1,2)+(1.-edge_vect_w(j))*ve(i,j,2)
-             vt3(j) = edge_vect_w(j)*ve(i,j-1,3)+(1.-edge_vect_w(j))*ve(i,j,3)
+             vt1(j) = edge_vect_w(j)*ve(1,i,j-1)+(1.-edge_vect_w(j))*ve(1,i,j)
+             vt2(j) = edge_vect_w(j)*ve(2,i,j-1)+(1.-edge_vect_w(j))*ve(2,i,j)
+             vt3(j) = edge_vect_w(j)*ve(3,i,j-1)+(1.-edge_vect_w(j))*ve(3,i,j)
         else
-             vt1(j) = edge_vect_w(j)*ve(i,j+1,1)+(1.-edge_vect_w(j))*ve(i,j,1)
-             vt2(j) = edge_vect_w(j)*ve(i,j+1,2)+(1.-edge_vect_w(j))*ve(i,j,2)
-             vt3(j) = edge_vect_w(j)*ve(i,j+1,3)+(1.-edge_vect_w(j))*ve(i,j,3)
+             vt1(j) = edge_vect_w(j)*ve(1,i,j+1)+(1.-edge_vect_w(j))*ve(1,i,j)
+             vt2(j) = edge_vect_w(j)*ve(2,i,j+1)+(1.-edge_vect_w(j))*ve(2,i,j)
+             vt3(j) = edge_vect_w(j)*ve(3,i,j+1)+(1.-edge_vect_w(j))*ve(3,i,j)
         endif
        enddo
        do j=js,je
-          ve(i,j,1) = vt1(j)
-          ve(i,j,2) = vt2(j)
-          ve(i,j,3) = vt3(j)
+          ve(1,i,j) = vt1(j)
+          ve(2,i,j) = vt2(j)
+          ve(3,i,j) = vt3(j)
        enddo
      endif
 
@@ -1749,19 +1748,19 @@ contains
        i = npx
        do j=js,je
         if ( j>jm2 ) then
-             vt1(j) = edge_vect_e(j)*ve(i,j-1,1)+(1.-edge_vect_e(j))*ve(i,j,1)
-             vt2(j) = edge_vect_e(j)*ve(i,j-1,2)+(1.-edge_vect_e(j))*ve(i,j,2)
-             vt3(j) = edge_vect_e(j)*ve(i,j-1,3)+(1.-edge_vect_e(j))*ve(i,j,3)
+             vt1(j) = edge_vect_e(j)*ve(1,i,j-1)+(1.-edge_vect_e(j))*ve(1,i,j)
+             vt2(j) = edge_vect_e(j)*ve(2,i,j-1)+(1.-edge_vect_e(j))*ve(2,i,j)
+             vt3(j) = edge_vect_e(j)*ve(3,i,j-1)+(1.-edge_vect_e(j))*ve(3,i,j)
         else
-             vt1(j) = edge_vect_e(j)*ve(i,j+1,1)+(1.-edge_vect_e(j))*ve(i,j,1)
-             vt2(j) = edge_vect_e(j)*ve(i,j+1,2)+(1.-edge_vect_e(j))*ve(i,j,2)
-             vt3(j) = edge_vect_e(j)*ve(i,j+1,3)+(1.-edge_vect_e(j))*ve(i,j,3)
+             vt1(j) = edge_vect_e(j)*ve(1,i,j+1)+(1.-edge_vect_e(j))*ve(1,i,j)
+             vt2(j) = edge_vect_e(j)*ve(2,i,j+1)+(1.-edge_vect_e(j))*ve(2,i,j)
+             vt3(j) = edge_vect_e(j)*ve(3,i,j+1)+(1.-edge_vect_e(j))*ve(3,i,j)
         endif
        enddo
        do j=js,je
-          ve(i,j,1) = vt1(j)
-          ve(i,j,2) = vt2(j)
-          ve(i,j,3) = vt3(j)
+          ve(1,i,j) = vt1(j)
+          ve(2,i,j) = vt2(j)
+          ve(3,i,j) = vt3(j)
        enddo
      endif
 
@@ -1770,19 +1769,19 @@ contains
        j = 1
        do i=is,ie
         if ( i>im2 ) then
-             ut1(i) = edge_vect_s(i)*ue(i-1,j,1)+(1.-edge_vect_s(i))*ue(i,j,1)
-             ut2(i) = edge_vect_s(i)*ue(i-1,j,2)+(1.-edge_vect_s(i))*ue(i,j,2)
-             ut3(i) = edge_vect_s(i)*ue(i-1,j,3)+(1.-edge_vect_s(i))*ue(i,j,3)
+             ut1(i) = edge_vect_s(i)*ue(1,i-1,j)+(1.-edge_vect_s(i))*ue(1,i,j)
+             ut2(i) = edge_vect_s(i)*ue(2,i-1,j)+(1.-edge_vect_s(i))*ue(2,i,j)
+             ut3(i) = edge_vect_s(i)*ue(3,i-1,j)+(1.-edge_vect_s(i))*ue(3,i,j)
         else
-             ut1(i) = edge_vect_s(i)*ue(i+1,j,1)+(1.-edge_vect_s(i))*ue(i,j,1)
-             ut2(i) = edge_vect_s(i)*ue(i+1,j,2)+(1.-edge_vect_s(i))*ue(i,j,2)
-             ut3(i) = edge_vect_s(i)*ue(i+1,j,3)+(1.-edge_vect_s(i))*ue(i,j,3)
+             ut1(i) = edge_vect_s(i)*ue(1,i+1,j)+(1.-edge_vect_s(i))*ue(1,i,j)
+             ut2(i) = edge_vect_s(i)*ue(2,i+1,j)+(1.-edge_vect_s(i))*ue(2,i,j)
+             ut3(i) = edge_vect_s(i)*ue(3,i+1,j)+(1.-edge_vect_s(i))*ue(3,i,j)
         endif
        enddo
        do i=is,ie
-          ue(i,j,1) = ut1(i)
-          ue(i,j,2) = ut2(i)
-          ue(i,j,3) = ut3(i)
+          ue(1,i,j) = ut1(i)
+          ue(2,i,j) = ut2(i)
+          ue(3,i,j) = ut3(i)
        enddo
      endif
 
@@ -1790,19 +1789,19 @@ contains
        j = npy
        do i=is,ie
         if ( i>im2 ) then
-             ut1(i) = edge_vect_n(i)*ue(i-1,j,1)+(1.-edge_vect_n(i))*ue(i,j,1)
-             ut2(i) = edge_vect_n(i)*ue(i-1,j,2)+(1.-edge_vect_n(i))*ue(i,j,2)
-             ut3(i) = edge_vect_n(i)*ue(i-1,j,3)+(1.-edge_vect_n(i))*ue(i,j,3)
+             ut1(i) = edge_vect_n(i)*ue(1,i-1,j)+(1.-edge_vect_n(i))*ue(1,i,j)
+             ut2(i) = edge_vect_n(i)*ue(2,i-1,j)+(1.-edge_vect_n(i))*ue(2,i,j)
+             ut3(i) = edge_vect_n(i)*ue(3,i-1,j)+(1.-edge_vect_n(i))*ue(3,i,j)
         else
-             ut1(i) = edge_vect_n(i)*ue(i+1,j,1)+(1.-edge_vect_n(i))*ue(i,j,1)
-             ut2(i) = edge_vect_n(i)*ue(i+1,j,2)+(1.-edge_vect_n(i))*ue(i,j,2)
-             ut3(i) = edge_vect_n(i)*ue(i+1,j,3)+(1.-edge_vect_n(i))*ue(i,j,3)
+             ut1(i) = edge_vect_n(i)*ue(1,i+1,j)+(1.-edge_vect_n(i))*ue(1,i,j)
+             ut2(i) = edge_vect_n(i)*ue(2,i+1,j)+(1.-edge_vect_n(i))*ue(2,i,j)
+             ut3(i) = edge_vect_n(i)*ue(3,i+1,j)+(1.-edge_vect_n(i))*ue(3,i,j)
         endif
        enddo
        do i=is,ie
-          ue(i,j,1) = ut1(i)
-          ue(i,j,2) = ut2(i)
-          ue(i,j,3) = ut3(i)
+          ue(1,i,j) = ut1(i)
+          ue(2,i,j) = ut2(i)
+          ue(3,i,j) = ut3(i)
        enddo
      endif
 
@@ -1810,16 +1809,16 @@ contains
 
      do j=js,je+1
         do i=is,ie
-           u(i,j,k) =  ue(i,j,1)*es(1,i,j,1) +  &
-                       ue(i,j,2)*es(2,i,j,1) +  &
-                       ue(i,j,3)*es(3,i,j,1)
+           u(i,j,k) =  ue(1,i,j)*es(1,i,j,1) +  &
+                       ue(2,i,j)*es(2,i,j,1) +  &
+                       ue(3,i,j)*es(3,i,j,1)
         enddo
      enddo
      do j=js,je
         do i=is,ie+1
-           v(i,j,k) = ve(i,j,1)*ew(1,i,j,2) +  &
-                      ve(i,j,2)*ew(2,i,j,2) +  &
-                      ve(i,j,3)*ew(3,i,j,2)
+           v(i,j,k) = ve(1,i,j)*ew(1,i,j,2) +  &
+                      ve(2,i,j)*ew(2,i,j,2) +  &
+                      ve(3,i,j)*ew(3,i,j,2)
         enddo
      enddo
  

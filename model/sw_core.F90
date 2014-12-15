@@ -43,12 +43,14 @@
   real, parameter:: b4 =  0.45
   real, parameter:: b5 = -0.05
 
+  logical:: sw_corner, se_corner, ne_corner, nw_corner 
+
 !---- version number -----
-  character(len=128) :: version = '$Id: sw_core.F90,v 20.0 2013/12/13 23:07:12 fms Exp $'
-  character(len=128) :: tagname = '$Name: tikal_201409 $'
+  character(len=128) :: version = '$Id$'
+  character(len=128) :: tagname = '$Name$'
 
       private
-      public :: c_sw, d_sw, d2a2c_vect,  divergence_corner, divergence_corner_nest, fill_4corners
+      public :: c_sw, d_sw, fill_4corners, del6_vt_flux
 
   contains
 
@@ -60,7 +62,8 @@
       type(fv_grid_bounds_type), intent(IN) :: bd
       real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed+1) :: u, vc
       real, intent(INOUT), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ) :: v, uc
-      real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed  ) :: delp,  pt,  ua, va, ut, vt, w
+      real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed  ) :: delp,  pt,  ua, va, ut, vt
+      real, intent(INOUT), dimension(bd%isd:      ,  bd%jsd:        ) :: w
       real, intent(OUT  ), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed  ) :: delpc, ptc, wc
       real, intent(OUT  ), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) :: divg_d
       integer, intent(IN) :: nord
@@ -120,13 +123,15 @@
       dxc     => gridstruct%dxc
       dyc     => gridstruct%dyc
 
-!     iep1 = ie;   jep1 = je
+      sw_corner = gridstruct%sw_corner
+      se_corner = gridstruct%se_corner
+      nw_corner = gridstruct%nw_corner
+      ne_corner = gridstruct%ne_corner
+
       iep1 = ie+1; jep1 = je+1
 
       call d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4, gridstruct, bd, &
-           npx, npy, nested, flagstruct%grid_type, &
-           gridstruct%sw_corner, gridstruct%se_corner, &
-           gridstruct%nw_corner, gridstruct%ne_corner)  
+                      npx, npy, nested, flagstruct%grid_type)
 
       if( nord > 0 ) then
          if (nested) then
@@ -136,46 +141,24 @@
          endif
       endif
 
+!!! TO DO: remove 'test_up'
+!!!   check repro with siena
       do j=js-1,jep1
          do i=is-1,iep1+1
-#ifndef TEST_UP
-            if (i == 1 .OR. i == npx) then
-               if (ut(i,j) > 0.) then
-                  ut(i,j) = dt2*ut(i,j)*dy(i,j)*sin_sg(i,j,1) 
-               else
-                  ut(i,j) = dt2*ut(i,j)*dy(i,j)*sin_sg(i-1,j,3)
-               end if
-            else
-               ut(i,j) = dt2*ut(i,j)*dy(i,j)*sina_u(i,j)
-            end if
-#else
             if (ut(i,j) > 0.) then
-                ut(i,j) = dt2*ut(i,j)*dy(i,j)*sin_sg(i-1,j,3) 
+                ut(i,j) = dt2*ut(i,j)*dy(i,j)*sin_sg(3,i-1,j) 
             else
-                ut(i,j) = dt2*ut(i,j)*dy(i,j)*sin_sg(i,j,1)
+                ut(i,j) = dt2*ut(i,j)*dy(i,j)*sin_sg(1,i,j)
             end if
-#endif
          enddo
       enddo
-      do j=js-1,jep1+1
+      do j=js-1,je+2
          do i=is-1,iep1
-#ifndef TEST_UP
-            if (j == 1 .OR. j == npy) then
-               if (vt(i,j) > 0.) then
-                  vt(i,j) = dt2*vt(i,j)*dx(i,j)*sin_sg(i,j,2) 
-               else
-                  vt(i,j) = dt2*vt(i,j)*dx(i,j)*sin_sg(i,j-1,4)
-               end if
-            else
-               vt(i,j) = dt2*vt(i,j)*dx(i,j)*sina_v(i,j)
-            end if
-#else
             if (vt(i,j) > 0.) then
-                vt(i,j) = dt2*vt(i,j)*dx(i,j)*sin_sg(i,j-1,4) 
+                vt(i,j) = dt2*vt(i,j)*dx(i,j)*sin_sg(4,i,j-1) 
             else
-                vt(i,j) = dt2*vt(i,j)*dx(i,j)*sin_sg(i,j,  2)
+                vt(i,j) = dt2*vt(i,j)*dx(i,j)*sin_sg(2,i,j)
             end if
-#endif
          enddo
       enddo
 
@@ -183,11 +166,12 @@
 ! Transport delp:
 !----------------
 ! Xdir:
-      if (flagstruct%grid_type < 3 .and. .not. nested) call fill2_4corners(delp, pt, 1, bd, npx, npy, gridstruct%sw_corner, gridstruct%se_corner, gridstruct%ne_corner, gridstruct%nw_corner)
+      if (flagstruct%grid_type < 3 .and. .not. nested) call fill2_4corners(delp, pt, 1, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
+
       if ( hydrostatic ) then
 #ifdef SW_DYNAMICS
            do j=js-1,jep1
-              do i=is-1,iep1+1      
+              do i=is-1,ie+2
                  if ( ut(i,j) > 0. ) then
                       fx1(i,j) = delp(i-1,j)
                  else
@@ -198,7 +182,7 @@
            enddo
 #else
            do j=js-1,jep1
-              do i=is-1,iep1+1
+              do i=is-1,ie+2
                  if ( ut(i,j) > 0. ) then
                       fx1(i,j) = delp(i-1,j)
                        fx(i,j) =   pt(i-1,j)
@@ -212,7 +196,8 @@
            enddo
 #endif
       else
-           if (flagstruct%grid_type < 3) call fill_4corners(w, 1, bd, npx, npy, gridstruct%sw_corner, gridstruct%se_corner, gridstruct%ne_corner, gridstruct%nw_corner)
+           if (flagstruct%grid_type < 3)   &
+               call fill_4corners(w, 1, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
            do j=js-1,je+1
               do i=is-1,ie+2      
                  if ( ut(i,j) > 0. ) then
@@ -232,7 +217,7 @@
       endif
 
 ! Ydir:
-      if (flagstruct%grid_type < 3 .and. .not. nested) call fill2_4corners(delp, pt, 2, bd, npx, npy, gridstruct%sw_corner, gridstruct%se_corner, gridstruct%ne_corner, gridstruct%nw_corner)
+      if (flagstruct%grid_type < 3 .and. .not. nested) call fill2_4corners(delp, pt, 2, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
       if ( hydrostatic ) then
            do j=js-1,jep1+1
               do i=is-1,iep1      
@@ -259,7 +244,7 @@
               enddo
            enddo
       else
-           if (flagstruct%grid_type < 3) call fill_4corners(w, 2, bd, npx, npy, gridstruct%sw_corner, gridstruct%se_corner, gridstruct%ne_corner, gridstruct%nw_corner)
+           if (flagstruct%grid_type < 3) call fill_4corners(w, 2, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
            do j=js-1,je+2
               do i=is-1,ie+1      
                  if ( vt(i,j) > 0. ) then
@@ -293,48 +278,72 @@
 
 !Since uc = u*, i.e. the covariant wind perpendicular to the face edge, if we want to compute kinetic energy we will need the true coordinate-parallel covariant wind, computed through u = uc*sina + v*cosa. 
 !Use the alpha for the cell KE is being computed in.
-      do j=js-1,jep1
+!!! TO DO:
+!!! Need separate versions for nesting/single-tile
+!!!   and for cubed-sphere
+      if (nested .or. flagstruct%grid_type >=3 ) then
+         do j=js-1,jep1
          do i=is-1,iep1
             if ( ua(i,j) > 0. ) then
-                 if ( i==1 .and. (.not. nested)) then
-                    ke(1,j) = uc(1,  j)*sin_sg(1,j,1)+v(1,j)*cos_sg(1,j,1)
-                 elseif ( i==npx .and. (.not. nested) ) then
-                    ke(i,j) = uc(npx,j)*sin_sg(npx,j,1)+v(npx,j)*cos_sg(npx,j,1)
-                 else
-                    ke(i,j) = uc(i,j)
-                 endif
+               ke(i,j) = uc(i,j)
             else
-                 if ( i==0 .and. (.not. nested)  ) then
-                    ke(0,j) = uc(1,  j)*sin_sg(0,j,3)+v(1,j)*cos_sg(0,j,3)
-                 elseif ( i==(npx-1)  .and. (.not. nested) ) then
-                    ke(i,j) = uc(npx,j)*sin_sg(npx-1,j,3)+v(npx,j)*cos_sg(npx-1,j,3)
-                 else
-                    ke(i,j) = uc(i+1,j)
-                 endif
+               ke(i,j) = uc(i+1,j)
             endif
          enddo
-      enddo
-      do j=js-1,jep1
+         enddo
+         do j=js-1,jep1
          do i=is-1,iep1
             if ( va(i,j) > 0. ) then
-               if ( j==1  .and. (.not. nested) ) then
-                  vort(i,1) = vc(i,  1)*sin_sg(i,1,2)+u(i,  1)*cos_sg(i,1,2)
-               elseif ( j==npy   .and. (.not. nested)) then
-                  vort(i,j) = vc(i,npy)*sin_sg(i,npy,2)+u(i,npy)*cos_sg(i,npy,2)
+               vort(i,j) = vc(i,j)
+            else
+               vort(i,j) = vc(i,j+1)
+            endif
+         enddo
+         enddo
+      else
+         do j=js-1,jep1
+         do i=is-1,iep1
+            if ( ua(i,j) > 0. ) then
+               if ( i==1 ) then
+                  ke(1,j) = uc(1,  j)*sin_sg(1,1,j)+v(1,j)*cos_sg(1,1,j)
+               elseif ( i==npx  ) then
+                  ke(i,j) = uc(npx,j)*sin_sg(1,npx,j)+v(npx,j)*cos_sg(1,npx,j)
                else
-                  vort(i,j) = vc(i,j)
+                  ke(i,j) = uc(i,j)
                endif
             else
-               if ( j==0   .and. (.not. nested)) then
-                  vort(i,0) = vc(i,  1)*sin_sg(i,0,4)+u(i,  1)*cos_sg(i,0,4)
-               elseif ( j==(npy-1) .and. (.not. nested) ) then
-                  vort(i,j) = vc(i,npy)*sin_sg(i,npy-1,4)+u(i,npy)*cos_sg(i,npy-1,4)
+               if ( i==0   ) then
+                  ke(0,j) = uc(1,  j)*sin_sg(3,0,j)+v(1,j)*cos_sg(3,0,j)
+               elseif ( i==(npx-1)   ) then
+                  ke(i,j) = uc(npx,j)*sin_sg(3,npx-1,j)+v(npx,j)*cos_sg(3,npx-1,j)
                else
-                  vort(i,j) = vc(i,j+1)
+                  ke(i,j) = uc(i+1,j)
                endif
             endif
          enddo
-      enddo
+         enddo
+         do j=js-1,jep1
+            do i=is-1,iep1
+               if ( va(i,j) > 0. ) then
+                  if ( j==1   ) then
+                     vort(i,1) = vc(i,  1)*sin_sg(2,i,1)+u(i,  1)*cos_sg(2,i,1)
+                  elseif ( j==npy   ) then
+                     vort(i,j) = vc(i,npy)*sin_sg(2,i,npy)+u(i,npy)*cos_sg(2,i,npy)
+                  else
+                     vort(i,j) = vc(i,j)
+                  endif
+               else
+                  if ( j==0   ) then
+                     vort(i,0) = vc(i,  1)*sin_sg(4,i,0)+u(i,  1)*cos_sg(4,i,0)
+                  elseif ( j==(npy-1)  ) then
+                     vort(i,j) = vc(i,npy)*sin_sg(4,i,npy-1)+u(i,npy)*cos_sg(4,i,npy-1)
+                  else
+                     vort(i,j) = vc(i,j+1)
+                  endif
+               endif
+            enddo
+         enddo
+      endif
 
       dt4 = 0.5*dt2
       do j=js-1,jep1
@@ -347,43 +356,18 @@
 ! Compute circulation on C grid
 !------------------------------
 ! To consider using true co-variant winds at face edges?
-#ifdef TEST_EDGE
       do j=js-1,je+1
          do i=is,ie+1
             fx(i,j) = uc(i,j) * dxc(i,j)
          enddo
       enddo
+
       do j=js,je+1
          do i=is-1,ie+1
             fy(i,j) = vc(i,j) * dyc(i,j)
          enddo
       enddo
-#else
-      is2 = max(2,is); ie1 = min(npx-1,ie+1)
-      do j=js-1,je+1
-         do i=is2,ie1
-            fx(i,j) = uc(i,j)*dxc(i,j)
-         enddo
-         !Multiplying in sin increases the error slightly.
-         if(  is   ==  1 ) fx(1,  j) = uc(1,  j)*dxc(1,  j)!* &
-              !0.5*( sin_sg(1,j,1) + sin_sg(0,j,3)  )
-         if( (ie+1)==npx ) fx(npx,j) = uc(npx,j)*dxc(npx,j)!* &
-              !0.5*( sin_sg(npx,j,1) + sin_sg(npx-1,j,3)  )
-      enddo
 
-      do j=js,je+1
-         if( j==1 .or. j==npy ) then
-           do i=is-1,ie+1
-              fy(i,j) = vc(i,j)*dyc(i,j)!* &
-                   !0.5*( sin_sg(i,j,2) + sin_sg(i,j-1,4)  )
-           enddo
-         else
-           do i=is-1,ie+1
-              fy(i,j) = vc(i,j)*dyc(i,j)
-           enddo
-         endif
-      enddo
-#endif
       do j=js,je+1
          do i=is,ie+1
             vort(i,j) =  fx(i,j-1) - fx(i,j) - fy(i-1,j) + fy(i,j)
@@ -391,10 +375,10 @@
       enddo
 
 ! Remove the extra term at the corners:
-      if ( gridstruct%sw_corner ) vort(1,    1) = vort(1,    1) + fy(0,   1)
-      if ( gridstruct%se_corner ) vort(npx  ,1) = vort(npx,  1) - fy(npx, 1)
-      if ( gridstruct%ne_corner ) vort(npx,npy) = vort(npx,npy) - fy(npx,npy)
-      if ( gridstruct%nw_corner ) vort(1,  npy) = vort(1,  npy) + fy(0,  npy)
+      if ( sw_corner ) vort(1,    1) = vort(1,    1) + fy(0,   1)
+      if ( se_corner ) vort(npx  ,1) = vort(npx,  1) - fy(npx, 1)
+      if ( ne_corner ) vort(npx,npy) = vort(npx,npy) - fy(npx,npy)
+      if ( nw_corner ) vort(1,  npy) = vort(1,  npy) + fy(0,  npy)
 
 !----------------------------
 ! Compute absolute vorticity
@@ -413,42 +397,65 @@
 ! These cancel, leaving us with fy1 = dt2*v at the edges.
 ! (For the same reason we only divide by sin instead of sin**2 in the interior)
 
-      do j=js,je
-         do i=is,iep1
-            if ( ( i==1 .or. i==npx )  .and. (.not. nested) ) then
-                 fy1(i,j) = dt2*v(i,j)
-            else
-                 fy1(i,j) = dt2*(v(i,j)-uc(i,j)*cosa_u(i,j))/sina_u(i,j)
-            endif
-            if ( fy1(i,j) > 0. ) then
-                 fy(i,j) = vort(i,j)
-            else
-                 fy(i,j) = vort(i,j+1)
-            endif
-          enddo
-      enddo
-
-      do j=js,jep1
-         if ( ( j==1 .or. j==npy ) .and. (.not. nested) ) then
-            do i=is,ie
-               fx1(i,j) = dt2*u(i,j)
-               if ( fx1(i,j) > 0. ) then
-                    fx(i,j) = vort(i,j)
+!! TO DO: separate versions for nesting/single-tile and cubed-sphere
+      if (nested .or. flagstruct%grid_type >= 3) then
+         do j=js,je
+            do i=is,iep1
+               fy1(i,j) = dt2*(v(i,j)-uc(i,j)*cosa_u(i,j))/sina_u(i,j)
+               if ( fy1(i,j) > 0. ) then
+                  fy(i,j) = vort(i,j)
                else
-                    fx(i,j) = vort(i+1,j)
+                  fy(i,j) = vort(i,j+1)
                endif
             enddo
-         else
+         enddo
+         do j=js,jep1
             do i=is,ie
                fx1(i,j) = dt2*(u(i,j)-vc(i,j)*cosa_v(i,j))/sina_v(i,j)
                if ( fx1(i,j) > 0. ) then
-                    fx(i,j) = vort(i,j)
+                  fx(i,j) = vort(i,j)
                else
-                    fx(i,j) = vort(i+1,j)
+                  fx(i,j) = vort(i+1,j)
                endif
             enddo
-         endif
-      enddo
+         enddo
+      else
+         do j=js,je
+            do i=is,iep1
+               if ( ( i==1 .or. i==npx ) ) then
+                  fy1(i,j) = dt2*v(i,j)
+               else
+                  fy1(i,j) = dt2*(v(i,j)-uc(i,j)*cosa_u(i,j))/sina_u(i,j)
+               endif
+               if ( fy1(i,j) > 0. ) then
+                  fy(i,j) = vort(i,j)
+               else
+                  fy(i,j) = vort(i,j+1)
+               endif
+            enddo
+         enddo
+         do j=js,jep1
+            if ( ( j==1 .or. j==npy ) ) then
+               do i=is,ie
+                  fx1(i,j) = dt2*u(i,j)
+                  if ( fx1(i,j) > 0. ) then
+                     fx(i,j) = vort(i,j)
+                  else
+                     fx(i,j) = vort(i+1,j)
+                  endif
+               enddo
+            else
+               do i=is,ie
+                  fx1(i,j) = dt2*(u(i,j)-vc(i,j)*cosa_v(i,j))/sina_v(i,j)
+                  if ( fx1(i,j) > 0. ) then
+                     fx(i,j) = vort(i,j)
+                  else
+                     fx(i,j) = vort(i+1,j)
+                  endif
+               enddo
+            endif
+         enddo
+      endif
 
 ! Update time-centered winds on the C-Grid
       do j=js,je
@@ -466,27 +473,30 @@
 
 
 
-!-------------------------------------------------------------------------------
-!
 !     d_sw :: D-Grid Shallow Water Routine
-!
+ 
    subroutine d_sw(delpc, delp,  ptc,   pt, u,  v, w, uc,vc, &
                    ua, va, divg_d, xflux, yflux, cx, cy,              &
-                   crx_adv, cry_adv,  xfx_adv, yfx_adv, heat_source,    &
+                   crx_adv, cry_adv,  xfx_adv, yfx_adv, q_con, z_rat, heat_source,    &
                    zvir, sphum, nq, q, k, km, inline_q,  &
                    dt, hord_tr, hord_mt, hord_vt, hord_tm, hord_dp, nord,   &
-                   nord_v, dddmp, d2_bg, d4_bg, vtdm4, d_con, hydrostatic, &
-                   gridstruct, flagstruct, bd)
+                   nord_v, nord_w, nord_t, dddmp, d2_bg, d4_bg, damp_v, damp_w, &
+                   damp_t, d_con, hydrostatic, gridstruct, flagstruct, bd)
 
       integer, intent(IN):: hord_tr, hord_mt, hord_vt, hord_tm, hord_dp
-      integer, intent(IN):: nord   ! nord=1 (del-4) or 3 (del-8)
-      integer, intent(IN):: nord_v
+      integer, intent(IN):: nord   ! nord=1 divergence damping; (del-4) or 3 (del-8)
+      integer, intent(IN):: nord_v ! vorticity damping
+      integer, intent(IN):: nord_w ! vertical velocity
+      integer, intent(IN):: nord_t ! pt
       integer, intent(IN):: sphum, nq, k, km
-      real   , intent(IN):: dt, dddmp, d2_bg, d4_bg, vtdm4, d_con
+      real   , intent(IN):: dt, dddmp, d2_bg, d4_bg, d_con
       real   , intent(IN):: zvir
+      real,    intent(in):: damp_v, damp_w, damp_t
       type(fv_grid_bounds_type), intent(IN) :: bd
       real, intent(inout):: divg_d(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) ! divergence
-      real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: delp, pt, ua, va, w
+      real, intent(IN), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: z_rat
+      real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: delp, pt, ua, va
+      real, intent(INOUT), dimension(bd%isd:      ,  bd%jsd:      ):: w, q_con
       real, intent(INOUT), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1):: u, vc
       real, intent(INOUT), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: v, uc
       real, intent(INOUT):: q(bd%isd:bd%ied,bd%jsd:bd%jed,km,nq)
@@ -524,9 +534,9 @@
       real :: gy(bd%is:bd%ie  ,bd%js:bd%je+1)  ! work Y-dir flux array
       logical :: fill_c
 
-      real :: dt4, dt5, dt6
+      real :: dt2, dt4, dt5, dt6
       real :: damp, damp2, damp4, dd8, u2, v2, du2, dv2
-      real :: damp_v, damp_t, damp_m
+      real :: u_lon
       integer :: i,j, is2, ie1, js2, je1, n, nt, n2, iq
 
       real, pointer, dimension(:,:) :: area, area_c, rarea, rarea_c
@@ -586,10 +596,6 @@
       rdx       => gridstruct%rdx    
       rdy       => gridstruct%rdy    
 
-      damp_v = vtdm4     ! vorticity & w 
-      damp_t = vtdm4     ! potential temperature
-      damp_m = vtdm4     ! delp (mass)
-
 #ifdef SW_DYNAMICS 
       if ( test_case == 1 ) then
         do j=jsd,jed
@@ -619,33 +625,49 @@
 #endif
      if ( flagstruct%grid_type < 3 ) then
 
-        do j=jsd,jed
-           if( (j/=0 .and. j/=1 .and. j/=(npy-1) .and. j/=npy) .or. nested) then
-             do i=is-1,ie+2
-                ut(i,j) = ( uc(i,j) - 0.25 * cosa_u(i,j) *     &
-                    (vc(i-1,j)+vc(i,j)+vc(i-1,j+1)+vc(i,j+1)))*rsin_u(i,j)
-             enddo
-           endif
-        enddo
-        do j=js-1,je+2
-
-           if( (j/=1 .and. j/=npy) .or. nested ) then
-
+!!! TO DO: separate versions for nesting and for cubed-sphere
+        if (nested) then
+           do j=jsd,jed
+              do i=is-1,ie+2
+                 ut(i,j) = ( uc(i,j) - 0.25 * cosa_u(i,j) *     &
+                      (vc(i-1,j)+vc(i,j)+vc(i-1,j+1)+vc(i,j+1)))*rsin_u(i,j)
+              enddo
+           enddo
+           do j=js-1,je+2
               do i=isd,ied
                  vt(i,j) = ( vc(i,j) - 0.25 * cosa_v(i,j) *     &
-                    (uc(i,j-1)+uc(i+1,j-1)+uc(i,j)+uc(i+1,j)))*rsin_v(i,j)
+                      (uc(i,j-1)+uc(i+1,j-1)+uc(i,j)+uc(i+1,j)))*rsin_v(i,j)
               enddo
-           endif
-        enddo
+           enddo
+        else
+           do j=jsd,jed
+              if( j/=0 .and. j/=1 .and. j/=(npy-1) .and. j/=npy) then
+                 do i=is-1,ie+2
+                    ut(i,j) = ( uc(i,j) - 0.25 * cosa_u(i,j) *     &
+                         (vc(i-1,j)+vc(i,j)+vc(i-1,j+1)+vc(i,j+1)))*rsin_u(i,j)
+                 enddo
+              endif
+           enddo
+           do j=js-1,je+2
+
+              if( j/=1 .and. j/=npy ) then
+
+                 do i=isd,ied
+                    vt(i,j) = ( vc(i,j) - 0.25 * cosa_v(i,j) *     &
+                         (uc(i,j-1)+uc(i+1,j-1)+uc(i,j)+uc(i+1,j)))*rsin_v(i,j)
+                 enddo
+              endif
+           enddo
+        endif
 
       if (.not. nested) then
 ! West edge:
        if ( is==1 ) then
           do j=jsd,jed
              if ( uc(1,j)*dt > 0. ) then
-                ut(1,j) = uc(1,j) / sin_sg(0,j,3)
+                ut(1,j) = uc(1,j) / sin_sg(3,0,j)
              else
-                ut(1,j) = uc(1,j) / sin_sg(1,j,1)
+                ut(1,j) = uc(1,j) / sin_sg(1,1,j)
              endif
           enddo
           do j=max(3,js), min(npy-2,je+1)
@@ -660,9 +682,9 @@
        if ( (ie+1)==npx ) then
           do j=jsd,jed
              if ( uc(npx,j)*dt > 0. ) then
-                ut(npx,j) = uc(npx,j) / sin_sg(npx-1,j,3)
+                ut(npx,j) = uc(npx,j) / sin_sg(3,npx-1,j)
              else
-                ut(npx,j) = uc(npx,j) / sin_sg(npx,j,1)
+                ut(npx,j) = uc(npx,j) / sin_sg(1,npx,j)
              endif
           enddo
 
@@ -679,9 +701,9 @@
 
            do i=isd,ied
               if ( vc(i,1)*dt > 0. ) then
-                   vt(i,1) = vc(i,1) / sin_sg(i,0,4)
+                   vt(i,1) = vc(i,1) / sin_sg(4,i,0)
               else
-                   vt(i,1) = vc(i,1) / sin_sg(i,1,2)
+                   vt(i,1) = vc(i,1) / sin_sg(2,i,1)
               endif
            enddo
 
@@ -697,9 +719,9 @@
        if ( (je+1)==npy ) then
            do i=isd,ied
               if ( vc(i,npy)*dt > 0. ) then
-                   vt(i,npy) = vc(i,npy) / sin_sg(i,npy-1,4)
+                   vt(i,npy) = vc(i,npy) / sin_sg(4,i,npy-1)
               else
-                   vt(i,npy) = vc(i,npy) / sin_sg(i,npy,2)
+                   vt(i,npy) = vc(i,npy) / sin_sg(2,i,npy)
               endif
            enddo
            do i=max(3,is),min(npx-2,ie+1)
@@ -720,7 +742,7 @@
        !  vt(1,2) = vc(1,2) - avg(ut)*cosa_v(1,2)
        ! in which avg(vt) includes vt(1,2) and avg(ut) includes ut(2,1)
 
-        if( gridstruct%sw_corner ) then
+        if( sw_corner ) then
             damp = 1. / (1.-0.0625*cosa_u(2,0)*cosa_v(1,0))
             ut(2,0) = (uc(2,0)-0.25*cosa_u(2,0)*(vt(1,1)+vt(2,1)+vt(2,0) +vc(1,0) -   &
                       0.25*cosa_v(1,0)*(ut(1,0)+ut(1,-1)+ut(2,-1))) ) * damp
@@ -734,12 +756,9 @@
 
             vt(1,2) = (vc(1,2)-0.25*cosa_v(1,2)*(ut(1,1)+ut(1,2)+ut(2,2)+uc(2,1) -   &
                       0.25*cosa_u(2,1)*(vt(1,1)+vt(2,1)+vt(2,2))) ) * damp
-
-
-
         endif
 
-        if( gridstruct%se_corner ) then
+        if( se_corner ) then
             damp = 1. / (1. - 0.0625*cosa_u(npx-1,0)*cosa_v(npx-1,0))
             ut(npx-1,0) = ( uc(npx-1,0)-0.25*cosa_u(npx-1,0)*(   &
                             vt(npx-1,1)+vt(npx-2,1)+vt(npx-2,0)+vc(npx-1,0) -   &
@@ -756,11 +775,9 @@
             vt(npx-1,2) = ( vc(npx-1,2)-0.25*cosa_v(npx-1,2)*(  &
                             ut(npx,1)+ut(npx,2)+ut(npx-1,2)+uc(npx-1,1) -   &
                       0.25*cosa_u(npx-1,1)*(vt(npx-1,1)+vt(npx-2,1)+vt(npx-2,2))) ) * damp
-
-
         endif
 
-        if( gridstruct%ne_corner ) then
+        if( ne_corner ) then
             damp = 1. / (1. - 0.0625*cosa_u(npx-1,npy)*cosa_v(npx-1,npy+1))
             ut(npx-1,npy) = ( uc(npx-1,npy)-0.25*cosa_u(npx-1,npy)*(   &
                               vt(npx-1,npy)+vt(npx-2,npy)+vt(npx-2,npy+1)+vc(npx-1,npy+1) -   &
@@ -777,12 +794,9 @@
             vt(npx-1,npy-1) = ( vc(npx-1,npy-1)-0.25*cosa_v(npx-1,npy-1)*(  &
                                 ut(npx,npy-1)+ut(npx,npy-2)+ut(npx-1,npy-2)+uc(npx-1,npy-1) -  &
                 0.25*cosa_u(npx-1,npy-1)*(vt(npx-1,npy)+vt(npx-2,npy)+vt(npx-2,npy-1))) ) * damp
-
-
-
         endif
 
-        if( gridstruct%nw_corner ) then
+        if( nw_corner ) then
             damp = 1. / (1. - 0.0625*cosa_u(2,npy)*cosa_v(1,npy+1))
             ut(2,npy) = ( uc(2,npy)-0.25*cosa_u(2,npy)*(   &
                           vt(1,npy)+vt(2,npy)+vt(2,npy+1)+vc(1,npy+1) -   &
@@ -800,7 +814,6 @@
             vt(1,npy-1) = ( vc(1,npy-1)-0.25*cosa_v(1,npy-1)*(  &
                             ut(1,npy-1)+ut(1,npy-2)+ut(2,npy-2)+uc(2,npy-1) -   &
                       0.25*cosa_u(2,npy-1)*(vt(1,npy)+vt(2,npy)+vt(2,npy-1))) ) * damp
-
         endif
 
        end if !.not. nested
@@ -836,27 +849,25 @@
 !    xfx_adv = dt*ut*dy   
 !    crx_adv = dt*ut/dx
 
-
-
         do j=jsd,jed
            do i=is,ie+1
               if ( xfx_adv(i,j) > 0. ) then
                    crx_adv(i,j) = xfx_adv(i,j) * rdxa(i-1,j)
-                   xfx_adv(i,j) = dy(i,j)*xfx_adv(i,j)*sin_sg(i-1,j,3)
+                   xfx_adv(i,j) = dy(i,j)*xfx_adv(i,j)*sin_sg(3,i-1,j)
               else
                    crx_adv(i,j) = xfx_adv(i,j) * rdxa(i,j)
-                   xfx_adv(i,j) = dy(i,j)*xfx_adv(i,j)*sin_sg(i,j,1)
-                   end if
-              enddo
+                   xfx_adv(i,j) = dy(i,j)*xfx_adv(i,j)*sin_sg(1,i,j)
+              end if
+           enddo
         enddo
         do j=js,je+1
            do i=isd,ied
               if ( yfx_adv(i,j) > 0. ) then
                    cry_adv(i,j) = yfx_adv(i,j) * rdya(i,j-1)
-                      yfx_adv(i,j) = dx(i,j)*yfx_adv(i,j)*sin_sg(i,j-1,4)
+                   yfx_adv(i,j) = dx(i,j)*yfx_adv(i,j)*sin_sg(4,i,j-1)
               else
                    cry_adv(i,j) = yfx_adv(i,j) * rdya(i,j)
-                      yfx_adv(i,j) = dx(i,j)*yfx_adv(i,j)*sin_sg(i,j,2) 
+                   yfx_adv(i,j) = dx(i,j)*yfx_adv(i,j)*sin_sg(2,i,j) 
               endif
            enddo
         enddo
@@ -878,56 +889,7 @@
 
 
       call fv_tp_2d(delp, crx_adv, cry_adv, npx, npy, hord_dp, fx, fy,  &
-                    xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, nord=nord_v, damp_c=damp_m)
-
-#ifdef SW_DYNAMICS
-        do j=js,je
-           do i=is,ie
-              delp(i,j) = delp(i,j) +    &
-                         (fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j)
-              ptc(i,j) = pt(i,j)
-           enddo
-        enddo
-
-#ifdef TEST_TRACER
-! <<< Save the mass fluxes to the "Flux Capacitor" for tracer transport >>>
-        do j=jsd,jed
-            do i=is,ie+1
-              cx(i,j) = cx(i,j) + crx_adv(i,j)
-           enddo
-        enddo       
-        do j=js,je
-           do i=is,ie+1
-              xflux(i,j) = xflux(i,j) + fx(i,j)
-           enddo
-        enddo       
-
-        do j=js,je+1
-           do i=isd,ied
-              cy(i,j) = cy(i,j) + cry_adv(i,j)
-           enddo
-           do i=is,ie
-              yflux(i,j) = yflux(i,j) + fy(i,j)
-           enddo
-        enddo 
-
-     if ( inline_q ) then
-        do iq=1,nq
-           call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv, npx, npy, hord_tr, gx, gy,  &
-                         xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, mfx=fx, mfy=fy)
-           do j=js,je
-              do i=is,ie
-                 q(i,j,k,iq) = (q(i,j,k,iq)*wk(i,j) +               &
-                         (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j))/delp(i,j)
-              enddo
-           enddo
-        enddo
-     endif
-
-
-#endif
-
-#else
+                    xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, nord=nord_v, damp_c=damp_v)
 
 ! <<< Save the mass fluxes to the "Flux Capacitor" for tracer transport >>>
         do j=jsd,jed
@@ -949,6 +911,7 @@
            enddo
         enddo 
 
+#ifndef SW_DYNAMICS
         do j=js,je
            do i=is,ie
               heat_source(i,j) = 0.
@@ -956,9 +919,9 @@
         enddo
 
         if ( .not. hydrostatic ) then
-            if ( damp_v>1.E-5 ) then
-                 damp4 = (damp_v*da_min_c)**(nord_v+1)
-                 call del6_vt_flux(nord_v, npx, npy, damp4, w, wk, fx2, fy2, gridstruct, bd)
+            if ( damp_w>1.E-5 ) then
+                 damp4 = (damp_w*da_min_c)**(nord_w+1)
+                 call del6_vt_flux(nord_w, npx, npy, damp4, w, wk, fx2, fy2, gridstruct, bd)
                 do j=js,je
                    do i=is,ie
                       dw(i,j) = (fx2(i,j)-fx2(i+1,j)+fy2(i,j)-fy2(i,j+1))*rarea(i,j)
@@ -976,6 +939,15 @@
             enddo
         endif
 
+#ifdef USE_COND
+           call fv_tp_2d(q_con, crx_adv,cry_adv, npx, npy, hord_dp, gx, gy,  &
+                xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
+            do j=js,je
+               do i=is,ie
+                  q_con(i,j) = delp(i,j)*q_con(i,j) + (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
+               enddo
+            enddo
+#endif
      if ( inline_q ) then
         do j=jsd,jed
            do i=isd,ied
@@ -986,15 +958,20 @@
 
         call fv_tp_2d(pt, crx_adv,cry_adv, npx, npy, hord_tm, gx, gy,  &
                       xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y,     &
-                      mfx=fx, mfy=fy, mass=delp, nord=nord_v, damp_c=damp_t)
+                      mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
+#endif
 
      if ( inline_q ) then
         do j=js,je
            do i=is,ie
                 wk(i,j) = delp(i,j)
               delp(i,j) = wk(i,j) + (fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j)
+#ifdef SW_DYNAMICS
+              ptc(i,j) = pt(i,j)
+#else
               pt(i,j) = (pt(i,j)*wk(i,j) +               &
                         (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j))/delp(i,j)
+#endif
            enddo
         enddo
         do iq=1,nq
@@ -1007,39 +984,29 @@
               enddo
            enddo
         enddo
+#ifndef SW_DYNAMICS
         do j=js,je
            do i=is,ie
               pt(i,j) = pt(i,j)*(1.+zvir*q(i,j,k,sphum))
            enddo
         enddo
+#endif
      else
         do j=js,je
            do i=is,ie
+#ifndef SW_DYNAMICS
               pt(i,j) = pt(i,j)*delp(i,j) +               &
                          (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
+#endif
               delp(i,j) = delp(i,j) +                     &
                          (fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j)
+#ifndef SW_DYNAMICS
               pt(i,j) = pt(i,j) / delp(i,j)
+
+#endif
            enddo
         enddo
      endif
-
-        if ( .not. hydrostatic ) then
-          if ( damp_v>1.E-5 ) then
-            do j=js,je
-               do i=is,ie
-                  w(i,j) = w(i,j) / delp(i,j) + dw(i,j)
-               enddo
-            enddo
-          else
-            do j=js,je
-               do i=is,ie
-                  w(i,j) = w(i,j) / delp(i,j)
-               enddo
-            enddo
-          endif
-        endif
-#endif
 
 #ifdef SW_DYNAMICS
       if (test_case > 1) then
@@ -1061,34 +1028,42 @@
          js2 = max(2,js); je1 = min(npy-1,je+1)
       end if
 
+!!! TO DO: separate versions for nested and for cubed-sphere
       if (flagstruct%grid_type < 3) then
 
-         if ( js==1 .and. .not. nested ) then
-            do i=is,ie+1
-               vb(i,1) = dt5*(vt(i-1,1)+vt(i,1))       ! corner values are incorrect
+         if (nested) then
+            do j=js2,je1
+               do i=is2,ie1
+                  vb(i,j) = dt5*(vc(i-1,j)+vc(i,j)-(uc(i,j-1)+uc(i,j))*cosa(i,j))*rsina(i,j)
+               enddo
             enddo
-         endif
-         
-         do j=js2,je1
-            do i=is2,ie1
-               vb(i,j) = dt5*(vc(i-1,j)+vc(i,j)-(uc(i,j-1)+uc(i,j))*cosa(i,j))*rsina(i,j)
-            enddo
-            if ( is==1 .and. .not. nested ) then
-!               vb(1,j) = dt5*(vt(0,j)+vt(1,j)) 
-! 2-pt extrapolation from both sides:
-               vb(1,j) = dt4*(-vt(-1,j) + 3.*(vt(0,j)+vt(1,j)) - vt(2,j))
+         else
+            if ( js==1 ) then
+               do i=is,ie+1
+                  vb(i,1) = dt5*(vt(i-1,1)+vt(i,1))       ! corner values are incorrect
+               enddo
             endif
-            if ( (ie+1)==npx .and. .not. nested ) then
-!               vb(npx,j) = dt5*(vt(npx-1,j)+vt(npx,j))
-               ! 2-pt extrapolation from both sides:
-               vb(npx,j) = dt4*(-vt(npx-2,j) + 3.*(vt(npx-1,j)+vt(npx,j)) - vt(npx+1,j))
-            endif
-         enddo
 
-         if ( (je+1)==npy .and. .not. nested ) then
-            do i=is,ie+1
-               vb(i,npy) = dt5*(vt(i-1,npy)+vt(i,npy)) ! corner values are incorrect
+            do j=js2,je1
+               do i=is2,ie1
+                  vb(i,j) = dt5*(vc(i-1,j)+vc(i,j)-(uc(i,j-1)+uc(i,j))*cosa(i,j))*rsina(i,j)
+               enddo
+
+               if ( is==1 ) then
+                  ! 2-pt extrapolation from both sides:
+                  vb(1,j) = dt4*(-vt(-1,j) + 3.*(vt(0,j)+vt(1,j)) - vt(2,j))
+               endif
+               if ( (ie+1)==npx ) then
+                  ! 2-pt extrapolation from both sides:
+                  vb(npx,j) = dt4*(-vt(npx-2,j) + 3.*(vt(npx-1,j)+vt(npx,j)) - vt(npx+1,j))
+               endif
             enddo
+
+            if ( (je+1)==npy ) then
+               do i=is,ie+1
+                  vb(i,npy) = dt5*(vt(i-1,npy)+vt(i,npy)) ! corner values are incorrect
+               enddo
+            endif
          endif
          
       else
@@ -1109,30 +1084,43 @@
       enddo
 
       if (flagstruct%grid_type < 3) then
-         if ( is==1  .and. .not. nested) then
+
+         if (nested) then
+
             do j=js,je+1
-               ub(1,j) = dt5*(ut(1,j-1)+ut(1,j))       ! corner values are incorrect
+ 
+                  do i=is2,ie1
+                     ub(i,j) = dt5*(uc(i,j-1)+uc(i,j)-(vc(i-1,j)+vc(i,j))*cosa(i,j))*rsina(i,j)
+                  enddo
+
             enddo
-         endif
-         
-         do j=js,je+1
-            if ( (j==1 .or. j==npy)  .and. .not. nested) then
-               do i=is2,ie1
-!                  ub(i,j) = dt5*(ut(i,j-1)+ut(i,j))
-! 2-pt extrapolation from both sides:
-                  ub(i,j) = dt4*(-ut(i,j-2) + 3.*(ut(i,j-1)+ut(i,j)) - ut(i,j+1))
-               enddo
-            else
-               do i=is2,ie1
-                  ub(i,j) = dt5*(uc(i,j-1)+uc(i,j)-(vc(i-1,j)+vc(i,j))*cosa(i,j))*rsina(i,j)
+
+
+         else
+            if ( is==1 ) then
+               do j=js,je+1
+                  ub(1,j) = dt5*(ut(1,j-1)+ut(1,j))       ! corner values are incorrect
                enddo
             endif
-         enddo
-         
-         if ( (ie+1)==npx  .and. .not. nested) then
+
             do j=js,je+1
-               ub(npx,j) = dt5*(ut(npx,j-1)+ut(npx,j))       ! corner values are incorrect
+               if ( (j==1 .or. j==npy) ) then
+                  do i=is2,ie1
+                     ! 2-pt extrapolation from both sides:
+                     ub(i,j) = dt4*(-ut(i,j-2) + 3.*(ut(i,j-1)+ut(i,j)) - ut(i,j+1))
+                  enddo
+               else
+                  do i=is2,ie1
+                     ub(i,j) = dt5*(uc(i,j-1)+uc(i,j)-(vc(i-1,j)+vc(i,j))*cosa(i,j))*rsina(i,j)
+                  enddo
+               endif
             enddo
+
+            if ( (ie+1)==npx ) then
+               do j=js,je+1
+                  ub(npx,j) = dt5*(ut(npx,j-1)+ut(npx,j))       ! corner values are incorrect
+               enddo
+            endif
          endif
          
       else
@@ -1157,24 +1145,24 @@
 !-----------------------------------------
     if (.not. nested) then
       dt6 = dt / 6.
-      if ( gridstruct%sw_corner ) then
+      if ( sw_corner ) then
            ke(1,1) = dt6*( (ut(1,1) + ut(1,0)) * u(1,1) +  &
                            (vt(1,1) + vt(0,1)) * v(1,1) +  &
                            (ut(1,1) + vt(1,1)) * u(0,1) )
       endif
-      if ( gridstruct%se_corner ) then
+      if ( se_corner ) then
            i = npx
            ke(i,1) = dt6*( (ut(i,1) + ut(i,  0)) * u(i-1,1) + &
                            (vt(i,1) + vt(i-1,1)) * v(i,  1) + &
                            (ut(i,1) - vt(i-1,1)) * u(i,  1) )
       endif
-      if ( gridstruct%ne_corner ) then
+      if ( ne_corner ) then
            i = npx;      j = npy
            ke(i,j) = dt6*( (ut(i,j  ) + ut(i,j-1)) * u(i-1,j) +  &
                            (vt(i,j  ) + vt(i-1,j)) * v(i,j-1) +  &
                            (ut(i,j-1) + vt(i-1,j)) * u(i,j  )  )
       endif
-      if ( gridstruct%nw_corner ) then
+      if ( nw_corner ) then
            j = npy
            ke(1,j) = dt6*( (ut(1,  j) + ut(1,j-1)) * u(1,j  ) +  &
                            (vt(1,  j) + vt(0,  j)) * v(1,j-1) +  &
@@ -1201,6 +1189,42 @@
           enddo
        enddo
 
+     if ( .not. hydrostatic ) then
+        if( flagstruct%do_f3d ) then
+#ifdef ROT3
+            dt2 = 2.*dt
+            do j=js,je
+               do i=is,ie
+                  w(i,j) = w(i,j)/delp(i,j) + dt2*gridstruct%w00(i,j) *  &
+                         ( gridstruct%a11(i,j)*(u(i,j)+u(i,j+1)) +       &
+                           gridstruct%a12(i,j)*(v(i,j)+v(i+1,j)) )
+               enddo
+            enddo
+#endif
+        else
+            do j=js,je
+               do i=is,ie
+                  w(i,j) = w(i,j)/delp(i,j)
+               enddo
+            enddo
+        endif
+        if ( damp_w>1.E-5 ) then
+          do j=js,je
+             do i=is,ie
+                w(i,j) = w(i,j) + dw(i,j)
+             enddo
+          enddo
+        endif
+
+     endif
+#ifdef USE_COND
+     do j=js,je
+        do i=is,ie
+           q_con(i,j) = q_con(i,j)/delp(i,j)
+        enddo
+     enddo
+#endif
+
 !-----------------------------
 ! Compute divergence damping
 !-----------------------------
@@ -1208,45 +1232,65 @@
 
    if ( nord==0 ) then
 !         area ~ dxb*dyb*sin(alpha)
-      do j=js,je+1
-         if ( (j==1 .or. j==npy)  .and. .not. nested ) then
-            do i=is-1,ie+1
-               if (vc(i,j) > 0) then
-                  ptc(i,j) = u(i,j)*dyc(i,j)*sin_sg(i,j-1,4)
-               else
-                  ptc(i,j) = u(i,j)*dyc(i,j)*sin_sg(i,j,2)
-               end if
-            enddo
-         else
+
+      if (nested) then
+
+         do j=js,je+1
             do i=is-1,ie+1
                ptc(i,j) = (u(i,j)-0.5*(va(i,j-1)+va(i,j))*cosa_v(i,j))   &
-                        *dyc(i,j)*sina_v(i,j)
+                    *dyc(i,j)*sina_v(i,j)
             enddo
-         endif
-      enddo
-
-      do j=js-1,je+1
-         do i=is2,ie1
-            vort(i,j) = (v(i,j) - 0.5*(ua(i-1,j)+ua(i,j))*cosa_u(i,j))  &
-                        *dxc(i,j)*sina_u(i,j)
          enddo
-         if ( is ==  1  .and. .not. nested) then
-            if (uc(1,j) > 0) then
-               vort(1,  j) = v(1,  j)*dxc(1,  j)*sin_sg(0,j,3)
+
+         do j=js-1,je+1
+            do i=is2,ie1
+               vort(i,j) = (v(i,j) - 0.5*(ua(i-1,j)+ua(i,j))*cosa_u(i,j))  &
+                    *dxc(i,j)*sina_u(i,j)
+            enddo
+         enddo
+
+      else
+         do j=js,je+1
+
+            if ( (j==1 .or. j==npy)  ) then
+               do i=is-1,ie+1
+                  if (vc(i,j) > 0) then
+                     ptc(i,j) = u(i,j)*dyc(i,j)*sin_sg(4,i,j-1)
+                  else
+                     ptc(i,j) = u(i,j)*dyc(i,j)*sin_sg(2,i,j)
+                  end if
+               enddo
             else
-               vort(1,  j) = v(1,  j)*dxc(1,  j)*sin_sg(1,j,1)
+               do i=is-1,ie+1
+                  ptc(i,j) = (u(i,j)-0.5*(va(i,j-1)+va(i,j))*cosa_v(i,j))   &
+                       *dyc(i,j)*sina_v(i,j)
+               enddo
+            endif
+         enddo
+
+         do j=js-1,je+1
+            do i=is2,ie1
+               vort(i,j) = (v(i,j) - 0.5*(ua(i-1,j)+ua(i,j))*cosa_u(i,j))  &
+                    *dxc(i,j)*sina_u(i,j)
+            enddo
+            if ( is ==  1 ) then
+               if (uc(1,j) > 0) then
+                  vort(1,  j) = v(1,  j)*dxc(1,  j)*sin_sg(3,0,j)
+               else
+                  vort(1,  j) = v(1,  j)*dxc(1,  j)*sin_sg(1,1,j)
+               end if
             end if
-         end if
-         if ( (ie+1)==npx  .and. .not. nested) then 
-            if (uc(npx,j) > 0) then
-               vort(npx,j) = v(npx,j)*dxc(npx,j)* & 
-                    sin_sg(npx-1,j,3)
-            else
-               vort(npx,j) = v(npx,j)*dxc(npx,j)* &
-                    sin_sg(npx,j,1)
+            if ( (ie+1)==npx ) then 
+               if (uc(npx,j) > 0) then
+                  vort(npx,j) = v(npx,j)*dxc(npx,j)* & 
+                       sin_sg(3,npx-1,j)
+               else
+                  vort(npx,j) = v(npx,j)*dxc(npx,j)* &
+                       sin_sg(1,npx,j)
+               end if
             end if
-         end if
-      enddo
+         enddo
+      endif
 
       do j=js,je+1
          do i=is,ie+1
@@ -1255,10 +1299,10 @@
       enddo
 
 ! Remove the extra term at the corners:
-      if (gridstruct%sw_corner) delpc(1,    1) = delpc(1,    1) - vort(1,    0)
-      if (gridstruct%se_corner) delpc(npx,  1) = delpc(npx,  1) - vort(npx,  0)
-      if (gridstruct%ne_corner) delpc(npx,npy) = delpc(npx,npy) + vort(npx,npy)
-      if (gridstruct%nw_corner) delpc(1,  npy) = delpc(1,  npy) + vort(1,  npy)
+      if (sw_corner) delpc(1,    1) = delpc(1,    1) - vort(1,    0)
+      if (se_corner) delpc(npx,  1) = delpc(npx,  1) - vort(npx,  0)
+      if (ne_corner) delpc(npx,npy) = delpc(npx,npy) + vort(npx,npy)
+      if (nw_corner) delpc(1,  npy) = delpc(1,  npy) + vort(1,  npy)
 
       do j=js,je+1
          do i=is,ie+1
@@ -1284,7 +1328,7 @@
         nt = nord-n
 
         fill_c = (nt/=0) .and. (flagstruct%grid_type<3) .and.               &
-                 ( gridstruct%sw_corner .or. gridstruct%se_corner .or. gridstruct%ne_corner .or. gridstruct%nw_corner ) &
+                 ( sw_corner .or. se_corner .or. ne_corner .or. nw_corner ) &
                   .and. .not. nested
 
         if ( fill_c ) call fill_corners(divg_d, npx, npy, FILL=XDir, BGRID=.true.)
@@ -1309,10 +1353,10 @@
         enddo
 
 ! Remove the extra term at the corners:
-        if (gridstruct%sw_corner) divg_d(1,    1) = divg_d(1,    1) - uc(1,    0)
-        if (gridstruct%se_corner) divg_d(npx,  1) = divg_d(npx,  1) - uc(npx,  0)
-        if (gridstruct%ne_corner) divg_d(npx,npy) = divg_d(npx,npy) + uc(npx,npy)
-        if (gridstruct%nw_corner) divg_d(1,  npy) = divg_d(1,  npy) + uc(1,  npy)
+        if (sw_corner) divg_d(1,    1) = divg_d(1,    1) - uc(1,    0)
+        if (se_corner) divg_d(npx,  1) = divg_d(npx,  1) - uc(npx,  0)
+        if (ne_corner) divg_d(npx,npy) = divg_d(npx,npy) + uc(npx,npy)
+        if (nw_corner) divg_d(1,  npy) = divg_d(1,  npy) + uc(1,  npy)
 
      if ( .not. gridstruct%stretched_grid ) then
         do j=js-nt,je+1+nt
@@ -1327,12 +1371,18 @@
      if ( dddmp<1.E-5) then
           vort(:,:) = 0.
      else
-        do j=js,je+1
-           do i=is,ie+1
-              vort(i,j) = abs(dt*delpc(i,j))
-           enddo
-        enddo
-!!!!    call smag_corner(abs(dt), u, v, ua, va, vort)
+      if ( flagstruct%grid_type < 3 ) then
+! Interpolate relative vort to cell corners
+          call a2b_ord4(wk, vort, gridstruct, npx, npy, is, ie, js, je, ng, .false.)
+          do j=js,je+1
+             do i=is,ie+1
+! The following is an approxi form of Smagorinsky diffusion
+                vort(i,j) = abs(dt)*sqrt(delpc(i,j)**2 + vort(i,j)**2)
+             enddo
+          enddo
+      else  ! Correct form: works only for doubly preiodic domain
+          call smag_corner(abs(dt), u, v, ua, va, vort, bd, npx, npy, gridstruct, ng)
+      endif
      endif
 
      if (gridstruct%stretched_grid ) then
@@ -1346,12 +1396,6 @@
         do i=is,ie+1
            damp2 =  da_min_c*max(d2_bg, min(0.20, dddmp*vort(i,j)))  ! del-2
            vort(i,j) = damp2*delpc(i,j) + dd8*divg_d(i,j)
-!-Dynamic coeff 
-!!!        damp2 =  min(0.16, d4_bg*vort(i,j))
-!!!        dd8 = (da_min_c*damp2)**n2
-!!!        damp2 =  da_min_c*min(0.20, dddmp*vort(i,j))
-!!!        vort(i,j) = damp2*delpc(i,j) + dd8*divg_d(i,j)
-!---------------
              ke(i,j) = ke(i,j) + vort(i,j)
         enddo
      enddo
@@ -1372,11 +1416,27 @@
    endif
 
 ! Vorticity transport
+   if ( hydrostatic ) then
     do j=jsd,jed
        do i=isd,ied
           vort(i,j) = wk(i,j) + f0(i,j)
        enddo
     enddo
+   else
+    if ( flagstruct%do_f3d ) then
+       do j=jsd,jed
+       do i=isd,ied
+          vort(i,j) = wk(i,j) + f0(i,j)*z_rat(i,j)
+       enddo
+       enddo
+    else
+       do j=jsd,jed
+       do i=isd,ied
+          vort(i,j) = wk(i,j) + f0(i,j)
+       enddo
+       enddo
+    endif
+   endif
 
     call fv_tp_2d(vort, crx_adv, cry_adv, npx, npy, hord_vt, fx, fy, &
                   xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y)
@@ -1390,7 +1450,6 @@
           v(i,j) = ut(i,j) + ke(i,j) - ke(i,j+1) - fx(i,j)
        enddo
     enddo
-
 
 !--------------------------------------------------------
 ! damping applied to relative vorticity (wk):
@@ -1505,23 +1564,19 @@
       enddo
    enddo
 
-   if( nord>0 ) call copy_corners(d2, npx, npy, 1, nested, bd, &
-      gridstruct%sw_corner, gridstruct%se_corner, &
-      gridstruct%nw_corner, gridstruct%ne_corner)
+   if( nord>0 ) call copy_corners(d2, npx, npy, 1, nested, bd, sw_corner, se_corner, nw_corner, ne_corner)
    do j=js-nord,je+nord
       do i=is-nord,ie+nord+1
 !        fx2(i,j) = dy(i,j)*sina_u(i,j)*(d2(i-1,j)-d2(i,j))*rdxc(i,j)
-         fx2(i,j) = 0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))*dy(i,j)*(d2(i-1,j)-d2(i,j))*rdxc(i,j)
+         fx2(i,j) = 0.5*(sin_sg(3,i-1,j)+sin_sg(1,i,j))*dy(i,j)*(d2(i-1,j)-d2(i,j))*rdxc(i,j)
       enddo
    enddo
 
-   if( nord>0 ) call copy_corners(d2, npx, npy, 2, nested, bd, &
-      gridstruct%sw_corner, gridstruct%se_corner,  &
-      gridstruct%nw_corner, gridstruct%ne_corner)
+   if( nord>0 ) call copy_corners(d2, npx, npy, 2, nested, bd, sw_corner, se_corner, nw_corner, ne_corner)
    do j=js-nord,je+nord+1
       do i=is-nord,ie+nord
 !        fy2(i,j) = dx(i,j)*sina_v(i,j)*(d2(i,j-1)-d2(i,j))*rdyc(i,j)
-         fy2(i,j) = 0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))*dx(i,j)*(d2(i,j-1)-d2(i,j))*rdyc(i,j)
+         fy2(i,j) = 0.5*(sin_sg(4,i,j-1)+sin_sg(2,i,j))*dx(i,j)*(d2(i,j-1)-d2(i,j))*rdyc(i,j)
       enddo
    enddo
 
@@ -1534,30 +1589,28 @@
          enddo
       enddo
 
-      call copy_corners(d2, npx, npy, 1, nested, bd, &
-      gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
+      call copy_corners(d2, npx, npy, 1, nested, bd, sw_corner, se_corner, nw_corner, ne_corner)
 
       do j=js-nt,je+nt
          do i=is-nt,ie+nt+1
 !           fx2(i,j) = dy(i,j)*sina_u(i,j)*(d2(i,j)-d2(i-1,j))*rdxc(i,j)
-            fx2(i,j) = 0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))*dy(i,j)*(d2(i,j)-d2(i-1,j))*rdxc(i,j)
+            fx2(i,j) = 0.5*(sin_sg(3,i-1,j)+sin_sg(1,i,j))*dy(i,j)*(d2(i,j)-d2(i-1,j))*rdxc(i,j)
          enddo
       enddo
 
       call copy_corners(d2, npx, npy, 2, nested, bd, &
-      gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
+      sw_corner, se_corner, nw_corner, ne_corner)
 
       do j=js-nt,je+nt+1
          do i=is-nt,ie+nt
 !           fy2(i,j) = dx(i,j)*sina_v(i,j)*(d2(i,j)-d2(i,j-1))*rdyc(i,j)
-            fy2(i,j) = 0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))*dx(i,j)*(d2(i,j)-d2(i,j-1))*rdyc(i,j)
+            fy2(i,j) = 0.5*(sin_sg(4,i,j-1)+sin_sg(2,i,j))*dx(i,j)*(d2(i,j)-d2(i,j-1))*rdyc(i,j)
          enddo
       enddo
    enddo
    endif
 
  end subroutine del6_vt_flux
-
 
 
  subroutine divergence_corner(u, v, ua, va, divg_d, gridstruct, flagstruct, bd)
@@ -1629,12 +1682,13 @@
   else
 #ifdef USE_UPWIND
     do j=js,je+1
+!!! TO DO: separate versions for nested and for cubed-sphere
        if ( (j==1 .or. j==npy)  .and. .not. nested ) then
             do i=is-1,ie+1
                if ( va(i,j) + va(i,j-1) > 0. ) then 
-                   uf(i,j) = u(i,j)*dyc(i,j) * sin_sg(i,j-1,4)
+                   uf(i,j) = u(i,j)*dyc(i,j) * sin_sg(4,i,j-1)
                else
-                   uf(i,j) = u(i,j)*dyc(i,j) * sin_sg(i,j,2)
+                   uf(i,j) = u(i,j)*dyc(i,j) * sin_sg(2,i,j)
                end if
             enddo
        else
@@ -1652,16 +1706,16 @@
        enddo
        if (  is == 1 .and. .not. nested) then
           if (ua(1,j) + ua(0,j) > 0.) then
-             vf(1,j) = v(1,j)*dxc(1,j)*sin_sg(0,j,3)
+             vf(1,j) = v(1,j)*dxc(1,j)*sin_sg(3,0,j)
           else
-             vf(1,j) = v(1,j)*dxc(1,j)*sin_sg(1,j,1)
+             vf(1,j) = v(1,j)*dxc(1,j)*sin_sg(1,1,j)
           end if
        end if
        if ( (ie+1)==npx .and. .not. nested ) then
           if (ua(npx-1,j) + ua(npx,j) > 0.) then
-             vf(npx,j) = v(npx,j)*dxc(npx,j)*sin_sg(npx-1,j,3)
+             vf(npx,j) = v(npx,j)*dxc(npx,j)*sin_sg(3,npx-1,j)
           else
-             vf(npx,j) = v(npx,j)*dxc(npx,j)*sin_sg(npx,j,1)
+             vf(npx,j) = v(npx,j)*dxc(npx,j)*sin_sg(1,npx,j)
           end if
        end if
     enddo
@@ -1674,23 +1728,23 @@
     do j=js,je+1
        if ( j==1 .or. j==npy ) then
          do i=is-1,ie+1
-            uf(i,j) = u(i,j)*dyc(i,j)*0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))
+            uf(i,j) = u(i,j)*dyc(i,j)*0.5*(sin_sg(4,i,j-1)+sin_sg(2,i,j))
          enddo
        else
          do i=is-1,ie+1
-            uf(i,j) = (u(i,j)-0.25*(va(i,j-1)+va(i,j))*(cos_sg(i,j-1,4)+cos_sg(i,j,2)))   &
-                                        * dyc(i,j)*0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))
+            uf(i,j) = (u(i,j)-0.25*(va(i,j-1)+va(i,j))*(cos_sg(4,i,j-1)+cos_sg(2,i,j)))   &
+                                        * dyc(i,j)*0.5*(sin_sg(4,i,j-1)+sin_sg(2,i,j))
          enddo
        endif
     enddo
 
     do j=js-1,je+1
        do i=is2,ie1
-          vf(i,j) = (v(i,j) - 0.25*(ua(i-1,j)+ua(i,j))*(cos_sg(i-1,j,3)+cos_sg(i,j,1)))  &
-                                         *dxc(i,j)*0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))
+          vf(i,j) = (v(i,j) - 0.25*(ua(i-1,j)+ua(i,j))*(cos_sg(3,i-1,j)+cos_sg(1,i,j)))  &
+                                         *dxc(i,j)*0.5*(sin_sg(3,i-1,j)+sin_sg(1,i,j))
        enddo
-       if (  is   ==  1 ) vf(1,  j) = v(1,  j)*dxc(1,  j)*0.5*(sin_sg(0,j,3)+sin_sg(1,j,1))
-       if ( (ie+1)==npx ) vf(npx,j) = v(npx,j)*dxc(npx,j)*0.5*(sin_sg(npx-1,j,3)+sin_sg(npx,j,1))
+       if (  is   ==  1 ) vf(1,  j) = v(1,  j)*dxc(1,  j)*0.5*(sin_sg(3,0,j)+sin_sg(1,1,j))
+       if ( (ie+1)==npx ) vf(npx,j) = v(npx,j)*dxc(npx,j)*0.5*(sin_sg(3,npx-1,j)+sin_sg(1,npx,j))
     enddo
 #endif
 
@@ -1701,10 +1755,10 @@
     enddo
 
 ! Remove the extra term at the corners:
-    if (gridstruct%sw_corner) divg_d(1,    1) = divg_d(1,    1) - vf(1,    0)
-    if (gridstruct%se_corner) divg_d(npx,  1) = divg_d(npx,  1) - vf(npx,  0)
-    if (gridstruct%ne_corner) divg_d(npx,npy) = divg_d(npx,npy) + vf(npx,npy)
-    if (gridstruct%nw_corner) divg_d(1,  npy) = divg_d(1,  npy) + vf(1,  npy)
+    if (sw_corner) divg_d(1,    1) = divg_d(1,    1) - vf(1,    0)
+    if (se_corner) divg_d(npx,  1) = divg_d(npx,  1) - vf(npx,  0)
+    if (ne_corner) divg_d(npx,npy) = divg_d(npx,npy) + vf(npx,npy)
+    if (nw_corner) divg_d(1,  npy) = divg_d(1,  npy) + vf(1,  npy)
 
     do j=js,je+1
        do i=is,ie+1
@@ -1783,15 +1837,15 @@
 
        do j=jsd+1,jed
           do i=isd,ied
-            uf(i,j) = (u(i,j)-0.25*(va(i,j-1)+va(i,j))*(cos_sg(i,j-1,4)+cos_sg(i,j,2)))   &
-                                        * dyc(i,j)*0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))
+            uf(i,j) = (u(i,j)-0.25*(va(i,j-1)+va(i,j))*(cos_sg(4,i,j-1)+cos_sg(2,i,j)))   &
+                                        * dyc(i,j)*0.5*(sin_sg(4,i,j-1)+sin_sg(2,i,j))
           enddo
        enddo
 
        do j=jsd,jed
           do i=isd+1,ied
-             vf(i,j) = (v(i,j) - 0.25*(ua(i-1,j)+ua(i,j))*(cos_sg(i-1,j,3)+cos_sg(i,j,1)))  &
-                  *dxc(i,j)*0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))
+             vf(i,j) = (v(i,j) - 0.25*(ua(i-1,j)+ua(i,j))*(cos_sg(3,i-1,j)+cos_sg(1,i,j)))  &
+                  *dxc(i,j)*0.5*(sin_sg(3,i-1,j)+sin_sg(1,i,j))
           enddo
        enddo
 
@@ -1871,7 +1925,7 @@ end subroutine divergence_corner_nest
 
   is2 = max(2,is); ie1 = min(npx-1,ie+1)
 
-! Smag = sqrt [ T*82 + S**2 ]:  unit = 1/s
+! Smag = sqrt [ T**2 + S**2 ]:  unit = 1/s
 ! where T = du/dx - dv/dy;   S = du/dy + dv/dx
 ! Compute tension strain at corners:
        do j=js,je+1
@@ -1889,6 +1943,7 @@ end subroutine divergence_corner_nest
              smag_c(i,j) = rarea_c(i,j)*(vt(i,j-1)-vt(i,j)-ut(i-1,j)+ut(i,j))
           enddo
        enddo
+! Fix the corners?? if grid_type /= 4
 
 ! Compute shear strain:
        do j=jsd,jed+1
@@ -1947,8 +2002,7 @@ end subroutine divergence_corner_nest
       js  = bd%js
       je  = bd%je
 
-! if (nested .or. (iord >= 8 .and. iord <= 10)) then
- if (nested) then
+ if ( nested .or. grid_type>3 ) then
     is3 = is-1        ; ie3 = ie+1
  else
     is3 = max(3,is-1) ; ie3 = min(npx-3,ie+1)
@@ -1979,6 +2033,7 @@ end subroutine divergence_corner_nest
         enddo
 
 ! Fix slopes near edges:
+!!! TO DO: separate versions for nested and for cubed-sphere
       if (grid_type < 3 .and. .not. nested) then
         if ( is==1 ) then
            if ( j==1 .or. j==npy ) then
@@ -2124,107 +2179,66 @@ end subroutine divergence_corner_nest
         enddo
      enddo
 
- case (6)
+ case (6) !Now just plain ol' PPM
 
      do j=js,je+1
-
-        do i=is-3,ie+2
-           dq(i) = u(i+1,j) - u(i,j)
+!            is3 = max(3,is-1) ; ie3 = min(npx-3,ie+1)
+        do i=is3,ie3+1
+           al(i) = p1*(u(i-1,j)+u(i,j)) + p2*(u(i-2,j)+u(i+1,j))
+        enddo
+        do i=is3,ie3
+           bl(i) = al(i  ) - u(i,j)
+           br(i) = al(i+1) - u(i,j)
         enddo
 
-        do i=is-2, ie+2
-           if ( dq(i-1)*dq(i) > 0. ) then
-                extm(i) = .false.
-           else
-                extm(i) = .true.
-           endif
-        enddo
-
-        if (nested) then
-
-        do i=is-1,ie+1
-           if ( extm(i) .and. (extm(i-1) .or. extm(i+1)) ) then
-!          if ( extm(i-1) .and. extm(i) .and. extm(i+1) ) then
-                bl(i) = 0.
-                br(i) = 0.
-           else
-                bl(i) = b5*u(i-2,j) + b4*u(i-1,j) + b3*u(i,j) + b2*u(i+1,j) + b1*u(i+2,j)
-                br(i) = b1*u(i-2,j) + b2*u(i-1,j) + b3*u(i,j) + b4*u(i+1,j) + b5*u(i+2,j)
-           endif
-        enddo
-
-        else
-
-        do i=max(3,is-1),min(npx-3,ie+1)
-!!!!          if ( extm(i) .and. (extm(i-1) .or. extm(i+1)) ) then
-           if ( extm(i-1) .and. extm(i) .and. extm(i+1) ) then
-                bl(i) = 0.
-                br(i) = 0.
-           else
-                bl(i) = b5*u(i-2,j) + b4*u(i-1,j) + b3*u(i,j) + b2*u(i+1,j) + b1*u(i+2,j)
-                br(i) = b1*u(i-2,j) + b2*u(i-1,j) + b3*u(i,j) + b4*u(i+1,j) + b5*u(i+2,j)
-           endif
-        enddo
-
-        if (grid_type < 3) then
+      if (.not.nested .and. grid_type < 3) then
         if ( is==1 ) then
-             br(2) = p1*(u(2,j)+u(3,j)) + p2*(u(1,j)+u(4,j)) - u(2,j)
-                xt = c3*u(1,j) + c2*u(2,j) + c1*u(3,j)
-             bl(2) = xt - u(2,j)
              if( j==1 .or. j==npy ) then
                  bl(0) = 0.   ! out
                  br(0) = 0.   ! edge
                  bl(1) = 0.   ! edge
                  br(1) = 0.   ! in
+                 bl(2) = c3*u(1,j) + c2*u(2,j) + c1*u(3,j) - u(2,j)
              else
-             br(1) = xt - u(1,j)
-              x0L = 0.5*((2.*dx(0,j)+dx(-1,j))*(u(0,j))   &
-                 - dx(0,j)*(u(-1,j)))/(dx(0,j)+dx(-1,j))
-              x0R = 0.5*((2.*dx(1,j)+dx(2,j))*(u(1,j))   &
-                 - dx(1,j)*(u(2,j)))/(dx(1,j)+dx(2,j))
-             xt = x0L + x0R
-             bl(1) = xt - u(1,j)
-             br(0) = xt - u(0,j)
-                xt = c1*u(-2,j) + c2*u(-1,j) + c3*u(0,j)
-             bl(0) = xt - u(0,j)
+                 bl(0) = c1*u(-2,j) + c2*u(-1,j) + c3*u(0,j) - u(0,j)
+             xt = 0.5*( ((2.*dx(0,j)+dx(-1,j))*(u(0,j))-dx(0,j)*u(-1,j))/(dx(0,j)+dx(-1,j))  &
+                +       ((2.*dx(1,j)+dx( 2,j))*(u(1,j))-dx(1,j)*u( 2,j))/(dx(1,j)+dx( 2,j)) )
+                 br(0) = xt - u(0,j)
+                 bl(1) = xt - u(1,j)
+                 xt = c3*u(1,j) + c2*u(2,j) + c1*u(3,j)
+                 br(1) = xt - u(1,j)
+                 bl(2) = xt - u(2,j)
              endif
+             br(2) = al(3) - u(2,j)
         endif
-
         if ( (ie+1)==npx ) then
-             bl(npx-2) = p1*(u(npx-2,j)+u(npx-3,j)) + p2*(u(npx-4,j)+u(npx-1,j)) - u(npx-2,j)
+             bl(npx-2) = al(npx-2) - u(npx-2,j)
              xt = c1*u(npx-3,j) + c2*u(npx-2,j) + c3*u(npx-1,j)
              br(npx-2) = xt - u(npx-2,j)
+             bl(npx-1) = xt - u(npx-1,j)
              if( j==1 .or. j==npy ) then
                  bl(npx-1) = 0.  ! in
                  br(npx-1) = 0.  ! edge
                  bl(npx  ) = 0.  ! edge
                  br(npx  ) = 0.  ! out
              else
-                 bl(npx-1) = xt - u(npx-1,j)
-                 x0L = 0.5*( (2.*dx(npx-1,j)+dx(npx-2,j))*(u(npx-1,j))  &
-                      - dx(npx-1,j)*(u(npx-2,j)))/(dx(npx-1,j)+dx(npx-2,j))
-                 x0R = 0.5*( (2.*dx(npx,j)+dx(npx+1,j))*(u(npx,j))  &
-                      - dx(npx,j)*(u(npx+1,j)))/(dx(npx,j)+dx(npx+1,j))
-                 xt = x0L + x0R
+             xt = 0.5*( ( (2.*dx(npx-1,j)+dx(npx-2,j))*u(npx-1,j)-dx(npx-1,j)*u(npx-2,j))/(dx(npx-1,j)+dx(npx-2,j)) &
+                +       ( (2.*dx(npx  ,j)+dx(npx+1,j))*u(npx  ,j)-dx(npx  ,j)*u(npx+1,j))/(dx(npx  ,j)+dx(npx+1,j)) )
                  br(npx-1) = xt - u(npx-1,j)
                  bl(npx  ) = xt - u(npx  ,j)
-                      xt = c3*u(npx,j) + c2*u(npx+1,j) + c1*u(npx+2,j)
-                 br(npx) = xt - u(npx,j)
+                 br(npx) = c3*u(npx,j) + c2*u(npx+1,j) + c1*u(npx+2,j) - u(npx,j)
              endif
         endif
-        endif
-
-     endif
-
-        do i=is,ie+1
-           if( c(i,j)>0. ) then
-                     cfl = c(i,j)*rdx(i-1,j)
-               flux(i,j) = u(i-1,j) + (1.-cfl)*(br(i-1)-cfl*(bl(i-1)+br(i-1)))
-           else
-                     cfl = c(i,j)*rdx(i,j)
-               flux(i,j) = u(i,  j) + (1.+cfl)*(bl(i  )+cfl*(bl(i  )+br(i  )))
-           endif
-        enddo
+      endif
+       do i=is,ie+1
+          if( c(i,j)>0. ) then
+              cfl = c(i,j)*rdx(i-1,j)
+              flux(i,j) = u(i-1,j) + (1.-cfl)*(br(i-1)-cfl*(bl(i-1)+br(i-1)))
+          else
+              cfl = c(i,j)*rdx(i,j)
+              flux(i,j) = u(i,  j) + (1.+cfl)*(bl(i  )+cfl*(bl(i  )+br(i  )))
+          endif
+       enddo
      enddo
 
  case default
@@ -2293,6 +2307,7 @@ end subroutine divergence_corner_nest
 !--------------
 ! fix the edges
 !--------------
+!!! TO DO: separate versions for nested and for cubed-sphere
            if ( is==1 .and. .not. nested) then
               br(2) = al(3) - u(2,j)
               xt = s15*u(1,j) + s11*u(2,j) - s14*dm(2)
@@ -2417,13 +2432,11 @@ end subroutine divergence_corner_nest
       js  = bd%js
       je  = bd%je
 
-! if (nested .or. (jord >= 8 .and. jord <= 10) ) then
- if (nested ) then
+ if ( nested .or. grid_type>3 ) then
     js3 = js-1;        je3 = je+1
  else
     js3 = max(3,js-1); je3 = min(npy-3,je+1)
  end if
-
 
  select case ( jord )
  case (1)
@@ -2626,71 +2639,30 @@ end subroutine divergence_corner_nest
 
  case (6)
 
-   do j=js-3,je+2
+   do j=js3,je3+1
       do i=is,ie+1
-         dq(i,j) = v(i,j+1) - v(i,j)
+         al(i,j) = p1*(v(i,j-1)+v(i,j)) + p2*(v(i,j-2)+v(i,j+1))
       enddo
    enddo
-   do j=js-2,je+2
+   do j=js3,je3
       do i=is,ie+1
-         if ( dq(i,j-1)*dq(i,j) > 0. ) then
-              extm(i,j) = .false.
-         else
-              extm(i,j) = .true.
-         endif
-      enddo
-   enddo
-   if (nested) then
-
-   do j=js-1,je+1
-      do i=is,ie+1
-         if ( extm(i,j) .and. (extm(i,j-1) .or. extm(i,j+1)) ) then
-!        if ( extm(i,j-1) .and. extm(i,j) .and. extm(i,j+1) ) then
-              bl(i,j) = 0.
-              br(i,j) = 0.
-         else
-              bl(i,j) = b5*v(i,j-2) + b4*v(i,j-1) + b3*v(i,j) + b2*v(i,j+1) + b1*v(i,j+2)
-              br(i,j) = b1*v(i,j-2) + b2*v(i,j-1) + b3*v(i,j) + b4*v(i,j+1) + b5*v(i,j+2)
-         endif
+          bl(i,j) = al(i,j  ) - v(i,j)
+          br(i,j) = al(i,j+1) - v(i,j)
       enddo
    enddo
 
-
-
-else
-
-
-   do j=max(3,js-1),min(npy-3,je+1)
-      do i=is,ie+1
-!!!!        if ( extm(i,j) .and. (extm(i,j-1) .or. extm(i,j+1)) ) then
-         if ( extm(i,j-1) .and. extm(i,j) .and. extm(i,j+1) ) then
-              bl(i,j) = 0.
-              br(i,j) = 0.
-         else
-              bl(i,j) = b5*v(i,j-2) + b4*v(i,j-1) + b3*v(i,j) + b2*v(i,j+1) + b1*v(i,j+2)
-              br(i,j) = b1*v(i,j-2) + b2*v(i,j-1) + b3*v(i,j) + b4*v(i,j+1) + b5*v(i,j+2)
-         endif
-      enddo
-   enddo
-
-   if (grid_type < 3) then
-   if( js==1 ) then
+   if ( .not.nested .and. grid_type < 3) then
+     if( js==1 ) then
        do i=is,ie+1
-          br(i,2) = p1*(v(i,2)+v(i,3)) + p2*(v(i,1)+v(i,4)) - v(i,2)
-               xt = c3*v(i,1) + c2*v(i,2) + c1*v(i,3)
+          bl(i,0) = c1*v(i,-2) + c2*v(i,-1) + c3*v(i,0) - v(i,0)
+          xt = 0.5*( ((2.*dy(i,0)+dy(i,-1))*v(i,0)-dy(i,0)*v(i,-1))/(dy(i,0)+dy(i,-1)) &
+             +       ((2.*dy(i,1)+dy(i, 2))*v(i,1)-dy(i,1)*v(i, 2))/(dy(i,1)+dy(i, 2)) )
+          br(i,0) = xt - v(i,0)
+          bl(i,1) = xt - v(i,1)
+          xt = c3*v(i,1) + c2*v(i,2) + c1*v(i,3)
           br(i,1) = xt - v(i,1)
           bl(i,2) = xt - v(i,2)
-
-          bl(i,0) = c1*v(i,-2) + c2*v(i,-1) + c3*v(i,0) - v(i,0)
-
-            x0L = 0.5*( (2.*dy(i,0)+dy(i,-1))*(v(i,0))   &
-               - dy(i,0)*(v(i,-1)))/(dy(i,0)+dy(i,-1))
-            x0R = 0.5*( (2.*dy(i,1)+dy(i,2))*(v(i,1))   &
-               - dy(i,1)*(v(i,2)))/(dy(i,1)+dy(i,2))
-            xt = x0L + x0R
-
-          bl(i,1) = xt - v(i,1)
-          br(i,0) = xt - v(i,0)
+          br(i,2) = al(i,3) - v(i,2)
        enddo
        if ( is==1 ) then
             bl(1,0) = 0.  ! out
@@ -2705,24 +2677,17 @@ else
             br(npx,1) = 0.   ! in
        endif
    endif
-
    if( (je+1)==npy ) then
        do i=is,ie+1
-            bl(i,npy-2) = p1*(v(i,npy-3)+v(i,npy-2)) + p2*(v(i,npy-4)+v(i,npy-1)) - v(i,npy-2)
-            xt = c1*v(i,npy-3) + c2*v(i,npy-2) + c3*v(i,npy-1)
-
-            br(i,npy-2) = xt - v(i,npy-2)
-            bl(i,npy-1) = xt - v(i,npy-1)
-            br(i,npy) = c3*v(i,npy)+ c2*v(i,npy+1) + c1*v(i,npy+2) - v(i,npy)
-            !xt = 0.5*((2.*dy(i,npy-1)+dy(i,npy-2))*(v(i,npy-1)+v(i,npy)) -  &
-            !     dy(i,npy-1)*(v(i,npy-2)+v(i,npy+1)))/(dy(i,npy-1)+dy(i,npy-2))
-            x0L= 0.5*((2.*dy(i,npy-1)+dy(i,npy-2))*(v(i,npy-1)) -  &
-                 dy(i,npy-1)*(v(i,npy-2)))/(dy(i,npy-1)+dy(i,npy-2))
-            x0R= 0.5*((2.*dy(i,npy)+dy(i,npy+1))*(v(i,npy)) -  &
-                 dy(i,npy)*(v(i,npy+1)))/(dy(i,npy)+dy(i,npy+1))
-            xt = x0L + x0R
-            br(i,npy-1) = xt - v(i,npy-1)
-            bl(i,npy  ) = xt - v(i,npy)
+          bl(i,npy-2) = al(i,npy-2) - v(i,npy-2)
+          xt = c1*v(i,npy-3) + c2*v(i,npy-2) + c3*v(i,npy-1)
+          br(i,npy-2) = xt - v(i,npy-2)
+          bl(i,npy-1) = xt - v(i,npy-1)
+          xt = 0.5*( ((2.*dy(i,npy-1)+dy(i,npy-2))*v(i,npy-1)-dy(i,npy-1)*v(i,npy-2))/(dy(i,npy-1)+dy(i,npy-2)) &
+             +       ((2.*dy(i,npy  )+dy(i,npy+1))*v(i,npy  )-dy(i,npy  )*v(i,npy+1))/(dy(i,npy  )+dy(i,npy+1)) )
+          br(i,npy-1) = xt - v(i,npy-1)
+          bl(i,npy  ) = xt - v(i,npy)
+          br(i,npy) = c3*v(i,npy)+ c2*v(i,npy+1) + c1*v(i,npy+2) - v(i,npy)
        enddo
        if ( is==1 ) then
             bl(1,npy-1) = 0.  ! in
@@ -2736,22 +2701,21 @@ else
             bl(npx,npy  ) = 0.  ! edge
             br(npx,npy  ) = 0.  ! out
        endif
+     endif
    endif
-   endif
-
-endif !nested
 
    do j=js,je+1
       do i=is,ie+1
-         if( c(i,j)>0. ) then
-                  cfl = c(i,j)*rdy(i,j-1)
+         if(c(i,j)>0.) then
+            cfl = c(i,j)*rdy(i,j-1)
             flux(i,j) = v(i,j-1) + (1.-cfl)*(br(i,j-1)-cfl*(bl(i,j-1)+br(i,j-1)))
          else
-                  cfl = c(i,j)*rdy(i,j)
+            cfl = c(i,j)*rdy(i,j)
             flux(i,j) = v(i,j  ) + (1.+cfl)*(bl(i,j  )+cfl*(bl(i,j  )+br(i,j  )))
          endif
       enddo
    enddo
+
 
  case default
 ! jord= 8, 9, 10
@@ -2870,7 +2834,6 @@ endif !nested
          j=2
          call pert_ppm(ie-is+2, v(is,j), bl(is,j), br(is,j), -1)
       endif
-
       if( (je+1)==npy  .and. .not. nested) then
          do i=is,ie+1
             bl(i,npy-2) = al(i,npy-2) - v(i,npy-2)
@@ -2955,8 +2918,7 @@ end subroutine ytp_v
 !    in the halo
 
  subroutine d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4, gridstruct, &
-      bd, npx, npy, nested, grid_type, &
-      sw_corner, se_corner, nw_corner, ne_corner)
+                       bd, npx, npy, nested, grid_type)
   type(fv_grid_bounds_type), intent(IN) :: bd
   logical, intent(in):: dord4
   real, intent(in) ::  u(bd%isd:bd%ied,bd%jsd:bd%jed+1)
@@ -2965,7 +2927,7 @@ end subroutine ytp_v
   real, intent(out), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1):: vc
   real, intent(out), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed  ):: ua, va, ut, vt
   integer, intent(IN) :: npx, npy, grid_type
-  logical, intent(IN) :: sw_corner, se_corner, nw_corner, ne_corner, nested
+  logical, intent(IN) :: nested
   type(fv_grid_type), intent(IN), target :: gridstruct
 ! Local 
   real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: utmp, vtmp
@@ -3012,17 +2974,6 @@ end subroutine ytp_v
   endif
 
 ! Initialize the non-existing corner regions
-  utmp=1.e25
-  vtmp=1.e25
-
-!!$!!!!!!!! DEBUG CODE
-!!$  ua=1.e26
-!!$  va=1.e26
-!!$  uc=1.e25
-!!$  vc=1.e25
-!!$  ut=1.e25
-!!$  vt=1.e25
-!!$!!!!!!!! END DEBUG CODE
 
   if ( nested) then  
 
@@ -3056,7 +3007,6 @@ end subroutine ytp_v
      enddo
 
   else
-
 
      !----------
      ! Interior:
@@ -3202,14 +3152,10 @@ end subroutine ytp_v
 !           uc(1,j) = 0.25*(-utmp(-1,j) + 3.*(utmp(0,j)+utmp(1,j)) - utmp(2,j))
            ut(1,j) = edge_interpolate4(ua(-1:2,j), dxa(-1:2,j))
            !Want to use the UPSTREAM value
-#ifdef UPSTREAM_FIXED
            if (ut(1,j) > 0.) then
-#else
-           if (ut(1,j) < 0.) then
-#endif
-              uc(1,j) = ut(1,j)*sin_sg(0,j,3)
+              uc(1,j) = ut(1,j)*sin_sg(3,0,j)
            else
-              uc(1,j) = ut(1,j)*sin_sg(1,j,1)
+              uc(1,j) = ut(1,j)*sin_sg(1,1,j)
            end if
 #else
 ! 3-pt extrapolation: grid symmetry assumed --------------------------------
@@ -3232,14 +3178,10 @@ end subroutine ytp_v
         i=npx
                    ut(i,j) = 0.25*(-ua(i-2,j) + 3.*(ua(i-1,j)+ua(i,j)) - ua(i+1,j))
         ut(i,j) = edge_interpolate4(ua(i-2:i+1,j), dxa(i-2:i+1,j))
-#ifdef UPSTREAM_FIXED
         if (ut(i,j) > 0.) then
-#else
-        if (ut(i,j) < 0.) then
-#endif
-           uc(i,j) = ut(i,j)*sin_sg(i-1,j,3)
+           uc(i,j) = ut(i,j)*sin_sg(3,i-1,j)
         else
-           uc(i,j) = ut(i,j)*sin_sg(i,j,1)
+           uc(i,j) = ut(i,j)*sin_sg(1,i,j)
         end if
 #else
 ! 3-pt extrapolation --------------------------------------------------------
@@ -3308,14 +3250,10 @@ end subroutine ytp_v
            !vt(i,j) = 0.25*(-va(i,j-2) + 3.*(va(i,j-1)+va(i,j)) - va(i,j+1))
 !           vc(i,j) = 0.25*(-vtmp(i,j-2) + 3.*(vtmp(i,j-1)+vtmp(i,j)) - vtmp(i,j+1))
            vt(i,j) = edge_interpolate4(va(i,-1:2), dya(i,-1:2))
-#ifdef UPSTREAM_FIXED
            if (vt(i,j) > 0.) then
-#else
-           if (vt(i,j) < 0.) then
-#endif
-              vc(i,j) = vt(i,j)*sin_sg(i,j-1,4)
+              vc(i,j) = vt(i,j)*sin_sg(4,i,j-1)
            else
-              vc(i,j) = vt(i,j)*sin_sg(i,j,2)
+              vc(i,j) = vt(i,j)*sin_sg(2,i,j)
            end if
 #else
 ! 3-pt extrapolation -----------------------------------------
@@ -3342,14 +3280,10 @@ end subroutine ytp_v
            vt(i,j) = 0.25*(-va(i,j-2) + 3.*(va(i,j-1)+va(i,j)) - va(i,j+1))
 !           vc(i,j) = 0.25*(-vtmp(i,j-2) + 3.*(vtmp(i,j-1)+vtmp(i,j)) - vtmp(i,j+1))
            vt(i,j) = edge_interpolate4(va(i,j-2:j+1), dya(i,j-2:j+1))
-#ifdef UPSTREAM_FIXED
            if (vt(i,j) > 0.) then
-#else
-           if (vt(i,j) < 0.) then
-#endif
-              vc(i,j) = vt(i,j)*sin_sg(i,j-1,4)
+              vc(i,j) = vt(i,j)*sin_sg(4,i,j-1)
            else
-              vc(i,j) = vt(i,j)*sin_sg(i,j,2)
+              vc(i,j) = vt(i,j)*sin_sg(2,i,j)
            end if
 #else
 ! 3-pt extrapolation --------------------------------------------------------

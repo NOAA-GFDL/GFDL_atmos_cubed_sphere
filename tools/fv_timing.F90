@@ -36,8 +36,8 @@
       logical, private :: module_initialized = .false.
 
 !---- version number -----
-      character(len=128) :: version = '$Id: fv_timing.F90,v 20.0 2013/12/13 23:07:42 fms Exp $'
-      character(len=128) :: tagname = '$Name: tikal_201409 $'
+      character(len=128) :: version = '$Id$'
+      character(len=128) :: tagname = '$Name$'
 
       contains
          subroutine timing_init
