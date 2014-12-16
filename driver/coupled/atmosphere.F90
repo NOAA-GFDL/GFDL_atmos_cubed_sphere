@@ -136,6 +136,11 @@ character(len=7)   :: mod_name = 'atmos'
   real, allocatable, dimension(:,:,:,:) :: q_dt
   real, allocatable :: pref(:,:), dum1d(:)
 
+!---need to define do_adiabatic_init to satisfy a reference when nwp_nudge is not the default
+#if defined(ATMOS_NUDGE) || defined(CLIMATE_NUDGE) || defined(ADA_NUDGE)
+   logical :: do_adiabatic_init
+#endif
+
 contains
 
 
@@ -859,9 +864,11 @@ contains
    fv_time = Time_next
    call get_time (fv_time, seconds,  days)
 
+#if !defined(ATMOS_NUDGE) && !defined(CLIMATE_NUDGE) && !defined(ADA_NUDGE)
    if ( .not.forecast_mode .and. Atm(mytile)%flagstruct%nudge .and. Atm(mytile)%flagstruct%na_init>0 ) then
         if(mod(seconds, 21600)==0)  call adiabatic_init_drv (Time_prev, Time_next)
    endif
+#endif
 
    call nullify_domain()
    call timing_on('FV_DIAG')
