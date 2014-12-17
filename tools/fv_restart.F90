@@ -500,7 +500,8 @@ contains
 ! Check tracers:
       do i=1, ntprog
           call get_tracer_names ( MODEL_ATMOS, i, tname )
-          call pmaxmn_g(trim(tname), Atm(n)%q(isd,jsd,1,i:i), isc, iec, jsc, jec, npz, 1., Atm(n)%gridstruct%area, Atm(n)%domain)
+          call pmaxmn_g(trim(tname), Atm(n)%q(isd:ied,jsd:jed,1:npz,i:i), isc, iec, jsc, jec, npz, &
+                        1., Atm(n)%gridstruct%area, Atm(n)%domain)
       enddo
 #endif
       call prt_maxmin('U ', Atm(n)%u(isc:iec,jsc:jec,1:npz), isc, iec, jsc, jec, 0, npz, 1.)
