@@ -38,7 +38,7 @@ module fv_io_mod
                                      save_restart, restore_state, &
                                      set_domain, nullify_domain, set_filename_appendix, &
                                      get_mosaic_tile_file, get_instance_filename, & 
-                                     save_restart_border, restore_state_border
+                                     save_restart_border, restore_state_border, free_restart_type
   use mpp_mod,                 only: mpp_error, FATAL, NOTE, WARNING, mpp_root_pe, &
                                      mpp_sync, mpp_pe, mpp_declare_pelist
   use mpp_domains_mod,         only: domain2d, EAST, WEST, NORTH, CENTER, SOUTH, CORNER, &
@@ -226,6 +226,7 @@ contains
     enddo
     if (file_exist('INPUT'//trim(fname))) then
       call restore_state(Tra_restart_r)
+      call free_restart_type(Tra_restart_r)
     else
       call mpp_error(NOTE,'==> Warning from fv_io_read_tracers: Expected file '//trim(fname)//' does not exist')
     endif
@@ -298,6 +299,7 @@ contains
     id_restart = register_restart_field(Fv_restart_r, fname, 'ak', ak_r(:), no_domain=.true.)
     id_restart = register_restart_field(Fv_restart_r, fname, 'bk', bk_r(:), no_domain=.true.)
     call restore_state(Fv_restart_r)
+    call free_restart_type(Fv_restart_r)
 
 ! fix for single tile runs where you need fv_core.res.nc and fv_core.res.tile1.nc
     ntiles = mpp_get_ntile_count(fv_domain)
@@ -331,7 +333,7 @@ contains
        id_restart =  register_restart_field(Fv_tile_restart_r, fname, 'phis', Atm(n)%phis, &
                      domain=fv_domain, tile_count=n)
        call restore_state(FV_tile_restart_r)
-
+       call free_restart_type(FV_tile_restart_r)
        fname = 'INPUT/fv_srf_wnd.res'//trim(stile_name)//'.nc'
        if (file_exist(fname)) then
          call restore_state(Atm(n)%Rsf_restart)
@@ -373,6 +375,7 @@ contains
                          domain=fv_domain, mandatory=.false., tile_count=n)
          enddo
          call restore_state(Tra_restart_r)
+         call free_restart_type(Tra_restart_r)
        else
          call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
        endif
