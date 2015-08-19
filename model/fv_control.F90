@@ -212,29 +212,6 @@ module fv_control_mod
    real :: umax = 350.           ! max wave speed for grid_type>3
    integer :: parent_grid_num = -1
 
-   namelist /fv_grid_nml/ grid_name, grid_file
-   namelist /fv_core_nml/npx, npy, ntiles, npz, npz_rst, layout, io_layout, ncnst, nwat,  &
-                         use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, do_schmidt,      &
-                         hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
-                         kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, do_f3d, &
-                         external_ic, ncep_ic, fv_diag_ic, res_latlon_dynamics, res_latlon_tracers, &
-                         scale_z, w_max, z_min, dddmp, d2_bg, d4_bg, vtdm4, d_ext, beta, non_ortho, n_sponge, &
-                         warm_start, adjust_dry_mass, mountain, d_con, nord, convert_ke, use_old_omega, &
-                         dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
-                         consv_te, fill, filter_phys, fill_dp, fill_wz, consv_am, &
-                         range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
-                         replace_w, tau, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, breed_vortex_inline,  &
-                         na_init, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, reset_eta,         &
-                         pnats, dnats, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
-                         c2l_ord, dx_const, dy_const, umax, deglat,      &
-                         deglon_start, deglon_stop, deglat_start, deglat_stop, &
-                         phys_hydrostatic, make_hybrid_z, old_divg_damp, add_noise, &
-                         nested, twowaynest, parent_grid_num, parent_tile, &
-                         refinement, nestbctype, nestupdate, nsponge, s_weight, &
-                         ioffset, joffset, check_negative, nudge_ic
-
-   namelist /test_case_nml/test_case,alpha
-
  contains
 
 !-------------------------------------------------------------------------------
@@ -506,6 +483,29 @@ module fv_control_mod
       character(len=128) :: res_latlon_tracers  = ''
       character(len=80)  :: grid_name = ''
       character(len=120) :: grid_file = ''
+
+      namelist /fv_grid_nml/ grid_name, grid_file
+      namelist /fv_core_nml/npx, npy, ntiles, npz, npz_rst, layout, io_layout, ncnst, nwat,  &
+                         use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, do_schmidt,      &
+                         hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
+                         kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, do_f3d, &
+                         external_ic, ncep_ic, fv_diag_ic, res_latlon_dynamics, res_latlon_tracers, &
+                         scale_z, w_max, z_min, dddmp, d2_bg, d4_bg, vtdm4, d_ext, beta, non_ortho, n_sponge, &
+                         warm_start, adjust_dry_mass, mountain, d_con, nord, convert_ke, use_old_omega, &
+                         dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
+                         consv_te, fill, filter_phys, fill_dp, fill_wz, consv_am, &
+                         range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
+                         replace_w, tau, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, breed_vortex_inline,  &
+                         na_init, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, reset_eta,         &
+                         pnats, dnats, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
+                         c2l_ord, dx_const, dy_const, umax, deglat,      &
+                         deglon_start, deglon_stop, deglat_start, deglat_stop, &
+                         phys_hydrostatic, make_hybrid_z, old_divg_damp, add_noise, &
+                         nested, twowaynest, parent_grid_num, parent_tile, &
+                         refinement, nestbctype, nestupdate, nsponge, s_weight, &
+                         ioffset, joffset, check_negative, nudge_ic
+
+      namelist /test_case_nml/test_case,alpha
 
       pe_counter = mpp_root_pe()
 
