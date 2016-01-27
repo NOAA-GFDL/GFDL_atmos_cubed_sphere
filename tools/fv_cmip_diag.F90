@@ -4,14 +4,18 @@ use mpp_mod,            only: input_nml_file
 use fms_mod,            only: open_namelist_file, check_nml_error, &
                               close_file, stdlog, mpp_pe, mpp_root_pe, &
                               write_version_number, file_exist, &
-                              error_mesg, FATAL, WARNING
+                              error_mesg, FATAL, WARNING, NOTE
 use fms_io_mod,         only: set_domain, nullify_domain, string
 use time_manager_mod,   only: time_type
 use mpp_domains_mod,    only: domain2d
 use diag_manager_mod,   only: diag_axis_init, register_diag_field, &
-                              send_data, get_diag_field_id
+                              send_data, get_diag_field_id, &
+                              register_static_field, &
+                              DIAG_FIELD_NOT_FOUND
+use diag_data_mod,      only: CMOR_MISSING_VALUE
 use tracer_manager_mod, only: get_tracer_index
 use field_manager_mod,  only: MODEL_ATMOS
+use constants_mod,      only: GRAV
 
 use fv_arrays_mod,      only: fv_atmos_type
 use fv_eta_mod,         only: get_eta_level
@@ -32,12 +36,12 @@ integer :: sphum
 integer :: istep = 0
 
 ! vertical pressure grids
-!    plevs = Table Amon = standard 17 levels + 6 ext
+!    plev  = Table Amon = standard 17 levels + 6 ext
 !    plev8 = Table day
 !    plev3 = Table 6hrPlev
 !    plev7 = Table cfMon,cfDay
 
-real, dimension(23) :: plevs = &
+real, dimension(23) :: plev = &
               (/ 100000., 92500., 85000., 70000., 60000., 50000., &
                   40000., 30000., 25000., 20000., 15000., 10000., &
                    7000.,  5000.,  3000.,  2000.,  1000.,   700., &
@@ -71,7 +75,7 @@ namelist /fv_cmip_diag_nml/ use_extra_levels, print_freq
 
 integer, parameter :: MAXPLEVS = 3  ! max plev sets
 integer, dimension(0:MAXPLEVS) :: id_ta, id_ua, id_va, id_hus, id_hur, id_wap, id_zg
-integer                        :: id_ps
+integer                        :: id_ps, id_orog
 integer, dimension(MAXPLEVS) :: num_pres_levs
 real,    dimension(MAXPLEVS,50) :: pressure_levels  ! max 50 levels per set
 
@@ -92,7 +96,8 @@ type(fv_atmos_type), intent(inout), target :: Atm(:)
 integer,             intent(in) :: axes(4)
 type(time_type),     intent(in) :: Time
 
-integer :: axes3d(3), area_id, k, id, np, id_plevs, num_std_plevs
+integer :: axes3d(3), area_id, k, id, np, id_plev, num_std_plevs
+integer :: n, isc, iec, jsc, jec
 integer :: iunit, ierr, io
 logical :: used
 character(len=8) :: suffix
@@ -134,6 +139,9 @@ character(len=16) :: axis_name, mod_name2
 ! axis identifiers
   axes3d(1:2) = axes(1:2)
   area_id = get_diag_field_id ('dynamics', 'area')
+  if (area_id .eq. DIAG_FIELD_NOT_FOUND) call error_mesg &
+        ('fv_cmip_diag_init', 'diagnostic field "dynamics", '// &
+         '"area" is not in the diag_table', NOTE)
 
 ! initialize other id's
   id_hur = 0
@@ -149,7 +157,7 @@ character(len=16) :: axis_name, mod_name2
   if (use_extra_levels) then
     ptop = get_top_press_level (Atm, 1000.e2)
     do k = 23, 1, -1
-      if (plevs(k) .gt. ptop) then
+      if (plev(k) .gt. ptop) then
         num_std_plevs = k
         exit
       endif
@@ -162,29 +170,54 @@ character(len=16) :: axis_name, mod_name2
 ! register variables on model levels
 
     id_ta(0) = register_diag_field (mod_name, 'ta', axes(1:3), Time, &
-                                    'Temperature', 'K',  &
+                                    'Air Temperature', 'K',  &
                                     standard_name='air_temperature', &
-                                    area=area_id, missing_value=missing_value )
+                                    area=area_id, missing_value=CMOR_MISSING_VALUE )
 
     id_ua(0) = register_diag_field (mod_name, 'ua', axes(1:3), Time, &
                                     'Eastward Wind', 'm s-1',  &
                                     standard_name='eastward_wind', &
-                                    area=area_id, missing_value=missing_value )
+                                    area=area_id, missing_value=CMOR_MISSING_VALUE )
 
     id_va(0) = register_diag_field (mod_name, 'va', axes(1:3), Time, &
                                     'Northward Wind', 'm s-1',  &
                                     standard_name='northward_wind', &
-                                    area=area_id, missing_value=missing_value )
+                                    area=area_id, missing_value=CMOR_MISSING_VALUE )
 
     id_hus(0) = register_diag_field (mod_name, 'hus', axes(1:3), Time, &
                                      'Specific Humidity', '1',  &
                                      standard_name='specific_humidity', &
-                                     area=area_id, missing_value=missing_value )
+                                     area=area_id, missing_value=CMOR_MISSING_VALUE )
+
+    id_wap(0) = register_diag_field (mod_name, 'wap', axes(1:3), Time, &
+                                     'omega (=dp/dt)', 'Pa s-1',  &
+                                     standard_name='lagrangian_tendency_of_air_pressure', &
+                                     area=area_id, missing_value=CMOR_MISSING_VALUE )
 
     id_ps = register_diag_field (mod_name, 'ps', axes(1:2), Time, &
                                  'Surface Air Pressure', 'Pa', &
                                  standard_name='surface_air_pressure', &
-                                 area=area_id, missing_value=missing_value )
+                                 area=area_id, missing_value=CMOR_MISSING_VALUE )
+
+! surface altitude
+
+  n = 1
+  isc = Atm(n)%bd%isc; iec = Atm(n)%bd%iec
+  jsc = Atm(n)%bd%jsc; jec = Atm(n)%bd%jec
+
+#ifndef DYNAMICS_ZS
+    id_orog = register_static_field (mod_name, 'orog', axes(1:2), &
+                                    'Surface Altitude', 'm', &
+                                    standard_name='surface_altitude', &
+                                    area=area_id)
+    if (id_orog > 0) used = send_data (id_orog, Atm(n)%phis(isc:iec,jsc:jec)/GRAV, Time)
+#else
+!--- for now output this as 'zsurf' from fv_diagnostics ---
+!   id_orog = register_diag_field (mod_name, 'orog', axes(1:2), Time, &
+!                                  'Surface Altitude', 'm', &
+!                                  standard_name='surface_altitude', &
+!                                  area=area_id)
+#endif
 
 !-----------------------------------------------------------------------
 ! loop through all possible pressure level sets
@@ -195,8 +228,8 @@ character(len=16) :: axis_name, mod_name2
   do id = 1, MAXPLEVS
     if (id .eq. 1) then
       np = num_std_plevs
-      pressure_levels(id,1:np) = plevs(1:np)
-      axis_name = 'plevs'
+      pressure_levels(id,1:np) = plev(1:np)
+      axis_name = 'plev'
     else if (id .eq. 2) then
       np = size(plev8,1)
       pressure_levels(id,1:np) = plev8
@@ -208,45 +241,45 @@ character(len=16) :: axis_name, mod_name2
     endif
 
     num_pres_levs(id) = np
-    id_plevs = diag_axis_init(axis_name, pressure_levels(id,1:np), &
-                              'Pa', 'z', 'Pressure Level', direction=1, set_name="dynamics")
-    axes3d(3) = id_plevs
-    mod_name2 = mod_name//'_'//trim(axis_name)
+    id_plev = diag_axis_init(axis_name, pressure_levels(id,1:np), &
+                             'Pa', 'z', 'pressure', direction=-1, set_name="dynamics")
+    axes3d(3) = id_plev
+    mod_name2 = trim(mod_name)//'_'//trim(axis_name)
 
     id_ta(id) = register_diag_field (mod_name2, 'ta', axes3d, Time, &
-                                     'Temperature', 'K',  &
+                                     'Air Temperature', 'K',  &
                                      standard_name='air_temperature', &
-                                     area=area_id, missing_value=missing_value )
+                                     area=area_id, missing_value=CMOR_MISSING_VALUE )
 
     id_ua(id) = register_diag_field (mod_name2, 'ua', axes3d, Time, &
                                      'Eastward Wind', 'm s-1',  &
                                      standard_name='eastward_wind', &
-                                     area=area_id, missing_value=missing_value )
+                                     area=area_id, missing_value=CMOR_MISSING_VALUE )
 
     id_va(id) = register_diag_field (mod_name2, 'va', axes3d, Time, &
                                      'Northward Wind', 'm s-1',  &
                                      standard_name='northward_wind', &
-                                     area=area_id, missing_value=missing_value )
+                                     area=area_id, missing_value=CMOR_MISSING_VALUE )
 
     id_hus(id) = register_diag_field (mod_name2, 'hus', axes3d, Time, &
                                      'Specific Humidity', '1',  &
                                      standard_name='specific_humidity', &
-                                     area=area_id, missing_value=missing_value )
+                                     area=area_id, missing_value=CMOR_MISSING_VALUE )
 
     id_hur(id) = register_diag_field (mod_name2, 'hur', axes3d, Time, &
                                      'Relative Humidity', '%',  &
                                      standard_name='relative_humidity', &
-                                     area=area_id, missing_value=missing_value )
+                                     area=area_id, missing_value=CMOR_MISSING_VALUE )
 
     id_wap(id) = register_diag_field (mod_name2, 'wap', axes3d, Time, &
                                      'omega (=dp/dt)', 'Pa s-1',  &
                                      standard_name='lagrangian_tendency_of_air_pressure', &
-                                     area=area_id, missing_value=missing_value )
+                                     area=area_id, missing_value=CMOR_MISSING_VALUE )
 
     id_zg(id) = register_diag_field (mod_name2, 'zg', axes3d, Time, &
                                      'Geopotential Height', 'm',  &
                                      standard_name='geopotential_height', &
-                                     area=area_id, missing_value=missing_value )
+                                     area=area_id, missing_value=CMOR_MISSING_VALUE )
 
   enddo
 
@@ -319,11 +352,12 @@ real, allocatable :: lnplevs(:)
   endif
 
   ! process fields on model levels (could add hur,wap)
-  if (id_ua(0)  > 0) used = send_data(id_ua(0),  Atm(n)%ua(isc:iec,jsc:jec,:), Time)
-  if (id_va(0)  > 0) used = send_data(id_va(0),  Atm(n)%va(isc:iec,jsc:jec,:), Time)
-  if (id_ta(0)  > 0) used = send_data(id_ta(0),  Atm(n)%pt(isc:iec,jsc:jec,:), Time)
-  if (id_hus(0) > 0) used = send_data(id_hus(0), Atm(n)%q (isc:iec,jsc:jec,:,sphum), Time)
-  if (id_ps     > 0) used = send_data(id_ps,     Atm(n)%ps(isc:iec,jsc:jec), Time)
+  if (id_ua(0)  > 0) used = send_data(id_ua(0),  Atm(n)%ua  (isc:iec,jsc:jec,:), Time)
+  if (id_va(0)  > 0) used = send_data(id_va(0),  Atm(n)%va  (isc:iec,jsc:jec,:), Time)
+  if (id_ta(0)  > 0) used = send_data(id_ta(0),  Atm(n)%pt  (isc:iec,jsc:jec,:), Time)
+  if (id_hus(0) > 0) used = send_data(id_hus(0), Atm(n)%q   (isc:iec,jsc:jec,:,sphum), Time)
+  if (id_wap(0) > 0) used = send_data(id_wap(0), Atm(n)%omga(isc:iec,jsc:jec,:), Time)
+  if (id_ps     > 0) used = send_data(id_ps,     Atm(n)%ps  (isc:iec,jsc:jec), Time)
 
   ! process fields on pressure levels
   do id = 1, MAXPLEVS
