@@ -65,6 +65,7 @@ module fv_diagnostics_mod
 
  public :: fv_diag_init, fv_time, fv_diag, prt_mxm, prt_maxmin, range_check!, id_divg, id_te
  public :: prt_mass, prt_minmax, ppme
+ public :: get_height_given_pressure, interpolate_vertical, rh_calc, get_height_field
 
 !---- version number -----
  character(len=128) :: version = '$Id$'

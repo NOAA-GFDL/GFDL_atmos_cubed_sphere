@@ -49,6 +49,7 @@ use fv_io_mod,          only: fv_io_register_nudge_restart
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin
+use fv_cmip_diag_mod,   only: fv_cmip_diag_init, fv_cmip_diag
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
 use fv_mp_mod,          only: switch_current_Atm 
@@ -247,6 +248,7 @@ contains
 !----- initialize atmos_axes and fv_dynamics diagnostics
        !I've had trouble getting this to work with multiple grids at a time; worth revisiting?
    call fv_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time, npx, npy, npz, Atm(mytile)%flagstruct%p_ref)
+   call fv_cmip_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time)
 
 !---------- reference profile -----------
     ps1 = 101325.
@@ -884,6 +886,7 @@ contains
    call nullify_domain()
    call timing_on('FV_DIAG')
    call fv_diag(Atm(mytile:mytile), zvir, fv_time, Atm(mytile)%flagstruct%print_freq)
+   call fv_cmip_diag(Atm(mytile:mytile), zvir, fv_time)
    call timing_off('FV_DIAG')
 
    call mpp_clock_end(id_fv_diag)
