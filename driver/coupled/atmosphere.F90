@@ -359,11 +359,13 @@ contains
 
    call mpp_clock_begin (id_dynam)
 !miz
+#ifndef use_AM3_physics
    Surf_diff%ddp_dyn(:,:,:) = Atm(mytile)%delp(isc:iec, jsc:jec, :)
    Surf_diff%tdt_dyn(:,:,:) = Atm(mytile)%pt(isc:iec, jsc:jec, :)
    Surf_diff%qdt_dyn(:,:,:) = Atm(mytile)%q (isc:iec, jsc:jec, :, 1) + &
    			      Atm(mytile)%q (isc:iec, jsc:jec, :, 2) + &
 			      Atm(mytile)%q (isc:iec, jsc:jec, :, 3)
+#endif
 
 !miz[M d0
    if ( id_tdt_dyn>0 ) ttend(:, :, :) = Atm(mytile)%pt(isc:iec, jsc:jec, :)
@@ -409,11 +411,13 @@ contains
     call mpp_clock_end (id_dynam)
 
 !miz
+#ifndef use_AM3_physics
    Surf_diff%ddp_dyn(:,:,:) =(Atm(mytile)%delp(isc:iec,jsc:jec,:)-Surf_diff%ddp_dyn(:,:,:))/dt_atmos
    Surf_diff%tdt_dyn(:,:,:) =(Atm(mytile)%pt(isc:iec,jsc:jec,:)  -Surf_diff%tdt_dyn(:,:,:))/dt_atmos
    Surf_diff%qdt_dyn(:,:,:) =(Atm(mytile)%q (isc:iec,jsc:jec,:,1) + &
    			      Atm(mytile)%q (isc:iec,jsc:jec,:,2) + &
    			      Atm(mytile)%q (isc:iec,jsc:jec,:,3) - Surf_diff%qdt_dyn(:,:,:))/dt_atmos
+#endif
 !miz
    if ( id_udt_dyn>0 )  used = send_data( id_udt_dyn, 2.0/dt_atmos*Atm(mytile)%ua(isc:iec,jsc:jec,:), Time)
    if ( id_vdt_dyn>0 )  used = send_data( id_vdt_dyn, 2.0/dt_atmos*Atm(mytile)%va(isc:iec,jsc:jec,:), Time)
