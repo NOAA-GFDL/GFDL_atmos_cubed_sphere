@@ -22,7 +22,7 @@ module fv_mapz_mod
   real, parameter:: c_ice = 2106.           ! heat capacity of ice at 0.C
   real, parameter:: c_liq = 4190.
   real, parameter:: tice  = 273.16
-  real(kind=4) :: E_Flux, E_Flux_Nest
+  real(kind=4) :: E_Flux, E_Flux_Nest=0.0
   private
 
   public compute_total_energy, Lagrangian_to_Eulerian,    &
