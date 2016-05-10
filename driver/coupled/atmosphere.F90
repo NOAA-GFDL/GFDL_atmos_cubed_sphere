@@ -49,6 +49,7 @@ use fv_io_mod,          only: fv_io_register_nudge_restart
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin
+use fv_cmip_diag_mod,   only: fv_cmip_diag_init, fv_cmip_diag
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
 use fv_mp_mod,          only: switch_current_Atm 
@@ -247,6 +248,7 @@ contains
 !----- initialize atmos_axes and fv_dynamics diagnostics
        !I've had trouble getting this to work with multiple grids at a time; worth revisiting?
    call fv_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time, npx, npy, npz, Atm(mytile)%flagstruct%p_ref)
+   call fv_cmip_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time)
 
 !---------- reference profile -----------
     ps1 = 101325.
@@ -297,8 +299,6 @@ contains
    !and so for now we will only define for the coarsest grid
 
 !miz
-   if( Atm(mytile)%flagstruct%ncep_ic ) Surf_diff%sst_miz(:,:) = Atm(mytile)%ts(isc:iec, jsc:jec)
-
    id_udt_dyn    =register_diag_field(mod_name,'udt_dyn',    Atm(mytile)%atmos_axes(1:3),  &
                          Time,'udt_dyn',    'm/s/s', missing_value=mv)
    id_vdt_dyn    =register_diag_field(mod_name,'vdt_dyn',    Atm(mytile)%atmos_axes(1:3),  &
@@ -349,14 +349,23 @@ contains
 
 
 
- subroutine atmosphere_dynamics ( Time )
+ subroutine atmosphere_dynamics ( Time, surf_diff )
    type(time_type),intent(in) :: Time
    integer :: itrac, n, psc
    integer :: k, w_diff, nt_dyn
-
+   type(surf_diff_type), intent(inout):: surf_diff
+ 
 !---- Call FV dynamics -----
 
    call mpp_clock_begin (id_dynam)
+!miz
+#ifndef use_AM3_physics
+   Surf_diff%ddp_dyn(:,:,:) = Atm(mytile)%delp(isc:iec, jsc:jec, :)
+   Surf_diff%tdt_dyn(:,:,:) = Atm(mytile)%pt(isc:iec, jsc:jec, :)
+   Surf_diff%qdt_dyn(:,:,:) = Atm(mytile)%q (isc:iec, jsc:jec, :, 1) + &
+   			      Atm(mytile)%q (isc:iec, jsc:jec, :, 2) + &
+			      Atm(mytile)%q (isc:iec, jsc:jec, :, 3)
+#endif
 
 !miz[M d0
    if ( id_tdt_dyn>0 ) ttend(:, :, :) = Atm(mytile)%pt(isc:iec, jsc:jec, :)
@@ -401,6 +410,14 @@ contains
     end do !p_split
     call mpp_clock_end (id_dynam)
 
+!miz
+#ifndef use_AM3_physics
+   Surf_diff%ddp_dyn(:,:,:) =(Atm(mytile)%delp(isc:iec,jsc:jec,:)-Surf_diff%ddp_dyn(:,:,:))/dt_atmos
+   Surf_diff%tdt_dyn(:,:,:) =(Atm(mytile)%pt(isc:iec,jsc:jec,:)  -Surf_diff%tdt_dyn(:,:,:))/dt_atmos
+   Surf_diff%qdt_dyn(:,:,:) =(Atm(mytile)%q (isc:iec,jsc:jec,:,1) + &
+   			      Atm(mytile)%q (isc:iec,jsc:jec,:,2) + &
+   			      Atm(mytile)%q (isc:iec,jsc:jec,:,3) - Surf_diff%qdt_dyn(:,:,:))/dt_atmos
+#endif
 !miz
    if ( id_udt_dyn>0 )  used = send_data( id_udt_dyn, 2.0/dt_atmos*Atm(mytile)%ua(isc:iec,jsc:jec,:), Time)
    if ( id_vdt_dyn>0 )  used = send_data( id_vdt_dyn, 2.0/dt_atmos*Atm(mytile)%va(isc:iec,jsc:jec,:), Time)
@@ -873,6 +890,7 @@ contains
    call nullify_domain()
    call timing_on('FV_DIAG')
    call fv_diag(Atm(mytile:mytile), zvir, fv_time, Atm(mytile)%flagstruct%print_freq)
+   call fv_cmip_diag(Atm(mytile:mytile), zvir, fv_time)
    call timing_off('FV_DIAG')
 
    call mpp_clock_end(id_fv_diag)
