@@ -11,6 +11,8 @@ use mpp_domains_mod,    only: domain2d
 use diag_manager_mod,   only: diag_axis_init, register_diag_field, &
                               send_data, get_diag_field_id, &
                               register_static_field, &
+                              diag_axis_add_attribute, &
+                              diag_field_add_attribute, &
                               DIAG_FIELD_NOT_FOUND
 use diag_data_mod,      only: CMOR_MISSING_VALUE
 use tracer_manager_mod, only: get_tracer_index
@@ -76,6 +78,8 @@ namelist /fv_cmip_diag_nml/ use_extra_levels, print_freq
 integer, parameter :: MAXPLEVS = 3  ! max plev sets
 integer, dimension(0:MAXPLEVS) :: id_ta, id_ua, id_va, id_hus, id_hur, id_wap, id_zg
 integer                        :: id_ps, id_orog
+integer                        :: id_lev, id_nv, id_ap, id_b, &
+                                  id_ap_bnds, id_b_bnds, id_lev_bnds
 integer, dimension(MAXPLEVS) :: num_pres_levs
 real,    dimension(MAXPLEVS,50) :: pressure_levels  ! max 50 levels per set
 
@@ -96,6 +100,9 @@ type(fv_atmos_type), intent(inout), target :: Atm(:)
 integer,             intent(in) :: axes(4)
 type(time_type),     intent(in) :: Time
 
+!-----------------------------------------------------------------------
+! local data
+
 integer :: axes3d(3), area_id, k, id, np, id_plev, num_std_plevs
 integer :: n, isc, iec, jsc, jec
 integer :: iunit, ierr, io
@@ -103,6 +110,12 @@ logical :: used
 character(len=8) :: suffix
 real :: ptop
 character(len=16) :: axis_name, mod_name2
+
+real                          :: p0
+real, dimension(Atm(1)%npz)   :: ap, b, lev
+real, dimension(2,Atm(1)%npz) :: ap_bnds, b_bnds, lev_bnds
+
+!-----------------------------------------------------------------------
 
   if (module_is_initialized) then
     call error_mesg ('fv_cmip_diag_mod', &
@@ -167,29 +180,88 @@ character(len=16) :: axis_name, mod_name2
   endif
 
 !-----------------------------------------------------------------------
+! vertical coordinate variables
+
+    p0 = 100000.
+    do k = 1, Atm(1)%npz
+      ap_bnds(1,k) = Atm(1)%ak(k)
+      ap_bnds(2,k) = Atm(1)%ak(k+1)
+      b_bnds(1,k) = Atm(1)%bk(k)
+      b_bnds(2,k) = Atm(1)%bk(k+1)
+      ap(k) = (ap_bnds(1,k)+ap_bnds(2,k))*0.5
+      b(k) = (b_bnds(1,k)+b_bnds(2,k))*0.5
+    enddo
+    lev = ap/p0 + b                 ! definition for CMIP purposes
+    lev_bnds = ap_bnds/p0 + b_bnds  
+
+    ! register new axes
+
+    id_lev = diag_axis_init('lev', lev, '1', 'Z', &
+                            'hybrid sigma pressure coordinate', &
+                             direction=-1, set_name='cmip')
+    call diag_axis_add_attribute (id_lev, 'formula', 'p(n,k,j,i) = ap(k) + b(k)*ps(n,j,i)')
+    call diag_axis_add_attribute (id_lev, 'formula_terms', 'ap: ap b: b ps: ps')
+    call diag_axis_add_attribute (id_lev, 'bounds', 'lev_bnds')
+
+    ! vertex number for bounds dimension
+    id_nv = diag_axis_init('nv', (/1.,2./), 'none', 'N', 'vertex number', set_name='nv')
+
+    ! register new static variables
+
+    id_ap = register_static_field (mod_name, 'ap', (/id_lev/), &
+                                 'vertical coordinate formula term: ap(k)', 'Pa')
+
+    id_b = register_static_field (mod_name, 'b', (/id_lev/), &
+                                 'vertical coordinate formula term: b(k)', '1')
+
+    id_ap_bnds = register_static_field (mod_name, 'ap_bnds', (/id_nv,id_lev/), &
+                                 'vertical coordinate formula term: ap(k+1/2)', 'Pa')
+
+    id_b_bnds = register_static_field (mod_name, 'b_bnds', (/id_nv,id_lev/), &
+                                 'vertical coordinate formula term: b(k+1/2)', '1')
+
+    id_lev_bnds = register_static_field (mod_name, 'lev_bnds', (/id_nv,id_lev/), &
+                                        'hybrid sigma pressure coordinate', '1', &
+                          standard_name='atmosphere_hybrid sigma pressure coordinate')
+    if (id_lev_bnds > 0) then
+      call diag_field_add_attribute ( id_lev_bnds, 'formula', 'p(n,k+1/2,j,i) = ap(k+1/2) + b(k+1/2)*ps(n,j,i)')
+      call diag_field_add_attribute ( id_lev_bnds, 'formula_terms', 'ap: ap_bnds b: b_bnds ps: ps')
+    endif
+
+   ! save static data
+   if (id_ap > 0) used = send_data ( id_ap, ap, Time )
+   if (id_b  > 0) used = send_data ( id_b , b , Time )
+   if (id_ap_bnds  > 0) used = send_data ( id_ap_bnds, ap_bnds, Time )
+   if (id_b_bnds   > 0) used = send_data ( id_b_bnds, b_bnds, Time )
+   if (id_lev_bnds > 0) used = send_data ( id_lev_bnds, lev_bnds, Time )
+
+!-----------------------------------------------------------------------
 ! register variables on model levels
 
-    id_ta(0) = register_diag_field (mod_name, 'ta', axes(1:3), Time, &
+    axes3d(3) = id_lev
+
+    id_ta(0) = register_diag_field (mod_name, 'ta', axes3d, Time, &
                                     'Air Temperature', 'K',  &
                                     standard_name='air_temperature', &
                                     area=area_id, missing_value=CMOR_MISSING_VALUE )
 
-    id_ua(0) = register_diag_field (mod_name, 'ua', axes(1:3), Time, &
+    id_ua(0) = register_diag_field (mod_name, 'ua', axes3d, Time, &
                                     'Eastward Wind', 'm s-1',  &
                                     standard_name='eastward_wind', &
                                     area=area_id, missing_value=CMOR_MISSING_VALUE )
 
-    id_va(0) = register_diag_field (mod_name, 'va', axes(1:3), Time, &
+    id_va(0) = register_diag_field (mod_name, 'va', axes3d, Time, &
                                     'Northward Wind', 'm s-1',  &
                                     standard_name='northward_wind', &
                                     area=area_id, missing_value=CMOR_MISSING_VALUE )
 
-    id_hus(0) = register_diag_field (mod_name, 'hus', axes(1:3), Time, &
+    id_hus(0) = register_diag_field (mod_name, 'hus', axes3d, Time, &
                                      'Specific Humidity', '1',  &
                                      standard_name='specific_humidity', &
                                      area=area_id, missing_value=CMOR_MISSING_VALUE )
 
-    id_wap(0) = register_diag_field (mod_name, 'wap', axes(1:3), Time, &
+
+    id_wap(0) = register_diag_field (mod_name, 'wap', axes3d, Time, &
                                      'omega (=dp/dt)', 'Pa s-1',  &
                                      standard_name='lagrangian_tendency_of_air_pressure', &
                                      area=area_id, missing_value=CMOR_MISSING_VALUE )
