@@ -38,6 +38,7 @@ use physics_driver_mod, only: surf_diff_type
 use physics_types_mod,  only: physics_type, & 
                               physics_tendency_type
 use radiation_types_mod,only: radiation_type, compute_g_avg
+use atmos_cmip_diag_mod,only: atmos_cmip_diag_init
 
 !-----------------
 ! FV core modules:
@@ -49,7 +50,7 @@ use fv_io_mod,          only: fv_io_register_nudge_restart
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin
-use fv_cmip_diag_mod,   only: fv_cmip_diag_init, fv_cmip_diag
+use fv_cmip_diag_mod,   only: fv_cmip_diag_init, fv_cmip_diag, fv_cmip_diag_end
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
 use fv_mp_mod,          only: switch_current_Atm 
@@ -248,7 +249,6 @@ contains
 !----- initialize atmos_axes and fv_dynamics diagnostics
        !I've had trouble getting this to work with multiple grids at a time; worth revisiting?
    call fv_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time, npx, npy, npz, Atm(mytile)%flagstruct%p_ref)
-   call fv_cmip_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time)
 
 !---------- reference profile -----------
     ps1 = 101325.
@@ -257,6 +257,10 @@ contains
     pref(npz+1,2) = ps2
     call get_eta_level ( npz, ps1, pref(1,1), dum1d, Atm(mytile)%ak, Atm(mytile)%bk )
     call get_eta_level ( npz, ps2, pref(1,2), dum1d, Atm(mytile)%ak, Atm(mytile)%bk )
+
+!---- initialize cmip diagnostic output ----
+   call atmos_cmip_diag_init ( Atm(mytile)%ak, Atm(mytile)%bk, pref(1,1), Atm(mytile)%atmos_axes, Time )
+   call fv_cmip_diag_init    ( Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time )
 
 !--- initialize nudging module ---
 #if defined (ATMOS_NUDGE)
@@ -511,6 +515,7 @@ contains
    if ( Atm(mytile)%flagstruct%nudge ) call fv_nwp_nudge_end
 #endif
 
+   call fv_cmip_diag_end
    call nullify_domain ( )
    call fv_end(Atm, grids_on_this_pe)
    deallocate (Atm)
