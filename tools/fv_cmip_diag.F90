@@ -13,16 +13,18 @@ use diag_manager_mod,   only: register_diag_field, &
                               register_static_field, &
                               diag_field_add_attribute, &
                               DIAG_FIELD_NOT_FOUND
-use diag_data_mod,      only: CMOR_MISSING_VALUE
+use diag_data_mod,      only: CMOR_MISSING_VALUE, null_axis_id
 use tracer_manager_mod, only: get_tracer_index
 use field_manager_mod,  only: MODEL_ATMOS
 use constants_mod,      only: GRAV
 
 use fv_arrays_mod,      only: fv_atmos_type
-use fv_diagnostics_mod, only: get_height_given_pressure, &
+use fv_diagnostics_mod, only: interpolate_vertical, &
+                              get_height_given_pressure, &
                               rh_calc, get_height_field
 
-use atmos_cmip_diag_mod, only: register_cmip_diag_field_3d, &
+use atmos_cmip_diag_mod, only: register_cmip_diag_field_2d, &
+                               register_cmip_diag_field_3d, &
                                send_cmip_data_3d, cmip_diag_id_type, &
                                query_cmip_diag_id
 
@@ -48,6 +50,8 @@ namelist /fv_cmip_diag_nml/ dummy
 
 type(cmip_diag_id_type) :: ID_ta, ID_ua, ID_va, ID_hus, ID_hur, ID_wap, ID_zg
 integer              :: id_ps, id_orog
+integer              :: id_plev200, id_plev850
+integer              :: id_ua200, id_va200, id_ua850, id_va850, id_ta850, id_zg500
 
 character(len=5) :: mod_name = 'atmos'
 
@@ -131,7 +135,7 @@ logical :: used
                        'Northward Wind', 'm s-1', standard_name='northward_wind')
 
     ID_hus = register_cmip_diag_field_3d (mod_name, 'hus', Time, &
-                       'Specific Humidity', '1', standard_name='specific_humidity')
+                       'Specific Humidity', '1.0', standard_name='specific_humidity')
 
     ID_wap = register_cmip_diag_field_3d (mod_name, 'wap', Time, &
                        'omega (=dp/dt)', 'Pa s-1', standard_name='lagrangian_tendency_of_air_pressure')
@@ -170,6 +174,56 @@ logical :: used
 !                                  area=area_id)
 #endif
 
+!-----------------------------------------------------------------------
+!---- register fields on specific pressure levels ----
+
+  !---- first register pressure levels as scalar variables ----
+    id_plev200 = register_static_field (mod_name, 'plev200', (/null_axis_id/), &
+                          'Pressure Level', 'Pa', standard_name = 'pressure')
+    if(id_plev200 > 0) then
+      call diag_field_add_attribute (id_plev200, 'axis', 'Z')
+      call diag_field_add_attribute (id_plev200, 'positive', 'up' )
+      used = send_data (id_plev200, 200.e2, Time)
+    endif
+
+    id_plev850 = register_static_field (mod_name, 'plev850', (/null_axis_id/), &
+                          'Pressure Level', 'Pa', standard_name = 'pressure')
+    if(id_plev850 > 0) then
+      call diag_field_add_attribute (id_plev850, 'axis', 'Z')
+      call diag_field_add_attribute (id_plev850, 'positive', 'up' )
+      used = send_data (id_plev850, 850.e2, Time)
+    endif
+  !----
+
+    id_ua200 = register_cmip_diag_field_2d (mod_name, 'ua200', Time, &
+                       'Eastward Wind', 'm s-1', standard_name='eastward_wind')
+    if (id_ua200 > 0 .and. id_plev200 > 0) &
+        call diag_field_add_attribute (id_ua200, 'coordinates', 'plev200')
+
+    id_va200 = register_cmip_diag_field_2d (mod_name, 'va200', Time, &
+                       'Northward Wind', 'm s-1', standard_name='northward_wind')
+    if (id_va200 > 0 .and. id_plev200 > 0) &
+        call diag_field_add_attribute (id_va200, 'coordinates', 'plev200')
+
+  !---- 850 hPa ----
+    id_ua850 = register_cmip_diag_field_2d (mod_name, 'ua850', Time, &
+                       'Eastward Wind at 850hPa', 'm s-1', standard_name='eastward_wind')
+    if (id_ua850 > 0 .and. id_plev850 > 0) &
+        call diag_field_add_attribute (id_ua850, 'coordinates', 'plev850')
+
+    id_va850 = register_cmip_diag_field_2d (mod_name, 'va850', Time, &
+                       'Northward Wind', 'm s-1', standard_name='northward_wind')
+    if (id_va850 > 0 .and. id_plev850 > 0) &
+        call diag_field_add_attribute (id_va850, 'coordinates', 'plev850')
+
+    id_ta850 = register_cmip_diag_field_2d (mod_name, 'ta850', Time, &
+                       'Air Temperature', 'K', standard_name='air_temperature')
+    if (id_ta850 > 0 .and. id_plev850 > 0) &
+        call diag_field_add_attribute (id_ta850, 'coordinates', 'plev850')
+
+!   id_zg500 = register_cmip_diag_field_2d (mod_name, 'zg500', Time, &
+!                      'Geopotential Height at 500 hPa', 'm', standard_name='geopotential_height')
+
 !--- done ---
   call nullify_domain()
   module_is_initialized=.true.
@@ -190,7 +244,7 @@ integer :: ngc, npz
 logical :: used
 
 real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
-                Atm(1)%bd%jsc:Atm(1)%bd%jec) :: pfull
+                Atm(1)%bd%jsc:Atm(1)%bd%jec) :: pfull, dat2
 
 real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
                 Atm(1)%bd%jsc:Atm(1)%bd%jec, &
@@ -232,9 +286,12 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
     call get_height_field(isc, iec, jsc, jec, ngc, npz, wz, Atm(n)%pt, Atm(n)%q, Atm(n)%peln, zvir)
   endif
   
-  ! process 2D fields
+!----------------------------------------------------------------------
+! process 2D fields
+
   if (id_ps     > 0) used = send_data  (id_ps,     Atm(n)%ps  (isc:iec,jsc:jec), Time)
 
+!----------------------------------------------------------------------
   ! process fields on model levels and pressure levels
 
   if (query_cmip_diag_id(ID_ua)) &
@@ -259,6 +316,46 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
   ! geopotential height
   if (query_cmip_diag_id(ID_zg)) &
           used = send_cmip_data_3d (ID_zg, wz, Time, phalf=Atm(n)%peln, opt=1, ext=.true.)
+
+!----------------------------------------------------------------------
+! process 2D fields on specific pressure levels
+! 
+  if (id_ua200 > 0) then
+    call interpolate_vertical (isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, &
+                               Atm(n)%ua(isc:iec,jsc:jec,:), dat2)          
+    used = send_data (id_ua200, dat2, Time)
+  endif
+
+  if (id_va200 > 0) then
+    call interpolate_vertical (isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, &
+                               Atm(n)%va(isc:iec,jsc:jec,:), dat2)          
+    used = send_data (id_va200, dat2, Time)
+  endif
+
+  if (id_ua850 > 0) then
+    call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
+                               Atm(n)%ua(isc:iec,jsc:jec,:), dat2)          
+    used = send_data (id_ua850, dat2, Time)
+  endif
+
+  if (id_va850 > 0) then
+    call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
+                               Atm(n)%va(isc:iec,jsc:jec,:), dat2)          
+    used = send_data (id_va850, dat2, Time)
+  endif
+
+  if (id_ta850 > 0) then
+    call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
+                               Atm(n)%pt(isc:iec,jsc:jec,:), dat2)          
+    used = send_data (id_ta850, dat2, Time)
+  endif
+
+ !if (id_zg500 > 0) then
+ !  call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/500.e2/), Atm(n)%peln, dat3)
+ !  used = send_data (id_ta850, dat2, Time)
+ !endif
+
+!----------------------------------------------------------------------
 
   call nullify_domain()
 
