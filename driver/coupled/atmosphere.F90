@@ -561,9 +561,9 @@ contains
 
  end subroutine atmosphere_pref
 
- subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro)
+ subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, do_uni_zfull) !miz
    integer, intent(out)           :: i1, i2, j1, j2, kt
-   logical, intent(out), optional :: p_hydro, hydro
+   logical, intent(out), optional :: p_hydro, hydro, do_uni_zfull !miz
    i1 = Atm(mytile)%bd%isc
    i2 = Atm(mytile)%bd%iec
    j1 = Atm(mytile)%bd%jsc
@@ -572,6 +572,7 @@ contains
 
    if (present(p_hydro)) p_hydro = Atm(mytile)%flagstruct%phys_hydrostatic
    if (present(  hydro))   hydro = Atm(mytile)%flagstruct%hydrostatic
+   if (present(do_uni_zfull)) do_uni_zfull = Atm(mytile)%flagstruct%do_uni_zfull
 
  end subroutine atmosphere_control_data
 
@@ -1044,8 +1045,8 @@ contains
 #else
                           Atm(mytile)%q_con, &
 #endif
-                          Physics%control%phys_hydrostatic)
-
+                          Physics%control%phys_hydrostatic, Physics%control%do_uni_zfull) !miz
+ 
      if (PRESENT(Physics_tendency)) then
 !--- copy the dynamics tendencies into the physics tendencies
 !--- if one wants to run physics concurrent with dynamics, 
@@ -1099,7 +1100,7 @@ contains
 #else
                           Atm(mytile)%q_con, &
 #endif
-                          Radiation%control%phys_hydrostatic)
+                          Radiation%control%phys_hydrostatic, Radiation%control%do_uni_zfull) !miz
    enddo
 
 !----------------------------------------------------------------------
@@ -1117,12 +1118,12 @@ contains
 
 
  subroutine fv_compute_p_z (npz, phis, pe, peln, delp, delz, pt, q_sph, &
-                            p_full, p_half, z_full, z_half, q_con, hydrostatic)
+                            p_full, p_half, z_full, z_half, q_con, hydrostatic, do_uni_zfull) !miz
     integer, intent(in)  :: npz
     real, dimension(:,:),   intent(in)  :: phis
     real, dimension(:,:,:), intent(in)  :: pe, peln, delp, delz, q_con, pt, q_sph
     real, dimension(:,:,:), intent(out) :: p_full, p_half, z_full, z_half
-    logical, intent(in)  :: hydrostatic
+    logical, intent(in)  :: hydrostatic, do_uni_zfull !miz
 !--- local variables
     integer i,j,k,isiz,jsiz
     real    tvm
@@ -1194,8 +1195,12 @@ contains
         enddo
       enddo
     endif
-
- end subroutine fv_compute_p_z
+    if (do_uni_zfull) then
+       do k=1,npz
+       	  z_full(:,:,k)=0.5*(z_half(:,:,k)+z_half(:,:,k+1))
+       enddo
+    endif
+  end subroutine fv_compute_p_z
 
 
  subroutine reset_atmos_tracers (Physics, Physics_tendency, Atm_block)
