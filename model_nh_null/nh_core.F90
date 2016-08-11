@@ -31,8 +31,6 @@ contains
 
    call error_mesg('update_dz_c','The null version of update_dz_c should not be called.',FATAL)
 
-    ws = 0.0
-
   end subroutine update_dz_c
 
 
@@ -57,8 +55,6 @@ contains
    type(fv_grid_type), intent(IN), target :: gridstruct
 
    call error_mesg('update_dz_d','The null version of update_dz_d should not be called.',FATAL)
-
-   delz = 0.0
 
   end subroutine update_dz_d
 
@@ -96,12 +92,6 @@ contains
    real, intent(out), dimension(isd:ied,jsd:jed,km+1):: gz
 
    call error_mesg('Riem_Solver3','The null version of Riem_Solver3 should not be called.',FATAL)
-   ppe = 0.0
-   delz = 0.0
-   pk = 0.0
-   pe = 0.0
-   pk3 = 0.0
-   gz = 0.0
 
   end subroutine Riem_Solver3
 
@@ -122,8 +112,6 @@ contains
    real, intent(  out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: pef
 
    call error_mesg('Riem_Solver_c','The null version of Riem_Solver_c should not be called.',FATAL)
-
-   pef = 0.0
 
   end subroutine Riem_Solver_c
 

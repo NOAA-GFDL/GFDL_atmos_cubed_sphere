@@ -6293,8 +6293,6 @@
  integer::i,j,k,n, jj, k1
  real:: p00=1.e5
 
- pk = 0.0
-
  pk0 = p00**kappa
  dz0 = ze1(km) - ze1(km+1)
  dzc(:,:) =dz0
