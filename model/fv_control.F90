@@ -171,6 +171,7 @@ module fv_control_mod
    character(len=128) , pointer :: res_latlon_tracers 
    logical , pointer :: hydrostatic 
    logical , pointer :: phys_hydrostatic 
+   logical , pointer :: do_uni_zfull !miz
    logical , pointer :: hybrid_z    
    logical , pointer :: Make_NH     
    logical , pointer :: make_hybrid_z  
@@ -500,7 +501,7 @@ module fv_control_mod
                          pnats, dnats, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
                          c2l_ord, dx_const, dy_const, umax, deglat,      &
                          deglon_start, deglon_stop, deglat_start, deglat_stop, &
-                         phys_hydrostatic, make_hybrid_z, old_divg_damp, add_noise, &
+                         phys_hydrostatic, do_uni_zfull, make_hybrid_z, old_divg_damp, add_noise, &!miz
                          nested, twowaynest, parent_grid_num, parent_tile, &
                          refinement, nestbctype, nestupdate, nsponge, s_weight, &
                          ioffset, joffset, check_negative, nudge_ic
@@ -1079,6 +1080,7 @@ module fv_control_mod
 
      hydrostatic                   => Atm%flagstruct%hydrostatic
      phys_hydrostatic              => Atm%flagstruct%phys_hydrostatic
+     do_uni_zfull                  => Atm%flagstruct%do_uni_zfull !miz
      hybrid_z                      => Atm%flagstruct%hybrid_z
      Make_NH                       => Atm%flagstruct%Make_NH
      make_hybrid_z                 => Atm%flagstruct%make_hybrid_z
