@@ -173,6 +173,7 @@ module fv_control_mod
    logical , pointer :: phys_hydrostatic 
 #ifndef use_AM3_physics
    logical , pointer :: do_uni_zfull !miz
+   logical , pointer :: adj_mass_vmr
 #endif
    logical , pointer :: hybrid_z    
    logical , pointer :: Make_NH     
@@ -507,6 +508,7 @@ module fv_control_mod
                          phys_hydrostatic, make_hybrid_z, old_divg_damp, add_noise, &
 #else
                          phys_hydrostatic, do_uni_zfull, make_hybrid_z, old_divg_damp, add_noise, &!miz
+                         adj_mass_vmr,&
 #endif
                          nested, twowaynest, parent_grid_num, parent_tile, &
                          refinement, nestbctype, nestupdate, nsponge, s_weight, &
@@ -1088,6 +1090,8 @@ module fv_control_mod
      phys_hydrostatic              => Atm%flagstruct%phys_hydrostatic
 #ifndef use_AM3_physics
      do_uni_zfull                  => Atm%flagstruct%do_uni_zfull !miz
+     !f1p
+     adj_mass_vmr                  => Atm%flagstruct%adj_mass_vmr
 #endif
      hybrid_z                      => Atm%flagstruct%hybrid_z
      Make_NH                       => Atm%flagstruct%Make_NH
