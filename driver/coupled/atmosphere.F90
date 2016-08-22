@@ -1054,7 +1054,11 @@ contains
 #else
                           Atm(mytile)%q_con, &
 #endif
+#ifdef use_AM3_physics
+                          Physics%control%phys_hydrostatic)
+#else
                           Physics%control%phys_hydrostatic, Physics%control%do_uni_zfull) !miz
+#endif
  
      if (PRESENT(Physics_tendency)) then
 !--- copy the dynamics tendencies into the physics tendencies
