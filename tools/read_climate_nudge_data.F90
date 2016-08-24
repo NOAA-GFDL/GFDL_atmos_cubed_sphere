@@ -175,12 +175,11 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
         enddo
 
         ! special case for surface geopotential (sometimes the name is PHIS)
-        ! z1l: the following is not needed
-!       ! rab: if not needed, should we remove?
-!        if (trim(name) .eq. 'PHIS') then
-!           Files(n)%field_index(INDEX_ZS) = i
-!           call check_resolution (siz(1:nd))
-!        endif
+        if (trim(name) .eq. 'PHIS') then
+           Files(n)%field_index(INDEX_ZS) = i
+           Files(n)%fields(INDEX_ZS) = fields(i)
+           call check_resolution (siz(1:nd))
+        endif
      enddo
      deallocate(fields)
 
