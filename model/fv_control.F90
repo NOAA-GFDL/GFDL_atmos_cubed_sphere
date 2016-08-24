@@ -39,7 +39,9 @@ module fv_control_mod
    use mpp_domains_mod,     only: mpp_define_nest_domains, nest_domain_type, mpp_get_global_domain
    use mpp_domains_mod,     only: mpp_get_C2F_index, mpp_get_F2C_index, mpp_broadcast_domain
    use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST, WEST, SOUTH
-   use mpp_mod,             only: mpp_send, mpp_sync, mpp_set_current_pelist, mpp_declare_pelist, mpp_root_pe, mpp_recv, mpp_sync_self, mpp_broadcast, read_input_nml
+   use mpp_mod,             only: mpp_send, mpp_sync, mpp_set_current_pelist
+   use mpp_mod,             only: mpp_declare_pelist, mpp_root_pe, mpp_recv
+   use mpp_mod,             only: mpp_sync_self, mpp_broadcast, read_input_nml
 
    implicit none
    private
