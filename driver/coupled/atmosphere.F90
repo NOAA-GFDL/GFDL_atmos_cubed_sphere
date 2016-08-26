@@ -561,17 +561,9 @@ contains
 
  end subroutine atmosphere_pref
 
-#ifdef use_AM3_physics
- subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro)
-#else
  subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, do_uni_zfull) !miz
-#endif
    integer, intent(out)           :: i1, i2, j1, j2, kt
-#ifdef use_AM3_physics
-   logical, intent(out), optional :: p_hydro, hydro
-#else
    logical, intent(out), optional :: p_hydro, hydro, do_uni_zfull !miz
-#endif
    i1 = Atm(mytile)%bd%isc
    i2 = Atm(mytile)%bd%iec
    j1 = Atm(mytile)%bd%jsc
@@ -580,9 +572,8 @@ contains
 
    if (present(p_hydro)) p_hydro = Atm(mytile)%flagstruct%phys_hydrostatic
    if (present(  hydro))   hydro = Atm(mytile)%flagstruct%hydrostatic
-#ifndef use_AM3_physics
    if (present(do_uni_zfull)) do_uni_zfull = Atm(mytile)%flagstruct%do_uni_zfull
-#endif
+
  end subroutine atmosphere_control_data
 
 
@@ -1054,11 +1045,7 @@ contains
 #else
                           Atm(mytile)%q_con, &
 #endif
-#ifdef use_AM3_physics
-                          Physics%control%phys_hydrostatic)
-#else
                           Physics%control%phys_hydrostatic, Physics%control%do_uni_zfull) !miz
-#endif
  
      if (PRESENT(Physics_tendency)) then
 !--- copy the dynamics tendencies into the physics tendencies
@@ -1113,11 +1100,7 @@ contains
 #else
                           Atm(mytile)%q_con, &
 #endif
-#ifdef use_AM3_physics
-                          Radiation%control%phys_hydrostatic)
-#else
                           Radiation%control%phys_hydrostatic, Radiation%control%do_uni_zfull) !miz
-#endif
    enddo
 
 !----------------------------------------------------------------------
@@ -1135,20 +1118,12 @@ contains
 
 
  subroutine fv_compute_p_z (npz, phis, pe, peln, delp, delz, pt, q_sph, &
-#ifdef use_AM3_physics
-                            p_full, p_half, z_full, z_half, q_con, hydrostatic)
-#else
                             p_full, p_half, z_full, z_half, q_con, hydrostatic, do_uni_zfull) !miz
-#endif
     integer, intent(in)  :: npz
     real, dimension(:,:),   intent(in)  :: phis
     real, dimension(:,:,:), intent(in)  :: pe, peln, delp, delz, q_con, pt, q_sph
     real, dimension(:,:,:), intent(out) :: p_full, p_half, z_full, z_half
-#ifdef use_AM3_physics
-    logical, intent(in)  :: hydrostatic
-#else
     logical, intent(in)  :: hydrostatic, do_uni_zfull !miz
-#endif
 !--- local variables
     integer i,j,k,isiz,jsiz
     real    tvm
@@ -1220,13 +1195,11 @@ contains
         enddo
       enddo
     endif
-#ifndef use_AM3_physics
     if (do_uni_zfull) then
        do k=1,npz
        	  z_full(:,:,k)=0.5*(z_half(:,:,k)+z_half(:,:,k+1))
        enddo
     endif
-#endif
   end subroutine fv_compute_p_z
 
 
