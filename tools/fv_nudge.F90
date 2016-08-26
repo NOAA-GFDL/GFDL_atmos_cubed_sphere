@@ -42,7 +42,10 @@ module fv_nwp_nudge_mod
  real :: deg2rad, rad2deg
  real :: time_nudge = 0.
  integer :: time_interval = 6*3600   ! dataset time interval (seconds)
- integer, parameter :: nfile_max = 125
+! ---> h1g, enhance the max. analysis data files, 2012-10-22
+! integer, parameter :: nfile_max = 125 
+ integer, parameter :: nfile_max = 29280  ! maximum: 20-year analysis data, 4*366*20=29280
+! <--- h1g,  2012-10-22
  integer :: nfile
 
  integer :: k_breed = 0
@@ -59,6 +62,19 @@ module fv_nwp_nudge_mod
  real, allocatable:: gz0(:,:)
 
 ! Namelist variables:
+! ---> h1g, add the list of input NCEP analysis data files, 2012-10-22
+ character(len=128):: input_fname_list =""       ! a file lists the input NCEP analysis data
+ character(len=128):: analysis_file_first =""    ! the first NCEP analysis file to be used for nudging,
+                                                 ! by default, the first file in the "input_fname_list" 
+ character(len=128):: analysis_file_last=""      ! the last NCEP analysis file to be used for nudging 
+                                                 ! by default, the last file in the "input_fname_list"
+
+ real   :: P_relax = 30.E2                       ! from P_relax upwards, nudging is reduced linearly 
+                                                 ! proportional to pfull/P_relax
+
+ real   :: P_norelax = 0.0                       ! from P_norelax upwards, no nudging   
+! <--- h1g, 2012-10-22
+
  character(len=128):: file_names(nfile_max)
  character(len=128):: track_file_name
  integer :: nfile_total = 0       ! =5 for 1-day (if datasets are 6-hr apart)
@@ -168,7 +184,8 @@ module fv_nwp_nudge_mod
                           nf_uv, breed_srf_w, tau_vt_wind, tau_vt_slp, strong_mask, mask_fac, del2_cd,   &
                           kbot_t, kbot_q, p_wvp, time_varying, time_interval, use_pt_inc, pt_lim,  &
                           tau_vt_rad, r_lo, r_hi, use_high_top, add_bg_wind, conserve_mom, conserve_hgt,  &
-                          min_nobs, min_mslp, nudged_time, r_fac, r_min, r_inc, ibtrack, track_file_name, file_names
+                          min_nobs, min_mslp, nudged_time, r_fac, r_min, r_inc, ibtrack, track_file_name, file_names,         &
+                          input_fname_list, analysis_file_first, analysis_file_last, P_relax, P_norelax  !h1g, add 3 namelist variables, 2012-20-22 
 
  contains
  
@@ -280,9 +297,12 @@ module fv_nwp_nudge_mod
 !$omp parallel do default(shared)
   do k=1,npz
      press(k) = 0.5*(ak(k) + ak(k+1)) + 0.5*(bk(k)+bk(k+1))*1.E5
-     if ( press(k) < 10.E2 ) then
-          profile(k) =  max(0.01, press(k)/10.E2) 
+     if ( press(k) < P_relax ) then
+          profile(k) =  max(0.01, press(k)/P_relax) 
      endif
+
+  ! above P_norelax, no nudging. added by h1g
+     if( press(k) < P_norelax ) profile(k) = 0.0
   enddo
   profile(1) = 0.
 
@@ -1082,6 +1102,11 @@ module fv_nwp_nudge_mod
   integer :: i, j, j1, f_unit, unit, io, ierr, nt, k
   integer :: ncid
 
+! ---> h1g, read NCEP analysis data list, 2012-10-22
+  integer            :: input_fname_unit
+  character(len=128) :: fname_tmp
+! <--- h1g, 2012-10-22
+
   real, pointer, dimension(:,:,:) :: agrid
 
   is  = bd%is
@@ -1130,6 +1155,52 @@ module fv_nwp_nudge_mod
          write( f_unit, nml = fv_nwp_nudge_nml )
          write(*,*) 'NWP nudging initialized.'
     endif
+! ---> h1g, specify the NCEP analysis data for nudging, 2012-10-22
+    if ( trim(input_fname_list) .ne. "" ) then
+      input_fname_unit = get_unit()
+      open( input_fname_unit, file = input_fname_list )
+       nt = 0
+       io = 0
+
+       do while ( io .eq. 0 )
+        read ( input_fname_unit, '(a)', iostat = io, end = 101 ) fname_tmp
+        if( trim(fname_tmp) .ne. "" ) then    ! escape any empty record  
+          if ( trim(fname_tmp) == trim(analysis_file_last) ) then
+            nt = nt + 1
+            file_names(nt) = 'INPUT/'//trim(fname_tmp)
+            if(master .and. nudge_debug) write(*,*) 'From NCEP file list, last file: ', nt, file_names(nt)
+            nt = 0
+            goto 101  ! read last analysis data and then close file
+          endif ! trim(fname_tmp) == trim(analysis_file_last) 
+
+          if ( trim(analysis_file_first) == "" ) then
+            nt = nt + 1
+            file_names(nt) = 'INPUT/'//trim(fname_tmp) 
+            if(master .and. nudge_debug) then
+              if( nt .eq. 1 ) then  
+               write(*,*) 'From NCEP file list, first file: ', nt, file_names(nt),trim(analysis_file_first) 
+              else
+               write(*,*) 'From NCEP file list: ', nt, file_names(nt) 
+              endif ! nt .eq. 1
+            endif ! master .and. nudge_debug
+          else
+            if ( trim(fname_tmp) == trim(analysis_file_first) .or. nt > 0 ) then
+              nt = nt + 1
+              file_names(nt) = 'INPUT/'//trim(fname_tmp)
+              if(master .and. nudge_debug) then
+                if( nt .eq. 1 ) then  
+                  write(*,*) 'From NCEP file list, first file: ', nt,  file_names(nt),trim(analysis_file_first) 
+                else
+                  write(*,*) 'From NCEP file list: ', nt, file_names(nt) 
+                endif !  nt .eq. 1
+              endif  ! master .and. nudge_debug
+            endif  ! trim(fname_tmp) == trim(analysis_file_first) .or. nt > 0 
+          endif  ! trim(analysis_file_first) == "" 
+        endif  ! trim(fname_tmp) .ne. "" 
+       end do !  io .eq. 0
+101   close( input_fname_unit )
+    endif
+! <--- h1g, 2012-10-22
 
     do nt=1,nfile_max
       if ( file_names(nt) == "No_File_specified" ) then
@@ -1257,6 +1328,10 @@ module fv_nwp_nudge_mod
   logical:: read_ts = .true.
   logical:: land_ts = .false.
 
+  integer:: status, var3id    ! h1g, 2016-08-10
+#include <netcdf.inc>
+
+
   if( .not. file_exist(fname) ) then
      call mpp_error(FATAL,'==> Error from get_ncep_analysis: file not found')
   else
@@ -1273,7 +1348,21 @@ module fv_nwp_nudge_mod
       if ( .not. land_ts ) then
            allocate ( wk0(im,jm) )
 ! Read NCEP ORO (1; land; 0: ocean; 2: sea_ice)
-           call get_var3_r4( ncid, 'ORO', 1,im, 1,jm, 1,1, wk0 )
+      
+! ---> h1g, read either 'ORO' or 'LAND', 2016-08-10
+        status = nf_inq_varid (ncid,  'ORO', var3id)
+        if (status .eq. NF_NOERR)  then
+          call get_var3_r4( ncid, 'ORO', 1,im, 1,jm, 1,1, wk0 )
+
+        else !there is no 'ORO'
+          status = nf_inq_varid (ncid,  'LAND', var3id)
+          if (status .eq. NF_NOERR)  then
+            call get_var3_r4( ncid, 'LAND', 1,im, 1,jm, 1,1, wk0 )         
+          else
+            call mpp_error(FATAL,'Neither ORO nor LAND exists in re-analysis data')  
+          endif
+        endif 
+! <--- h1g, 2016-08-10 
 
            do j=1,jm
               tmean = 0.
@@ -1351,7 +1440,23 @@ module fv_nwp_nudge_mod
         enddo
      enddo
 
-     call get_var3_r4( ncid, 'PHIS', 1,im, jbeg,jend, 1,1, wk2 )
+
+! ---> h1g, read either 'PHIS' or 'PHI', 2016-08-10
+     status = nf_inq_varid (ncid,  'PHIS', var3id)
+     if (status .eq. NF_NOERR)  then
+       call get_var3_r4( ncid, 'PHIS', 1,im, jbeg,jend, 1,1, wk2 )
+
+     else !there is no 'PHIS'
+       status = nf_inq_varid (ncid,  'PHI', var3id)
+       if (status .eq. NF_NOERR)  then
+         call get_var3_r4( ncid, 'PHI', 1,im, jbeg,jend, 1,1, wk2 )
+         wk2 = wk2 * grav  ! convert unit from geopotential meter (m) to geopotential height (m2/s2)
+       else
+         call mpp_error(FATAL,'Neither PHIS nor PHI exists in re-analysis data')  
+       endif
+     endif 
+! <--- h1g, 2016-08-10 
+
 
      do j=js,je
         do i=is,ie

@@ -430,6 +430,7 @@ module fv_arrays_mod
 !------------------------------------------------
    logical :: hydrostatic = .true.
    logical :: phys_hydrostatic = .true.  ! heating/cooling term from the physics is hydrostatic
+   logical :: do_uni_zfull = .false.     ! compute zfull as a simply average of two zhalf
    logical :: hybrid_z    = .false.      ! use hybrid_z for remapping
    logical :: Make_NH     = .false.      ! Initialize (w, delz) from hydro restart file 
    logical :: make_hybrid_z  = .false.   ! transform hydrostatic eta-coord IC into non-hydrostatic hybrid_z
@@ -448,6 +449,14 @@ module fv_arrays_mod
   !Convenience pointers
   integer, pointer :: grid_number
 
+#ifndef use_AM3_physics
+  !f1p
+!  logical  :: adj_mass_vmr = .true. !fix mass balance issue for tracers in units of vmr
+  logical  :: adj_mass_vmr = .false. !TER: This is to reproduce answers for verona patch.  This default can be changed
+                                     !     to .true. in the next city release if desired
+#else
+  logical  :: adj_mass_vmr = .false. !TER: AM3 should always reproduce answers
+#endif  
   
   !integer, pointer :: test_case
   !real,    pointer :: alpha

@@ -6,7 +6,7 @@ module fv_update_phys_mod
   use mpp_parameter_mod,  only: AGRID_PARAM=>AGRID
   use mpp_mod,            only: FATAL, mpp_error
   use time_manager_mod,   only: time_type
-  use tracer_manager_mod, only: get_tracer_index, adjust_mass
+  use tracer_manager_mod, only: get_tracer_index, adjust_mass, get_tracer_names
 
   use fv_arrays_mod,      only: fv_flags_type, fv_nest_type
   use boundary_mod,        only: nested_grid_BC
@@ -133,6 +133,13 @@ module fv_update_phys_mod
 
     real, dimension(1,1,1) :: parent_u_dt, parent_v_dt ! dummy variables for nesting
 
+!f1p                                                                                                                                                                                                                                        
+!account for change in air molecular weight because of H2O change                                                                                                                                                                            
+    logical, dimension(nq) :: conv_vmr_mmr
+    real                   :: adj_vmr(is:ie,js:je,npz)
+    character(len=32)      :: tracer_units, tracer_name
+
+
     cv_air = cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
 
     rdg = -rdgas / grav
@@ -147,6 +154,21 @@ module fv_update_phys_mod
         cld_amt = 7
            zvir = 0.
     endif
+
+!f1p
+    conv_vmr_mmr(1:nq) = .false.
+    if (flagstruct%adj_mass_vmr) then
+    do m=1,nq
+       call get_tracer_names (MODEL_ATMOS, m, name = tracer_name,  &
+            units = tracer_units)
+       if ( trim(tracer_units) .eq. 'vmr' ) then
+          conv_vmr_mmr(m) = .true.
+       else
+          conv_vmr_mmr(m) = .false.
+       end if
+    end do
+    end if
+    
 
     if ( nwat>=3 ) then
         sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
@@ -257,6 +279,26 @@ module fv_update_phys_mod
                                         q_dt(i,j,k,snowwat) +    &
                                         q_dt(i,j,k,graupel) )
               delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
+
+!f1p
+  !1 - kg(H2O)/kg(air) before / 1 - kg(H2O)/kg(air) current                                                                                                                                                                      
+              !1 - (q-dq/dt*Dt) = ps_dt - q 
+              if (flagstruct%adj_mass_vmr) then
+                 adj_vmr(i,j,k) = (      ps_dt(i,j)          -    &
+                      (q(i,j,k,sphum       +    &
+                      q(i,j,k,liq_wat)    +    &
+                      q(i,j,k,rainwat)    +    &
+                      q(i,j,k,ice_wat)    +    &
+                      q(i,j,k,snowwat)    +    &
+                      q(i,j,k,graupel)) ) ) /  &
+                      (1. - (q(i,j,k,sphum)      +    &
+                      q(i,j,k,liq_wat)    +    &
+                      q(i,j,k,rainwat)    +    &
+                      q(i,j,k,ice_wat)    +    &
+                      q(i,j,k,snowwat)    +    &
+                      q(i,j,k,graupel))   )
+              end if
+
            enddo
         enddo
       elseif( nwat==3 ) then
@@ -267,6 +309,17 @@ module fv_update_phys_mod
                                      q_dt(i,j,k,liq_wat) +    &
                                      q_dt(i,j,k,ice_wat) )
               delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
+
+!f1p
+              if (flagstruct%adj_mass_vmr) then
+                 adj_vmr(i,j,k) = (      ps_dt(i,j)          -    &
+                      (q(i,j,k,sphum       +    &
+                      q(i,j,k,liq_wat)    +    &
+                      q(i,j,k,ice_wat)))  ) /  &
+                      (1. - (q(i,j,k,sphum)      +    &
+                      q(i,j,k,liq_wat)    +    &
+                      q(i,j,k,ice_wat))   )
+              end if
            enddo
         enddo
       elseif ( nwat>0 ) then
@@ -274,6 +327,13 @@ module fv_update_phys_mod
            do i=is,ie
               ps_dt(i,j)  = 1. + dt*sum(q_dt(i,j,k,1:nwat))
               delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
+
+              if (flagstruct%adj_mass_vmr) then
+                 adj_vmr(i,j,k) =  (     ps_dt(i,j)                         -           &
+                      sum(q(i,j,k,1:flagstruct%nwat)) )                     /           &
+                      (1. - sum(q(i,j,k,1:flagstruct%nwat)))              
+              end if
+
            enddo
         enddo
       endif
@@ -287,6 +347,8 @@ module fv_update_phys_mod
           if( m /= cld_amt .and. m /= w_diff .and. adjust_mass(MODEL_ATMOS,m)) then 
             if (m <= nq)  then
               q(is:ie,js:je,k,m) = q(is:ie,js:je,k,m) / ps_dt(is:ie,js:je)
+              if (conv_vmr_mmr(m)) &
+                   q(is:ie,js:je,k,m) = q(is:ie,js:je,k,m) * adj_vmr(is:ie,js:je,k)
             else
               qdiag(is:ie,js:je,k,m) = qdiag(is:ie,js:je,k,m) / ps_dt(is:ie,js:je)
             endif
