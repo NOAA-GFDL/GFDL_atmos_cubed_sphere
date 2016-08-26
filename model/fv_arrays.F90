@@ -449,9 +449,14 @@ module fv_arrays_mod
   !Convenience pointers
   integer, pointer :: grid_number
 
+#ifndef use_AM3_physics
   !f1p
   logical  :: adj_mass_vmr = .true. !fix mass balance issue for tracers in units of vmr
-
+  logical  :: adj_mass_vmr = .false. !TER: This is to reproduce answers for verona patch.  This default can be changed
+                                     !     to .true. in the next city release if desired
+#else
+  logical  :: adj_mass_vmr = .false. !TER: AM3 should always reproduce answers
+#endif  
   
   !integer, pointer :: test_case
   !real,    pointer :: alpha
