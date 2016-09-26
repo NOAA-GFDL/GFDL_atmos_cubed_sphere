@@ -38,6 +38,7 @@ use physics_driver_mod, only: surf_diff_type
 use physics_types_mod,  only: physics_type, & 
                               physics_tendency_type
 use radiation_types_mod,only: radiation_type, compute_g_avg
+use atmos_cmip_diag_mod,only: atmos_cmip_diag_init
 
 !-----------------
 ! FV core modules:
@@ -49,7 +50,7 @@ use fv_io_mod,          only: fv_io_register_nudge_restart
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin
-use fv_cmip_diag_mod,   only: fv_cmip_diag_init, fv_cmip_diag
+use fv_cmip_diag_mod,   only: fv_cmip_diag_init, fv_cmip_diag, fv_cmip_diag_end
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
 use fv_mp_mod,          only: switch_current_Atm 
@@ -248,7 +249,6 @@ contains
 !----- initialize atmos_axes and fv_dynamics diagnostics
        !I've had trouble getting this to work with multiple grids at a time; worth revisiting?
    call fv_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time, npx, npy, npz, Atm(mytile)%flagstruct%p_ref)
-   call fv_cmip_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time)
 
 !---------- reference profile -----------
     ps1 = 101325.
@@ -257,6 +257,10 @@ contains
     pref(npz+1,2) = ps2
     call get_eta_level ( npz, ps1, pref(1,1), dum1d, Atm(mytile)%ak, Atm(mytile)%bk )
     call get_eta_level ( npz, ps2, pref(1,2), dum1d, Atm(mytile)%ak, Atm(mytile)%bk )
+
+!---- initialize cmip diagnostic output ----
+   call atmos_cmip_diag_init ( Atm(mytile)%ak, Atm(mytile)%bk, pref(1,1), Atm(mytile)%atmos_axes, Time )
+   call fv_cmip_diag_init    ( Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time )
 
 !--- initialize nudging module ---
 #if defined (ATMOS_NUDGE)
@@ -511,6 +515,7 @@ contains
    if ( Atm(mytile)%flagstruct%nudge ) call fv_nwp_nudge_end
 #endif
 
+   call fv_cmip_diag_end
    call nullify_domain ( )
    call fv_end(Atm, grids_on_this_pe)
    deallocate (Atm)
@@ -561,17 +566,9 @@ contains
 
  end subroutine atmosphere_pref
 
-#ifdef use_AM3_physics
- subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro)
-#else
  subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, do_uni_zfull) !miz
-#endif
    integer, intent(out)           :: i1, i2, j1, j2, kt
-#ifdef use_AM3_physics
-   logical, intent(out), optional :: p_hydro, hydro
-#else
    logical, intent(out), optional :: p_hydro, hydro, do_uni_zfull !miz
-#endif
    i1 = Atm(mytile)%bd%isc
    i2 = Atm(mytile)%bd%iec
    j1 = Atm(mytile)%bd%jsc
@@ -580,9 +577,8 @@ contains
 
    if (present(p_hydro)) p_hydro = Atm(mytile)%flagstruct%phys_hydrostatic
    if (present(  hydro))   hydro = Atm(mytile)%flagstruct%hydrostatic
-#ifndef use_AM3_physics
    if (present(do_uni_zfull)) do_uni_zfull = Atm(mytile)%flagstruct%do_uni_zfull
-#endif
+
  end subroutine atmosphere_control_data
 
 
@@ -1054,11 +1050,7 @@ contains
 #else
                           Atm(mytile)%q_con, &
 #endif
-#ifdef use_AM3_physics
-                          Physics%control%phys_hydrostatic)
-#else
                           Physics%control%phys_hydrostatic, Physics%control%do_uni_zfull) !miz
-#endif
  
      if (PRESENT(Physics_tendency)) then
 !--- copy the dynamics tendencies into the physics tendencies
@@ -1113,11 +1105,7 @@ contains
 #else
                           Atm(mytile)%q_con, &
 #endif
-#ifdef use_AM3_physics
-                          Radiation%control%phys_hydrostatic)
-#else
                           Radiation%control%phys_hydrostatic, Radiation%control%do_uni_zfull) !miz
-#endif
    enddo
 
 !----------------------------------------------------------------------
@@ -1135,20 +1123,12 @@ contains
 
 
  subroutine fv_compute_p_z (npz, phis, pe, peln, delp, delz, pt, q_sph, &
-#ifdef use_AM3_physics
-                            p_full, p_half, z_full, z_half, q_con, hydrostatic)
-#else
                             p_full, p_half, z_full, z_half, q_con, hydrostatic, do_uni_zfull) !miz
-#endif
     integer, intent(in)  :: npz
     real, dimension(:,:),   intent(in)  :: phis
     real, dimension(:,:,:), intent(in)  :: pe, peln, delp, delz, q_con, pt, q_sph
     real, dimension(:,:,:), intent(out) :: p_full, p_half, z_full, z_half
-#ifdef use_AM3_physics
-    logical, intent(in)  :: hydrostatic
-#else
     logical, intent(in)  :: hydrostatic, do_uni_zfull !miz
-#endif
 !--- local variables
     integer i,j,k,isiz,jsiz
     real    tvm
@@ -1220,13 +1200,11 @@ contains
         enddo
       enddo
     endif
-#ifndef use_AM3_physics
     if (do_uni_zfull) then
        do k=1,npz
        	  z_full(:,:,k)=0.5*(z_half(:,:,k)+z_half(:,:,k+1))
        enddo
     endif
-#endif
   end subroutine fv_compute_p_z
 
 

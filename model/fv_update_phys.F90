@@ -6,11 +6,8 @@ module fv_update_phys_mod
   use mpp_parameter_mod,  only: AGRID_PARAM=>AGRID
   use mpp_mod,            only: FATAL, mpp_error
   use time_manager_mod,   only: time_type
-#ifdef use_AM3_physics
-  use tracer_manager_mod, only: get_tracer_index, adjust_mass
-#else
   use tracer_manager_mod, only: get_tracer_index, adjust_mass, get_tracer_names
-#endif
+
   use fv_arrays_mod,      only: fv_flags_type, fv_nest_type
   use boundary_mod,        only: nested_grid_BC
   use fv_eta_mod,         only: get_eta_level
@@ -135,7 +132,7 @@ module fv_update_phys_mod
     real:: cvm, qstar, dbk, rdg, zvir, p_fac, cv_air, q_v, q_liq, q_sol, gama_dt
 
     real, dimension(1,1,1) :: parent_u_dt, parent_v_dt ! dummy variables for nesting
-#ifndef use_AM3_physics
+
 !f1p                                                                                                                                                                                                                                        
 !account for change in air molecular weight because of H2O change                                                                                                                                                                            
     logical, dimension(nq) :: conv_vmr_mmr
@@ -143,7 +140,6 @@ module fv_update_phys_mod
     character(len=32)      :: tracer_units, tracer_name
 
 
-#endif
     cv_air = cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
 
     rdg = -rdgas / grav
@@ -159,7 +155,6 @@ module fv_update_phys_mod
            zvir = 0.
     endif
 
-#ifndef use_AM3_physics
 !f1p
     conv_vmr_mmr(1:nq) = .false.
     if (flagstruct%adj_mass_vmr) then
@@ -174,7 +169,6 @@ module fv_update_phys_mod
     end do
     end if
     
-#endif
 
     if ( nwat>=3 ) then
         sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
@@ -286,7 +280,6 @@ module fv_update_phys_mod
                                         q_dt(i,j,k,graupel) )
               delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
 
-#ifndef use_AM3_physics
 !f1p
   !1 - kg(H2O)/kg(air) before / 1 - kg(H2O)/kg(air) current                                                                                                                                                                      
               !1 - (q-dq/dt*Dt) = ps_dt - q 
@@ -306,7 +299,6 @@ module fv_update_phys_mod
                       q(i,j,k,graupel))   )
               end if
 
-#endif
            enddo
         enddo
       elseif( nwat==3 ) then
@@ -318,7 +310,6 @@ module fv_update_phys_mod
                                      q_dt(i,j,k,ice_wat) )
               delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
 
-#ifndef use_AM3_physics
 !f1p
               if (flagstruct%adj_mass_vmr) then
                  adj_vmr(i,j,k) = (      ps_dt(i,j)          -    &
@@ -329,7 +320,6 @@ module fv_update_phys_mod
                       q(i,j,k,liq_wat)    +    &
                       q(i,j,k,ice_wat))   )
               end if
-#endif
            enddo
         enddo
       elseif ( nwat>0 ) then
@@ -337,7 +327,6 @@ module fv_update_phys_mod
            do i=is,ie
               ps_dt(i,j)  = 1. + dt*sum(q_dt(i,j,k,1:nwat))
               delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
-#ifndef use_AM3_physics
 
               if (flagstruct%adj_mass_vmr) then
                  adj_vmr(i,j,k) =  (     ps_dt(i,j)                         -           &
@@ -345,7 +334,6 @@ module fv_update_phys_mod
                       (1. - sum(q(i,j,k,1:flagstruct%nwat)))              
               end if
 
-#endif
            enddo
         enddo
       endif
@@ -359,10 +347,8 @@ module fv_update_phys_mod
           if( m /= cld_amt .and. m /= w_diff .and. adjust_mass(MODEL_ATMOS,m)) then 
             if (m <= nq)  then
               q(is:ie,js:je,k,m) = q(is:ie,js:je,k,m) / ps_dt(is:ie,js:je)
-#ifndef use_AM3_physics
               if (conv_vmr_mmr(m)) &
                    q(is:ie,js:je,k,m) = q(is:ie,js:je,k,m) * adj_vmr(is:ie,js:je,k)
-#endif
             else
               qdiag(is:ie,js:je,k,m) = qdiag(is:ie,js:je,k,m) / ps_dt(is:ie,js:je)
             endif

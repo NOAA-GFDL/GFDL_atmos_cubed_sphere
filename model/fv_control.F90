@@ -39,7 +39,9 @@ module fv_control_mod
    use mpp_domains_mod,     only: mpp_define_nest_domains, nest_domain_type, mpp_get_global_domain
    use mpp_domains_mod,     only: mpp_get_C2F_index, mpp_get_F2C_index, mpp_broadcast_domain
    use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST, WEST, SOUTH
-   use mpp_mod,             only: mpp_send, mpp_sync, mpp_transmit, mpp_set_current_pelist, mpp_declare_pelist, mpp_root_pe, mpp_recv, mpp_sync_self, mpp_broadcast, read_input_nml
+   use mpp_mod,             only: mpp_send, mpp_sync, mpp_set_current_pelist
+   use mpp_mod,             only: mpp_declare_pelist, mpp_root_pe, mpp_recv
+   use mpp_mod,             only: mpp_sync_self, mpp_broadcast, read_input_nml
 
    implicit none
    private
@@ -171,10 +173,8 @@ module fv_control_mod
    character(len=128) , pointer :: res_latlon_tracers 
    logical , pointer :: hydrostatic 
    logical , pointer :: phys_hydrostatic 
-#ifndef use_AM3_physics
    logical , pointer :: do_uni_zfull !miz
-   logical , pointer :: adj_mass_vmr
-#endif
+   logical , pointer :: adj_mass_vmr ! f1p
    logical , pointer :: hybrid_z    
    logical , pointer :: Make_NH     
    logical , pointer :: make_hybrid_z  
@@ -504,15 +504,11 @@ module fv_control_mod
                          pnats, dnats, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
                          c2l_ord, dx_const, dy_const, umax, deglat,      &
                          deglon_start, deglon_stop, deglat_start, deglat_stop, &
-#ifdef use_AM3_physics
-                         phys_hydrostatic, make_hybrid_z, old_divg_damp, add_noise, &
-#else
                          phys_hydrostatic, do_uni_zfull, make_hybrid_z, old_divg_damp, add_noise, &!miz
-                         adj_mass_vmr,&
-#endif
                          nested, twowaynest, parent_grid_num, parent_tile, &
                          refinement, nestbctype, nestupdate, nsponge, s_weight, &
-                         ioffset, joffset, check_negative, nudge_ic
+                         ioffset, joffset, check_negative, nudge_ic, &
+                         adj_mass_vmr
 
       namelist /test_case_nml/test_case,alpha
 
@@ -1088,11 +1084,8 @@ module fv_control_mod
 
      hydrostatic                   => Atm%flagstruct%hydrostatic
      phys_hydrostatic              => Atm%flagstruct%phys_hydrostatic
-#ifndef use_AM3_physics
      do_uni_zfull                  => Atm%flagstruct%do_uni_zfull !miz
-     !f1p
-     adj_mass_vmr                  => Atm%flagstruct%adj_mass_vmr
-#endif
+     adj_mass_vmr                  => Atm%flagstruct%adj_mass_vmr !f1p
      hybrid_z                      => Atm%flagstruct%hybrid_z
      Make_NH                       => Atm%flagstruct%Make_NH
      make_hybrid_z                 => Atm%flagstruct%make_hybrid_z
