@@ -38,7 +38,10 @@ use physics_driver_mod, only: surf_diff_type
 use physics_types_mod,  only: physics_type, & 
                               physics_tendency_type
 use radiation_types_mod,only: radiation_type, compute_g_avg
-use atmos_cmip_diag_mod,only: atmos_cmip_diag_init
+use atmos_cmip_diag_mod,only: atmos_cmip_diag_init, &
+                              register_cmip_diag_field_3d, &
+                              send_cmip_data_3d, cmip_diag_id_type, &
+                              query_cmip_diag_id
 
 !-----------------
 ! FV core modules:
@@ -122,6 +125,7 @@ character(len=7)   :: mod_name = 'atmos'
   real, allocatable :: qtend(:,:,:,:)
   real              :: mv = -1.e10
 !miz
+  type(cmip_diag_id_type) :: ID_tnta, ID_tnhusa
 
   integer :: mytile = 1
   integer :: p_split = 1
@@ -317,6 +321,13 @@ contains
                          Time,'qidt_dyn',   'kg/kg/s', missing_value=mv)
    id_qadt_dyn   =register_diag_field(mod_name,'qadt_dyn',   Atm(mytile)%atmos_axes(1:3),  &
                          Time,'qadt_dyn',   '1/s', missing_value=mv)
+!--- register cmip tendency fields ---
+   ID_tnta = register_cmip_diag_field_3d (mod_name, 'tnta', Time, &
+                         'Tendency of Air Temperature due to Advection', 'K s-1', &
+                         standard_name='tendency_of_air_temperature_due_to_advection')
+   ID_tnhusa = register_cmip_diag_field_3d (mod_name, 'tnhusa', Time, &
+                         'Tendency of Specific Humidity due to Advection', 's-1', &
+                         standard_name='tendency_of_specific_humidity_due_to_advection')
 
 !---allocate id_tracer_*
    allocate (id_tracerdt_dyn    (num_tracers))
@@ -331,9 +342,9 @@ contains
      endif
    enddo
    if (any(id_tracerdt_dyn(:)>0)) allocate(qtendyyf(isc:iec, jsc:jec,1:npz,num_tracers))
-   if ( id_tdt_dyn>0 )            allocate(ttend(isc:iec, jsc:jec, 1:npz))
-   if ( id_qdt_dyn>0 .or. id_qldt_dyn>0 .or. id_qidt_dyn>0 .or. id_qadt_dyn>0 )   &
-                                  allocate(qtend(isc:iec, jsc:jec, 1:npz, 4))
+   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) allocate(ttend(isc:iec, jsc:jec, 1:npz))
+   if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or. &
+        query_cmip_diag_id(ID_tnhusa) )  allocate(qtend(isc:iec, jsc:jec, 1:npz, 4))
 !miz
 
 !  --- initialize clocks for dynamics, physics_down and physics_up
@@ -367,14 +378,14 @@ contains
    Surf_diff%ddp_dyn(:,:,:) = Atm(mytile)%delp(isc:iec, jsc:jec, :)
    Surf_diff%tdt_dyn(:,:,:) = Atm(mytile)%pt(isc:iec, jsc:jec, :)
    Surf_diff%qdt_dyn(:,:,:) = Atm(mytile)%q (isc:iec, jsc:jec, :, 1) + &
-   			      Atm(mytile)%q (isc:iec, jsc:jec, :, 2) + &
-			      Atm(mytile)%q (isc:iec, jsc:jec, :, 3)
+                              Atm(mytile)%q (isc:iec, jsc:jec, :, 2) + &
+                              Atm(mytile)%q (isc:iec, jsc:jec, :, 3)
 #endif
 
 !miz[M d0
-   if ( id_tdt_dyn>0 ) ttend(:, :, :) = Atm(mytile)%pt(isc:iec, jsc:jec, :)
-   if ( id_qdt_dyn>0 .or. id_qldt_dyn>0 .or. id_qidt_dyn>0 .or. id_qadt_dyn>0 )   &
-        qtend(:, :, :, :) = Atm(mytile)%q (isc:iec, jsc:jec, :, :)
+   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) ttend(:, :, :) = Atm(mytile)%pt(isc:iec, jsc:jec, :)
+   if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or. &
+        query_cmip_diag_id(ID_tnhusa) ) qtend(:, :, :, :) = Atm(mytile)%q (isc:iec, jsc:jec, :, :)
 !miz
    do itrac = 1, num_tracers
      if (id_tracerdt_dyn (itrac) >0 ) & 
@@ -419,23 +430,25 @@ contains
    Surf_diff%ddp_dyn(:,:,:) =(Atm(mytile)%delp(isc:iec,jsc:jec,:)-Surf_diff%ddp_dyn(:,:,:))/dt_atmos
    Surf_diff%tdt_dyn(:,:,:) =(Atm(mytile)%pt(isc:iec,jsc:jec,:)  -Surf_diff%tdt_dyn(:,:,:))/dt_atmos
    Surf_diff%qdt_dyn(:,:,:) =(Atm(mytile)%q (isc:iec,jsc:jec,:,1) + &
-   			      Atm(mytile)%q (isc:iec,jsc:jec,:,2) + &
-   			      Atm(mytile)%q (isc:iec,jsc:jec,:,3) - Surf_diff%qdt_dyn(:,:,:))/dt_atmos
+                              Atm(mytile)%q (isc:iec,jsc:jec,:,2) + &
+                              Atm(mytile)%q (isc:iec,jsc:jec,:,3) - Surf_diff%qdt_dyn(:,:,:))/dt_atmos
 #endif
 !miz
    if ( id_udt_dyn>0 )  used = send_data( id_udt_dyn, 2.0/dt_atmos*Atm(mytile)%ua(isc:iec,jsc:jec,:), Time)
    if ( id_vdt_dyn>0 )  used = send_data( id_vdt_dyn, 2.0/dt_atmos*Atm(mytile)%va(isc:iec,jsc:jec,:), Time)
-   if ( id_tdt_dyn>0 ) then
+   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) then
         ttend = (Atm(mytile)%pt(isc:iec, jsc:jec, :)   - ttend(:, :, :   ))/dt_atmos
-         used = send_data(id_tdt_dyn,  ttend(:,:,:),   Time)
+        if (id_tdt_dyn>0)                used = send_data(id_tdt_dyn,  ttend(:,:,:),   Time)
+        if (query_cmip_diag_id(ID_tnta)) used = send_cmip_data_3d (ID_tnta, ttend(:,:,:), Time)
    endif
 
-   if ( id_qdt_dyn>0 .or. id_qldt_dyn>0 .or. id_qidt_dyn>0 .or. id_qadt_dyn>0 ) then
+   if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or.  query_cmip_diag_id(ID_tnhusa) ) then
         qtend = (Atm(mytile)%q (isc:iec, jsc:jec, :, :)- qtend(:, :, :, :))/dt_atmos
-        used = send_data(id_qdt_dyn,  qtend(:,:,:,1), Time)
-        used = send_data(id_qldt_dyn, qtend(:,:,:,2), Time)
-        used = send_data(id_qidt_dyn, qtend(:,:,:,3), Time)
-        used = send_data(id_qadt_dyn, qtend(:,:,:,4), Time)
+        if (id_qdt_dyn  > 0) used = send_data(id_qdt_dyn,  qtend(:,:,:,1), Time)
+        if (id_qldt_dyn > 0) used = send_data(id_qldt_dyn, qtend(:,:,:,2), Time)
+        if (id_qidt_dyn > 0) used = send_data(id_qidt_dyn, qtend(:,:,:,3), Time)
+        if (id_qadt_dyn > 0) used = send_data(id_qadt_dyn, qtend(:,:,:,4), Time)
+        if (query_cmip_diag_id(ID_tnhusa)) used = send_cmip_data_3d (ID_tnhusa, qtend(:,:,:,1), Time)
    endif
 !miz
 
