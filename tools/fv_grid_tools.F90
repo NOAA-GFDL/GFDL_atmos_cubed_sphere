@@ -35,7 +35,7 @@ module fv_grid_tools_mod
                                get_global_att_value, get_var_att_value
   use mosaic_mod,       only : get_mosaic_ntiles
 
-  use mpp_mod, only: mpp_transmit, mpp_recv
+  use mpp_mod, only: mpp_recv
   implicit none
   private
 #include <netcdf.inc>

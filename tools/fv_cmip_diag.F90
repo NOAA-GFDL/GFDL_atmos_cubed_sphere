@@ -321,7 +321,7 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
   if (count(ID_zg%field_id(:)>0) > 0 .or. id_zg500 > 0) then
     call get_height_field(isc, iec, jsc, jec, ngc, npz, wz, Atm(n)%pt, Atm(n)%q, Atm(n)%peln, zvir)
   endif
-  
+
 !----------------------------------------------------------------------
 ! process 2D fields
 
@@ -345,11 +345,11 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
   if (query_cmip_diag_id(ID_hus)) &
           used = send_cmip_data_3d (ID_hus, Atm(n)%q   (isc:iec,jsc:jec,:,sphum), Time, phalf=Atm(n)%peln, opt=1)
 
-  ! relative humidity
+    ! relative humidity
   if (query_cmip_diag_id(ID_hur)) &
           used = send_cmip_data_3d (ID_hur, rhum(isc:iec,jsc:jec,:), Time, phalf=Atm(n)%peln, opt=1)
 
-  ! geopotential height
+    ! geopotential height
   if (query_cmip_diag_id(ID_zg)) &
           used = send_cmip_data_3d (ID_zg, wz, Time, phalf=Atm(n)%peln, opt=1, ext=.true.)
 
@@ -360,25 +360,25 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
     call interpolate_vertical (isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, &
                                Atm(n)%ua(isc:iec,jsc:jec,:), dat2)          
     used = send_data (id_ua200, dat2, Time)
-  endif
+    endif
 
   if (id_va200 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, &
                                Atm(n)%va(isc:iec,jsc:jec,:), dat2)          
     used = send_data (id_va200, dat2, Time)
-  endif
+    endif
 
   if (id_ua850 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
                                Atm(n)%ua(isc:iec,jsc:jec,:), dat2)          
     used = send_data (id_ua850, dat2, Time)
-  endif
+    endif
 
   if (id_va850 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
                                Atm(n)%va(isc:iec,jsc:jec,:), dat2)          
     used = send_data (id_va850, dat2, Time)
-  endif
+    endif
 
   if (id_ta500 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 500.e2, Atm(n)%peln, &
@@ -396,7 +396,7 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
                                Atm(n)%pt(isc:iec,jsc:jec,:), dat2)          
     used = send_data (id_ta850, dat2, Time)
-  endif
+    endif
 
   if (id_hus850 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
