@@ -42,6 +42,8 @@ use atmos_cmip_diag_mod,only: atmos_cmip_diag_init, &
                               register_cmip_diag_field_3d, &
                               send_cmip_data_3d, cmip_diag_id_type, &
                               query_cmip_diag_id
+use  atmos_global_diag_mod, only: atmos_global_diag_init, &
+                                  atmos_global_diag_end
 
 !-----------------
 ! FV core modules:
@@ -263,8 +265,9 @@ contains
     call get_eta_level ( npz, ps2, pref(1,2), dum1d, Atm(mytile)%ak, Atm(mytile)%bk )
 
 !---- initialize cmip diagnostic output ----
-   call atmos_cmip_diag_init ( Atm(mytile)%ak, Atm(mytile)%bk, pref(1,1), Atm(mytile)%atmos_axes, Time )
-   call fv_cmip_diag_init    ( Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time )
+   call atmos_cmip_diag_init   ( Atm(mytile)%ak, Atm(mytile)%bk, pref(1,1), Atm(mytile)%atmos_axes, Time )
+   call atmos_global_diag_init ( Atm(mytile)%atmos_axes, Atm(mytile)%gridstruct%area(isc:iec,jsc:jec) )
+   call fv_cmip_diag_init      ( Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time )
 
 !--- initialize nudging module ---
 #if defined (ATMOS_NUDGE)
@@ -528,6 +531,7 @@ contains
    if ( Atm(mytile)%flagstruct%nudge ) call fv_nwp_nudge_end
 #endif
 
+   call atmos_global_diag_end
    call fv_cmip_diag_end
    call nullify_domain ( )
    call fv_end(Atm, grids_on_this_pe)
