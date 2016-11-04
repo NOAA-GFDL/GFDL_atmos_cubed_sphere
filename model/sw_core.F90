@@ -2950,6 +2950,9 @@ end subroutine ytp_v
       jsd = bd%jsd
       jed = bd%jed
 
+      utmp = 999.e19
+      vtmp = 999.e19
+
       sin_sg    => gridstruct%sin_sg  
       cosa_u    => gridstruct%cosa_u  
       cosa_v    => gridstruct%cosa_v  
