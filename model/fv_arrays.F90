@@ -49,6 +49,9 @@ module fv_arrays_mod
  integer ::  id_t05
  integer ::  id_tdust, id_sfc_dust
 #endif MARS_GCM
+#ifndef SW_DYNAMICS
+ integer ::  id_eflux ! energy fixer
+#endif SW_DYNAMICS
 
      ! For initial conditions:
      integer ic_ps, ic_ua, ic_va, ic_ppt
