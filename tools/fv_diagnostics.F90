@@ -556,6 +556,10 @@ contains
             'nonhydro_ratio', 'n/a', missing_value=missing_value )
        idiag%id_ws     = register_diag_field ( trim(field), 'ws', axes(1:2), Time,        &
             'Terrain W', 'm/s', missing_value=missing_value )
+#ifndef SW_DYNAMICS
+! energy fixer
+       idiag%id_eflux = register_diag_field ( trim(field), 'efix', Time, 'Energy Deficit (Fixer)', 'W m-2' )
+#endif SW_DYNAMICS
 !--------------------
 ! 3D Condensate
 !--------------------
@@ -1157,6 +1161,10 @@ contains
 #endif
 
     endif
+
+#ifndef SW_DYNAMICS
+    used = send_data(idiag%id_eflux, real(E_Flux), Time)
+#endif
 
     allocate ( a2(isc:iec,jsc:jec) )
     allocate ( u2(isc:iec,jsc:jec) )
