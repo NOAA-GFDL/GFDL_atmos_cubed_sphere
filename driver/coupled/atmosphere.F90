@@ -13,7 +13,7 @@ module atmosphere_mod
 use atmos_co2_mod,      only: atmos_co2_rad, co2_radiation_override
 use block_control_mod,  only: block_control_type
 use constants_mod,      only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
-use time_manager_mod,   only: time_type, get_time, set_time, operator(+) 
+use time_manager_mod,   only: time_type, get_time, set_time, operator(+)
 use fms_mod,            only: file_exist, open_namelist_file,    &
                               close_file, error_mesg, FATAL,     &
                               check_nml_error, stdlog,           &
@@ -35,15 +35,17 @@ use tracer_manager_mod, only: get_tracer_index,&
                               get_number_tracers, &
                               get_tracer_names, NO_TRACER
 use physics_driver_mod, only: surf_diff_type
-use physics_types_mod,  only: physics_type, & 
+use physics_types_mod,  only: physics_type, &
                               physics_tendency_type
 use radiation_types_mod,only: radiation_type, compute_g_avg
 use atmos_cmip_diag_mod,only: atmos_cmip_diag_init, &
                               register_cmip_diag_field_3d, &
                               send_cmip_data_3d, cmip_diag_id_type, &
                               query_cmip_diag_id
+#ifndef use_AM3_physics
 use  atmos_global_diag_mod, only: atmos_global_diag_init, &
                                   atmos_global_diag_end
+#endif
 
 !-----------------
 ! FV core modules:
@@ -58,7 +60,7 @@ use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin
 use fv_cmip_diag_mod,   only: fv_cmip_diag_init, fv_cmip_diag, fv_cmip_diag_end
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
-use fv_mp_mod,          only: switch_current_Atm 
+use fv_mp_mod,          only: switch_current_Atm
 use fv_sg_mod,          only: fv_dry_conv
 use fv_update_phys_mod, only: fv_update_phys
 #if defined (ATMOS_NUDGE)
@@ -78,14 +80,14 @@ use boundary_mod, only: update_coarse_grid
 implicit none
 private
 
-!--- driver routines 
+!--- driver routines
 public :: atmosphere_init, atmosphere_end, atmosphere_restart, &
           atmosphere_dynamics, atmosphere_state_update
 
 !--- utility routines
 public :: atmosphere_resolution, atmosphere_boundary, &
           atmosphere_grid_center, atmosphere_domain, &
-          atmosphere_cell_area, atmosphere_control_data, & 
+          atmosphere_cell_area, atmosphere_control_data, &
           atmosphere_pref, &
           get_atmosphere_axes, get_bottom_mass, &
           get_bottom_wind, get_stock_pe, &
@@ -266,7 +268,9 @@ contains
 
 !---- initialize cmip diagnostic output ----
    call atmos_cmip_diag_init   ( Atm(mytile)%ak, Atm(mytile)%bk, pref(1,1), Atm(mytile)%atmos_axes, Time )
+#ifndef use_AM3_physics
    call atmos_global_diag_init ( Atm(mytile)%atmos_axes, Atm(mytile)%gridstruct%area(isc:iec,jsc:jec) )
+#endif
    call fv_cmip_diag_init      ( Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time )
 
 !--- initialize nudging module ---
@@ -337,7 +341,7 @@ contains
 !---loop for tracers
    do itrac = 1, num_tracers
      call get_tracer_names (MODEL_ATMOS, itrac, name = tracer_name, units = tracer_units)
-     if (get_tracer_index(MODEL_ATMOS,tracer_name)>0) then 
+     if (get_tracer_index(MODEL_ATMOS,tracer_name)>0) then
          id_tracerdt_dyn(itrac) = register_diag_field(mod_name, TRIM(tracer_name)//'dt_dyn',  &
                                       Atm(mytile)%atmos_axes(1:3),Time,                       &
                                       TRIM(tracer_name)//' total tendency from advection',    &
@@ -361,8 +365,8 @@ contains
                     call timing_off('ATMOS_INIT')
 
    n = mytile
-   call switch_current_Atm(Atm(n)) 
-      
+   call switch_current_Atm(Atm(n))
+
  end subroutine atmosphere_init
 
 
@@ -372,7 +376,7 @@ contains
    integer :: itrac, n, psc
    integer :: k, w_diff, nt_dyn
    type(surf_diff_type), intent(inout):: surf_diff
- 
+
 !---- Call FV dynamics -----
 
    call mpp_clock_begin (id_dynam)
@@ -391,7 +395,7 @@ contains
         query_cmip_diag_id(ID_tnhusa) ) qtend(:, :, :, :) = Atm(mytile)%q (isc:iec, jsc:jec, :, :)
 !miz
    do itrac = 1, num_tracers
-     if (id_tracerdt_dyn (itrac) >0 ) & 
+     if (id_tracerdt_dyn (itrac) >0 ) &
             qtendyyf(:,:,:,itrac) = Atm(mytile)%q(isc:iec,jsc:jec,:,itrac)
    enddo
 
@@ -405,7 +409,7 @@ contains
                       Atm(n)%ptop, Atm(n)%ks, nq,                          &
                       Atm(n)%flagstruct%n_split, Atm(n)%flagstruct%q_split,&
                       Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz,           &
-                      Atm(n)%flagstruct%hydrostatic,                       & 
+                      Atm(n)%flagstruct%hydrostatic,                       &
                       Atm(n)%pt, Atm(n)%delp, Atm(n)%q, Atm(n)%ps,         &
                       Atm(n)%pe, Atm(n)%pk, Atm(n)%peln,                   &
                       Atm(n)%pkz, Atm(n)%phis, Atm(n)%q_con,               &
@@ -469,19 +473,19 @@ contains
        call timing_on('TWOWAY_UPDATE')
        call twoway_nesting(Atm, ngrids, grids_on_this_pe, kappa, cp_air, zvir, dt_atmos)
        call timing_off('TWOWAY_UPDATE')
-    endif   
+    endif
    call nullify_domain()
 #endif
 
 !-----------------------------------------------------
-!--- COMPUTE DRY CONVECTION 
+!--- COMPUTE DRY CONVECTION
 !-----------------------------------------------------
-!--- zero out tendencies 
+!--- zero out tendencies
     call mpp_clock_begin (id_dryconv)
-    u_dt(:,:,:)   = 0 
-    v_dt(:,:,:)   = 0 
-    t_dt(:,:,:)   = 0 
-    q_dt(:,:,:,:) = 0 
+    u_dt(:,:,:)   = 0
+    v_dt(:,:,:)   = 0
+    t_dt(:,:,:)   = 0
+    q_dt(:,:,:,:) = 0
 
     w_diff = get_tracer_index (MODEL_ATMOS, 'w_diff' )
     if ( Atm(n)%flagstruct%fv_sg_adj > 0 ) then
@@ -531,7 +535,9 @@ contains
    if ( Atm(mytile)%flagstruct%nudge ) call fv_nwp_nudge_end
 #endif
 
+#ifndef use_AM3_physics
    call atmos_global_diag_end
+#endif
    call fv_cmip_diag_end
    call nullify_domain ( )
    call fv_end(Atm, grids_on_this_pe)
@@ -600,11 +606,11 @@ contains
 
 
  subroutine atmosphere_cell_area  (area_out)
-   real, dimension(:,:),  intent(out)          :: area_out       
+   real, dimension(:,:),  intent(out)          :: area_out
 
-   area_out(1:iec-isc+1, 1:jec-jsc+1) =  Atm(mytile)%gridstruct%area (isc:iec,jsc:jec)                        
+   area_out(1:iec-isc+1, 1:jec-jsc+1) =  Atm(mytile)%gridstruct%area (isc:iec,jsc:jec)
 
- end subroutine atmosphere_cell_area 
+ end subroutine atmosphere_cell_area
 
 
 
@@ -677,7 +683,7 @@ contains
                                'size of argument is incorrect', FATAL   )
 
    axes (1:size(axes(:))) = Atm(mytile)%atmos_axes (1:size(axes(:)))
- 
+
  end subroutine get_atmosphere_axes
 
 
@@ -710,12 +716,12 @@ contains
    if ( present(slp) ) then
      ! determine 0.8 sigma reference level
      sigtop = Atm(mytile)%ak(1)/pstd_mks+Atm(mytile)%bk(1)
-     do k = 1, npz 
+     do k = 1, npz
         sigbot = Atm(mytile)%ak(k+1)/pstd_mks+Atm(mytile)%bk(k+1)
         if (sigbot+sigtop > 1.6) then
-           kr = k  
-           exit    
-        endif   
+           kr = k
+           exit
+        endif
         sigtop = sigbot
      enddo
      do j=jsc,jec
@@ -763,13 +769,13 @@ contains
    real,   intent(out) :: value
 
 #ifdef USE_STOCK
-   include 'stock.inc' 
+   include 'stock.inc'
 #endif
 
    real wm(isc:iec,jsc:jec)
    integer i,j,k
    real, pointer :: area(:,:)
- 
+
    area => Atm(mytile)%gridstruct%area
 
    select case (index)
@@ -779,7 +785,7 @@ contains
 #else
    case (1)
 #endif
-     
+
 !----------------------
 ! Perform vertical sum:
 !----------------------
@@ -810,7 +816,7 @@ contains
      value = 0.0
    end select
 
- end subroutine get_stock_pe 
+ end subroutine get_stock_pe
 
 
  subroutine atmosphere_state_update (Time, Physics_tendency, Physics, Atm_block)
@@ -893,7 +899,7 @@ contains
        call timing_on('TWOWAY_UPDATE')
     if (ngrids > 1) then
        call twoway_nesting(Atm, ngrids, grids_on_this_pe, kappa, cp_air, zvir, dt_atmos)
-    endif   
+    endif
        call timing_off('TWOWAY_UPDATE')
    call nullify_domain()
 #endif
@@ -1068,11 +1074,11 @@ contains
                           Atm(mytile)%q_con, &
 #endif
                           Physics%control%phys_hydrostatic, Physics%control%do_uni_zfull) !miz
- 
+
      if (PRESENT(Physics_tendency)) then
 !--- copy the dynamics tendencies into the physics tendencies
-!--- if one wants to run physics concurrent with dynamics, 
-!--- these values would be zeroed out and accumulated 
+!--- if one wants to run physics concurrent with dynamics,
+!--- these values would be zeroed out and accumulated
 !--- in the atmosphere_state_update
 
        Physics_tendency%block(nb)%u_dt = u_dt(ibs:ibe,jbs:jbe,:)
@@ -1102,7 +1108,7 @@ contains
      ibe = Atm_block%ibe(nb)
      jbs = Atm_block%jbs(nb)
      jbe = Atm_block%jbe(nb)
-     
+
      Radiation%block(nb)%phis = Atm(mytile)%phis(ibs:ibe,jbs:jbe)
      Radiation%block(nb)%t    = Atm(mytile)%pt(ibs:ibe,jbs:jbe,:)
      Radiation%block(nb)%q    = Atm(mytile)%q(ibs:ibe,jbs:jbe,:,:)
@@ -1158,7 +1164,7 @@ contains
     jsiz=size(phis,2)
     zvir = rvgas/rdgas - 1.
     ginv = 1./ grav
-    rrg  = rdgas / grav        
+    rrg  = rdgas / grav
 
 !----------------------------------------------------
 ! Compute pressure and height at full and half levels
@@ -1232,7 +1238,7 @@ contains
 !--- local variables
    integer :: nb, ibs, ibe, jbs, jbe
 
-!--- After initialization by the physics, tracer fields must be 
+!--- After initialization by the physics, tracer fields must be
 !--- returned to the Atm structure.  This is because tracer driver
 !--- can reset the initial values
 !$OMP parallel do default(shared) private(nb, ibs, ibe, jbs, jbe)
