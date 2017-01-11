@@ -1,25 +1,49 @@
+!***********************************************************************
+!*                   GNU General Public License                        *
+!* This file is a part of fvGFS.                                       *
+!*                                                                     *
+!* fvGFS is free software; you can redistribute it and/or modify it    *
+!* and are expected to follow the terms of the GNU General Public      *
+!* License as published by the Free Software Foundation; either        *
+!* version 2 of the License, or (at your option) any later version.    *
+!*                                                                     *
+!* fvGFS is distributed in the hope that it will be useful, but        *
+!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+!* General Public License for more details.                            *
+!*                                                                     *
+!* For the full text of the GNU General Public License,                *
+!* write to: Free Software Foundation, Inc.,                           *
+!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!***********************************************************************
 module fv_dynamics_mod
-   use constants_mod,       only: grav, pi, radius, hlv, rdgas, omega
-   use dyn_core_mod,        only: dyn_core, del2_cubed
-   use fv_mapz_mod,         only: compute_total_energy, Lagrangian_to_Eulerian
+   use constants_mod,       only: grav, pi=>pi_8, radius, hlv, rdgas, omega, rvgas, cp_vapor
+   use dyn_core_mod,        only: dyn_core, del2_cubed, init_ijk_mem
+   use fv_mapz_mod,         only: compute_total_energy, Lagrangian_to_Eulerian, moist_cv, moist_cp
    use fv_tracer2d_mod,     only: tracer_2d, tracer_2d_1L, tracer_2d_nested
    use fv_grid_utils_mod,   only: cubed_to_latlon, c2l_ord2, g_sum
+   use fv_fill_mod,         only: fill2D
    use fv_mp_mod,           only: is_master
+   use fv_mp_mod,           only: group_halo_update_type
+   use fv_mp_mod,           only: start_group_halo_update, complete_group_halo_update
    use fv_timing_mod,       only: timing_on, timing_off
    use diag_manager_mod,    only: send_data
    use fv_diagnostics_mod,  only: fv_time, prt_mxm, range_check, prt_minmax
    use mpp_domains_mod,     only: DGRID_NE, CGRID_NE, mpp_update_domains, domain2D
-   use mpp_domains_mod,     only: mpp_start_update_domains, mpp_complete_update_domains
+   use mpp_mod,             only: mpp_pe
    use field_manager_mod,   only: MODEL_ATMOS
    use tracer_manager_mod,  only: get_tracer_index
    use fv_sg_mod,           only: neg_adj3
    use fv_nesting_mod,      only: setup_nested_grid_BCs
+   use boundary_mod,        only: nested_grid_BC_apply_intT
    use fv_arrays_mod,       only: fv_grid_type, fv_flags_type, fv_atmos_type, fv_nest_type, fv_diag_type, fv_grid_bounds_type
    use fv_nwp_nudge_mod,    only: do_adiabatic_init
 
 implicit none
    logical :: RF_initialized = .false.
-   logical :: bad_range
+   logical :: pt_initialized = .false.
+   logical :: bad_range = .false.
    real, allocatable ::  rf(:)
    integer :: kmax=1
    real :: agrav
@@ -76,6 +100,7 @@ contains
     real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, ncnst) ! specific humidity and constituents
     real, intent(inout) :: delz(bd%isd:,bd%jsd:,1:)   ! delta-height (m); non-hydrostatic only
     real, intent(inout) ::  ze0(bd%is:, bd%js: ,1:) ! height at edges (m); non-hydrostatic
+! ze0 no longer used
 
 !-----------------------------------------------------------------------
 ! Auxilliary pressure arrays:    
@@ -84,7 +109,7 @@ contains
 ! dyn_aux:
     real, intent(inout) :: ps  (bd%isd:bd%ied  ,bd%jsd:bd%jed)           ! Surface pressure (pascal)
     real, intent(inout) :: pe  (bd%is-1:bd%ie+1, npz+1,bd%js-1:bd%je+1)  ! edge pressure (pascal)
-    real, intent(inout) :: pk  (bd%is:bd%ie,bd%js:bd%je, npz+1)          ! pe**cappa
+    real, intent(inout) :: pk  (bd%is:bd%ie,bd%js:bd%je, npz+1)          ! pe**kappa
     real, intent(inout) :: peln(bd%is:bd%ie,npz+1,bd%js:bd%je)           ! ln(pe)
     real, intent(inout) :: pkz (bd%is:bd%ie,bd%js:bd%je,npz)             ! finite-volume mean pk
     real, intent(inout):: q_con(bd%isd:, bd%jsd:, 1:)
@@ -121,19 +146,21 @@ contains
       real:: ps2(bd%isd:bd%ied,bd%jsd:bd%jed)
       real:: m_fac(bd%is:bd%ie,bd%js:bd%je)
       real:: pfull(npz)
-      real:: gz(bd%is:bd%ie)
-      real, allocatable :: dp1(:,:,:), dtdt_m(:,:,:)
-      real:: akap, rg, rdg, ph1, ph2, mdt, gam, amdt, u0
+      real, dimension(bd%is:bd%ie):: cvm
+      real, allocatable :: dp1(:,:,:), dtdt_m(:,:,:), cappa(:,:,:)
+      real:: akap, rdg, ph1, ph2, mdt, gam, amdt, u0
       integer:: kord_tracer(ncnst)
       integer :: i,j,k, n, iq, n_map, nq, nwat, k_split
-      integer :: sphum, liq_wat, ice_wat      ! GFDL physics
-      integer :: rainwat, snowwat, graupel, cld_amt
-      logical used, last_step, consv_am, do_omega
-      integer, parameter :: max_packs=11
-      integer:: i_pack(max_packs)
+      integer :: sphum, liq_wat = -999, ice_wat = -999      ! GFDL physics
+      integer :: rainwat = -999, snowwat = -999, graupel = -999, cld_amt = -999
+      integer :: theta_d = -999
+      logical used, last_step, do_omega
+      integer, parameter :: max_packs=12
+      type(group_halo_update_type), save :: i_pack(max_packs)
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
-      real :: rcv, dt2, consv_fac
+      real :: dt2
+
       is  = bd%is
       ie  = bd%ie
       js  = bd%js
@@ -142,96 +169,155 @@ contains
       ied = bd%ied
       jsd = bd%jsd
       jed = bd%jed
- 
- 
+
+!     cv_air =  cp_air - rdgas
       agrav = 1. / grav
         dt2 = 0.5*bdt
-      consv_am = flagstruct%consv_am
       k_split = flagstruct%k_split
       nwat = flagstruct%nwat
       nq = nq_tot - flagstruct%dnats
-      allocate ( dp1(is:ie, js:je, 1:npz) )
+      rdg = -rdgas * agrav
+      allocate ( dp1(isd:ied, jsd:jed, 1:npz) )
+      
+      
+#ifdef MOIST_CAPPA
+      allocate ( cappa(isd:ied,jsd:jed,npz) )
+      call init_ijk_mem(isd,ied, jsd,jed, npz, cappa, 0.)
+#else
+      allocate ( cappa(isd:isd,jsd:jsd,1) )
+      cappa = 0.
+#endif
+      !We call this BEFORE converting pt to virtual potential temperature, 
+      !since we interpolate on (regular) temperature rather than theta.
+      if (gridstruct%nested .or. ANY(neststruct%child_grids)) then
+                                           call timing_on('NEST_BCs')
+         call setup_nested_grid_BCs(npx, npy, npz, zvir, ncnst, &
+              u, v, w, pt, delp, delz, q, uc, vc, pkz, &
+              neststruct%nested, flagstruct%inline_q, flagstruct%make_nh, ng, &
+              gridstruct, flagstruct, neststruct, &
+              neststruct%nest_timestep, neststruct%tracer_nest_timestep, &
+              domain, bd, nwat)
 
-      if ( flagstruct%no_dycore ) goto 911
+#ifndef SW_DYNAMICS
+         if (gridstruct%nested) then
+          !Correct halo values have now been set up for BCs; we can go ahead and apply them too...
+            call nested_grid_BC_apply_intT(pt, &
+                 0, 0, npx, npy, npz, bd, 1., 1., &
+                 neststruct%pt_BC, bctype=neststruct%nestbctype  )
+#ifdef USE_COND
+            call nested_grid_BC_apply_intT(q_con, &
+                 0, 0, npx, npy, npz, bd, 1., 1., &
+                 neststruct%q_con_BC, bctype=neststruct%nestbctype  )            
+#ifdef MOIST_CAPPA
+            call nested_grid_BC_apply_intT(cappa, &
+                 0, 0, npx, npy, npz, bd, 1., 1., &
+                 neststruct%cappa_BC, bctype=neststruct%nestbctype  )            
+#endif
+#endif
+         endif
+#endif
+                                           call timing_off('NEST_BCs')
+      endif
+
+
+      if ( flagstruct%no_dycore ) then
+         if ( nwat.eq.2 .and. (.not.hydrostatic) ) then
+            sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
+         endif
+         goto 911
+      endif
+
+      if ( nwat==0 ) then
+             sphum = 1
+           cld_amt = -1   ! to cause trouble if (mis)used
+      else
+             sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
+           liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
+           ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
+           rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
+           snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
+           graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+           cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
+      endif
+
+      theta_d = get_tracer_index (MODEL_ATMOS, 'theta_d')
 
 #ifdef SW_DYNAMICS
       akap  = 1.
       pfull(1) = 0.5*flagstruct%p_ref
-#ifdef TEST_TRACER
-      sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
-#endif
 #else
-
-      if (nwat>=3 ) then
-             sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
-           liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
-           ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
-           cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
-      endif
-      if ( nwat==6 ) then
-           rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
-           snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
-           graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
-      else
-           sphum = 1
-           cld_amt = -1   ! to cause trouble if (mis)used
-      endif
-
       akap  = kappa
-      rg = kappa*cp_air
-      rcv = 1./(cp_air-rg)
 
-!$omp parallel do default(shared) private(ph1, ph2)
+!$OMP parallel do default(none) shared(npz,ak,bk,flagstruct,pfull) &
+!$OMP                          private(ph1, ph2)
       do k=1,npz
          ph1 = ak(k  ) + bk(k  )*flagstruct%p_ref
          ph2 = ak(k+1) + bk(k+1)*flagstruct%p_ref
          pfull(k) = (ph2 - ph1) / log(ph2/ph1)
       enddo
 
-!$omp parallel do default(shared) 
+    if ( hydrostatic ) then
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,nwat,q,q_con,sphum,liq_wat, &
+!$OMP      rainwat,ice_wat,snowwat,graupel) private(cvm)
       do k=1,npz
          do j=js,je
+#ifdef USE_COND
+             call moist_cp(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
+                           ice_wat, snowwat, graupel, q, q_con(is:ie,j,k), cvm)
+#endif
             do i=is,ie
                dp1(i,j,k) = zvir*q(i,j,k,sphum)
-#ifdef USE_COND
-#ifdef USE_NWAT3
-               q_con(i,j,k) = q(i,j,k,liq_wat) + q(i,j,k,ice_wat)
-#else
-               q_con(i,j,k) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) + q(i,j,k,ice_wat)  &
-                            + q(i,j,k,snowwat) + q(i,j,k,graupel)
-#endif
-#endif
             enddo
          enddo
       enddo
-
-      if ( .not. hydrostatic ) then
-         rdg = -rdgas * agrav
-!$omp parallel do default(shared)
-         do k=1,npz
+    else
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,liq_wat, &
+!$OMP                                  rainwat,ice_wat,snowwat,graupel,pkz,flagstruct, & 
+!$OMP                                  cappa,kappa,rdg,delp,pt,delz,nwat)              &
+!$OMP                          private(cvm)
+       do k=1,npz
+          if ( flagstruct%moist_phys ) then
+          do j=js,je
+#ifdef MOIST_CAPPA
+             call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
+                           ice_wat, snowwat, graupel, q, q_con(is:ie,j,k), cvm)
+#endif
+             do i=is,ie
+                dp1(i,j,k) = zvir*q(i,j,k,sphum)
+#ifdef MOIST_CAPPA
+               cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)))
+               pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+                            (1.+dp1(i,j,k))*(1.-q_con(i,j,k))/delz(i,j,k)) )
+#else
+               pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+                            (1.+dp1(i,j,k))/delz(i,j,k)) )
+! Using dry pressure for the definition of the virtual potential temperature
+!              pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+!                                      (1.-q(i,j,k,sphum))/delz(i,j,k)) )
+#endif
+             enddo
+          enddo
+          else
             do j=js,je
                do i=is,ie
-#ifdef USE_COND
-                  pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
-                               (1.+dp1(i,j,k)-q_con(i,j,k))/delz(i,j,k)) )
-#else
-                  pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
-                               (1.+dp1(i,j,k))/delz(i,j,k)) )
-#endif
+                  dp1(i,j,k) = 0.
+                  pkz(i,j,k) = exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
                enddo
             enddo
-         enddo
-      endif
+          endif
+       enddo
+    endif
 
       if ( flagstruct%fv_debug ) then
-         call prt_mxm('PS',        ps, is, ie, js, je, ng,   1, 0.01, gridstruct%area, domain)
-         call prt_mxm('T_dyn_b',   pt, is, ie, js, je, ng, npz, 1.,   gridstruct%area, domain)
-         if (.not. hydrostatic) then
-            call prt_mxm('delz',  delz, is, ie, js, je, ng, npz, 1., gridstruct%area, domain)
-         endif
-         call prt_mxm('delp_b ', delp, is, ie, js, je, ng, npz, 0.01, gridstruct%area, domain)
-         call prt_mxm('pk_b',    pk, is, ie, js, je, 0, npz+1, 1.,gridstruct%area, domain)
-         call prt_mxm('pkz_b',   pkz,is, ie, js, je, 0, npz,   1.,gridstruct%area, domain)
+#ifdef MOIST_CAPPA
+         call prt_mxm('cappa', cappa, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
+#endif
+         call prt_mxm('PS',        ps, is, ie, js, je, ng,   1, 0.01, gridstruct%area_64, domain)
+         call prt_mxm('T_dyn_b',   pt, is, ie, js, je, ng, npz, 1.,   gridstruct%area_64, domain)
+         if ( .not. hydrostatic) call prt_mxm('delz',    delz, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
+         call prt_mxm('delp_b ', delp, is, ie, js, je, ng, npz, 0.01, gridstruct%area_64, domain)
+         call prt_mxm('pk_b',    pk, is, ie, js, je, 0, npz+1, 1.,gridstruct%area_64, domain)
+         call prt_mxm('pkz_b',   pkz,is, ie, js, je, 0, npz,   1.,gridstruct%area_64, domain)
       endif
 
 !---------------------
@@ -241,8 +327,8 @@ contains
            call compute_total_energy(is, ie, js, je, isd, ied, jsd, jed, npz,        &
                                      u, v, w, delz, pt, delp, q, dp1, pe, peln, phis, &
                                      gridstruct%rsin2, gridstruct%cosa_s, &
-                                     zvir, cp_air, rg, hlv, te_2d, ua, va, teq,            &
-                                     flagstruct%moist_phys, sphum, liq_wat, rainwat,   &
+                                     zvir, cp_air, rdgas, hlv, te_2d, ua, va, teq,        &
+                                     flagstruct%moist_phys, nwat, sphum, liq_wat, rainwat,   &
                                      ice_wat, snowwat, graupel, hydrostatic, idiag%id_te)
            if( idiag%id_te>0 ) then
                used = send_data(idiag%id_te, teq, fv_time)
@@ -251,7 +337,7 @@ contains
            endif
       endif
 
-      if( (consv_am.or.idiag%id_amdt>0) .and. (.not.do_adiabatic_init) ) then
+      if( (flagstruct%consv_am.or.idiag%id_amdt>0) .and. (.not.do_adiabatic_init) ) then
           call compute_aam(npz, is, ie, js, je, isd, ied, jsd, jed, gridstruct, bd,   &
                            ptop, ua, va, u, v, delp, teq, ps2, m_fac)
       endif
@@ -259,49 +345,58 @@ contains
       if( flagstruct%tau > 0. ) then
         if ( gridstruct%grid_type<4 ) then
              call Rayleigh_Super(abs(bdt), npx, npy, npz, ks, pfull, phis, flagstruct%tau, u, v, w, pt,  &
-                  ua, va, delz, gridstruct%agrid, cp_air, rg, ptop, hydrostatic, .true., flagstruct%rf_cutoff, gridstruct, domain, bd)
+                  ua, va, delz, gridstruct%agrid, cp_air, rdgas, ptop, hydrostatic, (.not. neststruct%nested), flagstruct%rf_cutoff, gridstruct, domain, bd)
         else
              call Rayleigh_Friction(abs(bdt), npx, npy, npz, ks, pfull, flagstruct%tau, u, v, w, pt,  &
-                  ua, va, delz, cp_air, rg, ptop, hydrostatic, .true., flagstruct%rf_cutoff, gridstruct, domain, bd)
+                  ua, va, delz, cp_air, rdgas, ptop, hydrostatic, .true., flagstruct%rf_cutoff, gridstruct, domain, bd)
         endif
       endif
 
 #endif
 
-      !We call this BEFORE converting pt to virtual potential temperature, 
-      !since we interpolate on (regular) temperature rather than theta.
-      if (gridstruct%nested .or. ANY(neststruct%child_grids)) then
-                                           call timing_on('NEST_BCs')
-         call setup_nested_grid_BCs(npx, npy, npz, cp_air, zvir, ncnst, sphum,     &
-              u, v, w, pt, delp, delz, q, uc, vc, pkz, &
-              neststruct%nested, flagstruct%inline_q, flagstruct%make_nh, ng, &
-              gridstruct, flagstruct, neststruct, &
-              neststruct%nest_timestep, neststruct%tracer_nest_timestep, domain, bd)
-                                           call timing_off('NEST_BCs')
-      endif
-
 #ifndef SW_DYNAMICS
-! Convert pt to virtual potential temperature * CP
-!$omp parallel do default(shared) 
+! Convert pt to virtual potential temperature on the first timestep
+  if ( flagstruct%adiabatic .and. flagstruct%kord_tm>0 ) then
+     if ( .not.pt_initialized )then
+!$OMP parallel do default(none) shared(theta_d,is,ie,js,je,npz,pt,pkz,q)
+       do k=1,npz
+          do j=js,je
+             do i=is,ie
+                pt(i,j,k) = pt(i,j,k)/pkz(i,j,k)
+             enddo
+          enddo
+          if ( theta_d>0 ) then
+             do j=js,je
+                do i=is,ie
+                   q(i,j,k,theta_d) = pt(i,j,k)
+                enddo
+             enddo
+          endif
+       enddo
+       pt_initialized = .true.
+     endif
+  else
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,pt,dp1,pkz,q_con)
   do k=1,npz
      do j=js,je
         do i=is,ie
 #ifdef USE_COND
-           pt(i,j,k) = cp_air*pt(i,j,k)*(1.+dp1(i,j,k)-q_con(i,j,k))/pkz(i,j,k)
+           pt(i,j,k) = pt(i,j,k)*(1.+dp1(i,j,k))*(1.-q_con(i,j,k))/pkz(i,j,k)
 #else
-           pt(i,j,k) = cp_air*pt(i,j,k)*(1.+dp1(i,j,k))/pkz(i,j,k)
+           pt(i,j,k) = pt(i,j,k)*(1.+dp1(i,j,k))/pkz(i,j,k)
 #endif
         enddo
      enddo
   enddo
+  endif
 #endif
 
   last_step = .false.
   mdt = bdt / real(k_split)
 
-  if ( idiag%id_mdt > 0 ) then
+  if ( idiag%id_mdt > 0 .and. (.not. do_adiabatic_init) ) then
        allocate ( dtdt_m(is:ie,js:je,npz) )
-!$omp parallel do default(shared) 
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,dtdt_m)
        do k=1,npz
           do j=js,je
              do i=is,ie
@@ -310,50 +405,54 @@ contains
           enddo
        enddo
   endif
+
+
                                                   call timing_on('FV_DYN_LOOP')
   do n_map=1, k_split   ! first level of time-split
                                            call timing_on('COMM_TOTAL')
-      i_pack(1) = mpp_start_update_domains(delp, domain)
-      i_pack(2) = mpp_start_update_domains(pt,   domain)
-#ifndef ROT3
-      i_pack(8) = mpp_start_update_domains(u, v, domain, gridtype=DGRID_NE)
-#endif
 #ifdef USE_COND
-      i_pack(11) = mpp_start_update_domains(q_con, domain)
+      call start_group_halo_update(i_pack(11), q_con, domain)
+#ifdef MOIST_CAPPA
+      call start_group_halo_update(i_pack(12), cappa, domain)
+#endif
+#endif
+      call start_group_halo_update(i_pack(1), delp, domain, complete=.false.)
+      call start_group_halo_update(i_pack(1), pt,   domain, complete=.true.)
+#ifndef ROT3
+      call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
 #endif
                                            call timing_off('COMM_TOTAL')
-!$omp parallel do default(shared) 
+!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,dp1,delp)
       do k=1,npz
-         do j=js,je
-            do i=is,ie
+         do j=jsd,jed
+            do i=isd,ied
                dp1(i,j,k) = delp(i,j,k)
             enddo
          enddo
       enddo
 
       if ( n_map==k_split ) last_step = .true.
+
 #ifdef USE_COND
                                            call timing_on('COMM_TOTAL')
-     call mpp_complete_update_domains(i_pack(11), q_con, domain)
+     call complete_group_halo_update(i_pack(11), domain)
+#ifdef MOIST_CAPPA
+     call complete_group_halo_update(i_pack(12), domain)
+#endif
                                            call timing_off('COMM_TOTAL')
 #endif
 
                                            call timing_on('DYN_CORE')
-      call dyn_core(npx, npy, npz, ng, sphum, nq, mdt, n_split, zvir, cp_air, akap, grav, hydrostatic, &
+      call dyn_core(npx, npy, npz, ng, sphum, nq, mdt, n_split, zvir, cp_air, akap, cappa, grav, hydrostatic, &
                     u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           & 
                     uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
                     gridstruct, flagstruct, neststruct, idiag, bd, &
                     domain, n_map==1, i_pack, last_step, time_total)
                                            call timing_off('DYN_CORE')
 
-  if ( flagstruct%fv_debug ) then
-       call prt_mxm('delp_a1',  delp, is, ie, js, je, ng, npz, 0.01, gridstruct%area, domain)
-       call prt_mxm('PT_dyn_a1',  pt, is, ie, js, je, ng, npz, 1., gridstruct%area, domain)
-       call prt_mxm('pk_a1',   pk, is, ie, js, je, 0, npz+1, 1., gridstruct%area, domain)
-  endif
 
 #ifdef SW_DYNAMICS
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,delp,agrav)
       do j=js,je
          do i=is,ie
             ps(i,j) = delp(i,j,1) * agrav
@@ -366,20 +465,44 @@ contains
 ! mass fluxes
                                               call timing_on('tracer_2d')
        !!! CLEANUP: merge these two calls?
-       if (gridstruct%nested .or. ANY(neststruct%child_grids)) then
+       if (gridstruct%nested) then
          call tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
                         flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), &
-                        flagstruct%z_tracer, k_split, neststruct, parent_grid)          
+                        flagstruct%nord_tr, flagstruct%trdm2, &
+                        k_split, neststruct, parent_grid)          
        else
+         if ( flagstruct%z_tracer ) then
+         call tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
+                        flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), &
+                        flagstruct%nord_tr, flagstruct%trdm2)
+         else
          call tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
                         flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), &
-                        flagstruct%z_tracer, k_split)
+                        flagstruct%nord_tr, flagstruct%trdm2)
+         endif
        endif
                                              call timing_off('tracer_2d')
 
+     if ( flagstruct%moist_phys ) then
+                                                  call timing_on('Fill2D')
+      if ( liq_wat > 0 )  &
+       call fill2D(is, ie, js, je, ng, npz, q(isd,jsd,1,liq_wat), delp, gridstruct%area, domain, neststruct%nested, npx, npy)
+      if ( nwat > 2 ) then       ! FV3_GFS nwat=2; nq=4
+       if ( rainwat > 0 )  &
+        call fill2D(is, ie, js, je, ng, npz, q(isd,jsd,1,rainwat), delp, gridstruct%area, domain, neststruct%nested, npx, npy)
+       if ( ice_wat > 0  )  &
+        call fill2D(is, ie, js, je, ng, npz, q(isd,jsd,1,ice_wat), delp, gridstruct%area, domain, neststruct%nested, npx, npy)
+       if ( snowwat > 0 )  &
+        call fill2D(is, ie, js, je, ng, npz, q(isd,jsd,1,snowwat), delp, gridstruct%area, domain, neststruct%nested, npx, npy)
+       if ( graupel > 0 )  &
+        call fill2D(is, ie, js, je, ng, npz, q(isd,jsd,1,graupel), delp, gridstruct%area, domain, neststruct%nested, npx, npy)
+      endif
+                                                  call timing_off('Fill2D')
+     endif
+
          if( last_step .and. idiag%id_divg>0 ) then
              used = send_data(idiag%id_divg, dp1, fv_time) 
-             if(flagstruct%fv_debug) call prt_mxm('divg',  dp1, is, ie, js, je, 0, npz, 1.,gridstruct%area, domain)
+             if(flagstruct%fv_debug) call prt_mxm('divg',  dp1, is, ie, js, je, 0, npz, 1.,gridstruct%area_64, domain)
          endif
       endif
 
@@ -396,87 +519,69 @@ contains
             if ( iq==cld_amt )  kord_tracer(iq) = 9      ! monotonic
          enddo
 
+         do_omega = hydrostatic .and. last_step
                                                   call timing_on('Remapping')
+#ifdef AVEC_TIMERS
+                                                  call avec_timer_start(6)
+#endif
 
          call Lagrangian_to_Eulerian(last_step, consv_te, ps, pe, delp,          &
                      pkz, pk, mdt, bdt, npz, is,ie,js,je, isd,ied,jsd,jed,       &
                      nq, nwat, sphum, q_con, u,  v, w, delz, pt, q, phis,    &
-                     zvir, cp_air, akap, flagstruct%kord_mt, flagstruct%kord_wz, &
+                     zvir, cp_air, akap, cappa, flagstruct%kord_mt, flagstruct%kord_wz, &
                      kord_tracer, flagstruct%kord_tm, peln, te_2d,               &
                      ng, ua, va, omga, dp1, ws, fill, reproduce_sum,             &
-                     idiag%id_mdt>0, dtdt_m, &
-                     ptop, ak, bk, gridstruct, domain, ze0, flagstruct%remap_t,  &
-                     flagstruct%do_sat_adj, hydrostatic, hybrid_z, last_step, do_adiabatic_init)
+                     idiag%id_mdt>0, dtdt_m, ptop, ak, bk, pfull, gridstruct, domain,   &
+                     flagstruct%do_sat_adj, hydrostatic, hybrid_z, do_omega,     &
+                     flagstruct%adiabatic, do_adiabatic_init)
 
+#ifdef AVEC_TIMERS
+                                                  call avec_timer_stop(6)
+#endif
                                                   call timing_off('Remapping')
+#ifdef MOIST_CAPPA
+         if ( neststruct%nested .and. .not. last_step) then
+            call nested_grid_BC_apply_intT(cappa, &
+                 0, 0, npx, npy, npz, bd, real(n_map+1), real(k_split), &
+                 neststruct%cappa_BC, bctype=neststruct%nestbctype  )
+         endif
+#endif
+
          if( last_step )  then
-!--------------------------
-! Filter omega for physics:
-!--------------------------
-            if(flagstruct%nf_omega>0) call del2_cubed(omga, 0.20*gridstruct%da_min, gridstruct, domain, npx, npy, npz, flagstruct%nf_omega, bd)
-            if(.not.hydrostatic .and. flagstruct%replace_w) then
-!$omp parallel do default(shared) 
+            if( .not. hydrostatic ) then
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,omga,delp,delz,w)
                do k=1,npz
                   do j=js,je
                      do i=is,ie
-!                                          dz/dt = - omega / (g*density)
-                        w(i,j,k) = delz(i,j,k)/delp(i,j,k) * omga(i,j,k)
+                        omga(i,j,k) = delp(i,j,k)/delz(i,j,k)*w(i,j,k)
                      enddo
                   enddo
                enddo
-               if( is_master() ) write(6,*) 'Warning: W-wind replaced by scaled Omega'
-               !This is the one place where we allow a member of flagstruct% to be 
-               !changed outside of fv_control.
-               flagstruct%replace_w = .false.
             endif
-
-! Convert back to temperature
-            if ( .not. flagstruct%remap_t ) then
-              if ( hydrostatic ) then
-!$omp parallel do default(shared) 
-               do k=1,npz
-                  do j=js,je
-                  do i=is,ie
-                     pt(i,j,k) = pt(i,j,k)*pkz(i,j,k)/(cp_air*(1.+zvir*q(i,j,k,sphum)))
-                  enddo
-                  enddo
-               enddo
-              else
-!$omp parallel do default(shared) 
-               do k=1,npz
-                  do j=js,je
-                  do i=is,ie
-#ifdef USE_COND
-                     pt(i,j,k) = pt(i,j,k)*pkz(i,j,k)/(cp_air*(1.+zvir*q(i,j,k,sphum)-q_con(i,j,k)))
-#else
-                     pt(i,j,k) = pt(i,j,k)*pkz(i,j,k)/(cp_air*(1.+zvir*q(i,j,k,sphum)))
-#endif
-                  enddo
-                  enddo
-               enddo
-            endif
-            endif
-
+!--------------------------
+! Filter omega for physics:
+!--------------------------
+            if(flagstruct%nf_omega>0)    &
+            call del2_cubed(omga, 0.18*gridstruct%da_min, gridstruct, domain, npx, npy, npz, flagstruct%nf_omega, bd)
          endif
       end if
 #endif
   enddo    ! n_map loop
                                                   call timing_off('FV_DYN_LOOP')
-
   if ( idiag%id_mdt > 0 .and. (.not.do_adiabatic_init) ) then
 ! Output temperature tendency due to inline moist physics:
-!$omp parallel do default(shared) 
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,dtdt_m,bdt)
        do k=1,npz
           do j=js,je
              do i=is,ie
-                dtdt_m(i,j,k) = dtdt_m(i,j,k) / bdt
+                dtdt_m(i,j,k) = dtdt_m(i,j,k) / bdt * 86400.
              enddo
           enddo
        enddo
+!      call prt_mxm('Fast DTDT (deg/Day)', dtdt_m, is, ie, js, je, 0, npz, 1., gridstruct%area_64, domain)
        used = send_data(idiag%id_mdt, dtdt_m, fv_time)
        deallocate ( dtdt_m )
   endif
-
 
   if( nwat==6 ) then
      if (cld_amt > 0) then
@@ -502,30 +607,30 @@ contains
                                 q(isd,jsd,1,graupel), check_negative=flagstruct%check_negative)
      endif
      if ( flagstruct%fv_debug ) then
-       call prt_mxm('T_dyn_a3',    pt, is, ie, js, je, ng, npz, 1., gridstruct%area, domain)
-       call prt_mxm('SPHUM_dyn',   q(isd,jsd,1,sphum  ), is, ie, js, je, ng, npz, 1.,gridstruct%area, domain)
-       call prt_mxm('liq_wat_dyn', q(isd,jsd,1,liq_wat), is, ie, js, je, ng, npz, 1.,gridstruct%area, domain)
-       call prt_mxm('rainwat_dyn', q(isd,jsd,1,rainwat), is, ie, js, je, ng, npz, 1.,gridstruct%area, domain)
-       call prt_mxm('ice_wat_dyn', q(isd,jsd,1,ice_wat), is, ie, js, je, ng, npz, 1.,gridstruct%area, domain)
-       call prt_mxm('snowwat_dyn', q(isd,jsd,1,snowwat), is, ie, js, je, ng, npz, 1.,gridstruct%area, domain)
-       call prt_mxm('graupel_dyn', q(isd,jsd,1,graupel), is, ie, js, je, ng, npz, 1.,gridstruct%area, domain)
+       call prt_mxm('T_dyn_a3',    pt, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
+       call prt_mxm('SPHUM_dyn',   q(isd,jsd,1,sphum  ), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       call prt_mxm('liq_wat_dyn', q(isd,jsd,1,liq_wat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       call prt_mxm('rainwat_dyn', q(isd,jsd,1,rainwat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       call prt_mxm('ice_wat_dyn', q(isd,jsd,1,ice_wat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       call prt_mxm('snowwat_dyn', q(isd,jsd,1,snowwat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       call prt_mxm('graupel_dyn', q(isd,jsd,1,graupel), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
      endif
   endif
 
-  if( consv_am .or. idiag%id_amdt>0 .or. idiag%id_aam>0 .and. (.not.do_adiabatic_init)  ) then
+  if( (flagstruct%consv_am.or.idiag%id_amdt>0.or.idiag%id_aam>0) .and. (.not.do_adiabatic_init)  ) then
       call compute_aam(npz, is, ie, js, je, isd, ied, jsd, jed, gridstruct, bd,   &
                        ptop, ua, va, u, v, delp, te_2d, ps, m_fac)
       if( idiag%id_aam>0 ) then
           used = send_data(idiag%id_aam, te_2d, fv_time)
           if ( prt_minmax ) then
-             gam = g_sum( domain, te_2d, is, ie, js, je, ng, gridstruct%area, 0) 
+             gam = g_sum( domain, te_2d, is, ie, js, je, ng, gridstruct%area_64, 0) 
              if( is_master() ) write(6,*) 'Total AAM =', gam
           endif
       endif
   endif
 
-  if( consv_am .or. idiag%id_amdt>0 .and. (.not.do_adiabatic_init)  ) then
-!$omp parallel do default(shared) 
+  if( (flagstruct%consv_am.or.idiag%id_amdt>0) .and. (.not.do_adiabatic_init)  ) then
+!$OMP parallel do default(none) shared(is,ie,js,je,te_2d,teq,dt2,ps2,ps,idiag) 
       do j=js,je
          do i=is,ie
 ! Note: the mountain torque computation contains also numerical error
@@ -535,37 +640,23 @@ contains
       enddo
       if( idiag%id_amdt>0 ) used = send_data(idiag%id_amdt, te_2d/bdt, fv_time)
 
-      if ( consv_am .or. prt_minmax ) then
-         amdt = g_sum( domain, te_2d, is, ie, js, je, ng, gridstruct%area, 0) 
-         u0 = -radius*amdt/g_sum( domain, m_fac, is, ie, js, je, ng, gridstruct%area, 0)
-         u0 = real(u0, 4)    ! truncate to enforce reproducibility
+      if ( flagstruct%consv_am .or. prt_minmax ) then
+         amdt = g_sum( domain, te_2d, is, ie, js, je, ng, gridstruct%area_64, 0, reproduce=.true.) 
+         u0 = -radius*amdt/g_sum( domain, m_fac, is, ie, js, je, ng, gridstruct%area_64, 0,reproduce=.true.)
          if(is_master() .and. prt_minmax)         &
-!        write(6,*) 'Dynamic AM tendency =', amdt/(bdt*1.e18), 'del-u (per yr)=', u0*365.*86400./bdt
-         write(6,*) 'Dynamic Angular Momentum tendency (Hadleys)=', amdt/(bdt*1.e18)
+         write(6,*) 'Dynamic AM tendency (Hadleys)=', amdt/(bdt*1.e18), 'del-u (per day)=', u0*86400./bdt
       endif
 
-      if( consv_am ) then
-!$omp parallel do default(shared)
+    if( flagstruct%consv_am ) then
+!$OMP parallel do default(none) shared(is,ie,js,je,m_fac,u0,gridstruct)
       do j=js,je
          do i=is,ie
             m_fac(i,j) = u0*cos(gridstruct%agrid(i,j,2))
          enddo
       enddo
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,hydrostatic,pt,m_fac,ua,cp_air, &
+!$OMP                                  u,u0,gridstruct,v )
       do k=1,npz
-      if ( hydrostatic ) then
-         do j=js,je
-         do i=is,ie
-            pt(i,j,k) = pt(i,j,k) - m_fac(i,j)*(0.5*m_fac(i,j)+ua(i,j,k))/cp_air
-         enddo
-         enddo
-      else
-         do j=js,je
-         do i=is,ie
-            pt(i,j,k) = pt(i,j,k) - m_fac(i,j)*(0.5*m_fac(i,j)+ua(i,j,k))*rcv
-         enddo
-         enddo
-      endif
       do j=js,je+1
          do i=is,ie
             u(i,j,k) = u(i,j,k) + u0*gridstruct%l2c_u(i,j)
@@ -577,33 +668,40 @@ contains
          enddo
       enddo
       enddo
-      endif   !  consv_am
+    endif   !  consv_am
   endif
 
 911  call cubed_to_latlon(u, v, ua, va, gridstruct, &
           npx, npy, npz, 1, gridstruct%grid_type, domain, gridstruct%nested, flagstruct%c2l_ord, bd)
 
-     if ( flagstruct%fv_debug ) then
-       call prt_mxm('UA', ua, is, ie, js, je, ng, npz, 1., gridstruct%area, domain)
-       call prt_mxm('VA', va, is, ie, js, je, ng, npz, 1., gridstruct%area, domain)
-       call prt_mxm('TA', pt, is, ie, js, je, ng, npz, 1., gridstruct%area, domain)
-     endif
+  deallocate(dp1)
+  deallocate(cappa)
+
+  if ( flagstruct%fv_debug ) then
+     call prt_mxm('UA', ua, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
+     call prt_mxm('VA', va, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
+     call prt_mxm('TA', pt, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
+     if (.not. hydrostatic) call prt_mxm('W ', w,  is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
+  endif
 
   if ( flagstruct%range_warn ) then
        call range_check('UA_dyn', ua, is, ie, js, je, ng, npz, gridstruct%agrid,   &
                          -220., 260., bad_range)
        call range_check('VA_dyn', ua, is, ie, js, je, ng, npz, gridstruct%agrid,   &
-                         -220., 220., bad_range)
+                         -220., 260., bad_range)
 #ifndef SW_DYNAMICS
        call range_check('TA_dyn', pt, is, ie, js, je, ng, npz, gridstruct%agrid,   &
-                         160., 330., bad_range)
+#ifdef HIWPP
+                         130., 335., bad_range)
+#else
+                         160., 335., bad_range)
+#endif
        if ( .not. hydrostatic ) &
-       call range_check('W_dyn', w, is, ie, js, je, ng, npz, gridstruct%agrid,   &
-                         -20., 20., bad_range)
+            call range_check('W_dyn', w, is, ie, js, je, ng, npz, gridstruct%agrid,   &
+                         -50., 100., bad_range)
 #endif
 
   endif
-  deallocate ( dp1 )
 
   end subroutine fv_dynamics
 
@@ -624,9 +722,9 @@ contains
     real, intent(inout):: pt(bd%isd:bd%ied,bd%jsd:bd%jed,npz) ! temp
     real, intent(inout):: ua(bd%isd:bd%ied,bd%jsd:bd%jed,npz) ! 
     real, intent(inout):: va(bd%isd:bd%ied,bd%jsd:bd%jed,npz) ! 
-    real, intent(inout):: delz(bd%isd:      ,bd%jsd:      ,1: )   ! delta-height (m); non-hydrostatic only
+    real, intent(inout):: delz(bd%isd:    ,bd%jsd:      ,1: ) ! delta-height (m); non-hydrostatic only
     real,   intent(in) :: agrid(bd%isd:bd%ied,  bd%jsd:bd%jed,2)
-    real, intent(in) :: phis(bd%isd:bd%ied,bd%jsd:bd%jed)       ! Surface geopotential (g*Z_surf)
+    real, intent(in) :: phis(bd%isd:bd%ied,bd%jsd:bd%jed)     ! Surface geopotential (g*Z_surf)
     type(fv_grid_type), intent(IN) :: gridstruct
     type(domain2d), intent(INOUT) :: domain
 !
@@ -654,7 +752,7 @@ contains
 #ifdef HIWPP
           allocate ( u00(is:ie,  js:je+1,npz) )
           allocate ( v00(is:ie+1,js:je  ,npz) )
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,u00,u,v00,v)
           do k=1,npz
              do j=js,je+1
                 do i=is,ie
@@ -689,17 +787,49 @@ contains
           RF_initialized = .true.
      endif
 
-    call c2l_ord2(u, v, ua, va, gridstruct, npz, gridstruct%grid_type, bd)
+    call c2l_ord2(u, v, ua, va, gridstruct, npz, gridstruct%grid_type, bd, gridstruct%nested)
 
     allocate( u2f(isd:ied,jsd:jed,kmax) )
 
-!$omp parallel do default(shared)
+    if (gridstruct%nested) then
+!$OMP parallel do default(none) shared(is,ie,js,je,kmax,pm,rf_cutoff,hydrostatic,ua,va,agrid, &
+!$OMP                                  u2f,rf,w)
+    do k=1,kmax
+       if ( pm(k) < rf_cutoff ) then
+          do j=js-1,je+1
+             if ( hydrostatic ) then
+                do i=is-1,ie+1
+                   if ( sqrt(ua(i,j,1)**2+va(i,j,1)**2)>25.*cos(agrid(i,j,2)) )  then
+                      u2f(i,j,k) = 1./(1.+rf(k)*sqrt(ua(i,j,k)**2+va(i,j,k)**2)/u0)
+                   else
+                      u2f(i,j,k) = 1.
+                   endif
+                enddo
+             else
+                do i=is-1,ie+1
+                   if ( sqrt(ua(i,j,1)**2+va(i,j,1)**2)>25.*cos(agrid(i,j,2)) .or. abs(w(i,j,1))>0.05 )  then
+                      !!! DEBUG CODE
+                      !print*, i,j,k, ua(i,j,k), va(i,j,k), w(i,j,k)
+                      !!! END DEBUG CODE
+                      u2f(i,j,k) = 1./(1.+rf(k)*sqrt(ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2)/u0)
+                   else
+                      u2f(i,j,k) = 1.
+                   endif
+                enddo
+             endif
+          enddo
+       endif ! p check
+    enddo
+
+    else
+!$OMP parallel do default(none) shared(is,ie,js,je,kmax,pm,rf_cutoff,hydrostatic,ua,va,agrid, &
+!$OMP                                  u2f,rf,w)
     do k=1,kmax
        if ( pm(k) < rf_cutoff ) then
        do j=js,je
         if ( hydrostatic ) then
           do i=is,ie
-             if ( abs(ua(i,j,k)) > 35.*cos(agrid(i,j,2)) )  then
+             if ( sqrt(ua(i,j,1)**2+va(i,j,1)**2)>25.*cos(agrid(i,j,2)) )  then
                   u2f(i,j,k) = 1./(1.+rf(k)*sqrt(ua(i,j,k)**2+va(i,j,k)**2)/u0)
              else
                   u2f(i,j,k) = 1.
@@ -707,7 +837,7 @@ contains
           enddo
         else
           do i=is,ie
-             if ( abs(ua(i,j,k)) > 35.*cos(agrid(i,j,2)) .or. abs(w(i,j,k))>7.5 )  then
+             if ( sqrt(ua(i,j,1)**2+va(i,j,1)**2)>25.*cos(agrid(i,j,2)) .or. abs(w(i,j,1))>0.05 )  then
                   u2f(i,j,k) = 1./(1.+rf(k)*sqrt(ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2)/u0)
              else
                   u2f(i,j,k) = 1.
@@ -717,21 +847,26 @@ contains
        enddo
        endif ! p check
     enddo
-
+    endif
                                         call timing_on('COMM_TOTAL')
     call mpp_update_domains(u2f, domain)
                                         call timing_off('COMM_TOTAL')
 
-
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,kmax,pm,rf_cutoff,w,rf,u,v, &
+#ifdef HIWPP
+!$OMP                                  u00,v00, &
+#endif
+!$OMP                                  conserve,hydrostatic,pt,ua,va,u2f,cp,rg,ptop,rcv)
      do k=1,kmax
         if ( pm(k) < rf_cutoff ) then
 #ifdef HIWPP
-             do j=js,je
-                do i=is,ie
-                   w(i,j,k) = w(i,j,k)/(1.+rf(k))
-                enddo
-             enddo
+           if (.not. hydrostatic) then
+              do j=js,je
+                 do i=is,ie
+                    w(i,j,k) = w(i,j,k)/(1.+rf(k))
+                 enddo
+              enddo
+           endif
              do j=js,je+1
                 do i=is,ie
                    u(i,j,k) = (u(i,j,k)+rf(k)*u00(i,j,k))/(1.+rf(k))
@@ -802,7 +937,7 @@ contains
     real, intent(inout):: pt(bd%isd:bd%ied,bd%jsd:bd%jed,npz) ! temp
     real, intent(inout):: ua(bd%isd:bd%ied,bd%jsd:bd%jed,npz) ! 
     real, intent(inout):: va(bd%isd:bd%ied,bd%jsd:bd%jed,npz) ! 
-    real, intent(inout):: delz(bd%isd:      ,bd%jsd:      ,1: )   ! delta-height (m); non-hydrostatic only
+    real, intent(inout):: delz(bd%isd:    ,bd%jsd:      ,1: ) ! delta-height (m); non-hydrostatic only
     type(fv_grid_type), intent(IN) :: gridstruct
     type(domain2d), intent(INOUT) :: domain
 ! local:
@@ -845,9 +980,9 @@ contains
 
     allocate( u2f(isd:ied,jsd:jed,kmax) )
 
-    call c2l_ord2(u, v, ua, va, gridstruct, npz, gridstruct%grid_type, bd)
-    u2f = 0.
-!$omp parallel do default(shared)
+    call c2l_ord2(u, v, ua, va, gridstruct, npz, gridstruct%grid_type, bd, gridstruct%nested)
+
+!$OMP parallel do default(none) shared(is,ie,js,je,kmax,u2f,hydrostatic,ua,va,w)
     do k=1,kmax
         if ( hydrostatic ) then
            do j=js,je
@@ -863,11 +998,13 @@ contains
            enddo
         endif
     enddo
+
                                         call timing_on('COMM_TOTAL')
     call mpp_update_domains(u2f, domain)
                                         call timing_off('COMM_TOTAL')
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,kmax,conserve,hydrostatic,pt,u2f,cp,rg, &
+!$OMP                                  ptop,pm,rf,delz,rcv,u,v,w)
      do k=1,kmax
 
         if ( conserve ) then
@@ -941,9 +1078,10 @@ contains
     real, dimension(is:ie):: r1, r2, dm
     integer i, j, k
 
-  call c2l_ord2(u, v, ua, va, gridstruct, npz, gridstruct%grid_type, bd)
+    call c2l_ord2(u, v, ua, va, gridstruct, npz, gridstruct%grid_type, bd, gridstruct%nested)
     
-!$omp parallel do default(shared) private(r1, r2, dm)
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,gridstruct,aam,m_fac,ps,ptop,delp,agrav,ua) &
+!$OMP                          private(r1, r2, dm)
   do j=js,je
      do i=is,ie
         r1(i) = radius*cos(gridstruct%agrid(i,j,2))

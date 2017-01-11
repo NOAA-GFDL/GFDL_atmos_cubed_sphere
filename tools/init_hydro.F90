@@ -1,3 +1,22 @@
+!***********************************************************************
+!*                   GNU General Public License                        *
+!* This file is a part of fvGFS.                                       *
+!*                                                                     *
+!* fvGFS is free software; you can redistribute it and/or modify it    *
+!* and are expected to follow the terms of the GNU General Public      *
+!* License as published by the Free Software Foundation; either        *
+!* version 2 of the License, or (at your option) any later version.    *
+!*                                                                     *
+!* fvGFS is distributed in the hope that it will be useful, but        *
+!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+!* General Public License for more details.                            *
+!*                                                                     *
+!* For the full text of the GNU General Public License,                *
+!* write to: Free Software Foundation, Inc.,                           *
+!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!***********************************************************************
 ! $Id$
 
 module init_hydro_mod
@@ -8,6 +27,7 @@ module init_hydro_mod
       use field_manager_mod,  only: MODEL_ATMOS
       use tracer_manager_mod, only: get_tracer_index
       use mpp_domains_mod, only: domain2d
+      use constants_mod, only: R_GRID
 !     use fv_diagnostics_mod, only: prt_maxmin
 !!! DEBUG CODE
       use mpp_mod, only: mpp_pe
@@ -43,7 +63,7 @@ contains
    real, intent(inout):: delz(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
    real, intent(inout):: delp(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
    real, intent(inout)::    q(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km, nq)
-   real, intent(IN)   :: area(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)
+   real(kind=R_GRID), intent(IN)   :: area(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)
    logical, optional:: make_nh
 ! Output:
    real, intent(out) ::   ps(ifirst-ng:ilast+ng, jfirst-ng:jlast+ng)
@@ -67,7 +87,10 @@ contains
 
    pek = ptop ** cappa
 
-!$omp parallel do default(shared) private(ratio, ak1, lnp)
+!$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,ptop,pek,pe,pk, &
+!$OMP                                  ps,adjust_dry_mass,dpd,delp,peln,cappa,      &
+!$OMP                                  ptop_min,hydrostatic,pkz )                   &
+!$OMP                          private(ratio, ak1, lnp)
    do j=jfirst,jlast
       do i=ifirst,ilast
          pe(i,1,j) = ptop
@@ -126,7 +149,7 @@ contains
       if ( present(make_nh) ) then
           if ( make_nh ) then
              delz = 1.e25 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,delz,rdg,pt,peln)
              do k=1,km
                 do j=jfirst,jlast
                    do i=ifirst,ilast
@@ -144,7 +167,8 @@ contains
 !------------------------------------------------------------------
        zvir = rvgas/rdgas - 1.
        sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,pkz,cappa,rdg, &
+!$OMP                                  delp,pt,zvir,q,sphum,delz)
        do k=1,km
           do j=jfirst,jlast
              do i=ifirst,ilast
@@ -154,7 +178,8 @@ contains
           enddo
        enddo
      else
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,pkz,cappa,rdg, &
+!$OMP                                  delp,pt,delz)
        do k=1,km
           do j=jfirst,jlast
              do i=ifirst,ilast
@@ -184,7 +209,7 @@ contains
       real, intent(in):: cappa
       logical, intent(in):: adjust_dry_mass
       logical, intent(in):: moist_phys
-      real, intent(IN) :: area(ifirst-ng:ilast+ng, jfirst-ng:jlast+ng)
+      real(kind=R_GRID), intent(IN) :: area(ifirst-ng:ilast+ng, jfirst-ng:jlast+ng)
       type(domain2d), intent(IN) :: domain
 
 ! !INPUT/OUTPUT PARAMETERS:     
@@ -197,7 +222,7 @@ contains
       real  psmo, psdry
       integer i, j, k
 
-!$omp parallel do default(shared) 
+!$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,ps,ptop,psd,delp,nwat,q) 
       do j=jfirst,jlast
 
          do i=ifirst,ilast
@@ -262,7 +287,7 @@ contains
   logical, intent(in):: mountain
   logical, intent(in):: hydrostatic
   logical, intent(in):: hybrid_z
-  real, intent(IN) :: area(is-ng:ie+ng,js-ng:je+ng)
+  real(kind=R_GRID), intent(IN) :: area(is-ng:ie+ng,js-ng:je+ng)
   type(domain2d), intent(IN) :: domain
 ! Output
   real, intent(out):: ps(is-ng:ie+ng,js-ng:je+ng)
@@ -285,67 +310,6 @@ contains
 
   if ( is_master() ) write(*,*) 'Initializing ATM hydrostatically'
 
-#if defined(MARS_GCM)
-  if ( is_master() ) write(*,*) 'Initializing Mars'
-      p0 = 6.5E2         !
-      t0 = 200.0
-
-!         Isothermal temperature
-      pt = t0
-
-      gztop = rdgas*t0*log(p0/ak(1))        ! gztop when zs==0
-
-     do j=js,je
-        do i=is,ie
-           ps(i,j) = ak(1)*exp((gztop-hs(i,j))/(rdgas*t0))
-        enddo
-     enddo
-
-     psm = g_sum(domain, ps(is:ie,js:je), is, ie, js, je, ng, area, 1, .true.)
-     dps = drym - psm
-
-     if(is_master()) write(*,*) 'Initializing:  Computed mean ps=', psm
-     if(is_master()) write(*,*) '            Correction delta-ps=', dps
-
-!           Add correction to surface pressure to yield desired
-!                globally-integrated atmospheric mass  (drym)
-     do j=js,je
-        do i=is,ie
-           ps(i,j) = ps(i,j) + dps
-        enddo
-     enddo
-
-      do k=1,km
-         do j=js,je
-            do i=is,ie
-               delp(i,j,k) = ak(k+1)-ak(k) + ps(i,j)*(bk(k+1)-bk(k))
-            enddo
-         enddo
-      enddo
-
-#elif defined(VENUS_GCM)
-  if ( is_master() ) write(*,*) 'Initializing Venus'
-      p0 = 92.E5         ! need to tune this value
-      t0 = 700.
-      pt = t0
-! gztop when zs==0
-      gztop = rdgas*t0*log(p0/ak(1))
-
-     do j=js,je
-        do i=is,ie
-           ps(i,j) = ak(1)*exp((gztop-hs(i,j))/(rdgas*t0))
-        enddo
-     enddo
-
-      do k=1,km
-         do j=js,je
-            do i=is,ie
-               delp(i,j,k) = ak(k+1)-ak(k) + ps(i,j)*(bk(k+1)-bk(k))
-            enddo
-         enddo
-      enddo
-
-#else
   if ( is_master() ) write(*,*) 'Initializing Earth'
 ! Given p1 and z1 (250mb, 10km)
         p1 = 25000.
@@ -460,8 +424,6 @@ contains
       enddo
    enddo    ! j-loop
 
-
-#endif
 
  end subroutine hydro_eq
 

@@ -1,3 +1,22 @@
+!***********************************************************************
+!*                   GNU General Public License                        *
+!* This file is a part of fvGFS.                                       *
+!*                                                                     *
+!* fvGFS is free software; you can redistribute it and/or modify it    *
+!* and are expected to follow the terms of the GNU General Public      *
+!* License as published by the Free Software Foundation; either        *
+!* version 2 of the License, or (at your option) any later version.    *
+!*                                                                     *
+!* fvGFS is distributed in the hope that it will be useful, but        *
+!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+!* General Public License for more details.                            *
+!*                                                                     *
+!* For the full text of the GNU General Public License,                *
+!* write to: Free Software Foundation, Inc.,                           *
+!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!***********************************************************************
 module a2b_edge_mod
 
   use fv_grid_utils_mod, only: great_circle_dist
@@ -6,6 +25,7 @@ module a2b_edge_mod
 #endif
 
   use fv_arrays_mod,     only: fv_grid_type
+  use constants_mod,     only: R_GRID
 
   implicit none
 
@@ -55,7 +75,7 @@ contains
 
   real, pointer, dimension(:,:,:) :: grid, agrid
   real, pointer, dimension(:,:)   :: dxa, dya
-  real, pointer, dimension(:) :: edge_w, edge_e, edge_s, edge_n
+  real(kind=R_GRID), pointer, dimension(:) :: edge_w, edge_e, edge_s, edge_n
 
   edge_w => gridstruct%edge_w
   edge_e => gridstruct%edge_e
@@ -673,7 +693,7 @@ contains
     real, pointer, dimension(:,:,:) :: grid, agrid
     real, pointer, dimension(:,:)   :: dxa, dya
 
-  real, pointer, dimension(:) :: edge_w, edge_e, edge_s, edge_n
+  real(kind=R_GRID), pointer, dimension(:) :: edge_w, edge_e, edge_s, edge_n
 
   edge_w => gridstruct%edge_w
   edge_e => gridstruct%edge_e
@@ -787,8 +807,8 @@ contains
     real, intent(in ):: q1, q2
     real:: x1, x2
 
-    x1 = great_circle_dist( p1, p0 )
-    x2 = great_circle_dist( p2, p0 )
+    x1 = great_circle_dist( real(p1,kind=R_GRID), real(p0,kind=R_GRID) )
+    x2 = great_circle_dist( real(p2,kind=R_GRID), real(p0,kind=R_GRID) )
 
     extrap_corner = q1 + x1/(x2-x1) * (q1-q2)
 

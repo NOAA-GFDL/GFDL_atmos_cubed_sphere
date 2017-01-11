@@ -1,3 +1,22 @@
+!***********************************************************************
+!*                   GNU General Public License                        *
+!* This file is a part of fvGFS.                                       *
+!*                                                                     *
+!* fvGFS is free software; you can redistribute it and/or modify it    *
+!* and are expected to follow the terms of the GNU General Public      *
+!* License as published by the Free Software Foundation; either        *
+!* version 2 of the License, or (at your option) any later version.    *
+!*                                                                     *
+!* fvGFS is distributed in the hope that it will be useful, but        *
+!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+!* General Public License for more details.                            *
+!*                                                                     *
+!* For the full text of the GNU General Public License,                *
+!* write to: Free Software Foundation, Inc.,                           *
+!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!***********************************************************************
 module sim_nc_mod
 
 ! This is S-J Lin's private netcdf file reader
@@ -19,7 +38,7 @@ module sim_nc_mod
  private
  public  open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var2_double,   &
          get_var3_real, get_var3_double, get_var3_r4, get_var2_real, get_var2_r4,   &
-         handle_err, check_var
+         handle_err, check_var, get_var1_real, get_var_att_double
 
 !---- version number -----
  character(len=128) :: version = '$Id$'
@@ -90,19 +109,24 @@ module sim_nc_mod
 
 
 ! 4-byte data:
-      subroutine get_var1_real( ncid, var1_name, im, var1 )
+      subroutine get_var1_real( ncid, var1_name, im, var1, var_exist )
       integer, intent(in):: ncid
       character(len=*), intent(in)::  var1_name
       integer, intent(in):: im
+      logical, intent(out), optional:: var_exist
       real(kind=4), intent(out):: var1(im)
-
       integer::  status, var1id
 
       status = nf_inq_varid (ncid, var1_name, var1id)
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) then
+!         call handle_err(status)
+          if(present(var_exist) ) var_exist = .false.
+      else
+          status = nf_get_var_real (ncid, var1id, var1)
+          if (status .ne. NF_NOERR) call handle_err(status)
+          if(present(var_exist) ) var_exist = .true.
+      endif
 
-      status = nf_get_var_real (ncid, var1id, var1)
-      if (status .ne. NF_NOERR) call handle_err(status)
 
       end subroutine get_var1_real
 
@@ -352,6 +376,22 @@ module sim_nc_mod
       if (status .ne. NF_NOERR) call handle_err(status)
 
       end subroutine get_var_att_str
+
+      subroutine get_var_att_double(ncid, var_name, att_name, value)
+      implicit none
+#include <netcdf.inc>
+      integer, intent(in):: ncid
+      character*(*), intent(in)::  var_name, att_name
+      real(kind=8), intent(out)::  value
+
+      integer::  status, varid
+
+      status = nf_inq_varid (ncid, var_name, varid)
+      status = nf_get_att(ncid, varid, att_name, value)
+
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      end subroutine get_var_att_double
 
 
       subroutine handle_err(status)
