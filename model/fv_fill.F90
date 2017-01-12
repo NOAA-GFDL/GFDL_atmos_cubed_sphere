@@ -20,6 +20,7 @@
 module fv_fill_mod
 
    use mpp_domains_mod,     only: mpp_update_domains, domain2D
+   use platform_mod,        only: kind_phys => r8_kind
 
    implicit none
    public fillz

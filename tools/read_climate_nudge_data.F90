@@ -212,6 +212,7 @@ subroutine read_time ( times, units, calendar )
 real(8),          intent(out) :: times(:)
 character(len=*), intent(out) :: units, calendar
 integer :: istat, i1, i2, n
+real(4) :: times_r4(size(times))
 type(axistype), save:: time_axis
 character(len=32) :: default_calendar
 
@@ -235,7 +236,8 @@ character(len=32) :: default_calendar
          call mpp_get_atts(time_axis, units=units, calendar=calendar)
          if( trim(calendar) == trim(default_calendar)) calendar = 'gregorian  '
       endif
-      call mpp_get_times(Files(n)%ncid, times(i1:i2))
+      call mpp_get_times(Files(n)%ncid, times_r4(i1:i2))
+      times(i1:i2) = times_r4(i1:i2)
    enddo
 
 ! NOTE: need to do the conversion to time_type in this routine

@@ -24,10 +24,12 @@ use fv_diagnostics_mod, only: interpolate_vertical, &
                               get_height_given_pressure, &
                               rh_calc, get_height_field
 
+#ifndef GFS_PHYS
 use atmos_cmip_diag_mod, only: register_cmip_diag_field_2d, &
                                register_cmip_diag_field_3d, &
                                send_cmip_data_3d, cmip_diag_id_type, &
                                query_cmip_diag_id
+#endif
 
 !----------------------------------------------------------------------
 
@@ -49,7 +51,9 @@ namelist /fv_cmip_diag_nml/ dummy
 
 !-----------------------------------------------------------------------
 
+#ifndef GFS_PHYS
 type(cmip_diag_id_type) :: ID_ta, ID_ua, ID_va, ID_hus, ID_hur, ID_wap, ID_zg
+#endif
 integer              :: id_ps, id_orog
 integer              :: id_ua200, id_va200, id_ua850, id_va850, &
                         id_ta500, id_ta700, id_ta850, id_zg500, &
@@ -64,8 +68,28 @@ logical :: module_is_initialized=.false.
 
 CONTAINS
 
+#ifdef GFS_PHYS
 !######################################################################
+subroutine fv_cmip_diag_init ( Atm, axes, Time )
+  type(fv_atmos_type), intent(inout), target :: Atm(:)
+  integer,             intent(in) :: axes(4)
+  type(time_type),     intent(in) :: Time
+end subroutine fv_cmip_diag_init
 
+!######################################################################
+subroutine fv_cmip_diag ( Atm, zvir, Time )
+  type(fv_atmos_type), intent(inout) :: Atm(:)
+  real,                intent(in) :: zvir
+  type(time_type),     intent(in) :: Time
+end subroutine fv_cmip_diag
+
+!######################################################################
+subroutine fv_cmip_diag_end
+end subroutine fv_cmip_diag_end
+
+#else
+
+!######################################################################
 subroutine fv_cmip_diag_init ( Atm, axes, Time )
 type(fv_atmos_type), intent(inout), target :: Atm(:)
 integer,             intent(in) :: axes(4)
@@ -268,7 +292,6 @@ character(len=4)      :: plabel
 end subroutine fv_cmip_diag_init
 
 !######################################################################
-
 subroutine fv_cmip_diag ( Atm, zvir, Time )
 type(fv_atmos_type), intent(inout) :: Atm(:)
 real,                intent(in) :: zvir
@@ -425,7 +448,6 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
 end subroutine fv_cmip_diag
 
 !######################################################################
-
 subroutine fv_cmip_diag_end
 
   if (.not. module_is_initialized) then
@@ -442,7 +464,7 @@ subroutine fv_cmip_diag_end
 
 end subroutine fv_cmip_diag_end
 
-!######################################################################
+#endif
 
 end module fv_cmip_diag_mod
 

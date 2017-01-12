@@ -17,7 +17,7 @@
 !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
 !* or see:   http://www.gnu.org/licenses/gpl.html                      *
 !***********************************************************************
-module nh_utils_mod
+module nh_core_mod
 ! Developer: S.-J. Lin, NOAA/GFDL
 ! To do list:
 ! include moisture effect in pt
@@ -2156,4 +2156,4 @@ CONTAINS
 
 end subroutine nest_halo_nh
 
-end module nh_utils_mod
+end module nh_core_mod

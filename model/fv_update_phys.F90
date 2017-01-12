@@ -26,7 +26,7 @@ module fv_update_phys_mod
   use mpp_mod,            only: FATAL, mpp_error
   use mpp_mod,            only: mpp_error, NOTE, WARNING
   use time_manager_mod,   only: time_type
-  use tracer_manager_mod, only: get_tracer_index, adjust_mass
+  use tracer_manager_mod, only: get_tracer_index, adjust_mass, get_tracer_names
   use fv_mp_mod,          only: start_group_halo_update, complete_group_halo_update
   use fv_mp_mod,          only: group_halo_update_type
   use fv_arrays_mod,      only: fv_flags_type, fv_nest_type
@@ -223,10 +223,10 @@ module fv_update_phys_mod
 
     call get_eta_level(npz, 1.0E5, pfull, phalf, ak, bk)
 
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,flagstruct,pfull,q_dt,sphum,q,qdiag, &
-!$OMP                                  nq,w_diff,dt,nwat,liq_wat,rainwat,ice_wat,snowwat,   &
-!$OMP                                  graupel,delp,cld_amt,hydrostatic,pt,t_dt,delz,       &
-!$OMP                                  gama_dt,cv_air,ua,u_dt,va,v_dt,isd,ied,jsd,jed)      &
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,flagstruct,pfull,q_dt,sphum,q,qdiag,  &
+!$OMP                                  nq,w_diff,dt,nwat,liq_wat,rainwat,ice_wat,snowwat,    &
+!$OMP                                  graupel,delp,cld_amt,hydrostatic,pt,t_dt,delz,adj_vmr,&
+!$OMP                                  gama_dt,cv_air,ua,u_dt,va,v_dt,isd,ied,jsd,jed)       &
 !$OMP                          private(cvm, qc, qstar, ps_dt, p_fac)
     do k=1, npz
 

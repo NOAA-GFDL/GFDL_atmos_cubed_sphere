@@ -322,7 +322,7 @@ module fv_nwp_nudge_mod
 
   profile(:) = 1.
 
-!$OMP parallel do default(none) shared(npz,press,ak,bk,profile)
+!$OMP parallel do default(none) shared(npz,press,ak,bk,P_relax,P_norelax,profile)
   do k=1,npz
      press(k) = 0.5*(ak(k) + ak(k+1)) + 0.5*(bk(k)+bk(k+1))*1.E5
      if ( press(k) < P_relax ) then
