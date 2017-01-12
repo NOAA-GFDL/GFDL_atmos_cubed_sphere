@@ -151,7 +151,7 @@ character(len=7)   :: mod_name = 'atmos'
    logical :: do_adiabatic_init
 #endif
 
-  parameter, integer :: kind_phys=8
+  integer, parameter :: kind_phys=8
   logical :: first_diag = .true.
 
 contains
@@ -498,7 +498,7 @@ contains
                         Atm(n)%flagstruct%nwat, Atm(n)%delp, Atm(n)%pe,     &
                         Atm(n)%peln, Atm(n)%pkz, Atm(n)%pt, Atm(n)%q,       &
                         Atm(n)%ua, Atm(n)%va, Atm(n)%flagstruct%hydrostatic,&
-                        Atm(n)%w, Atm(n)%delz, u_dt, v_dt, t_dt, q_t,       &
+                        Atm(n)%w, Atm(n)%delz, u_dt, v_dt, t_dt, q_dt,      &
                         Atm(n)%flagstruct%n_sponge)
     endif
 
@@ -1035,11 +1035,11 @@ contains
                          Atm(n)%ua, Atm(n)%va,  Atm(n)%ps, Atm(n)%pe,   Atm(n)%peln,     &
                          Atm(n)%pk, Atm(n)%pkz, Atm(n)%ak, Atm(n)%bk,   Atm(n)%phis,     &
                          Atm(n)%u_srf, Atm(n)%v_srf, Atm(n)%ts, Atm(n)%delz,             &
-                         Atm(n)%flagstruct%hydrostatic, u_dt, v_dt, t_dt, q_dt,          &
+                         Atm(n)%flagstruct%hydrostatic, u_dt, v_dt, t_dt,                &
                          .true., Time_next, Atm(n)%flagstruct%nudge, Atm(n)%gridstruct,  &
                          Atm(n)%gridstruct%agrid(:,:,1), Atm(n)%gridstruct%agrid(:,:,2), &
                          Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%flagstruct,          &
-                         Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop)
+                         Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop, q_dt)
 
     endif
 

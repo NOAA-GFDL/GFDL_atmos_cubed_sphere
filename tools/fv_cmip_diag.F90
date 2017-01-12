@@ -343,7 +343,8 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
 
   ! height field (wz) if needed
   if (count(ID_zg%field_id(:)>0) > 0 .or. id_zg500 > 0) then
-    call get_height_field(isc, iec, jsc, jec, ngc, npz, wz, Atm(n)%pt, Atm(n)%q, Atm(n)%peln, zvir)
+    call get_height_field(isc, iec, jsc, jec, ngc, npz, Atm(n)%flagstruct%hydrostatic, Atm(n)%delz, &
+                          wz, Atm(n)%pt, Atm(n)%q, Atm(n)%peln, zvir)
   endif
 
 !----------------------------------------------------------------------
@@ -435,7 +436,8 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
   endif
 
   if (id_zg500 > 0) then
-    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/log(500.e2)/), Atm(n)%peln, dat3)
+    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/id_zg500/), &
+                                    (/log(500.e2)/), Atm(n)%peln, dat3)
     used = send_data (id_zg500, dat3(:,:,1), Time)
   endif
 
