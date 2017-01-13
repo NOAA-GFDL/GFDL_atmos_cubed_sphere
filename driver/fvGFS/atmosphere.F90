@@ -956,13 +956,12 @@ contains
     jed = jec + ngc
 
      call timing_on('adiabatic_init')
+     do_adiabatic_init = .true.
 
      allocate ( u0(isc:iec,  jsc:jec+1, npz) )
      allocate ( v0(isc:iec+1,jsc:jec,   npz) )
      allocate ( t0(isc:iec,jsc:jec, npz) )
      allocate (dp0(isc:iec,jsc:jec, npz) )
-
-     do_adiabatic_init = .not. Atm(mytile)%flagstruct%do_sat_adj
 
 #ifdef NUDGE_GZ
      call p_adi(npz, Atm(mytile)%ng, isc, iec, jsc, jec, Atm(mytile)%ptop,  &
