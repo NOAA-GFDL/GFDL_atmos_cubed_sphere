@@ -1,1 +1,0 @@
-This is the same file as in model_nh_64bit, except it has been separated into two files to work around an Intel v16 bug in which 32-bit AVX2 instructions don't give run to run reproducibility.
