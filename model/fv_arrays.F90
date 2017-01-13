@@ -19,14 +19,16 @@
 !***********************************************************************
 module fv_arrays_mod
 #include <fms_platform.h>
- use mpp_domains_mod,  only: domain2d
-  use fms_io_mod,       only: restart_file_type
-  use time_manager_mod, only: time_type
-  use horiz_interp_type_mod, only:  horiz_interp_type
-  use mpp_domains_mod, only : nest_domain_type
-  use mpp_mod, only: mpp_broadcast
-  use constants_mod, only: R_GRID
+  use mpp_domains_mod,       only: domain2d
+  use fms_io_mod,            only: restart_file_type
+  use time_manager_mod,      only: time_type
+  use horiz_interp_type_mod, only: horiz_interp_type
+  use mpp_domains_mod,       only: nest_domain_type
+  use mpp_mod,               only: mpp_broadcast
+  use platform_mod,          only: r8_kind
   public
+
+  integer, public, parameter :: R_GRID = r8_kind
 
   !Several 'auxiliary' structures are introduced here. These are for
   ! the internal use by certain modules, and although fv_atmos_type

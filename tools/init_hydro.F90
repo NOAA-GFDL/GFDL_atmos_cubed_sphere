@@ -21,16 +21,16 @@
 
 module init_hydro_mod
 
-      use constants_mod, only: grav, rdgas, rvgas
-      use fv_grid_utils_mod,    only: g_sum
-      use fv_mp_mod,        only: is_master
+      use constants_mod,      only: grav, rdgas, rvgas
+      use fv_grid_utils_mod,  only: g_sum
+      use fv_mp_mod,          only: is_master
       use field_manager_mod,  only: MODEL_ATMOS
       use tracer_manager_mod, only: get_tracer_index
-      use mpp_domains_mod, only: domain2d
-      use constants_mod, only: R_GRID
+      use mpp_domains_mod,    only: domain2d
+      use fv_arrays_mod,      only: R_GRID
 !     use fv_diagnostics_mod, only: prt_maxmin
 !!! DEBUG CODE
-      use mpp_mod, only: mpp_pe
+      use mpp_mod,            only: mpp_pe
 !!! END DEBUG CODE
 
       implicit none

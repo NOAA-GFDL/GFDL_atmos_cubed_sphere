@@ -42,8 +42,8 @@ module dyn_core_mod
   use fv_nwp_nudge_mod,   only: breed_slp_inline, do_adiabatic_init
 #endif
   use diag_manager_mod,   only: send_data
-  use fv_arrays_mod,      only: fv_grid_type, fv_flags_type, fv_nest_type, fv_diag_type, fv_grid_bounds_type
-  use constants_mod,      only: R_GRID
+  use fv_arrays_mod,      only: fv_grid_type, fv_flags_type, fv_nest_type, fv_diag_type, &
+                                fv_grid_bounds_type, R_GRID
 
   use boundary_mod,         only: extrapolation_BC,  nested_grid_BC_apply_intT
 

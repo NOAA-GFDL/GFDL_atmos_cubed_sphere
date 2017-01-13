@@ -28,8 +28,8 @@ module fv_restart_mod
   ! for the model.
   !</DESCRIPTION>
 
-  use constants_mod,       only: kappa, pi=>pi_8, omega, rdgas, grav, rvgas, cp_air, radius, R_GRID
-  use fv_arrays_mod,       only: fv_atmos_type, fv_nest_type, fv_grid_bounds_type
+  use constants_mod,       only: kappa, pi=>pi_8, omega, rdgas, grav, rvgas, cp_air, radius
+  use fv_arrays_mod,       only: fv_atmos_type, fv_nest_type, fv_grid_bounds_type, R_GRID
   use fv_io_mod,           only: fv_io_init, fv_io_read_restart, fv_io_write_restart, &
                                  remap_restart, fv_io_register_restart, fv_io_register_nudge_restart, &
                                  fv_io_register_restart_BCs, fv_io_register_restart_BCs_NH, fv_io_write_BCs, fv_io_read_BCs
@@ -48,9 +48,9 @@ module fv_restart_mod
   use fv_eta_mod,          only: compute_dz_var, compute_dz_L32, set_hybrid_z
   use fv_surf_map_mod,     only: del2_cubed_sphere, del4_cubed_sphere
   use boundary_mod,        only: fill_nested_grid, nested_grid_BC, update_coarse_grid
-   use tracer_manager_mod, only: get_tracer_index
-   use field_manager_mod,  only: MODEL_ATMOS
-   use fv_timing_mod,      only: timing_on, timing_off
+  use tracer_manager_mod,  only: get_tracer_index
+  use field_manager_mod,   only: MODEL_ATMOS
+  use fv_timing_mod,       only: timing_on, timing_off
   use mpp_domains_mod,     only: mpp_get_compute_domain, mpp_get_data_domain, mpp_get_global_domain
   use mpp_mod,             only: mpp_send, mpp_recv, mpp_sync_self, mpp_set_current_pelist, mpp_get_current_pelist, mpp_npes, mpp_pe, mpp_sync
   use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST,  mpp_get_C2F_index, WEST, SOUTH

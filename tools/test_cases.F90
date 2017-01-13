@@ -20,7 +20,7 @@
 
  module test_cases_mod
 
-      use constants_mod,     only: cnst_radius=>radius, pi=>pi_8, omega, grav, kappa, rdgas, cp_air, rvgas, R_GRID
+      use constants_mod,     only: cnst_radius=>radius, pi=>pi_8, omega, grav, kappa, rdgas, cp_air, rvgas
       use init_hydro_mod,    only: p_var, hydro_eq
       use fv_mp_mod,         only: ng, is_master,        &
                                    is,js,ie,je, isd,jsd,ied,jed, &
@@ -44,7 +44,7 @@
 !!! DEBUG CODE
      use mpp_mod, only: mpp_pe, mpp_chksum, stdout
 !!! END DEBUG CODE
-      use fv_arrays_mod,         only: fv_grid_type, fv_flags_type, fv_grid_bounds_type
+      use fv_arrays_mod,         only: fv_grid_type, fv_flags_type, fv_grid_bounds_type, R_GRID
       use tracer_manager_mod,    only: get_tracer_index
       use field_manager_mod,     only: MODEL_ATMOS
       implicit none

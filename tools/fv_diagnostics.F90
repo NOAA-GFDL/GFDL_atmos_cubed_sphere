@@ -19,22 +19,23 @@
 !***********************************************************************
 module fv_diagnostics_mod
 
- use constants_mod,    only: grav, rdgas, rvgas, pi=>pi_8, radius, kappa, WTMAIR, WTMCO2, R_GRID,   &
-                             omega, hlv, cp_air, cp_vapor
- use fms_io_mod,       only: set_domain, nullify_domain
- use time_manager_mod, only: time_type, get_date, get_time
- use mpp_domains_mod,  only: domain2d, mpp_update_domains, DGRID_NE
- use diag_manager_mod, only: diag_axis_init, register_diag_field, &
-                             register_static_field, send_data, diag_grid_init
- use fv_arrays_mod,    only: fv_atmos_type, fv_grid_type, fv_diag_type, fv_grid_bounds_type
- !!! CLEANUP needs removal?
- use fv_mapz_mod,      only: E_Flux, moist_cv
- use fv_mp_mod,        only: mp_reduce_sum, mp_reduce_min, mp_reduce_max, is_master
- use fv_eta_mod,        only: get_eta_level, gw_1d
- use fv_grid_utils_mod, only: g_sum
- use a2b_edge_mod,     only: a2b_ord2, a2b_ord4
- use fv_surf_map_mod,  only: zs_g
- use fv_sg_mod,        only: qsmith
+ use constants_mod,      only: grav, rdgas, rvgas, pi=>pi_8, radius, kappa, WTMAIR, WTMCO2, &
+                               omega, hlv, cp_air, cp_vapor
+ use fms_io_mod,         only: set_domain, nullify_domain
+ use time_manager_mod,   only: time_type, get_date, get_time
+ use mpp_domains_mod,    only: domain2d, mpp_update_domains, DGRID_NE
+ use diag_manager_mod,   only: diag_axis_init, register_diag_field, &
+                               register_static_field, send_data, diag_grid_init
+ use fv_arrays_mod,      only: fv_atmos_type, fv_grid_type, fv_diag_type, fv_grid_bounds_type, & 
+                               R_GRID
+ !!! CLEANUP needs rem oval?
+ use fv_mapz_mod,        only: E_Flux, moist_cv
+ use fv_mp_mod,          only: mp_reduce_sum, mp_reduce_min, mp_reduce_max, is_master
+ use fv_eta_mod,         only: get_eta_level, gw_1d
+ use fv_grid_utils_mod,  only: g_sum
+ use a2b_edge_mod,       only: a2b_ord2, a2b_ord4
+ use fv_surf_map_mod,    only: zs_g
+ use fv_sg_mod,          only: qsmith
 
  use tracer_manager_mod, only: get_tracer_names, get_number_tracers, get_tracer_index
  use field_manager_mod,  only: MODEL_ATMOS
@@ -46,6 +47,7 @@ module fv_diagnostics_mod
 
  implicit none
  private
+
 
  real, parameter:: missing_value = -1.e10
  real :: ginv
@@ -75,7 +77,6 @@ module fv_diagnostics_mod
 
  public :: fv_diag_init, fv_time, fv_diag, prt_mxm, prt_maxmin, range_check!, id_divg, id_te
  public :: prt_mass, prt_minmax, ppme, fv_diag_init_gn, z_sum, sphum_ll_fix, eqv_pot, qcly0, gn
- public :: get_height_given_pressure, interpolate_vertical, rh_calc, get_height_field
 
 !---- version number -----
  character(len=128) :: version = '$Id$'
@@ -1045,7 +1046,7 @@ contains
     real, parameter:: ws_1 = 20.
     real, parameter:: vort_c0= 2.2e-5 
     logical, allocatable :: storm(:,:), cat_crt(:,:)
-    real :: tmp2, pvsum, e2, einf, qm, mm, maxdbz, allmax
+    real :: tmp2, pvsum, e2, einf, qm, mm, maxdbz, allmax, rgrav
     integer :: Cl, Cl2
 
     !!! CLEANUP: does it really make sense to have this routine loop over Atm% anymore? We assume n=1 below anyway
@@ -2173,6 +2174,21 @@ contains
 
        if ( idiag%id_u100m>0 .or. idiag%id_v100m>0 .or. idiag%id_w100m>0 .or. idiag%id_w5km>0 .or. idiag%id_w2500m>0 .or. idiag%id_basedbz .or. idiag%id_dbz4km) then
           if (.not.allocated(wz)) allocate ( wz(isc:iec,jsc:jec,npz+1) )
+          if ( Atm(n)%flagstruct%hydrostatic) then
+             rgrav = 1. / grav
+!$OMP parallel do default(none) shared(isc,iec,jsc,jec,wz,npz,Atm,n,rgrav)
+            do j=jsc,jec
+               do i=isc,iec
+                  wz(i,j,npz+1) = 0.
+!                  wz(i,j,npz+1) = Atm(n)%phis(i,j)/grav
+               enddo
+               do k=npz,1,-1
+                  do i=isc,iec
+                     wz(i,j,k) = wz(i,j,k+1) - (rdgas*rgrav)*Atm(n)%pt(i,j,k)*(Atm(n)%peln(i,k,j) - Atm(n)%peln(i,k+1,j))
+                  enddo
+               enddo
+            enddo
+          else
 !$OMP parallel do default(none) shared(isc,iec,jsc,jec,wz,npz,Atm,n)
             do j=jsc,jec
                do i=isc,iec
@@ -2185,8 +2201,9 @@ contains
                   enddo
                enddo
             enddo
-            if( prt_minmax )   &
-            call prt_maxmin('ZTOP', wz(isc:iec,jsc:jec,1)+Atm(n)%phis(isc:iec,jsc:jec)/grav, isc, iec, jsc, jec, 0, 1, 1.E-3)
+         endif
+         if( prt_minmax )   &
+              call prt_maxmin('ZTOP', wz(isc:iec,jsc:jec,1)+Atm(n)%phis(isc:iec,jsc:jec)/grav, isc, iec, jsc, jec, 0, 1, 1.E-3)
        endif
 
        if ( idiag%id_rain5km>0 ) then

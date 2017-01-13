@@ -25,7 +25,7 @@
 
 module fv_control_mod
 
-   use constants_mod,       only: pi=>pi_8, kappa, radius, grav, rdgas, R_GRID
+   use constants_mod,       only: pi=>pi_8, kappa, radius, grav, rdgas
    use field_manager_mod,   only: MODEL_ATMOS
    use fms_mod,             only: write_version_number, open_namelist_file, &
                                   check_nml_error, close_file, file_exist
@@ -44,7 +44,8 @@ module fv_control_mod
 
    use fv_io_mod,           only: fv_io_exit
    use fv_restart_mod,      only: fv_restart_init, fv_restart_end
-   use fv_arrays_mod,       only: fv_atmos_type, allocate_fv_atmos_type, deallocate_fv_atmos_type
+   use fv_arrays_mod,       only: fv_atmos_type, allocate_fv_atmos_type, deallocate_fv_atmos_type, &
+                                  R_GRID
    use fv_grid_utils_mod,   only: grid_utils_init, grid_utils_end, ptop_min
    use fv_eta_mod,          only: set_eta
    use fv_grid_tools_mod,   only: init_grid

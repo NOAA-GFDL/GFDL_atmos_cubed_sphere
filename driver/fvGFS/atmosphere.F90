@@ -30,7 +30,7 @@ module atmosphere_mod
 ! FMS modules:
 !-----------------
 use block_control_mod,      only: block_control_type
-use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks, R_GRID
+use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
 use time_manager_mod,       only: time_type, get_time, set_time, operator(+) 
 use fms_mod,                only: file_exist, open_namelist_file,    &
                                   close_file, error_mesg, FATAL,     &
@@ -55,7 +55,7 @@ use gfs_physics_driver_mod, only: state_fields_in, state_fields_out, kind_phys
 !-----------------
 ! FV core modules:
 !-----------------
-use fv_arrays_mod,      only: fv_atmos_type
+use fv_arrays_mod,      only: fv_atmos_type, R_GRID
 use fv_control_mod,     only: fv_init, fv_end, ngrids
 use fv_eta_mod,         only: get_eta_level
 use fv_fill_mod,        only: fill_gfs

@@ -34,7 +34,7 @@ module sorted_index_mod
   !</DESCRIPTION>
   !---------------------------------------------------------------------
 
-  use constants_mod, only: R_GRID
+  use fv_arrays_mod, only: R_GRID
 
   implicit none
   private

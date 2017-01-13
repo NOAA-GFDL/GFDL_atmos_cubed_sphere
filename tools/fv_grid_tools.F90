@@ -19,8 +19,8 @@
 !***********************************************************************
 module fv_grid_tools_mod
 
-  use constants_mod, only: grav, omega, pi=>pi_8, cnst_radius=>radius, R_GRID
-  use fv_arrays_mod, only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type
+  use constants_mod, only: grav, omega, pi=>pi_8, cnst_radius=>radius
+  use fv_arrays_mod, only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type, R_GRID
   use fv_grid_utils_mod, only: gnomonic_grids, great_circle_dist,  &
                            mid_pt_sphere, spherical_angle,     &
                                cell_center2, get_area, inner_prod, fill_ghost, &

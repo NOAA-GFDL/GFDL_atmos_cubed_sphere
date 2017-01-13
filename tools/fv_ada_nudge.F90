@@ -17,7 +17,7 @@ module fv_ada_nudge_mod
 
  use external_sst_mod,  only: i_sst, j_sst, sst_ncep, sst_anom, forecast_mode
  use diag_manager_mod,  only: register_diag_field, send_data
- use constants_mod,     only: pi, grav, rdgas, cp_air, kappa, cnst_radius=>radius, seconds_per_day, R_GRID
+ use constants_mod,     only: pi, grav, rdgas, cp_air, kappa, cnst_radius=>radius, seconds_per_day
  use fms_mod,           only: write_version_number, open_namelist_file, &
                               check_nml_error, file_exist, close_file
 !use fms_io_mod,        only: field_size
@@ -39,8 +39,9 @@ module fv_ada_nudge_mod
  use fv_mp_mod,         only: mp_reduce_sum, mp_reduce_min, mp_reduce_max, is_master
  use fv_timing_mod,     only: timing_on, timing_off
 
- use sim_nc_mod,        only: open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var3_r4, get_var2_r4, get_var1_real
- use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, fv_nest_type
+ use sim_nc_mod,        only: open_ncfile, close_ncfile, get_ncdim1, get_var1_double, &
+                              get_var3_r4, get_var2_r4, get_var1_real
+ use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, fv_nest_type, R_GRID
 
  use fms_io_mod, only: register_restart_field, restart_file_type, restore_state
  use fms_io_mod, only: save_restart, get_mosaic_tile_file
