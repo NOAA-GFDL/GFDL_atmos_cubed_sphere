@@ -987,27 +987,6 @@ contains
        idiag%id_qn850 = register_diag_field ( trim(field), 'qn850', axes(1:2), Time,       &
                '850mb condensate', 'kg/m/s^2', missing_value=missing_value )
 
-!--------------------------
-! 250-mb winds:
-!--------------------------
-       idiag%id_u250 = register_diag_field ( trim(field), 'u250', axes(1:2), Time,       &
-                           '250-mb u-wind', 'm/s', missing_value=missing_value )
-       idiag%id_v250 = register_diag_field ( trim(field), 'v250', axes(1:2), Time,       &
-                           '250-mb v-wind', 'm/s', missing_value=missing_value )
-!--------------------------
-! 300-mb winds:
-!--------------------------
-       idiag%id_u300 = register_diag_field ( trim(field), 'u300', axes(1:2), Time,       &
-                           '300-mb u-wind', 'm/s', missing_value=missing_value )
-       idiag%id_v300 = register_diag_field ( trim(field), 'v300', axes(1:2), Time,       &
-                           '300-mb v-wind', 'm/s', missing_value=missing_value )
-!--------------------------
-! 500-mb winds:
-!--------------------------
-       idiag%id_u500 = register_diag_field ( trim(field), 'u500', axes(1:2), Time,       &
-                           '500-mb u-wind', 'm/s', missing_value=missing_value )
-       idiag%id_v500 = register_diag_field ( trim(field), 'v500', axes(1:2), Time,       &
-                           '500-mb v-wind', 'm/s', missing_value=missing_value )
        if( .not. Atm(n)%flagstruct%hydrostatic )                                          &
           idiag%id_w500 = register_diag_field ( trim(field), 'w500', axes(1:2), Time,       &
                               '500-mb w-wind', 'm/s', missing_value=missing_value )
@@ -1044,10 +1023,6 @@ contains
        idiag%id_srh = register_diag_field ( trim(field), 'srh', axes(1:2), Time,       &
                            'Storm Relative Helicity', 'm/s**2', missing_value=missing_value )
 ! TC test winds at 100 m
-       idiag%id_u100m = register_diag_field ( trim(field), 'u100m', axes(1:2), Time,       &
-                        '100-m AGL u-wind', 'm/s', missing_value=missing_value )
-       idiag%id_v100m = register_diag_field ( trim(field), 'v100m', axes(1:2), Time,       &
-                        '100-m AGL v-wind', 'm/s', missing_value=missing_value )
        if( .not. Atm(n)%flagstruct%hydrostatic )                                          &
        idiag%id_w100m = register_diag_field ( trim(field), 'w100m', axes(1:2), Time,       &
                         '100-m AGL w-wind', 'm/s', missing_value=missing_value )
