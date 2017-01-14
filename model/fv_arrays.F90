@@ -43,7 +43,6 @@ module fv_arrays_mod
 #else
   real, parameter:: real_big = 1.e30   ! big enough to cause blowup if used
 #endif
-  real, parameter:: real_big = 1.e10   ! big enough to cause blowup if used (without bothering the debugger)
   type fv_diag_type
 
 
