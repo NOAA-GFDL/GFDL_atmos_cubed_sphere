@@ -538,7 +538,6 @@ module fv_control_mod
       character(len=80)  :: grid_name = ''
       character(len=120) :: grid_file = ''
 
-      namelist /mpi_nml/ dumm  ! Use of this namelist is deprecated; filled with a dummy variable
       namelist /fv_grid_nml/ grid_name, grid_file
       namelist /fv_core_nml/npx, npy, ntiles, npz, npz_rst, layout, io_layout, ncnst, nwat,  &
                             use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, do_schmidt,      &
