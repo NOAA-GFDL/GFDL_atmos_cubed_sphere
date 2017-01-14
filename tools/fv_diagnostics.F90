@@ -1242,7 +1242,7 @@ contains
     real, parameter:: ws_1 = 20.
     real, parameter:: vort_c0= 2.2e-5 
     logical, allocatable :: storm(:,:), cat_crt(:,:)
-    real :: tmp2, pvsum, e2, einf, qm, mm, maxdbz, allmax
+    real :: tmp2, pvsum, e2, einf, qm, mm, maxdbz, allmax, rgrav
     integer :: Cl, Cl2
 
     !!! CLEANUP: does it really make sense to have this routine loop over Atm% anymore? We assume n=1 below anyway
