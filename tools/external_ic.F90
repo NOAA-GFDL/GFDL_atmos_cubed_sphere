@@ -2463,12 +2463,17 @@ contains
                Atm%q(i,j,k,liq_wat) = 0.
                Atm%q(i,j,k,ice_wat) = qn1(i,k)
             else
-               if ( k.ne.1 .and. Atm%pt(i,j,k)<258.16 .and. Atm%q(i,j,k-1,ice_wat)>1.e-5 ) then
-                  Atm%q(i,j,k,liq_wat) = 0.
-                  Atm%q(i,j,k,ice_wat) = qn1(i,k)
-               else  ! between [-40,0]: linear interpolation
+               if ( k.eq.1 ) then  ! between [-40,0]: linear interpolation
                   Atm%q(i,j,k,liq_wat) = qn1(i,k)*((Atm%pt(i,j,k)-233.16)/40.)
                   Atm%q(i,j,k,ice_wat) = qn1(i,k) - Atm%q(i,j,k,liq_wat)
+               else
+                 if (Atm%pt(i,j,k)<258.16 .and. Atm%q(i,j,k-1,ice_wat)>1.e-5 ) then
+                    Atm%q(i,j,k,liq_wat) = 0.
+                    Atm%q(i,j,k,ice_wat) = qn1(i,k)
+                 else  ! between [-40,0]: linear interpolation
+                    Atm%q(i,j,k,liq_wat) = qn1(i,k)*((Atm%pt(i,j,k)-233.16)/40.)
+                    Atm%q(i,j,k,ice_wat) = qn1(i,k) - Atm%q(i,j,k,liq_wat)
+                 endif
                endif
             endif
 #endif
