@@ -2511,6 +2511,21 @@ contains
 
        if ( idiag%id_u100m>0 .or. idiag%id_v100m>0 .or. idiag%id_w100m>0 .or. idiag%id_w5km>0 .or. idiag%id_w2500m>0 .or. idiag%id_basedbz .or. idiag%id_dbz4km) then
           if (.not.allocated(wz)) allocate ( wz(isc:iec,jsc:jec,npz+1) )
+          if ( Atm(n)%flagstruct%hydrostatic) then
+             rgrav = 1. / grav
+!$OMP parallel do default(none) shared(isc,iec,jsc,jec,wz,npz,Atm,n,rgrav)
+            do j=jsc,jec
+               do i=isc,iec
+                  wz(i,j,npz+1) = 0.
+!                  wz(i,j,npz+1) = Atm(n)%phis(i,j)/grav
+               enddo
+               do k=npz,1,-1
+                  do i=isc,iec
+                     wz(i,j,k) = wz(i,j,k+1) - (rdgas*rgrav)*Atm(n)%pt(i,j,k)*(Atm(n)%peln(i,k,j) - Atm(n)%peln(i,k+1,j))
+                  enddo
+               enddo
+            enddo
+          else
 !$OMP parallel do default(none) shared(isc,iec,jsc,jec,wz,npz,Atm,n)
             do j=jsc,jec
                do i=isc,iec
@@ -2523,6 +2538,7 @@ contains
                   enddo
                enddo
             enddo
+         endif
             if( prt_minmax )   &
             call prt_maxmin('ZTOP', wz(isc:iec,jsc:jec,1)+Atm(n)%phis(isc:iec,jsc:jec)/grav, isc, iec, jsc, jec, 0, 1, 1.E-3)
        endif
