@@ -36,7 +36,6 @@ module fv_update_phys_mod
   use fv_timing_mod,      only: timing_on, timing_off
   use fv_diagnostics_mod, only: prt_maxmin
   use fv_mapz_mod,        only: moist_cv, moist_cp
-
 #if defined (ATMOS_NUDGE)
   use atmos_nudge_mod,    only: get_atmos_nudge, do_ps
 #elif defined (CLIMATE_NUDGE)
@@ -52,7 +51,6 @@ module fv_update_phys_mod
   implicit none
 
   public :: fv_update_phys, del2_phys
-
 #ifdef ROT3
   public :: update_dwinds_phys
 #endif
@@ -60,11 +58,7 @@ module fv_update_phys_mod
 !---- version number -----
   character(len=128) :: version = '$Id$'
   character(len=128) :: tagname = '$Name$'
-!
-  real, parameter:: c_ice = 2106.
-  real, parameter:: c_liq = 4190.
-  real, parameter:: cv_vap = 1410.
-  real, parameter:: con_cp  = cp_air
+  real,parameter:: con_cp  = cp_air
 
   contains
 

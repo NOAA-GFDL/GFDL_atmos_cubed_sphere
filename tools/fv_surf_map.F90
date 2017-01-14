@@ -57,11 +57,12 @@
       logical:: zero_ocean = .true.          ! if true, no diffusive flux into water/ocean area 
       integer           ::  nlon = 21600
       integer           ::  nlat = 10800
-      real:: cd4 = 0.15        ! Dimensionless coeff for del-4 diffusion (with FCT)
-      real:: cd2 = -1.        ! Dimensionless coeff for del-2 diffusion (-1 gives resolution-determined value)
-      real:: peak_fac = 1.0  ! overshoot factor for the mountain peak
-      real:: max_slope = 0.2
-      integer:: n_del2_weak = 15
+      real:: cd4 = 0.15      ! Dimensionless coeff for del-4 diffusion (with FCT)
+      real:: cd2 = -1.       ! Dimensionless coeff for del-2 diffusion (-1 gives resolution-determined value)
+      real:: peak_fac = 1.05 ! overshoot factor for the mountain peak
+      real:: max_slope = 0.15 ! max allowable terrain slope: 1 --> 45 deg
+                              ! 0.15 for C768 or lower; 0.25 C1536; 0.3 for C3072
+      integer:: n_del2_weak = 12
       integer:: n_del2_strong = -1
       integer:: n_del4 = -1
       
@@ -75,7 +76,7 @@
       character(len=3) :: grid_string = ''
 
       namelist /surf_map_nml/ surf_file,surf_format,nlon,nlat, zero_ocean, zs_filter, &
-           cd4, peak_fac, max_slope, n_del2_weak, n_del2_strong, cd2, n_del4
+                    cd4, peak_fac, max_slope, n_del2_weak, n_del2_strong, cd2, n_del4
 !
       real, allocatable:: zs_g(:,:), sgh_g(:,:), oro_g(:,:)
 
@@ -555,14 +556,11 @@
 ! OUTPUT arrays
    real, intent(inout):: q(bd%isd:bd%ied, bd%jsd:bd%jed)
 ! Local:
-      real, parameter:: p1 =  7./12.
-      real, parameter:: p2 = -1./12.
-      real, parameter:: c1 = -2./14.
-      real, parameter:: c2 = 11./14.
-      real, parameter:: c3 =  5./14.
-   real :: q0(bd%isd:bd%ied,bd%jsd:bd%jed)
-
-
+   real, parameter:: p1 =  7./12.
+   real, parameter:: p2 = -1./12.
+   real, parameter:: c1 = -2./14.
+   real, parameter:: c2 = 11./14.
+   real, parameter:: c3 =  5./14.
    real:: ddx(bd%is:bd%ie+1,bd%js:bd%je), ddy(bd%is:bd%ie,bd%js:bd%je+1)
    logical:: extm(bd%is-1:bd%ie+1)
    logical:: ext2(bd%is:bd%ie,bd%js-1:bd%je+1)
@@ -941,7 +939,7 @@
       real :: fx2(bd%is:bd%ie+1,bd%js:bd%je), fy2(bd%is:bd%ie,bd%js:bd%je+1)
       real :: fx4(bd%is:bd%ie+1,bd%js:bd%je), fy4(bd%is:bd%ie,bd%js:bd%je+1)
       real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: d2, win, wou 
-      real, dimension(bd%is:bd%ie,bd%js:bd%je):: qlow, qmin, qmax
+      real, dimension(bd%is:bd%ie,bd%js:bd%je):: qlow, qmin, qmax, q0
       real, parameter:: esl = 1.E-20
       integer i,j, n
 
@@ -970,8 +968,7 @@
 
      do j=js,je
         do i=is,ie
-           qmax(i,j) = q(i,j) * peak_fac
-           qmin(i,j) = q(i,j) / peak_fac
+           q0(i,j) = q(i,j)
         enddo
      enddo
 
@@ -1010,12 +1007,12 @@
 
      do j=js,je
         do i=is,ie
-           qmin(i,j) = min(qmin(i,j), q(i-1,j-1), q(i,j-1), q(i+1,j-1),  &
-                                      q(i-1,j  ), q(i,j  ), q(i+1,j  ),  &
-                                      q(i-1,j+1), q(i,j+1), q(i+1,j+1) )
-           qmax(i,j) = max(qmax(i,j), q(i-1,j-1), q(i,j-1), q(i+1,j-1),  &
-                                      q(i-1,j  ), q(i,j  ), q(i+1,j  ),  &
-                                      q(i-1,j+1), q(i,j+1), q(i+1,j+1) )
+           qmin(i,j) = min(q0(i,j),          q(i-1,j-1), q(i,j-1), q(i+1,j-1),  &
+                                             q(i-1,j  ), q(i,j  ), q(i+1,j  ),  &
+                                             q(i-1,j+1), q(i,j+1), q(i+1,j+1) )
+           qmax(i,j) = max(peak_fac*q0(i,j), q(i-1,j-1), q(i,j-1), q(i+1,j-1),  &
+                                             q(i-1,j  ), q(i,j  ), q(i+1,j  ),  &
+                                             q(i-1,j+1), q(i,j+1), q(i+1,j+1) )
         enddo
      enddo
 

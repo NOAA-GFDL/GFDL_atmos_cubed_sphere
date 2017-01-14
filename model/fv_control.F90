@@ -157,6 +157,7 @@ module fv_control_mod
    integer , pointer :: nt_phys 
    real    , pointer :: tau_h2o 
 
+   real    , pointer :: delt_max
    real    , pointer :: d_con 
    real    , pointer :: ke_bg
    real    , pointer :: consv_te 
@@ -207,6 +208,7 @@ module fv_control_mod
    logical , pointer :: hybrid_z    
    logical , pointer :: Make_NH     
    logical , pointer :: make_hybrid_z  
+   logical , pointer :: nudge_qv
    real,     pointer :: add_noise
 
    integer , pointer :: a2b_ord 
@@ -228,7 +230,11 @@ module fv_control_mod
 
    integer :: ntilesMe                ! Number of tiles on this process =1 for now
 
+#ifdef OVERLOAD_R4
+   real    :: too_big  = 1.E8
+#else
    real    :: too_big  = 1.E35
+#endif
    public :: fv_init, fv_end
 
    integer, public :: ngrids = 1
@@ -532,6 +538,7 @@ module fv_control_mod
       character(len=80)  :: grid_name = ''
       character(len=120) :: grid_file = ''
 
+      namelist /mpi_nml/ dumm  ! Use of this namelist is deprecated; filled with a dummy variable
       namelist /fv_grid_nml/ grid_name, grid_file
       namelist /fv_core_nml/npx, npy, ntiles, npz, npz_rst, layout, io_layout, ncnst, nwat,  &
                             use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, do_schmidt,      &
@@ -539,22 +546,27 @@ module fv_control_mod
                             kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, do_f3d, &
                             external_ic, ncep_ic, nggps_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
                             res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, &
-                            dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, beta, non_ortho, n_sponge, &
+                            dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
                             warm_start, adjust_dry_mass, mountain, d_con, ke_bg, nord, nord_tr, convert_ke, use_old_omega, &
                             dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
                             consv_te, fill, filter_phys, fill_dp, fill_wz, consv_am, &
                             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
                             tau, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, breed_vortex_inline,  &
-                            na_init, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
+                               na_init, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
                             pnats, dnats, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
                             c2l_ord, dx_const, dy_const, umax, deglat,      &
                             deglon_start, deglon_stop, deglat_start, deglat_stop, &
                             phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, &
-                            nested, twowaynest, parent_grid_num, parent_tile, &
+                            nested, twowaynest, parent_grid_num, parent_tile, nudge_qv, &
                             refinement, nestbctype, nestupdate, nsponge, s_weight, &
                             ioffset, joffset, check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst
 
       namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
+
+#ifdef GFS_PHYS
+      real, dimension(2048) :: fdiag = 0.
+      namelist /nggps_diag_nml/ fdiag
+#endif
 
       pe_counter = mpp_root_pe()
 
@@ -610,6 +622,20 @@ module fv_control_mod
    ! Read Test_Case namelist
       read (input_nml_file,test_case_nml,iostat=ios)
       ierr = check_nml_error(ios,'test_case_nml')
+#ifdef GFS_PHYS
+   ! Read NGGPS_DIAG namelist
+      read (input_nml_file,nggps_diag_nml,iostat=ios)
+      ierr = check_nml_error(ios,'nggps_diag_nml')
+!--- check fdiag to see if it is an interval or a list
+      if (nint(fdiag(2)) == 0) then
+        Atm(n)%fdiag(1) = fdiag(1)
+        do i = 2, size(fdiag,1)
+          Atm(n)%fdiag(i) = Atm(n)%fdiag(i-1) + fdiag(1)
+        enddo
+      else
+        atm(n)%fdiag = fdiag
+      endif
+#endif
 #else
       if (size(Atm) == 1) then
          f_unit = open_namelist_file()
@@ -628,7 +654,21 @@ module fv_control_mod
       rewind (f_unit)
       read (f_unit,test_case_nml,iostat=ios)
       ierr = check_nml_error(ios,'test_case_nml')
-
+#ifdef GFS_PHYS
+   ! Read NGGPS_DIAG namelist
+      rewind (f_unit)
+      read (f_unit,nggps_diag_nml,iostat=ios)
+      ierr = check_nml_error(ios,'nggps_diag_nml')
+!--- check fdiag to see if it is an interval or a list
+      if (nint(fdiag(2)) == 0) then
+        Atm(n)%fdiag(1) = fdiag(1)
+        do i = 2, size(fdiag,1)
+          Atm(n)%fdiag(i) = Atm(n)%fdiag(i-1) + fdiag(1)
+        enddo
+      else
+        atm(n)%fdiag = fdiag
+      endif
+#endif
       call close_file(f_unit)
 #endif         
           if (len_trim(grid_file) /= 0) Atm(n)%flagstruct%grid_file = grid_file
@@ -638,6 +678,9 @@ module fv_control_mod
 
          write(unit, nml=fv_core_nml)
          write(unit, nml=test_case_nml)
+#ifdef GFS_PHYS
+         write(unit, nml=nggps_diag_nml)
+#endif         
 
          !*** single tile for Cartesian grids
          if (grid_type>3) then
@@ -1109,6 +1152,7 @@ module fv_control_mod
      nt_prog                       => Atm%flagstruct%nt_prog
      nt_phys                       => Atm%flagstruct%nt_phys
      tau_h2o                       => Atm%flagstruct%tau_h2o
+     delt_max                      => Atm%flagstruct%delt_max
      d_con                         => Atm%flagstruct%d_con
      ke_bg                         => Atm%flagstruct%ke_bg
      consv_te                      => Atm%flagstruct%consv_te
@@ -1157,6 +1201,7 @@ module fv_control_mod
      hybrid_z                      => Atm%flagstruct%hybrid_z
      Make_NH                       => Atm%flagstruct%Make_NH
      make_hybrid_z                 => Atm%flagstruct%make_hybrid_z
+     nudge_qv                      => Atm%flagstruct%nudge_qv
      add_noise                     => Atm%flagstruct%add_noise
      a2b_ord                       => Atm%flagstruct%a2b_ord
      c2l_ord                       => Atm%flagstruct%c2l_ord

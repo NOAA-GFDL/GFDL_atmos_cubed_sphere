@@ -1423,27 +1423,20 @@ module fv_eta_mod
              pint = 100.E2
              call var_hi(km, ak, bk, ptop, ks, pint, 1.035)
 #endif
-! Hi-top:
-        case (71)
-             ptop = 1.
-             pint = 100.E2
-             call var_hi(km, ak, bk, ptop, ks, pint, 1.03)
-        case (79)
-             ptop = 1.
-             pint = 100.E2
-             call var_hi(km, ak, bk, ptop, ks, pint, 1.03)
 ! NGGPS_GFS
+        case (91)
+             pint = 100.E2
+             ptop = 20.
+             call var_gfs(km, ak, bk, ptop, ks, pint, 1.03)
         case (95)
 ! Mid-top settings:
-!            ptop = 60.
-! Hi-top settings:
-             ptop = 1.
-             pint = 100.E2   !  75.E2
+             pint = 100.E2
+             ptop = 20.
              call var_gfs(km, ak, bk, ptop, ks, pint, 1.028)
         case (127)
              ptop = 1.
              pint = 75.E2
-             call var_gfs(km, ak, bk, ptop, ks, pint, 1.026)
+             call var_gfs(km, ak, bk, ptop, ks, pint, 1.028)
 ! IFS-like L125
         case (125)
           ks = 33
@@ -1668,7 +1661,7 @@ module fv_eta_mod
   real ztop, t0, dz0, sum1, tmp1
   real ep, es, alpha, beta, gama
 !---- Tunable parameters:
-  integer:: k_inc = 20   ! # of layers from bottom up to near const dz region
+  integer:: k_inc = 25   ! # of layers from bottom up to near const dz region
   real:: s0 = 0.13 ! lowest layer stretch factor
 !-----------------------
   real:: s_inc
@@ -1689,20 +1682,17 @@ module fv_eta_mod
          s_fac(k)  = s_fac(k+1) + s_inc
       enddo
 
-      s_fac(km-k_inc-1) = 0.5*(s_fac(km-k_inc) + s_rate)
-          
-      do k=km-k_inc-2, 9, -1
+      do k=km-k_inc-1, 9, -1
          s_fac(k) = s_rate * s_fac(k+1)
       enddo
-
       s_fac(8) = 0.5*(1.1+s_rate)*s_fac(9)
-      s_fac(7) = 1.1 *s_fac(8)
+      s_fac(7) = 1.10*s_fac(8)
       s_fac(6) = 1.15*s_fac(7)
-      s_fac(5) = 1.2 *s_fac(6)
-      s_fac(4) = 1.3 *s_fac(5)
-      s_fac(3) = 1.35*s_fac(4)
-      s_fac(2) = 1.35 *s_fac(3)
-      s_fac(1) = 1.2 *s_fac(2)
+      s_fac(5) = 1.20*s_fac(6)
+      s_fac(4) = 1.26*s_fac(5)
+      s_fac(3) = 1.33*s_fac(4)
+      s_fac(2) = 1.41*s_fac(3)
+      s_fac(1) = 1.60*s_fac(2)
 
       sum1 = 0.
       do k=1,km
@@ -1737,7 +1727,7 @@ module fv_eta_mod
 !          enddo
       endif
 
-      call sm1_edge(1, 1, 1, 1, km, 1, 1, ze, 3)
+!     call sm1_edge(1, 1, 1, 1, km, 1, 1, ze, 3)
 
 ! Given z --> p
       do k=1,km

@@ -483,11 +483,10 @@ contains
        endif
                                              call timing_off('tracer_2d')
 
-     if ( flagstruct%moist_phys ) then
+     if ( nwat.ne.6 .and. flagstruct%moist_phys ) then
                                                   call timing_on('Fill2D')
-      if ( liq_wat > 0 )  &
-       call fill2D(is, ie, js, je, ng, npz, q(isd,jsd,1,liq_wat), delp, gridstruct%area, domain, neststruct%nested, npx, npy)
-      if ( nwat > 2 ) then       ! FV3_GFS nwat=2; nq=4
+       if ( liq_wat > 0 )  &
+        call fill2D(is, ie, js, je, ng, npz, q(isd,jsd,1,liq_wat), delp, gridstruct%area, domain, neststruct%nested, npx, npy)
        if ( rainwat > 0 )  &
         call fill2D(is, ie, js, je, ng, npz, q(isd,jsd,1,rainwat), delp, gridstruct%area, domain, neststruct%nested, npx, npy)
        if ( ice_wat > 0  )  &
@@ -496,7 +495,6 @@ contains
         call fill2D(is, ie, js, je, ng, npz, q(isd,jsd,1,snowwat), delp, gridstruct%area, domain, neststruct%nested, npx, npy)
        if ( graupel > 0 )  &
         call fill2D(is, ie, js, je, ng, npz, q(isd,jsd,1,graupel), delp, gridstruct%area, domain, neststruct%nested, npx, npy)
-      endif
                                                   call timing_off('Fill2D')
      endif
 
@@ -508,7 +506,7 @@ contains
 
       if ( npz > 4 ) then
 !------------------------------------------------------------------------
-! Peroform vertical remapping from Lagrangian control-volume to
+! Perform vertical remapping from Lagrangian control-volume to
 ! the Eulerian coordinate as specified by the routine set_eta.
 ! Note that this finite-volume dycore is otherwise independent of the vertical
 ! Eulerian coordinate.
@@ -686,21 +684,14 @@ contains
 
   if ( flagstruct%range_warn ) then
        call range_check('UA_dyn', ua, is, ie, js, je, ng, npz, gridstruct%agrid,   &
-                         -220., 260., bad_range)
+                         -280., 280., bad_range)
        call range_check('VA_dyn', ua, is, ie, js, je, ng, npz, gridstruct%agrid,   &
-                         -220., 260., bad_range)
-#ifndef SW_DYNAMICS
+                         -280., 280., bad_range)
        call range_check('TA_dyn', pt, is, ie, js, je, ng, npz, gridstruct%agrid,   &
-#ifdef HIWPP
-                         130., 335., bad_range)
-#else
-                         160., 335., bad_range)
-#endif
+                         150., 335., bad_range)
        if ( .not. hydrostatic ) &
             call range_check('W_dyn', w, is, ie, js, je, ng, npz, gridstruct%agrid,   &
                          -50., 100., bad_range)
-#endif
-
   endif
 
   end subroutine fv_dynamics
@@ -774,6 +765,9 @@ contains
           allocate( rf(npz) )
           rf(:) = 0.
 
+          do k=1, ks+1
+             if( is_master() ) write(6,*) k, 0.01*pm(k)
+          enddo
           if( is_master() ) write(6,*) 'Rayleigh friction E-folding time (days):'
           do k=1, npz
              if ( pm(k) < rf_cutoff ) then
@@ -791,63 +785,15 @@ contains
 
     allocate( u2f(isd:ied,jsd:jed,kmax) )
 
-    if (gridstruct%nested) then
 !$OMP parallel do default(none) shared(is,ie,js,je,kmax,pm,rf_cutoff,hydrostatic,ua,va,agrid, &
 !$OMP                                  u2f,rf,w)
     do k=1,kmax
        if ( pm(k) < rf_cutoff ) then
-          do j=js-1,je+1
-             if ( hydrostatic ) then
-                do i=is-1,ie+1
-                   if ( sqrt(ua(i,j,1)**2+va(i,j,1)**2)>25.*cos(agrid(i,j,2)) )  then
-                      u2f(i,j,k) = 1./(1.+rf(k)*sqrt(ua(i,j,k)**2+va(i,j,k)**2)/u0)
-                   else
-                      u2f(i,j,k) = 1.
-                   endif
-                enddo
-             else
-                do i=is-1,ie+1
-                   if ( sqrt(ua(i,j,1)**2+va(i,j,1)**2)>25.*cos(agrid(i,j,2)) .or. abs(w(i,j,1))>0.05 )  then
-                      !!! DEBUG CODE
-                      !print*, i,j,k, ua(i,j,k), va(i,j,k), w(i,j,k)
-                      !!! END DEBUG CODE
-                      u2f(i,j,k) = 1./(1.+rf(k)*sqrt(ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2)/u0)
-                   else
-                      u2f(i,j,k) = 1.
-                   endif
-                enddo
-             endif
-          enddo
-       endif ! p check
+          u2f(:,:,k) = 1. / (1.+rf(k))
+       else
+          u2f(:,:,k) = 1.
+       endif
     enddo
-
-    else
-!$OMP parallel do default(none) shared(is,ie,js,je,kmax,pm,rf_cutoff,hydrostatic,ua,va,agrid, &
-!$OMP                                  u2f,rf,w)
-    do k=1,kmax
-       if ( pm(k) < rf_cutoff ) then
-       do j=js,je
-        if ( hydrostatic ) then
-          do i=is,ie
-             if ( sqrt(ua(i,j,1)**2+va(i,j,1)**2)>25.*cos(agrid(i,j,2)) )  then
-                  u2f(i,j,k) = 1./(1.+rf(k)*sqrt(ua(i,j,k)**2+va(i,j,k)**2)/u0)
-             else
-                  u2f(i,j,k) = 1.
-             endif
-          enddo
-        else
-          do i=is,ie
-             if ( sqrt(ua(i,j,1)**2+va(i,j,1)**2)>25.*cos(agrid(i,j,2)) .or. abs(w(i,j,1))>0.05 )  then
-                  u2f(i,j,k) = 1./(1.+rf(k)*sqrt(ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2)/u0)
-             else
-                  u2f(i,j,k) = 1.
-             endif
-          enddo
-        endif
-       enddo
-       endif ! p check
-    enddo
-    endif
                                         call timing_on('COMM_TOTAL')
     call mpp_update_domains(u2f, domain)
                                         call timing_off('COMM_TOTAL')
@@ -894,6 +840,7 @@ contains
                enddo
              endif
           endif
+
              do j=js,je+1
                 do i=is,ie
                    u(i,j,k) = 0.5*(u2f(i,j-1,k)+u2f(i,j,k))*u(i,j,k)

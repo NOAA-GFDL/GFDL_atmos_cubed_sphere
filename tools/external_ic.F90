@@ -158,12 +158,6 @@ contains
                              call timing_on('ECMWF_IC')
            call get_ecmwf_ic( Atm, fv_domain )
                              call timing_off('ECMWF_IC')
-      elseif ( Atm(1)%flagstruct%fv_diag_ic ) then
-! Interpolate/remap diagnostic output from a FV model diagnostic output file on uniform lat-lon A grid:
-               nq = size(Atm(1)%q,4)
-! Needed variables: lon, lat, pfull(dim), zsurf, ps, ucomp, vcomp, w, temp, and all q
-! delz not implemnetd yet; set make_nh = .true.
-               call get_diag_ic( Atm, fv_domain, nq )
       else
 ! The following is to read in legacy lat-lon FV core restart file
 !  is Atm%q defined in all cases?
@@ -281,253 +275,8 @@ contains
     deallocate( tile_id )
 
   end subroutine get_cubed_sphere_terrain
-!------------------------------------------------------------------
-!------------------------------------------------------------------
-  subroutine get_diag_ic( Atm, fv_domain, nq )
-      type(fv_atmos_type), intent(inout) :: Atm(:)
-      type(domain2d),      intent(inout) :: fv_domain
-      integer, intent(in):: nq
-! local:
-      character(len=128) :: fname, tracer_name
-      real(kind=4), allocatable:: wk1(:), wk2(:,:), wk3(:,:,:)
-      real, allocatable:: tp(:,:,:), qp(:,:,:,:)
-      real, allocatable:: ua(:,:,:), va(:,:,:), wa(:,:,:)
-      real, allocatable:: lat(:), lon(:), ak0(:), bk0(:)
-      real:: s2c(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je,4)
-      integer, dimension(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je):: id1, id2, jdc
-      real psc(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je)
-      real gzc(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je)
-      integer:: i, j, k, im, jm, km, npz, npt
-      integer:: i1, i2, j1, ncid
-      integer:: jbeg, jend
-      integer tsize(3), tr_ind
-      logical:: found
 
-      integer  sphum, liq_wat, rainwat, ice_wat, snowwat, graupel
 
-      integer :: is,  ie,  js,  je
-      integer :: isd, ied, jsd, jed
-
-      is  = Atm(1)%bd%is
-      ie  = Atm(1)%bd%ie
-      js  = Atm(1)%bd%js
-      je  = Atm(1)%bd%je
-      isd = Atm(1)%bd%isd
-      ied = Atm(1)%bd%ied
-      jsd = Atm(1)%bd%jsd
-      jed = Atm(1)%bd%jed
-
-      deg2rad = pi/180.
-
-      npz = Atm(1)%npz
-
-! Zero out all initial tracer fields:
-      Atm(1)%q = 0.
-
-      fname = Atm(1)%flagstruct%res_latlon_dynamics
-
-      if( file_exist(fname) ) then
-          call open_ncfile( fname, ncid )        ! open the file
-          call get_ncdim1( ncid, 'lon',   tsize(1) )
-          call get_ncdim1( ncid, 'lat',   tsize(2) )
-          call get_ncdim1( ncid, 'pfull', tsize(3) )
-
-          im = tsize(1); jm = tsize(2); km = tsize(3)
-
-          if(is_master())  write(*,*) fname, ' FV_diag IC dimensions:', tsize
-
-          allocate (  lon(im) )
-          allocate (  lat(jm) )
- 
-          call _GET_VAR1(ncid, 'lon', im, lon )
-          call _GET_VAR1(ncid, 'lat', jm, lat )
-
-! Convert to radian
-          do i=1,im
-             lon(i) = lon(i) * deg2rad  ! lon(1) = 0.
-          enddo
-          do j=1,jm
-             lat(j) = lat(j) * deg2rad
-          enddo
-
-          allocate ( ak0(km+1) )
-          allocate ( bk0(km+1) )
-! npz
-          if ( npz /= km ) then
-               call mpp_error(FATAL,'==>Error in get_diag_ic: vertical dim must be the same')
-          else
-               ak0(:) = Atm(1)%ak(:)
-               bk0(:) = Atm(1)%bk(:)
-          endif
-      else
-          call mpp_error(FATAL,'==> Error in get_diag_ic: Expected file '//trim(fname)//' for dynamics does not exist')
-      endif
-
-! Initialize lat-lon to Cubed bi-linear interpolation coeff:
-      call remap_coef( is, ie, js, je, isd, ied, jsd, jed, &
-                       im, jm, lon, lat, id1, id2, jdc, s2c , Atm(1)%gridstruct%agrid )
-
-! Find bounding latitudes:
-      jbeg = jm-1;         jend = 2
-      do j=js,je
-         do i=is,ie
-              j1 = jdc(i,j)
-            jbeg = min(jbeg, j1) 
-            jend = max(jend, j1+1)
-         enddo
-      enddo
-
-! remap surface pressure and height:
-      allocate ( wk2(im,jbeg:jend) )
-      call get_var3_r4( ncid, 'ps', 1,im, jbeg,jend, 1,1, wk2 )
-      do j=js,je
-         do i=is,ie
-            i1 = id1(i,j)
-            i2 = id2(i,j)
-            j1 = jdc(i,j)
-            psc(i,j) = s2c(i,j,1)*wk2(i1,j1  ) + s2c(i,j,2)*wk2(i2,j1  ) +  &
-                       s2c(i,j,3)*wk2(i2,j1+1) + s2c(i,j,4)*wk2(i1,j1+1)
-         enddo
-      enddo
-
-      call get_var3_r4( ncid, 'zsurf', 1,im, jbeg,jend, 1,1, wk2 )
-      do j=js,je
-         do i=is,ie
-            i1 = id1(i,j)
-            i2 = id2(i,j)
-            j1 = jdc(i,j)
-            gzc(i,j) = s2c(i,j,1)*wk2(i1,j1  ) + s2c(i,j,2)*wk2(i2,j1  ) +  &
-                       s2c(i,j,3)*wk2(i2,j1+1) + s2c(i,j,4)*wk2(i1,j1+1)
-         enddo
-      enddo
-      deallocate ( wk2 )
-
-! Read in temperature:
-      allocate ( wk3(1:im,jbeg:jend, 1:km) )
-      call get_var3_r4( ncid, 'temp', 1,im, jbeg,jend, 1,km, wk3 )
-      allocate (  tp(is:ie,js:je,km) )
-      do k=1,km
-        do j=js,je
-         do i=is,ie
-            i1 = id1(i,j)
-            i2 = id2(i,j)
-            j1 = jdc(i,j)
-            tp(i,j,k) = s2c(i,j,1)*wk3(i1,j1  ,k) + s2c(i,j,2)*wk3(i2,j1  ,k) +  &
-                        s2c(i,j,3)*wk3(i2,j1+1,k) + s2c(i,j,4)*wk3(i1,j1+1,k)
-         enddo
-        enddo
-      enddo
-
-! Read in all tracers:
-    allocate ( qp(is:ie,js:je,km,nq) )
-    qp = 1.E25
-    do tr_ind=1, nq
-       call get_tracer_names(MODEL_ATMOS, tr_ind, tracer_name)
-       if (field_exist(fname,tracer_name)) then
-           call get_var3_r4( ncid, tracer_name, 1,im, jbeg,jend, 1,km, wk3 )
-           do k=1,km
-              do j=js,je
-                 do i=is,ie
-                    i1 = id1(i,j)
-                    i2 = id2(i,j)
-                    j1 = jdc(i,j)
-                    qp(i,j,k,tr_ind) = s2c(i,j,1)*wk3(i1,j1  ,k) + s2c(i,j,2)*wk3(i2,j1  ,k) +  &
-                                       s2c(i,j,3)*wk3(i2,j1+1,k) + s2c(i,j,4)*wk3(i1,j1+1,k)
-                 enddo
-              enddo
-           enddo
-       endif
-    enddo
-    call remap_scalar(im, jm, km, npz, nq, nq, ak0, bk0, psc, gzc, tp, qp, Atm(1))
-    deallocate ( tp )
-    deallocate ( qp )
-
-! Winds:
-      call get_var3_r4( ncid, 'ucomp', 1,im, jbeg,jend, 1,km, wk3 )
-      allocate ( ua(is:ie,js:je,km) )
-      do k=1,km
-        do j=js,je
-          do i=is,ie
-            i1 = id1(i,j)
-            i2 = id2(i,j)
-            j1 = jdc(i,j)
-            ua(i,j,k) = s2c(i,j,1)*wk3(i1,j1  ,k) + s2c(i,j,2)*wk3(i2,j1  ,k) +  &
-                        s2c(i,j,3)*wk3(i2,j1+1,k) + s2c(i,j,4)*wk3(i1,j1+1,k)
-          enddo
-        enddo
-      enddo
-
-      call get_var3_r4( ncid, 'vcomp', 1,im, jbeg,jend, 1,km, wk3 )
-      allocate ( va(is:ie,js:je,km) )
-      do k=1,km
-        do j=js,je
-          do i=is,ie
-            i1 = id1(i,j)
-            i2 = id2(i,j)
-            j1 = jdc(i,j)
-            va(i,j,k) = s2c(i,j,1)*wk3(i1,j1  ,k) + s2c(i,j,2)*wk3(i2,j1  ,k) +  &
-                        s2c(i,j,3)*wk3(i2,j1+1,k) + s2c(i,j,4)*wk3(i1,j1+1,k)
-          enddo
-        enddo
-      enddo
-      call remap_winds(im, jm, km, npz, ak0, bk0, psc, ua, va, Atm(1))
-
-      deallocate ( ua )
-      deallocate ( va )
-
-      if ( .not. Atm(1)%flagstruct%hydrostatic ) then
-        if (field_exist(fname,'w')) then
-           allocate ( wa(is:ie,js:je,km) )
-           call get_var3_r4( ncid, 'w', 1,im, jbeg,jend, 1,km, wk3 )
-           do k=1,km
-              do j=js,je
-                 do i=is,ie
-                    i1 = id1(i,j)
-                    i2 = id2(i,j)
-                    j1 = jdc(i,j)
-                    wa(i,j,k) = s2c(i,j,1)*wk3(i1,j1  ,k) + s2c(i,j,2)*wk3(i2,j1  ,k) +  &
-                                s2c(i,j,3)*wk3(i2,j1+1,k) + s2c(i,j,4)*wk3(i1,j1+1,k)
-                 enddo
-              enddo
-           enddo
-           call remap_wz(im, jm, km, npz, ng, ak0, bk0, psc, wa, Atm(1)%w, Atm(1))
-           deallocate ( wa )
-        else    ! use "w = - fac * omega" ?
-           Atm(1)%w(:,:,:) = 0.
-        endif
-! delz:
-        if (field_exist(fname,'delz')) then
-           allocate ( wa(is:ie,js:je,km) )
-           call get_var3_r4( ncid, 'delz', 1,im, jbeg,jend, 1,km, wk3 )
-           do k=1,km
-              do j=js,je
-                 do i=is,ie
-                    i1 = id1(i,j)
-                    i2 = id2(i,j)
-                    j1 = jdc(i,j)
-                    wa(i,j,k) = s2c(i,j,1)*wk3(i1,j1  ,k) + s2c(i,j,2)*wk3(i2,j1  ,k) +  &
-                                s2c(i,j,3)*wk3(i2,j1+1,k) + s2c(i,j,4)*wk3(i1,j1+1,k)
-                 enddo
-              enddo
-           enddo
-           call remap_wz(im, jm, km, npz, 0,  ak0, bk0, psc, wa, Atm(1)%delz, Atm(1))
-           deallocate ( wa )
-        else    ! Force make = T
-           Atm(1)%flagstruct%make_nh = .true.
-        endif
-
-      endif   ! hydrostatic test
-
-      call close_ncfile ( ncid )
-      deallocate ( wk3 )
-      deallocate ( ak0 )
-      deallocate ( bk0 )
-      deallocate ( lat )
-      deallocate ( lon )
-
-  end subroutine get_diag_ic
-!------------------------------------------------------------------
-!------------------------------------------------------------------
   subroutine get_nggps_ic (Atm, fv_domain)
 !    read in data after it has been preprocessed with 
 !    NCEP/EMC orography maker and global_chgres
@@ -746,7 +495,7 @@ contains
 #endif
 
       unit = stdlog()
-      call write_version_number ( 'NGGPS_release', 'get_nggps_ics' )
+      call write_version_number ( 'NGGPS_release', 'get_nggps_ic' )
       write(unit, nml=external_ic_nml)
 
       remap = .true.
@@ -943,6 +692,9 @@ contains
 
         allocate ( ud(is:ie,  js:je+1, 1:levp) )
         allocate ( vd(is:ie+1,js:je,   1:levp) )
+
+!$OMP parallel do default(none) shared(is,ie,js,je,levp,Atm,ud,vd,u_s,v_s,u_w,v_w) &
+!$OMP               private(p1,p2,p3,e1,e2,ex,ey)
         do k=1,levp
           do j=js,je+1
             do i=is,ie
@@ -1510,11 +1262,11 @@ contains
       character(len=128) :: fname
       real, allocatable:: wk2(:,:)
       real(kind=4), allocatable:: wk2_r4(:,:)
-      real, dimension(:,:,:), allocatable:: u_inc, v_inc, ud, vd
+      real, dimension(:,:,:), allocatable:: ud, vd
       real, allocatable:: wc(:,:,:)
       real(kind=4), allocatable:: uec(:,:,:), vec(:,:,:), tec(:,:,:), wec(:,:,:)
       real(kind=4), allocatable:: psec(:,:), zsec(:,:), zhec(:,:,:), qec(:,:,:,:)
-      real(kind=4), allocatable:: psc(:,:), zsc(:,:)
+      real(kind=4), allocatable:: psc(:,:)
       real(kind=4), allocatable:: sphumec(:,:,:)
       real, allocatable:: psc_r8(:,:), zhc(:,:,:), qc(:,:,:,:)
       real, allocatable:: lat(:), lon(:), ak0(:), bk0(:)
@@ -1528,7 +1280,7 @@ contains
         id1_c, id2_c, jdc_c
       integer, dimension(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je+1)::     &
         id1_d, id2_d, jdc_d
-      real tmean
+      real:: utmp, vtmp
       integer:: i, j, k, n, im, jm, km, npz, npt
       integer:: i1, i2, j1, ncid
       integer:: jbeg, jend, jn
@@ -1796,8 +1548,8 @@ contains
 
 ! convert zhec, psec, zsec from EC grid to cubic grid
       allocate (psc(is:ie,js:je))
-      allocate (zsc(is:ie,js:je))
       allocate (psc_r8(is:ie,js:je))
+
       do j=js,je
          do i=is,ie
             i1 = id1(i,j)
@@ -1805,14 +1557,14 @@ contains
             j1 = jdc(i,j)
             psc(i,j) = s2c(i,j,1)*psec(i1,j1  ) + s2c(i,j,2)*psec(i2,j1  ) +  &
                        s2c(i,j,3)*psec(i2,j1+1) + s2c(i,j,4)*psec(i1,j1+1)
-            zsc(i,j) = s2c(i,j,1)*zsec(i1,j1  ) + s2c(i,j,2)*zsec(i2,j1  ) +  &
-                       s2c(i,j,3)*zsec(i2,j1+1) + s2c(i,j,4)*zsec(i1,j1+1)
          enddo
       enddo
       deallocate ( psec )
       deallocate ( zsec )
 
       allocate (zhc(is:ie,js:je,km+1))
+!$OMP parallel do default(none) shared(is,ie,js,je,km,s2c,id1,id2,jdc,zhc,zhec)  &
+!$OMP               private(i1,i2,j1)
       do k=1,km+1
         do j=js,je
          do i=is,ie
@@ -1826,13 +1578,14 @@ contains
       enddo
       deallocate ( zhec )
 
-      if(is_master()) write(*,*) 'done interpolate psec/zsec/zhec into cubic grid psc/zsc/zhc!'
+      if(is_master()) write(*,*) 'done interpolate psec/zsec/zhec into cubic grid psc/zhc!'
 
 ! Read in other tracers from EC data and remap them into cubic sphere grid:
       allocate ( qc(is:ie,js:je,km,6) )
 
       do n = 1, 5
-
+!$OMP parallel do default(none) shared(n,is,ie,js,je,km,s2c,id1,id2,jdc,qc,qec) &
+!$OMP               private(i1,i2,j1)
         do k=1,km
           do j=js,je
             do i=is,ie
@@ -1844,10 +1597,9 @@ contains
             enddo
           enddo
         enddo
-
       enddo
 
-      qc(:,:,:,graupel) = 0.
+      qc(:,:,:,graupel) = 0.   ! note Graupel must be tracer #6
 
       deallocate ( qec )
       if(is_master()) write(*,*) 'done interpolate tracers (qec) into cubic (qc)'
@@ -1862,6 +1614,8 @@ contains
       wec(:,:,:) = wec(:,:,:)*scale_value + offset
       !call p_maxmin('wec', wec, 1, im, jbeg, jend, km, 1.)
 
+!$OMP parallel do default(none) shared(is,ie,js,je,km,id1,id2,jdc,s2c,wc,wec) &
+!$OMP               private(i1,i2,j1)
       do k=1,km
         do j=js,je
          do i=is,ie
@@ -1879,11 +1633,10 @@ contains
       if(is_master()) write(*,*) 'done reading and interpolate vertical wind (w) into cubic'
 
 ! remap tracers
-      psc_r8 = psc
+      psc_r8(:,:) = psc(:,:)
       call remap_scalar_ec(Atm(1), km, npz, 6, ak0, bk0, psc_r8, qc, wc, zhc )
       if(is_master()) write(*,*) 'done remap_scalar_ec'
        
-      deallocate ( zsc )
       deallocate ( zhc )
       deallocate ( wc )
       deallocate ( qc )
@@ -1895,16 +1648,14 @@ contains
       allocate (ud(is:ie  , js:je+1, km))
       allocate (vd(is:ie+1, js:je  , km))
 
-      call get_staggered_grid( &
-          is, ie, js, je, &
-          isd, ied, jsd, jed, &
-          Atm(1)%gridstruct%grid, pt_c, pt_d)
+      call get_staggered_grid( is, ie, js, je,  &
+                               isd, ied, jsd, jed, &
+                               Atm(1)%gridstruct%grid, pt_c, pt_d)
 
       !------ pt_c part ------
       ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
       call remap_coef( is, ie+1, js, je, isd, ied+1, jsd, jed, &
-          im, jm, lon, lat, id1_c, id2_c, jdc_c, s2c_c, &
-          pt_c)
+                       im, jm, lon, lat, id1_c, id2_c, jdc_c, s2c_c, pt_c)
 
       ! Find bounding latitudes:
       jbeg = jm-1;         jend = 2
@@ -1932,43 +1683,38 @@ contains
       vec(:,:,:) = vec(:,:,:)*scale_value + offset
       if(is_master()) write(*,*) 'first time done reading vec'
 
-      ! compute wind on pt_c point
-      allocate ( u_inc(is:ie+1,js:je,km) )
-      allocate ( v_inc(is:ie+1,js:je,km) )
-
+!$OMP parallel do default(none) shared(is,ie,js,je,km,s2c_c,id1_c,id2_c,jdc_c,uec,vec,Atm,vd) &
+!$OMP                     private(i1,i2,j1,p1,p2,p3,e2,ex,ey,utmp,vtmp)
       do k=1,km
         do j=js,je
           do i=is,ie+1
             i1 = id1_c(i,j)
             i2 = id2_c(i,j)
             j1 = jdc_c(i,j)
-            u_inc(i,j,k) = s2c_c(i,j,1)*uec(i1,j1  ,k) + &
-                           s2c_c(i,j,2)*uec(i2,j1  ,k) + &
-                           s2c_c(i,j,3)*uec(i2,j1+1,k) + &
-                           s2c_c(i,j,4)*uec(i1,j1+1,k)
-            v_inc(i,j,k) = s2c_c(i,j,1)*vec(i1,j1  ,k) + &
-                           s2c_c(i,j,2)*vec(i2,j1  ,k) + &
-                           s2c_c(i,j,3)*vec(i2,j1+1,k) + &
-                           s2c_c(i,j,4)*vec(i1,j1+1,k)
             p1(:) = Atm(1)%gridstruct%grid(i,j  ,1:2)
             p2(:) = Atm(1)%gridstruct%grid(i,j+1,1:2)
             call  mid_pt_sphere(p1, p2, p3)
             call get_unit_vect2(p1, p2, e2)
             call get_latlon_vector(p3, ex, ey)
-            vd(i,j,k) = u_inc(i,j,k)*inner_prod(e2,ex) + &
-                        v_inc(i,j,k)*inner_prod(e2,ey)
+            utmp = s2c_c(i,j,1)*uec(i1,j1  ,k) + &
+                   s2c_c(i,j,2)*uec(i2,j1  ,k) + &
+                   s2c_c(i,j,3)*uec(i2,j1+1,k) + &
+                   s2c_c(i,j,4)*uec(i1,j1+1,k)
+            vtmp = s2c_c(i,j,1)*vec(i1,j1  ,k) + &
+                   s2c_c(i,j,2)*vec(i2,j1  ,k) + &
+                   s2c_c(i,j,3)*vec(i2,j1+1,k) + &
+                   s2c_c(i,j,4)*vec(i1,j1+1,k)
+            vd(i,j,k) = utmp*inner_prod(e2,ex) + vtmp*inner_prod(e2,ey)
           enddo
         enddo
       enddo
 
-      deallocate ( u_inc, v_inc )
       deallocate ( uec, vec )
 
       !------ pt_d part ------
       ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
       call remap_coef( is, ie, js, je+1, isd, ied, jsd, jed+1, &
-          im, jm, lon, lat, id1_d, id2_d, jdc_d, s2c_d, &
-          pt_d)
+                       im, jm, lon, lat, id1_d, id2_d, jdc_d, s2c_d, pt_d)
 
       ! Find bounding latitudes:
       jbeg = jm-1;         jend = 2
@@ -1996,42 +1742,36 @@ contains
       vec(:,:,:) = vec(:,:,:)*scale_value + offset
       if(is_master()) write(*,*) 'second time done reading vec'
 
-      ! compute wind on pt_c point
-      allocate ( u_inc(is:ie,js:je+1,km) )
-      allocate ( v_inc(is:ie,js:je+1,km) )
-
+!$OMP parallel do default(none) shared(is,ie,js,je,km,id1_d,id2_d,jdc_d,s2c_d,uec,vec,Atm,ud) &
+!$OMP                     private(i1,i2,j1,p1,p2,p3,e1,ex,ey,utmp,vtmp)
       do k=1,km
         do j=js,je+1
           do i=is,ie
             i1 = id1_d(i,j)
             i2 = id2_d(i,j)
             j1 = jdc_d(i,j)
-            u_inc(i,j,k) = s2c_d(i,j,1)*uec(i1,j1  ,k) + &
-                           s2c_d(i,j,2)*uec(i2,j1  ,k) + &
-                           s2c_d(i,j,3)*uec(i2,j1+1,k) + &
-                           s2c_d(i,j,4)*uec(i1,j1+1,k)
-            v_inc(i,j,k) = s2c_d(i,j,1)*vec(i1,j1  ,k) + &
-                           s2c_d(i,j,2)*vec(i2,j1  ,k) + &
-                           s2c_d(i,j,3)*vec(i2,j1+1,k) + &
-                           s2c_d(i,j,4)*vec(i1,j1+1,k)
             p1(:) = Atm(1)%gridstruct%grid(i,  j,1:2)
             p2(:) = Atm(1)%gridstruct%grid(i+1,j,1:2)
             call  mid_pt_sphere(p1, p2, p3)
             call get_unit_vect2(p1, p2, e1)
             call get_latlon_vector(p3, ex, ey)
-            ud(i,j,k)  = u_inc(i,j,k)*inner_prod(e1,ex) + &
-                         v_inc(i,j,k)*inner_prod(e1,ey)
+            utmp = s2c_d(i,j,1)*uec(i1,j1  ,k) + &
+                   s2c_d(i,j,2)*uec(i2,j1  ,k) + &
+                   s2c_d(i,j,3)*uec(i2,j1+1,k) + &
+                   s2c_d(i,j,4)*uec(i1,j1+1,k)
+            vtmp = s2c_d(i,j,1)*vec(i1,j1  ,k) + &
+                   s2c_d(i,j,2)*vec(i2,j1  ,k) + &
+                   s2c_d(i,j,3)*vec(i2,j1+1,k) + &
+                   s2c_d(i,j,4)*vec(i1,j1+1,k)
+            ud(i,j,k) = utmp*inner_prod(e1,ex) + vtmp*inner_prod(e1,ey)
           enddo
         enddo
       enddo
-
-      deallocate ( u_inc, v_inc )
       deallocate ( uec, vec )
 
       call remap_dwinds(km, npz, ak0, bk0, psc_r8, ud, vd, Atm(1))
 
       deallocate ( ud, vd )
-
       deallocate ( ak0, bk0 )
       deallocate ( psc )
       deallocate ( psc_r8 )
@@ -2582,6 +2322,8 @@ contains
        call mpp_error(FATAL,'SPHUM must be 1st tracer')
   endif
 
+!$OMP parallel do default(none) shared(sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,cld_amt,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,omga,qa,Atm) &
+!$OMP   private(pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
   do 5000 j=js,je
      do k=1,km+1
         do i=is,ie
@@ -2639,7 +2381,7 @@ contains
             enddo
          enddo
          call mappm(km, pe0, qp, npz, pe1,  qn1, is,ie, 0, 8, Atm%ptop)
-         if ( iq==1 ) then
+         if ( iq==sphum ) then
             call fillq(ie-is+1, npz, 1, qn1, dp2)
          else
             call fillz(ie-is+1, npz, 1, qn1, dp2)
@@ -2708,6 +2450,7 @@ contains
             if ( Atm%pt(i,j,k) > 273.16 ) then       ! > 0C all liq_wat
                Atm%q(i,j,k,liq_wat) = qn1(i,k)
                Atm%q(i,j,k,ice_wat) = 0.
+#ifdef ORIG_CLOUDS_PART
             else if ( Atm%pt(i,j,k) < 258.16 ) then  ! < -15C all ice_wat
                Atm%q(i,j,k,liq_wat) = 0.
                Atm%q(i,j,k,ice_wat) = qn1(i,k)
@@ -2715,6 +2458,20 @@ contains
                Atm%q(i,j,k,liq_wat) = qn1(i,k)*((Atm%pt(i,j,k)-258.16)/15.)
                Atm%q(i,j,k,ice_wat) = qn1(i,k) - Atm%q(i,j,k,liq_wat)
             endif
+#else
+            else if ( Atm%pt(i,j,k) < 233.16 ) then  ! < -40C all ice_wat
+               Atm%q(i,j,k,liq_wat) = 0.
+               Atm%q(i,j,k,ice_wat) = qn1(i,k)
+            else
+               if ( k.ne.1 .and. Atm%pt(i,j,k)<258.16 .and. Atm%q(i,j,k-1,ice_wat)>1.e-5 ) then
+                  Atm%q(i,j,k,liq_wat) = 0.
+                  Atm%q(i,j,k,ice_wat) = qn1(i,k)
+               else  ! between [-40,0]: linear interpolation
+                  Atm%q(i,j,k,liq_wat) = qn1(i,k)*((Atm%pt(i,j,k)-233.16)/40.)
+                  Atm%q(i,j,k,ice_wat) = qn1(i,k) - Atm%q(i,j,k,liq_wat)
+               endif
+            endif
+#endif
             call mp_auto_conversion(Atm%q(i,j,k,liq_wat), Atm%q(i,j,k,rainwat),  &
                                     Atm%q(i,j,k,ice_wat), Atm%q(i,j,k,snowwat) )
          enddo
@@ -2817,6 +2574,8 @@ contains
     endif
   endif
  
+!$OMP parallel do default(none) shared(sphum,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,qa,wc,Atm) &
+!$OMP   private(qc,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
  do 5000 j=js,je
      do k=1,km+1
         do i=is,ie
@@ -2900,6 +2659,7 @@ contains
       enddo
       gz_fv(npz+1) = Atm%phis(i,j)
 
+
       do 555 k=1,npz
 ! Searching using FV3 log(pe): pn1
          do l=1,km
@@ -2916,8 +2676,9 @@ contains
 
 ! Compute true temperature using hydrostatic balance
       do k=1,npz
-         qc = 1 + Atm%q(i,j,k,liq_wat) + Atm%q(i,j,k,rainwat) + Atm%q(i,j,k,ice_wat) + Atm%q(i,j,k,snowwat)
-         Atm%pt(i,j,k) = (gz_fv(k)-gz_fv(k+1))*qc/( rdgas*(pn1(i,k+1)-pn1(i,k))*(1.+zvir*Atm%q(i,j,k,sphum)) )
+!        qc = 1.-(Atm%q(i,j,k,liq_wat)+Atm%q(i,j,k,rainwat)+Atm%q(i,j,k,ice_wat)+Atm%q(i,j,k,snowwat))
+!        Atm%pt(i,j,k) = (gz_fv(k)-gz_fv(k+1))*qc/( rdgas*(pn1(i,k+1)-pn1(i,k))*(1.+zvir*Atm%q(i,j,k,sphum)) )
+         Atm%pt(i,j,k) = (gz_fv(k)-gz_fv(k+1))/( rdgas*(pn1(i,k+1)-pn1(i,k))*(1.+zvir*Atm%q(i,j,k,sphum)) )
       enddo
       if ( .not. Atm%flagstruct%hydrostatic ) then
          do k=1,npz
@@ -3082,7 +2843,7 @@ contains
 
  subroutine mp_auto_conversion(ql, qr, qi, qs)
  real, intent(inout):: ql, qr, qi, qs
- real, parameter:: qi0_max = 2.5e-3
+ real, parameter:: qi0_max = 2.0e-3
  real, parameter:: ql0_max = 2.5e-3
 
 ! Convert excess cloud water into rain:
@@ -3097,65 +2858,6 @@ contains
   endif
 
  end subroutine mp_auto_conversion
-
- subroutine get_pt_wdz( Atm, npz, zh) 
-  type(fv_atmos_type), intent(inout) :: Atm
-  integer, intent(in):: npz
-  real,    intent(in), dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je,npz+2):: zh
-! Local:
-  real, dimension(Atm%bd%is:Atm%bd%ie,npz+1):: pe0, pn0
-  integer i,j,k, kshift
-  integer :: is,  ie,  js,  je
-  real:: grd
-
-  grd = grav/rdgas
-
-  is  = Atm%bd%is
-  ie  = Atm%bd%ie
-  js  = Atm%bd%js
-  je  = Atm%bd%je
-
-  kshift = 1
-
-! Needs openMP here
-  do j = js, je
-
-     do i=is,ie
-        pe0(i,1) = atm%ak(1)
-        pn0(i,1) = log(pe0(i,1))
-     enddo
-
-     do k=2,npz+1
-        do i=is,ie
-           pe0(i,k) = atm%ak(k) + atm%bk(k)*atm%ps(i,j)
-           pn0(i,k) = log(pe0(i,k))
-        enddo
-     enddo
-
-! Retrieve temp from height at edges:
-! Approximate w from Omega
-     do k= 1, npz
-        if ( atm%flagstruct%hydrostatic )then
-          do i = is, ie
-             Atm%pt(i,j,k) = grd*(zh(i,j,k+kshift)-zh(i,j,k+kshift+1))/((pn0(i,k+1)-pn0(i,k))*(1.+zvir*atm%q(i,j,k,1)))
-          enddo
-        else
-          do i = is, ie
-           atm%delz(i,j,k) = zh(i,j,k+kshift+1) - zh(i,j,k+kshift)
-             atm%pt(i,j,k) = grd*atm%delz(i,j,k)/((pn0(i,k)-pn0(i,k+1))*(1.+zvir*atm%q(i,j,k,1)))
-              atm%w(i,j,k) = atm%omga(i,j,k)*atm%delz(i,j,k) / (pe0(i,k+1)-pe0(i,k))
-          enddo
-        endif
-     enddo
-
-  enddo
-
-  call p_maxmin('T_ic', Atm%pt(is:ie,js:je,1:npz), is, ie, js, je, npz, 1.)
-
-  if ( .not. atm%flagstruct%hydrostatic )   &
-  call p_maxmin('W_ic', Atm%w(is:ie,js:je,1:npz),  is, ie, js, je, npz, 1.)
-
-  end subroutine get_pt_wdz
 
 
  subroutine remap_dwinds(km, npz, ak0, bk0, psc, ud, vd, Atm)
@@ -3183,7 +2885,6 @@ contains
   jsd = Atm%bd%jsd
   jed = Atm%bd%jed
 
-!RAB - NEED TO FIX PSD & PS FOR IN HALO REGION FOR NESTED GRIDS
   if (Atm%neststruct%nested) then
      do j=jsd,jed
      do i=isd,ied
@@ -3200,6 +2901,8 @@ contains
   call mpp_update_domains( psd,    Atm%domain, complete=.false. )
   call mpp_update_domains( Atm%ps, Atm%domain, complete=.true. )
 
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,km,ak0,bk0,Atm,psc,psd,ud,vd) &
+!$OMP                          private(pe1,pe0,qn1)
   do 5000 j=js,je+1
 !------
 ! map u
@@ -3295,7 +2998,7 @@ contains
 !------
 ! map u
 !------
-      call mappm(km, pe0, ua(is:ie,j,1:km), npz, pe1, qn1, is,ie, -1, 4, Atm%ptop)
+      call mappm(km, pe0, ua(is:ie,j,1:km), npz, pe1, qn1, is,ie, -1, 8, Atm%ptop)
       do k=1,npz
          do i=is,ie
             ut(i,j,k) = qn1(i,k)
@@ -3304,7 +3007,7 @@ contains
 !------
 ! map v
 !------
-      call mappm(km, pe0, va(is:ie,j,1:km), npz, pe1, qn1, is,ie, -1, 4, Atm%ptop)
+      call mappm(km, pe0, va(is:ie,j,1:km), npz, pe1, qn1, is,ie, -1, 8, Atm%ptop)
       do k=1,npz
          do i=is,ie
             vt(i,j,k) = qn1(i,k)
@@ -3325,64 +3028,6 @@ contains
   if (is_master()) write(*,*) 'done remap_winds'
 
  end subroutine remap_winds
-
-
- subroutine remap_wz(im, jm, km, npz, mg, ak0, bk0, psc, wa, wz, Atm)
-  type(fv_atmos_type), intent(inout) :: Atm
-  integer, intent(in):: im, jm, km, npz
-  integer, intent(in):: mg     ! mg = 0 for delz; mg=3 for w
-  real,    intent(in):: ak0(km+1), bk0(km+1)
-  real,    intent(in):: psc(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je)
-  real,    intent(in), dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je,km):: wa
-  real,   intent(out):: wz(Atm%bd%is-mg:Atm%bd%ie+mg,Atm%bd%js-mg:Atm%bd%je+mg,npz)
-! local:
-  real, dimension(Atm%bd%is:Atm%bd%ie, km+1):: pe0
-  real, dimension(Atm%bd%is:Atm%bd%ie,npz+1):: pe1
-  real, dimension(Atm%bd%is:Atm%bd%ie,npz):: qn1
-  integer i,j,k
-  integer :: is,  ie,  js,  je
-  integer :: isd, ied, jsd, jed
-
-  is  = Atm%bd%is
-  ie  = Atm%bd%ie
-  js  = Atm%bd%js
-  je  = Atm%bd%je
-  isd = Atm%bd%isd
-  ied = Atm%bd%ied
-  jsd = Atm%bd%jsd
-  jed = Atm%bd%jed
-
-  do 5000 j=js,je
-
-     do k=1,km+1
-        do i=is,ie
-           pe0(i,k) = ak0(k) + bk0(k)*psc(i,j)
-        enddo
-     enddo
-
-     do k=1,npz+1
-       do i=is,ie
-          pe1(i,k) = Atm%ak(k) + Atm%bk(k)*Atm%ps(i,j)
-       enddo
-     enddo
-
-!------
-! map w
-!------
-      call mappm(km, pe0, wa(is:ie,j,1:km), npz, pe1, qn1, is,ie, -1, 4, Atm%ptop)
-      do k=1,npz
-         do i=is,ie
-            wz(i,j,k) = qn1(i,k)
-         enddo
-      enddo
-
-5000 continue
-
-! call prt_maxmin('WZ', wz, is, ie, js, je, mg, npz, 1.)
-! if (is_master()) write(*,*) 'done remap_wz'
-
- end subroutine remap_wz
-
 
 
   subroutine remap_xyz( im, jbeg, jend, jm, km, npz, nq, ncnst, lon, lat, ak0, bk0, ps0, gz0,   &
@@ -4045,7 +3690,7 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
 
  end subroutine fillq
 
-     subroutine compute_zh(im, jm, levp, ak0, bk0, ps, zs, t, q, nq, zh )
+  subroutine compute_zh(im, jm, levp, ak0, bk0, ps, zs, t, q, nq, zh )
        implicit none
        integer, intent(in):: levp, im,jm, nq
        real,    intent(in), dimension(levp+1):: ak0, bk0
@@ -4054,24 +3699,13 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
        real(kind=4),    intent(in), dimension(im,jm,levp,nq):: q
        real(kind=4),    intent(out), dimension(im,jm,levp+1):: zh
        ! Local:
-       real,    dimension(im,jm,levp):: sphum
        real, dimension(im,levp+1):: pe0, pn0
-       real:: qc
-       integer i,j,k
-       real, parameter :: GRAV   = 9.80665
-       real, parameter :: RDGAS  = 287.05
-       real, parameter :: RVGAS = 461.50
-       real, parameter :: e0 = 610.71
-       real, parameter :: hlv = 2.501e6
-       real, parameter :: tfreeze = 273.15
-       real  :: zvir
-       real:: grd
+       real:: qc, grd
+       integer:: i,j,k
       
        grd = grav/rdgas
-       zvir = rvgas/rdgas - 1.
-
-       sphum(:,:,:) = q(:,:,:,1)
-
+!$OMP parallel do default(none) shared(im,jm,levp,grd,ak0,bk0,zs,ps,t,q,zh) &
+!$OMP                          private(qc,pe0,pn0)
        do j = 1, jm
          do i=1, im
            pe0(i,1) = ak0(1)
@@ -4085,26 +3719,23 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
             enddo
          enddo
 
-
          zh(1:im,j,levp+1) = zs(1:im,j)
 
          do k = levp, 1, -1
            do i = 1, im
-             qc = 1 + q(i,j,k,2) + q(i,j,k,3) + q(i,j,k,4) + q(i,j,k,5)
-             zh(i,j,k) = zh(i,j,k+1)+(t(i,j,k)*(1.+zvir*sphum(i,j,k))*(pn0(i,k+1)-pn0(i,k)))/(grd*qc)
+!            qc = 1.-(q(i,j,k,2)+q(i,j,k,3)+q(i,j,k,4)+q(i,j,k,5))
+!            zh(i,j,k) = zh(i,j,k+1)+(t(i,j,k)*(1.+zvir*q(i,j,k,1))*(pn0(i,k+1)-pn0(i,k)))/(grd*qc)
+             zh(i,j,k) = zh(i,j,k+1)+(t(i,j,k)*(1.+zvir*q(i,j,k,1))*(pn0(i,k+1)-pn0(i,k)))*(rdgas/grav)
            enddo
          enddo
        enddo
 
        !if(is_master()) call pmaxmin( 'zh levp+1', zh(:,:,levp+1), im, jm, 1.)
 
-     end subroutine compute_zh
+  end subroutine compute_zh
 
-  subroutine get_staggered_grid( &
-      is, ie, js, je, &
-      isd, ied, jsd, jed, &
-      pt_b, pt_c, pt_d)
-    integer, intent(in) :: is, ie, js, je, isd, ied, jsd, jed
+  subroutine get_staggered_grid( is, ie, js, je, isd, ied, jsd, jed, pt_b, pt_c, pt_d)
+    integer, intent(in):: is, ie, js, je, isd, ied, jsd, jed
     real, dimension(isd:ied+1,jsd:jed+1,2), intent(in) :: pt_b
     real, dimension(isd:ied+1,jsd:jed  ,2), intent(out) :: pt_c
     real, dimension(isd:ied  ,jsd:jed+1,2), intent(out) :: pt_d
@@ -4112,21 +3743,22 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
     real(kind=R_GRID), dimension(2):: p1, p2, p3
     integer :: i, j
 
-    do j = js,je+1
-      do i = is,ie
-        p1(:) = pt_b(i,  j,1:2)
-        p2(:) = pt_b(i+1,j,1:2)
-        call  mid_pt_sphere(p1, p2, p3)
-        pt_d(i,j,1:2) = p3(:)
-      enddo
+    do j=js,je+1
+       do i=is,ie
+          p1(:) = pt_b(i,  j,1:2)
+          p2(:) = pt_b(i+1,j,1:2)
+          call  mid_pt_sphere(p1, p2, p3)
+          pt_d(i,j,1:2) = p3(:)
+       enddo
     enddo
-    do j = js,je
-      do i = is,ie+1
-        p1(:) = pt_b(i,j  ,1:2)
-        p2(:) = pt_b(i,j+1,1:2)
-        call  mid_pt_sphere(p1, p2, p3)
-        pt_c(i,j,1:2) = p3(:)
-      enddo
+
+    do j=js,je
+       do i=is,ie+1
+          p1(:) = pt_b(i,j  ,1:2)
+          p2(:) = pt_b(i,j+1,1:2)
+          call  mid_pt_sphere(p1, p2, p3)
+          pt_c(i,j,1:2) = p3(:)
+       enddo
     enddo
 
   end subroutine get_staggered_grid

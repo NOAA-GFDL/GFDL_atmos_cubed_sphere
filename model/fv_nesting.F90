@@ -465,8 +465,8 @@ contains
    integer, intent(IN) :: npx, npy, npz
    real, intent(IN) :: zvir
 
-    real, parameter:: c_liq = 4190.       ! heat capacity of water at 0C
-    real, parameter:: c_ice = 2106.       ! heat capacity of ice at 0C: c=c_ice+7.3*(T-Tice) 
+    real, parameter:: c_liq = 4185.5      ! heat capacity of water at 0C
+    real, parameter:: c_ice = 1972.       ! heat capacity of ice at 0C: c=c_ice+7.3*(T-Tice) 
     real, parameter:: cv_vap = cp_vapor - rvgas  ! 1384.5
 
    real, dimension(:,:,:), pointer :: ptBC, sphumBC, qconBC, delpBC, delzBC, cappaBC

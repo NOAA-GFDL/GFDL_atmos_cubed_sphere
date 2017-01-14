@@ -19,7 +19,7 @@
 !***********************************************************************
 module dyn_core_mod
 
-  use constants_mod,      only: rdgas, radius, cp_air
+  use constants_mod,      only: rdgas, radius, cp_air, pi
   use mpp_mod,            only: mpp_pe 
   use mpp_domains_mod,    only: CGRID_NE, DGRID_NE, mpp_get_boundary, mpp_update_domains,  &
                                 domain2d
@@ -36,11 +36,7 @@ module dyn_core_mod
 #ifdef ROT3
   use fv_update_phys_mod, only: update_dwinds_phys
 #endif
-#if defined (ADA_NUDGE)
-  use fv_ada_nudge_mod,   only: breed_slp_inline_ada
-#else
   use fv_nwp_nudge_mod,   only: breed_slp_inline, do_adiabatic_init
-#endif
   use diag_manager_mod,   only: send_data
   use fv_arrays_mod,      only: fv_grid_type, fv_flags_type, fv_nest_type, fv_diag_type, &
                                 fv_grid_bounds_type, R_GRID
@@ -60,7 +56,13 @@ public :: dyn_core, del2_cubed, init_ijk_mem
   real :: d3_damp
   real, allocatable, dimension(:,:,:) ::  ut, vt, crx, cry, xfx, yfx, divgd, &
                                           zh, du, dv, pkc, delpc, pk3, ptc, gz
+! real, parameter:: delt_max = 1.e-1   ! Max dissipative heating/cooling rate
+                                       ! 6 deg per 10-min
   real(kind=R_GRID), parameter :: cnst_0p20=0.20d0
+
+  real, allocatable ::  rf(:)
+  logical:: RFF_initialized = .false.
+  integer :: kmax=1
 
 !---- version number -----
   character(len=128) :: version = '$Id$'
@@ -115,7 +117,11 @@ contains
 !-----------------------------------------------------------------------
 ! Others:
     real,    parameter:: near0 = 1.E-8
+#ifdef OVERLOAD_R4
+    real,    parameter:: huge_r = 1.E8
+#else
     real,    parameter:: huge_r = 1.E40
+#endif
 !-----------------------------------------------------------------------
     real, intent(out  ):: ws(bd%is:bd%ie,bd%js:bd%je)        ! w at surface
     real, intent(inout):: omga(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    ! Vertical pressure velocity (pa/s)
@@ -166,7 +172,7 @@ contains
     real    :: beta, beta_d, d_con_k, damp_w, damp_t, kgb, cv_air
     real    :: dt, dt2, rdt
     real    :: d2_divg
-    real    :: k1k, rdg, mk1
+    real    :: k1k, rdg, dtmp, delt
     logical :: last_step, remap_step
     logical used
     real :: split_timestep_bc
@@ -262,7 +268,7 @@ contains
          call init_ijk_mem(isd, ied, jsd, jed, npz, heat_source, 0.)
     endif
 
-    if ( flagstruct%convert_ke .or. flagstruct%vtdm4> 1.E-3 ) then
+    if ( flagstruct%convert_ke .or. flagstruct%vtdm4> 1.E-4 ) then
          n_con = npz
     else
          if ( flagstruct%d2_bg_k1 < 1.E-3 ) then
@@ -318,7 +324,7 @@ contains
                              call timing_off('COMM_TOTAL')
 
       if ( it==1 ) then
-		if (gridstruct%nested) then
+        if (gridstruct%nested) then
 !$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,gz,zs,delz)
          do j=jsd,jed
             do i=isd,ied
@@ -330,7 +336,7 @@ contains
                enddo
             enddo
          enddo
-		else
+        else
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,gz,zs,delz)
          do j=js,je
             do i=is,ie
@@ -342,7 +348,7 @@ contains
                enddo
             enddo
          enddo
-	    endif
+        endif
                              call timing_on('COMM_TOTAL')
          call start_group_halo_update(i_pack(5), gz,  domain)
                              call timing_off('COMM_TOTAL')
@@ -562,11 +568,13 @@ contains
        hord_v = flagstruct%hord_vt
        hord_p = flagstruct%hord_dp
        nord_k = flagstruct%nord
-       if ( k==npz ) then
+
+!      if ( k==npz ) then
           kgb = flagstruct%ke_bg
-       else
-          kgb = 0.
-       endif
+!      else
+!         kgb = 0.
+!      endif
+
        nord_v(k) = min(2, flagstruct%nord)
 !      d2_divg = min(0.20, flagstruct%d2_bg*(1.-3.*tanh(0.1*log(pfull(k)/pfull(npz)))))
        d2_divg = min(0.20, flagstruct%d2_bg)
@@ -889,6 +897,12 @@ contains
    endif
                                        call timing_off('PG_D')
 
+! Inline Rayleigh friction here?
+#ifdef USE_SUPER_RAY
+   if( flagstruct%tau > 0. )  &
+   call Rayleigh_fast(abs(dt), npx, npy, npz, pfull, flagstruct%tau, u, v, w, ptop, hydrostatic, flagstruct%rf_cutoff, bd)
+#endif
+
 !-------------------------------------------------------------------------------------------------------
     if ( flagstruct%breed_vortex_inline ) then
         if ( .not. hydrostatic ) then
@@ -1039,34 +1053,48 @@ contains
 !
 ! del(Cp*T) = - del(KE)
 !
-!$OMP parallel do default(none) shared(is,ie,js,je,n_con,pt,heat_source,delp,pkz)
+!$OMP parallel do default(none) shared(flagstruct,is,ie,js,je,n_con,pt,heat_source,delp,pkz,bdt) &
+!$OMP                          private(dtmp)
        do j=js,je
-          do k=1,n_con
-             do i=is,ie
-                pt(i,j,k) = pt(i,j,k) + heat_source(i,j,k)/(cp_air*delp(i,j,k)*pkz(i,j,k))
-             enddo
+          do k=1,n_con  ! n_con is usually less than 3;
+             if ( k<3 ) then
+                do i=is,ie
+                   pt(i,j,k) = pt(i,j,k) + heat_source(i,j,k)/(cp_air*delp(i,j,k)*pkz(i,j,k))
+                enddo
+             else
+                do i=is,ie
+                     dtmp = heat_source(i,j,k) / (cp_air*delp(i,j,k))
+                pt(i,j,k) = pt(i,j,k) + sign(min(abs(bdt)*flagstruct%delt_max,abs(dtmp)), dtmp)/pkz(i,j,k)
+                enddo
+             endif
           enddo
        enddo
     else
-!$OMP parallel do default(none) shared(is,ie,js,je,n_con,pkz,cappa,rdg,delp,delz,pt, &
-!$OMP                                  heat_source,k1k,akap,cv_air) &
-!$OMP                          private(mk1)
-       do j=js,je
-          do k=1,n_con    ! n_con is usually less than 3; not good as outer openMP loop
+!$OMP parallel do default(none) shared(flagstruct,is,ie,js,je,n_con,pkz,cappa,rdg,delp,delz,pt, &
+!$OMP                                  heat_source,k1k,cv_air,bdt) &
+!$OMP                          private(dtmp, delt)
+       do k=1,n_con
+          delt = abs(bdt*flagstruct%delt_max)
+! Sponge layers:
+          if ( k == 1 ) delt = 9.0*delt
+          if ( k == 2 ) delt = 3.0*delt
+          if ( k == 3 ) delt = 1.5*delt
+          do j=js,je
              do i=is,ie
 #ifdef MOIST_CAPPA
-                mk1 = cappa(i,j,k)/(1.-cappa(i,j,k))
-                pkz(i,j,k) = exp( mk1*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
+                pkz(i,j,k) = exp( cappa(i,j,k)/(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #else
                 pkz(i,j,k) = exp( k1k*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #endif
-                pt(i,j,k) = pt(i,j,k) + heat_source(i,j,k)/(cv_air*delp(i,j,k)*pkz(i,j,k))
+                     dtmp = heat_source(i,j,k) / (cv_air*delp(i,j,k))
+                pt(i,j,k) = pt(i,j,k) + sign(min(delt, abs(dtmp)),dtmp) / pkz(i,j,k)
              enddo
           enddo
        enddo
     endif
-    endif
-    if (allocated(heat_source)) deallocate( heat_source ) !If ncon == 0 but d_con > 1.e-5, this would not be deallocated in earlier versions of the code
+
+  endif
+  if (allocated(heat_source)) deallocate( heat_source ) !If ncon == 0 but d_con > 1.e-5, this would not be deallocated in earlier versions of the code
 
 
   if ( end_step ) then
@@ -1091,10 +1119,6 @@ contains
 
   endif
   if( allocated(pem) )   deallocate ( pem )
-
-if ( flagstruct%fv_debug ) then
-   if(is_master()) write(*,*) 'End of dyn_core'
-endif
 
 end subroutine dyn_core
 
@@ -2183,6 +2207,84 @@ do 1000 j=jfirst,jlast
       enddo
 
  end subroutine init_ijk_mem
+
+
+ subroutine Rayleigh_fast(dt, npx, npy, npz, pfull, tau, u, v, w,  &
+                          ptop, hydrostatic, rf_cutoff, bd)
+! Simple "inline" version of the Rayleigh friction
+    real, intent(in):: dt
+    real, intent(in):: tau              ! time scale (days)
+    real, intent(in):: ptop, rf_cutoff
+    real, intent(in),  dimension(npz):: pfull
+    integer, intent(in):: npx, npy, npz
+    logical, intent(in):: hydrostatic
+    type(fv_grid_bounds_type), intent(IN) :: bd
+    real, intent(inout):: u(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) ! D grid zonal wind (m/s)
+    real, intent(inout):: v(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz) ! D grid meridional wind (m/s)
+    real, intent(inout)::  w(bd%isd:      ,bd%jsd:      ,1: ) ! cell center vertical wind (m/s)
+!
+    real(kind=R_GRID):: rff(npz)
+    real, parameter:: sday = 86400.
+    real:: tau0
+    integer i, j, k
+
+    integer :: is,  ie,  js,  je
+    integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+
+     if ( .not. RFF_initialized ) then
+          tau0 = tau * sday
+          allocate( rf(npz) )
+          rf(:) = 1.
+
+          if( is_master() ) write(6,*) 'Fast Rayleigh friction E-folding time (days):'
+          do k=1, npz
+             if ( pfull(k) < rf_cutoff ) then
+                  rff(k) = dt/tau0*sin(0.5*pi*log(rf_cutoff/pfull(k))/log(rf_cutoff/ptop))**2
+! Re-FACTOR rf
+                  if( is_master() ) write(6,*) k, 0.01*pfull(k), dt/(rff(k)*sday)
+                  kmax = k
+                  rff(k) = 1.d0 / (1.0d0+rff(k))
+                   rf(k) = rff(k)
+             else
+                  exit
+             endif
+          enddo
+          RFF_initialized = .true.
+     endif
+
+!$OMP parallel do default(none) shared(is,ie,js,je,kmax,pfull,rf_cutoff,w,rf,u,v,hydrostatic)
+     do k=1,kmax
+        if ( pfull(k) < rf_cutoff ) then
+             do j=js,je+1
+                do i=is,ie
+                   u(i,j,k) = rf(k)*u(i,j,k)
+                enddo
+             enddo
+             do j=js,je
+                do i=is,ie+1
+                   v(i,j,k) = rf(k)*v(i,j,k)
+                enddo
+             enddo
+             if ( .not. hydrostatic ) then
+                do j=js,je
+                   do i=is,ie
+                      w(i,j,k) = rf(k)*w(i,j,k)
+                   enddo
+                enddo
+             endif
+        endif
+     enddo
+
+ end subroutine Rayleigh_fast
 
 
 end module dyn_core_mod

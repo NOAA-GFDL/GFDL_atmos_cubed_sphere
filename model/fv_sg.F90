@@ -35,21 +35,26 @@ public  fv_subgrid_z, qsmith, neg_adj3
 
   real, parameter:: esl = 0.621971831
   real, parameter:: tice = 273.16
-  real, parameter:: c_ice = 2106.  ! Emanuel table, page 566
-  real, parameter:: c_liq = 4.1855e+3
-!!!  real, parameter:: c_liq = 4190.
+! real, parameter:: c_ice = 2106.  ! Emanuel table, page 566
+  real, parameter:: c_ice = 1972.  !  -15 C
+  real, parameter:: c_liq = 4.1855e+3    ! GFS
+! real, parameter:: c_liq = 4218.        ! ECMWF-IFS
   real, parameter:: cv_vap = cp_vapor - rvgas  ! 1384.5
   real, parameter:: c_con = c_ice
 
-  real, parameter:: dc_vap =  cp_vapor - c_liq   ! = -2368.
+! real, parameter:: dc_vap =  cp_vapor - c_liq   ! = -2368.
+  real, parameter:: dc_vap =  cv_vap - c_liq   ! = -2368.
   real, parameter:: dc_ice =  c_liq - c_ice      ! = 2112.
-  real, parameter:: hlv0 = 2.501e6   ! Emanual Appendix-2
-  real, parameter:: hlf0 = 3.337e5   ! Emanual
-  real, parameter:: t_ice = 273.15
-! real, parameter:: ri_max = 2.
-! real, parameter:: ri_min = 1.
+! Values at 0 Deg C
+  real, parameter:: hlv0 = 2.5e6
+  real, parameter:: hlf0 = 3.3358e5
+! real, parameter:: hlv0 = 2.501e6   ! Emanual Appendix-2
+! real, parameter:: hlf0 = 3.337e5   ! Emanual
+  real, parameter:: t_ice = 273.16
   real, parameter:: ri_max = 1.
   real, parameter:: ri_min = 0.25
+  real, parameter:: t1_min = 160.
+  real, parameter:: t2_min = 165.
   real, parameter:: t2_max = 315.
   real, parameter:: t3_max = 325.
   real, parameter:: Lv0 =  hlv0 - dc_vap*t_ice   ! = 3.147782e6
@@ -57,6 +62,7 @@ public  fv_subgrid_z, qsmith, neg_adj3
 
   real, parameter:: zvir =  rvgas/rdgas - 1.     ! = 0.607789855
   real, allocatable:: table(:),des(:)
+  real:: lv00, d0_vap
 
 !---- version number -----
   character(len=128) :: version = '$Id: fv_sg.F90,v 17.0.2.4.2.3.2.6.2.10.4.1 2014/11/12 03:46:32 Lucas.Harris Exp $'
@@ -97,7 +103,7 @@ contains
       real, dimension(is:ie):: gzh, lcp2, icp2, cvm, cpm, qs
       real ri_ref, ri, pt1, pt2, ratio, tv, cv, tmp, q_liq, q_sol
       real tv1, tv2, g2, h0, mc, fra, rk, rz, rdt, tvd, tv_surf
-      real dh, dq, qsw, dqsdt, tcp3, t_max
+      real dh, dq, qsw, dqsdt, tcp3, t_max, t_min
       integer i, j, k, kk, n, m, iq, km1, im, kbot
       real, parameter:: ustar2 = 1.E-4
       real:: cv_air, xvir
@@ -117,6 +123,11 @@ contains
            kbot = k_bot
       else
            kbot = km
+      endif
+      if ( pe(is,1,js) < 2. ) then
+           t_min = t1_min
+      else
+           t_min = t2_min
       endif
 
       if ( k_bot < min(km,24)  ) then
@@ -147,12 +158,12 @@ contains
    m = 3
    fra = dt/real(tau)
 
-!$OMP parallel do default(none) shared(im,is,ie,js,je,nq,kbot,qa,ta,sphum,ua,va,delp,peln,     &
-!$OMP                                  hydrostatic,pe,delz,g2,w,liq_wat,rainwat,ice_wat,  &
-!$OMP                                  snowwat,cv_air,m,graupel,pkz,rk,rz,fra, t_max,    &
-!$OMP                                  u_dt,rdt,v_dt,xvir,nwat)                 &
-!$OMP                          private(kk,lcp2,icp2,tcp3,dh,dq,den,qs,qsw,dqsdt,qcon,q0, &
-!$OMP                                  t0,u0,v0,w0,h0,pm,gzh,tvm,tmp,cpm,cvm,q_liq,q_sol, &
+!$OMP parallel do default(none) shared(im,is,ie,js,je,nq,kbot,qa,ta,sphum,ua,va,delp,peln,   &
+!$OMP                                  hydrostatic,pe,delz,g2,w,liq_wat,rainwat,ice_wat,     &
+!$OMP                                  snowwat,cv_air,m,graupel,pkz,rk,rz,fra, t_max, t_min, &
+!$OMP                                  u_dt,rdt,v_dt,xvir,nwat)                              &
+!$OMP                          private(kk,lcp2,icp2,tcp3,dh,dq,den,qs,qsw,dqsdt,qcon,q0,     &
+!$OMP                                  t0,u0,v0,w0,h0,pm,gzh,tvm,tmp,cpm,cvm,q_liq,q_sol,    &
 !$OMP                                  tv,gz,hd,te,ratio,pt1,pt2,tv1,tv2,ri_ref, ri,mc,km1)
   do 1000 j=js,je  
 
@@ -295,17 +306,29 @@ contains
             tv2 = t0(i,k  )*(1.+xvir*q0(i,k  ,sphum)-qcon(i,k))
             pt1 = tv1 / pkz(i,j,km1)
             pt2 = tv2 / pkz(i,j,k  )
+!
+            ri = (gz(i,km1)-gz(i,k))*(pt1-pt2)/( 0.5*(pt1+pt2)*        &
+                 ((u0(i,km1)-u0(i,k))**2+(v0(i,km1)-v0(i,k))**2+ustar2) )
             if ( tv1>t_max .and. tv1>tv2 ) then
 ! top layer unphysically warm
                ri = 0.
-            else
-               ri = (gz(i,km1)-gz(i,k))*(pt1-pt2)/( 0.5*(pt1+pt2)*        &
-                   ((u0(i,km1)-u0(i,k))**2+(v0(i,km1)-v0(i,k))**2+ustar2) )
+            elseif ( tv2<t_min ) then
+               ri = min(ri, 0.2)
             endif
 ! Adjustment for K-H instability:
 ! Compute equivalent mass flux: mc
 ! Add moist 2-dz instability consideration:
-            ri_ref = min(ri_max, ri_min + (ri_max-ri_min)*dim(500.e2,pm(i,k))/250.e2 )
+!!!         ri_ref = min(ri_max, ri_min + (ri_max-ri_min)*dim(500.e2,pm(i,k))/250.e2 )
+            ri_ref = min(ri_max, ri_min + (ri_max-ri_min)*dim(400.e2,pm(i,k))/200.e2 )
+! Enhancing mixing at the model top
+            if ( k==2 ) then
+                 ri_ref = 4.*ri_ref
+            elseif ( k==3 ) then
+                 ri_ref = 2.*ri_ref
+            elseif ( k==4 ) then
+                 ri_ref = 1.5*ri_ref
+            endif
+
             if ( ri < ri_ref ) then
                mc = ratio*delp(i,j,km1)*delp(i,j,k)/(delp(i,j,km1)+delp(i,j,k))*(1.-max(0.0,ri/ri_ref))**2
                  do iq=1,nq
@@ -1130,8 +1153,15 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk,
   endif
   endif
 
+     if ( hydrostatic ) then
+       d0_vap = cp_vapor - c_liq
+     else
+       d0_vap = cv_vap - c_liq
+     endif
+     lv00 = hlv0 - d0_vap*t_ice
+
 !$OMP parallel do default(none) shared(is,ie,js,je,kbot,qv,ql,qi,qs,qr,qg,dp,pt,       &
-!$OMP                                  hydrostatic,peln,delz,cv_air,sat_adj) &
+!$OMP                                  lv00, d0_vap,hydrostatic,peln,delz,cv_air,sat_adj) &
 !$OMP                          private(dq,dq1,qsum,dp2,p2,pt2,qv2,ql2,qi2,qs2,qg2,qr2, &
 !$OMP                                  lcpk,icpk,qsw,dwsdt,sink,q_liq,q_sol,cpm)
   do k=1, kbot
@@ -1166,7 +1196,7 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk,
              q_liq = max(0., ql2(i,j) + qr2(i,j))
              q_sol = max(0., qi2(i,j) + qs2(i,j))
              cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cv_air + qv2(i,j)*cv_vap + q_liq*c_liq + q_sol*c_ice
-             lcpk(i,j) = (Lv0+dc_vap*pt2(i,j)) / cpm
+             lcpk(i,j) = (lv00+d0_vap*pt2(i,j)) / cpm
              icpk(i,j) = (Li0+dc_ice*pt2(i,j)) / cpm
           enddo
        enddo
