@@ -24,7 +24,7 @@ use fv_diagnostics_mod, only: interpolate_vertical, &
                               get_height_given_pressure, &
                               rh_calc, get_height_field
 
-#ifndef GFS_PHYS
+#ifndef NO_CMIP_DIAG
 use atmos_cmip_diag_mod, only: register_cmip_diag_field_2d, &
                                register_cmip_diag_field_3d, &
                                send_cmip_data_3d, cmip_diag_id_type, &
@@ -51,7 +51,7 @@ namelist /fv_cmip_diag_nml/ dummy
 
 !-----------------------------------------------------------------------
 
-#ifndef GFS_PHYS
+#ifndef NO_CMIP_DIAG
 type(cmip_diag_id_type) :: ID_ta, ID_ua, ID_va, ID_hus, ID_hur, ID_wap, ID_zg
 #endif
 integer              :: id_ps, id_orog
@@ -68,7 +68,7 @@ logical :: module_is_initialized=.false.
 
 CONTAINS
 
-#ifdef GFS_PHYS
+#ifdef NO_CMIP_DIAG
 !######################################################################
 subroutine fv_cmip_diag_init ( Atm, axes, Time )
   type(fv_atmos_type), intent(inout), target :: Atm(:)

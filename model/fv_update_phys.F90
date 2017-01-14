@@ -486,7 +486,7 @@ module fv_update_phys_mod
 ! Update delp
 !--------------
         if (do_ps) then
-!$omp parallel do default(none) shared(is,ie,js,je,npz,bk,delp,ps_dt) private(dbk)
+!$omp parallel do default(none) shared(is,ie,js,je,npz,dt,bk,delp,ps_dt) private(dbk)
             do k=1,npz
               dbk = dt * (bk(k+1) - bk(k))
                do j=js,je
