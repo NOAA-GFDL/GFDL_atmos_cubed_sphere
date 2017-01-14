@@ -152,7 +152,6 @@ character(len=7)   :: mod_name = 'atmos'
 #endif
 
   integer, parameter :: kind_phys=8
-  logical :: first_diag = .true.
 
 contains
 
@@ -907,23 +906,6 @@ contains
        call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir)
        call timing_off('TWOWAY_UPDATE')
     endif   
-   call nullify_domain()
-
-  !---- diagnostics for FV dynamics -----
-   if (Atm(mytile)%flagstruct%print_freq /= -99) then
-     call mpp_clock_begin(id_fv_diag)
-
-     fv_time = Time_next
-     call get_time (fv_time, seconds,  days)
-
-     call nullify_domain()
-     call timing_on('FV_DIAG')
-     call fv_diag(Atm(mytile:mytile), zvir, fv_time, Atm(mytile)%flagstruct%print_freq)
-     first_diag = .false.
-     call timing_off('FV_DIAG')
-
-     call mpp_clock_end(id_fv_diag)
-   endif
 
 #if !defined(ATMOS_NUDGE) && !defined(CLIMATE_NUDGE) && !defined(ADA_NUDGE)
    if ( .not.forecast_mode .and. Atm(mytile)%flagstruct%nudge .and. Atm(mytile)%flagstruct%na_init>0 ) then
@@ -932,12 +914,20 @@ contains
 #endif
 
    call nullify_domain()
-   call timing_on('FV_DIAG')
-   call fv_diag(Atm(mytile:mytile), zvir, fv_time, Atm(mytile)%flagstruct%print_freq)
-   call fv_cmip_diag(Atm(mytile:mytile), zvir, fv_time)
-   call timing_off('FV_DIAG')
+  !---- diagnostics for FV dynamics -----
+   if (Atm(mytile)%flagstruct%print_freq /= -99) then
+     call mpp_clock_begin(id_fv_diag)
+     call timing_on('FV_DIAG')
 
-   call mpp_clock_end(id_fv_diag)
+     fv_time = Time_next
+     call get_time (fv_time, seconds,  days)
+
+     call fv_diag(Atm(mytile:mytile), zvir, fv_time, Atm(mytile)%flagstruct%print_freq)
+     call fv_cmip_diag(Atm(mytile:mytile), zvir, fv_time)
+
+     call timing_off('FV_DIAG')
+     call mpp_clock_end(id_fv_diag)
+   endif
 
  end subroutine atmosphere_state_update
 
