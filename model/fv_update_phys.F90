@@ -217,11 +217,13 @@ module fv_update_phys_mod
 
     call get_eta_level(npz, 1.0E5, pfull, phalf, ak, bk)
 
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,flagstruct,pfull,q_dt,sphum,q,qdiag,  &
-!$OMP                                  nq,w_diff,dt,nwat,liq_wat,rainwat,ice_wat,snowwat,    &
-!$OMP                                  graupel,delp,cld_amt,hydrostatic,pt,t_dt,delz,adj_vmr,&
-!$OMP                                  gama_dt,cv_air,ua,u_dt,va,v_dt,isd,ied,jsd,jed)       &
-!$OMP                          private(cvm, qc, qstar, ps_dt, p_fac)
+!$OMP parallel do default(none) &
+!$OMP             shared(is,ie,js,je,npz,flagstruct,pfull,q_dt,sphum,q,qdiag,  &
+!$OMP                    nq,w_diff,dt,nwat,liq_wat,rainwat,ice_wat,snowwat,    &
+!$OMP                    graupel,delp,cld_amt,hydrostatic,pt,t_dt,delz,adj_vmr,&
+!$OMP                    gama_dt,cv_air,ua,u_dt,va,v_dt,isd,ied,jsd,jed,       &
+!$OMP                    conv_vmr_mmr)                                         &
+!$OMP             private(cvm, qc, qstar, ps_dt, p_fac)
     do k=1, npz
 
        if (present(q_dt)) then
