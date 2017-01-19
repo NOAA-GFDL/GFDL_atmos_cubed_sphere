@@ -55,36 +55,17 @@ module fv_arrays_mod
            id_delp, id_delz, id_zratio, id_ws, id_iw, id_lw,      &
            id_pfhy, id_pfnh,                                      &
            id_qn, id_qn200, id_qn500, id_qn850, id_qp, id_mdt, id_qdt, id_aam, id_amdt, &
-           id_acly, id_acl, id_acl2, id_dbz, id_maxdbz, id_basedbz, id_dbz4km
+           id_acly, id_acl, id_acl2, id_dbz, id_maxdbz, id_basedbz, id_dbz4km, id_ctp, id_ctt
 
 ! Selected p-level fields from 3D variables:
  integer :: id_vort200, id_vort500, id_w500, id_w700
- integer :: id_vort850, id_w850, id_x850, id_srh, id_theta_e,  &
+ integer :: id_vort850, id_w850, id_x850, id_srh, id_srh25, id_srh01, &
+            id_uh03, id_uh25, id_theta_e,  &
             id_w200, id_s200, id_sl12, id_sl13, id_w5km, id_rain5km, id_w2500m
 ! NGGPS 31-level diag
- integer:: id_u1,   id_u2,   id_u3,  id_u5, id_u7, id_u10, id_u20, id_u30, id_u50, id_u70, id_u100,  &       
-           id_u150, id_u200, id_u250, id_u300, id_u350, id_u400, id_u450, id_u500, id_u550, id_u600, &
-           id_u650, id_u700, id_u750, id_u800, id_u850, id_u900, id_u925, id_u950, id_u975, id_u1000
+ integer, allocatable :: id_u(:), id_v(:), id_t(:), id_h(:), id_q(:), id_omg(:)
 
- integer:: id_v1,   id_v2,   id_v3,  id_v5, id_v7, id_v10, id_v20, id_v30, id_v50, id_v70, id_v100,  &       
-           id_v150, id_v200, id_v250, id_v300, id_v350, id_v400, id_v450, id_v500, id_v550, id_v600, &
-           id_v650, id_v700, id_v750, id_v800, id_v850, id_v900, id_v925, id_v950, id_v975, id_v1000
-
- integer:: id_t1,   id_t2,   id_t3,   id_t5,   id_t7,    id_t10, id_t20,  id_t30,  id_t50,  id_t70, id_t100,  &       
-           id_t150, id_t200, id_t250, id_t300, id_t350, id_t400, id_t450, id_t500, id_t550, id_t600, &
-           id_t650, id_t700, id_t750, id_t800, id_t850, id_t900, id_t925, id_t950, id_t975, id_t1000
-
- integer:: id_h1,   id_h2,   id_h3,   id_h5,   id_h7,   id_h10,  id_h20,  id_h30,  id_h50,  id_h70, id_h100,  &       
-           id_h150, id_h200, id_h250, id_h300, id_h350, id_h400, id_h450, id_h500, id_h550, id_h600, &
-           id_h650, id_h700, id_h750, id_h800, id_h850, id_h900, id_h925, id_h950, id_h975, id_h1000
-
- integer:: id_q1,   id_q2,   id_q3,   id_q5,   id_q7,   id_q10,  id_q20,  id_q30,  id_q50,  id_q70, id_q100,  &       
-           id_q150, id_q200, id_q250, id_q300, id_q350, id_q400, id_q450, id_q500, id_q550, id_q600, &
-           id_q650, id_q700, id_q750, id_q800, id_q850, id_q900, id_q925, id_q950, id_q975, id_q1000
-
- integer:: id_omg1,   id_omg2,   id_omg3,   id_omg5,   id_omg7,   id_omg10,  id_omg20,  id_omg30,  id_omg50,  id_omg70, id_omg100,  &       
-           id_omg150, id_omg200, id_omg250, id_omg300, id_omg350, id_omg400, id_omg450, id_omg500, id_omg550, id_omg600, &
-           id_omg650, id_omg700, id_omg750, id_omg800, id_omg850, id_omg900, id_omg925, id_omg950, id_omg975, id_omg1000
+ integer:: id_u_plev, id_v_plev, id_t_plev, id_h_plev, id_q_plev, id_omg_plev
 ! IPCC diag
  integer :: id_rh10,  id_rh50,  id_rh100, id_rh200,  id_rh250, id_rh300, &
             id_rh500, id_rh700, id_rh850, id_rh1000

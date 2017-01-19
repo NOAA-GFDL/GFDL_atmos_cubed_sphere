@@ -309,7 +309,6 @@ contains
  real:: q1(isd:ied)
  real, dimension(is:ie+1):: fx0, fx1
  logical, dimension(is-1:ie+1):: smt5, smt6
- logical:: hi6(is:ie+1)
  real  al(is-1:ie+2)
  real  dm(is-2:ie+2)
  real  dq(is-3:ie+2)
@@ -382,35 +381,39 @@ contains
               flux(i,j) = qtmp + (1.+xt)*(al(i)-qtmp+xt*(al(i)+al(i+1)-(qtmp+qtmp)))  
          endif
       enddo
+
    elseif ( iord==3 ) then
-! Similar to iord = 4, but less damp
         do i=is-1,ie+1
            bl(i) = al(i)   - q1(i)
            br(i) = al(i+1) - q1(i)
            b0(i) = bl(i) + br(i)
               x0 = abs(b0(i))
               xt = abs(bl(i)-br(i))
-!          smt5(i) = bl(i)*br(i) < 0.
            smt5(i) =    x0 < xt
            smt6(i) = 3.*x0 < xt
         enddo
         do i=is,ie+1
-           hi6(i) = smt6(i-1) .or. smt6(i)
            fx1(i) = 0.
         enddo
-!DEC$ VECTOR ALWAYS
         do i=is,ie+1
            xt = c(i,j)
            if ( xt > 0. ) then
                 fx0(i) = q1(i-1)
-                if ( hi6(i).or.smt5(i-1) ) fx1(i) = br(i-1) - xt*b0(i-1)
+                if ( smt6(i-1).or.smt5(i) ) then
+                   fx1(i) = br(i-1) - xt*b0(i-1)
+                elseif ( smt5(i-1) ) then   ! 2nd order, piece-wise linear
+                   fx1(i) = sign(min(abs(bl(i-1)),abs(br(i-1))), br(i-1))
+                endif
            else
                 fx0(i) = q1(i)
-                if ( hi6(i).or.smt5(i) )   fx1(i) = bl(i) + xt*b0(i)
+                if ( smt6(i).or.smt5(i-1) ) then
+                   fx1(i) = bl(i) + xt*b0(i)
+                elseif ( smt5(i) ) then
+                   fx1(i) = sign(min(abs(bl(i)), abs(br(i))), bl(i))
+                endif
            endif
            flux(i,j) = fx0(i) + (1.-abs(xt))*fx1(i)
         enddo
-
    elseif ( iord==4 ) then
         do i=is-1,ie+1
            bl(i) = al(i)   - q1(i)
@@ -422,30 +425,22 @@ contains
            smt6(i) = 3.*x0 < xt
         enddo
         do i=is,ie+1
-           hi6(i) = smt6(i-1) .or. smt6(i)
            fx1(i) = 0.
         enddo
+!DEC$ VECTOR ALWAYS
         do i=is,ie+1
            xt = c(i,j)
            if ( xt > 0. ) then
                 fx0(i) = q1(i-1)
-                if ( hi6(i) ) then
-                   fx1(i) = br(i-1) - xt*b0(i-1)
-                elseif ( smt5(i-1) ) then   ! 2nd order, piece-wise linear
-                   fx1(i) = sign(min(abs(bl(i-1)),abs(br(i-1))), br(i-1))
-                endif
+                if ( smt6(i-1).or.smt5(i) ) fx1(i) = br(i-1) - xt*b0(i-1)
            else
                 fx0(i) = q1(i)
-                if ( hi6(i) ) then
-                   fx1(i) = bl(i) + xt*b0(i)
-                elseif ( smt5(i) ) then
-                   fx1(i) = sign(min(abs(bl(i)), abs(br(i))), bl(i))
-                endif
+                if ( smt6(i).or.smt5(i-1) ) fx1(i) = bl(i) + xt*b0(i)
            endif
            flux(i,j) = fx0(i) + (1.-abs(xt))*fx1(i)
         enddo
    else
-! iord = 6 & 6
+! iord = 5 & 6
       if ( iord==5 ) then
         do i=is-1,ie+1
            bl(i) = al(i)   - q1(i)
@@ -602,7 +597,6 @@ contains
  real:: dq(ifirst:ilast,js-3:je+2)
  real,    dimension(ifirst:ilast):: fx0, fx1
  logical, dimension(ifirst:ilast,js-1:je+1):: smt5, smt6
- logical:: hi6(ifirst:ilast)
  real:: x0, xt, qtmp, pmp_1, lac_1, pmp_2, lac_2, r1
  integer:: i, j, js1, je3, je1
 
@@ -695,18 +689,24 @@ if ( jord < 8 ) then
         enddo
         do j=js,je+1
            do i=ifirst,ilast
-              hi6(i) = smt6(i,j-1) .or. smt6(i,j)
               fx1(i) = 0.
            enddo
-!DEC$ VECTOR ALWAYS
            do i=ifirst,ilast
               xt = c(i,j)
               if ( xt > 0. ) then
                    fx0(i) = q(i,j-1)
-                   if( hi6(i).or.smt5(i,j-1) ) fx1(i) = br(i,j-1) - xt*b0(i,j-1)
+                   if( smt6(i,j-1).or.smt5(i,j) ) then
+                       fx1(i) = br(i,j-1) - xt*b0(i,j-1)
+                   elseif ( smt5(i,j-1) ) then ! both up-downwind sides are noisy; 2nd order, piece-wise linear
+                       fx1(i) = sign(min(abs(bl(i,j-1)),abs(br(i,j-1))),br(i,j-1))
+                   endif
               else
                    fx0(i) = q(i,j)
-                   if( hi6(i).or.smt5(i,j) )   fx1(i) = bl(i,j)   + xt*b0(i,j)
+                   if( smt6(i,j).or.smt5(i,j-1) ) then
+                       fx1(i) = bl(i,j) + xt*b0(i,j)
+                   elseif ( smt5(i,j) ) then
+                       fx1(i) = sign(min(abs(bl(i,j)),abs(br(i,j))), bl(i,j))
+                   endif
               endif
               flux(i,j) = fx0(i) + (1.-abs(xt))*fx1(i)
            enddo
@@ -726,29 +726,22 @@ if ( jord < 8 ) then
         enddo
         do j=js,je+1
            do i=ifirst,ilast
-              hi6(i) = smt6(i,j-1) .or. smt6(i,j)
               fx1(i) = 0.
            enddo
+!DEC$ VECTOR ALWAYS
            do i=ifirst,ilast
               xt = c(i,j)
               if ( xt > 0. ) then
                    fx0(i) = q(i,j-1)
-                   if ( hi6(i) ) then
-                       fx1(i) = br(i,j-1) - xt*b0(i,j-1)
-                   elseif ( smt5(i,j-1) ) then ! both up-downwind sides are noisy; 2nd order, piece-wise linear
-                       fx1(i) = sign(min(abs(bl(i,j-1)),abs(br(i,j-1))),br(i,j-1))
-                   endif
+                   if( smt6(i,j-1).or.smt5(i,j) )  fx1(i) = br(i,j-1) - xt*b0(i,j-1)
               else
                    fx0(i) = q(i,j)
-                   if ( hi6(i) ) then
-                       fx1(i) = bl(i,j) + xt*b0(i,j)
-                   elseif ( smt5(i,j) ) then
-                       fx1(i) = sign(min(abs(bl(i,j)),abs(br(i,j))), bl(i,j))
-                   endif
+                   if( smt6(i,j).or.smt5(i,j-1) )  fx1(i) = bl(i,j)   + xt*b0(i,j)
               endif
               flux(i,j) = fx0(i) + (1.-abs(xt))*fx1(i)
            enddo
         enddo
+
 
    else  ! jord=5,6,7
        if ( jord==5 ) then

@@ -36,7 +36,11 @@ module dyn_core_mod
 #ifdef ROT3
   use fv_update_phys_mod, only: update_dwinds_phys
 #endif
+#if defined (ADA_NUDGE)
+  use fv_ada_nudge_mod,   only: breed_slp_inline_ada
+#else
   use fv_nwp_nudge_mod,   only: breed_slp_inline, do_adiabatic_init
+#endif
   use diag_manager_mod,   only: send_data
   use fv_arrays_mod,      only: fv_grid_type, fv_flags_type, fv_nest_type, fv_diag_type, &
                                 fv_grid_bounds_type, R_GRID

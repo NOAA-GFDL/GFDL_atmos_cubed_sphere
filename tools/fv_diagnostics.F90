@@ -84,6 +84,9 @@ module fv_diagnostics_mod
  character(len=128) :: version = '$Id$'
  character(len=128) :: tagname = '$Name$'
 
+ integer, parameter :: nplev = 31
+ integer :: levs(nplev)
+
 contains
 
  subroutine fv_diag_init(Atm, axes, Time, npx, npy, npz, p_ref)
@@ -103,16 +106,19 @@ contains
     !These id_* are not needed later since they are for static data which is not used elsewhere
     integer :: id_bk, id_pk, id_area, id_lon, id_lat, id_lont, id_latt, id_phalf, id_pfull
     integer :: id_hyam, id_hybm
+    integer :: id_plev
     integer :: i, j, k, n, ntileMe, id_xt, id_yt, id_x, id_y, id_xe, id_ye, id_xn, id_yn
     integer :: isc, iec, jsc, jec
 
     logical :: used
 
+    character(len=64) :: plev
     character(len=64) :: field
     integer              :: ntprog
     integer              :: unit
 
     integer :: ncnst
+    integer :: axe2(3)
 
 
     idiag => Atm(1)%idiag
@@ -254,6 +260,18 @@ contains
     axes(3) = id_pfull
     axes(4) = id_phalf
 
+! Selected pressure levels
+! SJL note: 31 is enough here; if you need more levels you should do it OFF line
+! do not add more to prevent the model from slowing down too much.
+    levs = (/1,2,3,5,7,10,20,30,50,70,100,150,200,250,300,350,400,450,500,550,600,650,700,750,800,850,900,925,950,975,1000/)
+
+    id_plev = diag_axis_init('plev', levs(:)*1.0, 'mb', 'z', &
+            'actual pressure level', direction=-1, set_name="dynamics")
+
+    axe2(1) = id_xt
+    axe2(2) = id_yt
+    axe2(3) = id_plev
+
 !---- register time independent fields -------
 
 !    do n = 1, ntileMe
@@ -383,6 +401,19 @@ contains
     idiag%id_tracer_dvmr(:) = 0 
     idiag%w_mr(:) = 0.E0
 
+    allocate(idiag%id_u(nplev))
+    allocate(idiag%id_v(nplev))
+    allocate(idiag%id_t(nplev))
+    allocate(idiag%id_h(nplev))
+    allocate(idiag%id_q(nplev))
+    allocate(idiag%id_omg(nplev))
+    idiag%id_u(:)   = 0
+    idiag%id_v(:)   = 0
+    idiag%id_t(:)   = 0
+    idiag%id_h(:)   = 0
+    idiag%id_q(:)   = 0
+    idiag%id_omg(:) = 0
+
 !    do n = 1, ntileMe
     n = 1
        field= 'dynamics'
@@ -410,393 +441,48 @@ contains
        idiag%id_amdt = register_diag_field ( trim(field), 'amdt', axes(1:2), Time,           &
             'angular momentum error', 'kg*m^2/s^2', missing_value=missing_value )
 
-!-------
-! Height
-!-------
-      idiag%id_h1  = register_diag_field (trim(field), 'z1', axes(1:2),  Time,   &
-                                     '1-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h2  = register_diag_field (trim(field), 'z2', axes(1:2),  Time,   &
-                                     '2-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h3  = register_diag_field (trim(field), 'z3', axes(1:2),  Time,   &
-                                     '3-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h5  = register_diag_field (trim(field), 'z5', axes(1:2),  Time,   &
-                                     '5-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h7  = register_diag_field (trim(field), 'z7', axes(1:2),  Time,   &
-                                     '7-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h10 = register_diag_field (trim(field), 'z10', axes(1:2),  Time,   &
-                                     '10-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h20 = register_diag_field (trim(field), 'z20', axes(1:2),  Time,   &
-                                     '20-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h30 = register_diag_field (trim(field), 'z30', axes(1:2),  Time,   &
-                                     '30-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h50 = register_diag_field (trim(field), 'z50', axes(1:2),  Time,   &
-                                     '50-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h70 = register_diag_field (trim(field), 'z70', axes(1:2),  Time,   &
-                                     '70-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h100 = register_diag_field (trim(field), 'gth100', axes(1:2),  Time,   &
-                                     '100-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h150 = register_diag_field (trim(field), 'z150', axes(1:2),  Time,   &
-                                     '150-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h200 = register_diag_field (trim(field), 'z200', axes(1:2),  Time,   &
-                                     '200-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h250 = register_diag_field (trim(field), 'z250', axes(1:2),  Time,   &
-                                     '250-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h300 = register_diag_field (trim(field), 'z300', axes(1:2),  Time,   &
-                                     '300-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h350 = register_diag_field (trim(field), 'z350', axes(1:2),  Time,   &
-                                     '350-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h400 = register_diag_field (trim(field), 'z400', axes(1:2),  Time,   &
-                                     '400-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h450 = register_diag_field (trim(field), 'z450', axes(1:2),  Time,   &
-                                     '450-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h500 = register_diag_field (trim(field), 'z500', axes(1:2),  Time,   &
-                                     '500-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h550 = register_diag_field (trim(field), 'z550', axes(1:2),  Time,   &
-                                     '550-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h600 = register_diag_field (trim(field), 'z600', axes(1:2),  Time,   &
-                                     '600-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h650 = register_diag_field (trim(field), 'z650', axes(1:2),  Time,   &
-                                     '650-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h700 = register_diag_field (trim(field), 'z700', axes(1:2),  Time,   &
-                                     '700-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h750 = register_diag_field (trim(field), 'z750', axes(1:2),  Time,   &
-                                     '750-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h800 = register_diag_field (trim(field), 'z800', axes(1:2),  Time,   &
-                                     '800-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h850 = register_diag_field (trim(field), 'z850', axes(1:2),  Time,   &
-                                     '850-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h900 = register_diag_field (trim(field), 'z900', axes(1:2),  Time,   &
-                                     '900-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h925 = register_diag_field (trim(field), 'z925', axes(1:2),  Time,   &
-                                     '925-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h950 = register_diag_field (trim(field), 'z950', axes(1:2),  Time,   &
-                                     '950-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h975 = register_diag_field (trim(field), 'z975', axes(1:2),  Time,   &
-                                     '975-mb hght', 'm', missing_value=missing_value )
-      idiag%id_h1000= register_diag_field (trim(field), 'z1000', axes(1:2),  Time,   &
-                                     '1000-mb hght', 'm', missing_value=missing_value )
 !
+      do i=1,nplev
+        write(plev,'(I5)') levs(i)
+! Height:
+        idiag%id_h(i)   = register_diag_field(trim(field), 'z'//trim(adjustl(plev)), axes(1:2), Time, &
+                                    trim(adjustl(plev))//'-mb height', 'm', missing_value=missing_value)
 ! u-wind:
-      idiag%id_u1  = register_diag_field (trim(field), 'u1', axes(1:2),  Time,   &
-                                     '1-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u2  = register_diag_field (trim(field), 'u2', axes(1:2),  Time,   &
-                                     '2-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u3  = register_diag_field (trim(field), 'u3', axes(1:2),  Time,   &
-                                     '3-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u5  = register_diag_field (trim(field), 'u5', axes(1:2),  Time,   &
-                                     '5-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u7  = register_diag_field (trim(field), 'u7', axes(1:2),  Time,   &
-                                     '7-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u10 = register_diag_field (trim(field), 'u10', axes(1:2),  Time,   &
-                                     '10-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u20 = register_diag_field (trim(field), 'u20', axes(1:2),  Time,   &
-                                     '20-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u30 = register_diag_field (trim(field), 'u30', axes(1:2),  Time,   &
-                                     '30-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u50 = register_diag_field (trim(field), 'u50', axes(1:2),  Time,   &
-                                     '50-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u70 = register_diag_field (trim(field), 'u70', axes(1:2),  Time,   &
-                                     '70-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u100 = register_diag_field (trim(field), 'u100', axes(1:2),  Time,   &
-                                     '100-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u150 = register_diag_field (trim(field), 'u150', axes(1:2),  Time,   &
-                                     '150-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u200 = register_diag_field (trim(field), 'u200', axes(1:2),  Time,   &
-                                     '200-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u250 = register_diag_field (trim(field), 'u250', axes(1:2),  Time,   &
-                                     '250-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u300 = register_diag_field (trim(field), 'u300', axes(1:2),  Time,   &
-                                     '300-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u350 = register_diag_field (trim(field), 'u350', axes(1:2),  Time,   &
-                                     '350-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u400 = register_diag_field (trim(field), 'u400', axes(1:2),  Time,   &
-                                     '400-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u450 = register_diag_field (trim(field), 'u450', axes(1:2),  Time,   &
-                                     '450-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u500 = register_diag_field (trim(field), 'u500', axes(1:2),  Time,   &
-                                     '500-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u550 = register_diag_field (trim(field), 'u550', axes(1:2),  Time,   &
-                                     '550-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u600 = register_diag_field (trim(field), 'u600', axes(1:2),  Time,   &
-                                     '600-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u650 = register_diag_field (trim(field), 'u650', axes(1:2),  Time,   &
-                                     '650-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u700 = register_diag_field (trim(field), 'u700', axes(1:2),  Time,   &
-                                     '700-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u750 = register_diag_field (trim(field), 'u750', axes(1:2),  Time,   &
-                                     '750-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u800 = register_diag_field (trim(field), 'u800', axes(1:2),  Time,   &
-                                     '800-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u850 = register_diag_field (trim(field), 'u850', axes(1:2),  Time,   &
-                                     '850-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u900 = register_diag_field (trim(field), 'u900', axes(1:2),  Time,   &
-                                     '900-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u925 = register_diag_field (trim(field), 'u925', axes(1:2),  Time,   &
-                                     '925-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u950 = register_diag_field (trim(field), 'u950', axes(1:2),  Time,   &
-                                     '950-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u975 = register_diag_field (trim(field), 'u975', axes(1:2),  Time,   &
-                                     '975-mb u', 'm/s', missing_value=missing_value )
-      idiag%id_u1000= register_diag_field (trim(field), 'u1000', axes(1:2),  Time,   &
-                                     '1000-mb u', 'm/s', missing_value=missing_value )
+        idiag%id_u(i)   = register_diag_field(trim(field), 'u'//trim(adjustl(plev)), axes(1:2), Time, &
+                                    trim(adjustl(plev))//'-mb u', 'm/s', missing_value=missing_value)
 ! v-wind:
-      idiag%id_v1  = register_diag_field (trim(field), 'v1', axes(1:2),  Time,   &
-                                     '1-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v2  = register_diag_field (trim(field), 'v2', axes(1:2),  Time,   &
-                                     '2-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v3  = register_diag_field (trim(field), 'v3', axes(1:2),  Time,   &
-                                     '3-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v5  = register_diag_field (trim(field), 'v5', axes(1:2),  Time,   &
-                                     '5-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v7  = register_diag_field (trim(field), 'v7', axes(1:2),  Time,   &
-                                     '7-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v10 = register_diag_field (trim(field), 'v10', axes(1:2),  Time,   &
-                                     '10-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v20 = register_diag_field (trim(field), 'v20', axes(1:2),  Time,   &
-                                     '20-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v30 = register_diag_field (trim(field), 'v30', axes(1:2),  Time,   &
-                                     '30-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v50 = register_diag_field (trim(field), 'v50', axes(1:2),  Time,   &
-                                     '50-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v70 = register_diag_field (trim(field), 'v70', axes(1:2),  Time,   &
-                                     '70-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v100 = register_diag_field (trim(field), 'v100', axes(1:2),  Time,   &
-                                     '100-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v150 = register_diag_field (trim(field), 'v150', axes(1:2),  Time,   &
-                                     '150-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v200 = register_diag_field (trim(field), 'v200', axes(1:2),  Time,   &
-                                     '200-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v250 = register_diag_field (trim(field), 'v250', axes(1:2),  Time,   &
-                                     '250-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v300 = register_diag_field (trim(field), 'v300', axes(1:2),  Time,   &
-                                     '300-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v350 = register_diag_field (trim(field), 'v350', axes(1:2),  Time,   &
-                                     '350-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v400 = register_diag_field (trim(field), 'v400', axes(1:2),  Time,   &
-                                     '400-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v450 = register_diag_field (trim(field), 'v450', axes(1:2),  Time,   &
-                                     '450-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v500 = register_diag_field (trim(field), 'v500', axes(1:2),  Time,   &
-                                     '500-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v550 = register_diag_field (trim(field), 'v550', axes(1:2),  Time,   &
-                                     '550-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v600 = register_diag_field (trim(field), 'v600', axes(1:2),  Time,   &
-                                     '600-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v650 = register_diag_field (trim(field), 'v650', axes(1:2),  Time,   &
-                                     '650-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v700 = register_diag_field (trim(field), 'v700', axes(1:2),  Time,   &
-                                     '700-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v750 = register_diag_field (trim(field), 'v750', axes(1:2),  Time,   &
-                                     '750-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v800 = register_diag_field (trim(field), 'v800', axes(1:2),  Time,   &
-                                     '800-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v850 = register_diag_field (trim(field), 'v850', axes(1:2),  Time,   &
-                                     '850-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v900 = register_diag_field (trim(field), 'v900', axes(1:2),  Time,   &
-                                     '900-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v925 = register_diag_field (trim(field), 'v925', axes(1:2),  Time,   &
-                                     '925-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v950 = register_diag_field (trim(field), 'v950', axes(1:2),  Time,   &
-                                     '950-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v975 = register_diag_field (trim(field), 'v975', axes(1:2),  Time,   &
-                                     '975-mb v', 'm/s', missing_value=missing_value )
-      idiag%id_v1000= register_diag_field (trim(field), 'v1000', axes(1:2),  Time,   &
-                                     '1000-mb v', 'm/s', missing_value=missing_value )
+        idiag%id_v(i)   = register_diag_field(trim(field), 'v'//trim(adjustl(plev)), axes(1:2), Time, &
+                                    trim(adjustl(plev))//'-mb v', 'm/s', missing_value=missing_value)
 ! Temperature (K):
-      idiag%id_t1 = register_diag_field ( trim(field), 't1', axes(1:2), Time,       &
-                        '1-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t2  = register_diag_field (trim(field), 't2', axes(1:2),  Time,   &
-                                     '2-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t3  = register_diag_field (trim(field), 't3', axes(1:2),  Time,   &
-                                     '3-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t5  = register_diag_field (trim(field), 't5', axes(1:2),  Time,   &
-                                     '5-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t7  = register_diag_field (trim(field), 't7', axes(1:2),  Time,   &
-                                     '7-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t10 = register_diag_field (trim(field), 't10', axes(1:2),  Time,   &
-                                     '10-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t20 = register_diag_field (trim(field), 't20', axes(1:2),  Time,   &
-                                     '20-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t30 = register_diag_field (trim(field), 't30', axes(1:2),  Time,   &
-                                     '30-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t50 = register_diag_field (trim(field), 't50', axes(1:2),  Time,   &
-                                     '50-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t70 = register_diag_field (trim(field), 't70', axes(1:2),  Time,   &
-                                     '70-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t100 = register_diag_field (trim(field), 't100', axes(1:2),  Time,   &
-                                     '100-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t150 = register_diag_field (trim(field), 't150', axes(1:2),  Time,   &
-                                     '150-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t200 = register_diag_field (trim(field), 't200', axes(1:2),  Time,   &
-                                     '200-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t250 = register_diag_field (trim(field), 't250', axes(1:2),  Time,   &
-                                     '250-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t300 = register_diag_field (trim(field), 't300', axes(1:2),  Time,   &
-                                     '300-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t350 = register_diag_field (trim(field), 't350', axes(1:2),  Time,   &
-                                     '350-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t400 = register_diag_field (trim(field), 't400', axes(1:2),  Time,   &
-                                     '400-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t450 = register_diag_field (trim(field), 't450', axes(1:2),  Time,   &
-                                     '450-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t500 = register_diag_field (trim(field), 't500', axes(1:2),  Time,   &
-                                     '500-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t550 = register_diag_field (trim(field), 't550', axes(1:2),  Time,   &
-                                     '550-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t600 = register_diag_field (trim(field), 't600', axes(1:2),  Time,   &
-                                     '600-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t650 = register_diag_field (trim(field), 't650', axes(1:2),  Time,   &
-                                     '650-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t700 = register_diag_field (trim(field), 't700', axes(1:2),  Time,   &
-                                     '700-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t750 = register_diag_field (trim(field), 't750', axes(1:2),  Time,   &
-                                     '750-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t800 = register_diag_field (trim(field), 't800', axes(1:2),  Time,   &
-                                     '800-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t850 = register_diag_field (trim(field), 't850', axes(1:2),  Time,   &
-                                     '850-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t900 = register_diag_field (trim(field), 't900', axes(1:2),  Time,   &
-                                     '900-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t925 = register_diag_field (trim(field), 't925', axes(1:2),  Time,   &
-                                     '925-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t950 = register_diag_field (trim(field), 't950', axes(1:2),  Time,   &
-                                     '950-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t975 = register_diag_field (trim(field), 't975', axes(1:2),  Time,   &
-                                     '975-mb temperature', 'K', missing_value=missing_value )
-      idiag%id_t1000= register_diag_field (trim(field), 't1000', axes(1:2),  Time,   &
-                                     '1000-mb temperature', 'K', missing_value=missing_value )
-!--------------------------
+        idiag%id_t(i)   = register_diag_field(trim(field), 't'//trim(adjustl(plev)), axes(1:2), Time, &
+                                    trim(adjustl(plev))//'-mb temperature', 'K', missing_value=missing_value)
 ! specific humidity:
-!--------------------------
-      idiag%id_q1 = register_diag_field ( trim(field), 'q1', axes(1:2), Time,       &
-                           '1-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q2  = register_diag_field (trim(field), 'q2', axes(1:2),  Time,   &
-                                     '2-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q3  = register_diag_field (trim(field), 'q3', axes(1:2),  Time,   &
-                                     '3-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q5  = register_diag_field (trim(field), 'q5', axes(1:2),  Time,   &
-                                     '5-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q7  = register_diag_field (trim(field), 'q7', axes(1:2),  Time,   &
-                                     '7-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q10 = register_diag_field (trim(field), 'q10', axes(1:2),  Time,   &
-                                     '10-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q20 = register_diag_field (trim(field), 'q20', axes(1:2),  Time,   &
-                                     '20-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q30 = register_diag_field (trim(field), 'q30', axes(1:2),  Time,   &
-                                     '30-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q50 = register_diag_field (trim(field), 'q50', axes(1:2),  Time,   &
-                                     '50-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q70 = register_diag_field (trim(field), 'q70', axes(1:2),  Time,   &
-                                     '70-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q100 = register_diag_field (trim(field), 'q100', axes(1:2),  Time,   &
-                                     '100-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q150 = register_diag_field (trim(field), 'q150', axes(1:2),  Time,   &
-                                     '150-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q200 = register_diag_field (trim(field), 'q200', axes(1:2),  Time,   &
-                                     '200-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q250 = register_diag_field (trim(field), 'q250', axes(1:2),  Time,   &
-                                     '250-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q300 = register_diag_field (trim(field), 'q300', axes(1:2),  Time,   &
-                                     '300-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q350 = register_diag_field (trim(field), 'q350', axes(1:2),  Time,   &
-                                     '350-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q400 = register_diag_field (trim(field), 'q400', axes(1:2),  Time,   &
-                                     '400-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q450 = register_diag_field (trim(field), 'q450', axes(1:2),  Time,   &
-                                     '450-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q500 = register_diag_field (trim(field), 'q500', axes(1:2),  Time,   &
-                                     '500-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q550 = register_diag_field (trim(field), 'q550', axes(1:2),  Time,   &
-                                     '550-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q600 = register_diag_field (trim(field), 'q600', axes(1:2),  Time,   &
-                                     '600-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q650 = register_diag_field (trim(field), 'q650', axes(1:2),  Time,   &
-                                     '650-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q700 = register_diag_field (trim(field), 'q700', axes(1:2),  Time,   &
-                                     '700-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q750 = register_diag_field (trim(field), 'q750', axes(1:2),  Time,   &
-                                     '750-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q800 = register_diag_field (trim(field), 'q800', axes(1:2),  Time,   &
-                                     '800-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q850 = register_diag_field (trim(field), 'q850', axes(1:2),  Time,   &
-                                     '850-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q900 = register_diag_field (trim(field), 'q900', axes(1:2),  Time,   &
-                                     '900-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q925 = register_diag_field (trim(field), 'q925', axes(1:2),  Time,   &
-                                     '925-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q950 = register_diag_field (trim(field), 'q950', axes(1:2),  Time,   &
-                                     '950-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q975 = register_diag_field (trim(field), 'q975', axes(1:2),  Time,   &
-                                     '975-mb specific humidity', 'kg/kg', missing_value=missing_value )
-      idiag%id_q1000 = register_diag_field ( trim(field), 'q1000', axes(1:2), Time,       &
-                           '1000-mb specific humidity', 'kg/kg', missing_value=missing_value )
+        idiag%id_q(i)   = register_diag_field(trim(field), 'q'//trim(adjustl(plev)), axes(1:2), Time, &
+                                    trim(adjustl(plev))//'-mb specific humidity', 'kg/kg', missing_value=missing_value)
 ! Omega (Pa/sec)
-      idiag%id_omg1 = register_diag_field ( trim(field), 'omg1', axes(1:2), Time,       &
-                                     '1-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg2  = register_diag_field (trim(field), 'omg2', axes(1:2),  Time,   &
-                                     '2-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg3  = register_diag_field (trim(field), 'omg3', axes(1:2),  Time,   &
-                                     '3-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg5  = register_diag_field (trim(field), 'omg5', axes(1:2),  Time,   &
-                                     '5-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg7  = register_diag_field (trim(field), 'omg7', axes(1:2),  Time,   &
-                                     '7-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg10 = register_diag_field (trim(field), 'omg10', axes(1:2),  Time,   &
-                                     '10-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg20 = register_diag_field (trim(field), 'omg20', axes(1:2),  Time,   &
-                                     '20-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg30 = register_diag_field (trim(field), 'omg30', axes(1:2),  Time,   &
-                                     '30-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg50 = register_diag_field (trim(field), 'omg50', axes(1:2),  Time,   &
-                                     '50-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg70 = register_diag_field (trim(field), 'omg70', axes(1:2),  Time,   &
-                                     '70-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg100 = register_diag_field (trim(field), 'omg100', axes(1:2),  Time,   &
-                                     '100-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg150 = register_diag_field (trim(field), 'omg150', axes(1:2),  Time,   &
-                                     '150-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg200 = register_diag_field (trim(field), 'omg200', axes(1:2),  Time,   &
-                                     '200-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg250 = register_diag_field (trim(field), 'omg250', axes(1:2),  Time,   &
-                                     '250-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg300 = register_diag_field (trim(field), 'omg300', axes(1:2),  Time,   &
-                                     '300-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg350 = register_diag_field (trim(field), 'omg350', axes(1:2),  Time,   &
-                                     '350-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg400 = register_diag_field (trim(field), 'omg400', axes(1:2),  Time,   &
-                                     '400-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg450 = register_diag_field (trim(field), 'omg450', axes(1:2),  Time,   &
-                                     '450-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg500 = register_diag_field (trim(field), 'omg500', axes(1:2),  Time,   &
-                                     '500-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg550 = register_diag_field (trim(field), 'omg550', axes(1:2),  Time,   &
-                                     '550-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg600 = register_diag_field (trim(field), 'omg600', axes(1:2),  Time,   &
-                                     '600-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg650 = register_diag_field (trim(field), 'omg650', axes(1:2),  Time,   &
-                                     '650-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg700 = register_diag_field (trim(field), 'omg700', axes(1:2),  Time,   &
-                                     '700-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg750 = register_diag_field (trim(field), 'omg750', axes(1:2),  Time,   &
-                                     '750-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg800 = register_diag_field (trim(field), 'omg800', axes(1:2),  Time,   &
-                                     '800-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg850 = register_diag_field (trim(field), 'omg850', axes(1:2),  Time,   &
-                                     '850-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg900 = register_diag_field (trim(field), 'omg900', axes(1:2),  Time,   &
-                                     '900-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg925 = register_diag_field (trim(field), 'omg925', axes(1:2),  Time,   &
-                                     '925-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg950 = register_diag_field (trim(field), 'omg950', axes(1:2),  Time,   &
-                                     '950-mb omega', 'Pa/s', missing_value=missing_value )
-      idiag%id_omg975 = register_diag_field (trim(field), 'omg975', axes(1:2),  Time,   &
-                                     '975-mb omega', 'Pa/s', missing_value=missing_value )
-       idiag%id_omg1000 = register_diag_field ( trim(field), 'omg1000', axes(1:2), Time,       &
-                           '1000-mb omega', 'Pa/s', missing_value=missing_value )
+        idiag%id_omg(i) = register_diag_field(trim(field), 'omg'//trim(adjustl(plev)), axes(1:2), Time, &
+                                    trim(adjustl(plev))//'-mb omega', 'Pa/s', missing_value=missing_value)
+      enddo
+
+      idiag%id_u_plev = register_diag_field ( trim(field), 'u_plev', axe2(1:3), Time,        &
+           'zonal wind', 'm/sec', missing_value=missing_value, range=vrange )
+      idiag%id_v_plev = register_diag_field ( trim(field), 'v_plev', axe2(1:3), Time,        &
+           'meridional wind', 'm/sec', missing_value=missing_value, range=vrange )
+      idiag%id_t_plev = register_diag_field ( trim(field), 't_plev', axe2(1:3), Time,        &
+           'temperature', 'K', missing_value=missing_value, range=trange )
+      idiag%id_h_plev = register_diag_field ( trim(field), 'h_plev', axe2(1:3), Time,        &
+           'height', 'm', missing_value=missing_value )
+      idiag%id_q_plev = register_diag_field ( trim(field), 'q_plev', axe2(1:3), Time,        &
+           'specific humidity', 'kg/kg', missing_value=missing_value )
+      idiag%id_omg_plev = register_diag_field ( trim(field), 'omg_plev', axe2(1:3), Time,        &
+           'omega', 'Pa/s', missing_value=missing_value )
 
       ! flag for calculation of geopotential
-      if ( idiag%id_h10>0  .or. idiag%id_h50>0  .or. idiag%id_h100>0 .or. idiag%id_h200>0 .or. idiag%id_h250>0 .or. &
-           idiag%id_h300>0 .or. idiag%id_h500>0 .or. idiag%id_h700>0 .or. idiag%id_h850>0 .or. idiag%id_h1000>0 ) then
+      if ( all(idiag%id_h(minloc(abs(levs-10)))>0)  .or. all(idiag%id_h(minloc(abs(levs-50)))>0)  .or. &
+           all(idiag%id_h(minloc(abs(levs-100)))>0) .or. all(idiag%id_h(minloc(abs(levs-200)))>0) .or. &
+           all(idiag%id_h(minloc(abs(levs-250)))>0) .or. all(idiag%id_h(minloc(abs(levs-300)))>0) .or. &
+           all(idiag%id_h(minloc(abs(levs-500)))>0) .or. all(idiag%id_h(minloc(abs(levs-700)))>0) .or. &
+           all(idiag%id_h(minloc(abs(levs-850)))>0) .or. all(idiag%id_h(minloc(abs(levs-1000)))>0) ) then
            idiag%id_hght = 1
       else
            idiag%id_hght = 0
@@ -1021,7 +707,18 @@ contains
 
 ! Storm Relative Helicity
        idiag%id_srh = register_diag_field ( trim(field), 'srh', axes(1:2), Time,       &
-                           'Storm Relative Helicity', 'm/s**2', missing_value=missing_value )
+                           '0-3 km Storm Relative Helicity', 'm/s**2', missing_value=missing_value )
+       idiag%id_srh25 = register_diag_field ( trim(field), 'srh25', axes(1:2), Time,       &
+                           '2-5 km Storm Relative Helicity', 'm/s**2', missing_value=missing_value )
+       idiag%id_srh01 = register_diag_field ( trim(field), 'srh01', axes(1:2), Time,       &
+                           '0-1 km Storm Relative Helicity', 'm/s**2', missing_value=missing_value )
+       
+       if( .not. Atm(n)%flagstruct%hydrostatic ) then
+          idiag%id_uh03 = register_diag_field ( trim(field), 'uh03', axes(1:2), Time,       &
+                           '0-3 km Updraft Helicity', 'm/s**2', missing_value=missing_value )
+          idiag%id_uh25 = register_diag_field ( trim(field), 'uh25', axes(1:2), Time,       &
+                           '2-5 km Updraft Helicity', 'm/s**2', missing_value=missing_value )
+       endif
 ! TC test winds at 100 m
        if( .not. Atm(n)%flagstruct%hydrostatic )                                          &
        idiag%id_w100m = register_diag_field ( trim(field), 'w100m', axes(1:2), Time,       &
@@ -1227,10 +924,9 @@ contains
     real, allocatable :: slp(:,:), depress(:,:), ws_max(:,:), tc_count(:,:)
     real, allocatable :: u2(:,:), v2(:,:), x850(:,:), var1(:,:), var2(:,:), var3(:,:)
     real, allocatable :: dmmr(:,:,:), dvmr(:,:,:)
-    integer, parameter:: nplev = 31
     real height(2)
     real:: plevs(nplev), pout(nplev)
-    integer:: idg(nplev)
+    integer:: idg(nplev), id1(nplev)
     real    :: tot_mq, tmp, sar, slon, slat
     real    :: t_gb, t_nh, t_sh, t_eq, area_gb, area_nh, area_sh, area_eq
     logical :: do_cs_intp
@@ -1255,42 +951,8 @@ contains
     height(1) = 5.E3      ! for computing 5-km "pressure"
     height(2) = 0.        ! for sea-level pressure
 
-! Selected pressure levels
-! SJL note: 10 is enough here; if you need more levels you should do it OFF line
-! do not add more to prevent the model from slowing down too much.
-    pout(1)  =  1.e2
-    pout(2)  =  2.e2
-    pout(3)  =  3.e2
-    pout(4)  =  5.e2
-    pout(5)  =  7.e2
-    pout(6)  = 10.e2
-    pout(7)  = 20.e2
-    pout(8)  = 30.e2
-    pout(9)  = 50.e2
-    pout(10) = 70.e2
-    pout(11) = 100.e2
-    pout(12) = 150.e2
-    pout(13) = 200.e2
-    pout(14) = 250.e2
-    pout(15) = 300.e2
-    pout(16) = 350.e2
-    pout(17) = 400.e2
-    pout(18) = 450.e2
-    pout(19) = 500.e2
-    pout(20) = 550.e2
-    pout(21) = 600.e2
-    pout(22) = 650.e2
-    pout(23) = 700.e2
-    pout(24) = 750.e2
-    pout(25) = 800.e2
-    pout(26) = 850.e2
-    pout(27) = 900.e2
-    pout(28) = 925.e2
-    pout(29) = 950.e2
-    pout(30) = 975.e2
-    pout(31) = 1000.e2
-
     do i=1,nplev
+       pout(i) = levs(i) * 1.e2
        plevs(i) = log( pout(i) )
     enddo
 
@@ -1305,7 +967,6 @@ contains
 
     isd = Atm(n)%bd%isd; ied = Atm(n)%bd%ied
     jsd = Atm(n)%bd%jsd; jed = Atm(n)%bd%jed
-
 
     if( idiag%id_c15>0 ) then
         allocate (   storm(isc:iec,jsc:jec) )
@@ -1488,7 +1149,8 @@ contains
        endif
 
        if ( idiag%id_vort200>0 .or. idiag%id_vort500>0 .or. idiag%id_vort850>0 .or. idiag%id_vorts>0   &
-            .or. idiag%id_vort>0 .or. idiag%id_pv>0 .or. idiag%id_rh>0 .or. idiag%id_x850>0 ) then
+            .or. idiag%id_vort>0 .or. idiag%id_pv>0 .or. idiag%id_rh>0 .or. idiag%id_x850>0 .or.  &
+            idiag%id_uh03>0 .or. idiag%id_uh25>0) then
           call get_vorticity(isc, iec, jsc, jec, isd, ied, jsd, jed, npz, Atm(n)%u, Atm(n)%v, wk, &
                Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy, Atm(n)%gridstruct%rarea)
 
@@ -1534,25 +1196,35 @@ contains
 
           endif
 
-          if ( idiag%id_srh > 0 ) then
-             call helicity_relative(isc, iec, jsc, jec, ngc, npz, zvir, sphum, a2, &
-                  Atm(n)%ua, Atm(n)%va, Atm(n)%delz, Atm(n)%q,   &
-                  Atm(n)%flagstruct%hydrostatic, Atm(n)%pt, Atm(n)%peln, Atm(n)%phis, grav)
-             used = send_data ( idiag%id_srh, a2, Time )
-             if(prt_minmax) then
-                do j=jsc,jec
-                   do i=isc,iec
-                      tmp = rad2deg * Atm(n)%gridstruct%agrid(i,j,1)
-                      tmp2 = rad2deg * Atm(n)%gridstruct%agrid(i,j,2)
-                      if (  tmp2<25. .or. tmp2>50.    &
-                           .or. tmp<235. .or. tmp>300. ) then
-                         a2(i,j) = 0.
-                      endif
+          if( .not. Atm(n)%flagstruct%hydrostatic ) then
+
+             if ( idiag%id_uh03 > 0 ) then
+                call updraft_helicity(isc, iec, jsc, jec, ngc, npz, zvir, sphum, a2, &
+                     Atm(n)%w, wk, Atm(n)%delz, Atm(n)%q,   &
+                     Atm(n)%flagstruct%hydrostatic, Atm(n)%pt, Atm(n)%peln, Atm(n)%phis, grav, 0., 3.e3)
+                used = send_data ( idiag%id_uh03, a2, Time )
+                if(prt_minmax) then
+                   do j=jsc,jec
+                      do i=isc,iec
+                         tmp = rad2deg * Atm(n)%gridstruct%agrid(i,j,1)
+                         tmp2 = rad2deg * Atm(n)%gridstruct%agrid(i,j,2)
+                         if (  tmp2<25. .or. tmp2>50.    &
+                              .or. tmp<235. .or. tmp>300. ) then
+                            a2(i,j) = 0.
+                         endif
+                      enddo
                    enddo
-                enddo
-                call prt_maxmin('SRH over CONUS', a2, isc, iec, jsc, jec, 0,   1, 1.)
+                   call prt_maxmin('UH over CONUS', a2, isc, iec, jsc, jec, 0,   1, 1.)
+                endif
+             endif
+             if ( idiag%id_uh25 > 0 ) then
+                call updraft_helicity(isc, iec, jsc, jec, ngc, npz, zvir, sphum, a2, &
+                     Atm(n)%w, wk, Atm(n)%delz, Atm(n)%q,   &
+                     Atm(n)%flagstruct%hydrostatic, Atm(n)%pt, Atm(n)%peln, Atm(n)%phis, grav, 2.e3, 5.e3)
+                used = send_data ( idiag%id_uh25, a2, Time )
              endif
           endif
+
 
           if ( idiag%id_pv > 0 ) then
 ! Note: this is expensive computation.
@@ -1562,30 +1234,66 @@ contains
               if (prt_minmax) call prt_maxmin('PV', wk, isc, iec, jsc, jec, 0, 1, 1.)
           endif
 
-! Relative Humidity
-          if ( idiag%id_rh > 0 ) then
-! Compute FV mean pressure
-               do k=1,npz
-                  do j=jsc,jec
-                     do i=isc,iec
-                        a2(i,j) = Atm(n)%delp(i,j,k)/(Atm(n)%peln(i,k+1,j)-Atm(n)%peln(i,k,j))
-                     enddo
-                  enddo
-                  call qsmith(iec-isc+1, jec-jsc+1, 1, Atm(n)%pt(isc:iec,jsc:jec,k),   &
-                              a2, Atm(n)%q(isc:iec,jsc:jec,k,sphum), wk(isc,jsc,k))
-                  do j=jsc,jec
-                     do i=isc,iec
-                        wk(i,j,k) = 100.*Atm(n)%q(i,j,k,sphum)/wk(i,j,k)
-                     enddo
-                  enddo
-               enddo
-               used = send_data ( idiag%id_rh, wk, Time )
-               if(prt_minmax) then
-                  call prt_maxmin('RH_sf (%)', wk(isc:iec,jsc:jec,npz), isc, iec, jsc, jec, 0,   1, 1.)
-                  call prt_maxmin('RH_3D (%)', wk, isc, iec, jsc, jec, 0, npz, 1.)
-               endif
-          endif
+       endif
 
+
+       
+       if ( idiag%id_srh > 0 ) then
+          call helicity_relative(isc, iec, jsc, jec, ngc, npz, zvir, sphum, a2, &
+               Atm(n)%ua, Atm(n)%va, Atm(n)%delz, Atm(n)%q,   &
+               Atm(n)%flagstruct%hydrostatic, Atm(n)%pt, Atm(n)%peln, Atm(n)%phis, grav, 0., 3.e3)
+          used = send_data ( idiag%id_srh, a2, Time )
+          if(prt_minmax) then
+             do j=jsc,jec
+                do i=isc,iec
+                   tmp = rad2deg * Atm(n)%gridstruct%agrid(i,j,1)
+                   tmp2 = rad2deg * Atm(n)%gridstruct%agrid(i,j,2)
+                   if (  tmp2<25. .or. tmp2>50.    &
+                        .or. tmp<235. .or. tmp>300. ) then
+                      a2(i,j) = 0.
+                   endif
+                enddo
+             enddo
+             call prt_maxmin('SRH over CONUS', a2, isc, iec, jsc, jec, 0,   1, 1.)
+          endif
+       endif
+
+       if ( idiag%id_srh25 > 0 ) then
+          call helicity_relative(isc, iec, jsc, jec, ngc, npz, zvir, sphum, a2, &
+               Atm(n)%ua, Atm(n)%va, Atm(n)%delz, Atm(n)%q,   &
+               Atm(n)%flagstruct%hydrostatic, Atm(n)%pt, Atm(n)%peln, Atm(n)%phis, grav, 2.e3, 5.e3)
+          used = send_data ( idiag%id_srh25, a2, Time )
+       endif
+       if ( idiag%id_srh01 > 0 ) then
+          call helicity_relative(isc, iec, jsc, jec, ngc, npz, zvir, sphum, a2, &
+               Atm(n)%ua, Atm(n)%va, Atm(n)%delz, Atm(n)%q,   &
+               Atm(n)%flagstruct%hydrostatic, Atm(n)%pt, Atm(n)%peln, Atm(n)%phis, grav, 0.e3, 1.e3)
+          used = send_data ( idiag%id_srh01, a2, Time )
+       endif
+
+
+       ! Relative Humidity
+       if ( idiag%id_rh > 0 ) then
+          ! Compute FV mean pressure
+          do k=1,npz
+             do j=jsc,jec
+                do i=isc,iec
+                   a2(i,j) = Atm(n)%delp(i,j,k)/(Atm(n)%peln(i,k+1,j)-Atm(n)%peln(i,k,j))
+                enddo
+             enddo
+             call qsmith(iec-isc+1, jec-jsc+1, 1, Atm(n)%pt(isc:iec,jsc:jec,k),   &
+                  a2, Atm(n)%q(isc:iec,jsc:jec,k,sphum), wk(isc,jsc,k))
+             do j=jsc,jec
+                do i=isc,iec
+                   wk(i,j,k) = 100.*Atm(n)%q(i,j,k,sphum)/wk(i,j,k)
+                enddo
+             enddo
+          enddo
+          used = send_data ( idiag%id_rh, wk, Time )
+          if(prt_minmax) then
+             call prt_maxmin('RH_sf (%)', wk(isc:iec,jsc:jec,npz), isc, iec, jsc, jec, 0,   1, 1.)
+             call prt_maxmin('RH_3D (%)', wk, isc, iec, jsc, jec, 0, npz, 1.)
+          endif
        endif
 
        ! rel hum from physics at selected press levels (for IPCC)
@@ -1734,61 +1442,37 @@ contains
 
              allocate( a3(isc:iec,jsc:jec,nplev) )
 
-             idg(1) = idiag%id_h1
-             idg(2) = idiag%id_h2
-             idg(3) = idiag%id_h3
-             idg(4) = idiag%id_h5
-             idg(5) = idiag%id_h7
-             idg(6) = idiag%id_h10
-             idg(7) = idiag%id_h20
-             idg(8) = idiag%id_h30
-             idg(9) = idiag%id_h50
-             idg(10) = idiag%id_h70
-             idg(11) = idiag%id_h100
-             idg(12) = idiag%id_h150
-             idg(13) = idiag%id_h200
-             idg(14) = idiag%id_h250
-             idg(15) = idiag%id_h300
-             idg(16) = idiag%id_h350
-             idg(17) = idiag%id_h400
-             idg(18) = idiag%id_h450
-             idg(19) = idiag%id_h500
-             idg(20) = idiag%id_h550
-             idg(21) = idiag%id_h600
-             idg(22) = idiag%id_h650
-             idg(23) = idiag%id_h700
-             idg(24) = idiag%id_h750
-             idg(25) = idiag%id_h800
-             idg(26) = idiag%id_h850
-             idg(27) = idiag%id_h900
-             idg(28) = idiag%id_h925
-             idg(29) = idiag%id_h950
-             idg(30) = idiag%id_h975
-             idg(31) = idiag%id_h1000
+             idg(:) = idiag%id_h(:)
 
              if ( idiag%id_tm>0 ) then
-                  idg(15) = 1  ! 300-mb
-                  idg(19) = 1  ! 500-mb
+                  idg(minloc(abs(levs-300))) = 1  ! 300-mb
+                  idg(minloc(abs(levs-500))) = 1  ! 500-mb
              else
-                  idg(15) = idiag%id_h300
-                  idg(19) = idiag%id_h500
+                  idg(minloc(abs(levs-300))) = idiag%id_h(minloc(abs(levs-300)))
+                  idg(minloc(abs(levs-500))) = idiag%id_h(minloc(abs(levs-500)))
              endif
 
              call get_height_given_pressure(isc, iec, jsc, jec, ngc, npz, wz, nplev, idg, plevs, Atm(n)%peln, a3)
              ! reset 
-             idg(15) = idiag%id_h300
-             idg(19) = idiag%id_h500
+             idg(minloc(abs(levs-300))) = idiag%id_h(minloc(abs(levs-300)))
+             idg(minloc(abs(levs-500))) = idiag%id_h(minloc(abs(levs-500)))
 
              do i=1,nplev
                 if (idg(i)>0) used=send_data(idg(i), a3(isc:iec,jsc:jec,i), Time)
              enddo
 
+             if (idiag%id_h_plev>0)  then
+               id1(:) = 1
+               call get_height_given_pressure(isc, iec, jsc, jec, ngc, npz, wz, nplev, id1, plevs, Atm(n)%peln, a3)
+               used=send_data(idiag%id_h_plev, a3(isc:iec,jsc:jec,:), Time)
+             endif
+
              if( prt_minmax ) then
   
-                if(idiag%id_h100>0)  &
+                if(all(idiag%id_h(minloc(abs(levs-100)))>0))  &
                 call prt_mxm('Z100',a3(isc:iec,jsc:jec,11),isc,iec,jsc,jec,0,1,1.E-3,Atm(n)%gridstruct%area_64,Atm(n)%domain)
 
-                if(idiag%id_h500>0)  then
+                if(all(idiag%id_h(minloc(abs(levs-500)))>0))  then
 !                  call prt_mxm('Z500',a3(isc:iec,jsc:jec,19),isc,iec,jsc,jec,0,1,1.,Atm(n)%gridstruct%area_64,Atm(n)%domain)
                    if (.not. Atm(n)%neststruct%nested) then
                    t_eq = 0.   ;    t_nh = 0.;    t_sh = 0.;    t_gb = 0.
@@ -1966,37 +1650,7 @@ contains
       endif
 
 ! Temperature:
-       idg(1) = idiag%id_t1
-       idg(2) = idiag%id_t2
-       idg(3) = idiag%id_t3
-       idg(4) = idiag%id_t5
-       idg(5) = idiag%id_t7
-       idg(6) = idiag%id_t10
-       idg(7) = idiag%id_t20
-       idg(8) = idiag%id_t30
-       idg(9) = idiag%id_t50
-       idg(10) = idiag%id_t70
-       idg(11) = idiag%id_t100
-       idg(12) = idiag%id_t150
-       idg(13) = idiag%id_t200
-       idg(14) = idiag%id_t250
-       idg(15) = idiag%id_t300
-       idg(16) = idiag%id_t350
-       idg(17) = idiag%id_t400
-       idg(18) = idiag%id_t450
-       idg(19) = idiag%id_t500
-       idg(20) = idiag%id_t550
-       idg(21) = idiag%id_t600
-       idg(22) = idiag%id_t650
-       idg(23) = idiag%id_t700
-       idg(24) = idiag%id_t750
-       idg(25) = idiag%id_t800
-       idg(26) = idiag%id_t850
-       idg(27) = idiag%id_t900
-       idg(28) = idiag%id_t925
-       idg(29) = idiag%id_t950
-       idg(30) = idiag%id_t975
-       idg(31) = idiag%id_t1000
+       idg(:) = idiag%id_t(:)
 
        do_cs_intp = .false.
        do i=1,nplev
@@ -2013,7 +1667,7 @@ contains
           do i=1,nplev
              if (idg(i)>0) used=send_data(idg(i), a3(isc:iec,jsc:jec,i), Time)
           enddo
-          if ( idiag%id_t100>0 .and. prt_minmax ) then
+          if ( all(idiag%id_t(minloc(abs(levs-100)))>0) .and. prt_minmax ) then
              call prt_mxm('T100:', a3(isc:iec,jsc:jec,11), isc, iec, jsc, jec, 0, 1, 1.,   &
                           Atm(n)%gridstruct%area_64, Atm(n)%domain)
              if (.not. Atm(n)%neststruct%nested)  then
@@ -2038,7 +1692,7 @@ contains
                 endif
              endif
           endif
-          if ( idiag%id_t200>0 .and. prt_minmax ) then
+          if ( all(idiag%id_t(minloc(abs(levs-200)))>0) .and. prt_minmax ) then
              call prt_mxm('T200:', a3(isc:iec,jsc:jec,13), isc, iec, jsc, jec, 0, 1, 1.,   &
                           Atm(n)%gridstruct%area_64, Atm(n)%domain)
              if (.not. Atm(n)%neststruct%nested) then
@@ -2063,6 +1717,14 @@ contains
           deallocate( a3 )
        endif
 
+       if (idiag%id_t_plev>0) then
+         if(.not. allocated (a3) ) allocate( a3(isc:iec,jsc:jec,nplev) )
+         id1(:) = 1
+         call cs3_interpolator(isc,iec,jsc,jec,npz, Atm(n)%pt(isc:iec,jsc:jec,:), nplev,    &
+                               plevs, wz, Atm(n)%peln, id1, a3, 1)
+         used=send_data(idiag%id_t_plev, a3(isc:iec,jsc:jec,:), Time)
+         deallocate( a3 )
+       endif
 
        if(idiag%id_mq > 0)  then
           do j=jsc,jec
@@ -2540,7 +2202,7 @@ contains
             enddo
          endif
             if( prt_minmax )   &
-            call prt_maxmin('ZTOP', wz(isc:iec,jsc:jec,1)+Atm(n)%phis(isc:iec,jsc:jec)/grav, isc, iec, jsc, jec, 0, 1, 1.E-3)
+                 call prt_maxmin('ZTOP', wz(isc:iec,jsc:jec,1)+Atm(n)%phis(isc:iec,jsc:jec)/grav, isc, iec, jsc, jec, 0, 1, 1.E-3)
        endif
 
        if ( idiag%id_rain5km>0 ) then
@@ -2615,37 +2277,7 @@ contains
 !-------------------------------------------------------
        if(.not. allocated(a3)) allocate( a3(isc:iec,jsc:jec,nplev) )
 ! u-winds:
-       idg(1) = idiag%id_u1
-       idg(2) = idiag%id_u2
-       idg(3) = idiag%id_u3
-       idg(4) = idiag%id_u5
-       idg(5) = idiag%id_u7
-       idg(6) = idiag%id_u10
-       idg(7) = idiag%id_u20
-       idg(8) = idiag%id_u30
-       idg(9) = idiag%id_u50
-       idg(10) = idiag%id_u70
-       idg(11) = idiag%id_u100
-       idg(12) = idiag%id_u150
-       idg(13) = idiag%id_u200
-       idg(14) = idiag%id_u250
-       idg(15) = idiag%id_u300
-       idg(16) = idiag%id_u350
-       idg(17) = idiag%id_u400
-       idg(18) = idiag%id_u450
-       idg(19) = idiag%id_u500
-       idg(20) = idiag%id_u550
-       idg(21) = idiag%id_u600
-       idg(22) = idiag%id_u650
-       idg(23) = idiag%id_u700
-       idg(24) = idiag%id_u750
-       idg(25) = idiag%id_u800
-       idg(26) = idiag%id_u850
-       idg(27) = idiag%id_u900
-       idg(28) = idiag%id_u925
-       idg(29) = idiag%id_u950
-       idg(30) = idiag%id_u975
-       idg(31) = idiag%id_u1000
+       idg(:) = idiag%id_u(:)
 
        do_cs_intp = .false.
        do i=1,nplev
@@ -2664,38 +2296,15 @@ contains
           enddo
        endif
 
+       if (idiag%id_u_plev>0) then
+         id1(:) = 1
+         call cs3_interpolator(isc,iec,jsc,jec,npz, Atm(n)%ua(isc:iec,jsc:jec,:), nplev,    &
+                              pout, wz, Atm(n)%pe(isc:iec,1:npz+1,jsc:jec), id1, a3, -1)
+         used=send_data(idiag%id_u_plev, a3(isc:iec,jsc:jec,:), Time)
+       endif
+
 ! v-winds:
-       idg(1) = idiag%id_v1
-       idg(2) = idiag%id_v2
-       idg(3) = idiag%id_v3
-       idg(4) = idiag%id_v5
-       idg(5) = idiag%id_v7
-       idg(6) = idiag%id_v10
-       idg(7) = idiag%id_v20
-       idg(8) = idiag%id_v30
-       idg(9) = idiag%id_v50
-       idg(10) = idiag%id_v70
-       idg(11) = idiag%id_v100
-       idg(12) = idiag%id_v150
-       idg(13) = idiag%id_v200
-       idg(14) = idiag%id_v250
-       idg(15) = idiag%id_v300
-       idg(16) = idiag%id_v350
-       idg(17) = idiag%id_v400
-       idg(18) = idiag%id_v450
-       idg(19) = idiag%id_v500
-       idg(20) = idiag%id_v550
-       idg(21) = idiag%id_v600
-       idg(22) = idiag%id_v650
-       idg(23) = idiag%id_v700
-       idg(24) = idiag%id_v750
-       idg(25) = idiag%id_v800
-       idg(26) = idiag%id_v850
-       idg(27) = idiag%id_v900
-       idg(28) = idiag%id_v925
-       idg(29) = idiag%id_v950
-       idg(30) = idiag%id_v975
-       idg(31) = idiag%id_v1000
+       idg(:) = idiag%id_v(:)
 
        do_cs_intp = .false.
        do i=1,nplev
@@ -2714,38 +2323,15 @@ contains
           enddo
        endif
 
+       if (idiag%id_v_plev>0) then
+         id1(:) = 1
+         call cs3_interpolator(isc,iec,jsc,jec,npz, Atm(n)%va(isc:iec,jsc:jec,:), nplev,    &
+                              pout, wz, Atm(n)%pe(isc:iec,1:npz+1,jsc:jec), id1, a3, -1)
+         used=send_data(idiag%id_v_plev, a3(isc:iec,jsc:jec,:), Time)
+       endif
+
 ! Specific humidity
-       idg(1) = idiag%id_q1
-       idg(2) = idiag%id_q2
-       idg(3) = idiag%id_q3
-       idg(4) = idiag%id_q5
-       idg(5) = idiag%id_q7
-       idg(6) = idiag%id_q10
-       idg(7) = idiag%id_q20
-       idg(8) = idiag%id_q30
-       idg(9) = idiag%id_q50
-       idg(10) = idiag%id_q70
-       idg(11) = idiag%id_q100
-       idg(12) = idiag%id_q150
-       idg(13) = idiag%id_q200
-       idg(14) = idiag%id_q250
-       idg(15) = idiag%id_q300
-       idg(16) = idiag%id_q350
-       idg(17) = idiag%id_q400
-       idg(18) = idiag%id_q450
-       idg(19) = idiag%id_q500
-       idg(20) = idiag%id_q550
-       idg(21) = idiag%id_q600
-       idg(22) = idiag%id_q650
-       idg(23) = idiag%id_q700
-       idg(24) = idiag%id_q750
-       idg(25) = idiag%id_q800
-       idg(26) = idiag%id_q850
-       idg(27) = idiag%id_q900
-       idg(28) = idiag%id_q925
-       idg(29) = idiag%id_q950
-       idg(30) = idiag%id_q975
-       idg(31) = idiag%id_q1000
+       idg(:) = idiag%id_q(:)
 
        do_cs_intp = .false.
        do i=1,nplev
@@ -2764,38 +2350,15 @@ contains
           enddo
        endif
 
+       if (idiag%id_q_plev>0) then
+         id1(:) = 1
+         call cs3_interpolator(isc,iec,jsc,jec,npz, Atm(n)%q(isc:iec,jsc:jec,:,sphum), nplev, &
+                              pout, wz, Atm(n)%pe(isc:iec,1:npz+1,jsc:jec), id1, a3, 0)
+         used=send_data(idiag%id_q_plev, a3(isc:iec,jsc:jec,:), Time)
+       endif
+
 ! Omega
-       idg(1) = idiag%id_omg1
-       idg(2) = idiag%id_omg2
-       idg(3) = idiag%id_omg3
-       idg(4) = idiag%id_omg5
-       idg(5) = idiag%id_omg7
-       idg(6) = idiag%id_omg10
-       idg(7) = idiag%id_omg20
-       idg(8) = idiag%id_omg30
-       idg(9) = idiag%id_omg50
-       idg(10) = idiag%id_omg70
-       idg(11) = idiag%id_omg100
-       idg(12) = idiag%id_omg150
-       idg(13) = idiag%id_omg200
-       idg(14) = idiag%id_omg250
-       idg(15) = idiag%id_omg300
-       idg(16) = idiag%id_omg350
-       idg(17) = idiag%id_omg400
-       idg(18) = idiag%id_omg450
-       idg(19) = idiag%id_omg500
-       idg(20) = idiag%id_omg550
-       idg(21) = idiag%id_omg600
-       idg(22) = idiag%id_omg650
-       idg(23) = idiag%id_omg700
-       idg(24) = idiag%id_omg750
-       idg(25) = idiag%id_omg800
-       idg(26) = idiag%id_omg850
-       idg(27) = idiag%id_omg900
-       idg(28) = idiag%id_omg925
-       idg(29) = idiag%id_omg950
-       idg(30) = idiag%id_omg975
-       idg(31) = idiag%id_omg1000
+       idg(:) = idiag%id_omg(:)
 
        do_cs_intp = .false.
        do i=1,nplev
@@ -2811,6 +2374,13 @@ contains
           do i=1,nplev
              if (idg(i)>0) used=send_data(idg(i), a3(isc:iec,jsc:jec,i), Time)
           enddo
+       endif
+
+       if (idiag%id_omg_plev>0) then
+         id1(:) = 1
+         call cs3_interpolator(isc,iec,jsc,jec,npz, Atm(n)%omga(isc:iec,jsc:jec,:), nplev,    &
+                              pout, wz, Atm(n)%pe(isc:iec,1:npz+1,jsc:jec), id1, a3, -1)
+         used=send_data(idiag%id_omg_plev, a3(isc:iec,jsc:jec,:), Time)
        endif
 
        if( allocated(a3) ) deallocate (a3)
@@ -3770,10 +3340,10 @@ contains
  end subroutine interpolate_z
 
  subroutine helicity_relative(is, ie, js, je, ng, km, zvir, sphum, srh,   &
-                              ua, va, delz, q, hydrostatic, pt, peln, phis, grav)
+                              ua, va, delz, q, hydrostatic, pt, peln, phis, grav, z_bot, z_top)
 ! !INPUT PARAMETERS:
    integer, intent(in):: is, ie, js, je, ng, km, sphum
-   real, intent(in):: grav, zvir
+   real, intent(in):: grav, zvir, z_bot, z_top
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, ua, va
    real, intent(in):: delz(is-ng:ie+ng,js-ng:je+ng,km)
    real, intent(in):: q(is-ng:ie+ng,js-ng:je+ng,km,*)
@@ -3781,24 +3351,25 @@ contains
    real, intent(in):: peln(is:ie,km+1,js:je) 
    logical, intent(in):: hydrostatic
    real, intent(out):: srh(is:ie,js:je)   ! unit: (m/s)**2
-   real, parameter:: z_crit = 3.e3   ! lowest 3-km
+!   real, parameter:: z_crit = 3.e3   ! lowest 3-km
 !---------------------------------------------------------------------------------
 ! SRH = 150-299 ... supercells possible with weak tornadoes
 ! SRH = 300-449 ... very favourable to supercells development and strong tornadoes
 ! SRH > 450 ... violent tornadoes
 !---------------------------------------------------------------------------------
-! if z_crit = 1E3, the threshold for supercells is 100 (m/s)**2
+! if z_top = 1E3, the threshold for supercells is 100 (m/s)**2
 ! Coded by S.-J. Lin for CONUS regional climate simulations
 !
    real:: rdg
-   real, dimension(is:ie):: zh, uc, vc, dz
-   integer i, j, k, k0
+   real, dimension(is:ie):: zh, uc, vc, dz, zh0
+   integer i, j, k, k0, k1
+   logical below(is:ie)
 
    rdg = rdgas / grav
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,hydrostatic,rdg,pt,zvir,sphum, &
-!$OMP                                  peln,delz,ua,va,srh) &
-!$OMP                          private(zh,uc,vc,dz,k0)
+!$OMP                                  peln,delz,ua,va,srh,z_bot,z_top) &
+!$OMP                          private(zh,uc,vc,dz,k0,k1,zh0,below)
    do j=js,je
 
       do i=is,ie
@@ -3806,6 +3377,8 @@ contains
          vc(i) = 0.
          zh(i) = 0.
          srh(i,j) = 0.
+         below(i) = .true.
+         zh0(i) = 0.
 
 !        if ( phis(i,j)/grav < 1.E3 ) then
          do k=km,1,-1
@@ -3815,24 +3388,31 @@ contains
                  dz(i) = - delz(i,j,k)
             endif
             zh(i) = zh(i) + dz(i)
-! Compute mean winds below z_crit
-            if ( zh(i) < z_crit ) then
+            if (zh(i) <= z_bot ) continue
+            if (zh(i) > z_bot .and. below(i)) then
+               uc(i) = ua(i,j,k)*dz(i)
+               vc(i) = va(i,j,k)*dz(i)
+               zh0(i) = zh(i) - dz(i)
+               k1 = k
+               below(i) = .false.
+! Compute mean winds below z_top
+            elseif ( zh(i) < z_top ) then
                 uc(i) = uc(i) + ua(i,j,k)*dz(i)
                 vc(i) = vc(i) + va(i,j,k)*dz(i)
                 k0 = k
             else
-                uc(i) = uc(i) / (zh(i)-dz(i))
-                vc(i) = vc(i) / (zh(i)-dz(i))
+                uc(i) = uc(i) / (zh(i)-dz(i) - zh0(i))
+                vc(i) = vc(i) / (zh(i)-dz(i) - zh0(i))
                 goto 123
             endif
          enddo
 123      continue
 
 ! Lowest layer wind shear computed betw top edge and mid-layer
-         k = km
-         srh(i,j) = 0.5*(va(i,j,km)-vc(i))*(ua(i,j,km-1)-ua(i,j,km))  -  &
-                    0.5*(ua(i,j,km)-uc(i))*(va(i,j,km-1)-va(i,j,km))
-         do k=k0, km-1
+         k = k1
+         srh(i,j) = 0.5*(va(i,j,k1)-vc(i))*(ua(i,j,k1-1)-ua(i,j,k1))  -  &
+                    0.5*(ua(i,j,k1)-uc(i))*(va(i,j,k1-1)-va(i,j,k1))
+         do k=k0, k1-1
             srh(i,j) = srh(i,j) + 0.5*(va(i,j,k)-vc(i))*(ua(i,j,k-1)-ua(i,j,k+1)) -  &
                                   0.5*(ua(i,j,k)-uc(i))*(va(i,j,k-1)-va(i,j,k+1))
          enddo
@@ -3841,6 +3421,67 @@ contains
    enddo   ! j-loop
 
  end subroutine helicity_relative
+
+ subroutine updraft_helicity(is, ie, js, je, ng, km, zvir, sphum, uh,   &
+                             w, vort, delz, q, hydrostatic, pt, peln, phis, grav, z_bot, z_top)
+! !INPUT PARAMETERS:
+   integer, intent(in):: is, ie, js, je, ng, km, sphum
+   real, intent(in):: grav, zvir, z_bot, z_top
+   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, w
+   real, intent(in), dimension(is:ie,js:je,km):: vort
+   real, intent(in):: delz(is-ng:ie+ng,js-ng:je+ng,km)
+   real, intent(in):: q(is-ng:ie+ng,js-ng:je+ng,km,*)
+   real, intent(in):: phis(is-ng:ie+ng,js-ng:je+ng)
+   real, intent(in):: peln(is:ie,km+1,js:je) 
+   logical, intent(in):: hydrostatic
+   real, intent(out):: uh(is:ie,js:je)   ! unit: (m/s)**2
+! Coded by S.-J. Lin for CONUS regional climate simulations
+! Modified for UH by LMH
+!
+   real:: rdg
+   real, dimension(is:ie):: zh, dz, zh0
+   integer i, j, k
+   logical below(is:ie)
+
+   rdg = rdgas / grav
+
+!$OMP parallel do default(none) shared(is,ie,js,je,km,hydrostatic,rdg,pt,zvir,sphum, &
+!$OMP                                  peln,delz,w,vort,uh,z_bot,z_top) &
+!$OMP                          private(zh,dz,zh0,below)
+   do j=js,je
+
+      do i=is,ie
+         zh(i) = 0.
+         uh(i,j) = 0.
+         below(i) = .true.
+         zh0(i) = 0.
+
+!        if ( phis(i,j)/grav < 1.E3 ) then
+         do k=km,1,-1
+            if ( hydrostatic ) then
+                 dz(i) = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
+            else
+                 dz(i) = - delz(i,j,k)
+            endif
+            zh(i) = zh(i) + dz(i)
+            if (zh(i) <= z_bot ) continue
+            if (zh(i) > z_bot .and. below(i)) then
+               uh(i,j) = vort(i,j,k)*w(i,j,k)*(zh(i) - z_bot)
+               below(i) = .false.
+! Compute mean winds below z_top
+            elseif ( zh(i) < z_top ) then
+               uh(i,j) = uh(i,j) + vort(i,j,k)*w(i,j,k)*dz(i)
+            else
+               uh(i,j) = uh(i,j) + vort(i,j,k)*w(i,j,k)*(z_top - (zh(i)-dz(i)) ) 
+               goto 123
+            endif
+         enddo
+123      continue
+
+      enddo  ! i-loop
+   enddo   ! j-loop
+
+ end subroutine updraft_helicity
 
 
 

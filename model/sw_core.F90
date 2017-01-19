@@ -1976,7 +1976,6 @@ end subroutine divergence_corner_nest
 ! Local
  real, dimension(is-1:ie+1):: bl, br, b0
  logical, dimension(is-1:ie+1):: smt5, smt6
- logical:: hi6(is:ie+1)
  real:: fx0(is:ie+1)
  real al(is-1:ie+2), dm(is-2:ie+2)
  real dq(is-3:ie+2)
@@ -2076,8 +2075,7 @@ end subroutine divergence_corner_nest
            endif
         enddo
 
-     elseif ( iord==3 ) then  ! As in iord=4, less diffusive
-
+     elseif ( iord==3 ) then
           do i=is-1, ie+1
              x0 = abs(b0(i))
              x1 = abs(bl(i)-br(i))
@@ -2085,18 +2083,45 @@ end subroutine divergence_corner_nest
              smt6(i) = 3.*x0 < x1
           enddo
           do i=is, ie+1
-             hi6(i) = smt6(i-1) .or. smt6(i)
+             fx0(i) = 0.
           enddo
           do i=is, ie+1
              if( c(i,j)>0. ) then
-                 if ( hi6(i).or.smt5(i-1) ) then
+                 cfl = c(i,j)*rdx(i-1,j)
+                 if ( smt6(i-1).or.smt5(i) ) then
+                    fx0(i) = br(i-1) - cfl*b0(i-1)
+                 elseif( smt5(i-1) ) then
+                    fx0(i) = sign(min(abs(bl(i-1)),abs(br(i-1))), br(i-1))
+                 endif
+                 flux(i,j) = u(i-1,j) + (1.-cfl)*fx0(i)
+             else
+                 cfl = c(i,j)*rdx(i,j)
+                 if ( smt6(i).or.smt5(i-1) ) then
+                    fx0(i) = bl(i) + cfl*b0(i)
+                 elseif( smt5(i) ) then
+                    fx0(i) = sign(min(abs(bl(i)),abs(br(i))), bl(i))
+                 endif
+                 flux(i,j) = u(i,j) + (1.+cfl)*fx0(i)
+             endif
+          enddo
+
+     elseif ( iord==4 ) then  ! more damp than ord5 but less damp than ord6
+          do i=is-1, ie+1
+             x0 = abs(b0(i))
+             x1 = abs(bl(i)-br(i))
+             smt5(i) =    x0 < x1
+             smt6(i) = 3.*x0 < x1  ! if smt6 =.T. --> smt5=.T.
+          enddo
+          do i=is, ie+1
+             if( c(i,j)>0. ) then
+                 if ( smt6(i-1).or.smt5(i) ) then
                           cfl = c(i,j)*rdx(i-1,j)
                     flux(i,j) = u(i-1,j) + (1.-cfl)*(br(i-1) - cfl*b0(i-1))
-                 else
+                 else  ! 1st order ONLY_IF smt6(i-1)=.F.  .AND. smt5(i)=.F.
                     flux(i,j) = u(i-1,j)
                  endif
              else
-                 if ( hi6(i).or.smt5(i) ) then
+                 if ( smt6(i).or.smt5(i-1) ) then
                           cfl = c(i,j)*rdx(i,j)
                     flux(i,j) = u(i,j) + (1.+cfl)*(bl(i) + cfl*b0(i))
                  else
@@ -2105,37 +2130,6 @@ end subroutine divergence_corner_nest
              endif
           enddo
 
-     elseif ( iord==4 ) then
-
-          do i=is-1, ie+1
-             x0 = abs(b0(i))
-             x1 = abs(bl(i)-br(i))
-             smt5(i) =    x0 < x1
-             smt6(i) = 3.*x0 < x1
-          enddo
-          do i=is, ie+1
-             hi6(i) = smt6(i-1) .or. smt6(i)
-             fx0(i) = 0.
-          enddo
-          do i=is, ie+1
-             if( c(i,j)>0. ) then
-                 cfl = c(i,j)*rdx(i-1,j)
-                 if ( hi6(i) ) then
-                    fx0(i) = br(i-1) - cfl*b0(i-1)
-                 elseif( smt5(i-1) ) then
-                    fx0(i) = sign(min(abs(bl(i-1)),abs(br(i-1))), br(i-1))
-                 endif
-                 flux(i,j) = u(i-1,j) + (1.-cfl)*fx0(i)
-             else
-                 cfl = c(i,j)*rdx(i,j)
-                 if ( hi6(i) ) then
-                    fx0(i) = bl(i) + cfl*b0(i)
-                 elseif( smt5(i) ) then
-                    fx0(i) = sign(min(abs(bl(i)),abs(br(i))), bl(i))
-                 endif
-                 flux(i,j) = u(i,j) + (1.+cfl)*fx0(i)
-             endif
-          enddo
 
      else    !  iord=5,6,7
 
@@ -2323,7 +2317,6 @@ end subroutine divergence_corner_nest
  logical, INTENT(IN) :: nested
 ! Local:
  logical, dimension(is:ie+1,js-1:je+1):: smt5, smt6
- logical:: hi6(is:ie+1)
  real:: fx0(is:ie+1)
  real dm(is:ie+1,js-2:je+2)
  real al(is:ie+1,js-1:je+2)
@@ -2454,25 +2447,28 @@ end subroutine divergence_corner_nest
              smt6(i,j) = 3.*x0 < x1
           enddo
        enddo
+
        do j=js,je+1
           do i=is,ie+1
-             hi6(i) = smt6(i,j-1) .or. smt6(i,j)
+             fx0(i) = 0.
           enddo
           do i=is,ie+1
              if( c(i,j)>0. ) then
-                 if ( hi6(i).or.smt5(i,j-1) ) then
-                          cfl = c(i,j)*rdy(i,j-1)
-                    flux(i,j) = v(i,j-1) + (1.-cfl)*(br(i,j-1) - cfl*b0(i,j-1))
-                  else
-                    flux(i,j) = v(i,j-1)
+                 cfl = c(i,j)*rdy(i,j-1)
+                 if ( smt6(i,j-1).or.smt5(i,j) ) then
+                    fx0(i) = br(i,j-1) - cfl*b0(i,j-1)
+                 elseif ( smt5(i,j-1) ) then  ! piece-wise linear
+                    fx0(i) = sign(min(abs(bl(i,j-1)),abs(br(i,j-1))), br(i,j-1))
                  endif
+                 flux(i,j) = v(i,j-1) + (1.-cfl)*fx0(i)
              else
-                 if ( hi6(i).or.smt5(i,j) ) then
-                          cfl = c(i,j)*rdy(i,j)
-                    flux(i,j) = v(i,j) + (1.+cfl)*(bl(i,j) + cfl*b0(i,j))
-                 else
-                    flux(i,j) = v(i,j)
+                 cfl = c(i,j)*rdy(i,j)
+                 if ( smt6(i,j).or.smt5(i,j-1) ) then
+                    fx0(i) = bl(i,j) + cfl*b0(i,j)
+                 elseif ( smt5(i,j) ) then
+                    fx0(i) = sign(min(abs(bl(i,j)),abs(br(i,j))), bl(i,j))
                  endif
+                 flux(i,j) = v(i,j) + (1.+cfl)*fx0(i)
              endif
           enddo
        enddo
@@ -2487,32 +2483,26 @@ end subroutine divergence_corner_nest
              smt6(i,j) = 3.*x0 < x1
           enddo
        enddo
-
        do j=js,je+1
           do i=is,ie+1
-             hi6(i) = smt6(i,j-1) .or. smt6(i,j)
-             fx0(i) = 0.
-          enddo
-          do i=is,ie+1
              if( c(i,j)>0. ) then
-                 cfl = c(i,j)*rdy(i,j-1)
-                 if ( hi6(i) ) then
-                    fx0(i) = br(i,j-1) - cfl*b0(i,j-1)
-                 elseif ( smt5(i,j-1) ) then  ! piece-wise linear
-                    fx0(i) = sign(min(abs(bl(i,j-1)),abs(br(i,j-1))), br(i,j-1))
+                 if ( smt6(i,j-1).or.smt5(i,j) ) then
+                          cfl = c(i,j)*rdy(i,j-1)
+                    flux(i,j) = v(i,j-1) + (1.-cfl)*(br(i,j-1) - cfl*b0(i,j-1))
+                  else
+                    flux(i,j) = v(i,j-1)
                  endif
-                 flux(i,j) = v(i,j-1) + (1.-cfl)*fx0(i)
              else
-                 cfl = c(i,j)*rdy(i,j)
-                 if ( hi6(i) ) then
-                    fx0(i) = bl(i,j) + cfl*b0(i,j)
-                 elseif ( smt5(i,j) ) then
-                    fx0(i) = sign(min(abs(bl(i,j)),abs(br(i,j))), bl(i,j))
+                 if ( smt6(i,j).or.smt5(i,j-1) ) then
+                          cfl = c(i,j)*rdy(i,j)
+                    flux(i,j) = v(i,j) + (1.+cfl)*(bl(i,j) + cfl*b0(i,j))
+                 else
+                    flux(i,j) = v(i,j)
                  endif
-                 flux(i,j) = v(i,j) + (1.+cfl)*fx0(i)
              endif
           enddo
        enddo
+
 
    else   ! jord = 5,6,7
 ! Diffusivity: ord2 < ord5 < ord3 < ord4 < ord6  < ord7

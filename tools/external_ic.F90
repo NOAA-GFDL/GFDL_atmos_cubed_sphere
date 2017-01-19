@@ -649,7 +649,7 @@ contains
         do nt = 1, ntprog
           call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
           ! set all tracers to an initial profile value
-          call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%q(:,:,:,n)  )
+          call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%q(:,:,:,nt)  )
         enddo
         do nt = ntprog+1, ntracers
           call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
@@ -1291,6 +1291,7 @@ contains
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
       integer :: sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel
+      real:: wt, qt, m_fac
       real(kind=8) :: scale_value, offset
       real(kind=R_GRID), dimension(2):: p1, p2, p3
       real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
@@ -1772,6 +1773,40 @@ contains
       call remap_dwinds(km, npz, ak0, bk0, psc_r8, ud, vd, Atm(1))
 
       deallocate ( ud, vd )
+
+#ifndef COND_IFS_IC
+      liq_wat  = get_tracer_index(MODEL_ATMOS, 'liq_wat')
+      if ( Atm(1)%flagstruct%nwat .eq. 6 ) then
+           ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
+           rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
+           snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
+           graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
+      endif
+! Add cloud condensate from IFS to total MASS
+! Adjust the mixing ratios consistently...
+      do k=1,npz
+         do j=js,je
+            do i=is,ie
+               wt = Atm(1)%delp(i,j,k)
+               if ( Atm(1)%flagstruct%nwat .eq. 2 ) then
+                  qt = wt*(1.+Atm(1)%q(i,j,k,liq_wat))
+               elseif ( Atm(1)%flagstruct%nwat .eq. 6 ) then
+                  qt = wt*(1. + Atm(1)%q(i,j,k,liq_wat) + &
+                                Atm(1)%q(i,j,k,ice_wat) + &
+                                Atm(1)%q(i,j,k,rainwat) + &
+                                Atm(1)%q(i,j,k,snowwat) + &
+                                Atm(1)%q(i,j,k,graupel))
+               endif
+               m_fac = wt / qt
+               do iq=1,ntracers
+                  Atm(1)%q(i,j,k,iq) = m_fac * Atm(1)%q(i,j,k,iq)
+               enddo
+               Atm(1)%delp(i,j,k) = qt
+            enddo
+         enddo
+      enddo
+#endif
+
       deallocate ( ak0, bk0 )
       deallocate ( psc )
       deallocate ( psc_r8 )
@@ -2322,9 +2357,10 @@ contains
        call mpp_error(FATAL,'SPHUM must be 1st tracer')
   endif
 
-!$OMP parallel do default(none) shared(sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,&
-!$OMP         cld_amt,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,omga,qa,Atm) &
-!$OMP   private(l,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
+!$OMP parallel do default(none) &
+!$OMP             shared(sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,&
+!$OMP                    cld_amt,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,omga,qa,Atm) &
+!$OMP             private(l,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
   do 5000 j=js,je
      do k=1,km+1
         do i=is,ie

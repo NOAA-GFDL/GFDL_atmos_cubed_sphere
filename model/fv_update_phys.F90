@@ -375,6 +375,8 @@ module fv_update_phys_mod
           if( m /= cld_amt .and. m /= w_diff .and. adjust_mass(MODEL_ATMOS,m)) then 
             if (m <= nq)  then
               q(is:ie,js:je,k,m) = q(is:ie,js:je,k,m) / ps_dt(is:ie,js:je)
+              if (conv_vmr_mmr(m)) &
+                   q(is:ie,js:je,k,m) = q(is:ie,js:je,k,m) * adj_vmr(is:ie,js:je,k)
             else
               qdiag(is:ie,js:je,k,m) = qdiag(is:ie,js:je,k,m) / ps_dt(is:ie,js:je)
             endif
