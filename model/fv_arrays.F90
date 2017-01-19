@@ -55,7 +55,7 @@ module fv_arrays_mod
            id_delp, id_delz, id_zratio, id_ws, id_iw, id_lw,      &
            id_pfhy, id_pfnh,                                      &
            id_qn, id_qn200, id_qn500, id_qn850, id_qp, id_mdt, id_qdt, id_aam, id_amdt, &
-           id_acly, id_acl, id_acl2, id_dbz, id_maxdbz, id_basedbz, id_dbz4km, id_ctp, id_ctt
+           id_acly, id_acl, id_acl2, id_dbz, id_maxdbz, id_basedbz, id_dbz4km
 
 ! Selected p-level fields from 3D variables:
  integer :: id_vort200, id_vort500, id_w500, id_w700
