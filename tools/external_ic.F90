@@ -2322,8 +2322,9 @@ contains
        call mpp_error(FATAL,'SPHUM must be 1st tracer')
   endif
 
-!$OMP parallel do default(none) shared(sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,cld_amt,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,omga,qa,Atm) &
-!$OMP   private(pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
+!$OMP parallel do default(none) shared(sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,&
+!$OMP         cld_amt,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,omga,qa,Atm) &
+!$OMP   private(l,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
   do 5000 j=js,je
      do k=1,km+1
         do i=is,ie

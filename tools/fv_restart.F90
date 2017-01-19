@@ -56,7 +56,6 @@ module fv_restart_mod
   use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST,  mpp_get_C2F_index, WEST, SOUTH
   use mpp_domains_mod,     only: mpp_global_field
   use fms_mod,             only: file_exist
-  use external_sst_mod,    only: use_ncep_sst           
 
   implicit none
   private
@@ -1398,10 +1397,6 @@ contains
       enddo
 ! Write4 energy correction term
 #endif
-
-!! JHC
-!     if (use_ncep_sst .or. Atm(1)%flagstruct%nudge) call fv_io_register_nudge_restart(Atm)
-
 
    enddo
 

@@ -60,7 +60,6 @@ use fv_arrays_mod,      only: fv_atmos_type, R_GRID
 use fv_control_mod,     only: fv_init, fv_end, ngrids
 use fv_eta_mod,         only: get_eta_level
 use fv_fill_mod,        only: fill_gfs
-use fv_io_mod,          only: fv_io_register_nudge_restart
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin
