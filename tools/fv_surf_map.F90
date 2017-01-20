@@ -255,7 +255,7 @@
          ! due to failures in finding latlon points in the source data.
          !This sets a larger search region if the number of cells on a PE is too small.
          !(Alternately you can just cold start the topography using a smaller number of PEs)
-         if (min(je-js+1,ie-js+1) < 15) then
+         if (min(je-js+1,ie-is+1) < 15) then
             delg = max( 0.4*(latn-lats), pi/real(npx_global-1), 2.*pi/real(nlat) )
          else
             delg = max( 0.2*(latn-lats), pi/real(npx_global-1), 2.*pi/real(nlat) )
