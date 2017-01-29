@@ -299,19 +299,19 @@ module fv_update_phys_mod
   !1 - kg(H2O)/kg(air) before / 1 - kg(H2O)/kg(air) current                                                                                                                                                                      
               !1 - (q-dq/dt*Dt) = ps_dt - q 
               if (flagstruct%adj_mass_vmr) then
-                 adj_vmr(i,j,k) = (      ps_dt(i,j)          -    &
-                      (q(i,j,k,sphum       +    &
-                      q(i,j,k,liq_wat)    +    &
-                      q(i,j,k,rainwat)    +    &
-                      q(i,j,k,ice_wat)    +    &
-                      q(i,j,k,snowwat)    +    &
-                      q(i,j,k,graupel)) ) ) /  &
-                      (1. - (q(i,j,k,sphum)      +    &
-                      q(i,j,k,liq_wat)    +    &
-                      q(i,j,k,rainwat)    +    &
-                      q(i,j,k,ice_wat)    +    &
-                      q(i,j,k,snowwat)    +    &
-                      q(i,j,k,graupel))   )
+                 adj_vmr(i,j,k) =                          &
+                      (ps_dt(i,j) - (q(i,j,k,sphum  )   +  &
+                                     q(i,j,k,liq_wat)   +  &
+                                     q(i,j,k,rainwat)   +  &
+                                     q(i,j,k,ice_wat)   +  &
+                                     q(i,j,k,snowwat)   +  &
+                                     q(i,j,k,graupel))) /  &
+                      (1.d0       - (q(i,j,k,sphum  )   +  &
+                                     q(i,j,k,liq_wat)   +  &
+                                     q(i,j,k,rainwat)   +  &
+                                     q(i,j,k,ice_wat)   +  &
+                                     q(i,j,k,snowwat)   +  &
+                                     q(i,j,k,graupel)))
               end if
            enddo
         enddo
@@ -319,9 +319,9 @@ module fv_update_phys_mod
 ! micro-physics with fake ice
         do j=js,je
            do i=is,ie
-              ps_dt(i,j)  = 1. + dt * ( q_dt(i,j,k,sphum  ) +    &
-                                        q_dt(i,j,k,liq_wat) +    &
-                                        q_dt(i,j,k,rainwat) )
+              ps_dt(i,j)  = 1. + dt * (q_dt(i,j,k,sphum  ) +  &
+                                       q_dt(i,j,k,liq_wat) +  &
+                                       q_dt(i,j,k,rainwat))
               delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
            enddo
         enddo
@@ -335,13 +335,13 @@ module fv_update_phys_mod
               delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
 !f1p
               if (flagstruct%adj_mass_vmr) then
-                 adj_vmr(i,j,k) = (      ps_dt(i,j)          -    &
-                      (q(i,j,k,sphum       +    &
-                      q(i,j,k,liq_wat)    +    &
-                      q(i,j,k,ice_wat)))  ) /  &
-                      (1. - (q(i,j,k,sphum)      +    &
-                      q(i,j,k,liq_wat)    +    &
-                      q(i,j,k,ice_wat))   )
+                 adj_vmr(i,j,k) =                          &
+                      (ps_dt(i,j) - (q(i,j,k,sphum  )   +  &
+                                     q(i,j,k,liq_wat)   +  &
+                                     q(i,j,k,ice_wat))) /  &
+                      (1.d0       - (q(i,j,k,sphum  )   +  &
+                                     q(i,j,k,liq_wat)   +  &
+                                     q(i,j,k,ice_wat)))
               end if
            enddo
         enddo
@@ -359,9 +359,9 @@ module fv_update_phys_mod
               ps_dt(i,j)  = 1. + dt*sum(q_dt(i,j,k,1:nwat))
               delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
               if (flagstruct%adj_mass_vmr) then
-                 adj_vmr(i,j,k) =  (     ps_dt(i,j)                         -           &
-                      sum(q(i,j,k,1:flagstruct%nwat)) )                     /           &
-                      (1. - sum(q(i,j,k,1:flagstruct%nwat)))              
+                 adj_vmr(i,j,k) =                          &
+                      (ps_dt(i,j) - sum(q(i,j,k,1:flagstruct%nwat))) /  &
+                      (1.d0       - sum(q(i,j,k,1:flagstruct%nwat)))
               end if
 
            enddo
