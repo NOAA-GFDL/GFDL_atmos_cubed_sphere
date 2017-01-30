@@ -404,6 +404,8 @@ CONTAINS
   end subroutine Riem_Solver_c
 
 
+!GFDL - This routine will not give absoulte reproducibility when compiled with -fast-transcendentals.
+!GFDL - It is now inside of nh_core.F90 and being compiled without -fast-transcendentals.
   subroutine Riem_Solver3test(ms, dt,   is,   ie,   js, je, km, ng,    &
                           isd, ied, jsd, jed, akap, cappa, cp,     &
                           ptop, zs, q_con, w,  delz, pt,  &
