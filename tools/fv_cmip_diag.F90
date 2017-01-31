@@ -53,7 +53,8 @@ type(cmip_diag_id_type) :: ID_ta, ID_ua, ID_va, ID_hus, ID_hur, ID_wap, ID_zg
 integer              :: id_ps, id_orog
 integer              :: id_ua200, id_va200, id_ua850, id_va850, &
                         id_ta500, id_ta700, id_ta850, id_zg500, &
-                        id_hus850, id_wap500
+                        id_zg100, id_zg10,  id_zg1000,          &
+                        id_hus850, id_wap500, id_ua10
 
 character(len=5) :: mod_name = 'atmos'
 
@@ -199,6 +200,11 @@ character(len=4)      :: plabel
 
   !---- register field on single pressure levels ----
 
+    id_ua10 = register_cmip_diag_field_2d (mod_name, 'ua10', Time, &
+                       'Eastward Wind at 10hPa', 'm s-1', standard_name='eastward_wind')
+    if (id_ua10 > 0 .and. id_plevels(id_p10) > 0) &
+        call diag_field_add_attribute (id_ua10, 'coordinates', 'p10')
+
     id_ua200 = register_cmip_diag_field_2d (mod_name, 'ua200', Time, &
                        'Eastward Wind', 'm s-1', standard_name='eastward_wind')
     if (id_ua200 > 0 .and. id_plevels(id_p200) > 0) &
@@ -253,10 +259,25 @@ character(len=4)      :: plabel
 
   !---- geopotential height ----
 
+    id_zg10 = register_cmip_diag_field_2d (mod_name, 'zg10', Time, &
+                       'Geopotential Height at 10 hPa', 'm', standard_name='geopotential_height')
+    if (id_zg10 > 0 .and. id_plevels(id_p10) > 0) &
+        call diag_field_add_attribute (id_zg10, 'coordinates', 'p10')
+
+    id_zg100 = register_cmip_diag_field_2d (mod_name, 'zg100', Time, &
+                       'Geopotential Height at 100 hPa', 'm', standard_name='geopotential_height')
+    if (id_zg100 > 0 .and. id_plevels(id_p1000) > 0) &
+        call diag_field_add_attribute (id_zg100, 'coordinates', 'p100')
+
     id_zg500 = register_cmip_diag_field_2d (mod_name, 'zg500', Time, &
                        'Geopotential Height at 500 hPa', 'm', standard_name='geopotential_height')
     if (id_zg500 > 0 .and. id_plevels(id_p500) > 0) &
         call diag_field_add_attribute (id_zg500, 'coordinates', 'p500')
+
+    id_zg1000 = register_cmip_diag_field_2d (mod_name, 'zg1000', Time, &
+                       'Geopotential Height at 1000 hPa', 'm', standard_name='geopotential_height')
+    if (id_zg1000 > 0 .and. id_plevels(id_p1000) > 0) &
+        call diag_field_add_attribute (id_zg1000, 'coordinates', 'p1000')
 
 !--- done ---
   call nullify_domain()
@@ -318,7 +339,7 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
 
 
   ! height field (wz) if needed
-  if (count(ID_zg%field_id(:)>0) > 0 .or. id_zg500 > 0) then
+  if (count(ID_zg%field_id(:)>0) > 0 .or. any((/id_zg10,id_zg100,id_zg500,id_zg1000/) > 0)) then
     call get_height_field(isc, iec, jsc, jec, ngc, npz, wz, Atm(n)%pt, Atm(n)%q, Atm(n)%peln, zvir)
   endif
 
@@ -356,29 +377,35 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
 !----------------------------------------------------------------------
 ! process 2D fields on specific pressure levels
 ! 
+  if (id_ua10 > 0) then
+    call interpolate_vertical (isc, iec, jsc, jec, npz, 10.e2, Atm(n)%peln, &
+                               Atm(n)%ua(isc:iec,jsc:jec,:), dat2)          
+    used = send_data (id_ua10, dat2, Time)
+  endif
+
   if (id_ua200 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, &
                                Atm(n)%ua(isc:iec,jsc:jec,:), dat2)          
     used = send_data (id_ua200, dat2, Time)
-    endif
+  endif
 
   if (id_va200 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, &
                                Atm(n)%va(isc:iec,jsc:jec,:), dat2)          
     used = send_data (id_va200, dat2, Time)
-    endif
+  endif
 
   if (id_ua850 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
                                Atm(n)%ua(isc:iec,jsc:jec,:), dat2)          
     used = send_data (id_ua850, dat2, Time)
-    endif
+  endif
 
   if (id_va850 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
                                Atm(n)%va(isc:iec,jsc:jec,:), dat2)          
     used = send_data (id_va850, dat2, Time)
-    endif
+  endif
 
   if (id_ta500 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 500.e2, Atm(n)%peln, &
@@ -410,9 +437,24 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
     used = send_data (id_wap500, dat2, Time)
   endif
 
+  if (id_zg10 > 0) then
+    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/log(10.e2)/), Atm(n)%peln, dat3)
+    used = send_data (id_zg10, dat3(:,:,1), Time)
+  endif
+
+  if (id_zg100 > 0) then
+    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/log(100.e2)/), Atm(n)%peln, dat3)
+    used = send_data (id_zg100, dat3(:,:,1), Time)
+  endif
+
   if (id_zg500 > 0) then
     call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/log(500.e2)/), Atm(n)%peln, dat3)
     used = send_data (id_zg500, dat3(:,:,1), Time)
+  endif
+
+  if (id_zg1000 > 0) then
+    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/log(1000.e2)/), Atm(n)%peln, dat3)
+    used = send_data (id_zg1000, dat3(:,:,1), Time)
   endif
 
 !----------------------------------------------------------------------
