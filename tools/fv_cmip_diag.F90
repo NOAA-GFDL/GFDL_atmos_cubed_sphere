@@ -156,10 +156,9 @@ character(len=4)      :: plabel
 
     ! 2D fields
 
-    id_ps = register_diag_field (mod_name, 'ps', axes(1:2), Time, &
+    id_ps = register_cmip_diag_field_2d (mod_name, 'ps', Time, &
                                  'Surface Air Pressure', 'Pa', &
-                                 standard_name='surface_air_pressure', &
-                                 area=area_id, missing_value=CMOR_MISSING_VALUE )
+                                 standard_name='surface_air_pressure' )
 
 ! surface altitude
 
