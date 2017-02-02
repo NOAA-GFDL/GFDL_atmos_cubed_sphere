@@ -24,6 +24,7 @@ module lin_cld_microphys_mod
  public  qsmith_init, qsmith, es2_table1d, es3_table1d, esw_table1d, wqsat_moist, wqsat2_moist
  public  setup_con, wet_bulb
  public  cloud_diagnosis
+ public  cracw
  real             :: missing_value = -1.e10
  logical          :: module_is_initialized = .false.
  logical          :: qsmith_tables_initialized = .false.
