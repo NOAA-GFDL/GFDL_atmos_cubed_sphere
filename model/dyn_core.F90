@@ -1080,9 +1080,8 @@ contains
        do k=1,n_con
           delt = abs(bdt*flagstruct%delt_max)
 ! Sponge layers:
-          if ( k == 1 ) delt = 9.0*delt
-          if ( k == 2 ) delt = 3.0*delt
-          if ( k == 3 ) delt = 1.5*delt
+!         if ( k == 1 ) delt = 2.0*delt
+!         if ( k == 2 ) delt = 1.5*delt
           do j=js,je
              do i=is,ie
 #ifdef MOIST_CAPPA
