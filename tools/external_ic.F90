@@ -2391,9 +2391,9 @@ contains
 ! Use log-p for interpolation/extrapolation
 ! mirror image method:
         do k=km+2, km+k2
-               m = 2*(km+1) - k
-           gz(k) = 2.*gz(km+1) - gz(m)
-           pn(k) = 2.*pn(km+1) - pn(m)
+               l = 2*(km+1) - k
+           gz(k) = 2.*gz(km+1) - gz(l)
+           pn(k) = 2.*pn(km+1) - pn(l)
         enddo
 
         do k=km+k2-1, 2, -1
@@ -2631,7 +2631,7 @@ contains
   endif
  
 !$OMP parallel do default(none) shared(sphum,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,qa,wc,Atm) &
-!$OMP   private(qc,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
+!$OMP   private(pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
  do 5000 j=js,je
      do k=1,km+1
         do i=is,ie
@@ -2648,9 +2648,9 @@ contains
 ! Use log-p for interpolation/extrapolation
 ! mirror image method:
         do k=km+2, km+k2
-               m = 2*(km+1) - k
-           gz(k) = 2.*gz(km+1) - gz(m)
-           pn(k) = 2.*pn(km+1) - pn(m)
+               l = 2*(km+1) - k
+           gz(k) = 2.*gz(km+1) - gz(l)
+           pn(k) = 2.*pn(km+1) - pn(l)
         enddo
 
         do k=km+k2-1, 2, -1
@@ -3759,8 +3759,8 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
 !      real:: qc
        integer:: i,j,k
       
-!$OMP parallel do default(none) shared(im,jm,levp,grd,ak0,bk0,zs,ps,t,q,zh) &
-!$OMP                          private(qc,pe0,pn0)
+!$OMP parallel do default(none) shared(im,jm,levp,ak0,bk0,zs,ps,t,q,zh) &
+!$OMP                          private(pe0,pn0)
        do j = 1, jm
          do i=1, im
            pe0(i,1) = ak0(1)
