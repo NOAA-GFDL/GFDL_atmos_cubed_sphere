@@ -457,8 +457,10 @@ module fv_arrays_mod
 !  logical  :: adj_mass_vmr = .true. !fix mass balance issue for tracers in units of vmr
   logical  :: adj_mass_vmr = .false. !TER: This is to reproduce answers for verona patch.  This default can be changed
                                      !     to .true. in the next city release if desired
+  logical  :: retain_mass_vmr_bug = .true. ! h1g, 2017-02-06
 #else
   logical  :: adj_mass_vmr = .false. !TER: AM3 should always reproduce answers
+  logical  :: retain_mass_vmr_bug = .true. ! h1g, 2017-02-06
 #endif  
   
   !integer, pointer :: test_case

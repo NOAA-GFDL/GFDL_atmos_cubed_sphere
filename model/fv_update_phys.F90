@@ -284,19 +284,36 @@ module fv_update_phys_mod
   !1 - kg(H2O)/kg(air) before / 1 - kg(H2O)/kg(air) current                                                                                                                                                                      
               !1 - (q-dq/dt*Dt) = ps_dt - q 
               if (flagstruct%adj_mass_vmr) then
+               if(flagstruct%retain_mass_vmr_bug) then       ! h1g, 2017-02-06
                  adj_vmr(i,j,k) = (      ps_dt(i,j)          -    &
                       (q(i,j,k,sphum       +    &
                       q(i,j,k,liq_wat)    +    &
                       q(i,j,k,rainwat)    +    &
                       q(i,j,k,ice_wat)    +    &
                       q(i,j,k,snowwat)    +    &
-                      q(i,j,k,graupel)) ) ) /  &
+                      q(i,j,k,graupel))) )  /  &
                       (1. - (q(i,j,k,sphum)      +    &
                       q(i,j,k,liq_wat)    +    &
                       q(i,j,k,rainwat)    +    &
                       q(i,j,k,ice_wat)    +    &
                       q(i,j,k,snowwat)    +    &
                       q(i,j,k,graupel))   )
+               else
+                 adj_vmr(i,j,k) = (      ps_dt(i,j)          -    &
+                      (q(i,j,k,sphum)       +    &
+                      q(i,j,k,liq_wat)    +    &
+                      q(i,j,k,rainwat)    +    &
+                      q(i,j,k,ice_wat)    +    &
+                      q(i,j,k,snowwat)    +    &
+                      q(i,j,k,graupel)) )  /  &
+                      (1. - (q(i,j,k,sphum)      +    &
+                      q(i,j,k,liq_wat)    +    &
+                      q(i,j,k,rainwat)    +    &
+                      q(i,j,k,ice_wat)    +    &
+                      q(i,j,k,snowwat)    +    &
+                      q(i,j,k,graupel))   )
+
+               endif
               end if
 
            enddo
@@ -311,14 +328,24 @@ module fv_update_phys_mod
               delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
 
 !f1p
-              if (flagstruct%adj_mass_vmr) then
+              if (flagstruct%adj_mass_vmr) then 
+               if(flagstruct%retain_mass_vmr_bug) then     ! ---> h1g, 2017-02-06
                  adj_vmr(i,j,k) = (      ps_dt(i,j)          -    &
                       (q(i,j,k,sphum       +    &
                       q(i,j,k,liq_wat)    +    &
-                      q(i,j,k,ice_wat)))  ) /  &
+                      q(i,j,k,ice_wat))) )  /  &
                       (1. - (q(i,j,k,sphum)      +    &
                       q(i,j,k,liq_wat)    +    &
                       q(i,j,k,ice_wat))   )
+               else
+                 adj_vmr(i,j,k) = (      ps_dt(i,j)          -    &
+                      (q(i,j,k,sphum)       +    &
+                      q(i,j,k,liq_wat)    +    &
+                      q(i,j,k,ice_wat)) )  /  &
+                      (1. - (q(i,j,k,sphum)      +    &
+                      q(i,j,k,liq_wat)    +    &
+                      q(i,j,k,ice_wat))   )
+               endif        ! <--- h1g, 2017-02-06
               end if
            enddo
         enddo

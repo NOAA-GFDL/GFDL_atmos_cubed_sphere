@@ -175,6 +175,7 @@ module fv_control_mod
    logical , pointer :: phys_hydrostatic 
    logical , pointer :: do_uni_zfull !miz
    logical , pointer :: adj_mass_vmr ! f1p
+   logical , pointer :: retain_mass_vmr_bug ! h1g, 2017-02-06
    logical , pointer :: hybrid_z    
    logical , pointer :: Make_NH     
    logical , pointer :: make_hybrid_z  
@@ -508,7 +509,7 @@ module fv_control_mod
                          nested, twowaynest, parent_grid_num, parent_tile, &
                          refinement, nestbctype, nestupdate, nsponge, s_weight, &
                          ioffset, joffset, check_negative, nudge_ic, &
-                         adj_mass_vmr
+                         adj_mass_vmr, retain_mass_vmr_bug
 
       namelist /test_case_nml/test_case,alpha
 
@@ -1086,6 +1087,7 @@ module fv_control_mod
      phys_hydrostatic              => Atm%flagstruct%phys_hydrostatic
      do_uni_zfull                  => Atm%flagstruct%do_uni_zfull !miz
      adj_mass_vmr                  => Atm%flagstruct%adj_mass_vmr !f1p
+     retain_mass_vmr_bug           => Atm%flagstruct%retain_mass_vmr_bug  ! h1g, 2017-02-06
      hybrid_z                      => Atm%flagstruct%hybrid_z
      Make_NH                       => Atm%flagstruct%Make_NH
      make_hybrid_z                 => Atm%flagstruct%make_hybrid_z
