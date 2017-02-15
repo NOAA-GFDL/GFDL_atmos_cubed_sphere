@@ -433,15 +433,14 @@ contains
         enddo
 !DEC$ VECTOR ALWAYS
         do i=is,ie+1
-!          xt = c(i,j)
            if ( c(i,j) > 0. ) then
                 fx0(i) = q1(i-1)
-                if ( smt6(i-1).or.smt5(i) ) fx1(i) = br(i-1) - c(i,j)*b0(i-1)
+                if ( smt6(i-1).or.smt5(i) ) fx1(i) = (1.-c(i,j))*(br(i-1) - c(i,j)*b0(i-1))
            else
                 fx0(i) = q1(i)
-                if ( smt6(i).or.smt5(i-1) ) fx1(i) = bl(i) + c(i,j)*b0(i)
+                if ( smt6(i).or.smt5(i-1) ) fx1(i) = (1.+c(i,j))*(bl(i) + c(i,j)*b0(i))
            endif
-           flux(i,j) = fx0(i) + (1.-abs(c(i,j)))*fx1(i)
+           flux(i,j) = fx0(i) + fx1(i)
         enddo
    else
 ! iord = 5 & 6
@@ -460,22 +459,6 @@ contains
            smt5(i) = abs(3.*b0(i)) < abs(bl(i)-br(i))
         enddo
       endif
-#ifdef FAST_BUGGY
-!DEC$ VECTOR ALWAYS
-      do i=is,ie+1
-!        xt = c(i,j)
-         if ( c(i,j) > 0. ) then
-             fx1(i) = br(i-1) - c(i,j)*b0(i-1)
-             flux(i,j) = q1(i-1)
-         else
-             fx1(i) = bl(i) + c(i,j)*b0(i)
-             flux(i,j) = q1(i)
-         endif
-         if (smt5(i-1).or.smt5(i)) flux(i,j) = flux(i,j) + (1.-abs(c(i,j)))*fx1(i) 
-      enddo
-#else
-! SJL note: the Intel compiler seems to have problem with the complicated vector loop
-! Split the above into two loops:
 !DEC$ VECTOR ALWAYS
       do i=is,ie+1
          if ( c(i,j) > 0. ) then
@@ -485,9 +468,8 @@ contains
              fx1(i) = (1.+c(i,j))*(bl(i) + c(i,j)*b0(i))
              flux(i,j) = q1(i)
          endif
-         if (smt5(i-1).or.smt5(i)) flux(i,j) = flux(i,j) + fx1(i)
+         if (smt5(i-1).or.smt5(i)) flux(i,j) = flux(i,j) + fx1(i) 
       enddo
-#endif
    endif
    goto 666
 
@@ -749,15 +731,14 @@ if ( jord < 8 ) then
            enddo
 !DEC$ VECTOR ALWAYS
            do i=ifirst,ilast
-!             xt = c(i,j)
               if ( c(i,j) > 0. ) then
                    fx0(i) = q(i,j-1)
-                   if( smt6(i,j-1).or.smt5(i,j) )  fx1(i) = br(i,j-1) - c(i,j)*b0(i,j-1)
+                   if( smt6(i,j-1).or.smt5(i,j) )  fx1(i) = (1.-c(i,j))*(br(i,j-1) - c(i,j)*b0(i,j-1))
               else
                    fx0(i) = q(i,j)
-                   if( smt6(i,j).or.smt5(i,j-1) )  fx1(i) = bl(i,j)   + c(i,j)*b0(i,j)
+                   if( smt6(i,j).or.smt5(i,j-1) )  fx1(i) = (1.+c(i,j))*(bl(i,j)   + c(i,j)*b0(i,j))
               endif
-              flux(i,j) = fx0(i) + (1.-abs(c(i,j)))*fx1(i)
+              flux(i,j) = fx0(i) + fx1(i)
            enddo
         enddo
 
@@ -781,22 +762,6 @@ if ( jord < 8 ) then
              enddo
           enddo
        endif
-#ifdef FAST_BUGGY
-       do j=js,je+1
-!DEC$ VECTOR ALWAYS
-          do i=ifirst,ilast
-!            xt = c(i,j)
-             if ( c(i,j) > 0. ) then
-                  fx1(i) = br(i,j-1) - c(i,j)*b0(i,j-1)
-                  flux(i,j) = q(i,j-1)
-             else
-                  fx1(i) = bl(i,j) + c(i,j)*b0(i,j)
-                  flux(i,j) = q(i,j)
-             endif
-             if (smt5(i,j-1).or.smt5(i,j)) flux(i,j) = flux(i,j) + (1.-abs(c(i,j)))*fx1(i) 
-          enddo
-       enddo
-#else
        do j=js,je+1
 !DEC$ VECTOR ALWAYS
           do i=ifirst,ilast
@@ -807,10 +772,9 @@ if ( jord < 8 ) then
                   fx1(i) = (1.+c(i,j))*(bl(i,j) + c(i,j)*b0(i,j))
                   flux(i,j) = q(i,j)
              endif
-             if (smt5(i,j-1).or.smt5(i,j)) flux(i,j) = flux(i,j) + fx1(i)
+             if (smt5(i,j-1).or.smt5(i,j)) flux(i,j) = flux(i,j) + fx1(i) 
           enddo
        enddo
-#endif
    endif
    return
 
