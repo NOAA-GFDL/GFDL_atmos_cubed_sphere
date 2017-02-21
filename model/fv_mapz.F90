@@ -1532,7 +1532,7 @@ endif        ! end last_step check
  real, intent(inout):: a4(4,i1:i2,km)     ! Interpolated values
  real, intent(in):: qmin
 !-----------------------------------------------------------------------
- logical:: extm(i1:i2,km) 
+ logical, dimension(i1:i2,km):: extm, ext6
  real  gam(i1:i2,km)
  real    q(i1:i2,km+1)
  real   d4(i1:i2)

@@ -693,8 +693,6 @@ contains
         allocate ( ud(is:ie,  js:je+1, 1:levp) )
         allocate ( vd(is:ie+1,js:je,   1:levp) )
 
-!$OMP parallel do default(none) shared(is,ie,js,je,levp,Atm,ud,vd,u_s,v_s,u_w,v_w) &
-!$OMP               private(p1,p2,p3,e1,e2,ex,ey)
         do k=1,levp
           do j=js,je+1
             do i=is,ie
@@ -1577,8 +1575,6 @@ contains
       deallocate ( zsec )
 
       allocate (zhc(is:ie,js:je,km+1))
-!$OMP parallel do default(none) shared(is,ie,js,je,km,s2c,id1,id2,jdc,zhc,zhec)  &
-!$OMP               private(i1,i2,j1)
       do k=1,km+1
         do j=js,je
          do i=is,ie
@@ -1598,8 +1594,6 @@ contains
       allocate ( qc(is:ie,js:je,km,6) )
 
       do n = 1, 5
-!$OMP parallel do default(none) shared(n,is,ie,js,je,km,s2c,id1,id2,jdc,qc,qec) &
-!$OMP               private(i1,i2,j1)
         do k=1,km
           do j=js,je
             do i=is,ie
@@ -1628,8 +1622,6 @@ contains
       wec(:,:,:) = wec(:,:,:)*scale_value + offset
       !call p_maxmin('wec', wec, 1, im, jbeg, jend, km, 1.)
 
-!$OMP parallel do default(none) shared(is,ie,js,je,km,id1,id2,jdc,s2c,wc,wec) &
-!$OMP               private(i1,i2,j1)
       do k=1,km
         do j=js,je
          do i=is,ie
@@ -1712,8 +1704,6 @@ contains
 
       if(is_master()) write(*,*) 'first time done reading vec'
 
-!$OMP parallel do default(none) shared(is,ie,js,je,km,s2c_c,id1_c,id2_c,jdc_c,uec,vec,Atm,vd) &
-!$OMP                     private(i1,i2,j1,p1,p2,p3,e2,ex,ey,utmp,vtmp)
       do k=1,km
         do j=js,je
           do i=is,ie+1
@@ -1772,8 +1762,6 @@ contains
       vec(:,:,:) = vec(:,:,:)*scale_value + offset
       if(is_master()) write(*,*) 'second time done reading vec'
 
-!$OMP parallel do default(none) shared(is,ie,js,je,km,id1_d,id2_d,jdc_d,s2c_d,uec,vec,Atm,ud) &
-!$OMP                     private(i1,i2,j1,p1,p2,p3,e1,ex,ey,utmp,vtmp)
       do k=1,km
         do j=js,je+1
           do i=is,ie
@@ -2378,10 +2366,6 @@ contains
        call mpp_error(FATAL,'SPHUM must be 1st tracer')
   endif
 
-!$OMP parallel do default(none) &
-!$OMP             shared(sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,&
-!$OMP                    cld_amt,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,omga,qa,Atm) &
-!$OMP             private(l,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
   do 5000 j=js,je
      do k=1,km+1
         do i=is,ie
@@ -2651,8 +2635,6 @@ contains
     endif
   endif
  
-!$OMP parallel do default(none) shared(sphum,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,qa,wc,Atm) &
-!$OMP   private(pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
  do 5000 j=js,je
      do k=1,km+1
         do i=is,ie
@@ -2992,8 +2974,6 @@ contains
   call mpp_update_domains( psd,    Atm%domain, complete=.false. )
   call mpp_update_domains( Atm%ps, Atm%domain, complete=.true. )
 
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,km,ak0,bk0,Atm,psc,psd,ud,vd) &
-!$OMP                          private(pe1,pe0,qn1)
   do 5000 j=js,je+1
 !------
 ! map u
@@ -3794,8 +3774,6 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
 !      real:: qc
        integer:: i,j,k
       
-!$OMP parallel do default(none) shared(im,jm,levp,ak0,bk0,zs,ps,t,q,zh) &
-!$OMP                          private(pe0,pn0)
        do j = 1, jm
          do i=1, im
            pe0(i,1) = ak0(1)
