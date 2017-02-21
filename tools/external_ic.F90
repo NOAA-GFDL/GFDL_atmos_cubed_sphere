@@ -1292,7 +1292,7 @@ contains
       integer :: isd, ied, jsd, jed
       integer :: sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel
       real:: wt, qt, m_fac
-      real(kind=8) :: scale_value, offset
+      real(kind=8) :: scale_value, offset, ptmp
       real(kind=R_GRID), dimension(2):: p1, p2, p3
       real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
       real, allocatable:: ps_gfs(:,:), zh_gfs(:,:,:), o3mr_gfs(:,:,:)
@@ -1551,13 +1551,26 @@ contains
       allocate (psc(is:ie,js:je))
       allocate (psc_r8(is:ie,js:je))
 
+#ifdef LOGP_INTP
+      do j=jbeg,jend
+         do i=1,im
+            psec(i,j) = log(psec(i,j))
+         enddo
+      enddo
+#endif
       do j=js,je
          do i=is,ie
             i1 = id1(i,j)
             i2 = id2(i,j)
             j1 = jdc(i,j)
+#ifdef LOGP_INTP
+            ptmp = s2c(i,j,1)*psec(i1,j1  ) + s2c(i,j,2)*psec(i2,j1  ) +  &
+                       s2c(i,j,3)*psec(i2,j1+1) + s2c(i,j,4)*psec(i1,j1+1)
+            psc(i,j) = exp(ptmp)
+#else
             psc(i,j) = s2c(i,j,1)*psec(i1,j1  ) + s2c(i,j,2)*psec(i2,j1  ) +  &
                        s2c(i,j,3)*psec(i2,j1+1) + s2c(i,j,4)*psec(i1,j1+1)
+#endif
          enddo
       enddo
       deallocate ( psec )
@@ -1790,13 +1803,6 @@ contains
       deallocate ( ud, vd )
 
 #ifndef COND_IFS_IC
-      liq_wat  = get_tracer_index(MODEL_ATMOS, 'liq_wat')
-      if ( Atm(1)%flagstruct%nwat .eq. 6 ) then
-           ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
-           rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
-           snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
-           graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
-      endif
 ! Add cloud condensate from IFS to total MASS
 ! Adjust the mixing ratios consistently...
       do k=1,npz
@@ -2328,6 +2334,7 @@ contains
   real, dimension(Atm%bd%is:Atm%bd%ie,npz+1):: pe1
   real qp(Atm%bd%is:Atm%bd%ie,km)
   real wk(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je)
+  real, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je):: z500
 !!! High-precision
   real(kind=R_GRID), dimension(Atm%bd%is:Atm%bd%ie,npz+1):: pn1
   real(kind=R_GRID):: gz_fv(npz+1)
@@ -2403,6 +2410,19 @@ contains
           endif
         enddo
 123     Atm%ps(i,j) = exp(pst)
+
+! ------------------
+! Find 500-mb height
+! ------------------
+        pst = log(500.e2)
+        do k=km+k2-1, 2, -1
+          if( pst.le.pn(k+1) .and. pst.ge.pn(k) ) then
+              z500(i,j) = (gz(k+1) + (gz(k)-gz(k+1))*(pn(k+1)-pst)/(pn(k+1)-pn(k)))/grav
+              go to 124
+          endif
+        enddo
+124     continue
+
      enddo   ! i-loop
 
      do i=is,ie
@@ -2562,6 +2582,7 @@ contains
      enddo
   enddo
   call pmaxmn('ZS_diff (m)', wk, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
+  call pmaxmn('Z500 (m)',  z500, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
 
   do j=js,je
      do i=is,ie
@@ -2594,11 +2615,11 @@ contains
   real(kind=R_GRID), dimension(2*km+1):: gz, pn
   real(kind=R_GRID), dimension(Atm%bd%is:Atm%bd%ie,km+1):: pn0
   real(kind=R_GRID):: pst
+  real, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je):: z500
 !!! High-precision
   integer i,j,k,l,m,k2, iq
   integer  sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel
   integer :: is,  ie,  js,  je
-!  real :: qc
 
   is  = Atm%bd%is
   ie  = Atm%bd%ie
@@ -2660,6 +2681,19 @@ contains
           endif
         enddo
 123     Atm%ps(i,j) = exp(pst)
+
+! ------------------
+! Find 500-mb height
+! ------------------
+        pst = log(500.e2)
+        do k=km+k2-1, 2, -1
+          if( pst.le.pn(k+1) .and. pst.ge.pn(k) ) then
+              z500(i,j) = (gz(k+1) + (gz(k)-gz(k+1))*(pn(k+1)-pst)/(pn(k+1)-pn(k)))/grav
+              go to 125
+          endif
+        enddo
+125     continue
+
      enddo   ! i-loop
 
      do i=is,ie
@@ -2779,6 +2813,7 @@ contains
      enddo
   enddo
   call pmaxmn('ZS_diff (m)', wk, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
+  call pmaxmn('Z500 (m)', z500, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
 
   do j=js,je
      do i=is,ie

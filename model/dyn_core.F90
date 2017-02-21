@@ -328,7 +328,7 @@ contains
                              call timing_off('COMM_TOTAL')
 
       if ( it==1 ) then
-        if (gridstruct%nested) then
+         if (gridstruct%nested) then
 !$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,gz,zs,delz)
          do j=jsd,jed
             do i=isd,ied
@@ -340,7 +340,7 @@ contains
                enddo
             enddo
          enddo
-        else
+         else
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,gz,zs,delz)
          do j=js,je
             do i=is,ie
@@ -352,7 +352,7 @@ contains
                enddo
             enddo
          enddo
-        endif
+         endif
                              call timing_on('COMM_TOTAL')
          call start_group_halo_update(i_pack(5), gz,  domain)
                              call timing_off('COMM_TOTAL')
