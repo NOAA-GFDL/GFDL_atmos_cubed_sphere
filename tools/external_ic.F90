@@ -2459,23 +2459,44 @@ contains
       endif
 
       do k=1,km+1
+         pn(k) = pn0(i,k)
          gz(k) = zh(i,j,k)*grav
       enddo
+!-------------------------------------------------
+      do k=km+2, km+k2
+         m = 2*(km+1) - k
+         gz(k) = 2.*gz(km+1) - gz(m)
+         pn(k) = 2.*pn(km+1) - pn(m)
+      enddo
+!-------------------------------------------------
+
       gz_fv(npz+1) = Atm%phis(i,j)
 
-      do 555 k=1,npz
+      m = 1
+
+      do k=1,npz
 ! Searching using FV3 log(pe): pn1
-         do l=1,km
-            if ( (pn1(i,k).le.pn0(i,l+1)) .and. (pn1(i,k).ge.pn0(i,l)) ) then
-                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn0(i,l))/(pn0(i,l+1)-pn0(i,l))
+#ifdef USE_ISOTHERMO
+         do l=m,km
+            if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
+                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
                 goto 555
-            elseif ( pn1(i,k) .gt. pn0(i,km+1) ) then
+            elseif ( pn1(i,k) .gt. pn(km+1) ) then
 ! Isothermal under ground; linear in log-p extra-polation
-                gz_fv(k) = gz(km+1) + (gz_fv(npz+1)-gz(km+1))*(pn1(i,k)-pn0(i,km+1))/(pn1(i,npz+1)-pn0(i,km+1))
+                gz_fv(k) = gz(km+1) + (gz_fv(npz+1)-gz(km+1))*(pn1(i,k)-pn(km+1))/(pn1(i,npz+1)-pn(km+1))
                 goto 555
             endif
          enddo
-555   continue
+#else
+         do l=m,km+k2
+            if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
+                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
+                goto 555
+            endif
+         enddo
+#endif
+555   m = l
+      enddo
 
 ! Compute true temperature using hydrostatic balance
       do k=1,npz
@@ -2727,24 +2748,42 @@ contains
       endif
 
       do k=1,km+1
+         pn(k) = pn0(i,k)
          gz(k) = zh(i,j,k)*grav
       enddo
+!-------------------------------------------------
+      do k=km+2, km+k2
+         m = 2*(km+1) - k
+         gz(k) = 2.*gz(km+1) - gz(m)
+         pn(k) = 2.*pn(km+1) - pn(m)
+      enddo
+!-------------------------------------------------
       gz_fv(npz+1) = Atm%phis(i,j)
 
-
-      do 555 k=1,npz
+      m = 1
+      do k=1,npz
 ! Searching using FV3 log(pe): pn1
-         do l=1,km
-            if ( (pn1(i,k).le.pn0(i,l+1)) .and. (pn1(i,k).ge.pn0(i,l)) ) then
-                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn0(i,l))/(pn0(i,l+1)-pn0(i,l))
+#ifdef USE_ISOTHERMO
+         do l=m,km
+            if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
+                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
                 goto 555
-            elseif ( pn1(i,k) .gt. pn0(i,km+1) ) then
+            elseif ( pn1(i,k) .gt. pn(km+1) ) then
 ! Isothermal under ground; linear in log-p extra-polation
-                gz_fv(k) = gz(km+1) + (gz_fv(npz+1)-gz(km+1))*(pn1(i,k)-pn0(i,km+1))/(pn1(i,npz+1)-pn0(i,km+1))
+                gz_fv(k) = gz(km+1) + (gz_fv(npz+1)-gz(km+1))*(pn1(i,k)-pn(km+1))/(pn1(i,npz+1)-pn(km+1))
                 goto 555
             endif
          enddo
-555   continue
+#else
+         do l=m,km+k2
+            if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
+                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
+                goto 555
+            endif
+         enddo
+#endif
+555   m = l
+      enddo
 
 ! Compute true temperature using hydrostatic balance
       do k=1,npz
