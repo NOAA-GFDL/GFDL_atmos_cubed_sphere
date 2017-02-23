@@ -80,6 +80,7 @@ real(kind=r8_kind), public, parameter :: PI_8   = 3.1415926535897931_r8_kind
 real, public, parameter ::         PI     = 3.1415926535897931_r8_kind
 real, public, parameter :: OMEGA  = 7.2921e-5 
 real, public, parameter :: GRAV   = 9.80665_r8_kind
+real(kind=r8_kind), public, parameter :: GRAV_8  = 9.80665_r8_kind
 real, public, parameter :: RDGAS  = 287.05_r8_kind
 real, public, parameter :: RVGAS  = 461.50_r8_kind
 ! Extra:

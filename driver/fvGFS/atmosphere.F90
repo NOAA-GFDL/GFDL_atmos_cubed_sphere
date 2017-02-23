@@ -51,7 +51,7 @@ use xgrid_mod,              only: grid_box_type
 use field_manager_mod,      only: MODEL_ATMOS
 use tracer_manager_mod,     only: get_tracer_index, get_number_tracers, &
                                   NO_TRACER
-use gfs_physics_driver_mod, only: state_fields_in, state_fields_out, kind_phys
+use IPD_typedefs,           only: IPD_data_type, kind_phys
 
 !-----------------
 ! FV core modules:
@@ -729,15 +729,14 @@ contains
  end subroutine get_stock_pe
 
 
- subroutine atmosphere_state_update (Time, Statein, Stateout, Atm_block)
-   type(time_type),                      intent(in) :: Time
-   type(state_fields_in),  dimension(:), intent(in) :: Statein
-   type(state_fields_out), dimension(:), intent(in) :: Stateout
-   type(block_control_type),             intent(in) :: Atm_block
+ subroutine atmosphere_state_update (Time, IPD_Data, Atm_block)
+   type(time_type),           intent(in) :: Time
+   type(IPD_data_type),       intent(in) :: IPD_Data(:)
+   type(block_control_type),  intent(in) :: Atm_block
    type(time_type) :: Time_prev, Time_next
 !--- local variables ---
    integer :: i, j, ix, k, k1, n, w_diff, nt_dyn, iq
-   integer :: nb, ibs, ibe, jbs, jbe
+   integer :: nb, blen
    real(kind=kind_phys):: rcp, q0, q1, q2, q3, q4, q5, q6, q7, qt, rdt
 
    Time_prev = Time
@@ -753,27 +752,24 @@ contains
    call timing_on('GFS_TENDENCIES')
 !--- put u/v tendencies into haloed arrays u_dt and v_dt
 !$OMP parallel do default (none) & 
-!$OMP              shared (rdt,n,nq,npz,ncnst, mytile, u_dt, v_dt, t_dt, Atm, Statein, Stateout, Atm_block,sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,o3mr) &
-!$OMP             private (nb, ibs, ibe, jbs, jbe, i, j, k, k1, ix, q0, q1, q2, q3, q4, q5, q6, q7, qt)
+!$OMP              shared (rdt, n, nq, npz, ncnst, mytile, u_dt, v_dt, t_dt, Atm, IPD_Data,     &
+!$OMP                      Atm_block, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, o3mr) &
+!$OMP             private (nb, blen, i, j, k, k1, ix, q0, q1, q2, q3, q4, q5, q6, q7, qt)
    do nb = 1,Atm_block%nblks
-     ibs = Atm_block%ibs(nb)
-     ibe = Atm_block%ibe(nb)
-     jbs = Atm_block%jbs(nb)
-     jbe = Atm_block%jbe(nb)
 
 !SJL: perform vertical filling to fix the negative humidity if the SAS convection scheme is used
 !     This call may be commented out if RAS or other positivity-preserving CPS is used.
-     ix = Atm_block%ix(nb)%ix(ibe,jbe)
-     call fill_gfs(ix, npz, Statein(nb)%prsi(1:ix,1:npz+1), Stateout(nb)%gq0(1:ix,1:npz,1), 1.e-9_kind_phys)
+     blen = Atm_block%blksz(nb)
+     call fill_gfs(blen, npz, IPD_Data(nb)%Statein%prsi, IPD_Data(nb)%Stateout%gq0, 1.e-9_kind_phys)
 
      do k = 1, npz
-      k1 = npz+1-k !reverse the k direction 
-      do j=jbs,jbe
-       do i=ibs,ibe
-         ix = Atm_block%ix(nb)%ix(i,j)
-         u_dt(i,j,k1) = u_dt(i,j,k1) + (Stateout(nb)%gu0(ix,k) - Statein(nb)%ugrs(ix,k)) * rdt
-         v_dt(i,j,k1) = v_dt(i,j,k1) + (Stateout(nb)%gv0(ix,k) - Statein(nb)%vgrs(ix,k)) * rdt
-         t_dt(i,j,k1) = (Stateout(nb)%gt0(ix,k) - Statein(nb)%tgrs(ix,k)) * rdt
+       k1 = npz+1-k !reverse the k direction 
+       do ix = 1, blen
+         i = Atm_block%index(nb)%ii(ix)
+         j = Atm_block%index(nb)%jj(ix)
+         u_dt(i,j,k1) = u_dt(i,j,k1) + (IPD_Data(nb)%Stateout%gu0(ix,k) - IPD_Data(nb)%Statein%ugrs(ix,k)) * rdt
+         v_dt(i,j,k1) = v_dt(i,j,k1) + (IPD_Data(nb)%Stateout%gv0(ix,k) - IPD_Data(nb)%Statein%vgrs(ix,k)) * rdt
+         t_dt(i,j,k1) = (IPD_Data(nb)%Stateout%gt0(ix,k) - IPD_Data(nb)%Statein%tgrs(ix,k)) * rdt
 ! LJZ notes: this section is extremely inflexible, need to be revised later
          if ( Atm(n)%flagstruct%nwat .eq. 2 ) then
 ! SJL notes:
@@ -782,10 +778,10 @@ contains
 ! GFS mixing ratios  = tracer_mass / (air_mass + vapor_mass)
 ! FV3 total air mass = dry_mass + [water_vapor + condensate ]
 ! FV3 mixing ratios  = tracer_mass / (dry_mass+vapor_mass+cond_mass)
-         q0 = Statein(nb)%prsi(ix,k) - Statein(nb)%prsi(ix,k+1)
-         q1 = q0*Stateout(nb)%gq0(ix,k,1)
-         q2 = q0*Stateout(nb)%gq0(ix,k,2)
-         q3 = q0*Stateout(nb)%gq0(ix,k,3)
+         q0 = IPD_Data(nb)%Statein%prsi(ix,k) - IPD_Data(nb)%Statein%prsi(ix,k+1)
+         q1 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,1)
+         q2 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,2)
+         q3 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,3)
 ! **********************************************************************************************************
 ! Dry mass: the following way of updating delp is key to mass conservation with hybrid 32-64 bit computation
 ! **********************************************************************************************************
@@ -800,17 +796,17 @@ contains
          Atm(n)%q(i,j,k1,2) = q2 / q0
          Atm(n)%q(i,j,k1,3) = q3 / q0
          elseif ( Atm(n)%flagstruct%nwat .eq. 6 ) then
-         q0 = Statein(nb)%prsi(ix,k) - Statein(nb)%prsi(ix,k+1)
-         q1 = q0*Stateout(nb)%gq0(ix,k,sphum)
-         q2 = q0*Stateout(nb)%gq0(ix,k,liq_wat)
-         q3 = q0*Stateout(nb)%gq0(ix,k,rainwat)
-         q4 = q0*Stateout(nb)%gq0(ix,k,ice_wat)
-         q5 = q0*Stateout(nb)%gq0(ix,k,snowwat)
-         q6 = q0*Stateout(nb)%gq0(ix,k,graupel)
-         q7 = q0*Stateout(nb)%gq0(ix,k,o3mr)
+         q0 = IPD_Data(nb)%Statein%prsi(ix,k) - IPD_Data(nb)%Statein%prsi(ix,k+1)
+         q1 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,sphum)
+         q2 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,liq_wat)
+         q3 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,rainwat)
+         q4 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,ice_wat)
+         q5 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,snowwat)
+         q6 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,graupel)
+         q7 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,o3mr)
          qt = q1+q2+q3+q4+q5+q6
          q0 = Atm(n)%delp(i,j,k1)*(1.-(Atm(n)%q(i,j,k1,sphum)+Atm(n)%q(i,j,k1,liq_wat)+Atm(n)%q(i,j,k1,rainwat)+    &
-              Atm(n)%q(i,j,k1,ice_wat)+Atm(n)%q(i,j,k1,snowwat)+Atm(n)%q(i,j,k1,graupel))) + qt
+                                       Atm(n)%q(i,j,k1,ice_wat)+Atm(n)%q(i,j,k1,snowwat)+Atm(n)%q(i,j,k1,graupel))) + qt
          Atm(n)%delp(i,j,k1) = q0
          Atm(n)%q(i,j,k1,  sphum) = q1 / q0
          Atm(n)%q(i,j,k1,liq_wat) = q2 / q0
@@ -821,26 +817,22 @@ contains
          Atm(n)%q(i,j,k1,   o3mr) = q7 / q0     ! ozone
          endif
        enddo
-      enddo
      enddo
 
-!rab#ifdef GFS_TRACER_TRANSPORT
 ! The following does nothing...
      if ( nq > 8 ) then
      do iq=9, nq
        do k = 1, npz
          k1 = npz+1-k !reverse the k direction 
-         do j=jbs,jbe
-           do i=ibs,ibe
-             ix = Atm_block%ix(nb)%ix(i,j)
-             Atm(n)%q(i,j,k1,iq) = Atm(n)%q(i,j,k1,iq) + (Stateout(nb)%gq0(ix,k,iq)-Statein(nb)%qgrs(ix,k,iq))
-!                                * (Statein(nb)%prsi(ix,k)-Statein(nb)%prsi(ix,k+1))/Atm(n)%delp(i,j,k1)
-           enddo
+         do ix = 1, blen
+           i = Atm_block%index(nb)%ii(ix)
+           j = Atm_block%index(nb)%jj(ix)
+           Atm(n)%q(i,j,k1,iq) = Atm(n)%q(i,j,k1,iq) + (IPD_Data(nb)%Stateout%gq0(ix,k,iq)-IPD_Data(nb)%Statein%qgrs(ix,k,iq))
+!                              * (IPD_Data(nb)%Statein%prsi(ix,k)-IPD_Data(nb)%Statein%prsi(ix,k+1))/Atm(n)%delp(i,j,k1)
          enddo
        enddo
      enddo
      endif
-!rab#endif
 ! LJZ notes: this section is extremely inflexible, need to be revised later
 
      !--- diagnostic tracers are being updated in-place
@@ -848,11 +840,10 @@ contains
      do iq = nq+1, ncnst
        do k = 1, npz
          k1 = npz+1-k !reverse the k direction 
-         do j=jbs,jbe
-           do i=ibs,ibe
-             ix = Atm_block%ix(nb)%ix(i,j)
-             Atm(mytile)%qdiag(i,j,k1,iq) = Stateout(nb)%gq0(ix,k,iq)
-           enddo
+         do ix = 1, blen
+             i = Atm_block%index(nb)%ii(ix)
+             j = Atm_block%index(nb)%jj(ix)
+             Atm(mytile)%qdiag(i,j,k1,iq) = IPD_Data(nb)%Stateout%gq0(ix,k,iq)
          enddo
        enddo
      enddo
@@ -1157,17 +1148,17 @@ contains
 #define _DBL_(X) X
 #define _RL_(X) X
 #endif
- subroutine atmos_phys_driver_statein (Statein, Atm_block)
-   type (state_fields_in), dimension(:), intent(inout) :: Statein
-   type (block_control_type),            intent(in)    :: Atm_block
+ subroutine atmos_phys_driver_statein (IPD_Data, Atm_block)
+   type (IPD_data_type),      intent(inout) :: IPD_Data(:)
+   type (block_control_type), intent(in)    :: Atm_block
 !--------------------------------------
 ! Local GFS-phys consistent parameters:
 !--------------------------------------
    real(kind=kind_phys), parameter:: p00 = 1.e5
    real(kind=kind_phys), parameter:: qmin = 1.0e-10   
    real(kind=kind_phys):: pk0inv, ptop, pktop
-   real(kind=kind_phys) :: rTv, dm
-   integer :: nb, npz, ibs, ibe, jbs, jbe, i, j, k, ix, k1
+   real(kind=kind_phys) :: rTv, dm, qgrs_rad
+   integer :: nb, blen, npz, i, j, k, ix, k1
    logical :: diag_sounding = .false.
 
 !!! NOTES: lmh 6nov15
@@ -1196,136 +1187,158 @@ contains
 ! use most up to date atmospheric properties when running serially
 !---------------------------------------------------------------------
 !$OMP parallel do default (none) & 
-!$OMP             shared  (Atm_block, Atm, Statein, npz, nq, ncnst, sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, o3mr, pk0inv, &
-!$OMP                      ptop, pktop, zvir, mytile, diag_sounding) &
-!$OMP             private (dm, nb, ibs, ibe, jbs, jbe, i, j, ix, k1, rTv)
+!$OMP             shared  (Atm_block, Atm, IPD_Data, npz, nq, ncnst, sphum, liq_wat, &
+!$OMP                      ice_wat, rainwat, snowwat, graupel, o3mr, pk0inv, ptop,   &
+!$OMP                      pktop, zvir, mytile, diag_sounding) &
+!$OMP             private (dm, nb, blen, i, j, ix, k1, rTv, qgrs_rad)
 
    do nb = 1,Atm_block%nblks
-     ibs = Atm_block%ibs(nb)
-     ibe = Atm_block%ibe(nb)
-     jbs = Atm_block%jbs(nb)
-     jbe = Atm_block%jbe(nb)
-
 ! gase_phase_mass <-- prsl
 ! log(pe) <-- prsik
 
+     blen = Atm_block%blksz(nb)
+
      !-- level interface geopotential height (relative to the surface)
-     Statein(nb)%phii(:,1) = 0.0_kind_phys
-     Statein(nb)%adjtrc = 1.0_kind_phys
-     Statein(nb)%prsik(:,:) = 1.e25_kind_phys
+     IPD_Data(nb)%Statein%phii(:,1) = 0.0_kind_phys
+!rab     IPD_Data(nb)%Statein%adjtrc = 1.0_kind_phys
+     IPD_Data(nb)%Statein%prsik(:,:) = 1.e25_kind_phys
 
      do k = 1, npz
-        ix = 0 
-        do j=jbs,jbe
-           do i=ibs,ibe
-              ix = ix + 1
-                 !Indices for FV's vertical coordinate, for which 1 = top
-                 !here, k is the index for GFS's vertical coordinate, for which 1 = bottom
-              k1 = npz+1-k ! flipping the index
-              Statein(nb)%tgrs(ix,k) = _DBL_(_RL_(Atm(mytile)%pt(i,j,k1)))
-              Statein(nb)%ugrs(ix,k) = _DBL_(_RL_(Atm(mytile)%ua(i,j,k1)))
-              Statein(nb)%vgrs(ix,k) = _DBL_(_RL_(Atm(mytile)%va(i,j,k1)))
-               Statein(nb)%vvl(ix,k) = _DBL_(_RL_(Atm(mytile)%omga(i,j,k1)))
-              Statein(nb)%prsl(ix,k) = _DBL_(_RL_(Atm(mytile)%delp(i,j,k1)))   ! Total mass
+       do ix = 1, blen
+         i = Atm_block%index(nb)%ii(ix)
+         j = Atm_block%index(nb)%jj(ix)
 
-              if (.not.Atm(mytile)%flagstruct%hydrostatic .and. (.not.Atm(mytile)%flagstruct%use_hydro_pressure))  &
-              Statein(nb)%phii(ix,k+1) = Statein(nb)%phii(ix,k) - _DBL_(_RL_(Atm(mytile)%delz(i,j,k1)*grav))
+            !Indices for FV's vertical coordinate, for which 1 = top
+            !here, k is the index for GFS's vertical coordinate, for which 1 = bottom
+         k1 = npz+1-k ! flipping the index
+         IPD_Data(nb)%Statein%tgrs(ix,k) = _DBL_(_RL_(Atm(mytile)%pt(i,j,k1)))
+         IPD_Data(nb)%Statein%ugrs(ix,k) = _DBL_(_RL_(Atm(mytile)%ua(i,j,k1)))
+         IPD_Data(nb)%Statein%vgrs(ix,k) = _DBL_(_RL_(Atm(mytile)%va(i,j,k1)))
+          IPD_Data(nb)%Statein%vvl(ix,k) = _DBL_(_RL_(Atm(mytile)%omga(i,j,k1)))
+         IPD_Data(nb)%Statein%prsl(ix,k) = _DBL_(_RL_(Atm(mytile)%delp(i,j,k1)))   ! Total mass
+
+         if (.not.Atm(mytile)%flagstruct%hydrostatic .and. (.not.Atm(mytile)%flagstruct%use_hydro_pressure))  &
+           IPD_Data(nb)%Statein%phii(ix,k+1) = IPD_Data(nb)%Statein%phii(ix,k) - _DBL_(_RL_(Atm(mytile)%delz(i,j,k1)*grav))
 
 ! Convert to tracer mass:
-              Statein(nb)%qgrs_rad(ix,k)  =  _DBL_(_RL_(max(qmin, Atm(mytile)%q(i,j,k1,sphum)))) * Statein(nb)%prsl(ix,k)
-              Statein(nb)%qgrs(ix,k,1:nq) =  _DBL_(_RL_(          Atm(mytile)%q(i,j,k1,1:nq))) * Statein(nb)%prsl(ix,k)
-              Statein(nb)%qgrs(ix,k,nq+1:ncnst) = _DBL_(_RL_(Atm(mytile)%qdiag(i,j,k1,nq+1:ncnst))) * Statein(nb)%prsl(ix,k)
+!rab         IPD_Data(nb)%Statein%qgrs_rad(ix,k)  =  _DBL_(_RL_(max(qmin, Atm(mytile)%q(i,j,k1,sphum)))) &
+!rab                                                             * IPD_Data(nb)%Statein%prsl(ix,k)
+         IPD_Data(nb)%Statein%qgrs(ix,k,1:nq) =  _DBL_(_RL_(          Atm(mytile)%q(i,j,k1,1:nq))) &
+                                                             * IPD_Data(nb)%Statein%prsl(ix,k)
+         IPD_Data(nb)%Statein%qgrs(ix,k,nq+1:ncnst) = _DBL_(_RL_(Atm(mytile)%qdiag(i,j,k1,nq+1:ncnst))) * IPD_Data(nb)%Statein%prsl(ix,k)
 ! Remove the contribution of condensates to delp (mass):
-              if ( Atm(mytile)%flagstruct%nwat .eq. 2 ) then  ! GFS
-                 Statein(nb)%prsl(ix,k) = Statein(nb)%prsl(ix,k) - Statein(nb)%qgrs(ix,k,liq_wat)
-              elseif ( Atm(mytile)%flagstruct%nwat .eq. 6 ) then
-                 Statein(nb)%prsl(ix,k) = Statein(nb)%prsl(ix,k) - Statein(nb)%qgrs(ix,k,liq_wat) - &
-                                                                   Statein(nb)%qgrs(ix,k,ice_wat) - &
-                                                                   Statein(nb)%qgrs(ix,k,rainwat) - &
-                                                                   Statein(nb)%qgrs(ix,k,snowwat) - &
-                                                                   Statein(nb)%qgrs(ix,k,graupel)
-              endif
-           enddo
-        enddo
+         if ( Atm(mytile)%flagstruct%nwat .eq. 2 ) then  ! GFS
+            IPD_Data(nb)%Statein%prsl(ix,k) = IPD_Data(nb)%Statein%prsl(ix,k) &
+                                            - IPD_Data(nb)%Statein%qgrs(ix,k,liq_wat)
+         elseif ( Atm(mytile)%flagstruct%nwat .eq. 6 ) then
+            IPD_Data(nb)%Statein%prsl(ix,k) = IPD_Data(nb)%Statein%prsl(ix,k) &
+                                            - IPD_Data(nb)%Statein%qgrs(ix,k,liq_wat)   &
+                                            - IPD_Data(nb)%Statein%qgrs(ix,k,ice_wat)   &
+                                            - IPD_Data(nb)%Statein%qgrs(ix,k,rainwat)   &
+                                            - IPD_Data(nb)%Statein%qgrs(ix,k,snowwat)   &
+                                            - IPD_Data(nb)%Statein%qgrs(ix,k,graupel)
+         endif
+       enddo
      enddo
 
 ! Re-compute pressure (dry_mass + water_vapor) derived fields:
-     do i=1,ix
-        Statein(nb)%prsi(i,npz+1) = ptop 
+     do i=1,blen
+        IPD_Data(nb)%Statein%prsi(i,npz+1) = ptop 
      enddo
      do k=npz,1,-1
-        do i=1,ix
-           Statein(nb)%prsi(i,k) = Statein(nb)%prsi(i,k+1) + Statein(nb)%prsl(i,k)
-           Statein(nb)%prsik(i,k) = log( Statein(nb)%prsi(i,k) )
+        do i=1,blen
+           IPD_Data(nb)%Statein%prsi(i,k)  = IPD_Data(nb)%Statein%prsi(i,k+1)  &
+                                           + IPD_Data(nb)%Statein%prsl(i,k)
+           IPD_Data(nb)%Statein%prsik(i,k) = log( IPD_Data(nb)%Statein%prsi(i,k) )
 ! Redefine mixing ratios for GFS == tracer_mass / (dry_air_mass + water_vapor_mass)
-           Statein(nb)%qgrs_rad(i,k)     = Statein(nb)%qgrs_rad(i,k)     / Statein(nb)%prsl(i,k)
-           Statein(nb)%qgrs(i,k,1:ncnst) = Statein(nb)%qgrs(i,k,1:ncnst) / Statein(nb)%prsl(i,k)
+!rab           IPD_Data(nb)%Statein%qgrs_rad(i,k)     = IPD_Data(nb)%Statein%qgrs_rad(i,k)     &
+!rab                                                  / IPD_Data(nb)%Statein%prsl(i,k)
+           IPD_Data(nb)%Statein%qgrs(i,k,1:ncnst) = IPD_Data(nb)%Statein%qgrs(i,k,1:ncnst) &
+                                                  / IPD_Data(nb)%Statein%prsl(i,k)
         enddo
      enddo
-     do i=1,ix
-        Statein(nb)%pgr(i) = Statein(nb)%prsi(i,1)    ! surface pressure for GFS
-        Statein(nb)%prsik(i,npz+1) = log(ptop)
+     do i=1,blen
+        IPD_Data(nb)%Statein%pgr(i)         = IPD_Data(nb)%Statein%prsi(i,1)    ! surface pressure for GFS
+        IPD_Data(nb)%Statein%prsik(i,npz+1) = log(ptop)
      enddo
 
      do k=1,npz
-        do i=1,ix
+        do i=1,blen
 ! Geo-potential at interfaces:
-           rTv = rdgas*Statein(nb)%tgrs(i,k)*(1.+zvir*Statein(nb)%qgrs_rad(i,k))
+!rab           rTv = rdgas*IPD_Data(nb)%Statein%tgrs(i,k)*(1.+zvir*IPD_Data(nb)%Statein%qgrs_rad(i,k))
+           qgrs_rad = max(qmin,IPD_Data(nb)%Statein%qgrs(i,k,sphum))
+           rTv = rdgas*IPD_Data(nb)%Statein%tgrs(i,k)*(1.+zvir*qgrs_rad)
            if ( Atm(mytile)%flagstruct%hydrostatic .or. Atm(mytile)%flagstruct%use_hydro_pressure )   &
-                Statein(nb)%phii(i,k+1) = Statein(nb)%phii(i,k) + rTv*(Statein(nb)%prsik(i,k)-Statein(nb)%prsik(i,k+1))
+                IPD_Data(nb)%Statein%phii(i,k+1) = IPD_Data(nb)%Statein%phii(i,k) &
+                                                     + rTv*(IPD_Data(nb)%Statein%prsik(i,k) &
+                                                          - IPD_Data(nb)%Statein%prsik(i,k+1))
 ! Layer mean pressure by perfect gas law:
-           dm = Statein(nb)%prsl(i,k)
-           Statein(nb)%prsl(i,k) = dm*rTv/(Statein(nb)%phii(i,k+1)-Statein(nb)%phii(i,k))
+           dm = IPD_Data(nb)%Statein%prsl(i,k)
+           IPD_Data(nb)%Statein%prsl(i,k) = dm*rTv/(IPD_Data(nb)%Statein%phii(i,k+1) &
+                                                  - IPD_Data(nb)%Statein%phii(i,k))
+
 !!! Ensure subgrid MONOTONICITY of Pressure: SJL 09/11/2016
            if ( .not.Atm(mytile)%flagstruct%hydrostatic ) then
 #ifdef ALT_METHOD
 ! If violated, replaces it with hydrostatic pressure
-              if (Statein(nb)%prsl(i,k).ge.Statein(nb)%prsi(i,k).or.Statein(nb)%prsl(i,k).le.Statein(nb)%prsi(i,k+1)) then
-                  Statein(nb)%prsl(i,k) = dm / (Statein(nb)%prsik(i,k)-Statein(nb)%prsik(i,k+1))
+              if (IPD_Data(nb)%Statein%prsl(i,k).ge.IPD_Data(nb)%Statein%prsi(i,k) .or. &
+                                IPD_Data(nb)%Statein%prsl(i,k).le.IPD_Data(nb)%Statein%prsi(i,k+1)) then
+                  IPD_Data(nb)%Statein%prsl(i,k) = dm / (IPD_Data(nb)%Statein%prsik(i,k) &
+                                                       - IPD_Data(nb)%Statein%prsik(i,k+1))
               endif
                
 #else
-              Statein(nb)%prsl(i,k) = min(Statein(nb)%prsl(i,k), Statein(nb)%prsi(i,k)   - 0.01*dm)
-              Statein(nb)%prsl(i,k) = max(Statein(nb)%prsl(i,k), Statein(nb)%prsi(i,k+1) + 0.01*dm)
+              IPD_Data(nb)%Statein%prsl(i,k) = min(IPD_Data(nb)%Statein%prsl(i,k), &
+                                                   IPD_Data(nb)%Statein%prsi(i,k)   - 0.01*dm)
+              IPD_Data(nb)%Statein%prsl(i,k) = max(IPD_Data(nb)%Statein%prsl(i,k), &
+                                                   IPD_Data(nb)%Statein%prsi(i,k+1) + 0.01*dm)
 #endif
            endif
         enddo
      enddo
 
      do k = 1,npz
-        do i=1,ix
+        do i=1,blen
 ! Exner function layer center: large sensitivity to non-hydro runs with moist kappa
-           Statein(nb)%prslk(i,k) = exp( kappa*log(Statein(nb)%prsl(i,k)/p00) )
+           IPD_Data(nb)%Statein%prslk(i,k) = exp( kappa*log(IPD_Data(nb)%Statein%prsl(i,k)/p00) )
 !--  layer center geopotential; geometric midpoint
-           Statein(nb)%phil(i,k) = 0.5_kind_phys*(Statein(nb)%phii(i,k) + Statein(nb)%phii(i,k+1))
+           IPD_Data(nb)%Statein%phil(i,k) = 0.5_kind_phys*(IPD_Data(nb)%Statein%phii(i,k) &
+                                                         + IPD_Data(nb)%Statein%phii(i,k+1))
         enddo
      enddo
 
 ! Compute Exner function at layer "interfaces"
-    do i=1,ix
+    do i=1,blen
 !      Top & Bottom edges computed hydrostaticlly
-       Statein(nb)%prsik(i,    1) = exp( kappa*Statein(nb)%prsik(i,1) )*pk0inv  ! bottom
-       Statein(nb)%prsik(i,npz+1) = pktop                           ! TOA
+       IPD_Data(nb)%Statein%prsik(i,    1) = exp( kappa*IPD_Data(nb)%Statein%prsik(i,1) )*pk0inv  ! bottom
+       IPD_Data(nb)%Statein%prsik(i,npz+1) = pktop                           ! TOA
     enddo
 
     if ( Atm(mytile)%flagstruct%hydrostatic .or. Atm(mytile)%flagstruct%use_hydro_pressure ) then
         do k=2,npz
-           do i=1,ix
-              Statein(nb)%prsik(i,k) = exp( kappa*Statein(nb)%prsik(i,k) )*pk0inv 
+           do i=1,blen
+              IPD_Data(nb)%Statein%prsik(i,k) = exp( kappa*IPD_Data(nb)%Statein%prsik(i,k) )*pk0inv 
            enddo
         enddo
 #ifdef DEBUG_GFS
     else
 ! Bottom limited by hydrostatic surface pressure
-        do i=1,ix
-           Statein(nb)%prsik(i,1) = max(Statein(nb)%prsik(i,1), Statein(nb)%prslk(i,1))
+        do i=1,blen
+           IPD_Data(nb)%Statein%prsik(i,1) = max(IPD_Data(nb)%Statein%prsik(i,1), &
+                                                 IPD_Data(nb)%Statein%prslk(i,1))
         enddo
 ! Interior: linear interpolation in height using layer mean
         do k=2,npz
-           do i=1,ix
-!             Statein(nb)%prsik(i,k) = 0.5*(Statein(nb)%prslk(i,k-1) + Statein(nb)%prslk(i,k))
-              Statein(nb)%prsik(i,k) = Statein(nb)%prslk(i,k-1) + (Statein(nb)%prslk(i,k)-Statein(nb)%prslk(i,k-1)) *   &
-                   (Statein(nb)%phii(i,k)-Statein(nb)%phil(i,k-1))/(Statein(nb)%phil(i,k)-Statein(nb)%phil(i,k-1))
+           do i=1,blen
+!             IPD_Data(nb)%Statein%prsik(i,k) = 0.5*(IPD_Data(nb)%Statein%prslk(i,k-1) 
+!                                                  + IPD_Data(nb)%Statein%prslk(i,k))
+              IPD_Data(nb)%Statein%prsik(i,k) = IPD_Data(nb)%Statein%prslk(i,k-1)       &
+                                              + (IPD_Data(nb)%Statein%prslk(i,k)        &
+                                              -  IPD_Data(nb)%Statein%prslk(i,k-1)) *   &
+                                                (IPD_Data(nb)%Statein%phii(i,k)         &
+                                              -  IPD_Data(nb)%Statein%phil(i,k-1))      &
+                                              / (IPD_Data(nb)%Statein%phil(i,k)         &
+                                              -  IPD_Data(nb)%Statein%phil(i,k-1))
            enddo
         enddo
 #endif
