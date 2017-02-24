@@ -1725,7 +1725,17 @@ endif        ! end last_step check
 
      elseif ( abs(kord)==9 ) then
        do i=i1,i2
-          if ( extm(i,k) .and. (extm(i,k-1).or.extm(i,k+1).or.a4(1,i,k)<qmin) ) then
+          if ( extm(i,k) .and. extm(i,k-1) ) then
+! grid-scale 2-delta-z wave detected
+               a4(2,i,k) = a4(1,i,k)
+               a4(3,i,k) = a4(1,i,k)
+               a4(4,i,k) = 0.
+          else if ( extm(i,k) .and. extm(i,k+1) ) then
+! grid-scale 2-delta-z wave detected
+               a4(2,i,k) = a4(1,i,k)
+               a4(3,i,k) = a4(1,i,k)
+               a4(4,i,k) = 0.
+          else if ( extm(i,k) .and. a4(1,i,k)<qmin ) then
 ! grid-scale 2-delta-z wave detected
                a4(2,i,k) = a4(1,i,k)
                a4(3,i,k) = a4(1,i,k)
@@ -2073,7 +2083,12 @@ endif        ! end last_step check
 
      elseif ( abs(kord)==9 ) then
        do i=i1,i2
-          if ( extm(i,k) .and. (extm(i,k-1).or.extm(i,k+1)) ) then  ! c90_mp122
+          if ( extm(i,k) .and. extm(i,k-1) ) then  ! c90_mp122
+! grid-scale 2-delta-z wave detected
+               a4(2,i,k) = a4(1,i,k)
+               a4(3,i,k) = a4(1,i,k)
+               a4(4,i,k) = 0.
+          else if ( extm(i,k) .and. extm(i,k+1) ) then  ! c90_mp122
 ! grid-scale 2-delta-z wave detected
                a4(2,i,k) = a4(1,i,k)
                a4(3,i,k) = a4(1,i,k)

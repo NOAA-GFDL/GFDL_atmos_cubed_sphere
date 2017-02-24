@@ -483,7 +483,7 @@ contains
        endif
                                              call timing_off('tracer_2d')
 
-     if ( nwat.ne.6 .and. flagstruct%moist_phys ) then
+     if ( flagstruct%hord_tr<8 .and. flagstruct%moist_phys ) then
                                                   call timing_on('Fill2D')
        if ( liq_wat > 0 )  &
         call fill2D(is, ie, js, je, ng, npz, q(isd,jsd,1,liq_wat), delp, gridstruct%area, domain, neststruct%nested, npx, npy)

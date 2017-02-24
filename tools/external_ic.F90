@@ -1635,6 +1635,8 @@ contains
 
 ! remap tracers
       psc_r8(:,:) = psc(:,:)
+      deallocate ( psc )
+
       call remap_scalar_ec(Atm(1), km, npz, 6, ak0, bk0, psc_r8, qc, wc, zhc )
       if(is_master()) write(*,*) 'done remap_scalar_ec'
        
@@ -1675,13 +1677,26 @@ contains
       call get_var3_r4( ncid, 'u', 1,im, jbeg,jend, 1,km, uec )
       call get_var_att_double ( ncid, 'u', 'scale_factor', scale_value )
       call get_var_att_double ( ncid, 'u', 'add_offset', offset )
-      uec(:,:,:) = uec(:,:,:)*scale_value + offset
+      do k=1,km
+        do j=jbeg, jend
+          do i=1,im
+             uec(i,j,k) = uec(i,j,k)*scale_value + offset
+          enddo
+        enddo
+      enddo
       if(is_master()) write(*,*) 'first time done reading uec'
 
       call get_var3_r4( ncid, 'v', 1,im, jbeg,jend, 1,km, vec )
       call get_var_att_double ( ncid, 'v', 'scale_factor', scale_value )
       call get_var_att_double ( ncid, 'v', 'add_offset', offset )
-      vec(:,:,:) = vec(:,:,:)*scale_value + offset
+      do k=1,km
+        do j=jbeg, jend
+          do i=1,im
+             vec(i,j,k) = vec(i,j,k)*scale_value + offset
+          enddo
+        enddo
+      enddo
+
       if(is_master()) write(*,*) 'first time done reading vec'
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,s2c_c,id1_c,id2_c,jdc_c,uec,vec,Atm,vd) &
@@ -1716,6 +1731,7 @@ contains
       ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
       call remap_coef( is, ie, js, je+1, isd, ied, jsd, jed+1, &
                        im, jm, lon, lat, id1_d, id2_d, jdc_d, s2c_d, pt_d)
+      deallocate ( pt_c, pt_d )
 
       ! Find bounding latitudes:
       jbeg = jm-1;         jend = 2
@@ -1771,7 +1787,6 @@ contains
       deallocate ( uec, vec )
 
       call remap_dwinds(km, npz, ak0, bk0, psc_r8, ud, vd, Atm(1))
-
       deallocate ( ud, vd )
 
 #ifndef COND_IFS_IC
@@ -1808,10 +1823,9 @@ contains
 #endif
 
       deallocate ( ak0, bk0 )
-      deallocate ( psc )
+!     deallocate ( psc )
       deallocate ( psc_r8 )
       deallocate ( lat, lon )
-      deallocate ( pt_c, pt_d )
 
       Atm(1)%flagstruct%make_nh = .false.
 
@@ -2321,7 +2335,7 @@ contains
   real(kind=R_GRID), dimension(Atm%bd%is:Atm%bd%ie,km+1):: pn0
   real(kind=R_GRID):: pst
 !!! High-precision
-  integer i,j,k, k2, l, iq
+  integer i,j,k,l,m, k2,iq
   integer  sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt
   integer :: is,  ie,  js,  je
 
@@ -2377,7 +2391,7 @@ contains
 ! Use log-p for interpolation/extrapolation
 ! mirror image method:
         do k=km+2, km+k2
-              l = 2*(km+1) - k
+               l = 2*(km+1) - k
            gz(k) = 2.*gz(km+1) - gz(l)
            pn(k) = 2.*pn(km+1) - pn(l)
         enddo
@@ -2581,10 +2595,10 @@ contains
   real(kind=R_GRID), dimension(Atm%bd%is:Atm%bd%ie,km+1):: pn0
   real(kind=R_GRID):: pst
 !!! High-precision
-  integer i,j,k, k2, l, iq
+  integer i,j,k,l,m,k2, iq
   integer  sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel
   integer :: is,  ie,  js,  je
-  real :: qc
+!  real :: qc
 
   is  = Atm%bd%is
   ie  = Atm%bd%ie
@@ -2617,7 +2631,7 @@ contains
   endif
  
 !$OMP parallel do default(none) shared(sphum,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,qa,wc,Atm) &
-!$OMP   private(qc,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
+!$OMP   private(pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
  do 5000 j=js,je
      do k=1,km+1
         do i=is,ie
@@ -2634,7 +2648,7 @@ contains
 ! Use log-p for interpolation/extrapolation
 ! mirror image method:
         do k=km+2, km+k2
-              l = 2*(km+1) - k
+               l = 2*(km+1) - k
            gz(k) = 2.*gz(km+1) - gz(l)
            pn(k) = 2.*pn(km+1) - pn(l)
         enddo
@@ -3742,16 +3756,16 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
        real(kind=4),    intent(out), dimension(im,jm,levp+1):: zh
        ! Local:
        real, dimension(im,levp+1):: pe0, pn0
-       real:: qc, grd
+!      real:: qc
        integer:: i,j,k
       
-       grd = grav/rdgas
-!$OMP parallel do default(none) shared(im,jm,levp,grd,ak0,bk0,zs,ps,t,q,zh) &
-!$OMP                          private(qc,pe0,pn0)
+!$OMP parallel do default(none) shared(im,jm,levp,ak0,bk0,zs,ps,t,q,zh) &
+!$OMP                          private(pe0,pn0)
        do j = 1, jm
          do i=1, im
            pe0(i,1) = ak0(1)
            pn0(i,1) = log(pe0(i,1))
+           zh(i,j,levp+1) = zs(i,j)
          enddo
 
          do k=2,levp+1
@@ -3761,12 +3775,9 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
             enddo
          enddo
 
-         zh(1:im,j,levp+1) = zs(1:im,j)
-
          do k = levp, 1, -1
            do i = 1, im
 !            qc = 1.-(q(i,j,k,2)+q(i,j,k,3)+q(i,j,k,4)+q(i,j,k,5))
-!            zh(i,j,k) = zh(i,j,k+1)+(t(i,j,k)*(1.+zvir*q(i,j,k,1))*(pn0(i,k+1)-pn0(i,k)))/(grd*qc)
              zh(i,j,k) = zh(i,j,k+1)+(t(i,j,k)*(1.+zvir*q(i,j,k,1))*(pn0(i,k+1)-pn0(i,k)))*(rdgas/grav)
            enddo
          enddo
