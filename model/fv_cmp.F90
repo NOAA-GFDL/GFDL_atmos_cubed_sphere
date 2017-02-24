@@ -4,9 +4,9 @@ module fv_cmp_mod
   use fv_mp_mod,             only: is_master
   use fv_arrays_mod,         only: R_GRID
   use lin_cld_microphys_mod, only: ql_gen, qi_gen, qi0_max, ql0_max, qi_lim
-  use lin_cld_microphys_mod, only: tau_r, tau_s, tau_i2s, tau_v2l, tau_l2v, tau_mlt
+  use lin_cld_microphys_mod, only: tau_r, tau_s, tau_i2s, tau_v2l, tau_l2v, tau_mlt, tau_l2r
   use lin_cld_microphys_mod, only: rad_rain, rad_snow, rad_graupel
-  use lin_cld_microphys_mod, only: sat_adj0, dw_ocean, t_sub, cld_min
+  use lin_cld_microphys_mod, only: sat_adj0, t_sub, cld_min
   use lin_cld_microphys_mod, only: cracw
 
   implicit none
@@ -34,7 +34,7 @@ module fv_cmp_mod
  real(kind=R_GRID), parameter:: d2ice  = cp_vap - c_ice
  real(kind=R_GRID), parameter:: Li2 = hlv0+hlf0 - d2ice*tice
 ! Local:
- real, parameter:: tau_l2r = 900.
+ real:: dw_ocean = 0.12 ! This parameter is different from that in major MP
  real:: crevp(5), lat2
  real, allocatable:: table(:), table2(:), tablew(:), des2(:), desw(:)
  real:: d0_vap, lv00
