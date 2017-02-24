@@ -151,6 +151,7 @@ real, parameter :: pi = 3.1415926535897931_R_GRID
  real :: rh_ins = 0.25   ! rh increment for sublimation of snow
 
 ! The following 3 time scales are for melting during terminal falls
+ real :: tau_r   = 900.    ! rain freezing time scale during fast_sat
  real :: tau_s   = 600.    ! snow melt
  real :: tau_g   = 600.    ! graupel melt
  real :: tau_mlt = 600.    ! ice melting time-scale
@@ -235,7 +236,7 @@ real, parameter :: pi = 3.1415926535897931_R_GRID
  real:: tice0, t_wfr
  real:: log_10
 
- public mp_time, t_min, t_sub, tau_s, tau_g, dw_land, dw_ocean,  &
+ public mp_time, t_min, t_sub, tau_r, tau_s, tau_g, dw_land, dw_ocean,  &
         vi_fac, vr_fac, vs_fac, vg_fac, ql_mlt, do_qa, fix_negative, &
         vi_max, vs_max, vg_max, vr_max,        &
         qs0_crt, qi_gen, ql0_max, qi0_max, qi0_crt, qr0_crt, fast_sat_adj, &
