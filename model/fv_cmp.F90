@@ -1,8 +1,13 @@
 module fv_cmp_mod
 
-  use constants_mod, only: pi=>pi_8, rvgas, rdgas, grav, hlv, hlf, cp_air, cp_vapor
-  use fv_mp_mod,     only: is_master
-  use fv_arrays_mod, only: R_GRID
+  use constants_mod,         only: pi=>pi_8, rvgas, rdgas, grav, hlv, hlf, cp_air, cp_vapor
+  use fv_mp_mod,             only: is_master
+  use fv_arrays_mod,         only: R_GRID
+  use lin_cld_microphys_mod, only: ql_gen, qi_gen, qi0_max, ql0_max, qi_lim
+  use lin_cld_microphys_mod, only: tau_r, tau_s, tau_i2s, tau_v2l, tau_l2v, tau_mlt, tau_l2r
+  use lin_cld_microphys_mod, only: rad_rain, rad_snow, rad_graupel
+  use lin_cld_microphys_mod, only: sat_adj0, t_sub, cld_min
+  use lin_cld_microphys_mod, only: cracw
 
   implicit none
   real, parameter:: cv_vap = 3.*rvgas  ! 1384.8
@@ -29,30 +34,11 @@ module fv_cmp_mod
  real(kind=R_GRID), parameter:: d2ice  = cp_vap - c_ice
  real(kind=R_GRID), parameter:: Li2 = hlv0+hlf0 - d2ice*tice
 ! Local:
- real:: ql_gen = 1.0e-3    ! max ql generation during remapping step if fast_sat_adj = .T.
- real:: qi_gen = 1.82E-6
- real:: qi_lim = 1.  ! 2.
- real:: tau_i2s = 1000.
- real:: tau_v2l = 150.
- real:: tau_l2v = 300.
- real:: tau_r  = 900.       ! rain freezing time scale during fast_sat
- real:: tau_s  = 900.       ! snow melt
- real:: tau_mlt = 600.      ! ice melting time-scale
- real, parameter:: tau_l2r = 900.
- real:: sat_adj0 = 0.9  !  0.95
- real:: qi0_max = 1.0e-4    ! Max: ice  --> snow autocon threshold
- real:: ql0_max = 2.0e-3    ! max ql value (auto converted to rain)
- real:: t_sub   = 184.  ! Min temp for sublimation of cloud ice
- real:: cld_min = 0.05
- real:: dw_ocean = 0.12 ! 0.1
- real:: cracw = 3.272
+ real:: dw_ocean = 0.12 ! This parameter is different from that in major MP
  real:: crevp(5), lat2
  real, allocatable:: table(:), table2(:), tablew(:), des2(:), desw(:)
  real:: d0_vap, lv00
 
- logical:: rad_rain = .true.
- logical:: rad_snow = .true.
- logical:: rad_graupel = .true.
  logical:: mp_initialized = .false.
 
  private

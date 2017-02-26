@@ -24,6 +24,7 @@ module lin_cld_microphys_mod
  public  qsmith_init, qsmith, es2_table1d, es3_table1d, esw_table1d, wqsat_moist, wqsat2_moist
  public  setup_con, wet_bulb
  public  cloud_diagnosis
+ public  cracw
  real             :: missing_value = -1.e10
  logical          :: module_is_initialized = .false.
  logical          :: qsmith_tables_initialized = .false.
@@ -105,9 +106,9 @@ real, parameter :: pi = 3.1415926535897931_R_GRID
  logical :: do_sedi_heat = .true.      !
  logical :: prog_ccn = .false.     ! do prognostic CCN (Yi Ming's method)
  logical :: do_qa   = .true.       ! do inline cloud fraction
- logical :: rad_snow =.false.
- logical :: rad_graupel =.false.
- logical :: rad_rain =.false.
+ logical :: rad_snow =.true.
+ logical :: rad_graupel =.true.
+ logical :: rad_rain =.true.
  logical :: fix_negative =.false.
  logical :: do_setup=.true.
  logical :: master
@@ -150,12 +151,14 @@ real, parameter :: pi = 3.1415926535897931_R_GRID
  real :: rh_ins = 0.25   ! rh increment for sublimation of snow
 
 ! The following 3 time scales are for melting during terminal falls
- real :: tau_s   = 600.    ! snow melt
+ real :: tau_r   = 900.    ! rain freezing time scale during fast_sat
+ real :: tau_s   = 900.    ! snow melt
  real :: tau_g   = 600.    ! graupel melt
  real :: tau_mlt = 600.    ! ice melting time-scale
 
 ! Fast MP:
  real :: tau_i2s = 1000.  ! ice2snow auto-conversion time scale (sec) 
+ real :: tau_l2r = 900.
 ! cloud water
  real :: tau_v2l = 150.   ! vapor --> cloud water (condensation)  time scale
  real :: tau_l2v = 300.   ! cloud water --> vapor (evaporation)  time scale
@@ -164,7 +167,7 @@ real, parameter :: pi = 3.1415926535897931_R_GRID
  real :: tau_v2g = 21600. ! Grapuel deposition -- make it a slow process
 
  real :: dw_land  = 0.20  ! base value for subgrid deviation/variability over land
- real :: dw_ocean = 0.15  ! base value for ocean
+ real :: dw_ocean = 0.10  ! base value for ocean
  real :: ccn_o =  90.
  real :: ccn_l = 270.
  real :: rthresh = 10.0e-6     ! critical cloud drop radius (micro m)
@@ -177,14 +180,14 @@ real, parameter :: pi = 3.1415926535897931_R_GRID
 ! WRF/WSM6 ice initiation scheme; qi_crt = qi_gen*min(qi_lim, 0.1*tmp) / den
 !
  real :: qi_gen  = 1.82E-6
- real :: qi_lim  = 10.
+ real :: qi_lim  = 1.
  real :: ql_mlt  = 2.0e-3    ! max value of cloud water allowed from melted cloud ice
  real :: ql_gen  = 1.0e-3    ! max ql generation during remapping step if fast_sat_adj = .T.
- real :: sat_adj0 = 0.99     ! adjustment factor (0: no, 1: full) during fast_sat_adj
+ real :: sat_adj0 = 0.90     ! adjustment factor (0: no, 1: full) during fast_sat_adj
 
 ! Cloud condensate upper bounds: "safety valves" for ql & qi
  real :: ql0_max = 2.0e-3    ! max ql value (auto converted to rain)
- real :: qi0_max = 5.0e-6    ! max qi value (by other sources)
+ real :: qi0_max = 1.0e-4    ! max qi value (by other sources)
 
  real :: qi0_crt = 1.0e-4    ! ice  --> snow autocon threshold (was 1.E-4)
                              ! qi0_crt is highly dependent on horizontal resolution
@@ -234,13 +237,13 @@ real, parameter :: pi = 3.1415926535897931_R_GRID
  real:: tice0, t_wfr
  real:: log_10
 
- public mp_time, t_min, t_sub, tau_s, tau_g, dw_land, dw_ocean,  &
+ public mp_time, t_min, t_sub, tau_r, tau_s, tau_g, dw_land, dw_ocean,  &
         vi_fac, vr_fac, vs_fac, vg_fac, ql_mlt, do_qa, fix_negative, &
         vi_max, vs_max, vg_max, vr_max,        &
         qs0_crt, qi_gen, ql0_max, qi0_max, qi0_crt, qr0_crt, fast_sat_adj, &
         rh_inc, rh_ins, rh_inr, const_vi, const_vs, const_vg, const_vr,    &
         use_ccn, rthresh, ccn_l, ccn_o, qc_crt, tau_g2v, tau_v2g, sat_adj0,    &
-        c_piacr, tau_mlt, tau_v2l, tau_l2v, tau_i2s, qi_lim, ql_gen,  &
+        c_piacr, tau_mlt, tau_v2l, tau_l2v, tau_i2s, tau_l2r, qi_lim, ql_gen,  &
         c_paut, c_psaci, c_pgacs, z_slope_liq, z_slope_ice, prog_ccn,  &
         c_cracw, alin, clin, tice, rad_snow, rad_graupel, rad_rain,   &
         cld_min, use_ppm, mono_prof, do_sedi_heat, sedi_transport,   &
