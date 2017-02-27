@@ -3523,7 +3523,7 @@ contains
       integer i, j, k
 
 #ifdef SW_DYNAMICS
-!$OMP parallel do default(none) shared(is,ie,js,je,vort,grav,f_d,help)
+!$OMP parallel do default(none) shared(is,ie,js,je,vort,grav,f_d,delp)
         do j=js,je
           do i=is,ie
             vort(i,j,1) = grav * (vort(i,j,1)+f_d(i,j)) / delp(i,j,1)
