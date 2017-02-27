@@ -693,8 +693,6 @@ contains
         allocate ( ud(is:ie,  js:je+1, 1:levp) )
         allocate ( vd(is:ie+1,js:je,   1:levp) )
 
-!$OMP parallel do default(none) shared(is,ie,js,je,levp,Atm,ud,vd,u_s,v_s,u_w,v_w) &
-!$OMP               private(p1,p2,p3,e1,e2,ex,ey)
         do k=1,levp
           do j=js,je+1
             do i=is,ie
@@ -1292,7 +1290,7 @@ contains
       integer :: isd, ied, jsd, jed
       integer :: sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel
       real:: wt, qt, m_fac
-      real(kind=8) :: scale_value, offset
+      real(kind=8) :: scale_value, offset, ptmp
       real(kind=R_GRID), dimension(2):: p1, p2, p3
       real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
       real, allocatable:: ps_gfs(:,:), zh_gfs(:,:,:), o3mr_gfs(:,:,:)
@@ -1551,21 +1549,32 @@ contains
       allocate (psc(is:ie,js:je))
       allocate (psc_r8(is:ie,js:je))
 
+#ifdef LOGP_INTP
+      do j=jbeg,jend
+         do i=1,im
+            psec(i,j) = log(psec(i,j))
+         enddo
+      enddo
+#endif
       do j=js,je
          do i=is,ie
             i1 = id1(i,j)
             i2 = id2(i,j)
             j1 = jdc(i,j)
+#ifdef LOGP_INTP
+            ptmp = s2c(i,j,1)*psec(i1,j1  ) + s2c(i,j,2)*psec(i2,j1  ) +  &
+                       s2c(i,j,3)*psec(i2,j1+1) + s2c(i,j,4)*psec(i1,j1+1)
+            psc(i,j) = exp(ptmp)
+#else
             psc(i,j) = s2c(i,j,1)*psec(i1,j1  ) + s2c(i,j,2)*psec(i2,j1  ) +  &
                        s2c(i,j,3)*psec(i2,j1+1) + s2c(i,j,4)*psec(i1,j1+1)
+#endif
          enddo
       enddo
       deallocate ( psec )
       deallocate ( zsec )
 
       allocate (zhc(is:ie,js:je,km+1))
-!$OMP parallel do default(none) shared(is,ie,js,je,km,s2c,id1,id2,jdc,zhc,zhec)  &
-!$OMP               private(i1,i2,j1)
       do k=1,km+1
         do j=js,je
          do i=is,ie
@@ -1585,8 +1594,6 @@ contains
       allocate ( qc(is:ie,js:je,km,6) )
 
       do n = 1, 5
-!$OMP parallel do default(none) shared(n,is,ie,js,je,km,s2c,id1,id2,jdc,qc,qec) &
-!$OMP               private(i1,i2,j1)
         do k=1,km
           do j=js,je
             do i=is,ie
@@ -1615,8 +1622,6 @@ contains
       wec(:,:,:) = wec(:,:,:)*scale_value + offset
       !call p_maxmin('wec', wec, 1, im, jbeg, jend, km, 1.)
 
-!$OMP parallel do default(none) shared(is,ie,js,je,km,id1,id2,jdc,s2c,wc,wec) &
-!$OMP               private(i1,i2,j1)
       do k=1,km
         do j=js,je
          do i=is,ie
@@ -1699,8 +1704,6 @@ contains
 
       if(is_master()) write(*,*) 'first time done reading vec'
 
-!$OMP parallel do default(none) shared(is,ie,js,je,km,s2c_c,id1_c,id2_c,jdc_c,uec,vec,Atm,vd) &
-!$OMP                     private(i1,i2,j1,p1,p2,p3,e2,ex,ey,utmp,vtmp)
       do k=1,km
         do j=js,je
           do i=is,ie+1
@@ -1759,8 +1762,6 @@ contains
       vec(:,:,:) = vec(:,:,:)*scale_value + offset
       if(is_master()) write(*,*) 'second time done reading vec'
 
-!$OMP parallel do default(none) shared(is,ie,js,je,km,id1_d,id2_d,jdc_d,s2c_d,uec,vec,Atm,ud) &
-!$OMP                     private(i1,i2,j1,p1,p2,p3,e1,ex,ey,utmp,vtmp)
       do k=1,km
         do j=js,je+1
           do i=is,ie
@@ -1790,13 +1791,6 @@ contains
       deallocate ( ud, vd )
 
 #ifndef COND_IFS_IC
-      liq_wat  = get_tracer_index(MODEL_ATMOS, 'liq_wat')
-      if ( Atm(1)%flagstruct%nwat .eq. 6 ) then
-           ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
-           rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
-           snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
-           graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
-      endif
 ! Add cloud condensate from IFS to total MASS
 ! Adjust the mixing ratios consistently...
       do k=1,npz
@@ -2328,6 +2322,7 @@ contains
   real, dimension(Atm%bd%is:Atm%bd%ie,npz+1):: pe1
   real qp(Atm%bd%is:Atm%bd%ie,km)
   real wk(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je)
+  real, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je):: z500
 !!! High-precision
   real(kind=R_GRID), dimension(Atm%bd%is:Atm%bd%ie,npz+1):: pn1
   real(kind=R_GRID):: gz_fv(npz+1)
@@ -2371,10 +2366,6 @@ contains
        call mpp_error(FATAL,'SPHUM must be 1st tracer')
   endif
 
-!$OMP parallel do default(none) &
-!$OMP             shared(sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,&
-!$OMP                    cld_amt,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,omga,qa,Atm) &
-!$OMP             private(l,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
   do 5000 j=js,je
      do k=1,km+1
         do i=is,ie
@@ -2403,6 +2394,19 @@ contains
           endif
         enddo
 123     Atm%ps(i,j) = exp(pst)
+
+! ------------------
+! Find 500-mb height
+! ------------------
+        pst = log(500.e2)
+        do k=km+k2-1, 2, -1
+          if( pst.le.pn(k+1) .and. pst.ge.pn(k) ) then
+              z500(i,j) = (gz(k+1) + (gz(k)-gz(k+1))*(pn(k+1)-pst)/(pn(k+1)-pn(k)))/grav
+              go to 124
+          endif
+        enddo
+124     continue
+
      enddo   ! i-loop
 
      do i=is,ie
@@ -2455,23 +2459,44 @@ contains
       endif
 
       do k=1,km+1
+         pn(k) = pn0(i,k)
          gz(k) = zh(i,j,k)*grav
       enddo
+!-------------------------------------------------
+      do k=km+2, km+k2
+         m = 2*(km+1) - k
+         gz(k) = 2.*gz(km+1) - gz(m)
+         pn(k) = 2.*pn(km+1) - pn(m)
+      enddo
+!-------------------------------------------------
+
       gz_fv(npz+1) = Atm%phis(i,j)
 
-      do 555 k=1,npz
+      m = 1
+
+      do k=1,npz
 ! Searching using FV3 log(pe): pn1
-         do l=1,km
-            if ( (pn1(i,k).le.pn0(i,l+1)) .and. (pn1(i,k).ge.pn0(i,l)) ) then
-                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn0(i,l))/(pn0(i,l+1)-pn0(i,l))
+#ifdef USE_ISOTHERMO
+         do l=m,km
+            if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
+                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
                 goto 555
-            elseif ( pn1(i,k) .gt. pn0(i,km+1) ) then
+            elseif ( pn1(i,k) .gt. pn(km+1) ) then
 ! Isothermal under ground; linear in log-p extra-polation
-                gz_fv(k) = gz(km+1) + (gz_fv(npz+1)-gz(km+1))*(pn1(i,k)-pn0(i,km+1))/(pn1(i,npz+1)-pn0(i,km+1))
+                gz_fv(k) = gz(km+1) + (gz_fv(npz+1)-gz(km+1))*(pn1(i,k)-pn(km+1))/(pn1(i,npz+1)-pn(km+1))
                 goto 555
             endif
          enddo
-555   continue
+#else
+         do l=m,km+k2
+            if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
+                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
+                goto 555
+            endif
+         enddo
+#endif
+555   m = l
+      enddo
 
 ! Compute true temperature using hydrostatic balance
       do k=1,npz
@@ -2562,6 +2587,7 @@ contains
      enddo
   enddo
   call pmaxmn('ZS_diff (m)', wk, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
+  call pmaxmn('Z500 (m)',  z500, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
 
   do j=js,je
      do i=is,ie
@@ -2594,11 +2620,11 @@ contains
   real(kind=R_GRID), dimension(2*km+1):: gz, pn
   real(kind=R_GRID), dimension(Atm%bd%is:Atm%bd%ie,km+1):: pn0
   real(kind=R_GRID):: pst
+  real, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je):: z500
 !!! High-precision
   integer i,j,k,l,m,k2, iq
   integer  sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel
   integer :: is,  ie,  js,  je
-!  real :: qc
 
   is  = Atm%bd%is
   ie  = Atm%bd%ie
@@ -2630,8 +2656,6 @@ contains
     endif
   endif
  
-!$OMP parallel do default(none) shared(sphum,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,qa,wc,Atm) &
-!$OMP   private(pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
  do 5000 j=js,je
      do k=1,km+1
         do i=is,ie
@@ -2660,6 +2684,19 @@ contains
           endif
         enddo
 123     Atm%ps(i,j) = exp(pst)
+
+! ------------------
+! Find 500-mb height
+! ------------------
+        pst = log(500.e2)
+        do k=km+k2-1, 2, -1
+          if( pst.le.pn(k+1) .and. pst.ge.pn(k) ) then
+              z500(i,j) = (gz(k+1) + (gz(k)-gz(k+1))*(pn(k+1)-pst)/(pn(k+1)-pn(k)))/grav
+              go to 125
+          endif
+        enddo
+125     continue
+
      enddo   ! i-loop
 
      do i=is,ie
@@ -2711,24 +2748,42 @@ contains
       endif
 
       do k=1,km+1
+         pn(k) = pn0(i,k)
          gz(k) = zh(i,j,k)*grav
       enddo
+!-------------------------------------------------
+      do k=km+2, km+k2
+         m = 2*(km+1) - k
+         gz(k) = 2.*gz(km+1) - gz(m)
+         pn(k) = 2.*pn(km+1) - pn(m)
+      enddo
+!-------------------------------------------------
       gz_fv(npz+1) = Atm%phis(i,j)
 
-
-      do 555 k=1,npz
+      m = 1
+      do k=1,npz
 ! Searching using FV3 log(pe): pn1
-         do l=1,km
-            if ( (pn1(i,k).le.pn0(i,l+1)) .and. (pn1(i,k).ge.pn0(i,l)) ) then
-                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn0(i,l))/(pn0(i,l+1)-pn0(i,l))
+#ifdef USE_ISOTHERMO
+         do l=m,km
+            if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
+                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
                 goto 555
-            elseif ( pn1(i,k) .gt. pn0(i,km+1) ) then
+            elseif ( pn1(i,k) .gt. pn(km+1) ) then
 ! Isothermal under ground; linear in log-p extra-polation
-                gz_fv(k) = gz(km+1) + (gz_fv(npz+1)-gz(km+1))*(pn1(i,k)-pn0(i,km+1))/(pn1(i,npz+1)-pn0(i,km+1))
+                gz_fv(k) = gz(km+1) + (gz_fv(npz+1)-gz(km+1))*(pn1(i,k)-pn(km+1))/(pn1(i,npz+1)-pn(km+1))
                 goto 555
             endif
          enddo
-555   continue
+#else
+         do l=m,km+k2
+            if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
+                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
+                goto 555
+            endif
+         enddo
+#endif
+555   m = l
+      enddo
 
 ! Compute true temperature using hydrostatic balance
       do k=1,npz
@@ -2779,6 +2834,7 @@ contains
      enddo
   enddo
   call pmaxmn('ZS_diff (m)', wk, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
+  call pmaxmn('Z500 (m)', z500, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
 
   do j=js,je
      do i=is,ie
@@ -2957,8 +3013,6 @@ contains
   call mpp_update_domains( psd,    Atm%domain, complete=.false. )
   call mpp_update_domains( Atm%ps, Atm%domain, complete=.true. )
 
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,km,ak0,bk0,Atm,psc,psd,ud,vd) &
-!$OMP                          private(pe1,pe0,qn1)
   do 5000 j=js,je+1
 !------
 ! map u
@@ -3759,8 +3813,6 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
 !      real:: qc
        integer:: i,j,k
       
-!$OMP parallel do default(none) shared(im,jm,levp,ak0,bk0,zs,ps,t,q,zh) &
-!$OMP                          private(pe0,pn0)
        do j = 1, jm
          do i=1, im
            pe0(i,1) = ak0(1)
