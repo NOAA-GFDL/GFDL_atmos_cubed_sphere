@@ -70,6 +70,9 @@ public :: twoway_nesting, setup_nested_grid_BCs
 
 contains
 
+!!!! NOTE: Many of the routines here and in boundary.F90 have a lot of
+!!!!   redundant code, which could be cleaned up and simplified.
+
  subroutine setup_nested_grid_BCs(npx, npy, npz, zvir, ncnst,     &
                         u, v, w, pt, delp, delz,q, uc, vc, pkz, &
                         nested, inline_q, make_nh, ng, &
