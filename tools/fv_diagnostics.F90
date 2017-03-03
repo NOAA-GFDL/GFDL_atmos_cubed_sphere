@@ -4023,16 +4023,21 @@ end subroutine eqv_pot
 
    !Other constants
    real, parameter :: gamma_seven = 720.
+   real, parameter :: koch_correction = 161.3
    !The following values are also used in Lin-Lin MP
    real, parameter :: rho_r = 1.0e3  ! LFO83
    real, parameter :: rho_s = 100.   ! kg m^-3 
    real, parameter :: rho_g = 400.   ! kg m^-3
    real, parameter :: alpha = 0.224
    real, parameter :: factor_r = gamma_seven * 1.e18 * (1./(pi*rho_r))**1.75
-   real, parameter :: factor_s = gamma_seven * 1.e18 * (1./(pi*rho_s))**1.75 &
+   real, parameter :: factor_s = koch_correction * 1.e18 * (1./(pi*rho_s))**1.75 &
         * (rho_s/rho_r)**2 * alpha
-   real, parameter :: factor_g = gamma_seven * 1.e18 * (1./(pi*rho_g))**1.75 &
+   real, parameter :: factor_g = koch_correction * 1.e18 * (1./(pi*rho_g))**1.75 &
         * (rho_g/rho_r)**2 * alpha
+!!$   real, parameter :: factor_s = gamma_seven * 1.e18 * (1./(pi*rho_s))**1.75 &
+!!$        * (rho_s/rho_r)**2 * alpha
+!!$   real, parameter :: factor_g = gamma_seven * 1.e18 * (1./(pi*rho_g))**1.75 &
+!!$        * (rho_g/rho_r)**2 * alpha
    real, parameter :: tice = 273.16
 
    integer :: i,j,k
