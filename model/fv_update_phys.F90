@@ -283,90 +283,17 @@ module fv_update_phys_mod
 !--------------------------------------------------------
 ! Adjust total air mass due to changes in water substance
 !--------------------------------------------------------
-
-      if ( nwat==6 ) then
-! micro-physics with 6 water substances
-        do j=js,je
-           do i=is,ie
-              ps_dt(i,j)  = 1. + dt * ( q_dt(i,j,k,sphum  ) +    &
-                                        q_dt(i,j,k,liq_wat) +    &
-                                        q_dt(i,j,k,rainwat) +    &
-                                        q_dt(i,j,k,ice_wat) +    &
-                                        q_dt(i,j,k,snowwat) +    &
-                                        q_dt(i,j,k,graupel) )
-              delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
-!f1p
-  !1 - kg(H2O)/kg(air) before / 1 - kg(H2O)/kg(air) current                                                                                                                                                                      
-              !1 - (q-dq/dt*Dt) = ps_dt - q 
-              if (flagstruct%adj_mass_vmr) then
-                 adj_vmr(i,j,k) =                          &
-                      (ps_dt(i,j) - (q(i,j,k,sphum  )   +  &
-                                     q(i,j,k,liq_wat)   +  &
-                                     q(i,j,k,rainwat)   +  &
-                                     q(i,j,k,ice_wat)   +  &
-                                     q(i,j,k,snowwat)   +  &
-                                     q(i,j,k,graupel))) /  &
-                      (1.d0       - (q(i,j,k,sphum  )   +  &
-                                     q(i,j,k,liq_wat)   +  &
-                                     q(i,j,k,rainwat)   +  &
-                                     q(i,j,k,ice_wat)   +  &
-                                     q(i,j,k,snowwat)   +  &
-                                     q(i,j,k,graupel)))
-              end if
-           enddo
-        enddo
-      elseif ( nwat==4 ) then
-! micro-physics with fake ice
-        do j=js,je
-           do i=is,ie
-              ps_dt(i,j)  = 1. + dt * (q_dt(i,j,k,sphum  ) +  &
-                                       q_dt(i,j,k,liq_wat) +  &
-                                       q_dt(i,j,k,rainwat))
-              delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
-           enddo
-        enddo
-      elseif( nwat==3 ) then
-! GFDL AM2/3 phys (cloud water + cloud ice)
-        do j=js,je
-           do i=is,ie
-               ps_dt(i,j) = 1. + dt*(q_dt(i,j,k,sphum  ) +    &
-                                     q_dt(i,j,k,liq_wat) +    &
-                                     q_dt(i,j,k,ice_wat) )
-              delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
-!f1p
-              if (flagstruct%adj_mass_vmr) then
-                 adj_vmr(i,j,k) =                          &
-                      (ps_dt(i,j) - (q(i,j,k,sphum  )   +  &
-                                     q(i,j,k,liq_wat)   +  &
-                                     q(i,j,k,ice_wat))) /  &
-                      (1.d0       - (q(i,j,k,sphum  )   +  &
-                                     q(i,j,k,liq_wat)   +  &
-                                     q(i,j,k,ice_wat)))
-              end if
-           enddo
-        enddo
-      elseif( nwat==2 ) then
-! NGGPS-GFS: the total condensate is "liq_wat"
-        do j=js,je
-           do i=is,ie
-               ps_dt(i,j) = 1. + dt*(q_dt(i,j,k,sphum) + q_dt(i,j,k,liq_wat))
-              delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
-           enddo
-        enddo
-      elseif ( nwat>0 ) then
-        do j=js,je
-           do i=is,ie
-              ps_dt(i,j)  = 1. + dt*sum(q_dt(i,j,k,1:nwat))
-              delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
-              if (flagstruct%adj_mass_vmr) then
-                 adj_vmr(i,j,k) =                          &
-                      (ps_dt(i,j) - sum(q(i,j,k,1:flagstruct%nwat))) /  &
-                      (1.d0       - sum(q(i,j,k,1:flagstruct%nwat)))
-              end if
-
-           enddo
-        enddo
-      endif
+      do j=js,je
+         do i=is,ie
+            ps_dt(i,j)  = 1. + dt*sum(q_dt(i,j,k,1:nwat))
+            delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
+            if (flagstruct%adj_mass_vmr) then
+               adj_vmr(i,j,k) =                          &
+                    (ps_dt(i,j) - sum(q(i,j,k,1:flagstruct%nwat))) /  &
+                    (1.d0       - sum(q(i,j,k,1:flagstruct%nwat)))
+            end if
+         enddo
+      enddo
 
 !-----------------------------------------
 ! Adjust mass mixing ratio of all tracers 

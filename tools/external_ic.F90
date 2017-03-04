@@ -789,13 +789,11 @@ contains
         endif
 
         call mpp_update_domains( Atm(n)%phis, Atm(n)%domain, complete=.true. )
-        liq_wat  = get_tracer_index(MODEL_ATMOS, 'liq_wat')
-        if ( Atm(n)%flagstruct%nwat .eq. 6 ) then
-           ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
-           rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
-           snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
-           graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
-        endif
+        liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
+        ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
+        rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
+        snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
+        graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
 !--- Add cloud condensate from GFS to total MASS
 ! 20160928: Adjust the mixing ratios consistently...
         do k=1,npz
@@ -1324,13 +1322,11 @@ contains
 
       sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
       liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
+      ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
+      rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
+      snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
+      graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
       o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
-      if ( Atm(1)%flagstruct%nwat .eq. 6 ) then
-         ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
-         rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
-         snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
-         graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
-      endif
 
       if (is_master()) then
          print *, 'sphum = ', sphum
@@ -2353,17 +2349,12 @@ contains
 
   sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
   liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
+  ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
+  rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
+  snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
+  graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
+  cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
   o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
-
-  cld_amt = 0
-
-  if ( Atm%flagstruct%nwat .eq. 6 ) then
-    ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
-    rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
-    snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
-    graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
-    cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
-  endif
 
   k2 = max(10, km/2)
 
@@ -3204,9 +3195,6 @@ contains
   agrid => Atm%gridstruct%agrid
 
   sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
-! liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
-! ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
-! cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
 
    if ( sphum/=1 ) then
         call mpp_error(FATAL,'SPHUM must be 1st tracer')

@@ -114,8 +114,7 @@ character(len=7)   :: mod_name = 'atmos'
   logical :: cold_start = .false.       ! read in initial condition
 
   integer, dimension(:), allocatable :: id_tracerdt_dyn
-  integer :: num_tracers = 0
-  integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, o3mr ! Lin Micro-physics
+  integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel  !condensate species
 
   integer :: mytile = 1
   integer :: p_split = 1
@@ -153,10 +152,6 @@ contains
                     call timing_on('ATMOS_INIT')
    allocate(pelist(mpp_npes()))
    call mpp_get_current_pelist(pelist)
-
-   call get_number_tracers(MODEL_ATMOS, num_prog= num_tracers)
-
-   sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
 
    zvir = rvgas/rdgas - 1.
 
@@ -200,6 +195,17 @@ contains
    jed = jec + Atm(mytile)%bd%ng
 
    nq = ncnst-pnats
+   sphum   = get_tracer_index (MODEL_ATMOS, 'sphum' )
+   liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat' )
+   ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat' )
+   rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat' )
+   snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat' )
+   graupel = get_tracer_index (MODEL_ATMOS, 'graupel' )
+
+   if (max(sphum,liq_wat,ice_wat,rainwat,snowwat,graupel) > Atm(mytile)%flagstruct%nwat) then
+      call mpp_error (FATAL,' atmosphere_init: condensate species are not first in the list of &
+                            &tracers defined in the field_table')
+   endif
 
    ! Allocate grid variables to be used to calculate gradient in 2nd order flux exchange
    ! This data is only needed for the COARSEST grid.
@@ -736,14 +742,15 @@ contains
    type(time_type) :: Time_prev, Time_next
 !--- local variables ---
    integer :: i, j, ix, k, k1, n, w_diff, nt_dyn, iq
-   integer :: nb, blen
-   real(kind=kind_phys):: rcp, q0, q1, q2, q3, q4, q5, q6, q7, qt, rdt
+   integer :: nb, blen, nwat
+   real(kind=kind_phys):: rcp, q0, qwat(nq), qt, rdt
 
    Time_prev = Time
    Time_next = Time + Time_step_atmos
    rdt = 1.d0 / dt_atmos
 
    n = mytile
+   nwat = Atm(n)%flagstruct%nwat
 
    if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
 
@@ -752,9 +759,9 @@ contains
    call timing_on('GFS_TENDENCIES')
 !--- put u/v tendencies into haloed arrays u_dt and v_dt
 !$OMP parallel do default (none) & 
-!$OMP              shared (rdt, n, nq, npz, ncnst, mytile, u_dt, v_dt, t_dt, Atm, IPD_Data,     &
-!$OMP                      Atm_block, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, o3mr) &
-!$OMP             private (nb, blen, i, j, k, k1, ix, q0, q1, q2, q3, q4, q5, q6, q7, qt)
+!$OMP              shared (rdt, n, nq, npz, ncnst, nwat, mytile, u_dt, v_dt, t_dt, Atm, IPD_Data, &
+!$OMP                      Atm_block, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel)   &
+!$OMP             private (nb, blen, i, j, k, k1, ix, q0, qwat, qt)
    do nb = 1,Atm_block%nblks
 
 !SJL: perform vertical filling to fix the negative humidity if the SAS convection scheme is used
@@ -779,61 +786,19 @@ contains
 ! FV3 total air mass = dry_mass + [water_vapor + condensate ]
 ! FV3 mixing ratios  = tracer_mass / (dry_mass+vapor_mass+cond_mass)
          q0 = IPD_Data(nb)%Statein%prsi(ix,k) - IPD_Data(nb)%Statein%prsi(ix,k+1)
-         q1 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,1)
-         q2 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,2)
-         q3 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,3)
+         qwat(:) = q0*IPD_Data(nb)%Stateout%gq0(ix,k,:)
 ! **********************************************************************************************************
 ! Dry mass: the following way of updating delp is key to mass conservation with hybrid 32-64 bit computation
 ! **********************************************************************************************************
 ! The following is for 2 water species. Must include more when more sophisticated cloud microphysics is used.
 !        q0 = Atm(n)%delp(i,j,k1)*(1.-(Atm(n)%q(i,j,k1,1)+Atm(n)%q(i,j,k1,2))) + q1 + q2
-         q0 = Atm(n)%delp(i,j,k1)*(1.-(Atm(n)%q(i,j,k1,1)+Atm(n)%q(i,j,k1,2))) + (q1+q2)
-!--- bad conservation ---
-!!!!!    q0 = Atm(n)%delp(i,j,k1)*(1._kind_phys-(Atm(n)%q(i,j,k1,1)+Atm(n)%q(i,j,k1,2))) + q1 + q2
-!--- bad conservation ---
+         qt = sum(qwat(1:nwat))
+         q0 = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:nwat))) + qt 
          Atm(n)%delp(i,j,k1) = q0
-         Atm(n)%q(i,j,k1,1) = q1 / q0
-         Atm(n)%q(i,j,k1,2) = q2 / q0
-         Atm(n)%q(i,j,k1,3) = q3 / q0
-         elseif ( Atm(n)%flagstruct%nwat .eq. 6 ) then
-         q0 = IPD_Data(nb)%Statein%prsi(ix,k) - IPD_Data(nb)%Statein%prsi(ix,k+1)
-         q1 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,sphum)
-         q2 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,liq_wat)
-         q3 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,rainwat)
-         q4 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,ice_wat)
-         q5 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,snowwat)
-         q6 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,graupel)
-         q7 = q0*IPD_Data(nb)%Stateout%gq0(ix,k,o3mr)
-         qt = q1+q2+q3+q4+q5+q6
-         q0 = Atm(n)%delp(i,j,k1)*(1.-(Atm(n)%q(i,j,k1,sphum)+Atm(n)%q(i,j,k1,liq_wat)+Atm(n)%q(i,j,k1,rainwat)+    &
-                                       Atm(n)%q(i,j,k1,ice_wat)+Atm(n)%q(i,j,k1,snowwat)+Atm(n)%q(i,j,k1,graupel))) + qt
-         Atm(n)%delp(i,j,k1) = q0
-         Atm(n)%q(i,j,k1,  sphum) = q1 / q0
-         Atm(n)%q(i,j,k1,liq_wat) = q2 / q0
-         Atm(n)%q(i,j,k1,rainwat) = q3 / q0
-         Atm(n)%q(i,j,k1,ice_wat) = q4 / q0
-         Atm(n)%q(i,j,k1,snowwat) = q5 / q0
-         Atm(n)%q(i,j,k1,graupel) = q6 / q0
-         Atm(n)%q(i,j,k1,   o3mr) = q7 / q0     ! ozone
+         Atm(n)%q(i,j,k1,1:nq) = qwat(1:nq) / q0
          endif
        enddo
      enddo
-
-! The following does nothing...
-     if ( nq > 8 ) then
-     do iq=9, nq
-       do k = 1, npz
-         k1 = npz+1-k !reverse the k direction 
-         do ix = 1, blen
-           i = Atm_block%index(nb)%ii(ix)
-           j = Atm_block%index(nb)%jj(ix)
-           Atm(n)%q(i,j,k1,iq) = Atm(n)%q(i,j,k1,iq) + (IPD_Data(nb)%Stateout%gq0(ix,k,iq)-IPD_Data(nb)%Statein%qgrs(ix,k,iq))
-!                              * (IPD_Data(nb)%Statein%prsi(ix,k)-IPD_Data(nb)%Statein%prsi(ix,k+1))/Atm(n)%delp(i,j,k1)
-         enddo
-       enddo
-     enddo
-     endif
-! LJZ notes: this section is extremely inflexible, need to be revised later
 
      !--- diagnostic tracers are being updated in-place
      !--- tracer fields must be returned to the Atm structure
@@ -1159,7 +1124,6 @@ contains
    real(kind=kind_phys):: pk0inv, ptop, pktop
    real(kind=kind_phys) :: rTv, dm, qgrs_rad
    integer :: nb, blen, npz, i, j, k, ix, k1
-   logical :: diag_sounding = .false.
 
 !!! NOTES: lmh 6nov15
 !!! - "Layer" means "layer mean", ie. the average value in a layer
@@ -1169,18 +1133,6 @@ contains
    pktop  = (ptop/p00)**kappa
    pk0inv = (1.0_kind_phys/p00)**kappa
 
-   sphum = get_tracer_index (MODEL_ATMOS, 'sphum' )
-   liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat' )
-   if ( liq_wat<0 ) call mpp_error(FATAL, 'GFS condensate does not exist')
-
-   if ( Atm(mytile)%flagstruct%nwat .eq. 6 ) then
-      ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat' )
-      rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat' )
-      snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat' )
-      graupel = get_tracer_index (MODEL_ATMOS, 'graupel' )
-      o3mr    = get_tracer_index (MODEL_ATMOS, 'o3mr' )
-   endif
-
    npz = Atm_block%npz
 
 !---------------------------------------------------------------------
@@ -1188,8 +1140,8 @@ contains
 !---------------------------------------------------------------------
 !$OMP parallel do default (none) & 
 !$OMP             shared  (Atm_block, Atm, IPD_Data, npz, nq, ncnst, sphum, liq_wat, &
-!$OMP                      ice_wat, rainwat, snowwat, graupel, o3mr, pk0inv, ptop,   &
-!$OMP                      pktop, zvir, mytile, diag_sounding) &
+!$OMP                      ice_wat, rainwat, snowwat, graupel, pk0inv, ptop,   &
+!$OMP                      pktop, zvir, mytile) &
 !$OMP             private (dm, nb, blen, i, j, ix, k1, rTv, qgrs_rad)
 
    do nb = 1,Atm_block%nblks
@@ -1200,7 +1152,6 @@ contains
 
      !-- level interface geopotential height (relative to the surface)
      IPD_Data(nb)%Statein%phii(:,1) = 0.0_kind_phys
-!rab     IPD_Data(nb)%Statein%adjtrc = 1.0_kind_phys
      IPD_Data(nb)%Statein%prsik(:,:) = 1.e25_kind_phys
 
      do k = 1, npz
@@ -1221,11 +1172,9 @@ contains
            IPD_Data(nb)%Statein%phii(ix,k+1) = IPD_Data(nb)%Statein%phii(ix,k) - _DBL_(_RL_(Atm(mytile)%delz(i,j,k1)*grav))
 
 ! Convert to tracer mass:
-!rab         IPD_Data(nb)%Statein%qgrs_rad(ix,k)  =  _DBL_(_RL_(max(qmin, Atm(mytile)%q(i,j,k1,sphum)))) &
-!rab                                                             * IPD_Data(nb)%Statein%prsl(ix,k)
          IPD_Data(nb)%Statein%qgrs(ix,k,1:nq) =  _DBL_(_RL_(          Atm(mytile)%q(i,j,k1,1:nq))) &
                                                              * IPD_Data(nb)%Statein%prsl(ix,k)
-         IPD_Data(nb)%Statein%qgrs(ix,k,nq+1:ncnst) = _DBL_(_RL_(Atm(mytile)%qdiag(i,j,k1,nq+1:ncnst))) * IPD_Data(nb)%Statein%prsl(ix,k)
+         IPD_Data(nb)%Statein%qgrs(ix,k,nq+1:ncnst) = _DBL_(_RL_(Atm(mytile)%qdiag(i,j,k1,nq+1:ncnst)))
 ! Remove the contribution of condensates to delp (mass):
          if ( Atm(mytile)%flagstruct%nwat .eq. 2 ) then  ! GFS
             IPD_Data(nb)%Statein%prsl(ix,k) = IPD_Data(nb)%Statein%prsl(ix,k) &
@@ -1251,8 +1200,6 @@ contains
                                            + IPD_Data(nb)%Statein%prsl(i,k)
            IPD_Data(nb)%Statein%prsik(i,k) = log( IPD_Data(nb)%Statein%prsi(i,k) )
 ! Redefine mixing ratios for GFS == tracer_mass / (dry_air_mass + water_vapor_mass)
-!rab           IPD_Data(nb)%Statein%qgrs_rad(i,k)     = IPD_Data(nb)%Statein%qgrs_rad(i,k)     &
-!rab                                                  / IPD_Data(nb)%Statein%prsl(i,k)
            IPD_Data(nb)%Statein%qgrs(i,k,1:ncnst) = IPD_Data(nb)%Statein%qgrs(i,k,1:ncnst) &
                                                   / IPD_Data(nb)%Statein%prsl(i,k)
         enddo
@@ -1265,7 +1212,6 @@ contains
      do k=1,npz
         do i=1,blen
 ! Geo-potential at interfaces:
-!rab           rTv = rdgas*IPD_Data(nb)%Statein%tgrs(i,k)*(1.+zvir*IPD_Data(nb)%Statein%qgrs_rad(i,k))
            qgrs_rad = max(qmin,IPD_Data(nb)%Statein%qgrs(i,k,sphum))
            rTv = rdgas*IPD_Data(nb)%Statein%tgrs(i,k)*(1.+zvir*qgrs_rad)
            if ( Atm(mytile)%flagstruct%hydrostatic .or. Atm(mytile)%flagstruct%use_hydro_pressure )   &
@@ -1320,46 +1266,8 @@ contains
               IPD_Data(nb)%Statein%prsik(i,k) = exp( kappa*IPD_Data(nb)%Statein%prsik(i,k) )*pk0inv 
            enddo
         enddo
-#ifdef DEBUG_GFS
-    else
-! Bottom limited by hydrostatic surface pressure
-        do i=1,blen
-           IPD_Data(nb)%Statein%prsik(i,1) = max(IPD_Data(nb)%Statein%prsik(i,1), &
-                                                 IPD_Data(nb)%Statein%prslk(i,1))
-        enddo
-! Interior: linear interpolation in height using layer mean
-        do k=2,npz
-           do i=1,blen
-!             IPD_Data(nb)%Statein%prsik(i,k) = 0.5*(IPD_Data(nb)%Statein%prslk(i,k-1) 
-!                                                  + IPD_Data(nb)%Statein%prslk(i,k))
-              IPD_Data(nb)%Statein%prsik(i,k) = IPD_Data(nb)%Statein%prslk(i,k-1)       &
-                                              + (IPD_Data(nb)%Statein%prslk(i,k)        &
-                                              -  IPD_Data(nb)%Statein%prslk(i,k-1)) *   &
-                                                (IPD_Data(nb)%Statein%phii(i,k)         &
-                                              -  IPD_Data(nb)%Statein%phil(i,k-1))      &
-                                              / (IPD_Data(nb)%Statein%phil(i,k)         &
-                                              -  IPD_Data(nb)%Statein%phil(i,k-1))
-           enddo
-        enddo
-#endif
     endif
-
-!!$!!! DEBUG CODE
-!!$     if (diag_sounding) then
-!!$        if (ibs == 1 .and. jbs == 1) then
-!!$           do k=1,npz
-!!$              write(mpp_pe()+1000,'(I4,3x, 6(F,3x))') k, Statein(nb)%prsi(1,k), Statein(nb)%prsl(1,k), &
-!!$                   Statein(nb)%phii(1,k), Statein(nb)%phil(1,k), &
-!!$                   Atm(mytile)%delp(1,1,npz+1-k), Atm(mytile)%pe(1,npz+1-k,1)
-!!$           enddo
-!!$           k = npz+1
-!!$        endif
-!!$        diag_sounding = .false.
-!!$     endif
-!!$!!! END DEBUG CODE
-
   enddo
-
 
  end subroutine atmos_phys_driver_statein
 
