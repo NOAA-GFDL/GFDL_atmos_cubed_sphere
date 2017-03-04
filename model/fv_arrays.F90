@@ -1,20 +1,48 @@
+!***********************************************************************
+!*                   GNU General Public License                        *
+!* This file is a part of fvGFS.                                       *
+!*                                                                     *
+!* fvGFS is free software; you can redistribute it and/or modify it    *
+!* and are expected to follow the terms of the GNU General Public      *
+!* License as published by the Free Software Foundation; either        *
+!* version 2 of the License, or (at your option) any later version.    *
+!*                                                                     *
+!* fvGFS is distributed in the hope that it will be useful, but        *
+!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+!* General Public License for more details.                            *
+!*                                                                     *
+!* For the full text of the GNU General Public License,                *
+!* write to: Free Software Foundation, Inc.,                           *
+!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!***********************************************************************
 module fv_arrays_mod
 #include <fms_platform.h>
- use mpp_domains_mod,  only: domain2d
-  use fms_io_mod,       only: restart_file_type
-  use time_manager_mod, only: time_type
-  use horiz_interp_type_mod, only:  horiz_interp_type
-  use mpp_domains_mod, only : nest_domain_type
-  use mpp_mod, only: mpp_broadcast
+  use mpp_domains_mod,       only: domain2d
+  use fms_io_mod,            only: restart_file_type
+  use time_manager_mod,      only: time_type
+  use horiz_interp_type_mod, only: horiz_interp_type
+  use mpp_domains_mod,       only: nest_domain_type
+  use mpp_mod,               only: mpp_broadcast
+  use platform_mod,          only: r8_kind
   public
+
+  integer, public, parameter :: R_GRID = r8_kind
 
   !Several 'auxiliary' structures are introduced here. These are for
   ! the internal use by certain modules, and although fv_atmos_type
   !  contains one of each of these structures all memory management
   !   is performed by the module in question.
 
+
   integer, parameter:: max_step = 1000
+!--- MAY NEED TO TEST THIS
+#ifdef OVERLOAD_R4
+  real, parameter:: real_big = 1.e8    ! big enough to cause blowup if used
+#else
   real, parameter:: real_big = 1.e30   ! big enough to cause blowup if used
+#endif
   type fv_diag_type
 
 
@@ -22,42 +50,35 @@ module fv_arrays_mod
            id_tm, id_pv, id_zsurf, id_oro, id_sgh, id_divg, id_w, &
            id_ke, id_te, id_zs, id_ze, id_mq, id_vorts, id_us, id_vs,    &
            id_tq, id_rh, id_c15, id_c25, id_c35, id_c45,          &
-                         id_f15, id_f25, id_f35, id_f45,          &
-           id_ppt, id_ts, id_tb, id_pmask, id_pmaskv2,            &
+                         id_f15, id_f25, id_f35, id_f45, id_ctp,  &
+           id_ppt, id_ts, id_tb, id_ctt, id_pmask, id_pmaskv2,    &
            id_delp, id_delz, id_zratio, id_ws, id_iw, id_lw,      &
-           id_qn, id_qp, id_mdt, id_aam, id_amdt
+           id_pfhy, id_pfnh,                                      &
+           id_qn, id_qn200, id_qn500, id_qn850, id_qp, id_mdt, id_qdt, id_aam, id_amdt, &
+           id_acly, id_acl, id_acl2, id_dbz, id_maxdbz, id_basedbz, id_dbz4km
 
 ! Selected p-level fields from 3D variables:
- integer :: id_vort850, id_w850, id_x850, id_srh,  &
-            id_w200, id_s200, id_sl12, id_sl13, id_w5km
-! IPCC diag
- integer :: id_u10,  id_v10,  id_t10,  id_q10,  id_rh10,  id_omg10,  id_h10,  &
-            id_u50,  id_v50,  id_t50,  id_q50,  id_rh50,  id_omg50,  id_h50,  &
-            id_u100, id_v100, id_t100, id_q100, id_rh100, id_omg100, id_h100, &
-            id_u200, id_v200, id_t200, id_q200, id_rh200, id_omg200, id_h200, &
-            id_u250, id_v250, id_t250, id_q250, id_rh250, id_omg250, id_h250, &
-            id_u300, id_v300, id_t300, id_q300, id_rh300, id_omg300, id_h300, &
-            id_u500, id_v500, id_t500, id_q500, id_rh500, id_omg500, id_h500, &
-            id_u700, id_v700, id_t700, id_q700, id_rh700, id_omg700, id_h700, &
-            id_u850, id_v850, id_t850, id_q850, id_rh850, id_omg850, id_h850, &
-            id_u1000,id_v1000,id_t1000,id_q1000,id_rh1000,id_omg1000,id_h1000
- integer :: id_rh1000_cmip, id_rh850_cmip, id_rh700_cmip, id_rh500_cmip, &
-            id_rh300_cmip, id_rh250_cmip, id_rh100_cmip, id_rh50_cmip, id_rh10_cmip
- integer :: id_hght
+ integer :: id_vort200, id_vort500, id_w500, id_w700
+ integer :: id_vort850, id_w850, id_x850, id_srh, id_srh25, id_srh01, &
+            id_uh03, id_uh25, id_theta_e,  &
+            id_w200, id_s200, id_sl12, id_sl13, id_w5km, id_rain5km, id_w2500m
+! NGGPS 31-level diag
+ integer, allocatable :: id_u(:), id_v(:), id_t(:), id_h(:), id_q(:), id_omg(:)
 
-#ifdef MARS_GCM
- integer ::  id_t05
- integer ::  id_tdust, id_sfc_dust
-#endif MARS_GCM
-#ifndef SW_DYNAMICS
- integer ::  id_eflux ! energy fixer
-#endif SW_DYNAMICS
+ integer:: id_u_plev, id_v_plev, id_t_plev, id_h_plev, id_q_plev, id_omg_plev
+! IPCC diag
+ integer :: id_rh10,  id_rh50,  id_rh100, id_rh200,  id_rh250, id_rh300, &
+            id_rh500, id_rh700, id_rh850, id_rh1000
+
+ integer :: id_rh1000_cmip, id_rh850_cmip, id_rh700_cmip, id_rh500_cmip, &
+            id_rh300_cmip,  id_rh250_cmip, id_rh100_cmip, id_rh50_cmip, id_rh10_cmip
+
+ integer :: id_hght
+ integer :: id_u100m, id_v100m, id_w100m
 
      ! For initial conditions:
      integer ic_ps, ic_ua, ic_va, ic_ppt
-#ifdef LASPRAT
      integer ic_sphum
-#endif
      integer, allocatable :: id_tracer(:)
 ! ESM requested diagnostics  -  dry mass/volume mixing ratios
  integer, allocatable :: id_tracer_dmmr(:)
@@ -84,38 +105,47 @@ module fv_arrays_mod
   ! It should not contain any user options (that goes in a different structure) nor data which
   ! is altered outside of those two modules.
   type fv_grid_type
+     real(kind=R_GRID), allocatable, dimension(:,:,:) :: grid_64, agrid_64
+     real(kind=R_GRID), allocatable, dimension(:,:) :: area_64, area_c_64
+     real(kind=R_GRID), allocatable, dimension(:,:) :: sina_64, cosa_64
+     real(kind=R_GRID), allocatable, dimension(:,:) :: dx_64, dy_64
+     real(kind=R_GRID), allocatable, dimension(:,:) :: dxc_64, dyc_64
+     real(kind=R_GRID), allocatable, dimension(:,:) :: dxa_64, dya_64
+
      real, allocatable, dimension(:,:,:) :: grid, agrid
      real, allocatable, dimension(:,:) :: area, area_c
      real, allocatable, dimension(:,:) :: rarea, rarea_c     
 
-  real, allocatable, dimension(:,:) :: sina, cosa
-  real, allocatable, dimension(:,:,:) :: e1,e2
-  real, allocatable, dimension(:,:) :: dx, dy
-  real, allocatable, dimension(:,:) :: dxc, dyc
-  real, allocatable, dimension(:,:) :: dxa, dya
-  real, allocatable, dimension(:,:) :: rdx, rdy
-  real, allocatable, dimension(:,:) :: rdxc, rdyc
-  real, allocatable, dimension(:,:) :: rdxa, rdya
+     real, allocatable, dimension(:,:) :: sina, cosa
+     real, allocatable, dimension(:,:,:) :: e1,e2
+     real, allocatable, dimension(:,:) :: dx, dy
+     real, allocatable, dimension(:,:) :: dxc, dyc
+     real, allocatable, dimension(:,:) :: dxa, dya
+     real, allocatable, dimension(:,:) :: rdx, rdy
+     real, allocatable, dimension(:,:) :: rdxc, rdyc
+     real, allocatable, dimension(:,:) :: rdxa, rdya
 
      ! Scalars:
-     real, allocatable :: edge_s(:)
-     real, allocatable :: edge_n(:)
-     real, allocatable :: edge_w(:)
-     real, allocatable :: edge_e(:)
+     real(kind=R_GRID), allocatable :: edge_s(:)
+     real(kind=R_GRID), allocatable :: edge_n(:)
+     real(kind=R_GRID), allocatable :: edge_w(:)
+     real(kind=R_GRID), allocatable :: edge_e(:)
      ! Vector:
-     real, allocatable :: edge_vect_s(:)
-     real, allocatable :: edge_vect_n(:)
-     real, allocatable :: edge_vect_w(:)
-     real, allocatable :: edge_vect_e(:)
+     real(kind=R_GRID), allocatable :: edge_vect_s(:)
+     real(kind=R_GRID), allocatable :: edge_vect_n(:)
+     real(kind=R_GRID), allocatable :: edge_vect_w(:)
+     real(kind=R_GRID), allocatable :: edge_vect_e(:)
      ! scalar:
-     real, allocatable :: ex_s(:)
-     real, allocatable :: ex_n(:)
-     real, allocatable :: ex_w(:)
-     real, allocatable :: ex_e(:)
+     real(kind=R_GRID), allocatable :: ex_s(:)
+     real(kind=R_GRID), allocatable :: ex_n(:)
+     real(kind=R_GRID), allocatable :: ex_w(:)
+     real(kind=R_GRID), allocatable :: ex_e(:)
 
      real, allocatable :: l2c_u(:,:), l2c_v(:,:)
      ! divergence Damping:
      real, allocatable :: divg_u(:,:), divg_v(:,:)    !
+     ! del6 diffusion:
+     real, allocatable :: del6_u(:,:), del6_v(:,:)    !
      ! Cubed_2_latlon:
      real, allocatable :: a11(:,:)
      real, allocatable :: a12(:,:)
@@ -138,12 +168,12 @@ module fv_arrays_mod
      real, allocatable :: rsin_v(:,:)
      real, allocatable ::  rsina(:,:)
      real, allocatable ::  rsin2(:,:)
-     real, allocatable :: ee1(:,:,:)
-     real, allocatable :: ee2(:,:,:)
-     real, allocatable :: ec1(:,:,:)
-     real, allocatable :: ec2(:,:,:)
-     real, allocatable :: ew(:,:,:,:)
-     real, allocatable :: es(:,:,:,:)
+     real(kind=R_GRID), allocatable :: ee1(:,:,:)
+     real(kind=R_GRID), allocatable :: ee2(:,:,:)
+     real(kind=R_GRID), allocatable :: ec1(:,:,:)
+     real(kind=R_GRID), allocatable :: ec2(:,:,:)
+     real(kind=R_GRID), allocatable :: ew(:,:,:,:)
+     real(kind=R_GRID), allocatable :: es(:,:,:,:)
 
 
      !- 3D Super grid to contain all geometrical factors --
@@ -153,15 +183,15 @@ module fv_arrays_mod
      !--------------------------------------------------
 
      ! Unit Normal vectors at cell edges:
-     real, allocatable :: en1(:,:,:)
-     real, allocatable :: en2(:,:,:)
+     real(kind=R_GRID), allocatable :: en1(:,:,:)
+     real(kind=R_GRID), allocatable :: en2(:,:,:)
 
      ! Extended Cubed cross-edge winds
      real, allocatable :: eww(:,:)
      real, allocatable :: ess(:,:)
 
      ! Unit vectors for lat-lon grid
-     real, allocatable :: vlon(:,:,:), vlat(:,:,:)
+     real(kind=R_GRID), allocatable :: vlon(:,:,:), vlat(:,:,:)
      real, allocatable :: fC(:,:), f0(:,:)
 
      integer, dimension(:,:,:), allocatable :: iinta, jinta, iintb, jintb
@@ -170,11 +200,11 @@ module fv_arrays_mod
      
      integer :: npx_g, npy_g, ntiles_g ! global domain
 
-     real :: global_area
+     real(kind=R_GRID) :: global_area
      logical :: g_sum_initialized = .false. !Not currently used but can be useful
      logical:: sw_corner, se_corner, ne_corner, nw_corner
 
-     real :: da_min, da_max, da_min_c, da_max_c
+     real(kind=R_GRID) :: da_min, da_max, da_min_c, da_max_c
 
      real  :: acapN, acapS
      real  :: globalarea  ! total Global Area
@@ -247,12 +277,14 @@ module fv_arrays_mod
 
    integer :: nord=1         ! 0: del-2, 1: del-4, 2: del-6, 3: del-8 divergence damping
                              ! Alternative setting for high-res: nord=1; d4_bg = 0.075
+   integer :: nord_tr=0      ! 0: del-2, 1: del-4, 2: del-6
    real    :: dddmp = 0.0    ! coefficient for del-2 divergence damping (0.2)
                              ! for C90 or lower: 0.2
    real    :: d2_bg = 0.0    ! coefficient for background del-2 divergence damping
    real    :: d4_bg = 0.16   ! coefficient for background del-4(6) divergence damping
                              ! for stability, d4_bg must be <=0.16 if nord=3
    real    :: vtdm4 = 0.0    ! coefficient for del-4 vorticity damping
+   real    :: trdm2 = 0.0    ! coefficient for del-2 tracer damping
    real    :: d2_bg_k1 = 4.         ! factor for d2_bg (k=1)
    real    :: d2_bg_k2 = 2.         ! factor for d2_bg (k=2)
    real    :: d2_divg_max_k1 = 0.15 ! d2_divg max value (k=1)
@@ -263,15 +295,12 @@ module fv_arrays_mod
 ! Additional (after the fact) terrain filter (to further smooth the terrain after cold start)
    integer ::    n_zs_filter=0      !  number of application of the terrain filter
    integer :: nord_zs_filter=4      !  use del-2 (2) OR del-4 (4)
+   logical :: full_zs_filter=.false.! perform full filtering of topography (in external_ic only )
 
    logical :: consv_am  = .false.   ! Apply Angular Momentum Correction (to zonal wind component)
    logical :: do_sat_adj= .false.   ! 
    logical :: do_f3d    = .false.   ! 
    logical :: no_dycore = .false.   ! skip the dycore
-   logical :: replace_w = .false.   ! replace w (m/sec) with omega (pa/sec) 
-                                    ! this is useful for getting a good initial estimate of w
-                                    ! suugest usage: from a hydrostatic IC, set hydrostatic = .F., make_nh = .T.
-                                    !                replace_w = .T., then run the model adiabatically for 1 sec
    logical :: convert_ke = .false. 
    logical :: do_vort_damp = .false. 
    logical :: use_old_omega = .true. 
@@ -299,9 +328,9 @@ module fv_arrays_mod
    real :: shift_fac   =  18.   ! shift west by 180/shift_fac = 10 degrees
 ! Defaults for Schmidt transformation:
    logical :: do_schmidt = .false. 
-   real :: stretch_fac =   1.   ! No stretching
-   real :: target_lat  = -90.   ! -90: no grid rotation 
-   real :: target_lon  =   0.   ! 
+   real(kind=R_GRID) :: stretch_fac =   1.   ! No stretching
+   real(kind=R_GRID) :: target_lat  = -90.   ! -90: no grid rotation 
+   real(kind=R_GRID) :: target_lon  =   0.   ! 
 
 !-----------------------------------------------------------------------------------------------
 ! Example #1a: US regional climate simulation, center located over Oklahoma city: (262.4, 35.4)
@@ -361,20 +390,17 @@ module fv_arrays_mod
    integer :: fv_sg_adj = -1          ! Perform grid-scale dry adjustment if > 0
                                       ! Relaxzation time  scale (sec) if positive
    integer :: na_init = 0             ! Perform adiabatic initialization
-#ifdef MARS_GCM
-   real    :: p_ref = 600.
-   real    :: reference_sfc_pres = 7.7E2
-   real    :: sponge_damp=   1.0
-   real    :: dry_mass = 7.7E2
-#else
    real    :: p_ref = 1.E5
    real    :: dry_mass = 98290.
-#endif
    integer :: nt_prog = 0
    integer :: nt_phys = 0
    real    :: tau_h2o = 0.            ! Time scale (days) for ch4_chem
 
+   real    :: delt_max = 1.           ! limiter for dissipative heating rate
+                                      ! large value (~1) essentially imposes no limit
    real    :: d_con = 0.
+   real    :: ke_bg = 0.              ! background KE production (m^2/s^3) over a small step
+                                      ! Use this to conserve total energy if consv_te=0
    real    :: consv_te = 0.
    real    :: tau = 0.                ! Time scale (days) for Rayleigh friction
    real    :: rf_cutoff = 30.E2       ! cutoff pressure level for RF
@@ -419,6 +445,12 @@ module fv_arrays_mod
    logical :: nudge = .false.         ! Perform nudging
    logical :: nudge_ic = .false.      ! Perform nudging on IC
    logical :: ncep_ic = .false.       ! use NCEP ICs 
+   logical :: nggps_ic = .false.      ! use NGGPS ICs 
+   logical :: ecmwf_ic = .false.      ! use ECMWF ICs 
+   logical :: gfs_phil = .false.      ! if .T., compute geopotential inside of GFS physics
+   logical :: agrid_vel_rst = .false. ! if .T., include ua/va (agrid winds) in the restarts
+   logical :: use_new_ncep = .false.  ! use the NCEP ICs created after 2014/10/22, if want to read CWAT
+   logical :: use_ncep_phy = .false.  ! if .T., separate CWAT by weights of liq_wat and liq_ice in FV_IC
    logical :: fv_diag_ic = .false.    ! reconstruct IC from fv_diagnostics on lat-lon grid
    logical :: external_ic = .false.   ! use ICs from external sources; e.g. lat-lon FV core
                                       ! or NCEP re-analysis; both vertical remapping & horizontal
@@ -432,34 +464,31 @@ module fv_arrays_mod
 ! Parameters related to non-hydrostatic dynamics:
 !------------------------------------------------
    logical :: hydrostatic = .true.
-   logical :: phys_hydrostatic = .true.  ! heating/cooling term from the physics is hydrostatic
-   logical :: do_uni_zfull = .false.     ! compute zfull as a simply average of two zhalf
-   logical :: hybrid_z    = .false.      ! use hybrid_z for remapping
-   logical :: Make_NH     = .false.      ! Initialize (w, delz) from hydro restart file 
-   logical :: make_hybrid_z  = .false.   ! transform hydrostatic eta-coord IC into non-hydrostatic hybrid_z
-   real    :: add_noise = -1.            !Amplitude of random noise added upon model startup; <=0 means no noise added
+   logical :: phys_hydrostatic = .true.    ! heating/cooling term from the physics is hydrostatic
+   logical :: use_hydro_pressure = .false. !  GFS control
+   logical :: do_uni_zfull = .false.       ! compute zfull as a simply average of two zhalf
+   logical :: hybrid_z    = .false.        ! use hybrid_z for remapping
+   logical :: Make_NH     = .false.        ! Initialize (w, delz) from hydro restart file 
+   logical :: make_hybrid_z  = .false.     ! transform hydrostatic eta-coord IC into non-hydrostatic hybrid_z
+   logical :: nudge_qv  = .false.          ! Nudge the water vapor (during na_init) above 30 mb towards HALOE climatology
+   real    :: add_noise = -1.              !Amplitude of random noise added upon model startup; <=0 means no noise added
 
    integer :: a2b_ord = 4    ! order for interpolation from A to B Grid (corners)
    integer :: c2l_ord = 4    ! order for interpolation from D to lat-lon A winds for phys & output
 
-  real :: dx_const = 1000.    ! spatial resolution for double periodic boundary configuration [m]
-  real :: dy_const = 1000.
-  real :: deglat=15.
+  real(kind=R_GRID) :: dx_const = 1000.    ! spatial resolution for double periodic boundary configuration [m]
+  real(kind=R_GRID) :: dy_const = 1000.
+  real(kind=R_GRID) :: deglat=15.
   !The following deglat_*, deglon_* options are not used.
-  real :: deglon_start = -30., deglon_stop = 30., &  ! boundaries of latlon patch
-          deglat_start = -30., deglat_stop = 30.
+  real(kind=R_GRID) :: deglon_start = -30., deglon_stop = 30., &  ! boundaries of latlon patch
+                       deglat_start = -30., deglat_stop = 30.
 
   !Convenience pointers
   integer, pointer :: grid_number
 
-#ifndef use_AM3_physics
   !f1p
-!  logical  :: adj_mass_vmr = .true. !fix mass balance issue for tracers in units of vmr
   logical  :: adj_mass_vmr = .false. !TER: This is to reproduce answers for verona patch.  This default can be changed
                                      !     to .true. in the next city release if desired
-#else
-  logical  :: adj_mass_vmr = .false. !TER: AM3 should always reproduce answers
-#endif  
   
   !integer, pointer :: test_case
   !real,    pointer :: alpha
@@ -476,6 +505,7 @@ module fv_arrays_mod
      integer :: istag, jstag
 
      logical :: allocated = .false.
+     logical :: initialized = .false.
 
   end type fv_nest_BC_type_3D
 
@@ -487,6 +517,7 @@ module fv_arrays_mod
      integer :: istag, jstag
 
      logical :: allocated = .false.
+     logical :: initialized = .false.
 
   end type fv_nest_BC_type_4D
 
@@ -510,14 +541,15 @@ module fv_arrays_mod
      logical :: first_step = .true.
      integer :: refinement_of_global = 1
      integer :: npx_global
-     
+     integer :: upoff = 1 ! currently the same for all variables
+     integer :: isu = -999, ieu = -1000, jsu = -999, jeu = -1000 ! limits of update regions on coarse grid 
 
      type(nest_domain_type) :: nest_domain !Structure holding link from this grid to its parent
      type(nest_domain_type), allocatable :: nest_domain_all(:)
 
      !Interpolation arrays for grid nesting
-     integer, allocatable, dimension(:,:,:) :: ind_h, ind_u, ind_v
-     real, allocatable, dimension(:,:,:) :: wt_h, wt_u, wt_v
+     integer, allocatable, dimension(:,:,:) :: ind_h, ind_u, ind_v, ind_b
+     real, allocatable, dimension(:,:,:) :: wt_h, wt_u, wt_v, wt_b
      integer, allocatable, dimension(:,:,:) :: ind_update_h
 
      !These arrays are not allocated by allocate_fv_atmos_type; but instead
@@ -529,10 +561,16 @@ module fv_arrays_mod
      logical :: parent_of_twoway = .false.
    
      !These are for time-extrapolated BCs
-     type(fv_nest_BC_type_3D) :: delp_BC, u_BC, v_BC, uc_BC, vc_BC
+     type(fv_nest_BC_type_3D) :: delp_BC, u_BC, v_BC, uc_BC, vc_BC, divg_BC
      type(fv_nest_BC_type_3D), allocatable, dimension(:) :: q_BC
 #ifndef SW_DYNAMICS
      type(fv_nest_BC_type_3D) :: pt_BC, w_BC, delz_BC
+#ifdef USE_COND
+     type(fv_nest_BC_type_3D) :: q_con_BC
+#ifdef MOIST_CAPPA
+     type(fv_nest_BC_type_3D) :: cappa_BC
+#endif
+#endif
 #endif
 
      !These are for tracer flux BCs
@@ -563,12 +601,17 @@ module fv_arrays_mod
   type fv_atmos_type
 
      logical :: allocated = .false.
-     logical :: dummy = .false.
+     logical :: dummy = .false. ! same as grids_on_this_pe(n)
      integer :: grid_number = 1
 
      !Timestep-related variables.
 
      type(time_type) :: Time_init, Time, Run_length, Time_end, Time_step_atmos
+
+#ifdef GFS_PHYS
+     !--- used for GFS PHYSICS only
+     real, dimension(2048) :: fdiag = 0.
+#endif
 
      logical :: grid_active = .true. !Always active for now
 
@@ -693,7 +736,7 @@ module fv_arrays_mod
      type(fv_nest_type) :: neststruct
 
      !Hold on to coarse-grid global grid, so we don't have to waste processor time getting it again when starting to do grid nesting
-     real, allocatable, dimension(:,:,:,:) :: grid_global
+     real(kind=R_GRID), allocatable, dimension(:,:,:,:) :: grid_global
 
   integer :: atmos_axes(4)
 
@@ -707,7 +750,7 @@ module fv_arrays_mod
 contains
 
   subroutine allocate_fv_atmos_type(Atm, isd_in, ied_in, jsd_in, jed_in, is_in, ie_in, js_in, je_in, &
-       npx_in, npy_in, npz_in, ndims_in, ncnst_in, nq_in, ng_in, dummy, alloc_2d)
+       npx_in, npy_in, npz_in, ndims_in, ncnst_in, nq_in, ng_in, dummy, alloc_2d, ngrids_in)
 
     !WARNING: Before calling this routine, be sure to have set up the
     ! proper domain parameters from the namelists (as is done in
@@ -718,6 +761,7 @@ contains
     integer, intent(IN) :: isd_in, ied_in, jsd_in, jed_in, is_in, ie_in, js_in, je_in
     integer, intent(IN) :: npx_in, npy_in, npz_in, ndims_in, ncnst_in, nq_in, ng_in
     logical, intent(IN) :: dummy, alloc_2d
+    integer, intent(IN) :: ngrids_in
     integer:: isd, ied, jsd, jed, is, ie, js, je
     integer:: npx, npy, npz, ndims, ncnst, nq, ng
 
@@ -888,6 +932,7 @@ contains
        endif
        !         allocate ( mono(isd:ied, jsd:jed, npz))
     endif
+
 #ifdef USE_COND
       allocate ( Atm%q_con(isd:ied,jsd:jed,1:npz) )
 #else
@@ -898,7 +943,7 @@ contains
 ! Notes by SJL
 ! Place the memory in the optimal shared mem space
 ! This will help the scaling with OpenMP
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,Atm,nq,ncnst)
      do k=1, npz
         do j=jsd, jed
            do i=isd, ied
@@ -946,31 +991,43 @@ contains
 #endif
 
     allocate ( Atm%gridstruct% area(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )   ! Cell Centered
+    allocate ( Atm%gridstruct% area_64(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) ! Cell Centered
     allocate ( Atm%gridstruct%rarea(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )   ! Cell Centered
     
-    allocate ( Atm%gridstruct% area_c(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )  ! Cell Corners
-    allocate ( Atm%gridstruct%rarea_c(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )  ! Cell Corners
+    allocate ( Atm%gridstruct% area_c(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )   ! Cell Corners
+    allocate ( Atm%gridstruct% area_c_64(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )! Cell Corners
+    allocate ( Atm%gridstruct%rarea_c(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )   ! Cell Corners
     
     allocate ( Atm%gridstruct% dx(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
+    allocate ( Atm%gridstruct% dx_64(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
     allocate ( Atm%gridstruct%rdx(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
     allocate ( Atm%gridstruct% dy(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
+    allocate ( Atm%gridstruct% dy_64(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
     allocate ( Atm%gridstruct%rdy(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
     
     allocate ( Atm%gridstruct% dxc(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
+    allocate ( Atm%gridstruct% dxc_64(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
     allocate ( Atm%gridstruct%rdxc(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
     allocate ( Atm%gridstruct% dyc(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
+    allocate ( Atm%gridstruct% dyc_64(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
     allocate ( Atm%gridstruct%rdyc(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
     
     allocate ( Atm%gridstruct% dxa(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
+    allocate ( Atm%gridstruct% dxa_64(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
     allocate ( Atm%gridstruct%rdxa(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
     allocate ( Atm%gridstruct% dya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
+    allocate ( Atm%gridstruct% dya_64(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
     allocate ( Atm%gridstruct%rdya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
     
     allocate ( Atm%gridstruct%grid (isd_2d:ied_2d+1,jsd_2d:jed_2d+1,1:ndims_2d) )
+    allocate ( Atm%gridstruct%grid_64 (isd_2d:ied_2d+1,jsd_2d:jed_2d+1,1:ndims_2d) )
     allocate ( Atm%gridstruct%agrid(isd_2d:ied_2d  ,jsd_2d:jed_2d  ,1:ndims_2d) )
+    allocate ( Atm%gridstruct%agrid_64(isd_2d:ied_2d  ,jsd_2d:jed_2d  ,1:ndims_2d) )
     allocate ( Atm%gridstruct% sina(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )   ! SIN(angle of intersection)
+    allocate ( Atm%gridstruct% sina_64(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )   ! SIN(angle of intersection)
     allocate ( Atm%gridstruct%rsina(is_2d:ie_2d+1,js_2d:je_2d+1) )      ! Why is the size different?
     allocate ( Atm%gridstruct% cosa(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )   ! COS(angle of intersection)
+    allocate ( Atm%gridstruct% cosa_64(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )   ! COS(angle of intersection)
     
     allocate ( Atm%gridstruct%  e1(3,isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
     allocate ( Atm%gridstruct%  e2(3,isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
@@ -1002,6 +1059,9 @@ contains
     ! For diveregnce damping:
     allocate (  Atm%gridstruct%divg_u(isd_2d:ied_2d,  jsd_2d:jed_2d+1) )
     allocate (  Atm%gridstruct%divg_v(isd_2d:ied_2d+1,jsd_2d:jed_2d) )
+    ! For del6 diffusion:
+    allocate (  Atm%gridstruct%del6_u(isd_2d:ied_2d,  jsd_2d:jed_2d+1) )
+    allocate (  Atm%gridstruct%del6_v(isd_2d:ied_2d+1,jsd_2d:jed_2d) )
 
     allocate (  Atm%gridstruct%z11(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
     allocate (  Atm%gridstruct%z12(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
@@ -1015,8 +1075,8 @@ contains
     allocate (  Atm%gridstruct%a12(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
     allocate (  Atm%gridstruct%a21(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
     allocate (  Atm%gridstruct%a22(is_2d-1:ie_2d+1,js_2d-1:je_2d+1) )
-    allocate ( Atm%gridstruct%vlon(3,is_2d-2:ie_2d+2,js_2d-2:je_2d+2) )
-    allocate ( Atm%gridstruct%vlat(3,is_2d-2:ie_2d+2,js_2d-2:je_2d+2) )
+    allocate ( Atm%gridstruct%vlon(is_2d-2:ie_2d+2,js_2d-2:je_2d+2,3) )
+    allocate ( Atm%gridstruct%vlat(is_2d-2:ie_2d+2,js_2d-2:je_2d+2,3) )
     ! Coriolis parameters:
     allocate ( Atm%gridstruct%f0(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
     allocate ( Atm%gridstruct%fC(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
@@ -1058,21 +1118,23 @@ contains
     !     |       |
     !     6---2---7
 
-    allocate ( Atm%gridstruct%cos_sg(9,isd_2d:ied_2d,jsd_2d:jed_2d) )
-    allocate ( Atm%gridstruct%sin_sg(9,isd_2d:ied_2d,jsd_2d:jed_2d) )
+    allocate ( Atm%gridstruct%cos_sg(isd_2d:ied_2d,jsd_2d:jed_2d,9) )
+    allocate ( Atm%gridstruct%sin_sg(isd_2d:ied_2d,jsd_2d:jed_2d,9) )
 
     allocate( Atm%gridstruct%eww(3,4) )
     allocate( Atm%gridstruct%ess(3,4) )
 
     if (Atm%neststruct%nested) then
 
-       allocate(Atm%neststruct%ind_h(isd:ied,jsd:jed,2))
-       allocate(Atm%neststruct%ind_u(isd:ied,jsd:jed+1,2))
-       allocate(Atm%neststruct%ind_v(isd:ied+1,jsd:jed,2))
+       allocate(Atm%neststruct%ind_h(isd:ied,jsd:jed,4))
+       allocate(Atm%neststruct%ind_u(isd:ied,jsd:jed+1,4))
+       allocate(Atm%neststruct%ind_v(isd:ied+1,jsd:jed,4))
 
        allocate(Atm%neststruct%wt_h(isd:ied,   jsd:jed,  4))
        allocate(Atm%neststruct%wt_u(isd:ied,   jsd:jed+1,4))
        allocate(Atm%neststruct%wt_v(isd:ied+1, jsd:jed,  4))
+       allocate(Atm%neststruct%ind_b(isd:ied+1,jsd:jed+1,4))
+       allocate(Atm%neststruct%wt_b(isd:ied+1, jsd:jed+1,4))
 
        ns = Atm%neststruct%nsponge
 
@@ -1081,6 +1143,7 @@ contains
        call allocate_fv_nest_BC_type(Atm%neststruct%v_BC,Atm,ns,1,0,dummy)
        call allocate_fv_nest_BC_type(Atm%neststruct%uc_BC,Atm,ns,1,0,dummy)
        call allocate_fv_nest_BC_type(Atm%neststruct%vc_BC,Atm,ns,0,1,dummy)
+       call allocate_fv_nest_BC_type(Atm%neststruct%divg_BC,Atm,ns,1,1,dummy)
 
        if (ncnst > 0) then
           allocate(Atm%neststruct%q_BC(ncnst))
@@ -1092,6 +1155,12 @@ contains
 #ifndef SW_DYNAMICS
 
        call allocate_fv_nest_BC_type(Atm%neststruct%pt_BC,Atm,ns,0,0,dummy)
+#ifdef USE_COND
+       call allocate_fv_nest_BC_type(Atm%neststruct%q_con_BC,Atm,ns,0,0,dummy)
+#ifdef MOIST_CAPPA
+       call allocate_fv_nest_BC_type(Atm%neststruct%cappa_BC,Atm,ns,0,0,dummy)
+#endif
+#endif
        if (.not.Atm%flagstruct%hydrostatic) then
           call allocate_fv_nest_BC_type(Atm%neststruct%w_BC,Atm,ns,0,0,dummy)
           call allocate_fv_nest_BC_type(Atm%neststruct%delz_BC,Atm,ns,0,0,dummy)
@@ -1106,6 +1175,8 @@ contains
 
     end if
 
+    !--- Do the memory allocation only for nested model
+    if( ngrids_in > 1 ) then
        if (Atm%flagstruct%grid_type < 4) then
           if (Atm%neststruct%nested) then
              allocate(Atm%grid_global(1-ng_2d:npx_2d  +ng_2d,1-ng_2d:npy_2d  +ng_2d,2,1))
@@ -1113,7 +1184,7 @@ contains
              allocate(Atm%grid_global(1-ng_2d:npx_2d  +ng_2d,1-ng_2d:npy_2d  +ng_2d,2,1:6))
           endif
        end if
-
+    endif
 
     Atm%allocated = .true.
     if (dummy) Atm%dummy = .true.
@@ -1221,6 +1292,7 @@ contains
     ! For diveregnce damping:
     deallocate (  Atm%gridstruct%divg_u )
     deallocate (  Atm%gridstruct%divg_v )
+    ! For del6 diffusion:
 
     deallocate (  Atm%gridstruct%z11 )
     deallocate (  Atm%gridstruct%z12 )
@@ -1289,11 +1361,16 @@ contains
        deallocate(Atm%neststruct%wt_u)
        deallocate(Atm%neststruct%wt_v)
 
+       deallocate(Atm%neststruct%ind_b)
+       deallocate(Atm%neststruct%wt_b)
+
        call deallocate_fv_nest_BC_type(Atm%neststruct%delp_BC)
        call deallocate_fv_nest_BC_type(Atm%neststruct%u_BC)
        call deallocate_fv_nest_BC_type(Atm%neststruct%v_BC)
        call deallocate_fv_nest_BC_type(Atm%neststruct%uc_BC)
        call deallocate_fv_nest_BC_type(Atm%neststruct%vc_BC)
+       call deallocate_fv_nest_BC_type(Atm%neststruct%divg_BC)
+
        if (allocated(Atm%neststruct%q_BC)) then
           do n=1,size(Atm%neststruct%q_BC)
              call deallocate_fv_nest_BC_type(Atm%neststruct%q_BC(n))
@@ -1302,6 +1379,12 @@ contains
 
 #ifndef SW_DYNAMICS
        call deallocate_fv_nest_BC_type(Atm%neststruct%pt_BC)
+#ifdef USE_COND
+       call deallocate_fv_nest_BC_type(Atm%neststruct%q_con_BC)
+#ifdef MOIST_CAPPA
+       call deallocate_fv_nest_BC_type(Atm%neststruct%cappa_BC)
+#endif
+#endif
        if (.not.Atm%flagstruct%hydrostatic) then
           call deallocate_fv_nest_BC_type(Atm%neststruct%w_BC)
           call deallocate_fv_nest_BC_type(Atm%neststruct%delz_BC)
@@ -1314,7 +1397,7 @@ contains
     end if
 
     if (Atm%flagstruct%grid_type < 4) then
-       deallocate(Atm%grid_global)
+       if(allocated(Atm%grid_global)) deallocate(Atm%grid_global)
     end if
     
     Atm%allocated = .false.
@@ -1368,6 +1451,14 @@ subroutine allocate_fv_nest_BC_type_3D(BC,is,ie,js,je,isd,ied,jsd,jed,npx,npy,np
   if (ie == npx-1 .and. .not. dummy) then
      allocate(BC%east_t1(ie+1-ns+istag:ied+istag,jsd:jed+jstag,npz))
      allocate(BC%east_t0(ie+1-ns+istag:ied+istag,jsd:jed+jstag,npz))
+     do k=1,npz
+     do j=jsd,jed+jstag
+     do i=ie+1-ns+istag,ied+istag
+        BC%east_t1(i,j,k) = 0.
+        BC%east_t0(i,j,k) = 0.
+     enddo
+     enddo
+     enddo
   else
      allocate(BC%east_t1(1,1,npz))
      allocate(BC%east_t0(1,1,npz))
@@ -1376,6 +1467,14 @@ subroutine allocate_fv_nest_BC_type_3D(BC,is,ie,js,je,isd,ied,jsd,jed,npx,npy,np
   if (js == 1 .and. .not. dummy) then
      allocate(BC%south_t1(isd:ied+istag,jsd:js-1+ns,npz))
      allocate(BC%south_t0(isd:ied+istag,jsd:js-1+ns,npz))
+     do k=1,npz
+     do j=jsd,js-1+ns
+     do i=isd,ied+istag
+        BC%south_t1(i,j,k) = 0.
+        BC%south_t0(i,j,k) = 0.
+     enddo
+     enddo
+     enddo
   else
      allocate(BC%south_t1(1,1,npz))
      allocate(BC%south_t0(1,1,npz))
@@ -1384,6 +1483,14 @@ subroutine allocate_fv_nest_BC_type_3D(BC,is,ie,js,je,isd,ied,jsd,jed,npx,npy,np
   if (is == 1 .and. .not. dummy) then
      allocate(BC%west_t1(isd:is-1+ns,jsd:jed+jstag,npz))
      allocate(BC%west_t0(isd:is-1+ns,jsd:jed+jstag,npz))
+     do k=1,npz
+     do j=jsd,jed+jstag
+     do i=isd,is-1+ns
+        BC%west_t1(i,j,k) = 0.
+        BC%west_t0(i,j,k) = 0.
+     enddo
+     enddo
+     enddo
   else
      allocate(BC%west_t1(1,1,npz))
      allocate(BC%west_t0(1,1,npz))
@@ -1392,6 +1499,14 @@ subroutine allocate_fv_nest_BC_type_3D(BC,is,ie,js,je,isd,ied,jsd,jed,npx,npy,np
   if (je == npy-1 .and. .not. dummy) then
      allocate(BC%north_t1(isd:ied+istag,je+1-ns+jstag:jed+jstag,npz))
      allocate(BC%north_t0(isd:ied+istag,je+1-ns+jstag:jed+jstag,npz))
+     do k=1,npz
+     do j=je+1-ns+jstag,jed+jstag
+     do i=isd,ied+istag
+        BC%north_t1(i,j,k) = 0.
+        BC%north_t0(i,j,k) = 0.
+     enddo
+     enddo
+     enddo
   else
      allocate(BC%north_t1(1,1,npz))
      allocate(BC%north_t0(1,1,npz))

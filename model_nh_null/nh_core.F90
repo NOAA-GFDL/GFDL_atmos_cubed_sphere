@@ -1,3 +1,23 @@
+!***********************************************************************
+!*                   GNU General Public License                        *
+!* This file is a part of fvGFS.                                       *
+!*                                                                     *
+!* fvGFS is free software; you can redistribute it and/or modify it    *
+!* and are expected to follow the terms of the GNU General Public      *
+!* License as published by the Free Software Foundation; either        *
+!* version 2 of the License, or (at your option) any later version.    *
+!*                                                                     *
+!* fvGFS is distributed in the hope that it will be useful, but        *
+!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+!* General Public License for more details.                            *
+!*                                                                     *
+!* For the full text of the GNU General Public License,                *
+!* write to: Free Software Foundation, Inc.,                           *
+!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!***********************************************************************
+
 module nh_core_mod
 
   use fms_mod, only: error_mesg, FATAL
@@ -62,9 +82,9 @@ contains
 
 
   subroutine Riem_Solver3(ms, dt,   is,   ie,   js, je, km, ng,    &
-                          isd, ied, jsd, jed, akap, cp,       &
-                          ptop, hs, q_con, w,  delz, pt,  &
-                          delp, zh, gz,  ppe, pk3, pk, pe, peln, &
+                          isd, ied, jsd, jed, akap, cappa, cp,     &
+                          ptop, zs, q_con, w,  delz, pt,  &
+                          delp, zh, pe, ppe, pk3, pk, peln, &
                           ws, scale_m,  p_fac, a_imp, &
                           use_logp, last_call, fp_out)
 !--------------------------------------------
@@ -77,19 +97,19 @@ contains
    integer, intent(in):: isd, ied, jsd, jed
    real, intent(in):: dt         ! the BIG horizontal Lagrangian time step
    real, intent(in):: akap, cp, ptop, p_fac, a_imp, scale_m
-   real, intent(in):: hs(isd:ied,jsd:jed)
+   real, intent(in):: zs(isd:ied,jsd:jed)
    logical, intent(in):: last_call, use_logp, fp_out
-   real, intent(in):: ws(isd:ied,jsd:jed)
+   real, intent(in):: ws(is:ie,js:je)
+   real, intent(in), dimension(isd:,jsd:,1:):: q_con, cappa
+   real, intent(in), dimension(isd:ied,jsd:jed,km):: delp, pt
    real, intent(inout), dimension(isd:ied,jsd:jed,km+1):: zh
-   real, intent(inout):: peln(is:ie,km+1,js:je)          ! ln(pe)
-   real, intent(inout), dimension(isd:   ,jsd:   ,1:):: w ! km
-   real, intent(inout), dimension(isd:ied,jsd:jed,km):: delp, pt, q_con
+   real, intent(inout), dimension(isd:ied,jsd:jed,km):: w
+   real, intent(inout):: pe(is-1:ie+1,km+1,js-1:je+1)
+   real, intent(out):: peln(is:ie,km+1,js:je)          ! ln(pe)
    real, intent(out), dimension(isd:ied,jsd:jed,km+1):: ppe
-   real, intent(out):: delz(is-ng:,js-ng:,1:) ! km
+   real, intent(out):: delz(is-ng:ie+ng,js-ng:je+ng,km)
    real, intent(out):: pk(is:ie,js:je,km+1)
-   real, intent(out):: pe(is-1:ie+1,km+1,js-1:je+1)
    real, intent(out):: pk3(isd:ied,jsd:jed,km+1)
-   real, intent(out), dimension(isd:ied,jsd:jed,km+1):: gz
 
    call error_mesg('Riem_Solver3','The null version of Riem_Solver3 should not be called.',FATAL)
 
@@ -98,15 +118,16 @@ contains
 
 
   subroutine Riem_Solver_c(ms,   dt,  is,   ie,   js, je, km,   ng,  &
-                           akap, cp,  ptop, hs, w3,  pt, q_con, &
+                           akap, cappa, cp,  ptop, hs, w3,  pt, q_con, &
                            delp, gz,  pef,  ws, p_fac, a_imp, scale_m)
    integer, intent(in):: is, ie, js, je, ng, km
    integer, intent(in):: ms
    real, intent(in):: dt,  akap, cp, ptop, p_fac, a_imp, scale_m
    real, intent(in):: ws(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, delp
+   real, intent(in), dimension(is-ng:,js-ng:,1:):: q_con, cappa
    real, intent(in)::   hs(is-ng:ie+ng,js-ng:je+ng)
-   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: w3, q_con
+   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: w3
 ! OUTPUT PARAMETERS
    real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: gz
    real, intent(  out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: pef
@@ -119,7 +140,6 @@ contains
 
   subroutine nest_halo_nh(ptop, grav, kappa, cp, delp, delz, pt, phis, pkc, gz, pk3, &
                            npx, npy, npz, nested, pkc_pertn, computepk3, fullhalo, bd)
-
    integer, intent(in) :: npx, npy, npz
    logical, intent(in) :: pkc_pertn, computepk3, fullhalo, nested
    real, intent(in) :: ptop, kappa, cp, grav

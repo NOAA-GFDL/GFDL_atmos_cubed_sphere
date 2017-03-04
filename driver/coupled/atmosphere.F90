@@ -61,7 +61,7 @@ use fv_cmip_diag_mod,   only: fv_cmip_diag_init, fv_cmip_diag, fv_cmip_diag_end
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
 use fv_mp_mod,          only: switch_current_Atm
-use fv_sg_mod,          only: fv_dry_conv
+use fv_sg_mod,          only: fv_subgrid_z
 use fv_update_phys_mod, only: fv_update_phys
 #if defined (ATMOS_NUDGE)
 use atmos_nudge_mod,    only: atmos_nudge_init, atmos_nudge_end
@@ -114,7 +114,7 @@ character(len=7)   :: mod_name = 'atmos'
   integer :: isd, ied, jsd, jed
   integer :: nq                       ! transported tracers
   integer :: sec, seconds, days
-  integer :: id_dynam, id_fv_diag, id_dryconv
+  integer :: id_dynam, id_fv_diag, id_subgridz
   logical :: cold_start = .false.       ! read in initial condition
 
   integer, dimension(:), allocatable :: id_tracerdt_dyn
@@ -141,7 +141,7 @@ character(len=7)   :: mod_name = 'atmos'
 
   real, parameter:: w0_big = 60.  ! to prevent negative w-tracer diffusion
 
-!---dynamics tendencies for use in fv_dry_conv and during fv_update_phys
+!---dynamics tendencies for use in fv_subgrid_z and during fv_update_phys
   real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt
   real, allocatable, dimension(:,:,:,:) :: q_dt
   real, allocatable :: pref(:,:), dum1d(:)
@@ -150,6 +150,8 @@ character(len=7)   :: mod_name = 'atmos'
 #if defined(ATMOS_NUDGE) || defined(CLIMATE_NUDGE) || defined(ADA_NUDGE)
    logical :: do_adiabatic_init
 #endif
+
+  integer, parameter :: kind_phys=8
 
 contains
 
@@ -238,8 +240,10 @@ contains
    Grid_box%edge_n(   isc:iec+1           ) = Atm(mytile)%gridstruct%edge_n(   isc:iec+1)
    Grid_box%en1   (:, isc:iec  , jsc:jec+1) = Atm(mytile)%gridstruct%en1   (:, isc:iec  , jsc:jec+1)
    Grid_box%en2   (:, isc:iec+1, jsc:jec  ) = Atm(mytile)%gridstruct%en2   (:, isc:iec+1, jsc:jec  )
-   Grid_box%vlon  (:, isc:iec  , jsc:jec  ) = Atm(mytile)%gridstruct%vlon  (:,  isc:iec ,  jsc:jec )
-   Grid_box%vlat  (:, isc:iec  , jsc:jec  ) = Atm(mytile)%gridstruct%vlat  (:,  isc:iec ,  jsc:jec )
+   do i = 1,3
+     Grid_box%vlon  (i, isc:iec  , jsc:jec  ) = Atm(mytile)%gridstruct%vlon  (isc:iec ,  jsc:jec, i )
+     Grid_box%vlat  (i, isc:iec  , jsc:jec  ) = Atm(mytile)%gridstruct%vlat  (isc:iec ,  jsc:jec, i )
+   enddo
 
 !----- allocate and zero out the dynamics (and accumulated) tendencies
    allocate( u_dt(isd:ied,jsd:jed,npz), &
@@ -355,14 +359,9 @@ contains
 !miz
 
 !  --- initialize clocks for dynamics, physics_down and physics_up
-   id_dynam     = mpp_clock_id ('FV dy-core', flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-   id_dryconv   = mpp_clock_id ('FV dry conv',flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-   id_fv_diag   = mpp_clock_id ('FV Diag',    flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-
-#ifdef TWOWAY_UPDATE_BEFORE_PHYSICS
-   if (ngrids > 1 ) call mpp_error(NOTE, "PERFORMING TWO-WAY UPDATING BEFORE PHYSICS")
-#endif
-                    call timing_off('ATMOS_INIT')
+   id_dynam     = mpp_clock_id ('FV dy-core',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+   id_subgridz  = mpp_clock_id ('FV subgrid_z',flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+   id_fv_diag   = mpp_clock_id ('FV Diag',     flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
    n = mytile
    call switch_current_Atm(Atm(n))
@@ -400,10 +399,10 @@ contains
    enddo
 
    n = mytile
-   do psc=1,p_split
+   do psc=1,abs(p_split)
                     call timing_on('fv_dynamics')
 !uc/vc only need be same on coarse grid? However BCs do need to be the same
-     call fv_dynamics(npx, npy, npz, nq, Atm(n)%ng, dt_atmos/real(p_split),&
+     call fv_dynamics(npx, npy, npz, nq, Atm(n)%ng, dt_atmos/real(abs(p_split)),&
                       Atm(n)%flagstruct%consv_te, Atm(n)%flagstruct%fill,  &
                       Atm(n)%flagstruct%reproduce_sum, kappa, cp_air, zvir,&
                       Atm(n)%ptop, Atm(n)%ks, nq,                          &
@@ -423,9 +422,9 @@ contains
 
      call timing_off('fv_dynamics')
 
-    if (ngrids > 1 .and. psc < p_split) then
+    if (ngrids > 1 .and. (psc < p_split .or. p_split < 0)) then
        call timing_on('TWOWAY_UPDATE')
-       call twoway_nesting(Atm, ngrids, grids_on_this_pe, kappa, cp_air, zvir, dt_atmos)
+       call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir)
        call timing_off('TWOWAY_UPDATE')
     endif
 
@@ -478,14 +477,14 @@ contains
 #endif
 
 !-----------------------------------------------------
-!--- COMPUTE DRY CONVECTION
+!--- COMPUTE SUBGRID Z
 !-----------------------------------------------------
 !--- zero out tendencies
-    call mpp_clock_begin (id_dryconv)
-    u_dt(:,:,:)   = 0
-    v_dt(:,:,:)   = 0
-    t_dt(:,:,:)   = 0
-    q_dt(:,:,:,:) = 0
+    call mpp_clock_begin (id_subgridz)
+    u_dt(:,:,:)   = 0.
+    v_dt(:,:,:)   = 0.
+    t_dt(:,:,:)   = 0.
+    q_dt(:,:,:,:) = 0.
 
     w_diff = get_tracer_index (MODEL_ATMOS, 'w_diff' )
     if ( Atm(n)%flagstruct%fv_sg_adj > 0 ) then
@@ -493,23 +492,26 @@ contains
       if ( w_diff /= NO_TRACER ) then
         nt_dyn = nq - 1
       endif
-      call fv_dry_conv( isd, ied, jsd, jed, isc, iec, jsc, jec, Atm(n)%npz, &
+      call fv_subgrid_z(isd, ied, jsd, jed, isc, iec, jsc, jec, Atm(n)%npz, &
                         nt_dyn, dt_atmos, Atm(n)%flagstruct%fv_sg_adj,      &
-                        Atm(n)%delp, Atm(n)%pe, Atm(n)%peln, Atm(n)%pkz,    &
-                        Atm(n)%pt, Atm(n)%q, Atm(n)%ua, Atm(n)%va,          &
-                        Atm(n)%flagstruct%hydrostatic, Atm(n)%w, Atm(n)%delz, &
-                        u_dt, v_dt, t_dt, q_dt )
+                        Atm(n)%flagstruct%nwat, Atm(n)%delp, Atm(n)%pe,     &
+                        Atm(n)%peln, Atm(n)%pkz, Atm(n)%pt, Atm(n)%q,       &
+                        Atm(n)%ua, Atm(n)%va, Atm(n)%flagstruct%hydrostatic,&
+                        Atm(n)%w, Atm(n)%delz, u_dt, v_dt, t_dt, q_dt,      &
+                        Atm(n)%flagstruct%n_sponge)
     endif
 
     if ( .not. Atm(n)%flagstruct%hydrostatic .and. w_diff /= NO_TRACER ) then
-!$OMP parallel do default(shared) private(k)
+!$OMP parallel do default (none) &
+!$OMP              shared (isc, iec, jsc, jec, w_diff, n, Atm, q_dt) &
+!$OMP             private (k)
        do k=1, Atm(n)%npz
           Atm(n)%q(isc:iec,jsc:jec,k,w_diff) = Atm(n)%w(isc:iec,jsc:jec,k) + w0_big
           q_dt(:,:,k,w_diff) = 0.
         enddo
     endif
 
-   call mpp_clock_end (id_dryconv)
+   call mpp_clock_end (id_subgridz)
 
  end subroutine atmosphere_dynamics
 
@@ -557,7 +559,7 @@ contains
   subroutine atmosphere_restart(timestamp)
     character(len=*),  intent(in) :: timestamp
 
-    call fv_write_restart(Atm, timestamp)
+    call fv_write_restart(Atm, grids_on_this_pe, timestamp)
 
   end subroutine atmosphere_restart
   ! </SUBROUTINE>
@@ -618,14 +620,14 @@ contains
 !---------------------------------------------------------------
 !    returns the longitude and latitude cell centers
 !---------------------------------------------------------------
-    real,    intent(out) :: lon(:,:), lat(:,:)   ! Unit: radian
+    real(kind=kind_phys), intent(out) :: lon(:,:), lat(:,:)   ! Unit: radian
 ! Local data:
     integer i,j
 
     do j=jsc,jec
        do i=isc,iec
-          lon(i-isc+1,j-jsc+1) = Atm(mytile)%gridstruct%agrid(i,j,1)
-          lat(i-isc+1,j-jsc+1) = Atm(mytile)%gridstruct%agrid(i,j,2)
+          lon(i-isc+1,j-jsc+1) = Atm(mytile)%gridstruct%agrid_64(i,j,1)
+          lat(i-isc+1,j-jsc+1) = Atm(mytile)%gridstruct%agrid_64(i,j,2)
        enddo
     end do
 
@@ -865,7 +867,9 @@ contains
 !--- adjust w and heat tendency for non-hydrostatic case
     if ( .not.Atm(n)%flagstruct%hydrostatic .and. w_diff /= NO_TRACER ) then
       rcp = 1. / cp_air
-!$OMP parallel do default(shared) private(i, j, k)
+!$OMP parallel do default (none) &
+!$OMP              shared (jsc, jec, isc, iec, n, w_diff, Atm, q_dt, t_dt, rcp, dt_atmos) &
+!$OMP             private (i, j, k)
        do k=1, Atm(n)%npz
          do j=jsc, jec
            do i=isc, iec
@@ -879,6 +883,7 @@ contains
        enddo
     endif
 
+   call mpp_clock_begin (id_dynam)
        call timing_on('FV_UPDATE_PHYS')
     call fv_update_phys( dt_atmos, isc, iec, jsc, jec, isd, ied, jsd, jed, Atm(n)%ng, nt_dyn, &
                          Atm(n)%u,  Atm(n)%v,   Atm(n)%w,  Atm(n)%delp, Atm(n)%pt,         &
@@ -886,29 +891,21 @@ contains
                          Atm(n)%ua, Atm(n)%va,  Atm(n)%ps, Atm(n)%pe,   Atm(n)%peln,       &
                          Atm(n)%pk, Atm(n)%pkz, Atm(n)%ak, Atm(n)%bk,   Atm(n)%phis,       &
                          Atm(n)%u_srf, Atm(n)%v_srf, Atm(n)%ts, Atm(n)%delz,               &
-                         Atm(n)%flagstruct%hydrostatic, u_dt, v_dt, t_dt, q_dt,            &
+                         Atm(n)%flagstruct%hydrostatic, u_dt, v_dt, t_dt,                  &
                          .true., Time_next, Atm(n)%flagstruct%nudge, Atm(n)%gridstruct,    &
                          Atm(n)%gridstruct%agrid(:,:,1), Atm(n)%gridstruct%agrid(:,:,2),   &
                          Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%flagstruct,            &
-                         Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop)
+                         Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop, q_dt)
        call timing_off('FV_UPDATE_PHYS')
+   call mpp_clock_end (id_dynam)
 
 !--- nesting update after updating atmospheric variables with
 !--- physics tendencies
-#ifndef TWOWAY_UPDATE_BEFORE_PHYSICS
+    if (ngrids > 1 .and. p_split > 0) then
        call timing_on('TWOWAY_UPDATE')
-    if (ngrids > 1) then
-       call twoway_nesting(Atm, ngrids, grids_on_this_pe, kappa, cp_air, zvir, dt_atmos)
-    endif
+       call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir)
        call timing_off('TWOWAY_UPDATE')
-   call nullify_domain()
-#endif
-
-  !---- diagnostics for FV dynamics -----
-   call mpp_clock_begin(id_fv_diag)
-
-   fv_time = Time_next
-   call get_time (fv_time, seconds,  days)
+    endif   
 
 #if !defined(ATMOS_NUDGE) && !defined(CLIMATE_NUDGE) && !defined(ADA_NUDGE)
    if ( .not.forecast_mode .and. Atm(mytile)%flagstruct%nudge .and. Atm(mytile)%flagstruct%na_init>0 ) then
@@ -917,12 +914,20 @@ contains
 #endif
 
    call nullify_domain()
-   call timing_on('FV_DIAG')
-   call fv_diag(Atm(mytile:mytile), zvir, fv_time, Atm(mytile)%flagstruct%print_freq)
-   call fv_cmip_diag(Atm(mytile:mytile), zvir, fv_time)
-   call timing_off('FV_DIAG')
+  !---- diagnostics for FV dynamics -----
+   if (Atm(mytile)%flagstruct%print_freq /= -99) then
+     call mpp_clock_begin(id_fv_diag)
+     call timing_on('FV_DIAG')
 
-   call mpp_clock_end(id_fv_diag)
+     fv_time = Time_next
+     call get_time (fv_time, seconds,  days)
+
+     call fv_diag(Atm(mytile:mytile), zvir, fv_time, Atm(mytile)%flagstruct%print_freq)
+     call fv_cmip_diag(Atm(mytile:mytile), zvir, fv_time)
+
+     call timing_off('FV_DIAG')
+     call mpp_clock_end(id_fv_diag)
+   endif
 
  end subroutine atmosphere_state_update
 
@@ -1020,11 +1025,11 @@ contains
                          Atm(n)%ua, Atm(n)%va,  Atm(n)%ps, Atm(n)%pe,   Atm(n)%peln,     &
                          Atm(n)%pk, Atm(n)%pkz, Atm(n)%ak, Atm(n)%bk,   Atm(n)%phis,     &
                          Atm(n)%u_srf, Atm(n)%v_srf, Atm(n)%ts, Atm(n)%delz,             &
-                         Atm(n)%flagstruct%hydrostatic, u_dt, v_dt, t_dt, q_dt,          &
+                         Atm(n)%flagstruct%hydrostatic, u_dt, v_dt, t_dt,                &
                          .true., Time_next, Atm(n)%flagstruct%nudge, Atm(n)%gridstruct,  &
                          Atm(n)%gridstruct%agrid(:,:,1), Atm(n)%gridstruct%agrid(:,:,2), &
                          Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%flagstruct,          &
-                         Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop)
+                         Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop, q_dt)
 
     endif
 

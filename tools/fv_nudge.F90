@@ -1,8 +1,33 @@
+!***********************************************************************
+!*                   GNU General Public License                        *
+!* This file is a part of fvGFS.                                       *
+!*                                                                     *
+!* fvGFS is free software; you can redistribute it and/or modify it    *
+!* and are expected to follow the terms of the GNU General Public      *
+!* License as published by the Free Software Foundation; either        *
+!* version 2 of the License, or (at your option) any later version.    *
+!*                                                                     *
+!* fvGFS is distributed in the hope that it will be useful, but        *
+!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+!* General Public License for more details.                            *
+!*                                                                     *
+!* For the full text of the GNU General Public License,                *
+!* write to: Free Software Foundation, Inc.,                           *
+!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!***********************************************************************
+#ifdef OVERLOAD_R4
+#define _GET_VAR1 get_var1_real
+#else
+#define _GET_VAR1 get_var1_double
+#endif
+
 module fv_nwp_nudge_mod
 
  use external_sst_mod,  only: i_sst, j_sst, sst_ncep, sst_anom, forecast_mode
  use diag_manager_mod,  only: register_diag_field, send_data
- use constants_mod,     only: pi, grav, rdgas, cp_air, kappa, radius
+ use constants_mod,     only: pi=>pi_8, grav, rdgas, cp_air, kappa, cnst_radius =>radius
  use fms_mod,           only: write_version_number, open_namelist_file, &
                               check_nml_error, file_exist, close_file
 !use fms_io_mod,        only: field_size
@@ -18,11 +43,14 @@ module fv_nwp_nudge_mod
  use fv_mp_mod,         only: mp_reduce_sum, mp_reduce_min, mp_reduce_max, is_master
  use fv_timing_mod,     only: timing_on, timing_off
 
- use sim_nc_mod,        only: open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var3_r4
- use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, fv_nest_type
+ use sim_nc_mod,        only: open_ncfile, close_ncfile, get_ncdim1, get_var1_double, &
+                              get_var3_r4, get_var1_real
+ use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, fv_nest_type, R_GRID
 
  implicit none
  private
+
+ real(kind=R_GRID), parameter :: radius = cnst_radius
 
  character(len=128) :: version = ''
  character(len=128) :: tagname = ''
@@ -235,22 +263,23 @@ module fv_nwp_nudge_mod
   logical used
 
 
-  real, pointer, dimension(:,:,:) :: agrid
+  real(kind=R_GRID), pointer, dimension(:,:,:) :: agrid
   real, pointer, dimension(:,:)   :: rarea, area
 
   real, pointer, dimension(:,:) :: sina_u, sina_v
-  real, pointer, dimension(:,:,:) :: vlon, vlat, sin_sg
+  real, pointer, dimension(:,:,:) :: sin_sg
+  real(kind=R_GRID), pointer, dimension(:,:,:) :: vlon, vlat
   
   real, pointer, dimension(:,:) :: dx, dy, rdxc, rdyc
 
-  real, pointer :: da_min
+  real(kind=R_GRID), pointer :: da_min
 
   logical, pointer :: nested, sw_corner, se_corner, nw_corner, ne_corner
 
   if ( .not. module_is_initialized ) then 
         call mpp_error(FATAL,'==> Error from fv_nwp_nudge: module not initialized')
   endif
-  agrid => gridstruct%agrid
+  agrid => gridstruct%agrid_64
    area => gridstruct%area
   rarea => gridstruct%rarea
 
@@ -294,7 +323,7 @@ module fv_nwp_nudge_mod
 
   profile(:) = 1.
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(npz,press,ak,bk,P_relax,P_norelax,profile)
   do k=1,npz
      press(k) = 0.5*(ak(k) + ak(k+1)) + 0.5*(bk(k)+bk(k+1))*1.E5
      if ( press(k) < P_relax ) then
@@ -308,7 +337,7 @@ module fv_nwp_nudge_mod
 
 ! Thermodynamics:
   prof_t(:) = 1.
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(npz,press,prof_t)
   do k=1,npz
      if ( press(k) < 10.E2 ) then
           prof_t(k) =  max(0.01, press(k)/10.E2) 
@@ -318,7 +347,7 @@ module fv_nwp_nudge_mod
  
 ! Water vapor:
   prof_q(:) = 1.
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(npz,press,prof_q)
   do k=1,npz
      if ( press(k) < 300.E2 ) then
           prof_q(k) =  max(0., press(k)/300.E2) 
@@ -412,7 +441,7 @@ module fv_nwp_nudge_mod
            call prt_maxmin('SLP_o', slp_n, is, ie, js, je, 0, 1, 0.01)
       endif
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,phis,gz0,m_err,mask,slp_m,slp_n)
       do j=js,je
          do i=is,ie
             if ( abs(phis(i,j)-gz0(i,j))/grav > 2. ) then
@@ -441,7 +470,8 @@ module fv_nwp_nudge_mod
 
 ! Compute tendencies:
      rdt = 1. / (tau_winds/factor + dt)
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(kstart,npz,kbot_winds,is,ie,js,je,du_obs,dv_obs, &
+!$OMP                                  profile,u_obs,v_obs,ua,va,rdt)
      do k=kstart, npz - kbot_winds
         do j=js,je
            do i=is,ie
@@ -453,7 +483,8 @@ module fv_nwp_nudge_mod
 
      if ( nf_uv>0 ) call del2_uv(du_obs, dv_obs, del2_cd, npz, nf_uv, bd, npx, npy, gridstruct, domain)
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(kstart,kbot_winds,npz,is,ie,js,je,du_obs,dv_obs, &
+!$OMP                                  mask,ps_fac,u_dt,v_dt,ua,va,dt)
      do k=kstart, npz - kbot_winds
         if ( k==npz ) then
         do j=js,je
@@ -484,7 +515,7 @@ module fv_nwp_nudge_mod
      enddo
   endif
 
-!$omp parallel do default(shared) 
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,t_dt)
   do k=1,npz
      do j=js,je
         do i=is,ie
@@ -495,7 +526,8 @@ module fv_nwp_nudge_mod
 
   if ( nudge_virt ) then
        rdt = 1./(tau_virt/factor + dt)
-!$omp parallel do default(shared) 
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,kstart,kht,t_dt,prof_t,t_obs,zvir, &
+!$OMP                                  q,pt,rdt,ps_fac)
      do k=kstart, kht
         if ( k==npz ) then
         do j=js,je
@@ -515,7 +547,9 @@ module fv_nwp_nudge_mod
 
   if ( nudge_hght .and. kht<npz ) then     ! averaged (in log-p) temperature
        rdt = 1. / (tau_hght/factor + dt)
-!$omp parallel do default(shared) private(pe2, peln )
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,ak,h2,delp,kht,t_obs,pt,zvir, &
+!$OMP                                  q,rdt,ps_fac,mask,t_dt) &
+!$OMP                          private(pe2, peln )
        do j=js,je
            do i=is,ie
               pe2(i,1) = ak(1)
@@ -554,7 +588,7 @@ module fv_nwp_nudge_mod
 
   if ( nudge_virt .or. nudge_hght ) then
        if ( nf_t>0 ) call del2_scalar(t_dt, del2_cd, npz, nf_t, bd, npx, npy, gridstruct, domain)
-!$omp parallel do default(shared) 
+!$OMP parallel do default(none) shared(kstart,npz,is,ie,js,je,pt,t_dt,dt,mask)
        do k=kstart, npz
           do j=js,je
              do i=is,ie
@@ -567,7 +601,8 @@ module fv_nwp_nudge_mod
   q_dt(:,:,:) = 0.
   if ( nudge_q ) then
        rdt = 1./(tau_q/factor + dt)
-!$omp parallel do default(shared) 
+!$OMP parallel do default(none) shared(kstart,npz,kbot_q,is,ie,js,je,press,p_wvp,nwat, &
+!$OMP                                  q,delp,q_dt,prof_q,q_min,q_obs,rdt,mask,dt)
      do k=kstart, npz - kbot_q
         if ( press(k) > p_wvp ) then
             do iq=2,nwat
@@ -1237,8 +1272,8 @@ module fv_nwp_nudge_mod
     allocate (  lon(im) )
     allocate (  lat(jm) )
 
-    call get_var1_double (ncid, 'lon', im, lon )
-    call get_var1_double (ncid, 'lat', jm, lat )
+    call _GET_VAR1 (ncid, 'lon', im, lon )
+    call _GET_VAR1 (ncid, 'lat', jm, lat )
 
 ! Convert to radian
     do i=1,im
@@ -1251,10 +1286,10 @@ module fv_nwp_nudge_mod
     allocate ( ak0(km+1) )
     allocate ( bk0(km+1) )
 
-    call get_var1_double (ncid, 'hyai', km+1, ak0, found )
+    call _GET_VAR1 (ncid, 'hyai', km+1, ak0, found )
     if ( .not. found )  ak0(:) = 0.
 
-    call get_var1_double (ncid, 'hybi', km+1, bk0 )
+    call _GET_VAR1 (ncid, 'hybi', km+1, bk0 )
     call close_ncfile( ncid )
 
 ! Note: definition of NCEP hybrid is p(k) = a(k)*1.E5 + b(k)*ps
@@ -1730,7 +1765,8 @@ module fv_nwp_nudge_mod
   real, dimension(is:ie,km+1):: pn0
   integer i,j,k
 
-!$omp parallel do default(shared) private(pn0)
+!$OMP parallel do default(none) shared(is,ie,js,je,km,ak0,bk0,ps0,gz3,gz0,tv) &
+!$OMP                          private(pn0)
   do 5000 j=js,je
 
      do k=1,km+1
@@ -1942,9 +1978,9 @@ module fv_nwp_nudge_mod
 ! Input
       type(time_type), intent(in):: time
       real, intent(inout):: mask(is:ie,js:je)
-      real, intent(IN), dimension(isd:ied,jsd:jed,2) :: agrid
+      real(kind=R_GRID), intent(IN), dimension(isd:ied,jsd:jed,2) :: agrid
 ! local
-      real:: pos(2)
+      real(kind=R_GRID):: pos(2)
       real:: slp_o         ! sea-level pressure (Pa)
       real:: w10_o         ! 10-m wind
       real:: r_vor, p_vor
@@ -2011,7 +2047,7 @@ module fv_nwp_nudge_mod
       real:: dist(is:ie,js:je)
       real::   tm(is:ie,js:je)
       real::  slp(is:ie,js:je)
-      real:: pos(2)
+      real(kind=R_GRID):: pos(2)
       real:: slp_o         ! sea-level pressure (Pa)
       real:: w10_o, p_env
       real:: r_vor
@@ -2022,11 +2058,12 @@ module fv_nwp_nudge_mod
       integer year, month, day, hour, minute, second
       integer n, i, j, k, iq, k0
 
-      real, pointer :: area(:,:), agrid(:,:,:)
+      real, pointer :: area(:,:)
+      real(kind=R_GRID), pointer :: agrid(:,:,:)
 
       if ( forecast_mode ) return
 
-      agrid => gridstruct%agrid
+      agrid => gridstruct%agrid_64
       area  => gridstruct%area
 
     if ( nstorms==0 ) then
@@ -2055,7 +2092,7 @@ module fv_nwp_nudge_mod
          return        !  time to return to forecast mode
     endif
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,ps,ak,delp,tm,pkz,pt)
     do j=js,je
 ! ---- Compute ps
        do i=is,ie
@@ -2073,7 +2110,8 @@ module fv_nwp_nudge_mod
     enddo
 !   call prt_maxmin('TM', tm, is, ie, js, je, 0, 1, 1.)
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(k_breed,npz,conserve_mom,is,ie,js,je,u,v,delp, &
+!$OMP                                  conserve_hgt,hydrostatic,pt,pkz,q,nwat)
     do k=k_breed+1,npz
 
        if ( conserve_mom ) then
@@ -2253,7 +2291,9 @@ module fv_nwp_nudge_mod
 
       mass_sink = 0.
 
-!$omp parallel do default(shared) private (f1, p_hi, p_lo, relx, delps, pbreed, mass_sink, dp0, pdep)
+!$OMP parallel do default(none) shared(is,ie,js,je,dist,r_vor,phis,p_env,slp_o,r_hi,r_lo, &
+!$OMP                                  ps,tm,relx0,tau_vt_rad,dps_min,slp,ak,k0,delp,npz,area) &
+!$OMP                           private(f1, p_hi, p_lo, relx, delps, pbreed, mass_sink, dp0, pdep)
       do j=js, je
          do i=is, ie
             if( dist(i,j) < r_vor .and. phis(i,j)<250.*grav ) then
@@ -2344,7 +2384,8 @@ module fv_nwp_nudge_mod
       mass_sink = mass_sink / p_sum ! mean delta pressure to be added back to the environment to conserve mass
       if(master .and. nudge_debug) write(*,*) 'TC#',n, 'Mass tele-ported (pa)=', mass_sink
 
-!$omp parallel do default(shared) private (pbreed, f1)
+!$OMP parallel do default(none) shared(is,ie,js,je,dist,r3,r2,ak,k_breed,delp,ps,mass_sink,npz) &
+!$OMP             private(pbreed, f1)
       do j=js, je
          do i=is, ie
             if( dist(i,j)<r3 .and. dist(i,j)>r2 ) then
@@ -2379,7 +2420,7 @@ module fv_nwp_nudge_mod
 !--------------------------
     call mpp_update_domains(delp, domain_local, complete=.true.)
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,pe,ak,delp,k_breed,peln,pk)
     do j=js-1,je+1
        do i=is-1,ie+1
           pe(i,1,j) = ak(1)
@@ -2400,7 +2441,8 @@ module fv_nwp_nudge_mod
       enddo
     enddo
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(k_breed,npz,is,ie,js,je,conserve_mom,u,v,delp, &
+!$OMP                                  conserve_hgt,hydrostatic,pkz,pk,pt,peln)
     do k=k_breed+1,npz
 
        if ( conserve_mom ) then
@@ -2430,7 +2472,7 @@ module fv_nwp_nudge_mod
 
 ! Convert tracer mass back to moist mixing ratio
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(nwat,k_breed,npz,is,ie,js,je,q,delp)
     do iq=1,nwat
        do k=k_breed+1,npz
           do j=js,je
@@ -2471,7 +2513,7 @@ module fv_nwp_nudge_mod
       real wv(is:ie+1,js:je)
       real u1(is:ie), v1(is:ie)
       real:: dist(is:ie,js:je), wind(is:ie,js:je)
-      real:: pos(2)
+      real(kind=R_GRID):: pos(2)
       real:: slp_o         ! sea-level pressure (Pa)
       real:: w10_o, p_env
       real:: r_vor, pc, p_count
@@ -2485,7 +2527,7 @@ module fv_nwp_nudge_mod
 
       ! Pointers
       real, pointer, dimension(:,:) :: dx, dy, rdxa, rdya, a11, a21, a12, a22, area
-      real, pointer, dimension(:,:,:) :: agrid, vlon, vlat
+      real(kind=R_GRID), pointer, dimension(:,:,:) :: agrid, vlon, vlat
 
       dx    => gridstruct%dx
       dy    => gridstruct%dy   
@@ -2496,7 +2538,7 @@ module fv_nwp_nudge_mod
       a12   => gridstruct%a12  
       a22   => gridstruct%a22  
       area  => gridstruct%area 
-      agrid => gridstruct%agrid
+      agrid => gridstruct%agrid_64
       vlon  => gridstruct%vlon 
       vlat  => gridstruct%vlat 
 
@@ -2507,20 +2549,21 @@ module fv_nwp_nudge_mod
     endif
 
 ! Compute lat-lon winds on A grid
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,wu,u,npz,dx)
     do j=js,je+1
        do i=is,ie
           wu(i,j) = u(i,j,npz)*dx(i,j)
        enddo
     enddo
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,wv,v,npz,dy)
     do j=js,je
        do i=is,ie+1
           wv(i,j) = v(i,j,npz)*dy(i,j)
        enddo
     enddo
 
-!$omp parallel do default(shared) private(u1,v1)
+!$OMP parallel do default(none) shared(is,ie,js,je,wu,rdxa,wv,rdya,us,vs,a11,a12,a21,a22,wind) &
+!$OMP                          private(u1,v1)
     do j=js, je
        do i=is, ie
 ! Co-variant to Co-variant "vorticity-conserving" interpolation
@@ -2692,7 +2735,7 @@ module fv_nwp_nudge_mod
                 else
                     speed_local = speed / f1**0.75
                 endif
-                call tangent_wind(vlon(1:3,i,j), vlat(1:3,i,j), speed_local, pos, agrid(i,j,1:2), ut, vt)
+                call tangent_wind(vlon(i,j,1:3), vlat(i,j,1:3), speed_local, pos, agrid(i,j,1:2), ut, vt)
                 ut = ut + u_bg
                 vt = vt + v_bg
 ! Update:
@@ -2713,7 +2756,7 @@ module fv_nwp_nudge_mod
                 else
                     speed_local = speed / f1**0.75
                 endif
-                call tangent_wind(vlon(1:3,i,j), vlat(1:3,i,j), speed_local, pos, agrid(i,j,1:2), ut, vt)
+                call tangent_wind(vlon(i,j,1:3), vlat(i,j,1:3), speed_local, pos, agrid(i,j,1:2), ut, vt)
                 ut = ut + u_bg
                 vt = vt + v_bg
 ! Update:
@@ -2749,7 +2792,7 @@ module fv_nwp_nudge_mod
 ! local
       real:: dist(is:ie,js:je), wind(is:ie,js:je)
       real::  slp(is:ie,js:je)
-      real:: pos(2)
+      real(kind=R_GRID):: pos(2)
       real:: slp_o         ! sea-level pressure (Pa)
       real:: w10_o, p_env
       real:: r_vor, pc, p_count
@@ -2761,12 +2804,13 @@ module fv_nwp_nudge_mod
       real:: wind_fac           ! Computed ( ~ 1.2)
       integer n, i, j, k, iq
 
-      real, pointer :: area(:,:), vlon(:,:,:), vlat(:,:,:), agrid(:,:,:)
+      real, pointer :: area(:,:)
+      real(kind=R_GRID), pointer :: vlon(:,:,:), vlat(:,:,:), agrid(:,:,:)
 
       area => gridstruct%area
       vlon => gridstruct%vlon
       vlat => gridstruct%vlat
-      agrid => gridstruct%agrid
+      agrid => gridstruct%agrid_64
 
     if ( nstorms==0 ) then
          if(master) write(*,*) 'NO TC data to process'
@@ -2776,7 +2820,7 @@ module fv_nwp_nudge_mod
        rdt = 1./dt
     relx0  = min(1., dt/tau_vt_wind)
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,slp,ps,phis,pt,npz,wind,ua,va)
     do j=js, je
        do i=is, ie
            slp(i,j) = ps(i,j)*exp(phis(i,j)/(rdgas*(pt(i,j,npz)+3.25E-3*phis(i,j)/grav)))
@@ -2784,7 +2828,7 @@ module fv_nwp_nudge_mod
        enddo
     enddo
 
-!omp parallel do default(shared) private(pos, w10_o, slp_o, r_vor, p_env)
+!!!!!$OMP parallel do default(none) private(pos, w10_o, slp_o, r_vor, p_env)
     do 3000 n=1,nstorms  ! loop through all storms
 
       if ( nobs_tc(n) < min_nobs ) goto 3000
@@ -2945,7 +2989,7 @@ module fv_nwp_nudge_mod
                 else
                     speed_local = speed / f1**0.75
                 endif
-                call tangent_wind(vlon(1:3,i,j), vlat(1:3,i,j), speed_local, pos, agrid(i,j,1:2), ut, vt)
+                call tangent_wind(vlon(i,j,1:3), vlat(i,j,1:3), speed_local, pos, agrid(i,j,1:2), ut, vt)
                 ut = ut + u_bg
                 vt = vt + v_bg
                 u_dt(i,j,k) = u_dt(i,j,k) + relx*(ut-ua(i,j,k)) * rdt
@@ -2964,11 +3008,11 @@ module fv_nwp_nudge_mod
 
   subroutine tangent_wind ( elon, elat, speed, po, pp, ut, vt )
   real, intent(in):: speed
-  real, intent(in):: po(2), pp(2)
-  real, intent(in):: elon(3), elat(3)
+  real(kind=R_GRID), intent(in):: po(2), pp(2)
+  real(kind=R_GRID), intent(in):: elon(3), elat(3)
   real, intent(out):: ut, vt
 ! local
-  real:: e1(3), eo(3), ep(3), op(3)
+  real(kind=R_GRID):: e1(3), eo(3), ep(3), op(3)
 
   call latlon2xyz(po, eo)
   call latlon2xyz(pp, ep)
@@ -3005,15 +3049,15 @@ module fv_nwp_nudge_mod
     real, optional, intent(in):: stime
     real, optional, intent(out):: fact
 ! Output
-    real, intent(out):: x_o , y_o      ! position of the storm center 
+    real(kind=R_GRID), intent(out):: x_o , y_o      ! position of the storm center 
     real, intent(out):: w10_o          ! 10-m wind speed
     real, intent(out):: slp_o          ! Observed sea-level-pressure (pa)
     real, intent(out):: r_vor, p_vor
 ! Internal:
     real:: t_thresh
-      real:: p1(2), p2(2)
+      real(kind=R_GRID):: p1(2), p2(2)
       real time_model
-      real fac
+      real(kind=R_GRID) fac
       integer year, month, day, hour, minute, second, n
 
       t_thresh = 600./86400.  ! unit: days
@@ -3319,7 +3363,7 @@ module fv_nwp_nudge_mod
    type(fv_grid_type), intent(IN), target :: gridstruct
   type(domain2d), intent(INOUT) :: domain
 ! local:
-  real, pointer, dimension(:,:,:) :: vlon, vlat
+  real(kind=R_GRID), pointer, dimension(:,:,:) :: vlon, vlat
    real, dimension(is:ie,js:je,kmd):: v1, v2, v3
    integer i,j,k
 
@@ -3327,13 +3371,13 @@ module fv_nwp_nudge_mod
    vlat => gridstruct%vlat
 
 ! transform to 3D Cartesian:
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(kmd,is,ie,js,je,v1,v2,v3,du,vlon,dv,vlat)
    do k=1,kmd
       do j=js,je
          do i=is,ie
-            v1(i,j,k) = du(i,j,k)*vlon(1,i,j) + dv(i,j,k)*vlat(1,i,j)
-            v2(i,j,k) = du(i,j,k)*vlon(2,i,j) + dv(i,j,k)*vlat(2,i,j)
-            v3(i,j,k) = du(i,j,k)*vlon(3,i,j) + dv(i,j,k)*vlat(3,i,j)
+            v1(i,j,k) = du(i,j,k)*vlon(i,j,1) + dv(i,j,k)*vlat(i,j,1)
+            v2(i,j,k) = du(i,j,k)*vlon(i,j,2) + dv(i,j,k)*vlat(i,j,2)
+            v3(i,j,k) = du(i,j,k)*vlon(i,j,3) + dv(i,j,k)*vlat(i,j,3)
          enddo
       enddo
    enddo
@@ -3344,12 +3388,12 @@ module fv_nwp_nudge_mod
    call del2_scalar( v3(is,js,1), cd, kmd, ntimes, bd, npx, npy, gridstruct, domain )
 
 ! Convert back to lat-lon components:
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(kmd,is,ie,js,je,du,dv,v1,v2,v3,vlon,vlat)
    do k=1,kmd
       do j=js,je
          do i=is,ie
-            du(i,j,k) = v1(i,j,k)*vlon(1,i,j) + v2(i,j,k)*vlon(2,i,j) + v3(i,j,k)*vlon(3,i,j)
-            dv(i,j,k) = v1(i,j,k)*vlat(1,i,j) + v2(i,j,k)*vlat(2,i,j) + v3(i,j,k)*vlat(3,i,j)
+            du(i,j,k) = v1(i,j,k)*vlon(i,j,1) + v2(i,j,k)*vlon(i,j,2) + v3(i,j,k)*vlon(i,j,3)
+            dv(i,j,k) = v1(i,j,k)*vlat(i,j,1) + v2(i,j,k)*vlat(i,j,2) + v3(i,j,k)*vlat(i,j,3)
          enddo
       enddo
    enddo
@@ -3378,7 +3422,7 @@ module fv_nwp_nudge_mod
   
   real, pointer, dimension(:,:) :: dx, dy, rdxc, rdyc
 
-  real, pointer :: da_min
+  real(kind=R_GRID), pointer :: da_min
 
   logical, pointer :: nested, sw_corner, se_corner, nw_corner, ne_corner
 
@@ -3406,7 +3450,7 @@ module fv_nwp_nudge_mod
 
    damp = cd * da_min
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,kmd,q,qdt)
    do k=1,kmd
       do j=js,je
          do i=is,ie
@@ -3422,7 +3466,10 @@ module fv_nwp_nudge_mod
 
    nt = ntimes - n
 
-!$omp parallel do default(shared) private(fx, fy)
+!$OMP parallel do default(none) shared(is,ie,js,je,kmd,nt,dy,q,isd,jsd,npx,npy,nested,   &
+!$OMP                                  bd,sw_corner,se_corner,nw_corner,ne_corner,       &
+!$OMP                                  sina_u,rdxc,sin_sg,dx,rdyc,sina_v,qdt,damp,rarea) &
+!$OMP                          private(fx, fy)
    do k=1,kmd
 
       if(nt>0) call copy_corners(q(isd,jsd,k), npx, npy, 1, nested, bd, &
@@ -3432,9 +3479,9 @@ module fv_nwp_nudge_mod
             fx(i,j) = dy(i,j)*sina_u(i,j)*(q(i-1,j,k)-q(i,j,k))*rdxc(i,j)
          enddo
          if (is == 1) fx(i,j) = dy(is,j)*(q(is-1,j,k)-q(is,j,k))*rdxc(is,j)* &
-            0.5*(sin_sg(1,1,j) + sin_sg(3,0,j))
+            0.5*(sin_sg(1,j,1) + sin_sg(0,j,3))
          if (ie+1 == npx) fx(i,j) = dy(ie+1,j)*(q(ie,j,k)-q(ie+1,j,k))*rdxc(ie+1,j)* & 
-            0.5*(sin_sg(1,npx,j) + sin_sg(3,npx-1,j))
+            0.5*(sin_sg(npx,j,1) + sin_sg(npx-1,j,3))
       enddo
 
       if(nt>0) call copy_corners(q(isd,jsd,k), npx, npy, 2, nested, bd, &
@@ -3443,7 +3490,7 @@ module fv_nwp_nudge_mod
          if (j == 1 .OR. j == npy) then
             do i=is-nt,ie+nt
                fy(i,j) = dx(i,j)*(q(i,j-1,k)-q(i,j,k))*rdyc(i,j) &
-                    *0.5*(sin_sg(2,i,j) + sin_sg(4,i,j-1) )
+                    *0.5*(sin_sg(i,j,2) + sin_sg(i,j-1,4) )
             enddo
          else
             do i=is-nt,ie+nt

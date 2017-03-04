@@ -1,32 +1,57 @@
+!***********************************************************************
+!*                   GNU General Public License                        *
+!* This file is a part of fvGFS.                                       *
+!*                                                                     *
+!* fvGFS is free software; you can redistribute it and/or modify it    *
+!* and are expected to follow the terms of the GNU General Public      *
+!* License as published by the Free Software Foundation; either        *
+!* version 2 of the License, or (at your option) any later version.    *
+!*                                                                     *
+!* fvGFS is distributed in the hope that it will be useful, but        *
+!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+!* General Public License for more details.                            *
+!*                                                                     *
+!* For the full text of the GNU General Public License,                *
+!* write to: Free Software Foundation, Inc.,                           *
+!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!***********************************************************************
 ! SJL: Apr 12, 2012
 ! This revision may actually produce rounding level differences due to the elimination of KS to compute
 ! pressure level for remapping.
 module fv_mapz_mod
 
-  use constants_mod,     only: radius, pi, rvgas, rdgas, grav, hlv, hlf, cp_air
+  use constants_mod,     only: radius, pi=>pi_8, rvgas, rdgas, grav, hlv, hlf, cp_air, cp_vapor
   use tracer_manager_mod,only: get_tracer_index
   use field_manager_mod, only: MODEL_ATMOS
   use fv_grid_utils_mod, only: g_sum, ptop_min
   use fv_fill_mod,       only: fillz
-  use fv_eta_mod ,       only: compute_dz_L32, hybrid_z_dz
   use mpp_domains_mod,   only: mpp_update_domains, domain2d
   use mpp_mod,           only: FATAL, mpp_error, get_unit, mpp_root_pe, mpp_pe
   use fv_arrays_mod,     only: fv_grid_type
-  use lin_cld_microphys_mod, only: sat_adj2
+  use fv_timing_mod,     only: timing_on, timing_off
   use fv_mp_mod,         only: is_master
+  use fv_cmp_mod,        only: qs_init, fv_sat_adj
 
   implicit none
-  real, parameter:: cv_vap = 1410.
+  real, parameter:: consv_min= 0.001   ! below which no correction applies
+  real, parameter:: t_min= 184.   ! below which applies stricter constraint
+  real, parameter:: r3 = 1./3., r23 = 2./3., r12 = 1./12.
+  real, parameter:: cv_vap = 3.*rvgas  ! 1384.5
   real, parameter:: cv_air =  cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
-  real, parameter::  r3 = 1./3., r23 = 2./3., r12 = 1./12.
-  real, parameter:: c_ice = 2106.           ! heat capacity of ice at 0.C
-  real, parameter:: c_liq = 4190.
-  real, parameter:: tice  = 273.16
-  real(kind=4) :: E_Flux, E_Flux_Nest=0.0
+! real, parameter:: c_ice = 2106.           ! heat capacity of ice at 0.C
+  real, parameter:: c_ice = 1972.           ! heat capacity of ice at -15.C
+  real, parameter:: c_liq = 4.1855e+3    ! GFS: heat capacity of water at 0C
+! real, parameter:: c_liq = 4218.        ! ECMWF-IFS
+  real, parameter:: cp_vap = cp_vapor   ! 1846.
+  real, parameter:: tice = 273.16
+
+  real(kind=4) :: E_Flux = 0.
   private
 
-  public compute_total_energy, Lagrangian_to_Eulerian,    &
-         rst_remap, mappm, E_Flux, E_Flux_nest
+  public compute_total_energy, Lagrangian_to_Eulerian, moist_cv, moist_cp,   &
+         rst_remap, mappm, E_Flux
 
 !---- version number -----
   character(len=128) :: version = '$Id$'
@@ -35,12 +60,12 @@ module fv_mapz_mod
 contains
 
  subroutine Lagrangian_to_Eulerian(last_step, consv, ps, pe, delp, pkz, pk,   &
-                      mdt, pdt, km, is,ie,js,je, isd,ied,jsd,jed,       &
+                                   mdt, pdt, km, is,ie,js,je, isd,ied,jsd,jed,       &
                       nq, nwat, sphum, q_con, u, v, w, delz, pt, q, hs, r_vir, cp,  &
-                      akap, kord_mt, kord_wz, kord_tr, kord_tm,  peln, te0_2d,        &
+                      akap, cappa, kord_mt, kord_wz, kord_tr, kord_tm,  peln, te0_2d,        &
                       ng, ua, va, omga, te, ws, fill, reproduce_sum, out_dt, dtdt,      &
-                      ptop, ak, bk, gridstruct, domain, ze0, remap_t, do_sat_adj, &
-                      hydrostatic, hybrid_z, do_omega, do_adiabatic_init)
+                      ptop, ak, bk, pfull, gridstruct, domain, do_sat_adj, &
+                      hydrostatic, hybrid_z, do_omega, adiabatic, do_adiabatic_init)
   logical, intent(in):: last_step
   real,    intent(in):: mdt                   ! remap time step
   real,    intent(in):: pdt                   ! phys time step
@@ -67,10 +92,11 @@ contains
   logical, intent(in):: do_sat_adj
   logical, intent(in):: fill                  ! fill negative tracers
   logical, intent(in):: reproduce_sum
-  logical, intent(in):: do_omega, do_adiabatic_init
+  logical, intent(in):: do_omega, adiabatic, do_adiabatic_init
   real, intent(in) :: ptop
   real, intent(in) :: ak(km+1)
   real, intent(in) :: bk(km+1)
+  real, intent(in):: pfull(km)
   type(fv_grid_type), intent(IN), target :: gridstruct
   type(domain2d), intent(INOUT) :: domain
 
@@ -80,7 +106,6 @@ contains
   real, intent(inout):: delp(isd:ied,jsd:jed,km) ! pressure thickness
   real, intent(inout)::  pe(is-1:ie+1,km+1,js-1:je+1) ! pressure at layer edges
   real, intent(inout):: ps(isd:ied,jsd:jed)      ! surface pressure
-  real, intent(inout):: ze0(is:,js:,1:)    ! Specified height at edges (m)
 
 ! u-wind will be ghosted one latitude to the north upon exit
   real, intent(inout)::  u(isd:ied  ,jsd:jed+1,km)   ! u-wind (m/s)
@@ -88,9 +113,7 @@ contains
   real, intent(inout)::  w(isd:     ,jsd:     ,1:)   ! vertical velocity (m/s)
   real, intent(inout):: pt(isd:ied  ,jsd:jed  ,km)   ! cp*virtual potential temperature 
                                                      ! as input; output: temperature
-  real, intent(inout):: q_con(isd:,jsd:,1:)
-  real, intent(inout):: delz(isd:   ,jsd:   ,1:)   ! delta-height (m)
-  logical, intent(in):: remap_t
+  real, intent(inout), dimension(isd:,jsd:,1:)::delz, q_con, cappa
   logical, intent(in):: hydrostatic
   logical, intent(in):: hybrid_z
   logical, intent(in):: out_dt
@@ -101,7 +124,7 @@ contains
   real, intent(inout)::   peln(is:ie,km+1,js:je)     ! log(pe)
   real, intent(inout)::   dtdt(is:ie,js:je,km)
   real, intent(out)::    pkz(is:ie,js:je,km)       ! layer-mean pk for converting t to pt
-  real, intent(out)::     te(is:ie,js:je,km)
+  real, intent(out)::     te(isd:ied,jsd:jed,km)
 
 ! !DESCRIPTION:
 !
@@ -109,65 +132,45 @@ contains
 ! SJL 03.11.04: Initial version for partial remapping
 !
 !-----------------------------------------------------------------------
-  integer :: i,j,k 
-     real q_source(is:ie,js:je,nq)    ! numerical tracer source from surface
-                                      ! in case fillz is not sufficient
-      real te_2d(is:ie,js:je)
-      real zsum0(is:ie,js:je)
-      real zsum1(is:ie,js:je)
-      real   q2(is:ie,km)
-      real  dp2(is:ie,km)
-      real  pe1(is:ie,km+1)
-      real  pe2(is:ie,km+1)
-      real  pk1(is:ie,km+1)
-      real  pk2(is:ie,km+1)
-      real  pn2(is:ie,km+1)
-      real  pe0(is:ie+1,km+1)
-      real  pe3(is:ie+1,km+1)
-      real phis(is:ie,km+1)
-      real   gz(is:ie)
-! for nonhydrostatic option with hybrid_z coordinate
-      real ze1(is:ie,km+1), ze2(is:ie,km+1), deng(is:ie,km)
-      real dz1(km), ztop, z_rat
-      real rcp, rg, ak1, tmp, tpe, cv, cvm, rgama, rrg
-      real bkh, dtmp, dlnp
-      integer iq, n, kp, k_next
-      logical te_map
-      real k1k, kapag, q_liq, q_sol
-      integer liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel
+  real, dimension(is:ie,js:je):: te_2d, zsum0, zsum1, dpln
+  real, dimension(is:ie,km)  :: q2, dp2
+  real, dimension(is:ie,km+1):: pe1, pe2, pk1, pk2, pn2, phis
+  real, dimension(is:ie+1,km+1):: pe0, pe3
+  real, dimension(is:ie):: gz, cvm, qv
+  real rcp, rg, tmp, tpe, rrg, bkh, dtmp, k1k
+  logical:: fast_mp_consv
+  integer:: i,j,k 
+  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, iq, n, kmp, kp, k_next
 
-      real, pointer, dimension(:,:) :: cosa_s, rsin2
+       k1k = rdgas/cv_air   ! akap / (1.-akap) = rg/Cv=0.4
+        rg = rdgas
+       rcp = 1./ cp
+       rrg = -rdgas/grav
 
-      cosa_s => gridstruct%cosa_s
-      rsin2 => gridstruct%rsin2
+       liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
+       ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
+       rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
+       snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
+       graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+       cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
 
-        k1k = akap / (1.-akap)    ! rg/Cv=0.4
-      kapag = -akap / grav
-         rg = akap * cp
-         cv = cp - rg
-      rgama = 1. - akap           ! cv/cp
-        rcp = 1./ cp
-        ak1 = (akap + 1.) / akap
-        rrg = - rg/grav
+       if ( do_sat_adj ) then
+            fast_mp_consv = (.not.do_adiabatic_init) .and. consv>consv_min
+            do k=1,km
+               kmp = k
+               if ( pfull(k) > 10.E2 ) exit
+            enddo
+            call qs_init(kmp)
+       endif
 
-      if ( kord_tm < 0 ) then
-           te_map = .false.
-      else
-           te_map = .true.
-      endif
-
-      if ( nwat>=3 ) then
-           liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
-           ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
-           cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
-      endif
-      if ( nwat.eq.6 ) then
-           rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
-           snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
-           graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
-      endif
-
-!$omp parallel do default(shared) private(q_liq,q_sol,z_rat, kp, k_next, bkh, deng, dp2, pe0, pe1, pe2, pe3, pk1, pk2, pn2, phis, q2, ze1, ze2)
+!$OMP parallel do default(none) shared(is,ie,js,je,km,pe,ptop,kord_tm,hydrostatic, &
+!$OMP                                  pt,pk,rg,peln,q,nwat,liq_wat,rainwat,ice_wat,snowwat,    &
+!$OMP                                  graupel,q_con,sphum,cappa,r_vir,rcp,k1k,delp, &
+!$OMP                                  delz,akap,pkz,te,u,v,ps, gridstruct, last_step, &
+!$OMP                                  ak,bk,nq,isd,ied,jsd,jed,kord_tr,fill, adiabatic, &
+!$OMP                                  hs,w,ws,kord_wz,do_omega,omga,rrg,kord_mt,ua)    &
+!$OMP                          private(qv,gz,cvm,kp,k_next,bkh,dp2,   &
+!$OMP                                  pe0,pe1,pe2,pe3,pk1,pk2,pn2,phis,q2)
   do 1000 j=js,je+1
 
      do k=1,km+1
@@ -183,131 +186,70 @@ contains
 
   if ( j /= (je+1) ) then
        if ( kord_tm < 0 ) then
-          if ( remap_t ) then
-! Note: pt at this stage is cp*Theta_v
-! Transform virtual pt to virtual Temp
+! Note: pt at this stage is Theta_v
              if ( hydrostatic ) then
+! Transform virtual pt to virtual Temp
              do k=1,km
                    do i=is,ie
-                      pt(i,j,k) = pt(i,j,k) * (pk(i,j,k+1)-pk(i,j,k)) /  &
-                                 (rg*(peln(i,k+1,j)-peln(i,k,j)) )
+                      pt(i,j,k) = pt(i,j,k)*(pk(i,j,k+1)-pk(i,j,k))/(akap*(peln(i,k+1,j)-peln(i,k,j)))
                    enddo
              enddo
              else
+! Transform "density pt" to "density temp"
                do k=1,km
+#ifdef MOIST_CAPPA
+               if ( nwat==2 ) then
                   do i=is,ie
-                     pt(i,j,k) = rcp*pt(i,j,k)*exp(k1k*log(kapag*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+                            qv(i) = max(0., q(i,j,k,sphum)) 
+                     q_con(i,j,k) = max(0., q(i,j,k,liq_wat))
+                     cvm(i) = (1.-qv(i))*cv_air + qv(i)*cv_vap
+                     cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/(1.+r_vir*qv(i)) )
+                     pt(i,j,k) = pt(i,j,k)*exp(cappa(i,j,k)/(1.-cappa(i,j,k))*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
                   enddo
+               else
+                  call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
+                                ice_wat, snowwat, graupel, q, gz, cvm)
+                  do i=is,ie
+                     q_con(i,j,k) = gz(i)
+                     cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/(1.+r_vir*q(i,j,k,sphum)) )
+                     pt(i,j,k) = pt(i,j,k)*exp(cappa(i,j,k)/(1.-cappa(i,j,k))*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+                  enddo
+               endif
+#else
+                  do i=is,ie
+                     pt(i,j,k) = pt(i,j,k)*exp(k1k*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+! Using dry pressure for the definition of the virtual potential temperature
+!                    pt(i,j,k) = pt(i,j,k)*exp(k1k*log(rrg*(1.-q(i,j,k,sphum))*delp(i,j,k)/delz(i,j,k)*    &
+!                                              pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum))))
+                  enddo
+#endif
                enddo
              endif         ! hydro test
-          endif            ! remap_t test
-       else
+       elseif ( hydrostatic ) then
            call pkez(km, is, ie, js, je, j, pe, pk, akap, peln, pkz, ptop)
 ! Compute cp*T + KE
            do k=1,km
                  do i=is,ie
-                    te(i,j,k) = 0.25*rsin2(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
+                    te(i,j,k) = 0.25*gridstruct%rsin2(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
                                                  v(i,j,k)**2+v(i+1,j,k)**2 -  &
-                               (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j))  &
-                              +  pt(i,j,k)*pkz(i,j,k)
+                               (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*gridstruct%cosa_s(i,j))  &
+                              + cp_air*pt(i,j,k)*pkz(i,j,k)
                  enddo
            enddo
        endif
 
      if ( .not. hydrostatic ) then
-        if ( hybrid_z ) then
-           if ( km==32 ) then
-                call compute_dz_L32(km, ztop, dz1)
-!          else
-!               ztop = 18.E3
-!               call hybrid_z_dz(km, dz1, ztop, 1.)
-!               call mpp_error(FATAL,'==> Error from fv_mapz: hybrid_z works only with L32')
-           endif
-        else
            do k=1,km
-                 do i=is,ie
-                    delz(i,j,k) = -delz(i,j,k) / delp(i,j,k) ! ="specific volume"/grav
-                 enddo
+              do i=is,ie
+                 delz(i,j,k) = -delz(i,j,k) / delp(i,j,k) ! ="specific volume"/grav
+              enddo
            enddo
-        endif
       endif
 
 ! update ps
       do i=is,ie
          ps(i,j) = pe1(i,km+1)
       enddo
-
-   if ( hybrid_z ) then
-!--------------------------
-! hybrid z_p coordinate
-!--------------------------
-
-        do i=is,ie
-           ze1(i,km+1) = ze0(i,j,km+1)
-        enddo
-
-        do k=km,1,-1
-           do i=is,ie
-              ze1(i,k) = ze1(i,k+1) - delz(i,j,k)   ! current height
-           enddo
-        enddo
-!
-! Copy ztop; the top layer must be thick enough to prevent numerical problems.
-!
-        do i=is,ie
-           ze2(i,  1) = ze1(i,1)
-           ze0(i,j,1) = ze1(i,1)      ! Note: ze0 (top) updated
-        enddo
-
-        do k=2,km+1
-           do i=is,ie
-              ze2(i,k) = ze0(i,j,k)   ! specified height
-           enddo
-        enddo
-
-! Check/fix monotonicity of top 3 layers thickness
-!-----------------------------------------------
-       if ( km==32 ) then
-        do i=is,ie
-           do k=1,3
-              z_rat = (ze2(i,1)-ze2(i,4)) / (dz1(1)+dz1(2)+dz1(3))
-              ze2(i,3) = ze2(i,4) + dz1(3)*z_rat
-              ze2(i,2) = ze2(i,3) + dz1(2)*z_rat
-           enddo
-        enddo
-       endif
-!-----------------------------------------------
-
-        do k=1,km
-           do i=is,ie
-              deng(i,k) = -delp(i,j,k)/delz(i,j,k)  ! density * grav
-           enddo
-        enddo
-
-        call remap_z(km, ze1, deng, km, ze2, deng, is, ie, 1, abs(kord_tm))
-!-------------
-! Update delz
-!-------------
-        do k=1,km
-           do i=is,ie
-              delz(i,j,k) = ze2(i,k+1) - ze2(i,k)
-           enddo
-        enddo
-
-!------------
-! update delp
-!------------
-        do k=1,km-1
-           do i=is,ie
-               dp2(i,k  ) = -delz(i,j,k) * deng(i,k)
-               pe2(i,k+1) =     pe2(i,k) +  dp2(i,k)
-           enddo
-        enddo
-
-        do i=is,ie
-           dp2(i,km) = pe2(i,km+1) - pe2(i,km)  ! to reduce rounding error
-        enddo
-   else
 !
 ! Hybrid sigma-P coordinate:
 !
@@ -321,7 +263,6 @@ contains
               dp2(i,k) = pe2(i,k+1) - pe2(i,k)
            enddo
         enddo
-   endif
 
 !------------
 ! update delp
@@ -332,30 +273,8 @@ contains
          enddo
       enddo
 
-!----------------
-! Map constituents
-!----------------
-       if( nq /= 0 ) then
-!------------------------------------------------------------------
-! Do remapping one tracer at a time; seems to be faster on the SGI
-! It requires less memory than mapn_ppm
-!------------------------------------------------------------------
-          do iq=1,nq
-             call map1_q2(km, pe1, q(isd,jsd,1,iq),     &
-                          km, pe2, q2, dp2,             &
-                          is, ie, 0, kord_tr(iq), j, isd, ied, jsd, jed)
-!           if (fill) call fillz(ie-is+1, km, 1, q2, dp2, q_source(is,j,iq))
-            if (fill) call fillz(ie-is+1, km, 1, q2, dp2)
-            do k=1,km
-               do i=is,ie
-                  q(i,j,k,iq) = q2(i,k)
-               enddo
-            enddo
-          enddo
-       endif
-
 !------------------
-! Compute p**cappa
+! Compute p**Kappa
 !------------------
    do k=1,km+1
       do i=is,ie
@@ -377,73 +296,46 @@ contains
       enddo
    enddo
 
-   if ( te_map ) then
-!---------------------
-! Compute Total Energy
-!---------------------
-        do i=is,ie
-           phis(i,km+1) = hs(i,j)
-        enddo
-        do k=km,1,-1
-           do i=is,ie
-              phis(i,k) = phis(i,k+1) + pt(i,j,k)*(pk1(i,k+1)-pk1(i,k))
-           enddo
-        enddo
-        do k=1,km+1
-           do i=is,ie
-              phis(i,k) = phis(i,k) * pe1(i,k)
-           enddo
-        enddo
-        do k=1,km
-           do i=is,ie
-              te(i,j,k) = te(i,j,k)+(phis(i,k+1)-phis(i,k))/(pe1(i,k+1)-pe1(i,k))
-           enddo
-        enddo
-!----------------
-! Map Total Energy
-!----------------
-        call map1_ppm (km,   pe1,  te, gz,   &
-                       km,   pe2,  te,       &
-                       is, ie, j, is, ie, js, je, 1, kord_tm)
+   if ( kord_tm<0 ) then
+!----------------------------------
+! Map t using logp 
+!----------------------------------
+         call map_scalar(km,  peln(is,1,j),  pt, gz,   &
+                         km,  pn2,           pt,              &
+                         is, ie, j, isd, ied, jsd, jed, 1, abs(kord_tm), t_min)
    else
-     if ( remap_t ) then
-!----------------------------------
-! Map t using ze1 (hybrid_z) or logp 
-!Note: the '1' in remap_z and map1_ppm was a '2' in siena_prerelease. It has been changed to be its value in siena -- 19mar12 lmh
-!----------------------------------
-       if ( hybrid_z ) then
-           do k=1,km
-              do i=is,ie
-                 deng(i,k) = pt(i,j,k)
-              enddo
-           enddo
-           call remap_z(km, ze1, deng, km, ze2, deng, is, ie, 1, abs(kord_tm))
-           do k=1,km
-              do i=is,ie
-                 pt(i,j,k) = deng(i,k)
-              enddo
-           enddo
-       else
-         call map1_ppm (km,  peln(is,1,j),  pt, gz,   &
-                        km,  pn2,           pt,              &
+! Map pt using pe
+         call map1_ppm (km,  pe1,  pt,  gz,       &
+                        km,  pe2,  pt,                  &
                         is, ie, j, isd, ied, jsd, jed, 1, abs(kord_tm))
-       endif
-     else
-!----------------
-! Map pt using pk
-!----------------
-       call map1_ppm (km,  pk1,  pt,  gz,       &
-                      km,  pk2,  pt,                  &
-                      is, ie, j, isd, ied, jsd, jed, 1, abs(kord_tm))
-     endif
    endif
+
+!----------------
+! Map constituents
+!----------------
+      if( nq > 5 ) then
+           call mapn_tracer(nq, km, pe1, pe2, q, dp2, kord_tr, j,     &
+                            is, ie, isd, ied, jsd, jed, 0., fill)
+      elseif ( nq > 0 ) then
+! Remap one tracer at a time
+         do iq=1,nq
+             call map1_q2(km, pe1, q(isd,jsd,1,iq),     &
+                          km, pe2, q2, dp2,             &
+                          is, ie, 0, kord_tr(iq), j, isd, ied, jsd, jed, 0.)
+            if (fill) call fillz(ie-is+1, km, 1, q2, dp2)
+            do k=1,km
+               do i=is,ie
+                  q(i,j,k,iq) = q2(i,k)
+               enddo
+            enddo
+         enddo
+      endif
 
    if ( .not. hydrostatic ) then
 ! Remap vertical wind:
         call map1_ppm (km,   pe1,  w,  ws(is,j),   &
                        km,   pe2,  w,              &
                        is, ie, j, isd, ied, jsd, jed, -2, kord_wz)
-     if ( .not. hybrid_z ) then
 ! Remap delz for hybrid sigma-p coordinate
         call map1_ppm (km,   pe1, delz,  gz,   &
                        km,   pe2, delz,              &
@@ -453,13 +345,12 @@ contains
               delz(i,j,k) = -delz(i,j,k)*dp2(i,k)
            enddo
         enddo
-     endif
    endif
 
 !----------
 ! Update pk
 !----------
-   do k=2,km
+   do k=1,km+1
       do i=is,ie
          pk(i,j,k) = pk2(i,k)
       enddo
@@ -496,21 +387,47 @@ contains
          enddo
       enddo
    else
-      if ( remap_t ) then
 ! Note: pt at this stage is T_v or T_m
          do k=1,km
-         do i=is,ie
-            pkz(i,j,k) = exp(akap*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+#ifdef MOIST_CAPPA
+         if ( nwat==2 ) then
+            do i=is,ie
+                      qv(i) = max(0., q(i,j,k,sphum)) 
+               q_con(i,j,k) = max(0., q(i,j,k,liq_wat))
+               cvm(i) = (1.-qv(i))*cv_air + qv(i)*cv_vap
+               cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/(1.+r_vir*qv(i)) )
+               pkz(i,j,k) = exp(cappa(i,j,k)*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+            enddo
+         else
+            call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
+                          ice_wat, snowwat, graupel, q, gz, cvm)
+            do i=is,ie
+               q_con(i,j,k) = gz(i)
+               cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/(1.+r_vir*q(i,j,k,sphum)) )
+               pkz(i,j,k) = exp(cappa(i,j,k)*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+            enddo
+         endif    ! nwat test
+#else
+         if ( kord_tm < 0 ) then
+           do i=is,ie
+              pkz(i,j,k) = exp(akap*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+! Using dry pressure for the definition of the virtual potential temperature
+!             pkz(i,j,k) = exp(akap*log(rrg*(1.-q(i,j,k,sphum))*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum))))
+           enddo
+         else
+           do i=is,ie
+              pkz(i,j,k) = exp(k1k*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+! Using dry pressure for the definition of the virtual potential temperature
+!             pkz(i,j,k) = exp(k1k*log(rrg*(1.-q(i,j,k,sphum))*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum))))
+           enddo
+           if ( last_step .and. (.not.adiabatic) ) then
+              do i=is,ie
+                 pt(i,j,k) = pt(i,j,k)*pkz(i,j,k)
+              enddo
+           endif
+         endif
+#endif
          enddo
-         enddo
-      else
-! Note: pt at this stage is cp*Theta_v
-         do k=1,km
-         do i=is,ie
-            pkz(i,j,k) = exp( k1k*log(kapag*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
-         enddo
-         enddo
-      endif
    endif
 
 ! Interpolate omega/pe3 (defined at pe0) to remapped cell center (dp2)
@@ -538,7 +455,6 @@ contains
 
   endif !(j < je+1)
 
- if ( .not.hybrid_z ) then
       do i=is,ie+1
          pe0(i,1) = pe(i,1,j)
       enddo
@@ -582,7 +498,6 @@ contains
                       km, pe3,  v, is, ie+1,    &
                       j, isd, ied+1, jsd, jed, -1, kord_mt)
    endif ! (j < je+1)
- endif    ! end hybrid_z check
 
      do k=1,km
         do i=is,ie
@@ -592,58 +507,17 @@ contains
 
 1000  continue
 
-if ( hybrid_z ) then   
-!------- Hybrid_z section ---------------
-   if ( gridstruct%square_domain ) then
-     call mpp_update_domains(ua , domain,  whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
-   else
-     call mpp_update_domains(ua , domain, complete=.true.)
-   endif
+!$OMP parallel default(none) shared(is,ie,js,je,km,kmp,ptop,u,v,pe,ua,isd,ied,jsd,jed,kord_mt, &
+!$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln, adiabatic, &
+!$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,       &
+!$OMP                               graupel,q_con,r_vir,sphum,w,pk,pkz,last_step,consv, &
+!$OMP                               do_adiabatic_init,zsum1,zsum0,te0_2d,domain,        &
+!$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,      &
+!$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,  &
+!$OMP                               fast_mp_consv,kord_tm) &
+!$OMP                       private(pe0,pe1,pe2,pe3,qv,cvm,gz,phis,tpe,tmp, dpln)
 
-! u-wind
-
-
-!$omp parallel do default(shared) private(pe1, pe2)
-   do j=js,je+1
-      do i=is,ie
-         pe1(i,1) = ptop
-         pe2(i,1) = ptop
-      enddo
-      do k=2,km+1
-         do i=is,ie
-            pe1(i,k) = 0.5*(pe(i,k,  j-1) + pe(i,k,j  ))
-            pe2(i,k) = 0.5*(ua(i,j-1,k-1) + ua(i,j,k-1))
-         enddo
-      enddo
-
-      call map1_ppm( km, pe1,   u,  gz, &
-                     km, pe2,   u,            &
-                     is, ie, j, isd, ied, jsd, jed+1, -1, kord_mt)
-   enddo
-
-! v-wind
-!$omp parallel do default(shared) private(pe0, pe3)
-   do j=js,je
-      do i=is,ie+1
-         pe0(i,1) = ptop
-         pe3(i,1) = ptop
-      enddo
-
-      do k=2,km+1
-         do i=is,ie+1
-            pe0(i,k) = 0.5*(pe(i-1,k,j  ) + pe(i,k,j  ))
-            pe3(i,k) = 0.5*(ua(i-1,j,k-1) + ua(i,j,k-1))
-         enddo
-      enddo
-
-      call map1_ppm (km, pe0,  v,  gz,   &
-                     km, pe3,  v, is, ie+1,    &
-                     j, isd, ied+1, jsd, jed, -1, kord_mt)
-   enddo
-endif 
-!------------- Hybrid_z section ----------------------
-
-!$omp parallel do default(shared)
+!$OMP do
   do k=2,km
      do j=js,je
         do i=is,ie
@@ -652,145 +526,105 @@ endif
      enddo
   enddo
 
-!  call cubed_to_latlon(u,  v, ua, va, dx, dy, rdxa, rdya, km, 1, flagstruct%c2l_ord)
+dtmp = 0.
+if( last_step .and. (.not.do_adiabatic_init)  ) then
 
-  if( last_step .and. consv > 0.  .and. (.not.do_adiabatic_init)  ) then
+  if ( consv > consv_min ) then
 
-    if ( te_map ) then
-!$omp parallel do default(shared) 
-      do j=js,je
-          do i=is,ie
-             te_2d(i,j) = te(i,j,1)*delp(i,j,1)
-          enddo
-          do k=2,km
-             do i=is,ie
-                te_2d(i,j) = te_2d(i,j) + te(i,j,k)*delp(i,j,k)
-             enddo
-          enddo
-      enddo
-    else
-!$omp parallel do default(shared) private(cvm, q_liq, q_sol, gz, phis)
-      do j=js,je
-        if ( remap_t ) then
-         if ( hydrostatic ) then
-         do i=is,ie
-            gz(i) = hs(i,j)
-            do k=1,km
-               gz(i) = gz(i) + rg*pt(i,j,k)*(peln(i,k+1,j)-peln(i,k,j))
-            enddo
-         enddo
-         do i=is,ie
-            te_2d(i,j) = pe(i,km+1,j)*hs(i,j) - pe(i,1,j)*gz(i)
-         enddo
-
-         do k=1,km
-            do i=is,ie
-               te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cp*pt(i,j,k) +   &
-                            0.25*rsin2(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
-                                             v(i,j,k)**2+v(i+1,j,k)**2 -  &
-                           (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j)))
-            enddo
-         enddo
-         else
-! non-hydrostatic & remap_t
-           do i=is,ie
-              phis(i,km+1) = hs(i,j)
-              do k=km,1,-1
-                 phis(i,k) = phis(i,k+1) - grav*delz(i,j,k)
-              enddo
-           enddo
-           do i=is,ie
-              te_2d(i,j) = 0.
-           enddo
-           do k=1,km
-              do i=is,ie
-! KE using 3D winds:
-#ifdef USE_COND
-#ifdef USE_NWAT3
-! nwat == 3
-           q_liq = q(i,j,k,liq_wat)
-           q_sol = q(i,j,k,ice_wat)
-#else
-! nwat == 6
-           q_liq = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
-           q_sol = q(i,j,k,ice_wat) + q(i,j,k,snowwat) + q(i,j,k,graupel)
-#endif
-           q_con(i,j,k) = q_liq + q_sol
-#ifdef USE_CVM
-           cvm = (1.-(q(i,j,k,sphum)+q_liq+q_sol))*cv_air + q(i,j,k,sphum)*cv_vap +   &
-                 q_liq*c_liq + q_sol*c_ice
-#else
-           cvm = cv_air
-#endif
-                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cvm*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum)-q_con(i,j,k)) + &
-#else
-                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cv_air*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum)) + &
-#endif
-                              0.5*(phis(i,k)+phis(i,k+1) + w(i,j,k)**2 + 0.5*rsin2(i,j)*( &
-                              u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -  &
-                             (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j))))
-              enddo
-           enddo
-         endif
-        else
-         if ( hydrostatic ) then
+!$OMP do
+    do j=js,je
+       if ( hydrostatic ) then
             do i=is,ie
                gz(i) = hs(i,j)
                do k=1,km
-                  gz(i) = gz(i) + pt(i,j,k)*(pk(i,j,k+1)-pk(i,j,k))
+                  gz(i) = gz(i) + rg*pt(i,j,k)*(peln(i,k+1,j)-peln(i,k,j))
                enddo
             enddo
-
             do i=is,ie
                te_2d(i,j) = pe(i,km+1,j)*hs(i,j) - pe(i,1,j)*gz(i)
             enddo
+
             do k=1,km
-               do i=is,ie
-                  te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(pt(i,j,k)*pkz(i,j,k) +   &
-                               0.25*rsin2(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
-                                                v(i,j,k)**2+v(i+1,j,k)**2 -  &
-                            (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j)))
-               enddo
+            do i=is,ie
+               te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cp*pt(i,j,k) +   &
+                            0.25*gridstruct%rsin2(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
+                                                        v(i,j,k)**2+v(i+1,j,k)**2 -  &
+                           (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*gridstruct%cosa_s(i,j)))
             enddo
-         else
-!-----------------
-! Non-hydrostatic:
-!-----------------
+            enddo
+       else
            do i=is,ie
+              te_2d(i,j) = 0.
               phis(i,km+1) = hs(i,j)
-              do k=km,1,-1
+           enddo
+           do k=km,1,-1
+              do i=is,ie
                  phis(i,k) = phis(i,k+1) - grav*delz(i,j,k)
               enddo
            enddo
-           do i=is,ie
-              te_2d(i,j) = 0.
-           enddo
+
            do k=1,km
+#ifdef MOIST_CAPPA
+           if ( nwat==2 ) then
+              do i=is,ie
+                 qv(i) = max(0., q(i,j,k,sphum)) 
+                 gz(i) = max(0., q(i,j,k,liq_wat))
+                 cvm(i) = (1.-qv(i))*cv_air + qv(i)*cv_vap
+              enddo
+           else
+              call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
+                            ice_wat, snowwat, graupel, q, gz, cvm)
+           endif
               do i=is,ie
 ! KE using 3D winds:
-#ifdef USE_COND
-#ifdef USE_NWAT3
-                 q_con(i,j,k) = q(i,j,k,liq_wat) + q(i,j,k,ice_wat)
-#else
-                 q_con(i,j,k) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) + q(i,j,k,ice_wat)  &
-                              + q(i,j,k,snowwat) + q(i,j,k,graupel)
-#endif
-                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(rgama*pt(i,j,k)*pkz(i,j,k)/(1.+r_vir*q(i,j,k,sphum)-q_con(i,j,k)) + &
-#else
-                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(rgama*pt(i,j,k)*pkz(i,j,k)/(1.+r_vir*q(i,j,k,sphum)) + &
-#endif
-                              0.5*(phis(i,k)+phis(i,k+1) + w(i,j,k)**2 + 0.5*rsin2(i,j)*( &
+              q_con(i,j,k) = gz(i)
+              te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cvm(i)*pt(i,j,k)/((1.+r_vir*q(i,j,k,sphum))*(1.-gz(i))) + &
+                              0.5*(phis(i,k)+phis(i,k+1) + w(i,j,k)**2 + 0.5*gridstruct%rsin2(i,j)*( &
                               u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -  &
-                             (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j))))
+                             (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*gridstruct%cosa_s(i,j))))
               enddo
-           enddo
+#else
+              do i=is,ie
+                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cv_air*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum)) + &
+                                 0.5*(phis(i,k)+phis(i,k+1) + w(i,j,k)**2 + 0.5*gridstruct%rsin2(i,j)*( &
+                                 u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -  &
+                                (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*gridstruct%cosa_s(i,j))))
+              enddo
+#endif
+           enddo   ! k-loop
+       endif  ! end non-hydro
+
+         do i=is,ie
+            te_2d(i,j) = te0_2d(i,j) - te_2d(i,j)
+            zsum1(i,j) = pkz(i,j,1)*delp(i,j,1)
+         enddo
+         do k=2,km
+            do i=is,ie
+               zsum1(i,j) = zsum1(i,j) + pkz(i,j,k)*delp(i,j,k)
+            enddo
+         enddo
+         if ( hydrostatic ) then
+            do i=is,ie
+               zsum0(i,j) = ptop*(pk(i,j,1)-pk(i,j,km+1)) + zsum1(i,j)
+            enddo
          endif
 
-       endif
-      enddo
-    endif
+    enddo   ! j-loop
 
-!$omp parallel do default(shared)
+!$OMP single
+         tpe = consv*g_sum(domain, te_2d, is, ie, js, je, ng, gridstruct%area_64, 0, reproduce=.true.)
+      E_Flux = tpe / (grav*pdt*4.*pi*radius**2)    ! unit: W/m**2
+                                                   ! Note pdt is "phys" time step
+      if ( hydrostatic ) then
+           dtmp = tpe / (cp*g_sum(domain, zsum0,  is, ie, js, je, ng, gridstruct%area_64, 0, reproduce=.true.))
+      else
+           dtmp = tpe / (cv_air*g_sum(domain, zsum1, is, ie, js, je, ng, gridstruct%area_64, 0, reproduce=.true.))
+      endif
+!$OMP end single
+
+  elseif ( consv < -consv_min ) then
+
+!$OMP do
       do j=js,je
          do i=is,ie
             zsum1(i,j) = pkz(i,j,1)*delp(i,j,1)
@@ -800,126 +634,116 @@ endif
                zsum1(i,j) = zsum1(i,j) + pkz(i,j,k)*delp(i,j,k)
             enddo
          enddo
-
-         do i=is,ie
-            zsum0(i,j) = ptop*(pk(i,j,1)-pk(i,j,km+1)) + zsum1(i,j)
-            te_2d(i,j) = te0_2d(i,j) - te_2d(i,j)
-         enddo
-      enddo
-
-         tpe = consv*g_sum(domain, te_2d, is, ie, js, je, ng, gridstruct%area, 0)
-      E_Flux = tpe / (grav*pdt*4.*pi*radius**2)    ! unit: W/m**2
-                                                   ! Note pdt is "phys" time step
-
-      if ( hydrostatic ) then
-           dtmp = tpe / (cp*g_sum(domain, zsum0,  is, ie, js, je, ng, gridstruct%area, 0))
-      else
-           dtmp = tpe / (cv*g_sum(domain, zsum1,  is, ie, js, je, ng, gridstruct%area, 0))
-      endif
-!-------------------------------------------------------------------------------
-! One may use this quick fix to ensure reproducibility at the expense of a lower
-! floating precision; this is fine for the TE correction
-!-------------------------------------------------------------------------------
-      if ( reproduce_sum ) dtmp = real(dtmp, 4) ! convert to 4-byte real
-  else
-      dtmp   = 0.
-      E_Flux = 0.
-#ifdef USE_COND
-!$omp parallel do default(shared)
-      do k=1,km
-         do j=js,je
-         do i=is,ie
-#ifdef USE_NWAT3
-            q_con(i,j,k) = q(i,j,k,liq_wat) + q(i,j,k,ice_wat)
-#else
-            q_con(i,j,k) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) + q(i,j,k,ice_wat)  &
-                         + q(i,j,k,snowwat) + q(i,j,k,graupel)
-#endif
-         enddo
-         enddo
-      enddo
-#endif
-  endif        ! end consv check
-
-  if ( te_map ) then !kord_mt >= 0
-!$omp parallel do default(shared) private(gz, tpe, tmp, dlnp)
-      do j=js,je
-         do i=is,ie
-            gz(i) = hs(i,j)
-         enddo
-         do k=km,1,-1
+         if ( hydrostatic ) then
             do i=is,ie
-               tpe = te(i,j,k) - gz(i) - 0.25*rsin2(i,j)*(    &
-                     u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -  &
-                    (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s(i,j) )
-               dlnp = rg*(peln(i,k+1,j) - peln(i,k,j))
-               tmp = tpe / (cp - pe(i,k,j)*dlnp/delp(i,j,k))
-               pt(i,j,k) = cp*(tmp/pkz(i,j,k) + dtmp)
-               gz(i) = gz(i) + dlnp*tmp
+               zsum0(i,j) = ptop*(pk(i,j,1)-pk(i,j,km+1)) + zsum1(i,j)
             enddo
-         enddo           ! end k-loop
+         endif
       enddo
-  else
-    if ( remap_t ) then
-        ! Note: pt at this stage is T_v
-      if ( do_sat_adj .and. (.not.do_adiabatic_init) ) then
-           !$omp parallel do default(shared) 
-           do k=1,km
-              call sat_adj2(mdt, is, ie, js, je, ng, km, k, hydrostatic, consv>0., &
-                   te0_2d, q(is-ng,js-ng,k,sphum), q(is-ng,js-ng,k,liq_wat),   &
-                      q(is-ng,js-ng,k,ice_wat), q(is-ng,js-ng,k,rainwat),    &
-                      q(is-ng,js-ng,k,snowwat), q(is-ng,js-ng,k,graupel), q(is-ng,js-ng,k,cld_amt), gridstruct%area(is-ng,js-ng), &
-                      peln, delz(is-ng:,js-ng:,k), pt(is-ng,js-ng,k), delp(is-ng,js-ng,k),           &
-                      q_con(is-ng:,js-ng:,k), dtdt(is,js,k), out_dt, last_step)
+
+      E_Flux = consv
+!$OMP single
+      if ( hydrostatic ) then
+           dtmp = E_flux*(grav*pdt*4.*pi*radius**2) /    &
+                 (cp*g_sum(domain, zsum0,  is, ie, js, je, ng, gridstruct%area_64, 0, reproduce=.true.))
+      else
+           dtmp = E_flux*(grav*pdt*4.*pi*radius**2) /    &
+                 (cv_air*g_sum(domain, zsum1,  is, ie, js, je, ng, gridstruct%area_64, 0, reproduce=.true.))
+      endif
+!$OMP end single
+  endif        ! end consv check
+endif        ! end last_step check
+
+! Note: pt at this stage is T_v
+  if ( (.not.do_adiabatic_init) .and. do_sat_adj ) then
+! if ( do_sat_adj ) then
+                                           call timing_on('sat_adj2')
+!$OMP do
+           do k=kmp,km
+              do j=js,je
+                 do i=is,ie
+                    dpln(i,j) = peln(i,k+1,j) - peln(i,k,j)
+                 enddo
+              enddo
+              call fv_sat_adj(abs(mdt), r_vir, is, ie, js, je, ng, hydrostatic, fast_mp_consv, &
+                             te(isd,jsd,k), q(isd,jsd,k,sphum), q(isd,jsd,k,liq_wat),   &
+                             q(isd,jsd,k,ice_wat), q(isd,jsd,k,rainwat),    &
+                             q(isd,jsd,k,snowwat), q(isd,jsd,k,graupel),    &
+                             dpln, delz(isd:,jsd:,k), pt(isd,jsd,k), delp(isd,jsd,k), q_con(isd:,jsd:,k), &
+              cappa(isd:,jsd:,k), gridstruct%area_64, dtdt(is,js,k), out_dt, last_step, cld_amt>0, q(isd,jsd,k,cld_amt))
               if ( .not. hydrostatic  ) then
                  do j=js,je
                     do i=is,ie
+#ifdef MOIST_CAPPA
+                       pkz(i,j,k) = exp(cappa(i,j,k)*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+#else
                        pkz(i,j,k) = exp(akap*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+#endif
                     enddo
                  enddo
               endif
-           enddo
-        endif
-        if ( last_step ) then
-           !$omp parallel do default(shared) 
-           do k=1,km
-              do j=js,je
-                 do i=is,ie
-                    ! Output temperature if last_step
-#ifdef USE_COND
-                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k))/(1.+r_vir*q(i,j,k,sphum)-q_con(i,j,k))
-#else
-                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k))/(1.+r_vir*q(i,j,k,sphum))
-#endif
-                 enddo
-              enddo
-           enddo
-        else
-           !$omp parallel do default(shared) 
-           do k=1,km
-              do j=js,je
-                 do i=is,ie
-                    pt(i,j,k) = cp*(pt(i,j,k)/pkz(i,j,k) + dtmp)
-                 enddo
-              enddo
-           enddo
-        endif
-    else
-        !$omp parallel do default(shared) 
+           enddo    ! OpenMP k-loop
+
+           if ( fast_mp_consv ) then
+!$OMP do
+                do j=js,je
+                   do i=is,ie
+                      do k=kmp,km
+                         te0_2d(i,j) = te0_2d(i,j) + te(i,j,k)
+                      enddo
+                   enddo
+                enddo
+           endif
+                                           call timing_off('sat_adj2')
+  endif   ! do_sat_adj
+
+
+  if ( last_step ) then
+       ! Output temperature if last_step
+!$OMP do
         do k=1,km
            do j=js,je
-              do i=is,ie
-                 pt(i,j,k) = pt(i,j,k) + cp*dtmp
-              enddo
-           enddo
-        enddo
-     endif
+#ifdef USE_COND
+              if ( nwat==2 ) then
+                 do i=is,ie
+                    gz(i) = max(0., q(i,j,k,liq_wat))
+                    qv(i) = max(0., q(i,j,k,sphum)) 
+                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k)) / ((1.+r_vir*qv(i))*(1.-gz(i)))
+                 enddo
+              elseif ( nwat==6 ) then
+                 do i=is,ie
+                    gz(i) = q(i,j,k,liq_wat)+q(i,j,k,rainwat)+q(i,j,k,ice_wat)+q(i,j,k,snowwat)+q(i,j,k,graupel)
+                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k))/((1.+r_vir*q(i,j,k,sphum))*(1.-gz(i)))
+                 enddo
+              else
+                 call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
+                               ice_wat, snowwat, graupel, q, gz, cvm)
+                 do i=is,ie
+                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k)) / ((1.+r_vir*q(i,j,k,sphum))*(1.-gz(i)))
+                 enddo
+              endif
+#else
+              if ( .not. adiabatic ) then
+                 do i=is,ie
+                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k)) / (1.+r_vir*q(i,j,k,sphum))
+                 enddo
+              endif
+#endif
+           enddo   ! j-loop
+        enddo  ! k-loop
+  else  ! not last_step
+    if ( kord_tm < 0 ) then
+!$OMP do
+       do k=1,km
+          do j=js,je
+             do i=is,ie
+                pt(i,j,k) = pt(i,j,k)/pkz(i,j,k)
+             enddo
+          enddo
+       enddo
+    endif
   endif
-
-! call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km, 1, flagstruct%c2l_ord)
-
-  nullify(cosa_s)
-  nullify(rsin2)
+!$OMP end parallel
 
  end subroutine Lagrangian_to_Eulerian
 
@@ -928,17 +752,17 @@ endif
                                  u, v, w, delz, pt, delp, q, qc, pe, peln, hs, &
                                  rsin2_l, cosa_s_l, &
                                  r_vir,  cp, rg, hlv, te_2d, ua, va, teq, &
-                                 moist_phys, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hydrostatic, id_te)
+                                 moist_phys, nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hydrostatic, id_te)
 !------------------------------------------------------
 ! Compute vertically integrated total energy per column
 !------------------------------------------------------
 ! !INPUT PARAMETERS:
    integer,  intent(in):: km, is, ie, js, je, isd, ied, jsd, jed, id_te
-   integer,  intent(in):: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel
+   integer,  intent(in):: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, nwat
    real, intent(inout), dimension(isd:ied,jsd:jed,km):: ua, va
    real, intent(in), dimension(isd:ied,jsd:jed,km):: pt, delp
-   real, intent(in), dimension(isd:ied,jsd:jed,km,sphum):: q
-   real, intent(in), dimension(is:ie,js:je,km):: qc
+   real, intent(in), dimension(isd:ied,jsd:jed,km,*):: q
+   real, intent(in), dimension(isd:ied,jsd:jed,km):: qc
    real, intent(inout)::  u(isd:ied,  jsd:jed+1,km)
    real, intent(inout)::  v(isd:ied+1,jsd:jed,  km)
    real, intent(in)::  w(isd:,jsd:,1:)   ! vertical velocity (m/s)
@@ -956,16 +780,18 @@ endif
 ! Local
    real, dimension(is:ie,km):: tv
    real  phiz(is:ie,km+1)
-   real cvm, q_liq, q_sol
+   real  cvm(is:ie), qd(is:ie)
    integer i, j, k
-
 
 !----------------------
 ! Output lat-lon winds:
 !----------------------
 !  call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km, flagstruct%c2l_ord)
 
-!$omp parallel do default(shared) private(phiz, tv, cvm, q_sol, q_liq)
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,km,hydrostatic,hs,pt,qc,rg,peln,te_2d, &
+!$OMP                                  pe,delp,cp,rsin2_l,u,v,cosa_s_l,delz,moist_phys,w, &
+!$OMP                                  q,nwat,liq_wat,rainwat,ice_wat,snowwat,graupel,sphum)   &
+!$OMP                          private(phiz, tv, cvm, qd)
   do j=js,je
 
      if ( hydrostatic ) then
@@ -1008,13 +834,13 @@ endif
      enddo
      if ( moist_phys ) then
      do k=1,km
+#ifdef MOIST_CAPPA
+        call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
+                      ice_wat, snowwat, graupel, q, qd, cvm)
+#endif
         do i=is,ie
-#if defined(USE_COND) && defined(USE_CVM)
-           q_liq = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
-           q_sol = q(i,j,k,ice_wat) + q(i,j,k,snowwat) + q(i,j,k,graupel)
-           cvm = (1.-(q(i,j,k,sphum)+q_liq+q_sol))*cv_air + q(i,j,k,sphum)*cv_vap +   &
-                 q_liq*c_liq + q_sol*c_ice
-           te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cvm*pt(i,j,k) +  &
+#ifdef MOIST_CAPPA
+           te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cvm(i)*pt(i,j,k) +  &
 #else
            te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv_air*pt(i,j,k) +  &
 #endif
@@ -1035,30 +861,22 @@ endif
   enddo
 
 !-------------------------------------
-! Doganostics computation for moist TE
+! Diganostics computation for moist TE
 !-------------------------------------
   if( id_te>0 ) then
-!$omp parallel do default(shared) 
+!$OMP parallel do default(none) shared(is,ie,js,je,teq,te_2d,moist_phys,km,hlv,sphum,q,delp)
       do j=js,je
          do i=is,ie
             teq(i,j) = te_2d(i,j)
          enddo
-      enddo
-      if ( moist_phys ) then
-!$omp parallel do default(shared) 
+         if ( moist_phys ) then
            do k=1,km
-              do j=js,je
-                 do i=is,ie
-                    teq(i,j) = teq(i,j) + hlv*q(i,j,k,sphum)*delp(i,j,k)
-                 enddo
+              do i=is,ie
+                 teq(i,j) = teq(i,j) + hlv*q(i,j,k,sphum)*delp(i,j,k)
               enddo
            enddo
-      endif
-!     do j=js,je
-!        do i=is,ie
-!           teq(i,j) = teq(i,j) / (pe(i,km,j) - pe(i,1,j))
-!        enddo
-!     enddo
+         endif
+      enddo
    endif
 
   end subroutine compute_total_energy
@@ -1207,6 +1025,100 @@ endif
 
  end subroutine remap_z
 
+ subroutine map_scalar( km,   pe1,    q1,   qs,           &
+                        kn,   pe2,    q2,   i1, i2,       &
+                         j,  ibeg, iend, jbeg, jend, iv,  kord, q_min)
+! iv=1
+ integer, intent(in) :: i1                ! Starting longitude
+ integer, intent(in) :: i2                ! Finishing longitude
+ integer, intent(in) :: iv                ! Mode: 0 == constituents  1 == temp
+                                          !       2 == remap temp with cs scheme
+ integer, intent(in) :: kord              ! Method order
+ integer, intent(in) :: j                 ! Current latitude
+ integer, intent(in) :: ibeg, iend, jbeg, jend
+ integer, intent(in) :: km                ! Original vertical dimension
+ integer, intent(in) :: kn                ! Target vertical dimension
+ real, intent(in) ::   qs(i1:i2)       ! bottom BC
+ real, intent(in) ::  pe1(i1:i2,km+1)  ! pressure at layer edges 
+                                       ! (from model top to bottom surface)
+                                       ! in the original vertical coordinate
+ real, intent(in) ::  pe2(i1:i2,kn+1)  ! pressure at layer edges 
+                                       ! (from model top to bottom surface)
+                                       ! in the new vertical coordinate
+ real, intent(in) ::    q1(ibeg:iend,jbeg:jend,km) ! Field input
+! !INPUT/OUTPUT PARAMETERS:
+ real, intent(inout)::  q2(ibeg:iend,jbeg:jend,kn) ! Field output
+ real, intent(in):: q_min
+
+! !DESCRIPTION:
+! IV = 0: constituents
+! pe1: pressure at layer edges (from model top to bottom surface)
+!      in the original vertical coordinate
+! pe2: pressure at layer edges (from model top to bottom surface)
+!      in the new vertical coordinate
+! !LOCAL VARIABLES:
+   real    dp1(i1:i2,km)
+   real   q4(4,i1:i2,km)
+   real    pl, pr, qsum, dp, esl
+   integer i, k, l, m, k0
+
+   do k=1,km
+      do i=i1,i2
+         dp1(i,k) = pe1(i,k+1) - pe1(i,k)
+         q4(1,i,k) = q1(i,j,k)
+      enddo
+   enddo
+
+! Compute vertical subgrid distribution
+   if ( kord >7 ) then
+        call scalar_profile( qs, q4, dp1, km, i1, i2, iv, kord, q_min )
+   else
+        call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
+   endif
+
+  do i=i1,i2
+     k0 = 1
+     do 555 k=1,kn
+      do l=k0,km
+! locate the top edge: pe2(i,k)
+      if( pe2(i,k) >= pe1(i,l) .and. pe2(i,k) <= pe1(i,l+1) ) then
+         pl = (pe2(i,k)-pe1(i,l)) / dp1(i,l)
+         if( pe2(i,k+1) <= pe1(i,l+1) ) then
+! entire new grid is within the original grid
+            pr = (pe2(i,k+1)-pe1(i,l)) / dp1(i,l)
+            q2(i,j,k) = q4(2,i,l) + 0.5*(q4(4,i,l)+q4(3,i,l)-q4(2,i,l))  &
+                       *(pr+pl)-q4(4,i,l)*r3*(pr*(pr+pl)+pl**2)
+               k0 = l
+               goto 555
+         else
+! Fractional area...
+            qsum = (pe1(i,l+1)-pe2(i,k))*(q4(2,i,l)+0.5*(q4(4,i,l)+   &
+                    q4(3,i,l)-q4(2,i,l))*(1.+pl)-q4(4,i,l)*           &
+                     (r3*(1.+pl*(1.+pl))))
+              do m=l+1,km
+! locate the bottom edge: pe2(i,k+1)
+                 if( pe2(i,k+1) > pe1(i,m+1) ) then
+! Whole layer
+                     qsum = qsum + dp1(i,m)*q4(1,i,m)
+                 else
+                     dp = pe2(i,k+1)-pe1(i,m)
+                     esl = dp / dp1(i,m)
+                     qsum = qsum + dp*(q4(2,i,m)+0.5*esl*               &
+                           (q4(3,i,m)-q4(2,i,m)+q4(4,i,m)*(1.-r23*esl)))
+                     k0 = m
+                     goto 123
+                 endif
+              enddo
+              goto 123
+         endif
+      endif
+      enddo
+123   q2(i,j,k) = qsum / ( pe2(i,k+1) - pe2(i,k) )
+555   continue
+  enddo
+
+ end subroutine map_scalar
+
 
  subroutine map1_ppm( km,   pe1,    q1,   qs,           &
                       kn,   pe2,    q2,   i1, i2,       &
@@ -1301,10 +1213,126 @@ endif
  end subroutine map1_ppm
 
 
+ subroutine mapn_tracer(nq, km, pe1, pe2, q1, dp2, kord, j,     &
+                        i1, i2, isd, ied, jsd, jed, q_min, fill)
+! !INPUT PARAMETERS:
+      integer, intent(in):: km                ! vertical dimension
+      integer, intent(in):: j, nq, i1, i2
+      integer, intent(in):: isd, ied, jsd, jed
+      integer, intent(in):: kord(nq)
+      real, intent(in)::  pe1(i1:i2,km+1)     ! pressure at layer edges 
+                                              ! (from model top to bottom surface)
+                                              ! in the original vertical coordinate
+      real, intent(in)::  pe2(i1:i2,km+1)     ! pressure at layer edges 
+                                              ! (from model top to bottom surface)
+                                              ! in the new vertical coordinate
+      real, intent(in)::  dp2(i1:i2,km)
+      real, intent(in)::  q_min
+      logical, intent(in):: fill
+      real, intent(inout):: q1(isd:ied,jsd:jed,km,nq) ! Field input
+! !LOCAL VARIABLES:
+      real:: q4(4,i1:i2,km,nq)
+      real:: q2(i1:i2,km,nq) ! Field output
+      real:: qsum(nq)
+      real:: dp1(i1:i2,km)
+      real:: qs(i1:i2)
+      real:: pl, pr, dp, esl, fac1, fac2
+      integer:: i, k, l, m, k0, iq
+
+      do k=1,km
+         do i=i1,i2
+            dp1(i,k) = pe1(i,k+1) - pe1(i,k)
+         enddo
+      enddo
+
+      do iq=1,nq
+         do k=1,km
+            do i=i1,i2
+               q4(1,i,k,iq) = q1(i,j,k,iq)
+            enddo
+         enddo
+         call scalar_profile( qs, q4(1,i1,1,iq), dp1, km, i1, i2, 0, kord(iq), q_min )
+      enddo
+
+! Mapping
+      do 1000 i=i1,i2
+         k0 = 1
+      do 555 k=1,km
+      do 100 l=k0,km
+! locate the top edge: pe2(i,k)
+      if(pe2(i,k) >= pe1(i,l) .and. pe2(i,k) <= pe1(i,l+1)) then
+         pl = (pe2(i,k)-pe1(i,l)) / dp1(i,l)
+         if(pe2(i,k+1) <= pe1(i,l+1)) then
+! entire new grid is within the original grid
+            pr = (pe2(i,k+1)-pe1(i,l)) / dp1(i,l)
+            fac1 = pr + pl
+            fac2 = r3*(pr*fac1 + pl*pl) 
+            fac1 = 0.5*fac1
+            do iq=1,nq
+               q2(i,k,iq) = q4(2,i,l,iq) + (q4(4,i,l,iq)+q4(3,i,l,iq)-q4(2,i,l,iq))*fac1  &
+                                         -  q4(4,i,l,iq)*fac2
+            enddo
+            k0 = l
+            goto 555
+          else
+! Fractional area...
+            dp = pe1(i,l+1) - pe2(i,k)
+            fac1 = 1. + pl
+            fac2 = r3*(1.+pl*fac1)
+            fac1 = 0.5*fac1
+            do iq=1,nq
+               qsum(iq) = dp*(q4(2,i,l,iq) + (q4(4,i,l,iq)+   &
+                              q4(3,i,l,iq) - q4(2,i,l,iq))*fac1 - q4(4,i,l,iq)*fac2)
+            enddo
+            do m=l+1,km
+! locate the bottom edge: pe2(i,k+1)
+               if(pe2(i,k+1) > pe1(i,m+1) ) then
+                                                   ! Whole layer..
+                  do iq=1,nq
+                     qsum(iq) = qsum(iq) + dp1(i,m)*q4(1,i,m,iq)
+                  enddo
+               else
+                  dp = pe2(i,k+1)-pe1(i,m)
+                  esl = dp / dp1(i,m)
+                  fac1 = 0.5*esl
+                  fac2 = 1.-r23*esl
+                  do iq=1,nq
+                     qsum(iq) = qsum(iq) + dp*( q4(2,i,m,iq) + fac1*(         &
+                                q4(3,i,m,iq)-q4(2,i,m,iq)+q4(4,i,m,iq)*fac2 ) )
+                  enddo
+                  k0 = m
+                  goto 123
+               endif
+            enddo
+            goto 123
+          endif
+      endif
+100   continue
+123   continue
+      do iq=1,nq
+         q2(i,k,iq) = qsum(iq) / dp2(i,k)
+      enddo
+555   continue
+1000  continue
+
+  if (fill) call fillz(i2-i1+1, km, nq, q2, dp2)
+
+  do iq=1,nq
+!    if (fill) call fillz(i2-i1+1, km, 1, q2(i1,1,iq), dp2)
+     do k=1,km
+        do i=i1,i2
+           q1(i,j,k,iq) = q2(i,k,iq)
+        enddo
+     enddo
+  enddo
+
+ end subroutine mapn_tracer
+
+
  subroutine map1_q2(km,   pe1,   q1,            &
                     kn,   pe2,   q2,   dp2,     &
                     i1,   i2,    iv,   kord, j, &
-                    ibeg, iend, jbeg, jend )
+                    ibeg, iend, jbeg, jend, q_min )
 
 
 ! !INPUT PARAMETERS:
@@ -1324,6 +1352,7 @@ endif
                                                ! in the new vertical coordinate
       real, intent(in) ::  q1(ibeg:iend,jbeg:jend,km) ! Field input
       real, intent(in) ::  dp2(i1:i2,kn)
+      real, intent(in) ::  q_min
 ! !INPUT/OUTPUT PARAMETERS:
       real, intent(inout):: q2(i1:i2,kn) ! Field output
 ! !LOCAL VARIABLES:
@@ -1343,7 +1372,7 @@ endif
 
 ! Compute vertical subgrid distribution
    if ( kord >7 ) then
-        call  cs_profile( qs, q4, dp1, km, i1, i2, iv, kord )
+        call  scalar_profile( qs, q4, dp1, km, i1, i2, iv, kord, q_min )
    else
         call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
    endif
@@ -1489,6 +1518,389 @@ endif
  end subroutine remap_2d
 
 
+ subroutine scalar_profile(qs, a4, delp, km, i1, i2, iv, kord, qmin)
+! Optimized vertical profile reconstruction:
+! Latest: Apr 2008 S.-J. Lin, NOAA/GFDL
+ integer, intent(in):: i1, i2
+ integer, intent(in):: km      ! vertical dimension
+ integer, intent(in):: iv      ! iv =-1: winds
+                               ! iv = 0: positive definite scalars
+                               ! iv = 1: others
+ integer, intent(in):: kord
+ real, intent(in)   ::   qs(i1:i2)
+ real, intent(in)   :: delp(i1:i2,km)     ! layer pressure thickness
+ real, intent(inout):: a4(4,i1:i2,km)     ! Interpolated values
+ real, intent(in):: qmin
+!-----------------------------------------------------------------------
+ logical, dimension(i1:i2,km):: extm, ext6
+ real  gam(i1:i2,km)
+ real    q(i1:i2,km+1)
+ real   d4(i1:i2)
+ real   bet, a_bot, grat 
+ real   pmp_1, lac_1, pmp_2, lac_2
+ integer i, k, im
+
+ if ( iv .eq. -2 ) then
+      do i=i1,i2
+         gam(i,2) = 0.5
+           q(i,1) = 1.5*a4(1,i,1)
+      enddo
+      do k=2,km-1
+         do i=i1, i2
+                  grat = delp(i,k-1) / delp(i,k)
+                   bet =  2. + grat + grat - gam(i,k)
+                q(i,k) = (3.*(a4(1,i,k-1)+a4(1,i,k)) - q(i,k-1))/bet
+            gam(i,k+1) = grat / bet
+         enddo
+      enddo
+      do i=i1,i2
+            grat = delp(i,km-1) / delp(i,km) 
+         q(i,km) = (3.*(a4(1,i,km-1)+a4(1,i,km)) - grat*qs(i) - q(i,km-1)) /  &
+                   (2. + grat + grat - gam(i,km))
+         q(i,km+1) = qs(i)
+      enddo
+      do k=km-1,1,-1
+        do i=i1,i2
+           q(i,k) = q(i,k) - gam(i,k+1)*q(i,k+1)
+        enddo
+      enddo
+ else
+  do i=i1,i2
+         grat = delp(i,2) / delp(i,1)   ! grid ratio
+          bet = grat*(grat+0.5)
+       q(i,1) = ( (grat+grat)*(grat+1.)*a4(1,i,1) + a4(1,i,2) ) / bet
+     gam(i,1) = ( 1. + grat*(grat+1.5) ) / bet
+  enddo
+
+  do k=2,km
+     do i=i1,i2
+           d4(i) = delp(i,k-1) / delp(i,k)
+             bet =  2. + d4(i) + d4(i) - gam(i,k-1)
+          q(i,k) = ( 3.*(a4(1,i,k-1)+d4(i)*a4(1,i,k)) - q(i,k-1) )/bet
+        gam(i,k) = d4(i) / bet
+     enddo
+  enddo
+ 
+  do i=i1,i2
+         a_bot = 1. + d4(i)*(d4(i)+1.5)
+     q(i,km+1) = (2.*d4(i)*(d4(i)+1.)*a4(1,i,km)+a4(1,i,km-1)-a_bot*q(i,km))  &
+               / ( d4(i)*(d4(i)+0.5) - a_bot*gam(i,km) )
+  enddo
+
+  do k=km,1,-1
+     do i=i1,i2
+        q(i,k) = q(i,k) - gam(i,k)*q(i,k+1)
+     enddo
+  enddo
+ endif
+
+!----- Perfectly linear scheme --------------------------------
+ if ( abs(kord) > 16 ) then
+  do k=1,km
+     do i=i1,i2
+        a4(2,i,k) = q(i,k  )
+        a4(3,i,k) = q(i,k+1)
+        a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+     enddo
+  enddo
+  return
+ endif
+!----- Perfectly linear scheme --------------------------------
+!------------------
+! Apply constraints
+!------------------
+  im = i2 - i1 + 1
+
+! Apply *large-scale* constraints 
+  do i=i1,i2
+     q(i,2) = min( q(i,2), max(a4(1,i,1), a4(1,i,2)) )
+     q(i,2) = max( q(i,2), min(a4(1,i,1), a4(1,i,2)) )
+  enddo
+
+  do k=2,km
+     do i=i1,i2
+        gam(i,k) = a4(1,i,k) - a4(1,i,k-1)
+     enddo
+  enddo
+
+! Interior:
+  do k=3,km-1
+     do i=i1,i2
+        if ( gam(i,k-1)*gam(i,k+1)>0. ) then
+! Apply large-scale constraint to ALL fields if not local max/min
+             q(i,k) = min( q(i,k), max(a4(1,i,k-1),a4(1,i,k)) )
+             q(i,k) = max( q(i,k), min(a4(1,i,k-1),a4(1,i,k)) )
+        else
+          if ( gam(i,k-1) > 0. ) then
+! There exists a local max
+               q(i,k) = max(q(i,k), min(a4(1,i,k-1),a4(1,i,k)))
+          else
+! There exists a local min
+               q(i,k) = min(q(i,k), max(a4(1,i,k-1),a4(1,i,k)))
+               if ( iv==0 ) q(i,k) = max(0., q(i,k))
+          endif
+        endif
+     enddo
+  enddo
+
+! Bottom:
+  do i=i1,i2
+     q(i,km) = min( q(i,km), max(a4(1,i,km-1), a4(1,i,km)) )
+     q(i,km) = max( q(i,km), min(a4(1,i,km-1), a4(1,i,km)) )
+  enddo
+
+  do k=1,km
+     do i=i1,i2
+        a4(2,i,k) = q(i,k  )
+        a4(3,i,k) = q(i,k+1)
+     enddo
+  enddo
+
+  do k=1,km
+     if ( k==1 .or. k==km ) then
+       do i=i1,i2
+          extm(i,k) = (a4(2,i,k)-a4(1,i,k)) * (a4(3,i,k)-a4(1,i,k)) > 0.
+       enddo
+     else
+       do i=i1,i2
+          extm(i,k) = gam(i,k)*gam(i,k+1) < 0.
+       enddo
+     endif
+     if ( abs(kord)==16 ) then
+       do i=i1,i2
+          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+          ext6(i,k) = abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k))
+       enddo
+     endif
+  enddo
+
+!---------------------------
+! Apply subgrid constraints:
+!---------------------------
+! f(s) = AL + s*[(AR-AL) + A6*(1-s)]         ( 0 <= s  <= 1 )
+! Top 2 and bottom 2 layers always use monotonic mapping
+
+  if ( iv==0 ) then
+     do i=i1,i2
+        a4(2,i,1) = max(0., a4(2,i,1))
+     enddo
+  elseif ( iv==-1 ) then 
+      do i=i1,i2
+         if ( a4(2,i,1)*a4(1,i,1) <= 0. ) a4(2,i,1) = 0.
+      enddo
+  elseif ( iv==2 ) then
+     do i=i1,i2
+        a4(2,i,1) = a4(1,i,1)
+        a4(3,i,1) = a4(1,i,1)
+        a4(4,i,1) = 0.
+     enddo
+  endif
+
+  if ( iv/=2 ) then
+     do i=i1,i2
+        a4(4,i,1) = 3.*(2.*a4(1,i,1) - (a4(2,i,1)+a4(3,i,1)))
+     enddo
+     call cs_limiters(im, extm(i1,1), a4(1,i1,1), 1)
+  endif
+
+! k=2
+   do i=i1,i2
+      a4(4,i,2) = 3.*(2.*a4(1,i,2) - (a4(2,i,2)+a4(3,i,2)))
+   enddo
+   call cs_limiters(im, extm(i1,2), a4(1,i1,2), 2)
+
+!-------------------------------------
+! Huynh's 2nd constraint for interior:
+!-------------------------------------
+  do k=3,km-2
+     if ( abs(kord)<9 ) then
+       do i=i1,i2
+! Left  edges
+          pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+          lac_1 = pmp_1 + 1.5*gam(i,k+2)
+          a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),   &
+                                         max(a4(1,i,k), pmp_1, lac_1) )
+! Right edges
+          pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+          lac_2 = pmp_2 - 1.5*gam(i,k-1)
+          a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
+                                         max(a4(1,i,k), pmp_2, lac_2) )
+
+          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+       enddo
+
+     elseif ( abs(kord)==9 ) then
+       do i=i1,i2
+          if ( extm(i,k) .and. extm(i,k-1) ) then
+! grid-scale 2-delta-z wave detected
+               a4(2,i,k) = a4(1,i,k)
+               a4(3,i,k) = a4(1,i,k)
+               a4(4,i,k) = 0.
+          else if ( extm(i,k) .and. extm(i,k+1) ) then
+! grid-scale 2-delta-z wave detected
+               a4(2,i,k) = a4(1,i,k)
+               a4(3,i,k) = a4(1,i,k)
+               a4(4,i,k) = 0.
+          else if ( extm(i,k) .and. a4(1,i,k)<qmin ) then
+! grid-scale 2-delta-z wave detected
+               a4(2,i,k) = a4(1,i,k)
+               a4(3,i,k) = a4(1,i,k)
+               a4(4,i,k) = 0.
+          else
+            a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+! Check within the smooth region if subgrid profile is non-monotonic
+            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
+                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
+              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
+                                             max(a4(1,i,k), pmp_1, lac_1) )
+                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
+              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
+                                             max(a4(1,i,k), pmp_2, lac_2) )
+              a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+            endif
+          endif
+       enddo
+     elseif ( abs(kord)==10 ) then
+       do i=i1,i2
+          if( extm(i,k) ) then
+              if( a4(1,i,k)<qmin .or. extm(i,k-1) .or. extm(i,k+1) ) then
+! grid-scale 2-delta-z wave detected; or q is too small -> ehance vertical mixing
+                   a4(2,i,k) = a4(1,i,k)
+                   a4(3,i,k) = a4(1,i,k)
+                   a4(4,i,k) = 0.
+              else
+! True local extremum
+                a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+              endif
+          else        ! not a local extremum
+            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+! Check within the smooth region if subgrid profile is non-monotonic
+            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
+                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
+              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
+                                             max(a4(1,i,k), pmp_1, lac_1) )
+                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
+              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
+                                             max(a4(1,i,k), pmp_2, lac_2) )
+              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+            endif
+          endif
+       enddo
+     elseif ( abs(kord)==12 ) then
+       do i=i1,i2
+          if( extm(i,k) ) then
+              a4(2,i,k) = a4(1,i,k)
+              a4(3,i,k) = a4(1,i,k)
+              a4(4,i,k) = 0.
+          else        ! not a local extremum
+            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+! Check within the smooth region if subgrid profile is non-monotonic
+            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
+                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
+              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
+                                             max(a4(1,i,k), pmp_1, lac_1) )
+                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
+              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
+                                             max(a4(1,i,k), pmp_2, lac_2) )
+              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+            endif
+          endif
+       enddo
+     elseif ( abs(kord)==13 ) then
+       do i=i1,i2
+          if( extm(i,k) ) then
+             if ( extm(i,k-1) .and. extm(i,k+1) ) then
+! grid-scale 2-delta-z wave detected
+                 a4(2,i,k) = a4(1,i,k)
+                 a4(3,i,k) = a4(1,i,k)
+                 a4(4,i,k) = 0.
+             else
+                 ! Left  edges
+                 pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                 lac_1 = pmp_1 + 1.5*gam(i,k+2)
+                 a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),   &
+                                     max(a4(1,i,k), pmp_1, lac_1) )
+                 ! Right edges
+                 pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                 lac_2 = pmp_2 - 1.5*gam(i,k-1)
+                 a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
+                                     max(a4(1,i,k), pmp_2, lac_2) )
+                 a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+             endif
+          else
+             a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+          endif
+       enddo
+     elseif ( abs(kord)==14 ) then
+       do i=i1,i2
+          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+       enddo
+     elseif ( abs(kord)==16 ) then
+       do i=i1,i2
+          if( ext6(i,k) ) then
+             if ( extm(i,k-1) .or. extm(i,k+1) ) then
+                 ! Left  edges
+                 pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                 lac_1 = pmp_1 + 1.5*gam(i,k+2)
+                 a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),   &
+                                     max(a4(1,i,k), pmp_1, lac_1) )
+                 ! Right edges
+                 pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                 lac_2 = pmp_2 - 1.5*gam(i,k-1)
+                 a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
+                                     max(a4(1,i,k), pmp_2, lac_2) )
+                 a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+             endif
+          endif
+       enddo
+     else      ! kord = 11, 13
+       do i=i1,i2
+         if ( extm(i,k) .and. (extm(i,k-1).or.extm(i,k+1).or.a4(1,i,k)<qmin) ) then
+! Noisy region:
+              a4(2,i,k) = a4(1,i,k)
+              a4(3,i,k) = a4(1,i,k)
+              a4(4,i,k) = 0.
+         else
+              a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+         endif
+       enddo
+     endif
+
+! Additional constraint to ensure positivity
+     if ( iv==0 ) call cs_limiters(im, extm(i1,k), a4(1,i1,k), 0)
+
+  enddo      ! k-loop
+
+!----------------------------------
+! Bottom layer subgrid constraints:
+!----------------------------------
+  if ( iv==0 ) then
+     do i=i1,i2
+        a4(3,i,km) = max(0., a4(3,i,km))
+     enddo
+  elseif ( iv .eq. -1 ) then 
+      do i=i1,i2
+         if ( a4(3,i,km)*a4(1,i,km) <= 0. )  a4(3,i,km) = 0.
+      enddo
+  endif
+
+  do k=km-1,km
+     do i=i1,i2
+        a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+     enddo
+     if(k==(km-1)) call cs_limiters(im, extm(i1,k), a4(1,i1,k), 2)
+     if(k== km   ) call cs_limiters(im, extm(i1,k), a4(1,i1,k), 1)
+  enddo
+
+ end subroutine scalar_profile
+
+
  subroutine cs_profile(qs, a4, delp, km, i1, i2, iv, kord)
 ! Optimized vertical profile reconstruction:
 ! Latest: Apr 2008 S.-J. Lin, NOAA/GFDL
@@ -1563,6 +1975,18 @@ endif
      enddo
   enddo
  endif
+!----- Perfectly linear scheme --------------------------------
+ if ( abs(kord) > 16 ) then
+  do k=1,km
+     do i=i1,i2
+        a4(2,i,k) = q(i,k  )
+        a4(3,i,k) = q(i,k+1)
+        a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+     enddo
+  enddo
+  return
+ endif
+!----- Perfectly linear scheme --------------------------------
 
 !------------------
 ! Apply constraints
@@ -1614,14 +2038,16 @@ endif
      enddo
   enddo
 
-  do k=2,km-1
-     do i=i1,i2
-        if ( gam(i,k)*gam(i,k+1) > 0.0 ) then
-             extm(i,k) = .false. 
-        else
-             extm(i,k) = .true.
-        endif
-     enddo
+  do k=1,km
+     if ( k==1 .or. k==km ) then
+       do i=i1,i2
+          extm(i,k) = (a4(2,i,k)-a4(1,i,k)) * (a4(3,i,k)-a4(1,i,k)) > 0.
+       enddo
+     else
+       do i=i1,i2
+          extm(i,k) = gam(i,k)*gam(i,k+1) < 0.
+       enddo
+     endif
   enddo
 
 !---------------------------
@@ -1681,7 +2107,12 @@ endif
 
      elseif ( abs(kord)==9 ) then
        do i=i1,i2
-          if ( extm(i,k) .and. (extm(i,k-1).or.extm(i,k+1)) ) then  ! c90_mp122
+          if ( extm(i,k) .and. extm(i,k-1) ) then  ! c90_mp122
+! grid-scale 2-delta-z wave detected
+               a4(2,i,k) = a4(1,i,k)
+               a4(3,i,k) = a4(1,i,k)
+               a4(4,i,k) = 0.
+          else if ( extm(i,k) .and. extm(i,k+1) ) then  ! c90_mp122
 ! grid-scale 2-delta-z wave detected
                a4(2,i,k) = a4(1,i,k)
                a4(3,i,k) = a4(1,i,k)
@@ -1730,11 +2161,59 @@ endif
             endif
           endif
        enddo
+     elseif ( abs(kord)==12 ) then
+       do i=i1,i2
+          if( extm(i,k) ) then
+! grid-scale 2-delta-z wave detected
+              a4(2,i,k) = a4(1,i,k)
+              a4(3,i,k) = a4(1,i,k)
+              a4(4,i,k) = 0.
+          else        ! not a local extremum
+            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+! Check within the smooth region if subgrid profile is non-monotonic
+            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
+                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
+              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
+                                             max(a4(1,i,k), pmp_1, lac_1) )
+                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
+              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
+                                             max(a4(1,i,k), pmp_2, lac_2) )
+              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+            endif
+          endif
+       enddo
+     elseif ( abs(kord)==13 ) then
+       do i=i1,i2
+          if( extm(i,k) ) then
+             if ( extm(i,k-1) .and. extm(i,k+1) ) then
+! grid-scale 2-delta-z wave detected
+                 a4(2,i,k) = a4(1,i,k)
+                 a4(3,i,k) = a4(1,i,k)
+                 a4(4,i,k) = 0.
+             else
+                 ! Left  edges
+                 pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                 lac_1 = pmp_1 + 1.5*gam(i,k+2)
+                 a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),   &
+                                     max(a4(1,i,k), pmp_1, lac_1) )
+                 ! Right edges
+                 pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                 lac_2 = pmp_2 - 1.5*gam(i,k-1)
+                 a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
+                                     max(a4(1,i,k), pmp_2, lac_2) )
+                 a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+             endif
+          else
+             a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+          endif
+       enddo
      elseif ( abs(kord)==14 ) then
        do i=i1,i2
           a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
-     else      ! kord = 11, 12, 13
+     else      ! kord = 11
        do i=i1,i2
          if ( extm(i,k) .and. (extm(i,k-1) .or. extm(i,k+1)) ) then
 ! Noisy region:
@@ -1774,7 +2253,6 @@ endif
   enddo
 
  end subroutine cs_profile
-
 
 
  subroutine cs_limiters(im, extm, a4, iv)
@@ -1930,7 +2408,7 @@ endif
          enddo
       enddo
 
-      if(km>8 .and. kord>4) call steepz(i1, i2, km, a4, df2, dc, delq, delp, d4)
+!     if(km>8 .and. kord>4) call steepz(i1, i2, km, a4, df2, dc, delq, delp, d4)
 
 ! Area preserving cubic with 2nd deriv. = 0 at the boundaries
 ! Top
@@ -2332,7 +2810,7 @@ endif
   r_vir = rvgas/rdgas - 1.
   rgrav = 1./grav
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,ps,ak_r)
   do j=js,je
      do i=is,ie
         ps(i,j) = ak_r(1)
@@ -2340,9 +2818,9 @@ endif
   enddo
 
 ! this OpenMP do-loop setup cannot work in it's current form....
-!rab!$omp parallel do default(shared)
-  do k=1,km
-     do j=js,je
+!$OMP parallel do default(none) shared(is,ie,js,je,km,ps,delp_r)
+  do j=js,je
+     do k=1,km
         do i=is,ie
            ps(i,j) = ps(i,j) + delp_r(i,j,k)
         enddo
@@ -2357,7 +2835,7 @@ endif
   endif
 
 ! Compute virtual Temp
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,km,pt_r,r_vir,q_r)
   do k=1,km
      do j=js,je
         do i=is,ie
@@ -2366,7 +2844,10 @@ endif
      enddo
   enddo
 
-!$omp parallel do default(shared) private(pe1,  pe2, pv1, pv2)
+!$OMP parallel do default(none) shared(is,ie,js,je,km,ak_r,bk_r,ps,kn,ak,bk,u_r,u,delp, &
+!$OMP                                  ntp,nq,hydrostatic,make_nh,w_r,w,delz_r,delp_r,delz, &
+!$OMP                                  pt_r,pt,v_r,v,q,q_r,qdiag,qdiag_r) &
+!$OMP                          private(pe1,  pe2, pv1, pv2)
   do 1000 j=js,je+1
 !------
 ! map u
@@ -2518,7 +2999,7 @@ endif
   endif !(j < je+1)
 1000  continue
 
-!$omp parallel do default(shared) 
+!$OMP parallel do default(none) shared(is,ie,js,je,kn,pt,r_vir,q)
   do k=1,kn
      do j=js,je
         do i=is,ie
@@ -2573,34 +3054,27 @@ endif
 !------------------------------------
 ! Lowest layer: constant distribution
 !------------------------------------
+#ifdef NGGPS_SUBMITTED
       do i=i1,i2
          a4(2,i,km) = q1(i,km)
          a4(3,i,km) = q1(i,km)
          a4(4,i,km) = 0.
       enddo
+#endif
 
       do 5555 i=i1,i2
          k0 = 1
       do 555 k=1,kn
 
-#ifdef OLD_TOP_EDGE
-         if(pe2(i,k+1) .le. pe1(i,1)) then
-! Entire grid above old ptop
-            q2(i,k) = a4(2,i,1)
-         elseif(pe2(i,k) .ge. pe1(i,km+1)) then
-! Entire grid below old ps
-            q2(i,k) = a4(3,i,km)
-         elseif(pe2(i,k  ) .lt. pe1(i,1) .and.   &
-                pe2(i,k+1) .gt. pe1(i,1))  then
-! Part of the grid above ptop
-            q2(i,k) = a4(1,i,1)
-#else
          if(pe2(i,k) .le. pe1(i,1)) then
 ! above old ptop
             q2(i,k) = q1(i,1)
          elseif(pe2(i,k) .ge. pe1(i,km+1)) then
 ! Entire grid below old ps
-            q2(i,k) = a4(3,i,km)
+#ifdef NGGPS_SUBMITTED
+            q2(i,k) = a4(3,i,km)   ! this is not good.
+#else
+            q2(i,k) = q1(i,km)
 #endif
          else
 
@@ -2652,7 +3126,11 @@ endif
         delp = pe2(i,k+1) - pe1(i,km+1)
         if(delp > 0.) then
 ! Extended below old ps
-           qsum = qsum + delp * a4(3,i,km)
+#ifdef NGGPS_SUBMITTED
+           qsum = qsum + delp * a4(3,i,km)    ! not good.
+#else
+           qsum = qsum + delp * q1(i,km)
+#endif
           dpsum = dpsum + delp
         endif
 123     q2(i,k) = qsum / dpsum
@@ -2661,4 +3139,146 @@ endif
 5555  continue
 
  end subroutine mappm
+
+
+ subroutine moist_cv(is,ie, isd,ied, jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
+                     ice_wat, snowwat, graupel, q, qd, cvm, t1)
+  integer, intent(in):: is, ie, isd,ied, jsd,jed, km, nwat, j, k
+  integer, intent(in):: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel
+  real, intent(in), dimension(isd:ied,jsd:jed,km,nwat):: q
+  real, intent(out), dimension(is:ie):: cvm, qd
+  real, intent(in), optional:: t1(is:ie)
+!
+  real, parameter:: t_i0 = 15.
+  real, dimension(is:ie):: qv, ql, qs
+  integer:: i
+
+  select case (nwat)
+
+   case(2)
+     if ( present(t1) ) then  ! Special case for GFS physics
+        do i=is,ie
+           qd(i) = max(0., q(i,j,k,liq_wat))
+           if ( t1(i) > tice ) then
+                qs(i) = 0.
+           elseif ( t1(i) < tice-t_i0 ) then
+                qs(i) = qd(i)
+           else
+                qs(i) = qd(i)*(tice-t1(i))/t_i0
+           endif
+           ql(i) = qd(i) - qs(i)
+           qv(i) = max(0.,q(i,j,k,sphum))
+           cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
+        enddo
+     else
+        do i=is,ie
+           qv(i) = max(0.,q(i,j,k,sphum))
+           qs(i) = max(0.,q(i,j,k,liq_wat))
+           qd(i) = qs(i)
+           cvm(i) = (1.-qv(i))*cv_air + qv(i)*cv_vap
+        enddo
+     endif
+  case (3)
+     do i=is,ie
+        qv(i) = q(i,j,k,sphum)
+        ql(i) = q(i,j,k,liq_wat) 
+        qs(i) = q(i,j,k,ice_wat)
+        qd(i) = ql(i) + qs(i)
+        cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
+     enddo
+  case(4)              ! K_warm_rain with fake ice
+     do i=is,ie 
+        qv(i) = q(i,j,k,sphum)
+        qd(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
+        cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + qd(i)*c_liq
+     enddo
+
+  case(6)
+     do i=is,ie 
+        qv(i) = q(i,j,k,sphum)
+        ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) 
+        qs(i) = q(i,j,k,ice_wat) + q(i,j,k,snowwat) + q(i,j,k,graupel)
+        qd(i) = ql(i) + qs(i)
+        cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
+     enddo
+  case default
+     do i=is,ie 
+         qd(i) = 0.
+        cvm(i) = cv_air
+     enddo
+ end select
+
+ end subroutine moist_cv
+
+ subroutine moist_cp(is,ie, isd,ied, jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
+                     ice_wat, snowwat, graupel, q, qd, cpm, t1)
+
+  integer, intent(in):: is, ie, isd,ied, jsd,jed, km, nwat, j, k
+  integer, intent(in):: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel
+  real, intent(in), dimension(isd:ied,jsd:jed,km,nwat):: q
+  real, intent(out), dimension(is:ie):: cpm, qd
+  real, intent(in), optional:: t1(is:ie)
+!
+  real, parameter:: t_i0 = 15.
+  real, dimension(is:ie):: qv, ql, qs
+  integer:: i
+
+  select case (nwat)
+
+  case(2)
+     if ( present(t1) ) then  ! Special case for GFS physics
+        do i=is,ie
+           qd(i) = max(0., q(i,j,k,liq_wat))
+           if ( t1(i) > tice ) then
+                qs(i) = 0.
+           elseif ( t1(i) < tice-t_i0 ) then
+                qs(i) = qd(i)
+           else
+                qs(i) = qd(i)*(tice-t1(i))/t_i0
+           endif
+           ql(i) = qd(i) - qs(i)
+           qv(i) = max(0.,q(i,j,k,sphum))
+           cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
+        enddo
+     else
+     do i=is,ie
+        qv(i) = max(0.,q(i,j,k,sphum))
+        qs(i) = max(0.,q(i,j,k,liq_wat))
+        qd(i) = qs(i)
+        cpm(i) = (1.-qv(i))*cp_air + qv(i)*cp_vapor
+     enddo
+     endif
+
+  case(3)
+     do i=is,ie
+        qv(i) = q(i,j,k,sphum)
+        ql(i) = q(i,j,k,liq_wat) 
+        qs(i) = q(i,j,k,ice_wat)
+        qd(i) = ql(i) + qs(i)
+        cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
+     enddo
+  case(4)    ! K_warm_rain scheme with fake ice
+     do i=is,ie
+        qv(i) = q(i,j,k,sphum)
+        qd(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
+        cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + qd(i)*c_liq
+     enddo
+
+  case(6)
+     do i=is,ie 
+        qv(i) = q(i,j,k,sphum)
+        ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) 
+        qs(i) = q(i,j,k,ice_wat) + q(i,j,k,snowwat) + q(i,j,k,graupel)
+        qd(i) = ql(i) + qs(i)
+        cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
+     enddo
+  case default
+     do i=is,ie 
+        qd(i) = 0.
+        cpm(i) = cp_air
+     enddo
+  end select
+
+ end subroutine moist_cp
+
 end module fv_mapz_mod

@@ -1,27 +1,27 @@
+!***********************************************************************
+!*                   GNU General Public License                        *
+!* This file is a part of fvGFS.                                       *
+!*                                                                     *
+!* fvGFS is free software; you can redistribute it and/or modify it    *
+!* and are expected to follow the terms of the GNU General Public      *
+!* License as published by the Free Software Foundation; either        *
+!* version 2 of the License, or (at your option) any later version.    *
+!*                                                                     *
+!* fvGFS is distributed in the hope that it will be useful, but        *
+!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+!* General Public License for more details.                            *
+!*                                                                     *
+!* For the full text of the GNU General Public License,                *
+!* write to: Free Software Foundation, Inc.,                           *
+!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!***********************************************************************
+!!!NOTE: Merging in the seasonal forecast initialization code
+!!!!     has proven problematic in the past, since many conflicts
+!!!!     occur. Leaving this for now --- lmh 10aug15
 
 module fv_io_mod
-  !-----------------------------------------------------------------------
-  !                   GNU General Public License                        
-  !                                                                      
-  ! This program is free software; you can redistribute it and/or modify it and  
-  ! are expected to follow the terms of the GNU General Public License  
-  ! as published by the Free Software Foundation; either version 2 of   
-  ! the License, or (at your option) any later version.                 
-  !                                                                      
-  ! MOM is distributed in the hope that it will be useful, but WITHOUT    
-  ! ANY WARRANTY; without even the implied warranty of MERCHANTABILITY  
-  ! or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public    
-  ! License for more details.                                           
-  !                                                                      
-  ! For the full text of the GNU General Public License,                
-  ! write to: Free Software Foundation, Inc.,                           
-  !           675 Mass Ave, Cambridge, MA 02139, USA.                   
-  ! or see:   http://www.gnu.org/licenses/gpl.html                      
-  !-----------------------------------------------------------------------
-  ! 
-  ! <CONTACT EMAIL= "Jeffrey.Durachta@noaa.gov">Jeffrey Durachta </CONTACT>
-
-  ! <HISTORY SRC="http://www.gfdl.noaa.gov/fms-cgi-bin/cvsweb.cgi/FMS/"/>
 
   !<OVERVIEW>
   ! Restart facilities for FV core
@@ -38,7 +38,8 @@ module fv_io_mod
                                      save_restart, restore_state, &
                                      set_domain, nullify_domain, set_filename_appendix, &
                                      get_mosaic_tile_file, get_instance_filename, & 
-                                     save_restart_border, restore_state_border, free_restart_type
+                                     save_restart_border, restore_state_border, free_restart_type, &
+                                     field_exist
   use mpp_mod,                 only: mpp_error, FATAL, NOTE, WARNING, mpp_root_pe, &
                                      mpp_sync, mpp_pe, mpp_declare_pelist
   use mpp_domains_mod,         only: domain2d, EAST, WEST, NORTH, CENTER, SOUTH, CORNER, &
@@ -502,6 +503,14 @@ contains
        id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname, 'phis', Atm(n)%phis, &
                      domain=fv_domain, tile_count=n)
 
+       !--- include agrid winds in restarts for use in data assimilation 
+       if (Atm(n)%flagstruct%agrid_vel_rst) then
+         id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname, 'ua', Atm(n)%ua, &
+                       domain=fv_domain, tile_count=n, mandatory=.false.)
+         id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname, 'va', Atm(n)%va, &
+                       domain=fv_domain, tile_count=n, mandatory=.false.)
+       endif
+
        fname = 'fv_srf_wnd.res'//trim(stile_name)//'.nc'
        id_restart =  register_restart_field(Atm(n)%Rsf_restart, fname, 'u_srf', Atm(n)%u_srf, &
                      domain=fv_domain, tile_count=n)
@@ -553,9 +562,10 @@ contains
   ! <DESCRIPTION>
   ! Write the fv core restart quantities 
   ! </DESCRIPTION>
-  subroutine  fv_io_write_restart(Atm, timestamp)
+  subroutine  fv_io_write_restart(Atm, grids_on_this_pe, timestamp)
 
     type(fv_atmos_type),        intent(inout) :: Atm(:)
+    logical, intent(IN) :: grids_on_this_pe(:)
     character(len=*), optional, intent(in) :: timestamp
     integer                                :: n, ntileMe
 
@@ -567,7 +577,12 @@ contains
     endif
  
     do n = 1, ntileMe
-!    n = 1
+       if (.not. grids_on_this_pe(n)) cycle
+
+       if ( (use_ncep_sst .or. Atm(n)%flagstruct%nudge) .and. .not. Atm(n)%gridstruct%nested ) then
+          call save_restart(Atm(n)%SST_restart, timestamp)
+       endif
+ 
        call save_restart(Atm(n)%Fv_restart, timestamp)
        call save_restart(Atm(n)%Fv_tile_restart, timestamp)
        call save_restart(Atm(n)%Rsf_restart, timestamp)
@@ -728,7 +743,7 @@ contains
 
 
   subroutine register_bcs_3d(Atm, BCfile_ne, BCfile_sw, fname_ne, fname_sw, &
-                             var_name, var, var_bc, istag, jstag)
+                             var_name, var, var_bc, istag, jstag, mandatory)
     type(fv_atmos_type),      intent(in)    :: Atm
     type(restart_file_type),  intent(inout) :: BCfile_ne, BCfile_sw
     character(len=120),       intent(in)    :: fname_ne, fname_sw
@@ -736,6 +751,7 @@ contains
     real, dimension(:,:,:),   intent(in), optional :: var
     type(fv_nest_BC_type_3D), intent(in), optional :: var_bc
     integer,                  intent(in), optional :: istag, jstag
+    logical,                  intent(IN), optional :: mandatory
 
     integer :: npx, npy, i_stag, j_stag
     integer :: is, ie, js, je, isd, ied, jsd, jed, n
@@ -793,12 +809,12 @@ contains
                                         trim(var_name)//'_west_t1', &
                                         var_bc%west_t1, & 
                                         indices, global_size, y2_pelist, &
-                                        is_root_pe, jshift=y_halo)
+                                        is_root_pe, jshift=y_halo, mandatory=mandatory)
 !register west prognostic halo data
     if (present(var)) id_restart = register_restart_field(BCfile_sw, trim(fname_sw), &
                                         trim(var_name)//'_west', &
                                         var, indices, global_size, &
-                                        y2_pelist, is_root_pe, jshift=y_halo)
+                                        y2_pelist, is_root_pe, jshift=y_halo, mandatory=mandatory)
 
 !define east root_pe
     is_root_pe = .FALSE.
@@ -808,7 +824,7 @@ contains
                                         trim(var_name)//'_east_t1', &
                                         var_bc%east_t1, & 
                                         indices, global_size, y1_pelist, &
-                                        is_root_pe, jshift=y_halo)
+                                        is_root_pe, jshift=y_halo, mandatory=mandatory)
 
 !reset indices for prognostic variables in the east halo
     indices(1) = ied-x_halo+1+i_stag
@@ -818,7 +834,7 @@ contains
                                         trim(var_name)//'_east', &
                                         var, indices, global_size, &
                                         y1_pelist, is_root_pe, jshift=y_halo, &
-                                        x_halo=(size(var,1)-x_halo), ishift=-(ie+i_stag))
+                                        x_halo=(size(var,1)-x_halo), ishift=-(ie+i_stag), mandatory=mandatory)
 
 !NORTH & SOUTH
 !set defaults for north/south halo regions
@@ -843,12 +859,12 @@ contains
                                         trim(var_name)//'_south_t1', &
                                         var_bc%south_t1, & 
                                         indices, global_size, x2_pelist, &
-                                        is_root_pe, x_halo=x_halo_ns)
+                                        is_root_pe, x_halo=x_halo_ns, mandatory=mandatory)
 !register south prognostic halo data
     if (present(var)) id_restart = register_restart_field(BCfile_sw, trim(fname_sw), &
                                         trim(var_name)//'_south', &
                                         var, indices, global_size, &
-                                        x2_pelist, is_root_pe, x_halo=x_halo_ns)
+                                        x2_pelist, is_root_pe, x_halo=x_halo_ns, mandatory=mandatory)
 
 !define north root_pe
     is_root_pe = .FALSE.
@@ -858,7 +874,7 @@ contains
                                         trim(var_name)//'_north_t1', &
                                         var_bc%north_t1, & 
                                         indices, global_size, x1_pelist, &
-                                        is_root_pe, x_halo=x_halo_ns)
+                                        is_root_pe, x_halo=x_halo_ns, mandatory=mandatory)
 
 !reset indices for prognostic variables in the north halo
     indices(3) = jed-y_halo+1+j_stag
@@ -868,7 +884,7 @@ contains
                                         trim(var_name)//'_north', &
                                         var, indices, global_size, &
                                         x1_pelist, is_root_pe, x_halo=x_halo_ns, &
-                                        y_halo=(size(var,2)-y_halo), jshift=-(je+j_stag))
+                                        y_halo=(size(var,2)-y_halo), jshift=-(je+j_stag), mandatory=mandatory)
 
   end subroutine register_bcs_3d
 
@@ -898,22 +914,31 @@ contains
     do n=1,ntprog
        call get_tracer_names(MODEL_ATMOS, n, tname)
        call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
-                            fname_ne, fname_sw, trim(tname), Atm%q(:,:,:,n), Atm%neststruct%q_BC(n))
+                            fname_ne, fname_sw, trim(tname), Atm%q(:,:,:,n), Atm%neststruct%q_BC(n), mandatory=.false.)
     enddo
     do n=ntprog+1,ntracers
        call get_tracer_names(MODEL_ATMOS, n, tname)
        call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
-                            fname_ne, fname_sw, trim(tname), var=Atm%qdiag(:,:,:,n))
+                            fname_ne, fname_sw, trim(tname), var=Atm%qdiag(:,:,:,n), mandatory=.false.)
     enddo
 #ifndef SW_DYNAMICS
     call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
                          fname_ne, fname_sw, 'pt', Atm%pt, Atm%neststruct%pt_BC)
     if ((.not.Atm%flagstruct%hydrostatic) .and. (.not.Atm%flagstruct%make_nh)) then
+       if (is_master()) print*, 'fv_io_register_restart_BCs: REGISTERING NH BCs', Atm%flagstruct%hydrostatic, Atm%flagstruct%make_nh
       call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
-                           fname_ne, fname_sw, 'w', Atm%w, Atm%neststruct%w_BC)
+                           fname_ne, fname_sw, 'w', Atm%w, Atm%neststruct%w_BC, mandatory=.false.)
       call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
-                           fname_ne, fname_sw, 'delz', Atm%delz, Atm%neststruct%delz_BC)
+                           fname_ne, fname_sw, 'delz', Atm%delz, Atm%neststruct%delz_BC, mandatory=.false.)
     endif
+#ifdef USE_COND
+       call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                            fname_ne, fname_sw,'q_con', var_bc=Atm%neststruct%q_con_BC, mandatory=.false.)
+#ifdef MOIST_CAPPA
+       call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+            fname_ne, fname_sw, 'cappa', var_bc=Atm%neststruct%cappa_BC, mandatory=.false.)
+#endif
+#endif
 #endif
     call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
                          fname_ne, fname_sw, 'u', Atm%u, Atm%neststruct%u_BC, jstag=1)
@@ -923,6 +948,10 @@ contains
                          fname_ne, fname_sw, 'uc', var_bc=Atm%neststruct%uc_BC, istag=1)
     call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
                          fname_ne, fname_sw, 'vc', var_bc=Atm%neststruct%vc_BC, jstag=1)
+    call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                         fname_ne, fname_sw, 'divg', var_bc=Atm%neststruct%divg_BC, istag=1,jstag=1, mandatory=.false.)
+    Atm%neststruct%divg_BC%initialized = field_exist(fname_ne, 'divg_north_t1', Atm%domain)
+
 
     return
   end subroutine fv_io_register_restart_BCs
@@ -939,6 +968,7 @@ contains
 
     call set_domain(Atm%domain)
 
+    if (is_master()) print*, 'fv_io_register_restart_BCs_NH: REGISTERING NH BCs', Atm%flagstruct%hydrostatic, Atm%flagstruct%make_nh
 #ifndef SW_DYNAMICS
     call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
          fname_ne, fname_sw, 'w', Atm%w, Atm%neststruct%w_BC)

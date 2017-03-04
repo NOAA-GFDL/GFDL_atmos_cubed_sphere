@@ -1,26 +1,41 @@
+!***********************************************************************
+!*                   GNU General Public License                        *
+!* This file is a part of fvGFS.                                       *
+!*                                                                     *
+!* fvGFS is free software; you can redistribute it and/or modify it    *
+!* and are expected to follow the terms of the GNU General Public      *
+!* License as published by the Free Software Foundation; either        *
+!* version 2 of the License, or (at your option) any later version.    *
+!*                                                                     *
+!* fvGFS is distributed in the hope that it will be useful, but        *
+!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+!* General Public License for more details.                            *
+!*                                                                     *
+!* For the full text of the GNU General Public License,                *
+!* write to: Free Software Foundation, Inc.,                           *
+!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!***********************************************************************
 module fv_update_phys_mod
 
-  use constants_mod,      only: kappa, rdgas, rvgas, grav, cp_air, cp_vapor, pi, radius
+  use constants_mod,      only: kappa, rdgas, rvgas, grav, cp_air, cp_vapor, pi=>pi_8, radius
   use field_manager_mod,  only: MODEL_ATMOS
-  use mpp_domains_mod,    only: mpp_update_domains, mpp_start_update_domains, mpp_complete_update_domains, domain2d
+  use mpp_domains_mod,    only: mpp_update_domains, domain2d
   use mpp_parameter_mod,  only: AGRID_PARAM=>AGRID
   use mpp_mod,            only: FATAL, mpp_error
+  use mpp_mod,            only: mpp_error, NOTE, WARNING
   use time_manager_mod,   only: time_type
   use tracer_manager_mod, only: get_tracer_index, adjust_mass, get_tracer_names
-
-  use fv_arrays_mod,      only: fv_flags_type, fv_nest_type
-  use boundary_mod,        only: nested_grid_BC
+  use fv_mp_mod,          only: start_group_halo_update, complete_group_halo_update
+  use fv_mp_mod,          only: group_halo_update_type
+  use fv_arrays_mod,      only: fv_flags_type, fv_nest_type, R_GRID
+  use boundary_mod,       only: nested_grid_BC
+  use boundary_mod,       only: extrapolation_BC
   use fv_eta_mod,         only: get_eta_level
   use fv_timing_mod,      only: timing_on, timing_off
   use fv_diagnostics_mod, only: prt_maxmin
-
-  use mpp_mod,             only: mpp_error, NOTE, WARNING
-  use boundary_mod,        only: extrapolation_BC
-
-#ifdef ROT3
-  public :: update_dwinds_phys
-#endif
-
+  use fv_mapz_mod,        only: moist_cv, moist_cp
 #if defined (ATMOS_NUDGE)
   use atmos_nudge_mod,    only: get_atmos_nudge, do_ps
 #elif defined (CLIMATE_NUDGE)
@@ -31,27 +46,28 @@ module fv_update_phys_mod
   use fv_nwp_nudge_mod,   only: fv_nwp_nudge
 #endif
   use fv_arrays_mod,      only: fv_grid_type, fv_nest_type, fv_grid_bounds_type
+  use fv_grid_utils_mod,  only: cubed_to_latlon
 
   implicit none
 
   public :: fv_update_phys, del2_phys
+#ifdef ROT3
+  public :: update_dwinds_phys
+#endif
 
 !---- version number -----
   character(len=128) :: version = '$Id$'
   character(len=128) :: tagname = '$Name$'
-!
-  real, parameter:: c_ice = 2106.
-  real, parameter:: c_liq = 4190.
-  real, parameter:: cv_vap = 1410.
+  real,parameter:: con_cp  = cp_air
 
   contains
 
   subroutine fv_update_phys ( dt, is, ie, js, je, isd, ied, jsd, jed, ng, nq,     &
                               u, v, w, delp, pt, q, qdiag, ua, va, ps, pe,  peln, pk, pkz,  &
                               ak, bk, phis, u_srf, v_srf, ts, delz, hydrostatic,  &
-                              u_dt, v_dt, t_dt, q_dt, moist_phys, Time, nudge,    &
+                              u_dt, v_dt, t_dt, moist_phys, Time, nudge,    &
                               gridstruct, lona, lata, npx, npy, npz, flagstruct,  &
-                              neststruct, bd, domain, ptop)
+                              neststruct, bd, domain, ptop, q_dt)
     real, intent(in)   :: dt, ptop
     integer, intent(in):: is,  ie,  js,  je, ng
     integer, intent(in):: isd, ied, jsd, jed
@@ -78,7 +94,7 @@ module fv_update_phys_mod
 ! Tendencies from Physics:
     real, intent(inout), dimension(isd:ied,jsd:jed,npz):: u_dt, v_dt
     real, intent(inout):: t_dt(is:ie,js:je,npz)
-    real, intent(inout):: q_dt(is:ie,js:je,npz,nq)
+    real, intent(inout), optional :: q_dt(is:ie,js:je,npz,nq)
 
 ! Saved Bottom winds for GFDL Physics Interface
     real, intent(out), dimension(is:ie,js:je):: u_srf, v_srf, ts
@@ -122,14 +138,15 @@ module fv_update_phys_mod
 
 ! Local arrays:
     real  ps_dt(is:ie,js:je)
+    real  cvm(is:ie), qc(is:ie)
     real  phalf(npz+1), pfull(npz)
 
-    integer:: i_pack(2)
+    type(group_halo_update_type), save :: i_pack(2)
     integer  i, j, k, m, n, nwat
     integer  sphum, liq_wat, ice_wat, cld_amt   ! GFDL AM physics
     integer  rainwat, snowwat, graupel          ! Lin Micro-physics
     integer  w_diff                             ! w-tracer for PBL diffusion
-    real:: cvm, qstar, dbk, rdg, zvir, p_fac, cv_air, q_v, q_liq, q_sol, gama_dt
+    real:: qstar, dbk, rdg, zvir, p_fac, cv_air, gama_dt
 
     real, dimension(1,1,1) :: parent_u_dt, parent_v_dt ! dummy variables for nesting
 
@@ -139,19 +156,15 @@ module fv_update_phys_mod
     real                   :: adj_vmr(is:ie,js:je,npz)
     character(len=32)      :: tracer_units, tracer_name
 
-
     cv_air = cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
 
     rdg = -rdgas / grav
 
-    sphum   = 1
     nwat = flagstruct%nwat
 
-    if ( moist_phys ) then
-        cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
+    if ( moist_phys .or. nwat/=0 ) then
            zvir = rvgas/rdgas - 1.
     else
-        cld_amt = 7
            zvir = 0.
     endif
 
@@ -169,20 +182,13 @@ module fv_update_phys_mod
     end do
     end if
     
-
-    if ( nwat>=3 ) then
-        sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
-        liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
-        ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
-    endif
-
-    if ( nwat==6 ) then
-! Micro-physics:
-        rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
-        snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
-        graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
-!       if ( cld_amt<7 ) call mpp_error(FATAL,'Cloud Fraction allocation error') 
-    endif
+    sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
+    liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
+    ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
+    rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
+    snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
+    graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+    cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
 
     if ( .not. hydrostatic ) then
         w_diff = get_tracer_index (MODEL_ATMOS, 'w_diff')
@@ -192,16 +198,18 @@ module fv_update_phys_mod
     endif
 
     if ( .not. hydrostatic .and. .not. flagstruct%phys_hydrostatic .and. nwat == 0 ) then
-       gama_dt = dt*cp_air/cv_vap
+       gama_dt = dt*cp_air/cv_air
     else
        gama_dt = -1.e24
     endif
 
     if ( flagstruct%fv_debug ) then
        call prt_maxmin('delp_b_update', delp, is, ie, js,  je, ng, npz, 0.01)
+       if (present(q_dt)) then
        do m=1,nq
           call prt_maxmin('q_dt', q_dt(is,js,1,m), is, ie, js, je, 0, npz, 1.)
        enddo
+       endif
        call prt_maxmin('u_dt', u_dt, is, ie, js,  je, ng, npz, 1.)
        call prt_maxmin('v_dt', v_dt, is, ie, js,  je, ng, npz, 1.)
        call prt_maxmin('T_dt', t_dt, is, ie, js,  je, 0, npz, 1.)
@@ -209,10 +217,18 @@ module fv_update_phys_mod
 
     call get_eta_level(npz, 1.0E5, pfull, phalf, ak, bk)
 
-!$omp parallel do default(shared) private(cvm, p_fac, qstar, ps_dt, q_liq, q_sol, q_v)
+!$OMP parallel do default(none) &
+!$OMP             shared(is,ie,js,je,npz,flagstruct,pfull,q_dt,sphum,q,qdiag,  &
+!$OMP                    nq,w_diff,dt,nwat,liq_wat,rainwat,ice_wat,snowwat,    &
+!$OMP                    graupel,delp,cld_amt,hydrostatic,pt,t_dt,delz,adj_vmr,&
+!$OMP                    gama_dt,cv_air,ua,u_dt,va,v_dt,isd,ied,jsd,jed,       &
+!$OMP                    conv_vmr_mmr)                                         &
+!$OMP             private(cvm, qc, qstar, ps_dt, p_fac)
     do k=1, npz
 
-       if ( flagstruct%tau_h2o<0.0 .and. pfull(k) < 100.E2 ) then
+       if (present(q_dt)) then
+
+       if (flagstruct%tau_h2o<0.0 .and. pfull(k) < 100.E2 ) then
 ! Wipe the stratosphere clean:
 ! This should only be used for initialization from a bad model state
            p_fac = -flagstruct%tau_h2o*86400.
@@ -267,76 +283,17 @@ module fv_update_phys_mod
 !--------------------------------------------------------
 ! Adjust total air mass due to changes in water substance
 !--------------------------------------------------------
-
-      if ( nwat==6 ) then
-! micro-physics with 6 water substances
-        do j=js,je
-           do i=is,ie
-              ps_dt(i,j)  = 1. + dt * ( q_dt(i,j,k,sphum  ) +    &
-                                        q_dt(i,j,k,liq_wat) +    &
-                                        q_dt(i,j,k,rainwat) +    &
-                                        q_dt(i,j,k,ice_wat) +    &
-                                        q_dt(i,j,k,snowwat) +    &
-                                        q_dt(i,j,k,graupel) )
-              delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
-
-!f1p
-  !1 - kg(H2O)/kg(air) before / 1 - kg(H2O)/kg(air) current                                                                                                                                                                      
-              !1 - (q-dq/dt*Dt) = ps_dt - q 
-              if (flagstruct%adj_mass_vmr) then
-                 adj_vmr(i,j,k) = (      ps_dt(i,j)          -    &
-                      (q(i,j,k,sphum       +    &
-                      q(i,j,k,liq_wat)    +    &
-                      q(i,j,k,rainwat)    +    &
-                      q(i,j,k,ice_wat)    +    &
-                      q(i,j,k,snowwat)    +    &
-                      q(i,j,k,graupel)) ) ) /  &
-                      (1. - (q(i,j,k,sphum)      +    &
-                      q(i,j,k,liq_wat)    +    &
-                      q(i,j,k,rainwat)    +    &
-                      q(i,j,k,ice_wat)    +    &
-                      q(i,j,k,snowwat)    +    &
-                      q(i,j,k,graupel))   )
-              end if
-
-           enddo
-        enddo
-      elseif( nwat==3 ) then
-! GFDL AM2/3 phys (cloud water + cloud ice)
-        do j=js,je
-           do i=is,ie
-               ps_dt(i,j) = 1. + dt*(q_dt(i,j,k,sphum  ) +    &
-                                     q_dt(i,j,k,liq_wat) +    &
-                                     q_dt(i,j,k,ice_wat) )
-              delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
-
-!f1p
-              if (flagstruct%adj_mass_vmr) then
-                 adj_vmr(i,j,k) = (      ps_dt(i,j)          -    &
-                      (q(i,j,k,sphum       +    &
-                      q(i,j,k,liq_wat)    +    &
-                      q(i,j,k,ice_wat)))  ) /  &
-                      (1. - (q(i,j,k,sphum)      +    &
-                      q(i,j,k,liq_wat)    +    &
-                      q(i,j,k,ice_wat))   )
-              end if
-           enddo
-        enddo
-      elseif ( nwat>0 ) then
-        do j=js,je
-           do i=is,ie
-              ps_dt(i,j)  = 1. + dt*sum(q_dt(i,j,k,1:nwat))
-              delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
-
-              if (flagstruct%adj_mass_vmr) then
-                 adj_vmr(i,j,k) =  (     ps_dt(i,j)                         -           &
-                      sum(q(i,j,k,1:flagstruct%nwat)) )                     /           &
-                      (1. - sum(q(i,j,k,1:flagstruct%nwat)))              
-              end if
-
-           enddo
-        enddo
-      endif
+      do j=js,je
+         do i=is,ie
+            ps_dt(i,j)  = 1. + dt*sum(q_dt(i,j,k,1:nwat))
+            delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
+            if (flagstruct%adj_mass_vmr) then
+               adj_vmr(i,j,k) =                          &
+                    (ps_dt(i,j) - sum(q(i,j,k,1:flagstruct%nwat))) /  &
+                    (1.d0       - sum(q(i,j,k,1:flagstruct%nwat)))
+            end if
+         enddo
+      enddo
 
 !-----------------------------------------
 ! Adjust mass mixing ratio of all tracers 
@@ -356,22 +313,30 @@ module fv_update_phys_mod
         enddo
       endif
 
+      endif ! present(q_dt)
+
       if ( hydrostatic ) then
          do j=js,je
+            call moist_cp(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
+                          ice_wat, snowwat, graupel, q, qc, cvm, pt(is:ie,j,k) )
             do i=is,ie
-               pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k)
+!!!            pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt
+               pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
             enddo
-         enddo
-      else
-        if ( flagstruct%phys_hydrostatic ) then
+          enddo
+       else
+         if ( flagstruct%phys_hydrostatic ) then
 ! Constant pressure
-            do j=js,je
-               do i=is,ie
-                  delz(i,j,k) = delz(i,j,k) / pt(i,j,k)
-                  pt(i,j,k) = pt(i,j,k) + dt*t_dt(i,j,k)
-                  delz(i,j,k) = delz(i,j,k) * pt(i,j,k)
-               enddo
-            enddo
+             do j=js,je
+                call moist_cp(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
+                              ice_wat, snowwat, graupel, q, qc, cvm, pt(is:ie,j,k) )
+                do i=is,ie
+                   delz(i,j,k) = delz(i,j,k) / pt(i,j,k)
+!!!                pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt
+                   pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
+                   delz(i,j,k) = delz(i,j,k) * pt(i,j,k)
+                enddo
+             enddo
          else
             !NOTE: only works for either no physics or Lin MP
             if (nwat == 0) then
@@ -382,24 +347,25 @@ module fv_update_phys_mod
                enddo
             else
                do j=js,je
+                  call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
+                                ice_wat, snowwat, graupel, q, qc, cvm, pt(is:ie,j,k))
                   do i=is,ie
-                     q_liq = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
-                     q_sol = q(i,j,k,ice_wat) + q(i,j,k,snowwat) + q(i,j,k,graupel)
-                     cvm = (1.-(q(i,j,k,sphum)+q_liq+q_sol))*cv_air + q(i,j,k,sphum)*cv_vap +   &
-                          q_liq*c_liq + q_sol*c_ice
-                     pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*cp_air/cvm
+!!!                  pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cv_air
+                     pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
                   enddo
                enddo
             endif
          endif
       endif
 
+#ifndef GFS_PHYS
       do j=js,je
          do i=is,ie
             ua(i,j,k) = ua(i,j,k) + dt*u_dt(i,j,k)
             va(i,j,k) = va(i,j,k) + dt*v_dt(i,j,k)
          enddo
       enddo
+#endif
 
    enddo ! k-loop
 
@@ -424,7 +390,7 @@ module fv_update_phys_mod
 ! Update delp
 !--------------
         if (do_ps) then
-!$omp parallel do default(shared) private(dbk)
+!$omp parallel do default(none) shared(is,ie,js,je,npz,bk,delp,ps_dt) private(dbk)
             do k=1,npz
                dbk = dt * (bk(k+1) - bk(k))
                do j=js,je
@@ -451,7 +417,7 @@ module fv_update_phys_mod
 ! Update delp
 !--------------
         if (do_ps) then
-!$omp parallel do default(shared) private(dbk)
+!$omp parallel do default(none) shared(is,ie,js,je,npz,dt,bk,delp,ps_dt) private(dbk)
             do k=1,npz
               dbk = dt * (bk(k+1) - bk(k))
                do j=js,je
@@ -479,7 +445,7 @@ module fv_update_phys_mod
                             nwat, q,  phis, gridstruct, bd, domain )
 #else
 ! All fields will be updated except winds; wind tendencies added
-!$omp parallel do default(shared) 
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,pe,delp,ps)
         do j=js,je
          do k=2,npz+1                                                                             
           do i=is,ie
@@ -496,17 +462,18 @@ module fv_update_phys_mod
 #endif
   endif         ! end nudging       
 
-        if ( .not.flagstruct%dwind_2d ) then
-                                                                 call timing_on('COMM_TOTAL')
-          if ( gridstruct%square_domain ) then
-             i_pack(1) = mpp_start_update_domains(u_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.false.)
-             i_pack(1) = mpp_start_update_domains(v_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
-          else
-             i_pack(1) = mpp_start_update_domains(u_dt, domain, complete=.false.)
-             i_pack(1) = mpp_start_update_domains(v_dt, domain, complete=.true.)
-          endif
-                                                                call timing_off('COMM_TOTAL')
-        endif
+  if ( .not.flagstruct%dwind_2d ) then
+
+                                                            call timing_on('COMM_TOTAL')
+      if ( gridstruct%square_domain ) then                  
+           call start_group_halo_update(i_pack(1), u_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.false.)
+           call start_group_halo_update(i_pack(1), v_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
+      else
+           call start_group_halo_update(i_pack(1), u_dt, domain, complete=.false.)
+           call start_group_halo_update(i_pack(1), v_dt, domain, complete=.true.)
+      endif                
+                                                           call timing_off('COMM_TOTAL')
+  endif
 
 !----------------------------------------
 ! Update pe, peln, pkz, and surface winds
@@ -516,7 +483,8 @@ module fv_update_phys_mod
        call prt_maxmin('delp_a_update', delp, is, ie, js,  je, ng, npz, 0.01)
   endif
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,pe,delp,peln,pk,ps,u_srf,v_srf, &
+!$OMP                                  ua,va,pkz,hydrostatic)
    do j=js,je
       do k=2,npz+1                                                                             
          do i=is,ie
@@ -551,13 +519,7 @@ module fv_update_phys_mod
 
     call timing_on('COMM_TOTAL')
 
-    if ( gridstruct%square_domain ) then
-       call mpp_complete_update_domains(i_pack(1), u_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.false.)
-       call mpp_complete_update_domains(i_pack(1), v_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
-    else
-       call mpp_complete_update_domains(i_pack(1), u_dt, domain, complete=.false.)
-       call mpp_complete_update_domains(i_pack(1), v_dt, domain, complete=.true.)
-    endif
+    call complete_group_halo_update(i_pack(1), domain)
 
     if (size(neststruct%child_grids) > 1) then
        if (gridstruct%nested) then
@@ -578,6 +540,10 @@ module fv_update_phys_mod
     call update_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v, gridstruct, npx, npy, npz, domain)
  endif
                                                     call timing_off(' Update_dwinds')
+#ifdef GFS_PHYS
+    call cubed_to_latlon(u, v, ua, va, gridstruct, &
+         npx, npy, npz, 1, gridstruct%grid_type, domain, gridstruct%nested, flagstruct%c2l_ord, bd)
+#endif
 
   if ( flagstruct%fv_debug ) then
        call prt_maxmin('PS_a_update', ps, is, ie, js, je, ng,   1, 0.01)
@@ -621,12 +587,12 @@ module fv_update_phys_mod
 
 ! Mask defined at corners
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,f1,npx)
    do i=is,ie+1
       f1(i) = (1. - sin(real(i-1)/real(npx-1)*pi))**2
    enddo
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,f1,f2,npy,mask,damp)
    do j=js,je+1
       f2(j) = (1. - sin(real(j-1)/real(npy-1)*pi))**2
       do i=is,ie+1
@@ -636,7 +602,7 @@ module fv_update_phys_mod
 
 ! mass weighted tendency from physics is filtered
 
-!$omp parallel do default(shared)
+!$OMP parallel do default(none) shared(is,ie,js,je,km,q,qdt,delp)
    do k=1,km
       do j=js,je
          do i=is,ie
@@ -648,7 +614,9 @@ module fv_update_phys_mod
    call mpp_update_domains(q, domain, complete=.true.)
                      call timing_off('COMM_TOTAL')
 
-!$omp parallel do default(shared) private(fx, fy)
+!$OMP parallel do default(none) shared(is,ie,js,je,km,mask,dy,sina_u,q,rdxc,gridstruct, &
+!$OMP                                  sin_sg,npx,dx,npy,rdyc,sina_v,qdt,rarea,delp)    &
+!$OMP                          private(fx, fy)
    do k=1,km
       do j=js,je
          do i=is,ie+1
@@ -658,17 +626,17 @@ module fv_update_phys_mod
          enddo
          if (is == 1 .and. .not. gridstruct%nested)   fx(i,j) = &
               (mask(is,j)+mask(is,j+1))*dy(is,j)*(q(is-1,j,k)-q(is,j,k))*rdxc(is,j)* &
-            0.5*(sin_sg(1,1,j) + sin_sg(3,0,j))
+            0.5*(sin_sg(1,j,1) + sin_sg(0,j,3))
          if (ie+1==npx .and. .not. gridstruct%nested) fx(i,j) = &
               (mask(ie+1,j)+mask(ie+1,j+1))*dy(ie+1,j)*(q(ie,j,k)-q(ie+1,j,k))*rdxc(ie+1,j)* & 
-            0.5*(sin_sg(1,npx,j) + sin_sg(3,npx-1,j))
+            0.5*(sin_sg(npx,j,1) + sin_sg(npx-1,j,3))
       enddo
       do j=js,je+1
          if ((j == 1 .OR. j == npy) .and. .not. gridstruct%nested) then
             do i=is,ie
                fy(i,j) = (mask(i,j)+mask(i+1,j))*dx(i,j)*&
                     (q(i,j-1,k)-q(i,j,k))*rdyc(i,j) &
-                    *0.5*(sin_sg(2,i,j) + sin_sg(4,i,j-1) )
+                    *0.5*(sin_sg(i,j,2) + sin_sg(i,j-1,4) )
             enddo
          else
             do i=is,ie
@@ -702,17 +670,17 @@ module fv_update_phys_mod
   type(domain2d), intent(INOUT) :: domain
 
 ! local:
-  real v3(3,is-1:ie+1,js-1:je+1)
-  real ue(3,is-1:ie+1,js:je+1)    ! 3D winds at edges
-  real ve(3,is:ie+1,js-1:je+1)    ! 3D winds at edges
+  real v3(is-1:ie+1,js-1:je+1,3)
+  real ue(is-1:ie+1,js:je+1,3)    ! 3D winds at edges
+  real ve(is:ie+1,js-1:je+1,  3)    ! 3D winds at edges
   real, dimension(is:ie):: ut1, ut2, ut3
   real, dimension(js:je):: vt1, vt2, vt3
   real dt5, gratio
   integer i, j, k, m, im2, jm2
 
-  real, pointer, dimension(:,:,:) :: vlon, vlat
-  real, pointer, dimension(:,:,:,:) :: es, ew
-  real, pointer, dimension(:) :: edge_vect_w, edge_vect_e, edge_vect_s, edge_vect_n
+  real(kind=R_GRID), pointer, dimension(:,:,:) :: vlon, vlat
+  real(kind=R_GRID), pointer, dimension(:,:,:,:) :: es, ew
+  real(kind=R_GRID), pointer, dimension(:) :: edge_vect_w, edge_vect_e, edge_vect_s, edge_vect_n
 
   es   => gridstruct%es
   ew   => gridstruct%ew
@@ -728,7 +696,10 @@ module fv_update_phys_mod
     im2 = (npx-1)/2
     jm2 = (npy-1)/2
 
-!$omp parallel do default(shared) private(ut1, ut2, ut3, vt1, vt2, vt3, ue, ve, v3)
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,gridstruct,u,dt5,u_dt,v,v_dt,  &
+!$OMP                                  vlon,vlat,jm2,edge_vect_w,npx,edge_vect_e,im2, &
+!$OMP                                  edge_vect_s,npy,edge_vect_n,es,ew)             &
+!$OMP                          private(ut1, ut2, ut3, vt1, vt2, vt3, ue, ve, v3)
     do k=1, npz
 
      if ( gridstruct%grid_type > 3 ) then    ! Local & one tile configurations
@@ -748,26 +719,26 @@ module fv_update_phys_mod
 ! Compute 3D wind tendency on A grid
        do j=js-1,je+1
           do i=is-1,ie+1
-             v3(1,i,j) = u_dt(i,j,k)*vlon(1,i,j) + v_dt(i,j,k)*vlat(1,i,j)
-             v3(2,i,j) = u_dt(i,j,k)*vlon(2,i,j) + v_dt(i,j,k)*vlat(2,i,j)
-             v3(3,i,j) = u_dt(i,j,k)*vlon(3,i,j) + v_dt(i,j,k)*vlat(3,i,j)
+             v3(i,j,1) = u_dt(i,j,k)*vlon(i,j,1) + v_dt(i,j,k)*vlat(i,j,1)
+             v3(i,j,2) = u_dt(i,j,k)*vlon(i,j,2) + v_dt(i,j,k)*vlat(i,j,2)
+             v3(i,j,3) = u_dt(i,j,k)*vlon(i,j,3) + v_dt(i,j,k)*vlat(i,j,3)
           enddo
        enddo
 
 ! Interpolate to cell edges
        do j=js,je+1
           do i=is-1,ie+1
-             ue(1,i,j) = v3(1,i,j-1) + v3(1,i,j)
-             ue(2,i,j) = v3(2,i,j-1) + v3(2,i,j)
-             ue(3,i,j) = v3(3,i,j-1) + v3(3,i,j)
+             ue(i,j,1) = v3(i,j-1,1) + v3(i,j,1)
+             ue(i,j,2) = v3(i,j-1,2) + v3(i,j,2)
+             ue(i,j,3) = v3(i,j-1,3) + v3(i,j,3)
           enddo
        enddo
 
        do j=js-1,je+1
           do i=is,ie+1
-             ve(1,i,j) = v3(1,i-1,j) + v3(1,i,j)
-             ve(2,i,j) = v3(2,i-1,j) + v3(2,i,j)
-             ve(3,i,j) = v3(3,i-1,j) + v3(3,i,j)
+             ve(i,j,1) = v3(i-1,j,1) + v3(i,j,1)
+             ve(i,j,2) = v3(i-1,j,2) + v3(i,j,2)
+             ve(i,j,3) = v3(i-1,j,3) + v3(i,j,3)
           enddo
        enddo
 
@@ -776,38 +747,38 @@ module fv_update_phys_mod
        i = 1
        do j=js,je
         if ( j>jm2 ) then
-             vt1(j) = edge_vect_w(j)*ve(1,i,j-1)+(1.-edge_vect_w(j))*ve(1,i,j)
-             vt2(j) = edge_vect_w(j)*ve(2,i,j-1)+(1.-edge_vect_w(j))*ve(2,i,j)
-             vt3(j) = edge_vect_w(j)*ve(3,i,j-1)+(1.-edge_vect_w(j))*ve(3,i,j)
+             vt1(j) = edge_vect_w(j)*ve(i,j-1,1)+(1.-edge_vect_w(j))*ve(i,j,1)
+             vt2(j) = edge_vect_w(j)*ve(i,j-1,2)+(1.-edge_vect_w(j))*ve(i,j,2)
+             vt3(j) = edge_vect_w(j)*ve(i,j-1,3)+(1.-edge_vect_w(j))*ve(i,j,3)
         else
-             vt1(j) = edge_vect_w(j)*ve(1,i,j+1)+(1.-edge_vect_w(j))*ve(1,i,j)
-             vt2(j) = edge_vect_w(j)*ve(2,i,j+1)+(1.-edge_vect_w(j))*ve(2,i,j)
-             vt3(j) = edge_vect_w(j)*ve(3,i,j+1)+(1.-edge_vect_w(j))*ve(3,i,j)
+             vt1(j) = edge_vect_w(j)*ve(i,j+1,1)+(1.-edge_vect_w(j))*ve(i,j,1)
+             vt2(j) = edge_vect_w(j)*ve(i,j+1,2)+(1.-edge_vect_w(j))*ve(i,j,2)
+             vt3(j) = edge_vect_w(j)*ve(i,j+1,3)+(1.-edge_vect_w(j))*ve(i,j,3)
         endif
        enddo
        do j=js,je
-          ve(1,i,j) = vt1(j)
-          ve(2,i,j) = vt2(j)
-          ve(3,i,j) = vt3(j)
+          ve(i,j,1) = vt1(j)
+          ve(i,j,2) = vt2(j)
+          ve(i,j,3) = vt3(j)
        enddo
      endif
      if ( (ie+1)==npx .and. .not. gridstruct%nested ) then
        i = npx
        do j=js,je
         if ( j>jm2 ) then
-             vt1(j) = edge_vect_e(j)*ve(1,i,j-1)+(1.-edge_vect_e(j))*ve(1,i,j)
-             vt2(j) = edge_vect_e(j)*ve(2,i,j-1)+(1.-edge_vect_e(j))*ve(2,i,j)
-             vt3(j) = edge_vect_e(j)*ve(3,i,j-1)+(1.-edge_vect_e(j))*ve(3,i,j)
+             vt1(j) = edge_vect_e(j)*ve(i,j-1,1)+(1.-edge_vect_e(j))*ve(i,j,1)
+             vt2(j) = edge_vect_e(j)*ve(i,j-1,2)+(1.-edge_vect_e(j))*ve(i,j,2)
+             vt3(j) = edge_vect_e(j)*ve(i,j-1,3)+(1.-edge_vect_e(j))*ve(i,j,3)
         else
-             vt1(j) = edge_vect_e(j)*ve(1,i,j+1)+(1.-edge_vect_e(j))*ve(1,i,j)
-             vt2(j) = edge_vect_e(j)*ve(2,i,j+1)+(1.-edge_vect_e(j))*ve(2,i,j)
-             vt3(j) = edge_vect_e(j)*ve(3,i,j+1)+(1.-edge_vect_e(j))*ve(3,i,j)
+             vt1(j) = edge_vect_e(j)*ve(i,j+1,1)+(1.-edge_vect_e(j))*ve(i,j,1)
+             vt2(j) = edge_vect_e(j)*ve(i,j+1,2)+(1.-edge_vect_e(j))*ve(i,j,2)
+             vt3(j) = edge_vect_e(j)*ve(i,j+1,3)+(1.-edge_vect_e(j))*ve(i,j,3)
         endif
        enddo
        do j=js,je
-          ve(1,i,j) = vt1(j)
-          ve(2,i,j) = vt2(j)
-          ve(3,i,j) = vt3(j)
+          ve(i,j,1) = vt1(j)
+          ve(i,j,2) = vt2(j)
+          ve(i,j,3) = vt3(j)
        enddo
      endif
 ! N-S edges (for u-wind):
@@ -815,52 +786,52 @@ module fv_update_phys_mod
        j = 1
        do i=is,ie
         if ( i>im2 ) then
-             ut1(i) = edge_vect_s(i)*ue(1,i-1,j)+(1.-edge_vect_s(i))*ue(1,i,j)
-             ut2(i) = edge_vect_s(i)*ue(2,i-1,j)+(1.-edge_vect_s(i))*ue(2,i,j)
-             ut3(i) = edge_vect_s(i)*ue(3,i-1,j)+(1.-edge_vect_s(i))*ue(3,i,j)
+             ut1(i) = edge_vect_s(i)*ue(i-1,j,1)+(1.-edge_vect_s(i))*ue(i,j,1)
+             ut2(i) = edge_vect_s(i)*ue(i-1,j,2)+(1.-edge_vect_s(i))*ue(i,j,2)
+             ut3(i) = edge_vect_s(i)*ue(i-1,j,3)+(1.-edge_vect_s(i))*ue(i,j,3)
         else
-             ut1(i) = edge_vect_s(i)*ue(1,i+1,j)+(1.-edge_vect_s(i))*ue(1,i,j)
-             ut2(i) = edge_vect_s(i)*ue(2,i+1,j)+(1.-edge_vect_s(i))*ue(2,i,j)
-             ut3(i) = edge_vect_s(i)*ue(3,i+1,j)+(1.-edge_vect_s(i))*ue(3,i,j)
+             ut1(i) = edge_vect_s(i)*ue(i+1,j,1)+(1.-edge_vect_s(i))*ue(i,j,1)
+             ut2(i) = edge_vect_s(i)*ue(i+1,j,2)+(1.-edge_vect_s(i))*ue(i,j,2)
+             ut3(i) = edge_vect_s(i)*ue(i+1,j,3)+(1.-edge_vect_s(i))*ue(i,j,3)
         endif
        enddo
        do i=is,ie
-          ue(1,i,j) = ut1(i)
-          ue(2,i,j) = ut2(i)
-          ue(3,i,j) = ut3(i)
+          ue(i,j,1) = ut1(i)
+          ue(i,j,2) = ut2(i)
+          ue(i,j,3) = ut3(i)
        enddo
      endif
      if ( (je+1)==npy  .and. .not. gridstruct%nested) then
        j = npy
        do i=is,ie
         if ( i>im2 ) then
-             ut1(i) = edge_vect_n(i)*ue(1,i-1,j)+(1.-edge_vect_n(i))*ue(1,i,j)
-             ut2(i) = edge_vect_n(i)*ue(2,i-1,j)+(1.-edge_vect_n(i))*ue(2,i,j)
-             ut3(i) = edge_vect_n(i)*ue(3,i-1,j)+(1.-edge_vect_n(i))*ue(3,i,j)
+             ut1(i) = edge_vect_n(i)*ue(i-1,j,1)+(1.-edge_vect_n(i))*ue(i,j,1)
+             ut2(i) = edge_vect_n(i)*ue(i-1,j,2)+(1.-edge_vect_n(i))*ue(i,j,2)
+             ut3(i) = edge_vect_n(i)*ue(i-1,j,3)+(1.-edge_vect_n(i))*ue(i,j,3)
         else
-             ut1(i) = edge_vect_n(i)*ue(1,i+1,j)+(1.-edge_vect_n(i))*ue(1,i,j)
-             ut2(i) = edge_vect_n(i)*ue(2,i+1,j)+(1.-edge_vect_n(i))*ue(2,i,j)
-             ut3(i) = edge_vect_n(i)*ue(3,i+1,j)+(1.-edge_vect_n(i))*ue(3,i,j)
+             ut1(i) = edge_vect_n(i)*ue(i+1,j,1)+(1.-edge_vect_n(i))*ue(i,j,1)
+             ut2(i) = edge_vect_n(i)*ue(i+1,j,2)+(1.-edge_vect_n(i))*ue(i,j,2)
+             ut3(i) = edge_vect_n(i)*ue(i+1,j,3)+(1.-edge_vect_n(i))*ue(i,j,3)
         endif
        enddo
        do i=is,ie
-          ue(1,i,j) = ut1(i)
-          ue(2,i,j) = ut2(i)
-          ue(3,i,j) = ut3(i)
+          ue(i,j,1) = ut1(i)
+          ue(i,j,2) = ut2(i)
+          ue(i,j,3) = ut3(i)
        enddo
      endif
        do j=js,je+1
           do i=is,ie
-             u(i,j,k) = u(i,j,k) + dt5*( ue(1,i,j)*es(1,i,j,1) +  &
-                                         ue(2,i,j)*es(2,i,j,1) +  &
-                                         ue(3,i,j)*es(3,i,j,1) )
+             u(i,j,k) = u(i,j,k) + dt5*( ue(i,j,1)*es(1,i,j,1) +  &
+                                         ue(i,j,2)*es(2,i,j,1) +  &
+                                         ue(i,j,3)*es(3,i,j,1) )
           enddo
        enddo
        do j=js,je
           do i=is,ie+1
-             v(i,j,k) = v(i,j,k) + dt5*( ve(1,i,j)*ew(1,i,j,2) +  &
-                                         ve(2,i,j)*ew(2,i,j,2) +  &
-                                         ve(3,i,j)*ew(3,i,j,2) )
+             v(i,j,k) = v(i,j,k) + dt5*( ve(i,j,1)*ew(1,i,j,2) +  &
+                                         ve(i,j,2)*ew(2,i,j,2) +  &
+                                         ve(i,j,3)*ew(3,i,j,2) )
           enddo
        enddo
 ! Update:
@@ -890,9 +861,9 @@ module fv_update_phys_mod
   real:: dt5, gratio
   integer i, j, k
 
-  real, pointer, dimension(:,:,:) :: vlon, vlat
-  real, pointer, dimension(:,:,:,:) :: es, ew
-  real, pointer, dimension(:) :: edge_vect_w, edge_vect_e, edge_vect_s, edge_vect_n
+  real(kind=R_GRID), pointer, dimension(:,:,:) :: vlon, vlat
+  real(kind=R_GRID), pointer, dimension(:,:,:,:) :: es, ew
+  real(kind=R_GRID), pointer, dimension(:) :: edge_vect_w, edge_vect_e, edge_vect_s, edge_vect_n
   real, pointer, dimension(:,:) :: z11, z12, z21, z22, dya, dxa
 
   es   => gridstruct%es
@@ -915,7 +886,8 @@ module fv_update_phys_mod
 
 ! Transform wind tendency on A grid to local "co-variant" components:
 
-!$omp parallel do private (ut)
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,z11,u_dt,z12,v_dt,z21,z22) &
+!$OMP                          private(ut)
     do k=1,npz
        do j=js,je
           do i=is,ie
@@ -932,7 +904,9 @@ module fv_update_phys_mod
 
     dt5 = 0.5 * dt
 
-!$omp parallel do private (gratio)
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,gridstruct,u,dt5,u_dt,v,v_dt, &
+!$OMP                                  dya,npy,dxa,npx)                              &
+!$OMP                          private(gratio)
     do k=1, npz
 
      if ( gridstruct%grid_type > 3 .or. gridstruct%nested) then    ! Local & one tile configurations
@@ -1010,6 +984,5 @@ module fv_update_phys_mod
     enddo         ! k-loop
 
   end subroutine update2d_dwinds_phys
-
 
 end module fv_update_phys_mod

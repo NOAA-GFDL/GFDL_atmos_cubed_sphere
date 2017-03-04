@@ -1,3 +1,22 @@
+!***********************************************************************
+!*                   GNU General Public License                        *
+!* This file is a part of fvGFS.                                       *
+!*                                                                     *
+!* fvGFS is free software; you can redistribute it and/or modify it    *
+!* and are expected to follow the terms of the GNU General Public      *
+!* License as published by the Free Software Foundation; either        *
+!* version 2 of the License, or (at your option) any later version.    *
+!*                                                                     *
+!* fvGFS is distributed in the hope that it will be useful, but        *
+!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+!* General Public License for more details.                            *
+!*                                                                     *
+!* For the full text of the GNU General Public License,                *
+!* write to: Free Software Foundation, Inc.,                           *
+!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!***********************************************************************
       module fv_timing_mod
 
       use mpp_mod, only: mpp_error, FATAL
@@ -17,10 +36,10 @@
       integer , private      :: tblk
 
 #if defined(SPMD)
-      real , external       :: MPI_Wtime
+      real(kind=8) , external       :: MPI_Wtime
 #endif
       real , private       :: etime
-      real , private       :: totim
+      real(kind=8) , private       :: totim
       real , private       :: tarray(2)
       type tms
            private
@@ -253,13 +272,13 @@
         print *,                                  &
         '  -----------------------------------------------------'
         print *,                                  &
-        '     Block          User time  System Time   Total Time'
+        '     Block                    User time  System Time   Total Time   GID '
         print *,                                  &
         '  -----------------------------------------------------'
 
         do n = 1, tblk
-           print '(3x,a20,2x,3(1x,f12.4))', blkname(n),     &
-               tmp(n)%usr, tmp(n)%sys, tmp(n)%usr + tmp(n)%sys
+           print '(3x,a20,2x,3(1x,f12.4), 2x, I6)', blkname(n),     &
+               tmp(n)%usr, tmp(n)%sys, tmp(n)%usr + tmp(n)%sys, gid
         end do
 
 
