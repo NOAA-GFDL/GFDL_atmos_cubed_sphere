@@ -317,7 +317,7 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
 
 
   ! height field (wz) if needed
-  if (count(ID_zg%field_id(:)>0) > 0 .or. id_zg500 > 0) then
+  if (count(ID_zg%field_id(:)>0) > 0 .or. any((/id_zg10,id_zg100,id_zg500,id_zg1000/) > 0)) then
     call get_height_field(isc, iec, jsc, jec, ngc, npz, Atm(n)%flagstruct%hydrostatic, Atm(n)%delz, &
                           wz, Atm(n)%pt, Atm(n)%q, Atm(n)%peln, zvir)
   endif
