@@ -155,6 +155,8 @@ contains
           
           !Even if this grid is not on this PE, if it has child grids we must send
           !along the data that is needed. 
+          !This is a VERY complicated bit of code that attempts to follow the entire decision tree
+          ! of the initialization without doing anything. This could very much be cleaned up.
 
           if (Atm(n)%neststruct%nested) then
              if (cold_start_grids(n)) then
@@ -184,7 +186,8 @@ contains
                 endif
              end if
 
-             if (.not. Atm(n)%flagstruct%hydrostatic .and. Atm(n)%flagstruct%make_nh) then
+             if (.not. Atm(n)%flagstruct%hydrostatic .and. Atm(n)%flagstruct%make_nh .and. &
+                  (.not. Atm(n)%flagstruct%nggps_ic .and. .not. Atm(n)%flagstruct%ecmwf_ic) ) then
                 call nested_grid_BC(Atm(n)%delz, Atm(n)%parent_grid%delz, Atm(n)%neststruct%nest_domain, &
                      Atm(n)%neststruct%ind_h, Atm(n)%neststruct%wt_h, 0, 0, &
                      Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%bd, isg, ieg, jsg, jeg, proc_in=.false.)
