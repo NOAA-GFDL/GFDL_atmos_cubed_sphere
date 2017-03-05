@@ -68,10 +68,10 @@ module fv_arrays_mod
  integer:: id_u_plev, id_v_plev, id_t_plev, id_h_plev, id_q_plev, id_omg_plev
 ! IPCC diag
  integer :: id_rh10,  id_rh50,  id_rh100, id_rh200,  id_rh250, id_rh300, &
-            id_rh500, id_rh700, id_rh850, id_rh1000
+            id_rh500, id_rh700, id_rh850, id_rh925,  id_rh1000
 
- integer :: id_rh1000_cmip, id_rh850_cmip, id_rh700_cmip, id_rh500_cmip, &
-            id_rh300_cmip,  id_rh250_cmip, id_rh100_cmip, id_rh50_cmip, id_rh10_cmip
+ integer :: id_rh1000_cmip, id_rh925_cmip, id_rh850_cmip, id_rh700_cmip, id_rh500_cmip, &
+            id_rh300_cmip,  id_rh250_cmip, id_rh100_cmip, id_rh50_cmip,  id_rh10_cmip
 
  integer :: id_hght
  integer :: id_u100m, id_v100m, id_w100m

@@ -43,7 +43,6 @@ module fv_diagnostics_mod
  use sat_vapor_pres_mod, only: compute_qs, lookup_es
 
  use fv_arrays_mod, only: max_step 
- use lin_cld_microphys_mod, only: wqs1, qsmith_init
 
  implicit none
  private
@@ -744,6 +743,8 @@ contains
                            '700-mb relative humidity', '%', missing_value=missing_value )
        idiag%id_rh850 = register_diag_field ( trim(field), 'rh850', axes(1:2), Time,       &
                            '850-mb relative humidity', '%', missing_value=missing_value )
+       idiag%id_rh925 = register_diag_field ( trim(field), 'rh925', axes(1:2), Time,       &
+                           '925-mb relative humidity', '%', missing_value=missing_value )
        idiag%id_rh1000 = register_diag_field ( trim(field), 'rh1000', axes(1:2), Time,       &
                            '1000-mb relative humidity', '%', missing_value=missing_value )
 !--------------------------
@@ -765,6 +766,8 @@ contains
                            '700-mb relative humidity (CMIP)', '%', missing_value=missing_value )
        idiag%id_rh850_cmip = register_diag_field ( trim(field), 'rh850_cmip', axes(1:2), Time,       &
                            '850-mb relative humidity (CMIP)', '%', missing_value=missing_value )
+       idiag%id_rh925_cmip = register_diag_field ( trim(field), 'rh925_cmip', axes(1:2), Time,       &
+                           '925-mb relative humidity (CMIP)', '%', missing_value=missing_value )
        idiag%id_rh1000_cmip = register_diag_field ( trim(field), 'rh1000_cmip', axes(1:2), Time,       &
                            '1000-mb relative humidity (CMIP)', '%', missing_value=missing_value )
 
@@ -835,9 +838,6 @@ contains
 
     module_is_initialized=.true.
     istep = 0
-#ifndef GFS_PHYS
-    if(idiag%id_theta_e >0 ) call qsmith_init
-#endif
  end subroutine fv_diag_init
 
 
@@ -1298,7 +1298,8 @@ contains
 
        ! rel hum from physics at selected press levels (for IPCC)
        if (idiag%id_rh50>0  .or. idiag%id_rh100>0 .or. idiag%id_rh200>0 .or. idiag%id_rh250>0 .or. &
-           idiag%id_rh500>0 .or. idiag%id_rh700>0 .or. idiag%id_rh850>0 .or. idiag%id_rh1000>0) then
+           idiag%id_rh300>0 .or. idiag%id_rh500>0 .or. idiag%id_rh700>0 .or. idiag%id_rh850>0 .or. &
+           idiag%id_rh925>0 .or. idiag%id_rh1000>0) then
            ! compute mean pressure
            do k=1,npz
                do j=jsc,jec
@@ -1325,6 +1326,10 @@ contains
                call interpolate_vertical(isc, iec, jsc, jec, npz, 250.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
                used=send_data(idiag%id_rh250, a2, Time)
            endif
+           if (idiag%id_rh300>0) then
+               call interpolate_vertical(isc, iec, jsc, jec, npz, 300.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
+               used=send_data(idiag%id_rh300, a2, Time)
+           endif
            if (idiag%id_rh500>0) then
                call interpolate_vertical(isc, iec, jsc, jec, npz, 500.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
                used=send_data(idiag%id_rh500, a2, Time)
@@ -1337,6 +1342,10 @@ contains
                call interpolate_vertical(isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
                used=send_data(idiag%id_rh850, a2, Time)
            endif
+           if (idiag%id_rh925>0) then
+               call interpolate_vertical(isc, iec, jsc, jec, npz, 925.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
+               used=send_data(idiag%id_rh925, a2, Time)
+           endif
            if (idiag%id_rh1000>0) then
                call interpolate_vertical(isc, iec, jsc, jec, npz, 1000.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
                used=send_data(idiag%id_rh1000, a2, Time)
@@ -1344,9 +1353,10 @@ contains
        endif
 
        ! rel hum (CMIP definition) at selected press levels  (for IPCC)
-       if (idiag%id_rh10_cmip>0 .or. idiag%id_rh50_cmip>0  .or. idiag%id_rh100_cmip>0 .or. &
-           idiag%id_rh250_cmip>0 .or. idiag%id_rh500_cmip>0 .or. idiag%id_rh700_cmip>0 .or. &
-           idiag%id_rh850_cmip>0 .or. idiag%id_rh1000_cmip>0) then
+       if (idiag%id_rh10_cmip>0  .or. idiag%id_rh50_cmip>0  .or. idiag%id_rh100_cmip>0 .or. &
+           idiag%id_rh250_cmip>0 .or. idiag%id_rh300_cmip>0 .or. idiag%id_rh500_cmip>0 .or. &
+           idiag%id_rh700_cmip>0 .or. idiag%id_rh850_cmip>0 .or. idiag%id_rh925_cmip>0 .or. &
+           idiag%id_rh1000_cmip>0) then
            ! compute mean pressure
            do k=1,npz
                do j=jsc,jec
@@ -1373,6 +1383,10 @@ contains
                call interpolate_vertical(isc, iec, jsc, jec, npz, 250.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
                used=send_data(idiag%id_rh250_cmip, a2, Time)
            endif
+           if (idiag%id_rh300_cmip>0) then
+               call interpolate_vertical(isc, iec, jsc, jec, npz, 300.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
+               used=send_data(idiag%id_rh300_cmip, a2, Time)
+           endif
            if (idiag%id_rh500_cmip>0) then
                call interpolate_vertical(isc, iec, jsc, jec, npz, 500.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
                used=send_data(idiag%id_rh500_cmip, a2, Time)
@@ -1384,6 +1398,10 @@ contains
            if (idiag%id_rh850_cmip>0) then
                call interpolate_vertical(isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
                used=send_data(idiag%id_rh850_cmip, a2, Time)
+           endif
+           if (idiag%id_rh925_cmip>0) then
+               call interpolate_vertical(isc, iec, jsc, jec, npz, 925.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
+               used=send_data(idiag%id_rh925_cmip, a2, Time)
            endif
            if (idiag%id_rh1000_cmip>0) then
                call interpolate_vertical(isc, iec, jsc, jec, npz, 1000.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
@@ -3710,88 +3728,6 @@ subroutine rh_calc (pfull, t, qv, rh, do_cmip)
 
 end subroutine rh_calc
 
-#ifdef SIMPLIFIED_THETA_E
-subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, npz, &
-                   hydrostatic, moist)
-! calculate the equvalent potential temperature
-! Simplified form coded by SJL
-    integer, intent(in):: is,ie,js,je,ng,npz
-    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,npz):: pt, delp, q
-    real, intent(in), dimension(is-ng:     ,js-ng:     ,1: ):: delz
-    real, intent(in), dimension(is:ie,npz+1,js:je):: peln
-    real, intent(in):: pkz(is:ie,js:je,npz) 
-    logical, intent(in):: hydrostatic, moist
-! Output:
-    real, dimension(is:ie,js:je,npz), intent(out) :: theta_e  !< eqv pot
-! local
-    real, parameter:: tice = 273.16
-    real, parameter:: c_liq = 4190.       ! heat capacity of water at 0C
-#ifdef SIM_NGGPS
-    real, parameter:: dc_vap = 0.
-#else
-    real, parameter:: dc_vap = cp_vapor - c_liq     ! = -2344.    isobaric heating/cooling
-#endif
-    real(kind=R_GRID), dimension(is:ie):: pd, rq
-    real(kind=R_GRID) :: wfac
-    integer :: i,j,k
-
-    if ( moist ) then
-         wfac = 1.
-    else
-         wfac = 0.
-    endif
-
-!$OMP parallel do default(none) shared(pk0,wfac,moist,pkz,is,ie,js,je,npz,pt,q,delp,peln,delz,theta_e,hydrostatic)  &
-!$OMP  private(pd, rq)
-    do k = 1,npz
-       do j = js,je
-
-        if ( hydrostatic ) then
-            do i=is,ie
-               rq(i) = max(0., wfac*q(i,j,k))
-               pd(i) = (1.-rq(i))*delp(i,j,k) / (peln(i,k+1,j) - peln(i,k,j))
-            enddo
-        else
-! Dry pressure: p = r R T
-            do i=is,ie
-               rq(i) = max(0., wfac*q(i,j,k))
-               pd(i) = -rdgas*pt(i,j,k)*(1.-rq(i))*delp(i,j,k)/(grav*delz(i,j,k))
-            enddo
-        endif
-
-        if ( moist ) then
-            do i=is,ie
-               rq(i) = max(0., q(i,j,k))
-!              rh(i) = max(1.e-12, rq(i)/wqs1(pt(i,j,k),den(i)))   ! relative humidity
-!              theta_e(i,j,k) = exp(rq(i)/cp_air*((hlv+dc_vap*(pt(i,j,k)-tice))/pt(i,j,k) -   &
-!                                   rvgas*log(rh(i))) + kappa*log(1.e5/pd(i))) * pt(i,j,k)
-! Simplified form: (ignoring the RH term)
-#ifdef SIM_NGGPS
-               theta_e(i,j,k) = pt(i,j,k)*exp(kappa*log(1.e5/pd(i))) *  &
-                                          exp(rq(i)*hlv/(cp_air*pt(i,j,k)))
-#else
-               theta_e(i,j,k) = pt(i,j,k)*exp( rq(i)/(cp_air*pt(i,j,k))*(hlv+dc_vap*(pt(i,j,k)-tice)) &
-                                             + kappa*log(1.e5/pd(i)) )
-#endif
-            enddo
-        else
-          if ( hydrostatic ) then
-             do i=is,ie
-                theta_e(i,j,k) = pt(i,j,k)*pk0/pkz(i,j,k)
-             enddo
-          else
-             do i=is,ie
-!               theta_e(i,j,k) = pt(i,j,k)*(1.e5/pd(i))**kappa
-                theta_e(i,j,k) = pt(i,j,k)*exp( kappa*log(1.e5/pd(i)) )
-             enddo
-          endif
-        endif
-      enddo ! j-loop
-    enddo   ! k-loop
-
-end subroutine eqv_pot
-
-#else
 subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, npz, &
                    hydrostatic, moist)
 ! calculate the equvalent potential temperature
@@ -3870,7 +3806,6 @@ subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, np
 
 end subroutine eqv_pot
 
-#endif
 
  subroutine nh_total_energy(is, ie, js, je, isd, ied, jsd, jed, km,  &
                             w, delz, pt, delp, q, hs, area, domain,  &

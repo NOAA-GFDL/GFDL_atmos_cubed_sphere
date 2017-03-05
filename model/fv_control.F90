@@ -551,14 +551,15 @@ module fv_control_mod
                             consv_te, fill, filter_phys, fill_dp, fill_wz, consv_am, &
                             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
                             tau, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, breed_vortex_inline,  &
-                               na_init, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
+                            na_init, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
                             pnats, dnats, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
                             c2l_ord, dx_const, dy_const, umax, deglat,      &
                             deglon_start, deglon_stop, deglat_start, deglat_stop, &
                             phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, &
                             nested, twowaynest, parent_grid_num, parent_tile, nudge_qv, &
                             refinement, nestbctype, nestupdate, nsponge, s_weight, &
-                            ioffset, joffset, check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst
+                            ioffset, joffset, check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
+                            do_uni_zfull, adj_mass_vmr
 
       namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
 

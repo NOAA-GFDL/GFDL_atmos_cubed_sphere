@@ -2719,7 +2719,6 @@
            pk1(k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
         enddo
 
-        call SuperCell_Sounding(npz, p00, pk1, ts1, qs1)
 
         w(:,:,:) = 0.
         q(:,:,:,:) = 0.
@@ -6410,7 +6409,6 @@ end subroutine terminator_tracers
            pk1(k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
         enddo
 
-        call SuperCell_Sounding(npz, p00, pk1, ts1, qs1)
 
         v(:,:,:) = 0.
         w(:,:,:) = 0.
@@ -6500,7 +6498,6 @@ end subroutine terminator_tracers
            pk1(k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
         enddo
 
-        call SuperCell_Sounding(npz, p00, pk1, ts1, qs1)
 
         w(:,:,:) = 0.
         q(:,:,:,:) = 0.
@@ -7033,137 +7030,6 @@ end subroutine terminator_tracers
 
  end subroutine superK_u 
 
-
- subroutine SuperCell_Sounding(km, ps, pk1, tp, qp)
- use lin_cld_microphys_mod, only: wqsat_moist, qsmith_init, qs_blend
-! Morris Weisman & J. Klemp 2002 sounding
-! Output sounding on pressure levels:
- integer, intent(in):: km
- real, intent(in):: ps     ! surface pressure (Pa)
- real, intent(in), dimension(km):: pk1
- real, intent(out), dimension(km):: tp, qp
-! Local:
- integer, parameter:: ns = 401
- integer, parameter:: nx = 3
- real, dimension(ns):: zs, pt, qs, us, rh, pp, pk, dpk, dqdt
- real, parameter:: Tmin = 175.
- real, parameter:: p00 = 1.0e5
- real, parameter:: qst = 3.0e-6
- real, parameter:: qv0 = 1.4e-2
- real, parameter:: ztr = 12.E3
- real, parameter:: ttr = 213.
- real, parameter:: ptr = 343.    ! Tropopause potential temp.
- real, parameter:: pt0 = 300.    ! surface potential temperature
- real:: dz0, zvir, fac_z, pk0, temp1, p2
- integer:: k, n, kk
-
-#ifdef GFS_PHYS
-
- call mpp_error(FATAL, 'SuperCell sounding cannot perform with GFS Physics.')
-
-#else
-
- zvir = rvgas/rdgas - 1.
- pk0 = p00**kappa
- pp(ns) = ps
- pk(ns) = ps**kappa
- if ( (is_master()) ) then
-     write(*,*) 'Computing sounding for super-cell test'
- endif
-
- call qsmith_init
-
- dz0 = 50.
- zs(ns) = 0.
- qs(:) = qst
- rh(:) = 0.25
-
- do k=ns-1, 1, -1
-    zs(k) = zs(k+1) + dz0
- enddo
-
- do k=1,ns
-! Potential temperature
-    if ( zs(k) .gt. ztr ) then
-! Stratosphere:
-         pt(k) = ptr*exp(grav*(zs(k)-ztr)/(cp_air*ttr))
-    else
-! Troposphere:
-         fac_z = (zs(k)/ztr)**1.25
-         pt(k) = pt0 + (ptr-pt0)* fac_z
-         rh(k) =  1. -     0.75 * fac_z
-! First guess on q:
-         qs(k) = qv0 - (qv0-qst)*fac_z
-    endif
-    pt(k) = pt(k) / pk0
- enddo
-
-!--------------------------------------
-! Iterate nx times with virtual effect:
-!--------------------------------------
- do n=1, nx
-    do k=1,ns-1
-        temp1 = 0.5*(pt(k)*(1.+zvir*qs(k)) + pt(k+1)*(1.+zvir*qs(k+1)))
-       dpk(k) = grav*(zs(k)-zs(k+1))/(cp_air*temp1)   ! DPK > 0
-    enddo
-
-    do k=ns-1,1,-1
-       pk(k) = pk(k+1) - dpk(k)
-    enddo
-
-    do k=1, ns
-       temp1 = pt(k)*pk(k)
-!      if ( (is_master()) ) write(*,*) k, temp1, rh(k)
-       if ( pk(k) > 0. ) then
-            pp(k) = exp(log(pk(k))/kappa) 
-#ifdef SUPER_K
-            qs(k) = 380./pp(k)*exp(17.27*(temp1-273.)/(temp1-36.))
-            qs(k) = min( qv0, rh(k)*qs(k) )
-            if ( (is_master()) ) write(*,*) 0.01*pp(k), qs(k)
-#else
-
-#ifdef USE_MIXED_TABLE
-            qs(k) = min(qv0, rh(k)*qs_blend(temp1, pp(k), qs(k)))
-#else
-            qs(k) = min(qv0, rh(k)*wqsat_moist(temp1, qs(k), pp(k)))
-#endif
-
-#endif
-       else
-            if ( (is_master()) ) write(*,*) n, k, pk(k)
-            call mpp_error(FATAL, 'Super-Cell case: pk < 0')
-       endif
-    enddo
- enddo
-
-! Interpolate to p levels using pk1: p**kappa
- do 555 k=1, km
-    if ( pk1(k) .le. pk(1) ) then
-         tp(k) = pt(1)*pk(1)/pk1(k)   ! isothermal above
-         qp(k) = qst                  ! set to stratosphere value
-    elseif ( pk1(k) .ge. pk(ns) ) then
-         tp(k) = pt(ns)
-         qp(k) = qs(ns)
-    else
-      do kk=1,ns-1
-         if( (pk1(k).le.pk(kk+1)) .and. (pk1(k).ge.pk(kk)) ) then
-             fac_z = (pk1(k)-pk(kk))/(pk(kk+1)-pk(kk)) 
-             tp(k) = pt(kk) + (pt(kk+1)-pt(kk))*fac_z
-             qp(k) = qs(kk) + (qs(kk+1)-qs(kk))*fac_z
-             goto 555
-         endif
-      enddo 
-    endif
-555  continue
-
- do k=1,km
-    tp(k) = tp(k)*pk1(k)    ! temperature
-    tp(k) = max(Tmin, tp(k))
- enddo
-
-#endif
-
- end subroutine SuperCell_Sounding
 
  subroutine DCMIP16_BC(delp,pt,u,v,q,w,delz,&
       is,ie,js,je,isd,ied,jsd,jed,npz,nq,ak,bk,ptop, &
