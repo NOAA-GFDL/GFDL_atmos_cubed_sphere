@@ -742,7 +742,7 @@ contains
    type(time_type) :: Time_prev, Time_next
 !--- local variables ---
    integer :: i, j, ix, k, k1, n, w_diff, nt_dyn, iq
-   integer :: nb, blen, nwat
+   integer :: nb, blen, nwat, dnats
    real(kind=kind_phys):: rcp, q0, qwat(nq), qt, rdt
 
    Time_prev = Time
@@ -751,6 +751,7 @@ contains
 
    n = mytile
    nwat = Atm(n)%flagstruct%nwat
+   dnats = Atm(mytile)%flagstruct%dnats
 
    if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
 
@@ -759,8 +760,9 @@ contains
    call timing_on('GFS_TENDENCIES')
 !--- put u/v tendencies into haloed arrays u_dt and v_dt
 !$OMP parallel do default (none) & 
-!$OMP              shared (rdt, n, nq, npz, ncnst, nwat, mytile, u_dt, v_dt, t_dt, Atm, IPD_Data, &
-!$OMP                      Atm_block, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel)   &
+!$OMP              shared (rdt, n, nq, dnats, npz, ncnst, nwat, mytile, u_dt, v_dt, t_dt,&
+!$OMP                      Atm, IPD_Data, Atm_block, sphum, liq_wat, rainwat, ice_wat,   &
+!$OMP                      snowwat, graupel)   &
 !$OMP             private (nb, blen, i, j, k, k1, ix, q0, qwat, qt)
    do nb = 1,Atm_block%nblks
 
@@ -777,8 +779,6 @@ contains
          u_dt(i,j,k1) = u_dt(i,j,k1) + (IPD_Data(nb)%Stateout%gu0(ix,k) - IPD_Data(nb)%Statein%ugrs(ix,k)) * rdt
          v_dt(i,j,k1) = v_dt(i,j,k1) + (IPD_Data(nb)%Stateout%gv0(ix,k) - IPD_Data(nb)%Statein%vgrs(ix,k)) * rdt
          t_dt(i,j,k1) = (IPD_Data(nb)%Stateout%gt0(ix,k) - IPD_Data(nb)%Statein%tgrs(ix,k)) * rdt
-! LJZ notes: this section is extremely inflexible, need to be revised later
-         if ( Atm(n)%flagstruct%nwat .eq. 2 ) then
 ! SJL notes:
 ! ---- DO not touch the code below; dry mass conservation may change due to 64bit <-> 32bit conversion
 ! GFS total air mass = dry_mass + water_vapor (condensate excluded)
@@ -786,32 +786,47 @@ contains
 ! FV3 total air mass = dry_mass + [water_vapor + condensate ]
 ! FV3 mixing ratios  = tracer_mass / (dry_mass+vapor_mass+cond_mass)
          q0 = IPD_Data(nb)%Statein%prsi(ix,k) - IPD_Data(nb)%Statein%prsi(ix,k+1)
-         qwat(:) = q0*IPD_Data(nb)%Stateout%gq0(ix,k,:)
+         qwat(1:nq-dnats) = q0*IPD_Data(nb)%Stateout%gq0(ix,k,1:nq-dnats)
 ! **********************************************************************************************************
 ! Dry mass: the following way of updating delp is key to mass conservation with hybrid 32-64 bit computation
 ! **********************************************************************************************************
-! The following is for 2 water species. Must include more when more sophisticated cloud microphysics is used.
+! The following example is for 2 water species. 
 !        q0 = Atm(n)%delp(i,j,k1)*(1.-(Atm(n)%q(i,j,k1,1)+Atm(n)%q(i,j,k1,2))) + q1 + q2
          qt = sum(qwat(1:nwat))
          q0 = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:nwat))) + qt 
          Atm(n)%delp(i,j,k1) = q0
-         Atm(n)%q(i,j,k1,1:nq) = qwat(1:nq) / q0
-         endif
+         Atm(n)%q(i,j,k1,1:nq-dnats) = qwat(1:nq-dnats) / q0
        enddo
      enddo
 
-     !--- diagnostic tracers are being updated in-place
-     !--- tracer fields must be returned to the Atm structure
+!GFDL     if ( dnats > 0 ) then
+!GFDL       do iq = nq-dnats+1, nq
+!GFDL         do k = 1, npz
+!GFDL           k1 = npz+1-k !reverse the k direction
+!GFDL           do ix = 1,blen
+!GFDL             i = Atm_block%index(nb)%ii(ix)
+!GFDL             j = Atm_block%index(nb)%jj(ix)
+!GFDL             Atm(n)%q(i,j,k1,iq) = Atm(n)%q(i,j,k1,iq) + (IPD_Data(nb)%Stateout%gq0(ix,k,iq)-IPD_Data(nb)%Statein%qgrs(ix,k,iq))*rdt
+!GFDL!                                * (IPD_Data%Statein%prsi(ix,k)-IPD_Data(nb)%Statein%prsi(ix,k+1))/Atm(n)%delp(i,j,k1)
+!GFDL           enddo
+!GFDL         enddo
+!GFDL       enddo
+!GFDL     endif
+
+     !--- diagnostic tracers are assumed to be updated in-place
+     !--- SHOULD THESE DIAGNOSTIC TRACERS BE MASS ADJUSTED???
+     !--- See Note in statein...
      do iq = nq+1, ncnst
        do k = 1, npz
          k1 = npz+1-k !reverse the k direction 
          do ix = 1, blen
-             i = Atm_block%index(nb)%ii(ix)
-             j = Atm_block%index(nb)%jj(ix)
-             Atm(mytile)%qdiag(i,j,k1,iq) = IPD_Data(nb)%Stateout%gq0(ix,k,iq)
+           i = Atm_block%index(nb)%ii(ix)
+           j = Atm_block%index(nb)%jj(ix)
+           Atm(mytile)%qdiag(i,j,k1,iq) = IPD_Data(nb)%Stateout%gq0(ix,k,iq)
          enddo
        enddo
      enddo
+
    enddo  ! nb-loop
 
    call timing_off('GFS_TENDENCIES')
@@ -1145,7 +1160,7 @@ contains
 !$OMP             private (dm, nb, blen, i, j, ix, k1, rTv, qgrs_rad)
 
    do nb = 1,Atm_block%nblks
-! gase_phase_mass <-- prsl
+! gas_phase_mass <-- prsl
 ! log(pe) <-- prsik
 
      blen = Atm_block%blksz(nb)
@@ -1172,8 +1187,10 @@ contains
            IPD_Data(nb)%Statein%phii(ix,k+1) = IPD_Data(nb)%Statein%phii(ix,k) - _DBL_(_RL_(Atm(mytile)%delz(i,j,k1)*grav))
 
 ! Convert to tracer mass:
-         IPD_Data(nb)%Statein%qgrs(ix,k,1:nq) =  _DBL_(_RL_(          Atm(mytile)%q(i,j,k1,1:nq))) &
-                                                             * IPD_Data(nb)%Statein%prsl(ix,k)
+         IPD_Data(nb)%Statein%qgrs(ix,k,1:nq) =  _DBL_(_RL_(Atm(mytile)%q(i,j,k1,1:nq))) &
+                                                          * IPD_Data(nb)%Statein%prsl(ix,k)
+         !--- SHOULD THESE BE CONVERTED TO MASS SINCE THE DYCORE DOES NOT TOUCH THEM IN ANY WAY???
+         !--- See Note in state update...
          IPD_Data(nb)%Statein%qgrs(ix,k,nq+1:ncnst) = _DBL_(_RL_(Atm(mytile)%qdiag(i,j,k1,nq+1:ncnst)))
 ! Remove the contribution of condensates to delp (mass):
          if ( Atm(mytile)%flagstruct%nwat .eq. 2 ) then  ! GFS
