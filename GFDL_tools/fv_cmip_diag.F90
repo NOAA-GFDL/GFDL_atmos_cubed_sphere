@@ -151,7 +151,7 @@ character(len=4)      :: plabel
                        'Relative Humidity', '%', standard_name='relative_humidity')
 
     ID_zg = register_cmip_diag_field_3d (mod_name, 'zg', Time, &
-                       'Geopotential Height', 'm', standard_name='geopotential_height')
+                       'Geopotential Height', 'm', standard_name='geopotential_height', axis='half')
 
 
     ! 2D fields
