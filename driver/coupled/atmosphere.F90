@@ -363,6 +363,8 @@ contains
    id_subgridz  = mpp_clock_id ('FV subgrid_z',flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
    id_fv_diag   = mpp_clock_id ('FV Diag',     flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
+                    call timing_off('ATMOS_INIT')
+
    n = mytile
    call switch_current_Atm(Atm(n))
 
