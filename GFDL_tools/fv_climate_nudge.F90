@@ -226,7 +226,7 @@ real :: missing_value = -1.e10
   allocate ( TimeList(ntime_obs) )
   call read_time ( tlevels, units, calendar )
   do n = 1, ntime_obs
-     Timelist(n) = get_cal_time( tlevels(n), trim(units), trim(calendar), &
+     Timelist(n) = get_cal_time( real(tlevels(n)), trim(units), trim(calendar), &
                                  permit_calendar_conversion=.true. )
   enddo
   deallocate ( tlevels )
