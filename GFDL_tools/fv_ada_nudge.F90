@@ -1,3 +1,8 @@
+#ifdef OVERLOAD_R4
+#define _GET_VAR1 get_var1_real
+#else
+#define _GET_VAR1 get_var1_double
+#endif
 module fv_ada_nudge_mod
   ! This fv_ada_nudge_mod module is based off the existing fv_nwp_nudge_mod found
   ! in the fv_nudge.F90 file in the same directory as this file.
@@ -12,7 +17,7 @@ module fv_ada_nudge_mod
 
  use external_sst_mod,  only: i_sst, j_sst, sst_ncep, sst_anom, forecast_mode
  use diag_manager_mod,  only: register_diag_field, send_data
- use constants_mod,     only: pi, grav, rdgas, cp_air, kappa, radius, seconds_per_day
+ use constants_mod,     only: pi, grav, rdgas, cp_air, kappa, cnst_radius=>radius, seconds_per_day
  use fms_mod,           only: write_version_number, open_namelist_file, &
                               check_nml_error, file_exist, close_file
 !use fms_io_mod,        only: field_size
@@ -34,8 +39,9 @@ module fv_ada_nudge_mod
  use fv_mp_mod,         only: mp_reduce_sum, mp_reduce_min, mp_reduce_max, is_master
  use fv_timing_mod,     only: timing_on, timing_off
 
- use sim_nc_mod,        only: open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var3_r4, get_var2_r4
- use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, fv_nest_type
+ use sim_nc_mod,        only: open_ncfile, close_ncfile, get_ncdim1, get_var1_double, &
+                              get_var3_r4, get_var2_r4, get_var1_real
+ use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, fv_nest_type, R_GRID
 
  use fms_io_mod, only: register_restart_field, restart_file_type, restore_state
  use fms_io_mod, only: save_restart, get_mosaic_tile_file
@@ -48,6 +54,8 @@ module fv_ada_nudge_mod
 
  implicit none
  private
+
+ real(kind=R_GRID), parameter :: radius = cnst_radius
 
  character(len=*), parameter :: VERSION =&
       & '$Id$'
@@ -282,15 +290,13 @@ module fv_ada_nudge_mod
   integer :: is,  ie,  js,  je
   integer :: isd, ied, jsd, jed
 
-  real, pointer, dimension(:,:,:) :: agrid
+  real(kind=R_GRID), pointer, dimension(:,:,:) :: agrid
   real, pointer, dimension(:,:)   :: rarea, area
 
   real, pointer, dimension(:,:) :: sina_u, sina_v
-  real, pointer, dimension(:,:,:) :: vlon, vlat, sin_sg
+  real, pointer, dimension(:,:,:) :: sin_sg
 
   real, pointer, dimension(:,:) :: dx, dy, rdxc, rdyc
-
-  real, pointer :: da_min
 
   logical, pointer :: nested, sw_corner, se_corner, nw_corner, ne_corner
 
@@ -307,12 +313,10 @@ module fv_ada_nudge_mod
   jsd = bd%jsd
   jed = bd%jed
 
-  agrid => gridstruct%agrid
+  agrid => gridstruct%agrid_64
    area => gridstruct%area
   rarea => gridstruct%rarea
 
-  vlon   => gridstruct%vlon
-  vlat   => gridstruct%vlat
   sina_u => gridstruct%sina_u
   sina_v => gridstruct%sina_v
   sin_sg => gridstruct%sin_sg
@@ -321,8 +325,6 @@ module fv_ada_nudge_mod
   dy     => gridstruct%dy
   rdxc   => gridstruct%rdxc
   rdyc   => gridstruct%rdyc
-
-  da_min => gridstruct%da_min
 
   nested => gridstruct%nested
   sw_corner => gridstruct%sw_corner
@@ -939,8 +941,6 @@ endif
   nullify(area)
   nullify(rarea)
 
-  nullify(vlon)
-  nullify(vlat)
   nullify(sina_u)
   nullify(sina_v)
   nullify(sin_sg)
@@ -949,8 +949,6 @@ endif
   nullify(dy)
   nullify(rdxc)
   nullify(rdyc)
-
-  nullify(da_min)
 
   nullify(nested)
   nullify(sw_corner)
@@ -1560,8 +1558,8 @@ endif
     allocate (  lon(im) )
     allocate (  lat(jm) )
 
-    call get_var1_double (ncid, 'lon', im, lon )
-    call get_var1_double (ncid, 'lat', jm, lat )
+    call _GET_VAR1 (ncid, 'lon', im, lon )
+    call _GET_VAR1 (ncid, 'lat', jm, lat )
 
 ! Convert to radian
     do i=1,im
@@ -1574,10 +1572,10 @@ endif
     allocate ( ak0(km+1) )
     allocate ( bk0(km+1) )
 
-    call get_var1_double (ncid, 'hyai', km+1, ak0, found )
+    call _GET_VAR1 (ncid, 'hyai', km+1, ak0, found )
     if ( .not. found )  ak0(:) = 0.
 
-    call get_var1_double (ncid, 'hybi', km+1, bk0 )
+    call _GET_VAR1 (ncid, 'hybi', km+1, bk0 )
     call close_ncfile( ncid )
 
 ! Note: definition of NCEP hybrid is p(k) = a(k)*1.E5 + b(k)*ps
@@ -2515,9 +2513,9 @@ endif
       type(fv_grid_bounds_type), intent(IN) :: bd
       type(time_type), intent(in):: time
       real, intent(inout):: mask(bd%is:bd%ie,bd%js:bd%je)
-      real, intent(IN), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,2) :: agrid
+      real(kind=R_GRID), intent(IN), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,2) :: agrid
 ! local
-      real:: pos(2)
+      real(kind=R_GRID) :: pos(2)
       real:: slp_o         ! sea-level pressure (Pa)
       real:: w10_o         ! 10-m wind
       real:: r_vor, p_vor
@@ -2590,7 +2588,7 @@ endif
       real:: dist(bd%is:bd%ie,bd%js:bd%je)
       real::   tm(bd%is:bd%ie,bd%js:bd%je)
       real::  slp(bd%is:bd%ie,bd%js:bd%je)
-      real:: pos(2)
+      real(kind=R_GRID):: pos(2)
       real:: slp_o         ! sea-level pressure (Pa)
       real:: w10_o, p_env
       real:: r_vor
@@ -2601,7 +2599,8 @@ endif
       integer year, month, day, hour, minute, second
       integer n, i, j, k, iq, k0
 
-      real, pointer :: area(:,:), agrid(:,:,:)
+      real(kind=R_GRID), pointer :: agrid(:,:,:)
+      real, pointer :: area(:,:)
 
       integer :: is,  ie,  js,  je
 
@@ -2612,7 +2611,7 @@ endif
 
 
 
-      agrid => gridstruct%agrid
+      agrid => gridstruct%agrid_64
       area  => gridstruct%area
 
     if ( nstorms==0 ) then
@@ -3062,7 +3061,7 @@ endif
 ! local
       real:: dist(bd%is:bd%ie,bd%js:bd%je), wind(bd%is:bd%ie,bd%js:bd%je)
       real::  slp(bd%is:bd%ie,bd%js:bd%je)
-      real:: pos(2)
+      real(kind=R_GRID):: pos(2)
       real:: slp_o         ! sea-level pressure (Pa)
       real:: w10_o, p_env
       real:: r_vor, pc, p_count
@@ -3074,7 +3073,8 @@ endif
       real:: wind_fac           ! Computed ( ~ 1.2)
       integer n, i, j, k, iq
 
-      real, pointer :: area(:,:), vlon(:,:,:), vlat(:,:,:), agrid(:,:,:)
+      real, pointer :: area(:,:)
+      real(kind=R_GRID), pointer :: vlon(:,:,:), vlat(:,:,:), agrid(:,:,:)
 
       integer :: is,  ie,  js,  je
 
@@ -3086,7 +3086,7 @@ endif
       area => gridstruct%area
       vlon => gridstruct%vlon
       vlat => gridstruct%vlat
-      agrid => gridstruct%agrid
+      agrid => gridstruct%agrid_64
 
     if ( nstorms==0 ) then
          if(master) write(*,*) 'NO TC data to process'
@@ -3266,7 +3266,7 @@ endif
                 else
                     speed_local = speed / f1**0.75
                 endif
-                call tangent_wind(vlon(1:3,i,j), vlat(1:3,i,j), speed_local, pos, agrid(i,j,1:2), ut, vt)
+                call tangent_wind(vlon(i,j,1:3), vlat(i,j,1:3), speed_local, pos, agrid(i,j,1:2), ut, vt)
                 ut = ut + u_bg
                 vt = vt + v_bg
                 u_dt(i,j,k) = u_dt(i,j,k) + relx*(ut-ua(i,j,k)) * rdt
@@ -3285,11 +3285,11 @@ endif
 
   subroutine tangent_wind ( elon, elat, speed, po, pp, ut, vt )
   real, intent(in):: speed
-  real, intent(in):: po(2), pp(2)
-  real, intent(in):: elon(3), elat(3)
+  real(kind=R_GRID), intent(in):: po(2), pp(2)
+  real(kind=R_GRID), intent(in):: elon(3), elat(3)
   real, intent(out):: ut, vt
 ! local
-  real:: e1(3), eo(3), ep(3), op(3)
+  real(kind=R_GRID):: e1(3), eo(3), ep(3), op(3)
 
   call latlon2xyz(po, eo)
   call latlon2xyz(pp, ep)
@@ -3326,15 +3326,15 @@ endif
     real, optional, intent(in):: stime
     real, optional, intent(out):: fact
 ! Output
-    real, intent(out):: x_o , y_o      ! position of the storm center
+    real(kind=R_GRID), intent(out):: x_o , y_o      ! position of the storm center
     real, intent(out):: w10_o          ! 10-m wind speed
     real, intent(out):: slp_o          ! Observed sea-level-pressure (pa)
     real, intent(out):: r_vor, p_vor
 ! Internal:
     real:: t_thresh
-      real:: p1(2), p2(2)
+      real(kind=R_GRID):: p1(2), p2(2)
       real time_model
-      real fac
+      real(kind=R_GRID) fac
       integer year, month, day, hour, minute, second, n
 
       t_thresh = 600./86400.  ! unit: days
@@ -3641,7 +3641,7 @@ endif
    type(fv_grid_type), intent(IN), target :: gridstruct
   type(domain2d), intent(INOUT) :: domain
 ! local:
-  real, pointer, dimension(:,:,:) :: vlon, vlat
+  real(kind=R_GRID), pointer, dimension(:,:,:) :: vlon, vlat
    real, dimension(bd%is:bd%ie,bd%js:bd%je,kmd):: v1, v2, v3
    integer i,j,k
 
@@ -3660,9 +3660,9 @@ endif
    do k=1,kmd
       do j=js,je
          do i=is,ie
-            v1(i,j,k) = du(i,j,k)*vlon(1,i,j) + dv(i,j,k)*vlat(1,i,j)
-            v2(i,j,k) = du(i,j,k)*vlon(2,i,j) + dv(i,j,k)*vlat(2,i,j)
-            v3(i,j,k) = du(i,j,k)*vlon(3,i,j) + dv(i,j,k)*vlat(3,i,j)
+            v1(i,j,k) = du(i,j,k)*vlon(i,j,1) + dv(i,j,k)*vlat(i,j,1)
+            v2(i,j,k) = du(i,j,k)*vlon(i,j,2) + dv(i,j,k)*vlat(i,j,2)
+            v3(i,j,k) = du(i,j,k)*vlon(i,j,3) + dv(i,j,k)*vlat(i,j,3)
          enddo
       enddo
    enddo
@@ -3677,8 +3677,8 @@ endif
    do k=1,kmd
       do j=js,je
          do i=is,ie
-            du(i,j,k) = v1(i,j,k)*vlon(1,i,j) + v2(i,j,k)*vlon(2,i,j) + v3(i,j,k)*vlon(3,i,j)
-            dv(i,j,k) = v1(i,j,k)*vlat(1,i,j) + v2(i,j,k)*vlat(2,i,j) + v3(i,j,k)*vlat(3,i,j)
+            du(i,j,k) = v1(i,j,k)*vlon(i,j,1) + v2(i,j,k)*vlon(i,j,2) + v3(i,j,k)*vlon(i,j,3)
+            dv(i,j,k) = v1(i,j,k)*vlat(i,j,1) + v2(i,j,k)*vlat(i,j,2) + v3(i,j,k)*vlat(i,j,3)
          enddo
       enddo
    enddo
@@ -3711,8 +3711,6 @@ endif
 
   real, pointer, dimension(:,:) :: dx, dy, rdxc, rdyc
 
-  real, pointer :: da_min
-
   logical, pointer :: nested, sw_corner, se_corner, nw_corner, ne_corner
 
    is  = bd%is
@@ -3736,8 +3734,6 @@ endif
   rdxc   => gridstruct%rdxc
   rdyc   => gridstruct%rdyc
 
-  da_min => gridstruct%da_min
-
   nested => gridstruct%nested
   sw_corner => gridstruct%sw_corner
   se_corner => gridstruct%se_corner
@@ -3746,7 +3742,7 @@ endif
 
    ntimes = min(3, nmax)
 
-   damp = cd * da_min
+   damp = cd * gridstruct%da_min
 
 !$omp parallel do default(shared)
    do k=1,kmd

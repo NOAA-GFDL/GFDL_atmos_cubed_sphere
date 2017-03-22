@@ -1,3 +1,22 @@
+!***********************************************************************
+!*                   GNU General Public License                        *
+!* This file is a part of fvGFS.                                       *
+!*                                                                     *
+!* fvGFS is free software; you can redistribute it and/or modify it    *
+!* and are expected to follow the terms of the GNU General Public      *
+!* License as published by the Free Software Foundation; either        *
+!* version 2 of the License, or (at your option) any later version.    *
+!*                                                                     *
+!* fvGFS is distributed in the hope that it will be useful, but        *
+!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+!* General Public License for more details.                            *
+!*                                                                     *
+!* For the full text of the GNU General Public License,                *
+!* write to: Free Software Foundation, Inc.,                           *
+!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!***********************************************************************
 !------------------------------------------------------------------------------
 !BOP
 !
@@ -23,6 +42,10 @@
       use mpp_domains_mod, only : mpp_get_neighbor_pe, mpp_define_mosaic, mpp_define_io_domain
       use mpp_domains_mod, only : NORTH, NORTH_EAST, EAST, SOUTH_EAST
       use mpp_domains_mod, only : SOUTH, SOUTH_WEST, WEST, NORTH_WEST
+      use mpp_domains_mod, only : mpp_start_group_update, mpp_complete_group_update
+      use mpp_domains_mod, only : mpp_group_update_initialized, mpp_do_group_update
+      use mpp_domains_mod, only : mpp_create_group_update,mpp_reset_group_update_field
+      use mpp_domains_mod, only : group_halo_update_type => mpp_group_update_type
       use mpp_parameter_mod, only : WUPDATE, EUPDATE, SUPDATE, NUPDATE, XUPDATE, YUPDATE
       use fv_arrays_mod, only: fv_atmos_type
       use fms_io_mod, only: set_domain
@@ -78,29 +101,69 @@
       !they will need to be switched when domains are switched
 !!! CLEANUP: ng is a PARAMETER and is OK to be shared by a use statement
       public is, ie, js, je, isd, ied, jsd, jed, isc, iec, jsc, jec, ng
+      public start_group_halo_update, complete_group_halo_update
+      public group_halo_update_type
+
+      interface start_group_halo_update
+        module procedure start_var_group_update_2d
+        module procedure start_var_group_update_3d
+        module procedure start_var_group_update_4d
+        module procedure start_vector_group_update_2d
+        module procedure start_vector_group_update_3d
+      end interface start_group_halo_update
 
       INTERFACE fill_corners
-        MODULE PROCEDURE fill_corners_2d
-        MODULE PROCEDURE fill_corners_xy_2d
-        MODULE PROCEDURE fill_corners_xy_3d
+        MODULE PROCEDURE fill_corners_2d_r4
+        MODULE PROCEDURE fill_corners_2d_r8
+        MODULE PROCEDURE fill_corners_xy_2d_r4
+        MODULE PROCEDURE fill_corners_xy_2d_r8
+        MODULE PROCEDURE fill_corners_xy_3d_r4
+        MODULE PROCEDURE fill_corners_xy_3d_r8
+      END INTERFACE
+
+      INTERFACE fill_corners_agrid
+        MODULE PROCEDURE fill_corners_agrid_r4
+        MODULE PROCEDURE fill_corners_agrid_r8
+      END INTERFACE
+
+      INTERFACE fill_corners_cgrid
+        MODULE PROCEDURE fill_corners_cgrid_r4
+        MODULE PROCEDURE fill_corners_cgrid_r8
+      END INTERFACE
+
+      INTERFACE fill_corners_dgrid
+        MODULE PROCEDURE fill_corners_dgrid_r4
+        MODULE PROCEDURE fill_corners_dgrid_r8
       END INTERFACE
 
       INTERFACE mp_bcst
         MODULE PROCEDURE mp_bcst_i4
+        MODULE PROCEDURE mp_bcst_r4
         MODULE PROCEDURE mp_bcst_r8
+        MODULE PROCEDURE mp_bcst_3d_r4
         MODULE PROCEDURE mp_bcst_3d_r8
+        MODULE PROCEDURE mp_bcst_4d_r4
         MODULE PROCEDURE mp_bcst_4d_r8
         MODULE PROCEDURE mp_bcst_3d_i8
         MODULE PROCEDURE mp_bcst_4d_i8
       END INTERFACE
 
+      INTERFACE mp_reduce_min
+        MODULE PROCEDURE mp_reduce_min_r4
+        MODULE PROCEDURE mp_reduce_min_r8
+      END INTERFACE
+
       INTERFACE mp_reduce_max
+        MODULE PROCEDURE mp_reduce_max_r4_1d
+        MODULE PROCEDURE mp_reduce_max_r4
         MODULE PROCEDURE mp_reduce_max_r8_1d
         MODULE PROCEDURE mp_reduce_max_r8
         MODULE PROCEDURE mp_reduce_max_i4
       END INTERFACE
 
       INTERFACE mp_reduce_sum
+        MODULE PROCEDURE mp_reduce_sum_r4
+        MODULE PROCEDURE mp_reduce_sum_r4_1d
         MODULE PROCEDURE mp_reduce_sum_r8
         MODULE PROCEDURE mp_reduce_sum_r8_1d
       END INTERFACE
@@ -111,6 +174,7 @@
         MODULE PROCEDURE mp_gather_3d_r8
       END INTERFACE
 
+      integer :: halo_update_type = 1
 !---- version number -----
       character(len=128) :: version = '$Id$'
       character(len=128) :: tagname = '$Name$'
@@ -129,8 +193,9 @@ contains
 !
 !     mp_start :: Start SPMD processes
 !
-        subroutine mp_start(commID)
+        subroutine mp_start(commID, halo_update_type_in)
           integer, intent(in), optional :: commID
+          integer, intent(in), optional :: halo_update_type_in
 
          integer :: ios
          integer :: unit
@@ -140,6 +205,7 @@ contains
          if( PRESENT(commID) )then
              commglobal = commID
          end if
+         halo_update_type = halo_update_type_in
 
          numthreads = 1
 !$OMP PARALLEL
@@ -262,7 +328,11 @@ contains
        ! call mpp_domains_set_stack_size(10000)
        ! call mpp_domains_set_stack_size(900000)
        !  call mpp_domains_set_stack_size(1500000)
+#ifdef SMALL_PE
+         call mpp_domains_set_stack_size(6000000)
+#else
          call mpp_domains_set_stack_size(3000000)
+#endif
 
          select case(nregions)
          case ( 1 )  ! Lat-Lon "cyclic"
@@ -279,6 +349,23 @@ contains
                npes_per_tile = npes_x*npes_y !/nregions !Set up for concurrency
                is_symmetry = .true.
                call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
+
+               if ( npes_x == 0 ) then 
+                  npes_x = layout(1)
+               endif
+               if ( npes_y == 0 ) then
+                  npes_y = layout(2)
+               endif
+
+               if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  Atm%gridstruct%square_domain = .true.
+
+               if ( (npx/npes_x < ng) .or. (npy/npes_y < ng) ) then
+                  write(*,310) npes_x, npes_y, npx/npes_x, npy/npes_y
+                 call mp_stop
+                 call exit(1)
+              endif
+           
+              layout = (/npes_x,npes_y/)
             case (3)   ! Lat-Lon "cyclic"
                type="Lat-Lon: cyclic"
                nregions = 4
@@ -569,6 +656,241 @@ contains
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
 
+subroutine start_var_group_update_2d(group, array, domain, flags, position, whalo, ehalo, shalo, nhalo, complete)
+  type(group_halo_update_type), intent(inout) :: group
+  real, dimension(:,:),         intent(inout) :: array
+  type(domain2D),               intent(inout) :: domain
+  integer,      optional,       intent(in)    :: flags
+  integer,      optional,       intent(in)    :: position
+  integer,      optional,       intent(in)    :: whalo, ehalo, shalo, nhalo
+  logical,      optional,       intent(in)    :: complete
+  real                                        :: d_type
+  logical                                     :: is_complete
+! Arguments: 
+!  (inout)   group - The data type that store information for group update. 
+!                    This data will be used in do_group_pass.
+!  (inout)   array - The array which is having its halos points exchanged.
+!  (in)      domain - contains domain information.
+!  (in)      flags  - An optional integer indicating which directions the
+!                       data should be sent.  
+!  (in)      position - An optional argument indicating the position.  This is
+!                       may be CORNER, but is CENTER by default.
+!  (in)      complete - An optional argument indicating whether the halo updates
+!                       should be initiated immediately or wait for second 
+!                       pass_..._start call.  Omitting complete is the same as 
+!                       setting complete to .true.
+
+  if (mpp_group_update_initialized(group)) then
+    call mpp_reset_group_update_field(group,array)
+  else
+    call mpp_create_group_update(group, array, domain, flags=flags, position=position, &
+             whalo=whalo, ehalo=ehalo, shalo=shalo, nhalo=nhalo)
+  endif
+
+  is_complete = .TRUE.
+  if(present(complete)) is_complete = complete
+  if(is_complete .and. halo_update_type == 1) then 
+     call mpp_start_group_update(group, domain, d_type)
+  endif
+
+end subroutine start_var_group_update_2d
+
+
+subroutine start_var_group_update_3d(group, array, domain, flags, position, whalo, ehalo, shalo, nhalo, complete)
+  type(group_halo_update_type), intent(inout) :: group
+  real, dimension(:,:,:),       intent(inout) :: array
+  type(domain2D),               intent(inout) :: domain
+  integer,           optional,  intent(in)    :: flags
+  integer,           optional,  intent(in)    :: position
+  integer,      optional,       intent(in)    :: whalo, ehalo, shalo, nhalo
+  logical,      optional,       intent(in)    :: complete
+  real                                        :: d_type
+  logical                                     :: is_complete
+
+! Arguments: 
+!  (inout)   group - The data type that store information for group update. 
+!                    This data will be used in do_group_pass.
+!  (inout)   array - The array which is having its halos points exchanged.
+!  (in)      domain - contains domain information.
+!  (in)      flags  - An optional integer indicating which directions the
+!                       data should be sent.  
+!  (in)      position - An optional argument indicating the position.  This is
+!                       may be CORNER, but is CENTER by default.
+!  (in)      complete - An optional argument indicating whether the halo updates
+!                       should be initiated immediately or wait for second 
+!                       pass_..._start call.  Omitting complete is the same as 
+!                       setting complete to .true.
+
+  if (mpp_group_update_initialized(group)) then
+    call mpp_reset_group_update_field(group,array)
+  else
+    call mpp_create_group_update(group, array, domain, flags=flags, position=position, &
+          whalo=whalo, ehalo=ehalo, shalo=shalo, nhalo=nhalo)
+  endif
+
+  is_complete = .TRUE.
+  if(present(complete)) is_complete = complete
+  if(is_complete .and. halo_update_type == 1 ) then
+     call mpp_start_group_update(group, domain, d_type)
+  endif
+
+end subroutine start_var_group_update_3d
+
+subroutine start_var_group_update_4d(group, array, domain, flags, position, whalo, ehalo, shalo, nhalo, complete)
+  type(group_halo_update_type), intent(inout) :: group
+  real, dimension(:,:,:,:),     intent(inout) :: array
+  type(domain2D),               intent(inout) :: domain
+  integer,           optional,  intent(in)    :: flags
+  integer,           optional,  intent(in)    :: position
+  integer,      optional,       intent(in)    :: whalo, ehalo, shalo, nhalo
+  logical,      optional,       intent(in)    :: complete
+  real                                        :: d_type
+  logical                                     :: is_complete
+
+! Arguments: 
+!  (inout)   group - The data type that store information for group update. 
+!                    This data will be used in do_group_pass.
+!  (inout)   array - The array which is having its halos points exchanged.
+!  (in)      domain - contains domain information.
+!  (in)      flags  - An optional integer indicating which directions the
+!                       data should be sent.  
+!  (in)      position - An optional argument indicating the position.  This is
+!                       may be CORNER, but is CENTER by default.
+!  (in)      complete - An optional argument indicating whether the halo updates
+!                       should be initiated immediately or wait for second 
+!                       pass_..._start call.  Omitting complete is the same as 
+!                       setting complete to .true.
+
+  integer :: dirflag
+
+  if (mpp_group_update_initialized(group)) then
+    call mpp_reset_group_update_field(group,array)
+  else
+    call mpp_create_group_update(group, array, domain, flags=flags, position=position, &
+              whalo=whalo, ehalo=ehalo, shalo=shalo, nhalo=nhalo)
+  endif
+
+  is_complete = .TRUE.
+  if(present(complete)) is_complete = complete
+  if(is_complete .and. halo_update_type == 1 ) then
+     call mpp_start_group_update(group, domain, d_type)
+  endif
+
+end subroutine start_var_group_update_4d
+
+
+
+subroutine start_vector_group_update_2d(group, u_cmpt, v_cmpt, domain, flags, gridtype, whalo, ehalo, shalo, nhalo, complete)
+  type(group_halo_update_type), intent(inout) :: group
+  real,       dimension(:,:),   intent(inout) :: u_cmpt, v_cmpt
+  type(domain2d),               intent(inout) :: domain
+  integer,            optional, intent(in)    :: flags
+  integer,            optional, intent(in)    :: gridtype
+  integer,      optional,       intent(in)    :: whalo, ehalo, shalo, nhalo
+  logical,      optional,       intent(in)    :: complete
+  real                                        :: d_type
+  logical                                     :: is_complete
+
+! Arguments: 
+!  (inout)   group - The data type that store information for group update. 
+!                    This data will be used in do_group_pass.
+!  (inout)   u_cmpt - The nominal zonal (u) component of the vector pair which
+!                     is having its halos points exchanged.
+!  (inout)   v_cmpt - The nominal meridional (v) component of the vector pair
+!                     which is having its halos points exchanged. 
+!  (in)      domain - Contains domain decomposition information.
+!  (in)      flags - An optional integer indicating which directions the
+!                        data should be sent. 
+!  (in)      gridtype - An optional flag, which may be one of A_GRID, BGRID_NE,
+!                      CGRID_NE or DGRID_NE, indicating where the two components of the
+!                      vector are discretized. 
+!  (in)      complete - An optional argument indicating whether the halo updates
+!                       should be initiated immediately or wait for second 
+!                       pass_..._start call.  Omitting complete is the same as 
+!                       setting complete to .true.
+
+  if (mpp_group_update_initialized(group)) then
+    call mpp_reset_group_update_field(group,u_cmpt, v_cmpt)
+  else
+    call mpp_create_group_update(group, u_cmpt, v_cmpt, domain, &
+            flags=flags, gridtype=gridtype, &
+            whalo=whalo, ehalo=ehalo, shalo=shalo, nhalo=nhalo)
+  endif
+
+  is_complete = .TRUE.
+  if(present(complete)) is_complete = complete
+  if(is_complete .and. halo_update_type == 1 ) then
+     call mpp_start_group_update(group, domain, d_type)
+  endif
+
+end subroutine start_vector_group_update_2d
+
+subroutine start_vector_group_update_3d(group, u_cmpt, v_cmpt, domain, flags, gridtype, whalo, ehalo, shalo, nhalo, complete)
+  type(group_halo_update_type), intent(inout) :: group
+  real,       dimension(:,:,:), intent(inout) :: u_cmpt, v_cmpt
+  type(domain2d),               intent(inout) :: domain
+  integer,            optional, intent(in)    :: flags
+  integer,            optional, intent(in)    :: gridtype
+  integer,      optional,       intent(in)    :: whalo, ehalo, shalo, nhalo
+  logical,      optional,       intent(in)    :: complete
+  real                                        :: d_type
+  logical                                     :: is_complete
+
+! Arguments: 
+!  (inout)   group - The data type that store information for group update. 
+!                    This data will be used in do_group_pass.
+!  (inout)   u_cmpt - The nominal zonal (u) component of the vector pair which
+!                     is having its halos points exchanged.
+!  (inout)   v_cmpt - The nominal meridional (v) component of the vector pair
+!                     which is having its halos points exchanged. 
+!  (in)      domain - Contains domain decomposition information.
+!  (in)      flags - An optional integer indicating which directions the
+!                        data should be sent. 
+!  (in)      gridtype - An optional flag, which may be one of A_GRID, BGRID_NE,
+!                      CGRID_NE or DGRID_NE, indicating where the two components of the
+!                      vector are discretized. 
+!  (in)      complete - An optional argument indicating whether the halo updates
+!                       should be initiated immediately or wait for second 
+!                       pass_..._start call.  Omitting complete is the same as 
+!                       setting complete to .true.
+
+  if (mpp_group_update_initialized(group)) then
+    call mpp_reset_group_update_field(group,u_cmpt, v_cmpt)
+  else
+    call mpp_create_group_update(group, u_cmpt, v_cmpt, domain, &
+            flags=flags, gridtype=gridtype, &
+            whalo=whalo, ehalo=ehalo, shalo=shalo, nhalo=nhalo)
+  endif
+
+  is_complete = .TRUE.
+  if(present(complete)) is_complete = complete
+  if(is_complete .and. halo_update_type == 1) then
+     call mpp_start_group_update(group, domain, d_type)
+  endif
+
+end subroutine start_vector_group_update_3d
+
+
+subroutine complete_group_halo_update(group, domain)
+  type(group_halo_update_type), intent(inout) :: group
+  type(domain2d),               intent(inout) :: domain
+  real                                        :: d_type
+
+! Arguments: 
+!  (inout)   group - The data type that store information for group update. 
+!  (in)      domain - Contains domain decomposition information.
+
+  if( halo_update_type == 1 ) then
+  call mpp_complete_group_update(group, domain, d_type)
+  else
+    call mpp_do_group_update(group, domain, d_type)
+  endif
+
+end subroutine complete_group_halo_update
+
+
+
+
 subroutine broadcast_domains(Atm)
   
   type(fv_atmos_type), intent(INOUT) :: Atm(:)
@@ -586,10 +908,10 @@ subroutine broadcast_domains(Atm)
 
   !Pelist needs to be set to ALL ensemble PEs for broadcast_domain to work
   call mpp_set_current_pelist((/ (i,i=ens_root_pe,npes-1+ens_root_pe) /))
-  do n=1,size(Atm)
-     call mpp_broadcast_domain(Atm(n)%domain)
-     call mpp_broadcast_domain(Atm(n)%domain_for_coupler)
-  end do
+     do n=1,size(Atm)
+        call mpp_broadcast_domain(Atm(n)%domain)
+        call mpp_broadcast_domain(Atm(n)%domain_for_coupler)
+     end do
 
 end subroutine broadcast_domains
 
@@ -638,8 +960,8 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !!
 !     
-      subroutine fill_corners_2d(q, npx, npy, FILL, AGRID, BGRID)
-         real, DIMENSION(isd:,jsd:), intent(INOUT):: q
+      subroutine fill_corners_2d_r4(q, npx, npy, FILL, AGRID, BGRID)
+         real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: q
          integer, intent(IN):: npx,npy
          integer, intent(IN):: FILL  ! X-Dir or Y-Dir 
          logical, OPTIONAL, intent(IN) :: AGRID, BGRID 
@@ -711,22 +1033,102 @@ end subroutine switch_current_Atm
             endif
           endif
 
-      end subroutine fill_corners_2d
+      end subroutine fill_corners_2d_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !!
+!     
+      subroutine fill_corners_2d_r8(q, npx, npy, FILL, AGRID, BGRID)
+         real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: q
+         integer, intent(IN):: npx,npy
+         integer, intent(IN):: FILL  ! X-Dir or Y-Dir 
+         logical, OPTIONAL, intent(IN) :: AGRID, BGRID 
+         integer :: i,j
+
+         if (present(BGRID)) then
+            if (BGRID) then
+              select case (FILL)
+              case (XDir)
+                 do j=1,ng
+                    do i=1,ng
+                     if ((is==    1) .and. (js==    1)) q(1-i  ,1-j  ) = q(1-j  ,i+1    )  !SW Corner 
+                     if ((is==    1) .and. (je==npy-1)) q(1-i  ,npy+j) = q(1-j  ,npy-i  )  !NW Corner
+                     if ((ie==npx-1) .and. (js==    1)) q(npx+i,1-j  ) = q(npx+j,i+1    )  !SE Corner
+                     if ((ie==npx-1) .and. (je==npy-1)) q(npx+i,npy+j) = q(npx+j,npy-i  )  !NE Corner
+                    enddo
+                 enddo
+              case (YDir)
+                 do j=1,ng
+                    do i=1,ng
+                     if ((is==    1) .and. (js==    1)) q(1-j  ,1-i  ) = q(i+1  ,1-j    )  !SW Corner 
+                     if ((is==    1) .and. (je==npy-1)) q(1-j  ,npy+i) = q(i+1  ,npy+j  )  !NW Corner
+                     if ((ie==npx-1) .and. (js==    1)) q(npx+j,1-i  ) = q(npx-i,1-j    )  !SE Corner
+                     if ((ie==npx-1) .and. (je==npy-1)) q(npx+j,npy+i) = q(npx-i,npy+j  )  !NE Corner
+                    enddo
+                 enddo
+              case default
+                 do j=1,ng
+                    do i=1,ng
+                     if ((is==    1) .and. (js==    1)) q(1-i  ,1-j  ) = q(1-j  ,i+1    )  !SW Corner 
+                     if ((is==    1) .and. (je==npy-1)) q(1-i  ,npy+j) = q(1-j  ,npy-i  )  !NW Corner
+                     if ((ie==npx-1) .and. (js==    1)) q(npx+i,1-j  ) = q(npx+j,i+1    )  !SE Corner
+                     if ((ie==npx-1) .and. (je==npy-1)) q(npx+i,npy+j) = q(npx+j,npy-i  )  !NE Corner
+                    enddo
+                 enddo
+              end select
+            endif
+          elseif (present(AGRID)) then
+            if (AGRID) then
+              select case (FILL)
+              case (XDir)
+                 do j=1,ng
+                    do i=1,ng
+                       if ((is==    1) .and. (js==    1)) q(1-i    ,1-j    ) = q(1-j    ,i        )  !SW Corner 
+                       if ((is==    1) .and. (je==npy-1)) q(1-i    ,npy-1+j) = q(1-j    ,npy-1-i+1)  !NW Corner
+                       if ((ie==npx-1) .and. (js==    1)) q(npx-1+i,1-j    ) = q(npx-1+j,i        )  !SE Corner
+                       if ((ie==npx-1) .and. (je==npy-1)) q(npx-1+i,npy-1+j) = q(npx-1+j,npy-1-i+1)  !NE Corner
+                    enddo
+                 enddo
+              case (YDir)
+                 do j=1,ng
+                    do i=1,ng
+                       if ((is==    1) .and. (js==    1)) q(1-j    ,1-i    ) = q(i        ,1-j    )  !SW Corner 
+                       if ((is==    1) .and. (je==npy-1)) q(1-j    ,npy-1+i) = q(i        ,npy-1+j)  !NW Corner
+                       if ((ie==npx-1) .and. (js==    1)) q(npx-1+j,1-i    ) = q(npx-1-i+1,1-j    )  !SE Corner
+                       if ((ie==npx-1) .and. (je==npy-1)) q(npx-1+j,npy-1+i) = q(npx-1-i+1,npy-1+j)  !NE Corner
+                    enddo
+                 enddo
+              case default
+                 do j=1,ng
+                    do i=1,ng        
+                       if ((is==    1) .and. (js==    1)) q(1-j    ,1-i    ) = q(i        ,1-j    )  !SW Corner 
+                       if ((is==    1) .and. (je==npy-1)) q(1-j    ,npy-1+i) = q(i        ,npy-1+j)  !NW Corner
+                       if ((ie==npx-1) .and. (js==    1)) q(npx-1+j,1-i    ) = q(npx-1-i+1,1-j    )  !SE Corner
+                       if ((ie==npx-1) .and. (je==npy-1)) q(npx-1+j,npy-1+i) = q(npx-1-i+1,npy-1+j)  !NE Corner
+                   enddo
+                 enddo          
+              end select
+            endif
+          endif
+
+      end subroutine fill_corners_2d_r8
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !!
-!     fill_corners_xy_2d
-      subroutine fill_corners_xy_2d(x, y, npx, npy, DGRID, AGRID, CGRID, VECTOR)
-         real, DIMENSION(isd:,jsd:), intent(INOUT):: x !(isd:ied  ,jsd:jed+1)
-         real, DIMENSION(isd:,jsd:), intent(INOUT):: y !(isd:ied+1,jsd:jed  )
+!     fill_corners_xy_2d_r8
+      subroutine fill_corners_xy_2d_r8(x, y, npx, npy, DGRID, AGRID, CGRID, VECTOR)
+         real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: x !(isd:ied  ,jsd:jed+1)
+         real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: y !(isd:ied+1,jsd:jed  )
          integer, intent(IN):: npx,npy
          logical, OPTIONAL, intent(IN) :: DGRID, AGRID, CGRID, VECTOR
          integer :: i,j
 
-         real :: mySign
+         real(kind=8) :: mySign
 
          mySign = 1.0
          if (present(VECTOR)) then
@@ -743,22 +1145,54 @@ end subroutine switch_current_Atm
             call fill_corners_agrid(x, y, npx, npy, mySign)
          endif
 
-      end subroutine fill_corners_xy_2d
+      end subroutine fill_corners_xy_2d_r8
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !!
-!     fill_corners_xy_3d
-      subroutine fill_corners_xy_3d(x, y, npx, npy, npz, DGRID, AGRID, CGRID, VECTOR)
-         real, DIMENSION(isd:,jsd:,:), intent(INOUT):: x !(isd:ied  ,jsd:jed+1)
-         real, DIMENSION(isd:,jsd:,:), intent(INOUT):: y !(isd:ied+1,jsd:jed  )
+!     fill_corners_xy_2d_r4
+      subroutine fill_corners_xy_2d_r4(x, y, npx, npy, DGRID, AGRID, CGRID, VECTOR)
+         real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: x !(isd:ied  ,jsd:jed+1)
+         real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: y !(isd:ied+1,jsd:jed  )
+         integer, intent(IN):: npx,npy
+         logical, OPTIONAL, intent(IN) :: DGRID, AGRID, CGRID, VECTOR
+         integer :: i,j
+
+         real(kind=4) :: mySign
+
+         mySign = 1.0
+         if (present(VECTOR)) then
+            if (VECTOR) mySign = -1.0
+         endif
+
+         if (present(DGRID)) then
+            call fill_corners_dgrid(x, y, npx, npy, mySign)
+         elseif (present(CGRID)) then
+            call fill_corners_cgrid(x, y, npx, npy, mySign)
+         elseif (present(AGRID)) then
+            call fill_corners_agrid(x, y, npx, npy, mySign)
+         else
+            call fill_corners_agrid(x, y, npx, npy, mySign)
+         endif
+
+      end subroutine fill_corners_xy_2d_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !!
+!     fill_corners_xy_3d_r8
+      subroutine fill_corners_xy_3d_r8(x, y, npx, npy, npz, DGRID, AGRID, CGRID, VECTOR)
+         real(kind=8), DIMENSION(isd:,jsd:,:), intent(INOUT):: x !(isd:ied  ,jsd:jed+1)
+         real(kind=8), DIMENSION(isd:,jsd:,:), intent(INOUT):: y !(isd:ied+1,jsd:jed  )
          integer, intent(IN):: npx,npy,npz
          logical, OPTIONAL, intent(IN) :: DGRID, AGRID, CGRID, VECTOR
          integer :: i,j,k
 
-         real :: mySign
+         real(kind=8) :: mySign
 
          mySign = 1.0
          if (present(VECTOR)) then
@@ -783,7 +1217,47 @@ end subroutine switch_current_Atm
             enddo
          endif
 
-      end subroutine fill_corners_xy_3d
+      end subroutine fill_corners_xy_3d_r8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !!
+!     fill_corners_xy_3d_r4
+      subroutine fill_corners_xy_3d_r4(x, y, npx, npy, npz, DGRID, AGRID, CGRID, VECTOR)
+         real(kind=4), DIMENSION(isd:,jsd:,:), intent(INOUT):: x !(isd:ied  ,jsd:jed+1)
+         real(kind=4), DIMENSION(isd:,jsd:,:), intent(INOUT):: y !(isd:ied+1,jsd:jed  )
+         integer, intent(IN):: npx,npy,npz
+         logical, OPTIONAL, intent(IN) :: DGRID, AGRID, CGRID, VECTOR
+         integer :: i,j,k
+
+         real(kind=4) :: mySign
+
+         mySign = 1.0
+         if (present(VECTOR)) then
+            if (VECTOR) mySign = -1.0
+         endif
+
+         if (present(DGRID)) then
+            do k=1,npz
+               call fill_corners_dgrid(x(:,:,k), y(:,:,k), npx, npy, mySign)
+            enddo
+         elseif (present(CGRID)) then
+            do k=1,npz
+               call fill_corners_cgrid(x(:,:,k), y(:,:,k), npx, npy, mySign)
+            enddo
+         elseif (present(AGRID)) then
+            do k=1,npz
+               call fill_corners_agrid(x(:,:,k), y(:,:,k), npx, npy, mySign)
+            enddo
+         else
+            do k=1,npz
+               call fill_corners_agrid(x(:,:,k), y(:,:,k), npx, npy, mySign)
+            enddo
+         endif
+
+      end subroutine fill_corners_xy_3d_r4
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
@@ -791,11 +1265,11 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-      subroutine fill_corners_dgrid(x, y, npx, npy, mySign)
-         real, DIMENSION(isd:,jsd:), intent(INOUT):: x
-         real, DIMENSION(isd:,jsd:), intent(INOUT):: y
+      subroutine fill_corners_dgrid_r8(x, y, npx, npy, mySign)
+         real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: x
+         real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: y
          integer, intent(IN):: npx,npy
-         real, intent(IN) :: mySign 
+         real(kind=8), intent(IN) :: mySign 
          integer :: i,j
 
                do j=1,ng
@@ -823,7 +1297,7 @@ end subroutine switch_current_Atm
                   enddo
                enddo
 
-      end subroutine fill_corners_dgrid
+      end subroutine fill_corners_dgrid_r8
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
@@ -831,11 +1305,51 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-      subroutine fill_corners_cgrid(x, y, npx, npy, mySign)
-         real, DIMENSION(isd:,jsd:), intent(INOUT):: x
-         real, DIMENSION(isd:,jsd:), intent(INOUT):: y
+      subroutine fill_corners_dgrid_r4(x, y, npx, npy, mySign)
+         real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: x
+         real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: y
          integer, intent(IN):: npx,npy
-         real, intent(IN) :: mySign
+         real(kind=4), intent(IN) :: mySign 
+         integer :: i,j
+
+               do j=1,ng
+                  do i=1,ng
+                   !   if ((is  ==  1) .and. (js  ==  1)) x(1-i    ,1-j  ) =        y(j+1  ,1-i    )  !SW Corner 
+                   !   if ((is  ==  1) .and. (je+1==npy)) x(1-i    ,npy+j) = mySign*y(j+1  ,npy-1+i)  !NW Corner
+                   !   if ((ie+1==npx) .and. (js  ==  1)) x(npx-1+i,1-j  ) = mySign*y(npx-j,1-i    )  !SE Corner
+                   !   if ((ie+1==npx) .and. (je+1==npy)) x(npx-1+i,npy+j) =        y(npx-j,npy-1+i)  !NE Corner
+                      if ((is  ==  1) .and. (js  ==  1)) x(1-i    ,1-j  ) = mySign*y(1-j  ,i    )  !SW Corner 
+                      if ((is  ==  1) .and. (je+1==npy)) x(1-i    ,npy+j) =        y(1-j  ,npy-i)  !NW Corner
+                      if ((ie+1==npx) .and. (js  ==  1)) x(npx-1+i,1-j  ) =        y(npx+j,i    )  !SE Corner
+                      if ((ie+1==npx) .and. (je+1==npy)) x(npx-1+i,npy+j) = mySign*y(npx+j,npy-i)  !NE Corner
+                  enddo
+               enddo
+               do j=1,ng
+                  do i=1,ng
+                   !  if ((is  ==  1) .and. (js  ==  1)) y(1-i    ,1-j    ) =        x(1-j    ,i+1  )  !SW Corner 
+                   !  if ((is  ==  1) .and. (je+1==npy)) y(1-i    ,npy-1+j) = mySign*x(1-j    ,npy-i)  !NW Corner
+                   !  if ((ie+1==npx) .and. (js  ==  1)) y(npx+i  ,1-j    ) = mySign*x(npx-1+j,i+1  )  !SE Corner
+                   !  if ((ie+1==npx) .and. (je+1==npy)) y(npx+i  ,npy-1+j) =        x(npx-1+j,npy-i)  !NE Corner
+                     if ((is  ==  1) .and. (js  ==  1)) y(1-i    ,1-j    ) = mySign*x(j      ,1-i  )  !SW Corner 
+                     if ((is  ==  1) .and. (je+1==npy)) y(1-i    ,npy-1+j) =        x(j      ,npy+i)  !NW Corner
+                     if ((ie+1==npx) .and. (js  ==  1)) y(npx+i  ,1-j    ) =        x(npx-j  ,1-i  )  !SE Corner
+                     if ((ie+1==npx) .and. (je+1==npy)) y(npx+i  ,npy-1+j) = mySign*x(npx-j  ,npy+i)  !NE Corner
+                  enddo
+               enddo
+
+      end subroutine fill_corners_dgrid_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+      subroutine fill_corners_cgrid_r4(x, y, npx, npy, mySign)
+         real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: x
+         real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: y
+         integer, intent(IN):: npx,npy
+         real(kind=4), intent(IN) :: mySign
          integer :: i,j
 
                   do j=1,ng
@@ -855,7 +1369,7 @@ end subroutine switch_current_Atm
                      enddo
                   enddo
       
-      end subroutine fill_corners_cgrid
+      end subroutine fill_corners_cgrid_r4
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
@@ -863,11 +1377,43 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-      subroutine fill_corners_agrid(x, y, npx, npy, mySign)
-         real, DIMENSION(isd:,jsd:), intent(INOUT):: x
-         real, DIMENSION(isd:,jsd:), intent(INOUT):: y
+      subroutine fill_corners_cgrid_r8(x, y, npx, npy, mySign)
+         real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: x
+         real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: y
          integer, intent(IN):: npx,npy
-         real, intent(IN) :: mySign
+         real(kind=8), intent(IN) :: mySign
+         integer :: i,j
+
+                  do j=1,ng
+                     do i=1,ng
+                        if ((is  ==  1) .and. (js  ==  1)) x(1-i    ,1-j    ) =        y(j      ,1-i  )  !SW Corner 
+                        if ((is  ==  1) .and. (je+1==npy)) x(1-i    ,npy-1+j) = mySign*y(j      ,npy+i)  !NW Corner
+                        if ((ie+1==npx) .and. (js  ==  1)) x(npx+i  ,1-j    ) = mySign*y(npx-j  ,1-i  )  !SE Corner
+                        if ((ie+1==npx) .and. (je+1==npy)) x(npx+i  ,npy-1+j) =        y(npx-j  ,npy+i)  !NE Corner
+                     enddo
+                  enddo
+                  do j=1,ng
+                     do i=1,ng
+                        if ((is  ==  1) .and. (js  ==  1)) y(1-i    ,1-j  ) =        x(1-j  ,i    )  !SW Corner 
+                        if ((is  ==  1) .and. (je+1==npy)) y(1-i    ,npy+j) = mySign*x(1-j  ,npy-i)  !NW Corner
+                        if ((ie+1==npx) .and. (js  ==  1)) y(npx-1+i,1-j  ) = mySign*x(npx+j,i    )  !SE Corner
+                        if ((ie+1==npx) .and. (je+1==npy)) y(npx-1+i,npy+j) =        x(npx+j,npy-i)  !NE Corner
+                     enddo
+                  enddo
+      
+      end subroutine fill_corners_cgrid_r8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+      subroutine fill_corners_agrid_r4(x, y, npx, npy, mySign)
+         real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: x
+         real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: y
+         integer, intent(IN):: npx,npy
+         real(kind=4), intent(IN) :: mySign
          integer :: i,j
 
                  do j=1,ng
@@ -887,7 +1433,39 @@ end subroutine switch_current_Atm
                     enddo
                  enddo
 
-      end subroutine fill_corners_agrid
+      end subroutine fill_corners_agrid_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+      subroutine fill_corners_agrid_r8(x, y, npx, npy, mySign)
+         real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: x
+         real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: y
+         integer, intent(IN):: npx,npy
+         real(kind=8), intent(IN) :: mySign
+         integer :: i,j
+
+                 do j=1,ng
+                    do i=1,ng
+                       if ((is==    1) .and. (js==    1)) x(1-i    ,1-j    ) = mySign*y(1-j    ,i        )  !SW Corner
+                       if ((is==    1) .and. (je==npy-1)) x(1-i    ,npy-1+j) =        y(1-j    ,npy-1-i+1)  !NW Corner
+                       if ((ie==npx-1) .and. (js==    1)) x(npx-1+i,1-j    ) =        y(npx-1+j,i        )  !SE Corner
+                       if ((ie==npx-1) .and. (je==npy-1)) x(npx-1+i,npy-1+j) = mySign*y(npx-1+j,npy-1-i+1)  !NE Corner
+                    enddo
+                 enddo
+                 do j=1,ng
+                    do i=1,ng
+                       if ((is==    1) .and. (js==    1)) y(1-j    ,1-i    ) = mySign*x(i        ,1-j    )  !SW Corner
+                       if ((is==    1) .and. (je==npy-1)) y(1-j    ,npy-1+i) =        x(i        ,npy-1+j)  !NW Corner
+                       if ((ie==npx-1) .and. (js==    1)) y(npx-1+j,1-i    ) =        x(npx-1-i+1,1-j    )  !SE Corner
+                       if ((ie==npx-1) .and. (je==npy-1)) y(npx-1+j,npy-1+i) = mySign*x(npx-1-i+1,npy-1+j)  !NE Corner
+                    enddo
+                 enddo
+
+      end subroutine fill_corners_agrid_r8
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
@@ -1448,7 +2026,7 @@ end subroutine switch_current_Atm
          integer :: Gsize
          integer :: LsizeS(npes_this_grid), Ldispl(npes_this_grid), cnts(npes_this_grid)
          integer :: Ldims(5), Gdims(5*npes_this_grid)
-         real,   allocatable, dimension(:) :: larr, garr
+         real(kind=8),   allocatable, dimension(:) :: larr, garr
 
          Ldims(1) = i1
          Ldims(2) = i2
@@ -1532,10 +2110,25 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
+!     mp_bcst_r4 :: Call SPMD broadcast 
+!
+      subroutine mp_bcst_r4(q)
+         real(kind=4), intent(INOUT)  :: q
+
+         call MPI_BCAST(q, 1, MPI_REAL, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
 !     mp_bcst_r8 :: Call SPMD broadcast 
 !
       subroutine mp_bcst_r8(q)
-         real, intent(INOUT)  :: q
+         real(kind=8), intent(INOUT)  :: q
 
          call MPI_BCAST(q, 1, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
 
@@ -1547,11 +2140,27 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
+!     mp_bcst_3d_r4 :: Call SPMD broadcast 
+!
+      subroutine mp_bcst_3d_r4(q, idim, jdim, kdim)
+         integer, intent(IN)  :: idim, jdim, kdim
+         real(kind=4), intent(INOUT)  :: q(idim,jdim,kdim)
+
+         call MPI_BCAST(q, idim*jdim*kdim, MPI_REAL, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_3d_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
 !     mp_bcst_3d_r8 :: Call SPMD broadcast 
 !
       subroutine mp_bcst_3d_r8(q, idim, jdim, kdim)
          integer, intent(IN)  :: idim, jdim, kdim
-         real, intent(INOUT)  :: q(idim,jdim,kdim)
+         real(kind=8), intent(INOUT)  :: q(idim,jdim,kdim)
 
          call MPI_BCAST(q, idim*jdim*kdim, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
 
@@ -1563,11 +2172,27 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !       
+!     mp_bcst_4d_r4 :: Call SPMD broadcast 
+!
+      subroutine mp_bcst_4d_r4(q, idim, jdim, kdim, ldim)
+         integer, intent(IN)  :: idim, jdim, kdim, ldim
+         real(kind=4), intent(INOUT)  :: q(idim,jdim,kdim,ldim)
+
+         call MPI_BCAST(q, idim*jdim*kdim*ldim, MPI_REAL, masterproc, commglobal, ierror)
+        
+      end subroutine mp_bcst_4d_r4
+!     
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!       
 !     mp_bcst_4d_r8 :: Call SPMD broadcast 
 !
       subroutine mp_bcst_4d_r8(q, idim, jdim, kdim, ldim)
          integer, intent(IN)  :: idim, jdim, kdim, ldim
-         real, intent(INOUT)  :: q(idim,jdim,kdim,ldim)
+         real(kind=8), intent(INOUT)  :: q(idim,jdim,kdim,ldim)
 
          call MPI_BCAST(q, idim*jdim*kdim*ldim, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
         
@@ -1612,13 +2237,35 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !       
+!     mp_reduce_max_r4_1d :: Call SPMD REDUCE_MAX 
+!
+      subroutine mp_reduce_max_r4_1d(mymax,npts)
+         integer, intent(IN)  :: npts
+         real(kind=4), intent(INOUT)  :: mymax(npts)
+        
+         real(kind=4) :: gmax(npts)
+        
+         call MPI_ALLREDUCE( mymax, gmax, npts, MPI_REAL, MPI_MAX, &
+                             commglobal, ierror )
+      
+         mymax = gmax
+        
+      end subroutine mp_reduce_max_r4_1d
+!     
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!       
 !     mp_reduce_max_r8_1d :: Call SPMD REDUCE_MAX 
 !
       subroutine mp_reduce_max_r8_1d(mymax,npts)
          integer, intent(IN)  :: npts
-         real, intent(INOUT)  :: mymax(npts)
+         real(kind=8), intent(INOUT)  :: mymax(npts)
         
-         real :: gmax(npts)
+         real(kind=8) :: gmax(npts)
         
          call MPI_ALLREDUCE( mymax, gmax, npts, MPI_DOUBLE_PRECISION, MPI_MAX, &
                              commglobal, ierror )
@@ -1634,12 +2281,29 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
+!     mp_reduce_max_r4 :: Call SPMD REDUCE_MAX 
+!
+      subroutine mp_reduce_max_r4(mymax)
+         real(kind=4), intent(INOUT)  :: mymax
+
+         real(kind=4) :: gmax
+
+         call MPI_ALLREDUCE( mymax, gmax, 1, MPI_REAL, MPI_MAX, &
+                             commglobal, ierror )
+
+         mymax = gmax
+
+      end subroutine mp_reduce_max_r4
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
 !     mp_reduce_max_r8 :: Call SPMD REDUCE_MAX 
 !
       subroutine mp_reduce_max_r8(mymax)
-         real, intent(INOUT)  :: mymax
+         real(kind=8), intent(INOUT)  :: mymax
 
-         real :: gmax
+         real(kind=8) :: gmax
 
          call MPI_ALLREDUCE( mymax, gmax, 1, MPI_DOUBLE_PRECISION, MPI_MAX, &
                              commglobal, ierror )
@@ -1648,17 +2312,29 @@ end subroutine switch_current_Atm
 
       end subroutine mp_reduce_max_r8
 
-      subroutine mp_reduce_min(mymin)
-         real, intent(INOUT)  :: mymin
+      subroutine mp_reduce_min_r4(mymin)
+         real(kind=4), intent(INOUT)  :: mymin
 
-         real :: gmin
+         real(kind=4) :: gmin
+
+         call MPI_ALLREDUCE( mymin, gmin, 1, MPI_REAL, MPI_MIN, &
+                             commglobal, ierror )
+
+         mymin = gmin
+
+      end subroutine mp_reduce_min_r4
+
+      subroutine mp_reduce_min_r8(mymin)
+         real(kind=8), intent(INOUT)  :: mymin
+
+         real(kind=8) :: gmin
 
          call MPI_ALLREDUCE( mymin, gmin, 1, MPI_DOUBLE_PRECISION, MPI_MIN, &
                              commglobal, ierror )
 
          mymin = gmin
 
-      end subroutine mp_reduce_min
+      end subroutine mp_reduce_min_r8
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
@@ -1686,12 +2362,32 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
+!     mp_reduce_sum_r4 :: Call SPMD REDUCE_SUM 
+!
+      subroutine mp_reduce_sum_r4(mysum)
+         real(kind=4), intent(INOUT)  :: mysum
+
+         real(kind=4) :: gsum
+
+         call MPI_ALLREDUCE( mysum, gsum, 1, MPI_REAL, MPI_SUM, &
+                             commglobal, ierror )
+
+         mysum = gsum
+
+      end subroutine mp_reduce_sum_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
 !     mp_reduce_sum_r8 :: Call SPMD REDUCE_SUM 
 !
       subroutine mp_reduce_sum_r8(mysum)
-         real, intent(INOUT)  :: mysum
+         real(kind=8), intent(INOUT)  :: mysum
 
-         real :: gsum
+         real(kind=8) :: gsum
 
          call MPI_ALLREDUCE( mysum, gsum, 1, MPI_DOUBLE_PRECISION, MPI_SUM, &
                              commglobal, ierror )
@@ -1706,14 +2402,42 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
+!     mp_reduce_sum_r4_1d :: Call SPMD REDUCE_SUM 
+!
+      subroutine mp_reduce_sum_r4_1d(mysum, sum1d, npts)
+         integer, intent(in)  :: npts
+         real(kind=4), intent(in)     :: sum1d(npts)
+         real(kind=4), intent(INOUT)  :: mysum
+
+         real(kind=4) :: gsum
+         integer :: i
+
+         mysum = 0.0
+         do i=1,npts
+            mysum = mysum + sum1d(i)
+         enddo 
+
+         call MPI_ALLREDUCE( mysum, gsum, 1, MPI_DOUBLE_PRECISION, MPI_SUM, &
+                             commglobal, ierror )
+
+         mysum = gsum
+
+      end subroutine mp_reduce_sum_r4_1d
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
 !     mp_reduce_sum_r8_1d :: Call SPMD REDUCE_SUM 
 !
       subroutine mp_reduce_sum_r8_1d(mysum, sum1d, npts)
          integer, intent(in)  :: npts
-         real, intent(in)     :: sum1d(npts)
-         real, intent(INOUT)  :: mysum
+         real(kind=8), intent(in)     :: sum1d(npts)
+         real(kind=8), intent(INOUT)  :: mysum
 
-         real :: gsum
+         real(kind=8) :: gsum
          integer :: i
 
          mysum = 0.0
@@ -1730,7 +2454,6 @@ end subroutine switch_current_Atm
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
-
 #else
       implicit none
       private
@@ -1742,3 +2465,5 @@ end subroutine switch_current_Atm
 
       end module fv_mp_mod
 !-------------------------------------------------------------------------------
+
+

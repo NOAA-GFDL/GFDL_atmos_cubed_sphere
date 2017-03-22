@@ -1,8 +1,25 @@
+!***********************************************************************
+!*                   GNU General Public License                        *
+!* This file is a part of fvGFS.                                       *
+!*                                                                     *
+!* fvGFS is free software; you can redistribute it and/or modify it    *
+!* and are expected to follow the terms of the GNU General Public      *
+!* License as published by the Free Software Foundation; either        *
+!* version 2 of the License, or (at your option) any later version.    *
+!*                                                                     *
+!* fvGFS is distributed in the hope that it will be useful, but        *
+!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+!* General Public License for more details.                            *
+!*                                                                     *
+!* For the full text of the GNU General Public License,                *
+!* write to: Free Software Foundation, Inc.,                           *
+!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!***********************************************************************
 !-*- F90 -*-
 module sorted_index_mod
   !---------------------------------------------------------------------
-  ! <CONTACT EMAIL= "Michael.Herzog@noaa.gov">Michael Herzog </CONTACT>
-  !
   !<OVERVIEW>
   ! sort cell corner indices in latlon space to ensure same order of
   ! operations regardless of orientation in index space
@@ -16,6 +33,8 @@ module sorted_index_mod
   ! around a b-grid cell, no ghosting.
   !</DESCRIPTION>
   !---------------------------------------------------------------------
+
+  use fv_arrays_mod, only: R_GRID
 
   implicit none
   private
@@ -44,7 +63,7 @@ contains
   subroutine sorted_inta(isd, ied, jsd, jed, cubed_sphere, bgrid, iinta, jinta)
 
     integer, intent(in) :: isd, ied, jsd, jed
-    real,    intent(in), dimension(isd:ied+1,jsd:jed+1,2) :: bgrid
+    real(kind=R_GRID),    intent(in), dimension(isd:ied+1,jsd:jed+1,2) :: bgrid
     logical, intent(in) :: cubed_sphere
 
     integer, intent(out), dimension(4,isd:ied,jsd:jed) :: iinta, jinta
@@ -240,7 +259,7 @@ contains
                           cubed_sphere, agrid, iintb, jintb)
 
     integer, intent(in) :: isd, ied, jsd, jed, is, ie, js, je, npx, npy
-    real,    intent(in), dimension(isd:ied,jsd:jed,2) :: agrid
+    real(kind=R_GRID),    intent(in), dimension(isd:ied,jsd:jed,2) :: agrid
     logical, intent(in) :: cubed_sphere
 
     integer, dimension(4,is:ie+1,js:je+1), intent(out) :: iintb, jintb

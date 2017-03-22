@@ -66,7 +66,6 @@ logical :: module_is_initialized=.false.
 CONTAINS
 
 !######################################################################
-
 subroutine fv_cmip_diag_init ( Atm, axes, Time )
 type(fv_atmos_type), intent(inout), target :: Atm(:)
 integer,             intent(in) :: axes(4)
@@ -152,7 +151,7 @@ character(len=4)      :: plabel
                        'Relative Humidity', '%', standard_name='relative_humidity')
 
     ID_zg = register_cmip_diag_field_3d (mod_name, 'zg', Time, &
-                       'Geopotential Height', 'm', standard_name='geopotential_height')
+                       'Geopotential Height', 'm', standard_name='geopotential_height', axis='half')
 
 
     ! 2D fields
@@ -288,7 +287,6 @@ character(len=4)      :: plabel
 end subroutine fv_cmip_diag_init
 
 !######################################################################
-
 subroutine fv_cmip_diag ( Atm, zvir, Time )
 type(fv_atmos_type), intent(inout) :: Atm(:)
 real,                intent(in) :: zvir
@@ -340,7 +338,8 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
 
   ! height field (wz) if needed
   if (count(ID_zg%field_id(:)>0) > 0 .or. any((/id_zg10,id_zg100,id_zg500,id_zg1000/) > 0)) then
-    call get_height_field(isc, iec, jsc, jec, ngc, npz, wz, Atm(n)%pt, Atm(n)%q, Atm(n)%peln, zvir)
+    call get_height_field(isc, iec, jsc, jec, ngc, npz, Atm(n)%flagstruct%hydrostatic, Atm(n)%delz, &
+                          wz, Atm(n)%pt, Atm(n)%q, Atm(n)%peln, zvir)
   endif
 
 !----------------------------------------------------------------------
@@ -438,22 +437,26 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
   endif
 
   if (id_zg10 > 0) then
-    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/log(10.e2)/), Atm(n)%peln, dat3)
+    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/id_zg10/), &
+                                    (/log(10.e2)/), Atm(n)%peln, dat3)
     used = send_data (id_zg10, dat3(:,:,1), Time)
   endif
 
   if (id_zg100 > 0) then
-    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/log(100.e2)/), Atm(n)%peln, dat3)
+    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/id_zg100/), &
+                                    (/log(100.e2)/), Atm(n)%peln, dat3)
     used = send_data (id_zg100, dat3(:,:,1), Time)
   endif
 
   if (id_zg500 > 0) then
-    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/log(500.e2)/), Atm(n)%peln, dat3)
+    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/id_zg500/), &
+                                    (/log(500.e2)/), Atm(n)%peln, dat3)
     used = send_data (id_zg500, dat3(:,:,1), Time)
   endif
 
   if (id_zg1000 > 0) then
-    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/log(1000.e2)/), Atm(n)%peln, dat3)
+    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/id_zg1000/), &
+                                    (/log(1000.e2)/), Atm(n)%peln, dat3)
     used = send_data (id_zg1000, dat3(:,:,1), Time)
   endif
 
@@ -466,7 +469,6 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
 end subroutine fv_cmip_diag
 
 !######################################################################
-
 subroutine fv_cmip_diag_end
 
   if (.not. module_is_initialized) then
@@ -482,8 +484,6 @@ subroutine fv_cmip_diag_end
   module_is_initialized = .false.
 
 end subroutine fv_cmip_diag_end
-
-!######################################################################
 
 end module fv_cmip_diag_mod
 
