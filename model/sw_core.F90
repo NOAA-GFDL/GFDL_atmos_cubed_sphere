@@ -984,7 +984,6 @@
                       xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y,     &
                       mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
 #endif
-#endif
 
      if ( inline_q ) then
         do j=js,je
