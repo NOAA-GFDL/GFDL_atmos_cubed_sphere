@@ -271,8 +271,8 @@ contains
     call get_eta_level ( npz, ps2, pref(1,2), dum1d, Atm(mytile)%ak, Atm(mytile)%bk )
 
 !---- initialize cmip diagnostic output ----
-   call atmos_cmip_diag_init   ( Atm(mytile)%ak, Atm(mytile)%bk, pref(1,1), Atm(mytile)%atmos_axes, Time )
 #ifndef use_AM3_physics
+   call atmos_cmip_diag_init   ( Atm(mytile)%ak, Atm(mytile)%bk, pref(1,1), Atm(mytile)%atmos_axes, Time )
    call atmos_global_diag_init ( Atm(mytile)%atmos_axes, Atm(mytile)%gridstruct%area(isc:iec,jsc:jec) )
 #endif
    call fv_cmip_diag_init      ( Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time )
