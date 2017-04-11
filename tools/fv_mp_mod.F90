@@ -175,9 +175,6 @@
       END INTERFACE
 
       integer :: halo_update_type = 1
-!---- version number -----
-      character(len=128) :: version = '$Id$'
-      character(len=128) :: tagname = '$Name$'
 
 contains
 
