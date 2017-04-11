@@ -73,10 +73,6 @@
    MODULE PROCEDURE fill_ghost_r8
  END INTERFACE
 
-!---- version number -----
- character(len=128) :: version = '$Id$'
- character(len=128) :: tagname = '$Name$'
-
  contains
 
    subroutine grid_utils_init(Atm, npx, npy, npz, non_ortho, grid_type, c2l_order)

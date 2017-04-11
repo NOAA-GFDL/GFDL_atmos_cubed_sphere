@@ -53,10 +53,6 @@ module fv_mapz_mod
   public compute_total_energy, Lagrangian_to_Eulerian, moist_cv, moist_cp,   &
          rst_remap, mappm, E_Flux
 
-!---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
-
 contains
 
  subroutine Lagrangian_to_Eulerian(last_step, consv, ps, pe, delp, pkz, pk,   &

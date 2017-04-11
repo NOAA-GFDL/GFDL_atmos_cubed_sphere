@@ -68,10 +68,6 @@
   real, parameter:: b5 = -0.05
 
 
-!---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
-
       private
       public :: c_sw, d_sw, fill_4corners, del6_vt_flux, divergence_corner, divergence_corner_nest
 

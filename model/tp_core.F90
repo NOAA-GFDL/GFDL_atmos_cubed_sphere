@@ -69,10 +69,6 @@ module tp_core_mod
 !   q(i+0.5) = p1*(q(i-1)+q(i)) + p2*(q(i-2)+q(i+1))
 ! integer:: is, ie, js, je, isd, ied, jsd, jed
 
-!---- version number -----
-   character(len=128) :: version = '$Id$'
-   character(len=128) :: tagname = '$Name$'
-
 !
 !EOP
 !-----------------------------------------------------------------------

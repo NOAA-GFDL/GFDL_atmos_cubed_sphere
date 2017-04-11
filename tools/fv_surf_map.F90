@@ -84,10 +84,6 @@
       public  surfdrv
       public  del2_cubed_sphere, del4_cubed_sphere, FV3_zs_filter
 
-!---- version number -----
-      character(len=128) :: version = '$Id$'
-      character(len=128) :: tagname = '$Name$'
-
       contains
 
       subroutine surfdrv(npx, npy, grid, agrid, area, dx, dy, dxa, dya, dxc, dyc, sin_sg, phis, &

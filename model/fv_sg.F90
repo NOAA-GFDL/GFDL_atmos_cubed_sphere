@@ -64,10 +64,6 @@ public  fv_subgrid_z, qsmith, neg_adj3
   real, allocatable:: table(:),des(:)
   real:: lv00, d0_vap
 
-!---- version number -----
-  character(len=128) :: version = '$Id: fv_sg.F90,v 17.0.2.4.2.3.2.6.2.10.4.1 2014/11/12 03:46:32 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name:  $'
-
 contains
 
 

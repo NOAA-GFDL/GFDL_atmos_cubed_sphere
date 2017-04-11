@@ -27,10 +27,6 @@ module fv_fill_mod
    public fill_gfs
    public fill2D
 
-!---- version number -----
-   character(len=128) :: version = '$Id$'
-   character(len=128) :: tagname = '$Name$'
-
 contains
 
  subroutine fillz(im, km, nq, q, dp)

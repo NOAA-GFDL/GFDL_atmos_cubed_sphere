@@ -38,10 +38,6 @@ module init_hydro_mod
 
       public :: p_var, hydro_eq
 
-!---- version number -----
-      character(len=128) :: version = '$Id$'
-      character(len=128) :: tagname = '$Name$'
-
 contains
 
 !-------------------------------------------------------------------------------

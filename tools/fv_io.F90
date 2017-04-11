@@ -69,10 +69,6 @@ module fv_io_mod
   logical                       :: module_is_initialized = .FALSE.
 
 
-!---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
-
   integer ::grid_xtdimid, grid_ytdimid, haloid, pfullid !For writing BCs
   integer ::grid_xtstagdimid, grid_ytstagdimid, oneid
 

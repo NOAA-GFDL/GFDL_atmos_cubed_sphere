@@ -93,10 +93,10 @@ public :: atmosphere_resolution, atmosphere_boundary, &
 public :: atmos_phys_driver_statein
 
 !-----------------------------------------------------------------------
-
-character(len=128) :: version = '$Id$'
-character(len=128) :: tagname = '$Name$'
-character(len=7)   :: mod_name = 'atmos'
+! version number of this module
+! Include variable "version" to be written to log file.
+#include<file_version.h>
+character(len=7)   :: mod_name = 'fvGFS/atmosphere'
 
 !---- private data ----
   type (time_type) :: Time_step_atmos
@@ -174,7 +174,7 @@ contains
    Atm(mytile)%Time_init = Time_init
 
 !----- write version and namelist to log file -----
-   call write_version_number ( version, tagname )
+   call write_version_number ( 'fvGFS/ATMOSPHERE_MOD', version )
 
 !-----------------------------------
 

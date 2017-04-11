@@ -55,9 +55,6 @@ module fv_update_phys_mod
   public :: update_dwinds_phys
 #endif
 
-!---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
   real,parameter:: con_cp  = cp_air
 
   contains

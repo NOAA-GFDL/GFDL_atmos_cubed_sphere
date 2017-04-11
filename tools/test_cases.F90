@@ -155,10 +155,6 @@
       public :: init_double_periodic, init_latlon
       public :: checker_tracers
 
- !---- version number -----
-      character(len=128) :: version = '$Id$'
-      character(len=128) :: tagname = '$Name$'
-
   INTERFACE mp_update_dwinds
      MODULE PROCEDURE mp_update_dwinds_2d
      MODULE PROCEDURE mp_update_dwinds_3d
