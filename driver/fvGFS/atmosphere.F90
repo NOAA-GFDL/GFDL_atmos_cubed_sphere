@@ -1010,8 +1010,8 @@ contains
                      Atm(mytile)%domain)
 ! Nudging back to IC
 !$omp parallel do default (none) &
-!$omp             shared (pref, q00, p00,npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mytile) &
-!$omp            private (i, j, k)
+!$omp             shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mytile) &
+!$omp            private (i, j, k, p00, q00)
        do k=1,npz
           do j=jsc,jec+1
              do i=isc,iec
