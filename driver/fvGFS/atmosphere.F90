@@ -100,7 +100,7 @@ character(len=7)   :: mod_name = 'atmos'
 
 !---- private data ----
   type (time_type) :: Time_step_atmos
-  public Atm
+  public Atm, mytile
 
   !These are convenience variables for local use only, and are set to values in Atm%
   real    :: dt_atmos
@@ -898,7 +898,7 @@ contains
      fv_time = Time_next - Atm(n)%Time_init
      call get_time (fv_time, seconds,  days)
     !--- perform diagnostics on GFS fdiag schedule
-     if (ANY(Atm(mytile)%fdiag(:) == (real(days)*24. + real(seconds)/3600.))) then
+     if (ANY(nint(Atm(mytile)%fdiag(:)*3600.) == (days*24*3600+seconds)) .or. (days*24*3600+seconds) == dt_atmos ) then
        if (mpp_pe() == mpp_root_pe()) write(6,*) 'NGGPS:FV3 DIAG STEP', (real(days)*24. + real(seconds)/3600.)
        call fv_nggps_diag(Atm(mytile:mytile), zvir, Time_next)
      endif
@@ -1008,10 +1008,10 @@ contains
                      Atm(mytile)%gridstruct, Atm(mytile)%flagstruct,                            &
                      Atm(mytile)%neststruct, Atm(mytile)%idiag, Atm(mytile)%bd, Atm(mytile)%parent_grid,  &
                      Atm(mytile)%domain)
-! Nudging back to IC
+!Nudging back to IC
 !$omp parallel do default (none) &
-!$omp             shared (pref, q00, p00,npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mytile) &
-!$omp            private (i, j, k)
+!$omp shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mytile) & 
+!$omp private (i, j, k, p00, q00)
        do k=1,npz
           do j=jsc,jec+1
              do i=isc,iec
