@@ -249,10 +249,6 @@ real, parameter :: pi = 3.1415926535897931_R_GRID
         cld_min, use_ppm, mono_prof, do_sedi_heat, sedi_transport,   &
         do_sedi_w, de_ice, mp_print
 
-!---- version number -----
- character(len=128) :: version = '$Id: lin_cloud_microphys.F90,v 21.0.2.1 2014/12/18 21:14:54 Lucas.Harris Exp $'
- character(len=128) :: tagname = '$Name:  $'
-
  contains
 
 

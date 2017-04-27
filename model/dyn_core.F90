@@ -68,10 +68,6 @@ public :: dyn_core, del2_cubed, init_ijk_mem
   logical:: RFF_initialized = .false.
   integer :: kmax=1
 
-!---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
-
 contains
 
 !-----------------------------------------------------------------------
