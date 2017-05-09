@@ -575,10 +575,6 @@ contains
     do n = 1, ntileMe
        if (.not. grids_on_this_pe(n)) cycle
 
-       if ( (use_ncep_sst .or. Atm(n)%flagstruct%nudge) .and. .not. Atm(n)%gridstruct%nested ) then
-          call save_restart(Atm(n)%SST_restart, timestamp)
-       endif
- 
        call save_restart(Atm(n)%Fv_restart, timestamp)
        call save_restart(Atm(n)%Fv_tile_restart, timestamp)
        call save_restart(Atm(n)%Rsf_restart, timestamp)
