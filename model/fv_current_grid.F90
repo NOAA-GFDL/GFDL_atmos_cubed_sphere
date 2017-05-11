@@ -156,10 +156,6 @@ module fv_current_grid_mod
 
   integer, pointer :: atmos_axes(:)
 
-!---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
-
 contains
 
   subroutine switch_current_grid_pointers(Atm)

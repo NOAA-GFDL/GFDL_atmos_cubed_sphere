@@ -242,16 +242,16 @@ module fv_control_mod
    integer :: commID, max_refinement_of_global = 1.
    integer :: gid
 
-!---- version number -----
-   character(len=128) :: version = '$Id$'
-   character(len=128) :: tagname = '$Name$'
-
    real :: umax = 350.           ! max wave speed for grid_type>3
    integer :: parent_grid_num = -1
 
    integer :: halo_update_type = 1 ! 1 for two-interfaces non-block
                                    ! 2 for block
                                    ! 3 for four-interfaces non-block
+
+! version number of this module
+! Include variable "version" to be written to log file.
+#include<file_version.h>
 
  contains
 
@@ -601,6 +601,7 @@ module fv_control_mod
 #endif
 
       unit = stdlog()
+      call write_version_number ( 'FV_CONTROL_MOD', version )
       write(unit, nml=fv_grid_nml)
 
       do n=1,size(Atm)

@@ -73,10 +73,6 @@ module fv_grid_tools_mod
 
   public :: todeg, missing, init_grid, spherical_to_cartesian
 
-  !---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
-
 contains
 
   subroutine read_grid(Atm, grid_file, ndims, nregions, ng)

@@ -69,10 +69,6 @@ module fv_io_mod
   logical                       :: module_is_initialized = .FALSE.
 
 
-!---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
-
   integer ::grid_xtdimid, grid_ytdimid, haloid, pfullid !For writing BCs
   integer ::grid_xtstagdimid, grid_ytstagdimid, oneid
 
@@ -579,10 +575,6 @@ contains
     do n = 1, ntileMe
        if (.not. grids_on_this_pe(n)) cycle
 
-       if ( (use_ncep_sst .or. Atm(n)%flagstruct%nudge) .and. .not. Atm(n)%gridstruct%nested ) then
-          call save_restart(Atm(n)%SST_restart, timestamp)
-       endif
- 
        call save_restart(Atm(n)%Fv_restart, timestamp)
        call save_restart(Atm(n)%Fv_tile_restart, timestamp)
        call save_restart(Atm(n)%Rsf_restart, timestamp)

@@ -25,8 +25,9 @@ private
 public :: fv_climate_nudge_init, fv_climate_nudge,  &
           fv_climate_nudge_end, do_ps
 
-character(len=128), parameter :: version = '$Id$'
-character(len=128), parameter :: tagname = '$Name$'
+! version number of this module
+! Include variable "version" to be written to log file.
+#include<file_version.h>
 
 type var_state_type
    integer :: is, ie, js, je, npz
@@ -126,7 +127,7 @@ real :: missing_value = -1.e10
 !----- write version and namelist to log file -----
 
    unit = stdlog()
-   call write_version_number (version, tagname)
+   call write_version_number ('FV_CLIMATE_NUDGE_MOD', version)
    if (mpp_pe() == mpp_root_pe()) write (unit, nml=fv_climate_nudge_nml)
 
  ! initialize flags

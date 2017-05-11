@@ -57,10 +57,10 @@ module fv_ada_nudge_mod
 
  real(kind=R_GRID), parameter :: radius = cnst_radius
 
- character(len=*), parameter :: VERSION =&
-      & '$Id$'
- character(len=*), parameter :: TAGNAME =&
-      & '$Name$'
+! version number of this module
+! Include variable "version" to be written to log file.
+#include<file_version.h>
+
  logical :: do_adiabatic_init
 
  public fv_ada_nudge, fv_ada_nudge_init, fv_ada_nudge_end, breed_slp_inline_ada
@@ -1516,7 +1516,7 @@ endif
 10     call close_file ( unit )
     end if
 #endif
-    call write_version_number (VERSION, TAGNAME)
+    call write_version_number ( 'FV_ADA_NUDGE_MOD', version )
     if ( master ) then
          f_unit=stdlog()
          write( f_unit, nml = fv_ada_nudge_nml )

@@ -72,11 +72,11 @@ module external_ic_mod
    real(kind=R_GRID), parameter :: cnst_0p20=0.20d0
    real :: deg2rad
 
-   public get_external_ic, get_cubed_sphere_terrain
+! version number of this module
+! Include variable "version" to be written to log file.
+#include<file_version.h>
 
-!---- version number -----
-   character(len=128) :: version = '$Id$'
-   character(len=128) :: tagname = '$Name$'
+   public get_external_ic, get_cubed_sphere_terrain
 
 contains
 
@@ -495,7 +495,7 @@ contains
 #endif
 
       unit = stdlog()
-      call write_version_number ( 'NGGPS_release', 'get_nggps_ic' )
+      call write_version_number ( 'EXTERNAL_IC_MOD::get_nggps_ic', version )
       write(unit, nml=external_ic_nml)
 
       remap = .true.

@@ -29,10 +29,6 @@ module nh_core_mod
 
   public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, nest_halo_nh
 
-!---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
-
 contains
 
   subroutine update_dz_c(is, ie, js, je, km, ng, dt, dp0, zs, area, ut, vt, gz, ws, &

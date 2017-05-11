@@ -25,9 +25,6 @@ module fv_eta_mod
  private
  public set_eta, get_eta_level, compute_dz_var, compute_dz_L32, compute_dz_L101, set_hybrid_z, compute_dz, gw_1d, sm1_edge, hybrid_z_dz
 
-!---- version number -----
- character(len=128) :: version = '$Id$'
- character(len=128) :: tagname = '$Name$'
 ! Developer: Shian-Jiann Lin, NOAA/GFDL
 
  contains

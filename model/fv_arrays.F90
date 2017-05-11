@@ -743,10 +743,6 @@ module fv_arrays_mod
 
   end type fv_atmos_type
 
-!---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
-
 contains
 
   subroutine allocate_fv_atmos_type(Atm, isd_in, ied_in, jsd_in, jed_in, is_in, ie_in, js_in, je_in, &

@@ -34,8 +34,13 @@ use platform_mod, only: r8_kind
 implicit none
 private
 
-character(len=128) :: version='$Id$'
-character(len=128) :: tagname='$Name$'
+! Include variable "version" to be written to log file.
+#include<file_version.h>
+!-----------------------------------------------------------------------
+! version is public so that write_version_number can be called for constants_mod
+! by fms_init
+public :: version
+
 !dummy variable to use in HUGE initializations
 real :: realnumber
 
@@ -288,10 +293,6 @@ real, public, parameter :: EPSLN   = 1.0e-15_r8_kind
 !rabreal, public, parameter :: EPSLN   = 1.0e-40_r8_kind
 !rabreal, public, parameter :: PI      = 3.14159265358979323846_r8_kind
 
-!-----------------------------------------------------------------------
-! version and tagname published
-! so that write_version_number can be called for constants_mod by fms_init
-public :: version, tagname
 !-----------------------------------------------------------------------
 public :: constants_init
 

@@ -35,7 +35,7 @@
       use mpp_domains_mod, only : GLOBAL_DATA_DOMAIN, BITWISE_EXACT_SUM, BGRID_NE, FOLD_NORTH_EDGE, CGRID_NE
       use mpp_domains_mod, only : MPP_DOMAIN_TIME, CYCLIC_GLOBAL_DOMAIN, NUPDATE,EUPDATE, XUPDATE, YUPDATE, SCALAR_PAIR
       use mpp_domains_mod, only : domain1D, domain2D, DomainCommunicator2D, mpp_get_ntile_count
-      use mpp_domains_mod, only : mpp_get_compute_domain, mpp_get_data_domain, mpp_domains_set_stack_size
+      use mpp_domains_mod, only : mpp_get_compute_domain, mpp_get_data_domain
       use mpp_domains_mod, only : mpp_global_field, mpp_global_sum, mpp_global_max, mpp_global_min
       use mpp_domains_mod, only : mpp_domains_init, mpp_domains_exit, mpp_broadcast_domain
       use mpp_domains_mod, only : mpp_check_field, mpp_define_layout 
@@ -175,9 +175,6 @@
       END INTERFACE
 
       integer :: halo_update_type = 1
-!---- version number -----
-      character(len=128) :: version = '$Id$'
-      character(len=128) :: tagname = '$Name$'
 
 contains
 
@@ -322,17 +319,7 @@ contains
          npes_x = layout(1)
          npes_y = layout(2)
 
-
          call mpp_domains_init(MPP_DOMAIN_TIME)
-
-       ! call mpp_domains_set_stack_size(10000)
-       ! call mpp_domains_set_stack_size(900000)
-       !  call mpp_domains_set_stack_size(1500000)
-#ifdef SMALL_PE
-         call mpp_domains_set_stack_size(6000000)
-#else
-         call mpp_domains_set_stack_size(3000000)
-#endif
 
          select case(nregions)
          case ( 1 )  ! Lat-Lon "cyclic"
