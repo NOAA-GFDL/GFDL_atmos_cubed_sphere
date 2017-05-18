@@ -56,6 +56,7 @@ module fv_restart_mod
   use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST,  mpp_get_C2F_index, WEST, SOUTH
   use mpp_domains_mod,     only: mpp_global_field
   use fms_mod,             only: file_exist
+  use fv_treat_da_inc_mod, only: read_da_inc
 
   implicit none
   private
@@ -228,6 +229,17 @@ contains
         else
              if( is_master() ) write(*,*) 'Warm starting, calling fv_io_restart'
              call fv_io_read_restart(Atm(n)%domain,Atm(n:n))
+!            ====== PJP added DA functionality ======
+             if (Atm(n)%flagstruct%read_increment) then
+                ! print point in middle of domain for a sanity check
+                i = (Atm(n)%bd%isc + Atm(n)%bd%iec)/2
+                j = (Atm(n)%bd%jsc + Atm(n)%bd%jec)/2
+                k = Atm(n)%npz/2
+                if( is_master() ) write(*,*) 'Calling read_da_inc',Atm(n)%pt(i,j,k)
+                call read_da_inc(Atm(n:n), Atm(n)%domain)
+                if( is_master() ) write(*,*) 'Back from read_da_inc',Atm(n)%pt(i,j,k)
+             endif
+!            ====== end PJP added DA functionailty======
         endif
     endif
 

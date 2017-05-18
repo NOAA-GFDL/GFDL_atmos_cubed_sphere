@@ -455,6 +455,7 @@ module fv_arrays_mod
    logical :: external_ic = .false.   ! use ICs from external sources; e.g. lat-lon FV core
                                       ! or NCEP re-analysis; both vertical remapping & horizontal
                                       ! (lat-lon to cubed sphere) interpolation will be done
+   logical :: read_increment = .false.   ! read in analysis increment and add to restart
 ! Default restart files from the "Memphis" latlon FV core:
    character(len=128) :: res_latlon_dynamics = 'INPUT/fv_rst.res.nc'
    character(len=128) :: res_latlon_tracers  = 'INPUT/atmos_tracers.res.nc'
