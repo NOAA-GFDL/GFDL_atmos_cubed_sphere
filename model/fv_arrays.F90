@@ -455,6 +455,8 @@ module fv_arrays_mod
    logical :: external_ic = .false.   ! use ICs from external sources; e.g. lat-lon FV core
                                       ! or NCEP re-analysis; both vertical remapping & horizontal
                                       ! (lat-lon to cubed sphere) interpolation will be done
+   logical :: external_eta = .false.  ! allow the use of externally defined ak/bk values and not 
+                                      ! require coefficients to be defined vi set_eta
    logical :: read_increment = .false.   ! read in analysis increment and add to restart
 ! Default restart files from the "Memphis" latlon FV core:
    character(len=128) :: res_latlon_dynamics = 'INPUT/fv_rst.res.nc'
@@ -743,10 +745,6 @@ module fv_arrays_mod
 
 
   end type fv_atmos_type
-
-!---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
 
 contains
 

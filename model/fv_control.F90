@@ -198,6 +198,7 @@ module fv_control_mod
    logical , pointer :: use_ncep_phy 
    logical , pointer :: fv_diag_ic 
    logical , pointer :: external_ic 
+   logical , pointer :: external_eta
    logical , pointer :: read_increment
    character(len=128) , pointer :: res_latlon_dynamics
    character(len=128) , pointer :: res_latlon_tracers 
@@ -243,16 +244,16 @@ module fv_control_mod
    integer :: commID, max_refinement_of_global = 1.
    integer :: gid
 
-!---- version number -----
-   character(len=128) :: version = '$Id$'
-   character(len=128) :: tagname = '$Name$'
-
    real :: umax = 350.           ! max wave speed for grid_type>3
    integer :: parent_grid_num = -1
 
    integer :: halo_update_type = 1 ! 1 for two-interfaces non-block
                                    ! 2 for block
                                    ! 3 for four-interfaces non-block
+
+! version number of this module
+! Include variable "version" to be written to log file.
+#include<file_version.h>
 
  contains
 
@@ -545,7 +546,7 @@ module fv_control_mod
                             hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
                             kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, do_f3d, &
                             external_ic, read_increment, ncep_ic, nggps_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
-                            res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, &
+                            external_eta, res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, &
                             dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
                             warm_start, adjust_dry_mass, mountain, d_con, ke_bg, nord, nord_tr, convert_ke, use_old_omega, &
                             dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
@@ -601,6 +602,7 @@ module fv_control_mod
       rewind (f_unit)
 #endif
 
+      call write_version_number ( 'FV_CONTROL_MOD', version )
       unit = stdlog()
       write(unit, nml=fv_grid_nml)
 
@@ -1193,6 +1195,7 @@ module fv_control_mod
      use_ncep_phy                  => Atm%flagstruct%use_ncep_phy
      fv_diag_ic                    => Atm%flagstruct%fv_diag_ic
      external_ic                   => Atm%flagstruct%external_ic
+     external_eta                  => Atm%flagstruct%external_eta
      read_increment                => Atm%flagstruct%read_increment
 
      hydrostatic                   => Atm%flagstruct%hydrostatic

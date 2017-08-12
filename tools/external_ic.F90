@@ -53,7 +53,7 @@ module external_ic_mod
    use fv_timing_mod,     only: timing_on, timing_off
    use init_hydro_mod,    only: p_var
    use fv_fill_mod,       only: fillz
-   use fv_eta_mod,        only: set_eta
+   use fv_eta_mod,        only: set_eta, set_external_eta
    use sim_nc_mod,        only: open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var2_real,   &
                                 get_var3_r4, get_var2_r4, get_var1_real, get_var_att_double
    use fv_nwp_nudge_mod,  only: T_is_Tv
@@ -74,9 +74,9 @@ module external_ic_mod
 
    public get_external_ic, get_cubed_sphere_terrain
 
-!---- version number -----
-   character(len=128) :: version = '$Id$'
-   character(len=128) :: tagname = '$Name$'
+! version number of this module
+! Include variable "version" to be written to log file.
+#include<file_version.h>
 
 contains
 
@@ -265,7 +265,7 @@ contains
 
     end do
 
-	!Needed for reproducibility. DON'T REMOVE THIS!!
+! Needed for reproducibility. DON'T REMOVE THIS!!
     call mpp_update_domains( Atm(1)%phis, Atm(1)%domain ) 
     ftop = g_sum(Atm(1)%domain, Atm(1)%phis(is:ie,js:je), is, ie, js, je, ng, Atm(1)%gridstruct%area_64, 1)
  
@@ -304,7 +304,6 @@ contains
 !                                        Cloud mixing ratio)
 !--- Namelist variables 
 !       filtered_terrain  -  use orography maker filtered terrain mapping
-!       ncep_plevels      -  use NCEP pressure levels (implies no vertical remapping)
 
 
       type(fv_atmos_type), intent(inout) :: Atm(:)
@@ -330,7 +329,6 @@ contains
       character(len=64) :: fn_oro_ics = 'oro_data.nc'
       logical :: remap
       logical :: filtered_terrain = .true.
-      logical :: ncep_plevels = .false.
       logical :: gfs_dwinds = .true.
       integer :: levp = 64
       logical :: checker_tr = .false.
@@ -339,7 +337,7 @@ contains
       real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
       integer:: i,j,k,nts, ks
       integer:: liq_wat, ice_wat, rainwat, snowwat, graupel
-      namelist /external_ic_nml/ filtered_terrain, ncep_plevels, levp, gfs_dwinds, &
+      namelist /external_ic_nml/ filtered_terrain, levp, gfs_dwinds, &
                                  checker_tr, nt_checker
 #ifdef GFSL64
    real, dimension(65):: ak_sj, bk_sj
@@ -495,19 +493,19 @@ contains
 #endif
 
       unit = stdlog()
-      call write_version_number ( 'NGGPS_release', 'get_nggps_ic' )
+      call write_version_number ( 'EXTERNAL_IC_mod::get_nggps_ic', version )
       write(unit, nml=external_ic_nml)
 
       remap = .true.
-      if (ncep_plevels) then
+      if (Atm(1)%flagstruct%external_eta) then
         if (filtered_terrain) then
           call mpp_error(NOTE,'External_IC::get_nggps_ic -  use externally-generated, filtered terrain &
-                              &and NCEP pressure levels (vertical remapping)')
+                              &and NCEP pressure levels (no vertical remapping)')
         else if (.not. filtered_terrain) then
           call mpp_error(NOTE,'External_IC::get_nggps_ic -  use externally-generated, raw terrain &
-                              &and NCEP pressure levels (vertical remapping)')
+                              &and NCEP pressure levels (no vertical remapping)')
         endif
-      else  ! (.not.ncep_plevels)
+      else  ! (.not.external_eta)
         if (filtered_terrain) then
           call mpp_error(NOTE,'External_IC::get_nggps_ic -  use externally-generated, filtered terrain &
                               &and FV3 pressure levels (vertical remapping)')
@@ -670,11 +668,12 @@ contains
         Atm(n)%phis = Atm(n)%phis*grav
         
         ! set the pressure levels and ptop to be used
-        if (ncep_plevels) then
+        if (Atm(1)%flagstruct%external_eta) then
           itoa = levp - npz + 1
           Atm(n)%ptop = ak(itoa)
           Atm(n)%ak(1:npz+1) = ak(itoa:levp+1)
           Atm(n)%bk(1:npz+1) = bk(itoa:levp+1)
+          call set_external_eta (Atm(n)%ak, Atm(n)%bk, Atm(n)%ptop, Atm(n)%ks)
         else
           if ( npz <= 64 ) then
              Atm(n)%ak(:) = ak_sj(:)
@@ -800,14 +799,14 @@ contains
           do j=js,je
             do i=is,ie
               wt = Atm(n)%delp(i,j,k)
-              if ( Atm(n)%flagstruct%nwat .eq. 2 ) then
-                 qt = wt*(1.+Atm(n)%q(i,j,k,liq_wat))
-              elseif ( Atm(n)%flagstruct%nwat .eq. 6 ) then
+              if ( Atm(n)%flagstruct%nwat .eq. 6 ) then
                  qt = wt*(1. + Atm(n)%q(i,j,k,liq_wat) + &
                                Atm(n)%q(i,j,k,ice_wat) + &
                                Atm(n)%q(i,j,k,rainwat) + &
                                Atm(n)%q(i,j,k,snowwat) + &
                                Atm(n)%q(i,j,k,graupel))
+              else   ! all other values of nwat
+                 qt = wt*(1. + sum(Atm(n)%q(i,j,k,2:Atm(n)%flagstruct%nwat)))
               endif
               m_fac = wt / qt
               do iq=1,ntracers
@@ -1647,6 +1646,7 @@ contains
       deallocate ( psc )
 
       call remap_scalar_ec(Atm(1), km, npz, 6, ak0, bk0, psc_r8, qc, wc, zhc )
+      call mpp_update_domains(Atm(1)%phis, Atm(1)%domain)
       if(is_master()) write(*,*) 'done remap_scalar_ec'
        
       deallocate ( zhc )
@@ -2197,7 +2197,7 @@ contains
   endif
 
   call prt_maxmin('ZS_FV3', Atm%phis, is, ie, js, je, 3, 1, 1./grav)
-  call prt_maxmin('ZS_GFS', gzc,      is, ie, js, je, 0, 1, 1.)
+  call prt_maxmin('ZS_GFS', gzc,      is, ie, js, je, 0, 1, 1./grav)
   call prt_maxmin('PS_Data', psc, is, ie, js, je, 0, 1, 0.01)
   call prt_maxmin('T_Data', ta, is, ie, js, je, 0, km, 1.)
   call prt_maxmin('q_Data', qa(is:ie,js:je,1:km,1), is, ie, js, je, 0, km, 1.)
@@ -2230,10 +2230,10 @@ contains
           pn0(i,k) = log(pe0(i,k))
             pk0(k) = pe0(i,k)**kappa
        enddo
-! gzc is height
+! gzc is geopotential
 
 ! Note the following line, gz is actully Z (from Jeff's data).
-       gz(km+1) = gzc(i,j)*grav
+       gz(km+1) = gzc(i,j)
        do k=km,1,-1
           gz(k) = gz(k+1) + rdgas*tp(i,k)*(pn0(i,k+1)-pn0(i,k))
        enddo
@@ -2369,6 +2369,10 @@ contains
        call mpp_error(FATAL,'SPHUM must be 1st tracer')
   endif
 
+#ifdef USE_GFS_ZS
+   Atm%phis(is:ie,js:je) = zh(is:ie,js:je,km+1)*grav
+#endif
+
 !$OMP parallel do default(none) &
 !$OMP             shared(sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,&
 !$OMP                    cld_amt,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,omga,qa,Atm,z500) &
@@ -2495,7 +2499,7 @@ contains
             endif
          enddo
 #else
-         do l=m,km+k2
+         do l=m,km+k2-1
             if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
                 gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
                 goto 555
@@ -2503,6 +2507,10 @@ contains
          enddo
 #endif
 555   m = l
+      enddo
+
+      do k=1,npz+1
+         Atm%peln(i,k,j) = pn1(i,k)
       enddo
 
 ! Compute true temperature using hydrostatic balance
@@ -2629,9 +2637,9 @@ contains
   real(kind=R_GRID):: pst
   real, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je):: z500
 !!! High-precision
-  integer i,j,k,l,m,k2, iq
-  integer  sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel
-  integer :: is,  ie,  js,  je
+  integer:: sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt
+  integer:: i,j,k,l,m,k2, iq
+  integer:: is,  ie,  js,  je
 
   is  = Atm%bd%is
   ie  = Atm%bd%ie
@@ -2646,7 +2654,9 @@ contains
     rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
     snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
     graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
+    cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
   endif
+  if (cld_amt .gt. 0) Atm%q(:,:,:,cld_amt) = 0.
 
   k2 = max(10, km/2)
 
@@ -2784,7 +2794,7 @@ contains
             endif
          enddo
 #else
-         do l=m,km+k2
+         do l=m,km+k2-1
             if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
                 gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
                 goto 555
@@ -2792,6 +2802,10 @@ contains
          enddo
 #endif
 555   m = l
+      enddo
+
+      do k=1,npz+1
+         Atm%peln(i,k,j) = pn1(i,k)
       enddo
 
 ! Compute true temperature using hydrostatic balance

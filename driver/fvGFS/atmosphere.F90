@@ -46,7 +46,8 @@ use mpp_mod,                only: mpp_error, stdout, FATAL, NOTE, &
                                   mpp_npes, mpp_pe, mpp_chksum,   &
                                   mpp_get_current_pelist,         &
                                   mpp_set_current_pelist
-use mpp_domains_mod,        only: domain2d
+use mpp_parameter_mod,      only: EUPDATE, WUPDATE, SUPDATE, NUPDATE
+use mpp_domains_mod,        only: domain2d, mpp_update_domains
 use xgrid_mod,              only: grid_box_type
 use field_manager_mod,      only: MODEL_ATMOS
 use tracer_manager_mod,     only: get_tracer_index, get_number_tracers, &
@@ -82,21 +83,23 @@ public :: atmosphere_init, atmosphere_end, atmosphere_restart, &
           atmosphere_dynamics, atmosphere_state_update
 
 !--- utility routines
-public :: atmosphere_resolution, atmosphere_boundary, &
-          atmosphere_grid_center, atmosphere_domain, &
+public :: atmosphere_resolution, atmosphere_grid_bdry, &
+          atmosphere_grid_ctr, atmosphere_domain, &
           atmosphere_control_data, atmosphere_pref, &
-          get_atmosphere_axes, get_bottom_mass, &
-          get_bottom_wind, get_stock_pe, &
-          set_atmosphere_pelist, get_atmosphere_grid
+          atmosphere_diag_axes, atmosphere_etalvls, &
+          atmosphere_hgt, atmosphere_scalar_field_halo, &
+          atmosphere_tracer_postinit, &
+          get_bottom_mass, get_bottom_wind,   &
+          get_stock_pe, set_atmosphere_pelist
 
 !--- physics/radiation data exchange routines
 public :: atmos_phys_driver_statein
 
 !-----------------------------------------------------------------------
-
-character(len=128) :: version = '$Id$'
-character(len=128) :: tagname = '$Name$'
-character(len=7)   :: mod_name = 'atmos'
+! version number of this module
+! Include variable "version" to be written to log file.
+#include<file_version.h>
+character(len=7)   :: mod_name = 'fvGFS/atmosphere_mod'
 
 !---- private data ----
   type (time_type) :: Time_step_atmos
@@ -136,10 +139,9 @@ contains
 
 
 
- subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, ak, bk, dx, dy, area)
+ subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, dx, dy, area)
    type (time_type),    intent(in)    :: Time_init, Time, Time_step
    type(grid_box_type), intent(inout) :: Grid_box
-   real(kind=kind_phys), pointer, dimension(:), intent(inout) :: ak, bk
    real(kind=kind_phys), pointer, dimension(:,:), intent(inout) :: dx, dy, area
 
 !--- local variables ---
@@ -174,7 +176,7 @@ contains
    Atm(mytile)%Time_init = Time_init
 
 !----- write version and namelist to log file -----
-   call write_version_number ( version, tagname )
+   call write_version_number ( 'fvGFS/ATMOSPHERE_MOD', version )
 
 !-----------------------------------
 
@@ -266,10 +268,6 @@ contains
     pref(npz+1,2) = ps2
     call get_eta_level ( npz, ps1, pref(1,1), dum1d, Atm(mytile)%ak, Atm(mytile)%bk )
     call get_eta_level ( npz, ps2, pref(1,2), dum1d, Atm(mytile)%ak, Atm(mytile)%bk )
-    allocate (ak(npz+1))
-    allocate (bk(npz+1))
-    ak(1:npz+1) = Atm(mytile)%ak(npz+1:1:-1)
-    bk(1:npz+1) = Atm(mytile)%bk(npz+1:1:-1)
 
 !  --- initialize clocks for dynamics, physics_down and physics_up
    id_dynam     = mpp_clock_id ('FV dy-core',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
@@ -523,7 +521,7 @@ contains
  end subroutine atmosphere_control_data
 
 
- subroutine atmosphere_grid_center (lon, lat)
+ subroutine atmosphere_grid_ctr (lon, lat)
 !---------------------------------------------------------------
 !    returns the longitude and latitude cell centers
 !---------------------------------------------------------------
@@ -538,10 +536,10 @@ contains
        enddo
     end do
 
- end subroutine atmosphere_grid_center
+ end subroutine atmosphere_grid_ctr
 
 
- subroutine atmosphere_boundary (blon, blat, global)
+ subroutine atmosphere_grid_bdry (blon, blat, global)
 !---------------------------------------------------------------
 !    returns the longitude and latitude grid box edges
 !    for either the local PEs grid (default) or the global grid
@@ -563,7 +561,7 @@ contains
        enddo
     end do
 
- end subroutine atmosphere_boundary
+ end subroutine atmosphere_grid_bdry
 
 
  subroutine set_atmosphere_pelist ()
@@ -581,16 +579,7 @@ contains
  end subroutine atmosphere_domain
 
 
- subroutine get_atmosphere_grid (dxmax, dxmin)
-   real(kind=R_GRID), intent(out) :: dxmax, dxmin
-
-   dxmax = Atm(mytile)%gridstruct%da_max
-   dxmin = Atm(mytile)%gridstruct%da_min
-
- end subroutine get_atmosphere_grid
-
-
- subroutine get_atmosphere_axes ( axes )
+ subroutine atmosphere_diag_axes ( axes )
    integer, intent(out) :: axes (:)
 
 !----- returns the axis indices for the atmospheric (mass) grid -----
@@ -600,8 +589,203 @@ contains
 
    axes (1:size(axes(:))) = Atm(mytile)%atmos_axes (1:size(axes(:)))
 
- end subroutine get_atmosphere_axes
+ end subroutine atmosphere_diag_axes
 
+
+ subroutine atmosphere_etalvls (ak, bk, flip)
+   real(kind=kind_phys), pointer, dimension(:), intent(inout) :: ak, bk
+   logical, intent(in) :: flip
+
+   allocate(ak(npz+1))
+   allocate(bk(npz+1))
+
+   if (flip) then
+     ak(1:npz+1) = Atm(mytile)%ak(npz+1:1:-1)
+     bk(1:npz+1) = Atm(mytile)%bk(npz+1:1:-1)
+   else
+     ak(1:npz+1) = Atm(mytile)%ak(1:npz+1)
+     bk(1:npz+1) = Atm(mytile)%bk(1:npz+1)
+   endif
+ end subroutine atmosphere_etalvls
+
+
+ subroutine atmosphere_hgt (hgt, position, relative, flip)
+   real(kind=kind_phys), pointer, dimension(:,:,:), intent(inout) :: hgt
+   character(len=5), intent(in) :: position
+   logical, intent(in) :: relative
+   logical, intent(in) :: flip
+   !--- local variables ---
+   integer:: lev, k, j, i
+   real(kind=kind_phys), allocatable, dimension(:,:,:) :: z, dz
+
+   if ((position .ne. "layer") .and. (position .ne. "level")) then
+     call mpp_error (FATAL, 'atmosphere_hgt:: incorrect position specification')
+   endif
+
+   allocate(z(iec-isc+1,jec-jsc+1,npz+1))
+   allocate(dz(iec-isc+1,jec-jsc+1,npz))
+   z  = 0
+   dz = 0 
+
+   if (Atm(mytile)%flagstruct%hydrostatic) then
+     !--- generate dz using hydrostatic assumption
+     do j = jsc, jec
+       do i = isc, iec
+         dz(i-isc+1,j-jsc+1,1:npz) = (rdgas/grav)*Atm(mytile)%pt(i,j,1:npz)  &
+                         * (Atm(mytile)%peln(i,1:npz,j) - Atm(mytile)%peln(i,2:npz+1,j))
+       enddo
+     enddo
+   else
+     !--- use non-hydrostatic delz directly
+     do j = jsc, jec
+       do i = isc, iec
+         dz(i-isc+1,j-jsc+1,1:npz) = Atm(mytile)%delz(i,j,1:npz)
+       enddo
+     enddo
+   endif
+
+   !--- calculate geometric heights at the interfaces (levels)
+   !--- if needed, flip the indexing during this step
+   if (flip) then
+     if (.not. relative) then
+       z(:,:,1) = Atm(mytile)%phis(:,:)/grav
+     endif
+     do k = 2,npz+1
+       z(:,:,k) = z(:,:,k-1) - dz(:,:,npz+2-k)
+     enddo
+   else
+     if (.not. relative) then
+       z(:,:,npz+1) = Atm(mytile)%phis(:,:)/grav
+     endif
+     do k = npz,1,-1
+       z(:,:,k) = z(:,:,k+1) - dz(:,:,k)
+     enddo
+   endif
+
+   !--- allocate and set either the level or layer height for return
+   if (position == "level") then
+     allocate (hgt(iec-isc+1,jec-jsc+1,npz+1))
+     hgt = z
+   elseif (position == "layer") then
+     allocate (hgt(iec-isc+1,jec-jsc+1,npz))
+     hgt(:,:,1:npz) = 0.5d0 * (z(:,:,1:npz) + z(:,:,2:npz+1))
+   endif
+
+   deallocate (z)
+   deallocate (dz)
+
+ end subroutine atmosphere_hgt
+
+
+ subroutine atmosphere_scalar_field_halo (data, halo, isize, jsize, ksize, data_p)
+   !--------------------------------------------------------------------
+   ! data   - output array to return the field with halo (i,j,k)
+   !          optionally input for field already in (i,j,k) form
+   !          sized to include the halo of the field (+ 2*halo)
+   ! halo   - size of the halo (must be less than 3)
+   ! ied    - horizontal resolution in i-dir with haloes
+   ! jed    - horizontal resolution in j-dir with haloes
+   ! ksize  - vertical resolution
+   ! data_p - optional input field in packed format (ix,k)  
+   !--------------------------------------------------------------------
+   !--- interface variables ---
+   real(kind=kind_phys), dimension(1:isize,1:jsize,ksize), intent(inout) :: data
+   integer, intent(in) :: halo
+   integer, intent(in) :: isize
+   integer, intent(in) :: jsize
+   integer, intent(in) :: ksize
+   real(kind=kind_phys), dimension(:,:), optional, intent(in) :: data_p
+   !--- local variables ---
+   integer :: i, j, k
+   integer :: ic, jc
+   character(len=44) :: modname = 'atmosphere_mod::atmosphere_scalar_field_halo'
+   integer :: mpp_flags
+
+   !--- perform error checking
+   if (halo .gt. 3) call mpp_error(FATAL, modname//' - halo.gt.3 requires extending the MPP domain to support')
+   ic = isize - 2 * halo
+   jc = jsize - 2 * halo
+
+   !--- if packed data is present, unpack it into the two-dimensional data array
+   if (present(data_p)) then
+     if (ic*jc .ne. size(data_p,1)) call mpp_error(FATAL, modname//' - incorrect sizes for incoming &
+                                                  &variables data and data_p')
+     data = 0.
+!$OMP parallel do default (none) &
+!$OMP              shared (data, data_p, halo, ic, jc, ksize) &
+!$OMP             private (i, j, k)
+     do k = 1, ksize
+       do j = 1, jc
+         do i = 1, ic
+           data(i+halo, j+halo, k) = data_p(i + (j-1)*ic, k)
+         enddo
+       enddo
+     enddo
+   endif
+
+   mpp_flags = EUPDATE + WUPDATE + SUPDATE + NUPDATE
+   if (halo == 1) then
+     call mpp_update_domains(data, Atm(mytile)%domain_for_coupler, flags=mpp_flags, complete=.true.)
+   elseif (halo == 3) then
+     call mpp_update_domains(data, Atm(mytile)%domain, flags=mpp_flags, complete=.true.)
+   else
+     call mpp_error(FATAL, modname//' - unsupported halo size')
+   endif
+
+   !--- fill the halo points when at a corner of the cubed-sphere tile 
+   !--- interior domain corners are handled correctly
+   if ( (isc==1) .or. (jsc==1) .or. (iec==npx-1) .or. (jec==npy-1) ) then
+     do k = 1, ksize
+       do j=1,halo
+         do i=1,halo
+           if ((isc==    1) .and. (jsc==    1)) data(halo+1-j ,halo+1-i ,k) = data(halo+i     ,halo+1-j ,k)  !SW Corner
+           if ((isc==    1) .and. (jec==npy-1)) data(halo+1-j ,halo+jc+i,k) = data(halo+i     ,halo+jc+j,k)  !NW Corner
+           if ((iec==npx-1) .and. (jsc==    1)) data(halo+ic+j,halo+1-i ,k) = data(halo+ic-i+1,halo+1-j ,k)  !SE Corner
+           if ((iec==npx-1) .and. (jec==npy-1)) data(halo+ic+j,halo+jc+i,k) = data(halo+ic-i+1,halo+jc+j,k)  !NE Corner
+         enddo
+       enddo
+     enddo
+   endif
+
+   return
+ end subroutine atmosphere_scalar_field_halo
+
+
+ subroutine atmosphere_tracer_postinit (IPD_Data, Atm_block)
+   !--- interface variables ---
+   type(IPD_data_type),       intent(in) :: IPD_Data(:)
+   type(block_control_type),  intent(in) :: Atm_block
+   !--- local variables ---
+   integer :: i, j, ix, k, k1, n, nwat, nb, blen
+   real(kind=kind_phys) :: qwat
+
+   if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
+
+   n = mytile
+   nwat = Atm(n)%flagstruct%nwat
+
+!$OMP parallel do default (none) &
+!$OMP              shared (Atm_block, Atm, IPD_Data, npz, nq, ncnst, n, nwat) &
+!$OMP             private (nb, k, k1, ix, i, j, qwat)
+   do nb = 1,Atm_block%nblks
+     do k = 1, npz
+       k1 = npz+1-k !reverse the k direction
+       do ix = 1, Atm_block%blksz(nb)
+         i = Atm_block%index(nb)%ii(ix)
+         j = Atm_block%index(nb)%jj(ix)
+         qwat = sum(Atm(n)%q(i,j,k1,1:nwat))
+         Atm(n)%q(i,j,k1,1:nq) = Atm(n)%q(i,j,k1,1:nq) + IPD_Data(nb)%Stateout%gq0(ix,k,1:nq) * (1.0 - qwat)
+         if (nq .gt. ncnst) then
+           Atm(n)%qdiag(i,j,k1,nq+1:ncnst) = Atm(n)%qdiag(i,j,k1,nq+1:ncnst) + IPD_Data(nb)%Stateout%gq0(ix,k,nq+1:ncnst)
+         endif
+       enddo
+     enddo
+   enddo
+
+   call mpp_update_domains (Atm(n)%q, Atm(n)%domain, complete=.true.)
+
+   return
+ end subroutine atmosphere_tracer_postinit
 
 
  subroutine get_bottom_mass ( t_bot, tr_bot, p_bot, z_bot, p_surf, slp )
@@ -736,13 +920,14 @@ contains
 
 
  subroutine atmosphere_state_update (Time, IPD_Data, Atm_block)
+   !--- interface variables ---
    type(time_type),           intent(in) :: Time
    type(IPD_data_type),       intent(in) :: IPD_Data(:)
    type(block_control_type),  intent(in) :: Atm_block
+   !--- local variables ---
    type(time_type) :: Time_prev, Time_next
-!--- local variables ---
    integer :: i, j, ix, k, k1, n, w_diff, nt_dyn, iq
-   integer :: nb, blen, nwat, dnats
+   integer :: nb, blen, nwat, dnats, nq_adv
    real(kind=kind_phys):: rcp, q0, qwat(nq), qt, rdt
 
    Time_prev = Time
@@ -752,6 +937,7 @@ contains
    n = mytile
    nwat = Atm(n)%flagstruct%nwat
    dnats = Atm(mytile)%flagstruct%dnats
+   nq_adv = nq - dnats
 
    if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
 
@@ -762,7 +948,7 @@ contains
 !$OMP parallel do default (none) & 
 !$OMP              shared (rdt, n, nq, dnats, npz, ncnst, nwat, mytile, u_dt, v_dt, t_dt,&
 !$OMP                      Atm, IPD_Data, Atm_block, sphum, liq_wat, rainwat, ice_wat,   &
-!$OMP                      snowwat, graupel)   &
+!$OMP                      snowwat, graupel, nq_adv)   &
 !$OMP             private (nb, blen, i, j, k, k1, ix, q0, qwat, qt)
    do nb = 1,Atm_block%nblks
 
@@ -782,11 +968,11 @@ contains
 ! SJL notes:
 ! ---- DO not touch the code below; dry mass conservation may change due to 64bit <-> 32bit conversion
 ! GFS total air mass = dry_mass + water_vapor (condensate excluded)
-! GFS mixing ratios  = tracer_mass / (air_mass + vapor_mass)
+! GFS mixing ratios  = tracer_mass / (dry_mass + vapor_mass)
 ! FV3 total air mass = dry_mass + [water_vapor + condensate ]
 ! FV3 mixing ratios  = tracer_mass / (dry_mass+vapor_mass+cond_mass)
          q0 = IPD_Data(nb)%Statein%prsi(ix,k) - IPD_Data(nb)%Statein%prsi(ix,k+1)
-         qwat(1:nq-dnats) = q0*IPD_Data(nb)%Stateout%gq0(ix,k,1:nq-dnats)
+         qwat(1:nq_adv) = q0*IPD_Data(nb)%Stateout%gq0(ix,k,1:nq_adv)
 ! **********************************************************************************************************
 ! Dry mass: the following way of updating delp is key to mass conservation with hybrid 32-64 bit computation
 ! **********************************************************************************************************
@@ -795,7 +981,8 @@ contains
          qt = sum(qwat(1:nwat))
          q0 = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:nwat))) + qt 
          Atm(n)%delp(i,j,k1) = q0
-         Atm(n)%q(i,j,k1,1:nq-dnats) = qwat(1:nq-dnats) / q0
+         Atm(n)%q(i,j,k1,1:nq_adv) = qwat(1:nq_adv) / q0
+         if (dnats .gt. 0) Atm(n)%q(i,j,k1,nq_adv+1:nq) = IPD_Data(nb)%Stateout%gq0(ix,k,nq_adv+1:nq)
        enddo
      enddo
 
@@ -1138,7 +1325,7 @@ contains
    real(kind=kind_phys), parameter:: qmin = 1.0e-10   
    real(kind=kind_phys):: pk0inv, ptop, pktop
    real(kind=kind_phys) :: rTv, dm, qgrs_rad
-   integer :: nb, blen, npz, i, j, k, ix, k1
+   integer :: nb, blen, npz, i, j, k, ix, k1, dnats, nq_adv
 
 !!! NOTES: lmh 6nov15
 !!! - "Layer" means "layer mean", ie. the average value in a layer
@@ -1149,6 +1336,8 @@ contains
    pk0inv = (1.0_kind_phys/p00)**kappa
 
    npz = Atm_block%npz
+   dnats = Atm(mytile)%flagstruct%dnats
+   nq_adv = nq - dnats
 
 !---------------------------------------------------------------------
 ! use most up to date atmospheric properties when running serially
@@ -1156,7 +1345,7 @@ contains
 !$OMP parallel do default (none) & 
 !$OMP             shared  (Atm_block, Atm, IPD_Data, npz, nq, ncnst, sphum, liq_wat, &
 !$OMP                      ice_wat, rainwat, snowwat, graupel, pk0inv, ptop,   &
-!$OMP                      pktop, zvir, mytile) &
+!$OMP                      pktop, zvir, mytile, dnats, nq_adv) &
 !$OMP             private (dm, nb, blen, i, j, ix, k1, rTv, qgrs_rad)
 
    do nb = 1,Atm_block%nblks
@@ -1187,22 +1376,25 @@ contains
            IPD_Data(nb)%Statein%phii(ix,k+1) = IPD_Data(nb)%Statein%phii(ix,k) - _DBL_(_RL_(Atm(mytile)%delz(i,j,k1)*grav))
 
 ! Convert to tracer mass:
-         IPD_Data(nb)%Statein%qgrs(ix,k,1:nq) =  _DBL_(_RL_(Atm(mytile)%q(i,j,k1,1:nq))) &
+         IPD_Data(nb)%Statein%qgrs(ix,k,1:nq_adv) =  _DBL_(_RL_(Atm(mytile)%q(i,j,k1,1:nq_adv))) &
                                                           * IPD_Data(nb)%Statein%prsl(ix,k)
+         if (dnats .gt. 0) &
+             IPD_Data(nb)%Statein%qgrs(ix,k,nq_adv+1:nq) =  _DBL_(_RL_(Atm(mytile)%q(i,j,k1,nq_adv+1:nq)))
          !--- SHOULD THESE BE CONVERTED TO MASS SINCE THE DYCORE DOES NOT TOUCH THEM IN ANY WAY???
          !--- See Note in state update...
-         IPD_Data(nb)%Statein%qgrs(ix,k,nq+1:ncnst) = _DBL_(_RL_(Atm(mytile)%qdiag(i,j,k1,nq+1:ncnst)))
+         if ( ncnst > nq) &
+             IPD_Data(nb)%Statein%qgrs(ix,k,nq+1:ncnst) = _DBL_(_RL_(Atm(mytile)%qdiag(i,j,k1,nq+1:ncnst)))
 ! Remove the contribution of condensates to delp (mass):
-         if ( Atm(mytile)%flagstruct%nwat .eq. 2 ) then  ! GFS
-            IPD_Data(nb)%Statein%prsl(ix,k) = IPD_Data(nb)%Statein%prsl(ix,k) &
-                                            - IPD_Data(nb)%Statein%qgrs(ix,k,liq_wat)
-         elseif ( Atm(mytile)%flagstruct%nwat .eq. 6 ) then
+         if ( Atm(mytile)%flagstruct%nwat .eq. 6 ) then
             IPD_Data(nb)%Statein%prsl(ix,k) = IPD_Data(nb)%Statein%prsl(ix,k) &
                                             - IPD_Data(nb)%Statein%qgrs(ix,k,liq_wat)   &
                                             - IPD_Data(nb)%Statein%qgrs(ix,k,ice_wat)   &
                                             - IPD_Data(nb)%Statein%qgrs(ix,k,rainwat)   &
                                             - IPD_Data(nb)%Statein%qgrs(ix,k,snowwat)   &
                                             - IPD_Data(nb)%Statein%qgrs(ix,k,graupel)
+         else !variable condensate numbers
+            IPD_Data(nb)%Statein%prsl(ix,k) = IPD_Data(nb)%Statein%prsl(ix,k) &
+                                            - sum(IPD_Data(nb)%Statein%qgrs(ix,k,2:Atm(mytile)%flagstruct%nwat))   
          endif
        enddo
      enddo
@@ -1217,8 +1409,8 @@ contains
                                            + IPD_Data(nb)%Statein%prsl(i,k)
            IPD_Data(nb)%Statein%prsik(i,k) = log( IPD_Data(nb)%Statein%prsi(i,k) )
 ! Redefine mixing ratios for GFS == tracer_mass / (dry_air_mass + water_vapor_mass)
-           IPD_Data(nb)%Statein%qgrs(i,k,1:ncnst) = IPD_Data(nb)%Statein%qgrs(i,k,1:ncnst) &
-                                                  / IPD_Data(nb)%Statein%prsl(i,k)
+           IPD_Data(nb)%Statein%qgrs(i,k,1:nq_adv) = IPD_Data(nb)%Statein%qgrs(i,k,1:nq_adv) &
+                                                   / IPD_Data(nb)%Statein%prsl(i,k)
         enddo
      enddo
      do i=1,blen
@@ -1242,20 +1434,11 @@ contains
 
 !!! Ensure subgrid MONOTONICITY of Pressure: SJL 09/11/2016
            if ( .not.Atm(mytile)%flagstruct%hydrostatic ) then
-#ifdef ALT_METHOD
 ! If violated, replaces it with hydrostatic pressure
-              if (IPD_Data(nb)%Statein%prsl(i,k).ge.IPD_Data(nb)%Statein%prsi(i,k) .or. &
-                                IPD_Data(nb)%Statein%prsl(i,k).le.IPD_Data(nb)%Statein%prsi(i,k+1)) then
-                  IPD_Data(nb)%Statein%prsl(i,k) = dm / (IPD_Data(nb)%Statein%prsik(i,k) &
-                                                       - IPD_Data(nb)%Statein%prsik(i,k+1))
-              endif
-               
-#else
               IPD_Data(nb)%Statein%prsl(i,k) = min(IPD_Data(nb)%Statein%prsl(i,k), &
                                                    IPD_Data(nb)%Statein%prsi(i,k)   - 0.01*dm)
               IPD_Data(nb)%Statein%prsl(i,k) = max(IPD_Data(nb)%Statein%prsl(i,k), &
                                                    IPD_Data(nb)%Statein%prsi(i,k+1) + 0.01*dm)
-#endif
            endif
         enddo
      enddo

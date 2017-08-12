@@ -73,10 +73,6 @@
    MODULE PROCEDURE fill_ghost_r8
  END INTERFACE
 
-!---- version number -----
- character(len=128) :: version = '$Id$'
- character(len=128) :: tagname = '$Name$'
-
  contains
 
    subroutine grid_utils_init(Atm, npx, npy, npz, non_ortho, grid_type, c2l_order)
@@ -193,15 +189,17 @@
            Atm%ks    = 0
       elseif ( .not. Atm%flagstruct%hybrid_z ) then
 ! Initialize (ak,bk) for cold start; overwritten with restart file
-           call set_eta(npz, Atm%ks, Atm%ptop, Atm%ak, Atm%bk)
-           if ( is_master() ) then
-              write(*,*) 'Grid_init', npz, Atm%ks, Atm%ptop
-              tmp1 = Atm%ak(Atm%ks+1)
-              do k=Atm%ks+1,npz
-                 tmp1 = max(tmp1, (Atm%ak(k)-Atm%ak(k+1))/max(1.E-9, (Atm%bk(k+1)-Atm%bk(k))) )
-              enddo
-              write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hpa)=', tmp1/100.
-              if ( tmp1 > 420.E2 ) write(*,*) 'Warning: the chosen setting in set_eta can cause instability'
+           if (.not. Atm%flagstruct%external_eta) then
+              call set_eta(npz, Atm%ks, Atm%ptop, Atm%ak, Atm%bk)
+              if ( is_master() ) then
+                 write(*,*) 'Grid_init', npz, Atm%ks, Atm%ptop
+                 tmp1 = Atm%ak(Atm%ks+1)
+                 do k=Atm%ks+1,npz
+                    tmp1 = max(tmp1, (Atm%ak(k)-Atm%ak(k+1))/max(1.E-9, (Atm%bk(k+1)-Atm%bk(k))) )
+                 enddo
+                 write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hpa)=', tmp1/100.
+                 if ( tmp1 > 420.E2 ) write(*,*) 'Warning: the chosen setting in set_eta can cause instability'
+              endif
            endif
       endif
 

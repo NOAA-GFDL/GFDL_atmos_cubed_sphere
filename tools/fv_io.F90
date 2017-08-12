@@ -53,7 +53,7 @@ module fv_io_mod
   use field_manager_mod,       only: MODEL_ATMOS  
   use external_sst_mod,        only: sst_ncep, sst_anom, use_ncep_sst
   use fv_arrays_mod,           only: fv_atmos_type, fv_nest_BC_type_3D
-  use fv_eta_mod,              only: set_eta
+  use fv_eta_mod,              only: set_external_eta
 
   use fv_mp_mod,               only: ng, mp_gather, is_master
   use fms_io_mod,              only: set_domain
@@ -68,10 +68,6 @@ module fv_io_mod
 
   logical                       :: module_is_initialized = .FALSE.
 
-
-!---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
 
   integer ::grid_xtdimid, grid_ytdimid, haloid, pfullid !For writing BCs
   integer ::grid_xtstagdimid, grid_ytstagdimid, oneid
@@ -127,6 +123,9 @@ contains
     ntileMe = size(Atm(:))  ! This will need mods for more than 1 tile per pe
 
     call restore_state(Atm(1)%Fv_restart)
+    if (Atm(1)%flagstruct%external_eta) then
+       call set_external_eta(Atm(1)%ak, Atm(1)%bk, Atm(1)%ptop, Atm(1)%ks)
+    endif
 
     if ( use_ncep_sst .or. Atm(1)%flagstruct%nudge .or. Atm(1)%flagstruct%ncep_ic ) then
        call mpp_error(NOTE, 'READING FROM SST_RESTART DISABLED')
