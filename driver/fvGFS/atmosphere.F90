@@ -136,11 +136,12 @@ contains
 
 
 
- subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, ak, bk, dx, dy, area)
+ subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, ak, bk, dx, dy, area, layout)
    type (time_type),    intent(in)    :: Time_init, Time, Time_step
    type(grid_box_type), intent(inout) :: Grid_box
    real(kind=kind_phys), pointer, dimension(:), intent(inout) :: ak, bk
    real(kind=kind_phys), pointer, dimension(:,:), intent(inout) :: dx, dy, area
+   integer, intent(inout)             :: layout(:)
 
 !--- local variables ---
    integer :: i, n
@@ -193,6 +194,8 @@ contains
    ied = iec + Atm(mytile)%bd%ng
    jsd = jsc - Atm(mytile)%bd%ng
    jed = jec + Atm(mytile)%bd%ng
+
+   layout(1:2) =  Atm(mytile)%layout(1:2)
 
    nq = ncnst-pnats
    sphum   = get_tracer_index (MODEL_ATMOS, 'sphum' )

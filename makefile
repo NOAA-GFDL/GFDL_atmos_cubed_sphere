@@ -91,6 +91,9 @@ $(LIBRARY): $(OBJS)
 ./model/fv_mapz.o : ./model/fv_mapz.F90
 	$(FC) $(CPPDEFS) $(FPPFLAGS) $(FFLAGS) $(OTHER_FFLAGS) $(FAST) -c $< -o $@
 
+./tools/fv_nggps_diag.o : ./tools/fv_nggps_diag.F90
+	$(FC) $(CPPDEFS) $(FPPFLAGS) $(FFLAGS) $(OTHER_FFLAGS) $(FAST) $(ESMF_INC) -c $< -o $@
+
 .PHONY: clean
 clean:
 	@echo "Cleaning fv3core ... "
