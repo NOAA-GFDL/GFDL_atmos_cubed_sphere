@@ -25,7 +25,7 @@ module fv_sg_mod
   use constants_mod,      only: rdgas, rvgas, cp_air, cp_vapor, hlv, hlf, kappa, grav
   use tracer_manager_mod, only: get_tracer_index
   use field_manager_mod,  only: MODEL_ATMOS
-  use gfdl_cloud_microphys_mod, only: wqs2, wqsat2_moist
+  use gfdl_cloud_microphys_mod, only: wqs1, wqs2, wqsat2_moist
   use fv_mp_mod,          only: mp_reduce_min, is_master
 
 implicit none
@@ -63,10 +63,6 @@ public  fv_subgrid_z, qsmith, neg_adj3
   real, parameter:: zvir =  rvgas/rdgas - 1.     ! = 0.607789855
   real, allocatable:: table(:),des(:)
   real:: lv00, d0_vap
-
-!---- version number -----
-  character(len=128) :: version = '$Id: fv_sg.F90,v 17.0.2.4.2.3.2.6.2.10.4.1 2014/11/12 03:46:32 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name:  $'
 
 contains
 
@@ -313,7 +309,7 @@ contains
 ! top layer unphysically warm
                ri = 0.
             elseif ( tv2<t_min ) then
-               ri = min(ri, 0.2)
+               ri = min(ri, 0.1)
             endif
 ! Adjustment for K-H instability:
 ! Compute equivalent mass flux: mc

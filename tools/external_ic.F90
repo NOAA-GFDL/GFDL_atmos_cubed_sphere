@@ -42,7 +42,7 @@ module external_ic_mod
 
    use constants_mod,     only: pi=>pi_8, omega, grav, kappa, rdgas, rvgas, cp_air
    use fv_arrays_mod,     only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type, R_GRID
-   use fv_diagnostics_mod,only: prt_maxmin
+   use fv_diagnostics_mod,only: prt_maxmin, prt_gb_nh_sh, prt_height
    use fv_grid_utils_mod, only: ptop_min, g_sum,mid_pt_sphere,get_unit_vect2,get_latlon_vector,inner_prod
    use fv_io_mod,         only: fv_io_read_tracers 
    use fv_mapz_mod,       only: mappm
@@ -2602,7 +2602,13 @@ contains
      enddo
   enddo
   call pmaxmn('ZS_diff (m)', wk, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
-  call pmaxmn('Z500 (m)',  z500, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
+
+  if (.not.Atm%neststruct%nested) then
+      call prt_gb_nh_sh('GFS_IC Z500', is,ie, js,je, z500, Atm%gridstruct%area_64(is:ie,js:je), Atm%gridstruct%agrid_64(is:ie,js:je,2))
+      if ( .not. Atm%flagstruct%hydrostatic )  &
+      call prt_height('fv3_IC Z500', is,ie, js,je, 3, npz, 500.E2, Atm%phis, Atm%delz, Atm%peln,   &
+                      Atm%gridstruct%area_64(is:ie,js:je), Atm%gridstruct%agrid_64(is:ie,js:je,2))
+  endif
 
   do j=js,je
      do i=is,ie
@@ -2857,7 +2863,13 @@ contains
      enddo
   enddo
   call pmaxmn('ZS_diff (m)', wk, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
-  call pmaxmn('Z500 (m)', z500, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
+
+  if (.not.Atm%neststruct%nested) then
+      call prt_gb_nh_sh('IFS_IC Z500', is,ie, js,je, z500, Atm%gridstruct%area_64(is:ie,js:je), Atm%gridstruct%agrid_64(is:ie,js:je,2))
+      if ( .not. Atm%flagstruct%hydrostatic )  &
+      call prt_height('fv3_IC Z500', is,ie, js,je, 3, npz, 500.E2, Atm%phis, Atm%delz, Atm%peln,   &
+                       Atm%gridstruct%area_64(is:ie,js:je), Atm%gridstruct%agrid_64(is:ie,js:je,2))
+  endif
 
   do j=js,je
      do i=is,ie

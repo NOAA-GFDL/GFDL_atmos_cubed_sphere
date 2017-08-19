@@ -46,16 +46,14 @@ implicit none
    logical :: bad_range = .false.
    real, allocatable ::  rf(:)
    integer :: kmax=1
+   integer :: k_rf = 0
+
    real :: agrav
 #ifdef HIWPP
    real, allocatable:: u00(:,:,:), v00(:,:,:)
 #endif
 private
 public :: fv_dynamics
-
-!---- version number -----
-   character(len=128) :: version = '$Id$'
-   character(len=128) :: tagname = '$Name$'
 
 contains
 
@@ -342,10 +340,16 @@ contains
                            ptop, ua, va, u, v, delp, teq, ps2, m_fac)
       endif
 
-      if( flagstruct%tau > 0. ) then
+      if( .not.flagstruct%RF_fast .and. flagstruct%tau > 0. ) then
         if ( gridstruct%grid_type<4 ) then
+!         if ( flagstruct%RF_fast ) then
+!            call Ray_fast(abs(dt), npx, npy, npz, pfull, flagstruct%tau, u, v, w,  &
+!                          dp_ref, ptop, hydrostatic, flagstruct%rf_cutoff, bd)
+!         else
              call Rayleigh_Super(abs(bdt), npx, npy, npz, ks, pfull, phis, flagstruct%tau, u, v, w, pt,  &
-                  ua, va, delz, gridstruct%agrid, cp_air, rdgas, ptop, hydrostatic, (.not. neststruct%nested), flagstruct%rf_cutoff, gridstruct, domain, bd)
+                  ua, va, delz, gridstruct%agrid, cp_air, rdgas, ptop, hydrostatic,    &
+                 (.not. neststruct%nested), flagstruct%rf_cutoff, gridstruct, domain, bd)
+!         endif
         else
              call Rayleigh_Friction(abs(bdt), npx, npy, npz, ks, pfull, flagstruct%tau, u, v, w, pt,  &
                   ua, va, delz, cp_air, rdgas, ptop, hydrostatic, .true., flagstruct%rf_cutoff, gridstruct, domain, bd)
@@ -452,7 +456,7 @@ contains
 
 
 #ifdef SW_DYNAMICS
-!$OMP parallel do default(none) shared(is,ie,js,je,delp,agrav)
+!!$OMP parallel do default(none) shared(is,ie,js,je,ps,delp,agrav)
       do j=js,je
          do i=is,ie
             ps(i,j) = delp(i,j,1) * agrav
@@ -469,20 +473,21 @@ contains
          call tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
                         flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), &
                         flagstruct%nord_tr, flagstruct%trdm2, &
-                        k_split, neststruct, parent_grid)          
+                        k_split, neststruct, parent_grid, flagstruct%lim_fac)
        else
          if ( flagstruct%z_tracer ) then
          call tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
                         flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), &
-                        flagstruct%nord_tr, flagstruct%trdm2)
+                        flagstruct%nord_tr, flagstruct%trdm2, flagstruct%lim_fac)
          else
          call tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
                         flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), &
-                        flagstruct%nord_tr, flagstruct%trdm2)
+                        flagstruct%nord_tr, flagstruct%trdm2, flagstruct%lim_fac)
          endif
        endif
                                              call timing_off('tracer_2d')
 
+#ifdef FILL2D
      if ( flagstruct%hord_tr<8 .and. flagstruct%moist_phys ) then
                                                   call timing_on('Fill2D')
        if ( liq_wat > 0 )  &
@@ -497,6 +502,7 @@ contains
         call fill2D(is, ie, js, je, ng, npz, q(isd,jsd,1,graupel), delp, gridstruct%area, domain, neststruct%nested, npx, npy)
                                                   call timing_off('Fill2D')
      endif
+#endif
 
          if( last_step .and. idiag%id_divg>0 ) then
              used = send_data(idiag%id_divg, dp1, fv_time) 
@@ -696,9 +702,131 @@ contains
 
   end subroutine fv_dynamics
 
+#ifdef USE_RF_FAST
+  subroutine Rayleigh_fast(dt, npx, npy, npz, pfull, tau, u, v, w,  &
+                          ks, dp, ptop, hydrostatic, rf_cutoff, bd)
+! Simple "inline" version of the Rayleigh friction
+    real, intent(in):: dt
+    real, intent(in):: tau              ! time scale (days)
+    real, intent(in):: ptop, rf_cutoff
+    real, intent(in),  dimension(npz):: pfull
+    integer, intent(in):: npx, npy, npz, ks
+    logical, intent(in):: hydrostatic
+    type(fv_grid_bounds_type), intent(IN) :: bd
+    real, intent(inout):: u(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) ! D grid zonal wind (m/s)
+    real, intent(inout):: v(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz) ! D grid meridional wind (m/s)
+    real, intent(inout):: w(bd%isd:      ,bd%jsd:      ,1: ) ! cell center vertical wind (m/s)
+    real, intent(in):: dp(npz)
+!
+    real(kind=R_GRID):: rff(npz)
+    real, parameter:: sday = 86400.
+    real, dimension(bd%is:bd%ie+1):: dmv
+    real, dimension(bd%is:bd%ie):: dmu
+    real:: tau0, dm
+    integer i, j, k
+
+    integer :: is,  ie,  js,  je
+    integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+
+     if ( .not. RF_initialized ) then
+          tau0 = tau * sday
+          allocate( rf(npz) )
+          rf(:) = 1.
+
+          if( is_master() ) write(6,*) 'Fast Rayleigh friction E-folding time (days):'
+          do k=1, npz
+             if ( pfull(k) < rf_cutoff ) then
+                  rff(k) = dt/tau0*sin(0.5*pi*log(rf_cutoff/pfull(k))/log(rf_cutoff/ptop))**2
+! Re-FACTOR rf
+                  if( is_master() ) write(6,*) k, 0.01*pfull(k), dt/(rff(k)*sday)
+                  kmax = k
+                  rff(k) = 1.d0 / (1.0d0+rff(k))
+                   rf(k) = rff(k)
+             else
+                  exit
+             endif
+          enddo
+          dm = 0.
+          do k=1,ks
+             if ( pfull(k) < 100.E2 ) then
+                  dm = dm + dp(k)
+                  k_rf = k
+             else
+                  exit
+             endif
+          enddo
+          if( is_master() ) write(6,*) 'k_rf=', k_rf, 0.01*pfull(k_rf), 'dm=', dm
+          RF_initialized = .true.
+     endif
+
+!$OMP parallel do default(none) shared(k_rf,is,ie,js,je,kmax,pfull,rf_cutoff,w,rf,dp,u,v,hydrostatic) &
+!$OMP          private(dm, dmu, dmv)
+     do j=js,je+1
+
+        dm = 0.
+        do k=1, k_rf
+           dm = dm + dp(k)
+        enddo
+
+        dmu(:) = 0.
+        dmv(:) = 0.
+        do k=1,kmax
+           do i=is,ie
+                dmu(i) = dmu(i) + (1.-rf(k))*dp(k)*u(i,j,k)
+              u(i,j,k) = rf(k)*u(i,j,k)
+           enddo
+           if ( j/=je+1 ) then
+              do i=is,ie+1
+                   dmv(i) = dmv(i) + (1.-rf(k))*dp(k)*v(i,j,k)
+                 v(i,j,k) = rf(k)*v(i,j,k)
+              enddo
+              if ( .not. hydrostatic ) then
+                do i=is,ie
+                   w(i,j,k) = rf(k)*w(i,j,k)
+                enddo
+              endif
+           endif
+        enddo
+
+        do i=is,ie
+           dmu(i) = dmu(i) / dm
+        enddo
+        if ( j/=je+1 ) then
+           do i=is,ie+1
+              dmv(i) = dmv(i) / dm
+           enddo
+        endif
+
+        do k=1, k_rf
+           do i=is,ie
+              u(i,j,k) = u(i,j,k) + dmu(i)
+           enddo
+           if ( j/=je+1 ) then
+              do i=is,ie+1
+                 v(i,j,k) = v(i,j,k) + dmv(i)
+              enddo
+           endif
+        enddo
+
+     enddo
+
+ end subroutine Rayleigh_fast
+#endif
+
+
 
  subroutine Rayleigh_Super(dt, npx, npy, npz, ks, pm, phis, tau, u, v, w, pt,  &
-                           ua, va, delz, agrid, cp, rg, ptop, hydrostatic, conserve, rf_cutoff, gridstruct, domain, bd)
+                           ua, va, delz, agrid, cp, rg, ptop, hydrostatic,     &
+                           conserve, rf_cutoff, gridstruct, domain, bd)
     real, intent(in):: dt
     real, intent(in):: tau              ! time scale (days)
     real, intent(in):: cp, rg, ptop, rf_cutoff

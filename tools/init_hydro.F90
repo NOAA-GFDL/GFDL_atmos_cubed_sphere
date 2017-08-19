@@ -38,10 +38,6 @@ module init_hydro_mod
 
       public :: p_var, hydro_eq
 
-!---- version number -----
-      character(len=128) :: version = '$Id$'
-      character(len=128) :: tagname = '$Name$'
-
 contains
 
 !-------------------------------------------------------------------------------
@@ -75,7 +71,7 @@ contains
 
 ! Local
    integer  sphum, liq_wat, ice_wat
-   integer  rainwat, snowwat, graupel          ! Lin Micro-physics
+   integer  rainwat, snowwat, graupel          ! GFDL Cloud Microphysics
    real ratio(ifirst:ilast)
    real pek, lnp, ak1, rdg, dpd, zvir
    integer i, j, k

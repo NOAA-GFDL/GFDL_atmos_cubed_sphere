@@ -54,14 +54,18 @@ module fv_arrays_mod
            id_ppt, id_ts, id_tb, id_ctt, id_pmask, id_pmaskv2,    &
            id_delp, id_delz, id_zratio, id_ws, id_iw, id_lw,      &
            id_pfhy, id_pfnh,                                      &
-           id_qn, id_qn200, id_qn500, id_qn850, id_qp, id_mdt, id_qdt, id_aam, id_amdt, &
-           id_acly, id_acl, id_acl2, id_dbz, id_maxdbz, id_basedbz, id_dbz4km
+           id_qn, id_qn200, id_qn500, id_qn850, id_qp, id_mdt,    &
+           id_qdt, id_aam, id_amdt,                               &
+           id_acly, id_acl, id_acl2,                              &
+           id_dbz, id_maxdbz, id_basedbz, id_dbz4km, id_dbztop, id_dbz_m10C, &
+           id_ctz, id_w1km, id_wmaxup, id_wmaxdn, id_cape, id_cin
 
 ! Selected p-level fields from 3D variables:
  integer :: id_vort200, id_vort500, id_w500, id_w700
- integer :: id_vort850, id_w850, id_x850, id_srh, id_srh25, id_srh01, &
+ integer :: id_vort850, id_w850, id_x850, id_srh25, &
             id_uh03, id_uh25, id_theta_e,  &
             id_w200, id_s200, id_sl12, id_sl13, id_w5km, id_rain5km, id_w2500m
+ integer :: id_srh1, id_srh3, id_ustm, id_vstm
 ! NGGPS 31-level diag
  integer, allocatable :: id_u(:), id_v(:), id_t(:), id_h(:), id_q(:), id_omg(:)
 
@@ -69,6 +73,8 @@ module fv_arrays_mod
 ! IPCC diag
  integer :: id_rh10,  id_rh50,  id_rh100, id_rh200,  id_rh250, id_rh300, &
             id_rh500, id_rh700, id_rh850, id_rh925,  id_rh1000
+ integer :: id_dp10,  id_dp50,  id_dp100, id_dp200,  id_dp250, id_dp300, &
+            id_dp500, id_dp700, id_dp850, id_dp925,  id_dp1000
 
  integer :: id_rh1000_cmip, id_rh925_cmip, id_rh850_cmip, id_rh700_cmip, id_rh500_cmip, &
             id_rh300_cmip,  id_rh250_cmip, id_rh100_cmip, id_rh50_cmip,  id_rh10_cmip
@@ -274,6 +280,7 @@ module fv_arrays_mod
    real    :: scale_z = 0.   ! diff_z = scale_z**2 * 0.25
    real    :: w_max = 75.    ! max w (m/s) threshold for hydostatiic adjustment 
    real    :: z_min = 0.05   ! min ratio of dz_nonhydrostatic/dz_hydrostatic
+   real    :: lim_fac = 1.0  ! linear scheme limiting factor, 1: hord = 5, 3: hord = 6
 
    integer :: nord=1         ! 0: del-2, 1: del-4, 2: del-6, 3: del-8 divergence damping
                              ! Alternative setting for high-res: nord=1; d4_bg = 0.075
@@ -297,6 +304,7 @@ module fv_arrays_mod
    integer :: nord_zs_filter=4      !  use del-2 (2) OR del-4 (4)
    logical :: full_zs_filter=.false.! perform full filtering of topography (in external_ic only )
 
+   logical :: RF_fast =.false.      !  Fast inline Rayleigh Friction
    logical :: consv_am  = .false.   ! Apply Angular Momentum Correction (to zonal wind component)
    logical :: do_sat_adj= .false.   ! 
    logical :: do_f3d    = .false.   ! 
@@ -373,6 +381,8 @@ module fv_arrays_mod
                              ! positive n: every n hours
                              ! negative n: every time step
 
+   logical :: write_3d_diags = .true. !whether to write large 3d outputs
+                                      !on this grid
 !------------------------------------------
 ! Model Domain parameters
 !------------------------------------------
@@ -390,6 +400,7 @@ module fv_arrays_mod
    integer :: fv_sg_adj = -1          ! Perform grid-scale dry adjustment if > 0
                                       ! Relaxzation time  scale (sec) if positive
    integer :: na_init = 0             ! Perform adiabatic initialization
+   logical :: nudge_dz = .false.      ! Whether to nudge delz in the adiabatic initialization
    real    :: p_ref = 1.E5
    real    :: dry_mass = 98290.
    integer :: nt_prog = 0

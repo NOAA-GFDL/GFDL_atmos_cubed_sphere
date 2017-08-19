@@ -52,8 +52,10 @@ module fv_nwp_nudge_mod
 
  real(kind=R_GRID), parameter :: radius = cnst_radius
 
- character(len=128) :: version = ''
- character(len=128) :: tagname = ''
+! version number of this module
+! Include variable "version" to be written to log file.
+#include<file_version.h>
+
  logical :: do_adiabatic_init
 
  public fv_nwp_nudge, fv_nwp_nudge_init, fv_nwp_nudge_end, breed_slp_inline, T_is_Tv
@@ -1184,7 +1186,7 @@ module fv_nwp_nudge_mod
        end do
 10     call close_file ( unit )
     end if
-    call write_version_number (version, tagname)
+    call write_version_number ( 'FV_NUDGE_MOD', version )
     if ( master ) then
          f_unit=stdlog()
          write( f_unit, nml = fv_nwp_nudge_nml )

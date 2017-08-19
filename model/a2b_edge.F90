@@ -43,10 +43,6 @@ module a2b_edge_mod
   private
   public :: a2b_ord2, a2b_ord4
 
-!---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
-
 contains
 
 #ifndef USE_OLD_ALGORITHM

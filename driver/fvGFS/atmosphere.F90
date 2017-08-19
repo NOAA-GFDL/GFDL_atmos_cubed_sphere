@@ -63,7 +63,7 @@ use fv_eta_mod,         only: get_eta_level
 use fv_fill_mod,        only: fill_gfs
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
-use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin
+use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
@@ -88,7 +88,8 @@ public :: atmosphere_resolution, atmosphere_grid_bdry, &
           atmosphere_control_data, atmosphere_pref, &
           atmosphere_diag_axes, atmosphere_etalvls, &
           atmosphere_hgt, atmosphere_scalar_field_halo, &
-          atmosphere_tracer_postinit, &
+!rab          atmosphere_tracer_postinit, &
+! atmosphere_diss_est, &
           get_bottom_mass, get_bottom_wind,   &
           get_stock_pe, set_atmosphere_pelist
 
@@ -139,12 +140,10 @@ contains
 
 
 
- subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, dx, dy, area)
+ subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, area)
    type (time_type),    intent(in)    :: Time_init, Time, Time_step
    type(grid_box_type), intent(inout) :: Grid_box
-   real(kind=kind_phys), pointer, dimension(:,:), intent(inout) :: dx, dy, area
-   integer, intent(inout)             :: layout(:)
-
+   real(kind=kind_phys), pointer, dimension(:,:), intent(inout) :: area
 !--- local variables ---
    integer :: i, n
    integer :: itrac
@@ -197,8 +196,6 @@ contains
    jsd = jsc - Atm(mytile)%bd%ng
    jed = jec + Atm(mytile)%bd%ng
 
-   layout(1:2) =  Atm(mytile)%layout(1:2)
-
    nq = ncnst-pnats
    sphum   = get_tracer_index (MODEL_ATMOS, 'sphum' )
    liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat' )
@@ -240,11 +237,7 @@ contains
      Grid_box%vlon  (i, isc:iec  , jsc:jec  ) = Atm(mytile)%gridstruct%vlon  (isc:iec ,  jsc:jec, i )
      Grid_box%vlat  (i, isc:iec  , jsc:jec  ) = Atm(mytile)%gridstruct%vlat  (isc:iec ,  jsc:jec, i )
    enddo
-   allocate (dx  (isc:iec  , jsc:jec+1))
-   allocate (dy  (isc:iec+1, jsc:jec  ))
    allocate (area(isc:iec  , jsc:jec  ))
-   dx(isc:iec,jsc:jec+1) = Atm(mytile)%gridstruct%dx_64(isc:iec,jsc:jec+1)
-   dy(isc:iec+1,jsc:jec) = Atm(mytile)%gridstruct%dy_64(isc:iec+1,jsc:jec)
    area(isc:iec,jsc:jec) = Atm(mytile)%gridstruct%area_64(isc:iec,jsc:jec)
 
 !----- allocate and zero out the dynamics (and accumulated) tendencies
@@ -252,7 +245,7 @@ contains
              v_dt(isd:ied,jsd:jed,npz), &
              t_dt(isc:iec,jsc:jec,npz) )
 !--- allocate pref
-    allocate(pref(npz+1,2), dum1d(npz+1))
+   allocate(pref(npz+1,2), dum1d(npz+1))
 
    call set_domain ( Atm(mytile)%domain )
    call fv_restart(Atm(mytile)%domain, Atm, dt_atmos, seconds, days, cold_start, Atm(mytile)%gridstruct%grid_type, grids_on_this_pe)
@@ -284,9 +277,12 @@ contains
       if ( .not. Atm(mytile)%flagstruct%hydrostatic ) then
            call prt_maxmin('Before adi: W', Atm(mytile)%w, isc, iec, jsc, jec, Atm(mytile)%ng, npz, 1.)
       endif
-      call adiabatic_init(zvir)
+      call adiabatic_init(zvir,Atm(mytile)%flagstruct%nudge_dz)
       if ( .not. Atm(mytile)%flagstruct%hydrostatic ) then
            call prt_maxmin('After adi: W', Atm(mytile)%w, isc, iec, jsc, jec, Atm(mytile)%ng, npz, 1.)
+! Not nested?
+           call prt_height('na_ini Z500', isc,iec, jsc,jec, 3, npz, 500.E2, Atm(mytile)%phis, Atm(mytile)%delz,    &
+                Atm(mytile)%peln, Atm(mytile)%gridstruct%area_64(isc:iec,jsc:jec), Atm(mytile)%gridstruct%agrid_64(isc:iec,jsc:jec,2))
       endif
    else
       call mpp_error(NOTE,'No adiabatic initialization correction in use')
@@ -572,12 +568,14 @@ contains
  end subroutine set_atmosphere_pelist
 
 
- subroutine atmosphere_domain ( fv_domain )
+ subroutine atmosphere_domain ( fv_domain, layout )
    type(domain2d), intent(out) :: fv_domain
+   integer, intent(out) :: layout(2)
 !  returns the domain2d variable associated with the coupling grid
 !  note: coupling is done using the mass/temperature grid with no halos
 
    fv_domain = Atm(mytile)%domain_for_coupler
+   layout(1:2) =  Atm(mytile)%layout(1:2)
 
  end subroutine atmosphere_domain
 
@@ -754,41 +752,43 @@ contains
  end subroutine atmosphere_scalar_field_halo
 
 
- subroutine atmosphere_tracer_postinit (IPD_Data, Atm_block)
-   !--- interface variables ---
-   type(IPD_data_type),       intent(in) :: IPD_Data(:)
-   type(block_control_type),  intent(in) :: Atm_block
-   !--- local variables ---
-   integer :: i, j, ix, k, k1, n, nwat, nb, blen
-   real(kind=kind_phys) :: qwat
-
-   if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
-
-   n = mytile
-   nwat = Atm(n)%flagstruct%nwat
-
-!$OMP parallel do default (none) &
-!$OMP              shared (Atm_block, Atm, IPD_Data, npz, nq, ncnst, n, nwat) &
-!$OMP             private (nb, k, k1, ix, i, j, qwat)
-   do nb = 1,Atm_block%nblks
-     do k = 1, npz
-       k1 = npz+1-k !reverse the k direction
-       do ix = 1, Atm_block%blksz(nb)
-         i = Atm_block%index(nb)%ii(ix)
-         j = Atm_block%index(nb)%jj(ix)
-         qwat = sum(Atm(n)%q(i,j,k1,1:nwat))
-         Atm(n)%q(i,j,k1,1:nq) = Atm(n)%q(i,j,k1,1:nq) + IPD_Data(nb)%Stateout%gq0(ix,k,1:nq) * (1.0 - qwat)
-         if (nq .gt. ncnst) then
-           Atm(n)%qdiag(i,j,k1,nq+1:ncnst) = Atm(n)%qdiag(i,j,k1,nq+1:ncnst) + IPD_Data(nb)%Stateout%gq0(ix,k,nq+1:ncnst)
-         endif
-       enddo
-     enddo
-   enddo
-
-   call mpp_update_domains (Atm(n)%q, Atm(n)%domain, complete=.true.)
-
-   return
- end subroutine atmosphere_tracer_postinit
+!--- Need to know the formulation of the mixing ratio being imported into FV3
+!--- in order to adjust it in a consistent manner for advection
+!rab subroutine atmosphere_tracer_postinit (IPD_Data, Atm_block)
+!rab   !--- interface variables ---
+!rab   type(IPD_data_type),       intent(in) :: IPD_Data(:)
+!rab   type(block_control_type),  intent(in) :: Atm_block
+!rab   !--- local variables ---
+!rab   integer :: i, j, ix, k, k1, n, nwat, nb, blen
+!rab   real(kind=kind_phys) :: qwat
+!rab
+!rab   if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
+!rab
+!rab   n = mytile
+!rab   nwat = Atm(n)%flagstruct%nwat
+!rab
+!rab!$OMP parallel do default (none) &
+!rab!$OMP              shared (Atm_block, Atm, IPD_Data, npz, nq, ncnst, n, nwat) &
+!rab!$OMP             private (nb, k, k1, ix, i, j, qwat)
+!rab   do nb = 1,Atm_block%nblks
+!rab     do k = 1, npz
+!rab       k1 = npz+1-k !reverse the k direction
+!rab       do ix = 1, Atm_block%blksz(nb)
+!rab         i = Atm_block%index(nb)%ii(ix)
+!rab         j = Atm_block%index(nb)%jj(ix)
+!rab         qwat = sum(Atm(n)%q(i,j,k1,1:nwat))
+!rab         Atm(n)%q(i,j,k1,1:nq) = Atm(n)%q(i,j,k1,1:nq) + IPD_Data(nb)%Stateout%gq0(ix,k,1:nq) * (1.0 - qwat)
+!rab         if (nq .gt. ncnst) then
+!rab           Atm(n)%qdiag(i,j,k1,nq+1:ncnst) = Atm(n)%qdiag(i,j,k1,nq+1:ncnst) + IPD_Data(nb)%Stateout%gq0(ix,k,nq+1:ncnst)
+!rab         endif
+!rab       enddo
+!rab     enddo
+!rab   enddo
+!rab
+!rab   call mpp_update_domains (Atm(n)%q, Atm(n)%domain, complete=.true.)
+!rab
+!rab   return
+!rab end subroutine atmosphere_tracer_postinit
 
 
  subroutine get_bottom_mass ( t_bot, tr_bot, p_bot, z_bot, p_surf, slp )
@@ -985,7 +985,7 @@ contains
          q0 = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:nwat))) + qt 
          Atm(n)%delp(i,j,k1) = q0
          Atm(n)%q(i,j,k1,1:nq_adv) = qwat(1:nq_adv) / q0
-         if (dnats .gt. 0) Atm(n)%q(i,j,k1,nq_adv+1:nq) = IPD_Data(nb)%Stateout%gq0(ix,k,nq_adv+1:nq)
+!        if (dnats .gt. 0) Atm(n)%q(i,j,k1,nq_adv+1:nq) = IPD_Data(nb)%Stateout%gq0(ix,k,nq_adv+1:nq)
        enddo
      enddo
 
@@ -1100,9 +1100,10 @@ contains
  end subroutine atmosphere_state_update
 
 
- subroutine adiabatic_init(zvir)
-   real, allocatable, dimension(:,:,:):: u0, v0, t0, dp0
+ subroutine adiabatic_init(zvir,nudge_dz)
+   real, allocatable, dimension(:,:,:):: u0, v0, t0, dz0, dp0
    real, intent(in):: zvir
+   logical, intent(inout):: nudge_dz
 !  real, parameter:: wt = 1.  ! was 2.
    real, parameter:: wt = 2.
 !***********
@@ -1144,11 +1145,18 @@ contains
 
      allocate ( u0(isc:iec,  jsc:jec+1, npz) )
      allocate ( v0(isc:iec+1,jsc:jec,   npz) )
-     allocate ( t0(isc:iec,jsc:jec, npz) )
      allocate (dp0(isc:iec,jsc:jec, npz) )
 
+     if ( Atm(mytile)%flagstruct%hydrostatic ) nudge_dz = .false.
+
+     if ( nudge_dz ) then
+          allocate (dz0(isc:iec,jsc:jec, npz) )
+     else
+          allocate ( t0(isc:iec,jsc:jec, npz) )
+     endif
+
 !$omp parallel do default (none) & 
-!$omp              shared (npz, jsc, jec, isc, iec, n, sphum, u0, v0, t0, dp0, Atm, zvir, mytile) &
+!$omp              shared (nudge_dz, npz, jsc, jec, isc, iec, n, sphum, u0, v0, t0, dz0, dp0, Atm, zvir, mytile) &
 !$omp             private (k, j, i) 
        do k=1,npz
           do j=jsc,jec+1
@@ -1161,12 +1169,21 @@ contains
                 v0(i,j,k) = Atm(mytile)%v(i,j,k)
              enddo
           enddo
-          do j=jsc,jec
-             do i=isc,iec
-                t0(i,j,k) = Atm(mytile)%pt(i,j,k)*(1.+zvir*Atm(mytile)%q(i,j,k,sphum))  ! virt T
-               dp0(i,j,k) = Atm(mytile)%delp(i,j,k)
+          if ( nudge_dz ) then
+             do j=jsc,jec
+                do i=isc,iec
+                   dp0(i,j,k) = Atm(mytile)%delp(i,j,k)
+                   dz0(i,j,k) = Atm(mytile)%delz(i,j,k)
+                enddo
              enddo
-          enddo
+          else
+             do j=jsc,jec
+                do i=isc,iec
+                   t0(i,j,k) = Atm(mytile)%pt(i,j,k)*(1.+zvir*Atm(mytile)%q(i,j,k,sphum))  ! virt T
+                   dp0(i,j,k) = Atm(mytile)%delp(i,j,k)
+                enddo
+             enddo
+          endif
        enddo
 
      do m=1,Atm(mytile)%flagstruct%na_init
@@ -1198,10 +1215,10 @@ contains
                      Atm(mytile)%gridstruct, Atm(mytile)%flagstruct,                            &
                      Atm(mytile)%neststruct, Atm(mytile)%idiag, Atm(mytile)%bd, Atm(mytile)%parent_grid,  &
                      Atm(mytile)%domain)
-!Nudging back to IC
+! Nudging back to IC
 !$omp parallel do default (none) &
-!$omp shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mytile) & 
-!$omp private (i, j, k, p00, q00)
+!$omp              shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mytile, nudge_dz, dz0) &
+!$omp             private (i, j, k, p00, q00)
        do k=1,npz
           do j=jsc,jec+1
              do i=isc,iec
@@ -1213,37 +1230,47 @@ contains
                 Atm(mytile)%v(i,j,k) = xt*(Atm(mytile)%v(i,j,k) + wt*v0(i,j,k))
              enddo
           enddo
-      if( Atm(mytile)%flagstruct%nudge_qv ) then
+          if( Atm(mytile)%flagstruct%nudge_qv ) then
 ! SJL note: Nudging water vaport towards HALOE climatology:
 ! In case of better IC (IFS) this step may not be necessary
-          p00 = Atm(mytile)%pe(isc,k,jsc)
-          if ( p00 < 30.E2 ) then
-             if ( p00 < 1. ) then
-                  q00 = q1_h2o
-             elseif ( p00 <= 7. .and. p00 >= 1. ) then
-                  q00 = q1_h2o + (q7_h2o-q1_h2o)*log(pref(k,1)/1.)/log(7.)
-             elseif ( p00 < 100. .and. p00 >= 7. ) then
-                  q00 = q7_h2o + (q100_h2o-q7_h2o)*log(pref(k,1)/7.)/log(100./7.)
-             elseif ( p00 < 1000. .and. p00 >= 100. ) then
-                  q00 = q100_h2o + (q1000_h2o-q100_h2o)*log(pref(k,1)/1.E2)/log(10.)
-             elseif ( p00 < 2000. .and. p00 >= 1000. ) then
-                  q00 = q1000_h2o + (q2000_h2o-q1000_h2o)*log(pref(k,1)/1.E3)/log(2.)
-             else
-                  q00 = q2000_h2o + (q3000_h2o-q2000_h2o)*log(pref(k,1)/2.E3)/log(1.5)
+             p00 = Atm(mytile)%pe(isc,k,jsc)
+             if ( p00 < 30.E2 ) then
+                if ( p00 < 1. ) then
+                     q00 = q1_h2o
+                elseif ( p00 <= 7. .and. p00 >= 1. ) then
+                     q00 = q1_h2o + (q7_h2o-q1_h2o)*log(pref(k,1)/1.)/log(7.)
+                elseif ( p00 < 100. .and. p00 >= 7. ) then
+                     q00 = q7_h2o + (q100_h2o-q7_h2o)*log(pref(k,1)/7.)/log(100./7.)
+                elseif ( p00 < 1000. .and. p00 >= 100. ) then
+                     q00 = q100_h2o + (q1000_h2o-q100_h2o)*log(pref(k,1)/1.E2)/log(10.)
+                elseif ( p00 < 2000. .and. p00 >= 1000. ) then
+                     q00 = q1000_h2o + (q2000_h2o-q1000_h2o)*log(pref(k,1)/1.E3)/log(2.)
+                else
+                     q00 = q2000_h2o + (q3000_h2o-q2000_h2o)*log(pref(k,1)/2.E3)/log(1.5)
+                endif
+                do j=jsc,jec
+                   do i=isc,iec
+                      Atm(mytile)%q(i,j,k,sphum) = xt*(Atm(mytile)%q(i,j,k,sphum) + wt*q00)
+                   enddo
+                enddo
              endif
+          endif
+          if ( nudge_dz ) then
              do j=jsc,jec
                 do i=isc,iec
-                   Atm(mytile)%q(i,j,k,sphum) = xt*(Atm(mytile)%q(i,j,k,sphum) + wt*q00)
+                   Atm(mytile)%delp(i,j,k) = xt*(Atm(mytile)%delp(i,j,k) + wt*dp0(i,j,k))
+                   Atm(mytile)%delz(i,j,k) = xt*(Atm(mytile)%delz(i,j,k) + wt*dz0(i,j,k))
+                enddo
+             enddo
+          else
+             do j=jsc,jec
+                do i=isc,iec
+                   Atm(mytile)%pt(i,j,k) = xt*(Atm(mytile)%pt(i,j,k) + wt*t0(i,j,k)/(1.+zvir*Atm(mytile)%q(i,j,k,sphum)))
+                   Atm(mytile)%delp(i,j,k) = xt*(Atm(mytile)%delp(i,j,k) + wt*dp0(i,j,k))
                 enddo
              enddo
           endif
-      endif
-          do j=jsc,jec
-             do i=isc,iec
-                Atm(mytile)%pt(i,j,k) = xt*(Atm(mytile)%pt(i,j,k) + wt*t0(i,j,k)/(1.+zvir*Atm(mytile)%q(i,j,k,sphum)))
-                Atm(mytile)%delp(i,j,k) = xt*(Atm(mytile)%delp(i,j,k) + wt*dp0(i,j,k))
-             enddo
-          enddo
+
        enddo
 
 ! Backward
@@ -1276,8 +1303,8 @@ contains
                      Atm(mytile)%domain)
 ! Nudging back to IC
 !$omp parallel do default (none) &
-!$omp             shared (npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mytile) &
-!$omp            private (i, j, k)
+!$omp              shared (nudge_dz,npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dz0, dp0, xt, zvir, mytile) &
+!$omp             private (i, j, k)
        do k=1,npz
           do j=jsc,jec+1
              do i=isc,iec
@@ -1289,20 +1316,30 @@ contains
                 Atm(mytile)%v(i,j,k) = xt*(Atm(mytile)%v(i,j,k) + wt*v0(i,j,k))
              enddo
           enddo
-          do j=jsc,jec
+          if ( nudge_dz ) then
+             do j=jsc,jec
+             do i=isc,iec
+                Atm(mytile)%delp(i,j,k) = xt*(Atm(mytile)%delp(i,j,k) + wt*dp0(i,j,k))
+                Atm(mytile)%delz(i,j,k) = xt*(Atm(mytile)%delz(i,j,k) + wt*dz0(i,j,k))
+             enddo
+             enddo
+          else
+             do j=jsc,jec
              do i=isc,iec
                 Atm(mytile)%pt(i,j,k) = xt*(Atm(mytile)%pt(i,j,k) + wt*t0(i,j,k)/(1.+zvir*Atm(mytile)%q(i,j,k,sphum)))
                 Atm(mytile)%delp(i,j,k) = xt*(Atm(mytile)%delp(i,j,k) + wt*dp0(i,j,k))
              enddo
-          enddo
+             enddo
+          endif
        enddo
 
      enddo
 
      deallocate ( u0 )
      deallocate ( v0 )
-     deallocate ( t0 )
      deallocate (dp0 )
+     if ( allocated(t0) )  deallocate ( t0 )
+     if ( allocated(dz0) ) deallocate ( dz0 )
 
      do_adiabatic_init = .false.
      call timing_off('adiabatic_init')
