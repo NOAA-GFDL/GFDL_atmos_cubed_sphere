@@ -43,8 +43,8 @@ SRCS_F90 = \
 		   ./model/fv_update_phys.F90                     \
 		   ./model/sw_core.F90                            \
 		   ./model/tp_core.F90                            \
-		   ./model_nh/nh_core.F90                         \
-		   ./model_nh/nh_utils.F90                        \
+		   ./model/nh_core.F90                            \
+		   ./model/nh_utils.F90                           \
 		   ./tools/external_ic.F90                        \
 		   ./tools/external_sst.F90                       \
 		   ./tools/fv_diagnostics.F90                     \
@@ -62,8 +62,7 @@ SRCS_F90 = \
 		   ./tools/sim_nc_mod.F90                         \
 		   ./tools/sorted_index.F90                       \
 		   ./tools/test_cases.F90                         \
-		   ./driver/fvGFS/atmosphere.F90                  \
-		   ./driver/fvGFS/lin_cloud_microphys.F90
+		   ./driver/fvGFS/atmosphere.F90
 
 SRCS_c   = 
 
@@ -85,14 +84,14 @@ $(LIBRARY): $(OBJS)
 # this is the place to override default (implicit) compilation rules
 # and create specific (explicit) rules
 
-./model_nh/nh_utils.o : ./model_nh/nh_utils.F90
+./model/nh_utils.o : ./model/nh_utils.F90
 	$(FC) $(CPPDEFS) $(FPPFLAGS) $(FFLAGS) $(OTHER_FFLAGS) $(FAST) -c $< -o $@
 
 ./model/fv_mapz.o : ./model/fv_mapz.F90
 	$(FC) $(CPPDEFS) $(FPPFLAGS) $(FFLAGS) $(OTHER_FFLAGS) $(FAST) -c $< -o $@
 
 ./tools/fv_nggps_diag.o : ./tools/fv_nggps_diag.F90
-	$(FC) $(CPPDEFS) $(FPPFLAGS) $(FFLAGS) $(OTHER_FFLAGS) $(FAST) $(ESMF_INC) -c $< -o $@
+	$(FC) $(CPPDEFS) $(FPPFLAGS) $(FFLAGS) $(OTHER_FFLAGS) $(ESMF_INC) -c $< -o $@
 
 .PHONY: clean
 clean:
