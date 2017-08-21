@@ -53,6 +53,7 @@ use field_manager_mod,      only: MODEL_ATMOS
 use tracer_manager_mod,     only: get_tracer_index, get_number_tracers, &
                                   NO_TRACER
 use IPD_typedefs,           only: IPD_data_type, kind_phys
+use fv_iau_mod,             only: IAU_external_data_type
 
 !-----------------
 ! FV core modules:
@@ -89,7 +90,7 @@ public :: atmosphere_resolution, atmosphere_grid_bdry, &
           atmosphere_diag_axes, atmosphere_etalvls, &
           atmosphere_hgt, atmosphere_scalar_field_halo, &
 !rab          atmosphere_tracer_postinit, &
-! atmosphere_diss_est, &
+          atmosphere_diss_est, &
           get_bottom_mass, get_bottom_wind,   &
           get_stock_pe, set_atmosphere_pelist
 
@@ -384,7 +385,7 @@ contains
                       Atm(n)%flagstruct%hybrid_z,                          &
                       Atm(n)%gridstruct, Atm(n)%flagstruct,                &
                       Atm(n)%neststruct, Atm(n)%idiag, Atm(n)%bd,          &
-                      Atm(n)%parent_grid, Atm(n)%domain)
+                      Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est)
 
      call timing_off('fv_dynamics')
 
@@ -752,6 +753,32 @@ contains
  end subroutine atmosphere_scalar_field_halo
 
 
+ subroutine atmosphere_diss_est (diss_est, npass)
+   use dyn_core_mod, only: del2_cubed
+   !--- interface variables ---
+   real(kind=kind_phys), pointer, dimension(:,:,:), intent(inout) :: diss_est
+   integer, intent(in) :: npass
+   !--- local variables
+   integer:: k
+
+   !horizontally smooth dissiapation estimate for SKEB
+   do k = 1,min(3,npass)
+     call del2_cubed(Atm(mytile)%diss_est, 0.25*Atm(mytile)%gridstruct%da_min, Atm(mytile)%gridstruct, &
+                     Atm(mytile)%domain, npx, npy, npz, 3, Atm(mytile)%bd)
+   enddo
+
+   diss_est=abs(diss_est)
+
+   do k = 4,npass
+     call del2_cubed(Atm(mytile)%diss_est, 0.25**Atm(mytile)%gridstruct%da_min, Atm(mytile)%gridstruct, &
+                     Atm(mytile)%domain, npx, npy, npz, 3, Atm(mytile)%bd)
+   enddo
+
+   diss_est=sqrt(diss_est)
+
+ end subroutine atmosphere_diss_est
+
+
 !--- Need to know the formulation of the mixing ratio being imported into FV3
 !--- in order to adjust it in a consistent manner for advection
 !rab subroutine atmosphere_tracer_postinit (IPD_Data, Atm_block)
@@ -922,11 +949,11 @@ contains
  end subroutine get_stock_pe
 
 
- subroutine atmosphere_state_update (Time, IPD_Data, Atm_block)
-   !--- interface variables ---
-   type(time_type),           intent(in) :: Time
-   type(IPD_data_type),       intent(in) :: IPD_Data(:)
-   type(block_control_type),  intent(in) :: Atm_block
+ subroutine atmosphere_state_update (Time, IPD_Data, IAU_Data, Atm_block)
+   type(time_type),              intent(in) :: Time
+   type(IPD_data_type),          intent(in) :: IPD_Data(:)
+   type(IAU_external_data_type), intent(in) :: IAU_Data
+   type(block_control_type),     intent(in) :: Atm_block
    !--- local variables ---
    type(time_type) :: Time_prev, Time_next
    integer :: i, j, ix, k, k1, n, w_diff, nt_dyn, iq
@@ -943,6 +970,36 @@ contains
    nq_adv = nq - dnats
 
    if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
+
+   if (IAU_Data%in_interval) then
+!     IAU increments are in units of 1/sec
+
+!     add analysis increment to u,v,t tendencies
+!     directly update delp with analysis increment
+      do k = 1, npz
+         do j = jsc,jec
+            do i = isc,iec
+               u_dt(i,j,k) = u_dt(i,j,k) + IAU_Data%ua_inc(i,j,k)
+               v_dt(i,j,k) = v_dt(i,j,k) + IAU_Data%va_inc(i,j,k)
+               t_dt(i,j,k) = t_dt(i,j,k) + IAU_Data%temp_inc(i,j,k)
+               Atm(n)%delp(i,j,k) = Atm(n)%delp(i,j,k)  + IAU_Data%delp_inc(i,j,k)*dt_atmos
+          enddo
+        enddo
+      enddo
+!     add analysis increment to tracers to output from physics
+      do nb = 1,Atm_block%nblks
+         !if (nb.EQ.1) print*,'in block_update',IAU_Data%in_interval,IAU_Data%temp_inc(isc,jsc,30)
+         blen = Atm_block%blksz(nb)
+         do k = 1, npz
+            k1 = npz+1-k !reverse the k direction 
+            do ix = 1, blen
+               i = Atm_block%index(nb)%ii(ix)
+               j = Atm_block%index(nb)%jj(ix)
+               IPD_Data(nb)%Stateout%gq0(ix,k,:) = IPD_Data(nb)%Stateout%gq0(ix,k,:) + IAU_Data%tracer_inc(i,j,k1,:)*dt_atmos
+            enddo
+         enddo
+      enddo
+   endif
 
    call set_domain ( Atm(mytile)%domain )
 
@@ -967,7 +1024,8 @@ contains
          j = Atm_block%index(nb)%jj(ix)
          u_dt(i,j,k1) = u_dt(i,j,k1) + (IPD_Data(nb)%Stateout%gu0(ix,k) - IPD_Data(nb)%Statein%ugrs(ix,k)) * rdt
          v_dt(i,j,k1) = v_dt(i,j,k1) + (IPD_Data(nb)%Stateout%gv0(ix,k) - IPD_Data(nb)%Statein%vgrs(ix,k)) * rdt
-         t_dt(i,j,k1) = (IPD_Data(nb)%Stateout%gt0(ix,k) - IPD_Data(nb)%Statein%tgrs(ix,k)) * rdt
+!         t_dt(i,j,k1) = (IPD_Data(nb)%Stateout%gt0(ix,k) - IPD_Data(nb)%Statein%tgrs(ix,k)) * rdt
+         t_dt(i,j,k1) = t_dt(i,j,k1) + (IPD_Data(nb)%Stateout%gt0(ix,k) - IPD_Data(nb)%Statein%tgrs(ix,k)) * rdt
 ! SJL notes:
 ! ---- DO not touch the code below; dry mass conservation may change due to 64bit <-> 32bit conversion
 ! GFS total air mass = dry_mass + water_vapor (condensate excluded)
@@ -988,20 +1046,6 @@ contains
 !        if (dnats .gt. 0) Atm(n)%q(i,j,k1,nq_adv+1:nq) = IPD_Data(nb)%Stateout%gq0(ix,k,nq_adv+1:nq)
        enddo
      enddo
-
-!GFDL     if ( dnats > 0 ) then
-!GFDL       do iq = nq-dnats+1, nq
-!GFDL         do k = 1, npz
-!GFDL           k1 = npz+1-k !reverse the k direction
-!GFDL           do ix = 1,blen
-!GFDL             i = Atm_block%index(nb)%ii(ix)
-!GFDL             j = Atm_block%index(nb)%jj(ix)
-!GFDL             Atm(n)%q(i,j,k1,iq) = Atm(n)%q(i,j,k1,iq) + (IPD_Data(nb)%Stateout%gq0(ix,k,iq)-IPD_Data(nb)%Statein%qgrs(ix,k,iq))*rdt
-!GFDL!                                * (IPD_Data%Statein%prsi(ix,k)-IPD_Data(nb)%Statein%prsi(ix,k+1))/Atm(n)%delp(i,j,k1)
-!GFDL           enddo
-!GFDL         enddo
-!GFDL       enddo
-!GFDL     endif
 
      !--- diagnostic tracers are assumed to be updated in-place
      !--- SHOULD THESE DIAGNOSTIC TRACERS BE MASS ADJUSTED???
@@ -1200,7 +1244,7 @@ contains
                      Atm(mytile)%cx, Atm(mytile)%cy, Atm(mytile)%ze0, Atm(mytile)%flagstruct%hybrid_z,    &
                      Atm(mytile)%gridstruct, Atm(mytile)%flagstruct,                            &
                      Atm(mytile)%neststruct, Atm(mytile)%idiag, Atm(mytile)%bd, Atm(mytile)%parent_grid,  &
-                     Atm(mytile)%domain)
+                     Atm(mytile)%domain,Atm(mytile)%diss_est)
 ! Backward
     call fv_dynamics(Atm(mytile)%npx, Atm(mytile)%npy, npz,  nq, Atm(mytile)%ng, -dt_atmos, 0.,      &
                      Atm(mytile)%flagstruct%fill, Atm(mytile)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1214,8 +1258,8 @@ contains
                      Atm(mytile)%cx, Atm(mytile)%cy, Atm(mytile)%ze0, Atm(mytile)%flagstruct%hybrid_z,    &
                      Atm(mytile)%gridstruct, Atm(mytile)%flagstruct,                            &
                      Atm(mytile)%neststruct, Atm(mytile)%idiag, Atm(mytile)%bd, Atm(mytile)%parent_grid,  &
-                     Atm(mytile)%domain)
-! Nudging back to IC
+                     Atm(mytile)%domain,Atm(mytile)%diss_est)
+!Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mytile, nudge_dz, dz0) &
 !$omp             private (i, j, k, p00, q00)
@@ -1286,7 +1330,7 @@ contains
                      Atm(mytile)%cx, Atm(mytile)%cy, Atm(mytile)%ze0, Atm(mytile)%flagstruct%hybrid_z,    &
                      Atm(mytile)%gridstruct, Atm(mytile)%flagstruct,                            &
                      Atm(mytile)%neststruct, Atm(mytile)%idiag, Atm(mytile)%bd, Atm(mytile)%parent_grid,  &
-                     Atm(mytile)%domain)
+                     Atm(mytile)%domain,Atm(mytile)%diss_est)
 ! Forward call
     call fv_dynamics(Atm(mytile)%npx, Atm(mytile)%npy, npz,  nq, Atm(mytile)%ng, dt_atmos, 0.,      &
                      Atm(mytile)%flagstruct%fill, Atm(mytile)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1300,7 +1344,7 @@ contains
                      Atm(mytile)%cx, Atm(mytile)%cy, Atm(mytile)%ze0, Atm(mytile)%flagstruct%hybrid_z,    &
                      Atm(mytile)%gridstruct, Atm(mytile)%flagstruct,                            &
                      Atm(mytile)%neststruct, Atm(mytile)%idiag, Atm(mytile)%bd, Atm(mytile)%parent_grid,  &
-                     Atm(mytile)%domain)
+                     Atm(mytile)%domain,Atm(mytile)%diss_est)
 ! Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (nudge_dz,npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dz0, dp0, xt, zvir, mytile) &
@@ -1409,7 +1453,7 @@ contains
          IPD_Data(nb)%Statein%tgrs(ix,k) = _DBL_(_RL_(Atm(mytile)%pt(i,j,k1)))
          IPD_Data(nb)%Statein%ugrs(ix,k) = _DBL_(_RL_(Atm(mytile)%ua(i,j,k1)))
          IPD_Data(nb)%Statein%vgrs(ix,k) = _DBL_(_RL_(Atm(mytile)%va(i,j,k1)))
-          IPD_Data(nb)%Statein%vvl(ix,k) = _DBL_(_RL_(Atm(mytile)%omga(i,j,k1)))
+         IPD_Data(nb)%Statein%vvl(ix,k)  = _DBL_(_RL_(Atm(mytile)%omga(i,j,k1)))
          IPD_Data(nb)%Statein%prsl(ix,k) = _DBL_(_RL_(Atm(mytile)%delp(i,j,k1)))   ! Total mass
 
          if (.not.Atm(mytile)%flagstruct%hydrostatic .and. (.not.Atm(mytile)%flagstruct%use_hydro_pressure))  &

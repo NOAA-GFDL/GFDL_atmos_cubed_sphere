@@ -469,6 +469,8 @@ module fv_arrays_mod
    logical :: external_eta = .false.  ! allow the use of externally defined ak/bk values and not 
                                       ! require coefficients to be defined vi set_eta
    logical :: read_increment = .false.   ! read in analysis increment and add to restart
+! following are namelist parameters for Stochastic Energy Baskscatter dissipation estimate
+   logical :: do_skeb  = .false.       ! save dissipation estimate
 ! Default restart files from the "Memphis" latlon FV core:
    character(len=128) :: res_latlon_dynamics = 'INPUT/fv_rst.res.nc'
    character(len=128) :: res_latlon_tracers  = 'INPUT/atmos_tracers.res.nc'
@@ -680,6 +682,8 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: sgh(:,:)      _NULL  ! Terrain standard deviation
     real, _ALLOCATABLE :: oro(:,:)      _NULL  ! land fraction (1: all land; 0: all water)
     real, _ALLOCATABLE :: ts(:,:)       _NULL  ! skin temperature (sst) from NCEP/GFS (K) -- tile
+! For stochastic kinetic energy backscatter (SKEB)
+    real, _ALLOCATABLE :: diss_est(:,:,:) _NULL ! dissipation estimate taken from 'heat_source'
  
 !-----------------------------------------------------------------------
 ! Others:
@@ -907,6 +911,8 @@ contains
        allocate ( Atm%oro(1,1) )
     endif
 
+! For stochastic kinetic energy backscatter (SKEB)
+    allocate ( Atm%diss_est(isd:ied  ,jsd:jed  ,npz) )
     ! Allocate others
     allocate ( Atm%ts(is:ie,js:je) )
     allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )

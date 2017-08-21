@@ -109,7 +109,6 @@ contains
     deg2rad = pi/180.
 
     npz = Atm(1)%npz
-
     fname = 'INPUT/'//Atm(1)%flagstruct%res_latlon_dynamics
 
     if( file_exist(fname) ) then
@@ -148,9 +147,16 @@ contains
     endif
 
     ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
-    call remap_coef( is, ie, js, je, isd, ied, jsd, jed, &
+    if (is_master()) then
+       print*,'call_remap coeff Is',is,ie
+       print*,'call_remap coeff Js',js,je
+       print*,'call_remap coeff other',im,maxval(lat),maxval(Atm(1)%gridstruct%agrid(:,:,1))
+       print*,'call_remap coeff other',jm,maxval(lon),maxval(Atm(1)%gridstruct%agrid(:,:,2))
+    endif
+     
+    call remap_coef( is, ie, js, je, &
         im, jm, lon, lat, id1, id2, jdc, s2c, &
-        Atm(1)%gridstruct%agrid)
+        Atm(1)%gridstruct%agrid(is:ie,js:je,:))
 
     ! Find bounding latitudes:
     jbeg = jm-1;         jend = 2
@@ -180,8 +186,8 @@ contains
     deallocate ( wk3 )
 
     ! perform increments on winds
-    allocate (pt_c(isd:ied+1,jsd:jed  ,2))
-    allocate (pt_d(isd:ied  ,jsd:jed+1,2))
+    allocate (pt_c(is:ie+1,js:je  ,2))
+    allocate (pt_d(is:ie  ,js:je+1,2))
     allocate (ud_inc(is:ie  , js:je+1, km))
     allocate (vd_inc(is:ie+1, js:je  , km))
 
@@ -192,7 +198,7 @@ contains
 
     !------ pt_c part ------
     ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
-    call remap_coef( is, ie+1, js, je, isd, ied+1, jsd, jed, &
+    call remap_coef( is, ie+1, js, je, &
         im, jm, lon, lat, id1_c, id2_c, jdc_c, s2c_c, &
         pt_c)
 
@@ -245,7 +251,7 @@ contains
 
     !------ pt_d part ------
     ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
-    call remap_coef( is, ie, js, je+1, isd, ied, jsd, jed+1, &
+    call remap_coef( is, ie, js, je+1,&
         im, jm, lon, lat, id1_d, id2_d, jdc_d, s2c_d, &
         pt_d)
 
@@ -335,15 +341,15 @@ contains
     !---------------------------------------------------------------------------
   end subroutine read_da_inc
   !=============================================================================
-  subroutine remap_coef( is, ie, js, je, isd, ied, jsd, jed, &
+  subroutine remap_coef( is, ie, js, je,&
       im, jm, lon, lat, id1, id2, jdc, s2c, agrid )
 
-    integer, intent(in):: is, ie, js, je, isd, ied, jsd, jed
+    integer, intent(in):: is, ie, js, je
     integer, intent(in):: im, jm
     real,    intent(in):: lon(im), lat(jm)
     real,    intent(out):: s2c(is:ie,js:je,4)
     integer, intent(out), dimension(is:ie,js:je):: id1, id2, jdc
-    real,    intent(in):: agrid(isd:ied,jsd:jed,2)
+    real,    intent(in):: agrid(is:ie,js:je,2)
     ! local:
     real :: rdlon(im)
     real :: rdlat(jm)
@@ -417,10 +423,11 @@ contains
       is, ie, js, je, &
       isd, ied, jsd, jed, &
       pt_b, pt_c, pt_d)
-    integer, intent(in) :: is, ie, js, je, isd, ied, jsd, jed
+    integer, intent(in) :: is, ie, js, je
+    integer, intent(in) :: isd, ied, jsd, jed
     real, dimension(isd:ied+1,jsd:jed+1,2), intent(in) :: pt_b
-    real, dimension(isd:ied+1,jsd:jed  ,2), intent(out) :: pt_c
-    real, dimension(isd:ied  ,jsd:jed+1,2), intent(out) :: pt_d
+    real, dimension(is:ie+1,js:je  ,2), intent(out) :: pt_c
+    real, dimension(is:ie  ,js:je+1,2), intent(out) :: pt_d
     ! local
     real(kind=R_GRID), dimension(2):: p1, p2, p3
     integer :: i, j

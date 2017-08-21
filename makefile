@@ -55,6 +55,7 @@ SRCS_F90 = \
 		   ./tools/fv_nggps_diag.F90                      \
 		   ./tools/fv_nudge.F90                           \
 		   ./tools/fv_treat_da_inc.F90                    \
+		   ./tools/fv_iau_mod.F90                         \
 		   ./tools/fv_restart.F90                         \
 		   ./tools/fv_surf_map.F90                        \
 		   ./tools/fv_timing.F90                          \

@@ -38,9 +38,12 @@ module fv_nggps_diags_mod
 
  real, parameter:: missing_value = -1.e10
  logical master
- integer :: id_ua, id_va, id_pt, id_delp, id_pfhy, id_pfnh, id_w, id_delz 
- integer :: kstt_ua, kstt_va, kstt_pt, kstt_delp, kstt_pfhy, kstt_pfnh, kstt_w, kstt_delz 
- integer :: kend_ua, kend_va, kend_pt, kend_delp, kend_pfhy, kend_pfnh, kend_w, kend_delz 
+ integer :: id_ua, id_va, id_pt, id_delp, id_pfhy, id_pfnh 
+ integer :: id_w, id_delz, id_diss
+ integer :: kstt_ua, kstt_va, kstt_pt, kstt_delp, kstt_pfhy
+ integer :: kstt_pfnh, kstt_w, kstt_delz, kstt_diss
+ integer :: kend_ua, kend_va, kend_pt, kend_delp, kend_pfhy
+ integer :: kend_pfnh, kend_w, kend_delz, kend_diss
  integer :: isco, ieco, jsco, jeco, npzo, ncnsto
  integer :: nlevs
  logical :: hydrostatico
@@ -55,6 +58,7 @@ module fv_nggps_diags_mod
  real :: vrange(2) = (/ -330.,  330. /)  ! winds
  real :: wrange(2) = (/ -100.,  100. /)  ! vertical wind
  real :: trange(2) = (/  100.,  350. /)  ! temperature
+ real :: skrange(2) = (/ -10000000.0,  10000000.0 /)  ! dissipation estimate for SKEB
 
 ! file name
  character(len=64) :: file_name = 'gfs_dyn'
@@ -166,6 +170,14 @@ contains
           nlevs = nlevs + npzo
        endif
 
+       !--- diagnostic output for skeb: dissipation estimate
+       id_diss = register_diag_field ( trim(file_name), 'diss_est', axes(1:3), Time,    &
+            'dissipation estimate', 'none', missing_value=missing_value, range=skrange )
+       if (id_delp>0) then
+          kstt_diss = nlevs+1; kend_diss = nlevs+npzo
+          nlevs = nlevs + npzo
+       endif
+
 !--------------------
 ! Tracer diagnostics:
 !--------------------
@@ -263,7 +275,7 @@ contains
            enddo
          enddo
        enddo
-       call store_data(id_pfhy, wk, Time, kstt_delp)
+       call store_data(id_pfhy, wk, Time, kstt_pfhy)
     endif
 
 #ifdef GFS_PHYS
@@ -308,6 +320,9 @@ contains
        call store_data(id_pfnh, wk, Time, kstt_pfnh)
     endif
 #endif
+
+    !--- DISS_EST (skeb: dissipation estimate)
+    if(id_diss > 0) call store_data(id_diss, Atm(n)%diss_est(isco:ieco,jsco:jeco,:), Time, kstt_diss)
 
     deallocate ( wk )
 
