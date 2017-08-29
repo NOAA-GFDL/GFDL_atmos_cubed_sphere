@@ -770,7 +770,7 @@ contains
    diss_est=abs(diss_est)
 
    do k = 4,npass
-     call del2_cubed(Atm(mytile)%diss_est, 0.25**Atm(mytile)%gridstruct%da_min, Atm(mytile)%gridstruct, &
+     call del2_cubed(Atm(mytile)%diss_est, 0.25*Atm(mytile)%gridstruct%da_min, Atm(mytile)%gridstruct, &
                      Atm(mytile)%domain, npx, npy, npz, 3, Atm(mytile)%bd)
    enddo
 
