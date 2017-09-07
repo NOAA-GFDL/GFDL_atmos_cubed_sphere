@@ -101,7 +101,7 @@ public :: atmos_phys_driver_statein
 ! version number of this module
 ! Include variable "version" to be written to log file.
 #include<file_version.h>
-character(len=7)   :: mod_name = 'fvGFS/atmosphere_mod'
+character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
 
 !---- private data ----
   type (time_type) :: Time_step_atmos
