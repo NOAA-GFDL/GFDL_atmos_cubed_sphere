@@ -31,7 +31,7 @@ module external_ic_mod
    use fms_mod,            only: get_mosaic_tile_file, read_data, error_mesg
    use fms_io_mod,         only: get_tile_string, field_size, free_restart_type
    use fms_io_mod,         only: restart_file_type, register_restart_field
-   use fms_io_mod,         only: save_restart, restore_state, set_filename_appendix
+   use fms_io_mod,         only: save_restart, restore_state
    use mpp_mod,            only: mpp_error, FATAL, NOTE, mpp_pe, mpp_root_pe
    use mpp_mod,            only: stdlog, input_nml_file
    use mpp_parameter_mod,  only: AGRID_PARAM=>AGRID
@@ -526,14 +526,6 @@ contains
       npz = Atm(1)%npz
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
       ntdiag = ntracers-ntprog
-
-!--- set the 'nestXX' appendix for all files using fms_io
-      if (Atm(1)%grid_number > 1) then
-         write(gn,'(A4, I2.2)') "nest", Atm(1)%grid_number
-      else
-         gn = ''
-      end if
-      call set_filename_appendix('')
 
 !--- test for existence of the GFS control file
       if (.not. file_exist('INPUT/'//trim(fn_gfs_ctl), no_domain=.TRUE.)) then
