@@ -379,7 +379,7 @@ contains
    integer num_axes, id, axis_length, direction, edges
    integer num_attributes, num_field_dyn, axis_typ
    character(255) :: units, long_name, cart_name,axis_direct,edgesS
-   character(128) :: output_name
+   character(128) :: output_name, shydrostatic
    integer currdate(6)
    type(domain1d) :: Domain
    real,dimension(:),allocatable :: axis_data
@@ -407,8 +407,40 @@ contains
    num_axes = size(axes)
    allocate(all_axes(num_axes))
    all_axes(1:num_axes) = axes(1:num_axes)
+!   print *,'in fv_dyn bundle,num_axes=',num_axes
 !   if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,num_axes=',num_axes, 'axes=',axes
-
+!
+!*** add global attributes in the field bundle:
+   call ESMF_AttributeAdd(dyn_bundle, convention="NetCDF", purpose="FV3", &
+     attrList=(/"hydrostatic"/), rc=rc)
+   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+     line=__LINE__, &
+     file=__FILE__)) &
+     return  ! bail out
+   if (hydrostatico ) then
+     shydrostatic = 'hydrostatic'
+   else
+     shydrostatic = 'non-hydrostatic'
+   endif
+   call ESMF_AttributeSet(dyn_bundle, convention="NetCDF", purpose="FV3", &
+     name="hydrostatic", value=trim(shydrostatic), rc=rc)
+   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+     line=__LINE__, &
+     file=__FILE__)) &
+     return  ! bail out
+!
+   call ESMF_AttributeAdd(dyn_bundle, convention="NetCDF", purpose="FV3", &
+     attrList=(/"ncnsto"/), rc=rc)
+   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+     line=__LINE__, &
+     file=__FILE__)) &
+     return  ! bail out
+   call ESMF_AttributeSet(dyn_bundle, convention="NetCDF", purpose="FV3", &
+     name="ncnsto", value=ncnsto, rc=rc)
+   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+     line=__LINE__, &
+     file=__FILE__)) &
+     return  ! bail out
 !
 !*** get axis names
    allocate(axis_name(num_axes))
