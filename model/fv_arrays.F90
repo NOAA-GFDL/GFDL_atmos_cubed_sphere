@@ -58,7 +58,7 @@ module fv_arrays_mod
            id_qdt, id_aam, id_amdt,                               &
            id_acly, id_acl, id_acl2,                              &
            id_dbz, id_maxdbz, id_basedbz, id_dbz4km, id_dbztop, id_dbz_m10C, &
-           id_ctz, id_w1km, id_wmaxup, id_wmaxdn, id_cape, id_cin
+           id_ctz, id_w1km, id_wmaxup, id_wmaxdn, id_cape, id_cin,id_diss
 
 ! Selected p-level fields from 3D variables:
  integer :: id_vort200, id_vort500, id_w500, id_w700
@@ -471,6 +471,7 @@ module fv_arrays_mod
    logical :: read_increment = .false.   ! read in analysis increment and add to restart
 ! following are namelist parameters for Stochastic Energy Baskscatter dissipation estimate
    logical :: do_skeb  = .false.       ! save dissipation estimate
+   integer :: skeb_npass  = 11        ! Filter dissipation estimate "skeb_npass" times
 ! Default restart files from the "Memphis" latlon FV core:
    character(len=128) :: res_latlon_dynamics = 'INPUT/fv_rst.res.nc'
    character(len=128) :: res_latlon_tracers  = 'INPUT/atmos_tracers.res.nc'
@@ -911,9 +912,8 @@ contains
        allocate ( Atm%oro(1,1) )
     endif
 
-! For stochastic kinetic energy backscatter (SKEB)
-    allocate ( Atm%diss_est(isd:ied  ,jsd:jed  ,npz) )
     ! Allocate others
+    allocate (   Atm%diss_est(isd:ied  ,jsd:jed  ,npz) )
     allocate ( Atm%ts(is:ie,js:je) )
     allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
     allocate ( Atm%omga(isd:ied  ,jsd:jed  ,npz) ); Atm%omga=0.

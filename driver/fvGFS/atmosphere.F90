@@ -753,28 +753,28 @@ contains
  end subroutine atmosphere_scalar_field_halo
 
 
- subroutine atmosphere_diss_est (diss_est, npass)
+ subroutine atmosphere_diss_est (npass)
    use dyn_core_mod, only: del2_cubed
    !--- interface variables ---
-   real(kind=kind_phys), pointer, dimension(:,:,:), intent(inout) :: diss_est
    integer, intent(in) :: npass
    !--- local variables
    integer:: k
 
    !horizontally smooth dissiapation estimate for SKEB
+   ! 3 passes before taking absolute value
    do k = 1,min(3,npass)
      call del2_cubed(Atm(mytile)%diss_est, 0.25*Atm(mytile)%gridstruct%da_min, Atm(mytile)%gridstruct, &
                      Atm(mytile)%domain, npx, npy, npz, 3, Atm(mytile)%bd)
    enddo
 
-   diss_est=abs(diss_est)
+   Atm(mytile)%diss_est=abs(Atm(mytile)%diss_est)
 
    do k = 4,npass
      call del2_cubed(Atm(mytile)%diss_est, 0.25*Atm(mytile)%gridstruct%da_min, Atm(mytile)%gridstruct, &
                      Atm(mytile)%domain, npx, npy, npz, 3, Atm(mytile)%bd)
    enddo
-
-   diss_est=sqrt(diss_est)
+   ! provide back sqrt of dissipation estimate
+   Atm(mytile)%diss_est=sqrt(Atm(mytile)%diss_est)
 
  end subroutine atmosphere_diss_est
 
@@ -1455,6 +1455,7 @@ contains
          IPD_Data(nb)%Statein%vgrs(ix,k) = _DBL_(_RL_(Atm(mytile)%va(i,j,k1)))
          IPD_Data(nb)%Statein%vvl(ix,k)  = _DBL_(_RL_(Atm(mytile)%omga(i,j,k1)))
          IPD_Data(nb)%Statein%prsl(ix,k) = _DBL_(_RL_(Atm(mytile)%delp(i,j,k1)))   ! Total mass
+         if (Atm(mytile)%flagstruct%do_skeb)IPD_Data(nb)%Statein%diss_est(ix,k) = _DBL_(_RL_(Atm(mytile)%diss_est(i,j,k1)))
 
          if (.not.Atm(mytile)%flagstruct%hydrostatic .and. (.not.Atm(mytile)%flagstruct%use_hydro_pressure))  &
            IPD_Data(nb)%Statein%phii(ix,k+1) = IPD_Data(nb)%Statein%phii(ix,k) - _DBL_(_RL_(Atm(mytile)%delz(i,j,k1)*grav))

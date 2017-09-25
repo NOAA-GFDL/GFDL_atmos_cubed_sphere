@@ -1,10 +1,10 @@
 !-------------------------------------------------------------------------------
-!> @brief Treat DA increment
-!> @author Xi.Chen <xi.chen@noaa.gov>
-!> @date 02/12/2016
+!> @brief incremental analysis update module
+!> @author Philip Pegion <philip.pegion@noaa.gov>
+!> @date 09/13/2017
 !
 !  REVISION HISTORY:
-!  02/12/2016 - Initial Version
+!  09/13/2017 - Initial Version
 !-------------------------------------------------------------------------------
 
 #ifdef OVERLOAD_R4
@@ -128,7 +128,6 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
    enddo
    if (is_master()) print *,'nfiles = ',nfiles
    if (nfiles < 1) then
-      print *,'no iau files, returning'
       return
    endif
    if (nfiles > 1) then
@@ -161,7 +160,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
       if (km.ne.npz) then
         if (is_master()) print *, 'km = ', km
         call mpp_error(FATAL, &
-            '==> Error in read_da_inc: km is not equal to npz')
+            '==> Error in IAU_initialize: km is not equal to npz')
       endif
 
       if(is_master())  write(*,*) fname, ' DA increment dimensions:', im,jm,km
@@ -182,7 +181,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
       enddo
 
     else
-      call mpp_error(FATAL,'==> Error in read_da_inc: Expected file '&
+      call mpp_error(FATAL,'==> Error in IAU_initialize: Expected file '&
           //trim(fname)//' for DA increment does not exist')
     endif
 
@@ -198,12 +197,6 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
          agrid(is-1+i,js-1+j,2)=Init_parm%xlat(i,j)
       enddo
     enddo
-    if (is_master()) then
-       print*,'call_remap coeff Is',is,ie
-       print*,'call_remap coeff Js',js,je
-       print*,'call_remap coeff other',im,maxval(lat),maxval(agrid(:,:,1))
-       print*,'call_remap coeff other',jm,maxval(lon),maxval(agrid(:,:,2))
-    endif
     call remap_coef( is, ie, js, je, &
         im, jm, lon, lat, id1, id2, jdc, s2c, &
         agrid)
@@ -222,7 +215,6 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
     allocate (iau_state%inc1%delp_inc (is:ie, js:je, km))
     allocate (iau_state%inc1%tracer_inc(is:ie, js:je, km,ntracers))
     iau_state%hr1=IPD_Control%iaufhrs(1)
-    print*,'about to call read_iau',size(iau_state%inc1%temp_inc,1),size(iau_state%inc1%temp_inc,2),size(iau_state%inc1%temp_inc,3)
     call read_iau_forcing(IPD_Control,iau_state%inc1,'INPUT/'//trim(IPD_Control%iau_inc_files(1)))
     if (nfiles.EQ.1) then  ! only need to get incrments once since constant forcing over window
        call setiauforcing(IPD_Control,IAU_Data)
@@ -236,7 +228,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
        iau_state%hr2=IPD_Control%iaufhrs(2)
        call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(2)))
     endif
-   print*,'in IAU init',dt,rdt
+!   print*,'in IAU init',dt,rdt
 
 end subroutine IAU_initialize
 
@@ -258,10 +250,10 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
       t1=iau_state%hr1 - IPD_Control%iau_delthrs*0.5
       t2=iau_state%hr1 + IPD_Control%iau_delthrs*0.5
       if ( IPD_Control%fhour < t1 .or. IPD_Control%fhour >= t2 ) then
-         if (is_master()) print *,'no iau forcing',t1,IPD_Control%fhour,t2
+!         if (is_master()) print *,'no iau forcing',t1,IPD_Control%fhour,t2
          IAU_Data%in_interval=.false.
       else 
-         if (is_master()) print *,'yes iau forcing',t1,IPD_Control%fhour,t2
+         if (is_master()) print *,'apply iau forcing',t1,IPD_Control%fhour,t2
          IAU_Data%in_interval=.true.
       endif
       return
@@ -270,7 +262,7 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
    if (nfiles > 1) then
       t2=2
       if (IPD_Control%fhour < IPD_Control%iaufhrs(1) .or. IPD_Control%fhour >= IPD_Control%iaufhrs(nfiles)) then
-         if (is_master()) print *,'no iau forcing',IPD_Control%iaufhrs(1),IPD_Control%fhour,IPD_Control%iaufhrs(nfiles)
+!         if (is_master()) print *,'no iau forcing',IPD_Control%iaufhrs(1),IPD_Control%fhour,IPD_Control%iaufhrs(nfiles)
          IAU_Data%in_interval=.false.
       else 
          IAU_Data%in_interval=.true.
@@ -279,7 +271,7 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
                t2=k
             endif
          enddo
-         if (is_master()) print *,'t2=',t2
+!         if (is_master()) print *,'t2=',t2
          if (IPD_Control%fhour >= iau_state%hr2) then ! need to read in next increment file
             iau_state%hr1=iau_state%hr2
             iau_state%hr2=IPD_Control%iaufhrs(t2)
@@ -291,7 +283,6 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
       endif
    endif
    sphum=get_tracer_index(MODEL_ATMOS,'sphum')
-   if (IAU_Data%in_interval .AND. is_master()) print *,'have iau forcing',IAU_Data%tracer_inc(is,js,npz,sphum)
  end subroutine getiauforcing
 
 subroutine updateiauforcing(IPD_Control,IAU_Data)
@@ -317,8 +308,6 @@ subroutine updateiauforcing(IPD_Control,IAU_Data)
          enddo
        enddo
    enddo
-   if (is_master()) print *,'update1',IPD_Control%fhour,delt
-   if (is_master()) print *,'update2',IAU_state%hr1,IAU_state%hr2
  end subroutine updateiauforcing
 
 
@@ -345,8 +334,6 @@ subroutine updateiauforcing(IPD_Control,IAU_Data)
     enddo
  enddo
  sphum=get_tracer_index(MODEL_ATMOS,'sphum')
- if (is_master()) print *,'have iau forcing',IAU_Data%tracer_inc(is,js,npz,sphum)
- if (is_master()) print *,'have iau forcing',IAU_Data%tracer_inc(is,js,npz,sphum)
  end subroutine setiauforcing
 
 subroutine read_iau_forcing(IPD_Control,increments,fname)
@@ -369,7 +356,6 @@ subroutine read_iau_forcing(IPD_Control,increments,fname)
     ie  = is + IPD_Control%nx-1
     js  = IPD_Control%jsc
     je  = js + IPD_Control%ny-1
-    print*,'in read_iau',size(increments%temp_inc,1),size(increments%temp_inc,2),size(increments%temp_inc,3)
 
     deg2rad = pi/180.
 
@@ -378,7 +364,7 @@ subroutine read_iau_forcing(IPD_Control,increments,fname)
     if( file_exist(fname) ) then
       call open_ncfile( fname, ncid )        ! open the file
     else
-      call mpp_error(FATAL,'==> Error in read_da_inc: Expected file '&
+      call mpp_error(FATAL,'==> Error in read_iau_forcing: Expected file '&
           //trim(fname)//' for DA increment does not exist')
     endif
 
@@ -426,7 +412,6 @@ subroutine interp_inc(field_name,var,jbeg,jend)
        enddo
     enddo
  enddo
- print*,trim(field_name),'after=',var(is,je,1)
 end subroutine interp_inc
 
 end module fv_iau_mod

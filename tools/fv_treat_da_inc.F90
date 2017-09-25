@@ -147,13 +147,6 @@ contains
     endif
 
     ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
-    if (is_master()) then
-       print*,'call_remap coeff Is',is,ie
-       print*,'call_remap coeff Js',js,je
-       print*,'call_remap coeff other',im,maxval(lat),maxval(Atm(1)%gridstruct%agrid(:,:,1))
-       print*,'call_remap coeff other',jm,maxval(lon),maxval(Atm(1)%gridstruct%agrid(:,:,2))
-    endif
-     
     call remap_coef( is, ie, js, je, &
         im, jm, lon, lat, id1, id2, jdc, s2c, &
         Atm(1)%gridstruct%agrid(is:ie,js:je,:))

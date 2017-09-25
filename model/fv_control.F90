@@ -204,7 +204,6 @@ module fv_control_mod
    logical , pointer :: external_ic 
    logical , pointer :: external_eta
    logical , pointer :: read_increment
-   logical , pointer :: do_skeb
    character(len=128) , pointer :: res_latlon_dynamics
    character(len=128) , pointer :: res_latlon_tracers 
    logical , pointer :: hydrostatic 
@@ -566,7 +565,7 @@ module fv_control_mod
                             nested, twowaynest, parent_grid_num, parent_tile, nudge_qv, &
                             refinement, nestbctype, nestupdate, nsponge, s_weight, &
                             ioffset, joffset, check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
-                            do_uni_zfull, adj_mass_vmr, do_skeb
+                            do_uni_zfull, adj_mass_vmr
 
       namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
 
@@ -1206,7 +1205,6 @@ module fv_control_mod
      external_ic                   => Atm%flagstruct%external_ic
      external_eta                  => Atm%flagstruct%external_eta
      read_increment                => Atm%flagstruct%read_increment
-     do_skeb                       => Atm%flagstruct%do_skeb
 
      hydrostatic                   => Atm%flagstruct%hydrostatic
      phys_hydrostatic              => Atm%flagstruct%phys_hydrostatic
