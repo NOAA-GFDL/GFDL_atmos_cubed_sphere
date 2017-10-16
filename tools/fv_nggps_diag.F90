@@ -39,16 +39,17 @@ module fv_nggps_diags_mod
  real, parameter:: missing_value = -1.e10
  logical master
  integer :: id_ua, id_va, id_pt, id_delp, id_pfhy, id_pfnh 
- integer :: id_w, id_delz, id_diss
+ integer :: id_w, id_delz, id_diss, id_ps, id_hs
  integer :: kstt_ua, kstt_va, kstt_pt, kstt_delp, kstt_pfhy
- integer :: kstt_pfnh, kstt_w, kstt_delz, kstt_diss
+ integer :: kstt_pfnh, kstt_w, kstt_delz, kstt_diss, kstt_ps,kstt_hs
  integer :: kend_ua, kend_va, kend_pt, kend_delp, kend_pfhy
- integer :: kend_pfnh, kend_w, kend_delz, kend_diss
+ integer :: kend_pfnh, kend_w, kend_delz, kend_diss, kend_ps,kend_hs
  integer :: isco, ieco, jsco, jeco, npzo, ncnsto
  integer :: nlevs
  logical :: hydrostatico
  integer, allocatable :: id_tracer(:), all_axes(:)
  integer, allocatable :: kstt_tracer(:), kend_tracer(:)
+ real, allocatable :: ak(:), bk(:)
  character(20),allocatable :: axis_name(:),axis_name_vert(:)
 
  logical :: module_is_initialized=.false.
@@ -191,7 +192,27 @@ contains
              nlevs = nlevs + npzo
           endif
        enddo
-
+!
+       id_ps = register_diag_field ( trim(file_name), 'ps', axes(1:2), Time,    &
+           'surface pressure', 'pa',  missing_value=missing_value )
+       if( id_ps > 0) then
+          kstt_ps = nlevs+1; kend_ps = nlevs+1
+          nlevs = nlevs + 1
+       endif
+!
+       id_hs = register_diag_field ( trim(file_name), 'hs', axes(1:2), Time,    &
+           'surface geopotential height', 'gpm',  missing_value=missing_value )
+       if( id_hs > 0) then
+          kstt_hs = nlevs+1; kend_hs = nlevs+1
+          nlevs = nlevs + 1
+       endif
+!
+      allocate(ak(size(atm(1)%ak)))
+      allocate(bk(size(atm(1)%bk)))
+      ak(1:size(ak)) = atm(1)%ak(1:size(ak))
+      bk(1:size(bk)) = atm(1)%bk(1:size(bk))
+!      print *,'in ngpps diag init, ak=',ak(1:5),' bk=',bk(1:5)
+!
 !------------------------------------
 ! use wrte grid component for output
 !------------------------------------
@@ -230,27 +251,27 @@ contains
 
     !--- A-GRID WINDS
     if ( .not. allocated(buffer_dyn)) allocate(buffer_dyn(isco:ieco,jsco:jeco,nlevs))
-    if(id_ua > 0) call store_data(id_ua, Atm(n)%ua(isco:ieco,jsco:jeco,:), Time, kstt_ua)
+    if(id_ua > 0) call store_data(id_ua, Atm(n)%ua(isco:ieco,jsco:jeco,:), Time, kstt_ua, kend_ua)
     
-    if(id_va > 0) call store_data(id_va, Atm(n)%va(isco:ieco,jsco:jeco,:), Time, kstt_va)
+    if(id_va > 0) call store_data(id_va, Atm(n)%va(isco:ieco,jsco:jeco,:), Time, kstt_va, kend_va)
 
     !--- W (non-hydrostatic)
     if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_w>0  ) then
-       call store_data(id_w, Atm(n)%w(isco:ieco,jsco:jeco,:), Time, kstt_w)
+       call store_data(id_w, Atm(n)%w(isco:ieco,jsco:jeco,:), Time, kstt_w, kend_w)
     endif
 
     !--- TEMPERATURE
-    if(id_pt   > 0) call store_data(id_pt, Atm(n)%pt(isco:ieco,jsco:jeco,:), Time, kstt_pt)
+    if(id_pt   > 0) call store_data(id_pt, Atm(n)%pt(isco:ieco,jsco:jeco,:), Time, kstt_pt, kend_pt)
 
     !--- TRACERS
     do itrac=1, ncnsto
       call get_tracer_names (MODEL_ATMOS, itrac, tname)
       if (id_tracer(itrac) > 0 .and. itrac.gt.nq) then
         call store_data (id_tracer(itrac), Atm(n)%qdiag(isco:ieco,jsco:jeco,:,itrac), Time,  &
-                         kstt_tracer(itrac) )
+                         kstt_tracer(itrac),kend_tracer(itrac) )
       else
         call store_data (id_tracer(itrac), Atm(n)%q(isco:ieco,jsco:jeco,:,itrac), Time,      &
-                         kstt_tracer(itrac) )
+                         kstt_tracer(itrac),kend_tracer(itrac) )
       endif
     enddo
 
@@ -263,7 +284,7 @@ contains
            enddo
          enddo
        enddo
-       call store_data(id_delz, wk, Time, kstt_delz)
+       call store_data(id_delz, wk, Time, kstt_delz, kend_delz)
     endif
 
     !--- PRESSURE (hydrostatic)
@@ -275,7 +296,7 @@ contains
            enddo
          enddo
        enddo
-       call store_data(id_pfhy, wk, Time, kstt_pfhy)
+       call store_data(id_pfhy, wk, Time, kstt_pfhy, kend_pfhy)
     endif
 
 #ifdef GFS_PHYS
@@ -288,7 +309,7 @@ contains
            enddo
          enddo
        enddo
-       call store_data(id_delp, wk, Time, kstt_delp)
+       call store_data(id_delp, wk, Time, kstt_delp, kend_delp)
     endif
 
     !--- PRESSURE (non-hydrostatic)
@@ -301,7 +322,7 @@ contains
            enddo
          enddo
        enddo
-       call store_data(id_pfnh, wk, Time, kstt_pfnh)
+       call store_data(id_pfnh, wk, Time, kstt_pfnh, kend_pfnh)
     endif
 #else
     !--- DELP
@@ -317,12 +338,21 @@ contains
            enddo
          enddo
        enddo
-       call store_data(id_pfnh, wk, Time, kstt_pfnh)
+       call store_data(id_pfnh, wk, Time, kstt_pfnh, kend_pfnh)
     endif
 #endif
 
     !--- DISS_EST (skeb: dissipation estimate)
-    if(id_diss > 0) call store_data(id_diss, Atm(n)%diss_est(isco:ieco,jsco:jeco,:), Time, kstt_diss)
+    if(id_diss > 0) call store_data(id_diss, Atm(n)%diss_est(isco:ieco,jsco:jeco,:), Time, kstt_diss, kend_diss)
+!
+    if(id_ps > 0) call store_data(id_ps, Atm(n)%ps(isco:ieco,jsco:jeco), Time, kstt_ps, kend_ps)
+    
+    do j=jsco,jeco
+      do i=isco,ieco
+        wk(i,j,1) = Atm(n)%phis(i,j)/grav
+      enddo
+    enddo
+    if(id_hs > 0) call store_data(id_hs, wk, Time, kstt_hs, kend_hs)
 
     deallocate ( wk )
 
@@ -330,10 +360,10 @@ contains
 
  end subroutine fv_nggps_diag
 
- subroutine store_data(id, work, Time, nstt)
+ subroutine store_data(id, work, Time, nstt, nend)
    integer, intent(in)         :: id
-   integer, intent(in)         :: nstt
-   real, intent(in)            :: work(isco:ieco,jsco:jeco,1:npzo)
+   integer, intent(in)         :: nstt, nend
+   real, intent(in)            :: work(isco:ieco,jsco:jeco,nend-nstt+1)
    type(time_type), intent(in) :: Time
 !
    integer k,j,i,kb
@@ -341,7 +371,7 @@ contains
 !
    if( id > 0 ) then
      if( use_wrtgridcomp_output ) then
-       do k=1,npzo
+       do k=1,nend-nstt+1
          do j= jsco,jeco
            do i=isco,ieco
              kb = k + nstt - 1
@@ -412,7 +442,7 @@ contains
 !
 !*** add global attributes in the field bundle:
    call ESMF_AttributeAdd(dyn_bundle, convention="NetCDF", purpose="FV3", &
-     attrList=(/"hydrostatic"/), rc=rc)
+     attrList=(/"hydrostatic","ncnsto","ak","bk"/), rc=rc)
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
      line=__LINE__, &
      file=__FILE__)) &
@@ -429,14 +459,42 @@ contains
      file=__FILE__)) &
      return  ! bail out
 !
-   call ESMF_AttributeAdd(dyn_bundle, convention="NetCDF", purpose="FV3", &
-     attrList=(/"ncnsto"/), rc=rc)
+!   call ESMF_AttributeAdd(dyn_bundle, convention="NetCDF", purpose="FV3", &
+!     attrList=(/"ncnsto"/), rc=rc)
+!   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+!     line=__LINE__, &
+!     file=__FILE__)) &
+!     return  ! bail out
+   call ESMF_AttributeSet(dyn_bundle, convention="NetCDF", purpose="FV3", &
+     name="ncnsto", value=ncnsto, rc=rc)
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
      line=__LINE__, &
      file=__FILE__)) &
      return  ! bail out
+!
+!   call ESMF_AttributeAdd(dyn_bundle, convention="NetCDF", purpose="FV3", &
+!     attrList=(/"ak"/), rc=rc)
+!   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+!     line=__LINE__, &
+!     file=__FILE__)) &
+!     return  ! bail out
    call ESMF_AttributeSet(dyn_bundle, convention="NetCDF", purpose="FV3", &
-     name="ncnsto", value=ncnsto, rc=rc)
+     name="ak", valueList=ak, rc=rc)
+    if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,after add ak, rc=',rc
+   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+     line=__LINE__, &
+     file=__FILE__)) &
+     return  ! bail out
+!
+!   call ESMF_AttributeAdd(dyn_bundle, convention="NetCDF", purpose="FV3", &
+!     attrList=(/"bk"/), rc=rc)
+!   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+!     line=__LINE__, &
+!     file=__FILE__)) &
+!     return  ! bail out
+   call ESMF_AttributeSet(dyn_bundle, convention="NetCDF", purpose="FV3", &
+     name="bk", valueList=bk, rc=rc)
+    if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,after add bk, rc=',rc
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
      line=__LINE__, &
      file=__FILE__)) &
@@ -480,13 +538,13 @@ contains
        if(axes(i) == edges) edgesS=axis_name(i)
      enddo
 
-     if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,id=',id,'edges=',edges,rc, &
-       'num_attributes=',num_attributes,'edgesS=',trim(edgesS)
+!     if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,id=',id,'edges=',edges,rc, &
+!       'num_attributes=',num_attributes,'edgesS=',trim(edgesS)
 !
 ! Add vertical dimension Attributes to Grid
      if( id>2 ) then
-      if(mpp_pe()==mpp_root_pe())print *,' in dyn add grid, axis_name=',     &
-         trim(axis_name(id)),'axis_data=',axis_data
+!      if(mpp_pe()==mpp_root_pe())print *,' in dyn add grid, axis_name=',     &
+!         trim(axis_name(id)),'axis_data=',axis_data
       if(trim(edgesS)/='') then
         call ESMF_AttributeAdd(fcst_grid, convention="NetCDF", purpose="FV3",  &
           attrList=(/trim(axis_name(id)),trim(axis_name(id))//":long_name",    &
@@ -616,14 +674,30 @@ contains
 ! tracers
    do i=1, ncnsto
      call get_tracer_names ( MODEL_ATMOS, i, tname, tlongname, tunits )
+     call find_outputname(trim(file_name),trim(tname),output_name)
      if (id_tracer(i)>0) then
-       call add_field_to_bundle(trim(tname),trim(tlongname), trim(tunits), "time: point",   &
+       call add_field_to_bundle(trim(output_name),trim(tlongname), trim(tunits), "time: point",   &
             axes(1:3), fcst_grid, kstt_tracer(i),kend_tracer(i), dyn_bundle, rcd=rc)
        if(rc==0)  num_field_dyn=num_field_dyn+1
      endif
-     if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,add trac,i=',i,' rc=',rc
+!     if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,add trac,i=',i,'output_name=',trim(output_name),' rc=',rc
    enddo
 !
+!
+   if( id_ps > 0) then
+     call find_outputname(trim(file_name),'ps',output_name)
+     call add_field_to_bundle(trim(output_name),'surface pressure', 'pa', "time: point",   &
+          axes(1:2), fcst_grid, kstt_ps,kend_ps, dyn_bundle, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
+   if( id_hs > 0) then
+     call find_outputname(trim(file_name),'hs',output_name)
+     call add_field_to_bundle(trim(output_name),'surface geopotential height', 'gpm', "time: point",   &
+          axes(1:2), fcst_grid, kstt_hs,kend_hs, dyn_bundle, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+
 
  end subroutine fv_dyn_bundle_setup
 
@@ -645,13 +719,20 @@ contains
    type(ESMF_DataCopy_Flag) :: copyflag=ESMF_DATACOPY_REFERENCE
    integer rc, i, j, idx
    real(4),dimension(:,:,:),pointer :: temp_r3d
+   real(4),dimension(:,:),pointer :: temp_r2d
    logical, save :: first=.true.
 
 !
 !*** create esmf field  
-   temp_r3d => buffer_dyn(isco:ieco,jsco:jeco,kstt:kend)
-   field = ESMF_FieldCreate(dyn_grid, temp_r3d, datacopyflag=copyflag, &
+   if( kend>kstt ) then
+     temp_r3d => buffer_dyn(isco:ieco,jsco:jeco,kstt:kend)
+     field = ESMF_FieldCreate(dyn_grid, temp_r3d, datacopyflag=copyflag, &
                             name=var_name, indexFlag=ESMF_INDEX_DELOCAL, rc=rc)
+   else
+     temp_r2d => buffer_dyn(isco:ieco,jsco:jeco,kstt)
+     field = ESMF_FieldCreate(dyn_grid, temp_r2d, datacopyflag=copyflag, &
+                            name=var_name, indexFlag=ESMF_INDEX_DELOCAL, rc=rc)
+   endif
 !*** add field attributes
    call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3", &
         attrList=(/"long_name"/), rc=rc)

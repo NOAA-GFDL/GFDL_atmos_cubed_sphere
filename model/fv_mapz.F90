@@ -625,7 +625,7 @@ endif        ! end last_step check
 ! Note: pt at this stage is T_v
 ! if ( (.not.do_adiabatic_init) .and. do_sat_adj ) then
   if ( do_sat_adj ) then
-                                           call timing_on('sat_adj2')
+!!                                         call timing_on('sat_adj2')
 !$OMP do
            do k=kmp,km
               do j=js,je
@@ -662,7 +662,7 @@ endif        ! end last_step check
                    enddo
                 enddo
            endif
-                                           call timing_off('sat_adj2')
+!!                                         call timing_off('sat_adj2')
   endif   ! do_sat_adj
 
 
