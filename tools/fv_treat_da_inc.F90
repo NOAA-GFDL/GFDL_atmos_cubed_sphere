@@ -50,7 +50,8 @@ module fv_treat_da_inc_mod
                                get_var1_double, &
                                get_var2_real,   &
                                get_var3_r4, &
-                               get_var1_real
+                               get_var1_real, &
+                               check_var_exists
   implicit none
   private
 
@@ -312,8 +313,15 @@ contains
     subroutine apply_inc_on_3d_scalar(field_name,var)
       character(len=*), intent(in) :: field_name
       real, dimension(isd:ied,jsd:jed,1:km), intent(inout) :: var
+      integer :: ierr
 
-      call get_var3_r4( ncid, field_name, 1,im, jbeg,jend, 1,km, wk3 )
+      call check_var_exists(ncid, field_name, ierr)
+      if (ierr == 0) then
+         call get_var3_r4( ncid, field_name, 1,im, jbeg,jend, 1,km, wk3 )
+      else
+         print *,'warning: no increment for ',trim(field_name),' found, assuming zero'
+         wk3 = 0.
+      endif
       print*,trim(field_name),'before=',var(4,4,30)
 
       do k=1,km

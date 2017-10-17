@@ -38,7 +38,8 @@ module sim_nc_mod
  private
  public  open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var2_double,   &
          get_var3_real, get_var3_double, get_var3_r4, get_var2_real, get_var2_r4,   &
-         handle_err, check_var, get_var1_real, get_var_att_double
+         handle_err, check_var, get_var1_real, get_var_att_double, &
+         check_var_exists 
 
  contains
 
@@ -48,7 +49,7 @@ module sim_nc_mod
       integer::  status
 
       status = nf_open (iflnm, NF_NOWRITE, ncid)
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('nf_open',status)
 
 
       end subroutine open_ncfile
@@ -59,7 +60,7 @@ module sim_nc_mod
       integer::  status
 
       status = nf_close (ncid)
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('nf_close',status)
 
 
       end subroutine close_ncfile
@@ -72,10 +73,10 @@ module sim_nc_mod
       integer::  status, var1id
 
       status = nf_inq_dimid (ncid, var1_name, var1id)
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('dimid '//var1_name,status)
 
       status = nf_inq_dimlen (ncid, var1id, im)
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('dimid '//var1_name,status)
 
       end subroutine get_ncdim1
 
@@ -92,11 +93,11 @@ module sim_nc_mod
 
       status = nf_inq_varid (ncid, var1_name, var1id)
       if (status .ne. NF_NOERR) then
-!         call handle_err(status)
+!         call handle_err('varid '//var1_name,status)
           if(present(var_exist) ) var_exist = .false.
       else
           status = nf_get_var_double (ncid, var1id, var1)
-          if (status .ne. NF_NOERR) call handle_err(status)
+          if (status .ne. NF_NOERR) call handle_err('varid '//var1_name,status)
           if(present(var_exist) ) var_exist = .true.
       endif
 
@@ -119,7 +120,7 @@ module sim_nc_mod
           if(present(var_exist) ) var_exist = .false.
       else
           status = nf_get_var_real (ncid, var1id, var1)
-          if (status .ne. NF_NOERR) call handle_err(status)
+          if (status .ne. NF_NOERR) call handle_err('get_var1_real1 '//var1_name,status)
           if(present(var_exist) ) var_exist = .true.
       endif
 
@@ -135,10 +136,10 @@ module sim_nc_mod
       integer::  status, var1id
 
       status = nf_inq_varid (ncid, var_name, var1id)
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('get_var2_real varid '//var_name,status)
 
       status = nf_get_var_real (ncid, var1id, var2)
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('get_var2_real get_var'//var_name,status)
 
       end subroutine get_var2_real
 
@@ -154,7 +155,7 @@ module sim_nc_mod
       integer:: status, var2id
 
       status = nf_inq_varid (ncid, var2_name, var2id)
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('get_var2_r4 varid'//var2_name,status)
 
       start(1) = is; start(2) = js; start(3) = 1
       if ( present(time_slice) ) then
@@ -166,7 +167,7 @@ module sim_nc_mod
       nreco(3) = 1
 
       status = nf_get_vara_real(ncid, var2id, start, nreco, var2)
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('get_var2_r4 get_vara_real'//var2_name,status)
 
       end subroutine get_var2_r4
 
@@ -179,10 +180,10 @@ module sim_nc_mod
       integer::  status, var2id
 
       status = nf_inq_varid (ncid, var2_name, var2id)
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('get_var2_double varid'//var2_name,status)
 
       status = nf_get_var_double (ncid, var2id, var2)
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('get_var2_double get_var_double'//var2_name,status)
 
 
       end subroutine get_var2_double
@@ -198,10 +199,12 @@ module sim_nc_mod
 
       status = nf_inq_varid (ncid, var3_name, var3id)
 
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) &
+          call handle_err('get_var3_double varid '//var3_name,status)
 
       status = nf_get_var_double (ncid, var3id, var3)
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) &
+          call handle_err('get_var3_double get_vara_double '//var3_name,status)
 
       end subroutine get_var3_double
 
@@ -215,13 +218,23 @@ module sim_nc_mod
 
       status = nf_inq_varid (ncid, var3_name, var3id)
 
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) &
+                call handle_err('get_var3_real varid '//var3_name,status)
       status = nf_get_var_real (ncid, var3id, var3)
 
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) &
+                call handle_err('get_var3_real get_var_real '//var3_name,status)
 
       end subroutine get_var3_real
 
+
+      subroutine check_var_exists(ncid, var_name, status)
+      integer, intent(in):: ncid
+      integer, intent(inout) :: status
+      character(len=*), intent(in)::  var_name
+      integer:: varid
+      status = nf_inq_varid (ncid, var_name, varid)
+      end subroutine check_var_exists
 
       subroutine get_var3_r4( ncid, var3_name, is,ie, js,je, ks,ke, var3, time_slice )
       integer, intent(in):: ncid
@@ -235,7 +248,7 @@ module sim_nc_mod
       integer:: status, var3id
 
       status = nf_inq_varid (ncid, var3_name, var3id)
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('get_var3_r4 varid '//var3_name,status)
 
       start(1) = is; start(2) = js; start(3) = ks; start(4) = 1
       if ( present(time_slice) ) then
@@ -248,7 +261,7 @@ module sim_nc_mod
       nreco(4) = 1
 
       status = nf_get_vara_real(ncid, var3id, start, nreco, var3)
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('get_var3_r4 get_vara_real '//var3_name,status)
 
       end subroutine get_var3_r4
       subroutine get_var4_real( ncid, var4_name, im, jm, km, nt, var4 )
@@ -288,7 +301,7 @@ module sim_nc_mod
       enddo
       enddo
 
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('get_var4_r4 get_vara_real '//var4_name,status)
 
       end subroutine get_var4_real
 
@@ -315,7 +328,7 @@ module sim_nc_mod
       status = nf_inq_varid (ncid, var4_name, var4id)
       status = nf_get_vara_double(ncid, var4id, start, icount, var4)
 
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('get_var4_double get_vara_double '//var4_name,status)
 
       end subroutine get_var4_double
 !------------------------------------------------------------------------
@@ -341,7 +354,8 @@ module sim_nc_mod
       status = nf_inq_varid (ncid, var4_name, var4id)
       status = nf_get_vara_real(ncid, var4id, start, icount, var4)
 
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) &
+         call handle_err('get_real3 get_vara_real '//var4_name,status)
 
       end subroutine get_real3
 !------------------------------------------------------------------------
@@ -369,7 +383,7 @@ module sim_nc_mod
       status = nf_inq_varid (ncid, var_name, varid)
       status = nf_get_att_text(ncid, varid, att_name, att)
 
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('get_var_att_str '//var_name,status)
 
       end subroutine get_var_att_str
 
@@ -385,17 +399,18 @@ module sim_nc_mod
       status = nf_inq_varid (ncid, var_name, varid)
       status = nf_get_att(ncid, varid, att_name, value)
 
-      if (status .ne. NF_NOERR) call handle_err(status)
+      if (status .ne. NF_NOERR) call handle_err('get_var_att_double '//var_name,status)
 
       end subroutine get_var_att_double
 
 
-      subroutine handle_err(status)
+      subroutine handle_err(idstr,status)
       integer          status
-      character(len=120) :: errstr
+      character(len=500) :: errstr
+      character(len=*) :: idstr
 
       if (status .ne. nf_noerr) then
-         write(errstr,*) 'Error in handle_err: ', NF_STRERROR(STATUS)
+         write(errstr,*) 'Error in handle_err: ',trim(idstr)//' ',NF_STRERROR(STATUS)
          call mpp_error(FATAL,errstr)
       endif
 

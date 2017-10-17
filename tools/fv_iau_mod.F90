@@ -30,7 +30,7 @@ module fv_iau_mod
                                get_ncdim1, &
                                get_var1_double, &
                                get_var3_r4, &
-                               get_var1_real
+                               get_var1_real, check_var_exists
   use IPD_typedefs,       only: IPD_init_type, IPD_control_type, &
                                 kind_phys
   use block_control_mod,  only: block_control_type
@@ -399,8 +399,14 @@ subroutine interp_inc(field_name,var,jbeg,jend)
  character(len=*), intent(in) :: field_name
  real, dimension(is:ie,js:je,1:km), intent(inout) :: var
  integer, intent(in) :: jbeg,jend
- integer:: i1, i2, j1, k,j,i
- call get_var3_r4( ncid, field_name, 1,im, jbeg,jend, 1,km, wk3 )
+ integer:: i1, i2, j1, k,j,i,ierr
+ call check_var_exists(ncid, field_name, ierr)
+ if (ierr == 0) then
+    call get_var3_r4( ncid, field_name, 1,im, jbeg,jend, 1,km, wk3 )
+ else
+    print *,'warning: no increment for ',trim(field_name),' found, assuming zero'
+    wk3 = 0.
+ endif
  do k=1,km
     do j=js,je
        do i=is,ie
