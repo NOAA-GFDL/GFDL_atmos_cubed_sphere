@@ -1,6 +1,7 @@
 module fv_cmp_mod
 
   use constants_mod,         only: pi=>pi_8, rvgas, rdgas, grav, hlv, hlf, cp_air, cp_vapor
+  use fms_mod,               only: error_mesg, FATAL
   use fv_mp_mod,             only: is_master
 
   implicit none
