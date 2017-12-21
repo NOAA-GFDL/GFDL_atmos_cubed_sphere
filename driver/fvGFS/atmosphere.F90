@@ -90,7 +90,7 @@ public :: atmosphere_resolution, atmosphere_grid_bdry, &
           atmosphere_diag_axes, atmosphere_etalvls, &
           atmosphere_hgt, atmosphere_scalar_field_halo, &
 !rab          atmosphere_tracer_postinit, &
-          atmosphere_diss_est, &
+          atmosphere_diss_est, atmosphere_nggps_diag, &
           get_bottom_mass, get_bottom_wind,   &
           get_stock_pe, set_atmosphere_pelist
 
@@ -256,7 +256,6 @@ contains
 !----- initialize atmos_axes and fv_dynamics diagnostics
        !I've had trouble getting this to work with multiple grids at a time; worth revisiting?
    call fv_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time, npx, npy, npz, Atm(mytile)%flagstruct%p_ref)
-   call fv_nggps_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time)
 
 !---------- reference profile -----------
     ps1 = 101325.
@@ -779,6 +778,33 @@ contains
  end subroutine atmosphere_diss_est
 
 
+ subroutine atmosphere_nggps_diag (Time, init)
+   !----------------------------------------------
+   ! api for output of NCEP/EMC diagnostics
+   ! 
+   ! if register is present and set to .true.
+   ! will make the initialization call
+   !
+   ! outputs 3D state fields via either
+   ! NCEP write_component or GFDL/FMS diag_manager
+   !----------------------------------------------
+   type(time_type),   intent(in) :: Time
+   logical, optional, intent(in) :: init
+
+   if (PRESENT(init)) then
+     if (init == .true.) then
+       call fv_nggps_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time)
+       return
+     else
+       call mpp_error(FATAL, 'atmosphere_nggps_diag - calling with init present, but set to .false.')
+     endif
+   endif
+
+   call fv_nggps_diag(Atm(mytile:mytile), zvir, Time)
+
+ end subroutine atmosphere_nggps_diag
+
+
 !--- Need to know the formulation of the mixing ratio being imported into FV3
 !--- in order to adjust it in a consistent manner for advection
 !rab subroutine atmosphere_tracer_postinit (IPD_Data, Atm_block)
@@ -1128,14 +1154,6 @@ contains
      call timing_on('FV_DIAG')
      call fv_diag(Atm(mytile:mytile), zvir, fv_time, Atm(mytile)%flagstruct%print_freq)
      first_diag = .false.
-
-     fv_time = Time_next - Atm(n)%Time_init
-     call get_time (fv_time, seconds,  days)
-    !--- perform diagnostics on GFS fdiag schedule
-     if (ANY(nint(Atm(mytile)%fdiag(:)*3600.) == (days*24*3600+seconds)) .or. (days*24*3600+seconds) == dt_atmos ) then
-       if (mpp_pe() == mpp_root_pe()) write(6,*) 'NGGPS:FV3 DIAG STEP', (real(days)*24. + real(seconds)/3600.)
-       call fv_nggps_diag(Atm(mytile:mytile), zvir, Time_next)
-     endif
      call timing_off('FV_DIAG')
 
      call mpp_clock_end(id_fv_diag)

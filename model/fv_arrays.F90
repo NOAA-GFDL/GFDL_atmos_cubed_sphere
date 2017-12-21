@@ -625,11 +625,6 @@ module fv_arrays_mod
 
      type(time_type) :: Time_init, Time, Run_length, Time_end, Time_step_atmos
 
-#ifdef GFS_PHYS
-     !--- used for GFS PHYSICS only
-     real, dimension(2048) :: fdiag = 0.
-#endif
-
      logical :: grid_active = .true. !Always active for now
 
      !This is kept here instead of in neststruct% simply for convenience
