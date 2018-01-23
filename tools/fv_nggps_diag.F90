@@ -37,6 +37,9 @@ module fv_nggps_diags_mod
  private
 
  real, parameter:: missing_value = -1.e10
+ real, parameter:: stndrd_atmos_ps = 101325.
+ real, parameter:: stndrd_atmos_lapse = 0.0065
+
  logical master
  integer :: id_ua, id_va, id_pt, id_delp, id_pfhy, id_pfnh 
  integer :: id_w, id_delz, id_diss, id_ps, id_hs
@@ -44,6 +47,7 @@ module fv_nggps_diags_mod
  integer :: kstt_pfnh, kstt_w, kstt_delz, kstt_diss, kstt_ps,kstt_hs
  integer :: kend_ua, kend_va, kend_pt, kend_delp, kend_pfhy
  integer :: kend_pfnh, kend_w, kend_delz, kend_diss, kend_ps,kend_hs
+ integer :: kstt_windvect, kend_windvect
  integer :: isco, ieco, jsco, jeco, npzo, ncnsto
  integer :: nlevs
  logical :: hydrostatico
@@ -69,7 +73,10 @@ module fv_nggps_diags_mod
  character(len=256)   :: tlongname, tunits
 
 ! wrtout buffer
- real(4), dimension(:,:,:), allocatable, target :: buffer_dyn
+ real(4), dimension(:,:,:), allocatable, target   :: buffer_dyn
+ real(4), dimension(:,:,:,:), allocatable, target :: windvect
+ real(4), dimension(:,:), allocatable, target     :: psurf
+ real, dimension(:,:), allocatable                :: lon, lat
 
  public :: fv_nggps_diag_init, fv_nggps_diag
 #ifdef use_WRTCOMP
@@ -83,7 +90,7 @@ contains
     integer, intent(in)         :: axes(4)
     type(time_type), intent(in) :: Time
 
-    integer :: n, i
+    integer :: n, i, j
 
     n = 1
     ncnsto = Atm(1)%ncnst
@@ -127,6 +134,12 @@ contains
        if (id_va>0) then
          kstt_va = nlevs+1; kend_va = nlevs+npzo
          nlevs = nlevs + npzo
+       endif
+
+       if(id_ua>0 .and. id_va>0) then
+         kstt_windvect = 1;  kend_windvect = npzo
+         allocate(windvect(3,isco:ieco,jsco:jeco,npzo))
+         windvect = 0.
        endif
 
        if( Atm(n)%flagstruct%hydrostatic ) then 
@@ -198,6 +211,7 @@ contains
        if( id_ps > 0) then
           kstt_ps = nlevs+1; kend_ps = nlevs+1
           nlevs = nlevs + 1
+          allocate(psurf(isco:ieco,jsco:jeco))
        endif
 !
        id_hs = register_diag_field ( trim(file_name), 'hs', axes(1:2), Time,    &
@@ -212,11 +226,31 @@ contains
       ak(1:size(ak)) = atm(1)%ak(1:size(ak))
       bk(1:size(bk)) = atm(1)%bk(1:size(bk))
 !      print *,'in ngpps diag init, ak=',ak(1:5),' bk=',bk(1:5)
+
+! get lon,lon information
+      if(.not.allocated(lon)) then
+        allocate(lon(isco:ieco,jsco:jeco))
+        do j=jsco,jeco
+          do i=isco,ieco
+            lon(i,j) = Atm(n)%gridstruct%agrid(i,j,1)
+          enddo
+        enddo
+!        if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,lon=',lon(isco,jsco),lon(ieco-2:ieco,jeco-2:jeco)*180./3.14157
+      endif
+      if(.not.allocated(lat)) then
+        allocate(lat(isco:ieco,jsco:jeco))
+        do j=jsco,jeco
+          do i=isco,ieco
+            lat(i,j) = Atm(n)%gridstruct%agrid(i,j,2)
+          enddo
+        enddo
+!        if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,lat=',lat(isco,jsco),lat(ieco-2:ieco,jeco-2:jeco)*180./3.14157
+      endif
 !
 !------------------------------------
 ! use wrte grid component for output
 !------------------------------------
-       use_wrtgridcomp_output = .false.
+      use_wrtgridcomp_output = .false.
 
  end subroutine fv_nggps_diag_init
 
@@ -254,6 +288,19 @@ contains
     if(id_ua > 0) call store_data(id_ua, Atm(n)%ua(isco:ieco,jsco:jeco,:), Time, kstt_ua, kend_ua)
     
     if(id_va > 0) call store_data(id_va, Atm(n)%va(isco:ieco,jsco:jeco,:), Time, kstt_va, kend_va)
+
+    ! set up 3D wind vector
+    if(id_ua>0 .and. id_va>0) then
+      do k=1,npzo
+        do j=jsco,jeco
+          do i=isco,ieco
+            windvect(1,i,j,k) = Atm(n)%ua(i,j,k)*cos(lon(i,j)) - Atm(n)%va(i,j,k)*sin(lat(i,j))*sin(lon(i,j))
+            windvect(2,i,j,k) = Atm(n)%ua(i,j,k)*sin(lon(i,j)) + Atm(n)%va(i,j,k)*sin(lat(i,j))*cos(lon(i,j))
+            windvect(3,i,j,k) =                                  Atm(n)%va(i,j,k)*cos(lat(i,j))
+          enddo
+        enddo
+      enddo
+    endif
 
     !--- W (non-hydrostatic)
     if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_w>0  ) then
@@ -312,6 +359,19 @@ contains
        call store_data(id_delp, wk, Time, kstt_delp, kend_delp)
     endif
 
+    !--- PS
+    ! Re-compute pressure (dry_mass + water_vapor) surface pressure
+    if(id_ps > 0) then
+      do j=jsco,jeco
+        do i=isco,ieco
+           psurf(i,j) = ptop
+           do k=npzo,1,-1
+             psurf(i,j)  = psurf(i,j) + wk(i,j,k)
+           enddo
+        enddo
+      enddo
+    endif
+
     !--- PRESSURE (non-hydrostatic)
     if( (.not. Atm(n)%flagstruct%hydrostatic) .and. id_pfnh > 0) then
        do k=1,npzo
@@ -324,9 +384,19 @@ contains
        enddo
        call store_data(id_pfnh, wk, Time, kstt_pfnh, kend_pfnh)
     endif
+
 #else
     !--- DELP
     if(id_delp > 0) call store_data(id_delp, Atm(n)%delp(isco:ieco,jsco:jeco,:), Time, kstt_delp)
+
+    !--- ps
+    if( id_ps > 0) then
+      do j=jsco,jeco
+        do i=isco,ieco
+          psurf(i,j) = Atm(n)%ps(i,j)
+        enddo
+      enddo
+    endif
 
     !--- PRESSURE (non-hydrostatic)
     if( (.not. Atm(n)%flagstruct%hydrostatic) .and. id_pfnh > 0) then
@@ -345,14 +415,33 @@ contains
     !--- DISS_EST (skeb: dissipation estimate)
     if(id_diss > 0) call store_data(id_diss, Atm(n)%diss_est(isco:ieco,jsco:jeco,:), Time, kstt_diss, kend_diss)
 !
-    if(id_ps > 0) call store_data(id_ps, Atm(n)%ps(isco:ieco,jsco:jeco), Time, kstt_ps, kend_ps)
+    if(id_ps > 0) then
+      if(  use_wrtgridcomp_output ) then
+        do j=jsco,jeco
+          do i=isco,ieco
+            wk(i,j,1) = (psurf(i,j)/stndrd_atmos_ps)**(rdgas/grav*stndrd_atmos_lapse)
+          enddo
+        enddo
+      else
+        do j=jsco,jeco
+          do i=isco,ieco
+            wk(i,j,1) = psurf(i,j)
+          enddo
+        enddo
+      endif
+!      print *,'in comput ps, i=',isco,'j=',jsco,'psurf=',psurf(isco,jsco),'stndrd_atmos_ps=',stndrd_atmos_ps, &
+!       'rdgas=',rdgas,'grav=',grav,'stndrd_atmos_lapse=',stndrd_atmos_lapse,rdgas/grav*stndrd_atmos_lapse
+      call store_data(id_ps, wk, Time, kstt_ps, kend_ps)
+    endif
     
-    do j=jsco,jeco
-      do i=isco,ieco
-        wk(i,j,1) = Atm(n)%phis(i,j)/grav
+    if( id_hs > 0) then
+      do j=jsco,jeco
+        do i=isco,ieco
+          wk(i,j,1) = Atm(n)%phis(i,j)/grav
+        enddo
       enddo
-    enddo
-    if(id_hs > 0) call store_data(id_hs, wk, Time, kstt_hs, kend_hs)
+      call store_data(id_hs, wk, Time, kstt_hs, kend_hs)
+    endif
 
     deallocate ( wk )
 
@@ -405,28 +494,46 @@ contains
 
 !*** local variables
    integer i, j, k, n, rc
-!   integer isc, iec, jsc, jec, npz, ncnst
    integer num_axes, id, axis_length, direction, edges
    integer num_attributes, num_field_dyn, axis_typ
    character(255) :: units, long_name, cart_name,axis_direct,edgesS
-   character(128) :: output_name, shydrostatic
-   integer currdate(6)
+   character(128) :: output_name, output_file, output_file1, dynbdl_name, shydrostatic
+   integer currdate(6), idx1
+   logical l3Dvector
    type(domain1d) :: Domain
    real,dimension(:),allocatable :: axis_data
    type(diag_atttype),dimension(:),allocatable :: attributes 
    character(2) axis_id
-   type(ESMF_Field)                            :: field
 
+   type(ESMF_Field)                            :: field
+!
+!jwtest
+!   integer :: fieldcount
+!   character(128) :: fld_outfilename
+!   character(128),dimension(:),allocatable      :: fieldnamelist
+!   type(ESMF_Field),dimension(:),allocatable    :: fieldlist
 !
 !------------------------------------------------------------
 !--- use wrte grid component for output
-     use_wrtgridcomp_output = quilting
+   use_wrtgridcomp_output = quilting
 
 ! data type
    if(.not. allocated(buffer_dyn))allocate(buffer_dyn(isco:ieco,jsco:jeco,nlevs))
    buffer_dyn=0.
    num_field_dyn = 0.
-
+!
+! set output files
+   call ESMF_FieldBundleGet(dyn_bundle, name=dynbdl_name,rc=rc)
+   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+     line=__LINE__, &
+     file=__FILE__)) &
+     return  ! bail out
+   idx1 = index(dynbdl_name,'_bilinear')
+   if(idx1 > 0) then
+     output_file = dynbdl_name(1:idx1-1)
+   else
+     output_file = 'dyn'
+   endif
 !
 !------------------------------------------------------------
 !*** add attributes to the bundle such as subdomain limtis,
@@ -437,7 +544,6 @@ contains
    num_axes = size(axes)
    allocate(all_axes(num_axes))
    all_axes(1:num_axes) = axes(1:num_axes)
-!   print *,'in fv_dyn bundle,num_axes=',num_axes
 !   if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,num_axes=',num_axes, 'axes=',axes
 !
 !*** add global attributes in the field bundle:
@@ -459,12 +565,6 @@ contains
      file=__FILE__)) &
      return  ! bail out
 !
-!   call ESMF_AttributeAdd(dyn_bundle, convention="NetCDF", purpose="FV3", &
-!     attrList=(/"ncnsto"/), rc=rc)
-!   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
-!     line=__LINE__, &
-!     file=__FILE__)) &
-!     return  ! bail out
    call ESMF_AttributeSet(dyn_bundle, convention="NetCDF", purpose="FV3", &
      name="ncnsto", value=ncnsto, rc=rc)
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
@@ -472,29 +572,17 @@ contains
      file=__FILE__)) &
      return  ! bail out
 !
-!   call ESMF_AttributeAdd(dyn_bundle, convention="NetCDF", purpose="FV3", &
-!     attrList=(/"ak"/), rc=rc)
-!   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
-!     line=__LINE__, &
-!     file=__FILE__)) &
-!     return  ! bail out
    call ESMF_AttributeSet(dyn_bundle, convention="NetCDF", purpose="FV3", &
      name="ak", valueList=ak, rc=rc)
-    if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,after add ak, rc=',rc
+!    if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,after add ak, rc=',rc
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
      line=__LINE__, &
      file=__FILE__)) &
      return  ! bail out
 !
-!   call ESMF_AttributeAdd(dyn_bundle, convention="NetCDF", purpose="FV3", &
-!     attrList=(/"bk"/), rc=rc)
-!   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
-!     line=__LINE__, &
-!     file=__FILE__)) &
-!     return  ! bail out
    call ESMF_AttributeSet(dyn_bundle, convention="NetCDF", purpose="FV3", &
      name="bk", valueList=bk, rc=rc)
-    if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,after add bk, rc=',rc
+!    if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,after add bk, rc=',rc
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
      line=__LINE__, &
      file=__FILE__)) &
@@ -614,7 +702,7 @@ contains
      call find_outputname(trim(file_name),'ucomp',output_name)
 !     if(mpp_pe()==mpp_root_pe()) print *,'ucomp output name is ',trim(output_name)
      call add_field_to_bundle(trim(output_name),'zonal wind', 'm/sec', "time: point",   &
-          axes(1:3), fcst_grid, kstt_ua,kend_ua, dyn_bundle,  &
+          axes(1:3), fcst_grid, kstt_ua,kend_ua, dyn_bundle, output_file, &
           range=vrange, rcd=rc)
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
@@ -622,36 +710,46 @@ contains
    if(id_va > 0) then
      call find_outputname(trim(file_name),'vcomp',output_name)
      call add_field_to_bundle(trim(output_name),'meridional wind', 'm/sec', "time: point",   &
-          axes(1:3), fcst_grid, kstt_va,kend_va, dyn_bundle,       &
+          axes(1:3), fcst_grid, kstt_va,kend_va, dyn_bundle, output_file, &
           range=vrange,rcd=rc)
      if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
+!*** create 3D vector from local u/v winds
+   if(id_ua > 0 .and. id_va > 0) then
+     output_name = "windvector"
+     output_file1 = 'none'
+     l3Dvector = .true.
+     call add_field_to_bundle(trim(output_name),'3D cartisian wind vector', 'm/sec', "time: point",   &
+          axes(1:3), fcst_grid, kstt_windvect,kend_windvect, dyn_bundle, output_file1, range=vrange,   &
+          l3Dvector=l3Dvector,rcd=rc)
    endif
 !
    if ( .not.hydrostatico ) then
      if( id_w>0  ) then
        call find_outputname(trim(file_name),'w',output_name)
        call add_field_to_bundle(trim(output_name),'vertical wind', 'm/sec', "time: point",   &
-            axes(1:3), fcst_grid, kstt_w,kend_w, dyn_bundle, &
+            axes(1:3), fcst_grid, kstt_w,kend_w, dyn_bundle, output_file, &
             range=wrange, rcd=rc)
        if(rc==0)  num_field_dyn=num_field_dyn+1
      endif
      if( id_pfnh>0  ) then
        call find_outputname(trim(file_name),'pfnh',output_name)
        call add_field_to_bundle(trim(output_name),'non-hydrostatic pressure', 'pa', "time: point",  &
-            axes(1:3), fcst_grid, kstt_pfnh,kend_pfnh, dyn_bundle, rcd=rc)
+            axes(1:3), fcst_grid, kstt_pfnh,kend_pfnh, dyn_bundle, output_file, rcd=rc)
        if(rc==0)  num_field_dyn=num_field_dyn+1
      endif
      if( id_delz>0  ) then
        call find_outputname(trim(file_name),'delz',output_name)
        call add_field_to_bundle(trim(output_name),'height thickness', 'm', "time: point",   &
-            axes(1:3), fcst_grid, kstt_delz,kend_delz, dyn_bundle, rcd=rc)
+            axes(1:3), fcst_grid, kstt_delz,kend_delz, dyn_bundle, output_file, rcd=rc)
        if(rc==0)  num_field_dyn=num_field_dyn+1
      endif
    else
      if( id_pfhy>0  ) then
        call find_outputname(trim(file_name),'pfhy',output_name)
        call add_field_to_bundle(trim(output_name),'hydrostatic pressure', 'pa', "time: point",   &
-            axes(1:3), fcst_grid, kstt_pfhy,kend_pfhy, dyn_bundle, rcd=rc)
+            axes(1:3), fcst_grid, kstt_pfhy,kend_pfhy, dyn_bundle, output_file, rcd=rc)
        if(rc==0)  num_field_dyn=num_field_dyn+1
      endif
    endif
@@ -659,7 +757,7 @@ contains
    if(id_pt > 0) then
      call find_outputname(trim(file_name),'temp',output_name)
      call add_field_to_bundle(trim(output_name),'temperature', 'K', "time: point",   &
-          axes(1:3), fcst_grid, kstt_pt,kend_pt, dyn_bundle, &
+          axes(1:3), fcst_grid, kstt_pt,kend_pt, dyn_bundle, output_file, &
           range=trange,rcd=rc)
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
@@ -667,7 +765,7 @@ contains
    if( id_delp > 0) then
      call find_outputname(trim(file_name),'delp',output_name)
      call add_field_to_bundle(trim(output_name),'pressure thickness', 'pa', "time: point",   &
-          axes(1:3), fcst_grid, kstt_delp,kend_delp, dyn_bundle, rcd=rc)
+          axes(1:3), fcst_grid, kstt_delp,kend_delp, dyn_bundle, output_file, rcd=rc)
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
 !
@@ -677,7 +775,7 @@ contains
      call find_outputname(trim(file_name),trim(tname),output_name)
      if (id_tracer(i)>0) then
        call add_field_to_bundle(trim(output_name),trim(tlongname), trim(tunits), "time: point",   &
-            axes(1:3), fcst_grid, kstt_tracer(i),kend_tracer(i), dyn_bundle, rcd=rc)
+            axes(1:3), fcst_grid, kstt_tracer(i),kend_tracer(i), dyn_bundle, output_file, rcd=rc)
        if(rc==0)  num_field_dyn=num_field_dyn+1
      endif
 !     if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,add trac,i=',i,'output_name=',trim(output_name),' rc=',rc
@@ -687,22 +785,32 @@ contains
    if( id_ps > 0) then
      call find_outputname(trim(file_name),'ps',output_name)
      call add_field_to_bundle(trim(output_name),'surface pressure', 'pa', "time: point",   &
-          axes(1:2), fcst_grid, kstt_ps,kend_ps, dyn_bundle, rcd=rc)
+          axes(1:2), fcst_grid, kstt_ps,kend_ps, dyn_bundle, output_file, rcd=rc)
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
 !
    if( id_hs > 0) then
      call find_outputname(trim(file_name),'hs',output_name)
      call add_field_to_bundle(trim(output_name),'surface geopotential height', 'gpm', "time: point",   &
-          axes(1:2), fcst_grid, kstt_hs,kend_hs, dyn_bundle, rcd=rc)
+          axes(1:2), fcst_grid, kstt_hs,kend_hs, dyn_bundle, output_file, rcd=rc)
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
 
+!jwtest:
+!   call ESMF_FieldBundleGet(dyn_bundle, fieldCount=fieldCount, rc=rc)
+!   print *,'in dyn_bundle_setup, fieldCount=',fieldCount
+!   allocate(fieldnamelist(fieldCount),fieldlist(fieldCount))
+!   call ESMF_FieldBundleGet(dyn_bundle, fieldlist=fieldlist,fieldnamelist=fieldnamelist, rc=rc)
+!   do i=1,fieldCount
+!     call ESMF_AttributeGet(fieldlist(i), convention="NetCDF", purpose="FV3", &
+!                    name="output_file", value=fld_outfilename, rc=rc)
+!     print *,'in dyn bundle setup, i=',i,' fieldname=',trim(fieldnamelist(i)),' out filename=',trim(fld_outfilename)
+!   enddo
 
  end subroutine fv_dyn_bundle_setup
 
  subroutine add_field_to_bundle(var_name,long_name,units,cell_methods, axes,dyn_grid, &
-                                kstt,kend,dyn_bundle,range, rcd)
+                                kstt,kend,dyn_bundle,output_file, range, l3Dvector, rcd)
    use esmf
    implicit none
 
@@ -711,28 +819,60 @@ contains
    type(esmf_grid), intent(in)          :: dyn_grid
    integer, intent(in)                  :: kstt,kend
    type(esmf_fieldbundle),intent(inout) :: dyn_bundle
+   character(*), intent(in)             :: output_file
    real, intent(in), optional           :: range(2)
+   logical, intent(in), optional        :: l3Dvector
    integer, intent(out), optional       :: rcd
 !
 !*** local variable
    type(ESMF_Field)         :: field
    type(ESMF_DataCopy_Flag) :: copyflag=ESMF_DATACOPY_REFERENCE
    integer rc, i, j, idx
-   real(4),dimension(:,:,:),pointer :: temp_r3d
-   real(4),dimension(:,:),pointer :: temp_r2d
+   real(4),dimension(:,:,:,:),pointer :: temp_r4d
+   real(4),dimension(:,:,:),  pointer :: temp_r3d
+   real(4),dimension(:,:),    pointer :: temp_r2d
    logical, save :: first=.true.
-
 !
 !*** create esmf field  
-   if( kend>kstt ) then
+   if( present(l3Dvector) ) then
+     temp_r4d => windvect(1:3,isco:ieco,jsco:jeco,kstt:kend)
+     call ESMF_LogWrite('create winde vector esmf field', ESMF_LOGMSG_INFO, rc=rc)
+     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, &
+      file=__FILE__)) &
+      return  ! bail out
+!jw      field = ESMF_FieldCreate(dyn_grid, temp_r4d, datacopyflag=ESMF_DATACOPY_VALUE, 
+     field = ESMF_FieldCreate(dyn_grid, temp_r4d, datacopyflag=ESMF_DATACOPY_REFERENCE, &
+                            gridToFieldMap=(/2,3/), ungriddedLBound=(/1,kstt/), ungriddedUBound=(/3,kend/), &
+                            name="windvector", indexFlag=ESMF_INDEX_DELOCAL, rc=rc)
+     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, &
+      file=__FILE__)) &
+      return  ! bail out
+     call ESMF_LogWrite('create winde vector esmf field', ESMF_LOGMSG_INFO, rc=rc)
+     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, &
+      file=__FILE__)) &
+      return  ! bail out
+
+     call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3", &
+        attrList=(/"output_file"/), rc=rc)
+     call ESMF_AttributeSet(field, convention="NetCDF", purpose="FV3", &
+        name='output_file',value=trim(output_file),rc=rc)
+
+     call ESMF_FieldBundleAdd(dyn_bundle,(/field/), rc=rc)
+     if( present(rcd)) rcd=rc
+     return
+   else if( kend>kstt ) then
      temp_r3d => buffer_dyn(isco:ieco,jsco:jeco,kstt:kend)
      field = ESMF_FieldCreate(dyn_grid, temp_r3d, datacopyflag=copyflag, &
                             name=var_name, indexFlag=ESMF_INDEX_DELOCAL, rc=rc)
-   else
+   else if(kend==kstt) then
      temp_r2d => buffer_dyn(isco:ieco,jsco:jeco,kstt)
      field = ESMF_FieldCreate(dyn_grid, temp_r2d, datacopyflag=copyflag, &
                             name=var_name, indexFlag=ESMF_INDEX_DELOCAL, rc=rc)
    endif
+!
 !*** add field attributes
    call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3", &
         attrList=(/"long_name"/), rc=rc)
@@ -759,8 +899,11 @@ contains
    call ESMF_AttributeSet(field, convention="NetCDF", purpose="FV3", &
         name='cell_methods',value=trim(cell_methods),rc=rc)
 
-!*** add vertical coord attribute:
-
+   call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3", &
+        attrList=(/"output_file"/), rc=rc)
+   call ESMF_AttributeSet(field, convention="NetCDF", purpose="FV3", &
+        name='output_file',value=trim(output_file),rc=rc)
+!
 !*** add vertical coord attribute:
    if( size(axes) > 2) then
      do i=3,size(axes)
