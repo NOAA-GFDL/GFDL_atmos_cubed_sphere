@@ -60,6 +60,7 @@ module fv_iau_mod
     real,allocatable :: va_inc(:,:,:)
     real,allocatable :: temp_inc(:,:,:)
     real,allocatable :: delp_inc(:,:,:)
+    real,allocatable :: delz_inc(:,:,:)
     real,allocatable :: tracer_inc(:,:,:,:)
   end type iau_internal_data_type
   type iau_external_data_type
@@ -67,6 +68,7 @@ module fv_iau_mod
     real,allocatable :: va_inc(:,:,:)
     real,allocatable :: temp_inc(:,:,:)
     real,allocatable :: delp_inc(:,:,:)
+    real,allocatable :: delz_inc(:,:,:)
     real,allocatable :: tracer_inc(:,:,:,:)
     logical          :: in_interval = .false.
   end type iau_external_data_type
@@ -207,12 +209,14 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
     allocate(IAU_Data%va_inc(is:ie, js:je, km))
     allocate(IAU_Data%temp_inc(is:ie, js:je, km))
     allocate(IAU_Data%delp_inc(is:ie, js:je, km))
+    allocate(IAU_Data%delz_inc(is:ie, js:je, km))
     allocate(IAU_Data%tracer_inc(is:ie, js:je, km,ntracers))
 ! allocate arrays that will hold iau state
     allocate (iau_state%inc1%ua_inc(is:ie, js:je, km))
     allocate (iau_state%inc1%va_inc(is:ie, js:je, km))
     allocate (iau_state%inc1%temp_inc (is:ie, js:je, km))
     allocate (iau_state%inc1%delp_inc (is:ie, js:je, km))
+    allocate (iau_state%inc1%delz_inc (is:ie, js:je, km))
     allocate (iau_state%inc1%tracer_inc(is:ie, js:je, km,ntracers))
     iau_state%hr1=IPD_Control%iaufhrs(1)
     call read_iau_forcing(IPD_Control,iau_state%inc1,'INPUT/'//trim(IPD_Control%iau_inc_files(1)))
@@ -224,6 +228,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
        allocate (iau_state%inc2%va_inc(is:ie, js:je, km))
        allocate (iau_state%inc2%temp_inc (is:ie, js:je, km))
        allocate (iau_state%inc2%delp_inc (is:ie, js:je, km))
+       allocate (iau_state%inc2%delz_inc (is:ie, js:je, km))
        allocate (iau_state%inc2%tracer_inc(is:ie, js:je, km,ntracers))
        iau_state%hr2=IPD_Control%iaufhrs(2)
        call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(2)))
@@ -302,6 +307,7 @@ subroutine updateiauforcing(IPD_Control,IAU_Data)
             IAU_Data%va_inc(i,j,k)    =(delt*IAU_state%inc1%va_inc(i,j,k)    + (1.-delt)* IAU_state%inc2%va_inc(i,j,k))*rdt
             IAU_Data%temp_inc(i,j,k)  =(delt*IAU_state%inc1%temp_inc(i,j,k)  + (1.-delt)* IAU_state%inc2%temp_inc(i,j,k))*rdt
             IAU_Data%delp_inc(i,j,k)  =(delt*IAU_state%inc1%delp_inc(i,j,k)  + (1.-delt)* IAU_state%inc2%delp_inc(i,j,k))*rdt
+            IAU_Data%delz_inc(i,j,k)  =(delt*IAU_state%inc1%delz_inc(i,j,k)  + (1.-delt)* IAU_state%inc2%delz_inc(i,j,k))*rdt
             do l=1,ntracers
                IAU_Data%tracer_inc(i,j,k,l) =(delt*IAU_state%inc1%tracer_inc(i,j,k,l) + (1.-delt)* IAU_state%inc2%tracer_inc(i,j,k,l))*rdt
             enddo
@@ -327,6 +333,7 @@ subroutine updateiauforcing(IPD_Control,IAU_Data)
           IAU_Data%va_inc(i,j,k)    =IAU_state%inc1%va_inc(i,j,k)*rdt
           IAU_Data%temp_inc(i,j,k)  =IAU_state%inc1%temp_inc(i,j,k)*rdt
           IAU_Data%delp_inc(i,j,k) =IAU_state%inc1%delp_inc(i,j,k)*rdt
+          IAU_Data%delz_inc(i,j,k) =IAU_state%inc1%delz_inc(i,j,k)*rdt
           do l = 1,ntracers
              IAU_Data%tracer_inc(i,j,k,l) =IAU_state%inc1%tracer_inc(i,j,k,l)*rdt
           enddo
@@ -382,6 +389,7 @@ subroutine read_iau_forcing(IPD_Control,increments,fname)
  ! read in 1 time level
     call interp_inc('T_inc',increments%temp_inc(:,:,:),jbeg,jend)
     call interp_inc('delp_inc',increments%delp_inc(:,:,:),jbeg,jend)
+    call interp_inc('delz_inc',increments%delz_inc(:,:,:),jbeg,jend)
     call interp_inc('u_inc',increments%ua_inc(:,:,:),jbeg,jend)   ! can these be treated as scalars?
     call interp_inc('v_inc',increments%va_inc(:,:,:),jbeg,jend)
     do l=1,ntracers

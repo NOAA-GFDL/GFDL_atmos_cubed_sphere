@@ -1012,6 +1012,15 @@ contains
           enddo
         enddo
       enddo
+      if (.not. Atm(mytile)%flagstruct%hydrostatic) then
+         do k = 1, npz
+            do j = jsc,jec
+               do i = isc,iec
+                  Atm(n)%delz(i,j,k) = Atm(n)%delz(i,j,k)  + IAU_Data%delz_inc(i,j,k)*dt_atmos
+             enddo
+           enddo
+         enddo
+      endif
 !     add analysis increment to tracers to output from physics
       do nb = 1,Atm_block%nblks
          !if (nb.EQ.1) print*,'in block_update',IAU_Data%in_interval,IAU_Data%temp_inc(isc,jsc,30)

@@ -172,6 +172,9 @@ contains
 
     call apply_inc_on_3d_scalar('T_inc',Atm(1)%pt)
     call apply_inc_on_3d_scalar('delp_inc',Atm(1)%delp)
+    if (.not. Atm(1)%flagstruct%hydrostatic) then
+        call apply_inc_on_3d_scalar('delz_inc',Atm(1)%delz)
+    endif
     call apply_inc_on_3d_scalar('sphum_inc',Atm(1)%q(:,:,:,sphum))
     call apply_inc_on_3d_scalar('liq_wat_inc',Atm(1)%q(:,:,:,liq_wat))
     call apply_inc_on_3d_scalar('o3mr_inc',Atm(1)%q(:,:,:,o3mr))
