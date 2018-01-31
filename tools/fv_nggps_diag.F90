@@ -772,8 +772,8 @@ contains
 ! tracers
    do i=1, ncnsto
      call get_tracer_names ( MODEL_ATMOS, i, tname, tlongname, tunits )
-     call find_outputname(trim(file_name),trim(tname),output_name)
      if (id_tracer(i)>0) then
+       call find_outputname(trim(file_name),trim(tname),output_name)
        call add_field_to_bundle(trim(output_name),trim(tlongname), trim(tunits), "time: point",   &
             axes(1:3), fcst_grid, kstt_tracer(i),kend_tracer(i), dyn_bundle, output_file, rcd=rc)
        if(rc==0)  num_field_dyn=num_field_dyn+1
@@ -960,7 +960,7 @@ contains
      endif
    enddo
    if(output_name=='') then
-     print *,'Error, cant find out put name'
+     print *,'Error, cant find out put name, field_name=',trim(field_name),'in_num=',in_num
    endif
 
  end subroutine find_outputname
