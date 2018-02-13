@@ -362,6 +362,13 @@ contains
     !--- PS
     ! Re-compute pressure (dry_mass + water_vapor) surface pressure
     if(id_ps > 0) then
+      do k=1,npzo
+        do j=jsco,jeco
+          do i=isco,ieco
+            wk(i,j,k) = Atm(n)%delp(i,j,k)*(1.-sum(Atm(n)%q(i,j,k,2:Atm(n)%flagstruct%nwat)))
+          enddo
+        enddo
+      enddo
       do j=jsco,jeco
         do i=isco,ieco
            psurf(i,j) = ptop

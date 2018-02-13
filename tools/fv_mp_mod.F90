@@ -137,15 +137,21 @@
       END INTERFACE
 
       INTERFACE mp_bcst
-        MODULE PROCEDURE mp_bcst_i4
+        MODULE PROCEDURE mp_bcst_i
         MODULE PROCEDURE mp_bcst_r4
         MODULE PROCEDURE mp_bcst_r8
+        MODULE PROCEDURE mp_bcst_1d_r4
+        MODULE PROCEDURE mp_bcst_1d_r8
+        MODULE PROCEDURE mp_bcst_2d_r4
+        MODULE PROCEDURE mp_bcst_2d_r8
         MODULE PROCEDURE mp_bcst_3d_r4
         MODULE PROCEDURE mp_bcst_3d_r8
         MODULE PROCEDURE mp_bcst_4d_r4
         MODULE PROCEDURE mp_bcst_4d_r8
-        MODULE PROCEDURE mp_bcst_3d_i8
-        MODULE PROCEDURE mp_bcst_4d_i8
+        MODULE PROCEDURE mp_bcst_1d_i
+        MODULE PROCEDURE mp_bcst_2d_i
+        MODULE PROCEDURE mp_bcst_3d_i
+        MODULE PROCEDURE mp_bcst_4d_i
       END INTERFACE
 
       INTERFACE mp_reduce_min
@@ -158,7 +164,7 @@
         MODULE PROCEDURE mp_reduce_max_r4
         MODULE PROCEDURE mp_reduce_max_r8_1d
         MODULE PROCEDURE mp_reduce_max_r8
-        MODULE PROCEDURE mp_reduce_max_i4
+        MODULE PROCEDURE mp_reduce_max_i
       END INTERFACE
 
       INTERFACE mp_reduce_sum
@@ -2087,14 +2093,14 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_bcst_i4 :: Call SPMD broadcast 
+!     mp_bcst_i :: Call SPMD broadcast 
 !
-      subroutine mp_bcst_i4(q)
+      subroutine mp_bcst_i(q)
          integer, intent(INOUT)  :: q
 
          call MPI_BCAST(q, 1, MPI_INTEGER, masterproc, commglobal, ierror)
 
-      end subroutine mp_bcst_i4
+      end subroutine mp_bcst_i
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
@@ -2125,6 +2131,70 @@ end subroutine switch_current_Atm
          call MPI_BCAST(q, 1, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
 
       end subroutine mp_bcst_r8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_bcst_1d_r4 :: Call SPMD broadcast 
+!
+      subroutine mp_bcst_1d_r4(q, idim)
+         integer, intent(IN)  :: idim
+         real(kind=4), intent(INOUT)  :: q(idim)
+
+         call MPI_BCAST(q, idim, MPI_REAL, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_1d_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_bcst_1d_r8 :: Call SPMD broadcast 
+!
+      subroutine mp_bcst_1d_r8(q, idim)
+         integer, intent(IN)  :: idim
+         real(kind=8), intent(INOUT)  :: q(idim)
+
+         call MPI_BCAST(q, idim, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_1d_r8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_bcst_2d_r4 :: Call SPMD broadcast 
+!
+      subroutine mp_bcst_2d_r4(q, idim, jdim)
+         integer, intent(IN)  :: idim, jdim
+         real(kind=4), intent(INOUT)  :: q(idim,jdim)
+
+         call MPI_BCAST(q, idim*jdim, MPI_REAL, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_2d_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_bcst_2d_r8 :: Call SPMD broadcast 
+!
+      subroutine mp_bcst_2d_r8(q, idim, jdim)
+         integer, intent(IN)  :: idim, jdim
+         real(kind=8), intent(INOUT)  :: q(idim,jdim)
+
+         call MPI_BCAST(q, idim*jdim, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_2d_r8
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
@@ -2196,15 +2266,15 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_bcst_3d_i8 :: Call SPMD broadcast
+!     mp_bcst_3d_i :: Call SPMD broadcast
 !
-      subroutine mp_bcst_3d_i8(q, idim, jdim, kdim)
+      subroutine mp_bcst_3d_i(q, idim, jdim, kdim)
          integer, intent(IN)  :: idim, jdim, kdim
          integer, intent(INOUT)  :: q(idim,jdim,kdim)
 
          call MPI_BCAST(q, idim*jdim*kdim, MPI_INTEGER, masterproc, commglobal, ierror)
 
-      end subroutine mp_bcst_3d_i8
+      end subroutine mp_bcst_3d_i
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
@@ -2212,15 +2282,46 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_bcst_4d_i8 :: Call SPMD broadcast
+!     mp_bcst_1d_i :: Call SPMD broadcast
 !
-      subroutine mp_bcst_4d_i8(q, idim, jdim, kdim, ldim)
+      subroutine mp_bcst_1d_i(q, idim)
+         integer, intent(IN)  :: idim
+         integer, intent(INOUT)  :: q(idim)
+
+         call MPI_BCAST(q, idim, MPI_INTEGER, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_1d_i
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_bcst_2d_i :: Call SPMD broadcast
+!
+      subroutine mp_bcst_2d_i(q, idim, jdim)
+         integer, intent(IN)  :: idim, jdim
+         integer, intent(INOUT)  :: q(idim,jdim)
+
+         call MPI_BCAST(q, idim*jdim, MPI_INTEGER, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_2d_i
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_bcst_4d_i :: Call SPMD broadcast
+!
+      subroutine mp_bcst_4d_i(q, idim, jdim, kdim, ldim)
          integer, intent(IN)  :: idim, jdim, kdim, ldim
          integer, intent(INOUT)  :: q(idim,jdim,kdim,ldim)
 
          call MPI_BCAST(q, idim*jdim*kdim*ldim, MPI_INTEGER, masterproc, commglobal, ierror)
 
-      end subroutine mp_bcst_4d_i8
+      end subroutine mp_bcst_4d_i
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
@@ -2334,9 +2435,9 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_bcst_4d_i4 :: Call SPMD REDUCE_MAX 
+!     mp_bcst_4d_i :: Call SPMD REDUCE_MAX 
 !
-      subroutine mp_reduce_max_i4(mymax)
+      subroutine mp_reduce_max_i(mymax)
          integer, intent(INOUT)  :: mymax
 
          integer :: gmax
@@ -2346,7 +2447,7 @@ end subroutine switch_current_Atm
 
          mymax = gmax
 
-      end subroutine mp_reduce_max_i4
+      end subroutine mp_reduce_max_i
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
