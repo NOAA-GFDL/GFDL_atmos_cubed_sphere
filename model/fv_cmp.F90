@@ -707,7 +707,7 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, &
                 rh = qpz (i) / qstar (i)
                 
                 ! -----------------------------------------------------------------------
-                ! icloud_f = 0: bug - fxied
+                ! icloud_f = 0: bug - fixed
                 ! icloud_f = 1: old fvgfs gfdl) mp implementation
                 ! icloud_f = 2: binary cloud scheme (0 / 1)
                 ! -----------------------------------------------------------------------

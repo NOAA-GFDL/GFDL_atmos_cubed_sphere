@@ -97,7 +97,7 @@ contains
     real,                intent(in)    :: dt_atmos
     integer,             intent(out)   :: seconds
     integer,             intent(out)   :: days
-    logical,             intent(inout)    :: cold_start
+    logical,             intent(inout) :: cold_start
     integer,             intent(in)    :: grid_type
     logical, intent(INOUT) :: grids_on_this_pe(:)
 
@@ -327,14 +327,13 @@ contains
             if( is_master() ) write(*,*) 'phis set to zero'
          endif !mountain
 
-
 #ifdef SW_DYNAMICS
-        Atm(n)%pt(:,:,:)=1.
+        Atm(n)%pt(:,:,:) = 1.
 #else
         if ( .not.Atm(n)%flagstruct%hybrid_z ) then
-           if(Atm(n)%ptop/=Atm(n)%ak(1)) call mpp_error(FATAL,'FV restart: ptop not equal Atm(n)%ak(1)')
+           if(Atm(n)%ptop /= Atm(n)%ak(1)) call mpp_error(FATAL,'FV restart: ptop not equal Atm(n)%ak(1)')
         else
-           Atm(n)%ptop = Atm(n)%ak(1);  Atm(n)%ks = 0
+           Atm(n)%ptop = Atm(n)%ak(1) ;  Atm(n)%ks = 0
         endif
         call p_var(npz,         isc,         iec,       jsc,     jec,   Atm(n)%ptop,     ptop_min,  &
                    Atm(n)%delp, Atm(n)%delz, Atm(n)%pt, Atm(n)%ps, Atm(n)%pe, Atm(n)%peln,   &
@@ -643,21 +642,24 @@ contains
        process = .true.
     endif
 
-    isd = Atm%bd%isd
-    ied = Atm%bd%ied
-    jsd = Atm%bd%jsd
-    jed = Atm%bd%jed
+    isd   = Atm%bd%isd
+    ied   = Atm%bd%ied
+    jsd   = Atm%bd%jsd
+    jed   = Atm%bd%jed
     ncnst = Atm%ncnst
-    isc = Atm%bd%isc; iec = Atm%bd%iec; jsc = Atm%bd%jsc; jec = Atm%bd%jec
-    is  = Atm%bd%is ; ie  = Atm%bd%ie ; js  = Atm%bd%js ; je  = Atm%bd%je
-    npz     = Atm%npz    
-    nwat = Atm%flagstruct%nwat
+    isc   = Atm%bd%isc; iec = Atm%bd%iec; jsc = Atm%bd%jsc; jec = Atm%bd%jec
+    is    = Atm%bd%is ; ie  = Atm%bd%ie ; js  = Atm%bd%js ; je  = Atm%bd%je
+    npz   = Atm%npz    
+    nwat  = Atm%flagstruct%nwat
 
-   if (nwat>=3 ) then
+   if (nwat >= 3) then
       liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
       ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
    endif
-   if ( nwat==6 ) then
+   if ( nwat== 5) then
+      rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
+      snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
+   elseif (nwat == 6) then
       rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
       snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
       graupel = get_tracer_index (MODEL_ATMOS, 'graupel')

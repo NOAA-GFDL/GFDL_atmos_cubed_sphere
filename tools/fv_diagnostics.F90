@@ -1982,7 +1982,7 @@ contains
           do k=1,npz
           do j=jsc,jec
              do i=isc,iec
-!                a2(i,j) = a2(i,j) + Atm(n)%q(i,j,k,1)*Atm(n)%delp(i,j,k)
+!               a2(i,j) = a2(i,j) + Atm(n)%q(i,j,k,1)*Atm(n)%delp(i,j,k)
                 a2(i,j) = a2(i,j) + sum(Atm(n)%q(i,j,k,1:nwater))*Atm(n)%delp(i,j,k)
              enddo
           enddo
@@ -4633,12 +4633,12 @@ end subroutine eqv_pot
    !Other constants
    real, parameter :: gamma_seven = 720.
    !The following values are also used in GFDL MP
-   real, parameter :: rho_r = 1.0e3  ! LFO83
-   real, parameter :: rho_s = 100.   ! kg m^-3 
+   real, parameter :: rho_r  = 1.0e3  ! LFO83
+   real, parameter :: rho_s  = 100.   ! kg m^-3 
    real, parameter :: rho_g0 = 400.   ! kg m^-3
-   real, parameter :: rho_g = 500.   ! graupel-hail mix
-!  real, parameter :: rho_g = 900.   ! hail/frozen rain
-   real, parameter :: alpha = 0.224
+   real, parameter :: rho_g  = 500.   ! graupel-hail mix
+!  real, parameter :: rho_g  = 900.   ! hail/frozen rain
+   real, parameter :: alpha  = 0.224
    real(kind=R_GRID), parameter :: factor_r = gamma_seven * 1.e18 * (1./(pi*rho_r))**1.75
    real(kind=R_GRID), parameter :: factor_s = gamma_seven * 1.e18 * (1./(pi*rho_s))**1.75 &
         * (rho_s/rho_r)**2 * alpha
@@ -4773,7 +4773,11 @@ end subroutine eqv_pot
 ! Account for excessively high cloud water -> autoconvert (diag only) excess cloud water
          t1 = rhoair(i)*max(qmin, q(i,j,k,rainwat)+dim(q(i,j,k,liq_wat), 1.0e-3))
          t2 = rhoair(i)*max(qmin, q(i,j,k,snowwat))
-         t3 = rhoair(i)*max(qmin, q(i,j,k,graupel))
+         if (graupel > 0) then
+           t3 = rhoair(i)*max(qmin, q(i,j,k,graupel))
+         else
+           t3 = rhoair(i)*qmin
+         endif
          denfac = sqrt(min(10., 1.2/rhoair(i)))
          vtr = max(1.e-3, vconr*denfac*exp(0.2   *log(t1/normr)))
          vtg = max(1.e-3, vcong*denfac*exp(0.125 *log(t3/normg)))

@@ -53,7 +53,7 @@ module fv_nggps_diags_mod
  logical :: hydrostatico
  integer, allocatable :: id_tracer(:), all_axes(:)
  integer, allocatable :: kstt_tracer(:), kend_tracer(:)
- real, allocatable :: ak(:), bk(:)
+ real,    allocatable :: ak(:), bk(:)
  character(20),allocatable :: axis_name(:),axis_name_vert(:)
 
  logical :: module_is_initialized=.false.
@@ -90,7 +90,7 @@ contains
     integer, intent(in)         :: axes(4)
     type(time_type), intent(in) :: Time
 
-    integer :: n, i, j
+    integer :: n, i, j, nz
 
     n = 1
     ncnsto = Atm(1)%ncnst
@@ -221,10 +221,13 @@ contains
           nlevs = nlevs + 1
        endif
 !
-      allocate(ak(size(atm(1)%ak)))
-      allocate(bk(size(atm(1)%bk)))
-      ak(1:size(ak)) = atm(1)%ak(1:size(ak))
-      bk(1:size(bk)) = atm(1)%bk(1:size(bk))
+       nz = size(atm(1)%ak)
+       allocate(ak(nz))
+       allocate(bk(nz))
+       do i=1,nz
+         ak(i) = atm(1)%ak(i)
+         bk(i) = atm(1)%bk(i)
+       enddo
 !      print *,'in ngpps diag init, ak=',ak(1:5),' bk=',bk(1:5)
 
 ! get lon,lon information

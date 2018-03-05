@@ -336,7 +336,7 @@ contains
       real(kind=R_GRID), dimension(2):: p1, p2, p3
       real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
       integer:: i,j,k,nts, ks
-      integer:: liq_wat, ice_wat, rainwat, snowwat, graupel
+      integer:: liq_wat, ice_wat, rainwat, snowwat, graupel, ntclamt
       namelist /external_ic_nml/ filtered_terrain, levp, gfs_dwinds, &
                                  checker_tr, nt_checker
 #ifdef GFSL64
@@ -676,7 +676,7 @@ contains
           endif
         endif
         ! call vertical remapping algorithms
-        if(is_master())  write(*,*) 'GFS ak(1)=', ak(1), ' ak(2)=', ak(2)
+        if(is_master())  write(*,*) 'GFS ak =', ak,' FV3 ak=',Atm(n)%ak
         ak(1) = max(1.e-9, ak(1))
 
         call remap_scalar_nggps(Atm(n), levp, npz, ntracers, ak, bk, ps, q, omga, zh)
@@ -785,13 +785,14 @@ contains
         rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
         snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
         graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
+        ntclamt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
 !--- Add cloud condensate from GFS to total MASS
 ! 20160928: Adjust the mixing ratios consistently...
         do k=1,npz
           do j=js,je
             do i=is,ie
               wt = Atm(n)%delp(i,j,k)
-              if ( Atm(n)%flagstruct%nwat .eq. 6 ) then
+              if ( Atm(n)%flagstruct%nwat == 6 ) then
                  qt = wt*(1. + Atm(n)%q(i,j,k,liq_wat) + &
                                Atm(n)%q(i,j,k,ice_wat) + &
                                Atm(n)%q(i,j,k,rainwat) + &
@@ -805,6 +806,7 @@ contains
                  Atm(n)%q(i,j,k,iq) = m_fac * Atm(n)%q(i,j,k,iq)
               enddo
               Atm(n)%delp(i,j,k) = qt
+              if (ntclamt > 0) Atm(n)%q(i,j,k,ntclamt) = 0.0    ! Moorthi
             enddo
           enddo
         enddo

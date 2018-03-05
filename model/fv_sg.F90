@@ -225,6 +225,13 @@ contains
              cpm(i) = (1.-(q0(i,k,sphum)+q_liq))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq
              cvm(i) = (1.-(q0(i,k,sphum)+q_liq))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq
           enddo
+       elseif ( nwat==5 ) then
+          do i=is,ie
+             q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
+             q_sol = q0(i,k,ice_wat) + q0(i,k,snowwat)
+             cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
+             cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
+          enddo
        else
           do i=is,ie
              q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
@@ -285,6 +292,12 @@ contains
             qcon(i,k) = q0(i,k,liq_wat) + q0(i,k,rainwat)
          enddo
       enddo
+   elseif ( nwat==5 ) then
+      do k=1,kbot
+         do i=is,ie
+            qcon(i,k) = q0(i,k,liq_wat)+q0(i,k,ice_wat)+q0(i,k,snowwat)+q0(i,k,rainwat)
+         enddo
+      enddo
    else
       do k=1,kbot
          do i=is,ie
@@ -341,6 +354,9 @@ contains
                     qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,ice_wat)
                  elseif ( nwat==4 ) then  ! K_warm_rain scheme with fake ice
                     qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,rainwat)
+                 elseif ( nwat==5 ) then  ! K_warm_rain scheme with fake ice
+                    qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,ice_wat) +                  &
+                                  q0(i,km1,snowwat) + q0(i,km1,rainwat)
                  else
                     qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,ice_wat) +                  &
                                   q0(i,km1,snowwat) + q0(i,km1,rainwat) + q0(i,km1,graupel)
@@ -418,6 +434,13 @@ contains
                q_liq = q0(i,kk,liq_wat) + q0(i,kk,rainwat)
                cpm(i) = (1.-(q0(i,kk,sphum)+q_liq))*cp_air + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq
                cvm(i) = (1.-(q0(i,kk,sphum)+q_liq))*cv_air + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq
+            enddo
+           elseif ( nwat == 5 ) then
+            do i=is,ie
+               q_liq = q0(i,kk,liq_wat) + q0(i,kk,rainwat)
+               q_sol = q0(i,kk,ice_wat) + q0(i,kk,snowwat)
+               cpm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cp_air + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
+               cvm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cv_air + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
             enddo
            else
             do i=is,ie
@@ -643,6 +666,13 @@ contains
              cpm(i) = (1.-(q0(i,k,sphum)+q_liq))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq
              cvm(i) = (1.-(q0(i,k,sphum)+q_liq))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq
           enddo
+       elseif ( nwat==5 ) then
+          do i=is,ie
+             q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
+             q_sol = q0(i,k,ice_wat) + q0(i,k,snowwat)
+             cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
+             cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
+          enddo
        else
           do i=is,ie
              q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
@@ -703,6 +733,11 @@ contains
             qcon(i,k) = q0(i,k,liq_wat) + q0(i,k,rainwat)
          enddo
       enddo
+   elseif ( nwat==5 ) then
+      do k=1,kbot
+         do i=is,ie
+            qcon(i,k) = q0(i,k,liq_wat)+q0(i,k,ice_wat)+q0(i,k,snowwat)+q0(i,k,rainwat)
+         enddo
    else
       do k=1,kbot
          do i=is,ie
@@ -752,6 +787,9 @@ contains
                     qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,ice_wat)
                  elseif ( nwat==4 ) then  ! K_warm_rain scheme with fake ice
                     qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,rainwat)
+                 elseif ( nwat==5 ) then
+                    qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,ice_wat) +                  &
+                                  q0(i,km1,snowwat) + q0(i,km1,rainwat)
                  else
                     qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,ice_wat) +                  &
                                   q0(i,km1,snowwat) + q0(i,km1,rainwat) + q0(i,km1,graupel)
@@ -829,6 +867,13 @@ contains
                q_liq = q0(i,kk,liq_wat) + q0(i,kk,rainwat)
                cpm(i) = (1.-(q0(i,kk,sphum)+q_liq))*cp_air + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq
                cvm(i) = (1.-(q0(i,kk,sphum)+q_liq))*cv_air + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq
+            enddo
+           elseif ( nwat == 5 ) then
+            do i=is,ie
+               q_liq = q0(i,kk,liq_wat) + q0(i,kk,rainwat)
+               q_sol = q0(i,kk,ice_wat) + q0(i,kk,snowwat)
+               cpm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cp_air + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
+               cvm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cv_air + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
             enddo
            else
             do i=is,ie

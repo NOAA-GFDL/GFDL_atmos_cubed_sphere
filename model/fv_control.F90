@@ -255,6 +255,7 @@ module fv_control_mod
                                    ! 2 for block
                                    ! 3 for four-interfaces non-block
 
+
 ! version number of this module
 ! Include variable "version" to be written to log file.
 #include<file_version.h>
@@ -530,7 +531,7 @@ module fv_control_mod
    real :: dim0 = 180.           ! base dimension
    real :: dt0  = 1800.          ! base time step
    real :: ns0  = 5.             ! base nsplit for base dimension 
-                                    ! For cubed sphere 5 is better
+                                 ! For cubed sphere 5 is better
    !real :: umax = 350.           ! max wave speed for grid_type>3 ! Now defined above
    real :: dimx, dl, dp, dxmin, dymin, d_fac
 
@@ -569,6 +570,7 @@ module fv_control_mod
                          do_uni_zfull, adj_mass_vmr
 
    namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
+
 
    pe_counter = mpp_root_pe()
 
@@ -613,7 +615,7 @@ module fv_control_mod
 
 #ifdef INTERNAL_FILE_NML
    ! Set input_file_nml for correct parent/nest initialization
-      if (n .gt. 1) then
+      if (n > 1) then
          write(nested_grid_filename,'(A4, I2.2)') 'nest', n
          call read_input_nml(nested_grid_filename)
       endif
