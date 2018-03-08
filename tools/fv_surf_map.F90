@@ -1,23 +1,67 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
  module fv_surf_map_mod
+
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>grav, radius, pi=>pi_8</td>
+!   </tr>
+!   <tr>
+!     <td>fms_mod</td>
+!     <td>file_exist, check_nml_error,open_namelist_file, close_file,
+!         stdlog, mpp_pe, mpp_root_pe, FATAL, error_mesg</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_grid_bounds_type, R_GRID</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_utils_mod</td>
+!     <td>great_circle_dist, latlon2xyz, v_prod, normalize_vect,
+!         g_sum, global_mx, vect_cross</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>ng,mp_stop, mp_reduce_min, mp_reduce_max, is_master</td>
+!   </tr>
+!   <tr>
+!     <td>fv_timing_mod</td>
+!     <td>timing_on, timing_off</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>get_unit, input_nml_file, mpp_error,
+!         mpp_pe, mpp_chksum, stdout</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>mpp_update_domains, domain2d</td>
+!   </tr>
+! </table>
 
       use fms_mod,           only: file_exist, check_nml_error,            &
                                    open_namelist_file, close_file, stdlog, &
@@ -57,11 +101,11 @@
       logical:: zero_ocean = .true.          ! if true, no diffusive flux into water/ocean area 
       integer           ::  nlon = 21600
       integer           ::  nlat = 10800
-      real:: cd4 = 0.15      ! Dimensionless coeff for del-4 diffusion (with FCT)
-      real:: cd2 = -1.       ! Dimensionless coeff for del-2 diffusion (-1 gives resolution-determined value)
-      real:: peak_fac = 1.05 ! overshoot factor for the mountain peak
-      real:: max_slope = 0.15 ! max allowable terrain slope: 1 --> 45 deg
-                              ! 0.15 for C768 or lower; 0.25 C1536; 0.3 for C3072
+      real:: cd4 = 0.15      !< Dimensionless coeff for del-4 diffusion (with FCT)
+      real:: cd2 = -1.       !< Dimensionless coeff for del-2 diffusion (-1 gives resolution-determined value)
+      real:: peak_fac = 1.05 !< overshoot factor for the mountain peak
+      real:: max_slope = 0.15 !< max allowable terrain slope: 1 --> 45 deg
+                              !! 0.15 for C768 or lower; 0.25 C1536; 0.3 for C3072
       integer:: n_del2_weak = 12
       integer:: n_del2_strong = -1
       integer:: n_del4 = -1
@@ -534,7 +578,7 @@
    type(fv_grid_bounds_type), intent(IN) :: bd
    integer, intent(in):: npx, npy
    integer, intent(in):: ntmax
-   integer, intent(in):: filter_type    ! 0: strong,   1: weak
+   integer, intent(in):: filter_type    !< 0: strong,   1: weak
    real, intent(in):: cd
 ! INPUT arrays
    real(kind=R_GRID), intent(in)::area(bd%isd:bd%ied,  bd%jsd:bd%jed)
@@ -545,7 +589,7 @@
    real, intent(in):: dxc(bd%isd:bd%ied+1,bd%jsd:bd%jed)
    real, intent(in):: dyc(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
    real, intent(in):: sin_sg(bd%isd:bd%ied,bd%jsd:bd%jed,9)
-   real, intent(in):: oro(bd%isd:bd%ied,  bd%jsd:bd%jed)        ! 0==water, 1==land
+   real, intent(in):: oro(bd%isd:bd%ied,  bd%jsd:bd%jed)        !< 0==water, 1==land
    logical, intent(in):: zero_ocean, check_slope
    logical, intent(in):: nested
    type(domain2d), intent(inout) :: domain
@@ -825,7 +869,7 @@
       real, intent(in):: dxc(bd%isd:bd%ied+1,bd%jsd:bd%jed)
       real, intent(in):: dyc(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
       real, intent(IN):: sin_sg(bd%isd:bd%ied,bd%jsd:bd%jed,9)
-      real, intent(in):: oro(bd%isd:bd%ied,  bd%jsd:bd%jed)        ! 0==water, 1==land
+      real, intent(in):: oro(bd%isd:bd%ied,  bd%jsd:bd%jed)        !< 0==water, 1==land
       logical, intent(IN) :: nested
       type(domain2d), intent(INOUT) :: domain
     ! OUTPUT arrays
@@ -918,7 +962,7 @@
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(in):: npx, npy, nmax
       logical, intent(in):: zero_ocean
-      real, intent(in):: oro(bd%isd:bd%ied,  bd%jsd:bd%jed)        ! 0==water, 1==land
+      real, intent(in):: oro(bd%isd:bd%ied,  bd%jsd:bd%jed)        !< 0==water, 1==land
       real(kind=R_GRID), intent(in)::area(bd%isd:bd%ied,  bd%jsd:bd%jed)
       real, intent(in)::  dx(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
       real, intent(in)::  dy(bd%isd:bd%ied+1,bd%jsd:bd%jed)
@@ -1156,8 +1200,8 @@
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(in):: igh, im, jt
       integer, intent(in):: npx, npy, npx_global
-      real, intent(in):: lat1(jt+1)       ! original southern edge of the cell [-pi/2:pi/2]
-      real, intent(in):: lon1(im+1)       ! original western edge of the cell [0:2*pi]
+      real, intent(in):: lat1(jt+1)       !< original southern edge of the cell [-pi/2:pi/2]
+      real, intent(in):: lon1(im+1)       !< original western edge of the cell [0:2*pi]
       real(kind=4), intent(in), dimension(-igh:im+igh,jt):: zs, ft
       real(kind=R_GRID), intent(in)::  grid(bd%isd:bd%ied+1, bd%jsd:bd%jed+1,2)
       real(kind=R_GRID), intent(in):: agrid(bd%isd:bd%ied,   bd%jsd:bd%jed,  2)
@@ -1165,9 +1209,9 @@
       real(kind=R_GRID), intent(IN) :: stretch_fac
       logical, intent(IN) :: nested
 ! Output
-      real, intent(out):: q2(bd%isd:bd%ied,bd%jsd:bd%jed) ! Mapped data at the target resolution
-      real, intent(out):: f2(bd%isd:bd%ied,bd%jsd:bd%jed) ! oro
-      real, intent(out):: h2(bd%isd:bd%ied,bd%jsd:bd%jed) ! variances of terrain
+      real, intent(out):: q2(bd%isd:bd%ied,bd%jsd:bd%jed) !< Mapped data at the target resolution
+      real, intent(out):: f2(bd%isd:bd%ied,bd%jsd:bd%jed) !< oro
+      real, intent(out):: h2(bd%isd:bd%ied,bd%jsd:bd%jed) !< variances of terrain
 ! Local
       real :: lon_g(-igh:im+igh)
       real lat_g(jt), cos_g(jt)
@@ -1484,6 +1528,8 @@
  end function inside_p4
 #endif
 
+!>@brief The subroutine 'handle_err' returns an error when
+!! it cannot find or correctly read in an external file.
  subroutine handle_err(status)
 #include <netcdf.inc>
       integer          status
@@ -1545,20 +1591,15 @@
       enddo
  end subroutine remove_ice_sheets
 
-
-!#######################################################################
-! reads the namelist file, write namelist to log file,
-! and initializes constants
-
+!>@brief The subroutine 'read_namelis' reads the namelist file, 
+!! writes the namelist to log file, and initializes constants.
 subroutine read_namelist
-
-   integer :: unit, ierr, io
+  integer :: unit, ierr, io
 !   real    :: dtr, ght
 
 !  read namelist
 
    if (namelist_read) return
-
 #ifdef INTERNAL_FILE_NML
     read  (input_nml_file, nml=surf_map_nml, iostat=io)
     ierr = check_nml_error(io,'surf_map_nml')
@@ -1583,8 +1624,8 @@ subroutine read_namelist
 
 end subroutine read_namelist
 
+!> The sugroutine 'zonal_mean' replaces 'p' with its zonal mean.
 subroutine zonal_mean(im, p, zmean)
-! replace p with its zonal mean
    integer, intent(in):: im
    real(kind=4), intent(inout):: p(im)
    real, intent(out):: zmean

@@ -1,23 +1,119 @@
-!***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!!***********************************************************************
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 module fv_grid_tools_mod
+
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>grav, omega, pi=>pi_8, cnst_radius=>radius</td>
+!   </tr>
+!   <tr>
+!     <td>fms_mod</td>
+!     <td>get_mosaic_tile_grid</td>
+!   </tr>
+!   <tr>
+!     <td>fms_io_mod</td>
+!     <td>file_exist, field_exist, read_data, get_global_att_value, get_var_att_value</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_atmos_type, fv_grid_type, fv_grid_bounds_type, R_GRID</td>
+!   </tr>
+!   <tr>
+!     <td>fv_control_mod</td>
+!     <td>fv_init, fv_end, ngrids</td>
+!   </tr>
+!   <tr>
+!     <td>fv_diagnostics_mod</td>
+!     <td>prt_maxmin, prt_gb_nh_sh, prt_height</td>
+!   </tr>
+!   <tr>
+!     <td>fv_eta_mod</td>
+!     <td>set_eta, set_external_eta</td>
+!   </tr>
+!   <tr>
+!     <td>fv_fill_mod</td>
+!     <td>fillz</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_utils_mod</td>
+!     <td>gnomonic_grids, great_circle_dist,mid_pt_sphere, spherical_angle,
+!        cell_center2, get_area, inner_prod, fill_ghost, direct_transform, 
+!        dist2side_latlon,spherical_linear_interpolation, big_number</td>
+!   </tr>
+!   <tr>
+!     <td>fv_io_mod</td>
+!     <td>fv_io_read_tracers</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>ng, is_master, fill_corners, XDir, YDir,mp_gather, 
+!         mp_bcst, mp_reduce_max, mp_stop </td>
+!   </tr>
+!   <tr>
+!     <td>fv_timing_mod</td>
+!     <td>timing_on, timing_off</td>
+!   </tr>
+!   <tr>
+!     <td>mosaic_mod</td>
+!     <td>get_mosaic_ntiles</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_error, FATAL, get_unit, mpp_chksum, mpp_pe, stdout, 
+!         mpp_send, mpp_recv, mpp_sync_self, EVENT_RECV, mpp_npes, 
+!         mpp_sum, mpp_max, mpp_min, mpp_root_pe, mpp_broadcast, mpp_transmit</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>domain2d,mpp_update_domains, mpp_get_boundary,mpp_get_ntile_count, 
+!         mpp_get_pelist, mpp_get_compute_domains, mpp_global_field, 
+!         mpp_get_data_domain, mpp_get_compute_domain,mpp_get_global_domain, 
+!         mpp_global_sum, mpp_global_max, mpp_global_min</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_io_mod</td>
+!     <td>mpp_get_att_value</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_parameter_mod</td>
+!     <td>AGRID_PARAM=>AGRID,DGRID_NE_PARAM=>DGRID_NE, 
+!         CGRID_NE_PARAM=>CGRID_NE,CGRID_SW_PARAM=>CGRID_SW, 
+!         BGRID_NE_PARAM=>BGRID_NE,BGRID_SW_PARAM=>BGRID_SW, 
+!         SCALAR_PAIR,CORNER, CENTER, XUPDATE</td>
+!   </tr>
+!   <tr>
+!     <td>sorted_index_mod</td>
+!     <td>sorted_inta, sorted_intb</td>
+!   </tr>
+!   <tr>
+!     <td>tracer_manager_mod</td>
+!     <td>get_tracer_names, get_number_tracers, get_tracer_index, set_tracer_profile</td>
+!   </tr>
+! </table>
+
 
   use constants_mod, only: grav, omega, pi=>pi_8, cnst_radius=>radius
   use fv_arrays_mod, only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type, R_GRID
@@ -32,7 +128,7 @@ module fv_grid_tools_mod
   use sorted_index_mod,  only: sorted_inta, sorted_intb
   use mpp_mod,           only: mpp_error, FATAL, get_unit, mpp_chksum, mpp_pe, stdout, &
                                mpp_send, mpp_recv, mpp_sync_self, EVENT_RECV, mpp_npes, &
-                               mpp_sum, mpp_max, mpp_min, mpp_root_pe, mpp_broadcast
+                               mpp_sum, mpp_max, mpp_min, mpp_root_pe, mpp_broadcast, mpp_transmit
   use mpp_domains_mod,   only: mpp_update_domains, mpp_get_boundary, &
                                mpp_get_ntile_count, mpp_get_pelist, &
                                mpp_get_compute_domains, mpp_global_field, &
@@ -54,15 +150,14 @@ module fv_grid_tools_mod
                                get_global_att_value, get_var_att_value
   use mosaic_mod,       only : get_mosaic_ntiles
 
-  use mpp_mod, only: mpp_transmit, mpp_recv
   implicit none
   private
 #include <netcdf.inc>
 
   real(kind=R_GRID), parameter:: radius = cnst_radius
 
-  real(kind=R_GRID) , parameter:: todeg = 180.0d0/pi          ! convert to degrees
-  real(kind=R_GRID) , parameter:: torad = pi/180.0d0          ! convert to radians
+  real(kind=R_GRID) , parameter:: todeg = 180.0d0/pi          !< convert to degrees
+  real(kind=R_GRID) , parameter:: torad = pi/180.0d0          !< convert to radians
   real(kind=R_GRID) , parameter:: missing = 1.d25
 
   real(kind=R_GRID) :: csFac
@@ -75,8 +170,8 @@ module fv_grid_tools_mod
 
 contains
 
+!>@brief The subroutine 'read_grid' reads the grid from the mosaic grid file.
   subroutine read_grid(Atm, grid_file, ndims, nregions, ng)
-    !     read_grid :: read grid from mosaic grid file.
     type(fv_atmos_type), intent(inout), target :: Atm
     character(len=*),    intent(IN)    :: grid_file
     integer,             intent(IN)    :: ndims
@@ -407,10 +502,9 @@ contains
 
   end subroutine get_symmetry
 
+!>@brief The subroutine 'init_grid' reads the grid from the input file
+!! and sets up grid descriptors.
   subroutine init_grid(Atm, grid_name, grid_file, npx, npy, npz, ndims, nregions, ng)
- 
-!     init_grid :: read grid from input file and setup grid descriptors
- 
 !--------------------------------------------------------
     type(fv_atmos_type), intent(inout), target :: Atm
     character(len=80), intent(IN) :: grid_name
@@ -1133,9 +1227,9 @@ contains
       
 
       real(kind=R_GRID), allocatable, dimension(:,:,:) :: p_grid_u, p_grid_v, pa_grid, p_grid, c_grid_u, c_grid_v
-      integer ::    p_ind(1-ng:npx  +ng,1-ng:npy  +ng,4) !First two entries along dim 3 are
-                                                         !for the corner source indices;
-                                                         !the last two are for the remainders
+      integer ::    p_ind(1-ng:npx  +ng,1-ng:npy  +ng,4) !< First two entries along dim 3 are
+                                                         !! for the corner source indices;
+                                                         !! the last two are for the remainders
 
       integer i,j,k, p
       real(kind=R_GRID) sum
@@ -1802,24 +1896,19 @@ contains
          z = -r * sin(lat)
 #endif
  end subroutine spherical_to_cartesian
- 
-!-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     rot_3d :: rotate points on a sphere in xyz coords (convert angle from
-!               degrees to radians if necessary)
-!
-      subroutine rot_3d(axis, x1in, y1in, z1in, angle, x2out, y2out, z2out, degrees, convert)
 
-         integer, intent(IN) :: axis         ! axis of rotation 1=x, 2=y, 3=z
+!>@brief The subroutine 'rot_3d' rotates points on a sphere in xyz coordinates.
+!>@details Converts angle from degrees to radians if necessary
+      subroutine rot_3d(axis, x1in, y1in, z1in, angle, x2out, y2out, z2out, degrees, convert)
+         integer, intent(IN) :: axis         !< axis of rotation 1=x, 2=y, 3=z
          real(kind=R_GRID) , intent(IN)    :: x1in, y1in, z1in
-         real(kind=R_GRID) , intent(INOUT) :: angle        ! angle to rotate in radians
+         real(kind=R_GRID) , intent(INOUT) :: angle        !< angle to rotate in radians
          real(kind=R_GRID) , intent(OUT)   :: x2out, y2out, z2out
-         integer, intent(IN), optional :: degrees ! if present convert angle 
-                                                  ! from degrees to radians
-         integer, intent(IN), optional :: convert ! if present convert input point
-                                                  ! from spherical to cartesian, rotate, 
-                                                  ! and convert back
+         integer, intent(IN), optional :: degrees !< if present convert angle 
+                                                  !! from degrees to radians
+         integer, intent(IN), optional :: convert !< if present convert input point
+                                                  !! from spherical to cartesian, rotate, 
+                                                  !! and convert back
 
          real(kind=R_GRID)  :: c, s
          real(kind=R_GRID)  :: x1,y1,z1, x2,y2,z2
@@ -1870,17 +1959,13 @@ contains
 
 
 
-
-
+!>brief The function 'get_area_tri' gets the surface area of a cell defined as a triangle
+!!on the sphere. 
+!>@details The area is computed as the spherical excess [area units are based on the units of radius]
       real(kind=R_GRID)  function get_area_tri(ndims, p_1, p_2, p_3) &
                         result (myarea)
  
-!     get_area_tri :: get the surface area of a cell defined as a triangle
-!                  on the sphere. Area is computed as the spherical excess
-!                  [area units are based on the units of radius]
- 
-
-      integer, intent(IN)    :: ndims          ! 2=lat/lon, 3=xyz
+      integer, intent(IN)    :: ndims          !< 2=lat/lon, 3=xyz
       real(kind=R_GRID) , intent(IN)    :: p_1(ndims) ! 
       real(kind=R_GRID) , intent(IN)    :: p_2(ndims) ! 
       real(kind=R_GRID) , intent(IN)    :: p_3(ndims) ! 
@@ -1900,29 +1985,21 @@ contains
         myarea = (angA+angB+angC - pi) * radius**2
 
       end function get_area_tri
-!
-! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
-!-------------------------------------------------------------------------------
 
-!-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     grid_area :: get surface area on grid in lat/lon coords or xyz coords
-!                    (determined by ndims argument 2=lat/lon, 3=xyz)
-!                    [area is returned in m^2 on Unit sphere]
-!
+!>@brief The subroutine 'grid_area' gets the surface area on a grid in lat/lon or xyz coordinates.
+!>@details Determined by 'ndims' argument: 2=lat/lon, 3=xyz)
+!! The area is returned in m^2 on a unit sphere.
       subroutine grid_area(nx, ny, ndims, nregions, nested, gridstruct, domain, bd )
-
         type(fv_grid_bounds_type), intent(IN) :: bd
         integer, intent(IN) :: nx, ny, ndims, nregions
         logical, intent(IN) :: nested
         type(fv_grid_type), intent(IN), target :: gridstruct
         type(domain2d), intent(INOUT) :: domain
 
-         real(kind=R_GRID)  :: p_lL(ndims) ! lower Left
-         real(kind=R_GRID)  :: p_uL(ndims) ! upper Left
-         real(kind=R_GRID)  :: p_lR(ndims) ! lower Right
-         real(kind=R_GRID)  :: p_uR(ndims) ! upper Right
+         real(kind=R_GRID)  :: p_lL(ndims) !< lower Left
+         real(kind=R_GRID)  :: p_uL(ndims) !< upper Left
+         real(kind=R_GRID)  :: p_lR(ndims) !< lower Right
+         real(kind=R_GRID)  :: p_uR(ndims) !< upper Right
          real(kind=R_GRID)  :: a1, d1, d2, mydx, mydy, globalarea
 
          real(kind=R_GRID)  :: p1(ndims), p2(ndims), p3(ndims), pi1(ndims), pi2(ndims)
@@ -2124,14 +2201,13 @@ contains
 
       end subroutine grid_area
 
-
-
+!>@brief The function 'get_angle' gets the angle between 3 points on a sphere in lat/lon or
+!! xyz coordinates.
+!>@details Determined by the 'ndims' argument: 2=lat/lon, 3=xyz
+!! The angle is returned in degrees.
       real(kind=R_GRID)  function get_angle(ndims, p1, p2, p3, rad) result (angle)
-!     get_angle :: get angle between 3 points on a sphere in lat/lon coords or
-!                  xyz coords (determined by ndims argument 2=lat/lon, 3=xyz)
-!                  [angle is returned in degrees]
 
-         integer, intent(IN) :: ndims         ! 2=lat/lon, 3=xyz
+         integer, intent(IN) :: ndims         !< 2=lat/lon, 3=xyz
          real(kind=R_GRID) , intent(IN)   :: p1(ndims)
          real(kind=R_GRID) , intent(IN)   :: p2(ndims)
          real(kind=R_GRID) , intent(IN)   :: p3(ndims)
@@ -2156,18 +2232,13 @@ contains
 
       end function get_angle
  
-
- 
-
-
+!>@brief The subroutine 'mirror_grid' mirrors the grid across the 0-longitude line 
       subroutine mirror_grid(grid_global,ng,npx,npy,ndims,nregions)
          integer, intent(IN)    :: ng,npx,npy,ndims,nregions
          real(kind=R_GRID)   , intent(INOUT) :: grid_global(1-ng:npx  +ng,1-ng:npy  +ng,ndims,1:nregions)
          integer :: i,j,n,n1,n2,nreg
          real(kind=R_GRID) :: x1,y1,z1, x2,y2,z2, ang
-!
-!    Mirror Across the 0-longitude
-!
+
          nreg = 1
          do j=1,ceiling(npy/2.)
             do i=1,ceiling(npx/2.)
@@ -2292,9 +2363,6 @@ contains
           enddo
 
   end subroutine mirror_grid
-
-
-
 
       end module fv_grid_tools_mod
 

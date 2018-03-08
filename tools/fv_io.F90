@@ -1,36 +1,90 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
-!!!NOTE: Merging in the seasonal forecast initialization code
-!!!!     has proven problematic in the past, since many conflicts
-!!!!     occur. Leaving this for now --- lmh 10aug15
+
+!>@brief The module 'fv_io' contains restart facilities for FV core.
+!>@details This module writes and reads restart files for the FV core. Additionally
+!! it provides setup and calls routines necessary to provide a complete restart
+!! for the model.
+!>@note NOTE: Merging in the seasonal forecast initialization code
+!! has proven problematic in the past, since many conflicts
+!! occur. Leaving this for now --- lmh 10aug15
 
 module fv_io_mod
 
-  !<OVERVIEW>
-  ! Restart facilities for FV core
-  !</OVERVIEW>
-  !<DESCRIPTION>
-  ! This module writes and reads restart files for the FV core. Additionally
-  ! it provides setup and calls routines necessary to provide a complete restart
-  ! for the model.
-  !</DESCRIPTION>
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>external_sst_mod</td>
+!     <td>sst_ncep, sst_anom, use_ncep_sst</td>
+!   </tr>
+!   <tr>
+!     <td>field_manager_mod</td>
+!     <td>MODEL_ATMOS</td>
+!   </tr>
+!   <tr>
+!     <td>fms_mod</td>
+!     <td>file_exist</td>
+!   </tr>
+!   <tr>
+!     <td>fms_io_mod</td>
+!     <td>fms_io_exit, get_tile_string,restart_file_type, 
+!         register_restart_field, save_restart, restore_state, 
+!         set_domain, nullify_domain, set_filename_appendix, 
+!         get_mosaic_tile_file, get_instance_filename, 
+!         save_restart_border, restore_state_border,
+!         free_restart_type,field_exist</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_atmos_type, fv_nest_BC_type_3D</td>
+!   </tr>
+!   <tr>
+!     <td>fv_eta_mod</td>
+!     <td>set_external_eta</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>ng, mp_gather, is_master</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_error, FATAL, NOTE, WARNING, mpp_root_pe,
+!         mpp_sync, mpp_pe, mpp_declare_pelist</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>domain2d, EAST, WEST, NORTH, CENTER, SOUTH, CORNER,
+!         mpp_get_compute_domain, mpp_get_data_domain,  
+!         mpp_get_layout, mpp_get_ntile_count,mpp_get_global_domain</td>
+!   </tr>
+!   <tr>
+!     <td>tracer_manager_mod</td>
+!     <td>tr_get_tracer_names=>get_tracer_names, 
+!         get_tracer_names, get_number_tracers, 
+!         set_tracer_profile, get_tracer_index</td>
+!   </tr>
+! </table>
 
   use fms_mod,                 only: file_exist
   use fms_io_mod,              only: fms_io_exit, get_tile_string, &
@@ -56,8 +110,6 @@ module fv_io_mod
   use fv_eta_mod,              only: set_external_eta
 
   use fv_mp_mod,               only: ng, mp_gather, is_master
-  use fms_io_mod,              only: set_domain
-
   implicit none
   private
 
@@ -74,39 +126,20 @@ module fv_io_mod
 
 contains 
 
-  !#####################################################################
-  ! <SUBROUTINE NAME="fv_io_init">
-  !
-  ! <DESCRIPTION>
-  ! Initialize the fv core restart facilities
-  ! </DESCRIPTION>
-  !
+
+  !>@brief Initialize the fv core restart facilities
   subroutine fv_io_init()
     module_is_initialized = .TRUE.
   end subroutine fv_io_init
-  ! </SUBROUTINE> NAME="fv_io_init"
 
 
-  !#####################################################################
-  ! <SUBROUTINE NAME="fv_io_exit">
-  !
-  ! <DESCRIPTION>
-  ! Close the fv core restart facilities
-  ! </DESCRIPTION>
-  !
+  !>@brief Close the fv core restart facilities
   subroutine fv_io_exit
     module_is_initialized = .FALSE.
   end subroutine fv_io_exit
-  ! </SUBROUTINE> NAME="fv_io_exit"
 
 
-
-  !#####################################################################
-  ! <SUBROUTINE NAME="fv_io_read_restart">
-  !
-  ! <DESCRIPTION>
-  ! Write the fv core restart quantities 
-  ! </DESCRIPTION>
+  !>@brief Write the fv core restart quantities 
   subroutine  fv_io_read_restart(fv_domain,Atm)
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
@@ -183,10 +216,11 @@ contains
     return
 
   end subroutine  fv_io_read_restart
-  ! </SUBROUTINE> NAME="fv_io_read_restart"
-  !#####################################################################
-
-
+  
+  !>@brief The subroutine 'fv_io_read_tracers' reads in only tracers from restart files.
+  !>@details This subroutine is useful when initializing a cycled or nudged model 
+  !! from an analysis that does not have a whole set of microphysical, aerosol, or 
+  !! chemical tracers
   subroutine fv_io_read_tracers(fv_domain,Atm)
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
@@ -234,8 +268,10 @@ contains
     return
 
   end subroutine  fv_io_read_tracers
-
-
+ 
+  !>@brief The subroutine 'remap_restart' remaps the model state from remap files 
+  !! to a new set of Eulerian coordinates.
+  !>@details Use if npz (run time z-dimension) /= npz_rst (restart z-dimension)
   subroutine  remap_restart(fv_domain,Atm)
   use fv_mapz_mod,       only: rst_remap
 
@@ -405,13 +441,9 @@ contains
 
   end subroutine  remap_restart
 
-
-  !#####################################################################
-  ! <SUBROUTINE NAME="fv_io_register_nudge_restart">
-  !
-  ! <DESCRIPTION>
-  !   register restart nudge field to be written out to restart file. 
-  ! </DESCRIPTION>
+!>@brief The subroutine 'fv_io_register_nudge_restart' registers restarts for SST
+!! fields used in HiRAM.
+!>@note This option is currently not supported.
   subroutine  fv_io_register_nudge_restart(Atm)
     type(fv_atmos_type), intent(inout) :: Atm(:)
     character(len=64) :: fname
@@ -426,15 +458,8 @@ contains
 !!$    endif
 
   end subroutine  fv_io_register_nudge_restart
-  ! </SUBROUTINE> NAME="fv_io_register_nudge_restart"
 
-
-  !#####################################################################
-  ! <SUBROUTINE NAME="fv_io_register_restart">
-  !
-  ! <DESCRIPTION>
-  !   register restart field to be written out to restart file. 
-  ! </DESCRIPTION>
+!>@brief The subroutine 'fv_io_register_restart' registers model restart fields.
   subroutine  fv_io_register_restart(fv_domain,Atm)
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
@@ -551,16 +576,8 @@ contains
     enddo
 
   end subroutine  fv_io_register_restart
-  ! </SUBROUTINE> NAME="fv_io_register_restart"
 
-
-
-  !#####################################################################
-  ! <SUBROUTINE NAME="fv_io_write_restart">
-  !
-  ! <DESCRIPTION>
-  ! Write the fv core restart quantities 
-  ! </DESCRIPTION>
+  !>@brief The subroutine 'fv_io_write_restart' writes restart files.
   subroutine  fv_io_write_restart(Atm, grids_on_this_pe, timestamp)
 
     type(fv_atmos_type),        intent(inout) :: Atm(:)
@@ -887,10 +904,8 @@ contains
 
   end subroutine register_bcs_3d
 
-
-  ! </SUBROUTINE> NAME="fv_io_regsiter_restart_BCs"
-  !#####################################################################
-
+!>@brief The subroutine 'fv_io_register_restart_BCs' registers restarts for 
+!! nested-grid boundary conditions.
   subroutine fv_io_register_restart_BCs(Atm)
     type(fv_atmos_type),        intent(inout) :: Atm
 
@@ -979,6 +994,7 @@ contains
   end subroutine fv_io_register_restart_BCs_NH
 
 
+!>@brief The subroutine 'fv_io_write_BCs' writes BCs to a restart file.
   subroutine fv_io_write_BCs(Atm, timestamp)
     type(fv_atmos_type), intent(inout) :: Atm
     character(len=*),    intent(in), optional :: timestamp
@@ -989,7 +1005,7 @@ contains
     return
   end subroutine fv_io_write_BCs
 
-
+!>@brief The subroutine 'fv_io_read_BCs' reads BCs from a restart file.
   subroutine fv_io_read_BCs(Atm)
     type(fv_atmos_type), intent(inout) :: Atm
 

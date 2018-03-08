@@ -1,29 +1,147 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
 #ifdef OVERLOAD_R4
 #define _GET_VAR1 get_var1_real 
 #else
 #define _GET_VAR1 get_var1_double
 #endif
 
+!>@brief The module 'external_ic_mod' contains routines that read in and 
+!! remap initial conditions.
+
 module external_ic_mod
+
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>pi=>pi_8, omega, grav, kappa, rdgas, rvgas, cp_air</td>
+!   </tr>
+!   <tr>
+!     <td>external_sst_mod</td>
+!     <td>i_sst, j_sst, sst_ncep</td>
+!   </tr>
+!   <tr>
+!     <td>field_manager_mod</td>
+!     <td>MODEL_ATMOS</td>
+!   </tr>
+!   <tr>
+!     <td>fms_mod</td>
+!     <td>file_exist, read_data, field_exist, write_version_number,
+!         open_namelist_file, check_nml_error, close_file,
+!         get_mosaic_tile_file, read_data, error_mesg</td>
+!   </tr>
+!   <tr>
+!     <td>fms_io_mod</td>
+!     <td>get_tile_string, field_size, free_restart_type,
+!         restart_file_type, register_restart_field,
+!         save_restart, restore_state</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_atmos_type, fv_grid_type, fv_grid_bounds_type, R_GRID</td>
+!   </tr>
+!   <tr>
+!     <td>fv_control_mod</td>
+!     <td>fv_init, fv_end, ngrids</td>
+!   </tr>
+!   <tr>
+!     <td>fv_diagnostics_mod</td>
+!     <td>prt_maxmin, prt_gb_nh_sh, prt_height</td>
+!   </tr>
+!   <tr>
+!     <td>fv_eta_mod</td>
+!     <td>set_eta, set_external_eta</td>
+!   </tr>
+!   <tr>
+!     <td>fv_fill_mod</td>
+!     <td>fillz</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_utils_mod</td>
+!     <td>ptop_min, g_sum,mid_pt_sphere,get_unit_vect2, 
+!         get_latlon_vector,inner_prod</td>
+!   </tr>
+!   <tr>
+!     <td>fv_io_mod</td>
+!     <td>fv_io_read_tracers</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>ng, is_master, fill_corners, YDir, mp_reduce_min, mp_reduce_max</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mapz_mod</td>
+!     <td>mappm</td>
+!   </tr>
+!   <tr>
+!     <td>fv_nwp_nudge_mod</td>
+!     <td>T_is_Tv</td>
+!   </tr>
+!   <tr>
+!     <td>fv_surf_map_mod</td>
+!     <td>surfdrv, FV3_zs_filter,sgh_g, oro_g,del2_cubed_sphere, del4_cubed_sphere</td>
+!   </tr>
+!   <tr>
+!     <td>fv_timing_mod</td>
+!     <td>timing_on, timing_off</td>
+!   </tr>
+!   <tr>
+!     <td>fv_update_phys_mod</td>
+!     <td>fv_update_phys</td>
+!   </tr>
+!   <tr>
+!     <td>init_hydro_mod</td>
+!     <td>p_var</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_error, FATAL, NOTE, mpp_pe, mpp_root_pe,stdlog, input_nml_file</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>mpp_get_tile_id, domain2d, mpp_update_domains, NORTH, EAST</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_parameter_mod</td>
+!     <td>AGRID_PARAM=>AGRID</td>
+!   </tr>
+!   <tr>
+!     <td>sim_nc_mod</td>
+!     <td>open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var2_real,
+!         get_var3_r4, get_var2_r4, get_var1_real, get_var_att_double</td>
+!   </tr>
+!   <tr>
+!     <td>tracer_manager_mod</td>
+!     <td>get_tracer_names, get_number_tracers, get_tracer_index, set_tracer_profile</td>
+!   </tr>
+!   <tr>
+!     <td>test_cases_mod</td>
+!     <td>checker_tracers</td>
+!   </tr>
+! </table>
 
    use external_sst_mod,   only: i_sst, j_sst, sst_ncep
    use fms_mod,            only: file_exist, read_data, field_exist, write_version_number
@@ -276,34 +394,30 @@ contains
 
   end subroutine get_cubed_sphere_terrain
 
-
+!>@brief The subroutine 'get_nggps_ic' reads in data after it has been preprocessed with 
+!!    NCEP/EMC orography maker and 'global_chgres', and has been horiztontally
+!! interpolated to the current cubed-sphere grid
   subroutine get_nggps_ic (Atm, fv_domain)
-!    read in data after it has been preprocessed with 
-!    NCEP/EMC orography maker and global_chgres
-!    and has been horiztontally interpolated to the 
-!    current cubed-sphere grid
-!
-!--- variables read in from 'gfs_ctrl.nc'
-!       VCOORD  -  level information
-!                   maps to 'ak & bk'
-!--- variables read in from 'sfc_data.nc'
-!       land_frac  -  land-sea-ice mask (L:0 / S:1)
-!                     maps to 'oro'
-!       TSEA       -  surface skin temperature (k)
-!                     maps to 'ts'
-!--- variables read in from 'gfs_data.nc'
-!       ZH  -  GFS grid height at edges (m)
-!       PS  -  surface pressure (Pa)
-!       U_W -  D-grid west  face tangential wind component (m/s)
-!       V_W -  D-grid west  face normal wind component (m/s)
-!       U_S -  D-grid south face tangential wind component (m/s)
-!       V_S -  D-grid south face normal wind component (m/s)
-!       W   -  vertical velocity 'omega' (Pa/s)
-!       Q   -  prognostic tracer fields (Specific Humidity, 
-!                                        O3 mixing ratio,
-!                                        Cloud mixing ratio)
-!--- Namelist variables 
-!       filtered_terrain  -  use orography maker filtered terrain mapping
+
+!>variables read in from 'gfs_ctrl.nc'
+!>       VCOORD  -  level information
+!>                   maps to 'ak & bk'
+!> variables read in from 'sfc_data.nc'
+!>       land_frac  -  land-sea-ice mask (L:0 / S:1)
+!>                     maps to 'oro'
+!>       TSEA       -  surface skin temperature (k)
+!>                     maps to 'ts'
+!> variables read in from 'gfs_data.nc'
+!>       ZH  -  GFS grid height at edges (m)
+!>       PS  -  surface pressure (Pa)
+!>       U_W -  D-grid west  face tangential wind component (m/s)
+!>       V_W -  D-grid west  face normal wind component (m/s)
+!>       U_S -  D-grid south face tangential wind component (m/s)
+!>       V_S -  D-grid south face normal wind component (m/s)
+!>       OMGA-  vertical velocity 'omega' (Pa/s)
+!>       Q   -  prognostic tracer fields
+!> Namelist variables 
+!>       filtered_terrain  -  use orography maker filtered terrain mapping
 
 
       type(fv_atmos_type), intent(inout) :: Atm(:)
@@ -596,6 +710,7 @@ contains
 
         if ( Atm(n)%flagstruct%full_zs_filter) then
            allocate (oro_g(isd:ied,jsd:jed))
+           oro_g = 0.
           ! land-frac
           id_res = register_restart_field (ORO_restart, fn_oro_ics, 'land_frac', oro_g, domain=Atm(n)%domain)
           call mpp_update_domains(oro_g, Atm(n)%domain)
@@ -831,6 +946,7 @@ contains
   end subroutine get_nggps_ic
 !------------------------------------------------------------------
 !------------------------------------------------------------------
+!>@brief The subroutine 'get_ncep_ic' reads in the specified NCEP analysis or reanalysis dataset 
   subroutine get_ncep_ic( Atm, fv_domain, nq )
       type(fv_atmos_type), intent(inout) :: Atm(:)
       type(domain2d),      intent(inout) :: fv_domain
@@ -1148,8 +1264,10 @@ contains
       deallocate ( lon )
 
   end subroutine get_ncep_ic
-!------------------------------------------------------------------
-!------------------------------------------------------------------
+
+!>@brief The subroutine 'get_ecmwf_ic' reads in initial conditions from ECMWF
+!! analyses
+!!>@authors Jan-Huey Chen, Xi Chen, Shian-Jiann Lin
   subroutine get_ecmwf_ic( Atm, fv_domain )
       type(fv_atmos_type), intent(inout) :: Atm(:)
       type(domain2d),      intent(inout) :: fv_domain
@@ -2062,7 +2180,6 @@ contains
 
  end subroutine ncep2fms
 #endif
-
 
 
  subroutine remap_coef( is, ie, js, je, isd, ied, jsd, jed, &
@@ -3430,11 +3547,8 @@ contains
 
  end subroutine remap_xyz
 
-
+!>@brief The subroutine 'cubed_a2d' transforms the wind from the A Grid to the D Grid.
  subroutine cubed_a2d( npx, npy, npz, ua, va, u, v, gridstruct, fv_domain, bd )
-
-! Purpose; Transform wind on A grid to D grid
-
   use mpp_domains_mod,    only: mpp_update_domains
 
   type(fv_grid_bounds_type), intent(IN) :: bd
@@ -3446,8 +3560,8 @@ contains
   type(domain2d), intent(INOUT) :: fv_domain
 ! local:
   real v3(3,bd%is-1:bd%ie+1,bd%js-1:bd%je+1)
-  real ue(3,bd%is-1:bd%ie+1,bd%js:bd%je+1)    ! 3D winds at edges
-  real ve(3,bd%is:bd%ie+1,bd%js-1:bd%je+1)    ! 3D winds at edges
+  real ue(3,bd%is-1:bd%ie+1,bd%js:bd%je+1)    !< 3D winds at edges
+  real ve(3,bd%is:bd%ie+1,bd%js-1:bd%je+1)    !< 3D winds at edges
   real, dimension(bd%is:bd%ie):: ut1, ut2, ut3
   real, dimension(bd%js:bd%je):: vt1, vt2, vt3
   integer i, j, k, im2, jm2
@@ -3618,7 +3732,6 @@ contains
  end subroutine cubed_a2d
 
 
-
  subroutine d2a3d(u, v,  ua,   va,  im,  jm, km, lon)
       integer, intent(in):: im, jm, km           ! Dimensions
       real, intent(in ) :: lon(im)
@@ -3692,7 +3805,6 @@ contains
       enddo
 
   end subroutine d2a3d
-
 
 
   subroutine pmaxmin( qname, a, im, jm, fac )
@@ -3794,11 +3906,11 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
  end subroutine p_maxmin
 
  subroutine fillq(im, km, nq, q, dp)
-   integer,  intent(in):: im                ! No. of longitudes
-   integer,  intent(in):: km                ! No. of levels
-   integer,  intent(in):: nq                ! Total number of tracers
-   real , intent(in)::  dp(im,km)       ! pressure thickness
-   real , intent(inout) :: q(im,km,nq)   ! tracer mixing ratio
+   integer,  intent(in):: im            !< No. of longitudes
+   integer,  intent(in):: km            !< No. of levels
+   integer,  intent(in):: nq            !< Total number of tracers
+   real , intent(in)::  dp(im,km)       !< pressure thickness
+   real , intent(inout) :: q(im,km,nq)  !< tracer mixing ratio
 ! !LOCAL VARIABLES:
    integer i, k, ic, k1
 

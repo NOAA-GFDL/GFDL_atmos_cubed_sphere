@@ -1,23 +1,69 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
+!>@brief The module 'fv_nggps_diags' computes output diagnostics entirely
+!! on 3D pressure levels
+!>@details The module is designed for applications that process the full
+!!3D fields through the NCEP post-processor.
+
 module fv_nggps_diags_mod
+
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>kappa, grav, rdgas</td>
+!   </tr>
+!   <tr>
+!     <td>diag_manager_mod</td>
+!     <td>register_diag_field, send_data</td>
+!   </tr>
+!   <tr>
+!     <td>field_manager_mod</td>
+!     <td>MODEL_ATMOS</td>
+!   </tr>
+!   <tr>
+!     <td>fms_io_mod</td>
+!     <td>set_domain, nullify_domain</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_atmos_type</td>
+!   </tr>
+!   <tr>
+!     <td>fv_diagnostics_mod</td>
+!     <td>range_check</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_pe, mpp_root_pe</td>
+!   </tr>
+!   <tr>
+!     <td>tracer_manager_mod</td>
+!     <td>get_tracer_names, get_number_tracers, get_tracer_index</td>
+!   </tr>
+! </table>
 
  use mpp_mod,            only: mpp_pe, mpp_root_pe
  use constants_mod,      only: grav, rdgas
@@ -31,7 +77,7 @@ module fv_nggps_diags_mod
  use field_manager_mod,  only: MODEL_ATMOS
  use fv_diagnostics_mod, only: range_check
  use fv_arrays_mod,      only: fv_atmos_type
- use mpp_domains_mod,    only: domain1d
+ use mpp_domains_mod,    only: domain1d, domainUG
 
  implicit none
  private
@@ -58,12 +104,12 @@ module fv_nggps_diags_mod
 
  logical :: module_is_initialized=.false.
  logical :: use_wrtgridcomp_output=.false.
- integer :: sphum, liq_wat, ice_wat       ! GFDL physics
+ integer :: sphum, liq_wat, ice_wat       !< GFDL physics
  integer :: rainwat, snowwat, graupel
- real :: vrange(2) = (/ -330.,  330. /)  ! winds
- real :: wrange(2) = (/ -100.,  100. /)  ! vertical wind
- real :: trange(2) = (/  100.,  350. /)  ! temperature
- real :: skrange(2) = (/ -10000000.0,  10000000.0 /)  ! dissipation estimate for SKEB
+ real :: vrange(2) = (/ -330.,  330. /)  !< winds
+ real :: wrange(2) = (/ -100.,  100. /)  !< vertical wind
+ real :: trange(2) = (/  100.,  350. /)  !< temperature
+ real :: skrange(2) = (/ -10000000.0,  10000000.0 /)  !< dissipation estimate for SKEB
 
 ! file name
  character(len=64) :: file_name = 'gfs_dyn'
@@ -118,7 +164,7 @@ contains
     kstt_tracer(:) = 0
     kend_tracer(:) = 0
 
-
+    if (Atm(n)%flagstruct%write_3d_diags) then
 !-------------------
 ! A grid winds (lat-lon)
 !-------------------
@@ -231,24 +277,25 @@ contains
 !      print *,'in ngpps diag init, ak=',ak(1:5),' bk=',bk(1:5)
 
 ! get lon,lon information
-      if(.not.allocated(lon)) then
-        allocate(lon(isco:ieco,jsco:jeco))
-        do j=jsco,jeco
-          do i=isco,ieco
-            lon(i,j) = Atm(n)%gridstruct%agrid(i,j,1)
-          enddo
-        enddo
+       if(.not.allocated(lon)) then
+         allocate(lon(isco:ieco,jsco:jeco))
+         do j=jsco,jeco
+           do i=isco,ieco
+             lon(i,j) = Atm(n)%gridstruct%agrid(i,j,1)
+           enddo
+         enddo
 !        if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,lon=',lon(isco,jsco),lon(ieco-2:ieco,jeco-2:jeco)*180./3.14157
-      endif
-      if(.not.allocated(lat)) then
-        allocate(lat(isco:ieco,jsco:jeco))
-        do j=jsco,jeco
-          do i=isco,ieco
-            lat(i,j) = Atm(n)%gridstruct%agrid(i,j,2)
-          enddo
-        enddo
+       endif
+       if(.not.allocated(lat)) then
+         allocate(lat(isco:ieco,jsco:jeco))
+         do j=jsco,jeco
+           do i=isco,ieco
+             lat(i,j) = Atm(n)%gridstruct%agrid(i,j,2)
+           enddo
+         enddo
 !        if(mpp_pe()==mpp_root_pe())print *,'in fv_dyn bundle,lat=',lat(isco,jsco),lat(ieco-2:ieco,jeco-2:jeco)*180./3.14157
-      endif
+       endif
+    endif
 !
 !------------------------------------
 ! use wrte grid component for output
@@ -292,7 +339,7 @@ contains
     
     if(id_va > 0) call store_data(id_va, Atm(n)%va(isco:ieco,jsco:jeco,:), Time, kstt_va, kend_va)
 
-    ! set up 3D wind vector
+    !--- set up 3D wind vector
     if(id_ua>0 .and. id_va>0) then
       do k=1,npzo
         do j=jsco,jeco
@@ -362,7 +409,7 @@ contains
        call store_data(id_delp, wk, Time, kstt_delp, kend_delp)
     endif
 
-    !--- PS
+    !--- Surface Pressure (PS)
     ! Re-compute pressure (dry_mass + water_vapor) surface pressure
     if(id_ps > 0) then
       do k=1,npzo
@@ -394,12 +441,11 @@ contains
        enddo
        call store_data(id_pfnh, wk, Time, kstt_pfnh, kend_pfnh)
     endif
-
 #else
     !--- DELP
     if(id_delp > 0) call store_data(id_delp, Atm(n)%delp(isco:ieco,jsco:jeco,:), Time, kstt_delp)
 
-    !--- ps
+    !--- Surface Pressure (PS)
     if( id_ps > 0) then
       do j=jsco,jeco
         do i=isco,ieco
@@ -511,6 +557,7 @@ contains
    integer currdate(6), idx1
    logical l3Dvector
    type(domain1d) :: Domain
+   type(domainuG) :: DomainU
    real,dimension(:),allocatable :: axis_data
    type(diag_atttype),dimension(:),allocatable :: attributes 
    character(2) axis_id
@@ -558,7 +605,10 @@ contains
 !
 !*** add global attributes in the field bundle:
    call ESMF_AttributeAdd(dyn_bundle, convention="NetCDF", purpose="FV3", &
-     attrList=(/"hydrostatic","ncnsto","ak","bk"/), rc=rc)
+     attrList=(/"hydrostatic", &
+                 "ncnsto    ", &
+                 "ak        ", &
+                 "bk        "/), rc=rc)
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
      line=__LINE__, &
      file=__FILE__)) &
@@ -627,7 +677,7 @@ contains
      axis_length =  get_axis_global_length(axes(id)) 
      allocate(axis_data(axis_length))
      call get_diag_axis( axes(id), axis_name(id), units, long_name, cart_name, &
-                         direction, edges, Domain, axis_data,        &
+                         direction, edges, Domain, DomainU, axis_data,         &
                          num_attributes=num_attributes,              &
                          attributes=attributes)
 !

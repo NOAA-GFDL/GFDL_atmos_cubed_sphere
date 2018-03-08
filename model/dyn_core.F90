@@ -1,23 +1,107 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+!
+!>@brief The module 'dyn_core' peforms the Lagrangian acoustic dynamics 
+!! described by \cite lin2004vertically.
+!>@details The forward timestep is handled by routines in 'sw_core.F90'.
+!! The backwards-in-time PGF is evaluated in one_grad_p or split_p_grad (hydrostatic) and nh_p_grad (nonhydrostatic)
+!! see \cite lin1997explicit.
+!! The nonhydrostatic components are handled by 'nh_core.F90'.
+
 module dyn_core_mod
+
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>a2b_edge_mod</td>
+!     <td>a2b_ord2, a2b_ord4</td>
+!   </tr>
+!   <tr>
+!     <td>boundary_mod</td>
+!     <td>extrapolation_BC, nested_grid_BC_apply_intT</td>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>rdgas, radius, cp_air, pi</td>
+!   </tr>
+!   <tr>
+!     <td>diag_manager_mod</td>
+!     <td>send_data</td>
+!   </tr>
+!   <tr>
+!     <td>fv_ada_nudge_mod</td>
+!     <td>breed_slp_inline_ada</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_grid_type, fv_flags_type, fv_nest_type, 
+!        fv_diag_type,fv_grid_bounds_type, R_GRID </td>
+!   </tr>
+!   <tr>
+!     <td>fv_diagnostics_mod</td>
+!     <td>prt_maxmin, fv_time, prt_mxm</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>is_master, start_group_halo_update, 
+!          complete_group_halo_update,group_halo_update_type</td>
+!   </tr>
+!   <tr>
+!     <td>fv_nwp_nudge_mod</td>
+!     <td>breed_slp_inline, do_adiabatic_init</td>
+!   </tr>
+!   <tr>
+!     <td>fv_timing_mod</td>
+!     <td>timing_on, timing_off</td>
+!   </tr>
+!   <tr>
+!     <td>fv_update_phys_mod</td>
+!     <td>update_dwinds_phys</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_pe </td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>CGRID_NE, DGRID_NE, mpp_get_boundary, mpp_update_domains,domain2d</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_parameter_mod</td>
+!     <td>CORNER</td>
+!   </tr>
+!   <tr>
+!     <td>nh_core_mod</td>
+!     <td>Riem_Solver3, Riem_Solver_C, update_dz_c, update_dz_d, nest_halo_nh</td>
+!   </tr>
+!   <tr>
+!     <td>test_cases_mod</td>
+!     <td>test_case, case9_forcing1, case9_forcing2</td>
+!   </tr>
+!   <tr>
+!     <td>tp_core_mod</td>
+!     <td>copy_corners</td>
+!   </tr>
+! </table>
 
   use constants_mod,      only: rdgas, radius, cp_air, pi
   use mpp_mod,            only: mpp_pe 
@@ -80,6 +164,7 @@ contains
                      uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
                      ks, gridstruct, flagstruct, neststruct, idiag, bd, domain, &
                      init_step, i_pack, end_step, diss_est,time_total)
+
     integer, intent(IN) :: npx
     integer, intent(IN) :: npy
     integer, intent(IN) :: npz
@@ -95,26 +180,26 @@ contains
     integer, intent(IN) :: ks
     type(group_halo_update_type), intent(inout) :: i_pack(*)
     type(fv_grid_bounds_type), intent(IN) :: bd
-    real, intent(inout), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz):: u  ! D grid zonal wind (m/s)
-    real, intent(inout), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz):: v  ! D grid meridional wind (m/s)
-    real, intent(inout) :: w(   bd%isd:,bd%jsd:,1:)  ! vertical vel. (m/s)
-    real, intent(inout) ::  delz(bd%isd:,bd%jsd:,1:)  ! delta-height (m, negative)
-    real, intent(inout) :: cappa(bd%isd:,bd%jsd:,1:) ! moist kappa
-    real, intent(inout) :: pt(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  ! temperature (K)
-    real, intent(inout) :: delp(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  ! pressure thickness (pascal)
+    real, intent(inout), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz):: u  !< D grid zonal wind (m/s)
+    real, intent(inout), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz):: v  !< D grid meridional wind (m/s)
+    real, intent(inout) :: w(   bd%isd:,bd%jsd:,1:)  !< vertical vel. (m/s)
+    real, intent(inout) ::  delz(bd%isd:,bd%jsd:,1:)  !< delta-height (m, negative)
+    real, intent(inout) :: cappa(bd%isd:,bd%jsd:,1:) !< moist kappa
+    real, intent(inout) :: pt(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< temperature (K)
+    real, intent(inout) :: delp(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< pressure thickness (pascal)
     real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, nq)  ! 
-    real, intent(in), optional:: time_total  ! total time (seconds) since start
-    real, intent(inout) :: diss_est(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  ! skeb dissipation estimate
+    real, intent(in), optional:: time_total  !< total time (seconds) since start
+    real, intent(inout) :: diss_est(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< skeb dissipation estimate
 
 !-----------------------------------------------------------------------
 ! Auxilliary pressure arrays:    
 ! The 5 vars below can be re-computed from delp and ptop.
 !-----------------------------------------------------------------------
 ! dyn_aux:
-    real, intent(inout):: phis(bd%isd:bd%ied,bd%jsd:bd%jed)      ! Surface geopotential (g*Z_surf)
-    real, intent(inout):: pe(bd%is-1:bd%ie+1, npz+1,bd%js-1:bd%je+1)  ! edge pressure (pascal)
-    real, intent(inout):: peln(bd%is:bd%ie,npz+1,bd%js:bd%je)          ! ln(pe)
-    real, intent(inout):: pk(bd%is:bd%ie,bd%js:bd%je, npz+1)        ! pe**kappa
+    real, intent(inout):: phis(bd%isd:bd%ied,bd%jsd:bd%jed)      !< Surface geopotential (g*Z_surf)
+    real, intent(inout):: pe(bd%is-1:bd%ie+1, npz+1,bd%js-1:bd%je+1)  !< edge pressure (pascal)
+    real, intent(inout):: peln(bd%is:bd%ie,npz+1,bd%js:bd%je)          !< ln(pe)
+    real, intent(inout):: pk(bd%is:bd%ie,bd%js:bd%je, npz+1)        !< pe**kappa
 
 !-----------------------------------------------------------------------
 ! Others:
@@ -125,9 +210,9 @@ contains
     real,    parameter:: huge_r = 1.E40
 #endif
 !-----------------------------------------------------------------------
-    real, intent(out  ):: ws(bd%is:bd%ie,bd%js:bd%je)        ! w at surface
-    real, intent(inout):: omga(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    ! Vertical pressure velocity (pa/s)
-    real, intent(inout):: uc(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz)  ! (uc, vc) are mostly used as the C grid winds
+    real, intent(out  ):: ws(bd%is:bd%ie,bd%js:bd%je)        !< w at surface
+    real, intent(inout):: omga(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    !< Vertical pressure velocity (pa/s)
+    real, intent(inout):: uc(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz)  !< (uc, vc) are mostly used as the C grid winds
     real, intent(inout):: vc(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz)
     real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: ua, va
     real, intent(inout):: q_con(bd%isd:, bd%jsd:, 1:)
@@ -150,7 +235,7 @@ contains
 ! Auto 1D & 2D arrays:
     real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: ws3, z_rat
     real:: dp_ref(npz)
-    real:: zs(bd%isd:bd%ied,bd%jsd:bd%jed)        ! surface height (m)
+    real:: zs(bd%isd:bd%ied,bd%jsd:bd%jed)        !< surface height (m)
     real:: p1d(bd%is:bd%ie)
     real:: om2d(bd%is:bd%ie,npz)
     real wbuffer(npy+2,npz)
@@ -547,14 +632,9 @@ contains
                  1, 0, npx, npy, npz, bd, split_timestep_bc+0.5, real(n_split*flagstruct%k_split), &
             neststruct%uc_BC, bctype=neststruct%nestbctype )
 
-       !QUESTION: What to do with divgd in nested halo?
             call nested_grid_BC_apply_intT(divgd, &
                  1, 1, npx, npy, npz, bd, split_timestep_bc, real(n_split*flagstruct%k_split), &
             neststruct%divg_BC, bctype=neststruct%nestbctype )
-!!$            if (is == 1 .and. js == 1) then
-!!$               do j=jsd,5
-!!$                  write(mpp_pe()+2000,*) j, divg(isd:5,j,1)
-!!$            endif
 
       end if
 
@@ -1380,8 +1460,8 @@ integer, intent(in):: npz
 real,    intent(in):: dt2
 type(fv_grid_bounds_type), intent(IN) :: bd
 real, intent(in), dimension(bd%isd:, bd%jsd: ,:  ):: delpc
-! pkc is pe**cappa     if hydrostatic
-! pkc is full pressure if non-hydrostatic
+!> pkc is pe**cappa     if hydrostatic
+!> pkc is full pressure if non-hydrostatic
 real, intent(in), dimension(bd%isd:bd%ied, bd%jsd:bd%jed ,npz+1):: pkc, gz
 real, intent(inout):: uc(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz)
 real, intent(inout):: vc(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz)
@@ -1442,9 +1522,9 @@ real,    intent(IN) :: dt
 logical, intent(in) :: use_logp
 type(fv_grid_bounds_type), intent(IN) :: bd
 real, intent(inout) ::  delp(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
-real, intent(inout) ::    pp(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  ! perturbation pressure
-real, intent(inout) ::    pk(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  ! p**kappa
-real, intent(inout) ::    gz(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  ! g * h
+real, intent(inout) ::    pp(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  !< perturbation pressure
+real, intent(inout) ::    pk(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  !< p**kappa
+real, intent(inout) ::    gz(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  !< g * h
 real, intent(inout) ::     u(bd%isd:bd%ied,  bd%jsd:bd%jed+1,npz) 
 real, intent(inout) ::     v(bd%isd:bd%ied+1,bd%jsd:bd%jed,  npz)
 type(fv_grid_type), intent(INOUT), target :: gridstruct
@@ -1540,9 +1620,9 @@ real,    intent(IN) :: beta, dt
 logical, intent(in):: use_logp
 type(fv_grid_bounds_type), intent(IN) :: bd
 real, intent(inout) ::  delp(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
-real, intent(inout) ::    pp(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  ! perturbation pressure
-real, intent(inout) ::    pk(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  ! p**kappa
-real, intent(inout) ::    gz(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  ! g * h
+real, intent(inout) ::    pp(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  !< perturbation pressure
+real, intent(inout) ::    pk(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  !< p**kappa
+real, intent(inout) ::    gz(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  !< g * h
 ! real, intent(inout) ::    du(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) 
 ! real, intent(inout) ::    dv(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz)
 real, intent(inout) ::     u(bd%isd:bd%ied,  bd%jsd:bd%jed+1,npz) 
@@ -1956,7 +2036,7 @@ do 1000 j=jfirst,jlast
 
  end subroutine  mix_dp
 
-
+!>@brief The subroutine 'geopk' calculates geopotential and pressure to the kappa.
  subroutine geopk(ptop, pe, peln, delp, pk, gz, hs, pt, q_con, pkz, km, akap, CG, nested, computehalo, npx, npy, a2b_ord, bd)
 
    integer, intent(IN) :: km, npx, npy, a2b_ord
@@ -1969,7 +2049,7 @@ do 1000 j=jfirst,jlast
    ! !OUTPUT PARAMETERS
    real, intent(OUT), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,km+1):: gz, pk
    real, intent(OUT) :: pe(bd%is-1:bd%ie+1,km+1,bd%js-1:bd%je+1)
-   real, intent(out) :: peln(bd%is:bd%ie,km+1,bd%js:bd%je)          ! ln(pe)
+   real, intent(out) :: peln(bd%is:bd%ie,km+1,bd%js:bd%je)          !< ln(pe)
    real, intent(out) :: pkz(bd%is:bd%ie,bd%js:bd%je,km)
    ! !DESCRIPTION:
    !    Calculates geopotential and pressure to the kappa.
@@ -2089,13 +2169,13 @@ do 1000 j=jfirst,jlast
 2000  continue
  end subroutine geopk
 
-
+!>@brief The subroutine 'del2-cubed' filters the omega field for the physics.
  subroutine del2_cubed(q, cd, gridstruct, domain, npx, npy, km, nmax, bd)
       !---------------------------------------------------------------
       ! This routine is for filtering the omega field for the physics
       !---------------------------------------------------------------
       integer, intent(in):: npx, npy, km, nmax
-      real(kind=R_GRID),    intent(in):: cd            ! cd = K * da_min;   0 < K < 0.25
+      real(kind=R_GRID),    intent(in):: cd            !< cd = K * da_min;   0 < K < 0.25
       type(fv_grid_bounds_type), intent(IN) :: bd
       real, intent(inout):: q(bd%isd:bd%ied,bd%jsd:bd%jed,km)
       type(fv_grid_type), intent(IN), target :: gridstruct
@@ -2218,20 +2298,20 @@ do 1000 j=jfirst,jlast
 
  end subroutine init_ijk_mem
 
-
+!>@brief The subroutine 'Ray_fast' computes a simple "inline" version of the Rayleigh friction.
  subroutine Ray_fast(dt, npx, npy, npz, pfull, tau, u, v, w,  &
                           ks, dp, ptop, hydrostatic, rf_cutoff, bd)
 ! Simple "inline" version of the Rayleigh friction
     real, intent(in):: dt
-    real, intent(in):: tau              ! time scale (days)
+    real, intent(in):: tau              !< time scale (days)
     real, intent(in):: ptop, rf_cutoff
     real, intent(in),  dimension(npz):: pfull
     integer, intent(in):: npx, npy, npz, ks
     logical, intent(in):: hydrostatic
     type(fv_grid_bounds_type), intent(IN) :: bd
-    real, intent(inout):: u(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) ! D grid zonal wind (m/s)
-    real, intent(inout):: v(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz) ! D grid meridional wind (m/s)
-    real, intent(inout):: w(bd%isd:      ,bd%jsd:      ,1: ) ! cell center vertical wind (m/s)
+    real, intent(inout):: u(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) !< D grid zonal wind (m/s)
+    real, intent(inout):: v(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz) !< D grid meridional wind (m/s)
+    real, intent(inout):: w(bd%isd:      ,bd%jsd:      ,1: ) !< cell center vertical wind (m/s)
     real, intent(in):: dp(npz)
 !
     real(kind=R_GRID):: rff(npz)

@@ -1,5 +1,34 @@
-!-------------------------------------------------------------------------------
-!> @brief Treat DA increment
+!***********************************************************************
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
+
+!>@brief 'The module 'tread_da_increment' contains routines for treating the increments
+!! of the prognostic variables that are calculated by the DA process
+!>@details This module includes functions to read in the externally calculated increments
+!! and applies the increments to the restart variables. Specifically, if the increments are
+!! zero, FV3 should reproduce directly from the restart files.
+!>@note Please treat the following subroutines as API interfaces, and consult the FV3 team 
+!! code modification proposal.
+!>@warning Expanding the list of increments without the proper knowledge of the FV3 dynamical
+!! core is EXTREMELY RISKY, especially for the non-hydrostatic scenario. Such a modification
+!! could break the scientific consistency, possibly leading to a simulation crash.
 !> @author Xi.Chen <xi.chen@noaa.gov>
 !> @date 02/12/2016
 !
@@ -14,6 +43,67 @@
 #endif
 
 module fv_treat_da_inc_mod
+
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>pi=>pi_8, omega, grav, kappa, rdgas, rvgas, cp_air</td>
+!   </tr>
+!   <tr>
+!     <td>field_manager_mod</td>
+!     <td>MODEL_ATMOS</td>
+!   </tr>
+!   <tr>
+!     <td>fms_mod</td>
+!     <td>file_exist, open_namelist_file,close_file, error_mesg, FATAL,
+!         check_nml_error, stdlog,write_version_number,set_domain,
+!         mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_SUBCOMPONENT, 
+!         clock_flag_default, nullify_domain</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_atmos_type, fv_grid_type, fv_grid_bounds_type,
+!          R_GRID</td>
+!   </tr>
+!   <tr>
+!     <td>fv_control_mod</td>
+!     <td>fv_init, fv_end, ngrids</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_utils_mod</td>
+!     <td>ptop_min, g_sum, mid_pt_sphere, get_unit_vect2,
+!         get_latlon_vector, inner_prod, cubed_to_latlon</td>
+!   </tr>
+!   <tr>
+!     <td>fms_mod</td>
+!     <td>file_exist, read_data, field_exist, write_version_number</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>ng,is_master,fill_corners,YDir,mp_reduce_min, mp_reduce_max</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_error, FATAL, NOTE, mpp_pe</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>mpp_get_tile_id, domain2d, mpp_update_domains,NORTH, EAST</td>
+!   </tr>
+!   <tr>
+!     <td>sim_nc_mod</td>
+!     <td>open_ncfile, close_ncfile, get_ncdim1, get_var1_double, 
+!         get_var2_real, get_var3_r4, get_var1_real</td>
+!   </tr>
+!   <tr>
+!     <td>tracer_manager_mod</td>
+!     <td>get_tracer_names, get_number_tracers, get_tracer_index</td>
+!   </tr>
+! </table>
 
   use fms_mod,           only: file_exist, read_data, &
                                field_exist, write_version_number
@@ -59,9 +149,12 @@ module fv_treat_da_inc_mod
 
 contains
   !=============================================================================
-  !> @brief description
-  !> @author Xi.Chen <xi.chen@noaa.gov>
-  !> @date 02/12/2016
+  !>@brief The subroutine 'read_da_inc' reads the increments of the diagnostic variables 
+  !! from the DA-generated files.
+  !>@details Additional support of prognostic variables such as tracers can be assessed
+  !! and added upon request.
+  !>@author Xi.Chen <xi.chen@noaa.gov>
+  !>@date 02/12/2016
   subroutine read_da_inc(Atm, fv_domain)
     type(fv_atmos_type), intent(inout) :: Atm(:)
     type(domain2d),      intent(inout) :: fv_domain
@@ -110,6 +203,7 @@ contains
     deg2rad = pi/180.
 
     npz = Atm(1)%npz
+
     fname = 'INPUT/'//Atm(1)%flagstruct%res_latlon_dynamics
 
     if( file_exist(fname) ) then
@@ -312,7 +406,9 @@ contains
     deallocate ( lon, lat )
 
   contains
-    !---------------------------------------------------------------------------
+   !---------------------------------------------------------------------------
+   !> @brief The subroutine 'apply_inc_on3d_scalar' applies the input increments
+   !! to the prognostic variables.
     subroutine apply_inc_on_3d_scalar(field_name,var)
       character(len=*), intent(in) :: field_name
       real, dimension(isd:ied,jsd:jed,1:km), intent(inout) :: var
@@ -344,7 +440,10 @@ contains
     end subroutine apply_inc_on_3d_scalar
     !---------------------------------------------------------------------------
   end subroutine read_da_inc
+ 
   !=============================================================================
+  !>@brief The subroutine 'remap_coef' calculates the coefficients for horizonal regridding.
+
   subroutine remap_coef( is, ie, js, je,&
       im, jm, lon, lat, id1, id2, jdc, s2c, agrid )
 
@@ -422,7 +521,10 @@ contains
 5000 continue   ! j-loop
 
   end subroutine remap_coef
+
   !=============================================================================
+  !>@brief The subroutine 'get_staggered_grid' gets the lat-lon locations of the
+  !! staggered points.
   subroutine get_staggered_grid( &
       is, ie, js, je, &
       isd, ied, jsd, jed, &

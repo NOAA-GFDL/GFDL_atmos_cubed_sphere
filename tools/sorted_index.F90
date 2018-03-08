@@ -1,38 +1,31 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
-!-*- F90 -*-
+!>@brief The module 'sorted_index' sorts cell corner indices in lat-lon
+!! space to ensure the same order of operations regardless of the 
+!! orientation in index space.
+!>@details  i/jinta are indices of b-grid locations needed for line integrals 
+!! around an a-grid cell including ghosting.
+!! i/jintb are indices of a-grid locations needed for line integrals
+!! around a b-grid cell with no ghosting.
 module sorted_index_mod
-  !---------------------------------------------------------------------
-  !<OVERVIEW>
-  ! sort cell corner indices in latlon space to ensure same order of
-  ! operations regardless of orientation in index space
-  !</OVERVIEW>
-  !
-  !<DESCRIPTION>
-  ! i/jinta are indices of b-grid locations needed for line integrals 
-  ! around an a-grid cell including ghosting.
-  !
-  ! i/jintb are indices of a-grid locations needed for line integrals
-  ! around a b-grid cell, no ghosting.
-  !</DESCRIPTION>
-  !---------------------------------------------------------------------
 
   use fv_arrays_mod, only: R_GRID
 
@@ -41,23 +34,16 @@ module sorted_index_mod
   public :: sorted_inta, sorted_intb
 
 contains
-  !#####################################################################
-  ! <SUBROUTINE NAME="sorted_inta">
-  !
-  ! <DESCRIPTION>
-  ! Sort cell corner indices in latlon space based on grid locations 
-  ! in index space. If not cubed_sphere assume orientations in index 
-  ! and latlon space are identical.
-  !
-  ! i/jinta are indices of b-grid locations needed for line integrals 
-  ! around an a-grid cell including ghosting.
-  !
-  ! i/jintb are indices of a-grid locations needed for line integrals
-  ! around a b-grid cell, no ghosting.
-  ! </DESCRIPTION>
-  !
-  subroutine sorted_inta(isd, ied, jsd, jed, cubed_sphere, bgrid, iinta, jinta)
 
+!>@brief The subroutine 'sorted_inta' sorts cell corner indices in latlon space
+!! based on grid locations in index space..
+!>@details If not the grid is notcubed_sphere, it assumes that
+!! the orientations in index  and latlon space are identical.
+!! i/jinta are indices of b-grid locations needed for line integrals 
+!! around an a-grid cell including ghosting.
+!! i/jintb are indices of a-grid locations needed for line integrals
+!! around a b-grid cell, no ghosting.
+  subroutine sorted_inta(isd, ied, jsd, jed, cubed_sphere, bgrid, iinta, jinta)
     integer, intent(in) :: isd, ied, jsd, jed
     real(kind=R_GRID),    intent(in), dimension(isd:ied+1,jsd:jed+1,2) :: bgrid
     logical, intent(in) :: cubed_sphere
@@ -235,25 +221,17 @@ contains
     end subroutine sort_rectangle
     !------------------------------------------------------------------!
   end subroutine sorted_inta
-  ! </SUBROUTINE> NAME="sorted_inta"
-  !#####################################################################
-  ! <SUBROUTINE NAME="sorted_intb">
-  !
-  ! <DESCRIPTION>
-  ! Sort cell corner indices in latlon space based on grid locations 
-  ! in index space. If not cubed_sphere assume orientations in index 
-  ! and latlon space are identical.
-  !
-  ! i/jinta are indices of b-grid locations needed for line integrals 
-  ! around an a-grid cell including ghosting.
-  !
-  ! i/jintb are indices of a-grid locations needed for line integrals
-  ! around a b-grid cell, no ghosting.
-  ! </DESCRIPTION>
-  !
+
+!>@brief The subroutine 'sorted_intb' sorts cell corner indices in latlon space
+!!  based on grid locations in index space.
+!>@details If not the grid is notcubed_sphere, it assumes that
+!! the orientations in index  and latlon space are identical.
+!! i/jinta are indices of b-grid locations needed for line integrals 
+!! around an a-grid cell including ghosting.
+!! i/jintb are indices of a-grid locations needed for line integrals
+!! around a b-grid cell, no ghosting.
   subroutine sorted_intb(isd, ied, jsd, jed, is, ie, js, je, npx, npy, &
                           cubed_sphere, agrid, iintb, jintb)
-
     integer, intent(in) :: isd, ied, jsd, jed, is, ie, js, je, npx, npy
     real(kind=R_GRID),    intent(in), dimension(isd:ied,jsd:jed,2) :: agrid
     logical, intent(in) :: cubed_sphere
@@ -537,6 +515,5 @@ contains
     end subroutine sort_triangle
     !------------------------------------------------------------------!
   end subroutine sorted_intb
-  ! </SUBROUTINE> NAME="sorted_intb"
-  !#####################################################################
+
 end module sorted_index_mod

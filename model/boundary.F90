@@ -1,23 +1,63 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
+!>@brief The module 'boundary' contains utility routines for grid nesting
+!! and boundary conditions.
+
 module boundary_mod
+
+! Modules Included:
+! <table>
+! <tr>
+!    <th>Module Name</th>
+!     <th>Functions Included</th>
+!  </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>grav</td>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_atmos_type, fv_nest_BC_type_3D, fv_grid_bounds_type</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>ng, isc,jsc,iec,jec, isd,jsd,ied,jed, is,js,ie,je, is_master, mp_bcst</td>
+!   </tr>
+!   <tr>
+!     <td>fv_timing_mod</td>
+!     <td>timing_on, timing_off</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod/td>
+!     <td>mpp_error, FATAL, mpp_sum, mpp_sync, mpp_npes, mpp_broadcast, WARNING, mpp_pe,
+!         mpp_send, mpp_recv</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod/td>
+!     <td>mpp_get_compute_domain, mpp_get_data_domain, mpp_get_global_domain,
+!         ENTER, CORNER, NORTH, EAST,nest_domain_type, WEST, SOUTH, 
+!         mpp_get_C2F_index, mpp_update_nest_fine,mpp_global_field, mpp_get_pelist
+!         mpp_get_F2C_index, mpp_update_nest_coarse</td>
+!   </tr>
+! </table>
 
   use fv_mp_mod,         only: ng, isc,jsc,iec,jec, isd,jsd,ied,jed, is,js,ie,je, is_master
   use constants_mod,     only: grav
@@ -42,7 +82,10 @@ module boundary_mod
   public fill_nested_grid, nested_grid_BC_apply_intT
   public nested_grid_BC_send, nested_grid_BC_recv, nested_grid_BC_save_proc
 
-  interface nested_grid_BC
+!>@briefThe interface 'nested_grid_BC' includes subroutines 'nested_grid_BC_2d' and 'nested_grid_BC_3d' 
+!! that fetch coarse-grid data, interpolate it to nested-grid boundary cells,
+!! apply the interpolated data directly to the boundary halo cells without saving the datatype.
+  interface nested_grid_BC 
      module procedure nested_grid_BC_2d
      module procedure nested_grid_BC_mpp
      module procedure nested_grid_BC_mpp_send
@@ -50,12 +93,18 @@ module boundary_mod
      module procedure nested_grid_BC_3d
   end interface
 
-
+!>@brief The interface 'fill_nested_grid' includes subroutines 'fill_nested_grid_2d' and 'fill_nested_grid_3d' 
+!! that fill nested-grid data with interpolated data from the coarse grid.
+!>@details This is one method to create a new nested grid, and may be useful when cold-starting.
   interface fill_nested_grid
      module procedure fill_nested_grid_2d
      module procedure fill_nested_grid_3d
   end interface
 
+!>@brief The interface'update_coarse_grid_mpp'contains subroutines that
+!! fetch data from the nested grid and 
+!! interpolate it to the coarse grid using the method described by
+!! \cite harris2013two.
   interface update_coarse_grid
      module procedure update_coarse_grid_mpp
      module procedure update_coarse_grid_mpp_2d
@@ -63,9 +112,8 @@ module boundary_mod
 
 contains
 
-
-  !Linear extrapolation into halo region
-  !Not to be confused with extrapolated-in-time nested BCs
+!>@brief The subroutine 'extrapolation_BC' performs linear extrapolation into the halo region.
+!Not to be confused with extrapolated-in-time nested BCs
   subroutine extrapolation_BC(q, istag, jstag, npx, npy, bd, pd_in, debug_in)
 
     type(fv_grid_bounds_type), intent(IN) :: bd
@@ -1256,6 +1304,7 @@ contains
 
  end subroutine nested_grid_BC_3D
 
+!>@brief The subroutine 'nested_grid_BC_send' sends coarse-grid data to create boundary conditions.
  subroutine nested_grid_BC_send(var_coarse, nest_domain, istag, jstag)
 
    real, dimension(:,:,:), intent(IN) :: var_coarse
@@ -1286,6 +1335,7 @@ contains
 
  end subroutine nested_grid_BC_send
 
+!>@briefThe subroutine 'nested_grid_BC_recv' receives coarse-grid data to create boundary conditions.
  subroutine nested_grid_BC_recv(nest_domain, istag, jstag, npz, &
       bd, nest_BC_buffers)
 
@@ -1392,6 +1442,8 @@ contains
 
  end subroutine nested_grid_BC_recv
 
+!>@brief The subroutine 'nested_grid_BC_save_proc' saves data received by 'nested_grid_BC_recv' 
+!! into the datatype 'fv_nest_BC_type'.
  subroutine nested_grid_BC_save_proc(nest_domain, ind, wt, istag, jstag, &
       npx, npy, npz, bd, nest_BC, nest_BC_buffers, pd_in)
 
@@ -1623,6 +1675,9 @@ contains
   ! bctype >= 2 currently correspond
   ! to a flux BC on the tracers ONLY, which is implemented in fv_tracer.
 
+!>@brief The subroutine 'nested_grid_BC_apply_intT' performs linear interpolation or 
+!! extrapolation in time for saved BC data, then applies the interlpolated
+!! data to nested-grid boundary cells.
  subroutine nested_grid_BC_apply_intT(var_nest, istag, jstag, &
       npx, npy, npz, bd, step, split, &
       BC, bctype)
@@ -1778,11 +1833,12 @@ contains
   subroutine update_coarse_grid_mpp(var_coarse, var_nest, nest_domain, ind_update, dx, dy, area, &
       isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n, &
       isu, ieu, jsu, jeu, npx, npy, npz, &
-      istag, jstag, r, nestupdate, upoff, nsponge, parent_proc, child_proc, parent_grid)
+      istag, jstag, r, nestupdate, upoff, nsponge, &
+      parent_proc, child_proc, parent_grid)
 
    !This routine assumes the coarse and nested grids are properly
    ! aligned, and that in particular for odd refinement ratios all
-   ! coarse-grid points coincide with nested-grid points
+   ! coarse-grid cells (faces) coincide with nested-grid cells (faces)
 
    integer, intent(IN) :: isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n
    integer, intent(IN) :: isu, ieu, jsu, jeu
@@ -1795,7 +1851,6 @@ contains
    real, intent(IN)    :: dy(isd:ied+1,jsd:jed)
    logical, intent(IN) :: parent_proc, child_proc
    type(fv_atmos_type), intent(INOUT) :: parent_grid
-
    type(nest_domain_type), intent(INOUT) :: nest_domain
 
    integer :: in, jn, ini, jnj, s, qr
@@ -1834,7 +1889,6 @@ contains
          do k=1,npz
          do j=js_n,je_n
          do i=is_n,ie_n
-
 
             var_nest_send(i,j,k) = var_nest(i,j,k)*area(i,j)
 

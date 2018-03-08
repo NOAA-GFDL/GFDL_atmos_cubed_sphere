@@ -1,29 +1,118 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
-! $Id$
-!
+
+!>@brief The module 'FV3_control' is for initialization and termination
+!! of the model, and controls namelist parameters in FV3.
 !----------------
-! FV contro panel
+! FV control panel
 !----------------
 
 module fv_control_mod
+! Modules Included:
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+! <table>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>pi=>pi_8, kappa, radius, grav, rdgas</td>
+!   </tr>
+!   <tr>
+!     <td>field_manager_mod</td>
+!     <td>MODEL_ATMOS</td>
+!   </tr>
+!   <tr>
+!     <td>fms_mod</td>
+!     <td>write_version_number, open_namelist_file,
+!         check_nml_error, close_file, file_exist</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_atmos_type, allocate_fv_atmos_type, deallocate_fv_atmos_type,
+!          R_GRID</td>
+!   </tr>
+!   <tr>
+!     <td>fv_diagnostics_mod</td>
+!     <td>fv_diag_init_gn</td>
+!   </tr>
+!   <tr>
+!     <td>fv_eta_mod</td>
+!     <td>set_eta</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_tools_mod</td>
+!     <td>init_grid</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_utils_mod</td>
+!     <td>grid_utils_init, grid_utils_end, ptop_min</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>mp_start, mp_assign_gid, domain_decomp,ng, switch_current_Atm,
+!         broadcast_domains, mp_barrier, is_master, setup_master </td>
+!   </tr>
+!   <tr>
+!     <td>fv_io_mod</td>
+!     <td>fv_io_exit</td>
+!   </tr>
+!   <tr>
+!     <td>fv_restart_mod</td>
+!     <td>fv_restart_init, fv_restart_end</td>
+!   </tr>
+!   <tr>
+!     <td>fv_timing_mod</td>
+!     <td>timing_on, timing_off, timing_init, timing_prt</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_send, mpp_sync, mpp_transmit, mpp_set_current_pelist, mpp_declare_pelist, 
+!         mpp_root_pe, mpp_recv, mpp_sync_self, mpp_broadcast, read_input_nml,
+!         FATAL, mpp_error, mpp_pe, stdlog, mpp_npes, mpp_get_current_pelist, 
+!         input_nml_file, get_unit, WARNING, read_ascii_file, INPUT_STR_LENGTH</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>mpp_get_data_domain, mpp_get_compute_domain, domain2D, mpp_define_nest_domains, 
+!        nest_domain_type, mpp_get_global_domain, mpp_get_C2F_index, mpp_get_F2C_index,
+!        mpp_broadcast_domain, CENTER, CORNER, NORTH, EAST, WEST, SOUTH</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_parameter_mod</td>
+!     <td>AGRID_PARAM=>AGRID</td>
+!   </tr>
+!   <tr>
+!     <td>test_cases_mod</td>
+!     <td>test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size</td>
+!   </tr>
+!   <tr>
+!     <td>tracer_manager_mod</td>
+!     <td>tm_get_number_tracers => get_number_tracers,tm_get_tracer_index => get_tracer_index,   
+!         tm_get_tracer_indices => get_tracer_indices, tm_set_tracer_profile => set_tracer_profile, 
+!         tm_get_tracer_names => get_tracer_names,tm_check_if_prognostic=> check_if_prognostic,
+!         tm_register_tracers => register_tracers</td>
+!   </tr>
+! </table>
 
    use constants_mod,       only: pi=>pi_8, kappa, radius, grav, rdgas
    use field_manager_mod,   only: MODEL_ATMOS
@@ -143,7 +232,7 @@ module fv_control_mod
 
    integer , pointer :: npx           
    integer , pointer :: npy           
-   integer , pointer :: npz           
+   integer , pointer :: npz
    integer , pointer :: npz_rst 
                                       
    integer , pointer :: ncnst 
@@ -230,7 +319,7 @@ module fv_control_mod
 
   logical, pointer :: nested, twowaynest
   integer, pointer :: parent_tile, refinement, nestbctype, nestupdate, nsponge, ioffset, joffset
-  real, pointer :: s_weight
+  real, pointer :: s_weight, update_blend
 
   integer, pointer :: layout(:), io_layout(:)
 
@@ -248,12 +337,12 @@ module fv_control_mod
    integer :: commID, max_refinement_of_global = 1.
    integer :: gid
 
-   real :: umax = 350.           ! max wave speed for grid_type>3
+   real :: umax = 350.           !< max wave speed for grid_type>3
    integer :: parent_grid_num = -1
 
-   integer :: halo_update_type = 1 ! 1 for two-interfaces non-block
-                                   ! 2 for block
-                                   ! 3 for four-interfaces non-block
+   integer :: halo_update_type = 1 !< 1 for two-interfaces non-block
+                                   !< 2 for block
+                                   !< 3 for four-interfaces non-block
 
 
 ! version number of this module
@@ -263,7 +352,9 @@ module fv_control_mod
  contains
 
 !-------------------------------------------------------------------------------
-         
+!>@brief The subroutine 'fv_init' initializes FV3.
+!>@details It allocates memory, sets up MPI and processor lists,
+!! sets up the grid, and controls FV3 namelist parameters.   
  subroutine fv_init(Atm, dt_atmos, grids_on_this_pe, p_split)
 
    type(fv_atmos_type), allocatable, intent(inout), target :: Atm(:)
@@ -275,7 +366,7 @@ module fv_control_mod
    real :: sdt
 
 ! tracers
-   integer :: num_family          ! output of register_tracers
+   integer :: num_family          !< output of register_tracers
 
    integer :: isc_p, iec_p, jsc_p, jec_p, isg, ieg, jsg, jeg, upoff, jind
    integer :: ic, jc
@@ -485,8 +576,8 @@ module fv_control_mod
  end subroutine fv_init
 !-------------------------------------------------------------------------------
 
-!-------------------------------------------------------------------------------
-         
+!>@brief The subroutine 'fv_end' terminates FV3, deallocates memory, 
+!! saves restart files, and stops I/O.
  subroutine fv_end(Atm, grids_on_this_pe)
 
     type(fv_atmos_type), intent(inout) :: Atm(:)
@@ -513,25 +604,22 @@ module fv_control_mod
  end subroutine fv_end
 !-------------------------------------------------------------------------------
 
-!-------------------------------------------------------------------------------
-!
-!     run_setup :: initialize run from namelist
-!
+!>@brief The subroutine 'run_setup' initializes the run from a namelist.
  subroutine run_setup(Atm, dt_atmos, grids_on_this_pe, p_split)
    type(fv_atmos_type), intent(inout), target :: Atm(:)
    real, intent(in)                   :: dt_atmos
    logical, intent(INOUT) :: grids_on_this_pe(:)
    integer, intent(INOUT) :: p_split
    !--- local variables ---
-   character(len=80) :: filename, tracerName, errString
+   character(len=80) :: tracerName, errString
    character(len=32) :: nested_grid_filename
    integer :: ios, ierr, f_unit, unit
    logical :: exists
 
-   real :: dim0 = 180.           ! base dimension
-   real :: dt0  = 1800.          ! base time step
-   real :: ns0  = 5.             ! base nsplit for base dimension 
-                                 ! For cubed sphere 5 is better
+   real :: dim0 = 180.           !< base dimension
+   real :: dt0  = 1800.          !< base time step
+   real :: ns0  = 5.             !< base nsplit for base dimension 
+                                 !< For cubed sphere 5 is better
    !real :: umax = 350.           ! max wave speed for grid_type>3 ! Now defined above
    real :: dimx, dl, dp, dxmin, dymin, d_fac
 
@@ -579,14 +667,6 @@ module fv_control_mod
    bubble_do = .false.
    test_case = 11   ! (USGS terrain)
 
-   filename = "input.nml"
-
-   inquire(file=filename,exist=exists)
-   if (.not. exists) then  ! This will be replaced with fv_error wrapper
-     if(is_master()) write(*,*) "file ",trim(filename)," doesn't exist" 
-     call mpp_error(FATAL,'FV core terminating 1')
-   endif
-
 #ifdef INTERNAL_FILE_NML
 ! Read Main namelist
    read (input_nml_file,fv_grid_nml,iostat=ios)
@@ -597,7 +677,7 @@ module fv_control_mod
 ! Read Main namelist
    read (f_unit,fv_grid_nml,iostat=ios)
    ierr = check_nml_error(ios,'fv_grid_nml')
-   rewind (f_unit)
+   call close_file(f_unit)
 #endif
 
    call write_version_number ( 'FV_CONTROL_MOD', version )
@@ -1037,6 +1117,9 @@ module fv_control_mod
 
   end subroutine init_nesting
 
+!>@brief The subroutine 'setup_pointers' associates the MODULE flag pointers
+!! with the ARRAY flag variables for the grid active on THIS pe so the flags
+!! can be read in from the namelist.
   subroutine setup_pointers(Atm)
 
     type(fv_atmos_type), intent(INOUT), target :: Atm

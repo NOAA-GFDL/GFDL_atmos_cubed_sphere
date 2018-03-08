@@ -1,23 +1,41 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
+!>@brief The module 'fv_timing' contains FV3 timers.
+
       module fv_timing_mod
+
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!     <td>fv_mp_mod</td>
+!     <td>is_master, mp_reduce_max</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_error, FATAL</td>
+!   </tr>
+! </table>
 
       use mpp_mod, only: mpp_error, FATAL
 #if defined(SPMD)
@@ -55,10 +73,9 @@
       logical, private :: module_initialized = .false.
 
       contains
+
+!>@brief The subroutine 'timing_init' initializes timers
          subroutine timing_init
-!
-! init
-!
          implicit none
 
          integer  :: C, R, M
@@ -94,12 +111,8 @@
          module_initialized = .true.
          end subroutine timing_init
 
-
+!>@brief The subroutine 'timing_on' starts a timer.
          subroutine timing_on(blk_name)
-!
-! timing_on
-!
-
          implicit none
 
          character(len=*) :: blk_name
@@ -162,12 +175,8 @@
 
         end subroutine timing_on
 
-
+!>@brief The subroutine 'timing_off' stops a timer.
         subroutine timing_off(blk_name)
-!
-! Timing_off
-!
-
         implicit none
         character(len=*) :: blk_name
 
@@ -226,7 +235,7 @@
 #endif
         end subroutine timing_off
 
-
+!>@brief The subroutine 'timing_clear' resets a timer.
         subroutine timing_clear()
         integer  n
           do n = 1, nblks
@@ -235,11 +244,8 @@
           enddo
         end subroutine timing_clear
 
-
+!>@brief The subroutine 'timing_prt' prints all timers
         subroutine timing_prt(gid)
-!
-! Timing_prt
-!
         implicit none
         integer  gid
         integer  n

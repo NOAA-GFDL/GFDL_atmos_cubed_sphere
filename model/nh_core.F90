@@ -1,27 +1,51 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
+!>@brief The module 'nh_core' peforms non-hydrostatic computations.
+!@author S. J. Lin, NOAA/GFDL
+!>@todo Include moisture effect in pt
+
 module nh_core_mod
-! Developer: S.-J. Lin, NOAA/GFDL
-! To do list:
-! include moisture effect in pt
-!------------------------------
+
+! Modules Included:
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>rdgas, cp_air, grav</td>
+!   </tr>
+!   <tr>
+!     <td>nh_utils_mod</td>
+!     <td>update_dz_c, update_dz_d, nest_halo_nh, sim3p0_solver, rim_2d,
+!         sim_solver, sim1_solver, sim3_solver</td>
+!   </tr>
+!   <tr>
+!     <td>tp_core_mod</td>
+!     <td>fv_tp_2d</td>
+!   </tr>
+! </table>
+
    use constants_mod,     only: rdgas, cp_air, grav
    use tp_core_mod,       only: fv_tp_2d
    use nh_utils_mod,      only: update_dz_c, update_dz_d, nest_halo_nh
@@ -51,7 +75,7 @@ CONTAINS
 !--------------------------------------------
    integer, intent(in):: ms, is, ie, js, je, km, ng
    integer, intent(in):: isd, ied, jsd, jed
-   real, intent(in):: dt         ! the BIG horizontal Lagrangian time step
+   real, intent(in):: dt         !< the BIG horizontal Lagrangian time step
    real, intent(in):: akap, cp, ptop, p_fac, a_imp, scale_m
    real, intent(in):: zs(isd:ied,jsd:jed)
    logical, intent(in):: last_call, use_logp, fp_out
@@ -61,7 +85,7 @@ CONTAINS
    real, intent(inout), dimension(isd:ied,jsd:jed,km+1):: zh
    real, intent(inout), dimension(isd:ied,jsd:jed,km):: w
    real, intent(inout):: pe(is-1:ie+1,km+1,js-1:je+1)
-   real, intent(out):: peln(is:ie,km+1,js:je)          ! ln(pe)
+   real, intent(out):: peln(is:ie,km+1,js:je)          !< ln(pe)
    real, intent(out), dimension(isd:ied,jsd:jed,km+1):: ppe
    real, intent(out):: delz(is-ng:ie+ng,js-ng:je+ng,km)
    real, intent(out):: pk(is:ie,js:je,km+1)

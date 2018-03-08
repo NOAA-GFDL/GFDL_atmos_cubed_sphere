@@ -1,23 +1,78 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
+!>@brief The module 'fv_grid_utils' contains routines for setting up and
+!! computing grid-related quantities. 
+!>@details Many of these are useful for computing diagnostics or setting up initial conditions.
+
  module fv_grid_utils_mod
+
+! Modules Included:
+! <table>
+!   <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>omega, pi=>pi_8, cnst_radius=>radius</td>
+!   </tr>
+!   <tr>
+!     <td>external_sst_mod</td>
+!     <td>i_sst, j_sst, sst_ncep, sst_anom</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_atmos_type, fv_grid_type, fv_grid_bounds_type,R_GRID</td>
+!   </tr>
+!   <tr>
+!     <td>fv_diagnostics_mod</td>
+!     <td>fv_time, prt_mxm, range_check, prt_minmax</td>
+!   </tr>
+!   <tr>
+!     <td>fv_eta_mod</td>
+!     <td>set_eta</td>
+!   </tr>
+!  <tr>
+!     <td>fv_mp_mod</td>
+!     <td>ng, is_master, mp_reduce_sum, mp_reduce_min, mp_reduce_max,fill_corners, XDir, YDir</td>
+!   </tr>
+!   <tr>
+!     <td>fv_parameter_mod</td>
+!     <td>AGRID_PARAM=>AGRID, CGRID_NE_PARAM=>CGRID_NE, CORNER, SCALAR_PAIR</td>
+!   </tr>
+!   <tr>
+!     <td>fv_timing_mod</td>
+!     <td>timing_on, timing_off</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod/td>
+!     <td>FATAL, mpp_error, WARNING</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod/td>
+!     <td>mpp_update_domains, DGRID_NE, mpp_global_sum, BITWISE_EXACT_SUM, domain2d, BITWISE_EFP_SUM</td>
+!   </tr>
+! </table>
+
  
 #include <fms_platform.h>
  use constants_mod,   only: omega, pi=>pi_8, cnst_radius=>radius
@@ -76,7 +131,7 @@
  contains
 
    subroutine grid_utils_init(Atm, npx, npy, npz, non_ortho, grid_type, c2l_order)
-! Initialize 2D memory and geometrical factors
+!> Initialize 2D memory and geometrical factors
       type(fv_atmos_type), intent(inout), target :: Atm
       logical, intent(in):: non_ortho
       integer, intent(in):: npx, npy, npz
@@ -558,14 +613,16 @@
          enddo
       enddo
 
-      !EXPLANATION HERE: calling fill_ghost overwrites **SOME** of the sin_sg values along the outward-facing edge of a tile in the corners, which is incorrect. What we will do is call fill_ghost and then fill in the appropriate values
+      !EXPLANATION HERE: calling fill_ghost overwrites **SOME** of the sin_sg 
+      !values along the outward-facing edge of a tile in the corners, which is incorrect. 
+      !What we will do is call fill_ghost and then fill in the appropriate values
 
       if (.not. Atm%neststruct%nested) then
-     do k=1,9
+       do k=1,9
         call fill_ghost(sin_sg(:,:,k), npx, npy, tiny_number, Atm%bd)  ! this will cause NAN if used
         call fill_ghost(cos_sg(:,:,k), npx, npy, big_number, Atm%bd)
-     enddo
-     end if
+       enddo
+      end if
 
 ! -------------------------------
 ! For transport operation
@@ -841,7 +898,6 @@
 
  
   subroutine grid_utils_end
- 
 ! deallocate sst_ncep (if allocated)
 #ifndef DYCORE_SOLO
       if (allocated(sst_ncep)) deallocate( sst_ncep )
@@ -849,16 +905,14 @@
 #endif
   end subroutine grid_utils_end
 
+!>@brief The subroutine 'direct_transform' performs a direct transformation of the 
+!! standard (symmetrical) cubic grid to a locally enhanced high-res grid on the sphere.
+!>@details It is an application of the Schmidt transformation at the south pole 
+!! followed by a pole_shift_to_target (rotation) operation.
   subroutine direct_transform(c, i1, i2, j1, j2, lon_p, lat_p, n, lon, lat)
-!
-! This is a direct transformation of the standard (symmetrical) cubic grid
-! to a locally enhanced high-res grid on the sphere; it is an application
-! of the Schmidt transformation at the south pole followed by a 
-! pole_shift_to_target (rotation) operation
-!
-    real(kind=R_GRID),    intent(in):: c              ! Stretching factor
-    real(kind=R_GRID),    intent(in):: lon_p, lat_p   ! center location of the target face, radian
-    integer, intent(in):: n              ! grid face number
+    real(kind=R_GRID),    intent(in):: c              !< Stretching factor
+    real(kind=R_GRID),    intent(in):: lon_p, lat_p   !< center location of the target face, radian
+    integer, intent(in):: n              !< grid face number
     integer, intent(in):: i1, i2, j1, j2
 !  0 <= lon <= 2*pi ;    -pi/2 <= lat <= pi/2
     real(kind=R_GRID), intent(inout), dimension(i1:i2,j1:j2):: lon, lat
@@ -924,12 +978,9 @@
 
   end function inner_prod
 
-
+!>@brief The subroutine 'efactor_a2c_v' initializes interpolation factors at face edges
+!! for interpolating vectors from A to C grid
  subroutine efactor_a2c_v(edge_vect_s, edge_vect_n, edge_vect_w, edge_vect_e, non_ortho, grid, agrid, npx, npy, nested, bd)
-!
-! Initialization of interpolation factors at face edges
-! for interpolating vectors from A to C grid
-!
  type(fv_grid_bounds_type), intent(IN) :: bd
  real(kind=R_GRID),    intent(INOUT), dimension(bd%isd:bd%ied) :: edge_vect_s, edge_vect_n
  real(kind=R_GRID),    intent(INOUT), dimension(bd%jsd:bd%jed) :: edge_vect_w, edge_vect_e
@@ -939,7 +990,7 @@
  integer, intent(in):: npx, npy
 
  real(kind=R_GRID) px(2,bd%isd:bd%ied+1),  py(2,bd%jsd:bd%jed+1)
- real(kind=R_GRID) p1(2,bd%isd:bd%ied+1),  p2(2,bd%jsd:bd%jed+1)       ! mid-point
+ real(kind=R_GRID) p1(2,bd%isd:bd%ied+1),  p2(2,bd%jsd:bd%jed+1)  !< mid-point
  real(kind=R_GRID) d1, d2
  integer i, j
  integer im2, jm2
@@ -1103,12 +1154,10 @@
 
  end subroutine efactor_a2c_v
 
+!>@brief The subroutine 'edge_factors' initializes interpolation factors at face edges
+!! for interpolation from A to B grid.
 ! Sets up edge_?
  subroutine edge_factors(edge_s, edge_n, edge_w, edge_e, non_ortho, grid, agrid, npx, npy, bd)
-!
-! Initialization of interpolation factors at face edges
-! for interpolation from A to B grid
-!
  type(fv_grid_bounds_type), intent(IN) :: bd
  real(kind=R_GRID),    intent(INOUT), dimension(npx) :: edge_s, edge_n
  real(kind=R_GRID),    intent(INOUT), dimension(npy) :: edge_w, edge_e
@@ -1239,17 +1288,19 @@
 
  end subroutine gnomonic_grids
 
+!-----------------------------------------------------
+!>@brief The subroutine 'gnomonic_ed' computes the equal 
+!! distances along the 4 edges of the cubed sphere.
+!-----------------------------------------------------
+!>@details Properties: 
+!!  defined by intersections of great circles
+!!  max(dx,dy; global) / min(dx,dy; global) = sqrt(2) = 1.4142
+!!  Max(aspect ratio) = 1.06089
+!!  the N-S coordinate curves are const longitude on the 4 
+!!  faces with equator 
+!! For C2000: (dx_min, dx_max) = (3.921, 5.545) in km unit
+!! This is the grid of choice for global cloud resolving
  subroutine gnomonic_ed(im, lamda, theta)
-!-----------------------------------------------------
-! Equal distance along the 4 edges of the cubed sphere
-!-----------------------------------------------------
-! Properties: 
-!            * defined by intersections of great circles
-!            * max(dx,dy; global) / min(dx,dy; global) = sqrt(2) = 1.4142
-!            * Max(aspect ratio) = 1.06089
-!            * the N-S coordinate curves are const longitude on the 4 faces with equator 
-! For C2000: (dx_min, dx_max) = (3.921, 5.545)    in km unit
-! This is the grid of choice for global cloud resolving
 
  integer, intent(in):: im
  real(kind=R_GRID), intent(out):: lamda(im+1,im+1)
@@ -1336,19 +1387,16 @@
 
  end subroutine gnomonic_ed
 
+!>@brief The subroutine 'gnomonic_ed_limited' creates a limited-area 
+!! equidistant gnomonic grid with corners given by lL (lower-left),
+!! lR (lower-right), uL (upper-left),and uR (upper-right) with im by in 
+!! cells. 
+!>@details 'lamda' and 'theta' are the latitude-longitude coordinates of 
+!! the corners of the cells. This formulation assumes the coordinates given 
+!! are on the 'prototypical equatorial panel' given by gnomonic_ed. 
+!! The resulting gnomonic limited area grid can then be translated and/or
+!! scaled to its appropriate location on another panel if desired.
  subroutine gnomonic_ed_limited(im, in, nghost, lL, lR, uL, uR, lamda, theta)
-   
-   !This routine creates a limited-area equidistant gnomonic grid with
-   !corners given by lL (lower-left), lR (lower-right), uL (upper-left),
-   !and uR (upper-right) with im by in cells. lamda and theta are the 
-   !latitude-longitude coordinates of the corners of the cells.
-
-   !This formulation assumes the coordinates given are on the
-   ! 'prototypical equatorial panel' given by gnomonic_ed. The
-   ! resulting gnomonic limited area grid can then be translated and
-   ! /or scaled to its appropriate location on another panel if so
-   ! desired.
-
    integer, intent(IN) :: im, in, nghost
    real(kind=R_GRID), intent(IN), dimension(2) :: lL, lR, uL, uR
    real(kind=R_GRID), intent(OUT) :: lamda(1-nghost:im+1+nghost,1-nghost:in+1+nghost)
@@ -1564,14 +1612,12 @@
 
  end subroutine latlon2xyz2
 
-
+!>@brief The subroutine 'latlon2xyz' maps (lon, lat) to (x,y,z)
  subroutine latlon2xyz(p, e, id)
-!
-! Routine to map (lon, lat) to (x,y,z)
-!
+
  real(kind=R_GRID), intent(in) :: p(2)
  real(kind=R_GRID), intent(out):: e(3)
- integer, optional, intent(in):: id   ! id=0 do nothing; id=1, right_hand
+ integer, optional, intent(in):: id !< id=0 do nothing; id=1, right_hand
 
  integer n
  real (f_p):: q(2)
@@ -1593,12 +1639,10 @@
 
  end subroutine latlon2xyz
 
-
+!>@brief The subroutine 'mirror_xyz' computes the mirror image of p0(x0, y0, z0)
+!! as p(x, y, z) given the "mirror" as defined by p1(x1, y1, z1), p2(x2, y2, z2), 
+!! and the center of the sphere.
  subroutine mirror_xyz(p1, p2, p0, p)
-
-! Given the "mirror" as defined by p1(x1, y1, z1), p2(x2, y2, z2), and center 
-! of the sphere, compute the mirror image of p0(x0, y0, z0) as p(x, y, z)
-
 !-------------------------------------------------------------------------------
 ! for k=1,2,3 (x,y,z)
 !
@@ -1630,12 +1674,10 @@
 
  end subroutine mirror_xyz 
 
-
+!>@brief The subroutine 'mirror_latlon' computes the mirror image of 
+!! (lon0, lat0) as  (lon3, lat3) given the "mirror" as defined by
+!! (lon1, lat1), (lon2, lat2), and center of the sphere. 
  subroutine mirror_latlon(lon1, lat1, lon2, lat2, lon0, lat0, lon3, lat3)
-!
-! Given the "mirror" as defined by (lon1, lat1), (lon2, lat2), and center 
-! of the sphere, compute the mirror image of (lon0, lat0) as  (lon3, lat3)
-
  real(kind=R_GRID), intent(in):: lon1, lat1, lon2, lat2, lon0, lat0
  real(kind=R_GRID), intent(out):: lon3, lat3
 !
@@ -1705,14 +1747,12 @@
 
  end  subroutine cart_to_latlon
 
-
-
+!>@brief The subroutine 'vect_cross performs cross products 
+!! of 3D vectors: e = P1 X P2
  subroutine vect_cross(e, p1, p2)
  real(kind=R_GRID), intent(in) :: p1(3), p2(3)
  real(kind=R_GRID), intent(out):: e(3)
-!
-! Perform cross products of 3D vectors: e = P1 X P2
-!
+
       e(1) = p1(2)*p2(3) - p1(3)*p2(2)
       e(2) = p1(3)*p2(1) - p1(1)*p2(3)
       e(3) = p1(1)*p2(2) - p1(2)*p2(1)
@@ -1776,7 +1816,7 @@
 
  subroutine get_unit_vect2( e1, e2, uc )
    real(kind=R_GRID), intent(in) :: e1(2), e2(2)
-   real(kind=R_GRID), intent(out):: uc(3) ! unit vector e1--->e2
+   real(kind=R_GRID), intent(out):: uc(3) !< unit vector e1--->e2
 ! Local:
    real(kind=R_GRID), dimension(3):: pc, p1, p2, p3
 
@@ -1804,10 +1844,9 @@
 
  end subroutine get_unit_vect3
 
-
-
+!>@brief The subroutine 'normalize_vect' makes 'e' a unit vector.
  subroutine normalize_vect(e)
-!                              Make e an unit vector
+
  real(kind=R_GRID), intent(inout):: e(3)
  real(f_p):: pdot
  integer k
@@ -1823,9 +1862,9 @@
 
 
  subroutine intp_great_circle(beta, p1, p2, x_o, y_o)
- real(kind=R_GRID), intent(in)::  beta    ! [0,1]
+ real(kind=R_GRID), intent(in)::  beta  !< [0,1]
  real(kind=R_GRID), intent(in)::  p1(2), p2(2)
- real(kind=R_GRID), intent(out):: x_o, y_o     ! between p1 and p2 along GC
+ real(kind=R_GRID), intent(out):: x_o, y_o !< between p1 and p2 along GC
 !------------------------------------------
     real(kind=R_GRID):: pm(2)
     real(kind=R_GRID):: e1(3), e2(3), e3(3)
@@ -1853,13 +1892,14 @@
 
  end subroutine intp_great_circle
 
+!>@brief The subroutine 'spherical_linear_interpolation' interpolates along the great circle connecting points p1 and p2.
+!>@details The routine uses the formula taken from <http://en.wikipedia.org/wiki/Slerp> 
+!! and is attributed to Glenn Davis based on a concept by Ken Shoemake.
  subroutine spherical_linear_interpolation(beta, p1, p2, pb)
 
-   !This formula interpolates along the great circle connecting points p1 and p2. This formula is taken from http://en.wikipedia.org/wiki/Slerp and is attributed to Glenn Davis based on a concept by Ken Shoemake.
-
- real(kind=R_GRID), intent(in)::  beta    ! [0,1]
+ real(kind=R_GRID), intent(in)::  beta    !< [0,1]
  real(kind=R_GRID), intent(in)::  p1(2), p2(2)
- real(kind=R_GRID), intent(out):: pb(2)   ! between p1 and p2 along GC
+ real(kind=R_GRID), intent(out):: pb(2)   !< between p1 and p2 along GC
 !------------------------------------------
  real(kind=R_GRID):: pm(2)
  real(kind=R_GRID):: e1(3), e2(3), eb(3)
@@ -1990,14 +2030,12 @@
 
   end function great_circle_dist
 
-
+  !>@brief The function 'great_circle_dist_cart' calculates the 
+  !! normalized great circle distance between 'v1' and 'v2'.      
+  !>@date July 2006                                               
+  !>@version 0.1                                                                                                                     
   function great_circle_dist_cart(v1, v2, radius)
-    !------------------------------------------------------------------!
-    ! date:    July 2006                                               !
-    ! version: 0.1                                                     !
-    !                                                                  !
-    ! calculate normalized great circle distance between v1 and v2     ! 
-    !------------------------------------------------------------------!
+   
     real(kind=R_GRID) :: great_circle_dist_cart
     real(kind=R_GRID), dimension(3), intent(in) :: v1, v2
     real(kind=R_GRID), intent(IN), optional :: radius
@@ -2019,29 +2057,20 @@
 
 
   end function great_circle_dist_cart
-
-
-
+                                                                                                           
+ !>@brief The subroutine 'intersect' calculates the intersection of two great circles.       
+ !>@details input:                                                           
+ !> a1, a2,  -   pairs of points on sphere in cartesian coordinates  
+ !> b1, b2       defining great circles                              
+ !> radius   -   radius of the sphere                                                                                                
+ !> output:                                                          
+ !> x_inter  -   nearest intersection point of the great circles     
+ !> local_a  -   true if x1 between (a1, a2)                         
+ !> local_b  -   true if x1 between (b1, b2)                                        
+ !>@date July 2006                                                 
+ !>@version: 0.1        
  subroutine intersect(a1,a2,b1,b2,radius,x_inter,local_a,local_b)
-  !--------------------------------------------------------------------!
-  ! date:    July 2006                                                 !
-  ! version: 0.1                                                       !
-  !                                                                    !
-  ! calculate intersection of two great circles                        !
-  !--------------------------------------------------------------------!
-    !------------------------------------------------------------------!
-    ! calculate intersection of two great circles                      !
-    !                                                                  !
-    ! input:                                                           !
-    ! a1, a2,  -   pairs of points on sphere in cartesian coordinates  !
-    ! b1, b2       defining great circles                              !
-    ! radius   -   radius of the sphere                                !
-    !                                                                  !
-    ! output:                                                          !
-    ! x_inter  -   nearest intersection point of the great circles     !
-    ! local_a  -   true if x1 between (a1, a2)                         !
-    ! local_b  -   true if x1 between (b1, b2)                         !
-    !------------------------------------------------------------------!
+
     real(kind=R_GRID), dimension(3), intent(in)  :: a1, a2, b1, b2
     real(kind=R_GRID), intent(in) :: radius
     real(kind=R_GRID), dimension(3), intent(out) :: x_inter
@@ -2121,40 +2150,38 @@
     end subroutine check_local
     !------------------------------------------------------------------!
   end subroutine intersect
-
+ 
+ !>@brief The subroutine 'intersect_cross' calculates the intersection of two great circles.       
+ !>@details input:                                                           
+ !> a1, a2,  -   pairs of points on sphere in cartesian coordinates  
+ !> b1, b2       defining great circles                              
+ !> radius   -   radius of the sphere                                
+ !>                                                                  
+ !> output:                                                          
+ !> x_inter  -   nearest intersection point of the great circles     
+ !> local_a  -   true if x1 between (a1, a2)                         
+ !> local_b  -   true if x1 between (b1, b2)     
  subroutine intersect_cross(a1,a2,b1,b2,radius,x_inter,local_a,local_b)
-    !------------------------------------------------------------------!
-    ! calculate intersection of two great circles                      !
-    !                                                                  !
-    ! input:                                                           !
-    ! a1, a2,  -   pairs of points on sphere in cartesian coordinates  !
-    ! b1, b2       defining great circles                              !
-    ! radius   -   radius of the sphere                                !
-    !                                                                  !
-    ! output:                                                          !
-    ! x_inter  -   nearest intersection point of the great circles     !
-    ! local_a  -   true if x1 between (a1, a2)                         !
-    ! local_b  -   true if x1 between (b1, b2)                         !
-    !------------------------------------------------------------------!
+  
     real(kind=R_GRID), dimension(3), intent(in)  :: a1, a2, b1, b2
     real(kind=R_GRID), intent(in) :: radius
     real(kind=R_GRID), dimension(3), intent(out) :: x_inter
     logical, intent(out) :: local_a,local_b
     real(kind=R_GRID), dimension(3) :: v1, v2
 
-    !A great circle is the intersection of a plane through the center
-    ! of the sphere with the sphere. That plane is specified by a
-    ! vector v1, which is the cross product of any two vectors lying
-    ! in the plane; here, we use position vectors, which are unit
-    ! vectors lying in the plane and rooted at the center of the
-    ! sphere. 
-    !The intersection of two great circles is where the the
-    ! intersection of the planes, a line, itself intersects the
-    ! sphere. Since the planes are defined by perpendicular vectors
-    ! v1, v2 respectively, the intersecting line is perpendicular
-    ! to both v1 and v2, and so lies along the cross product of v1
-    ! and v2.
-    !The two intersection points of the great circles is therefore +/- v1 x v2.
+    !> A great circle is the intersection of a plane through the center
+    !! of the sphere with the sphere. That plane is specified by a
+    !! vector v1, which is the cross product of any two vectors lying
+    !! in the plane; here, we use position vectors, which are unit
+    !! vectors lying in the plane and rooted at the center of the
+    !! sphere. 
+    !> The intersection of two great circles is where the the
+    !! intersection of the planes, a line, itself intersects the
+    !! sphere. Since the planes are defined by perpendicular vectors
+    !! v1, v2 respectively, the intersecting line is perpendicular
+    !! to both v1 and v2, and so lies along the cross product of v1
+    !! and v2.
+    !> The two intersection points of the great circles is therefore +/- v1 x v2.
     call vect_cross(v1, a1, a2)
     call vect_cross(v2, b1, b2)
 
@@ -2653,9 +2680,8 @@
 
  end subroutine cell_center2
 
-
+!>@brief The subroutine 'cell_center3' gets the center position of a cell.
  subroutine cell_center3(p1, p2, p3, p4, ec)
-! Get center position of a cell
          real(kind=R_GRID) , intent(IN)  :: p1(3), p2(3), p3(3), p4(3)
          real(kind=R_GRID) , intent(OUT) :: ec(3)
 ! Local
@@ -2718,15 +2744,12 @@
 
  end function get_area
 
-
-  function dist2side(v1, v2, point)
-    !------------------------------------------------------------------!
-    ! calculate shortest normalized distance on sphere                 !
-    ! from point to straight line defined by v1 and v2                 !
-    ! This version uses cartesian coordinates.                         !
-    ! date:    Feb 2007                                                !
-    ! version: 0.1                                                     !
-    !------------------------------------------------------------------!
+  !>@brief The function 'dist2side' calculates the shortest normalized distance 
+  !! on a sphere from point to straight line defined by 'v1' and 'v2'.  
+  !>@details This version uses cartesian coordinates.
+  !>@date Feb 2007                                                
+  !>@version 0.1    
+  function dist2side(v1, v2, point)  
     real(kind=R_GRID) :: dist2side
     real(kind=R_GRID), dimension(3), intent(in) :: v1, v2, point
 
@@ -2738,8 +2761,9 @@
 
   end function dist2side
 
+  !>@brief The function 'dist2side_latlon' is the version of 'dist2side' that 
+  !! takes points in latitude-longitude coordinates.
   function dist2side_latlon(v1,v2,point)
-    !Version of dist2side that takes points in latitude-longitude coordinates
 
     real(kind=R_GRID) :: dist2side_latlon
     real(kind=R_GRID), dimension(2), intent(in) :: v1, v2, point
@@ -2870,10 +2894,8 @@
 
  end function cos_angle
 
-
-
+ !>@brief The function 'g_sum' is the fast version of 'globalsum'. 
  real function g_sum(domain, p, ifirst, ilast, jfirst, jlast, ngc, area, mode, reproduce)
-! Fast version of globalsum 
       integer, intent(IN) :: ifirst, ilast
       integer, intent(IN) :: jfirst, jlast, ngc
       integer, intent(IN) :: mode  ! if ==1 divided by area
@@ -2924,12 +2946,11 @@
 
  end function g_sum
 
-
+!>@brief The function 'global_qsum' computes the quick global sum without area weighting.
  real function global_qsum(p, ifirst, ilast, jfirst, jlast)
-! quick global sum without area weighting
       integer, intent(IN) :: ifirst, ilast
       integer, intent(IN) :: jfirst, jlast
-      real, intent(IN) :: p(ifirst:ilast,jfirst:jlast)      ! field to be summed
+      real, intent(IN) :: p(ifirst:ilast,jfirst:jlast) !< field to be summed
       integer :: i,j
       real gsum
          
@@ -2974,8 +2995,8 @@
 
  end subroutine global_mx
 
+!>@brief The subroutine 'global_mx_c' computes the global max and min at the cell corners.
  subroutine global_mx_c(q, i1, i2, j1, j2, qmin, qmax)
-! For computing global max/min at cell Corners
      integer, intent(in):: i1, i2, j1, j2
      real(kind=R_GRID), intent(in)   :: q(i1:i2,j1:j2)
      real(kind=R_GRID), intent(out)  :: qmin, qmax
@@ -3149,7 +3170,7 @@
   integer, intent (in) :: n
   integer :: i,j,k
   real(kind=R_GRID), intent (inout), dimension (n,n):: a
-  real(kind=R_GRID), intent (out), dimension (n,n):: x   ! inverted maxtrix
+  real(kind=R_GRID), intent (out), dimension (n,n):: x   !< inverted maxtrix
   real(kind=R_GRID), dimension (n,n) :: b
   integer indx(n)
  
@@ -3186,15 +3207,10 @@
 
  end subroutine invert_matrix
  
-
+!>@brief The subroutine 'elgs' performs the partial-pivoting gaussian elimination.
+!>@details a(n,n) is the original matrix in the input and transformed matrix
+!! plus the pivoting element ratios below the diagonal in the output.
  subroutine elgs (a,n,indx)
-
-!------------------------------------------------------------------
-! subroutine to perform the partial-pivoting gaussian elimination.
-! a(n,n) is the original matrix in the input and transformed matrix
-! plus the pivoting element ratios below the diagonal in the output.
-!------------------------------------------------------------------
- 
   integer, intent (in) :: n
   integer :: i,j,k,itmp
   integer, intent (out), dimension (n) :: indx
@@ -3272,8 +3288,8 @@
 
  subroutine project_sphere_v( np, f, e )
 !---------------------------------
- integer, intent(in):: np           ! total number of points
- real(kind=R_GRID),    intent(in):: e(3,np)      ! input position unit vector
+ integer, intent(in):: np           !< total number of points
+ real(kind=R_GRID),    intent(in):: e(3,np)      !< input position unit vector
  real(kind=R_GRID), intent(inout):: f(3,np)
 ! local
  real(f_p):: ap

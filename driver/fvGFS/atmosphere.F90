@@ -1,30 +1,142 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
-module atmosphere_mod
-#include <fms_platform.h>
 
-!-----------------------------------------------------------------------
-!
-! Interface for Cubed_Sphere fv dynamical core
-!
-!-----------------------------------------------------------------------
+!>@brief The module 'atmosphere' provides the interface for the
+!! Cubed-Sphere FV dynamical core
+
+module atmosphere_mod
+
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>block_control_mod</td>
+!     <td>block_control_type</td>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>cp_air, rdgas, grav, rvgas, kappa, pstd_mks</td>
+!   </tr>
+!   <tr>
+!     <td>field_manager_mod</td>
+!     <td>MODEL_ATMOS</td>
+!   </tr>
+!   <tr>
+!     <td>fms_mod</td>
+!     <td>file_exist, open_namelist_file,close_file, error_mesg, FATAL,
+!         check_nml_error, stdlog,write_version_number,set_domain,
+!         mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_SUBCOMPONENT, 
+!         clock_flag_default, nullify_domain</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_atmos_type, R_GRID</td>
+!   </tr>
+!   <tr>
+!     <td>fv_control_mod</td>
+!     <td>fv_init, fv_end, ngrids</td>
+!   </tr>
+!   <tr>
+!     <td>fv_diagnostics_mod</td>
+!     <td>fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height</td>
+!   </tr>
+!   <tr>
+!     <td>fv_dynamics_mod</td>
+!     <td>fv_dynamics</td>
+!   </tr>
+!   <tr>
+!     <td>fv_eta_mod</td>
+!     <td>get_eta_level</td>
+!   </tr>
+!   <tr>
+!     <td>fv_fill_mod</td>
+!     <td>fill_gfs</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>switch_current_Atm</td>
+!   </tr>
+!   <tr>
+!     <td>fv_nesting_mod</td>
+!     <td>twoway_nesting</td>
+!   </tr>
+!   <tr>
+!     <td>fv_nggps_diags_mod</td>
+!     <td>fv_nggps_diag_init, fv_nggps_diag</td>
+!   </tr>
+!   <tr>
+!     <td>fv_nwp_nudge_mod</td>
+!     <td>fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init</td>
+!   </tr>
+!   <tr>
+!     <td>fv_restart_mod</td>
+!     <td>fv_restart, fv_write_restart</td>
+!   </tr>
+!   <tr>
+!     <td>fv_sg_mod</td>
+!     <td>fv_subgrid_z</td>
+!   </tr>
+!   <tr>
+!     <td>fv_timing_mod</td>
+!     <td>timing_on, timing_off</td>
+!   </tr>
+!   <tr>
+!     <td>fv_update_phys_mod</td>
+!     <td>fv_update_phys</td>
+!   </tr>
+!   <tr>
+!     <td>IPD_typedefs_mod</td>
+!     <td>IPD_data_type, kind_phys</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_error, stdout, FATAL, NOTE, input_nml_file, mpp_root_pe,
+!                    mpp_npes, mpp_pe, mpp_chksum,mpp_get_current_pelist,     
+!                    mpp_set_current_pelist</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>mpp_get_data_domain, mpp_get_compute_domain, domain2d, mpp_update_domains</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_parameter_mod</td>
+!     <td>EUPDATE, WUPDATE, SUPDATE, NUPDATE</td>
+!   </tr>
+!   <tr>
+!     <td>time_manager_mod</td>
+!     <td>time_type, get_time, set_time, operator(+), operator(-)</td>
+!   </tr>
+!   <tr>
+!     <td>tracer_manager_mod</td>
+!     <td>get_tracer_index, get_number_tracers, NO_TRACER</td>
+!   </tr>
+!   <tr>
+!     <td>xgrid_mod</td>
+!     <td>grid_box_type</td>
+!   </tr>
+! </table>
+
+#include <fms_platform.h>
 
 !-----------------
 ! FMS modules:
@@ -52,6 +164,7 @@ use xgrid_mod,              only: grid_box_type
 use field_manager_mod,      only: MODEL_ATMOS
 use tracer_manager_mod,     only: get_tracer_index, get_number_tracers, &
                                   NO_TRACER
+use DYCORE_typedefs,        only: DYCORE_data_type
 use IPD_typedefs,           only: IPD_data_type, kind_phys
 use fv_iau_mod,             only: IAU_external_data_type
 
@@ -74,7 +187,6 @@ use fv_update_phys_mod, only: fv_update_phys
 use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
 
 use mpp_domains_mod, only:  mpp_get_data_domain, mpp_get_compute_domain
-use boundary_mod, only: update_coarse_grid
 
 implicit none
 private
@@ -89,10 +201,12 @@ public :: atmosphere_resolution, atmosphere_grid_bdry, &
           atmosphere_control_data, atmosphere_pref, &
           atmosphere_diag_axes, atmosphere_etalvls, &
           atmosphere_hgt, atmosphere_scalar_field_halo, &
-!rab          atmosphere_tracer_postinit, &
-          atmosphere_diss_est, atmosphere_nggps_diag, &
-          get_bottom_mass, get_bottom_wind,   &
-          get_stock_pe, set_atmosphere_pelist
+! experimental APIs not ready for use
+!         atmosphere_tracer_postinit, &
+          atmosphere_diss_est, & ! dissipation estimate for SKEB 
+          atmosphere_get_bottom_layer, &
+          atmosphere_nggps_diag, &
+          set_atmosphere_pelist
 
 !--- physics/radiation data exchange routines
 public :: atmos_phys_driver_statein
@@ -113,13 +227,13 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
   integer :: npx, npy, npz, ncnst, pnats
   integer :: isc, iec, jsc, jec
   integer :: isd, ied, jsd, jed
-  integer :: nq                       ! transported tracers
+  integer :: nq                       !  number of transported tracers
   integer :: sec, seconds, days
   integer :: id_dynam, id_fv_diag, id_subgridz
-  logical :: cold_start = .false.       ! read in initial condition
+  logical :: cold_start = .false.     !  used in initial condition
 
   integer, dimension(:), allocatable :: id_tracerdt_dyn
-  integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel  !condensate species
+  integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel  ! condensate species tracer indices
 
   integer :: mytile = 1
   integer :: p_split = 1
@@ -140,7 +254,9 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
 contains
 
 
-
+!>@brief The subroutine 'atmosphere_init' is an API to initialize the FV3 dynamical core,
+!! including the grid structures, memory, initial state (self-initialization or restart), 
+!! and diagnostics.  
  subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, area)
    type (time_type),    intent(in)    :: Time_init, Time, Time_step
    type(grid_box_type), intent(inout) :: Grid_box
@@ -299,13 +415,15 @@ contains
  end subroutine atmosphere_init
 
 
+!>@brief The subroutine 'p_adi' computes (ps, pk, pe, peln, pkz)
+!! given (ptop, delp). 
  subroutine p_adi(km, ng, ifirst, ilast, jfirst, jlast, ptop,   &
                   delp, pt, ps, pe, peln, pk, pkz, hydrostatic)
 ! Given (ptop, delp) computes (ps, pk, pe, peln, pkz)
 ! Input:
    integer,  intent(in):: km, ng
-   integer,  intent(in):: ifirst, ilast            ! Longitude strip
-   integer,  intent(in):: jfirst, jlast            ! Latitude strip
+   integer,  intent(in):: ifirst, ilast            !< Longitude strip
+   integer,  intent(in):: jfirst, jlast            !< Latitude strip
    logical, intent(in)::  hydrostatic
    real, intent(in):: ptop
    real, intent(in)::   pt(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
@@ -313,8 +431,8 @@ contains
 ! Output:
    real, intent(out) ::   ps(ifirst-ng:ilast+ng, jfirst-ng:jlast+ng)
    real, intent(out) ::   pk(ifirst:ilast, jfirst:jlast, km+1)
-   real, intent(out) ::   pe(ifirst-1:ilast+1,km+1,jfirst-1:jlast+1) ! Ghosted Edge pressure
-   real, intent(out) :: peln(ifirst:ilast, km+1, jfirst:jlast)    ! Edge pressure
+   real, intent(out) ::   pe(ifirst-1:ilast+1,km+1,jfirst-1:jlast+1) !< Ghosted Edge pressure
+   real, intent(out) :: peln(ifirst:ilast, km+1, jfirst:jlast)       !< Edge pressure
    real, intent(out) ::  pkz(ifirst:ilast, jfirst:jlast, km)
 ! Local
    real pek
@@ -355,6 +473,8 @@ contains
  end subroutine p_adi
 
 
+!>@brief The subroutine 'atmosphere_dynamics' is an API for the main driver
+!! of the FV3 dynamical core responsible for executing a "dynamics" step.
  subroutine atmosphere_dynamics ( Time )
    type(time_type),intent(in) :: Time
    integer :: itrac, n, psc
@@ -437,14 +557,11 @@ contains
  end subroutine atmosphere_dynamics
 
 
- subroutine atmosphere_end (Time, Grid_box )!rab, Radiation, Physics)
+!>@brief The subroutine 'atmosphere_end' is an API for the termination of the
+!! FV3 dynamical core responsible for writing out a restart and final diagnostic state.
+ subroutine atmosphere_end (Time, Grid_box)
    type (time_type),      intent(in)    :: Time
    type(grid_box_type),   intent(inout) :: Grid_box
-!rab   type (radiation_type), intent(inout) :: Radiation
-!rab   type (physics_type),   intent(inout) :: Physics
-
-  ! initialize domains for writing global physics data
-   call set_domain ( Atm(mytile)%domain )
 
    call nullify_domain ( )
    if (first_diag) then
@@ -463,21 +580,21 @@ contains
  end subroutine atmosphere_end
 
 
-
-  !#######################################################################
-  ! <SUBROUTINE NAME="atmosphere_restart">
-  ! <DESCRIPTION>
-  !  Write out restart files registered through register_restart_file
-  ! </DESCRIPTION>
+!>@brief The subroutine 'atmosphere_restart' is an API to save restart information
+!! at a given timestamp.
+!>@detail This API is used to provide intermediate restart capability to the atmospheric
+!! driver.
   subroutine atmosphere_restart(timestamp)
     character(len=*),  intent(in) :: timestamp
 
     call fv_write_restart(Atm, grids_on_this_pe, timestamp)
 
   end subroutine atmosphere_restart
-  ! </SUBROUTINE>
+ 
 
-
+!>@brief The subroutine 'atmospehre_resolution' is an API to return the local 
+!! extents of the current MPI-rank or the global extents of the current 
+!! cubed-sphere tile.
  subroutine atmosphere_resolution (i_size, j_size, global)
    integer, intent(out)          :: i_size, j_size
    logical, intent(in), optional :: global
@@ -497,6 +614,7 @@ contains
  end subroutine atmosphere_resolution
 
 
+!>@brief The subroutine 'atmosphere_pref' is an API to return the reference pressure.
  subroutine atmosphere_pref (p_ref)
    real, dimension(:,:), intent(inout) :: p_ref
 
@@ -520,11 +638,10 @@ contains
  end subroutine atmosphere_control_data
 
 
+!>@brief The subroutine 'atmosphere_grid_ctr' is an API that returns the longitude and 
+!! latitude cell centers of the current MPI-rank.
  subroutine atmosphere_grid_ctr (lon, lat)
-!---------------------------------------------------------------
-!    returns the longitude and latitude cell centers
-!---------------------------------------------------------------
-    real(kind=kind_phys), intent(out) :: lon(:,:), lat(:,:)   ! Unit: radian
+    real(kind=kind_phys), intent(out) :: lon(:,:), lat(:,:)   !< Unit: radian
 ! Local data:
     integer i,j
 
@@ -538,12 +655,10 @@ contains
  end subroutine atmosphere_grid_ctr
 
 
+!>@brief The subroutine 'atmosphere_grid_bdry' is an API to returns the 
+!! longitude and latitude finite volume edges (grid box) for the current MPI-rank.
  subroutine atmosphere_grid_bdry (blon, blat, global)
-!---------------------------------------------------------------
-!    returns the longitude and latitude grid box edges
-!    for either the local PEs grid (default) or the global grid
-!---------------------------------------------------------------
-    real,    intent(out) :: blon(:,:), blat(:,:)   ! Unit: radian
+    real,    intent(out) :: blon(:,:), blat(:,:)   !< Unit: radian
     logical, intent(in), optional :: global
 ! Local data:
     integer i,j
@@ -568,6 +683,10 @@ contains
  end subroutine set_atmosphere_pelist
 
 
+!>@brief The subroutine 'atmosphere_domain' is an API to return
+!! the "domain2d" variable associated with the coupling grid and the 
+!! decomposition for the current cubed-sphere tile.
+!>@detail Coupling is done using the mass/temperature grid with no halos.
  subroutine atmosphere_domain ( fv_domain, layout )
    type(domain2d), intent(out) :: fv_domain
    integer, intent(out) :: layout(2)
@@ -580,6 +699,8 @@ contains
  end subroutine atmosphere_domain
 
 
+!>@brief The subroutine 'atmosphere_diag_axes' is an API to return the axis indices
+!! for the atmospheric (mass) grid.
  subroutine atmosphere_diag_axes ( axes )
    integer, intent(out) :: axes (:)
 
@@ -593,9 +714,13 @@ contains
  end subroutine atmosphere_diag_axes
 
 
+!>@brief The subroutine 'atmosphere_etalvls' is an API to return the ak/bk
+!! pairs used to compute the eta or pressure levels.
+!>@detail By default, the vertical dimension assumes the standard FV3 convention
+!! of TOA (k=1) to Surface (k=npz).
  subroutine atmosphere_etalvls (ak, bk, flip)
    real(kind=kind_phys), pointer, dimension(:), intent(inout) :: ak, bk
-   logical, intent(in) :: flip
+   logical, intent(in) :: flip !< control vertical index flipping
 
    allocate(ak(npz+1))
    allocate(bk(npz+1))
@@ -610,74 +735,71 @@ contains
  end subroutine atmosphere_etalvls
 
 
+!>@brief The subroutine 'atmosphere_hgt' is an API to return the height
+!! coordinate.
+!>@detail By default, the vertical dimension assumes the standard FV3 convention
+!! of TOA (k=1) to Surface (k=npz).  There are options to choose location [level (interface)
+!! or layer] and absolute vs. relative height (zero-based).
  subroutine atmosphere_hgt (hgt, position, relative, flip)
    real(kind=kind_phys), pointer, dimension(:,:,:), intent(inout) :: hgt
-   character(len=5), intent(in) :: position
-   logical, intent(in) :: relative
-   logical, intent(in) :: flip
+   character(len=5), intent(in) :: position !< level (interface) vs layer
+   logical, intent(in) :: relative          !< control absolute vs. relative height
+   logical, intent(in) :: flip              !< control vertical index flipping
    !--- local variables ---
-   integer:: lev, k, j, i
-   real(kind=kind_phys), allocatable, dimension(:,:,:) :: z, dz
+   integer:: lev, k, j, i, npx, npy
+   real(kind=kind_phys), dimension(isc:iec,jsc:jec,1:npz+1) :: z
+   real(kind=kind_phys), dimension(isc:iec,jsc:jec,1:npz) :: dz
 
    if ((position .ne. "layer") .and. (position .ne. "level")) then
      call mpp_error (FATAL, 'atmosphere_hgt:: incorrect position specification')
    endif
 
-   allocate(z(iec-isc+1,jec-jsc+1,npz+1))
-   allocate(dz(iec-isc+1,jec-jsc+1,npz))
+   npx = iec-isc+1
+   npy = jec-jsc+1
    z  = 0
-   dz = 0 
+   dz = 0
 
    if (Atm(mytile)%flagstruct%hydrostatic) then
      !--- generate dz using hydrostatic assumption
-     do j = jsc, jec
-       do i = isc, iec
-         dz(i-isc+1,j-jsc+1,1:npz) = (rdgas/grav)*Atm(mytile)%pt(i,j,1:npz)  &
-                         * (Atm(mytile)%peln(i,1:npz,j) - Atm(mytile)%peln(i,2:npz+1,j))
-       enddo
-     enddo
+     dz(isc:iec,jsc:jec,1:npz) = (rdgas/grav)*Atm(mytile)%pt(isc:iec,jsc:jec,1:npz)  &
+                                 * (Atm(mytile)%peln(isc:iec,1:npz,jsc:jec)          &
+                                 -  Atm(mytile)%peln(isc:iec,2:npz+1,jsc:jec))
    else
      !--- use non-hydrostatic delz directly
-     do j = jsc, jec
-       do i = isc, iec
-         dz(i-isc+1,j-jsc+1,1:npz) = Atm(mytile)%delz(i,j,1:npz)
-       enddo
-     enddo
+     dz(isc:iec,jsc:jec,1:npz) = Atm(mytile)%delz(isc:iec,jsc:jec,1:npz)
    endif
 
    !--- calculate geometric heights at the interfaces (levels)
    !--- if needed, flip the indexing during this step
    if (flip) then
-     if (.not. relative) then
-       z(:,:,1) = Atm(mytile)%phis(:,:)/grav
-     endif
+     if (.not. relative) z(isc:iec,jsc:jec,1) = Atm(mytile)%phis(isc:iec,jsc:jec)/grav
      do k = 2,npz+1
-       z(:,:,k) = z(:,:,k-1) - dz(:,:,npz+2-k)
+       z(isc:iec,jsc:jec,k) = z(isc:iec,jsc:jec,k-1) - dz(isc:iec,jsc:jec,npz+2-k)
      enddo
    else
-     if (.not. relative) then
-       z(:,:,npz+1) = Atm(mytile)%phis(:,:)/grav
-     endif
+     if (.not. relative) z(isc:iec,jsc:jec,npz+1) = Atm(mytile)%phis(isc:iec,jsc:jec)/grav
      do k = npz,1,-1
-       z(:,:,k) = z(:,:,k+1) - dz(:,:,k)
+       z(isc:iec,jsc:jec,k) = z(isc:iec,jsc:jec,k+1) - dz(isc:iec,jsc:jec,k)
      enddo
    endif
 
    !--- allocate and set either the level or layer height for return
    if (position == "level") then
-     allocate (hgt(iec-isc+1,jec-jsc+1,npz+1))
-     hgt = z
+     allocate (hgt(npx,npy,npz+1))
+     hgt(1:npx,1:npy,1:npz+1) = z(isc:iec,jsc:jec,1:npz+1)
    elseif (position == "layer") then
-     allocate (hgt(iec-isc+1,jec-jsc+1,npz))
-     hgt(:,:,1:npz) = 0.5d0 * (z(:,:,1:npz) + z(:,:,2:npz+1))
+     allocate (hgt(npx,npy,npz))
+     hgt(1:npx,1:npy,1:npz) = 0.5d0 * (z(isc:iec,jsc:jec,1:npz) + z(isc:iec,jsc:jec,2:npz+1))
    endif
-
-   deallocate (z)
-   deallocate (dz)
 
  end subroutine atmosphere_hgt
 
 
+!>@brief The subroutine 'atmosphere_scalar_field_halo' is an API to return halo information 
+!! of the current MPI_rank for an input scalar field.
+!>@detail Up to three point haloes can be returned by this API which includes special handling for
+!! the cubed-sphere tile corners. Output will be in (i,j,k) while input can be in (i,j,k) or 
+!! horizontally-packed form (ix,k).
  subroutine atmosphere_scalar_field_halo (data, halo, isize, jsize, ksize, data_p)
    !--------------------------------------------------------------------
    ! data   - output array to return the field with halo (i,j,k)
@@ -690,12 +812,14 @@ contains
    ! data_p - optional input field in packed format (ix,k)  
    !--------------------------------------------------------------------
    !--- interface variables ---
-   real(kind=kind_phys), dimension(1:isize,1:jsize,ksize), intent(inout) :: data
-   integer, intent(in) :: halo
-   integer, intent(in) :: isize
-   integer, intent(in) :: jsize
-   integer, intent(in) :: ksize
-   real(kind=kind_phys), dimension(:,:), optional, intent(in) :: data_p
+   real(kind=kind_phys), dimension(1:isize,1:jsize,ksize), intent(inout) :: data !< output array to return the field with halo (i,j,k)
+                                                                                 !< optionally input for field already in (i,j,k) form
+                                                                                 !< sized to include the halo of the field (+ 2*halo)
+   integer, intent(in) :: halo  !< size of the halo (must be less than 3)
+   integer, intent(in) :: isize !< horizontal resolution in i-dir with haloes
+   integer, intent(in) :: jsize !< horizontal resolution in j-dir with haloes
+   integer, intent(in) :: ksize !< vertical resolution
+   real(kind=kind_phys), dimension(:,:), optional, intent(in) :: data_p !< optional input field in packed format (ix,k)
    !--- local variables ---
    integer :: i, j, k
    integer :: ic, jc
@@ -778,16 +902,11 @@ contains
  end subroutine atmosphere_diss_est
 
 
+!>@brief The subroutine 'atmosphere_nggps_diag' is an API to trigger output of diagnostics in
+!! NCEP/EMC format.
+!>@details  If register is present and set to .true., will make the initialization call.
+!! Can output 3D prognostic fields via either NCEP 'write_component' or GFDL/FMS 'diag_manager'.
  subroutine atmosphere_nggps_diag (Time, init)
-   !----------------------------------------------
-   ! api for output of NCEP/EMC diagnostics
-   ! 
-   ! if register is present and set to .true.
-   ! will make the initialization call
-   !
-   ! outputs 3D state fields via either
-   ! NCEP write_component or GFDL/FMS diag_manager
-   !----------------------------------------------
    type(time_type),   intent(in) :: Time
    logical, optional, intent(in) :: init
 
@@ -919,6 +1038,84 @@ contains
  end subroutine get_bottom_wind
 
 
+!>@brief The subroutine 'atmosphere_get_bottom_layer' is an API to provide the
+!! bottom layer quantities needed for coupling with other external components.
+!>@detail The data will be provided in a DDT which is a packed, blocked structure.
+ subroutine atmosphere_get_bottom_layer (Atm_block, DYCORE_Data)
+!--------------------------------------------------------------
+! Returns in blocked format:
+!    temp, pres, winds, height, and tracers at the bottom layer
+!    surface pressure
+!    sea-level pressure
+!--------------------------------------------------------------
+   !--- interface variables ---
+   type(block_control_type), intent(in)    :: Atm_block
+   type(dycore_data_type),   intent(inout) :: DYCORE_Data(:)
+   !--- local variables ---
+   integer :: ix, i, j, nt, k, nb
+   real    :: rrg, sigtop, sigbot, tref
+   !--- local parameters ---
+   real, parameter :: tlaps = 6.5e-3
+   !--- local saved variables ---
+   integer, save :: kr
+   logical, save :: first_time = .true.
+
+   rrg  = rdgas / grav
+
+   if (first_time) then
+     print *, 'calculating slp kr value'
+     ! determine 0.8 sigma reference level
+     sigtop = Atm(mytile)%ak(1)/pstd_mks+Atm(mytile)%bk(1)
+     do k = 1, npz
+       sigbot = Atm(mytile)%ak(k+1)/pstd_mks+Atm(mytile)%bk(k+1)
+       if (sigbot+sigtop > 1.6) then
+         kr = k
+         exit
+       endif
+       sigtop = sigbot
+     enddo
+     !--- allocate the DYCORE_Data container
+     do nb = 1,Atm_block%nblks
+       call DYCORE_Data(nb)%Coupling%create (Atm_block%blksz(nb), nq)
+     enddo
+     first_time = .false.
+   endif
+
+!$OMP parallel do default (none) &
+!$OMP              shared (Atm_block, DYCORE_Data, Atm, mytile, npz, kr, rrg, zvir, nq) &
+!$OMP             private (nb, ix, i, j, tref, nt)
+   do nb = 1,Atm_block%nblks
+     do ix = 1,Atm_block%blksz(nb)
+       i = Atm_block%index(nb)%ii(ix)
+       j = Atm_block%index(nb)%jj(ix)
+       !--- surface pressure
+       DYCORE_Data(nb)%Coupling%p_srf(ix) = Atm(mytile)%ps(i,j)
+       !--- bottom layer temperature, pressure, & winds
+       DYCORE_Data(nb)%Coupling%t_bot(ix) = Atm(mytile)%pt(i,j,npz)
+       DYCORE_Data(nb)%Coupling%p_bot(ix) = Atm(mytile)%delp(i,j,npz)/(Atm(mytile)%peln(i,npz+1,j)-Atm(mytile)%peln(i,npz,j))
+       DYCORE_Data(nb)%Coupling%u_bot(ix) = Atm(mytile)%u_srf(i,j)
+       DYCORE_Data(nb)%Coupling%v_bot(ix) = Atm(mytile)%v_srf(i,j)
+       !--- bottom layer height based on hydrostatic assumptions
+       DYCORE_Data(nb)%Coupling%z_bot(ix) = rrg*DYCORE_Data(nb)%Coupling%t_bot(ix)*(1.+zvir*Atm(mytile)%q(i,j,npz,1)) *  &
+                                        (1. - Atm(mytile)%pe(i,npz,j)/DYCORE_Data(nb)%Coupling%p_bot(ix))
+       !--- sea level pressure
+       tref = Atm(mytile)%pt(i,j,kr) * (Atm(mytile)%delp(i,j,kr)/ &
+              ((Atm(mytile)%peln(i,kr+1,j)-Atm(mytile)%peln(i,kr,j))*Atm(mytile)%ps(i,j)))**(-rrg*tlaps)
+       DYCORE_Data(nb)%Coupling%slp(ix) = Atm(mytile)%ps(i,j)*(1.+tlaps*Atm(mytile)%phis(i,j)/(tref*grav))**(1./(rrg*tlaps))
+     enddo
+
+     !--- bottom layer tracers
+     do nt = 1,nq
+       do ix = 1,Atm_block%blksz(nb)
+         i = Atm_block%index(nb)%ii(ix)
+         j = Atm_block%index(nb)%jj(ix)
+         DYCORE_Data(nb)%Coupling%tr_bot(ix,nt) = Atm(mytile)%q(i,j,npz,nt)
+       enddo
+     enddo
+   enddo
+
+ end subroutine atmosphere_get_bottom_layer
+
 
  subroutine get_stock_pe(index, value)
    integer, intent(in) :: index
@@ -951,8 +1148,8 @@ contains
            do i=isc,iec
 ! Warning: the following works only with AM2 physics: water vapor; cloud water, cloud ice.
               wm(i,j) = wm(i,j) + Atm(mytile)%delp(i,j,k) * ( Atm(mytile)%q(i,j,k,1) +    &
-                                                         Atm(mytile)%q(i,j,k,2) +    &
-                                                         Atm(mytile)%q(i,j,k,3) )
+                                                              Atm(mytile)%q(i,j,k,2) +    &
+                                                              Atm(mytile)%q(i,j,k,3) )
            enddo
         enddo
      enddo
@@ -975,6 +1172,8 @@ contains
  end subroutine get_stock_pe
 
 
+!>@brief The subroutine 'atmospehre_state_update' is an API to apply tendencies
+!! and compute a consistent prognostic state.
  subroutine atmosphere_state_update (Time, IPD_Data, IAU_Data, Atm_block)
    type(time_type),              intent(in) :: Time
    type(IPD_data_type),          intent(in) :: IPD_Data(:)
@@ -1171,6 +1370,9 @@ contains
  end subroutine atmosphere_state_update
 
 
+!>@brief The subroutine 'adiabatic_init' is an optional step during initialization 
+!! to pre-condition a solution via backward-forward steps with capability for various
+!! nudgings.
  subroutine adiabatic_init(zvir,nudge_dz)
    real, allocatable, dimension(:,:,:):: u0, v0, t0, dz0, dp0
    real, intent(in):: zvir
@@ -1419,6 +1621,12 @@ contains
 
 
 
+!>@brief The subroutine 'atmos_phys_driver_statein' is an API to populate 
+!! the IPD_Data%Statein container with the prognostic state at the end of 
+!! the advection (dynamics) step of integration.
+!>@detail Performs a mass adjustment to be consistent with the
+!! GFS physics and if necessary, converts quantities to hydrostatic
+!! representation.
 #if defined(OVERLOAD_R4)
 #define _DBL_(X) DBLE(X)
 #define _RL_(X) REAL(X,KIND=4)

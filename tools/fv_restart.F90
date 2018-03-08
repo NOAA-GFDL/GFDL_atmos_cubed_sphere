@@ -1,32 +1,137 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 module fv_restart_mod
 
-  !<OVERVIEW>
-  ! Restart facilities for FV core
-  !</OVERVIEW>
-  !<DESCRIPTION>
-  ! This module writes and reads restart files for the FV core. Additionally
-  ! it provides setup and calls routines necessary to provide a complete restart
-  ! for the model.
-  !</DESCRIPTION>
+!>@brief The module 'fv_restart' contains routines for initializing the model.
+!>@details The module reads in restart files from the INPUT directory and writes
+!! out restart files at the end of the model run, or when intermediate restart
+!! files are specified.
+
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>boundary_mod</td>
+!     <td>fill_nested_grid, nested_grid_BC, update_coarse_grid</td>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>kappa, pi=>pi_8, omega, rdgas, grav, rvgas, cp_air, radius</td>
+!   </tr>
+!   <tr>
+!     <td>external_ic_mod</td>
+!     <td>get_external_ic, get_cubed_sphere_terrain</td>
+!   </tr>
+!   <tr>
+!     <td>field_manager_mod</td>
+!     <td>MODEL_ATMOS</td>
+!   </tr>
+!   <tr>
+!     <td>fms_mod</td>
+!     <td>file_exist</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_atmos_type, fv_nest_type, fv_grid_bounds_type, R_GRID</td>
+!   </tr>
+!   <tr>
+!     <td>fv_control_mod</td>
+!     <td>fv_init, fv_end, ngrids</td>
+!   </tr>
+!   <tr>
+!     <td>fv_diagnostics_mod</td>
+!     <td>prt_maxmin</td>
+!   </tr>
+!   <tr>
+!     <td>fv_eta_mod</td>
+!     <td>compute_dz_var, compute_dz_L32, set_hybrid_z</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_utils_mod</td>
+!     <td>ptop_min, fill_ghost, g_sum, 
+!         make_eta_level, cubed_to_latlon, great_circle_dist</td>
+!   </tr>
+!   <tr>
+!     <td>fv_io_mod</td>
+!     <td>fv_io_init, fv_io_read_restart, fv_io_write_restart, 
+!        remap_restart, fv_io_register_restart, fv_io_register_nudge_restart, 
+!        fv_io_register_restart_BCs, fv_io_register_restart_BCs_NH, fv_io_write_BCs, 
+!        fv_io_read_BCs</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>is_master, switch_current_Atm, mp_reduce_min, mp_reduce_max</td>
+!   </tr>
+!   <tr>
+!     <td>fv_surf_map_mod</td>
+!     <td>sgh_g, oro_g,del2_cubed_sphere, del4_cubed_sphere </td>
+!   </tr>
+!   <tr>
+!     <td>fv_treat_da_inc_mod</td>
+!     <td>read_da_inc</td>
+!   </tr>
+!   <tr>
+!     <td>fv_timing_mod</td>
+!     <td>timing_on, timing_off</td>
+!   </tr>
+!   <tr>
+!     <td>fv_update_phys_mod</td>
+!     <td>fv_update_phys</td>
+!   </tr>
+!   <tr>
+!     <td>init_hydro_mod</td>
+!     <td>p_var</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_chksum, stdout, mpp_error, FATAL, NOTE, get_unit, mpp_sum,
+!         mpp_get_current_pelist, mpp_set_current_pelist, mpp_send, mpp_recv, 
+!         mpp_sync_self, mpp_npes, mpp_pe, mpp_sync</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>mpp_get_compute_domain, mpp_get_data_domain, mpp_get_global_domain, 
+!         mpp_update_domains, domain2d, DGRID_NE, CENTER, CORNER, NORTH, EAST,
+!         mpp_get_C2F_index, WEST, SOUTH, mpp_global_field</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_parameter_mod</td>
+!     <td>EUPDATE, WUPDATE, SUPDATE, NUPDATE</td>
+!   </tr>
+!   <tr>
+!     <td>time_manager_mod</td>
+!     <td>time_type, get_time, set_time, operator(+), operator(-)</td>
+!   </tr>
+!   <tr>
+!     <td>tracer_manager_mod</td>
+!     <td>get_tracer_index, get_tracer_names</td>
+!   </tr>
+!   <tr>
+!     <td>test_cases_mod</td>
+!     <td>test_case, alpha, init_case, init_double_periodic, init_latlon</td>
+!   </tr>
+! </table>
+
 
   use constants_mod,       only: kappa, pi=>pi_8, omega, rdgas, grav, rvgas, cp_air, radius
   use fv_arrays_mod,       only: fv_atmos_type, fv_nest_type, fv_grid_bounds_type, R_GRID
@@ -37,24 +142,26 @@ module fv_restart_mod
                                  make_eta_level, cubed_to_latlon, great_circle_dist
   use fv_diagnostics_mod,  only: prt_maxmin
   use init_hydro_mod,      only: p_var
+  use mpp_domains_mod,     only: mpp_get_compute_domain, mpp_get_data_domain, mpp_get_global_domain
   use mpp_domains_mod,     only: mpp_update_domains, domain2d, DGRID_NE
-  use mpp_mod,             only: mpp_chksum, stdout, mpp_error, FATAL, NOTE, get_unit, mpp_sum
+  use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST,  mpp_get_C2F_index, WEST, SOUTH
+  use mpp_domains_mod,     only: mpp_global_field
+  use mpp_mod,             only: mpp_chksum, stdout, mpp_error, FATAL, NOTE
+  use mpp_mod,             only: get_unit, mpp_sum
+  use mpp_mod,             only: mpp_get_current_pelist, mpp_set_current_pelist
+  use mpp_mod,             only: mpp_send, mpp_recv, mpp_sync_self, mpp_npes, mpp_pe, mpp_sync
   use test_cases_mod,      only: test_case, alpha, init_case, init_double_periodic, init_latlon
   use fv_mp_mod,           only: is_master, switch_current_Atm, mp_reduce_min, mp_reduce_max
   use fv_surf_map_mod,     only: sgh_g, oro_g
+  use fv_surf_map_mod,     only: del2_cubed_sphere, del4_cubed_sphere
   use tracer_manager_mod,  only: get_tracer_names
+  use tracer_manager_mod,  only: get_tracer_index
   use field_manager_mod,   only: MODEL_ATMOS
   use external_ic_mod,     only: get_external_ic, get_cubed_sphere_terrain
   use fv_eta_mod,          only: compute_dz_var, compute_dz_L32, set_hybrid_z
-  use fv_surf_map_mod,     only: del2_cubed_sphere, del4_cubed_sphere
-  use boundary_mod,        only: fill_nested_grid, nested_grid_BC, update_coarse_grid
-  use tracer_manager_mod,  only: get_tracer_index
+  use boundary_mod,        only: fill_nested_grid, nested_grid_BC, update_coarse_grid 
   use field_manager_mod,   only: MODEL_ATMOS
   use fv_timing_mod,       only: timing_on, timing_off
-  use mpp_domains_mod,     only: mpp_get_compute_domain, mpp_get_data_domain, mpp_get_global_domain
-  use mpp_mod,             only: mpp_send, mpp_recv, mpp_sync_self, mpp_set_current_pelist, mpp_get_current_pelist, mpp_npes, mpp_pe, mpp_sync
-  use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST,  mpp_get_C2F_index, WEST, SOUTH
-  use mpp_domains_mod,     only: mpp_global_field
   use fms_mod,             only: file_exist
   use fv_treat_da_inc_mod, only: read_da_inc
 
@@ -70,27 +177,17 @@ module fv_restart_mod
 
 contains 
 
-  !#####################################################################
-  ! <SUBROUTINE NAME="fv_restart_init">
-  !
-  ! <DESCRIPTION>
-  ! Initialize the fv core restart facilities
-  ! </DESCRIPTION>
-  !
+
   subroutine fv_restart_init()
     call fv_io_init()
     module_is_initialized = .TRUE.
   end subroutine fv_restart_init
-  ! </SUBROUTINE> NAME="fv_restart_init"
 
-
-    !#####################################################################
-  ! <SUBROUTINE NAME="fv_restart">
-  !
-  ! <DESCRIPTION>
-  ! The fv core restart facility
-  ! </DESCRIPTION>
-  !
+!>@brief The subroutine 'fv_restart' initializes the model state, including 
+!! prognaostic variables and several auxiliary pressure variables
+!>@details The modules also writes out restart files at the end of the 
+!! model run, and prints out diagnostics of the initial state.
+!! There are several options to control the initialization process.
   subroutine fv_restart(fv_domain, Atm, dt_atmos, seconds, days, cold_start, grid_type, grids_on_this_pe)
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
@@ -187,12 +284,11 @@ contains
                   (.not. Atm(n)%flagstruct%nggps_ic .and. .not. Atm(n)%flagstruct%ecmwf_ic) ) then
                 call nested_grid_BC(Atm(n)%delz, Atm(n)%parent_grid%delz, Atm(n)%neststruct%nest_domain, &
                      Atm(n)%neststruct%ind_h, Atm(n)%neststruct%wt_h, 0, 0, &
-                     Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%bd, isg, ieg, jsg, jeg, proc_in=.false.)
+                     Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%bd, isg, ieg, jsg, jeg, proc_in=.false.)
                 call nested_grid_BC(Atm(n)%w, Atm(n)%parent_grid%w, Atm(n)%neststruct%nest_domain, &
                      Atm(n)%neststruct%ind_h, Atm(n)%neststruct%wt_h, 0, 0, &
-                     Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%bd, isg, ieg, jsg, jeg, proc_in=.false.)
+                     Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%bd, isg, ieg, jsg, jeg, proc_in=.false.)
              endif
-
 
           endif
 
@@ -202,21 +298,18 @@ contains
        !This call still appears to be necessary to get isd, etc. correct
        call switch_current_Atm(Atm(n))
 
-    npz     = Atm(1)%npz
-    npz_rst = Atm(1)%flagstruct%npz_rst
-
     !--- call fv_io_register_restart to register restart field to be written out in fv_io_write_restart
     call fv_io_register_restart(Atm(n)%domain,Atm(n:n))
     if (Atm(n)%neststruct%nested) call fv_io_register_restart_BCs(Atm(n))
     if( .not.cold_start_grids(n) .and. (.not. Atm(n)%flagstruct%external_ic) ) then
 
 
-        if ( npz_rst /= 0 .and. npz_rst /= npz ) then
+        if ( Atm(n)%flagstruct%npz_rst /= 0 .and. Atm(n)%flagstruct%npz_rst /= Atm(n)%npz ) then
 !            Remap vertically the prognostic variables for the chosen vertical resolution
              if( is_master() ) then
                  write(*,*) ' '
                  write(*,*) '***** Important Note from FV core ********************'
-                 write(*,*) 'Remapping dynamic IC from', npz_rst, 'levels to ', npz,'levels'
+                 write(*,*) 'Remapping dynamic IC from', Atm(n)%flagstruct%npz_rst, 'levels to ', Atm(n)%npz,'levels'
                  write(*,*) '***** End Note from FV core **************************'
                  write(*,*) ' '
              endif
@@ -279,7 +372,7 @@ contains
        if(.not.cold_start_grids(n))then
           Atm(N)%neststruct%first_step = .false.
           if (Atm(n)%neststruct%nested) then
-             if ( npz_rst /= 0 .and. npz_rst /= npz ) then
+             if ( Atm(n)%flagstruct%npz_rst /= 0 .and. Atm(n)%flagstruct%npz_rst /= Atm(n)%npz ) then
                 call setup_nested_boundary_halo(Atm(n)) 
              else
                 !If BC file is found, then read them in. Otherwise we need to initialize the BCs.
@@ -335,7 +428,7 @@ contains
         else
            Atm(n)%ptop = Atm(n)%ak(1) ;  Atm(n)%ks = 0
         endif
-        call p_var(npz,         isc,         iec,       jsc,     jec,   Atm(n)%ptop,     ptop_min,  &
+        call p_var(Atm(n)%npz,         isc,         iec,       jsc,     jec,   Atm(n)%ptop,     ptop_min,  &
                    Atm(n)%delp, Atm(n)%delz, Atm(n)%pt, Atm(n)%ps, Atm(n)%pe, Atm(n)%peln,   &
                    Atm(n)%pk,   Atm(n)%pkz, kappa, Atm(n)%q, Atm(n)%ng, &
                    ncnst,  Atm(n)%gridstruct%area_64, Atm(n)%flagstruct%dry_mass,  &
@@ -388,7 +481,7 @@ contains
                            Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, &
                            Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        & 
                            Atm(n)%ak, Atm(n)%bk, Atm(n)%gridstruct, Atm(n)%flagstruct,&
-                           Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, &
+                           Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%ng, &
                            ncnst, Atm(n)%flagstruct%nwat,  &
                            Atm(n)%flagstruct%ndims, Atm(n)%flagstruct%ntiles, &
                            Atm(n)%flagstruct%dry_mass, &
@@ -405,7 +498,7 @@ contains
                                       Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        & 
                                       Atm(n)%ak, Atm(n)%bk, &
                                       Atm(n)%gridstruct, Atm(n)%flagstruct, &
-                                      Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, &
+                                      Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%ng, &
                                       ncnst, Atm(n)%flagstruct%nwat,  &
                                       Atm(n)%flagstruct%ndims, Atm(n)%flagstruct%ntiles, &
                                       Atm(n)%flagstruct%dry_mass, Atm(n)%flagstruct%mountain, &
@@ -419,7 +512,7 @@ contains
                              Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, &
                              Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        &
                              Atm(n)%ak, Atm(n)%bk, Atm(n)%gridstruct, &
-                             Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, ncnst, &
+                             Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%ng, ncnst, &
                              Atm(n)%flagstruct%ndims, Atm(n)%flagstruct%ntiles, &
                              Atm(n)%flagstruct%dry_mass, &
                              Atm(n)%flagstruct%mountain,       &
@@ -485,25 +578,24 @@ contains
        ntdiag = size(Atm(n)%qdiag,4)
        isc = Atm(n)%bd%isc; iec = Atm(n)%bd%iec; jsc = Atm(n)%bd%jsc; jec = Atm(n)%bd%jec
 
-
 !---------------------------------------------------------------------------------------------
 ! Transform the (starting) Eulerian vertical coordinate from sigma-p to hybrid_z
      if ( Atm(n)%flagstruct%hybrid_z ) then
        if ( Atm(n)%flagstruct%make_hybrid_z ) then
-          allocate ( dz1(npz) )
-          if( npz==32 ) then
-              call compute_dz_L32(npz, ztop, dz1)
+          allocate ( dz1(Atm(n)%npz) )
+          if( Atm(n)%npz==32 ) then
+              call compute_dz_L32(Atm(n)%npz, ztop, dz1)
           else
               ztop = 45.E3
-              call compute_dz_var(npz, ztop, dz1)
+              call compute_dz_var(Atm(n)%npz, ztop, dz1)
           endif
-          call set_hybrid_z(isc, iec, jsc, jec, Atm(n)%ng, npz, ztop, dz1, rgrav,  &
+          call set_hybrid_z(isc, iec, jsc, jec, Atm(n)%ng, Atm(n)%npz, ztop, dz1, rgrav,  &
                             Atm(n)%phis, Atm(n)%ze0)
           deallocate ( dz1 )
-!         call prt_maxmin('ZE0', Atm(n)%ze0,  isc, iec, jsc, jec, 0, npz, 1.E-3)
-!         call prt_maxmin('DZ0', Atm(n)%delz, isc, iec, jsc, jec, 0, npz, 1.   )
+!         call prt_maxmin('ZE0', Atm(n)%ze0,  isc, iec, jsc, jec, 0, Atm(n)%npz, 1.E-3)
+!         call prt_maxmin('DZ0', Atm(n)%delz, isc, iec, jsc, jec, 0, Atm(n)%npz, 1.   )
        endif
-!      call make_eta_level(npz, Atm(n)%pe, area, Atm(n)%ks, Atm(n)%ak, Atm(n)%bk, Atm(n)%ptop)
+!      call make_eta_level(Atm(n)%npz, Atm(n)%pe, area, Atm(n)%ks, Atm(n)%ak, Atm(n)%bk, Atm(n)%ptop)
      endif
 !---------------------------------------------------------------------------------------------
 
@@ -513,7 +605,7 @@ contains
         call random_seed
         npts = 0
         sumpertn = 0.
-        do k=1,npz
+        do k=1,Atm(n)%npz
         do j=jsc,jec
         do i=isc,iec
            call random_number(pertn)
@@ -562,24 +654,24 @@ contains
 !---------------
       call pmaxmn_g('ZS', Atm(n)%phis, isc, iec, jsc, jec, 1, rgrav, Atm(n)%gridstruct%area_64, Atm(n)%domain)
       call pmaxmn_g('PS', Atm(n)%ps,   isc, iec, jsc, jec, 1, 0.01,  Atm(n)%gridstruct%area_64, Atm(n)%domain)
-      call pmaxmn_g('T ', Atm(n)%pt,   isc, iec, jsc, jec, npz, 1.,  Atm(n)%gridstruct%area_64, Atm(n)%domain)
+      call pmaxmn_g('T ', Atm(n)%pt,   isc, iec, jsc, jec, Atm(n)%npz, 1.,  Atm(n)%gridstruct%area_64, Atm(n)%domain)
 
 ! Check tracers:
       do i=1, ntprog
           call get_tracer_names ( MODEL_ATMOS, i, tname )
-          call pmaxmn_g(trim(tname), Atm(n)%q(isd:ied,jsd:jed,1:npz,i:i), isc, iec, jsc, jec, npz, &
+          call pmaxmn_g(trim(tname), Atm(n)%q(isd:ied,jsd:jed,1:Atm(n)%npz,i:i), isc, iec, jsc, jec, Atm(n)%npz, &
                         1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
       enddo
 #endif
-      call prt_maxmin('U ', Atm(n)%u(isc:iec,jsc:jec,1:npz), isc, iec, jsc, jec, 0, npz, 1.)
-      call prt_maxmin('V ', Atm(n)%v(isc:iec,jsc:jec,1:npz), isc, iec, jsc, jec, 0, npz, 1.)
+      call prt_maxmin('U ', Atm(n)%u(isc:iec,jsc:jec,1:Atm(n)%npz), isc, iec, jsc, jec, 0, Atm(n)%npz, 1.)
+      call prt_maxmin('V ', Atm(n)%v(isc:iec,jsc:jec,1:Atm(n)%npz), isc, iec, jsc, jec, 0, Atm(n)%npz, 1.)
 
       if ( (.not.Atm(n)%flagstruct%hydrostatic) .and. Atm(n)%flagstruct%make_nh ) then
          call mpp_error(NOTE, "  Initializing w to 0")
          Atm(n)%w = 0.
          if ( .not.Atm(n)%flagstruct%hybrid_z ) then
             call mpp_error(NOTE, "  Initializing delz from hydrostatic state")
-             do k=1,npz
+             do k=1,Atm(n)%npz
                 do j=jsc,jec
                    do i=isc,iec
                       Atm(n)%delz(i,j,k) = (rdgas*rgrav)*Atm(n)%pt(i,j,k)*(Atm(n)%peln(i,k,j)-Atm(n)%peln(i,k+1,j))
@@ -590,7 +682,7 @@ contains
       endif
 
       if ( .not.Atm(n)%flagstruct%hydrostatic )   &
-      call pmaxmn_g('W ', Atm(n)%w, isc, iec, jsc, jec, npz, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
+      call pmaxmn_g('W ', Atm(n)%w, isc, iec, jsc, jec, Atm(n)%npz, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
 
       if (is_master()) write(unit,*)
 
@@ -600,13 +692,13 @@ contains
     if ( .not. Atm(n)%flagstruct%srf_init ) then
          call cubed_to_latlon(Atm(n)%u, Atm(n)%v, Atm(n)%ua, Atm(n)%va, &
               Atm(n)%gridstruct, &
-              Atm(n)%npx, Atm(n)%npy, npz, 1, &              
+              Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, 1, &              
               Atm(n)%gridstruct%grid_type, Atm(n)%domain, &
               Atm(n)%gridstruct%nested, Atm(n)%flagstruct%c2l_ord, Atm(n)%bd)
          do j=jsc,jec
             do i=isc,iec
-               Atm(n)%u_srf(i,j) = Atm(n)%ua(i,j,npz)
-               Atm(n)%v_srf(i,j) = Atm(n)%va(i,j,npz)
+               Atm(n)%u_srf(i,j) = Atm(n)%ua(i,j,Atm(n)%npz)
+               Atm(n)%v_srf(i,j) = Atm(n)%va(i,j,Atm(n)%npz)
             enddo
          enddo
          Atm(n)%flagstruct%srf_init = .true.
@@ -615,7 +707,6 @@ contains
     end do   ! n_tile
 
   end subroutine fv_restart
-  ! </SUBROUTINE> NAME="fv_restart"
 
   subroutine setup_nested_boundary_halo(Atm, proc_in)
 
@@ -647,10 +738,10 @@ contains
     jsd   = Atm%bd%jsd
     jed   = Atm%bd%jed
     ncnst = Atm%ncnst
-    isc   = Atm%bd%isc; iec = Atm%bd%iec; jsc = Atm%bd%jsc; jec = Atm%bd%jec
-    is    = Atm%bd%is ; ie  = Atm%bd%ie ; js  = Atm%bd%js ; je  = Atm%bd%je
-    npz   = Atm%npz    
-    nwat  = Atm%flagstruct%nwat
+    isc = Atm%bd%isc; iec = Atm%bd%iec; jsc = Atm%bd%jsc; jec = Atm%bd%jec
+    is  = Atm%bd%is ; ie  = Atm%bd%ie ; js  = Atm%bd%js ; je  = Atm%bd%je
+    npz = Atm%npz    
+    nwat = Atm%flagstruct%nwat
 
    if (nwat >= 3) then
       liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
@@ -783,10 +874,10 @@ contains
     
   end subroutine fill_nested_grid_topo_halo
 
-!!! We call this routine to fill the nested grid with topo so that we can do the boundary smoothing.
-!!! Interior topography is then over-written in get_external_ic.
+!>@brief The subroutine 'fill_nested_grid_topo' fills the nested grid with topo 
+!! to enable boundary smoothing.
+!>@details Interior topography is then over-written in get_external_ic.
   subroutine fill_nested_grid_topo(Atm, proc_in) 
-
     type(fv_atmos_type), intent(INOUT) :: Atm
     logical, intent(IN), OPTIONAL :: proc_in
     real, allocatable :: g_dat(:,:,:)
@@ -1205,8 +1296,9 @@ contains
 
   end subroutine fill_nested_grid_data
 
+  !>@brief The subroutine ' fill_nested_grid_data_end' 
+  !! actually sets up the coarse-grid TOPOGRAPHY.
   subroutine fill_nested_grid_data_end(Atm, proc_in)
-
     type(fv_atmos_type), intent(INOUT) :: Atm  
     logical, intent(IN), OPTIONAL :: proc_in
     real, allocatable :: g_dat(:,:,:), pt_coarse(:,:,:)
@@ -1300,12 +1392,9 @@ contains
 
   end subroutine fill_nested_grid_data_end
 
-
-  !#######################################################################
-  ! <SUBROUTINE NAME="fv_write_restart">
-  ! <DESCRIPTION>
-  !  Write out restart files registered through register_restart_file
-  ! </DESCRIPTION>
+  !>@brief The subroutine 'fv_write_restart' writes restart files to disk.
+  !>@details This subroutine may be called during an integration to write out
+  !! intermediate restart files.
   subroutine fv_write_restart(Atm, grids_on_this_pe, timestamp)
     type(fv_atmos_type), intent(inout) :: Atm(:)
     character(len=*),    intent(in)    :: timestamp
@@ -1320,17 +1409,10 @@ contains
     enddo
 
   end subroutine fv_write_restart
-  ! </SUBROUTINE>
 
-
-
-  !#####################################################################
-  ! <SUBROUTINE NAME="fv_restart_end">
-  !
-  ! <DESCRIPTION>
-  ! Initialize the fv core restart facilities
-  ! </DESCRIPTION>
-  !
+  !>@brief The subroutine 'fv_restart_end' writes ending restart files,
+  !! terminates I/O, and prints out diagnostics including global totals
+  !! and checksums.
   subroutine fv_restart_end(Atm, grids_on_this_pe)
     type(fv_atmos_type), intent(inout) :: Atm(:)
     logical, intent(INOUT) :: grids_on_this_pe(:)
@@ -1437,7 +1519,6 @@ contains
 #endif
 
   end subroutine fv_restart_end
-  ! </SUBROUTINE> NAME="fv_restart_end"
 
  subroutine d2c_setup(u, v, &
       ua, va, &
@@ -1852,6 +1933,7 @@ contains
 
 end subroutine d2a_setup
 
+!>@brief The subroutine 'pmaxn_g' writes domain max, min, and averages quantities.
 subroutine pmaxmn_g(qname, q, is, ie, js, je, km, fac, area, domain)
       character(len=*), intent(in)::  qname
       integer, intent(in):: is, ie, js, je

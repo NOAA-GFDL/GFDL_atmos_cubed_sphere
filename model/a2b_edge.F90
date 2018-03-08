@@ -1,23 +1,43 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
+!>@brief The module 'a2b_edge' performs FV-consistent interpolation of pressure to corners.
+
 module a2b_edge_mod
+!
+! Modules Included:
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_grid_type, R_GRID</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_utils_mod</td>
+!     <td>great_circle_dist, van2 </td>
+!   </tr>
+! </table>
 
   use fv_grid_utils_mod, only: great_circle_dist
 #ifdef VAN2
@@ -32,12 +52,12 @@ module a2b_edge_mod
 !----------------------------
 ! 4-pt Lagrange interpolation
 !----------------------------
-  real, parameter:: a1 =  0.5625  !  9/16
-  real, parameter:: a2 = -0.0625  ! -1/16
+  real, parameter:: a1 =  0.5625  !<  9/16
+  real, parameter:: a2 = -0.0625  !< -1/16
 !----------------------
 ! PPM volume mean form:
 !----------------------
-  real, parameter:: b1 =  7./12.     ! 0.58333333
+  real, parameter:: b1 =  7./12.     !< 0.58333333
   real, parameter:: b2 = -1./12.
 
   private
@@ -48,8 +68,8 @@ contains
 #ifndef USE_OLD_ALGORITHM
   subroutine a2b_ord4(qin, qout, gridstruct, npx, npy, is, ie, js, je, ng, replace)
   integer, intent(IN):: npx, npy, is, ie, js, je, ng
-  real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   ! A-grid field
-  real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   ! Output  B-grid field
+  real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   !< A-grid field
+  real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   !< Output B-grid field
   type(fv_grid_type), intent(IN), target :: gridstruct
   logical, optional, intent(IN):: replace
 ! local: compact 4-pt cubic
@@ -333,8 +353,8 @@ contains
 ! Working version:
   subroutine a2b_ord4(qin, qout, gridstruct, npx, npy, is, ie, js, je, ng, replace)
   integer, intent(IN):: npx, npy, is, ie, js, je, ng
-  real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   ! A-grid field
-  real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   ! Output  B-grid field
+  real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   !< A-grid field
+  real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   !< Output B-grid field
   type(fv_grid_type), intent(IN), target :: gridstruct
   logical, optional, intent(IN):: replace
 ! local: compact 4-pt cubic
@@ -346,8 +366,8 @@ contains
 !-----------------------------
 ! 6-pt corner interpolation:
 !-----------------------------
-  real, parameter:: d1 =  0.375                   !   0.5
-  real, parameter:: d2 = -1./24.                  !  -1./6.
+  real, parameter:: d1 =  0.375                   !<   0.5
+  real, parameter:: d2 = -1./24.                  !<  -1./6.
 
   real qx(is:ie+1,js-ng:je+ng)
   real qy(is-ng:ie+ng,js:je+1)
@@ -676,8 +696,8 @@ contains
 
   subroutine a2b_ord2(qin, qout, gridstruct, npx, npy, is, ie, js, je, ng, replace)
     integer, intent(IN   ) :: npx, npy, is, ie, js, je, ng
-    real   , intent(INOUT) ::  qin(is-ng:ie+ng,js-ng:je+ng)   ! A-grid field
-    real   , intent(  OUT) :: qout(is-ng:ie+ng,js-ng:je+ng)   ! Output  B-grid field
+    real   , intent(INOUT) ::  qin(is-ng:ie+ng,js-ng:je+ng)   !< A-grid field
+    real   , intent(  OUT) :: qout(is-ng:ie+ng,js-ng:je+ng)   !< Output B-grid field
     type(fv_grid_type), intent(IN), target :: gridstruct
     logical, optional, intent(IN) ::  replace
     ! local:
@@ -813,8 +833,8 @@ contains
   subroutine a2b_ord4(qin, qout, grid, agrid, npx, npy, is, ie, js, je, ng, replace)
 ! use  tp_core_mod,      only: copy_corners
   integer, intent(IN):: npx, npy, is, ie, js, je, ng
-  real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   ! A-grid field
-  real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   ! Output  B-grid field
+  real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   !< A-grid field
+  real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   !< Output B-grid field
   real,    intent(in) ::  grid(is-ng:ie+ng+1,js-ng:je+ng+1,2)
   real,    intent(in) :: agrid(is-ng:ie+ng,js-ng:je+ng,2)
   logical, optional, intent(IN):: replace

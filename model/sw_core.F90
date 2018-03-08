@@ -1,23 +1,48 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
+!>@brief The module 'sw_core' advances the forward step of the Lagrangian dynamics
+!! as described by \cite lin1997explicit, \cite lin2004vertically, and \cite harris2013two.
+!>@details The step is applied to the cubed sphere.
+
  module sw_core_mod
+
+! Modules Included:
+! <table>
+! <tr>
+!    <th>Module Name</th>
+!     <th>Functions Included</th>
+!  </tr>
+!   <tr>
+!     <td>a2b_edge_mod</td>
+!     <td>a2b_ord4</td>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>ffv_grid_type, fv_grid_bounds_type, fv_flags_type</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>ng,fill_corners, XDir, YDir</td>
+!   </tr>
+! </table>
 
  use fv_mp_mod,         only: ng
  use tp_core_mod,       only: fv_tp_2d, pert_ppm, copy_corners
@@ -34,7 +59,7 @@
   real, parameter:: r3 = 1./3.
   real, parameter:: t11=27./28., t12=-13./28., t13=3./7., t14=6./7., t15=3./28.
   real, parameter:: s11=11./14., s13=-13./14., s14=4./7., s15=3./14.
-  real, parameter:: near_zero = 1.E-9     ! for KE limiter
+  real, parameter:: near_zero = 1.E-9     !< for KE limiter
 #ifdef OVERLOAD_R4
   real, parameter:: big_number = 1.E8
 #else
@@ -43,7 +68,7 @@
 !----------------------
 ! PPM volume mean form:
 !----------------------
-  real, parameter:: p1 =  7./12.     ! 0.58333333
+  real, parameter:: p1 =  7./12.     !< 0.58333333
   real, parameter:: p2 = -1./12.
 !----------------------------
 ! 4-pt Lagrange interpolation
@@ -73,7 +98,7 @@
 
   contains
 
-
+!>@brief The subroutine 'c_sw' performs a half-timestep advance of the C-grid winds.
    subroutine c_sw(delpc, delp, ptc, pt, u,v, w, uc,vc, ua,va, wc,  &
                    ut, vt, divg_d, nord, dt2, hydrostatic, dord4, &
                    bd, gridstruct, flagstruct)
@@ -487,8 +512,10 @@
 
 
 
-!     d_sw :: D-Grid Shallow Water Routine
- 
+! d_sw :: D-Grid Shallow Water Routine
+
+!>@brief The subroutine 'd_sw' peforms a full-timestep advance of the D-grid winds
+!! and other prognostic varaiables. 
    subroutine d_sw(delpc, delp,  ptc,   pt, u,  v, w, uc,vc, &
                    ua, va, divg_d, xflux, yflux, cx, cy,              &
                    crx_adv, cry_adv,  xfx_adv, yfx_adv, q_con, z_rat, kgb, heat_source,diss_est,  &
@@ -498,16 +525,16 @@
                    damp_t, d_con, hydrostatic, gridstruct, flagstruct, bd)
 
       integer, intent(IN):: hord_tr, hord_mt, hord_vt, hord_tm, hord_dp
-      integer, intent(IN):: nord   ! nord=1 divergence damping; (del-4) or 3 (del-8)
-      integer, intent(IN):: nord_v ! vorticity damping
-      integer, intent(IN):: nord_w ! vertical velocity
-      integer, intent(IN):: nord_t ! pt
+      integer, intent(IN):: nord   !< nord=1 divergence damping; (del-4) or 3 (del-8)
+      integer, intent(IN):: nord_v !< vorticity damping
+      integer, intent(IN):: nord_w !< vertical velocity
+      integer, intent(IN):: nord_t !< pt
       integer, intent(IN):: sphum, nq, k, km
       real   , intent(IN):: dt, dddmp, d2_bg, d4_bg, d_con
       real   , intent(IN):: zvir
       real,    intent(in):: damp_v, damp_w, damp_t, kgb
       type(fv_grid_bounds_type), intent(IN) :: bd
-      real, intent(inout):: divg_d(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) ! divergence
+      real, intent(inout):: divg_d(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) !< divergence
       real, intent(IN), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: z_rat
       real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: delp, pt, ua, va
       real, intent(INOUT), dimension(bd%isd:      ,  bd%jsd:      ):: w, q_con
@@ -536,18 +563,18 @@
 !---
       real :: fx2(bd%isd:bd%ied+1,bd%jsd:bd%jed)
       real :: fy2(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
-      real :: dw(bd%is:bd%ie,bd%js:bd%je) !  work array
+      real :: dw(bd%is:bd%ie,bd%js:bd%je) !<  work array
 !---
       real, dimension(bd%is:bd%ie+1,bd%js:bd%je+1):: ub, vb
-      real :: wk(bd%isd:bd%ied,bd%jsd:bd%jed) !  work array
-      real :: ke(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) !  needs this for corner_comm
-      real :: vort(bd%isd:bd%ied,bd%jsd:bd%jed)     ! Vorticity
-      real ::   fx(bd%is:bd%ie+1,bd%js:bd%je  )  ! 1-D X-direction Fluxes
-      real ::   fy(bd%is:bd%ie  ,bd%js:bd%je+1)  ! 1-D Y-direction Fluxes
+      real :: wk(bd%isd:bd%ied,bd%jsd:bd%jed) !<  work array
+      real :: ke(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) !<  needed for corner_comm
+      real :: vort(bd%isd:bd%ied,bd%jsd:bd%jed)     !< Vorticity
+      real ::   fx(bd%is:bd%ie+1,bd%js:bd%je  )  !< 1-D X-direction Fluxes
+      real ::   fy(bd%is:bd%ie  ,bd%js:bd%je+1)  !< 1-D Y-direction Fluxes
       real :: ra_x(bd%is:bd%ie,bd%jsd:bd%jed)
       real :: ra_y(bd%isd:bd%ied,bd%js:bd%je)
       real :: gx(bd%is:bd%ie+1,bd%js:bd%je  ) 
-      real :: gy(bd%is:bd%ie  ,bd%js:bd%je+1)  ! work Y-dir flux array
+      real :: gy(bd%is:bd%ie  ,bd%js:bd%je+1)  !< work Y-dir flux array
       logical :: fill_c
 
       real :: dt2, dt4, dt5, dt6
@@ -1511,7 +1538,7 @@
            dv2 = vb(i,j) + vb(i+1,j)
 ! Total energy conserving:
 ! Convert lost KE due to divergence damping to "heat"
-           heat_source(i,j) = delp(i,j)*(heat_source(i,j) - damp*rsin2(i,j)*( &
+         heat_source(i,j) = delp(i,j)*(heat_source(i,j) - damp*rsin2(i,j)*( &
                   (ub(i,j)**2 + ub(i,j+1)**2 + vb(i,j)**2 + vb(i+1,j)**2)  &
                               + 2.*(gy(i,j)+gy(i,j+1)+gx(i,j)+gx(i+1,j))   &
                               - cosa_s(i,j)*(u2*dv2 + v2*du2 + du2*dv2)) )
@@ -1545,6 +1572,8 @@
 
  end subroutine d_sw
 
+!>@brief The subroutine 'del6_vt_flux' applies 2nd, 4th, or 6th-order damping
+!! to fluxes ("vorticity damping")
  subroutine del6_vt_flux(nord, npx, npy, damp, q, d2, fx2, fy2, gridstruct, bd)
 ! Del-nord damping for the relative vorticity
 ! nord must be <= 2
@@ -1658,7 +1687,8 @@
 
  end subroutine del6_vt_flux
 
-
+!>@brief The subroutine 'divergence_corner' computes the cell-mean divergence on the
+!! "dual grid", the native-grid positioning of the divergence. 
  subroutine divergence_corner(u, v, ua, va, divg_d, gridstruct, flagstruct, bd)
  type(fv_grid_bounds_type), intent(IN) :: bd
  real, intent(in),  dimension(bd%isd:bd%ied,  bd%jsd:bd%jed+1):: u
@@ -1876,11 +1906,10 @@
 
 end subroutine divergence_corner_nest
 
-
-
+!>@brief The subroutine 'smag_corner' computes Smagorinsky damping.
  subroutine smag_corner(dt, u, v, ua, va, smag_c, bd, npx, npy, gridstruct, ng)
-! Compute the Tension_Shear strain at cell corners for Smagorinsky diffusion
-!!!  work only if (grid_type==4)
+ !> Compute the Tension_Shear strain at cell corners for Smagorinsky diffusion
+ !!  work only if (grid_type==4)
  type(fv_grid_bounds_type), intent(IN) :: bd
  real, intent(in):: dt
  integer, intent(IN) :: npx, npy, ng
@@ -1892,7 +1921,7 @@ end subroutine divergence_corner_nest
 ! local
  real:: ut(bd%isd:bd%ied+1,bd%jsd:bd%jed)
  real:: vt(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
- real:: wk(bd%isd:bd%ied,bd%jsd:bd%jed) !  work array
+ real:: wk(bd%isd:bd%ied,bd%jsd:bd%jed) !<  work array
  real:: sh(bd%isd:bd%ied,bd%jsd:bd%jed)
  integer i,j
  integer is2, ie1
@@ -2330,7 +2359,7 @@ end subroutine divergence_corner_nest
  integer, intent(IN):: jord
  real, INTENT(IN)  ::   u(isd:ied,jsd:jed+1)
  real, INTENT(IN)  ::   v(isd:ied+1,jsd:jed)
- real, INTENT(IN) ::    c(is:ie+1,js:je+1)   !  Courant   N (like FLUX)
+ real, INTENT(IN) ::    c(is:ie+1,js:je+1)   !<  Courant   N (like FLUX)
  real, INTENT(OUT):: flux(is:ie+1,js:je+1)
  real, INTENT(IN) ::   dy(isd:ied+1,jsd:jed)
  real, INTENT(IN) ::  rdy(isd:ied+1,jsd:jed)
@@ -3143,11 +3172,10 @@ end subroutine ytp_v
 
  end function edge_interpolate4
 
-
+!>@brief The subroutine 'fill3_4corners' fills the 4 corners of the scalar fileds only as needed by 'c_core'.
  subroutine fill3_4corners(q1, q2, q3, dir, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
   type(fv_grid_bounds_type), intent(IN) :: bd
-! This routine fill the 4 corners of the scalar fileds only as needed by c_core
-  integer, intent(in):: dir                ! 1: x-dir; 2: y-dir
+  integer, intent(in):: dir                !< 1: x-dir; 2: y-dir
   real, intent(inout):: q1(bd%isd:bd%ied,bd%jsd:bd%jed)
   real, intent(inout):: q2(bd%isd:bd%ied,bd%jsd:bd%jed)
   real, intent(inout):: q3(bd%isd:bd%ied,bd%jsd:bd%jed)
@@ -3215,11 +3243,10 @@ end subroutine ytp_v
   end select
  end subroutine fill3_4corners
 
-
+!>@brief The subroutine ' fill2_4corners' fills the 4 corners of the scalar fileds only as needed by 'c_core'.
  subroutine fill2_4corners(q1, q2, dir, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
   type(fv_grid_bounds_type), intent(IN) :: bd
-! This routine fill the 4 corners of the scalar fileds only as needed by c_core
-  integer, intent(in):: dir                ! 1: x-dir; 2: y-dir
+  integer, intent(in):: dir                !< 1: x-dir; 2: y-dir
   real, intent(inout):: q1(bd%isd:bd%ied,bd%jsd:bd%jed)
   real, intent(inout):: q2(bd%isd:bd%ied,bd%jsd:bd%jed)
   logical, intent(IN) :: sw_corner, se_corner, ne_corner, nw_corner
@@ -3278,9 +3305,9 @@ end subroutine ytp_v
 
  end subroutine fill2_4corners
 
+!>@brief The subroutine 'fill_4corners' fills the 4 corners of the scalar fields only as needed by c_core.
  subroutine fill_4corners(q, dir, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
   type(fv_grid_bounds_type), intent(IN) :: bd
-! This routine fill the 4 corners of the scalar fileds only as needed by c_core
   integer, intent(in):: dir                ! 1: x-dir; 2: y-dir
   real, intent(inout):: q(bd%isd:bd%ied,bd%jsd:bd%jed)
   logical, intent(IN) :: sw_corner, se_corner, ne_corner, nw_corner

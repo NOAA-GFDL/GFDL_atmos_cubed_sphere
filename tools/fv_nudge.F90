@@ -1,21 +1,22 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 #ifdef OVERLOAD_R4
 #define _GET_VAR1 get_var1_real
@@ -23,7 +24,81 @@
 #define _GET_VAR1 get_var1_double
 #endif
 
+!>@brief The module fv_nwp_nudge contains routines for nudging
+!! to input analyses.
+!>note This module is currently not supported in fvGFS of FV3GFS
+
 module fv_nwp_nudge_mod
+
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>pi=>pi_8, grav, rdgas, cp_air, kappa, cnst_radius =>radius</td>
+!   </tr>
+!   <tr>
+!     <td>external_sst_mod</td>
+!     <td>i_sst, j_sst, sst_ncep, sst_anom, forecast_mode</td>
+!   </tr>
+!   <tr>
+!     <td>diag_manager_mod</td>
+!     <td>register_diag_field, send_data</td>
+!   </tr>
+!   <tr>
+!     <td>fms_mod</td>
+!     <td>write_version_number, open_namelist_file, check_nml_error, 
+!         file_exist, close_file</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_grid_type, fv_grid_bounds_type, fv_nest_type, R_GRID</td>
+!   </tr>
+!   <tr>
+!     <td>fv_diagnostics_mod</td>
+!     <td>prt_maxmin, fv_time</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_utils_mod</td>
+!     <td>great_circle_dist, intp_great_circle,
+!         latlon2xyz, vect_cross, normalize_vect</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>nmp_reduce_sum, mp_reduce_min, mp_reduce_max, is_master</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mapz_mod</td>
+!     <td>mappm</td>
+!   </tr>
+!   <tr>
+!     <td>fv_timing_mod</td>
+!     <td>timing_on, timing_off</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_error, FATAL, stdlog, get_unit, mpp_pe</td>
+!   </tr>
+!   <tr>
+!     <td>sim_nc_mod</td>
+!     <td>open_ncfile, close_ncfile, get_ncdim1, get_var1_double, 
+!         get_var3_r4, get_var1_real</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>mpp_update_domains, domain2d</td>
+!   </tr>
+!   <tr>
+!     <td>time_manager_mod</td>
+!     <td>time_type,  get_time, get_date</td>
+!   </tr>
+!   <tr>
+!     <td>tp_core_mod</td>
+!     <td>copy_corners</td>
+!   </tr>
+! </table>
 
  use external_sst_mod,  only: i_sst, j_sst, sst_ncep, sst_anom, forecast_mode
  use diag_manager_mod,  only: register_diag_field, send_data
@@ -60,9 +135,9 @@ module fv_nwp_nudge_mod
 
  public fv_nwp_nudge, fv_nwp_nudge_init, fv_nwp_nudge_end, breed_slp_inline, T_is_Tv
  public do_adiabatic_init
- integer im     ! Data x-dimension
- integer jm     ! Data y-dimension
- integer km     ! Data z-dimension
+ integer im     !< Data x-dimension
+ integer jm     !< Data y-dimension
+ integer km     !< Data z-dimension
  real, allocatable:: ak0(:), bk0(:)
  real, allocatable:: lat(:), lon(:)
 
@@ -71,47 +146,47 @@ module fv_nwp_nudge_mod
  logical :: no_obs
  real :: deg2rad, rad2deg
  real :: time_nudge = 0.
- integer :: time_interval = 6*3600   ! dataset time interval (seconds)
+ integer :: time_interval = 6*3600   !< dataset time interval (seconds)
 ! ---> h1g, enhance the max. analysis data files, 2012-10-22
 ! integer, parameter :: nfile_max = 125 
- integer, parameter :: nfile_max = 29280  ! maximum: 20-year analysis data, 4*366*20=29280
+ integer, parameter :: nfile_max = 29280  !< maximum: 20-year analysis data, 4*366*20=29280
 ! <--- h1g,  2012-10-22
  integer :: nfile
 
  integer :: k_breed = 0
  integer :: k_trop = 0
  real    :: p_trop = 950.E2
- real    :: dps_min = 50.      ! maximum PS increment (pa; each step) due to inline breeding
+ real    :: dps_min = 50.      !< maximum PS increment (pa; each step) due to inline breeding
  real    :: del2_cd = 0.16
 
  real,    allocatable:: s2c(:,:,:)
  integer, allocatable:: id1(:,:), id2(:,:), jdc(:,:)
  real, allocatable :: ps_dat(:,:,:)
  real(KIND=4), allocatable, dimension(:,:,:,:):: u_dat, v_dat, t_dat, q_dat
- real(KIND=4), allocatable, dimension(:,:,:):: gz3  ! work array
+ real(KIND=4), allocatable, dimension(:,:,:):: gz3  !< work array
  real, allocatable:: gz0(:,:)
 
 ! Namelist variables:
 ! ---> h1g, add the list of input NCEP analysis data files, 2012-10-22
- character(len=128):: input_fname_list =""       ! a file lists the input NCEP analysis data
- character(len=128):: analysis_file_first =""    ! the first NCEP analysis file to be used for nudging,
-                                                 ! by default, the first file in the "input_fname_list" 
- character(len=128):: analysis_file_last=""      ! the last NCEP analysis file to be used for nudging 
-                                                 ! by default, the last file in the "input_fname_list"
+ character(len=128):: input_fname_list =""       !< a file lists the input NCEP analysis data
+ character(len=128):: analysis_file_first =""    !< the first NCEP analysis file to be used for nudging,
+                                                 !! by default, the first file in the "input_fname_list" 
+ character(len=128):: analysis_file_last=""      !< the last NCEP analysis file to be used for nudging 
+                                                 !! by default, the last file in the "input_fname_list"
 
- real   :: P_relax = 30.E2                       ! from P_relax upwards, nudging is reduced linearly 
-                                                 ! proportional to pfull/P_relax
+ real   :: P_relax = 30.E2                       !< from P_relax upwards, nudging is reduced linearly 
+                                                 !! proportional to pfull/P_relax
 
- real   :: P_norelax = 0.0                       ! from P_norelax upwards, no nudging   
+ real   :: P_norelax = 0.0                       !< from P_norelax upwards, no nudging   
 ! <--- h1g, 2012-10-22
 
  character(len=128):: file_names(nfile_max)
  character(len=128):: track_file_name
- integer :: nfile_total = 0       ! =5 for 1-day (if datasets are 6-hr apart)
- real    :: p_wvp = 100.E2        ! cutoff level for specific humidity nudging 
+ integer :: nfile_total = 0       !< =5 for 1-day (if datasets are 6-hr apart)
+ real    :: p_wvp = 100.E2        !< cutoff level for specific humidity nudging 
  integer :: kord_data = 8
 
- real    :: mask_fac = 0.25        ! [0,1]  0: no mask;  1: full strength
+ real    :: mask_fac = 0.25       !< [0,1]  0: no mask;  1: full strength
 
  logical :: T_is_Tv  = .false.
  logical :: use_pt_inc  = .false.
@@ -133,12 +208,12 @@ module fv_nwp_nudge_mod
  logical :: print_end_breed = .true.
  logical :: print_end_nudge = .true.
 
-
-! Nudging time-scales (seconds): note, however, the effective time-scale is 2X smaller (stronger) due
+!Nudging time-scales (seconds): 
+!note, however, the effective time-scale is 2X smaller (stronger) due
 ! to the use of the time-varying weighting factor
- real :: tau_ps     = 21600.       ! 1-day
- real :: tau_q      = 86400.       ! 1-day
- real :: tau_winds  = 21600.       !  6-hr
+ real :: tau_ps     = 21600.       !< 1-day
+ real :: tau_q      = 86400.       !< 1-day
+ real :: tau_winds  = 21600.       !< 6-hr
  real :: tau_virt   = 43200. 
  real :: tau_hght   = 43200.
 
@@ -170,8 +245,8 @@ module fv_nwp_nudge_mod
   real :: tau_vt_rad    = 4.0  
 
   real :: pt_lim =  0.2
-  real ::  slp_env = 101010.    ! storm environment pressure (pa)
-  real :: pre0_env = 100000.    ! critical storm environment pressure (pa) for size computation
+  real ::  slp_env = 101010.    !< storm environment pressure (pa)
+  real :: pre0_env = 100000.    !< critical storm environment pressure (pa) for size computation
   real, parameter:: tm_max = 315.
 !------------------
   real:: r_lo = 2.0
@@ -182,25 +257,25 @@ module fv_nwp_nudge_mod
   real :: r_inc =  25.E3
   real, parameter:: del_r = 50.E3
   real:: elapsed_time = 0.0
-  real:: nudged_time = 1.E12 ! seconds 
+  real:: nudged_time = 1.E12 !< seconds 
                              ! usage example: set to 43200. to do inline vortex breeding
                              ! for only the first 12 hours
                              ! In addition, specify only 3 analysis files (12 hours)
   integer:: year_track_data
-  integer, parameter:: max_storm = 140     ! max # of storms to process
-  integer, parameter::  nobs_max = 125     ! Max # of observations per storm
+  integer, parameter:: max_storm = 140     !< max # of storms to process
+  integer, parameter::  nobs_max = 125     !< Max # of observations per storm
 
   integer :: nstorms = 0
   integer :: nobs_tc(max_storm)
   integer :: min_nobs = 16
   real :: min_mslp = 1009.E2
-  real(KIND=4)::     x_obs(nobs_max,max_storm)           ! longitude in degrees
-  real(KIND=4)::     y_obs(nobs_max,max_storm)           ! latitude in degrees
-  real(KIND=4)::  wind_obs(nobs_max,max_storm)           ! observed 10-m wind speed (m/s)
-  real(KIND=4)::  mslp_obs(nobs_max,max_storm)           ! observed SLP in mb
-  real(KIND=4)::  mslp_out(nobs_max,max_storm)           ! outer ring SLP in mb
-  real(KIND=4)::   rad_out(nobs_max,max_storm)           ! outer ring radius in meters
-  real(KIND=4)::   time_tc(nobs_max,max_storm)           ! start time of the track
+  real(KIND=4)::     x_obs(nobs_max,max_storm)           !< longitude in degrees
+  real(KIND=4)::     y_obs(nobs_max,max_storm)           !< latitude in degrees
+  real(KIND=4)::  wind_obs(nobs_max,max_storm)           !< observed 10-m wind speed (m/s)
+  real(KIND=4)::  mslp_obs(nobs_max,max_storm)           !< observed SLP in mb
+  real(KIND=4)::  mslp_out(nobs_max,max_storm)           !< outer ring SLP in mb
+  real(KIND=4)::   rad_out(nobs_max,max_storm)           !< outer ring radius in meters
+  real(KIND=4)::   time_tc(nobs_max,max_storm)           !< start time of the track
 !------------------------------------------------------------------------------------------
   integer :: id_ht_err
 
@@ -219,14 +294,15 @@ module fv_nwp_nudge_mod
 
  contains
  
-
+!>@brief Ths subroutine 'fv_nwp_nudge' computes and returns time tendencies for nudging to analysis.
+!>@details This nudging is typically applied to fv_update_phys.
   subroutine fv_nwp_nudge ( Time, dt, npx, npy, npz, ps_dt, u_dt, v_dt, t_dt, q_dt, zvir, ptop, &
                             ak, bk, ts, ps, delp, ua, va, pt, nwat, q, phis, gridstruct, &
                             bd, domain )
 
   type(time_type), intent(in):: Time
   integer,         intent(IN):: npx, npy
-  integer,         intent(in):: npz           ! vertical dimension
+  integer,         intent(in):: npz           !< vertical dimension
   integer,         intent(in):: nwat
   real,            intent(in):: dt
   real,            intent(in):: zvir, ptop
@@ -246,9 +322,9 @@ module fv_nwp_nudge_mod
   type(fv_grid_type), intent(INOUT), target :: gridstruct
 ! local:
   real:: h2(is:ie,js:je)
-  real:: m_err(is:ie,js:je)         ! height error at specified model interface level
-  real:: slp_n(is:ie,js:je)         ! "Observed" SLP
-  real:: slp_m(is:ie,js:je)         ! "model" SLP
+  real:: m_err(is:ie,js:je)         !< height error at specified model interface level
+  real:: slp_n(is:ie,js:je)         !< "Observed" SLP
+  real:: slp_m(is:ie,js:je)         !< "model" SLP
   real::   mask(is:ie,js:je)
   real::     tv(is:ie,js:je)
   real:: peln(is:ie,npz+1)
@@ -907,14 +983,15 @@ module fv_nwp_nudge_mod
 
  end subroutine ps_bias_correction
 
-
+!>@brief Fast version of global sum that is reproduced
+!! if the result is rounded to 4-byte
  real function g0_sum(p, ifirst, ilast, jfirst, jlast, mode, reproduce, isd, ied, jsd, jed, area)
 ! Fast version of global sum; reproduced if result rounded to 4-byte
       integer, intent(IN) :: ifirst, ilast
       integer, intent(IN) :: jfirst, jlast
-      integer, intent(IN) :: mode  ! if ==1 divided by global area
+      integer, intent(IN) :: mode  !< if ==1 divided by global area
       logical, intent(IN) :: reproduce
-      real,    intent(IN) :: p(ifirst:ilast,jfirst:jlast)      ! field to be summed
+      real,    intent(IN) :: p(ifirst:ilast,jfirst:jlast)      !< field to be summed
       integer, intent(IN) :: isd, ied, jsd, jed
       real,    intent(IN) :: area(isd:ied,jsd:jed)
 
@@ -1118,12 +1195,13 @@ module fv_nwp_nudge_mod
 
  end subroutine get_obs
 
-
+!>@brief The subroutine 'fv_nwp_nudge_init' initializes the nudging module.
+!>@details This module opens analysis files and computes remapping coefficients.
  subroutine fv_nwp_nudge_init(time, axes, npz, zvir, ak, bk, ts, phis, gridstruct, ks, npx, neststruct, bd)
  character(len=17) :: mod_name = 'fv_nudge'
   type(time_type), intent(in):: time
   integer,         intent(in):: axes(4)
-  integer,  intent(in):: npz           ! vertical dimension 
+  integer,  intent(in):: npz           !< vertical dimension 
   real,     intent(in):: zvir
   type(fv_grid_bounds_type), intent(IN) :: bd
   real, intent(in), dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: phis
@@ -1946,10 +2024,8 @@ module fv_nwp_nudge_mod
 
  end subroutine remap_uv
 
-
-
+!>@brief The subroutine 'fv_nwp_nudge_end' terminates the nudging module.
  subroutine fv_nwp_nudge_end
-
     deallocate ( ps_dat )
     deallocate (  t_dat )
     deallocate (  q_dat )
@@ -1976,15 +2052,15 @@ module fv_nwp_nudge_mod
 
 
  subroutine get_tc_mask(time, mask, agrid)
-      real :: slp_mask = 100900.    ! crtical SLP to apply mask
+      real :: slp_mask = 100900.    !< crtical SLP to apply mask
 ! Input
       type(time_type), intent(in):: time
       real, intent(inout):: mask(is:ie,js:je)
       real(kind=R_GRID), intent(IN), dimension(isd:ied,jsd:jed,2) :: agrid
 ! local
       real(kind=R_GRID):: pos(2)
-      real:: slp_o         ! sea-level pressure (Pa)
-      real:: w10_o         ! 10-m wind
+      real:: slp_o         !< sea-level pressure (Pa)
+      real:: w10_o         !< 10-m wind
       real:: r_vor, p_vor
       real:: dist
       integer n, i, j
@@ -2015,16 +2091,16 @@ module fv_nwp_nudge_mod
 
  end subroutine get_tc_mask
 
-
+!>@brief The subroutine 'breed_slp_inline' performs vortex breeding by nudging sea level pressure toward
+!! single point observations
+!>@details This is a tropical cyclone 'bogusing' routine that currently only works
+!! for hydrostatic dynamics.
+!>@note Note: conserve water mass, geopotential, and momentum at the expense of dry air mass
  subroutine breed_slp_inline(nstep, dt, npz, ak, bk, phis, pe, pk, peln, pkz, delp, u, v, pt, q, nwat,   &
                              zvir, gridstruct, ks, domain_local, bd, hydrostatic)
-!------------------------------------------------------------------------------------------
-! Purpose:  Vortex-breeding by nudging sea-level-pressure towards single point observations
-! Note: conserve water mass, geopotential, and momentum at the expense of dry air mass
-!------------------------------------------------------------------------------------------
 ! Input
       integer, intent(in):: nstep, npz, nwat, ks
-      real, intent(in):: dt       ! (small) time step in seconds
+      real, intent(in):: dt       !< (small) time step in seconds
       real, intent(in):: zvir
       real, intent(in), dimension(npz+1):: ak, bk
       logical, intent(in):: hydrostatic
@@ -2037,10 +2113,10 @@ module fv_nwp_nudge_mod
       real, intent(inout), dimension(isd:ied,jsd:jed,npz):: delp, pt
       real, intent(inout)::q(isd:ied,jsd:jed,npz,*)
 
-      real, intent(inout):: pk(is:ie,js:je, npz+1)          ! pe**kappa
-      real, intent(inout):: pe(is-1:ie+1, npz+1,js-1:je+1)  ! edge pressure (pascal)
+      real, intent(inout):: pk(is:ie,js:je, npz+1)          !< pe**kappa
+      real, intent(inout):: pe(is-1:ie+1, npz+1,js-1:je+1)  !< edge pressure (pascal)
       real, intent(inout):: pkz(is:ie,js:je,npz) 
-      real, intent(out):: peln(is:ie,npz+1,js:je)           ! ln(pe)
+      real, intent(out):: peln(is:ie,npz+1,js:je)           !< ln(pe)
 
       type(fv_grid_type), target :: gridstruct
 ! local
@@ -2492,14 +2568,12 @@ module fv_nwp_nudge_mod
     
   end subroutine breed_slp_inline
 
-
+!>@brief The subroutine 'breed_srf_w10' performs vortex breeding by nudging 10-m winds.
+!>@details This is the inline version.
  subroutine breed_srf_w10(time, dt, npz, ak, bk, ps, phis, slp, delp, u, v, gridstruct)
-!------------------------------------------------------------------------------------------
-! Purpose:  Vortex-breeding by nudging 10-m winds; inline version
-!------------------------------------------------------------------------------------------
       type(time_type), intent(in):: time
       integer, intent(in):: npz
-      real, intent(in):: dt       ! time step in seconds
+      real, intent(in):: dt       !< time step in seconds
       real, intent(in), dimension(npz+1):: ak, bk
       real, intent(in):: phis(isd:ied,jsd:jed)
       real, intent(in)::   ps(isd:ied,jsd:jed)
@@ -2516,15 +2590,15 @@ module fv_nwp_nudge_mod
       real u1(is:ie), v1(is:ie)
       real:: dist(is:ie,js:je), wind(is:ie,js:je)
       real(kind=R_GRID):: pos(2)
-      real:: slp_o         ! sea-level pressure (Pa)
+      real:: slp_o         !< sea-level pressure (Pa)
       real:: w10_o, p_env
       real:: r_vor, pc, p_count
       real:: r_max, speed, ut, vt, speed_local        ! tangent wind speed
       real:: u_bg, v_bg, mass, t_mass
       real:: relx0, relx, f1
       real:: z0, mslp0
-      real:: zz = 35.           ! mid-layer height at the lowest model level
-      real:: wind_fac           ! Computed ( ~ 1.2)
+      real:: zz = 35.           !< mid-layer height at the lowest model level
+      real:: wind_fac           !< Computed ( ~ 1.2)
       integer n, i, j
 
       ! Pointers
@@ -2774,15 +2848,12 @@ module fv_nwp_nudge_mod
 
   end subroutine breed_srf_w10
 
-
+!>@brief The subroutine 'breed_srf_winds' performs vortex breeding by nudging 1-m winds.
  subroutine breed_srf_winds(time, dt, npz, u_obs, v_obs, ak, bk, ps, phis, delp, ua, va, u_dt, v_dt, pt, q, nwat, zvir, gridstruct)
-!------------------------------------------------------------------------------------------
-! Purpose:  Vortex-breeding by nudging 1-m winds
-!------------------------------------------------------------------------------------------
 ! Input
       type(time_type), intent(in):: time
       integer, intent(in):: npz, nwat
-      real, intent(in):: dt       ! time step in seconds
+      real, intent(in):: dt       !< time step in seconds
       real, intent(in):: zvir
       real, intent(in), dimension(npz+1):: ak, bk
       real, intent(in), dimension(isd:ied,jsd:jed):: phis, ps
@@ -2795,15 +2866,15 @@ module fv_nwp_nudge_mod
       real:: dist(is:ie,js:je), wind(is:ie,js:je)
       real::  slp(is:ie,js:je)
       real(kind=R_GRID):: pos(2)
-      real:: slp_o         ! sea-level pressure (Pa)
+      real:: slp_o         !< sea-level pressure (Pa)
       real:: w10_o, p_env
       real:: r_vor, pc, p_count
       real:: r_max, speed, ut, vt, speed_local        ! tangent wind speed
       real:: u_bg, v_bg, mass, t_mass
       real:: relx0, relx, f1, rdt
       real:: z0, mslp0
-      real:: zz = 35.           ! mid-layer height at the lowest model level
-      real:: wind_fac           ! Computed ( ~ 1.2)
+      real:: zz = 35.           !< mid-layer height at the lowest model level
+      real:: wind_fac           !< Computed ( ~ 1.2)
       integer n, i, j, k, iq
 
       real, pointer :: area(:,:)
@@ -3040,20 +3111,20 @@ module fv_nwp_nudge_mod
                          x_o, y_o, w10_o, slp_o, r_vor, p_vor, stime, fact)
 ! Input
     type(time_type), intent(in):: time
-    integer, intent(in)::  nobs   ! number of observations in this particular storm
+    integer, intent(in)::  nobs   !< number of observations in this particular storm
     real(KIND=4), intent(in)::  lon_obs(nobs)
     real(KIND=4), intent(in)::  lat_obs(nobs)
-    real(KIND=4), intent(in)::      w10(nobs)        ! observed 10-m widn speed
-    real(KIND=4), intent(in)::     mslp(nobs)        ! observed SLP in pa
-    real(KIND=4), intent(in)::  slp_out(nobs)        ! slp at r_out
-    real(KIND=4), intent(in)::    r_out(nobs)        ! 
+    real(KIND=4), intent(in)::      w10(nobs)        !< observed 10-m widn speed
+    real(KIND=4), intent(in)::     mslp(nobs)        !< observed SLP in pa
+    real(KIND=4), intent(in)::  slp_out(nobs)        !< slp at r_out
+    real(KIND=4), intent(in)::    r_out(nobs)         
     real(KIND=4), intent(in):: time_obs(nobs)
     real, optional, intent(in):: stime
     real, optional, intent(out):: fact
 ! Output
-    real(kind=R_GRID), intent(out):: x_o , y_o      ! position of the storm center 
-    real, intent(out):: w10_o          ! 10-m wind speed
-    real, intent(out):: slp_o          ! Observed sea-level-pressure (pa)
+    real(kind=R_GRID), intent(out):: x_o , y_o      !< position of the storm center 
+    real, intent(out):: w10_o          !< 10-m wind speed
+    real, intent(out):: slp_o          !< Observed sea-level-pressure (pa)
     real, intent(out):: r_vor, p_vor
 ! Internal:
     real:: t_thresh
@@ -3257,9 +3328,9 @@ module fv_nwp_nudge_mod
 
   end subroutine slp_obs_init
 
-
+  !> The function 'calday' performs time interpolation:
+  ! Julian day (0 to 365 for non-leap year)
   real function calday(year, month, day, hour, minute, sec)
-! For time interpolation; Julian day (0 to 365 for non-leap year)
 ! input:
     integer, intent(in):: year, month, day, hour
     integer, intent(in):: minute, sec
@@ -3291,17 +3362,15 @@ module fv_nwp_nudge_mod
 
   end function calday
 
-
+!>@details The function 'leap_year' determines if year 'ny' is a leap year.
+!>@author Shian-Jiann Lin
   logical function leap_year(ny)
   integer, intent(in):: ny
-!
-! Determine if year ny is a leap year
-! Author: S.-J. Lin
    integer ny00
 !
 ! No leap years prior to 0000
 !
-      parameter ( ny00 = 0000 )   ! The threshold for starting leap-year 
+      parameter ( ny00 = 0000 )   !< The threshold for starting leap-year 
 
       if( ny >= ny00 ) then
          if( mod(ny,100) == 0. .and. mod(ny,400) == 0. ) then
@@ -3353,12 +3422,11 @@ module fv_nwp_nudge_mod
 
  end subroutine pmaxmin
 
-
+!>@brief The subroutine 'del2_uv' filters the wind tendency.
  subroutine del2_uv(du, dv, cd, kmd, ntimes, bd, npx, npy, gridstruct, domain)
-! This routine is for filtering the wind tendency
    integer, intent(in):: kmd
    integer, intent(in):: ntimes
-   real,    intent(in):: cd            ! cd = K * da_min;   0 < K < 0.25
+   real,    intent(in):: cd            !< cd = K * da_min;   0 < K < 0.25
    type(fv_grid_bounds_type), intent(IN) :: bd
    real, intent(inout), dimension(is:ie,js:je,kmd):: du, dv
    integer, intent(IN) :: npx, npy
@@ -3402,11 +3470,11 @@ module fv_nwp_nudge_mod
 
  end subroutine del2_uv
 
+!>@brief The subroutine 'del2_scalar' filters the physics tendency.
  subroutine del2_scalar(qdt, cd, kmd, nmax, bd,  npx, npy, gridstruct, domain)
-! This routine is for filtering the physics tendency
    integer, intent(in):: kmd
-   integer, intent(in):: nmax          ! must be no greater than 3 
-   real,    intent(in):: cd            ! cd = K * da_min;   0 < K < 0.25
+   integer, intent(in):: nmax          !< must be no greater than 3 
+   real,    intent(in):: cd            !< cd = K * da_min;   0 < K < 0.25
    type(fv_grid_bounds_type), intent(IN) :: bd
    real, intent(inout):: qdt(is:ie,js:je,kmd)
    integer, intent(IN) :: npx, npy

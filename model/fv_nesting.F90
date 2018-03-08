@@ -1,23 +1,104 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
+!>@brief The module 'fv_nesting' is a collection of routines pertaining to grid nesting 
+!! \cite harris2013two.
+
 module fv_nesting_mod
+
+! Modules Included:
+! <table>
+!   <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!  </tr>
+!  <tr>
+!     <td>boundary_mod</td>
+!     <td>update_coarse_grid,nested_grid_BC_send, nested_grid_BC_recv, nested_grid_BC_save_proc
+!         nested_grid_BC, nested_grid_BC_apply_intT</td>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>grav, pi=>pi_8, radius, hlv, rdgas, cp_air, rvgas, cp_vapor, kappa</td>
+!   </tr>
+!   <tr>
+!     <td>field_manager_mod</td>
+!     <td>MODEL_ATMOS</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_grid_type, fv_flags_type, fv_atmos_type, fv_nest_type, fv_diag_type, 
+!         fv_nest_BC_type_3D,allocate_fv_nest_BC_type,  fv_atmos_type, fv_grid_bounds_type</td>
+!   </tr>
+!   <tr>
+!     <td>fv_diagnostics_mod</td>
+!     <td>sphum_ll_fix, range_check</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_utils_mod</td>
+!     <td>ptop_min, g_sum, cubed_to_latlon, f_p</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mapz_mod</td>
+!     <td>mappm, remap_2d</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>is, ie, js, je, isd, ied, jsd, jed, isc, iec, jsc, jec,is_master,mp_reduce_sum</td>
+!   </tr>
+!   <tr>
+!     <td>fv_restart_mod</td>
+!     <td>d2a_setup, d2c_setup</td>
+!   </tr>
+!   <tr>
+!     <td>fv_sg_mod</td>
+!     <td>neg_adj3</td>
+!   </tr>
+!  <tr>
+!     <td>fv_timing_mod</td>
+!     <td>timing_on, timing_off</td>
+!   </tr>
+!   <tr>
+!     <td>init_hydro_mod</td>
+!     <td>p_var</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod/td>
+!    <td>mpp_sync_self, mpp_sync, mpp_send, mpp_recv, mpp_error, FATAL</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod/td>
+!     <td>mpp_update_domains, mpp_global_field,mpp_get_data_domain, mpp_get_compute_domain, 
+!         mpp_get_global_domain, DGRID_NE, mpp_update_domains, domain2D, mpp_global_sum, 
+!         BITWISE_EFP_SUM, BITWISE_EXACT_SUM</td>
+!   </tr>
+!   <tr>
+!    <td>sw_core_mod</td>
+!     <td>divergence_corner, divergence_corner_nest</td>
+!   </tr>
+!   <tr>
+!     <td>tracer_manager_mod</td>
+!     <td>get_tracer_index</td>
+!   </tr>
+! </table>
 
    use mpp_domains_mod,     only: mpp_update_domains
    use mpp_domains_mod,     only: mpp_global_field
@@ -54,7 +135,7 @@ implicit none
    real, allocatable :: dp1_coarse(:,:,:)
 
    !For nested grid buffers
-	!Individual structures are allocated by nested_grid_BC_recv
+   !Individual structures are allocated by nested_grid_BC_recv
    type(fv_nest_BC_type_3d) :: u_buf, v_buf, uc_buf, vc_buf, delp_buf, delz_buf, pt_buf, pkz_buf, w_buf, divg_buf
    type(fv_nest_BC_type_3d), allocatable:: q_buf(:)
 !#ifdef USE_COND
@@ -69,6 +150,8 @@ contains
 !!!! NOTE: Many of the routines here and in boundary.F90 have a lot of
 !!!!   redundant code, which could be cleaned up and simplified.
 
+!>@brief The subroutine 'setup_nested_grid_BCs' fetches data from the coarse grid 
+!! to set up  the nested-grid boundary conditions.
  subroutine setup_nested_grid_BCs(npx, npy, npz, zvir, ncnst,     &
                         u, v, w, pt, delp, delz,q, uc, vc, pkz, &
                         nested, inline_q, make_nh, ng, &
@@ -84,16 +167,16 @@ contains
     integer, intent(IN) :: ncnst, ng, nwat
     logical, intent(IN) :: inline_q, make_nh,nested
 
-    real, intent(inout), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) :: u ! D grid zonal wind (m/s)
-    real, intent(inout), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz) :: v ! D grid meridional wind (m/s)
-    real, intent(inout) :: w(   bd%isd:        ,bd%jsd:        ,1:)  !  W (m/s)
-    real, intent(inout) :: pt(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  ! temperature (K)
-    real, intent(inout) :: delp(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  ! pressure thickness (pascal)
-    real, intent(inout) :: delz(bd%isd:        ,bd%jsd:        ,1:)  ! height thickness (m)
-    real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, ncnst) ! specific humidity and constituents
-    real, intent(inout) :: uc(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz) ! (uc,vc) mostly used as the C grid winds
+    real, intent(inout), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) :: u !< D grid zonal wind (m/s)
+    real, intent(inout), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz) :: v !< D grid meridional wind (m/s)
+    real, intent(inout) :: w(   bd%isd:        ,bd%jsd:        ,1:)  !<  W (m/s)
+    real, intent(inout) :: pt(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< temperature (K)
+    real, intent(inout) :: delp(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< pressure thickness (pascal)
+    real, intent(inout) :: delz(bd%isd:        ,bd%jsd:        ,1:)  !< height thickness (m)
+    real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, ncnst) !< specific humidity and constituents
+    real, intent(inout) :: uc(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz) !< (uc,vc) mostly used as the C grid winds
     real, intent(inout) :: vc(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz)
-    real, intent(inout) :: pkz (bd%is:bd%ie,bd%js:bd%je,npz)             ! finite-volume mean pk
+    real, intent(inout) :: pkz (bd%is:bd%ie,bd%js:bd%je,npz)             !< finite-volume mean pk
     integer, intent(INOUT) :: nest_timestep, tracer_nest_timestep
 
     type(fv_grid_type), intent(INOUT) :: gridstruct
@@ -464,9 +547,9 @@ contains
    integer, intent(IN) :: npx, npy, npz
    real, intent(IN) :: zvir
 
-    real, parameter:: c_liq = 4185.5      ! heat capacity of water at 0C
-    real, parameter:: c_ice = 1972.       ! heat capacity of ice at 0C: c=c_ice+7.3*(T-Tice) 
-    real, parameter:: cv_vap = cp_vapor - rvgas  ! 1384.5
+    real, parameter:: c_liq = 4185.5      !< heat capacity of water at 0C
+    real, parameter:: c_ice = 1972.       !< heat capacity of ice at 0C: c=c_ice+7.3*(T-Tice) 
+    real, parameter:: cv_vap = cp_vapor - rvgas  !< 1384.5
 
    real, dimension(:,:,:), pointer :: ptBC, sphumBC, qconBC, delpBC, delzBC, cappaBC
    real, dimension(:,:,:), pointer :: liq_watBC_west, ice_watBC_west, rainwatBC_west, snowwatBC_west, graupelBC_west
@@ -478,7 +561,7 @@ contains
 
    integer :: i,j,k, istart, iend
    integer :: liq_wat, ice_wat, rainwat, snowwat, graupel
-   real, parameter:: tice = 273.16 ! For GFS Partitioning
+   real, parameter:: tice = 273.16 !< For GFS Partitioning
    real, parameter:: t_i0 = 15.
 
    integer :: is,  ie,  js,  je
@@ -928,7 +1011,6 @@ contains
    neststruct%divg_BC%north_t0 = neststruct%divg_BC%north_t1
    neststruct%divg_BC%south_t0 = neststruct%divg_BC%south_t1
 
-
  end subroutine set_BCs_t0
 
 
@@ -953,7 +1035,9 @@ contains
 !! Note: "conserving updates" do not guarantee global conservation
 !!  unless flux nested grid BCs are specified, or if a quantity is
 !!  not updated at all. This ability has not been implemented.
-
+!
+!>@brief The subroutine'twoway_nesting' performs a two-way update 
+!! of nested-grid data onto the parent grid.
 subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir)
 
    type(fv_atmos_type), intent(INOUT) :: Atm(ngrids)
@@ -997,9 +1081,6 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir)
 
    endif ! ngrids > 1
 
-
-
-
   end subroutine twoway_nesting
 
 !!!CLEANUP: this routine assumes that the PARENT GRID has pt = (regular) temperature,
@@ -1017,19 +1098,19 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir)
     logical, intent(IN), OPTIONAL :: conv_theta_in
 
     type(fv_grid_bounds_type), intent(IN) :: bd
-    real, intent(inout), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) :: u ! D grid zonal wind (m/s)
-    real, intent(inout), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz) :: v ! D grid meridional wind (m/s)
-    real, intent(inout) :: w(   bd%isd:        ,bd%jsd:        ,1: )  !  W (m/s)
-    real, intent(inout) :: omga(bd%isd:bd%ied,bd%jsd:bd%jed,npz)      ! Vertical pressure velocity (pa/s)
-    real, intent(inout) :: pt(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  ! temperature (K)
-    real, intent(inout) :: delp(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  ! pressure thickness (pascal)
-    real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, ncnst) ! specific humidity and constituents
-    real, intent(inout) :: uc(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz) ! (uc,vc) C grid winds
+    real, intent(inout), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) :: u !< D grid zonal wind (m/s)
+    real, intent(inout), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz) :: v !< D grid meridional wind (m/s)
+    real, intent(inout) :: w(   bd%isd:        ,bd%jsd:        ,1: )  !<  W (m/s)
+    real, intent(inout) :: omga(bd%isd:bd%ied,bd%jsd:bd%jed,npz)      !< Vertical pressure velocity (pa/s)
+    real, intent(inout) :: pt(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< temperature (K)
+    real, intent(inout) :: delp(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< pressure thickness (pascal)
+    real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, ncnst) !< specific humidity and constituents
+    real, intent(inout) :: uc(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz) !< (uc,vc) C grid winds
     real, intent(inout) :: vc(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz)
 
-    real, intent(inout) :: pkz (bd%is:bd%ie,bd%js:bd%je,npz)             ! finite-volume mean pk
-    real, intent(inout) :: delz(bd%isd:      ,bd%jsd:      ,1: )   ! delta-height (m); non-hydrostatic only
-    real, intent(inout) :: ps  (bd%isd:bd%ied  ,bd%jsd:bd%jed)           ! Surface pressure (pascal)
+    real, intent(inout) :: pkz (bd%is:bd%ie,bd%js:bd%je,npz)       !< finite-volume mean pk
+    real, intent(inout) :: delz(bd%isd:      ,bd%jsd:      ,1: )   !< delta-height (m); non-hydrostatic only
+    real, intent(inout) :: ps  (bd%isd:bd%ied  ,bd%jsd:bd%jed)     !< Surface pressure (pascal)
 
     type(fv_grid_type), intent(INOUT) :: gridstruct
     type(fv_flags_type), intent(INOUT) :: flagstruct
@@ -1269,6 +1350,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir)
 
       call mpp_sync!self
 
+
       if (.not. flagstruct%hydrostatic) then
 
             call update_coarse_grid(parent_grid%w, w, neststruct%nest_domain, &
@@ -1466,29 +1548,29 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir)
     integer, intent(IN) :: ng, npx, npy, npz
     integer, intent(IN) :: ncnst
 
-    real, intent(inout), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) :: u ! D grid zonal wind (m/s)
-    real, intent(inout), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz) :: v ! D grid meridional wind (m/s)
-    real, intent(inout) :: w(   bd%isd:        ,bd%jsd:        ,1: )  !  W (m/s)
-    real, intent(inout) :: pt(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  ! temperature (K)
-    real, intent(inout) :: delp(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  ! pressure thickness (pascal)
-    real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, ncnst) ! specific humidity and constituents
-    real, intent(inout) :: delz(bd%isd:        ,bd%jsd:        ,1: )   ! delta-height (m); non-hydrostatic only
+    real, intent(inout), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) :: u !< D grid zonal wind (m/s)
+    real, intent(inout), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz) :: v !< D grid meridional wind (m/s)
+    real, intent(inout) :: w(   bd%isd:        ,bd%jsd:        ,1: )  !< W (m/s)
+    real, intent(inout) :: pt(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< temperature (K)
+    real, intent(inout) :: delp(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< pressure thickness (pascal)
+    real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, ncnst) !< specific humidity and constituents
+    real, intent(inout) :: delz(bd%isd:        ,bd%jsd:        ,1: )   !< delta-height (m); non-hydrostatic only
 
 !-----------------------------------------------------------------------
 ! Auxilliary pressure arrays:    
 ! The 5 vars below can be re-computed from delp and ptop.
 !-----------------------------------------------------------------------
 ! dyn_aux:
-    real, intent(inout) :: ps  (bd%isd:bd%ied  ,bd%jsd:bd%jed)           ! Surface pressure (pascal)
-    real, intent(inout) :: pe  (bd%is-1:bd%ie+1, npz+1,bd%js-1:bd%je+1)  ! edge pressure (pascal)
-    real, intent(inout) :: pk  (bd%is:bd%ie,bd%js:bd%je, npz+1)          ! pe**cappa
-    real, intent(inout) :: peln(bd%is:bd%ie,npz+1,bd%js:bd%je)           ! ln(pe)
-    real, intent(inout) :: pkz (bd%is:bd%ie,bd%js:bd%je,npz)             ! finite-volume mean pk
+    real, intent(inout) :: ps  (bd%isd:bd%ied  ,bd%jsd:bd%jed)           !< Surface pressure (pascal)
+    real, intent(inout) :: pe  (bd%is-1:bd%ie+1, npz+1,bd%js-1:bd%je+1)  !< edge pressure (pascal)
+    real, intent(inout) :: pk  (bd%is:bd%ie,bd%js:bd%je, npz+1)          !< pe**cappa
+    real, intent(inout) :: peln(bd%is:bd%ie,npz+1,bd%js:bd%je)           !< ln(pe)
+    real, intent(inout) :: pkz (bd%is:bd%ie,bd%js:bd%je,npz)             !< finite-volume mean pk
     
 !-----------------------------------------------------------------------
 ! Others:
 !-----------------------------------------------------------------------
-    real, intent(inout) :: phis(bd%isd:bd%ied,bd%jsd:bd%jed)       ! Surface geopotential (g*Z_surf)
+    real, intent(inout) :: phis(bd%isd:bd%ied,bd%jsd:bd%jed)       !< Surface geopotential (g*Z_surf)
 
     real, intent(inout), dimension(bd%isd:bd%ied ,bd%jsd:bd%jed ,npz):: ua, va
     type(fv_grid_type), intent(IN) :: gridstruct
@@ -1546,8 +1628,8 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir)
 
  end subroutine after_twoway_nest_update
 
- !Routines for remapping (interpolated) nested-grid data to the coarse-grid's vertical coordinate.
-
+!>@brief The subroutine 'update_remap_tqw' remaps (interpolated) nested-grid data 
+!! to the coarse-grid's vertical coordinate.
  !This does not yet do anything for the tracers
  subroutine update_remap_tqw( npz, ak,  bk,  ps, delp,  t,  q, w, hydrostatic, &
                       kmd, ps0, zvir, ptop, nq, kord_tm, kord_tr, kord_wz, &
@@ -1740,6 +1822,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir)
    end do
 
  end subroutine update_remap_uv
+
 
 
 end module fv_nesting_mod

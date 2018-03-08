@@ -1,26 +1,34 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
+!>@brief The module 'sim_nc' is a netcdf file reader.
+!>@details The code is necessary to circumvent issues with the FMS
+!! 'read_data' utility, which opens too many files and uses excessive
+!! memory.
+!>@author Shian-Jiann Lin
+
 module sim_nc_mod
 
 ! This is S-J Lin's private netcdf file reader
-! This code is needed because FMS utilitty (read_data) led to too much
+! This code is needed because FMS utility (read_data) led to too much
 ! memory usage and too many files openned. Perhaps lower-level FMS IO
 ! calls should be used instead.
 
@@ -80,9 +88,7 @@ module sim_nc_mod
 
       end subroutine get_ncdim1
 
-
-
-
+!>@brief The 'get_var' subroutines read in variables from netcdf files
       subroutine get_var1_double( ncid, var1_name, im, var1, var_exist )
       integer, intent(in):: ncid
       character(len=*), intent(in)::  var1_name
@@ -264,6 +270,8 @@ module sim_nc_mod
       if (status .ne. NF_NOERR) call handle_err('get_var3_r4 get_vara_real '//var3_name,status)
 
       end subroutine get_var3_r4
+
+
       subroutine get_var4_real( ncid, var4_name, im, jm, km, nt, var4 )
       implicit         none
 #include <netcdf.inc>
@@ -416,6 +424,7 @@ module sim_nc_mod
 
       end subroutine handle_err
 
+!>@brief The subroutine 'calendar' computes the current GMT.
    subroutine calendar(year, month, day, hour)
       integer, intent(inout) :: year              ! year
       integer, intent(inout) :: month             ! month
@@ -425,13 +434,8 @@ module sim_nc_mod
 ! Local variables
 !
       integer irem4,irem100
-      integer mdays(12)                           ! number day of month 
+      integer mdays(12)                           !< number day of month 
       data mdays /31,28,31,30,31,30,31,31,30,31,30,31/
-!
-!***********************************************************************
-!******         compute current GMT                               ******
-!***********************************************************************
-!
 !**** consider leap year
 !
       irem4    = mod( year, 4 )

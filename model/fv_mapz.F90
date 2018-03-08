@@ -1,26 +1,85 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
-! SJL: Apr 12, 2012
-! This revision may actually produce rounding level differences due to the elimination of KS to compute
-! pressure level for remapping.
+
+!>@brief The module 'fv_mapz' contains the vertical mapping routines \cite lin2004vertically
+!>@note April 12, 2012 -SJL: This revision may actually produce rounding level differences 
+!! due to the elimination of KS to compute pressure level for remapping.
+
 module fv_mapz_mod
+
+! Modules Included:
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+! <table>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>radius, pi=>pi_8, rvgas, rdgas, grav, hlv, hlf, cp_air, cp_vapor</td>
+!   </tr>
+!     <td>field_manager_mod</td>
+!     <td>MODEL_ATMOS</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_grid_type</td>
+!   </tr>
+!   <tr>
+!     <td>fv_cmp_mod</td>
+!     <td>qs_init, fv_sat_adj</td>
+!   </tr>
+!   <tr>
+!     <td>fv_fill_mod</td>
+!     <td>fillz</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_utils_mod</td>
+!     <td>g_sum, ptop_min</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>is_master</td>
+!   </tr>
+!   <tr>
+!     <td>fv_timing_mod</td>
+!     <td>timing_on, timing_off</td>
+!   </tr>
+!   <tr>
+!     <td>fv_tracer2d_mod</td>
+!     <td>tracer_2d, tracer_2d_1L, tracer_2d_nested</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod/td>
+!     <td>NOTE, mpp_error, get_unit, mpp_root_pe, mpp_pe</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod/td>
+!     <td> mpp_update_domains, domain2d</td>
+!   </tr>
+!   <tr>
+!     <td>tracer_manager_mod</td>
+!     <td>get_tracer_index</td>
+!   </tr>
+! </table>
 
   use constants_mod,     only: radius, pi=>pi_8, rvgas, rdgas, grav, hlv, hlf, cp_air, cp_vapor
   use tracer_manager_mod,only: get_tracer_index
@@ -35,16 +94,16 @@ module fv_mapz_mod
   use fv_cmp_mod,        only: qs_init, fv_sat_adj
 
   implicit none
-  real, parameter:: consv_min= 0.001   ! below which no correction applies
-  real, parameter:: t_min= 184.   ! below which applies stricter constraint
+  real, parameter:: consv_min= 0.001         !< below which no correction applies
+  real, parameter:: t_min= 184.              !< below which applies stricter constraint
   real, parameter:: r3 = 1./3., r23 = 2./3., r12 = 1./12.
-  real, parameter:: cv_vap = 3.*rvgas  ! 1384.5
-  real, parameter:: cv_air =  cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
-! real, parameter:: c_ice = 2106.           ! heat capacity of ice at 0.C
-  real, parameter:: c_ice = 1972.           ! heat capacity of ice at -15.C
-  real, parameter:: c_liq = 4.1855e+3    ! GFS: heat capacity of water at 0C
-! real, parameter:: c_liq = 4218.        ! ECMWF-IFS
-  real, parameter:: cp_vap = cp_vapor   ! 1846.
+  real, parameter:: cv_vap = 3.*rvgas        !< 1384.5
+  real, parameter:: cv_air =  cp_air - rdgas !< = rdgas * (7/2-1) = 2.5*rdgas=717.68
+! real, parameter:: c_ice = 2106.            !< heat capacity of ice at 0.C
+  real, parameter:: c_ice = 1972.            !< heat capacity of ice at -15.C
+  real, parameter:: c_liq = 4.1855e+3        !< GFS: heat capacity of water at 0C
+! real, parameter:: c_liq = 4218.            !< ECMWF-IFS
+  real, parameter:: cp_vap = cp_vapor        !< 1846.
   real, parameter:: tice = 273.16
 
   real(kind=4) :: E_Flux = 0.
@@ -54,7 +113,9 @@ module fv_mapz_mod
          rst_remap, mappm, E_Flux
 
 contains
-
+ 
+!>@brief The subroutine 'Lagrangian_to_Eulerian' remaps deformed Lagrangian layers back to the reference Eulerian coordinate.
+!>@details It also includes the entry point for calling fast microphysical processes. This is typically calle on the k_split loop.
  subroutine Lagrangian_to_Eulerian(last_step, consv, ps, pe, delp, pkz, pk,   &
                                    mdt, pdt, km, is,ie,js,je, isd,ied,jsd,jed,       &
                       nq, nwat, sphum, q_con, u, v, w, delz, pt, q, hs, r_vir, cp,  &
@@ -63,30 +124,30 @@ contains
                       ptop, ak, bk, pfull, gridstruct, domain, do_sat_adj, &
                       hydrostatic, hybrid_z, do_omega, adiabatic, do_adiabatic_init)
   logical, intent(in):: last_step
-  real,    intent(in):: mdt                   ! remap time step
-  real,    intent(in):: pdt                   ! phys time step
+  real,    intent(in):: mdt                    !< remap time step
+  real,    intent(in):: pdt                    !< phys time step
   integer, intent(in):: km
-  integer, intent(in):: nq                    ! number of tracers (including h2o)
+  integer, intent(in):: nq                     !< number of tracers (including h2o)
   integer, intent(in):: nwat
-  integer, intent(in):: sphum                 ! index for water vapor (specific humidity)
+  integer, intent(in):: sphum                  !< index for water vapor (specific humidity)
   integer, intent(in):: ng
-  integer, intent(in):: is,ie,isd,ied         ! starting & ending X-Dir index
-  integer, intent(in):: js,je,jsd,jed         ! starting & ending Y-Dir index
-  integer, intent(in):: kord_mt               ! Mapping order for the vector winds
-  integer, intent(in):: kord_wz               ! Mapping order/option for w
-  integer, intent(in):: kord_tr(nq)           ! Mapping order for tracers
-  integer, intent(in):: kord_tm               ! Mapping order for thermodynamics
+  integer, intent(in):: is,ie,isd,ied          !< starting & ending X-Dir index
+  integer, intent(in):: js,je,jsd,jed          !< starting & ending Y-Dir index
+  integer, intent(in):: kord_mt                !< Mapping order for the vector winds
+  integer, intent(in):: kord_wz                !< Mapping order/option for w
+  integer, intent(in):: kord_tr(nq)            !< Mapping order for tracers
+  integer, intent(in):: kord_tm                !< Mapping order for thermodynamics
 
-  real, intent(in):: consv                 ! factor for TE conservation
+  real, intent(in):: consv                  !< factor for TE conservation
   real, intent(in):: r_vir
   real, intent(in):: cp
   real, intent(in):: akap
-  real, intent(in):: hs(isd:ied,jsd:jed)  ! surface geopotential
+  real, intent(in):: hs(isd:ied,jsd:jed)  !< surface geopotential
   real, intent(inout):: te0_2d(is:ie,js:je)
   real, intent(in):: ws(is:ie,js:je)
 
   logical, intent(in):: do_sat_adj
-  logical, intent(in):: fill                  ! fill negative tracers
+  logical, intent(in):: fill                  !< fill negative tracers
   logical, intent(in):: reproduce_sum
   logical, intent(in):: do_omega, adiabatic, do_adiabatic_init
   real, intent(in) :: ptop
@@ -96,30 +157,30 @@ contains
   type(fv_grid_type), intent(IN), target :: gridstruct
   type(domain2d), intent(INOUT) :: domain
 
-! !INPUT/OUTPUT
-  real, intent(inout):: pk(is:ie,js:je,km+1) ! pe to the kappa
+! INPUT/OUTPUT
+  real, intent(inout):: pk(is:ie,js:je,km+1)          !< pe to the kappa
   real, intent(inout):: q(isd:ied,jsd:jed,km,*)
-  real, intent(inout):: delp(isd:ied,jsd:jed,km) ! pressure thickness
-  real, intent(inout)::  pe(is-1:ie+1,km+1,js-1:je+1) ! pressure at layer edges
-  real, intent(inout):: ps(isd:ied,jsd:jed)      ! surface pressure
+  real, intent(inout):: delp(isd:ied,jsd:jed,km)      !< pressure thickness
+  real, intent(inout)::  pe(is-1:ie+1,km+1,js-1:je+1) !< pressure at layer edges
+  real, intent(inout):: ps(isd:ied,jsd:jed)           !< surface pressure
 
 ! u-wind will be ghosted one latitude to the north upon exit
-  real, intent(inout)::  u(isd:ied  ,jsd:jed+1,km)   ! u-wind (m/s)
-  real, intent(inout)::  v(isd:ied+1,jsd:jed  ,km)   ! v-wind (m/s)
-  real, intent(inout)::  w(isd:     ,jsd:     ,1:)   ! vertical velocity (m/s)
-  real, intent(inout):: pt(isd:ied  ,jsd:jed  ,km)   ! cp*virtual potential temperature 
-                                                     ! as input; output: temperature
+  real, intent(inout)::  u(isd:ied  ,jsd:jed+1,km)   !< u-wind (m/s)
+  real, intent(inout)::  v(isd:ied+1,jsd:jed  ,km)   !< v-wind (m/s)
+  real, intent(inout)::  w(isd:     ,jsd:     ,1:)   !< vertical velocity (m/s)
+  real, intent(inout):: pt(isd:ied  ,jsd:jed  ,km)   !< cp*virtual potential temperature 
+                                                     !< as input; output: temperature
   real, intent(inout), dimension(isd:,jsd:,1:)::delz, q_con, cappa
   logical, intent(in):: hydrostatic
   logical, intent(in):: hybrid_z
   logical, intent(in):: out_dt
 
-  real, intent(inout)::   ua(isd:ied,jsd:jed,km)   ! u-wind (m/s) on physics grid
-  real, intent(inout)::   va(isd:ied,jsd:jed,km)   ! v-wind (m/s) on physics grid
-  real, intent(inout):: omga(isd:ied,jsd:jed,km)   ! vertical press. velocity (pascal/sec)
-  real, intent(inout)::   peln(is:ie,km+1,js:je)     ! log(pe)
+  real, intent(inout)::   ua(isd:ied,jsd:jed,km)   !< u-wind (m/s) on physics grid
+  real, intent(inout)::   va(isd:ied,jsd:jed,km)   !< v-wind (m/s) on physics grid
+  real, intent(inout):: omga(isd:ied,jsd:jed,km)   !< vertical press. velocity (pascal/sec)
+  real, intent(inout)::   peln(is:ie,km+1,js:je)   !< log(pe)
   real, intent(inout)::   dtdt(is:ie,js:je,km)
-  real, intent(out)::    pkz(is:ie,js:je,km)       ! layer-mean pk for converting t to pt
+  real, intent(out)::    pkz(is:ie,js:je,km)       !< layer-mean pk for converting t to pt
   real, intent(out)::     te(isd:ied,jsd:jed,km)
 
 ! !DESCRIPTION:
@@ -625,7 +686,7 @@ endif        ! end last_step check
 ! Note: pt at this stage is T_v
 ! if ( (.not.do_adiabatic_init) .and. do_sat_adj ) then
   if ( do_sat_adj ) then
-!!                                         call timing_on('sat_adj2')
+                                           call timing_on('sat_adj2')
 !$OMP do
            do k=kmp,km
               do j=js,je
@@ -662,7 +723,7 @@ endif        ! end last_step check
                    enddo
                 enddo
            endif
-!!                                         call timing_off('sat_adj2')
+                                           call timing_off('sat_adj2')
   endif   ! do_sat_adj
 
 
@@ -716,7 +777,8 @@ endif        ! end last_step check
 
  end subroutine Lagrangian_to_Eulerian
 
-
+!>@brief The subroutine 'compute_total_energy' performs the FV3-consistent computation of the global total energy.
+!>@details It includes the potential, internal (latent and sensible heat), kinetic terms.
  subroutine compute_total_energy(is, ie, js, je, isd, ied, jsd, jed, km,       &
                                  u, v, w, delz, pt, delp, q, qc, pe, peln, hs, &
                                  rsin2_l, cosa_s_l, &
@@ -734,19 +796,19 @@ endif        ! end last_step check
    real, intent(in), dimension(isd:ied,jsd:jed,km):: qc
    real, intent(inout)::  u(isd:ied,  jsd:jed+1,km)
    real, intent(inout)::  v(isd:ied+1,jsd:jed,  km)
-   real, intent(in)::  w(isd:,jsd:,1:)   ! vertical velocity (m/s)
+   real, intent(in)::  w(isd:,jsd:,1:)   !< vertical velocity (m/s)
    real, intent(in):: delz(isd:,jsd:,1:)
-   real, intent(in):: hs(isd:ied,jsd:jed)  ! surface geopotential
-   real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) ! pressure at layer edges
-   real, intent(in):: peln(is:ie,km+1,js:je)  ! log(pe)
+   real, intent(in):: hs(isd:ied,jsd:jed)  !< surface geopotential
+   real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) !< pressure at layer edges
+   real, intent(in):: peln(is:ie,km+1,js:je)  !< log(pe)
    real, intent(in):: cp, rg, r_vir, hlv
    real, intent(in) :: rsin2_l(isd:ied, jsd:jed)
    real, intent(in) :: cosa_s_l(isd:ied, jsd:jed)
    logical, intent(in):: moist_phys, hydrostatic
-! Output:
-   real, intent(out):: te_2d(is:ie,js:je)   ! vertically integrated TE
-   real, intent(out)::   teq(is:ie,js:je)   ! Moist TE
-! Local
+!! Output:
+   real, intent(out):: te_2d(is:ie,js:je)   !< vertically integrated TE
+   real, intent(out)::   teq(is:ie,js:je)   !< Moist TE
+!! Local
    real, dimension(is:ie,km):: tv
    real  phiz(is:ie,km+1)
    real  cvm(is:ie), qd(is:ie)
@@ -854,17 +916,17 @@ endif        ! end last_step check
   subroutine pkez(km, ifirst, ilast, jfirst, jlast, j, &
                   pe, pk, akap, peln, pkz, ptop)
 
-! !INPUT PARAMETERS:
+! INPUT PARAMETERS:
    integer, intent(in):: km, j
-   integer, intent(in):: ifirst, ilast        ! Latitude strip
-   integer, intent(in):: jfirst, jlast        ! Latitude strip
+   integer, intent(in):: ifirst, ilast        !< Latitude strip
+   integer, intent(in):: jfirst, jlast        !< Latitude strip
    real, intent(in):: akap
    real, intent(in):: pe(ifirst-1:ilast+1,km+1,jfirst-1:jlast+1)
    real, intent(in):: pk(ifirst:ilast,jfirst:jlast,km+1)
    real, intent(IN):: ptop
-! !OUTPUT
+! OUTPUT
    real, intent(out):: pkz(ifirst:ilast,jfirst:jlast,km)
-   real, intent(inout):: peln(ifirst:ilast, km+1, jfirst:jlast)   ! log (pe)
+   real, intent(inout):: peln(ifirst:ilast, km+1, jfirst:jlast)   !< log (pe)
 ! Local
    real pk2(ifirst:ilast, km+1)
    real pek
@@ -912,24 +974,22 @@ endif        ! end last_step check
 
  subroutine remap_z(km, pe1, q1, kn, pe2, q2, i1, i2, iv, kord)
 
-! !INPUT PARAMETERS:
-      integer, intent(in) :: i1                ! Starting longitude
-      integer, intent(in) :: i2                ! Finishing longitude
-      integer, intent(in) :: kord              ! Method order
-      integer, intent(in) :: km                ! Original vertical dimension
-      integer, intent(in) :: kn                ! Target vertical dimension
+! INPUT PARAMETERS:
+      integer, intent(in) :: i1                !< Starting longitude
+      integer, intent(in) :: i2                !< Finishing longitude
+      integer, intent(in) :: kord              !< Method order
+      integer, intent(in) :: km                !< Original vertical dimension
+      integer, intent(in) :: kn                !< Target vertical dimension
       integer, intent(in) :: iv
 
-      real, intent(in) ::  pe1(i1:i2,km+1)     ! height at layer edges 
-                                               ! (from model top to bottom surface)
-      real, intent(in) ::  pe2(i1:i2,kn+1)     ! hieght at layer edges 
-                                               ! (from model top to bottom surface)
-      real, intent(in) ::  q1(i1:i2,km)        ! Field input
+      real, intent(in) ::  pe1(i1:i2,km+1)     !< height at layer edges from model top to bottom surface
+      real, intent(in) ::  pe2(i1:i2,kn+1)     !< height at layer edges from model top to bottom surface
+      real, intent(in) ::  q1(i1:i2,km)        !< Field input
 
-! !INPUT/OUTPUT PARAMETERS:
-      real, intent(inout)::  q2(i1:i2,kn)      ! Field output
+! INPUT/OUTPUT PARAMETERS:
+      real, intent(inout)::  q2(i1:i2,kn)      !< Field output
 
-! !LOCAL VARIABLES:
+! LOCAL VARIABLES:
       real   qs(i1:i2)
       real  dp1(  i1:i2,km)
       real   q4(4,i1:i2,km)
@@ -998,34 +1058,29 @@ endif        ! end last_step check
                         kn,   pe2,    q2,   i1, i2,       &
                          j,  ibeg, iend, jbeg, jend, iv,  kord, q_min)
 ! iv=1
- integer, intent(in) :: i1                ! Starting longitude
- integer, intent(in) :: i2                ! Finishing longitude
- integer, intent(in) :: iv                ! Mode: 0 == constituents  1 == temp
-                                          !       2 == remap temp with cs scheme
- integer, intent(in) :: kord              ! Method order
- integer, intent(in) :: j                 ! Current latitude
+ integer, intent(in) :: i1                !< Starting longitude
+ integer, intent(in) :: i2                !< Finishing longitude
+ integer, intent(in) :: iv                !< Mode: 0 == constituents 1 == temp 2 == remap temp with cs scheme
+ integer, intent(in) :: kord              !< Method order
+ integer, intent(in) :: j                 !< Current latitude
  integer, intent(in) :: ibeg, iend, jbeg, jend
- integer, intent(in) :: km                ! Original vertical dimension
- integer, intent(in) :: kn                ! Target vertical dimension
- real, intent(in) ::   qs(i1:i2)       ! bottom BC
- real, intent(in) ::  pe1(i1:i2,km+1)  ! pressure at layer edges 
-                                       ! (from model top to bottom surface)
-                                       ! in the original vertical coordinate
- real, intent(in) ::  pe2(i1:i2,kn+1)  ! pressure at layer edges 
-                                       ! (from model top to bottom surface)
-                                       ! in the new vertical coordinate
- real, intent(in) ::    q1(ibeg:iend,jbeg:jend,km) ! Field input
-! !INPUT/OUTPUT PARAMETERS:
- real, intent(inout)::  q2(ibeg:iend,jbeg:jend,kn) ! Field output
+ integer, intent(in) :: km                !< Original vertical dimension
+ integer, intent(in) :: kn                !< Target vertical dimension
+ real, intent(in) ::   qs(i1:i2)       !< bottom BC
+ real, intent(in) ::  pe1(i1:i2,km+1)  !< pressure at layer edges from model top to bottom surface in the original vertical coordinate
+ real, intent(in) ::  pe2(i1:i2,kn+1)  !< pressure at layer edges from model top to bottom surface in the new vertical coordinate
+ real, intent(in) ::    q1(ibeg:iend,jbeg:jend,km) !< Field input
+! INPUT/OUTPUT PARAMETERS:
+ real, intent(inout)::  q2(ibeg:iend,jbeg:jend,kn) !< Field output
  real, intent(in):: q_min
 
-! !DESCRIPTION:
+! DESCRIPTION:
 ! IV = 0: constituents
 ! pe1: pressure at layer edges (from model top to bottom surface)
 !      in the original vertical coordinate
 ! pe2: pressure at layer edges (from model top to bottom surface)
 !      in the new vertical coordinate
-! !LOCAL VARIABLES:
+! LOCAL VARIABLES:
    real    dp1(i1:i2,km)
    real   q4(4,i1:i2,km)
    real    pl, pr, qsum, dp, esl
@@ -1092,33 +1147,29 @@ endif        ! end last_step check
  subroutine map1_ppm( km,   pe1,    q1,   qs,           &
                       kn,   pe2,    q2,   i1, i2,       &
                       j,    ibeg, iend, jbeg, jend, iv,  kord)
- integer, intent(in) :: i1                ! Starting longitude
- integer, intent(in) :: i2                ! Finishing longitude
- integer, intent(in) :: iv                ! Mode: 0 == constituents  1 == ???
-                                          !       2 == remap temp with cs scheme
- integer, intent(in) :: kord              ! Method order
- integer, intent(in) :: j                 ! Current latitude
+ integer, intent(in) :: i1                !< Starting longitude
+ integer, intent(in) :: i2                !< Finishing longitude
+ integer, intent(in) :: iv                !< Mode: 0 == constituents 1 == ??? 2 == remap temp with cs scheme
+ integer, intent(in) :: kord              !< Method order
+ integer, intent(in) :: j                 !< Current latitude
  integer, intent(in) :: ibeg, iend, jbeg, jend
- integer, intent(in) :: km                ! Original vertical dimension
- integer, intent(in) :: kn                ! Target vertical dimension
- real, intent(in) ::   qs(i1:i2)       ! bottom BC
- real, intent(in) ::  pe1(i1:i2,km+1)  ! pressure at layer edges 
-                                       ! (from model top to bottom surface)
-                                       ! in the original vertical coordinate
- real, intent(in) ::  pe2(i1:i2,kn+1)  ! pressure at layer edges 
-                                       ! (from model top to bottom surface)
-                                       ! in the new vertical coordinate
- real, intent(in) ::    q1(ibeg:iend,jbeg:jend,km) ! Field input
-! !INPUT/OUTPUT PARAMETERS:
- real, intent(inout)::  q2(ibeg:iend,jbeg:jend,kn) ! Field output
+ integer, intent(in) :: km                !< Original vertical dimension
+ integer, intent(in) :: kn                !< Target vertical dimension
+ real, intent(in) ::   qs(i1:i2)       !< bottom BC
+ real, intent(in) ::  pe1(i1:i2,km+1)  !< pressure at layer edges from model top to bottom surface in the original vertical coordinate
+ real, intent(in) ::  pe2(i1:i2,kn+1)  !< pressure at layer edges from model top to bottom surface in the new vertical coordinate
+ real, intent(in) ::    q1(ibeg:iend,jbeg:jend,km) !< Field input
+! INPUT/OUTPUT PARAMETERS:
+ real, intent(inout)::  q2(ibeg:iend,jbeg:jend,kn) !< Field output
 
-! !DESCRIPTION:
+! DESCRIPTION:
 ! IV = 0: constituents
 ! pe1: pressure at layer edges (from model top to bottom surface)
 !      in the original vertical coordinate
 ! pe2: pressure at layer edges (from model top to bottom surface)
 !      in the new vertical coordinate
-! !LOCAL VARIABLES:
+
+! LOCAL VARIABLES:
    real    dp1(i1:i2,km)
    real   q4(4,i1:i2,km)
    real    pl, pr, qsum, dp, esl
@@ -1184,24 +1235,20 @@ endif        ! end last_step check
 
  subroutine mapn_tracer(nq, km, pe1, pe2, q1, dp2, kord, j,     &
                         i1, i2, isd, ied, jsd, jed, q_min, fill)
-! !INPUT PARAMETERS:
-      integer, intent(in):: km                ! vertical dimension
+! INPUT PARAMETERS:
+      integer, intent(in):: km                !< vertical dimension
       integer, intent(in):: j, nq, i1, i2
       integer, intent(in):: isd, ied, jsd, jed
       integer, intent(in):: kord(nq)
-      real, intent(in)::  pe1(i1:i2,km+1)     ! pressure at layer edges 
-                                              ! (from model top to bottom surface)
-                                              ! in the original vertical coordinate
-      real, intent(in)::  pe2(i1:i2,km+1)     ! pressure at layer edges 
-                                              ! (from model top to bottom surface)
-                                              ! in the new vertical coordinate
+      real, intent(in)::  pe1(i1:i2,km+1)     !< pressure at layer edges from model top to bottom surface in the original vertical coordinate
+      real, intent(in)::  pe2(i1:i2,km+1)     !< pressure at layer edges from model top to bottom surface in the new vertical coordinate
       real, intent(in)::  dp2(i1:i2,km)
       real, intent(in)::  q_min
       logical, intent(in):: fill
       real, intent(inout):: q1(isd:ied,jsd:jed,km,nq) ! Field input
-! !LOCAL VARIABLES:
+! LOCAL VARIABLES:
       real:: q4(4,i1:i2,km,nq)
-      real:: q2(i1:i2,km,nq) ! Field output
+      real:: q2(i1:i2,km,nq) !< Field output
       real:: qsum(nq)
       real:: dp1(i1:i2,km)
       real:: qs(i1:i2)
@@ -1304,27 +1351,23 @@ endif        ! end last_step check
                     ibeg, iend, jbeg, jend, q_min )
 
 
-! !INPUT PARAMETERS:
+! INPUT PARAMETERS:
       integer, intent(in) :: j
       integer, intent(in) :: i1, i2
       integer, intent(in) :: ibeg, iend, jbeg, jend
-      integer, intent(in) :: iv                ! Mode: 0 ==  constituents 1 == ???
+      integer, intent(in) :: iv                !< Mode: 0 ==  constituents 1 == ???
       integer, intent(in) :: kord
-      integer, intent(in) :: km                ! Original vertical dimension
-      integer, intent(in) :: kn                ! Target vertical dimension
+      integer, intent(in) :: km                !< Original vertical dimension
+      integer, intent(in) :: kn                !< Target vertical dimension
 
-      real, intent(in) ::  pe1(i1:i2,km+1)     ! pressure at layer edges 
-                                               ! (from model top to bottom surface)
-                                               ! in the original vertical coordinate
-      real, intent(in) ::  pe2(i1:i2,kn+1)     ! pressure at layer edges 
-                                               ! (from model top to bottom surface)
-                                               ! in the new vertical coordinate
-      real, intent(in) ::  q1(ibeg:iend,jbeg:jend,km) ! Field input
+      real, intent(in) ::  pe1(i1:i2,km+1)     !< pressure at layer edges from model top to bottom surface in the original vertical coordinate
+      real, intent(in) ::  pe2(i1:i2,kn+1)     !< pressure at layer edges from model top to bottom surface in the new vertical coordinate
+      real, intent(in) ::  q1(ibeg:iend,jbeg:jend,km) !< Field input
       real, intent(in) ::  dp2(i1:i2,kn)
       real, intent(in) ::  q_min
-! !INPUT/OUTPUT PARAMETERS:
-      real, intent(inout):: q2(i1:i2,kn) ! Field output
-! !LOCAL VARIABLES:
+! INPUT/OUTPUT PARAMETERS:
+      real, intent(inout):: q2(i1:i2,kn) !< Field output
+! LOCAL VARIABLES:
       real   qs(i1:i2)
       real   dp1(i1:i2,km)
       real   q4(4,i1:i2,km)
@@ -1396,19 +1439,15 @@ endif        ! end last_step check
                      kn,   pe2,   q2,        &
                      i1,   i2,    iv,   kord)
    integer, intent(in):: i1, i2
-   integer, intent(in):: iv               ! Mode: 0 ==  constituents 1 ==others
+   integer, intent(in):: iv               !< Mode: 0 ==  constituents 1 ==others
    integer, intent(in):: kord
-   integer, intent(in):: km               ! Original vertical dimension
-   integer, intent(in):: kn               ! Target vertical dimension
-   real, intent(in):: pe1(i1:i2,km+1)     ! pressure at layer edges 
-                                          ! (from model top to bottom surface)
-                                          ! in the original vertical coordinate
-   real, intent(in):: pe2(i1:i2,kn+1)     ! pressure at layer edges 
-                                          ! (from model top to bottom surface)
-                                          ! in the new vertical coordinate
-   real, intent(in) :: q1(i1:i2,km) ! Field input
-   real, intent(out):: q2(i1:i2,kn) ! Field output
-! !LOCAL VARIABLES:
+   integer, intent(in):: km               !< Original vertical dimension
+   integer, intent(in):: kn               !< Target vertical dimension
+   real, intent(in):: pe1(i1:i2,km+1)     !< Pressure at layer edges from model top to bottom surface in the original vertical coordinate
+   real, intent(in):: pe2(i1:i2,kn+1)     !< Pressure at layer edges from model top to bottom surface in the new vertical coordinate
+   real, intent(in) :: q1(i1:i2,km) !< Field input
+   real, intent(out):: q2(i1:i2,kn) !< Field output
+! LOCAL VARIABLES:
    real   qs(i1:i2)
    real   dp1(i1:i2,km)
    real   q4(4,i1:i2,km)
@@ -1487,18 +1526,18 @@ endif        ! end last_step check
  end subroutine remap_2d
 
 
+!>@brief Optimized vertical profile reconstruction:
+!> Latest: Apr 2008 S.-J. Lin, NOAA/GFDL
  subroutine scalar_profile(qs, a4, delp, km, i1, i2, iv, kord, qmin)
 ! Optimized vertical profile reconstruction:
 ! Latest: Apr 2008 S.-J. Lin, NOAA/GFDL
  integer, intent(in):: i1, i2
- integer, intent(in):: km      ! vertical dimension
- integer, intent(in):: iv      ! iv =-1: winds
-                               ! iv = 0: positive definite scalars
-                               ! iv = 1: others
+ integer, intent(in):: km      !< vertical dimension
+ integer, intent(in):: iv      !< iv =-1: winds iv = 0: positive definite scalars iv = 1: others
  integer, intent(in):: kord
  real, intent(in)   ::   qs(i1:i2)
- real, intent(in)   :: delp(i1:i2,km)     ! layer pressure thickness
- real, intent(inout):: a4(4,i1:i2,km)     ! Interpolated values
+ real, intent(in)   :: delp(i1:i2,km)     !< Layer pressure thickness
+ real, intent(inout):: a4(4,i1:i2,km)     !< Interpolated values
  real, intent(in):: qmin
 !-----------------------------------------------------------------------
  logical, dimension(i1:i2,km):: extm, ext5, ext6
@@ -1896,19 +1935,21 @@ endif        ! end last_step check
 
  end subroutine scalar_profile
 
-
+!>@brief The subroutine 'cs_profile' performs the optimized vertical profile reconstruction:
+!>@date April 2008 
+!>@author S. J. Lin, NOAA/GFDL
  subroutine cs_profile(qs, a4, delp, km, i1, i2, iv, kord)
 ! Optimized vertical profile reconstruction:
 ! Latest: Apr 2008 S.-J. Lin, NOAA/GFDL
  integer, intent(in):: i1, i2
- integer, intent(in):: km      ! vertical dimension
- integer, intent(in):: iv      ! iv =-1: winds
-                               ! iv = 0: positive definite scalars
-                               ! iv = 1: others
+ integer, intent(in):: km      !< vertical dimension
+ integer, intent(in):: iv      !< iv =-1: winds
+                               !< iv = 0: positive definite scalars
+                               !< iv = 1: others
  integer, intent(in):: kord
  real, intent(in)   ::   qs(i1:i2)
- real, intent(in)   :: delp(i1:i2,km)     ! layer pressure thickness
- real, intent(inout):: a4(4,i1:i2,km)     ! Interpolated values
+ real, intent(in)   :: delp(i1:i2,km)     !< layer pressure thickness
+ real, intent(inout):: a4(4,i1:i2,km)     !< Interpolated values
 !-----------------------------------------------------------------------
  logical, dimension(i1:i2,km):: extm, ext5, ext6
  real  gam(i1:i2,km)
@@ -2304,8 +2345,8 @@ endif        ! end last_step check
  integer, intent(in) :: im
  integer, intent(in) :: iv
  logical, intent(in) :: extm(im)
- real , intent(inout) :: a4(4,im)   ! PPM array
-! !LOCAL VARIABLES:
+ real , intent(inout) :: a4(4,im)   !< PPM array
+! LOCAL VARIABLES:
  real  da1, da2, a6da
  integer i
 
@@ -2381,20 +2422,17 @@ endif        ! end last_step check
 
  subroutine ppm_profile(a4, delp, km, i1, i2, iv, kord)
 
-! !INPUT PARAMETERS:
- integer, intent(in):: iv      ! iv =-1: winds
-                               ! iv = 0: positive definite scalars
-                               ! iv = 1: others
-                               ! iv = 2: temp (if remap_t) and w (iv=-2)
- integer, intent(in):: i1      ! Starting longitude
- integer, intent(in):: i2      ! Finishing longitude
- integer, intent(in):: km      ! vertical dimension
- integer, intent(in):: kord    ! Order (or more accurately method no.):
+! INPUT PARAMETERS:
+ integer, intent(in):: iv      !< iv =-1: winds iv = 0: positive definite scalars iv = 1: others iv = 2: temp (if remap_t) and w (iv=-2)
+ integer, intent(in):: i1      !< Starting longitude
+ integer, intent(in):: i2      !< Finishing longitude
+ integer, intent(in):: km      !< Vertical dimension
+ integer, intent(in):: kord    !< Order (or more accurately method no.):
                                ! 
- real , intent(in):: delp(i1:i2,km)     ! layer pressure thickness
+ real , intent(in):: delp(i1:i2,km)     !< Layer pressure thickness
 
 ! !INPUT/OUTPUT PARAMETERS:
- real , intent(inout):: a4(4,i1:i2,km)  ! Interpolated values
+ real , intent(inout):: a4(4,i1:i2,km)  !< Interpolated values
 
 ! DESCRIPTION:
 !
@@ -2641,20 +2679,15 @@ endif        ! end last_step check
 
  subroutine ppm_limiters(dm, a4, itot, lmt)
 
-! !INPUT PARAMETERS:
-      real , intent(in):: dm(*)     ! the linear slope
-      integer, intent(in) :: itot      ! Total Longitudes
-      integer, intent(in) :: lmt       ! 0: Standard PPM constraint
-                                       ! 1: Improved full monotonicity constraint (Lin)
-                                       ! 2: Positive definite constraint
-                                       ! 3: do nothing (return immediately)
-! !INPUT/OUTPUT PARAMETERS:
-      real , intent(inout) :: a4(4,*)   ! PPM array
-                                           ! AA <-- a4(1,i)
-                                           ! AL <-- a4(2,i)
-                                           ! AR <-- a4(3,i)
-                                           ! A6 <-- a4(4,i)
-! !LOCAL VARIABLES:
+! INPUT PARAMETERS:
+      real , intent(in):: dm(*)     !< Linear slope
+      integer, intent(in) :: itot      !< Total Longitudes
+      integer, intent(in) :: lmt       !< 0: Standard PPM constraint 1: Improved full monotonicity constraint
+                                       !< (Lin) 2: Positive definite constraint 
+                                       !< 3: do nothing (return immediately)
+! INPUT/OUTPUT PARAMETERS:
+      real , intent(inout) :: a4(4,*)   !< PPM array AA <-- a4(1,i) AL <-- a4(2,i) AR <-- a4(3,i) A6 <-- a4(4,i)
+! LOCAL VARIABLES:
       real  qmp
       real  da1, da2, a6da
       real  fmin
@@ -2726,14 +2759,14 @@ endif        ! end last_step check
 
  subroutine steepz(i1, i2, km, a4, df2, dm, dq, dp, d4)
  integer, intent(in) :: km, i1, i2
-   real , intent(in) ::  dp(i1:i2,km)       ! grid size
-   real , intent(in) ::  dq(i1:i2,km)       ! backward diff of q
-   real , intent(in) ::  d4(i1:i2,km)       ! backward sum:  dp(k)+ dp(k-1) 
-   real , intent(in) :: df2(i1:i2,km)       ! first guess mismatch
-   real , intent(in) ::  dm(i1:i2,km)       ! monotonic mismatch
-! !INPUT/OUTPUT PARAMETERS:
-      real , intent(inout) ::  a4(4,i1:i2,km)  ! first guess/steepened
-! !LOCAL VARIABLES:
+   real , intent(in) ::  dp(i1:i2,km)       !< Grid size
+   real , intent(in) ::  dq(i1:i2,km)       !< Backward diff of q
+   real , intent(in) ::  d4(i1:i2,km)       !< Backward sum:  dp(k)+ dp(k-1) 
+   real , intent(in) :: df2(i1:i2,km)       !< First guess mismatch
+   real , intent(in) ::  dm(i1:i2,km)       !< Monotonic mismatch
+! INPUT/OUTPUT PARAMETERS:
+      real , intent(inout) ::  a4(4,i1:i2,km)  !<First guess/steepened
+! LOCAL VARIABLES:
       integer i, k
       real  alfa(i1:i2,km)
       real     f(i1:i2,km)
@@ -2777,8 +2810,9 @@ endif        ! end last_step check
 
  end subroutine steepz
 
-
-
+!>@brief The subroutine 'rst_remap' remaps all variables required for a restart.
+!>@details npz_restart /= npz (i.e., when the number of vertical levels is
+!! changed at restart)
  subroutine rst_remap(km, kn, is,ie,js,je, isd,ied,jsd,jed, nq, ntp, &
                       delp_r, u_r, v_r, w_r, delz_r, pt_r, q_r, qdiag_r, &
                       delp,   u,   v,   w,   delz,   pt,   q,   qdiag,   &
@@ -2787,21 +2821,21 @@ endif        ! end last_step check
 !------------------------------------
 ! Assuming hybrid sigma-P coordinate:
 !------------------------------------
-! !INPUT PARAMETERS:
-  integer, intent(in):: km                    ! Restart z-dimension
-  integer, intent(in):: kn                    ! Run time dimension
-  integer, intent(in):: nq, ntp               ! number of tracers (including h2o)
-  integer, intent(in):: is,ie,isd,ied         ! starting & ending X-Dir index
-  integer, intent(in):: js,je,jsd,jed         ! starting & ending Y-Dir index
+! INPUT PARAMETERS:
+  integer, intent(in):: km                    !< Restart z-dimension
+  integer, intent(in):: kn                    !< Run time dimension
+  integer, intent(in):: nq, ntp               !< Number of tracers (including H2O)
+  integer, intent(in):: is,ie,isd,ied         !< Starting & ending X-Dir index
+  integer, intent(in):: js,je,jsd,jed         !< Starting & ending Y-Dir index
   logical, intent(in):: hydrostatic, make_nh, square_domain
   real, intent(IN) :: ptop
   real, intent(in) :: ak_r(km+1)
   real, intent(in) :: bk_r(km+1)
   real, intent(in) :: ak(kn+1)
   real, intent(in) :: bk(kn+1)
-  real, intent(in):: delp_r(is:ie,js:je,km) ! pressure thickness
-  real, intent(in)::   u_r(is:ie,  js:je+1,km)   ! u-wind (m/s)
-  real, intent(in)::   v_r(is:ie+1,js:je  ,km)   ! v-wind (m/s)
+  real, intent(in):: delp_r(is:ie,js:je,km) !< Pressure thickness
+  real, intent(in)::   u_r(is:ie,  js:je+1,km)   !< u-wind (m/s)
+  real, intent(in)::   v_r(is:ie+1,js:je  ,km)   !< v-wind (m/s)
   real, intent(inout)::  pt_r(is:ie,js:je,km)
   real, intent(in)::   w_r(is:ie,js:je,km)
   real, intent(in)::   q_r(is:ie,js:je,km,1:ntp)
@@ -2809,17 +2843,17 @@ endif        ! end last_step check
   real, intent(inout)::delz_r(is:ie,js:je,km)
   type(domain2d), intent(INOUT) :: domain
 ! Output:
-  real, intent(out):: delp(isd:ied,jsd:jed,kn) ! pressure thickness
-  real, intent(out)::  u(isd:ied  ,jsd:jed+1,kn)   ! u-wind (m/s)
-  real, intent(out)::  v(isd:ied+1,jsd:jed  ,kn)   ! v-wind (m/s)
-  real, intent(out)::  w(isd:     ,jsd:     ,1:)   ! vertical velocity (m/s)
-  real, intent(out):: pt(isd:ied  ,jsd:jed  ,kn)   ! temperature
+  real, intent(out):: delp(isd:ied,jsd:jed,kn) !< Pressure thickness
+  real, intent(out)::  u(isd:ied  ,jsd:jed+1,kn)   !< u-wind (m/s)
+  real, intent(out)::  v(isd:ied+1,jsd:jed  ,kn)   !< v-wind (m/s)
+  real, intent(out)::  w(isd:     ,jsd:     ,1:)   !< Vertical velocity (m/s)
+  real, intent(out):: pt(isd:ied  ,jsd:jed  ,kn)   !< Temperature
   real, intent(out):: q(isd:ied,jsd:jed,kn,1:ntp)
   real, intent(out):: qdiag(isd:ied,jsd:jed,kn,ntp+1:nq)
-  real, intent(out):: delz(isd:,jsd:,1:)   ! delta-height (m)
+  real, intent(out):: delz(isd:,jsd:,1:)   !< Delta-height (m)
 !-----------------------------------------------------------------------
   real r_vir, rgrav
-  real ps(isd:ied,jsd:jed)  ! surface pressure
+  real ps(isd:ied,jsd:jed)  !< Surface pressure
   real  pe1(is:ie,km+1)
   real  pe2(is:ie,kn+1)
   real  pv1(is:ie+1,km+1)
@@ -3055,8 +3089,8 @@ endif        ! end last_step check
 
  end subroutine rst_remap
 
-
-
+!>@brief The subroutine 'mappm' is a general-purpose routine for remapping
+!! one set of vertical levels to another. 
  subroutine mappm(km, pe1, q1, kn, pe2, q2, i1, i2, iv, kord, ptop)
 
 ! IV = 0: constituents
@@ -3071,7 +3105,11 @@ endif        ! end last_step check
 !      in the new vertical coordinate
 
  integer, intent(in):: i1, i2, km, kn, kord, iv
- real, intent(in ):: pe1(i1:i2,km+1), pe2(i1:i2,kn+1)
+ real, intent(in ):: pe1(i1:i2,km+1), pe2(i1:i2,kn+1) !< pe1: pressure at layer edges from model top to bottom
+                                                      !!      surface in the ORIGINAL vertical coordinate 
+                                                      !< pe2: pressure at layer edges from model top to bottom 
+                                                      !!      surface in the NEW vertical coordinate
+! Mass flux preserving mapping: q1(im,km) -> q2(im,kn)
  real, intent(in )::  q1(i1:i2,km)
  real, intent(out)::  q2(i1:i2,kn)
  real, intent(IN) :: ptop
@@ -3185,7 +3223,9 @@ endif        ! end last_step check
 
  end subroutine mappm
 
-
+!>@brief The subroutine 'moist_cv' computes the FV3-consistent moist heat capacity under constant volume,
+!! including the heating capacity of water vapor and condensates.
+!>@details See \cite emanuel1994atmospheric for information on variable heat capacities.
  subroutine moist_cv(is,ie, isd,ied, jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
                      ice_wat, snowwat, graupel, q, qd, cvm, t1)
   integer, intent(in):: is, ie, isd,ied, jsd,jed, km, nwat, j, k
@@ -3263,6 +3303,8 @@ endif        ! end last_step check
 
  end subroutine moist_cv
 
+!>@brief The subroutine 'moist_cp' computes the FV3-consistent moist heat capacity under constant pressure,
+!! including the heating capacity of water vapor and condensates.
  subroutine moist_cp(is,ie, isd,ied, jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
                      ice_wat, snowwat, graupel, q, qd, cpm, t1)
 

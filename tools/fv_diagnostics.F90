@@ -1,26 +1,124 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
+!>@ The module 'fv_diagnostics' contains routines to compute diagnosic fields.
 module fv_diagnostics_mod
+
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>a2b_edge_mod</td>
+!     <td>a2b_ord2, a2b_ord4</td>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>grav, rdgas, rvgas, pi=>pi_8, radius, kappa, WTMAIR, WTMCO2,
+!         omega, hlv, cp_air, cp_vapor</td>
+!   </tr>
+!   <tr>
+!     <td>diag_manager_mod</td>
+!     <td>diag_axis_init, register_diag_field,
+!         register_static_field, send_data, diag_grid_init</td>
+!   </tr>
+!   <tr>
+!     <td>field_manager_mod</td>
+!     <td>MODEL_ATMOS</td>
+!   </tr>
+!   <tr>
+!     <td>fms_mod</td>
+!     <td>write_version_number</td>
+!   </tr>
+!   <tr>
+!     <td>fms_io_mod</td>
+!     <td>set_domain, nullify_domain, write_version_number</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_atmos_type, fv_grid_type, fv_diag_type, fv_grid_bounds_type, 
+!         R_GRIDmax_step</td>
+!   </tr>
+!   <tr>
+!     <td>fv_eta_mod</td>
+!     <td>get_eta_level, gw_1d</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_utils_mod</td>
+!     <td> g_sum</td>
+!   </tr>
+!   <tr>
+!     <td>fv_io_mod</td>
+!     <td>fv_io_read_tracers</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>mp_reduce_sum, mp_reduce_min, mp_reduce_max, is_master</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mapz_mod</td>
+!     <td>E_Flux, moist_cv</td>
+!   </tr>
+!   <tr>
+!     <td>fv_sg_mod</td>
+!     <td>qsmith</td>
+!   </tr>
+!   <tr>
+!     <td>fv_surf_map_mod</td>
+!     <td>zs_g</td>
+!   </tr>
+!   <tr>
+!     <td>fv_timing_mod</td>
+!     <td>timing_on, timing_off</td>
+!   </tr>
+!   <tr>
+!     <td>gfdl_cloud_microphys_mod</td>
+!     <td>wqs1, qsmith_init</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_error, FATAL, stdlog, mpp_pe, mpp_root_pe, mpp_sum, mpp_max, NOTE</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>domain2d, mpp_update_domains, DGRID_NE</td>
+!   </tr>>
+!   <tr>
+!     <td>sat_vapor_pres_mod</td>
+!     <td>compute_qs, lookup_es</td>
+!   </tr>
+!   <tr>
+!     <td>time_manager_mod</td>
+!     <td>time_type, get_date, get_time</td>
+!   </tr>
+!   <tr>
+!     <td>tracer_manager_mod</td>
+!     <td>get_tracer_names, get_number_tracers, get_tracer_index, set_tracer_profile</td>
+!   </tr>
+! </table>
 
  use constants_mod,      only: grav, rdgas, rvgas, pi=>pi_8, radius, kappa, WTMAIR, WTMCO2, &
                                omega, hlv, cp_air, cp_vapor
+ use fms_mod,            only: write_version_number
  use fms_io_mod,         only: set_domain, nullify_domain, write_version_number
  use time_manager_mod,   only: time_type, get_date, get_time
  use mpp_domains_mod,    only: domain2d, mpp_update_domains, DGRID_NE
@@ -50,7 +148,8 @@ module fv_diagnostics_mod
 
 
  real, parameter:: missing_value = -1.e10
- real, parameter:: missing_value2 = -1.e3 ! for variables with many missing values
+ real, parameter:: missing_value2 = -1.e3 !< for variables with many missing values
+ real, parameter:: missing_value3 = 1.e10 !< for variables where we look for smallest values
  real :: ginv
  real :: pk0
  logical master
@@ -98,8 +197,7 @@ contains
 
     real, allocatable :: grid_xt(:), grid_yt(:), grid_xe(:), grid_ye(:), grid_xn(:), grid_yn(:)
     real, allocatable :: grid_x(:),  grid_y(:)
-    real              :: vrange(2), vsrange(2), wrange(2), trange(2), slprange(2), rhrange(2),&
-                         skrange(2)
+    real              :: vrange(2), vsrange(2), wrange(2), trange(2), slprange(2), rhrange(2)
     real, allocatable :: a3(:,:,:)
     real              :: pfull(npz)
     real              :: hyam(npz), hybm(npz)
@@ -159,7 +257,6 @@ contains
     trange = (/  100.,  350. /)  ! temperature
 #endif
     slprange = (/800.,  1200./)  ! sea-level-pressure
-    skrange  = (/ -10000000.0,  10000000.0 /)  ! dissipation estimate for SKEB
 
     ginv = 1./GRAV
      if (Atm(1)%grid_number == 1) fv_time = Time
@@ -567,9 +664,6 @@ contains
                'omega', 'Pa/s', missing_value=missing_value )
           idiag%id_divg  = register_diag_field ( trim(field), 'divg', axes(1:3), Time,      &
                'mean divergence', '1/s', missing_value=missing_value )
-!  diagnotic output for skeb testing
-       idiag%id_diss = register_diag_field ( trim(field), 'diss_est', axes(1:3), Time,    &
-            'random', 'none', missing_value=missing_value, range=skrange )
 
           idiag%id_rh = register_diag_field ( trim(field), 'rh', axes(1:3), Time,        &
                'Relative Humidity', '%', missing_value=missing_value )
@@ -656,9 +750,9 @@ contains
        idiag%id_tb = register_diag_field ( trim(field), 'tb', axes(1:2), Time,  &
                                         'lowest layer temperature', 'K' )
        idiag%id_ctt = register_diag_field( trim(field), 'ctt', axes(1:2), Time,  &
-                                        'cloud_top temperature', 'K', missing_value=missing_value2 )
+                                        'cloud_top temperature', 'K', missing_value=missing_value3 )
        idiag%id_ctp = register_diag_field( trim(field), 'ctp', axes(1:2), Time,  &
-                                        'cloud_top pressure', 'hPa' , missing_value=missing_value2 )
+                                        'cloud_top pressure', 'hPa' , missing_value=missing_value3 )
        idiag%id_ctz = register_diag_field( trim(field), 'ctz', axes(1:2), Time,  &
                                         'cloud_top height', 'hPa' , missing_value=missing_value2 )
        idiag%id_cape = register_diag_field( trim(field), 'cape', axes(1:2), Time,  &
@@ -1506,59 +1600,63 @@ contains
                 idiag%id_dp300>0 .or. idiag%id_dp500>0 .or. idiag%id_dp700>0 .or. idiag%id_dp850>0 .or. &
                 idiag%id_dp925>0 .or. idiag%id_dp1000>0 ) then
 
+              if (allocated(a3)) deallocate(a3)
+              allocate(a3(isc:iec,jsc:jec,1:npz))
               !compute dew point (K)
               !using formula at https://cals.arizona.edu/azmet/dewpoint.html
               do k=1,npz
               do j=jsc,jec
               do i=isc,iec
-                 tmp = ( log(wk(i,j,k)*1.e-2) + 17.27 * ( Atm(n)%pt(i,j,k) - 273.14 )/ ( -35.84 + Atm(n)%pt(i,j,k)) ) / 17.27 
-                 wk(i,j,k) = 273.14 + 237.3*tmp/ ( 1. - tmp )
+                 tmp = ( log(max(wk(i,j,k)*1.e-2,1.e-2)) + 17.27 * ( Atm(n)%pt(i,j,k) - 273.14 )/ ( -35.84 + Atm(n)%pt(i,j,k)) ) / 17.27 
+                 a3(i,j,k) = 273.14 + 237.3*tmp/ ( 1. - tmp )
               enddo
               enddo
               enddo
 
+              if (idiag%id_dp50>0) then
+                 call interpolate_vertical(isc, iec, jsc, jec, npz, 50.e2, Atm(n)%peln, a3, a2)
+                 used=send_data(idiag%id_dp50, a2, Time)
+              endif
+              if (idiag%id_dp100>0) then
+                 call interpolate_vertical(isc, iec, jsc, jec, npz, 100.e2, Atm(n)%peln, a3, a2)
+                 used=send_data(idiag%id_dp100, a2, Time)
+              endif
+              if (idiag%id_dp200>0) then
+                 call interpolate_vertical(isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, a3, a2)
+                 used=send_data(idiag%id_dp200, a2, Time)
+              endif
+              if (idiag%id_dp250>0) then
+                 call interpolate_vertical(isc, iec, jsc, jec, npz, 250.e2, Atm(n)%peln, a3, a2)
+                 used=send_data(idiag%id_dp250, a2, Time)
+              endif
+              if (idiag%id_dp300>0) then
+                 call interpolate_vertical(isc, iec, jsc, jec, npz, 300.e2, Atm(n)%peln, a3, a2)
+                 used=send_data(idiag%id_dp300, a2, Time)
+              endif
+              if (idiag%id_dp500>0) then
+                 call interpolate_vertical(isc, iec, jsc, jec, npz, 500.e2, Atm(n)%peln, a3, a2)
+                 used=send_data(idiag%id_dp500, a2, Time)
+              endif
+              if (idiag%id_dp700>0) then
+                 call interpolate_vertical(isc, iec, jsc, jec, npz, 700.e2, Atm(n)%peln, a3, a2)
+                 used=send_data(idiag%id_dp700, a2, Time)
+              endif
+              if (idiag%id_dp850>0) then
+                 call interpolate_vertical(isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, a3, a2)
+                 used=send_data(idiag%id_dp850, a2, Time)
+              endif
+              if (idiag%id_dp925>0) then
+                 call interpolate_vertical(isc, iec, jsc, jec, npz, 925.e2, Atm(n)%peln, a3, a2)
+                 used=send_data(idiag%id_dp925, a2, Time)
+              endif
+              if (idiag%id_dp1000>0) then
+                 call interpolate_vertical(isc, iec, jsc, jec, npz, 1000.e2, Atm(n)%peln, a3, a2)
+                 used=send_data(idiag%id_dp1000, a2, Time)
+              endif
+              deallocate(a3)
+
            endif
 
-           if (idiag%id_dp50>0) then
-               call interpolate_vertical(isc, iec, jsc, jec, npz, 50.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
-               used=send_data(idiag%id_dp50, a2, Time)
-           endif
-           if (idiag%id_dp100>0) then
-               call interpolate_vertical(isc, iec, jsc, jec, npz, 100.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
-               used=send_data(idiag%id_dp100, a2, Time)
-           endif
-           if (idiag%id_dp200>0) then
-               call interpolate_vertical(isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
-               used=send_data(idiag%id_dp200, a2, Time)
-           endif
-           if (idiag%id_dp250>0) then
-               call interpolate_vertical(isc, iec, jsc, jec, npz, 250.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
-               used=send_data(idiag%id_dp250, a2, Time)
-           endif
-           if (idiag%id_dp300>0) then
-               call interpolate_vertical(isc, iec, jsc, jec, npz, 300.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
-               used=send_data(idiag%id_dp300, a2, Time)
-           endif
-           if (idiag%id_dp500>0) then
-               call interpolate_vertical(isc, iec, jsc, jec, npz, 500.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
-               used=send_data(idiag%id_dp500, a2, Time)
-           endif
-           if (idiag%id_dp700>0) then
-               call interpolate_vertical(isc, iec, jsc, jec, npz, 700.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
-               used=send_data(idiag%id_dp700, a2, Time)
-           endif
-           if (idiag%id_dp850>0) then
-               call interpolate_vertical(isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
-               used=send_data(idiag%id_dp850, a2, Time)
-           endif
-           if (idiag%id_dp925>0) then
-               call interpolate_vertical(isc, iec, jsc, jec, npz, 925.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
-               used=send_data(idiag%id_dp925, a2, Time)
-           endif
-           if (idiag%id_dp1000>0) then
-               call interpolate_vertical(isc, iec, jsc, jec, npz, 1000.e2, Atm(n)%peln, wk(isc:iec,jsc:jec,:), a2)
-               used=send_data(idiag%id_dp1000, a2, Time)
-           endif
        endif
 
        ! rel hum (CMIP definition) at selected press levels  (for IPCC)
@@ -1632,7 +1730,7 @@ contains
 
 
 
-       if( idiag%id_slp>0 .or. idiag%id_tm>0 .or. idiag%id_hght>0 .or. idiag%id_c15>0 .or. idiag%id_ctz ) then
+       if( idiag%id_slp>0 .or. idiag%id_tm>0 .or. idiag%id_hght>0 .or. idiag%id_c15>0 .or. idiag%id_ctz>0 ) then
 
           allocate ( wz(isc:iec,jsc:jec,npz+1) )
           call get_height_field(isc, iec, jsc, jec, ngc, npz, Atm(n)%flagstruct%hydrostatic, Atm(n)%delz,  &
@@ -2143,7 +2241,7 @@ contains
        endif
 
 ! Cloud top temperature & cloud top press:
-       if ( (idiag%id_ctt>0 .or. idiag%id_ctp>0 .or. idiag%id_ctz).and. Atm(n)%flagstruct%nwat==6) then
+       if ( (idiag%id_ctt>0 .or. idiag%id_ctp>0 .or. idiag%id_ctz>0).and. Atm(n)%flagstruct%nwat==6) then
             allocate ( var1(isc:iec,jsc:jec) )
             allocate ( var2(isc:iec,jsc:jec) )
 !$OMP parallel do default(shared) private(tmp)
@@ -2443,7 +2541,7 @@ contains
             used=send_data(idiag%id_pmaskv2, a2, Time)
        endif
 
-       if ( idiag%id_u100m>0 .or. idiag%id_v100m>0 .or.  idiag%id_w100m>0 .or. idiag%id_w5km>0 .or. idiag%id_w2500m>0 .or. idiag%id_w1km>0 .or. idiag%id_basedbz .or. idiag%id_dbz4km) then
+       if ( idiag%id_u100m>0 .or. idiag%id_v100m>0 .or.  idiag%id_w100m>0 .or. idiag%id_w5km>0 .or. idiag%id_w2500m>0 .or. idiag%id_w1km>0 .or. idiag%id_basedbz>0 .or. idiag%id_dbz4km>0) then
           if (.not.allocated(wz)) allocate ( wz(isc:iec,jsc:jec,npz+1) )
           if ( Atm(n)%flagstruct%hydrostatic) then
              rgrav = 1. / grav
@@ -2514,7 +2612,7 @@ contains
             if(prt_minmax) call prt_maxmin('v100m', a2, isc, iec, jsc, jec, 0, 1, 1.)
        endif
 
-       if ( rainwat > 0 .and. (idiag%id_dbz>0 .or. idiag%id_maxdbz>0 .or. idiag%id_basedbz>0 .or. idiag%id_dbz4km .or. idiag%id_dbztop .or. idiag%id_dbz_m10C)) then
+       if ( rainwat > 0 .and. (idiag%id_dbz>0 .or. idiag%id_maxdbz>0 .or. idiag%id_basedbz>0 .or. idiag%id_dbz4km>0 .or. idiag%id_dbztop>0 .or. idiag%id_dbz_m10C>0)) then
 
           if (.not. allocated(a3)) allocate(a3(isc:iec,jsc:jec,npz))
 
@@ -2766,7 +2864,6 @@ contains
 
        if(idiag%id_pt   > 0) used=send_data(idiag%id_pt  , Atm(n)%pt  (isc:iec,jsc:jec,:), Time)
        if(idiag%id_omga > 0) used=send_data(idiag%id_omga, Atm(n)%omga(isc:iec,jsc:jec,:), Time)
-       if(idiag%id_diss > 0) used=send_data(idiag%id_diss, Atm(n)%diss_est(isc:iec,jsc:jec,:), Time)
        
        allocate( a3(isc:iec,jsc:jec,npz) )
        if(idiag%id_theta_e > 0 ) then
@@ -2780,7 +2877,7 @@ contains
                 enddo
              enddo
           else
-             call eqv_pot(a3, Atm(n)%pt, Atm(n)%delp, Atm(n)%delz, Atm(n)%peln, Atm(n)%pkz, Atm(n)%q(isd,jsd,1,sphum),    &
+             call eqv_pot(a3, Atm(n)%pt, Atm(n)%delp, Atm(n)%delz, Atm(n)%peln, Atm(n)%pkz, Atm(n)%q(isd:ied,jsd:jed,1:npz,sphum),    &
                   isc, iec, jsc, jec, ngc, npz, Atm(n)%flagstruct%hydrostatic, Atm(n)%flagstruct%moist_phys)
           endif
 
@@ -3319,12 +3416,12 @@ contains
                                       ts, peln, a2, fac)
 
  integer,  intent(in):: is, ie, js, je, km, ng
- integer,  intent(in):: kd           ! vertical dimension of the ouput height
+ integer,  intent(in):: kd           !< vertical dimension of the ouput height
  real, intent(in):: wz(is:ie,js:je,km+1)
  real, intent(in):: ts(is-ng:ie+ng,js-ng:je+ng)
  real, intent(in):: peln(is:ie,km+1,js:je)
- real, intent(in):: height(kd)   ! must be monotonically decreasing with increasing k
- real, intent(out):: a2(is:ie,js:je,kd)      ! pressure (pa)
+ real, intent(in):: height(kd)   !< must be monotonically decreasing with increasing k
+ real, intent(out):: a2(is:ie,js:je,kd)      !< pressure (pa)
  real, optional, intent(in):: fac
 
 ! local:
@@ -3371,13 +3468,13 @@ contains
 
  subroutine get_height_given_pressure(is, ie, js, je, km, wz, kd, id, log_p, peln, a2)
  integer,  intent(in):: is, ie, js, je, km
- integer,  intent(in):: kd       ! vertical dimension of the ouput height
+ integer,  intent(in):: kd       !< vertical dimension of the ouput height
  integer,  intent(in):: id(kd)
- real, intent(in):: log_p(kd)    ! must be monotonically increasing  with increasing k
-                                 ! log (p)
+ real, intent(in):: log_p(kd)    !< must be monotonically increasing  with increasing k
+                                 !! log (p)
  real, intent(in):: wz(is:ie,js:je,km+1)
  real, intent(in):: peln(is:ie,km+1,js:je)
- real, intent(out):: a2(is:ie,js:je,kd)      ! height (m)
+ real, intent(out):: a2(is:ie,js:je,kd)      !< height (m)
 ! local:
  real, dimension(2*km+1):: pn, gz
  integer n,i,j,k, k1, k2, l
@@ -3425,7 +3522,7 @@ contains
  real, intent(in):: delz(is-ng:ie+ng,js-ng:je+ng,km)
  real(kind=R_GRID), intent(in), dimension(is:ie, js:je):: area, lat
 ! local:
- real:: a2(is:ie,js:je)      ! height (m)
+ real:: a2(is:ie,js:je)      !< height (m)
  real(kind=R_GRID), dimension(2*km+1):: pn, gz
  real(kind=R_GRID):: log_p
  integer i,j,k, k2, l
@@ -3504,6 +3601,11 @@ contains
      call mp_reduce_sum(   t_sh)
      call mp_reduce_sum(area_eq)
      call mp_reduce_sum(   t_eq)
+     !Bugfix for non-global domains
+     if (area_gb <= 1.) area_gb = -1.0
+     if (area_nh <= 1.) area_nh = -1.0
+     if (area_sh <= 1.) area_sh = -1.0
+     if (area_eq <= 1.) area_eq = -1.0
      if (is_master()) write(*,*) qname, t_gb/area_gb, t_nh/area_nh, t_sh/area_sh, t_eq/area_eq
 
  end subroutine prt_gb_nh_sh
@@ -3513,7 +3615,7 @@ contains
 ! iv = 0: positive definite scalars
 ! iv = 1: temperature
  integer,  intent(in):: is, ie, js, je, km, iv
- integer,  intent(in):: kd      ! vertical dimension of the ouput height
+ integer,  intent(in):: kd      !< vertical dimension of the ouput height
  integer,  intent(in):: id(kd)
  real, intent(in):: pout(kd)    ! must be monotonically increasing with increasing k
  real, intent(in):: pe(is:ie,km+1,js:je)
@@ -3635,7 +3737,7 @@ contains
  integer, intent(in):: i1, i2, km
  integer, intent(in):: iv
  real, intent(in)   :: q2(i1:i2,km)
- real, intent(in)   :: delp(i1:i2,km)     ! layer pressure thickness
+ real, intent(in)   :: delp(i1:i2,km)     ! <layer pressure thickness
  real, intent(out):: q(i1:i2,km+1)
 !-----------------------------------------------------------------------
  real  gam(i1:i2,km)
@@ -3756,7 +3858,7 @@ contains
  subroutine interpolate_z(is, ie, js, je, km, zl, hght, a3, a2)
 
  integer,  intent(in):: is, ie, js, je, km
- real, intent(in):: hght(is:ie,js:je,km+1)  ! hght(k) > hght(k+1)
+ real, intent(in):: hght(is:ie,js:je,km+1)  !< hght(k) > hght(k+1)
  real, intent(in):: a3(is:ie,js:je,km)
  real, intent(in):: zl
  real, intent(out):: a2(is:ie,js:je)
@@ -4086,8 +4188,8 @@ contains
 
  end subroutine updraft_helicity
 
-
-
+!>@brief The subroutine 'pv_entropy' computes potential vorticity.
+!>@author Shian-Jiann Lin
  subroutine pv_entropy(is, ie, js, je, ng, km, vort, f_d, pt, pkz, delp, grav)
 
 ! !INPUT PARAMETERS:
@@ -4280,8 +4382,6 @@ contains
 
  end subroutine ppme
 
-!#######################################################################
-
 subroutine rh_calc (pfull, t, qv, rh, do_cmip)
   
    real, intent (in),  dimension(:,:) :: pfull, t, qv
@@ -4314,10 +4414,11 @@ subroutine rh_calc (pfull, t, qv, rh, do_cmip)
 end subroutine rh_calc
 
 #ifdef SIMPLIFIED_THETA_E
+!>@brief The subroutine 'eqv_pot' calculates the equivalent potential temperature using 
+!! a simplified method.
+!>@author Shian-Jiann Lin
 subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, npz, &
                    hydrostatic, moist)
-! calculate the equvalent potential temperature
-! Simplified form coded by SJL
     integer, intent(in):: is,ie,js,je,ng,npz
     real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,npz):: pt, delp, q
     real, intent(in), dimension(is-ng:     ,js-ng:     ,1: ):: delz
@@ -4328,11 +4429,11 @@ subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, np
     real, dimension(is:ie,js:je,npz), intent(out) :: theta_e  !< eqv pot
 ! local
     real, parameter:: tice = 273.16
-    real, parameter:: c_liq = 4190.       ! heat capacity of water at 0C
+    real, parameter:: c_liq = 4190.       !< heat capacity of water at 0C
 #ifdef SIM_NGGPS
     real, parameter:: dc_vap = 0.
 #else
-    real, parameter:: dc_vap = cp_vapor - c_liq     ! = -2344.    isobaric heating/cooling
+    real, parameter:: dc_vap = cp_vapor - c_liq     !< = -2344. isobaric heating/cooling
 #endif
     real(kind=R_GRID), dimension(is:ie):: pd, rq
     real(kind=R_GRID) :: wfac
@@ -4395,11 +4496,13 @@ subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, np
 end subroutine eqv_pot
 
 #else
+
+!>@brief The subroutine 'eqv_pot' calculates the equivalent potential temperature.
+!>@author Xi Chen
+!>@date 28 July 2015
+!> Modfied by Shian-Jiann Lin
 subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, npz, &
                    hydrostatic, moist)
-! calculate the equvalent potential temperature
-! author: Xi.Chen@noaa.gov
-! created on: 07/28/2015
 ! Modified by SJL
     integer, intent(in):: is,ie,js,je,ng,npz
     real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,npz):: pt, delp, q
@@ -4475,27 +4578,26 @@ end subroutine eqv_pot
 
 #endif
 
+!>@brief The subroutine 'nh_total_energy computes vertically-integrated
+!! total energy per column.
  subroutine nh_total_energy(is, ie, js, je, isd, ied, jsd, jed, km,  &
                             w, delz, pt, delp, q, hs, area, domain,  &
                             sphum, liq_wat, rainwat, ice_wat,        &
                             snowwat, graupel, nwat, ua, va, moist_phys, te)
-!------------------------------------------------------
-! Compute vertically integrated total energy per column
-!------------------------------------------------------
-! !INPUT PARAMETERS:
+! INPUT PARAMETERS:
    integer,  intent(in):: km, is, ie, js, je, isd, ied, jsd, jed
    integer,  intent(in):: nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel
    real, intent(in), dimension(isd:ied,jsd:jed,km):: ua, va, pt, delp, w, delz
    real, intent(in), dimension(isd:ied,jsd:jed,km,nwat):: q
-   real, intent(in):: hs(isd:ied,jsd:jed)  ! surface geopotential
+   real, intent(in):: hs(isd:ied,jsd:jed)  !< surface geopotential
    real, intent(in):: area(isd:ied, jsd:jed)
    logical, intent(in):: moist_phys
    type(domain2d), intent(INOUT) :: domain
-   real, intent(out):: te(is:ie,js:je)   ! vertically integrated TE
+   real, intent(out):: te(is:ie,js:je)   !< vertically integrated TE
 ! Local
-   real, parameter:: c_liq = 4190.       ! heat capacity of water at 0C
+   real, parameter:: c_liq = 4190.       !< heat capacity of water at 0C
    real(kind=R_Grid) ::    area_l(isd:ied, jsd:jed)
-   real, parameter:: cv_vap = cp_vapor - rvgas  ! 1384.5
+   real, parameter:: cv_vap = cp_vapor - rvgas  !< 1384.5
    real  phiz(is:ie,km+1)
    real, dimension(is:ie):: cvm, qc
    real cv_air, psm
@@ -4548,14 +4650,23 @@ end subroutine eqv_pot
 
   end subroutine nh_total_energy
 
-
+!>@brief The subroutine 'dbzcalc' computes equivalent reflectivity factor (in dBZ) at
+!! each model grid point.
+!>@details In calculating Ze, the RIP algorithm makes
+!! assumptions consistent with those made in an early version
+!! (ca. 1996) of the bulk mixed-phase microphysical scheme in the MM5
+!!  model (i.e., the scheme known as "Resiner-2").
+!!  More information on the derivation of simulated reflectivity in RIP
+!!  can be found in Stoelinga (2005, unpublished write-up).  Contact
+!!  Mark Stoelinga (stoeling@atmos.washington.edu) for a copy. 
+!>@date 22 September, 2016 - modified for use with GFDL cloud microphysics parameters.
  subroutine dbzcalc(q, pt, delp, peln, delz, &
       dbz, maxdbz, allmax, bd, npz, ncnst, &
       hydrostatic, zvir, in0r, in0s, in0g, iliqskin)
 
-   !Code from Mark Stoelinga's dbzcalc.f from the RIP package. 
-   !Currently just using values taken directly from that code, which is
-   ! consistent for the MM5 Reisner-2 microphysics. From that file:
+! Code from Mark Stoelinga's dbzcalc.f from the RIP package. 
+! Currently just using values taken directly from that code, which is
+! consistent for the MM5 Reisner-2 microphysics. From that file:
 
 !     This routine computes equivalent reflectivity factor (in dBZ) at
 !     each model grid point.  In calculating Ze, the RIP algorithm makes
@@ -4666,93 +4777,7 @@ end subroutine eqv_pot
    maxdbz(:,:) = -20. !Minimum value
    allmax = -20.
 
-#ifdef USE_STO
-   do k=mp_top+1, npz
-   do j=js, je
-   if (hydrostatic) then
-      do i=is, ie
-         rhoair(i) = delp(i,j,k)/( (peln(i,k+1,j)-peln(i,k,j)) * rdgas * pt(i,j,k) * ( 1. + zvir*q(i,j,k,sphum) ) )
-      enddo
-   else
-      do i=is, ie
-         rhoair(i) = -delp(i,j,k)/(grav*delz(i,j,k)) ! moist air density
-      enddo
-   endif
-   do i=is, ie
-      !      Adjust factor for brightband, where snow or graupel particle
-      !      scatters like liquid water (alpha=1.0) because it is assumed to
-      !      have a liquid skin.
-      
-      !lmh: celkel in dbzcalc.f presumably freezing temperature
-      if (iliqskin .and. pt(i,j,k) .gt. tice) then
-         factorb_s=factor_s/alpha
-         factorb_g=factor_g/alpha
-      else
-         factorb_s=factor_s
-         factorb_g=factor_g
-      endif
 
-      !Calculate variable intercept parameters if necessary
-      !  using definitions from Thompson et al
-      if (in0s) then
-         temp_c = min(-0.001, pt(i,j,k) - tice)
-         sonv = min(2.0e8, 2.0e6*exp(-0.12*temp_c))
-      else
-         sonv = rn0_s
-      end if
-
-! Account for excessively high cloud water -> autoconvert (diag only) excess cloud water
-      qr1 = max(qmin, q(i,j,k,rainwat)+dim(q(i,j,k,liq_wat), 1.0e-3))
-
-      if (graupel > 0) then
-         qg1 = max(qmin, q(i,j,k,graupel))
-      else
-         qg1 = qmin
-      endif
-      if (snowwat > 0) then
-         qs1 = max(qmin, q(i,j,k,snowwat))
-      else
-         qs1 = qmin
-      endif
-
-      if (in0g) then
-         gonv = gon
-         if ( qg1 > r1) then
-            gonv = 2.38 * (pi * rho_g / (rhoair(i)*qg1))**0.92
-            gonv = max(1.e4, min(gonv,gon))
-         end if
-      else
-         gonv = rn0_g
-      end if
-
-      if (in0r) then
-         ronv = ron2
-         if (qr1 > r1 ) then
-            ronv = ron_const1r * tanh((ron_qr0-qr1)/ron_delqr0) + ron_const2r
-         end if
-      else
-         ronv = rn0_r
-      end if
-
-      t1 = rhoair(i)*qr1
-      t2 = rhoair(i)*qs1
-      t3 = rhoair(i)*qg1
-
-      denfac = sqrt(min(10., 1.2/rhoair(i)))
-      vtr = max(1.e-3, vconr*denfac*exp(0.2*log(t1/normr)))
-
-      !Total equivalent reflectivity: mm^6 m^-3
-!     z_e = factor_r*t1*exp(0.75*log(t1/ronv)) + factorb_g*t3*exp(0.75*log(t3/gonv)) + factorb_s*t2*exp(0.75*log(t2/sonv))
-! Replace the rain contribution by a GFDL_MP consistent method
-      z_e = 200.*exp(1.6*log(3.6e6*t1/rho_r*vtr)) + factorb_g*t3*exp(0.75*log(t3/gonv)) + factorb_s*t2*exp(0.75*log(t2/sonv))
-      dbz(i,j,k) = 10.*log10( max(0.01, z_e) )
-      maxdbz(i,j) = max(dbz(i,j,k), maxdbz(i,j))
-      allmax      = max(dbz(i,j,k), allmax)
-   enddo
-   enddo
-   enddo
-
-#else
 !$OMP parallel do default(shared) private(rhoair,t1,t2,t3,denfac,vtr,vtg,vts,z_e)
    do k=mp_top+1, npz
    do j=js, je
@@ -4803,11 +4828,9 @@ end subroutine eqv_pot
          allmax = max(maxdbz(i,j), allmax)
       enddo
    enddo
-#endif
 
  end subroutine dbzcalc
 
-!#######################################################################
 
  subroutine fv_diag_init_gn(Atm)
    type(fv_atmos_type), intent(inout), target :: Atm
@@ -4820,10 +4843,16 @@ end subroutine eqv_pot
    
  end subroutine fv_diag_init_gn
 
-!-----------------------------------------------------------------------
-!ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-!-----------------------------------------------------------------------
-
+!>@brief The subroutine 'getcape' calculateds the Convective Available
+!! Potential Energy (CAPE) from a Sounding
+!>@author George H. Bryan
+!! Mesoscale and Microscale Meteorology Division
+!! National Center for Atmospheric Research
+!! Boulder, Colorado, USA
+!! gbryan@ucar.edu
+!>@details: Last modified 10 October 2008
+!! See \cite bolton1980computation for constants and definitions
+!! \cite bryan2004reevaluation for ice processes
     subroutine getcape( nk , p , t , dz, q, the, cape , cin, source_in )
     implicit none
 
@@ -4874,27 +4903,25 @@ end subroutine eqv_pot
 !-----------------------------------------------------------------------
 !  User options:
 
-    real, parameter :: pinc = 10000.0   ! Pressure increment (Pa)
-                                      ! (smaller number yields more accurate
-                                      !  results,larger number makes code 
-                                      !  go faster)
+    real, parameter :: pinc = 10000.0   !< Pressure increment (Pa)
+                                        ! (smaller number yields more accurate
+                                        !  results,larger number makes code 
+                                        !  go faster)
 
 
-    real, parameter :: ml_depth =  200.0  ! depth (m) of mixed layer 
-                                          ! for source=3
+    real, parameter :: ml_depth =  200.0 !< depth (m) of mixed layer 
+                                         !! for source=3
 
-    integer, parameter :: adiabat = 1   ! Formulation of moist adiabat:
-                                        ! 1 = pseudoadiabatic, liquid only
-                                        ! 2 = reversible, liquid only
-                                        ! 3 = pseudoadiabatic, with ice
-                                        ! 4 = reversible, with ice
+    integer, parameter :: adiabat = 1   !< Formulation of moist adiabat:
+                                        !< 1 = pseudoadiabatic, liquid only
+                                        !< 2 = reversible, liquid only
+                                        !< 3 = pseudoadiabatic, with ice
+                                        !< 4 = reversible, with ice
 
 !-----------------------------------------------------------------------
 !ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 !-----------------------------------------------------------------------
 !            No need to modify anything below here:
-!-----------------------------------------------------------------------
-!ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 !-----------------------------------------------------------------------
 
     integer :: source = 1
@@ -5261,10 +5288,8 @@ end subroutine eqv_pot
 
     return
   end subroutine getcape
+!-----------------------------------------------------------------------
 
-!-----------------------------------------------------------------------
-!ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-!-----------------------------------------------------------------------
 
   real function getqvs(p,t)
     implicit none
@@ -5278,10 +5303,8 @@ end subroutine eqv_pot
 
     return
   end function getqvs
+!-----------------------------------------------------------------------
 
-!-----------------------------------------------------------------------
-!ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-!-----------------------------------------------------------------------
 
   real function getqvi(p,t)
     implicit none
@@ -5295,7 +5318,6 @@ end subroutine eqv_pot
 
     return
   end function getqvi
-
 !-----------------------------------------------------------------------
 
 end module fv_diagnostics_mod

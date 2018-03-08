@@ -1,23 +1,92 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
+!>@brief The module 'fv_update_phys' applies physics tendencies consistent with
+!! the FV3 discretization and definition of the prognostic variables.
+
 module fv_update_phys_mod
+
+! Modules Included:
+! <table>
+!   <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>boundary_mod</td>
+!     <td>nested_grid_BC, extrapolation_BC</td>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>kappa, rdgas, rvgas, grav, cp_air, cp_vapor, pi=>pi_8, radius</td>
+!   </tr>
+!   <tr>
+!     <td>field_manager_mod</td>
+!     <td>MODEL_ATMOS</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_flags_type, fv_nest_type, R_GRID</td>
+!   </tr>
+!   <tr>
+!     <td>fv_diagnostics_mod</td>
+!     <td>prt_maxmin</td>
+!   </tr>
+!   <tr>
+!     <td>fv_eta_mod</td>
+!     <td>get_eta_level</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mapz_mod</td>
+!     <td>moist_cv, moist_cp</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>start_group_halo_update, complete_group_halo_update,group_halo_update_type</td>
+!   </tr>
+!   <tr>
+!     <td>fv_timing_mod</td>
+!     <td>timing_on, timing_off</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>FATAL, mpp_error,NOTE, WARNING</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>mpp_update_domains, domain2d</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_parameter_mod</td>
+!     <td>AGRID_PARAM=>AGRID</td>
+!   </tr>
+!   <tr>
+!     <td>time_manager_mod</td>
+!     <td>time_type</td>
+!   </tr>
+!   <tr>
+!     <td>tracer_manager_mod</td>
+!     <td>get_tracer_index, adjust_mass, get_tracer_names</td>
+!   </tr>
+! </table>
 
   use constants_mod,      only: kappa, rdgas, rvgas, grav, cp_air, cp_vapor, pi=>pi_8, radius
   use field_manager_mod,  only: MODEL_ATMOS
@@ -82,7 +151,7 @@ module fv_update_phys_mod
 
 ! optional arguments for atmospheric nudging
     real, intent(in), dimension(isd:ied,jsd:jed), optional ::   &
-                                lona, lata   ! A-grid (physics) lon and lat
+                                lona, lata   !< A-grid (physics) lon and lat
 
 ! Winds on lat-lon grid:
     real, intent(inout), dimension(isd:ied,jsd:jed,npz):: ua, va
@@ -100,22 +169,22 @@ module fv_update_phys_mod
     type(fv_grid_bounds_type), intent(IN)  :: bd
     type(domain2d), intent(INOUT) :: domain
 
-    real, intent(inout):: u(isd:ied  ,jsd:jed+1,npz)  ! D grid zonal wind (m/s)
-    real, intent(inout):: v(isd:ied+1,jsd:jed  ,npz)  ! D grid meridional wind (m/s)
+    real, intent(inout):: u(isd:ied  ,jsd:jed+1,npz)  !< D grid zonal wind (m/s)
+    real, intent(inout):: v(isd:ied+1,jsd:jed  ,npz)  !< D grid meridional wind (m/s)
     real, intent(inout), dimension(isd:ied,jsd:jed,npz):: pt, delp
-    real, intent(inout):: q(isd:ied,jsd:jed,npz,nq)   ! specific humidity and constituents
-    real, intent(inout):: qdiag(isd:ied,jsd:jed,npz,nq+1:flagstruct%ncnst) ! diagnostic tracers
+    real, intent(inout):: q(isd:ied,jsd:jed,npz,nq)   !< specific humidity and constituents
+    real, intent(inout):: qdiag(isd:ied,jsd:jed,npz,nq+1:flagstruct%ncnst) !< diagnostic tracers
 
 !-----------------------------------------------------------------------
 ! Auxilliary pressure arrays:    
 ! The 5 vars below can be re-computed from delp and ptop.
 !-----------------------------------------------------------------------
 ! dyn_aux:
-    real, intent(inout):: ps  (isd:ied  ,jsd:jed)           ! Surface pressure (pascal)
-    real, intent(inout):: pe  (is-1:ie+1, npz+1,js-1:je+1)  ! edge pressure (pascal)
-    real, intent(inout):: pk  (is:ie,js:je  , npz+1)        ! pe**cappa
-    real, intent(inout):: peln(is:ie,npz+1,js:je)           ! ln(pe)
-    real, intent(inout):: pkz (is:ie,js:je,npz)             ! finite-volume mean pk
+    real, intent(inout):: ps  (isd:ied  ,jsd:jed)           !< Surface pressure (pascal)
+    real, intent(inout):: pe  (is-1:ie+1, npz+1,js-1:je+1)  !< edge pressure (pascal)
+    real, intent(inout):: pk  (is:ie,js:je  , npz+1)        !< pe**cappa
+    real, intent(inout):: peln(is:ie,npz+1,js:je)           !< ln(pe)
+    real, intent(inout):: pkz (is:ie,js:je,npz)             !< finite-volume mean pk
     real, parameter:: tice = 273.16
 
     type(fv_grid_type) :: gridstruct
@@ -548,13 +617,13 @@ module fv_update_phys_mod
 
   end subroutine fv_update_phys
 
-
+!>@brief The subroutine 'del2_phys' is for filtering the physics tendency.
   subroutine del2_phys(qdt, delp, gridstruct, cd, npx, npy, km, is, ie, js, je, &
                        isd, ied, jsd, jed, ngc, domain)
 ! This routine is for filtering the physics tendency
    integer, intent(in):: npx, npy, km
    integer, intent(in):: is, ie, js, je, isd, ied, jsd, jed, ngc
-   real,    intent(in):: cd            ! cd = K * da_min;   0 < K < 0.25
+   real,    intent(in):: cd            !< cd = K * da_min;   0 < K < 0.25
    real, intent(in   ):: delp(isd:ied,jsd:jed,km)
    real, intent(inout):: qdt(is-ngc:ie+ngc,js-ngc:je+ngc,km)
    type(fv_grid_type), intent(IN), target :: gridstruct
@@ -651,7 +720,8 @@ module fv_update_phys_mod
 
   end subroutine del2_phys
 
-
+!>@brief The subroutine 'update_dwinds_phys' transforms the wind tendencies from 
+!! the A grid to the D grid for the final update.
   subroutine update_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v, gridstruct, npx, npy, npz, domain)
 
 ! Purpose; Transform wind tendencies on A grid to D grid for the final update
@@ -668,10 +738,10 @@ module fv_update_phys_mod
 
 ! local:
   real v3(is-1:ie+1,js-1:je+1,3)
-  real ue(is-1:ie+1,js:je+1,3)      ! 3D winds at edges
-  real ve(is:ie+1,js-1:je+1,  3)    ! 3D winds at edges
-  real, dimension(is:ie) :: ut1, ut2, ut3
-  real, dimension(js:je) :: vt1, vt2, vt3
+  real ue(is-1:ie+1,js:je+1,3)    !< 3D winds at edges
+  real ve(is:ie+1,js-1:je+1,3)    !< 3D winds at edges
+  real, dimension(is:ie):: ut1, ut2, ut3
+  real, dimension(js:je):: vt1, vt2, vt3
   real dt5, gratio
   integer i, j, k, m, im2, jm2
 
@@ -838,7 +908,8 @@ module fv_update_phys_mod
 
   end subroutine update_dwinds_phys 
 
-
+!>@brief The subroutine 'update2d_dwinds_phys' transforms the wind tendencies from 
+!! the A grid to the D grid for the final update.
   subroutine update2d_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v, gridstruct, npx, npy, npz, domain)
 
 ! Purpose; Transform wind tendencies on A grid to D grid for the final update

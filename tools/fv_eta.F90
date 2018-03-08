@@ -1,23 +1,48 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
+!>@brief The module 'fv_eta' contains routine to set up the reference
+!! (Eulerian) pressure coordinate
+
 module fv_eta_mod
+
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>kappa, grav, cp_air, rdgas</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>is_master</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_error, FATAL</td>
+!   </tr>
+! </table>
+
  use constants_mod,  only: kappa, grav, cp_air, rdgas
  use fv_mp_mod,      only: is_master
  use mpp_mod,        only: FATAL, mpp_error
@@ -29,6 +54,7 @@ module fv_eta_mod
 
  contains
 
+!!!NOTE: USE_VAR_ETA not used in fvGFS
 #ifdef USE_VAR_ETA
  subroutine set_eta(km, ks, ptop, ak, bk)
 ! This is the easy to use version of the set_eta
@@ -388,16 +414,17 @@ module fv_eta_mod
  end subroutine mount_waves
 
 #else
+ !>This is the version of set_eta used in fvGFS and AM4
+ !>@note 01/2018: 'set_eta' is being cleaned up.
  subroutine set_eta(km, ks, ptop, ak, bk)
-
-      integer,  intent(in)::  km           ! vertical dimension
-      integer,  intent(out):: ks           ! number of pure p layers
+      integer,  intent(in)::  km           !< vertical dimension
+      integer,  intent(out):: ks           !< number of pure p layers
       real, intent(out):: ak(km+1)
       real, intent(out):: bk(km+1)
-      real, intent(out):: ptop         ! model top (Pa)
+      real, intent(out):: ptop         !< model top (Pa)
 ! local
-      real a24(25),b24(25)            ! GFDL AM2L24
-      real a26(27),b26(27)            ! Jablonowski & Williamson 26-level
+      real a24(25),b24(25)            !< GFDL AM2L24
+      real a26(27),b26(27)            !< Jablonowski & Williamson 26-level
       real a32(33),b32(33)
       real a32w(33),b32w(33)
       real a47(48),b47(48)
@@ -408,8 +435,8 @@ module fv_eta_mod
       real a60(61),b60(61)
       real a63(64),b63(64)
       real a64(65),b64(65)
-      real a68(69),b68(69)            ! cjg: grid with enhanced PBL resolution
-      real a96(97),b96(97)            ! cjg: grid with enhanced PBL resolution
+      real a68(69),b68(69)            !< cjg: grid with enhanced PBL resolution
+      real a96(97),b96(97)            !< cjg: grid with enhanced PBL resolution
       real a100(101),b100(101)
       real a104(105),b104(105)
       real a125(126),b125(126)
@@ -1483,13 +1510,15 @@ module fv_eta_mod
  end subroutine set_eta
 #endif
 
-
+!>@brief The subroutine 'set_external_eta' sets 'ptop' (model top) and 
+!! 'ks' (first level of pure pressure coordinates given the coefficients
+!! 'ak' and 'bk'
  subroutine set_external_eta(ak, bk, ptop, ks)
    implicit none
    real,    intent(in)  :: ak(:)
    real,    intent(in)  :: bk(:)
-   real,    intent(out) :: ptop         ! model top (Pa)
-   integer, intent(out) :: ks           ! number of pure p layers
+   real,    intent(out) :: ptop         !< model top (Pa)
+   integer, intent(out) :: ks           !< number of pure p layers
    !--- local variables
    integer :: k
    real :: eps = 1.d-7
@@ -1510,7 +1539,7 @@ module fv_eta_mod
  implicit none
   integer, intent(in):: km
   real,    intent(in):: ptop
-  real,    intent(in):: s_rate        ! between [1. 1.1]
+  real,    intent(in):: s_rate        !< between [1. 1.1]
   real,    intent(out):: ak(km+1), bk(km+1)
   real,    intent(inout):: pint
   integer, intent(out):: ks
@@ -1522,8 +1551,8 @@ module fv_eta_mod
   real ep, es, alpha, beta, gama
   real, parameter:: akap = 2./7.
 !---- Tunable parameters:
-  real:: k_inc = 10   ! # of layers from bottom up to near const dz region
-  real:: s0 = 0.8     ! lowest layer stretch factor
+  real:: k_inc = 10   !< number of layers from bottom up to near const dz region
+  real:: s0 = 0.8     !< lowest layer stretch factor
 !-----------------------
   real:: s_inc
   integer  k
@@ -1671,7 +1700,7 @@ module fv_eta_mod
  subroutine var_gfs(km, ak, bk, ptop, ks, pint, s_rate)
   integer, intent(in):: km
   real,    intent(in):: ptop
-  real,    intent(in):: s_rate        ! between [1. 1.1]
+  real,    intent(in):: s_rate        !< between [1. 1.1]
   real,    intent(out):: ak(km+1), bk(km+1)
   real,    intent(inout):: pint
   integer, intent(out):: ks
@@ -1682,8 +1711,8 @@ module fv_eta_mod
   real ztop, t0, dz0, sum1, tmp1
   real ep, es, alpha, beta, gama
 !---- Tunable parameters:
-  integer:: k_inc = 25   ! # of layers from bottom up to near const dz region
-  real:: s0 = 0.13 ! lowest layer stretch factor
+  integer:: k_inc = 25   !< number of layers from bottom up to near const dz region
+  real:: s0 = 0.13 !< lowest layer stretch factor
 !-----------------------
   real:: s_inc
   integer  k
@@ -1835,7 +1864,7 @@ module fv_eta_mod
  subroutine var_hi(km, ak, bk, ptop, ks, pint, s_rate)
   integer, intent(in):: km
   real,    intent(in):: ptop
-  real,    intent(in):: s_rate        ! between [1. 1.1]
+  real,    intent(in):: s_rate        !< between [1. 1.1]
   real,    intent(out):: ak(km+1), bk(km+1)
   real,    intent(inout):: pint
   integer, intent(out):: ks
@@ -1846,8 +1875,8 @@ module fv_eta_mod
   real ztop, t0, dz0, sum1, tmp1
   real ep, es, alpha, beta, gama
 !---- Tunable parameters:
-  integer:: k_inc = 15   ! # of layers from bottom up to near const dz region
-  real:: s0 = 0.10 ! lowest layer stretch factor
+  integer:: k_inc = 15   !<number of layers from bottom up to near const dz region
+  real:: s0 = 0.10 !< lowest layer stretch factor
 !-----------------------
   real:: s_inc
   integer  k
@@ -2011,7 +2040,7 @@ module fv_eta_mod
  subroutine var_hi2(km, ak, bk, ptop, ks, pint, s_rate)
   integer, intent(in):: km
   real,    intent(in):: ptop
-  real,    intent(in):: s_rate        ! between [1. 1.1]
+  real,    intent(in):: s_rate        !< between [1. 1.1]
   real,    intent(out):: ak(km+1), bk(km+1)
   real,    intent(inout):: pint
   integer, intent(out):: ks
@@ -2170,7 +2199,7 @@ module fv_eta_mod
  subroutine var_dz(km, ak, bk, ptop, ks, pint, s_rate)
   integer, intent(in):: km
   real,    intent(in):: ptop
-  real,    intent(in):: s_rate        ! between [1. 1.1]
+  real,    intent(in):: s_rate        !< between [1. 1.1]
   real,    intent(out):: ak(km+1), bk(km+1)
   real,    intent(inout):: pint
   integer, intent(out):: ks
@@ -2331,7 +2360,7 @@ module fv_eta_mod
  subroutine var55_dz(km, ak, bk, ptop, ks, pint, s_rate)
   integer, intent(in):: km
   real,    intent(in):: ptop
-  real,    intent(in):: s_rate        ! between [1. 1.1]
+  real,    intent(in):: s_rate        !< between [1. 1.1]
   real,    intent(out):: ak(km+1), bk(km+1)
   real,    intent(inout):: pint
   integer, intent(out):: ks
@@ -2492,7 +2521,7 @@ module fv_eta_mod
 
  subroutine hybrid_z_dz(km, dz, ztop, s_rate)
   integer, intent(in):: km
-  real,    intent(in):: s_rate        ! between [1. 1.1]
+  real,    intent(in):: s_rate        !< between [1. 1.1]
   real,    intent(in):: ztop
   real,    intent(out):: dz(km)
 ! Local
@@ -2553,11 +2582,11 @@ module fv_eta_mod
 
  end subroutine hybrid_z_dz                                   
 
-
-
+!>@brief The subroutine 'get_eta_level' returns the interface and
+!! layer-mean pressures for reference.
  subroutine get_eta_level(npz, p_s, pf, ph, ak, bk, pscale)
   integer, intent(in) :: npz    
-  real, intent(in)  :: p_s            ! unit: pascal
+  real, intent(in)  :: p_s            !< unit: pascal
   real, intent(in)  :: ak(npz+1)
   real, intent(in)  :: bk(npz+1)
   real, intent(in), optional :: pscale
@@ -2811,7 +2840,7 @@ module fv_eta_mod
 
  integer,  intent(in):: is, ie, js, je, ng, km
  real, intent(in):: rgrav, ztop
- real, intent(in):: dz(km)       ! Reference vertical resolution for zs=0
+ real, intent(in):: dz(km)       !< Reference vertical resolution for zs=0
  real, intent(in):: hs(is-ng:ie+ng,js-ng:je+ng)
  real, intent(inout)::  ze(is:ie,js:je,km+1)
  real, optional, intent(out):: dz3(is-ng:ie+ng,js-ng:je+ng,km)

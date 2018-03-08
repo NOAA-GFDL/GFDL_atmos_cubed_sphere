@@ -1,25 +1,59 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
-! $Id$
 
 module init_hydro_mod
+
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>grav, rdgas, rvgas</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_utils_mod</td>
+!     <td>g_sum</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>is_master</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_chksum, stdout, mpp_error, FATAL, NOTE,get_unit, mpp_sum, mpp_broadcast,
+!         mpp_get_current_pelist, mpp_npes, mpp_set_current_pelist, mpp_send, mpp_recv, 
+!         mpp_sync_self, mpp_npes, mpp_pe, mpp_sync</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td> domain2d</td>
+!   </tr>
+!   <tr>
+!     <td>tracer_manager_mod</td>
+!     <td>get_tracer_index</td>
+!   </tr>
+! </table>
+
 
       use constants_mod,      only: grav, rdgas, rvgas
       use fv_grid_utils_mod,  only: g_sum
@@ -29,9 +63,6 @@ module init_hydro_mod
       use mpp_domains_mod,    only: domain2d
       use fv_arrays_mod,      only: R_GRID
 !     use fv_diagnostics_mod, only: prt_maxmin
-!!! DEBUG CODE
-      use mpp_mod,            only: mpp_pe
-!!! END DEBUG CODE
 
       implicit none
       private
@@ -41,16 +72,19 @@ module init_hydro_mod
 contains
 
 !-------------------------------------------------------------------------------
+!>@brief the subroutine 'p_var' computes auxiliary pressure variables for 
+!! a hydrostatic state.
+!>@details The variables are: surfce, interface, layer-mean pressure, exener function
+!! Given (ptop, delp) computes (ps, pk, pe, peln, pkz)
  subroutine p_var(km, ifirst, ilast, jfirst, jlast, ptop, ptop_min,    &
                   delp, delz, pt, ps,  pe, peln, pk, pkz, cappa, q, ng, nq, area,   &
                   dry_mass, adjust_dry_mass, mountain, moist_phys,      &
                   hydrostatic, nwat, domain, make_nh)
-               
 ! Given (ptop, delp) computes (ps, pk, pe, peln, pkz)
 ! Input:
    integer,  intent(in):: km
-   integer,  intent(in):: ifirst, ilast            ! Longitude strip
-   integer,  intent(in):: jfirst, jlast            ! Latitude strip
+   integer,  intent(in):: ifirst, ilast            !< Longitude strip
+   integer,  intent(in):: jfirst, jlast            !< Latitude strip
    integer,  intent(in):: nq, nwat
    integer,  intent(in):: ng
    logical, intent(in):: adjust_dry_mass, mountain, moist_phys, hydrostatic
@@ -64,8 +98,8 @@ contains
 ! Output:
    real, intent(out) ::   ps(ifirst-ng:ilast+ng, jfirst-ng:jlast+ng)
    real, intent(out) ::   pk(ifirst:ilast, jfirst:jlast, km+1)
-   real, intent(out) ::   pe(ifirst-1:ilast+1,km+1,jfirst-1:jlast+1) ! Ghosted Edge pressure
-   real, intent(out) :: peln(ifirst:ilast, km+1, jfirst:jlast)    ! Edge pressure
+   real, intent(out) ::   pe(ifirst-1:ilast+1,km+1,jfirst-1:jlast+1) !< Ghosted Edge pressure
+   real, intent(out) :: peln(ifirst:ilast, km+1, jfirst:jlast)    !< Edge pressure
    real, intent(out) ::  pkz(ifirst:ilast, jfirst:jlast, km)
    type(domain2d), intent(IN) :: domain
 
@@ -195,10 +229,10 @@ contains
                     cappa,   ptop, ps, delp, q,  nq, area,  nwat,  &
                     dry_mass, adjust_dry_mass, moist_phys, dpd, domain)
 
-! !INPUT PARAMETERS:
+! INPUT PARAMETERS:
       integer km
-      integer ifirst, ilast  ! Long strip
-      integer jfirst, jlast  ! Latitude strip    
+      integer ifirst, ilast  !< Longitude strip
+      integer jfirst, jlast  !< Latitude strip    
       integer nq, ng, nwat
       real, intent(in):: dry_mass
       real, intent(in):: ptop
@@ -208,13 +242,13 @@ contains
       real(kind=R_GRID), intent(IN) :: area(ifirst-ng:ilast+ng, jfirst-ng:jlast+ng)
       type(domain2d), intent(IN) :: domain
 
-! !INPUT/OUTPUT PARAMETERS:     
+! INPUT/OUTPUT PARAMETERS:     
       real, intent(in)::   q(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km,nq)
-      real, intent(in)::delp(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km)     !
-      real, intent(inout):: ps(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)        ! surface pressure
+      real, intent(in)::delp(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km)     
+      real, intent(inout):: ps(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)        !< surface pressure
       real, intent(out):: dpd
 ! Local
-      real  psd(ifirst:ilast,jfirst:jlast)     ! surface pressure  due to dry air mass
+      real  psd(ifirst:ilast,jfirst:jlast)     !< surface pressure due to dry air mass
       real  psmo, psdry
       integer i, j, k
 
@@ -271,8 +305,8 @@ contains
 
  end subroutine drymadj
 
-
-
+!>@brief The subroutine 'hydro_eq' computes a hydrostatically balanced and isothermal
+!! basic state from input heights.
  subroutine hydro_eq(km, is, ie, js, je, ps, hs, drym, delp, ak, bk,  &
                      pt, delz, area, ng, mountain, hydrostatic, hybrid_z, domain)
 ! Input: 

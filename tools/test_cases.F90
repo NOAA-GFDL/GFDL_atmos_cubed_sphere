@@ -1,24 +1,101 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
  module test_cases_mod
+
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>cnst_radius=>radius, pi=>pi_8, omega, grav, kappa, rdgas, cp_air, rvgas</td>
+!   </tr>
+!   <tr>
+!     <td>diag_manager_mod</td>
+!     <td>diag_axis_init, register_diag_field,
+!         register_static_field, send_data, diag_grid_init</td>
+!   </tr>
+!   <tr>
+!     <td>field_manager_mod</td>
+!     <td>MODEL_ATMOS</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_grid_type, fv_flags_type, fv_grid_bounds_type, R_GRID</td>
+!   </tr>
+!   <tr>
+!     <td>fv_diagnostics_mod</td>
+!     <td>prt_maxmin, ppme, eqv_pot, qcly0</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_tools_mod</td>
+!     <td>todeg, missing, spherical_to_cartesian</td>
+!   </tr>
+!   <tr>
+!     <td>fv_eta_mod</td>
+!     <td>compute_dz_L32, compute_dz_L101, set_hybrid_z,
+!         gw_1d,hybrid_z_dz</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>ng, is_master,is,js,ie,je, isd,jsd,ied,jed, 
+!         domain_decomp, fill_corners, XDir, YDir, mp_stop, 
+!         mp_reduce_sum, mp_reduce_max, mp_gather, mp_bcst</td>
+!   </tr>
+!   <tr>
+!     <td>fv_sg_mod</td>
+!     <td>qsmith</td>
+!   </tr>
+!   <tr>
+!     <td>fv_surf_map_mod</td>
+!     <td>surfdrv</td>
+!   </tr>
+!   <tr>
+!     <td>init_hydro_mod</td>
+!     <td>p_var, hydro_eq</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_error, FATAL, mpp_root_pe, mpp_broadcast, mpp_sum,
+!         mpp_pe, mpp_chksum, stdout</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>mpp_update_domains, domain2d</td>
+!   </tr>>
+!   <tr>
+!     <td>mpp_parameter_mod</td>
+!     <td>AGRID_PARAM=>AGRID,CGRID_NE_PARAM=>CGRID_NE,SCALAR_PAIR</td>
+!   </tr>
+!   <tr>
+!     <td>time_manager_mod</td>
+!     <td>time_type, get_date, get_time</td>
+!   </tr>
+!   <tr>
+!     <td>tracer_manager_mod</td>
+!     <td>get_tracer_index</td>
+!   </tr>
+! </table>
 
       use constants_mod,     only: cnst_radius=>radius, pi=>pi_8, omega, grav, kappa, rdgas, cp_air, rvgas
       use init_hydro_mod,    only: p_var, hydro_eq
@@ -102,11 +179,11 @@
 ! Case 0 parameters
       real :: p0_c0 = 3.0
       real :: rgamma = 5.0
-      real :: lat0 = pi/2.0 !pi/4.8
-      real :: lon0 = 0.0 !pi-0.8
+      real :: lat0 = pi/2.0 !< pi/4.8
+      real :: lon0 = 0.0 !<pi-0.8
 
 !  pi_shift moves the initial location of the cosine bell for Case 1
-      real, parameter :: pi_shift = 0.0 !3.0*pi/4.
+      real, parameter :: pi_shift = 0.0 !< 3.0*pi/4.
 
  ! -1:null_op, 0:All-Grids, 1:C-Grid, 2:D-Grid, 3:A-Grid, 4:A-Grid then Rotate, 5:D-Grid with unit vectors then Rotate
       integer, parameter :: initWindsCase0 =-1 
@@ -131,17 +208,17 @@
 
 
      !  Validating fields used in statistics
-     real  , allocatable :: phi0(:,:,:) ! Validating Field
-     real  , allocatable :: ua0(:,:,:)  ! Validating U-Wind
-     real  , allocatable :: va0(:,:,:)  ! Validating V-Windfms_io_exit, get_tile_string, &
+     real  , allocatable :: phi0(:,:,:) !< Validating Field
+     real  , allocatable :: ua0(:,:,:)  !< Validating U-Wind
+     real  , allocatable :: va0(:,:,:)  !< Validating V-Windfms_io_exit, get_tile_string, &
 
      real  , allocatable :: gh_table(:), lats_table(:)
      logical :: gh_initialized = .false.
 
      !  Initial Conservation statistics ; total mass ; enstrophy ; energy
-     real   :: tmass_orig
-     real   :: tvort_orig
-     real   :: tener_orig
+     real   :: tmass_orig !< total mass
+     real   :: tvort_orig !< enstrophy (integral of total vorticity)
+     real   :: tener_orig !< energy
 
      integer, parameter :: interpOrder = 1
 
@@ -164,9 +241,7 @@
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     init_winds :: initialize the winds 
-!
+!>@brief The subroutine 'init_winds' initialize the winds.
       subroutine init_winds(UBar, u,v,ua,va,uc,vc, defOnGrid, npx, npy, ng, ndims, nregions, nested, gridstruct, domain, tile)
  ! defOnGrid = -1:null_op, 0:All-Grids, 1:C-Grid, 2:D-Grid, 3:A-Grid, 4:A-Grid then Rotate, 5:D-Grid with unit vectors then Rotate
 
@@ -453,6 +528,7 @@
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!>@brief The subroutine 'init_case' initialize the Williamson test cases;
 !
 !     init_case :: initialize the Williamson test cases:
 !                  case 1 (2-D advection of a cosine bell)
@@ -6706,9 +6782,11 @@ end subroutine terminator_tracers
 
       end subroutine init_double_periodic
 
+!>@brief The subroutine 'SuperK_Sounding' gets the sounding at "equator"; the
+!! initial storm center.
+!>@details This is the z-coordinate version 
+!! (Morris Weisman & J. Klemp 2002 sounding)
  subroutine SuperK_Sounding(km, pe, p00, ze, pt, qz)
-! This is the z-ccordinate version:
-! Morris Weisman & J. Klemp 2002 sounding
  integer, intent(in):: km
  real, intent(in):: p00
  real, intent(inout), dimension(km+1):: pe
@@ -6722,8 +6800,8 @@ end subroutine terminator_tracers
  real, parameter:: qv0 = 1.4e-2
  real, parameter:: ztr = 12.E3
  real, parameter:: ttr = 213.
- real, parameter:: ptr = 343.    ! Tropopause potential temp.
- real, parameter:: pt0 = 300.    ! surface potential temperature
+ real, parameter:: ptr = 343.    !< Tropopause potential temp.
+ real, parameter:: pt0 = 300.    !< surface potential temperature
  real, dimension(km):: zs, rh, temp, dp, dp0
  real, dimension(km+1):: peln, pk
  real:: qs, zvir, fac_z, pk0, temp1, pm
@@ -7422,24 +7500,24 @@ end subroutine terminator_tracers
    real, intent(OUT), dimension(isd:ied,jsd:jed,npz+1) :: gz
    logical, intent(IN) :: hydrostatic,adiabatic
 
-   real, parameter :: zt = 15000 ! m
-   real, parameter :: q0 = 0.021 ! kg/kg
-   real, parameter :: qt = 1.e-11 ! kg/kg
-   real, parameter :: T0 = 302.15 ! K
-   real, parameter :: Tv0 = 302.15*(1.+0.608*q0) ! K
-   real, parameter :: Ts = 302.15 ! K
-   real, parameter :: zq1 = 3000. ! m
-   real, parameter :: zq2 = 8000. ! m
-   real, parameter :: lapse = 7.e-3 ! K/m
-   real, parameter :: Tvt = Tv0 - lapse*zt ! K
-   real, parameter :: pb = 101500. ! Pa
+   real, parameter :: zt = 15000 !< m
+   real, parameter :: q0 = 0.021 !< kg/kg
+   real, parameter :: qt = 1.e-11 !< kg/kg
+   real, parameter :: T0 = 302.15 !< K
+   real, parameter :: Tv0 = 302.15*(1.+0.608*q0) !< K
+   real, parameter :: Ts = 302.15 !< K
+   real, parameter :: zq1 = 3000. !< m
+   real, parameter :: zq2 = 8000. !< m
+   real, parameter :: lapse = 7.e-3 !< K/m
+   real, parameter :: Tvt = Tv0 - lapse*zt !< K
+   real, parameter :: pb = 101500. !< Pa
    real, parameter :: ptt = pb*(TvT/Tv0)**(grav/Rdgas/lapse)
    real(kind=R_GRID), parameter :: lamp = pi
    real(kind=R_GRID), parameter :: phip = pi/18.
    real(kind=R_GRID), parameter :: ppcenter(2) = (/ lamp, phip /)
-   real, parameter :: dp = 1115. ! Pa
-   real, parameter :: rp = 282000. ! m
-   real, parameter :: zp = 7000. ! m
+   real, parameter :: dp = 1115. !< Pa
+   real, parameter :: rp = 282000. !< m
+   real, parameter :: zp = 7000. !< m
    real, parameter :: fc = 2.*OMEGA*sin(phip)
 
    real, parameter :: zconv = 1.e-6
@@ -8250,14 +8328,11 @@ end subroutine terminator_tracers
 
  end subroutine d2a2c
 
-
+!>@brief The subroutine 'atob_s' interpolates a scalar from the A-Grid to the B-grid.
       subroutine atob_s(qin, qout, npx, npy, dxa, dya, nested, cubed_sphere, altInterp)
-
-!     atob_s :: interpolate scalar from the A-Grid to the B-grid
-!
          integer,      intent(IN) :: npx, npy
-         real  , intent(IN)    ::  qin(isd:ied  ,jsd:jed  )    ! A-grid field
-         real  , intent(OUT)   :: qout(isd:ied+1,jsd:jed+1)    ! Output  B-grid field
+         real  , intent(IN)    ::  qin(isd:ied  ,jsd:jed  )    !< A-grid field
+         real  , intent(OUT)   :: qout(isd:ied+1,jsd:jed+1)    !< Output  B-grid field
          integer, OPTIONAL, intent(IN) :: altInterp 
          logical, intent(IN) :: nested, cubed_sphere
          real, intent(IN), dimension(isd:ied,jsd:jed)    :: dxa, dya
@@ -8390,23 +8465,18 @@ end subroutine terminator_tracers
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     atod :: interpolate from the A-Grid to the D-grid
-!
+!>@brief The subroutine 'atod' interpolates values from the A-Grid to the D-grid.
       subroutine atod(uin, vin, uout, vout, dxa, dya, dxc, dyc, npx, npy, ng, nested, domain)
-
-
          integer,      intent(IN) :: npx, npy, ng
-         real  , intent(IN)    ::  uin(isd:ied  ,jsd:jed  ) ! A-grid u-wind field
-         real  , intent(IN)    ::  vin(isd:ied  ,jsd:jed  ) ! A-grid v-wind field
-         real  , intent(OUT)   :: uout(isd:ied  ,jsd:jed+1) ! D-grid u-wind field
-         real  , intent(OUT)   :: vout(isd:ied+1,jsd:jed  ) ! D-grid v-wind field
+         real  , intent(IN)    ::  uin(isd:ied  ,jsd:jed  ) !< A-grid u-wind field
+         real  , intent(IN)    ::  vin(isd:ied  ,jsd:jed  ) !< A-grid v-wind field
+         real  , intent(OUT)   :: uout(isd:ied  ,jsd:jed+1) !< D-grid u-wind field
+         real  , intent(OUT)   :: vout(isd:ied+1,jsd:jed  ) !< D-grid v-wind field
          logical, intent(IN) :: nested
          real  , intent(IN), dimension(isd:ied,jsd:jed) :: dxa, dya
          real  , intent(IN), dimension(isd:ied+1,jsd:jed) :: dxc
          real  , intent(IN), dimension(isd:ied,jsd:jed+1) :: dyc
          type(domain2d), intent(INOUT) :: domain
-
 
          integer :: i,j
          real :: tmp1i(isd:ied+1)
@@ -8439,16 +8509,13 @@ end subroutine terminator_tracers
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     dtoa :: interpolate from the D-Grid to the A-grid
-!
+!>@brief The subroutine 'dtoa' interpolates values from the D-Grid to the A-grid.
       subroutine dtoa(uin, vin, uout, vout, dx, dy, dxa, dya, dxc, dyc, npx, npy, ng)
-
          integer,      intent(IN) :: npx, npy, ng
-         real  , intent(IN)    ::  uin(isd:ied  ,jsd:jed+1)    ! D-grid u-wind field
-         real  , intent(IN)    ::  vin(isd:ied+1,jsd:jed  )    ! D-grid v-wind field
-         real  , intent(OUT)   :: uout(isd:ied  ,jsd:jed  )    ! A-grid u-wind field
-         real  , intent(OUT)   :: vout(isd:ied  ,jsd:jed  )    ! A-grid v-wind field
+         real  , intent(IN)    ::  uin(isd:ied  ,jsd:jed+1)    !< D-grid u-wind field
+         real  , intent(IN)    ::  vin(isd:ied+1,jsd:jed  )    !< D-grid v-wind field
+         real  , intent(OUT)   :: uout(isd:ied  ,jsd:jed  )    !< A-grid u-wind field
+         real  , intent(OUT)   :: vout(isd:ied  ,jsd:jed  )    !< A-grid v-wind field
          real  , intent(IN), dimension(isd:ied,jsd:jed+1) :: dx, dyc
          real  , intent(IN), dimension(isd:ied+1,jsd:jed) :: dy, dxc
          real  , intent(IN), dimension(isd:ied,jsd:jed) :: dxa, dya
@@ -8495,17 +8562,13 @@ end subroutine terminator_tracers
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     atoc :: interpolate from the A-Grid to the C-grid
-!
+!>@brief The subroutine 'atoc' interpolates values from the A-Grid to the C-grid.
       subroutine atoc(uin, vin, uout, vout, dx, dy, dxa, dya, npx, npy, ng, nested, domain, noComm)
-
-
          integer,      intent(IN) :: npx, npy, ng
-         real  , intent(IN)    ::  uin(isd:ied  ,jsd:jed  ) ! A-grid u-wind field
-         real  , intent(IN)    ::  vin(isd:ied  ,jsd:jed  ) ! A-grid v-wind field
-         real  , intent(OUT)   :: uout(isd:ied+1,jsd:jed  ) ! C-grid u-wind field
-         real  , intent(OUT)   :: vout(isd:ied  ,jsd:jed+1) ! C-grid v-wind field
+         real  , intent(IN)    ::  uin(isd:ied  ,jsd:jed  ) !< A-grid u-wind field
+         real  , intent(IN)    ::  vin(isd:ied  ,jsd:jed  ) !< A-grid v-wind field
+         real  , intent(OUT)   :: uout(isd:ied+1,jsd:jed  ) !< C-grid u-wind field
+         real  , intent(OUT)   :: vout(isd:ied  ,jsd:jed+1) !< C-grid v-wind field
          logical, intent(IN) :: nested
          logical, OPTIONAL, intent(IN)   :: noComm
          real  , intent(IN), dimension(isd:ied,jsd:jed+1) :: dx
@@ -8620,17 +8683,13 @@ end subroutine terminator_tracers
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     ctoa :: interpolate from the C-Grid to the A-grid
-!
+!>@brief The subroutine 'ctoa' interpolates values from the C-Grid to the A-grid.
       subroutine ctoa(uin, vin, uout, vout, dx, dy, dxc, dyc, dxa, dya, npx, npy, ng)
-
-
          integer,      intent(IN) :: npx, npy, ng 
-         real  , intent(IN)    ::  uin(isd:ied+1,jsd:jed  )    ! C-grid u-wind field
-         real  , intent(IN)    ::  vin(isd:ied  ,jsd:jed+1)    ! C-grid v-wind field
-         real  , intent(OUT)   :: uout(isd:ied  ,jsd:jed  )    ! A-grid u-wind field
-         real  , intent(OUT)   :: vout(isd:ied  ,jsd:jed  )    ! A-grid v-wind field
+         real  , intent(IN)    ::  uin(isd:ied+1,jsd:jed  )    !< C-grid u-wind field
+         real  , intent(IN)    ::  vin(isd:ied  ,jsd:jed+1)    !< C-grid v-wind field
+         real  , intent(OUT)   :: uout(isd:ied  ,jsd:jed  )    !< A-grid u-wind field
+         real  , intent(OUT)   :: vout(isd:ied  ,jsd:jed  )    !< A-grid v-wind field
          real  , intent(IN), dimension(isd:ied+1,jsd:jed) :: dxc, dy
          real  , intent(IN), dimension(isd:ied,jsd:jed+1) :: dyc, dx
          real  , intent(IN), dimension(isd:ied,jsd:jed) :: dxa, dya
@@ -8676,21 +8735,17 @@ end subroutine terminator_tracers
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     rotate_winds :: rotate winds from the sphere-to-cube || cube-to-sphere
-!
+!>@brief The subroutine 'rotate_winds' rotates winds from the sphere-to-cube to cube-to-sphere.
       subroutine rotate_winds(myU, myV, p1, p2, p3, p4, t1, ndims, dir)
-
-
          integer,      intent(IN) :: ndims
-         real  , intent(INOUT) :: myU    ! u-wind field
-         real  , intent(INOUT) :: myV    ! v-wind field
+         real  , intent(INOUT) :: myU    !< u-wind field
+         real  , intent(INOUT) :: myV    !< v-wind field
          real(kind=R_GRID)  , intent(IN)    :: p1(ndims)    !             p4     
          real(kind=R_GRID)  , intent(IN)    :: p2(ndims)    !                    
          real(kind=R_GRID)  , intent(IN)    :: p3(ndims)    !        p1   t1   p3
          real(kind=R_GRID)  , intent(IN)    :: p4(ndims)    !                    
          real(kind=R_GRID)  , intent(IN)    :: t1(ndims)    !             p2     
-         integer,   intent(IN)    :: dir   ! Direction ; 1=>sphere-to-cube  2=> cube-to-sphere
+         integer,   intent(IN)    :: dir   !< Direction ; 1=>sphere-to-cube  2=> cube-to-sphere
 
          real(kind=R_GRID) :: ee1(3), ee2(3), ee3(3), elon(3), elat(3)
 
@@ -8726,8 +8781,8 @@ end subroutine terminator_tracers
 
       subroutine mp_update_dwinds_2d(u, v, npx, npy, domain)
         use mpp_parameter_mod, only: DGRID_NE
-         real  , intent(INOUT)   :: u(isd:ied  ,jsd:jed+1) ! D-grid u-wind field
-         real  , intent(INOUT)   :: v(isd:ied+1,jsd:jed  ) ! D-grid v-wind field
+         real  , intent(INOUT)   :: u(isd:ied  ,jsd:jed+1) !< D-grid u-wind field
+         real  , intent(INOUT)   :: v(isd:ied+1,jsd:jed  ) !< D-grid v-wind field
          integer,      intent(IN) :: npx, npy
          type(domain2d), intent(INOUT) :: domain
 
@@ -8744,8 +8799,8 @@ end subroutine terminator_tracers
 !
       subroutine mp_update_dwinds_3d(u, v, npx, npy, npz, domain)
         use mpp_parameter_mod, only: DGRID_NE
-         real  , intent(INOUT)   :: u(isd:ied  ,jsd:jed+1,npz) ! D-grid u-wind field
-         real  , intent(INOUT)   :: v(isd:ied+1,jsd:jed  ,npz) ! D-grid v-wind field
+         real  , intent(INOUT)   :: u(isd:ied  ,jsd:jed+1,npz) !< D-grid u-wind field
+         real  , intent(INOUT)   :: v(isd:ied+1,jsd:jed  ,npz) !< D-grid v-wind field
          integer,      intent(IN) :: npx, npy, npz
          type(domain2d), intent(INOUT) :: domain
          integer k
@@ -8759,17 +8814,14 @@ end subroutine terminator_tracers
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     gsum :: get global sum
-!
+!>@brief The subroutine 'gsum' computes the global sum.
       real  function globalsum(p, npx, npy, ifirst, ilast, jfirst, jlast, isd, ied, jsd, jed, gridstruct, tile) result (gsum)
-             
          integer,   intent(IN)    :: npx, npy
          integer,   intent(IN)    :: ifirst, ilast
          integer,   intent(IN)    :: jfirst, jlast
          integer,   intent(IN)    :: isd, ied
          integer,   intent(IN)    :: jsd, jed, tile
-         real  , intent(IN)    :: p(ifirst:ilast,jfirst:jlast)      ! field to be summed
+         real  , intent(IN)    :: p(ifirst:ilast,jfirst:jlast)      !< field to be summed
          type(fv_grid_type), intent(IN), target :: gridstruct
 
          integer :: i,j,k,n
@@ -8960,12 +9012,10 @@ end subroutine terminator_tracers
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!     
-!     interp_left_edge_1d :: interpolate to left edge of a cell either
-!               order = 1 -> Linear average
-!               order = 2 -> Uniform PPM
-!               order = 3 -> Non-Uniform PPM  
-!
+!>@brief The subroutine 'interp_left_edge_1d' interpolates to left edge of a cell.
+!>@details order = 1 -> Linear average
+!>order = 2 -> Uniform PPM
+!>order = 3 -> Non-Uniform PPM  
  subroutine interp_left_edge_1d(qout, qin, dx, ifirst, ilast, order)
  integer, intent(in):: ifirst,ilast
  real, intent(out)  :: qout(ifirst:)
@@ -9073,16 +9123,16 @@ end subroutine terminator_tracers
  end subroutine interp_left_edge_1d
 !------------------------------------------------------------------------------
 !----------------------------------------------------------------------- 
-!BOP
-!
+!>@brief The subroutine 'vpol5' treats the V winds at the poles.  
+!>@details This requires an average of the U- and V-winds, 
+!!weighted by their angles of incidence at the pole points.     
  subroutine vpol5(u, v, im, jm, coslon, sinlon, cosl5, sinl5,    &
                   ng_d,  ng_s,  jfirst, jlast)
-
 ! !INPUT PARAMETERS:
-      integer im                       ! Total longitudes
-      integer jm                       ! Total latitudes
-      integer jfirst                   ! First PE latitude (no ghosting)
-      integer jlast                    ! Last  PE latitude (no ghosting)
+      integer im                       !< Total longitudes
+      integer jm                       !< Total latitudes
+      integer jfirst                   !< First PE latitude (no ghosting)
+      integer jlast                    !< Last  PE latitude (no ghosting)
       integer, intent(in):: ng_s, ng_d
       real, intent(in):: coslon(im,jm), sinlon(im,jm)
       real, intent(in):: cosl5(im,jm),sinl5(im,jm)
@@ -9091,18 +9141,6 @@ end subroutine terminator_tracers
 ! !INPUT/OUTPUT PARAMETERS:
       real, intent(inout):: v(im,jfirst-ng_d:jlast+ng_d)
 
-! !DESCRIPTION:
-!
-!   Treat the V winds at the poles.  This requires an average 
-!   of the U- and V-winds, weighted by their angles of incidence
-!   at the pole points.     
-!
-! !REVISION HISTORY:
-!
-!EOP
-!-----------------------------------------------------------------------
-!BOC
-!
 ! !LOCAL VARIABLES:
 
       integer i, imh

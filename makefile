@@ -32,7 +32,6 @@ SRCS_F90 = \
 		   ./model/fv_arrays.F90                          \
 		   ./model/fv_cmp.F90                             \
 		   ./model/fv_control.F90                         \
-		   ./model/fv_current_grid.F90                    \
 		   ./model/fv_dynamics.F90                        \
 		   ./model/fv_fill.F90                            \
 		   ./model/fv_grid_utils.F90                      \
@@ -52,7 +51,6 @@ SRCS_F90 = \
 		   ./tools/fv_grid_tools.F90                      \
 		   ./tools/fv_io.F90                              \
 		   ./tools/fv_mp_mod.F90                          \
-		   ./tools/fv_nggps_diag.F90                      \
 		   ./tools/fv_nudge.F90                           \
 		   ./tools/fv_treat_da_inc.F90                    \
 		   ./tools/fv_iau_mod.F90                         \
@@ -63,6 +61,8 @@ SRCS_F90 = \
 		   ./tools/sim_nc_mod.F90                         \
 		   ./tools/sorted_index.F90                       \
 		   ./tools/test_cases.F90                         \
+		   ./driver/fvGFS/DYCORE_typedefs.F90             \
+		   ./driver/fvGFS/fv_nggps_diag.F90               \
 		   ./driver/fvGFS/atmosphere.F90
 
 SRCS_c   = 
@@ -91,7 +91,7 @@ $(LIBRARY): $(OBJS)
 ./model/fv_mapz.o : ./model/fv_mapz.F90
 	$(FC) $(CPPDEFS) $(FPPFLAGS) $(FFLAGS) $(OTHER_FFLAGS) $(FAST) -c $< -o $@
 
-./tools/fv_nggps_diag.o : ./tools/fv_nggps_diag.F90
+./driver/fvGFS/fv_nggps_diag.o : ./driver/fvGFS/fv_nggps_diag.F90
 	$(FC) $(CPPDEFS) $(FPPFLAGS) $(FFLAGS) $(OTHER_FFLAGS) $(ESMF_INC) -c $< -o $@
 
 .PHONY: clean

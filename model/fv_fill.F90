@@ -1,23 +1,40 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 module fv_fill_mod
+!
+! Modules Included:
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>mpp_update_domains, domain2D</td>
+!   </tr>
+!   <tr>
+!     <td>platform_mod</td>
+!     <td>kind_phys => r8_kind</td>
+!   </tr>
+! </table>
 
    use mpp_domains_mod,     only: mpp_update_domains, domain2D
    use platform_mod,        only: kind_phys => r8_kind
@@ -29,13 +46,15 @@ module fv_fill_mod
 
 contains
 
+!>@brief The subroutine 'fillz' is for mass-conservative filling of nonphysical negative values in the tracers. 
+!>@details This routine takes mass from adjacent cells in the same column to fill negatives, if possible.
  subroutine fillz(im, km, nq, q, dp)
-   integer,  intent(in):: im                ! No. of longitudes
-   integer,  intent(in):: km                ! No. of levels
-   integer,  intent(in):: nq                ! Total number of tracers
-   real , intent(in)::  dp(im,km)       ! pressure thickness
-   real , intent(inout) :: q(im,km,nq)   ! tracer mixing ratio
-! !LOCAL VARIABLES:
+   integer,  intent(in):: im                !< No. of longitudes
+   integer,  intent(in):: km                !< No. of levels
+   integer,  intent(in):: nq                !< Total number of tracers
+   real , intent(in)::  dp(im,km)           !< pressure thickness
+   real , intent(inout) :: q(im,km,nq)      !< tracer mixing ratio
+! LOCAL VARIABLES:
    logical:: zfix(im)
    real ::  dm(km)
    integer i, k, ic, k1
@@ -136,10 +155,14 @@ contains
    enddo
  end subroutine fillz
 
+!>@brief The subroutine 'fill_gfs' is for mass-conservative filling of nonphysical negative values in the tracers. 
+!>@details This routine is the same as 'fillz', but only fills one scalar field 
+!! using specified q_min instead of 0 with the k-index flipped as in the GFS physics. 
+!! It accepts edge pressure instead of delp.
  subroutine fill_gfs(im, km, pe2, q, q_min)
 !SJL: this routine is the equivalent of fillz except that the vertical index is upside down
    integer, intent(in):: im, km
-   real(kind=kind_phys), intent(in):: pe2(im,km+1)       ! pressure interface
+   real(kind=kind_phys), intent(in):: pe2(im,km+1)       !< pressure interface
    real(kind=kind_phys), intent(in):: q_min
    real(kind=kind_phys), intent(inout):: q(im,km)
 !  LOCAL VARIABLES:
@@ -178,7 +201,8 @@ contains
 
  end subroutine fill_gfs
 
-
+!>@brief The subroutine 'fill2D' fills in nonphysical negative values in a single scalar field 
+!! using a two-dimensional diffusive approach which conserves mass.
  subroutine fill2D(is, ie, js, je, ng, km, q, delp, area, domain, nested, npx, npy)
 ! This is a diffusive type filling algorithm
  type(domain2D), intent(INOUT) :: domain

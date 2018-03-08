@@ -1,27 +1,54 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License                 
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it 
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or 
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be 
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.  
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
+!>@brief The module 'tp_core' is a collection of routines to support FV transport.
+!>@details The module contains the scalar advection scheme and PPM operators. 
 module tp_core_mod
-!BOP
+
+! Modules Included:
 !
-! !MODULE: tp_core --- A collection of routines to support FV transport
-!
+! <table>
+!   <tr>
+!     <th>Module Name</th>
+!    <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>ng</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_utils_mod</td>
+!     <td>big_number</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_grid_type, fv_grid_bounds_type</td>
+!   </tr>
+!   <tr>
+!     <td>field_manager_mod</td>
+!     <td>fm_path_name_len, fm_string_len, fm_exists, fm_get_index, fm_new_list, fm_get_current_list,
+!         fm_change_list, fm_field_name_len, fm_type_name_len, fm_dump_list, fm_loop_over_list</td>
+!   </tr>
+! </table>
+
  use fv_mp_mod,         only: ng 
  use fv_grid_utils_mod, only: big_number
  use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type
@@ -31,7 +58,7 @@ module tp_core_mod
  private
  public fv_tp_2d, pert_ppm, copy_corners
 
- real, parameter:: ppm_fac = 1.5   ! nonlinear scheme limiter: between 1 and 2
+ real, parameter:: ppm_fac = 1.5   !< nonlinear scheme limiter: between 1 and 2
  real, parameter:: r3 = 1./3.
  real, parameter:: near_zero = 1.E-25
  real, parameter:: ppm_limiter = 2.0
@@ -75,31 +102,34 @@ module tp_core_mod
 
 contains
 
+!>@brief The subroutine 'fv_tp_2d' contains the FV advection scheme
+!! \cite putman2007finite \cite lin1996multiflux. 
+!>@details It performs 1 time step of the forward advection.
  subroutine fv_tp_2d(q, crx, cry, npx, npy, hord, fx, fy, xfx, yfx,  &
                      gridstruct, bd, ra_x, ra_y, lim_fac, mfx, mfy, mass, nord, damp_c)
    type(fv_grid_bounds_type), intent(IN) :: bd
    integer, intent(in):: npx, npy
    integer, intent(in)::hord
 
-   real, intent(in)::  crx(bd%is:bd%ie+1,bd%jsd:bd%jed)  !
-   real, intent(in)::  xfx(bd%is:bd%ie+1,bd%jsd:bd%jed)  !
-   real, intent(in)::  cry(bd%isd:bd%ied,bd%js:bd%je+1 )  !
-   real, intent(in)::  yfx(bd%isd:bd%ied,bd%js:bd%je+1 )  !
+   real, intent(in)::  crx(bd%is:bd%ie+1,bd%jsd:bd%jed)  
+   real, intent(in)::  xfx(bd%is:bd%ie+1,bd%jsd:bd%jed)  
+   real, intent(in)::  cry(bd%isd:bd%ied,bd%js:bd%je+1 )  
+   real, intent(in)::  yfx(bd%isd:bd%ied,bd%js:bd%je+1 )  
    real, intent(in):: ra_x(bd%is:bd%ie,bd%jsd:bd%jed)
    real, intent(in):: ra_y(bd%isd:bd%ied,bd%js:bd%je)
-   real, intent(inout):: q(bd%isd:bd%ied,bd%jsd:bd%jed)  ! transported scalar
-   real, intent(out)::fx(bd%is:bd%ie+1 ,bd%js:bd%je)    ! Flux in x ( E )
-   real, intent(out)::fy(bd%is:bd%ie,   bd%js:bd%je+1 )    ! Flux in y ( N )
+   real, intent(inout):: q(bd%isd:bd%ied,bd%jsd:bd%jed)  !< transported scalar
+   real, intent(out)::fx(bd%is:bd%ie+1 ,bd%js:bd%je)    !< Flux in x ( E )
+   real, intent(out)::fy(bd%is:bd%ie,   bd%js:bd%je+1 ) !< Flux in y ( N )
 
    type(fv_grid_type), intent(IN), target :: gridstruct
 
    real, intent(in):: lim_fac
 ! optional Arguments:
-   real, OPTIONAL, intent(in):: mfx(bd%is:bd%ie+1,bd%js:bd%je  )  ! Mass Flux X-Dir
-   real, OPTIONAL, intent(in):: mfy(bd%is:bd%ie  ,bd%js:bd%je+1)  ! Mass Flux Y-Dir
+   real, OPTIONAL, intent(in):: mfx(bd%is:bd%ie+1,bd%js:bd%je  ) !< Mass Flux X-Dir
+   real, OPTIONAL, intent(in):: mfy(bd%is:bd%ie  ,bd%js:bd%je+1)  !< Mass Flux Y-Dir
    real, OPTIONAL, intent(in):: mass(bd%isd:bd%ied,bd%jsd:bd%jed)
    real, OPTIONAL, intent(in):: damp_c
-   integer, OPTIONAL, intent(in):: nord
+   integer, OPTIONAL, intent(in):: nord !< order of divergence damping
 ! Local:
    integer ord_ou, ord_in
    real q_i(bd%isd:bd%ied,bd%js:bd%je)
@@ -292,17 +322,17 @@ contains
 
  subroutine xppm(flux, q, c, iord, is,ie,isd,ied, jfirst,jlast,jsd,jed, npx, npy, dxa, nested, grid_type, lim_fac)
  integer, INTENT(IN) :: is, ie, isd, ied, jsd, jed
- integer, INTENT(IN) :: jfirst, jlast  ! compute domain
+ integer, INTENT(IN) :: jfirst, jlast  !< compute domain
  integer, INTENT(IN) :: iord
  integer, INTENT(IN) :: npx, npy
  real   , INTENT(IN) :: q(isd:ied,jfirst:jlast)
- real   , INTENT(IN) :: c(is:ie+1,jfirst:jlast) ! Courant   N (like FLUX)
+ real   , INTENT(IN) :: c(is:ie+1,jfirst:jlast) !< Courant N (like FLUX)
  real   , intent(IN) :: dxa(isd:ied,jsd:jed)
  logical, intent(IN) :: nested
  integer, intent(IN) :: grid_type
  real   , intent(IN) :: lim_fac
-! !OUTPUT PARAMETERS:
- real  , INTENT(OUT) :: flux(is:ie+1,jfirst:jlast) !  Flux
+!OUTPUT PARAMETERS:
+ real  , INTENT(OUT) :: flux(is:ie+1,jfirst:jlast) !< Flux
 ! Local
  real, dimension(is-1:ie+1):: bl, br, b0
  real:: q1(isd:ied)
@@ -602,13 +632,13 @@ contains
 
 
  subroutine yppm(flux, q, c, jord, ifirst,ilast, isd,ied, js,je,jsd,jed, npx, npy, dya, nested, grid_type, lim_fac)
- integer, INTENT(IN) :: ifirst,ilast    ! Compute domain
+ integer, INTENT(IN) :: ifirst,ilast    !< Compute domain
  integer, INTENT(IN) :: isd,ied, js,je,jsd,jed
  integer, INTENT(IN) :: jord
  integer, INTENT(IN) :: npx, npy
  real   , INTENT(IN) :: q(ifirst:ilast,jsd:jed)
- real   , intent(in) :: c(isd:ied,js:je+1 )  ! Courant number
- real   , INTENT(OUT):: flux(ifirst:ilast,js:je+1)   !  Flux
+ real   , intent(in) :: c(isd:ied,js:je+1 )  !< Courant number
+ real   , INTENT(OUT):: flux(ifirst:ilast,js:je+1)   !<  Flux
  real   , intent(IN) :: dya(isd:ied,jsd:jed)
  logical, intent(IN) :: nested
  integer, intent(IN) :: grid_type
@@ -955,10 +985,10 @@ endif
       integer, intent(in):: ifirst, ilast
       integer, intent(in):: jfirst, jlast
       integer, intent(in):: kfirst, klast
-      integer, intent(in):: ng_e      ! eastern  zones to ghost
-      integer, intent(in):: ng_w      ! western  zones to ghost
-      integer, intent(in):: ng_s      ! southern zones to ghost
-      integer, intent(in):: ng_n      ! northern zones to ghost
+      integer, intent(in):: ng_e      !< eastern  zones to ghost
+      integer, intent(in):: ng_w      !< western  zones to ghost
+      integer, intent(in):: ng_s      !< southern zones to ghost
+      integer, intent(in):: ng_n      !< northern zones to ghost
       real, intent(inout):: q_ghst(ifirst-ng_w:ilast+ng_e,jfirst-ng_s:jlast+ng_n,kfirst:klast,nq)
       real, optional, intent(in):: q(ifirst:ilast,jfirst:jlast,kfirst:klast,nq)
 !
@@ -1060,15 +1090,15 @@ endif
 
 
  subroutine deln_flux(nord,is,ie,js,je, npx, npy, damp, q, fx, fy, gridstruct, bd, mass )
-! Del-n damping for the cell-mean values (A grid)
+!> Del-n damping for the cell-mean values (A grid)
 !------------------
-! nord = 0:   del-2
-! nord = 1:   del-4
-! nord = 2:   del-6
-! nord = 3:   del-8 --> requires more ghosting than current
+!> nord = 0:   del-2
+!> nord = 1:   del-4
+!> nord = 2:   del-6
+!> nord = 3:   del-8 --> requires more ghosting than current
 !------------------
    type(fv_grid_bounds_type), intent(IN) :: bd
-   integer, intent(in):: nord            ! del-n
+   integer, intent(in):: nord            !< del-n
    integer, intent(in):: is,ie,js,je, npx, npy
    real, intent(in):: damp
    real, intent(in):: q(bd%is-ng:bd%ie+ng, bd%js-ng:bd%je+ng)  ! q ghosted on input
