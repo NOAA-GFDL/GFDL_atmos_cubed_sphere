@@ -20,8 +20,7 @@
 !***********************************************************************
 
 !>@brief The module 'nh_utils' peforms non-hydrostatic computations.
-!@author S. J. Lin, NOAA/GFDL
-!>@todo Include moisture effect in pt
+!>@author S. J. Lin, NOAA/GFDL
 
 module nh_utils_mod
 

@@ -1526,8 +1526,6 @@ endif        ! end last_step check
  end subroutine remap_2d
 
 
-!>@brief Optimized vertical profile reconstruction:
-!> Latest: Apr 2008 S.-J. Lin, NOAA/GFDL
  subroutine scalar_profile(qs, a4, delp, km, i1, i2, iv, kord, qmin)
 ! Optimized vertical profile reconstruction:
 ! Latest: Apr 2008 S.-J. Lin, NOAA/GFDL
@@ -1935,9 +1933,6 @@ endif        ! end last_step check
 
  end subroutine scalar_profile
 
-!>@brief The subroutine 'cs_profile' performs the optimized vertical profile reconstruction:
-!>@date April 2008 
-!>@author S. J. Lin, NOAA/GFDL
  subroutine cs_profile(qs, a4, delp, km, i1, i2, iv, kord)
 ! Optimized vertical profile reconstruction:
 ! Latest: Apr 2008 S.-J. Lin, NOAA/GFDL

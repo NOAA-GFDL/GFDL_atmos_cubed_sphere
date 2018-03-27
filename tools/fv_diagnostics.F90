@@ -4843,7 +4843,7 @@ end subroutine eqv_pot
    
  end subroutine fv_diag_init_gn
 
-!>@brief The subroutine 'getcape' calculateds the Convective Available
+!>@brief The subroutine 'getcape' calculates the Convective Available
 !! Potential Energy (CAPE) from a Sounding
 !>@author George H. Bryan
 !! Mesoscale and Microscale Meteorology Division
@@ -4851,8 +4851,6 @@ end subroutine eqv_pot
 !! Boulder, Colorado, USA
 !! gbryan@ucar.edu
 !>@details: Last modified 10 October 2008
-!! See \cite bolton1980computation for constants and definitions
-!! \cite bryan2004reevaluation for ice processes
     subroutine getcape( nk , p , t , dz, q, the, cape , cin, source_in )
     implicit none
 

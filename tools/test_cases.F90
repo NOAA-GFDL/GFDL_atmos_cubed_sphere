@@ -241,7 +241,6 @@
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!>@brief The subroutine 'init_winds' initialize the winds.
       subroutine init_winds(UBar, u,v,ua,va,uc,vc, defOnGrid, npx, npy, ng, ndims, nregions, nested, gridstruct, domain, tile)
  ! defOnGrid = -1:null_op, 0:All-Grids, 1:C-Grid, 2:D-Grid, 3:A-Grid, 4:A-Grid then Rotate, 5:D-Grid with unit vectors then Rotate
 
@@ -528,8 +527,6 @@
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!>@brief The subroutine 'init_case' initialize the Williamson test cases;
-!
 !     init_case :: initialize the Williamson test cases:
 !                  case 1 (2-D advection of a cosine bell)
 !                  case 2 (Steady State Zonal Geostrophic Flow)
@@ -6782,10 +6779,6 @@ end subroutine terminator_tracers
 
       end subroutine init_double_periodic
 
-!>@brief The subroutine 'SuperK_Sounding' gets the sounding at "equator"; the
-!! initial storm center.
-!>@details This is the z-coordinate version 
-!! (Morris Weisman & J. Klemp 2002 sounding)
  subroutine SuperK_Sounding(km, pe, p00, ze, pt, qz)
  integer, intent(in):: km
  real, intent(in):: p00
@@ -8328,7 +8321,6 @@ end subroutine terminator_tracers
 
  end subroutine d2a2c
 
-!>@brief The subroutine 'atob_s' interpolates a scalar from the A-Grid to the B-grid.
       subroutine atob_s(qin, qout, npx, npy, dxa, dya, nested, cubed_sphere, altInterp)
          integer,      intent(IN) :: npx, npy
          real  , intent(IN)    ::  qin(isd:ied  ,jsd:jed  )    !< A-grid field
@@ -8465,7 +8457,6 @@ end subroutine terminator_tracers
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!>@brief The subroutine 'atod' interpolates values from the A-Grid to the D-grid.
       subroutine atod(uin, vin, uout, vout, dxa, dya, dxc, dyc, npx, npy, ng, nested, domain)
          integer,      intent(IN) :: npx, npy, ng
          real  , intent(IN)    ::  uin(isd:ied  ,jsd:jed  ) !< A-grid u-wind field
@@ -8509,7 +8500,6 @@ end subroutine terminator_tracers
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!>@brief The subroutine 'dtoa' interpolates values from the D-Grid to the A-grid.
       subroutine dtoa(uin, vin, uout, vout, dx, dy, dxa, dya, dxc, dyc, npx, npy, ng)
          integer,      intent(IN) :: npx, npy, ng
          real  , intent(IN)    ::  uin(isd:ied  ,jsd:jed+1)    !< D-grid u-wind field
@@ -8562,7 +8552,6 @@ end subroutine terminator_tracers
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!>@brief The subroutine 'atoc' interpolates values from the A-Grid to the C-grid.
       subroutine atoc(uin, vin, uout, vout, dx, dy, dxa, dya, npx, npy, ng, nested, domain, noComm)
          integer,      intent(IN) :: npx, npy, ng
          real  , intent(IN)    ::  uin(isd:ied  ,jsd:jed  ) !< A-grid u-wind field
@@ -8683,7 +8672,6 @@ end subroutine terminator_tracers
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!>@brief The subroutine 'ctoa' interpolates values from the C-Grid to the A-grid.
       subroutine ctoa(uin, vin, uout, vout, dx, dy, dxc, dyc, dxa, dya, npx, npy, ng)
          integer,      intent(IN) :: npx, npy, ng 
          real  , intent(IN)    ::  uin(isd:ied+1,jsd:jed  )    !< C-grid u-wind field
@@ -8735,7 +8723,6 @@ end subroutine terminator_tracers
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!>@brief The subroutine 'rotate_winds' rotates winds from the sphere-to-cube to cube-to-sphere.
       subroutine rotate_winds(myU, myV, p1, p2, p3, p4, t1, ndims, dir)
          integer,      intent(IN) :: ndims
          real  , intent(INOUT) :: myU    !< u-wind field
@@ -8814,7 +8801,6 @@ end subroutine terminator_tracers
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!>@brief The subroutine 'gsum' computes the global sum.
       real  function globalsum(p, npx, npy, ifirst, ilast, jfirst, jlast, isd, ied, jsd, jed, gridstruct, tile) result (gsum)
          integer,   intent(IN)    :: npx, npy
          integer,   intent(IN)    :: ifirst, ilast
@@ -9012,10 +8998,6 @@ end subroutine terminator_tracers
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!>@brief The subroutine 'interp_left_edge_1d' interpolates to left edge of a cell.
-!>@details order = 1 -> Linear average
-!>order = 2 -> Uniform PPM
-!>order = 3 -> Non-Uniform PPM  
  subroutine interp_left_edge_1d(qout, qin, dx, ifirst, ilast, order)
  integer, intent(in):: ifirst,ilast
  real, intent(out)  :: qout(ifirst:)
@@ -9123,9 +9105,6 @@ end subroutine terminator_tracers
  end subroutine interp_left_edge_1d
 !------------------------------------------------------------------------------
 !----------------------------------------------------------------------- 
-!>@brief The subroutine 'vpol5' treats the V winds at the poles.  
-!>@details This requires an average of the U- and V-winds, 
-!!weighted by their angles of incidence at the pole points.     
  subroutine vpol5(u, v, im, jm, coslon, sinlon, cosl5, sinl5,    &
                   ng_d,  ng_s,  jfirst, jlast)
 ! !INPUT PARAMETERS:

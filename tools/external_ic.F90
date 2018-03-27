@@ -1265,9 +1265,9 @@ contains
 
   end subroutine get_ncep_ic
 
-!>@brief The subroutine 'get_ecmwf_ic' reads in initial conditions from ECMWF
-!! analyses
-!!>@authors Jan-Huey Chen, Xi Chen, Shian-Jiann Lin
+!>@brief The subroutine 'get_ecmwf_ic' reads in initial conditions from ECMWF analyses
+!! (EXPERIMENTAL: contact Jan-Huey Chen jan-huey.chen@noaa.gov for support)
+!>@authors Jan-Huey Chen, Xi Chen, Shian-Jiann Lin
   subroutine get_ecmwf_ic( Atm, fv_domain )
       type(fv_atmos_type), intent(inout) :: Atm(:)
       type(domain2d),      intent(inout) :: fv_domain

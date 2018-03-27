@@ -2298,7 +2298,7 @@ do 1000 j=jfirst,jlast
 
  end subroutine init_ijk_mem
 
-!>@brief The subroutine 'Ray_fast' computes a simple "inline" version of the Rayleigh friction.
+!>@brief The subroutine 'Ray_fast' computes a simple "inline" version of the Rayleigh friction (EXPERIMENTAL - NOT FOR GENERAL USE).
  subroutine Ray_fast(dt, npx, npy, npz, pfull, tau, u, v, w,  &
                           ks, dp, ptop, hydrostatic, rf_cutoff, bd)
 ! Simple "inline" version of the Rayleigh friction
