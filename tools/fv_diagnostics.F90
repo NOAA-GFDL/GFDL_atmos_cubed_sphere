@@ -197,7 +197,7 @@ contains
 
     real, allocatable :: grid_xt(:), grid_yt(:), grid_xe(:), grid_ye(:), grid_xn(:), grid_yn(:)
     real, allocatable :: grid_x(:),  grid_y(:)
-    real              :: vrange(2), vsrange(2), wrange(2), trange(2), slprange(2), rhrange(2)
+    real              :: vrange(2), vsrange(2), wrange(2), trange(2), slprange(2), rhrange(2), skrange(2)
     real, allocatable :: a3(:,:,:)
     real              :: pfull(npz)
     real              :: hyam(npz), hybm(npz)
@@ -257,6 +257,7 @@ contains
     trange = (/  100.,  350. /)  ! temperature
 #endif
     slprange = (/800.,  1200./)  ! sea-level-pressure
+    skrange  = (/ -10000000.0,  10000000.0 /)  ! dissipation estimate for SKEB
 
     ginv = 1./GRAV
      if (Atm(1)%grid_number == 1) fv_time = Time
@@ -664,6 +665,9 @@ contains
                'omega', 'Pa/s', missing_value=missing_value )
           idiag%id_divg  = register_diag_field ( trim(field), 'divg', axes(1:3), Time,      &
                'mean divergence', '1/s', missing_value=missing_value )
+          ! diagnotic output for skeb testing
+          idiag%id_diss = register_diag_field ( trim(field), 'diss_est', axes(1:3), Time,    &
+               'random', 'none', missing_value=missing_value, range=skrange )
 
           idiag%id_rh = register_diag_field ( trim(field), 'rh', axes(1:3), Time,        &
                'Relative Humidity', '%', missing_value=missing_value )
@@ -2864,6 +2868,7 @@ contains
 
        if(idiag%id_pt   > 0) used=send_data(idiag%id_pt  , Atm(n)%pt  (isc:iec,jsc:jec,:), Time)
        if(idiag%id_omga > 0) used=send_data(idiag%id_omga, Atm(n)%omga(isc:iec,jsc:jec,:), Time)
+       if(idiag%id_diss > 0) used=send_data(idiag%id_diss, Atm(n)%diss_est(isc:iec,jsc:jec,:), Time)
        
        allocate( a3(isc:iec,jsc:jec,npz) )
        if(idiag%id_theta_e > 0 ) then

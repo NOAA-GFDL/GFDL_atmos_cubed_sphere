@@ -276,7 +276,7 @@ contains
        enddo
 !      print *,'in ngpps diag init, ak=',ak(1:5),' bk=',bk(1:5)
 
-! get lon,lon information
+! get lon,lat information
        if(.not.allocated(lon)) then
          allocate(lon(isco:ieco,jsco:jeco))
          do j=jsco,jeco
