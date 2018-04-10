@@ -106,7 +106,7 @@ module atmosphere_mod
 !   </tr>
 !   <tr>
 !     <td>IPD_typedefs_mod</td>
-!     <td>IPD_data_type, kind_phys</td>
+!     <td>IPD_data_type, kind_phys => IPD_kind_phys</td>
 !   </tr>
 !   <tr>
 !     <td>mpp_mod</td>
@@ -165,7 +165,7 @@ use field_manager_mod,      only: MODEL_ATMOS
 use tracer_manager_mod,     only: get_tracer_index, get_number_tracers, &
                                   NO_TRACER
 use DYCORE_typedefs,        only: DYCORE_data_type
-use IPD_typedefs,           only: IPD_data_type, kind_phys
+use IPD_typedefs,           only: IPD_data_type, kind_phys => IPD_kind_phys
 use fv_iau_mod,             only: IAU_external_data_type
 
 !-----------------
@@ -1640,9 +1640,9 @@ contains
 !--------------------------------------
 ! Local GFS-phys consistent parameters:
 !--------------------------------------
-   real(kind=kind_phys), parameter:: p00 = 1.e5
-   real(kind=kind_phys), parameter:: qmin = 1.0e-10   
-   real(kind=kind_phys):: pk0inv, ptop, pktop
+   real(kind=kind_phys), parameter :: p00 = 1.e5
+   real(kind=kind_phys), parameter :: qmin = 1.0e-10   
+   real(kind=kind_phys) :: pk0inv, ptop, pktop
    real(kind=kind_phys) :: rTv, dm, qgrs_rad
    integer :: nb, blen, npz, i, j, k, ix, k1, dnats, nq_adv
 

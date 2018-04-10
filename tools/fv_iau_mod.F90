@@ -25,8 +25,8 @@
 !> @author Philip Pegion <philip.pegion@noaa.gov>
 !> @date 09/13/2017
 !
-!  REVISION HISTORY:
-!  09/13/2017 - Initial Version based on fv_treat_da_inc.F90
+!>  REVISION HISTORY:
+!>  09/13/2017 - Initial Version based on fv_treat_da_inc.F90
 !-------------------------------------------------------------------------------
 
 #ifdef OVERLOAD_R4
@@ -54,7 +54,7 @@ module fv_iau_mod
                                  get_var3_r4,         &
                                  get_var1_real, check_var_exists
   use IPD_typedefs,        only: IPD_init_type, IPD_control_type, &
-                                 kind_phys
+                                 kind_phys => IPD_kind_phys
   use block_control_mod,   only: block_control_type
   use fv_treat_da_inc_mod, only: remap_coef
   use tracer_manager_mod,  only: get_tracer_names,get_tracer_index, get_number_tracers
