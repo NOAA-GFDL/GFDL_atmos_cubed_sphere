@@ -968,9 +968,11 @@ contains
 ! returns temp, sphum, pres, height at the lowest model level
 ! and surface pressure
 !--------------------------------------------------------------
+   !--- interface variables ---
    real, intent(out), dimension(isc:iec,jsc:jec):: t_bot, p_bot, z_bot, p_surf
    real, intent(out), optional, dimension(isc:iec,jsc:jec):: slp
    real, intent(out), dimension(isc:iec,jsc:jec,nq):: tr_bot
+   !--- local variables ---
    integer :: i, j, m, k, kr
    real    :: rrg, sigtop, sigbot
    real, dimension(isc:iec,jsc:jec) :: tref
@@ -1025,7 +1027,9 @@ contains
 !-----------------------------------------------------------
 ! returns u and v on the mass grid at the lowest model level
 !-----------------------------------------------------------
+   !--- interface variables ---
    real, intent(out), dimension(isc:iec,jsc:jec):: u_bot, v_bot
+   !--- local variables ---
    integer i, j
 
    do j=jsc,jec
