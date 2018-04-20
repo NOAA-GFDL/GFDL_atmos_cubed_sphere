@@ -740,14 +740,14 @@ module fv_update_phys_mod
   real v3(is-1:ie+1,js-1:je+1,3)
   real ue(is-1:ie+1,js:je+1,3)    !< 3D winds at edges
   real ve(is:ie+1,js-1:je+1,3)    !< 3D winds at edges
-  real, dimension(is:ie):: ut1, ut2, ut3
-  real, dimension(js:je):: vt1, vt2, vt3
+  real, dimension(is:ie) :: ut1, ut2, ut3
+  real, dimension(js:je) :: vt1, vt2, vt3
   real dt5, gratio
   integer i, j, k, m, im2, jm2
 
-  real(kind=R_GRID), pointer, dimension(:,:,:) :: vlon, vlat
+  real(kind=R_GRID), pointer, dimension(:,:,:)   :: vlon, vlat
   real(kind=R_GRID), pointer, dimension(:,:,:,:) :: es, ew
-  real(kind=R_GRID), pointer, dimension(:) :: edge_vect_w, edge_vect_e, edge_vect_s, edge_vect_n
+  real(kind=R_GRID), pointer, dimension(:)       :: edge_vect_w, edge_vect_e, edge_vect_s, edge_vect_n
 
   es   => gridstruct%es
   ew   => gridstruct%ew

@@ -345,6 +345,7 @@ module fv_control_mod
                                    !< 3 for four-interfaces non-block
 
 
+
 ! version number of this module
 ! Include variable "version" to be written to log file.
 #include<file_version.h>
@@ -620,7 +621,7 @@ module fv_control_mod
    real :: dt0  = 1800.          !< base time step
    real :: ns0  = 5.             !< base nsplit for base dimension 
                                  !< For cubed sphere 5 is better
-   !real :: umax = 350.           ! max wave speed for grid_type>3 ! Now defined above
+   !real :: umax = 350.          ! max wave speed for grid_type>3 ! Now defined above
    real :: dimx, dl, dp, dxmin, dymin, d_fac
 
    integer :: n0split

@@ -159,12 +159,12 @@ contains
 !     fv_dynamics :: FV dynamical core driver
 !-----------------------------------------------------------------------
  
-  subroutine fv_dynamics(npx, npy, npz, nq_tot,  ng, bdt, consv_te, fill,               &
-                        reproduce_sum, kappa, cp_air, zvir, ptop, ks, ncnst, n_split,     &
-                        q_split, u, v, w, delz, hydrostatic, pt, delp, q,   &
-                        ps, pe, pk, peln, pkz, phis, q_con, omga, ua, va, uc, vc,          &
-                        ak, bk, mfx, mfy, cx, cy, ze0, hybrid_z, &
-                        gridstruct, flagstruct, neststruct, idiag, bd, &
+  subroutine fv_dynamics(npx, npy, npz, nq_tot,  ng, bdt, consv_te, fill,             &
+                        reproduce_sum, kappa, cp_air, zvir, ptop, ks, ncnst, n_split, &
+                        q_split, u, v, w, delz, hydrostatic, pt, delp, q,             &
+                        ps, pe, pk, peln, pkz, phis, q_con, omga, ua, va, uc, vc,     &
+                        ak, bk, mfx, mfy, cx, cy, ze0, hybrid_z,                      &
+                        gridstruct, flagstruct, neststruct, idiag, bd,                &
                         parent_grid, domain, diss_est, time_total)
 
     real, intent(IN) :: bdt  !< Large time-step
@@ -232,21 +232,21 @@ contains
     type(fv_grid_type),  intent(inout), target :: gridstruct
     type(fv_flags_type), intent(INOUT) :: flagstruct
     type(fv_nest_type),  intent(INOUT) :: neststruct
-    type(domain2d), intent(INOUT) :: domain
+    type(domain2d),      intent(INOUT) :: domain
     type(fv_atmos_type), intent(INOUT) :: parent_grid
-    type(fv_diag_type), intent(IN) :: idiag
+    type(fv_diag_type),  intent(IN)    :: idiag
 
 ! Local Arrays
-      real:: ws(bd%is:bd%ie,bd%js:bd%je)
-      real:: te_2d(bd%is:bd%ie,bd%js:bd%je)
-      real::   teq(bd%is:bd%ie,bd%js:bd%je)
-      real:: ps2(bd%isd:bd%ied,bd%jsd:bd%jed)
-      real:: m_fac(bd%is:bd%ie,bd%js:bd%je)
-      real:: pfull(npz)
+      real :: ws(bd%is:bd%ie,bd%js:bd%je)
+      real :: te_2d(bd%is:bd%ie,bd%js:bd%je)
+      real ::   teq(bd%is:bd%ie,bd%js:bd%je)
+      real :: ps2(bd%isd:bd%ied,bd%jsd:bd%jed)
+      real :: m_fac(bd%is:bd%ie,bd%js:bd%je)
+      real :: pfull(npz)
       real, dimension(bd%is:bd%ie):: cvm
       real, allocatable :: dp1(:,:,:), dtdt_m(:,:,:), cappa(:,:,:)
       real:: akap, rdg, ph1, ph2, mdt, gam, amdt, u0
-      integer:: kord_tracer(ncnst)
+      integer :: kord_tracer(ncnst)
       integer :: i,j,k, n, iq, n_map, nq, nwat, k_split
       integer :: sphum, liq_wat = -999, ice_wat = -999      ! GFDL physics
       integer :: rainwat = -999, snowwat = -999, graupel = -999, cld_amt = -999
@@ -256,7 +256,7 @@ contains
       type(group_halo_update_type), save :: i_pack(max_packs)
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
-      real :: dt2
+      real    :: dt2
 
       is  = bd%is
       ie  = bd%ie
@@ -268,12 +268,12 @@ contains
       jed = bd%jed
 
 !     cv_air =  cp_air - rdgas
-      agrav = 1. / grav
-        dt2 = 0.5*bdt
+      agrav   = 1. / grav
+        dt2   = 0.5*bdt
       k_split = flagstruct%k_split
-      nwat = flagstruct%nwat
-      nq = nq_tot - flagstruct%dnats
-      rdg = -rdgas * agrav
+      nwat    = flagstruct%nwat
+      nq      = nq_tot - flagstruct%dnats
+      rdg     = -rdgas * agrav
       allocate ( dp1(isd:ied, jsd:jed, 1:npz) )
       
       
@@ -346,7 +346,7 @@ contains
       akap  = kappa
 
 !$OMP parallel do default(none) shared(npz,ak,bk,flagstruct,pfull) &
-!$OMP                          private(ph1, ph2)
+!$OMP                          private(ph1, ph2,k)
       do k=1,npz
          ph1 = ak(k  ) + bk(k  )*flagstruct%p_ref
          ph2 = ak(k+1) + bk(k+1)*flagstruct%p_ref
@@ -355,7 +355,7 @@ contains
 
     if ( hydrostatic ) then
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,nwat,q,q_con,sphum,liq_wat, &
-!$OMP      rainwat,ice_wat,snowwat,graupel) private(cvm)
+!$OMP      rainwat,ice_wat,snowwat,graupel) private(cvm,i,j,k)
       do k=1,npz
          do j=js,je
 #ifdef USE_COND
@@ -371,10 +371,10 @@ contains
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,liq_wat, &
 !$OMP                                  rainwat,ice_wat,snowwat,graupel,pkz,flagstruct, & 
 !$OMP                                  cappa,kappa,rdg,delp,pt,delz,nwat)              &
-!$OMP                          private(cvm)
+!$OMP                          private(cvm,i,j,k)
        do k=1,npz
-          if ( flagstruct%moist_phys ) then
-          do j=js,je
+         if ( flagstruct%moist_phys ) then
+           do j=js,je
 #ifdef MOIST_CAPPA
              call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
                            ice_wat, snowwat, graupel, q, q_con(is:ie,j,k), cvm)
@@ -393,15 +393,15 @@ contains
 !                                      (1.-q(i,j,k,sphum))/delz(i,j,k)) )
 #endif
              enddo
-          enddo
-          else
-            do j=js,je
-               do i=is,ie
-                  dp1(i,j,k) = 0.
-                  pkz(i,j,k) = exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
-               enddo
-            enddo
-          endif
+           enddo
+         else
+           do j=js,je
+             do i=is,ie
+               dp1(i,j,k) = 0.
+               pkz(i,j,k) = exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+             enddo
+           enddo
+         endif
        enddo
     endif
 
@@ -628,14 +628,14 @@ contains
                                                   call avec_timer_start(6)
 #endif
 
-         call Lagrangian_to_Eulerian(last_step, consv_te, ps, pe, delp,          &
-                     pkz, pk, mdt, bdt, npz, is,ie,js,je, isd,ied,jsd,jed,       &
-                     nq, nwat, sphum, q_con, u,  v, w, delz, pt, q, phis,    &
+         call Lagrangian_to_Eulerian(last_step, consv_te, ps, pe, delp,                 &
+                     pkz, pk, mdt, bdt, npz, is,ie,js,je, isd,ied,jsd,jed,              &
+                     nq, nwat, sphum, q_con, u,  v, w, delz, pt, q, phis,               &
                      zvir, cp_air, akap, cappa, flagstruct%kord_mt, flagstruct%kord_wz, &
-                     kord_tracer, flagstruct%kord_tm, peln, te_2d,               &
-                     ng, ua, va, omga, dp1, ws, fill, reproduce_sum,             &
+                     kord_tracer, flagstruct%kord_tm, peln, te_2d,                      &
+                     ng, ua, va, omga, dp1, ws, fill, reproduce_sum,                    &
                      idiag%id_mdt>0, dtdt_m, ptop, ak, bk, pfull, gridstruct, domain,   &
-                     flagstruct%do_sat_adj, hydrostatic, hybrid_z, do_omega,     &
+                     flagstruct%do_sat_adj, hydrostatic, hybrid_z, do_omega,            &
                      flagstruct%adiabatic, do_adiabatic_init)
 
 #ifdef AVEC_TIMERS
@@ -677,7 +677,7 @@ contains
        do k=1,npz
           do j=js,je
              do i=is,ie
-                dtdt_m(i,j,k) = dtdt_m(i,j,k) / bdt * 86400.
+                dtdt_m(i,j,k) = dtdt_m(i,j,k) *( 86400.0 / bdt)
              enddo
           enddo
        enddo
@@ -686,7 +686,7 @@ contains
        deallocate ( dtdt_m )
   endif
 
-  if( nwat==6 ) then
+  if( nwat == 6 ) then
      if (cld_amt > 0) then
       call neg_adj3(is, ie, js, je, ng, npz,        &
                     flagstruct%hydrostatic,         &

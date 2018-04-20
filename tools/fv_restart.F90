@@ -738,10 +738,10 @@ contains
     jsd   = Atm%bd%jsd
     jed   = Atm%bd%jed
     ncnst = Atm%ncnst
-    isc = Atm%bd%isc; iec = Atm%bd%iec; jsc = Atm%bd%jsc; jec = Atm%bd%jec
-    is  = Atm%bd%is ; ie  = Atm%bd%ie ; js  = Atm%bd%js ; je  = Atm%bd%je
-    npz = Atm%npz    
-    nwat = Atm%flagstruct%nwat
+    isc   = Atm%bd%isc; iec = Atm%bd%iec; jsc = Atm%bd%jsc; jec = Atm%bd%jec
+    is    = Atm%bd%is ; ie  = Atm%bd%ie ; js  = Atm%bd%js ; je  = Atm%bd%je
+    npz   = Atm%npz    
+    nwat  = Atm%flagstruct%nwat
 
    if (nwat >= 3) then
       liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
