@@ -1188,7 +1188,6 @@ contains
   endif
   if (allocated(heat_source)) deallocate( heat_source ) !If ncon == 0 but d_con > 1.e-5, this would not be deallocated in earlier versions of the code
 
-
   if ( end_step ) then
     deallocate(    gz )
     deallocate(   ptc )
