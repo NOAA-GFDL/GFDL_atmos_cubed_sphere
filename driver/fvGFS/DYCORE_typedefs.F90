@@ -83,8 +83,8 @@ module DYCORE_typedefs
     real(kind=r8_kind)  :: fcst_hour      !< current forecast hour (same as fhour)
     type(var_subtype), allocatable :: data(:) !< holds pointers to data in packed format (allocated to nblks)
     contains
-      procedure create => diag_create
-      procedure zero   => diag_zero
+      procedure :: create => diag_create
+      procedure :: zero   => diag_zero
   end type DYCORE_diag_type
 
 

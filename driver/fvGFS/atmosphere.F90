@@ -912,7 +912,7 @@ contains
    logical, optional, intent(in) :: init
 
    if (PRESENT(init)) then
-     if (init == .true.) then
+     if (init) then
        call fv_nggps_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time)
        return
      else

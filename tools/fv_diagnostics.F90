@@ -2476,10 +2476,8 @@ contains
 
           allocate(var2(isc:iec,jsc:jec))
           allocate(a3(isc:iec,jsc:jec,npz))
-
-          call eqv_pot(a3, Atm(n)%pt, Atm(n)%delp, Atm(n)%delz, Atm(n)%peln, Atm(n)%pkz, Atm(n)%q(isd,jsd,1,sphum),    &
-               isc, iec, jsc, jec, ngc, npz, Atm(n)%flagstruct%hydrostatic, Atm(n)%flagstruct%moist_phys)
-
+          call eqv_pot(a3, Atm(n)%pt, Atm(n)%delp, Atm(n)%delz, Atm(n)%peln, Atm(n)%pkz, Atm(n)%q(isd:ied,jsd:jed,1:npz,sphum), &
+                       isc, iec, jsc, jec, ngc, npz, Atm(n)%flagstruct%hydrostatic, Atm(n)%flagstruct%moist_phys)
 
 !$OMP parallel do default(shared)
           do j=jsc,jec
@@ -2545,7 +2543,7 @@ contains
             used=send_data(idiag%id_pmaskv2, a2, Time)
        endif
 
-       if ( idiag%id_u100m>0 .or. idiag%id_v100m>0 .or.  idiag%id_w100m>0 .or. idiag%id_w5km>0 .or. idiag%id_w2500m>0 .or. idiag%id_w1km>0 .or. idiag%id_basedbz>0 .or. idiag%id_dbz4km>0) then
+       if ( idiag%id_u100m>0 .or. idiag%id_v100m>0 .or. idiag%id_w100m>0 .or. idiag%id_w5km>0 .or. idiag%id_w2500m>0 .or. idiag%id_w1km>0 .or. idiag%id_basedbz>0 .or. idiag%id_dbz4km>0) then
           if (.not.allocated(wz)) allocate ( wz(isc:iec,jsc:jec,npz+1) )
           if ( Atm(n)%flagstruct%hydrostatic) then
              rgrav = 1. / grav

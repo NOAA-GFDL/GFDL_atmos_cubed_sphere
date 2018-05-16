@@ -606,9 +606,9 @@ contains
 !*** add global attributes in the field bundle:
    call ESMF_AttributeAdd(dyn_bundle, convention="NetCDF", purpose="FV3", &
      attrList=(/"hydrostatic", &
-                 "ncnsto    ", &
-                 "ak        ", &
-                 "bk        "/), rc=rc)
+                "ncnsto     ", &
+                "ak         ", &
+                "bk         "/), rc=rc)
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
      line=__LINE__, &
      file=__FILE__)) &
@@ -693,21 +693,63 @@ contains
      if( id>2 ) then
 !      if(mpp_pe()==mpp_root_pe())print *,' in dyn add grid, axis_name=',     &
 !         trim(axis_name(id)),'axis_data=',axis_data
-      if(trim(edgesS)/='') then
-        call ESMF_AttributeAdd(fcst_grid, convention="NetCDF", purpose="FV3",  &
-          attrList=(/trim(axis_name(id)),trim(axis_name(id))//":long_name",    &
-                    trim(axis_name(id))//":units", trim(axis_name(id))//":cartesian_axis", &
-                    trim(axis_name(id))//":positive", trim(axis_name(id))//":edges"/), rc=rc)
-      else
-        call ESMF_AttributeAdd(fcst_grid, convention="NetCDF", purpose="FV3",  &
-          attrList=(/trim(axis_name(id)),trim(axis_name(id))//":long_name",    &
-                    trim(axis_name(id))//":units", trim(axis_name(id))//":cartesian_axis", &
-                    trim(axis_name(id))//":positive"/), rc=rc)
-      endif
+!
+! Previous definition using variable-length character arrays violates the Fortran standards.
+! While this worked with Intel compilers, it caused the model to crash in different places
+! with both GNU and PGI. Compilers should throw an error at compile time, but it seems that
+! they can't handle the "trim(...) // ..." expressions.
+! The Standard (Fortran 2003) way to do this correctly is to tell the array constructor
+! how long to make the fixed array of characters:
+!
+!   call ESMF_AttributeAdd(fcst_grid, convention="NetCDF", purpose="FV3", &
+!   attrList=(/ character(128) :: trim(axis_name(id)),trim(axis_name(id))//":long_name", &
+!             trim(axis_name(id))//":units", trim(axis_name(id))//":cartesian_axis", &
+!             trim(axis_name(id))//":positive", trim(axis_name(id))//":edges"/), rc=rc)
+!
+! However this fails for GNU and PGI, see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=85547
+! The easiest and safest way forward is to define the attributes one by one as it is done
+! as it is done below in add_field_to_bundle.
+!
+      ! Add attributes one by one
+      call ESMF_AttributeAdd(fcst_grid, convention="NetCDF", purpose="FV3",  &
+        attrList=(/trim(axis_name(id))/), rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
         line=__LINE__, &
         file=__FILE__)) &
         return  ! bail out
+      call ESMF_AttributeAdd(fcst_grid, convention="NetCDF", purpose="FV3",  &
+        attrList=(/trim(axis_name(id))//":long_name"/), rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, &
+        file=__FILE__)) &
+        return  ! bail out
+      call ESMF_AttributeAdd(fcst_grid, convention="NetCDF", purpose="FV3",  &
+        attrList=(/trim(axis_name(id))//":units"/), rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, &
+        file=__FILE__)) &
+        return  ! bail out
+      call ESMF_AttributeAdd(fcst_grid, convention="NetCDF", purpose="FV3",  &
+        attrList=(/trim(axis_name(id))//":cartesian_axis"/), rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, &
+        file=__FILE__)) &
+        return  ! bail out
+      call ESMF_AttributeAdd(fcst_grid, convention="NetCDF", purpose="FV3",  &
+        attrList=(/trim(axis_name(id))//":positive"/), rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, &
+        file=__FILE__)) &
+        return  ! bail out
+      if(trim(edgesS)/='') then
+        call ESMF_AttributeAdd(fcst_grid, convention="NetCDF", purpose="FV3",  &
+          attrList=(/trim(axis_name(id))//":edges"/), rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, &
+          file=__FILE__)) &
+          return  ! bail out
+      endif
+      ! Set attributes
       call ESMF_AttributeSet(fcst_grid, convention="NetCDF", purpose="FV3", &
         name=trim(axis_name(id)), valueList=axis_data, rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
