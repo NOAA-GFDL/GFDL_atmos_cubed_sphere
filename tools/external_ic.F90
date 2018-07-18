@@ -418,7 +418,11 @@ contains
 !>       Q   -  prognostic tracer fields
 !> Namelist variables 
 !>       filtered_terrain  -  use orography maker filtered terrain mapping
+#ifdef __PGI
+      use GFS_restart, only : GFS_restart_type
 
+      implicit none
+#endif
 
       type(fv_atmos_type), intent(inout) :: Atm(:)
       type(domain2d),      intent(inout) :: fv_domain
@@ -1269,6 +1273,13 @@ contains
 !! (EXPERIMENTAL: contact Jan-Huey Chen jan-huey.chen@noaa.gov for support)
 !>@authors Jan-Huey Chen, Xi Chen, Shian-Jiann Lin
   subroutine get_ecmwf_ic( Atm, fv_domain )
+
+#ifdef __PGI
+      use GFS_restart, only : GFS_restart_type
+
+      implicit none
+#endif
+
       type(fv_atmos_type), intent(inout) :: Atm(:)
       type(domain2d),      intent(inout) :: fv_domain
 ! local:

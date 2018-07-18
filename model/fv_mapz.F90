@@ -87,11 +87,15 @@ module fv_mapz_mod
   use fv_grid_utils_mod, only: g_sum, ptop_min
   use fv_fill_mod,       only: fillz
   use mpp_domains_mod,   only: mpp_update_domains, domain2d
-  use mpp_mod,           only: NOTE, mpp_error, get_unit, mpp_root_pe, mpp_pe
+  use mpp_mod,           only: NOTE, FATAL, mpp_error, get_unit, mpp_root_pe, mpp_pe
   use fv_arrays_mod,     only: fv_grid_type
   use fv_timing_mod,     only: timing_on, timing_off
   use fv_mp_mod,         only: is_master
   use fv_cmp_mod,        only: qs_init, fv_sat_adj
+#ifdef CCPP
+  use ccpp_api,          only: ccpp_initialized, ccpp_physics_run
+  use IPD_CCPP_driver,   only: ccpp_cdata => cdata
+#endif
 
   implicit none
   real, parameter:: consv_min= 0.001         !< below which no correction applies
@@ -198,6 +202,9 @@ contains
   logical:: fast_mp_consv
   integer:: i,j,k 
   integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, iq, n, kmp, kp, k_next
+#ifdef CCPP
+  integer :: ccpp_ierr
+#endif
 
        k1k = rdgas/cv_air   ! akap / (1.-akap) = rg/Cv=0.4
         rg = rdgas
@@ -551,8 +558,13 @@ contains
 !$OMP                               do_adiabatic_init,zsum1,zsum0,te0_2d,domain,        &
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,      &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,  &
+#ifdef CCPP
+!$OMP                               fast_mp_consv,kord_tm,ccpp_cdata) &
+!$OMP                       private(pe0,pe1,pe2,pe3,qv,cvm,gz,phis,dpln,ccpp_ierr)
+#else
 !$OMP                               fast_mp_consv,kord_tm) &
 !$OMP                       private(pe0,pe1,pe2,pe3,qv,cvm,gz,phis,dpln)
+#endif
 
 !$OMP do
   do k=2,km
@@ -686,6 +698,15 @@ endif        ! end last_step check
 ! Note: pt at this stage is T_v
 ! if ( (.not.do_adiabatic_init) .and. do_sat_adj ) then
   if ( do_sat_adj ) then
+#ifdef CCPP
+    if (ccpp_initialized(ccpp_cdata)) then
+      call ccpp_physics_run(ccpp_cdata, group_name='fast_physics', ierr=ccpp_ierr)
+      if (ccpp_ierr/=0) call mpp_error(FATAL, "Call to IPD-CCPP step 'fast_physics' failed")
+    else
+      call mpp_error (NOTE, 'fv_mapz::skip ccpp fast physics because cdata not initialized')
+    endif
+#endif
+
                                            call timing_on('sat_adj2')
 !$OMP do
            do k=kmp,km
