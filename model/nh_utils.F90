@@ -208,7 +208,7 @@ CONTAINS
 
 
   subroutine update_dz_d(ndif, damp, hord, is, ie, js, je, km, ng, npx, npy, area, rarea,   &
-                         dp0, zs, zh, crx, cry, xfx, yfx, delz, ws, rdt, gridstruct, bd, lim_fac)
+                         dp0, zs, zh, crx, cry, xfx, yfx, delz, ws, rdt, gridstruct, bd, lim_fac, regional)
 
   type(fv_grid_bounds_type), intent(IN) :: bd
   integer, intent(in):: is, ie, js, je, ng, km, npx, npy
@@ -227,6 +227,7 @@ CONTAINS
   real, intent(out)   :: ws(is:ie,js:je)
   type(fv_grid_type), intent(IN), target :: gridstruct
   real, intent(in) :: lim_fac
+  logical,intent(in) :: regional
 !-----------------------------------------------------
 ! Local array:
   real, dimension(is:   ie+1, js-ng:je+ng,km+1):: crx_adv, xfx_adv
@@ -262,7 +263,7 @@ CONTAINS
 
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,km,area,xfx_adv,yfx_adv, &
 !$OMP                                  damp,zh,crx_adv,cry_adv,npx,npy,hord,gridstruct,bd,  &
-!$OMP                                  ndif,rarea,lim_fac) &
+!$OMP                                  ndif,rarea,lim_fac,regional) &
 !$OMP                          private(z2, fx2, fy2, ra_x, ra_y, fx, fy,wk2)
   do k=1,km+1
 
@@ -284,7 +285,7 @@ CONTAINS
         enddo
      enddo
      call fv_tp_2d(z2, crx_adv(is,jsd,k), cry_adv(isd,js,k), npx,  npy, hord, &
-                  fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y, lim_fac)
+                  fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y, lim_fac, regional)
      call del6_vt_flux(ndif(k), npx, npy, damp(k), z2, wk2, fx2, fy2, gridstruct, bd)
      do j=js,je
         do i=is,ie
@@ -294,7 +295,7 @@ CONTAINS
      enddo
    else
      call fv_tp_2d(zh(isd,jsd,k), crx_adv(is,jsd,k), cry_adv(isd,js,k), npx,  npy, hord, &
-                   fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y, lim_fac)
+                   fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y, lim_fac, regional)
      do j=js,je
         do i=is,ie
            zh(i,j,k) = (zh(i,j,k)*area(i,j)+fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))   &
@@ -407,7 +408,7 @@ CONTAINS
                        dm, pm2, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), .true.)
       else
            call SIM1_solver(dt, is1, ie1, km, rdgas, gama, gm2, cp2, akap, pe2,  &
-                            dm, pm2, pem, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), p_fac)
+                            dm, pm2, pem, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), p_fac )
       endif
 
       do k=2,km+1
@@ -1327,6 +1328,7 @@ CONTAINS
           p1(i) = (pe(i,k) + bb(i,k)*pe(i,k+1) + g_rat(i,k)*pe(i,k+2))*r3 - g_rat(i,k)*p1(i)
 #ifdef MOIST_CAPPA
           dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp((cp2(i,k)-1.)*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
+      
 #else
           dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp(capa1*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
 #endif
@@ -1660,12 +1662,12 @@ CONTAINS
 #endif
 #endif
       pkc, gz, pk3, &
-      npx, npy, npz, nested, pkc_pertn, computepk3, fullhalo, bd)
+      npx, npy, npz, nested, pkc_pertn, computepk3, fullhalo, bd, regional)
 
       !INPUT: delp, delz, pt
       !OUTPUT: gz, pkc, pk3 (optional)
       integer, intent(IN) :: npx, npy, npz
-      logical, intent(IN) :: pkc_pertn, computepk3, fullhalo, nested
+      logical, intent(IN) :: pkc_pertn, computepk3, fullhalo, nested, regional
       real, intent(IN) :: ptop, kappa, cp, grav
       type(fv_grid_bounds_type), intent(IN) :: bd
       real, intent(IN) :: phis(bd%isd:bd%ied,bd%jsd:bd%jed)
@@ -1705,7 +1707,7 @@ CONTAINS
       jsd = bd%jsd
       jed = bd%jed
 
-      if (.not. nested) return
+      if (.not. (nested .or. regional)) return
       ifirst = isd
       jfirst = jsd
       ilast = ied

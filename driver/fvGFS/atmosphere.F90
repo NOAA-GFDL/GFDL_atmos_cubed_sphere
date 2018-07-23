@@ -144,12 +144,13 @@ module atmosphere_mod
 use block_control_mod,      only: block_control_type
 use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
 use time_manager_mod,       only: time_type, get_time, set_time, operator(+), &
-                                  operator(-)
+                                  operator(-), operator(/), time_type_to_real
 use fms_mod,                only: file_exist, open_namelist_file,    &
                                   close_file, error_mesg, FATAL,     &
                                   check_nml_error, stdlog,           &
                                   write_version_number,              &
                                   set_domain,   &
+                                  read_data,   &
                                   mpp_clock_id, mpp_clock_begin,     &
                                   mpp_clock_end, CLOCK_SUBCOMPONENT, &
                                   clock_flag_default, nullify_domain
@@ -185,6 +186,9 @@ use fv_mp_mod,          only: switch_current_Atm
 use fv_sg_mod,          only: fv_subgrid_z
 use fv_update_phys_mod, only: fv_update_phys
 use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
+use fv_regional_mod,    only: start_regional_restart, read_new_bc_data
+use fv_regional_mod,    only: a_step, p_step
+use fv_regional_mod,    only: current_time_in_seconds
 
 use mpp_domains_mod, only:  mpp_get_data_domain, mpp_get_compute_domain
 
@@ -268,6 +272,9 @@ contains
    character(len=32) :: tracer_name, tracer_units
    real :: ps1, ps2
 
+   current_time_in_seconds = time_type_to_real( Time - Time_init )
+   if (mpp_pe() == 0) write(*,"('atmosphere_init: current_time_seconds = ',f9.1)")current_time_in_seconds
+
                     call timing_on('ATMOS_INIT')
    allocate(pelist(mpp_npes()))
    call mpp_get_current_pelist(pelist)
@@ -291,6 +298,11 @@ contains
    enddo
 
    Atm(mytile)%Time_init = Time_init
+
+   a_step=0
+   if(Atm(mytile)%flagstruct%warm_start)then
+     a_step=nint(current_time_in_seconds/dt_atmos)
+   endif
 
 !----- write version and namelist to log file -----
    call write_version_number ( 'fvGFS/ATMOSPHERE_MOD', version )
@@ -388,6 +400,14 @@ contains
 
                     call timing_off('ATMOS_INIT')
 
+!  --- initiate the start for a restarted regional forecast
+   if ( Atm(mytile)%gridstruct%regional .and. Atm(mytile)%flagstruct%warm_start ) then
+
+     call start_regional_restart(Atm(1),       &
+                                 isc, iec, jsc, jec, &
+                                 isd, ied, jsd, jed )
+   endif
+
    if ( Atm(mytile)%flagstruct%na_init>0 ) then
       call nullify_domain ( )
       if ( .not. Atm(mytile)%flagstruct%hydrostatic ) then
@@ -480,12 +500,27 @@ contains
    integer :: itrac, n, psc
    integer :: k, w_diff, nt_dyn
 
+   type(time_type) :: atmos_time
+   integer :: atmos_time_step
+
 !---- Call FV dynamics -----
 
    call mpp_clock_begin (id_dynam)
 
    n = mytile
+
+   a_step = a_step + 1
+!
+!*** If this is a regional run then read in the next boundary data when it is time.
+!
+   if(Atm(n)%flagstruct%regional)then
+
+     call read_new_bc_data(Atm(n), Time, Time_step_atmos, p_split, &
+                           isd, ied, jsd, jed )
+   endif
+
    do psc=1,abs(p_split)
+      p_step = psc
                     call timing_on('fv_dynamics')
 !uc/vc only need be same on coarse grid? However BCs do need to be the same
      call fv_dynamics(npx, npy, npz, nq, Atm(n)%ng, dt_atmos/real(abs(p_split)),&
@@ -688,14 +723,16 @@ contains
 !! the "domain2d" variable associated with the coupling grid and the 
 !! decomposition for the current cubed-sphere tile.
 !>@detail Coupling is done using the mass/temperature grid with no halos.
- subroutine atmosphere_domain ( fv_domain, layout )
+ subroutine atmosphere_domain ( fv_domain, layout, regional )
    type(domain2d), intent(out) :: fv_domain
    integer, intent(out) :: layout(2)
+   logical, intent(out) :: regional
 !  returns the domain2d variable associated with the coupling grid
 !  note: coupling is done using the mass/temperature grid with no halos
 
    fv_domain = Atm(mytile)%domain_for_coupler
    layout(1:2) =  Atm(mytile)%layout(1:2)
+   regional = Atm(mytile)%flagstruct%regional
 
  end subroutine atmosphere_domain
 

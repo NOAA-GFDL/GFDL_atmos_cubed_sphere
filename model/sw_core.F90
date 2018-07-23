@@ -129,7 +129,7 @@
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
       integer :: npx, npy
-      logical :: nested
+      logical :: nested,regional
 
       real, pointer, dimension(:,:,:) :: sin_sg, cos_sg
       real, pointer, dimension(:,:)   :: cosa_u, cosa_v
@@ -149,6 +149,7 @@
       npx = flagstruct%npx
       npy = flagstruct%npy
       nested = gridstruct%nested
+      regional = gridstruct%regional
 
       sin_sg  => gridstruct%sin_sg
       cos_sg  => gridstruct%cos_sg
@@ -169,10 +170,10 @@
       iep1 = ie+1; jep1 = je+1
 
       call d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4, gridstruct, bd, &
-                      npx, npy, nested, flagstruct%grid_type)
+                      npx, npy, nested, flagstruct%grid_type, regional )
 
       if( nord > 0 ) then
-         if (nested) then
+         if (nested .or. regional) then
             call divergence_corner_nest(u, v, ua, va, divg_d, gridstruct, flagstruct, bd)
          else
             call divergence_corner(u, v, ua, va, divg_d, gridstruct, flagstruct, bd)
@@ -202,7 +203,8 @@
 ! Transport delp:
 !----------------
 ! Xdir:
-      if (flagstruct%grid_type < 3 .and. .not. nested) call fill2_4corners(delp, pt, 1, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
+      if (flagstruct%grid_type < 3 .and. .not. (nested .or. regional)) &
+       call fill2_4corners(delp, pt, 1, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
 
       if ( hydrostatic ) then
 #ifdef SW_DYNAMICS
@@ -253,7 +255,9 @@
       endif
 
 ! Ydir:
-      if (flagstruct%grid_type < 3 .and. .not. nested) call fill2_4corners(delp, pt, 2, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
+      if (flagstruct%grid_type < 3 .and. .not. (nested .or. regional))  &
+       call fill2_4corners(delp, pt, 2, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
+
       if ( hydrostatic ) then
            do j=js-1,jep1+1
               do i=is-1,iep1      
@@ -317,7 +321,7 @@
 !!! TO DO:
 !!! Need separate versions for nesting/single-tile
 !!!   and for cubed-sphere
-      if (nested .or. flagstruct%grid_type >=3 ) then
+      if (nested .or. regional .or. flagstruct%grid_type >=3 ) then
          do j=js-1,jep1
          do i=is-1,iep1
             if ( ua(i,j) > 0. ) then
@@ -434,7 +438,7 @@
 ! (For the same reason we only divide by sin instead of sin**2 in the interior)
 
 !! TO DO: separate versions for nesting/single-tile and cubed-sphere
-      if (nested .or. flagstruct%grid_type >= 3) then
+      if (nested .or. regional .or. flagstruct%grid_type >= 3) then
          do j=js,je
             do i=is,iep1
                fy1(i,j) = dt2*(v(i,j)-uc(i,j)*cosa_u(i,j))/sina_u(i,j)
@@ -595,7 +599,7 @@
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
       integer :: npx, npy
-      logical :: nested
+      logical :: nested,regional
 
       is  = bd%is
       ie  = bd%ie
@@ -609,6 +613,7 @@
       npx      = flagstruct%npx
       npy      = flagstruct%npy
       nested   = gridstruct%nested
+      regional = gridstruct%regional
 
       area      => gridstruct%area   
       rarea     => gridstruct%rarea  
@@ -670,7 +675,7 @@
      if ( flagstruct%grid_type < 3 ) then
 
 !!! TO DO: separate versions for nesting and for cubed-sphere
-        if (nested) then
+        if (nested .or. regional) then
            do j=jsd,jed
               do i=is-1,ie+2
                  ut(i,j) = ( uc(i,j) - 0.25 * cosa_u(i,j) *     &
@@ -704,7 +709,7 @@
            enddo
         endif
 
-      if (.not. nested) then
+      if (.not. (nested .or. regional)) then
 ! West edge:
        if ( is==1 ) then
           do j=jsd,jed
@@ -860,7 +865,7 @@
                       0.25*cosa_u(2,npy-1)*(vt(1,npy)+vt(2,npy)+vt(2,npy-1))) ) * damp
         endif
 
-       end if !.not. nested
+       end if !.not. (nested .or. regional)
 
      else
 ! flagstruct%grid_type >= 3
@@ -935,7 +940,8 @@
 
 
       call fv_tp_2d(delp, crx_adv, cry_adv, npx, npy, hord_dp, fx, fy,  &
-                    xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, nord=nord_v, damp_c=damp_v)
+                    xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, & 
+                    regional,nord=nord_v, damp_c=damp_v)
 
 ! <<< Save the mass fluxes to the "Flux Capacitor" for tracer transport >>>
         do j=jsd,jed
@@ -981,7 +987,8 @@
                 enddo
             endif
             call fv_tp_2d(w, crx_adv,cry_adv, npx, npy, hord_vt, gx, gy, xfx_adv, yfx_adv, &
-                          gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, mfx=fx, mfy=fy)
+                          gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac,                  &
+                          regional,mfx=fx, mfy=fy)
             do j=js,je
                do i=is,ie
                   w(i,j) = delp(i,j)*w(i,j) + (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
@@ -991,7 +998,8 @@
 
 #ifdef USE_COND
            call fv_tp_2d(q_con, crx_adv,cry_adv, npx, npy, hord_dp, gx, gy,  &
-                xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
+                xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac,&
+                regional, mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
             do j=js,je
                do i=is,ie
                   q_con(i,j) = delp(i,j)*q_con(i,j) + (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
@@ -1008,7 +1016,7 @@
 !    endif
         call fv_tp_2d(pt, crx_adv,cry_adv, npx, npy, hord_tm, gx, gy,  &
                       xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
-                      mfx=fx, mfy=fy, mass=delp, nord=nord_v, damp_c=damp_v)
+                      regional,mfx=fx, mfy=fy, mass=delp, nord=nord_v, damp_c=damp_v)
 !                     mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
 #endif
 
@@ -1028,7 +1036,7 @@
         do iq=1,nq
            call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv, npx, npy, hord_tr, gx, gy,  &
                          xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
-                         mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
+                         regional,mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
            do j=js,je
               do i=is,ie
                  q(i,j,k,iq) = (q(i,j,k,iq)*wk(i,j) +               &
@@ -1073,7 +1081,7 @@
       dt5 = 0.5 *dt
       dt4 = 0.25*dt
 
-      if (nested) then
+      if (nested .or. regional) then
          is2 = is;        ie1 = ie+1
          js2 = js;        je1 = je+1
       else
@@ -1084,7 +1092,7 @@
 !!! TO DO: separate versions for nested and for cubed-sphere
       if (flagstruct%grid_type < 3) then
 
-         if (nested) then
+         if (nested .or. regional) then
             do j=js2,je1
                do i=is2,ie1
                   vb(i,j) = dt5*(vc(i-1,j)+vc(i,j)-(uc(i,j-1)+uc(i,j))*cosa(i,j))*rsina(i,j)
@@ -1128,7 +1136,7 @@
       endif
 
       call ytp_v(is,ie,js,je,isd,ied,jsd,jed, vb, u, v, ub, hord_mt, gridstruct%dy, gridstruct%rdy, &
-                 npx, npy, flagstruct%grid_type, nested, flagstruct%lim_fac)
+                 npx, npy, flagstruct%grid_type, nested, flagstruct%lim_fac, regional)
 
       do j=js,je+1
          do i=is,ie+1
@@ -1138,7 +1146,7 @@
 
       if (flagstruct%grid_type < 3) then
 
-         if (nested) then
+         if (nested .or. regional) then
 
             do j=js,je+1
  
@@ -1185,7 +1193,7 @@
       endif
 
       call xtp_u(is,ie,js,je, isd,ied,jsd,jed, ub, u, v, vb, hord_mt, gridstruct%dx, gridstruct%rdx, &
-                 npx, npy, flagstruct%grid_type, nested, flagstruct%lim_fac)
+                 npx, npy, flagstruct%grid_type, nested, flagstruct%lim_fac, regional)
 
       do j=js,je+1
          do i=is,ie+1
@@ -1196,7 +1204,7 @@
 !-----------------------------------------
 ! Fix KE at the 4 corners of the face:
 !-----------------------------------------
-    if (.not. nested) then
+    if (.not. (nested .or. regional)) then
       dt6 = dt / 6.
       if ( sw_corner ) then
            ke(1,1) = dt6*( (ut(1,1) + ut(1,0)) * u(1,1) +  &
@@ -1286,7 +1294,7 @@
    if ( nord==0 ) then
 !         area ~ dxb*dyb*sin(alpha)
 
-      if (nested) then
+      if (nested .or. regional) then
 
          do j=js,je+1
             do i=is-1,ie+1
@@ -1382,7 +1390,7 @@
 
         fill_c = (nt/=0) .and. (flagstruct%grid_type<3) .and.               &
                  ( sw_corner .or. se_corner .or. ne_corner .or. nw_corner ) &
-                  .and. .not. nested
+                  .and. .not. (nested .or. regional)
 
         if ( fill_c ) call fill_corners(divg_d, npx, npy, FILL=XDir, BGRID=.true.)
         do j=js-nt,je+1+nt
@@ -1492,7 +1500,7 @@
    endif
 
     call fv_tp_2d(vort, crx_adv, cry_adv, npx, npy, hord_vt, fx, fy, &
-                  xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac)
+                  xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac,regional)
     do j=js,je+1
        do i=is,ie
           u(i,j) = vt(i,j) + ke(i,j) - ke(i+1,j) + fy(i,j)
@@ -1592,7 +1600,7 @@
    real, intent(out):: fx2(bd%isd:bd%ied+1,bd%jsd:bd%jed), fy2(bd%isd:bd%ied,bd%jsd:bd%jed+1)
    integer i,j, nt, n, i1, i2, j1, j2
 
-   logical :: nested
+   logical :: nested, regional
 
 #ifdef USE_SG
   real, pointer, dimension(:,:,:) :: sin_sg
@@ -1609,7 +1617,7 @@
    dy       => gridstruct%dy    
 #endif
    nested = gridstruct%nested
-
+   regional = gridstruct%regional
    is  = bd%is
    ie  = bd%ie
    js  = bd%js
@@ -1624,7 +1632,7 @@
       enddo
    enddo
 
-   if( nord>0 ) call copy_corners(d2, npx, npy, 1, nested, bd, gridstruct%sw_corner,    &
+   if( nord>0 .and. (.not. (regional))) call copy_corners(d2, npx, npy, 1, nested, bd, gridstruct%sw_corner,    &
                    gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
    do j=js-nord,je+nord
       do i=is-nord,ie+nord+1
@@ -1636,7 +1644,7 @@
       enddo
    enddo
 
-   if( nord>0 ) call copy_corners(d2, npx, npy, 2, nested, bd, gridstruct%sw_corner,   &
+   if( nord>0 .and. (.not. (regional))) call copy_corners(d2, npx, npy, 2, nested, bd, gridstruct%sw_corner,   &
                    gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
    do j=js-nord,je+nord+1
       do i=is-nord,ie+nord
@@ -1657,7 +1665,7 @@
          enddo
       enddo
 
-      call copy_corners(d2, npx, npy, 1, nested, bd, gridstruct%sw_corner,    &
+      if (.not. (regional)) call copy_corners(d2, npx, npy, 1, nested, bd, gridstruct%sw_corner,    &
          gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
       do j=js-nt,je+nt
@@ -1670,7 +1678,7 @@
          enddo
       enddo
 
-      call copy_corners(d2, npx, npy, 2, nested, bd, &
+      if (.not. (regional))call copy_corners(d2, npx, npy, 2, nested, bd, &
       gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
       do j=js-nt,je+nt+1
@@ -1708,7 +1716,7 @@
 
       integer :: is,  ie,  js,  je
       integer :: npx, npy
-      logical :: nested
+      logical :: nested, regional
 
       is  = bd%is
       ie  = bd%ie
@@ -1718,13 +1726,14 @@
       npx = flagstruct%npx
       npy = flagstruct%npy
       nested = gridstruct%nested
+      regional = gridstruct%regional
 
       sin_sg     => gridstruct%sin_sg 
       cos_sg     => gridstruct%cos_sg 
       dxc        => gridstruct%dxc    
       dyc        => gridstruct%dyc    
 
- if (nested) then
+ if (nested .or. regional) then
     is2 = is;        ie1 = ie+1
  else
     is2 = max(2,is); ie1 = min(npx-1,ie+1)
@@ -1820,7 +1829,7 @@
 
       integer :: isd, ied, jsd, jed
       integer :: npx, npy
-      logical :: nested
+      logical :: nested, regional
 
       isd = bd%isd
       ied = bd%ied
@@ -1830,6 +1839,7 @@
       npx = flagstruct%npx
       npy = flagstruct%npy
       nested = gridstruct%nested
+      regional = gridstruct%regional
 
       rarea_c    => gridstruct%rarea_c
       sin_sg     => gridstruct%sin_sg 
@@ -1997,7 +2007,7 @@ end subroutine divergence_corner_nest
  end subroutine smag_corner
 
 
- subroutine xtp_u(is,ie,js,je,isd,ied,jsd,jed,c, u, v, flux, iord, dx, rdx, npx, npy, grid_type, nested, lim_fac)
+ subroutine xtp_u(is,ie,js,je,isd,ied,jsd,jed,c, u, v, flux, iord, dx, rdx, npx, npy, grid_type, nested, lim_fac, regional)
 
  integer, intent(in):: is,ie,js,je, isd,ied,jsd,jed
  real, INTENT(IN)::   u(isd:ied,jsd:jed+1)
@@ -2007,7 +2017,7 @@ end subroutine divergence_corner_nest
  real, INTENT(IN) ::   dx(isd:ied,  jsd:jed+1)
  real, INTENT(IN) ::  rdx(isd:ied,  jsd:jed+1)
  integer, INTENT(IN) :: iord, npx, npy, grid_type
- logical, INTENT(IN) :: nested
+ logical, INTENT(IN) :: nested,regional
  real, INTENT(IN) ::  lim_fac
 ! Local
  real, dimension(is-1:ie+1):: bl, br, b0
@@ -2023,7 +2033,7 @@ end subroutine divergence_corner_nest
  integer is3, ie3
  integer is2, ie2
 
- if ( nested .or. grid_type>3 ) then
+ if ( nested .or. regional .or. grid_type>3 ) then
     is3 = is-1        ; ie3 = ie+1
  else
     is3 = max(3,is-1) ; ie3 = min(npx-3,ie+1)
@@ -2043,7 +2053,7 @@ end subroutine divergence_corner_nest
            br(i) = al(i+1) - u(i,j)
         enddo
 
-      if ( (.not.nested) .and. grid_type < 3) then
+      if ( (.not. (nested .or. regional)) .and. grid_type < 3) then
         if ( is==1 ) then
              xt = c3*u(1,j) + c2*u(2,j) + c1*u(3,j)
              br(1) = xt - u(1,j)
@@ -2276,7 +2286,7 @@ end subroutine divergence_corner_nest
 ! fix the edges
 !--------------
 !!! TO DO: separate versions for nested and for cubed-sphere
-           if ( is==1 .and. .not. nested) then
+           if ( is==1 .and. .not. (nested .or. regional)) then
               br(2) = al(3) - u(2,j)
               xt = s15*u(1,j) + s11*u(2,j) - s14*dm(2)
               bl(2) = xt - u(2,j)
@@ -2299,7 +2309,7 @@ end subroutine divergence_corner_nest
               call pert_ppm(1, u(2,j), bl(2), br(2), -1)
            endif
 
-           if ( (ie+1)==npx  .and. .not. nested) then
+           if ( (ie+1)==npx  .and. .not. (nested .or. regional)) then
               bl(npx-2) = al(npx-2) - u(npx-2,j)
               xt = s15*u(npx-1,j) + s11*u(npx-2,j) + s14*dm(npx-2)
               br(npx-2) = xt - u(npx-2,j)
@@ -2354,7 +2364,7 @@ end subroutine divergence_corner_nest
  end subroutine xtp_u
 
 
- subroutine ytp_v(is,ie,js,je,isd,ied,jsd,jed, c, u, v, flux, jord, dy, rdy, npx, npy, grid_type, nested, lim_fac)
+ subroutine ytp_v(is,ie,js,je,isd,ied,jsd,jed, c, u, v, flux, jord, dy, rdy, npx, npy, grid_type, nested, lim_fac, regional)
  integer, intent(in):: is,ie,js,je, isd,ied,jsd,jed
  integer, intent(IN):: jord
  real, INTENT(IN)  ::   u(isd:ied,jsd:jed+1)
@@ -2364,7 +2374,7 @@ end subroutine divergence_corner_nest
  real, INTENT(IN) ::   dy(isd:ied+1,jsd:jed)
  real, INTENT(IN) ::  rdy(isd:ied+1,jsd:jed)
  integer, INTENT(IN) :: npx, npy, grid_type
- logical, INTENT(IN) :: nested
+ logical, INTENT(IN) :: nested,regional
  real, INTENT(IN) ::  lim_fac
 ! Local:
  logical, dimension(is:ie+1,js-1:je+1):: smt5, smt6
@@ -2379,7 +2389,7 @@ end subroutine divergence_corner_nest
  real x0, x1, x0R, x0L
  integer i, j, is1, ie1, js3, je3
 
- if ( nested .or. grid_type>3 ) then
+ if ( nested .or. regional .or. grid_type>3 ) then
     js3 = js-1;        je3 = je+1
  else
     js3 = max(3,js-1); je3 = min(npy-3,je+1)
@@ -2400,7 +2410,7 @@ end subroutine divergence_corner_nest
       enddo
    enddo
 
-   if ( (.not.nested) .and. grid_type < 3) then
+   if ( (.not. (nested .or. regional)) .and. grid_type < 3) then
      if( js==1 ) then
        do i=is,ie+1
           bl(i,0) = c1*v(i,-2) + c2*v(i,-1) + c3*v(i,0) - v(i,0)
@@ -2695,7 +2705,7 @@ end subroutine divergence_corner_nest
 !--------------
 ! fix the edges
 !--------------
-      if( js==1 .and. .not. nested) then
+      if( js==1 .and. .not. (nested .or. regional)) then
          do i=is,ie+1
             br(i,2) = al(i,3) - v(i,2)
             xt = s15*v(i,1) + s11*v(i,2) - s14*dm(i,2)
@@ -2735,7 +2745,7 @@ end subroutine divergence_corner_nest
          j=2
          call pert_ppm(ie-is+2, v(is,j), bl(is,j), br(is,j), -1)
       endif
-      if( (je+1)==npy  .and. .not. nested) then
+      if( (je+1)==npy  .and. .not. (nested .or. regional)) then
          do i=is,ie+1
             bl(i,npy-2) = al(i,npy-2) - v(i,npy-2)
             xt = s15*v(i,npy-1) + s11*v(i,npy-2) + s14*dm(i,npy-2)
@@ -2818,7 +2828,7 @@ end subroutine ytp_v
 !   is needed after c_sw is completed if these variables are needed
 !    in the halo
  subroutine d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4, gridstruct, &
-                       bd, npx, npy, nested, grid_type)
+                       bd, npx, npy, nested, grid_type, regional )
   type(fv_grid_bounds_type), intent(IN) :: bd
   logical, intent(in):: dord4
   real, intent(in) ::  u(bd%isd:bd%ied,bd%jsd:bd%jed+1)
@@ -2826,8 +2836,8 @@ end subroutine ytp_v
   real, intent(out), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: uc
   real, intent(out), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1):: vc
   real, intent(out), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed  ):: ua, va, ut, vt
-  integer, intent(IN) :: npx, npy, grid_type
-  logical, intent(IN) :: nested
+  integer, intent(IN) :: npx, npy, grid_type 
+  logical, intent(IN) :: nested,regional
   type(fv_grid_type), intent(IN), target :: gridstruct
 ! Local 
   real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: utmp, vtmp
@@ -2865,7 +2875,7 @@ end subroutine ytp_v
        id = 0
   endif
 
-  if (grid_type < 3 .and. .not. nested) then
+  if (grid_type < 3 .and. .not. (nested .or. regional)) then
      npt = 4
   else
      npt = -2
@@ -2875,7 +2885,7 @@ end subroutine ytp_v
   utmp(:,:) = big_number
   vtmp(:,:) = big_number 
 
- if ( nested) then  
+ if ( nested .or. regional) then  
 
      do j=jsd+1,jed-1
         do i=isd,ied
@@ -2998,7 +3008,7 @@ end subroutine ytp_v
          enddo
      endif
 
-  if (grid_type < 3 .and. .not. nested) then
+  if (grid_type < 3 .and. .not. (nested .or. regional)) then
      ifirst = max(3,    is-1)
      ilast  = min(npx-2,ie+2)
   else
@@ -3034,7 +3044,7 @@ end subroutine ytp_v
          ua( 0,npy) = va(0,npy-1) 
      endif
 
-     if( is==1 .and. .not. nested  ) then
+     if( is==1 .and. .not. (nested .or. regional)  ) then
         do j=js-1,je+1
            uc(0,j) = c1*utmp(-2,j) + c2*utmp(-1,j) + c3*utmp(0,j) 
            ut(1,j) = edge_interpolate4(ua(-1:2,j), dxa(-1:2,j))
@@ -3050,7 +3060,7 @@ end subroutine ytp_v
         enddo
      endif
 
-     if( (ie+1)==npx  .and. .not. nested ) then
+     if( (ie+1)==npx  .and. .not. (nested .or. regional) ) then
         do j=js-1,je+1
            uc(npx-1,j) = c1*utmp(npx-3,j)+c2*utmp(npx-2,j)+c3*utmp(npx-1,j) 
            ut(npx,  j) = edge_interpolate4(ua(npx-2:npx+1,j), dxa(npx-2:npx+1,j))
@@ -3110,7 +3120,7 @@ end subroutine ytp_v
  if (grid_type < 3) then
 
      do j=js-1,je+2
-      if ( j==1 .and. .not. nested  ) then
+      if ( j==1 .and. .not. (nested .or. regional)  ) then
         do i=is-1,ie+1
            vt(i,j) = edge_interpolate4(va(i,-1:2), dya(i,-1:2))
            if (vt(i,j) > 0.) then
@@ -3119,17 +3129,17 @@ end subroutine ytp_v
               vc(i,j) = vt(i,j)*sin_sg(i,j,2)
            end if
         enddo
-      elseif ( j==0 .or. j==(npy-1) .and. .not. nested  ) then
+      elseif ( j==0 .or. j==(npy-1) .and. .not. (nested .or. regional)  ) then
         do i=is-1,ie+1
            vc(i,j) = c1*vtmp(i,j-2) + c2*vtmp(i,j-1) + c3*vtmp(i,j)
            vt(i,j) = (vc(i,j) - u(i,j)*cosa_v(i,j))*rsin_v(i,j)
         enddo
-      elseif ( j==2 .or. j==(npy+1)  .and. .not. nested ) then
+      elseif ( j==2 .or. j==(npy+1)  .and. .not. (nested.or. regional) ) then
         do i=is-1,ie+1
            vc(i,j) = c1*vtmp(i,j+1) + c2*vtmp(i,j) + c3*vtmp(i,j-1)
            vt(i,j) = (vc(i,j) - u(i,j)*cosa_v(i,j))*rsin_v(i,j)
         enddo
-      elseif ( j==npy .and. .not. nested  ) then
+      elseif ( j==npy .and. .not. (nested .or. regional)  ) then
         do i=is-1,ie+1
            vt(i,j) = edge_interpolate4(va(i,j-2:j+1), dya(i,j-2:j+1))
            if (vt(i,j) > 0.) then

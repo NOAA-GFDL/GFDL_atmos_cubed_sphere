@@ -400,7 +400,7 @@ contains
                                           Atm(n)%gridstruct%area_64, Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy,   &
                                           Atm(n)%gridstruct%dxc, Atm(n)%gridstruct%dyc, Atm(n)%gridstruct%sin_sg, &
                                           Atm(n)%flagstruct%n_zs_filter, cnst_0p20*Atm(n)%gridstruct%da_min, &
-                                          .false., oro_g, Atm(n)%neststruct%nested, Atm(n)%domain, Atm(n)%bd)
+                                          .false., oro_g, Atm(n)%neststruct%nested, Atm(n)%domain, Atm(n)%bd, Atm(n)%flagstruct%regional)
                    if ( is_master() ) write(*,*) 'Warning !!! del-2 terrain filter has been applied ', &
                         Atm(n)%flagstruct%n_zs_filter, ' times'
               else if( Atm(n)%flagstruct%nord_zs_filter == 4 ) then
@@ -408,7 +408,7 @@ contains
                                           Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy,   &
                                           Atm(n)%gridstruct%dxc, Atm(n)%gridstruct%dyc, Atm(n)%gridstruct%sin_sg, &
                                           Atm(n)%flagstruct%n_zs_filter, .false., oro_g, Atm(n)%neststruct%nested, &
-                                          Atm(n)%domain, Atm(n)%bd)
+                                          Atm(n)%domain, Atm(n)%bd, Atm(n)%flagstruct%regional)
                  if ( is_master() ) write(*,*) 'Warning !!! del-4 terrain filter has been applied ', &
                       Atm(n)%flagstruct%n_zs_filter, ' times'
               endif
@@ -1526,7 +1526,7 @@ contains
       isd,ied,jsd,jed, is,ie,js,je, npx,npy, &
       grid_type, nested, &
       se_corner, sw_corner, ne_corner, nw_corner, &
-      rsin_u,rsin_v,cosa_s,rsin2 )
+      rsin_u,rsin_v,cosa_s,rsin2,regional )
 
   logical, intent(in):: dord4
   real, intent(in) ::  u(isd:ied,jsd:jed+1)
@@ -1536,7 +1536,7 @@ contains
   real, intent(out), dimension(isd:ied+1,jsd:jed  ):: uc
   real, intent(out), dimension(isd:ied  ,jsd:jed+1):: vc
   integer, intent(in) :: isd,ied,jsd,jed, is,ie,js,je, npx,npy,grid_type
-  logical, intent(in) :: nested, se_corner, sw_corner, ne_corner, nw_corner
+  logical, intent(in) :: nested, se_corner, sw_corner, ne_corner, nw_corner, regional
   real, intent(in) :: rsin_u(isd:ied+1,jsd:jed)
   real, intent(in) :: rsin_v(isd:ied,jsd:jed+1)
   real, intent(in) :: cosa_s(isd:ied,jsd:jed)
@@ -1559,7 +1559,7 @@ contains
   endif
 
 
-  if (grid_type < 3 .and. .not. nested) then
+  if (grid_type < 3 .and. .not. (nested .or. regional)) then
      npt = 4
   else
      npt = -2
@@ -1693,7 +1693,7 @@ contains
          enddo
      endif
 
-  if (grid_type < 3 .and. .not. nested) then
+  if (grid_type < 3 .and. .not. (nested .or. regional)) then
      ifirst = max(3,    is-1)
      ilast  = min(npx-2,ie+2)
   else
@@ -1711,7 +1711,7 @@ contains
 
      if (grid_type < 3) then
 ! Xdir:
-     if( is==1 .and. .not. nested ) then
+     if( is==1 .and. .not. (nested .or. regional) ) then
         do j=js-1,je+1
            uc(0,j) = c1*utmp(-2,j) + c2*utmp(-1,j) + c3*utmp(0,j) 
            uc(1,j) = ( t14*(utmp( 0,j)+utmp(1,j))    &
@@ -1721,7 +1721,7 @@ contains
         enddo
      endif
 
-     if( (ie+1)==npx .and. .not. nested ) then
+     if( (ie+1)==npx .and. .not. (nested .or. regional) ) then
         do j=js-1,je+1
            uc(npx-1,j) = c1*utmp(npx-3,j)+c2*utmp(npx-2,j)+c3*utmp(npx-1,j) 
            uc(npx,j) = (t14*(utmp(npx-1,j)+utmp(npx,j))+      &
@@ -1760,21 +1760,21 @@ contains
      if (grid_type < 3) then
 
      do j=js-1,je+2
-      if ( j==1  .and. .not. nested) then
+      if ( j==1  .and. .not. (nested .or. regional)) then
         do i=is-1,ie+1
            vc(i,1) = (t14*(vtmp(i, 0)+vtmp(i,1))    &
                     + t12*(vtmp(i,-1)+vtmp(i,2))    &
                     + t15*(vtmp(i,-2)+vtmp(i,3)))*rsin_v(i,1)
         enddo
-      elseif ( (j==0 .or. j==(npy-1))  .and. .not. nested) then
+      elseif ( (j==0 .or. j==(npy-1))  .and. .not. (nested .or. regional)) then
         do i=is-1,ie+1
            vc(i,j) = c1*vtmp(i,j-2) + c2*vtmp(i,j-1) + c3*vtmp(i,j)
         enddo
-      elseif ( (j==2 .or. j==(npy+1))  .and. .not. nested) then
+      elseif ( (j==2 .or. j==(npy+1))  .and. .not. (nested .or. regional)) then
         do i=is-1,ie+1
            vc(i,j) = c1*vtmp(i,j+1) + c2*vtmp(i,j) + c3*vtmp(i,j-1)
         enddo
-      elseif ( j==npy  .and. .not. nested) then
+      elseif ( j==npy  .and. .not. (nested .or. regional)) then
         do i=is-1,ie+1
            vc(i,npy) = (t14*(vtmp(i,npy-1)+vtmp(i,npy))    &
                       + t12*(vtmp(i,npy-2)+vtmp(i,npy+1))  &
@@ -1801,7 +1801,7 @@ contains
  subroutine d2a_setup(u, v, ua, va, dord4, &
       isd,ied,jsd,jed, is,ie,js,je, npx,npy, &
       grid_type, nested, &
-      cosa_s,rsin2 )
+      cosa_s,rsin2,regional )
 
   logical, intent(in):: dord4
   real, intent(in) ::  u(isd:ied,jsd:jed+1)
@@ -1811,7 +1811,7 @@ contains
   integer, intent(in) :: isd,ied,jsd,jed, is,ie,js,je, npx,npy,grid_type
   real, intent(in) :: cosa_s(isd:ied,jsd:jed)
   real, intent(in) :: rsin2(isd:ied,jsd:jed)
-  logical, intent(in) :: nested
+  logical, intent(in) :: nested, regional
 
 ! Local 
   real, dimension(isd:ied,jsd:jed):: utmp, vtmp
@@ -1830,7 +1830,7 @@ contains
   endif
 
 
-  if (grid_type < 3 .and. .not. nested) then
+  if (grid_type < 3 .and. .not. (nested .or. regional)) then
      npt = 4
   else
      npt = -2

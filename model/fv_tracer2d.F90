@@ -70,6 +70,8 @@ module fv_tracer2d_mod
    use mpp_domains_mod,   only: mpp_update_domains, CGRID_NE, domain2d
    use fv_timing_mod,     only: timing_on, timing_off
    use boundary_mod,      only: nested_grid_BC_apply_intT
+   use fv_regional_mod,   only: regional_boundary_update
+   use fv_regional_mod,   only: current_time_in_seconds
    use fv_arrays_mod,     only: fv_grid_type, fv_nest_type, fv_atmos_type, fv_grid_bounds_type
    use mpp_mod,           only: mpp_error, FATAL, mpp_broadcast, mpp_send, mpp_recv, mpp_sum, mpp_max
 
@@ -88,7 +90,7 @@ contains
 !! of split tracer timesteps. This potentially accelerates tracer advection when there
 !! is a large difference in layer-maximum wind speeds (cf. polar night jet).
 subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
-                        nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm, lim_fac)
+                        nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm, lim_fac, regional)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(IN) :: npx
@@ -100,6 +102,7 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, n
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt, trdm
       real   , intent(IN) :: lim_fac
+      logical, intent(IN) :: regional
       type(group_halo_update_type), intent(inout) :: q_pack
       real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   !< Tracers
       real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    !< DELP before dyn_core
@@ -254,7 +257,7 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, n
         enddo
 
 !$OMP parallel do default(none) shared(k,nsplt,it,is,ie,js,je,isd,ied,jsd,jed,npx,npy,cx,xfx,hord,trdm, &
-!$OMP                                  nord_tr,nq,gridstruct,bd,cy,yfx,mfx,mfy,qn2,q,ra_x,ra_y,dp1,dp2,rarea,lim_fac) &
+!$OMP                                  nord_tr,nq,gridstruct,bd,cy,yfx,mfx,mfy,qn2,q,ra_x,ra_y,dp1,dp2,rarea,lim_fac,regional) &
 !$OMP                          private(fx,fy)
         do iq=1,nq
         if ( nsplt /= 1 ) then
@@ -267,7 +270,7 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, n
            endif
            call fv_tp_2d(qn2(isd,jsd,iq), cx(is,jsd,k), cy(isd,js,k), &
                          npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
-                         gridstruct, bd, ra_x, ra_y, lim_fac, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
+                         gridstruct, bd, ra_x, ra_y, lim_fac, regional, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
            if ( it < nsplt ) then   ! not last call
               do j=js,je
               do i=is,ie
@@ -284,7 +287,7 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, n
         else
            call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
                          npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
-                         gridstruct, bd, ra_x, ra_y, lim_fac, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
+                         gridstruct, bd, ra_x, ra_y, lim_fac, regional, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
            do j=js,je
               do i=is,ie
                  q(i,j,k,iq) = (q(i,j,k,iq)*dp1(i,j,k)+(fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j))/dp2(i,j)
@@ -312,7 +315,7 @@ end subroutine tracer_2d_1L
 
 !>@brief The subroutine 'tracer_2d' is the standard routine for sub-cycled tracer advection.
 subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
-                     nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm, lim_fac)
+                     nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm, lim_fac, regional)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(IN) :: npx
@@ -324,6 +327,7 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy,
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt, trdm
       real   , intent(IN) :: lim_fac
+      logical, intent(IN) :: regional
       type(group_halo_update_type), intent(inout) :: q_pack
       real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   !< Tracers
       real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    !< DELP before dyn_core
@@ -483,7 +487,7 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy,
                        call timing_off('COMM_TOTAL')
 
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,mfx,mfy,rarea,nq,ksplt,&
-!$OMP                                  area,xfx,yfx,q,cx,cy,npx,npy,hord,gridstruct,bd,it,nsplt,nord_tr,trdm,lim_fac) &
+!$OMP                                  area,xfx,yfx,q,cx,cy,npx,npy,hord,gridstruct,bd,it,nsplt,nord_tr,trdm,lim_fac,regional) &
 !$OMP                          private(dp2, ra_x, ra_y, fx, fy)
      do k=1,npz
 
@@ -510,12 +514,12 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy,
          if ( it==1 .and. trdm>1.e-4 ) then
             call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
                           npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
-                          gridstruct, bd, ra_x, ra_y, lim_fac, mfx=mfx(is,js,k), mfy=mfy(is,js,k),   &
+                          gridstruct, bd, ra_x, ra_y, lim_fac, regional, mfx=mfx(is,js,k), mfy=mfy(is,js,k),   &
                           mass=dp1(isd,jsd,k), nord=nord_tr, damp_c=trdm)
          else
             call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
                           npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
-                          gridstruct, bd, ra_x, ra_y, lim_fac, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
+                          gridstruct, bd, ra_x, ra_y, lim_fac, regional, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
          endif
             do j=js,je
                do i=is,ie
@@ -553,7 +557,7 @@ end subroutine tracer_2d
 
 subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
                      nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm, &
-                     k_split, neststruct, parent_grid, lim_fac)
+                     k_split, neststruct, parent_grid, lim_fac, regional)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(IN) :: npx
@@ -565,6 +569,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt, trdm
       real   , intent(IN) :: lim_fac
+      logical, intent(IN) :: regional
       type(group_halo_update_type), intent(inout) :: q_pack
       real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   !< Tracers
       real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    !< DELP before dyn_core
@@ -589,6 +594,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       real :: cmax_t
       real :: c_global
       real :: frac, rdt
+      real :: recip_nsplt,reg_bc_update_time
       integer :: nsplt, nsplt_parent, msg_split_steps = 1
       integer :: i,j,k,it,iq
 
@@ -684,6 +690,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
 !--------------------------------------------------------------------------------
 
    frac  = 1. / real(nsplt)
+   recip_nsplt = 1. / real(nsplt)
 
       if( nsplt /= 1 ) then
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,cx,frac,xfx,mfx,cy,yfx,mfy)
@@ -735,9 +742,21 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
            enddo
       endif
 
+      if (regional) then
+            reg_bc_update_time=current_time_in_seconds+(it-1)*recip_nsplt*dt   !<-- dt is the k_split timestep length
+            do iq=1,nq
+                 call regional_boundary_update(q(:,:,:,iq), 'q', &
+                                               isd, ied, jsd, jed, npz, &
+                                               is,  ie,  js,  je,       &
+                                               isd, ied, jsd, jed,      &
+                                               reg_bc_update_time,      &
+                                               iq )
+            enddo
+      endif
+
 
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,mfx,mfy,rarea,nq, &
-!$OMP                                  area,xfx,yfx,q,cx,cy,npx,npy,hord,gridstruct,bd,it,nsplt,nord_tr,trdm,lim_fac) &
+!$OMP                                  area,xfx,yfx,q,cx,cy,npx,npy,hord,gridstruct,bd,it,nsplt,nord_tr,trdm,lim_fac,regional) &
 !$OMP                          private(dp2, ra_x, ra_y, fx, fy)
       do k=1,npz
 
@@ -762,12 +781,12 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
          if ( it==1 .and. trdm>1.e-4 ) then
             call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
                           npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
-                          gridstruct, bd, ra_x, ra_y, lim_fac, mfx=mfx(is,js,k), mfy=mfy(is,js,k),   &
+                          gridstruct, bd, ra_x, ra_y, lim_fac, regional, mfx=mfx(is,js,k), mfy=mfy(is,js,k),   &
                           mass=dp1(isd,jsd,k), nord=nord_tr, damp_c=trdm)
          else
             call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
                           npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
-                          gridstruct, bd, ra_x, ra_y, lim_fac, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
+                          gridstruct, bd, ra_x, ra_y, lim_fac, regional, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
          endif
             do j=js,je
                do i=is,ie
@@ -798,6 +817,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
               end do
            end if
 
+! BCs for q at the current time were applied above for the regional mode.
 
    enddo  ! nsplt
 

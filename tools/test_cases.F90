@@ -1620,7 +1620,7 @@
                     gridstruct%area_64, dx, dy, dxa, dya, dxc, dyc, &
                     gridstruct%sin_sg, phis, &
                     flagstruct%stretch_fac, gridstruct%nested, &
-                    npx_global, domain, flagstruct%grid_number, bd)
+                    npx_global, domain, flagstruct%grid_number, bd,  flagstruct%regional)
        call mpp_update_domains( phis, domain )
 
        if ( hybrid_z ) then

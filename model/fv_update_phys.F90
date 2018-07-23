@@ -603,6 +603,66 @@ module fv_update_phys_mod
     endif
 
     call timing_off('COMM_TOTAL')
+!
+! for regional grid need to set values for u_dt and v_dt at the edges.
+! Note from Lucas:The physics only operates on the compute domain.
+! One snag is that in fv_update_phys.F90 u_dt and v_dt from the physics need to be interpolated to the D-grids,
+! which requires BCs for u_dt and v_dt. For the nested grid I can simply get the BCs from the coarse grid, but
+! in your case I would recommend just setting the boundary conditions to 0 or to constant values (ie the value
+! of the cell closest to the boundary).
+    if (gridstruct%regional) then
+     if (is == 1) then
+      do k=1,npz
+       do j = js,je
+        u_dt(is-1,j,k) = u_dt(is,j,k)
+        v_dt(is-1,j,k) = v_dt(is,j,k)
+       enddo
+      enddo
+     endif
+     if (ie == npx) then
+      do k=1,npz
+       do j = js,je
+        u_dt(ie+1,j,k) = u_dt(ie,j,k)
+        v_dt(ie+1,j,k) = v_dt(ie,j,k)
+       enddo
+      enddo
+     endif
+     if (js == 1) then
+      do k=1,npz
+       do i = is,ie
+        u_dt(i,js-1,k) = u_dt(i,js,k)
+        v_dt(i,js-1,k) = v_dt(i,js,k)
+       enddo
+      enddo
+     endif
+     if (je == npy) then
+      do k=1,npz
+       do i = is,ie
+        u_dt(i,je+1,k) = u_dt(i,je,k)
+        v_dt(i,je+1,k) = v_dt(i,je,k)
+       enddo
+      enddo
+     endif
+!
+! corners
+!
+     do k=1,npz
+      if (is == 1 .and. js == 1) then
+       u_dt(is-1,js-1,k) = u_dt(is,js,k)
+       v_dt(is-1,js-1,k) = v_dt(is,js,k)
+      elseif (is == 1 .and. je == npy) then
+       u_dt(is-1,je+1,k) = u_dt(is,je,k)
+       v_dt(is-1,je+1,k) = v_dt(is,je,k)
+      elseif (ie == npx .and. js == 1) then
+       u_dt(ie+1,js-1,k) = u_dt(ie,je,k)
+       v_dt(ie+1,js-1,k) = v_dt(ie,je,k)
+      elseif (ie == npx .and. je == npy) then
+       u_dt(ie+1,je+1,k) = u_dt(ie,je,k)
+       v_dt(ie+1,je+1,k) = v_dt(ie,je,k)
+      endif
+     enddo
+    endif !regional
+!
     call update_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v, gridstruct, npx, npy, npz, domain)
  endif
                                                     call timing_off(' Update_dwinds')
@@ -810,7 +870,7 @@ module fv_update_phys_mod
         enddo
 
 ! --- E_W edges (for v-wind):
-        if ( is==1 .and. .not. gridstruct%nested ) then
+        if ( is==1 .and. .not. (gridstruct%nested .or. gridstruct%regional)) then
           i = 1
           do j=js,je
             if ( j>jm2 ) then
@@ -829,7 +889,7 @@ module fv_update_phys_mod
              ve(i,j,3) = vt3(j)
           enddo
         endif
-        if ( (ie+1)==npx .and. .not. gridstruct%nested ) then
+        if ( (ie+1)==npx .and. .not. (gridstruct%nested .or. gridstruct%regional)) then
           i = npx
           do j=js,je
             if ( j>jm2 ) then
@@ -849,7 +909,7 @@ module fv_update_phys_mod
           enddo
         endif
 ! N-S edges (for u-wind):
-        if ( js==1  .and. .not. gridstruct%nested) then
+        if ( js==1  .and. .not. (gridstruct%nested .or. gridstruct%regional)) then
           j = 1
           do i=is,ie
             if ( i>im2 ) then
@@ -868,7 +928,7 @@ module fv_update_phys_mod
              ue(i,j,3) = ut3(i)
           enddo
         endif
-        if ( (je+1)==npy  .and. .not. gridstruct%nested) then
+        if ( (je+1)==npy  .and. .not. (gridstruct%nested .or. gridstruct%regional)) then
           j = npy
           do i=is,ie
             if ( i>im2 ) then

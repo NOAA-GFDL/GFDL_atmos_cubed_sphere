@@ -247,7 +247,7 @@ contains
                gridstruct%se_corner, gridstruct%sw_corner, &
                gridstruct%ne_corner, gridstruct%nw_corner, &
                gridstruct%rsin_u, gridstruct%rsin_v, &
-               gridstruct%cosa_s, gridstruct%rsin2 )
+               gridstruct%cosa_s, gridstruct%rsin2, flagstruct%regional )
           if (nested) then
              call divergence_corner_nest(u(isd,jsd,k), v(isd,jsd,k), ua, va, divg(isd,jsd,k), gridstruct, flagstruct, bd)
           else

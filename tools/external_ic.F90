@@ -163,8 +163,11 @@ module external_ic_mod
    use fv_diagnostics_mod,only: prt_maxmin, prt_gb_nh_sh, prt_height
    use fv_grid_utils_mod, only: ptop_min, g_sum,mid_pt_sphere,get_unit_vect2,get_latlon_vector,inner_prod
    use fv_io_mod,         only: fv_io_read_tracers 
-   use fv_mapz_mod,       only: mappm
+   use fv_mapz_mod,       only: mappm 
+
+   use fv_regional_mod,   only: dump_field, H_STAGGER, U_STAGGER, V_STAGGER
    use fv_mp_mod,         only: ng, is_master, fill_corners, YDir, mp_reduce_min, mp_reduce_max
+   use fv_regional_mod,   only: start_regional_cold_start
    use fv_surf_map_mod,   only: surfdrv, FV3_zs_filter
    use fv_surf_map_mod,   only: sgh_g, oro_g
    use fv_surf_map_mod,   only: del2_cubed_sphere, del4_cubed_sphere
@@ -246,7 +249,9 @@ contains
       enddo
 
       call mpp_update_domains( f0, fv_domain )
-      if ( Atm(1)%gridstruct%cubed_sphere .and. .not. Atm(1)%neststruct%nested) call fill_corners(f0, Atm(1)%npx, Atm(1)%npy, YDir)
+      if ( Atm(1)%gridstruct%cubed_sphere .and. (.not. (Atm(1)%neststruct%nested .or. Atm(1)%flagstruct%regional)))then
+         call fill_corners(f0, Atm(1)%npx, Atm(1)%npy, YDir)
+      endif
  
 ! Read in cubed_sphere terrain
       if ( Atm(1)%flagstruct%mountain ) then
@@ -377,7 +382,7 @@ contains
                          Atm(n)%gridstruct%dxc, Atm(n)%gridstruct%dyc, Atm(n)%gridstruct%sin_sg, &
                          Atm(n)%phis, Atm(n)%flagstruct%stretch_fac, &
                          Atm(n)%neststruct%nested, Atm(n)%neststruct%npx_global, Atm(N)%domain, &
-                         Atm(n)%flagstruct%grid_number, Atm(n)%bd )
+                         Atm(n)%flagstruct%grid_number, Atm(n)%bd, Atm(n)%flagstruct%regional )
           call mpp_error(NOTE,'terrain datasets generated using USGS data')
        endif
 
@@ -642,6 +647,8 @@ contains
       jsd = Atm(1)%bd%jsd
       jed = Atm(1)%bd%jed
       npz = Atm(1)%npz
+      write(*,22001)is,ie,js,je,isd,ied,jsd,jed
+22001 format(' enter get_nggps_ic is=',i4,' ie=',i4,' js=',i4,' je=',i4,' isd=',i4,' ied=',i4,' jsd=',i4,' jed=',i4)
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
       ntdiag = ntracers-ntprog
 
@@ -770,6 +777,7 @@ contains
         call restore_state (ORO_restart)
         call restore_state (SFC_restart)
         call restore_state (GFS_restart)
+
         ! free the restart type to be re-used by the nest
         call free_restart_type(ORO_restart)
         call free_restart_type(SFC_restart)
@@ -798,6 +806,22 @@ contains
         if(is_master())  write(*,*) 'GFS ak =', ak,' FV3 ak=',Atm(n)%ak
         ak(1) = max(1.e-9, ak(1))
 
+!***  For regional runs read in each of the BC variables from the NetCDF boundary file
+!***  and remap in the vertical from the input levels to the model integration levels.
+!***  Here in the initialization we begn by allocating the regional domain's boundary
+!***  objects.  Then we need to read the first two regional BC files so the integration 
+!***  can begin interpolating between those two times as the forecast proceeds.
+
+        if (n==1.and.Atm(1)%flagstruct%regional) then     !<-- Select the parent regional domain.
+
+          call start_regional_cold_start(Atm(1), ak, bk, levp, &
+                                         is, ie, js, je, &
+                                         isd, ied, jsd, jed )
+        endif
+
+!
+!***  Remap the variables in the compute domain.
+!
         call remap_scalar_nggps(Atm(n), levp, npz, ntracers, ak, bk, ps, q, omga, zh)
 
         allocate ( ud(is:ie,  js:je+1, 1:levp) )
@@ -833,6 +857,7 @@ contains
         deallocate ( v_s )
              
         call remap_dwinds(levp, npz, ak, bk, ps, ud, vd, Atm(n))
+
         deallocate ( ud )
         deallocate ( vd )
    
@@ -859,7 +884,7 @@ contains
                 Atm(n)%gridstruct%area_64, Atm(n)%gridstruct%dxa, Atm(n)%gridstruct%dya, &
                 Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy, Atm(n)%gridstruct%dxc, &
                 Atm(n)%gridstruct%dyc, Atm(n)%gridstruct%grid_64, Atm(n)%gridstruct%agrid_64, &
-                Atm(n)%gridstruct%sin_sg, Atm(n)%phis, oro_g)
+                Atm(n)%gridstruct%sin_sg, Atm(n)%phis, oro_g, Atm(n)%flagstruct%regional)
            deallocate(oro_g)
         endif
 
@@ -871,7 +896,7 @@ contains
                    Atm(n)%gridstruct%area_64, Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy,   &
                    Atm(n)%gridstruct%dxc, Atm(n)%gridstruct%dyc, Atm(n)%gridstruct%sin_sg, &
                    Atm(n)%flagstruct%n_zs_filter, cnst_0p20*Atm(n)%gridstruct%da_min, &
-                   .false., oro_g, Atm(n)%neststruct%nested, Atm(n)%domain, Atm(n)%bd)
+                   .false., oro_g, Atm(n)%neststruct%nested, Atm(n)%domain, Atm(n)%bd, Atm(n)%flagstruct%regional)
             if ( is_master() ) write(*,*) 'Warning !!! del-2 terrain filter has been applied ', &
                    Atm(n)%flagstruct%n_zs_filter, ' times'
           else if( Atm(n)%flagstruct%nord_zs_filter == 4 ) then
@@ -879,7 +904,7 @@ contains
                    Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy,   &
                    Atm(n)%gridstruct%dxc, Atm(n)%gridstruct%dyc, Atm(n)%gridstruct%sin_sg, &
                    Atm(n)%flagstruct%n_zs_filter, .false., oro_g, Atm(n)%neststruct%nested, &
-                   Atm(n)%domain, Atm(n)%bd)
+                   Atm(n)%domain, Atm(n)%bd, Atm(n)%flagstruct%regional)
             if ( is_master() ) write(*,*) 'Warning !!! del-4 terrain filter has been applied ', &
                    Atm(n)%flagstruct%n_zs_filter, ' times'
           endif
@@ -2498,7 +2523,7 @@ contains
 !$OMP parallel do default(none) &
 !$OMP             shared(sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,&
 !$OMP                    cld_amt,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,omga,qa,Atm,z500) &
-!$OMP             private(l,m,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
+!$OMP             private(l,m,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv) 
   do 5000 j=js,je
      do k=1,km+1
         do i=is,ie
@@ -3154,7 +3179,7 @@ contains
   jsd = Atm%bd%jsd
   jed = Atm%bd%jed
 
-  if (Atm%neststruct%nested) then
+  if (Atm%neststruct%nested .or. Atm%flagstruct%regional) then
      do j=jsd,jed
      do i=isd,ied
         psd(i,j) = Atm%ps(i,j)

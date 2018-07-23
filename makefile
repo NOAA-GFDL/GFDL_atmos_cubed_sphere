@@ -17,7 +17,7 @@ endif
 
 LIBRARY  = libfv3core.a
 
-FFLAGS   += -I../fms -I../fms/include -I../gfsphysics -I ../ipd -I../io -I../namphysics
+FFLAGS   += -I../fms -I../fms/include -I../gfsphysics -I../ipd -I../io -I../namphysics
 
 SRCS_f   =
 
@@ -37,6 +37,7 @@ SRCS_F90 = \
 		   ./model/fv_grid_utils.F90                      \
  		   ./model/fv_mapz.F90                            \
 		   ./model/fv_nesting.F90                         \
+		   ./model/fv_regional_bc.F90                     \
 		   ./model/fv_sg.F90                              \
 		   ./model/fv_tracer2d.F90                        \
 		   ./model/fv_update_phys.F90                     \
@@ -65,7 +66,7 @@ SRCS_F90 = \
 		   ./driver/fvGFS/fv_nggps_diag.F90               \
 		   ./driver/fvGFS/atmosphere.F90
 
-SRCS_c   = 
+SRCS_c   =
 
 DEPEND_FILES = $(SRCS_f) $(SRCS_f90) $(SRCS_F) $(SRCS_F90)
 
@@ -102,7 +103,7 @@ $(LIBRARY): $(OBJS)
 clean:
 	@echo "Cleaning fv3core ... "
 	@echo
-	$(RM) -f $(LIBRARY) *__genmod.f90 */*.o */*/*.o  *.mod *.lst *.i depend
+	$(RM) -f $(LIBRARY) *__genmod.f90 */*.o */*/*.o *.mod *.i90 *.lst *.i depend
 
 MKDEPENDS = ../mkDepends.pl
 include ../conf/make.rules
