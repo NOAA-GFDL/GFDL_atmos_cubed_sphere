@@ -2135,7 +2135,9 @@ contains
 !***  Fill the total condensate in the regional boundary array.
 !-----------------------------------------------------------------------
 !
+#ifdef USE_COND
       call fill_q_con_BC
+#endif
 !
 !-----------------------------------------------------------------------
 !***  Fill moist kappa in the regional domain boundary array.
@@ -2263,6 +2265,7 @@ contains
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !-----------------------------------------------------------------------
 !
+#ifdef USE_COND
       subroutine fill_q_con_BC
 !
 !-----------------------------------------------------------------------
@@ -2351,11 +2354,13 @@ contains
 !-----------------------------------------------------------------------
 !
       end subroutine fill_q_con_BC
+#endif
 !
 !-----------------------------------------------------------------------
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !-----------------------------------------------------------------------
 !
+#ifdef MOIST_CAPPA
       subroutine fill_cappa_BC
 !
 !-----------------------------------------------------------------------
@@ -2492,6 +2497,7 @@ contains
 !-----------------------------------------------------------------------
 !
       end subroutine compute_cappa
+#endif
 !
 !-----------------------------------------------------------------------
 !
@@ -3495,8 +3501,13 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !---------------------------------------------------------------------
 
-      subroutine set_regional_BCs(delp,delz,w                         &
-                                 ,pt,q_con,cappa                      &
+      subroutine set_regional_BCs(delp,delz,w,pt                      &
+#ifdef USE_COND
+                                 ,q_con                               &
+#endif
+#ifdef MOIST_CAPPA
+                                 ,cappa                               &
+#endif
                                  ,q                                   &
                                  ,u,v,uc,vc                           &
                                  ,bd, nlayers, ntracers               &
@@ -3529,14 +3540,18 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                                                 delp  &
                                                                ,pt 
 ! 
-      real,dimension(bd%isd:,bd%jsd:,1:),intent(out) :: delz,q_con,w
+      real,dimension(bd%isd:,bd%jsd:,1:),intent(out) :: delz,w
+#ifdef USE_COND
+      real,dimension(bd%isd:,bd%jsd:,1:),intent(out) :: q_con
+#endif
+
 !
       real,dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz,ntracers),intent(out) :: q
 !
 #ifdef MOIST_CAPPA
       real,dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz),intent(out) :: cappa
-#else
-      real,dimension(isd:isd,jsd:jsd,1),intent(out) :: cappa
+!#else
+!      real,dimension(isd:isd,jsd:jsd,1),intent(out) :: cappa
 #endif
 !
       real,dimension(bd%isd:bd%ied,bd%jsd:bd%jed+1,npz),intent(out) :: u,vc
@@ -3740,9 +3755,11 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           delz(i,j,k)=side_t0%delz_BC(i,j,k)                            &
                      +(side_t1%delz_BC(i,j,k)-side_t0%delz_BC(i,j,k))   &
                       *fraction_interval
+#ifdef USE_COND
           q_con(i,j,k)=side_t0%q_con_BC(i,j,k)                          &
                      +(side_t1%q_con_BC(i,j,k)-side_t0%q_con_BC(i,j,k)) &
                       *fraction_interval
+#endif
           w(i,j,k)=side_t0%w_BC(i,j,k)                                  &
                      +(side_t1%w_BC(i,j,k)-side_t0%w_BC(i,j,k))         &
                       *fraction_interval
@@ -4052,12 +4069,16 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         case ('divgd')
           bc_t0=>bc_side_t0%divgd_BC
           bc_t1=>bc_side_t1%divgd_BC
+#ifdef MOIST_CAPPA
         case ('cappa')
           bc_t0=>bc_side_t0%cappa_BC
           bc_t1=>bc_side_t1%cappa_BC
+#endif
+#ifdef USE_COND
         case ('q_con')
           bc_t0=>bc_side_t0%q_con_BC
           bc_t1=>bc_side_t1%q_con_BC
+#endif
         case ('q')
           if(iq<1)then
             write(0,101)
@@ -4696,7 +4717,13 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       real :: rdg
 !
-      real,dimension(:,:,:),pointer :: cappa,delp,delz,pt,q_con
+      real,dimension(:,:,:),pointer :: delp,delz,pt
+#ifdef USE_COND
+      real,dimension(:,:,:),pointer :: q_con
+#endif
+#ifdef MOIST_CAPPA
+      real,dimension(:,:,:),pointer ::cappa
+#endif
 !
       real,dimension(:,:,:,:),pointer :: q
 !
@@ -4716,10 +4743,14 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         j1=regional_bounds%js_north
         j2=regional_bounds%je_north
         q    =>BC_t1%north%q_BC
+#ifdef USE_COND
         q_con=>BC_t1%north%q_con_BC
+#endif
         delp =>BC_t1%north%delp_BC
         delz =>BC_t1%north%delz_BC
+#ifdef MOIST_CAPPA
         cappa=>BC_t1%north%cappa_BC
+#endif
         pt   =>BC_t1%north%pt_BC
         call compute_vpt             !<-- Compute the virtual potential temperature.
       endif
@@ -4730,10 +4761,14 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         j1=regional_bounds%js_south
         j2=regional_bounds%je_south
         q    =>BC_t1%south%q_BC
+#ifdef USE_COND
         q_con=>BC_t1%south%q_con_BC
+#endif
         delp =>BC_t1%south%delp_BC
         delz =>BC_t1%south%delz_BC
+#ifdef MOIST_CAPPA
         cappa=>BC_t1%south%cappa_BC
+#endif
         pt   =>BC_t1%south%pt_BC
         call compute_vpt             !<-- Compute the virtual potential temperature.
       endif
@@ -4744,10 +4779,14 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         j1=regional_bounds%js_east
         j2=regional_bounds%je_east
         q    =>BC_t1%east%q_BC
+#ifdef USE_COND
         q_con=>BC_t1%east%q_con_BC
+#endif
         delp =>BC_t1%east%delp_BC
         delz =>BC_t1%east%delz_BC
+#ifdef MOIST_CAPPA
         cappa=>BC_t1%east%cappa_BC
+#endif
         pt   =>BC_t1%east%pt_BC
         call compute_vpt             !<-- Compute the virtual potential temperature.
       endif
@@ -4758,10 +4797,14 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         j1=regional_bounds%js_west
         j2=regional_bounds%je_west
         q    =>BC_t1%west%q_BC
+#ifdef USE_COND
         q_con=>BC_t1%west%q_con_BC
+#endif
         delp =>BC_t1%west%delp_BC
         delz =>BC_t1%west%delz_BC
+#ifdef MOIST_CAPPA
         cappa=>BC_t1%west%cappa_BC
+#endif
         pt   =>BC_t1%west%pt_BC
         call compute_vpt             !<-- Compute the virtual potential temperature.
       endif
