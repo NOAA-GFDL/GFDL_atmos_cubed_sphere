@@ -75,7 +75,7 @@ module fv_nggps_diags_mod
  use diag_util_mod,      only: find_input_field
  use tracer_manager_mod, only: get_tracer_names, get_number_tracers, get_tracer_index
  use field_manager_mod,  only: MODEL_ATMOS
- use fv_diagnostics_mod, only: range_check
+ use fv_diagnostics_mod, only: range_check, dbzcalc
  use fv_arrays_mod,      only: fv_atmos_type
  use mpp_domains_mod,    only: domain1d, domainUG
 
@@ -88,11 +88,12 @@ module fv_nggps_diags_mod
 
  logical master
  integer :: id_ua, id_va, id_pt, id_delp, id_pfhy, id_pfnh 
- integer :: id_w, id_delz, id_diss, id_ps, id_hs
+ integer :: id_w, id_delz, id_diss, id_ps, id_hs, id_dbz
  integer :: kstt_ua, kstt_va, kstt_pt, kstt_delp, kstt_pfhy
  integer :: kstt_pfnh, kstt_w, kstt_delz, kstt_diss, kstt_ps,kstt_hs
  integer :: kend_ua, kend_va, kend_pt, kend_delp, kend_pfhy
  integer :: kend_pfnh, kend_w, kend_delz, kend_diss, kend_ps,kend_hs
+ integer :: kstt_dbz, kend_dbz
  integer :: kstt_windvect, kend_windvect
  integer :: isco, ieco, jsco, jeco, npzo, ncnsto
  integer :: nlevs
@@ -267,6 +268,13 @@ contains
           nlevs = nlevs + 1
        endif
 !
+       id_dbz = register_diag_field ( trim(file_name), 'reflectivity', axes(1:3), Time,    &
+           'Stoelinga simulated reflectivity', 'dBz', missing_value=missing_value)
+       if( rainwat > 0 .and. id_dbz > 0) then
+          kstt_dbz = nlevs+1; kend_dbz = nlevs+npzo
+          nlevs = nlevs + npzo
+       endif
+!
        nz = size(atm(1)%ak)
        allocate(ak(nz))
        allocate(bk(nz))
@@ -313,14 +321,16 @@ contains
 
     integer :: i, j, k, n, ngc, nq, itrac
     logical :: bad_range
-    real    :: ptop
-    real, allocatable :: wk(:,:,:)
+    real    :: ptop, allmax
+    real, allocatable :: wk(:,:,:), wk2(:,:,:)
 
     n = 1
     ngc = Atm(n)%ng
     ptop = Atm(n)%ak(1)
+    allmax = -20.
     nq = size (Atm(n)%q,4)
     allocate ( wk(isco:ieco,jsco:jeco,npzo) )
+    allocate ( wk2(isco:ieco,jsco:jeco,npzo) )
 
     if ( Atm(n)%flagstruct%range_warn ) then
          call range_check('DELP', Atm(n)%delp, isco, ieco, jsco, jeco, ngc, npzo, Atm(n)%gridstruct%agrid,    &
@@ -497,6 +507,14 @@ contains
         enddo
       enddo
       call store_data(id_hs, wk, Time, kstt_hs, kend_hs)
+    endif
+
+    !--- 3-D Reflectivity field
+    if ( rainwat > 0 .and. id_dbz>0) then
+      call dbzcalc(Atm(n)%q, Atm(n)%pt, Atm(n)%delp, Atm(n)%peln, Atm(n)%delz, &
+                   wk, wk2, allmax, Atm(n)%bd, npzo, Atm(n)%ncnst, Atm(n)%flagstruct%hydrostatic, &
+                   zvir, .false., .false., .false., .true. ) ! GFDL MP has constant N_0 intercept
+      call store_data(id_dbz, wk, Time, kstt_dbz, kend_dbz)
     endif
 
     deallocate ( wk )
@@ -895,6 +913,14 @@ contains
      call find_outputname(trim(file_name),'hs',output_name)
      call add_field_to_bundle(trim(output_name),'surface geopotential height', 'gpm', "time: point",   &
           axes(1:2), fcst_grid, kstt_hs,kend_hs, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
+   if(id_dbz > 0) then
+     call find_outputname(trim(file_name),'reflectivity',output_name)
+!     if(mpp_pe()==mpp_root_pe())print *,'reflectivity, output name=',trim(output_name)
+     call add_field_to_bundle(trim(output_name),'Stoelinga simulated reflectivity', 'dBz', "time: point",   &
+          axes(1:3), fcst_grid, kstt_dbz,kend_dbz, dyn_bundle, output_file, rcd=rc)
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
 
