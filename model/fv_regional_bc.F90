@@ -60,7 +60,6 @@ module fv_regional_mod
 
       public ak_in, bk_in                                               &
             ,bc_hour                                                    &
-            ,bc_time_interval                                           &
             ,BC_t0,BC_t1                                                &
             ,begin_regional_restart,exch_uv                             &
             ,ntimesteps_per_bc_update                                   &
@@ -77,15 +76,14 @@ module fv_regional_mod
             ,current_time_in_seconds                                    &
             ,a_step, p_step, k_step, n_step
 
-      integer,parameter :: bc_time_interval=3                           &
-                          ,nhalo_data =4                                &
+      integer,parameter :: nhalo_data =4                                &
                           ,nhalo_model=3
 
       integer, public, parameter :: H_STAGGER = 1
       integer, public, parameter :: U_STAGGER = 2
       integer, public, parameter :: V_STAGGER = 3
 
-      real, parameter :: stretch_factor = 1.5
+      real, parameter :: stretch_factor = 1.50
       real, parameter :: target_lon = -97.5
       real, parameter :: target_lat = 35.5
       integer, parameter :: parent_tile = 6
@@ -173,6 +171,8 @@ module fv_regional_mod
         module procedure dump_field_3d
         module procedure dump_field_2d
       end interface dump_field
+
+      integer,save :: bc_update_interval
 
       integer :: a_step, p_step, k_step, n_step
 
@@ -272,6 +272,8 @@ contains
       if(ied>npx-1)then
         west_bc=.true.
       endif
+!
+      bc_update_interval=Atm%flagstruct%bc_update_interval
 !
       if(.not.(north_bc.or.south_bc.or.east_bc.or.west_bc))then
         return                                                             !<-- This task is not on the domain boundary so exit.
@@ -1101,7 +1103,7 @@ contains
                                ,Atm%ncnst                               &  !    to t0.
                                ,Atm%regional_bc_bounds )                   !
 !
-      bc_hour=bc_hour+bc_time_interval
+      bc_hour=bc_hour+bc_update_interval
 !
       call regional_bc_data(Atm, bc_hour                                &  !<-- Fill time level t1 
                            ,is, ie, js, je                              &  !    from the 2nd time level
@@ -1223,7 +1225,7 @@ contains
       type(fv_atmos_type),intent(inout) :: Atm                             !<-- Atm object for the current domain
       type(time_type),intent(in) :: Time                                   !<-- Current forecast time
       type (time_type),intent(in) :: Time_step_atmos                       !<-- Large (physics) timestep
-!
+
       integer,intent(in) :: isd,ied,jsd,jed                             &  !<-- Memory limits of task subdomain
                            ,p_split
 !
@@ -1248,7 +1250,7 @@ contains
       dt_atmos = real(sec)
 !
       if(atmos_time_step==0.or.Atm%flagstruct%warm_start)then
-        ntimesteps_per_bc_update=nint(Atm%flagstruct%bc_update_interval*3600./(dt_atmos/real(abs(p_split))))
+        ntimesteps_per_bc_update=nint(bc_update_interval*3600./(dt_atmos/real(abs(p_split))))
       endif
 !
       if(atmos_time_step+1>=ntimesteps_per_bc_update.and.mod(atmos_time_step,ntimesteps_per_bc_update)==0 &
@@ -1256,7 +1258,7 @@ contains
          Atm%flagstruct%warm_start.and.begin_regional_restart)then
 !
         begin_regional_restart=.false.
-        bc_hour=bc_hour+Atm%flagstruct%bc_update_interval
+        bc_hour=bc_hour+bc_update_interval
 !
 !-----------------------------------------------------------------------
 !***  Transfer the time level t1 data to t0.
@@ -3573,7 +3575,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  time level 0 to time level 1.
 !---------------------------------------------------------------------
 !
-      fraction_interval=mod(fcst_time,(bc_time_interval*3600.))/(bc_time_interval*3600.)
+      fraction_interval=mod(fcst_time,(bc_update_interval*3600.))     &
+                       /(bc_update_interval*3600.)
 !
 !---------------------------------------------------------------------
 !
@@ -3888,7 +3891,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                   ,lbnd1,ubnd1,lbnd2,ubnd2             &
                                   ,i1,i2,j1,j2                         &
                                   ,fcst_time                           &
-                                  ,bc_time_interval )
+                                  ,bc_update_interval )
 !
       endif
 !
@@ -3923,7 +3926,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                   ,lbnd1,ubnd1,lbnd2,ubnd2             &
                                   ,i1,i2,j1,j2                         &
                                   ,fcst_time                           &
-                                  ,bc_time_interval )
+                                  ,bc_update_interval )
 !
       endif
 !
@@ -3964,7 +3967,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                   ,lbnd1,ubnd1,lbnd2,ubnd2             &
                                   ,i1,i2,j1,j2                         &
                                   ,fcst_time                           &
-                                  ,bc_time_interval )
+                                  ,bc_update_interval )
       endif  ! east_bc
 !
       if(west_bc)then
@@ -4005,7 +4008,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                   ,lbnd1,ubnd1,lbnd2,ubnd2             &
                                   ,i1,i2,j1,j2                         &
                                   ,fcst_time                           &
-                                  ,bc_time_interval )
+                                  ,bc_update_interval )
       endif  ! west_bc
 !
 !---------------------------------------------------------------------
@@ -4129,7 +4132,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                       ,lbnd2, ubnd2                   &
                                       ,i1,i2,j1,j2                    &
                                       ,fcst_time                      &
-                                      ,bc_time_interval )
+                                      ,bc_update_interval )
 
 !---------------------------------------------------------------------
 !***  Update the boundary region of the input array at the given
@@ -4149,7 +4152,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       integer,intent(in) :: i1,i2,j1,j2                                  !<-- Index limits of the updated region.
 !
-      integer,intent(in) :: bc_time_interval                             !<-- Time (hours) between BC data states
+      integer,intent(in) :: bc_update_interval                           !<-- Time (hours) between BC data states
 !
       real,intent(in) :: fcst_time                                       !<-- Current forecast time (sec)
 !
@@ -4180,7 +4183,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  time level 0 to time level 1.
 !---------------------------------------------------------------------
 !
-      fraction_interval=mod(fcst_time,(bc_time_interval*3600.))/(bc_time_interval*3600.)
+      fraction_interval=mod(fcst_time,(bc_update_interval*3600.))     &
+                       /(bc_update_interval*3600.)
 !
 !---------------------------------------------------------------------
 !
