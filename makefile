@@ -17,7 +17,7 @@ endif
 
 LIBRARY  = libfv3core.a
 
-FFLAGS   += -I../fms -I../fms/include -I../gfsphysics -I../ipd -I../io -I../namphysics
+FFLAGS   += -I$(FMS_DIR) -I../gfsphysics -I../ipd -I../io -I../namphysics
 
 SRCS_f   =
 
@@ -35,7 +35,7 @@ SRCS_F90 = \
 		   ./model/fv_dynamics.F90                        \
 		   ./model/fv_fill.F90                            \
 		   ./model/fv_grid_utils.F90                      \
- 		   ./model/fv_mapz.F90                            \
+		   ./model/fv_mapz.F90                            \
 		   ./model/fv_nesting.F90                         \
 		   ./model/fv_regional_bc.F90                     \
 		   ./model/fv_sg.F90                              \
