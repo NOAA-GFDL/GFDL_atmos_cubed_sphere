@@ -421,7 +421,6 @@ contains
          print *,'warning: no increment for ',trim(field_name),' found, assuming zero'
          wk3 = 0.
       endif
-      print*,trim(field_name),'before=',var(4,4,30)
 
       do k=1,km
         do j=js,je
@@ -435,7 +434,6 @@ contains
           enddo
         enddo
       enddo
-      print*,trim(field_name),'after=',var(4,4,30),tp(4,4,30)
 
     end subroutine apply_inc_on_3d_scalar
     !---------------------------------------------------------------------------
