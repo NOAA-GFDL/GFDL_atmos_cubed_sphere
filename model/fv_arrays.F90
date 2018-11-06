@@ -602,7 +602,11 @@ module fv_arrays_mod
                             !< produces a good first guess by examining the resolution, 
                             !< dt_atmos, and k_split.
 
-   integer :: m_split = 0    ! Number of time splits for Riemann solver
+   real    :: fac_n_spl = 1.0 !< factor multiplying n_split up tp forecast hour fhouri
+   real    :: fhouri    = 0.0 !< forecast hour up to which the number of small dynamics (acoustic) time steps
+                              !< are nint(n_split*fac_n_spl)
+
+   integer :: m_split = 0   !< Number of time splits for Riemann solver
    integer :: k_split = 1   !< Number of vertical remappings per dt_atmos (physics timestep).
                             !< 1 by default.
 
@@ -1426,12 +1430,12 @@ contains
     Atm%bd%ng  = ng
 
     !Convenience pointers
-    Atm%npx => Atm%flagstruct%npx
-    Atm%npy => Atm%flagstruct%npy
-    Atm%npz => Atm%flagstruct%npz
+    Atm%npx   => Atm%flagstruct%npx
+    Atm%npy   => Atm%flagstruct%npy
+    Atm%npz   => Atm%flagstruct%npz
     Atm%ncnst => Atm%flagstruct%ncnst
 
-    Atm%ng => Atm%bd%ng
+    Atm%ng    => Atm%bd%ng
 
 !!$    Atm%npx = npx_in
 !!$    Atm%npy = npy_in

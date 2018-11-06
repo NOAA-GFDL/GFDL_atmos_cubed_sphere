@@ -91,6 +91,10 @@ module fv_dynamics_mod
 !     <td>neg_adj3</td>
 !   </tr>
 !   <tr>
+!     <td>fv_sg_mod</td>
+!     <td>neg_adj2</td>
+!   </tr>
+!   <tr>
 !     <td>fv_timing_mod</td>
 !     <td>timing_on, timing_off</td>
 !   </tr>
@@ -132,7 +136,7 @@ module fv_dynamics_mod
    use mpp_mod,             only: mpp_pe
    use field_manager_mod,   only: MODEL_ATMOS
    use tracer_manager_mod,  only: get_tracer_index
-   use fv_sg_mod,           only: neg_adj3
+   use fv_sg_mod,           only: neg_adj3, neg_adj2
    use fv_nesting_mod,      only: setup_nested_grid_BCs
    use fv_regional_mod,     only: regional_boundary_update, set_regional_BCs
    use fv_regional_mod,     only: dump_field, H_STAGGER, U_STAGGER, V_STAGGER
@@ -751,6 +755,38 @@ contains
        call prt_mxm('ice_wat_dyn', q(isd,jsd,1,ice_wat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
        call prt_mxm('snowwat_dyn', q(isd,jsd,1,snowwat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
        call prt_mxm('graupel_dyn', q(isd,jsd,1,graupel), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+     endif
+  endif
+
+  if( nwat == 5 ) then
+     if (cld_amt > 0) then
+      call neg_adj2(is, ie, js, je, ng, npz,        &
+                    flagstruct%hydrostatic,         &
+                    peln, delz,                     &
+                    pt, delp, q(isd,jsd,1,sphum),   &
+                              q(isd,jsd,1,liq_wat), &
+                              q(isd,jsd,1,rainwat), &
+                              q(isd,jsd,1,ice_wat), &
+                              q(isd,jsd,1,snowwat), &
+                              q(isd,jsd,1,cld_amt), flagstruct%check_negative)
+     else
+        call neg_adj2(is, ie, js, je, ng, npz,        &
+                      flagstruct%hydrostatic,         &
+                      peln, delz,                     &
+                      pt, delp, q(isd,jsd,1,sphum),   &
+                                q(isd,jsd,1,liq_wat), &
+                                q(isd,jsd,1,rainwat), &
+                                q(isd,jsd,1,ice_wat), &
+                                q(isd,jsd,1,snowwat), &
+                                check_negative=flagstruct%check_negative)
+     endif
+     if ( flagstruct%fv_debug ) then
+       call prt_mxm('T_dyn_a3',    pt, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
+       call prt_mxm('SPHUM_dyn',   q(isd,jsd,1,sphum  ), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       call prt_mxm('liq_wat_dyn', q(isd,jsd,1,liq_wat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       call prt_mxm('rainwat_dyn', q(isd,jsd,1,rainwat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       call prt_mxm('ice_wat_dyn', q(isd,jsd,1,ice_wat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       call prt_mxm('snowwat_dyn', q(isd,jsd,1,snowwat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
      endif
   endif
 

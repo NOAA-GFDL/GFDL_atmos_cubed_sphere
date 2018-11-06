@@ -64,7 +64,7 @@ module fv_sg_mod
 implicit none
 private
 
-public  fv_subgrid_z, qsmith, neg_adj3
+public  fv_subgrid_z, qsmith, neg_adj3, neg_adj2
 
   real, parameter:: esl = 0.621971831
   real, parameter:: tice = 273.16
@@ -1549,6 +1549,326 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk,
  endif
 
  end subroutine neg_adj3
+
+ subroutine neg_adj2(is, ie, js, je, ng, kbot, hydrostatic,   &
+                     peln, delz, pt, dp, qv, ql, qr, qi, qs, qa, check_negative)
+
+! This is designed for 6-class micro-physics schemes
+ integer, intent(in):: is, ie, js, je, ng, kbot
+ logical, intent(in):: hydrostatic
+ real,    intent(in):: dp(is-ng:ie+ng,js-ng:je+ng,kbot)  !< total delp-p
+ real,    intent(in):: delz(is-ng:,js-ng:,1:)
+ real,    intent(in):: peln(is:ie,kbot+1,js:je)           !< ln(pe)
+ logical, intent(in), OPTIONAL :: check_negative
+ real,    intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::    &
+                                 pt, qv, ql, qr, qi, qs
+ real, intent(inout), OPTIONAL, dimension(is-ng:ie+ng,js-ng:je+ng,kbot):: qa
+! Local:
+ logical:: sat_adj = .false.
+ real, parameter :: t48 = tice - 48.
+ real, dimension(is:ie,kbot):: dpk, q2
+ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, dp2, p2, icpk, lcpk
+ real:: cv_air
+ real:: dq, qsum, dq1, q_liq, q_sol, oneocpm, sink, qsw, dwsdt, tx1
+ integer i, j, k
+
+ cv_air = cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
+
+  if ( present(check_negative) ) then
+    if ( check_negative ) then
+      call prt_negative('Temperature', pt, is, ie, js, je, ng, kbot, 165.)
+      call prt_negative('sphum',   qv, is, ie, js, je, ng, kbot, -1.e-8)
+      call prt_negative('liq_wat', ql, is, ie, js, je, ng, kbot, -1.e-7)
+      call prt_negative('rainwat', qr, is, ie, js, je, ng, kbot, -1.e-7)
+      call prt_negative('ice_wat', qi, is, ie, js, je, ng, kbot, -1.e-7)
+      call prt_negative('snowwat', qs, is, ie, js, je, ng, kbot, -1.e-7)
+    endif
+  endif
+
+  if ( hydrostatic ) then
+    d0_vap = cp_vapor - c_liq
+  else
+    d0_vap = cv_vap - c_liq
+  endif
+  lv00 = hlv0 - d0_vap*t_ice
+
+!$OMP parallel do default(none) shared(is,ie,js,je,kbot,qv,ql,qi,qs,qr,dp,pt,       &
+!$OMP                                  lv00, d0_vap,hydrostatic,peln,delz,cv_air,sat_adj) &
+!$OMP                          private(dq,dq1,qsum,dp2,p2,pt2,qv2,ql2,qi2,qs2,qr2, &
+!$OMP                                  lcpk,icpk,qsw,dwsdt,sink,q_liq,q_sol,oneocpm)
+  do k=1, kbot
+     do j=js, je
+        do i=is, ie
+        qv2(i,j) = qv(i,j,k)
+        ql2(i,j) = ql(i,j,k)
+        qi2(i,j) = qi(i,j,k)
+        qs2(i,j) = qs(i,j,k)
+        qr2(i,j) = qr(i,j,k)
+        dp2(i,j) = dp(i,j,k)
+        pt2(i,j) = pt(i,j,k)
+        enddo
+     enddo
+
+     if ( hydrostatic ) then
+       do j=js, je
+          do i=is, ie
+             p2(i,j) = dp2(i,j)/(peln(i,k+1,j)-peln(i,k,j))
+             q_liq = max(0., ql2(i,j) + qr2(i,j))
+             q_sol = max(0., qi2(i,j) + qs2(i,j))
+             oneocpm = 1.0 / ((1.-(qv2(i,j)+q_liq+q_sol))*cp_air + qv2(i,j)*cp_vapor + q_liq*c_liq + q_sol*c_ice)
+             lcpk(i,j) = hlv * oneocpm
+             icpk(i,j) = hlf * oneocpm
+          enddo
+       enddo
+     else
+       do j=js, je
+          do i=is, ie
+             p2(i,j) = -dp2(i,j)/(grav*delz(i,j,k))*rdgas*pt2(i,j)*(1.+zvir*qv2(i,j))
+             q_liq = max(0., ql2(i,j) + qr2(i,j))
+             q_sol = max(0., qi2(i,j) + qs2(i,j))
+             oneocpm = 1.0 / ((1.-(qv2(i,j)+q_liq+q_sol))*cv_air + qv2(i,j)*cv_vap + q_liq*c_liq + q_sol*c_ice)
+             lcpk(i,j) = (lv00+d0_vap*pt2(i,j)) * oneocpm
+             icpk(i,j) = (Li0+dc_ice*pt2(i,j))  * oneocpm
+          enddo
+       enddo
+     endif
+
+! Fix the negatives:
+!-----------
+! Ice-phase:
+!-----------
+   do j=js, je
+      do i=is, ie
+        qsum = qi2(i,j) + qs2(i,j)
+        if ( qsum > 0. ) then
+          if ( qi2(i,j) < 0. ) then
+               qi2(i,j) = 0.
+               qs2(i,j) = qsum
+          elseif ( qs2(i,j) < 0. ) then
+               qs2(i,j) = 0.
+               qi2(i,j) = qsum
+          endif
+        else
+          qi2(i,j) = 0.
+          qs2(i,j) = qsum
+
+! If qsum is negative then borrow from rain water: phase change
+          if ( qs2(i,j) < 0. .and. qr2(i,j) > 0. ) then
+             dq   = min( qr2(i,j), -qs2(i,j) )
+             qs2(i,j) = qs2(i,j) + dq
+             qr2(i,j) = qr2(i,j) - dq
+             pt2(i,j) = pt2(i,j) + dq*icpk(i,j)  ! conserve total energy
+          endif
+! If qs2 is still negative then borrow from cloud water: phase change
+          if ( qs2(i,j) < 0. .and. ql2(i,j) > 0. ) then
+             dq   = min( ql2(i,j), -qs2(i,j) )
+             qs2(i,j) = qs2(i,j) + dq
+             ql2(i,j) = ql2(i,j) - dq
+             pt2(i,j) = pt2(i,j) + dq*icpk(i,j)
+          endif
+! Last resort; borrow from water vapor
+          if ( qs2(i,j) < 0. .and. qv2(i,j) > 0. ) then
+             dq   = min( 0.999*qv2(i,j), -qs2(i,j) )
+             qs2(i,j) = qs2(i,j) + dq
+             qv2(i,j) = qv2(i,j) - dq
+             pt2(i,j) = pt2(i,j) + dq*(icpk(i,j)+lcpk(i,j))
+          endif
+        endif
+
+!--------------
+! Liquid phase:
+!--------------
+        qsum = ql2(i,j) + qr2(i,j)
+        if ( qsum > 0. ) then
+          if ( qr2(i,j) < 0. ) then
+               qr2(i,j) = 0.
+               ql2(i,j) = qsum
+          elseif ( ql2(i,j) < 0. ) then
+               ql2(i,j) = 0.
+               qr2(i,j) = qsum
+          endif
+        else
+          ql2(i,j) = 0.
+          qr2(i,j) = qsum     ! rain water is still negative
+          if ( qr(i,j,k) < 0. ) then
+! fill negative rain with available qi & qs (cooling)
+             dq = min( qi2(i,j)+qs2(i,j), -qr2(i,j) )
+             qr2(i,j) = qr2(i,j) + dq
+             dq1      = min( dq, qs2(i,j) )
+             qs2(i,j) = qs2(i,j) - dq1
+             qi2(i,j) = qi2(i,j) + dq1 - dq 
+             pt2(i,j) = pt2(i,j) - dq*icpk(i,j)
+          endif
+! fix negative rain water with available vapor
+          if ( qr2(i,j) < 0. .and. qv2(i,j) > 0. ) then
+             dq       = min( 0.999*qv2(i,j), -qr2(i,j) )
+             qv2(i,j) = qv2(i,j) - dq
+             qr2(i,j) = qr2(i,j) + dq
+             pt2(i,j) = pt2(i,j) + dq*lcpk(i,j)
+          endif
+        endif
+      enddo
+   enddo
+
+!******************************************
+! Fast moist physics: Saturation adjustment
+!******************************************
+#ifndef GFS_PHYS
+   if ( sat_adj ) then
+
+     do j=js, je
+       do i=is, ie
+! Melting of cloud ice into cloud water ********
+          if ( qi2(i,j)>1.e-8 .and. pt2(i,j) > tice ) then
+            sink = min( qi2(i,j), (pt2(i,j)-tice)/icpk(i,j) )
+            ql2(i,j) = ql2(i,j) + sink
+            qi2(i,j) = qi2(i,j) - sink
+            pt2(i,j) = pt2(i,j) - sink*icpk(i,j)
+          endif
+
+! vapor <---> liquid water --------------------------------
+          qsw = wqsat2_moist(pt2(i,j), qv2(i,j), p2(i,j), dwsdt)
+          sink = min( ql2(i,j), (qsw-qv2(i,j))/(1.+lcpk(i,j)*dwsdt) )
+          qv2(i,j) = qv2(i,j) + sink
+          ql2(i,j) = ql2(i,j) - sink
+          pt2(i,j) = pt2(i,j) - sink*lcpk(i,j)
+!-----------------------------------------------------------
+
+! freezing of cloud water ********
+          if( ql2(i,j)>1.e-8 .and. pt2(i,j) < t48 ) then
+! Enforce complete freezing below t_00 (-48 C)
+             sink = min( ql2(i,j), (t48-pt2(i,j))/icpk(i,j) )
+             ql2(i,j) = ql2(i,j) - sink
+             qi2(i,j) = qi2(i,j) + sink
+             pt2(i,j) = pt2(i,j) + sink*icpk(i,j)
+          endif ! significant ql existed
+       enddo
+     enddo
+   endif
+#endif
+
+!----------------------------------------------------------------
+! Update fields:
+   do j=js, je
+     do i=is, ie
+        qv(i,j,k) = qv2(i,j)
+        ql(i,j,k) = ql2(i,j)
+        qi(i,j,k) = qi2(i,j)
+        qs(i,j,k) = qs2(i,j)
+        qr(i,j,k) = qr2(i,j)
+        pt(i,j,k) = pt2(i,j)
+     enddo
+   enddo
+
+ enddo
+
+!$OMP parallel do default(none) shared(is,ie,js,je,kbot,dp,qr) &
+!$OMP                          private(dpk, q2)
+ do j=js, je
+! Rain water:
+    do k=1,kbot
+       do i=is,ie
+          dpk(i,k) = dp(i,j,k)
+          q2(i,k)  = qr(i,j,k)
+       enddo
+    enddo
+    call fillq(ie-is+1, kbot, q2, dpk)
+    do k=1,kbot
+       do i=is,ie
+          qr(i,j,k) = q2(i,k)
+       enddo
+    enddo
+ enddo
+
+!-----------------------------------
+! Fix water vapor
+!-----------------------------------
+! Top layer: borrow from below
+    k = 1
+!$OMP parallel do default(none) shared(is,ie,js,je,k,qv,dp)
+   do j=js, je
+       do i=is, ie
+          if( qv(i,j,k) < 0. ) then
+              qv(i,j,k+1) = qv(i,j,k+1) + qv(i,j,k)*dp(i,j,k)/dp(i,j,k+1)
+              qv(i,j,k  ) = 0.
+          endif
+     enddo
+   enddo
+
+! this OpenMP do-loop cannot be parallelized with recursion on k/k-1
+!$OMP parallel do default(none) shared(is,ie,js,je,kbot,qv,dp) &
+!$OMP                          private(dq)
+ do j=js, je
+   do k=2,kbot-1
+       do i=is, ie
+          if( qv(i,j,k) < 0. .and. qv(i,j,k-1) > 0. ) then
+              dq = min(-qv(i,j,k)*dp(i,j,k), qv(i,j,k-1)*dp(i,j,k-1))
+              qv(i,j,k-1) = qv(i,j,k-1) - dq/dp(i,j,k-1) 
+              qv(i,j,k  ) = qv(i,j,k  ) + dq/dp(i,j,k  ) 
+          endif
+          if( qv(i,j,k) < 0. ) then
+              qv(i,j,k+1) = qv(i,j,k+1) + qv(i,j,k)*dp(i,j,k)/dp(i,j,k+1)
+              qv(i,j,k  ) = 0.
+          endif
+       enddo
+   enddo
+ enddo
+ 
+! Bottom layer; Borrow from above
+!$OMP parallel do default(none) shared(is,ie,js,je,kbot,qv,dp) private(dq,tx1)
+ do j=js, je
+    do i=is, ie
+      if( qv(i,j,kbot) < 0. ) then
+         tx1 = 1.0 / dp(i,j,kbot)
+         do k=kbot-1,1,-1
+            if ( qv(i,j,kbot)>= 0. ) goto 123
+            if ( qv(i,j,k) > 0. ) then
+                 dq = min(-qv(i,j,kbot)*dp(i,j,kbot), qv(i,j,k)*dp(i,j,k))
+                 qv(i,j,k   ) = qv(i,j,k   ) - dq / dp(i,j,k) 
+                 qv(i,j,kbot) = qv(i,j,kbot) + dq * tx1
+            endif
+         enddo   ! k-loop
+123      continue
+      endif
+    enddo ! i-loop
+ enddo   ! j-loop
+
+ 
+ if (present(qa)) then
+!-----------------------------------
+! Fix negative cloud fraction
+!-----------------------------------
+! this OpenMP do-loop cannot be parallelized by the recursion on k/k+1
+!$OMP parallel do default(none) shared(is,ie,js,je,kbot,qa,dp)
+   do j=js, je
+     do k=1,kbot-1
+       do i=is, ie
+         if( qa(i,j,k) < 0. ) then
+           qa(i,j,k+1) = qa(i,j,k+1) + qa(i,j,k)*dp(i,j,k)/dp(i,j,k+1)
+           qa(i,j,k  ) = 0.
+         endif
+       enddo
+     enddo
+   enddo
+ 
+! Bottom layer; Borrow from above
+!$OMP parallel do default(none) shared(is,ie,js,je,qa,kbot,dp) &
+!$OMP                          private(dq)
+   do j=js, je
+     do i=is, ie
+       if( qa(i,j,kbot) < 0. .and. qa(i,j,kbot-1)>0.) then
+          dq = min(-qa(i,j,kbot)*dp(i,j,kbot), qa(i,j,kbot-1)*dp(i,j,kbot-1))
+          qa(i,j,kbot-1) = qa(i,j,kbot-1) - dq/dp(i,j,kbot-1) 
+          qa(i,j,kbot  ) = qa(i,j,kbot  ) + dq/dp(i,j,kbot  ) 
+       endif
+! if qa is still < 0
+       qa(i,j,kbot) = max(0., qa(i,j,kbot))
+     enddo
+   enddo
+
+ endif
+
+ end subroutine neg_adj2
 
  subroutine fillq(im, km, q, dp)
 ! Aggresive 1D filling algorithm for qr and qg

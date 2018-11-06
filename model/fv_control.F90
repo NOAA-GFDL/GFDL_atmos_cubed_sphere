@@ -221,6 +221,9 @@ module fv_control_mod
    real    , pointer :: p_fac
    real    , pointer :: a_imp
    integer , pointer :: n_split 
+
+   real    , pointer :: fac_n_spl
+   real    , pointer :: fhouri
                              ! Default 
    integer , pointer :: m_split 
    integer , pointer :: k_split 
@@ -433,8 +436,8 @@ module fv_control_mod
             endif
 
             !!CLEANUP: Convenience pointers
-            Atm(n)%gridstruct%nested    => Atm(n)%neststruct%nested
-            Atm(n)%gridstruct%grid_type => Atm(n)%flagstruct%grid_type
+            Atm(n)%gridstruct%nested      => Atm(n)%neststruct%nested
+            Atm(n)%gridstruct%grid_type   => Atm(n)%flagstruct%grid_type
             Atm(n)%flagstruct%grid_number => Atm(n)%grid_number
             Atm(n)%gridstruct%regional  => Atm(n)%flagstruct%regional
 
@@ -658,7 +661,7 @@ module fv_control_mod
                          nested, twowaynest, parent_grid_num, parent_tile, nudge_qv, &
                          refinement, nestbctype, nestupdate, nsponge, s_weight, &
                          ioffset, joffset, check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
-                         do_uni_zfull, adj_mass_vmr, regional, bc_update_interval
+                         do_uni_zfull, adj_mass_vmr, fac_n_spl, fhouri, regional, bc_update_interval
 
    namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
 
@@ -749,14 +752,14 @@ module fv_control_mod
       if (.not. (nested .or. regional)) Atm(n)%neststruct%npx_global = npx
 
       ! Define n_split if not in namelist
-      if (ntiles==6) then
+      if (ntiles == 6) then
          dimx = 4.0*(npx-1)
          if ( hydrostatic ) then
             if ( npx >= 120 ) ns0 = 6
          else
             if ( npx <= 45 ) then
                ns0 = 6
-            elseif ( npx <=90 ) then
+            elseif ( npx <= 90 ) then
                ns0 = 7
             else
                ns0 = 8
@@ -1189,6 +1192,8 @@ module fv_control_mod
      p_fac                         => Atm%flagstruct%p_fac
      a_imp                         => Atm%flagstruct%a_imp
      n_split                       => Atm%flagstruct%n_split
+     fac_n_spl                     => Atm%flagstruct%fac_n_spl
+     fhouri                        => Atm%flagstruct%fhouri
      m_split                       => Atm%flagstruct%m_split
      k_split                       => Atm%flagstruct%k_split
      use_logp                      => Atm%flagstruct%use_logp
