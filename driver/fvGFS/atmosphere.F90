@@ -670,17 +670,19 @@ contains
  end subroutine atmosphere_pref
 
 
- subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro)
+ subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, tile_num)
    integer, intent(out)           :: i1, i2, j1, j2, kt
    logical, intent(out), optional :: p_hydro, hydro
+   integer, intent(out), optional :: tile_num
    i1 = Atm(mytile)%bd%isc
    i2 = Atm(mytile)%bd%iec
    j1 = Atm(mytile)%bd%jsc
    j2 = Atm(mytile)%bd%jec
    kt = Atm(mytile)%npz
 
-   if (present(p_hydro)) p_hydro = Atm(mytile)%flagstruct%phys_hydrostatic
-   if (present(  hydro))   hydro = Atm(mytile)%flagstruct%hydrostatic
+   if (present(tile_num)) tile_num = Atm(mytile)%tile
+   if (present(p_hydro)) p_hydro   = Atm(mytile)%flagstruct%phys_hydrostatic
+   if (present(  hydro))   hydro   = Atm(mytile)%flagstruct%hydrostatic
 
  end subroutine atmosphere_control_data
 
