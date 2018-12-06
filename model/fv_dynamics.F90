@@ -343,7 +343,7 @@ contains
 #ifdef MOIST_CAPPA
                ,cappa                                             &
 #endif
-               ,q,u,v,uc,vc, bd, npz, ncnst, reg_bc_update_time )
+               ,q,u,v,uc,vc, bd, npz, reg_bc_update_time )
 
         call timing_off('Regional_BCs')
       endif

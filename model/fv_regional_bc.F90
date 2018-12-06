@@ -20,6 +20,7 @@
 
 module fv_regional_mod
 
+   use netcdf
    use mpp_domains_mod,   only: domain2d
    use mpp_domains_mod,   only: domain1D, mpp_get_domain_components,    &
                                 mpp_get_global_domain,                  &
@@ -34,7 +35,7 @@ module fv_regional_mod
                                 mpp_npes, mpp_root_pe, mpp_gather,      &
                                 mpp_get_current_pelist, NULL_PE
    use mpp_io_mod
-   use tracer_manager_mod,only: get_tracer_index
+   use tracer_manager_mod,only: get_tracer_index,get_tracer_names
    use field_manager_mod, only: MODEL_ATMOS
    use time_manager_mod,  only: get_time                                &
                                ,operator(-),operator(/)                 &
@@ -53,8 +54,10 @@ module fv_regional_mod
    use fv_mp_mod,         only: is_master, mp_reduce_min, mp_reduce_max
    use fv_fill_mod,       only: fillz
    use fv_eta_mod,        only: get_eta_level
-   use fms_mod,           only: check_nml_error
-   use fms_io_mod,        only: read_data
+   use fms_mod,           only: check_nml_error,file_exist
+   use fms_io_mod,        only: read_data,get_global_att_value
+
+   implicit none 
 
       private
 
@@ -74,7 +77,7 @@ module fv_regional_mod
             ,start_regional_restart                                     &
             ,dump_field                                                 &
             ,current_time_in_seconds                                    &
-            ,a_step, p_step, k_step, n_step
+            ,a_step, p_step, k_step, n_step, get_data_source
 
       integer,parameter :: nhalo_data =4                                &
                           ,nhalo_model=3
@@ -145,6 +148,8 @@ module fv_regional_mod
                                                     ,bc_west_t1         &
                                                     ,bc_east_t1
 
+      type(fv_regional_BC_variables),pointer :: bc_side_t0,bc_side_t1
+
       type(fv_regional_bc_bounds_type),pointer,save :: regional_bounds
 
       real,parameter :: tice=273.16                                     &
@@ -175,7 +180,8 @@ module fv_regional_mod
       integer,save :: bc_update_interval
 
       integer :: a_step, p_step, k_step, n_step
-
+!
+      character(len=80) :: data_source
 contains
 
 !-----------------------------------------------------------------------
@@ -282,7 +288,7 @@ contains
 !
 !-----------------------------------------------------------------------
 !
-      ntracers=Atm%ncnst                                                   !<-- # of advected tracers
+      ntracers=Atm%ncnst - Atm%flagstruct%dnats                            !<-- # of advected tracers
       npz=Atm%npz                                                          !<-- # of layers in vertical configuration of integration
       klev_out=npz
 !
@@ -988,7 +994,6 @@ contains
 !-----------------------------------------------------------------------
 !***  Read the filtered topography including the extra outer row.
 !-----------------------------------------------------------------------
-      use netcdf
 !-----------------------------------------------------------------------
       implicit none
 !-----------------------------------------------------------------------
@@ -1089,6 +1094,10 @@ contains
 !***********************************************************************
 !-----------------------------------------------------------------------
 !
+! get the source of the input data
+!
+      call get_data_source(data_source,Atm%flagstruct%regional)
+!
       call setup_regional_BC(Atm                                        &
                             ,isd, ied, jsd, jed                         &
                             ,Atm%npx, Atm%npy )
@@ -1100,7 +1109,7 @@ contains
                            ,ak, bk )
       call regional_bc_t1_to_t0(BC_t1, BC_t0                            &  !
                                ,Atm%npz                                 &  !<-- Move BC t1 data
-                               ,Atm%ncnst                               &  !    to t0.
+                               ,ntracers                                &
                                ,Atm%regional_bc_bounds )                   !
 !
       bc_hour=bc_hour+bc_update_interval
@@ -1266,7 +1275,7 @@ contains
 !
         call regional_bc_t1_to_t0(BC_t1, BC_t0                          &  
                                  ,Atm%npz                               & 
-                                 ,Atm%ncnst                             &
+                                 ,ntracers                              &
                                  ,Atm%regional_bc_bounds )
 !
 !-----------------------------------------------------------------------
@@ -1297,7 +1306,6 @@ contains
 !-----------------------------------------------------------------------
 !***  Regional boundary data is obtained from the external BC file.
 !-----------------------------------------------------------------------
-      use netcdf
 !-----------------------------------------------------------------------
       implicit none
 !-----------------------------------------------------------------------
@@ -1344,7 +1352,8 @@ contains
       real,dimension(:,:,:),allocatable :: ud,vd,uc,vc
 !
       real,dimension(:,:),allocatable :: ps_reg
-      real,dimension(:,:,:),allocatable :: ps_input,w_input,zh_input
+      real,dimension(:,:,:),allocatable :: ps_input,t_input             &
+                                          ,w_input,zh_input
       real,dimension(:,:,:),allocatable :: u_s_input,v_s_input          &
                                           ,u_w_input,v_w_input
       real,dimension(:,:,:,:),allocatable :: tracers_input
@@ -1364,11 +1373,18 @@ contains
       logical,save :: computed_regional_bc_indices=.false.
 !
       character(len=3) :: int_to_char
+      character(len=5) :: side
       character(len=6) :: fmt='(i3.3)'
 !
       character(len=50) :: file_name
 !
       integer,save :: kount1=0,kount2=0
+!
+      character(len=60) :: var_name_root
+      integer :: nside,nt,index
+!
+      logical :: call_remap
+!
 !-----------------------------------------------------------------------
 !***********************************************************************
 !-----------------------------------------------------------------------
@@ -1380,6 +1396,7 @@ contains
       if(.not.(north_bc.or.south_bc.or.east_bc.or.west_bc))then
         return
       endif
+!if (data_source == 'FV3GFS GAUSSIAN NEMSIO FILE')
 !
 !-----------------------------------------------------------------------
 !
@@ -1415,13 +1432,14 @@ contains
       js_input=js-nhalo_data
       je_input=je+nhalo_data
 !
-      allocate( ps_input(is_input:ie_input,js_input:je_input,1)) ; ps_input=real_snan                      !<-- Sfc pressure
-      allocate(  w_input(is_input:ie_input,js_input:je_input,1:klev_in)) ; w_input=real_snan               !<-- Vertical velocity
-      allocate( zh_input(is_input:ie_input,js_input:je_input,1:klev_in+1)) ; zh_input=real_snan            !<-- Interface heights
-      allocate(u_s_input(is_input:ie_input,js_input:je_input,1:klev_in)) ; u_s_input=real_snan             !<-- D-grid u component
-      allocate(v_s_input(is_input:ie_input,js_input:je_input,1:klev_in)) ; v_s_input=real_snan             !<-- C-grid v component
-      allocate(u_w_input(is_input:ie_input,js_input:je_input,1:klev_in)) ; u_w_input=real_snan             !<-- C-grid u component
-      allocate(v_w_input(is_input:ie_input,js_input:je_input,1:klev_in)) ; v_w_input=real_snan             !<-- D-grid v component
+      allocate( ps_input(is_input:ie_input,js_input:je_input,1)) ; ps_input=real_snan                 !<-- Sfc pressure
+      allocate(  t_input(is_input:ie_input,js_input:je_input,1:klev_in)) ; t_input=real_snan          !<-- Sensible temperature
+      allocate(  w_input(is_input:ie_input,js_input:je_input,1:klev_in)) ; w_input=real_snan          !<-- Vertical velocity
+      allocate( zh_input(is_input:ie_input,js_input:je_input,1:klev_in+1)) ; zh_input=real_snan       !<-- Interface heights
+      allocate(u_s_input(is_input:ie_input,js_input:je_input,1:klev_in)) ; u_s_input=real_snan        !<-- D-grid u component
+      allocate(v_s_input(is_input:ie_input,js_input:je_input,1:klev_in)) ; v_s_input=real_snan        !<-- C-grid v component
+      allocate(u_w_input(is_input:ie_input,js_input:je_input,1:klev_in)) ; u_w_input=real_snan        !<-- C-grid u component
+      allocate(v_w_input(is_input:ie_input,js_input:je_input,1:klev_in)) ; v_w_input=real_snan        !<-- D-grid v component
 !
       allocate(tracers_input(is_input:ie_input,js_input:je_input,klev_in,ntracers)) ; tracers_input=real_snan
 !
@@ -1435,62 +1453,25 @@ contains
 !------------------
 !
       nlev=1
+      var_name_root='ps'
       call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
                                 ,nlev                                   &
                                 ,ntracers                               &
 !                               ,Atm%regional_bc_bounds                 &
-                                ,'ps     '                              &
+                                ,var_name_root                          &
                                 ,array_3d=ps_input )                       !<-- ps is 2D but for simplicity here use a 3rd dim of 1
-!
-!-----------------------
-!***  Specific humidity
-!-----------------------
-!
-      nlev=klev_in
-      call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
-                                ,nlev                                   &
-                                ,ntracers                               &
-!                               ,Atm%regional_bc_bounds                 &
-                                ,'sphum  '                              &
-                                ,array_4d=tracers_input                 &
-                                ,tlev=sphum_index )
-!
-!------------------
-!***  Liquid water
-!------------------
-!
-      nlev=klev_in
-      call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
-                                ,nlev                                   &
-                                ,ntracers                               &
-!                               ,Atm%regional_bc_bounds                 &
-                                ,'liq_wat'                              &
-                                ,array_4d=tracers_input                 &
-                                ,tlev=liq_water_index )
-!
-!-----------
-!***  Ozone
-!-----------
-!
-      nlev=klev_in
-      call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
-                                ,nlev                                   &
-                                ,ntracers                               &
-!                               ,Atm%regional_bc_bounds                 &
-                                ,'o3mr   '                              &
-                                ,array_4d=tracers_input                 &
-                                ,tlev=o3mr_index )
 !
 !-----------------------
 !***  Vertical velocity
 !-----------------------
 !
       nlev=klev_in
+      var_name_root='w'
       call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
                                 ,nlev                                   &
                                 ,ntracers                               &
 !                               ,Atm%regional_bc_bounds                 &
-                                ,'w      '                              &
+                                ,var_name_root                          &
                                 ,array_3d=w_input)
 !
 !-----------------------
@@ -1498,23 +1479,40 @@ contains
 !-----------------------
 !
       nlev=klev_in+1
+      var_name_root='zh'
       call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
                                 ,nlev                                   &
                                 ,ntracers                               &
 !                               ,Atm%regional_bc_bounds                 &
-                                ,'zh     '                              &
+                                ,var_name_root                          &
                                 ,array_3d=zh_input)
+!
+!--------------------------
+!***  Sensible temperature
+!--------------------------
+!
+      if (data_source == 'FV3GFS GAUSSIAN NEMSIO FILE') then
+        nlev=klev_in
+        var_name_root='t'
+        call read_regional_bc_file(is_input,ie_input,js_input,je_input  &
+                                  ,nlev                                 &
+                                  ,ntracers                             &
+!                                 ,Atm%regional_bc_bounds               &
+                                  ,var_name_root                        &
+                                  ,array_3d=t_input)
+      endif
 !
 !-----------------------------
 !***  U component south/north
 !-----------------------------
 !
       nlev=klev_in
+      var_name_root='u_s'
       call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
                                 ,nlev                                   &
                                 ,ntracers                               &
 !                               ,Atm%regional_bc_bounds                 &
-                                ,'u_s    '                              &
+                                ,var_name_root                          &
                                 ,array_3d=u_s_input)
 !
 !-----------------------------
@@ -1522,11 +1520,12 @@ contains
 !-----------------------------
 !
       nlev=klev_in
+      var_name_root='v_s'
       call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
                                 ,nlev                                   &
                                 ,ntracers                               &
 !                               ,Atm%regional_bc_bounds                 &
-                                ,'v_s    '                              &
+                                ,var_name_root                          &
                                 ,array_3d=v_s_input)
 !
 !---------------------------
@@ -1534,11 +1533,12 @@ contains
 !---------------------------
 !
       nlev=klev_in
+      var_name_root='u_w'
       call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
                                 ,nlev                                   &
                                 ,ntracers                               &
 !                               ,Atm%regional_bc_bounds                 &
-                                ,'u_w    '                              &
+                                ,var_name_root                          &
                                 ,array_3d=u_w_input)
 !
 !---------------------------
@@ -1546,12 +1546,36 @@ contains
 !---------------------------
 !
       nlev=klev_in
+      var_name_root='v_w'
       call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
                                 ,nlev                                   &
                                 ,ntracers                               &
 !                               ,Atm%regional_bc_bounds                 &
-                                ,'v_w    '                              &
+                                ,var_name_root                          &
                                 ,array_3d=v_w_input)
+!----------------------
+!***   tracers
+!-----------------------
+
+      nlev=klev_in
+!
+!-----------------------------------------------------------------------
+!***  Read the tracers specified in the field_table.  If they are not
+!***  in the input data then print a warning and set them to 0 in the
+!***  boundary.  The tracers that are not advected are not in the
+!***  input and BC files.
+!-----------------------------------------------------------------------
+!
+      do nt = 1, ntracers 
+        call get_tracer_names(MODEL_ATMOS, nt, var_name_root)
+        index= get_tracer_index(MODEL_ATMOS,trim(var_name_root))
+        call read_regional_bc_file(is_input,ie_input,js_input,je_input  &
+                                  ,nlev                                 &
+                                  ,ntracers                             &
+                                  ,var_name_root                        &
+                                  ,array_4d=tracers_input               &
+                                  ,tlev=index )
+      enddo
 !
 !-----------------------------------------------------------------------
 !***  We now have the boundary variables from the BC file on the
@@ -1588,137 +1612,78 @@ contains
 !***  from two different boundary side regions.
 !-----------------------------------------------------------------------
 !
-!-----------
-!***  North
-!-----------
+!-----------------------------------------------------------------------
+      sides_scalars: do nside=1,4
+!-----------------------------------------------------------------------
 !
-      if(north_bc)then
+        call_remap=.false.
 !
+        if(nside==1)then
+          if(north_bc)then
+            call_remap=.true.
+            side='north'
+            bc_side_t1=>BC_t1%north
+          endif
+        endif
+!
+        if(nside==2)then
+          if(south_bc)then
+            call_remap=.true.
+            side='south'
+            bc_side_t1=>BC_t1%south
+          endif
+        endif
+!
+        if(nside==3)then
+          if(east_bc)then
+            call_remap=.true.
+            side='east '
+            bc_side_t1=>BC_t1%east
+          endif
+        endif
+!
+        if(nside==4)then
+          if(west_bc)then
+            call_remap=.true.
+            side='west '
+            bc_side_t1=>BC_t1%west
+          endif
+        endif
+!
+        if(call_remap)then
           call remap_scalar_nggps_regional_bc(Atm                          &
-                                             ,'north'                      &
+                                             ,side                         &
 
                                              ,isd,ied,jsd,jed              &  !<-- Atm array indices w/halo
 
                                              ,is_input                     &  !<--
-                                             ,ie_input                     &  !  Input array 
+                                             ,ie_input                     &  !  Input array
                                              ,js_input                     &  !  index limits.
                                              ,je_input                     &  !<--
 
                                              ,klev_in, klev_out            &
-                                             ,ntracers                     & 
+                                             ,ntracers                     &
                                              ,ak, bk                       &
 
                                              ,ps_input                     &  !<--
-                                             ,tracers_input                &  !  BC vbls on
-                                             ,w_input                      &  !  input model levels
+                                             ,t_input                      &  !  BC vbls
+                                             ,tracers_input                &  !  on input
+                                             ,w_input                      &  !  model levels
                                              ,zh_input                     &  !<--
 
                                              ,phis_reg                     &  !<-- Filtered topography
 
                                              ,ps_reg                       &  !<-- Derived FV3 psfc in regional domain boundary region
 
-                                             ,BC_t1%north )                   !<-- North BC vbls on final integration levels
+                                             ,bc_side_t1 )                    !<-- BC vbls on final integration levels
 !
-      endif
+          call set_delp_and_tracers(bc_side_t1,Atm%npz,Atm%flagstruct%nwat)
 !
-!-----------
-!***  South
-!-----------
+        endif
 !
-      if(south_bc)then
-!
-        call remap_scalar_nggps_regional_bc(Atm                            &
-                                           ,'south'                        &
-
-                                           ,isd,ied,jsd,jed                &  !<-- Atm array indices w/halo
-
-                                           ,is_input                       &  !<--
-                                           ,ie_input                       &  !  Input array
-                                           ,js_input                       &  !  index limits.
-                                           ,je_input                       &  !<--
-
-                                           ,klev_in, klev_out              &
-                                           ,ntracers                       &
-                                           ,ak, bk                         &
-
-                                           ,ps_input                       &  !<--
-                                           ,tracers_input                  &  !  BC vbls on
-                                           ,w_input                        &  !  input model levels
-                                           ,zh_input                       &  !<--
-
-                                           ,phis_reg                       &  !<-- Filtered topography
-
-                                           ,ps_reg                         &  !<-- Derived FV3 psfc in regional domain boundary region
-
-                                           ,BC_t1%south )                     !<-- South BC vbls on final integration levels
-!
-      endif
-!
-!----------
-!***  East
-!----------
-!
-      if(east_bc)then
-!
-        call remap_scalar_nggps_regional_bc(Atm                            &
-                                           ,'east '                        &
-
-                                           ,isd,ied,jsd,jed                &  !<-- Atm array indices w/halo
-
-                                           ,is_input                       &  !<--
-                                           ,ie_input                       &  !  Input array 
-                                           ,js_input                       &  !  index limits.
-                                           ,je_input                       &  !<--
-
-                                           ,klev_in, klev_out              &
-                                           ,ntracers                       &
-                                           ,ak, bk                         &
-
-                                           ,ps_input                       &  !<--
-                                           ,tracers_input                  &  !  BC vbls on
-                                           ,w_input                        &  !  input model levels
-                                           ,zh_input                       &  !<--
-
-                                           ,phis_reg                       &  !<-- Filtered topography
-
-                                           ,ps_reg                         &  !<-- Derived FV3 psfc in regional domain boundary region
-
-                                           ,BC_t1%east )
-!
-      endif
-!
-!----------
-!***  West
-!----------
-!
-      if(west_bc)then
-!
-        call remap_scalar_nggps_regional_bc(Atm                            &
-                                           ,'west '                        &
-
-                                           ,isd,ied,jsd,jed                &  !<-- Atm array indices w/halo
-
-                                           ,is_input                       &  !<--
-                                           ,ie_input                       &  !  Input array
-                                           ,js_input                       &  !  index limits.
-                                           ,je_input                       &  !<--
-
-                                           ,klev_in, klev_out              &
-                                           ,ntracers                       &
-                                           ,ak, bk                         &
-
-                                           ,ps_input                       &  !<--
-                                           ,tracers_input                  &  !  BC vbls on
-                                           ,w_input                        &  !  input model levels
-                                           ,zh_input                       &  !<--
-
-                                           ,phis_reg                       &  !<-- Filtered topography
-
-                                           ,ps_reg                         &  !<-- Derived FV3 psfc in regional domain boundary region
-
-                                           ,BC_t1%west )
-!
-      endif
+!-----------------------------------------------------------------------
+      enddo sides_scalars
+!-----------------------------------------------------------------------
 !
 !-----------------------------------------------------------------------
 !***  Now that we have the pressure throughout the boundary region
@@ -1766,329 +1731,154 @@ contains
       enddo
 #endif
 !
-      if(north_bc)then
+!-----------------------------------------------------------------------
+!***  Loop through the four sides of the domain.
+!-----------------------------------------------------------------------
 !
-        is_u=Atm%regional_bc_bounds%is_north_uvs
-        ie_u=Atm%regional_bc_bounds%ie_north_uvs
-        js_u=Atm%regional_bc_bounds%js_north_uvs
-        je_u=Atm%regional_bc_bounds%je_north_uvs
+!-----------------------------------------------------------------------
+      sides_winds: do nside=1,4
+!-----------------------------------------------------------------------
 !
-        is_v=Atm%regional_bc_bounds%is_north_uvw
-        ie_v=Atm%regional_bc_bounds%ie_north_uvw
-        js_v=Atm%regional_bc_bounds%js_north_uvw
-        je_v=Atm%regional_bc_bounds%je_north_uvw
+        call_remap=.false.
+
+        if(nside==1)then
+          if(north_bc)then
+            call_remap=.true.
+            bc_side_t1=>BC_t1%north
 !
-        allocate(ud(is_u:ie_u,js_u:je_u,1:nlev)) ; ud=real_snan
-        allocate(vd(is_v:ie_v,js_v:je_v,1:nlev)) ; vd=real_snan
-        allocate(vc(is_u:ie_u,js_u:je_u,1:nlev)) ; vc=real_snan
-        allocate(uc(is_v:ie_v,js_v:je_v,1:nlev)) ; uc=real_snan
+            is_u=Atm%regional_bc_bounds%is_north_uvs
+            ie_u=Atm%regional_bc_bounds%ie_north_uvs
+            js_u=Atm%regional_bc_bounds%js_north_uvs
+            je_u=Atm%regional_bc_bounds%je_north_uvs
 !
-        do k=1,nlev
-          do j=js_u,je_u
-          do i=is_u,ie_u
-            p1(:) = grid_reg(i,  j,1:2)
-            p2(:) = grid_reg(i+1,j,1:2)
-            call  mid_pt_sphere(p1, p2, p3)
-            call get_unit_vect2(p1, p2, e1)
-            call get_latlon_vector(p3, ex, ey)
-            ud(i,j,k) = u_s_input(i,j,k)*inner_prod(e1,ex)+v_s_input(i,j,k)*inner_prod(e1,ey)
-            p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-            call get_unit_vect2(p3, p4, e2) !C-grid V-wind unit vector
-            vc(i,j,k) = u_s_input(i,j,k)*inner_prod(e2,ex)+v_s_input(i,j,k)*inner_prod(e2,ey)
-          enddo
-          enddo
+            is_v=Atm%regional_bc_bounds%is_north_uvw
+            ie_v=Atm%regional_bc_bounds%ie_north_uvw
+            js_v=Atm%regional_bc_bounds%js_north_uvw
+            je_v=Atm%regional_bc_bounds%je_north_uvw
+          endif
+        endif
 !
-          do j=js_v,je_v
-            do i=is_v,ie_v
-              p1(:) = grid_reg(i,j  ,1:2)
-              p2(:) = grid_reg(i,j+1,1:2)
+        if(nside==2)then
+          if(south_bc)then
+            call_remap=.true.
+            bc_side_t1=>BC_t1%south
+!
+            is_u=Atm%regional_bc_bounds%is_south_uvs
+            ie_u=Atm%regional_bc_bounds%ie_south_uvs
+            js_u=Atm%regional_bc_bounds%js_south_uvs
+            je_u=Atm%regional_bc_bounds%je_south_uvs
+!
+            is_v=Atm%regional_bc_bounds%is_south_uvw
+            ie_v=Atm%regional_bc_bounds%ie_south_uvw
+            js_v=Atm%regional_bc_bounds%js_south_uvw
+            je_v=Atm%regional_bc_bounds%je_south_uvw
+          endif
+        endif
+!
+        if(nside==3)then
+          if(east_bc)then
+            call_remap=.true.
+            bc_side_t1=>BC_t1%east
+!
+            is_u=Atm%regional_bc_bounds%is_east_uvs
+            ie_u=Atm%regional_bc_bounds%ie_east_uvs
+            js_u=Atm%regional_bc_bounds%js_east_uvs
+            je_u=Atm%regional_bc_bounds%je_east_uvs
+!
+            is_v=Atm%regional_bc_bounds%is_east_uvw
+            ie_v=Atm%regional_bc_bounds%ie_east_uvw
+            js_v=Atm%regional_bc_bounds%js_east_uvw
+            je_v=Atm%regional_bc_bounds%je_east_uvw
+          endif
+        endif
+!
+        if(nside==4)then
+          if(west_bc)then
+            call_remap=.true.
+            bc_side_t1=>BC_t1%west
+!
+            is_u=Atm%regional_bc_bounds%is_west_uvs
+            ie_u=Atm%regional_bc_bounds%ie_west_uvs
+            js_u=Atm%regional_bc_bounds%js_west_uvs
+            je_u=Atm%regional_bc_bounds%je_west_uvs
+!
+            is_v=Atm%regional_bc_bounds%is_west_uvw
+            ie_v=Atm%regional_bc_bounds%ie_west_uvw
+            js_v=Atm%regional_bc_bounds%js_west_uvw
+            je_v=Atm%regional_bc_bounds%je_west_uvw
+          endif
+        endif
+!
+        if(call_remap)then
+!
+          allocate(ud(is_u:ie_u,js_u:je_u,1:nlev)) ; ud=real_snan
+          allocate(vd(is_v:ie_v,js_v:je_v,1:nlev)) ; vd=real_snan
+          allocate(vc(is_u:ie_u,js_u:je_u,1:nlev)) ; vc=real_snan
+          allocate(uc(is_v:ie_v,js_v:je_v,1:nlev)) ; uc=real_snan
+!
+          do k=1,nlev
+            do j=js_u,je_u
+            do i=is_u,ie_u
+              p1(:) = grid_reg(i,  j,1:2)
+              p2(:) = grid_reg(i+1,j,1:2)
               call  mid_pt_sphere(p1, p2, p3)
-              call get_unit_vect2(p1, p2, e2)
+              call get_unit_vect2(p1, p2, e1)
               call get_latlon_vector(p3, ex, ey)
-              vd(i,j,k) = u_w_input(i,j,k)*inner_prod(e2,ex)+v_w_input(i,j,k)*inner_prod(e2,ey)
+              ud(i,j,k) = u_s_input(i,j,k)*inner_prod(e1,ex)+v_s_input(i,j,k)*inner_prod(e1,ey)
               p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-              call get_unit_vect2(p3, p4, e1) !C-grid U-wind unit vector
-              uc(i,j,k) = u_w_input(i,j,k)*inner_prod(e1,ex)+v_w_input(i,j,k)*inner_prod(e1,ey)
+              call get_unit_vect2(p3, p4, e2) !C-grid V-wind unit vector
+              vc(i,j,k) = u_s_input(i,j,k)*inner_prod(e2,ex)+v_s_input(i,j,k)*inner_prod(e2,ey)
+            enddo
+            enddo
+!
+            do j=js_v,je_v
+              do i=is_v,ie_v
+                p1(:) = grid_reg(i,j  ,1:2)
+                p2(:) = grid_reg(i,j+1,1:2)
+                call  mid_pt_sphere(p1, p2, p3)
+                call get_unit_vect2(p1, p2, e2)
+                call get_latlon_vector(p3, ex, ey)
+                vd(i,j,k) = u_w_input(i,j,k)*inner_prod(e2,ex)+v_w_input(i,j,k)*inner_prod(e2,ey)
+                p4(:) = agrid_reg(i,j,1:2) ! cell centroid
+                call get_unit_vect2(p3, p4, e1) !C-grid U-wind unit vector
+                uc(i,j,k) = u_w_input(i,j,k)*inner_prod(e1,ex)+v_w_input(i,j,k)*inner_prod(e1,ey)
+              enddo
             enddo
           enddo
-        enddo
 !
-        call remap_dwinds_regional_bc(Atm                                  &
-   
-                                     ,is_input                             &  !<--
-                                     ,ie_input                             &  !  Index limits for scalars
-                                     ,js_input                             &  !  at center of north BC region grid cells.
-                                     ,je_input                             &  !<--
+          call remap_dwinds_regional_bc(Atm                                  &
 
-                                     ,is_u                                 &  !<--
-                                     ,ie_u                                 &  !  Index limits for u component
-                                     ,js_u                                 &  !  on north edge of BC region grid cells.
-                                     ,je_u                                 &  !<--
+                                       ,is_input                             &  !<--
+                                       ,ie_input                             &  !  Index limits for scalars
+                                       ,js_input                             &  !  at center of north BC region grid cells.
+                                       ,je_input                             &  !<--
 
-                                     ,is_v                                 &  !<--
-                                     ,ie_v                                 &  !  Index limits for v component
-                                     ,js_v                                 &  !  on north edge of BC region grid cells.
-                                     ,je_v                                 &  !<--
-   
-                                     ,klev_in, klev_out                    &  !<-- data / model levels
-                                     ,ak, bk                               &
+                                       ,is_u                                 &  !<--
+                                       ,ie_u                                 &  !  Index limits for u component
+                                       ,js_u                                 &  !  on north edge of BC region grid cells.
+                                       ,je_u                                 &  !<--
 
-                                     ,ps_reg                               &  !<-- BC values of sfc pressure
-                                     ,ud ,vd                               &  !<-- BC values of D-grid u and v
-                                     ,uc ,vc                               &  !<-- BC values of C-grid u and v
-                                     ,BC_t1%north )                           !<-- North BC vbls on final integration levels
+                                       ,is_v                                 &  !<--
+                                       ,ie_v                                 &  !  Index limits for v component
+                                       ,js_v                                 &  !  on north edge of BC region grid cells.
+                                       ,je_v                                 &  !<--
+
+                                       ,klev_in, klev_out                    &  !<-- data / model levels
+                                       ,ak, bk                               &
+
+                                       ,ps_reg                               &  !<-- BC values of sfc pressure
+                                       ,ud ,vd                               &  !<-- BC values of D-grid u and v
+                                       ,uc ,vc                               &  !<-- BC values of C-grid u and v
+                                       ,bc_side_t1 )                            !<-- North BC vbls on final integration levels
 
 !
-        deallocate(ud,vd,uc,vc)
+          deallocate(ud,vd,uc,vc)
 !
-      endif
+        endif
 !
 !-----------------------------------------------------------------------
-!***  Transform the D-grid wind components on the south side of
-!***  the regional domain then remap them from the input levels
-!***  to the integration levels.
+      enddo sides_winds
 !-----------------------------------------------------------------------
-!
-      if(south_bc)then
-!
-        is_u=Atm%regional_bc_bounds%is_south_uvs
-        ie_u=Atm%regional_bc_bounds%ie_south_uvs
-        js_u=Atm%regional_bc_bounds%js_south_uvs
-        je_u=Atm%regional_bc_bounds%je_south_uvs
-        is_v=Atm%regional_bc_bounds%is_south_uvw
-        ie_v=Atm%regional_bc_bounds%ie_south_uvw
-        js_v=Atm%regional_bc_bounds%js_south_uvw
-        je_v=Atm%regional_bc_bounds%je_south_uvw
-!
-        allocate(ud(is_u:ie_u,js_u:je_u,1:nlev)) ; ud=real_snan
-        allocate(vd(is_v:ie_v,js_v:je_v,1:nlev)) ; vd=real_snan
-        allocate(vc(is_u:ie_u,js_u:je_u,1:nlev)) ; vc=real_snan
-        allocate(uc(is_v:ie_v,js_v:je_v,1:nlev)) ; uc=real_snan
-!
-        do k=1,nlev
-          do j=js_u,je_u
-          do i=is_u,ie_u
-            p1(:) = grid_reg(i,  j,1:2)
-            p2(:) = grid_reg(i+1,j,1:2)
-            call  mid_pt_sphere(p1, p2, p3)
-            call get_unit_vect2(p1, p2, e1)
-            call get_latlon_vector(p3, ex, ey)
-            ud(i,j,k) = u_s_input(i,j,k)*inner_prod(e1,ex)+v_s_input(i,j,k)*inner_prod(e1,ey)
-            p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-            call get_unit_vect2(p3, p4, e2) !C-grid V-wind unit vector
-            vc(i,j,k) = u_s_input(i,j,k)*inner_prod(e2,ex)+v_s_input(i,j,k)*inner_prod(e2,ey)
-          enddo
-          enddo
-!
-          do j=js_v,je_v
-            do i=is_v,ie_v
-              p1(:) = grid_reg(i,j  ,1:2)
-              p2(:) = grid_reg(i,j+1,1:2)
-              call  mid_pt_sphere(p1, p2, p3)
-              call get_unit_vect2(p1, p2, e2)
-              call get_latlon_vector(p3, ex, ey)
-              vd(i,j,k) = u_w_input(i,j,k)*inner_prod(e2,ex)+v_w_input(i,j,k)*inner_prod(e2,ey)
-              p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-              call get_unit_vect2(p3, p4, e1) !C-grid U-wind unit vector
-              uc(i,j,k) = u_w_input(i,j,k)*inner_prod(e1,ex)+v_w_input(i,j,k)*inner_prod(e1,ey)
-            enddo
-          enddo
-        enddo
-!
-        call remap_dwinds_regional_bc(Atm                                  &
-   
-                                     ,is_input                             &  !<--
-                                     ,ie_input                             &  !  Index limits for scalars
-                                     ,js_input                             &  !  at center of south BC region grid cells.
-                                     ,je_input                             &  !<--
-
-                                     ,is_u                                 &  !<--
-                                     ,ie_u                                 &  !  Index limits for u component
-                                     ,js_u                                 &  !  on north edge of BC region grid cells.
-                                     ,je_u                                 &  !<--
-
-                                     ,is_v                                 &  !<--
-                                     ,ie_v                                 &  !  Index limits for v component
-                                     ,js_v                                 &  !  on east edge of BC region grid cells.
-                                     ,je_v                                 &  !<--
-   
-                                     ,klev_in, klev_out                    &  !<-- data / model levels
-                                     ,ak, bk                               &
-
-                                     ,ps_reg                               &  !<-- BC values of sfc pressure
-                                     ,ud, vd                               &  !<-- BC values of D-grid u and v
-                                     ,uc, vc                               &  !<-- BC values of C-grid u and v
-
-                                     ,BC_t1%south )                           !<-- South BC vbls on final integration levels
-!
-        deallocate(ud,vd,uc,vc)
-!
-      endif
-!
-!-----------------------------------------------------------------------
-!***  Transform the D-grid wind components on the east side of
-!***  the regional domain then remap them from the input levels
-!***  to the integration levels.
-!-----------------------------------------------------------------------
-!
-      if(east_bc)then
-!
-        is_u=Atm%regional_bc_bounds%is_east_uvs
-        ie_u=Atm%regional_bc_bounds%ie_east_uvs
-        js_u=Atm%regional_bc_bounds%js_east_uvs
-        je_u=Atm%regional_bc_bounds%je_east_uvs
-        is_v=Atm%regional_bc_bounds%is_east_uvw
-        ie_v=Atm%regional_bc_bounds%ie_east_uvw
-        js_v=Atm%regional_bc_bounds%js_east_uvw
-        je_v=Atm%regional_bc_bounds%je_east_uvw
-!
-        allocate(ud(is_u:ie_u,js_u:je_u,1:nlev)) ; ud=real_snan
-        allocate(vd(is_v:ie_v,js_v:je_v,1:nlev)) ; vd=real_snan
-        allocate(vc(is_u:ie_u,js_u:je_u,1:nlev)) ; vc=real_snan
-        allocate(uc(is_v:ie_v,js_v:je_v,1:nlev)) ; uc=real_snan
-!
-        do k=1,nlev
-          do j=js_u,je_u
-          do i=is_u,ie_u
-            p1(:) = grid_reg(i,  j,1:2)
-            p2(:) = grid_reg(i+1,j,1:2)
-            call  mid_pt_sphere(p1, p2, p3)
-            call get_unit_vect2(p1, p2, e1)
-            call get_latlon_vector(p3, ex, ey)
-            ud(i,j,k) = u_s_input(i,j,k)*inner_prod(e1,ex)+v_s_input(i,j,k)*inner_prod(e1,ey)
-            p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-            call get_unit_vect2(p3, p4, e2) !C-grid V-wind unit vector
-            vc(i,j,k) = u_s_input(i,j,k)*inner_prod(e2,ex)+v_s_input(i,j,k)*inner_prod(e2,ey)
-          enddo
-          enddo
-!
-!
-          do j=js_v,je_v
-            do i=is_v,ie_v
-              p1(:) = grid_reg(i,j  ,1:2)
-              p2(:) = grid_reg(i,j+1,1:2)
-              call  mid_pt_sphere(p1, p2, p3)
-              call get_unit_vect2(p1, p2, e2)
-              call get_latlon_vector(p3, ex, ey)
-              vd(i,j,k) = u_w_input(i,j,k)*inner_prod(e2,ex)+v_w_input(i,j,k)*inner_prod(e2,ey)
-              p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-              call get_unit_vect2(p3, p4, e1) !C-grid U-wind unit vector
-              uc(i,j,k) = u_w_input(i,j,k)*inner_prod(e1,ex)+v_w_input(i,j,k)*inner_prod(e1,ey)
-            enddo
-          enddo
-        enddo
-!
-        call remap_dwinds_regional_bc(Atm                                 &
-   
-                                     ,is_input                            &  !<--
-                                     ,ie_input                            &  !  Index limits for scalars
-                                     ,js_input                            &  !  at center of east BC region grid cells.
-                                     ,je_input                            &  !<--
-
-                                     ,is_u                                &  !<--
-                                     ,ie_u                                &  !  Index limits for u component
-                                     ,js_u                                &  !  on north edge of BC region grid cells.
-                                     ,je_u                                &  !<--
-
-                                     ,is_v                                &  !<--
-                                     ,ie_v                                &  !  Index limits for v component
-                                     ,js_v                                &  !  on east edge of BC region grid cells.
-                                     ,je_v                                &  !<--
-   
-                                     ,klev_in, klev_out                   &  !<-- data / model levels
-                                     ,ak, bk                              &
-
-                                     ,ps_reg                              &  !<-- BC values of sfc pressure
-                                     ,ud, vd                              &  !<-- BC values of D-grid u and v
-                                     ,uc, vc                              &  !<-- BC values of C-grid u and v
-
-                                     ,BC_t1%east )                           !<-- East BC vbls on final integration levels
-!
-        deallocate(ud,vd,uc,vc)
-!
-      endif
-!
-!-----------------------------------------------------------------------
-!***  Transform the D-grid wind components on the west side of
-!***  the regional domain then remap them from the input levels
-!***  to the integration levels.
-!-----------------------------------------------------------------------
-!
-      if(west_bc)then
-!
-        is_u=Atm%regional_bc_bounds%is_west_uvs
-        ie_u=Atm%regional_bc_bounds%ie_west_uvs
-        js_u=Atm%regional_bc_bounds%js_west_uvs
-        je_u=Atm%regional_bc_bounds%je_west_uvs
-        is_v=Atm%regional_bc_bounds%is_west_uvw
-        ie_v=Atm%regional_bc_bounds%ie_west_uvw
-        js_v=Atm%regional_bc_bounds%js_west_uvw
-        je_v=Atm%regional_bc_bounds%je_west_uvw
-!
-        allocate(ud(is_u:ie_u,js_u:je_u,1:nlev)) ; ud=real_snan
-        allocate(vd(is_v:ie_v,js_v:je_v,1:nlev)) ; vd=real_snan
-        allocate(vc(is_u:ie_u,js_u:je_u,1:nlev)) ; vc=real_snan
-        allocate(uc(is_v:ie_v,js_v:je_v,1:nlev)) ; uc=real_snan
-!
-        do k=1,nlev
-          do j=js_u,je_u
-          do i=is_u,ie_u
-            p1(:) = grid_reg(i,  j,1:2)
-            p2(:) = grid_reg(i+1,j,1:2)
-            call  mid_pt_sphere(p1, p2, p3)
-            call get_unit_vect2(p1, p2, e1)
-            call get_latlon_vector(p3, ex, ey)
-            ud(i,j,k) = u_s_input(i,j,k)*inner_prod(e1,ex)+v_s_input(i,j,k)*inner_prod(e1,ey)
-            p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-            call get_unit_vect2(p3, p4, e2) !C-grid V-wind unit vector
-            vc(i,j,k) = u_s_input(i,j,k)*inner_prod(e2,ex)+v_s_input(i,j,k)*inner_prod(e2,ey)
-          enddo
-          enddo
-!
-          do j=js_v,je_v
-            do i=is_v,ie_v
-              p1(:) = grid_reg(i,j  ,1:2)
-              p2(:) = grid_reg(i,j+1,1:2)
-              call  mid_pt_sphere(p1, p2, p3)
-              call get_unit_vect2(p1, p2, e2)
-              call get_latlon_vector(p3, ex, ey)
-              vd(i,j,k) = u_w_input(i,j,k)*inner_prod(e2,ex)+v_w_input(i,j,k)*inner_prod(e2,ey)
-              p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-              call get_unit_vect2(p3, p4, e1) !C-grid U-wind unit vector
-              uc(i,j,k) = u_w_input(i,j,k)*inner_prod(e1,ex)+v_w_input(i,j,k)*inner_prod(e1,ey)
-            enddo
-          enddo
-        enddo
-!
-        call remap_dwinds_regional_bc(Atm                                 &
-   
-                                     ,is_input                            &  !<--
-                                     ,ie_input                            &  !  Index limits for scalars
-                                     ,js_input                            &  !  at center of west BC region grid cells.
-                                     ,je_input                            &  !<--
-
-                                     ,is_u                                &  !<--
-                                     ,ie_u                                &  !  Index limits for u component
-                                     ,js_u                                &  !  on north edge of BC region grid cells.
-                                     ,je_u                                &  !<--
-
-                                     ,is_v                                &  !<--
-                                     ,ie_v                                &  !  Index limits for v component
-                                     ,js_v                                &  !  on east edge of BC region grid cells.
-                                     ,je_v                                &  !<--
-   
-                                     ,klev_in, klev_out                   &  !<-- data / model levels
-                                     ,ak, bk                              &
-
-                                     ,ps_reg                              &  !<-- BC values of sfc pressure
-                                     ,ud, vd                              &  !<-- BC values of D-grid u and v
-                                     ,uc, vc                              &  !<-- BC values of C-grid u and v
-
-                                     ,BC_t1%west )                           !<-- West BC vbls on final integration levels
-!
-        deallocate(ud,vd,uc,vc)
-!
-      endif
 !
 !-----------------------------------------------------------------------
 !***  Close the boundary file.
@@ -2104,6 +1894,9 @@ contains
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       if(allocated(ps_input))then
         deallocate(ps_input)
+      endif
+      if(allocated(t_input))then
+        deallocate(t_input)
       endif
       if(allocated(zh_input))then
         deallocate(zh_input)
@@ -2187,77 +1980,77 @@ contains
 !***  Local variables
 !--------------------
 !
-      integer :: i,ie,is,j,je,js,k
+      integer :: i,ie0,is0,j,je0,js0,k,nside
+!
+      logical :: call_set
 !
 !-----------------------------------------------------------------------
 !***********************************************************************
 !-----------------------------------------------------------------------
 !
-      if(north_bc)then
+!-----------------------------------------------------------------------
+!***  Loop through the four sides.
+!-----------------------------------------------------------------------
 !
-        is_north=lbound(BC_t1%north%divgd_BC,1)
-        ie_north=ubound(BC_t1%north%divgd_BC,1)
-        js_north=lbound(BC_t1%north%divgd_BC,2)
-        je_north=ubound(BC_t1%north%divgd_BC,2)
+      do nside=1,4
 !
-        do k=1,klev_out
-          do j=js_north,je_north
-          do i=is_north,ie_north
-            BC_t1%north%divgd_BC(i,j,k)=0.
+        call_set=.false.
+!
+        if(nside==1)then
+          if(north_bc)then
+            call_set=.true.
+            bc_side_t1=>BC_t1%north
+            is0=lbound(BC_t1%north%divgd_BC,1)
+            ie0=ubound(BC_t1%north%divgd_BC,1)
+            js0=lbound(BC_t1%north%divgd_BC,2)
+            je0=ubound(BC_t1%north%divgd_BC,2)
+          endif
+        endif
+!
+        if(nside==2)then
+          if(south_bc)then
+            call_set=.true.
+            bc_side_t1=>BC_t1%south
+            is0=lbound(BC_t1%south%divgd_BC,1)
+            ie0=ubound(BC_t1%south%divgd_BC,1)
+            js0=lbound(BC_t1%south%divgd_BC,2)
+            je0=ubound(BC_t1%south%divgd_BC,2)
+          endif
+        endif
+!
+        if(nside==3)then
+          if(east_bc)then
+            call_set=.true.
+            bc_side_t1=>BC_t1%east
+            is0=lbound(BC_t1%east%divgd_BC,1)
+            ie0=ubound(BC_t1%east%divgd_BC,1)
+            js0=lbound(BC_t1%east%divgd_BC,2)
+            je0=ubound(BC_t1%east%divgd_BC,2)
+          endif
+        endif
+!
+        if(nside==4)then
+          if(west_bc)then
+            call_set=.true.
+            bc_side_t1=>BC_t1%west
+            is0=lbound(BC_t1%west%divgd_BC,1)
+            ie0=ubound(BC_t1%west%divgd_BC,1)
+            js0=lbound(BC_t1%west%divgd_BC,2)
+            je0=ubound(BC_t1%west%divgd_BC,2)
+          endif
+        endif
+!
+        if(call_set)then
+          do k=1,klev_out
+            do j=js0,je0
+            do i=is0,ie0
+              bc_side_t1%divgd_BC(i,j,k)=0.
+            enddo
+            enddo
           enddo
-          enddo
-        enddo
+        endif
 !
-      endif
-
-      if(south_bc)then
-!
-        is_south=lbound(BC_t1%south%divgd_BC,1)
-        ie_south=ubound(BC_t1%south%divgd_BC,1)
-        js_south=lbound(BC_t1%south%divgd_BC,2)
-        je_south=ubound(BC_t1%south%divgd_BC,2)
-!
-        do k=1,klev_out
-          do j=js_south,je_south
-          do i=is_south,ie_south
-            BC_t1%south%divgd_BC(i,j,k)=0.
-          enddo
-          enddo
-        enddo
-      endif
-!
-      if(east_bc)then
-!
-        is_east=lbound(BC_t1%east%divgd_BC,1)
-        ie_east=ubound(BC_t1%east%divgd_BC,1)
-        js_east=lbound(BC_t1%east%divgd_BC,2)
-        je_east=ubound(BC_t1%east%divgd_BC,2)
-!
-        do k=1,klev_out
-          do j=js_east,je_east
-          do i=is_east,ie_east
-            BC_t1%east%divgd_BC(i,j,k)=0.
-          enddo
-          enddo
-        enddo
-!
-      endif
-!
-      if(west_bc)then
-!
-        is_west=lbound(BC_t1%west%divgd_BC,1)
-        ie_west=ubound(BC_t1%west%divgd_BC,1)
-        js_west=lbound(BC_t1%west%divgd_BC,2)
-        je_west=ubound(BC_t1%west%divgd_BC,2)
-!
-        do k=1,klev_out
-          do j=js_west,je_west
-          do i=is_west,ie_west
-            BC_t1%west%divgd_BC(i,j,k)=0.
-          enddo
-          enddo
-        enddo
-      endif
+      enddo
 !
 !-----------------------------------------------------------------------
 !
@@ -2281,77 +2074,76 @@ contains
 !***  Local variables
 !--------------------
 !
-      integer :: i,ie,is,j,je,js,k
+      integer :: i,ie0,is0,j,je0,js0,k,nside
+!
+      logical :: call_set
 !
 !-----------------------------------------------------------------------
 !***********************************************************************
 !-----------------------------------------------------------------------
 !
-      if(north_bc)then
+!-----------------------------------------------------------------------
+!***  Loop through the four sides.
+!-----------------------------------------------------------------------
 !
-        is_north=lbound(BC_t1%north%q_con_BC,1)
-        ie_north=ubound(BC_t1%north%q_con_BC,1)
-        js_north=lbound(BC_t1%north%q_con_BC,2)
-        je_north=ubound(BC_t1%north%q_con_BC,2)
+      do nside=1,4
+        call_set=.false.
 !
-        do k=1,klev_out
-          do j=js_north,je_north
-          do i=is_north,ie_north
-            BC_t1%north%q_con_BC(i,j,k)=BC_t1%north%q_BC(i,j,k,liq_water_index)
+        if(nside==1)then
+          if(north_bc)then
+            call_set=.true.
+            bc_side_t1=>BC_t1%north
+            is0=lbound(BC_t1%north%q_con_BC,1)
+            ie0=ubound(BC_t1%north%q_con_BC,1)
+            js0=lbound(BC_t1%north%q_con_BC,2)
+            je0=ubound(BC_t1%north%q_con_BC,2)
+          endif
+        endif
+!
+        if(nside==2)then
+          if(south_bc)then
+            call_set=.true.
+            bc_side_t1=>BC_t1%south
+            is0=lbound(BC_t1%south%q_con_BC,1)
+            ie0=ubound(BC_t1%south%q_con_BC,1)
+            js0=lbound(BC_t1%south%q_con_BC,2)
+            je0=ubound(BC_t1%south%q_con_BC,2)
+          endif
+        endif
+!
+        if(nside==3)then
+          if(east_bc)then
+            call_set=.true.
+            bc_side_t1=>BC_t1%east
+            is0=lbound(BC_t1%east%q_con_BC,1)
+            ie0=ubound(BC_t1%east%q_con_BC,1)
+            js0=lbound(BC_t1%east%q_con_BC,2)
+            je0=ubound(BC_t1%east%q_con_BC,2)
+          endif
+        endif
+!
+        if(nside==4)then
+          if(west_bc)then
+            call_set=.true.
+            bc_side_t1=>BC_t1%west
+            is0=lbound(BC_t1%west%q_con_BC,1)
+            ie0=ubound(BC_t1%west%q_con_BC,1)
+            js0=lbound(BC_t1%west%q_con_BC,2)
+            je0=ubound(BC_t1%west%q_con_BC,2)
+          endif
+        endif
+!
+        if(call_set)then
+          do k=1,klev_out
+            do j=js0,je0
+            do i=is0,ie0
+              bc_side_t1%q_con_BC(i,j,k)=bc_side_t1%q_BC(i,j,k,liq_water_index)
+            enddo
+            enddo
           enddo
-          enddo
-        enddo
+        endif
 !
-      endif
-
-      if(south_bc)then
-!
-        is_south=lbound(BC_t1%south%q_con_BC,1)
-        ie_south=ubound(BC_t1%south%q_con_BC,1)
-        js_south=lbound(BC_t1%south%q_con_BC,2)
-        je_south=ubound(BC_t1%south%q_con_BC,2)
-!
-        do k=1,klev_out
-          do j=js_south,je_south
-          do i=is_south,ie_south
-            BC_t1%south%q_con_BC(i,j,k)=BC_t1%south%q_BC(i,j,k,liq_water_index)
-          enddo
-          enddo
-        enddo
-      endif
-!
-      if(east_bc)then
-!
-        is_east=lbound(BC_t1%east%q_con_BC,1)
-        ie_east=ubound(BC_t1%east%q_con_BC,1)
-        js_east=lbound(BC_t1%east%q_con_BC,2)
-        je_east=ubound(BC_t1%east%q_con_BC,2)
-!
-        do k=1,klev_out
-          do j=js_east,je_east
-          do i=is_east,ie_east
-            BC_t1%east%q_con_BC(i,j,k)=BC_t1%east%q_BC(i,j,k,liq_water_index)
-          enddo
-          enddo
-        enddo
-!
-      endif
-
-      if(west_bc)then
-!
-        is_west=lbound(BC_t1%west%q_con_BC,1)
-        ie_west=ubound(BC_t1%west%q_con_BC,1)
-        js_west=lbound(BC_t1%west%q_con_BC,2)
-        je_west=ubound(BC_t1%west%q_con_BC,2)
-!
-        do k=1,klev_out
-          do j=js_west,je_west
-          do i=is_west,ie_west
-            BC_t1%west%q_con_BC(i,j,k)=BC_t1%west%q_BC(i,j,k,liq_water_index)
-          enddo
-          enddo
-        enddo
-      endif
+      enddo
 !
 !-----------------------------------------------------------------------
 !
@@ -2376,61 +2168,60 @@ contains
 !***  Local variables
 !---------------------
 !
-      integer :: i1,i2,j1,j2
+      integer :: i1,i2,j1,j2,nside
 !
       real,dimension(:,:,:),pointer :: cappa,temp,liq_wat,sphum
+!
+      logical :: call_compute
 !
 !-----------------------------------------------------------------------
 !***********************************************************************
 !-----------------------------------------------------------------------
 !
-      if(north_bc)then
-        i1=lbound(BC_t1%north%cappa_BC,1)
-        i2=ubound(BC_t1%north%cappa_BC,1)
-        j1=lbound(BC_t1%north%cappa_BC,2)
-        j2=ubound(BC_t1%north%cappa_BC,2)
-        cappa  =>BC_t1%north%cappa_BC
-        temp   =>BC_t1%north%pt_BC
-        liq_wat=>BC_t1%north%q_BC(:,:,:,liq_water_index)
-        sphum  =>BC_t1%north%q_BC(:,:,:,sphum_index)
-        call compute_cappa(i1,i2,j1,j2,cappa,temp,liq_wat,sphum)
-      endif
+      do nside=1,4
+        call_compute=.false.
 !
-      if(south_BC)then
-        i1=lbound(BC_t1%south%cappa_BC,1)
-        i2=ubound(BC_t1%south%cappa_BC,1)
-        j1=lbound(BC_t1%south%cappa_BC,2)
-        j2=ubound(BC_t1%south%cappa_BC,2)
-        cappa  =>BC_t1%south%cappa_BC
-        temp   =>BC_t1%south%pt_BC
-        liq_wat=>BC_t1%south%q_BC(:,:,:,liq_water_index)
-        sphum  =>BC_t1%south%q_BC(:,:,:,sphum_index)
-        call compute_cappa(i1,i2,j1,j2,cappa,temp,liq_wat,sphum)
-      endif
+        if(nside==1)then
+          if(north_bc)then
+            call_compute=.true.
+            bc_side_t1=>BC_t1%north
+          endif
+        endif
 !
-      if(east_bc)then
-        i1=lbound(BC_t1%east%cappa_BC,1)
-        i2=ubound(BC_t1%east%cappa_BC,1)
-        j1=lbound(BC_t1%east%cappa_BC,2)
-        j2=ubound(BC_t1%east%cappa_BC,2)
-        cappa  =>BC_t1%east%cappa_BC
-        temp   =>BC_t1%east%pt_BC
-        liq_wat=>BC_t1%east%q_BC(:,:,:,liq_water_index)
-        sphum  =>BC_t1%east%q_BC(:,:,:,sphum_index)
-        call compute_cappa(i1,i2,j1,j2,cappa,temp,liq_wat,sphum)
-      endif
+        if(nside==2)then
+          if(south_bc)then
+            call_compute=.true.
+            bc_side_t1=>BC_t1%south
+          endif
+        endif
 !
-      if(west_bc)then
-        i1=lbound(BC_t1%west%cappa_BC,1)
-        i2=ubound(BC_t1%west%cappa_BC,1)
-        j1=lbound(BC_t1%west%cappa_BC,2)
-        j2=ubound(BC_t1%west%cappa_BC,2)
-        cappa  =>BC_t1%west%cappa_BC
-        temp   =>BC_t1%west%pt_BC
-        liq_wat=>BC_t1%west%q_BC(:,:,:,liq_water_index)
-        sphum  =>BC_t1%west%q_BC(:,:,:,sphum_index)
-        call compute_cappa(i1,i2,j1,j2,cappa,temp,liq_wat,sphum)
-      endif
+        if(nside==3)then
+          if(east_bc)then
+            call_compute=.true.
+            bc_side_t1=>BC_t1%east
+          endif
+        endif
+!
+        if(nside==4)then
+          if(west_bc)then
+            call_compute=.true.
+            bc_side_t1=>BC_t1%west
+          endif
+        endif
+!
+        if(call_compute)then
+          i1=lbound(bc_side_t1%cappa_BC,1)
+          i2=ubound(bc_side_t1%cappa_BC,1)
+          j1=lbound(bc_side_t1%cappa_BC,2)
+          j2=ubound(bc_side_t1%cappa_BC,2)
+          cappa  =>bc_side_t1%cappa_BC
+          temp   =>bc_side_t1%pt_BC
+          liq_wat=>bc_side_t1%q_BC(:,:,:,liq_water_index)
+          sphum  =>bc_side_t1%q_BC(:,:,:,sphum_index)
+          call compute_cappa(i1,i2,j1,j2,cappa,temp,liq_wat,sphum)
+        endif
+!
+      enddo
 !
 !-----------------------------------------------------------------------
 !
@@ -2520,7 +2311,6 @@ contains
 !***  Read the boundary data from the external file generated by
 !***  chgres.
 !-----------------------------------------------------------------------
-      use netcdf
 !-----------------------------------------------------------------------
       implicit none
 !-----------------------------------------------------------------------
@@ -2538,7 +2328,7 @@ contains
 !
       integer,intent(in),optional :: tlev                                  !<-- Position of current tracer among all of them
 !
-      character(len= 7),intent(in) :: var_name_root                        !<-- Root of variable name in the boundary file
+      character(len= 60),intent(in) :: var_name_root                       !<-- Root of variable name in the boundary file
 !
 !------------
 !***  Output
@@ -2558,42 +2348,28 @@ contains
                 ,j_count,j_start_array,j_start_data,j_end_array
 !
       integer :: dim_id,nctype,ndims,var_id
+      integer :: nside,status
 !
       character(len=5) :: dim_name_x                                    &  !<-- Dimension names in
                          ,dim_name_y                                       !    the BC file
 !
-      character(len=20) :: var_name                                        !<-- Variable name in the boundary NetCDF file
+      character(len=80) :: var_name                                        !<-- Variable name in the boundary NetCDF file
+!
+      logical :: call_get_var
 !
 !-----------------------------------------------------------------------
 !***********************************************************************
 !-----------------------------------------------------------------------
 !
 !-----------------------------------------------------------------------
-!***  Set the dimension information for the given side of the domain.
+!***  Loop through the four sides of the domain.
 !-----------------------------------------------------------------------
 !
 !-----------------------------------------------------------------------
-!***  First consider the north and south sides of the regional domain.
-!***  Take care of the dimensions' names, IDs, and lengths.
+      sides: do nside=1,4
 !-----------------------------------------------------------------------
 !
-      if(north_bc)then
-!
-        dim_name_x='lon'
-        if(var_name_root=='u_w'.or.var_name_root=='v_w')then
-          dim_name_x='lonp'                                                !<-- Wind components on west/east sides of cells
-        endif
-!
-        call check(nf90_inq_dimid(ncid,dim_name_x,dim_id))                 !<-- Obtain the dimension ID of the x coordinate.
-        call check(nf90_inquire_dimension(ncid,dim_id,len=lon))            !<-- # of points in the x dimension (lon)
-!
-        dim_name_y='halo'
-        if(var_name_root=='u_s'.or.var_name_root=='v_s')then
-          dim_name_y='halop'                                               !<-- Wind components on south/north sides of cells
-        endif
-!
-        call check(nf90_inq_dimid(ncid,dim_name_y,dim_id))                 !<-- Obtain the dimension ID of the y coordinate.
-        call check(nf90_inquire_dimension(ncid,dim_id,len=halo))           !<-- # of points in the y dimension (halo)
+        call_get_var=.false.
 !
 !-----------------------------------------------------------------------
 !***  Construct the variable's name in the NetCDF file and set
@@ -2605,297 +2381,170 @@ contains
 !***  j_count datapoints in each direction.
 !-----------------------------------------------------------------------
 !
-        var_name=trim(var_name_root)//"_bottom"
+!-----------
+!***  North
+!-----------
 !
-        i_start_array=is_input
-        i_end_array  =ie_input
-        j_start_array=js_input
-        if(trim(var_name_root)=='u_s'.or.trim(var_name_root)=='v_s')then
-          j_end_array=js_input+nhalo_data
-        else
-          j_end_array  =js_input+nhalo_data-1
-        endif
+        if(nside==1)then
+          if(north_bc)then
+            call_get_var=.true.
 !
-        i_start_data=i_start_array+nhalo_data   !<-- File data begins at 1.
-        i_count=i_end_array-i_start_array+1
-        j_start_data=1
-        j_count=j_end_array-j_start_array+1
+            var_name=trim(var_name_root)//"_bottom"
 !
-!-----------------------------------------------------------------------
-!***  Fill this task's subset of north boundary data for
-!***  this 3-D or 4-D variable.
-!-----------------------------------------------------------------------
+            i_start_array=is_input
+            i_end_array  =ie_input
+            j_start_array=js_input
+            if(trim(var_name_root)=='u_s'.or.trim(var_name_root)=='v_s')then
+              j_end_array=js_input+nhalo_data
+            else
+              j_end_array=js_input+nhalo_data-1
+            endif
 !
-        call check(nf90_inq_varid(ncid,var_name,var_id))                   !<-- Get this variable's ID.
-!
-        if(present(array_4d))then   !<-- 4-D variable
-          call check(nf90_get_var(ncid,var_id                                         &
-                                 ,array_4d(i_start_array:i_end_array                  &  !<-- Fill this task's domain boundary halo.
-                                          ,j_start_array:j_end_array                  &
-                                          ,1:nlev, tlev)                              &
-                                          ,start=(/i_start_data,j_start_data,1,tlev/) &  !<-- Start reading the data array here.
-                                          ,count=(/i_count,j_count,nlev,1/)))            !<-- Extent of data to read in each dimension.
-!
-        else                         !<-- 3-D variable
-          call check(nf90_get_var(ncid,var_id                                    &
-                                 ,array_3d(i_start_array:i_end_array             &  !<-- Fill this task's domain boundary halo.
-                                          ,j_start_array:j_end_array             &
-                                          ,1:nlev)                               &
-                                          ,start=(/i_start_data,j_start_data,1/) &  !<-- Start reading the data array here.
-                                          ,count=(/i_count,j_count,nlev/)))         !<-- Extent of data to read in each dimension.
-        endif
-!
-      endif  ! north_bc
-!
-      if(south_bc)then
-!
-        dim_name_x='lon'
-        if(var_name_root=='u_w'.or.var_name_root=='v_w')then
-          dim_name_x='lonp'                                                !<-- Wind components on west/east sides of cells
-        endif
-!
-        call check(nf90_inq_dimid(ncid,dim_name_x,dim_id))                 !<-- Obtain the dimension ID of the x coordinate.
-        call check(nf90_inquire_dimension(ncid,dim_id,len=lon))            !<-- # of points in the x dimension (lon)
-!
-        dim_name_y='halo'
-        if(var_name_root=='u_s'.or.var_name_root=='v_s')then
-          dim_name_y='halop'                                               !<-- Wind components on south/north sides of cells
-        endif
-!
-        call check(nf90_inq_dimid(ncid,dim_name_y,dim_id))                 !<-- Obtain the dimension ID of the y coordinate.
-        call check(nf90_inquire_dimension(ncid,dim_id,len=halo))           !<-- # of points in the y dimension (halo)
-!
-!-----------------------------------------------------------------------
-!***  Construct the variable's name in the NetCDF file and set
-!***  the start locations and point counts for the data file and
-!***  for the BC arrays being filled.  The input array begins
-!***  receiving data at (i_start_array,j_start_array), etc.
-!***  The read of the data for the given input array begins at
-!***  (i_start_data,j_start_data) and encompasses i_count by
-!***  j_count datapoints in each direction.
-!-----------------------------------------------------------------------
-!
-        var_name=trim(var_name_root)//"_top"
-!
-        i_start_array=is_input
-        i_end_array  =ie_input
-        j_start_array=je_input-nhalo_data+1
-        j_end_array  =je_input
-!
-        i_start_data=i_start_array+nhalo_data   !<-- File data begins at 1.
-        i_count=i_end_array-i_start_array+1
-        j_start_data=1
-        j_count=j_end_array-j_start_array+1
-!
-!-----------------------------------------------------------------------
-!***  Fill this task's subset of south boundary data for
-!***  this 3-D or 4-D variable.
-!-----------------------------------------------------------------------
-!
-        call check(nf90_inq_varid(ncid,var_name,var_id))                   !<-- Get this variable's ID.
-!
-        if(present(array_4d))then   !<-- 4-D variable
-          call check(nf90_get_var(ncid,var_id                                         &
-                                 ,array_4d(i_start_array:i_end_array                  &  !<-- Fill this task's domain boundary halo.
-                                          ,j_start_array:j_end_array                  &
-                                          ,1:nlev, tlev)                              &
-                                          ,start=(/i_start_data,j_start_data,1,tlev/) &  !<-- Start reading the data array here.
-                                          ,count=(/i_count,j_count,nlev,1/)))            !<-- Extent of data to read in each dimension.
-!
-        else                         !<-- 3-D variable
-          call check(nf90_get_var(ncid,var_id                                    &
-                                 ,array_3d(i_start_array:i_end_array             &  !<-- Fill this task's domain boundary halo.
-                                          ,j_start_array:j_end_array             &
-                                          ,1:nlev)                               &
-                                          ,start=(/i_start_data,j_start_data,1/) &  !<-- Start reading the data array here.
-                                          ,count=(/i_count,j_count,nlev/)))         !<-- Extent of data to read in each dimension.
-        endif
-!
-      endif  ! south_bc
-!
-!-----------------------------------------------------------------------
-!***  Now consider the east and west sides of the regional domain.
-!***  Take care of the dimensions' names, IDs, and lengths.
-!-----------------------------------------------------------------------
-!
-      if(east_bc)then
-!
-        dim_name_x='halo'
-        if(var_name_root=='u_w'.or.var_name_root=='v_w')then
-          dim_name_x='halop'                                               !<-- Wind components on west/east sides of cells
-        endif
-!
-        call check(nf90_inq_dimid(ncid,dim_name_x,dim_id))                 !<-- Obtain the dimension ID of the x coordinate.
-        call check(nf90_inquire_dimension(ncid,dim_id,len=halo))           !<-- # of points in the x dimension (halo)
-!
-        dim_name_y='lat'
-        if(var_name_root=='u_s'.or.var_name_root=='v_s')then
-          dim_name_y='latm'                                                !<-- Wind components on south/north sides of cells
-!
-!-----------------------------------------------------------------------
-!***  Note that latm=lat-1.  The reason the y extent of u_s and v_s
-!***  is 1 less than the regular y extent of the west/east sides is
-!***  that the north/south pieces of data for those variables already
-!***  includes the values on both the south and north ends of the
-!***  west and east sides which reduces the total number of values
-!***  of u_s and v_s by 1.
-!-----------------------------------------------------------------------
-!
-        endif
-!
-        call check(nf90_inq_dimid(ncid,dim_name_y,dim_id))                 !<-- Obtain the dimension ID of the y coordinate.
-        call check(nf90_inquire_dimension(ncid,dim_id,len=lat))            !<-- # of points in the y dimension (lat)
-!
-!-----------------------------------------------------------------------
-!***  Construct the variable's name in the NetCDF file and set
-!***  the start locations and point counts in the data file and
-!***  in the BC arrays being filled.
-!-----------------------------------------------------------------------
-!
-        j_start_array=js_input
-        j_end_array  =je_input
-!
-        var_name=trim(var_name_root)//"_left"
-!
-        i_start_array=is_input
-!
-        if(var_name_root=='u_w'.or.var_name_root=='v_w')then
-          i_end_array=is_input+nhalo_data
-        else
-          i_end_array=is_input+nhalo_data-1
-        endif
-!
-        if(north_bc)then
-          if(var_name_root=='u_s'.or.var_name_root=='v_s')then
-            j_start_array=js_input+nhalo_data+1
-          else
-            j_start_array=js_input+nhalo_data
+            i_start_data=i_start_array+nhalo_data
+            i_count=i_end_array-i_start_array+1
+            j_start_data=1
+            j_count=j_end_array-j_start_array+1
           endif
         endif
-        if(south_bc)then
-          j_end_array  =je_input-nhalo_data
-        endif
 !
-        i_start_data=1
-        i_count=i_end_array-i_start_array+1
-        if(var_name_root=='u_s'.or.var_name_root=='v_s')then
-          j_start_data=j_start_array-1
-        else
-          j_start_data=j_start_array
-        endif
-        j_count=j_end_array-j_start_array+1
+!-----------
+!***  South
+!-----------
 !
-!-----------------------------------------------------------------------
-!***  Fill this task's subset of east boundary data.
-!-----------------------------------------------------------------------
+        if(nside==2)then
+          if(south_bc)then
+            call_get_var=.true.
 !
-        call check(nf90_inq_varid(ncid,var_name,var_id))                   !<-- Get this variable's ID.
+            var_name=trim(var_name_root)//"_top"
 !
-        if(present(array_4d))then    !<-- 4-D variable
-          call check(nf90_get_var(ncid,var_id                                         &
-                                 ,array_4d(i_start_array:i_end_array                  &  !<-- Fill this task's domain boundary halo.
-                                          ,j_start_array:j_end_array                  &
-                                          ,1:nlev, tlev)                              &
-                                          ,start=(/i_start_data,j_start_data,1,tlev/) &  !<-- Start reading the data array here.
-                                          ,count=(/i_count,j_count,nlev,1/)))            !<-- Extent of data to read in each dimension.
+            i_start_array=is_input
+            i_end_array  =ie_input
+            j_start_array=je_input-nhalo_data+1
+            j_end_array  =je_input
 !
-        else                         !<-- 3-D variable
-          call check(nf90_get_var(ncid,var_id                                  &
-                                 ,array_3d(i_start_array:i_end_array           &  !<-- Fill this task's domain boundary halo.
-                                          ,j_start_array:j_end_array           &
-                                          ,1:nlev)                             &
-                                          ,start=(/i_start_data,j_start_data/) &  !<-- Start reading the data array here.
-                                          ,count=(/i_count,j_count,nlev/)))       !<-- Extent of data to read in each dimension.
-        endif
-!
-      endif  ! east_bc
-!
-      if(west_bc)then
-!
-        dim_name_x='halo'
-        if(var_name_root=='u_w'.or.var_name_root=='v_w')then
-          dim_name_x='halop'                                               !<-- Wind components on west/east sides of cells
-        endif
-!
-        call check(nf90_inq_dimid(ncid,dim_name_x,dim_id))                 !<-- Obtain the dimension ID of the x coordinate.
-        call check(nf90_inquire_dimension(ncid,dim_id,len=halo))           !<-- # of points in the x dimension (halo)
-!
-        dim_name_y='lat'
-        if(var_name_root=='u_s'.or.var_name_root=='v_s')then
-          dim_name_y='latm'                                                !<-- Wind components on south/north sides of cells
-!
-!-----------------------------------------------------------------------
-!***  Note that latm=lat-1.  The reason the y extent of u_s and v_s
-!***  is 1 less than the regular y extent of the west/east sides is
-!***  that the north/south pieces of data for those variables already
-!***  includes the values on both the south and north ends of the
-!***  west and east sides which reduces the total number of values
-!***  of u_s and v_s by 1.
-!-----------------------------------------------------------------------
-!
-        endif
-!
-        call check(nf90_inq_dimid(ncid,dim_name_y,dim_id))                 !<-- Obtain the dimension ID of the y coordinate.
-        call check(nf90_inquire_dimension(ncid,dim_id,len=lat))            !<-- # of points in the y dimension (lat)
-!
-!-----------------------------------------------------------------------
-!***  Construct the variable's name in the NetCDF file and set
-!***  the start locations and point counts in the data file and
-!***  in the BC arrays being filled.
-!-----------------------------------------------------------------------
-!
-        j_start_array=js_input
-        j_end_array  =je_input
-!
-        var_name=trim(var_name_root)//"_right"
-!
-        i_start_array=ie_input-nhalo_data+1
-        i_end_array=ie_input
-!
-        if(north_bc)then
-          if(var_name_root=='u_s'.or.var_name_root=='v_s')then
-            j_start_array=js_input+nhalo_data+1
-          else
-            j_start_array=js_input+nhalo_data
+            i_start_data=i_start_array+nhalo_data
+            i_count=i_end_array-i_start_array+1
+            j_start_data=1
+            j_count=j_end_array-j_start_array+1
           endif
         endif
-        if(south_bc)then
-          j_end_array  =je_input-nhalo_data
+!
+!----------
+!***  East
+!----------
+!
+        if(nside==3)then
+          if(east_bc)then
+            call_get_var=.true.
+!
+            var_name=trim(var_name_root)//"_left"
+!
+            j_start_array=js_input
+            j_end_array  =je_input
+!
+            i_start_array=is_input
+!
+            if(trim(var_name_root)=='u_w'.or.trim(var_name_root)=='v_w')then
+              i_end_array=is_input+nhalo_data
+            else
+              i_end_array=is_input+nhalo_data-1
+            endif
+!
+            if(north_bc)then
+              if(trim(var_name_root)=='u_s'.or.trim(var_name_root)=='v_s')then
+                j_start_array=js_input+nhalo_data+1
+              else
+                j_start_array=js_input+nhalo_data
+              endif
+            endif
+            if(south_bc)then
+              j_end_array  =je_input-nhalo_data
+            endif
+!
+            i_start_data=1
+            i_count=i_end_array-i_start_array+1
+            if(trim(var_name_root)=='u_s'.or.trim(var_name_root)=='v_s')then
+              j_start_data=j_start_array-1
+            else
+              j_start_data=j_start_array
+            endif
+            j_count=j_end_array-j_start_array+1
+          endif
         endif
 !
-        i_start_data=1
-        i_count=i_end_array-i_start_array+1
-        if(var_name_root=='u_s'.or.var_name_root=='v_s')then
-          j_start_data=j_start_array-1
-        else
-          j_start_data=j_start_array
+!----------
+!***  West
+!----------
+!
+        if(nside==4)then
+          if(west_bc)then
+            call_get_var=.true.
+!
+            var_name=trim(var_name_root)//"_right"
+!
+            j_start_array=js_input
+            j_end_array  =je_input
+!
+            i_start_array=ie_input-nhalo_data+1
+            i_end_array=ie_input
+!
+            if(north_bc)then
+              if(trim(var_name_root)=='u_s'.or.trim(var_name_root)=='v_s')then
+                j_start_array=js_input+nhalo_data+1
+              else
+                j_start_array=js_input+nhalo_data
+              endif
+            endif
+!
+            if(south_bc)then
+              j_end_array  =je_input-nhalo_data
+            endif
+!
+            i_start_data=1
+            i_count=i_end_array-i_start_array+1
+            if(trim(var_name_root)=='u_s'.or.trim(var_name_root)=='v_s')then
+              j_start_data=j_start_array-1
+            else
+              j_start_data=j_start_array
+            endif
+            j_count=j_end_array-j_start_array+1
+          endif
         endif
-        j_count=j_end_array-j_start_array+1
 !
 !-----------------------------------------------------------------------
-!***  Fill this task's subset of east or west boundary data.
+!***  Fill this task's subset of boundary data for this 3-D
+!***  or 4-D variable.  If the variable is a tracer then
+!***  check if it is present in the input data.  If it is
+!***  not then print a warning and set it to zero.
 !-----------------------------------------------------------------------
 !
-        call check(nf90_inq_varid(ncid,var_name,var_id))                   !<-- Get this variable's ID.
+        if(call_get_var)then
+          if (present(array_4d)) then   !<-- 4-D variable
+            status=nf90_inq_varid(ncid,trim(var_name),var_id)
+            if (status /= nf90_noerr) then
+              if (east_bc) write(0,*)' WARNING: Tracer ',trim(var_name),' not in input file'
+              array_4d(:,:,:,tlev)=0.                                        !<-- Tracer not in input so set to zero in boundary.
+            else
+              call check(nf90_get_var(ncid,var_id                                         &
+                                     ,array_4d(i_start_array:i_end_array                  &  !<-- Fill this task's domain boundary halo.
+                                              ,j_start_array:j_end_array                  &
+                                              ,1:nlev, tlev)                              &
+                                              ,start=(/i_start_data,j_start_data,1,tlev/) &  !<-- Start reading the data array here.
+                                              ,count=(/i_count,j_count,nlev,1/)))            !<-- Extent of data to read in each dimension.
+            endif
 !
-        if(present(array_4d))then   !<-- 4-D variable
-          call check(nf90_get_var(ncid,var_id                                         &
-                                 ,array_4d(i_start_array:i_end_array                  &  !<-- Fill this task's domain boundary halo.
-                                          ,j_start_array:j_end_array                  &
-                                          ,1:nlev, tlev)                              &
-                                          ,start=(/i_start_data,j_start_data,1,tlev/) &  !<-- Start reading the data array here.
-                                          ,count=(/i_count,j_count,nlev,1/)))            !<-- Extent of data to read in each dimension.
-!
-        else                         !<-- 3-D variable
-          call check(nf90_get_var(ncid,var_id                                  &
-                                 ,array_3d(i_start_array:i_end_array           &  !<-- Fill this task's domain boundary halo.
-                                          ,j_start_array:j_end_array           &
-                                          ,1:nlev)                             &
-                                          ,start=(/i_start_data,j_start_data/) &  !<-- Start reading the data array here.
-                                          ,count=(/i_count,j_count,nlev/)))       !<-- Extent of data to read in each dimension.
+          else                         !<-- 3-D variable
+            call check(nf90_inq_varid(ncid,trim(var_name),var_id))                    !<-- Get this variable's ID.
+            call check(nf90_get_var(ncid,var_id                                    &
+                                   ,array_3d(i_start_array:i_end_array             &  !<-- Fill this task's domain boundary halo.
+                                            ,j_start_array:j_end_array             &
+                                            ,1:nlev)                               &
+                                            ,start=(/i_start_data,j_start_data,1/) &  !<-- Start reading the data array here.
+                                            ,count=(/i_count,j_count,nlev/)))         !<-- Extent of data to read in each dimension.
+          endif
         endif
 !
-      endif  ! west_bc
+      enddo sides
 !
 !-----------------------------------------------------------------------
 !
@@ -2906,7 +2555,6 @@ contains
 !-----------------------------------------------------------------------
 !
       subroutine check(status)
-      use netcdf
       integer,intent(in) :: status
 !
       if(status /= nf90_noerr) then
@@ -3003,7 +2651,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                          ,isd,ied,jsd,jed             &
                                          ,is_bc,ie_bc,js_bc,je_bc     &
                                          ,km, npz, ncnst, ak0, bk0    &
-                                         ,psc, qa, omga, zh           &
+                                         ,psc, t_in, qa, omga, zh     &
                                          ,phis_reg                    &
                                          ,ps                          &
                                          ,BC_side )
@@ -3016,6 +2664,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                        ,ncnst                    !<-- # of tracer variables
   real,    intent(in):: ak0(km+1), bk0(km+1)
   real,    intent(in), dimension(is_bc:ie_bc,js_bc:je_bc):: psc
+  real,    intent(in), dimension(is_bc:ie_bc,js_bc:je_bc,km):: t_in
   real,    intent(in), dimension(is_bc:ie_bc,js_bc:je_bc,km):: omga
   real,    intent(in), dimension(is_bc:ie_bc,js_bc:je_bc,km,ncnst):: qa
   real,    intent(in), dimension(is_bc:ie_bc,js_bc:je_bc,km+1):: zh
@@ -3043,7 +2692,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
   real(kind=R_GRID), dimension(is_bc:ie_bc,km+1):: pn0
   real(kind=R_GRID):: pst
 !!! High-precision
-  integer i,ie,is,je,js,k,l,m, k2,iq
+  integer i,ie,is,j,je,js,k,l,m, k2,iq
   integer  sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt
 !
 !---------------------------------------------------------------------------------
@@ -3197,6 +2846,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
 ! map shpum, o3mr, liq_wat tracers
       do iq=1,ncnst
+!       if (iq == sphum .or. iq == liq_wat .or.  iq == o3mr) then ! only remap if the data is already set
+       if (iq /= cld_amt) then ! don't remap cld_amt
          do k=1,km
             do i=is,ie
                qp(i,k) = qa(i,j,k,iq)
@@ -3206,7 +2857,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
          call mappm(km, pe0, qp, npz, pe1,  qn1, is,ie, 0, 8, Atm%ptop)
 
          if ( iq==sphum ) then
-         call fillq(ie-is+1, npz, 1, qn1, dp2)
+            call fillq(ie-is+1, npz, 1, qn1, dp2)
          else
             call fillz(ie-is+1, npz, 1, qn1, dp2)
          endif
@@ -3216,58 +2867,60 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
              BC_side%q_BC(i,j,k,iq) = qn1(i,k)
            enddo
          enddo
+!jaa       endif ! for remapping only the tracers included in the data that is read in
+       endif ! skip cld_amt in the remap since it is not included in the input
       enddo
 
 !---------------------------------------------------
 ! Retrieve temperature using GFS geopotential height
 !---------------------------------------------------
 !
-   i_loop: do i=is,ie
+      i_loop: do i=is,ie
 !
 ! Make sure FV3 top is lower than GFS; can not do extrapolation above the top at this point
-      if ( pn1(i,1) .lt. pn0(i,1) ) then
-           call mpp_error(FATAL,'FV3 top higher than NCEP/GFS')
-      endif
+        if ( pn1(i,1) .lt. pn0(i,1) ) then
+          call mpp_error(FATAL,'FV3 top higher than NCEP/GFS')
+        endif
 
-      do k=1,km+1
-         pn(k) = pn0(i,k)
-         gz(k) = zh(i,j,k)*grav
-      enddo
+        do k=1,km+1
+           pn(k) = pn0(i,k)
+           gz(k) = zh(i,j,k)*grav
+        enddo
 !-------------------------------------------------
-      do k=km+2, km+k2
-         l = 2*(km+1) - k
-         gz(k) = 2.*gz(km+1) - gz(l)
-         pn(k) = 2.*pn(km+1) - pn(l)
-      enddo
+        do k=km+2, km+k2
+           l = 2*(km+1) - k
+           gz(k) = 2.*gz(km+1) - gz(l)
+           pn(k) = 2.*pn(km+1) - pn(l)
+        enddo
 !-------------------------------------------------
 
-      gz_fv(npz+1) = phis_reg(i,j)
+        gz_fv(npz+1) = phis_reg(i,j)
 
-      m = 1
+        m = 1
 
-      do k=1,npz
+        do k=1,npz
 ! Searching using FV3 log(pe): pn1
 #ifdef USE_ISOTHERMO
-         do l=m,km
-            if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
-                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
-                goto 555
-            elseif ( pn1(i,k) .gt. pn(km+1) ) then
+           do l=m,km
+              if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
+                  gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
+                  goto 555
+              elseif ( pn1(i,k) .gt. pn(km+1) ) then
 ! Isothermal under ground; linear in log-p extra-polation
-                gz_fv(k) = gz(km+1) + (gz_fv(npz+1)-gz(km+1))*(pn1(i,k)-pn(km+1))/(pn1(i,npz+1)-pn(km+1))
-                goto 555
-            endif
-         enddo
+                  gz_fv(k) = gz(km+1) + (gz_fv(npz+1)-gz(km+1))*(pn1(i,k)-pn(km+1))/(pn1(i,npz+1)-pn(km+1))
+                  goto 555
+              endif
+           enddo
 #else
-         do l=m,km+k2-1
-            if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
-                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
-                goto 555
-            endif
-         enddo
+           do l=m,km+k2-1
+              if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
+                  gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
+                  goto 555
+              endif
+           enddo
 #endif
-555   m = l
-      enddo
+555     m = l
+        enddo
 
 !xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 !xxx  DO WE NEED Atm%peln to have values in the boundary region?
@@ -3277,24 +2930,35 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !xxx     Atm%peln(i,k,j) = pn1(i,k)
 !xxx  enddo
 
-! Compute true temperature using hydrostatic balance
-      do k=1,npz
-        BC_side%pt_BC(i,j,k) = (gz_fv(k)-gz_fv(k+1))/( rdgas*(pn1(i,k+1)-pn1(i,k))*(1.+zvir*BC_side%q_BC(i,j,k,sphum)) )
-      enddo
+! Compute true temperature using hydrostatic balance if not read from input.
 
-      if ( .not. Atm%flagstruct%hydrostatic ) then
-         do k=1,npz
+        if (data_source /= 'FV3GFS GAUSSIAN NEMSIO FILE') then
+          do k=1,npz
+            BC_side%pt_BC(i,j,k) = (gz_fv(k)-gz_fv(k+1))/( rdgas*(pn1(i,k+1)-pn1(i,k))*(1.+zvir*BC_side%q_BC(i,j,k,sphum)) )
+          enddo
+        endif
+
+
+        if ( .not. Atm%flagstruct%hydrostatic ) then
+          do k=1,npz
             BC_side%delz_BC(i,j,k) = (gz_fv(k+1) - gz_fv(k)) / grav
-         enddo
-      endif
+          enddo
+        endif
 
-   enddo i_loop
+      enddo i_loop
 
 !-----------------------------------------------------------------------
 ! seperate cloud water and cloud ice
 ! From Jan-Huey Chen's HiRAM code
 !-----------------------------------------------------------------------
-
+!
+! If the source is FV3GFS GAUSSIAN NEMSIO FILE then all the tracers are in the boundary files
+! and will be read in.
+! If the source is from old GFS or operational GSM then the tracers will be fixed in the boundaries
+! and may not provide a very good result
+! 
+!  if (cld_amt .gt. 0) BC_side%q_BC(:,:,:,cld_amt) = 0.
+  if (trim(data_source) /= 'FV3GFS GAUSSIAN NEMSIO FILE') then
    if ( Atm%flagstruct%nwat .eq. 6 ) then
       do k=1,npz
          do i=is,ie
@@ -3302,7 +2966,6 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
             BC_side%q_BC(i,j,k,rainwat) = 0.
             BC_side%q_BC(i,j,k,snowwat) = 0.
             BC_side%q_BC(i,j,k,graupel) = 0.
-            if (cld_amt .gt. 0) BC_side%q_BC(i,j,k,cld_amt) = 0.
             if ( BC_side%pt_BC(i,j,k) > 273.16 ) then       ! > 0C all liq_wat
                BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)
                BC_side%q_BC(i,j,k,ice_wat) = 0.
@@ -3338,7 +3001,11 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
          enddo
       enddo
    endif
-
+  endif ! data source /= FV3GFS GAUSSIAN NEMSIO FILE
+!
+! For GFS spectral input, omega in pa/sec is stored as w in the input data so actual w(m/s) is calculated
+! For GFS nemsio input, omega is 0, so best not to use for input since boundary data will not exist for w
+! For FV3GFS NEMSIO input, w is already in m/s (but the code reads in as omga) and just needs to be remapped
 !-------------------------------------------------------------
 ! map omega
 !------- ------------------------------------------------------
@@ -3348,13 +3015,41 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
             qp(i,k) = omga(i,j,k)
          enddo
       enddo
-       call mappm(km, pe0, qp, npz, pe1, qn1, is,ie, -1, 4, Atm%ptop)
-      do k=1,npz
-         do i=is,ie
+
+      call mappm(km, pe0, qp, npz, pe1, qn1, is,ie, -1, 4, Atm%ptop)
+
+      if (data_source == 'FV3GFS GAUSSIAN NEMSIO FILE') then
+        do k=1,npz
+          do i=is,ie
+            BC_side%w_BC(i,j,k) = qn1(i,k)
+          enddo
+        enddo
+!------------------------------
+! Remap input T linearly in p.
+!------------------------------
+        do k=1,km
+          do i=is,ie
+            qp(i,k) = t_in(i,j,k)
+          enddo
+        enddo
+
+        call mappm(km, pe0, qp, npz, pe1, qn1, is,ie, 2, 4, Atm%ptop)
+
+        do k=1,npz
+          do i=is,ie
+            BC_side%pt_BC(i,j,k) = qn1(i,k)
+          enddo
+        enddo
+
+      else          !<-- datasource /= 'FV3GFS GAUSSIAN NEMSIO FILE'
+        do k=1,npz
+          do i=is,ie
             BC_side%w_BC(i,j,k) = qn1(i,k)/BC_side%delp_BC(i,j,k)*BC_side%delz_BC(i,j,k)
-         enddo
-      enddo
-   endif
+          enddo
+        enddo
+      endif
+
+   endif   !.not. Atm%flagstruct%hydrostatic
 
    enddo jloop2
 
@@ -3512,7 +3207,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 #endif
                                  ,q                                   &
                                  ,u,v,uc,vc                           &
-                                 ,bd, nlayers, ntracers               &
+                                 ,bd, nlayers                         &
                                  ,fcst_time )
 !
 !---------------------------------------------------------------------
@@ -3528,7 +3223,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  Input variables
 !--------------------
 !
-      integer,intent(in) :: nlayers, ntracers
+      integer,intent(in) :: nlayers
 !
       real,intent(in) :: fcst_time                                       !<-- Current forecast time (sec)
 !
@@ -3841,8 +3536,11 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       integer :: i1,i2,j1,j2                                             !<-- Horizontal limits of region updated.
       integer :: lbnd1,ubnd1,lbnd2,ubnd2                                 !<-- Horizontal limits of BC update arrays.
       integer :: iq                                                      !<-- Tracer index
+      integer :: nside
 !
       real,dimension(:,:,:),pointer :: bc_t0,bc_t1                       !<-- Boundary data at the two bracketing times.
+!
+      logical :: call_interp
 !
 !---------------------------------------------------------------------
 !*********************************************************************
@@ -3858,158 +3556,148 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       endif
 !
 !---------------------------------------------------------------------
+!***  Loop through the sides of the domain and find the limits
+!***  of the region to update in the boundary.
+!---------------------------------------------------------------------
+!
+!---------------------------------------------------------------------
+      sides: do nside=1,4
+!---------------------------------------------------------------------
+!
+        call_interp=.false.
+!
+!-----------
+!***  North
+!-----------
+!
+        if(nside==1)then
+          if(north_bc)then
+            call_interp=.true.
+            bc_side_t0=>bc_north_t0
+            bc_side_t1=>bc_north_t1
+!
+            i1=isd
+            i2=ied
+            if(trim(bc_vbl_name)=='uc'.or.trim(bc_vbl_name)=='v')then
+              i2=ied+1
+            endif
+!
+            j1=jsd
+            j2=js-1
+          endif
+        endif
+!
+!-----------
+!***  South
+!-----------
+!
+        if(nside==2)then
+          if(south_bc)then
+            call_interp=.true.
+            bc_side_t0=>bc_south_t0
+            bc_side_t1=>bc_south_t1
+!
+            i1=isd
+            i2=ied
+            if(trim(bc_vbl_name)=='uc'.or.trim(bc_vbl_name)=='v')then
+              i2=ied+1
+            endif
+!
+            j1=je+1
+            j2=jed
+            if(trim(bc_vbl_name)=='u'.or.trim(bc_vbl_name)=='vc')then
+              j1=je+2
+              j2=jed+1
+            endif
+          endif
+        endif
+!
+!----------
+!***  East
+!----------
+!
+        if(nside==3)then
+          if(east_bc)then
+            call_interp=.true.
+            bc_side_t0=>bc_east_t0
+            bc_side_t1=>bc_east_t1
+!
+            j1=jsd
+            j2=jed
+!
+            i1=isd
+            i2=is-1
+!
+            if(north_bc)then
+              j1=js
+            endif
+            if(south_bc)then
+              j2=je
+              if(trim(bc_vbl_name)=='u'.or.trim(bc_vbl_name)=='vc')then
+                j2=je+1
+              endif
+            endif
+          endif
+        endif
+!
+!----------
+!***  West
+!----------
+!
+        if(nside==4)then
+          if(west_bc)then
+            call_interp=.true.
+            bc_side_t0=>bc_west_t0
+            bc_side_t1=>bc_west_t1
+!
+            j1=jsd
+            j2=jed
+!
+            i1=ie+1
+            i2=ied
+            if(trim(bc_vbl_name)=='uc'.or.trim(bc_vbl_name)=='v')then
+              i1=ie+2
+              i2=ied+1
+            endif
+!
+            if(north_bc)then
+              j1=js
+            endif
+            if(south_bc)then
+              j2=je
+              if(trim(bc_vbl_name)=='u'.or.trim(bc_vbl_name)=='vc')then
+                j2=je+1
+              endif
+            endif
+          endif
+        endif
+!
+!---------------------------------------------------------------------
 !***  Get the pointers pointing at the boundary arrays holding the
 !***  two time levels of the given prognostic array's boundary region
 !***  then update the boundary points.
-!***  Start with tasks on the north or south side of the domain.
 !---------------------------------------------------------------------
 !
-      if(north_bc)then
+        if(call_interp)then
 !
-        call retrieve_bc_variable_data(bc_vbl_name                    &
-!                                     ,BC_t0%north,BC_t1%north        &
-                                      ,bc_north_t0,bc_north_t1        &  !<-- Boundary data objects
-                                      ,bc_t0,bc_t1                    &  !<-- Pointer to boundary arrays
-                                      ,lbnd1,ubnd1,lbnd2,ubnd2        &  !<-- Bounds of the boundary data objects
-                                      ,iq )
-!-----------------------------------------------------
-!***  Limits of the region to update in the boundary.
-!-----------------------------------------------------
+          call retrieve_bc_variable_data(bc_vbl_name                  &
+                                        ,bc_side_t0,bc_side_t1        &  !<-- Boundary data objects
+                                        ,bc_t0,bc_t1                  &  !<-- Pointer to boundary arrays
+                                        ,lbnd1,ubnd1,lbnd2,ubnd2      &  !<-- Bounds of the boundary data objects
+                                        ,iq )
 !
-        i1=isd
-        i2=ied
-        if(trim(bc_vbl_name)=='uc'.or.trim(bc_vbl_name)=='v')then
-          i2=ied+1
+          call bc_time_interpolation(array                               &
+                                    ,lbnd_x,ubnd_x,lbnd_y,ubnd_y,ubnd_z  &
+                                    ,bc_t0,bc_t1                         &
+                                    ,lbnd1,ubnd1,lbnd2,ubnd2             &
+                                    ,i1,i2,j1,j2                         &
+                                    ,fcst_time                           &
+                                    ,bc_update_interval )
         endif
-!
-        j1=jsd
-        j2=js-1
-!
-        call bc_time_interpolation(array                               &
-                                  ,lbnd_x,ubnd_x,lbnd_y,ubnd_y,ubnd_z  &
-                                  ,bc_t0,bc_t1                         &
-                                  ,lbnd1,ubnd1,lbnd2,ubnd2             &
-                                  ,i1,i2,j1,j2                         &
-                                  ,fcst_time                           &
-                                  ,bc_update_interval )
-!
-      endif
-!
-      if(south_bc)then
-!
-        call retrieve_bc_variable_data(bc_vbl_name                    &
-!                                     ,BC_t0%south,BC_t1%south        &
-                                      ,bc_south_t0,bc_south_t1        &  !<-- Boundary data objects
-                                      ,bc_t0,bc_t1                    &  !<-- Pointer to boundary arrays
-                                      ,lbnd1,ubnd1,lbnd2,ubnd2        &  !<-- Bounds of the boundary data objects
-                                      ,iq )
-!-----------------------------------------------------
-!***  Limits of the region to update in the boundary.
-!-----------------------------------------------------
-!
-        i1=isd
-        i2=ied
-        if(trim(bc_vbl_name)=='uc'.or.trim(bc_vbl_name)=='v')then
-          i2=ied+1
-        endif
-!
-        j1=je+1
-        j2=jed
-        if(trim(bc_vbl_name)=='u'.or.trim(bc_vbl_name)=='vc')then
-          j1=je+2
-          j2=jed+1
-        endif
-!
-        call bc_time_interpolation(array                               &
-                                  ,lbnd_x,ubnd_x,lbnd_y,ubnd_y,ubnd_z  &
-                                  ,bc_t0,bc_t1                         &
-                                  ,lbnd1,ubnd1,lbnd2,ubnd2             &
-                                  ,i1,i2,j1,j2                         &
-                                  ,fcst_time                           &
-                                  ,bc_update_interval )
-!
-      endif
 !
 !---------------------------------------------------------------------
-!***  Now update the west and east sides of the domain.
+      enddo sides
 !---------------------------------------------------------------------
-      if(east_bc)then
-!
-        call retrieve_bc_variable_data(bc_vbl_name                    &
-!                                     ,BC_t0%east,BC_t1%east          &
-                                      ,bc_east_t0,bc_east_t1          &  !<-- Boundary data objects
-                                      ,bc_t0,bc_t1                    &  !<-- Pointer to boundary arrays
-                                      ,lbnd1,ubnd1,lbnd2,ubnd2        &  !<-- Bounds of the boundary data objects
-                                      ,iq )
-!-----------------------------------------------------
-!***  Limits of the region to update in the boundary.
-!-----------------------------------------------------
-!
-        j1=jsd
-        j2=jed
-!
-        i1=isd
-        i2=is-1
-!
-        if(north_bc)then
-          j1=js
-        endif
-        if(south_bc)then
-          j2=je
-          if(trim(bc_vbl_name)=='u'.or.trim(bc_vbl_name)=='vc')then
-            j2=je+1
-          endif
-        endif
-!
-        call bc_time_interpolation(array                               &
-                                  ,lbnd_x,ubnd_x,lbnd_y,ubnd_y,ubnd_z  &
-                                  ,bc_t0,bc_t1                         &
-                                  ,lbnd1,ubnd1,lbnd2,ubnd2             &
-                                  ,i1,i2,j1,j2                         &
-                                  ,fcst_time                           &
-                                  ,bc_update_interval )
-      endif  ! east_bc
-!
-      if(west_bc)then
-!
-        call retrieve_bc_variable_data(bc_vbl_name                    &
-!                                     ,BC_t0%west,BC_t1%west          &
-                                      ,bc_west_t0,bc_west_t1          &  !<-- Boundary data objects
-                                      ,bc_t0,bc_t1                    &  !<-- Pointer to boundary arrays
-                                      ,lbnd1,ubnd1,lbnd2,ubnd2        &  !<-- Bounds of the boundary data objects
-                                      ,iq )
-!-----------------------------------------------------
-!***  Limits of the region to update in the boundary.
-!-----------------------------------------------------
-!
-        j1=jsd
-        j2=jed
-!
-        i1=ie+1
-        i2=ied
-        if(trim(bc_vbl_name)=='uc'.or.trim(bc_vbl_name)=='v')then
-          i1=ie+2
-          i2=ied+1
-        endif
-!
-        if(north_bc)then
-          j1=js
-        endif
-        if(south_bc)then
-          j2=je
-          if(trim(bc_vbl_name)=='u'.or.trim(bc_vbl_name)=='vc')then
-            j2=je+1
-          endif
-        endif
-!
-        call bc_time_interpolation(array                               &
-                                  ,lbnd_x,ubnd_x,lbnd_y,ubnd_y,ubnd_z  &
-                                  ,bc_t0,bc_t1                         &
-                                  ,lbnd1,ubnd1,lbnd2,ubnd2             &
-                                  ,i1,i2,j1,j2                         &
-                                  ,fcst_time                           &
-                                  ,bc_update_interval )
-      endif  ! west_bc
 !
 !---------------------------------------------------------------------
 
@@ -4237,14 +3925,14 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  Local variables
 !---------------------
 !
-      integer :: i,j,k,n,nlayers,ntracers
+      integer :: i,j,k,n,nlayers!,ntracers
 !
 !---------------------------------------------------------------------
 !*********************************************************************
 !---------------------------------------------------------------------
 !
       nlayers =Atm%npz                                                   !<-- # of layers in vertical configuration of integration
-      ntracers=Atm%ncnst                                                 !<-- # of advected tracers
+!      ntracers=Atm%ncnst                                                 !<-- # of advected tracers
 !
 !---------------------------------------------------------------------
 !
@@ -4361,331 +4049,183 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       type(fv_regional_bc_bounds_type),intent(in) :: bnds                !<-- Index limits for all types of vbls in boundary region
 !
-      type(fv_domain_sides),intent(in) :: BC_t1
+      type(fv_domain_sides),target,intent(in) :: BC_t1
 !
-      type(fv_domain_sides),intent(inout) :: BC_t0
+      type(fv_domain_sides),target,intent(inout) :: BC_t0
 !
 !---------------------
 !***  Local variables
 !---------------------
 !
-      integer :: i,ie,is,j,je,js,k,n
+      integer :: i,ie_c,ie_s,ie_w,is_c,is_s,is_w                      &
+                ,j,je_c,je_s,je_w,js_c,js_s,js_w                      &
+                ,k,n,nside
+!
+      logical :: move
 !
 !---------------------------------------------------------------------
 !*********************************************************************
 !---------------------------------------------------------------------
 !
-!-----------
-!***  North
-!-----------
+!---------------------------------------------------------------------
+!***  Loop through the four sides of the domain.
+!---------------------------------------------------------------------
 !
-      if(north_bc)then
+      sides: do nside=1,4
 !
-        is=bnds%is_north                                                 !<--
-        ie=bnds%ie_north                                                 !  North BC index limits 
-        js=bnds%js_north                                                 !  for centers of grid cells
-        je=bnds%je_north                                                 !<--
+        move=.false.
 !
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
-            BC_t0%north%delp_BC(i,j,k)=BC_t1%north%delp_BC(i,j,k)
-            BC_t0%north%divgd_BC(i,j,k)=BC_t1%north%divgd_BC(i,j,k)
-          enddo
-          enddo
-        enddo
+        if(nside==1)then
+          if(north_bc)then
+            move=.true.
+            bc_side_t0=>BC_t0%north
+            bc_side_t1=>BC_t1%north
 !
-        do n=1,ntracers
+            is_c=bnds%is_north                                               !<--
+            ie_c=bnds%ie_north                                               !  North BC index limits
+            js_c=bnds%js_north                                               !  for centers of grid cells.
+            je_c=bnds%je_north                                               !<--
+!
+            is_s=bnds%is_north_uvs                                           !<--
+            ie_s=bnds%ie_north_uvs                                           !  North BC index limits
+            js_s=bnds%js_north_uvs                                           !  for winds on N/S sides of grid cells.
+            je_s=bnds%je_north_uvs                                           !<--
+!
+            is_w=bnds%is_north_uvw                                           !<--
+            ie_w=bnds%ie_north_uvw                                           !  North BC index limits
+            js_w=bnds%js_north_uvw                                           !  for winds on E/W sides of grid cells.
+            je_w=bnds%je_north_uvw                                           !<--
+          endif
+        endif
+!
+        if(nside==2)then
+          if(south_bc)then
+            move=.true.
+            bc_side_t0=>BC_t0%south
+            bc_side_t1=>BC_t1%south
+!
+            is_c=bnds%is_south                                               !<--
+            ie_c=bnds%ie_south                                               !  South BC index limits
+            js_c=bnds%js_south                                               !  for centers of grid cells.
+            je_c=bnds%je_south                                               !<--
+!
+            is_s=bnds%is_south_uvs                                           !<--
+            ie_s=bnds%ie_south_uvs                                           !  South BC index limits
+            js_s=bnds%js_south_uvs                                           !  for winds on N/S sides of grid cells.
+            je_s=bnds%je_south_uvs                                           !<--
+!
+            is_w=bnds%is_south_uvw                                           !<--
+            ie_w=bnds%ie_south_uvw                                           !  South BC index limits
+            js_w=bnds%js_south_uvw                                           !  for winds on E/W sides of grid cells.
+            je_w=bnds%je_south_uvw                                           !<--
+          endif
+        endif
+!
+        if(nside==3)then
+          if(east_bc)then
+            move=.true.
+            bc_side_t0=>BC_t0%east
+            bc_side_t1=>BC_t1%east
+!
+            is_c=bnds%is_east                                                !<--
+            ie_c=bnds%ie_east                                                !  East BC index limits
+            js_c=bnds%js_east                                                !  for centers of grid cells.
+            je_c=bnds%je_east                                                !<--
+!
+            is_s=bnds%is_east_uvs                                            !<--
+            ie_s=bnds%ie_east_uvs                                            !  East BC index limits
+            js_s=bnds%js_east_uvs                                            !  for winds on N/S sides of grid cells.
+            je_s=bnds%je_east_uvs                                            !<--
+!
+            is_w=bnds%is_east_uvw                                            !<--
+            ie_w=bnds%ie_east_uvw                                            !  East BC index limits
+            js_w=bnds%js_east_uvw                                            !  for winds on E/W sides of grid cells.
+            je_w=bnds%je_east_uvw                                            !<--
+          endif
+        endif
+!
+        if(nside==4)then
+          if(west_bc)then
+            move=.true.
+            bc_side_t0=>BC_t0%west
+            bc_side_t1=>BC_t1%west
+!
+            is_c=bnds%is_west                                                !<--
+            ie_c=bnds%ie_west                                                !  West BC index limits
+            js_c=bnds%js_west                                                !  for centers of grid cells.
+            je_c=bnds%je_west                                                !<--
+!
+            is_s=bnds%is_west_uvs                                            !<--
+            ie_s=bnds%ie_west_uvs                                            !  West BC index limits
+            js_s=bnds%js_west_uvs                                            !  for winds on N/S sides of grid cells.
+            je_s=bnds%je_west_uvs                                            !<--
+!
+            is_w=bnds%is_west_uvw                                            !<--
+            ie_w=bnds%ie_west_uvw                                            !  West BC index limits
+            js_w=bnds%js_west_uvw                                            !  for winds on E/W sides of grid cells.
+            je_w=bnds%je_west_uvw                                            !<--
+          endif
+        endif
+!
+        if(move)then
           do k=1,nlev
-            do j=js,je
-            do i=is,ie
-              BC_t0%north%q_BC(i,j,k,n)=BC_t1%north%q_BC(i,j,k,n)
+            do j=js_c,je_c
+            do i=is_c,ie_c
+              bc_side_t0%delp_BC(i,j,k) =bc_side_t1%delp_BC(i,j,k)
+              bc_side_t0%divgd_BC(i,j,k)=bc_side_t1%divgd_BC(i,j,k)
             enddo
             enddo
           enddo
-        enddo
 !
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
-#ifndef SW_DYNAMICS
-            BC_t0%north%w_BC(i,j,k)   =BC_t1%north%w_BC(i,j,k)
-            BC_t0%north%pt_BC(i,j,k)  =BC_t1%north%pt_BC(i,j,k)
-            BC_t0%north%delz_BC(i,j,k)=BC_t1%north%delz_BC(i,j,k)
-#ifdef USE_COND
-            BC_t0%north%q_con_BC(i,j,k)=BC_t1%north%q_con_BC(i,j,k)
-#ifdef MOIST_CAPPA
-            BC_t0%north%cappa_BC(i,j,k)=BC_t1%north%cappa_BC(i,j,k)
-#endif
-#endif
-#endif
+          do n=1,ntracers
+            do k=1,nlev
+              do j=js_c,je_c
+              do i=is_c,ie_c
+                bc_side_t0%q_BC(i,j,k,n)=bc_side_t1%q_BC(i,j,k,n)
+              enddo
+              enddo
+            enddo
           enddo
-          enddo
-        enddo
 !
-        is=bnds%is_north_uvs                                             !<--
-        ie=bnds%ie_north_uvs                                             !  North BC index limits
-        js=bnds%js_north_uvs                                             !  for winds on N/S sides of grid cells.
-        je=bnds%je_north_uvs                                             !<--
-!
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
-            BC_t0%north%u_BC(i,j,k) =BC_t1%north%u_BC(i,j,k)
-            BC_t0%north%vc_BC(i,j,k)=BC_t1%north%vc_BC(i,j,k)
-          enddo
-          enddo
-        enddo
-!
-        is=bnds%is_north_uvw                                             !<--
-        ie=bnds%ie_north_uvw                                             !  North BC index limits
-        js=bnds%js_north_uvw                                             !  for winds on E/W sides of grid cells.
-        je=bnds%je_north_uvw                                             !<--
-!
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
-            BC_t0%north%v_BC(i,j,k) =BC_t1%north%v_BC(i,j,k)
-            BC_t0%north%uc_BC(i,j,k)=BC_t1%north%uc_BC(i,j,k)
-          enddo
-          enddo
-        enddo
-!
-      endif
-!
-!-----------
-!***  South
-!-----------
-!
-      if(south_bc)then
-!
-        is=bnds%is_south                                                 !<--
-        ie=bnds%ie_south                                                 !  South BC index limits 
-        js=bnds%js_south                                                 !  for centers of grid cells
-        je=bnds%je_south                                                 !<--
-!
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
-            BC_t0%south%delp_BC(i,j,k)=BC_t1%south%delp_BC(i,j,k)
-            BC_t0%south%divgd_BC(i,j,k)=BC_t1%south%divgd_BC(i,j,k)
-          enddo
-          enddo
-        enddo
-!
-        do n=1,ntracers
           do k=1,nlev
-            do j=js,je
-            do i=is,ie
-              BC_t0%south%q_BC(i,j,k,n)=BC_t1%south%q_BC(i,j,k,n)
-            enddo
-            enddo
-          enddo
-        enddo
-!
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
+            do j=js_c,je_c
+            do i=is_c,ie_c
 #ifndef SW_DYNAMICS
-            BC_t0%south%w_BC(i,j,k)   =BC_t1%south%w_BC(i,j,k)
-            BC_t0%south%pt_BC(i,j,k)  =BC_t1%south%pt_BC(i,j,k)
-            BC_t0%south%delz_BC(i,j,k)=BC_t1%south%delz_BC(i,j,k)
+              bc_side_t0%w_BC(i,j,k)    =bc_side_t1%w_BC(i,j,k)
+              bc_side_t0%pt_BC(i,j,k)   =bc_side_t1%pt_BC(i,j,k)
+              bc_side_t0%delz_BC(i,j,k) =bc_side_t1%delz_BC(i,j,k)
 #ifdef USE_COND
-            BC_t0%south%q_con_BC(i,j,k)=BC_t1%south%q_con_BC(i,j,k)
+              bc_side_t0%q_con_BC(i,j,k)=bc_side_t1%q_con_BC(i,j,k)
 #ifdef MOIST_CAPPA
-            BC_t0%south%cappa_BC(i,j,k)=BC_t1%south%cappa_BC(i,j,k)
+              bc_side_t0%cappa_BC(i,j,k)=bc_side_t1%cappa_BC(i,j,k)
 #endif
 #endif
 #endif
+            enddo
+            enddo
           enddo
-          enddo
-        enddo
 !
-        is=bnds%is_south_uvs                                             !<--
-        ie=bnds%ie_south_uvs                                             !  South BC index limits
-        js=bnds%js_south_uvs                                             !  for winds on N/S sides of grid cells.
-        je=bnds%je_south_uvs                                             !<--
-!
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
-            BC_t0%south%u_BC(i,j,k) =BC_t1%south%u_BC(i,j,k)
-            BC_t0%south%vc_BC(i,j,k)=BC_t1%south%vc_BC(i,j,k)
-          enddo
-          enddo
-        enddo
-!
-        is=bnds%is_south_uvw                                             !<--
-        ie=bnds%ie_south_uvw                                             !  South BC index limits
-        js=bnds%js_south_uvw                                             !  for winds on E/W sides of grid cells.
-        je=bnds%je_south_uvw                                             !<--
-!
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
-            BC_t0%south%v_BC(i,j,k) =BC_t1%south%v_BC(i,j,k)
-            BC_t0%south%uc_BC(i,j,k)=BC_t1%south%uc_BC(i,j,k)
-          enddo
-          enddo
-        enddo
-!
-      endif
-!
-!----------
-!***  East
-!----------
-!
-      if(east_bc)then
-!
-        is=bnds%is_east                                                  !<--
-        ie=bnds%ie_east                                                  !  East BC index limits 
-        js=bnds%js_east                                                  !  for centers of grid cells
-        je=bnds%je_east                                                  !<--
-!
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
-            BC_t0%east%delp_BC(i,j,k)=BC_t1%east%delp_BC(i,j,k)
-            BC_t0%east%divgd_BC(i,j,k)=BC_t1%east%divgd_BC(i,j,k)
-          enddo
-          enddo
-        enddo
-!
-        do n=1,ntracers
           do k=1,nlev
-            do j=js,je
-            do i=is,ie
-              BC_t0%east%q_BC(i,j,k,n)=BC_t1%east%q_BC(i,j,k,n)
+            do j=js_s,je_s
+            do i=is_s,ie_s
+              bc_side_t0%u_BC(i,j,k) =bc_side_t1%u_BC(i,j,k)
+              bc_side_t0%vc_BC(i,j,k)=bc_side_t1%vc_BC(i,j,k)
             enddo
             enddo
           enddo
-        enddo
 !
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
-#ifndef SW_DYNAMICS
-            BC_t0%east%w_BC(i,j,k)   =BC_t1%east%w_BC(i,j,k)
-            BC_t0%east%pt_BC(i,j,k)  =BC_t1%east%pt_BC(i,j,k)
-            BC_t0%east%delz_BC(i,j,k)=BC_t1%east%delz_BC(i,j,k)
-#ifdef USE_COND
-            BC_t0%east%q_con_BC(i,j,k)=BC_t1%east%q_con_BC(i,j,k)
-#ifdef MOIST_CAPPA
-            BC_t0%east%cappa_BC(i,j,k)=BC_t1%east%cappa_BC(i,j,k)
-#endif
-#endif
-#endif
-          enddo
-          enddo
-        enddo
-!
-        is=bnds%is_east_uvs                                              !<--
-        ie=bnds%ie_east_uvs                                              !  East BC index limits
-        js=bnds%js_east_uvs                                              !  for winds on N/S sides of grid cells.
-        je=bnds%je_east_uvs                                              !<--
-!
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
-            BC_t0%east%u_BC(i,j,k) =BC_t1%east%u_BC(i,j,k)
-            BC_t0%east%vc_BC(i,j,k)=BC_t1%east%vc_BC(i,j,k)
-          enddo
-          enddo
-        enddo
-!
-          is=bnds%is_east_uvw                                            !<--
-          ie=bnds%ie_east_uvw                                            !  East BC index limits
-          js=bnds%js_east_uvw                                            !  for winds on E/W sides of grid cells.
-          je=bnds%je_east_uvw                                            !<--
-!
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
-            BC_t0%east%v_BC(i,j,k) =BC_t1%east%v_BC(i,j,k)
-            BC_t0%east%uc_BC(i,j,k)=BC_t1%east%uc_BC(i,j,k)
-          enddo
-          enddo
-        enddo
-!
-      endif
-!
-!----------
-!***  West
-!----------
-!
-      if(west_bc)then
-!
-        is=bnds%is_west                                                  !<--
-        ie=bnds%ie_west                                                  !  West BC index limits 
-        js=bnds%js_west                                                  !  for centers of grid cells
-        je=bnds%je_west                                                  !<--
-!
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
-            BC_t0%west%delp_BC(i,j,k)=BC_t1%west%delp_BC(i,j,k)
-            BC_t0%west%divgd_BC(i,j,k)=BC_t1%west%divgd_BC(i,j,k)
-          enddo
-          enddo
-        enddo
-!
-        do n=1,ntracers
           do k=1,nlev
-            do j=js,je
-            do i=is,ie
-              BC_t0%west%q_BC(i,j,k,n)=BC_t1%west%q_BC(i,j,k,n)
+            do j=js_w,je_w
+            do i=is_w,ie_w
+              bc_side_t0%v_BC(i,j,k) =bc_side_t1%v_BC(i,j,k)
+              bc_side_t0%uc_BC(i,j,k)=bc_side_t1%uc_BC(i,j,k)
             enddo
             enddo
           enddo
-        enddo
 !
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
-#ifndef SW_DYNAMICS
-            BC_t0%west%w_BC(i,j,k)   =BC_t1%west%w_BC(i,j,k)
-            BC_t0%west%pt_BC(i,j,k)  =BC_t1%west%pt_BC(i,j,k)
-            BC_t0%west%delz_BC(i,j,k)=BC_t1%west%delz_BC(i,j,k)
-#ifdef USE_COND
-            BC_t0%west%q_con_BC(i,j,k)=BC_t1%west%q_con_BC(i,j,k)
-#ifdef MOIST_CAPPA
-            BC_t0%west%cappa_BC(i,j,k)=BC_t1%west%cappa_BC(i,j,k)
-#endif
-#endif
-#endif
-          enddo
-          enddo
-        enddo
+        endif
 !
-        is=bnds%is_west_uvs                                              !<--
-        ie=bnds%ie_west_uvs                                              !  West BC index limits
-        js=bnds%js_west_uvs                                              !  for winds on N/S sides of grid cells.
-        je=bnds%je_west_uvs                                              !<--
-!
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
-            BC_t0%west%u_BC(i,j,k) =BC_t1%west%u_BC(i,j,k)
-            BC_t0%west%vc_BC(i,j,k)=BC_t1%west%vc_BC(i,j,k)
-          enddo
-          enddo
-        enddo
-!
-          is=bnds%is_west_uvw                                            !<--
-          ie=bnds%ie_west_uvw                                            !  West BC index limits
-          js=bnds%js_west_uvw                                            !  for winds on E/W sides of grid cells.
-          je=bnds%je_west_uvw                                            !<--
-!
-        do k=1,nlev
-          do j=js,je
-          do i=is,ie
-            BC_t0%west%v_BC(i,j,k) =BC_t1%west%v_BC(i,j,k)
-            BC_t0%west%uc_BC(i,j,k)=BC_t1%west%uc_BC(i,j,k)
-          enddo
-          enddo
-        enddo
-!
-      endif
+      enddo sides
 !
 !---------------------------------------------------------------------
 !
@@ -5594,6 +5134,104 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     endif
 
   end subroutine exch_uv
+
+  subroutine get_data_source(source,regional)
+!
+! This routine extracts the data source information if it is present in the datafile.
+!
+      character (len = 80) :: source
+      integer              :: ncids,sourceLength
+      logical :: lstatus,regional
+!
+! Use the fms call here so we can actually get the return code value.
+!
+      if (regional) then
+       lstatus = get_global_att_value('INPUT/gfs_data.nc',"source", source)
+      else
+       lstatus = get_global_att_value('INPUT/gfs_data.tile1.nc',"source", source)
+      endif
+      if (.not. lstatus) then
+       if (mpp_pe() == 0) write(0,*) 'INPUT source not found ',lstatus,' set source=No Source Attribute'
+       source='No Source Attribute'
+      endif
+  end subroutine get_data_source
+
+  subroutine set_delp_and_tracers(BC_side,npz,nwat)
+!
+! This routine mimics what is done in external_ic to add mass back to delp
+! and remove it from the tracers
+!
+  integer :: npz,nwat
+  type(fv_regional_BC_variables),intent(inout) :: BC_side   !<-- The BC variables on a domain side at the final integration levels.
+!
+! local variables
+!
+  integer :: k, j, i, iq, is, ie, js, je
+  integer :: liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt
+  real    :: qt, wt, m_fac
+
+   is=lbound(BC_side%delp_BC,1)
+   ie=ubound(BC_side%delp_BC,1)
+   js=lbound(BC_side%delp_BC,2)
+   je=ubound(BC_side%delp_BC,2)
+!
+   liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
+   ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
+   rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
+   snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
+   graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
+   cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
+!
+   source: if (trim(data_source) == 'FV3GFS GAUSSIAN NEMSIO FILE') then
+!
+!    if (cld_amt > 0) BC_side%q_BC(:,:,:,cld_amt) = 0.0    ! Moorthi
+     do k=1,npz
+     do j=js,je
+     do i=is,ie
+       wt = BC_side%delp_BC(i,j,k)
+       if ( nwat == 6 ) then
+         qt = wt*(1. + BC_side%q_BC(i,j,k,liq_wat) + &
+                       BC_side%q_BC(i,j,k,ice_wat) + &
+                       BC_side%q_BC(i,j,k,rainwat) + &
+                       BC_side%q_BC(i,j,k,snowwat) + &
+                       BC_side%q_BC(i,j,k,graupel))
+       else   ! all other values of nwat
+         qt = wt*(1. + sum(BC_side%q_BC(i,j,k,2:nwat)))
+       endif
+!--- Adjust delp with tracer mass.
+       BC_side%delp_BC(i,j,k) = qt
+     enddo
+     enddo
+     enddo
+!
+   else source   ! This else block is for all sources other than FV3GFS GAUSSIAN NEMSIO FILE
+!
+! 20160928: Adjust the mixing ratios consistently...
+     do k=1,npz
+     do j=js,je
+     do i=is,ie
+       wt = BC_side%delp_BC(i,j,k)
+       if ( nwat == 6 ) then
+         qt = wt*(1. + BC_side%q_BC(i,j,k,liq_wat) + &
+                       BC_side%q_BC(i,j,k,ice_wat) + &
+                       BC_side%q_BC(i,j,k,rainwat) + &
+                       BC_side%q_BC(i,j,k,snowwat) + &
+                       BC_side%q_BC(i,j,k,graupel))
+       else   ! all other values of nwat
+         qt = wt*(1. + sum(BC_side%q_BC(i,j,k,2:nwat)))
+       endif
+       m_fac = wt / qt
+       do iq=1,ntracers
+         BC_side%q_BC(i,j,k,iq) = m_fac * BC_side%q_BC(i,j,k,iq)
+       enddo
+       BC_side%delp_BC(i,j,k) = qt
+     enddo
+     enddo
+     enddo
+!
+   endif source
+!
+  end subroutine set_delp_and_tracers
 
 !---------------------------------------------------------------------
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
