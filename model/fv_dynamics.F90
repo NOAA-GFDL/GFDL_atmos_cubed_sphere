@@ -241,7 +241,7 @@ contains
     type(fv_flags_type), intent(INOUT) :: flagstruct
     type(fv_nest_type),  intent(INOUT) :: neststruct
     type(domain2d),      intent(INOUT) :: domain
-    type(fv_atmos_type), intent(INOUT) :: parent_grid
+    type(fv_atmos_type), pointer, intent(IN) :: parent_grid
     type(fv_diag_type),  intent(IN)    :: idiag
 
 ! Local Arrays

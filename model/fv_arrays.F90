@@ -1176,7 +1176,7 @@ module fv_arrays_mod
      logical :: grid_active = .true. !Always active for now
 
      !This is kept here instead of in neststruct% simply for convenience
-     type(fv_atmos_type), pointer :: parent_grid _NULL
+     type(fv_atmos_type), pointer :: parent_grid => NULL()
 
 !-----------------------------------------------------------------------
 ! Five prognostic state variables for the f-v dynamics

@@ -736,16 +736,21 @@ contains
 !! the "domain2d" variable associated with the coupling grid and the 
 !! decomposition for the current cubed-sphere tile.
 !>@detail Coupling is done using the mass/temperature grid with no halos.
- subroutine atmosphere_domain ( fv_domain, layout, regional )
+ subroutine atmosphere_domain ( fv_domain, layout, regional, nested, pelist )
    type(domain2d), intent(out) :: fv_domain
    integer, intent(out) :: layout(2)
    logical, intent(out) :: regional
+   logical, intent(out) :: nested
+   integer, pointer, intent(out) :: pelist(:)
 !  returns the domain2d variable associated with the coupling grid
 !  note: coupling is done using the mass/temperature grid with no halos
 
    fv_domain = Atm(mytile)%domain_for_coupler
    layout(1:2) =  Atm(mytile)%layout(1:2)
    regional = Atm(mytile)%flagstruct%regional
+   nested = ngrids > 1
+   call set_atmosphere_pelist()
+   pelist => Atm(mytile)%pelist
 
  end subroutine atmosphere_domain
 

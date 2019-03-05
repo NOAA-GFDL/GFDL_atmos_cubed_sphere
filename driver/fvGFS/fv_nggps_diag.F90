@@ -551,7 +551,7 @@ contains
 
 #ifdef use_WRTCOMP
 
- subroutine fv_dyn_bundle_setup(axes, dyn_bundle, fcst_grid, quilting )
+ subroutine fv_dyn_bundle_setup(axes, dyn_bundle, fcst_grid, quilting, rc)
 !
 !-------------------------------------------------------------
 !*** set esmf bundle for dyn output fields
@@ -564,10 +564,11 @@ contains
    type(ESMF_FieldBundle),intent(inout)        :: dyn_bundle
    type(ESMF_Grid),intent(inout)               :: fcst_grid
    logical,intent(in)                          :: quilting
+   integer,intent(out)                         :: rc
 
 
 !*** local variables
-   integer i, j, k, n, rc
+   integer i, j, k, n
    integer num_axes, id, axis_length, direction, edges
    integer num_attributes, num_field_dyn, axis_typ
    character(255) :: units, long_name, cart_name,axis_direct,edgesS
@@ -577,7 +578,7 @@ contains
    type(domain1d) :: Domain
    type(domainuG) :: DomainU
    real,dimension(:),allocatable :: axis_data
-   type(diag_atttype),dimension(:),allocatable :: attributes 
+   type(diag_atttype),dimension(:),allocatable :: attributes
    character(2) axis_id
 
    type(ESMF_Field)                            :: field
@@ -589,6 +590,10 @@ contains
 !   type(ESMF_Field),dimension(:),allocatable    :: fieldlist
 !
 !------------------------------------------------------------
+
+! initialize RC
+   rc = ESMF_SUCCESS
+
 !--- use wrte grid component for output
    use_wrtgridcomp_output = quilting
 

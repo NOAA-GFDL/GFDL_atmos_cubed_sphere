@@ -579,7 +579,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       real   , intent(INOUT) ::  cy(bd%isd:bd%ied,bd%js :bd%je +1,npz)  !< Courant Number Y-Dir
       type(fv_grid_type), intent(IN), target :: gridstruct
       type(fv_nest_type), intent(INOUT) :: neststruct
-      type(fv_atmos_type), intent(INOUT) :: parent_grid
+      type(fv_atmos_type), pointer, intent(IN) :: parent_grid
       type(domain2d), intent(INOUT) :: domain
 
 ! Local Arrays
