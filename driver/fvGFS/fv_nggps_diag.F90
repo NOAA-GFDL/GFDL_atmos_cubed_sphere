@@ -65,17 +65,19 @@ module fv_nggps_diags_mod
 !   </tr>
 ! </table>
 
- use mpp_mod,            only: mpp_pe, mpp_root_pe
+ use mpp_mod,            only: mpp_pe, mpp_root_pe,FATAL,mpp_error
  use constants_mod,      only: grav, rdgas
  use fms_io_mod,         only: set_domain, nullify_domain
- use time_manager_mod,   only: time_type
+ use time_manager_mod,   only: time_type, get_time
  use diag_manager_mod,   only: register_diag_field, send_data
  use diag_axis_mod,      only: get_axis_global_length, get_diag_axis, get_diag_axis_name
  use diag_data_mod,      only: output_fields, max_output_fields
  use diag_util_mod,      only: find_input_field
  use tracer_manager_mod, only: get_tracer_names, get_number_tracers, get_tracer_index
  use field_manager_mod,  only: MODEL_ATMOS
- use fv_diagnostics_mod, only: range_check, dbzcalc
+ use fv_diagnostics_mod, only: range_check, dbzcalc,max_vv,get_vorticity, &
+                               max_uh,max_vorticity,bunkers_vector,       &
+                               helicity_relative_CAPS,max_vorticity_hy1 
  use fv_arrays_mod,      only: fv_atmos_type
  use mpp_domains_mod,    only: domain1d, domainUG
 
@@ -95,7 +97,17 @@ module fv_nggps_diags_mod
  integer :: kend_pfnh, kend_w, kend_delz, kend_diss, kend_ps,kend_hs
  integer :: kstt_dbz, kend_dbz
  integer :: kstt_windvect, kend_windvect
+ integer :: id_wmaxup,id_wmaxdn,kstt_wup, kend_wup,kstt_wdn,kend_wdn
+ integer :: id_uhmax03,id_uhmin03,id_uhmax25,id_uhmin25,id_maxvort01
+ integer :: id_maxvorthy1,kstt_maxvorthy1,kstt_maxvort01,id_ustm
+ integer :: kend_maxvorthy1,kend_maxvort01,id_vstm,id_srh01,id_srh03
+ integer :: kstt_uhmax03,kstt_uhmin03,kend_uhmax03,kend_uhmin03
+ integer :: kstt_uhmax25,kstt_uhmin25,kend_uhmax25,kend_uhmin25
+ integer :: kstt_ustm,kstt_vstm,kend_ustm,kend_vstm,kstt_srh01
+ integer :: kstt_srh03,kend_srh01,kend_srh03
+ integer :: id_maxvort02,kstt_maxvort02,kend_maxvort02
  integer :: isco, ieco, jsco, jeco, npzo, ncnsto
+ integer :: isdo, iedo, jsdo, jedo
  integer :: nlevs
  logical :: hydrostatico
  integer, allocatable :: id_tracer(:), all_axes(:)
@@ -124,8 +136,10 @@ module fv_nggps_diags_mod
  real(4), dimension(:,:,:,:), allocatable, target :: windvect
  real(4), dimension(:,:), allocatable, target     :: psurf
  real, dimension(:,:), allocatable                :: lon, lat
-
- public :: fv_nggps_diag_init, fv_nggps_diag
+ real, dimension(:,:),allocatable :: up2,dn2,uhmax03,uhmin03
+ real, dimension(:,:),allocatable :: uhmax25,uhmin25,maxvort01
+ real, dimension(:,:),allocatable :: maxvorthy1,maxvort02
+ public :: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 #ifdef use_WRTCOMP
  public :: fv_dyn_bundle_setup
 #endif
@@ -136,7 +150,6 @@ contains
     type(fv_atmos_type), intent(inout), target :: Atm(:)
     integer, intent(in)         :: axes(4)
     type(time_type), intent(in) :: Time
-
     integer :: n, i, j, nz
 
     n = 1
@@ -144,6 +157,8 @@ contains
     npzo   = Atm(1)%npz
     isco = Atm(n)%bd%isc; ieco = Atm(n)%bd%iec
     jsco = Atm(n)%bd%jsc; jeco = Atm(n)%bd%jec
+    isdo = Atm(n)%bd%isd; iedo = Atm(n)%bd%ied
+    jsdo = Atm(n)%bd%jsd; jedo = Atm(n)%bd%jed
     hydrostatico = Atm(n)%flagstruct%hydrostatic
 
     call set_domain(Atm(1)%domain)  ! Set domain so that diag_manager can access tile information
@@ -274,6 +289,99 @@ contains
           kstt_dbz = nlevs+1; kend_dbz = nlevs+npzo
           nlevs = nlevs + npzo
        endif
+       id_ustm = register_diag_field ( trim(file_name), 'ustm',axes(1:2), Time,       &
+          'u comp of storm motion', 'm/s', missing_value=missing_value )
+       if( id_ustm > 0) then
+          kstt_ustm = nlevs+1; kend_ustm = nlevs+1
+          nlevs = nlevs + 1
+       endif
+       id_vstm = register_diag_field ( trim(file_name), 'vstm',axes(1:2), Time,       &
+          'v comp of storm motion', 'm/s', missing_value=missing_value )
+       if( id_vstm > 0) then
+          kstt_vstm = nlevs+1; kend_vstm = nlevs+1
+          nlevs = nlevs + 1
+       endif
+
+       id_srh01 = register_diag_field ( trim(file_name), 'srh01',axes(1:2), Time,       &
+          '0-1km storm rel. helicity', 'm/s**2', missing_value=missing_value )
+       if( id_srh01 > 0) then
+          kstt_srh01 = nlevs+1; kend_srh01 = nlevs+1
+          nlevs = nlevs + 1
+       endif
+       id_srh03 = register_diag_field ( trim(file_name), 'srh03',axes(1:2), Time,       &
+          '0-3km storm rel. helicity', 'm/s**2', missing_value=missing_value )
+       if( id_srh03 > 0) then
+          kstt_srh03 = nlevs+1; kend_srh03 = nlevs+1
+          nlevs = nlevs + 1
+       endif
+       id_maxvort01 = register_diag_field ( trim(file_name), 'maxvort01',axes(1:2), Time,       &
+          'Max hourly 0-1km vert vorticity', '1/s', missing_value=missing_value )
+       if( id_maxvort01 > 0) then
+          allocate ( maxvort01(isco:ieco,jsco:jeco) )
+          kstt_maxvort01 = nlevs+1; kend_maxvort01 = nlevs+1
+          nlevs = nlevs + 1
+       endif
+       id_maxvort02 = register_diag_field ( trim(file_name), 'maxvort02',axes(1:2), Time,       &
+          'Max hourly 0-2km vert vorticity', '1/s', missing_value=missing_value )
+       if( id_maxvort02 > 0) then
+          allocate ( maxvort02(isco:ieco,jsco:jeco) )
+          kstt_maxvort02 = nlevs+1; kend_maxvort02 = nlevs+1
+          nlevs = nlevs + 1
+       endif
+       id_maxvorthy1 = register_diag_field ( trim(file_name), 'maxvorthy1',axes(1:2), Time,       &
+          'Max hourly hybrid lev1 vert. vorticity', '1/s', missing_value=missing_value )
+       if( id_maxvorthy1 > 0) then
+          allocate ( maxvorthy1(isco:ieco,jsco:jeco) )
+          kstt_maxvorthy1 = nlevs+1; kend_maxvorthy1 = nlevs+1
+          nlevs = nlevs + 1
+       endif
+       id_wmaxup = register_diag_field ( trim(file_name), 'wmaxup',axes(1:2), Time,       &
+          'Max hourly updraft velocity', 'm/s', missing_value=missing_value )
+       if( id_wmaxup > 0) then
+          allocate ( up2(isco:ieco,jsco:jeco) )
+          kstt_wup = nlevs+1; kend_wup = nlevs+1
+          nlevs = nlevs + 1 
+       endif
+       id_wmaxdn = register_diag_field ( trim(file_name), 'wmaxdn',axes(1:2), Time,      &
+          'Max hourly downdraft velocity', 'm/s', missing_value=missing_value )
+!       write (0,*)'id_wmaxdn in fv_nggps=',id_wmaxdn
+       if( id_wmaxdn > 0) then
+          allocate ( dn2(isco:ieco,jsco:jeco) )
+          kstt_wdn = nlevs+1; kend_wdn = nlevs+1
+          nlevs = nlevs + 1
+       endif
+       id_uhmax03 = register_diag_field ( trim(file_name), 'uhmax03',axes(1:2), Time,      &
+          'Max hourly max 0-3km updraft helicity', 'm/s**2', missing_value=missing_value )
+!       write (0,*)'id_uhmax03 in fv_nggps=',id_uhmax03
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmax03 > 0 ) then
+          allocate ( uhmax03(isco:ieco,jsco:jeco) )
+          kstt_uhmax03 = nlevs+1; kend_uhmax03 = nlevs+1
+          nlevs = nlevs + 1
+       endif
+!
+       id_uhmin03 = register_diag_field ( trim(file_name), 'uhmin03',axes(1:2), Time,      &
+          'Max hourly min 0-3km updraft helicity', 'm/s**2', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmin03 > 0 ) then
+          allocate ( uhmin03(isco:ieco,jsco:jeco) )
+          kstt_uhmin03 = nlevs+1; kend_uhmin03 = nlevs+1
+          nlevs = nlevs + 1
+       endif
+!
+       id_uhmax25 = register_diag_field ( trim(file_name), 'uhmax25',axes(1:2), Time,      &
+          'Max hourly max 2-5km updraft helicity', 'm/s**2', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmax25 > 0 ) then
+          allocate ( uhmax25(isco:ieco,jsco:jeco) )
+          kstt_uhmax25 = nlevs+1; kend_uhmax25 = nlevs+1
+          nlevs = nlevs + 1
+       endif
+!
+       id_uhmin25 = register_diag_field ( trim(file_name), 'uhmin25',axes(1:2), Time,      &
+          'Max hourly min 2-5km updraft helicity', 'm/s**2', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmin25 > 0 ) then
+          allocate ( uhmin25(isco:ieco,jsco:jeco) )
+          kstt_uhmin25 = nlevs+1; kend_uhmin25 = nlevs+1
+          nlevs = nlevs + 1
+       endif
 !
        nz = size(atm(1)%ak)
        allocate(ak(nz))
@@ -323,7 +431,7 @@ contains
     logical :: bad_range
     real    :: ptop, allmax
     real, allocatable :: wk(:,:,:), wk2(:,:,:)
-
+    real, dimension(:,:),allocatable :: ustm,vstm,srh01,srh03
     n = 1
     ngc = Atm(n)%ng
     ptop = Atm(n)%ak(1)
@@ -331,7 +439,10 @@ contains
     nq = size (Atm(n)%q,4)
     allocate ( wk(isco:ieco,jsco:jeco,npzo) )
     allocate ( wk2(isco:ieco,jsco:jeco,npzo) )
-
+    allocate ( ustm(isco:ieco,jsco:jeco) )
+    allocate ( vstm(isco:ieco,jsco:jeco) )
+    allocate ( srh01(isco:ieco,jsco:jeco) )
+    allocate ( srh03(isco:ieco,jsco:jeco) )
     if ( Atm(n)%flagstruct%range_warn ) then
          call range_check('DELP', Atm(n)%delp, isco, ieco, jsco, jeco, ngc, npzo, Atm(n)%gridstruct%agrid,    &
                            0.01*ptop, 200.E2, bad_range)
@@ -342,7 +453,6 @@ contains
          call range_check('TA', Atm(n)%pt, isco, ieco, jsco, jeco, ngc, npzo, Atm(n)%gridstruct%agrid,   &
                            150., 350., bad_range) !DCMIP ICs have very low temperatures
     endif
-
     !--- A-GRID WINDS
     if ( .not. allocated(buffer_dyn)) allocate(buffer_dyn(isco:ieco,jsco:jeco,nlevs))
     if(id_ua > 0) call store_data(id_ua, Atm(n)%ua(isco:ieco,jsco:jeco,:), Time, kstt_ua, kend_ua)
@@ -518,11 +628,182 @@ contains
     endif
 
     deallocate ( wk )
+    !---u and v comp of storm motion, 0-1, 0-3km SRH 
+    if ( id_ustm > 0 .or. id_vstm > 0 .or. id_srh01 > 0 .or. id_srh03 > 0) then
+      if ( id_ustm > 0 .and. id_vstm > 0 .and. id_srh01 > 0 .and. id_srh03 > 0) then
+        call bunkers_vector(isco,ieco,jsco,jeco,ngc,npzo,zvir,sphum,ustm,vstm,    &
+                          Atm(n)%ua,Atm(n)%va, Atm(n)%delz, Atm(n)%q,           &
+                          Atm(n)%flagstruct%hydrostatic, Atm(n)%pt, Atm(n)%peln,&
+                          Atm(n)%phis, grav)
+
+        call helicity_relative_CAPS(isco,ieco,jsco,jeco,ngc,npzo,zvir,sphum,srh01, &
+                                 ustm, vstm,Atm(n)%ua, Atm(n)%va, Atm(n)%delz,  &
+                                 Atm(n)%q,Atm(n)%flagstruct%hydrostatic,        &
+                                 Atm(n)%pt, Atm(n)%peln, Atm(n)%phis, grav, 0., 1.e3)
+
+        call helicity_relative_CAPS(isco,ieco,jsco,jeco,ngc,npzo,zvir,sphum,srh03, &
+                                 ustm, vstm,Atm(n)%ua, Atm(n)%va, Atm(n)%delz,  &
+                                 Atm(n)%q,Atm(n)%flagstruct%hydrostatic,        &
+                                 Atm(n)%pt, Atm(n)%peln, Atm(n)%phis, grav, 0., 3.e3)
+
+        call store_data(id_ustm, ustm, Time, kstt_ustm, kend_ustm)
+        call store_data(id_vstm, vstm, Time, kstt_vstm, kend_vstm)
+        call store_data(id_srh01, srh01, Time, kstt_srh01, kend_srh01)
+        call store_data(id_srh03, srh03, Time, kstt_srh03, kend_srh03)
+       else
+         print *,'Missing fields in diag_table'
+         print *,'Make sure the following are listed in the diag_table under gfs_dyn:'
+         print *,'ustm,vstm,srh01,shr03'
+         call mpp_error(FATAL, 'Missing fields in diag_table')
+         stop
+       endif
+      endif
+        deallocate ( ustm )
+        deallocate ( vstm )
+        deallocate ( srh01 )
+        deallocate ( srh03 )
+
+    !--- max hourly 0-1km vert. vorticity
+    if ( id_maxvort01 > 0) then
+      call store_data(id_maxvort01, maxvort01, Time, kstt_maxvort01, kend_maxvort01)
+    endif
+    !--- max hourly 0-2km vert. vorticity
+    if ( id_maxvort02 > 0) then
+      call store_data(id_maxvort02, maxvort02, Time, kstt_maxvort02, kend_maxvort02)
+    endif
+    !--- max hourly hybrid lev 1 vert. vorticity 
+    if ( id_maxvorthy1 > 0) then
+      call store_data(id_maxvorthy1, maxvorthy1, Time, kstt_maxvorthy1, kend_maxvorthy1)
+    endif
+!   
+    !--- max hourly updraft velocity 
+    if ( id_wmaxup > 0) then
+      call store_data(id_wmaxup, up2, Time, kstt_wup, kend_wup)
+    endif
+    !--- max hourly downdraft velocity
+    if ( id_wmaxdn > 0) then
+      call store_data(id_wmaxdn, dn2, Time, kstt_wdn, kend_wdn)
+    endif
+    !--- max hourly max 0-3km updraft helicity 
+    if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmax03 > 0) then
+      call store_data(id_uhmax03, uhmax03, Time, kstt_uhmax03, kend_uhmax03)
+    endif
+!
+    !--- max hourly min 0-3km updraft helicity
+    if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmin03 > 0) then
+      call store_data(id_uhmin03, uhmin03, Time, kstt_uhmin03, kend_uhmin03)
+    endif
+!   
+    !--- max hourly max 2-5km updraft helicity
+    if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmax25 > 0) then
+      call store_data(id_uhmax25, uhmax25, Time, kstt_uhmax25, kend_uhmax25)
+    endif
+!
+    !--- max hourly min 2-5km updraft helicity
+    if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmin25 > 0) then
+      call store_data(id_uhmin25, uhmin25, Time, kstt_uhmin25, kend_uhmin25)
+    endif
 
     call nullify_domain()
 
  end subroutine fv_nggps_diag
 
+ subroutine fv_nggps_tavg(Atm, Time,avg_max_length,zvir)
+    type(fv_atmos_type), intent(inout) :: Atm(:)
+    type(time_type),     intent(in) :: Time
+    real,                intent(in):: zvir
+    integer :: i, j, k, n, ngc, nq, itrac
+    integer seconds, days, nsteps_per_reset
+    logical, save :: first_call=.true.
+    real, save :: first_time = 0.
+    integer, save :: kdtt = 0
+    real :: avg_max_length
+    real,dimension(:,:,:),allocatable :: vort 
+    n = 1
+    ngc = Atm(n)%ng
+    nq = size (Atm(n)%q,4)
+!
+!Check if any of the max hourly fields are being requested otherwise skip
+!
+    if(id_wmaxup > 0 .or. id_wmaxdn > 0 .or. id_uhmax03 > 0 .or. id_uhmin03 > 0 &
+          .or. id_uhmax25 > 0 .or. id_uhmin25 > 0 .or. id_maxvort01 > 0 &
+          .or. id_maxvorthy1 > 0 .or. id_maxvort02 > 0) then
+!Make sure the group of max hrly fields listed below are ALL present otherwise
+!abort
+!
+     if(id_wmaxup > 0 .and. id_wmaxdn > 0 .and. id_uhmax03 > 0 .and. id_uhmin03 > 0 &
+          .and. id_uhmax25 > 0 .and. id_uhmin25 > 0 .and. id_maxvort01 > 0  & 
+          .and. id_maxvorthy1 > 0 .and. id_maxvort02 > 0) then
+       allocate ( vort(isco:ieco,jsco:jeco,npzo) )
+       if(first_call == .true.) then
+         call get_time (Time, seconds,  days)
+         first_time=seconds
+         first_call=.false.
+         kdtt=0
+       endif
+       nsteps_per_reset = nint(avg_max_length/first_time)
+       do j=jsco,jeco
+          do i=isco,ieco
+             if(mod(kdtt,nsteps_per_reset)==0)then
+                up2(i,j) = -999.
+                dn2(i,j) = 999.
+                maxvorthy1(i,j)= 0.
+                maxvort01(i,j)= 0.
+                maxvort02(i,j)= 0.
+             endif
+          enddo
+        enddo
+         call get_vorticity(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo, &
+                           npzo,Atm(n)%u,Atm(n)%v,vort,    &
+                           Atm(n)%gridstruct%dx,Atm(n)%gridstruct%dy,&
+                           Atm(n)%gridstruct%rarea)
+         call max_vorticity_hy1(isco,ieco,jsco,jeco,npzo,vort,maxvorthy1)
+         call max_vorticity(isco,ieco,jsco,jeco,ngc,npzo,zvir, &
+                           sphum,Atm(n)%delz,Atm(n)%q, &
+                           Atm(n)%flagstruct%hydrostatic, &
+                           Atm(n)%pt,Atm(n)%peln,Atm(n)%phis,grav, &
+                           vort,maxvort01,0., 1.e3)
+         call max_vorticity(isco,ieco,jsco,jeco,ngc,npzo,zvir, &
+                           sphum,Atm(n)%delz,Atm(n)%q, &
+                           Atm(n)%flagstruct%hydrostatic, &
+                           Atm(n)%pt,Atm(n)%peln,Atm(n)%phis,grav, &
+                           vort,maxvort02,0., 2.e3)
+         if( .not.Atm(n)%flagstruct%hydrostatic ) then
+            call max_vv(isco,ieco,jsco,jeco,npzo,ngc,up2,dn2,Atm(n)%pe,Atm(n)%w)
+            do j=jsco,jeco
+               do i=isco,ieco
+                  if(mod(kdtt,nsteps_per_reset)==0)then
+                    uhmax03(i,j)= 0.
+                    uhmin03(i,j)= 0.
+                    uhmax25(i,j)= 0.
+                    uhmin25(i,j)= 0.
+                  endif
+               enddo
+             enddo
+
+             call max_uh(isco,ieco,jsco,jeco,ngc,npzo,zvir, &
+                           sphum,uhmax03,uhmin03,Atm(n)%w,vort,Atm(n)%delz, &
+                           Atm(n)%q,Atm(n)%flagstruct%hydrostatic, &
+                           Atm(n)%pt,Atm(n)%peln,Atm(n)%phis,grav, &
+                           0., 3.e3)
+             call max_uh(isco,ieco,jsco,jeco,ngc,npzo,zvir, &
+                           sphum,uhmax25,uhmin25,Atm(n)%w,vort,Atm(n)%delz, &
+                           Atm(n)%q,Atm(n)%flagstruct%hydrostatic, &
+                           Atm(n)%pt,Atm(n)%peln,Atm(n)%phis,grav, &
+                           2.e3, 5.e3)
+         endif
+    kdtt=kdtt+1
+    deallocate (vort)
+    else
+       print *,'Missing max/min hourly field in diag_table'
+       print *,'Make sure the following are listed in the diag_table under gfs_dyn:'
+       print *,'wmaxup,wmaxdn,uhmax03,uhmin03,uhmax25,uhmin25,maxvort01,maxvort02 and maxvorthy1'
+       call mpp_error(FATAL, 'Missing max hourly fields in diag_table')
+       stop
+    endif
+   endif
+ end subroutine fv_nggps_tavg
+!
  subroutine store_data(id, work, Time, nstt, nend)
    integer, intent(in)         :: id
    integer, intent(in)         :: nstt, nend
@@ -926,6 +1207,96 @@ contains
 !     if(mpp_pe()==mpp_root_pe())print *,'reflectivity, output name=',trim(output_name)
      call add_field_to_bundle(trim(output_name),'Stoelinga simulated reflectivity', 'dBz', "time: point",   &
           axes(1:3), fcst_grid, kstt_dbz,kend_dbz, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+   if(id_ustm > 0 .and. id_vstm > 0 .and. id_srh01 > 0 .and. id_srh03 > 0) then
+     call find_outputname(trim(file_name),'ustm',output_name)
+     if(mpp_pe()==mpp_root_pe())print *,'u comp. of storm motion, output name=',trim(output_name)
+     call add_field_to_bundle(trim(output_name),'u comp of storm motion', 'm/s', "time: point",   &
+          axes(1:2), fcst_grid, kstt_ustm,kend_ustm, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+
+     call find_outputname(trim(file_name),'vstm',output_name)
+     if(mpp_pe()==mpp_root_pe())print *,'v comp. of storm motion, output name=',trim(output_name)
+     call add_field_to_bundle(trim(output_name),'v comp of storm motion', 'm/s', "time: point",   &
+          axes(1:2), fcst_grid, kstt_vstm,kend_vstm, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+
+     call find_outputname(trim(file_name),'srh01',output_name)
+     if(mpp_pe()==mpp_root_pe())print *,'0-1km srh, output name=',trim(output_name)
+     call add_field_to_bundle(trim(output_name),'0-1km srh', 'm/s**2', "time: point",   &
+          axes(1:2), fcst_grid, kstt_srh01,kend_srh01, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+
+     call find_outputname(trim(file_name),'srh03',output_name)
+     if(mpp_pe()==mpp_root_pe())print *,'0-3km srh, output name=',trim(output_name)
+     call add_field_to_bundle(trim(output_name),'0-3km srh', 'm/s**2', "time: point",   &
+          axes(1:2), fcst_grid, kstt_srh03,kend_srh03, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+
+
+   if(id_maxvort01 > 0) then
+     call find_outputname(trim(file_name),'maxvort01',output_name)
+     if(mpp_pe()==mpp_root_pe())print *,'max hourly 0-1km vert. vorticity, output name=',trim(output_name)
+     call add_field_to_bundle(trim(output_name),'Max hourly 0-1km vert. vorticity', '1/s', "time: point",   &
+          axes(1:2), fcst_grid, kstt_maxvort01,kend_maxvort01, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+   if(id_maxvort02 > 0) then
+     call find_outputname(trim(file_name),'maxvort02',output_name)
+     if(mpp_pe()==mpp_root_pe())print *,'max hourly 0-2km vert. vorticity, output name=',trim(output_name)
+     call add_field_to_bundle(trim(output_name),'Max hourly 0-2km vert. vorticity', '1/s', "time: point",   &
+          axes(1:2), fcst_grid, kstt_maxvort02,kend_maxvort02, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+   if(id_maxvorthy1 > 0) then
+     call find_outputname(trim(file_name),'maxvorthy1',output_name)
+     if(mpp_pe()==mpp_root_pe())print *,'max hourly lev 1 vert. vorticity output name=',trim(output_name)
+     call add_field_to_bundle(trim(output_name),'Max hourly lev 1 vert vort.', '1/s', "time: point",   &
+          axes(1:2), fcst_grid, kstt_maxvorthy1,kend_maxvorthy1, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+   if(id_wmaxup > 0) then
+     call find_outputname(trim(file_name),'wmaxup',output_name)
+     if(mpp_pe()==mpp_root_pe())print *,'max hourly updraft vel, output name=',trim(output_name)
+     call add_field_to_bundle(trim(output_name),'Max hourly updraft velocity', 'm/s', "time: point",   &
+          axes(1:2), fcst_grid, kstt_wup,kend_wup, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+   if(id_wmaxdn > 0) then
+     call find_outputname(trim(file_name),'wmaxdn',output_name)
+     if(mpp_pe()==mpp_root_pe())print *,'max hourly downdraft vel, output name=',trim(output_name)
+     call add_field_to_bundle(trim(output_name),'Max hourly downdraft velocity', 'm/s', "time: point",   &
+          axes(1:2), fcst_grid, kstt_wdn,kend_wdn, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+   if( .not.hydrostatico .and. id_uhmax03 > 0 ) then
+     call find_outputname(trim(file_name),'uhmax03',output_name)
+     if(mpp_pe()==mpp_root_pe())print *,'max hourly 0-3km updraft helicity, output name=',trim(output_name)
+     call add_field_to_bundle(trim(output_name),'Max hourly 0-3km updraft helicity', 'm/s**2', "time: point",   &
+          axes(1:2), fcst_grid, kstt_uhmax03,kend_uhmax03, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+   if( .not.hydrostatico .and. id_uhmin03 > 0 ) then
+     call find_outputname(trim(file_name),'uhmin03',output_name)
+     if(mpp_pe()==mpp_root_pe())print *,'max hourly 0-3km updraft helicity, output name=',trim(output_name)
+     call add_field_to_bundle(trim(output_name),'Max hourly 0-3km updraft helicity', 'm/s**2', "time: point",   &
+          axes(1:2), fcst_grid, kstt_uhmin03,kend_uhmin03, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+   if( .not.hydrostatico .and. id_uhmax25 > 0 ) then
+     call find_outputname(trim(file_name),'uhmax25',output_name)
+     if(mpp_pe()==mpp_root_pe())print *,'max hourly 2-5km updraft helicity, output name=',trim(output_name)
+     call add_field_to_bundle(trim(output_name),'Max hourly 2-5km updraft helicity', 'm/s**2', "time: point",   &
+          axes(1:2), fcst_grid, kstt_uhmax25,kend_uhmax25, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+   if( .not.hydrostatico .and. id_uhmin25 > 0 ) then
+     call find_outputname(trim(file_name),'uhmin25',output_name)
+     if(mpp_pe()==mpp_root_pe())print *,'max hourly 2-5km updraft helicity, output name=',trim(output_name)
+     call add_field_to_bundle(trim(output_name),'Max hourly 2-5km updraft helicity', 'm/s**2', "time: point",   &
+          axes(1:2), fcst_grid, kstt_uhmin25,kend_uhmin25, dyn_bundle, output_file, rcd=rc)
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
 

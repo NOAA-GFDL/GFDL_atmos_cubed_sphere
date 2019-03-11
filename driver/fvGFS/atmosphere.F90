@@ -179,7 +179,7 @@ use fv_fill_mod,        only: fill_gfs
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
-use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag
+use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
 use fv_mp_mod,          only: switch_current_Atm
@@ -962,10 +962,10 @@ contains
 !! NCEP/EMC format.
 !>@details  If register is present and set to .true., will make the initialization call.
 !! Can output 3D prognostic fields via either NCEP 'write_component' or GFDL/FMS 'diag_manager'.
- subroutine atmosphere_nggps_diag (Time, init)
+ subroutine atmosphere_nggps_diag (Time, init, ltavg,avg_max_length)
    type(time_type),   intent(in) :: Time
-   logical, optional, intent(in) :: init
-
+   logical, optional, intent(in) :: init, ltavg
+   real, optional, intent(in) :: avg_max_length
    if (PRESENT(init)) then
      if (init) then
        call fv_nggps_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time)
@@ -974,9 +974,14 @@ contains
        call mpp_error(FATAL, 'atmosphere_nggps_diag - calling with init present, but set to .false.')
      endif
    endif
-
-   call fv_nggps_diag(Atm(mytile:mytile), zvir, Time)
-
+   if (PRESENT(ltavg)) then
+     if (ltavg) then
+       call fv_nggps_tavg(Atm(mytile:mytile), Time,avg_max_length,zvir)
+       return
+     endif
+   else
+      call fv_nggps_diag(Atm(mytile:mytile), zvir, Time)
+   endif
  end subroutine atmosphere_nggps_diag
 
 

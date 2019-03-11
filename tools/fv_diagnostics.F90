@@ -142,7 +142,6 @@ module fv_diagnostics_mod
 
  use fv_arrays_mod, only: max_step 
  use gfdl_cloud_microphys_mod, only: wqs1, qsmith_init
-
  implicit none
  private
 
@@ -178,6 +177,9 @@ module fv_diagnostics_mod
  public :: fv_diag_init, fv_time, fv_diag, prt_mxm, prt_maxmin, range_check!, id_divg, id_te
  public :: prt_mass, prt_minmax, ppme, fv_diag_init_gn, z_sum, sphum_ll_fix, eqv_pot, qcly0, gn
  public :: prt_height, prt_gb_nh_sh, interpolate_vertical, rh_calc, get_height_field, dbzcalc
+ public :: max_vv,get_vorticity,max_uh 
+ public :: max_vorticity,max_vorticity_hy1,bunkers_vector
+ public :: helicity_relative_CAPS 
 
  integer, parameter :: nplev = 31
  integer :: levs(nplev)
@@ -208,7 +210,6 @@ contains
     integer :: id_plev
     integer :: i, j, k, n, ntileMe, id_xt, id_yt, id_x, id_y, id_xe, id_ye, id_xn, id_yn
     integer :: isc, iec, jsc, jec
-
     logical :: used
 
     character(len=64) :: plev
@@ -821,7 +822,6 @@ contains
                            '2.5-km AGL w-wind', 'm/s', missing_value=missing_value )
           idiag%id_w1km = register_diag_field ( trim(field), 'w1km', axes(1:2), Time,       &
                            '1-km AGL w-wind', 'm/s', missing_value=missing_value )
-
           idiag%id_wmaxup = register_diag_field ( trim(field), 'wmaxup', axes(1:2), Time,       &
                            'column-maximum updraft', 'm/s', missing_value=missing_value )
           idiag%id_wmaxdn = register_diag_field ( trim(field), 'wmaxdn', axes(1:2), Time,       &
@@ -1114,7 +1114,6 @@ contains
     logical, allocatable :: storm(:,:), cat_crt(:,:)
     real :: tmp2, pvsum, e2, einf, qm, mm, maxdbz, allmax, rgrav
     integer :: Cl, Cl2
-
     !!! CLEANUP: does it really make sense to have this routine loop over Atm% anymore? We assume n=1 below anyway
 
 ! cat15: SLP<1000; srf_wnd>ws_0; vort>vort_c0
@@ -2676,8 +2675,6 @@ contains
 
           deallocate(a3)
        endif
-
-
 !-------------------------------------------------------
 ! Applying cubic-spline as the intepolator for (u,v,T,q)
 !-------------------------------------------------------
@@ -3958,7 +3955,7 @@ contains
                 vc(i) = vc(i) / (zh(i)-dz(i) - zh0(i))
                 goto 123
             endif
-         enddo
+         enddo 
 123      continue
 
 ! Lowest layer wind shear computed betw top edge and mid-layer
@@ -4014,7 +4011,7 @@ contains
          zh0 = 0.
          below = .true.
 
-         do k=km,1,-1
+  K_LOOP:do k=km,1,-1
             if ( hydrostatic ) then
                  dz(i) = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
             else
@@ -4031,11 +4028,10 @@ contains
             elseif ( zh(i) < z_top ) then
                 k0 = k
             else
-                goto 123
+               EXIT K_LOOP
             endif
 
-         enddo
-123      continue
+         enddo K_LOOP
 
 ! Lowest layer wind shear computed betw top edge and mid-layer
          k = k1
@@ -4090,7 +4086,7 @@ contains
          usfc = ua(i,j,km)
          vsfc = va(i,j,km)
 
-         do k=km,1,-1
+  K_LOOP:do k=km,1,-1
             if ( hydrostatic ) then
                  dz = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
             else
@@ -4105,11 +4101,10 @@ contains
                 umn = umn + ua(i,j,k)*dz
                 vmn = vmn + va(i,j,k)*dz
             else
-                goto 123
+               EXIT K_LOOP
             endif
 
-         enddo
-123      continue
+         enddo K_LOOP
 
          u6km = u6km + (ua(i,j,k) - u6km) / dz * (6000. - (zh - dz))
          v6km = v6km + (va(i,j,k) - v6km) / dz * (6000. - (zh - dz))
@@ -4832,7 +4827,165 @@ end subroutine eqv_pot
    enddo
 
  end subroutine dbzcalc
+!
+ subroutine max_vorticity_hy1(is, ie, js, je, km, vort, maxvorthy1)
+   integer, intent(in):: is, ie, js, je, km
+   real, intent(in), dimension(is:ie,js:je,km):: vort
+   real, intent(inout), dimension(is:ie,js:je):: maxvorthy1
+   integer i, j, k
 
+   do j=js,je
+      do i=is,ie
+         maxvorthy1(i,j)=max(maxvorthy1(i,j),vort(i,j,km))
+      enddo  ! i-loop
+   enddo   ! j-loop
+ end subroutine max_vorticity_hy1
+!
+! subroutine max_vorticity(is, ie, js, je, ng, km, zvir, sphum, delz, q, hydrostatic, &
+!                          pt, peln, phis, grav, vort, maxvorthy1, maxvort, z_bot, z_top)
+ subroutine max_vorticity(is, ie, js, je, ng, km, zvir, sphum, delz, q, hydrostatic, &
+                          pt, peln, phis, grav, vort, maxvort, z_bot, z_top)
+   integer, intent(in):: is, ie, js, je, ng, km, sphum
+   real, intent(in):: grav, zvir, z_bot, z_top
+   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt
+   real, intent(in), dimension(is:ie,js:je,km):: vort
+   real, intent(in):: delz(is-ng:ie+ng,js-ng:je+ng,km)
+   real, intent(in):: q(is-ng:ie+ng,js-ng:je+ng,km,*)
+   real, intent(in):: phis(is-ng:ie+ng,js-ng:je+ng)
+   real, intent(in):: peln(is:ie,km+1,js:je)
+   logical, intent(in):: hydrostatic
+!   real, intent(inout), dimension(is:ie,js:je):: maxvorthy1,maxvort
+   real, intent(inout), dimension(is:ie,js:je):: maxvort
+
+   real:: rdg
+   real, dimension(is:ie):: zh, dz, zh0
+   integer i, j, k,klevel
+   logical below(is:ie)
+
+   rdg = rdgas / grav
+
+   do j=js,je
+
+      do i=is,ie
+         zh(i) = 0.
+         below(i) = .true.
+         zh0(i) = 0.
+
+     K_LOOP:do k=km,1,-1
+            if ( hydrostatic ) then
+                 dz(i) = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
+            else
+                 dz(i) = - delz(i,j,k)
+            endif
+            zh(i) = zh(i) + dz(i)
+            if (zh(i) <= z_bot ) continue
+            if (zh(i) > z_bot .and. below(i)) then
+               maxvort(i,j) = max(maxvort(i,j),vort(i,j,k))
+               below(i) = .false.
+            elseif ( zh(i) < z_top ) then
+               maxvort(i,j) = max(maxvort(i,j),vort(i,j,k))
+            else
+               maxvort(i,j) = max(maxvort(i,j),vort(i,j,k))
+               EXIT K_LOOP 
+            endif
+         enddo K_LOOP
+!      maxvorthy1(i,j)=max(maxvorthy1(i,j),vort(i,j,km))
+      enddo  ! i-loop
+   enddo   ! j-loop
+
+
+ end subroutine max_vorticity
+
+ subroutine max_uh(is, ie, js, je, ng, km, zvir, sphum, uphmax,uphmin,   &
+                  w, vort, delz, q, hydrostatic, pt, peln, phis, grav, z_bot, z_top)
+! !INPUT PARAMETERS:
+   integer, intent(in):: is, ie, js, je, ng, km, sphum
+   real, intent(in):: grav, zvir, z_bot, z_top
+   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, w
+   real, intent(in), dimension(is:ie,js:je,km):: vort
+   real, intent(in):: delz(is-ng:ie+ng,js-ng:je+ng,km)
+   real, intent(in):: q(is-ng:ie+ng,js-ng:je+ng,km,*)
+   real, intent(in):: phis(is-ng:ie+ng,js-ng:je+ng)
+   real, intent(in):: peln(is:ie,km+1,js:je)
+   logical, intent(in):: hydrostatic
+   real :: uh(is:ie,js:je)   ! unit: (m/s)**2
+   real, intent(inout), dimension(is:ie,js:je):: uphmax,uphmin
+! Coded by S.-J. Lin for CONUS regional climate simulations
+! Modified for UH by LMH
+!
+   real:: rdg
+   real, dimension(is:ie):: zh, dz, zh0
+   integer i, j, k
+   logical below(is:ie)
+
+   rdg = rdgas / grav
+   do j=js,je
+
+      do i=is,ie
+         zh(i) = 0.
+         uh(i,j) = 0.
+         below(i) = .true.
+         zh0(i) = 0.
+
+!        if ( phis(i,j)/grav < 1.E3 ) then
+  K_LOOP:do k=km,1,-1
+            if ( hydrostatic ) then
+                 dz(i) = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
+            else
+                 dz(i) = - delz(i,j,k)
+            endif
+            zh(i) = zh(i) + dz(i)
+            if (zh(i) <= z_bot ) continue
+            if (zh(i) > z_bot .and. below(i)) then
+               if(w(i,j,k).lt.0)then
+                  uh(i,j) = 0.
+                  EXIT K_LOOP
+               endif 
+               uh(i,j) = vort(i,j,k)*w(i,j,k)*(zh(i) - z_bot)
+               below(i) = .false.
+! Compute mean winds below z_top
+            elseif ( zh(i) < z_top ) then
+               if(w(i,j,k).lt.0)then
+                  uh(i,j) = 0.
+                  EXIT K_LOOP
+               endif
+               uh(i,j) = uh(i,j) + vort(i,j,k)*w(i,j,k)*dz(i)
+            else
+               if(w(i,j,k).lt.0)then
+                  uh(i,j) = 0.
+                  EXIT K_LOOP
+               endif
+               uh(i,j) = uh(i,j) + vort(i,j,k)*w(i,j,k)*(z_top - (zh(i)-dz(i)) )
+               EXIT K_LOOP
+            endif
+         enddo K_LOOP
+        if (uh(i,j) > uphmax(i,j)) then 
+           uphmax(i,j) = uh(i,j)
+        elseif (uh(i,j) < uphmin(i,j)) then 
+           uphmin(i,j) = uh(i,j)
+        endif 
+      enddo  ! i-loop
+   enddo   ! j-loop
+
+ end subroutine max_uh 
+ subroutine max_vv(is,ie,js,je,npz,ng,up2,dn2,pe,w)
+! !INPUT PARAMETERS:
+   integer, intent(in):: is, ie, js, je, ng, npz
+   integer :: i,j,k
+   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,npz):: w
+   real, intent(in):: pe(is-1:ie+1,npz+1,js-1:je+1)
+   real, intent(inout), dimension(is:ie,js:je):: up2,dn2
+      do j=js,je
+         do i=is,ie
+            do k=3,npz
+              if (pe(i,k,j) >= 100.e2) then 
+                  up2(i,j) = max(up2(i,j),w(i,j,k))
+                  dn2(i,j) = min(dn2(i,j),w(i,j,k))
+              endif
+             enddo
+         enddo
+      enddo
+ end subroutine max_vv 
 
  subroutine fv_diag_init_gn(Atm)
    type(fv_atmos_type), intent(inout), target :: Atm
