@@ -708,9 +708,9 @@ contains
 
  end subroutine fv_nggps_diag
 
- subroutine fv_nggps_tavg(Atm, Time,avg_max_length,zvir)
+ subroutine fv_nggps_tavg(Atm, Time_step_atmos,avg_max_length,zvir)
     type(fv_atmos_type), intent(inout) :: Atm(:)
-    type(time_type),     intent(in) :: Time
+    type(time_type),     intent(in) :: Time_step_atmos
     real,                intent(in):: zvir
     integer :: i, j, k, n, ngc, nq, itrac
     integer seconds, days, nsteps_per_reset
@@ -736,7 +736,7 @@ contains
           .and. id_maxvorthy1 > 0 .and. id_maxvort02 > 0) then
        allocate ( vort(isco:ieco,jsco:jeco,npzo) )
        if(first_call == .true.) then
-         call get_time (Time, seconds,  days)
+         call get_time (Time_step_atmos, seconds,  days)
          first_time=seconds
          first_call=.false.
          kdtt=0

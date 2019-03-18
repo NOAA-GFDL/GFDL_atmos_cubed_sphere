@@ -976,7 +976,7 @@ contains
    endif
    if (PRESENT(ltavg)) then
      if (ltavg) then
-       call fv_nggps_tavg(Atm(mytile:mytile), Time,avg_max_length,zvir)
+       call fv_nggps_tavg(Atm(mytile:mytile), Time_step_atmos,avg_max_length,zvir)
        return
      endif
    else
