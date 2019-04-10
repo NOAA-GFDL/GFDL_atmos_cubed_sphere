@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -187,6 +188,10 @@ module external_ic_mod
    use boundary_mod,      only: nested_grid_BC, extrapolation_BC
    use mpp_domains_mod,       only: mpp_get_data_domain, mpp_get_global_domain, mpp_get_compute_domain
 
+#ifdef MULTI_GASES
+   use multi_gases_mod,  only:  virq, virqd, vicpqd
+#endif
+
    implicit none
    private
 
@@ -216,7 +221,12 @@ contains
 
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
-      integer :: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, o3mr
+      integer :: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel
+#ifdef MULTI_GASES
+      integer :: spfo, spfo2, spfo3
+#else
+      integer :: o3mr
+#endif
 
       is  = Atm(1)%bd%is
       ie  = Atm(1)%bd%ie
@@ -303,7 +313,13 @@ contains
         rainwat   = get_tracer_index(MODEL_ATMOS, 'rainwat')
         snowwat   = get_tracer_index(MODEL_ATMOS, 'snowwat')
         graupel   = get_tracer_index(MODEL_ATMOS, 'graupel')
+#ifdef MULTI_GASES
+        spfo      = get_tracer_index(MODEL_ATMOS, 'spfo')
+        spfo2     = get_tracer_index(MODEL_ATMOS, 'spfo2')
+        spfo3     = get_tracer_index(MODEL_ATMOS, 'spfo3')
+#else
         o3mr      = get_tracer_index(MODEL_ATMOS, 'o3mr')
+#endif
         if ( liq_wat > 0 ) &
         call prt_maxmin('liq_wat', Atm(1)%q(:,:,:,liq_wat), is, ie, js, je, ng, Atm(1)%npz, 1.)
         if ( ice_wat > 0 ) &
@@ -314,8 +330,17 @@ contains
         call prt_maxmin('snowwat', Atm(1)%q(:,:,:,snowwat), is, ie, js, je, ng, Atm(1)%npz, 1.)
         if ( graupel > 0 ) &
         call prt_maxmin('graupel', Atm(1)%q(:,:,:,graupel), is, ie, js, je, ng, Atm(1)%npz, 1.)
+#ifdef MULTI_GASES
+        if ( spfo > 0    ) &
+        call prt_maxmin('SPFO',    Atm(1)%q(:,:,:,spfo),    is, ie, js, je, ng, Atm(1)%npz, 1.)
+        if ( spfo2 > 0   ) &
+        call prt_maxmin('SPFO2',   Atm(1)%q(:,:,:,spfo2),   is, ie, js, je, ng, Atm(1)%npz, 1.)
+        if ( spfo3 > 0   ) &
+        call prt_maxmin('SPFO3',   Atm(1)%q(:,:,:,spfo3),   is, ie, js, je, ng, Atm(1)%npz, 1.)
+#else
         if ( o3mr > 0    ) &
         call prt_maxmin('O3MR',    Atm(1)%q(:,:,:,o3mr),    is, ie, js, je, ng, Atm(1)%npz, 1.)
+#endif
       endif
 
       call p_var(Atm(1)%npz,  is, ie, js, je, Atm(1)%ak(1),  ptop_min,         &
@@ -1464,12 +1489,22 @@ contains
       logical:: found
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
-      integer :: sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel
+      integer :: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel
+#ifdef MULTI_GASES
+      integer :: spfo, spfo2, spfo3
+#else
+      integer :: o3mr
+#endif
       real:: wt, qt, m_fac
       real(kind=8) :: scale_value, offset, ptmp
       real(kind=R_GRID), dimension(2):: p1, p2, p3
       real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
-      real, allocatable:: ps_gfs(:,:), zh_gfs(:,:,:), o3mr_gfs(:,:,:)
+      real, allocatable:: ps_gfs(:,:), zh_gfs(:,:,:)
+#ifdef MULTI_GASES
+      real, allocatable:: spfo_gfs(:,:,:), spfo2_gfs(:,:,:), spfo3_gfs(:,:,:)
+#else
+      real, allocatable:: o3mr_gfs(:,:,:)
+#endif
       real, allocatable:: ak_gfs(:), bk_gfs(:)
       integer :: id_res, ntprog, ntracers, ks, iq, nt
       character(len=64) :: tracer_name
@@ -1502,7 +1537,13 @@ contains
       rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
       snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
       graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
+#ifdef MULTI_GASES
+      spfo    = get_tracer_index(MODEL_ATMOS, 'spfo')
+      spfo2   = get_tracer_index(MODEL_ATMOS, 'spfo2')
+      spfo3   = get_tracer_index(MODEL_ATMOS, 'spfo3')
+#else
       o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
+#endif
 
       if (is_master()) then
          print *, 'sphum = ', sphum
@@ -1513,7 +1554,13 @@ contains
             print *, 'snowwat = ', snowwat
             print *, 'graupel = ', graupel 
          endif
+#ifdef MULTI_GASES
+         print *, ' spfo3 = ', spfo3
+         print *, ' spfo  = ', spfo
+         print *, ' spfo2 = ', spfo2
+#else
          print *, ' o3mr = ', o3mr
+#endif
       endif
 
       
@@ -1539,12 +1586,27 @@ contains
       call mpp_update_domains( Atm(1)%phis, Atm(1)%domain )
 
 !! Read in o3mr, ps and zh from GFS_data.tile?.nc
+#ifdef MULTI_GASES
+      allocate (spfo3_gfs(is:ie,js:je,levp_gfs))
+      allocate ( spfo_gfs(is:ie,js:je,levp_gfs))
+      allocate (spfo2_gfs(is:ie,js:je,levp_gfs))
+#else
       allocate (o3mr_gfs(is:ie,js:je,levp_gfs))
+#endif
       allocate (ps_gfs(is:ie,js:je))
       allocate (zh_gfs(is:ie,js:je,levp_gfs+1))
    
+#ifdef MULTI_GASES
+      id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'spfo3', spfo3_gfs, &
+                                       mandatory=.false.,domain=Atm(1)%domain)
+      id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'spfo', spfo_gfs, &
+                                       mandatory=.false.,domain=Atm(1)%domain)
+      id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'spfo2', spfo2_gfs, &
+                                       mandatory=.false.,domain=Atm(1)%domain)
+#else
       id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'o3mr', o3mr_gfs, &
                                        mandatory=.false.,domain=Atm(1)%domain)
+#endif
       id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'ps', ps_gfs, domain=Atm(1)%domain)
       id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'ZH', zh_gfs, domain=Atm(1)%domain)
       call restore_state (GFS_restart)
@@ -1562,14 +1624,35 @@ contains
    
       if ( bk_gfs(1) < 1.E-9 ) ak_gfs(1) = max(1.e-9, ak_gfs(1))
   
+#ifdef MULTI_GASES
+      iq = spfo3
+      if(is_master()) write(*,*) 'Reading spfo3 from GFS_data.nc:'
+      if(is_master()) write(*,*) 'spfo3 =', iq
+      call remap_scalar_single(Atm(1), levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spfo3_gfs, zh_gfs, iq)
+      iq = spfo
+      if(is_master()) write(*,*) 'Reading spfo from GFS_data.nc:'
+      if(is_master()) write(*,*) 'spfo =', iq
+      call remap_scalar_single(Atm(1), levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spfo_gfs, zh_gfs, iq)
+      iq = spfo2
+      if(is_master()) write(*,*) 'Reading spfo2 from GFS_data.nc:'
+      if(is_master()) write(*,*) 'spfo2 =', iq
+      call remap_scalar_single(Atm(1), levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spfo2_gfs, zh_gfs, iq)
+#else
       iq = o3mr
       if(is_master()) write(*,*) 'Reading o3mr from GFS_data.nc:'
       if(is_master()) write(*,*) 'o3mr =', iq
       call remap_scalar_single(Atm(1), levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, o3mr_gfs, zh_gfs, iq)
+#endif
 
       deallocate (ak_gfs, bk_gfs)
       deallocate (ps_gfs, zh_gfs)
+#ifdef MULTI_GASES
+      deallocate (spfo3_gfs)
+      deallocate ( spfo_gfs)
+      deallocate (spfo2_gfs)
+#else
       deallocate (o3mr_gfs)
+#endif
 
 !! Start to read EC data
       fname = Atm(1)%flagstruct%res_latlon_dynamics
@@ -2344,8 +2427,13 @@ contains
   real qp(Atm%bd%is:Atm%bd%ie,km,ncnst)
   real p1, p2, alpha, rdg
   real(kind=R_GRID):: pst, pt0
+#ifdef MULTI_GASES
+  integer  spfo, spfo2, spfo3
+#else
+  integer o3mr
+#endif
   integer i,j,k, k2,l, iq
-  integer  sphum, o3mr, clwmr
+  integer  sphum, clwmr
   integer :: is,  ie,  js,  je
   integer :: isd, ied, jsd, jed
 
@@ -2396,7 +2484,11 @@ contains
        enddo
     else
        do k=1,km
+#ifdef MULTI_GASES
+          tp(i,k) = ta(i,j,k)*virq(qp(i,k,:))
+#else
           tp(i,k) = ta(i,j,k)*(1.+zvir*qp(i,k,sphum))
+#endif
        enddo
     endif
 ! Tracers:
@@ -2404,7 +2496,7 @@ contains
        do k=1,km+1
           pe0(i,k) = ak0(k) + bk0(k)*psc(i,j)
           pn0(i,k) = log(pe0(i,k))
-            pk0(k) = pe0(i,k)**kappa
+          pk0(k) = pe0(i,k)**kappa
        enddo
 ! gzc is geopotential
 
@@ -2469,7 +2561,11 @@ contains
       call mappm(km, pn0, tp, npz, pn1, qn1, is,ie, 1, 9, Atm%ptop)
       do k=1,npz
          do i=is,ie
+#ifdef MULTI_GASES
+            Atm%pt(i,j,k) = qn1(i,k)/virq(Atm%q(i,j,k,:))
+#else
             Atm%pt(i,j,k) = qn1(i,k)/(1.+zvir*Atm%q(i,j,k,sphum))
+#endif
          enddo
       enddo
 
@@ -2516,7 +2612,12 @@ contains
   real(kind=R_GRID):: pst
 !!! High-precision
   integer i,j,k,l,m, k2,iq
-  integer  sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt
+  integer  sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt
+#ifdef MULTI_GASES
+  integer  spfo, spfo2, spfo3
+#else
+  integer o3mr
+#endif
   integer :: is,  ie,  js,  je
 
   is  = Atm%bd%is
@@ -2531,14 +2632,26 @@ contains
   snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
   graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
   cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
+#ifdef MULTI_GASES
+  spfo    = get_tracer_index(MODEL_ATMOS, 'spfo')
+  spfo2   = get_tracer_index(MODEL_ATMOS, 'spfo2')
+  spfo3   = get_tracer_index(MODEL_ATMOS, 'spfo3')
+#else
   o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
+#endif
 
   k2 = max(10, km/2)
 
   if (mpp_pe()==1) then
     print *, 'sphum = ', sphum
     print *, 'clwmr = ', liq_wat
+#ifdef MULTI_GASES
+    print *, 'spfo3 = ', spfo3
+    print *, ' spfo = ', spfo
+    print *, 'spfo2 = ', spfo2
+#else
     print *, ' o3mr = ', o3mr
+#endif
     print *, 'ncnst = ', ncnst
   endif
 
@@ -2553,7 +2666,7 @@ contains
 !$OMP parallel do default(none) &
 !$OMP             shared(sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,source,                     &
 !$OMP                    cld_amt,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,t_in,zh,omga,qa,Atm,z500) &
-!$OMP             private(l,m,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv) 
+!$OMP             private(l,m,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
   do 5000 j=js,je
      do k=1,km+1
         do i=is,ie
@@ -2695,7 +2808,11 @@ contains
 !----------------------------------------------------
       if (trim(source) /= 'FV3GFS GAUSSIAN NEMSIO FILE') then
         do k=1,npz
+#ifdef MULTI_GASES
+           Atm%pt(i,j,k) = (gz_fv(k)-gz_fv(k+1))/( rdgas*(pn1(i,k+1)-pn1(i,k))*virq(Atm%q(i,j,k,:)) )
+#else
            Atm%pt(i,j,k) = (gz_fv(k)-gz_fv(k+1))/( rdgas*(pn1(i,k+1)-pn1(i,k))*(1.+zvir*Atm%q(i,j,k,sphum)) )
+#endif
         enddo
 !------------------------------
 ! Remap input T linearly in p.
@@ -2851,7 +2968,12 @@ contains
   real(kind=R_GRID):: pst
   real, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je):: z500
 !!! High-precision
-  integer:: sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt
+  integer:: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt
+#ifdef MULTI_GASES
+  integer:: spfo, spfo2, spfo3
+#else
+  integer:: o3mr
+#endif
   integer:: i,j,k,l,m,k2, iq
   integer:: is,  ie,  js,  je
 
@@ -3026,7 +3148,11 @@ contains
       do k=1,npz
 !        qc = 1.-(Atm%q(i,j,k,liq_wat)+Atm%q(i,j,k,rainwat)+Atm%q(i,j,k,ice_wat)+Atm%q(i,j,k,snowwat))
 !        Atm%pt(i,j,k) = (gz_fv(k)-gz_fv(k+1))*qc/( rdgas*(pn1(i,k+1)-pn1(i,k))*(1.+zvir*Atm%q(i,j,k,sphum)) )
+#ifdef MULTI_GASES
+         Atm%pt(i,j,k) = (gz_fv(k)-gz_fv(k+1))/( rdgas*(pn1(i,k+1)-pn1(i,k))*virq(Atm%q(i,j,k,:)) )
+#else
          Atm%pt(i,j,k) = (gz_fv(k)-gz_fv(k+1))/( rdgas*(pn1(i,k+1)-pn1(i,k))*(1.+zvir*Atm%q(i,j,k,sphum)) )
+#endif
       enddo
       if ( .not. Atm%flagstruct%hydrostatic ) then
          do k=1,npz
@@ -3410,6 +3536,9 @@ contains
   real :: rdlat(jm)
   real:: a1, b1, c1, c2, c3, c4
   real:: gzc, psc, pst
+#ifdef MULTI_GASES
+  real:: kappax, pkx
+#endif
   integer i,j,k, i1, i2, jc, i0, j0, iq
 ! integer  sphum, liq_wat, ice_wat, cld_amt
   integer  sphum
@@ -3452,6 +3581,7 @@ contains
         pe0(i,1) = ak0(1)
         pn0(i,1) = log(ak0(1))
      enddo
+
 
      do i=is,ie
 
@@ -3526,7 +3656,11 @@ contains
           tp(i,k) = c1*ta(i1,jc,  k) + c2*ta(i2,jc,  k) +  &
                     c3*ta(i2,jc+1,k) + c4*ta(i1,jc+1,k)
 ! Virtual effect:
+#ifdef MULTI_GASES
+          tp(i,k) = tp(i,k)*virq(qp(i,k,:))
+#else
           tp(i,k) = tp(i,k)*(1.+zvir*qp(i,k,sphum))
+#endif
        enddo
 ! Tracers:
 
@@ -3547,7 +3681,14 @@ contains
            gz(k) = gz(k+1) + rdgas*tp(i,k)*(pn0(i,k+1)-pn0(i,k)) 
        enddo
 ! Only lowest layer potential temp is needed
-          pt0(km) = tp(i,km)/(pk0(km+1)-pk0(km))*(kappa*(pn0(i,km+1)-pn0(i,km)))
+#ifdef MULTI_GASES
+       kappax = virqd(qp(i,km,:))/vicpqd(qp(i,km,:))
+       pkx = (pk0(km+1)-pk0(km))*(kappa*(pn0(i,km+1)-pn0(i,km)))
+       pkx = exp( kappax*log(pkx) )
+       pt0(km) = tp(i,km)/pkx
+#else
+       pt0(km) = tp(i,km)/(pk0(km+1)-pk0(km))*(kappa*(pn0(i,km+1)-pn0(i,km)))
+#endif
        if( Atm%phis(i,j)>gzc ) then
            do k=km,1,-1
               if( Atm%phis(i,j) <  gz(k)  .and.    &
@@ -3558,10 +3699,18 @@ contains
            enddo
        else
 ! Extrapolation into the ground
+#ifdef MULTI_GASES
+           pst = pk0(km+1) + (gzc-Atm%phis(i,j))/(cp_air*pt0(km)*pkx)
+#else
            pst = pk0(km+1) + (gzc-Atm%phis(i,j))/(cp_air*pt0(km))
+#endif
        endif
 
+#ifdef MULTI_GASES
+123    Atm%ps(i,j) = pst**(1./(kappa*kappax))
+#else
 123    Atm%ps(i,j) = pst**(1./kappa)
+#endif
 #endif
      enddo   !i-loop
  
@@ -3625,7 +3774,11 @@ contains
       call mappm(km, pn0, tp, npz, pn1, qn1, is,ie, 1, 9, Atm%ptop)
       do k=1,npz
          do i=is,ie
+#ifdef MULTI_GASES
+            Atm%pt(i,j,k) = qn1(i,k)/virq(Atm%q(i,j,k,:))
+#else
             Atm%pt(i,j,k) = qn1(i,k)/(1.+zvir*Atm%q(i,j,k,sphum))
+#endif
          enddo
       enddo
 
@@ -4053,6 +4206,7 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
 !$OMP parallel do default(none) shared(im,jm,levp,ak0,bk0,zs,ps,t,q,zh) &
 !$OMP                          private(pe0,pn0)
        do j = 1, jm
+
          do i=1, im
            pe0(i,1) = ak0(1)
            pn0(i,1) = log(pe0(i,1))

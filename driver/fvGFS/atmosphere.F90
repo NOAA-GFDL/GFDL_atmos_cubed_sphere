@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -186,6 +187,9 @@ use fv_mp_mod,          only: switch_current_Atm
 use fv_sg_mod,          only: fv_subgrid_z
 use fv_update_phys_mod, only: fv_update_phys
 use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
+#ifdef MULTI_GASES
+use multi_gases_mod,  only: virq, virq_max, num_gas
+#endif
 use fv_regional_mod,    only: start_regional_restart, read_new_bc_data, &
                               a_step, p_step, current_time_in_seconds
 
@@ -1046,8 +1050,12 @@ contains
          p_surf(i,j) = Atm(mytile)%ps(i,j)
          t_bot(i,j) = Atm(mytile)%pt(i,j,npz)
          p_bot(i,j) = Atm(mytile)%delp(i,j,npz)/(Atm(mytile)%peln(i,npz+1,j)-Atm(mytile)%peln(i,npz,j))
-         z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(mytile)%q(i,j,npz,1)) *  &
-                      (1. - Atm(mytile)%pe(i,npz,j)/p_bot(i,j))
+         z_bot(i,j) = rrg*t_bot(i,j)*(1. - Atm(mytile)%pe(i,npz,j)/p_bot(i,j))
+#ifdef MULTI_GASES
+         z_bot(i,j) = z_bot(i,j)*virq(Atm(mytile)%q(i,j,npz,:))
+#else
+         z_bot(i,j) = z_bot(i,j)*(1.+zvir*Atm(mytile)%q(i,j,npz,1))
+#endif
       enddo
    enddo
 
@@ -1161,8 +1169,13 @@ contains
        DYCORE_Data(nb)%Coupling%u_bot(ix) = Atm(mytile)%u_srf(i,j)
        DYCORE_Data(nb)%Coupling%v_bot(ix) = Atm(mytile)%v_srf(i,j)
        !--- bottom layer height based on hydrostatic assumptions
-       DYCORE_Data(nb)%Coupling%z_bot(ix) = rrg*DYCORE_Data(nb)%Coupling%t_bot(ix)*(1.+zvir*Atm(mytile)%q(i,j,npz,1)) *  &
+       DYCORE_Data(nb)%Coupling%z_bot(ix) = rrg*DYCORE_Data(nb)%Coupling%t_bot(ix) * &
                                         (1. - Atm(mytile)%pe(i,npz,j)/DYCORE_Data(nb)%Coupling%p_bot(ix))
+#ifdef MULTI_GASES
+       DYCORE_Data(nb)%Coupling%z_bot(ix) = DYCORE_Data(nb)%Coupling%z_bot(ix)*virq(Atm(mytile)%q(i,j,npz,:))
+#else
+       DYCORE_Data(nb)%Coupling%z_bot(ix) = DYCORE_Data(nb)%Coupling%z_bot(ix)*(1.+zvir*Atm(mytile)%q(i,j,npz,1))
+#endif
        !--- sea level pressure
        tref = Atm(mytile)%pt(i,j,kr) * (Atm(mytile)%delp(i,j,kr)/ &
               ((Atm(mytile)%peln(i,kr+1,j)-Atm(mytile)%peln(i,kr,j))*Atm(mytile)%ps(i,j)))**(-rrg*tlaps)
@@ -1250,7 +1263,6 @@ contains
    integer :: i, j, ix, k, k1, n, w_diff, nt_dyn, iq
    integer :: nb, blen, nwat, dnats, nq_adv
    real(kind=kind_phys):: rcp, q0, qwat(nq), qt, rdt
-
    Time_prev = Time
    Time_next = Time + Time_step_atmos
    rdt = 1.d0 / dt_atmos
@@ -1312,6 +1324,9 @@ contains
 !$OMP parallel do default (none) & 
 !$OMP              shared (rdt, n, nq, dnats, npz, ncnst, nwat, mytile, u_dt, v_dt, t_dt,&
 !$OMP                      Atm, IPD_Data, Atm_block, sphum, liq_wat, rainwat, ice_wat,   &
+#ifdef MULTI_GASES
+!$OMP                      num_gas,                                                      &
+#endif
 !$OMP                      snowwat, graupel, nq_adv, flip_vc)   &
 !$OMP             private (nb, blen, i, j, k, k1, ix, q0, qwat, qt)
    do nb = 1,Atm_block%nblks
@@ -1351,8 +1366,12 @@ contains
 ! **********************************************************************************************************
 ! The following example is for 2 water species. 
 !        q0 = Atm(n)%delp(i,j,k1)*(1.-(Atm(n)%q(i,j,k1,1)+Atm(n)%q(i,j,k1,2))) + q1 + q2
+#ifdef MULTI_GASES
+         q0 = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:max(nwat,num_gas)))) + sum(qwat(1:max(nwat,num_gas)))
+#else
          qt = sum(qwat(1:nwat))
          q0 = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:nwat))) + qt 
+#endif
          Atm(n)%delp(i,j,k1) = q0
          Atm(n)%q(i,j,k1,1:nq_adv) = qwat(1:nq_adv) / q0
 !        if (dnats .gt. 0) Atm(n)%q(i,j,k1,nq_adv+1:nq) = IPD_Data(nb)%Stateout%gq0(ix,k,nq_adv+1:nq)
@@ -1535,7 +1554,11 @@ contains
           else
              do j=jsc,jec
                 do i=isc,iec
+#ifdef MULTI_GASES
+                   t0(i,j,k) = Atm(mytile)%pt(i,j,k)*virq(Atm(mytile)%q(i,j,k,:))  ! virt T
+#else
                    t0(i,j,k) = Atm(mytile)%pt(i,j,k)*(1.+zvir*Atm(mytile)%q(i,j,k,sphum))  ! virt T
+#endif
                    dp0(i,j,k) = Atm(mytile)%delp(i,j,k)
                 enddo
              enddo
@@ -1633,7 +1656,11 @@ contains
          else
             do j=jsc,jec
               do i=isc,iec
+#ifdef MULTI_GASES
+                 Atm(mytile)%pt(i,j,k) = xt*(Atm(mytile)%pt(i,j,k) + wt*t0(i,j,k)/virq(Atm(mytile)%q(i,j,k,:)))
+#else
                  Atm(mytile)%pt(i,j,k) = xt*(Atm(mytile)%pt(i,j,k) + wt*t0(i,j,k)/(1.+zvir*Atm(mytile)%q(i,j,k,sphum)))
+#endif
                  Atm(mytile)%delp(i,j,k) = xt*(Atm(mytile)%delp(i,j,k) + wt*dp0(i,j,k))
               enddo
             enddo
@@ -1696,7 +1723,11 @@ contains
          else
            do j=jsc,jec
              do i=isc,iec
+#ifdef MULTI_GASES
+                Atm(mytile)%pt(i,j,k) = xt*(Atm(mytile)%pt(i,j,k) + wt*t0(i,j,k)/virq(Atm(mytile)%q(i,j,k,:)))
+#else
                 Atm(mytile)%pt(i,j,k) = xt*(Atm(mytile)%pt(i,j,k) + wt*t0(i,j,k)/(1.+zvir*Atm(mytile)%q(i,j,k,sphum)))
+#endif
                 Atm(mytile)%delp(i,j,k) = xt*(Atm(mytile)%delp(i,j,k) + wt*dp0(i,j,k))
              enddo
            enddo
@@ -1867,8 +1898,12 @@ contains
      do k=1,npz
         do i=1,blen
 ! Geo-potential at interfaces:
+#ifdef MULTI_GASES
+           rTv = rdgas*IPD_Data(nb)%Statein%tgrs(i,k)*virq_max(IPD_Data(nb)%Statein%qgrs(i,k,:),qmin)
+#else
            qgrs_rad = max(qmin,IPD_Data(nb)%Statein%qgrs(i,k,sphum))
            rTv = rdgas*IPD_Data(nb)%Statein%tgrs(i,k)*(1.+zvir*qgrs_rad)
+#endif
            if ( Atm(mytile)%flagstruct%hydrostatic .or. Atm(mytile)%flagstruct%use_hydro_pressure )   &
                 IPD_Data(nb)%Statein%phii(i,k+1) = IPD_Data(nb)%Statein%phii(i,k) &
                                                      + rTv*(IPD_Data(nb)%Statein%prsik(i,k) &

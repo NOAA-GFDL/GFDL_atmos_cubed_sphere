@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -60,6 +61,9 @@ module fv_cmp_mod
     use gfdl_cloud_microphys_mod, only: icloud_f, sat_adj0, t_sub, cld_min
     use gfdl_cloud_microphys_mod, only: tau_r2g, tau_smlt, tau_i2s, tau_v2l, tau_l2v, tau_imlt, tau_l2r
     use gfdl_cloud_microphys_mod, only: rad_rain, rad_snow, rad_graupel, dw_ocean, dw_land
+#ifdef MULTI_GASES
+    use multi_gases_mod,  only:   virq_qpz, vicpqd_qpz, vicvqd_qpz, num_gas
+#endif
     
     implicit none
     
@@ -112,12 +116,16 @@ module fv_cmp_mod
     
 contains
 
-
 !>@brief The subroutine 'fv_sat_adj' performs the fast processes in the GFDL microphysics.
 !>@details This is designed for single-moment 6-class cloud microphysics schemes.
 !! It handles the heat release due to in situ phase changes.
-subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, &
-        te0, qv, ql, qi, qr, qs, qg, hs, dpln, delz, pt, dp, q_con, cappa, &
+subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, te0,&
+#ifdef MULTI_GASES
+        km, qvi, &
+#else
+        qv, &
+#endif
+        ql, qi, qr, qs, qg, hs, dpln, delz, pt, dp, q_con, cappa, &
         area, dtdt, out_dt, last_step, do_qa, qa)
     
     implicit none
@@ -131,7 +139,14 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, &
     real, intent (in), dimension (is - ng:ie + ng, js - ng:je + ng) :: dp, delz, hs
     real, intent (in), dimension (is:ie, js:je) :: dpln
     
-    real, intent (inout), dimension (is - ng:ie + ng, js - ng:je + ng) :: pt, qv, ql, qi, qr, qs, qg
+
+#ifdef MULTI_GASES
+    integer, intent(in) :: km
+    real, intent (inout), dimension (is - ng:ie + ng, js - ng:je + ng,km,*) :: qvi
+#else
+    real, intent (inout), dimension (is - ng:ie + ng, js - ng:je + ng) :: qv
+#endif
+    real, intent (inout), dimension (is - ng:ie + ng, js - ng:je + ng) :: pt, ql, qi, qr, qs, qg
     real, intent (inout), dimension (is - ng:, js - ng:) :: q_con, cappa
     real, intent (inout), dimension (is:ie, js:je) :: dtdt
     
@@ -139,6 +154,9 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, &
     
     real (kind = r_grid), intent (in), dimension (is - ng:ie + ng, js - ng:je + ng) :: area
     
+#ifdef MULTI_GASES
+    real, dimension (is - ng:ie + ng, js - ng:je + ng) :: qv
+#endif
     real, dimension (is:ie) :: wqsat, dq2dt, qpz, cvm, t0, pt1, qstar
     real, dimension (is:ie) :: icp2, lcp2, tcp2, tcp3
     real, dimension (is:ie) :: den, q_liq, q_sol, q_cond, src, sink, hvar
@@ -153,6 +171,9 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, &
     
     integer :: i, j
     
+#ifdef MULTI_GASES
+    qv(:,:) = qvi(:,:,1,1)
+#endif
     sdt = 0.5 * mdt ! half remapping time step
     dt_bigg = mdt ! bigg mechinism time step
     
@@ -195,10 +216,14 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, &
             q_liq (i) = ql (i, j) + qr (i, j)
             q_sol (i) = qi (i, j) + qs (i, j) + qg (i, j)
             qpz (i) = q_liq (i) + q_sol (i)
+#ifdef MULTI_GASES
+            pt1 (i) = pt (i, j) / virq_qpz(qvi(i,j,1,1:num_gas),qpz(i))
+#else
 #ifdef USE_COND
             pt1 (i) = pt (i, j) / ((1 + zvir * qv (i, j)) * (1 - qpz (i)))
 #else
             pt1 (i) = pt (i, j) / (1 + zvir * qv (i, j))
+#endif
 #endif
             t0 (i) = pt1 (i) ! true temperature
             qpz (i) = qpz (i) + qv (i, j) ! total_wat conserved in this routine
@@ -223,6 +248,13 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, &
         ! -----------------------------------------------------------------------
         
         do i = is, ie
+#ifdef MULTI_GASES
+            if (hydrostatic) then
+                c_air = cp_air * vicpqd_qpz(qvi(i,j,1,1:num_gas),qpz(i))
+            else
+                c_air = cv_air * vicvqd_qpz(qvi(i,j,1,1:num_gas),qpz(i))
+            endif
+#endif
             mc_air (i) = (1. - qpz (i)) * c_air ! constant
             cvm (i) = mc_air (i) + qv (i, j) * c_vap + q_liq (i) * c_liq + q_sol (i) * c_ice
             lhi (i) = li00 + dc_ice * pt1 (i)
@@ -236,6 +268,9 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, &
         if (consv_te) then
             if (hydrostatic) then
                 do i = is, ie
+#ifdef MULTI_GASES
+                    c_air = cp_air * vicpqd_qpz(qvi(i,j,1,1:num_gas),qpz(i))
+#endif
                     te0 (i, j) = - c_air * t0 (i)
                 enddo
             else
@@ -243,6 +278,9 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, &
 #ifdef USE_COND
                     te0 (i, j) = - cvm (i) * t0 (i)
 #else
+#ifdef MULTI_GASES
+                    c_air = cv_air * vicvqd_qpz(qvi(i,j,1,1:num_gas),qpz(i))
+#endif
                     te0 (i, j) = - c_air * t0 (i)
 #endif
                 enddo
@@ -372,6 +410,9 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, &
                 src (i) = - min (ql (i, j), factor * dq0)
             endif
             qv (i, j) = qv (i, j) - src (i)
+#ifdef MULTI_GASES
+            qvi(i,j,1,1) = qv (i, j)
+#endif
             ql (i, j) = ql (i, j) + src (i)
             q_liq (i) = q_liq (i) + src (i)
             cvm (i) = mc_air (i) + qv (i, j) * c_vap + q_liq (i) * c_liq + q_sol (i) * c_ice
@@ -413,6 +454,9 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, &
                 endif
                 adj_fac = 1.
                 qv (i, j) = qv (i, j) - src (i)
+#ifdef MULTI_GASES
+                qvi(i,j,1,1) = qv(i,j)
+#endif
                 ql (i, j) = ql (i, j) + src (i)
                 q_liq (i) = q_liq (i) + src (i)
                 cvm (i) = mc_air (i) + qv (i, j) * c_vap + q_liq (i) * c_liq + q_sol (i) * c_ice
@@ -585,6 +629,9 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, &
                 endif
             endif
             qv (i, j) = qv (i, j) - src (i)
+#ifdef MULTI_GASES
+            qvi(i,j,1,1) = qv(i,j)
+#endif
             qi (i, j) = qi (i, j) + src (i)
             q_sol (i) = q_sol (i) + src (i)
             cvm (i) = mc_air (i) + qv (i, j) * c_vap + q_liq (i) * c_liq + q_sol (i) * c_ice
@@ -598,12 +645,21 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, &
         do i = is, ie
 #ifdef USE_COND
             q_con (i, j) = q_liq (i) + q_sol (i)
+#ifdef MULTI_GASES
+            pt (i, j) = pt1 (i) * virq_qpz(qvi(i,j,1,1:num_gas),q_con(i,j))
+#else
             tmp = 1. + zvir * qv (i, j)
-            pt (i, j) = pt1 (i) * tmp * (1. - q_con (i, j))
+            pt (i, j) = pt1 (i) *  tmp     * (1. - q_con (i, j))
+#endif
             tmp = rdgas * tmp
             cappa (i, j) = tmp / (tmp + cvm (i))
 #else
+#ifdef MULTI_GASES
+            q_con (i, j) = q_liq (i) + q_sol (i)
+            pt (i, j) = pt1 (i) * virq_qpz(qvi(i,j,1,1:num_gas),q_con(i,j)) * (1. - q_con(i,j))
+#else
             pt (i, j) = pt1 (i) * (1. + zvir * qv (i, j))
+#endif
 #endif
         enddo
         
@@ -645,11 +701,17 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, &
         if (consv_te) then
             do i = is, ie
                 if (hydrostatic) then
+#ifdef MULTI_GASES
+                    c_air = cp_air * vicpqd_qpz(qvi(i,j,1,1:num_gas),qpz(i))
+#endif
                     te0 (i, j) = dp (i, j) * (te0 (i, j) + c_air * pt1 (i))
                 else
 #ifdef USE_COND
                     te0 (i, j) = dp (i, j) * (te0 (i, j) + cvm (i) * pt1 (i))
 #else
+#ifdef MULTI_GASES
+                    c_air = cv_air * vicvqd_qpz(qvi(i,j,1,1:num_gas),qpz(i))
+#endif
                     te0 (i, j) = dp (i, j) * (te0 (i, j) + c_air * pt1 (i))
 #endif
                 endif

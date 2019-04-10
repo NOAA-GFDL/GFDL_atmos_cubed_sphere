@@ -6293,7 +6293,12 @@ end subroutine terminator_tracers
                do i=is,ie
                   pm(i) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
                enddo
+#ifdef MULTI_GASES
+               call qsmith((ie-is+1)*(je-js+1), npz,  &
+                            ie-is+1, 1, pt(is:ie,j,k), pm, q(is:ie,j,k,1), qs)
+#else
                call qsmith(ie-is+1, 1, 1, pt(is:ie,j,k), pm, q(is:ie,j,k,1), qs)
+#endif
                do i=is,ie
                   q(i,j,k,1) = max(2.E-6, 0.8*pm(i)/ps(i,j)*qs(i) )
                enddo
@@ -6707,7 +6712,12 @@ end subroutine terminator_tracers
                do i=is,ie
                   pm(i) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
                enddo
+#ifdef MULTI_GASES
+               call qsmith((ie-is+1)*(je-js+1), npz,  &
+                            ie-is+1, 1, pt(is:ie,j,k), pm, q(is:ie,j,k,1), qs)
+#else
                call qsmith(ie-is+1, 1, 1, pt(is:ie,j,k), pm, q(is:ie,j,k,1), qs)
+#endif
                do i=is,ie
                   if ( pm(i) > 100.E2 ) then
                        q(i,j,k,1) = 0.9*qs(i)

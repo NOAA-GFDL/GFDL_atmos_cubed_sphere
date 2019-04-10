@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -136,6 +137,9 @@ module dyn_core_mod
 #ifdef SW_DYNAMICS
   use test_cases_mod,      only: test_case, case9_forcing1, case9_forcing2
 #endif
+#ifdef MULTI_GASES
+    use multi_gases_mod,  only:  virqd, vicvqd
+#endif
   use fv_regional_mod,     only: dump_field, exch_uv, H_STAGGER, U_STAGGER, V_STAGGER
   use fv_regional_mod,     only: a_step, p_step, k_step, n_step
 
@@ -163,7 +167,11 @@ contains
 !     dyn_core :: FV Lagrangian dynamics driver
 !-----------------------------------------------------------------------
  
- subroutine dyn_core(npx, npy, npz, ng, sphum, nq, bdt, n_split, zvir, cp, akap, cappa, grav, hydrostatic,  &
+ subroutine dyn_core(npx, npy, npz, ng, sphum, nq, bdt, n_split, zvir, cp, akap, cappa,  &
+#ifdef MULTI_GASES
+                     kapad,  &
+#endif
+                     grav, hydrostatic,  &
                      u,  v,  w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va, & 
                      uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
                      ks, gridstruct, flagstruct, neststruct, idiag, bd, domain, &
@@ -189,7 +197,10 @@ contains
     real, intent(inout) :: w(   bd%isd:,bd%jsd:,1:)  !< vertical vel. (m/s)
     real, intent(inout) ::  delz(bd%isd:,bd%jsd:,1:)  !< delta-height (m, negative)
     real, intent(inout) :: cappa(bd%isd:,bd%jsd:,1:) !< moist kappa
-    real, intent(inout) :: pt(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< temperature (K)
+#ifdef MULTI_GASES
+    real, intent(inout) :: kapad(bd%isd:bd%ied,bd%jsd:bd%jed,1:npz) !< multi_gases kappa
+#endif
+    real, intent(inout) :: pt(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< potential temperature (K)
     real, intent(inout) :: delp(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< pressure thickness (pascal)
     real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, nq)  ! 
     real, intent(in), optional:: time_total  !< total time (seconds) since start
@@ -550,7 +561,11 @@ contains
       endif
 
       if ( hydrostatic ) then
-           call geopk(ptop, pe, peln, delpc, pkc, gz, phis, ptc, q_con, pkz, npz, akap, .true., &
+           call geopk(ptop, pe, peln, delpc, pkc, gz, phis, ptc,  &
+#ifdef MULTI_GASES
+                      kapad, &
+#endif
+                      q_con, pkz, npz, akap, .true., &
                       gridstruct%nested, .false., npx, npy, flagstruct%a2b_ord, bd)
       else
 #ifndef SW_DYNAMICS
@@ -588,7 +603,11 @@ contains
 
                                                call timing_on('Riem_Solver')
            call Riem_Solver_C( ms, dt2,   is,  ie,   js,   je,   npz,   ng,   &
-                               akap, cappa,  cp,  ptop, phis, omga, ptc,  &
+                               akap, cappa, cp,  &
+#ifdef MULTI_GASES
+                               kapad, &
+#endif
+                               ptop, phis, omga, ptc,  &
                                q_con,  delpc, gz,  pkc, ws3, flagstruct%p_fac, &
                                 flagstruct%a_imp, flagstruct%scale_z )
                                                call timing_off('Riem_Solver')
@@ -612,7 +631,11 @@ contains
               !Compute gz/pkc
               !NOTE: nominally only need to compute quantities one out in the halo for p_grad_c
               !(instead of entire halo)
+
              call nest_halo_nh(ptop, grav, akap, cp, delpc, delz, ptc, phis, &
+#ifdef MULTI_GASES
+                q, &
+#endif
 #ifdef USE_COND
                 q_con, &
 #ifdef MOIST_CAPPA
@@ -952,7 +975,11 @@ contains
     endif
 
      if ( hydrostatic ) then
-          call geopk(ptop, pe, peln, delp, pkc, gz, phis, pt, q_con, pkz, npz, akap, .false., &
+          call geopk(ptop, pe, peln, delp, pkc, gz, phis, pt,  &
+#ifdef MULTI_GASES
+                     kapad,   &
+#endif
+                     q_con, pkz, npz, akap, .false., &
                      gridstruct%nested, .true., npx, npy, flagstruct%a2b_ord, bd)
        else
 #ifndef SW_DYNAMICS
@@ -974,11 +1001,16 @@ contains
 
         call Riem_Solver3(flagstruct%m_split, dt,  is,  ie,   js,   je, npz, ng,     &
                          isd, ied, jsd, jed, &
-                         akap, cappa, cp,  ptop, zs, q_con, w, delz, pt, delp, zh,   &
+                         akap, cappa, cp,  &
+#ifdef MULTI_GASES
+                         kapad, &
+#endif
+                         ptop, zs, q_con, w, delz, pt, delp, zh,   &
                          pe, pkc, pk3, pk, peln, ws, &
                          flagstruct%scale_z, flagstruct%p_fac, flagstruct%a_imp, &
                          flagstruct%use_logp, remap_step, beta<-0.1)
                                                          call timing_off('Riem_Solver')
+
                                        call timing_on('COMM_TOTAL')
         if ( gridstruct%square_domain ) then
           call start_group_halo_update(i_pack(4), zh ,  domain)
@@ -1013,7 +1045,11 @@ contains
 
        if (gridstruct%nested .or. flagstruct%regional) then
           !Compute gz/pkc/pk3; note that now pkc should be nonhydro pert'n pressure
+
           call nest_halo_nh(ptop, grav, akap, cp, delp, delz, pt, phis, &
+#ifdef MULTI_GASES
+               q, &
+#endif
 #ifdef USE_COND
                q_con, &
 #ifdef MOIST_CAPPA
@@ -1117,7 +1153,11 @@ contains
 #ifdef MOIST_CAPPA
                     pkz(i,j,k) = exp(cappa(i,j,k)/(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #else
+#ifdef MULTI_GASES
+                    pkz(i,j,k) = exp( k1k*virqd(q(i,j,k,:))/vicvqd(q(i,j,k,:))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
+#else
                     pkz(i,j,k) = exp( k1k*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
+#endif
 #endif
                  enddo
               enddo
@@ -1278,10 +1318,10 @@ contains
        nf_ke = min(3, flagstruct%nord+1)
        call del2_cubed(heat_source, cnst_0p20*gridstruct%da_min, gridstruct, domain, npx, npy, npz, nf_ke, bd)
 
-! Note: pt here is cp*(Virtual_Temperature/pkz)
+! Note: pt here is cp_air*(Virtual_Temperature/pkz), cp_air is constant
     if ( hydrostatic ) then
 !
-! del(Cp*T) = - del(KE)
+! del(Cp_air*Tm) = - del(KE)
 !
 !$OMP parallel do default(none) shared(flagstruct,is,ie,js,je,n_con,pt,heat_source,delp,pkz,bdt) &
 !$OMP                          private(dtmp)
@@ -1313,9 +1353,13 @@ contains
 #ifdef MOIST_CAPPA
                 pkz(i,j,k) = exp( cappa(i,j,k)/(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #else
+#ifdef MULTI_GASES
+                pkz(i,j,k) = exp( k1k*virqd(q(i,j,k,:))/vicvqd(q(i,j,k,:))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
+#else
                 pkz(i,j,k) = exp( k1k*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #endif
-                     dtmp = heat_source(i,j,k) / (cv_air*delp(i,j,k))
+#endif
+                dtmp = heat_source(i,j,k) / (cv_air*delp(i,j,k))
                 pt(i,j,k) = pt(i,j,k) + sign(min(delt, abs(dtmp)),dtmp) / pkz(i,j,k)
              enddo
           enddo
@@ -2173,13 +2217,20 @@ do 1000 j=jfirst,jlast
  end subroutine  mix_dp
 
 !>@brief The subroutine 'geopk' calculates geopotential and pressure to the kappa.
- subroutine geopk(ptop, pe, peln, delp, pk, gz, hs, pt, q_con, pkz, km, akap, CG, nested, computehalo, npx, npy, a2b_ord, bd)
+ subroutine geopk(ptop, pe, peln, delp, pk, gz, hs, pt,    &
+#ifdef MULTI_GASES
+                  kapad,  &
+#endif
+                  q_con, pkz, km, akap, CG, nested, computehalo, npx, npy, a2b_ord, bd)
 
    integer, intent(IN) :: km, npx, npy, a2b_ord
    real   , intent(IN) :: akap, ptop
    type(fv_grid_bounds_type), intent(IN) :: bd
    real   , intent(IN) :: hs(bd%isd:bd%ied,bd%jsd:bd%jed)
    real, intent(IN), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,km):: pt, delp
+#ifdef MULTI_GASES
+   real, intent(IN) :: kapad(bd%isd:bd%ied,bd%jsd:bd%jed,km)
+#endif
    real, intent(IN), dimension(bd%isd:,bd%jsd:,1:):: q_con
    logical, intent(IN) :: CG, nested, computehalo
    ! !OUTPUT PARAMETERS
@@ -2194,6 +2245,12 @@ do 1000 j=jfirst,jlast
    real pkg(bd%isd:bd%ied,km+1)
    real p1d(bd%isd:bd%ied)
    real logp(bd%isd:bd%ied)
+#ifdef MULTI_GASES
+   real pkx (bd%isd:bd%ied,km)
+   real pkgx(bd%isd:bd%ied,km)
+   real akapx
+   integer n
+#endif
    integer i, j, k
    integer ifirst, ilast
    integer jfirst, jlast
@@ -2225,9 +2282,15 @@ do 1000 j=jfirst,jlast
       if (je == npy-1) jlast  = jed
    end if
 
+#ifdef MULTI_GASES
+!$OMP parallel do default(none) shared(jfirst,jlast,ifirst,ilast,pk,km,gz,hs,ptop,ptk,kapad, &
+!$OMP             js,je,is,ie,peln,peln1,pe,delp,akap,pt,CG,pkz,q_con) &
+!$OMP                          private(peg, pkx, pkgx, akapx, pkg, p1d, logp)
+#else
 !$OMP parallel do default(none) shared(jfirst,jlast,ifirst,ilast,pk,km,gz,hs,ptop,ptk, &
 !$OMP                                  js,je,is,ie,peln,peln1,pe,delp,akap,pt,CG,pkz,q_con) &
 !$OMP                          private(peg, pkg, p1d, logp)
+#endif
    do 2000 j=jfirst,jlast
 
       do i=ifirst, ilast
@@ -2276,8 +2339,22 @@ do 1000 j=jfirst,jlast
                enddo
             endif
          endif
-
       enddo
+
+#ifdef MULTI_GASES
+      do k=1,km
+         do i=ifirst, ilast
+            akapx = (kapad(i,j,k)-akap)/akap
+#ifdef USE_COND
+            pkgx(i,k) = (pkg(i,k+1)-pkg(i,k))/(akap*(log(peg(i,k+1))-log(peg(i,k))))
+            pkgx(i,k) = exp( akapx*log(pkgx(i,k)) )
+#else
+            pkx(i,k) = (pk(i,j,k+1)-pk(i,j,k))/(akap*(peln(i,k+1,j)-peln(i,k,j)))
+            pkx (i,k) = exp( akapx*log(pkx(i,k)) )
+#endif
+         enddo
+      enddo
+#endif
 
       ! Bottom up
       do k=km,1,-1
@@ -2286,9 +2363,17 @@ do 1000 j=jfirst,jlast
             gz(i,j,k) = gz(i,j,k+1) + pt(i,j,k)*(pk(i,j,k+1)-pk(i,j,k))
 #else
 #ifdef USE_COND
+#ifdef MULTI_GASES
+            gz(i,j,k) = gz(i,j,k+1) + cp_air*pkgx(i,k)*pt(i,j,k)*(pkg(i,k+1)-pkg(i,k))
+#else
             gz(i,j,k) = gz(i,j,k+1) + cp_air*pt(i,j,k)*(pkg(i,k+1)-pkg(i,k))
+#endif
+#else
+#ifdef MULTI_GASES
+            gz(i,j,k) = gz(i,j,k+1) + cp_air*pkx(i,k)*pt(i,j,k)*(pk(i,j,k+1)-pk(i,j,k))
 #else
             gz(i,j,k) = gz(i,j,k+1) + cp_air*pt(i,j,k)*(pk(i,j,k+1)-pk(i,j,k))
+#endif
 #endif
 #endif
          enddo
@@ -2298,6 +2383,10 @@ do 1000 j=jfirst,jlast
          do k=1,km
             do i=is,ie
                pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(akap*(peln(i,k+1,j)-peln(i,k,j)))
+#ifdef MULTI_GASES
+               akapx = kapad(i,j,k) / akap
+               pkz(i,j,k) = exp ( akapx * log( pkz(i,j,k) ) )
+#endif
             enddo
          enddo
       endif

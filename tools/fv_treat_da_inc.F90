@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -189,7 +190,12 @@ contains
     logical:: found
     integer :: is,  ie,  js,  je
     integer :: isd, ied, jsd, jed
-    integer :: sphum, liq_wat, o3mr
+    integer :: sphum, liq_wat
+#ifdef MULTI_GASES
+    integer :: spfo, spfo2, spfo3
+#else
+    integer :: o3mr
+#endif
 
     is  = Atm(1)%bd%is
     ie  = Atm(1)%bd%ie
@@ -257,7 +263,13 @@ contains
     enddo
 
     sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
+#ifdef MULTI_GASES
+    spfo3   = get_tracer_index(MODEL_ATMOS, 'spfo3')
+    spfo    = get_tracer_index(MODEL_ATMOS, 'spfo')
+    spfo2   = get_tracer_index(MODEL_ATMOS, 'spfo2')
+#else
     o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
+#endif
     liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
 
     ! perform increments on scalars
@@ -271,7 +283,13 @@ contains
     endif
     call apply_inc_on_3d_scalar('sphum_inc',Atm(1)%q(:,:,:,sphum))
     call apply_inc_on_3d_scalar('liq_wat_inc',Atm(1)%q(:,:,:,liq_wat))
+#ifdef MULTI_GASES
+    call apply_inc_on_3d_scalar('spfo3_inc',Atm(1)%q(:,:,:,spfo3))
+    call apply_inc_on_3d_scalar('spfo_inc',Atm(1)%q(:,:,:,spfo))
+    call apply_inc_on_3d_scalar('spfo2_inc',Atm(1)%q(:,:,:,spfo2))
+#else
     call apply_inc_on_3d_scalar('o3mr_inc',Atm(1)%q(:,:,:,o3mr))
+#endif
 
     deallocate ( tp )
     deallocate ( wk3 )

@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -60,8 +61,12 @@ module nh_core_mod
 
 CONTAINS 
 
+
   subroutine Riem_Solver3(ms, dt,   is,   ie,   js, je, km, ng,    &
                           isd, ied, jsd, jed, akap, cappa, cp,     &
+#ifdef MULTI_GASES
+                          kapad,  &
+#endif
                           ptop, zs, q_con, w,  delz, pt,  &
                           delp, zh, pe, ppe, pk3, pk, peln, &
                           ws, scale_m,  p_fac, a_imp, &
@@ -80,6 +85,9 @@ CONTAINS
    logical, intent(in):: last_call, use_logp, fp_out
    real, intent(in):: ws(is:ie,js:je)
    real, intent(in), dimension(isd:,jsd:,1:):: q_con, cappa
+#ifdef MULTI_GASES
+   real, intent(in), dimension(isd:ied,jsd:jed,km):: kapad
+#endif
    real, intent(in), dimension(isd:ied,jsd:jed,km):: delp, pt
    real, intent(inout), dimension(isd:ied,jsd:jed,km+1):: zh
    real, intent(inout), dimension(isd:ied,jsd:jed,km):: w
@@ -92,6 +100,9 @@ CONTAINS
 ! Local:
   real, dimension(is:ie,km):: dm, dz2, pm2, w2, gm2, cp2
   real, dimension(is:ie,km+1)::pem, pe2, peln2, peg, pelng
+#ifdef MULTI_GASES
+  real, dimension(is:ie,km):: kapad2
+#endif
   real gama, rgrav, ptk, peln1
   integer i, j, k
 
@@ -102,8 +113,13 @@ CONTAINS
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,delp,ptop,peln1,pk3,ptk,akap,rgrav,zh,pt, &
 !$OMP                                  w,a_imp,dt,gama,ws,p_fac,scale_m,ms,delz,last_call,  &
+#ifdef MULTI_GASES
+!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,kapad )          &
+!$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2,kapad2)
+#else
 !$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con )          &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2)
+#endif
    do 2000 j=js, je
 
       do k=1,km
@@ -111,6 +127,9 @@ CONTAINS
             dm(i,k) = delp(i,j,k)
 #ifdef MOIST_CAPPA
             cp2(i,k) = cappa(i,j,k)
+#endif
+#ifdef MULTI_GASES
+            kapad2(i,k) = kapad(i,j,k)
 #endif
          enddo
       enddo
@@ -134,6 +153,7 @@ CONTAINS
             peg(i,k) = peg(i,k-1) + dm(i,k-1)*(1.-q_con(i,j,k-1))
             pelng(i,k) = log(peg(i,k))
 #endif
+!hmhj pk3 at interface , interface pk is using constant akap
             pk3(i,j,k) = exp(akap*peln2(i,k))
          enddo
       enddo
@@ -156,23 +176,45 @@ CONTAINS
          enddo
       enddo
 
+
       if ( a_imp < -0.999 ) then
-           call SIM3p0_solver(dt, is, ie, km, rdgas, gama, akap, pe2, dm,  &
+           call SIM3p0_solver(dt, is, ie, km, rdgas, gama, akap, &
+#ifdef MULTI_GASES
+                              kapad2,  &
+#endif
+                              pe2, dm,  &
                               pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac, scale_m )
       elseif ( a_imp < -0.5 ) then
-           call SIM3_solver(dt, is, ie, km, rdgas, gama, akap, pe2, dm,   &
+           call SIM3_solver(dt, is, ie, km, rdgas, gama, akap, &
+#ifdef MULTI_GASES
+                        kapad2,  &
+#endif
+                        pe2, dm,   &
                         pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), abs(a_imp), p_fac, scale_m)
       elseif ( a_imp <= 0.5 ) then
-           call RIM_2D(ms, dt, is, ie, km, rdgas, gama, gm2, pe2,   &
+           call RIM_2D(ms, dt, is, ie, km, rdgas, gama, gm2, &
+#ifdef MULTI_GASES
+                       kapad2,  &
+#endif
+                       pe2,   &
                        dm, pm2, w2, dz2, pt(is:ie,j,1:km), ws(is,j), .false.)
       elseif ( a_imp > 0.999 ) then
-           call SIM1_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, pe2, dm,   &
+           call SIM1_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, &
+#ifdef MULTI_GASES
+                            kapad2,  &
+#endif
+                            pe2, dm,   &
                             pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac)
       else
-           call SIM_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, pe2, dm,  &
+           call SIM_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, &
+#ifdef MULTI_GASES
+                           kapad2,  &
+#endif
+                           pe2, dm,  &
                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), &
                            a_imp, p_fac, scale_m)
       endif
+
 
       do k=1, km
          do i=is, ie
@@ -225,5 +267,6 @@ CONTAINS
 2000  continue
 
   end subroutine Riem_Solver3
+
 
 end module nh_core_mod

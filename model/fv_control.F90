@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -150,6 +151,11 @@ module fv_control_mod
    use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST, WEST, SOUTH
    use mpp_mod,             only: mpp_send, mpp_sync, mpp_transmit, mpp_set_current_pelist, mpp_declare_pelist, mpp_root_pe, mpp_recv, mpp_sync_self, mpp_broadcast, read_input_nml
    use fv_diagnostics_mod,  only: fv_diag_init_gn
+
+#ifdef MULTI_GASES
+   use constants_mod,       only: rvgas, cp_air
+   use multi_gases_mod,     only: multi_gases_init
+#endif
 
    implicit none
    private
@@ -664,6 +670,10 @@ module fv_control_mod
                          do_uni_zfull, adj_mass_vmr, fac_n_spl, fhouri, regional, bc_update_interval
 
    namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
+#ifdef MULTI_GASES
+   namelist /multi_gases_nml/ rilist,cpilist
+   real, allocatable :: rilist(:), cpilist(:)
+#endif
 
 
    pe_counter = mpp_root_pe()
@@ -708,6 +718,20 @@ module fv_control_mod
    ! Read FVCORE namelist 
       read (input_nml_file,fv_core_nml,iostat=ios)
       ierr = check_nml_error(ios,'fv_core_nml')
+#ifdef MULTI_GASES
+      if( is_master() ) print *,' enter multi_gases: ncnst = ',ncnst
+      allocate (rilist(0:ncnst))
+      allocate (cpilist(0:ncnst))
+      rilist     =    0.0
+      cpilist    =    0.0
+      rilist(0)  = rdgas
+      rilist(1)  = rvgas
+      cpilist(0) = cp_air
+      cpilist(1) = 4*cp_air
+   ! Read multi_gases namelist
+      read (input_nml_file,multi_gases_nml,iostat=ios)
+      ierr = check_nml_error(ios,'multi_gases_nml')
+#endif
    ! Read Test_Case namelist
       read (input_nml_file,test_case_nml,iostat=ios)
       ierr = check_nml_error(ios,'test_case_nml')
@@ -728,6 +752,23 @@ module fv_control_mod
       read (f_unit,fv_core_nml,iostat=ios)
       ierr = check_nml_error(ios,'fv_core_nml')
 
+#ifdef MULTI_GASES
+      if( is_master() ) print *,' enter multi_gases: ncnst = ',ncnst
+      allocate (rilist(0:ncnst))
+      allocate (cpilist(0:ncnst))
+      allocate (rilist(0:ncnst))
+      allocate (cpilist(0:ncnst))
+      rilist     =    0.0
+      cpilist    =    0.0
+      rilist(0)  = rdgas
+      rilist(1)  = rvgas
+      cpilist(0) = cp_air
+      cpilist(1) = 4*cp_air
+   ! Read multi_gases namelist
+      rewind (f_unit)
+      read (f_unit,multi_gases_nml,iostat=ios)
+      ierr = check_nml_error(ios,'multi_gases_nml')
+#endif
    ! Read Test_Case namelist
       rewind (f_unit)
       read (f_unit,test_case_nml,iostat=ios)
@@ -736,6 +777,10 @@ module fv_control_mod
 #endif         
       write(unit, nml=fv_core_nml)
       write(unit, nml=test_case_nml)
+#ifdef MULTI_GASES
+      write(unit, nml=multi_gases_nml)
+      call multi_gases_init(ncnst,nwat,rilist,cpilist)
+#endif
 
       if (len_trim(grid_file) /= 0) Atm(n)%flagstruct%grid_file = grid_file
       if (len_trim(grid_name) /= 0) Atm(n)%flagstruct%grid_name = grid_name

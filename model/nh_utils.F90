@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -53,6 +54,9 @@ module nh_utils_mod
    use tp_core_mod,       only: fv_tp_2d
    use sw_core_mod,       only: fill_4corners, del6_vt_flux
    use fv_arrays_mod,     only: fv_grid_bounds_type, fv_grid_type
+#ifdef MULTI_GASES
+   use multi_gases_mod,  only:  vicpqd, vicvqd
+#endif
 
    implicit none
    private
@@ -323,8 +327,13 @@ CONTAINS
 
   end subroutine update_dz_d
 
+
   subroutine Riem_Solver_c(ms,   dt,  is,   ie,   js, je, km,   ng,  &
-                           akap, cappa, cp,  ptop, hs, w3,  pt, q_con, &
+                           akap, cappa, cp,  &
+#ifdef MULTI_GASES
+                           kapad, &
+#endif
+                           ptop, hs, w3,  pt, q_con, &
                            delp, gz,  pef,  ws, p_fac, a_imp, scale_m)
 
    integer, intent(in):: is, ie, js, je, ng, km
@@ -333,6 +342,9 @@ CONTAINS
    real, intent(in):: ws(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, delp
    real, intent(in), dimension(is-ng:,js-ng:,1:):: q_con, cappa
+#ifdef MULTI_GASES
+   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: kapad
+#endif
    real, intent(in)::   hs(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: w3
 ! OUTPUT PARAMETERS 
@@ -341,6 +353,9 @@ CONTAINS
 ! Local:
   real, dimension(is-1:ie+1,km  ):: dm, dz2, w2, pm2, gm2, cp2
   real, dimension(is-1:ie+1,km+1):: pem, pe2, peg
+#ifdef MULTI_GASES
+  real, dimension(is-1:ie+1,km  ):: kapad2
+#endif
   real gama, rgrav
   integer i, j, k
   integer is1, ie1
@@ -352,8 +367,13 @@ CONTAINS
    ie1 = ie + 1
 
 !$OMP parallel do default(none) shared(js,je,is1,ie1,km,delp,pef,ptop,gz,rgrav,w3,pt, &
+#ifdef MULTI_GASES
+!$OMP                                  a_imp,dt,gama,akap,ws,p_fac,scale_m,ms,hs,q_con,cappa,kapad) &
+!$OMP                          private(cp2,gm2, dm, dz2, w2, pm2, pe2, pem, peg, kapad2)
+#else
 !$OMP                                  a_imp,dt,gama,akap,ws,p_fac,scale_m,ms,hs,q_con,cappa) &
 !$OMP                          private(cp2,gm2, dm, dz2, w2, pm2, pe2, pem, peg)
+#endif
    do 2000 j=js-1, je+1
 
       do k=1,km
@@ -394,6 +414,9 @@ CONTAINS
 #else
             pm2(i,k) = dm(i,k)/log(pem(i,k+1)/pem(i,k))
 #endif
+#ifdef MULTI_GASES
+         kapad2(i,k) = kapad(i,j,k)
+#endif
              dm(i,k) = dm(i,k) * rgrav
              w2(i,k) = w3(i,j,k)
          enddo
@@ -401,15 +424,28 @@ CONTAINS
 
 
       if ( a_imp < -0.01 ) then
-           call SIM3p0_solver(dt, is1, ie1, km, rdgas, gama, akap, pe2, dm, &
+           call SIM3p0_solver(dt, is1, ie1, km, rdgas, gama, akap, &
+#ifdef MULTI_GASES
+                              kapad2, &
+#endif
+                              pe2, dm, &
                               pem, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), p_fac, scale_m)
       elseif ( a_imp <= 0.5 ) then
-           call RIM_2D(ms, dt, is1, ie1, km, rdgas, gama, gm2, pe2, &
+           call RIM_2D(ms, dt, is1, ie1, km, rdgas, gama, gm2, &
+#ifdef MULTI_GASES
+                       kapad2, &
+#endif
+                       pe2, &
                        dm, pm2, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), .true.)
       else
-           call SIM1_solver(dt, is1, ie1, km, rdgas, gama, gm2, cp2, akap, pe2,  &
-                            dm, pm2, pem, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), p_fac )
+           call SIM1_solver(dt, is1, ie1, km, rdgas, gama, gm2, cp2, akap, &
+#ifdef MULTI_GASES
+                            kapad2, &
+#endif
+                            pe2,  &
+                            dm, pm2, pem, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), p_fac)
       endif
+
 
       do k=2,km+1
          do i=is1, ie1
@@ -437,6 +473,9 @@ CONTAINS
 !! GFDL - It is now inside of nh_core.F90 and being compiled without -fast-transcendentals.
   subroutine Riem_Solver3test(ms, dt,   is,   ie,   js, je, km, ng,    &
                           isd, ied, jsd, jed, akap, cappa, cp,     &
+#ifdef MULTI_GASES
+                          kapad, &
+#endif
                           ptop, zs, q_con, w,  delz, pt,  &
                           delp, zh, pe, ppe, pk3, pk, peln, &
                           ws, scale_m,  p_fac, a_imp, &
@@ -456,6 +495,9 @@ CONTAINS
    real, intent(in):: ws(is:ie,js:je)
    real, intent(in), dimension(isd:,jsd:,1:):: q_con, cappa
    real, intent(in), dimension(isd:ied,jsd:jed,km):: delp, pt
+#ifdef MULTI_GASES
+   real, intent(in), dimension(isd:ied,jsd:jed,km):: kapad
+#endif
    real, intent(inout), dimension(isd:ied,jsd:jed,km+1):: zh
    real, intent(inout), dimension(isd:ied,jsd:jed,km):: w
    real, intent(inout):: pe(is-1:ie+1,km+1,js-1:je+1)
@@ -467,6 +509,9 @@ CONTAINS
 ! Local:
   real, dimension(is:ie,km):: dm, dz2, pm2, w2, gm2, cp2
   real, dimension(is:ie,km+1)::pem, pe2, peln2, peg, pelng
+#ifdef MULTI_GASES
+  real, dimension(is:ie,km):: kapad2
+#endif
   real gama, rgrav, ptk, peln1
   integer i, j, k
 
@@ -477,8 +522,13 @@ CONTAINS
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,delp,ptop,peln1,pk3,ptk,akap,rgrav,zh,pt, &
 !$OMP                                  w,a_imp,dt,gama,ws,p_fac,scale_m,ms,delz,last_call,  &
+#ifdef MULTI_GASES
+!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,kapad )          &
+!$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2,kapad2)
+#else
 !$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con )          &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2)
+#endif
    do 2000 j=js, je
 
       do k=1,km
@@ -486,6 +536,9 @@ CONTAINS
             dm(i,k) = delp(i,j,k)
 #ifdef MOIST_CAPPA
             cp2(i,k) = cappa(i,j,k)
+#endif
+#ifdef MULTI_GASES
+         kapad2(i,k) = kapad(i,j,k)
 #endif
          enddo
       enddo
@@ -531,23 +584,45 @@ CONTAINS
          enddo
       enddo
 
+
       if ( a_imp < -0.999 ) then
-           call SIM3p0_solver(dt, is, ie, km, rdgas, gama, akap, pe2, dm,  &
+           call SIM3p0_solver(dt, is, ie, km, rdgas, gama, akap, &
+#ifdef MULTI_GASES
+                              kapad2, &
+#endif
+                              pe2, dm,  &
                               pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac, scale_m )
       elseif ( a_imp < -0.5 ) then
-           call SIM3_solver(dt, is, ie, km, rdgas, gama, akap, pe2, dm,   &
+           call SIM3_solver(dt, is, ie, km, rdgas, gama, akap, &
+#ifdef MULTI_GASES
+                        kapad2, &
+#endif
+                        pe2, dm,   &
                         pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), abs(a_imp), p_fac, scale_m)
       elseif ( a_imp <= 0.5 ) then
-           call RIM_2D(ms, dt, is, ie, km, rdgas, gama, gm2, pe2,   &
+           call RIM_2D(ms, dt, is, ie, km, rdgas, gama, gm2, &
+#ifdef MULTI_GASES
+                       kapad2, &
+#endif
+                       pe2,   &
                        dm, pm2, w2, dz2, pt(is:ie,j,1:km), ws(is,j), .false.)
       elseif ( a_imp > 0.999 ) then
-           call SIM1_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, pe2, dm,   &
+           call SIM1_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, &
+#ifdef MULTI_GASES
+                            kapad2, &
+#endif
+                            pe2, dm,   &
                             pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac)
       else
-           call SIM_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, pe2, dm,  &
+           call SIM_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, &
+#ifdef MULTI_GASES
+                           kapad2, &
+#endif
+                           pe2, dm,  &
                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), &
                            a_imp, p_fac, scale_m)
       endif
+
 
       do k=1, km
          do i=is, ie
@@ -600,7 +675,6 @@ CONTAINS
 2000  continue
 
   end subroutine Riem_Solver3test
-
 
   subroutine imp_diff_w(j, is, ie, js, je, ng, km, cd, delz, ws, w, w3)
   integer, intent(in) :: j, is, ie, js, je, km, ng
@@ -665,8 +739,11 @@ CONTAINS
   end subroutine imp_diff_w
 
 
-  subroutine RIM_2D(ms, bdt, is, ie, km, rgas, gama, gm2, pe2, &
-                    dm2, pm2, w2, dz2, pt2, ws, c_core )
+  subroutine RIM_2D(ms, bdt, is, ie, km, rgas, gama, gm2, &
+#ifdef MULTI_GASES
+                    kapad2, &
+#endif
+                    pe2, dm2, pm2, w2, dz2, pt2, ws, c_core )
 
   integer, intent(in):: ms, is, ie, km
   real,    intent(in):: bdt, gama, rgas
@@ -678,6 +755,9 @@ CONTAINS
   real, intent(inout):: dz2(is:ie,km)
   real, intent(inout)::  w2(is:ie,km)
   real, intent(out  ):: pe2(is:ie,km+1)
+#ifdef MULTI_GASES
+   real, intent(inout), dimension(is:ie,km):: kapad2
+#endif
 ! Local:
   real:: ws2(is:ie)
   real, dimension(km+1):: m_bot, m_top, r_bot, r_top, pe1, pbar, wbar
@@ -685,6 +765,9 @@ CONTAINS
   real, dimension(km):: pf1, wc, cm , pp, pt1
   real:: dt, rdt, grg, z_frac, ptmp1, rden, pf, time_left
   real:: m_surf
+#ifdef MULTI_GASES
+   real  gamax
+#endif
   integer:: i, k, n, ke, kt1, ktop
   integer:: ks0, ks1
 
@@ -721,7 +804,12 @@ CONTAINS
 !           dts(k) = -dz(k)/sqrt(gm2(i,k)*rgas*pf1(k)/rden)
             dts(k) = -dz(k)/sqrt(grg*pf1(k)/rden)
 #else
+#ifdef MULTI_GASES
+            gamax = 1./(1.-kapad2(i,k))
+            pf1(k) = exp( gamax*log(rden*pt1(k)) )
+#else
             pf1(k) = exp( gama*log(rden*pt1(k)) )
+#endif
             dts(k) = -dz(k)/sqrt(grg*pf1(k)/rden)
 #endif
             if ( bdt > dts(k) ) then
@@ -787,7 +875,12 @@ CONTAINS
 !     dts(k) = -dz(k) /  sqrt( gm2(i,k)*rgas*pf/rden )
       dts(k) = -dz(k) /  sqrt( grg*pf/rden )
 #else
+#ifdef MULTI_GASES
+          gamax = 1./(1.-kapad2(i,k))
+          pf = exp( gamax*log(rden*pt1(k)) )
+#else
           pf = exp( gama*log(rden*pt1(k)) )
+#endif
       dts(k) = -dz(k) /  sqrt( grg*pf/rden )
 #endif
        ptmp1 = dts(k)*(pf - pm2(i,k))
@@ -910,7 +1003,11 @@ CONTAINS
 
  end subroutine RIM_2D
 
- subroutine SIM3_solver(dt,  is,  ie, km, rgas, gama, kappa, pe2, dm,   &
+ subroutine SIM3_solver(dt,  is,  ie, km, rgas, gama, kappa, &
+#ifdef MULTI_GASES
+                        kapad2, &
+#endif
+                        pe2, dm,   &
                         pem, w2, dz2, pt2, ws, alpha, p_fac, scale_m)
    integer, intent(in):: is, ie, km
    real, intent(in):: dt, rgas, gama, kappa, alpha, p_fac, scale_m
@@ -919,11 +1016,17 @@ CONTAINS
    real, intent(in ), dimension(is:ie,km+1):: pem
    real, intent(out):: pe2(is:ie,km+1)
    real, intent(inout), dimension(is:ie,km):: dz2, w2
+#ifdef MULTI_GASES
+   real, intent(inout), dimension(is:ie,km):: kapad2
+#endif
 ! Local
    real, dimension(is:ie,km  ):: aa, bb, dd, w1, wk, g_rat, gam
    real, dimension(is:ie,km+1):: pp
    real, dimension(is:ie):: p1, wk1, bet
    real  beta, t2, t1g, rdt, ra, capa1, r2g, r6g
+#ifdef MULTI_GASES
+   real  gamax, capa1x, t1gx
+#endif
    integer i, k
 
     beta = 1. - alpha
@@ -940,7 +1043,12 @@ CONTAINS
       do i=is, ie
          w1(i,k) = w2(i,k)
 ! Full pressure at center
+#ifdef MULTI_GASES
+         gamax = 1. / (1.-kapad2(i,k))
+         aa(i,k) = exp(gamax*log(-dm(i,k)/dz2(i,k)*rgas*pt2(i,k)))
+#else
          aa(i,k) = exp(gama*log(-dm(i,k)/dz2(i,k)*rgas*pt2(i,k)))
+#endif
       enddo
    enddo
 
@@ -987,7 +1095,13 @@ CONTAINS
 
     do k=2, km
        do i=is, ie
+#ifdef MULTI_GASES
+          gamax = 1./(1.-kapad2(i,k))
+          t1gx = gamax*2.*(alpha*dt)**2
+          aa(i,k) = t1gx/(dz2(i,k-1)+dz2(i,k))*pe2(i,k)
+#else
           aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k))*pe2(i,k)
+#endif
           wk(i,k) = t2*aa(i,k)*(w1(i,k-1)-w1(i,k))
           aa(i,k) = aa(i,k) - scale_m*dm(i,1)
        enddo
@@ -1005,7 +1119,13 @@ CONTAINS
        enddo
     enddo
     do i=is, ie
+#ifdef MULTI_GASES
+          gamax = 1./(1.-kapad2(i,km))
+          t1gx = gamax*2.*(alpha*dt)**2
+          wk1(i) = t1gx/dz2(i,km)*pe2(i,km+1)
+#else
           wk1(i) = t1g/dz2(i,km)*pe2(i,km+1)
+#endif
        gam(i,km) = aa(i,km) / bet(i)
           bet(i) =  dm(i,km) - (aa(i,km)+wk1(i) + aa(i,km)*gam(i,km))
         w2(i,km) = (dm(i,km)*w1(i,km)+dt*(pp(i,km+1)-pp(i,km))-wk(i,km) +  &
@@ -1041,13 +1161,23 @@ CONTAINS
     do i=is, ie
 ! Recover cell-averaged pressure
            p1(i) = (pe2(i,km)+ 2.*pe2(i,km+1))*r3 - r6g*dm(i,km)
+#ifdef MULTI_GASES
+       capa1x = kapad2(i,km) - 1.
+       dz2(i,km) = -dm(i,km)*rgas*pt2(i,km)*exp( capa1x*log(p1(i)) )
+#else
        dz2(i,km) = -dm(i,km)*rgas*pt2(i,km)*exp( capa1*log(p1(i)) )
+#endif
     enddo
 
     do k=km-1, 1, -1
        do i=is, ie
              p1(i) = (pe2(i,k)+bb(i,k)*pe2(i,k+1)+g_rat(i,k)*pe2(i,k+2))*r3 - g_rat(i,k)*p1(i)
+#ifdef MULTI_GASES
+          capa1x = kapad2(i,k) - 1.
+          dz2(i,k) = -dm(i,k)*rgas*pt2(i,k)*exp( capa1x*log(p1(i)) )
+#else
           dz2(i,k) = -dm(i,k)*rgas*pt2(i,k)*exp( capa1*log(p1(i)) )
+#endif
        enddo
     enddo
 
@@ -1060,7 +1190,11 @@ CONTAINS
 
  end subroutine SIM3_solver
 
- subroutine SIM3p0_solver(dt,  is,  ie, km, rgas, gama, kappa, pe2, dm, &
+ subroutine SIM3p0_solver(dt,  is,  ie, km, rgas, gama, kappa, &
+#ifdef MULTI_GASES
+                          kapad2, &
+#endif
+                          pe2, dm, &
                           pem, w2, dz2, pt2, ws, p_fac, scale_m)
 ! Sa SIM3, but for beta==0
    integer, intent(in):: is, ie, km
@@ -1070,11 +1204,17 @@ CONTAINS
    real, intent(in ):: pem(is:ie,km+1)
    real, intent(out):: pe2(is:ie,km+1)
    real, intent(inout), dimension(is:ie,km):: dz2, w2
+#ifdef MULTI_GASES
+   real, intent(inout), dimension(is:ie,km):: kapad2
+#endif
 ! Local
    real, dimension(is:ie,km  ):: aa, bb, dd, w1, g_rat, gam
    real, dimension(is:ie,km+1):: pp
    real, dimension(is:ie):: p1, wk1, bet
    real  t1g, rdt, capa1, r2g, r6g
+#ifdef MULTI_GASES
+   real  gamax, capa1x, t1gx
+#endif
    integer i, k
 
      t1g = 2.*gama*dt**2
@@ -1087,7 +1227,12 @@ CONTAINS
       do i=is, ie
          w1(i,k) = w2(i,k)
 ! Full pressure at center
+#ifdef MULTI_GASES
+         gamax = 1. / ( 1. - kapad2(i,k) )
+         aa(i,k) = exp(gamax*log(-dm(i,k)/dz2(i,k)*rgas*pt2(i,k)))
+#else
          aa(i,k) = exp(gama*log(-dm(i,k)/dz2(i,k)*rgas*pt2(i,k)))
+#endif
       enddo
    enddo
 
@@ -1134,7 +1279,13 @@ CONTAINS
 
     do k=2, km
        do i=is, ie
+#ifdef MULTI_GASES
+          gamax = 1. / (1.-kapad2(i,k))
+          t1gx =  2.*gamax*dt**2
+          aa(i,k) = t1gx/(dz2(i,k-1)+dz2(i,k))*pe2(i,k) - scale_m*dm(i,1)
+#else
           aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k))*pe2(i,k) - scale_m*dm(i,1)
+#endif
        enddo
     enddo
     do i=is, ie
@@ -1149,7 +1300,13 @@ CONTAINS
        enddo
     enddo
     do i=is, ie
+#ifdef MULTI_GASES
+          gamax = 1. / (1.-kapad2(i,km))
+          t1gx =  2.*gamax*dt**2
+          wk1(i) = t1gx/dz2(i,km)*pe2(i,km+1)
+#else
           wk1(i) = t1g/dz2(i,km)*pe2(i,km+1)
+#endif
        gam(i,km) = aa(i,km) / bet(i)
           bet(i) =  dm(i,km) - (aa(i,km)+wk1(i) + aa(i,km)*gam(i,km))
         w2(i,km) = (dm(i,km)*w1(i,km)+dt*(pp(i,km+1)-pp(i,km))-wk1(i)*ws(i) - &
@@ -1184,13 +1341,23 @@ CONTAINS
     do i=is, ie
 ! Recover cell-averaged pressure
            p1(i) = (pe2(i,km)+ 2.*pe2(i,km+1))*r3 - r6g*dm(i,km)
+#ifdef MULTI_GASES
+       capa1x = kapad2(i,km) - 1.
+       dz2(i,km) = -dm(i,km)*rgas*pt2(i,km)*exp( capa1x*log(p1(i)) )
+#else
        dz2(i,km) = -dm(i,km)*rgas*pt2(i,km)*exp( capa1*log(p1(i)) )
+#endif
     enddo
 
     do k=km-1, 1, -1
        do i=is, ie
              p1(i) = (pe2(i,k)+bb(i,k)*pe2(i,k+1)+g_rat(i,k)*pe2(i,k+2))*r3-g_rat(i,k)*p1(i)
+#ifdef MULTI_GASES
+          capa1x = kapad2(i,k) - 1.
+          dz2(i,k) = -dm(i,k)*rgas*pt2(i,k)*exp( capa1x*log(p1(i)) )
+#else
           dz2(i,k) = -dm(i,k)*rgas*pt2(i,k)*exp( capa1*log(p1(i)) )
+#endif
        enddo
     enddo
 
@@ -1203,7 +1370,11 @@ CONTAINS
  end subroutine SIM3p0_solver
 
 
- subroutine SIM1_solver(dt,  is,  ie, km, rgas, gama, gm2, cp2, kappa, pe, dm2,   &
+ subroutine SIM1_solver(dt,  is,  ie, km, rgas, gama, gm2, cp2, kappa, &
+#ifdef MULTI_GASES
+                        kapad2, &
+#endif
+                        pe, dm2,   &
                         pm2, pem, w2, dz2, pt2, ws, p_fac)
    integer, intent(in):: is, ie, km
    real,    intent(in):: dt, rgas, gama, kappa, p_fac
@@ -1212,11 +1383,17 @@ CONTAINS
    real, intent(in ), dimension(is:ie,km+1):: pem
    real, intent(out)::  pe(is:ie,km+1)
    real, intent(inout), dimension(is:ie,km):: dz2, w2
+#ifdef MULTI_GASES
+   real, intent(inout), dimension(is:ie,km):: kapad2
+#endif
 ! Local
    real, dimension(is:ie,km  ):: aa, bb, dd, w1, g_rat, gam
    real, dimension(is:ie,km+1):: pp
    real, dimension(is:ie):: p1, bet
    real t1g, rdt, capa1
+#ifdef MULTI_GASES
+   real  gamax, capa1x, t1gx
+#endif
    integer i, k
 
 #ifdef MOIST_CAPPA
@@ -1232,7 +1409,12 @@ CONTAINS
 #ifdef MOIST_CAPPA
           pe(i,k) = exp(gm2(i,k)*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
 #else
+#ifdef MULTI_GASES
+          gamax = 1. / ( 1. - kapad2(i,k) )
+          pe(i,k) = exp(gamax*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
+#else
           pe(i,k) = exp(gama*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
+#endif
 #endif
           w1(i,k) = w2(i,k)
        enddo
@@ -1274,7 +1456,13 @@ CONTAINS
 #ifdef MOIST_CAPPA
           aa(i,k) = t1g*0.5*(gm2(i,k-1)+gm2(i,k))/(dz2(i,k-1)+dz2(i,k)) * (pem(i,k)+pp(i,k))
 #else
+#ifdef MULTI_GASES
+          gamax = 1./(1.-kapad2(i,k))
+          t1gx = gamax * 2.*dt*dt
+          aa(i,k) = t1gx/(dz2(i,k-1)+dz2(i,k)) * (pem(i,k)+pp(i,k))
+#else
           aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k)) * (pem(i,k)+pp(i,k))
+#endif
 #endif
        enddo
     enddo
@@ -1293,7 +1481,13 @@ CONTAINS
 #ifdef MOIST_CAPPA
            p1(i) = t1g*gm2(i,km)/dz2(i,km)*(pem(i,km+1)+pp(i,km+1))
 #else
+#ifdef MULTI_GASES
+           gamax = 1./(1.-kapad2(i,km))
+           t1gx = gamax * 2.*dt*dt
+           p1(i) = t1gx/dz2(i,km)*(pem(i,km+1)+pp(i,km+1))
+#else
            p1(i) = t1g/dz2(i,km)*(pem(i,km+1)+pp(i,km+1))
+#endif
 #endif
        gam(i,km) = aa(i,km) / bet(i)
           bet(i) =  dm2(i,km) - (aa(i,km)+p1(i) + aa(i,km)*gam(i,km))
@@ -1319,7 +1513,12 @@ CONTAINS
 #ifdef MOIST_CAPPA
        dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp((cp2(i,km)-1.)*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
 #else
+#ifdef MULTI_GASES
+       capa1x = kapad2(i,km)-1.
+       dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp(capa1x*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
+#else
        dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp(capa1*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
+#endif
 #endif
     enddo
 
@@ -1330,14 +1529,23 @@ CONTAINS
           dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp((cp2(i,k)-1.)*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
       
 #else
+#ifdef MULTI_GASES
+          capa1x = kapad2(i,k)-1.
+          dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp(capa1x*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
+#else
           dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp(capa1*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
+#endif
 #endif
        enddo
     enddo
 
  end subroutine SIM1_solver
 
- subroutine SIM_solver(dt,  is,  ie, km, rgas, gama, gm2, cp2, kappa, pe2, dm2,   &
+ subroutine SIM_solver(dt,  is,  ie, km, rgas, gama, gm2, cp2, kappa,  &
+#ifdef MULTI_GASES
+                       kapad2, &
+#endif
+                       pe2, dm2,   &
                        pm2, pem, w2, dz2, pt2, ws, alpha, p_fac, scale_m)
    integer, intent(in):: is, ie, km
    real, intent(in):: dt, rgas, gama, kappa, p_fac, alpha, scale_m
@@ -1346,11 +1554,17 @@ CONTAINS
    real, intent(in ), dimension(is:ie,km+1):: pem
    real, intent(out):: pe2(is:ie,km+1)
    real, intent(inout), dimension(is:ie,km):: dz2, w2
+#ifdef MULTI_GASES
+   real, intent(inout), dimension(is:ie,km):: kapad2
+#endif
 ! Local
    real, dimension(is:ie,km  ):: aa, bb, dd, w1, wk, g_rat, gam
    real, dimension(is:ie,km+1):: pp
    real, dimension(is:ie):: p1, wk1, bet
    real  beta, t2, t1g, rdt, ra, capa1
+#ifdef MULTI_GASES
+   real  gamax, capa1x, t1gx
+#endif
    integer i, k
 
     beta = 1. - alpha
@@ -1371,7 +1585,12 @@ CONTAINS
 #ifdef MOIST_CAPPA
          pe2(i,k) = exp(gm2(i,k)*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
 #else
+#ifdef MULTI_GASES
+         gamax = 1./(1.-kapad2(i,k))
+         pe2(i,k) = exp(gamax*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
+#else
          pe2(i,k) = exp(gama*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
+#endif
 #endif
       enddo
    enddo
@@ -1418,7 +1637,13 @@ CONTAINS
 #ifdef MOIST_CAPPA
           aa(i,k) = t1g*0.5*(gm2(i,k-1)+gm2(i,k))/(dz2(i,k-1)+dz2(i,k))*pe2(i,k)
 #else
+#ifdef MULTI_GASES
+          gamax = 1./(1.-kapad2(i,k))
+          t1gx = 2.*gamax*(alpha*dt)**2
+          aa(i,k) = t1gx/(dz2(i,k-1)+dz2(i,k))*pe2(i,k)
+#else
           aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k))*pe2(i,k)
+#endif
 #endif
           wk(i,k) = t2*aa(i,k)*(w1(i,k-1)-w1(i,k))
           aa(i,k) = aa(i,k) - scale_m*dm2(i,1)
@@ -1443,7 +1668,13 @@ CONTAINS
 #ifdef MOIST_CAPPA
           wk1(i) = t1g*gm2(i,km)/dz2(i,km)*pe2(i,km+1)
 #else
+#ifdef MULTI_GASES
+          gamax = 1./(1.-kapad2(i,km))
+          t1gx = 2.*gamax*(alpha*dt)**2
+          wk1(i) = t1gx/dz2(i,km)*pe2(i,km+1)
+#else
           wk1(i) = t1g/dz2(i,km)*pe2(i,km+1)
+#endif
 #endif
        gam(i,km) = aa(i,km) / bet(i)
           bet(i) =  dm2(i,km) - (aa(i,km)+wk1(i) + aa(i,km)*gam(i,km))
@@ -1471,7 +1702,12 @@ CONTAINS
 #ifdef MOIST_CAPPA
        dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp((cp2(i,km)-1.)*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
 #else
+#ifdef MULTI_GASES
+       capa1x = kapad2(i,km)-1.
+       dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp(capa1x*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
+#else
        dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp(capa1*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
+#endif
 #endif
     enddo
 
@@ -1482,7 +1718,12 @@ CONTAINS
 #ifdef MOIST_CAPPA
           dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp((cp2(i,k)-1.)*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
 #else
+#ifdef MULTI_GASES
+          capa1x = kapad2(i,k)-1.
+          dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp(capa1x*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
+#else
           dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp(capa1*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
+#endif
 #endif
        enddo
     enddo
@@ -1655,6 +1896,9 @@ CONTAINS
  end subroutine edge_profile
 
  subroutine nest_halo_nh(ptop, grav, kappa, cp, delp, delz, pt, phis, &
+#ifdef MULTI_GASES
+      q ,    &
+#endif
 #ifdef USE_COND
       q_con, &
 #ifdef MOIST_CAPPA
@@ -1672,6 +1916,9 @@ CONTAINS
       type(fv_grid_bounds_type), intent(IN) :: bd
       real, intent(IN) :: phis(bd%isd:bd%ied,bd%jsd:bd%jed)
       real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: pt, delp, delz
+#ifdef MULTI_GASES
+      real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz,*):: q
+#endif
 #ifdef USE_COND
       real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: q_con
 #ifdef MOIST_CAPPA
@@ -1692,6 +1939,9 @@ CONTAINS
       real, dimension(bd%isd:bd%ied, npz-1) :: g_rat
       real, dimension(bd%isd:bd%ied) :: bet
       real :: pm
+#ifdef MULTI_GASES
+      real gamax
+#endif
 
       integer :: ifirst, ilast, jfirst, jlast
 
@@ -1766,9 +2016,14 @@ CONTAINS
 #ifdef MOIST_CAPPA
                   pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #else
+#ifdef MULTI_GASES
+                  gamax = gama * (vicpqd(q(i,j,k,:))/vicvqd(q(i,j,k,:)))
+                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
+#else
                   pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
 #endif
-                  !hydro
+#endif
+!                  !hydro
 #ifdef USE_COND
                   pm = (peg(i,k+1)-peg(i,k))/(pelng(i,k+1)-pelng(i,k))
 #else
@@ -1882,7 +2137,12 @@ CONTAINS
 #ifdef MOIST_CAPPA
                   pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #else
+#ifdef MULTI_GASES
+                  gamax = gama * (vicpqd(q(i,j,k,:))/vicvqd(q(i,j,k,:)))
+                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
+#else
                   pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
+#endif
 #endif
                   !hydro
 #ifdef USE_COND
@@ -1994,7 +2254,12 @@ CONTAINS
 #ifdef MOIST_CAPPA
                   pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #else
+#ifdef MULTI_GASES
+                  gamax = gama * (vicpqd(q(i,j,k,:))/vicvqd(q(i,j,k,:)))
+                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
+#else
                   pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
+#endif
 #endif
                   !hydro
 #ifdef USE_COND
@@ -2112,7 +2377,12 @@ CONTAINS
 #ifdef MOIST_CAPPA
                   pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #else
+#ifdef MULTI_GASES
+                  gamax = gama * (vicpqd(q(i,j,k,:))/vicvqd(q(i,j,k,:)))
+                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
+#else
                   pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
+#endif
 #endif
                   !hydro
 #ifdef USE_COND

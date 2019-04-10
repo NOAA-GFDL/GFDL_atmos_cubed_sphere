@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -121,6 +122,9 @@ module fv_nwp_nudge_mod
  use sim_nc_mod,        only: open_ncfile, close_ncfile, get_ncdim1, get_var1_double, &
                               get_var3_r4, get_var1_real
  use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, fv_nest_type, R_GRID
+#ifdef MULTI_GASES
+ use multi_gases_mod,  only:  virq, virqd, vicpqd, num_gas
+#endif
 
  implicit none
  private
@@ -312,7 +316,11 @@ module fv_nwp_nudge_mod
   real, intent(in   ), dimension(isd:ied,jsd:jed    ):: phis
   real, intent(inout), dimension(isd:ied,jsd:jed,npz):: pt, ua, va, delp
 ! pt as input is true tempeature
+#ifdef MULTI_GASES
+  real, intent(inout):: q(isd:ied,jsd:jed,npz,*)
+#else
   real, intent(inout):: q(isd:ied,jsd:jed,npz,nwat)
+#endif
   real, intent(inout), dimension(isd:ied,jsd:jed):: ps
 ! Accumulated tendencies
   real, intent(inout), dimension(isd:ied,jsd:jed,npz):: u_dt, v_dt
@@ -335,7 +343,7 @@ module fv_nwp_nudge_mod
   real, allocatable, dimension(:,:,:):: du_obs, dv_obs
   real:: ps_fac(is:ie,js:je)
   integer :: seconds, days
-  integer :: i,j,k, iq, kht
+  integer :: i,j,k, iq, kht, n
   real :: factor, rms, bias, co
   real :: rdt, press(npz), profile(npz), prof_t(npz), prof_q(npz), du, dv
   logical used
@@ -504,7 +512,11 @@ module fv_nwp_nudge_mod
 !-------------------------------------------
       do j=js,je
          do i=is,ie
+#ifdef MULTI_GASES
+            tv(i,j) = pt(i,j,npz)*virq(q(i,j,npz,1:num_gas))
+#else
             tv(i,j) = pt(i,j,npz)*(1.+zvir*q(i,j,npz,1))
+#endif
          enddo
       enddo
       call compute_slp(is, ie, js, je, tv, ps(is:ie,js:je), phis(is:ie,js:je), slp_m)
@@ -605,18 +617,29 @@ module fv_nwp_nudge_mod
   if ( nudge_virt ) then
        rdt = 1./(tau_virt/factor + dt)
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,kstart,kht,t_dt,prof_t,t_obs,zvir, &
+#ifdef MULTI_GASES
+!$OMP                                  num_gas,                                           &
+#endif
 !$OMP                                  q,pt,rdt,ps_fac)
      do k=kstart, kht
         if ( k==npz ) then
         do j=js,je
            do i=is,ie
+#ifdef MULTI_GASES
+              t_dt(i,j,k) = prof_t(k)*(t_obs(i,j,k)/virq(q(i,j,k,1:num_gas))-pt(i,j,k))*rdt*ps_fac(i,j)
+#else
               t_dt(i,j,k) = prof_t(k)*(t_obs(i,j,k)/(1.+zvir*q(i,j,k,1))-pt(i,j,k))*rdt*ps_fac(i,j)
+#endif
            enddo
         enddo
         else
         do j=js,je
            do i=is,ie
+#ifdef MULTI_GASES
+              t_dt(i,j,k) = prof_t(k)*(t_obs(i,j,k)/virq(q(i,j,k,1:num_gas))-pt(i,j,k))*rdt
+#else
               t_dt(i,j,k) = prof_t(k)*(t_obs(i,j,k)/(1.+zvir*q(i,j,k,1))-pt(i,j,k))*rdt
+#endif
            enddo
         enddo
         endif
@@ -626,6 +649,9 @@ module fv_nwp_nudge_mod
   if ( nudge_hght .and. kht<npz ) then     ! averaged (in log-p) temperature
        rdt = 1. / (tau_hght/factor + dt)
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,ak,h2,delp,kht,t_obs,pt,zvir, &
+#ifdef MULTI_GASES
+!$OMP                                  num_gas,                &
+#endif
 !$OMP                                  q,rdt,ps_fac,mask,t_dt) &
 !$OMP                          private(pe2, peln )
        do j=js,je
@@ -647,7 +673,11 @@ module fv_nwp_nudge_mod
            do k=kht+1, npz
               do i=is,ie
 ! Difference between "Mean virtual tempearture" (pseudo height)
+#ifdef MULTI_GASES
+                 h2(i,j) = h2(i,j) + (t_obs(i,j,k)-pt(i,j,k)*virq(q(i,j,k,1:num_gas)))*(peln(i,k+1)-peln(i,k))
+#else
                  h2(i,j) = h2(i,j) + (t_obs(i,j,k)-pt(i,j,k)*(1.+zvir*q(i,j,k,1)))*(peln(i,k+1)-peln(i,k))
+#endif
               enddo
            enddo
            do i=is,ie
@@ -657,7 +687,11 @@ module fv_nwp_nudge_mod
 
            do k=kht+1, npz
               do i=is,ie
+#ifdef MULTI_GASES
+                 t_dt(i,j,k) = h2(i,j) / virq(q(i,j,k,1:num_gas))
+#else
                  t_dt(i,j,k) = h2(i,j) / (1.+zvir*q(i,j,k,1))
+#endif
               enddo
            enddo
        enddo   ! j-loop
@@ -775,12 +809,16 @@ module fv_nwp_nudge_mod
 ! local
       real, dimension(is:ie,js:je):: ps_dt
       integer, parameter:: kmax = 100
-      real:: pn0(kmax+1), pk0(kmax+1)
+      real:: pn0(kmax+1), pk0(kmax+1), pe0(kmax+1)
       real, dimension(is:ie,npz+1):: pe2, peln
       real:: pst, dbk, pt0, rdt, bias
       integer i, j, k, iq
 
       real, pointer, dimension(:,:) :: area
+#ifdef MULTI_GASES
+      real :: kappax(km)
+      real :: pkx
+#endif
 
       area => gridstruct%area
 
@@ -789,7 +827,13 @@ module fv_nwp_nudge_mod
 
     do j=js,je
        do 666 i=is,ie
+#ifdef MULTI_GASES
+       do k=1,km
+          kappax(k)= virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))
+       enddo
+#endif
        do k=1, km+1
+          pe0(k) =  ak0(k) + bk0(k)*ps_obs(i,j)
           pk0(k) = (ak0(k) + bk0(k)*ps_obs(i,j))**kappa
        enddo
       if( phis(i,j)>gz0(i,j) ) then
@@ -803,10 +847,22 @@ module fv_nwp_nudge_mod
           pn0(km  ) = log(ak0(km) + bk0(km)*ps_obs(i,j))
           pn0(km+1) = log(ps_obs(i,j))
 ! Extrapolation into the ground using only the lowest layer potential temp
+#ifdef MULTI_GASES
+           pkx = (pk0(km+1)-pk0(km))/(kappa*(pn0(km+1)-pn0(km)))
+           pt0 = tm(i,j)/exp(kappax(km)*log(pkx))
+           pkx = exp((kappax(km)-1.0)*log(pkx))
+           pst = pk0(km+1) + (gz0(i,j)-phis(i,j))/(cp_air*pt0*pkx)
+#else
            pt0 = tm(i,j)/(pk0(km+1)-pk0(km))*(kappa*(pn0(km+1)-pn0(km)))
            pst = pk0(km+1) + (gz0(i,j)-phis(i,j))/(cp_air*pt0)
+#endif
       endif
+#ifdef MULTI_GASES
+      k=km
+666   ps_dt(i,j) = pst**(1./(kappa*kappax(k))) - ps(i,j)
+#else
 666   ps_dt(i,j) = pst**(1./kappa) - ps(i,j)
+#endif
       enddo   ! j-loop
 
       if( nf_ps>0 ) call del2_scalar(ps_dt, del2_cd, 1, nf_ps, bd, npx, npy, gridstruct, domain)
@@ -2138,6 +2194,9 @@ module fv_nwp_nudge_mod
 
       real, pointer :: area(:,:)
       real(kind=R_GRID), pointer :: agrid(:,:,:)
+#ifdef MULTI_GASES
+      real :: kappax(is:ie,js:je,npz)
+#endif
 
       if ( forecast_mode ) return
 
@@ -2510,6 +2569,16 @@ module fv_nwp_nudge_mod
        enddo
     enddo
 
+#ifdef MULTI_GASES
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,k_breed,kappax,num_gas)
+    do k=k_breed,npz
+      do j=js,je
+         do i=is,ie
+            kappax(i,j,k)= virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))
+         enddo
+      enddo
+    enddo
+#endif
     do k=k_breed+1,npz+1
       do j=js,je
          do i=is,ie
@@ -2520,6 +2589,9 @@ module fv_nwp_nudge_mod
     enddo
 
 !$OMP parallel do default(none) shared(k_breed,npz,is,ie,js,je,conserve_mom,u,v,delp, &
+#ifdef MULTI_GASES
+!$OMP                                  kappax,                                        &
+#endif
 !$OMP                                  conserve_hgt,hydrostatic,pkz,pk,pt,peln)
     do k=k_breed+1,npz
 
@@ -2540,7 +2612,10 @@ module fv_nwp_nudge_mod
        do j=js,je
           do i=is,ie
 ! Conserve total enthalpy (static energy)
-            pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
+             pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
+#ifdef MULTI_GASES
+             pkz(i,j,k) = exp(kappax(i,j,k)*log(pkz(i,j,k)))
+#endif
              pt(i,j,k) = pt(i,j,k) / (pkz(i,j,k)*delp(i,j,k))
           enddo
        enddo

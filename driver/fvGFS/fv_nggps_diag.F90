@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -80,6 +81,9 @@ module fv_nggps_diags_mod
                                helicity_relative_CAPS,max_vorticity_hy1 
  use fv_arrays_mod,      only: fv_atmos_type
  use mpp_domains_mod,    only: domain1d, domainUG
+#ifdef MULTI_GASES
+ use multi_gases_mod,  only:  virq
+#endif
 
  implicit none
  private
@@ -432,6 +436,7 @@ contains
     real    :: ptop, allmax
     real, allocatable :: wk(:,:,:), wk2(:,:,:)
     real, dimension(:,:),allocatable :: ustm,vstm,srh01,srh03
+
     n = 1
     ngc = Atm(n)%ng
     ptop = Atm(n)%ak(1)
@@ -553,9 +558,13 @@ contains
     if( (.not. Atm(n)%flagstruct%hydrostatic) .and. id_pfnh > 0) then
        do k=1,npzo
          do j=jsco,jeco
-           do i=isco,ieco         
-             wk(i,j,k) = -wk(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*rdgas*          &
-                         Atm(n)%pt(i,j,k)*(1.+zvir*Atm(n)%q(i,j,k,sphum))     
+           do i=isco,ieco
+             wk(i,j,k) = -wk(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*rdgas*Atm(n)%pt(i,j,k)
+#ifdef MULTI_GASES
+             wk(i,j,k) = wk(i,j,k) * virq(Atm(n)%q(i,j,k,:))
+#else
+             wk(i,j,k) = wk(i,j,k) * (1.+zvir*Atm(n)%q(i,j,k,sphum))
+#endif
            enddo
          enddo
        enddo
@@ -579,8 +588,12 @@ contains
        do k=1,npzo
          do j=jsco,jeco
            do i=isco,ieco
-             wk(i,j,k) = -Atm(n)%delp(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*rdgas*          &
-                          Atm(n)%pt(i,j,k)*(1.+zvir*Atm(n)%q(i,j,k,sphum))
+             wk(i,j,k) = -Atm(n)%delp(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*rdgas*Atm(n)%pt(i,j,k)
+#ifdef MULTI_GASES
+             wk(i,j,k) = wk(i,j,k)*virq(Atm(n)%q(i,j,k,:)
+#else
+             wk(i,j,k) = wk(i,j,k)*(1.+zvir*Atm(n)%q(i,j,k,sphum))
+#endif
            enddo
          enddo
        enddo

@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -164,6 +165,9 @@ module fv_restart_mod
   use fv_timing_mod,       only: timing_on, timing_off
   use fms_mod,             only: file_exist
   use fv_treat_da_inc_mod, only: read_da_inc
+#ifdef MULTI_GASES
+  use multi_gases_mod,  only:  virq
+#endif
 
   implicit none
   private
@@ -949,7 +953,7 @@ contains
     integer :: isg_n, ieg_n, jsg_n, jeg_n, npx_n, npy_n
     real zvir, gh0, p1(2), p2(2), r, r0
 
-    integer :: p, sending_proc, gid
+    integer :: p, sending_proc, gid, n
     logical process
 
     if (present(proc_in)) then
@@ -966,6 +970,7 @@ contains
     isc = Atm(1)%bd%isc; iec = Atm(1)%bd%iec; jsc = Atm(1)%bd%jsc; jec = Atm(1)%bd%jec
     npz     = Atm(1)%npz    
     
+
     gid = mpp_pe()
 
     sending_proc = Atm(1)%parent_grid%pelist(1) + (Atm(1)%neststruct%parent_tile-1)*Atm(1)%parent_grid%npes_per_tile
@@ -1115,7 +1120,11 @@ contains
           do k=1,npz
              do j=Atm(1)%bd%jsd,Atm(1)%bd%jed
                 do i=Atm(1)%bd%isd,0
+#ifdef MULTI_GASES
+                   Atm(1)%pt(i,j,k) = cp_air*Atm(1)%pt(i,j,k)/pt_coarse(i,j,k)*virq(Atm(1)%q(i,j,k,:))
+#else
                    Atm(1)%pt(i,j,k) = cp_air*Atm(1)%pt(i,j,k)/pt_coarse(i,j,k)*(1.+zvir*Atm(1)%q(i,j,k,sphum))
+#endif
                 end do
              end do
           end do
@@ -1136,7 +1145,11 @@ contains
           do k=1,npz
              do j=Atm(1)%bd%jsd,0
                 do i=istart,iend
+#ifdef MULTI_GASES
+                   Atm(1)%pt(i,j,k) = cp_air*Atm(1)%pt(i,j,k)/pt_coarse(i,j,k)*virq(Atm(1)%q(i,j,k,:))
+#else
                    Atm(1)%pt(i,j,k) = cp_air*Atm(1)%pt(i,j,k)/pt_coarse(i,j,k)*(1.+zvir*Atm(1)%q(i,j,k,sphum))
+#endif
                 end do
              end do
           end do
@@ -1146,7 +1159,11 @@ contains
           do k=1,npz
              do j=Atm(1)%bd%jsd,Atm(1)%bd%jed
                 do i=Atm(1)%npx,Atm(1)%bd%ied
+#ifdef MULTI_GASES
+                   Atm(1)%pt(i,j,k) = cp_air*Atm(1)%pt(i,j,k)/pt_coarse(i,j,k)*virq(Atm(1)%q(i,j,k,:))
+#else
                    Atm(1)%pt(i,j,k) = cp_air*Atm(1)%pt(i,j,k)/pt_coarse(i,j,k)*(1.+zvir*Atm(1)%q(i,j,k,sphum))
+#endif
                 end do
              end do
           end do
@@ -1167,7 +1184,11 @@ contains
           do k=1,npz
              do j=Atm(1)%npy,Atm(1)%bd%jed
                 do i=istart,iend
+#ifdef MULTI_GASES
+                   Atm(1)%pt(i,j,k) = cp_air*Atm(1)%pt(i,j,k)/pt_coarse(i,j,k)*virq(Atm(1)%q(i,j,k,:))
+#else
                    Atm(1)%pt(i,j,k) = cp_air*Atm(1)%pt(i,j,k)/pt_coarse(i,j,k)*(1.+zvir*Atm(1)%q(i,j,k,sphum))
+#endif
                 end do
              end do
           end do

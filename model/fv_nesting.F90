@@ -22,6 +22,8 @@
 !>@brief The module 'fv_nesting' is a collection of routines pertaining to grid nesting 
 !! \cite harris2013two.
 
+#undef MULTI_GASES
+
 module fv_nesting_mod
 
 ! Modules Included:

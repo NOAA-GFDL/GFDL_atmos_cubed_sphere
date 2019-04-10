@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -63,6 +64,9 @@ module init_hydro_mod
       use mpp_domains_mod,    only: domain2d
       use fv_arrays_mod,      only: R_GRID
 !     use fv_diagnostics_mod, only: prt_maxmin
+#ifdef MULTI_GASES
+      use multi_gases_mod,  only:  virq, virqd, vicpqd
+#endif
 
       implicit none
       private
@@ -108,7 +112,7 @@ contains
    integer  rainwat, snowwat, graupel          ! GFDL Cloud Microphysics
    real ratio(ifirst:ilast)
    real pek, lnp, ak1, rdg, dpd, zvir
-   integer i, j, k
+   integer i, j, k, n
 
 ! Check dry air mass & compute the adjustment amount:
    if ( adjust_dry_mass )      &
@@ -198,22 +202,36 @@ contains
        zvir = rvgas/rdgas - 1.
        sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
 !$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,pkz,cappa,rdg, &
-!$OMP                                  delp,pt,zvir,q,sphum,delz)
+!$OMP                                 delp,pt,zvir,q,sphum,delz)
        do k=1,km
           do j=jfirst,jlast
              do i=ifirst,ilast
+#ifdef MULTI_GASES
+                pkz(i,j,k) = exp( cappa*(virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:))) * &
+                                        log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+                                     virq(q(i,j,k,:))   /delz(i,j,k)) )
+#else
                 pkz(i,j,k) = exp( cappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
                                 (1.+zvir*q(i,j,k,sphum))/delz(i,j,k)) )
+#endif
              enddo
           enddo
        enddo
      else
 !$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,pkz,cappa,rdg, &
-!$OMP                                  delp,pt,delz)
+#ifdef MULTI_GASES
+!$OMP                              q,                                              &
+#endif
+!$OMP                              delp,pt,delz)
        do k=1,km
           do j=jfirst,jlast
              do i=ifirst,ilast
+#ifdef MULTI_GASES
+                pkz(i,j,k) = exp( cappa * (virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:))) * &
+                                        log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)) )
+#else
                 pkz(i,j,k) = exp( cappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)) )
+#endif
              enddo
           enddo
        enddo

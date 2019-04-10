@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -142,6 +143,10 @@ module fv_diagnostics_mod
 
  use fv_arrays_mod, only: max_step 
  use gfdl_cloud_microphys_mod, only: wqs1, qsmith_init
+#ifdef MULTI_GASES
+ use multi_gases_mod,  only:  virq, virqd, vicpqd, vicvqd, num_gas
+#endif
+
  implicit none
  private
 
@@ -231,7 +236,6 @@ contains
 
     ncnst = Atm(1)%ncnst
     m_calendar = Atm(1)%flagstruct%moist_phys
-
     call set_domain(Atm(1)%domain)  ! Set domain so that diag_manager can access tile information
 
     sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
@@ -1526,8 +1530,14 @@ contains
                    a2(i,j) = Atm(n)%delp(i,j,k)/(Atm(n)%peln(i,k+1,j)-Atm(n)%peln(i,k,j))
                 enddo
              enddo
+#ifdef MULTI_GASES
+             call qsmith((iec-isc+1)*(jec-jsc+1), npz,                       &
+                   (iec-isc+1)*(jec-jsc+1), 1, Atm(n)%pt(isc:iec,jsc:jec,k), &
+                  a2, Atm(n)%q(isc:iec,jsc:jec,k,sphum), wk(isc,jsc,k))
+#else
              call qsmith(iec-isc+1, jec-jsc+1, 1, Atm(n)%pt(isc:iec,jsc:jec,k),   &
                   a2, Atm(n)%q(isc:iec,jsc:jec,k,sphum), wk(isc,jsc,k))
+#endif
              do j=jsc,jec
                 do i=isc,iec
                    wk(i,j,k) = 100.*Atm(n)%q(i,j,k,sphum)/wk(i,j,k)
@@ -2433,8 +2443,13 @@ contains
            do k=1,npz
              do j=jsc,jec
              do i=isc,iec         
-                 wk(i,j,k) = -wk(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*rdgas*          &
-                             Atm(n)%pt(i,j,k)*(1.+zvir*Atm(n)%q(i,j,k,sphum))     
+#ifdef MULTI_GASES
+                 wk(i,j,k) = -wk(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*rdgas*  &
+                             Atm(n)%pt(i,j,k)*virq(Atm(n)%q(i,j,k,1:num_gas))
+#else
+                 wk(i,j,k) = -wk(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*rdgas*  &
+                             Atm(n)%pt(i,j,k)*(1.+zvir*Atm(n)%q(i,j,k,sphum))
+#endif
              enddo
              enddo
            enddo
@@ -2450,8 +2465,13 @@ contains
            do k=1,npz
              do j=jsc,jec
              do i=isc,iec
+#ifdef MULTI_GASES
+                 wk(i,j,k) = -Atm(n)%delp(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*rdgas*          &
+                              Atm(n)%pt(i,j,k)*virq(Atm(n)%q(i,j,k,1:num_gas))
+#else
                  wk(i,j,k) = -Atm(n)%delp(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*rdgas*          &
                               Atm(n)%pt(i,j,k)*(1.+zvir*Atm(n)%q(i,j,k,sphum))
+#endif
              enddo
              enddo
            enddo
@@ -3095,7 +3115,7 @@ contains
   logical, intent(in):: hydrostatic
   real, intent(out):: wz(is:ie,js:je,km+1)
 !
-  integer i,j,k
+  integer i,j,k,n
   real gg
 
       gg  = rdgas * ginv
@@ -3107,8 +3127,13 @@ contains
       if (hydrostatic ) then
          do k=km,1,-1
             do i=is,ie
+#ifdef MULTI_GASES
+               wz(i,j,k) = wz(i,j,k+1) + gg*pt(i,j,k)*virq(q(i,j,k,1:num_gas))  &
+                          *(peln(i,k+1,j)-peln(i,k,j))
+#else
                wz(i,j,k) = wz(i,j,k+1) + gg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))  &
                           *(peln(i,k+1,j)-peln(i,k,j))
+#endif
             enddo
          enddo
       else
@@ -3918,6 +3943,9 @@ contains
    rdg = rdgas / grav
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,hydrostatic,rdg,pt,zvir,sphum, &
+#ifdef MULTI_GASES
+!$OMP                                  num_gas,                         &
+#endif
 !$OMP                                  peln,delz,ua,va,srh,z_bot,z_top) &
 !$OMP                          private(zh,uc,vc,dz,k0,k1,zh0,below)
    do j=js,je
@@ -3933,7 +3961,11 @@ contains
 !        if ( phis(i,j)/grav < 1.E3 ) then
          do k=km,1,-1
             if ( hydrostatic ) then
+#ifdef MULTI_GASES
+                 dz(i) = rdg*pt(i,j,k)*virq(q(i,j,k,1:num_gas))*(peln(i,k+1,j)-peln(i,k,j))
+#else
                  dz(i) = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
+#endif
             else
                  dz(i) = - delz(i,j,k)
             endif
@@ -3995,12 +4027,15 @@ contains
 !
    real:: rdg
    real, dimension(is:ie):: zh, dz, zh0
-   integer i, j, k, k0, k1
+   integer i, j, k, k0, k1, n
    logical below
 
    rdg = rdgas / grav
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,hydrostatic,rdg,pt,zvir,sphum, &
+#ifdef MULTI_GASES
+!$OMP                                  num_gas,                               &
+#endif
 !$OMP                                  peln,delz,ua,va,srh,uc,vc,z_bot,z_top) &
 !$OMP                          private(zh,dz,k0,k1,zh0,below)
    do j=js,je
@@ -4013,7 +4048,11 @@ contains
 
   K_LOOP:do k=km,1,-1
             if ( hydrostatic ) then
+#ifdef MULTI_GASES
+                 dz(i) = rdg*pt(i,j,k)*virq(q(i,j,k,1:num_gas))*(peln(i,k+1,j)-peln(i,k,j))
+#else
                  dz(i) = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
+#endif
             else
                  dz(i) = -delz(i,j,k)
             endif
@@ -4063,13 +4102,16 @@ contains
    real:: rdg
    real :: zh, dz, usfc, vsfc, u6km, v6km, umn, vmn
    real :: ushr, vshr, shrmag
-   integer i, j, k
+   integer i, j, k, n
    real, parameter :: bunkers_d = 7.5 ! Empirically derived parameter
    logical :: has_sfc, has_6km
 
    rdg = rdgas / grav
 
-!$OMP parallel do default(none) shared(is,ie,js,je,km,hydrostatic,rdg,pt,zvir,sphum, &
+!$OMP parallel do default(none) shared(is,ie,js,je,ng,km,hydrostatic,rdg,pt,zvir,sphum, &
+#ifdef MULTI_GASES
+!$OMP                                  num_gas,               &
+#endif
 !$OMP                                  peln,delz,ua,va,uc,vc) &
 !$OMP                           private(zh,dz,usfc,vsfc,u6km,v6km,umn,vmn, &
 !$OMP                                  ushr,vshr,shrmag)
@@ -4088,7 +4130,11 @@ contains
 
   K_LOOP:do k=km,1,-1
             if ( hydrostatic ) then
+#ifdef MULTI_GASES
+                 dz = rdg*pt(i,j,k)*virq(q(i,j,k,1:num_gas))*(peln(i,k+1,j)-peln(i,k,j))
+#else
                  dz = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
+#endif
             else
                  dz = -delz(i,j,k)
             endif
@@ -4142,12 +4188,15 @@ contains
 !
    real:: rdg
    real, dimension(is:ie):: zh, dz, zh0
-   integer i, j, k
+   integer i, j, k, n
    logical below(is:ie)
 
    rdg = rdgas / grav
 
-!$OMP parallel do default(none) shared(is,ie,js,je,km,hydrostatic,rdg,pt,zvir,sphum, &
+!$OMP parallel do default(none) shared(is,ie,js,je,ng,km,hydrostatic,rdg,pt,zvir,sphum, &
+#ifdef MULTI_GASES
+!$OMP                                  num_gas,                         &
+#endif
 !$OMP                                  peln,delz,w,vort,uh,z_bot,z_top) &
 !$OMP                          private(zh,dz,zh0,below)
    do j=js,je
@@ -4161,7 +4210,11 @@ contains
 !        if ( phis(i,j)/grav < 1.E3 ) then
          do k=km,1,-1
             if ( hydrostatic ) then
+#ifdef MULTI_GASES
+                 dz(i) = rdg*pt(i,j,k)*virq(q(i,j,k,1:num_gas))*(peln(i,k+1,j)-peln(i,k,j))
+#else
                  dz(i) = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
+#endif
             else
                  dz(i) = - delz(i,j,k)
             endif
@@ -4411,12 +4464,21 @@ subroutine rh_calc (pfull, t, qv, rh, do_cmip)
 end subroutine rh_calc
 
 #ifdef SIMPLIFIED_THETA_E
+
 !>@brief The subroutine 'eqv_pot' calculates the equivalent potential temperature using 
 !! a simplified method.
 !>@author Shian-Jiann Lin
+#ifdef MULTI_GASES
+subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, qi, is, ie, js, je, ng, npz, &
+                   hydrostatic, moist)
+#else
 subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, npz, &
                    hydrostatic, moist)
+#endif
     integer, intent(in):: is,ie,js,je,ng,npz
+#ifdef MULTI_GASES
+    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,npz,*):: qi
+#endif
     real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,npz):: pt, delp, q
     real, intent(in), dimension(is-ng:     ,js-ng:     ,1: ):: delz
     real, intent(in), dimension(is:ie,npz+1,js:je):: peln
@@ -4441,6 +4503,15 @@ subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, np
     else
          wfac = 0.
     endif
+#ifdef MULLTI_GASES
+    do j=js,je
+       do i=is,ie
+          do k=1,npz
+             q(i,j,k) = qi(i,j,k,1)
+          enddo
+       enddo
+    enddo
+#endif
 
 !$OMP parallel do default(none) shared(pk0,wfac,moist,pkz,is,ie,js,je,npz,pt,q,delp,peln,delz,theta_e,hydrostatic)  &
 !$OMP  private(pd, rq)
@@ -4468,11 +4539,21 @@ subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, np
 !                                   rvgas*log(rh(i))) + kappa*log(1.e5/pd(i))) * pt(i,j,k)
 ! Simplified form: (ignoring the RH term)
 #ifdef SIM_NGGPS
+#ifdef MULTI_GASES
+               theta_e(i,j,k) = pt(i,j,k)*exp(kappa * (virqd(qi(i,j,k,:))/vicpqd(qi(i,j,k,:)))*log(1.e5/pd(i))) *  &
+                                          exp(rq(i)*hlv/(cp_air*vicpqd(qi(i,j,k,:))*pt(i,j,k)))
+#else
                theta_e(i,j,k) = pt(i,j,k)*exp(kappa*log(1.e5/pd(i))) *  &
                                           exp(rq(i)*hlv/(cp_air*pt(i,j,k)))
+#endif
+#else
+#ifdef MULTI_GASES
+               theta_e(i,j,k) = pt(i,j,k)*exp( rq(i)/(cp_air*vicpqd(q(i,j,k,:))*pt(i,j,k))*(hlv+dc_vap*(pt(i,j,k)-tice)) &
+                                             + rdgas*virqd(qi(i,j,k,:)) / (cp_air*vicpqd(qi(i,j,k,:)))*log(1.e5/pd(i)) )
 #else
                theta_e(i,j,k) = pt(i,j,k)*exp( rq(i)/(cp_air*pt(i,j,k))*(hlv+dc_vap*(pt(i,j,k)-tice)) &
                                              + kappa*log(1.e5/pd(i)) )
+#endif
 #endif
             enddo
         else
@@ -4483,7 +4564,11 @@ subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, np
           else
              do i=is,ie
 !               theta_e(i,j,k) = pt(i,j,k)*(1.e5/pd(i))**kappa
+#ifdef MULTI_GASES
+                theta_e(i,j,k) = pt(i,j,k)*exp( kappa * (virqd(qi(i,j,k,:))/vicpqd(qi(i,j,k,:)))*log(1.e5/pd(i)) )
+#else
                 theta_e(i,j,k) = pt(i,j,k)*exp( kappa*log(1.e5/pd(i)) )
+#endif
              enddo
           endif
         endif
@@ -4498,11 +4583,20 @@ end subroutine eqv_pot
 !>@author Xi Chen
 !>@date 28 July 2015
 !> Modfied by Shian-Jiann Lin
+#ifdef MULTI_GASES
+subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, qi, is, ie, js, je, ng, npz, &
+#else
 subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, npz, &
+#endif
                    hydrostatic, moist)
 ! Modified by SJL
     integer, intent(in):: is,ie,js,je,ng,npz
-    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,npz):: pt, delp, q
+#ifdef MULTI_GASES
+    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,npz,*):: qi
+#else
+    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,npz):: q
+#endif
+    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,npz):: pt, delp
     real, intent(in), dimension(is-ng:     ,js-ng:     ,1: ):: delz
     real, intent(in), dimension(is:ie,npz+1,js:je):: peln
     real, intent(in):: pkz(is:ie,js:je,npz) 
@@ -4510,13 +4604,19 @@ subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, np
 ! Output:
     real, dimension(is:ie,js:je,npz), intent(out) :: theta_e  !< eqv pot
 ! local
+#ifdef MULTI_GASES
+    real, dimension(is-ng:ie+ng,js-ng:je+ng,npz):: q
+#endif
     real, parameter:: cv_vap = cp_vapor - rvgas  ! 1384.5
     real, parameter:: cappa_b = 0.2854
     real(kind=R_GRID):: cv_air, cappa, zvir
     real(kind=R_GRID):: p_mb(is:ie)
     real(kind=R_GRID) :: r, e, t_l, rdg, capa
-    integer :: i,j,k
+    integer :: i,j,k, n
 
+#ifdef MULTI_GASES
+    q(:,:,:) = qi(:,:,:,1)
+#endif
     cv_air =  cp_air - rdgas
     rdg = -rdgas/grav
     if ( moist ) then
@@ -4525,7 +4625,11 @@ subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, np
          zvir = 0.
     endif
 
-!$OMP parallel do default(none) shared(moist,pk0,pkz,cv_air,zvir,rdg,is,ie,js,je,npz,pt,q,delp,peln,delz,theta_e,hydrostatic)  &
+!$OMP parallel do default(none) shared(moist,pk0,pkz,cv_air,zvir,rdg,is,ie,js,je,ng,npz, &
+#ifdef MULTI_GASES
+!$OMP      qi,num_gas,                                                                   &
+#endif
+!$OMP      pt,q,delp,peln,delz,theta_e,hydrostatic)  &
 !$OMP      private(cappa,p_mb, r, e, t_l, capa)
     do k = 1,npz
        cappa = cappa_b
@@ -4537,12 +4641,20 @@ subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, np
             enddo
         else
             do i=is,ie
+#ifdef MULTI_GASES
+               p_mb(i) = 0.01*rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)*virq(qi(i,j,k,1:num_gas))
+#else
                p_mb(i) = 0.01*rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)*(1.+zvir*q(i,j,k))
+#endif
             enddo
         endif
         if ( moist ) then
           do i = is,ie
+#ifdef MULTI_GASES
+          cappa = rdgas/(rdgas+((1.-q(i,j,k))*cv_air+q(i,j,k)*cv_vap)/virq(qi(i,j,k,1:num_gas)))
+#else
           cappa = rdgas/(rdgas+((1.-q(i,j,k))*cv_air+q(i,j,k)*cv_vap)/(1.+zvir*q(i,j,k)))
+#endif
 ! get "dry" mixing ratio of m_vapor/m_tot in g/kg
           r = q(i,j,k)/(1.-q(i,j,k))*1000.
           r = max(1.e-10, r)
@@ -4564,7 +4676,11 @@ subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, np
              enddo
           else
              do i = is,ie
+#ifdef MULTI_GASES
+                theta_e(i,j,k) = pt(i,j,k)*exp( kappa * virqd(qi(i,j,k,1:num_gas))/vicpqd(qi(i,j,k,1:num_gas)) *log(1000./p_mb(i)) )
+#else
                 theta_e(i,j,k) = pt(i,j,k)*exp( kappa*log(1000./p_mb(i)) )
+#endif
              enddo
           endif
         endif
@@ -4604,6 +4720,9 @@ end subroutine eqv_pot
    cv_air =  cp_air - rdgas
 
 !$OMP parallel do default(none) shared(te,nwat,is,ie,js,je,isd,ied,jsd,jed,km,ua,va,   &
+#ifdef MULTI_GASES
+!$OMP          num_gas,                                                                &
+#endif
 !$OMP          w,q,pt,delp,delz,hs,cv_air,moist_phys,sphum,liq_wat,rainwat,ice_wat,snowwat,graupel) &
 !$OMP          private(phiz,cvm, qc)
   do j=js,je
@@ -4631,8 +4750,13 @@ end subroutine eqv_pot
      else
        do k=1,km
           do i=is,ie
+#ifdef MULTI_GASES
+             te(i,j) = te(i,j) + delp(i,j,k)*( cv_air*vicvqd(q(i,j,k,1:num_gas))*pt(i,j,k) +  &
+                     0.5*(phiz(i,k)+phiz(i,k+1)+ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2) )
+#else
              te(i,j) = te(i,j) + delp(i,j,k)*( cv_air*pt(i,j,k) +  &
                      0.5*(phiz(i,k)+phiz(i,k+1)+ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2) )
+#endif
           enddo
        enddo
      endif
@@ -4761,7 +4885,7 @@ end subroutine eqv_pot
    real(kind=R_GRID):: factorb_s, factorb_g
    real(kind=R_GRID):: temp_c, pres, sonv, gonv, ronv, z_e
 
-   integer :: i,j,k
+   integer :: i,j,k, n
    integer :: is, ie, js, je
 
    is = bd%is
@@ -4780,7 +4904,11 @@ end subroutine eqv_pot
    do j=js, je
       if (hydrostatic) then
          do i=is, ie
+#ifdef MULTI_GASES
+            rhoair(i) = delp(i,j,k)/( (peln(i,k+1,j)-peln(i,k,j)) * rdgas * pt(i,j,k) * virq(q(i,j,k,1:num_gas)) )
+#else
             rhoair(i) = delp(i,j,k)/( (peln(i,k+1,j)-peln(i,k,j)) * rdgas * pt(i,j,k) * ( 1. + zvir*q(i,j,k,sphum) ) )
+#endif
          enddo
       else
          do i=is, ie
