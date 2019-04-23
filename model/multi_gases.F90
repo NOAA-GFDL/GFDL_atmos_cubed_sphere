@@ -45,6 +45,8 @@ module multi_gases_mod
       integer ind_gas
       integer num_wat
       integer sphum, sphump1
+      real, allocatable :: ri(:)
+      real, allocatable :: cpi(:)
       real, allocatable :: vir(:)
       real, allocatable :: vicp(:)
       real, allocatable :: vicv(:)
@@ -64,7 +66,7 @@ module multi_gases_mod
 
       CONTAINS
 ! --------------------------------------------------------
-      subroutine multi_gases_init(ngas, nwat, ri,   cpi )
+      subroutine multi_gases_init(ngas, nwat)
 !--------------------------------------------
 ! !OUTPUT PARAMETERS
 ! Ouput: vir(i): ri/rdgas - r0/rdgas
@@ -76,8 +78,6 @@ module multi_gases_mod
 !        vicv(0): cv0/cv_air
 !--------------------------------------------
       integer, intent(in):: ngas, nwat
-      real, intent(in):: ri(0:ngas)
-      real, intent(in):: cpi(0:ngas)
 ! Local:
       integer n
       real   cvi(0:ngas)

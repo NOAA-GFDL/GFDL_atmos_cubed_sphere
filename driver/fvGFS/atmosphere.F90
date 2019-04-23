@@ -188,7 +188,7 @@ use fv_sg_mod,          only: fv_subgrid_z
 use fv_update_phys_mod, only: fv_update_phys
 use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
 #ifdef MULTI_GASES
-use multi_gases_mod,  only: virq, virq_max, num_gas
+use multi_gases_mod,  only: virq, virq_max, num_gas, ri, cpi
 #endif
 use fv_regional_mod,    only: start_regional_restart, read_new_bc_data, &
                               a_step, p_step, current_time_in_seconds
@@ -241,6 +241,9 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
 
   integer, dimension(:), allocatable :: id_tracerdt_dyn
   integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel  ! condensate species tracer indices
+#ifdef CCPP
+  integer :: cld_amt
+#endif
 
   integer :: mytile  = 1
   integer :: p_split = 1
@@ -265,6 +268,32 @@ contains
 !! including the grid structures, memory, initial state (self-initialization or restart), 
 !! and diagnostics.  
  subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, area)
+#ifdef CCPP
+#ifdef STATIC
+! For static builds, the ccpp_physics_{init,run,finalize} calls
+! are not pointing to code in the CCPP framework, but to auto-generated
+! ccpp_suite_cap and ccpp_group_*_cap modules behind a ccpp_static_api
+   use ccpp_api,          only: ccpp_init
+   use ccpp_static_api,   only: ccpp_physics_init
+#else
+   use iso_c_binding,     only: c_loc
+   use ccpp_api,          only: ccpp_init,           &
+                                ccpp_physics_init,   &
+                                ccpp_field_add,      &
+                                ccpp_error
+#endif
+   use CCPP_data,         only: ccpp_suite,          &
+                                cdata => cdata_tile, &
+                                CCPP_interstitial
+#ifdef OPENMP
+   use omp_lib
+#endif
+#ifndef STATIC
+! Begin include auto-generated list of modules for ccpp
+#include "ccpp_modules_fast_physics.inc"
+! End include auto-generated list of modules for ccpp
+#endif
+#endif
    type (time_type),    intent(in)    :: Time_init, Time, Time_step
    type(grid_box_type), intent(inout) :: Grid_box
    real(kind=kind_phys), pointer, dimension(:,:), intent(inout) :: area
@@ -274,6 +303,10 @@ contains
    logical :: do_atmos_nudge
    character(len=32) :: tracer_name, tracer_units
    real    :: ps1, ps2
+#ifdef CCPP
+   integer :: nthreads
+   integer :: ierr
+#endif
 
    current_time_in_seconds = time_type_to_real( Time - Time_init )
    if (mpp_pe() == 0) write(*,"('atmosphere_init: current_time_seconds = ',f9.1)")current_time_in_seconds
@@ -335,6 +368,9 @@ contains
    rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat' )
    snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat' )
    graupel = get_tracer_index (MODEL_ATMOS, 'graupel' )
+#ifdef CCPP
+   cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
+#endif
 
    if (max(sphum,liq_wat,ice_wat,rainwat,snowwat,graupel) > Atm(mytile)%flagstruct%nwat) then
       call mpp_error (FATAL,' atmosphere_init: condensate species are not first in the list of &
@@ -402,6 +438,72 @@ contains
    id_fv_diag   = mpp_clock_id ('FV Diag',     flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
                     call timing_off('ATMOS_INIT')
+
+#ifdef CCPP
+   ! Do CCPP fast physics initialization before call to adiabatic_init (since this calls fv_dynamics)
+
+   ! Initialize the cdata structure
+   call ccpp_init(trim(ccpp_suite), cdata, ierr)
+   if (ierr/=0) then
+      cdata%errmsg = ' atmosphere_dynamics: error in ccpp_init: ' // trim(cdata%errmsg)
+      call mpp_error (FATAL, cdata%errmsg)
+   end if
+   
+   ! For fast physics running over the entire domain, block and thread
+   ! number are not used; set to safe values
+   cdata%blk_no = 1
+   cdata%thrd_no = 1
+
+   ! Create shared data type for fast and slow physics, one for each thread
+#ifdef OPENMP
+   nthreads = omp_get_max_threads()
+#else
+   nthreads = 1
+#endif
+   ! Create interstitial data type for fast physics; for multi-gases physics,
+   ! pass q(:,:,:,1:num_gas) as qvi, otherwise pass q(:,:,:,1:1) as 4D array
+   call CCPP_interstitial%create(Atm(mytile)%bd%is, Atm(mytile)%bd%ie, Atm(mytile)%bd%isd, Atm(mytile)%bd%ied, &
+                                 Atm(mytile)%bd%js, Atm(mytile)%bd%je, Atm(mytile)%bd%jsd, Atm(mytile)%bd%jed, &
+                                 Atm(mytile)%npz, Atm(mytile)%ng,                                              &
+                                 dt_atmos, p_split, Atm(mytile)%flagstruct%k_split,                            &
+                                 zvir, Atm(mytile)%flagstruct%p_ref, Atm(mytile)%ak, Atm(mytile)%bk,           &
+                                 cld_amt>0, kappa, Atm(mytile)%flagstruct%hydrostatic,                         &
+                                 Atm(mytile)%flagstruct%do_sat_adj,                                            &
+                                 Atm(mytile)%delp, Atm(mytile)%delz, Atm(mytile)%gridstruct%area_64,           &
+                                 Atm(mytile)%peln, Atm(mytile)%phis, Atm(mytile)%pkz, Atm(mytile)%pt,          &
+#ifdef MULTI_GASES
+                                 Atm(mytile)%q(:,:,:,1:max(1,num_gas)),                                        &
+#else
+                                 Atm(mytile)%q(:,:,:,1:1),                                                     &
+#endif
+                                 Atm(mytile)%q(:,:,:,sphum), Atm(mytile)%q(:,:,:,liq_wat),                     &
+                                 Atm(mytile)%q(:,:,:,ice_wat), Atm(mytile)%q(:,:,:,rainwat),                   &
+                                 Atm(mytile)%q(:,:,:,snowwat), Atm(mytile)%q(:,:,:,graupel),                   &
+                                 Atm(mytile)%q(:,:,:,cld_amt), Atm(mytile)%q_con, nthreads,                    &
+                                 Atm(mytile)%flagstruct%nwat,                                                  &
+#ifdef MULTI_GASES
+                                 ngas=num_gas, rilist=ri, cpilist=cpi,                                         &
+#endif
+                                 mpirank=mpp_pe(), mpiroot=mpp_root_pe())
+
+#ifndef STATIC
+! Populate cdata structure with fields required to run fast physics (auto-generated).
+#include "ccpp_fields_fast_physics.inc"
+#endif
+
+   if (Atm(mytile)%flagstruct%do_sat_adj) then
+      ! Initialize fast physics
+#ifdef STATIC
+      call ccpp_physics_init(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
+#else
+      call ccpp_physics_init(cdata, group_name="fast_physics", ierr=ierr)
+#endif
+      if (ierr/=0) then
+         cdata%errmsg = ' atmosphere_dynamics: error in ccpp_physics_init for group fast_physics: ' // trim(cdata%errmsg)
+         call mpp_error (FATAL, cdata%errmsg)
+      end if
+   end if
+#endif
 
 !  --- initiate the start for a restarted regional forecast
    if ( Atm(mytile)%gridstruct%regional .and. Atm(mytile)%flagstruct%warm_start ) then
@@ -611,8 +713,37 @@ contains
 !>@brief The subroutine 'atmosphere_end' is an API for the termination of the
 !! FV3 dynamical core responsible for writing out a restart and final diagnostic state.
  subroutine atmosphere_end (Time, Grid_box)
+#ifdef CCPP
+#ifdef STATIC
+! For static builds, the ccpp_physics_{init,run,finalize} calls
+! are not pointing to code in the CCPP framework, but to auto-generated
+! ccpp_suite_cap and ccpp_group_*_cap modules behind a ccpp_static_api
+   use ccpp_static_api,   only: ccpp_physics_finalize
+   use CCPP_data,         only: ccpp_suite
+#else
+   use ccpp_api,          only: ccpp_physics_finalize
+#endif
+   use CCPP_data,         only: cdata => cdata_tile
+#endif
    type (time_type),      intent(in)    :: Time
    type(grid_box_type),   intent(inout) :: Grid_box
+
+#ifdef CCPP
+   integer :: ierr
+
+   if (Atm(mytile)%flagstruct%do_sat_adj) then
+      ! Finalize fast physics
+#ifdef STATIC
+      call ccpp_physics_finalize(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
+#else
+      call ccpp_physics_finalize(cdata, group_name="fast_physics", ierr=ierr)
+#endif
+      if (ierr/=0) then
+         cdata%errmsg = ' atmosphere_dynamics: error in ccpp_physics_finalize for group fast_physics: ' // trim(cdata%errmsg)
+         call mpp_error (FATAL, cdata%errmsg)
+      end if
+   end if
+#endif
 
    call nullify_domain ( )
    if (first_diag) then
@@ -957,7 +1088,7 @@ contains
                      Atm(mytile)%domain, npx, npy, npz, 3, Atm(mytile)%bd)
    enddo
    ! provide back sqrt of dissipation estimate
-   Atm(mytile)%diss_est=sqrt(Atm(mytile)%diss_est)
+   Atm(mytile)%diss_est=sqrt(abs(Atm(mytile)%diss_est))
 
  end subroutine atmosphere_diss_est
 
@@ -1250,7 +1381,7 @@ contains
  end subroutine get_stock_pe
 
 
-!>@brief The subroutine 'atmospehre_state_update' is an API to apply tendencies
+!>@brief The subroutine 'atmosphere_state_update' is an API to apply tendencies
 !! and compute a consistent prognostic state.
  subroutine atmosphere_state_update (Time, IPD_Data, IAU_Data, Atm_block, flip_vc)
    type(time_type),              intent(in) :: Time
@@ -1475,7 +1606,7 @@ contains
 !! to pre-condition a solution via backward-forward steps with capability for various
 !! nudgings.
  subroutine adiabatic_init(zvir,nudge_dz,time)
-   type(time_type),intent(in) :: Time
+   type(time_type),intent(in) :: time
    real, allocatable, dimension(:,:,:):: u0, v0, t0, dz0, dp0
    real,    intent(in)   :: zvir
    logical, intent(inout):: nudge_dz

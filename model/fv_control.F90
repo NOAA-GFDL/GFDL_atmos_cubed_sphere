@@ -154,7 +154,9 @@ module fv_control_mod
 
 #ifdef MULTI_GASES
    use constants_mod,       only: rvgas, cp_air
-   use multi_gases_mod,     only: multi_gases_init
+   use multi_gases_mod,     only: multi_gases_init, &
+                                  rilist => ri,     &
+                                  cpilist => cpi
 #endif
 
    implicit none
@@ -672,7 +674,6 @@ module fv_control_mod
    namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
 #ifdef MULTI_GASES
    namelist /multi_gases_nml/ rilist,cpilist
-   real, allocatable :: rilist(:), cpilist(:)
 #endif
 
 
@@ -756,8 +757,6 @@ module fv_control_mod
       if( is_master() ) print *,' enter multi_gases: ncnst = ',ncnst
       allocate (rilist(0:ncnst))
       allocate (cpilist(0:ncnst))
-      allocate (rilist(0:ncnst))
-      allocate (cpilist(0:ncnst))
       rilist     =    0.0
       cpilist    =    0.0
       rilist(0)  = rdgas
@@ -779,7 +778,7 @@ module fv_control_mod
       write(unit, nml=test_case_nml)
 #ifdef MULTI_GASES
       write(unit, nml=multi_gases_nml)
-      call multi_gases_init(ncnst,nwat,rilist,cpilist)
+      call multi_gases_init(ncnst,nwat)
 #endif
 
       if (len_trim(grid_file) /= 0) Atm(n)%flagstruct%grid_file = grid_file

@@ -748,7 +748,7 @@ contains
           .and. id_uhmax25 > 0 .and. id_uhmin25 > 0 .and. id_maxvort01 > 0  & 
           .and. id_maxvorthy1 > 0 .and. id_maxvort02 > 0) then
        allocate ( vort(isco:ieco,jsco:jeco,npzo) )
-       if(first_call == .true.) then
+       if (first_call) then
          call get_time (Time_step_atmos, seconds,  days)
          first_time=seconds
          first_call=.false.
