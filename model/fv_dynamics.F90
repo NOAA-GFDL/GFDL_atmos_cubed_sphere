@@ -448,7 +448,9 @@ contains
              call moist_cp(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
                            ice_wat, snowwat, graupel, q, q_con(is:ie,j,k), cvm)
 #endif
-
+            do i=is,ie
+               dp1(i,j,k) = zvir*q(i,j,k,sphum)
+            enddo
          enddo
       enddo
     else

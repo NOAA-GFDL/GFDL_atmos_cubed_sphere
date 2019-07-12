@@ -436,7 +436,7 @@ contains
       if (ierr == 0) then
          call get_var3_r4( ncid, field_name, 1,im, jbeg,jend, 1,km, wk3 )
       else
-         print *,'warning: no increment for ',trim(field_name),' found, assuming zero'
+         if (is_master()) print *,'warning: no increment for ',trim(field_name),' found, assuming zero'
          wk3 = 0.
       endif
 

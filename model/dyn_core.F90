@@ -159,6 +159,7 @@ public :: dyn_core, del2_cubed, init_ijk_mem
   real, allocatable ::  rf(:)
   integer:: k_rf = 0
   logical:: RFF_initialized = .false.
+  logical:: first_call = .true.
   integer :: kmax=1
 
 contains
@@ -739,13 +740,14 @@ contains
     endif
 
     if (flagstruct%regional) call exch_uv(domain, bd, npz, vc, uc)
+    if (first_call .and. is_master() .and. last_step) write(6,*) 'Sponge layer divergence damping coefficent:'
 
                                                      call timing_on('d_sw')
 !$OMP parallel do default(none) shared(npz,flagstruct,nord_v,pfull,damp_vt,hydrostatic,last_step, &
 !$OMP                                  is,ie,js,je,isd,ied,jsd,jed,omga,delp,gridstruct,npx,npy,  &
 !$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,ua,va,divgd,mfx,mfy,cx,cy,     &
 !$OMP                                  crx,cry,xfx,yfx,q_con,zvir,sphum,nq,q,dt,bd,rdt,iep1,jep1, &
-!$OMP                                  heat_source,diss_est)                                      &
+!$OMP                                  heat_source,diss_est,ptop,first_call)                                      &
 !$OMP                          private(nord_k, nord_w, nord_t, damp_w, damp_t, d2_divg,   &
 !$OMP                          d_con_k,kgb, hord_m, hord_v, hord_t, hord_p, wk, heat_s,diss_e, z_rat)
     do k=1,npz
@@ -782,6 +784,10 @@ contains
        else
 ! Sponge layers with del-2 damping on divergence, vorticity, w, z, and air mass (delp).
 ! no special damping of potential temperature in sponge layers
+! enhanced del-2 divergence damping has same vertical structure as Rayleigh
+! damping if d2_bg_k2<=0.
+          if (flagstruct%d2_bg_k2 > 0) then ! old version, only applied at top two or three levels
+
               if ( k==1 ) then
 ! Divergence damping:
                    nord_k=0; d2_divg = max(0.01, flagstruct%d2_bg, flagstruct%d2_bg_k1)
@@ -789,7 +795,7 @@ contains
                    nord_w=0; damp_w = d2_divg
                    if ( flagstruct%do_vort_damp ) then
 ! damping on delp and vorticity:
-                        nord_v(k)=0; 
+                        nord_v(k)=0;
 #ifndef HIWPP
                         damp_vt(k) = 0.5*d2_divg
 #endif
@@ -810,6 +816,21 @@ contains
                    nord_w=0;  damp_w = d2_divg
                    d_con_k = 0.
               endif
+          else ! new version, uses d2_bg_k1 and sponge layer vertical structure
+              if ( pfull(k) < flagstruct%rf_cutoff ) then
+                   nord_k=0; nord_w=0
+                   d2_divg = max(flagstruct%d2_bg, flagstruct%d2_bg_k1*   &
+                             sin(0.5*pi*log(flagstruct%rf_cutoff/pfull(k))/log(flagstruct%rf_cutoff/ptop))**2)
+                   if (first_call .and. is_master() .and. last_step) write(6,*) k, 0.01*pfull(k), d2_divg
+                   damp_w = d2_divg
+                   if ( flagstruct%do_vort_damp ) then
+! damping on delp and vorticity
+                      nord_v(k)=0
+                      damp_vt(k) = 0.5*d2_divg
+                   endif
+              endif
+          endif
+
        endif
 
        if( hydrostatic .and. (.not.flagstruct%use_old_omega) .and. last_step ) then
@@ -1300,6 +1321,7 @@ contains
 
 !-----------------------------------------------------
   enddo   ! time split loop
+  first_call=.false.
 !-----------------------------------------------------
     if ( nq > 0 .and. .not. flagstruct%inline_q ) then
        call timing_on('COMM_TOTAL')
