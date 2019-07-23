@@ -41,6 +41,9 @@ AC_SYS_LARGEFILE
 # Require MPI.
 AC_CHECK_FUNC([MPI_Init], [], [AC_MSG_ERROR([MPI C library required])])
 
+# Require FMS. But this does not work because fms_platform.h is actually a fortran file.
+# AC_CHECK_HEADERS([fms_platform.h], [], [AC_MSG_ERROR([Can't find fms_platform.h.])])
+
 dnl # Check for netCDF C library.
 dnl AC_SEARCH_LIBS([nc_create], [netcdf], [],
 dnl                             [AC_MSG_ERROR([Can't find or link to the netcdf C library, set CPPFLAGS/LDFLAGS.])])
