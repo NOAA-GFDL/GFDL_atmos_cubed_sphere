@@ -6,6 +6,6 @@ ACLOCAL_AMFLAGS = -I m4
 
 # Make targets will be run in each subdirectory. Order is significant.
 #SUBDIRS = driver GFDL_tools model model_nh tools
-SUBDIRS = GFDL_tools model model_nh tools
+SUBDIRS = model GFDL_tools model_nh tools
 
 EXTRA_DIST = README.md LICENSE.md
