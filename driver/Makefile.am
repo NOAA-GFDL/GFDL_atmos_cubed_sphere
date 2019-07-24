@@ -3,5 +3,5 @@
 # Ed Hartnett 7/22/2019
 
 # Make targets will be run in each subdirectory. Order is significant.
-SUBDIRS = GFDL SHiELD
-
+#SUBDIRS = GFDL SHiELD
+SUBDIRS = SHiELD

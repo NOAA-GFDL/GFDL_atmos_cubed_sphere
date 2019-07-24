@@ -11,14 +11,20 @@
 # AM_CPPFLAGS += -I${top_builddir}/mpp
 
 # Build this uninstalled convenience library.
-noinst_LTLIBRARIES = libatmosphere.la
+noinst_LTLIBRARIES = libatmos_co2.la libatmosphere.la
 
 # The convenience library depends on its source.
 libatmosphere_la_SOURCES = atmosphere.F90
+libatmos_co2_la_SOURCES = atmos_co2.F90
 
 # Mod file depends on its o file, is built and then installed.
 atmosphere_mod.mod: atmosphere.$(OBJEXT)
-BUILT_SOURCES = atmosphere_mod.mod
-include_HEADERS = atmosphere_mod.mod
+atmos_co2_mod.mod: atmos_co2.$(OBJEXT)
+
+# Some mods are dependant on other mods in this dir.
+atmosphere.$(OBJEXT): atmos_co2_mod.mod
+
+BUILT_SOURCES = atmosphere_mod.mod atmos_co2_mod.mod
+include_HEADERS = atmosphere_mod.mod atmos_co2_mod.mod
 
 CLEANFILES = *.mod
