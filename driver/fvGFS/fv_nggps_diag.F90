@@ -514,7 +514,7 @@ contains
        do k=1,npzo
          do j=jsco,jeco
            do i=isco,ieco
-             wk(i,j,k) = -Atm(n)%delz(i,j,k)
+             wk(i,j,k) = Atm(n)%delz(i,j,k)
            enddo
          enddo
        enddo
