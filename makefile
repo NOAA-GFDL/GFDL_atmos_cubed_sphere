@@ -28,6 +28,7 @@ SRCS_F   =
 SRCS_F90 = \
 		   ./model/a2b_edge.F90                           \
 		   ./model/multi_gases.F90                        \
+		   ./model/molecular_diffusion.F90                \
 		   ./model/boundary.F90                           \
 		   ./model/dyn_core.F90                           \
 		   ./model/fv_arrays.F90                          \

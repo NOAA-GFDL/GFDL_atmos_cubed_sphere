@@ -2014,11 +2014,15 @@ CONTAINS
                do i=ifirst,0
                   !Full p
 #ifdef MOIST_CAPPA
+#ifdef MULTI_GASES
+                  pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)*(1.-q_con(i,j,k))/delz(i,j,k)*pt(i,j,k)))
+#else
                   pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+#endif
 #else
 #ifdef MULTI_GASES
                   gamax = gama * (vicpqd(q(i,j,k,:))/vicvqd(q(i,j,k,:)))
-                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
+                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*(1.-q_con(i,j,k))*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
 #else
                   pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
 #endif
@@ -2135,11 +2139,15 @@ CONTAINS
                do i=npx,ilast
                   !Full p
 #ifdef MOIST_CAPPA
+#ifdef MULTI_GASES
+                  pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)*(1.-q_con(i,j,k))/delz(i,j,k)*pt(i,j,k)))
+#else
                   pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+#endif
 #else
 #ifdef MULTI_GASES
                   gamax = gama * (vicpqd(q(i,j,k,:))/vicvqd(q(i,j,k,:)))
-                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
+                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*(1.-q_con(i,j,k))*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
 #else
                   pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
 #endif
@@ -2252,11 +2260,15 @@ CONTAINS
                do i=ifirst,ilast
                   !Full p
 #ifdef MOIST_CAPPA
+#ifdef MULTI_GASES
+                  pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)*(1.-q_con(i,j,k))/delz(i,j,k)*pt(i,j,k)))
+#else
                   pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+#endif
 #else
 #ifdef MULTI_GASES
                   gamax = gama * (vicpqd(q(i,j,k,:))/vicvqd(q(i,j,k,:)))
-                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
+                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*(1.-q_con(i,j,k))*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
 #else
                   pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
 #endif
@@ -2375,11 +2387,15 @@ CONTAINS
                do i=ifirst,ilast
                   !Full p
 #ifdef MOIST_CAPPA
+#ifdef MULTI_GASES
+                  pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)*(1.-q_con(i,j,k))/delz(i,j,k)*pt(i,j,k)))
+#else
                   pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+#endif
 #else
 #ifdef MULTI_GASES
                   gamax = gama * (vicpqd(q(i,j,k,:))/vicvqd(q(i,j,k,:)))
-                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
+                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*(1.-q_con(i,j,k))*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
 #else
                   pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
 #endif

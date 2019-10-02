@@ -268,7 +268,11 @@ contains
       integer :: rainwat = -999, snowwat = -999, graupel = -999, cld_amt = -999
       integer :: theta_d = -999
       logical used, last_step, do_omega
+#ifdef MULTI_GASES
+      integer, parameter :: max_packs=13
+#else
       integer, parameter :: max_packs=12
+#endif
       type(group_halo_update_type), save :: i_pack(max_packs)
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
@@ -906,6 +910,16 @@ contains
   endif
 
   if ( flagstruct%range_warn ) then
+#ifdef MOLECULAR_DIFFUSION
+       call range_check('UA_dyn', ua, is, ie, js, je, ng, npz,gridstruct%agrid,&
+                         -680., 680., bad_range)
+       call range_check('VA_dyn', ua, is, ie, js, je, ng, npz,gridstruct%agrid,&
+                         -680., 680., bad_range)
+       call range_check('TA_dyn', pt, is, ie, js, je, ng, npz,gridstruct%agrid,&
+                         150.,3350., bad_range)
+       call range_check('W_dyn', w, is, ie, js, je, ng, npz,gridstruct%agrid, &
+                         -250., 250., bad_range)
+#else
        call range_check('UA_dyn', ua, is, ie, js, je, ng, npz, gridstruct%agrid,   &
                          -280., 280., bad_range)
        call range_check('VA_dyn', ua, is, ie, js, je, ng, npz, gridstruct%agrid,   &
@@ -915,6 +929,7 @@ contains
        if ( .not. hydrostatic ) &
             call range_check('W_dyn', w, is, ie, js, je, ng, npz, gridstruct%agrid,   &
                          -50., 100., bad_range)
+#endif
   endif
 
   end subroutine fv_dynamics

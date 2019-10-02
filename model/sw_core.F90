@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -44,8 +45,17 @@
 !   </tr>
 ! </table>
 
+#ifdef MOLECULAR_DIFFUSION
+ use molecular_diffusion_mod,  only: molecular_diffusion_coefs, &
+                                     rtau_visc, rtau_cond, rtau_diff, &
+                                     md_implicit
+ use fv_mp_mod,         only: ng, is_master
+ use tp_core_mod,       only: fv_tp_2d, pert_ppm, copy_corners, &
+                              deln_flux_implm, deln_flux_explm
+#else
  use fv_mp_mod,         only: ng
  use tp_core_mod,       only: fv_tp_2d, pert_ppm, copy_corners
+#endif
  use fv_mp_mod, only: fill_corners, XDir, YDir
  use fv_arrays_mod, only: fv_grid_type, fv_grid_bounds_type, fv_flags_type
  use a2b_edge_mod, only: a2b_ord4
@@ -94,7 +104,12 @@
 
 
       private
+#ifdef MOLECULAR_DIFFUSION
+      public :: c_sw, d_sw, d_md, fill_4corners, &
+                del6_vt_flux, divergence_corner, divergence_corner_nest
+#else
       public :: c_sw, d_sw, fill_4corners, del6_vt_flux, divergence_corner, divergence_corner_nest
+#endif
 
   contains
 
@@ -522,7 +537,8 @@
 !! and other prognostic varaiables. 
    subroutine d_sw(delpc, delp,  ptc,   pt, u,  v, w, uc,vc, &
                    ua, va, divg_d, xflux, yflux, cx, cy,              &
-                   crx_adv, cry_adv,  xfx_adv, yfx_adv, q_con, z_rat, kgb, heat_source,diss_est,  &
+                   crx_adv, cry_adv,  xfx_adv, yfx_adv, q_con, z_rat, &
+                   kgb, heat_source,diss_est,  &
                    zvir, sphum, nq, q, k, km, inline_q,  &
                    dt, hord_tr, hord_mt, hord_vt, hord_tm, hord_dp, nord,   &
                    nord_v, nord_w, nord_t, dddmp, d2_bg, d4_bg, damp_v, damp_w, &
@@ -986,9 +1002,10 @@
                    enddo
                 enddo
             endif
-            call fv_tp_2d(w, crx_adv,cry_adv, npx, npy, hord_vt, gx, gy, xfx_adv, yfx_adv, &
-                          gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac,                  &
-                          regional,mfx=fx, mfy=fy)
+            call fv_tp_2d(w, crx_adv,cry_adv, npx, npy,                  &
+                          hord_vt, gx, gy, xfx_adv, yfx_adv,             &
+                          gridstruct, bd, ra_x, ra_y,                    &
+                          flagstruct%lim_fac,regional,mfx=fx, mfy=fy)
             do j=js,je
                do i=is,ie
                   w(i,j) = delp(i,j)*w(i,j) + (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
@@ -997,9 +1014,12 @@
         endif
 
 #ifdef USE_COND
-           call fv_tp_2d(q_con, crx_adv,cry_adv, npx, npy, hord_dp, gx, gy,  &
-                xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac,&
-                regional, mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
+           call fv_tp_2d(q_con, crx_adv,cry_adv, npx, npy,     &
+                         hord_dp, gx, gy,                      &
+                         xfx_adv,yfx_adv, gridstruct, bd,      &
+                         ra_x, ra_y, flagstruct%lim_fac,       &
+                         regional, mfx=fx, mfy=fy, mass=delp,  &
+                         nord=nord_t, damp_c=damp_t)
             do j=js,je
                do i=is,ie
                   q_con(i,j) = delp(i,j)*q_con(i,j) + (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
@@ -1014,9 +1034,12 @@
 !          enddo
 !       enddo
 !    endif
-        call fv_tp_2d(pt, crx_adv,cry_adv, npx, npy, hord_tm, gx, gy,  &
-                      xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
-                      regional,mfx=fx, mfy=fy, mass=delp, nord=nord_v, damp_c=damp_v)
+        call fv_tp_2d(pt, crx_adv,cry_adv, npx, npy,       &
+                      hord_tm, gx, gy,                     &
+                      xfx_adv,yfx_adv, gridstruct, bd,     &
+                      ra_x, ra_y, flagstruct%lim_fac,      &
+                      regional,mfx=fx, mfy=fy, mass=delp,  &
+                      nord=nord_v, damp_c=damp_v)
 !                     mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
 #endif
 
@@ -1034,9 +1057,12 @@
            enddo
         enddo
         do iq=1,nq
-           call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv, npx, npy, hord_tr, gx, gy,  &
-                         xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
-                         regional,mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
+           call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv,  &
+                         npx, npy, hord_tr, gx, gy,         &
+                         xfx_adv,yfx_adv, gridstruct, bd,   &
+                         ra_x, ra_y, flagstruct%lim_fac,    &
+                         regional,mfx=fx, mfy=fy, mass=delp,&
+                         nord=nord_t, damp_c=damp_t)
            do j=js,je
               do i=is,ie
                  q(i,j,k,iq) = (q(i,j,k,iq)*wk(i,j) +               &
@@ -1579,6 +1605,229 @@
 #endif
 
  end subroutine d_sw
+
+#ifdef MOLECULAR_DIFFUSION
+
+! d_md :: D-Grid 2D molecular diffusion
+
+!>@brief The subroutine 'd_md' peforms D-grid molecular diffusion
+   subroutine d_md(p, t, u,  v, w, q,  &
+                   it, nq, k, km, dt,   &
+                   gridstruct, flagstruct, bd)
+
+      integer, intent(IN):: nq, k, km, it
+      real   , intent(IN):: dt
+      type(fv_grid_bounds_type), intent(IN) :: bd
+      real, intent(INOUT), dimension(bd%isd:bd%ied, bd%jsd:bd%jed):: p, t
+      real, intent(INOUT), dimension(bd%isd:      ,  bd%jsd:      ):: w
+      real, intent(INOUT), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1):: u
+      real, intent(INOUT), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: v
+      real, intent(INOUT):: q(bd%isd:bd%ied,bd%jsd:bd%jed,km,nq)
+      type(fv_grid_type), intent(IN), target :: gridstruct
+      type(fv_flags_type), intent(IN), target :: flagstruct
+!---
+      real :: wk(bd%isd:bd%ied,bd%jsd:bd%jed) !<  work array
+      real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: utmp, vtmp
+      real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed,1:nq)::  qtra
+      real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: temp, plyr, coef
+      real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: visc, cond, diff
+
+      integer :: i, j, iq
+      integer :: ijm,idir
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+      integer :: npx, npy, nord
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+      ijm = (ied-isd+1)*(jed-jsd+1)
+
+      npx      = flagstruct%npx
+      npy      = flagstruct%npy
+      nord     = flagstruct%nord
+
+! -----------------------------------------------------
+! time-split and dimensional-split molecular diffusion 
+! -----------------------------------------------------
+!
+! prepare molecular diffusion coefficients
+!
+      do j=jsd,jed
+         do i=isd,ied
+            plyr(i,j) = p(i,j)
+            temp(i,j) = t(i,j)
+            qtra(i,j,1:nq) = q(i,j,k,1:nq)
+          enddo
+      enddo
+
+      if( flagstruct%nord>0 .and. (.not. (flagstruct%regional))) then
+          idir = mod(it-1,2)+1	! alternated by 1 and 2 to avoid bias
+          call copy_corners(plyr, npx, npy, idir, gridstruct%nested, bd, &
+                            gridstruct%sw_corner, gridstruct%se_corner, &
+                            gridstruct%nw_corner, gridstruct%ne_corner)
+          call copy_corners(temp, npx, npy, idir, gridstruct%nested, bd, &
+                            gridstruct%sw_corner, gridstruct%se_corner, &
+                            gridstruct%nw_corner, gridstruct%ne_corner)
+          do iq=1,nq
+             call copy_corners(qtra(isd,jsd,iq), npx, npy, idir, &
+                               gridstruct%nested, bd           , &
+                            gridstruct%sw_corner, gridstruct%se_corner, &
+                            gridstruct%nw_corner, gridstruct%ne_corner)
+          enddo
+      endif
+
+      call molecular_diffusion_coefs(ijm,plyr(isd,jsd  ),temp(isd,jsd),&
+                                         qtra(isd,jsd,1),visc(isd,jsd),&
+                                         cond(isd,jsd  ),diff(isd,jsd))
+
+!     if(is_master()) then
+!x        write(*,*) 'k=',k,'VISC',(maxval(visc(isd:ied,jsd:jed)))
+!x        write(*,*) 'k=',k,'COND',(maxval(cond(isd:ied,jsd:jed)))
+!         write(*,*) 'k=',k,'DIFF',(maxval(diff(isd:ied,jsd:jed)))
+!         write(*,*) 'k=',k,'minDIFF',(minval(diff(isd:ied,jsd:jed)))
+!         write(*,*) 'k=',k,'maxDIFF',(maxval(diff(isd:ied,jsd:jed)))
+!     endif
+!!    if(is_master().and.k.eq.1) then
+!!        write(*,*) 'k=1 visc cond diff ',(maxval(visc(isd:ied,jsd:jed))) &
+!!                                        ,(maxval(cond(isd:ied,jsd:jed))) &
+!!                                        ,(maxval(diff(isd:ied,jsd:jed)))
+!!    endif
+
+! time scale  and options
+      do j=jsd,jed
+         do i=isd,ied
+            visc(i,j) = visc(i,j)*abs(dt)*rtau_visc
+            cond(i,j) = cond(i,j)*abs(dt)*rtau_cond
+            diff(i,j) = diff(i,j)*abs(dt)*rtau_diff
+         enddo
+      enddo
+!     if(is_master()) then
+!         write(*,*) 'k=',k,'minXVDT',(minval(diff(isd:ied,jsd:jed)))
+!         write(*,*) 'k=',k,'maxXVDT',(maxval(diff(isd:ied,jsd:jed)))
+!     endif
+
+!
+! compute diffusion with dimensional split alternatively
+      idir = mod(it-1,2)+1
+!
+! w
+      do j=jsd,jed
+         do i=isd,ied
+             wk(i,j) = w(i,j)
+         enddo
+      enddo
+
+      if( md_implicit ) then
+          call deln_flux_implm(idir,nord,is,ie,js,je,npx,npy,visc,wk,gridstruct,bd)
+      else
+          call deln_flux_explm(idir,nord,is,ie,js,je,npx,npy,visc,wk,gridstruct,bd,k)
+      endif
+
+      do j=jsd,jed
+         do i=isd,ied
+            w(i,j) = wk(i,j)
+         enddo
+      enddo
+! t
+
+      if( md_implicit ) then
+          call deln_flux_implm(idir,nord,is,ie,js,je,npx,npy,cond,t,gridstruct,bd)
+      else
+          call deln_flux_explm(idir,nord,is,ie,js,je,npx,npy,cond,t,gridstruct,bd,k)
+      endif
+
+! q
+      do iq=1,nq
+         do j=jsd,jed
+            do i=isd,ied
+               wk(i,j) = q(i,j,k,iq)
+            enddo
+         enddo
+
+         if( md_implicit ) then
+             call deln_flux_implm(idir,nord,is,ie,js,je,npx,npy,diff,wk,gridstruct,bd)
+         else
+             call deln_flux_explm(idir,nord,is,ie,js,je,npx,npy,diff,wk,gridstruct,bd,k)
+         endif
+
+         do j=jsd,jed
+            do i=isd,ied
+               q(i,j,k,iq) = wk(i,j)
+            enddo
+         enddo
+      enddo 
+! u
+      do j=jsd+1,jed-1
+         do i=isd,ied
+            utmp(i,j) = a2*(u(i,j-1)+u(i,j+2)) + a1*(u(i,j)+u(i,j+1))
+         enddo
+      enddo
+      do i=isd,ied
+         utmp(i,jsd) = 0.5*(u(i,jsd)+u(i,jsd+1))
+         utmp(i,jed) = 0.5*(u(i,jed)+u(i,jed+1))
+      end do
+      if( gridstruct%sw_corner ) then
+          do i=isd,is-1 ; utmp(i,js) = 0.5*(u(i,js)+u(i,js+1)) ; enddo ; endif
+      if( gridstruct%se_corner ) then
+          do i=ie+1,ied ; utmp(i,js) = 0.5*(u(i,js)+u(i,js+1)) ; enddo ; endif
+      if( gridstruct%nw_corner ) then
+          do i=isd,is-1 ; utmp(i,je) = 0.5*(u(i,je)+u(i,je+1)) ; enddo ; endif
+      if( gridstruct%ne_corner ) then
+          do i=ie+1,ied ; utmp(i,je) = 0.5*(u(i,je)+u(i,je+1)) ; enddo ; endif
+ 
+      if( md_implicit ) then
+          call deln_flux_implm(idir,nord,is,ie,js,je,npx,npy,visc,utmp,gridstruct,bd)
+      else
+          call deln_flux_explm(idir,nord,is,ie,js,je,npx,npy,visc,utmp,gridstruct,bd,k)
+      endif
+
+      do j=js,je+1
+         do i=is,ie
+            u(i,j) = a2*(utmp(i,j+1)+utmp(i,j-2)) + a1*(utmp(i,j)+utmp(i,j-1))
+         enddo
+      enddo
+
+! v
+      do j=jsd,jed
+         do i=isd+1,ied-1
+            vtmp(i,j) = a2*(v(i-1,j)+v(i+2,j)) + a1*(v(i,j)+v(i+1,j))
+         enddo
+         vtmp(isd,j) = 0.5*(v(isd,j)+v(isd+1,j)) 
+         vtmp(ied,j) = 0.5*(v(ied,j)+v(ied+1,j))
+      enddo
+      if( gridstruct%sw_corner ) then
+          do j=jsd,js-1 ; vtmp(is,j) = 0.5*(v(is,j)+v(is+1,j)) ; enddo ; endif
+      if( gridstruct%se_corner ) then
+          do j=jsd,js-1 ; vtmp(ie,j) = 0.5*(v(ie,j)+v(ie+1,j)) ; enddo ; endif
+      if( gridstruct%nw_corner ) then
+          do j=je+1,jed ; vtmp(is,j) = 0.5*(v(is,j)+v(is+1,j)) ; enddo ; endif
+      if( gridstruct%ne_corner ) then
+          do j=je+1,jed ; vtmp(ie,j) = 0.5*(v(ie,j)+v(ie+1,j)) ; enddo ; endif
+
+      if( md_implicit ) then
+          call deln_flux_implm(idir,nord,is,ie,js,je,npx,npy,visc,vtmp,gridstruct,bd)
+      else
+          call deln_flux_explm(idir,nord,is,ie,js,je,npx,npy,visc,vtmp,gridstruct,bd,k)
+      endif
+
+      do j=js,je
+         do i=is,ie+1
+            v(i,j) = a2*(vtmp(i+1,j)+vtmp(i-2,j)) + a1*(vtmp(i,j)+vtmp(i-1,j))
+         enddo
+      enddo
+
+      return
+
+ end subroutine d_md
+
+#endif  	! for MOLECULAR_DIFFUSION
 
 !>@brief The subroutine 'del6_vt_flux' applies 2nd, 4th, or 6th-order damping
 !! to fluxes ("vorticity damping")

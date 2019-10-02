@@ -156,6 +156,9 @@ module fv_control_mod
    use constants_mod,       only: rvgas, cp_air
    use multi_gases_mod,     only: multi_gases_init
 #endif
+#ifdef MOLECULAR_DIFFUSION
+   use molecular_diffusion_mod,     only: molecular_diffusion_init
+#endif
 
    implicit none
    private
@@ -674,6 +677,11 @@ module fv_control_mod
    namelist /multi_gases_nml/ rilist,cpilist
    real, allocatable :: rilist(:), cpilist(:)
 #endif
+#ifdef MOLECULAR_DIFFUSION
+   namelist /molecular_diffusion_nml/ tau_visc, tau_cond, tau_diff, md_impl
+   real tau_visc, tau_cond, tau_diff
+   integer md_impl
+#endif
 
 
    pe_counter = mpp_root_pe()
@@ -732,6 +740,12 @@ module fv_control_mod
       read (input_nml_file,multi_gases_nml,iostat=ios)
       ierr = check_nml_error(ios,'multi_gases_nml')
 #endif
+#ifdef MOLECULAR_DIFFUSION
+      tau_visc=0.0; tau_cond=0.0; tau_diff=0.0; md_impl=0
+   ! Read molecular_diffusion namelist
+      read (input_nml_file,molecular_diffusion_nml,iostat=ios)
+      ierr = check_nml_error(ios,'molecular_diffusion_nml')
+#endif
    ! Read Test_Case namelist
       read (input_nml_file,test_case_nml,iostat=ios)
       ierr = check_nml_error(ios,'test_case_nml')
@@ -756,8 +770,6 @@ module fv_control_mod
       if( is_master() ) print *,' enter multi_gases: ncnst = ',ncnst
       allocate (rilist(0:ncnst))
       allocate (cpilist(0:ncnst))
-      allocate (rilist(0:ncnst))
-      allocate (cpilist(0:ncnst))
       rilist     =    0.0
       cpilist    =    0.0
       rilist(0)  = rdgas
@@ -768,6 +780,13 @@ module fv_control_mod
       rewind (f_unit)
       read (f_unit,multi_gases_nml,iostat=ios)
       ierr = check_nml_error(ios,'multi_gases_nml')
+#endif
+#ifdef MOLECULAR_DIFFUSION
+      tau_visc=0.0; tau_cond=0.0; tau_diff=0.0; md_impl=0
+   ! Read molecular_diffusion namelist
+      rewind (f_unit)
+      read (f_unit,molecular_diffusion_nml,iostat=ios)
+      ierr = check_nml_error(ios,'molecular_diffusion_nml')
 #endif
    ! Read Test_Case namelist
       rewind (f_unit)
@@ -780,6 +799,10 @@ module fv_control_mod
 #ifdef MULTI_GASES
       write(unit, nml=multi_gases_nml)
       call multi_gases_init(ncnst,nwat,rilist,cpilist)
+#endif
+#ifdef MOLECULAR_DIFFUSION
+      write(unit, nml=molecular_diffusion_nml)
+      call molecular_diffusion_init(tau_visc,tau_cond,tau_diff,md_impl)
 #endif
 
       if (len_trim(grid_file) /= 0) Atm(n)%flagstruct%grid_file = grid_file

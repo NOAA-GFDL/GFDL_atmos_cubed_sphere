@@ -646,7 +646,8 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, te0
 #ifdef USE_COND
             q_con (i, j) = q_liq (i) + q_sol (i)
 #ifdef MULTI_GASES
-            pt (i, j) = pt1 (i) * virq_qpz(qvi(i,j,1,1:num_gas),q_con(i,j))
+            tmp = virq_qpz(qvi(i,j,1,1:num_gas),q_con(i,j))
+            pt (i, j) = pt1 (i) *  tmp   
 #else
             tmp = 1. + zvir * qv (i, j)
             pt (i, j) = pt1 (i) *  tmp     * (1. - q_con (i, j))
@@ -656,7 +657,7 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, te0
 #else
 #ifdef MULTI_GASES
             q_con (i, j) = q_liq (i) + q_sol (i)
-            pt (i, j) = pt1 (i) * virq_qpz(qvi(i,j,1,1:num_gas),q_con(i,j)) * (1. - q_con(i,j))
+            pt (i, j) = pt1 (i) * virq_qpz(qvi(i,j,1,1:num_gas),q_con(i,j)) 
 #else
             pt (i, j) = pt1 (i) * (1. + zvir * qv (i, j))
 #endif

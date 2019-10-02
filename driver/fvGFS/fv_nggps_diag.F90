@@ -125,7 +125,11 @@ module fv_nggps_diags_mod
  integer :: rainwat, snowwat, graupel
  real :: vrange(2) = (/ -330.,  330. /)  !< winds
  real :: wrange(2) = (/ -100.,  100. /)  !< vertical wind
+#ifdef MULTI_GASES
+ real :: trange(2) = (/  100., 3000. /)  !< temperature
+#else
  real :: trange(2) = (/  100.,  350. /)  !< temperature
+#endif
  real :: skrange(2) = (/ -10000000.0,  10000000.0 /)  !< dissipation estimate for SKEB
 
 ! file name

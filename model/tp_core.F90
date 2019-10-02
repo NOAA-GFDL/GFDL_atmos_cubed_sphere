@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -49,7 +50,11 @@ module tp_core_mod
 !   </tr>
 ! </table>
 
+#ifdef MOLECULAR_DIFFUSION
+ use fv_mp_mod,         only: ng, is_master 
+#else
  use fv_mp_mod,         only: ng 
+#endif
  use fv_grid_utils_mod, only: big_number
  use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type
 
@@ -57,6 +62,11 @@ module tp_core_mod
 
  private
  public fv_tp_2d, pert_ppm, copy_corners
+#ifdef MOLECULAR_DIFFUSION
+ public deln_flux_implm
+ public deln_flux_explm
+ public tridiag
+#endif
 
  real, parameter:: ppm_fac = 1.5   !< nonlinear scheme limiter: between 1 and 2
  real, parameter:: r3 = 1./3.
@@ -1237,5 +1247,270 @@ endif
 
  end subroutine deln_flux
 
+#ifdef MOLECULAR_DIFFUSION
+
+ subroutine deln_flux_implm(idir,nord,is,ie,js,je,npx,npy,damp,q,gridstruct,bd)
+!> Del-2 dimensional split implicit damping for the cell-mean values (A grid)
+!------------------
+!> nord =  used for extra grid as side 
+!------------------
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   integer, intent(in):: idir            !< 1: x then y; 2: y then x
+   integer, intent(in):: nord            !< del-n
+   integer, intent(in):: is,ie,js,je, npx, npy
+   real, intent(in):: damp(bd%isd:bd%ied, bd%jsd:bd%jed)  
+   real, intent(inout):: q(bd%isd:bd%ied, bd%jsd:bd%jed)  ! q ghosted on input
+   type(fv_grid_type), intent(IN), target :: gridstruct
+! local:
+   real xx(bd%ied-bd%isd+1)
+   real xd(bd%ied-bd%isd+1),xu(bd%ied-bd%isd+1),xl(bd%ied-bd%isd+1)
+   real yy(bd%jed-bd%jsd+1)
+   real yd(bd%jed-bd%jsd+1),yu(bd%jed-bd%jsd+1),yl(bd%jed-bd%jsd+1)
+   real xk,xkxvc
+   real xv(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real d2(bd%isd:bd%ied,bd%jsd:bd%jed)
+   integer i, j, m, n, nt, i1, i2, j1, j2
+
+#ifdef USE_SG
+   real, pointer, dimension(:,:)   :: dx, dy, rdxc, rdyc
+   real, pointer, dimension(:,:,:) :: sin_sg
+
+   dx       => gridstruct%dx     
+   dy       => gridstruct%dy     
+   rdxc     => gridstruct%rdxc   
+   rdyc     => gridstruct%rdyc   
+   sin_sg   => gridstruct%sin_sg 
+#endif
+
+   i1 = is-1-nord;    i2 = ie+1+nord
+   j1 = js-1-nord;    j2 = je+1+nord
+
+   do j=bd%jsd,bd%jed
+      do i=bd%isd,bd%ied
+         xv(i,j) = damp(i,j) 
+         d2(i,j) = q(i,j)
+      enddo
+   enddo
+
+   do m = 1, 2
+
+! do x tridiagonal solver first at grid point a
+   if( idir==m ) then
+
+!x if( nord>0 ) then
+       call copy_corners(d2, npx, npy, 1, gridstruct%nested, bd, &
+                         gridstruct%sw_corner, gridstruct%se_corner, &
+                         gridstruct%nw_corner, gridstruct%ne_corner)
+       call copy_corners(xv, npx, npy, 1, gridstruct%nested, bd, &
+                         gridstruct%sw_corner, gridstruct%se_corner, &
+                         gridstruct%nw_corner, gridstruct%ne_corner)
+!x endif
+
+   do j=j1,j2
+      n=1
+      xx(1) = d2(i1,j)
+      xd(1) = 1.0 
+      do i=i1,i2-1
+#ifdef USE_SG
+         xk = 0.5*(sin_sg(i,j,3)+sin_sg(i+1,j,1))*dy(i+1,j)*rdxc(i+1,j)
+#else
+         xk = gridstruct%del6_v(i+1,j)
+#endif
+         xkxvc = 0.5 * xk * (xv(i,j)+xv(i+1,j))
+         xu(n) = -gridstruct%rarea(i  ,j) * xkxvc
+         xl(n) = -gridstruct%rarea(i+1,j) * xkxvc
+         xd(n) = xd(n) - xu(n)
+         xd(n+1) = 1.0 - xl(n)
+         xx(n+1) = d2(i+1,j)
+         n=n+1
+      enddo
+
+      nt=n
+      call tridiag(nt,xl,xd,xu,xx,xu,xx)
+
+      n=1
+      do i=i1,i2
+         d2(i,j) = xx(n) 
+         n=n+1
+      enddo
+   enddo
+
+   endif	
+
+! do y tridiagonal solver second at grid point a
+   if( m==1  ) then
+
+!x if( nord>0 ) then
+       call copy_corners(d2, npx, npy, 2, gridstruct%nested, bd, &
+                         gridstruct%sw_corner, gridstruct%se_corner, &
+                         gridstruct%nw_corner, gridstruct%ne_corner)
+       call copy_corners(xv, npx, npy, 2, gridstruct%nested, bd, &
+                         gridstruct%sw_corner, gridstruct%se_corner, &
+                         gridstruct%nw_corner, gridstruct%ne_corner)
+!x endif
+   do i=i1,i2
+      n=1
+      yy(1) = d2(i,j1)
+      yd(1) = 1.0 
+      do j=j1,j2-1
+#ifdef USE_SG
+         xk = 0.5*(sin_sg(i,j,4)+sin_sg(i,j+1,2))*dx(i,j+1)*rdyc(i,j+1)
+#else
+         xk = gridstruct%del6_u(i,j+1)
+#endif
+         xkxvc = 0.5 * xk * (xv(i,j)+xv(i,j+1))
+         yu(n) = -gridstruct%rarea(i,j  ) * xkxvc
+         yl(n) = -gridstruct%rarea(i,j+1) * xkxvc
+         yd(n) = yd(n) - yu(n)
+         yd(n+1) = 1 - yl(n)
+         yy(n+1) = d2(i,j+1)
+         n=n+1
+      enddo
+      nt=n
+
+      call tridiag(nt,yl,yd,yu,yy,yu,yy)
+
+      n=1
+      do j=j1,j2
+         d2(i,j) = yy(n)
+         n=n+1
+      enddo
+   enddo
+
+   endif
+
+   enddo	! m loop
+!---------------------------------------------
+   do j=bd%jsd,bd%jed
+      do i=bd%isd,bd%ied
+         q(i,j) = d2(i,j)
+      enddo
+   enddo
+   return
+ end subroutine deln_flux_implm
+
+ subroutine deln_flux_explm(idir,nord,is,ie,js,je,npx,npy,damp,q,gridstruct,bd,k)
+!> Del-2 time split explicit damping for the cell-mean values (A grid)
+!------------------
+!> nord =  used for extra grid as side 
+!------------------
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   integer, intent(in):: idir            !< 1: x then y; 2: y then x
+   integer, intent(in):: nord            !< del-n
+   integer, intent(in):: is,ie,js,je, npx, npy, k
+   real, intent(in):: damp(bd%isd:bd%ied, bd%jsd:bd%jed)  
+   real, intent(inout):: q(bd%isd:bd%ied, bd%jsd:bd%jed)  ! q ghosted on input
+   type(fv_grid_type), intent(IN), target :: gridstruct
+! local:
+   real fx2(bd%isd:bd%ied+1,bd%jsd:bd%jed), fy2(bd%isd:bd%ied,bd%jsd:bd%jed+1)
+   real xv(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real d2(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real deln2(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real scale(bd%isd:bd%ied,bd%jsd:bd%jed)
+   integer i, j, m, n, nt, i1, i2, j1, j2
+
+#ifdef USE_SG
+   real, pointer, dimension(:,:)   :: dx, dy, rdxc, rdyc
+   real, pointer, dimension(:,:,:) :: sin_sg
+
+   dx       => gridstruct%dx     
+   dy       => gridstruct%dy     
+   rdxc     => gridstruct%rdxc   
+   rdyc     => gridstruct%rdyc   
+   sin_sg   => gridstruct%sin_sg 
+#endif
+
+!x i1 = is-1-nord;    i2 = ie+1+nord
+!x j1 = js-1-nord;    j2 = je+1+nord
+
+   i1 = bd%isd;    i2 = bd%ied
+   j1 = bd%jsd;    j2 = bd%jed
+
+   do j=bd%jsd,bd%jed
+      do i=bd%isd,bd%ied
+         xv(i,j) = damp(i,j) 
+         d2(i,j) = q(i,j)
+      enddo
+   enddo
+
+! explicit scheme 
+
+!
+   call copy_corners(d2, npx, npy, 1, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+   call copy_corners(xv, npx, npy, 1, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+!
+
+   do j=j1,j2
+      do i=i1+1,i2
+#ifdef USE_SG
+         fx2(i,j) = 0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))*dy(i,j)*(d2(i-1,j)-d2(i,j))*rdxc(i,j)
+#else
+         fx2(i,j) = gridstruct%del6_v(i,j)*(d2(i-1,j)-d2(i,j))
+#endif
+         fx2(i,j) = 0.5*(xv(i-1,j)+xv(i,j))*fx2(i,j)
+      enddo
+   enddo
+
+!
+   call copy_corners(d2, npx, npy, 2, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+   call copy_corners(xv, npx, npy, 2, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+!
+   do i=i1,i2
+      do j=j1+1,j2
+#ifdef USE_SG
+         fy2(i,j) = 0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))*dx(i,j)*(d2(i,j-1)-d2(i,j))*rdyc(i,j)
+#else
+         fy2(i,j) = gridstruct%del6_u(i,j)*(d2(i,j-1)-d2(i,j))
+#endif
+         fy2(i,j) = 0.5*(xv(i,j-1)+xv(i,j))*fy2(i,j)
+      enddo
+   enddo
+!
+   do j=j1+1,j2-1
+      do i=i1+1,i2-1
+         q(i,j) = q(i,j) +            &
+         (fx2(i,j)-fx2(i+1,j)+fy2(i,j)-fy2(i,j+1))*gridstruct%rarea(i,j)
+      enddo
+   enddo
+
+   return
+ end subroutine deln_flux_explm
+
+!===========================================
+ subroutine tridiag(n,cl,cm,cu,r1,au,a1)
+
+    implicit none
+    integer  n
+    real     cl(2:n),cm(n),cu(n-1),r1(n),au(n-1),a1(n)
+! local
+    integer  k
+    real     fk
+!-----------------------------------------------------------------------
+    fk    = 1./cm(1)
+    au(1) = fk*cu(1)
+    a1(1) = fk*r1(1)
+    do k=2,n-1
+       fk    = 1./(cm(k)-cl(k)*au(k-1))
+       au(k) = fk*cu(k)
+       a1(k) = fk*(r1(k)-cl(k)*a1(k-1))
+     enddo
+     fk    = 1./(cm(n)-cl(n)*au(n-1))
+     a1(n) = fk*(r1(n)-cl(n)*a1(n-1))
+     do k=n-1,1,-1
+        a1(k) = a1(k)-au(k)*a1(k+1)
+     enddo
+!-----------------------------------------------------------------------
+     return
+ end subroutine tridiag
+
+#endif
 
 end module tp_core_mod

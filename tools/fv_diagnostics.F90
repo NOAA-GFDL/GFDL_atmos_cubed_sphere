@@ -253,14 +253,20 @@ contains
 
     vsrange = (/ -200.,  200. /)  ! surface (lowest layer) winds
 
+#ifdef MOLECULAR_DIFFUSION
+    vrange = (/ -850.,  850. /)  ! winds
+    wrange = (/ -300.,  300. /)  ! vertical wind
+    trange = (/    5., 3500. /)  ! temperature
+#else
     vrange = (/ -330.,  330. /)  ! winds
     wrange = (/ -100.,  100. /)  ! vertical wind
-   rhrange = (/  -10.,  150. /)  ! RH
 #ifdef HIWPP
     trange = (/    5.,  350. /)  ! temperature
 #else
     trange = (/  100.,  350. /)  ! temperature
 #endif
+#endif
+     rhrange = (/  -10.,  150. /)  ! RH
     slprange = (/800.,  1200./)  ! sea-level-pressure
     skrange  = (/ -10000000.0,  10000000.0 /)  ! dissipation estimate for SKEB
 
@@ -1279,16 +1285,35 @@ contains
     elseif ( Atm(n)%flagstruct%range_warn ) then
          call range_check('DELP', Atm(n)%delp, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,    &
                            0.01*ptop, 200.E2, bad_range)
+#ifdef MOLECULAR_DIFFUSION
+         call range_check('UA', Atm(n)%ua, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
+                           -850., 850., bad_range)
+         call range_check('VA', Atm(n)%va, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
+                           -850., 850., bad_range)
+#else
          call range_check('UA', Atm(n)%ua, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
                            -250., 250., bad_range)
          call range_check('VA', Atm(n)%va, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
                            -250., 250., bad_range)
+#endif
 #ifndef SW_DYNAMICS
          call range_check('TA', Atm(n)%pt, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
 #ifdef HIWPP
+#ifdef MOLECULAR_DIFFUSION
+                           130., 3500., bad_range)
+#else
                            130., 350., bad_range) !DCMIP ICs have very low temperatures
+#endif
+#else
+#ifdef MULTI_GASES
+                           130., 3500., bad_range)
+#else
+#ifdef MOLECULAR_DIFFUSION
+                           130., 3500., bad_range)
 #else
                            150., 350., bad_range)
+#endif
+#endif
 #endif
 #endif
 

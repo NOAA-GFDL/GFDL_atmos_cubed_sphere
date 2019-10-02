@@ -112,7 +112,11 @@ module dyn_core_mod
   use fv_mp_mod,          only: is_master
   use fv_mp_mod,          only: start_group_halo_update, complete_group_halo_update
   use fv_mp_mod,          only: group_halo_update_type
+#ifdef MOLECULAR_DIFFUSION
+  use sw_core_mod,        only: c_sw, d_sw, d_md
+#else
   use sw_core_mod,        only: c_sw, d_sw
+#endif
   use a2b_edge_mod,       only: a2b_ord2, a2b_ord4
   use nh_core_mod,        only: Riem_Solver3, Riem_Solver_C, update_dz_c, update_dz_d, nest_halo_nh
   use tp_core_mod,        only: copy_corners
@@ -138,7 +142,7 @@ module dyn_core_mod
   use test_cases_mod,      only: test_case, case9_forcing1, case9_forcing2
 #endif
 #ifdef MULTI_GASES
-    use multi_gases_mod,  only:  virqd, vicvqd
+    use multi_gases_mod,  only:  virqd, vicpqd, vicvqd
 #endif
   use fv_regional_mod,     only: dump_field, exch_uv, H_STAGGER, U_STAGGER, V_STAGGER
   use fv_regional_mod,     only: a_step, p_step, k_step, n_step
@@ -262,6 +266,12 @@ contains
     real wk(bd%isd:bd%ied,bd%jsd:bd%jed)
     real fz(bd%is: bd%ie+1,bd%js: bd%je+1)
     real heat_s(bd%is:bd%ie,bd%js:bd%je)
+#ifdef MOLECULAR_DIFFUSION
+    real p(bd%isd:bd%ied,bd%jsd:bd%jed)
+    real t(bd%isd:bd%ied,bd%jsd:bd%jed)
+    real pkzf(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    integer ii, jj
+#endif
 ! new array for stochastic kinetic energy backscatter (SKEB)
     real diss_e(bd%is:bd%ie,bd%js:bd%je)
     real damp_vt(npz+1)
@@ -1178,6 +1188,7 @@ contains
 ! Prevent accumulation of rounding errors at overlapped domain edges:
        call mpp_get_boundary(u, v, domain, ebuffery=ebuffer,  &
                              nbufferx=nbuffer, gridtype=DGRID_NE )
+                                                     call timing_off('COMM_TOTAL')
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,u,nbuffer,v,ebuffer)
           do k=1,npz
              do i=is,ie
@@ -1190,6 +1201,107 @@ contains
 
     endif
 
+#ifdef MOLECULAR_DIFFUSION
+! -----------------------------------------------------
+! time-split and dimensional-split molecular diffusion
+! -----------------------------------------------------
+! ------- update halo to prepare for diffusion -------
+    pkzf = 0.0
+    do k=1,npz
+       do j=js,je
+          pkzf(is:ie,j,k) = pkz(is:ie,j,k)
+       enddo
+    enddo
+
+                             call timing_on('COMM_TOTAL')
+    call start_group_halo_update(i_pack(1),delp,  domain, complete=.false.)
+    call start_group_halo_update(i_pack(1), pt,   domain, complete=.true.)
+    call start_group_halo_update(i_pack(2),pkzf,  domain)
+    call start_group_halo_update(i_pack(7), w, domain)
+    call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
+
+    if ( nq > 0 ) then
+                                       call timing_on('COMM_TRACER')
+                    call start_group_halo_update(i_pack(10), q, domain)
+                                       call timing_off('COMM_TRACER')
+    endif
+
+    call complete_group_halo_update(i_pack(1), domain)	! delp. pt
+    call complete_group_halo_update(i_pack(2), domain)	! pkzf
+    call complete_group_halo_update(i_pack(7), domain)	! w
+    call complete_group_halo_update(i_pack(8), domain)
+    if ( nq>0 ) then
+                                       call timing_on('COMM_TRACER')
+         call complete_group_halo_update(i_pack(10), domain)
+                                       call timing_off('COMM_TRACER')
+    endif
+                             call timing_off('COMM_TOTAL')
+
+    if( flagstruct%nord>0 .and. (.not. (flagstruct%regional))) then
+        i=mod(it-1,2)+1		! alternatively to avoid bias
+        do k=1,npz
+        call copy_corners(pkzf(isd,jsd,k), npx, npy, i, gridstruct%nested, bd, &
+                          gridstruct%sw_corner, gridstruct%se_corner, &
+                          gridstruct%nw_corner, gridstruct%ne_corner)
+        enddo
+    endif
+                                       call timing_on('d_md')
+
+!$OMP parallel do default(none) shared(npz,flagstruct,gridstruct,bd,      &
+!$OMP                                  is,ie,js,je,isd,ied,jsd,jed,it,dt, &
+!$OMP                                  pt,u,v,w,q,pkz,pkzf,cappa,akap,nq, &
+!$OMP                                  zvir)                              &
+!$OMP                          private(k,i,j,p,t)
+! ----------------
+    do k=1, npz
+! ----------------
+
+! ------- prepare p and t for molecular diffusion coefficients
+
+       do j=jsd,jed
+          do i=isd,ied
+             t(i,j) = pt(i,j,k) * pkzf(i,j,k)
+#ifdef MOIST_CAPPA
+             p(i,j) = exp( log(pkzf(i,j,k)) / cappa(i,j,k) )
+#else
+#ifdef MULTI_GASES
+             p(i,j) = exp( log(pkzf(i,j,k)) / (akap*virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:))) )
+#else
+             p(i,j) = exp( log(pkzf(i,j,k)) / akap )
+#endif
+#endif
+          enddo
+       enddo
+
+! compute molecular diffusion with implicit time and dimensional splits
+
+       call d_md( p(isd,jsd), t(isd,jsd),                        &
+                  u(isd,jsd,k), v(isd,jsd,k), w(isd:,jsd:,k), q, &
+                  it, nq, k, npz, dt,                            &
+                  gridstruct, flagstruct, bd)
+
+       do j=js,je
+          do i=is,ie
+#ifdef MOIST_CAPPA
+             pkz(i,j,k) = exp( log(p(i,j)) * cappa(i,j,k) )
+#else
+#ifdef MULTI_GASES
+             pkz(i,j,k) = exp( log(p(i,j)) * (akap*virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:))) )
+#else
+             pkz(i,j,k) = exp( log(p(i,j)) * akap )
+#endif
+#endif
+             pt(i,j,k) = t(i,j) / pkz(i,j,k)
+          enddo
+       enddo
+
+! -------------------------------------------------
+    enddo	! k loop of 2d molecular diffusion
+! -------------------------------------------------
+#endif	! MOLECULAR_DIFFUSION
+
+
+                                                     call timing_on('COMM_TOTAL')
 #ifndef ROT3
     if ( it/=n_split)   &
          call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
@@ -1199,9 +1311,9 @@ contains
 #ifdef SW_DYNAMICS
     endif
 #endif
-      if ( gridstruct%nested ) then
+    if ( gridstruct%nested ) then
          neststruct%nest_timestep = neststruct%nest_timestep + 1
-      endif
+    endif
 
 #ifdef SW_DYNAMICS
 #else
@@ -1254,13 +1366,12 @@ contains
     if (gridstruct%nested) then
 
 
-
 #ifndef SW_DYNAMICS
-         if (.not. hydrostatic) then
+        if (.not. hydrostatic) then
                call nested_grid_BC_apply_intT(w, &
                0, 0, npx, npy, npz, bd, split_timestep_BC+1, real(n_split*flagstruct%k_split), &
                neststruct%w_BC, bctype=neststruct%nestbctype  )
-       end if
+        end if
 #endif SW_DYNAMICS
             call nested_grid_BC_apply_intT(u, &
             0, 1, npx, npy, npz, bd, split_timestep_BC+1, real(n_split*flagstruct%k_split), &
@@ -1269,9 +1380,9 @@ contains
             1, 0, npx, npy, npz, bd, split_timestep_BC+1, real(n_split*flagstruct%k_split), &
             neststruct%v_BC, bctype=neststruct%nestbctype )
 
-      end if
+    end if
 
-      if (flagstruct%regional) then
+    if (flagstruct%regional) then
 
 #ifndef SW_DYNAMICS
          if (.not. hydrostatic) then
@@ -1296,11 +1407,13 @@ contains
                                        reg_bc_update_time )
       
          call exch_uv(domain, bd, npz, u,  v )      
-      endif
+
+    endif
 
 !-----------------------------------------------------
   enddo   ! time split loop
 !-----------------------------------------------------
+
     if ( nq > 0 .and. .not. flagstruct%inline_q ) then
        call timing_on('COMM_TOTAL')
        call timing_on('COMM_TRACER')
