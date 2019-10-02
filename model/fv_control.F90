@@ -154,7 +154,9 @@ module fv_control_mod
 
 #ifdef MULTI_GASES
    use constants_mod,       only: rvgas, cp_air
-   use multi_gases_mod,     only: multi_gases_init
+   use multi_gases_mod,     only: multi_gases_init, &
+                                  rilist => ri,     &
+                                  cpilist => cpi
 #endif
 #ifdef MOLECULAR_DIFFUSION
    use molecular_diffusion_mod,     only: molecular_diffusion_init
@@ -675,7 +677,6 @@ module fv_control_mod
    namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
 #ifdef MULTI_GASES
    namelist /multi_gases_nml/ rilist,cpilist
-   real, allocatable :: rilist(:), cpilist(:)
 #endif
 #ifdef MOLECULAR_DIFFUSION
    namelist /molecular_diffusion_nml/ tau_visc, tau_cond, tau_diff, md_impl
@@ -798,7 +799,7 @@ module fv_control_mod
       write(unit, nml=test_case_nml)
 #ifdef MULTI_GASES
       write(unit, nml=multi_gases_nml)
-      call multi_gases_init(ncnst,nwat,rilist,cpilist)
+      call multi_gases_init(ncnst,nwat)
 #endif
 #ifdef MOLECULAR_DIFFUSION
       write(unit, nml=molecular_diffusion_nml)

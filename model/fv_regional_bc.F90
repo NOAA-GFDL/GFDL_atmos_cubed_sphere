@@ -1,21 +1,22 @@
 !***********************************************************************
-!*                   GNU General Public License                        *
-!* This file is a part of fvGFS.                                       *
-!*                                                                     *
-!* fvGFS is free software; you can redistribute it and/or modify it    *
-!* and are expected to follow the terms of the GNU General Public      *
-!* License as published by the Free Software Foundation; either        *
-!* version 2 of the License, or (at your option) any later version.    *
-!*                                                                     *
-!* fvGFS is distributed in the hope that it will be useful, but        *
-!* WITHOUT ANY WARRANTY; without even the implied warranty of          *
-!* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
-!* General Public License for more details.                            *
-!*                                                                     *
-!* For the full text of the GNU General Public License,                *
-!* write to: Free Software Foundation, Inc.,                           *
-!*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
-!* or see:   http://www.gnu.org/licenses/gpl.html                      *
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+!* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
 module fv_regional_mod
@@ -106,7 +107,7 @@ module fv_regional_mod
 
       real :: current_time_in_seconds
       integer,save :: ncid,next_time_to_read_bcs,npz,ntracers
-      integer,save :: liq_water_index,o3mr_index,sphum_index               !<-- Locations of tracer vbls in the tracers array
+      integer,save :: liq_water_index,sphum_index                          !<-- Locations of tracer vbls in the tracers array
       integer,save :: bc_hour, ntimesteps_per_bc_update
 
       real(kind=R_GRID),dimension(:,:,:),allocatable :: agrid_reg      &   !<-- Lon/lat of cell centers
@@ -304,9 +305,8 @@ contains
 !
       call compute_regional_bc_indices(Atm%regional_bc_bounds)
 !
-      liq_water_index=get_tracer_index(MODEL_ATMOS, 'liq_wat')
-      o3mr_index     =get_tracer_index(MODEL_ATMOS, 'o3mr')
-      sphum_index    =get_tracer_index(MODEL_ATMOS, 'sphum')
+      liq_water_index = get_tracer_index(MODEL_ATMOS, 'liq_wat')
+      sphum_index     = get_tracer_index(MODEL_ATMOS, 'sphum')
 !
 !-----------------------------------------------------------------------
 !***  Allocate the objects that will hold the boundary variables
@@ -1382,6 +1382,7 @@ contains
 !
       character(len=60) :: var_name_root
       integer :: nside,nt,index
+      logical :: required
 !
       logical :: call_remap
 !
@@ -1562,19 +1563,25 @@ contains
 !-----------------------------------------------------------------------
 !***  Read the tracers specified in the field_table.  If they are not
 !***  in the input data then print a warning and set them to 0 in the
-!***  boundary.  The tracers that are not advected are not in the
-!***  input and BC files.
+!***  boundary. Some tracers are mandatory to have, because they are 
+!***  used later for calculating virtual potential temperature etc.
 !-----------------------------------------------------------------------
 !
       do nt = 1, ntracers 
         call get_tracer_names(MODEL_ATMOS, nt, var_name_root)
         index= get_tracer_index(MODEL_ATMOS,trim(var_name_root))
+        if (index==liq_water_index .or. index==sphum_index) then
+          required = .true.
+        else
+          required = .false.
+        endif
         call read_regional_bc_file(is_input,ie_input,js_input,je_input  &
                                   ,nlev                                 &
                                   ,ntracers                             &
                                   ,var_name_root                        &
                                   ,array_4d=tracers_input               &
-                                  ,tlev=index )
+                                  ,tlev=index                           &
+                                  ,required=required )
       enddo
 !
 !-----------------------------------------------------------------------
@@ -2306,7 +2313,8 @@ contains
                                       ,var_name_root                    &
                                       ,array_3d                         &
                                       ,array_4d                         &
-                                      ,tlev )
+                                      ,tlev                             &
+                                      ,required )
 !-----------------------------------------------------------------------
 !***  Read the boundary data from the external file generated by
 !***  chgres.
@@ -2328,7 +2336,8 @@ contains
 !
       integer,intent(in),optional :: tlev                                  !<-- Position of current tracer among all of them
 !
-      character(len= 60),intent(in) :: var_name_root                       !<-- Root of variable name in the boundary file
+      character(len=*),intent(in) :: var_name_root                         !<-- Root of variable name in the boundary file
+      logical,intent(in),optional :: required
 !
 !------------
 !***  Output
@@ -2356,10 +2365,21 @@ contains
       character(len=80) :: var_name                                        !<-- Variable name in the boundary NetCDF file
 !
       logical :: call_get_var
+      logical :: required_local
 !
 !-----------------------------------------------------------------------
 !***********************************************************************
 !-----------------------------------------------------------------------
+!
+!-----------------------------------------------------------------------
+!***  Process optional argument required, default value is .true.
+!-----------------------------------------------------------------------
+!
+      if(present(required)) then
+        required_local=required
+      else
+        required_local=.true.
+      endif
 !
 !-----------------------------------------------------------------------
 !***  Loop through the four sides of the domain.
@@ -2521,6 +2541,9 @@ contains
         if(call_get_var)then
           if (present(array_4d)) then   !<-- 4-D variable
             status=nf90_inq_varid(ncid,trim(var_name),var_id)
+            if (required_local) then
+              call check(status)
+            endif
             if (status /= nf90_noerr) then
               if (east_bc) write(0,*)' WARNING: Tracer ',trim(var_name),' not in input file'
               array_4d(:,:,:,tlev)=0.                                        !<-- Tracer not in input so set to zero in boundary.

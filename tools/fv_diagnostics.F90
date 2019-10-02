@@ -142,7 +142,9 @@ module fv_diagnostics_mod
  use sat_vapor_pres_mod, only: compute_qs, lookup_es
 
  use fv_arrays_mod, only: max_step 
+#ifndef GFS_PHYS
  use gfdl_cloud_microphys_mod, only: wqs1, qsmith_init
+#endif
 #ifdef MULTI_GASES
  use multi_gases_mod,  only:  virq, virqd, vicpqd, vicvqd, num_gas
 #endif
@@ -3140,7 +3142,7 @@ contains
   logical, intent(in):: hydrostatic
   real, intent(out):: wz(is:ie,js:je,km+1)
 !
-  integer i,j,k,n
+  integer i,j,k
   real gg
 
       gg  = rdgas * ginv
@@ -4910,7 +4912,7 @@ end subroutine eqv_pot
    real(kind=R_GRID):: factorb_s, factorb_g
    real(kind=R_GRID):: temp_c, pres, sonv, gonv, ronv, z_e
 
-   integer :: i,j,k, n
+   integer :: i,j,k
    integer :: is, ie, js, je
 
    is = bd%is

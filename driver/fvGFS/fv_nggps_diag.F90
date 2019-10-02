@@ -93,13 +93,13 @@ module fv_nggps_diags_mod
  real, parameter:: stndrd_atmos_lapse = 0.0065
 
  logical master
- integer :: id_ua, id_va, id_pt, id_delp, id_pfhy, id_pfnh 
- integer :: id_w, id_delz, id_diss, id_ps, id_hs, id_dbz
+ integer :: id_ua, id_va, id_pt, id_delp, id_pfhy, id_pfnh
+ integer :: id_w, id_delz, id_diss, id_ps, id_hs, id_dbz, id_omga
  integer :: kstt_ua, kstt_va, kstt_pt, kstt_delp, kstt_pfhy
  integer :: kstt_pfnh, kstt_w, kstt_delz, kstt_diss, kstt_ps,kstt_hs
  integer :: kend_ua, kend_va, kend_pt, kend_delp, kend_pfhy
  integer :: kend_pfnh, kend_w, kend_delz, kend_diss, kend_ps,kend_hs
- integer :: kstt_dbz, kend_dbz
+ integer :: kstt_dbz, kend_dbz, kstt_omga, kend_omga
  integer :: kstt_windvect, kend_windvect
  integer :: id_wmaxup,id_wmaxdn,kstt_wup, kend_wup,kstt_wdn,kend_wdn
  integer :: id_uhmax03,id_uhmin03,id_uhmax25,id_uhmin25,id_maxvort01
@@ -238,6 +238,13 @@ contains
              kstt_delz = nlevs+1; kend_delz = nlevs+npzo
              nlevs = nlevs + npzo
           endif
+       endif
+
+       id_omga = register_diag_field ( trim(file_name), 'omga', axes(1:3), Time,        &
+            'Vertical pressure velocity', 'pa/sec', missing_value=missing_value )
+       if (id_omga>0) then
+          kstt_omga = nlevs+1; kend_omga = nlevs+npzo
+          nlevs = nlevs + npzo
        endif
 
        id_pt   = register_diag_field ( trim(file_name), 'temp', axes(1:3), Time,       &
@@ -486,6 +493,11 @@ contains
        call store_data(id_w, Atm(n)%w(isco:ieco,jsco:jeco,:), Time, kstt_w, kend_w)
     endif
 
+    !--- OMGA (non-hydrostatic)
+    if ( id_omga>0  ) then
+       call store_data(id_omga, Atm(n)%omga(isco:ieco,jsco:jeco,:), Time, kstt_omga, kend_omga)
+    endif
+
     !--- TEMPERATURE
     if(id_pt   > 0) call store_data(id_pt, Atm(n)%pt(isco:ieco,jsco:jeco,:), Time, kstt_pt, kend_pt)
 
@@ -506,7 +518,7 @@ contains
        do k=1,npzo
          do j=jsco,jeco
            do i=isco,ieco
-             wk(i,j,k) = -Atm(n)%delz(i,j,k)
+             wk(i,j,k) = Atm(n)%delz(i,j,k)
            enddo
          enddo
        enddo
@@ -752,7 +764,7 @@ contains
           .and. id_uhmax25 > 0 .and. id_uhmin25 > 0 .and. id_maxvort01 > 0  & 
           .and. id_maxvorthy1 > 0 .and. id_maxvort02 > 0) then
        allocate ( vort(isco:ieco,jsco:jeco,npzo) )
-       if(first_call == .true.) then
+       if (first_call) then
          call get_time (Time_step_atmos, seconds,  days)
          first_time=seconds
          first_call=.false.
@@ -1175,6 +1187,13 @@ contains
             axes(1:3), fcst_grid, kstt_pfhy,kend_pfhy, dyn_bundle, output_file, rcd=rc)
        if(rc==0)  num_field_dyn=num_field_dyn+1
      endif
+   endif
+!
+   if( id_omga>0  ) then
+     call find_outputname(trim(file_name),'omga',output_name)
+     call add_field_to_bundle(trim(output_name),'Vertical pressure velocity', 'pa/sec', "time: point",   &
+          axes(1:3), fcst_grid, kstt_omga,kend_omga, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
 !
    if(id_pt > 0) then

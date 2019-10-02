@@ -15,6 +15,12 @@ else
     $(info )
 endif
 
+ifneq (,$(findstring CCPP,$(CPPDEFS)))
+    FAST_PHYSICS_SRCS_F90 =
+else
+    FAST_PHYSICS_SRCS_F90 = ./model/fv_cmp.F90
+endif
+
 LIBRARY  = libfv3core.a
 
 FFLAGS   += -I$(FMS_DIR) -I../gfsphysics -I../ipd -I../io -I../namphysics
@@ -32,7 +38,7 @@ SRCS_F90 = \
 		   ./model/boundary.F90                           \
 		   ./model/dyn_core.F90                           \
 		   ./model/fv_arrays.F90                          \
-		   ./model/fv_cmp.F90                             \
+		   $(FAST_PHYSICS_SRCS_F90)                       \
 		   ./model/fv_control.F90                         \
 		   ./model/fv_dynamics.F90                        \
 		   ./model/fv_fill.F90                            \
@@ -91,6 +97,7 @@ $(LIBRARY): $(OBJS)
 ./model/nh_utils.o : ./model/nh_utils.F90
 	$(FC) $(CPPDEFS) $(FPPFLAGS) $(FFLAGS) $(OTHER_FFLAGS) $(FAST) -c $< -o $@
 
+# For PROD/TRANSITION, this is overwritten below
 ./model/fv_mapz.o : ./model/fv_mapz.F90
 	$(FC) $(CPPDEFS) $(FPPFLAGS) $(FFLAGS) $(OTHER_FFLAGS) $(FAST) -c $< -o $@
 
@@ -100,6 +107,20 @@ $(LIBRARY): $(OBJS)
 # additional include files (ESMF_INC) needed for PGI
 ./driver/fvGFS/atmosphere.o : ./driver/fvGFS/atmosphere.F90
 	$(FC) $(CPPDEFS) $(FPPFLAGS) $(FFLAGS) $(OTHER_FFLAGS) $(ESMF_INC) -c $< -o $@
+
+# For CCPP acceptance: reduce optimization for certain files to
+# obtain bit-for-bit identical results in PROD mode on Theia/Intel 15
+ifneq (,$(findstring TRANSITION,$(CPPDEFS)))
+FFLAGS_LOPT=$(subst CORE-AVX2,CORE-AVX-I,\
+              $(subst no-prec-div,prec-div,\
+                $(subst no-prec-sqrt,prec-sqrt,$(FFLAGS))))
+./model/dyn_core.o : ./model/dyn_core.F90
+	$(FC) $(CPPDEFS) $(FPPFLAGS) $(FFLAGS_LOPT) $(OTHER_FFLAGS) -c $< -o $@
+./model/fv_mapz.o : ./model/fv_mapz.F90
+	$(FC) $(CPPDEFS) $(FPPFLAGS) $(FFLAGS_LOPT) $(OTHER_FFLAGS) $(FAST) -c $< -o $@
+./model/fv_cmp.o : ./model/fv_cmp.F90
+	$(FC) $(CPPDEFS) $(FPPFLAGS) $(FFLAGS_LOPT) $(OTHER_FFLAGS) -c $< -o $@
+endif # (,$(findstring TRANSITION,$(CPPDEFS)))
 
 .PHONY: clean
 clean:
