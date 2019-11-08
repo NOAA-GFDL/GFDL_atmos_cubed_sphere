@@ -364,7 +364,7 @@ contains
                allocate( dv(isd:ied+1,jsd:jed,  npz) )
                call init_ijk_mem(isd,ied+1, jsd,jed  , npz, dv, 0.)
           endif
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,diss_est)
+!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,diss_est)
           do k=1,npz
             do j=jsd,jed
               do i=isd,ied
