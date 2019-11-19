@@ -604,6 +604,9 @@ contains
    type(time_type),intent(in) :: Time
    integer :: n, psc, atmos_time_step
    integer :: k, w_diff, nt_dyn, n_split_loc, seconds, days
+#ifdef MOLECULAR_DIFFUSION
+   real time_total
+#endif
 
    type(time_type) :: atmos_time
 
@@ -614,6 +617,9 @@ contains
    n = mytile
 
    call get_time (time, seconds,  days)
+#ifdef MOLECULAR_DIFFUSION
+   time_total = seconds + 86400. * days
+#endif
 !  if (seconds < 10800 .and. days == 0) then
 !    n_split_loc = (Atm(n)%flagstruct%n_split * 3) / 2
    if (seconds < nint(3600*Atm(n)%flagstruct%fhouri) .and. Atm(n)%flagstruct%fac_n_spl > 1.0) then
@@ -656,7 +662,11 @@ contains
                        Atm(n)%flagstruct%hybrid_z,                               &
                        Atm(n)%gridstruct,  Atm(n)%flagstruct,                    &
                        Atm(n)%neststruct,  Atm(n)%idiag, Atm(n)%bd,              &
+#ifdef MOLECULAR_DIFFUSION
+                       Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est,time_total)
+#else
                        Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est)
+#endif
 
       call timing_off('fv_dynamics')
 
@@ -1624,6 +1634,9 @@ contains
    real:: xt, p00, q00
    integer:: isc, iec, jsc, jec, npz
    integer:: m, n, i,j,k, ngc, n_split_loc, days
+#ifdef MOLECULAR_DIFFUSION
+   real time_total
+#endif
 
    character(len=80) :: errstr
 
@@ -1697,6 +1710,9 @@ contains
        enddo
 
        call get_time (time, seconds, days)
+#ifdef MOLECULAR_DIFFUSION
+       time_total = seconds + 86400. * days
+#endif
       if (seconds < nint(3600*Atm(mytile)%flagstruct%fhouri) .and. Atm(mytile)%flagstruct%fac_n_spl > 1.0) then
         n_split_loc = nint(Atm(mytile)%flagstruct%n_split * Atm(mytile)%flagstruct%fac_n_spl)
       else
@@ -1721,7 +1737,11 @@ contains
                         Atm(mytile)%cx, Atm(mytile)%cy, Atm(mytile)%ze0, Atm(mytile)%flagstruct%hybrid_z,         &
                         Atm(mytile)%gridstruct, Atm(mytile)%flagstruct,                                           &
                         Atm(mytile)%neststruct, Atm(mytile)%idiag, Atm(mytile)%bd, Atm(mytile)%parent_grid,       &
+#ifdef MOLECULAR_DIFFUSION
+                        Atm(mytile)%domain,Atm(mytile)%diss_est,time_total)
+#else
                         Atm(mytile)%domain,Atm(mytile)%diss_est)
+#endif
 ! Backward
        call fv_dynamics(Atm(mytile)%npx, Atm(mytile)%npy, npz,  nq, Atm(mytile)%ng, -dt_atmos, 0.,                &
                         Atm(mytile)%flagstruct%fill, Atm(mytile)%flagstruct%reproduce_sum, kappa, cp_air, zvir,   &
@@ -1736,7 +1756,11 @@ contains
                         Atm(mytile)%cx,    Atm(mytile)%cy,   Atm(mytile)%ze0, Atm(mytile)%flagstruct%hybrid_z,    &
                         Atm(mytile)%gridstruct, Atm(mytile)%flagstruct,                                           &
                         Atm(mytile)%neststruct, Atm(mytile)%idiag, Atm(mytile)%bd, Atm(mytile)%parent_grid,       &
+#ifdef MOLECULAR_DIFFUSION
+                        Atm(mytile)%domain,Atm(mytile)%diss_est,time_total)
+#else
                         Atm(mytile)%domain,Atm(mytile)%diss_est)
+#endif
 !Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mytile, nudge_dz, dz0) &
@@ -1813,7 +1837,11 @@ contains
                         Atm(mytile)%cx, Atm(mytile)%cy, Atm(mytile)%ze0, Atm(mytile)%flagstruct%hybrid_z,         &
                         Atm(mytile)%gridstruct, Atm(mytile)%flagstruct,                                           &
                         Atm(mytile)%neststruct, Atm(mytile)%idiag, Atm(mytile)%bd, Atm(mytile)%parent_grid,       &
+#ifdef MOLECULAR_DIFFUSION
+                        Atm(mytile)%domain,Atm(mytile)%diss_est,time_total)
+#else
                         Atm(mytile)%domain,Atm(mytile)%diss_est)
+#endif
 ! Forward call
        call fv_dynamics(Atm(mytile)%npx, Atm(mytile)%npy, npz,  nq, Atm(mytile)%ng, dt_atmos, 0.,                 &
                         Atm(mytile)%flagstruct%fill, Atm(mytile)%flagstruct%reproduce_sum, kappa, cp_air, zvir,   &
@@ -1828,7 +1856,11 @@ contains
                         Atm(mytile)%cx, Atm(mytile)%cy, Atm(mytile)%ze0, Atm(mytile)%flagstruct%hybrid_z,         &
                         Atm(mytile)%gridstruct, Atm(mytile)%flagstruct,                                           &
                         Atm(mytile)%neststruct, Atm(mytile)%idiag, Atm(mytile)%bd, Atm(mytile)%parent_grid,       &
+#ifdef MOLECULAR_DIFFUSION
+                        Atm(mytile)%domain,Atm(mytile)%diss_est,time_total)
+#else
                         Atm(mytile)%domain,Atm(mytile)%diss_est)
+#endif
 ! Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (nudge_dz,npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dz0, dp0, xt, zvir, mytile) &

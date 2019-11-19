@@ -271,7 +271,6 @@ contains
     real p(bd%isd:bd%ied,bd%jsd:bd%jed)
     real t(bd%isd:bd%ied,bd%jsd:bd%jed)
     real pkzf(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-    integer ii, jj
 #endif
 ! new array for stochastic kinetic energy backscatter (SKEB)
     real diss_e(bd%is:bd%ie,bd%js:bd%je)
@@ -1224,7 +1223,8 @@ contains
 
 #ifdef MOLECULAR_DIFFUSION
 ! -----------------------------------------------------
-! time-split and dimensional-split molecular diffusion
+! time-split and dimensional-split implicit scheme
+! and optional with direct explicit molecular diffusion
 ! -----------------------------------------------------
 ! ------- update halo to prepare for diffusion -------
     pkzf = 0.0
@@ -1319,8 +1319,8 @@ contains
 ! -------------------------------------------------
     enddo	! k loop of 2d molecular diffusion
 ! -------------------------------------------------
-#endif	! MOLECULAR_DIFFUSION
 
+#endif		! for MOLECULAR_DIFFUSION
 
                                                      call timing_on('COMM_TOTAL')
 #ifndef ROT3

@@ -184,6 +184,10 @@ contains
     use CCPP_data, only: CCPP_interstitial
 #endif
 
+#ifdef MOLECULAR_DIFFUSION
+    use molecular_diffusion_mod, only: md_implicit, md_init_wait, md_wait_sec
+#endif
+
     real, intent(IN) :: bdt  !< Large time-step
     real, intent(IN) :: consv_te
     real, intent(IN) :: kappa, cp_air
@@ -269,6 +273,9 @@ contains
 #ifdef MULTI_GASES
       real, allocatable :: kapad(:,:,:)
 #endif
+#ifdef MOLECULAR_DIFFUSION
+      real, save :: time_offset = -1.00
+#endif
       real:: akap, rdg, ph1, ph2, mdt, gam, amdt, u0
       real:: recip_k_split,reg_bc_update_time
       integer :: kord_tracer(ncnst)
@@ -348,6 +355,9 @@ contains
 #ifdef MULTI_GASES
       allocate ( kapad(isd:ied, jsd:jed, npz) )
       call init_ijk_mem(isd,ied, jsd,jed, npz, kapad, kappa)
+#endif
+#ifdef MOLECULAR_DIFFUSION
+      if( time_offset .lt. 0.0 ) time_offset = time_total
 #endif
 
       !We call this BEFORE converting pt to virtual potential temperature, 
@@ -822,6 +832,15 @@ contains
 #endif
   enddo    ! n_map loop
                                                   call timing_off('FV_DYN_LOOP')
+#ifdef MOLECULAR_DIFFUSION
+  if( md_init_wait .and. time_total - time_offset .gt. md_wait_sec ) then
+    md_init_wait= .false.
+    if( is_master() ) then
+        write(*,*) 'Molecular diffusion is on with explicit scheme '
+    endif
+  endif
+#endif
+
   if ( idiag%id_mdt > 0 .and. (.not.do_adiabatic_init) ) then
 ! Output temperature tendency due to inline moist physics:
 #if defined(CCPP) && defined(__GFORTRAN__)

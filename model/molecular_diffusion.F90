@@ -45,8 +45,9 @@ module molecular_diffusion_mod
 
       implicit none
 
-      real rtau_visc, rtau_cond, rtau_diff    ! time scale in unit of sec
-      logical md_implicit
+      real rtau_visc, rtau_cond, rtau_diff    
+      real md_wait_sec
+      logical md_implicit, md_init_wait
       real, parameter:: amo=15.9994, amo2=31.9999, amo3=47.9982     !g/mol
       real, parameter::              amn2=28.013,  amh2o=18.0154    !g/mol
 !hmhj muo3 and muh2o are not precise, correct later
@@ -67,48 +68,36 @@ module molecular_diffusion_mod
 
       CONTAINS
 ! --------------------------------------------------------
-      subroutine molecular_diffusion_init(tau_visc,tau_cond,tau_diff,md_impl)
+      subroutine molecular_diffusion_init(tau_visc,tau_cond,tau_diff,md_impl,md_wait_hr)
 !--------------------------------------------
 ! molecular diffusion control for each effect
-!        if tau_???? is positive, it is for efolding day
-!        if tau_???? is zero, it is no diffusion
-!        if tau_???? is -1.0, it is maxima effect, no efolding time
-! Input: tau_visc : viscosity efolding time in day
-!        tau_cond : conductivity efolding time in day
-!        tau_diff : diffusivity efolding time in day
+! Input: tau_visc : viscosity effect weighting
+!        tau_cond : conductivity effect weighting
+!        tau_diff : diffusivity effect weighting
 !        md_impl  : 1 for implicit, 0 for explicit
 !--------------------------------------------
-      real, intent(in):: tau_visc, tau_cond, tau_diff
+      real, intent(in):: tau_visc, tau_cond, tau_diff, md_wait_hr
       integer, intent(in):: md_impl
-      real, parameter :: sday=86400.0
 !
-      if( tau_visc .gt. 0.0 ) then
-         rtau_visc = 1.0 / (tau_visc*sday)
-      else
-         rtau_visc = abs(tau_visc)
-      endif
-!
-      if( tau_cond .gt. 0.0 ) then
-         rtau_cond = 1.0 / (tau_cond*sday)
-      else
-         rtau_cond = abs(tau_cond)
-      endif
-!
-      if( tau_diff .gt. 0.0 ) then
-         rtau_diff = 1.0 / (tau_diff*sday)
-      else
-         rtau_diff = abs(tau_diff)
-      endif
+      rtau_visc = abs(tau_visc)
+      rtau_cond = abs(tau_cond)
+      rtau_diff = abs(tau_diff)
 !
       if( md_impl.eq.1 ) then
         md_implicit = .true.
+        md_init_wait= .false.
       else
         md_implicit = .false.
+        md_init_wait= .true.
       endif
+      md_wait_sec = 0.0
+      if( md_init_wait ) md_wait_sec = md_wait_hr * 3600.0
       
       if( is_master() ) then
         write(*,*) ' molecular_diffusion is on'
         write(*,*) ' molecular_diffusion implicit is ',md_implicit
+        write(*,*) ' molecular_diffusion initial wait is ',md_init_wait
+        write(*,*) ' molecular_diffusion initial wait seconds is ',md_wait_sec
         write(*,*) ' viscosity    day ',tau_visc,' with effect ',rtau_visc
         write(*,*) ' conductivity day ',tau_cond,' with effect ',rtau_cond
         write(*,*) ' diffusivity  day ',tau_diff,' with effect ',rtau_diff
