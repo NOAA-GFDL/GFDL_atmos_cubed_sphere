@@ -712,7 +712,7 @@ contains
 
 !>@brief The subroutine 'atmosphere_end' is an API for the termination of the
 !! FV3 dynamical core responsible for writing out a restart and final diagnostic state.
- subroutine atmosphere_end (Time, Grid_box)
+ subroutine atmosphere_end (Time, Grid_box, restart_endfcst)
 #ifdef CCPP
 #ifdef STATIC
 ! For static builds, the ccpp_physics_{init,run,finalize} calls
@@ -727,6 +727,7 @@ contains
 #endif
    type (time_type),      intent(in)    :: Time
    type(grid_box_type),   intent(inout) :: Grid_box
+   logical,               intent(in)    :: restart_endfcst
 
 #ifdef CCPP
    integer :: ierr
@@ -754,7 +755,7 @@ contains
       call timing_off('FV_DIAG')
    endif
 
-   call fv_end(Atm, grids_on_this_pe)
+   call fv_end(Atm, grids_on_this_pe, restart_endfcst)
    deallocate (Atm)
 
    deallocate( u_dt, v_dt, t_dt, pref, dum1d )
