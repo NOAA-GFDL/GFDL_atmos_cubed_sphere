@@ -27,7 +27,8 @@ module fv_diagnostics_mod
  use time_manager_mod,   only: time_type, get_date, get_time
  use mpp_domains_mod,    only: domain2d, mpp_update_domains, DGRID_NE
  use diag_manager_mod,   only: diag_axis_init, register_diag_field, &
-                               register_static_field, send_data, diag_grid_init
+                               register_static_field, send_data, diag_grid_init, &
+                               diag_field_add_attribute !:MKL December 27 2019
  use fv_arrays_mod,      only: fv_atmos_type, fv_grid_type, fv_diag_type, fv_grid_bounds_type, & 
                                R_GRID
  !!! CLEANUP needs rem oval?
@@ -78,7 +79,7 @@ module fv_diagnostics_mod
 
  public :: fv_diag_init, fv_time, fv_diag, prt_mxm, prt_maxmin, range_check!, id_divg, id_te
  public :: prt_mass, prt_minmax, ppme, fv_diag_init_gn, z_sum, sphum_ll_fix, eqv_pot, qcly0, gn
- public :: get_height_given_pressure, interpolate_vertical, rh_calc, get_height_field
+ public :: get_height_given_pressure, interpolate_vertical, rh_calc, get_height_field, get_vorticity !:MKL December 27 2019
 
  integer, parameter :: nplev = 31
  integer :: levs(nplev)
@@ -149,13 +150,14 @@ contains
 
     vsrange = (/ -200.,  200. /)  ! surface (lowest layer) winds
 
-    vrange = (/ -330.,  330. /)  ! winds
+    !:MKL vrange = (/ -330.,  330. /)  ! winds
+    vrange = (/ -300.,  300. /)  ! winds
     wrange = (/ -100.,  100. /)  ! vertical wind
    rhrange = (/  -10.,  150. /)  ! RH
 #ifdef HIWPP
     trange = (/    5.,  350. /)  ! temperature
 #else
-    trange = (/  100.,  350. /)  ! temperature
+    trange = (/  100.,  400. /)  ! temperature  !:MKL December 27 2019 changed from 450 to 400
 #endif
     slprange = (/800.,  1200./)  ! sea-level-pressure
 
@@ -289,9 +291,13 @@ contains
                                          'latitude', 'degrees_N' )
        id_area = register_static_field ( trim(field), 'area', axes(1:2),  &
                                          'cell area', 'm**2' )
+       if (id_area > 0) then                                                   !:MKL December 27 2019
+          call diag_field_add_attribute (id_area, 'cell_methods', 'area: sum') !:MKL December 27 2019
+       endif                                                                   !:MKL December 27 2019
+
 #ifndef DYNAMICS_ZS
        idiag%id_zsurf = register_static_field ( trim(field), 'zsurf', axes(1:2),  &
-                                         'surface height', 'm' )
+                                         'surface height', 'm', interp_method='conserve_order1' ) !:MKL December 27 2019
 #endif
        idiag%id_zs = register_static_field ( trim(field), 'zs', axes(1:2),  &
                                         'Original Mean Terrain', 'm' )
@@ -428,7 +434,7 @@ contains
 ! Surface pressure
 !-------------------
        idiag%id_ps = register_diag_field ( trim(field), 'ps', axes(1:2), Time,           &
-            'surface pressure', 'Pa', missing_value=missing_value )
+            'surface pressure', 'Pa', missing_value=missing_value, range=(/40000.0, 110000.0/)) !:MKL December 27 2019
 
 !-------------------
 ! Mountain torque
@@ -493,7 +499,7 @@ contains
 ! mean temp between 300-500 mb
 !-----------------------------
       idiag%id_tm = register_diag_field (trim(field), 'tm', axes(1:2),  Time,   &
-                                   'mean 300-500 mb temp', 'K', missing_value=missing_value )
+                                   'mean 300-500 mb temp', 'K', missing_value=missing_value, range=(/140.0,400.0/)  ) !:MKL December 27 2019
 
 !-------------------
 ! Sea-level-pressure

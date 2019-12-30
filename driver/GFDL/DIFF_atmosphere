@@ -1,0 +1,135 @@
+1,20d0
+< !***********************************************************************
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+< !***********************************************************************
+153c133,134
+<   type(cmip_diag_id_type) :: ID_tnta, ID_tnhusa
+---
+>   type(cmip_diag_id_type) :: ID_tnta, ID_tnhusa, ID_tnt, ID_tnhus
+>   integer :: nqv, nql, nqi, nqa
+362a344,349
+>    ID_tnt = register_cmip_diag_field_3d (mod_name, 'tnt', Time, &
+>                          'Tendency of Air Temperature', 'K s-1', &
+>                          standard_name='tendency_of_air_temperature')
+>    ID_tnhus = register_cmip_diag_field_3d (mod_name, 'tnhus', Time, &
+>                          'Tendency of Specific Humidity', 's-1', &
+>                          standard_name='tendency_of_specific_humidity')
+377c364,365
+<    if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) allocate(ttend(isc:iec, jsc:jec, 1:npz))
+---
+>    if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) .or. query_cmip_diag_id(ID_tnt) ) &
+>                                                       allocate(ttend(isc:iec, jsc:jec, 1:npz))
+379c367
+<         query_cmip_diag_id(ID_tnhusa) )  allocate(qtend(isc:iec, jsc:jec, 1:npz, 4))
+---
+>         query_cmip_diag_id(ID_tnhusa) .or. query_cmip_diag_id(ID_tnhus) )  allocate(qtend(isc:iec, jsc:jec, 1:npz, 4))
+381a370,381
+> ! get tracer number for common moisture tracers
+>    nqv = get_tracer_index(MODEL_ATMOS,'sphum')
+>    nql = get_tracer_index(MODEL_ATMOS,'liq_wat')
+>    nqi = get_tracer_index(MODEL_ATMOS,'ice_wat')
+>    nqa = get_tracer_index(MODEL_ATMOS,'cld_amt')
+> ! could zero out diagnostics if nXX = 0
+>    if (any((/nqv,nql,nqi,nqa/)==0)) call error_mesg ('atmosphere_mod', &
+>          'at least one moisture tracer (sphum,liq_wat,ice_wat,cld_amt) does not exist', FATAL )
+>    if (nqv > size(qtend,4)) id_qdt_dyn = 0
+>    if (nql > size(qtend,4)) id_qldt_dyn = 0
+>    if (nqi > size(qtend,4)) id_qidt_dyn = 0
+>    if (nqa > size(qtend,4)) id_qadt_dyn = 0
+409,411c409,411
+<    Surf_diff%qdt_dyn(:,:,:) = Atm(mytile)%q (isc:iec, jsc:jec, :, 1) + &
+<                               Atm(mytile)%q (isc:iec, jsc:jec, :, 2) + &
+<                               Atm(mytile)%q (isc:iec, jsc:jec, :, 3)
+---
+>    Surf_diff%qdt_dyn(:,:,:) = Atm(mytile)%q (isc:iec, jsc:jec, :, nqv) + &
+>                               Atm(mytile)%q (isc:iec, jsc:jec, :, nql) + &
+>                               Atm(mytile)%q (isc:iec, jsc:jec, :, nqi)
+415c415,416
+<    if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) ttend(:, :, :) = Atm(mytile)%pt(isc:iec, jsc:jec, :)
+---
+>    if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) .or. query_cmip_diag_id(ID_tnt) ) &
+>                                              ttend(:, :, :) = Atm(mytile)%pt(isc:iec, jsc:jec, :)
+417c418,419
+<         query_cmip_diag_id(ID_tnhusa) ) qtend(:, :, :, :) = Atm(mytile)%q (isc:iec, jsc:jec, :, :)
+---
+>         query_cmip_diag_id(ID_tnhusa) .or. query_cmip_diag_id(ID_tnhus) ) &
+>                                              qtend(:, :, :, :) = Atm(mytile)%q (isc:iec, jsc:jec, :, 1:size(qtend,4))
+461,463c463,465
+<    Surf_diff%qdt_dyn(:,:,:) =(Atm(mytile)%q (isc:iec,jsc:jec,:,1) + &
+<                               Atm(mytile)%q (isc:iec,jsc:jec,:,2) + &
+<                               Atm(mytile)%q (isc:iec,jsc:jec,:,3) - Surf_diff%qdt_dyn(:,:,:))/dt_atmos
+---
+>    Surf_diff%qdt_dyn(:,:,:) =(Atm(mytile)%q (isc:iec,jsc:jec,:,nqv) + &
+>                               Atm(mytile)%q (isc:iec,jsc:jec,:,nql) + &
+>                               Atm(mytile)%q (isc:iec,jsc:jec,:,nqi) - Surf_diff%qdt_dyn(:,:,:))/dt_atmos
+466,481c468,469
+<    if ( id_udt_dyn>0 )  used = send_data( id_udt_dyn, 2.0/dt_atmos*Atm(mytile)%ua(isc:iec,jsc:jec,:), Time)
+<    if ( id_vdt_dyn>0 )  used = send_data( id_vdt_dyn, 2.0/dt_atmos*Atm(mytile)%va(isc:iec,jsc:jec,:), Time)
+<    if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) then
+<         ttend = (Atm(mytile)%pt(isc:iec, jsc:jec, :)   - ttend(:, :, :   ))/dt_atmos
+<         if (id_tdt_dyn>0)                used = send_data(id_tdt_dyn,  ttend(:,:,:),   Time)
+<         if (query_cmip_diag_id(ID_tnta)) used = send_cmip_data_3d (ID_tnta, ttend(:,:,:), Time)
+<    endif
+< 
+<    if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or.  query_cmip_diag_id(ID_tnhusa) ) then
+<         qtend = (Atm(mytile)%q (isc:iec, jsc:jec, :, :)- qtend(:, :, :, :))/dt_atmos
+<         if (id_qdt_dyn  > 0) used = send_data(id_qdt_dyn,  qtend(:,:,:,1), Time)
+<         if (id_qldt_dyn > 0) used = send_data(id_qldt_dyn, qtend(:,:,:,2), Time)
+<         if (id_qidt_dyn > 0) used = send_data(id_qidt_dyn, qtend(:,:,:,3), Time)
+<         if (id_qadt_dyn > 0) used = send_data(id_qadt_dyn, qtend(:,:,:,4), Time)
+<         if (query_cmip_diag_id(ID_tnhusa)) used = send_cmip_data_3d (ID_tnhusa, qtend(:,:,:,1), Time)
+<    endif
+---
+>    if (id_udt_dyn > 0) used = send_data( id_udt_dyn, 2.0/dt_atmos*Atm(mytile)%ua(isc:iec,jsc:jec,:), Time)
+>    if (id_vdt_dyn > 0) used = send_data( id_vdt_dyn, 2.0/dt_atmos*Atm(mytile)%va(isc:iec,jsc:jec,:), Time)
+482a471,480
+>    if (id_tdt_dyn > 0) used = send_data( id_tdt_dyn, (Atm(mytile)%pt(isc:iec,jsc:jec,:)-ttend(:,:,:))/dt_atmos, Time)
+>    if (query_cmip_diag_id(ID_tnta)) &
+>                  used = send_cmip_data_3d ( ID_tnta, (Atm(mytile)%pt(isc:iec,jsc:jec,:)-ttend(:,:,:))/dt_atmos, Time)
+> 
+>    if (id_qdt_dyn  > 0) used = send_data( id_qdt_dyn , (Atm(mytile)%q(isc:iec,jsc:jec,:,nqv)-qtend(:,:,:,nqv))/dt_atmos, Time)
+>    if (id_qldt_dyn > 0) used = send_data( id_qldt_dyn, (Atm(mytile)%q(isc:iec,jsc:jec,:,nql)-qtend(:,:,:,nql))/dt_atmos, Time)
+>    if (id_qidt_dyn > 0) used = send_data( id_qidt_dyn, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqi)-qtend(:,:,:,nqi))/dt_atmos, Time)
+>    if (id_qadt_dyn > 0) used = send_data( id_qadt_dyn, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqa)-qtend(:,:,:,nqa))/dt_atmos, Time)
+>    if (query_cmip_diag_id(ID_tnhusa)) &
+>                   used = send_cmip_data_3d (ID_tnhusa, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqv)-qtend(:,:,:,nqv))/dt_atmos, Time)
+736c734
+<          z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(mytile)%q(i,j,npz,1)) *  &
+---
+>          z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(mytile)%q(i,j,npz,nqv)) *  &
+822,824c820,822
+<               wm(i,j) = wm(i,j) + Atm(mytile)%delp(i,j,k) * ( Atm(mytile)%q(i,j,k,1) +    &
+<                                                          Atm(mytile)%q(i,j,k,2) +    &
+<                                                          Atm(mytile)%q(i,j,k,3) )
+---
+>               wm(i,j) = wm(i,j) + Atm(mytile)%delp(i,j,k) * ( Atm(mytile)%q(i,j,k,nqv) +    &
+>                                                               Atm(mytile)%q(i,j,k,nql) +    &
+>                                                               Atm(mytile)%q(i,j,k,nqi) )
+932a931,936
+> !--- cmip6 total tendencies of temperature and specific humidity
+>    if (query_cmip_diag_id(ID_tnt)) &
+>                  used = send_cmip_data_3d ( ID_tnt, (Atm(mytile)%pt(isc:iec,jsc:jec,:)-ttend(:,:,:))/dt_atmos, Time)
+>    if (query_cmip_diag_id(ID_tnhus)) &
+>                   used = send_cmip_data_3d (ID_tnhus, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqv)-qtend(:,:,:,nqv))/dt_atmos, Time)
+> 
+1170a1175,1177
+> !++VAN
+>    call compute_g_avg(Time, 'ch4', Radiation, Atm_block)
+> !--VAN

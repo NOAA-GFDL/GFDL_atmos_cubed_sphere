@@ -36,13 +36,13 @@ use diag_manager_mod,   only: register_diag_field, &
 use diag_data_mod,      only: CMOR_MISSING_VALUE, null_axis_id
 use tracer_manager_mod, only: get_tracer_index
 use field_manager_mod,  only: MODEL_ATMOS
-use constants_mod,      only: GRAV
+use constants_mod,      only: GRAV, RDGAS  !:MKL - December 26 2019
 
 use fv_mapz_mod,        only: E_Flux
 use fv_arrays_mod,      only: fv_atmos_type
 use fv_diagnostics_mod, only: interpolate_vertical, &
                               get_height_given_pressure, &
-                              rh_calc, get_height_field
+                              rh_calc, get_height_field, get_vorticity !:MKL - December 27 2019, also made public in fv_diagnostics
 
 use atmos_cmip_diag_mod, only: register_cmip_diag_field_2d, &
                                register_cmip_diag_field_3d, &
@@ -71,12 +71,13 @@ namelist /fv_cmip_diag_nml/ dummy
 
 type(cmip_diag_id_type) :: ID_ta, ID_ua, ID_va, ID_hus, ID_hur, ID_wap, ID_zg, &
                            ID_u2, ID_v2, ID_t2, ID_wap2, ID_uv, ID_ut, ID_vt,  &
-                           ID_uwap, ID_vwap, ID_twap
+                           ID_uwap, ID_vwap, ID_twap, ID_wa !:MKL December 26 2019
 integer              :: id_ps, id_orog
 integer              :: id_ua200, id_va200, id_ua850, id_va850, &
                         id_ta500, id_ta700, id_ta850, id_zg500, &
                         id_zg100, id_zg10,  id_zg1000,          &
                         id_hus850, id_wap500, id_ua10
+integer              :: id_rv850 !:MKL December 27 2019
 
 character(len=5) :: mod_name = 'atmos'
 
@@ -164,6 +165,10 @@ character(len=4)      :: plabel
     ID_va = register_cmip_diag_field_3d (mod_name, 'va', Time, &
                        'Northward Wind', 'm s-1', standard_name='northward_wind')
 
+    !:MKL December 26 2019
+    ID_wa = register_cmip_diag_field_3d (mod_name, 'wa', Time, &
+                       'Upward Air Velocity', 'm s-1', standard_name='upward_air_velocity')
+    
     ID_hus = register_cmip_diag_field_3d (mod_name, 'hus', Time, &
                        'Specific Humidity', '1.0', standard_name='specific_humidity')
 
@@ -232,7 +237,7 @@ character(len=4)      :: plabel
     id_orog = register_static_field (mod_name, 'orog', axes(1:2), &
                                     'Surface Altitude', 'm', &
                                     standard_name='surface_altitude', &
-                                    area=area_id)
+                                    area=area_id, interp_method='conserve_order1') !:MKL December 27 2019
     if (id_orog > 0) used = send_data (id_orog, Atm(n)%phis(isc:iec,jsc:jec)/GRAV, Time)
 #else
 !--- for now output this as 'zsurf' from fv_diagnostics ---
@@ -311,6 +316,12 @@ character(len=4)      :: plabel
     if (id_hus850 > 0 .and. id_plevels(id_p850) > 0) &
         call diag_field_add_attribute (id_hus850, 'coordinates', 'p850')
 
+  !---- relative vorticity at 850 hPa ----                                                                   !:MKL December 27 2019
+    id_rv850 = register_cmip_diag_field_2d (mod_name, 'rv850', Time, &                                       !:MKL December 27 2019
+                      'Relative Vorticity at 850 hPa', 's-1', standard_name='atmosphere_relative_vorticity') !:MKL December 27 2019
+    if (id_rv850 > 0 .and. id_plevels(id_p850) > 0) &                                                        !:MKL December 27 2019
+         call diag_field_add_attribute (id_rv850, 'coordinates', 'p850')                                     !:MKL December 27 2019
+
   !---- omega at 500 hPa ----
 
     id_wap500 = register_cmip_diag_field_2d (mod_name, 'wap500', Time, &
@@ -357,15 +368,18 @@ type(time_type),     intent(in) :: Time
 integer :: isc, iec, jsc, jec, n, i, j, k, id
 integer :: ngc, npz
 logical :: used
+logical :: compute_wa !:MKL December 26 2019
 
 real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
-                Atm(1)%bd%jsc:Atm(1)%bd%jec) :: pfull, dat2
+                Atm(1)%bd%jsc:Atm(1)%bd%jec) :: pfull, dat2, &
+                                                rv850 !:MKL December 27 2018
+                
 real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
                 Atm(1)%bd%jsc:Atm(1)%bd%jec,1) :: dat3
 
 real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
                 Atm(1)%bd%jsc:Atm(1)%bd%jec, &
-                Atm(1)%npz) :: rhum
+                Atm(1)%npz) :: rhum, wa, rv !:MKL December 26 2019
 
 real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
                 Atm(1)%bd%jsc:Atm(1)%bd%jec, &
@@ -384,8 +398,12 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
 
   call set_domain(Atm(n)%domain)
 
+  ! set flags for computing quantities                     !:MKL December 26 2019
+  compute_wa = .false.                                     !:MKL December 26 2019
+  if (count(ID_wa%field_id(:)>0)  > 0) compute_wa = .true. !:MKL December 26 2019
+    
   ! compute relative humidity at model levels (if needed)
-  if (count(ID_hur%field_id(:)>0) > 0) then
+  if (count(ID_hur%field_id(:)>0) > 0 .or. compute_wa ) then !:MKL December 26 2019
     do k=1,npz
       do j=jsc,jec
       do i=isc,iec
@@ -394,15 +412,25 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
       enddo
       call rh_calc (pfull, Atm(n)%pt(isc:iec,jsc:jec,k), &
                     Atm(n)%q(isc:iec,jsc:jec,k,sphum), rhum(isc:iec,jsc:jec,k), do_cmip=.true.)
+      if (compute_wa) then                                                                        !:MKL December 26 2019
+         wa(isc:iec,jsc:jec,k) = -(Atm(n)%omga(isc:iec,jsc:jec,k)*Atm(n)%pt(isc:iec,jsc:jec,k)/ & !:MKL December 26 2019
+              pfull(isc:iec,jsc:jec))*(RDGAS/GRAV)                                                !:MKL December 26 2019
+      end if                                                                                      !:MKL December 26 2019
     enddo
   endif
-
 
   ! height field (wz) if needed
   if (count(ID_zg%field_id(:)>0) > 0 .or. any((/id_zg10,id_zg100,id_zg500,id_zg1000/) > 0)) then
     call get_height_field(isc, iec, jsc, jec, ngc, npz, Atm(n)%flagstruct%hydrostatic, Atm(n)%delz, &
                           wz, Atm(n)%pt, Atm(n)%q, Atm(n)%peln, zvir)
   endif
+
+  ! relative vorticity                                                                                              !:MKL December 27 2019
+  if (id_rv850 > 0) then                                                                                            !:MKL December 27 2019
+    call get_vorticity(isc, iec, jsc, jec, Atm(n)%bd%isd, Atm(n)%bd%ied, Atm(n)%bd%jsd, Atm(n)%bd%jed, npz, &       !:MKL December 27 2019
+                       Atm(n)%u, Atm(n)%v, rv, Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy, Atm(n)%gridstruct%rarea) !:MKL December 27 2019
+  endif                                                                                                             !:MKL December 27 2019
+
 
 !----------------------------------------------------------------------
 ! process 2D fields
@@ -430,6 +458,10 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
     ! relative humidity
   if (query_cmip_diag_id(ID_hur)) &
           used = send_cmip_data_3d (ID_hur, rhum(isc:iec,jsc:jec,:), Time, phalf=Atm(n)%peln, opt=1)
+
+   ! vertical velocity              !:MKL December 26 2019
+  if (query_cmip_diag_id(ID_wa)) &  !:MKL December 26 2019
+          used = send_cmip_data_3d (ID_wa, wa(isc:iec,jsc:jec,:), Time, phalf=Atm(n)%peln, opt=1) !:MKL December 26 2019
 
     ! geopotential height
   if (query_cmip_diag_id(ID_zg)) &
@@ -540,6 +572,12 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
                                Atm(n)%omga(isc:iec,jsc:jec,:), dat2)          
     used = send_data (id_wap500, dat2, Time)
   endif
+
+
+  if (id_rv850 > 0 ) then                                                                  !:MKL December 27 2019
+    call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, rv, rv850)    !:MKL December 27 2019
+    if (id_rv850 > 0) used = send_data (id_rv850, rv850, Time)                             !:MKL December 27 2019
+  endif                                                                                    !:MKL December 27 2019
 
   if (id_zg10 > 0) then
     call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/id_zg10/), &
