@@ -1,0 +1,319 @@
+---------------------------fv_ada_nudge.F90------------------
+1,20d0
+< !***********************************************************************
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+< !***********************************************************************
+---------------------------fv_climate_nudge.F90------------------
+1,20d0
+< !***********************************************************************
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+< !***********************************************************************
+---------------------------fv_cmip_diag.F90------------------
+1,20d0
+< !***********************************************************************
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+< !***********************************************************************
+39c19
+< use constants_mod,      only: GRAV, RDGAS  
+---
+> use constants_mod,      only: GRAV, RDGAS
+44,45c24,25
+<                               get_height_given_pressure, &
+<                               rh_calc, get_height_field, get_vorticity 
+---
+>                               get_height_given_pressure, rh_calc, &
+>                               get_height_field, get_vorticity
+76d55
+< 
+174,176d152
+<     ID_wa = register_cmip_diag_field_3d (mod_name, 'wa', Time, &
+<                        'Upward Air Velocity', 'm s-1', standard_name='upward_air_velocity')
+<     
+185a162,164
+>     ID_wa = register_cmip_diag_field_3d (mod_name, 'wa', Time, &
+>                        'Upward Air Velocity', 'm s-1', standard_name='upward_air_velocity')
+> 
+245a225
+> 
+263c243
+<                                     area=area_id, interp_method='conserve_order1') 
+---
+>                                     area=area_id, interp_method='conserve_order1')
+291c271
+<          '700 hPa Average', 'Pa', standard_name='air_pressure')
+---
+>                         '700 hPa Average', 'Pa', standard_name='air_pressure')
+293,304c273,284
+<        call diag_field_add_attribute (id_pl700, 'axis', 'Z')
+<        call diag_field_add_attribute (id_pl700, 'positive', 'down' )
+<        call diag_field_add_attribute (id_pl700, 'comment', 'average at levels 600,700,850 hPa' )
+<        ! add bounds
+<        id_nv = diag_axis_init('nv', (/1.,2./), 'none', 'N', 'vertex number', set_name='nv')
+<        id_pl700_bnds = register_static_field (mod_name, 'pl700_bnds', (/id_nv,null_axis_id/), &
+<             '700 hPa boundaries', 'Pa', standard_name='air_pressure')
+<        if (id_pl700_bnds > 0) then
+<           call diag_field_add_attribute (id_pl700, 'bounds', 'pl700_bnds' )
+<           used = send_data (id_pl700_bnds, (/850.e2,600.e2/), Time)
+<        endif
+<        used = send_data (id_pl700, 700.e2, Time)
+---
+>       call diag_field_add_attribute (id_pl700, 'axis', 'Z')
+>       call diag_field_add_attribute (id_pl700, 'positive', 'down' )
+>       call diag_field_add_attribute (id_pl700, 'comment', 'average at levels 600,700,850 hPa' )
+>       ! add bounds
+>       id_nv = diag_axis_init('nv', (/1.,2./), 'none', 'N', 'vertex number', set_name='nv')
+>       id_pl700_bnds = register_static_field (mod_name, 'pl700_bnds', (/id_nv,null_axis_id/), &
+>                                      '700 hPa boundaries', 'Pa', standard_name='air_pressure')
+>       if (id_pl700_bnds > 0) then
+>         call diag_field_add_attribute (id_pl700, 'bounds', 'pl700_bnds' )
+>         used = send_data (id_pl700_bnds, (/850.e2,600.e2/), Time)
+>       endif
+>       used = send_data (id_pl700, 700.e2, Time)
+307d286
+< 
+360a340
+> 
+362c342
+<          'Relative Vorticity at 200 hPa', 's-1', standard_name='atmosphere_relative_vorticity')
+---
+>                   'Relative Vorticity at 200 hPa', 's-1', standard_name='atmosphere_relative_vorticity')
+364,365c344,345
+<          call diag_field_add_attribute (id_rv200, 'coordinates', 'p200')
+<     
+---
+>         call diag_field_add_attribute (id_rv200, 'coordinates', 'p200')
+> 
+367c347
+<          'Relative Vorticity at 500 hPa', 's-1', standard_name='atmosphere_relative_vorticity')
+---
+>                   'Relative Vorticity at 500 hPa', 's-1', standard_name='atmosphere_relative_vorticity')
+369c349
+<          call diag_field_add_attribute (id_rv500, 'coordinates', 'p500')    
+---
+>         call diag_field_add_attribute (id_rv500, 'coordinates', 'p500')
+371,374c351,354
+<     id_rv850 = register_cmip_diag_field_2d (mod_name, 'rv850', Time, &                                       
+<                       'Relative Vorticity at 850 hPa', 's-1', standard_name='atmosphere_relative_vorticity') 
+<     if (id_rv850 > 0 .and. id_plevels(id_p850) > 0) &                                                        
+<          call diag_field_add_attribute (id_rv850, 'coordinates', 'p850')                                     
+---
+>     id_rv850 = register_cmip_diag_field_2d (mod_name, 'rv850', Time, &
+>                   'Relative Vorticity at 850 hPa', 's-1', standard_name='atmosphere_relative_vorticity')
+>     if (id_rv850 > 0 .and. id_plevels(id_p850) > 0) &
+>         call diag_field_add_attribute (id_rv850, 'coordinates', 'p850')
+377c357
+<  
+---
+> 
+379,380c359,360
+<          'Mean Relative Vorticity over 600-850 hPa', 's-1',  &
+<          standard_name='atmosphere_relative_vorticity')
+---
+>                  'Mean Relative Vorticity over 600-850 hPa', 's-1',  &
+>                         standard_name='atmosphere_relative_vorticity')
+382,383c362,363
+<          call diag_field_add_attribute (id_vortmean, 'coordinates', 'pl700')
+<     
+---
+>         call diag_field_add_attribute (id_vortmean, 'coordinates', 'pl700')
+> 
+430c410
+< logical :: compute_wa . compute_rh
+---
+> logical :: compute_rh, compute_wa
+435d414
+<                 
+441c420
+<                 Atm(1)%npz) :: rhum, wa, rv 
+---
+>                 Atm(1)%npz) :: rhum, wa, rv
+460c439
+<   ! set flags for computing quantities                     
+---
+>   ! set flags for computing quantities
+462c441
+<   compute_wa = .false.                                     
+---
+>   compute_wa = .false.
+464,465c443,444
+<   if (count(ID_wa%field_id(:)>0)  > 0) compute_wa = .true. 
+<     
+---
+>   if (count(ID_wa%field_id(:)>0)  > 0) compute_wa = .true.
+> 
+467c446
+<   if ( compute_rh  .or. compute_wa ) then 
+---
+>   if (compute_rh .or. compute_wa) then
+475,477c454,456
+<       if( compute_rh) then
+<          call rh_calc (pfull, Atm(n)%pt(isc:iec,jsc:jec,k), &
+<               Atm(n)%q(isc:iec,jsc:jec,k,sphum), rhum(isc:iec,jsc:jec,k), do_cmip=.true.)
+---
+>       if (compute_rh) then
+>         call rh_calc (pfull, Atm(n)%pt(isc:iec,jsc:jec,k), &
+>                     Atm(n)%q(isc:iec,jsc:jec,k,sphum), rhum(isc:iec,jsc:jec,k), do_cmip=.true.)
+480,483c459,462
+<       if (compute_wa) then                                                                        
+<          wa(isc:iec,jsc:jec,k) = -(Atm(n)%omga(isc:iec,jsc:jec,k)*Atm(n)%pt(isc:iec,jsc:jec,k)/ & 
+<               pfull(isc:iec,jsc:jec))*(RDGAS/GRAV)                                                
+<       endif                                                                                      
+---
+>       if (compute_wa) then
+>         wa(isc:iec,jsc:jec,k) = -(Atm(n)%omga(isc:iec,jsc:jec,k)*Atm(n)%pt(isc:iec,jsc:jec,k)/ &
+>                                         pfull(isc:iec,jsc:jec))*(RDGAS/GRAV)
+>       endif
+486a466
+> 
+493c473
+<   ! relative vorticity                                                                                              
+---
+>   ! relative vorticity
+495,498c475,477
+<     call get_vorticity(isc, iec, jsc, jec, Atm(n)%bd%isd, Atm(n)%bd%ied, Atm(n)%bd%jsd, Atm(n)%bd%jed, npz, &       
+<                        Atm(n)%u, Atm(n)%v, rv, Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy, Atm(n)%gridstruct%rarea) 
+<   endif                                                                                                             
+< 
+---
+>     call get_vorticity(isc, iec, jsc, jec, Atm(n)%bd%isd, Atm(n)%bd%ied, Atm(n)%bd%jsd, Atm(n)%bd%jed, npz, &
+>                        Atm(n)%u, Atm(n)%v, rv, Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy, Atm(n)%gridstruct%rarea)
+>   endif
+527,529c506,508
+<    ! vertical velocity              
+<   if (query_cmip_diag_id(ID_wa)) &  
+<           used = send_cmip_data_3d (ID_wa, wa(isc:iec,jsc:jec,:), Time, phalf=Atm(n)%peln, opt=1) 
+---
+>     ! vertical velocity
+>   if (query_cmip_diag_id(ID_wa)) &
+>           used = send_cmip_data_3d (ID_wa, wa(isc:iec,jsc:jec,:), Time, phalf=Atm(n)%peln, opt=1)
+578,584c557,563
+<  !----------------------------------------------------------------------
+<  ! stratiform cloud tracers (only on model levels)
+<  
+<    if (query_cmip_diag_id(ID_cls))  used = send_cmip_data_3d (ID_cls,  Atm(n)%q(isc:iec,jsc:jec,:,nqa)*100., Time)
+<    if (query_cmip_diag_id(ID_clws)) used = send_cmip_data_3d (ID_clws, Atm(n)%q(isc:iec,jsc:jec,:,nql), Time)
+<    if (query_cmip_diag_id(ID_clis)) used = send_cmip_data_3d (ID_clis, Atm(n)%q(isc:iec,jsc:jec,:,nqi), Time)
+<  
+---
+> !----------------------------------------------------------------------
+> ! stratiform cloud tracers (only on model levels)
+> 
+>   if (query_cmip_diag_id(ID_cls))  used = send_cmip_data_3d (ID_cls,  Atm(n)%q(isc:iec,jsc:jec,:,nqa)*100., Time)
+>   if (query_cmip_diag_id(ID_clws)) used = send_cmip_data_3d (ID_clws, Atm(n)%q(isc:iec,jsc:jec,:,nql), Time)
+>   if (query_cmip_diag_id(ID_clis)) used = send_cmip_data_3d (ID_clis, Atm(n)%q(isc:iec,jsc:jec,:,nqi), Time)
+> 
+649,650c628,629
+<      call interpolate_vertical (isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, rv, dat2)          
+<      used = send_data (id_rv200, dat2, Time)
+---
+>     call interpolate_vertical (isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, rv, dat2)          
+>     used = send_data (id_rv200, dat2, Time)
+652c631
+<   
+---
+> 
+654,655c633,634
+<      call interpolate_vertical (isc, iec, jsc, jec, npz, 500.e2, Atm(n)%peln, rv, dat2)          
+<      used = send_data (id_rv500, dat2, Time)
+---
+>     call interpolate_vertical (isc, iec, jsc, jec, npz, 500.e2, Atm(n)%peln, rv, dat2)          
+>     used = send_data (id_rv500, dat2, Time)
+657,665c636,644
+<   
+<   if (id_rv850 > 0 .or. id_vortmean > 0 ) then                                                                  
+<      call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, rv, rv850)    
+<      if (id_rv850 > 0) used = send_data (id_rv850, rv850, Time)                             
+<      if (id_vortmean > 0) then
+<         call interpolate_vertical (isc, iec, jsc, jec, npz, 600.e2, Atm(n)%peln, rv, rv600)
+<         call interpolate_vertical (isc, iec, jsc, jec, npz, 700.e2, Atm(n)%peln, rv, rv700)
+<         used = send_data (id_vortmean, (rv600+rv700+rv850)/3., Time)
+<      endif
+---
+> 
+>   if (id_rv850 > 0 .or. id_vortmean > 0) then
+>     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, rv, rv850)          
+>     if (id_rv850 > 0) used = send_data (id_rv850, rv850, Time)
+>     if (id_vortmean > 0) then
+>       call interpolate_vertical (isc, iec, jsc, jec, npz, 600.e2, Atm(n)%peln, rv, rv600)
+>       call interpolate_vertical (isc, iec, jsc, jec, npz, 700.e2, Atm(n)%peln, rv, rv700)
+>       used = send_data (id_vortmean, (rv600+rv700+rv850)/3., Time)
+>     endif
+667c646
+<   
+---
+> 
+---------------------------read_climate_nudge_data.F90------------------
+1,20c1
+< !***********************************************************************
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+< !***********************************************************************
+---
+> 

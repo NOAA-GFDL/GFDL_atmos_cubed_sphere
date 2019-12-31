@@ -150,8 +150,8 @@ character(len=7)   :: mod_name = 'atmos'
   real, allocatable :: qtend(:,:,:,:)
   real              :: mv = -1.e10
 !miz
-  type(cmip_diag_id_type) :: ID_tnta, ID_tnhusa, ID_tnt, ID_tnhus !:MKL December 30 2019
-  integer :: nqv, nql, nqi, nqa                                   !:MKL December 30 2019
+  type(cmip_diag_id_type) :: ID_tnta, ID_tnhusa, ID_tnt, ID_tnhus 
+  integer :: nqv, nql, nqi, nqa                                   
 
   integer :: mytile = 1
   integer :: p_split = 1
@@ -361,12 +361,12 @@ contains
    ID_tnhusa = register_cmip_diag_field_3d (mod_name, 'tnhusa', Time, &
                          'Tendency of Specific Humidity due to Advection', 's-1', &
                          standard_name='tendency_of_specific_humidity_due_to_advection')
-   ID_tnt = register_cmip_diag_field_3d (mod_name, 'tnt', Time, &       !:MKL December 30 2019
-                         'Tendency of Air Temperature', 'K s-1', &      !:MKL December 30 2019   
-                         standard_name='tendency_of_air_temperature')   !:MKL December 30 2019
-   ID_tnhus = register_cmip_diag_field_3d (mod_name, 'tnhus', Time, &   !:MKL December 30 2019
-                         'Tendency of Specific Humidity', 's-1', &      !:MKL December 30 2019
-                         standard_name='tendency_of_specific_humidity') !:MKL December 30 2019 
+   ID_tnt = register_cmip_diag_field_3d (mod_name, 'tnt', Time, &       
+                         'Tendency of Air Temperature', 'K s-1', &      
+                         standard_name='tendency_of_air_temperature')   
+   ID_tnhus = register_cmip_diag_field_3d (mod_name, 'tnhus', Time, &   
+                         'Tendency of Specific Humidity', 's-1', &      
+                         standard_name='tendency_of_specific_humidity') 
 
 
 !---allocate id_tracer_*
@@ -382,24 +382,24 @@ contains
      endif
    enddo
    if (any(id_tracerdt_dyn(:)>0)) allocate(qtendyyf(isc:iec, jsc:jec,1:npz,num_tracers))
-   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) .or. query_cmip_diag_id(ID_tnt) ) &     !:MKL December 30 2019
+   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) .or. query_cmip_diag_id(ID_tnt) ) &     
                                                       allocate(ttend(isc:iec, jsc:jec, 1:npz))
    if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or. &
-        query_cmip_diag_id(ID_tnhusa) .or. query_cmip_diag_id(ID_tnhus) )  allocate(qtend(isc:iec, jsc:jec, 1:npz, 4)) !:MKL December 30 2019
+        query_cmip_diag_id(ID_tnhusa) .or. query_cmip_diag_id(ID_tnhus) )  allocate(qtend(isc:iec, jsc:jec, 1:npz, 4)) 
 !miz
 
-! get tracer number for common moisture tracers  !:MKL December 30 2019                                        
-   nqv = get_tracer_index(MODEL_ATMOS,'sphum')   !:MKL December 30 2019
-   nql = get_tracer_index(MODEL_ATMOS,'liq_wat') !:MKL December 30 2019
-   nqi = get_tracer_index(MODEL_ATMOS,'ice_wat') !:MKL December 30 2019
-   nqa = get_tracer_index(MODEL_ATMOS,'cld_amt') !:MKL December 30 2019
-! could zero out diagnostics if nXX = 0                                                         !:MKL December 30 2019                       
-   if (any((/nqv,nql,nqi,nqa/)==0)) call error_mesg ('atmosphere_mod', &                        !:MKL December 30 2019
-         'at least one moisture tracer (sphum,liq_wat,ice_wat,cld_amt) does not exist', FATAL ) !:MKL December 30 2019
-   if (nqv > size(qtend,4)) id_qdt_dyn = 0                                                      !:MKL December 30 2019
-   if (nql > size(qtend,4)) id_qldt_dyn = 0                                                     !:MKL December 30 2019
-   if (nqi > size(qtend,4)) id_qidt_dyn = 0                                                     !:MKL December 30 2019
-   if (nqa > size(qtend,4)) id_qadt_dyn = 0                                                     !:MKL December 30 2019
+! get tracer number for common moisture tracers  
+   nqv = get_tracer_index(MODEL_ATMOS,'sphum')   
+   nql = get_tracer_index(MODEL_ATMOS,'liq_wat') 
+   nqi = get_tracer_index(MODEL_ATMOS,'ice_wat') 
+   nqa = get_tracer_index(MODEL_ATMOS,'cld_amt') 
+! could zero out diagnostics if nXX = 0                                                         
+   if (any((/nqv,nql,nqi,nqa/)==0)) call error_mesg ('atmosphere_mod', &                        
+         'at least one moisture tracer (sphum,liq_wat,ice_wat,cld_amt) does not exist', FATAL ) 
+   if (nqv > size(qtend,4)) id_qdt_dyn = 0                                                      
+   if (nql > size(qtend,4)) id_qldt_dyn = 0                                                     
+   if (nqi > size(qtend,4)) id_qidt_dyn = 0                                                     
+   if (nqa > size(qtend,4)) id_qadt_dyn = 0                                                     
 !  --- initialize clocks for dynamics, physics_down and physics_up
    id_dynam     = mpp_clock_id ('FV dy-core',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
    id_subgridz  = mpp_clock_id ('FV subgrid_z',flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
@@ -433,12 +433,11 @@ contains
 #endif
 
 !miz[M d0
-   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) .or. query_cmip_diag_id(ID_tnt) ) & !:MKL December 30 2019
+   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) .or. query_cmip_diag_id(ID_tnt) ) & 
                                              ttend(:, :, :) = Atm(mytile)%pt(isc:iec, jsc:jec, :)
    if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or. &
-        query_cmip_diag_id(ID_tnhusa) .or. query_cmip_diag_id(ID_tnhus) ) & !:MKL December 30 2019
-                                             qtend(:, :, :, :) = Atm(mytile)%q (isc:iec, jsc:jec, :, 1:size(qtend,4)) !:MKL December 30 2019
-                                             !:MKL qtend(:, :, :, :) = Atm(mytile)%q (isc:iec, jsc:jec, :, :)
+        query_cmip_diag_id(ID_tnhusa) .or. query_cmip_diag_id(ID_tnhus) ) & 
+                                             qtend(:, :, :, :) = Atm(mytile)%q (isc:iec, jsc:jec, :, 1:size(qtend,4)) 
 !miz
    do itrac = 1, num_tracers
      if (id_tracerdt_dyn (itrac) >0 ) &
@@ -489,32 +488,18 @@ contains
 !miz
    if ( id_udt_dyn>0 )  used = send_data( id_udt_dyn, 2.0/dt_atmos*Atm(mytile)%ua(isc:iec,jsc:jec,:), Time)
    if ( id_vdt_dyn>0 )  used = send_data( id_vdt_dyn, 2.0/dt_atmos*Atm(mytile)%va(isc:iec,jsc:jec,:), Time)
-   if (id_tdt_dyn > 0) used = send_data( id_tdt_dyn, (Atm(mytile)%pt(isc:iec,jsc:jec,:)-ttend(:,:,:))/dt_atmos, Time) !:MKL December 30 2019
-   if (query_cmip_diag_id(ID_tnta)) &                                                                                 !:MKL December 30 2019
-                 used = send_cmip_data_3d ( ID_tnta, (Atm(mytile)%pt(isc:iec,jsc:jec,:)-ttend(:,:,:))/dt_atmos, Time) !:MKL December 30 2019  
+   if (id_tdt_dyn > 0) used = send_data( id_tdt_dyn, (Atm(mytile)%pt(isc:iec,jsc:jec,:)-ttend(:,:,:))/dt_atmos, Time) 
+   if (query_cmip_diag_id(ID_tnta)) &                                                                                 
+                 used = send_cmip_data_3d ( ID_tnta, (Atm(mytile)%pt(isc:iec,jsc:jec,:)-ttend(:,:,:))/dt_atmos, Time) 
 
-   !if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) then                                  !:MKL December 30 2019
-   !   ttend = (Atm(mytile)%pt(isc:iec, jsc:jec, :)   - ttend(:, :, :   ))/dt_atmos            !:MKL December 30 2019
-   !   if (id_tdt_dyn>0)                used = send_data(id_tdt_dyn,  ttend(:,:,:),   Time)    !:MKL December 30 2019
-   !   if (query_cmip_diag_id(ID_tnta)) used = send_cmip_data_3d (ID_tnta, ttend(:,:,:), Time) !:MKL December 30 2019
-   !endif
-
-   if (id_qdt_dyn  > 0) used = send_data( id_qdt_dyn , (Atm(mytile)%q(isc:iec,jsc:jec,:,nqv)-qtend(:,:,:,nqv))/dt_atmos, Time) !:MKL December 30 2019
-   if (id_qldt_dyn > 0) used = send_data( id_qldt_dyn, (Atm(mytile)%q(isc:iec,jsc:jec,:,nql)-qtend(:,:,:,nql))/dt_atmos, Time) !:MKL December 30 2019
-   if (id_qidt_dyn > 0) used = send_data( id_qidt_dyn, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqi)-qtend(:,:,:,nqi))/dt_atmos, Time) !:MKL December 30 2019
-   if (id_qadt_dyn > 0) used = send_data( id_qadt_dyn, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqa)-qtend(:,:,:,nqa))/dt_atmos, Time) !:MKL December 30 2019
-   if (query_cmip_diag_id(ID_tnhusa)) &                                                                                        !:MKL December 30 2019
-                  used = send_cmip_data_3d (ID_tnhusa, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqv)-qtend(:,:,:,nqv))/dt_atmos, Time) !:MKL December 30 2019
+   if (id_qdt_dyn  > 0) used = send_data( id_qdt_dyn , (Atm(mytile)%q(isc:iec,jsc:jec,:,nqv)-qtend(:,:,:,nqv))/dt_atmos, Time) 
+   if (id_qldt_dyn > 0) used = send_data( id_qldt_dyn, (Atm(mytile)%q(isc:iec,jsc:jec,:,nql)-qtend(:,:,:,nql))/dt_atmos, Time) 
+   if (id_qidt_dyn > 0) used = send_data( id_qidt_dyn, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqi)-qtend(:,:,:,nqi))/dt_atmos, Time) 
+   if (id_qadt_dyn > 0) used = send_data( id_qadt_dyn, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqa)-qtend(:,:,:,nqa))/dt_atmos, Time) 
+   if (query_cmip_diag_id(ID_tnhusa)) &                                                                                        
+                  used = send_cmip_data_3d (ID_tnhusa, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqv)-qtend(:,:,:,nqv))/dt_atmos, Time) 
 
 
-   !if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or.  query_cmip_diag_id(ID_tnhusa) ) then   !:MKL December 30 2019
-        ! ttend = (Atm(mytile)%q (isc:iec, jsc:jec, :, :)- qtend(:, :, :, :))/dt_atmos                                 !:MKL December 30 2019
-        ! if (id_qdt_dyn  > 0) used = send_data(id_qdt_dyn,  qtend(:,:,:,1), Time)                                     !:MKL December 30 2019
-        ! if (id_qldt_dyn > 0) used = send_data(id_qldt_dyn, qtend(:,:,:,2), Time)                                     !:MKL December 30 2019
-        ! if (id_qidt_dyn > 0) used = send_data(id_qidt_dyn, qtend(:,:,:,3), Time)                                     !:MKL December 30 2019
-        ! if (id_qadt_dyn > 0) used = send_data(id_qadt_dyn, qtend(:,:,:,4), Time)                                     !:MKL December 30 2019
-        ! if (query_cmip_diag_id(ID_tnhusa)) used = send_cmip_data_3d (ID_tnhusa, qtend(:,:,:,1), Time)                !:MKL December 30 2019
-   ! endif
 !miz
 
    do itrac = 1, num_tracers
@@ -967,10 +952,10 @@ contains
     endif   
 
 !--- cmip6 total tendencies of temperature and specific humidity
-   if (query_cmip_diag_id(ID_tnt)) &                                                                                  !:MKL December 30 2019
-                 used = send_cmip_data_3d ( ID_tnt, (Atm(mytile)%pt(isc:iec,jsc:jec,:)-ttend(:,:,:))/dt_atmos, Time)  !:MKL December 30 2019
-   if (query_cmip_diag_id(ID_tnhus)) &                                                                                !:MKL December 30 2019
-                  used = send_cmip_data_3d (ID_tnhus, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqv)-qtend(:,:,:,nqv))/dt_atmos, Time) !:MKL December 30 2019
+   if (query_cmip_diag_id(ID_tnt)) &                                                                                  
+                 used = send_cmip_data_3d ( ID_tnt, (Atm(mytile)%pt(isc:iec,jsc:jec,:)-ttend(:,:,:))/dt_atmos, Time)  
+   if (query_cmip_diag_id(ID_tnhus)) &                                                                                
+                  used = send_cmip_data_3d (ID_tnhus, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqv)-qtend(:,:,:,nqv))/dt_atmos, Time) 
 
 
 #if !defined(ATMOS_NUDGE) && !defined(CLIMATE_NUDGE) && !defined(ADA_NUDGE)
@@ -1211,6 +1196,7 @@ contains
 ! phase due to the way in which MPI interacts with nested OpenMP
 !----------------------------------------------------------------------
    call compute_g_avg(Time, 'co2', Radiation, Atm_block)
+   call compute_g_avg(Time, 'ch4', Radiation, Atm_block)
 
  end subroutine atmos_radiation_driver_inputs
 
