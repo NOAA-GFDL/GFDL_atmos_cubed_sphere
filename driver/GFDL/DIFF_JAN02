@@ -1,0 +1,42 @@
+1,20d0
+< !***********************************************************************
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+< !***********************************************************************
+488,489c468,470
+<    if (id_udt_dyn>0)  used = send_data( id_udt_dyn, 2.0/dt_atmos*Atm(mytile)%ua(isc:iec,jsc:jec,:), Time)
+<    if (id_vdt_dyn>0)  used = send_data( id_vdt_dyn, 2.0/dt_atmos*Atm(mytile)%va(isc:iec,jsc:jec,:), Time)
+---
+>    if (id_udt_dyn > 0) used = send_data( id_udt_dyn, 2.0/dt_atmos*Atm(mytile)%ua(isc:iec,jsc:jec,:), Time)
+>    if (id_vdt_dyn > 0) used = send_data( id_vdt_dyn, 2.0/dt_atmos*Atm(mytile)%va(isc:iec,jsc:jec,:), Time)
+> !miz
+501,503d481
+< 
+< !miz
+< 
+843,844c821,822
+<                                                          Atm(mytile)%q(i,j,k,nql) +    &
+<                                                          Atm(mytile)%q(i,j,k,nqi) )
+---
+>                                                               Atm(mytile)%q(i,j,k,nql) +    &
+>                                                               Atm(mytile)%q(i,j,k,nqi) )
+1196a1175
+> !++VAN
+1197a1177
+> !--VAN

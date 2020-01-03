@@ -54,7 +54,7 @@ module fv_arrays_mod
                          id_f15, id_f25, id_f35, id_f45, id_ctp,  &
            id_ppt, id_ts, id_tb, id_ctt, id_pmask, id_pmaskv2,    &
            id_delp, id_delz, id_zratio, id_ws, id_iw, id_lw,      &
-           id_pfhy, id_pfnh,                                      &
+           id_pfhy, id_pfnh,                           &
            id_qn, id_qn200, id_qn500, id_qn850, id_qp, id_mdt, id_qdt, id_aam, id_amdt, &
            id_acly, id_acl, id_acl2, id_dbz, id_maxdbz, id_basedbz, id_dbz4km, &
            id_uq, id_vq, id_wq, id_iuq, id_ivq, id_iwq,   & ! moisture flux & vertical integral
@@ -73,8 +73,8 @@ module fv_arrays_mod
 
  integer:: id_u_plev, id_v_plev, id_t_plev, id_h_plev, id_q_plev, id_omg_plev
 ! IPCC diag
- integer :: id_rh10,  id_rh50,  id_rh100, id_rh200,  id_rh250, id_rh300, &
-            id_rh500, id_rh700, id_rh850, id_rh925,  id_rh1000
+ integer :: id_rh10, id_rh50, id_rh100, id_rh200, id_rh250, id_rh300,  &
+            id_rh500, id_rh700, id_rh850, id_rh925, id_rh1000
 
  integer :: id_rh1000_cmip, id_rh925_cmip, id_rh850_cmip, id_rh700_cmip, id_rh500_cmip, &
             id_rh300_cmip,  id_rh250_cmip, id_rh100_cmip, id_rh50_cmip,  id_rh10_cmip

@@ -1,0 +1,1050 @@
+-----------------------external_ic.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *
+2202d2200
+<   !call prt_maxmin('ZS_GFS', gzc,      is, ie, js, je, 0, 1, 1.)
+2235c2233
+< ! gzc is height
+---
+> ! gzc is geopotential
+2239d2236
+<        !gz(km+1) = gzc(i,j)*grav
+-----------------------external_sst.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *
+-----------------------fv_diagnostics.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *
+294c293
+<           call diag_field_add_attribute (id_area, 'cell_methods', 'area: sum')
+---
+>          call diag_field_add_attribute (id_area, 'cell_methods', 'area: sum')
+296d294
+< 
+502c500
+<                                    'mean 300-500 mb temp', 'K', missing_value=missing_value, range=(/140.0,400.0/)  )
+---
+>                                    'mean 300-500 mb temp', 'K', missing_value=missing_value, range=(/140.0,400.0/) )
+589a588
+> 
+732a732
+> 
+777a778
+> 
+2276,2277c2277
+<        if ( idiag%id_u100m>0 .or. idiag%id_v100m>0 .or. idiag%id_w100m>0 .or. idiag%id_w5km>0 .or. idiag%id_w2500m>0 &
+<             & .or. idiag%id_basedbz.ne.0 .or. idiag%id_dbz4km.ne.0) then !! idiag%id_basedbz and idiag%id_dbz4km are INTEGERS
+---
+>        if ( idiag%id_u100m>0 .or. idiag%id_v100m>0 .or. idiag%id_w100m>0 .or. idiag%id_w5km>0 .or. idiag%id_w2500m>0 .or. idiag%id_basedbz .ne. 0 .or. idiag%id_dbz4km .ne. 0 ) then !! idiag%id_basedbz and idiag%id_dbz4km are INTEGERS 
+2322c2322
+<        ! 250-mb
+---
+> ! 250-mb
+2349c2349
+<        if ( rainwat > 0 .and. (idiag%id_dbz>0 .or. idiag%id_maxdbz>0 .or. idiag%id_basedbz>0 .or. idiag%id_dbz4km.ne.0)) then
+---
+>        if ( rainwat > 0 .and. (idiag%id_dbz>0 .or. idiag%id_maxdbz>0 .or. idiag%id_basedbz>0 .or. idiag%id_dbz4km .ne. 0 )) then
+2495c2495
+<          x850(:,:) = x850(:,:)*a2(:,:)
+---
+>          x850(:,:) = x850(:,:)*a2(:,:) 
+2674,2865c2674,2864
+<         allocate ( a4(isc:iec,jsc:jec,npz) )
+<  
+<         ! zonal moisture flux
+<         if(idiag%id_uq > 0) then
+<            do k=1,npz
+<               do j=jsc,jec
+<                  do i=isc,iec
+<                     a4(i,j,k) =  Atm(n)%ua(i,j,k) * Atm(n)%q(i,j,k,sphum)
+<                  enddo
+<               enddo
+<            enddo
+<            used=send_data(idiag%id_uq, a4, Time)
+<            if(idiag%id_iuq > 0) then
+<               call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+<               used=send_data(idiag%id_iuq, a2, Time)
+<            endif
+<         endif
+<         ! meridional moisture flux
+<         if(idiag%id_vq > 0) then
+<            do k=1,npz
+<               do j=jsc,jec
+<                  do i=isc,iec
+<                     a4(i,j,k) =  Atm(n)%va(i,j,k) * Atm(n)%q(i,j,k,sphum)
+<                  enddo
+<               enddo
+<            enddo
+<            used=send_data(idiag%id_vq, a4, Time)
+<            if(idiag%id_ivq > 0) then
+<               call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+<               used=send_data(idiag%id_ivq, a2, Time)
+<            endif
+<         endif
+<         
+<         ! zonal heat flux
+<         if(idiag%id_ut > 0) then
+<            do k=1,npz
+<               do j=jsc,jec
+<                  do i=isc,iec
+<                     a4(i,j,k) =  Atm(n)%ua(i,j,k) * Atm(n)%pt(i,j,k)
+<                  enddo
+<               enddo
+<            enddo
+<            used=send_data(idiag%id_ut, a4, Time)
+<            if(idiag%id_iut > 0) then
+<               call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+<               used=send_data(idiag%id_iut, a2, Time)
+<            endif
+<         endif
+<         ! meridional heat flux
+<         if(idiag%id_vt > 0) then
+<            do k=1,npz
+<               do j=jsc,jec
+<                  do i=isc,iec
+<                     a4(i,j,k) =  Atm(n)%va(i,j,k) * Atm(n)%pt(i,j,k)
+<                  enddo
+<               enddo
+<            enddo
+<            used=send_data(idiag%id_vt, a4, Time)
+<            if(idiag%id_ivt > 0) then
+<               call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+<               used=send_data(idiag%id_ivt, a2, Time)
+<            endif
+<         endif
+<         
+<         ! zonal flux of u
+<         if(idiag%id_uu > 0) then
+<            do k=1,npz
+<               do j=jsc,jec
+<                  do i=isc,iec
+<                     a4(i,j,k) =  Atm(n)%ua(i,j,k) * Atm(n)%ua(i,j,k)
+<                  enddo
+<               enddo
+<            enddo
+<            used=send_data(idiag%id_uu, a4, Time)
+<            if(idiag%id_iuu > 0) then
+<               call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+<               used=send_data(idiag%id_iuu, a2, Time)
+<            endif
+<         endif
+<         ! zonal flux of v
+<         if(idiag%id_uv > 0) then
+<            do k=1,npz
+<               do j=jsc,jec
+<                  do i=isc,iec
+<                     a4(i,j,k) =  Atm(n)%ua(i,j,k) * Atm(n)%va(i,j,k)
+<                  enddo
+<               enddo
+<            enddo
+<            used=send_data(idiag%id_uv, a4, Time)
+<            if(idiag%id_iuv > 0) then
+<               call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+<               used=send_data(idiag%id_iuv, a2, Time)
+<            endif
+<         endif
+<         ! meridional flux of v
+<         if(idiag%id_vv > 0) then
+<            do k=1,npz
+<               do j=jsc,jec
+<                  do i=isc,iec
+<                     a4(i,j,k) =  Atm(n)%va(i,j,k) * Atm(n)%va(i,j,k)
+<                  enddo
+<               enddo
+<            enddo
+<            used=send_data(idiag%id_vv, a4, Time)
+<            if(idiag%id_ivv > 0) then
+<               call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+<               used=send_data(idiag%id_ivv, a2, Time)
+<            endif
+<         endif
+<         
+<         ! terms related with vertical wind ( Atm(n)%w ):
+<         if(.not.Atm(n)%flagstruct%hydrostatic) then
+<            ! vertical moisture flux
+<            if(idiag%id_wq > 0) then
+<               do k=1,npz
+<                  do j=jsc,jec
+<                     do i=isc,iec
+<                        a4(i,j,k) =  Atm(n)%w(i,j,k) * Atm(n)%q(i,j,k,sphum)
+<                     enddo
+<                  enddo
+<               enddo
+<               used=send_data(idiag%id_wq, a4, Time)
+<               if(idiag%id_iwq > 0) then
+<                  call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+<                  used=send_data(idiag%id_iwq, a2, Time)
+<               endif
+<            endif
+<            ! vertical heat flux
+<            if(idiag%id_wt > 0) then
+<               do k=1,npz
+<                  do j=jsc,jec
+<                     do i=isc,iec
+<                        a4(i,j,k) =  Atm(n)%w(i,j,k) * Atm(n)%pt(i,j,k)
+<                     enddo
+<                  enddo
+<               enddo
+<               used=send_data(idiag%id_wt, a4, Time)
+<               if(idiag%id_iwt > 0) then
+<                  call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+<                  used=send_data(idiag%id_iwt, a2, Time)
+<               endif
+<            endif
+<            ! zonal flux of w
+<            if(idiag%id_uw > 0) then
+<               do k=1,npz
+<                  do j=jsc,jec
+<                     do i=isc,iec
+<                        a4(i,j,k) =  Atm(n)%ua(i,j,k) * Atm(n)%w(i,j,k)
+<                     enddo
+<                  enddo
+<               enddo
+<               used=send_data(idiag%id_uw, a4, Time)
+<               if(idiag%id_iuw > 0) then
+<                  call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+<                  used=send_data(idiag%id_iuw, a2, Time)
+<               endif
+<            endif
+<            ! meridional flux of w
+<            if(idiag%id_vw > 0) then
+<               do k=1,npz
+<                  do j=jsc,jec
+<                     do i=isc,iec
+<                        a4(i,j,k) =  Atm(n)%va(i,j,k) * Atm(n)%w(i,j,k)
+<                     enddo
+<                  enddo
+<               enddo
+<               used=send_data(idiag%id_vw, a4, Time)
+<               if(idiag%id_ivw > 0) then
+<                  call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+<                  used=send_data(idiag%id_ivw, a2, Time)
+<               endif
+<            endif
+<            ! vertical flux of w
+<            if(idiag%id_ww > 0) then
+<               do k=1,npz
+<                  do j=jsc,jec
+<                     do i=isc,iec
+<                        a4(i,j,k) =  Atm(n)%w(i,j,k) * Atm(n)%w(i,j,k)
+<                     enddo
+<                  enddo
+<               enddo
+<               used=send_data(idiag%id_ww, a4, Time)
+<               if(idiag%id_iww > 0) then
+<                  call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+<                  used=send_data(idiag%id_iww, a2, Time)
+<               endif
+<            endif
+<         endif
+<         
+<         deallocate ( a4 )
+<         
+<         
+---
+>      allocate ( a4(isc:iec,jsc:jec,npz) )
+> 
+>      ! zonal moisture flux
+>      if(idiag%id_uq > 0) then
+>        do k=1,npz
+>           do j=jsc,jec
+>              do i=isc,iec
+>                 a4(i,j,k) =  Atm(n)%ua(i,j,k) * Atm(n)%q(i,j,k,sphum)
+>              enddo
+>           enddo
+>        enddo
+>        used=send_data(idiag%id_uq, a4, Time)
+>        if(idiag%id_iuq > 0) then
+>          call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+>          used=send_data(idiag%id_iuq, a2, Time)
+>        endif
+>      endif
+>     ! meridional moisture flux
+>      if(idiag%id_vq > 0) then
+>        do k=1,npz
+>           do j=jsc,jec
+>              do i=isc,iec
+>                 a4(i,j,k) =  Atm(n)%va(i,j,k) * Atm(n)%q(i,j,k,sphum)
+>              enddo
+>           enddo
+>        enddo
+>        used=send_data(idiag%id_vq, a4, Time)
+>        if(idiag%id_ivq > 0) then
+>          call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+>          used=send_data(idiag%id_ivq, a2, Time)
+>        endif
+>      endif
+> 
+>      ! zonal heat flux
+>      if(idiag%id_ut > 0) then
+>        do k=1,npz
+>           do j=jsc,jec
+>              do i=isc,iec
+>                 a4(i,j,k) =  Atm(n)%ua(i,j,k) * Atm(n)%pt(i,j,k)
+>              enddo
+>           enddo
+>        enddo
+>        used=send_data(idiag%id_ut, a4, Time)
+>        if(idiag%id_iut > 0) then
+>          call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+>          used=send_data(idiag%id_iut, a2, Time)
+>        endif
+>      endif
+>      ! meridional heat flux
+>      if(idiag%id_vt > 0) then
+>        do k=1,npz
+>           do j=jsc,jec
+>              do i=isc,iec
+>                 a4(i,j,k) =  Atm(n)%va(i,j,k) * Atm(n)%pt(i,j,k)
+>              enddo
+>           enddo
+>        enddo
+>        used=send_data(idiag%id_vt, a4, Time)
+>        if(idiag%id_ivt > 0) then
+>          call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+>          used=send_data(idiag%id_ivt, a2, Time)
+>        endif
+>      endif
+> 
+>      ! zonal flux of u
+>      if(idiag%id_uu > 0) then
+>        do k=1,npz
+>           do j=jsc,jec
+>              do i=isc,iec
+>                 a4(i,j,k) =  Atm(n)%ua(i,j,k) * Atm(n)%ua(i,j,k)
+>              enddo
+>           enddo
+>        enddo
+>        used=send_data(idiag%id_uu, a4, Time)
+>        if(idiag%id_iuu > 0) then
+>          call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+>          used=send_data(idiag%id_iuu, a2, Time)
+>        endif
+>      endif
+>      ! zonal flux of v
+>      if(idiag%id_uv > 0) then
+>        do k=1,npz
+>           do j=jsc,jec
+>              do i=isc,iec
+>                 a4(i,j,k) =  Atm(n)%ua(i,j,k) * Atm(n)%va(i,j,k)
+>              enddo
+>           enddo
+>        enddo
+>        used=send_data(idiag%id_uv, a4, Time)
+>        if(idiag%id_iuv > 0) then
+>          call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+>          used=send_data(idiag%id_iuv, a2, Time)
+>        endif
+>      endif
+>     ! meridional flux of v
+>      if(idiag%id_vv > 0) then
+>        do k=1,npz
+>           do j=jsc,jec
+>              do i=isc,iec
+>                 a4(i,j,k) =  Atm(n)%va(i,j,k) * Atm(n)%va(i,j,k)
+>              enddo
+>           enddo
+>        enddo
+>        used=send_data(idiag%id_vv, a4, Time)
+>        if(idiag%id_ivv > 0) then
+>          call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+>          used=send_data(idiag%id_ivv, a2, Time)
+>        endif
+>      endif
+> 
+> ! terms related with vertical wind ( Atm(n)%w ):
+>      if(.not.Atm(n)%flagstruct%hydrostatic) then
+>        ! vertical moisture flux
+>        if(idiag%id_wq > 0) then
+>          do k=1,npz
+>             do j=jsc,jec
+>                do i=isc,iec
+>                   a4(i,j,k) =  Atm(n)%w(i,j,k) * Atm(n)%q(i,j,k,sphum)
+>                enddo
+>             enddo
+>          enddo
+>          used=send_data(idiag%id_wq, a4, Time)
+>          if(idiag%id_iwq > 0) then
+>            call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+>            used=send_data(idiag%id_iwq, a2, Time)
+>          endif
+>        endif
+>        ! vertical heat flux
+>        if(idiag%id_wt > 0) then
+>          do k=1,npz
+>             do j=jsc,jec
+>                do i=isc,iec
+>                   a4(i,j,k) =  Atm(n)%w(i,j,k) * Atm(n)%pt(i,j,k)
+>                enddo
+>             enddo
+>          enddo
+>          used=send_data(idiag%id_wt, a4, Time)
+>          if(idiag%id_iwt > 0) then
+>            call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+>            used=send_data(idiag%id_iwt, a2, Time)
+>          endif
+>        endif
+>       ! zonal flux of w
+>        if(idiag%id_uw > 0) then
+>          do k=1,npz
+>             do j=jsc,jec
+>                do i=isc,iec
+>                   a4(i,j,k) =  Atm(n)%ua(i,j,k) * Atm(n)%w(i,j,k)
+>                enddo
+>             enddo
+>          enddo
+>          used=send_data(idiag%id_uw, a4, Time)
+>          if(idiag%id_iuw > 0) then
+>            call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+>            used=send_data(idiag%id_iuw, a2, Time)
+>          endif
+>        endif
+>        ! meridional flux of w
+>        if(idiag%id_vw > 0) then
+>          do k=1,npz
+>             do j=jsc,jec
+>                do i=isc,iec
+>                   a4(i,j,k) =  Atm(n)%va(i,j,k) * Atm(n)%w(i,j,k)
+>                enddo
+>             enddo
+>          enddo
+>          used=send_data(idiag%id_vw, a4, Time)
+>          if(idiag%id_ivw > 0) then
+>            call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+>            used=send_data(idiag%id_ivw, a2, Time)
+>          endif
+>        endif
+>        ! vertical flux of w
+>        if(idiag%id_ww > 0) then
+>          do k=1,npz
+>             do j=jsc,jec
+>                do i=isc,iec
+>                   a4(i,j,k) =  Atm(n)%w(i,j,k) * Atm(n)%w(i,j,k)
+>                enddo
+>             enddo
+>          enddo
+>          used=send_data(idiag%id_ww, a4, Time)
+>          if(idiag%id_iww > 0) then
+>            call z_sum(isc, iec, jsc, jec, npz, 0, Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+>            used=send_data(idiag%id_iww, a2, Time)
+>          endif
+>        endif
+>      endif
+> 
+>      deallocate ( a4 )
+> 
+-----------------------fv_eta.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *
+674c673
+<          data a49/                                &
+---
+>            data a49/                                &
+-----------------------fv_grid_tools.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *
+-----------------------fv_io.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *
+-----------------------fv_mp_mod.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *
+-----------------------fv_nggps_diag.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *
+-----------------------fv_nudge.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *
+-----------------------fv_restart.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *
+-----------------------fv_surf_map.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *
+481d479
+<       !real, intent(IN):: sin_sg(9,isd:ied,jsd:jed)
+550d547
+<    !real, intent(in):: sin_sg(9,bd%isd:bd%ied,bd%jsd:bd%jed)
+699d695
+<             !ddx(i,j) = 0.5*(sin_sg(3,i-1,j)+sin_sg(1,i,j))*dy(i,j)*ddx(i,j)
+703d698
+<             !ddx(i,j) = fac*0.5*(sin_sg(3,i-1,j)+sin_sg(1,i,j))*dy(i,j)*ddx(i,j)
+761d755
+<               !ddy(i,j) = 0.5*(sin_sg(4,i,j-1)+sin_sg(2,i,j))*dx(i,j)*ddy(i,j)
+766d759
+<               !ddy(i,j) = fac*0.5*(sin_sg(4,i,j-1)+sin_sg(2,i,j))*dx(i,j)*ddy(i,j)
+-----------------------fv_timing.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *
+-----------------------init_hydro.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *
+-----------------------sim_nc_mod.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *
+-----------------------sorted_index.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *
+-----------------------test_cases.F90-----------------------
+2,19c2,18
+< !*                   GNU Lesser General Public License
+< !*
+< !* This file is part of the FV3 dynamical core.
+< !*
+< !* The FV3 dynamical core is free software: you can redistribute it
+< !* and/or modify it under the terms of the
+< !* GNU Lesser General Public License as published by the
+< !* Free Software Foundation, either version 3 of the License, or
+< !* (at your option) any later version.
+< !*
+< !* The FV3 dynamical core is distributed in the hope that it will be
+< !* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+< !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+< !* See the GNU General Public License for more details.
+< !*
+< !* You should have received a copy of the GNU Lesser General Public
+< !* License along with the FV3 dynamical core.
+< !* If not, see <http://www.gnu.org/licenses/>.
+---
+> !*                   GNU General Public License                        *
+> !* This file is a part of fvGFS.                                       *
+> !*                                                                     *
+> !* fvGFS is free software; you can redistribute it and/or modify it    *
+> !* and are expected to follow the terms of the GNU General Public      *
+> !* License as published by the Free Software Foundation; either        *
+> !* version 2 of the License, or (at your option) any later version.    *
+> !*                                                                     *
+> !* fvGFS is distributed in the hope that it will be useful, but        *
+> !* WITHOUT ANY WARRANTY; without even the implied warranty of          *
+> !* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU   *
+> !* General Public License for more details.                            *
+> !*                                                                     *
+> !* For the full text of the GNU General Public License,                *
+> !* write to: Free Software Foundation, Inc.,                           *
+> !*           675 Mass Ave, Cambridge, MA 02139, USA.                   *
+> !* or see:   http://www.gnu.org/licenses/gpl.html                      *

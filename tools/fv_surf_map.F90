@@ -477,7 +477,8 @@
 
       real(kind=R_GRID), intent(in)::  grid(isd:ied+1, jsd:jed+1,2)
       real(kind=R_GRID), intent(in):: agrid(isd:ied,   jsd:jed,  2)
-      real, intent(IN):: sin_sg(9,isd:ied,jsd:jed)
+      real, intent(IN):: sin_sg(isd:ied,jsd:jed,9)
+      !real, intent(IN):: sin_sg(9,isd:ied,jsd:jed)
       real(kind=R_GRID), intent(IN):: stretch_fac
       logical, intent(IN) :: nested
       real, intent(inout):: phis(isd:ied,jsd,jed)
@@ -545,7 +546,8 @@
    real, intent(in):: dya(bd%isd:bd%ied,  bd%jsd:bd%jed)
    real, intent(in):: dxc(bd%isd:bd%ied+1,bd%jsd:bd%jed)
    real, intent(in):: dyc(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
-   real, intent(in):: sin_sg(9,bd%isd:bd%ied,bd%jsd:bd%jed)
+   real, intent(in):: sin_sg(bd%isd:bd%ied,bd%jsd:bd%jed,9)
+   !real, intent(in):: sin_sg(9,bd%isd:bd%ied,bd%jsd:bd%jed)
    real, intent(in):: oro(bd%isd:bd%ied,  bd%jsd:bd%jed)        ! 0==water, 1==land
    logical, intent(in):: zero_ocean, check_slope
    logical, intent(in):: nested
@@ -693,10 +695,12 @@
     do i=is,ie+1
             ddx(i,j) = (q(i-1,j)-q(i,j))/dxc(i,j)
        if ( extm(i-1).and.extm(i) ) then
-            ddx(i,j) = 0.5*(sin_sg(3,i-1,j)+sin_sg(1,i,j))*dy(i,j)*ddx(i,j)
+            ddx(i,j) = 0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))*dy(i,j)*ddx(i,j)
+            !ddx(i,j) = 0.5*(sin_sg(3,i-1,j)+sin_sg(1,i,j))*dy(i,j)*ddx(i,j)
        elseif ( abs(ddx(i,j)) > m_slope ) then
             fac = min(1., max(0.1,(abs(ddx(i,j))-m_slope)/m_slope ) )
-            ddx(i,j) = fac*0.5*(sin_sg(3,i-1,j)+sin_sg(1,i,j))*dy(i,j)*ddx(i,j)
+            ddx(i,j) = fac*0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))*dy(i,j)*ddx(i,j)
+            !ddx(i,j) = fac*0.5*(sin_sg(3,i-1,j)+sin_sg(1,i,j))*dy(i,j)*ddx(i,j)
        else
             ddx(i,j) = 0.
        endif
@@ -754,10 +758,12 @@
       do i=is,ie
          ddy(i,j) = (q(i,j-1)-q(i,j))/dyc(i,j)
          if ( ext2(i,j-1) .and. ext2(i,j) ) then
-              ddy(i,j) = 0.5*(sin_sg(4,i,j-1)+sin_sg(2,i,j))*dx(i,j)*ddy(i,j)
+              !ddy(i,j) = 0.5*(sin_sg(4,i,j-1)+sin_sg(2,i,j))*dx(i,j)*ddy(i,j)
+              ddy(i,j) = 0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))*dx(i,j)*ddy(i,j)
          elseif ( abs(ddy(i,j))>m_slope ) then
               fac = min(1., max(0.1,(abs(ddy(i,j))-m_slope)/m_slope))
-              ddy(i,j) = fac*0.5*(sin_sg(4,i,j-1)+sin_sg(2,i,j))*dx(i,j)*ddy(i,j)
+              ddy(i,j) = fac*0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))*dx(i,j)*ddy(i,j)
+              !ddy(i,j) = fac*0.5*(sin_sg(4,i,j-1)+sin_sg(2,i,j))*dx(i,j)*ddy(i,j)
          else
               ddy(i,j) = 0.
          endif

@@ -28,7 +28,7 @@ module fv_diagnostics_mod
  use mpp_domains_mod,    only: domain2d, mpp_update_domains, DGRID_NE
  use diag_manager_mod,   only: diag_axis_init, register_diag_field, &
                                register_static_field, send_data, diag_grid_init, &
-                               diag_field_add_attribute 
+                               diag_field_add_attribute
  use fv_arrays_mod,      only: fv_atmos_type, fv_grid_type, fv_diag_type, fv_grid_bounds_type, & 
                                R_GRID
  !!! CLEANUP needs rem oval?
@@ -79,7 +79,7 @@ module fv_diagnostics_mod
 
  public :: fv_diag_init, fv_time, fv_diag, prt_mxm, prt_maxmin, range_check!, id_divg, id_te
  public :: prt_mass, prt_minmax, ppme, fv_diag_init_gn, z_sum, sphum_ll_fix, eqv_pot, qcly0, gn
- public :: get_height_given_pressure, interpolate_vertical, rh_calc, get_height_field, get_vorticity 
+ public :: get_height_given_pressure, interpolate_vertical, rh_calc, get_height_field, get_vorticity
 
  integer, parameter :: nplev = 31
  integer :: levs(nplev)
@@ -156,7 +156,7 @@ contains
 #ifdef HIWPP
     trange = (/    5.,  350. /)  ! temperature
 #else
-    trange = (/  100.,  400. /)  ! temperature  
+    trange = (/  100.,  400. /)  ! temperature
 #endif
     slprange = (/800.,  1200./)  ! sea-level-pressure
 
@@ -290,13 +290,13 @@ contains
                                          'latitude', 'degrees_N' )
        id_area = register_static_field ( trim(field), 'area', axes(1:2),  &
                                          'cell area', 'm**2' )
-       if (id_area > 0) then                                                   
-          call diag_field_add_attribute (id_area, 'cell_methods', 'area: sum') 
-       endif                                                                   
+       if (id_area > 0) then
+          call diag_field_add_attribute (id_area, 'cell_methods', 'area: sum')
+       endif
 
 #ifndef DYNAMICS_ZS
        idiag%id_zsurf = register_static_field ( trim(field), 'zsurf', axes(1:2),  &
-                                         'surface height', 'm', interp_method='conserve_order1' ) 
+                                         'surface height', 'm', interp_method='conserve_order1' )
 #endif
        idiag%id_zs = register_static_field ( trim(field), 'zs', axes(1:2),  &
                                         'Original Mean Terrain', 'm' )
@@ -433,7 +433,7 @@ contains
 ! Surface pressure
 !-------------------
        idiag%id_ps = register_diag_field ( trim(field), 'ps', axes(1:2), Time,           &
-            'surface pressure', 'Pa', missing_value=missing_value, range=(/40000.0, 110000.0/)) 
+            'surface pressure', 'Pa', missing_value=missing_value, range=(/40000.0, 110000.0/))
 
 !-------------------
 ! Mountain torque
@@ -491,15 +491,15 @@ contains
            all(idiag%id_h(minloc(abs(levs-500)))>0) .or. all(idiag%id_h(minloc(abs(levs-700)))>0) .or. &
            all(idiag%id_h(minloc(abs(levs-850)))>0) .or. all(idiag%id_h(minloc(abs(levs-925)))>0) .or. &
            all(idiag%id_h(minloc(abs(levs-1000)))>0) ) then
-           idiag%id_hght = 1
+        idiag%id_hght = 1
       else
-           idiag%id_hght = 0
+        idiag%id_hght = 0
       endif
 !-----------------------------
 ! mean temp between 300-500 mb
 !-----------------------------
       idiag%id_tm = register_diag_field (trim(field), 'tm', axes(1:2),  Time,   &
-                                   'mean 300-500 mb temp', 'K', missing_value=missing_value, range=(/140.0,400.0/)  ) 
+                                   'mean 300-500 mb temp', 'K', missing_value=missing_value, range=(/140.0,400.0/)  )
 
 !-------------------
 ! Sea-level-pressure
@@ -722,7 +722,7 @@ contains
 ! 850-mb vorticity
 !--------------------------
        idiag%id_vort850 = register_diag_field ( trim(field), 'vort850', axes(1:2), Time,       &
-                           '850-mb vorticity', '1/s', missing_value=missing_value )
+                           '850-mb vorticity', '1/s', missing_value=missing_value)
 
        if ( .not. Atm(n)%flagstruct%hydrostatic )                                        &
            idiag%id_w200 = register_diag_field ( trim(field), 'w200', axes(1:2), Time,       &
@@ -1004,7 +1004,7 @@ contains
     integer :: isd, ied, jsd, jed, npz, itrac
     integer :: ngc, nwater
 
-    real, allocatable :: a2(:,:),a3(:,:,:),a4(:,:,:), wk(:,:,:), wz(:,:,:), ucoor(:,:,:), vcoor(:,:,:)
+    real, allocatable :: a2(:,:),a3(:,:,:), a4(:,:,:), wk(:,:,:), wz(:,:,:), ucoor(:,:,:), vcoor(:,:,:)
     real, allocatable :: slp(:,:), depress(:,:), ws_max(:,:), tc_count(:,:)
     real, allocatable :: u2(:,:), v2(:,:), x850(:,:), var1(:,:), var2(:,:), var3(:,:)
     real, allocatable :: dmmr(:,:,:), dvmr(:,:,:)
@@ -2274,7 +2274,7 @@ contains
        endif
 
        if ( idiag%id_u100m>0 .or. idiag%id_v100m>0 .or. idiag%id_w100m>0 .or. idiag%id_w5km>0 .or. idiag%id_w2500m>0 &
-            & .or. idiag%id_basedbz.ne.0 .or. idiag%id_dbz4km.ne.0) then
+            & .or. idiag%id_basedbz.ne.0 .or. idiag%id_dbz4km.ne.0) then !! idiag%id_basedbz and idiag%id_dbz4km are INTEGERS
           if (.not.allocated(wz)) allocate ( wz(isc:iec,jsc:jec,npz+1) )
           if ( Atm(n)%flagstruct%hydrostatic) then
              rgrav = 1. / grav
@@ -2315,9 +2315,9 @@ contains
             if(prt_minmax) call prt_maxmin('rain5km', a2, isc, iec, jsc, jec, 0, 1, 1.)
        endif
        if ( idiag%id_w200>0 ) then
-          call interpolate_vertical(isc, iec, jsc, jec, npz,   &
-                                    200.e2, Atm(n)%peln, Atm(n)%w(isc:iec,jsc:jec,:), a2)
-          used=send_data(idiag%id_w200, a2, Time)
+            call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                      200.e2, Atm(n)%peln, Atm(n)%w(isc:iec,jsc:jec,:), a2)
+            used=send_data(idiag%id_w200, a2, Time)
        endif
        ! 250-mb
        if ( idiag%id_w5km>0 ) then
@@ -2492,9 +2492,9 @@ contains
          used=send_data(idiag%id_omg_plev, a3(isc:iec,jsc:jec,:), Time)
        endif
        if ( idiag%id_x850>0 .and. idiag%id_vort850>0 ) then
-          x850(:,:) = x850(:,:)*a2(:,:) 
-          used=send_data(idiag%id_x850, x850, Time)
-          deallocate ( x850 )
+         x850(:,:) = x850(:,:)*a2(:,:)
+         used=send_data(idiag%id_x850, x850, Time)
+         deallocate ( x850 )
        endif
 
        if( allocated(a3) ) deallocate (a3)
@@ -2565,7 +2565,7 @@ contains
           enddo
           enddo
         else
-          call eqv_pot(a3, Atm(n)%pt, Atm(n)%delp, Atm(n)%delz, Atm(n)%peln, Atm(n)%pkz, (/Atm(n)%q(isd,jsd,1,sphum)/),&
+          call eqv_pot(a3, Atm(n)%pt, Atm(n)%delp, Atm(n)%delz, Atm(n)%peln, Atm(n)%pkz, (/Atm(n)%q(isd,jsd,1,sphum)/),    &
                        isc, iec, jsc, jec, ngc, npz, Atm(n)%flagstruct%hydrostatic, Atm(n)%flagstruct%moist_phys)
         endif
 

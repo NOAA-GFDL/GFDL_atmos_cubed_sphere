@@ -36,13 +36,13 @@ use diag_manager_mod,   only: register_diag_field, diag_axis_init, &
 use diag_data_mod,      only: CMOR_MISSING_VALUE, null_axis_id
 use tracer_manager_mod, only: get_tracer_index
 use field_manager_mod,  only: MODEL_ATMOS
-use constants_mod,      only: GRAV, RDGAS  
+use constants_mod,      only: GRAV, RDGAS
 
 use fv_mapz_mod,        only: E_Flux
 use fv_arrays_mod,      only: fv_atmos_type
 use fv_diagnostics_mod, only: interpolate_vertical, &
                               get_height_given_pressure, &
-                              rh_calc, get_height_field, get_vorticity 
+                              rh_calc, get_height_field, get_vorticity
 
 use atmos_cmip_diag_mod, only: register_cmip_diag_field_2d, &
                                register_cmip_diag_field_3d, &
@@ -170,9 +170,6 @@ integer               :: id_pl700, id_pl700_bnds, id_nv
 
     ID_va = register_cmip_diag_field_3d (mod_name, 'va', Time, &
                        'Northward Wind', 'm s-1', standard_name='northward_wind')
-
-    ID_wa = register_cmip_diag_field_3d (mod_name, 'wa', Time, &
-                       'Upward Air Velocity', 'm s-1', standard_name='upward_air_velocity')
     
     ID_hus = register_cmip_diag_field_3d (mod_name, 'hus', Time, &
                        'Specific Humidity', '1.0', standard_name='specific_humidity')
@@ -182,6 +179,9 @@ integer               :: id_pl700, id_pl700_bnds, id_nv
 
     ID_hur = register_cmip_diag_field_3d (mod_name, 'hur', Time, &
                        'Relative Humidity', '%', standard_name='relative_humidity')
+
+    ID_wa = register_cmip_diag_field_3d (mod_name, 'wa', Time, &
+                       'Upward Air Velocity', 'm s-1', standard_name='upward_air_velocity')
 
     ID_zg = register_cmip_diag_field_3d (mod_name, 'zg', Time, &
                        'Geopotential Height', 'm', standard_name='geopotential_height', axis='half')
@@ -260,7 +260,7 @@ integer               :: id_pl700, id_pl700_bnds, id_nv
     id_orog = register_static_field (mod_name, 'orog', axes(1:2), &
                                     'Surface Altitude', 'm', &
                                     standard_name='surface_altitude', &
-                                    area=area_id, interp_method='conserve_order1') 
+                                    area=area_id, interp_method='conserve_order1')
     if (id_orog > 0) used = send_data (id_orog, Atm(n)%phis(isc:iec,jsc:jec)/GRAV, Time)
 #else
 !--- for now output this as 'zsurf' from fv_diagnostics ---
@@ -288,20 +288,20 @@ integer               :: id_pl700, id_pl700_bnds, id_nv
     enddo
 
     id_pl700 = register_static_field (mod_name, 'pl700', (/null_axis_id/), &
-         '700 hPa Average', 'Pa', standard_name='air_pressure')
+                        '700 hPa Average', 'Pa', standard_name='air_pressure')
     if (id_pl700 > 0) then
-       call diag_field_add_attribute (id_pl700, 'axis', 'Z')
-       call diag_field_add_attribute (id_pl700, 'positive', 'down' )
-       call diag_field_add_attribute (id_pl700, 'comment', 'average at levels 600,700,850 hPa' )
-       ! add bounds
-       id_nv = diag_axis_init('nv', (/1.,2./), 'none', 'N', 'vertex number', set_name='nv')
-       id_pl700_bnds = register_static_field (mod_name, 'pl700_bnds', (/id_nv,null_axis_id/), &
-            '700 hPa boundaries', 'Pa', standard_name='air_pressure')
-       if (id_pl700_bnds > 0) then
-          call diag_field_add_attribute (id_pl700, 'bounds', 'pl700_bnds' )
-          used = send_data (id_pl700_bnds, (/850.e2,600.e2/), Time)
-       endif
-       used = send_data (id_pl700, 700.e2, Time)
+      call diag_field_add_attribute (id_pl700, 'axis', 'Z')
+      call diag_field_add_attribute (id_pl700, 'positive', 'down' )
+      call diag_field_add_attribute (id_pl700, 'comment', 'average at levels 600,700,850 hPa' )
+      ! add bounds
+      id_nv = diag_axis_init('nv', (/1.,2./), 'none', 'N', 'vertex number', set_name='nv')
+      id_pl700_bnds = register_static_field (mod_name, 'pl700_bnds', (/id_nv,null_axis_id/), &
+                                     '700 hPa boundaries', 'Pa', standard_name='air_pressure')
+      if (id_pl700_bnds > 0) then
+        call diag_field_add_attribute (id_pl700, 'bounds', 'pl700_bnds' )
+        used = send_data (id_pl700_bnds, (/850.e2,600.e2/), Time)
+      endif
+      used = send_data (id_pl700, 700.e2, Time)
     endif
 
 
@@ -359,27 +359,27 @@ integer               :: id_pl700, id_pl700_bnds, id_nv
 
   !---- relative vorticity at 200, 500, 850 hPa ----
     id_rv200 = register_cmip_diag_field_2d (mod_name, 'rv200', Time, &
-         'Relative Vorticity at 200 hPa', 's-1', standard_name='atmosphere_relative_vorticity')
+                  'Relative Vorticity at 200 hPa', 's-1', standard_name='atmosphere_relative_vorticity')
     if (id_rv200 > 0 .and. id_plevels(id_p200) > 0) &
-         call diag_field_add_attribute (id_rv200, 'coordinates', 'p200')
+        call diag_field_add_attribute (id_rv200, 'coordinates', 'p200')
     
     id_rv500 = register_cmip_diag_field_2d (mod_name, 'rv500', Time, &
-         'Relative Vorticity at 500 hPa', 's-1', standard_name='atmosphere_relative_vorticity')
+                  'Relative Vorticity at 500 hPa', 's-1', standard_name='atmosphere_relative_vorticity')
     if (id_rv500 > 0 .and. id_plevels(id_p500) > 0) &
-         call diag_field_add_attribute (id_rv500, 'coordinates', 'p500')    
+        call diag_field_add_attribute (id_rv500, 'coordinates', 'p500')
 
-    id_rv850 = register_cmip_diag_field_2d (mod_name, 'rv850', Time, &                                       
-                      'Relative Vorticity at 850 hPa', 's-1', standard_name='atmosphere_relative_vorticity') 
-    if (id_rv850 > 0 .and. id_plevels(id_p850) > 0) &                                                        
-         call diag_field_add_attribute (id_rv850, 'coordinates', 'p850')                                     
+    id_rv850 = register_cmip_diag_field_2d (mod_name, 'rv850', Time, &
+                  'Relative Vorticity at 850 hPa', 's-1', standard_name='atmosphere_relative_vorticity')
+    if (id_rv850 > 0 .and. id_plevels(id_p850) > 0) &
+        call diag_field_add_attribute (id_rv850, 'coordinates', 'p850')
 
   !---- mean relative vorticity 600, 700, 850 hPa ----
  
     id_vortmean = register_cmip_diag_field_2d (mod_name, 'vortmean', Time, &
-         'Mean Relative Vorticity over 600-850 hPa', 's-1',  &
-         standard_name='atmosphere_relative_vorticity')
+                 'Mean Relative Vorticity over 600-850 hPa', 's-1',  &
+                        standard_name='atmosphere_relative_vorticity')
     if (id_vortmean > 0 .and. id_pl700 > 0) &
-         call diag_field_add_attribute (id_vortmean, 'coordinates', 'pl700')
+        call diag_field_add_attribute (id_vortmean, 'coordinates', 'pl700')
     
   !---- omega at 500 hPa ----
 
@@ -438,7 +438,7 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
 
 real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
                 Atm(1)%bd%jsc:Atm(1)%bd%jec, &
-                Atm(1)%npz) :: rhum, wa, rv 
+                Atm(1)%npz) :: rhum, wa, rv
 
 real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
                 Atm(1)%bd%jsc:Atm(1)%bd%jec, &
@@ -457,14 +457,14 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
 
   call set_domain(Atm(n)%domain)
 
-  ! set flags for computing quantities                     
+  ! set flags for computing quantities
   compute_rh = .false.
-  compute_wa = .false.                                     
+  compute_wa = .false.
   if (count(ID_hur%field_id(:)>0) > 0) compute_rh = .true.
-  if (count(ID_wa%field_id(:)>0)  > 0) compute_wa = .true. 
+  if (count(ID_wa%field_id(:)>0)  > 0) compute_wa = .true.
     
   ! compute relative humidity at model levels (if needed)
-  if ( compute_rh  .or. compute_wa ) then 
+  if (compute_rh .or. compute_wa) then 
     do k=1,npz
       do j=jsc,jec
       do i=isc,iec
@@ -472,15 +472,15 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
       enddo
       enddo
       ! compute relative humidity
-      if( compute_rh) then
-         call rh_calc (pfull, Atm(n)%pt(isc:iec,jsc:jec,k), &
-              Atm(n)%q(isc:iec,jsc:jec,k,sphum), rhum(isc:iec,jsc:jec,k), do_cmip=.true.)
+      if (compute_rh) then
+        call rh_calc (pfull, Atm(n)%pt(isc:iec,jsc:jec,k), &
+                    Atm(n)%q(isc:iec,jsc:jec,k,sphum), rhum(isc:iec,jsc:jec,k), do_cmip=.true.)
       endif
       ! compute vertical velocity
-      if (compute_wa) then                                                                        
-         wa(isc:iec,jsc:jec,k) = -(Atm(n)%omga(isc:iec,jsc:jec,k)*Atm(n)%pt(isc:iec,jsc:jec,k)/ & 
-              pfull(isc:iec,jsc:jec))*(RDGAS/GRAV)                                                
-      endif                                                                                      
+      if (compute_wa) then
+        wa(isc:iec,jsc:jec,k) = -(Atm(n)%omga(isc:iec,jsc:jec,k)*Atm(n)%pt(isc:iec,jsc:jec,k)/ &
+                                        pfull(isc:iec,jsc:jec))*(RDGAS/GRAV)
+      endif
     enddo
   endif
 
@@ -490,12 +490,11 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
                           wz, Atm(n)%pt, Atm(n)%q, Atm(n)%peln, zvir)
   endif
 
-  ! relative vorticity                                                                                              
+  ! relative vorticity
   if (any((/id_rv200,id_rv500,id_rv850,id_vortmean/) > 0)) then
-    call get_vorticity(isc, iec, jsc, jec, Atm(n)%bd%isd, Atm(n)%bd%ied, Atm(n)%bd%jsd, Atm(n)%bd%jed, npz, &       
-                       Atm(n)%u, Atm(n)%v, rv, Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy, Atm(n)%gridstruct%rarea) 
-  endif                                                                                                             
-
+    call get_vorticity(isc, iec, jsc, jec, Atm(n)%bd%isd, Atm(n)%bd%ied, Atm(n)%bd%jsd, Atm(n)%bd%jed, npz, &
+                       Atm(n)%u, Atm(n)%v, rv, Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy, Atm(n)%gridstruct%rarea)
+  endif
 
 !----------------------------------------------------------------------
 ! process 2D fields
@@ -524,9 +523,9 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
   if (query_cmip_diag_id(ID_hur)) &
           used = send_cmip_data_3d (ID_hur, rhum(isc:iec,jsc:jec,:), Time, phalf=Atm(n)%peln, opt=1)
 
-   ! vertical velocity              
-  if (query_cmip_diag_id(ID_wa)) &  
-          used = send_cmip_data_3d (ID_wa, wa(isc:iec,jsc:jec,:), Time, phalf=Atm(n)%peln, opt=1) 
+    ! vertical velocity
+  if (query_cmip_diag_id(ID_wa)) &
+          used = send_cmip_data_3d (ID_wa, wa(isc:iec,jsc:jec,:), Time, phalf=Atm(n)%peln, opt=1)
 
     ! geopotential height
   if (query_cmip_diag_id(ID_zg)) &
@@ -575,12 +574,12 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
           used = send_cmip_data_3d (ID_twap, Atm(n)%pt  (isc:iec,jsc:jec,:)*Atm(n)%omga(isc:iec,jsc:jec,:), &
                                     Time, phalf=Atm(n)%peln, opt=1)
 
- !----------------------------------------------------------------------
- ! stratiform cloud tracers (only on model levels)
- 
-   if (query_cmip_diag_id(ID_cls))  used = send_cmip_data_3d (ID_cls,  Atm(n)%q(isc:iec,jsc:jec,:,nqa)*100., Time)
-   if (query_cmip_diag_id(ID_clws)) used = send_cmip_data_3d (ID_clws, Atm(n)%q(isc:iec,jsc:jec,:,nql), Time)
-   if (query_cmip_diag_id(ID_clis)) used = send_cmip_data_3d (ID_clis, Atm(n)%q(isc:iec,jsc:jec,:,nqi), Time)
+!----------------------------------------------------------------------
+! stratiform cloud tracers (only on model levels)
+
+  if (query_cmip_diag_id(ID_cls))  used = send_cmip_data_3d (ID_cls,  Atm(n)%q(isc:iec,jsc:jec,:,nqa)*100., Time)
+  if (query_cmip_diag_id(ID_clws)) used = send_cmip_data_3d (ID_clws, Atm(n)%q(isc:iec,jsc:jec,:,nql), Time)
+  if (query_cmip_diag_id(ID_clis)) used = send_cmip_data_3d (ID_clis, Atm(n)%q(isc:iec,jsc:jec,:,nqi), Time)
  
 !----------------------------------------------------------------------
 ! process 2D fields on specific pressure levels
@@ -646,23 +645,23 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
   endif
 
   if (id_rv200 > 0) then
-     call interpolate_vertical (isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, rv, dat2)          
-     used = send_data (id_rv200, dat2, Time)
+    call interpolate_vertical (isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, rv, dat2)
+    used = send_data (id_rv200, dat2, Time)
   endif
   
   if (id_rv500 > 0) then
-     call interpolate_vertical (isc, iec, jsc, jec, npz, 500.e2, Atm(n)%peln, rv, dat2)          
-     used = send_data (id_rv500, dat2, Time)
+    call interpolate_vertical (isc, iec, jsc, jec, npz, 500.e2, Atm(n)%peln, rv, dat2)
+    used = send_data (id_rv500, dat2, Time)
   endif
   
-  if (id_rv850 > 0 .or. id_vortmean > 0 ) then                                                                  
-     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, rv, rv850)    
-     if (id_rv850 > 0) used = send_data (id_rv850, rv850, Time)                             
-     if (id_vortmean > 0) then
-        call interpolate_vertical (isc, iec, jsc, jec, npz, 600.e2, Atm(n)%peln, rv, rv600)
-        call interpolate_vertical (isc, iec, jsc, jec, npz, 700.e2, Atm(n)%peln, rv, rv700)
-        used = send_data (id_vortmean, (rv600+rv700+rv850)/3., Time)
-     endif
+  if (id_rv850 > 0 .or. id_vortmean > 0 ) then
+    call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, rv, rv850)
+    if (id_rv850 > 0) used = send_data (id_rv850, rv850, Time)
+    if (id_vortmean > 0) then
+      call interpolate_vertical (isc, iec, jsc, jec, npz, 600.e2, Atm(n)%peln, rv, rv600)
+      call interpolate_vertical (isc, iec, jsc, jec, npz, 700.e2, Atm(n)%peln, rv, rv700)
+      used = send_data (id_vortmean, (rv600+rv700+rv850)/3., Time)
+    endif
   endif
   
   if (id_zg10 > 0) then
