@@ -25,11 +25,11 @@ module fv_grid_tools_mod
   use fv_grid_utils_mod, only: gnomonic_grids, great_circle_dist,  &
                            mid_pt_sphere, spherical_angle,     &
                                cell_center2, get_area, inner_prod, fill_ghost, &
-                           direct_transform, dist2side_latlon, &
+                           direct_transform, cube_transform, dist2side_latlon, &
                            spherical_linear_interpolation, big_number
   use fv_timing_mod,  only: timing_on, timing_off
-  use fv_mp_mod,      only: ng, is_master, fill_corners, XDir, YDir
-  use fv_mp_mod,      only: mp_gather, mp_bcst, mp_reduce_max, mp_stop
+  use fv_mp_mod,      only: is_master, fill_corners, XDir, YDir
+  use fv_mp_mod,      only: mp_gather, mp_bcst, mp_reduce_max, mp_stop, grids_master_procs
   use sorted_index_mod,  only: sorted_inta, sorted_intb
   use mpp_mod,           only: mpp_error, FATAL, get_unit, mpp_chksum, mpp_pe, stdout, &
                                mpp_send, mpp_recv, mpp_sync_self, EVENT_RECV, mpp_npes, &
@@ -74,10 +74,6 @@ module fv_grid_tools_mod
 
   public :: todeg, missing, init_grid, spherical_to_cartesian
 
-  !---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
-
 contains
 
   subroutine read_grid(Atm, grid_file, ndims, nregions, ng)
@@ -98,6 +94,7 @@ contains
     integer                            :: start(4), nread(4)  
     integer                            :: is,  ie,  js,  je
     integer                            :: isd, ied, jsd, jed
+      integer,save :: halo=3 ! for regional domain external tools
 
     is  = Atm%bd%is
     ie  = Atm%bd%ie
@@ -139,23 +136,29 @@ contains
 
     !FIXME: Doesn't work for a nested grid
     ntiles = get_mosaic_ntiles(atm_mosaic)
-    if(ntiles .NE. 6) call mpp_error(FATAL, &
-       'fv_grid_tools(read_grid): ntiles should be 6 in mosaic file '//trim(atm_mosaic) )
-    if(nregions .NE. 6) call mpp_error(FATAL, &
-       'fv_grid_tools(read_grid): nregions should be 6 when reading from mosaic file '//trim(grid_file) )
+    if( .not. Atm%gridstruct%bounded_domain) then  !<-- The regional setup has only 1 tile so do not shutdown in that case.
+       if(ntiles .NE. 6) call mpp_error(FATAL, &
+            'fv_grid_tools(read_grid): ntiles should be 6 in mosaic file '//trim(atm_mosaic) )
+       if(nregions .NE. 6) call mpp_error(FATAL, &
+            'fv_grid_tools(read_grid): nregions should be 6 when reading from mosaic file '//trim(grid_file) )
+    endif
 
     call get_var_att_value(atm_hgrid, 'x', 'units', units)
 
     !--- get the geographical coordinates of super-grid.
     isc2 = 2*is-1; iec2 = 2*ie+1
     jsc2 = 2*js-1; jec2 = 2*je+1  
+    if( Atm%gridstruct%bounded_domain ) then
+      isc2 = 2*(isd+halo)-1; iec2 = 2*(ied+1+halo)-1   ! For the regional domain the cell corner locations must be transferred
+      jsc2 = 2*(jsd+halo)-1; jec2 = 2*(jed+1+halo)-1   ! from the entire supergrid to the compute grid, including the halo region. 
+    endif
     allocate(tmpx(isc2:iec2, jsc2:jec2) )
     allocate(tmpy(isc2:iec2, jsc2:jec2) )
     start = 1; nread = 1
     start(1) = isc2; nread(1) = iec2 - isc2 + 1
     start(2) = jsc2; nread(2) = jec2 - jsc2 + 1
-    call read_data(atm_hgrid, 'x', tmpx, start, nread, no_domain=.TRUE.)
-    call read_data(atm_hgrid, 'y', tmpy, start, nread, no_domain=.TRUE.)
+    call read_data(atm_hgrid, 'x', tmpx, start, nread, no_domain=.TRUE.)  !<-- tmpx (lon, deg east) is on the supergrid
+    call read_data(atm_hgrid, 'y', tmpy, start, nread, no_domain=.TRUE.)  !<-- tmpy (lat, deg) is on the supergrid
 
     !--- geographic grid at cell corner
     grid(isd: is-1, jsd:js-1,1:ndims)=0.
@@ -165,12 +168,25 @@ contains
     if(len_trim(units) < 6) call mpp_error(FATAL, &
           "fv_grid_tools_mod(read_grid): the length of units must be no less than 6")
     if(units(1:6) == 'degree') then
+    if( .not. Atm%gridstruct%bounded_domain) then
        do j = js, je+1
           do i = is, ie+1
              grid(i,j,1) = tmpx(2*i-1,2*j-1)*pi/180.
              grid(i,j,2) = tmpy(2*i-1,2*j-1)*pi/180.
           enddo
        enddo
+    else
+!
+!***  In the regional case the halo surrounding the domain was included in the read.
+!***  Transfer the compute and halo regions to the compute grid.
+!
+       do j = jsd, jed+1
+          do i = isd, ied+1
+             grid(i,j,1) = tmpx(2*i+halo+2,2*j+halo+2)*pi/180.
+             grid(i,j,2) = tmpy(2*i+halo+2,2*j+halo+2)*pi/180.
+          enddo
+       enddo
+    endif
     else if(units(1:6) == 'radian') then
        do j = js, je+1
           do i = is, ie+1
@@ -412,7 +428,7 @@ contains
 
   end subroutine get_symmetry
 
-  subroutine init_grid(Atm, grid_name, grid_file, npx, npy, npz, ndims, nregions, ng)
+  subroutine init_grid(Atm, grid_name, grid_file, npx, npy, npz, ndims, nregions, ng, tile_coarse)
  
 !     init_grid :: read grid from input file and setup grid descriptors
  
@@ -424,6 +440,7 @@ contains
     integer,      intent(IN) :: ndims
     integer,      intent(IN) :: nregions
     integer,      intent(IN) :: ng
+    integer,      intent(IN) :: tile_coarse(:)
 !--------------------------------------------------------
     real(kind=R_GRID)   ::  xs(npx,npy)
     real(kind=R_GRID)   ::  ys(npx,npy)
@@ -478,6 +495,7 @@ contains
     type(domain2d), pointer :: domain
     integer :: is,  ie,  js,  je
     integer :: isd, ied, jsd, jed
+    integer :: istart, iend, jstart, jend
 
     is  = Atm%bd%is
     ie  = Atm%bd%ie
@@ -537,7 +555,7 @@ contains
     have_north_pole               => Atm%gridstruct%have_north_pole
     stretched_grid                => Atm%gridstruct%stretched_grid
 
-    tile                          => Atm%tile
+    tile                          => Atm%tile_of_mosaic
 
     domain                        => Atm%domain
 
@@ -547,7 +565,12 @@ contains
     latlon = .false.
     cubed_sphere = .false.
 
-    if ( Atm%flagstruct%do_schmidt .and. abs(atm%flagstruct%stretch_fac-1.) > 1.E-5 ) stretched_grid = .true.
+    if ( (Atm%flagstruct%do_schmidt .or. Atm%flagstruct%do_cube_transform) .and. abs(atm%flagstruct%stretch_fac-1.) > 1.E-5 ) then
+       stretched_grid = .true.
+       if (Atm%flagstruct%do_schmidt .and. Atm%flagstruct%do_cube_transform) then
+          call mpp_error(FATAL, ' Cannot set both do_schmidt and do_cube_transform to .true.')
+       endif
+    endif
 
     if (Atm%flagstruct%grid_type>3) then
        if (Atm%flagstruct%grid_type == 4) then
@@ -561,41 +584,43 @@ contains
           cubed_sphere = .true.
           
           if (Atm%neststruct%nested) then
+             !Read grid if it exists
+             ! still need to set up 
              call setup_aligned_nest(Atm)
           else
-          if(trim(grid_file) == 'INPUT/grid_spec.nc') then  
-             call read_grid(Atm, grid_file, ndims, nregions, ng)
-          else
+             if(trim(grid_file) == 'INPUT/grid_spec.nc') then  
+                call read_grid(Atm, grid_file, ndims, nregions, ng)
+             else
 
-             if (Atm%flagstruct%grid_type>=0) call gnomonic_grids(Atm%flagstruct%grid_type, npx-1, xs, ys)
+                if (Atm%flagstruct%grid_type>=0) call gnomonic_grids(Atm%flagstruct%grid_type, npx-1, xs, ys)
 
-          if (is_master()) then
+                if (is_master()) then
 
-             if (Atm%flagstruct%grid_type>=0) then
-                do j=1,npy
+                if (Atm%flagstruct%grid_type>=0) then
+                   do j=1,npy
                    do i=1,npx
                       grid_global(i,j,1,1) = xs(i,j)
                       grid_global(i,j,2,1) = ys(i,j)
                    enddo
-                enddo
+                   enddo
 ! mirror_grid assumes that the tile=1 is centered on equator and greenwich meridian Lon[-pi,pi] 
-                call mirror_grid(grid_global, ng, npx, npy, 2, 6)
-                do n=1,nregions
+                   call mirror_grid(grid_global, ng, npx, npy, 2, 6)
+                   do n=1,nregions
                    do j=1,npy
-                      do i=1,npx
+                   do i=1,npx
 !---------------------------------
 ! Shift the corner away from Japan
 !---------------------------------
 !--------------------- This will result in the corner close to east coast of China ------------------
-                         if ( .not.Atm%flagstruct%do_schmidt .and. (Atm%flagstruct%shift_fac)>1.E-4 )   &
-                              grid_global(i,j,1,n) = grid_global(i,j,1,n) - pi/Atm%flagstruct%shift_fac
+                      if ( .not. ( Atm%flagstruct%do_schmidt .or. Atm%flagstruct%do_cube_transform) .and. (Atm%flagstruct%shift_fac)>1.E-4 )   &
+                           grid_global(i,j,1,n) = grid_global(i,j,1,n) - pi/Atm%flagstruct%shift_fac
 !----------------------------------------------------------------------------------------------------
-                         if ( grid_global(i,j,1,n) < 0. )              &
-                              grid_global(i,j,1,n) = grid_global(i,j,1,n) + 2.*pi
-                         if (ABS(grid_global(i,j,1,1)) < 1.d-10) grid_global(i,j,1,1) = 0.0
-                         if (ABS(grid_global(i,j,2,1)) < 1.d-10) grid_global(i,j,2,1) = 0.0
-                         enddo
-                      enddo
+                      if ( grid_global(i,j,1,n) < 0. )              &
+                           grid_global(i,j,1,n) = grid_global(i,j,1,n) + 2.*pi
+                      if (ABS(grid_global(i,j,1,1)) < 1.d-10) grid_global(i,j,1,1) = 0.0
+                      if (ABS(grid_global(i,j,2,1)) < 1.d-10) grid_global(i,j,2,1) = 0.0
+                   enddo
+                   enddo
                    enddo
                 else
                    call mpp_error(FATAL, "fv_grid_tools: reading of ASCII grid files no longer supported")
@@ -622,110 +647,141 @@ contains
 !------------------------
 ! Schmidt transformation:
 !------------------------
-             if ( Atm%flagstruct%do_schmidt ) then
-             do n=1,nregions
-                call direct_transform(Atm%flagstruct%stretch_fac, 1, npx, 1, npy, &
-                                      Atm%flagstruct%target_lon, Atm%flagstruct%target_lat, &
-                                      n, grid_global(1:npx,1:npy,1,n), grid_global(1:npx,1:npy,2,n))
-             enddo
-             endif
-        endif
-             call mpp_broadcast(grid_global, size(grid_global), mpp_root_pe())
-!--- copy grid to compute domain
-       do n=1,ndims
-          do j=js,je+1
-             do i=is,ie+1
-                grid(i,j,n) = grid_global(i,j,n,tile)
-             enddo
-          enddo
-       enddo
-          endif
+                if ( Atm%flagstruct%do_schmidt ) then
+                   do n=1,nregions
+                      call direct_transform(Atm%flagstruct%stretch_fac, 1, npx, 1, npy, &
+                           Atm%flagstruct%target_lon, Atm%flagstruct%target_lat, &
+                           n, grid_global(1:npx,1:npy,1,n), grid_global(1:npx,1:npy,2,n))
+                   enddo
+                elseif (Atm%flagstruct%do_cube_transform) then
+                   do n=1,nregions
+                      call cube_transform(Atm%flagstruct%stretch_fac, 1, npx, 1, npy, &
+                           Atm%flagstruct%target_lon, Atm%flagstruct%target_lat, &
+                           n, grid_global(1:npx,1:npy,1,n), grid_global(1:npx,1:npy,2,n))
+                   enddo
+                endif
+                endif !is master
+                call mpp_broadcast(grid_global, size(grid_global), mpp_root_pe())
+                !--- copy grid to compute domain
+                do n=1,ndims
+                do j=js,je+1
+                do i=is,ie+1
+                   grid(i,j,n) = grid_global(i,j,n,tile)
+                enddo
+                enddo
+                enddo
+             endif !(trim(grid_file) == 'INPUT/grid_spec.nc')
 !
 ! SJL: For phys/exchange grid, etc
 !
-       call mpp_update_domains( grid, Atm%domain, position=CORNER)
-       if (.not. Atm%neststruct%nested) call fill_corners(grid(:,:,1), npx, npy, FILL=XDir, BGRID=.true.)
-       if (.not. Atm%neststruct%nested) call fill_corners(grid(:,:,2), npx, npy, FILL=XDir, BGRID=.true.)
-
-          !--- dx and dy         
-          do j = js, je+1
-             do i = is, ie
+             call mpp_update_domains( grid, Atm%domain, position=CORNER)
+             if (.not. (Atm%gridstruct%bounded_domain)) then
+                call fill_corners(grid(:,:,1), npx, npy, FILL=XDir, BGRID=.true.)
+                call fill_corners(grid(:,:,2), npx, npy, FILL=XDir, BGRID=.true.)
+             endif
+             
+             !--- dx and dy         
+             if( .not. Atm%gridstruct%bounded_domain) then
+                istart=is
+                iend=ie
+                jstart=js
+                jend=je
+             else
+                istart=isd
+                iend=ied
+                jstart=jsd
+                jend=jed
+             endif
+             
+             do j = jstart, jend+1
+             do i = istart, iend
                 p1(1) = grid(i  ,j,1)
                 p1(2) = grid(i  ,j,2)
                 p2(1) = grid(i+1,j,1)
                 p2(2) = grid(i+1,j,2)
                 dx(i,j) = great_circle_dist( p2, p1, radius )
              enddo
-          enddo
-          if( stretched_grid ) then
-             do j = js, je
-                do i = is, ie+1
+             enddo
+             if( stretched_grid .or. Atm%gridstruct%bounded_domain ) then
+                do j = jstart, jend
+                do i = istart, iend+1
                    p1(1) = grid(i,j,  1)
                    p1(2) = grid(i,j,  2)
                    p2(1) = grid(i,j+1,1)
                    p2(2) = grid(i,j+1,2)
                    dy(i,j) = great_circle_dist( p2, p1, radius )
                 enddo
-             enddo
-          else
-             call get_symmetry(dx(is:ie,js:je+1), dy(is:ie+1,js:je), 0, 1, Atm%layout(1), Atm%layout(2), &
-                  Atm%domain, Atm%tile, Atm%gridstruct%npx_g, Atm%bd)
-          endif
+                enddo
+             else
+                call get_symmetry(dx(is:ie,js:je+1), dy(is:ie+1,js:je), 0, 1, Atm%layout(1), Atm%layout(2), &
+                     Atm%domain, Atm%tile_of_mosaic, Atm%gridstruct%npx_g, Atm%bd)
+             endif
 
-          call mpp_get_boundary( dy, dx, Atm%domain, ebufferx=ebuffer, wbufferx=wbuffer, sbuffery=sbuffer, nbuffery=nbuffer,&
-               flags=SCALAR_PAIR+XUPDATE, gridtype=CGRID_NE_PARAM)
-          if(is == 1 .AND. mod(tile,2) .NE. 0) then ! on the west boundary
-             dy(is, js:je) = wbuffer(js:je)
-          endif
-          if(ie == npx-1) then  ! on the east boundary
-             dy(ie+1, js:je) = ebuffer(js:je)
-          endif
+             call mpp_get_boundary( dy, dx, Atm%domain, ebufferx=ebuffer, wbufferx=wbuffer, sbuffery=sbuffer, nbuffery=nbuffer,&
+                  flags=SCALAR_PAIR+XUPDATE, gridtype=CGRID_NE_PARAM)
+             if( .not. Atm%gridstruct%bounded_domain ) then
+                if(is == 1 .AND. mod(tile,2) .NE. 0) then ! on the west boundary
+                   dy(is, js:je) = wbuffer(js:je)
+                endif
+                if(ie == npx-1) then  ! on the east boundary
+                   dy(ie+1, js:je) = ebuffer(js:je)
+                endif
+             endif
 
-          call mpp_update_domains( dy, dx, Atm%domain, flags=SCALAR_PAIR,      &
-               gridtype=CGRID_NE_PARAM, complete=.true.)
-          if (cubed_sphere .and. .not. Atm%neststruct%nested) call fill_corners(dx, dy, npx, npy, DGRID=.true.)
+             call mpp_update_domains( dy, dx, Atm%domain, flags=SCALAR_PAIR,      &
+                  gridtype=CGRID_NE_PARAM, complete=.true.)
+             if (cubed_sphere .and. (.not. (Atm%gridstruct%bounded_domain))) then
+                call fill_corners(dx, dy, npx, npy, DGRID=.true.)
+             endif
 
-       if( .not. stretched_grid )         &
-           call sorted_inta(isd, ied, jsd, jed, cubed_sphere, grid, iinta, jinta)
+             if( .not. stretched_grid )         &
+                  call sorted_inta(isd, ied, jsd, jed, cubed_sphere, grid, iinta, jinta)
 
-       agrid(:,:,:) = -1.e25
+             agrid(:,:,:) = -1.e25
  
-       do j=js,je
-          do i=is,ie
-             if ( stretched_grid ) then
+          !--- compute agrid (use same indices as for dx/dy above)
+
+             do j=jstart,jend
+             do i=istart,iend
+                if ( stretched_grid ) then
                   call cell_center2(grid(i,j,  1:2), grid(i+1,j,  1:2),   &
                                     grid(i,j+1,1:2), grid(i+1,j+1,1:2),   &
                                     agrid(i,j,1:2) )
-             else
+               else
                   call cell_center2(grid(iinta(1,i,j),jinta(1,i,j),1:2),  &
                                     grid(iinta(2,i,j),jinta(2,i,j),1:2),  &
                                     grid(iinta(3,i,j),jinta(3,i,j),1:2),  &
                                     grid(iinta(4,i,j),jinta(4,i,j),1:2),  &
                                     agrid(i,j,1:2) )
+               endif
+             enddo
+             enddo
+
+             call mpp_update_domains( agrid, Atm%domain, position=CENTER, complete=.true. )
+             if (.not. (Atm%gridstruct%bounded_domain)) then
+                call fill_corners(agrid(:,:,1), npx, npy, XDir, AGRID=.true.)
+                call fill_corners(agrid(:,:,2), npx, npy, YDir, AGRID=.true.)
              endif
-          enddo
-       enddo
-
-       call mpp_update_domains( agrid, Atm%domain, position=CENTER, complete=.true. )
-       if (.not. Atm%neststruct%nested) call fill_corners(agrid(:,:,1), npx, npy, XDir, AGRID=.true.)
-       if (.not. Atm%neststruct%nested) call fill_corners(agrid(:,:,2), npx, npy, YDir, AGRID=.true.)
-
-       do j=jsd,jed
-          do i=isd,ied
-             call mid_pt_sphere(grid(i,  j,1:2), grid(i,  j+1,1:2), p1)
-             call mid_pt_sphere(grid(i+1,j,1:2), grid(i+1,j+1,1:2), p2)
-             dxa(i,j) = great_circle_dist( p2, p1, radius )
-!
-             call mid_pt_sphere(grid(i,j  ,1:2), grid(i+1,j  ,1:2), p1)
-             call mid_pt_sphere(grid(i,j+1,1:2), grid(i+1,j+1,1:2), p2)
-             dya(i,j) = great_circle_dist( p2, p1, radius )
-          enddo
-       enddo
+             
+             do j=jsd,jed
+             do i=isd,ied
+                call mid_pt_sphere(grid(i,  j,1:2), grid(i,  j+1,1:2), p1)
+                call mid_pt_sphere(grid(i+1,j,1:2), grid(i+1,j+1,1:2), p2)
+                dxa(i,j) = great_circle_dist( p2, p1, radius )
+                !
+                call mid_pt_sphere(grid(i,j  ,1:2), grid(i+1,j  ,1:2), p1)
+                call mid_pt_sphere(grid(i,j+1,1:2), grid(i+1,j+1,1:2), p2)
+                dya(i,j) = great_circle_dist( p2, p1, radius )
+             enddo
+             enddo
 !      call mpp_update_domains( dxa, dya, Atm%domain, flags=SCALAR_PAIR, gridtype=AGRID_PARAM)
-       if (cubed_sphere  .and. .not. Atm%neststruct%nested) call fill_corners(dxa, dya, npx, npy, AGRID=.true.)
+             if (cubed_sphere  .and. (.not. (Atm%gridstruct%bounded_domain))) then
+                call fill_corners(dxa, dya, npx, npy, AGRID=.true.)
+             endif
+             
 
+          end if !if nested
 
-    end if !if nested
 
 !       do j=js,je
 !          do i=is,ie+1
@@ -733,6 +789,9 @@ contains
           do i=isd+1,ied
              dxc(i,j) = great_circle_dist(agrid(i,j,:), agrid(i-1,j,:), radius)
           enddo
+!xxxxxx
+      !Are the following 2 lines appropriate for the regional domain?
+!xxxxxx
           dxc(isd,j)   = dxc(isd+1,j)
           dxc(ied+1,j) = dxc(ied,j)
        enddo
@@ -744,6 +803,9 @@ contains
              dyc(i,j) = great_circle_dist(agrid(i,j,:), agrid(i,j-1,:), radius)
           enddo
        enddo
+!xxxxxx
+      !Are the following 2 lines appropriate for the regional domain?
+!xxxxxx
        do i=isd,ied
           dyc(i,jsd)   = dyc(i,jsd+1)
           dyc(i,jed+1) = dyc(i,jed)
@@ -754,13 +816,13 @@ contains
            call sorted_intb(isd, ied, jsd, jed, is, ie, js, je, npx, npy, &
                             cubed_sphere, agrid, iintb, jintb)
 
-       call grid_area( npx, npy, ndims, nregions, Atm%neststruct%nested, Atm%gridstruct, Atm%domain, Atm%bd )
+       call grid_area( npx, npy, ndims, nregions, Atm%gridstruct%bounded_domain, Atm%gridstruct, Atm%domain, Atm%bd )
 !      stretched_grid = .false.
 
 !----------------------------------
 ! Compute area_c, rarea_c, dxc, dyc
 !----------------------------------
-  if ( .not. stretched_grid .and. .not. Atm%neststruct%nested) then
+  if ( .not. stretched_grid .and. (.not. (Atm%gridstruct%bounded_domain))) then
 ! For symmetrical grids:
        if ( is==1 ) then
           i = 1
@@ -855,18 +917,20 @@ contains
              p4(1:2) = grid(i,j,1:2)
              area_c(i,j) = 3.*get_area(p1, p4, p2, p3, radius)
        endif
-   endif
+    endif
 !-----------------
 
        call mpp_update_domains( dxc, dyc, Atm%domain, flags=SCALAR_PAIR,   &
                                 gridtype=CGRID_NE_PARAM, complete=.true.)
-       if (cubed_sphere  .and. .not. Atm%neststruct%nested) call fill_corners(dxc, dyc, npx, npy, CGRID=.true.)
+       if (cubed_sphere  .and. (.not. (Atm%gridstruct%bounded_domain))) then
+         call fill_corners(dxc, dyc, npx, npy, CGRID=.true.)
+       endif
 
        call mpp_update_domains( area,   Atm%domain, complete=.true. )
 
 
        !Handling outermost ends for area_c
-       if (Atm%neststruct%nested) then
+       if (Atm%gridstruct%bounded_domain) then
           if (is == 1) then
              do j=jsd,jed
                 area_c(isd,j) = area_c(isd+1,j)
@@ -896,7 +960,7 @@ contains
        call mpp_update_domains( area_c, Atm%domain, position=CORNER, complete=.true.)
 
        ! Handle corner Area ghosting
-       if (cubed_sphere .and. .not. Atm%neststruct%nested) then
+       if (cubed_sphere .and. (.not. (Atm%gridstruct%bounded_domain))) then
           call fill_ghost(area, npx, npy, -big_number, Atm%bd)  ! fill in garbage values
           call fill_corners(area_c, npx, npy, FILL=XDir, BGRID=.true.)
        endif
@@ -948,7 +1012,7 @@ contains
        angM = -missing
        aspN =  missing
        aspM = -missing
-       if (tile == 1) then
+       !if (tile == 1) then ! doing a GLOBAL domain search on each grid
           do j=js, je
              do i=is, ie
                 if(i>ceiling(npx/2.) .OR. j>ceiling(npy/2.)) cycle
@@ -978,7 +1042,7 @@ contains
                 aspN  = MIN(aspN,asp)
              enddo
           enddo
-       endif
+       !endif
        call mpp_sum(angAv)
        call mpp_sum(dxAV)
        call mpp_sum(aspAV)
@@ -999,6 +1063,7 @@ contains
           write(*,*) ' REDUCED EARTH: Radius is ', radius, ', omega is ', omega
 #endif
           write(*,*  ) ' Cubed-Sphere Grid Stats : ', npx,'x',npy,'x',nregions
+          print*, dxN, dxM, dxAV, dxN, dxM
           write(*,201) '      Grid Length               : min: ', dxN,' max: ', dxM,' avg: ', dxAV, ' min/max: ',dxN/dxM
           write(*,200) '      Deviation from Orthogonal : min: ',angN,' max: ',angM,' avg: ',angAV
           write(*,200) '      Aspect Ratio              : min: ',aspN,' max: ',aspM,' avg: ',aspAV
@@ -1006,8 +1071,26 @@ contains
        endif
     endif!if gridtype > 3
 
+    !SEND grid global if any child nests
+    !Matching receive in setup_aligned_nest
+    do n=1,size(Atm%neststruct%child_grids)
+       if (Atm%neststruct%child_grids(n) .and. is_master()) then
+          !need to get tile_coarse AND determine local number for tile
+          if (ntiles_g > 1) then ! coarse grid only!!
+!!$             !!! DEBUG CODE
+!!$             print*, 'SENDING GRID_GLOBAL: ', mpp_pe(), tile_coarse(n), grids_master_procs(n), grid_global(1,npy,:,tile_coarse(n))
+!!$             !!! END DEBUG CODE
+             call mpp_send(grid_global(:,:,:,tile_coarse(n)), &
+                  size(grid_global)/Atm%flagstruct%ntiles,grids_master_procs(n))
+          else
+             call mpp_send(grid_global(:,:,:,1),size(grid_global),grids_master_procs(n))
+          endif
+          call mpp_sync_self()
+       endif
+    enddo
+
     if (Atm%neststruct%nested .or. ANY(Atm%neststruct%child_grids)) then
-    nullify(grid_global)
+       nullify(grid_global)
     else if( trim(grid_file) .NE. 'INPUT/grid_spec.nc') then
        deallocate(grid_global)
     endif
@@ -1128,6 +1211,21 @@ contains
 
     end subroutine setup_cartesian
 
+    !This routine currently does two things:
+    ! 1) Create the nested grid on-the-fly from the parent
+    ! 2) Compute the weights and indices for the boundary conditions
+    ! We should split these into two routines in case we can
+    !   read the nest from the input mosaic. Then we only need
+    !   to set up the weights.
+    ! When creating the nest on-the-fly we need the global parent grid,
+    !   as we are doing now. For nests crossing a cube edge
+    !   new code is needed.
+    ! Creating the indices should be relatvely straightforward procedure
+    !   since we will always know ioffset and joffset, which are needed
+    !   to initialize the mpp nesting structure
+    ! Computing the weights can be simplified by simply retreiving the 
+    !   BC agrid/grid structures?
+    
     subroutine setup_aligned_nest(Atm)
 
       type(fv_atmos_type), intent(INOUT), target :: Atm
@@ -1148,7 +1246,7 @@ contains
       real(kind=R_GRID), dimension(2) :: q1, q2
 
       integer, pointer :: parent_tile, refinement, ioffset, joffset
-      integer, pointer, dimension(:,:,:) :: ind_h, ind_u, ind_v, ind_update_h
+      integer, pointer, dimension(:,:,:) :: ind_h, ind_u, ind_v
       real,    pointer, dimension(:,:,:) :: wt_h, wt_u, wt_v
 
       integer, pointer, dimension(:,:,:) :: ind_b
@@ -1169,15 +1267,13 @@ contains
 
 
       parent_tile => Atm%neststruct%parent_tile
-      refinement => Atm%neststruct%refinement
-      ioffset => Atm%neststruct%ioffset
-      joffset => Atm%neststruct%joffset
+      refinement  => Atm%neststruct%refinement
+      ioffset     => Atm%neststruct%ioffset
+      joffset     => Atm%neststruct%joffset
 
       ind_h => Atm%neststruct%ind_h
       ind_u => Atm%neststruct%ind_u
       ind_v => Atm%neststruct%ind_v
-
-      ind_update_h => Atm%neststruct%ind_update_h
 
       wt_h => Atm%neststruct%wt_h
       wt_u => Atm%neststruct%wt_u
@@ -1199,21 +1295,31 @@ contains
       allocate(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2) )
       p_grid = 1.e25
 
-         !Need to RECEIVE grid_global; matching mpp_send of grid_global from parent grid is in fv_control
+         !Need to RECEIVE parent grid_global; 
+      !matching mpp_send of grid_global from parent grid is in init_grid()
       if( is_master() ) then
-         p_ind = -1000000000
 
          call mpp_recv(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2), size(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2)), &
                        Atm%parent_grid%pelist(1))
+!!$         !!!! DEBUG CODE
+!!$         print*, 'RECEIVING GRID GLOBAL: ', mpp_pe(), Atm%parent_grid%pelist(1), p_grid(1,jeg+1,:)
+!!$         !!!! END DEBUG CODE
+
+      endif
+
+      call mpp_broadcast( p_grid(isg-ng:ieg+ng+1, jsg-ng:jeg+ng+1, :), &
+           (ieg-isg+2+2*ng)*(jeg-jsg+2+2*ng)*ndims, mpp_root_pe() )
+
+         !NOTE : Grid now allowed to lie outside of parent
          !Check that the grid does not lie outside its parent
          !3aug15: allows halo of nest to lie within halo of coarse grid.
-         !  NOTE: will this then work with the mpp_update_nest_fine?
-         if ( joffset + floor( real(1-ng) / real(refinement) ) < 1-ng .or. &
-              ioffset + floor( real(1-ng) / real(refinement) ) < 1-ng .or. &
-              joffset + floor( real(npy+ng) / real(refinement) ) > Atm%parent_grid%npy+ng .or. &
-              ioffset + floor( real(npx+ng) / real(refinement) ) > Atm%parent_grid%npx+ng ) then
-            call mpp_error(FATAL, 'nested grid lies outside its parent')
-         end if
+!!$         !  NOTE: will this then work with the mpp_update_nest_fine?
+!!$         if ( joffset + floor( real(1-ng) / real(refinement) ) < 1-ng .or. &
+!!$              ioffset + floor( real(1-ng) / real(refinement) ) < 1-ng .or. &
+!!$              joffset + floor( real(npy+ng) / real(refinement) ) > Atm%parent_grid%npy+ng .or. &
+!!$              ioffset + floor( real(npx+ng) / real(refinement) ) > Atm%parent_grid%npx+ng ) then
+!!$            call mpp_error(FATAL, 'nested grid lies outside its parent')
+!!$         end if
 
          do j=1-ng,npy+ng
             jc = joffset + (j-1)/refinement !int( real(j-1) / real(refinement) )
@@ -1288,21 +1394,18 @@ contains
             end do
          end do
 
-      end if
-
-      call mpp_broadcast(grid_global(1-ng:npx+ng,  1-ng:npy+ng  ,:,1), &
-           ((npx+ng)-(1-ng)+1)*((npy+ng)-(1-ng)+1)*ndims, mpp_root_pe() )
-      call mpp_broadcast(      p_ind(1-ng:npx+ng,  1-ng:npy+ng  ,1:4),   &
-           ((npx+ng)-(1-ng)+1)*((npy+ng)-(1-ng)+1)*4, mpp_root_pe() )
-      call mpp_broadcast(    pa_grid( isg:ieg  , jsg:jeg  , :), &
-           ((ieg-isg+1))*(jeg-jsg+1)*ndims, mpp_root_pe())
-      call mpp_broadcast(  p_grid_u( isg:ieg  , jsg:jeg+1, :), &
-           (ieg-isg+1)*(jeg-jsg+2)*ndims, mpp_root_pe())
-      call mpp_broadcast(  p_grid_v( isg:ieg+1, jsg:jeg  , :), &
-           (ieg-isg+2)*(jeg-jsg+1)*ndims, mpp_root_pe())
-
-      call mpp_broadcast( p_grid(isg-ng:ieg+ng+1, jsg-ng:jeg+ng+1, :), &
-           (ieg-isg+2+2*ng)*(jeg-jsg+2+2*ng)*ndims, mpp_root_pe() )
+!!$      !TODO: can we just send around ONE grid and re-calculate
+!!$      ! staggered grids from that??
+!!$      call mpp_broadcast(grid_global(1-ng:npx+ng,  1-ng:npy+ng  ,:,1), &
+!!$           ((npx+ng)-(1-ng)+1)*((npy+ng)-(1-ng)+1)*ndims, mpp_root_pe() )
+!!$      call mpp_broadcast(      p_ind(1-ng:npx+ng,  1-ng:npy+ng  ,1:4),   &
+!!$           ((npx+ng)-(1-ng)+1)*((npy+ng)-(1-ng)+1)*4, mpp_root_pe() )
+!!$      call mpp_broadcast(    pa_grid( isg:ieg  , jsg:jeg  , :), &
+!!$           ((ieg-isg+1))*(jeg-jsg+1)*ndims, mpp_root_pe())
+!!$      call mpp_broadcast(  p_grid_u( isg:ieg  , jsg:jeg+1, :), &
+!!$           (ieg-isg+1)*(jeg-jsg+2)*ndims, mpp_root_pe())
+!!$      call mpp_broadcast(  p_grid_v( isg:ieg+1, jsg:jeg  , :), &
+!!$           (ieg-isg+2)*(jeg-jsg+1)*ndims, mpp_root_pe())
 
       do n=1,ndims
          do j=jsd,jed+1
@@ -1357,8 +1460,6 @@ contains
          ind_b(i,j,4) = jmod
       enddo
       enddo
-
-         !In a concurrent simulation, p_ind was passed off to the parent processes above, so they can create ind_update_h
 
       ind_u = -99999999
       !New BCs for wind components:
@@ -1631,6 +1732,7 @@ contains
       if (is_master()) then
          if (Atm%neststruct%nested) then
             !Nesting position information
+            !BUG multiply by 180 not 90....
             write(*,*) 'NESTED GRID ', Atm%grid_number
             ic = p_ind(1,1,1) ; jc = p_ind(1,1,1)
             write(*,'(A, 2I5, 4F10.4)') 'SW CORNER: ', ic, jc, grid_global(1,1,:,1)*90./pi
@@ -1641,7 +1743,7 @@ contains
             ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,1)
             write(*,'(A, 2I5, 4F10.4)') 'SE CORNER: ', ic, jc, grid_global(npx,1,:,1)*90./pi
          else         
-            write(*,*) 'PARENT GRID ', Atm%parent_grid%grid_number, Atm%parent_grid%tile
+            write(*,*) 'PARENT GRID ', Atm%parent_grid%grid_number, Atm%parent_grid%global_tile
             ic = p_ind(1,1,1) ; jc = p_ind(1,1,1)
             write(*,'(A, 2I5, 4F10.4)') 'SW CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
             ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,1)
@@ -1916,11 +2018,11 @@ contains
 !                    (determined by ndims argument 2=lat/lon, 3=xyz)
 !                    [area is returned in m^2 on Unit sphere]
 !
-      subroutine grid_area(nx, ny, ndims, nregions, nested, gridstruct, domain, bd )
+      subroutine grid_area(nx, ny, ndims, nregions, bounded_domain, gridstruct, domain, bd )
 
         type(fv_grid_bounds_type), intent(IN) :: bd
         integer, intent(IN) :: nx, ny, ndims, nregions
-        logical, intent(IN) :: nested
+        logical, intent(IN) :: bounded_domain
         type(fv_grid_type), intent(IN), target :: gridstruct
         type(domain2d), intent(INOUT) :: domain
 
@@ -1944,7 +2046,7 @@ contains
          real(kind=R_GRID),    pointer, dimension(:,:)   :: area, area_c
          
          integer :: is,  ie,  js,  je
-         integer :: isd, ied, jsd, jed
+         integer :: isd, ied, jsd, jed, ng
 
          is  = bd%is
          ie  = bd%ie
@@ -1954,6 +2056,7 @@ contains
          ied = bd%ied
          jsd = bd%jsd
          jed = bd%jed
+         ng  = bd%ng
 
          grid  => gridstruct%grid_64
          agrid => gridstruct%agrid_64
@@ -1965,7 +2068,7 @@ contains
          area   => gridstruct%area_64
          area_c => gridstruct%area_c_64
 
-         if (nested) nh = ng
+         if (bounded_domain) nh = ng
 
          maxarea = -1.e25
          minarea =  1.e25
@@ -1974,7 +2077,7 @@ contains
          do j=js-nh,je+nh
             do i=is-nh,ie+nh
                do n=1,ndims
-               if ( gridstruct%stretched_grid .or. nested ) then
+               if ( gridstruct%stretched_grid .or. bounded_domain ) then
                   p_lL(n) = grid(i  ,j  ,n)
                   p_uL(n) = grid(i  ,j+1,n)
                   p_lR(n) = grid(i+1,j  ,n)
@@ -2030,7 +2133,7 @@ contains
         if (is_master()) write(*,209) 'GLOBAL AREA (m*m):', globalarea, ' IDEAL GLOBAL AREA (m*m):', 4.0*pi*radius**2
  209  format(A,e21.14,A,e21.14)
 
-        if (nested) then
+        if (bounded_domain) then
            nh = ng-1 !cannot get rarea_c on boundary directly
            area_c = 1.e30
         end if
@@ -2038,7 +2141,7 @@ contains
          do j=js-nh,je+nh+1
             do i=is-nh,ie+nh+1
                do n=1,ndims
-               if ( gridstruct%stretched_grid .or. nested ) then
+               if ( gridstruct%stretched_grid .or. bounded_domain ) then
                   p_lL(n) = agrid(i-1,j-1,n)
                   p_lR(n) = agrid(i  ,j-1,n)
                   p_uL(n) = agrid(i-1,j  ,n)
@@ -2056,7 +2159,7 @@ contains
          enddo
 
 ! Corners: assuming triangular cells
-         if (gridstruct%cubed_sphere .and. .not. nested) then
+         if (gridstruct%cubed_sphere .and. .not. bounded_domain) then
 ! SW:
             i=1
             j=1

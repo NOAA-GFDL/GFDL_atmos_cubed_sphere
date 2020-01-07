@@ -78,8 +78,9 @@ integer              :: id_ua200, id_va200, id_ua850, id_va850, &
 
 character(len=5) :: mod_name = 'atmos'
 
-character(len=128) :: version = '$Id$'
-character(len=128) :: tagname = '$Name$'
+! version number of this module
+! Include variable "version" to be written to log file.
+#include<file_version.h>
 
 logical :: module_is_initialized=.false.
 
@@ -131,7 +132,7 @@ character(len=4)      :: plabel
 !----- write version and namelist to log file -----
 
   iunit = stdlog()
-  call write_version_number ( version, tagname )
+  call write_version_number ( 'FV_CMIP_DIAG_MOD', version )
   if (mpp_pe() == mpp_root_pe()) write (iunit, nml=fv_cmip_diag_nml)
 
 

@@ -41,10 +41,6 @@ module sim_nc_mod
          get_var3_real, get_var3_double, get_var3_r4, get_var2_real, get_var2_r4,   &
          handle_err, check_var, get_var1_real, get_var_att_double
 
-!---- version number -----
- character(len=128) :: version = '$Id$'
- character(len=128) :: tagname = '$Name$'
-
  contains
 
       subroutine open_ncfile( iflnm, ncid )

@@ -44,10 +44,6 @@ module a2b_edge_mod
   private
   public :: a2b_ord2, a2b_ord4
 
-!---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
-
 contains
 
 #ifndef USE_OLD_ALGORITHM
@@ -99,7 +95,7 @@ contains
 
 ! Corners:
 ! 3-way extrapolation
-    if (gridstruct%nested) then
+    if (gridstruct%bounded_domain) then
 
     do j=js-2,je+2
        do i=is,ie+1
@@ -186,7 +182,7 @@ contains
 ! Y-Interior:
 !------------
 
-    if (gridstruct%nested) then
+    if (gridstruct%bounded_domain) then
 
 
     do j=js,je+1
@@ -242,7 +238,7 @@ contains
     end if
 !--------------------------------------
 
-    if (gridstruct%nested) then
+    if (gridstruct%bounded_domain) then
 
     do j=js, je+1
        do i=is,ie+1
@@ -448,7 +444,7 @@ contains
 !------------
 ! X-Interior:
 !------------
-    if (gridstruct%nested) then
+    if (gridstruct%bounded_domain) then
 
     do j=js-2,je+2
        do i=is, ie+1
@@ -519,7 +515,7 @@ contains
 !------------
 ! Y-Interior:
 !------------
-    if (gridstruct%nested) then
+    if (gridstruct%bounded_domain) then
 
     do j=js,je+1
        do i=is-2, ie+2
@@ -587,7 +583,7 @@ contains
 
  end if
 
- if (gridstruct%nested) then
+ if (gridstruct%bounded_domain) then
 
     do j=js,je+1
        do i=is,ie+1
@@ -707,7 +703,7 @@ contains
 
     if (gridstruct%grid_type < 3) then
 
-       if (gridstruct%nested) then
+       if (gridstruct%bounded_domain) then
 
           do j=js-2,je+1+2
              do i=is-2,ie+1+2

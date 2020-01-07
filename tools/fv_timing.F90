@@ -55,10 +55,6 @@
 
       logical, private :: module_initialized = .false.
 
-!---- version number -----
-      character(len=128) :: version = '$Id$'
-      character(len=128) :: tagname = '$Name$'
-
       contains
          subroutine timing_init
 !

@@ -42,8 +42,10 @@ interface read_climate_nudge_data
    module procedure read_climate_nudge_data_3d
 end interface
 
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
+! version number of this module
+! Include variable "version" to be written to log file.
+#include<file_version.h>
+
   real, parameter :: P0 = 1.e5
   real, parameter :: D608 = RVGAS/RDGAS - 1.
 
@@ -133,7 +135,7 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
 !----- write version and namelist to log file -----
 
   iunit = stdlog()
-  call write_version_number ( version, tagname )
+  call write_version_number ( 'READ_CLIMATE_NUDGE_DATA_MOD', version )
   if (mpp_pe() == mpp_root_pe()) write (iunit, nml=read_climate_nudge_data_nml)
 
   ! determine the number of files

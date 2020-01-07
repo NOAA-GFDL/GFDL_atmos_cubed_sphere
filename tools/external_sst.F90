@@ -34,8 +34,4 @@ use amip_interp_mod, only: i_sst, j_sst, sst_ncep, sst_anom, &
 
 public i_sst, j_sst, sst_ncep, sst_anom, forecast_mode, use_ncep_sst
 
-!---- version number -----
-character(len=128) :: version = '$Id$'
-character(len=128) :: tagname = '$Name$'
-
 end module external_sst_mod

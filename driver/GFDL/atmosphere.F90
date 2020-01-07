@@ -118,8 +118,9 @@ public :: atmos_radiation_driver_inputs, atmos_physics_driver_inputs
 
 !-----------------------------------------------------------------------
 
-character(len=128) :: version = '$Id$'
-character(len=128) :: tagname = '$Name$'
+! version number of this module
+! Include variable "version" to be written to log file.
+#include<file_version.h>
 character(len=7)   :: mod_name = 'atmos'
 
 !---- private data ----
@@ -214,7 +215,7 @@ contains
    enddo
 
 !----- write version and namelist to log file -----
-   call write_version_number ( version, tagname )
+   call write_version_number ( 'COUPLED/ATMOSPHERE_MOD', version )
 
 !-----------------------------------
 

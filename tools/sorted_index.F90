@@ -18,7 +18,6 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
-!-*- F90 -*-
 module sorted_index_mod
   !---------------------------------------------------------------------
   !<OVERVIEW>
@@ -40,10 +39,6 @@ module sorted_index_mod
   implicit none
   private
   public :: sorted_inta, sorted_intb
-
-  !---- version number -----
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
 
 contains
   !#####################################################################

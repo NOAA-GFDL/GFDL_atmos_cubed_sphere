@@ -26,7 +26,7 @@ module fv_sg_mod
   use constants_mod,      only: rdgas, rvgas, cp_air, cp_vapor, hlv, hlf, kappa, grav
   use tracer_manager_mod, only: get_tracer_index
   use field_manager_mod,  only: MODEL_ATMOS
-  use lin_cld_microphys_mod, only: wqs2, wqsat2_moist
+  use gfdl_cloud_microphys_mod, only: wqs1, wqs2, wqsat2_moist
   use fv_mp_mod,          only: mp_reduce_min, is_master
 
 implicit none
@@ -65,10 +65,6 @@ public  fv_subgrid_z, qsmith, neg_adj3
   real, allocatable:: table(:),des(:)
   real:: lv00, d0_vap
 
-!---- version number -----
-  character(len=128) :: version = '$Id: fv_sg.F90,v 17.0.2.4.2.3.2.6.2.10.4.1 2014/11/12 03:46:32 Lucas.Harris Exp $'
-  character(len=128) :: tagname = '$Name:  $'
-
 contains
 
 
@@ -85,7 +81,7 @@ contains
       real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) 
       real, intent(in):: peln(is  :ie,  km+1,js  :je)
       real, intent(in):: delp(isd:ied,jsd:jed,km)      ! Delta p at each model level
-      real, intent(in):: delz(isd:,jsd:,1:)      ! Delta z at each model level
+      real, intent(in):: delz(is:,js:,1:)      ! Delta z at each model level
       real, intent(in)::  pkz(is:ie,js:je,km)
       logical, intent(in)::  hydrostatic
       integer, intent(in), optional:: k_bot
@@ -314,7 +310,7 @@ contains
 ! top layer unphysically warm
                ri = 0.
             elseif ( tv2<t_min ) then
-               ri = min(ri, 0.2)
+               ri = min(ri, 0.1)
             endif
 ! Adjustment for K-H instability:
 ! Compute equivalent mass flux: mc
@@ -512,7 +508,7 @@ contains
       real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) 
       real, intent(in):: peln(is  :ie,  km+1,js  :je)
       real, intent(in):: delp(isd:ied,jsd:jed,km)      ! Delta p at each model level
-      real, intent(in):: delz(isd:,jsd:,1:)      ! Delta z at each model level
+      real, intent(in):: delz(is:,js:,1:)      ! Delta z at each model level
       real, intent(in)::  pkz(is:ie,js:je,km)
       logical, intent(in)::  hydrostatic
    integer, intent(in), optional:: k_bot
@@ -1125,7 +1121,7 @@ contains
  integer, intent(in):: is, ie, js, je, ng, kbot
  logical, intent(in):: hydrostatic
  real, intent(in):: dp(is-ng:ie+ng,js-ng:je+ng,kbot)  ! total delp-p
- real, intent(in):: delz(is-ng:,js-ng:,1:)
+ real, intent(in):: delz(is:,js:,1:)
  real, intent(in):: peln(is:ie,kbot+1,js:je)           ! ln(pe)
  logical, intent(in), OPTIONAL :: check_negative
  real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::    &

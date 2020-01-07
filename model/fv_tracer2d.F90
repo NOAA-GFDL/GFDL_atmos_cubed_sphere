@@ -21,12 +21,14 @@
 module fv_tracer2d_mod
    use tp_core_mod,       only: fv_tp_2d, copy_corners
    use fv_mp_mod,         only: mp_reduce_max
-   use fv_mp_mod,         only: ng, mp_gather, is_master
+   use fv_mp_mod,         only: mp_gather, is_master
    use fv_mp_mod,         only: group_halo_update_type
    use fv_mp_mod,         only: start_group_halo_update, complete_group_halo_update
    use mpp_domains_mod,   only: mpp_update_domains, CGRID_NE, domain2d
    use fv_timing_mod,     only: timing_on, timing_off
    use boundary_mod,      only: nested_grid_BC_apply_intT
+   use fv_regional_mod,   only: regional_boundary_update
+   use fv_regional_mod,   only: current_time_in_seconds
    use fv_arrays_mod,     only: fv_grid_type, fv_nest_type, fv_atmos_type, fv_grid_bounds_type
    use mpp_mod,           only: mpp_error, FATAL, mpp_broadcast, mpp_send, mpp_recv, mpp_sum, mpp_max
 
@@ -36,10 +38,6 @@ private
 public :: tracer_2d, tracer_2d_nested, tracer_2d_1L
 
 real, allocatable, dimension(:,:,:) :: nest_fx_west_accum, nest_fx_east_accum, nest_fx_south_accum, nest_fx_north_accum
-
-!---- version number -----
-   character(len=128) :: version = '$Id$'
-   character(len=128) :: tagname = '$Name$'
 
 contains
 
@@ -513,7 +511,7 @@ end subroutine tracer_2d
 
 subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
                      nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm, &
-                     k_split, neststruct, parent_grid)
+                     k_split, neststruct, parent_grid, n_map)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(IN) :: npx
@@ -521,7 +519,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       integer, intent(IN) :: npz
       integer, intent(IN) :: nq    ! number of tracers to be advected
       integer, intent(IN) :: hord, nord_tr
-      integer, intent(IN) :: q_split, k_split
+      integer, intent(IN) :: q_split, k_split, n_map
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt, trdm
       type(group_halo_update_type), intent(inout) :: q_pack
@@ -533,7 +531,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       real   , intent(INOUT) ::  cy(bd%isd:bd%ied,bd%js :bd%je +1,npz)  ! Courant Number Y-Dir
       type(fv_grid_type), intent(IN), target :: gridstruct
       type(fv_nest_type), intent(INOUT) :: neststruct
-      type(fv_atmos_type), intent(INOUT) :: parent_grid
+      type(fv_atmos_type), pointer, intent(IN) :: parent_grid
       type(domain2d), intent(INOUT) :: domain
 
 ! Local Arrays
@@ -548,6 +546,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       real :: cmax_t
       real :: c_global
       real :: frac, rdt
+      real :: reg_bc_update_time
       integer :: nsplt, nsplt_parent, msg_split_steps = 1
       integer :: i,j,k,it,iq
 
@@ -694,6 +693,19 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
            enddo
       endif
 
+      if (gridstruct%regional) then
+            !This is more accurate than the nested BC calculation
+            ! since it takes into account varying nsplit
+            reg_bc_update_time=current_time_in_seconds+(real(n_map-1) + real(it-1)/frac)*dt
+            do iq=1,nq
+                 call regional_boundary_update(q(:,:,:,iq), 'q', &
+                                               isd, ied, jsd, jed, npz, &
+                                               is,  ie,  js,  je,       &
+                                               isd, ied, jsd, jed,      &
+                                               reg_bc_update_time,      &
+                                               iq )
+            enddo
+      endif
 
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,mfx,mfy,rarea,nq, &
 !$OMP                                  area,xfx,yfx,q,cx,cy,npx,npy,hord,gridstruct,bd,it,nsplt,nord_tr,trdm) &
@@ -744,19 +756,6 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
                           call timing_off('COMM_TRACER')
                       call timing_off('COMM_TOTAL')
       endif
-           !Apply nested-grid BCs
-           if ( gridstruct%nested ) then
-              do iq=1,nq
-
-
-                 call nested_grid_BC_apply_intT(q(isd:ied,jsd:jed,:,iq), &
-                      0, 0, npx, npy, npz, bd, &
-                      real(neststruct%tracer_nest_timestep), real(nsplt*k_split), &
-                 neststruct%q_BC(iq), bctype=neststruct%nestbctype  )
-
-              end do
-           end if
-
 
    enddo  ! nsplt
 
