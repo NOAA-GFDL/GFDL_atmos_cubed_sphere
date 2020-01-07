@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
@@ -104,6 +105,30 @@ module dyn_core_mod
 !   </tr>
 ! </table>
 
+=======
+!***********************************************************************
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+!* If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
+module dyn_core_mod
+
+>>>>>>> rusty/master_test
   use constants_mod,      only: rdgas, radius, cp_air, pi
   use mpp_mod,            only: mpp_pe 
   use mpp_domains_mod,    only: CGRID_NE, DGRID_NE, mpp_get_boundary, mpp_update_domains,  &
@@ -114,7 +139,11 @@ module dyn_core_mod
   use fv_mp_mod,          only: group_halo_update_type
   use sw_core_mod,        only: c_sw, d_sw
   use a2b_edge_mod,       only: a2b_ord2, a2b_ord4
+<<<<<<< HEAD
   use nh_core_mod,        only: Riem_Solver3, Riem_Solver_C, update_dz_c, update_dz_d, nest_halo_nh
+=======
+  use nh_core_mod,        only: Riem_Solver3, Riem_Solver_C, update_dz_c, update_dz_d, nh_bc
+>>>>>>> rusty/master_test
   use tp_core_mod,        only: copy_corners
   use fv_timing_mod,      only: timing_on, timing_off
   use fv_diagnostics_mod, only: prt_maxmin, fv_time, prt_mxm
@@ -128,18 +157,30 @@ module dyn_core_mod
 #endif
   use diag_manager_mod,   only: send_data
   use fv_arrays_mod,      only: fv_grid_type, fv_flags_type, fv_nest_type, fv_diag_type, &
+<<<<<<< HEAD
                                 fv_grid_bounds_type, R_GRID
 
   use boundary_mod,         only: extrapolation_BC,  nested_grid_BC_apply_intT
   use fv_regional_mod,      only: regional_boundary_update
   use fv_regional_mod,      only: current_time_in_seconds
+=======
+                                fv_grid_bounds_type, R_GRID, fv_nest_BC_type_3d
+
+  use boundary_mod,         only: extrapolation_BC,  nested_grid_BC_apply_intT
+  use fv_regional_mod,      only: regional_boundary_update
+  use fv_regional_mod,      only: current_time_in_seconds, bc_time_interval
+  use fv_regional_mod,      only: delz_regBC ! TEMPORARY --- lmh
+>>>>>>> rusty/master_test
 
 #ifdef SW_DYNAMICS
   use test_cases_mod,      only: test_case, case9_forcing1, case9_forcing2
 #endif
+<<<<<<< HEAD
 #ifdef MULTI_GASES
     use multi_gases_mod,  only:  virqd, vicvqd
 #endif
+=======
+>>>>>>> rusty/master_test
   use fv_regional_mod,     only: dump_field, exch_uv, H_STAGGER, U_STAGGER, V_STAGGER
   use fv_regional_mod,     only: a_step, p_step, k_step, n_step
 
@@ -159,7 +200,10 @@ public :: dyn_core, del2_cubed, init_ijk_mem
   real, allocatable ::  rf(:)
   integer:: k_rf = 0
   logical:: RFF_initialized = .false.
+<<<<<<< HEAD
   logical:: first_call = .true.
+=======
+>>>>>>> rusty/master_test
   integer :: kmax=1
 
 contains
@@ -168,6 +212,7 @@ contains
 !     dyn_core :: FV Lagrangian dynamics driver
 !-----------------------------------------------------------------------
  
+<<<<<<< HEAD
  subroutine dyn_core(npx, npy, npz, ng, sphum, nq, bdt, n_split, zvir, cp, akap, cappa,  &
 #ifdef MULTI_GASES
                      kapad,  &
@@ -178,11 +223,22 @@ contains
                      ks, gridstruct, flagstruct, neststruct, idiag, bd, domain, &
                      init_step, i_pack, end_step, diss_est,time_total)
 
+=======
+ subroutine dyn_core(npx, npy, npz, ng, sphum, nq, bdt, n_map, n_split, zvir, cp, akap, cappa, grav, hydrostatic,  &
+                     u,  v,  w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va, & 
+                     uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
+                     ks, gridstruct, flagstruct, neststruct, idiag, bd, domain, &
+                     init_step, i_pack, end_step, time_total)
+>>>>>>> rusty/master_test
     integer, intent(IN) :: npx
     integer, intent(IN) :: npy
     integer, intent(IN) :: npz
     integer, intent(IN) :: ng, nq, sphum
+<<<<<<< HEAD
     integer, intent(IN) :: n_split
+=======
+    integer, intent(IN) :: n_map, n_split
+>>>>>>> rusty/master_test
     real   , intent(IN) :: bdt
     real   , intent(IN) :: zvir, cp, akap, grav
     real   , intent(IN) :: ptop
@@ -193,6 +249,7 @@ contains
     integer, intent(IN) :: ks
     type(group_halo_update_type), intent(inout) :: i_pack(*)
     type(fv_grid_bounds_type), intent(IN) :: bd
+<<<<<<< HEAD
     real, intent(inout), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz):: u  !< D grid zonal wind (m/s)
     real, intent(inout), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz):: v  !< D grid meridional wind (m/s)
     real, intent(inout) :: w(   bd%isd:,bd%jsd:,1:)  !< vertical vel. (m/s)
@@ -206,16 +263,34 @@ contains
     real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, nq)  ! 
     real, intent(in), optional:: time_total  !< total time (seconds) since start
     real, intent(inout) :: diss_est(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< skeb dissipation estimate
+=======
+    real, intent(inout), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz):: u  ! D grid zonal wind (m/s)
+    real, intent(inout), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz):: v  ! D grid meridional wind (m/s)
+    real, intent(inout) :: w(   bd%isd:,bd%jsd:,1:)  ! vertical vel. (m/s)
+    real, intent(inout) ::  delz(bd%is:,bd%js:,1:)  ! delta-height (m, negative)
+    real, intent(inout) :: cappa(bd%isd:,bd%jsd:,1:) ! moist kappa
+    real, intent(inout) :: pt(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  ! temperature (K)
+    real, intent(inout) :: delp(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  ! pressure thickness (pascal)
+    real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, nq)  ! 
+    real, intent(in), optional:: time_total  ! total time (seconds) since start
+>>>>>>> rusty/master_test
 
 !-----------------------------------------------------------------------
 ! Auxilliary pressure arrays:    
 ! The 5 vars below can be re-computed from delp and ptop.
 !-----------------------------------------------------------------------
 ! dyn_aux:
+<<<<<<< HEAD
     real, intent(inout):: phis(bd%isd:bd%ied,bd%jsd:bd%jed)      !< Surface geopotential (g*Z_surf)
     real, intent(inout):: pe(bd%is-1:bd%ie+1, npz+1,bd%js-1:bd%je+1)  !< edge pressure (pascal)
     real, intent(inout):: peln(bd%is:bd%ie,npz+1,bd%js:bd%je)          !< ln(pe)
     real, intent(inout):: pk(bd%is:bd%ie,bd%js:bd%je, npz+1)        !< pe**kappa
+=======
+    real, intent(inout):: phis(bd%isd:bd%ied,bd%jsd:bd%jed)      ! Surface geopotential (g*Z_surf)
+    real, intent(inout):: pe(bd%is-1:bd%ie+1, npz+1,bd%js-1:bd%je+1)  ! edge pressure (pascal)
+    real, intent(inout):: peln(bd%is:bd%ie,npz+1,bd%js:bd%je)          ! ln(pe)
+    real, intent(inout):: pk(bd%is:bd%ie,bd%js:bd%je, npz+1)        ! pe**kappa
+>>>>>>> rusty/master_test
 
 !-----------------------------------------------------------------------
 ! Others:
@@ -226,9 +301,15 @@ contains
     real,    parameter:: huge_r = 1.E40
 #endif
 !-----------------------------------------------------------------------
+<<<<<<< HEAD
     real, intent(out  ):: ws(bd%is:bd%ie,bd%js:bd%je)        !< w at surface
     real, intent(inout):: omga(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    !< Vertical pressure velocity (pa/s)
     real, intent(inout):: uc(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz)  !< (uc, vc) are mostly used as the C grid winds
+=======
+    real, intent(out  ):: ws(bd%is:bd%ie,bd%js:bd%je)        ! w at surface
+    real, intent(inout):: omga(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    ! Vertical pressure velocity (pa/s)
+    real, intent(inout):: uc(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz)  ! (uc, vc) are mostly used as the C grid winds
+>>>>>>> rusty/master_test
     real, intent(inout):: vc(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz)
     real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: ua, va
     real, intent(inout):: q_con(bd%isd:, bd%jsd:, 1:)
@@ -251,7 +332,11 @@ contains
 ! Auto 1D & 2D arrays:
     real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: ws3, z_rat
     real:: dp_ref(npz)
+<<<<<<< HEAD
     real:: zs(bd%isd:bd%ied,bd%jsd:bd%jed)        !< surface height (m)
+=======
+    real:: zs(bd%isd:bd%ied,bd%jsd:bd%jed)        ! surface height (m)
+>>>>>>> rusty/master_test
     real:: p1d(bd%is:bd%ie)
     real:: om2d(bd%is:bd%ie,npz)
     real wbuffer(npy+2,npz)
@@ -263,8 +348,11 @@ contains
     real wk(bd%isd:bd%ied,bd%jsd:bd%jed)
     real fz(bd%is: bd%ie+1,bd%js: bd%je+1)
     real heat_s(bd%is:bd%ie,bd%js:bd%je)
+<<<<<<< HEAD
 ! new array for stochastic kinetic energy backscatter (SKEB)
     real diss_e(bd%is:bd%ie,bd%js:bd%je)
+=======
+>>>>>>> rusty/master_test
     real damp_vt(npz+1)
     integer nord_v(npz+1)
 !-------------------------------------
@@ -333,7 +421,10 @@ contains
        enddo
     endif
 
+<<<<<<< HEAD
 !
+=======
+>>>>>>> rusty/master_test
       if ( init_step ) then  ! Start of the big dynamic time stepping
 
            allocate(    gz(isd:ied, jsd:jed ,npz+1) )
@@ -364,6 +455,7 @@ contains
                allocate( dv(isd:ied+1,jsd:jed,  npz) )
                call init_ijk_mem(isd,ied+1, jsd,jed  , npz, dv, 0.)
           endif
+<<<<<<< HEAD
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,diss_est)
           do k=1,npz
             do j=js,je
@@ -372,6 +464,8 @@ contains
               enddo
             enddo
           enddo
+=======
+>>>>>>> rusty/master_test
       endif    ! end init_step
 
 ! Empty the "flux capacitors"
@@ -399,10 +493,18 @@ contains
          endif
     endif
 
+<<<<<<< HEAD
 !-----------------------------------------------------
   do it=1,n_split
 !-----------------------------------------------------
      n_step = it
+=======
+
+
+!-----------------------------------------------------
+  do it=1,n_split
+!-----------------------------------------------------
+>>>>>>> rusty/master_test
 #ifdef ROT3
      call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
 #endif
@@ -415,7 +517,11 @@ contains
      if ( flagstruct%fv_debug ) then
           if(is_master()) write(*,*) 'n_split loop, it=', it
           if ( .not. flagstruct%hydrostatic )    &
+<<<<<<< HEAD
           call prt_mxm('delz',  delz, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
+=======
+          call prt_mxm('delz',  delz, is, ie, js, je, 0, npz, 1., gridstruct%area_64, domain)
+>>>>>>> rusty/master_test
      endif
 
      if (gridstruct%nested) then
@@ -440,6 +546,7 @@ contains
                              call timing_off('COMM_TOTAL')
 
       if ( it==1 ) then
+<<<<<<< HEAD
          if (gridstruct%nested .or. gridstruct%regional) then
 !$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,gz,zs,delz)
          do j=jsd,jed
@@ -458,13 +565,44 @@ contains
             do i=is,ie
                gz(i,j,npz+1) = zs(i,j)
             enddo
+=======
+         if (gridstruct%bounded_domain) then
+!$OMP parallel do default(none) shared(isd,ied,jsd,jed,gz,zs,npz)
+            do j=jsd,jed
+            do i=isd,ied
+               gz(i,j,npz+1) = zs(i,j)
+            enddo
+            enddo
+            if (gridstruct%nested) then
+               call gz_bc(gz,neststruct%delz_BC,bd,npx,npy,npz,split_timestep_BC, real(n_split*flagstruct%k_split))
+            endif
+            if (gridstruct%regional) then
+               reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(it-1)*dt
+               if (is_master() .and. flagstruct%fv_debug) print*, ' REG_BC_UPDATE_TIME: ', it, current_time_in_seconds+bdt*(n_map-1)+(it-1)*dt
+               call gz_bc(gz, delz_regBC,bd,npx,npy,npz,mod(reg_bc_update_time,bc_time_interval*3600.), bc_time_interval*3600.)
+            endif
+         else
+!$OMP parallel do default(none) shared(is,ie,js,je,gz,zs,npz)
+            do j=js,je
+            do i=is,ie
+               gz(i,j,npz+1) = zs(i,j)
+            enddo
+            enddo
+         endif
+
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,gz,delz)
+         do j=js,je
+>>>>>>> rusty/master_test
             do k=npz,1,-1
                do i=is,ie
                   gz(i,j,k) = gz(i,j,k+1) - delz(i,j,k)
                enddo
             enddo
          enddo
+<<<<<<< HEAD
          endif
+=======
+>>>>>>> rusty/master_test
                              call timing_on('COMM_TOTAL')
          call start_group_halo_update(i_pack(5), gz,  domain)
                              call timing_off('COMM_TOTAL')
@@ -472,6 +610,10 @@ contains
 
      endif
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> rusty/master_test
 #ifdef SW_DYNAMICS
      if (test_case>1) then
 #ifdef USE_OLD
@@ -544,9 +686,14 @@ contains
               neststruct%pt_BC, bctype=neststruct%nestbctype )
 #endif
       endif
+<<<<<<< HEAD
 
       if (flagstruct%regional) then
         reg_bc_update_time=current_time_in_seconds+(0.5+(it-1))*dt
+=======
+      if (flagstruct%regional) then
+        reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(0.5+(it-1))*dt
+>>>>>>> rusty/master_test
         call regional_boundary_update(delpc, 'delp', &
                                       isd, ied, jsd, jed, npz, &
                                       is,  ie,  js,  je,       &
@@ -560,6 +707,7 @@ contains
                                       reg_bc_update_time )
 #endif
       endif
+<<<<<<< HEAD
 
       if ( hydrostatic ) then
            call geopk(ptop, pe, peln, delpc, pkc, gz, phis, ptc,  &
@@ -568,6 +716,11 @@ contains
 #endif
                       q_con, pkz, npz, akap, .true., &
                       gridstruct%nested, .false., npx, npy, flagstruct%a2b_ord, bd)
+=======
+      if ( hydrostatic ) then
+           call geopk(ptop, pe, peln, delpc, pkc, gz, phis, ptc, q_con, pkz, npz, akap, .true., &
+                      gridstruct%bounded_domain, .false., npx, npy, flagstruct%a2b_ord, bd)
+>>>>>>> rusty/master_test
       else
 #ifndef SW_DYNAMICS
            if ( it == 1 ) then
@@ -587,6 +740,21 @@ contains
            enddo
 
         else 
+<<<<<<< HEAD
+=======
+
+           if (gridstruct%bounded_domain) then
+              if (gridstruct%nested) then
+                 call gz_bc(gz,neststruct%delz_BC,bd,npx,npy,npz,split_timestep_BC, real(n_split*flagstruct%k_split))
+              endif
+              if (gridstruct%regional) then
+                 reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(it-1)*dt
+                 if (is_master() .and. flagstruct%fv_debug) print*, ' REG_BC_UPDATE_TIME: ', it, current_time_in_seconds+bdt*(n_map-1)+(it-1)*dt
+                 call gz_bc(gz, delz_regBC,bd,npx,npy,npz,mod(reg_bc_update_time,bc_time_interval*3600.), bc_time_interval*3600.)
+              endif
+           endif
+
+>>>>>>> rusty/master_test
 !$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,zh,gz)
            do k=1, npz+1
               do j=jsd,jed
@@ -595,6 +763,10 @@ contains
                  enddo
               enddo
            enddo
+<<<<<<< HEAD
+=======
+
+>>>>>>> rusty/master_test
         endif
                                             call timing_on('UPDATE_DZ_C')
          call update_dz_c(is, ie, js, je, npz, ng, dt2, dp_ref, zs, gridstruct%area, ut, vt, gz, ws3, &
@@ -604,16 +776,21 @@ contains
 
                                                call timing_on('Riem_Solver')
            call Riem_Solver_C( ms, dt2,   is,  ie,   js,   je,   npz,   ng,   &
+<<<<<<< HEAD
                                akap, cappa, cp,  &
 #ifdef MULTI_GASES
                                kapad, &
 #endif
                                ptop, phis, omga, ptc,  &
+=======
+                               akap, cappa,  cp,  ptop, phis, omga, ptc,  &
+>>>>>>> rusty/master_test
                                q_con,  delpc, gz,  pkc, ws3, flagstruct%p_fac, &
                                 flagstruct%a_imp, flagstruct%scale_z )
                                                call timing_off('Riem_Solver')
 
            if (gridstruct%nested) then
+<<<<<<< HEAD
                  call nested_grid_BC_apply_intT(delz, &
                       0, 0, npx, npy, npz, bd, split_timestep_BC+0.5, real(n_split*flagstruct%k_split), &
                 neststruct%delz_BC, bctype=neststruct%nestbctype )
@@ -637,6 +814,8 @@ contains
 #ifdef MULTI_GASES
                 q, &
 #endif
+=======
+           call nh_bc(ptop, grav, akap, cp, delpc, neststruct%delz_BC, ptc, phis, &
 #ifdef USE_COND
                 q_con, &
 #ifdef MOIST_CAPPA
@@ -644,8 +823,32 @@ contains
 #endif
 #endif
                 pkc, gz, pk3, &
+                split_timestep_BC+0.5, real(n_split*flagstruct%k_split), &
+                npx, npy, npz, gridstruct%bounded_domain, .false., .false., .false., bd)
+           endif
+
+           if (flagstruct%regional) then
+
+             reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(0.5+(it-1))*dt
+             call nh_bc(ptop, grav, akap, cp, delpc, delz_regBC, ptc, phis, &
+>>>>>>> rusty/master_test
+#ifdef USE_COND
+                q_con, &
+#ifdef MOIST_CAPPA
+                cappa, &
+#endif
+#endif
+                pkc, gz, pk3, &
+<<<<<<< HEAD
                 npx, npy, npz, gridstruct%nested, .false., .false., .false., bd, flagstruct%regional)
            endif
+=======
+                mod(reg_bc_update_time,bc_time_interval*3600.), bc_time_interval*3600.,  &
+                npx, npy, npz, gridstruct%bounded_domain, .false., .false., .false., bd)
+
+           endif
+
+>>>>>>> rusty/master_test
 #endif SW_DYNAMICS
 
       endif   ! end hydro check
@@ -695,9 +898,16 @@ contains
 
       if (flagstruct%regional) then
 
+<<<<<<< HEAD
         call exch_uv(domain, bd, npz, vc, uc)
         
         reg_bc_update_time=current_time_in_seconds+(0.5+(it-1))*dt
+=======
+        !call exch_uv(domain, bd, npz, vc, uc)
+        call mpp_update_domains(uc, vc, domain, gridtype=CGRID_NE)
+        
+        reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(0.5+(it-1))*dt
+>>>>>>> rusty/master_test
         call regional_boundary_update(vc, 'vc', &
                                       isd, ied, jsd, jed+1, npz, &
                                       is,  ie,  js,  je,       &
@@ -708,8 +918,14 @@ contains
                                       is,  ie,  js,  je,       &
                                       isd, ied, jsd, jed,      &
                                       reg_bc_update_time )
+<<<<<<< HEAD
 !!! Currently divgd is always 0.0 in the regional domain boundary area.
         reg_bc_update_time=current_time_in_seconds+(it-1)*dt
+=======
+        call mpp_update_domains(uc, vc, domain, gridtype=CGRID_NE)
+!!! Currently divgd is always 0.0 in the regional domain boundary area.
+        reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(it-1)*dt
+>>>>>>> rusty/master_test
         call regional_boundary_update(divgd, 'divgd', &
                                       isd, ied+1, jsd, jed+1, npz, &
                                       is,  ie,  js,  je,       &
@@ -725,9 +941,14 @@ contains
                neststruct%q_BC(iq), bctype=neststruct%nestbctype )
             end do
       endif
+<<<<<<< HEAD
 
       if (flagstruct%regional) then
         reg_bc_update_time=current_time_in_seconds+(it-1)*dt
+=======
+      if (flagstruct%regional) then
+        reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(it-1)*dt
+>>>>>>> rusty/master_test
         do iq=1,nq
           call regional_boundary_update(q(:,:,:,iq), 'q', &
                                         isd, ied, jsd, jed, npz, &
@@ -739,17 +960,26 @@ contains
 
     endif
 
+<<<<<<< HEAD
     if (flagstruct%regional) call exch_uv(domain, bd, npz, vc, uc)
     if (first_call .and. is_master() .and. last_step) write(6,*) 'Sponge layer divergence damping coefficent:'
+=======
+>>>>>>> rusty/master_test
 
                                                      call timing_on('d_sw')
 !$OMP parallel do default(none) shared(npz,flagstruct,nord_v,pfull,damp_vt,hydrostatic,last_step, &
 !$OMP                                  is,ie,js,je,isd,ied,jsd,jed,omga,delp,gridstruct,npx,npy,  &
 !$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,ua,va,divgd,mfx,mfy,cx,cy,     &
 !$OMP                                  crx,cry,xfx,yfx,q_con,zvir,sphum,nq,q,dt,bd,rdt,iep1,jep1, &
+<<<<<<< HEAD
 !$OMP                                  heat_source,diss_est,ptop,first_call)                                      &
 !$OMP                          private(nord_k, nord_w, nord_t, damp_w, damp_t, d2_divg,   &
 !$OMP                          d_con_k,kgb, hord_m, hord_v, hord_t, hord_p, wk, heat_s,diss_e, z_rat)
+=======
+!$OMP                                  heat_source)                                               &
+!$OMP                          private(nord_k, nord_w, nord_t, damp_w, damp_t, d2_divg,   &
+!$OMP                          d_con_k,kgb, hord_m, hord_v, hord_t, hord_p, wk, heat_s, z_rat)
+>>>>>>> rusty/master_test
     do k=1,npz
        hord_m = flagstruct%hord_mt
        hord_t = flagstruct%hord_tm
@@ -784,10 +1014,13 @@ contains
        else
 ! Sponge layers with del-2 damping on divergence, vorticity, w, z, and air mass (delp).
 ! no special damping of potential temperature in sponge layers
+<<<<<<< HEAD
 ! enhanced del-2 divergence damping has same vertical structure as Rayleigh
 ! damping if d2_bg_k2<=0.
           if (flagstruct%d2_bg_k2 > 0) then ! old version, only applied at top two or three levels
 
+=======
+>>>>>>> rusty/master_test
               if ( k==1 ) then
 ! Divergence damping:
                    nord_k=0; d2_divg = max(0.01, flagstruct%d2_bg, flagstruct%d2_bg_k1)
@@ -795,7 +1028,11 @@ contains
                    nord_w=0; damp_w = d2_divg
                    if ( flagstruct%do_vort_damp ) then
 ! damping on delp and vorticity:
+<<<<<<< HEAD
                         nord_v(k)=0;
+=======
+                        nord_v(k)=0; 
+>>>>>>> rusty/master_test
 #ifndef HIWPP
                         damp_vt(k) = 0.5*d2_divg
 #endif
@@ -816,6 +1053,7 @@ contains
                    nord_w=0;  damp_w = d2_divg
                    d_con_k = 0.
               endif
+<<<<<<< HEAD
           else ! new version, uses d2_bg_k1 and sponge layer vertical structure
               if ( pfull(k) < flagstruct%rf_cutoff ) then
                    nord_k=0; nord_w=0
@@ -831,6 +1069,8 @@ contains
               endif
           endif
 
+=======
+>>>>>>> rusty/master_test
        endif
 
        if( hydrostatic .and. (.not.flagstruct%use_old_omega) .and. last_step ) then
@@ -855,7 +1095,10 @@ contains
             enddo
          enddo
        endif
+<<<<<<< HEAD
 
+=======
+>>>>>>> rusty/master_test
        call d_sw(vt(isd,jsd,k), delp(isd,jsd,k), ptc(isd,jsd,k),  pt(isd,jsd,k),      &
                   u(isd,jsd,k),    v(isd,jsd,k),   w(isd:,jsd:,k),  uc(isd,jsd,k),      &
                   vc(isd,jsd,k),   ua(isd,jsd,k),  va(isd,jsd,k), divgd(isd,jsd,k),   &
@@ -866,7 +1109,11 @@ contains
 #else
                   q_con(isd:,jsd:,1),  z_rat(isd,jsd),  &
 #endif
+<<<<<<< HEAD
                   kgb, heat_s, diss_e,zvir, sphum, nq,  q,  k,  npz, flagstruct%inline_q,  dt,  &
+=======
+                  kgb, heat_s, zvir, sphum, nq,  q,  k,  npz, flagstruct%inline_q,  dt,  &
+>>>>>>> rusty/master_test
                   flagstruct%hord_tr, hord_m, hord_v, hord_t, hord_p,    &
                   nord_k, nord_v(k), nord_w, nord_t, flagstruct%dddmp, d2_divg, flagstruct%d4_bg,  &
                   damp_vt(k), damp_w, damp_t, d_con_k, hydrostatic, gridstruct, flagstruct, bd)
@@ -887,21 +1134,33 @@ contains
                enddo
             enddo
        endif
+<<<<<<< HEAD
        if ( flagstruct%d_con > 1.0E-5 .OR. flagstruct%do_skeb ) then
 !       if ( flagstruct%d_con > 1.0E-5 ) then
+=======
+       if ( flagstruct%d_con > 1.0E-5 ) then
+>>>>>>> rusty/master_test
 ! Average horizontal "convergence" to cell center
             do j=js,je
                do i=is,ie
                   heat_source(i,j,k) = heat_source(i,j,k) + heat_s(i,j)
+<<<<<<< HEAD
                   diss_est(i,j,k) = diss_est(i,j,k) + diss_e(i,j)
+=======
+>>>>>>> rusty/master_test
                enddo
             enddo
        endif
     enddo           ! end openMP k-loop
 
     if (flagstruct%regional) then
+<<<<<<< HEAD
        call exch_uv(domain, bd, npz, vc, uc)
        call exch_uv(domain, bd, npz, u,  v )
+=======
+       call mpp_update_domains(uc, vc, domain, gridtype=CGRID_NE)
+       call mpp_update_domains(u , v , domain, gridtype=DGRID_NE)
+>>>>>>> rusty/master_test
     endif
                                                      call timing_off('d_sw')
 
@@ -945,7 +1204,11 @@ contains
                                        call timing_off('COMM_TOTAL')
     if ( flagstruct%fv_debug ) then
          if ( .not. flagstruct%hydrostatic )    &
+<<<<<<< HEAD
          call prt_mxm('delz',  delz, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
+=======
+         call prt_mxm('delz',  delz, is, ie, js, je, 0, npz, 1., gridstruct%area_64, domain)
+>>>>>>> rusty/master_test
     endif
 
     !Want to move this block into the hydro/nonhydro branch above and merge the two if structures
@@ -969,9 +1232,14 @@ contains
 #endif
 
     end if
+<<<<<<< HEAD
 
     if (flagstruct%regional) then
       reg_bc_update_time=current_time_in_seconds+bdt+(it-1)*dt
+=======
+    if (flagstruct%regional) then
+      reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(it-1)*dt
+>>>>>>> rusty/master_test
       call regional_boundary_update(delp, 'delp', &
                                     isd, ied, jsd, jed, npz, &
                                     is,  ie,  js,  je,       &
@@ -994,6 +1262,7 @@ contains
 
 #endif
     endif
+<<<<<<< HEAD
 
      if ( hydrostatic ) then
           call geopk(ptop, pe, peln, delp, pkc, gz, phis, pt,  &
@@ -1002,22 +1271,36 @@ contains
 #endif
                      q_con, pkz, npz, akap, .false., &
                      gridstruct%nested, .true., npx, npy, flagstruct%a2b_ord, bd)
+=======
+     if ( hydrostatic ) then
+          call geopk(ptop, pe, peln, delp, pkc, gz, phis, pt, q_con, pkz, npz, akap, .false., &
+                     gridstruct%bounded_domain, .true., npx, npy, flagstruct%a2b_ord, bd)
+>>>>>>> rusty/master_test
        else
 #ifndef SW_DYNAMICS
                                             call timing_on('UPDATE_DZ')
         call update_dz_d(nord_v, damp_vt, flagstruct%hord_tm, is, ie, js, je, npz, ng, npx, npy, gridstruct%area,  &
+<<<<<<< HEAD
                          gridstruct%rarea, dp_ref, zs, zh, crx, cry, xfx, yfx, delz, ws, rdt, gridstruct, bd, flagstruct%lim_fac, &
                          flagstruct%regional)
                                             call timing_off('UPDATE_DZ')
     if ( flagstruct%fv_debug ) then
          if ( .not. flagstruct%hydrostatic )    &
          call prt_mxm('delz updated',  delz, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
+=======
+                         gridstruct%rarea, dp_ref, zs, zh, crx, cry, xfx, yfx, ws, rdt, gridstruct, bd) 
+                                            call timing_off('UPDATE_DZ')
+    if ( flagstruct%fv_debug ) then
+         if ( .not. flagstruct%hydrostatic )    &
+         call prt_mxm('delz updated',  delz, is, ie, js, je, 0, npz, 1., gridstruct%area_64, domain)
+>>>>>>> rusty/master_test
     endif
 
         if (idiag%id_ws>0 .and. last_step) then
 !           call prt_maxmin('WS', ws, is, ie, js, je, 0, 1, 1., master)
             used=send_data(idiag%id_ws, ws, fv_time)
         endif
+<<<<<<< HEAD
                                                          call timing_on('Riem_Solver')
 
         call Riem_Solver3(flagstruct%m_split, dt,  is,  ie,   js,   je, npz, ng,     &
@@ -1027,11 +1310,25 @@ contains
                          kapad, &
 #endif
                          ptop, zs, q_con, w, delz, pt, delp, zh,   &
+=======
+
+
+
+                             
+
+                                                         call timing_on('Riem_Solver')
+        call Riem_Solver3(flagstruct%m_split, dt,  is,  ie,   js,   je, npz, ng,     &
+                         isd, ied, jsd, jed, &
+                         akap, cappa, cp,  ptop, zs, q_con, w, delz, pt, delp, zh,   & 
+>>>>>>> rusty/master_test
                          pe, pkc, pk3, pk, peln, ws, &
                          flagstruct%scale_z, flagstruct%p_fac, flagstruct%a_imp, &
                          flagstruct%use_logp, remap_step, beta<-0.1)
                                                          call timing_off('Riem_Solver')
+<<<<<<< HEAD
 
+=======
+>>>>>>> rusty/master_test
                                        call timing_on('COMM_TOTAL')
         if ( gridstruct%square_domain ) then
           call start_group_halo_update(i_pack(4), zh ,  domain)
@@ -1049,6 +1346,7 @@ contains
         else
              call pk3_halo(is, ie, js, je, isd, ied, jsd, jed, npz, ptop, akap, pk3, delp)
         endif
+<<<<<<< HEAD
        if (gridstruct%nested) then
           call nested_grid_BC_apply_intT(delz, &
                0, 0, npx, npy, npz, bd, split_timestep_BC+1., real(n_split*flagstruct%k_split), &
@@ -1071,13 +1369,39 @@ contains
 #ifdef MULTI_GASES
                q, &
 #endif
+=======
+
+        if (gridstruct%nested) then
+           call nh_bc(ptop, grav, akap, cp, delp, neststruct%delz_BC, pt, phis, &
+#ifdef USE_COND
+                q_con, &
+#ifdef MOIST_CAPPA
+                cappa, &
+#endif
+#endif
+                pkc, gz, pk3, &
+                split_timestep_BC+1., real(n_split*flagstruct%k_split), &
+                npx, npy, npz, gridstruct%bounded_domain, .true., .true., .true., bd)
+        endif
+          
+        if (flagstruct%regional) then
+          reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+it*dt
+          call nh_bc(ptop, grav, akap, cp, delp, delz_regBC, pt, phis, &
+>>>>>>> rusty/master_test
 #ifdef USE_COND
                q_con, &
 #ifdef MOIST_CAPPA
                cappa, &
 #endif
 #endif
+<<<<<<< HEAD
                pkc, gz, pk3, npx, npy, npz, gridstruct%nested, .true., .true., .true., bd, flagstruct%regional)
+=======
+                pkc, gz, pk3, &
+                mod(reg_bc_update_time,bc_time_interval*3600.), bc_time_interval*3600., &
+                npx, npy, npz, gridstruct%bounded_domain, .true., .true., .true., bd)
+
+>>>>>>> rusty/master_test
         endif
 
         call timing_on('COMM_TOTAL')
@@ -1158,10 +1482,13 @@ contains
    endif
                                        call timing_off('PG_D')
 
+<<<<<<< HEAD
 ! *** Inline Rayleigh friction here?
    if( flagstruct%RF_fast .and. flagstruct%tau > 0. )  &
    call Ray_fast(abs(dt), npx, npy, npz, pfull, flagstruct%tau, u, v, w,  &
                       ks, dp_ref, ptop, hydrostatic, flagstruct%rf_cutoff, bd)
+=======
+>>>>>>> rusty/master_test
 
 !-------------------------------------------------------------------------------------------------------
     if ( flagstruct%breed_vortex_inline ) then
@@ -1174,12 +1501,17 @@ contains
 #ifdef MOIST_CAPPA
                     pkz(i,j,k) = exp(cappa(i,j,k)/(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #else
+<<<<<<< HEAD
 #ifdef MULTI_GASES
                     pkz(i,j,k) = exp( k1k*virqd(q(i,j,k,:))/vicvqd(q(i,j,k,:))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #else
                     pkz(i,j,k) = exp( k1k*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #endif
 #endif
+=======
+                    pkz(i,j,k) = exp( k1k*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
+#endif
+>>>>>>> rusty/master_test
                  enddo
               enddo
            enddo
@@ -1195,7 +1527,11 @@ contains
 !-------------------------------------------------------------------------------------------------------
 
                                                      call timing_on('COMM_TOTAL')
+<<<<<<< HEAD
     if( it==n_split .and. gridstruct%grid_type<4 .and. .not. (gridstruct%nested .or. gridstruct%regional)) then
+=======
+    if( it==n_split .and. gridstruct%grid_type<4 .and. .not. gridstruct%bounded_domain) then
+>>>>>>> rusty/master_test
 ! Prevent accumulation of rounding errors at overlapped domain edges:
        call mpp_get_boundary(u, v, domain, ebuffery=ebuffer,  &
                              nbufferx=nbuffer, gridtype=DGRID_NE )
@@ -1296,7 +1632,11 @@ contains
 
 #ifndef SW_DYNAMICS
          if (.not. hydrostatic) then
+<<<<<<< HEAD
            reg_bc_update_time=current_time_in_seconds+it*dt
+=======
+           reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+it*dt
+>>>>>>> rusty/master_test
            call regional_boundary_update(w, 'w', &
                                          isd, ied, jsd, jed, ubound(w,3), &
                                          is,  ie,  js,  je,       &
@@ -1316,12 +1656,20 @@ contains
                                        isd, ied, jsd, jed,      &
                                        reg_bc_update_time )
       
+<<<<<<< HEAD
          call exch_uv(domain, bd, npz, u,  v )      
       endif
 
 !-----------------------------------------------------
   enddo   ! time split loop
   first_call=.false.
+=======
+         call mpp_update_domains(u, v, domain, gridtype=DGRID_NE)
+      end if
+
+!-----------------------------------------------------
+  enddo   ! time split loop
+>>>>>>> rusty/master_test
 !-----------------------------------------------------
     if ( nq > 0 .and. .not. flagstruct%inline_q ) then
        call timing_on('COMM_TOTAL')
@@ -1340,10 +1688,17 @@ contains
        nf_ke = min(3, flagstruct%nord+1)
        call del2_cubed(heat_source, cnst_0p20*gridstruct%da_min, gridstruct, domain, npx, npy, npz, nf_ke, bd)
 
+<<<<<<< HEAD
 ! Note: pt here is cp_air*(Virtual_Temperature/pkz), cp_air is constant
     if ( hydrostatic ) then
 !
 ! del(Cp_air*Tm) = - del(KE)
+=======
+! Note: pt here is cp*(Virtual_Temperature/pkz)
+    if ( hydrostatic ) then
+!
+! del(Cp*T) = - del(KE)
+>>>>>>> rusty/master_test
 !
 !$OMP parallel do default(none) shared(flagstruct,is,ie,js,je,n_con,pt,heat_source,delp,pkz,bdt) &
 !$OMP                          private(dtmp)
@@ -1375,6 +1730,7 @@ contains
 #ifdef MOIST_CAPPA
                 pkz(i,j,k) = exp( cappa(i,j,k)/(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #else
+<<<<<<< HEAD
 #ifdef MULTI_GASES
                 pkz(i,j,k) = exp( k1k*virqd(q(i,j,k,:))/vicvqd(q(i,j,k,:))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #else
@@ -1382,6 +1738,11 @@ contains
 #endif
 #endif
                 dtmp = heat_source(i,j,k) / (cv_air*delp(i,j,k))
+=======
+                pkz(i,j,k) = exp( k1k*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
+#endif
+                     dtmp = heat_source(i,j,k) / (cv_air*delp(i,j,k))
+>>>>>>> rusty/master_test
                 pt(i,j,k) = pt(i,j,k) + sign(min(delt, abs(dtmp)),dtmp) / pkz(i,j,k)
              enddo
           enddo
@@ -1391,6 +1752,10 @@ contains
   endif
   if (allocated(heat_source)) deallocate( heat_source ) !If ncon == 0 but d_con > 1.e-5, this would not be deallocated in earlier versions of the code
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> rusty/master_test
   if ( end_step ) then
     deallocate(    gz )
     deallocate(   ptc )
@@ -1662,8 +2027,13 @@ integer, intent(in):: npz
 real,    intent(in):: dt2
 type(fv_grid_bounds_type), intent(IN) :: bd
 real, intent(in), dimension(bd%isd:, bd%jsd: ,:  ):: delpc
+<<<<<<< HEAD
 !> pkc is pe**cappa     if hydrostatic
 !> pkc is full pressure if non-hydrostatic
+=======
+! pkc is pe**cappa     if hydrostatic
+! pkc is full pressure if non-hydrostatic
+>>>>>>> rusty/master_test
 real, intent(in), dimension(bd%isd:bd%ied, bd%jsd:bd%jed ,npz+1):: pkc, gz
 real, intent(inout):: uc(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz)
 real, intent(inout):: vc(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz)
@@ -1724,9 +2094,15 @@ real,    intent(IN) :: dt
 logical, intent(in) :: use_logp
 type(fv_grid_bounds_type), intent(IN) :: bd
 real, intent(inout) ::  delp(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+<<<<<<< HEAD
 real, intent(inout) ::    pp(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  !< perturbation pressure
 real, intent(inout) ::    pk(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  !< p**kappa
 real, intent(inout) ::    gz(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  !< g * h
+=======
+real, intent(inout) ::    pp(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  ! perturbation pressure
+real, intent(inout) ::    pk(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  ! p**kappa
+real, intent(inout) ::    gz(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  ! g * h
+>>>>>>> rusty/master_test
 real, intent(inout) ::     u(bd%isd:bd%ied,  bd%jsd:bd%jed+1,npz) 
 real, intent(inout) ::     v(bd%isd:bd%ied+1,bd%jsd:bd%jed,  npz)
 type(fv_grid_type), intent(INOUT), target :: gridstruct
@@ -1822,9 +2198,15 @@ real,    intent(IN) :: beta, dt
 logical, intent(in):: use_logp
 type(fv_grid_bounds_type), intent(IN) :: bd
 real, intent(inout) ::  delp(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+<<<<<<< HEAD
 real, intent(inout) ::    pp(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  !< perturbation pressure
 real, intent(inout) ::    pk(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  !< p**kappa
 real, intent(inout) ::    gz(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  !< g * h
+=======
+real, intent(inout) ::    pp(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  ! perturbation pressure
+real, intent(inout) ::    pk(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  ! p**kappa
+real, intent(inout) ::    gz(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)  ! g * h
+>>>>>>> rusty/master_test
 ! real, intent(inout) ::    du(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) 
 ! real, intent(inout) ::    dv(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz)
 real, intent(inout) ::     u(bd%isd:bd%ied,  bd%jsd:bd%jed+1,npz) 
@@ -2238,18 +2620,24 @@ do 1000 j=jfirst,jlast
 
  end subroutine  mix_dp
 
+<<<<<<< HEAD
 !>@brief The subroutine 'geopk' calculates geopotential and pressure to the kappa.
  subroutine geopk(ptop, pe, peln, delp, pk, gz, hs, pt,    &
 #ifdef MULTI_GASES
                   kapad,  &
 #endif
                   q_con, pkz, km, akap, CG, nested, computehalo, npx, npy, a2b_ord, bd)
+=======
+
+ subroutine geopk(ptop, pe, peln, delp, pk, gz, hs, pt, q_con, pkz, km, akap, CG, bounded_domain, computehalo, npx, npy, a2b_ord, bd)
+>>>>>>> rusty/master_test
 
    integer, intent(IN) :: km, npx, npy, a2b_ord
    real   , intent(IN) :: akap, ptop
    type(fv_grid_bounds_type), intent(IN) :: bd
    real   , intent(IN) :: hs(bd%isd:bd%ied,bd%jsd:bd%jed)
    real, intent(IN), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,km):: pt, delp
+<<<<<<< HEAD
 #ifdef MULTI_GASES
    real, intent(IN) :: kapad(bd%isd:bd%ied,bd%jsd:bd%jed,km)
 #endif
@@ -2259,6 +2647,14 @@ do 1000 j=jfirst,jlast
    real, intent(OUT), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,km+1):: gz, pk
    real, intent(OUT) :: pe(bd%is-1:bd%ie+1,km+1,bd%js-1:bd%je+1)
    real, intent(out) :: peln(bd%is:bd%ie,km+1,bd%js:bd%je)          !< ln(pe)
+=======
+   real, intent(IN), dimension(bd%isd:,bd%jsd:,1:):: q_con
+   logical, intent(IN) :: CG, bounded_domain, computehalo
+   ! !OUTPUT PARAMETERS
+   real, intent(OUT), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,km+1):: gz, pk
+   real, intent(OUT) :: pe(bd%is-1:bd%ie+1,km+1,bd%js-1:bd%je+1)
+   real, intent(out) :: peln(bd%is:bd%ie,km+1,bd%js:bd%je)          ! ln(pe)
+>>>>>>> rusty/master_test
    real, intent(out) :: pkz(bd%is:bd%ie,bd%js:bd%je,km)
    ! !DESCRIPTION:
    !    Calculates geopotential and pressure to the kappa.
@@ -2267,12 +2663,15 @@ do 1000 j=jfirst,jlast
    real pkg(bd%isd:bd%ied,km+1)
    real p1d(bd%isd:bd%ied)
    real logp(bd%isd:bd%ied)
+<<<<<<< HEAD
 #ifdef MULTI_GASES
    real pkx (bd%isd:bd%ied,km)
    real pkgx(bd%isd:bd%ied,km)
    real akapx
    integer n
 #endif
+=======
+>>>>>>> rusty/master_test
    integer i, j, k
    integer ifirst, ilast
    integer jfirst, jlast
@@ -2289,7 +2688,11 @@ do 1000 j=jfirst,jlast
       jsd = bd%jsd
       jed = bd%jed
 
+<<<<<<< HEAD
    if ( (.not. CG .and. a2b_ord==4) .or. (nested .and. .not. CG) ) then   ! D-Grid
+=======
+   if ( (.not. CG .and. a2b_ord==4) .or. (bounded_domain .and. .not. CG) ) then   ! D-Grid
+>>>>>>> rusty/master_test
       ifirst = is-2; ilast = ie+2
       jfirst = js-2; jlast = je+2
    else
@@ -2297,13 +2700,18 @@ do 1000 j=jfirst,jlast
       jfirst = js-1; jlast = je+1
    endif
 
+<<<<<<< HEAD
    if (nested .and. computehalo) then
+=======
+   if (bounded_domain .and. computehalo) then
+>>>>>>> rusty/master_test
       if (is == 1)     ifirst = isd
       if (ie == npx-1) ilast  = ied
       if (js == 1)     jfirst = jsd
       if (je == npy-1) jlast  = jed
    end if
 
+<<<<<<< HEAD
 #ifdef MULTI_GASES
 !$OMP parallel do default(none) shared(jfirst,jlast,ifirst,ilast,pk,km,gz,hs,ptop,ptk,kapad, &
 !$OMP             js,je,is,ie,peln,peln1,pe,delp,akap,pt,CG,pkz,q_con) &
@@ -2313,6 +2721,11 @@ do 1000 j=jfirst,jlast
 !$OMP                                  js,je,is,ie,peln,peln1,pe,delp,akap,pt,CG,pkz,q_con) &
 !$OMP                          private(peg, pkg, p1d, logp)
 #endif
+=======
+!$OMP parallel do default(none) shared(jfirst,jlast,ifirst,ilast,pk,km,gz,hs,ptop,ptk, &
+!$OMP                                  js,je,is,ie,peln,peln1,pe,delp,akap,pt,CG,pkz,q_con) &
+!$OMP                          private(peg, pkg, p1d, logp)
+>>>>>>> rusty/master_test
    do 2000 j=jfirst,jlast
 
       do i=ifirst, ilast
@@ -2361,6 +2774,7 @@ do 1000 j=jfirst,jlast
                enddo
             endif
          endif
+<<<<<<< HEAD
       enddo
 
 #ifdef MULTI_GASES
@@ -2377,6 +2791,10 @@ do 1000 j=jfirst,jlast
          enddo
       enddo
 #endif
+=======
+
+      enddo
+>>>>>>> rusty/master_test
 
       ! Bottom up
       do k=km,1,-1
@@ -2385,6 +2803,7 @@ do 1000 j=jfirst,jlast
             gz(i,j,k) = gz(i,j,k+1) + pt(i,j,k)*(pk(i,j,k+1)-pk(i,j,k))
 #else
 #ifdef USE_COND
+<<<<<<< HEAD
 #ifdef MULTI_GASES
             gz(i,j,k) = gz(i,j,k+1) + cp_air*pkgx(i,k)*pt(i,j,k)*(pkg(i,k+1)-pkg(i,k))
 #else
@@ -2393,11 +2812,17 @@ do 1000 j=jfirst,jlast
 #else
 #ifdef MULTI_GASES
             gz(i,j,k) = gz(i,j,k+1) + cp_air*pkx(i,k)*pt(i,j,k)*(pk(i,j,k+1)-pk(i,j,k))
+=======
+            gz(i,j,k) = gz(i,j,k+1) + cp_air*pt(i,j,k)*(pkg(i,k+1)-pkg(i,k))
+>>>>>>> rusty/master_test
 #else
             gz(i,j,k) = gz(i,j,k+1) + cp_air*pt(i,j,k)*(pk(i,j,k+1)-pk(i,j,k))
 #endif
 #endif
+<<<<<<< HEAD
 #endif
+=======
+>>>>>>> rusty/master_test
          enddo
       enddo
 
@@ -2405,10 +2830,13 @@ do 1000 j=jfirst,jlast
          do k=1,km
             do i=is,ie
                pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(akap*(peln(i,k+1,j)-peln(i,k,j)))
+<<<<<<< HEAD
 #ifdef MULTI_GASES
                akapx = kapad(i,j,k) / akap
                pkz(i,j,k) = exp ( akapx * log( pkz(i,j,k) ) )
 #endif
+=======
+>>>>>>> rusty/master_test
             enddo
          enddo
       endif
@@ -2416,13 +2844,21 @@ do 1000 j=jfirst,jlast
 2000  continue
  end subroutine geopk
 
+<<<<<<< HEAD
 !>@brief The subroutine 'del2-cubed' filters the omega field for the physics.
+=======
+
+>>>>>>> rusty/master_test
  subroutine del2_cubed(q, cd, gridstruct, domain, npx, npy, km, nmax, bd)
       !---------------------------------------------------------------
       ! This routine is for filtering the omega field for the physics
       !---------------------------------------------------------------
       integer, intent(in):: npx, npy, km, nmax
+<<<<<<< HEAD
       real(kind=R_GRID),    intent(in):: cd            !< cd = K * da_min;   0 < K < 0.25
+=======
+      real(kind=R_GRID),    intent(in):: cd            ! cd = K * da_min;   0 < K < 0.25
+>>>>>>> rusty/master_test
       type(fv_grid_bounds_type), intent(IN) :: bd
       real, intent(inout):: q(bd%isd:bd%ied,bd%jsd:bd%jed,km)
       type(fv_grid_type), intent(IN), target :: gridstruct
@@ -2494,7 +2930,11 @@ do 1000 j=jfirst,jlast
                q(1,npy,k) =  q(1,je,k)
             endif
 
+<<<<<<< HEAD
             if(nt>0 .and. (.not. gridstruct%regional)) call copy_corners(q(isd,jsd,k), npx, npy, 1, gridstruct%nested, bd, &
+=======
+            if(nt>0 .and. (.not. gridstruct%bounded_domain)) call copy_corners(q(isd,jsd,k), npx, npy, 1, gridstruct%bounded_domain, bd, &
+>>>>>>> rusty/master_test
                  gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner )
             do j=js-nt,je+nt
                do i=is-nt,ie+1+nt
@@ -2506,7 +2946,11 @@ do 1000 j=jfirst,jlast
                enddo
             enddo
 
+<<<<<<< HEAD
             if(nt>0 .and. (.not. gridstruct%regional)) call copy_corners(q(isd,jsd,k), npx, npy, 2, gridstruct%nested, bd, &
+=======
+            if(nt>0 .and. (.not. gridstruct%bounded_domain)) call copy_corners(q(isd,jsd,k), npx, npy, 2, gridstruct%bounded_domain, bd, &
+>>>>>>> rusty/master_test
                  gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
             do j=js-nt,je+1+nt
                do i=is-nt,ie+nt
@@ -2545,6 +2989,7 @@ do 1000 j=jfirst,jlast
 
  end subroutine init_ijk_mem
 
+<<<<<<< HEAD
 !>@brief The subroutine 'Ray_fast' computes a simple "inline" version of the Rayleigh friction (EXPERIMENTAL - NOT FOR GENERAL USE).
  subroutine Ray_fast(dt, npx, npy, npz, pfull, tau, u, v, w,  &
                           ks, dp, ptop, hydrostatic, rf_cutoff, bd)
@@ -2566,6 +3011,26 @@ do 1000 j=jfirst,jlast
     real, dimension(bd%is:bd%ie+1):: dmv
     real, dimension(bd%is:bd%ie):: dmu
     real:: tau0, dm
+=======
+
+ subroutine Rayleigh_fast(dt, npx, npy, npz, pfull, tau, u, v, w,  &
+                          ptop, hydrostatic, rf_cutoff, bd)
+! Simple "inline" version of the Rayleigh friction
+    real, intent(in):: dt
+    real, intent(in):: tau              ! time scale (days)
+    real, intent(in):: ptop, rf_cutoff
+    real, intent(in),  dimension(npz):: pfull
+    integer, intent(in):: npx, npy, npz
+    logical, intent(in):: hydrostatic
+    type(fv_grid_bounds_type), intent(IN) :: bd
+    real, intent(inout):: u(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) ! D grid zonal wind (m/s)
+    real, intent(inout):: v(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz) ! D grid meridional wind (m/s)
+    real, intent(inout)::  w(bd%isd:      ,bd%jsd:      ,1: ) ! cell center vertical wind (m/s)
+!
+    real(kind=R_GRID):: rff(npz)
+    real, parameter:: sday = 86400.
+    real:: tau0
+>>>>>>> rusty/master_test
     integer i, j, k
 
     integer :: is,  ie,  js,  je
@@ -2598,6 +3063,7 @@ do 1000 j=jfirst,jlast
                   exit
              endif
           enddo
+<<<<<<< HEAD
           dm = 0.
           do k=1,ks
              if ( pfull(k) < rf_cutoff + min(100., 10.*ptop) ) then
@@ -2663,6 +3129,122 @@ do 1000 j=jfirst,jlast
      enddo
 
  end subroutine Ray_fast
+=======
+          RFF_initialized = .true.
+     endif
+
+!$OMP parallel do default(none) shared(is,ie,js,je,kmax,pfull,rf_cutoff,w,rf,u,v,hydrostatic)
+     do k=1,kmax
+        if ( pfull(k) < rf_cutoff ) then
+             do j=js,je+1
+                do i=is,ie
+                   u(i,j,k) = rf(k)*u(i,j,k)
+                enddo
+             enddo
+             do j=js,je
+                do i=is,ie+1
+                   v(i,j,k) = rf(k)*v(i,j,k)
+                enddo
+             enddo
+             if ( .not. hydrostatic ) then
+                do j=js,je
+                   do i=is,ie
+                      w(i,j,k) = rf(k)*w(i,j,k)
+                   enddo
+                enddo
+             endif
+        endif
+     enddo
+
+ end subroutine Rayleigh_fast
+
+ subroutine gz_bc(gz,delzBC,bd,npx,npy,npz,step,split)
+
+    type(fv_grid_bounds_type), intent(IN) :: bd
+    integer, intent(IN) :: npx, npy, npz
+    real, intent(INOUT) :: gz(bd%isd:bd%ied,bd%jsd:bd%jed,npz+1)
+    type(fv_nest_BC_type_3d), intent(IN) :: delzBC
+    real, intent(IN) :: step, split
+
+    real :: a1, a2
+    integer i, j, k
+
+    integer :: is,  ie,  js,  je
+    integer :: isd, ied, jsd, jed
+
+    integer :: istart, iend
+
+    is  = bd%is
+    ie  = bd%ie
+    js  = bd%js
+    je  = bd%je
+    isd = bd%isd
+    ied = bd%ied
+    jsd = bd%jsd
+    jed = bd%jed
+    
+    a1 = (split-step)/split
+    a2 = step/split
+
+    if (is == 1) then
+!$OMP parallel do default(none) shared(jsd,jed,npz,isd,delzBC,gz,a1,a2)
+       do j=jsd,jed
+       do k=npz,1,-1
+       do i=isd,0
+          gz(i,j,k) = gz(i,j,k+1) - (delzBC%west_t1(i,j,k)*a2 + delzBC%west_t0(i,j,k)*a1)
+       enddo
+       enddo
+       enddo
+    endif
+   
+    if (ie == npx-1) then
+!$OMP parallel do default(none) shared(jsd,jed,npz,npx,ied,delzBC,gz,a1,a2)
+       do j=jsd,jed
+       do k=npz,1,-1
+       do i=npx,ied
+          gz(i,j,k) = gz(i,j,k+1) - (delzBC%east_t1(i,j,k)*a2 + delzBC%east_t0(i,j,k)*a1)
+       enddo
+       enddo
+       enddo
+    endif
+   
+    if (is == 1) then
+       istart = is
+    else
+       istart = isd
+    end if
+    if (ie == npx-1) then
+       iend = ie
+    else
+       iend = ied
+    end if
+
+    if (js == 1) then
+!$OMP parallel do default(none) shared(jsd,npz,istart,iend,delzBC,gz,a1,a2)
+       do j=jsd,0
+       do k=npz,1,-1
+       do i=istart,iend
+          gz(i,j,k) = gz(i,j,k+1) - (delzBC%south_t1(i,j,k)*a2 + delzBC%south_t0(i,j,k)*a1)
+          !if (gz(i,j,k) <= gz(i,j,k+1) .or. abs(gz(i,j,k)) > 1.e6) print*, ' BAD GZ (bc): ', i, j, k, gz(i,j,k:k+1), delzBC%west_t1(i,j,k), delzBC%west_t0(i,j,k)
+       enddo
+       enddo
+       enddo
+    endif
+
+    if (je == npy-1) then
+!$OMP parallel do default(none) shared(npy,jed,npz,istart,iend,delzBC,gz,a1,a2)
+       do j=npy,jed
+       do k=npz,1,-1
+       do i=istart,iend
+          gz(i,j,k) = gz(i,j,k+1) - (delzBC%north_t1(i,j,k)*a2 + delzBC%north_t0(i,j,k)*a1)
+          !if (gz(i,j,k) <= gz(i,j,k+1) .or. abs(gz(i,j,k)) > 1.e6) print*, ' BAD GZ (bc): ', i, j, k, gz(i,j,k:k+1), delzBC%west_t1(i,j,k), delzBC%west_t0(i,j,k)
+       enddo
+       enddo
+       enddo
+    endif
+
+ end subroutine gz_bc
+>>>>>>> rusty/master_test
 
 
 end module dyn_core_mod

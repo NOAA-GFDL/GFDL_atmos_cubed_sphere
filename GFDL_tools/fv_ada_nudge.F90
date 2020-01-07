@@ -1,24 +1,3 @@
-<<<<<<< HEAD
-
-!***********************************************************************
-!*                   GNU Lesser General Public License                 
-!*
-!* This file is part of the FV3 dynamical core.
-!*
-!* The FV3 dynamical core is free software: you can redistribute it 
-!* and/or modify it under the terms of the
-!* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
-!* (at your option) any later version.
-!*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
-!* See the GNU General Public License for more details.
-!*
-!* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
-=======
 !***********************************************************************
 !*                   GNU Lesser General Public License
 !*
@@ -37,7 +16,6 @@
 !*
 !* You should have received a copy of the GNU Lesser General Public
 !* License along with the FV3 dynamical core.
->>>>>>> rusty/master_test
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 #ifdef OVERLOAD_R4
@@ -45,97 +23,33 @@
 #else
 #define _GET_VAR1 get_var1_double
 #endif
+module fv_ada_nudge_mod
+  ! This fv_ada_nudge_mod module is based off the existing fv_nwp_nudge_mod found
+  ! in the fv_nudge.F90 file in the same directory as this file.
+  !
+  ! fv_ada_nudge_mod is modified only that it calls the ADA routines for data
+  ! assimilation.
 
-<<<<<<< HEAD
-!>@brief The module fv_nwp_nudge contains routines for nudging
-!! to input analyses.
-!>note This module is currently not supported in fvGFS of FV3GFS
+!!! CLEANUP: This file compiles but has not been tested.
 
-module fv_nwp_nudge_mod
+!!! CLEANUP: Also see  /ncrc/home1/Lucas.Harris/forecast/AM2p12b/quebec/input_quebec/hiram_quebec_updates/fv_nudge.F90 for auto-inputs
+!!! (copy added in this directory: see fv_nudge.F90-auto )
 
-! <table>
-! <tr>
-!     <th>Module Name</th>
-!     <th>Functions Included</th>
-!   </tr>
-!   <tr>
-!     <td>constants_mod</td>
-!     <td>pi=>pi_8, grav, rdgas, cp_air, kappa, cnst_radius =>radius</td>
-!   </tr>
-!   <tr>
-!     <td>external_sst_mod</td>
-!     <td>i_sst, j_sst, sst_ncep, sst_anom, forecast_mode</td>
-!   </tr>
-!   <tr>
-!     <td>diag_manager_mod</td>
-!     <td>register_diag_field, send_data</td>
-!   </tr>
-!   <tr>
-!     <td>fms_mod</td>
-!     <td>write_version_number, open_namelist_file, check_nml_error, 
-!         file_exist, close_file</td>
-!   </tr>
-!   <tr>
-!     <td>fv_arrays_mod</td>
-!     <td>fv_grid_type, fv_grid_bounds_type, fv_nest_type, R_GRID</td>
-!   </tr>
-!   <tr>
-!     <td>fv_diagnostics_mod</td>
-!     <td>prt_maxmin, fv_time</td>
-!   </tr>
-!   <tr>
-!     <td>fv_grid_utils_mod</td>
-!     <td>great_circle_dist, intp_great_circle,
-!         latlon2xyz, vect_cross, normalize_vect</td>
-!   </tr>
-!   <tr>
-!     <td>fv_mp_mod</td>
-!     <td>nmp_reduce_sum, mp_reduce_min, mp_reduce_max, is_master</td>
-!   </tr>
-!   <tr>
-!     <td>fv_mapz_mod</td>
-!     <td>mappm</td>
-!   </tr>
-!   <tr>
-!     <td>fv_timing_mod</td>
-!     <td>timing_on, timing_off</td>
-!   </tr>
-!   <tr>
-!     <td>mpp_mod</td>
-!     <td>mpp_error, FATAL, stdlog, get_unit, mpp_pe</td>
-!   </tr>
-!   <tr>
-!     <td>sim_nc_mod</td>
-!     <td>open_ncfile, close_ncfile, get_ncdim1, get_var1_double, 
-!         get_var3_r4, get_var1_real</td>
-!   </tr>
-!   <tr>
-!     <td>mpp_domains_mod</td>
-!     <td>mpp_update_domains, domain2d</td>
-!   </tr>
-!   <tr>
-!     <td>time_manager_mod</td>
-!     <td>time_type,  get_time, get_date</td>
-!   </tr>
-!   <tr>
-!     <td>tp_core_mod</td>
-!     <td>copy_corners</td>
-!   </tr>
-! </table>
-
-=======
-module fv_nwp_nudge_mod
-
->>>>>>> rusty/master_test
  use external_sst_mod,  only: i_sst, j_sst, sst_ncep, sst_anom, forecast_mode
  use diag_manager_mod,  only: register_diag_field, send_data
- use constants_mod,     only: pi=>pi_8, grav, rdgas, cp_air, kappa, cnst_radius =>radius
+ use constants_mod,     only: pi, grav, rdgas, cp_air, kappa, cnst_radius=>radius, seconds_per_day
  use fms_mod,           only: write_version_number, open_namelist_file, &
                               check_nml_error, file_exist, close_file
 !use fms_io_mod,        only: field_size
- use mpp_mod,           only: mpp_error, FATAL, stdlog, get_unit, mpp_pe
+ use mpp_mod,           only: mpp_error, FATAL, stdlog, get_unit, mpp_pe, input_nml_file
+ use mpp_mod,           only: mpp_root_pe, stdout ! snz
+ use mpp_mod,           only: mpp_clock_id, mpp_clock_begin, mpp_clock_end
+ use mpp_mod,           only: CLOCK_COMPONENT, CLOCK_SUBCOMPONENT, CLOCK_MODULE, CLOCK_ROUTINE
  use mpp_domains_mod,   only: mpp_update_domains, domain2d
- use time_manager_mod,  only: time_type,  get_time, get_date
+ use mpp_domains_mod,   only: mpp_get_data_domain ! snz
+ use time_manager_mod,  only: time_type,  get_time, get_date, set_date, increment_time
+
+ use grid_mod, only : define_cube_mosaic ! snz
 
  use fv_grid_utils_mod, only: great_circle_dist, intp_great_circle
  use fv_grid_utils_mod, only: latlon2xyz, vect_cross, normalize_vect
@@ -146,14 +60,17 @@ module fv_nwp_nudge_mod
  use fv_timing_mod,     only: timing_on, timing_off
 
  use sim_nc_mod,        only: open_ncfile, close_ncfile, get_ncdim1, get_var1_double, &
-                              get_var3_r4, get_var1_real
+                              get_var3_r4, get_var2_r4, get_var1_real
  use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, fv_nest_type, R_GRID
-<<<<<<< HEAD
-#ifdef MULTI_GASES
- use multi_gases_mod,  only:  virq, virqd, vicpqd, num_gas
+
+ use fms_io_mod, only: register_restart_field, restart_file_type, restore_state
+ use fms_io_mod, only: save_restart, get_mosaic_tile_file
+ use axis_utils_mod, only : frac_index
+
+#ifdef ENABLE_ADA
+ use ada_types_mod, only : model_data_type
+ use ada_driver_fv_mod, only : init_fv_ada, fv_ada, ada_end
 #endif
-=======
->>>>>>> rusty/master_test
 
  implicit none
  private
@@ -166,17 +83,13 @@ module fv_nwp_nudge_mod
 
  logical :: do_adiabatic_init
 
- public fv_nwp_nudge, fv_nwp_nudge_init, fv_nwp_nudge_end, breed_slp_inline, T_is_Tv
+ public fv_ada_nudge, fv_ada_nudge_init, fv_ada_nudge_end, breed_slp_inline_ada
  public do_adiabatic_init
-<<<<<<< HEAD
- integer im     !< Data x-dimension
- integer jm     !< Data y-dimension
- integer km     !< Data z-dimension
-=======
+
+ !!! CLEANUP: Are these OK as module variables? They are not thread private.
  integer im     ! Data x-dimension
  integer jm     ! Data y-dimension
  integer km     ! Data z-dimension
->>>>>>> rusty/master_test
  real, allocatable:: ak0(:), bk0(:)
  real, allocatable:: lat(:), lon(:)
 
@@ -185,96 +98,46 @@ module fv_nwp_nudge_mod
  logical :: no_obs
  real :: deg2rad, rad2deg
  real :: time_nudge = 0.
-<<<<<<< HEAD
- integer :: time_interval = 6*3600   !< dataset time interval (seconds)
-! ---> h1g, enhance the max. analysis data files, 2012-10-22
-! integer, parameter :: nfile_max = 125 
- integer, parameter :: nfile_max = 29280  !< maximum: 20-year analysis data, 4*366*20=29280
-=======
  integer :: time_interval = 6*3600   ! dataset time interval (seconds)
-! ---> h1g, enhance the max. analysis data files, 2012-10-22
-! integer, parameter :: nfile_max = 125 
- integer, parameter :: nfile_max = 29280  ! maximum: 20-year analysis data, 4*366*20=29280
->>>>>>> rusty/master_test
-! <--- h1g,  2012-10-22
+ integer, parameter :: nfile_max = 125
  integer :: nfile
+ integer :: last_year = -1 ! Last year used during read.  Negative value indicates not set.
 
  integer :: k_breed = 0
  integer :: k_trop = 0
- real    :: p_trop = 950.E2
-<<<<<<< HEAD
- real    :: dps_min = 50.      !< maximum PS increment (pa; each step) due to inline breeding
-=======
+ real    :: p_trop = 750.E2
  real    :: dps_min = 50.      ! maximum PS increment (pa; each step) due to inline breeding
->>>>>>> rusty/master_test
  real    :: del2_cd = 0.16
 
  real,    allocatable:: s2c(:,:,:)
  integer, allocatable:: id1(:,:), id2(:,:), jdc(:,:)
  real, allocatable :: ps_dat(:,:,:)
  real(KIND=4), allocatable, dimension(:,:,:,:):: u_dat, v_dat, t_dat, q_dat
-<<<<<<< HEAD
- real(KIND=4), allocatable, dimension(:,:,:):: gz3  !< work array
-=======
  real(KIND=4), allocatable, dimension(:,:,:):: gz3  ! work array
->>>>>>> rusty/master_test
  real, allocatable:: gz0(:,:)
 
 ! Namelist variables:
-! ---> h1g, add the list of input NCEP analysis data files, 2012-10-22
-<<<<<<< HEAD
- character(len=128):: input_fname_list =""       !< a file lists the input NCEP analysis data
- character(len=128):: analysis_file_first =""    !< the first NCEP analysis file to be used for nudging,
-                                                 !! by default, the first file in the "input_fname_list" 
- character(len=128):: analysis_file_last=""      !< the last NCEP analysis file to be used for nudging 
-                                                 !! by default, the last file in the "input_fname_list"
-
- real   :: P_relax = 30.E2                       !< from P_relax upwards, nudging is reduced linearly 
-                                                 !! proportional to pfull/P_relax
-
- real   :: P_norelax = 0.0                       !< from P_norelax upwards, no nudging   
-=======
- character(len=128):: input_fname_list =""       ! a file lists the input NCEP analysis data
- character(len=128):: analysis_file_first =""    ! the first NCEP analysis file to be used for nudging,
-                                                 ! by default, the first file in the "input_fname_list" 
- character(len=128):: analysis_file_last=""      ! the last NCEP analysis file to be used for nudging 
-                                                 ! by default, the last file in the "input_fname_list"
-
- real   :: P_relax = 30.E2                       ! from P_relax upwards, nudging is reduced linearly 
-                                                 ! proportional to pfull/P_relax
-
- real   :: P_norelax = 0.0                       ! from P_norelax upwards, no nudging   
->>>>>>> rusty/master_test
-! <--- h1g, 2012-10-22
-
  character(len=128):: file_names(nfile_max)
  character(len=128):: track_file_name
-<<<<<<< HEAD
- integer :: nfile_total = 0       !< =5 for 1-day (if datasets are 6-hr apart)
- real    :: p_wvp = 100.E2        !< cutoff level for specific humidity nudging 
- integer :: kord_data = 8
-
- real    :: mask_fac = 0.25       !< [0,1]  0: no mask;  1: full strength
-=======
  integer :: nfile_total = 0       ! =5 for 1-day (if datasets are 6-hr apart)
- real    :: p_wvp = 100.E2        ! cutoff level for specific humidity nudging 
+ real    :: p_wvp = 100.E2        ! cutoff level for specific humidity nudging
  integer :: kord_data = 8
 
  real    :: mask_fac = 0.25        ! [0,1]  0: no mask;  1: full strength
->>>>>>> rusty/master_test
 
  logical :: T_is_Tv  = .false.
- logical :: use_pt_inc  = .false.
+ logical :: use_pt_inc  = .true.
  logical :: use_high_top = .false.
  logical :: add_bg_wind = .true.
  logical :: conserve_mom = .true.
  logical :: conserve_hgt = .true.
  logical :: tc_mask = .false.
- logical :: strong_mask = .false. 
- logical :: ibtrack = .true. 
+ logical :: strong_mask = .false.
+ logical :: ibtrack = .true.
  logical :: nudge_debug = .false.
  logical :: do_ps_bias  = .false.
  logical :: nudge_ps    = .false.
+ logical :: nudge_t    = .false.
  logical :: nudge_q     = .false.
  logical :: nudge_winds = .true.
  logical :: nudge_virt  = .true.
@@ -282,60 +145,50 @@ module fv_nwp_nudge_mod
  logical :: time_varying = .true.
  logical :: print_end_breed = .true.
  logical :: print_end_nudge = .true.
+ logical :: one_year_files = .false. ! Setting to true indicates the files to be read in have 1 year of time data
+                                     ! Otherwise, assuming a single time per file (as originally written)
+ logical :: ps_impact_uvt = .false.
 
-<<<<<<< HEAD
-!Nudging time-scales (seconds): 
-!note, however, the effective time-scale is 2X smaller (stronger) due
-! to the use of the time-varying weighting factor
- real :: tau_ps     = 21600.       !< 1-day
- real :: tau_q      = 86400.       !< 1-day
- real :: tau_winds  = 21600.       !< 6-hr
-=======
 
 ! Nudging time-scales (seconds): note, however, the effective time-scale is 2X smaller (stronger) due
 ! to the use of the time-varying weighting factor
  real :: tau_ps     = 21600.       ! 1-day
  real :: tau_q      = 86400.       ! 1-day
  real :: tau_winds  = 21600.       !  6-hr
->>>>>>> rusty/master_test
- real :: tau_virt   = 43200. 
+ real :: tau_t      = 86400.       !  6-hr
+ real :: tau_virt   = 43200.
  real :: tau_hght   = 43200.
 
  real :: q_min      = 1.E-8
 
  integer :: jbeg, jend
- integer :: nf_uv = 0 
- integer :: nf_ps = 0 
- integer :: nf_t  = 2 
- integer :: nf_ht = 1 
+ integer :: nf_uv = 0
+ integer :: nf_ps = 0
+ integer :: nf_t  = 2
+ integer :: nf_ht = 2
 
 ! starting layer (top layer is sponge layer and is skipped)
- integer :: kstart = 2 
+ integer :: kstart = 2
 
 ! skip "kbot" layers
- integer :: kbot_winds = 0 
- integer :: kbot_t     = 0 
- integer :: kbot_q     = 0 
+ integer :: kbot_winds = 0
+ integer :: kbot_t     = 0
+ integer :: kbot_q     = 1
  logical :: analysis_time
 
 !-- Tropical cyclones  --------------------------------------------------------------------
 
 ! track dataset: 'INPUT/tropical_cyclones.txt'
 
-  logical :: breed_srf_w = .false.
+  logical :: breed_vortex = .false.
   real :: grid_size     = 28.E3
-  real :: tau_vt_slp    = 1200.
-  real :: tau_vt_wind   = 1200.
-  real :: tau_vt_rad    = 4.0  
+  real :: tau_vt_slp    = 900.
+  real :: tau_vt_wind   = 900.
+  real :: tau_vt_rad    = 4.0
 
   real :: pt_lim =  0.2
-<<<<<<< HEAD
-  real ::  slp_env = 101010.    !< storm environment pressure (pa)
-  real :: pre0_env = 100000.    !< critical storm environment pressure (pa) for size computation
-=======
   real ::  slp_env = 101010.    ! storm environment pressure (pa)
   real :: pre0_env = 100000.    ! critical storm environment pressure (pa) for size computation
->>>>>>> rusty/master_test
   real, parameter:: tm_max = 315.
 !------------------
   real:: r_lo = 2.0
@@ -346,36 +199,18 @@ module fv_nwp_nudge_mod
   real :: r_inc =  25.E3
   real, parameter:: del_r = 50.E3
   real:: elapsed_time = 0.0
-<<<<<<< HEAD
-  real:: nudged_time = 1.E12 !< seconds 
-=======
-  real:: nudged_time = 1.E12 ! seconds 
->>>>>>> rusty/master_test
+  real:: nudged_time = 1.E12 ! seconds
                              ! usage example: set to 43200. to do inline vortex breeding
                              ! for only the first 12 hours
                              ! In addition, specify only 3 analysis files (12 hours)
   integer:: year_track_data
-<<<<<<< HEAD
-  integer, parameter:: max_storm = 140     !< max # of storms to process
-  integer, parameter::  nobs_max = 125     !< Max # of observations per storm
-=======
   integer, parameter:: max_storm = 140     ! max # of storms to process
   integer, parameter::  nobs_max = 125     ! Max # of observations per storm
->>>>>>> rusty/master_test
 
   integer :: nstorms = 0
   integer :: nobs_tc(max_storm)
   integer :: min_nobs = 16
-  real :: min_mslp = 1009.E2
-<<<<<<< HEAD
-  real(KIND=4)::     x_obs(nobs_max,max_storm)           !< longitude in degrees
-  real(KIND=4)::     y_obs(nobs_max,max_storm)           !< latitude in degrees
-  real(KIND=4)::  wind_obs(nobs_max,max_storm)           !< observed 10-m wind speed (m/s)
-  real(KIND=4)::  mslp_obs(nobs_max,max_storm)           !< observed SLP in mb
-  real(KIND=4)::  mslp_out(nobs_max,max_storm)           !< outer ring SLP in mb
-  real(KIND=4)::   rad_out(nobs_max,max_storm)           !< outer ring radius in meters
-  real(KIND=4)::   time_tc(nobs_max,max_storm)           !< start time of the track
-=======
+  real :: min_mslp = 1000.E2
   real(KIND=4)::     x_obs(nobs_max,max_storm)           ! longitude in degrees
   real(KIND=4)::     y_obs(nobs_max,max_storm)           ! latitude in degrees
   real(KIND=4)::  wind_obs(nobs_max,max_storm)           ! observed 10-m wind speed (m/s)
@@ -383,124 +218,125 @@ module fv_nwp_nudge_mod
   real(KIND=4)::  mslp_out(nobs_max,max_storm)           ! outer ring SLP in mb
   real(KIND=4)::   rad_out(nobs_max,max_storm)           ! outer ring radius in meters
   real(KIND=4)::   time_tc(nobs_max,max_storm)           ! start time of the track
->>>>>>> rusty/master_test
 !------------------------------------------------------------------------------------------
   integer :: id_ht_err
+  real :: mslp_obs_arg
+
+  integer, dimension(2) :: atm_layout ! snz
+  integer :: filt_halo0 ! snz
+  integer :: filt_halo  ! snz
+  integer :: isd_filt, ied_filt, jsd_filt, jed_filt ! snz
+
+!------snz add diag variables for ada increments
+  integer :: id_u_ncep, id_v_ncep, id_t_ncep, id_q_ncep, id_ps_ncep ! snz
+  integer :: id_u_damb, id_v_damb, id_t_damb, id_q_damb, id_ps_damb ! snz
+  integer :: id_u_adj, id_v_adj, id_t_adj, id_q_adj, id_ps_adj ! snz
+  integer :: id_u_a, id_v_a, id_t_a, id_q_a, id_ps_a ! snz
+  integer :: id_u_da, id_v_da, id_t_da, id_q_da, id_ps_da ! snz
+  integer :: id_ada
+
+  type(restart_file_type) :: ada_driver_restart ! snz
+  character(len=*), parameter :: restart_file="ada_driver.res.nc" ! snz
+
+#ifdef ENABLE_ADA ! snz
+  type(model_data_type) :: Atm_var
+  type(domain2d), private, save :: filt_domain
+  real, allocatable :: weight(:,:,:)
+  real :: weight_sum, alat(361)
+  integer :: i_sm, j_sm, jlat
+#endif
 
   !!! CLEANUP Module pointers
-  integer :: is, ie, js, je
-  integer :: isd, ied, jsd, jed
 
- namelist /fv_nwp_nudge_nml/T_is_Tv, nudge_ps, nudge_virt, nudge_hght, nudge_q, nudge_winds,  &
-                          do_ps_bias, tau_ps, tau_winds, tau_q, tau_virt, tau_hght,  kstart, kbot_winds, &
+ namelist /fv_ada_nudge_nml/T_is_Tv, nudge_ps, nudge_virt, nudge_hght, nudge_q, nudge_t, nudge_winds,  &
+                          do_ps_bias, tau_ps, tau_winds, tau_t, tau_q, tau_virt, tau_hght,  kstart, kbot_winds, &
                           k_breed, k_trop, p_trop, dps_min, kord_data, tc_mask, nudge_debug, nf_ps, nf_t, nf_ht,  &
-                          nf_uv, breed_srf_w, tau_vt_wind, tau_vt_slp, strong_mask, mask_fac, del2_cd,   &
+                          nf_uv, breed_vortex, tau_vt_wind, tau_vt_slp, strong_mask, mask_fac, del2_cd,   &
                           kbot_t, kbot_q, p_wvp, time_varying, time_interval, use_pt_inc, pt_lim,  &
                           tau_vt_rad, r_lo, r_hi, use_high_top, add_bg_wind, conserve_mom, conserve_hgt,  &
-                          min_nobs, min_mslp, nudged_time, r_fac, r_min, r_inc, ibtrack, track_file_name, file_names,         &
-                          input_fname_list, analysis_file_first, analysis_file_last, P_relax, P_norelax  !h1g, add 3 namelist variables, 2012-20-22 
+                          min_nobs, min_mslp, nudged_time, r_fac, r_min, r_inc, ibtrack, track_file_name, file_names, &
+                          one_year_files, &
+                          atm_layout, filt_halo0, ps_impact_uvt
 
  contains
- 
-<<<<<<< HEAD
-!>@brief Ths subroutine 'fv_nwp_nudge' computes and returns time tendencies for nudging to analysis.
-!>@details This nudging is typically applied to fv_update_phys.
-=======
 
->>>>>>> rusty/master_test
-  subroutine fv_nwp_nudge ( Time, dt, npx, npy, npz, ps_dt, u_dt, v_dt, t_dt, q_dt, zvir, ptop, &
+
+  subroutine fv_ada_nudge ( Time, dt, npx, npy, npz, ps_dt, u_dt, v_dt, t_dt, q_dt, zvir, ptop, &
                             ak, bk, ts, ps, delp, ua, va, pt, nwat, q, phis, gridstruct, &
                             bd, domain )
 
   type(time_type), intent(in):: Time
   integer,         intent(IN):: npx, npy
-<<<<<<< HEAD
-  integer,         intent(in):: npz           !< vertical dimension
-=======
   integer,         intent(in):: npz           ! vertical dimension
->>>>>>> rusty/master_test
   integer,         intent(in):: nwat
   real,            intent(in):: dt
   real,            intent(in):: zvir, ptop
   type(domain2d), intent(INOUT), target :: domain
   type(fv_grid_bounds_type), intent(IN) :: bd
   real, intent(in   ), dimension(npz+1):: ak, bk
-  real, intent(in   ), dimension(isd:ied,jsd:jed    ):: phis
-  real, intent(inout), dimension(isd:ied,jsd:jed,npz):: pt, ua, va, delp
+  real, intent(in   ), dimension(bd%isd:bd%ied,bd%jsd:bd%jed    ):: phis
+  real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: pt, ua, va, delp
 ! pt as input is true tempeature
-<<<<<<< HEAD
-#ifdef MULTI_GASES
-  real, intent(inout):: q(isd:ied,jsd:jed,npz,*)
-#else
-  real, intent(inout):: q(isd:ied,jsd:jed,npz,nwat)
-#endif
-=======
-  real, intent(inout):: q(isd:ied,jsd:jed,npz,nwat)
->>>>>>> rusty/master_test
-  real, intent(inout), dimension(isd:ied,jsd:jed):: ps
+  real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nwat):: q
+  real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: ps
 ! Accumulated tendencies
-  real, intent(inout), dimension(isd:ied,jsd:jed,npz):: u_dt, v_dt
-  real, intent(out), dimension(is:ie,js:je,npz):: t_dt, q_dt
-  real, intent(out), dimension(is:ie,js:je):: ps_dt, ts
+  real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: u_dt, v_dt
+  real, intent(out), dimension(bd%is:bd%ie,bd%js:bd%je,npz):: t_dt
+  real, intent(out), dimension(bd%is:bd%ie,bd%js:bd%je,npz):: q_dt
+  real, intent(out), dimension(bd%is:bd%ie,bd%js:bd%je):: ps_dt, ts
 
   type(fv_grid_type), intent(INOUT), target :: gridstruct
 ! local:
-  real:: h2(is:ie,js:je)
-<<<<<<< HEAD
-  real:: m_err(is:ie,js:je)         !< height error at specified model interface level
-  real:: slp_n(is:ie,js:je)         !< "Observed" SLP
-  real:: slp_m(is:ie,js:je)         !< "model" SLP
-=======
-  real:: m_err(is:ie,js:je)         ! height error at specified model interface level
-  real:: slp_n(is:ie,js:je)         ! "Observed" SLP
-  real:: slp_m(is:ie,js:je)         ! "model" SLP
->>>>>>> rusty/master_test
-  real::   mask(is:ie,js:je)
-  real::     tv(is:ie,js:je)
-  real:: peln(is:ie,npz+1)
-  real:: pe2(is:ie, npz+1)
-  real:: ptmp
+  real:: hght2(bd%is:bd%ie,bd%js:bd%je)         ! height at specified model interface level
+  real:: m_err(bd%is:bd%ie,bd%js:bd%je)         ! height error at specified model interface level
+  real:: slp_n(bd%is:bd%ie,bd%js:bd%je)         ! "Observed" SLP
+  real:: slp_m(bd%is:bd%ie,bd%js:bd%je)         ! "model" SLP
+  real::   mask(bd%is:bd%ie,bd%js:bd%je)
+  real::     tv(bd%is:bd%ie,bd%js:bd%je)
+  real:: gz_int(bd%is:bd%ie,bd%js:bd%je), gz(bd%is:bd%ie,npz+1), peln(bd%is:bd%ie,npz+1), pk(bd%is:bd%ie,npz+1)
+  real:: pe1(bd%is:bd%ie)
+  real:: pkz, ptmp
   real, allocatable :: ps_obs(:,:)
   real, allocatable, dimension(:,:,:):: u_obs, v_obs, t_obs, q_obs
   real, allocatable, dimension(:,:,:):: du_obs, dv_obs
-  real:: ps_fac(is:ie,js:je)
   integer :: seconds, days
-<<<<<<< HEAD
-  integer :: i,j,k, iq, kht, n
-=======
   integer :: i,j,k, iq, kht
->>>>>>> rusty/master_test
   real :: factor, rms, bias, co
-  real :: rdt, press(npz), profile(npz), prof_t(npz), prof_q(npz), du, dv
+  real :: q_rat, pst, pt0, pkz0
+  real :: dbk, rdt, press(npz), profile(npz), prof_t(npz), prof_q(npz), du, dv
   logical used
+  real :: diff_t, dt_const
 
+  integer :: is,  ie,  js,  je
+  integer :: isd, ied, jsd, jed
 
   real(kind=R_GRID), pointer, dimension(:,:,:) :: agrid
   real, pointer, dimension(:,:)   :: rarea, area
 
   real, pointer, dimension(:,:) :: sina_u, sina_v
   real, pointer, dimension(:,:,:) :: sin_sg
-  real(kind=R_GRID), pointer, dimension(:,:,:) :: vlon, vlat
-  
+
   real, pointer, dimension(:,:) :: dx, dy, rdxc, rdyc
 
-  real(kind=R_GRID), pointer :: da_min
-
-<<<<<<< HEAD
   logical, pointer :: nested, sw_corner, se_corner, nw_corner, ne_corner
-=======
-  logical, pointer :: bounded_domain, sw_corner, se_corner, nw_corner, ne_corner
->>>>>>> rusty/master_test
 
-  if ( .not. module_is_initialized ) then 
-        call mpp_error(FATAL,'==> Error from fv_nwp_nudge: module not initialized')
+  if ( .not. module_is_initialized ) then
+        call mpp_error(FATAL,'==> Error from fv_ada_nudge: module not initialized')
   endif
+
+  is  = bd%is
+  ie  = bd%ie
+  js  = bd%js
+  je  = bd%je
+  isd = bd%isd
+  ied = bd%ied
+  jsd = bd%jsd
+  jed = bd%jed
+
   agrid => gridstruct%agrid_64
    area => gridstruct%area
   rarea => gridstruct%rarea
 
-  vlon   => gridstruct%vlon
-  vlat   => gridstruct%vlat
   sina_u => gridstruct%sina_u
   sina_v => gridstruct%sina_v
   sin_sg => gridstruct%sin_sg
@@ -510,17 +346,12 @@ module fv_nwp_nudge_mod
   rdxc   => gridstruct%rdxc
   rdyc   => gridstruct%rdyc
 
-  da_min => gridstruct%da_min
-
-<<<<<<< HEAD
   nested => gridstruct%nested
-=======
->>>>>>> rusty/master_test
   sw_corner => gridstruct%sw_corner
   se_corner => gridstruct%se_corner
   nw_corner => gridstruct%nw_corner
   ne_corner => gridstruct%ne_corner
-  
+
   if ( no_obs ) then
 #ifndef DYCORE_SOLO
        forecast_mode = .true.
@@ -535,41 +366,38 @@ module fv_nwp_nudge_mod
         mask(i,j) = 1.
      enddo
   enddo
-  if ( tc_mask )  call get_tc_mask(time, mask, agrid)
+  if ( tc_mask )  call get_tc_mask(time, mask, bd, agrid)
 
-! The following profile is suitable only for nwp purposes; if the analysis has a good representation
+! The following profile is suitable only for ada purposes; if the analysis has a good representation
 ! of the strat-meso-sphere the profile for upper layers should be changed.
 
   profile(:) = 1.
 
-!$OMP parallel do default(none) shared(npz,press,ak,bk,P_relax,P_norelax,profile)
+!$omp parallel do default(shared)
   do k=1,npz
      press(k) = 0.5*(ak(k) + ak(k+1)) + 0.5*(bk(k)+bk(k+1))*1.E5
-     if ( press(k) < P_relax ) then
-          profile(k) =  max(0.01, press(k)/P_relax) 
+     if ( press(k) < 30.E2 ) then
+          profile(k) =  max(0.01, press(k)/30.E2)
      endif
-
-  ! above P_norelax, no nudging. added by h1g
-     if( press(k) < P_norelax ) profile(k) = 0.0
   enddo
   profile(1) = 0.
 
 ! Thermodynamics:
   prof_t(:) = 1.
-!$OMP parallel do default(none) shared(npz,press,prof_t)
+!$omp parallel do default(shared)
   do k=1,npz
-     if ( press(k) < 10.E2 ) then
-          prof_t(k) =  max(0.01, press(k)/10.E2) 
+     if ( press(k) < 30.E2 ) then
+          prof_t(k) =  max(0.01, press(k)/30.E2)
      endif
   enddo
   prof_t(1) = 0.
- 
+
 ! Water vapor:
   prof_q(:) = 1.
-!$OMP parallel do default(none) shared(npz,press,prof_q)
+!$omp parallel do default(shared)
   do k=1,npz
      if ( press(k) < 300.E2 ) then
-          prof_q(k) =  max(0., press(k)/300.E2) 
+          prof_q(k) =  max(0., press(k)/300.E2)
      endif
   enddo
   prof_q(1) = 0.
@@ -581,15 +409,9 @@ module fv_nwp_nudge_mod
           ptmp = ak(k+1) + bk(k+1)*1.E5
           if ( ptmp > p_trop ) then
                k_trop = k
-               exit              
+               exit
           endif
        enddo
-  endif
-
-  if ( nudge_virt .and. nudge_hght ) then
-       kht = k_trop
-  else
-       kht = npz-kbot_t
   endif
 
   if ( time_varying ) then
@@ -612,8 +434,236 @@ module fv_nwp_nudge_mod
 
 
   call get_obs(Time, dt, zvir, ak, bk, ps, ts, ps_obs, delp, pt, nwat, q, u_obs, v_obs, t_obs, q_obs,   &
-               phis, ua, va, u_dt, v_dt, npx, npy, npz, factor, mask, ptop, bd, gridstruct, domain)
+               phis, gz_int, ua, va, u_dt, v_dt, npx, npy, npz, factor, mask, ptop, bd, gridstruct, domain)
 ! *t_obs* is virtual temperature
+#ifdef ENABLE_ADA ! snz
+
+ call mpp_clock_begin(id_ada)
+!  call get_time (time, seconds, days)
+
+  if (mod(seconds, 21600) == 0) then
+
+     Atm_var%u(is:ie,js:je,:) = ua(is:ie,js:je,:)
+     Atm_var%v(is:ie,js:je,:) = va(is:ie,js:je,:)
+     Atm_var%t(is:ie,js:je,:) = pt(is:ie,js:je,:)
+     Atm_var%q(is:ie,js:je,:) = q(is:ie,js:je,:,1)
+     Atm_var%dp(is:ie,js:je,:) = delp(is:ie,js:je,:)
+     Atm_var%ps(is:ie,js:je) = ps(is:ie,js:je)
+     Atm_var%phis(is:ie,js:je) = phis(is:ie,js:je)
+
+     call mpp_update_domains(Atm_var%u(:,:,:), filt_domain, complete=.false.)
+     call mpp_update_domains(Atm_var%v(:,:,:), filt_domain, complete=.false.)
+     call mpp_update_domains(Atm_var%t(:,:,:), filt_domain, complete=.false.)
+     call mpp_update_domains(Atm_var%q(:,:,:), filt_domain, complete=.false.)
+     call mpp_update_domains(Atm_var%dp(:,:,:), filt_domain, complete=.true.)
+     call mpp_update_domains(Atm_var%ps(:,:), filt_domain, complete=.false.)
+     call mpp_update_domains(Atm_var%phis(:,:), filt_domain, complete=.true.)
+
+     ! handle the lower-left corner
+     if (is == 1 .and. js == 1) then
+       do k = 1, npz
+       do j = js-filt_halo, js-1
+       do i = is-filt_halo, is-1
+         Atm_var%u(i,j,k) = Atm_var%u(is-i,js-j,k)
+         Atm_var%v(i,j,k) = Atm_var%v(is-i,js-j,k)
+         Atm_var%t(i,j,k) = Atm_var%t(is-i,js-j,k)
+         Atm_var%q(i,j,k) = Atm_var%q(is-i,js-j,k)
+         Atm_var%dp(i,j,k) = Atm_var%dp(is-i,js-j,k)
+       end do
+       end do
+       end do
+       do j = js-filt_halo, js-1
+       do i = is-filt_halo, is-1
+         Atm_var%ps(i,j) = Atm_var%ps(is-i,js-j)
+         Atm_var%phis(i,j) = Atm_var%phis(is-i,js-j)
+       end do
+       end do
+     end if
+     ! handle the lower-right corner
+     if (ie == npx-1 .and. js == 1) then
+       do k = 1, npz
+       do j = js-filt_halo, js-1
+       do i = ie+1, ie+filt_halo
+         Atm_var%u(i,j,k) = Atm_var%u(ie-i+ie+1,js-j,k)
+         Atm_var%v(i,j,k) = Atm_var%v(ie-i+ie+1,js-j,k)
+         Atm_var%t(i,j,k) = Atm_var%t(ie-i+ie+1,js-j,k)
+         Atm_var%q(i,j,k) = Atm_var%q(ie-i+ie+1,js-j,k)
+         Atm_var%dp(i,j,k) = Atm_var%dp(ie-i+ie+1,js-j,k)
+       end do
+       end do
+       end do
+       do j = js-filt_halo, js-1
+       do i = ie+1, ie+filt_halo
+         Atm_var%ps(i,j) = Atm_var%ps(ie-i+ie+1,js-j)
+         Atm_var%phis(i,j) = Atm_var%phis(ie-i+ie+1,js-j)
+       end do
+       end do
+     end if
+     ! handle the upper-right corner
+     if (ie == npx-1 .and. je == npy-1) then
+       do k = 1, npz
+       do j = je+1, je+filt_halo
+       do i = ie+1, ie+filt_halo
+         Atm_var%u(i,j,k) = Atm_var%u(ie-i+ie+1,je-j+je+1,k)
+         Atm_var%v(i,j,k) = Atm_var%v(ie-i+ie+1,je-j+je+1,k)
+         Atm_var%t(i,j,k) = Atm_var%t(ie-i+ie+1,je-j+je+1,k)
+         Atm_var%q(i,j,k) = Atm_var%q(ie-i+ie+1,je-j+je+1,k)
+         Atm_var%dp(i,j,k) = Atm_var%dp(ie-i+ie+1,je-j+je+1,k)
+       end do
+       end do
+       end do
+       do j = je+1, je+filt_halo
+       do i = ie+1, ie+filt_halo
+         Atm_var%ps(i,j) = Atm_var%ps(ie-i+ie+1,je-j+je+1)
+         Atm_var%phis(i,j) = Atm_var%phis(ie-i+ie+1,je-j+je+1)
+       end do
+       end do
+     end if
+     ! end of handling corners
+
+     if (filt_halo0 > 0) then ! for smooth
+
+     do k = 1, npz
+     do j = js, je
+     do i = is, ie
+       jlat = floor(frac_index(agrid(i,j,2)*rad2deg, alat(:)))
+       Atm_var%u_a(i,j,k) = 0.0
+       Atm_var%v_a(i,j,k) = 0.0
+       Atm_var%t_a(i,j,k) = 0.0
+       Atm_var%q_a(i,j,k) = 0.0
+       do j_sm = j-filt_halo,j+filt_halo
+       do i_sm = i-filt_halo,i+filt_halo
+         Atm_var%u_a(i,j,k) = Atm_var%u_a(i,j,k)+weight(i_sm-i,j_sm-j,jlat)*Atm_var%u(i_sm,j_sm,k)
+         Atm_var%v_a(i,j,k) = Atm_var%v_a(i,j,k)+weight(i_sm-i,j_sm-j,jlat)*Atm_var%v(i_sm,j_sm,k)
+         Atm_var%t_a(i,j,k) = Atm_var%t_a(i,j,k)+weight(i_sm-i,j_sm-j,jlat)*Atm_var%t(i_sm,j_sm,k)
+         Atm_var%q_a(i,j,k) = Atm_var%q_a(i,j,k)+weight(i_sm-i,j_sm-j,jlat)*Atm_var%q(i_sm,j_sm,k)
+       end do
+       end do
+     end do
+     end do
+     end do
+     do j = js, je
+     do i = is, ie
+       jlat = floor(frac_index(agrid(i,j,2)*rad2deg, alat(:)))
+       Atm_var%ps_a(i,j) = 0.0
+       do j_sm = j-filt_halo,j+filt_halo
+       do i_sm = i-filt_halo,i+filt_halo
+         Atm_var%ps_a(i,j) = Atm_var%ps_a(i,j)+weight(i_sm-i,j_sm-j,jlat)*Atm_var%ps(i_sm,j_sm)
+       end do
+       end do
+     end do
+     end do
+     ua(is:ie,js:je,:)  = Atm_var%u_a(is:ie,js:je,:)
+     va(is:ie,js:je,:)  = Atm_var%v_a(is:ie,js:je,:)
+     pt(is:ie,js:je,:)  = Atm_var%t_a(is:ie,js:je,:)
+     q(is:ie,js:je,:,1) = Atm_var%q_a(is:ie,js:je,:)
+     ps(is:ie,js:je)    = Atm_var%ps_a(is:ie,js:je)
+
+     call mpp_update_domains(ua(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(va(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(pt(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(q(:,:,:,1), domain, complete=.true.)
+     call mpp_update_domains(ps(:,:), domain, complete=.true.)
+
+     Atm_var%u_a(is:ie,js:je,:)  = Atm_var%u(is:ie,js:je,:) - Atm_var%u_a(is:ie,js:je,:)
+     Atm_var%v_a(is:ie,js:je,:)  = Atm_var%v(is:ie,js:je,:) - Atm_var%v_a(is:ie,js:je,:)
+     Atm_var%t_a(is:ie,js:je,:)  = Atm_var%t(is:ie,js:je,:) - Atm_var%t_a(is:ie,js:je,:)
+     Atm_var%q_a(is:ie,js:je,:)  = Atm_var%q(is:ie,js:je,:) - Atm_var%q_a(is:ie,js:je,:)
+     Atm_var%ps_a(is:ie,js:je)   = Atm_var%ps(is:ie,js:je) - Atm_var%ps_a(is:ie,js:je)
+
+     call mpp_update_domains(Atm_var%u_a(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(Atm_var%v_a(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(Atm_var%t_a(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(Atm_var%q_a(:,:,:), domain, complete=.true.)
+     call mpp_update_domains(Atm_var%ps_a(:,:), domain, complete=.true.)
+
+     else ! no smooth
+
+     Atm_var%u_a(is:ie,js:je,:)  = 0.0
+     Atm_var%v_a(is:ie,js:je,:)  = 0.0
+     Atm_var%t_a(is:ie,js:je,:)  = 0.0
+     Atm_var%q_a(is:ie,js:je,:)  = 0.0
+     Atm_var%ps_a(is:ie,js:je)   = 0.0
+
+     end if ! for smooth or not
+
+     if ( id_u_ncep > 0 ) used=send_data(id_u_ncep, u_obs(is:ie,js:je,:), Time)
+     if ( id_v_ncep > 0 ) used=send_data(id_v_ncep, v_obs(is:ie,js:je,:), Time)
+     if ( id_t_ncep > 0 ) used=send_data(id_t_ncep, t_obs(is:ie,js:je,:), Time)
+     if ( id_q_ncep > 0 ) used=send_data(id_q_ncep, q_obs(is:ie,js:je,:), Time)
+     if ( id_ps_ncep > 0 ) used=send_data(id_ps_ncep, ps_obs(is:ie,js:je), Time)
+
+     if ( id_u_damb > 0 ) used=send_data(id_u_damb, ua(is:ie,js:je,:), Time)
+     if ( id_v_damb > 0 ) used=send_data(id_v_damb, va(is:ie,js:je,:), Time)
+     if ( id_t_damb > 0 ) used=send_data(id_t_damb, pt(is:ie,js:je,:), Time)
+     if ( id_q_damb > 0 ) used=send_data(id_q_damb, q(is:ie,js:je,:,1), Time)
+     if ( id_ps_damb > 0 ) used=send_data(id_ps_damb, ps(is:ie,js:je), Time)
+
+     if ( id_u_a > 0 ) used=send_data(id_u_a, Atm_var%u_a(is:ie,js:je,:), Time)
+     if ( id_v_a > 0 ) used=send_data(id_v_a, Atm_var%v_a(is:ie,js:je,:), Time)
+     if ( id_t_a > 0 ) used=send_data(id_t_a, Atm_var%t_a(is:ie,js:je,:), Time)
+     if ( id_q_a > 0 ) used=send_data(id_q_a, Atm_var%q_a(is:ie,js:je,:), Time)
+     if ( id_ps_a > 0 ) used=send_data(id_ps_a, Atm_var%ps_a(is:ie,js:je), Time)
+
+     call fv_ada(time, ak, bk, Atm_var)
+
+     Atm_var%u_adj(is:ie,js:je,1:npz) = Atm_var%u(is:ie,js:je,1:npz) - ua(is:ie,js:je,1:npz)
+     Atm_var%v_adj(is:ie,js:je,1:npz) = Atm_var%v(is:ie,js:je,1:npz) - va(is:ie,js:je,1:npz)
+     Atm_var%t_adj(is:ie,js:je,1:npz) = Atm_var%t(is:ie,js:je,1:npz) - pt(is:ie,js:je,1:npz)
+     Atm_var%q_adj(is:ie,js:je,1:npz) = Atm_var%q(is:ie,js:je,1:npz) - q(is:ie,js:je,1:npz,1)
+     Atm_var%ps_adj(is:ie,js:je) = Atm_var%ps(is:ie,js:je) - ps(is:ie,js:je)
+
+     call mpp_update_domains(Atm_var%u_adj(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(Atm_var%v_adj(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(Atm_var%t_adj(:,:,:), domain, complete=.false.)
+     call mpp_update_domains(Atm_var%q_adj(:,:,:), domain, complete=.true.)
+     call mpp_update_domains(Atm_var%ps_adj(:,:), domain, complete=.true.)
+
+     if ( id_u_adj > 0 ) used=send_data(id_u_adj, Atm_var%u_adj(is:ie,js:je,:), Time)
+     if ( id_v_adj > 0 ) used=send_data(id_v_adj, Atm_var%v_adj(is:ie,js:je,:), Time)
+     if ( id_t_adj > 0 ) used=send_data(id_t_adj, Atm_var%t_adj(is:ie,js:je,:), Time)
+     if ( id_q_adj > 0 ) used=send_data(id_q_adj, Atm_var%q_adj(is:ie,js:je,:), Time)
+     if ( id_ps_adj > 0 ) used=send_data(id_ps_adj, Atm_var%ps_adj(is:ie,js:je), Time)
+
+     ua(is:ie,js:je,:) = ua(is:ie,js:je,:) + Atm_var%u_a(is:ie,js:je,:)
+     va(is:ie,js:je,:) = va(is:ie,js:je,:) + Atm_var%v_a(is:ie,js:je,:)
+     pt(is:ie,js:je,:) = pt(is:ie,js:je,:) + Atm_var%t_a(is:ie,js:je,:)
+
+  end if ! for 6-hour reanalysis data
+
+  diff_t = 18.0-mod(seconds,21600)/1200.0
+  dt_const = 1./171.*diff_t
+
+  ! update delp and ps
+  do j=js,je
+  do i=is,ie
+    ps(i,j) = ak(1)
+  enddo
+  enddo
+
+  do k = 1, npz
+    dbk = (bk(k+1) - bk(k))*dt_const
+    do j = js, je
+    do i = is, ie
+      delp(i,j,k) = delp(i,j,k) + dbk*Atm_var%ps_adj(i,j)
+          ps(i,j) = delp(i,j,k) + ps(i,j)
+    end do
+    end do
+  end do
+
+  ! if ps_inpact_uvt, then update u, v, pt
+  if (ps_impact_uvt) then
+    ua(is:ie,js:je,:) = ua(is:ie,js:je,:) + Atm_var%u_adj(is:ie,js:je,:)*dt_const
+    va(is:ie,js:je,:) = va(is:ie,js:je,:) + Atm_var%v_adj(is:ie,js:je,:)*dt_const
+    pt(is:ie,js:je,:) = pt(is:ie,js:je,:) + Atm_var%t_adj(is:ie,js:je,:)*dt_const
+    call mpp_update_domains(ua(:,:,:), domain, complete=.false.)
+    call mpp_update_domains(va(:,:,:), domain, complete=.false.)
+    call mpp_update_domains(pt(:,:,:), domain, complete=.true.)
+  end if
+
+  call mpp_clock_end(id_ada)
+
+#endif ! snz
 
   if ( no_obs ) then
        deallocate (ps_obs)
@@ -629,38 +679,19 @@ module fv_nwp_nudge_mod
        return
    endif
 
-   do j=js,je
-      do i=is,ie
-         if ( abs(ps(i,j)-ps_obs(i,j)) > 2.e2 ) then 
-              ps_fac(i,j) = 2.e2 / abs(ps(i,j)-ps_obs(i,j))
-         else
-              ps_fac(i,j) = 1.
-         endif
-      enddo
-   enddo
-
   if( analysis_time ) then
 !-------------------------------------------
-! Compute RMSE, bias, and correlation of SLP 
+! Compute RMSE, bias, and correlation of SLP
 !-------------------------------------------
       do j=js,je
          do i=is,ie
-<<<<<<< HEAD
-#ifdef MULTI_GASES
-            tv(i,j) = pt(i,j,npz)*virq(q(i,j,npz,1:num_gas))
-#else
             tv(i,j) = pt(i,j,npz)*(1.+zvir*q(i,j,npz,1))
-#endif
-=======
-            tv(i,j) = pt(i,j,npz)*(1.+zvir*q(i,j,npz,1))
->>>>>>> rusty/master_test
          enddo
       enddo
       call compute_slp(is, ie, js, je, tv, ps(is:ie,js:je), phis(is:ie,js:je), slp_m)
-      call compute_slp(is, ie, js, je, t_obs(is,js,npz), ps_obs, gz0, slp_n)
+      call compute_slp(is, ie, js, je, t_obs(is:ie,js:je,npz:npz), ps_obs, gz0, slp_n)
 
       if ( nudge_debug ) then
-           if(master) write(*,*) 'kht=', kht
            call prt_maxmin('PS_o', ps_obs, is, ie, js, je, 0, 1, 0.01)
            ptmp = 0.01*g0_sum(ps_obs, is, ie, js, je, 1, .false., isd, ied, jsd, jed, area)
            if(master) write(*,*) 'Mean PS_o=', ptmp
@@ -668,22 +699,22 @@ module fv_nwp_nudge_mod
            call prt_maxmin('SLP_o', slp_n, is, ie, js, je, 0, 1, 0.01)
       endif
 
-!$OMP parallel do default(none) shared(is,ie,js,je,phis,gz0,m_err,mask,slp_m,slp_n)
+!$omp parallel do default(shared)
       do j=js,je
          do i=is,ie
-            if ( abs(phis(i,j)-gz0(i,j))/grav > 2. ) then
-                 m_err(i,j) = mask(i,j)*(slp_m(i,j) - slp_n(i,j))*2.*grav/abs(phis(i,j)-gz0(i,j))
+            if ( phis(i,j)/grav > 500. ) then
+! Exclude high terrains region for RMS and bias computation
+                 m_err(i,j) = 0.
             else
                  m_err(i,j) = mask(i,j)*(slp_m(i,j) - slp_n(i,j))
             endif
          enddo
       enddo
-     
-      call rmse_bias(m_err, rms, bias, area)
-      call corr(slp_m, slp_n, co, area)
 
-      call prt_maxmin('SLP Error (mb)=', m_err, is, ie, js, je, 0, 1, 0.01)
-      if(master) write(*,*) 'SLP (Pa): RMS=', rms, ' Bias=', bias
+      call rmse_bias(m_err, rms, bias, bd, area)
+      call corr(slp_m, slp_n, co, bd, area)
+
+      if(master) write(*,*) 'SLP (mb): RMS=', 0.01*rms, ' Bias=', 0.01*bias
       if(master) write(*,*) 'SLP correlation=',co
   endif
 
@@ -692,13 +723,9 @@ module fv_nwp_nudge_mod
        allocate (du_obs(is:ie,js:je,npz) )
        allocate (dv_obs(is:ie,js:je,npz) )
 
-       du_obs = 0.
-       dv_obs = 0.
-
 ! Compute tendencies:
      rdt = 1. / (tau_winds/factor + dt)
-!$OMP parallel do default(none) shared(kstart,npz,kbot_winds,is,ie,js,je,du_obs,dv_obs, &
-!$OMP                                  profile,u_obs,v_obs,ua,va,rdt)
+!$omp parallel do default(shared)
      do k=kstart, npz - kbot_winds
         do j=js,je
            do i=is,ie
@@ -710,22 +737,8 @@ module fv_nwp_nudge_mod
 
      if ( nf_uv>0 ) call del2_uv(du_obs, dv_obs, del2_cd, npz, nf_uv, bd, npx, npy, gridstruct, domain)
 
-!$OMP parallel do default(none) shared(kstart,kbot_winds,npz,is,ie,js,je,du_obs,dv_obs, &
-!$OMP                                  mask,ps_fac,u_dt,v_dt,ua,va,dt)
+!$omp parallel do default(shared)
      do k=kstart, npz - kbot_winds
-        if ( k==npz ) then
-        do j=js,je
-           do i=is,ie
-              du_obs(i,j,k) = du_obs(i,j,k) * mask(i,j) * ps_fac(i,j)
-              dv_obs(i,j,k) = dv_obs(i,j,k) * mask(i,j) * ps_fac(i,j)
-!
-              u_dt(i,j,k) = u_dt(i,j,k) + du_obs(i,j,k)
-              v_dt(i,j,k) = v_dt(i,j,k) + dv_obs(i,j,k)
-                ua(i,j,k) =   ua(i,j,k) + du_obs(i,j,k)*dt
-                va(i,j,k) =   va(i,j,k) + dv_obs(i,j,k)*dt
-           enddo
-        enddo
-        else
         do j=js,je
            do i=is,ie
 ! Apply TC mask
@@ -738,129 +751,157 @@ module fv_nwp_nudge_mod
                 va(i,j,k) =   va(i,j,k) + dv_obs(i,j,k)*dt
            enddo
         enddo
-        endif
      enddo
-  endif
 
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,t_dt)
-  do k=1,npz
-     do j=js,je
-        do i=is,ie
-           t_dt(i,j,k) = 0.
-        enddo
-     enddo
-  enddo
+     deallocate (du_obs)
+     deallocate (dv_obs)
+
+  endif
 
   if ( nudge_virt ) then
-       rdt = 1./(tau_virt/factor + dt)
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,kstart,kht,t_dt,prof_t,t_obs,zvir, &
-<<<<<<< HEAD
-#ifdef MULTI_GASES
-!$OMP                                  num_gas,                                           &
-#endif
-=======
->>>>>>> rusty/master_test
-!$OMP                                  q,pt,rdt,ps_fac)
-     do k=kstart, kht
-        if ( k==npz ) then
+     if(nudge_debug) call prt_maxmin('T_obs', t_obs, is, ie, js, je, 0, npz, 1.)
+  endif
+
+!---------------------- temp -----------
+  if ( nudge_virt .and. nudge_hght ) then
+       tau_virt = max(tau_hght, tau_virt)
+       kht = k_trop
+  else
+       kht = npz-kbot_t
+  endif
+!---------------------- temp -----------
+
+  t_dt(:,:,:) = 0.
+
+  if ( nudge_hght ) then
+
+        rdt = dt / (tau_hght/factor + dt)
+
+!$omp parallel do default(shared) private(pe1, peln, pk, gz)
         do j=js,je
+
            do i=is,ie
-<<<<<<< HEAD
-#ifdef MULTI_GASES
-              t_dt(i,j,k) = prof_t(k)*(t_obs(i,j,k)/virq(q(i,j,k,1:num_gas))-pt(i,j,k))*rdt*ps_fac(i,j)
-#else
-              t_dt(i,j,k) = prof_t(k)*(t_obs(i,j,k)/(1.+zvir*q(i,j,k,1))-pt(i,j,k))*rdt*ps_fac(i,j)
-#endif
-=======
-              t_dt(i,j,k) = prof_t(k)*(t_obs(i,j,k)/(1.+zvir*q(i,j,k,1))-pt(i,j,k))*rdt*ps_fac(i,j)
->>>>>>> rusty/master_test
+              pe1(i) = ak(1)
+              peln(i,1) = log(pe1(i))
+                pk(i,1) = pe1(i)**kappa
            enddo
-        enddo
+           do k=2, npz+1
+              do i=is,ie
+                    pe1(i) = pe1(i) + delp(i,j,k-1)
+                 peln(i,k) = log(pe1(i))
+                   pk(i,k) = pe1(i)**kappa
+              enddo
+           enddo
+
+           do i=is,ie
+              gz(i,npz+1) = phis(i,j)
+           enddo
+           do i=is,ie
+              do k=npz, k_trop+1, -1
+                 gz(i,k) = gz(i,k+1) + rdgas*pt(i,j,k)*(1.+zvir*q(i,j,k,1))*(peln(i,k+1)-peln(i,k))
+              enddo
+           enddo
+
+           do i=is,ie
+              hght2(i,j) =  gz(i,k_trop+1)
+if ( use_pt_inc ) then
+              m_err(i,j) = (gz_int(i,j)-hght2(i,j))/(cp_air*(pk(i,npz+1)-pk(i,k_trop+1)))
+              m_err(i,j) = m_err(i,j)*max( 0., 1.-abs(gz0(i,j)-phis(i,j))/(grav*1000.) )
+              m_err(i,j) = sign( min(pt_lim, abs(m_err(i,j))), m_err(i,j) )
+else
+! Virtual Temperature increment:
+              m_err(i,j) = (gz_int(i,j)-hght2(i,j))/(rdgas*(peln(i,npz+1)-peln(i,k_trop+1)))
+              m_err(i,j) = m_err(i,j)*max( 0., 1.-abs(gz0(i,j)-phis(i,j))/(grav*500.) )
+              m_err(i,j) = sign( min(5.0, abs(m_err(i,j))), m_err(i,j) )
+endif
+           enddo
+
+        enddo   ! j-loop
+
+! Filter:
+        if ( nf_ht > 0 ) call del2_scalar(m_err, del2_cd, 1, nf_ht, bd, npx, npy, gridstruct, domain)
+
+        if ( use_pt_inc ) then
+             pkz0 = (1.0E5)**kappa
         else
+             pkz0 = 1.
+        endif
+        call prt_maxmin('T_inc (deg)', m_err, is, ie, js, je, 0, 1, pkz0)
+
+!$omp parallel do default(shared) private(pe1, peln, pk, pt0, pkz)
+        do j=js,je
+
+! if ( use_pt_inc ) then
+           do i=is,ie
+              pe1(i) = ak(1)
+              peln(i,1) = log(pe1(i))
+                pk(i,1) = pe1(i)**kappa
+           enddo
+           do k=2, npz+1
+              do i=is,ie
+                    pe1(i) = pe1(i) + delp(i,j,k-1)
+                 peln(i,k) = log(pe1(i))
+                   pk(i,k) = pe1(i)**kappa
+              enddo
+           enddo
+! endif
+           do i=is,ie
+              pt0 = rdt*mask(i,j)*m_err(i,j)
+              do k=k_trop+1,npz
+if ( use_pt_inc ) then
+! Add constant "virtual potential temperature" increment to correct height at p_interface
+!------------------------------------------------------------------------------------------
+                 pkz = (pk(i,k+1)-pk(i,k))/(kappa*(peln(i,k+1)-peln(i,k)))
+                 pt(i,j,k) = pt(i,j,k) + pkz*pt0 / (1.+zvir*q(i,j,k,1))
+!------------------------------------------------------------------------------------------
+else
+! Add constant "virtual temperature" increment
+                 pt(i,j,k) = pt(i,j,k) + pt0 / (1.+zvir*q(i,j,k,1))
+endif
+              enddo
+              m_err(i,j) = (gz_int(i,j)-hght2(i,j)) / (rdgas*(peln(i,npz+1)-peln(i,k_trop+1)))
+           enddo
+        enddo   ! j-loop
+        if ( (.not.do_adiabatic_init) .and. id_ht_err>0 ) used=send_data(id_ht_err, m_err, Time)
+
+!-----------------------
+! Compute RMSE of height
+!-----------------------
+        if( analysis_time ) then
+!$omp parallel do default(shared)
+            do j=js,je
+               do i=is,ie
+                  m_err(i,j) = (hght2(i,j) - gz_int(i,j)) / grav
+               enddo
+            enddo
+            call corr(hght2, gz_int, co, bd, area)
+            call prt_maxmin('H_int_obs', gz_int, is, ie, js, je, 0, 1, 1./grav)
+            call prt_maxmin('H_int_err',  m_err, is, ie, js, je, 0, 1, 1.     )
+            call rmse_bias(m_err, rms, bias, bd, area)
+            if(master) write(*,*) 'HGHT: RMSE (m)=', rms, ' Bias (m)=', bias
+            if(master) write(*,*) 'HGHT: correlation=', co
+        endif
+  endif
+
+  if ( nudge_virt ) then
+        rdt = 1./(tau_virt/factor + dt)
+!$omp parallel do default(shared)
+     do k=kstart, kht
         do j=js,je
            do i=is,ie
-<<<<<<< HEAD
-#ifdef MULTI_GASES
-              t_dt(i,j,k) = prof_t(k)*(t_obs(i,j,k)/virq(q(i,j,k,1:num_gas))-pt(i,j,k))*rdt
-#else
               t_dt(i,j,k) = prof_t(k)*(t_obs(i,j,k)/(1.+zvir*q(i,j,k,1))-pt(i,j,k))*rdt
-#endif
-=======
-              t_dt(i,j,k) = prof_t(k)*(t_obs(i,j,k)/(1.+zvir*q(i,j,k,1))-pt(i,j,k))*rdt
->>>>>>> rusty/master_test
            enddo
         enddo
-        endif
      enddo
   endif
 
-  if ( nudge_hght .and. kht<npz ) then     ! averaged (in log-p) temperature
-       rdt = 1. / (tau_hght/factor + dt)
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,ak,h2,delp,kht,t_obs,pt,zvir, &
-<<<<<<< HEAD
-#ifdef MULTI_GASES
-!$OMP                                  num_gas,                &
-#endif
-=======
->>>>>>> rusty/master_test
-!$OMP                                  q,rdt,ps_fac,mask,t_dt) &
-!$OMP                          private(pe2, peln )
-       do j=js,je
-           do i=is,ie
-              pe2(i,1) = ak(1)
-               h2(i,j) = 0.
-           enddo
-           do k=1, npz
-              do i=is,ie
-                 pe2(i,k+1) = pe2(i,k) + delp(i,j,k)
-              enddo
-           enddo
-           do k=kht+1, npz+1
-              do i=is,ie
-                 peln(i,k) = log(pe2(i,k))
-              enddo
-           enddo
 
-           do k=kht+1, npz
-              do i=is,ie
-! Difference between "Mean virtual tempearture" (pseudo height)
-<<<<<<< HEAD
-#ifdef MULTI_GASES
-                 h2(i,j) = h2(i,j) + (t_obs(i,j,k)-pt(i,j,k)*virq(q(i,j,k,1:num_gas)))*(peln(i,k+1)-peln(i,k))
-#else
-                 h2(i,j) = h2(i,j) + (t_obs(i,j,k)-pt(i,j,k)*(1.+zvir*q(i,j,k,1)))*(peln(i,k+1)-peln(i,k))
-#endif
-=======
-                 h2(i,j) = h2(i,j) + (t_obs(i,j,k)-pt(i,j,k)*(1.+zvir*q(i,j,k,1)))*(peln(i,k+1)-peln(i,k))
->>>>>>> rusty/master_test
-              enddo
-           enddo
-           do i=is,ie
-              h2(i,j) = h2(i,j) / (peln(i,npz+1)-peln(i,kht+1))
-              h2(i,j) = rdt*ps_fac(i,j)*h2(i,j)*mask(i,j)
-           enddo
-
-           do k=kht+1, npz
-              do i=is,ie
-<<<<<<< HEAD
-#ifdef MULTI_GASES
-                 t_dt(i,j,k) = h2(i,j) / virq(q(i,j,k,1:num_gas))
-#else
-                 t_dt(i,j,k) = h2(i,j) / (1.+zvir*q(i,j,k,1))
-#endif
-=======
-                 t_dt(i,j,k) = h2(i,j) / (1.+zvir*q(i,j,k,1))
->>>>>>> rusty/master_test
-              enddo
-           enddo
-       enddo   ! j-loop
-       if(nudge_debug) call prt_maxmin('H2 increment=', h2, is, ie, js, je, 0, 1, dt)
-  endif
-
-  if ( nudge_virt .or. nudge_hght ) then
+  if ( nudge_virt ) then
+! Filter t_dt here:
        if ( nf_t>0 ) call del2_scalar(t_dt, del2_cd, npz, nf_t, bd, npx, npy, gridstruct, domain)
-!$OMP parallel do default(none) shared(kstart,npz,is,ie,js,je,pt,t_dt,dt,mask)
-       do k=kstart, npz
+
+!$omp parallel do default(shared)
+       do k=kstart, kht
           do j=js,je
              do i=is,ie
                 pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*mask(i,j)
@@ -872,8 +913,7 @@ module fv_nwp_nudge_mod
   q_dt(:,:,:) = 0.
   if ( nudge_q ) then
        rdt = 1./(tau_q/factor + dt)
-!$OMP parallel do default(none) shared(kstart,npz,kbot_q,is,ie,js,je,press,p_wvp,nwat, &
-!$OMP                                  q,delp,q_dt,prof_q,q_min,q_obs,rdt,mask,dt)
+!$omp parallel do default(shared)
      do k=kstart, npz - kbot_q
         if ( press(k) > p_wvp ) then
             do iq=2,nwat
@@ -909,28 +949,18 @@ module fv_nwp_nudge_mod
   deallocate ( q_obs )
   deallocate ( ps_obs )
 
-  if ( breed_srf_w .and. nudge_winds )   &
-  call breed_srf_winds(Time, dt, npz, u_obs, v_obs, ak, bk, ps, phis, delp, ua, va, u_dt, v_dt, pt, q, nwat, zvir, gridstruct)
-
-  if ( nudge_debug) then
-       call prt_maxmin('T increment=', t_dt,   is, ie, js, je, 0, npz, dt)
-       call prt_maxmin('U increment=', du_obs, is, ie, js, je, 0, npz, dt)
-       call prt_maxmin('V increment=', dv_obs, is, ie, js, je, 0, npz, dt)
-  endif
+  if ( breed_vortex )   &
+  call breed_srf_winds(Time, dt, npz, u_obs, v_obs, ak, bk, ps, phis, delp, ua, va, u_dt, v_dt, pt, q, nwat, zvir, bd, gridstruct)
 
   if ( nudge_winds ) then
      deallocate ( u_obs )
      deallocate ( v_obs )
-     deallocate (du_obs)
-     deallocate (dv_obs)
   endif
 
   nullify(agrid)
   nullify(area)
   nullify(rarea)
 
-  nullify(vlon)  
-  nullify(vlat)  
   nullify(sina_u)
   nullify(sina_v)
   nullify(sin_sg)
@@ -940,18 +970,13 @@ module fv_nwp_nudge_mod
   nullify(rdxc)
   nullify(rdyc)
 
-  nullify(da_min)
-
-<<<<<<< HEAD
   nullify(nested)
-=======
->>>>>>> rusty/master_test
   nullify(sw_corner)
   nullify(se_corner)
   nullify(nw_corner)
   nullify(ne_corner)
 
- end  subroutine fv_nwp_nudge
+ end  subroutine fv_ada_nudge
 
 
  subroutine ps_nudging(dt, factor, npz, ak, bk, ps_obs, mask, tm, ps, phis, delp, ua, va, pt, nwat, q, bd, npx, npy, gridstruct, domain)
@@ -960,34 +985,30 @@ module fv_nwp_nudge_mod
       integer, intent(in):: npz, nwat, npx, npy
       real, intent(in), dimension(npz+1):: ak, bk
       type(fv_grid_bounds_type), intent(IN) :: bd
-      real, intent(in):: phis(isd:ied,jsd:jed)
-      real, intent(in), dimension(is:ie,js:je):: ps_obs, mask, tm
+      real, intent(in):: phis(bd%isd:bd%ied,bd%jsd:bd%jed)
+      real, intent(in), dimension(bd%is:bd%ie,bd%js:bd%je):: ps_obs, mask, tm
       type(fv_grid_type), intent(IN), target :: gridstruct
       type(domain2d), intent(INOUT) :: domain
 ! Input/Output
-      real, intent(inout), dimension(isd:ied,jsd:jed):: ps
-      real, intent(inout), dimension(isd:ied,jsd:jed,npz):: delp, pt, ua, va
-      real, intent(inout):: q(isd:ied,jsd:jed,npz,nwat)
+      real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: ps
+      real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: delp, pt, ua, va
+      real, intent(inout):: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nwat)
 ! local
-      real, dimension(is:ie,js:je):: ps_dt
+      real, dimension(bd%is:bd%ie,bd%js:bd%je):: ps_dt
       integer, parameter:: kmax = 100
-<<<<<<< HEAD
-      real:: pn0(kmax+1), pk0(kmax+1), pe0(kmax+1)
-=======
       real:: pn0(kmax+1), pk0(kmax+1)
->>>>>>> rusty/master_test
-      real, dimension(is:ie,npz+1):: pe2, peln
+      real, dimension(bd%is:bd%ie,npz+1):: pe2, peln
       real:: pst, dbk, pt0, rdt, bias
       integer i, j, k, iq
 
       real, pointer, dimension(:,:) :: area
-<<<<<<< HEAD
-#ifdef MULTI_GASES
-      real :: kappax(km)
-      real :: pkx
-#endif
-=======
->>>>>>> rusty/master_test
+
+      integer :: is,  ie,  js,  je
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
 
       area => gridstruct%area
 
@@ -996,17 +1017,7 @@ module fv_nwp_nudge_mod
 
     do j=js,je
        do 666 i=is,ie
-<<<<<<< HEAD
-#ifdef MULTI_GASES
-       do k=1,km
-          kappax(k)= virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))
-       enddo
-#endif
        do k=1, km+1
-          pe0(k) =  ak0(k) + bk0(k)*ps_obs(i,j)
-=======
-       do k=1, km+1
->>>>>>> rusty/master_test
           pk0(k) = (ak0(k) + bk0(k)*ps_obs(i,j))**kappa
        enddo
       if( phis(i,j)>gz0(i,j) ) then
@@ -1020,29 +1031,10 @@ module fv_nwp_nudge_mod
           pn0(km  ) = log(ak0(km) + bk0(km)*ps_obs(i,j))
           pn0(km+1) = log(ps_obs(i,j))
 ! Extrapolation into the ground using only the lowest layer potential temp
-<<<<<<< HEAD
-#ifdef MULTI_GASES
-           pkx = (pk0(km+1)-pk0(km))/(kappa*(pn0(km+1)-pn0(km)))
-           pt0 = tm(i,j)/exp(kappax(km)*log(pkx))
-           pkx = exp((kappax(km)-1.0)*log(pkx))
-           pst = pk0(km+1) + (gz0(i,j)-phis(i,j))/(cp_air*pt0*pkx)
-#else
-           pt0 = tm(i,j)/(pk0(km+1)-pk0(km))*(kappa*(pn0(km+1)-pn0(km)))
-           pst = pk0(km+1) + (gz0(i,j)-phis(i,j))/(cp_air*pt0)
-#endif
-      endif
-#ifdef MULTI_GASES
-      k=km
-666   ps_dt(i,j) = pst**(1./(kappa*kappax(k))) - ps(i,j)
-#else
-666   ps_dt(i,j) = pst**(1./kappa) - ps(i,j)
-#endif
-=======
            pt0 = tm(i,j)/(pk0(km+1)-pk0(km))*(kappa*(pn0(km+1)-pn0(km)))
            pst = pk0(km+1) + (gz0(i,j)-phis(i,j))/(cp_air*pt0)
       endif
 666   ps_dt(i,j) = pst**(1./kappa) - ps(i,j)
->>>>>>> rusty/master_test
       enddo   ! j-loop
 
       if( nf_ps>0 ) call del2_scalar(ps_dt, del2_cd, 1, nf_ps, bd, npx, npy, gridstruct, domain)
@@ -1055,7 +1047,12 @@ module fv_nwp_nudge_mod
          enddo
       enddo
 
-      if( do_ps_bias ) call ps_bias_correction( ps_dt, is, ie, js, je, isd, ied, jsd, jed, area)
+      if( do_ps_bias ) call ps_bias_correction( ps_dt, is, ie, js, je, bd%isd, bd%ied, bd%jsd, bd%jed, area)
+
+      if ( nudge_debug ) then
+           bias = -g0_sum(ps_dt, is, ie, js, je, 1, .false., bd%isd, bd%ied, bd%jsd, bd%jed, area)
+           if(master) write(*,*) 'PS bias=', bias
+      endif
 
 #ifdef CONSV_HGHT
 ! Convert tracer moist mixing ratio to mass
@@ -1103,7 +1100,7 @@ module fv_nwp_nudge_mod
             ps(i,j) = ak(1)
          enddo
       enddo
- 
+
       rdt = dt / (tau_ps/factor + dt)
       do k=1,npz
          dbk = rdt*(bk(k+1) - bk(k))
@@ -1175,14 +1172,14 @@ module fv_nwp_nudge_mod
       if(master .and. nudge_debug) write(*,*) 'Significant PS bias=', -bias
  endif
 
- if ( bias > 0. ) then    
+ if ( bias > 0. ) then
      psum = 0.
      do j=js,je
         do i=is,ie
            if ( ps_dt(i,j) > 0. ) then
                 psum = psum + area(i,j)
            endif
-        enddo 
+        enddo
      enddo
 
      call mp_reduce_sum( psum )
@@ -1193,7 +1190,7 @@ module fv_nwp_nudge_mod
            if ( ps_dt(i,j) > 0.0 ) then
                 ps_dt(i,j) = max(0.0, ps_dt(i,j) - bias)
            endif
-        enddo 
+        enddo
      enddo
  else
      psum = 0.
@@ -1202,42 +1199,31 @@ module fv_nwp_nudge_mod
            if ( ps_dt(i,j) < 0. ) then
                 psum = psum + area(i,j)
            endif
-        enddo 
+        enddo
      enddo
 
      call mp_reduce_sum( psum )
-     bias = bias * total_area / psum 
+     bias = bias * total_area / psum
 
      do j=js,je
         do i=is,ie
            if ( ps_dt(i,j) < 0.0 ) then
                 ps_dt(i,j) = min(0.0, ps_dt(i,j) - bias)
            endif
-        enddo 
+        enddo
      enddo
  endif
 
  end subroutine ps_bias_correction
 
-<<<<<<< HEAD
-!>@brief Fast version of global sum that is reproduced
-!! if the result is rounded to 4-byte
-=======
 
->>>>>>> rusty/master_test
  real function g0_sum(p, ifirst, ilast, jfirst, jlast, mode, reproduce, isd, ied, jsd, jed, area)
 ! Fast version of global sum; reproduced if result rounded to 4-byte
       integer, intent(IN) :: ifirst, ilast
       integer, intent(IN) :: jfirst, jlast
-<<<<<<< HEAD
-      integer, intent(IN) :: mode  !< if ==1 divided by global area
-      logical, intent(IN) :: reproduce
-      real,    intent(IN) :: p(ifirst:ilast,jfirst:jlast)      !< field to be summed
-=======
       integer, intent(IN) :: mode  ! if ==1 divided by global area
       logical, intent(IN) :: reproduce
       real,    intent(IN) :: p(ifirst:ilast,jfirst:jlast)      ! field to be summed
->>>>>>> rusty/master_test
       integer, intent(IN) :: isd, ied, jsd, jed
       real,    intent(IN) :: area(isd:ied,jsd:jed)
 
@@ -1281,31 +1267,52 @@ module fv_nwp_nudge_mod
 
 
  subroutine get_obs(Time, dt, zvir, ak, bk, ps, ts, ps_obs, delp, pt, nwat, q, u_obs, v_obs, t_obs, q_obs,  &
-                    phis, ua, va, u_dt, v_dt, npx, npy, npz, factor, mask, ptop, bd, gridstruct, domain)
+                    phis, gz_int, ua, va, u_dt, v_dt, npx, npy, npz, factor, mask, ptop, bd, gridstruct, domain)
   type(time_type), intent(in):: Time
   integer,         intent(in):: npz, nwat, npx, npy
   real,            intent(in):: zvir, ptop
   real,            intent(in):: dt, factor
   real, intent(in), dimension(npz+1):: ak, bk
   type(fv_grid_bounds_type), intent(IN) :: bd
-  real, intent(in), dimension(isd:ied,jsd:jed):: phis
-  real, intent(in), dimension(is:ie,js:je):: mask
-  real, intent(inout), dimension(isd:ied,jsd:jed):: ps
-  real, intent(inout), dimension(isd:ied,jsd:jed,npz):: delp, pt, ua, va, u_dt, v_dt
-  real, intent(inout)::q(isd:ied,jsd:jed,npz,*)
-  real, intent(out), dimension(is:ie,js:je):: ts, ps_obs
-  real, intent(out), dimension(is:ie,js:je,npz):: u_obs, v_obs, t_obs, q_obs
+  real, intent(in), dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: phis
+  real, intent(in), dimension(bd%is:bd%ie,bd%js:bd%je):: mask
+  real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: ps
+  real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: delp, pt
+  real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: ua, va, u_dt, v_dt
+  real, intent(inout)::q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,*)
+  real, intent(out), dimension(bd%is:bd%ie,bd%js:bd%je):: ts, ps_obs
+  real, intent(out), dimension(bd%is:bd%ie,bd%js:bd%je,npz):: u_obs, v_obs, t_obs, q_obs
+  real, intent(out)::  gz_int(bd%is:bd%ie,bd%js:bd%je)
   type(fv_grid_type), intent(IN) :: gridstruct
   type(domain2d), intent(INOUT) :: domain
 ! local:
-  real::  tm(is:ie,js:je)
+  real::  tm(bd%is:bd%ie,bd%js:bd%je)
   real(KIND=4), allocatable,dimension(:,:,:):: ut, vt, wt
   real, allocatable,dimension(:,:,:):: uu, vv
   integer :: seconds, days
+  integer :: year, month, day, hour, minute, second
   integer :: i,j,k
   real :: alpha, beta
+  type(time_type) :: time_p1
+
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+
 
   call get_time (time, seconds, days)
+  time_p1 = increment_time(time,time_interval) ! Require two time levels in memory.
+                                        ! Without increment, will have 2 of the same
+                                        ! time levels in memory.
+  call get_date (time_p1, year, month, day, hour, minute, second)
 
   if ( do_adiabatic_init  ) goto 333
   seconds = seconds - nint(dt)
@@ -1317,7 +1324,7 @@ module fv_nwp_nudge_mod
 
   if ( mod(seconds, time_interval) == 0 ) then
 
-    if ( nfile == nfile_total ) then
+    if ( nfile == nfile_total .and. (.not.one_year_files) ) then
          no_obs = .true.
 #ifndef DYCORE_SOLO
          forecast_mode = .true.
@@ -1340,10 +1347,12 @@ module fv_nwp_nudge_mod
 !---------------
 ! Read next data
 !---------------
-      nfile = nfile + 1
+      if ( .not.one_year_files .or. (one_year_files .and. year.ne.last_year) ) then
+         nfile = nfile + 1
+      end if
       call get_ncep_analysis ( ps_dat(:,:,2), u_dat(:,:,:,2), v_dat(:,:,:,2),    &
                               t_dat(:,:,:,2), q_dat(:,:,:,2), zvir,  &
-                              ts, nfile, file_names(nfile), bd )
+                              ts, nfile, file_names(nfile), bd, time=time_p1 ) !!::sdu:: There might be problems
       time_nudge = dt
   else
       time_nudge = time_nudge + dt
@@ -1374,20 +1383,20 @@ module fv_nwp_nudge_mod
   ps_obs(:,:)  = alpha*ps_dat(:,:,1) + beta*ps_dat(:,:,2)
 
 !---------------------------------
-!*** nudge & update ps & delp here 
+!*** nudge & update ps & delp here
 !---------------------------------
   if (nudge_ps) then
 
       allocate ( wt(is:ie,js:je,km) )
-      wt(:,:,:) = alpha*t_dat(:,:,:,1) + beta*t_dat(:,:,:,2) 
-! Needs gz3 for ps_nudging
-      call get_int_hght(npz, ak, bk, ps(is:ie,js:je), delp, ps_obs(is:ie,js:je), wt)
+      wt(:,:,:) = alpha*t_dat(:,:,:,1) + beta*t_dat(:,:,:,2)
       do j=js,je
          do i=is,ie
             tm(i,j)  = wt(i,j,km)
         enddo
       enddo
-      deallocate ( wt ) 
+
+      call get_int_hght(gz_int, npz, ak, bk, ps(is:ie,js:je), delp, ps_obs(is:ie,js:je), wt(:,:,:), .false., bd)
+      deallocate ( wt )
 
       allocate ( uu(isd:ied,jsd:jed,npz) )
       allocate ( vv(isd:ied,jsd:jed,npz) )
@@ -1397,13 +1406,13 @@ module fv_nwp_nudge_mod
       do k=1,npz
       do j=js,je
          do i=is,ie
-            u_dt(i,j,k) = u_dt(i,j,k) + (uu(i,j,k) - ua(i,j,k)) / dt 
-            v_dt(i,j,k) = v_dt(i,j,k) + (vv(i,j,k) - va(i,j,k)) / dt 
+            u_dt(i,j,k) = u_dt(i,j,k) + (uu(i,j,k) - ua(i,j,k)) / dt
+            v_dt(i,j,k) = v_dt(i,j,k) + (vv(i,j,k) - va(i,j,k)) / dt
         enddo
       enddo
       enddo
-      deallocate (uu ) 
-      deallocate (vv ) 
+      deallocate (uu )
+      deallocate (vv )
   endif
 
   allocate ( ut(is:ie,js:je,npz) )
@@ -1412,55 +1421,54 @@ module fv_nwp_nudge_mod
   if ( nudge_winds ) then
 
        call remap_uv(npz, ak,  bk, ps(is:ie,js:je), delp,  ut,     vt,   &
-                     km, ps_dat(is:ie,js:je,1),  u_dat(:,:,:,1), v_dat(:,:,:,1), ptop )
+                     km, ps_dat(is:ie,js:je,1),  u_dat(:,:,:,1), v_dat(:,:,:,1), ptop, bd )
 
        u_obs(:,:,:) = alpha*ut(:,:,:)
        v_obs(:,:,:) = alpha*vt(:,:,:)
 
        call remap_uv(npz, ak, bk, ps(is:ie,js:je), delp,   ut,      vt,   &
-                     km, ps_dat(is:ie,js:je,2),  u_dat(:,:,:,2), v_dat(:,:,:,2), ptop )
+                     km, ps_dat(is:ie,js:je,2),  u_dat(:,:,:,2), v_dat(:,:,:,2), ptop, bd )
 
        u_obs(:,:,:) = u_obs(:,:,:) + beta*ut(:,:,:)
        v_obs(:,:,:) = v_obs(:,:,:) + beta*vt(:,:,:)
   endif
 
        call remap_tq(npz, ak, bk, ps(is:ie,js:je), delp,  ut,  vt,  &
-                     km,  ps_dat(is:ie,js:je,1),  t_dat(:,:,:,1), q_dat(:,:,:,1), zvir, ptop)
+                     km,  ps_dat(is:ie,js:je,1),  t_dat(:,:,:,1), q_dat(:,:,:,1), zvir, ptop, bd)
 
        t_obs(:,:,:) = alpha*ut(:,:,:)
        q_obs(:,:,:) = alpha*vt(:,:,:)
 
        call remap_tq(npz, ak, bk, ps(is:ie,js:je), delp,  ut,  vt,  &
-                     km,  ps_dat(is:ie,js:je,2),  t_dat(:,:,:,2), q_dat(:,:,:,2), zvir, ptop)
+                     km,  ps_dat(is:ie,js:je,2),  t_dat(:,:,:,2), q_dat(:,:,:,2), zvir, ptop, bd)
 
        t_obs(:,:,:) = t_obs(:,:,:) + beta*ut(:,:,:)
        q_obs(:,:,:) = q_obs(:,:,:) + beta*vt(:,:,:)
 
-  deallocate ( ut ) 
-  deallocate ( vt ) 
+  deallocate ( ut )
+  deallocate ( vt )
+
+  if ( nudge_hght ) then
+       allocate ( wt(is:ie,js:je,km) )
+       wt(:,:,:) = alpha*t_dat(:,:,:,1) + beta*t_dat(:,:,:,2)
+       call get_int_hght(gz_int, npz, ak, bk, ps(is:ie,js:je), delp, ps_obs(is:ie,js:je), wt(:,:,:), .true., bd)
+       deallocate ( wt )
+  endif
 
  end subroutine get_obs
 
-<<<<<<< HEAD
-!>@brief The subroutine 'fv_nwp_nudge_init' initializes the nudging module.
-!>@details This module opens analysis files and computes remapping coefficients.
-=======
 
->>>>>>> rusty/master_test
- subroutine fv_nwp_nudge_init(time, axes, npz, zvir, ak, bk, ts, phis, gridstruct, ks, npx, neststruct, bd)
- character(len=17) :: mod_name = 'fv_nudge'
+ subroutine fv_ada_nudge_init(time, axes, npz, zvir, ak, bk, ts, phis, gridstruct, ks, npx, neststruct, bd, domain)
+ character(len=17) :: mod_name = 'fv_ada_nudge'
   type(time_type), intent(in):: time
   integer,         intent(in):: axes(4)
-<<<<<<< HEAD
-  integer,  intent(in):: npz           !< vertical dimension 
-=======
-  integer,  intent(in):: npz           ! vertical dimension 
->>>>>>> rusty/master_test
+  integer,  intent(in):: npz           ! vertical dimension
   real,     intent(in):: zvir
   type(fv_grid_bounds_type), intent(IN) :: bd
   real, intent(in), dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: phis
   real, intent(in), dimension(npz+1):: ak, bk
   real, intent(out), dimension(bd%is:bd%ie,bd%js:bd%je):: ts
+  type(domain2d), intent(in) :: domain
   type(fv_grid_type), target :: gridstruct
   integer,  intent(in) :: ks, npx
   type(fv_nest_type) :: neststruct
@@ -1470,27 +1478,32 @@ module fv_nwp_nudge_mod
   integer tsize(4)
   integer :: i, j, j1, f_unit, unit, io, ierr, nt, k
   integer :: ncid
+  integer :: year, month, day, hour, minute, second
 
-! ---> h1g, read NCEP analysis data list, 2012-10-22
-  integer            :: input_fname_unit
-  character(len=128) :: fname_tmp
-! <--- h1g, 2012-10-22
+  integer :: id_restart !< Currently not used for anything other than a return
+  !value.
+  character(len=256) :: restart_file_instance
 
   real, pointer, dimension(:,:,:) :: agrid
+
+  integer :: is,  ie,  js,  je
+  integer :: isd, ied, jsd, jed
+
+  integer :: stdout_unit
+
+  stdout_unit = stdout()
 
   is  = bd%is
   ie  = bd%ie
   js  = bd%js
   je  = bd%je
-  
   isd = bd%isd
   ied = bd%ied
   jsd = bd%jsd
   jed = bd%jed
 
-
    agrid => gridstruct%agrid
-  
+
    master = is_master()
    do_adiabatic_init = .false.
    deg2rad = pi/180.
@@ -1509,67 +1522,26 @@ module fv_nwp_nudge_mod
 
    track_file_name = "No_File_specified"
 
+#ifdef INTERNAL_FILE_NML
+       read(input_nml_file, nml = fv_ada_nudge_nml, iostat = io)
+       ierr = check_nml_error(io,'fv_ada_nudge_nml')
+#else
     if( file_exist( 'input.nml' ) ) then
        unit = open_namelist_file ()
        io = 1
        do while ( io .ne. 0 )
-          read( unit, nml = fv_nwp_nudge_nml, iostat = io, end = 10 )
-          ierr = check_nml_error(io,'fv_nwp_nudge_nml')
+          read( unit, nml = fv_ada_nudge_nml, iostat = io, end = 10 )
+          ierr = check_nml_error(io,'fv_ada_nudge_nml')
        end do
 10     call close_file ( unit )
     end if
-    call write_version_number ( 'FV_NUDGE_MOD', version )
+#endif
+    call write_version_number ( 'FV_ADA_NUDGE_MOD', version )
     if ( master ) then
          f_unit=stdlog()
-         write( f_unit, nml = fv_nwp_nudge_nml )
-         write(*,*) 'NWP nudging initialized.'
+         write( f_unit, nml = fv_ada_nudge_nml )
+         write(*,*) 'ADA nudging initialized.'
     endif
-! ---> h1g, specify the NCEP analysis data for nudging, 2012-10-22
-    if ( trim(input_fname_list) .ne. "" ) then
-      input_fname_unit = get_unit()
-      open( input_fname_unit, file = input_fname_list )
-       nt = 0
-       io = 0
-
-       do while ( io .eq. 0 )
-        read ( input_fname_unit, '(a)', iostat = io, end = 101 ) fname_tmp
-        if( trim(fname_tmp) .ne. "" ) then    ! escape any empty record  
-          if ( trim(fname_tmp) == trim(analysis_file_last) ) then
-            nt = nt + 1
-            file_names(nt) = 'INPUT/'//trim(fname_tmp)
-            if(master .and. nudge_debug) write(*,*) 'From NCEP file list, last file: ', nt, file_names(nt)
-            nt = 0
-            goto 101  ! read last analysis data and then close file
-          endif ! trim(fname_tmp) == trim(analysis_file_last) 
-
-          if ( trim(analysis_file_first) == "" ) then
-            nt = nt + 1
-            file_names(nt) = 'INPUT/'//trim(fname_tmp) 
-            if(master .and. nudge_debug) then
-              if( nt .eq. 1 ) then  
-               write(*,*) 'From NCEP file list, first file: ', nt, file_names(nt),trim(analysis_file_first) 
-              else
-               write(*,*) 'From NCEP file list: ', nt, file_names(nt) 
-              endif ! nt .eq. 1
-            endif ! master .and. nudge_debug
-          else
-            if ( trim(fname_tmp) == trim(analysis_file_first) .or. nt > 0 ) then
-              nt = nt + 1
-              file_names(nt) = 'INPUT/'//trim(fname_tmp)
-              if(master .and. nudge_debug) then
-                if( nt .eq. 1 ) then  
-                  write(*,*) 'From NCEP file list, first file: ', nt,  file_names(nt),trim(analysis_file_first) 
-                else
-                  write(*,*) 'From NCEP file list: ', nt, file_names(nt) 
-                endif !  nt .eq. 1
-              endif  ! master .and. nudge_debug
-            endif  ! trim(fname_tmp) == trim(analysis_file_first) .or. nt > 0 
-          endif  ! trim(analysis_file_first) == "" 
-        endif  ! trim(fname_tmp) .ne. "" 
-       end do !  io .eq. 0
-101   close( input_fname_unit )
-    endif
-! <--- h1g, 2012-10-22
 
     do nt=1,nfile_max
       if ( file_names(nt) == "No_File_specified" ) then
@@ -1616,7 +1588,7 @@ module fv_nwp_nudge_mod
     do j=1,jm
        lat(j) = lat(j) * deg2rad
     enddo
- 
+
     allocate ( ak0(km+1) )
     allocate ( bk0(km+1) )
 
@@ -1628,7 +1600,7 @@ module fv_nwp_nudge_mod
 
 ! Note: definition of NCEP hybrid is p(k) = a(k)*1.E5 + b(k)*ps
     ak0(:) = ak0(:) * 1.E5
-! Limiter to prevent NAN at top during remapping 
+! Limiter to prevent NAN at top during remapping
     if ( bk0(1) < 1.E-9 ) ak0(1) = max(1.e-9, ak0(1))
 
    if ( master ) then
@@ -1644,14 +1616,14 @@ module fv_nwp_nudge_mod
 !-----------------------------------------------------------
 ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
 !-----------------------------------------------------------
-    call remap_coef(agrid)
+    call remap_coef(bd, agrid)
 
 ! Find bounding latitudes:
     jbeg = jm-1;         jend = 2
     do j=js,je
        do i=is,ie
             j1 = jdc(i,j)
-          jbeg = min(jbeg, j1) 
+          jbeg = min(jbeg, j1)
           jend = max(jend, j1+1)
        enddo
     enddo
@@ -1670,24 +1642,197 @@ module fv_nwp_nudge_mod
     nfile = 1
     call get_ncep_analysis ( ps_dat(:,:,nt), u_dat(:,:,:,nt), v_dat(:,:,:,nt),     &
                             t_dat(:,:,:,nt), q_dat(:,:,:,nt), zvir,   &
-                            ts, nfile, file_names(nfile), bd )
+                            ts, nfile, file_names(nfile), bd, time=time )
+    if ( one_year_files ) then
+       call get_date(time, year, month, day, hour, minute, second)
+       last_year = year
+    end if
 
+#ifdef ENABLE_ADA
+
+    do j = 1, 361
+      alat(j) = -90 + (j-1)*0.5
+    end do
+
+    if (filt_halo0 >= 1) then
+       filt_halo = filt_halo0
+    else
+       filt_halo = 1
+    end if
+
+    allocate(weight(-filt_halo:filt_halo,-filt_halo:filt_halo,1:size(alat)))
+    weight(:,:,:) = 0.0
+
+    do j = 1, size(alat) ! loop for latitude
+
+    weight_sum = 0.0
+    do j_sm = -filt_halo, filt_halo
+    do i_sm = -filt_halo, filt_halo
+      if (abs(alat(j)) <= 35.0) then
+         weight(i_sm,j_sm,j) = exp(-(i_sm**2+j_sm**2)/(2.*filt_halo**2))
+      elseif (abs(alat(j)) < 45.0) then
+         weight(i_sm,j_sm,j) = exp(-(i_sm**2+j_sm**2)/(2.*(filt_halo*((45.-abs(alat(j)))/10.))**2))
+      else
+         if (abs(i_sm) == 0 .and. abs(j_sm) == 0) then
+            weight(i_sm,j_sm,j) = 1.0
+         else
+            weight(i_sm,j_sm,j) = 0.0
+         end if
+      end if
+      weight_sum = weight_sum + weight(i_sm,j_sm,j)
+    end do
+    end do
+    do j_sm = -filt_halo, filt_halo
+    do i_sm = -filt_halo, filt_halo
+      weight(i_sm,j_sm,j) = weight(i_sm,j_sm,j)/weight_sum
+    end do
+    end do
+
+    weight_sum = 0.0
+    do j_sm = -filt_halo, filt_halo
+    do i_sm = -filt_halo, filt_halo
+      weight_sum = weight_sum+weight(i_sm,j_sm,j)
+    end do
+    end do
+    if (abs(weight_sum-1.0) > 1.e-5) then
+      print*,'weight_sum=',weight_sum
+      call mpp_error(FATAL,'==> Error in weight_sum: is not 1.0')
+    end if
+
+    end do ! loop for latitude
+
+    call define_cube_mosaic ('ATM', filt_domain, atm_layout, halo=filt_halo)
+    call mpp_get_data_domain(filt_domain, isd_filt,ied_filt,jsd_filt,jed_filt)
+
+    allocate(Atm_var%u_a(isd:ied,jsd:jed,npz))
+    allocate(Atm_var%v_a(isd:ied,jsd:jed,npz))
+    allocate(Atm_var%t_a(isd:ied,jsd:jed,npz))
+    allocate(Atm_var%q_a(isd:ied,jsd:jed,npz),Atm_var%ps_a(isd:ied,jsd:jed))
+
+    allocate(Atm_var%u_adj(isd:ied,jsd:jed,npz))
+    allocate(Atm_var%v_adj(isd:ied,jsd:jed,npz))
+    allocate(Atm_var%t_adj(isd:ied,jsd:jed,npz))
+    allocate(Atm_var%q_adj(isd:ied,jsd:jed,npz),Atm_var%ps_adj(isd:ied,jsd:jed))
+
+    allocate(Atm_var%u(isd_filt:ied_filt,jsd_filt:jed_filt,npz))
+    allocate(Atm_var%v(isd_filt:ied_filt,jsd_filt:jed_filt,npz))
+    allocate(Atm_var%t(isd_filt:ied_filt,jsd_filt:jed_filt,npz))
+    allocate(Atm_var%q(isd_filt:ied_filt,jsd_filt:jed_filt,npz),Atm_var%ps(isd_filt:ied_filt,jsd_filt:jed_filt))
+    allocate(Atm_var%dp(isd_filt:ied_filt,jsd_filt:jed_filt,npz),Atm_var%phis(isd_filt:ied_filt,jsd_filt:jed_filt))
+
+    Atm_var%u_a(:,:,:) = 0.0
+    Atm_var%v_a(:,:,:) = 0.0
+    Atm_var%t_a(:,:,:) = 0.0
+    Atm_var%q_a(:,:,:) = 0.0
+    Atm_var%ps_a(:,:) = 0.0
+    Atm_var%u_adj(:,:,:) = 0.0
+    Atm_var%v_adj(:,:,:) = 0.0
+    Atm_var%t_adj(:,:,:) = 0.0
+    Atm_var%q_adj(:,:,:) = 0.0
+    Atm_var%ps_adj(:,:) = 0.0
+
+    Atm_var%u(:,:,:) = 0.0
+    Atm_var%v(:,:,:) = 0.0
+    Atm_var%t(:,:,:) = 0.0
+    Atm_var%q(:,:,:) = 0.0
+    Atm_var%dp(:,:,:) = 0.0
+    Atm_var%ps(:,:) = 0.0
+    Atm_var%phis(:,:) = 0.0
+
+    call init_fv_ada(time, agrid)
+
+    id_u_ncep = register_diag_field ( mod_name, 'u_ncep', axes(1:3), time, &
+               'ncep ucomp', 'm/s', missing_value=missing_value )
+    id_v_ncep = register_diag_field ( mod_name, 'v_ncep', axes(1:3), time, &
+               'ncep vcomp', 'm/s', missing_value=missing_value )
+    id_t_ncep = register_diag_field ( mod_name, 't_ncep', axes(1:3), time, &
+               'ncep temp', 'DEG K', missing_value=missing_value )
+    id_q_ncep = register_diag_field ( mod_name, 'q_ncep', axes(1:3), time, &
+               'ncep moist', 'g/kg', missing_value=missing_value )
+    id_ps_ncep = register_diag_field ( mod_name, 'ps_ncep', axes(1:2), time, &
+               'ncep ps', 'Pa', missing_value=missing_value )
+!    id_u_damb = register_diag_field ( mod_name, 'u_damb', axes(1:3), time, &
+!               'damb ucomp', 'm/s', missing_value=missing_value )
+!    id_v_damb = register_diag_field ( mod_name, 'v_damb', axes(1:3), time, &
+!               'damb vcomp', 'm/s', missing_value=missing_value )
+!    id_t_damb = register_diag_field ( mod_name, 't_damb', axes(1:3), time, &
+!               'damb temp', 'DEG K', missing_value=missing_value )
+!    id_q_damb = register_diag_field ( mod_name, 'q_damb', axes(1:3), time, &
+!               'damb moist', 'g/kg', missing_value=missing_value )
+!    id_ps_damb = register_diag_field ( mod_name, 'ps_damb', axes(1:2), time, &
+!               'damb ps', 'Pa', missing_value=missing_value )
+    id_u_adj = register_diag_field ( mod_name, 'u_adj', axes(1:3), time, &
+               'ada u increments', 'm/s', missing_value=missing_value )
+    id_v_adj = register_diag_field ( mod_name, 'v_adj', axes(1:3), time, &
+               'ada v increments', 'm/s', missing_value=missing_value )
+    id_t_adj = register_diag_field ( mod_name, 't_adj', axes(1:3), time, &
+               'ada t increments', 'DEG K', missing_value=missing_value )
+    id_q_adj = register_diag_field ( mod_name, 'q_adj', axes(1:3), time, &
+               'ada q increments', 'g/kg', missing_value=missing_value )
+    id_ps_adj = register_diag_field ( mod_name, 'ps_adj', axes(1:2), time, &
+               'ada ps increments', 'Pa', missing_value=missing_value )
+    id_u_a = register_diag_field ( mod_name, 'u_a', axes(1:3), time, &
+               'pert ucomp', 'm/s', missing_value=missing_value )
+    id_v_a = register_diag_field ( mod_name, 'v_a', axes(1:3), time, &
+               'pert vcomp', 'm/s', missing_value=missing_value )
+    id_t_a = register_diag_field ( mod_name, 't_a', axes(1:3), time, &
+               'pert temp', 'DEG K', missing_value=missing_value )
+    id_q_a = register_diag_field ( mod_name, 'q_a', axes(1:3), time, &
+               'pert moist', 'g/kg', missing_value=missing_value )
+    id_ps_a = register_diag_field ( mod_name, 'ps_a', axes(1:2), time, &
+               'pert ps', 'Pa', missing_value=missing_value )
+    id_u_da = register_diag_field ( mod_name, 'u_da', axes(1:3), time, &
+               'da ucomp', 'm/s', missing_value=missing_value )
+    id_v_da = register_diag_field ( mod_name, 'v_da', axes(1:3), time, &
+               'da vcomp', 'm/s', missing_value=missing_value )
+    id_t_da = register_diag_field ( mod_name, 't_da', axes(1:3), time, &
+               'da temp', 'DEG K', missing_value=missing_value )
+    id_q_da = register_diag_field ( mod_name, 'q_da', axes(1:3), time, &
+               'da moist', 'g/kg', missing_value=missing_value )
+    id_ps_da = register_diag_field ( mod_name, 'ps_da', axes(1:2), time, &
+               'da ps', 'Pa', missing_value=missing_value )
+
+! snz add the following lines for recording the return values from the previous assim run
+    call get_mosaic_tile_file(restart_file, restart_file_instance,&
+         & .FALSE., domain)
+
+    id_restart = register_restart_field(ada_driver_restart, restart_file_instance, &
+         & "u_adj", Atm_var%u_adj(:,:,:), domain=domain)
+    id_restart = register_restart_field(ada_driver_restart, restart_file_instance, &
+         & "v_adj", Atm_var%v_adj(:,:,:), domain=domain)
+    id_restart = register_restart_field(ada_driver_restart, restart_file_instance, &
+         & "t_adj", Atm_var%t_adj(:,:,:), domain=domain)
+    id_restart = register_restart_field(ada_driver_restart, restart_file_instance, &
+         & "q_adj", Atm_var%q_adj(:,:,:), domain=domain)
+    id_restart = register_restart_field(ada_driver_restart, restart_file_instance, &
+         & "ps_adj", Atm_var%ps_adj(:,:), domain=domain)
+
+    if ( file_exist('INPUT/'//trim(restart_file_instance), domain=domain) ) then
+       if ( mpp_pe() .eq. mpp_root_pe() ) then
+          write (stdout_unit,*) 'Reading ada restart information from ', 'INPUT/'//trim(restart_file_instance)
+       end if
+       call restore_state(ada_driver_restart, DIRECTORY='INPUT')
+    end if
+
+#endif ! snz for ENABLE_ADA
 
     module_is_initialized = .true.
-    
+
     nullify(agrid)
 
- end subroutine fv_nwp_nudge_init
+ end subroutine fv_ada_nudge_init
 
 
- subroutine get_ncep_analysis ( ps, u, v, t, q, zvir, ts, nfile, fname, bd )
+ subroutine get_ncep_analysis ( ps, u, v, t, q, zvir, ts, nfile, fname, bd, time )
   real,     intent(in):: zvir
   character(len=128), intent(in):: fname
   integer,  intent(inout):: nfile
+  type(time_type), intent(in), optional :: time
 !
   type(fv_grid_bounds_type), intent(IN) :: bd
-  real, intent(out), dimension(is:ie,js:je):: ts, ps
-  real(KIND=4), intent(out), dimension(is:ie,js:je,km):: u, v, t, q
+  real, intent(out), dimension(bd%is:bd%ie,bd%js:bd%je):: ts
+  real, intent(out), dimension(bd%is:bd%ie,bd%js:bd%je):: ps
+  real(KIND=4), intent(out), dimension(bd%is:bd%ie,bd%js:bd%je,km):: u, v, t, q
 ! local:
   real(kind=4), allocatable:: wk0(:,:), wk1(:,:), wk2(:,:), wk3(:,:,:)
   real tmean
@@ -1696,46 +1841,52 @@ module fv_nwp_nudge_mod
   logical found
   logical:: read_ts = .true.
   logical:: land_ts = .false.
-
-  integer:: status, var3id    ! h1g, 2016-08-10
-#include <netcdf.inc>
-
+  type(time_type):: time1 ! Jan 1 of current year
+  integer :: year, month, day, hour, minute, second
+  integer :: days, seconds, days1, seconds1, time_slice
+  integer, save :: year_on_first_read = 0 !< year on first read of file during
+                                          !! model run
+  integer :: is,  ie,  js,  je
 
   if( .not. file_exist(fname) ) then
-<<<<<<< HEAD
      call mpp_error(FATAL,'==> Error from get_ncep_analysis: file not found')
-=======
-     call mpp_error(FATAL,'==> Error from get_ncep_analysis: file not found: '//fname)
->>>>>>> rusty/master_test
   else
      call open_ncfile( fname, ncid )        ! open the file
-     if(master) write(*,*) 'Reading NCEP anlysis file:', fname 
+     if(master) write(*,*) 'Reading NCEP anlysis file:', fname
   endif
-  
+
+  is  = bd%is
+  ie  = bd%ie
+  js  = bd%js
+  je  = bd%je
+
+  !!::sdu:: Ability to read data in from 1 year files
+  !!::sdu:: need the current time (passed in from calling function?
+  if ( one_year_files .and. present(Time) ) then
+     call get_time(time, seconds, days)
+     call get_date(time, year, month, day, hour, minute, second)
+     ! Year file has first day of following year
+     ! year_on_first_read is the year on the first read of the model run
+     if ( year_on_first_read == 0 ) then
+        year_on_first_read = year
+     end if
+     time1=set_date(year_on_first_read, 1, 1, 0, 0, 0)
+     call get_time(time1, seconds1, days1)
+     time_slice = (days - days1)*int(seconds_per_day/time_interval) + int(seconds/time_interval) + 1
+  else
+     time_slice = 1.  !! Assuming one slice per file, as done originally
+  end if
+
   if ( read_ts ) then       ! read skin temperature; could be used for SST
        allocate ( wk1(im,jm) )
 
-       call get_var3_r4( ncid, 'TS', 1,im, 1,jm, 1,1, wk1 )
+       call get_var2_r4( ncid, 'TS', 1,im, 1,jm, wk1, time_slice=time_slice )
 !      if ( master ) write(*,*) 'Done reading NCEP TS data'
 
       if ( .not. land_ts ) then
            allocate ( wk0(im,jm) )
 ! Read NCEP ORO (1; land; 0: ocean; 2: sea_ice)
-      
-! ---> h1g, read either 'ORO' or 'LAND', 2016-08-10
-        status = nf_inq_varid (ncid,  'ORO', var3id)
-        if (status .eq. NF_NOERR)  then
-          call get_var3_r4( ncid, 'ORO', 1,im, 1,jm, 1,1, wk0 )
-
-        else !there is no 'ORO'
-          status = nf_inq_varid (ncid,  'LAND', var3id)
-          if (status .eq. NF_NOERR)  then
-            call get_var3_r4( ncid, 'LAND', 1,im, 1,jm, 1,1, wk0 )         
-          else
-            call mpp_error(FATAL,'Neither ORO nor LAND exists in re-analysis data')  
-          endif
-        endif 
-! <--- h1g, 2016-08-10 
+           call get_var2_r4( ncid, 'ORO', 1,im, 1,jm, wk0, time_slice=time_slice )
 
            do j=1,jm
               tmean = 0.
@@ -1747,7 +1898,7 @@ module fv_nwp_nudge_mod
                  endif
               enddo
 !-------------------------------------------------------
-! Replace TS over interior land with zonal mean SST/Ice 
+! Replace TS over interior land with zonal mean SST/Ice
 !-------------------------------------------------------
               if ( npt /= 0 ) then
                    tmean= tmean / real(npt)
@@ -1771,7 +1922,7 @@ module fv_nwp_nudge_mod
                    enddo
               endif
            enddo
-           deallocate ( wk0 ) 
+           deallocate ( wk0 )
       endif   ! land_ts
 
       do j=js,je
@@ -1791,7 +1942,7 @@ module fv_nwp_nudge_mod
       if(master) call pmaxmin( 'SST_ncep', sst_ncep, i_sst, j_sst, 1.)
 !     if(nfile/=1 .and. master) call pmaxmin( 'SST_anom', sst_anom, i_sst, j_sst, 1.)
 #endif
-       deallocate ( wk1 ) 
+       deallocate ( wk1 )
        if (master) write(*,*) 'Done processing NCEP SST'
 
   endif     ! read_ts
@@ -1801,7 +1952,7 @@ module fv_nwp_nudge_mod
 !----------------------------------
 
      allocate ( wk2(im,jbeg:jend) )
-     call get_var3_r4( ncid, 'PS', 1,im, jbeg,jend, 1,1, wk2 )
+     call get_var2_r4( ncid, 'PS', 1,im, jbeg,jend, wk2, time_slice=time_slice )
 
      do j=js,je
         do i=is,ie
@@ -1813,23 +1964,7 @@ module fv_nwp_nudge_mod
         enddo
      enddo
 
-
-! ---> h1g, read either 'PHIS' or 'PHI', 2016-08-10
-     status = nf_inq_varid (ncid,  'PHIS', var3id)
-     if (status .eq. NF_NOERR)  then
-       call get_var3_r4( ncid, 'PHIS', 1,im, jbeg,jend, 1,1, wk2 )
-
-     else !there is no 'PHIS'
-       status = nf_inq_varid (ncid,  'PHI', var3id)
-       if (status .eq. NF_NOERR)  then
-         call get_var3_r4( ncid, 'PHI', 1,im, jbeg,jend, 1,1, wk2 )
-         wk2 = wk2 * grav  ! convert unit from geopotential meter (m) to geopotential height (m2/s2)
-       else
-         call mpp_error(FATAL,'Neither PHIS nor PHI exists in re-analysis data')  
-       endif
-     endif 
-! <--- h1g, 2016-08-10 
-
+     call get_var2_r4( ncid, 'PHIS', 1,im, jbeg,jend, wk2, time_slice=time_slice )
 
      do j=js,je
         do i=is,ie
@@ -1849,7 +1984,7 @@ module fv_nwp_nudge_mod
 ! Winds:
    if ( nudge_winds ) then
 
-      call get_var3_r4( ncid, 'U', 1,im, jbeg,jend, 1,km, wk3 )
+      call get_var3_r4( ncid, 'U', 1,im, jbeg,jend, 1,km, wk3, time_slice=time_slice )
 
       do k=1,km
       do j=js,je
@@ -1863,7 +1998,7 @@ module fv_nwp_nudge_mod
       enddo
       enddo
 
-      call get_var3_r4( ncid, 'V', 1,im, jbeg,jend, 1,km, wk3 )
+      call get_var3_r4( ncid, 'V', 1,im, jbeg,jend, 1,km, wk3, time_slice=time_slice )
 
       do k=1,km
       do j=js,je
@@ -1879,8 +2014,10 @@ module fv_nwp_nudge_mod
 
    endif
 
+!  if ( nudge_virt .or. nudge_q .or.  nudge_hght ) then
+
 ! Read in tracers: only sphum at this point
-      call get_var3_r4( ncid, 'Q', 1,im, jbeg,jend, 1,km , wk3 )
+      call get_var3_r4( ncid, 'Q', 1,im, jbeg,jend, 1,km , wk3, time_slice=time_slice )
 
       do k=1,km
       do j=js,je
@@ -1894,7 +2031,7 @@ module fv_nwp_nudge_mod
       enddo
       enddo
 
-      call get_var3_r4( ncid, 'T', 1,im, jbeg,jend, 1,km , wk3 )
+      call get_var3_r4( ncid, 'T', 1,im, jbeg,jend, 1,km , wk3, time_slice=time_slice )
       call close_ncfile ( ncid )
 
       do k=1,km
@@ -1924,22 +2061,32 @@ module fv_nwp_nudge_mod
 
 !  endif
 
-   deallocate ( wk3 ) 
+   deallocate ( wk3 )
 
 ! nfile = nfile + 1
 
  end subroutine get_ncep_analysis
 
 
- subroutine remap_coef(agrid)
 
-  real, intent(IN), dimension(isd:ied,jsd:jed,2) :: agrid
+ subroutine remap_coef(bd, agrid)
+
+  type(fv_grid_bounds_type), intent(IN) :: bd
+  real, intent(IN), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,2) :: agrid
 
 ! local:
   real :: rdlon(im)
   real :: rdlat(jm)
   real:: a1, b1
   integer i,j, i1, i2, jc, i0, j0
+
+  integer :: is,  ie,  js,  je
+
+  is  = bd%is
+  ie  = bd%ie
+  js  = bd%js
+  je  = bd%je
+
 
   do i=1,im-1
      rdlon(i) = 1. / (lon(i+1) - lon(i))
@@ -2031,8 +2178,8 @@ module fv_nwp_nudge_mod
 ! lon: 0.5, 1.5, ..., 359.5
 ! lat: -89.5, -88.5, ... , 88.5, 89.5
 
-  delx = 360./real(i_sst) 
-  dely = 180./real(j_sst) 
+  delx = 360./real(i_sst)
+  dely = 180./real(j_sst)
 
   jt = 1
   do 5000 j=1,j_sst
@@ -2093,26 +2240,50 @@ module fv_nwp_nudge_mod
  end subroutine ncep2fms
 #endif
 
- subroutine get_int_hght(npz, ak, bk, ps, delp, ps0, tv)
+
+ subroutine get_int_hght(h_int, npz, ak, bk, ps, delp, ps0, tv, get_hght, bd)
   integer, intent(in):: npz
   real,    intent(in):: ak(npz+1), bk(npz+1)
-  real,    intent(in), dimension(is:ie,js:je):: ps, ps0
-  real, intent(in), dimension(isd:ied,jsd:jed,npz):: delp
-  real(KIND=4),  intent(in), dimension(is:ie,js:je,km):: tv    ! virtual temperature
+  type(fv_grid_bounds_type), intent(IN) :: bd
+  real,    intent(in), dimension(bd%is:bd%ie,bd%js:bd%je):: ps, ps0
+  real, intent(in), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: delp
+  real(KIND=4),  intent(in), dimension(bd%is:bd%ie,bd%js:bd%je,km):: tv
+  real,   intent(out), dimension(bd%is:bd%ie,bd%js:bd%je):: h_int  ! g*height
+  logical, intent(in):: get_hght
 ! local:
-  real, dimension(is:ie,km+1):: pn0
+  real, dimension(bd%is:bd%ie,km+1):: pn0
+  real:: logp(bd%is:bd%ie)
   integer i,j,k
 
-!$OMP parallel do default(none) shared(is,ie,js,je,km,ak0,bk0,ps0,gz3,gz0,tv) &
-!$OMP                          private(pn0)
+  integer :: is,  ie,  js,  je
+
+  is  = bd%is
+  ie  = bd%ie
+  js  = bd%js
+  je  = bd%je
+
+  h_int(:,:) = 1.E25
+
   do 5000 j=js,je
 
      do k=1,km+1
         do i=is,ie
            pn0(i,k) = log( ak0(k) + bk0(k)*ps0(i,j) )
         enddo
-     enddo 
+     enddo
+!------
+! Model
+!------
      do i=is,ie
+        logp(i) = ak(1)
+     enddo
+     do k=1,k_trop
+       do i=is,ie
+          logp(i) = logp(i) + delp(i,j,k)
+       enddo
+     enddo
+     do i=is,ie
+        logp(i) = log( logp(i) )
         gz3(i,j,km+1) = gz0(i,j)   ! Data Surface geopotential
      enddo
 
@@ -2122,6 +2293,19 @@ module fv_nwp_nudge_mod
         enddo
      enddo
 
+! Linear in log-p interpolation
+     if ( get_hght ) then
+     do i=is,ie
+        do k=km,1,-1
+           if ( logp(i)>=pn0(i,k) .and. logp(i)<=pn0(i,k+1) ) then
+                h_int(i,j) = gz3(i,j,k+1) + (gz3(i,j,k)-gz3(i,j,k+1))*(pn0(i,k+1)-logp(i))/(pn0(i,k+1)-pn0(i,k))
+               goto 400
+          endif
+       enddo
+400    continue
+    enddo
+    endif
+
 5000 continue
 
  end subroutine get_int_hght
@@ -2129,24 +2313,35 @@ module fv_nwp_nudge_mod
 
 
  subroutine remap_tq( npz, ak,  bk,  ps, delp,  t,  q,  &
-                      kmd, ps0, ta, qa, zvir, ptop)
+                      kmd, ps0, ta, qa, zvir, ptop, bd)
   integer, intent(in):: npz, kmd
   real,    intent(in):: zvir, ptop
   real,    intent(in):: ak(npz+1), bk(npz+1)
-  real,    intent(in),    dimension(is:ie,js:je):: ps0
-  real,    intent(inout), dimension(is:ie,js:je):: ps
-  real, intent(in), dimension(isd:ied,jsd:jed,npz):: delp
-  real(KIND=4),    intent(in), dimension(is:ie,js:je,kmd):: ta, qa
-  real(KIND=4),    intent(out), dimension(is:ie,js:je,npz):: t
+  type(fv_grid_bounds_type), intent(IN) :: bd
+  real,    intent(in), dimension(bd%is:bd%ie,bd%js:bd%je):: ps0
+  real,    intent(inout), dimension(bd%is:bd%ie,bd%js:bd%je):: ps
+  real, intent(in), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: delp
+  real(KIND=4),    intent(in), dimension(bd%is:bd%ie,bd%js:bd%je,kmd):: ta
+  real(KIND=4),    intent(in), dimension(bd%is:bd%ie,bd%js:bd%je,kmd):: qa
+  real(KIND=4),    intent(out), dimension(bd%is:bd%ie,bd%js:bd%je,npz):: t
 ! on  input "ta" is virtual temperature
 ! on output "t" is virtual temperature
-  real(KIND=4),    intent(out), dimension(is:ie,js:je,npz):: q
+  real(KIND=4),    intent(out), dimension(bd%is:bd%ie,bd%js:bd%je,npz):: q
 ! local:
-  real, dimension(is:ie,kmd):: tp, qp
-  real, dimension(is:ie,kmd+1):: pe0, pn0
-  real, dimension(is:ie,npz):: qn1
-  real, dimension(is:ie,npz+1):: pe1, pn1
+  real, dimension(bd%is:bd%ie,kmd):: tp, qp
+  real, dimension(bd%is:bd%ie,kmd+1):: pe0, pn0
+  real, dimension(bd%is:bd%ie,npz):: qn1
+  real, dimension(bd%is:bd%ie,npz+1):: pe1, pn1
   integer i,j,k
+
+  integer :: is,  ie,  js,  je
+
+  is  = bd%is
+  ie  = bd%ie
+  js  = bd%js
+  je  = bd%je
+
+
 
   do 5000 j=js,je
 
@@ -2155,7 +2350,7 @@ module fv_nwp_nudge_mod
            pe0(i,k) = ak0(k) + bk0(k)*ps0(i,j)
            pn0(i,k) = log(pe0(i,k))
        enddo
-     enddo 
+     enddo
 !------
 ! Model
 !------
@@ -2188,6 +2383,8 @@ module fv_nwp_nudge_mod
               q(i,j,k) = qn1(i,k)
            enddo
         enddo
+   else
+      q(:,:,:) = 0.0
    endif
 
    do k=1,kmd
@@ -2208,24 +2405,33 @@ module fv_nwp_nudge_mod
  end subroutine remap_tq
 
 
- subroutine remap_uv(npz, ak, bk, ps, delp, u, v, kmd, ps0, u0, v0, ptop)
+ subroutine remap_uv(npz, ak, bk, ps, delp, u, v, kmd, ps0, u0, v0, ptop, bd)
   integer, intent(in):: npz
   real,    intent(IN):: ptop
   real,    intent(in):: ak(npz+1), bk(npz+1)
-  real,    intent(inout):: ps(is:ie,js:je)
-  real, intent(in), dimension(isd:ied,jsd:jed,npz):: delp
-  real(KIND=4),    intent(inout), dimension(is:ie,js:je,npz):: u, v
+  type(fv_grid_bounds_type), intent(IN) :: bd
+  real,    intent(inout):: ps(bd%is:bd%ie,bd%js:bd%je)
+  real, intent(in), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: delp
+  real(KIND=4),    intent(inout), dimension(bd%is:bd%ie,bd%js:bd%je,npz):: u, v
 !
   integer, intent(in):: kmd
-  real,    intent(in):: ps0(is:ie,js:je)
-  real(KIND=4),    intent(in), dimension(is:ie,js:je,kmd):: u0, v0
+  real,    intent(in):: ps0(bd%is:bd%ie,bd%js:bd%je)
+  real(KIND=4),    intent(in), dimension(bd%is:bd%ie,bd%js:bd%je,kmd):: u0, v0
 !
 ! local:
-  real, dimension(is:ie,kmd+1):: pe0
-  real, dimension(is:ie,npz+1):: pe1
-  real, dimension(is:ie,kmd):: qt
-  real, dimension(is:ie,npz):: qn1
+  real, dimension(bd%is:bd%ie,kmd+1):: pe0
+  real, dimension(bd%is:bd%ie,npz+1):: pe1
+  real, dimension(bd%is:bd%ie,kmd):: qt
+  real, dimension(bd%is:bd%ie,npz):: qn1
   integer i,j,k
+
+  integer :: is,  ie,  js,  je
+
+  is  = bd%is
+  ie  = bd%ie
+  js  = bd%js
+  je  = bd%je
+
 
   do 5000 j=js,je
 !------
@@ -2282,15 +2488,10 @@ module fv_nwp_nudge_mod
 
  end subroutine remap_uv
 
-<<<<<<< HEAD
-!>@brief The subroutine 'fv_nwp_nudge_end' terminates the nudging module.
- subroutine fv_nwp_nudge_end
-=======
 
 
- subroutine fv_nwp_nudge_end
+ subroutine fv_ada_nudge_end
 
->>>>>>> rusty/master_test
     deallocate ( ps_dat )
     deallocate (  t_dat )
     deallocate (  q_dat )
@@ -2307,37 +2508,47 @@ module fv_nwp_nudge_mod
 
     deallocate ( ak0 )
     deallocate ( bk0 )
-    deallocate ( lat ) 
-    deallocate ( lon ) 
+    deallocate ( lat )
+    deallocate ( lon )
 
-    deallocate ( gz3 ) 
-    deallocate ( gz0 ) 
+    deallocate ( gz3 )
+    deallocate ( gz0 )
 
- end subroutine fv_nwp_nudge_end
+#ifdef ENABLE_ADA ! snz
+
+    call save_restart(ada_driver_restart)
+
+    deallocate ( Atm_var%u, Atm_var%v, Atm_var%t, Atm_var%u_adj, Atm_var%v_adj, Atm_var%t_adj)
+    deallocate ( Atm_var%q, Atm_var%ps, Atm_var%q_adj, Atm_var%ps_adj)
+
+    call ada_end()
+#endif ! snz
+
+ end subroutine fv_ada_nudge_end
 
 
- subroutine get_tc_mask(time, mask, agrid)
-<<<<<<< HEAD
-      real :: slp_mask = 100900.    !< crtical SLP to apply mask
-=======
+ subroutine get_tc_mask(time, mask, bd, agrid)
       real :: slp_mask = 100900.    ! crtical SLP to apply mask
->>>>>>> rusty/master_test
 ! Input
+      type(fv_grid_bounds_type), intent(IN) :: bd
       type(time_type), intent(in):: time
-      real, intent(inout):: mask(is:ie,js:je)
-      real(kind=R_GRID), intent(IN), dimension(isd:ied,jsd:jed,2) :: agrid
+      real, intent(inout):: mask(bd%is:bd%ie,bd%js:bd%je)
+      real(kind=R_GRID), intent(IN), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,2) :: agrid
 ! local
-      real(kind=R_GRID):: pos(2)
-<<<<<<< HEAD
-      real:: slp_o         !< sea-level pressure (Pa)
-      real:: w10_o         !< 10-m wind
-=======
+      real(kind=R_GRID) :: pos(2)
       real:: slp_o         ! sea-level pressure (Pa)
       real:: w10_o         ! 10-m wind
->>>>>>> rusty/master_test
       real:: r_vor, p_vor
       real:: dist
       integer n, i, j
+
+      integer :: is,  ie,  js,  je
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+
 
     do 5000 n=1,nstorms      ! loop through all storms
 !----------------------------------------
@@ -2355,7 +2566,7 @@ module fv_nwp_nudge_mod
       do j=js, je
          do i=is, ie
             dist = great_circle_dist(pos, agrid(i,j,1:2), radius)
-            if( dist < 6.*r_vor  ) then 
+            if( dist < 6.*r_vor  ) then
                 mask(i,j) = mask(i,j) * ( 1. - mask_fac*exp(-(0.5*dist/r_vor)**2)*min(1.,(slp_env-slp_o)/10.E2) )
             endif
          enddo             ! i-loop
@@ -2365,21 +2576,8 @@ module fv_nwp_nudge_mod
 
  end subroutine get_tc_mask
 
-<<<<<<< HEAD
-!>@brief The subroutine 'breed_slp_inline' performs vortex breeding by nudging sea level pressure toward
-!! single point observations
-!>@details This is a tropical cyclone 'bogusing' routine that currently only works
-!! for hydrostatic dynamics.
-!>@note Note: conserve water mass, geopotential, and momentum at the expense of dry air mass
- subroutine breed_slp_inline(nstep, dt, npz, ak, bk, phis, pe, pk, peln, pkz, delp, u, v, pt, q, nwat,   &
-                             zvir, gridstruct, ks, domain_local, bd, hydrostatic)
-! Input
-      integer, intent(in):: nstep, npz, nwat, ks
-      real, intent(in):: dt       !< (small) time step in seconds
-=======
 
- subroutine breed_slp_inline(nstep, dt, npz, ak, bk, phis, pe, pk, peln, pkz, delp, u, v, pt, q, nwat,   &
-                             zvir, gridstruct, ks, domain_local, bd, hydrostatic)
+ subroutine breed_slp_inline_ada(nstep, dt, npz, ak, bk, phis, pe, pk, peln, pkz, delp, u, v, pt, q, nwat, zvir, gridstruct, ks, domain_local, bd)
 !------------------------------------------------------------------------------------------
 ! Purpose:  Vortex-breeding by nudging sea-level-pressure towards single point observations
 ! Note: conserve water mass, geopotential, and momentum at the expense of dry air mass
@@ -2387,38 +2585,29 @@ module fv_nwp_nudge_mod
 ! Input
       integer, intent(in):: nstep, npz, nwat, ks
       real, intent(in):: dt       ! (small) time step in seconds
->>>>>>> rusty/master_test
       real, intent(in):: zvir
       real, intent(in), dimension(npz+1):: ak, bk
-      logical, intent(in):: hydrostatic
       type(fv_grid_bounds_type), intent(IN) :: bd
-      real, intent(in):: phis(isd:ied,jsd:jed)
+      real, intent(in):: phis(bd%isd:bd%ied,bd%jsd:bd%jed)
       type(domain2d), intent(INOUT) :: domain_local
 ! Input/Output
-      real, intent(inout):: u(isd:ied,jsd:jed+1,npz)
-      real, intent(inout):: v(isd:ied+1,jsd:jed,npz)
-      real, intent(inout), dimension(isd:ied,jsd:jed,npz):: delp, pt
-      real, intent(inout)::q(isd:ied,jsd:jed,npz,*)
+      real, intent(inout):: u(bd%isd:bd%ied,bd%jsd:bd%jed+1,npz)
+      real, intent(inout):: v(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz)
+      real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: delp, pt
+      real, intent(inout)::q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,*)
 
-<<<<<<< HEAD
-      real, intent(inout):: pk(is:ie,js:je, npz+1)          !< pe**kappa
-      real, intent(inout):: pe(is-1:ie+1, npz+1,js-1:je+1)  !< edge pressure (pascal)
-      real, intent(inout):: pkz(is:ie,js:je,npz) 
-      real, intent(out):: peln(is:ie,npz+1,js:je)           !< ln(pe)
-=======
-      real, intent(inout):: pk(is:ie,js:je, npz+1)          ! pe**kappa
-      real, intent(inout):: pe(is-1:ie+1, npz+1,js-1:je+1)  ! edge pressure (pascal)
-      real, intent(inout):: pkz(is:ie,js:je,npz) 
-      real, intent(out):: peln(is:ie,npz+1,js:je)           ! ln(pe)
->>>>>>> rusty/master_test
+      real, intent(inout):: pk(bd%is:bd%ie,bd%js:bd%je, npz+1)          ! pe**kappa
+      real, intent(inout):: pe(bd%is-1:bd%ie+1, npz+1,bd%js-1:bd%je+1)  ! edge pressure (pascal)
+      real, intent(inout):: pkz(bd%is:bd%ie,bd%js:bd%je,npz)
+      real, intent(out):: peln(bd%is:bd%ie,npz+1,bd%js:bd%je)           ! ln(pe)
 
       type(fv_grid_type), target :: gridstruct
 ! local
       type(time_type):: time
-      real:: ps(is:ie,js:je)
-      real:: dist(is:ie,js:je)
-      real::   tm(is:ie,js:je)
-      real::  slp(is:ie,js:je)
+      real:: ps(bd%is:bd%ie,bd%js:bd%je)
+      real:: dist(bd%is:bd%ie,bd%js:bd%je)
+      real::   tm(bd%is:bd%ie,bd%js:bd%je)
+      real::  slp(bd%is:bd%ie,bd%js:bd%je)
       real(kind=R_GRID):: pos(2)
       real:: slp_o         ! sea-level pressure (Pa)
       real:: w10_o, p_env
@@ -2430,16 +2619,17 @@ module fv_nwp_nudge_mod
       integer year, month, day, hour, minute, second
       integer n, i, j, k, iq, k0
 
-      real, pointer :: area(:,:)
       real(kind=R_GRID), pointer :: agrid(:,:,:)
-<<<<<<< HEAD
-#ifdef MULTI_GASES
-      real :: kappax(is:ie,js:je,npz)
-#endif
-=======
->>>>>>> rusty/master_test
+      real, pointer :: area(:,:)
 
-      if ( forecast_mode ) return
+      integer :: is,  ie,  js,  je
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+
+
 
       agrid => gridstruct%agrid_64
       area  => gridstruct%area
@@ -2455,7 +2645,7 @@ module fv_nwp_nudge_mod
 ! Advance (local) time
     call get_date(fv_time, year, month, day, hour, minute, second)
     if ( year /= year_track_data ) then
-        if (master) write(*,*) 'Warning: The year in storm track data is not the same as model year' 
+        if (master) write(*,*) 'Warning: The year in storm track data is not the same as model year'
         return
      endif
     time = fv_time   ! fv_time is the time at past time step (set in fv_diag)
@@ -2470,7 +2660,7 @@ module fv_nwp_nudge_mod
          return        !  time to return to forecast mode
     endif
 
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,ps,ak,delp,tm,pkz,pt)
+!$omp parallel do default(shared)
     do j=js,je
 ! ---- Compute ps
        do i=is,ie
@@ -2483,13 +2673,13 @@ module fv_nwp_nudge_mod
        enddo
 ! Compute lowest layer air temperature:
        do i=is,ie
+!         tm(i,j) = pkz(i,j,npz)*pt(i,j,npz)/(cp_air*(1.+zvir*q(i,j,npz,1)))
           tm(i,j) = pkz(i,j,npz)*pt(i,j,npz) / cp_air        ! virtual temp
        enddo
     enddo
 !   call prt_maxmin('TM', tm, is, ie, js, je, 0, 1, 1.)
 
-!$OMP parallel do default(none) shared(k_breed,npz,conserve_mom,is,ie,js,je,u,v,delp, &
-!$OMP                                  conserve_hgt,hydrostatic,pt,pkz,q,nwat)
+!$omp parallel do default(shared)
     do k=k_breed+1,npz
 
        if ( conserve_mom ) then
@@ -2505,9 +2695,11 @@ module fv_nwp_nudge_mod
        enddo
        endif
 
-       if ( conserve_hgt .and. hydrostatic ) then
+       if ( conserve_hgt ) then
        do j=js,je
           do i=is,ie
+! Conserve geopotential
+!            pt(i,j,k) = pt(i,j,k)*(pk(i,j,k+1)-pk(i,j,k))
 ! Conserve total enthalpy
              pt(i,j,k) = pt(i,j,k)*pkz(i,j,k)*delp(i,j,k)
           enddo
@@ -2532,7 +2724,8 @@ module fv_nwp_nudge_mod
 ! Check min MSLP
       mslp0 = 1013.E2
       do i=1,nobs_tc(n)
-         mslp0 = min( mslp0, mslp_obs(i,n) )
+         mslp_obs_arg = mslp_obs(i,n)
+         mslp0 = min( mslp0, mslp_obs_arg )
       enddo
       if ( mslp0 > min_mslp ) goto 5000
 
@@ -2571,7 +2764,7 @@ module fv_nwp_nudge_mod
    else
 ! Lower top for vrotex breeding
       if ( slp_o > 1000.E2 ) then
-           pbtop = 900.E2 
+           pbtop = 900.E2
       else
            pbtop = max(500.E2, 900.E2-5.*(1000.E2-slp_o))  ! mp48
       endif
@@ -2605,10 +2798,10 @@ module fv_nwp_nudge_mod
         a_sum = 0.
       do j=js, je
          do i=is, ie
-            if( dist(i,j)<(r_vor+del_r) .and. dist(i,j)>r_vor .and. phis(i,j)<250.*grav ) then 
+            if( dist(i,j)<(r_vor+del_r) .and. dist(i,j)>r_vor .and. phis(i,j)<250.*grav ) then
                 p_count = p_count + 1.
-                  p_sum = p_sum + slp(i,j)*area(i,j) 
-                  a_sum = a_sum + area(i,j) 
+                  p_sum = p_sum + slp(i,j)*area(i,j)
+                  a_sum = a_sum + area(i,j)
             endif
          enddo
       enddo
@@ -2669,9 +2862,7 @@ module fv_nwp_nudge_mod
 
       mass_sink = 0.
 
-!$OMP parallel do default(none) shared(is,ie,js,je,dist,r_vor,phis,p_env,slp_o,r_hi,r_lo, &
-!$OMP                                  ps,tm,relx0,tau_vt_rad,dps_min,slp,ak,k0,delp,npz,area) &
-!$OMP                           private(f1, p_hi, p_lo, relx, delps, pbreed, mass_sink, dp0, pdep)
+!$omp parallel do default(shared) private (f1, p_hi, p_lo, relx, delps, pbreed, mass_sink, dp0, pdep)
       do j=js, je
          do i=is, ie
             if( dist(i,j) < r_vor .and. phis(i,j)<250.*grav ) then
@@ -2680,7 +2871,7 @@ module fv_nwp_nudge_mod
                 p_hi = p_env - (p_env-slp_o) * exp( -r_hi*f1**2 )    ! upper bound
                 p_lo = p_env - (p_env-slp_o) * exp( -r_lo*f1**2 )    ! lower bound
 
-                if ( ps(i,j) > p_hi .and. tm(i,j) < tm_max ) then 
+                if ( ps(i,j) > p_hi .and. tm(i,j) < tm_max ) then
 !                                         do nothing if lowest layer is too hot
 ! Under-development:
                       relx = relx0*exp( -tau_vt_rad*f1**2 )
@@ -2697,7 +2888,7 @@ module fv_nwp_nudge_mod
                      delps = relx*(slp(i,j) - p_lo)  ! Note: slp is used here
                 else
                      goto 400        ! do nothing; proceed to next storm
-                endif 
+                endif
 
 #ifdef SIM_TEST
                 pbreed = ak(1)
@@ -2739,7 +2930,7 @@ module fv_nwp_nudge_mod
 #endif
 
             endif
-400     continue 
+400     continue
         enddo        ! end i-loop
       enddo        ! end j-loop
 
@@ -2753,7 +2944,7 @@ module fv_nwp_nudge_mod
       do j=js, je
          do i=is, ie
             if( dist(i,j)<r3 .and. dist(i,j)>r2 ) then
-                p_sum = p_sum + area(i,j) 
+                p_sum = p_sum + area(i,j)
             endif
          enddo
       enddo
@@ -2762,8 +2953,7 @@ module fv_nwp_nudge_mod
       mass_sink = mass_sink / p_sum ! mean delta pressure to be added back to the environment to conserve mass
       if(master .and. nudge_debug) write(*,*) 'TC#',n, 'Mass tele-ported (pa)=', mass_sink
 
-!$OMP parallel do default(none) shared(is,ie,js,je,dist,r3,r2,ak,k_breed,delp,ps,mass_sink,npz) &
-!$OMP             private(pbreed, f1)
+!$omp parallel do default(shared) private (pbreed, f1)
       do j=js, je
          do i=is, ie
             if( dist(i,j)<r3 .and. dist(i,j)>r2 ) then
@@ -2798,7 +2988,7 @@ module fv_nwp_nudge_mod
 !--------------------------
     call mpp_update_domains(delp, domain_local, complete=.true.)
 
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,pe,ak,delp,k_breed,peln,pk)
+!$omp parallel do default(shared)
     do j=js-1,je+1
        do i=is-1,ie+1
           pe(i,1,j) = ak(1)
@@ -2810,19 +3000,6 @@ module fv_nwp_nudge_mod
        enddo
     enddo
 
-<<<<<<< HEAD
-#ifdef MULTI_GASES
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,k_breed,kappax,num_gas)
-    do k=k_breed,npz
-      do j=js,je
-         do i=is,ie
-            kappax(i,j,k)= virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))
-         enddo
-      enddo
-    enddo
-#endif
-=======
->>>>>>> rusty/master_test
     do k=k_breed+1,npz+1
       do j=js,je
          do i=is,ie
@@ -2832,14 +3009,7 @@ module fv_nwp_nudge_mod
       enddo
     enddo
 
-!$OMP parallel do default(none) shared(k_breed,npz,is,ie,js,je,conserve_mom,u,v,delp, &
-<<<<<<< HEAD
-#ifdef MULTI_GASES
-!$OMP                                  kappax,                                        &
-#endif
-=======
->>>>>>> rusty/master_test
-!$OMP                                  conserve_hgt,hydrostatic,pkz,pk,pt,peln)
+!$omp parallel do default(shared)
     do k=k_breed+1,npz
 
        if ( conserve_mom ) then
@@ -2855,28 +3025,23 @@ module fv_nwp_nudge_mod
        enddo
        endif
 
-       if ( conserve_hgt .and. hydrostatic ) then
+       if ( conserve_hgt ) then
        do j=js,je
           do i=is,ie
+! Conserve geopotential
+!            pt(i,j,k) = pt(i,j,k) / (pk(i,j,k+1)-pk(i,j,k))
 ! Conserve total enthalpy (static energy)
-<<<<<<< HEAD
-             pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
-#ifdef MULTI_GASES
-             pkz(i,j,k) = exp(kappax(i,j,k)*log(pkz(i,j,k)))
-#endif
-=======
             pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
->>>>>>> rusty/master_test
              pt(i,j,k) = pt(i,j,k) / (pkz(i,j,k)*delp(i,j,k))
+! Conserve total enthalpy
           enddo
        enddo
-! pkz last used
        endif
     enddo
 
 ! Convert tracer mass back to moist mixing ratio
 
-!$OMP parallel do default(none) shared(nwat,k_breed,npz,is,ie,js,je,q,delp)
+!$omp parallel do default(shared)
     do iq=1,nwat
        do k=k_breed+1,npz
           do j=js,je
@@ -2887,323 +3052,15 @@ module fv_nwp_nudge_mod
        enddo
     enddo
 
-    if(hydrostatic) call mpp_update_domains(pt, domain_local, complete=.true.)
+    call mpp_update_domains(pt, domain_local, complete=.true.)
 
     nullify(agrid)
     nullify(area)
-    
-  end subroutine breed_slp_inline
 
-<<<<<<< HEAD
-!>@brief The subroutine 'breed_srf_w10' performs vortex breeding by nudging 10-m winds.
-!>@details This is the inline version.
- subroutine breed_srf_w10(time, dt, npz, ak, bk, ps, phis, slp, delp, u, v, gridstruct)
-      type(time_type), intent(in):: time
-      integer, intent(in):: npz
-      real, intent(in):: dt       !< time step in seconds
-=======
-
- subroutine breed_srf_w10(time, dt, npz, ak, bk, ps, phis, slp, delp, u, v, gridstruct)
-!------------------------------------------------------------------------------------------
-! Purpose:  Vortex-breeding by nudging 10-m winds; inline version
-!------------------------------------------------------------------------------------------
-      type(time_type), intent(in):: time
-      integer, intent(in):: npz
-      real, intent(in):: dt       ! time step in seconds
->>>>>>> rusty/master_test
-      real, intent(in), dimension(npz+1):: ak, bk
-      real, intent(in):: phis(isd:ied,jsd:jed)
-      real, intent(in)::   ps(isd:ied,jsd:jed)
-      real, intent(in), dimension(is:ie,js:je):: slp
-      type(fv_grid_type), intent(IN), target :: gridstruct
-      real, intent(inout):: u(isd:ied,jsd:jed+1,npz)
-      real, intent(inout):: v(isd:ied+1,jsd:jed,npz)
-! Input/Output
-      real, intent(inout), dimension(isd:ied,jsd:jed,npz):: delp
-! local
-      real, dimension(is:ie,js:je):: us, vs
-      real wu(is:ie,  js:je+1)
-      real wv(is:ie+1,js:je)
-      real u1(is:ie), v1(is:ie)
-      real:: dist(is:ie,js:je), wind(is:ie,js:je)
-      real(kind=R_GRID):: pos(2)
-<<<<<<< HEAD
-      real:: slp_o         !< sea-level pressure (Pa)
-=======
-      real:: slp_o         ! sea-level pressure (Pa)
->>>>>>> rusty/master_test
-      real:: w10_o, p_env
-      real:: r_vor, pc, p_count
-      real:: r_max, speed, ut, vt, speed_local        ! tangent wind speed
-      real:: u_bg, v_bg, mass, t_mass
-      real:: relx0, relx, f1
-      real:: z0, mslp0
-<<<<<<< HEAD
-      real:: zz = 35.           !< mid-layer height at the lowest model level
-      real:: wind_fac           !< Computed ( ~ 1.2)
-=======
-      real:: zz = 35.           ! mid-layer height at the lowest model level
-      real:: wind_fac           ! Computed ( ~ 1.2)
->>>>>>> rusty/master_test
-      integer n, i, j
-
-      ! Pointers
-      real, pointer, dimension(:,:) :: dx, dy, rdxa, rdya, a11, a21, a12, a22, area
-      real(kind=R_GRID), pointer, dimension(:,:,:) :: agrid, vlon, vlat
-
-      dx    => gridstruct%dx
-      dy    => gridstruct%dy   
-      rdxa  => gridstruct%rdxa 
-      rdya  => gridstruct%rdya 
-      a11   => gridstruct%a11  
-      a21   => gridstruct%a21  
-      a12   => gridstruct%a12  
-      a22   => gridstruct%a22  
-      area  => gridstruct%area 
-      agrid => gridstruct%agrid_64
-      vlon  => gridstruct%vlon 
-      vlat  => gridstruct%vlat 
+  end subroutine breed_slp_inline_ada
 
 
-    if ( nstorms==0 ) then
-         if(master) write(*,*) 'NO TC data to process'
-         return
-    endif
-
-! Compute lat-lon winds on A grid
-!$OMP parallel do default(none) shared(is,ie,js,je,wu,u,npz,dx)
-    do j=js,je+1
-       do i=is,ie
-          wu(i,j) = u(i,j,npz)*dx(i,j)
-       enddo
-    enddo
-!$OMP parallel do default(none) shared(is,ie,js,je,wv,v,npz,dy)
-    do j=js,je
-       do i=is,ie+1
-          wv(i,j) = v(i,j,npz)*dy(i,j)
-       enddo
-    enddo
-
-!$OMP parallel do default(none) shared(is,ie,js,je,wu,rdxa,wv,rdya,us,vs,a11,a12,a21,a22,wind) &
-!$OMP                          private(u1,v1)
-    do j=js, je
-       do i=is, ie
-! Co-variant to Co-variant "vorticity-conserving" interpolation
-             u1(i) = (wu(i,j) + wu(i,j+1)) * rdxa(i,j)
-             v1(i) = (wv(i,j) + wv(i+1,j)) * rdya(i,j)
-! Cubed (cell center co-variant winds) to lat-lon:
-             us(i,j) = a11(i,j)*u1(i) + a12(i,j)*v1(i)
-             vs(i,j) = a21(i,j)*u1(i) + a22(i,j)*v1(i)
-! Wind speed
-          wind(i,j) = sqrt( us(i,j)**2 + vs(i,j)**2 )
-       enddo
-    enddo
-
-    relx0  = min(1., dt/tau_vt_wind)
-
-    do 3000 n=1,nstorms  ! loop through all storms
-
-      if ( nobs_tc(n) < min_nobs ) goto 3000
-
-! Check min MSLP
-      mslp0 = 1013.E2
-      do i=1,nobs_tc(n)
-         mslp0 = min( mslp0, mslp_obs(i,n) )
-      enddo
-      if ( mslp0 > min_mslp ) goto 3000
-
-!----------------------------------------
-! Obtain slp observation
-!----------------------------------------
-      call get_slp_obs(time, nobs_tc(n), x_obs(1,n), y_obs(1,n), wind_obs(1,n),  mslp_obs(1,n), mslp_out(1,n), rad_out(1,n),   &
-                       time_tc(1,n), pos(1), pos(2), w10_o, slp_o, r_vor, p_env)
-
-      if ( slp_o<90000. .or. slp_o>slp_env .or. abs(pos(2))*rad2deg>35. ) goto 3000         ! next storm
- 
-
-      do j=js, je
-         do i=is, ie
-            dist(i,j) = great_circle_dist( pos, agrid(i,j,1:2), radius )
-         enddo
-      enddo
-
-      r_vor = r_min + (slp_env-slp_o)/25.E2*r_inc
-
-!----------------------------------------------------
-! * Find model's SLP center nearest to the observation
-! * Find maximum wind speed at the lowest model level
-
-     speed_local = 0.
-           r_max = -999.
-              pc = 1013.E2
-     p_count = 0.
-     do j=js, je
-        do i=is, ie
-           if( dist(i,j) < r_vor ) then
-
-! Counting the "land" points:
-               if ( dist(i,j)<0.5*r_vor .and. abs(phis(i,j))>2.*grav )  p_count = p_count + 1.
-
-               pc = min(pc, slp(i,j))
-
-               if ( speed_local < wind(i,j) ) then
-                    speed_local = wind(i,j)
-                    r_max = dist(i,j)
-               endif
-
-           endif
-        enddo
-     enddo
-
-     call mp_reduce_sum(p_count)
-     if ( p_count>32 ) goto 3000  ! over/near rough land
-
-     if ( w10_o < 0. ) then   ! 10-m wind obs is not available
-! Uses Atkinson_Holliday wind-pressure correlation
-          w10_o = 3.446778 * (1010.-slp_o/100.)**0.644
-     endif
-
-     speed = speed_local
-     call mp_reduce_max(speed)     ! global max wind (near storm)
-     call mp_reduce_min(pc)
-
-    if ( speed_local < speed ) then
-         r_max = -999.
-    endif
-    call mp_reduce_max(r_max)
-    if( r_max<0. ) call mpp_error(FATAL,'==> Error in r_max')
-
-! ---------------------------------------------------
-! Determine surface wind speed and radius for nudging 
-! ---------------------------------------------------
-
-! Compute surface roughness z0 from w10, based on Eq (4) & (5) from Moon et al. 2007
-     if ( w10_o > 12.5 ) then
-          z0 = (0.085*w10_o - 0.58) * 1.E-3
-! z0 (w10=40) = 2.82E-3
-!         z0 = min( z0, 2.82E-3 )
-
-     else
-          z0 = 0.0185/grav*(0.001*w10_o**2 + 0.028*w10_o)**2
-     endif
-
-! lowest layer height: zz
-
-     wind_fac = log(zz/z0) / log(10./z0)
-     if( nudge_debug .and. master ) write(*,*) 'Wind adjustment factor=', wind_fac
-     if( wind_fac<1. ) call mpp_error(FATAL,'==> Error in wind_fac')
-
-     if ( pc < slp_o ) then
-!--
-!         The storm in the model is over developed
-!         if ( (pc+3.0E2)>slp_o .or. speed <= w10_o ) go to 3000    ! next storm
-!--
-! using radius (r_max) as dtermined above;
-! What if model's pressure center is very far from the observed?
-! using obs wind
-          speed = wind_fac*w10_o
-     else
-!         The storm in the model is under developed; using max wind
-          speed = max(wind_fac*w10_o, speed)
-          if ( pc>1009.E2 )  r_max = 0.5 * r_vor
-     endif
-
-! More adjustment
-
-! Some bounds on the radius of maximum wind:
-     r_max = max(2.5*grid_size, r_max)      ! at least 2.5X the grid size
-     r_max = min(0.75*r_vor, r_max)
-
-     t_mass = 0.
-     u_bg = 0.
-     v_bg = 0.
-
-     if ( add_bg_wind ) then
-       p_count = 0.
-       do j=js, je
-          do i=is, ie
-           if( dist(i,j) <= min(r_vor,2.*r_fac*r_max) .and. phis(i,j)<2.*grav ) then
-               mass = area(i,j)*delp(i,j,npz)
-!-- using model winds ----------------------------------
-               u_bg = u_bg + us(i,j)*mass
-               v_bg = v_bg + vs(i,j)*mass
-!-------------------------------------------------------
-               t_mass = t_mass + mass
-               p_count = p_count + 1.
-           endif
-          enddo
-       enddo
-       call mp_reduce_sum(p_count)
-       if ( p_count<16. ) go to 3000
-
-       call mp_reduce_sum(t_mass)
-       call mp_reduce_sum(u_bg)
-       call mp_reduce_sum(v_bg)
-       u_bg = u_bg / t_mass
-       v_bg = v_bg / t_mass
-       if ( nudge_debug .and. master ) write(*,*) pos(2)*rad2deg, 'vortex bg wind=', u_bg, v_bg
-     endif
-
-      relx = relx0
-! Nudge wind in the "inner core":
-#ifdef TTT
-      do j=js, je
-         do i=is, ie
-            if( dist(i,j) <= min(r_vor, r_fac*r_max) .and. phis(i,j)<2.*grav ) then
-                f1 = dist(i,j)/r_max
-                relx = relx0*exp( -tau_vt_rad*f1**2 )
-                if( dist(i,j)<=r_max ) then
-                    speed_local = speed * f1
-                else
-                    speed_local = speed / f1**0.75
-                endif
-                call tangent_wind(vlon(i,j,1:3), vlat(i,j,1:3), speed_local, pos, agrid(i,j,1:2), ut, vt)
-                ut = ut + u_bg
-                vt = vt + v_bg
-! Update:
-                us(i,j) = relx*(ut-us(i,j))
-                vs(i,j) = relx*(vt-vs(i,j))
-            endif
-400     continue 
-        enddo        ! end i-loop
-      enddo        ! end j-loop
-#else
-      do j=js, je
-         do i=is, ie
-            if( dist(i,j) <= min(r_vor, r_fac*r_max) .and. phis(i,j)<2.*grav ) then
-                f1 = dist(i,j)/r_max
-                relx = relx0*exp( -tau_vt_rad*f1**2 )
-                if( dist(i,j)<=r_max ) then
-                    speed_local = speed * f1
-                else
-                    speed_local = speed / f1**0.75
-                endif
-                call tangent_wind(vlon(i,j,1:3), vlat(i,j,1:3), speed_local, pos, agrid(i,j,1:2), ut, vt)
-                ut = ut + u_bg
-                vt = vt + v_bg
-! Update:
-                us(i,j) = relx*(ut-us(i,j))
-                vs(i,j) = relx*(vt-vs(i,j))
-            endif
-400     continue 
-        enddo        ! end i-loop
-      enddo        ! end j-loop
-#endif
-
-3000 continue
-
-  end subroutine breed_srf_w10
-
-<<<<<<< HEAD
-!>@brief The subroutine 'breed_srf_winds' performs vortex breeding by nudging 1-m winds.
- subroutine breed_srf_winds(time, dt, npz, u_obs, v_obs, ak, bk, ps, phis, delp, ua, va, u_dt, v_dt, pt, q, nwat, zvir, gridstruct)
-! Input
-      type(time_type), intent(in):: time
-      integer, intent(in):: npz, nwat
-      real, intent(in):: dt       !< time step in seconds
-=======
-
- subroutine breed_srf_winds(time, dt, npz, u_obs, v_obs, ak, bk, ps, phis, delp, ua, va, u_dt, v_dt, pt, q, nwat, zvir, gridstruct)
+ subroutine breed_srf_winds(time, dt, npz, u_obs, v_obs, ak, bk, ps, phis, delp, ua, va, u_dt, v_dt, pt, q, nwat, zvir, bd, gridstruct)
 !------------------------------------------------------------------------------------------
 ! Purpose:  Vortex-breeding by nudging 1-m winds
 !------------------------------------------------------------------------------------------
@@ -3211,41 +3068,40 @@ module fv_nwp_nudge_mod
       type(time_type), intent(in):: time
       integer, intent(in):: npz, nwat
       real, intent(in):: dt       ! time step in seconds
->>>>>>> rusty/master_test
       real, intent(in):: zvir
       real, intent(in), dimension(npz+1):: ak, bk
-      real, intent(in), dimension(isd:ied,jsd:jed):: phis, ps
-      real, intent(in), dimension(is:ie,js:je,npz):: u_obs, v_obs
+      type(fv_grid_bounds_type), intent(IN) :: bd
+      real, intent(in):: phis(bd%isd:bd%ied,bd%jsd:bd%jed)
+      real, intent(in)::   ps(bd%isd:bd%ied,bd%jsd:bd%jed)
+      real, intent(in), dimension(bd%is:bd%ie,bd%js:bd%je,npz):: u_obs, v_obs
       type(fv_grid_type), intent(IN), target :: gridstruct
 ! Input/Output
-      real, intent(inout), dimension(isd:ied,jsd:jed,npz):: delp, pt, ua, va, u_dt, v_dt
-      real, intent(inout)::q(isd:ied,jsd:jed,npz,nwat)
+      real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: delp, pt, ua, va, u_dt, v_dt
+      real, intent(inout)::q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nwat)
 ! local
-      real:: dist(is:ie,js:je), wind(is:ie,js:je)
-      real::  slp(is:ie,js:je)
+      real:: dist(bd%is:bd%ie,bd%js:bd%je), wind(bd%is:bd%ie,bd%js:bd%je)
+      real::  slp(bd%is:bd%ie,bd%js:bd%je)
       real(kind=R_GRID):: pos(2)
-<<<<<<< HEAD
-      real:: slp_o         !< sea-level pressure (Pa)
-=======
       real:: slp_o         ! sea-level pressure (Pa)
->>>>>>> rusty/master_test
       real:: w10_o, p_env
       real:: r_vor, pc, p_count
       real:: r_max, speed, ut, vt, speed_local        ! tangent wind speed
       real:: u_bg, v_bg, mass, t_mass
       real:: relx0, relx, f1, rdt
       real:: z0, mslp0
-<<<<<<< HEAD
-      real:: zz = 35.           !< mid-layer height at the lowest model level
-      real:: wind_fac           !< Computed ( ~ 1.2)
-=======
       real:: zz = 35.           ! mid-layer height at the lowest model level
       real:: wind_fac           ! Computed ( ~ 1.2)
->>>>>>> rusty/master_test
       integer n, i, j, k, iq
 
       real, pointer :: area(:,:)
       real(kind=R_GRID), pointer :: vlon(:,:,:), vlat(:,:,:), agrid(:,:,:)
+
+      integer :: is,  ie,  js,  je
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
 
       area => gridstruct%area
       vlon => gridstruct%vlon
@@ -3260,7 +3116,7 @@ module fv_nwp_nudge_mod
        rdt = 1./dt
     relx0  = min(1., dt/tau_vt_wind)
 
-!$OMP parallel do default(none) shared(is,ie,js,je,slp,ps,phis,pt,npz,wind,ua,va)
+!$omp parallel do default(shared)
     do j=js, je
        do i=is, ie
            slp(i,j) = ps(i,j)*exp(phis(i,j)/(rdgas*(pt(i,j,npz)+3.25E-3*phis(i,j)/grav)))
@@ -3268,7 +3124,7 @@ module fv_nwp_nudge_mod
        enddo
     enddo
 
-!!!!!$OMP parallel do default(none) private(pos, w10_o, slp_o, r_vor, p_env)
+!omp parallel do default(shared) private(pos, w10_o, slp_o, r_vor, p_env)
     do 3000 n=1,nstorms  ! loop through all storms
 
       if ( nobs_tc(n) < min_nobs ) goto 3000
@@ -3276,7 +3132,8 @@ module fv_nwp_nudge_mod
 ! Check min MSLP
       mslp0 = 1013.E2
       do i=1,nobs_tc(n)
-         mslp0 = min( mslp0, mslp_obs(i,n) )
+         mslp_obs_arg = mslp_obs(i,n)
+         mslp0 = min( mslp0, mslp_obs_arg )
       enddo
       if ( mslp0 > min_mslp ) goto 3000
 
@@ -3287,7 +3144,7 @@ module fv_nwp_nudge_mod
                        time_tc(1,n), pos(1), pos(2), w10_o, slp_o, r_vor, p_env)
 
       if ( slp_o<90000. .or. slp_o>slp_env .or. abs(pos(2))*rad2deg>35. ) goto 3000         ! next storm
- 
+
 
       do j=js, je
          do i=is, ie
@@ -3343,7 +3200,7 @@ module fv_nwp_nudge_mod
     if( r_max<0. ) call mpp_error(FATAL,'==> Error in r_max')
 
 ! ---------------------------------------------------
-! Determine surface wind speed and radius for nudging 
+! Determine surface wind speed and radius for nudging
 ! ---------------------------------------------------
 
 ! Compute surface roughness z0 from w10, based on Eq (4) & (5) from Moon et al. 2007
@@ -3438,7 +3295,7 @@ module fv_nwp_nudge_mod
                 ua(i,j,k) = ua(i,j,k) + relx*(ut-ua(i,j,k))
                 va(i,j,k) = va(i,j,k) + relx*(vt-va(i,j,k))
             endif
-400     continue 
+400     continue
         enddo        ! end i-loop
       enddo        ! end j-loop
 
@@ -3478,36 +3335,20 @@ module fv_nwp_nudge_mod
                          x_o, y_o, w10_o, slp_o, r_vor, p_vor, stime, fact)
 ! Input
     type(time_type), intent(in):: time
-<<<<<<< HEAD
-    integer, intent(in)::  nobs   !< number of observations in this particular storm
-    real(KIND=4), intent(in)::  lon_obs(nobs)
-    real(KIND=4), intent(in)::  lat_obs(nobs)
-    real(KIND=4), intent(in)::      w10(nobs)        !< observed 10-m widn speed
-    real(KIND=4), intent(in)::     mslp(nobs)        !< observed SLP in pa
-    real(KIND=4), intent(in)::  slp_out(nobs)        !< slp at r_out
-    real(KIND=4), intent(in)::    r_out(nobs)         
-=======
     integer, intent(in)::  nobs   ! number of observations in this particular storm
     real(KIND=4), intent(in)::  lon_obs(nobs)
     real(KIND=4), intent(in)::  lat_obs(nobs)
     real(KIND=4), intent(in)::      w10(nobs)        ! observed 10-m widn speed
     real(KIND=4), intent(in)::     mslp(nobs)        ! observed SLP in pa
     real(KIND=4), intent(in)::  slp_out(nobs)        ! slp at r_out
-    real(KIND=4), intent(in)::    r_out(nobs)        ! 
->>>>>>> rusty/master_test
+    real(KIND=4), intent(in)::    r_out(nobs)        !
     real(KIND=4), intent(in):: time_obs(nobs)
     real, optional, intent(in):: stime
     real, optional, intent(out):: fact
 ! Output
-<<<<<<< HEAD
-    real(kind=R_GRID), intent(out):: x_o , y_o      !< position of the storm center 
-    real, intent(out):: w10_o          !< 10-m wind speed
-    real, intent(out):: slp_o          !< Observed sea-level-pressure (pa)
-=======
-    real(kind=R_GRID), intent(out):: x_o , y_o      ! position of the storm center 
+    real(kind=R_GRID), intent(out):: x_o , y_o      ! position of the storm center
     real, intent(out):: w10_o          ! 10-m wind speed
     real, intent(out):: slp_o          ! Observed sea-level-pressure (pa)
->>>>>>> rusty/master_test
     real, intent(out):: r_vor, p_vor
 ! Internal:
     real:: t_thresh
@@ -3531,7 +3372,7 @@ module fv_nwp_nudge_mod
       call get_date(time, year, month, day, hour, minute, second)
 
       if ( year /= year_track_data ) then
-           if (master) write(*,*) 'Warning: The year in storm track data is not the same as model year' 
+           if (master) write(*,*) 'Warning: The year in storm track data is not the same as model year'
            return
       endif
 
@@ -3632,7 +3473,7 @@ module fv_nwp_nudge_mod
          call mpp_error(FATAL,'==> Error in reading best track data')
     endif
 
-    do while ( ts_name=='start' ) 
+    do while ( ts_name=='start' )
 
                nstorms  = nstorms + 1
        nobs_tc(nstorms) = nobs       ! observation count for this storm
@@ -3682,7 +3523,7 @@ module fv_nwp_nudge_mod
              y_obs(nobs,nstorms) = lat_deg * deg2rad
           if ( GMT == 'GMT' ) then
 !                                  Transfrom x from (-180 , 180) to (0, 360) then to radian
-             if ( lon_deg < 0 ) then 
+             if ( lon_deg < 0 ) then
                   x_obs(nobs,nstorms) = (360.+lon_deg) * deg2rad
              else
                   x_obs(nobs,nstorms) = (360.-lon_deg) * deg2rad
@@ -3698,7 +3539,7 @@ module fv_nwp_nudge_mod
 
   close(unit)
 
-  if(master) then 
+  if(master) then
      write(*,*) 'TC vortex breeding: total storms=', nstorms
      if ( nstorms/=0 ) then
           do n=1,nstorms
@@ -3711,15 +3552,9 @@ module fv_nwp_nudge_mod
 
   end subroutine slp_obs_init
 
-<<<<<<< HEAD
-  !> The function 'calday' performs time interpolation:
-  ! Julian day (0 to 365 for non-leap year)
-  real function calday(year, month, day, hour, minute, sec)
-=======
 
   real function calday(year, month, day, hour, minute, sec)
 ! For time interpolation; Julian day (0 to 365 for non-leap year)
->>>>>>> rusty/master_test
 ! input:
     integer, intent(in):: year, month, day, hour
     integer, intent(in):: minute, sec
@@ -3733,7 +3568,7 @@ module fv_nwp_nudge_mod
 
       if( month /= 1 ) then
           do m=1, month-1
-            if( m==2  .and. leap_year(year) ) then 
+            if( m==2  .and. leap_year(year) ) then
                 ds = ds + 29
             else
                 ds = ds + days(m)
@@ -3751,28 +3586,17 @@ module fv_nwp_nudge_mod
 
   end function calday
 
-<<<<<<< HEAD
-!>@details The function 'leap_year' determines if year 'ny' is a leap year.
-!>@author Shian-Jiann Lin
-  logical function leap_year(ny)
-  integer, intent(in):: ny
-=======
 
   logical function leap_year(ny)
   integer, intent(in):: ny
 !
 ! Determine if year ny is a leap year
 ! Author: S.-J. Lin
->>>>>>> rusty/master_test
    integer ny00
 !
 ! No leap years prior to 0000
 !
-<<<<<<< HEAD
-      parameter ( ny00 = 0000 )   !< The threshold for starting leap-year 
-=======
-      parameter ( ny00 = 0000 )   ! The threshold for starting leap-year 
->>>>>>> rusty/master_test
+      parameter ( ny00 = 0000 )   ! The threshold for starting leap-year
 
       if( ny >= ny00 ) then
          if( mod(ny,100) == 0. .and. mod(ny,400) == 0. ) then
@@ -3824,35 +3648,35 @@ module fv_nwp_nudge_mod
 
  end subroutine pmaxmin
 
-<<<<<<< HEAD
-!>@brief The subroutine 'del2_uv' filters the wind tendency.
- subroutine del2_uv(du, dv, cd, kmd, ntimes, bd, npx, npy, gridstruct, domain)
-   integer, intent(in):: kmd
-   integer, intent(in):: ntimes
-   real,    intent(in):: cd            !< cd = K * da_min;   0 < K < 0.25
-=======
 
  subroutine del2_uv(du, dv, cd, kmd, ntimes, bd, npx, npy, gridstruct, domain)
 ! This routine is for filtering the wind tendency
    integer, intent(in):: kmd
    integer, intent(in):: ntimes
    real,    intent(in):: cd            ! cd = K * da_min;   0 < K < 0.25
->>>>>>> rusty/master_test
    type(fv_grid_bounds_type), intent(IN) :: bd
-   real, intent(inout), dimension(is:ie,js:je,kmd):: du, dv
+   real, intent(inout):: du(bd%is:bd%ie,bd%js:bd%je,kmd)
+   real, intent(inout):: dv(bd%is:bd%ie,bd%js:bd%je,kmd)
    integer, intent(IN) :: npx, npy
    type(fv_grid_type), intent(IN), target :: gridstruct
   type(domain2d), intent(INOUT) :: domain
 ! local:
   real(kind=R_GRID), pointer, dimension(:,:,:) :: vlon, vlat
-   real, dimension(is:ie,js:je,kmd):: v1, v2, v3
+   real, dimension(bd%is:bd%ie,bd%js:bd%je,kmd):: v1, v2, v3
    integer i,j,k
+
+   integer :: is,  ie,  js,  je
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
 
    vlon => gridstruct%vlon
    vlat => gridstruct%vlat
 
 ! transform to 3D Cartesian:
-!$OMP parallel do default(none) shared(kmd,is,ie,js,je,v1,v2,v3,du,vlon,dv,vlat)
+!$omp parallel do default(shared)
    do k=1,kmd
       do j=js,je
          do i=is,ie
@@ -3869,7 +3693,7 @@ module fv_nwp_nudge_mod
    call del2_scalar( v3(is,js,1), cd, kmd, ntimes, bd, npx, npy, gridstruct, domain )
 
 ! Convert back to lat-lon components:
-!$OMP parallel do default(none) shared(kmd,is,ie,js,je,du,dv,v1,v2,v3,vlon,vlat)
+!$omp parallel do default(shared)
    do k=1,kmd
       do j=js,je
          do i=is,ie
@@ -3881,43 +3705,42 @@ module fv_nwp_nudge_mod
 
  end subroutine del2_uv
 
-<<<<<<< HEAD
-!>@brief The subroutine 'del2_scalar' filters the physics tendency.
- subroutine del2_scalar(qdt, cd, kmd, nmax, bd,  npx, npy, gridstruct, domain)
-   integer, intent(in):: kmd
-   integer, intent(in):: nmax          !< must be no greater than 3 
-   real,    intent(in):: cd            !< cd = K * da_min;   0 < K < 0.25
-=======
  subroutine del2_scalar(qdt, cd, kmd, nmax, bd,  npx, npy, gridstruct, domain)
 ! This routine is for filtering the physics tendency
    integer, intent(in):: kmd
-   integer, intent(in):: nmax          ! must be no greater than 3 
+   integer, intent(in):: nmax          ! must be no greater than 3
    real,    intent(in):: cd            ! cd = K * da_min;   0 < K < 0.25
->>>>>>> rusty/master_test
    type(fv_grid_bounds_type), intent(IN) :: bd
-   real, intent(inout):: qdt(is:ie,js:je,kmd)
+   real, intent(inout):: qdt(bd%is:bd%ie,bd%js:bd%je,kmd)
    integer, intent(IN) :: npx, npy
    type(fv_grid_type), intent(IN), target :: gridstruct
   type(domain2d), intent(INOUT) :: domain
 ! local:
-   real::  q(isd:ied,jsd:jed,kmd)
-   real:: fx(isd:ied+1,jsd:jed), fy(isd:ied,jsd:jed+1)
+   real::  q(bd%isd:bd%ied,bd%jsd:bd%jed,kmd)
+   real:: fx(bd%isd:bd%ied+1,bd%jsd:bd%jed), fy(bd%isd:bd%ied,bd%jsd:bd%jed+1)
    integer i,j,k, n, nt, ntimes
    real :: damp
 
-  real, pointer, dimension(:,:) :: rarea, area
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+  real, pointer, dimension(:,:)   :: rarea, area
+
   real, pointer, dimension(:,:) :: sina_u, sina_v
   real, pointer, dimension(:,:,:) :: sin_sg
-  
+
   real, pointer, dimension(:,:) :: dx, dy, rdxc, rdyc
 
-  real(kind=R_GRID), pointer :: da_min
-
-<<<<<<< HEAD
   logical, pointer :: nested, sw_corner, se_corner, nw_corner, ne_corner
-=======
-  logical, pointer :: bounded_domain, sw_corner, se_corner, nw_corner, ne_corner
->>>>>>> rusty/master_test
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
 
    area => gridstruct%area
   rarea => gridstruct%rarea
@@ -3931,23 +3754,17 @@ module fv_nwp_nudge_mod
   rdxc   => gridstruct%rdxc
   rdyc   => gridstruct%rdyc
 
-  da_min => gridstruct%da_min
-
-<<<<<<< HEAD
   nested => gridstruct%nested
-=======
-  bounded_domain => gridstruct%bounded_domain
->>>>>>> rusty/master_test
   sw_corner => gridstruct%sw_corner
   se_corner => gridstruct%se_corner
   nw_corner => gridstruct%nw_corner
   ne_corner => gridstruct%ne_corner
-  
+
    ntimes = min(3, nmax)
 
-   damp = cd * da_min
+   damp = cd * gridstruct%da_min
 
-!$OMP parallel do default(none) shared(is,ie,js,je,kmd,q,qdt)
+!$omp parallel do default(shared)
    do k=1,kmd
       do j=js,je
          do i=is,ie
@@ -3963,43 +3780,28 @@ module fv_nwp_nudge_mod
 
    nt = ntimes - n
 
-<<<<<<< HEAD
-!$OMP parallel do default(none) shared(is,ie,js,je,kmd,nt,dy,q,isd,jsd,npx,npy,nested,   &
-=======
-!$OMP parallel do default(none) shared(is,ie,js,je,kmd,nt,dy,q,isd,jsd,npx,npy,bounded_domain,   &
->>>>>>> rusty/master_test
-!$OMP                                  bd,sw_corner,se_corner,nw_corner,ne_corner,       &
-!$OMP                                  sina_u,rdxc,sin_sg,dx,rdyc,sina_v,qdt,damp,rarea) &
-!$OMP                          private(fx, fy)
+!$omp parallel do default(shared) private(fx, fy)
    do k=1,kmd
 
-<<<<<<< HEAD
       if(nt>0) call copy_corners(q(isd,jsd,k), npx, npy, 1, nested, bd, &
-=======
-      if(nt>0) call copy_corners(q(isd,jsd,k), npx, npy, 1, bounded_domain, bd, &
->>>>>>> rusty/master_test
            sw_corner, se_corner, nw_corner, ne_corner)
       do j=js-nt,je+nt
          do i=is-nt,ie+1+nt
             fx(i,j) = dy(i,j)*sina_u(i,j)*(q(i-1,j,k)-q(i,j,k))*rdxc(i,j)
          enddo
          if (is == 1) fx(i,j) = dy(is,j)*(q(is-1,j,k)-q(is,j,k))*rdxc(is,j)* &
-            0.5*(sin_sg(1,j,1) + sin_sg(0,j,3))
-         if (ie+1 == npx) fx(i,j) = dy(ie+1,j)*(q(ie,j,k)-q(ie+1,j,k))*rdxc(ie+1,j)* & 
-            0.5*(sin_sg(npx,j,1) + sin_sg(npx-1,j,3))
+            0.5*(sin_sg(1,1,j) + sin_sg(3,0,j))
+         if (ie+1 == npx) fx(i,j) = dy(ie+1,j)*(q(ie,j,k)-q(ie+1,j,k))*rdxc(ie+1,j)* &
+            0.5*(sin_sg(1,npx,j) + sin_sg(3,npx-1,j))
       enddo
 
-<<<<<<< HEAD
       if(nt>0) call copy_corners(q(isd,jsd,k), npx, npy, 2, nested, bd, &
-=======
-      if(nt>0) call copy_corners(q(isd,jsd,k), npx, npy, 2, bounded_domain, bd, &
->>>>>>> rusty/master_test
            sw_corner, se_corner, nw_corner, ne_corner)
       do j=js-nt,je+1+nt
          if (j == 1 .OR. j == npy) then
             do i=is-nt,ie+nt
                fy(i,j) = dx(i,j)*(q(i,j-1,k)-q(i,j,k))*rdyc(i,j) &
-                    *0.5*(sin_sg(i,j,2) + sin_sg(i,j-1,4) )
+                    *0.5*(sin_sg(2,i,j) + sin_sg(4,i,j-1) )
             enddo
          else
             do i=is-nt,ie+nt
@@ -4027,12 +3829,20 @@ module fv_nwp_nudge_mod
 
  end subroutine del2_scalar
 
- subroutine rmse_bias(a, rms, bias, area)
-   real, intent(in):: a(is:ie,js:je)
-   real, intent(IN) :: area(isd:ied,jsd:jed)
+ subroutine rmse_bias(a, rms, bias, bd, area)
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   real, intent(in):: a(bd%is:bd%ie,bd%js:bd%je)
+   real, intent(IN) :: area(bd%isd:bd%ied,bd%jsd:bd%jed)
    real, intent(out):: rms, bias
    integer:: i,j
    real:: total_area
+
+   integer :: is,  ie,  js,  je
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
 
    total_area = 4.*pi*radius**2
 
@@ -4053,21 +3863,29 @@ module fv_nwp_nudge_mod
  end subroutine rmse_bias
 
 
- subroutine corr(a, b, co, area)
- real, intent(in):: a(is:ie,js:je), b(is:ie,js:je)
- real, intent(in):: area(isd:ied,jsd:jed)
+ subroutine corr(a, b, co, bd, area)
+ type(fv_grid_bounds_type), intent(IN) :: bd
+ real, intent(in):: a(bd%is:bd%ie,bd%js:bd%je), b(bd%is:bd%ie,bd%js:bd%je)
+ real, intent(IN) :: area(bd%isd:bd%ied,bd%jsd:bd%jed)
  real, intent(out):: co
  real:: m_a, m_b, std_a, std_b
  integer:: i,j
  real:: total_area
 
+   integer :: is,  ie,  js,  je
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+
    total_area = 4.*pi*radius**2
 
 ! Compute standard deviation:
-   call std(a, m_a, std_a, area)
-   call std(b, m_b, std_b, area)
+   call std(a, m_a, std_a, bd, area)
+   call std(b, m_b, std_b, bd, area)
 
-! Compute correlation: 
+! Compute correlation:
    co = 0.
    do j=js,je
       do i=is,ie
@@ -4079,12 +3897,20 @@ module fv_nwp_nudge_mod
 
  end subroutine corr
 
- subroutine std(a, mean, stdv, area)
- real,  intent(in):: a(is:ie,js:je)
- real, intent(IN) :: area(isd:ied,jsd:jed)
+ subroutine std(a, mean, stdv, bd, area)
+ type(fv_grid_bounds_type), intent(IN) :: bd
+ real,  intent(in):: a(bd%is:bd%ie,bd%js:bd%je)
+ real, intent(IN) :: area(bd%isd:bd%ied,bd%jsd:bd%jed)
  real, intent(out):: mean, stdv
  integer:: i,j
  real:: total_area
+
+   integer :: is,  ie,  js,  je
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
 
    total_area = 4.*pi*radius**2
 
@@ -4095,7 +3921,7 @@ module fv_nwp_nudge_mod
       enddo
    enddo
    call mp_reduce_sum(mean)
-   mean = mean / total_area 
+   mean = mean / total_area
 
    stdv = 0.
    do j=js,je
@@ -4109,4 +3935,4 @@ module fv_nwp_nudge_mod
  end subroutine std
 
 
-end module fv_nwp_nudge_mod
+end module fv_ada_nudge_mod

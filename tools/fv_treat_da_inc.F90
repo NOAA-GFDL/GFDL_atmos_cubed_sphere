@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
@@ -30,6 +31,30 @@
 !>@warning Expanding the list of increments without the proper knowledge of the FV3 dynamical
 !! core is EXTREMELY RISKY, especially for the non-hydrostatic scenario. Such a modification
 !! could break the scientific consistency, possibly leading to a simulation crash.
+=======
+!***********************************************************************
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+!* If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
+!-------------------------------------------------------------------------------
+!> @brief Treat DA increment
+>>>>>>> rusty/master_test
 !> @author Xi.Chen <xi.chen@noaa.gov>
 !> @date 02/12/2016
 !
@@ -45,6 +70,7 @@
 
 module fv_treat_da_inc_mod
 
+<<<<<<< HEAD
 ! <table>
 ! <tr>
 !     <th>Module Name</th>
@@ -106,6 +132,8 @@ module fv_treat_da_inc_mod
 !   </tr>
 ! </table>
 
+=======
+>>>>>>> rusty/master_test
   use fms_mod,           only: file_exist, read_data, &
                                field_exist, write_version_number
   use mpp_mod,           only: mpp_error, FATAL, NOTE, mpp_pe
@@ -129,8 +157,12 @@ module fv_treat_da_inc_mod
                                mid_pt_sphere, get_unit_vect2, &
                                get_latlon_vector, inner_prod, &
                                cubed_to_latlon
+<<<<<<< HEAD
   use fv_mp_mod,         only: ng, &
                                is_master, &
+=======
+  use fv_mp_mod,         only: is_master, &
+>>>>>>> rusty/master_test
                                fill_corners, &
                                YDir, &
                                mp_reduce_min, &
@@ -141,8 +173,12 @@ module fv_treat_da_inc_mod
                                get_var1_double, &
                                get_var2_real,   &
                                get_var3_r4, &
+<<<<<<< HEAD
                                get_var1_real, &
                                check_var_exists
+=======
+                               get_var1_real
+>>>>>>> rusty/master_test
   implicit none
   private
 
@@ -150,6 +186,7 @@ module fv_treat_da_inc_mod
 
 contains
   !=============================================================================
+<<<<<<< HEAD
   !>@brief The subroutine 'read_da_inc' reads the increments of the diagnostic variables 
   !! from the DA-generated files.
   !>@details Additional support of prognostic variables such as tracers can be assessed
@@ -162,6 +199,26 @@ contains
     ! local
     integer :: nq
 
+=======
+  !> @brief description
+  !> @author Xi.Chen <xi.chen@noaa.gov>
+  !> @date 02/12/2016
+
+  !> Do NOT Have delz increment available yet
+  !> EMC reads in delz increments but does NOT use them!!
+  subroutine read_da_inc(Atm, fv_domain, bd, npz_in, nq, u, v, q, delp, pt, is_in, js_in, ie_in, je_in )
+    type(fv_atmos_type),       intent(inout) :: Atm
+    type(domain2d),            intent(inout) :: fv_domain
+    type(fv_grid_bounds_type), intent(IN) :: bd
+    integer,                   intent(IN) :: npz_in, nq, is_in, js_in, ie_in, je_in
+    real, intent(inout), dimension(is_in:ie_in,  js_in:je_in+1,npz_in):: u  ! D grid zonal wind (m/s)
+    real, intent(inout), dimension(is_in:ie_in+1,js_in:je_in  ,npz_in):: v  ! D grid meridional wind (m/s)
+    real, intent(inout) :: delp(is_in:ie_in  ,js_in:je_in  ,npz_in)  ! pressure thickness (pascal)
+    real, intent(inout) :: pt(  is_in:ie_in  ,js_in:je_in  ,npz_in)  ! temperature (K)
+    real, intent(inout) :: q(   is_in:ie_in  ,js_in:je_in  ,npz_in, nq)  ! 
+
+    ! local
+>>>>>>> rusty/master_test
     real :: deg2rad
     character(len=128) :: fname
     real(kind=4), allocatable:: wk1(:), wk2(:,:), wk3(:,:,:)
@@ -170,6 +227,7 @@ contains
     real, dimension(:,:,:), allocatable:: u_inc, v_inc, ud_inc, vd_inc
     real, allocatable:: lat(:), lon(:)
     real, allocatable:: pt_c(:,:,:), pt_d(:,:,:)
+<<<<<<< HEAD
     real:: s2c(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je,4)
     real:: s2c_c(Atm(1)%bd%is:Atm(1)%bd%ie+1,Atm(1)%bd%js:Atm(1)%bd%je,4)
     real:: s2c_d(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je+1,4)
@@ -181,6 +239,19 @@ contains
         id1_d, id2_d, jdc_d
 
     integer:: i, j, k, im, jm, km, npz, npt
+=======
+    real:: s2c(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je,4)
+    real:: s2c_c(Atm%bd%is:Atm%bd%ie+1,Atm%bd%js:Atm%bd%je,4)
+    real:: s2c_d(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je+1,4)
+    integer, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je):: &
+        id1, id2, jdc
+    integer, dimension(Atm%bd%is:Atm%bd%ie+1,Atm%bd%js:Atm%bd%je)::&
+        id1_c, id2_c, jdc_c
+    integer, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je+1)::&
+        id1_d, id2_d, jdc_d
+
+    integer:: i, j, k, im, jm, km, npt
+>>>>>>> rusty/master_test
     integer:: i1, i2, j1, ncid
     integer:: jbeg, jend
     integer tsize(3)
@@ -190,6 +261,7 @@ contains
     logical:: found
     integer :: is,  ie,  js,  je
     integer :: isd, ied, jsd, jed
+<<<<<<< HEAD
     integer :: sphum, liq_wat
 #ifdef MULTI_GASES
     integer :: spfo, spfo2, spfo3
@@ -211,6 +283,22 @@ contains
     npz = Atm(1)%npz
 
     fname = 'INPUT/'//Atm(1)%flagstruct%res_latlon_dynamics
+=======
+    integer :: sphum, liq_wat, o3mr
+
+    is  = Atm%bd%is
+    ie  = Atm%bd%ie
+    js  = Atm%bd%js
+    je  = Atm%bd%je
+    isd = Atm%bd%isd
+    ied = Atm%bd%ied
+    jsd = Atm%bd%jsd
+    jed = Atm%bd%jed
+
+    deg2rad = pi/180.
+
+    fname = 'INPUT/'//Atm%flagstruct%res_latlon_dynamics
+>>>>>>> rusty/master_test
 
     if( file_exist(fname) ) then
       call open_ncfile( fname, ncid )        ! open the file
@@ -220,10 +308,17 @@ contains
 
       im = tsize(1); jm = tsize(2); km = tsize(3)
 
+<<<<<<< HEAD
       if (km.ne.npz) then
         if (is_master()) print *, 'km = ', km
         call mpp_error(FATAL, &
             '==> Error in read_da_inc: km is not equal to npz')
+=======
+      if (km.ne.npz_in) then
+        if (is_master()) print *, 'km = ', km
+        call mpp_error(FATAL, &
+            '==> Error in read_da_inc: km is not equal to npz_in')
+>>>>>>> rusty/master_test
       endif
 
       if(is_master())  write(*,*) fname, ' DA increment dimensions:', tsize
@@ -248,9 +343,15 @@ contains
     endif
 
     ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
+<<<<<<< HEAD
     call remap_coef( is, ie, js, je, &
         im, jm, lon, lat, id1, id2, jdc, s2c, &
         Atm(1)%gridstruct%agrid(is:ie,js:je,:))
+=======
+    call remap_coef( is, ie, js, je, isd, ied, jsd, jed, &
+        im, jm, lon, lat, id1, id2, jdc, s2c, &
+        Atm%gridstruct%agrid)
+>>>>>>> rusty/master_test
 
     ! Find bounding latitudes:
     jbeg = jm-1;         jend = 2
@@ -263,6 +364,7 @@ contains
     enddo
 
     sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
+<<<<<<< HEAD
 #ifdef MULTI_GASES
     spfo3   = get_tracer_index(MODEL_ATMOS, 'spfo3')
     spfo    = get_tracer_index(MODEL_ATMOS, 'spfo')
@@ -270,12 +372,16 @@ contains
 #else
     o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
 #endif
+=======
+    o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
+>>>>>>> rusty/master_test
     liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
 
     ! perform increments on scalars
     allocate ( wk3(1:im,jbeg:jend, 1:km) )
     allocate (  tp(is:ie,js:je,km) )
 
+<<<<<<< HEAD
     call apply_inc_on_3d_scalar('T_inc',Atm(1)%pt)
     call apply_inc_on_3d_scalar('delp_inc',Atm(1)%delp)
     if (.not. Atm(1)%flagstruct%hydrostatic) then
@@ -290,24 +396,44 @@ contains
 #else
     call apply_inc_on_3d_scalar('o3mr_inc',Atm(1)%q(:,:,:,o3mr))
 #endif
+=======
+    call apply_inc_on_3d_scalar('T_inc',pt, is_in, js_in, ie_in, je_in)
+    call apply_inc_on_3d_scalar('delp_inc',delp, is_in, js_in, ie_in, je_in)
+    call apply_inc_on_3d_scalar('sphum_inc',q(:,:,:,sphum), is_in, js_in, ie_in, je_in)
+    call apply_inc_on_3d_scalar('liq_wat_inc',q(:,:,:,liq_wat), is_in, js_in, ie_in, je_in)
+    call apply_inc_on_3d_scalar('o3mr_inc',q(:,:,:,o3mr), is_in, js_in, ie_in, je_in)
+>>>>>>> rusty/master_test
 
     deallocate ( tp )
     deallocate ( wk3 )
 
     ! perform increments on winds
+<<<<<<< HEAD
     allocate (pt_c(is:ie+1,js:je  ,2))
     allocate (pt_d(is:ie  ,js:je+1,2))
+=======
+    allocate (pt_c(isd:ied+1,jsd:jed  ,2))
+    allocate (pt_d(isd:ied  ,jsd:jed+1,2))
+>>>>>>> rusty/master_test
     allocate (ud_inc(is:ie  , js:je+1, km))
     allocate (vd_inc(is:ie+1, js:je  , km))
 
     call get_staggered_grid( &
         is, ie, js, je, &
         isd, ied, jsd, jed, &
+<<<<<<< HEAD
         Atm(1)%gridstruct%grid, pt_c, pt_d)
 
     !------ pt_c part ------
     ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
     call remap_coef( is, ie+1, js, je, &
+=======
+        Atm%gridstruct%grid, pt_c, pt_d)
+
+    !------ pt_c part ------
+    ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
+    call remap_coef( is, ie+1, js, je, isd, ied+1, jsd, jed, &
+>>>>>>> rusty/master_test
         im, jm, lon, lat, id1_c, id2_c, jdc_c, s2c_c, &
         pt_c)
 
@@ -343,14 +469,23 @@ contains
                          s2c_c(i,j,2)*wk3_v(i2,j1  ,k) + &
                          s2c_c(i,j,3)*wk3_v(i2,j1+1,k) + &
                          s2c_c(i,j,4)*wk3_v(i1,j1+1,k)
+<<<<<<< HEAD
           p1(:) = Atm(1)%gridstruct%grid(i,j  ,1:2)
           p2(:) = Atm(1)%gridstruct%grid(i,j+1,1:2)
+=======
+          p1(:) = Atm%gridstruct%grid(i,j  ,1:2)
+          p2(:) = Atm%gridstruct%grid(i,j+1,1:2)
+>>>>>>> rusty/master_test
           call  mid_pt_sphere(p1, p2, p3)
           call get_unit_vect2(p1, p2, e2)
           call get_latlon_vector(p3, ex, ey)
           vd_inc(i,j,k) = u_inc(i,j,k)*inner_prod(e2,ex) + &
                           v_inc(i,j,k)*inner_prod(e2,ey)
+<<<<<<< HEAD
           Atm(1)%v(i,j,k) = Atm(1)%v(i,j,k) + vd_inc(i,j,k)
+=======
+          v(i,j,k) = v(i,j,k) + vd_inc(i,j,k)
+>>>>>>> rusty/master_test
         enddo
       enddo
     enddo
@@ -360,7 +495,11 @@ contains
 
     !------ pt_d part ------
     ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
+<<<<<<< HEAD
     call remap_coef( is, ie, js, je+1,&
+=======
+    call remap_coef( is, ie, js, je+1, isd, ied, jsd, jed+1, &
+>>>>>>> rusty/master_test
         im, jm, lon, lat, id1_d, id2_d, jdc_d, s2c_d, &
         pt_d)
 
@@ -396,14 +535,23 @@ contains
                          s2c_d(i,j,2)*wk3_v(i2,j1  ,k) + &
                          s2c_d(i,j,3)*wk3_v(i2,j1+1,k) + &
                          s2c_d(i,j,4)*wk3_v(i1,j1+1,k)
+<<<<<<< HEAD
           p1(:) = Atm(1)%gridstruct%grid(i,  j,1:2)
           p2(:) = Atm(1)%gridstruct%grid(i+1,j,1:2)
+=======
+          p1(:) = Atm%gridstruct%grid(i,  j,1:2)
+          p2(:) = Atm%gridstruct%grid(i+1,j,1:2)
+>>>>>>> rusty/master_test
           call  mid_pt_sphere(p1, p2, p3)
           call get_unit_vect2(p1, p2, e1)
           call get_latlon_vector(p3, ex, ey)
           ud_inc(i,j,k) = u_inc(i,j,k)*inner_prod(e1,ex) + &
                           v_inc(i,j,k)*inner_prod(e1,ey)
+<<<<<<< HEAD
           Atm(1)%u(i,j,k) = Atm(1)%u(i,j,k) + ud_inc(i,j,k)
+=======
+          u(i,j,k) = u(i,j,k) + ud_inc(i,j,k)
+>>>>>>> rusty/master_test
         enddo
       enddo
     enddo
@@ -412,11 +560,19 @@ contains
     deallocate ( wk3_u, wk3_v )
 
 !rab The following is not necessary as ua/va will be re-calculated during model startup
+<<<<<<< HEAD
 !rab    call cubed_to_latlon(Atm(1)%u, Atm(1)%v, Atm(1)%ua, Atm(1)%va, &
 !rab        Atm(1)%gridstruct, Atm(1)%flagstruct%npx, Atm(1)%flagstruct%npy, &
 !rab        Atm(1)%flagstruct%npz, 1, Atm(1)%gridstruct%grid_type, &
 !rab        fv_domain, Atm(1)%gridstruct%nested, &
 !rab        Atm(1)%flagstruct%c2l_ord, Atm(1)%bd)
+=======
+!rab    call cubed_to_latlon(Atm%u, Atm%v, Atm%ua, Atm%va, &
+!rab        Atm%gridstruct, Atm%flagstruct%npx, Atm%flagstruct%npy, &
+!rab        Atm%flagstruct%npz, 1, Atm%gridstruct%grid_type, &
+!rab        fv_domain, Atm%gridstruct%nested, &
+!rab        Atm%flagstruct%c2l_ord, Atm%bd)
+>>>>>>> rusty/master_test
 
     !------ winds clean up ------
     deallocate ( pt_c, pt_d, ud_inc, vd_inc )
@@ -424,6 +580,7 @@ contains
     deallocate ( lon, lat )
 
   contains
+<<<<<<< HEAD
    !---------------------------------------------------------------------------
    !> @brief The subroutine 'apply_inc_on3d_scalar' applies the input increments
    !! to the prognostic variables.
@@ -439,6 +596,17 @@ contains
          if (is_master()) print *,'warning: no increment for ',trim(field_name),' found, assuming zero'
          wk3 = 0.
       endif
+=======
+    !---------------------------------------------------------------------------
+    subroutine apply_inc_on_3d_scalar(field_name,var, is_in, js_in, ie_in, je_in)
+      character(len=*), intent(in) :: field_name
+      integer, intent(IN) :: is_in, js_in, ie_in, je_in
+      real, dimension(is_in:ie_in,js_in:je_in,1:km), intent(inout) :: var
+
+      if (is_master()) print*, 'Reading increments ', field_name
+      call get_var3_r4( ncid, field_name, 1,im, jbeg,jend, 1,km, wk3 )
+      if (is_master()) print*,trim(field_name),'before=',var(4,4,30)
+>>>>>>> rusty/master_test
 
       do k=1,km
         do j=js,je
@@ -452,10 +620,15 @@ contains
           enddo
         enddo
       enddo
+<<<<<<< HEAD
+=======
+      if (is_master()) print*,trim(field_name),'after=',var(4,4,30),tp(4,4,30)
+>>>>>>> rusty/master_test
 
     end subroutine apply_inc_on_3d_scalar
     !---------------------------------------------------------------------------
   end subroutine read_da_inc
+<<<<<<< HEAD
  
   !=============================================================================
   !>@brief The subroutine 'remap_coef' calculates the coefficients for horizonal regridding.
@@ -464,11 +637,22 @@ contains
       im, jm, lon, lat, id1, id2, jdc, s2c, agrid )
 
     integer, intent(in):: is, ie, js, je
+=======
+  !=============================================================================
+  subroutine remap_coef( is, ie, js, je, isd, ied, jsd, jed, &
+      im, jm, lon, lat, id1, id2, jdc, s2c, agrid )
+
+    integer, intent(in):: is, ie, js, je, isd, ied, jsd, jed
+>>>>>>> rusty/master_test
     integer, intent(in):: im, jm
     real,    intent(in):: lon(im), lat(jm)
     real,    intent(out):: s2c(is:ie,js:je,4)
     integer, intent(out), dimension(is:ie,js:je):: id1, id2, jdc
+<<<<<<< HEAD
     real,    intent(in):: agrid(is:ie,js:je,2)
+=======
+    real,    intent(in):: agrid(isd:ied,jsd:jed,2)
+>>>>>>> rusty/master_test
     ! local:
     real :: rdlon(im)
     real :: rdlat(jm)
@@ -537,19 +721,30 @@ contains
 5000 continue   ! j-loop
 
   end subroutine remap_coef
+<<<<<<< HEAD
 
   !=============================================================================
   !>@brief The subroutine 'get_staggered_grid' gets the lat-lon locations of the
   !! staggered points.
+=======
+  !=============================================================================
+>>>>>>> rusty/master_test
   subroutine get_staggered_grid( &
       is, ie, js, je, &
       isd, ied, jsd, jed, &
       pt_b, pt_c, pt_d)
+<<<<<<< HEAD
     integer, intent(in) :: is, ie, js, je
     integer, intent(in) :: isd, ied, jsd, jed
     real, dimension(isd:ied+1,jsd:jed+1,2), intent(in) :: pt_b
     real, dimension(is:ie+1,js:je  ,2), intent(out) :: pt_c
     real, dimension(is:ie  ,js:je+1,2), intent(out) :: pt_d
+=======
+    integer, intent(in) :: is, ie, js, je, isd, ied, jsd, jed
+    real, dimension(isd:ied+1,jsd:jed+1,2), intent(in) :: pt_b
+    real, dimension(isd:ied+1,jsd:jed  ,2), intent(out) :: pt_c
+    real, dimension(isd:ied  ,jsd:jed+1,2), intent(out) :: pt_d
+>>>>>>> rusty/master_test
     ! local
     real(kind=R_GRID), dimension(2):: p1, p2, p3
     integer :: i, j

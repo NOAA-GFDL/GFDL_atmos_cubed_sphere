@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
@@ -49,6 +50,36 @@ module nh_core_mod
    use constants_mod,     only: rdgas, cp_air, grav
    use tp_core_mod,       only: fv_tp_2d
    use nh_utils_mod,      only: update_dz_c, update_dz_d, nest_halo_nh
+=======
+!***********************************************************************
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+!* If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
+module nh_core_mod
+! Developer: S.-J. Lin, NOAA/GFDL
+! To do list:
+! include moisture effect in pt
+!------------------------------
+   use constants_mod,     only: rdgas, cp_air, grav
+   use tp_core_mod,       only: fv_tp_2d
+   use nh_utils_mod,      only: update_dz_c, update_dz_d, nh_bc
+>>>>>>> rusty/master_test
    use nh_utils_mod,      only: sim_solver, sim1_solver, sim3_solver
    use nh_utils_mod,      only: sim3p0_solver, rim_2d
    use nh_utils_mod,      only: Riem_Solver_c
@@ -56,17 +87,26 @@ module nh_core_mod
    implicit none
    private
 
+<<<<<<< HEAD
    public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, nest_halo_nh
+=======
+   public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, nh_bc
+>>>>>>> rusty/master_test
    real, parameter:: r3 = 1./3.
 
 CONTAINS 
 
+<<<<<<< HEAD
 
   subroutine Riem_Solver3(ms, dt,   is,   ie,   js, je, km, ng,    &
                           isd, ied, jsd, jed, akap, cappa, cp,     &
 #ifdef MULTI_GASES
                           kapad,  &
 #endif
+=======
+  subroutine Riem_Solver3(ms, dt,   is,   ie,   js, je, km, ng,    &
+                          isd, ied, jsd, jed, akap, cappa, cp,     &
+>>>>>>> rusty/master_test
                           ptop, zs, q_con, w,  delz, pt,  &
                           delp, zh, pe, ppe, pk3, pk, peln, &
                           ws, scale_m,  p_fac, a_imp, &
@@ -79,30 +119,46 @@ CONTAINS
 !--------------------------------------------
    integer, intent(in):: ms, is, ie, js, je, km, ng
    integer, intent(in):: isd, ied, jsd, jed
+<<<<<<< HEAD
    real, intent(in):: dt         !< the BIG horizontal Lagrangian time step
+=======
+   real, intent(in):: dt         ! the BIG horizontal Lagrangian time step
+>>>>>>> rusty/master_test
    real, intent(in):: akap, cp, ptop, p_fac, a_imp, scale_m
    real, intent(in):: zs(isd:ied,jsd:jed)
    logical, intent(in):: last_call, use_logp, fp_out
    real, intent(in):: ws(is:ie,js:je)
    real, intent(in), dimension(isd:,jsd:,1:):: q_con, cappa
+<<<<<<< HEAD
 #ifdef MULTI_GASES
    real, intent(in), dimension(isd:ied,jsd:jed,km):: kapad
 #endif
+=======
+>>>>>>> rusty/master_test
    real, intent(in), dimension(isd:ied,jsd:jed,km):: delp, pt
    real, intent(inout), dimension(isd:ied,jsd:jed,km+1):: zh
    real, intent(inout), dimension(isd:ied,jsd:jed,km):: w
    real, intent(inout):: pe(is-1:ie+1,km+1,js-1:je+1)
+<<<<<<< HEAD
    real, intent(out):: peln(is:ie,km+1,js:je)          !< ln(pe)
    real, intent(out), dimension(isd:ied,jsd:jed,km+1):: ppe
    real, intent(out):: delz(is-ng:ie+ng,js-ng:je+ng,km)
+=======
+   real, intent(out):: peln(is:ie,km+1,js:je)          ! ln(pe)
+   real, intent(out), dimension(isd:ied,jsd:jed,km+1):: ppe
+   real, intent(out):: delz(is:ie,js:je,km)
+>>>>>>> rusty/master_test
    real, intent(out):: pk(is:ie,js:je,km+1)
    real, intent(out):: pk3(isd:ied,jsd:jed,km+1)
 ! Local:
   real, dimension(is:ie,km):: dm, dz2, pm2, w2, gm2, cp2
   real, dimension(is:ie,km+1)::pem, pe2, peln2, peg, pelng
+<<<<<<< HEAD
 #ifdef MULTI_GASES
   real, dimension(is:ie,km):: kapad2
 #endif
+=======
+>>>>>>> rusty/master_test
   real gama, rgrav, ptk, peln1
   integer i, j, k
 
@@ -113,6 +169,7 @@ CONTAINS
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,delp,ptop,peln1,pk3,ptk,akap,rgrav,zh,pt, &
 !$OMP                                  w,a_imp,dt,gama,ws,p_fac,scale_m,ms,delz,last_call,  &
+<<<<<<< HEAD
 #ifdef MULTI_GASES
 !$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,kapad )          &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2,kapad2)
@@ -120,6 +177,10 @@ CONTAINS
 !$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con )          &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2)
 #endif
+=======
+!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con )          &
+!$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2)
+>>>>>>> rusty/master_test
    do 2000 j=js, je
 
       do k=1,km
@@ -128,9 +189,12 @@ CONTAINS
 #ifdef MOIST_CAPPA
             cp2(i,k) = cappa(i,j,k)
 #endif
+<<<<<<< HEAD
 #ifdef MULTI_GASES
             kapad2(i,k) = kapad(i,j,k)
 #endif
+=======
+>>>>>>> rusty/master_test
          enddo
       enddo
 
@@ -153,7 +217,10 @@ CONTAINS
             peg(i,k) = peg(i,k-1) + dm(i,k-1)*(1.-q_con(i,j,k-1))
             pelng(i,k) = log(peg(i,k))
 #endif
+<<<<<<< HEAD
 !hmhj pk3 at interface , interface pk is using constant akap
+=======
+>>>>>>> rusty/master_test
             pk3(i,j,k) = exp(akap*peln2(i,k))
          enddo
       enddo
@@ -176,6 +243,7 @@ CONTAINS
          enddo
       enddo
 
+<<<<<<< HEAD
 
       if ( a_imp < -0.999 ) then
            call SIM3p0_solver(dt, is, ie, km, rdgas, gama, akap, &
@@ -211,11 +279,30 @@ CONTAINS
                            kapad2,  &
 #endif
                            pe2, dm,  &
+=======
+      if ( a_imp < -0.999 ) then
+           call SIM3p0_solver(dt, is, ie, km, rdgas, gama, akap, pe2, dm,  &
+                              pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac, scale_m )
+      elseif ( a_imp < -0.5 ) then
+           call SIM3_solver(dt, is, ie, km, rdgas, gama, akap, pe2, dm,   &
+                        pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), abs(a_imp), p_fac, scale_m)
+      elseif ( a_imp <= 0.5 ) then
+           call RIM_2D(ms, dt, is, ie, km, rdgas, gama, gm2, pe2,   &
+                       dm, pm2, w2, dz2, pt(is:ie,j,1:km), ws(is,j), .false.)
+      elseif ( a_imp > 0.999 ) then
+           call SIM1_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, pe2, dm,   &
+                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac)
+      else
+           call SIM_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, pe2, dm,  &
+>>>>>>> rusty/master_test
                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), &
                            a_imp, p_fac, scale_m)
       endif
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> rusty/master_test
       do k=1, km
          do i=is, ie
             w(i,j,k) = w2(i,k)
@@ -268,5 +355,8 @@ CONTAINS
 
   end subroutine Riem_Solver3
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> rusty/master_test
 end module nh_core_mod

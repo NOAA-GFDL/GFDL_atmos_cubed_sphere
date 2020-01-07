@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
@@ -124,10 +125,67 @@ module fv_mapz_mod
   real, parameter:: cp_vap = cp_vapor        !< 1846.
   real, parameter:: tice = 273.16
 
+=======
+!***********************************************************************
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+!* If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
+! SJL: Apr 12, 2012
+! This revision may actually produce rounding level differences due to the elimination of KS to compute
+! pressure level for remapping.
+module fv_mapz_mod
+
+  use constants_mod,     only: radius, pi=>pi_8, rvgas, rdgas, grav, hlv, hlf, cp_air, cp_vapor
+  use tracer_manager_mod,only: get_tracer_index
+  use field_manager_mod, only: MODEL_ATMOS
+  use fv_grid_utils_mod, only: g_sum, ptop_min, cubed_to_latlon, update_dwinds_phys
+  use fv_fill_mod,       only: fillz
+  use mpp_domains_mod,   only: mpp_update_domains, domain2d
+  use mpp_mod,           only: NOTE, mpp_error, get_unit, mpp_root_pe, mpp_pe
+  use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, R_GRID
+  use fv_timing_mod,     only: timing_on, timing_off
+  use fv_mp_mod,         only: is_master, mp_reduce_min, mp_reduce_max
+  use fv_cmp_mod,        only: qs_init, fv_sat_adj
+
+  implicit none
+  real, parameter:: consv_min = 0.001   ! below which no correction applies
+  real, parameter:: t_min= 184.   ! below which applies stricter constraint
+  real, parameter:: r3 = 1./3., r23 = 2./3., r12 = 1./12.
+  real, parameter:: cv_vap = 3.*rvgas  ! 1384.5
+  real, parameter:: cv_air =  cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
+! real, parameter:: c_ice = 2106.           ! heat capacity of ice at 0.C
+  real, parameter:: c_ice = 1972.           ! heat capacity of ice at -15.C
+  real, parameter:: c_liq = 4.1855e+3    ! GFS: heat capacity of water at 0C
+! real, parameter:: c_liq = 4218.        ! ECMWF-IFS
+  real, parameter:: cp_vap = cp_vapor   ! 1846.
+  real, parameter:: tice = 273.16
+
+  real, parameter :: w_max = 60.
+  real, parameter :: w_min = -30.
+  logical, parameter :: w_limiter = .false. ! doesn't work so well??
+
+>>>>>>> rusty/master_test
   real(kind=4) :: E_Flux = 0.
   private
 
   public compute_total_energy, Lagrangian_to_Eulerian, moist_cv, moist_cp,   &
+<<<<<<< HEAD
          rst_remap, mappm, E_Flux
 
 contains
@@ -137,10 +195,19 @@ contains
 !>@details It also includes the entry point for calling fast microphysical processes. This is typically calle on the k_split loop.
  subroutine Lagrangian_to_Eulerian(last_step, consv, ps, pe, delp, pkz, pk,   &
                                    mdt, pdt, km, is,ie,js,je, isd,ied,jsd,jed,       &
+=======
+         rst_remap, mappm, E_Flux, remap_2d
+
+contains
+
+ subroutine Lagrangian_to_Eulerian(last_step, consv, ps, pe, delp, pkz, pk,   &
+                                   mdt, pdt, npx, npy, km, is,ie,js,je, isd,ied,jsd,jed,       &
+>>>>>>> rusty/master_test
                       nq, nwat, sphum, q_con, u, v, w, delz, pt, q, hs, r_vir, cp,  &
                       akap, cappa, kord_mt, kord_wz, kord_tr, kord_tm,  peln, te0_2d,        &
                       ng, ua, va, omga, te, ws, fill, reproduce_sum, out_dt, dtdt,      &
                       ptop, ak, bk, pfull, gridstruct, domain, do_sat_adj, &
+<<<<<<< HEAD
                       hydrostatic, hybrid_z, do_omega, adiabatic, do_adiabatic_init)
   logical, intent(in):: last_step
   real,    intent(in):: mdt                    !< remap time step
@@ -162,11 +229,43 @@ contains
   real, intent(in):: cp
   real, intent(in):: akap
   real, intent(in):: hs(isd:ied,jsd:jed)  !< surface geopotential
+=======
+                      hydrostatic, hybrid_z, do_omega, adiabatic, do_adiabatic_init, &
+                      c2l_ord, bd, fv_debug, &
+                      moist_phys)
+  logical, intent(in):: last_step
+  logical, intent(in):: fv_debug
+  real,    intent(in):: mdt                   ! remap time step
+  real,    intent(in):: pdt                   ! phys time step
+  integer, intent(in):: npx, npy
+  integer, intent(in):: km
+  integer, intent(in):: nq                    ! number of tracers (including h2o)
+  integer, intent(in):: nwat
+  integer, intent(in):: sphum                 ! index for water vapor (specific humidity)
+  integer, intent(in):: ng
+  integer, intent(in):: is,ie,isd,ied         ! starting & ending X-Dir index
+  integer, intent(in):: js,je,jsd,jed         ! starting & ending Y-Dir index
+  integer, intent(in):: kord_mt               ! Mapping order for the vector winds
+  integer, intent(in):: kord_wz               ! Mapping order/option for w
+  integer, intent(in):: kord_tr(nq)           ! Mapping order for tracers
+  integer, intent(in):: kord_tm               ! Mapping order for thermodynamics
+  integer, intent(in):: c2l_ord
+
+  real, intent(in):: consv                 ! factor for TE conservation
+  real, intent(in):: r_vir
+  real, intent(in):: cp
+  real, intent(in):: akap
+  real, intent(in):: hs(isd:ied,jsd:jed)  ! surface geopotential
+>>>>>>> rusty/master_test
   real, intent(inout):: te0_2d(is:ie,js:je)
   real, intent(in):: ws(is:ie,js:je)
 
   logical, intent(in):: do_sat_adj
+<<<<<<< HEAD
   logical, intent(in):: fill                  !< fill negative tracers
+=======
+  logical, intent(in):: fill                  ! fill negative tracers
+>>>>>>> rusty/master_test
   logical, intent(in):: reproduce_sum
   logical, intent(in):: do_omega, adiabatic, do_adiabatic_init
   real, intent(in) :: ptop
@@ -175,6 +274,7 @@ contains
   real, intent(in):: pfull(km)
   type(fv_grid_type), intent(IN), target :: gridstruct
   type(domain2d), intent(INOUT) :: domain
+<<<<<<< HEAD
 
 ! INPUT/OUTPUT
   real, intent(inout):: pk(is:ie,js:je,km+1)          !< pe to the kappa
@@ -202,12 +302,46 @@ contains
   real, intent(out)::    pkz(is:ie,js:je,km)       !< layer-mean pk for converting t to pt
   real, intent(out)::     te(isd:ied,jsd:jed,km)
 
+=======
+  type(fv_grid_bounds_type), intent(IN) :: bd
+
+! !INPUT/OUTPUT
+  real, intent(inout):: pk(is:ie,js:je,km+1) ! pe to the kappa
+  real, intent(inout):: q(isd:ied,jsd:jed,km,*)
+  real, intent(inout):: delp(isd:ied,jsd:jed,km) ! pressure thickness
+  real, intent(inout)::  pe(is-1:ie+1,km+1,js-1:je+1) ! pressure at layer edges
+  real, intent(inout):: ps(isd:ied,jsd:jed)      ! surface pressure
+
+! u-wind will be ghosted one latitude to the north upon exit
+  real, intent(inout)::  u(isd:ied  ,jsd:jed+1,km)   ! u-wind (m/s)
+  real, intent(inout)::  v(isd:ied+1,jsd:jed  ,km)   ! v-wind (m/s)
+  real, intent(inout)::  w(isd:     ,jsd:     ,1:)   ! vertical velocity (m/s)
+  real, intent(inout):: pt(isd:ied  ,jsd:jed  ,km)   ! cp*virtual potential temperature 
+                                                     ! as input; output: temperature
+  real, intent(inout), dimension(isd:,jsd:,1:)::q_con, cappa
+  real, intent(inout), dimension(is:,js:,1:)::delz
+  logical, intent(in):: hydrostatic
+  logical, intent(in):: hybrid_z
+  logical, intent(in):: out_dt
+  logical, intent(in):: moist_phys
+
+  real, intent(inout)::   ua(isd:ied,jsd:jed,km)   ! u-wind (m/s) on physics grid
+  real, intent(inout)::   va(isd:ied,jsd:jed,km)   ! v-wind (m/s) on physics grid
+  real, intent(inout):: omga(isd:ied,jsd:jed,km)   ! vertical press. velocity (pascal/sec)
+  real, intent(inout)::   peln(is:ie,km+1,js:je)     ! log(pe)
+  real, intent(inout)::   dtdt(is:ie,js:je,km)
+  real, intent(out)::    pkz(is:ie,js:je,km)       ! layer-mean pk for converting t to pt
+  real, intent(out)::     te(isd:ied,jsd:jed,km)
+
+
+>>>>>>> rusty/master_test
 ! !DESCRIPTION:
 !
 ! !REVISION HISTORY:
 ! SJL 03.11.04: Initial version for partial remapping
 !
 !-----------------------------------------------------------------------
+<<<<<<< HEAD
 #ifdef CCPP
   real, dimension(is:ie,js:je):: te_2d, zsum0, zsum1
 #else
@@ -234,6 +368,22 @@ contains
       ccpp_associate: associate( fast_mp_consv => CCPP_interstitial%fast_mp_consv, &
                                  kmp           => CCPP_interstitial%kmp            )
 #endif
+=======
+  real, allocatable, dimension(:,:,:) :: dp0, u0, v0
+  real, allocatable, dimension(:,:,:) :: u_dt, v_dt
+  real, dimension(is:ie,js:je):: te_2d, zsum0, zsum1, dpln
+  real, dimension(is:ie,km)  :: q2, dp2, t0, w2
+  real, dimension(is:ie,km+1):: pe1, pe2, pk1, pk2, pn2, phis
+  real, dimension(isd:ied,jsd:jed,km):: pe4
+  real, dimension(is:ie+1,km+1):: pe0, pe3
+  real, dimension(is:ie):: gsize, gz, cvm, qv
+
+  real rcp, rg, rrg, bkh, dtmp, k1k
+  logical:: fast_mp_consv
+  integer:: i,j,k 
+  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, iq, n, kmp, kp, k_next
+  integer:: ccn_cm3
+>>>>>>> rusty/master_test
 
        k1k = rdgas/cv_air   ! akap / (1.-akap) = rg/Cv=0.4
         rg = rdgas
@@ -246,16 +396,26 @@ contains
        snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
        graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
        cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
+<<<<<<< HEAD
 
        if ( do_sat_adj ) then
             fast_mp_consv = (.not.do_adiabatic_init) .and. consv>consv_min
 #ifndef CCPP
+=======
+       ccn_cm3 = get_tracer_index (MODEL_ATMOS, 'ccn_cm3')
+
+       if ( do_adiabatic_init .or. do_sat_adj ) then
+            fast_mp_consv = (.not.do_adiabatic_init) .and. consv>consv_min
+>>>>>>> rusty/master_test
             do k=1,km
                kmp = k
                if ( pfull(k) > 10.E2 ) exit
             enddo
             call qs_init(kmp)
+<<<<<<< HEAD
 #endif
+=======
+>>>>>>> rusty/master_test
        endif
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,pe,ptop,kord_tm,hydrostatic, &
@@ -263,12 +423,18 @@ contains
 !$OMP                                  graupel,q_con,sphum,cappa,r_vir,rcp,k1k,delp, &
 !$OMP                                  delz,akap,pkz,te,u,v,ps, gridstruct, last_step, &
 !$OMP                                  ak,bk,nq,isd,ied,jsd,jed,kord_tr,fill, adiabatic, &
+<<<<<<< HEAD
 #ifdef MULTI_GASES
 !$OMP                                  num_gas,                                          &
 #endif
 !$OMP                                  hs,w,ws,kord_wz,do_omega,omga,rrg,kord_mt,ua)    &
 !$OMP                          private(qv,gz,cvm,kp,k_next,bkh,dp2,   &
 !$OMP                                  pe0,pe1,pe2,pe3,pk1,pk2,pn2,phis,q2)
+=======
+!$OMP                                  hs,w,ws,kord_wz,do_omega,omga,rrg,kord_mt,pe4)    &
+!$OMP                          private(qv,gz,cvm,kp,k_next,bkh,dp2,   &
+!$OMP                                  pe0,pe1,pe2,pe3,pk1,pk2,pn2,phis,q2,w2)
+>>>>>>> rusty/master_test
   do 1000 j=js,je+1
 
      do k=1,km+1
@@ -289,6 +455,7 @@ contains
 ! Transform virtual pt to virtual Temp
              do k=1,km
                    do i=is,ie
+<<<<<<< HEAD
 #ifdef MULTI_GASES
                       pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(akap*(peln(i,k+1,j)-peln(i,k,j)))
                       pkz(i,j,k) = exp(virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))*log(pkz(i,j,k)))
@@ -296,6 +463,9 @@ contains
 #else
                       pt(i,j,k) = pt(i,j,k)*(pk(i,j,k+1)-pk(i,j,k))/(akap*(peln(i,k+1,j)-peln(i,k,j)))
 #endif
+=======
+                      pt(i,j,k) = pt(i,j,k)*(pk(i,j,k+1)-pk(i,j,k))/(akap*(peln(i,k+1,j)-peln(i,k,j)))
+>>>>>>> rusty/master_test
                    enddo
              enddo
              else
@@ -306,20 +476,28 @@ contains
                                 ice_wat, snowwat, graupel, q, gz, cvm)
                   do i=is,ie
                      q_con(i,j,k) = gz(i)
+<<<<<<< HEAD
 #ifdef MULTI_GASES
                      cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/virq(q(i,j,k,1:num_gas)) )
 #else
                      cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/(1.+r_vir*q(i,j,k,sphum)) )
 #endif
+=======
+                     cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/(1.+r_vir*q(i,j,k,sphum)) )
+>>>>>>> rusty/master_test
                      pt(i,j,k) = pt(i,j,k)*exp(cappa(i,j,k)/(1.-cappa(i,j,k))*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
                   enddo
 #else
                   do i=is,ie
+<<<<<<< HEAD
 #ifdef MULTI_GASES
                      pt(i,j,k) = pt(i,j,k)*exp(k1k*(virqd(q(i,j,k,1:num_gas))/vicvqd(q(i,j,k,1:num_gas))*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #else
                      pt(i,j,k) = pt(i,j,k)*exp(k1k*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #endif
+=======
+                     pt(i,j,k) = pt(i,j,k)*exp(k1k*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+>>>>>>> rusty/master_test
 ! Using dry pressure for the definition of the virtual potential temperature
 !                    pt(i,j,k) = pt(i,j,k)*exp(k1k*log(rrg*(1.-q(i,j,k,sphum))*delp(i,j,k)/delz(i,j,k)*    &
 !                                              pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum))))
@@ -329,12 +507,18 @@ contains
              endif         ! hydro test
        elseif ( hydrostatic ) then
            call pkez(km, is, ie, js, je, j, pe, pk, akap, peln, pkz, ptop)
+<<<<<<< HEAD
 ! Compute cp_air*Tm + KE
            do k=1,km
                  do i=is,ie
 #ifdef MULTI_GASES
                     pkz(i,j,k) = exp(virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))*log(pkz(i,j,k)))
 #endif
+=======
+! Compute cp*T + KE
+           do k=1,km
+                 do i=is,ie
+>>>>>>> rusty/master_test
                     te(i,j,k) = 0.25*gridstruct%rsin2(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
                                                  v(i,j,k)**2+v(i+1,j,k)**2 -  &
                                (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*gridstruct%cosa_s(i,j))  &
@@ -442,14 +626,24 @@ contains
                        km,   pe2,  w,              &
                        is, ie, j, isd, ied, jsd, jed, -2, kord_wz)
 ! Remap delz for hybrid sigma-p coordinate
+<<<<<<< HEAD
         call map1_ppm (km,   pe1, delz,  gz,   &
                        km,   pe2, delz,              &
                        is, ie, j, isd,  ied,  jsd,  jed,  1, abs(kord_tm))
+=======
+        call map1_ppm (km,   pe1, delz,  gz,   & ! works
+                       km,   pe2, delz,              &
+                       is, ie, j, is,  ie,  js,  je,  1, abs(kord_tm))
+>>>>>>> rusty/master_test
         do k=1,km
            do i=is,ie
               delz(i,j,k) = -delz(i,j,k)*dp2(i,k)
            enddo
         enddo
+<<<<<<< HEAD
+=======
+
+>>>>>>> rusty/master_test
    endif
 
 !----------
@@ -484,15 +678,21 @@ contains
 
 !------------
 ! Compute pkz
+<<<<<<< HEAD
 !hmhj pk is pe**kappa(=rgas/cp_air), but pkz=plyr**kappa(=r/cp)
+=======
+>>>>>>> rusty/master_test
 !------------
    if ( hydrostatic ) then
       do k=1,km
          do i=is,ie
             pkz(i,j,k) = (pk2(i,k+1)-pk2(i,k))/(akap*(peln(i,k+1,j)-peln(i,k,j)))
+<<<<<<< HEAD
 #ifdef MULTI_GASES
             pkz(i,j,k) = exp(virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))*log(pkz(i,j,k)))
 #endif
+=======
+>>>>>>> rusty/master_test
          enddo
       enddo
    else
@@ -503,31 +703,43 @@ contains
                           ice_wat, snowwat, graupel, q, gz, cvm)
             do i=is,ie
                q_con(i,j,k) = gz(i)
+<<<<<<< HEAD
 #ifdef MULTI_GASES
                cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/virq(q(i,j,k,1:num_gas)) )
 #else
                cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/(1.+r_vir*q(i,j,k,sphum)) )
 #endif
+=======
+               cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/(1.+r_vir*q(i,j,k,sphum)) )
+>>>>>>> rusty/master_test
                pkz(i,j,k) = exp(cappa(i,j,k)*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
             enddo
 #else
          if ( kord_tm < 0 ) then
            do i=is,ie
+<<<<<<< HEAD
 #ifdef MULTI_GASES
               pkz(i,j,k) = exp(akap*virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #else
               pkz(i,j,k) = exp(akap*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #endif
+=======
+              pkz(i,j,k) = exp(akap*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+>>>>>>> rusty/master_test
 ! Using dry pressure for the definition of the virtual potential temperature
 !             pkz(i,j,k) = exp(akap*log(rrg*(1.-q(i,j,k,sphum))*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum))))
            enddo
          else
            do i=is,ie
+<<<<<<< HEAD
 #ifdef MULTI_GASES
               pkz(i,j,k) = exp(k1k*virqd(q(i,j,k,1:num_gas))/vicvqd(q(i,j,k,1:num_gas))*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #else
               pkz(i,j,k) = exp(k1k*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #endif
+=======
+              pkz(i,j,k) = exp(k1k*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+>>>>>>> rusty/master_test
 ! Using dry pressure for the definition of the virtual potential temperature
 !             pkz(i,j,k) = exp(k1k*log(rrg*(1.-q(i,j,k,sphum))*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum))))
            enddo
@@ -612,12 +824,17 @@ contains
 
      do k=1,km
         do i=is,ie
+<<<<<<< HEAD
            ua(i,j,k) = pe2(i,k+1)
+=======
+           pe4(i,j,k) = pe2(i,k+1)
+>>>>>>> rusty/master_test
         enddo
      enddo
 
 1000  continue
 
+<<<<<<< HEAD
 #if defined(CCPP) && defined(__GFORTRAN__)
 !$OMP parallel default(none) shared(is,ie,js,je,km,ptop,u,v,pe,ua,isd,ied,jsd,jed,kord_mt,     &
 !$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln, adiabatic,        &
@@ -664,12 +881,30 @@ contains
 #endif
 !$OMP                       private(pe0,pe1,pe2,pe3,qv,cvm,gz,phis,kdelz,dpln)
 #endif
+=======
+
+!$OMP parallel default(none) shared(is,ie,js,je,km,kmp,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt, &
+!$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln,adiabatic, &
+!$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,       &
+!$OMP                               graupel,q_con,r_vir,sphum,w,pk,pkz,last_step,consv, &
+!$OMP                               do_adiabatic_init,zsum1,zsum0,te0_2d,domain,        &
+!$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,      &
+!$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,  &
+!$OMP                               fast_mp_consv,kord_tm,pe4, &
+!$OMP                               npx,npy,ccn_cm3,u_dt,v_dt,   &
+!$OMP                               c2l_ord,bd,dp0,ps) &
+!$OMP                       private(q2,pe0,pe1,pe2,pe3,qv,cvm,gz,gsize,phis,dpln,dp2,t0)
+>>>>>>> rusty/master_test
 
 !$OMP do
   do k=2,km
      do j=js,je
         do i=is,ie
+<<<<<<< HEAD
            pe(i,k,j) = ua(i,j,k-1)
+=======
+           pe(i,k,j) = pe4(i,j,k-1)
+>>>>>>> rusty/master_test
         enddo
      enddo
   enddo
@@ -718,22 +953,30 @@ if( last_step .and. (.not.do_adiabatic_init)  ) then
               do i=is,ie
 ! KE using 3D winds:
               q_con(i,j,k) = gz(i)
+<<<<<<< HEAD
 #ifdef MULTI_GASES
               te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cvm(i)*pt(i,j,k)/virq(q(i,j,k,1:num_gas)) + &
 #else
               te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cvm(i)*pt(i,j,k)/((1.+r_vir*q(i,j,k,sphum))*(1.-gz(i))) + &
 #endif
+=======
+              te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cvm(i)*pt(i,j,k)/((1.+r_vir*q(i,j,k,sphum))*(1.-gz(i))) + &
+>>>>>>> rusty/master_test
                               0.5*(phis(i,k)+phis(i,k+1) + w(i,j,k)**2 + 0.5*gridstruct%rsin2(i,j)*( &
                               u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -  &
                              (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*gridstruct%cosa_s(i,j))))
               enddo
 #else
               do i=is,ie
+<<<<<<< HEAD
 #ifdef MULTI_GASES
                  te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cv_air*pt(i,j,k)/virq(q(i,j,k,1:num_gas)) + &
 #else
                  te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cv_air*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum)) + &
 #endif
+=======
+                 te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*(cv_air*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum)) + &
+>>>>>>> rusty/master_test
                                  0.5*(phis(i,k)+phis(i,k+1) + w(i,j,k)**2 + 0.5*gridstruct%rsin2(i,j)*( &
                                  u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -  &
                                 (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*gridstruct%cosa_s(i,j))))
@@ -798,13 +1041,17 @@ if( last_step .and. (.not.do_adiabatic_init)  ) then
            dtmp = E_flux*(grav*pdt*4.*pi*radius**2) /    &
                  (cv_air*g_sum(domain, zsum1,  is, ie, js, je, ng, gridstruct%area_64, 0, reproduce=.true.))
       endif
+<<<<<<< HEAD
 
+=======
+>>>>>>> rusty/master_test
 !$OMP end single
   endif        ! end consv check
 endif        ! end last_step check
 
 ! Note: pt at this stage is T_v
 ! if ( (.not.do_adiabatic_init) .and. do_sat_adj ) then
+<<<<<<< HEAD
   if ( do_sat_adj ) then
                                            call timing_on('sat_adj2')
 #ifdef CCPP
@@ -819,6 +1066,11 @@ endif        ! end last_step check
       call mpp_error (FATAL, 'Lagrangian_to_Eulerian: can not call CCPP fast physics because cdata not initialized')
     endif
 #else
+=======
+  if (do_adiabatic_init .or. do_sat_adj) then
+                                           call timing_on('sat_adj2')
+
+>>>>>>> rusty/master_test
 !$OMP do
            do k=kmp,km
               do j=js,je
@@ -826,6 +1078,7 @@ endif        ! end last_step check
                     dpln(i,j) = peln(i,k+1,j) - peln(i,k,j)
                  enddo
               enddo
+<<<<<<< HEAD
               if (hydrostatic) then
                  kdelz = 1
               else
@@ -843,24 +1096,40 @@ endif        ! end last_step check
 
               cappa(isd:,jsd:,k), gridstruct%area_64, dtdt(is,js,k), out_dt, last_step, cld_amt>0, q(isd,jsd,k,cld_amt))
 
+=======
+              call fv_sat_adj(abs(mdt), r_vir, is, ie, js, je, ng, hydrostatic, fast_mp_consv, &
+                             te(isd,jsd,k), q(isd,jsd,k,sphum), q(isd,jsd,k,liq_wat),   &
+                             q(isd,jsd,k,ice_wat), q(isd,jsd,k,rainwat),    &
+                             q(isd,jsd,k,snowwat), q(isd,jsd,k,graupel),    &
+                             dpln, delz(is:ie,js:je,k), pt(isd,jsd,k), delp(isd,jsd,k), q_con(isd:,jsd:,k), & 
+                             cappa(isd:,jsd:,k), gridstruct%area_64, dtdt(is,js,k), out_dt, last_step, cld_amt>0, q(isd,jsd,k,cld_amt))
+>>>>>>> rusty/master_test
               if ( .not. hydrostatic  ) then
                  do j=js,je
                     do i=is,ie
 #ifdef MOIST_CAPPA
                        pkz(i,j,k) = exp(cappa(i,j,k)*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #else
+<<<<<<< HEAD
 #ifdef MULTI_GASES
                        pkz(i,j,k) = exp(akap*(virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #else
                        pkz(i,j,k) = exp(akap*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #endif
 #endif
+=======
+                       pkz(i,j,k) = exp(akap*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+#endif
+>>>>>>> rusty/master_test
                     enddo
                  enddo
               endif
            enddo    ! OpenMP k-loop
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> rusty/master_test
            if ( fast_mp_consv ) then
 !$OMP do
                 do j=js,je
@@ -871,11 +1140,18 @@ endif        ! end last_step check
                    enddo
                 enddo
            endif
+<<<<<<< HEAD
 #endif
                                            call timing_off('sat_adj2')
   endif   ! do_sat_adj
 
 
+=======
+
+                                           call timing_off('sat_adj2')
+  endif   ! do_sat_adj
+
+>>>>>>> rusty/master_test
   if ( last_step ) then
        ! Output temperature if last_step
 !!!  if ( is_master() ) write(*,*) 'dtmp=', dtmp, nwat
@@ -886,41 +1162,59 @@ endif        ! end last_step check
               if ( nwat==2 ) then
                  do i=is,ie
                     gz(i) = max(0., q(i,j,k,liq_wat))
+<<<<<<< HEAD
                     qv(i) = max(0., q(i,j,k,sphum))
 #ifdef MULTI_GASES
                     pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k)) / virq(q(i,j,k,1:num_gas))
 #else
                     pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k)) / ((1.+r_vir*qv(i))*(1.-gz(i)))
 #endif
+=======
+                    qv(i) = max(0., q(i,j,k,sphum)) 
+                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k)) / ((1.+r_vir*qv(i))*(1.-gz(i)))
+>>>>>>> rusty/master_test
                  enddo
               elseif ( nwat==6 ) then
                  do i=is,ie
                     gz(i) = q(i,j,k,liq_wat)+q(i,j,k,rainwat)+q(i,j,k,ice_wat)+q(i,j,k,snowwat)+q(i,j,k,graupel)
+<<<<<<< HEAD
 #ifdef MULTI_GASES
                     pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k))/ virq(q(i,j,k,1:num_gas))
 #else
                     pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k))/((1.+r_vir*q(i,j,k,sphum))*(1.-gz(i)))
 #endif
+=======
+                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k))/((1.+r_vir*q(i,j,k,sphum))*(1.-gz(i)))
+>>>>>>> rusty/master_test
                  enddo
               else
                  call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
                                ice_wat, snowwat, graupel, q, gz, cvm)
                  do i=is,ie
+<<<<<<< HEAD
 #ifdef MULTI_GASES
                     pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k)) / virq(q(i,j,k,1:num_gas))
 #else
                     pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k)) / ((1.+r_vir*q(i,j,k,sphum))*(1.-gz(i)))
 #endif
+=======
+                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k)) / ((1.+r_vir*q(i,j,k,sphum))*(1.-gz(i)))
+>>>>>>> rusty/master_test
                  enddo
               endif
 #else
               if ( .not. adiabatic ) then
+<<<<<<< HEAD
                 do i=is,ie
 #ifdef MULTI_GASES
                     pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k)) / virq(q(i,j,k,1:num_gas))
 #else
                     pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k)) / (1.+r_vir*q(i,j,k,sphum))
 #endif
+=======
+                 do i=is,ie
+                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k)) / (1.+r_vir*q(i,j,k,sphum))
+>>>>>>> rusty/master_test
                  enddo
               endif
 #endif
@@ -940,6 +1234,7 @@ endif        ! end last_step check
   endif
 !$OMP end parallel
 
+<<<<<<< HEAD
 #ifdef CCPP
   end associate ccpp_associate
 #endif
@@ -949,6 +1244,11 @@ endif        ! end last_step check
 
 !>@brief The subroutine 'compute_total_energy' performs the FV3-consistent computation of the global total energy.
 !>@details It includes the potential, internal (latent and sensible heat), kinetic terms.
+=======
+ end subroutine Lagrangian_to_Eulerian
+
+
+>>>>>>> rusty/master_test
  subroutine compute_total_energy(is, ie, js, je, isd, ied, jsd, jed, km,       &
                                  u, v, w, delz, pt, delp, q, qc, pe, peln, hs, &
                                  rsin2_l, cosa_s_l, &
@@ -966,19 +1266,34 @@ endif        ! end last_step check
    real, intent(in), dimension(isd:ied,jsd:jed,km):: qc
    real, intent(inout)::  u(isd:ied,  jsd:jed+1,km)
    real, intent(inout)::  v(isd:ied+1,jsd:jed,  km)
+<<<<<<< HEAD
    real, intent(in)::  w(isd:,jsd:,1:)   !< vertical velocity (m/s)
    real, intent(in):: delz(isd:,jsd:,1:)
    real, intent(in):: hs(isd:ied,jsd:jed)  !< surface geopotential
    real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) !< pressure at layer edges
    real, intent(in):: peln(is:ie,km+1,js:je)  !< log(pe)
+=======
+   real, intent(in)::  w(isd:,jsd:,1:)   ! vertical velocity (m/s)
+   real, intent(in):: delz(is:,js:,1:)
+   real, intent(in):: hs(isd:ied,jsd:jed)  ! surface geopotential
+   real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) ! pressure at layer edges
+   real, intent(in):: peln(is:ie,km+1,js:je)  ! log(pe)
+>>>>>>> rusty/master_test
    real, intent(in):: cp, rg, r_vir, hlv
    real, intent(in) :: rsin2_l(isd:ied, jsd:jed)
    real, intent(in) :: cosa_s_l(isd:ied, jsd:jed)
    logical, intent(in):: moist_phys, hydrostatic
+<<<<<<< HEAD
 !! Output:
    real, intent(out):: te_2d(is:ie,js:je)   !< vertically integrated TE
    real, intent(out)::   teq(is:ie,js:je)   !< Moist TE
 !! Local
+=======
+! Output:
+   real, intent(out):: te_2d(is:ie,js:je)   ! vertically integrated TE
+   real, intent(out)::   teq(is:ie,js:je)   ! Moist TE
+! Local
+>>>>>>> rusty/master_test
    real, dimension(is:ie,km):: tv
    real  phiz(is:ie,km+1)
    real  cvm(is:ie), qd(is:ie)
@@ -991,9 +1306,12 @@ endif        ! end last_step check
 
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,km,hydrostatic,hs,pt,qc,rg,peln,te_2d, &
 !$OMP                                  pe,delp,cp,rsin2_l,u,v,cosa_s_l,delz,moist_phys,w, &
+<<<<<<< HEAD
 #ifdef MULTI_GASES
 !$OMP                                  num_gas,                                           &
 #endif
+=======
+>>>>>>> rusty/master_test
 !$OMP                                  q,nwat,liq_wat,rainwat,ice_wat,snowwat,graupel,sphum)   &
 !$OMP                          private(phiz, tv, cvm, qd)
   do j=js,je
@@ -1046,12 +1364,17 @@ endif        ! end last_step check
 #ifdef MOIST_CAPPA
            te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cvm(i)*pt(i,j,k) +  &
 #else
+<<<<<<< HEAD
 #ifdef MULTI_GASES
            te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv_air*vicvqd(q(i,j,k,1:num_gas) )*pt(i,j,k) +  &
 #else
            te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv_air*pt(i,j,k) +  &
 #endif
 #endif
+=======
+           te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv_air*pt(i,j,k) +  &
+#endif
+>>>>>>> rusty/master_test
                         0.5*(phiz(i,k)+phiz(i,k+1)+w(i,j,k)**2+0.5*rsin2_l(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
                         v(i,j,k)**2+v(i+1,j,k)**2-(u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s_l(i,j))))
         enddo
@@ -1059,11 +1382,15 @@ endif        ! end last_step check
      else
        do k=1,km
           do i=is,ie
+<<<<<<< HEAD
 #ifdef MULTI_GASES
              te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv_air*vicvqd(q(i,j,k,1:num_gas))*pt(i,j,k) +  &
 #else
              te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv_air*pt(i,j,k) +  &
 #endif
+=======
+             te_2d(i,j) = te_2d(i,j) + delp(i,j,k)*( cv_air*pt(i,j,k) +  &
+>>>>>>> rusty/master_test
                           0.5*(phiz(i,k)+phiz(i,k+1)+w(i,j,k)**2+0.5*rsin2_l(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
                           v(i,j,k)**2+v(i+1,j,k)**2-(u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*cosa_s_l(i,j))))
           enddo
@@ -1093,6 +1420,7 @@ endif        ! end last_step check
 
   end subroutine compute_total_energy
 
+<<<<<<< HEAD
   subroutine pkez(km, ifirst, ilast, jfirst, jlast, j, &
                   pe, pk, akap, peln, pkz, ptop)
 
@@ -1100,13 +1428,29 @@ endif        ! end last_step check
    integer, intent(in):: km, j
    integer, intent(in):: ifirst, ilast        !< Latitude strip
    integer, intent(in):: jfirst, jlast        !< Latitude strip
+=======
+
+  subroutine pkez(km, ifirst, ilast, jfirst, jlast, j, &
+                  pe, pk, akap, peln, pkz, ptop)
+
+! !INPUT PARAMETERS:
+   integer, intent(in):: km, j
+   integer, intent(in):: ifirst, ilast        ! Latitude strip
+   integer, intent(in):: jfirst, jlast        ! Latitude strip
+>>>>>>> rusty/master_test
    real, intent(in):: akap
    real, intent(in):: pe(ifirst-1:ilast+1,km+1,jfirst-1:jlast+1)
    real, intent(in):: pk(ifirst:ilast,jfirst:jlast,km+1)
    real, intent(IN):: ptop
+<<<<<<< HEAD
 ! OUTPUT
    real, intent(out):: pkz(ifirst:ilast,jfirst:jlast,km)
    real, intent(inout):: peln(ifirst:ilast, km+1, jfirst:jlast)   !< log (pe)
+=======
+! !OUTPUT
+   real, intent(out):: pkz(ifirst:ilast,jfirst:jlast,km)
+   real, intent(inout):: peln(ifirst:ilast, km+1, jfirst:jlast)   ! log (pe)
+>>>>>>> rusty/master_test
 ! Local
    real pk2(ifirst:ilast, km+1)
    real pek
@@ -1154,6 +1498,7 @@ endif        ! end last_step check
 
  subroutine remap_z(km, pe1, q1, kn, pe2, q2, i1, i2, iv, kord)
 
+<<<<<<< HEAD
 ! INPUT PARAMETERS:
       integer, intent(in) :: i1                !< Starting longitude
       integer, intent(in) :: i2                !< Finishing longitude
@@ -1170,6 +1515,26 @@ endif        ! end last_step check
       real, intent(inout)::  q2(i1:i2,kn)      !< Field output
 
 ! LOCAL VARIABLES:
+=======
+! !INPUT PARAMETERS:
+      integer, intent(in) :: i1                ! Starting longitude
+      integer, intent(in) :: i2                ! Finishing longitude
+      integer, intent(in) :: kord              ! Method order
+      integer, intent(in) :: km                ! Original vertical dimension
+      integer, intent(in) :: kn                ! Target vertical dimension
+      integer, intent(in) :: iv
+
+      real, intent(in) ::  pe1(i1:i2,km+1)     ! height at layer edges 
+                                               ! (from model top to bottom surface)
+      real, intent(in) ::  pe2(i1:i2,kn+1)     ! hieght at layer edges 
+                                               ! (from model top to bottom surface)
+      real, intent(in) ::  q1(i1:i2,km)        ! Field input
+
+! !INPUT/OUTPUT PARAMETERS:
+      real, intent(inout)::  q2(i1:i2,kn)      ! Field output
+
+! !LOCAL VARIABLES:
+>>>>>>> rusty/master_test
       real   qs(i1:i2)
       real  dp1(  i1:i2,km)
       real   q4(4,i1:i2,km)
@@ -1238,6 +1603,7 @@ endif        ! end last_step check
                         kn,   pe2,    q2,   i1, i2,       &
                          j,  ibeg, iend, jbeg, jend, iv,  kord, q_min)
 ! iv=1
+<<<<<<< HEAD
  integer, intent(in) :: i1                !< Starting longitude
  integer, intent(in) :: i2                !< Finishing longitude
  integer, intent(in) :: iv                !< Mode: 0 == constituents 1 == temp 2 == remap temp with cs scheme
@@ -1255,12 +1621,40 @@ endif        ! end last_step check
  real, intent(in):: q_min
 
 ! DESCRIPTION:
+=======
+ integer, intent(in) :: i1                ! Starting longitude
+ integer, intent(in) :: i2                ! Finishing longitude
+ integer, intent(in) :: iv                ! Mode: 0 == constituents  1 == temp
+                                          !       2 == remap temp with cs scheme
+ integer, intent(in) :: kord              ! Method order
+ integer, intent(in) :: j                 ! Current latitude
+ integer, intent(in) :: ibeg, iend, jbeg, jend
+ integer, intent(in) :: km                ! Original vertical dimension
+ integer, intent(in) :: kn                ! Target vertical dimension
+ real, intent(in) ::   qs(i1:i2)       ! bottom BC
+ real, intent(in) ::  pe1(i1:i2,km+1)  ! pressure at layer edges 
+                                       ! (from model top to bottom surface)
+                                       ! in the original vertical coordinate
+ real, intent(in) ::  pe2(i1:i2,kn+1)  ! pressure at layer edges 
+                                       ! (from model top to bottom surface)
+                                       ! in the new vertical coordinate
+ real, intent(in) ::    q1(ibeg:iend,jbeg:jend,km) ! Field input
+! !INPUT/OUTPUT PARAMETERS:
+ real, intent(inout)::  q2(ibeg:iend,jbeg:jend,kn) ! Field output
+ real, intent(in):: q_min
+
+! !DESCRIPTION:
+>>>>>>> rusty/master_test
 ! IV = 0: constituents
 ! pe1: pressure at layer edges (from model top to bottom surface)
 !      in the original vertical coordinate
 ! pe2: pressure at layer edges (from model top to bottom surface)
 !      in the new vertical coordinate
+<<<<<<< HEAD
 ! LOCAL VARIABLES:
+=======
+! !LOCAL VARIABLES:
+>>>>>>> rusty/master_test
    real    dp1(i1:i2,km)
    real   q4(4,i1:i2,km)
    real    pl, pr, qsum, dp, esl
@@ -1327,6 +1721,7 @@ endif        ! end last_step check
  subroutine map1_ppm( km,   pe1,    q1,   qs,           &
                       kn,   pe2,    q2,   i1, i2,       &
                       j,    ibeg, iend, jbeg, jend, iv,  kord)
+<<<<<<< HEAD
  integer, intent(in) :: i1                !< Starting longitude
  integer, intent(in) :: i2                !< Finishing longitude
  integer, intent(in) :: iv                !< Mode: 0 == constituents 1 == ??? 2 == remap temp with cs scheme
@@ -1343,13 +1738,40 @@ endif        ! end last_step check
  real, intent(inout)::  q2(ibeg:iend,jbeg:jend,kn) !< Field output
 
 ! DESCRIPTION:
+=======
+ integer, intent(in) :: i1                ! Starting longitude
+ integer, intent(in) :: i2                ! Finishing longitude
+ integer, intent(in) :: iv                ! Mode: 0 == constituents  1 == ???
+                                          !       2 == remap temp with cs scheme
+ integer, intent(in) :: kord              ! Method order
+ integer, intent(in) :: j                 ! Current latitude
+ integer, intent(in) :: ibeg, iend, jbeg, jend
+ integer, intent(in) :: km                ! Original vertical dimension
+ integer, intent(in) :: kn                ! Target vertical dimension
+ real, intent(in) ::   qs(i1:i2)       ! bottom BC
+ real, intent(in) ::  pe1(i1:i2,km+1)  ! pressure at layer edges 
+                                       ! (from model top to bottom surface)
+                                       ! in the original vertical coordinate
+ real, intent(in) ::  pe2(i1:i2,kn+1)  ! pressure at layer edges 
+                                       ! (from model top to bottom surface)
+                                       ! in the new vertical coordinate
+ real, intent(in) ::    q1(ibeg:iend,jbeg:jend,km) ! Field input
+! !INPUT/OUTPUT PARAMETERS:
+ real, intent(inout)::  q2(ibeg:iend,jbeg:jend,kn) ! Field output
+
+! !DESCRIPTION:
+>>>>>>> rusty/master_test
 ! IV = 0: constituents
 ! pe1: pressure at layer edges (from model top to bottom surface)
 !      in the original vertical coordinate
 ! pe2: pressure at layer edges (from model top to bottom surface)
 !      in the new vertical coordinate
+<<<<<<< HEAD
 
 ! LOCAL VARIABLES:
+=======
+! !LOCAL VARIABLES:
+>>>>>>> rusty/master_test
    real    dp1(i1:i2,km)
    real   q4(4,i1:i2,km)
    real    pl, pr, qsum, dp, esl
@@ -1415,6 +1837,7 @@ endif        ! end last_step check
 
  subroutine mapn_tracer(nq, km, pe1, pe2, q1, dp2, kord, j,     &
                         i1, i2, isd, ied, jsd, jed, q_min, fill)
+<<<<<<< HEAD
 ! INPUT PARAMETERS:
       integer, intent(in):: km                !< vertical dimension
       integer, intent(in):: j, nq, i1, i2
@@ -1422,13 +1845,32 @@ endif        ! end last_step check
       integer, intent(in):: kord(nq)
       real, intent(in)::  pe1(i1:i2,km+1)     !< pressure at layer edges from model top to bottom surface in the original vertical coordinate
       real, intent(in)::  pe2(i1:i2,km+1)     !< pressure at layer edges from model top to bottom surface in the new vertical coordinate
+=======
+! !INPUT PARAMETERS:
+      integer, intent(in):: km                ! vertical dimension
+      integer, intent(in):: j, nq, i1, i2
+      integer, intent(in):: isd, ied, jsd, jed
+      integer, intent(in):: kord(nq)
+      real, intent(in)::  pe1(i1:i2,km+1)     ! pressure at layer edges 
+                                              ! (from model top to bottom surface)
+                                              ! in the original vertical coordinate
+      real, intent(in)::  pe2(i1:i2,km+1)     ! pressure at layer edges 
+                                              ! (from model top to bottom surface)
+                                              ! in the new vertical coordinate
+>>>>>>> rusty/master_test
       real, intent(in)::  dp2(i1:i2,km)
       real, intent(in)::  q_min
       logical, intent(in):: fill
       real, intent(inout):: q1(isd:ied,jsd:jed,km,nq) ! Field input
+<<<<<<< HEAD
 ! LOCAL VARIABLES:
       real:: q4(4,i1:i2,km,nq)
       real:: q2(i1:i2,km,nq) !< Field output
+=======
+! !LOCAL VARIABLES:
+      real:: q4(4,i1:i2,km,nq)
+      real:: q2(i1:i2,km,nq) ! Field output
+>>>>>>> rusty/master_test
       real:: qsum(nq)
       real:: dp1(i1:i2,km)
       real:: qs(i1:i2)
@@ -1531,6 +1973,7 @@ endif        ! end last_step check
                     ibeg, iend, jbeg, jend, q_min )
 
 
+<<<<<<< HEAD
 ! INPUT PARAMETERS:
       integer, intent(in) :: j
       integer, intent(in) :: i1, i2
@@ -1548,6 +1991,29 @@ endif        ! end last_step check
 ! INPUT/OUTPUT PARAMETERS:
       real, intent(inout):: q2(i1:i2,kn) !< Field output
 ! LOCAL VARIABLES:
+=======
+! !INPUT PARAMETERS:
+      integer, intent(in) :: j
+      integer, intent(in) :: i1, i2
+      integer, intent(in) :: ibeg, iend, jbeg, jend
+      integer, intent(in) :: iv                ! Mode: 0 ==  constituents 1 == ???
+      integer, intent(in) :: kord
+      integer, intent(in) :: km                ! Original vertical dimension
+      integer, intent(in) :: kn                ! Target vertical dimension
+
+      real, intent(in) ::  pe1(i1:i2,km+1)     ! pressure at layer edges 
+                                               ! (from model top to bottom surface)
+                                               ! in the original vertical coordinate
+      real, intent(in) ::  pe2(i1:i2,kn+1)     ! pressure at layer edges 
+                                               ! (from model top to bottom surface)
+                                               ! in the new vertical coordinate
+      real, intent(in) ::  q1(ibeg:iend,jbeg:jend,km) ! Field input
+      real, intent(in) ::  dp2(i1:i2,kn)
+      real, intent(in) ::  q_min
+! !INPUT/OUTPUT PARAMETERS:
+      real, intent(inout):: q2(i1:i2,kn) ! Field output
+! !LOCAL VARIABLES:
+>>>>>>> rusty/master_test
       real   qs(i1:i2)
       real   dp1(i1:i2,km)
       real   q4(4,i1:i2,km)
@@ -1619,6 +2085,7 @@ endif        ! end last_step check
                      kn,   pe2,   q2,        &
                      i1,   i2,    iv,   kord)
    integer, intent(in):: i1, i2
+<<<<<<< HEAD
    integer, intent(in):: iv               !< Mode: 0 ==  constituents 1 ==others
    integer, intent(in):: kord
    integer, intent(in):: km               !< Original vertical dimension
@@ -1628,6 +2095,21 @@ endif        ! end last_step check
    real, intent(in) :: q1(i1:i2,km) !< Field input
    real, intent(out):: q2(i1:i2,kn) !< Field output
 ! LOCAL VARIABLES:
+=======
+   integer, intent(in):: iv               ! Mode: 0 ==  constituents 1 ==others
+   integer, intent(in):: kord
+   integer, intent(in):: km               ! Original vertical dimension
+   integer, intent(in):: kn               ! Target vertical dimension
+   real, intent(in):: pe1(i1:i2,km+1)     ! pressure at layer edges 
+                                          ! (from model top to bottom surface)
+                                          ! in the original vertical coordinate
+   real, intent(in):: pe2(i1:i2,kn+1)     ! pressure at layer edges 
+                                          ! (from model top to bottom surface)
+                                          ! in the new vertical coordinate
+   real, intent(in) :: q1(i1:i2,km) ! Field input
+   real, intent(out):: q2(i1:i2,kn) ! Field output
+! !LOCAL VARIABLES:
+>>>>>>> rusty/master_test
    real   qs(i1:i2)
    real   dp1(i1:i2,km)
    real   q4(4,i1:i2,km)
@@ -1710,6 +2192,7 @@ endif        ! end last_step check
 ! Optimized vertical profile reconstruction:
 ! Latest: Apr 2008 S.-J. Lin, NOAA/GFDL
  integer, intent(in):: i1, i2
+<<<<<<< HEAD
  integer, intent(in):: km      !< vertical dimension
  integer, intent(in):: iv      !< iv =-1: winds iv = 0: positive definite scalars iv = 1: others
  integer, intent(in):: kord
@@ -1719,11 +2202,28 @@ endif        ! end last_step check
  real, intent(in):: qmin
 !-----------------------------------------------------------------------
  logical, dimension(i1:i2,km):: extm, ext5, ext6
+=======
+ integer, intent(in):: km      ! vertical dimension
+ integer, intent(in):: iv      ! iv =-1: winds
+                               ! iv = 0: positive definite scalars
+                               ! iv = 1: others
+ integer, intent(in):: kord
+ real, intent(in)   ::   qs(i1:i2)
+ real, intent(in)   :: delp(i1:i2,km)     ! layer pressure thickness
+ real, intent(inout):: a4(4,i1:i2,km)     ! Interpolated values
+ real, intent(in):: qmin
+!-----------------------------------------------------------------------
+ logical, dimension(i1:i2,km):: extm, ext6
+>>>>>>> rusty/master_test
  real  gam(i1:i2,km)
  real    q(i1:i2,km+1)
  real   d4(i1:i2)
  real   bet, a_bot, grat 
+<<<<<<< HEAD
  real   pmp_1, lac_1, pmp_2, lac_2, x0, x1
+=======
+ real   pmp_1, lac_1, pmp_2, lac_2
+>>>>>>> rusty/master_test
  integer i, k, im
 
  if ( iv .eq. -2 ) then
@@ -1852,6 +2352,7 @@ endif        ! end last_step check
           extm(i,k) = gam(i,k)*gam(i,k+1) < 0.
        enddo
      endif
+<<<<<<< HEAD
      if ( abs(kord) > 9 ) then
        do i=i1,i2
           x0 = 2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k))
@@ -1859,6 +2360,12 @@ endif        ! end last_step check
           a4(4,i,k) = 3.*x0
           ext5(i,k) = abs(x0) > x1
           ext6(i,k) = abs(a4(4,i,k)) > x1
+=======
+     if ( abs(kord)==16 ) then
+       do i=i1,i2
+          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+          ext6(i,k) = abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k))
+>>>>>>> rusty/master_test
        enddo
      endif
   enddo
@@ -1953,6 +2460,7 @@ endif        ! end last_step check
        enddo
      elseif ( abs(kord)==10 ) then
        do i=i1,i2
+<<<<<<< HEAD
           if( ext5(i,k) ) then
               if( ext5(i,k-1) .or. ext5(i,k+1) ) then
                    a4(2,i,k) = a4(1,i,k)
@@ -1983,6 +2491,34 @@ endif        ! end last_step check
        do i=i1,i2
           a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
+=======
+          if( extm(i,k) ) then
+              if( a4(1,i,k)<qmin .or. extm(i,k-1) .or. extm(i,k+1) ) then
+! grid-scale 2-delta-z wave detected; or q is too small -> ehance vertical mixing
+                   a4(2,i,k) = a4(1,i,k)
+                   a4(3,i,k) = a4(1,i,k)
+                   a4(4,i,k) = 0.
+              else
+! True local extremum
+                a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+              endif
+          else        ! not a local extremum
+            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+! Check within the smooth region if subgrid profile is non-monotonic
+            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
+                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
+              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
+                                             max(a4(1,i,k), pmp_1, lac_1) )
+                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
+              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
+                                             max(a4(1,i,k), pmp_2, lac_2) )
+              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+            endif
+          endif
+       enddo
+>>>>>>> rusty/master_test
      elseif ( abs(kord)==12 ) then
        do i=i1,i2
           if( extm(i,k) ) then
@@ -2007,6 +2543,7 @@ endif        ! end last_step check
        enddo
      elseif ( abs(kord)==13 ) then
        do i=i1,i2
+<<<<<<< HEAD
           if( ext6(i,k) ) then
              if ( ext6(i,k-1) .and. ext6(i,k+1) ) then
 ! grid-scale 2-delta-z wave detected
@@ -2018,11 +2555,37 @@ endif        ! end last_step check
        do i=i1,i2
           a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
+=======
+          if( extm(i,k) ) then
+             if ( extm(i,k-1) .and. extm(i,k+1) ) then
+! grid-scale 2-delta-z wave detected
+                 a4(2,i,k) = a4(1,i,k)
+                 a4(3,i,k) = a4(1,i,k)
+                 a4(4,i,k) = 0.
+             else
+                 ! Left  edges
+                 pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                 lac_1 = pmp_1 + 1.5*gam(i,k+2)
+                 a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),   &
+                                     max(a4(1,i,k), pmp_1, lac_1) )
+                 ! Right edges
+                 pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                 lac_2 = pmp_2 - 1.5*gam(i,k-1)
+                 a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
+                                     max(a4(1,i,k), pmp_2, lac_2) )
+                 a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+             endif
+          else
+             a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+          endif
+       enddo
+>>>>>>> rusty/master_test
      elseif ( abs(kord)==14 ) then
 
        do i=i1,i2
           a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
+<<<<<<< HEAD
 
      elseif ( abs(kord)==15 ) then   ! Revised abs(kord)=9 scheme
        do i=i1,i2
@@ -2056,6 +2619,12 @@ endif        ! end last_step check
                  a4(2,i,k) = a4(1,i,k)
                  a4(3,i,k) = a4(1,i,k)
              elseif ( ext6(i,k-1) .or. ext6(i,k+1) ) then
+=======
+     elseif ( abs(kord)==16 ) then
+       do i=i1,i2
+          if( ext6(i,k) ) then
+             if ( extm(i,k-1) .or. extm(i,k+1) ) then
+>>>>>>> rusty/master_test
                  ! Left  edges
                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
@@ -2066,6 +2635,7 @@ endif        ! end last_step check
                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
                  a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
                                      max(a4(1,i,k), pmp_2, lac_2) )
+<<<<<<< HEAD
              endif
           endif
        enddo
@@ -2075,6 +2645,15 @@ endif        ! end last_step check
      else      ! kord = 11, 13
        do i=i1,i2
          if ( ext5(i,k) .and. (ext5(i,k-1).or.ext5(i,k+1).or.a4(1,i,k)<qmin) ) then
+=======
+                 a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+             endif
+          endif
+       enddo
+     else      ! kord = 11, 13
+       do i=i1,i2
+         if ( extm(i,k) .and. (extm(i,k-1).or.extm(i,k+1).or.a4(1,i,k)<qmin) ) then
+>>>>>>> rusty/master_test
 ! Noisy region:
               a4(2,i,k) = a4(1,i,k)
               a4(3,i,k) = a4(1,i,k)
@@ -2113,10 +2692,15 @@ endif        ! end last_step check
 
  end subroutine scalar_profile
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> rusty/master_test
  subroutine cs_profile(qs, a4, delp, km, i1, i2, iv, kord)
 ! Optimized vertical profile reconstruction:
 ! Latest: Apr 2008 S.-J. Lin, NOAA/GFDL
  integer, intent(in):: i1, i2
+<<<<<<< HEAD
  integer, intent(in):: km      !< vertical dimension
  integer, intent(in):: iv      !< iv =-1: winds
                                !< iv = 0: positive definite scalars
@@ -2127,11 +2711,27 @@ endif        ! end last_step check
  real, intent(inout):: a4(4,i1:i2,km)     !< Interpolated values
 !-----------------------------------------------------------------------
  logical, dimension(i1:i2,km):: extm, ext5, ext6
+=======
+ integer, intent(in):: km      ! vertical dimension
+ integer, intent(in):: iv      ! iv =-1: winds
+                               ! iv = 0: positive definite scalars
+                               ! iv = 1: others
+ integer, intent(in):: kord
+ real, intent(in)   ::   qs(i1:i2)
+ real, intent(in)   :: delp(i1:i2,km)     ! layer pressure thickness
+ real, intent(inout):: a4(4,i1:i2,km)     ! Interpolated values
+!-----------------------------------------------------------------------
+ logical:: extm(i1:i2,km) 
+>>>>>>> rusty/master_test
  real  gam(i1:i2,km)
  real    q(i1:i2,km+1)
  real   d4(i1:i2)
  real   bet, a_bot, grat 
+<<<<<<< HEAD
  real   pmp_1, lac_1, pmp_2, lac_2, x0, x1
+=======
+ real   pmp_1, lac_1, pmp_2, lac_2
+>>>>>>> rusty/master_test
  integer i, k, im
 
  if ( iv .eq. -2 ) then
@@ -2260,6 +2860,7 @@ endif        ! end last_step check
           extm(i,k) = gam(i,k)*gam(i,k+1) < 0.
        enddo
      endif
+<<<<<<< HEAD
      if ( abs(kord) > 9 ) then
        do i=i1,i2
           x0 = 2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k))
@@ -2269,6 +2870,8 @@ endif        ! end last_step check
           ext6(i,k) = abs(a4(4,i,k)) > x1
        enddo
      endif
+=======
+>>>>>>> rusty/master_test
   enddo
 
 !---------------------------
@@ -2356,6 +2959,7 @@ endif        ! end last_step check
        enddo
      elseif ( abs(kord)==10 ) then
        do i=i1,i2
+<<<<<<< HEAD
           if( ext5(i,k) ) then
               if( ext5(i,k-1) .or. ext5(i,k+1) ) then
                    a4(2,i,k) = a4(1,i,k)
@@ -2386,6 +2990,34 @@ endif        ! end last_step check
        do i=i1,i2
           a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
+=======
+          if( extm(i,k) ) then
+              if( extm(i,k-1) .or. extm(i,k+1) ) then
+! grid-scale 2-delta-z wave detected
+                   a4(2,i,k) = a4(1,i,k)
+                   a4(3,i,k) = a4(1,i,k)
+                   a4(4,i,k) = 0.
+              else
+! True local extremum
+                a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+              endif
+          else        ! not a local extremum
+            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+! Check within the smooth region if subgrid profile is non-monotonic
+            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
+                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
+              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
+                                             max(a4(1,i,k), pmp_1, lac_1) )
+                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
+              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
+                                             max(a4(1,i,k), pmp_2, lac_2) )
+              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+            endif
+          endif
+       enddo
+>>>>>>> rusty/master_test
      elseif ( abs(kord)==12 ) then
        do i=i1,i2
           if( extm(i,k) ) then
@@ -2411,6 +3043,7 @@ endif        ! end last_step check
        enddo
      elseif ( abs(kord)==13 ) then
        do i=i1,i2
+<<<<<<< HEAD
           if( ext6(i,k) ) then
              if ( ext6(i,k-1) .and. ext6(i,k+1) ) then
 ! grid-scale 2-delta-z wave detected
@@ -2458,6 +3091,15 @@ endif        ! end last_step check
                  a4(2,i,k) = a4(1,i,k)
                  a4(3,i,k) = a4(1,i,k)
              elseif ( ext6(i,k-1) .or. ext6(i,k+1) ) then
+=======
+          if( extm(i,k) ) then
+             if ( extm(i,k-1) .and. extm(i,k+1) ) then
+! grid-scale 2-delta-z wave detected
+                 a4(2,i,k) = a4(1,i,k)
+                 a4(3,i,k) = a4(1,i,k)
+                 a4(4,i,k) = 0.
+             else
+>>>>>>> rusty/master_test
                  ! Left  edges
                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
@@ -2468,15 +3110,29 @@ endif        ! end last_step check
                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
                  a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
                                      max(a4(1,i,k), pmp_2, lac_2) )
+<<<<<<< HEAD
              endif
           endif
        enddo
+=======
+                 a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+             endif
+          else
+             a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+          endif
+       enddo
+     elseif ( abs(kord)==14 ) then
+>>>>>>> rusty/master_test
        do i=i1,i2
           a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
      else      ! kord = 11
        do i=i1,i2
+<<<<<<< HEAD
          if ( ext5(i,k) .and. (ext5(i,k-1) .or. ext5(i,k+1)) ) then
+=======
+         if ( extm(i,k) .and. (extm(i,k-1) .or. extm(i,k+1)) ) then
+>>>>>>> rusty/master_test
 ! Noisy region:
               a4(2,i,k) = a4(1,i,k)
               a4(3,i,k) = a4(1,i,k)
@@ -2520,8 +3176,13 @@ endif        ! end last_step check
  integer, intent(in) :: im
  integer, intent(in) :: iv
  logical, intent(in) :: extm(im)
+<<<<<<< HEAD
  real , intent(inout) :: a4(4,im)   !< PPM array
 ! LOCAL VARIABLES:
+=======
+ real , intent(inout) :: a4(4,im)   ! PPM array
+! !LOCAL VARIABLES:
+>>>>>>> rusty/master_test
  real  da1, da2, a6da
  integer i
 
@@ -2597,6 +3258,7 @@ endif        ! end last_step check
 
  subroutine ppm_profile(a4, delp, km, i1, i2, iv, kord)
 
+<<<<<<< HEAD
 ! INPUT PARAMETERS:
  integer, intent(in):: iv      !< iv =-1: winds iv = 0: positive definite scalars iv = 1: others iv = 2: temp (if remap_t) and w (iv=-2)
  integer, intent(in):: i1      !< Starting longitude
@@ -2608,6 +3270,22 @@ endif        ! end last_step check
 
 ! !INPUT/OUTPUT PARAMETERS:
  real , intent(inout):: a4(4,i1:i2,km)  !< Interpolated values
+=======
+! !INPUT PARAMETERS:
+ integer, intent(in):: iv      ! iv =-1: winds
+                               ! iv = 0: positive definite scalars
+                               ! iv = 1: others
+                               ! iv = 2: temp (if remap_t) and w (iv=-2)
+ integer, intent(in):: i1      ! Starting longitude
+ integer, intent(in):: i2      ! Finishing longitude
+ integer, intent(in):: km      ! vertical dimension
+ integer, intent(in):: kord    ! Order (or more accurately method no.):
+                               ! 
+ real , intent(in):: delp(i1:i2,km)     ! layer pressure thickness
+
+! !INPUT/OUTPUT PARAMETERS:
+ real , intent(inout):: a4(4,i1:i2,km)  ! Interpolated values
+>>>>>>> rusty/master_test
 
 ! DESCRIPTION:
 !
@@ -2854,6 +3532,7 @@ endif        ! end last_step check
 
  subroutine ppm_limiters(dm, a4, itot, lmt)
 
+<<<<<<< HEAD
 ! INPUT PARAMETERS:
       real , intent(in):: dm(*)     !< Linear slope
       integer, intent(in) :: itot      !< Total Longitudes
@@ -2863,6 +3542,22 @@ endif        ! end last_step check
 ! INPUT/OUTPUT PARAMETERS:
       real , intent(inout) :: a4(4,*)   !< PPM array AA <-- a4(1,i) AL <-- a4(2,i) AR <-- a4(3,i) A6 <-- a4(4,i)
 ! LOCAL VARIABLES:
+=======
+! !INPUT PARAMETERS:
+      real , intent(in):: dm(*)     ! the linear slope
+      integer, intent(in) :: itot      ! Total Longitudes
+      integer, intent(in) :: lmt       ! 0: Standard PPM constraint
+                                       ! 1: Improved full monotonicity constraint (Lin)
+                                       ! 2: Positive definite constraint
+                                       ! 3: do nothing (return immediately)
+! !INPUT/OUTPUT PARAMETERS:
+      real , intent(inout) :: a4(4,*)   ! PPM array
+                                           ! AA <-- a4(1,i)
+                                           ! AL <-- a4(2,i)
+                                           ! AR <-- a4(3,i)
+                                           ! A6 <-- a4(4,i)
+! !LOCAL VARIABLES:
+>>>>>>> rusty/master_test
       real  qmp
       real  da1, da2, a6da
       real  fmin
@@ -2934,6 +3629,7 @@ endif        ! end last_step check
 
  subroutine steepz(i1, i2, km, a4, df2, dm, dq, dp, d4)
  integer, intent(in) :: km, i1, i2
+<<<<<<< HEAD
    real , intent(in) ::  dp(i1:i2,km)       !< Grid size
    real , intent(in) ::  dq(i1:i2,km)       !< Backward diff of q
    real , intent(in) ::  d4(i1:i2,km)       !< Backward sum:  dp(k)+ dp(k-1) 
@@ -2942,6 +3638,16 @@ endif        ! end last_step check
 ! INPUT/OUTPUT PARAMETERS:
       real , intent(inout) ::  a4(4,i1:i2,km)  !<First guess/steepened
 ! LOCAL VARIABLES:
+=======
+   real , intent(in) ::  dp(i1:i2,km)       ! grid size
+   real , intent(in) ::  dq(i1:i2,km)       ! backward diff of q
+   real , intent(in) ::  d4(i1:i2,km)       ! backward sum:  dp(k)+ dp(k-1) 
+   real , intent(in) :: df2(i1:i2,km)       ! first guess mismatch
+   real , intent(in) ::  dm(i1:i2,km)       ! monotonic mismatch
+! !INPUT/OUTPUT PARAMETERS:
+      real , intent(inout) ::  a4(4,i1:i2,km)  ! first guess/steepened
+! !LOCAL VARIABLES:
+>>>>>>> rusty/master_test
       integer i, k
       real  alfa(i1:i2,km)
       real     f(i1:i2,km)
@@ -2985,9 +3691,14 @@ endif        ! end last_step check
 
  end subroutine steepz
 
+<<<<<<< HEAD
 !>@brief The subroutine 'rst_remap' remaps all variables required for a restart.
 !>@details npz_restart /= npz (i.e., when the number of vertical levels is
 !! changed at restart)
+=======
+
+
+>>>>>>> rusty/master_test
  subroutine rst_remap(km, kn, is,ie,js,je, isd,ied,jsd,jed, nq, ntp, &
                       delp_r, u_r, v_r, w_r, delz_r, pt_r, q_r, qdiag_r, &
                       delp,   u,   v,   w,   delz,   pt,   q,   qdiag,   &
@@ -2996,21 +3707,36 @@ endif        ! end last_step check
 !------------------------------------
 ! Assuming hybrid sigma-P coordinate:
 !------------------------------------
+<<<<<<< HEAD
 ! INPUT PARAMETERS:
   integer, intent(in):: km                    !< Restart z-dimension
   integer, intent(in):: kn                    !< Run time dimension
   integer, intent(in):: nq, ntp               !< Number of tracers (including H2O)
   integer, intent(in):: is,ie,isd,ied         !< Starting & ending X-Dir index
   integer, intent(in):: js,je,jsd,jed         !< Starting & ending Y-Dir index
+=======
+! !INPUT PARAMETERS:
+  integer, intent(in):: km                    ! Restart z-dimension
+  integer, intent(in):: kn                    ! Run time dimension
+  integer, intent(in):: nq, ntp               ! number of tracers (including h2o)
+  integer, intent(in):: is,ie,isd,ied         ! starting & ending X-Dir index
+  integer, intent(in):: js,je,jsd,jed         ! starting & ending Y-Dir index
+>>>>>>> rusty/master_test
   logical, intent(in):: hydrostatic, make_nh, square_domain
   real, intent(IN) :: ptop
   real, intent(in) :: ak_r(km+1)
   real, intent(in) :: bk_r(km+1)
   real, intent(in) :: ak(kn+1)
   real, intent(in) :: bk(kn+1)
+<<<<<<< HEAD
   real, intent(in):: delp_r(is:ie,js:je,km) !< Pressure thickness
   real, intent(in)::   u_r(is:ie,  js:je+1,km)   !< u-wind (m/s)
   real, intent(in)::   v_r(is:ie+1,js:je  ,km)   !< v-wind (m/s)
+=======
+  real, intent(in):: delp_r(is:ie,js:je,km) ! pressure thickness
+  real, intent(in)::   u_r(is:ie,  js:je+1,km)   ! u-wind (m/s)
+  real, intent(in)::   v_r(is:ie+1,js:je  ,km)   ! v-wind (m/s)
+>>>>>>> rusty/master_test
   real, intent(inout)::  pt_r(is:ie,js:je,km)
   real, intent(in)::   w_r(is:ie,js:je,km)
   real, intent(in)::   q_r(is:ie,js:je,km,1:ntp)
@@ -3018,6 +3744,7 @@ endif        ! end last_step check
   real, intent(inout)::delz_r(is:ie,js:je,km)
   type(domain2d), intent(INOUT) :: domain
 ! Output:
+<<<<<<< HEAD
   real, intent(out):: delp(isd:ied,jsd:jed,kn) !< Pressure thickness
   real, intent(out)::  u(isd:ied  ,jsd:jed+1,kn)   !< u-wind (m/s)
   real, intent(out)::  v(isd:ied+1,jsd:jed  ,kn)   !< v-wind (m/s)
@@ -3029,6 +3756,19 @@ endif        ! end last_step check
 !-----------------------------------------------------------------------
   real r_vir, rgrav
   real ps(isd:ied,jsd:jed)  !< Surface pressure
+=======
+  real, intent(out):: delp(isd:ied,jsd:jed,kn) ! pressure thickness
+  real, intent(out)::  u(isd:ied  ,jsd:jed+1,kn)   ! u-wind (m/s)
+  real, intent(out)::  v(isd:ied+1,jsd:jed  ,kn)   ! v-wind (m/s)
+  real, intent(out)::  w(isd:     ,jsd:     ,1:)   ! vertical velocity (m/s)
+  real, intent(out):: pt(isd:ied  ,jsd:jed  ,kn)   ! temperature
+  real, intent(out):: q(isd:ied,jsd:jed,kn,1:ntp)
+  real, intent(out):: qdiag(isd:ied,jsd:jed,kn,ntp+1:nq)
+  real, intent(out):: delz(is:,js:,1:)   ! delta-height (m)
+!-----------------------------------------------------------------------
+  real r_vir, rgrav
+  real ps(isd:ied,jsd:jed)  ! surface pressure
+>>>>>>> rusty/master_test
   real  pe1(is:ie,km+1)
   real  pe2(is:ie,kn+1)
   real  pv1(is:ie+1,km+1)
@@ -3093,11 +3833,15 @@ endif        ! end last_step check
   do k=1,km
      do j=js,je
         do i=is,ie
+<<<<<<< HEAD
 #ifdef MULTI_GASES
            pt_r(i,j,k) = pt_r(i,j,k) * virq(q_r(i,j,k,:))
 #else
            pt_r(i,j,k) = pt_r(i,j,k) * (1.+r_vir*q_r(i,j,k,1))
 #endif
+=======
+           pt_r(i,j,k) = pt_r(i,j,k) * (1.+r_vir*q_r(i,j,k,1))
+>>>>>>> rusty/master_test
         enddo
      enddo
   enddo
@@ -3261,6 +4005,7 @@ endif        ! end last_step check
   do k=1,kn
      do j=js,je
         do i=is,ie
+<<<<<<< HEAD
 #ifdef MULTI_GASES
            pt(i,j,k) = pt(i,j,k) / virq(q(i,j,k,:))
 #else
@@ -3268,12 +4013,22 @@ endif        ! end last_step check
 #endif
         enddo
      enddo
+=======
+           pt(i,j,k) = pt(i,j,k) / (1.+r_vir*q(i,j,k,1))
+        enddo
+     enddo   
+>>>>>>> rusty/master_test
   enddo
 
  end subroutine rst_remap
 
+<<<<<<< HEAD
 !>@brief The subroutine 'mappm' is a general-purpose routine for remapping
 !! one set of vertical levels to another. 
+=======
+
+
+>>>>>>> rusty/master_test
  subroutine mappm(km, pe1, q1, kn, pe2, q2, i1, i2, iv, kord, ptop)
 
 ! IV = 0: constituents
@@ -3288,11 +4043,15 @@ endif        ! end last_step check
 !      in the new vertical coordinate
 
  integer, intent(in):: i1, i2, km, kn, kord, iv
+<<<<<<< HEAD
  real, intent(in ):: pe1(i1:i2,km+1), pe2(i1:i2,kn+1) !< pe1: pressure at layer edges from model top to bottom
                                                       !!      surface in the ORIGINAL vertical coordinate 
                                                       !< pe2: pressure at layer edges from model top to bottom 
                                                       !!      surface in the NEW vertical coordinate
 ! Mass flux preserving mapping: q1(im,km) -> q2(im,kn)
+=======
+ real, intent(in ):: pe1(i1:i2,km+1), pe2(i1:i2,kn+1)
+>>>>>>> rusty/master_test
  real, intent(in )::  q1(i1:i2,km)
  real, intent(out)::  q2(i1:i2,kn)
  real, intent(IN) :: ptop
@@ -3407,15 +4166,22 @@ endif        ! end last_step check
  end subroutine mappm
 
 
+<<<<<<< HEAD
 !>@brief The subroutine 'moist_cv' computes the FV3-consistent moist heat capacity under constant volume,
 !! including the heating capacity of water vapor and condensates.
 !>@details See \cite emanuel1994atmospheric for information on variable heat capacities.
+=======
+>>>>>>> rusty/master_test
  subroutine moist_cv(is,ie, isd,ied, jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
                      ice_wat, snowwat, graupel, q, qd, cvm, t1)
   integer, intent(in):: is, ie, isd,ied, jsd,jed, km, nwat, j, k
   integer, intent(in):: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel
   real, intent(in), dimension(isd:ied,jsd:jed,km,nwat):: q
+<<<<<<< HEAD
   real, intent(out), dimension(is:ie):: cvm, qd
+=======
+  real, intent(out), dimension(is:ie):: cvm, qd  ! qd is q_con
+>>>>>>> rusty/master_test
   real, intent(in), optional:: t1(is:ie)
 !
   real, parameter:: t_i0 = 15.
@@ -3437,22 +4203,30 @@ endif        ! end last_step check
            endif
            ql(i) = qd(i) - qs(i)
            qv(i) = max(0.,q(i,j,k,sphum))
+<<<<<<< HEAD
 #ifdef MULTI_GASES
            cvm(i) = (1.-(qv(i)+qd(i)))*cv_air*vicvqd(q(i,j,k,1:num_gas)) + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
 #else
            cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
 #endif
+=======
+           cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
+>>>>>>> rusty/master_test
         enddo
      else
         do i=is,ie
            qv(i) = max(0.,q(i,j,k,sphum))
            qs(i) = max(0.,q(i,j,k,liq_wat))
            qd(i) = qs(i)
+<<<<<<< HEAD
 #ifdef MULTI_GASES
            cvm(i) = (1.-qv(i))*cv_air*vicvqd(q(i,j,k,1:num_gas)) + qv(i)*cv_vap
 #else
            cvm(i) = (1.-qv(i))*cv_air + qv(i)*cv_vap
 #endif
+=======
+           cvm(i) = (1.-qv(i))*cv_air + qv(i)*cv_vap
+>>>>>>> rusty/master_test
         enddo
      endif
   case (3)
@@ -3465,6 +4239,7 @@ endif        ! end last_step check
      enddo
   case(4)              ! K_warm_rain with fake ice
      do i=is,ie 
+<<<<<<< HEAD
 #ifndef CCPP
         qv(i) = q(i,j,k,sphum)
         qd(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
@@ -3485,6 +4260,11 @@ endif        ! end last_step check
 #endif
 
 #endif
+=======
+        qv(i) = q(i,j,k,sphum)
+        qd(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
+        cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + qd(i)*c_liq
+>>>>>>> rusty/master_test
      enddo
   case(5)
      do i=is,ie 
@@ -3492,11 +4272,15 @@ endif        ! end last_step check
         ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) 
         qs(i) = q(i,j,k,ice_wat) + q(i,j,k,snowwat)
         qd(i) = ql(i) + qs(i)
+<<<<<<< HEAD
 #ifdef MULTI_GASES
         cvm(i) = (1.-(qv(i)+qd(i)))*cv_air*vicvqd(q(i,j,k,1:num_gas)) + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
 #else
         cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
 #endif
+=======
+        cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
+>>>>>>> rusty/master_test
      enddo
   case(6)
      do i=is,ie 
@@ -3504,6 +4288,7 @@ endif        ! end last_step check
         ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) 
         qs(i) = q(i,j,k,ice_wat) + q(i,j,k,snowwat) + q(i,j,k,graupel)
         qd(i) = ql(i) + qs(i)
+<<<<<<< HEAD
 #ifdef MULTI_GASES
         cvm(i) = (1.-(qv(i)+qd(i)))*cv_air*vicvqd(q(i,j,k,1:num_gas)) + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
 #else
@@ -3519,13 +4304,25 @@ endif        ! end last_step check
 #else
         cvm(i) = cv_air
 #endif
+=======
+        cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
+     enddo
+  case default
+     !call mpp_error (NOTE, 'fv_mapz::moist_cv - using default cv_air')
+     do i=is,ie 
+         qd(i) = 0.
+        cvm(i) = cv_air
+>>>>>>> rusty/master_test
      enddo
  end select
 
  end subroutine moist_cv
 
+<<<<<<< HEAD
 !>@brief The subroutine 'moist_cp' computes the FV3-consistent moist heat capacity under constant pressure,
 !! including the heating capacity of water vapor and condensates.
+=======
+>>>>>>> rusty/master_test
  subroutine moist_cp(is,ie, isd,ied, jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
                      ice_wat, snowwat, graupel, q, qd, cpm, t1)
 
@@ -3554,22 +4351,30 @@ endif        ! end last_step check
            endif
            ql(i) = qd(i) - qs(i)
            qv(i) = max(0.,q(i,j,k,sphum))
+<<<<<<< HEAD
 #ifdef MULTI_GASES
            cpm(i) = (1.-(qv(i)+qd(i)))*cp_air * vicpqd(q(i,j,k,:)) + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
 #else
            cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
 #endif
+=======
+           cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
+>>>>>>> rusty/master_test
         enddo
      else
      do i=is,ie
         qv(i) = max(0.,q(i,j,k,sphum))
         qs(i) = max(0.,q(i,j,k,liq_wat))
         qd(i) = qs(i)
+<<<<<<< HEAD
 #ifdef MULTI_GASES
         cpm(i) = (1.-qv(i))*cp_air*vicpqd(q(i,j,k,:)) + qv(i)*cp_vapor
 #else
         cpm(i) = (1.-qv(i))*cp_air + qv(i)*cp_vapor
 #endif
+=======
+        cpm(i) = (1.-qv(i))*cp_air + qv(i)*cp_vapor
+>>>>>>> rusty/master_test
      enddo
      endif
 
@@ -3579,6 +4384,7 @@ endif        ! end last_step check
         ql(i) = q(i,j,k,liq_wat) 
         qs(i) = q(i,j,k,ice_wat)
         qd(i) = ql(i) + qs(i)
+<<<<<<< HEAD
 #ifdef MULTI_GASES
         cpm(i) = (1.-(qv(i)+qd(i)))*cp_air*vicpqd(q(i,j,k,:)) + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
 #else
@@ -3608,6 +4414,15 @@ endif        ! end last_step check
 
     
 #endif
+=======
+        cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
+     enddo
+  case(4)    ! K_warm_rain scheme with fake ice
+     do i=is,ie
+        qv(i) = q(i,j,k,sphum)
+        qd(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
+        cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + qd(i)*c_liq
+>>>>>>> rusty/master_test
      enddo
   case(5)
      do i=is,ie 
@@ -3615,11 +4430,15 @@ endif        ! end last_step check
         ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) 
         qs(i) = q(i,j,k,ice_wat) + q(i,j,k,snowwat)
         qd(i) = ql(i) + qs(i)
+<<<<<<< HEAD
 #ifdef MULTI_GASES
         cpm(i) = (1.-(qv(i)+qd(i)))*cp_air*vicpqd(q(i,j,k,:)) + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
 #else
         cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
 #endif
+=======
+        cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
+>>>>>>> rusty/master_test
      enddo
   case(6)
      do i=is,ie 
@@ -3627,6 +4446,7 @@ endif        ! end last_step check
         ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) 
         qs(i) = q(i,j,k,ice_wat) + q(i,j,k,snowwat) + q(i,j,k,graupel)
         qd(i) = ql(i) + qs(i)
+<<<<<<< HEAD
 #ifdef MULTI_GASES
         cpm(i) = (1.-(qv(i)+qd(i)))*cp_air*vicpqd(q(i,j,k,:)) + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
 #else
@@ -3642,6 +4462,15 @@ endif        ! end last_step check
 #else
         cpm(i) = cp_air
 #endif
+=======
+        cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
+     enddo
+  case default
+     !call mpp_error (NOTE, 'fv_mapz::moist_cp - using default cp_air')
+     do i=is,ie 
+        qd(i) = 0.
+        cpm(i) = cp_air
+>>>>>>> rusty/master_test
      enddo
   end select
 

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
@@ -90,21 +91,58 @@ module fv_update_phys_mod
 ! </table>
 
   use constants_mod,      only: kappa, rdgas, rvgas, grav, cp_air, cp_vapor, pi=>pi_8, radius
+=======
+!***********************************************************************
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+!* If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
+module fv_update_phys_mod
+
+  use constants_mod,      only: kappa, rdgas, rvgas, grav, cp_air, cp_vapor, pi=>pi_8, radius, TFREEZE
+>>>>>>> rusty/master_test
   use field_manager_mod,  only: MODEL_ATMOS
   use mpp_domains_mod,    only: mpp_update_domains, domain2d
   use mpp_parameter_mod,  only: AGRID_PARAM=>AGRID
   use mpp_mod,            only: FATAL, mpp_error
+<<<<<<< HEAD
   use mpp_mod,            only: mpp_error, NOTE, WARNING
+=======
+  use mpp_mod,            only: mpp_error, NOTE, WARNING, mpp_pe
+>>>>>>> rusty/master_test
   use time_manager_mod,   only: time_type
   use tracer_manager_mod, only: get_tracer_index, adjust_mass, get_tracer_names
   use fv_mp_mod,          only: start_group_halo_update, complete_group_halo_update
   use fv_mp_mod,          only: group_halo_update_type
+<<<<<<< HEAD
   use fv_arrays_mod,      only: fv_flags_type, fv_nest_type, R_GRID
+=======
+  use fv_arrays_mod,      only: fv_flags_type, fv_nest_type, R_GRID, phys_diag_type
+>>>>>>> rusty/master_test
   use boundary_mod,       only: nested_grid_BC
   use boundary_mod,       only: extrapolation_BC
   use fv_eta_mod,         only: get_eta_level
   use fv_timing_mod,      only: timing_on, timing_off
+<<<<<<< HEAD
   use fv_diagnostics_mod, only: prt_maxmin
+=======
+  use fv_diagnostics_mod, only: prt_maxmin, range_check
+>>>>>>> rusty/master_test
   use fv_mapz_mod,        only: moist_cv, moist_cp
 #if defined (ATMOS_NUDGE)
   use atmos_nudge_mod,    only: get_atmos_nudge, do_ps
@@ -116,18 +154,27 @@ module fv_update_phys_mod
   use fv_nwp_nudge_mod,   only: fv_nwp_nudge
 #endif
   use fv_arrays_mod,      only: fv_grid_type, fv_nest_type, fv_grid_bounds_type
+<<<<<<< HEAD
   use fv_grid_utils_mod,  only: cubed_to_latlon
 #ifdef MULTI_GASES
   use multi_gases_mod,    only: virq, virqd, vicpqd, vicvqd, num_gas
 #endif
+=======
+  use fv_grid_utils_mod,  only: cubed_to_latlon, update_dwinds_phys, update2d_dwinds_phys
+  use fv_nesting_mod,     only: set_physics_BCs
+  use sat_vapor_pres_mod, only: tcmin, tcmax
+>>>>>>> rusty/master_test
 
   implicit none
 
   public :: fv_update_phys, del2_phys
+<<<<<<< HEAD
 #ifdef ROT3
   public :: update_dwinds_phys
 #endif
 
+=======
+>>>>>>> rusty/master_test
   real,parameter:: con_cp  = cp_air
 
   contains
@@ -137,12 +184,21 @@ module fv_update_phys_mod
                               ak, bk, phis, u_srf, v_srf, ts, delz, hydrostatic,  &
                               u_dt, v_dt, t_dt, moist_phys, Time, nudge,    &
                               gridstruct, lona, lata, npx, npy, npz, flagstruct,  &
+<<<<<<< HEAD
                               neststruct, bd, domain, ptop, q_dt)
     real, intent(in)   :: dt, ptop
     integer, intent(in):: is,  ie,  js,  je, ng
     integer, intent(in):: isd, ied, jsd, jed
     integer, intent(in):: nq            ! tracers modified by physics
                                         ! ncnst is the total number of tracers
+=======
+                              neststruct, bd, domain, ptop, phys_diag, q_dt)
+    real, intent(in)   :: dt, ptop
+    integer, intent(in):: is,  ie,  js,  je, ng
+    integer, intent(in):: isd, ied, jsd, jed
+    integer, intent(in):: nq            ! tracers modified by physics 
+                                        ! ncnst is the total nmber of tracers
+>>>>>>> rusty/master_test
     logical, intent(in):: moist_phys
     logical, intent(in):: hydrostatic
     logical, intent(in):: nudge
@@ -151,11 +207,19 @@ module fv_update_phys_mod
 
     real, intent(in), dimension(npz+1):: ak, bk
     real, intent(in) :: phis(isd:ied,jsd:jed)
+<<<<<<< HEAD
     real, intent(inout):: delz(isd:,jsd:,1:)
 
 ! optional arguments for atmospheric nudging
     real, intent(in), dimension(isd:ied,jsd:jed), optional ::   &
                                 lona, lata   !< A-grid (physics) lon and lat
+=======
+    real, intent(inout):: delz(is:,js:,1:)
+
+! optional arguments for atmospheric nudging
+    real, intent(in), dimension(isd:ied,jsd:jed), optional ::   &
+                                lona, lata   ! A-grid (physics) lon and lat
+>>>>>>> rusty/master_test
 
 ! Winds on lat-lon grid:
     real, intent(inout), dimension(isd:ied,jsd:jed,npz):: ua, va
@@ -165,6 +229,10 @@ module fv_update_phys_mod
     real, intent(inout), dimension(isd:ied,jsd:jed,npz):: u_dt, v_dt
     real, intent(inout):: t_dt(is:ie,js:je,npz)
     real, intent(inout), optional :: q_dt(is:ie,js:je,npz,nq)
+<<<<<<< HEAD
+=======
+    type(phys_diag_type), intent(inout) :: phys_diag
+>>>>>>> rusty/master_test
 
 ! Saved Bottom winds for GFDL Physics Interface
     real, intent(out), dimension(is:ie,js:je):: u_srf, v_srf, ts
@@ -173,27 +241,48 @@ module fv_update_phys_mod
     type(fv_grid_bounds_type), intent(IN)  :: bd
     type(domain2d), intent(INOUT) :: domain
 
+<<<<<<< HEAD
     real, intent(inout):: u(isd:ied  ,jsd:jed+1,npz)  !< D grid zonal wind (m/s)
     real, intent(inout):: v(isd:ied+1,jsd:jed  ,npz)  !< D grid meridional wind (m/s)
     real, intent(inout), dimension(isd:ied,jsd:jed,npz):: pt, delp
     real, intent(inout):: q(isd:ied,jsd:jed,npz,nq)   !< specific humidity and constituents
     real, intent(inout):: qdiag(isd:ied,jsd:jed,npz,nq+1:flagstruct%ncnst) !< diagnostic tracers
+=======
+    real, intent(inout):: u(isd:ied  ,jsd:jed+1,npz)  ! D grid zonal wind (m/s)
+    real, intent(inout):: v(isd:ied+1,jsd:jed  ,npz)  ! D grid meridional wind (m/s)
+    real, intent(inout), dimension(isd:ied,jsd:jed,npz):: pt, delp
+    real, intent(inout):: q(isd:ied,jsd:jed,npz,nq)   ! specific humidity and constituents
+    real, intent(inout):: qdiag(isd:ied,jsd:jed,npz,nq+1:flagstruct%ncnst) ! diagnostic tracers
+>>>>>>> rusty/master_test
 
 !-----------------------------------------------------------------------
 ! Auxilliary pressure arrays:    
 ! The 5 vars below can be re-computed from delp and ptop.
 !-----------------------------------------------------------------------
 ! dyn_aux:
+<<<<<<< HEAD
     real, intent(inout):: ps  (isd:ied  ,jsd:jed)           !< Surface pressure (pascal)
     real, intent(inout):: pe  (is-1:ie+1, npz+1,js-1:je+1)  !< edge pressure (pascal)
     real, intent(inout):: pk  (is:ie,js:je  , npz+1)        !< pe**cappa
     real, intent(inout):: peln(is:ie,npz+1,js:je)           !< ln(pe)
     real, intent(inout):: pkz (is:ie,js:je,npz)             !< finite-volume mean pk
+=======
+    real, intent(inout):: ps  (isd:ied  ,jsd:jed)           ! Surface pressure (pascal)
+    real, intent(inout):: pe  (is-1:ie+1, npz+1,js-1:je+1)  ! edge pressure (pascal)
+    real, intent(inout):: pk  (is:ie,js:je  , npz+1)        ! pe**cappa
+    real, intent(inout):: peln(is:ie,npz+1,js:je)           ! ln(pe)
+    real, intent(inout):: pkz (is:ie,js:je,npz)             ! finite-volume mean pk
+>>>>>>> rusty/master_test
     real, parameter:: tice = 273.16
 
     type(fv_grid_type) :: gridstruct
     type(fv_nest_type) :: neststruct
 
+<<<<<<< HEAD
+=======
+    real :: q_dt_nudge(is:ie,js:je,npz,nq)
+
+>>>>>>> rusty/master_test
     integer, intent(IN) :: npx, npy, npz
 
 !***********
@@ -211,18 +300,26 @@ module fv_update_phys_mod
     real  cvm(is:ie), qc(is:ie)
     real  phalf(npz+1), pfull(npz)
 
+<<<<<<< HEAD
 #ifdef MULTI_GASES
     integer :: nn, nm
 #endif
 
+=======
+>>>>>>> rusty/master_test
     type(group_halo_update_type), save :: i_pack(2)
     integer  i, j, k, m, n, nwat
     integer  sphum, liq_wat, ice_wat, cld_amt   ! GFDL AM physics
     integer  rainwat, snowwat, graupel          ! GFDL Cloud Microphysics
     integer  w_diff                             ! w-tracer for PBL diffusion
+<<<<<<< HEAD
     real:: qstar, dbk, rdg, zvir, p_fac, cv_air, gama_dt
 
     real, dimension(1,1,1) :: parent_u_dt, parent_v_dt ! dummy variables for nesting
+=======
+    real:: qstar, dbk, rdg, zvir, p_fac, cv_air, gama_dt, tbad
+    logical :: bad_range
+>>>>>>> rusty/master_test
 
 !f1p                                                                                                                                                                                                                                        
 !account for change in air molecular weight because of H2O change                                                                                                                                                                            
@@ -245,6 +342,7 @@ module fv_update_phys_mod
 !f1p
     conv_vmr_mmr(1:nq) = .false.
     if (flagstruct%adj_mass_vmr) then
+<<<<<<< HEAD
       do m=1,nq
         call get_tracer_names (MODEL_ATMOS, m, name = tracer_name,  &
                                units = tracer_units)
@@ -254,6 +352,17 @@ module fv_update_phys_mod
           conv_vmr_mmr(m) = .false.
         end if
       end do
+=======
+    do m=1,nq
+       call get_tracer_names (MODEL_ATMOS, m, name = tracer_name,  &
+            units = tracer_units)
+       if ( trim(tracer_units) .eq. 'vmr' ) then
+          conv_vmr_mmr(m) = .true.
+       else
+          conv_vmr_mmr(m) = .false.
+       end if
+    end do
+>>>>>>> rusty/master_test
     end if
     
     sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
@@ -278,6 +387,7 @@ module fv_update_phys_mod
     endif
 
     if ( flagstruct%fv_debug ) then
+<<<<<<< HEAD
       call prt_maxmin('delp_b_update', delp, is, ie, js,  je, ng, npz, 0.01)
       if (present(q_dt)) then
         do m=1,nq
@@ -287,19 +397,56 @@ module fv_update_phys_mod
       call prt_maxmin('u_dt', u_dt, is, ie, js,  je, ng, npz, 1.)
       call prt_maxmin('v_dt', v_dt, is, ie, js,  je, ng, npz, 1.)
       call prt_maxmin('T_dt', t_dt, is, ie, js,  je, 0, npz, 1.)
+=======
+       call prt_maxmin('delp_b_update', delp, is, ie, js,  je, ng, npz, 0.01)
+       if (present(q_dt)) then
+       do m=1,nq
+          call prt_maxmin('q_dt', q_dt(is,js,1,m), is, ie, js, je, 0, npz, 1.)
+       enddo
+       endif
+       call prt_maxmin('u_dt', u_dt, is, ie, js,  je, ng, npz, 1.)
+       call prt_maxmin('v_dt', v_dt, is, ie, js,  je, ng, npz, 1.)
+       call prt_maxmin('T_dt', t_dt, is, ie, js,  je, 0, npz, 1.)
+>>>>>>> rusty/master_test
     endif
 
     call get_eta_level(npz, 1.0E5, pfull, phalf, ak, bk)
 
+<<<<<<< HEAD
 #ifdef MULTI_GASES
         nm = max(           nwat,num_gas)
         nn = max(flagstruct%nwat,num_gas)
 #endif
+=======
+    if (size(neststruct%child_grids) > 1) then
+       call set_physics_BCs(ps, u_dt, v_dt, flagstruct, gridstruct, neststruct, npx, npy, npz, ng, ak, bk, bd)
+    endif
+
+    if (allocated(phys_diag%phys_t_dt)) phys_diag%phys_t_dt = pt(is:ie,js:je,:)
+    if (present(q_dt)) then
+       if (allocated(phys_diag%phys_qv_dt)) phys_diag%phys_qv_dt = q(is:ie,js:je,:,sphum)
+       if (allocated(phys_diag%phys_ql_dt)) then
+          if (liq_wat < 0) call mpp_error(FATAL, " phys_ql_dt needs at least one liquid water tracer defined")
+          phys_diag%phys_ql_dt = q(is:ie,js:je,:,liq_wat) 
+          if (rainwat > 0) phys_diag%phys_ql_dt = q(is:ie,js:je,:,rainwat) + phys_diag%phys_ql_dt
+       endif
+       if (allocated(phys_diag%phys_qi_dt)) then
+          if (ice_wat < 0) then
+             call mpp_error(WARNING, " phys_qi_dt needs at least one ice water tracer defined")
+             phys_diag%phys_qi_dt = 0.
+          endif
+          phys_diag%phys_qi_dt = q(is:ie,js:je,:,ice_wat)
+          if (snowwat > 0) phys_diag%phys_qi_dt = q(is:ie,js:je,:,snowwat) + phys_diag%phys_qi_dt
+          if (graupel > 0) phys_diag%phys_qi_dt = q(is:ie,js:je,:,graupel) + phys_diag%phys_qi_dt
+       endif
+    endif
+>>>>>>> rusty/master_test
 
 !$OMP parallel do default(none) &
 !$OMP             shared(is,ie,js,je,npz,flagstruct,pfull,q_dt,sphum,q,qdiag,  &
 !$OMP                    nq,w_diff,dt,nwat,liq_wat,rainwat,ice_wat,snowwat,    &
 !$OMP                    graupel,delp,cld_amt,hydrostatic,pt,t_dt,delz,adj_vmr,&
+<<<<<<< HEAD
 !$OMP                    gama_dt,cv_air,ua,u_dt,va,v_dt,isd,ied,jsd,jed,       &
 #ifdef MULTI_GASES
 !$OMP                    nn, nm,                                               &
@@ -311,6 +458,16 @@ module fv_update_phys_mod
       if (present(q_dt)) then
 
         if (flagstruct%tau_h2o<0.0 .and. pfull(k) < 100.E2 ) then
+=======
+!$OMP                    gama_dt,cv_air,ua,u_dt,va,v_dt,isd,ied,jsd,jed,          &
+!$OMP                    conv_vmr_mmr,pe,ptop,gridstruct,phys_diag)            &
+!$OMP             private(cvm, qc, qstar, ps_dt, p_fac, tbad)
+    do k=1, npz
+
+       if (present(q_dt)) then
+
+       if (flagstruct%tau_h2o<0.0 .and. pfull(k) < 100.E2 ) then
+>>>>>>> rusty/master_test
 ! Wipe the stratosphere clean:
 ! This should only be used for initialization from a bad model state
            p_fac = -flagstruct%tau_h2o*86400.
@@ -319,7 +476,11 @@ module fv_update_phys_mod
                  q_dt(i,j,k,sphum) = q_dt(i,j,k,sphum) + (3.E-6-q(i,j,k,sphum))/p_fac
               enddo
            enddo
+<<<<<<< HEAD
         elseif ( flagstruct%tau_h2o>0.0 .and. pfull(k) < 3000. ) then
+=======
+       elseif ( flagstruct%tau_h2o>0.0 .and. pfull(k) < 3000. ) then
+>>>>>>> rusty/master_test
 ! Do idealized Ch4 chemistry
 
            if ( pfull(k) < 1. ) then
@@ -347,11 +508,16 @@ module fv_update_phys_mod
                  q_dt(i,j,k,sphum) = q_dt(i,j,k,sphum) + (qstar-q(i,j,k,sphum))/p_fac
               enddo
            enddo
+<<<<<<< HEAD
         endif
+=======
+       endif
+>>>>>>> rusty/master_test
 
 !----------------
 ! Update tracers:
 !----------------
+<<<<<<< HEAD
         do m=1,nq
           if( m /= w_diff ) then 
             do j=js,je
@@ -361,10 +527,22 @@ module fv_update_phys_mod
             enddo
           endif
         enddo
+=======
+       do m=1,nq
+          if( m /= w_diff ) then 
+          do j=js,je
+             do i=is,ie
+                q(i,j,k,m) = q(i,j,k,m) + dt*q_dt(i,j,k,m)
+             enddo
+          enddo
+          endif
+       enddo
+>>>>>>> rusty/master_test
 
 !--------------------------------------------------------
 ! Adjust total air mass due to changes in water substance
 !--------------------------------------------------------
+<<<<<<< HEAD
         do j=js,je
           do i=is,ie
 #ifdef MULTI_GASES
@@ -386,10 +564,24 @@ module fv_update_phys_mod
             end if
           enddo
         enddo
+=======
+      do j=js,je
+         do i=is,ie
+            ps_dt(i,j)  = 1. + dt*sum(q_dt(i,j,k,1:nwat))
+            delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
+            if (flagstruct%adj_mass_vmr) then
+               adj_vmr(i,j,k) =                          &
+                    (ps_dt(i,j) - sum(q(i,j,k,1:flagstruct%nwat))) /  &
+                    (1.d0       - sum(q(i,j,k,1:flagstruct%nwat)))
+            end if
+         enddo
+      enddo
+>>>>>>> rusty/master_test
 
 !-----------------------------------------
 ! Adjust mass mixing ratio of all tracers 
 !-----------------------------------------
+<<<<<<< HEAD
         if ( nwat /=0 ) then
           do m=1,flagstruct%ncnst
 !-- check to query field_table to determine if tracer needs mass adjustment
@@ -404,6 +596,22 @@ module fv_update_phys_mod
             endif
           enddo
         endif
+=======
+      if ( nwat /=0 ) then
+        do m=1,flagstruct%ncnst
+!-- check to query field_table to determine if tracer needs mass adjustment
+          if( m /= cld_amt .and. m /= w_diff .and. adjust_mass(MODEL_ATMOS,m)) then 
+            if (m <= nq)  then
+              q(is:ie,js:je,k,m) = q(is:ie,js:je,k,m) / ps_dt(is:ie,js:je)
+              if (conv_vmr_mmr(m)) &
+                   q(is:ie,js:je,k,m) = q(is:ie,js:je,k,m) * adj_vmr(is:ie,js:je,k)
+            else
+              qdiag(is:ie,js:je,k,m) = qdiag(is:ie,js:je,k,m) / ps_dt(is:ie,js:je)
+            endif
+          endif
+        enddo
+      endif
+>>>>>>> rusty/master_test
 
       endif ! present(q_dt)
 
@@ -412,10 +620,18 @@ module fv_update_phys_mod
             call moist_cp(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
                           ice_wat, snowwat, graupel, q, qc, cvm, pt(is:ie,j,k) )
             do i=is,ie
+<<<<<<< HEAD
                pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
             enddo
          enddo
       else
+=======
+!!!            pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt
+               pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
+            enddo
+          enddo
+       else
+>>>>>>> rusty/master_test
          if ( flagstruct%phys_hydrostatic ) then
 ! Constant pressure
              do j=js,je
@@ -423,6 +639,10 @@ module fv_update_phys_mod
                               ice_wat, snowwat, graupel, q, qc, cvm, pt(is:ie,j,k) )
                 do i=is,ie
                    delz(i,j,k) = delz(i,j,k) / pt(i,j,k)
+<<<<<<< HEAD
+=======
+!!!                pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt
+>>>>>>> rusty/master_test
                    pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
                    delz(i,j,k) = delz(i,j,k) * pt(i,j,k)
                 enddo
@@ -440,6 +660,10 @@ module fv_update_phys_mod
                   call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
                                 ice_wat, snowwat, graupel, q, qc, cvm, pt(is:ie,j,k))
                   do i=is,ie
+<<<<<<< HEAD
+=======
+!!!                  pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cv_air
+>>>>>>> rusty/master_test
                      pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
                   enddo
                enddo
@@ -456,7 +680,48 @@ module fv_update_phys_mod
       enddo
 #endif
 
+<<<<<<< HEAD
     enddo ! k-loop
+=======
+   enddo ! k-loop
+
+   if (allocated(phys_diag%phys_t_dt)) phys_diag%phys_t_dt = (pt(is:ie,js:je,:) - phys_diag%phys_t_dt) / dt
+   if (present(q_dt)) then
+      if (allocated(phys_diag%phys_qv_dt)) phys_diag%phys_qv_dt = (q(is:ie,js:je,:,sphum) - phys_diag%phys_qv_dt) / dt
+      if (allocated(phys_diag%phys_ql_dt)) then
+         if (liq_wat < 0) call mpp_error(FATAL, " phys_ql_dt needs at least one liquid water tracer defined")
+         phys_diag%phys_ql_dt = q(is:ie,js:je,:,liq_wat) - phys_diag%phys_qv_dt
+         if (rainwat > 0) phys_diag%phys_ql_dt = q(is:ie,js:je,:,rainwat) + phys_diag%phys_ql_dt
+         phys_diag%phys_ql_dt = phys_diag%phys_ql_dt / dt
+      endif
+      if (allocated(phys_diag%phys_qi_dt)) then
+         if (ice_wat < 0) then
+            call mpp_error(WARNING, " phys_qi_dt needs at least one ice water tracer defined")
+            phys_diag%phys_qi_dt = 0.
+         endif
+         phys_diag%phys_qi_dt = q(is:ie,js:je,:,ice_wat) - phys_diag%phys_qi_dt
+         if (snowwat > 0) phys_diag%phys_qi_dt = q(is:ie,js:je,:,snowwat) + phys_diag%phys_qi_dt
+         if (graupel > 0) phys_diag%phys_qi_dt = q(is:ie,js:je,:,graupel) + phys_diag%phys_qi_dt
+         phys_diag%phys_qi_dt = phys_diag%phys_qi_dt / dt
+      endif
+   endif
+    
+   if ( flagstruct%range_warn ) then
+      call range_check('PT UPDATE', pt, is, ie, js, je, ng, npz, gridstruct%agrid,    &
+                          tcmin+TFREEZE, tcmax+TFREEZE, bad_range, Time)
+      if (bad_range) then
+         do k=1,npz
+         do j=js,je
+         do i=is,ie
+            if (pt(i,j,k) < tcmin+TFREEZE .or. pt(i,j,k) > tcmax+TFREEZE) then
+               write(*,*) 'PT UPDATE: ', t_dt(i,j,k)*dt, i,j,k, gridstruct%agrid(i,j,:)
+            endif
+         enddo
+         enddo
+         enddo
+      endif
+   endif
+>>>>>>> rusty/master_test
 
 ! [delp, (ua, va), pt, q] updated. Perform nudging if requested
 !------- nudging of atmospheric variables toward specified data --------
@@ -469,11 +734,19 @@ module fv_update_phys_mod
 ! All fields will be updated; tendencies added
 !--------------------------------------------
         call get_atmos_nudge ( Time, dt, is, ie, js, je,    &
+<<<<<<< HEAD
              npz, ng, ps(is:ie,js:je), ua(is:ie, js:je,:),  &
              va(is:ie,js:je,:), pt(is:ie,js:je,:),          &
              q(is:ie,js:je,:,:), ps_dt(is:ie,js:je), u_dt(is:ie,js:je,:),  & 
              v_dt(is:ie,js:je,:), t_dt(is:ie,js:je,:),      &
              q_dt(is:ie,js:je,:,:) )
+=======
+             npz, ng, ps(is:ie,js:je), ua(is:ie, js:je,:), &
+             va(is:ie,js:je,:), pt(is:ie,js:je,:), &
+             q(is:ie,js:je,:,:), ps_dt(is:ie,js:je), u_dt(is:ie,js:je,:),  & 
+             v_dt(is:ie,js:je,:), t_dt(is:ie,js:je,:), &
+             q_dt_nudge(is:ie,js:je,:,:) )
+>>>>>>> rusty/master_test
 
 !--------------
 ! Update delp
@@ -500,7 +773,11 @@ module fv_update_phys_mod
              pt(is:ie,js:je,:), q(is:ie,js:je,:,sphum:sphum),   &
              ps_dt(is:ie,js:je), u_dt(is:ie,js:je,:),  &
              v_dt(is:ie,js:je,:), t_dt(is:ie,js:je,:), &
+<<<<<<< HEAD
              q_dt(is:ie,js:je,:,sphum:sphum) )
+=======
+             q_dt_nudge(is:ie,js:je,:,sphum:sphum) )
+>>>>>>> rusty/master_test
 
 !--------------
 ! Update delp
@@ -520,6 +797,7 @@ module fv_update_phys_mod
 ! All fields will be updated except winds; wind tendencies added
 !$omp parallel do default(shared)
         do j=js,je
+<<<<<<< HEAD
           do k=2,npz+1
             do i=is,ie
               pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
@@ -530,12 +808,25 @@ module fv_update_phys_mod
           enddo
         enddo
         call fv_ada_nudge ( Time, dt, npx, npy, npz,  ps_dt, u_dt, v_dt, t_dt, q_dt,   &
+=======
+         do k=2,npz+1
+          do i=is,ie
+            pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+          enddo
+         enddo
+         do i=is,ie
+           ps(i,j) = pe(i,npz+1,j)
+         enddo
+        enddo
+        call fv_ada_nudge ( Time, dt, npx, npy, npz,  ps_dt, u_dt, v_dt, t_dt, q_dt_nudge,   &
+>>>>>>> rusty/master_test
                             zvir, ptop, ak, bk, ts, ps, delp, ua, va, pt,    &
                             nwat, q,  phis, gridstruct, bd, domain )
 #else
 ! All fields will be updated except winds; wind tendencies added
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,pe,delp,ps)
         do j=js,je
+<<<<<<< HEAD
           do k=2,npz+1                                                                             
             do i=is,ie
               pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
@@ -549,6 +840,22 @@ module fv_update_phys_mod
                             zvir, ptop, ak, bk, ts, ps, delp, ua, va, pt,    &
                             nwat, q,  phis, gridstruct, bd, domain )
 #endif
+=======
+         do k=2,npz+1                                                                             
+          do i=is,ie
+            pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+          enddo
+         enddo
+         do i=is,ie
+           ps(i,j) = pe(i,npz+1,j)
+         enddo
+        enddo
+        call fv_nwp_nudge ( Time, dt, npx, npy, npz,  ps_dt, u_dt, v_dt, t_dt, q_dt_nudge,   &
+                            zvir, ptop, ak, bk, ts, ps, delp, ua, va, pt,    &
+                            nwat, q,  phis, gridstruct, bd, domain )
+#endif
+
+>>>>>>> rusty/master_test
   endif         ! end nudging       
 
   if ( .not.flagstruct%dwind_2d ) then
@@ -573,9 +880,12 @@ module fv_update_phys_mod
   endif
 
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,pe,delp,peln,pk,ps,u_srf,v_srf, &
+<<<<<<< HEAD
 #ifdef MULTI_GASES
 !$OMP                                  q,                                              &
 #endif
+=======
+>>>>>>> rusty/master_test
 !$OMP                                  ua,va,pkz,hydrostatic)
    do j=js,je
       do k=2,npz+1                                                                             
@@ -596,9 +906,12 @@ module fv_update_phys_mod
          do k=1,npz
             do i=is,ie
                pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
+<<<<<<< HEAD
 #ifdef MULTI_GASES
                pkz(i,j,k) = exp( virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:)) * log( pkz(i,j,k) ) )
 #endif
+=======
+>>>>>>> rusty/master_test
             enddo
          enddo
       endif
@@ -616,6 +929,7 @@ module fv_update_phys_mod
 
     call complete_group_halo_update(i_pack(1), domain)
 
+<<<<<<< HEAD
     if (size(neststruct%child_grids) > 1) then
        if (gridstruct%nested) then
           call nested_grid_BC(u_dt, parent_u_dt, neststruct%nest_domain, neststruct%ind_h, neststruct%wt_h, 0, 0, &
@@ -631,6 +945,8 @@ module fv_update_phys_mod
        enddo
     endif
 
+=======
+>>>>>>> rusty/master_test
     call timing_off('COMM_TOTAL')
 !
 ! for regional grid need to set values for u_dt and v_dt at the edges.
@@ -697,22 +1013,55 @@ module fv_update_phys_mod
                                                     call timing_off(' Update_dwinds')
 #ifdef GFS_PHYS
     call cubed_to_latlon(u, v, ua, va, gridstruct, &
+<<<<<<< HEAD
          npx, npy, npz, 1, gridstruct%grid_type, domain, gridstruct%nested, flagstruct%c2l_ord, bd)
+=======
+         npx, npy, npz, 1, gridstruct%grid_type, domain, gridstruct%bounded_domain, flagstruct%c2l_ord, bd)
+>>>>>>> rusty/master_test
 #endif
 
   if ( flagstruct%fv_debug ) then
        call prt_maxmin('PS_a_update', ps, is, ie, js, je, ng,   1, 0.01)
   endif
 
+<<<<<<< HEAD
   end subroutine fv_update_phys
 
 !>@brief The subroutine 'del2_phys' is for filtering the physics tendency.
+=======
+  if (allocated(phys_diag%phys_u_dt)) then
+     do k=1,npz
+     do j=js,je
+     do i=is,ie
+        phys_diag%phys_u_dt(i,j,k) = u_dt(i,j,k)
+     enddo
+     enddo
+     enddo
+  endif
+  if (allocated(phys_diag%phys_v_dt)) then
+     do k=1,npz
+     do j=js,je
+     do i=is,ie
+        phys_diag%phys_v_dt(i,j,k) = v_dt(i,j,k)
+     enddo
+     enddo
+     enddo
+  endif
+
+  end subroutine fv_update_phys
+
+
+>>>>>>> rusty/master_test
   subroutine del2_phys(qdt, delp, gridstruct, cd, npx, npy, km, is, ie, js, je, &
                        isd, ied, jsd, jed, ngc, domain)
 ! This routine is for filtering the physics tendency
    integer, intent(in):: npx, npy, km
    integer, intent(in):: is, ie, js, je, isd, ied, jsd, jed, ngc
+<<<<<<< HEAD
    real,    intent(in):: cd            !< cd = K * da_min;   0 < K < 0.25
+=======
+   real,    intent(in):: cd            ! cd = K * da_min;   0 < K < 0.25
+>>>>>>> rusty/master_test
    real, intent(in   ):: delp(isd:ied,jsd:jed,km)
    real, intent(inout):: qdt(is-ngc:ie+ngc,js-ngc:je+ngc,km)
    type(fv_grid_type), intent(IN), target :: gridstruct
@@ -779,15 +1128,26 @@ module fv_update_phys_mod
                  (mask(i,j)+mask(i,j+1))*dy(i,j)*sina_u(i,j)* &
                  (q(i-1,j,k)-q(i,j,k))*rdxc(i,j)
          enddo
+<<<<<<< HEAD
          if (is == 1 .and. .not. gridstruct%nested)   fx(i,j) = &
               (mask(is,j)+mask(is,j+1))*dy(is,j)*(q(is-1,j,k)-q(is,j,k))*rdxc(is,j)* &
             0.5*(sin_sg(1,j,1) + sin_sg(0,j,3))
          if (ie+1==npx .and. .not. gridstruct%nested) fx(i,j) = &
+=======
+         if (is == 1 .and. .not. gridstruct%bounded_domain)   fx(i,j) = &
+              (mask(is,j)+mask(is,j+1))*dy(is,j)*(q(is-1,j,k)-q(is,j,k))*rdxc(is,j)* &
+            0.5*(sin_sg(1,j,1) + sin_sg(0,j,3))
+         if (ie+1==npx .and. .not. gridstruct%bounded_domain) fx(i,j) = &
+>>>>>>> rusty/master_test
               (mask(ie+1,j)+mask(ie+1,j+1))*dy(ie+1,j)*(q(ie,j,k)-q(ie+1,j,k))*rdxc(ie+1,j)* & 
             0.5*(sin_sg(npx,j,1) + sin_sg(npx-1,j,3))
       enddo
       do j=js,je+1
+<<<<<<< HEAD
          if ((j == 1 .OR. j == npy) .and. .not. gridstruct%nested) then
+=======
+         if ((j == 1 .OR. j == npy) .and. .not. gridstruct%bounded_domain) then
+>>>>>>> rusty/master_test
             do i=is,ie
                fy(i,j) = (mask(i,j)+mask(i+1,j))*dx(i,j)*&
                     (q(i,j-1,k)-q(i,j,k))*rdyc(i,j) &
@@ -809,6 +1169,7 @@ module fv_update_phys_mod
 
   end subroutine del2_phys
 
+<<<<<<< HEAD
 !>@brief The subroutine 'update_dwinds_phys' transforms the wind tendencies from 
 !! the A grid to the D grid for the final update.
   subroutine update_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v, gridstruct, npx, npy, npz, domain)
@@ -1142,4 +1503,6 @@ module fv_update_phys_mod
 
   end subroutine update2d_dwinds_phys
 
+=======
+>>>>>>> rusty/master_test
 end module fv_update_phys_mod

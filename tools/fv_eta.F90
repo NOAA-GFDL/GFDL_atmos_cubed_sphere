@@ -1,4 +1,5 @@
 !***********************************************************************
+<<<<<<< HEAD
 !*                   GNU Lesser General Public License                 
 !*
 !* This file is part of the FV3 dynamical core.
@@ -43,6 +44,28 @@ module fv_eta_mod
 !   </tr>
 ! </table>
 
+=======
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+!* If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
+module fv_eta_mod
+>>>>>>> rusty/master_test
  use constants_mod,  only: kappa, grav, cp_air, rdgas
  use fv_mp_mod,      only: is_master
  use mpp_mod,        only: FATAL, mpp_error
@@ -54,9 +77,17 @@ module fv_eta_mod
 
  contains
 
+<<<<<<< HEAD
 !!!NOTE: USE_VAR_ETA not used in fvGFS
 #ifdef USE_VAR_ETA
  subroutine set_eta(km, ks, ptop, ak, bk)
+=======
+!!!NOTE: USE_VAR_ETA not used in SHiELD
+!!! This routine will be kept here
+!!! for the time being to not disrupt idealized tests
+#ifdef USE_VAR_ETA
+ subroutine set_eta(km, ks, ptop, ak, bk, npz_type)
+>>>>>>> rusty/master_test
 ! This is the easy to use version of the set_eta
       integer,  intent(in)::  km           ! vertical dimension
       integer,  intent(out):: ks           ! number of pure p layers
@@ -107,6 +138,10 @@ module fv_eta_mod
       real, intent(out):: ak(km+1)
       real, intent(out):: bk(km+1)
       real, intent(out):: ptop         ! model top (Pa)
+<<<<<<< HEAD
+=======
+      character(24), intent(IN) :: npz_type
+>>>>>>> rusty/master_test
       real pint, stretch_fac
       integer  k
       real :: s_rate = -1.0 ! dummy value to not use var_les
@@ -175,6 +210,10 @@ module fv_eta_mod
             bk(k) = b60(k)
           enddo
 #else
+<<<<<<< HEAD
+=======
+!!!!!!!!!!! MERGING STOPPED HERE 13 oct 17 !!!!!!!!!!!!!!!!!
+>>>>>>> rusty/master_test
              ptop = 3.e2
 !            pint = 250.E2
              pint = 300.E2    ! revised for Moist test
@@ -278,6 +317,7 @@ module fv_eta_mod
 
  end subroutine set_eta
 
+<<<<<<< HEAD
  subroutine mount_waves(km, ak, bk, ptop, ks, pint)
   integer, intent(in):: km
   real,    intent(out):: ak(km+1), bk(km+1)
@@ -1506,19 +1546,500 @@ module fv_eta_mod
       end select
       ptop = ak(1)
       pint = ak(ks+1)
+=======
+
+#else
+ !This is the version of set_eta used in SHiELD and AM4
+ subroutine set_eta(km, ks, ptop, ak, bk, npz_type)
+
+!Level definitions are now in this header file
+#include <fv_eta.h>
+
+   integer,  intent(in)::  km           ! vertical dimension
+   integer,  intent(out):: ks           ! number of pure p layers
+   real, intent(out):: ak(km+1)
+   real, intent(out):: bk(km+1)
+   real, intent(out):: ptop         ! model top (Pa)
+   character(24), intent(IN) :: npz_type
+
+   real:: p0=1000.E2
+   real:: pc=200.E2
+
+   real pt, lnpe, dlnp
+   real press(km+1), pt1(km)
+   integer  k
+   integer :: var_fn = 0
+
+   real :: pint = 100.E2
+   real :: stretch_fac = 1.03
+   integer :: auto_routine = 0
+
+
+   ptop = 1.
+
+   ! Definition: press(i,j,k) = ak(k) + bk(k) * ps(i,j)
+
+   if (trim(npz_type) == 'superC' .or. trim(npz_type) == 'superK') then
+
+      auto_routine = 1
+      select case (km)
+      case (20)
+         ptop = 56.e2
+         pint = ptop
+         stretch_fac = 1.03
+      case (24)
+         ptop = 56.e2
+         pint = ptop
+         stretch_fac = 1.03
+      case (30)
+         ptop = 56.e2
+         pint = ptop
+         stretch_fac = 1.03
+      case (40)
+         ptop = 56.e2
+         pint = ptop
+         stretch_fac = 1.03
+      case (50)
+         ptop = 56.e2
+         pint = ptop
+         stretch_fac = 1.03
+      case (60)
+         ptop = 56.e2
+         pint = ptop
+         stretch_fac = 1.03
+      case (80)
+         ptop = 56.e2
+         pint = ptop
+         stretch_fac = 1.03
+      case (90)          ! super-duper cell
+         ptop = 40.e2
+         stretch_fac = 1.025
+         auto_routine = 2
+      end select
+
+   else
+
+      select case (km)
+
+      case (5,10) ! does this work????
+
+         ! Equivalent Shallow Water: for modon test
+         ptop = 500.e2
+         ks = 0
+         do k=1,km+1
+            bk(k) = real(k-1) / real (km) 
+            ak(k) = ptop*(1.-bk(k))
+         enddo
+
+      case (24)
+
+         ks = 5     
+         do k=1,km+1
+            ak(k) = a24(k)
+            bk(k) = b24(k)
+         enddo
+
+      case (26)
+
+         ks = 7
+         do k=1,km+1
+            ak(k) = a26(k)     
+            bk(k) = b26(k)     
+         enddo
+
+      case (30)          ! For Baroclinic Instability Test
+         ptop = 2.26e2
+         pint = 250.E2
+         stretch_fac = 1.03
+         auto_routine = 1
+
+      case (31)               ! N = 4, M=2
+         if (trim(npz_type) == 'lowtop') then
+            ptop = 300.
+            pint = 100.E2
+            stretch_fac = 1.035             
+            auto_routine = 5
+         else
+            ptop = 100.
+            stretch_fac = 1.035
+            auto_routine = 1
+         endif
+
+      case (32)
+
+         if (trim(npz_type) == 'old32') then
+            ks = 13              ! high-res trop_32 setup
+            do k=1,km+1
+               ak(k) = a32old(k)
+               bk(k) = b32old(k)
+            enddo
+         elseif (trim(npz_type) == 'lowtop') then
+            ptop = 100.
+            stretch_fac = 1.035
+            auto_routine = 1
+         else
+            ks = 7
+            do k=1,km+1
+               ak(k) = a32(k)
+               bk(k) = b32(k)
+            enddo
+         endif
+         !miz
+      case (33)
+         ks = 7
+         do k=1,km+1
+            ak(k) = a33(k)
+            bk(k) = b33(k)
+         enddo
+         !miz
+
+      case (39)               ! N = 5
+         ptop = 100.
+         stretch_fac = 1.035
+         auto_routine = 1
+
+      case (40)
+         ptop = 50.e2   ! For super cell test
+         pint = 300.E2
+         stretch_fac = 1.03
+         auto_routine = 1
+
+      case (41)
+         ptop = 100.
+         pint = 100.E2
+         stretch_fac = 1.035
+         auto_routine = 1
+
+      case (47)
+
+         if (trim(npz_type) == 'lowtop') then
+            ptop = 100.
+            stretch_fac = 1.035
+            auto_routine = 1
+         else
+            !         ks = 27       ! high-res trop-strat
+            ks = 20       ! Oct 23, 2012
+            do k=1,km+1
+               ak(k) = a47(k)
+               bk(k) = b47(k)
+            enddo
+         endif
+
+      case (48)
+         ks = 28
+         do k=1,km+1
+            ak(k) = a48(k)
+            bk(k) = b48(k)
+         enddo
+
+      case (50)          
+         ! *Very-low top: for idealized super-cell simulation:
+         ptop = 50.e2
+         pint = 250.E2
+         stretch_fac = 1.03
+         auto_routine = 1
+
+      case (51)
+         if (trim(npz_type) == 'lowtop') then
+            ptop = 100.
+            stretch_fac = 1.03
+            auto_routine = 1
+         elseif (trim(npz_type) == 'meso') then
+            ptop = 20.E2
+            pint = 100.E2
+            stretch_fac = 1.05
+            auto_routine = 1
+         elseif (trim(npz_type) == 'meso2') then
+            ptop = 1.E2
+            pint = 100.E2
+            stretch_fac = 1.05
+            auto_routine = 6
+         else
+            ptop = 100.
+            pint = 100.E2
+            stretch_fac = 1.035
+            auto_routine = 1
+         endif
+
+      case (52)
+
+         if (trim(npz_type) == 'rce') then
+            ptop = 30.e2    ! for special DPM RCE experiments
+            stretch_fac = 1.03
+            auto_routine = 1
+         else
+            ks = 35         ! pint = 223
+            do k=1,km+1
+               ak(k) = a52(k)
+               bk(k) = b52(k)
+            enddo
+         endif
+
+      case (54)
+         ks = 11         ! pint =  109.4
+         do k=1,km+1
+            ak(k) = a54(k)
+            bk(k) = b54(k)
+         enddo
+
+         ! Mid-top:
+      case (55)               ! N = 7
+         ptop = 10.
+         pint = 100.E2
+         stretch_fac = 1.035
+         auto_routine = 1
+
+      case (56)
+         ks = 26
+         do k=1,km+1
+            ak(k) = a56(k)
+            bk(k) = b56(k)
+         enddo
+
+      case (60)
+
+         if (trim(npz_type) == 'gfs') then
+            ks = 20
+            do k=1,km+1
+               ak(k) = a60gfs(k)
+               bk(k) = b60gfs(k)
+            enddo
+         else if (trim(npz_type) == 'BCwave') then
+            ptop = 3.e2
+            !            pint = 250.E2
+            pint = 300.E2    ! revised for Moist test
+            stretch_fac = 1.03
+            auto_routine = 1
+         else if (trim(npz_type) == 'meso') then
+
+            ptop = 40.e2
+            pint = 250.E2
+            stretch_fac = 1.03
+            auto_routine = 1
+
+         else
+            ks = 37
+            do k=1,km+1
+               ak(k) = a60(k)
+               bk(k) = b60(k)
+            enddo
+         endif
+
+      case (63)
+         if (trim(npz_type) == 'meso') then
+            ks = 11
+            do k=1,km+1
+               ak(k) = a63meso(k)
+               bk(k) = b63meso(k)
+            enddo
+         elseif (trim(npz_type) == 'hitop') then
+            ptop = 1.   ! high top
+            pint = 100.E2
+            stretch_fac = 1.035
+            auto_routine = 1
+         else!if (trim(npz_type) == 'gfs') then
+            !Used for SHiELD
+            ! GFS L64 equivalent setting
+            ks = 23
+            do k=1,km+1
+               ak(k) = a63(k)
+               bk(k) = b63(k)
+            enddo
+         endif
+
+      case (64)
+
+         if (trim(npz_type) == 'gfs') then
+            ks = 23
+            do k=1,km+1
+               ak(k) = a64gfs(k)
+               bk(k) = b64gfs(k)
+            enddo
+
+         else
+
+            ks = 46
+            do k=1,km+1
+               ak(k) = a64(k)
+               bk(k) = b64(k)
+            enddo
+
+         endif
+         !-->cjg
+      case (68)
+         ks = 27
+         do k=1,km+1
+            ak(k) = a68(k)
+            bk(k) = b68(k)
+         enddo
+
+      case (71)               ! N = 9
+         ptop = 1.
+         stretch_fac = 1.03
+         auto_routine = 1
+      case (75)   ! HS-SGO test configuration
+         pint = 100.E2
+         ptop = 10.E2
+         stretch_fac = 1.035
+         auto_routine = 6
+      case (79)               ! N = 10, M=5
+         if (trim(npz_type) == 'gcrm') then
+           pint = 100.E2
+           ptop = 3.E2
+           stretch_fac = 1.035
+           auto_routine = 6	
+         else
+           ptop = 1.
+           stretch_fac = 1.03
+           auto_routine = 1
+         endif
+      case (90)          ! super-duper cell
+         ptop = 40.e2
+         stretch_fac = 1.025
+         auto_routine = 2
+
+         ! NGGPS_GFS
+      case (91)
+         pint = 100.E2
+         ptop = 40.
+         stretch_fac = 1.029
+         auto_routine = 6
+
+      case (95)
+         ! Mid-top settings:
+         pint = 100.E2
+         ptop = 20.
+         stretch_fac = 1.029
+         auto_routine = 6
+
+      case (96)
+         ks = 27
+         do k=1,km+1
+            ak(k) = a96(k)
+            bk(k) = b96(k)
+         enddo
+         !<--cjg
+
+      case (100)
+         ks = 38
+         do k=1,km+1
+            ak(k) = a100(k)
+            bk(k) = b100(k)
+         enddo
+
+      case (104)
+         ks = 73
+         do k=1,km+1
+            ak(k) = a104(k)
+            bk(k) = b104(k)
+         enddo
+
+         ! IFS-like L125
+      case (125)
+         ks = 33
+         ptop = a125(1)
+         pint = a125(ks+1)
+         do k=1,km+1
+            ak(k) = a125(k)
+            bk(k) = b125(k)
+         enddo
+
+      case (127)               ! N = 10, M=5
+         if (trim(npz_type) == 'hitop') then
+            ptop = 1.
+            stretch_fac = 1.03
+            auto_routine = 2
+         else
+            ptop = 1.
+            pint = 75.E2
+            stretch_fac = 1.028
+            auto_routine = 6
+         endif
+      case (151)
+         !LES applications
+         ptop = 75.e2
+         pint = 500.E2
+         stretch_fac = 1.01
+         auto_routine = 3
+
+      case default
+
+         if(trim(npz_type) == 'hitop') then
+            ptop = 1.
+            pint = 100.E2
+         elseif(trim(npz_type) == 'midtop') then
+            ptop = 10.
+            pint = 100.E2
+         elseif(trim(npz_type) == 'lowtop') then
+            ptop = 1.E2
+            pint = 100.E2
+         endif
+
+         if (trim(npz_type) == 'gfs') then
+            auto_routine = 6
+         elseif(trim(npz_type) == 'les') then
+            auto_routine = 3
+         elseif(trim(npz_type) == 'mountain_wave') then
+            auto_routine = 4
+         elseif (km > 79) then
+            auto_routine = 2
+         else
+            auto_routine = 1
+         endif
+
+      end select
+
+   endif ! superC/superK
+
+   select case (auto_routine)
+
+   case (1)
+      call var_hi(km, ak, bk, ptop, ks, pint, stretch_fac)
+   case (2)
+      call var_hi2(km, ak, bk, ptop, ks, pint, stretch_fac)
+   case (3)
+      call var_les(km, ak, bk, ptop, ks, pint, stretch_fac)         
+   case (4)
+      call mount_waves(km, ak, bk, ptop, ks, pint)
+   case (5)
+      call var_dz(km, ak, bk, ptop, ks, pint, stretch_fac)
+   case (6)
+      call var_gfs(km, ak, bk, ptop, ks, pint, stretch_fac)
+   end select
+
+   ptop = ak(1)
+   pint = ak(ks+1)
+
+   if (is_master()) then
+      write(*, '(A4, A13, A13, A11)') 'klev', 'ak', 'bk', 'p_ref'
+      do k=1,km+1
+         write(*,'(I4, F13.5, F13.5, F11.2)') k, ak(k), bk(k), 1000.E2*bk(k) + ak(k)
+      enddo
+   endif
+
+>>>>>>> rusty/master_test
 
  end subroutine set_eta
 #endif
 
+<<<<<<< HEAD
 !>@brief The subroutine 'set_external_eta' sets 'ptop' (model top) and 
 !! 'ks' (first level of pure pressure coordinates given the coefficients
 !! 'ak' and 'bk'
+=======
+
+>>>>>>> rusty/master_test
  subroutine set_external_eta(ak, bk, ptop, ks)
    implicit none
    real,    intent(in)  :: ak(:)
    real,    intent(in)  :: bk(:)
+<<<<<<< HEAD
    real,    intent(out) :: ptop         !< model top (Pa)
    integer, intent(out) :: ks           !< number of pure p layers
+=======
+   real,    intent(out) :: ptop         ! model top (Pa)
+   integer, intent(out) :: ks           ! number of pure p layers
+>>>>>>> rusty/master_test
    !--- local variables
    integer :: k
    real :: eps = 1.d-7
@@ -1539,7 +2060,11 @@ module fv_eta_mod
  implicit none
   integer, intent(in):: km
   real,    intent(in):: ptop
+<<<<<<< HEAD
   real,    intent(in):: s_rate        !< between [1. 1.1]
+=======
+  real,    intent(in):: s_rate        ! between [1. 1.1]
+>>>>>>> rusty/master_test
   real,    intent(out):: ak(km+1), bk(km+1)
   real,    intent(inout):: pint
   integer, intent(out):: ks
@@ -1551,8 +2076,13 @@ module fv_eta_mod
   real ep, es, alpha, beta, gama
   real, parameter:: akap = 2./7.
 !---- Tunable parameters:
+<<<<<<< HEAD
   real:: k_inc = 10   !< number of layers from bottom up to near const dz region
   real:: s0 = 0.8     !< lowest layer stretch factor
+=======
+  real:: k_inc = 10   ! # of layers from bottom up to near const dz region
+  real:: s0 = 0.8     ! lowest layer stretch factor
+>>>>>>> rusty/master_test
 !-----------------------
   real:: s_inc
   integer  k
@@ -1700,7 +2230,11 @@ module fv_eta_mod
  subroutine var_gfs(km, ak, bk, ptop, ks, pint, s_rate)
   integer, intent(in):: km
   real,    intent(in):: ptop
+<<<<<<< HEAD
   real,    intent(in):: s_rate        !< between [1. 1.1]
+=======
+  real,    intent(in):: s_rate        ! between [1. 1.1]
+>>>>>>> rusty/master_test
   real,    intent(out):: ak(km+1), bk(km+1)
   real,    intent(inout):: pint
   integer, intent(out):: ks
@@ -1711,8 +2245,13 @@ module fv_eta_mod
   real ztop, t0, dz0, sum1, tmp1
   real ep, es, alpha, beta, gama
 !---- Tunable parameters:
+<<<<<<< HEAD
   integer:: k_inc = 25   !< number of layers from bottom up to near const dz region
   real:: s0 = 0.13 !< lowest layer stretch factor
+=======
+  integer:: k_inc = 25   ! # of layers from bottom up to near const dz region
+  real:: s0 = 0.13 ! lowest layer stretch factor
+>>>>>>> rusty/master_test
 !-----------------------
   real:: s_inc
   integer  k
@@ -1864,7 +2403,11 @@ module fv_eta_mod
  subroutine var_hi(km, ak, bk, ptop, ks, pint, s_rate)
   integer, intent(in):: km
   real,    intent(in):: ptop
+<<<<<<< HEAD
   real,    intent(in):: s_rate        !< between [1. 1.1]
+=======
+  real,    intent(in):: s_rate        ! between [1. 1.1]
+>>>>>>> rusty/master_test
   real,    intent(out):: ak(km+1), bk(km+1)
   real,    intent(inout):: pint
   integer, intent(out):: ks
@@ -1875,8 +2418,13 @@ module fv_eta_mod
   real ztop, t0, dz0, sum1, tmp1
   real ep, es, alpha, beta, gama
 !---- Tunable parameters:
+<<<<<<< HEAD
   integer:: k_inc = 15   !<number of layers from bottom up to near const dz region
   real:: s0 = 0.10 !< lowest layer stretch factor
+=======
+  integer:: k_inc = 15   ! # of layers from bottom up to near const dz region
+  real:: s0 = 0.10 ! lowest layer stretch factor
+>>>>>>> rusty/master_test
 !-----------------------
   real:: s_inc
   integer  k
@@ -2040,7 +2588,11 @@ module fv_eta_mod
  subroutine var_hi2(km, ak, bk, ptop, ks, pint, s_rate)
   integer, intent(in):: km
   real,    intent(in):: ptop
+<<<<<<< HEAD
   real,    intent(in):: s_rate        !< between [1. 1.1]
+=======
+  real,    intent(in):: s_rate        ! between [1. 1.1]
+>>>>>>> rusty/master_test
   real,    intent(out):: ak(km+1), bk(km+1)
   real,    intent(inout):: pint
   integer, intent(out):: ks
@@ -2199,7 +2751,11 @@ module fv_eta_mod
  subroutine var_dz(km, ak, bk, ptop, ks, pint, s_rate)
   integer, intent(in):: km
   real,    intent(in):: ptop
+<<<<<<< HEAD
   real,    intent(in):: s_rate        !< between [1. 1.1]
+=======
+  real,    intent(in):: s_rate        ! between [1. 1.1]
+>>>>>>> rusty/master_test
   real,    intent(out):: ak(km+1), bk(km+1)
   real,    intent(inout):: pint
   integer, intent(out):: ks
@@ -2360,7 +2916,11 @@ module fv_eta_mod
  subroutine var55_dz(km, ak, bk, ptop, ks, pint, s_rate)
   integer, intent(in):: km
   real,    intent(in):: ptop
+<<<<<<< HEAD
   real,    intent(in):: s_rate        !< between [1. 1.1]
+=======
+  real,    intent(in):: s_rate        ! between [1. 1.1]
+>>>>>>> rusty/master_test
   real,    intent(out):: ak(km+1), bk(km+1)
   real,    intent(inout):: pint
   integer, intent(out):: ks
@@ -2521,7 +3081,11 @@ module fv_eta_mod
 
  subroutine hybrid_z_dz(km, dz, ztop, s_rate)
   integer, intent(in):: km
+<<<<<<< HEAD
   real,    intent(in):: s_rate        !< between [1. 1.1]
+=======
+  real,    intent(in):: s_rate        ! between [1. 1.1]
+>>>>>>> rusty/master_test
   real,    intent(in):: ztop
   real,    intent(out):: dz(km)
 ! Local
@@ -2582,11 +3146,19 @@ module fv_eta_mod
 
  end subroutine hybrid_z_dz                                   
 
+<<<<<<< HEAD
 !>@brief The subroutine 'get_eta_level' returns the interface and
 !! layer-mean pressures for reference.
  subroutine get_eta_level(npz, p_s, pf, ph, ak, bk, pscale)
   integer, intent(in) :: npz    
   real, intent(in)  :: p_s            !< unit: pascal
+=======
+
+
+ subroutine get_eta_level(npz, p_s, pf, ph, ak, bk, pscale)
+  integer, intent(in) :: npz    
+  real, intent(in)  :: p_s            ! unit: pascal
+>>>>>>> rusty/master_test
   real, intent(in)  :: ak(npz+1)
   real, intent(in)  :: bk(npz+1)
   real, intent(in), optional :: pscale
@@ -2840,7 +3412,11 @@ module fv_eta_mod
 
  integer,  intent(in):: is, ie, js, je, ng, km
  real, intent(in):: rgrav, ztop
+<<<<<<< HEAD
  real, intent(in):: dz(km)       !< Reference vertical resolution for zs=0
+=======
+ real, intent(in):: dz(km)       ! Reference vertical resolution for zs=0
+>>>>>>> rusty/master_test
  real, intent(in):: hs(is-ng:ie+ng,js-ng:je+ng)
  real, intent(inout)::  ze(is:ie,js:je,km+1)
  real, optional, intent(out):: dz3(is-ng:ie+ng,js-ng:je+ng,km)
@@ -3071,6 +3647,143 @@ module fv_eta_mod
 
   end subroutine gw_1d
 
+<<<<<<< HEAD
+=======
+ subroutine mount_waves(km, ak, bk, ptop, ks, pint)
+  integer, intent(in):: km
+  real,    intent(out):: ak(km+1), bk(km+1)
+  real,    intent(out):: ptop, pint
+  integer, intent(out):: ks
+! Local
+  real, parameter:: p00 = 1.E5
+  real, dimension(km+1):: ze, pe1, peln, eta
+  real, dimension(km):: dz, dlnp
+  real ztop, t0, dz0, sum1, tmp1
+  real ep, es, alpha, beta, gama, s_fac
+  integer  k, k500
+
+  pint = 300.e2
+!      s_fac = 1.05
+!      dz0 = 500.
+  if ( km <= 60 ) then
+       s_fac = 1.0
+       dz0 = 500.
+  else
+       s_fac = 1.
+       dz0 = 250.
+  endif
+
+! Basic parameters for HIWPP mountain waves
+   t0 = 300.
+! ztop = 20.0e3; 500-m resolution in halft of the vertical domain
+! ztop = real(km-1)*500.
+!-----------------------
+! Compute temp ptop based on isothermal atm
+! ptop = p00*exp(-grav*ztop/(rdgas*t0))
+
+! Lowest half has constant resolution
+     ze(km+1) = 0.
+     do k=km, km-19, -1
+        ze(k) = ze(k+1) + dz0
+     enddo
+
+! Stretching from 10-km and up:
+     do k=km-20, 3,  -1
+        dz0 = s_fac * dz0
+        ze(k) = ze(k+1) + dz0
+     enddo
+     ze(2) = ze(3) + sqrt(2.)*dz0
+     ze(1) = ze(2) + 2.0*dz0
+
+!    call sm1_edge(1, 1, 1, 1, km, 1, 1, ze, 1)
+
+! Given z --> p
+     do k=1,km
+         dz(k) = ze(k) - ze(k+1)
+       dlnp(k) = grav*dz(k) / (rdgas*t0)
+     enddo
+
+      pe1(km+1) = p00
+     peln(km+1) = log(p00)
+     do k=km,1,-1
+        peln(k) = peln(k+1) - dlnp(k)
+         pe1(k) = exp(peln(k))
+     enddo
+
+! Comnpute new ptop
+     ptop = pe1(1)
+
+! Pe(k) = ak(k) + bk(k) * PS
+! Locate pint and KS
+      ks = 0
+      do k=2,km
+         if ( pint < pe1(k)) then
+              ks = k-1
+              exit
+         endif
+      enddo
+
+      if ( is_master() ) then
+         write(*,*) 'For (input) PINT=', 0.01*pint, ' KS=', ks, 'pint(computed)=', 0.01*pe1(ks+1)
+         write(*,*) 'Modified ptop =', ptop, ' ztop=', ze(1)/1000.
+         do k=1,km
+            write(*,*) k, 'ze =', ze(k)/1000.
+         enddo
+      endif
+      pint = pe1(ks+1)
+
+#ifdef NO_UKMO_HB
+      do k=1,ks+1
+         ak(k) = pe1(k)
+         bk(k) = 0.
+      enddo
+
+      do k=ks+2,km+1
+         bk(k) = (pe1(k) - pint) / (pe1(km+1)-pint)  ! bk == sigma
+         ak(k) =  pe1(k) - bk(k) * pe1(km+1)
+      enddo
+      bk(km+1) = 1.
+      ak(km+1) = 0.
+#else
+! Problematic for non-hydrostatic
+      do k=1,km+1
+         eta(k) = pe1(k) / pe1(km+1)
+      enddo
+      ep =  eta(ks+1) 
+      es =  eta(km) 
+!     es =  1.
+      alpha = (ep**2-2.*ep*es) / (es-ep)**2
+      beta  = 2.*ep*es**2 / (es-ep)**2
+      gama = -(ep*es)**2 / (es-ep)**2
+
+! Pure pressure:
+      do k=1,ks+1
+         ak(k) = eta(k)*1.e5
+         bk(k) = 0.
+      enddo
+
+      do k=ks+2, km
+         ak(k) = alpha*eta(k) + beta + gama/eta(k)
+         ak(k) = ak(k)*1.e5
+      enddo
+         ak(km+1) = 0.
+
+      do k=ks+2, km 
+         bk(k) = (pe1(k) - ak(k))/pe1(km+1)
+      enddo
+         bk(km+1) = 1.
+#endif
+
+      if ( is_master() ) then
+          tmp1 = ak(ks+1)
+          do k=ks+1,km
+             tmp1 = max(tmp1, (ak(k)-ak(k+1))/max(1.E-5, (bk(k+1)-bk(k))) )
+          enddo
+          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hpa)=', tmp1/100.
+      endif
+
+ end subroutine mount_waves
+>>>>>>> rusty/master_test
 
 
   subroutine zflip(q, im, km)

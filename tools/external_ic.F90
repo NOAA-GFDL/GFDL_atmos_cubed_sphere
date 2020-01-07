@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
@@ -20,12 +21,35 @@
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
+=======
+!***********************************************************************
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+!* If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
+>>>>>>> rusty/master_test
 #ifdef OVERLOAD_R4
 #define _GET_VAR1 get_var1_real 
 #else
 #define _GET_VAR1 get_var1_double
 #endif
 
+<<<<<<< HEAD
 !>@brief The module 'external_ic_mod' contains routines that read in and 
 !! remap initial conditions.
 
@@ -145,13 +169,21 @@ module external_ic_mod
 ! </table>
 
    use netcdf
+=======
+module external_ic_mod
+
+>>>>>>> rusty/master_test
    use external_sst_mod,   only: i_sst, j_sst, sst_ncep
    use fms_mod,            only: file_exist, read_data, field_exist, write_version_number
    use fms_mod,            only: open_namelist_file, check_nml_error, close_file
    use fms_mod,            only: get_mosaic_tile_file, read_data, error_mesg
    use fms_io_mod,         only: get_tile_string, field_size, free_restart_type
    use fms_io_mod,         only: restart_file_type, register_restart_field
+<<<<<<< HEAD
    use fms_io_mod,         only: save_restart, restore_state
+=======
+   use fms_io_mod,         only: save_restart, restore_state, set_filename_appendix, get_global_att_value
+>>>>>>> rusty/master_test
    use mpp_mod,            only: mpp_error, FATAL, NOTE, mpp_pe, mpp_root_pe
    use mpp_mod,            only: stdlog, input_nml_file
    use mpp_parameter_mod,  only: AGRID_PARAM=>AGRID
@@ -165,10 +197,16 @@ module external_ic_mod
    use fv_diagnostics_mod,only: prt_maxmin, prt_gb_nh_sh, prt_height
    use fv_grid_utils_mod, only: ptop_min, g_sum,mid_pt_sphere,get_unit_vect2,get_latlon_vector,inner_prod
    use fv_io_mod,         only: fv_io_read_tracers 
+<<<<<<< HEAD
    use fv_mapz_mod,       only: mappm 
 
    use fv_regional_mod,   only: dump_field, H_STAGGER, U_STAGGER, V_STAGGER, get_data_source
    use fv_mp_mod,         only: ng, is_master, fill_corners, YDir, mp_reduce_min, mp_reduce_max
+=======
+   use fv_mapz_mod,       only: mappm
+   use fv_regional_mod,   only: dump_field, H_STAGGER, U_STAGGER, V_STAGGER
+   use fv_mp_mod,         only: is_master, fill_corners, YDir, mp_reduce_min, mp_reduce_max
+>>>>>>> rusty/master_test
    use fv_regional_mod,   only: start_regional_cold_start
    use fv_surf_map_mod,   only: surfdrv, FV3_zs_filter
    use fv_surf_map_mod,   only: sgh_g, oro_g
@@ -188,28 +226,45 @@ module external_ic_mod
    use boundary_mod,      only: nested_grid_BC, extrapolation_BC
    use mpp_domains_mod,       only: mpp_get_data_domain, mpp_get_global_domain, mpp_get_compute_domain
 
+<<<<<<< HEAD
 #ifdef MULTI_GASES
    use multi_gases_mod,  only:  virq, virqd, vicpqd
 #endif
 
+=======
+>>>>>>> rusty/master_test
    implicit none
    private
 
    real, parameter:: zvir = rvgas/rdgas - 1.
    real(kind=R_GRID), parameter :: cnst_0p20=0.20d0
    real :: deg2rad
+<<<<<<< HEAD
    character (len = 80) :: source   ! This tells what the input source was for the data
    public get_external_ic, get_cubed_sphere_terrain
+=======
+   character (len = 80) :: source
+   character(len=27), parameter :: source_fv3gfs = 'FV3GFS GAUSSIAN NEMSIO FILE'
+>>>>>>> rusty/master_test
 
 ! version number of this module
 ! Include variable "version" to be written to log file.
 #include<file_version.h>
 
+<<<<<<< HEAD
+=======
+   public get_external_ic, get_cubed_sphere_terrain
+
+>>>>>>> rusty/master_test
 contains
 
    subroutine get_external_ic( Atm, fv_domain, cold_start )
 
+<<<<<<< HEAD
       type(fv_atmos_type), intent(inout), target :: Atm(:)
+=======
+      type(fv_atmos_type), intent(inout), target :: Atm
+>>>>>>> rusty/master_test
       type(domain2d),      intent(inout) :: fv_domain
       logical, intent(IN) :: cold_start
       real:: alpha = 0.
@@ -220,6 +275,7 @@ contains
       real, pointer, dimension(:,:) :: fC, f0
 
       integer :: is,  ie,  js,  je
+<<<<<<< HEAD
       integer :: isd, ied, jsd, jed
       integer :: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel
 #ifdef CCPP
@@ -245,6 +301,26 @@ contains
 
       fC    => Atm(1)%gridstruct%fC
       f0    => Atm(1)%gridstruct%f0
+=======
+      integer :: isd, ied, jsd, jed, ng
+      integer :: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, o3mr
+
+      is  = Atm%bd%is
+      ie  = Atm%bd%ie
+      js  = Atm%bd%js
+      je  = Atm%bd%je
+      isd = Atm%bd%isd
+      ied = Atm%bd%ied
+      jsd = Atm%bd%jsd
+      jed = Atm%bd%jed
+      ng  = Atm%bd%ng
+
+      grid  => Atm%gridstruct%grid
+      agrid => Atm%gridstruct%agrid
+
+      fC    => Atm%gridstruct%fC
+      f0    => Atm%gridstruct%f0
+>>>>>>> rusty/master_test
 
 ! * Initialize coriolis param:
  
@@ -263,6 +339,7 @@ contains
       enddo
 
       call mpp_update_domains( f0, fv_domain )
+<<<<<<< HEAD
       if ( Atm(1)%gridstruct%cubed_sphere .and. (.not. (Atm(1)%neststruct%nested .or. Atm(1)%flagstruct%regional)))then
          call fill_corners(f0, Atm(1)%npx, Atm(1)%npy, YDir)
       endif
@@ -276,6 +353,21 @@ contains
  
 ! Read in the specified external dataset and do all the needed transformation
       if ( Atm(1)%flagstruct%ncep_ic ) then
+=======
+      if ( Atm%gridstruct%cubed_sphere .and. (.not. Atm%gridstruct%bounded_domain))then
+         call fill_corners(f0, Atm%npx, Atm%npy, YDir)
+      endif
+ 
+! Read in cubed_sphere terrain
+      if ( Atm%flagstruct%mountain ) then
+           call get_cubed_sphere_terrain(Atm, fv_domain)
+      else
+         if (.not. Atm%neststruct%nested) Atm%phis = 0. !TODO: Not sure about this line --- lmh 30 may 18
+      endif
+ 
+! Read in the specified external dataset and do all the needed transformation
+      if ( Atm%flagstruct%ncep_ic ) then
+>>>>>>> rusty/master_test
            nq = 1
                              call timing_on('NCEP_IC')
            call get_ncep_ic( Atm, fv_domain, nq )
@@ -286,11 +378,19 @@ contains
               if(is_master()) write(*,*) 'All tracers except sphum replaced by FV IC'
            endif
 #endif
+<<<<<<< HEAD
       elseif ( Atm(1)%flagstruct%nggps_ic ) then
                              call timing_on('NGGPS_IC')
            call get_nggps_ic( Atm, fv_domain )
                              call timing_off('NGGPS_IC')
       elseif ( Atm(1)%flagstruct%ecmwf_ic ) then
+=======
+      elseif ( Atm%flagstruct%nggps_ic ) then
+                             call timing_on('NGGPS_IC')
+           call get_nggps_ic( Atm, fv_domain )
+                             call timing_off('NGGPS_IC')
+      elseif ( Atm%flagstruct%ecmwf_ic ) then
+>>>>>>> rusty/master_test
            if( is_master() ) write(*,*) 'Calling get_ecmwf_ic'
                              call timing_on('ECMWF_IC')
            call get_ecmwf_ic( Atm, fv_domain )
@@ -298,6 +398,7 @@ contains
       else
 ! The following is to read in legacy lat-lon FV core restart file
 !  is Atm%q defined in all cases?
+<<<<<<< HEAD
            nq = size(Atm(1)%q,4)
            call get_fv_ic( Atm, fv_domain, nq )
       endif
@@ -310,12 +411,27 @@ contains
         call prt_maxmin('TS', Atm(1)%ts, is, ie, js, je, 0, 1, 1.)
       endif
       if ( Atm(1)%flagstruct%nggps_ic .or. Atm(1)%flagstruct%ecmwf_ic ) then
+=======
+           nq = size(Atm%q,4)
+           call get_fv_ic( Atm, fv_domain, nq )
+      endif
+
+      call prt_maxmin('PS', Atm%ps, is, ie, js, je, ng, 1, 0.01)
+      call prt_maxmin('T', Atm%pt, is, ie, js, je, ng, Atm%npz, 1.)
+      if (.not.Atm%flagstruct%hydrostatic) call prt_maxmin('W', Atm%w, is, ie, js, je, ng, Atm%npz, 1.)
+      call prt_maxmin('SPHUM', Atm%q(:,:,:,1), is, ie, js, je, ng, Atm%npz, 1.)
+      if ( Atm%flagstruct%nggps_ic ) then
+        call prt_maxmin('TS', Atm%ts, is, ie, js, je, 0, 1, 1.)
+      endif
+      if ( Atm%flagstruct%nggps_ic .or. Atm%flagstruct%ecmwf_ic ) then
+>>>>>>> rusty/master_test
         sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
         liq_wat   = get_tracer_index(MODEL_ATMOS, 'liq_wat')
         ice_wat   = get_tracer_index(MODEL_ATMOS, 'ice_wat')
         rainwat   = get_tracer_index(MODEL_ATMOS, 'rainwat')
         snowwat   = get_tracer_index(MODEL_ATMOS, 'snowwat')
         graupel   = get_tracer_index(MODEL_ATMOS, 'graupel')
+<<<<<<< HEAD
 #ifdef MULTI_GASES
         spfo      = get_tracer_index(MODEL_ATMOS, 'spfo')
         spfo2     = get_tracer_index(MODEL_ATMOS, 'spfo2')
@@ -363,12 +479,37 @@ contains
                  kappa, Atm(1)%q, ng, Atm(1)%ncnst, Atm(1)%gridstruct%area_64, Atm(1)%flagstruct%dry_mass,           &
                  Atm(1)%flagstruct%adjust_dry_mass, Atm(1)%flagstruct%mountain, Atm(1)%flagstruct%moist_phys,   &
                  Atm(1)%flagstruct%hydrostatic, Atm(1)%flagstruct%nwat, Atm(1)%domain, Atm(1)%flagstruct%make_nh)
+=======
+        o3mr      = get_tracer_index(MODEL_ATMOS, 'o3mr')
+        if ( liq_wat > 0 ) &
+        call prt_maxmin('liq_wat', Atm%q(:,:,:,liq_wat), is, ie, js, je, ng, Atm%npz, 1.)
+        if ( ice_wat > 0 ) &
+        call prt_maxmin('ice_wat', Atm%q(:,:,:,ice_wat), is, ie, js, je, ng, Atm%npz, 1.)
+        if ( rainwat > 0 ) &
+        call prt_maxmin('rainwat', Atm%q(:,:,:,rainwat), is, ie, js, je, ng, Atm%npz, 1.)
+        if ( snowwat > 0 ) &
+        call prt_maxmin('snowwat', Atm%q(:,:,:,snowwat), is, ie, js, je, ng, Atm%npz, 1.)
+        if ( graupel > 0 ) &
+        call prt_maxmin('graupel', Atm%q(:,:,:,graupel), is, ie, js, je, ng, Atm%npz, 1.)
+        if ( o3mr > 0    ) &
+        call prt_maxmin('O3MR',    Atm%q(:,:,:,o3mr),    is, ie, js, je, ng, Atm%npz, 1.)
+      endif
+
+!Now in fv_restart
+!!$      call p_var(Atm%npz,  is, ie, js, je, Atm%ak(1),  ptop_min,         &
+!!$                 Atm%delp, Atm%delz, Atm%pt, Atm%ps,               & 
+!!$                 Atm%pe,   Atm%peln, Atm%pk, Atm%pkz,              &
+!!$                 kappa, Atm%q, ng, Atm%ncnst, Atm%gridstruct%area_64, Atm%flagstruct%dry_mass,           &
+!!$                 Atm%flagstruct%adjust_dry_mass, Atm%flagstruct%mountain, Atm%flagstruct%moist_phys,   &
+!!$                 Atm%flagstruct%hydrostatic, Atm%flagstruct%nwat, Atm%domain, Atm%flagstruct%adiabatic, Atm%flagstruct%make_nh)
+>>>>>>> rusty/master_test
 
   end subroutine get_external_ic
 
 
 !------------------------------------------------------------------
   subroutine get_cubed_sphere_terrain( Atm, fv_domain )
+<<<<<<< HEAD
     type(fv_atmos_type), intent(inout), target :: Atm(:)
     type(domain2d),      intent(inout) :: fv_domain
     integer              :: ntileMe
@@ -376,12 +517,21 @@ contains
     character(len=64)    :: fname
     character(len=7)  :: gn
     integer              ::  n
+=======
+    type(fv_atmos_type), intent(inout), target :: Atm
+    type(domain2d),      intent(inout) :: fv_domain
+    integer :: tile_id(1)
+    character(len=64)    :: fname
+    character(len=7)  :: gn
+    integer              ::  n=1
+>>>>>>> rusty/master_test
     integer              ::  jbeg, jend
     real ftop
     real, allocatable :: g_dat2(:,:,:)
     real, allocatable :: pt_coarse(:,:,:)
     integer isc_p, iec_p, jsc_p, jec_p, isg, ieg, jsg,jeg
 
+<<<<<<< HEAD
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
 
@@ -397,10 +547,29 @@ contains
     if (Atm(1)%grid_number > 1) then
        !write(gn,'(A2, I1)') ".g", Atm(1)%grid_number
        write(gn,'(A5, I2.2)') ".nest", Atm(1)%grid_number
+=======
+    integer :: is,  ie,  js,  je
+    integer :: isd, ied, jsd, jed, ng
+
+    is  = Atm%bd%is
+    ie  = Atm%bd%ie
+    js  = Atm%bd%js
+    je  = Atm%bd%je
+    isd = Atm%bd%isd
+    ied = Atm%bd%ied
+    jsd = Atm%bd%jsd
+    jed = Atm%bd%jed
+    ng  = Atm%bd%ng
+
+    if (Atm%grid_number > 1) then
+       !write(gn,'(A2, I1)') ".g", Atm%grid_number
+       write(gn,'(A5, I2.2)') ".nest", Atm%grid_number
+>>>>>>> rusty/master_test
     else
        gn = ''
     end if
 
+<<<<<<< HEAD
     ntileMe = size(Atm(:))  ! This will have to be modified for mult tiles per PE
                             ! ASSUMED always one at this point
 
@@ -470,6 +639,70 @@ contains
 #endif
 
       type(fv_atmos_type), intent(inout) :: Atm(:)
+=======
+    tile_id = mpp_get_tile_id( fv_domain )
+
+    call get_tile_string(fname, 'INPUT/fv_core.res'//trim(gn)//'.tile', tile_id(n), '.nc' )
+    if (mpp_pe() == mpp_root_pe()) print*, 'external_ic: looking for ', fname
+    
+       
+    if( file_exist(fname) ) then
+       call read_data(fname, 'phis', Atm%phis(is:ie,js:je),      &
+            domain=fv_domain, tile_count=n)
+    else
+       call surfdrv(  Atm%npx, Atm%npy, Atm%gridstruct%grid_64, Atm%gridstruct%agrid_64,   &
+                         Atm%gridstruct%area_64, Atm%gridstruct%dx, Atm%gridstruct%dy, &
+                         Atm%gridstruct%dxa, Atm%gridstruct%dya, &
+                         Atm%gridstruct%dxc, Atm%gridstruct%dyc, Atm%gridstruct%sin_sg, &
+                         Atm%phis, Atm%flagstruct%stretch_fac, &
+                         Atm%neststruct%nested, Atm%gridstruct%bounded_domain, &
+                         Atm%neststruct%npx_global, Atm%domain, &
+                         Atm%flagstruct%grid_number, Atm%bd )
+       call mpp_error(NOTE,'terrain datasets generated using USGS data')
+    endif
+
+
+    !Needed for reproducibility. DON'T REMOVE THIS!!
+    call mpp_update_domains( Atm%phis, Atm%domain ) 
+    ftop = g_sum(Atm%domain, Atm%phis(is:ie,js:je), is, ie, js, je, ng, Atm%gridstruct%area_64, 1)
+ 
+    call prt_maxmin('ZS', Atm%phis,  is, ie, js, je, ng, 1, 1./grav)
+    if(is_master()) write(*,*) 'mean terrain height (m)=', ftop/grav
+ 
+  end subroutine get_cubed_sphere_terrain
+
+
+  subroutine get_nggps_ic (Atm, fv_domain)
+!    read in data after it has been preprocessed with 
+!    NCEP/EMC orography maker and global_chgres
+!    and has been horiztontally interpolated to the 
+!    current cubed-sphere grid
+!
+!--- variables read in from 'gfs_ctrl.nc'
+!       VCOORD  -  level information
+!                   maps to 'ak & bk'
+!--- variables read in from 'sfc_data.nc'
+!       land_frac  -  land-sea-ice mask (L:0 / S:1)
+!                     maps to 'oro'
+!       TSEA       -  surface skin temperature (k)
+!                     maps to 'ts'
+!--- variables read in from 'gfs_data.nc'
+!       ZH  -  GFS grid height at edges (m)
+!       PS  -  surface pressure (Pa)
+!       U_W -  D-grid west  face tangential wind component (m/s)
+!       V_W -  D-grid west  face normal wind component (m/s)
+!       U_S -  D-grid south face tangential wind component (m/s)
+!       V_S -  D-grid south face normal wind component (m/s)
+!       W   -  vertical velocity 'omega' (Pa/s)
+!       Q   -  prognostic tracer fields (Specific Humidity, 
+!                                        O3 mixing ratio,
+!                                        Cloud mixing ratio)
+!--- Namelist variables 
+!       filtered_terrain  -  use orography maker filtered terrain mapping
+
+
+      type(fv_atmos_type), intent(inout) :: Atm
+>>>>>>> rusty/master_test
       type(domain2d),      intent(inout) :: fv_domain
 ! local:
       real, dimension(:), allocatable:: ak, bk
@@ -478,7 +711,11 @@ contains
       real, dimension(:,:,:), allocatable:: zh(:,:,:)  ! 3D height at 65 edges
       real, dimension(:,:,:,:), allocatable:: q
       real, dimension(:,:), allocatable :: phis_coarse ! lmh
+<<<<<<< HEAD
       real rdg, wt, qt, m_fac
+=======
+      real rdg, wt, qt, m_fac, pe1
+>>>>>>> rusty/master_test
       integer:: n, npx, npy, npz, itoa, nt, ntprog, ntdiag, ntracers, ntrac, iq
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
@@ -490,7 +727,10 @@ contains
       character(len=64) :: fn_gfs_ics = 'gfs_data.nc'
       character(len=64) :: fn_sfc_ics = 'sfc_data.nc'
       character(len=64) :: fn_oro_ics = 'oro_data.nc'
+<<<<<<< HEAD
       ! DH* character(len=64) :: fn_aero_ics = 'aero_data.nc' *DH
+=======
+>>>>>>> rusty/master_test
       logical :: remap
       logical :: filtered_terrain = .true.
       logical :: gfs_dwinds = .true.
@@ -500,6 +740,7 @@ contains
       real(kind=R_GRID), dimension(2):: p1, p2, p3
       real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
       integer:: i,j,k,nts, ks
+<<<<<<< HEAD
       integer:: liq_wat, ice_wat, rainwat, snowwat, graupel, ntclamt
       namelist /external_ic_nml/ filtered_terrain, levp, gfs_dwinds, &
                                  checker_tr, nt_checker
@@ -643,6 +884,13 @@ contains
                  0.9544341,     0.9648276,     0.9738676,   &
                  0.9817423,     0.9886266,     0.9946712, 1./
 #endif
+=======
+      integer:: liq_wat, ice_wat, rainwat, snowwat, graupel, tke, ntclamt
+      namelist /external_ic_nml/ filtered_terrain, levp, gfs_dwinds, &
+                                 checker_tr, nt_checker
+
+      n = 1 !??
+>>>>>>> rusty/master_test
 
       call mpp_error(NOTE,'Using external_IC::get_nggps_ic which is valid only for data which has been &
                           &horizontally interpolated to the current cubed-sphere grid')
@@ -657,11 +905,19 @@ contains
 #endif
 
       unit = stdlog()
+<<<<<<< HEAD
       call write_version_number ( 'EXTERNAL_IC_mod::get_nggps_ic', version )
       write(unit, nml=external_ic_nml)
 
       remap = .true.
       if (Atm(1)%flagstruct%external_eta) then
+=======
+      call write_version_number ( 'EXTERNAL_IC_MOD::get_nggps_ic', version )
+      write(unit, nml=external_ic_nml)
+
+      remap = .true.
+      if (Atm%flagstruct%external_eta) then
+>>>>>>> rusty/master_test
         if (filtered_terrain) then
           call mpp_error(NOTE,'External_IC::get_nggps_ic -  use externally-generated, filtered terrain &
                               &and NCEP pressure levels (no vertical remapping)')
@@ -679,6 +935,7 @@ contains
         endif
       endif
 
+<<<<<<< HEAD
       is  = Atm(1)%bd%is
       ie  = Atm(1)%bd%ie
       js  = Atm(1)%bd%js
@@ -693,6 +950,28 @@ contains
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
       ntdiag = ntracers-ntprog
 
+=======
+      is  = Atm%bd%is
+      ie  = Atm%bd%ie
+      js  = Atm%bd%js
+      je  = Atm%bd%je
+      isd = Atm%bd%isd
+      ied = Atm%bd%ied
+      jsd = Atm%bd%jsd
+      jed = Atm%bd%jed
+      npz = Atm%npz
+      call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
+      ntdiag = ntracers-ntprog
+
+!--- set the 'nestXX' appendix for all files using fms_io
+      if (Atm%grid_number > 1) then
+         write(gn,'(A4, I2.2)') "nest", Atm%grid_number
+      else
+         gn = ''
+      end if
+      call set_filename_appendix('')
+
+>>>>>>> rusty/master_test
 !--- test for existence of the GFS control file
       if (.not. file_exist('INPUT/'//trim(fn_gfs_ctl), no_domain=.TRUE.)) then
         call mpp_error(FATAL,'==> Error in External_ic::get_nggps_ic: file '//trim(fn_gfs_ctl)//' for NGGPS IC does not exist')
@@ -704,25 +983,48 @@ contains
       if (ntrac > ntracers) call mpp_error(FATAL,'==> External_ic::get_nggps_ic: more NGGPS tracers &
                                  &than defined in field_table '//trim(fn_gfs_ctl)//' for NGGPS IC')
 
+<<<<<<< HEAD
+=======
+!
+      call get_data_source(source,Atm%flagstruct%regional)
+      if (trim(source) == source_fv3gfs) then
+         call mpp_error(NOTE, "READING FROM REGRIDDED FV3GFS NEMSIO FILE")
+         levp = 65
+      endif
+!
+>>>>>>> rusty/master_test
 !--- read in ak and bk from the gfs control file using fms_io read_data ---
       allocate (wk2(levp+1,2))
       allocate (ak(levp+1))
       allocate (bk(levp+1))
+<<<<<<< HEAD
+=======
+ 
+>>>>>>> rusty/master_test
       call read_data('INPUT/'//trim(fn_gfs_ctl),'vcoord',wk2, no_domain=.TRUE.)
       ak(1:levp+1) = wk2(1:levp+1,1)
       bk(1:levp+1) = wk2(1:levp+1,2)
       deallocate (wk2)
 
+<<<<<<< HEAD
       if (.not. file_exist('INPUT/'//trim(fn_oro_ics), domain=Atm(1)%domain)) then
+=======
+      if (.not. file_exist('INPUT/'//trim(fn_oro_ics), domain=Atm%domain)) then
+>>>>>>> rusty/master_test
         call mpp_error(FATAL,'==> Error in External_ic::get_nggps_ic: tiled file '//trim(fn_oro_ics)//' for NGGPS IC does not exist')
       endif
       call mpp_error(NOTE,'==> External_ic::get_nggps_ic: using tiled data file '//trim(fn_oro_ics)//' for NGGPS IC')
 
+<<<<<<< HEAD
       if (.not. file_exist('INPUT/'//trim(fn_sfc_ics), domain=Atm(1)%domain)) then
+=======
+      if (.not. file_exist('INPUT/'//trim(fn_sfc_ics), domain=Atm%domain)) then
+>>>>>>> rusty/master_test
         call mpp_error(FATAL,'==> Error in External_ic::get_nggps_ic: tiled file '//trim(fn_sfc_ics)//' for NGGPS IC does not exist')
       endif
       call mpp_error(NOTE,'==> External_ic::get_nggps_ic: using tiled data file '//trim(fn_sfc_ics)//' for NGGPS IC')
 
+<<<<<<< HEAD
       if (.not. file_exist('INPUT/'//trim(fn_gfs_ics), domain=Atm(1)%domain)) then
         call mpp_error(FATAL,'==> Error in External_ic::get_nggps_ic: tiled file '//trim(fn_gfs_ics)//' for NGGPS IC does not exist')
       endif
@@ -730,6 +1032,13 @@ contains
 !
       call get_data_source(source,Atm(1)%flagstruct%regional)
 !
+=======
+      if (.not. file_exist('INPUT/'//trim(fn_gfs_ics), domain=Atm%domain)) then
+        call mpp_error(FATAL,'==> Error in External_ic::get_nggps_ic: tiled file '//trim(fn_gfs_ics)//' for NGGPS IC does not exist')
+      endif
+      call mpp_error(NOTE,'==> External_ic::get_nggps_ic: using tiled data file '//trim(fn_gfs_ics)//' for NGGPS IC')
+
+>>>>>>> rusty/master_test
       allocate (zh(is:ie,js:je,levp+1))   ! SJL
       allocate (ps(is:ie,js:je))
       allocate (omga(is:ie,js:je,levp))
@@ -738,6 +1047,7 @@ contains
       allocate ( v_w(is:ie+1, js:je, 1:levp) )
       allocate ( u_s(is:ie, js:je+1, 1:levp) )
       allocate ( v_s(is:ie, js:je+1, 1:levp) )
+<<<<<<< HEAD
       allocate (temp(is:ie,js:je,levp))
 
       do n = 1,size(Atm(:))
@@ -748,12 +1058,23 @@ contains
           do j=jsd,jed
             do i=isd,ied
               phis_coarse(i,j) = Atm(n)%phis(i,j)
+=======
+      if (trim(source) == source_fv3gfs) allocate (temp(is:ie,js:je,1:levp))
+
+        !!! If a nested grid, save the filled coarse-grid topography for blending
+        if (Atm%neststruct%nested) then
+          allocate(phis_coarse(isd:ied,jsd:jed))
+          do j=jsd,jed
+            do i=isd,ied
+              phis_coarse(i,j) = Atm%phis(i,j)
+>>>>>>> rusty/master_test
             enddo
           enddo
         endif
 
 !--- read in surface temperature (k) and land-frac
         ! surface skin temperature
+<<<<<<< HEAD
         id_res = register_restart_field (SFC_restart, fn_sfc_ics, 'tsea', Atm(n)%ts, domain=Atm(n)%domain)
 
         ! terrain surface height -- (needs to be transformed into phis = zs*grav)
@@ -806,31 +1127,98 @@ contains
           ! DH* if aerosols are in separate file, need to test for indices liq_aero and ice_aero and change fn_gfs_ics to fn_aero_ics *DH
           id_res = register_restart_field (GFS_restart, fn_gfs_ics, trim(tracer_name), q(:,:,:,nt), &
                                            mandatory=.false.,domain=Atm(n)%domain)
+=======
+        id_res = register_restart_field (SFC_restart, fn_sfc_ics, 'tsea', Atm%ts, domain=Atm%domain)
+
+        ! terrain surface height -- (needs to be transformed into phis = zs*grav)
+        if (filtered_terrain) then
+          id_res = register_restart_field (ORO_restart, fn_oro_ics, 'orog_filt', Atm%phis, domain=Atm%domain)
+        elseif (.not. filtered_terrain) then
+          id_res = register_restart_field (ORO_restart, fn_oro_ics, 'orog_raw', Atm%phis, domain=Atm%domain)
+        endif
+
+        if ( Atm%flagstruct%full_zs_filter) then
+           allocate (oro_g(isd:ied,jsd:jed))
+           oro_g = 0.
+          ! land-frac
+          id_res = register_restart_field (ORO_restart, fn_oro_ics, 'land_frac', oro_g, domain=Atm%domain)
+          call mpp_update_domains(oro_g, Atm%domain)
+          if (Atm%neststruct%nested) then
+             call extrapolation_BC(oro_g, 0, 0, Atm%npx, Atm%npy, Atm%bd, .true.)
+          endif
+        endif
+     
+        if ( Atm%flagstruct%fv_land ) then
+          ! stddev
+          id_res = register_restart_field (ORO_restart, fn_oro_ics, 'stddev', Atm%sgh, domain=Atm%domain)
+          ! land-frac
+          id_res = register_restart_field (ORO_restart, fn_oro_ics, 'land_frac', Atm%oro, domain=Atm%domain)
+        endif
+     
+        ! surface pressure (Pa)
+        id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'ps', ps, domain=Atm%domain)
+
+        ! D-grid west  face tangential wind component (m/s)
+        id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'u_w', u_w, domain=Atm%domain,position=EAST)
+        ! D-grid west  face normal wind component (m/s)
+        id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'v_w', v_w, domain=Atm%domain,position=EAST)
+        ! D-grid south face tangential wind component (m/s)
+        id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'u_s', u_s, domain=Atm%domain,position=NORTH)
+        ! D-grid south face normal wind component (m/s)
+        id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'v_s', v_s, domain=Atm%domain,position=NORTH)
+
+        ! vertical velocity 'omega' (Pa/s)
+        id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'w', omga, domain=Atm%domain)
+        ! GFS grid height at edges (including surface height)
+        id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'ZH', zh, domain=Atm%domain)
+
+        ! real temperature (K)
+        if (trim(source) == source_fv3gfs) id_res = register_restart_field (GFS_restart, fn_gfs_ics, 't', temp, mandatory=.false., &
+                                                                            domain=Atm%domain)
+        ! prognostic tracers
+        do nt = 1, ntracers
+           q(:,:,:,nt) = -999.99
+          call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
+          id_res = register_restart_field (GFS_restart, fn_gfs_ics, trim(tracer_name), q(:,:,:,nt), &
+                                           mandatory=.false.,domain=Atm%domain)
+>>>>>>> rusty/master_test
         enddo
 
         ! initialize all tracers to default values prior to being input
         do nt = 1, ntprog
           call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
           ! set all tracers to an initial profile value
+<<<<<<< HEAD
           call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%q(:,:,:,nt)  )
+=======
+          call set_tracer_profile (MODEL_ATMOS, nt, Atm%q(:,:,:,nt)  )
+>>>>>>> rusty/master_test
         enddo
         do nt = ntprog+1, ntracers
           call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
           ! set all tracers to an initial profile value
+<<<<<<< HEAD
           call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%qdiag(:,:,:,nt)  )
+=======
+          call set_tracer_profile (MODEL_ATMOS, nt, Atm%qdiag(:,:,:,nt)  )
+>>>>>>> rusty/master_test
         enddo
 
         ! read in the restart
         call restore_state (ORO_restart)
         call restore_state (SFC_restart)
         call restore_state (GFS_restart)
+<<<<<<< HEAD
 
+=======
+>>>>>>> rusty/master_test
         ! free the restart type to be re-used by the nest
         call free_restart_type(ORO_restart)
         call free_restart_type(SFC_restart)
         call free_restart_type(GFS_restart)
 
         ! multiply NCEP ICs terrain 'phis' by gravity to be true geopotential
+<<<<<<< HEAD
         Atm(n)%phis = Atm(n)%phis*grav
         
         ! set the pressure levels and ptop to be used
@@ -851,6 +1239,30 @@ contains
         endif
         ! call vertical remapping algorithms
         if(is_master())  write(*,*) 'GFS ak =', ak,' FV3 ak=',Atm(n)%ak
+=======
+        Atm%phis = Atm%phis*grav
+        
+        ! set the pressure levels and ptop to be used
+        ! else eta is set in grid_init
+        if (Atm%flagstruct%external_eta) then
+          itoa = levp - npz + 1
+          Atm%ptop = ak(itoa)
+          Atm%ak(1:npz+1) = ak(itoa:levp+1)
+          Atm%bk(1:npz+1) = bk(itoa:levp+1)
+          call set_external_eta (Atm%ak, Atm%bk, Atm%ptop, Atm%ks)
+!!$        else
+!!$          if ( (npz == 63 .or. npz == 64) .and. len(trim(Atm%flagstruct%npz_type)) == 0 ) then
+!!$             if (is_master()) print*, 'Using default GFS levels'
+!!$             Atm%ak(:) = ak_sj(:)
+!!$             Atm%bk(:) = bk_sj(:)
+!!$             Atm%ptop = Atm%ak(1)
+!!$          else
+!!$             call set_eta(npz, ks, Atm%ptop, Atm%ak, Atm%bk, Atm%flagstruct%npz_type)
+!!$          endif
+        endif
+        ! call vertical remapping algorithms
+        if(is_master())  write(*,*) 'GFS ak(1)=', ak(1), ' ak(2)=', ak(2)
+>>>>>>> rusty/master_test
         ak(1) = max(1.e-9, ak(1))
 
 !***  For regional runs read in each of the BC variables from the NetCDF boundary file
@@ -859,9 +1271,15 @@ contains
 !***  objects.  Then we need to read the first two regional BC files so the integration 
 !***  can begin interpolating between those two times as the forecast proceeds.
 
+<<<<<<< HEAD
         if (n==1.and.Atm(1)%flagstruct%regional) then     !<-- Select the parent regional domain.
 
           call start_regional_cold_start(Atm(1), ak, bk, levp, &
+=======
+        if (n==1.and.Atm%flagstruct%regional) then     !<-- Select the parent regional domain.
+
+          call start_regional_cold_start(Atm, ak, bk, levp, &
+>>>>>>> rusty/master_test
                                          is, ie, js, je, &
                                          isd, ied, jsd, jed )
         endif
@@ -869,7 +1287,11 @@ contains
 !
 !***  Remap the variables in the compute domain.
 !
+<<<<<<< HEAD
         call remap_scalar_nggps(Atm(n), levp, npz, ntracers, ak, bk, ps, temp, q, omga, zh)
+=======
+        call remap_scalar(Atm, levp, npz, ntracers, ak, bk, ps, q, zh, omga, temp)
+>>>>>>> rusty/master_test
 
         allocate ( ud(is:ie,  js:je+1, 1:levp) )
         allocate ( vd(is:ie+1,js:je,   1:levp) )
@@ -879,8 +1301,13 @@ contains
         do k=1,levp
           do j=js,je+1
             do i=is,ie
+<<<<<<< HEAD
               p1(:) = Atm(1)%gridstruct%grid(i,  j,1:2)
               p2(:) = Atm(1)%gridstruct%grid(i+1,j,1:2)
+=======
+              p1(:) = Atm%gridstruct%grid(i,  j,1:2)
+              p2(:) = Atm%gridstruct%grid(i+1,j,1:2)
+>>>>>>> rusty/master_test
               call  mid_pt_sphere(p1, p2, p3)
               call get_unit_vect2(p1, p2, e1)
               call get_latlon_vector(p3, ex, ey)
@@ -889,8 +1316,13 @@ contains
           enddo
           do j=js,je
             do i=is,ie+1
+<<<<<<< HEAD
               p1(:) = Atm(1)%gridstruct%grid(i,j  ,1:2)
               p2(:) = Atm(1)%gridstruct%grid(i,j+1,1:2)
+=======
+              p1(:) = Atm%gridstruct%grid(i,j  ,1:2)
+              p2(:) = Atm%gridstruct%grid(i,j+1,1:2)
+>>>>>>> rusty/master_test
               call  mid_pt_sphere(p1, p2, p3)
               call get_unit_vect2(p1, p2, e2)
               call get_latlon_vector(p3, ex, ey)
@@ -903,6 +1335,7 @@ contains
         deallocate ( u_s )
         deallocate ( v_s )
              
+<<<<<<< HEAD
         call remap_dwinds(levp, npz, ak, bk, ps, ud, vd, Atm(n))
 
         deallocate ( ud )
@@ -916,12 +1349,27 @@ contains
               do i=isd,ied
                  wt = max(0.,min(1.,real(5 - min(i,j,npx-i,npy-j,5))/5. ))
                  Atm(n)%phis(i,j) = (1.-wt)*Atm(n)%phis(i,j) + wt*phis_coarse(i,j)
+=======
+        call remap_dwinds(levp, npz, ak, bk, ps, ud, vd, Atm)
+        deallocate ( ud )
+        deallocate ( vd )
+   
+        if (Atm%neststruct%nested) then
+           if (is_master()) write(*,*) 'Blending nested and coarse grid topography'
+           npx = Atm%npx
+           npy = Atm%npy
+           do j=jsd,jed
+              do i=isd,ied
+                 wt = max(0.,min(1.,real(5 - min(i,j,npx-i,npy-j,5))/5. ))
+                 Atm%phis(i,j) = (1.-wt)*Atm%phis(i,j) + wt*phis_coarse(i,j)
+>>>>>>> rusty/master_test
               enddo
            enddo
         endif
 
 
         !!! Perform terrain smoothing, if desired
+<<<<<<< HEAD
         if ( Atm(n)%flagstruct%full_zs_filter ) then
 
            call mpp_update_domains(Atm(n)%phis, Atm(n)%domain)
@@ -932,10 +1380,23 @@ contains
                 Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy, Atm(n)%gridstruct%dxc, &
                 Atm(n)%gridstruct%dyc, Atm(n)%gridstruct%grid_64, Atm(n)%gridstruct%agrid_64, &
                 Atm(n)%gridstruct%sin_sg, Atm(n)%phis, oro_g, Atm(n)%flagstruct%regional)
+=======
+        if ( Atm%flagstruct%full_zs_filter ) then
+
+           call mpp_update_domains(Atm%phis, Atm%domain)
+
+           call FV3_zs_filter( Atm%bd, isd, ied, jsd, jed, npx, npy, Atm%neststruct%npx_global, &
+                Atm%flagstruct%stretch_fac, Atm%gridstruct%bounded_domain, Atm%domain, &
+                Atm%gridstruct%area_64, Atm%gridstruct%dxa, Atm%gridstruct%dya, &
+                Atm%gridstruct%dx, Atm%gridstruct%dy, Atm%gridstruct%dxc, &
+                Atm%gridstruct%dyc, Atm%gridstruct%grid_64, Atm%gridstruct%agrid_64, &
+                Atm%gridstruct%sin_sg, Atm%phis, oro_g)
+>>>>>>> rusty/master_test
            deallocate(oro_g)
         endif
 
 
+<<<<<<< HEAD
         if ( Atm(n)%flagstruct%n_zs_filter > 0 ) then
 
           if ( Atm(n)%flagstruct%nord_zs_filter == 2 ) then
@@ -954,10 +1415,33 @@ contains
                    Atm(n)%domain, Atm(n)%bd, Atm(n)%flagstruct%regional)
             if ( is_master() ) write(*,*) 'Warning !!! del-4 terrain filter has been applied ', &
                    Atm(n)%flagstruct%n_zs_filter, ' times'
+=======
+        if ( Atm%flagstruct%n_zs_filter > 0 ) then
+
+          if ( Atm%flagstruct%nord_zs_filter == 2 ) then
+            call del2_cubed_sphere(Atm%npx, Atm%npy, Atm%phis, &
+                   Atm%gridstruct%area_64, Atm%gridstruct%dx, Atm%gridstruct%dy,   &
+                   Atm%gridstruct%dxc, Atm%gridstruct%dyc, Atm%gridstruct%sin_sg, &
+                   Atm%flagstruct%n_zs_filter, cnst_0p20*Atm%gridstruct%da_min, &
+                   .false., oro_g, Atm%gridstruct%bounded_domain, &
+	           Atm%domain, Atm%bd)
+            if ( is_master() ) write(*,*) 'Warning !!! del-2 terrain filter has been applied ', &
+                   Atm%flagstruct%n_zs_filter, ' times'
+          else if( Atm%flagstruct%nord_zs_filter == 4 ) then
+            call del4_cubed_sphere(Atm%npx, Atm%npy, Atm%phis, Atm%gridstruct%area_64, &
+                   Atm%gridstruct%dx, Atm%gridstruct%dy,   &
+                   Atm%gridstruct%dxc, Atm%gridstruct%dyc, Atm%gridstruct%sin_sg, &
+                   Atm%flagstruct%n_zs_filter, .false., oro_g, &
+	           Atm%gridstruct%bounded_domain, &
+                   Atm%domain, Atm%bd)
+            if ( is_master() ) write(*,*) 'Warning !!! del-4 terrain filter has been applied ', &
+                   Atm%flagstruct%n_zs_filter, ' times'
+>>>>>>> rusty/master_test
           endif
 
         endif
 
+<<<<<<< HEAD
         if ( Atm(n)%neststruct%nested .and. ( Atm(n)%flagstruct%n_zs_filter > 0 .or. Atm(n)%flagstruct%full_zs_filter ) ) then
           npx = Atm(n)%npx
           npy = Atm(n)%npy
@@ -965,18 +1449,32 @@ contains
             do i=isd,ied
               wt = max(0.,min(1.,real(5 - min(i,j,npx-i,npy-j,5))/5. ))
               Atm(n)%phis(i,j) = (1.-wt)*Atm(n)%phis(i,j) + wt*phis_coarse(i,j)
+=======
+        if ( Atm%neststruct%nested .and. ( Atm%flagstruct%n_zs_filter > 0 .or. Atm%flagstruct%full_zs_filter ) ) then
+          npx = Atm%npx
+          npy = Atm%npy
+          do j=jsd,jed
+            do i=isd,ied
+              wt = max(0.,min(1.,real(5 - min(i,j,npx-i,npy-j,5))/5. ))
+              Atm%phis(i,j) = (1.-wt)*Atm%phis(i,j) + wt*phis_coarse(i,j)
+>>>>>>> rusty/master_test
             enddo
           enddo
           deallocate(phis_coarse)
         endif
 
+<<<<<<< HEAD
         call mpp_update_domains( Atm(n)%phis, Atm(n)%domain, complete=.true. )
+=======
+        call mpp_update_domains( Atm%phis, Atm%domain, complete=.true. )
+>>>>>>> rusty/master_test
         liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
         ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
         rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
         snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
         graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
         ntclamt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
+<<<<<<< HEAD
         if (trim(source) == 'FV3GFS GAUSSIAN NEMSIO FILE') then
          do k=1,npz
            do j=js,je
@@ -1023,10 +1521,74 @@ contains
         enddo
       endif   !end trim(source) test
 
+=======
+        if (trim(source) == source_fv3gfs) then
+        do k=1,npz
+          do j=js,je
+            do i=is,ie
+              wt = Atm%delp(i,j,k)
+              if ( Atm%flagstruct%nwat == 6 ) then
+                 qt = wt*(1. + Atm%q(i,j,k,liq_wat) + &
+                               Atm%q(i,j,k,ice_wat) + &
+                               Atm%q(i,j,k,rainwat) + &
+                               Atm%q(i,j,k,snowwat) + &
+                               Atm%q(i,j,k,graupel))
+              else   ! all other values of nwat
+                 qt = wt*(1. + sum(Atm%q(i,j,k,2:Atm%flagstruct%nwat)))
+              endif
+              Atm%delp(i,j,k) = qt
+              if (ntclamt > 0) Atm%q(i,j,k,ntclamt) = 0.0    ! Moorthi
+            enddo
+          enddo
+        enddo
+
+              else
+!--- Add cloud condensate from GFS to total MASS
+! 20160928: Adjust the mixing ratios consistently...
+           do k=1,npz
+           do j=js,je
+           do i=is,ie
+              wt = Atm%delp(i,j,k)
+              if ( Atm%flagstruct%nwat == 6 ) then
+                 qt = wt*(1. + Atm%q(i,j,k,liq_wat) + &
+                               Atm%q(i,j,k,ice_wat) + &
+                               Atm%q(i,j,k,rainwat) + &
+                               Atm%q(i,j,k,snowwat) + &
+                               Atm%q(i,j,k,graupel))
+              else   ! all other values of nwat
+                 qt = wt*(1. + sum(Atm%q(i,j,k,2:Atm%flagstruct%nwat)))
+              endif
+              m_fac = wt / qt
+              do iq=1,ntracers
+                 Atm%q(i,j,k,iq) = m_fac * Atm%q(i,j,k,iq)
+           enddo
+              Atm%delp(i,j,k) = qt
+              if (ntclamt > 0) Atm%q(i,j,k,ntclamt) = 0.0    ! Moorthi
+           enddo
+           enddo
+             
+       enddo
+      endif   !end trim(source) test
+
+
+        tke = get_tracer_index(MODEL_ATMOS, 'sgs_tke')
+        if (tke > 0) then
+           do k=1,npz
+           do j=js,je
+           do i=is,ie
+              !pe1 = Atm%ak(k+1) + Atm%bk(k+1)*Atm%ps(i,j)
+              Atm%q(i,j,k,tke) = 0.02 ! 1.*exp(-(Atm%ps(i,j) - pe1)**2)
+           enddo
+           enddo
+           enddo
+        endif
+
+>>>>>>> rusty/master_test
 !--- reset the tracers beyond condensate to a checkerboard pattern 
         if (checker_tr) then
           nts = ntracers - nt_checker+1
           call checker_tracers(is,ie, js,je, isd,ied, jsd,jed, nt_checker, &
+<<<<<<< HEAD
                                npz, Atm(n)%q(:,:,:,nts:ntracers),          &
                                Atm(n)%gridstruct%agrid_64(is:ie,js:je,1),     &
                                Atm(n)%gridstruct%agrid_64(is:ie,js:je,2), 9., 9.)
@@ -1034,20 +1596,37 @@ contains
       enddo ! n-loop
 
       Atm(1)%flagstruct%make_nh = .false.
+=======
+                               npz, Atm%q(:,:,:,nts:ntracers),          &
+                               Atm%gridstruct%agrid_64(is:ie,js:je,1),     &
+                               Atm%gridstruct%agrid_64(is:ie,js:je,2), 9., 9.)
+        endif
+
+      Atm%flagstruct%make_nh = .false.
+>>>>>>> rusty/master_test
 
       deallocate (ak)
       deallocate (bk)
       deallocate (ps)
       deallocate (q )
+<<<<<<< HEAD
       deallocate (temp)
+=======
+      if (trim(source) == source_fv3gfs) deallocate (temp)
+>>>>>>> rusty/master_test
       deallocate (omga)
 
   end subroutine get_nggps_ic
 !------------------------------------------------------------------
 !------------------------------------------------------------------
+<<<<<<< HEAD
 !>@brief The subroutine 'get_ncep_ic' reads in the specified NCEP analysis or reanalysis dataset 
   subroutine get_ncep_ic( Atm, fv_domain, nq )
       type(fv_atmos_type), intent(inout) :: Atm(:)
+=======
+  subroutine get_ncep_ic( Atm, fv_domain, nq )
+      type(fv_atmos_type), intent(inout) :: Atm
+>>>>>>> rusty/master_test
       type(domain2d),      intent(inout) :: fv_domain
       integer, intent(in):: nq
 ! local:
@@ -1078,6 +1657,7 @@ contains
 #endif
       character(len=128) :: fname
       real(kind=4), allocatable:: wk1(:), wk2(:,:), wk3(:,:,:)
+<<<<<<< HEAD
       real, allocatable:: tp(:,:,:), qp(:,:,:)
       real, allocatable:: ua(:,:,:), va(:,:,:)
       real, allocatable:: lat(:), lon(:), ak0(:), bk0(:)
@@ -1089,12 +1669,35 @@ contains
       integer:: i, j, k, im, jm, km, npz, npt
       integer:: i1, i2, j1, ncid
       integer:: jbeg, jend
+=======
+      real, dimension(:), allocatable:: lat, lon, ak0, bk0
+      real, dimension(:,:,:), allocatable:: ud, vd
+      real, dimension(:,:,:,:), allocatable:: qp
+      real(kind=4), dimension(:,:), allocatable:: psncep, zsncep, psc
+      real(kind=4), dimension(:,:,:), allocatable:: uncep, vncep, tncep, zhncep
+      real(kind=4), dimension(:,:,:,:), allocatable:: qncep
+      real, dimension(:,:), allocatable:: psc_r8
+      real, dimension(:,:,:), allocatable:: pt_c, pt_d, gzc
+      real:: s2c(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je,4)
+      real:: s2c_c(Atm%bd%is:Atm%bd%ie+1,Atm%bd%js:Atm%bd%je,4)
+      real:: s2c_d(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je+1,4)
+      integer, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je):: id1, id2, jdc
+      integer, dimension(Atm%bd%is:Atm%bd%ie+1,Atm%bd%js:Atm%bd%je)::     &
+        id1_c, id2_c, jdc_c
+      integer, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je+1)::     &
+        id1_d, id2_d, jdc_d
+      real :: tmean, utmp, vtmp
+      integer:: i, j, k, im, jm, km, npz, npt
+      integer:: i1, i2, j1, ncid
+      integer:: jbeg, jend, jn
+>>>>>>> rusty/master_test
       integer tsize(3) 
       logical:: read_ts = .true.
       logical:: land_ts = .false.
       logical:: found
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
+<<<<<<< HEAD
 
       is  = Atm(1)%bd%is
       ie  = Atm(1)%bd%ie
@@ -1114,6 +1717,32 @@ contains
 !      Atm(1)%q = 0.
 
       fname = Atm(1)%flagstruct%res_latlon_dynamics
+=======
+      real(kind=R_GRID), dimension(2):: p1, p2, p3
+      real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
+      integer :: id_res, ntprog, ntracers, ks, iq, nt
+
+      is  = Atm%bd%is
+      ie  = Atm%bd%ie
+      js  = Atm%bd%js
+      je  = Atm%bd%je
+      isd = Atm%bd%isd
+      ied = Atm%bd%ied
+      jsd = Atm%bd%jsd
+      jed = Atm%bd%jed
+
+      deg2rad = pi/180.
+
+      npz = Atm%npz
+      call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
+      if(is_master()) write(*,*) 'ntracers = ', ntracers, 'ntprog = ',ntprog
+
+! Zero out all initial tracer fields:
+! SJL: 20110716
+!      Atm%q = 0.
+
+      fname = Atm%flagstruct%res_latlon_dynamics
+>>>>>>> rusty/master_test
 
       if( file_exist(fname) ) then
           call open_ncfile( fname, ncid )        ! open the file
@@ -1173,7 +1802,11 @@ contains
 
 ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
       call remap_coef( is, ie, js, je, isd, ied, jsd, jed, &
+<<<<<<< HEAD
                        im, jm, lon, lat, id1, id2, jdc, s2c , Atm(1)%gridstruct%agrid)
+=======
+                       im, jm, lon, lat, id1, id2, jdc, s2c , Atm%gridstruct%agrid)
+>>>>>>> rusty/master_test
 
 ! Find bounding latitudes:
       jbeg = jm-1;         jend = 2
@@ -1185,16 +1818,70 @@ contains
          enddo
       enddo
 
+<<<<<<< HEAD
 ! remap surface pressure and height:
 
       allocate ( wk2(im,jbeg:jend) )
       call get_var3_r4( ncid, 'PS', 1,im, jbeg,jend, 1,1, wk2 )
+=======
+      if(is_master())  write(*,*) 'jbeg, jend = ', jbeg, jend
+! read in surface pressure and height:
+      allocate ( psncep(im,jbeg:jend) )
+      allocate ( zsncep(im,jbeg:jend) )
+
+      call get_var3_r4( ncid, 'PS', 1,im, jbeg,jend, 1,1, psncep )
+        if(is_master()) write(*,*) 'done reading psncep'
+      call get_var3_r4( ncid, 'PHIS', 1,im, jbeg,jend, 1,1, zsncep )
+        zsncep(:,:) = zsncep(:,:)/grav
+        if(is_master()) write(*,*) 'done reading zsncep'
+! read in temperatuer:
+      allocate ( tncep(1:im,jbeg:jend, 1:km) )
+      call get_var3_r4( ncid, 'T', 1,im, jbeg,jend, 1,km, tncep )
+        if(is_master()) write(*,*) 'done reading tncep'
+! read in specific humidity and cloud water cond:
+      allocate ( wk3(1:im,jbeg:jend, 1:km) )
+      allocate ( qncep(1:im,jbeg:jend, 1:km,2) )
+      call get_var3_r4( ncid, 'Q', 1,im, jbeg,jend, 1,km, wk3 )
+        if(is_master()) write(*,*) 'done reading sphumncep'
+        qncep(:,:,:,1) = wk3(:,:,:) 
+      call get_var3_r4( ncid, 'CWAT', 1,im, jbeg,jend, 1,km, wk3 )
+        if(is_master()) write(*,*) 'done reading cwatncep'
+        qncep(:,:,:,2) = wk3(:,:,:) 
+      deallocate (wk3)
+
+      if ( T_is_Tv ) then
+      ! The "T" field in NCEP analysis is actually virtual temperature (Larry H. post processing)
+      ! BEFORE 20051201
+        do i=1,im
+        do j=jbeg,jend
+          do k=1,km
+             tncep(i,j,k) = tncep(i,j,k)/(1.+zvir*qncep(i,j,k,1))
+          enddo
+        enddo
+        enddo
+      endif
+
+!!!! Compute height on edges, zhncep [ use psncep, zsncep, tncep, sphumncep]
+      allocate ( zhncep(1:im,jbeg:jend, km+1) )
+      jn = jend - jbeg + 1
+
+      call compute_zh(im, jn, km, ak0, bk0, psncep, zsncep, tncep, qncep, 2, zhncep )
+      deallocate (zsncep)
+      deallocate (tncep)
+
+      if(is_master()) write(*,*) 'done compute zhncep'
+
+! convert zhncep, psncep from NCEP grid to cubic grid
+      allocate (psc(is:ie,js:je))
+      allocate (psc_r8(is:ie,js:je))
+>>>>>>> rusty/master_test
 
       do j=js,je
          do i=is,ie
             i1 = id1(i,j)
             i2 = id2(i,j)
             j1 = jdc(i,j)
+<<<<<<< HEAD
             psc(i,j) = s2c(i,j,1)*wk2(i1,j1  ) + s2c(i,j,2)*wk2(i2,j1  ) +  &
                        s2c(i,j,3)*wk2(i2,j1+1) + s2c(i,j,4)*wk2(i1,j1+1)
          enddo
@@ -1202,10 +1889,23 @@ contains
 
       call get_var3_r4( ncid, 'PHIS', 1,im, jbeg,jend, 1,1, wk2 )
       do j=js,je
+=======
+            psc(i,j) = s2c(i,j,1)*psncep(i1,j1  ) + s2c(i,j,2)*psncep(i2,j1  ) +  &
+                       s2c(i,j,3)*psncep(i2,j1+1) + s2c(i,j,4)*psncep(i1,j1+1)
+         enddo
+      enddo
+      deallocate ( psncep )
+
+
+      allocate (gzc(is:ie,js:je,km+1))
+      do k=1,km+1
+        do j=js,je
+>>>>>>> rusty/master_test
          do i=is,ie
             i1 = id1(i,j)
             i2 = id2(i,j)
             j1 = jdc(i,j)
+<<<<<<< HEAD
             gzc(i,j) = s2c(i,j,1)*wk2(i1,j1  ) + s2c(i,j,2)*wk2(i2,j1  ) +  &
                        s2c(i,j,3)*wk2(i2,j1+1) + s2c(i,j,4)*wk2(i1,j1+1)
          enddo
@@ -1216,13 +1916,31 @@ contains
 
       if ( read_ts ) then       ! read skin temperature; could be used for SST
 
+=======
+            gzc(i,j,k) = s2c(i,j,1)*zhncep(i1,j1  ,k) + s2c(i,j,2)*zhncep(i2,j1  ,k) +  &
+                         s2c(i,j,3)*zhncep(i2,j1+1,k) + s2c(i,j,4)*zhncep(i1,j1+1,k)
+         enddo
+        enddo
+      enddo
+      deallocate ( zhncep )
+
+      if(is_master()) write(*,*) 'done interpolate psncep/zhncep into cubic grid psc/gzc!'
+
+! read skin temperature; could be used for SST
+      allocate ( wk2(im,jm) )
+      if ( read_ts ) then       ! read skin temperature; could be used for SST
+>>>>>>> rusty/master_test
         call get_var2_real( ncid, 'TS', im, jm, wk2 )
 
         if ( .not. land_ts ) then
            allocate ( wk1(im) )
 
            do j=1,jm
+<<<<<<< HEAD
 ! Read NCEP ORO (1; land; 0: ocean; 2: sea_ice)
+=======
+              ! Read NCEP ORO (1; land; 0: ocean; 2: sea_ice)
+>>>>>>> rusty/master_test
               call get_var3_r4( ncid, 'ORO', 1,im, j,j, 1,1, wk1 )
               tmean = 0.
               npt = 0
@@ -1232,9 +1950,15 @@ contains
                      npt = npt + 1
                  endif
               enddo
+<<<<<<< HEAD
 !------------------------------------------------------
 ! Replace TS over interior land with zonal mean SST/Ice
 !------------------------------------------------------
+=======
+              !------------------------------------------------------
+              ! Replace TS over interior land with zonal mean SST/Ice
+              !------------------------------------------------------
+>>>>>>> rusty/master_test
               if ( npt /= 0 ) then
                    tmean= tmean / real(npt)
                    do i=1,im
@@ -1265,11 +1989,19 @@ contains
             i1 = id1(i,j)
             i2 = id2(i,j)
             j1 = jdc(i,j)
+<<<<<<< HEAD
             Atm(1)%ts(i,j) = s2c(i,j,1)*wk2(i1,j1  ) + s2c(i,j,2)*wk2(i2,j1  ) +  &
                              s2c(i,j,3)*wk2(i2,j1+1) + s2c(i,j,4)*wk2(i1,j1+1)
           enddo
         enddo
         call prt_maxmin('SST_model', Atm(1)%ts, is, ie, js, je, 0, 1, 1.)
+=======
+            Atm%ts(i,j) = s2c(i,j,1)*wk2(i1,j1  ) + s2c(i,j,2)*wk2(i2,j1  ) +  &
+                             s2c(i,j,3)*wk2(i2,j1+1) + s2c(i,j,4)*wk2(i1,j1+1)
+          enddo
+        enddo
+        call prt_maxmin('SST_model', Atm%ts, is, ie, js, je, 0, 1, 1.)
+>>>>>>> rusty/master_test
 
 ! Perform interp to FMS SST format/grid
 #ifndef DYCORE_SOLO
@@ -1283,6 +2015,7 @@ contains
 
       deallocate ( wk2 )
 
+<<<<<<< HEAD
 ! Read in temperature:
       allocate ( wk3(1:im,jbeg:jend, 1:km) )
       call get_var3_r4( ncid, 'T', 1,im, jbeg,jend, 1,km, wk3 )
@@ -1304,18 +2037,30 @@ contains
       call get_var3_r4( ncid, 'Q', 1,im, jbeg,jend, 1,km, wk3 )
 
       allocate ( qp(is:ie,js:je,km) )
+=======
+! convert qncep from NCEP grid to cubic grid
+      allocate ( qp(is:ie,js:je,km,2) )
+>>>>>>> rusty/master_test
       do k=1,km
         do j=js,je
           do i=is,ie
             i1 = id1(i,j)
             i2 = id2(i,j)
             j1 = jdc(i,j)
+<<<<<<< HEAD
             qp(i,j,k) = s2c(i,j,1)*wk3(i1,j1  ,k) + s2c(i,j,2)*wk3(i2,j1  ,k) +  &
                         s2c(i,j,3)*wk3(i2,j1+1,k) + s2c(i,j,4)*wk3(i1,j1+1,k)
+=======
+            qp(i,j,k,1) = s2c(i,j,1)*qncep(i1,j1  ,k,1) + s2c(i,j,2)*qncep(i2,j1  ,k,1) +  &
+                          s2c(i,j,3)*qncep(i2,j1+1,k,1) + s2c(i,j,4)*qncep(i1,j1+1,k,1)
+            qp(i,j,k,2) = s2c(i,j,1)*qncep(i1,j1  ,k,2) + s2c(i,j,2)*qncep(i2,j1  ,k,2) +  &
+                          s2c(i,j,3)*qncep(i2,j1+1,k,2) + s2c(i,j,4)*qncep(i1,j1+1,k,2)
+>>>>>>> rusty/master_test
           enddo
         enddo
       enddo
 
+<<<<<<< HEAD
       call remap_scalar(im, jm, km, npz, nq, nq, ak0, bk0, psc, gzc, tp, qp, Atm(1))
       deallocate ( tp )
       deallocate ( qp )
@@ -1332,10 +2077,82 @@ contains
             j1 = jdc(i,j)
             ua(i,j,k) = s2c(i,j,1)*wk3(i1,j1  ,k) + s2c(i,j,2)*wk3(i2,j1  ,k) +  &
                         s2c(i,j,3)*wk3(i2,j1+1,k) + s2c(i,j,4)*wk3(i1,j1+1,k)
+=======
+      deallocate (qncep)
+
+      psc_r8(:,:) = psc(:,:)
+      deallocate (psc)
+
+
+      call remap_scalar(Atm, km, npz, 2, ak0, bk0, psc_r8, qp, gzc)
+      call mpp_update_domains(Atm%phis, Atm%domain)
+      if(is_master()) write(*,*) 'done remap_scalar'
+      deallocate ( qp )
+      deallocate ( gzc )
+
+! Winds:
+    ! get lat/lon values of pt_c and pt_d from grid data (pt_b)
+      allocate (pt_c(isd:ied+1,jsd:jed  ,2))
+      allocate (pt_d(isd:ied  ,jsd:jed+1,2))
+      allocate (ud(is:ie  , js:je+1, km))
+      allocate (vd(is:ie+1, js:je  , km))
+
+      call get_staggered_grid( is, ie, js, je,  &
+                               isd, ied, jsd, jed, &
+                               Atm%gridstruct%grid, pt_c, pt_d)
+
+      !------ pt_c part ------
+      ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
+      call remap_coef( is, ie+1, js, je, isd, ied+1, jsd, jed, &
+                       im, jm, lon, lat, id1_c, id2_c, jdc_c, s2c_c, pt_c)
+
+      ! Find bounding latitudes:
+      jbeg = jm-1;         jend = 2
+      do j=js,je
+        do i=is,ie+1
+            j1 = jdc_c(i,j)
+          jbeg = min(jbeg, j1)
+          jend = max(jend, j1+1)
+        enddo
+      enddo
+
+      ! read in NCEP wind data
+      allocate ( uncep(1:im,jbeg:jend, 1:km) )
+      allocate ( vncep(1:im,jbeg:jend, 1:km) )
+
+      call get_var3_r4( ncid, 'U', 1,im, jbeg,jend, 1,km, uncep )
+      if(is_master()) write(*,*) 'first time done reading Uncep'
+      call get_var3_r4( ncid, 'V', 1,im, jbeg,jend, 1,km, vncep )
+      if(is_master()) write(*,*) 'first time done reading Vncep'
+
+!$OMP parallel do default(none) shared(is,ie,js,je,km,s2c_c,id1_c,id2_c,jdc_c,uncep,vncep,Atm,vd) &
+!$OMP                     private(i1,i2,j1,p1,p2,p3,e2,ex,ey,utmp,vtmp)
+      do k=1,km
+        do j=js,je
+          do i=is,ie+1
+            i1 = id1_c(i,j)
+            i2 = id2_c(i,j)
+            j1 = jdc_c(i,j)
+            p1(:) = Atm%gridstruct%grid(i,j  ,1:2)
+            p2(:) = Atm%gridstruct%grid(i,j+1,1:2)
+            call  mid_pt_sphere(p1, p2, p3)
+            call get_unit_vect2(p1, p2, e2)
+            call get_latlon_vector(p3, ex, ey)
+            utmp = s2c_c(i,j,1)*uncep(i1,j1  ,k) + &
+                   s2c_c(i,j,2)*uncep(i2,j1  ,k) + &
+                   s2c_c(i,j,3)*uncep(i2,j1+1,k) + &
+                   s2c_c(i,j,4)*uncep(i1,j1+1,k)
+            vtmp = s2c_c(i,j,1)*vncep(i1,j1  ,k) + &
+                   s2c_c(i,j,2)*vncep(i2,j1  ,k) + &
+                   s2c_c(i,j,3)*vncep(i2,j1+1,k) + &
+                   s2c_c(i,j,4)*vncep(i1,j1+1,k)
+            vd(i,j,k) = utmp*inner_prod(e2,ex) + vtmp*inner_prod(e2,ey)
+>>>>>>> rusty/master_test
           enddo
         enddo
       enddo
 
+<<<<<<< HEAD
       call get_var3_r4( ncid, 'V', 1,im, jbeg,jend, 1,km, wk3 )
       call close_ncfile ( ncid )
 
@@ -1356,6 +2173,66 @@ contains
 
       deallocate ( ua )
       deallocate ( va )
+=======
+      deallocate ( uncep, vncep )
+
+      !------ pt_d part ------
+      ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
+      call remap_coef( is, ie, js, je+1, isd, ied, jsd, jed+1, &
+                       im, jm, lon, lat, id1_d, id2_d, jdc_d, s2c_d, pt_d)
+      deallocate ( pt_c, pt_d )
+
+      ! Find bounding latitudes:
+      jbeg = jm-1;         jend = 2
+      do j=js,je+1
+        do i=is,ie
+            j1 = jdc_d(i,j)
+          jbeg = min(jbeg, j1)
+          jend = max(jend, j1+1)
+        enddo
+      enddo
+
+      ! read in NCEP wind data
+      allocate ( uncep(1:im,jbeg:jend, 1:km) )
+      allocate ( vncep(1:im,jbeg:jend, 1:km) )
+
+      call get_var3_r4( ncid, 'U', 1,im, jbeg,jend, 1,km, uncep )
+      if(is_master()) write(*,*) 'second time done reading uec'
+
+      call get_var3_r4( ncid, 'V', 1,im, jbeg,jend, 1,km, vncep )
+      if(is_master()) write(*,*) 'second time done reading vec'
+
+!$OMP parallel do default(none) shared(is,ie,js,je,km,id1_d,id2_d,jdc_d,s2c_d,uncep,vncep,Atm,ud) &
+!$OMP                     private(i1,i2,j1,p1,p2,p3,e1,ex,ey,utmp,vtmp)
+      do k=1,km
+        do j=js,je+1
+          do i=is,ie
+            i1 = id1_d(i,j)
+            i2 = id2_d(i,j)
+            j1 = jdc_d(i,j)
+            p1(:) = Atm%gridstruct%grid(i,  j,1:2)
+            p2(:) = Atm%gridstruct%grid(i+1,j,1:2)
+            call  mid_pt_sphere(p1, p2, p3)
+            call get_unit_vect2(p1, p2, e1)
+            call get_latlon_vector(p3, ex, ey)
+            utmp = s2c_d(i,j,1)*uncep(i1,j1  ,k) + &
+                   s2c_d(i,j,2)*uncep(i2,j1  ,k) + &
+                   s2c_d(i,j,3)*uncep(i2,j1+1,k) + &
+                   s2c_d(i,j,4)*uncep(i1,j1+1,k)
+            vtmp = s2c_d(i,j,1)*vncep(i1,j1  ,k) + &
+                   s2c_d(i,j,2)*vncep(i2,j1  ,k) + &
+                   s2c_d(i,j,3)*vncep(i2,j1+1,k) + &
+                   s2c_d(i,j,4)*vncep(i1,j1+1,k)
+            ud(i,j,k) = utmp*inner_prod(e1,ex) + vtmp*inner_prod(e1,ey)
+          enddo
+        enddo
+      enddo
+      deallocate ( uncep, vncep )
+
+      call remap_dwinds(km, npz, ak0, bk0, psc_r8, ud, vd, Atm)
+      deallocate ( ud, vd )
+      call close_ncfile ( ncid )
+>>>>>>> rusty/master_test
 
       deallocate ( ak0 )
       deallocate ( bk0 )
@@ -1363,6 +2240,7 @@ contains
       deallocate ( lon )
 
   end subroutine get_ncep_ic
+<<<<<<< HEAD
 
 !>@brief The subroutine 'get_ecmwf_ic' reads in initial conditions from ECMWF analyses
 !! (EXPERIMENTAL: contact Jan-Huey Chen jan-huey.chen@noaa.gov for support)
@@ -1376,6 +2254,12 @@ contains
 #endif
 
       type(fv_atmos_type), intent(inout) :: Atm(:)
+=======
+!------------------------------------------------------------------
+!------------------------------------------------------------------
+  subroutine get_ecmwf_ic( Atm, fv_domain )
+      type(fv_atmos_type), intent(inout) :: Atm
+>>>>>>> rusty/master_test
       type(domain2d),      intent(inout) :: fv_domain
 ! local:
       real :: ak_ec(138), bk_ec(138)
@@ -1486,6 +2370,7 @@ contains
       real, allocatable:: psc_r8(:,:), zhc(:,:,:), qc(:,:,:,:)
       real, allocatable:: lat(:), lon(:), ak0(:), bk0(:)
       real, allocatable:: pt_c(:,:,:), pt_d(:,:,:)
+<<<<<<< HEAD
       real:: s2c(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je,4)
       real:: s2c_c(Atm(1)%bd%is:Atm(1)%bd%ie+1,Atm(1)%bd%js:Atm(1)%bd%je,4)
       real:: s2c_d(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je+1,4)
@@ -1494,12 +2379,23 @@ contains
       integer, dimension(Atm(1)%bd%is:Atm(1)%bd%ie+1,Atm(1)%bd%js:Atm(1)%bd%je)::     &
         id1_c, id2_c, jdc_c
       integer, dimension(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je+1)::     &
+=======
+      real:: s2c(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je,4)
+      real:: s2c_c(Atm%bd%is:Atm%bd%ie+1,Atm%bd%js:Atm%bd%je,4)
+      real:: s2c_d(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je+1,4)
+      integer, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je)::       &
+        id1, id2, jdc
+      integer, dimension(Atm%bd%is:Atm%bd%ie+1,Atm%bd%js:Atm%bd%je)::     &
+        id1_c, id2_c, jdc_c
+      integer, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je+1)::     &
+>>>>>>> rusty/master_test
         id1_d, id2_d, jdc_d
       real:: utmp, vtmp
       integer:: i, j, k, n, im, jm, km, npz, npt
       integer:: i1, i2, j1, ncid
       integer:: jbeg, jend, jn
       integer tsize(3) 
+<<<<<<< HEAD
       logical:: read_ts = .true.
       logical:: land_ts = .false.
       logical:: found
@@ -1511,16 +2407,26 @@ contains
 #else
       integer :: o3mr
 #endif
+=======
+      logical:: found
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+      integer :: sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel
+>>>>>>> rusty/master_test
       real:: wt, qt, m_fac
       real(kind=8) :: scale_value, offset, ptmp
       real(kind=R_GRID), dimension(2):: p1, p2, p3
       real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
+<<<<<<< HEAD
       real, allocatable:: ps_gfs(:,:), zh_gfs(:,:,:)
 #ifdef MULTI_GASES
       real, allocatable:: spfo_gfs(:,:,:), spfo2_gfs(:,:,:), spfo3_gfs(:,:,:)
 #else
       real, allocatable:: o3mr_gfs(:,:,:)
 #endif
+=======
+      real, allocatable:: ps_gfs(:,:), zh_gfs(:,:,:), o3mr_gfs(:,:,:)
+>>>>>>> rusty/master_test
       real, allocatable:: ak_gfs(:), bk_gfs(:)
       integer :: id_res, ntprog, ntracers, ks, iq, nt
       character(len=64) :: tracer_name
@@ -1532,6 +2438,7 @@ contains
       logical :: filtered_terrain = .true.
       namelist /external_ic_nml/ filtered_terrain
 
+<<<<<<< HEAD
       is  = Atm(1)%bd%is
       ie  = Atm(1)%bd%ie
       js  = Atm(1)%bd%js
@@ -1544,6 +2451,20 @@ contains
       deg2rad = pi/180.
 
       npz = Atm(1)%npz
+=======
+      is  = Atm%bd%is
+      ie  = Atm%bd%ie
+      js  = Atm%bd%js
+      je  = Atm%bd%je
+      isd = Atm%bd%isd
+      ied = Atm%bd%ied
+      jsd = Atm%bd%jsd
+      jed = Atm%bd%jed
+
+      deg2rad = pi/180.
+
+      npz = Atm%npz
+>>>>>>> rusty/master_test
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
       if(is_master()) write(*,*) 'ntracers = ', ntracers, 'ntprog = ',ntprog 
 
@@ -1553,6 +2474,7 @@ contains
       rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
       snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
       graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
+<<<<<<< HEAD
 #ifdef MULTI_GASES
       spfo    = get_tracer_index(MODEL_ATMOS, 'spfo')
       spfo2   = get_tracer_index(MODEL_ATMOS, 'spfo2')
@@ -1560,16 +2482,24 @@ contains
 #else
       o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
 #endif
+=======
+      o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
+>>>>>>> rusty/master_test
 
       if (is_master()) then
          print *, 'sphum = ', sphum
          print *, 'liq_wat = ', liq_wat
+<<<<<<< HEAD
          if ( Atm(1)%flagstruct%nwat .eq. 6 ) then
+=======
+         if ( Atm%flagstruct%nwat .eq. 6 ) then
+>>>>>>> rusty/master_test
             print *, 'rainwat = ', rainwat
             print *, 'iec_wat = ', ice_wat
             print *, 'snowwat = ', snowwat
             print *, 'graupel = ', graupel 
          endif
+<<<<<<< HEAD
 #ifdef MULTI_GASES
          print *, ' spfo3 = ', spfo3
          print *, ' spfo  = ', spfo
@@ -1577,10 +2507,14 @@ contains
 #else
          print *, ' o3mr = ', o3mr
 #endif
+=======
+         print *, ' o3mr = ', o3mr
+>>>>>>> rusty/master_test
       endif
 
       
 ! Set up model's ak and bk
+<<<<<<< HEAD
       if ( npz <= 64 ) then
          Atm(1)%ak(:) = ak_sj(:)
          Atm(1)%bk(:) = bk_sj(:)
@@ -1625,6 +2559,41 @@ contains
 #endif
       id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'ps', ps_gfs, domain=Atm(1)%domain)
       id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'ZH', zh_gfs, domain=Atm(1)%domain)
+=======
+      if (Atm%flagstruct%external_eta) then
+         call set_external_eta (Atm%ak, Atm%bk, Atm%ptop, Atm%ks)
+      endif
+!!$      if ( (npz == 64 .or. npz == 63)  .and. len(trim(Atm%flagstruct%npz_type)) == 0 ) then
+!!$         if (is_master()) print*, 'Using default GFS levels'
+!!$         Atm%ak(:) = ak_sj(:)
+!!$         Atm%bk(:) = bk_sj(:)
+!!$         Atm%ptop = Atm%ak(1)
+!!$      else
+!!$         call set_eta(npz, ks, Atm%ptop, Atm%ak, Atm%bk, Atm%flagstruct%npz_type)
+!!$      endif
+
+!! Read in model terrain from oro_data.tile?.nc
+      if (filtered_terrain) then
+          id_res = register_restart_field (ORO_restart, fn_oro_ics, 'orog_filt', Atm%phis, domain=Atm%domain)
+        elseif (.not. filtered_terrain) then
+          id_res = register_restart_field (ORO_restart, fn_oro_ics, 'orog_raw', Atm%phis, domain=Atm%domain)
+      endif
+      call restore_state (ORO_restart)
+      call free_restart_type(ORO_restart)
+      Atm%phis = Atm%phis*grav
+      if(is_master()) write(*,*) 'done reading model terrain from oro_data.nc'
+      call mpp_update_domains( Atm%phis, Atm%domain )
+
+!! Read in o3mr, ps and zh from GFS_data.tile?.nc
+      allocate (o3mr_gfs(is:ie,js:je,levp_gfs))
+      allocate (ps_gfs(is:ie,js:je))
+      allocate (zh_gfs(is:ie,js:je,levp_gfs+1))
+   
+      id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'o3mr', o3mr_gfs, &
+                                       mandatory=.false.,domain=Atm%domain)
+      id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'ps', ps_gfs, domain=Atm%domain)
+      id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'ZH', zh_gfs, domain=Atm%domain)
+>>>>>>> rusty/master_test
       call restore_state (GFS_restart)
       call free_restart_type(GFS_restart)
 
@@ -1640,6 +2609,7 @@ contains
    
       if ( bk_gfs(1) < 1.E-9 ) ak_gfs(1) = max(1.e-9, ak_gfs(1))
   
+<<<<<<< HEAD
 #ifdef MULTI_GASES
       iq = spfo3
       if(is_master()) write(*,*) 'Reading spfo3 from GFS_data.nc:'
@@ -1672,6 +2642,19 @@ contains
 
 !! Start to read EC data
       fname = Atm(1)%flagstruct%res_latlon_dynamics
+=======
+      iq = o3mr
+      if(is_master()) write(*,*) 'Reading o3mr from GFS_data.nc:'
+      if(is_master()) write(*,*) 'o3mr =', iq
+      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, o3mr_gfs, zh_gfs, iq)
+
+      deallocate (ak_gfs, bk_gfs)
+      deallocate (ps_gfs, zh_gfs)
+      deallocate (o3mr_gfs)
+
+!! Start to read EC data
+      fname = Atm%flagstruct%res_latlon_dynamics
+>>>>>>> rusty/master_test
 
       if( file_exist(fname) ) then
           call open_ncfile( fname, ncid )        ! open the file
@@ -1723,7 +2706,11 @@ contains
 
 ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
       call remap_coef( is, ie, js, je, isd, ied, jsd, jed, &
+<<<<<<< HEAD
                        im, jm, lon, lat, id1, id2, jdc, s2c , Atm(1)%gridstruct%agrid )
+=======
+                       im, jm, lon, lat, id1, id2, jdc, s2c , Atm%gridstruct%agrid )
+>>>>>>> rusty/master_test
 
 ! Find bounding latitudes:
       jbeg = jm-1;         jend = 2
@@ -1817,8 +2804,15 @@ contains
 
       call compute_zh(im, jn, km, ak0, bk0, psec, zsec, tec, qec, 5, zhec )
       if(is_master()) write(*,*) 'done compute zhec'
+<<<<<<< HEAD
 
 ! convert zhec, psec, zsec from EC grid to cubic grid
+=======
+      deallocate ( zsec )
+      deallocate ( tec )
+
+! convert zhec, psec from EC grid to cubic grid
+>>>>>>> rusty/master_test
       allocate (psc(is:ie,js:je))
       allocate (psc_r8(is:ie,js:je))
 
@@ -1845,7 +2839,10 @@ contains
          enddo
       enddo
       deallocate ( psec )
+<<<<<<< HEAD
       deallocate ( zsec )
+=======
+>>>>>>> rusty/master_test
 
       allocate (zhc(is:ie,js:je,km+1))
 !$OMP parallel do default(none) shared(is,ie,js,je,km,s2c,id1,id2,jdc,zhc,zhec)  &
@@ -1863,7 +2860,11 @@ contains
       enddo
       deallocate ( zhec )
 
+<<<<<<< HEAD
       if(is_master()) write(*,*) 'done interpolate psec/zsec/zhec into cubic grid psc/zhc!'
+=======
+      if(is_master()) write(*,*) 'done interpolate psec/zhec into cubic grid psc/zhc!'
+>>>>>>> rusty/master_test
 
 ! Read in other tracers from EC data and remap them into cubic sphere grid:
       allocate ( qc(is:ie,js:je,km,6) )
@@ -1921,9 +2922,15 @@ contains
       psc_r8(:,:) = psc(:,:)
       deallocate ( psc )
 
+<<<<<<< HEAD
       call remap_scalar_ec(Atm(1), km, npz, 6, ak0, bk0, psc_r8, qc, wc, zhc )
       call mpp_update_domains(Atm(1)%phis, Atm(1)%domain)
       if(is_master()) write(*,*) 'done remap_scalar_ec'
+=======
+      call remap_scalar(Atm, km, npz, 6, ak0, bk0, psc_r8, qc, zhc, wc)
+      call mpp_update_domains(Atm%phis, Atm%domain)
+      if(is_master()) write(*,*) 'done remap_scalar'
+>>>>>>> rusty/master_test
        
       deallocate ( zhc )
       deallocate ( wc )
@@ -1938,7 +2945,11 @@ contains
 
       call get_staggered_grid( is, ie, js, je,  &
                                isd, ied, jsd, jed, &
+<<<<<<< HEAD
                                Atm(1)%gridstruct%grid, pt_c, pt_d)
+=======
+                               Atm%gridstruct%grid, pt_c, pt_d)
+>>>>>>> rusty/master_test
 
       !------ pt_c part ------
       ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
@@ -1992,8 +3003,13 @@ contains
             i1 = id1_c(i,j)
             i2 = id2_c(i,j)
             j1 = jdc_c(i,j)
+<<<<<<< HEAD
             p1(:) = Atm(1)%gridstruct%grid(i,j  ,1:2)
             p2(:) = Atm(1)%gridstruct%grid(i,j+1,1:2)
+=======
+            p1(:) = Atm%gridstruct%grid(i,j  ,1:2)
+            p2(:) = Atm%gridstruct%grid(i,j+1,1:2)
+>>>>>>> rusty/master_test
             call  mid_pt_sphere(p1, p2, p3)
             call get_unit_vect2(p1, p2, e2)
             call get_latlon_vector(p3, ex, ey)
@@ -2052,8 +3068,13 @@ contains
             i1 = id1_d(i,j)
             i2 = id2_d(i,j)
             j1 = jdc_d(i,j)
+<<<<<<< HEAD
             p1(:) = Atm(1)%gridstruct%grid(i,  j,1:2)
             p2(:) = Atm(1)%gridstruct%grid(i+1,j,1:2)
+=======
+            p1(:) = Atm%gridstruct%grid(i,  j,1:2)
+            p2(:) = Atm%gridstruct%grid(i+1,j,1:2)
+>>>>>>> rusty/master_test
             call  mid_pt_sphere(p1, p2, p3)
             call get_unit_vect2(p1, p2, e1)
             call get_latlon_vector(p3, ex, ey)
@@ -2071,7 +3092,11 @@ contains
       enddo
       deallocate ( uec, vec )
 
+<<<<<<< HEAD
       call remap_dwinds(km, npz, ak0, bk0, psc_r8, ud, vd, Atm(1))
+=======
+      call remap_dwinds(km, npz, ak0, bk0, psc_r8, ud, vd, Atm)
+>>>>>>> rusty/master_test
       deallocate ( ud, vd )
 
 #ifndef COND_IFS_IC
@@ -2080,6 +3105,7 @@ contains
       do k=1,npz
          do j=js,je
             do i=is,ie
+<<<<<<< HEAD
                wt = Atm(1)%delp(i,j,k)
                if ( Atm(1)%flagstruct%nwat .eq. 2 ) then
                   qt = wt*(1.+Atm(1)%q(i,j,k,liq_wat))
@@ -2095,6 +3121,23 @@ contains
                   Atm(1)%q(i,j,k,iq) = m_fac * Atm(1)%q(i,j,k,iq)
                enddo
                Atm(1)%delp(i,j,k) = qt
+=======
+               wt = Atm%delp(i,j,k)
+               if ( Atm%flagstruct%nwat .eq. 2 ) then
+                  qt = wt*(1.+Atm%q(i,j,k,liq_wat))
+               elseif ( Atm%flagstruct%nwat .eq. 6 ) then
+                  qt = wt*(1. + Atm%q(i,j,k,liq_wat) + &
+                                Atm%q(i,j,k,ice_wat) + &
+                                Atm%q(i,j,k,rainwat) + &
+                                Atm%q(i,j,k,snowwat) + &
+                                Atm%q(i,j,k,graupel))
+               endif
+               m_fac = wt / qt
+               do iq=1,ntracers
+                  Atm%q(i,j,k,iq) = m_fac * Atm%q(i,j,k,iq)
+               enddo
+               Atm%delp(i,j,k) = qt
+>>>>>>> rusty/master_test
             enddo
          enddo
       enddo
@@ -2105,13 +3148,21 @@ contains
       deallocate ( psc_r8 )
       deallocate ( lat, lon )
 
+<<<<<<< HEAD
       Atm(1)%flagstruct%make_nh = .false.
+=======
+      Atm%flagstruct%make_nh = .false.
+>>>>>>> rusty/master_test
 
   end subroutine get_ecmwf_ic
 !------------------------------------------------------------------
 !------------------------------------------------------------------
   subroutine get_fv_ic( Atm, fv_domain, nq )
+<<<<<<< HEAD
       type(fv_atmos_type), intent(inout) :: Atm(:)
+=======
+      type(fv_atmos_type), intent(inout) :: Atm
+>>>>>>> rusty/master_test
       type(domain2d),      intent(inout) :: fv_domain
       integer, intent(in):: nq
 
@@ -2124,6 +3175,7 @@ contains
 !     integer sphum, liq_wat, ice_wat, cld_amt       ! GFDL AM2 physics
       logical found
 
+<<<<<<< HEAD
       npz = Atm(1)%npz
 
 ! Zero out all initial tracer fields:
@@ -2131,6 +3183,15 @@ contains
 
 ! Read in lat-lon FV core restart file
       fname = Atm(1)%flagstruct%res_latlon_dynamics
+=======
+      npz = Atm%npz
+
+! Zero out all initial tracer fields:
+      Atm%q = 0.
+
+! Read in lat-lon FV core restart file
+      fname = Atm%flagstruct%res_latlon_dynamics
+>>>>>>> rusty/master_test
 
       if( file_exist(fname) ) then
           call field_size(fname, 'T', tsize, field_found=found)
@@ -2185,12 +3246,20 @@ contains
       endif
 
 ! Read in tracers: only AM2 "physics tracers" at this point
+<<<<<<< HEAD
       fname = Atm(1)%flagstruct%res_latlon_tracers
+=======
+      fname = Atm%flagstruct%res_latlon_tracers
+>>>>>>> rusty/master_test
 
       if( file_exist(fname) ) then
           if(is_master()) write(*,*) 'Using lat-lon tracer restart:', fname 
 
+<<<<<<< HEAD
           allocate ( q0(im,jm,km,Atm(1)%ncnst) )
+=======
+          allocate ( q0(im,jm,km,Atm%ncnst) )
+>>>>>>> rusty/master_test
           q0 = 0.
 
           do tr_ind = 1, nq
@@ -2236,8 +3305,13 @@ contains
 ! Horizontal interpolation to the cubed sphere grid center
 ! remap vertically with terrain adjustment
 
+<<<<<<< HEAD
       call remap_xyz( im, 1, jm, jm, km, npz, nq, Atm(1)%ncnst, lon, lat, ak0, bk0,   &
                       ps0,  gz0, ua, va, t0, q0, Atm(1) )
+=======
+      call remap_xyz( im, 1, jm, jm, km, npz, nq, Atm%ncnst, lon, lat, ak0, bk0,   &
+                      ps0,  gz0, ua, va, t0, q0, Atm )
+>>>>>>> rusty/master_test
 
       deallocate ( ak0 ) 
       deallocate ( bk0 ) 
@@ -2339,6 +3413,7 @@ contains
 ! Interpolated surface pressure
        sst_ncep(i,j) = c1*wk(i1,jc  ) + c2*wk(i2,jc  ) +    &
                        c3*wk(i2,jc+1) + c4*wk(i1,jc+1)
+<<<<<<< HEAD
      enddo   !i-loop
 5000 continue   ! j-loop
 
@@ -2967,11 +4042,106 @@ contains
  end subroutine remap_scalar_nggps
 
  subroutine remap_scalar_ec(Atm, km, npz, ncnst, ak0, bk0, psc, qa, wc, zh)
+=======
+     enddo   !i-loop
+5000 continue   ! j-loop
+
+ end subroutine ncep2fms
+#endif
+
+
+
+ subroutine remap_coef( is, ie, js, je, isd, ied, jsd, jed, &
+                        im, jm, lon, lat, id1, id2, jdc, s2c, agrid )
+
+  integer, intent(in):: is, ie, js, je, isd, ied, jsd, jed
+  integer, intent(in):: im, jm
+  real,    intent(in):: lon(im), lat(jm)
+  real,    intent(out):: s2c(is:ie,js:je,4)
+  integer, intent(out), dimension(is:ie,js:je):: id1, id2, jdc
+  real,    intent(in):: agrid(isd:ied,jsd:jed,2)
+! local:
+  real :: rdlon(im)
+  real :: rdlat(jm)
+  real:: a1, b1
+  integer i,j, i1, i2, jc, i0, j0
+
+  do i=1,im-1
+     rdlon(i) = 1. / (lon(i+1) - lon(i))
+  enddo
+     rdlon(im) = 1. / (lon(1) + 2.*pi - lon(im))
+
+  do j=1,jm-1
+     rdlat(j) = 1. / (lat(j+1) - lat(j))
+  enddo
+
+! * Interpolate to cubed sphere cell center
+  do 5000 j=js,je
+
+     do i=is,ie
+
+       if ( agrid(i,j,1)>lon(im) ) then
+            i1 = im;     i2 = 1
+            a1 = (agrid(i,j,1)-lon(im)) * rdlon(im)
+       elseif ( agrid(i,j,1)<lon(1) ) then
+            i1 = im;     i2 = 1
+            a1 = (agrid(i,j,1)+2.*pi-lon(im)) * rdlon(im)
+       else
+            do i0=1,im-1
+            if ( agrid(i,j,1)>=lon(i0) .and. agrid(i,j,1)<=lon(i0+1) ) then
+               i1 = i0;  i2 = i0+1
+               a1 = (agrid(i,j,1)-lon(i1)) * rdlon(i0)
+               go to 111
+            endif
+            enddo
+       endif
+111    continue
+
+       if ( agrid(i,j,2)<lat(1) ) then
+            jc = 1
+            b1 = 0.
+       elseif ( agrid(i,j,2)>lat(jm) ) then
+            jc = jm-1
+            b1 = 1.
+       else
+          do j0=1,jm-1
+          if ( agrid(i,j,2)>=lat(j0) .and. agrid(i,j,2)<=lat(j0+1) ) then
+               jc = j0
+               b1 = (agrid(i,j,2)-lat(jc)) * rdlat(jc)
+               go to 222
+          endif
+          enddo
+       endif
+222    continue
+
+       if ( a1<0.0 .or. a1>1.0 .or.  b1<0.0 .or. b1>1.0 ) then
+            write(*,*) 'gid=', mpp_pe(), i,j,a1, b1
+       endif
+
+       s2c(i,j,1) = (1.-a1) * (1.-b1)
+       s2c(i,j,2) =     a1  * (1.-b1)
+       s2c(i,j,3) =     a1  *     b1
+       s2c(i,j,4) = (1.-a1) *     b1
+       id1(i,j) = i1
+       id2(i,j) = i2
+       jdc(i,j) = jc
+     enddo   !i-loop
+5000 continue   ! j-loop
+
+ end subroutine remap_coef
+
+
+ subroutine remap_scalar(Atm, km, npz, ncnst, ak0, bk0, psc, qa, zh, omga, t_in)
+>>>>>>> rusty/master_test
   type(fv_atmos_type), intent(inout) :: Atm
   integer, intent(in):: km, npz, ncnst
   real,    intent(in):: ak0(km+1), bk0(km+1)
   real,    intent(in), dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je):: psc
+<<<<<<< HEAD
   real,    intent(in), dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je,km):: wc
+=======
+  real,    intent(in), optional, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je,km):: omga, t_in
+>>>>>>> rusty/master_test
   real,    intent(in), dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je,km,ncnst):: qa
   real,    intent(in), dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je,km+1):: zh
 ! local:
@@ -2980,12 +4150,17 @@ contains
   real, dimension(Atm%bd%is:Atm%bd%ie,npz+1):: pe1
   real qp(Atm%bd%is:Atm%bd%ie,km)
   real wk(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je)
+<<<<<<< HEAD
+=======
+  real, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je):: z500
+>>>>>>> rusty/master_test
 !!! High-precision
   real(kind=R_GRID), dimension(Atm%bd%is:Atm%bd%ie,npz+1):: pn1
   real(kind=R_GRID):: gz_fv(npz+1)
   real(kind=R_GRID), dimension(2*km+1):: gz, pn
   real(kind=R_GRID), dimension(Atm%bd%is:Atm%bd%ie,km+1):: pn0
   real(kind=R_GRID):: pst
+<<<<<<< HEAD
   real, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je):: z500
 !!! High-precision
   integer:: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt
@@ -2996,6 +4171,12 @@ contains
 #endif
   integer:: i,j,k,l,m,k2, iq
   integer:: is,  ie,  js,  je
+=======
+!!! High-precision
+  integer i,j,k,l,m, k2,iq
+  integer  sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt
+  integer :: is,  ie,  js,  je
+>>>>>>> rusty/master_test
 
   is  = Atm%bd%is
   ie  = Atm%bd%ie
@@ -3004,6 +4185,7 @@ contains
 
   sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
   liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
+<<<<<<< HEAD
 
   if ( Atm%flagstruct%nwat .eq. 6 ) then
     ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
@@ -3019,6 +4201,19 @@ contains
   if (mpp_pe()==1) then
     print *, 'In remap_scalar_ec:'
     print *, 'ncnst = ', ncnst
+=======
+  ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
+  rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
+  snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
+  graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
+  cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
+  o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
+
+  if (mpp_pe()==1) then
+    print *, 'In remap_scalar:'
+    print *, 'ncnst = ', ncnst
+    print *, 'nwat = ', Atm%flagstruct%nwat
+>>>>>>> rusty/master_test
     print *, 'sphum = ', sphum
     print *, 'liq_wat = ', liq_wat
     if ( Atm%flagstruct%nwat .eq. 6 ) then
@@ -3028,10 +4223,34 @@ contains
       print *, 'graupel = ', graupel
     endif
   endif
+<<<<<<< HEAD
  
 !$OMP parallel do default(none) shared(sphum,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,qa,wc,Atm,z500) &
 !$OMP   private(l,m,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
  do 5000 j=js,je
+=======
+
+  if ( sphum/=1 ) then
+       call mpp_error(FATAL,'SPHUM must be 1st tracer')
+  endif
+
+  k2 = max(10, km/2)
+
+#ifdef USE_GFS_ZS
+   Atm%phis(is:ie,js:je) = zh(is:ie,js:je,km+1)*grav
+#endif
+
+  if (Atm%flagstruct%ecmwf_ic) then 
+      if (cld_amt .gt. 0) Atm%q(i,j,k,cld_amt) = 0.
+  endif
+
+!$OMP parallel do default(none) &
+!$OMP             shared(sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,source,&
+!$OMP                    cld_amt,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,omga,qa,Atm,z500,t_in) &
+!$OMP             private(l,m,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
+
+  do 5000 j=js,je
+>>>>>>> rusty/master_test
      do k=1,km+1
         do i=is,ie
            pe0(i,k) = ak0(k) + bk0(k)*psc(i,j)
@@ -3067,10 +4286,17 @@ contains
         do k=km+k2-1, 2, -1
           if( pst.le.pn(k+1) .and. pst.ge.pn(k) ) then
               z500(i,j) = (gz(k+1) + (gz(k)-gz(k+1))*(pn(k+1)-pst)/(pn(k+1)-pn(k)))/grav
+<<<<<<< HEAD
               go to 125
           endif
         enddo
 125     continue
+=======
+              go to 124
+          endif
+        enddo
+124     continue
+>>>>>>> rusty/master_test
 
      enddo   ! i-loop
 
@@ -3093,6 +4319,7 @@ contains
         enddo
      enddo
 
+<<<<<<< HEAD
 ! map shpum, liq_wat, ice_wat, rainwat, snowwat tracers
       do iq=1,ncnst
          do k=1,km
@@ -3115,11 +4342,42 @@ contains
       enddo
 !---------------------------------------------------
 ! Retrive temperature using EC geopotential height
+=======
+! map tracers
+      do iq=1,ncnst
+         if (floor(qa(is,j,1,iq)) > -999) then !skip missing scalars
+            do k=1,km
+               do i=is,ie
+                  qp(i,k) = qa(i,j,k,iq)
+               enddo
+            enddo
+            call mappm(km, pe0, qp, npz, pe1,  qn1, is,ie, 0, 8, Atm%ptop)
+            if ( iq==sphum ) then
+               call fillq(ie-is+1, npz, 1, qn1, dp2)
+            else
+               call fillz(ie-is+1, npz, 1, qn1, dp2)
+            endif
+            ! The HiRam step of blending model sphum with NCEP data is obsolete because nggps is always cold starting...
+            do k=1,npz
+               do i=is,ie
+                  Atm%q(i,j,k,iq) = qn1(i,k)
+               enddo
+            enddo
+         endif
+      enddo
+
+!---------------------------------------------------
+! Retrive temperature using  geopotential height from external data
+>>>>>>> rusty/master_test
 !---------------------------------------------------
    do i=is,ie
 ! Make sure FV3 top is lower than GFS; can not do extrapolation above the top at this point
       if ( pn1(i,1) .lt. pn0(i,1) ) then
+<<<<<<< HEAD
            call mpp_error(FATAL,'FV3 top higher than ECMWF')
+=======
+           call mpp_error(FATAL,'FV3 top higher than external data')
+>>>>>>> rusty/master_test
       endif
 
       do k=1,km+1
@@ -3133,9 +4391,17 @@ contains
          pn(k) = 2.*pn(km+1) - pn(l)
       enddo
 !-------------------------------------------------
+<<<<<<< HEAD
       gz_fv(npz+1) = Atm%phis(i,j)
 
       m = 1
+=======
+
+      gz_fv(npz+1) = Atm%phis(i,j)
+
+      m = 1
+
+>>>>>>> rusty/master_test
       do k=1,npz
 ! Searching using FV3 log(pe): pn1
 #ifdef USE_ISOTHERMO
@@ -3164,6 +4430,7 @@ contains
          Atm%peln(i,k,j) = pn1(i,k)
       enddo
 
+<<<<<<< HEAD
 ! Compute true temperature using hydrostatic balance
       do k=1,npz
 !        qc = 1.-(Atm%q(i,j,k,liq_wat)+Atm%q(i,j,k,rainwat)+Atm%q(i,j,k,ice_wat)+Atm%q(i,j,k,snowwat))
@@ -3174,6 +4441,31 @@ contains
          Atm%pt(i,j,k) = (gz_fv(k)-gz_fv(k+1))/( rdgas*(pn1(i,k+1)-pn1(i,k))*(1.+zvir*Atm%q(i,j,k,sphum)) )
 #endif
       enddo
+=======
+!----------------------------------------------------
+! Compute true temperature using hydrostatic balance
+!----------------------------------------------------
+      if (trim(source) /= source_fv3gfs .or. .not. present(t_in)) then
+         do k=1,npz
+!        qc = 1.-(Atm%q(i,j,k,liq_wat)+Atm%q(i,j,k,rainwat)+Atm%q(i,j,k,ice_wat)+Atm%q(i,j,k,snowwat))
+!        Atm%pt(i,j,k) = (gz_fv(k)-gz_fv(k+1))*qc/( rdgas*(pn1(i,k+1)-pn1(i,k))*(1.+zvir*Atm%q(i,j,k,sphum)) )
+            Atm%pt(i,j,k) = (gz_fv(k)-gz_fv(k+1))/( rdgas*(pn1(i,k+1)-pn1(i,k))*(1.+zvir*Atm%q(i,j,k,sphum)) )
+         enddo
+!------------------------------
+! Remap input T logarithmically in p.
+!------------------------------
+      else
+        do k=1,km
+            qp(i,k) = t_in(i,j,k)
+        enddo
+
+        call mappm(km, log(pe0), qp, npz, log(pe1), qn1, is,ie, 2, 4, Atm%ptop) ! pn0 and pn1 are higher-precision
+                                                                                ! and cannot be passed to mappm
+        do k=1,npz
+            Atm%pt(i,j,k) = qn1(i,k)
+        enddo
+      endif
+>>>>>>> rusty/master_test
       if ( .not. Atm%flagstruct%hydrostatic ) then
          do k=1,npz
             Atm%delz(i,j,k) = (gz_fv(k+1) - gz_fv(k)) / grav
@@ -3182,6 +4474,7 @@ contains
 
    enddo   ! i-loop
 
+<<<<<<< HEAD
 !-------------------------------------------------------------
 ! map omega
 !------- ------------------------------------------------------
@@ -3192,20 +4485,109 @@ contains
          enddo
       enddo
       call mappm(km, pe0, qp, npz, pe1, qn1, is,ie, -1, 4, Atm%ptop)
+=======
+!-----------------------------------------------------------------------
+! seperate cloud water and cloud ice from Jan-Huey Chen's HiRAM code
+! only use for NCEP IC and GFDL microphy
+!-----------------------------------------------------------------------
+   if (trim(source) /= source_fv3gfs) then
+      if ((Atm%flagstruct%nwat .eq. 3 .or. Atm%flagstruct%nwat .eq. 6) .and. &
+           (Atm%flagstruct%ncep_ic .or. Atm%flagstruct%nggps_ic)) then 
+         do k=1,npz
+            do i=is,ie
+
+               qn1(i,k) = Atm%q(i,j,k,liq_wat)
+               if (cld_amt .gt. 0) Atm%q(i,j,k,cld_amt) = 0.
+
+               if ( Atm%pt(i,j,k) > 273.16 ) then       ! > 0C all liq_wat
+                  Atm%q(i,j,k,liq_wat) = qn1(i,k)
+                  Atm%q(i,j,k,ice_wat) = 0.
+#ifdef ORIG_CLOUDS_PART
+               else if ( Atm%pt(i,j,k) < 258.16 ) then  ! < -15C all ice_wat
+                  Atm%q(i,j,k,liq_wat) = 0.
+                  Atm%q(i,j,k,ice_wat) = qn1(i,k)
+               else                                     ! between -15~0C: linear interpolation
+                  Atm%q(i,j,k,liq_wat) = qn1(i,k)*((Atm%pt(i,j,k)-258.16)/15.)
+                  Atm%q(i,j,k,ice_wat) = qn1(i,k) - Atm%q(i,j,k,liq_wat)
+               endif
+#else
+               else if ( Atm%pt(i,j,k) < 233.16 ) then  ! < -40C all ice_wat
+                  Atm%q(i,j,k,liq_wat) = 0.
+                  Atm%q(i,j,k,ice_wat) = qn1(i,k)
+               else
+                  if ( k.eq.1 ) then  ! between [-40,0]: linear interpolation
+                     Atm%q(i,j,k,liq_wat) = qn1(i,k)*((Atm%pt(i,j,k)-233.16)/40.)
+                     Atm%q(i,j,k,ice_wat) = qn1(i,k) - Atm%q(i,j,k,liq_wat)
+                  else
+                     if (Atm%pt(i,j,k)<258.16 .and. Atm%q(i,j,k-1,ice_wat)>1.e-5 ) then
+                        Atm%q(i,j,k,liq_wat) = 0.
+                        Atm%q(i,j,k,ice_wat) = qn1(i,k)
+                     else  ! between [-40,0]: linear interpolation
+                        Atm%q(i,j,k,liq_wat) = qn1(i,k)*((Atm%pt(i,j,k)-233.16)/40.)
+                        Atm%q(i,j,k,ice_wat) = qn1(i,k) - Atm%q(i,j,k,liq_wat)
+                     endif
+                  endif
+               endif
+#endif
+               if (Atm%flagstruct%nwat .eq. 6 ) then
+                  Atm%q(i,j,k,rainwat) = 0.
+                  Atm%q(i,j,k,snowwat) = 0.
+                  Atm%q(i,j,k,graupel) = 0.
+                  call mp_auto_conversion(Atm%q(i,j,k,liq_wat), Atm%q(i,j,k,rainwat),  &
+                       Atm%q(i,j,k,ice_wat), Atm%q(i,j,k,snowwat) )
+               endif
+            enddo
+         enddo
+      endif
+  endif ! data source /= FV3GFS GAUSSIAN NEMSIO FILE
+
+!-------------------------------------------------------------
+! map omega or w
+!------- ------------------------------------------------------
+   if ( (.not. Atm%flagstruct%hydrostatic) .and. (.not. Atm%flagstruct%ncep_ic) ) then
+      do k=1,km
+         do i=is,ie
+            qp(i,k) = omga(i,j,k)
+         enddo
+      enddo
+      call mappm(km, pe0, qp, npz, pe1, qn1, is,ie, -1, 4, Atm%ptop)
+    if (trim(source) == source_fv3gfs) then
+      do k=1,npz
+         do i=is,ie
+            atm%w(i,j,k) = qn1(i,k)
+         enddo
+      enddo
+    else
+>>>>>>> rusty/master_test
       do k=1,npz
          do i=is,ie
             atm%w(i,j,k) = qn1(i,k)/atm%delp(i,j,k)*atm%delz(i,j,k)
          enddo
       enddo
+<<<<<<< HEAD
+=======
+     endif
+>>>>>>> rusty/master_test
    endif
 
 5000 continue
 
 ! Add some diagnostics:
+<<<<<<< HEAD
   call p_maxmin('PS_model (mb)', Atm%ps(is:ie,js:je), is, ie, js, je, 1, 0.01)
   call p_maxmin('PT_model', Atm%pt(is:ie,js:je,1:npz), is, ie, js, je, npz, 1.)
   call pmaxmn('ZS_model', Atm%phis(is:ie,js:je)/grav, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
   call pmaxmn('ZS_EC', zh(is:ie,js:je,km+1), is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
+=======
+  if (.not. Atm%flagstruct%hydrostatic) call p_maxmin('delz_model', Atm%delz, is, ie, js, je, npz, 1.)
+  call p_maxmin('sphum_model', Atm%q(is:ie,js:je,1:npz,sphum), is, ie, js, je, npz, 1.)
+  call p_maxmin('liq_wat_model', Atm%q(is:ie,js:je,1:npz,liq_wat), is, ie, js, je, npz, 1.)
+  if (ice_wat .gt. 0) call p_maxmin('ice_wat_model', Atm%q(is:ie,js:je,1:npz,ice_wat), is, ie, js, je, npz, 1.)
+  call p_maxmin('PS_model (mb)', Atm%ps(is:ie,js:je), is, ie, js, je, 1, 0.01)
+  call p_maxmin('PT_model', Atm%pt(is:ie,js:je,1:npz), is, ie, js, je, npz, 1.)
+  call pmaxmn('ZS_model', Atm%phis(is:ie,js:je)/grav, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
+  call pmaxmn('ZS_data', zh(is:ie,js:je,km+1), is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
+>>>>>>> rusty/master_test
   do j=js,je
      do i=is,ie
         wk(i,j) = Atm%phis(i,j)/grav - zh(i,j,km+1)
@@ -3218,11 +4600,19 @@ contains
   enddo
   call pmaxmn('ZS_diff (m)', wk, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
 
+<<<<<<< HEAD
   if (.not.Atm%neststruct%nested) then
       call prt_gb_nh_sh('IFS_IC Z500', is,ie, js,je, z500, Atm%gridstruct%area_64(is:ie,js:je), Atm%gridstruct%agrid_64(is:ie,js:je,2))
       if ( .not. Atm%flagstruct%hydrostatic )  &
       call prt_height('fv3_IC Z500', is,ie, js,je, 3, npz, 500.E2, Atm%phis, Atm%delz, Atm%peln,   &
                        Atm%gridstruct%area_64(is:ie,js:je), Atm%gridstruct%agrid_64(is:ie,js:je,2))
+=======
+  if (.not.Atm%gridstruct%bounded_domain) then
+      call prt_gb_nh_sh('DATA_IC Z500', is,ie, js,je, z500, Atm%gridstruct%area_64(is:ie,js:je), Atm%gridstruct%agrid_64(is:ie,js:je,2))
+      if ( .not. Atm%flagstruct%hydrostatic )  &
+      call prt_height('fv3_IC Z500', is,ie, js,je, 3, npz, 500.E2, Atm%phis, Atm%delz, Atm%peln,   & 
+                      Atm%gridstruct%area_64(is:ie,js:je), Atm%gridstruct%agrid_64(is:ie,js:je,2))
+>>>>>>> rusty/master_test
   endif
 
   do j=js,je
@@ -3232,7 +4622,13 @@ contains
   enddo
   call pmaxmn('PS_diff (mb)', wk, is, ie, js, je, 1, 0.01, Atm%gridstruct%area_64, Atm%domain)
 
+<<<<<<< HEAD
  end subroutine remap_scalar_ec
+=======
+  if (is_master()) write(*,*) 'done remap_scalar'
+
+ end subroutine remap_scalar
+>>>>>>> rusty/master_test
 
  subroutine remap_scalar_single(Atm, km, npz, ak0, bk0, psc, qa, zh ,iq)
   type(fv_atmos_type), intent(inout) :: Atm
@@ -3386,7 +4782,12 @@ contains
   jsd = Atm%bd%jsd
   jed = Atm%bd%jed
 
+<<<<<<< HEAD
   if (Atm%neststruct%nested .or. Atm%flagstruct%regional) then
+=======
+!Not sure what this is for
+  if (Atm%gridstruct%bounded_domain) then
+>>>>>>> rusty/master_test
      do j=jsd,jed
      do i=isd,ied
         psd(i,j) = Atm%ps(i,j)
@@ -3472,6 +4873,10 @@ contains
 
   integer :: is,  ie,  js,  je
   integer :: isd, ied, jsd, jed
+<<<<<<< HEAD
+=======
+  integer :: ng
+>>>>>>> rusty/master_test
 
   is  = Atm%bd%is
   ie  = Atm%bd%ie
@@ -3481,6 +4886,10 @@ contains
   ied = Atm%bd%ied
   jsd = Atm%bd%jsd
   jed = Atm%bd%jed
+<<<<<<< HEAD
+=======
+  ng  = Atm%bd%ng
+>>>>>>> rusty/master_test
 
   do 5000 j=js,je
 
@@ -3556,14 +4965,21 @@ contains
   real :: rdlat(jm)
   real:: a1, b1, c1, c2, c3, c4
   real:: gzc, psc, pst
+<<<<<<< HEAD
 #ifdef MULTI_GASES
   real:: kappax, pkx
 #endif
+=======
+>>>>>>> rusty/master_test
   integer i,j,k, i1, i2, jc, i0, j0, iq
 ! integer  sphum, liq_wat, ice_wat, cld_amt
   integer  sphum
   integer :: is,  ie,  js,  je
+<<<<<<< HEAD
   integer :: isd, ied, jsd, jed
+=======
+  integer :: isd, ied, jsd, jed, ng
+>>>>>>> rusty/master_test
 
   is  = Atm%bd%is
   ie  = Atm%bd%ie
@@ -3573,6 +4989,10 @@ contains
   ied = Atm%bd%ied
   jsd = Atm%bd%jsd
   jed = Atm%bd%jed
+<<<<<<< HEAD
+=======
+  ng  = Atm%bd%ng
+>>>>>>> rusty/master_test
 
   !!NOTE: Only Atm is used in this routine.
   agrid => Atm%gridstruct%agrid
@@ -3602,7 +5022,10 @@ contains
         pn0(i,1) = log(ak0(1))
      enddo
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> rusty/master_test
      do i=is,ie
 
        if ( agrid(i,j,1)>lon(im) ) then
@@ -3676,11 +5099,15 @@ contains
           tp(i,k) = c1*ta(i1,jc,  k) + c2*ta(i2,jc,  k) +  &
                     c3*ta(i2,jc+1,k) + c4*ta(i1,jc+1,k)
 ! Virtual effect:
+<<<<<<< HEAD
 #ifdef MULTI_GASES
           tp(i,k) = tp(i,k)*virq(qp(i,k,:))
 #else
           tp(i,k) = tp(i,k)*(1.+zvir*qp(i,k,sphum))
 #endif
+=======
+          tp(i,k) = tp(i,k)*(1.+zvir*qp(i,k,sphum))
+>>>>>>> rusty/master_test
        enddo
 ! Tracers:
 
@@ -3701,6 +5128,7 @@ contains
            gz(k) = gz(k+1) + rdgas*tp(i,k)*(pn0(i,k+1)-pn0(i,k)) 
        enddo
 ! Only lowest layer potential temp is needed
+<<<<<<< HEAD
 #ifdef MULTI_GASES
        kappax = virqd(qp(i,km,:))/vicpqd(qp(i,km,:))
        pkx = (pk0(km+1)-pk0(km))*(kappa*(pn0(i,km+1)-pn0(i,km)))
@@ -3709,6 +5137,9 @@ contains
 #else
        pt0(km) = tp(i,km)/(pk0(km+1)-pk0(km))*(kappa*(pn0(i,km+1)-pn0(i,km)))
 #endif
+=======
+          pt0(km) = tp(i,km)/(pk0(km+1)-pk0(km))*(kappa*(pn0(i,km+1)-pn0(i,km)))
+>>>>>>> rusty/master_test
        if( Atm%phis(i,j)>gzc ) then
            do k=km,1,-1
               if( Atm%phis(i,j) <  gz(k)  .and.    &
@@ -3719,6 +5150,7 @@ contains
            enddo
        else
 ! Extrapolation into the ground
+<<<<<<< HEAD
 #ifdef MULTI_GASES
            pst = pk0(km+1) + (gzc-Atm%phis(i,j))/(cp_air*pt0(km)*pkx)
 #else
@@ -3732,6 +5164,13 @@ contains
 123    Atm%ps(i,j) = pst**(1./kappa)
 #endif
 #endif
+=======
+           pst = pk0(km+1) + (gzc-Atm%phis(i,j))/(cp_air*pt0(km))
+       endif
+
+123    Atm%ps(i,j) = pst**(1./kappa)
+#endif
+>>>>>>> rusty/master_test
      enddo   !i-loop
  
 
@@ -3794,11 +5233,15 @@ contains
       call mappm(km, pn0, tp, npz, pn1, qn1, is,ie, 1, 9, Atm%ptop)
       do k=1,npz
          do i=is,ie
+<<<<<<< HEAD
 #ifdef MULTI_GASES
             Atm%pt(i,j,k) = qn1(i,k)/virq(Atm%q(i,j,k,:))
 #else
             Atm%pt(i,j,k) = qn1(i,k)/(1.+zvir*Atm%q(i,j,k,sphum))
 #endif
+=======
+            Atm%pt(i,j,k) = qn1(i,k)/(1.+zvir*Atm%q(i,j,k,sphum))
+>>>>>>> rusty/master_test
          enddo
       enddo
 
@@ -3817,8 +5260,16 @@ contains
 
  end subroutine remap_xyz
 
+<<<<<<< HEAD
 !>@brief The subroutine 'cubed_a2d' transforms the wind from the A Grid to the D Grid.
  subroutine cubed_a2d( npx, npy, npz, ua, va, u, v, gridstruct, fv_domain, bd )
+=======
+
+ subroutine cubed_a2d( npx, npy, npz, ua, va, u, v, gridstruct, fv_domain, bd )
+
+! Purpose; Transform wind on A grid to D grid
+
+>>>>>>> rusty/master_test
   use mpp_domains_mod,    only: mpp_update_domains
 
   type(fv_grid_bounds_type), intent(IN) :: bd
@@ -3830,8 +5281,13 @@ contains
   type(domain2d), intent(INOUT) :: fv_domain
 ! local:
   real v3(3,bd%is-1:bd%ie+1,bd%js-1:bd%je+1)
+<<<<<<< HEAD
   real ue(3,bd%is-1:bd%ie+1,bd%js:bd%je+1)    !< 3D winds at edges
   real ve(3,bd%is:bd%ie+1,bd%js-1:bd%je+1)    !< 3D winds at edges
+=======
+  real ue(3,bd%is-1:bd%ie+1,bd%js:bd%je+1)    ! 3D winds at edges
+  real ve(3,bd%is:bd%ie+1,bd%js-1:bd%je+1)    ! 3D winds at edges
+>>>>>>> rusty/master_test
   real, dimension(bd%is:bd%ie):: ut1, ut2, ut3
   real, dimension(bd%js:bd%je):: vt1, vt2, vt3
   integer i, j, k, im2, jm2
@@ -3898,7 +5354,11 @@ contains
        enddo
 
 ! --- E_W edges (for v-wind):
+<<<<<<< HEAD
      if (.not. gridstruct%nested) then
+=======
+     if (.not. gridstruct%bounded_domain) then
+>>>>>>> rusty/master_test
      if ( is==1) then
        i = 1
        do j=js,je
@@ -3980,7 +5440,11 @@ contains
        enddo
      endif
 
+<<<<<<< HEAD
      endif ! .not. nested
+=======
+     endif ! .not. bounded_domain
+>>>>>>> rusty/master_test
 
      do j=js,je+1
         do i=is,ie
@@ -4002,6 +5466,10 @@ contains
  end subroutine cubed_a2d
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> rusty/master_test
  subroutine d2a3d(u, v,  ua,   va,  im,  jm, km, lon)
       integer, intent(in):: im, jm, km           ! Dimensions
       real, intent(in ) :: lon(im)
@@ -4077,6 +5545,10 @@ contains
   end subroutine d2a3d
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> rusty/master_test
   subroutine pmaxmin( qname, a, im, jm, fac )
 
       integer, intent(in):: im, jm
@@ -4176,11 +5648,19 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
  end subroutine p_maxmin
 
  subroutine fillq(im, km, nq, q, dp)
+<<<<<<< HEAD
    integer,  intent(in):: im            !< No. of longitudes
    integer,  intent(in):: km            !< No. of levels
    integer,  intent(in):: nq            !< Total number of tracers
    real , intent(in)::  dp(im,km)       !< pressure thickness
    real , intent(inout) :: q(im,km,nq)  !< tracer mixing ratio
+=======
+   integer,  intent(in):: im                ! No. of longitudes
+   integer,  intent(in):: km                ! No. of levels
+   integer,  intent(in):: nq                ! Total number of tracers
+   real , intent(in)::  dp(im,km)       ! pressure thickness
+   real , intent(inout) :: q(im,km,nq)   ! tracer mixing ratio
+>>>>>>> rusty/master_test
 ! !LOCAL VARIABLES:
    integer i, k, ic, k1
 
@@ -4226,7 +5706,10 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
 !$OMP parallel do default(none) shared(im,jm,levp,ak0,bk0,zs,ps,t,q,zh) &
 !$OMP                          private(pe0,pn0)
        do j = 1, jm
+<<<<<<< HEAD
 
+=======
+>>>>>>> rusty/master_test
          do i=1, im
            pe0(i,1) = ak0(1)
            pn0(i,1) = log(pe0(i,1))
@@ -4248,8 +5731,11 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
          enddo
        enddo
 
+<<<<<<< HEAD
        !if(is_master()) call pmaxmin( 'zh levp+1', zh(:,:,levp+1), im, jm, 1.)
 
+=======
+>>>>>>> rusty/master_test
   end subroutine compute_zh
 
   subroutine get_staggered_grid( is, ie, js, je, isd, ied, jsd, jed, pt_b, pt_c, pt_d)
@@ -4281,5 +5767,30 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
 
   end subroutine get_staggered_grid
 
+<<<<<<< HEAD
+=======
+  subroutine get_data_source(source,regional)
+!
+! This routine extracts the data source information if it is present in the datafile.
+!
+      character (len = 80) :: source
+      integer              :: ncids,sourceLength
+      logical :: lstatus,regional
+!
+! Use the fms call here so we can actually get the return code value.
+!
+      if (regional) then
+       lstatus = get_global_att_value('INPUT/gfs_data.nc',"source", source)
+      else
+       lstatus = get_global_att_value('INPUT/gfs_data.tile1.nc',"source", source)
+      endif
+      if (.not. lstatus) then
+         if (mpp_pe() == 0) write(0,*) 'INPUT source not found ',lstatus,' set source=No Source Attribute'
+         source='No Source Attribute'
+      endif
+  end subroutine get_data_source
+
+
+>>>>>>> rusty/master_test
  end module external_ic_mod
 

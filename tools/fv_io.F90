@@ -1,4 +1,5 @@
 !***********************************************************************
+<<<<<<< HEAD
 !*                   GNU Lesser General Public License                 
 !*
 !* This file is part of the FV3 dynamical core.
@@ -85,6 +86,41 @@ module fv_io_mod
 !         set_tracer_profile, get_tracer_index</td>
 !   </tr>
 ! </table>
+=======
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+!* If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
+!!!NOTE: Merging in the seasonal forecast initialization code
+!!!!     has proven problematic in the past, since many conflicts
+!!!!     occur. Leaving this for now --- lmh 10aug15
+
+module fv_io_mod
+
+  !<OVERVIEW>
+  ! Restart facilities for FV core
+  !</OVERVIEW>
+  !<DESCRIPTION>
+  ! This module writes and reads restart files for the FV core. Additionally
+  ! it provides setup and calls routines necessary to provide a complete restart
+  ! for the model.
+  !</DESCRIPTION>
+>>>>>>> rusty/master_test
 
   use fms_mod,                 only: file_exist
   use fms_io_mod,              only: fms_io_exit, get_tile_string, &
@@ -109,13 +145,24 @@ module fv_io_mod
   use fv_arrays_mod,           only: fv_atmos_type, fv_nest_BC_type_3D
   use fv_eta_mod,              only: set_external_eta
 
+<<<<<<< HEAD
   use fv_mp_mod,               only: ng, mp_gather, is_master
+=======
+  use fv_mp_mod,               only: mp_gather, is_master
+  use fms_io_mod,              only: set_domain
+  use fv_treat_da_inc_mod,     only: read_da_inc
+
+>>>>>>> rusty/master_test
   implicit none
   private
 
   public :: fv_io_init, fv_io_exit, fv_io_read_restart, remap_restart, fv_io_write_restart
   public :: fv_io_read_tracers, fv_io_register_restart, fv_io_register_nudge_restart
+<<<<<<< HEAD
   public :: fv_io_register_restart_BCs, fv_io_register_restart_BCs_NH
+=======
+  public :: fv_io_register_restart_BCs
+>>>>>>> rusty/master_test
   public :: fv_io_write_BCs, fv_io_read_BCs
 
   logical                       :: module_is_initialized = .FALSE.
@@ -126,6 +173,7 @@ module fv_io_mod
 
 contains 
 
+<<<<<<< HEAD
 
   !>@brief Initialize the fv core restart facilities
   subroutine fv_io_init()
@@ -140,6 +188,41 @@ contains
 
 
   !>@brief Write the fv core restart quantities 
+=======
+  !#####################################################################
+  ! <SUBROUTINE NAME="fv_io_init">
+  !
+  ! <DESCRIPTION>
+  ! Initialize the fv core restart facilities
+  ! </DESCRIPTION>
+  !
+  subroutine fv_io_init()
+    module_is_initialized = .TRUE.
+  end subroutine fv_io_init
+  ! </SUBROUTINE> NAME="fv_io_init"
+
+
+  !#####################################################################
+  ! <SUBROUTINE NAME="fv_io_exit">
+  !
+  ! <DESCRIPTION>
+  ! Close the fv core restart facilities
+  ! </DESCRIPTION>
+  !
+  subroutine fv_io_exit
+    module_is_initialized = .FALSE.
+  end subroutine fv_io_exit
+  ! </SUBROUTINE> NAME="fv_io_exit"
+
+
+
+  !#####################################################################
+  ! <SUBROUTINE NAME="fv_io_read_restart">
+  !
+  ! <DESCRIPTION>
+  ! Write the fv core restart quantities 
+  ! </DESCRIPTION>
+>>>>>>> rusty/master_test
   subroutine  fv_io_read_restart(fv_domain,Atm)
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
@@ -216,11 +299,18 @@ contains
     return
 
   end subroutine  fv_io_read_restart
+<<<<<<< HEAD
   
   !>@brief The subroutine 'fv_io_read_tracers' reads in only tracers from restart files.
   !>@details This subroutine is useful when initializing a cycled or nudged model 
   !! from an analysis that does not have a whole set of microphysical, aerosol, or 
   !! chemical tracers
+=======
+  ! </SUBROUTINE> NAME="fv_io_read_restart"
+  !#####################################################################
+
+
+>>>>>>> rusty/master_test
   subroutine fv_io_read_tracers(fv_domain,Atm)
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
@@ -268,10 +358,15 @@ contains
     return
 
   end subroutine  fv_io_read_tracers
+<<<<<<< HEAD
  
   !>@brief The subroutine 'remap_restart' remaps the model state from remap files 
   !! to a new set of Eulerian coordinates.
   !>@details Use if npz (run time z-dimension) /= npz_rst (restart z-dimension)
+=======
+
+
+>>>>>>> rusty/master_test
   subroutine  remap_restart(fv_domain,Atm)
   use fv_mapz_mod,       only: rst_remap
 
@@ -294,6 +389,10 @@ contains
     real, allocatable:: q_r(:,:,:,:), qdiag_r(:,:,:,:)
 !-------------------------------------------------------------------------
     integer npz, npz_rst, ng
+<<<<<<< HEAD
+=======
+    integer i,j,k
+>>>>>>> rusty/master_test
 
     npz     = Atm(1)%npz       ! run time z dimension
     npz_rst = Atm(1)%flagstruct%npz_rst   ! restart z dimension
@@ -345,6 +444,13 @@ contains
        stile_name = ''
     endif
 
+<<<<<<< HEAD
+=======
+!!!! A NOTE about file names
+!!! file_exist() needs the full relative path, including INPUT/
+!!! But register_restart_field ONLY looks in INPUT/ and so JUST needs the file name!!
+
+>>>>>>> rusty/master_test
 !    do n = 1, ntileMe
     n = 1
        fname = 'fv_core.res'//trim(stile_name)//'.nc'
@@ -370,8 +476,13 @@ contains
                      domain=fv_domain, tile_count=n)
        call restore_state(FV_tile_restart_r)
        call free_restart_type(FV_tile_restart_r)
+<<<<<<< HEAD
        fname = 'INPUT/fv_srf_wnd.res'//trim(stile_name)//'.nc'
        if (file_exist(fname)) then
+=======
+       fname = 'fv_srf_wnd.res'//trim(stile_name)//'.nc'
+       if (file_exist('INPUT/'//fname)) then
+>>>>>>> rusty/master_test
          call restore_state(Atm(n)%Rsf_restart)
          Atm(n)%flagstruct%srf_init = .true.
        else
@@ -381,15 +492,25 @@ contains
 
        if ( Atm(n)%flagstruct%fv_land ) then
 !--- restore data for mg_drag - if it exists
+<<<<<<< HEAD
          fname = 'INPUT/mg_drag.res'//trim(stile_name)//'.nc'
          if (file_exist(fname)) then
+=======
+         fname = 'mg_drag.res'//trim(stile_name)//'.nc'
+         if (file_exist('INPUT/'//fname)) then
+>>>>>>> rusty/master_test
            call restore_state(Atm(n)%Mg_restart)
          else
            call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
          endif
 !--- restore data for fv_land - if it exists
+<<<<<<< HEAD
          fname = 'INPUT/fv_land.res'//trim(stile_name)//'.nc'
          if (file_exist(fname)) then
+=======
+         fname = 'fv_land.res'//trim(stile_name)//'.nc'
+         if (file_exist('INPUT/'//fname)) then
+>>>>>>> rusty/master_test
            call restore_state(Atm(n)%Lnd_restart)
          else
            call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
@@ -397,7 +518,11 @@ contains
        endif
 
        fname = 'fv_tracer.res'//trim(stile_name)//'.nc'
+<<<<<<< HEAD
        if (file_exist('INPUT'//trim(fname))) then
+=======
+       if (file_exist('INPUT/'//fname)) then
+>>>>>>> rusty/master_test
          do nt = 1, ntprog
             call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
             call set_tracer_profile (MODEL_ATMOS, nt, q_r(isc:iec,jsc:jec,:,nt)  )
@@ -416,9 +541,28 @@ contains
          call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
        endif
 
+<<<<<<< HEAD
        call rst_remap(npz_rst, npz, isc, iec, jsc, jec, isd, ied, jsd, jed, ntracers, ntprog,      &
                       delp_r,      u_r,      v_r,      w_r,      delz_r,      pt_r,  q_r,  qdiag_r,&
                       Atm(n)%delp, Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%pt, Atm(n)%q, &
+=======
+!      ====== PJP added DA functionality ======
+       if (Atm(n)%flagstruct%read_increment) then
+          ! print point in middle of domain for a sanity check
+          i = (isc + iec)/2
+          j = (jsc + jec)/2
+          k = npz_rst/2
+          if( is_master() ) write(*,*) 'Calling read_da_inc',pt_r(i,j,k)
+          call read_da_inc(Atm(n), Atm(n)%domain, Atm(n)%bd, npz_rst, ntprog, &
+               u_r, v_r, q_r, delp_r, pt_r, isc, jsc, iec, jec )
+          if( is_master() ) write(*,*) 'Back from read_da_inc',pt_r(i,j,k)
+       endif
+!      ====== end PJP added DA functionailty======
+       
+       call rst_remap(npz_rst, npz, isc, iec, jsc, jec, isd, ied, jsd, jed, ntracers, ntprog,      &
+                      delp_r,      u_r,      v_r,      w_r,      delz_r,      pt_r,  q_r,  qdiag_r,&
+                      Atm(n)%delp, Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%pt, Atm(n)%q, & 
+>>>>>>> rusty/master_test
                       Atm(n)%qdiag, ak_r,  bk_r, Atm(n)%ptop, Atm(n)%ak, Atm(n)%bk,                &
                       Atm(n)%flagstruct%hydrostatic, Atm(n)%flagstruct%make_nh, Atm(n)%domain,     &
                       Atm(n)%gridstruct%square_domain)
@@ -441,9 +585,19 @@ contains
 
   end subroutine  remap_restart
 
+<<<<<<< HEAD
 !>@brief The subroutine 'fv_io_register_nudge_restart' registers restarts for SST
 !! fields used in HiRAM.
 !>@note This option is currently not supported.
+=======
+
+  !#####################################################################
+  ! <SUBROUTINE NAME="fv_io_register_nudge_restart">
+  !
+  ! <DESCRIPTION>
+  !   register restart nudge field to be written out to restart file. 
+  ! </DESCRIPTION>
+>>>>>>> rusty/master_test
   subroutine  fv_io_register_nudge_restart(Atm)
     type(fv_atmos_type), intent(inout) :: Atm(:)
     character(len=64) :: fname
@@ -451,6 +605,7 @@ contains
 
 ! use_ncep_sst may not be initialized at this point?
     call mpp_error(NOTE, 'READING FROM SST_restart DISABLED')
+<<<<<<< HEAD
 !!$    if ( use_ncep_sst .or. Atm(1)%nudge .or. Atm(1)%ncep_ic ) then
 !!$       fname = 'sst_ncep.res.nc'
 !!$       id_restart = register_restart_field(Atm(1)%SST_restart, fname, 'sst_ncep', sst_ncep)
@@ -460,6 +615,25 @@ contains
   end subroutine  fv_io_register_nudge_restart
 
 !>@brief The subroutine 'fv_io_register_restart' registers model restart fields.
+=======
+    if ( use_ncep_sst .or. Atm(1)%flagstruct%nudge .or. Atm(1)%flagstruct%ncep_ic ) then
+!    if ( Atm(1)%nudge .or. Atm(1)%ncep_ic ) then
+       fname = 'sst_ncep.res.nc'
+       id_restart = register_restart_field(Atm(1)%SST_restart, fname, 'sst_ncep', sst_ncep)
+       id_restart = register_restart_field(Atm(1)%SST_restart, fname, 'sst_anom', sst_anom)
+    endif
+
+  end subroutine  fv_io_register_nudge_restart
+  ! </SUBROUTINE> NAME="fv_io_register_nudge_restart"
+
+
+  !#####################################################################
+  ! <SUBROUTINE NAME="fv_io_register_restart">
+  !
+  ! <DESCRIPTION>
+  !   register restart field to be written out to restart file. 
+  ! </DESCRIPTION>
+>>>>>>> rusty/master_test
   subroutine  fv_io_register_restart(fv_domain,Atm)
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
@@ -492,7 +666,11 @@ contains
 
 ! use_ncep_sst may not be initialized at this point?
 #ifndef DYCORE_SOLO
+<<<<<<< HEAD
     call mpp_error(NOTE, 'READING FROM SST_RESTART DISABLED')
+=======
+!    call mpp_error(NOTE, 'READING FROM SST_RESTART DISABLED')
+>>>>>>> rusty/master_test
 !!$   if ( use_ncep_sst .or. Atm(1)%flagstruct%nudge .or. Atm(1)%flagstruct%ncep_ic ) then
 !!$       fname = 'sst_ncep'//trim(gn)//'.res.nc'
 !!$       id_restart = register_restart_field(Atm(1)%SST_restart, fname, 'sst_ncep', sst_ncep)
@@ -573,6 +751,7 @@ contains
                        domain=fv_domain, mandatory=.false., tile_count=n)
        enddo
 
+<<<<<<< HEAD
     enddo
 
   end subroutine  fv_io_register_restart
@@ -611,6 +790,50 @@ contains
        call save_restart(Atm(n)%Tra_restart, timestamp)
 
     end do
+=======
+       if ( Atm(n)%neststruct%nested ) then
+          call fv_io_register_restart_BCs(Atm(n)) !TODO put into fv_io_register_restart
+       endif
+
+    enddo
+
+  end subroutine  fv_io_register_restart
+  ! </SUBROUTINE> NAME="fv_io_register_restart"
+
+
+
+  !#####################################################################
+  ! <SUBROUTINE NAME="fv_io_write_restart">
+  !
+  ! <DESCRIPTION>
+  ! Write the fv core restart quantities 
+  ! </DESCRIPTION>
+  subroutine  fv_io_write_restart(Atm, timestamp)
+
+    type(fv_atmos_type),        intent(inout) :: Atm
+    character(len=*), optional, intent(in) :: timestamp
+
+!!$    if ( use_ncep_sst .or. Atm%flagstruct%nudge .or. Atm%flagstruct%ncep_ic ) then
+!!$       call mpp_error(NOTE, 'READING FROM SST_RESTART DISABLED')
+!!$       !call save_restart(Atm%SST_restart, timestamp)
+!!$    endif
+ 
+    if ( (use_ncep_sst .or. Atm%flagstruct%nudge) .and. .not. Atm%gridstruct%nested ) then
+       call save_restart(Atm%SST_restart, timestamp)
+    endif
+
+    call save_restart(Atm%Fv_restart, timestamp)
+    call save_restart(Atm%Fv_tile_restart, timestamp)
+    call save_restart(Atm%Rsf_restart, timestamp)
+
+    if ( Atm%flagstruct%fv_land ) then
+       call save_restart(Atm%Mg_restart, timestamp)
+       call save_restart(Atm%Lnd_restart, timestamp)
+    endif
+
+    call save_restart(Atm%Tra_restart, timestamp)
+
+>>>>>>> rusty/master_test
 
   end subroutine  fv_io_write_restart
 
@@ -904,8 +1127,15 @@ contains
 
   end subroutine register_bcs_3d
 
+<<<<<<< HEAD
 !>@brief The subroutine 'fv_io_register_restart_BCs' registers restarts for 
 !! nested-grid boundary conditions.
+=======
+
+  ! </SUBROUTINE> NAME="fv_io_regsiter_restart_BCs"
+  !#####################################################################
+
+>>>>>>> rusty/master_test
   subroutine fv_io_register_restart_BCs(Atm)
     type(fv_atmos_type),        intent(inout) :: Atm
 
@@ -938,12 +1168,22 @@ contains
 #ifndef SW_DYNAMICS
     call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
                          fname_ne, fname_sw, 'pt', Atm%pt, Atm%neststruct%pt_BC)
+<<<<<<< HEAD
     if ((.not.Atm%flagstruct%hydrostatic) .and. (.not.Atm%flagstruct%make_nh)) then
        if (is_master()) print*, 'fv_io_register_restart_BCs: REGISTERING NH BCs', Atm%flagstruct%hydrostatic, Atm%flagstruct%make_nh
       call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
                            fname_ne, fname_sw, 'w', Atm%w, Atm%neststruct%w_BC, mandatory=.false.)
       call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
                            fname_ne, fname_sw, 'delz', Atm%delz, Atm%neststruct%delz_BC, mandatory=.false.)
+=======
+    if ((.not.Atm%flagstruct%hydrostatic)) then 
+       if (is_master()) print*, 'fv_io_register_restart_BCs: REGISTERING NH BCs'
+      call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                           fname_ne, fname_sw, 'w', Atm%w, Atm%neststruct%w_BC, mandatory=.false.)
+      call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                           fname_ne, fname_sw, 'delz', var_bc=Atm%neststruct%delz_BC, mandatory=.false.)
+!                           fname_ne, fname_sw, 'delz', Atm%delz, Atm%neststruct%delz_BC, mandatory=.false.)
+>>>>>>> rusty/master_test
     endif
 #ifdef USE_COND
        call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
@@ -964,13 +1204,17 @@ contains
                          fname_ne, fname_sw, 'vc', var_bc=Atm%neststruct%vc_BC, jstag=1)
     call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
                          fname_ne, fname_sw, 'divg', var_bc=Atm%neststruct%divg_BC, istag=1,jstag=1, mandatory=.false.)
+<<<<<<< HEAD
     Atm%neststruct%divg_BC%initialized = field_exist(fname_ne, 'divg_north_t1', Atm%domain)
 
+=======
+>>>>>>> rusty/master_test
 
     return
   end subroutine fv_io_register_restart_BCs
 
 
+<<<<<<< HEAD
   subroutine fv_io_register_restart_BCs_NH(Atm)
     type(fv_atmos_type),        intent(inout) :: Atm
 
@@ -995,6 +1239,8 @@ contains
 
 
 !>@brief The subroutine 'fv_io_write_BCs' writes BCs to a restart file.
+=======
+>>>>>>> rusty/master_test
   subroutine fv_io_write_BCs(Atm, timestamp)
     type(fv_atmos_type), intent(inout) :: Atm
     character(len=*),    intent(in), optional :: timestamp
@@ -1005,13 +1251,27 @@ contains
     return
   end subroutine fv_io_write_BCs
 
+<<<<<<< HEAD
 !>@brief The subroutine 'fv_io_read_BCs' reads BCs from a restart file.
+=======
+
+>>>>>>> rusty/master_test
   subroutine fv_io_read_BCs(Atm)
     type(fv_atmos_type), intent(inout) :: Atm
 
     call restore_state_border(Atm%neststruct%BCfile_ne)
     call restore_state_border(Atm%neststruct%BCfile_sw)
 
+<<<<<<< HEAD
+=======
+    !These do not work yet
+    !need to modify register_bcs_?d to get ids for registered variables, and then use query_initialized_id
+    !Atm%neststruct%divg_BC%initialized = field_exist(fname_ne, 'divg_north_t1', Atm%domain)
+    !Atm%neststruct%w_BC%initialized    = field_exist(fname_ne, 'w_north_t1', Atm%domain)
+    !Atm%neststruct%delz_BC%initialized = field_exist(fname_ne, 'delz_north_t1', Atm%domain)
+    !if (is_master()) print*, ' BCs: ', Atm%neststruct%divg_BC%initialized, Atm%neststruct%w_BC%initialized, Atm%neststruct%delz_BC%initialized
+
+>>>>>>> rusty/master_test
     return
   end subroutine fv_io_read_BCs
 

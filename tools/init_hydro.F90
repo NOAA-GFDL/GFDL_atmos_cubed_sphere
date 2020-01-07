@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
@@ -17,11 +18,32 @@
 !*
 !* You should have received a copy of the GNU Lesser General Public
 !* License along with the FV3 dynamical core.  
+=======
+!***********************************************************************
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+>>>>>>> rusty/master_test
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
 module init_hydro_mod
 
+<<<<<<< HEAD
 ! <table>
 ! <tr>
 !     <th>Module Name</th>
@@ -56,6 +78,8 @@ module init_hydro_mod
 ! </table>
 
 
+=======
+>>>>>>> rusty/master_test
       use constants_mod,      only: grav, rdgas, rvgas
       use fv_grid_utils_mod,  only: g_sum
       use fv_mp_mod,          only: is_master
@@ -64,9 +88,12 @@ module init_hydro_mod
       use mpp_domains_mod,    only: domain2d
       use fv_arrays_mod,      only: R_GRID
 !     use fv_diagnostics_mod, only: prt_maxmin
+<<<<<<< HEAD
 #ifdef MULTI_GASES
       use multi_gases_mod,  only:  virq, virqd, vicpqd
 #endif
+=======
+>>>>>>> rusty/master_test
 
       implicit none
       private
@@ -76,6 +103,7 @@ module init_hydro_mod
 contains
 
 !-------------------------------------------------------------------------------
+<<<<<<< HEAD
 !>@brief the subroutine 'p_var' computes auxiliary pressure variables for 
 !! a hydrostatic state.
 !>@details The variables are: surfce, interface, layer-mean pressure, exener function
@@ -95,6 +123,24 @@ contains
    real, intent(in):: dry_mass, cappa, ptop, ptop_min
    real, intent(in   )::   pt(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
    real, intent(inout):: delz(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
+=======
+ subroutine p_var(km, ifirst, ilast, jfirst, jlast, ptop, ptop_min,    &
+                  delp, delz, pt, ps,  pe, peln, pk, pkz, cappa, q, ng, nq, area,   &
+                  dry_mass, adjust_dry_mass, mountain, moist_phys,      &
+                  hydrostatic, nwat, domain, adiabatic, make_nh)
+               
+! Given (ptop, delp) computes (ps, pk, pe, peln, pkz)
+! Input:
+   integer,  intent(in):: km
+   integer,  intent(in):: ifirst, ilast            ! Longitude strip
+   integer,  intent(in):: jfirst, jlast            ! Latitude strip
+   integer,  intent(in):: nq, nwat
+   integer,  intent(in):: ng
+   logical, intent(in):: adjust_dry_mass, mountain, moist_phys, hydrostatic, adiabatic
+   real, intent(in):: dry_mass, cappa, ptop, ptop_min
+   real, intent(in   )::   pt(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
+   real, intent(inout):: delz(ifirst:ilast,jfirst:jlast, km)
+>>>>>>> rusty/master_test
    real, intent(inout):: delp(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
    real, intent(inout)::    q(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km, nq)
    real(kind=R_GRID), intent(IN)   :: area(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)
@@ -102,8 +148,13 @@ contains
 ! Output:
    real, intent(out) ::   ps(ifirst-ng:ilast+ng, jfirst-ng:jlast+ng)
    real, intent(out) ::   pk(ifirst:ilast, jfirst:jlast, km+1)
+<<<<<<< HEAD
    real, intent(out) ::   pe(ifirst-1:ilast+1,km+1,jfirst-1:jlast+1) !< Ghosted Edge pressure
    real, intent(out) :: peln(ifirst:ilast, km+1, jfirst:jlast)    !< Edge pressure
+=======
+   real, intent(out) ::   pe(ifirst-1:ilast+1,km+1,jfirst-1:jlast+1) ! Ghosted Edge pressure
+   real, intent(out) :: peln(ifirst:ilast, km+1, jfirst:jlast)    ! Edge pressure
+>>>>>>> rusty/master_test
    real, intent(out) ::  pkz(ifirst:ilast, jfirst:jlast, km)
    type(domain2d), intent(IN) :: domain
 
@@ -112,7 +163,11 @@ contains
    integer  rainwat, snowwat, graupel          ! GFDL Cloud Microphysics
    real ratio(ifirst:ilast)
    real pek, lnp, ak1, rdg, dpd, zvir
+<<<<<<< HEAD
    integer i, j, k, n
+=======
+   integer i, j, k
+>>>>>>> rusty/master_test
 
 ! Check dry air mass & compute the adjustment amount:
    if ( adjust_dry_mass )      &
@@ -176,6 +231,15 @@ contains
       endif
    enddo
 
+<<<<<<< HEAD
+=======
+   if ( adiabatic  ) then
+      zvir = 0.
+   else
+      zvir = rvgas/rdgas - 1.
+   endif
+   sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
+>>>>>>> rusty/master_test
 
    if ( .not.hydrostatic ) then
 
@@ -183,11 +247,19 @@ contains
       if ( present(make_nh) ) then
           if ( make_nh ) then
              delz = 1.e25 
+<<<<<<< HEAD
 !$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,delz,rdg,pt,peln)
              do k=1,km
                 do j=jfirst,jlast
                    do i=ifirst,ilast
                       delz(i,j,k) = rdg*pt(i,j,k)*(peln(i,k+1,j)-peln(i,k,j))
+=======
+!$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,delz,rdg,pt,peln,zvir,sphum,q)
+             do k=1,km
+                do j=jfirst,jlast
+                   do i=ifirst,ilast
+                      delz(i,j,k) = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
+>>>>>>> rusty/master_test
                    enddo
                 enddo
              enddo
@@ -199,6 +271,7 @@ contains
 !------------------------------------------------------------------
 ! The following form is the same as in "fv_update_phys.F90"
 !------------------------------------------------------------------
+<<<<<<< HEAD
        zvir = rvgas/rdgas - 1.
        sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
 !$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,pkz,cappa,rdg, &
@@ -214,11 +287,21 @@ contains
                 pkz(i,j,k) = exp( cappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
                                 (1.+zvir*q(i,j,k,sphum))/delz(i,j,k)) )
 #endif
+=======
+!$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,pkz,cappa,rdg, &
+!$OMP                                  delp,pt,zvir,q,sphum,delz)
+       do k=1,km
+          do j=jfirst,jlast
+             do i=ifirst,ilast
+                pkz(i,j,k) = exp( cappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+                                (1.+zvir*q(i,j,k,sphum))/delz(i,j,k)) )
+>>>>>>> rusty/master_test
              enddo
           enddo
        enddo
      else
 !$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,pkz,cappa,rdg, &
+<<<<<<< HEAD
 #ifdef MULTI_GASES
 !$OMP                              q,                                              &
 #endif
@@ -232,6 +315,13 @@ contains
 #else
                 pkz(i,j,k) = exp( cappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)) )
 #endif
+=======
+!$OMP                                  delp,pt,delz)
+       do k=1,km
+          do j=jfirst,jlast
+             do i=ifirst,ilast
+                pkz(i,j,k) = exp( cappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)) )
+>>>>>>> rusty/master_test
              enddo
           enddo
        enddo
@@ -247,10 +337,17 @@ contains
                     cappa,   ptop, ps, delp, q,  nq, area,  nwat,  &
                     dry_mass, adjust_dry_mass, moist_phys, dpd, domain)
 
+<<<<<<< HEAD
 ! INPUT PARAMETERS:
       integer km
       integer ifirst, ilast  !< Longitude strip
       integer jfirst, jlast  !< Latitude strip    
+=======
+! !INPUT PARAMETERS:
+      integer km
+      integer ifirst, ilast  ! Long strip
+      integer jfirst, jlast  ! Latitude strip    
+>>>>>>> rusty/master_test
       integer nq, ng, nwat
       real, intent(in):: dry_mass
       real, intent(in):: ptop
@@ -260,6 +357,7 @@ contains
       real(kind=R_GRID), intent(IN) :: area(ifirst-ng:ilast+ng, jfirst-ng:jlast+ng)
       type(domain2d), intent(IN) :: domain
 
+<<<<<<< HEAD
 ! INPUT/OUTPUT PARAMETERS:     
       real, intent(in)::   q(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km,nq)
       real, intent(in)::delp(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km)     
@@ -267,6 +365,15 @@ contains
       real, intent(out):: dpd
 ! Local
       real  psd(ifirst:ilast,jfirst:jlast)     !< surface pressure due to dry air mass
+=======
+! !INPUT/OUTPUT PARAMETERS:     
+      real, intent(in)::   q(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km,nq)
+      real, intent(in)::delp(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km)     !
+      real, intent(inout):: ps(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)        ! surface pressure
+      real, intent(out):: dpd
+! Local
+      real  psd(ifirst:ilast,jfirst:jlast)     ! surface pressure  due to dry air mass
+>>>>>>> rusty/master_test
       real  psmo, psdry
       integer i, j, k
 
@@ -323,8 +430,13 @@ contains
 
  end subroutine drymadj
 
+<<<<<<< HEAD
 !>@brief The subroutine 'hydro_eq' computes a hydrostatically balanced and isothermal
 !! basic state from input heights.
+=======
+
+
+>>>>>>> rusty/master_test
  subroutine hydro_eq(km, is, ie, js, je, ps, hs, drym, delp, ak, bk,  &
                      pt, delz, area, ng, mountain, hydrostatic, hybrid_z, domain)
 ! Input: 
@@ -341,7 +453,11 @@ contains
   real, intent(out):: ps(is-ng:ie+ng,js-ng:je+ng)
   real, intent(out)::   pt(is-ng:ie+ng,js-ng:je+ng,km)
   real, intent(out):: delp(is-ng:ie+ng,js-ng:je+ng,km)
+<<<<<<< HEAD
   real, intent(inout):: delz(is-ng:ie+ng,js-ng:je+ng,km)
+=======
+  real, intent(inout):: delz(is:,js:,1:)
+>>>>>>> rusty/master_test
 ! Local
   real   gz(is:ie,km+1)
   real   ph(is:ie,km+1)

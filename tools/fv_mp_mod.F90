@@ -1,4 +1,5 @@
 !***********************************************************************
+<<<<<<< HEAD
 !*                   GNU Lesser General Public License                 
 !*
 !* This file is part of the FV3 dynamical core.
@@ -68,6 +69,33 @@
 !   </tr>
 ! </table>
 
+=======
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+!* If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
+!------------------------------------------------------------------------------
+!BOP
+!
+! !MODULE: fv_mp_mod --- SPMD parallel decompostion/communication module
+      module fv_mp_mod
+
+>>>>>>> rusty/master_test
 #if defined(SPMD)
 ! !USES:
       use fms_mod,         only : fms_init, fms_end
@@ -91,6 +119,7 @@
       use mpp_domains_mod, only : mpp_group_update_initialized, mpp_do_group_update
       use mpp_domains_mod, only : mpp_create_group_update,mpp_reset_group_update_field
       use mpp_domains_mod, only : group_halo_update_type => mpp_group_update_type
+<<<<<<< HEAD
       use mpp_parameter_mod, only : WUPDATE, EUPDATE, SUPDATE, NUPDATE, XUPDATE, YUPDATE
       use fv_arrays_mod, only: fv_atmos_type
       use fms_io_mod, only: set_domain
@@ -99,6 +128,13 @@
       use mpp_domains_mod, only : mpp_define_nest_domains, nest_domain_type
       use mpp_domains_mod, only : mpp_get_C2F_index, mpp_update_nest_fine
       use mpp_domains_mod, only : mpp_get_F2C_index, mpp_update_nest_coarse
+=======
+      use mpp_domains_mod, only: nest_domain_type
+      use mpp_parameter_mod, only : WUPDATE, EUPDATE, SUPDATE, NUPDATE, XUPDATE, YUPDATE
+      use fv_arrays_mod, only: fv_atmos_type, fv_grid_bounds_type
+      use fms_io_mod, only: set_domain
+      use mpp_mod, only : mpp_get_current_pelist, mpp_set_current_pelist
+>>>>>>> rusty/master_test
       use mpp_domains_mod, only : mpp_get_domain_shift
       use ensemble_manager_mod, only : get_ensemble_id
 
@@ -106,6 +142,10 @@
       private
 
       integer, parameter:: ng    = 3     ! Number of ghost zones required
+<<<<<<< HEAD
+=======
+      integer, parameter :: MAX_NNEST=20, MAX_NTILE=50
+>>>>>>> rusty/master_test
 
 #include "mpif.h"
       integer, parameter :: XDir=1
@@ -123,7 +163,10 @@
 
       logical :: master
 
+<<<<<<< HEAD
       type(nest_domain_type), allocatable, dimension(:)       :: nest_domain
+=======
+>>>>>>> rusty/master_test
       integer :: this_pe_grid = 0
       integer, EXTERNAL :: omp_get_thread_num, omp_get_num_threads      
 
@@ -136,21 +179,34 @@
       integer :: isd, ied, jsd, jed
       integer :: isc, iec, jsc, jec
 
+<<<<<<< HEAD
 #ifdef CCPP
       public commglobal
 #endif
+=======
+      integer, allocatable :: grids_master_procs(:)
+      integer, dimension(MAX_NNEST) :: tile_fine = 0 !Global index of LAST tile in a mosaic
+      type(nest_domain_type) :: global_nest_domain !ONE structure for ALL levels of nesting
+
+>>>>>>> rusty/master_test
       public mp_start, mp_assign_gid, mp_barrier, mp_stop!, npes
       public domain_decomp, mp_bcst, mp_reduce_max, mp_reduce_sum, mp_gather
       public mp_reduce_min
       public fill_corners, XDir, YDir
       public switch_current_domain, switch_current_Atm, broadcast_domains
       public is_master, setup_master
+<<<<<<< HEAD
       !The following variables are declared public by this module for convenience;
       !they will need to be switched when domains are switched
 !!! CLEANUP: ng is a PARAMETER and is OK to be shared by a use statement
       public is, ie, js, je, isd, ied, jsd, jed, isc, iec, jsc, jec, ng
       public start_group_halo_update, complete_group_halo_update
       public group_halo_update_type
+=======
+      public start_group_halo_update, complete_group_halo_update
+      public group_halo_update_type, grids_master_procs, tile_fine
+      public global_nest_domain, MAX_NNEST, MAX_NTILE
+>>>>>>> rusty/master_test
 
       interface start_group_halo_update
         module procedure start_var_group_update_2d
@@ -184,6 +240,7 @@
         MODULE PROCEDURE fill_corners_dgrid_r8
       END INTERFACE
 
+<<<<<<< HEAD
       !> The interface 'mp_bcast contains routines that call SPMD broadcast  
       !! (one-to-many communication).
       INTERFACE mp_bcst
@@ -194,10 +251,17 @@
         MODULE PROCEDURE mp_bcst_1d_r8
         MODULE PROCEDURE mp_bcst_2d_r4
         MODULE PROCEDURE mp_bcst_2d_r8
+=======
+      INTERFACE mp_bcst
+        MODULE PROCEDURE mp_bcst_i4
+        MODULE PROCEDURE mp_bcst_r4
+        MODULE PROCEDURE mp_bcst_r8
+>>>>>>> rusty/master_test
         MODULE PROCEDURE mp_bcst_3d_r4
         MODULE PROCEDURE mp_bcst_3d_r8
         MODULE PROCEDURE mp_bcst_4d_r4
         MODULE PROCEDURE mp_bcst_4d_r8
+<<<<<<< HEAD
         MODULE PROCEDURE mp_bcst_1d_i
         MODULE PROCEDURE mp_bcst_2d_i
         MODULE PROCEDURE mp_bcst_3d_i
@@ -207,19 +271,29 @@
       !> The interface 'mp_reduce_min' contains routines that call SPMD_REDUCE. 
       !! The routines compute the minima of values and place the
       !! absolute minimum value in a result. 
+=======
+        MODULE PROCEDURE mp_bcst_3d_i8
+        MODULE PROCEDURE mp_bcst_4d_i8
+      END INTERFACE
+
+>>>>>>> rusty/master_test
       INTERFACE mp_reduce_min
         MODULE PROCEDURE mp_reduce_min_r4
         MODULE PROCEDURE mp_reduce_min_r8
       END INTERFACE
 
+<<<<<<< HEAD
       !> The interface 'mp_reduce_max' contains routines that call SPMD_REDUCE. 
       !! The routines compute the maxima of values and place the
       !! absolute maximum value in a result. 
+=======
+>>>>>>> rusty/master_test
       INTERFACE mp_reduce_max
         MODULE PROCEDURE mp_reduce_max_r4_1d
         MODULE PROCEDURE mp_reduce_max_r4
         MODULE PROCEDURE mp_reduce_max_r8_1d
         MODULE PROCEDURE mp_reduce_max_r8
+<<<<<<< HEAD
         MODULE PROCEDURE mp_reduce_max_i
       END INTERFACE
 
@@ -242,6 +316,19 @@
       !! The routines aggregate elements from many processes into one process. 
       ! WARNING only works with one level (ldim == 1)
       INTERFACE mp_gather 
+=======
+        MODULE PROCEDURE mp_reduce_max_i4
+      END INTERFACE
+
+      INTERFACE mp_reduce_sum
+        MODULE PROCEDURE mp_reduce_sum_r4
+        MODULE PROCEDURE mp_reduce_sum_r4_1d
+        MODULE PROCEDURE mp_reduce_sum_r8
+        MODULE PROCEDURE mp_reduce_sum_r8_1d
+      END INTERFACE
+
+      INTERFACE mp_gather !WARNING only works with one level (ldim == 1)
+>>>>>>> rusty/master_test
         MODULE PROCEDURE mp_gather_4d_r4
         MODULE PROCEDURE mp_gather_3d_r4
         MODULE PROCEDURE mp_gather_3d_r8
@@ -260,7 +347,13 @@ contains
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+<<<<<<< HEAD
 !>@brief The subroutine 'mp_start' starts SPMD processes
+=======
+!
+!     mp_start :: Start SPMD processes
+!
+>>>>>>> rusty/master_test
         subroutine mp_start(commID, halo_update_type_in)
           integer, intent(in), optional :: commID
           integer, intent(in), optional :: halo_update_type_in
@@ -319,7 +412,13 @@ contains
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+<<<<<<< HEAD
 !>@brief The subroutine 'mp_barrier' waits for all SPMD processes
+=======
+!
+!     mp_barrier :: Wait for all SPMD processes
+!
+>>>>>>> rusty/master_test
       subroutine mp_barrier()
         
          call MPI_BARRIER(commglobal, ierror)
@@ -331,7 +430,13 @@ contains
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+<<<<<<< HEAD
 !>@brief The subroutine 'mp_stop' stops all SPMD processes
+=======
+!
+!     mp_stop :: Stop SPMD processes
+!
+>>>>>>> rusty/master_test
       subroutine mp_stop()
 
          call MPI_BARRIER(commglobal, ierror)
@@ -346,6 +451,7 @@ contains
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+<<<<<<< HEAD
 !>@brief The subroutine 'domain_decomp' sets up the domain decomposition.
       subroutine domain_decomp(npx,npy,nregions,grid_type,nested,Atm,layout,io_layout)
 
@@ -353,6 +459,17 @@ contains
          integer, intent(INOUT) :: nregions
          logical, intent(IN):: nested
          type(fv_atmos_type), intent(INOUT), target :: Atm
+=======
+!
+!     domain_decomp :: Setup domain decomp
+!
+      subroutine domain_decomp(npx,npy,nregions,grid_type,nested,layout,io_layout,bd,tile,square_domain,&
+           npes_per_tile,domain,domain_for_coupler,num_contact,pelist)
+
+         integer, intent(IN)  :: npx,npy,grid_type
+         integer, intent(INOUT) :: nregions, tile
+         logical, intent(IN):: nested
+>>>>>>> rusty/master_test
          integer, intent(INOUT) :: layout(2), io_layout(2)
 
          integer, allocatable :: pe_start(:), pe_end(:)
@@ -366,13 +483,22 @@ contains
          integer i
          integer :: npes_x, npes_y 
 
+<<<<<<< HEAD
          integer, pointer :: pelist(:), grid_number, num_contact, npes_per_tile
          logical, pointer :: square_domain
          type(domain2D), pointer :: domain, domain_for_coupler
+=======
+         integer, intent(INOUT) :: pelist(:)
+         integer, intent(OUT) :: num_contact, npes_per_tile
+         logical, intent(OUT) :: square_domain
+         type(domain2D), intent(OUT) :: domain, domain_for_coupler
+         type(fv_grid_bounds_type), intent(INOUT) :: bd
+>>>>>>> rusty/master_test
 
          nx = npx-1
          ny = npy-1
 
+<<<<<<< HEAD
          !! Init pointers
          pelist                        => Atm%pelist
          grid_number                   => Atm%grid_number
@@ -385,6 +511,11 @@ contains
          npes_y = layout(2)
 
 
+=======
+         npes_x = layout(1)
+         npes_y = layout(2)
+
+>>>>>>> rusty/master_test
          call mpp_domains_init(MPP_DOMAIN_TIME)
 
          select case(nregions)
@@ -410,7 +541,11 @@ contains
                   npes_y = layout(2)
                endif
 
+<<<<<<< HEAD
                if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  Atm%gridstruct%square_domain = .true.
+=======
+               if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  square_domain = .true.
+>>>>>>> rusty/master_test
 
                if ( (npx/npes_x < ng) .or. (npy/npes_y < ng) ) then
                   write(*,310) npes_x, npes_y, npx/npes_x, npy/npes_y
@@ -479,7 +614,11 @@ contains
                npes_y = layout(2)
             endif
 
+<<<<<<< HEAD
             if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  Atm%gridstruct%square_domain = .true.
+=======
+            if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  square_domain = .true.
+>>>>>>> rusty/master_test
 
             if ( (npx/npes_x < ng) .or. (npy/npes_y < ng) ) then
                write(*,310) npes_x, npes_y, npx/npes_x, npy/npes_y
@@ -628,8 +767,12 @@ contains
                if( nregions .NE. 1 ) then
                   call mpp_error(FATAL, 'domain_decomp: nregions should be 1 for nested region, contact developer')
                endif
+<<<<<<< HEAD
                tile_id(1) = 7   ! currently we assuming the nested tile is nested in one face of cubic sphere grid.
                                 ! we need a more general way to deal with nested grid tile id.
+=======
+               tile_id(1) = 7   ! TODO need update for multiple nests
+>>>>>>> rusty/master_test
             else
                do n = 1, nregions
                   tile_id(n) = n
@@ -656,6 +799,7 @@ contains
        deallocate(istart2, iend2, jstart2, jend2)
 
        !--- find the tile number
+<<<<<<< HEAD
        Atm%tile = (gid-pelist(1))/npes_per_tile+1 
        if (ANY(pelist == gid)) then
           npes_this_grid = npes_per_tile*nregions
@@ -677,6 +821,29 @@ contains
           Atm%bd%jsc = js
           Atm%bd%iec = ie
           Atm%bd%jec = je
+=======
+       tile = (gid-pelist(1))/npes_per_tile+1 
+       if (ANY(pelist == gid)) then
+          npes_this_grid = npes_per_tile*nregions
+          tile = tile
+          call mpp_get_compute_domain( domain, is,  ie,  js,  je  )
+          call mpp_get_data_domain   ( domain, isd, ied, jsd, jed )
+          
+          bd%is = is
+          bd%js = js
+          bd%ie = ie
+          bd%je = je
+
+          bd%isd = isd
+          bd%jsd = jsd
+          bd%ied = ied
+          bd%jed = jed
+
+          bd%isc = is
+          bd%jsc = js
+          bd%iec = ie
+          bd%jec = je
+>>>>>>> rusty/master_test
 
           if (debug .and. nregions==1) then
              tile=1
@@ -687,6 +854,7 @@ contains
 200       format(i4.4, ' ', i4.4, ' ', i4.4, ' ', i4.4, ' ', i4.4, ' ')
        else
           
+<<<<<<< HEAD
           Atm%bd%is = 0
           Atm%bd%js = 0
           Atm%bd%ie = -1
@@ -701,6 +869,22 @@ contains
           Atm%bd%jsc = 0
           Atm%bd%iec = -1
           Atm%bd%jec = -1
+=======
+          bd%is = 0
+          bd%js = 0
+          bd%ie = -1
+          bd%je = -1
+
+          bd%isd = 0
+          bd%jsd = 0
+          bd%ied = -1
+          bd%jed = -1
+
+          bd%isc = 0
+          bd%jsc = 0
+          bd%iec = -1
+          bd%jec = -1
+>>>>>>> rusty/master_test
 
        endif
 
@@ -710,6 +894,7 @@ contains
 !-------------------------------------------------------------------------------
 
 subroutine start_var_group_update_2d(group, array, domain, flags, position, whalo, ehalo, shalo, nhalo, complete)
+<<<<<<< HEAD
   type(group_halo_update_type), intent(inout) :: group !< The data type that store information for group update
   real, dimension(:,:),         intent(inout) :: array !< The array which is having its halos points exchanged
   type(domain2D),               intent(inout) :: domain !< contains domain information
@@ -718,6 +903,15 @@ subroutine start_var_group_update_2d(group, array, domain, flags, position, whal
   integer,      optional,       intent(in)    :: whalo, ehalo, shalo, nhalo
   logical,      optional,       intent(in)    :: complete !< Optional argument indicating whether the halo updates
                                                           !! should be initiated immediately or wait for second pass_..._start call
+=======
+  type(group_halo_update_type), intent(inout) :: group
+  real, dimension(:,:),         intent(inout) :: array
+  type(domain2D),               intent(inout) :: domain
+  integer,      optional,       intent(in)    :: flags
+  integer,      optional,       intent(in)    :: position
+  integer,      optional,       intent(in)    :: whalo, ehalo, shalo, nhalo
+  logical,      optional,       intent(in)    :: complete
+>>>>>>> rusty/master_test
   real                                        :: d_type
   logical                                     :: is_complete
 ! Arguments: 
@@ -751,6 +945,7 @@ end subroutine start_var_group_update_2d
 
 
 subroutine start_var_group_update_3d(group, array, domain, flags, position, whalo, ehalo, shalo, nhalo, complete)
+<<<<<<< HEAD
   type(group_halo_update_type), intent(inout) :: group !< The data type that store information for group update
   real, dimension(:,:,:),       intent(inout) :: array !< The array which is having its halos points exchanged
   type(domain2D),               intent(inout) :: domain !< contains domain information
@@ -759,6 +954,15 @@ subroutine start_var_group_update_3d(group, array, domain, flags, position, whal
   integer,      optional,       intent(in)    :: whalo, ehalo, shalo, nhalo
   logical,      optional,       intent(in)    :: complete !< Optional argument indicating whether the halo updates
                                                           !! should be initiated immediately or wait for second pass_..._start call
+=======
+  type(group_halo_update_type), intent(inout) :: group
+  real, dimension(:,:,:),       intent(inout) :: array
+  type(domain2D),               intent(inout) :: domain
+  integer,           optional,  intent(in)    :: flags
+  integer,           optional,  intent(in)    :: position
+  integer,      optional,       intent(in)    :: whalo, ehalo, shalo, nhalo
+  logical,      optional,       intent(in)    :: complete
+>>>>>>> rusty/master_test
   real                                        :: d_type
   logical                                     :: is_complete
 
@@ -792,6 +996,7 @@ subroutine start_var_group_update_3d(group, array, domain, flags, position, whal
 end subroutine start_var_group_update_3d
 
 subroutine start_var_group_update_4d(group, array, domain, flags, position, whalo, ehalo, shalo, nhalo, complete)
+<<<<<<< HEAD
   type(group_halo_update_type), intent(inout) :: group !< The data type that store information for group update
   real, dimension(:,:,:,:),     intent(inout) :: array !< The array which is having its halos points exchanged
   type(domain2D),               intent(inout) :: domain !< contains domain information
@@ -801,6 +1006,15 @@ subroutine start_var_group_update_4d(group, array, domain, flags, position, whal
   integer,      optional,       intent(in)    :: whalo, ehalo, shalo, nhalo
   logical,      optional,       intent(in)    :: complete !< Optional argument indicating whether the halo updates
                                                           !! should be initiated immediately or wait for second pass_..._start call
+=======
+  type(group_halo_update_type), intent(inout) :: group
+  real, dimension(:,:,:,:),     intent(inout) :: array
+  type(domain2D),               intent(inout) :: domain
+  integer,           optional,  intent(in)    :: flags
+  integer,           optional,  intent(in)    :: position
+  integer,      optional,       intent(in)    :: whalo, ehalo, shalo, nhalo
+  logical,      optional,       intent(in)    :: complete
+>>>>>>> rusty/master_test
   real                                        :: d_type
   logical                                     :: is_complete
 
@@ -838,6 +1052,7 @@ end subroutine start_var_group_update_4d
 
 
 subroutine start_vector_group_update_2d(group, u_cmpt, v_cmpt, domain, flags, gridtype, whalo, ehalo, shalo, nhalo, complete)
+<<<<<<< HEAD
   type(group_halo_update_type), intent(inout) :: group !< The data type that store information for group update
   real,       dimension(:,:),   intent(inout) :: u_cmpt, v_cmpt !< The nominal zonal (u) and meridional (v)
                                                                 !! components of the vector pair that 
@@ -850,6 +1065,15 @@ subroutine start_vector_group_update_2d(group, u_cmpt, v_cmpt, domain, flags, gr
   integer,      optional,       intent(in)    :: whalo, ehalo, shalo, nhalo
   logical,      optional,       intent(in)    :: complete !< Optional argument indicating whether the halo updates
                                                           !! should be initiated immediately or wait for second pass_..._start call
+=======
+  type(group_halo_update_type), intent(inout) :: group
+  real,       dimension(:,:),   intent(inout) :: u_cmpt, v_cmpt
+  type(domain2d),               intent(inout) :: domain
+  integer,            optional, intent(in)    :: flags
+  integer,            optional, intent(in)    :: gridtype
+  integer,      optional,       intent(in)    :: whalo, ehalo, shalo, nhalo
+  logical,      optional,       intent(in)    :: complete
+>>>>>>> rusty/master_test
   real                                        :: d_type
   logical                                     :: is_complete
 
@@ -888,6 +1112,7 @@ subroutine start_vector_group_update_2d(group, u_cmpt, v_cmpt, domain, flags, gr
 end subroutine start_vector_group_update_2d
 
 subroutine start_vector_group_update_3d(group, u_cmpt, v_cmpt, domain, flags, gridtype, whalo, ehalo, shalo, nhalo, complete)
+<<<<<<< HEAD
   type(group_halo_update_type), intent(inout) :: group !< The data type that store information for group update
   real,       dimension(:,:,:), intent(inout) :: u_cmpt, v_cmpt !! The nominal zonal (u) and meridional (v)
                                                                 !! components of the vector pair that 
@@ -900,6 +1125,15 @@ subroutine start_vector_group_update_3d(group, u_cmpt, v_cmpt, domain, flags, gr
   integer,      optional,       intent(in)    :: whalo, ehalo, shalo, nhalo
   logical,      optional,       intent(in)    :: complete !< Optional argument indicating whether the halo updates
                                                           !! should be initiated immediately or wait for second pass_..._start call
+=======
+  type(group_halo_update_type), intent(inout) :: group
+  real,       dimension(:,:,:), intent(inout) :: u_cmpt, v_cmpt
+  type(domain2d),               intent(inout) :: domain
+  integer,            optional, intent(in)    :: flags
+  integer,            optional, intent(in)    :: gridtype
+  integer,      optional,       intent(in)    :: whalo, ehalo, shalo, nhalo
+  logical,      optional,       intent(in)    :: complete
+>>>>>>> rusty/master_test
   real                                        :: d_type
   logical                                     :: is_complete
 
@@ -939,8 +1173,13 @@ end subroutine start_vector_group_update_3d
 
 
 subroutine complete_group_halo_update(group, domain)
+<<<<<<< HEAD
   type(group_halo_update_type), intent(inout) :: group !< The data type that store information for group update
   type(domain2d),               intent(inout) :: domain !< Contains domain decomposition information
+=======
+  type(group_halo_update_type), intent(inout) :: group
+  type(domain2d),               intent(inout) :: domain
+>>>>>>> rusty/master_test
   real                                        :: d_type
 
 ! Arguments: 
@@ -957,12 +1196,23 @@ end subroutine complete_group_halo_update
 
 
 
+<<<<<<< HEAD
 
 subroutine broadcast_domains(Atm)
   
   type(fv_atmos_type), intent(INOUT) :: Atm(:)
 
   integer :: n, i1, i2, j1, j2, i
+=======
+!Depreciated
+subroutine broadcast_domains(Atm,current_pelist,current_npes)
+  
+  type(fv_atmos_type), intent(INOUT) :: Atm(:)
+  integer, intent(IN) :: current_npes
+  integer, intent(IN) :: current_pelist(current_npes)
+
+  integer :: n, i
+>>>>>>> rusty/master_test
   integer :: ens_root_pe, ensemble_id
 
   !I think the idea is that each process needs to properly be part of a pelist,
@@ -975,6 +1225,7 @@ subroutine broadcast_domains(Atm)
 
   !Pelist needs to be set to ALL ensemble PEs for broadcast_domain to work
   call mpp_set_current_pelist((/ (i,i=ens_root_pe,npes-1+ens_root_pe) /))
+<<<<<<< HEAD
      do n=1,size(Atm)
         call mpp_broadcast_domain(Atm(n)%domain)
         call mpp_broadcast_domain(Atm(n)%domain_for_coupler)
@@ -982,6 +1233,17 @@ subroutine broadcast_domains(Atm)
 
 end subroutine broadcast_domains
 
+=======
+  do n=1,size(Atm)
+     call mpp_broadcast_domain(Atm(n)%domain)
+     call mpp_broadcast_domain(Atm(n)%domain_for_coupler)
+  end do
+  call mpp_set_current_pelist(current_pelist)
+
+end subroutine broadcast_domains
+
+!depreciated
+>>>>>>> rusty/master_test
 subroutine switch_current_domain(new_domain,new_domain_for_coupler)
 
   type(domain2D), intent(in), target :: new_domain, new_domain_for_coupler
@@ -1004,6 +1266,10 @@ subroutine switch_current_domain(new_domain,new_domain_for_coupler)
 
 end subroutine switch_current_domain
 
+<<<<<<< HEAD
+=======
+!depreciated
+>>>>>>> rusty/master_test
 subroutine switch_current_Atm(new_Atm, switch_domain)
 
   type(fv_atmos_type), intent(IN), target :: new_Atm
@@ -1011,6 +1277,7 @@ subroutine switch_current_Atm(new_Atm, switch_domain)
   logical, parameter :: debug = .false.
   logical :: swD
 
+<<<<<<< HEAD
   if (debug .AND. (gid==masterproc)) print*, 'SWITCHING ATM STRUCTURES', new_Atm%grid_number
   if (present(switch_domain)) then
      swD = switch_domain
@@ -1018,6 +1285,18 @@ subroutine switch_current_Atm(new_Atm, switch_domain)
      swD = .true.
   end if
   if (swD) call switch_current_domain(new_Atm%domain, new_Atm%domain_for_coupler)
+=======
+
+  call mpp_error(FATAL, "switch_current_Atm depreciated. call set_domain instead.")
+
+!!$  if (debug .AND. (gid==masterproc)) print*, 'SWITCHING ATM STRUCTURES', new_Atm%grid_number
+!!$  if (present(switch_domain)) then
+!!$     swD = switch_domain
+!!$  else
+!!$     swD = .true.
+!!$  end if
+!!$  if (swD) call switch_current_domain(new_Atm%domain, new_Atm%domain_for_coupler)
+>>>>>>> rusty/master_test
 
 !!$  if (debug .AND. (gid==masterproc)) WRITE(*,'(A, 6I5)') 'NEW GRID DIMENSIONS: ', &
 !!$       isd, ied, jsd, jed, new_Atm%npx, new_Atm%npy
@@ -1030,7 +1309,11 @@ end subroutine switch_current_Atm
       subroutine fill_corners_2d_r4(q, npx, npy, FILL, AGRID, BGRID)
          real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: q
          integer, intent(IN):: npx,npy
+<<<<<<< HEAD
          integer, intent(IN):: FILL  !< X-Dir or Y-Dir 
+=======
+         integer, intent(IN):: FILL  ! X-Dir or Y-Dir 
+>>>>>>> rusty/master_test
          logical, OPTIONAL, intent(IN) :: AGRID, BGRID 
          integer :: i,j
 
@@ -1110,7 +1393,11 @@ end subroutine switch_current_Atm
       subroutine fill_corners_2d_r8(q, npx, npy, FILL, AGRID, BGRID)
          real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: q
          integer, intent(IN):: npx,npy
+<<<<<<< HEAD
          integer, intent(IN):: FILL  ! <X-Dir or Y-Dir 
+=======
+         integer, intent(IN):: FILL  ! X-Dir or Y-Dir 
+>>>>>>> rusty/master_test
          logical, OPTIONAL, intent(IN) :: AGRID, BGRID 
          integer :: i,j
 
@@ -1189,8 +1476,13 @@ end subroutine switch_current_Atm
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !!
 !     fill_corners_xy_2d_r8
       subroutine fill_corners_xy_2d_r8(x, y, npx, npy, DGRID, AGRID, CGRID, VECTOR)
+<<<<<<< HEAD
          real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: x !<(isd:ied  ,jsd:jed+1)
          real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: y !<(isd:ied+1,jsd:jed  )
+=======
+         real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: x !(isd:ied  ,jsd:jed+1)
+         real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: y !(isd:ied+1,jsd:jed  )
+>>>>>>> rusty/master_test
          integer, intent(IN):: npx,npy
          logical, OPTIONAL, intent(IN) :: DGRID, AGRID, CGRID, VECTOR
          integer :: i,j
@@ -1221,8 +1513,13 @@ end subroutine switch_current_Atm
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !!
 !     fill_corners_xy_2d_r4
       subroutine fill_corners_xy_2d_r4(x, y, npx, npy, DGRID, AGRID, CGRID, VECTOR)
+<<<<<<< HEAD
          real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: x !<(isd:ied  ,jsd:jed+1)
          real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: y !<(isd:ied+1,jsd:jed  )
+=======
+         real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: x !(isd:ied  ,jsd:jed+1)
+         real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: y !(isd:ied+1,jsd:jed  )
+>>>>>>> rusty/master_test
          integer, intent(IN):: npx,npy
          logical, OPTIONAL, intent(IN) :: DGRID, AGRID, CGRID, VECTOR
          integer :: i,j
@@ -1253,8 +1550,13 @@ end subroutine switch_current_Atm
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !!
 !     fill_corners_xy_3d_r8
       subroutine fill_corners_xy_3d_r8(x, y, npx, npy, npz, DGRID, AGRID, CGRID, VECTOR)
+<<<<<<< HEAD
          real(kind=8), DIMENSION(isd:,jsd:,:), intent(INOUT):: x !<(isd:ied  ,jsd:jed+1)
          real(kind=8), DIMENSION(isd:,jsd:,:), intent(INOUT):: y !<(isd:ied+1,jsd:jed  )
+=======
+         real(kind=8), DIMENSION(isd:,jsd:,:), intent(INOUT):: x !(isd:ied  ,jsd:jed+1)
+         real(kind=8), DIMENSION(isd:,jsd:,:), intent(INOUT):: y !(isd:ied+1,jsd:jed  )
+>>>>>>> rusty/master_test
          integer, intent(IN):: npx,npy,npz
          logical, OPTIONAL, intent(IN) :: DGRID, AGRID, CGRID, VECTOR
          integer :: i,j,k
@@ -1293,8 +1595,13 @@ end subroutine switch_current_Atm
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !!
 !     fill_corners_xy_3d_r4
       subroutine fill_corners_xy_3d_r4(x, y, npx, npy, npz, DGRID, AGRID, CGRID, VECTOR)
+<<<<<<< HEAD
          real(kind=4), DIMENSION(isd:,jsd:,:), intent(INOUT):: x !<(isd:ied  ,jsd:jed+1)
          real(kind=4), DIMENSION(isd:,jsd:,:), intent(INOUT):: y !<(isd:ied+1,jsd:jed  )
+=======
+         real(kind=4), DIMENSION(isd:,jsd:,:), intent(INOUT):: x !(isd:ied  ,jsd:jed+1)
+         real(kind=4), DIMENSION(isd:,jsd:,:), intent(INOUT):: y !(isd:ied+1,jsd:jed  )
+>>>>>>> rusty/master_test
          integer, intent(IN):: npx,npy,npz
          logical, OPTIONAL, intent(IN) :: DGRID, AGRID, CGRID, VECTOR
          integer :: i,j,k
@@ -1536,6 +1843,7 @@ end subroutine switch_current_Atm
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
+<<<<<<< HEAD
 
 !!$!-------------------------------------------------------------------------------
 !!$! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
@@ -1917,6 +2225,13 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !>@brief  The subroutine 'mp_gather_4d_r4' calls SPMD Gather. 
+=======
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!       
+!     mp_gather_4d_r4 :: Call SPMD Gather 
+!     
+>>>>>>> rusty/master_test
       subroutine mp_gather_4d_r4(q, i1,i2, j1,j2, idim, jdim, kdim, ldim)
          integer, intent(IN)  :: i1,i2, j1,j2
          integer, intent(IN)  :: idim, jdim, kdim, ldim
@@ -2160,14 +2475,24 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
+<<<<<<< HEAD
 !     mp_bcst_i :: Call SPMD broadcast 
 !
       subroutine mp_bcst_i(q)
+=======
+!     mp_bcst_i4 :: Call SPMD broadcast 
+!
+      subroutine mp_bcst_i4(q)
+>>>>>>> rusty/master_test
          integer, intent(INOUT)  :: q
 
          call MPI_BCAST(q, 1, MPI_INTEGER, masterproc, commglobal, ierror)
 
+<<<<<<< HEAD
       end subroutine mp_bcst_i
+=======
+      end subroutine mp_bcst_i4
+>>>>>>> rusty/master_test
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
@@ -2205,6 +2530,7 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
+<<<<<<< HEAD
 !     mp_bcst_1d_r4 :: Call SPMD broadcast 
 !
       subroutine mp_bcst_1d_r4(q, idim)
@@ -2269,6 +2595,8 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
+=======
+>>>>>>> rusty/master_test
 !     mp_bcst_3d_r4 :: Call SPMD broadcast 
 !
       subroutine mp_bcst_3d_r4(q, idim, jdim, kdim)
@@ -2333,15 +2661,25 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
+<<<<<<< HEAD
 !     mp_bcst_3d_i :: Call SPMD broadcast
 !
       subroutine mp_bcst_3d_i(q, idim, jdim, kdim)
+=======
+!     mp_bcst_3d_i8 :: Call SPMD broadcast
+!
+      subroutine mp_bcst_3d_i8(q, idim, jdim, kdim)
+>>>>>>> rusty/master_test
          integer, intent(IN)  :: idim, jdim, kdim
          integer, intent(INOUT)  :: q(idim,jdim,kdim)
 
          call MPI_BCAST(q, idim*jdim*kdim, MPI_INTEGER, masterproc, commglobal, ierror)
 
+<<<<<<< HEAD
       end subroutine mp_bcst_3d_i
+=======
+      end subroutine mp_bcst_3d_i8
+>>>>>>> rusty/master_test
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
@@ -2349,6 +2687,7 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
+<<<<<<< HEAD
 !     mp_bcst_1d_i :: Call SPMD broadcast
 !
       subroutine mp_bcst_1d_i(q, idim)
@@ -2383,12 +2722,21 @@ end subroutine switch_current_Atm
 !     mp_bcst_4d_i :: Call SPMD broadcast
 !
       subroutine mp_bcst_4d_i(q, idim, jdim, kdim, ldim)
+=======
+!     mp_bcst_4d_i8 :: Call SPMD broadcast
+!
+      subroutine mp_bcst_4d_i8(q, idim, jdim, kdim, ldim)
+>>>>>>> rusty/master_test
          integer, intent(IN)  :: idim, jdim, kdim, ldim
          integer, intent(INOUT)  :: q(idim,jdim,kdim,ldim)
 
          call MPI_BCAST(q, idim*jdim*kdim*ldim, MPI_INTEGER, masterproc, commglobal, ierror)
 
+<<<<<<< HEAD
       end subroutine mp_bcst_4d_i
+=======
+      end subroutine mp_bcst_4d_i8
+>>>>>>> rusty/master_test
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
@@ -2502,9 +2850,15 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
+<<<<<<< HEAD
 !     mp_bcst_4d_i :: Call SPMD REDUCE_MAX 
 !
       subroutine mp_reduce_max_i(mymax)
+=======
+!     mp_bcst_4d_i4 :: Call SPMD REDUCE_MAX 
+!
+      subroutine mp_reduce_max_i4(mymax)
+>>>>>>> rusty/master_test
          integer, intent(INOUT)  :: mymax
 
          integer :: gmax
@@ -2514,7 +2868,11 @@ end subroutine switch_current_Atm
 
          mymax = gmax
 
+<<<<<<< HEAD
       end subroutine mp_reduce_max_i
+=======
+      end subroutine mp_reduce_max_i4
+>>>>>>> rusty/master_test
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
@@ -2559,6 +2917,7 @@ end subroutine switch_current_Atm
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
 
+<<<<<<< HEAD
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
@@ -2606,6 +2965,8 @@ end subroutine switch_current_Atm
 ! !
 !-------------------------------------------------------------------------------
 
+=======
+>>>>>>> rusty/master_test
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
@@ -2661,6 +3022,7 @@ end subroutine switch_current_Atm
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
+<<<<<<< HEAD
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 ! !
 !
@@ -2708,6 +3070,8 @@ end subroutine switch_current_Atm
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ! !
 
+=======
+>>>>>>> rusty/master_test
 #else
       implicit none
       private
