@@ -21,7 +21,6 @@ The top level directory structure groups source code and input files as follow:
 | ```LICENSE.md```     | a copy of the Gnu lesser general public license, version 3. |
 | ```README.md```      | this file with basic pointers to more information |
 | ```model/```         | contains the source code for core of the FV3 dyanmical core |
-| ```model_nh_null/``` | contains the source stub code for satisfying references |
 | ```driver/```        | contains drivers used by different models/modeling systems |
 | ```tools/```         | contains source code of tools used within the core |
 | ```GFDL_tools/```    | contains source code of tools specific to GFDL models |
