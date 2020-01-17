@@ -4,7 +4,7 @@ FV3-201912-public --- 10 January 2020
 Lucas Harris, GFDL <lucas.harris@noaa.gov>
 
 This version has been tested against the current SHiELD (formerly fvGFS) physics
-and with the updated FMS code in branch user/lmh/fvGFS at https://github.com/lharris4/FMS
+and with FMS release candidate 2020.02 from https://github.com/NOAA-GFDL/FMS
 
 Includes all of the features of the GFDL Release to EMC, as well as:
 
