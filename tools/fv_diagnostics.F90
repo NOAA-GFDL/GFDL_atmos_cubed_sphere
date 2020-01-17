@@ -2274,7 +2274,7 @@ contains
        endif
 
        if ( idiag%id_u100m>0 .or. idiag%id_v100m>0 .or. idiag%id_w100m>0 .or. idiag%id_w5km>0 .or. idiag%id_w2500m>0 &
-            & .or. idiag%id_basedbz.ne.0 .or. idiag%id_dbz4km.ne.0) then !! idiag%id_basedbz and idiag%id_dbz4km are INTEGERS
+            .or. idiag%id_basedbz.ne.0 .or. idiag%id_dbz4km.ne.0) then !! idiag%id_basedbz and idiag%id_dbz4km are INTEGERS
           if (.not.allocated(wz)) allocate ( wz(isc:iec,jsc:jec,npz+1) )
           if ( Atm(n)%flagstruct%hydrostatic) then
              rgrav = 1. / grav
