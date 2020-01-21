@@ -1,5 +1,4 @@
 !***********************************************************************
-<<<<<<< HEAD
 !*                   GNU Lesser General Public License                 
 !*
 !* This file is part of the FV3 dynamical core.
@@ -65,32 +64,7 @@
 module fv_tracer2d_mod
    use tp_core_mod,       only: fv_tp_2d, copy_corners
    use fv_mp_mod,         only: mp_reduce_max
-   use fv_mp_mod,         only: ng, mp_gather, is_master
-=======
-!*                   GNU Lesser General Public License
-!*
-!* This file is part of the FV3 dynamical core.
-!*
-!* The FV3 dynamical core is free software: you can redistribute it
-!* and/or modify it under the terms of the
-!* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or
-!* (at your option) any later version.
-!*
-!* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-!* See the GNU General Public License for more details.
-!*
-!* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.
-!* If not, see <http://www.gnu.org/licenses/>.
-!***********************************************************************
-module fv_tracer2d_mod
-   use tp_core_mod,       only: fv_tp_2d, copy_corners
-   use fv_mp_mod,         only: mp_reduce_max
    use fv_mp_mod,         only: mp_gather, is_master
->>>>>>> rusty/master_test
    use fv_mp_mod,         only: group_halo_update_type
    use fv_mp_mod,         only: start_group_halo_update, complete_group_halo_update
    use mpp_domains_mod,   only: mpp_update_domains, CGRID_NE, domain2d
@@ -110,41 +84,24 @@ real, allocatable, dimension(:,:,:) :: nest_fx_west_accum, nest_fx_east_accum, n
 
 contains
 
-<<<<<<< HEAD
 !>@brief The subroutine 'tracer_2d_1L' performs 2-D horizontal-to-lagrangian transport.
 !>@details This subroutine is called if 'z_tracer = .true.'
 !! It modifies 'tracer_2d' so that each layer uses a different diagnosed number 
 !! of split tracer timesteps. This potentially accelerates tracer advection when there
 !! is a large difference in layer-maximum wind speeds (cf. polar night jet).
 subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
-                        nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm, lim_fac, regional)
-=======
-!-----------------------------------------------------------------------
-! !ROUTINE: Perform 2D horizontal-to-lagrangian transport
-!-----------------------------------------------------------------------
-
-
-
-subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
-                        nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm)
->>>>>>> rusty/master_test
+                        nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm, lim_fac)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(IN) :: npx
       integer, intent(IN) :: npy
       integer, intent(IN) :: npz
-<<<<<<< HEAD
       integer, intent(IN) :: nq    !< number of tracers to be advected
-=======
-      integer, intent(IN) :: nq    ! number of tracers to be advected
->>>>>>> rusty/master_test
       integer, intent(IN) :: hord, nord_tr
       integer, intent(IN) :: q_split
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt, trdm
-<<<<<<< HEAD
       real   , intent(IN) :: lim_fac
-      logical, intent(IN) :: regional
       type(group_halo_update_type), intent(inout) :: q_pack
       real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   !< Tracers
       real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    !< DELP before dyn_core
@@ -152,24 +109,11 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, n
       real   , intent(INOUT) :: mfy(bd%is:bd%ie  ,bd%js:bd%je+1,npz)    !< Mass Flux Y-Dir
       real   , intent(INOUT) ::  cx(bd%is:bd%ie+1,bd%jsd:bd%jed  ,npz)  !< Courant Number X-Dir
       real   , intent(INOUT) ::  cy(bd%isd:bd%ied,bd%js :bd%je +1,npz)  !< Courant Number Y-Dir
-=======
-      type(group_halo_update_type), intent(inout) :: q_pack
-      real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   ! Tracers
-      real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)        ! DELP before dyn_core
-      real   , intent(INOUT) :: mfx(bd%is:bd%ie+1,bd%js:bd%je,  npz)    ! Mass Flux X-Dir
-      real   , intent(INOUT) :: mfy(bd%is:bd%ie  ,bd%js:bd%je+1,npz)    ! Mass Flux Y-Dir
-      real   , intent(INOUT) ::  cx(bd%is:bd%ie+1,bd%jsd:bd%jed  ,npz)  ! Courant Number X-Dir
-      real   , intent(INOUT) ::  cy(bd%isd:bd%ied,bd%js :bd%je +1,npz)  ! Courant Number Y-Dir
->>>>>>> rusty/master_test
       type(fv_grid_type), intent(IN), target :: gridstruct
       type(domain2d), intent(INOUT) :: domain
 
 ! Local Arrays
-<<<<<<< HEAD
       real :: qn2(bd%isd:bd%ied,bd%jsd:bd%jed,nq)   !< 3D tracers
-=======
-      real :: qn2(bd%isd:bd%ied,bd%jsd:bd%jed,nq)   ! 3D tracers
->>>>>>> rusty/master_test
       real :: dp2(bd%is:bd%ie,bd%js:bd%je)
       real :: fx(bd%is:bd%ie+1,bd%js:bd%je )
       real :: fy(bd%is:bd%ie , bd%js:bd%je+1)
@@ -312,11 +256,7 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, n
         enddo
 
 !$OMP parallel do default(none) shared(k,nsplt,it,is,ie,js,je,isd,ied,jsd,jed,npx,npy,cx,xfx,hord,trdm, &
-<<<<<<< HEAD
-!$OMP                                  nord_tr,nq,gridstruct,bd,cy,yfx,mfx,mfy,qn2,q,ra_x,ra_y,dp1,dp2,rarea,lim_fac,regional) &
-=======
-!$OMP                                  nord_tr,nq,gridstruct,bd,cy,yfx,mfx,mfy,qn2,q,ra_x,ra_y,dp1,dp2,rarea) &
->>>>>>> rusty/master_test
+!$OMP                                  nord_tr,nq,gridstruct,bd,cy,yfx,mfx,mfy,qn2,q,ra_x,ra_y,dp1,dp2,rarea,lim_fac) &
 !$OMP                          private(fx,fy)
         do iq=1,nq
         if ( nsplt /= 1 ) then
@@ -329,11 +269,7 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, n
            endif
            call fv_tp_2d(qn2(isd,jsd,iq), cx(is,jsd,k), cy(isd,js,k), &
                          npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
-<<<<<<< HEAD
-                         gridstruct, bd, ra_x, ra_y, lim_fac, regional, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
-=======
-                         gridstruct, bd, ra_x, ra_y, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
->>>>>>> rusty/master_test
+                         gridstruct, bd, ra_x, ra_y, lim_fac, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
            if ( it < nsplt ) then   ! not last call
               do j=js,je
               do i=is,ie
@@ -350,11 +286,7 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, n
         else
            call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
                          npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
-<<<<<<< HEAD
-                         gridstruct, bd, ra_x, ra_y, lim_fac, regional, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
-=======
-                         gridstruct, bd, ra_x, ra_y, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
->>>>>>> rusty/master_test
+                         gridstruct, bd, ra_x, ra_y, lim_fac, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
            do j=js,je
               do i=is,ie
                  q(i,j,k,iq) = (q(i,j,k,iq)*dp1(i,j,k)+(fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j))/dp2(i,j)
@@ -380,32 +312,20 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, n
 
 end subroutine tracer_2d_1L
 
-<<<<<<< HEAD
 !>@brief The subroutine 'tracer_2d' is the standard routine for sub-cycled tracer advection.
 subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
-                     nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm, lim_fac, regional)
-=======
-
-subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
-                     nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm)
->>>>>>> rusty/master_test
+                     nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm, lim_fac)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(IN) :: npx
       integer, intent(IN) :: npy
       integer, intent(IN) :: npz
-<<<<<<< HEAD
       integer, intent(IN) :: nq    !< number of tracers to be advected
-=======
-      integer, intent(IN) :: nq    ! number of tracers to be advected
->>>>>>> rusty/master_test
       integer, intent(IN) :: hord, nord_tr
       integer, intent(IN) :: q_split
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt, trdm
-<<<<<<< HEAD
       real   , intent(IN) :: lim_fac
-      logical, intent(IN) :: regional
       type(group_halo_update_type), intent(inout) :: q_pack
       real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   !< Tracers
       real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    !< DELP before dyn_core
@@ -413,15 +333,6 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy,
       real   , intent(INOUT) :: mfy(bd%is:bd%ie  ,bd%js:bd%je+1,npz)    !< Mass Flux Y-Dir
       real   , intent(INOUT) ::  cx(bd%is:bd%ie+1,bd%jsd:bd%jed  ,npz)  !< Courant Number X-Dir
       real   , intent(INOUT) ::  cy(bd%isd:bd%ied,bd%js :bd%je +1,npz)  !< Courant Number Y-Dir
-=======
-      type(group_halo_update_type), intent(inout) :: q_pack
-      real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   ! Tracers
-      real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)        ! DELP before dyn_core
-      real   , intent(INOUT) :: mfx(bd%is:bd%ie+1,bd%js:bd%je,  npz)    ! Mass Flux X-Dir
-      real   , intent(INOUT) :: mfy(bd%is:bd%ie  ,bd%js:bd%je+1,npz)    ! Mass Flux Y-Dir
-      real   , intent(INOUT) ::  cx(bd%is:bd%ie+1,bd%jsd:bd%jed  ,npz)  ! Courant Number X-Dir
-      real   , intent(INOUT) ::  cy(bd%isd:bd%ied,bd%js :bd%je +1,npz)  ! Courant Number Y-Dir
->>>>>>> rusty/master_test
       type(fv_grid_type), intent(IN), target :: gridstruct
       type(domain2d), intent(INOUT) :: domain
 
@@ -574,11 +485,7 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy,
                        call timing_off('COMM_TOTAL')
 
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,mfx,mfy,rarea,nq,ksplt,&
-<<<<<<< HEAD
-!$OMP                                  area,xfx,yfx,q,cx,cy,npx,npy,hord,gridstruct,bd,it,nsplt,nord_tr,trdm,lim_fac,regional) &
-=======
-!$OMP                                  area,xfx,yfx,q,cx,cy,npx,npy,hord,gridstruct,bd,it,nsplt,nord_tr,trdm) &
->>>>>>> rusty/master_test
+!$OMP                                  area,xfx,yfx,q,cx,cy,npx,npy,hord,gridstruct,bd,it,nsplt,nord_tr,trdm,lim_fac) &
 !$OMP                          private(dp2, ra_x, ra_y, fx, fy)
      do k=1,npz
 
@@ -605,20 +512,12 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy,
          if ( it==1 .and. trdm>1.e-4 ) then
             call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
                           npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
-<<<<<<< HEAD
-                          gridstruct, bd, ra_x, ra_y, lim_fac, regional, mfx=mfx(is,js,k), mfy=mfy(is,js,k),   &
-=======
-                          gridstruct, bd, ra_x, ra_y, mfx=mfx(is,js,k), mfy=mfy(is,js,k),   &
->>>>>>> rusty/master_test
+                          gridstruct, bd, ra_x, ra_y, lim_fac, mfx=mfx(is,js,k), mfy=mfy(is,js,k),   &
                           mass=dp1(isd,jsd,k), nord=nord_tr, damp_c=trdm)
          else
             call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
                           npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
-<<<<<<< HEAD
-                          gridstruct, bd, ra_x, ra_y, lim_fac, regional, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
-=======
-                          gridstruct, bd, ra_x, ra_y, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
->>>>>>> rusty/master_test
+                          gridstruct, bd, ra_x, ra_y, lim_fac, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
          endif
             do j=js,je
                do i=is,ie
@@ -656,24 +555,18 @@ end subroutine tracer_2d
 
 subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
                      nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm, &
-<<<<<<< HEAD
-                     k_split, neststruct, parent_grid, lim_fac, regional)
-=======
-                     k_split, neststruct, parent_grid, n_map)
->>>>>>> rusty/master_test
+                     k_split, neststruct, parent_grid, n_map, lim_fac)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(IN) :: npx
       integer, intent(IN) :: npy
       integer, intent(IN) :: npz
-<<<<<<< HEAD
       integer, intent(IN) :: nq    !< number of tracers to be advected
       integer, intent(IN) :: hord, nord_tr
-      integer, intent(IN) :: q_split, k_split
+      integer, intent(IN) :: q_split, k_split, n_map
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt, trdm
       real   , intent(IN) :: lim_fac
-      logical, intent(IN) :: regional
       type(group_halo_update_type), intent(inout) :: q_pack
       real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   !< Tracers
       real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    !< DELP before dyn_core
@@ -681,20 +574,6 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       real   , intent(INOUT) :: mfy(bd%is:bd%ie  ,bd%js:bd%je+1,npz)    !< Mass Flux Y-Dir
       real   , intent(INOUT) ::  cx(bd%is:bd%ie+1,bd%jsd:bd%jed  ,npz)  !< Courant Number X-Dir
       real   , intent(INOUT) ::  cy(bd%isd:bd%ied,bd%js :bd%je +1,npz)  !< Courant Number Y-Dir
-=======
-      integer, intent(IN) :: nq    ! number of tracers to be advected
-      integer, intent(IN) :: hord, nord_tr
-      integer, intent(IN) :: q_split, k_split, n_map
-      integer, intent(IN) :: id_divg
-      real   , intent(IN) :: dt, trdm
-      type(group_halo_update_type), intent(inout) :: q_pack
-      real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   ! Tracers
-      real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)        ! DELP before dyn_core
-      real   , intent(INOUT) :: mfx(bd%is:bd%ie+1,bd%js:bd%je,  npz)    ! Mass Flux X-Dir
-      real   , intent(INOUT) :: mfy(bd%is:bd%ie  ,bd%js:bd%je+1,npz)    ! Mass Flux Y-Dir
-      real   , intent(INOUT) ::  cx(bd%is:bd%ie+1,bd%jsd:bd%jed  ,npz)  ! Courant Number X-Dir
-      real   , intent(INOUT) ::  cy(bd%isd:bd%ied,bd%js :bd%je +1,npz)  ! Courant Number Y-Dir
->>>>>>> rusty/master_test
       type(fv_grid_type), intent(IN), target :: gridstruct
       type(fv_nest_type), intent(INOUT) :: neststruct
       type(fv_atmos_type), pointer, intent(IN) :: parent_grid
@@ -712,11 +591,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       real :: cmax_t
       real :: c_global
       real :: frac, rdt
-<<<<<<< HEAD
-      real :: recip_nsplt,reg_bc_update_time
-=======
-      real :: reg_bc_update_time
->>>>>>> rusty/master_test
+      real ::  recip_nsplt, reg_bc_update_time
       integer :: nsplt, nsplt_parent, msg_split_steps = 1
       integer :: i,j,k,it,iq
 
@@ -812,10 +687,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
 !--------------------------------------------------------------------------------
 
    frac  = 1. / real(nsplt)
-<<<<<<< HEAD
    recip_nsplt = 1. / real(nsplt)
-=======
->>>>>>> rusty/master_test
 
       if( nsplt /= 1 ) then
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,cx,frac,xfx,mfx,cy,yfx,mfy)
@@ -867,15 +739,8 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
            enddo
       endif
 
-<<<<<<< HEAD
-      if (regional) then
-            reg_bc_update_time=current_time_in_seconds+(it-1)*recip_nsplt*dt   !<-- dt is the k_split timestep length
-=======
       if (gridstruct%regional) then
-            !This is more accurate than the nested BC calculation
-            ! since it takes into account varying nsplit
-            reg_bc_update_time=current_time_in_seconds+(real(n_map-1) + real(it-1)/frac)*dt
->>>>>>> rusty/master_test
+            reg_bc_update_time=current_time_in_seconds+ (real(n_map-1) + real(it-1)*recip_nsplt)*dt   !<-- dt is the k_split timestep length
             do iq=1,nq
                  call regional_boundary_update(q(:,:,:,iq), 'q', &
                                                isd, ied, jsd, jed, npz, &
@@ -886,14 +751,9 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
             enddo
       endif
 
-<<<<<<< HEAD
 
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,mfx,mfy,rarea,nq, &
-!$OMP                                  area,xfx,yfx,q,cx,cy,npx,npy,hord,gridstruct,bd,it,nsplt,nord_tr,trdm,lim_fac,regional) &
-=======
-!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,mfx,mfy,rarea,nq, &
-!$OMP                                  area,xfx,yfx,q,cx,cy,npx,npy,hord,gridstruct,bd,it,nsplt,nord_tr,trdm) &
->>>>>>> rusty/master_test
+!$OMP                                  area,xfx,yfx,q,cx,cy,npx,npy,hord,gridstruct,bd,it,nsplt,nord_tr,trdm,lim_fac) &
 !$OMP                          private(dp2, ra_x, ra_y, fx, fy)
       do k=1,npz
 
@@ -918,20 +778,12 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
          if ( it==1 .and. trdm>1.e-4 ) then
             call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
                           npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
-<<<<<<< HEAD
-                          gridstruct, bd, ra_x, ra_y, lim_fac, regional, mfx=mfx(is,js,k), mfy=mfy(is,js,k),   &
-=======
-                          gridstruct, bd, ra_x, ra_y, mfx=mfx(is,js,k), mfy=mfy(is,js,k),   &
->>>>>>> rusty/master_test
+                          gridstruct, bd, ra_x, ra_y, lim_fac, mfx=mfx(is,js,k), mfy=mfy(is,js,k),   &
                           mass=dp1(isd,jsd,k), nord=nord_tr, damp_c=trdm)
          else
             call fv_tp_2d(q(isd,jsd,k,iq), cx(is,jsd,k), cy(isd,js,k), &
                           npx, npy, hord, fx, fy, xfx(is,jsd,k), yfx(isd,js,k), &
-<<<<<<< HEAD
-                          gridstruct, bd, ra_x, ra_y, lim_fac, regional, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
-=======
-                          gridstruct, bd, ra_x, ra_y, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
->>>>>>> rusty/master_test
+                          gridstruct, bd, ra_x, ra_y, lim_fac, mfx=mfx(is,js,k), mfy=mfy(is,js,k))
          endif
             do j=js,je
                do i=is,ie
@@ -949,23 +801,6 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
                           call timing_off('COMM_TRACER')
                       call timing_off('COMM_TOTAL')
       endif
-<<<<<<< HEAD
-           !Apply nested-grid BCs
-           if ( gridstruct%nested ) then
-              do iq=1,nq
-
-
-                 call nested_grid_BC_apply_intT(q(isd:ied,jsd:jed,:,iq), &
-                      0, 0, npx, npy, npz, bd, &
-                      real(neststruct%tracer_nest_timestep), real(nsplt*k_split), &
-                 neststruct%q_BC(iq), bctype=neststruct%nestbctype  )
-
-              end do
-           end if
-
-! BCs for q at the current time were applied above for the regional mode.
-=======
->>>>>>> rusty/master_test
 
    enddo  ! nsplt
 

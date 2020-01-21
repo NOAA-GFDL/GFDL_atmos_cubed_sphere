@@ -1,5 +1,4 @@
 !***********************************************************************
-<<<<<<< HEAD
 !*                   GNU Lesser General Public License                 
 !*
 !* This file is part of the FV3 dynamical core.
@@ -74,28 +73,6 @@
 !   </tr>
 ! </table>
 
-=======
-!*                   GNU Lesser General Public License
-!*
-!* This file is part of the FV3 dynamical core.
-!*
-!* The FV3 dynamical core is free software: you can redistribute it
-!* and/or modify it under the terms of the
-!* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or
-!* (at your option) any later version.
-!*
-!* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-!* See the GNU General Public License for more details.
-!*
-!* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.
-!* If not, see <http://www.gnu.org/licenses/>.
-!***********************************************************************
- module fv_grid_utils_mod
->>>>>>> rusty/master_test
  
 #include <fms_platform.h>
  use constants_mod,   only: omega, pi=>pi_8, cnst_radius=>radius
@@ -109,11 +86,7 @@
  use fv_arrays_mod,   only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type, &
                             R_GRID
  use fv_eta_mod,      only: set_eta
-<<<<<<< HEAD
- use fv_mp_mod,       only: ng, is_master
-=======
  use fv_mp_mod,       only: is_master
->>>>>>> rusty/master_test
  use fv_mp_mod,       only: mp_reduce_sum, mp_reduce_min, mp_reduce_max
  use fv_mp_mod,       only: fill_corners, XDir, YDir
  use fv_timing_mod,   only: timing_on, timing_off
@@ -138,21 +111,13 @@
  public f_p 
  public ptop_min, big_number !CLEANUP: OK to keep since they are constants?
  public cos_angle
-<<<<<<< HEAD
- public latlon2xyz, gnomonic_grids, &
-=======
  public update_dwinds_phys, update2d_dwinds_phys, latlon2xyz, gnomonic_grids, &
->>>>>>> rusty/master_test
         global_mx, unit_vect_latlon,  &
         cubed_to_latlon, c2l_ord2, g_sum, global_qsum, great_circle_dist,  &
         v_prod, get_unit_vect2, project_sphere_v
  public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, grid_utils_end, &
-<<<<<<< HEAD
-        spherical_angle, cell_center2, get_area, inner_prod, fill_ghost, direct_transform,  &
-=======
         spherical_angle, cell_center2, get_area, inner_prod, fill_ghost, &
         direct_transform, cube_transform, &
->>>>>>> rusty/master_test
         make_eta_level, expand_cell, cart_to_latlon, intp_great_circle, normalize_vect, &
         dist2side_latlon, spherical_linear_interpolation, get_latlon_vector
  public symm_grid
@@ -167,11 +132,7 @@
  contains
 
    subroutine grid_utils_init(Atm, npx, npy, npz, non_ortho, grid_type, c2l_order)
-<<<<<<< HEAD
 !> Initialize 2D memory and geometrical factors
-=======
-! Initialize 2D memory and geometrical factors
->>>>>>> rusty/master_test
       type(fv_atmos_type), intent(inout), target :: Atm
       logical, intent(in):: non_ortho
       integer, intent(in):: npx, npy, npz
@@ -267,11 +228,7 @@
       ne_corner                     => Atm%gridstruct%ne_corner
       nw_corner                     => Atm%gridstruct%nw_corner
 
-<<<<<<< HEAD
-      if ( Atm%flagstruct%do_schmidt .and. abs(Atm%flagstruct%stretch_fac-1.) > 1.E-5 ) then
-=======
       if ( (Atm%flagstruct%do_schmidt .or. Atm%flagstruct%do_cube_transform) .and. abs(Atm%flagstruct%stretch_fac-1.) > 1.E-5 ) then
->>>>>>> rusty/master_test
            Atm%gridstruct%stretched_grid = .true.
            symm_grid = .false.
       else
@@ -289,11 +246,7 @@
       elseif ( .not. Atm%flagstruct%hybrid_z ) then
 ! Initialize (ak,bk) for cold start; overwritten with restart file
            if (.not. Atm%flagstruct%external_eta) then
-<<<<<<< HEAD
-              call set_eta(npz, Atm%ks, Atm%ptop, Atm%ak, Atm%bk)
-=======
               call set_eta(npz, Atm%ks, Atm%ptop, Atm%ak, Atm%bk, Atm%flagstruct%npz_type)
->>>>>>> rusty/master_test
               if ( is_master() ) then
                  write(*,*) 'Grid_init', npz, Atm%ks, Atm%ptop
                  tmp1 = Atm%ak(Atm%ks+1)
@@ -321,11 +274,7 @@
       ne_corner = .false.
       nw_corner = .false.
 
-<<<<<<< HEAD
-      if (grid_type < 3 .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-=======
       if (grid_type < 3 .and. .not. Atm%gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
          if (       is==1 .and.  js==1 )      sw_corner = .true.
          if ( (ie+1)==npx .and.  js==1 )      se_corner = .true.
          if ( (ie+1)==npx .and. (je+1)==npy ) ne_corner = .true.
@@ -340,15 +289,9 @@
 
   if (grid_type < 3) then
 !xxx if ( .not. Atm%neststruct%nested ) then
-<<<<<<< HEAD
-     if ( .not. Atm%neststruct%nested .and. .not.Atm%flagstruct%regional ) then
-       call fill_corners(grid(:,:,1), npx, npy, FILL=XDir, BGRID=.true.)
-       call fill_corners(grid(:,:,2), npx, npy, FILL=XDir, BGRID=.true.)
-=======
      if ( .not. Atm%gridstruct%bounded_domain ) then
      call fill_corners(grid(:,:,1), npx, npy, FILL=XDir, BGRID=.true.)
      call fill_corners(grid(:,:,2), npx, npy, FILL=XDir, BGRID=.true.)
->>>>>>> rusty/master_test
      end if
 
      do j=jsd,jed+1
@@ -361,11 +304,7 @@
      call get_center_vect( npx, npy, grid3, ec1, ec2, Atm%bd )
 
 ! Fill arbitrary values in the non-existing corner regions:
-<<<<<<< HEAD
-     if (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-=======
      if (.not. Atm%gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
      do k=1,3
         call fill_ghost(ec1(k,:,:), npx, npy, big_number, Atm%bd)
         call fill_ghost(ec2(k,:,:), npx, npy, big_number, Atm%bd)
@@ -376,16 +315,6 @@
      do j=jsd,jed
         do i=isd+1,ied
         if ( ( (i<1   .and. j<1  ) .or. (i>npx .and. j<1  ) .or.  &
-<<<<<<< HEAD
-             (i>npx .and. j>(npy-1)) .or. (i<1   .and. j>(npy-1)) )  .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-             ew(1:3,i,j,1:2) = 0.
-        else
-           call mid_pt_cart( grid(i,j,1:2), grid(i,j+1,1:2), pp)
-           if (i==1 .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-              call latlon2xyz( agrid(i,j,1:2), p1)
-              call vect_cross(p2, pp, p1)
-           elseif(i==npx .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-=======
              (i>npx .and. j>(npy-1)) .or. (i<1   .and. j>(npy-1)) )  .and. .not. Atm%gridstruct%bounded_domain) then
              ew(1:3,i,j,1:2) = 0.
         else
@@ -394,7 +323,6 @@
               call latlon2xyz( agrid(i,j,1:2), p1)
               call vect_cross(p2, pp, p1)
            elseif(i==npx .and. .not. Atm%gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
               call latlon2xyz( agrid(i-1,j,1:2), p1)
               call vect_cross(p2, p1, pp)
            else
@@ -415,16 +343,6 @@
      do j=jsd+1,jed
         do i=isd,ied
         if ( ( (i<1   .and. j<1  ) .or. (i>(npx-1) .and. j<1  ) .or.  &
-<<<<<<< HEAD
-               (i>(npx-1) .and. j>npy) .or. (i<1   .and. j>npy) ) .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-             es(1:3,i,j,1:2) = 0.
-        else
-           call mid_pt_cart(grid(i,j,1:2), grid(i+1,j,1:2), pp)
-           if (j==1 .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-              call latlon2xyz( agrid(i,j,1:2), p1)
-              call vect_cross(p2, pp, p1)
-           elseif (j==npy .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-=======
                (i>(npx-1) .and. j>npy) .or. (i<1   .and. j>npy) ) .and. .not. Atm%gridstruct%bounded_domain) then
              es(1:3,i,j,1:2) = 0.
         else
@@ -433,7 +351,6 @@
               call latlon2xyz( agrid(i,j,1:2), p1)
               call vect_cross(p2, pp, p1)
            elseif (j==npy .and. .not. Atm%gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
               call latlon2xyz( agrid(i,j-1,1:2), p1)
               call vect_cross(p2, p1, pp)
            else 
@@ -502,11 +419,7 @@
 ! For transport operation
 ! -------------------------------
 !xxx  if (.not. Atm%neststruct%nested) then
-<<<<<<< HEAD
-      if (.not. Atm%neststruct%nested .and. .not. Atm%flagstruct%regional) then
-=======
       if (.not. Atm%gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
       if ( sw_corner ) then
            do i=-2,0
               sin_sg(0,i,3) = sin_sg(i,1,2) 
@@ -604,15 +517,9 @@
         do j=js,je+1
            do i=is,ie+1
 ! unit vect in X-dir: ee1
-<<<<<<< HEAD
-              if (i==1 .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-                  call vect_cross(pp, grid3(1,i,  j), grid3(1,i+1,j))
-              elseif(i==npx .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-=======
               if (i==1 .and. .not. Atm%gridstruct%bounded_domain) then
                   call vect_cross(pp, grid3(1,i,  j), grid3(1,i+1,j))
               elseif(i==npx .and. .not. Atm%gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
                   call vect_cross(pp, grid3(1,i-1,j), grid3(1,i,  j))
               else
                   call vect_cross(pp, grid3(1,i-1,j), grid3(1,i+1,j))
@@ -621,15 +528,9 @@
               call normalize_vect( ee1(1:3,i,j) )
 
 ! unit vect in Y-dir: ee2
-<<<<<<< HEAD
-              if (j==1 .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-                  call vect_cross(pp, grid3(1:3,i,j  ), grid3(1:3,i,j+1))
-              elseif(j==npy .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-=======
               if (j==1 .and. .not. Atm%gridstruct%bounded_domain) then
                   call vect_cross(pp, grid3(1:3,i,j  ), grid3(1:3,i,j+1))
               elseif(j==npy .and. .not. Atm%gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
                   call vect_cross(pp, grid3(1:3,i,j-1), grid3(1:3,i,j  ))
               else
                   call vect_cross(pp, grid3(1:3,i,j-1), grid3(1:3,i,j+1))
@@ -679,11 +580,7 @@
          enddo
       enddo
 ! Force the model to fail if incorrect corner values are to be used:
-<<<<<<< HEAD
-      if (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-=======
       if (.not. Atm%gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
          call fill_ghost(cosa_s, npx, npy,  big_number, Atm%bd)
       end if
 !------------------------------------
@@ -691,13 +588,8 @@
 !------------------------------------
       do j=js,je+1
          do i=is,ie+1
-<<<<<<< HEAD
-            if ( i==npx .and. j==npy .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-            else if ( ( i==1 .or. i==npx .or. j==1 .or. j==npy ) .and. .not. (Atm%neststruct%nested.or.Atm%flagstruct%regional) ) then
-=======
             if ( i==npx .and. j==npy .and. .not. Atm%gridstruct%bounded_domain) then
             else if ( ( i==1 .or. i==npx .or. j==1 .or. j==npy ) .and. .not. Atm%gridstruct%bounded_domain ) then
->>>>>>> rusty/master_test
                  rsina(i,j) = big_number
             else
 !                rsina(i,j) = 1. / sina(i,j)**2
@@ -708,11 +600,7 @@
 
       do j=jsd,jed
          do i=is,ie+1
-<<<<<<< HEAD
-            if ( (i==1 .or. i==npx)  .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional) ) then
-=======
             if ( (i==1 .or. i==npx)  .and. .not. Atm%gridstruct%bounded_domain ) then
->>>>>>> rusty/master_test
 !                rsin_u(i,j) = 1. / sina_u(i,j)
                  rsin_u(i,j) = 1. / sign(max(tiny_number,abs(sina_u(i,j))), sina_u(i,j))
             endif
@@ -721,11 +609,7 @@
 
       do j=js,je+1
          do i=isd,ied
-<<<<<<< HEAD
-            if ( (j==1 .or. j==npy) .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional) ) then
-=======
             if ( (j==1 .or. j==npy) .and. .not. Atm%gridstruct%bounded_domain ) then
->>>>>>> rusty/master_test
 !                rsin_v(i,j) = 1. / sina_v(i,j)
                  rsin_v(i,j) = 1. / sign(max(tiny_number,abs(sina_v(i,j))), sina_v(i,j))
             endif
@@ -736,21 +620,12 @@
       !values along the outward-facing edge of a tile in the corners, which is incorrect. 
       !What we will do is call fill_ghost and then fill in the appropriate values
 
-<<<<<<< HEAD
-      if (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-       do k=1,9
-        call fill_ghost(sin_sg(:,:,k), npx, npy, tiny_number, Atm%bd)  ! this will cause NAN if used
-        call fill_ghost(cos_sg(:,:,k), npx, npy, big_number, Atm%bd)
-       enddo
-      end if
-=======
       if (.not. Atm%gridstruct%bounded_domain) then
      do k=1,9
         call fill_ghost(sin_sg(:,:,k), npx, npy, tiny_number, Atm%bd)  ! this will cause NAN if used
         call fill_ghost(cos_sg(:,:,k), npx, npy, big_number, Atm%bd)
      enddo
      end if
->>>>>>> rusty/master_test
 
 ! -------------------------------
 ! For transport operation
@@ -834,11 +709,7 @@
 ! Make normal vect at face edges after consines are computed:
 !-------------------------------------------------------------
 ! for old d2a2c_vect routines
-<<<<<<< HEAD
-      if (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-=======
       if (.not. Atm%gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
          do j=js-1,je+1
             if ( is==1 ) then
                i=1
@@ -888,16 +759,11 @@
 !-------------------------------------------------------------
   endif
  
-<<<<<<< HEAD
 !xxxx
 !!!  should we insert .not.regional into the following loops alongside .not.nested ????
 !xxxx
   do j=jsd,jed+1
-     if ((j==1 .OR. j==npy) .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-=======
-  do j=jsd,jed+1
      if ((j==1 .OR. j==npy) .and. .not. Atm%gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
         do i=isd,ied
            divg_u(i,j) = 0.5*(sin_sg(i,j,2)+sin_sg(i,j-1,4))*dyc(i,j)/dx(i,j)
            del6_u(i,j) = 0.5*(sin_sg(i,j,2)+sin_sg(i,j-1,4))*dx(i,j)/dyc(i,j)
@@ -914,19 +780,11 @@
         divg_v(i,j) = sina_u(i,j)*dxc(i,j)/dy(i,j)
         del6_v(i,j) = sina_u(i,j)*dy(i,j)/dxc(i,j)
      enddo
-<<<<<<< HEAD
-     if (is == 1 .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-         divg_v(is,j) = 0.5*(sin_sg(1,j,1)+sin_sg(0,j,3))*dxc(is,j)/dy(is,j)
-         del6_v(is,j) = 0.5*(sin_sg(1,j,1)+sin_sg(0,j,3))*dy(is,j)/dxc(is,j)
-     endif
-     if (ie+1 == npx .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-=======
      if (is == 1 .and. .not. Atm%gridstruct%bounded_domain) then
          divg_v(is,j) = 0.5*(sin_sg(1,j,1)+sin_sg(0,j,3))*dxc(is,j)/dy(is,j)
          del6_v(is,j) = 0.5*(sin_sg(1,j,1)+sin_sg(0,j,3))*dy(is,j)/dxc(is,j)
      endif
      if (ie+1 == npx .and. .not. Atm%gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
          divg_v(ie+1,j) = 0.5*(sin_sg(npx,j,1)+sin_sg(npx-1,j,3))*dxc(ie+1,j)/dy(ie+1,j)
          del6_v(ie+1,j) = 0.5*(sin_sg(npx,j,1)+sin_sg(npx-1,j,3))*dy(ie+1,j)/dxc(ie+1,j)
      endif
@@ -935,11 +793,7 @@
 ! Initialize cubed_sphere to lat-lon transformation:
      call init_cubed_to_latlon( Atm%gridstruct, Atm%flagstruct%hydrostatic, agrid, grid_type, c2l_order, Atm%bd )
 
-<<<<<<< HEAD
-     call global_mx(area, ng, Atm%gridstruct%da_min, Atm%gridstruct%da_max, Atm%bd)
-=======
      call global_mx(area, Atm%ng, Atm%gridstruct%da_min, Atm%gridstruct%da_max, Atm%bd)
->>>>>>> rusty/master_test
      if( is_master() ) write(*,*) 'da_max/da_min=', Atm%gridstruct%da_max/Atm%gridstruct%da_min
 
      call global_mx_c(area_c(is:ie,js:je), is, ie, js, je, Atm%gridstruct%da_min_c, Atm%gridstruct%da_max_c)
@@ -950,11 +804,7 @@
 ! Initialization for interpolation at face edges
 !------------------------------------------------
 ! A->B scalar:
-<<<<<<< HEAD
-     if (grid_type < 3 .and. .not. Atm%neststruct%nested .and. .not. Atm%flagstruct%regional ) then
-=======
      if (grid_type < 3 .and. .not. Atm%gridstruct%bounded_domain ) then
->>>>>>> rusty/master_test
         call mpp_update_domains(divg_v, divg_u, Atm%domain, flags=SCALAR_PAIR,      &
                                 gridtype=CGRID_NE_PARAM, complete=.true.)
         call mpp_update_domains(del6_v, del6_u, Atm%domain, flags=SCALAR_PAIR,      &
@@ -963,11 +813,7 @@
              Atm%gridstruct%edge_e, non_ortho, grid, agrid, npx, npy, Atm%bd)
         call efactor_a2c_v(Atm%gridstruct%edge_vect_s, Atm%gridstruct%edge_vect_n, &
              Atm%gridstruct%edge_vect_w, Atm%gridstruct%edge_vect_e, &
-<<<<<<< HEAD
-             non_ortho, grid, agrid, npx, npy, Atm%neststruct%nested, Atm%bd, Atm%flagstruct%regional)
-=======
              non_ortho, grid, agrid, npx, npy, Atm%gridstruct%bounded_domain, Atm%bd)
->>>>>>> rusty/master_test
 !       call extend_cube_s(non_ortho, grid, agrid, npx, npy, .false., Atm%neststruct%nested)
 !       call van2d_init(grid, agrid, npx, npy)
      else
@@ -1058,10 +904,7 @@
 
  
   subroutine grid_utils_end
-<<<<<<< HEAD
-=======
  
->>>>>>> rusty/master_test
 ! deallocate sst_ncep (if allocated)
 #ifndef DYCORE_SOLO
       if (allocated(sst_ncep)) deallocate( sst_ncep )
@@ -1069,7 +912,6 @@
 #endif
   end subroutine grid_utils_end
 
-<<<<<<< HEAD
 !>@brief The subroutine 'direct_transform' performs a direct transformation of the 
 !! standard (symmetrical) cubic grid to a locally enhanced high-res grid on the sphere.
 !>@details It is an application of the Schmidt transformation at the south pole 
@@ -1078,18 +920,6 @@
     real(kind=R_GRID),    intent(in):: c              !< Stretching factor
     real(kind=R_GRID),    intent(in):: lon_p, lat_p   !< center location of the target face, radian
     integer, intent(in):: n              !< grid face number
-=======
-  subroutine direct_transform(c, i1, i2, j1, j2, lon_p, lat_p, n, lon, lat)
-!
-! This is a direct transformation of the standard (symmetrical) cubic grid
-! to a locally enhanced high-res grid on the sphere; it is an application
-! of the Schmidt transformation at the south pole followed by a 
-! pole_shift_to_target (rotation) operation
-!
-    real(kind=R_GRID),    intent(in):: c              ! Stretching factor
-    real(kind=R_GRID),    intent(in):: lon_p, lat_p   ! center location of the target face, radian
-    integer, intent(in):: n              ! grid face number
->>>>>>> rusty/master_test
     integer, intent(in):: i1, i2, j1, j2
 !  0 <= lon <= 2*pi ;    -pi/2 <= lat <= pi/2
     real(kind=R_GRID), intent(inout), dimension(i1:i2,j1:j2):: lon, lat
@@ -1141,8 +971,6 @@
   end subroutine direct_transform
 
 
-<<<<<<< HEAD
-=======
   subroutine cube_transform(c, i1, i2, j1, j2, lon_p, lat_p, n, lon, lat)
 !
 ! This is a direct transformation of the standard (symmetrical) cubic grid
@@ -1207,7 +1035,6 @@
   end subroutine cube_transform
 
 
->>>>>>> rusty/master_test
   real function inner_prod(v1, v2)
        real(kind=R_GRID),intent(in):: v1(3), v2(3)
        real (f_p) :: vp1(3), vp2(3), prod16
@@ -1222,36 +1049,19 @@
 
   end function inner_prod
 
-<<<<<<< HEAD
 !>@brief The subroutine 'efactor_a2c_v' initializes interpolation factors at face edges
 !! for interpolating vectors from A to C grid
- subroutine efactor_a2c_v(edge_vect_s, edge_vect_n, edge_vect_w, edge_vect_e, non_ortho, grid, agrid, npx, npy, nested, bd, regional)
- type(fv_grid_bounds_type), intent(IN) :: bd
- real(kind=R_GRID),    intent(INOUT), dimension(bd%isd:bd%ied) :: edge_vect_s, edge_vect_n
- real(kind=R_GRID),    intent(INOUT), dimension(bd%jsd:bd%jed) :: edge_vect_w, edge_vect_e
- logical, intent(in):: non_ortho, nested, regional
-=======
-
  subroutine efactor_a2c_v(edge_vect_s, edge_vect_n, edge_vect_w, edge_vect_e, non_ortho, grid, agrid, npx, npy, bounded_domain, bd)
-!
-! Initialization of interpolation factors at face edges
-! for interpolating vectors from A to C grid
-!
  type(fv_grid_bounds_type), intent(IN) :: bd
  real(kind=R_GRID),    intent(INOUT), dimension(bd%isd:bd%ied) :: edge_vect_s, edge_vect_n
  real(kind=R_GRID),    intent(INOUT), dimension(bd%jsd:bd%jed) :: edge_vect_w, edge_vect_e
  logical, intent(in):: non_ortho, bounded_domain
->>>>>>> rusty/master_test
  real(kind=R_GRID),    intent(in)::  grid(bd%isd:bd%ied+1,bd%jsd:bd%jed+1,2)
  real(kind=R_GRID),    intent(in):: agrid(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,2)
  integer, intent(in):: npx, npy
 
  real(kind=R_GRID) px(2,bd%isd:bd%ied+1),  py(2,bd%jsd:bd%jed+1)
-<<<<<<< HEAD
  real(kind=R_GRID) p1(2,bd%isd:bd%ied+1),  p2(2,bd%jsd:bd%jed+1)  !< mid-point
-=======
- real(kind=R_GRID) p1(2,bd%isd:bd%ied+1),  p2(2,bd%jsd:bd%jed+1)       ! mid-point
->>>>>>> rusty/master_test
  real(kind=R_GRID) d1, d2
  integer i, j
  integer im2, jm2
@@ -1280,11 +1090,7 @@
      edge_vect_w = big_number
      edge_vect_e = big_number
 
-<<<<<<< HEAD
-     if ( npx /= npy .and. .not. (nested .or. regional)) call mpp_error(FATAL, 'efactor_a2c_v: npx /= npy')
-=======
      if ( npx /= npy .and. .not. (bounded_domain)) call mpp_error(FATAL, 'efactor_a2c_v: npx /= npy')
->>>>>>> rusty/master_test
      if ( (npx/2)*2 == npx ) call mpp_error(FATAL, 'efactor_a2c_v: npx/npy is not an odd number')
 
      im2 = (npx-1)/2
@@ -1419,19 +1225,10 @@
 
  end subroutine efactor_a2c_v
 
-<<<<<<< HEAD
 !>@brief The subroutine 'edge_factors' initializes interpolation factors at face edges
 !! for interpolation from A to B grid.
 ! Sets up edge_?
  subroutine edge_factors(edge_s, edge_n, edge_w, edge_e, non_ortho, grid, agrid, npx, npy, bd)
-=======
-! Sets up edge_?
- subroutine edge_factors(edge_s, edge_n, edge_w, edge_e, non_ortho, grid, agrid, npx, npy, bd)
-!
-! Initialization of interpolation factors at face edges
-! for interpolation from A to B grid
-!
->>>>>>> rusty/master_test
  type(fv_grid_bounds_type), intent(IN) :: bd
  real(kind=R_GRID),    intent(INOUT), dimension(npx) :: edge_s, edge_n
  real(kind=R_GRID),    intent(INOUT), dimension(npy) :: edge_w, edge_e
@@ -1562,7 +1359,6 @@
 
  end subroutine gnomonic_grids
 
-<<<<<<< HEAD
 !-----------------------------------------------------
 !>@brief The subroutine 'gnomonic_ed' computes the equal 
 !! distances along the 4 edges of the cubed sphere.
@@ -1576,19 +1372,6 @@
 !! For C2000: (dx_min, dx_max) = (3.921, 5.545) in km unit
 !! This is the grid of choice for global cloud resolving
  subroutine gnomonic_ed(im, lamda, theta)
-=======
- subroutine gnomonic_ed(im, lamda, theta)
-!-----------------------------------------------------
-! Equal distance along the 4 edges of the cubed sphere
-!-----------------------------------------------------
-! Properties: 
-!            * defined by intersections of great circles
-!            * max(dx,dy; global) / min(dx,dy; global) = sqrt(2) = 1.4142
-!            * Max(aspect ratio) = 1.06089
-!            * the N-S coordinate curves are const longitude on the 4 faces with equator 
-! For C2000: (dx_min, dx_max) = (3.921, 5.545)    in km unit
-! This is the grid of choice for global cloud resolving
->>>>>>> rusty/master_test
 
  integer, intent(in):: im
  real(kind=R_GRID), intent(out):: lamda(im+1,im+1)
@@ -1670,16 +1453,11 @@
  if ( is_master() ) then
       p1(1) = lamda(1,1);    p1(2) = theta(1,1)
       p2(1) = lamda(2,1);    p2(2) = theta(2,1)
-<<<<<<< HEAD
       write(*,*) 'Gird distance at face edge (km)=',great_circle_dist( p1, p2, radius )   ! earth radius is assumed
-=======
-      write(*,*) 'Grid distance at face edge (m)=',great_circle_dist( p1, p2, radius )   ! earth radius is assumed
->>>>>>> rusty/master_test
  endif
 
  end subroutine gnomonic_ed
 
-<<<<<<< HEAD
 !>@brief The subroutine 'gnomonic_ed_limited' creates a limited-area 
 !! equidistant gnomonic grid with corners given by lL (lower-left),
 !! lR (lower-right), uL (upper-left),and uR (upper-right) with im by in 
@@ -1690,21 +1468,6 @@
 !! The resulting gnomonic limited area grid can then be translated and/or
 !! scaled to its appropriate location on another panel if desired.
  subroutine gnomonic_ed_limited(im, in, nghost, lL, lR, uL, uR, lamda, theta)
-=======
- subroutine gnomonic_ed_limited(im, in, nghost, lL, lR, uL, uR, lamda, theta)
-   
-   !This routine creates a limited-area equidistant gnomonic grid with
-   !corners given by lL (lower-left), lR (lower-right), uL (upper-left),
-   !and uR (upper-right) with im by in cells. lamda and theta are the 
-   !latitude-longitude coordinates of the corners of the cells.
-
-   !This formulation assumes the coordinates given are on the
-   ! 'prototypical equatorial panel' given by gnomonic_ed. The
-   ! resulting gnomonic limited area grid can then be translated and
-   ! /or scaled to its appropriate location on another panel if so
-   ! desired.
-
->>>>>>> rusty/master_test
    integer, intent(IN) :: im, in, nghost
    real(kind=R_GRID), intent(IN), dimension(2) :: lL, lR, uL, uR
    real(kind=R_GRID), intent(OUT) :: lamda(1-nghost:im+1+nghost,1-nghost:in+1+nghost)
@@ -1920,23 +1683,12 @@
 
  end subroutine latlon2xyz2
 
-<<<<<<< HEAD
 !>@brief The subroutine 'latlon2xyz' maps (lon, lat) to (x,y,z)
  subroutine latlon2xyz(p, e, id)
 
  real(kind=R_GRID), intent(in) :: p(2)
  real(kind=R_GRID), intent(out):: e(3)
  integer, optional, intent(in):: id !< id=0 do nothing; id=1, right_hand
-=======
-
- subroutine latlon2xyz(p, e, id)
-!
-! Routine to map (lon, lat) to (x,y,z)
-!
- real(kind=R_GRID), intent(in) :: p(2)
- real(kind=R_GRID), intent(out):: e(3)
- integer, optional, intent(in):: id   ! id=0 do nothing; id=1, right_hand
->>>>>>> rusty/master_test
 
  integer n
  real (f_p):: q(2)
@@ -1958,19 +1710,10 @@
 
  end subroutine latlon2xyz
 
-<<<<<<< HEAD
 !>@brief The subroutine 'mirror_xyz' computes the mirror image of p0(x0, y0, z0)
 !! as p(x, y, z) given the "mirror" as defined by p1(x1, y1, z1), p2(x2, y2, z2), 
 !! and the center of the sphere.
  subroutine mirror_xyz(p1, p2, p0, p)
-=======
-
- subroutine mirror_xyz(p1, p2, p0, p)
-
-! Given the "mirror" as defined by p1(x1, y1, z1), p2(x2, y2, z2), and center 
-! of the sphere, compute the mirror image of p0(x0, y0, z0) as p(x, y, z)
-
->>>>>>> rusty/master_test
 !-------------------------------------------------------------------------------
 ! for k=1,2,3 (x,y,z)
 !
@@ -2002,19 +1745,10 @@
 
  end subroutine mirror_xyz 
 
-<<<<<<< HEAD
 !>@brief The subroutine 'mirror_latlon' computes the mirror image of 
 !! (lon0, lat0) as  (lon3, lat3) given the "mirror" as defined by
 !! (lon1, lat1), (lon2, lat2), and center of the sphere. 
  subroutine mirror_latlon(lon1, lat1, lon2, lat2, lon0, lat0, lon3, lat3)
-=======
-
- subroutine mirror_latlon(lon1, lat1, lon2, lat2, lon0, lat0, lon3, lat3)
-!
-! Given the "mirror" as defined by (lon1, lat1), (lon2, lat2), and center 
-! of the sphere, compute the mirror image of (lon0, lat0) as  (lon3, lat3)
-
->>>>>>> rusty/master_test
  real(kind=R_GRID), intent(in):: lon1, lat1, lon2, lat2, lon0, lat0
  real(kind=R_GRID), intent(out):: lon3, lat3
 !
@@ -2084,34 +1818,18 @@
 
  end  subroutine cart_to_latlon
 
-<<<<<<< HEAD
 !>@brief The subroutine 'vect_cross performs cross products 
 !! of 3D vectors: e = P1 X P2
  subroutine vect_cross(e, p1, p2)
  real(kind=R_GRID), intent(in) :: p1(3), p2(3)
  real(kind=R_GRID), intent(out):: e(3)
 
-=======
-
-
- subroutine vect_cross(e, p1, p2)
- real(kind=R_GRID), intent(in) :: p1(3), p2(3)
- real(kind=R_GRID), intent(out):: e(3)
-!
-! Perform cross products of 3D vectors: e = P1 X P2
-!
->>>>>>> rusty/master_test
       e(1) = p1(2)*p2(3) - p1(3)*p2(2)
       e(2) = p1(3)*p2(1) - p1(1)*p2(3)
       e(3) = p1(1)*p2(2) - p1(2)*p2(1)
 
  end subroutine vect_cross
 
-<<<<<<< HEAD
-=======
-
-
->>>>>>> rusty/master_test
  subroutine get_center_vect( npx, npy, pp, u1, u2, bd )
    type(fv_grid_bounds_type), intent(IN) :: bd
     integer, intent(in):: npx, npy
@@ -2167,11 +1885,7 @@
 
  subroutine get_unit_vect2( e1, e2, uc )
    real(kind=R_GRID), intent(in) :: e1(2), e2(2)
-<<<<<<< HEAD
    real(kind=R_GRID), intent(out):: uc(3) !< unit vector e1--->e2
-=======
-   real(kind=R_GRID), intent(out):: uc(3) ! unit vector e1--->e2
->>>>>>> rusty/master_test
 ! Local:
    real(kind=R_GRID), dimension(3):: pc, p1, p2, p3
 
@@ -2199,16 +1913,9 @@
 
  end subroutine get_unit_vect3
 
-<<<<<<< HEAD
 !>@brief The subroutine 'normalize_vect' makes 'e' a unit vector.
  subroutine normalize_vect(e)
 
-=======
-
-
- subroutine normalize_vect(e)
-!                              Make e an unit vector
->>>>>>> rusty/master_test
  real(kind=R_GRID), intent(inout):: e(3)
  real(f_p):: pdot
  integer k
@@ -2224,15 +1931,9 @@
 
 
  subroutine intp_great_circle(beta, p1, p2, x_o, y_o)
-<<<<<<< HEAD
  real(kind=R_GRID), intent(in)::  beta  !< [0,1]
  real(kind=R_GRID), intent(in)::  p1(2), p2(2)
  real(kind=R_GRID), intent(out):: x_o, y_o !< between p1 and p2 along GC
-=======
- real(kind=R_GRID), intent(in)::  beta    ! [0,1]
- real(kind=R_GRID), intent(in)::  p1(2), p2(2)
- real(kind=R_GRID), intent(out):: x_o, y_o     ! between p1 and p2 along GC
->>>>>>> rusty/master_test
 !------------------------------------------
     real(kind=R_GRID):: pm(2)
     real(kind=R_GRID):: e1(3), e2(3), e3(3)
@@ -2260,7 +1961,6 @@
 
  end subroutine intp_great_circle
 
-<<<<<<< HEAD
 !>@brief The subroutine 'spherical_linear_interpolation' interpolates along the great circle connecting points p1 and p2.
 !>@details The routine uses the formula taken from <http://en.wikipedia.org/wiki/Slerp> 
 !! and is attributed to Glenn Davis based on a concept by Ken Shoemake.
@@ -2269,15 +1969,6 @@
  real(kind=R_GRID), intent(in)::  beta    !< [0,1]
  real(kind=R_GRID), intent(in)::  p1(2), p2(2)
  real(kind=R_GRID), intent(out):: pb(2)   !< between p1 and p2 along GC
-=======
- subroutine spherical_linear_interpolation(beta, p1, p2, pb)
-
-   !This formula interpolates along the great circle connecting points p1 and p2. This formula is taken from http://en.wikipedia.org/wiki/Slerp and is attributed to Glenn Davis based on a concept by Ken Shoemake.
-
- real(kind=R_GRID), intent(in)::  beta    ! [0,1]
- real(kind=R_GRID), intent(in)::  p1(2), p2(2)
- real(kind=R_GRID), intent(out):: pb(2)   ! between p1 and p2 along GC
->>>>>>> rusty/master_test
 !------------------------------------------
  real(kind=R_GRID):: pm(2)
  real(kind=R_GRID):: e1(3), e2(3), eb(3)
@@ -2408,23 +2099,12 @@
 
   end function great_circle_dist
 
-<<<<<<< HEAD
   !>@brief The function 'great_circle_dist_cart' calculates the 
   !! normalized great circle distance between 'v1' and 'v2'.      
   !>@date July 2006                                               
   !>@version 0.1                                                                                                                     
   function great_circle_dist_cart(v1, v2, radius)
    
-=======
-
-  function great_circle_dist_cart(v1, v2, radius)
-    !------------------------------------------------------------------!
-    ! date:    July 2006                                               !
-    ! version: 0.1                                                     !
-    !                                                                  !
-    ! calculate normalized great circle distance between v1 and v2     ! 
-    !------------------------------------------------------------------!
->>>>>>> rusty/master_test
     real(kind=R_GRID) :: great_circle_dist_cart
     real(kind=R_GRID), dimension(3), intent(in) :: v1, v2
     real(kind=R_GRID), intent(IN), optional :: radius
@@ -2446,7 +2126,6 @@
 
 
   end function great_circle_dist_cart
-<<<<<<< HEAD
                                                                                                            
  !>@brief The subroutine 'intersect' calculates the intersection of two great circles.       
  !>@details input:                                                           
@@ -2461,31 +2140,6 @@
  !>@version: 0.1        
  subroutine intersect(a1,a2,b1,b2,radius,x_inter,local_a,local_b)
 
-=======
-
-
-
- subroutine intersect(a1,a2,b1,b2,radius,x_inter,local_a,local_b)
-  !--------------------------------------------------------------------!
-  ! date:    July 2006                                                 !
-  ! version: 0.1                                                       !
-  !                                                                    !
-  ! calculate intersection of two great circles                        !
-  !--------------------------------------------------------------------!
-    !------------------------------------------------------------------!
-    ! calculate intersection of two great circles                      !
-    !                                                                  !
-    ! input:                                                           !
-    ! a1, a2,  -   pairs of points on sphere in cartesian coordinates  !
-    ! b1, b2       defining great circles                              !
-    ! radius   -   radius of the sphere                                !
-    !                                                                  !
-    ! output:                                                          !
-    ! x_inter  -   nearest intersection point of the great circles     !
-    ! local_a  -   true if x1 between (a1, a2)                         !
-    ! local_b  -   true if x1 between (b1, b2)                         !
-    !------------------------------------------------------------------!
->>>>>>> rusty/master_test
     real(kind=R_GRID), dimension(3), intent(in)  :: a1, a2, b1, b2
     real(kind=R_GRID), intent(in) :: radius
     real(kind=R_GRID), dimension(3), intent(out) :: x_inter
@@ -2565,7 +2219,6 @@
     end subroutine check_local
     !------------------------------------------------------------------!
   end subroutine intersect
-<<<<<<< HEAD
  
  !>@brief The subroutine 'intersect_cross' calculates the intersection of two great circles.       
  !>@details input:                                                           
@@ -2579,30 +2232,12 @@
  !> local_b  -   true if x1 between (b1, b2)     
  subroutine intersect_cross(a1,a2,b1,b2,radius,x_inter,local_a,local_b)
   
-=======
-
- subroutine intersect_cross(a1,a2,b1,b2,radius,x_inter,local_a,local_b)
-    !------------------------------------------------------------------!
-    ! calculate intersection of two great circles                      !
-    !                                                                  !
-    ! input:                                                           !
-    ! a1, a2,  -   pairs of points on sphere in cartesian coordinates  !
-    ! b1, b2       defining great circles                              !
-    ! radius   -   radius of the sphere                                !
-    !                                                                  !
-    ! output:                                                          !
-    ! x_inter  -   nearest intersection point of the great circles     !
-    ! local_a  -   true if x1 between (a1, a2)                         !
-    ! local_b  -   true if x1 between (b1, b2)                         !
-    !------------------------------------------------------------------!
->>>>>>> rusty/master_test
     real(kind=R_GRID), dimension(3), intent(in)  :: a1, a2, b1, b2
     real(kind=R_GRID), intent(in) :: radius
     real(kind=R_GRID), dimension(3), intent(out) :: x_inter
     logical, intent(out) :: local_a,local_b
     real(kind=R_GRID), dimension(3) :: v1, v2
 
-<<<<<<< HEAD
     !> A great circle is the intersection of a plane through the center
     !! of the sphere with the sphere. That plane is specified by a
     !! vector v1, which is the cross product of any two vectors lying
@@ -2616,21 +2251,6 @@
     !! to both v1 and v2, and so lies along the cross product of v1
     !! and v2.
     !> The two intersection points of the great circles is therefore +/- v1 x v2.
-=======
-    !A great circle is the intersection of a plane through the center
-    ! of the sphere with the sphere. That plane is specified by a
-    ! vector v1, which is the cross product of any two vectors lying
-    ! in the plane; here, we use position vectors, which are unit
-    ! vectors lying in the plane and rooted at the center of the
-    ! sphere. 
-    !The intersection of two great circles is where the the
-    ! intersection of the planes, a line, itself intersects the
-    ! sphere. Since the planes are defined by perpendicular vectors
-    ! v1, v2 respectively, the intersecting line is perpendicular
-    ! to both v1 and v2, and so lies along the cross product of v1
-    ! and v2.
-    !The two intersection points of the great circles is therefore +/- v1 x v2.
->>>>>>> rusty/master_test
     call vect_cross(v1, a1, a2)
     call vect_cross(v2, b1, b2)
 
@@ -2788,11 +2408,7 @@
   end subroutine init_cubed_to_latlon
 
 
-<<<<<<< HEAD
- subroutine cubed_to_latlon(u, v, ua, va, gridstruct, npx, npy, km, mode, grid_type, domain, nested, c2l_ord, bd)
-=======
  subroutine cubed_to_latlon(u, v, ua, va, gridstruct, npx, npy, km, mode, grid_type, domain, bounded_domain, c2l_ord, bd)
->>>>>>> rusty/master_test
  type(fv_grid_bounds_type), intent(IN) :: bd 
  integer, intent(in) :: km, npx, npy, grid_type, c2l_ord
  integer, intent(in) :: mode   ! update if present
@@ -2802,30 +2418,18 @@
  real, intent(out):: ua(bd%isd:bd%ied, bd%jsd:bd%jed,km)
  real, intent(out):: va(bd%isd:bd%ied, bd%jsd:bd%jed,km)
  type(domain2d), intent(INOUT) :: domain
-<<<<<<< HEAD
- logical, intent(IN) :: nested
-=======
  logical, intent(IN) :: bounded_domain
->>>>>>> rusty/master_test
 
  if ( c2l_ord == 2 ) then
       call c2l_ord2(u, v, ua, va, gridstruct, km, grid_type, bd, .false.)
  else
-<<<<<<< HEAD
-      call c2l_ord4(u, v, ua, va, gridstruct, npx, npy, km, grid_type, domain, nested, mode, bd)
-=======
       call c2l_ord4(u, v, ua, va, gridstruct, npx, npy, km, grid_type, domain, bounded_domain, mode, bd)
->>>>>>> rusty/master_test
  endif
 
  end subroutine cubed_to_latlon
 
 
-<<<<<<< HEAD
- subroutine c2l_ord4(u, v, ua, va, gridstruct, npx, npy, km, grid_type, domain, nested, mode, bd)
-=======
  subroutine c2l_ord4(u, v, ua, va, gridstruct, npx, npy, km, grid_type, domain, bounded_domain, mode, bd)
->>>>>>> rusty/master_test
 
  type(fv_grid_bounds_type), intent(IN) :: bd
   integer, intent(in) :: km, npx, npy, grid_type
@@ -2836,11 +2440,7 @@
   real, intent(out)::  ua(bd%isd:bd%ied, bd%jsd:bd%jed,km)
   real, intent(out)::  va(bd%isd:bd%ied, bd%jsd:bd%jed,km)
   type(domain2d), intent(INOUT) :: domain
-<<<<<<< HEAD
-  logical, intent(IN) :: nested
-=======
   logical, intent(IN) :: bounded_domain
->>>>>>> rusty/master_test
 ! Local 
 ! 4-pt Lagrange interpolation
   real :: a1 =  0.5625
@@ -2867,20 +2467,12 @@
                                   call timing_off('COMM_TOTAL')
   endif
 
-<<<<<<< HEAD
-!$OMP parallel do default(none) shared(is,ie,js,je,km,npx,npy,grid_type,nested,c2,c1, &
-=======
 !$OMP parallel do default(none) shared(is,ie,js,je,km,npx,npy,grid_type,bounded_domain,c2,c1, &
->>>>>>> rusty/master_test
 !$OMP                                  u,v,gridstruct,ua,va,a1,a2)         &
 !$OMP                          private(utmp, vtmp, wu, wv)
  do k=1,km
    if ( grid_type < 4 ) then
-<<<<<<< HEAD
-    if (nested) then
-=======
     if (bounded_domain) then
->>>>>>> rusty/master_test
      do j=max(1,js),min(npy-1,je)
         do i=max(1,is),min(npx-1,ie)
            utmp(i,j) = c2*(u(i,j-1,k)+u(i,j+2,k)) + c1*(u(i,j,k)+u(i,j+1,k))
@@ -2956,11 +2548,7 @@
       enddo
     endif
 
-<<<<<<< HEAD
- endif !nested
-=======
  endif !bounded_domain
->>>>>>> rusty/master_test
 
  !Transform local a-grid winds into latitude-longitude coordinates
      do j=js,je
@@ -3161,14 +2749,8 @@
 
  end subroutine cell_center2
 
-<<<<<<< HEAD
 !>@brief The subroutine 'cell_center3' gets the center position of a cell.
  subroutine cell_center3(p1, p2, p3, p4, ec)
-=======
-
- subroutine cell_center3(p1, p2, p3, p4, ec)
-! Get center position of a cell
->>>>>>> rusty/master_test
          real(kind=R_GRID) , intent(IN)  :: p1(3), p2(3), p3(3), p4(3)
          real(kind=R_GRID) , intent(OUT) :: ec(3)
 ! Local
@@ -3231,24 +2813,12 @@
 
  end function get_area
 
-<<<<<<< HEAD
   !>@brief The function 'dist2side' calculates the shortest normalized distance 
   !! on a sphere from point to straight line defined by 'v1' and 'v2'.  
   !>@details This version uses cartesian coordinates.
   !>@date Feb 2007                                                
   !>@version 0.1    
   function dist2side(v1, v2, point)  
-=======
-
-  function dist2side(v1, v2, point)
-    !------------------------------------------------------------------!
-    ! calculate shortest normalized distance on sphere                 !
-    ! from point to straight line defined by v1 and v2                 !
-    ! This version uses cartesian coordinates.                         !
-    ! date:    Feb 2007                                                !
-    ! version: 0.1                                                     !
-    !------------------------------------------------------------------!
->>>>>>> rusty/master_test
     real(kind=R_GRID) :: dist2side
     real(kind=R_GRID), dimension(3), intent(in) :: v1, v2, point
 
@@ -3260,14 +2830,9 @@
 
   end function dist2side
 
-<<<<<<< HEAD
   !>@brief The function 'dist2side_latlon' is the version of 'dist2side' that 
   !! takes points in latitude-longitude coordinates.
   function dist2side_latlon(v1,v2,point)
-=======
-  function dist2side_latlon(v1,v2,point)
-    !Version of dist2side that takes points in latitude-longitude coordinates
->>>>>>> rusty/master_test
 
     real(kind=R_GRID) :: dist2side_latlon
     real(kind=R_GRID), dimension(2), intent(in) :: v1, v2, point
@@ -3398,15 +2963,8 @@
 
  end function cos_angle
 
-<<<<<<< HEAD
  !>@brief The function 'g_sum' is the fast version of 'globalsum'. 
  real function g_sum(domain, p, ifirst, ilast, jfirst, jlast, ngc, area, mode, reproduce)
-=======
-
-
- real function g_sum(domain, p, ifirst, ilast, jfirst, jlast, ngc, area, mode, reproduce)
-! Fast version of globalsum 
->>>>>>> rusty/master_test
       integer, intent(IN) :: ifirst, ilast
       integer, intent(IN) :: jfirst, jlast, ngc
       integer, intent(IN) :: mode  ! if ==1 divided by area
@@ -3457,20 +3015,11 @@
 
  end function g_sum
 
-<<<<<<< HEAD
 !>@brief The function 'global_qsum' computes the quick global sum without area weighting.
  real function global_qsum(p, ifirst, ilast, jfirst, jlast)
       integer, intent(IN) :: ifirst, ilast
       integer, intent(IN) :: jfirst, jlast
       real, intent(IN) :: p(ifirst:ilast,jfirst:jlast) !< field to be summed
-=======
-
- real function global_qsum(p, ifirst, ilast, jfirst, jlast)
-! quick global sum without area weighting
-      integer, intent(IN) :: ifirst, ilast
-      integer, intent(IN) :: jfirst, jlast
-      real, intent(IN) :: p(ifirst:ilast,jfirst:jlast)      ! field to be summed
->>>>>>> rusty/master_test
       integer :: i,j
       real gsum
          
@@ -3515,13 +3064,8 @@
 
  end subroutine global_mx
 
-<<<<<<< HEAD
 !>@brief The subroutine 'global_mx_c' computes the global max and min at the cell corners.
  subroutine global_mx_c(q, i1, i2, j1, j2, qmin, qmax)
-=======
- subroutine global_mx_c(q, i1, i2, j1, j2, qmin, qmax)
-! For computing global max/min at cell Corners
->>>>>>> rusty/master_test
      integer, intent(in):: i1, i2, j1, j2
      real(kind=R_GRID), intent(in)   :: q(i1:i2,j1:j2)
      real(kind=R_GRID), intent(out)  :: qmin, qmax
@@ -3637,20 +3181,13 @@
   real, allocatable:: pem(:,:)
   real(kind=4) :: p4
   integer k, i, j
-<<<<<<< HEAD
-  integer :: is,  ie,  js,  je
-=======
   integer :: is,  ie,  js,  je, ng
->>>>>>> rusty/master_test
 
   is  = bd%is
   ie  = bd%ie
   js  = bd%js
   je  = bd%je
-<<<<<<< HEAD
-=======
   ng  = bd%ng
->>>>>>> rusty/master_test
 
      allocate ( pem(is:ie,js:je) )
 
@@ -3703,11 +3240,7 @@
   integer, intent (in) :: n
   integer :: i,j,k
   real(kind=R_GRID), intent (inout), dimension (n,n):: a
-<<<<<<< HEAD
   real(kind=R_GRID), intent (out), dimension (n,n):: x   !< inverted maxtrix
-=======
-  real(kind=R_GRID), intent (out), dimension (n,n):: x   ! inverted maxtrix
->>>>>>> rusty/master_test
   real(kind=R_GRID), dimension (n,n) :: b
   integer indx(n)
  
@@ -3744,22 +3277,10 @@
 
  end subroutine invert_matrix
  
-<<<<<<< HEAD
 !>@brief The subroutine 'elgs' performs the partial-pivoting gaussian elimination.
 !>@details a(n,n) is the original matrix in the input and transformed matrix
 !! plus the pivoting element ratios below the diagonal in the output.
  subroutine elgs (a,n,indx)
-=======
-
- subroutine elgs (a,n,indx)
-
-!------------------------------------------------------------------
-! subroutine to perform the partial-pivoting gaussian elimination.
-! a(n,n) is the original matrix in the input and transformed matrix
-! plus the pivoting element ratios below the diagonal in the output.
-!------------------------------------------------------------------
- 
->>>>>>> rusty/master_test
   integer, intent (in) :: n
   integer :: i,j,k,itmp
   integer, intent (out), dimension (n) :: indx
@@ -3837,13 +3358,8 @@
 
  subroutine project_sphere_v( np, f, e )
 !---------------------------------
-<<<<<<< HEAD
  integer, intent(in):: np           !< total number of points
  real(kind=R_GRID),    intent(in):: e(3,np)      !< input position unit vector
-=======
- integer, intent(in):: np           ! total number of points
- real(kind=R_GRID),    intent(in):: e(3,np)      ! input position unit vector
->>>>>>> rusty/master_test
  real(kind=R_GRID), intent(inout):: f(3,np)
 ! local
  real(f_p):: ap
@@ -3858,8 +3374,8 @@
 
  end subroutine project_sphere_v
 
-<<<<<<< HEAD
-=======
+!>@brief The subroutine 'update_dwinds_phys' transforms the wind tendencies from
+!! the A grid to the D grid for the final update.
  subroutine update_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v, gridstruct, npx, npy, npz, domain)
 
 ! Purpose; Transform wind tendencies on A grid to D grid for the final update
@@ -4046,7 +3562,9 @@
 
  end subroutine update_dwinds_phys 
 
-
+!>@brief The subroutine 'update2d_dwinds_phys' transforms the wind tendencies
+!from
+!! the A grid to the D grid for the final update.
  subroutine update2d_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v, gridstruct, npx, npy, npz, domain)
 
 ! Purpose; Transform wind tendencies on A grid to D grid for the final update
@@ -4191,7 +3709,6 @@
  end subroutine update2d_dwinds_phys
 
 
->>>>>>> rusty/master_test
 #ifdef TO_DO_MQ
  subroutine init_mq(phis, gridstruct, npx, npy, is, ie, js, je, ng)
     integer, intent(in):: npx, npy, is, ie, js, je, ng

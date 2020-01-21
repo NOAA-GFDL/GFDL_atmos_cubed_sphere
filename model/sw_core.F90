@@ -1,5 +1,4 @@
 !***********************************************************************
-<<<<<<< HEAD
 !*                   GNU Lesser General Public License                 
 !*
 !* This file is part of the FV3 dynamical core.
@@ -46,29 +45,6 @@
 ! </table>
 
  use fv_mp_mod,         only: ng
-=======
-!*                   GNU Lesser General Public License
-!*
-!* This file is part of the FV3 dynamical core.
-!*
-!* The FV3 dynamical core is free software: you can redistribute it
-!* and/or modify it under the terms of the
-!* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or
-!* (at your option) any later version.
-!*
-!* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-!* See the GNU General Public License for more details.
-!*
-!* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.
-!* If not, see <http://www.gnu.org/licenses/>.
-!***********************************************************************
- module sw_core_mod
-
->>>>>>> rusty/master_test
  use tp_core_mod,       only: fv_tp_2d, pert_ppm, copy_corners
  use fv_mp_mod, only: fill_corners, XDir, YDir
  use fv_arrays_mod, only: fv_grid_type, fv_grid_bounds_type, fv_flags_type
@@ -83,11 +59,7 @@
   real, parameter:: r3 = 1./3.
   real, parameter:: t11=27./28., t12=-13./28., t13=3./7., t14=6./7., t15=3./28.
   real, parameter:: s11=11./14., s13=-13./14., s14=4./7., s15=3./14.
-<<<<<<< HEAD
   real, parameter:: near_zero = 1.E-9     !< for KE limiter
-=======
-  real, parameter:: near_zero = 1.E-9     ! for KE limiter
->>>>>>> rusty/master_test
 #ifdef OVERLOAD_R4
   real, parameter:: big_number = 1.E8
 #else
@@ -96,11 +68,7 @@
 !----------------------
 ! PPM volume mean form:
 !----------------------
-<<<<<<< HEAD
   real, parameter:: p1 =  7./12.     !< 0.58333333
-=======
-  real, parameter:: p1 =  7./12.     ! 0.58333333
->>>>>>> rusty/master_test
   real, parameter:: p2 = -1./12.
 !----------------------------
 ! 4-pt Lagrange interpolation
@@ -130,11 +98,7 @@
 
   contains
 
-<<<<<<< HEAD
 !>@brief The subroutine 'c_sw' performs a half-timestep advance of the C-grid winds.
-=======
-
->>>>>>> rusty/master_test
    subroutine c_sw(delpc, delp, ptc, pt, u,v, w, uc,vc, ua,va, wc,  &
                    ut, vt, divg_d, nord, dt2, hydrostatic, dord4, &
                    bd, gridstruct, flagstruct)
@@ -165,11 +129,7 @@
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
       integer :: npx, npy
-<<<<<<< HEAD
-      logical :: nested,regional
-=======
       logical :: bounded_domain
->>>>>>> rusty/master_test
 
       real, pointer, dimension(:,:,:) :: sin_sg, cos_sg
       real, pointer, dimension(:,:)   :: cosa_u, cosa_v
@@ -188,12 +148,7 @@
 
       npx = flagstruct%npx
       npy = flagstruct%npy
-<<<<<<< HEAD
-      nested = gridstruct%nested
-      regional = gridstruct%regional
-=======
       bounded_domain = gridstruct%bounded_domain
->>>>>>> rusty/master_test
 
       sin_sg  => gridstruct%sin_sg
       cos_sg  => gridstruct%cos_sg
@@ -214,17 +169,10 @@
       iep1 = ie+1; jep1 = je+1
 
       call d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4, gridstruct, bd, &
-<<<<<<< HEAD
-                      npx, npy, nested, flagstruct%grid_type, regional )
-
-      if( nord > 0 ) then
-         if (nested .or. regional) then
-=======
                       npx, npy, bounded_domain, flagstruct%grid_type)
 
       if( nord > 0 ) then
          if (bounded_domain) then
->>>>>>> rusty/master_test
             call divergence_corner_nest(u, v, ua, va, divg_d, gridstruct, flagstruct, bd)
          else
             call divergence_corner(u, v, ua, va, divg_d, gridstruct, flagstruct, bd)
@@ -254,12 +202,7 @@
 ! Transport delp:
 !----------------
 ! Xdir:
-<<<<<<< HEAD
-      if (flagstruct%grid_type < 3 .and. .not. (nested .or. regional)) &
-       call fill2_4corners(delp, pt, 1, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
-=======
       if (flagstruct%grid_type < 3 .and. .not. bounded_domain) call fill2_4corners(delp, pt, 1, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
->>>>>>> rusty/master_test
 
       if ( hydrostatic ) then
 #ifdef SW_DYNAMICS
@@ -310,13 +253,7 @@
       endif
 
 ! Ydir:
-<<<<<<< HEAD
-      if (flagstruct%grid_type < 3 .and. .not. (nested .or. regional))  &
-       call fill2_4corners(delp, pt, 2, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
-
-=======
       if (flagstruct%grid_type < 3 .and. .not. bounded_domain) call fill2_4corners(delp, pt, 2, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
->>>>>>> rusty/master_test
       if ( hydrostatic ) then
            do j=js-1,jep1+1
               do i=is-1,iep1      
@@ -380,11 +317,7 @@
 !!! TO DO:
 !!! Need separate versions for nesting/single-tile
 !!!   and for cubed-sphere
-<<<<<<< HEAD
-      if (nested .or. regional .or. flagstruct%grid_type >=3 ) then
-=======
       if (bounded_domain .or. flagstruct%grid_type >=3 ) then
->>>>>>> rusty/master_test
          do j=js-1,jep1
          do i=is-1,iep1
             if ( ua(i,j) > 0. ) then
@@ -501,11 +434,7 @@
 ! (For the same reason we only divide by sin instead of sin**2 in the interior)
 
 !! TO DO: separate versions for nesting/single-tile and cubed-sphere
-<<<<<<< HEAD
-      if (nested .or. regional .or. flagstruct%grid_type >= 3) then
-=======
       if (bounded_domain .or. flagstruct%grid_type >= 3) then
->>>>>>> rusty/master_test
          do j=js,je
             do i=is,iep1
                fy1(i,j) = dt2*(v(i,j)-uc(i,j)*cosa_u(i,j))/sina_u(i,j)
@@ -583,7 +512,6 @@
 
 
 
-<<<<<<< HEAD
 ! d_sw :: D-Grid Shallow Water Routine
 
 !>@brief The subroutine 'd_sw' peforms a full-timestep advance of the D-grid winds
@@ -591,40 +519,22 @@
    subroutine d_sw(delpc, delp,  ptc,   pt, u,  v, w, uc,vc, &
                    ua, va, divg_d, xflux, yflux, cx, cy,              &
                    crx_adv, cry_adv,  xfx_adv, yfx_adv, q_con, z_rat, kgb, heat_source,diss_est,  &
-=======
-!     d_sw :: D-Grid Shallow Water Routine
- 
-   subroutine d_sw(delpc, delp,  ptc,   pt, u,  v, w, uc,vc, &
-                   ua, va, divg_d, xflux, yflux, cx, cy,              &
-                   crx_adv, cry_adv,  xfx_adv, yfx_adv, q_con, z_rat, kgb, heat_source,    &
->>>>>>> rusty/master_test
                    zvir, sphum, nq, q, k, km, inline_q,  &
                    dt, hord_tr, hord_mt, hord_vt, hord_tm, hord_dp, nord,   &
                    nord_v, nord_w, nord_t, dddmp, d2_bg, d4_bg, damp_v, damp_w, &
                    damp_t, d_con, hydrostatic, gridstruct, flagstruct, bd)
 
       integer, intent(IN):: hord_tr, hord_mt, hord_vt, hord_tm, hord_dp
-<<<<<<< HEAD
       integer, intent(IN):: nord   !< nord=1 divergence damping; (del-4) or 3 (del-8)
       integer, intent(IN):: nord_v !< vorticity damping
       integer, intent(IN):: nord_w !< vertical velocity
       integer, intent(IN):: nord_t !< pt
-=======
-      integer, intent(IN):: nord   ! nord=1 divergence damping; (del-4) or 3 (del-8)
-      integer, intent(IN):: nord_v ! vorticity damping
-      integer, intent(IN):: nord_w ! vertical velocity
-      integer, intent(IN):: nord_t ! pt
->>>>>>> rusty/master_test
       integer, intent(IN):: sphum, nq, k, km
       real   , intent(IN):: dt, dddmp, d2_bg, d4_bg, d_con
       real   , intent(IN):: zvir
       real,    intent(in):: damp_v, damp_w, damp_t, kgb
       type(fv_grid_bounds_type), intent(IN) :: bd
-<<<<<<< HEAD
       real, intent(inout):: divg_d(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) !< divergence
-=======
-      real, intent(inout):: divg_d(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) ! divergence
->>>>>>> rusty/master_test
       real, intent(IN), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: z_rat
       real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: delp, pt, ua, va
       real, intent(INOUT), dimension(bd%isd:      ,  bd%jsd:      ):: w, q_con
@@ -633,10 +543,7 @@
       real, intent(INOUT):: q(bd%isd:bd%ied,bd%jsd:bd%jed,km,nq)
       real, intent(OUT),   dimension(bd%isd:bd%ied,  bd%jsd:bd%jed)  :: delpc, ptc
       real, intent(OUT),   dimension(bd%is:bd%ie,bd%js:bd%je):: heat_source
-<<<<<<< HEAD
       real, intent(OUT),   dimension(bd%is:bd%ie,bd%js:bd%je):: diss_est
-=======
->>>>>>> rusty/master_test
 ! The flux capacitors:
       real, intent(INOUT):: xflux(bd%is:bd%ie+1,bd%js:bd%je  )
       real, intent(INOUT):: yflux(bd%is:bd%ie  ,bd%js:bd%je+1)
@@ -656,7 +563,6 @@
 !---
       real :: fx2(bd%isd:bd%ied+1,bd%jsd:bd%jed)
       real :: fy2(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
-<<<<<<< HEAD
       real :: dw(bd%is:bd%ie,bd%js:bd%je) !<  work array
 !---
       real, dimension(bd%is:bd%ie+1,bd%js:bd%je+1):: ub, vb
@@ -669,20 +575,6 @@
       real :: ra_y(bd%isd:bd%ied,bd%js:bd%je)
       real :: gx(bd%is:bd%ie+1,bd%js:bd%je  ) 
       real :: gy(bd%is:bd%ie  ,bd%js:bd%je+1)  !< work Y-dir flux array
-=======
-      real :: dw(bd%is:bd%ie,bd%js:bd%je) !  work array
-!---
-      real, dimension(bd%is:bd%ie+1,bd%js:bd%je+1):: ub, vb
-      real :: wk(bd%isd:bd%ied,bd%jsd:bd%jed) !  work array
-      real :: ke(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) !  needs this for corner_comm
-      real :: vort(bd%isd:bd%ied,bd%jsd:bd%jed)     ! Vorticity
-      real ::   fx(bd%is:bd%ie+1,bd%js:bd%je  )  ! 1-D X-direction Fluxes
-      real ::   fy(bd%is:bd%ie  ,bd%js:bd%je+1)  ! 1-D Y-direction Fluxes
-      real :: ra_x(bd%is:bd%ie,bd%jsd:bd%jed)
-      real :: ra_y(bd%isd:bd%ied,bd%js:bd%je)
-      real :: gx(bd%is:bd%ie+1,bd%js:bd%je  ) 
-      real :: gy(bd%is:bd%ie  ,bd%js:bd%je+1)  ! work Y-dir flux array
->>>>>>> rusty/master_test
       logical :: fill_c
 
       real :: dt2, dt4, dt5, dt6
@@ -702,13 +594,8 @@
 
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
-<<<<<<< HEAD
-      integer :: npx, npy
-      logical :: nested,regional
-=======
       integer :: npx, npy, ng
       logical :: bounded_domain
->>>>>>> rusty/master_test
 
       is  = bd%is
       ie  = bd%ie
@@ -718,19 +605,11 @@
       ied = bd%ied
       jsd = bd%jsd
       jed = bd%jed
-<<<<<<< HEAD
-
-      npx      = flagstruct%npx
-      npy      = flagstruct%npy
-      nested   = gridstruct%nested
-      regional = gridstruct%regional
-=======
       ng  = bd%ng
 
       npx      = flagstruct%npx
       npy      = flagstruct%npy
       bounded_domain = gridstruct%bounded_domain
->>>>>>> rusty/master_test
 
       area      => gridstruct%area   
       rarea     => gridstruct%rarea  
@@ -792,11 +671,7 @@
      if ( flagstruct%grid_type < 3 ) then
 
 !!! TO DO: separate versions for nesting and for cubed-sphere
-<<<<<<< HEAD
-        if (nested .or. regional) then
-=======
         if (bounded_domain) then
->>>>>>> rusty/master_test
            do j=jsd,jed
               do i=is-1,ie+2
                  ut(i,j) = ( uc(i,j) - 0.25 * cosa_u(i,j) *     &
@@ -830,11 +705,7 @@
            enddo
         endif
 
-<<<<<<< HEAD
-      if (.not. (nested .or. regional)) then
-=======
       if (.not. bounded_domain) then
->>>>>>> rusty/master_test
 ! West edge:
        if ( is==1 ) then
           do j=jsd,jed
@@ -990,11 +861,7 @@
                       0.25*cosa_u(2,npy-1)*(vt(1,npy)+vt(2,npy)+vt(2,npy-1))) ) * damp
         endif
 
-<<<<<<< HEAD
-       end if !.not. (nested .or. regional)
-=======
        end if !.not. bounded_domain
->>>>>>> rusty/master_test
 
      else
 ! flagstruct%grid_type >= 3
@@ -1069,12 +936,8 @@
 
 
       call fv_tp_2d(delp, crx_adv, cry_adv, npx, npy, hord_dp, fx, fy,  &
-<<<<<<< HEAD
                     xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, & 
-                    regional,nord=nord_v, damp_c=damp_v)
-=======
-                    xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, nord=nord_v, damp_c=damp_v)
->>>>>>> rusty/master_test
+                    nord=nord_v, damp_c=damp_v)
 
 ! <<< Save the mass fluxes to the "Flux Capacitor" for tracer transport >>>
         do j=jsd,jed
@@ -1100,10 +963,7 @@
         do j=js,je
            do i=is,ie
               heat_source(i,j) = 0.
-<<<<<<< HEAD
               diss_est(i,j) = 0.
-=======
->>>>>>> rusty/master_test
            enddo
         enddo
 
@@ -1118,20 +978,13 @@
 ! 0.5 * [ (w+dw)**2 - w**2 ] = w*dw + 0.5*dw*dw
 !                   heat_source(i,j) = -d_con*dw(i,j)*(w(i,j)+0.5*dw(i,j))
                     heat_source(i,j) = dd8 - dw(i,j)*(w(i,j)+0.5*dw(i,j))
-<<<<<<< HEAD
                     diss_est(i,j) = heat_source(i,j)
-=======
->>>>>>> rusty/master_test
                    enddo
                 enddo
             endif
             call fv_tp_2d(w, crx_adv,cry_adv, npx, npy, hord_vt, gx, gy, xfx_adv, yfx_adv, &
-<<<<<<< HEAD
                           gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac,                  &
-                          regional,mfx=fx, mfy=fy)
-=======
-                          gridstruct, bd, ra_x, ra_y, mfx=fx, mfy=fy)
->>>>>>> rusty/master_test
+                          mfx=fx, mfy=fy)
             do j=js,je
                do i=is,ie
                   w(i,j) = delp(i,j)*w(i,j) + (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
@@ -1141,12 +994,8 @@
 
 #ifdef USE_COND
            call fv_tp_2d(q_con, crx_adv,cry_adv, npx, npy, hord_dp, gx, gy,  &
-<<<<<<< HEAD
                 xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac,&
-                regional, mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
-=======
-                xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
->>>>>>> rusty/master_test
+                mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
             do j=js,je
                do i=is,ie
                   q_con(i,j) = delp(i,j)*q_con(i,j) + (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
@@ -1162,13 +1011,8 @@
 !       enddo
 !    endif
         call fv_tp_2d(pt, crx_adv,cry_adv, npx, npy, hord_tm, gx, gy,  &
-<<<<<<< HEAD
                       xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
-                      regional,mfx=fx, mfy=fy, mass=delp, nord=nord_v, damp_c=damp_v)
-=======
-                      xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y,     &
                       mfx=fx, mfy=fy, mass=delp, nord=nord_v, damp_c=damp_v)
->>>>>>> rusty/master_test
 !                     mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
 #endif
 
@@ -1187,13 +1031,8 @@
         enddo
         do iq=1,nq
            call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv, npx, npy, hord_tr, gx, gy,  &
-<<<<<<< HEAD
                          xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
-                         regional,mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
-=======
-                         xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y,  &
                          mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
->>>>>>> rusty/master_test
            do j=js,je
               do i=is,ie
                  q(i,j,k,iq) = (q(i,j,k,iq)*wk(i,j) +               &
@@ -1238,11 +1077,7 @@
       dt5 = 0.5 *dt
       dt4 = 0.25*dt
 
-<<<<<<< HEAD
-      if (nested .or. regional) then
-=======
       if (bounded_domain) then
->>>>>>> rusty/master_test
          is2 = is;        ie1 = ie+1
          js2 = js;        je1 = je+1
       else
@@ -1250,16 +1085,9 @@
          js2 = max(2,js); je1 = min(npy-1,je+1)
       end if
 
-<<<<<<< HEAD
-!!! TO DO: separate versions for nested and for cubed-sphere
-      if (flagstruct%grid_type < 3) then
-
-         if (nested .or. regional) then
-=======
       if (flagstruct%grid_type < 3) then
 
          if (bounded_domain) then
->>>>>>> rusty/master_test
             do j=js2,je1
                do i=is2,ie1
                   vb(i,j) = dt5*(vc(i-1,j)+vc(i,j)-(uc(i,j-1)+uc(i,j))*cosa(i,j))*rsina(i,j)
@@ -1303,11 +1131,7 @@
       endif
 
       call ytp_v(is,ie,js,je,isd,ied,jsd,jed, vb, u, v, ub, hord_mt, gridstruct%dy, gridstruct%rdy, &
-<<<<<<< HEAD
-                 npx, npy, flagstruct%grid_type, nested, flagstruct%lim_fac, regional)
-=======
-                 npx, npy, flagstruct%grid_type, bounded_domain)
->>>>>>> rusty/master_test
+                 npx, npy, flagstruct%grid_type, flagstruct%lim_fac, bounded_domain)
 
       do j=js,je+1
          do i=is,ie+1
@@ -1317,11 +1141,7 @@
 
       if (flagstruct%grid_type < 3) then
 
-<<<<<<< HEAD
-         if (nested .or. regional) then
-=======
          if (bounded_domain) then
->>>>>>> rusty/master_test
 
             do j=js,je+1
  
@@ -1368,11 +1188,7 @@
       endif
 
       call xtp_u(is,ie,js,je, isd,ied,jsd,jed, ub, u, v, vb, hord_mt, gridstruct%dx, gridstruct%rdx, &
-<<<<<<< HEAD
-                 npx, npy, flagstruct%grid_type, nested, flagstruct%lim_fac, regional)
-=======
-                 npx, npy, flagstruct%grid_type, bounded_domain)
->>>>>>> rusty/master_test
+                 npx, npy, flagstruct%grid_type, flagstruct%lim_fac, bounded_domain)
 
       do j=js,je+1
          do i=is,ie+1
@@ -1383,11 +1199,7 @@
 !-----------------------------------------
 ! Fix KE at the 4 corners of the face:
 !-----------------------------------------
-<<<<<<< HEAD
-    if (.not. (nested .or. regional)) then
-=======
     if (.not. bounded_domain) then
->>>>>>> rusty/master_test
       dt6 = dt / 6.
       if ( sw_corner ) then
            ke(1,1) = dt6*( (ut(1,1) + ut(1,0)) * u(1,1) +  &
@@ -1477,11 +1289,7 @@
    if ( nord==0 ) then
 !         area ~ dxb*dyb*sin(alpha)
 
-<<<<<<< HEAD
-      if (nested .or. regional) then
-=======
       if (bounded_domain) then
->>>>>>> rusty/master_test
 
          do j=js,je+1
             do i=is-1,ie+1
@@ -1577,11 +1385,7 @@
 
         fill_c = (nt/=0) .and. (flagstruct%grid_type<3) .and.               &
                  ( sw_corner .or. se_corner .or. ne_corner .or. nw_corner ) &
-<<<<<<< HEAD
-                  .and. .not. (nested .or. regional)
-=======
                   .and. .not. bounded_domain
->>>>>>> rusty/master_test
 
         if ( fill_c ) call fill_corners(divg_d, npx, npy, FILL=XDir, BGRID=.true.)
         do j=js-nt,je+1+nt
@@ -1691,11 +1495,7 @@
    endif
 
     call fv_tp_2d(vort, crx_adv, cry_adv, npx, npy, hord_vt, fx, fy, &
-<<<<<<< HEAD
-                  xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac,regional)
-=======
-                  xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y)
->>>>>>> rusty/master_test
+                  xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac)
     do j=js,je+1
        do i=is,ie
           u(i,j) = vt(i,j) + ke(i,j) - ke(i+1,j) + fy(i,j)
@@ -1714,11 +1514,7 @@
         call del6_vt_flux(nord_v, npx, npy, damp4, wk, vort, ut, vt, gridstruct, bd)
    endif
 
-<<<<<<< HEAD
    if ( d_con > 1.e-5 .or. flagstruct%do_skeb ) then
-=======
-   if ( d_con > 1.e-5 ) then
->>>>>>> rusty/master_test
       do j=js,je+1
          do i=is,ie
             ub(i,j) = (ub(i,j) + vt(i,j))*rdx(i,j)
@@ -1749,15 +1545,12 @@
                   (ub(i,j)**2 + ub(i,j+1)**2 + vb(i,j)**2 + vb(i+1,j)**2)  &
                               + 2.*(gy(i,j)+gy(i,j+1)+gx(i,j)+gx(i+1,j))   &
                               - cosa_s(i,j)*(u2*dv2 + v2*du2 + du2*dv2)) )
-<<<<<<< HEAD
            if (flagstruct%do_skeb) then
              diss_est(i,j) = diss_est(i,j)-rsin2(i,j)*( &
                   (ub(i,j)**2 + ub(i,j+1)**2 + vb(i,j)**2 + vb(i+1,j)**2)  &
                               + 2.*(gy(i,j)+gy(i,j+1)+gx(i,j)+gx(i+1,j))   &
                               - cosa_s(i,j)*(u2*dv2 + v2*du2 + du2*dv2)) 
            endif
-=======
->>>>>>> rusty/master_test
          enddo
       enddo
    endif
@@ -1782,11 +1575,8 @@
 
  end subroutine d_sw
 
-<<<<<<< HEAD
 !>@brief The subroutine 'del6_vt_flux' applies 2nd, 4th, or 6th-order damping
 !! to fluxes ("vorticity damping")
-=======
->>>>>>> rusty/master_test
  subroutine del6_vt_flux(nord, npx, npy, damp, q, d2, fx2, fy2, gridstruct, bd)
 ! Del-nord damping for the relative vorticity
 ! nord must be <= 2
@@ -1805,11 +1595,7 @@
    real, intent(out):: fx2(bd%isd:bd%ied+1,bd%jsd:bd%jed), fy2(bd%isd:bd%ied,bd%jsd:bd%jed+1)
    integer i,j, nt, n, i1, i2, j1, j2
 
-<<<<<<< HEAD
-   logical :: nested, regional
-=======
    logical :: bounded_domain
->>>>>>> rusty/master_test
 
 #ifdef USE_SG
   real, pointer, dimension(:,:,:) :: sin_sg
@@ -1825,13 +1611,8 @@
    dx       => gridstruct%dx    
    dy       => gridstruct%dy    
 #endif
-<<<<<<< HEAD
-   nested = gridstruct%nested
-   regional = gridstruct%regional
-=======
    bounded_domain = gridstruct%bounded_domain
 
->>>>>>> rusty/master_test
    is  = bd%is
    ie  = bd%ie
    js  = bd%js
@@ -1846,11 +1627,7 @@
       enddo
    enddo
 
-<<<<<<< HEAD
-   if( nord>0 .and. (.not. (regional))) call copy_corners(d2, npx, npy, 1, nested, bd, gridstruct%sw_corner,    &
-=======
    if( nord>0 .and. .not. bounded_domain) call copy_corners(d2, npx, npy, 1, bounded_domain, bd, gridstruct%sw_corner,    &
->>>>>>> rusty/master_test
                    gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
    do j=js-nord,je+nord
       do i=is-nord,ie+nord+1
@@ -1862,11 +1639,7 @@
       enddo
    enddo
 
-<<<<<<< HEAD
-   if( nord>0 .and. (.not. (regional))) call copy_corners(d2, npx, npy, 2, nested, bd, gridstruct%sw_corner,   &
-=======
    if( nord>0 .and. .not. bounded_domain) call copy_corners(d2, npx, npy, 2, bounded_domain, bd, gridstruct%sw_corner,   &
->>>>>>> rusty/master_test
                    gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
    do j=js-nord,je+nord+1
       do i=is-nord,ie+nord
@@ -1887,11 +1660,7 @@
          enddo
       enddo
 
-<<<<<<< HEAD
-      if (.not. (regional)) call copy_corners(d2, npx, npy, 1, nested, bd, gridstruct%sw_corner,    &
-=======
       if (.not. bounded_domain) call copy_corners(d2, npx, npy, 1, bounded_domain, bd, gridstruct%sw_corner,    &
->>>>>>> rusty/master_test
          gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
       do j=js-nt,je+nt
@@ -1904,11 +1673,7 @@
          enddo
       enddo
 
-<<<<<<< HEAD
-      if (.not. (regional))call copy_corners(d2, npx, npy, 2, nested, bd, &
-=======
       if (.not. bounded_domain) call copy_corners(d2, npx, npy, 2, bounded_domain, bd, &
->>>>>>> rusty/master_test
       gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
       do j=js-nt,je+nt+1
@@ -1925,12 +1690,8 @@
 
  end subroutine del6_vt_flux
 
-<<<<<<< HEAD
 !>@brief The subroutine 'divergence_corner' computes the cell-mean divergence on the
 !! "dual grid", the native-grid positioning of the divergence. 
-=======
-
->>>>>>> rusty/master_test
  subroutine divergence_corner(u, v, ua, va, divg_d, gridstruct, flagstruct, bd)
  type(fv_grid_bounds_type), intent(IN) :: bd
  real, intent(in),  dimension(bd%isd:bd%ied,  bd%jsd:bd%jed+1):: u
@@ -1950,11 +1711,7 @@
 
       integer :: is,  ie,  js,  je
       integer :: npx, npy
-<<<<<<< HEAD
-      logical :: nested, regional
-=======
       logical :: bounded_domain
->>>>>>> rusty/master_test
 
       is  = bd%is
       ie  = bd%ie
@@ -1963,23 +1720,14 @@
 
       npx = flagstruct%npx
       npy = flagstruct%npy
-<<<<<<< HEAD
-      nested = gridstruct%nested
-      regional = gridstruct%regional
-=======
       bounded_domain = gridstruct%bounded_domain
->>>>>>> rusty/master_test
 
       sin_sg     => gridstruct%sin_sg 
       cos_sg     => gridstruct%cos_sg 
       dxc        => gridstruct%dxc    
       dyc        => gridstruct%dyc    
 
-<<<<<<< HEAD
- if (nested .or. regional) then
-=======
  if (bounded_domain) then
->>>>>>> rusty/master_test
     is2 = is;        ie1 = ie+1
  else
     is2 = max(2,is); ie1 = min(npx-1,ie+1)
@@ -2075,10 +1823,6 @@
 
       integer :: isd, ied, jsd, jed
       integer :: npx, npy
-<<<<<<< HEAD
-      logical :: nested, regional
-=======
->>>>>>> rusty/master_test
 
       isd = bd%isd
       ied = bd%ied
@@ -2087,11 +1831,6 @@
 
       npx = flagstruct%npx
       npy = flagstruct%npy
-<<<<<<< HEAD
-      nested = gridstruct%nested
-      regional = gridstruct%regional
-=======
->>>>>>> rusty/master_test
 
       rarea_c    => gridstruct%rarea_c
       sin_sg     => gridstruct%sin_sg 
@@ -2168,18 +1907,10 @@
 
 end subroutine divergence_corner_nest
 
-<<<<<<< HEAD
 !>@brief The subroutine 'smag_corner' computes Smagorinsky damping.
  subroutine smag_corner(dt, u, v, ua, va, smag_c, bd, npx, npy, gridstruct, ng)
  !> Compute the Tension_Shear strain at cell corners for Smagorinsky diffusion
  !!  work only if (grid_type==4)
-=======
-
-
- subroutine smag_corner(dt, u, v, ua, va, smag_c, bd, npx, npy, gridstruct, ng)
-! Compute the Tension_Shear strain at cell corners for Smagorinsky diffusion
-!!!  work only if (grid_type==4)
->>>>>>> rusty/master_test
  type(fv_grid_bounds_type), intent(IN) :: bd
  real, intent(in):: dt
  integer, intent(IN) :: npx, npy, ng
@@ -2191,11 +1922,7 @@ end subroutine divergence_corner_nest
 ! local
  real:: ut(bd%isd:bd%ied+1,bd%jsd:bd%jed)
  real:: vt(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
-<<<<<<< HEAD
  real:: wk(bd%isd:bd%ied,bd%jsd:bd%jed) !<  work array
-=======
- real:: wk(bd%isd:bd%ied,bd%jsd:bd%jed) !  work array
->>>>>>> rusty/master_test
  real:: sh(bd%isd:bd%ied,bd%jsd:bd%jed)
  integer i,j
  integer is2, ie1
@@ -2271,11 +1998,7 @@ end subroutine divergence_corner_nest
  end subroutine smag_corner
 
 
-<<<<<<< HEAD
- subroutine xtp_u(is,ie,js,je,isd,ied,jsd,jed,c, u, v, flux, iord, dx, rdx, npx, npy, grid_type, nested, lim_fac, regional)
-=======
- subroutine xtp_u(is,ie,js,je,isd,ied,jsd,jed,c, u, v, flux, iord, dx, rdx, npx, npy, grid_type, bounded_domain)
->>>>>>> rusty/master_test
+ subroutine xtp_u(is,ie,js,je,isd,ied,jsd,jed,c, u, v, flux, iord, dx, rdx, npx, npy, grid_type, lim_fac,bounded_domain)
 
  integer, intent(in):: is,ie,js,je, isd,ied,jsd,jed
  real, INTENT(IN)::   u(isd:ied,jsd:jed+1)
@@ -2285,12 +2008,8 @@ end subroutine divergence_corner_nest
  real, INTENT(IN) ::   dx(isd:ied,  jsd:jed+1)
  real, INTENT(IN) ::  rdx(isd:ied,  jsd:jed+1)
  integer, INTENT(IN) :: iord, npx, npy, grid_type
-<<<<<<< HEAD
- logical, INTENT(IN) :: nested,regional
- real, INTENT(IN) ::  lim_fac
-=======
  logical, INTENT(IN) :: bounded_domain
->>>>>>> rusty/master_test
+ real, INTENT(IN) ::  lim_fac
 ! Local
  real, dimension(is-1:ie+1):: bl, br, b0
  logical, dimension(is-1:ie+1):: smt5, smt6
@@ -2305,11 +2024,7 @@ end subroutine divergence_corner_nest
  integer is3, ie3
  integer is2, ie2
 
-<<<<<<< HEAD
- if ( nested .or. regional .or. grid_type>3 ) then
-=======
  if ( bounded_domain .or. grid_type>3 ) then
->>>>>>> rusty/master_test
     is3 = is-1        ; ie3 = ie+1
  else
     is3 = max(3,is-1) ; ie3 = min(npx-3,ie+1)
@@ -2329,11 +2044,7 @@ end subroutine divergence_corner_nest
            br(i) = al(i+1) - u(i,j)
         enddo
 
-<<<<<<< HEAD
-      if ( (.not. (nested .or. regional)) .and. grid_type < 3) then
-=======
       if ( (.not.bounded_domain) .and. grid_type < 3) then
->>>>>>> rusty/master_test
         if ( is==1 ) then
              xt = c3*u(1,j) + c2*u(2,j) + c1*u(3,j)
              br(1) = xt - u(1,j)
@@ -2378,7 +2089,6 @@ end subroutine divergence_corner_nest
         b0(i) = bl(i) + br(i)
      enddo
 
-<<<<<<< HEAD
     if ( iord==1 ) then
 
       do i=is-1, ie+1
@@ -2399,9 +2109,6 @@ end subroutine divergence_corner_nest
       enddo
 
      elseif ( iord==2 ) then   ! Perfectly linear
-=======
-     if ( iord==2 ) then   ! Perfectly linear
->>>>>>> rusty/master_test
 
 !DEC$ VECTOR ALWAYS
         do i=is,ie+1
@@ -2424,55 +2131,35 @@ end subroutine divergence_corner_nest
           enddo
           do i=is, ie+1
              fx0(i) = 0.
-<<<<<<< HEAD
              hi5(i) = smt5(i-1) .and. smt5(i)
              hi6(i) = smt6(i-1) .or.  smt6(i)
-=======
->>>>>>> rusty/master_test
           enddo
           do i=is, ie+1
              if( c(i,j)>0. ) then
                  cfl = c(i,j)*rdx(i-1,j)
-<<<<<<< HEAD
                  if ( hi6(i) ) then
                     fx0(i) = br(i-1) - cfl*b0(i-1)
                  elseif( hi5(i) ) then
-=======
-                 if ( smt6(i-1).or.smt5(i) ) then
-                    fx0(i) = br(i-1) - cfl*b0(i-1)
-                 elseif( smt5(i-1) ) then
->>>>>>> rusty/master_test
                     fx0(i) = sign(min(abs(bl(i-1)),abs(br(i-1))), br(i-1))
                  endif
                  flux(i,j) = u(i-1,j) + (1.-cfl)*fx0(i)
              else
                  cfl = c(i,j)*rdx(i,j)
-<<<<<<< HEAD
                  if ( hi6(i) ) then
                     fx0(i) = bl(i) + cfl*b0(i)
                  elseif( hi5(i) ) then
-=======
-                 if ( smt6(i).or.smt5(i-1) ) then
-                    fx0(i) = bl(i) + cfl*b0(i)
-                 elseif( smt5(i) ) then
->>>>>>> rusty/master_test
                     fx0(i) = sign(min(abs(bl(i)),abs(br(i))), bl(i))
                  endif
                  flux(i,j) = u(i,j) + (1.+cfl)*fx0(i)
              endif
           enddo
 
-<<<<<<< HEAD
      elseif ( iord==4 ) then
-=======
-     elseif ( iord==4 ) then  ! more damp than ord5 but less damp than ord6
->>>>>>> rusty/master_test
 
           do i=is-1, ie+1
              x0 = abs(b0(i))
              x1 = abs(bl(i)-br(i))
              smt5(i) =    x0 < x1
-<<<<<<< HEAD
              smt6(i) = 3.*x0 < x1
           enddo
           do i=is, ie+1
@@ -2492,26 +2179,7 @@ end subroutine divergence_corner_nest
                  flux(i,j) = u(i,j)
              endif
              if ( hi5(i) ) flux(i,j) = flux(i,j) + fx0(i)
-=======
-             smt6(i) = 3.*x0 < x1  ! if smt6 =.T. --> smt5=.T.
-          enddo
-          do i=is, ie+1
-             if( c(i,j)>0. ) then
-                 if ( smt6(i-1).or.smt5(i) ) then
-                          cfl = c(i,j)*rdx(i-1,j)
-                    flux(i,j) = u(i-1,j) + (1.-cfl)*(br(i-1) - cfl*b0(i-1))
-                 else  ! 1st order ONLY_IF smt6(i-1)=.F.  .AND. smt5(i)=.F.
-                    flux(i,j) = u(i-1,j)
-                 endif
-             else
-                 if ( smt6(i).or.smt5(i-1) ) then
-                          cfl = c(i,j)*rdx(i,j)
-                    flux(i,j) = u(i,j) + (1.+cfl)*(bl(i) + cfl*b0(i))
-                 else
-                    flux(i,j) = u(i,j)
-                 endif
-             endif
->>>>>>> rusty/master_test
+
           enddo
 
      else    !  iord=5,6,7
@@ -2519,19 +2187,11 @@ end subroutine divergence_corner_nest
         if ( iord==5 ) then
            do i=is-1, ie+1
               smt5(i) = bl(i)*br(i) < 0.
-<<<<<<< HEAD
            enddo
         else
            do i=is-1, ie+1
               smt5(i) = 3.*abs(b0(i)) < abs(bl(i)-br(i))
-           enddo
-=======
-            enddo
-        else
-           do i=is-1, ie+1
-              smt5(i) = abs(3.*b0(i)) < abs(bl(i)-br(i))
-            enddo
->>>>>>> rusty/master_test
+           enddo      
         endif
 
 !DEC$ VECTOR ALWAYS
@@ -2617,13 +2277,8 @@ end subroutine divergence_corner_nest
 !--------------
 ! fix the edges
 !--------------
-<<<<<<< HEAD
-!!! TO DO: separate versions for nested and for cubed-sphere
-           if ( is==1 .and. .not. (nested .or. regional)) then
-=======
 !!! TO DO: separate versions for bounded_domain and for cubed-sphere
            if ( is==1 .and. .not. bounded_domain) then
->>>>>>> rusty/master_test
               br(2) = al(3) - u(2,j)
               xt = s15*u(1,j) + s11*u(2,j) - s14*dm(2)
               bl(2) = xt - u(2,j)
@@ -2646,11 +2301,7 @@ end subroutine divergence_corner_nest
               call pert_ppm(1, u(2,j), bl(2), br(2), -1)
            endif
 
-<<<<<<< HEAD
-           if ( (ie+1)==npx  .and. .not. (nested .or. regional)) then
-=======
            if ( (ie+1)==npx  .and. .not. bounded_domain) then
->>>>>>> rusty/master_test
               bl(npx-2) = al(npx-2) - u(npx-2,j)
               xt = s15*u(npx-1,j) + s11*u(npx-2,j) + s14*dm(npx-2)
               br(npx-2) = xt - u(npx-2,j)
@@ -2705,35 +2356,21 @@ end subroutine divergence_corner_nest
  end subroutine xtp_u
 
 
-<<<<<<< HEAD
- subroutine ytp_v(is,ie,js,je,isd,ied,jsd,jed, c, u, v, flux, jord, dy, rdy, npx, npy, grid_type, nested, lim_fac, regional)
-=======
- subroutine ytp_v(is,ie,js,je,isd,ied,jsd,jed, c, u, v, flux, jord, dy, rdy, npx, npy, grid_type, bounded_domain)
->>>>>>> rusty/master_test
+ subroutine ytp_v(is,ie,js,je,isd,ied,jsd,jed, c, u, v, flux, jord, dy, rdy, npx, npy, grid_type, lim_fac, bounded_domain)
  integer, intent(in):: is,ie,js,je, isd,ied,jsd,jed
  integer, intent(IN):: jord
  real, INTENT(IN)  ::   u(isd:ied,jsd:jed+1)
  real, INTENT(IN)  ::   v(isd:ied+1,jsd:jed)
-<<<<<<< HEAD
  real, INTENT(IN) ::    c(is:ie+1,js:je+1)   !<  Courant   N (like FLUX)
-=======
- real, INTENT(IN) ::    c(is:ie+1,js:je+1)   !  Courant   N (like FLUX)
->>>>>>> rusty/master_test
  real, INTENT(OUT):: flux(is:ie+1,js:je+1)
  real, INTENT(IN) ::   dy(isd:ied+1,jsd:jed)
  real, INTENT(IN) ::  rdy(isd:ied+1,jsd:jed)
  integer, INTENT(IN) :: npx, npy, grid_type
-<<<<<<< HEAD
- logical, INTENT(IN) :: nested,regional
+ logical, INTENT(IN) :: bounded_domain
  real, INTENT(IN) ::  lim_fac
 ! Local:
  logical, dimension(is:ie+1,js-1:je+1):: smt5, smt6
  logical, dimension(is:ie+1):: hi5, hi6
-=======
- logical, INTENT(IN) :: bounded_domain
-! Local:
- logical, dimension(is:ie+1,js-1:je+1):: smt5, smt6
->>>>>>> rusty/master_test
  real:: fx0(is:ie+1)
  real dm(is:ie+1,js-2:je+2)
  real al(is:ie+1,js-1:je+2)
@@ -2744,33 +2381,13 @@ end subroutine divergence_corner_nest
  real x0, x1, x0R, x0L
  integer i, j, is1, ie1, js3, je3
 
-<<<<<<< HEAD
- if ( nested .or. regional .or. grid_type>3 ) then
-=======
  if ( bounded_domain .or. grid_type>3 ) then
->>>>>>> rusty/master_test
     js3 = js-1;        je3 = je+1
  else
     js3 = max(3,js-1); je3 = min(npy-3,je+1)
  end if
 
-<<<<<<< HEAD
  if ( jord<8 ) then
-=======
- if ( jord==1 ) then
-
-      do j=js,je+1
-         do i=is,ie+1
-            if( c(i,j)>0. ) then
-               flux(i,j) = v(i,j-1)
-            else
-               flux(i,j) = v(i,j)
-            endif
-         enddo
-      enddo
-
- elseif ( jord<8 ) then
->>>>>>> rusty/master_test
 ! Diffusivity: ord2 < ord5 < ord3 < ord4 < ord6 
 
    do j=js3,je3+1
@@ -2785,11 +2402,7 @@ end subroutine divergence_corner_nest
       enddo
    enddo
 
-<<<<<<< HEAD
-   if ( (.not. (nested .or. regional)) .and. grid_type < 3) then
-=======
    if ( (.not.bounded_domain) .and. grid_type < 3) then
->>>>>>> rusty/master_test
      if( js==1 ) then
        do i=is,ie+1
           bl(i,0) = c1*v(i,-2) + c2*v(i,-1) + c3*v(i,0) - v(i,0)
@@ -2852,7 +2465,7 @@ end subroutine divergence_corner_nest
       enddo
    enddo
 
-<<<<<<< HEAD
+
    if ( jord==1 ) then    ! Perfectly linear
 
      do j=js-1,je+1
@@ -2876,10 +2489,7 @@ end subroutine divergence_corner_nest
         enddo
      enddo
 
-   elseif ( jord==2 ) then    ! Perfectly linear
-=======
-   if ( jord==2 ) then    ! Perfectly linear
->>>>>>> rusty/master_test
+   elseif ( jord==2 ) then    ! Perfectly linear     
       do j=js,je+1
 !DEC$ VECTOR ALWAYS
          do i=is,ie+1
@@ -2906,38 +2516,23 @@ end subroutine divergence_corner_nest
        do j=js,je+1
           do i=is,ie+1
              fx0(i) = 0.
-<<<<<<< HEAD
              hi5(i) = smt5(i,j-1) .and. smt5(i,j)
-             hi6(i) = smt6(i,j-1) .or.  smt6(i,j)
-=======
->>>>>>> rusty/master_test
+             hi6(i) = smt6(i,j-1) .or.  smt6(i,j)    
           enddo
           do i=is,ie+1
              if( c(i,j)>0. ) then
                  cfl = c(i,j)*rdy(i,j-1)
-<<<<<<< HEAD
                  if ( hi6(i) ) then
                     fx0(i) = br(i,j-1) - cfl*b0(i,j-1)
                  elseif ( hi5(i) ) then  ! piece-wise linear
-=======
-                 if ( smt6(i,j-1).or.smt5(i,j) ) then
-                    fx0(i) = br(i,j-1) - cfl*b0(i,j-1)
-                 elseif ( smt5(i,j-1) ) then  ! piece-wise linear
->>>>>>> rusty/master_test
                     fx0(i) = sign(min(abs(bl(i,j-1)),abs(br(i,j-1))), br(i,j-1))
                  endif
                  flux(i,j) = v(i,j-1) + (1.-cfl)*fx0(i)
              else
                  cfl = c(i,j)*rdy(i,j)
-<<<<<<< HEAD
                  if ( hi6(i) ) then
                     fx0(i) = bl(i,j) + cfl*b0(i,j)
                  elseif ( hi5(i) ) then  ! piece-wise linear
-=======
-                 if ( smt6(i,j).or.smt5(i,j-1) ) then
-                    fx0(i) = bl(i,j) + cfl*b0(i,j)
-                 elseif ( smt5(i,j) ) then
->>>>>>> rusty/master_test
                     fx0(i) = sign(min(abs(bl(i,j)),abs(br(i,j))), bl(i,j))
                  endif
                  flux(i,j) = v(i,j) + (1.+cfl)*fx0(i)
@@ -2957,7 +2552,6 @@ end subroutine divergence_corner_nest
        enddo
        do j=js,je+1
           do i=is,ie+1
-<<<<<<< HEAD
              fx0(i) = 0.
              hi5(i) = smt5(i,j-1) .and. smt5(i,j)
              hi6(i) = smt6(i,j-1) .or.  smt6(i,j)
@@ -2975,54 +2569,17 @@ end subroutine divergence_corner_nest
                flux(i,j) = v(i,j)
            endif
            if ( hi5(i) ) flux(i,j) = flux(i,j) + fx0(i)
-=======
-             if( c(i,j)>0. ) then
-                 if ( smt6(i,j-1).or.smt5(i,j) ) then
-                          cfl = c(i,j)*rdy(i,j-1)
-                    flux(i,j) = v(i,j-1) + (1.-cfl)*(br(i,j-1) - cfl*b0(i,j-1))
-                  else
-                    flux(i,j) = v(i,j-1)
-                 endif
-             else
-                 if ( smt6(i,j).or.smt5(i,j-1) ) then
-                          cfl = c(i,j)*rdy(i,j)
-                    flux(i,j) = v(i,j) + (1.+cfl)*(bl(i,j) + cfl*b0(i,j))
-                 else
-                    flux(i,j) = v(i,j)
-                 endif
-             endif
->>>>>>> rusty/master_test
           enddo
        enddo
 
    else   ! jord = 5,6,7
-<<<<<<< HEAD
      if ( jord==5 ) then
-
         do j=js-1,je+1
            do i=is,ie+1
               smt5(i,j) = bl(i,j)*br(i,j) < 0.
            enddo
         enddo
         do j=js,je+1
-=======
-! Diffusivity: ord2 < ord5 < ord3 < ord4 < ord6  < ord7
-     if ( jord==5 ) then
-       do j=js-1,je+1
-          do i=is,ie+1
-             smt5(i,j) = bl(i,j)*br(i,j) < 0.
-          enddo
-       enddo
-     else   ! ord = 6, 7
-       do j=js-1,je+1
-          do i=is,ie+1
-             smt5(i,j) = abs(3.*b0(i,j)) < abs(bl(i,j)-br(i,j))
-          enddo
-       enddo
-     endif
-
-     do j=js,je+1
->>>>>>> rusty/master_test
 !DEC$ VECTOR ALWAYS
         do i=is,ie+1
            if( c(i,j)>0. ) then
@@ -3036,7 +2593,6 @@ end subroutine divergence_corner_nest
            endif
            if (smt5(i,j-1).or.smt5(i,j)) flux(i,j) = flux(i,j) + fx0(i)
         enddo
-<<<<<<< HEAD
         enddo
      else
 ! hord=6
@@ -3061,9 +2617,6 @@ end subroutine divergence_corner_nest
         enddo
         enddo
      endif
-=======
-     enddo
->>>>>>> rusty/master_test
 
    endif
 
@@ -3144,11 +2697,7 @@ end subroutine divergence_corner_nest
 !--------------
 ! fix the edges
 !--------------
-<<<<<<< HEAD
-      if( js==1 .and. .not. (nested .or. regional)) then
-=======
       if( js==1 .and. .not. bounded_domain) then
->>>>>>> rusty/master_test
          do i=is,ie+1
             br(i,2) = al(i,3) - v(i,2)
             xt = s15*v(i,1) + s11*v(i,2) - s14*dm(i,2)
@@ -3188,11 +2737,7 @@ end subroutine divergence_corner_nest
          j=2
          call pert_ppm(ie-is+2, v(is,j), bl(is,j), br(is,j), -1)
       endif
-<<<<<<< HEAD
-      if( (je+1)==npy  .and. .not. (nested .or. regional)) then
-=======
       if( (je+1)==npy  .and. .not. bounded_domain) then
->>>>>>> rusty/master_test
          do i=is,ie+1
             bl(i,npy-2) = al(i,npy-2) - v(i,npy-2)
             xt = s15*v(i,npy-1) + s11*v(i,npy-2) + s14*dm(i,npy-2)
@@ -3271,19 +2816,12 @@ end subroutine ytp_v
 
 !There is a limit to how far this routine can fill uc and vc in the
 ! halo, and so either mpp_update_domains or some sort of boundary
-<<<<<<< HEAD
-!  routine (extrapolation, outflow, interpolation from a nested grid)
-!   is needed after c_sw is completed if these variables are needed
-!    in the halo
- subroutine d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4, gridstruct, &
-                       bd, npx, npy, nested, grid_type, regional )
-=======
 !  routine (extrapolation, outflow, interpolation from a bounded_domain grid)
+
 !   is needed after c_sw is completed if these variables are needed
 !    in the halo
  subroutine d2a2c_vect(u, v, ua, va, uc, vc, ut, vt, dord4, gridstruct, &
-                       bd, npx, npy, bounded_domain, grid_type)
->>>>>>> rusty/master_test
+          bd, npx, npy, bounded_domain, grid_type)
   type(fv_grid_bounds_type), intent(IN) :: bd
   logical, intent(in):: dord4
   real, intent(in) ::  u(bd%isd:bd%ied,bd%jsd:bd%jed+1)
@@ -3291,13 +2829,8 @@ end subroutine ytp_v
   real, intent(out), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: uc
   real, intent(out), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1):: vc
   real, intent(out), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed  ):: ua, va, ut, vt
-<<<<<<< HEAD
-  integer, intent(IN) :: npx, npy, grid_type 
-  logical, intent(IN) :: nested,regional
-=======
   integer, intent(IN) :: npx, npy, grid_type
   logical, intent(IN) :: bounded_domain
->>>>>>> rusty/master_test
   type(fv_grid_type), intent(IN), target :: gridstruct
 ! Local 
   real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: utmp, vtmp
@@ -3335,11 +2868,7 @@ end subroutine ytp_v
        id = 0
   endif
 
-<<<<<<< HEAD
-  if (grid_type < 3 .and. .not. (nested .or. regional)) then
-=======
   if (grid_type < 3 .and. .not. bounded_domain) then
->>>>>>> rusty/master_test
      npt = 4
   else
      npt = -2
@@ -3349,11 +2878,7 @@ end subroutine ytp_v
   utmp(:,:) = big_number
   vtmp(:,:) = big_number 
 
-<<<<<<< HEAD
- if ( nested .or. regional) then  
-=======
- if ( bounded_domain) then  
->>>>>>> rusty/master_test
+ if ( bounded_domain ) then  
 
      do j=jsd+1,jed-1
         do i=isd,ied
@@ -3476,11 +3001,7 @@ end subroutine ytp_v
          enddo
      endif
 
-<<<<<<< HEAD
-  if (grid_type < 3 .and. .not. (nested .or. regional)) then
-=======
   if (grid_type < 3 .and. .not. bounded_domain) then
->>>>>>> rusty/master_test
      ifirst = max(3,    is-1)
      ilast  = min(npx-2,ie+2)
   else
@@ -3516,11 +3037,7 @@ end subroutine ytp_v
          ua( 0,npy) = va(0,npy-1) 
      endif
 
-<<<<<<< HEAD
-     if( is==1 .and. .not. (nested .or. regional)  ) then
-=======
      if( is==1 .and. .not. bounded_domain  ) then
->>>>>>> rusty/master_test
         do j=js-1,je+1
            uc(0,j) = c1*utmp(-2,j) + c2*utmp(-1,j) + c3*utmp(0,j) 
            ut(1,j) = edge_interpolate4(ua(-1:2,j), dxa(-1:2,j))
@@ -3536,11 +3053,7 @@ end subroutine ytp_v
         enddo
      endif
 
-<<<<<<< HEAD
-     if( (ie+1)==npx  .and. .not. (nested .or. regional) ) then
-=======
      if( (ie+1)==npx  .and. .not. bounded_domain ) then
->>>>>>> rusty/master_test
         do j=js-1,je+1
            uc(npx-1,j) = c1*utmp(npx-3,j)+c2*utmp(npx-2,j)+c3*utmp(npx-1,j) 
            ut(npx,  j) = edge_interpolate4(ua(npx-2:npx+1,j), dxa(npx-2:npx+1,j))
@@ -3600,11 +3113,7 @@ end subroutine ytp_v
  if (grid_type < 3) then
 
      do j=js-1,je+2
-<<<<<<< HEAD
-      if ( j==1 .and. .not. (nested .or. regional)  ) then
-=======
       if ( j==1 .and. .not. bounded_domain  ) then
->>>>>>> rusty/master_test
         do i=is-1,ie+1
            vt(i,j) = edge_interpolate4(va(i,-1:2), dya(i,-1:2))
            if (vt(i,j) > 0.) then
@@ -3613,29 +3122,17 @@ end subroutine ytp_v
               vc(i,j) = vt(i,j)*sin_sg(i,j,2)
            end if
         enddo
-<<<<<<< HEAD
-      elseif ( j==0 .or. j==(npy-1) .and. .not. (nested .or. regional)  ) then
-=======
       elseif ( j==0 .or. j==(npy-1) .and. .not. bounded_domain  ) then
->>>>>>> rusty/master_test
         do i=is-1,ie+1
            vc(i,j) = c1*vtmp(i,j-2) + c2*vtmp(i,j-1) + c3*vtmp(i,j)
            vt(i,j) = (vc(i,j) - u(i,j)*cosa_v(i,j))*rsin_v(i,j)
         enddo
-<<<<<<< HEAD
-      elseif ( j==2 .or. j==(npy+1)  .and. .not. (nested.or. regional) ) then
-=======
       elseif ( j==2 .or. j==(npy+1)  .and. .not. bounded_domain ) then
->>>>>>> rusty/master_test
         do i=is-1,ie+1
            vc(i,j) = c1*vtmp(i,j+1) + c2*vtmp(i,j) + c3*vtmp(i,j-1)
            vt(i,j) = (vc(i,j) - u(i,j)*cosa_v(i,j))*rsin_v(i,j)
         enddo
-<<<<<<< HEAD
-      elseif ( j==npy .and. .not. (nested .or. regional)  ) then
-=======
       elseif ( j==npy .and. .not. bounded_domain  ) then
->>>>>>> rusty/master_test
         do i=is-1,ie+1
            vt(i,j) = edge_interpolate4(va(i,j-2:j+1), dya(i,j-2:j+1))
            if (vt(i,j) > 0.) then
@@ -3678,18 +3175,10 @@ end subroutine ytp_v
 
  end function edge_interpolate4
 
-<<<<<<< HEAD
 !>@brief The subroutine 'fill3_4corners' fills the 4 corners of the scalar fileds only as needed by 'c_core'.
  subroutine fill3_4corners(q1, q2, q3, dir, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
   type(fv_grid_bounds_type), intent(IN) :: bd
   integer, intent(in):: dir                !< 1: x-dir; 2: y-dir
-=======
-
- subroutine fill3_4corners(q1, q2, q3, dir, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
-  type(fv_grid_bounds_type), intent(IN) :: bd
-! This routine fill the 4 corners of the scalar fileds only as needed by c_core
-  integer, intent(in):: dir                ! 1: x-dir; 2: y-dir
->>>>>>> rusty/master_test
   real, intent(inout):: q1(bd%isd:bd%ied,bd%jsd:bd%jed)
   real, intent(inout):: q2(bd%isd:bd%ied,bd%jsd:bd%jed)
   real, intent(inout):: q3(bd%isd:bd%ied,bd%jsd:bd%jed)
@@ -3757,18 +3246,10 @@ end subroutine ytp_v
   end select
  end subroutine fill3_4corners
 
-<<<<<<< HEAD
 !>@brief The subroutine ' fill2_4corners' fills the 4 corners of the scalar fileds only as needed by 'c_core'.
  subroutine fill2_4corners(q1, q2, dir, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
   type(fv_grid_bounds_type), intent(IN) :: bd
   integer, intent(in):: dir                !< 1: x-dir; 2: y-dir
-=======
-
- subroutine fill2_4corners(q1, q2, dir, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
-  type(fv_grid_bounds_type), intent(IN) :: bd
-! This routine fill the 4 corners of the scalar fileds only as needed by c_core
-  integer, intent(in):: dir                ! 1: x-dir; 2: y-dir
->>>>>>> rusty/master_test
   real, intent(inout):: q1(bd%isd:bd%ied,bd%jsd:bd%jed)
   real, intent(inout):: q2(bd%isd:bd%ied,bd%jsd:bd%jed)
   logical, intent(IN) :: sw_corner, se_corner, ne_corner, nw_corner
@@ -3827,15 +3308,9 @@ end subroutine ytp_v
 
  end subroutine fill2_4corners
 
-<<<<<<< HEAD
 !>@brief The subroutine 'fill_4corners' fills the 4 corners of the scalar fields only as needed by c_core.
  subroutine fill_4corners(q, dir, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
   type(fv_grid_bounds_type), intent(IN) :: bd
-=======
- subroutine fill_4corners(q, dir, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
-  type(fv_grid_bounds_type), intent(IN) :: bd
-! This routine fill the 4 corners of the scalar fileds only as needed by c_core
->>>>>>> rusty/master_test
   integer, intent(in):: dir                ! 1: x-dir; 2: y-dir
   real, intent(inout):: q(bd%isd:bd%ied,bd%jsd:bd%jed)
   logical, intent(IN) :: sw_corner, se_corner, ne_corner, nw_corner

@@ -1,5 +1,4 @@
 !***********************************************************************
-<<<<<<< HEAD
 !*                   GNU Lesser General Public License                 
 !*
 !* This file is part of the FV3 dynamical core.
@@ -50,33 +49,6 @@ module tp_core_mod
 !   </tr>
 ! </table>
 
- use fv_mp_mod,         only: ng 
-=======
-!*                   GNU Lesser General Public License
-!*
-!* This file is part of the FV3 dynamical core.
-!*
-!* The FV3 dynamical core is free software: you can redistribute it
-!* and/or modify it under the terms of the
-!* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or
-!* (at your option) any later version.
-!*
-!* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-!* See the GNU General Public License for more details.
-!*
-!* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.
-!* If not, see <http://www.gnu.org/licenses/>.
-!***********************************************************************
-module tp_core_mod
-!BOP
-!
-! !MODULE: tp_core --- A collection of routines to support FV transport
-!
->>>>>>> rusty/master_test
  use fv_grid_utils_mod, only: big_number
  use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type
 
@@ -85,11 +57,7 @@ module tp_core_mod
  private
  public fv_tp_2d, pert_ppm, copy_corners
 
-<<<<<<< HEAD
  real, parameter:: ppm_fac = 1.5   !< nonlinear scheme limiter: between 1 and 2
-=======
- real, parameter:: ppm_fac = 1.5   ! nonlinear scheme limiter: between 1 and 2
->>>>>>> rusty/master_test
  real, parameter:: r3 = 1./3.
  real, parameter:: near_zero = 1.E-25
  real, parameter:: ppm_limiter = 2.0
@@ -133,21 +101,15 @@ module tp_core_mod
 
 contains
 
-<<<<<<< HEAD
 !>@brief The subroutine 'fv_tp_2d' contains the FV advection scheme
 !! \cite putman2007finite \cite lin1996multiflux. 
 !>@details It performs 1 time step of the forward advection.
  subroutine fv_tp_2d(q, crx, cry, npx, npy, hord, fx, fy, xfx, yfx,  &
-                     gridstruct, bd, ra_x, ra_y, lim_fac, regional, mfx, mfy, mass, nord, damp_c)
-=======
- subroutine fv_tp_2d(q, crx, cry, npx, npy, hord, fx, fy, xfx, yfx,  &
-                     gridstruct, bd, ra_x, ra_y, mfx, mfy, mass, nord, damp_c)
->>>>>>> rusty/master_test
+                     gridstruct, bd, ra_x, ra_y, lim_fac, mfx, mfy, mass, nord, damp_c)
    type(fv_grid_bounds_type), intent(IN) :: bd
    integer, intent(in):: npx, npy
    integer, intent(in)::hord
 
-<<<<<<< HEAD
    real, intent(in)::  crx(bd%is:bd%ie+1,bd%jsd:bd%jed)  
    real, intent(in)::  xfx(bd%is:bd%ie+1,bd%jsd:bd%jed)  
    real, intent(in)::  cry(bd%isd:bd%ied,bd%js:bd%je+1 )  
@@ -161,32 +123,12 @@ contains
    type(fv_grid_type), intent(IN), target :: gridstruct
 
    real, intent(in):: lim_fac
-   logical, intent(in):: regional
 ! optional Arguments:
    real, OPTIONAL, intent(in):: mfx(bd%is:bd%ie+1,bd%js:bd%je  ) !< Mass Flux X-Dir
    real, OPTIONAL, intent(in):: mfy(bd%is:bd%ie  ,bd%js:bd%je+1)  !< Mass Flux Y-Dir
    real, OPTIONAL, intent(in):: mass(bd%isd:bd%ied,bd%jsd:bd%jed)
    real, OPTIONAL, intent(in):: damp_c
    integer, OPTIONAL, intent(in):: nord !< order of divergence damping
-=======
-   real, intent(in)::  crx(bd%is:bd%ie+1,bd%jsd:bd%jed)  !
-   real, intent(in)::  xfx(bd%is:bd%ie+1,bd%jsd:bd%jed)  !
-   real, intent(in)::  cry(bd%isd:bd%ied,bd%js:bd%je+1 )  !
-   real, intent(in)::  yfx(bd%isd:bd%ied,bd%js:bd%je+1 )  !
-   real, intent(in):: ra_x(bd%is:bd%ie,bd%jsd:bd%jed)
-   real, intent(in):: ra_y(bd%isd:bd%ied,bd%js:bd%je)
-   real, intent(inout):: q(bd%isd:bd%ied,bd%jsd:bd%jed)  ! transported scalar
-   real, intent(out)::fx(bd%is:bd%ie+1 ,bd%js:bd%je)    ! Flux in x ( E )
-   real, intent(out)::fy(bd%is:bd%ie,   bd%js:bd%je+1 )    ! Flux in y ( N )
-
-   type(fv_grid_type), intent(IN), target :: gridstruct
-! optional Arguments:
-   real, OPTIONAL, intent(in):: mfx(bd%is:bd%ie+1,bd%js:bd%je  )  ! Mass Flux X-Dir
-   real, OPTIONAL, intent(in):: mfy(bd%is:bd%ie  ,bd%js:bd%je+1)  ! Mass Flux Y-Dir
-   real, OPTIONAL, intent(in):: mass(bd%isd:bd%ied,bd%jsd:bd%jed)
-   real, OPTIONAL, intent(in):: damp_c
-   integer, OPTIONAL, intent(in):: nord
->>>>>>> rusty/master_test
 ! Local:
    integer ord_ou, ord_in
    real q_i(bd%isd:bd%ied,bd%js:bd%je)
@@ -216,18 +158,11 @@ contains
    endif
    ord_ou = hord
 
-<<<<<<< HEAD
-   if (.not. (regional)) call copy_corners(q, npx, npy, 2, gridstruct%nested, bd, &
-                                gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
-
-   call yppm(fy2, q, cry, ord_in, isd,ied,isd,ied, js,je,jsd,jed, npx,npy, gridstruct%dya, gridstruct%nested, gridstruct%grid_type, lim_fac,regional)
-=======
    if (.not. gridstruct%bounded_domain) &
 	call copy_corners(q, npx, npy, 2, gridstruct%bounded_domain, bd, &
                           gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
-   call yppm(fy2, q, cry, ord_in, isd,ied,isd,ied, js,je,jsd,jed, npx,npy, gridstruct%dya, gridstruct%bounded_domain, gridstruct%grid_type)
->>>>>>> rusty/master_test
+   call yppm(fy2, q, cry, ord_in, isd,ied,isd,ied, js,je,jsd,jed, npx,npy, gridstruct%dya, gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
 
    do j=js,je+1
       do i=isd,ied
@@ -240,22 +175,13 @@ contains
       enddo
    enddo
 
-<<<<<<< HEAD
-   call xppm(fx, q_i, crx(is,js), ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx,npy, gridstruct%dxa, gridstruct%nested, gridstruct%grid_type, lim_fac,regional)
-
-   if (.not. (regional)) call copy_corners(q, npx, npy, 1, gridstruct%nested, bd, &
-                               gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
-
-  call xppm(fx2, q, crx, ord_in, is,ie,isd,ied, jsd,jed,jsd,jed, npx,npy, gridstruct%dxa, gridstruct%nested, gridstruct%grid_type, lim_fac,regional)
-=======
-   call xppm(fx, q_i, crx(is,js), ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx,npy, gridstruct%dxa, gridstruct%bounded_domain, gridstruct%grid_type)
+   call xppm(fx, q_i, crx(is,js), ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx,npy, gridstruct%dxa, gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
 
   if (.not. gridstruct%bounded_domain) &
 	call copy_corners(q, npx, npy, 1, gridstruct%bounded_domain, bd, &
                                gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
-  call xppm(fx2, q, crx, ord_in, is,ie,isd,ied, jsd,jed,jsd,jed, npx,npy, gridstruct%dxa, gridstruct%bounded_domain, gridstruct%grid_type)
->>>>>>> rusty/master_test
+  call xppm(fx2, q, crx, ord_in, is,ie,isd,ied, jsd,jed,jsd,jed, npx,npy, gridstruct%dxa, gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
 
   do j=jsd,jed
      do i=is,ie+1
@@ -266,11 +192,7 @@ contains
      enddo
   enddo
 
-<<<<<<< HEAD
-  call yppm(fy, q_j, cry, ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx, npy, gridstruct%dya, gridstruct%nested, gridstruct%grid_type, lim_fac,regional)
-=======
-  call yppm(fy, q_j, cry, ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx, npy, gridstruct%dya, gridstruct%bounded_domain, gridstruct%grid_type)
->>>>>>> rusty/master_test
+  call yppm(fy, q_j, cry, ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx, npy, gridstruct%dya, gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
 
 !----------------
 ! Flux averaging:
@@ -293,11 +215,7 @@ contains
       if ( present(nord) .and. present(damp_c) .and. present(mass) ) then
         if ( damp_c > 1.e-4 ) then
            damp = (damp_c * gridstruct%da_min)**(nord+1)
-<<<<<<< HEAD
-           call deln_flux(nord, is,ie,js,je, npx, npy, damp, q, fx, fy, gridstruct,regional, bd, mass)
-=======
            call deln_flux(nord, is,ie,js,je, npx, npy, damp, q, fx, fy, gridstruct, bd, mass )
->>>>>>> rusty/master_test
         endif
       endif
    else
@@ -317,44 +235,25 @@ contains
       if ( present(nord) .and. present(damp_c) ) then
            if ( damp_c > 1.E-4 ) then
                 damp = (damp_c * gridstruct%da_min)**(nord+1)
-<<<<<<< HEAD
-                call deln_flux(nord, is,ie,js,je, npx, npy, damp, q, fx, fy, gridstruct, regional, bd)
-           endif
-      endif
-   endif
-=======
                 call deln_flux(nord, is,ie,js,je, npx, npy, damp, q, fx, fy, gridstruct, bd)
            endif
       endif
    endif
-
->>>>>>> rusty/master_test
  end subroutine fv_tp_2d
 
  !Weird arguments are because this routine is called in a lot of
  !places outside of tp_core, sometimes very deeply nested in the call tree.
-<<<<<<< HEAD
- subroutine copy_corners(q, npx, npy, dir, nested, bd, &
-=======
  subroutine copy_corners(q, npx, npy, dir, bounded_domain, bd, &
->>>>>>> rusty/master_test
                          sw_corner, se_corner, nw_corner, ne_corner)
  type(fv_grid_bounds_type), intent(IN) :: bd
  integer, intent(in):: npx, npy, dir
  real, intent(inout):: q(bd%isd:bd%ied,bd%jsd:bd%jed)
-<<<<<<< HEAD
- logical, intent(IN) :: nested, sw_corner, se_corner, nw_corner, ne_corner
- integer  i,j
-
- if (nested) return
-=======
  logical, intent(IN) :: bounded_domain, sw_corner, se_corner, nw_corner, ne_corner
  integer  i,j, ng
 
  ng = bd%ng
 
  if (bounded_domain) return
->>>>>>> rusty/master_test
 
  if ( dir == 1 ) then
 ! XDir:
@@ -423,8 +322,7 @@ contains
       
  end subroutine copy_corners
 
-<<<<<<< HEAD
- subroutine xppm(flux, q, c, iord, is,ie,isd,ied, jfirst,jlast,jsd,jed, npx, npy, dxa, nested, grid_type, lim_fac,regional)
+ subroutine xppm(flux, q, c, iord, is,ie,isd,ied, jfirst,jlast,jsd,jed, npx, npy, dxa, bounded_domain, grid_type, lim_fac)
  integer, INTENT(IN) :: is, ie, isd, ied, jsd, jed
  integer, INTENT(IN) :: jfirst, jlast  !< compute domain
  integer, INTENT(IN) :: iord
@@ -432,7 +330,7 @@ contains
  real   , INTENT(IN) :: q(isd:ied,jfirst:jlast)
  real   , INTENT(IN) :: c(is:ie+1,jfirst:jlast) !< Courant N (like FLUX)
  real   , intent(IN) :: dxa(isd:ied,jsd:jed)
- logical, intent(IN) :: nested,regional
+ logical, intent(IN) :: bounded_domain
  integer, intent(IN) :: grid_type
  real   , intent(IN) :: lim_fac
 !OUTPUT PARAMETERS:
@@ -449,43 +347,14 @@ contains
  integer:: i, j, ie3, is1, ie1, mord
  real:: x0, x1, xt, qtmp, pmp_1, lac_1, pmp_2, lac_2
 
- if ( .not. (nested .or. regional) .and. grid_type<3 ) then
-=======
- subroutine xppm(flux, q, c, iord, is,ie,isd,ied, jfirst,jlast,jsd,jed, npx, npy, dxa, bounded_domain, grid_type)
- integer, INTENT(IN) :: is, ie, isd, ied, jsd, jed
- integer, INTENT(IN) :: jfirst, jlast  ! compute domain
- integer, INTENT(IN) :: iord
- integer, INTENT(IN) :: npx, npy
- real   , INTENT(IN) :: q(isd:ied,jfirst:jlast)
- real   , INTENT(IN) :: c(is:ie+1,jfirst:jlast) ! Courant   N (like FLUX)
- real   , intent(IN) :: dxa(isd:ied,jsd:jed)
- logical, intent(IN) :: bounded_domain
- integer, intent(IN) :: grid_type
-! !OUTPUT PARAMETERS:
- real  , INTENT(OUT) :: flux(is:ie+1,jfirst:jlast) !  Flux
-! Local
- real, dimension(is-1:ie+1):: bl, br, b0
- real:: q1(isd:ied)
- real, dimension(is:ie+1):: fx0, fx1
- logical, dimension(is-1:ie+1):: smt5, smt6
- real  al(is-1:ie+2)
- real  dm(is-2:ie+2)
- real  dq(is-3:ie+2)
- integer:: i, j, ie3, is1, ie1
- real:: x0, x1, xt, qtmp, pmp_1, lac_1, pmp_2, lac_2
-
  if ( .not. bounded_domain .and. grid_type<3 ) then
->>>>>>> rusty/master_test
     is1 = max(3,is-1);  ie3 = min(npx-2,ie+2)
                         ie1 = min(npx-3,ie+1)
  else
     is1 = is-1;         ie3 = ie+2
                         ie1 = ie+1
  end if
-<<<<<<< HEAD
   mord = abs(iord)
-=======
->>>>>>> rusty/master_test
 
  do 666 j=jfirst,jlast
 
@@ -493,49 +362,26 @@ contains
        q1(i) = q(i,j)
     enddo
 
-<<<<<<< HEAD
  if ( iord < 8 ) then
-=======
-  if ( iord < 8 ) then
->>>>>>> rusty/master_test
 ! ord = 2: perfectly linear ppm scheme
 ! Diffusivity: ord2 < ord5 < ord3 < ord4 < ord6 
 
    do i=is1, ie3
       al(i) = p1*(q1(i-1)+q1(i)) + p2*(q1(i-2)+q1(i+1))
    enddo
-<<<<<<< HEAD
 
-   if ( .not. (nested .or. regional) .and. grid_type<3 ) then
-=======
-   if ( iord==7 ) then
-       do i=is1, ie3
-          if ( al(i)<0. ) al(i) = 0.5*(q1(i-1)+q1(i))
-       enddo
-   endif
-
-   if ( .not.bounded_domain .and. grid_type<3 ) then
->>>>>>> rusty/master_test
+   if ( .not. bounded_domain .and. grid_type<3 ) then
      if ( is==1 ) then
        al(0) = c1*q1(-2) + c2*q1(-1) + c3*q1(0)
        al(1) = 0.5*(((2.*dxa(0,j)+dxa(-1,j))*q1(0)-dxa(0,j)*q1(-1))/(dxa(-1,j)+dxa(0,j)) &
              +      ((2.*dxa(1,j)+dxa( 2,j))*q1(1)-dxa(1,j)*q1( 2))/(dxa(1, j)+dxa(2,j)))
        al(2) = c3*q1(1) + c2*q1(2) +c1*q1(3)
-<<<<<<< HEAD
-=======
-       if(iord==7) then
-          al(0) = max(0., al(0))
-          al(1) = max(0., al(1))
-          al(2) = max(0., al(2))
-       endif
->>>>>>> rusty/master_test
      endif
      if ( (ie+1)==npx ) then
        al(npx-1) = c1*q1(npx-3) + c2*q1(npx-2) + c3*q1(npx-1)
        al(npx) = 0.5*(((2.*dxa(npx-1,j)+dxa(npx-2,j))*q1(npx-1)-dxa(npx-1,j)*q1(npx-2))/(dxa(npx-2,j)+dxa(npx-1,j)) &
                +      ((2.*dxa(npx,  j)+dxa(npx+1,j))*q1(npx  )-dxa(npx,  j)*q1(npx+1))/(dxa(npx,  j)+dxa(npx+1,j)))
        al(npx+1) = c3*q1(npx) + c2*q1(npx+1) + c1*q1(npx+2)
-<<<<<<< HEAD
      endif
    endif
 
@@ -565,18 +411,6 @@ contains
       enddo
 
    elseif ( mord==2 ) then  ! perfectly linear scheme
-=======
-       if(iord==7) then
-          al(npx-1) = max(0., al(npx-1))
-          al(npx  ) = max(0., al(npx  ))
-          al(npx+1) = max(0., al(npx+1))
-       endif
-     endif
-   endif
-
-   if ( iord==2 ) then  ! perfectly linear scheme
-! Diffusivity: ord2 < ord5 < ord3 < ord4 < ord6  < ord7
->>>>>>> rusty/master_test
 
 !DEC$ VECTOR ALWAYS
       do i=is,ie+1
@@ -594,12 +428,8 @@ contains
 !                  + x1*(q1(i)  +(1.+xt)*(al(i)-qtmp+xt*(al(i)+al(i+1)-(qtmp+qtmp))))
       enddo
 
-<<<<<<< HEAD
    elseif ( mord==3 ) then
 
-=======
-   elseif ( iord==3 ) then
->>>>>>> rusty/master_test
         do i=is-1,ie+1
            bl(i) = al(i)   - q1(i)
            br(i) = al(i+1) - q1(i)
@@ -611,7 +441,6 @@ contains
         enddo
         do i=is,ie+1
            fx1(i) = 0.
-<<<<<<< HEAD
            xt1(i) = c(i,j)
            hi5(i) = smt5(i-1) .and. smt5(i)   ! more diffusive
            hi6(i) = smt6(i-1) .or.  smt6(i)
@@ -636,29 +465,6 @@ contains
 
    elseif ( mord==4 ) then
 
-=======
-        enddo
-        do i=is,ie+1
-           xt = c(i,j)
-           if ( xt > 0. ) then
-                fx0(i) = q1(i-1)
-                if ( smt6(i-1).or.smt5(i) ) then
-                   fx1(i) = br(i-1) - xt*b0(i-1)
-                elseif ( smt5(i-1) ) then   ! 2nd order, piece-wise linear
-                   fx1(i) = sign(min(abs(bl(i-1)),abs(br(i-1))), br(i-1))
-                endif
-           else
-                fx0(i) = q1(i)
-                if ( smt6(i).or.smt5(i-1) ) then
-                   fx1(i) = bl(i) + xt*b0(i)
-                elseif ( smt5(i) ) then
-                   fx1(i) = sign(min(abs(bl(i)), abs(br(i))), bl(i))
-                endif
-           endif
-           flux(i,j) = fx0(i) + (1.-abs(xt))*fx1(i)
-        enddo
-   elseif ( iord==4 ) then
->>>>>>> rusty/master_test
         do i=is-1,ie+1
            bl(i) = al(i)   - q1(i)
            br(i) = al(i+1) - q1(i)
@@ -669,7 +475,6 @@ contains
            smt6(i) = 3.*x0 < xt
         enddo
         do i=is,ie+1
-<<<<<<< HEAD
            xt1(i) = c(i,j)
            hi5(i) = smt5(i-1) .and. smt5(i)   ! more diffusive
            hi6(i) = smt6(i-1) .or.  smt6(i)
@@ -690,24 +495,6 @@ contains
    else
 
       if ( mord==5 ) then
-=======
-           fx1(i) = 0.
-        enddo
-!DEC$ VECTOR ALWAYS
-        do i=is,ie+1
-           if ( c(i,j) > 0. ) then
-                fx0(i) = q1(i-1)
-                if ( smt6(i-1).or.smt5(i) ) fx1(i) = (1.-c(i,j))*(br(i-1) - c(i,j)*b0(i-1))
-           else
-                fx0(i) = q1(i)
-                if ( smt6(i).or.smt5(i-1) ) fx1(i) = (1.+c(i,j))*(bl(i) + c(i,j)*b0(i))
-           endif
-           flux(i,j) = fx0(i) + fx1(i)
-        enddo
-   else
-! iord = 5 & 6
-      if ( iord==5 ) then
->>>>>>> rusty/master_test
         do i=is-1,ie+1
            bl(i) = al(i)   - q1(i)
            br(i) = al(i+1) - q1(i)
@@ -719,7 +506,6 @@ contains
            bl(i) = al(i)   - q1(i)
            br(i) = al(i+1) - q1(i)
            b0(i) = bl(i) + br(i)
-<<<<<<< HEAD
            smt5(i) = 3.*abs(b0(i)) < abs(bl(i)-br(i))
         enddo
       endif
@@ -736,22 +522,6 @@ contains
          if (smt5(i-1).or.smt5(i)) flux(i,j) = flux(i,j) + fx1(i) 
       enddo
 
-=======
-           smt5(i) = abs(3.*b0(i)) < abs(bl(i)-br(i))
-        enddo
-      endif
-!DEC$ VECTOR ALWAYS
-      do i=is,ie+1
-         if ( c(i,j) > 0. ) then
-             fx1(i) = (1.-c(i,j))*(br(i-1) - c(i,j)*b0(i-1))
-             flux(i,j) = q1(i-1)
-         else
-             fx1(i) = (1.+c(i,j))*(bl(i) + c(i,j)*b0(i))
-             flux(i,j) = q1(i)
-         endif
-         if (smt5(i-1).or.smt5(i)) flux(i,j) = flux(i,j) + fx1(i) 
-      enddo
->>>>>>> rusty/master_test
    endif
    goto 666
 
@@ -807,11 +577,7 @@ contains
 ! Positive definite constraint:
     if(iord==9 .or. iord==13) call pert_ppm(ie1-is1+1, q1(is1), bl(is1), br(is1), 0)
 
-<<<<<<< HEAD
-    if (.not. (nested .or. regional) .and. grid_type<3) then
-=======
     if (.not. bounded_domain .and. grid_type<3) then
->>>>>>> rusty/master_test
       if ( is==1 ) then
          bl(0) = s14*dm(-1) + s11*(q1(-1)-q1(0))
 
@@ -862,77 +628,44 @@ contains
   enddo
 
 666   continue
-<<<<<<< HEAD
  end subroutine xppm
 
 
- subroutine yppm(flux, q, c, jord, ifirst,ilast, isd,ied, js,je,jsd,jed, npx, npy, dya, nested, grid_type, lim_fac,regional)
+ subroutine yppm(flux, q, c, jord, ifirst,ilast, isd,ied, js,je,jsd,jed, npx, npy, dya, bounded_domain, grid_type, lim_fac)
  integer, INTENT(IN) :: ifirst,ilast    !< Compute domain
-=======
-
- end subroutine xppm
-
-
- subroutine yppm(flux, q, c, jord, ifirst,ilast, isd,ied, js,je,jsd,jed, npx, npy, dya, bounded_domain, grid_type)
- integer, INTENT(IN) :: ifirst,ilast    ! Compute domain
->>>>>>> rusty/master_test
  integer, INTENT(IN) :: isd,ied, js,je,jsd,jed
  integer, INTENT(IN) :: jord
  integer, INTENT(IN) :: npx, npy
  real   , INTENT(IN) :: q(ifirst:ilast,jsd:jed)
-<<<<<<< HEAD
  real   , intent(in) :: c(isd:ied,js:je+1 )  !< Courant number
  real   , INTENT(OUT):: flux(ifirst:ilast,js:je+1)   !<  Flux
  real   , intent(IN) :: dya(isd:ied,jsd:jed)
- logical, intent(IN) :: nested,regional
- integer, intent(IN) :: grid_type
- real   , intent(IN) :: lim_fac
-=======
- real   , intent(in) :: c(isd:ied,js:je+1 )  ! Courant number
- real   , INTENT(OUT):: flux(ifirst:ilast,js:je+1)   !  Flux
- real   , intent(IN) :: dya(isd:ied,jsd:jed)
  logical, intent(IN) :: bounded_domain
  integer, intent(IN) :: grid_type
->>>>>>> rusty/master_test
+ real   , intent(IN) :: lim_fac
 ! Local:
  real:: dm(ifirst:ilast,js-2:je+2)
  real:: al(ifirst:ilast,js-1:je+2)
  real, dimension(ifirst:ilast,js-1:je+1):: bl, br, b0
  real:: dq(ifirst:ilast,js-3:je+2)
-<<<<<<< HEAD
  real,    dimension(ifirst:ilast):: fx0, fx1, xt1
  logical, dimension(ifirst:ilast,js-1:je+1):: smt5, smt6
  logical, dimension(ifirst:ilast):: hi5, hi6
  real:: x0, xt, qtmp, pmp_1, lac_1, pmp_2, lac_2, r1
  integer:: i, j, js1, je3, je1, mord
 
-   if ( .not. (nested .or. regional) .and. grid_type < 3 ) then
-=======
- real,    dimension(ifirst:ilast):: fx0, fx1
- logical, dimension(ifirst:ilast,js-1:je+1):: smt5, smt6
- real:: x0, xt, qtmp, pmp_1, lac_1, pmp_2, lac_2, r1
- integer:: i, j, js1, je3, je1
-
    if ( .not.bounded_domain .and. grid_type < 3 ) then
->>>>>>> rusty/master_test
 ! Cubed-sphere:
       js1 = max(3,js-1); je3 = min(npy-2,je+2)
                          je1 = min(npy-3,je+1)
    else
-<<<<<<< HEAD
-! Nested grid OR Doubly periodic domain:
-=======
 ! Bounded_domain grid OR Doubly periodic domain:
->>>>>>> rusty/master_test
       js1 = js-1;        je3 = je+2
                          je1 = je+1
    endif
 
-<<<<<<< HEAD
  mord = abs(jord)
 
-=======
->>>>>>> rusty/master_test
 if ( jord < 8 ) then
 
    do j=js1, je3
@@ -940,20 +673,8 @@ if ( jord < 8 ) then
          al(i,j) = p1*(q(i,j-1)+q(i,j)) + p2*(q(i,j-2)+q(i,j+1))
       enddo
    enddo
-<<<<<<< HEAD
-
-   if ( .not. (nested .or. regional) .and. grid_type<3 ) then
-=======
-   if ( jord==7 ) then
-      do j=js1, je3
-         do i=ifirst,ilast
-            if ( al(i,j)<0. ) al(i,j) = 0.5*(q(i,j)+q(i,j+1))
-         enddo
-      enddo
-   endif
 
    if ( .not. bounded_domain .and. grid_type<3 ) then
->>>>>>> rusty/master_test
       if( js==1 ) then
         do i=ifirst,ilast
            al(i,0) = c1*q(i,-2) + c2*q(i,-1) + c3*q(i,0)
@@ -961,16 +682,6 @@ if ( jord < 8 ) then
                    +      ((2.*dya(i,1)+dya(i,2))*q(i,1)-dya(i,1)*q(i,2))/(dya(i,1)+dya(i,2)))
            al(i,2) = c3*q(i,1) + c2*q(i,2) + c1*q(i,3)
         enddo
-<<<<<<< HEAD
-=======
-        if ( jord==7 ) then
-           do i=ifirst,ilast
-              al(i,0) = max(0., al(i,0))
-              al(i,1) = max(0., al(i,1))
-              al(i,2) = max(0., al(i,2))
-           enddo
-        endif
->>>>>>> rusty/master_test
       endif
       if( (je+1)==npy ) then
         do i=ifirst,ilast
@@ -979,7 +690,6 @@ if ( jord < 8 ) then
                    +      ((2.*dya(i,npy)+dya(i,npy+1))*q(i,npy)-dya(i,npy)*q(i,npy+1))/(dya(i,npy)+dya(i,npy+1)))
          al(i,npy+1) = c3*q(i,npy) + c2*q(i,npy+1) + c1*q(i,npy+2)
         enddo
-<<<<<<< HEAD
       endif
    endif
 
@@ -1015,19 +725,6 @@ if ( jord < 8 ) then
        enddo
 
    elseif ( mord==2 ) then   ! Perfectly linear scheme
-=======
-        if (jord==7 ) then
-           do i=ifirst,ilast
-              al(i,npy-1) = max(0., al(i,npy-1))
-              al(i,npy  ) = max(0., al(i,npy  ))
-              al(i,npy+1) = max(0., al(i,npy+1))
-           enddo
-        endif
-      endif
-   endif
-
-   if ( jord==2 ) then   ! Perfectly linear scheme
->>>>>>> rusty/master_test
 ! Diffusivity: ord2 < ord5 < ord3 < ord4 < ord6  < ord7
 
       do j=js,je+1
@@ -1044,12 +741,8 @@ if ( jord < 8 ) then
          enddo
       enddo
 
-<<<<<<< HEAD
    elseif ( mord==3 ) then
 
-=======
-   elseif ( jord==3 ) then
->>>>>>> rusty/master_test
         do j=js-1,je+1
            do i=ifirst,ilast
               bl(i,j) = al(i,j  ) - q(i,j)
@@ -1064,7 +757,6 @@ if ( jord < 8 ) then
         do j=js,je+1
            do i=ifirst,ilast
               fx1(i) = 0.
-<<<<<<< HEAD
               xt1(i) = c(i,j)
               hi5(i) = smt5(i,j-1) .and. smt5(i,j)
               hi6(i) = smt6(i,j-1) .or.  smt6(i,j)
@@ -1090,31 +782,6 @@ if ( jord < 8 ) then
 
    elseif ( mord==4 ) then
 
-=======
-           enddo
-           do i=ifirst,ilast
-              xt = c(i,j)
-              if ( xt > 0. ) then
-                   fx0(i) = q(i,j-1)
-                   if( smt6(i,j-1).or.smt5(i,j) ) then
-                       fx1(i) = br(i,j-1) - xt*b0(i,j-1)
-                   elseif ( smt5(i,j-1) ) then ! both up-downwind sides are noisy; 2nd order, piece-wise linear
-                       fx1(i) = sign(min(abs(bl(i,j-1)),abs(br(i,j-1))),br(i,j-1))
-                   endif
-              else
-                   fx0(i) = q(i,j)
-                   if( smt6(i,j).or.smt5(i,j-1) ) then
-                       fx1(i) = bl(i,j) + xt*b0(i,j)
-                   elseif ( smt5(i,j) ) then
-                       fx1(i) = sign(min(abs(bl(i,j)),abs(br(i,j))), bl(i,j))
-                   endif
-              endif
-              flux(i,j) = fx0(i) + (1.-abs(xt))*fx1(i)
-           enddo
-        enddo
-
-   elseif ( jord==4 ) then
->>>>>>> rusty/master_test
         do j=js-1,je+1
            do i=ifirst,ilast
               bl(i,j) = al(i,j  ) - q(i,j)
@@ -1128,7 +795,6 @@ if ( jord < 8 ) then
         enddo
         do j=js,je+1
            do i=ifirst,ilast
-<<<<<<< HEAD
               xt1(i) = c(i,j)
               hi5(i) = smt5(i,j-1) .and. smt5(i,j)
               hi6(i) = smt6(i,j-1) .or.  smt6(i,j)
@@ -1149,25 +815,6 @@ if ( jord < 8 ) then
 
    else  ! mord=5,6,7
        if ( mord==5 ) then
-=======
-              fx1(i) = 0.
-           enddo
-!DEC$ VECTOR ALWAYS
-           do i=ifirst,ilast
-              if ( c(i,j) > 0. ) then
-                   fx0(i) = q(i,j-1)
-                   if( smt6(i,j-1).or.smt5(i,j) )  fx1(i) = (1.-c(i,j))*(br(i,j-1) - c(i,j)*b0(i,j-1))
-              else
-                   fx0(i) = q(i,j)
-                   if( smt6(i,j).or.smt5(i,j-1) )  fx1(i) = (1.+c(i,j))*(bl(i,j)   + c(i,j)*b0(i,j))
-              endif
-              flux(i,j) = fx0(i) + fx1(i)
-           enddo
-        enddo
-
-   else  ! jord=5,6,7
-       if ( jord==5 ) then
->>>>>>> rusty/master_test
           do j=js-1,je+1
              do i=ifirst,ilast
                 bl(i,j) = al(i,j  ) - q(i,j)
@@ -1182,18 +829,11 @@ if ( jord < 8 ) then
                 bl(i,j) = al(i,j  ) - q(i,j)
                 br(i,j) = al(i,j+1) - q(i,j)
                 b0(i,j) = bl(i,j) + br(i,j)
-<<<<<<< HEAD
                 smt5(i,j) = 3.*abs(b0(i,j)) < abs(bl(i,j)-br(i,j))
              enddo
           enddo
        endif
 
-=======
-                smt5(i,j) = abs(3.*b0(i,j)) < abs(bl(i,j)-br(i,j))
-             enddo
-          enddo
-       endif
->>>>>>> rusty/master_test
        do j=js,je+1
 !DEC$ VECTOR ALWAYS
           do i=ifirst,ilast
@@ -1207,10 +847,7 @@ if ( jord < 8 ) then
              if (smt5(i,j-1).or.smt5(i,j)) flux(i,j) = flux(i,j) + fx1(i) 
           enddo
        enddo
-<<<<<<< HEAD
 
-=======
->>>>>>> rusty/master_test
    endif
    return
 
@@ -1279,11 +916,7 @@ else
      enddo
   endif
 
-<<<<<<< HEAD
-  if (.not. (nested .or. regional) .and. grid_type<3) then
-=======
   if (.not. bounded_domain .and. grid_type<3) then
->>>>>>> rusty/master_test
     if( js==1 ) then
       do i=ifirst,ilast
          bl(i,0) = s14*dm(i,-1) + s11*(q(i,-1)-q(i,0))
@@ -1339,10 +972,6 @@ endif
         endif
      enddo
   enddo
-<<<<<<< HEAD
-=======
-
->>>>>>> rusty/master_test
  end subroutine yppm
 
 
@@ -1355,17 +984,10 @@ endif
       integer, intent(in):: ifirst, ilast
       integer, intent(in):: jfirst, jlast
       integer, intent(in):: kfirst, klast
-<<<<<<< HEAD
       integer, intent(in):: ng_e      !< eastern  zones to ghost
       integer, intent(in):: ng_w      !< western  zones to ghost
       integer, intent(in):: ng_s      !< southern zones to ghost
       integer, intent(in):: ng_n      !< northern zones to ghost
-=======
-      integer, intent(in):: ng_e      ! eastern  zones to ghost
-      integer, intent(in):: ng_w      ! western  zones to ghost
-      integer, intent(in):: ng_s      ! southern zones to ghost
-      integer, intent(in):: ng_n      ! northern zones to ghost
->>>>>>> rusty/master_test
       real, intent(inout):: q_ghst(ifirst-ng_w:ilast+ng_e,jfirst-ng_s:jlast+ng_n,kfirst:klast,nq)
       real, optional, intent(in):: q(ifirst:ilast,jfirst:jlast,kfirst:klast,nq)
 !
@@ -1466,9 +1088,8 @@ endif
  end subroutine pert_ppm
 
 
-<<<<<<< HEAD
- subroutine deln_flux(nord,is,ie,js,je, npx, npy, damp, q, fx, fy, gridstruct,regional, bd, mass )
-!> Del-n damping for the cell-mean values (A grid)
+ subroutine deln_flux(nord,is,ie,js,je, npx, npy, damp, q, fx, fy, gridstruct, bd, mass )
+! Del-n damping for the cell-mean values (A grid)
 !------------------
 !> nord = 0:   del-2
 !> nord = 1:   del-4
@@ -1479,25 +1100,8 @@ endif
    integer, intent(in):: nord            !< del-n
    integer, intent(in):: is,ie,js,je, npx, npy
    real, intent(in):: damp
-   real, intent(in):: q(bd%is-ng:bd%ie+ng, bd%js-ng:bd%je+ng)  ! q ghosted on input
-   type(fv_grid_type), intent(IN), target :: gridstruct
-   logical, intent(in):: regional
-=======
- subroutine deln_flux(nord,is,ie,js,je, npx, npy, damp, q, fx, fy, gridstruct, bd, mass )
-! Del-n damping for the cell-mean values (A grid)
-!------------------
-! nord = 0:   del-2
-! nord = 1:   del-4
-! nord = 2:   del-6
-! nord = 3:   del-8 --> requires more ghosting than current
-!------------------
-   type(fv_grid_bounds_type), intent(IN) :: bd
-   integer, intent(in):: nord            ! del-n
-   integer, intent(in):: is,ie,js,je, npx, npy
-   real, intent(in):: damp
    real, intent(in):: q(bd%isd:bd%ied, bd%jsd:bd%jed)  ! q ghosted on input
    type(fv_grid_type), intent(IN), target :: gridstruct
->>>>>>> rusty/master_test
    real, optional, intent(in):: mass(bd%isd:bd%ied, bd%jsd:bd%jed)  ! q ghosted on input
 ! diffusive fluxes:
    real, intent(inout):: fx(bd%is:bd%ie+1,bd%js:bd%je), fy(bd%is:bd%ie,bd%js:bd%je+1)
@@ -1534,11 +1138,7 @@ endif
      enddo
    endif
 
-<<<<<<< HEAD
-   if( nord>0 .and. (.not. (regional))) call copy_corners(d2, npx, npy, 1, gridstruct%nested, bd, &
-=======
    if( nord>0 ) call copy_corners(d2, npx, npy, 1, gridstruct%bounded_domain, bd, &
->>>>>>> rusty/master_test
       gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
    do j=js-nord,je+nord
@@ -1551,11 +1151,7 @@ endif
       enddo
    enddo
 
-<<<<<<< HEAD
-   if( nord>0 .and. (.not. (regional))) call copy_corners(d2, npx, npy, 2, gridstruct%nested, bd, &
-=======
    if( nord>0 ) call copy_corners(d2, npx, npy, 2, gridstruct%bounded_domain, bd, &
->>>>>>> rusty/master_test
       gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
    do j=js-nord,je+nord+1
          do i=is-nord,ie+nord
@@ -1583,11 +1179,7 @@ endif
          enddo
       enddo
 
-<<<<<<< HEAD
-         if (.not.(regional))call copy_corners(d2, npx, npy, 1, gridstruct%nested, bd, &
-=======
       call copy_corners(d2, npx, npy, 1, gridstruct%bounded_domain, bd, &
->>>>>>> rusty/master_test
            gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
       do j=js-nt,je+nt
          do i=is-nt,ie+nt+1
@@ -1599,11 +1191,7 @@ endif
          enddo
       enddo
 
-<<<<<<< HEAD
-         if (.not.(regional)) call copy_corners(d2, npx, npy, 2, gridstruct%nested, bd, &
-=======
       call copy_corners(d2, npx, npy, 2, gridstruct%bounded_domain, bd, &
->>>>>>> rusty/master_test
            gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
       do j=js-nt,je+nt+1
             do i=is-nt,ie+nt

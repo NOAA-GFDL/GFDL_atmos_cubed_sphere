@@ -1,36 +1,4 @@
 !***********************************************************************
-<<<<<<< HEAD
-!*                   GNU Lesser General Public License                 
-!*
-!* This file is part of the FV3 dynamical core.
-!*
-!* The FV3 dynamical core is free software: you can redistribute it 
-!* and/or modify it under the terms of the
-!* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
-!* (at your option) any later version.
-!*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
-!* See the GNU General Public License for more details.
-!*
-!* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
-!* If not, see <http://www.gnu.org/licenses/>.
-!***********************************************************************
-
-!>@brief The module 'sim_nc' is a netcdf file reader.
-!>@details The code is necessary to circumvent issues with the FMS
-!! 'read_data' utility, which opens too many files and uses excessive
-!! memory.
-!>@author Shian-Jiann Lin
-
-module sim_nc_mod
-
-! This is S-J Lin's private netcdf file reader
-! This code is needed because FMS utility (read_data) led to too much
-=======
 !*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
@@ -50,11 +18,17 @@ module sim_nc_mod
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
+!>@brief The module 'sim_nc' is a netcdf file reader.
+!>@details The code is necessary to circumvent issues with the FMS
+!! 'read_data' utility, which opens too many files and uses excessive
+!! memory.
+!>@author Shian-Jiann Lin
+
 module sim_nc_mod
 
 ! This is S-J Lin's private netcdf file reader
-! This code is needed because FMS utilitty (read_data) led to too much
->>>>>>> rusty/master_test
+! This code is needed because FMS utility (read_data) led to too much
 ! memory usage and too many files openned. Perhaps lower-level FMS IO
 ! calls should be used instead.
 
@@ -72,12 +46,8 @@ module sim_nc_mod
  private
  public  open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var2_double,   &
          get_var3_real, get_var3_double, get_var3_r4, get_var2_real, get_var2_r4,   &
-<<<<<<< HEAD
          handle_err, check_var, get_var1_real, get_var_att_double, &
          check_var_exists 
-=======
-         handle_err, check_var, get_var1_real, get_var_att_double
->>>>>>> rusty/master_test
 
  contains
 
@@ -87,11 +57,7 @@ module sim_nc_mod
       integer::  status
 
       status = nf_open (iflnm, NF_NOWRITE, ncid)
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) call handle_err('nf_open',status)
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
 
 
       end subroutine open_ncfile
@@ -102,11 +68,7 @@ module sim_nc_mod
       integer::  status
 
       status = nf_close (ncid)
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) call handle_err('nf_close',status)
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
 
 
       end subroutine close_ncfile
@@ -119,7 +81,6 @@ module sim_nc_mod
       integer::  status, var1id
 
       status = nf_inq_dimid (ncid, var1_name, var1id)
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) call handle_err('dimid '//var1_name,status)
 
       status = nf_inq_dimlen (ncid, var1id, im)
@@ -128,18 +89,6 @@ module sim_nc_mod
       end subroutine get_ncdim1
 
 !>@brief The 'get_var' subroutines read in variables from netcdf files
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
-
-      status = nf_inq_dimlen (ncid, var1id, im)
-      if (status .ne. NF_NOERR) call handle_err(status)
-
-      end subroutine get_ncdim1
-
-
-
-
->>>>>>> rusty/master_test
       subroutine get_var1_double( ncid, var1_name, im, var1, var_exist )
       integer, intent(in):: ncid
       character(len=*), intent(in)::  var1_name
@@ -150,19 +99,11 @@ module sim_nc_mod
 
       status = nf_inq_varid (ncid, var1_name, var1id)
       if (status .ne. NF_NOERR) then
-<<<<<<< HEAD
 !         call handle_err('varid '//var1_name,status)
           if(present(var_exist) ) var_exist = .false.
       else
           status = nf_get_var_double (ncid, var1id, var1)
           if (status .ne. NF_NOERR) call handle_err('varid '//var1_name,status)
-=======
-!         call handle_err(status)
-          if(present(var_exist) ) var_exist = .false.
-      else
-          status = nf_get_var_double (ncid, var1id, var1)
-          if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
           if(present(var_exist) ) var_exist = .true.
       endif
 
@@ -185,11 +126,7 @@ module sim_nc_mod
           if(present(var_exist) ) var_exist = .false.
       else
           status = nf_get_var_real (ncid, var1id, var1)
-<<<<<<< HEAD
           if (status .ne. NF_NOERR) call handle_err('get_var1_real1 '//var1_name,status)
-=======
-          if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
           if(present(var_exist) ) var_exist = .true.
       endif
 
@@ -205,17 +142,10 @@ module sim_nc_mod
       integer::  status, var1id
 
       status = nf_inq_varid (ncid, var_name, var1id)
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) call handle_err('get_var2_real varid '//var_name,status)
 
       status = nf_get_var_real (ncid, var1id, var2)
       if (status .ne. NF_NOERR) call handle_err('get_var2_real get_var'//var_name,status)
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
-
-      status = nf_get_var_real (ncid, var1id, var2)
-      if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
 
       end subroutine get_var2_real
 
@@ -231,11 +161,7 @@ module sim_nc_mod
       integer:: status, var2id
 
       status = nf_inq_varid (ncid, var2_name, var2id)
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) call handle_err('get_var2_r4 varid'//var2_name,status)
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
 
       start(1) = is; start(2) = js; start(3) = 1
       if ( present(time_slice) ) then
@@ -247,11 +173,7 @@ module sim_nc_mod
       nreco(3) = 1
 
       status = nf_get_vara_real(ncid, var2id, start, nreco, var2)
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) call handle_err('get_var2_r4 get_vara_real'//var2_name,status)
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
 
       end subroutine get_var2_r4
 
@@ -264,17 +186,10 @@ module sim_nc_mod
       integer::  status, var2id
 
       status = nf_inq_varid (ncid, var2_name, var2id)
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) call handle_err('get_var2_double varid'//var2_name,status)
 
       status = nf_get_var_double (ncid, var2id, var2)
       if (status .ne. NF_NOERR) call handle_err('get_var2_double get_var_double'//var2_name,status)
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
-
-      status = nf_get_var_double (ncid, var2id, var2)
-      if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
 
 
       end subroutine get_var2_double
@@ -290,19 +205,12 @@ module sim_nc_mod
 
       status = nf_inq_varid (ncid, var3_name, var3id)
 
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) &
           call handle_err('get_var3_double varid '//var3_name,status)
 
       status = nf_get_var_double (ncid, var3id, var3)
       if (status .ne. NF_NOERR) &
           call handle_err('get_var3_double get_vara_double '//var3_name,status)
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
-
-      status = nf_get_var_double (ncid, var3id, var3)
-      if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
 
       end subroutine get_var3_double
 
@@ -316,24 +224,16 @@ module sim_nc_mod
 
       status = nf_inq_varid (ncid, var3_name, var3id)
 
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) &
                 call handle_err('get_var3_real varid '//var3_name,status)
       status = nf_get_var_real (ncid, var3id, var3)
 
       if (status .ne. NF_NOERR) &
                 call handle_err('get_var3_real get_var_real '//var3_name,status)
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
-      status = nf_get_var_real (ncid, var3id, var3)
-
-      if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
 
       end subroutine get_var3_real
 
 
-<<<<<<< HEAD
       subroutine check_var_exists(ncid, var_name, status)
       integer, intent(in):: ncid
       integer, intent(inout) :: status
@@ -342,8 +242,6 @@ module sim_nc_mod
       status = nf_inq_varid (ncid, var_name, varid)
       end subroutine check_var_exists
 
-=======
->>>>>>> rusty/master_test
       subroutine get_var3_r4( ncid, var3_name, is,ie, js,je, ks,ke, var3, time_slice )
       integer, intent(in):: ncid
       character(len=*), intent(in)::  var3_name
@@ -356,11 +254,7 @@ module sim_nc_mod
       integer:: status, var3id
 
       status = nf_inq_varid (ncid, var3_name, var3id)
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) call handle_err('get_var3_r4 varid '//var3_name,status)
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
 
       start(1) = is; start(2) = js; start(3) = ks; start(4) = 1
       if ( present(time_slice) ) then
@@ -373,17 +267,11 @@ module sim_nc_mod
       nreco(4) = 1
 
       status = nf_get_vara_real(ncid, var3id, start, nreco, var3)
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) call handle_err('get_var3_r4 get_vara_real '//var3_name,status)
 
       end subroutine get_var3_r4
 
 
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
-
-      end subroutine get_var3_r4
->>>>>>> rusty/master_test
       subroutine get_var4_real( ncid, var4_name, im, jm, km, nt, var4 )
       implicit         none
 #include <netcdf.inc>
@@ -421,11 +309,7 @@ module sim_nc_mod
       enddo
       enddo
 
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) call handle_err('get_var4_r4 get_vara_real '//var4_name,status)
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
 
       end subroutine get_var4_real
 
@@ -452,11 +336,7 @@ module sim_nc_mod
       status = nf_inq_varid (ncid, var4_name, var4id)
       status = nf_get_vara_double(ncid, var4id, start, icount, var4)
 
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) call handle_err('get_var4_double get_vara_double '//var4_name,status)
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
 
       end subroutine get_var4_double
 !------------------------------------------------------------------------
@@ -482,12 +362,8 @@ module sim_nc_mod
       status = nf_inq_varid (ncid, var4_name, var4id)
       status = nf_get_vara_real(ncid, var4id, start, icount, var4)
 
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) &
          call handle_err('get_real3 get_vara_real '//var4_name,status)
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
 
       end subroutine get_real3
 !------------------------------------------------------------------------
@@ -515,11 +391,7 @@ module sim_nc_mod
       status = nf_inq_varid (ncid, var_name, varid)
       status = nf_get_att_text(ncid, varid, att_name, att)
 
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) call handle_err('get_var_att_str '//var_name,status)
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
 
       end subroutine get_var_att_str
 
@@ -535,16 +407,11 @@ module sim_nc_mod
       status = nf_inq_varid (ncid, var_name, varid)
       status = nf_get_att(ncid, varid, att_name, value)
 
-<<<<<<< HEAD
       if (status .ne. NF_NOERR) call handle_err('get_var_att_double '//var_name,status)
-=======
-      if (status .ne. NF_NOERR) call handle_err(status)
->>>>>>> rusty/master_test
 
       end subroutine get_var_att_double
 
 
-<<<<<<< HEAD
       subroutine handle_err(idstr,status)
       integer          status
       character(len=500) :: errstr
@@ -552,23 +419,12 @@ module sim_nc_mod
 
       if (status .ne. nf_noerr) then
          write(errstr,*) 'Error in handle_err: ',trim(idstr)//' ',NF_STRERROR(STATUS)
-=======
-      subroutine handle_err(status)
-      integer          status
-      character(len=120) :: errstr
-
-      if (status .ne. nf_noerr) then
-         write(errstr,*) 'Error in handle_err: ', NF_STRERROR(STATUS)
->>>>>>> rusty/master_test
          call mpp_error(FATAL,errstr)
       endif
 
       end subroutine handle_err
 
-<<<<<<< HEAD
 !>@brief The subroutine 'calendar' computes the current GMT.
-=======
->>>>>>> rusty/master_test
    subroutine calendar(year, month, day, hour)
       integer, intent(inout) :: year              ! year
       integer, intent(inout) :: month             ! month
@@ -578,18 +434,8 @@ module sim_nc_mod
 ! Local variables
 !
       integer irem4,irem100
-<<<<<<< HEAD
       integer mdays(12)                           !< number day of month 
       data mdays /31,28,31,30,31,30,31,31,30,31,30,31/
-=======
-      integer mdays(12)                           ! number day of month 
-      data mdays /31,28,31,30,31,30,31,31,30,31,30,31/
-!
-!***********************************************************************
-!******         compute current GMT                               ******
-!***********************************************************************
-!
->>>>>>> rusty/master_test
 !**** consider leap year
 !
       irem4    = mod( year, 4 )

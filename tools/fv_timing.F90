@@ -1,22 +1,21 @@
 !***********************************************************************
-<<<<<<< HEAD
-!*                   GNU Lesser General Public License                 
+!*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
 !*
-!* The FV3 dynamical core is free software: you can redistribute it 
+!* The FV3 dynamical core is free software: you can redistribute it
 !* and/or modify it under the terms of the
 !* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
+!* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
 !* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
+!* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
@@ -38,29 +37,6 @@
 !   </tr>
 ! </table>
 
-=======
-!*                   GNU Lesser General Public License
-!*
-!* This file is part of the FV3 dynamical core.
-!*
-!* The FV3 dynamical core is free software: you can redistribute it
-!* and/or modify it under the terms of the
-!* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or
-!* (at your option) any later version.
-!*
-!* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-!* See the GNU General Public License for more details.
-!*
-!* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.
-!* If not, see <http://www.gnu.org/licenses/>.
-!***********************************************************************
-      module fv_timing_mod
-
->>>>>>> rusty/master_test
       use mpp_mod, only: mpp_error, FATAL
 #if defined(SPMD)
       use fv_mp_mod, only: is_master, mp_reduce_max
@@ -97,16 +73,9 @@
       logical, private :: module_initialized = .false.
 
       contains
-<<<<<<< HEAD
 
 !>@brief The subroutine 'timing_init' initializes timers
          subroutine timing_init
-=======
-         subroutine timing_init
-!
-! init
-!
->>>>>>> rusty/master_test
          implicit none
 
          integer  :: C, R, M
@@ -142,17 +111,8 @@
          module_initialized = .true.
          end subroutine timing_init
 
-<<<<<<< HEAD
 !>@brief The subroutine 'timing_on' starts a timer.
          subroutine timing_on(blk_name)
-=======
-
-         subroutine timing_on(blk_name)
-!
-! timing_on
-!
-
->>>>>>> rusty/master_test
          implicit none
 
          character(len=*) :: blk_name
@@ -215,17 +175,8 @@
 
         end subroutine timing_on
 
-<<<<<<< HEAD
 !>@brief The subroutine 'timing_off' stops a timer.
         subroutine timing_off(blk_name)
-=======
-
-        subroutine timing_off(blk_name)
-!
-! Timing_off
-!
-
->>>>>>> rusty/master_test
         implicit none
         character(len=*) :: blk_name
 
@@ -284,11 +235,7 @@
 #endif
         end subroutine timing_off
 
-<<<<<<< HEAD
 !>@brief The subroutine 'timing_clear' resets a timer.
-=======
-
->>>>>>> rusty/master_test
         subroutine timing_clear()
         integer  n
           do n = 1, nblks
@@ -297,16 +244,8 @@
           enddo
         end subroutine timing_clear
 
-<<<<<<< HEAD
 !>@brief The subroutine 'timing_prt' prints all timers
         subroutine timing_prt(gid)
-=======
-
-        subroutine timing_prt(gid)
-!
-! Timing_prt
-!
->>>>>>> rusty/master_test
         implicit none
         integer  gid
         integer  n

@@ -1,5 +1,4 @@
 !***********************************************************************
-<<<<<<< HEAD
 !*                   GNU Lesser General Public License                 
 !*
 !* This file is part of the FV3 dynamical core.
@@ -60,40 +59,13 @@ module boundary_mod
 !   </tr>
 ! </table>
 
-  use fv_mp_mod,         only: ng, isc,jsc,iec,jec, isd,jsd,ied,jed, is,js,ie,je, is_master
-=======
-!*                   GNU Lesser General Public License
-!*
-!* This file is part of the FV3 dynamical core.
-!*
-!* The FV3 dynamical core is free software: you can redistribute it
-!* and/or modify it under the terms of the
-!* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or
-!* (at your option) any later version.
-!*
-!* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-!* See the GNU General Public License for more details.
-!*
-!* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.
-!* If not, see <http://www.gnu.org/licenses/>.
-!***********************************************************************
-module boundary_mod
-
   use fv_mp_mod,         only: is_master
->>>>>>> rusty/master_test
   use constants_mod,     only: grav
 
   use mpp_domains_mod,    only: mpp_get_compute_domain, mpp_get_data_domain, mpp_get_global_domain
   use mpp_domains_mod,    only: CENTER, CORNER, NORTH, EAST
   use mpp_domains_mod,    only: mpp_global_field, mpp_get_pelist
-<<<<<<< HEAD
-=======
   use mpp_domains_mod,    only: AGRID, BGRID_NE, CGRID_NE, DGRID_NE
->>>>>>> rusty/master_test
   use mpp_mod,            only: mpp_error, FATAL, mpp_sum, mpp_sync, mpp_npes, mpp_broadcast, WARNING, mpp_pe
 
   use fv_mp_mod,          only: mp_bcst
@@ -111,23 +83,10 @@ module boundary_mod
   public fill_nested_grid, nested_grid_BC_apply_intT
   public nested_grid_BC_send, nested_grid_BC_recv, nested_grid_BC_save_proc
 
-<<<<<<< HEAD
 !>@briefThe interface 'nested_grid_BC' includes subroutines 'nested_grid_BC_2d' and 'nested_grid_BC_3d' 
 !! that fetch coarse-grid data, interpolate it to nested-grid boundary cells,
 !! apply the interpolated data directly to the boundary halo cells without saving the datatype.
   interface nested_grid_BC 
-     module procedure nested_grid_BC_2d
-     module procedure nested_grid_BC_mpp
-     module procedure nested_grid_BC_mpp_send
-     module procedure nested_grid_BC_2D_mpp
-     module procedure nested_grid_BC_3d
-  end interface
-
-!>@brief The interface 'fill_nested_grid' includes subroutines 'fill_nested_grid_2d' and 'fill_nested_grid_3d' 
-!! that fill nested-grid data with interpolated data from the coarse grid.
-!>@details This is one method to create a new nested grid, and may be useful when cold-starting.
-=======
-  interface nested_grid_BC
      module procedure nested_grid_BC_2d
 !     module procedure nested_grid_BC_mpp_2d
      module procedure nested_grid_BC_mpp_3d
@@ -147,14 +106,15 @@ module boundary_mod
      module procedure nested_grid_BC_recv_scalar
      module procedure nested_grid_BC_recv_vector
   end interface
+!>@brief The interface 'fill_nested_grid' includes subroutines 'fill_nested_grid_2d' and 'fill_nested_grid_3d' 
+!! that fill nested-grid data with interpolated data from the coarse grid.
+!>@details This is one method to create a new nested grid, and may be useful when cold-starting.
 
->>>>>>> rusty/master_test
   interface fill_nested_grid
      module procedure fill_nested_grid_2d
      module procedure fill_nested_grid_3d
   end interface
 
-<<<<<<< HEAD
 !>@brief The interface'update_coarse_grid_mpp'contains subroutines that
 !! fetch data from the nested grid and 
 !! interpolate it to the coarse grid using the method described by
@@ -162,24 +122,13 @@ module boundary_mod
   interface update_coarse_grid
      module procedure update_coarse_grid_mpp
      module procedure update_coarse_grid_mpp_2d
-=======
-  interface update_coarse_grid
-     module procedure update_coarse_grid_mpp
-     module procedure update_coarse_grid_mpp_2d
      module procedure update_coarse_grid_mpp_vector
->>>>>>> rusty/master_test
   end interface
 
 contains
 
-<<<<<<< HEAD
 !>@brief The subroutine 'extrapolation_BC' performs linear extrapolation into the halo region.
 !Not to be confused with extrapolated-in-time nested BCs
-=======
-
-  !Linear extrapolation into halo region
-  !Not to be confused with extrapolated-in-time nested BCs
->>>>>>> rusty/master_test
   subroutine extrapolation_BC(q, istag, jstag, npx, npy, bd, pd_in, debug_in)
 
     type(fv_grid_bounds_type), intent(IN) :: bd
@@ -640,11 +589,6 @@ contains
    end do
 
  end subroutine fill_nested_grid_3D
-<<<<<<< HEAD
- 
- subroutine nested_grid_BC_mpp(var_nest, var_coarse, nest_domain, ind, wt, istag, jstag, &
-      npx, npy, npz, bd, isg, ieg, jsg, jeg, nstep_in, nsplit_in, proc_in)
-=======
 
 !!$ subroutine nested_grid_BC_mpp_2d(var_nest, nest_domain, ind, wt, istag, jstag, &
 !!$      npx, npy, bd, isg, ieg, jsg, jeg, nstep_in, nsplit_in, proc_in)
@@ -677,7 +621,6 @@ contains
  
  subroutine nested_grid_BC_mpp_3d(var_nest, var_coarse, nest_domain, ind, wt, istag, jstag, &
       npx, npy, npz, bd, isg, ieg, jsg, jeg, nest_level, nstep_in, nsplit_in, proc_in)
->>>>>>> rusty/master_test
 
    type(fv_grid_bounds_type), intent(IN) :: bd
    real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,npz), intent(INOUT) :: var_nest
@@ -686,10 +629,7 @@ contains
    integer, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,2), intent(IN) :: ind
    real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,4), intent(IN) :: wt
    integer, intent(IN) :: istag, jstag, npx, npy, npz, isg, ieg, jsg, jeg
-<<<<<<< HEAD
-=======
    integer, intent(IN) :: nest_level
->>>>>>> rusty/master_test
    integer, intent(IN), OPTIONAL :: nstep_in, nsplit_in
    logical, intent(IN), OPTIONAL :: proc_in
 
@@ -736,15 +676,6 @@ contains
    end if
 
    call mpp_get_C2F_index(nest_domain, isw_f, iew_f, jsw_f, jew_f, isw_c, iew_c, jsw_c, jew_c, &
-<<<<<<< HEAD
-        WEST,  position=position)
-   call mpp_get_C2F_index(nest_domain, ise_f, iee_f, jse_f, jee_f, ise_c, iee_c, jse_c, jee_c, &
-        EAST,  position=position)
-   call mpp_get_C2F_index(nest_domain, iss_f, ies_f, jss_f, jes_f, iss_c, ies_c, jss_c, jes_c, &
-        SOUTH,  position=position)
-   call mpp_get_C2F_index(nest_domain, isn_f, ien_f, jsn_f, jen_f, isn_c, ien_c, jsn_c, jen_c, &
-        NORTH,  position=position)
-=======
         WEST, nest_level=nest_level, position=position)
    call mpp_get_C2F_index(nest_domain, ise_f, iee_f, jse_f, jee_f, ise_c, iee_c, jse_c, jee_c, &
         EAST, nest_level=nest_level, position=position)
@@ -752,7 +683,6 @@ contains
         SOUTH, nest_level=nest_level, position=position)
    call mpp_get_C2F_index(nest_domain, isn_f, ien_f, jsn_f, jen_f, isn_c, ien_c, jsn_c, jen_c, &
         NORTH, nest_level=nest_level, position=position)
->>>>>>> rusty/master_test
 
    if( iew_c .GE. isw_c .AND. jew_c .GE. jsw_c ) then
       allocate(wbuffer(isw_c:iew_c, jsw_c:jew_c,npz))
@@ -784,21 +714,14 @@ contains
 
 
        call timing_on ('COMM_TOTAL')
-<<<<<<< HEAD
-   call mpp_update_nest_fine(var_coarse, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer,  position=position)
-=======
    call mpp_update_nest_fine(var_coarse, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer, &
         nest_level=nest_level, position=position)
->>>>>>> rusty/master_test
        call timing_off('COMM_TOTAL')
 
    if (process) then
 
    if (is == 1) then
-<<<<<<< HEAD
-=======
 !OMP parallel do default(none) shared(npz,jsd,jed,jstag,isd,ind,var_nest,wt,wbuffer) private(ic,jc)
->>>>>>> rusty/master_test
       do k=1,npz
       do j=jsd,jed+jstag
          do i=isd,0
@@ -831,10 +754,7 @@ contains
          iend = ied
       end if
 
-<<<<<<< HEAD
-=======
 !OMP parallel do default(none) shared(npz,jsd,istart,iend,istag,ind,var_nest,wt,sbuffer) private(ic,jc)
->>>>>>> rusty/master_test
       do k=1,npz
       do j=jsd,0
          do i=istart,iend+istag
@@ -855,10 +775,7 @@ contains
 
 
    if (ie == npx-1) then
-<<<<<<< HEAD
-=======
 !OMP parallel do default(none) shared(npz,jsd,jed,jstag,npx,ied,istag,ind,var_nest,wt,ebuffer) private(ic,jc)
->>>>>>> rusty/master_test
       do k=1,npz
       do j=jsd,jed+jstag
          do i=npx+istag,ied+istag
@@ -891,10 +808,7 @@ contains
          iend = ied
       end if
 
-<<<<<<< HEAD
-=======
 !OMP parallel do default(none) shared(npz,jstag,npy,jed,istart,iend,istag,ind,var_nest,wt,nbuffer) private(ic,jc)
->>>>>>> rusty/master_test
       do k=1,npz
       do j=npy+jstag,jed+jstag
          do i=istart,iend+istag
@@ -917,11 +831,6 @@ contains
 
    deallocate(wbuffer, ebuffer, sbuffer, nbuffer)
 
-<<<<<<< HEAD
- end subroutine nested_grid_BC_mpp
-
- subroutine nested_grid_BC_mpp_send(var_coarse, nest_domain, istag, jstag)
-=======
  end subroutine nested_grid_BC_mpp_3d
 
  subroutine get_vector_position(position_x, position_y, gridtype)
@@ -1234,15 +1143,11 @@ contains
 
 
  subroutine nested_grid_BC_mpp_send_3d(var_coarse, nest_domain, istag, jstag, nest_level)
->>>>>>> rusty/master_test
 
    real, dimension(:,:,:), intent(IN) :: var_coarse
    type(nest_domain_type), intent(INOUT) :: nest_domain
    integer, intent(IN) :: istag, jstag
-<<<<<<< HEAD
-=======
    integer, intent(IN) :: nest_level
->>>>>>> rusty/master_test
 
    real,    allocatable         :: wbuffer(:,:,:)
    real,    allocatable         :: ebuffer(:,:,:)
@@ -1275,9 +1180,6 @@ contains
 
 
        call timing_on ('COMM_TOTAL')
-<<<<<<< HEAD
-   call mpp_update_nest_fine(var_coarse, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer,  position=position)
-=======
    call mpp_update_nest_fine(var_coarse, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer, nest_level=nest_level, position=position)
        call timing_off('COMM_TOTAL')
 
@@ -1325,23 +1227,15 @@ contains
 
        call timing_on ('COMM_TOTAL')
    call mpp_update_nest_fine(var_coarse, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer, nest_level=nest_level, position=position)
->>>>>>> rusty/master_test
        call timing_off('COMM_TOTAL')
 
 
    deallocate(wbuffer, ebuffer, sbuffer, nbuffer)
 
-<<<<<<< HEAD
- end subroutine nested_grid_BC_mpp_send
-
- subroutine nested_grid_BC_2D_mpp(var_nest, var_coarse, nest_domain, ind, wt, istag, jstag, &
-      npx, npy, bd, isg, ieg, jsg, jeg, nstep_in, nsplit_in, proc_in)
-=======
  end subroutine nested_grid_BC_mpp_send_2d
 
  subroutine nested_grid_BC_2D_mpp(var_nest, var_coarse, nest_domain, ind, wt, istag, jstag, &
       npx, npy, bd, isg, ieg, jsg, jeg, nest_level, nstep_in, nsplit_in, proc_in)
->>>>>>> rusty/master_test
 
    type(fv_grid_bounds_type), intent(IN) :: bd
    real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag), intent(INOUT) :: var_nest
@@ -1350,10 +1244,7 @@ contains
    integer, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,2), intent(IN) :: ind
    real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,4), intent(IN) :: wt
    integer, intent(IN) :: istag, jstag, npx, npy, isg, ieg, jsg, jeg
-<<<<<<< HEAD
-=======
    integer, intent(IN), OPTIONAL :: nest_level
->>>>>>> rusty/master_test
    integer, intent(IN), OPTIONAL :: nstep_in, nsplit_in
    logical, intent(IN), OPTIONAL :: proc_in
 
@@ -1367,10 +1258,7 @@ contains
    real,    allocatable         :: nbuffer(:,:)
 
    integer :: i,j, ic, jc, istart, iend, k
-<<<<<<< HEAD
-=======
    integer :: nl = 1 !nest_level
->>>>>>> rusty/master_test
 
    integer :: position
    logical :: process
@@ -1393,13 +1281,10 @@ contains
       process = .true.
    endif
 
-<<<<<<< HEAD
-=======
    if (PRESENT(nest_level)) then
       nl = nest_level
    endif
 
->>>>>>> rusty/master_test
    if (istag == 1 .and. jstag == 1) then
       position = CORNER
    else if (istag == 0 .and. jstag == 1) then
@@ -1411,15 +1296,6 @@ contains
    end if
 
    call mpp_get_C2F_index(nest_domain, isw_f, iew_f, jsw_f, jew_f, isw_c, iew_c, jsw_c, jew_c, &
-<<<<<<< HEAD
-        WEST,  position=position)
-   call mpp_get_C2F_index(nest_domain, ise_f, iee_f, jse_f, jee_f, ise_c, iee_c, jse_c, jee_c, &
-        EAST,  position=position)
-   call mpp_get_C2F_index(nest_domain, iss_f, ies_f, jss_f, jes_f, iss_c, ies_c, jss_c, jes_c, &
-        SOUTH,  position=position)
-   call mpp_get_C2F_index(nest_domain, isn_f, ien_f, jsn_f, jen_f, isn_c, ien_c, jsn_c, jen_c, &
-        NORTH,  position=position)
-=======
         WEST, nest_level=nl, position=position)
    call mpp_get_C2F_index(nest_domain, ise_f, iee_f, jse_f, jee_f, ise_c, iee_c, jse_c, jee_c, &
         EAST, nest_level=nl, position=position)
@@ -1427,7 +1303,6 @@ contains
         SOUTH, nest_level=nl, position=position)
    call mpp_get_C2F_index(nest_domain, isn_f, ien_f, jsn_f, jen_f, isn_c, ien_c, jsn_c, jen_c, &
         NORTH, nest_level=nl, position=position)
->>>>>>> rusty/master_test
 
    if( iew_c .GE. isw_c .AND. jew_c .GE. jsw_c ) then
       allocate(wbuffer(isw_c:iew_c, jsw_c:jew_c))
@@ -1458,11 +1333,7 @@ contains
    nbuffer = 0
 
        call timing_on ('COMM_TOTAL')
-<<<<<<< HEAD
-   call mpp_update_nest_fine(var_coarse, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer,  position=position)
-=======
    call mpp_update_nest_fine(var_coarse, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer, nest_level=nl, position=position)
->>>>>>> rusty/master_test
        call timing_off('COMM_TOTAL')
 
    if (process) then
@@ -1739,10 +1610,7 @@ contains
    end if
 
    if (is == 1) then
-<<<<<<< HEAD
-=======
 !OMP parallel do default(none) shared(npz,jsd,jed,jstag,isd,ind,var_nest,wt,var_coarse) private(ic,jc)
->>>>>>> rusty/master_test
       do k=1,npz
       do j=jsd,jed+jstag
          do i=isd,0
@@ -1775,10 +1643,7 @@ contains
          iend = ied
       end if
 
-<<<<<<< HEAD
-=======
 !OMP parallel do default(none) shared(npz,jsd,istart,iend,istag,ind,var_nest,wt,var_coarse) private(ic,jc)
->>>>>>> rusty/master_test
       do k=1,npz
       do j=jsd,0
          do i=istart,iend+istag
@@ -1799,10 +1664,7 @@ contains
 
 
    if (ie == npx-1) then
-<<<<<<< HEAD
-=======
 !OMP parallel do default(none) shared(npz,jsd,jed,jstag,npx,ied,istag,ind,var_nest,wt,var_coarse) private(ic,jc)
->>>>>>> rusty/master_test
       do k=1,npz
       do j=jsd,jed+jstag
          do i=npx+istag,ied+istag
@@ -1835,10 +1697,7 @@ contains
          iend = ied
       end if
 
-<<<<<<< HEAD
-=======
 !OMP parallel do default(none) shared(npz,npy,jed,jstag,istart,iend,istag,ind,var_nest,wt,var_coarse) private(ic,jc)
->>>>>>> rusty/master_test
       do k=1,npz
       do j=npy+jstag,jed+jstag
          do i=istart,iend+istag
@@ -1860,21 +1719,13 @@ contains
 
 
  end subroutine nested_grid_BC_3D
-
-<<<<<<< HEAD
 !>@brief The subroutine 'nested_grid_BC_send' sends coarse-grid data to create boundary conditions.
- subroutine nested_grid_BC_send(var_coarse, nest_domain, istag, jstag)
-=======
  subroutine nested_grid_BC_send_scalar(var_coarse, nest_domain, istag, jstag, nest_level)
->>>>>>> rusty/master_test
 
    real, dimension(:,:,:), intent(IN) :: var_coarse
    type(nest_domain_type), intent(INOUT) :: nest_domain
    integer, intent(IN) :: istag, jstag
-<<<<<<< HEAD
-=======
    integer, intent(IN) :: nest_level
->>>>>>> rusty/master_test
 
    integer                      :: position
 
@@ -1895,16 +1746,6 @@ contains
    end if
 
        call timing_on ('COMM_TOTAL')
-<<<<<<< HEAD
-   call mpp_update_nest_fine(var_coarse, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer,  position=position)
-       call timing_off('COMM_TOTAL')
-
- end subroutine nested_grid_BC_send
-
-!>@briefThe subroutine 'nested_grid_BC_recv' receives coarse-grid data to create boundary conditions.
- subroutine nested_grid_BC_recv(nest_domain, istag, jstag, npz, &
-      bd, nest_BC_buffers)
-=======
    call mpp_update_nest_fine(var_coarse, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer, nest_level=nest_level, position=position)
        call timing_off('COMM_TOTAL')
 
@@ -1912,36 +1753,22 @@ contains
 
  subroutine nested_grid_BC_recv_scalar(nest_domain, istag, jstag, npz, &
       bd, nest_BC_buffers, nest_level)
->>>>>>> rusty/master_test
 
    type(fv_grid_bounds_type), intent(IN) :: bd
    type(nest_domain_type), intent(INOUT) :: nest_domain
    integer, intent(IN) :: istag, jstag, npz
-<<<<<<< HEAD
-
-   type(fv_nest_BC_type_3d), intent(INOUT), target :: nest_BC_buffers
-   
-=======
    integer, intent(IN) :: nest_level
 
    type(fv_nest_BC_type_3d), intent(INOUT), target :: nest_BC_buffers
 
->>>>>>> rusty/master_test
    real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,npz) :: var_coarse_dummy
 
    integer                      :: position
 
-<<<<<<< HEAD
-   integer                      :: isw_f, iew_f, jsw_f, jew_f, isw_c, iew_c, jsw_c, jew_c
-   integer                      :: ise_f, iee_f, jse_f, jee_f, ise_c, iee_c, jse_c, jee_c
-   integer                      :: iss_f, ies_f, jss_f, jes_f, iss_c, ies_c, jss_c, jes_c
-   integer                      :: isn_f, ien_f, jsn_f, jen_f, isn_c, ien_c, jsn_c, jen_c
-=======
 !!$   integer                      :: isw_f, iew_f, jsw_f, jew_f, isw_c, iew_c, jsw_c, jew_c
 !!$   integer                      :: ise_f, iee_f, jse_f, jee_f, ise_c, iee_c, jse_c, jee_c
 !!$   integer                      :: iss_f, ies_f, jss_f, jes_f, iss_c, ies_c, jss_c, jes_c
 !!$   integer                      :: isn_f, ien_f, jsn_f, jen_f, isn_c, ien_c, jsn_c, jen_c
->>>>>>> rusty/master_test
 
    integer :: i,j, k
 
@@ -1956,17 +1783,6 @@ contains
    end if
 
    if (.not. allocated(nest_BC_buffers%west_t1) ) then
-<<<<<<< HEAD
-
-      call mpp_get_C2F_index(nest_domain, isw_f, iew_f, jsw_f, jew_f, isw_c, iew_c, jsw_c, jew_c, &
-           WEST,  position=position)
-      call mpp_get_C2F_index(nest_domain, ise_f, iee_f, jse_f, jee_f, ise_c, iee_c, jse_c, jee_c, &
-           EAST,  position=position)
-      call mpp_get_C2F_index(nest_domain, iss_f, ies_f, jss_f, jes_f, iss_c, ies_c, jss_c, jes_c, &
-           SOUTH,  position=position)
-      call mpp_get_C2F_index(nest_domain, isn_f, ien_f, jsn_f, jen_f, isn_c, ien_c, jsn_c, jen_c, &
-           NORTH,  position=position)
-=======
       call init_nest_bc_type(nest_domain, nest_BC_buffers, npz, nest_level, position)
    endif
 
@@ -2016,121 +1832,65 @@ contains
            SOUTH, nest_level=nest_level, position=position)
       call mpp_get_C2F_index(nest_domain, isn_f, ien_f, jsn_f, jen_f, isn_c, ien_c, jsn_c, jen_c, &
            NORTH, nest_level=nest_level, position=position)
->>>>>>> rusty/master_test
 
       if( iew_c .GE. isw_c .AND. jew_c .GE. jsw_c ) then
          If (.not. allocated(nest_BC_buffers%west_t1)) allocate(nest_BC_buffers%west_t1(isw_c:iew_c, jsw_c:jew_c,npz))
          !compatible with first touch principle
-<<<<<<< HEAD
-         do k=1,npz
-         do j=jsw_c,jew_c
-         do i=isw_c,iew_c
-            nest_BC_buffers%west_t1(i,j,k) = 0.
-=======
 !OMP parallel do default(none) shared(npz,jsw_c,jew_c,isw_c,iew_c,nest_BC_buffers)
          do k=1,npz
          do j=jsw_c,jew_c
          do i=isw_c,iew_c
             nest_BC_buffers%west_t1(i,j,k) = 1.e24
->>>>>>> rusty/master_test
          enddo
          enddo
          enddo         
       else
          allocate(nest_BC_buffers%west_t1(1,1,1))
-<<<<<<< HEAD
-         nest_BC_buffers%west_t1(1,1,1) = 0.
-=======
          nest_BC_buffers%west_t1(1,1,1) = 1.e24
->>>>>>> rusty/master_test
       endif
 
       if( iee_c .GE. ise_c .AND. jee_c .GE. jse_c ) then
          If (.not. allocated(nest_BC_buffers%east_t1)) allocate(nest_BC_buffers%east_t1(ise_c:iee_c, jse_c:jee_c,npz))
-<<<<<<< HEAD
-         do k=1,npz
-         do j=jse_c,jee_c
-         do i=ise_c,iee_c
-            nest_BC_buffers%east_t1(i,j,k) = 0.
-=======
 !OMP parallel do default(none) shared(npz,jse_c,jee_c,ise_c,iee_c,nest_BC_buffers)
          do k=1,npz
          do j=jse_c,jee_c
          do i=ise_c,iee_c
             nest_BC_buffers%east_t1(i,j,k) = 1.e24
->>>>>>> rusty/master_test
          enddo
          enddo
          enddo
       else
          allocate(nest_BC_buffers%east_t1(1,1,1))
-<<<<<<< HEAD
-         nest_BC_buffers%east_t1(1,1,1) = 0.
-=======
          nest_BC_buffers%east_t1(1,1,1) = 1.e24
->>>>>>> rusty/master_test
       endif
 
       if( ies_c .GE. iss_c .AND. jes_c .GE. jss_c ) then
          If (.not. allocated(nest_BC_buffers%south_t1)) allocate(nest_BC_buffers%south_t1(iss_c:ies_c, jss_c:jes_c,npz))
-<<<<<<< HEAD
-         do k=1,npz
-         do j=jss_c,jes_c
-         do i=iss_c,ies_c
-            nest_BC_buffers%south_t1(i,j,k) = 0.
-=======
 !OMP parallel do default(none) shared(npz,jss_c,jes_c,iss_c,ies_c,nest_BC_buffers)
          do k=1,npz
          do j=jss_c,jes_c
          do i=iss_c,ies_c
             nest_BC_buffers%south_t1(i,j,k) = 1.e24
->>>>>>> rusty/master_test
          enddo
          enddo
          enddo
       else
          allocate(nest_BC_buffers%south_t1(1,1,1))
-<<<<<<< HEAD
-         nest_BC_buffers%south_t1(1,1,1) = 0.
-=======
          nest_BC_buffers%south_t1(1,1,1) = 1.e24
->>>>>>> rusty/master_test
       endif
 
       if( ien_c .GE. isn_c .AND. jen_c .GE. jsn_c ) then
          If (.not. allocated(nest_BC_buffers%north_t1)) allocate(nest_BC_buffers%north_t1(isn_c:ien_c, jsn_c:jen_c,npz))
-<<<<<<< HEAD
-         do k=1,npz
-         do j=jsn_c,jen_c
-         do i=isn_c,ien_c
-            nest_BC_buffers%north_t1(i,j,k) = 0.
-=======
 !OMP parallel do default(none) shared(npz,jsn_c,jen_c,isn_c,ien_c,nest_BC_buffers)
          do k=1,npz
          do j=jsn_c,jen_c
          do i=isn_c,ien_c
             nest_BC_buffers%north_t1(i,j,k) = 1.e24
->>>>>>> rusty/master_test
          enddo
          enddo
          enddo
       else
          allocate(nest_BC_buffers%north_t1(1,1,1))
-<<<<<<< HEAD
-         nest_BC_buffers%north_t1(1,1,1) = 0
-      endif
-
-   endif
-
-       call timing_on ('COMM_TOTAL')
-   call mpp_update_nest_fine(var_coarse_dummy, nest_domain, nest_BC_buffers%west_t1, nest_BC_buffers%south_t1, nest_BC_buffers%east_t1, nest_BC_buffers%north_t1,  position=position)
-       call timing_off('COMM_TOTAL')
-
- end subroutine nested_grid_BC_recv
-
-!>@brief The subroutine 'nested_grid_BC_save_proc' saves data received by 'nested_grid_BC_recv' 
-!! into the datatype 'fv_nest_BC_type'.
-=======
          nest_BC_buffers%north_t1(1,1,1) = 1.e24
       endif
 
@@ -2169,8 +1929,8 @@ contains
 
  end subroutine nested_grid_BC_recv_vector
 
-
->>>>>>> rusty/master_test
+!>@brief The subroutine 'nested_grid_BC_save_proc' saves data received by 'nested_grid_BC_recv' 
+!! into the datatype 'fv_nest_BC_type'.
  subroutine nested_grid_BC_save_proc(nest_domain, ind, wt, istag, jstag, &
       npx, npy, npz, bd, nest_BC, nest_BC_buffers, pd_in)
 
@@ -2229,11 +1989,7 @@ contains
    !To do this more securely, instead of using is/etc we could use the fine-grid indices defined above
    if (is == 1  ) then
 
-<<<<<<< HEAD
-!$NO-MP parallel do default(none) shared(npz,isd,ied,jsd,jed,jstag,ind,var_west,wt,buf_west) private(ic,jc)
-=======
 !$OMP parallel do default(none) shared(npz,isd,ied,jsd,jed,jstag,ind,var_west,wt,buf_west) private(ic,jc)
->>>>>>> rusty/master_test
       do k=1,npz
       do j=jsd,jed+jstag
          do i=isd,0
@@ -2253,11 +2009,7 @@ contains
       end do
 
       if (pd) then
-<<<<<<< HEAD
-!$NO-MP parallel do default(none) shared(npz,jsd,jed,jstag,isd,var_west,nest_BC)
-=======
 !$OMP parallel do default(none) shared(npz,jsd,jed,jstag,isd,var_west,nest_BC)
->>>>>>> rusty/master_test
          do k=1,npz
          do j=jsd,jed+jstag
          do i=isd,0
@@ -2284,11 +2036,7 @@ contains
          iend = ied
       end if
 
-<<<<<<< HEAD
-!$NO-MP parallel do default(none) shared(npz,istart,iend,jsd,jed,istag,ind,var_south,wt,buf_south) private(ic,jc)
-=======
 !$OMP parallel do default(none) shared(npz,istart,iend,jsd,jed,istag,ind,var_south,wt,buf_south) private(ic,jc)
->>>>>>> rusty/master_test
       do k=1,npz
       do j=jsd,0
          do i=istart,iend+istag
@@ -2308,11 +2056,7 @@ contains
       end do
 
       if (pd) then
-<<<<<<< HEAD
-!$NO-MP parallel do default(none) shared(npz,jsd,jed,istart,iend,istag,var_south,nest_BC)
-=======
 !$OMP parallel do default(none) shared(npz,jsd,jed,istart,iend,istag,var_south,nest_BC)
->>>>>>> rusty/master_test
          do k=1,npz
          do j=jsd,0
          do i=istart,iend+istag
@@ -2329,11 +2073,7 @@ contains
 
    if (ie == npx-1 ) then
 
-<<<<<<< HEAD
-!$NO-MP parallel do default(none) shared(npx,npz,isd,ied,jsd,jed,istag,jstag,ind,var_east,wt,buf_east) private(ic,jc)
-=======
 !$OMP parallel do default(none) shared(npx,npz,isd,ied,jsd,jed,istag,jstag,ind,var_east,wt,buf_east) private(ic,jc)
->>>>>>> rusty/master_test
       do k=1,npz
       do j=jsd,jed+jstag
          do i=npx+istag,ied+istag
@@ -2353,11 +2093,7 @@ contains
       end do
 
       if (pd) then
-<<<<<<< HEAD
-!$NO-MP parallel do default(none) shared(npx,npz,jsd,jed,istag,jstag,ied,var_east,nest_BC)
-=======
 !$OMP parallel do default(none) shared(npx,npz,jsd,jed,istag,jstag,ied,var_east,nest_BC)
->>>>>>> rusty/master_test
          do k=1,npz
          do j=jsd,jed+jstag
          do i=npx+istag,ied+istag
@@ -2385,11 +2121,7 @@ contains
          iend = ied
       end if
 
-<<<<<<< HEAD
-!$NO-MP parallel do default(none) shared(npy,npz,istart,iend,jsd,jed,istag,jstag,ind,var_north,wt,buf_north) private(ic,jc)
-=======
 !$OMP parallel do default(none) shared(npy,npz,istart,iend,jsd,jed,istag,jstag,ind,var_north,wt,buf_north) private(ic,jc)
->>>>>>> rusty/master_test
       do k=1,npz
       do j=npy+jstag,jed+jstag
          do i=istart,iend+istag
@@ -2409,11 +2141,7 @@ contains
       end do
 
       if (pd) then
-<<<<<<< HEAD
-!$NO-MP parallel do default(none) shared(npy,npz,jsd,jed,istart,iend,istag,jstag,ied,var_north,nest_BC)
-=======
 !$OMP parallel do default(none) shared(npy,npz,jsd,jed,istart,iend,istag,jstag,ied,var_north,nest_BC)
->>>>>>> rusty/master_test
          do k=1,npz
          do j=npy+jstag,jed+jstag
          do i=istart,iend+istag
@@ -2434,12 +2162,9 @@ contains
   ! bctype >= 2 currently correspond
   ! to a flux BC on the tracers ONLY, which is implemented in fv_tracer.
 
-<<<<<<< HEAD
 !>@brief The subroutine 'nested_grid_BC_apply_intT' performs linear interpolation or 
 !! extrapolation in time for saved BC data, then applies the interlpolated
 !! data to nested-grid boundary cells.
-=======
->>>>>>> rusty/master_test
  subroutine nested_grid_BC_apply_intT(var_nest, istag, jstag, &
       npx, npy, npz, bd, step, split, &
       BC, bctype)
@@ -2474,21 +2199,14 @@ contains
    if (is == 1  ) then
       var_t0 => BC%west_t0
       var_t1 => BC%west_t1
-<<<<<<< HEAD
-=======
 !OMP parallel do default(none) shared(npz,jsd,jed,jstag,isd,var_nest,var_t0,var_t1,split,step,denom)
->>>>>>> rusty/master_test
       do k=1,npz
       do j=jsd,jed+jstag
       do i=isd,0
             var_nest(i,j,k) = (var_t0(i,j,k)*(split-step) + step*var_t1(i,j,k))*denom
       end do
-<<<<<<< HEAD
 
          end do
-=======
-      end do
->>>>>>> rusty/master_test
       end do
    end if
 
@@ -2508,17 +2226,11 @@ contains
 
       var_t0 => BC%south_t0
       var_t1 => BC%south_t1
-<<<<<<< HEAD
+!OMP parallel do default(none) shared(npz,jsd,istart,iend,istag,var_nest,var_t0,var_t1,split,step,denom)
       do k=1,npz
       do j=jsd,0
          do i=istart,iend+istag
 
-=======
-!OMP parallel do default(none) shared(npz,jsd,istart,iend,istag,var_nest,var_t0,var_t1,split,step,denom)
-      do k=1,npz
-      do j=jsd,0
-      do i=istart,iend+istag
->>>>>>> rusty/master_test
             var_nest(i,j,k) = (var_t0(i,j,k)*(split-step) + step*var_t1(i,j,k))*denom
       end do
       end do
@@ -2529,7 +2241,7 @@ contains
    if (ie == npx-1 ) then
       var_t0 => BC%east_t0
       var_t1 => BC%east_t1
-<<<<<<< HEAD
+!OMP parallel do default(none) shared(npz,jsd,jed,jstag,npx,isd,istag,var_nest,var_t0,var_t1,split,step,denom)
       do k=1,npz
       do j=jsd,jed+jstag
          do i=npx+istag,ied+istag
@@ -2539,16 +2251,6 @@ contains
       end do
       end do
 
-=======
-!OMP parallel do default(none) shared(npz,jsd,jed,jstag,npx,isd,istag,var_nest,var_t0,var_t1,split,step,denom)
-      do k=1,npz
-      do j=jsd,jed+jstag
-      do i=npx+istag,ied+istag
-         var_nest(i,j,k) = (var_t0(i,j,k)*(split-step) + step*var_t1(i,j,k))*denom
-      end do
-      end do
-      end do
->>>>>>> rusty/master_test
    end if
 
    if (je == npy-1 ) then
@@ -2567,7 +2269,7 @@ contains
 
       var_t0 => BC%north_t0
       var_t1 => BC%north_t1
-<<<<<<< HEAD
+!OMP parallel do default(none) shared(npz,npy,jed,jstag,istart,iend,istag,var_nest,var_t0,var_t1,split,step,denom)
       do k=1,npz
       do j=npy+jstag,jed+jstag
          do i=istart,iend+istag
@@ -2576,15 +2278,6 @@ contains
 
          end do
          end do
-=======
-!OMP parallel do default(none) shared(npz,npy,jed,jstag,istart,iend,istag,var_nest,var_t0,var_t1,split,step,denom)
-      do k=1,npz
-      do j=npy+jstag,jed+jstag
-      do i=istart,iend+istag
-         var_nest(i,j,k) = (var_t0(i,j,k)*(split-step) + step*var_t1(i,j,k))*denom
-      end do
-      end do
->>>>>>> rusty/master_test
       end do
 
    end if
@@ -2592,40 +2285,6 @@ contains
 
  end subroutine nested_grid_BC_apply_intT
 
-<<<<<<< HEAD
- subroutine update_coarse_grid_mpp_2d(var_coarse, var_nest, nest_domain, ind_update, dx, dy, area, &
-      isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n, isu, ieu, jsu, jeu, npx, npy, &
-      istag, jstag, r, nestupdate, upoff, nsponge, parent_proc, child_proc, parent_grid)
-
-   integer, intent(IN) :: isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n
-   integer, intent(IN) :: isu, ieu, jsu, jeu
-   integer, intent(IN) :: istag, jstag, r, nestupdate, upoff, nsponge
-   integer, intent(IN) :: ind_update(isd_p:ied_p+1,jsd_p:jed_p+1,2)
-   integer, intent(IN) :: npx, npy
-   real, intent(IN)    :: var_nest(is_n:ie_n+istag,js_n:je_n+jstag)
-   real, intent(INOUT) :: var_coarse(isd_p:ied_p+istag,jsd_p:jed_p+jstag)
-   real, intent(IN)    :: dx(isd:ied,jsd:jed+1)
-   real, intent(IN)    :: dy(isd:ied+1,jsd:jed)
-   real, intent(IN)    :: area(isd:ied,jsd:jed)
-   logical, intent(IN) :: parent_proc, child_proc
-   type(fv_atmos_type), intent(INOUT) :: parent_grid
-   type(nest_domain_type), intent(INOUT) :: nest_domain
-
-   real :: var_nest_3d(is_n:ie_n+istag,js_n:je_n+jstag,1)
-   real :: var_coarse_3d(isd_p:ied_p+istag,jsd_p:jed_p+jstag,1)
-
-   if (child_proc .and. size(var_nest) > 1) var_nest_3d(is_n:ie_n+istag,js_n:je_n+jstag,1) = var_nest(is_n:ie_n+istag,js_n:je_n+jstag)
-   if (parent_proc .and. size(var_coarse) > 1) var_coarse_3d(isd_p:ied_p+istag,jsd_p:jed_p,1) = var_coarse(isd_p:ied_p+istag,jsd_p:jed_p+jstag)
-
-   call update_coarse_grid_mpp(var_coarse_3d, var_nest_3d, &
-        nest_domain, ind_update, dx, dy, area, &
-        isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n, &
-        isu, ieu, jsu, jeu, npx, npy, 1, &
-        istag, jstag, r, nestupdate, upoff, nsponge, &
-        parent_proc, child_proc, parent_grid)
-
-   if (size(var_coarse) > 1 .and. parent_proc) var_coarse(isd_p:ied_p+istag,jsd_p:jed_p+jstag) = var_coarse_3d(isd_p:ied_p+istag,jsd_p:jed_p,1)
-=======
  subroutine update_coarse_grid_mpp_2d(var_coarse, var_nest, nest_domain, dx, dy, area, &
       bd, isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n, isu, ieu, jsu, jeu, npx, npy, &
       istag, jstag, r, nestupdate, upoff, nsponge, parent_proc, child_proc, parent_grid, nest_level)
@@ -2659,43 +2318,20 @@ contains
         isu, ieu, jsu, jeu, npx, npy, 1, &
         istag, jstag, r, nestupdate, upoff, nsponge, &
         parent_proc, child_proc, parent_grid, nest_level )
->>>>>>> rusty/master_test
 
  end subroutine update_coarse_grid_mpp_2d
 
 
-<<<<<<< HEAD
-  subroutine update_coarse_grid_mpp(var_coarse, var_nest, nest_domain, ind_update, dx, dy, area, &
-      isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n, &
-      isu, ieu, jsu, jeu, npx, npy, npz, &
-      istag, jstag, r, nestupdate, upoff, nsponge, &
-      parent_proc, child_proc, parent_grid)
-=======
   subroutine update_coarse_grid_mpp(var_coarse, var_nest, nest_domain, dx, dy, area, &
       bd, isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n, &
       isu, ieu, jsu, jeu, npx, npy, npz, &
       istag, jstag, r, nestupdate, upoff, nsponge, &
       parent_proc, child_proc, parent_grid, nest_level)
->>>>>>> rusty/master_test
 
    !This routine assumes the coarse and nested grids are properly
    ! aligned, and that in particular for odd refinement ratios all
    ! coarse-grid cells (faces) coincide with nested-grid cells (faces)
 
-<<<<<<< HEAD
-   integer, intent(IN) :: isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n
-   integer, intent(IN) :: isu, ieu, jsu, jeu
-   integer, intent(IN) :: istag, jstag, npx, npy, npz, r, nestupdate, upoff, nsponge
-   integer, intent(IN) :: ind_update(isd_p:ied_p+1,jsd_p:jed_p+1,2)
-   real, intent(IN)    :: var_nest(is_n:ie_n+istag,js_n:je_n+jstag,npz)
-   real, intent(INOUT) :: var_coarse(isd_p:ied_p+istag,jsd_p:jed_p+jstag,npz)
-   real, intent(IN)    :: area(isd:ied,jsd:jed)
-   real, intent(IN)    :: dx(isd:ied,jsd:jed+1)
-   real, intent(IN)    :: dy(isd:ied+1,jsd:jed)
-   logical, intent(IN) :: parent_proc, child_proc
-   type(fv_atmos_type), intent(INOUT) :: parent_grid
-   type(nest_domain_type), intent(INOUT) :: nest_domain
-=======
    type(fv_grid_bounds_type), intent(IN) :: bd
    integer, intent(IN) :: isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n
    integer, intent(IN) :: isu, ieu, jsu, jeu
@@ -2709,19 +2345,13 @@ contains
    type(fv_atmos_type), pointer, intent(IN) :: parent_grid
    type(nest_domain_type), intent(INOUT) :: nest_domain
    integer, intent(IN) :: nest_level
->>>>>>> rusty/master_test
 
    integer :: in, jn, ini, jnj, s, qr
    integer :: is_c, ie_c, js_c, je_c, is_f, ie_f, js_f, je_f
    integer :: istart, istop, jstart, jstop, ishift, jshift, j, i, k
    real :: val
-<<<<<<< HEAD
-   real, allocatable, dimension(:,:,:) :: nest_dat
-   real ::  var_nest_send(is_n:ie_n+istag,js_n:je_n+jstag,npz)
-=======
    real, allocatable, dimension(:,:,:) :: coarse_dat_send
    real, allocatable ::  coarse_dat_recv(:,:,:)
->>>>>>> rusty/master_test
    integer :: position
 
    if (istag == 1 .and. jstag == 1) then
@@ -2734,18 +2364,6 @@ contains
       position = CENTER
    end if
 
-<<<<<<< HEAD
-   call mpp_get_F2C_index(nest_domain, is_c, ie_c, js_c, je_c, is_f, ie_f, js_f, je_f, position=position)
-   if (ie_f > is_f .and. je_f > js_f) then
-      allocate(nest_dat (is_f:ie_f, js_f:je_f,npz))
-   else
-      allocate(nest_dat(1,1,1))
-   endif
-   nest_dat = -600
-
-   if (child_proc) then
-!! IF an area average (for istag == jstag == 0) or a linear average then multiply in the areas before sending data
-=======
    call mpp_get_F2C_index(nest_domain, is_c, ie_c, js_c, je_c, is_f, ie_f, js_f, je_f, nest_level=nest_level, position=position)
    if (child_proc) then
       allocate(coarse_dat_send(is_c:ie_c, js_c:je_c,npz))
@@ -2798,21 +2416,10 @@ contains
    real :: val
 
 
->>>>>>> rusty/master_test
    if (istag == 0 .and. jstag == 0) then
       select case (nestupdate)
       case (1,2,6,7,8)
          
-<<<<<<< HEAD
-!$NO-MP parallel do default(none) shared(npz,js_n,je_n,is_n,ie_n,var_nest_send,var_nest,area)
-         do k=1,npz
-         do j=js_n,je_n
-         do i=is_n,ie_n
-
-            var_nest_send(i,j,k) = var_nest(i,j,k)*area(i,j)
-
-         end do
-=======
 !$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,js_f,is_f,coarse_dat_send,var_nest,area,r) private(in,jn,val)
          do k=1,npz
             jn = js_f
@@ -2831,7 +2438,6 @@ contains
             in = in + r
          end do
             jn = jn + r
->>>>>>> rusty/master_test
          end do
          end do
 
@@ -2841,17 +2447,6 @@ contains
       select case (nestupdate) 
       case (1,6,7,8)
 
-<<<<<<< HEAD
-!$NO-MP parallel do default(none) shared(npz,js_n,je_n,is_n,ie_n,var_nest_send,var_nest,dx)
-         do k=1,npz
-         do j=js_n,je_n+1
-         do i=is_n,ie_n
-
-
-            var_nest_send(i,j,k) = var_nest(i,j,k)*dx(i,j)
-            
-         end do
-=======
 !$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,js_f,is_f,coarse_dat_send,var_nest,dx,r) private(in,jn,val)
          do k=1,npz
             jn = js_f
@@ -2868,7 +2463,6 @@ contains
             in = in + r
          end do
             jn = jn + r
->>>>>>> rusty/master_test
          end do
          end do
 
@@ -2883,16 +2477,6 @@ contains
 
       case (1,6,7,8)   !averaging update; in-line average for face-averaged values instead of areal average
 
-<<<<<<< HEAD
-!$NO-MP parallel do default(none) shared(npz,js_n,je_n,is_n,ie_n,var_nest_send,var_nest,dy)
-         do k=1,npz
-         do j=js_n,je_n
-         do i=is_n,ie_n+1
-
-            var_nest_send(i,j,k) = var_nest(i,j,k)*dy(i,j)
-
-         end do
-=======
 !$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,js_f,is_f,coarse_dat_send,var_nest,dy,r) private(in,jn,val)
          do k=1,npz
             jn = js_f
@@ -2909,7 +2493,6 @@ contains
             in = in + r
          end do
             jn = jn + r
->>>>>>> rusty/master_test
          end do
          end do
 
@@ -2924,51 +2507,6 @@ contains
       call mpp_error(FATAL, "Cannot have both nonzero istag and jstag.")
 
    endif
-<<<<<<< HEAD
-   endif
-
-      call timing_on('COMM_TOTAL')
-   call mpp_update_nest_coarse(var_nest_send, nest_domain, nest_dat, position=position)
-      call timing_off('COMM_TOTAL')
-
-   s = r/2 !rounds down (since r > 0)
-   qr = r*upoff + nsponge - s
-
-   if (parent_proc .and. .not. (ieu < isu .or. jeu < jsu)) then
-   if (istag == 0 .and. jstag == 0) then
-
-      select case (nestupdate) 
-      case (1,2,6,7,8) ! 1 = Conserving update on all variables; 2 = conserving update for cell-centered values; 6 = conserving remap-update
-
-!$NO-MP parallel do default(none) shared(npz,jsu,jeu,isu,ieu,ind_update,nest_dat,parent_grid,var_coarse,r) &
-!$NO-MP          private(in,jn,val)
-         do k=1,npz
-         do j=jsu,jeu
-         do i=isu,ieu
-
-            in = ind_update(i,j,1)
-            jn = ind_update(i,j,2)
-
-!!$            if (in < max(1+qr,is_f) .or. in > min(npx-1-qr-r+1,ie_f) .or. &
-!!$                 jn < max(1+qr,js_f) .or. jn > min(npy-1-qr-r+1,je_f)) then
-!!$               write(mpp_pe()+3000,'(A, 14I6)') 'SKIP: ', i, j, in, jn, 1+qr, is_f, ie_f, js_f, je_f, npy-1-qr-r+1, isu, ieu, jsu, jeu
-!!$               cycle
-!!$            endif
-
-            val = 0.
-            do jnj=jn,jn+r-1
-               do ini=in,in+r-1
-                  val = val + nest_dat(ini,jnj,k)
-               end do
-            end do            
-
-            !var_coarse(i,j,k) = val/r**2.
-
-            !!! CLEANUP: Couldn't rarea and rdx and rdy be built into the weight arrays?
-            !!!    Two-way updates do not yet have weights, tho
-            var_coarse(i,j,k) = val*parent_grid%gridstruct%rarea(i,j)
-
-=======
 
 
  end subroutine fill_coarse_data_send
@@ -3000,7 +2538,6 @@ contains
          do j=js_c,je_c
          do i=is_c,ie_c
             var_coarse(i,j,k) = coarse_dat_recv(i,j,k)*parent_grid%gridstruct%rarea(i,j)
->>>>>>> rusty/master_test
          end do
          end do
          end do
@@ -3019,37 +2556,11 @@ contains
       select case (nestupdate) 
       case (1,6,7,8)
 
-<<<<<<< HEAD
-!$NO-MP parallel do default(none) shared(npz,jsu,jeu,isu,ieu,ind_update,nest_dat,parent_grid,var_coarse,r) &
-!$NO-MP          private(in,jn,val)
-         do k=1,npz
-         do j=jsu,jeu+1
-         do i=isu,ieu
-
-            in = ind_update(i,j,1)
-            jn = ind_update(i,j,2)
-
-!!$            if (in < max(1+qr,is_f) .or. in > min(npx-1-qr-r+1,ie_f) .or. &
-!!$                 jn < max(1+qr+s,js_f) .or. jn > min(npy-1-qr-s+1,je_f)) then
-!!$               write(mpp_pe()+3000,'(A, 14I)') 'SKIP u: ', i, j, in, jn, 1+qr, is_f, ie_f, js_f, je_f, npy-1-qr-s+1, isu, ieu, jsu, jeu
-!!$               cycle
-!!$            endif
-
-            val = 0.
-               do ini=in,in+r-1
-                  val = val + nest_dat(ini,jn,k)
-               end do
-
-!            var_coarse(i,j,k) = val/r
-            var_coarse(i,j,k) = val*parent_grid%gridstruct%rdx(i,j)
-
-=======
 !$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,coarse_dat_recv,parent_grid,var_coarse) 
          do k=1,npz
          do j=js_c,je_c+1
          do i=is_c,ie_c
             var_coarse(i,j,k) = coarse_dat_recv(i,j,k)*parent_grid%gridstruct%rdx(i,j)
->>>>>>> rusty/master_test
          end do
          end do
          end do
@@ -3065,37 +2576,11 @@ contains
       select case (nestupdate) 
       case (1,6,7,8)   !averaging update; in-line average for face-averaged values instead of areal average
 
-<<<<<<< HEAD
-!$NO-MP parallel do default(none) shared(npz,jsu,jeu,isu,ieu,ind_update,nest_dat,parent_grid,var_coarse,r) &
-!$NO-MP          private(in,jn,val)
-         do k=1,npz
-         do j=jsu,jeu
-         do i=isu,ieu+1
-
-            in = ind_update(i,j,1)
-            jn = ind_update(i,j,2)
-
-!!$            if (in < max(1+qr+s,is_f) .or. in > min(npx-1-qr-s+1,ie_f) .or. &
-!!$                 jn < max(1+qr,js_f) .or. jn > min(npy-1-qr-r+1,je_f)) then
-!!$               write(mpp_pe()+3000,'(A, 14I6)') 'SKIP v: ', i, j, in, jn, 1+qr, is_f, ie_f, js_f, je_f, npx-1-qr-s+1, isu, ieu, jsu, jeu
-!!$               cycle
-!!$            endif
-
-            val = 0.
-            do jnj=jn,jn+r-1
-                  val = val + nest_dat(in,jnj,k)
-            end do
-
-!            var_coarse(i,j,k) = val/r
-            var_coarse(i,j,k) = val*parent_grid%gridstruct%rdy(i,j)
-
-=======
 !$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,coarse_dat_recv,parent_grid,var_coarse) 
          do k=1,npz
          do j=js_c,je_c
          do i=is_c,ie_c+1
             var_coarse(i,j,k) = coarse_dat_recv(i,j,k)*parent_grid%gridstruct%rdy(i,j)
->>>>>>> rusty/master_test
          end do
          end do
          end do
@@ -3109,14 +2594,6 @@ contains
    end if
 
 
-<<<<<<< HEAD
-   endif
-   deallocate(nest_dat)
-   
- end subroutine update_coarse_grid_mpp
-
-
-=======
  end subroutine fill_var_coarse
 
   subroutine update_coarse_grid_mpp_vector(u_coarse, v_coarse, u_nest, v_nest, nest_domain, dx, dy, area, &
@@ -3205,6 +2682,5 @@ contains
    if (allocated(coarse_dat_recv_v)) deallocate(coarse_dat_recv_v)
    
  end subroutine update_coarse_grid_mpp_vector
->>>>>>> rusty/master_test
    
 end module boundary_mod

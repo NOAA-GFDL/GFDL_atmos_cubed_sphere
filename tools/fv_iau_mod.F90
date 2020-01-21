@@ -46,6 +46,7 @@ module fv_iau_mod
                                  fv_grid_type,        & 
                                  fv_grid_bounds_type, &
                                  R_GRID
+  use fv_mp_mod,           only: ng
   use fv_mp_mod,           only: is_master
   use sim_nc_mod,          only: open_ncfile,         &
                                  close_ncfile,        &
@@ -71,7 +72,7 @@ module fv_iau_mod
 
   real :: deg2rad,dt,rdt
   integer :: im,jm,km,nfiles,ncid
-  integer :: is,  ie,  js,  je
+  integer :: is,  ie,  js,  je, isd, ied, jsd, jed
   integer :: npz,ntracers
   character(len=32), allocatable :: tracer_names(:)
   integer, allocatable :: tracer_indicies(:)
@@ -129,6 +130,10 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
     ie  = is + IPD_Control%nx-1
     js  = IPD_Control%jsc
     je  = js + IPD_Control%ny-1
+    isd = is - ng
+    ied = ie + ng
+    jsd = js - ng
+    jed = je + ng
     call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
     allocate (tracer_names(ntracers))
     allocate (tracer_indicies(ntracers))
@@ -140,7 +145,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
     allocate(id1(is:ie,js:je))
     allocate(id2(is:ie,js:je))
     allocate(jdc(is:ie,js:je))
-    allocate(agrid(is:ie,js:je,2))
+    allocate(agrid(isd:ied,jsd:jed,2))
 ! determine number of increment files to read, and the valid forecast hours
 
    nfilesall = size(IPD_Control%iau_inc_files)
@@ -220,11 +225,11 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
     do j = 1,size(Init_parm%xlon,2)
       do i = 1,size(Init_parm%xlon,1)
 !         print*,i,j,is-1+j,js-1+j
-         agrid(is-1+i,js-1+j,1)=Init_parm%xlon(i,j)
-         agrid(is-1+i,js-1+j,2)=Init_parm%xlat(i,j)
+         agrid(isd-1+i,jsd-1+j,1)=Init_parm%xlon(i,j)
+         agrid(isd-1+i,jsd-1+j,2)=Init_parm%xlat(i,j)
       enddo
     enddo
-    call remap_coef( is, ie, js, je, &
+    call remap_coef( is, ie, js, je, isd, ied, jsd, jed, &
         im, jm, lon, lat, id1, id2, jdc, s2c, &
         agrid)
     deallocate ( lon, lat,agrid )

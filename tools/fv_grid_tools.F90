@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 !!***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -17,31 +16,10 @@
 !*
 !* You should have received a copy of the GNU Lesser General Public
 !* License along with the FV3 dynamical core.  
-=======
-!***********************************************************************
-!*                   GNU Lesser General Public License
-!*
-!* This file is part of the FV3 dynamical core.
-!*
-!* The FV3 dynamical core is free software: you can redistribute it
-!* and/or modify it under the terms of the
-!* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or
-!* (at your option) any later version.
-!*
-!* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-!* See the GNU General Public License for more details.
-!*
-!* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.
->>>>>>> rusty/master_test
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 module fv_grid_tools_mod
 
-<<<<<<< HEAD
 ! <table>
 ! <tr>
 !     <th>Module Name</th>
@@ -137,24 +115,11 @@ module fv_grid_tools_mod
 ! </table>
 
 
-=======
->>>>>>> rusty/master_test
   use constants_mod, only: grav, omega, pi=>pi_8, cnst_radius=>radius
   use fv_arrays_mod, only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type, R_GRID
   use fv_grid_utils_mod, only: gnomonic_grids, great_circle_dist,  &
                            mid_pt_sphere, spherical_angle,     &
                                cell_center2, get_area, inner_prod, fill_ghost, &
-<<<<<<< HEAD
-                           direct_transform, dist2side_latlon, &
-                           spherical_linear_interpolation, big_number
-  use fv_timing_mod,  only: timing_on, timing_off
-  use fv_mp_mod,      only: ng, is_master, fill_corners, XDir, YDir
-  use fv_mp_mod,      only: mp_gather, mp_bcst, mp_reduce_max, mp_stop
-  use sorted_index_mod,  only: sorted_inta, sorted_intb
-  use mpp_mod,           only: mpp_error, FATAL, get_unit, mpp_chksum, mpp_pe, stdout, &
-                               mpp_send, mpp_recv, mpp_sync_self, EVENT_RECV, mpp_npes, &
-                               mpp_sum, mpp_max, mpp_min, mpp_root_pe, mpp_broadcast, mpp_transmit
-=======
                            direct_transform, cube_transform, dist2side_latlon, &
                            spherical_linear_interpolation, big_number
   use fv_timing_mod,  only: timing_on, timing_off
@@ -163,8 +128,7 @@ module fv_grid_tools_mod
   use sorted_index_mod,  only: sorted_inta, sorted_intb
   use mpp_mod,           only: mpp_error, FATAL, get_unit, mpp_chksum, mpp_pe, stdout, &
                                mpp_send, mpp_recv, mpp_sync_self, EVENT_RECV, mpp_npes, &
-                               mpp_sum, mpp_max, mpp_min, mpp_root_pe, mpp_broadcast
->>>>>>> rusty/master_test
+                               mpp_sum, mpp_max, mpp_min, mpp_root_pe, mpp_broadcast, mpp_transmit
   use mpp_domains_mod,   only: mpp_update_domains, mpp_get_boundary, &
                                mpp_get_ntile_count, mpp_get_pelist, &
                                mpp_get_compute_domains, mpp_global_field, &
@@ -186,23 +150,15 @@ module fv_grid_tools_mod
                                get_global_att_value, get_var_att_value
   use mosaic_mod,       only : get_mosaic_ntiles
 
-<<<<<<< HEAD
-=======
   use mpp_mod, only: mpp_transmit, mpp_recv
->>>>>>> rusty/master_test
   implicit none
   private
 #include <netcdf.inc>
 
   real(kind=R_GRID), parameter:: radius = cnst_radius
 
-<<<<<<< HEAD
   real(kind=R_GRID) , parameter:: todeg = 180.0d0/pi          !< convert to degrees
   real(kind=R_GRID) , parameter:: torad = pi/180.0d0          !< convert to radians
-=======
-  real(kind=R_GRID) , parameter:: todeg = 180.0d0/pi          ! convert to degrees
-  real(kind=R_GRID) , parameter:: torad = pi/180.0d0          ! convert to radians
->>>>>>> rusty/master_test
   real(kind=R_GRID) , parameter:: missing = 1.d25
 
   real(kind=R_GRID) :: csFac
@@ -215,13 +171,8 @@ module fv_grid_tools_mod
 
 contains
 
-<<<<<<< HEAD
 !>@brief The subroutine 'read_grid' reads the grid from the mosaic grid file.
   subroutine read_grid(Atm, grid_file, ndims, nregions, ng)
-=======
-  subroutine read_grid(Atm, grid_file, ndims, nregions, ng)
-    !     read_grid :: read grid from mosaic grid file.
->>>>>>> rusty/master_test
     type(fv_atmos_type), intent(inout), target :: Atm
     character(len=*),    intent(IN)    :: grid_file
     integer,             intent(IN)    :: ndims
@@ -238,11 +189,7 @@ contains
     integer                            :: start(4), nread(4)  
     integer                            :: is,  ie,  js,  je
     integer                            :: isd, ied, jsd, jed
-<<<<<<< HEAD
-      integer,save :: halo=3
-=======
       integer,save :: halo=3 ! for regional domain external tools
->>>>>>> rusty/master_test
 
     is  = Atm%bd%is
     ie  = Atm%bd%ie
@@ -284,20 +231,11 @@ contains
 
     !FIXME: Doesn't work for a nested grid
     ntiles = get_mosaic_ntiles(atm_mosaic)
-<<<<<<< HEAD
-
-    if( .not. Atm%flagstruct%regional) then  !<-- The regional setup has only 1 tile so do not shutdown in that case.
-      if(ntiles .NE. 6) call mpp_error(FATAL, &
-         'fv_grid_tools(read_grid): ntiles should be 6 in mosaic file '//trim(atm_mosaic) )
-      if(nregions .NE. 6) call mpp_error(FATAL, &
-         'fv_grid_tools(read_grid): nregions should be 6 when reading from mosaic file '//trim(grid_file) )
-=======
     if( .not. Atm%gridstruct%bounded_domain) then  !<-- The regional setup has only 1 tile so do not shutdown in that case.
        if(ntiles .NE. 6) call mpp_error(FATAL, &
             'fv_grid_tools(read_grid): ntiles should be 6 in mosaic file '//trim(atm_mosaic) )
        if(nregions .NE. 6) call mpp_error(FATAL, &
             'fv_grid_tools(read_grid): nregions should be 6 when reading from mosaic file '//trim(grid_file) )
->>>>>>> rusty/master_test
     endif
 
     call get_var_att_value(atm_hgrid, 'x', 'units', units)
@@ -305,11 +243,7 @@ contains
     !--- get the geographical coordinates of super-grid.
     isc2 = 2*is-1; iec2 = 2*ie+1
     jsc2 = 2*js-1; jec2 = 2*je+1  
-<<<<<<< HEAD
-    if( Atm%flagstruct%regional) then
-=======
     if( Atm%gridstruct%bounded_domain ) then
->>>>>>> rusty/master_test
       isc2 = 2*(isd+halo)-1; iec2 = 2*(ied+1+halo)-1   ! For the regional domain the cell corner locations must be transferred
       jsc2 = 2*(jsd+halo)-1; jec2 = 2*(jed+1+halo)-1   ! from the entire supergrid to the compute grid, including the halo region. 
     endif
@@ -329,45 +263,26 @@ contains
     if(len_trim(units) < 6) call mpp_error(FATAL, &
           "fv_grid_tools_mod(read_grid): the length of units must be no less than 6")
     if(units(1:6) == 'degree') then
-<<<<<<< HEAD
-       if( .not. Atm%flagstruct%regional) then
-          do j = js, je+1
-=======
     if( .not. Atm%gridstruct%bounded_domain) then
        do j = js, je+1
->>>>>>> rusty/master_test
           do i = is, ie+1
              grid(i,j,1) = tmpx(2*i-1,2*j-1)*pi/180.
              grid(i,j,2) = tmpy(2*i-1,2*j-1)*pi/180.
           enddo
-<<<<<<< HEAD
-          enddo
-       else
-=======
        enddo
     else
->>>>>>> rusty/master_test
 !
 !***  In the regional case the halo surrounding the domain was included in the read.
 !***  Transfer the compute and halo regions to the compute grid.
 !
-<<<<<<< HEAD
           do j = jsd, jed+1
-=======
-       do j = jsd, jed+1
->>>>>>> rusty/master_test
           do i = isd, ied+1
              grid(i,j,1) = tmpx(2*i+halo+2,2*j+halo+2)*pi/180.
              grid(i,j,2) = tmpy(2*i+halo+2,2*j+halo+2)*pi/180.
           enddo
-<<<<<<< HEAD
           enddo
        endif
 
-=======
-       enddo
-    endif
->>>>>>> rusty/master_test
     else if(units(1:6) == 'radian') then
        do j = js, je+1
           do i = is, ie+1
@@ -609,16 +524,9 @@ contains
 
   end subroutine get_symmetry
 
-<<<<<<< HEAD
 !>@brief The subroutine 'init_grid' reads the grid from the input file
 !! and sets up grid descriptors.
-  subroutine init_grid(Atm, grid_name, grid_file, npx, npy, npz, ndims, nregions, ng)
-=======
   subroutine init_grid(Atm, grid_name, grid_file, npx, npy, npz, ndims, nregions, ng, tile_coarse)
- 
-!     init_grid :: read grid from input file and setup grid descriptors
- 
->>>>>>> rusty/master_test
 !--------------------------------------------------------
     type(fv_atmos_type), intent(inout), target :: Atm
     character(len=80), intent(IN) :: grid_name
@@ -627,10 +535,7 @@ contains
     integer,      intent(IN) :: ndims
     integer,      intent(IN) :: nregions
     integer,      intent(IN) :: ng
-<<<<<<< HEAD
-=======
     integer,      intent(IN) :: tile_coarse(:)
->>>>>>> rusty/master_test
 !--------------------------------------------------------
     real(kind=R_GRID)   ::  xs(npx,npy)
     real(kind=R_GRID)   ::  ys(npx,npy)
@@ -700,11 +605,7 @@ contains
     agrid => Atm%gridstruct%agrid_64
     grid  => Atm%gridstruct%grid_64
 
-<<<<<<< HEAD
     area   => Atm%gridstruct%area_64
-=======
-     area   => Atm%gridstruct%area_64
->>>>>>> rusty/master_test
     area_c  => Atm%gridstruct%area_c_64
     rarea   => Atm%gridstruct%rarea
     rarea_c => Atm%gridstruct%rarea_c
@@ -749,11 +650,7 @@ contains
     have_north_pole               => Atm%gridstruct%have_north_pole
     stretched_grid                => Atm%gridstruct%stretched_grid
 
-<<<<<<< HEAD
-    tile                          => Atm%tile
-=======
     tile                          => Atm%tile_of_mosaic
->>>>>>> rusty/master_test
 
     domain                        => Atm%domain
 
@@ -763,16 +660,12 @@ contains
     latlon = .false.
     cubed_sphere = .false.
 
-<<<<<<< HEAD
-    if ( Atm%flagstruct%do_schmidt .and. abs(atm%flagstruct%stretch_fac-1.) > 1.E-5 ) stretched_grid = .true.
-=======
     if ( (Atm%flagstruct%do_schmidt .or. Atm%flagstruct%do_cube_transform) .and. abs(atm%flagstruct%stretch_fac-1.) > 1.E-5 ) then
        stretched_grid = .true.
        if (Atm%flagstruct%do_schmidt .and. Atm%flagstruct%do_cube_transform) then
           call mpp_error(FATAL, ' Cannot set both do_schmidt and do_cube_transform to .true.')
        endif
     endif
->>>>>>> rusty/master_test
 
     if (Atm%flagstruct%grid_type>3) then
        if (Atm%flagstruct%grid_type == 4) then
@@ -784,8 +677,10 @@ contains
     else
 
           cubed_sphere = .true.
-<<<<<<< HEAD
+          
           if (Atm%neststruct%nested) then
+             !Read grid if it exists
+             ! still need to set up 
              call setup_aligned_nest(Atm)
           else
            if(trim(grid_file) == 'INPUT/grid_spec.nc') then  
@@ -795,50 +690,22 @@ contains
             if (is_master()) then
              if (Atm%flagstruct%grid_type>=0) then
                 do j=1,npy
-=======
-          
-          if (Atm%neststruct%nested) then
-             !Read grid if it exists
-             ! still need to set up 
-             call setup_aligned_nest(Atm)
-          else
-             if(trim(grid_file) == 'INPUT/grid_spec.nc') then  
-                call read_grid(Atm, grid_file, ndims, nregions, ng)
-             else
-
-                if (Atm%flagstruct%grid_type>=0) call gnomonic_grids(Atm%flagstruct%grid_type, npx-1, xs, ys)
-
-                if (is_master()) then
-
-                if (Atm%flagstruct%grid_type>=0) then
-                   do j=1,npy
->>>>>>> rusty/master_test
                    do i=1,npx
                       grid_global(i,j,1,1) = xs(i,j)
                       grid_global(i,j,2,1) = ys(i,j)
                    enddo
-<<<<<<< HEAD
                 enddo
 ! mirror_grid assumes that the tile=1 is centered on equator and greenwich meridian Lon[-pi,pi] 
                 call mirror_grid(grid_global, ng, npx, npy, 2, 6)
                 do n=1,nregions
                    do j=1,npy
                       do i=1,npx
-=======
-                   enddo
-! mirror_grid assumes that the tile=1 is centered on equator and greenwich meridian Lon[-pi,pi] 
-                   call mirror_grid(grid_global, ng, npx, npy, 2, 6)
-                   do n=1,nregions
-                   do j=1,npy
-                   do i=1,npx
->>>>>>> rusty/master_test
 !---------------------------------
 ! Shift the corner away from Japan
 !---------------------------------
 !--------------------- This will result in the corner close to east coast of China ------------------
-<<<<<<< HEAD
-                         if ( .not.Atm%flagstruct%do_schmidt .and. (Atm%flagstruct%shift_fac)>1.E-4 )   &
-                              grid_global(i,j,1,n) = grid_global(i,j,1,n) - pi/Atm%flagstruct%shift_fac
+                      if ( .not. ( Atm%flagstruct%do_schmidt .or. Atm%flagstruct%do_cube_transform) .and. (Atm%flagstruct%shift_fac)>1.E-4 )   &
+                           grid_global(i,j,1,n) = grid_global(i,j,1,n) - pi/Atm%flagstruct%shift_fac
 !----------------------------------------------------------------------------------------------------
                          if ( grid_global(i,j,1,n) < 0. )              &
                               grid_global(i,j,1,n) = grid_global(i,j,1,n) + 2.*pi
@@ -850,21 +717,6 @@ contains
                 else
                    call mpp_error(FATAL, "fv_grid_tools: reading of ASCII grid files no longer supported")
                 endif ! Atm%flagstruct%grid_type>=0
-=======
-                      if ( .not. ( Atm%flagstruct%do_schmidt .or. Atm%flagstruct%do_cube_transform) .and. (Atm%flagstruct%shift_fac)>1.E-4 )   &
-                           grid_global(i,j,1,n) = grid_global(i,j,1,n) - pi/Atm%flagstruct%shift_fac
-!----------------------------------------------------------------------------------------------------
-                      if ( grid_global(i,j,1,n) < 0. )              &
-                           grid_global(i,j,1,n) = grid_global(i,j,1,n) + 2.*pi
-                      if (ABS(grid_global(i,j,1,1)) < 1.d-10) grid_global(i,j,1,1) = 0.0
-                      if (ABS(grid_global(i,j,2,1)) < 1.d-10) grid_global(i,j,2,1) = 0.0
-                   enddo
-                   enddo
-                   enddo
-                else
-                   call mpp_error(FATAL, "fv_grid_tools: reading of ASCII grid files no longer supported")
-                endif
->>>>>>> rusty/master_test
 
                 grid_global(  1,1:npy,:,2)=grid_global(npx,1:npy,:,1)
                 grid_global(  1,1:npy,:,3)=grid_global(npx:1:-1,npy,:,1)
@@ -887,52 +739,6 @@ contains
 !------------------------
 ! Schmidt transformation:
 !------------------------
-<<<<<<< HEAD
-             if ( Atm%flagstruct%do_schmidt ) then
-             do n=1,nregions
-                call direct_transform(Atm%flagstruct%stretch_fac, 1, npx, 1, npy, &
-                                      Atm%flagstruct%target_lon, Atm%flagstruct%target_lat, &
-                                      n, grid_global(1:npx,1:npy,1,n), grid_global(1:npx,1:npy,2,n))
-             enddo
-             endif
-        endif !is master
-             call mpp_broadcast(grid_global, size(grid_global), mpp_root_pe())
-!--- copy grid to compute domain
-       do n=1,ndims
-          do j=js,je+1
-             do i=is,ie+1
-                grid(i,j,n) = grid_global(i,j,n,tile)
-             enddo
-          enddo
-       enddo
-          endif !(trim(grid_file) == 'INPUT/grid_spec.nc')
-
-!
-! SJL: For phys/exchange grid, etc
-!
-       call mpp_update_domains( grid, Atm%domain, position=CORNER)
-       if (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-         call fill_corners(grid(:,:,1), npx, npy, FILL=XDir, BGRID=.true.)
-         call fill_corners(grid(:,:,2), npx, npy, FILL=XDir, BGRID=.true.)
-       endif
-
-
-          !--- dx and dy         
-
-          if( .not. Atm%flagstruct%regional) then
-            istart=is
-            iend=ie
-            jstart=js
-            jend=je
-          else
-            istart=isd
-            iend=ied
-            jstart=jsd
-            jend=jed
-          endif
-
-          do j = jstart, jend+1
-=======
                 if ( Atm%flagstruct%do_schmidt ) then
                    do n=1,nregions
                       call direct_transform(Atm%flagstruct%stretch_fac, 1, npx, 1, npy, &
@@ -980,7 +786,6 @@ contains
              endif
              
              do j = jstart, jend+1
->>>>>>> rusty/master_test
              do i = istart, iend
                 p1(1) = grid(i  ,j,1)
                 p1(2) = grid(i  ,j,2)
@@ -988,15 +793,9 @@ contains
                 p2(2) = grid(i+1,j,2)
                 dx(i,j) = great_circle_dist( p2, p1, radius )
              enddo
-<<<<<<< HEAD
-          enddo
-          if( stretched_grid ) then
-             do j = jstart, jend
-=======
              enddo
              if( stretched_grid .or. Atm%gridstruct%bounded_domain ) then
                 do j = jstart, jend
->>>>>>> rusty/master_test
                 do i = istart, iend+1
                    p1(1) = grid(i,j,  1)
                    p1(2) = grid(i,j,  2)
@@ -1004,45 +803,6 @@ contains
                    p2(2) = grid(i,j+1,2)
                    dy(i,j) = great_circle_dist( p2, p1, radius )
                 enddo
-<<<<<<< HEAD
-             enddo
-          else
-             call get_symmetry(dx(is:ie,js:je+1), dy(is:ie+1,js:je), 0, 1, Atm%layout(1), Atm%layout(2), &
-                  Atm%domain, Atm%tile, Atm%gridstruct%npx_g, Atm%bd)
-          endif
-
-          call mpp_get_boundary( dy, dx, Atm%domain, ebufferx=ebuffer, wbufferx=wbuffer, sbuffery=sbuffer, nbuffery=nbuffer,&
-               flags=SCALAR_PAIR+XUPDATE, gridtype=CGRID_NE_PARAM)
-          if( .not. Atm%flagstruct%regional ) then
-            if(is == 1 .AND. mod(tile,2) .NE. 0) then ! on the west boundary
-               dy(is, js:je) = wbuffer(js:je)
-            endif
-            if(ie == npx-1) then  ! on the east boundary
-               dy(ie+1, js:je) = ebuffer(js:je)
-            endif
-          endif
-
-          call mpp_update_domains( dy, dx, Atm%domain, flags=SCALAR_PAIR,      &
-               gridtype=CGRID_NE_PARAM, complete=.true.)
-          if (cubed_sphere .and. (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional))) then
-            call fill_corners(dx, dy, npx, npy, DGRID=.true.)
-          endif
-
-       if( .not. stretched_grid )         &
-           call sorted_inta(isd, ied, jsd, jed, cubed_sphere, grid, iinta, jinta)
-
-       agrid(:,:,:) = -1.e25
- 
-          !--- compute agrid (use same indices as for dx/dy above)
-
-       do j=jstart,jend
-          do i=istart,iend
-             if ( stretched_grid ) then
-                  call cell_center2(grid(i,j,  1:2), grid(i+1,j,  1:2),   &
-                                    grid(i,j+1,1:2), grid(i+1,j+1,1:2),   &
-                                    agrid(i,j,1:2) )
-             else
-=======
                 enddo
              else
                 call get_symmetry(dx(is:ie,js:je+1), dy(is:ie+1,js:je), 0, 1, Atm%layout(1), Atm%layout(2), &
@@ -1066,57 +826,25 @@ contains
                 call fill_corners(dx, dy, npx, npy, DGRID=.true.)
              endif
 
-             if( .not. stretched_grid )         &
-                  call sorted_inta(isd, ied, jsd, jed, cubed_sphere, grid, iinta, jinta)
+       if( .not. stretched_grid )         &
+           call sorted_inta(isd, ied, jsd, jed, cubed_sphere, grid, iinta, jinta)
 
-             agrid(:,:,:) = -1.e25
+       agrid(:,:,:) = -1.e25
  
           !--- compute agrid (use same indices as for dx/dy above)
 
-             do j=jstart,jend
-             do i=istart,iend
-                if ( stretched_grid ) then
+       do j=jstart,jend
+          do i=istart,iend
+             if ( stretched_grid ) then
                   call cell_center2(grid(i,j,  1:2), grid(i+1,j,  1:2),   &
                                     grid(i,j+1,1:2), grid(i+1,j+1,1:2),   &
                                     agrid(i,j,1:2) )
-               else
->>>>>>> rusty/master_test
+             else
                   call cell_center2(grid(iinta(1,i,j),jinta(1,i,j),1:2),  &
                                     grid(iinta(2,i,j),jinta(2,i,j),1:2),  &
                                     grid(iinta(3,i,j),jinta(3,i,j),1:2),  &
                                     grid(iinta(4,i,j),jinta(4,i,j),1:2),  &
                                     agrid(i,j,1:2) )
-<<<<<<< HEAD
-             endif
-          enddo
-       enddo
-
-       call mpp_update_domains( agrid, Atm%domain, position=CENTER, complete=.true. )
-       if (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-         call fill_corners(agrid(:,:,1), npx, npy, XDir, AGRID=.true.)
-         call fill_corners(agrid(:,:,2), npx, npy, YDir, AGRID=.true.)
-       endif
-
-       do j=jsd,jed
-          do i=isd,ied
-             call mid_pt_sphere(grid(i,  j,1:2), grid(i,  j+1,1:2), p1)
-             call mid_pt_sphere(grid(i+1,j,1:2), grid(i+1,j+1,1:2), p2)
-             dxa(i,j) = great_circle_dist( p2, p1, radius )
-!
-             call mid_pt_sphere(grid(i,j  ,1:2), grid(i+1,j  ,1:2), p1)
-             call mid_pt_sphere(grid(i,j+1,1:2), grid(i+1,j+1,1:2), p2)
-             dya(i,j) = great_circle_dist( p2, p1, radius )
-          enddo
-       enddo
-!      call mpp_update_domains( dxa, dya, Atm%domain, flags=SCALAR_PAIR, gridtype=AGRID_PARAM)
-       if (cubed_sphere  .and. (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional))) then
-         call fill_corners(dxa, dya, npx, npy, AGRID=.true.)
-       endif
-
-
-    end if !if nested
-
-=======
                endif
              enddo
              enddo
@@ -1144,12 +872,9 @@ contains
              endif
              
 
-          end if !if nested
 
+    end if !if nested
 
-!       do j=js,je
-!          do i=is,ie+1
->>>>>>> rusty/master_test
        do j=jsd,jed
           do i=isd+1,ied
              dxc(i,j) = great_circle_dist(agrid(i,j,:), agrid(i-1,j,:), radius)
@@ -1181,22 +906,13 @@ contains
            call sorted_intb(isd, ied, jsd, jed, is, ie, js, je, npx, npy, &
                             cubed_sphere, agrid, iintb, jintb)
 
-<<<<<<< HEAD
-       call grid_area( npx, npy, ndims, nregions, Atm%neststruct%nested, Atm%gridstruct, Atm%domain, Atm%bd, Atm%flagstruct%regional )
-=======
        call grid_area( npx, npy, ndims, nregions, Atm%gridstruct%bounded_domain, Atm%gridstruct, Atm%domain, Atm%bd )
->>>>>>> rusty/master_test
 !      stretched_grid = .false.
 
 !----------------------------------
 ! Compute area_c, rarea_c, dxc, dyc
 !----------------------------------
-<<<<<<< HEAD
-
-  if ( .not. stretched_grid .and. (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional))) then
-=======
   if ( .not. stretched_grid .and. (.not. (Atm%gridstruct%bounded_domain))) then
->>>>>>> rusty/master_test
 ! For symmetrical grids:
        if ( is==1 ) then
           i = 1
@@ -1291,20 +1007,12 @@ contains
              p4(1:2) = grid(i,j,1:2)
              area_c(i,j) = 3.*get_area(p1, p4, p2, p3, radius)
        endif
-<<<<<<< HEAD
    endif
-=======
-    endif
->>>>>>> rusty/master_test
 !-----------------
 
        call mpp_update_domains( dxc, dyc, Atm%domain, flags=SCALAR_PAIR,   &
                                 gridtype=CGRID_NE_PARAM, complete=.true.)
-<<<<<<< HEAD
-       if (cubed_sphere  .and. (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional))) then
-=======
        if (cubed_sphere  .and. (.not. (Atm%gridstruct%bounded_domain))) then
->>>>>>> rusty/master_test
          call fill_corners(dxc, dyc, npx, npy, CGRID=.true.)
        endif
 
@@ -1312,11 +1020,7 @@ contains
 
 
        !Handling outermost ends for area_c
-<<<<<<< HEAD
-       if (Atm%neststruct%nested .or. Atm%flagstruct%regional) then
-=======
        if (Atm%gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
           if (is == 1) then
              do j=jsd,jed
                 area_c(isd,j) = area_c(isd+1,j)
@@ -1346,11 +1050,7 @@ contains
        call mpp_update_domains( area_c, Atm%domain, position=CORNER, complete=.true.)
 
        ! Handle corner Area ghosting
-<<<<<<< HEAD
-       if (cubed_sphere .and. (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional))) then
-=======
        if (cubed_sphere .and. (.not. (Atm%gridstruct%bounded_domain))) then
->>>>>>> rusty/master_test
           call fill_ghost(area, npx, npy, -big_number, Atm%bd)  ! fill in garbage values
           call fill_corners(area_c, npx, npy, FILL=XDir, BGRID=.true.)
        endif
@@ -1402,11 +1102,7 @@ contains
        angM = -missing
        aspN =  missing
        aspM = -missing
-<<<<<<< HEAD
-       if (tile == 1) then
-=======
        !if (tile == 1) then ! doing a GLOBAL domain search on each grid
->>>>>>> rusty/master_test
           do j=js, je
              do i=is, ie
                 if(i>ceiling(npx/2.) .OR. j>ceiling(npy/2.)) cycle
@@ -1436,11 +1132,7 @@ contains
                 aspN  = MIN(aspN,asp)
              enddo
           enddo
-<<<<<<< HEAD
-       endif
-=======
        !endif
->>>>>>> rusty/master_test
        call mpp_sum(angAv)
        call mpp_sum(dxAV)
        call mpp_sum(aspAV)
@@ -1461,22 +1153,14 @@ contains
           write(*,*) ' REDUCED EARTH: Radius is ', radius, ', omega is ', omega
 #endif
           write(*,*  ) ' Cubed-Sphere Grid Stats : ', npx,'x',npy,'x',nregions
-<<<<<<< HEAD
-!xxxxxxx  write(*,201) '      Grid Length               : min: ', dxN,' max: ', dxM,' avg: ', dxAV, ' min/max: ',dxN/dxM
-=======
           print*, dxN, dxM, dxAV, dxN, dxM
           write(*,201) '      Grid Length               : min: ', dxN,' max: ', dxM,' avg: ', dxAV, ' min/max: ',dxN/dxM
->>>>>>> rusty/master_test
           write(*,200) '      Deviation from Orthogonal : min: ',angN,' max: ',angM,' avg: ',angAV
           write(*,200) '      Aspect Ratio              : min: ',aspN,' max: ',aspM,' avg: ',aspAV
           write(*,*  ) ''
        endif
     endif!if gridtype > 3
 
-<<<<<<< HEAD
-    if (Atm%neststruct%nested .or. ANY(Atm%neststruct%child_grids)) then
-    nullify(grid_global)
-=======
     !SEND grid global if any child nests
     !Matching receive in setup_aligned_nest
     do n=1,size(Atm%neststruct%child_grids)
@@ -1496,8 +1180,7 @@ contains
     enddo
 
     if (Atm%neststruct%nested .or. ANY(Atm%neststruct%child_grids)) then
-       nullify(grid_global)
->>>>>>> rusty/master_test
+    nullify(grid_global)
     else if( trim(grid_file) .NE. 'INPUT/grid_spec.nc') then
        deallocate(grid_global)
     endif
@@ -1618,8 +1301,6 @@ contains
 
     end subroutine setup_cartesian
 
-<<<<<<< HEAD
-=======
     !This routine currently does two things:
     ! 1) Create the nested grid on-the-fly from the parent
     ! 2) Compute the weights and indices for the boundary conditions
@@ -1635,7 +1316,6 @@ contains
     ! Computing the weights can be simplified by simply retreiving the 
     !   BC agrid/grid structures?
     
->>>>>>> rusty/master_test
     subroutine setup_aligned_nest(Atm)
 
       type(fv_atmos_type), intent(INOUT), target :: Atm
@@ -1646,15 +1326,9 @@ contains
       
 
       real(kind=R_GRID), allocatable, dimension(:,:,:) :: p_grid_u, p_grid_v, pa_grid, p_grid, c_grid_u, c_grid_v
-<<<<<<< HEAD
       integer ::    p_ind(1-ng:npx  +ng,1-ng:npy  +ng,4) !< First two entries along dim 3 are
                                                          !! for the corner source indices;
                                                          !! the last two are for the remainders
-=======
-      integer ::    p_ind(1-ng:npx  +ng,1-ng:npy  +ng,4) !First two entries along dim 3 are
-                                                         !for the corner source indices;
-                                                         !the last two are for the remainders
->>>>>>> rusty/master_test
 
       integer i,j,k, p
       real(kind=R_GRID) sum
@@ -1662,11 +1336,7 @@ contains
       real(kind=R_GRID), dimension(2) :: q1, q2
 
       integer, pointer :: parent_tile, refinement, ioffset, joffset
-<<<<<<< HEAD
-      integer, pointer, dimension(:,:,:) :: ind_h, ind_u, ind_v, ind_update_h
-=======
       integer, pointer, dimension(:,:,:) :: ind_h, ind_u, ind_v
->>>>>>> rusty/master_test
       real,    pointer, dimension(:,:,:) :: wt_h, wt_u, wt_v
 
       integer, pointer, dimension(:,:,:) :: ind_b
@@ -1687,25 +1357,14 @@ contains
 
 
       parent_tile => Atm%neststruct%parent_tile
-<<<<<<< HEAD
       refinement => Atm%neststruct%refinement
       ioffset => Atm%neststruct%ioffset
       joffset => Atm%neststruct%joffset
-=======
-      refinement  => Atm%neststruct%refinement
-      ioffset     => Atm%neststruct%ioffset
-      joffset     => Atm%neststruct%joffset
->>>>>>> rusty/master_test
 
       ind_h => Atm%neststruct%ind_h
       ind_u => Atm%neststruct%ind_u
       ind_v => Atm%neststruct%ind_v
 
-<<<<<<< HEAD
-      ind_update_h => Atm%neststruct%ind_update_h
-
-=======
->>>>>>> rusty/master_test
       wt_h => Atm%neststruct%wt_h
       wt_u => Atm%neststruct%wt_u
       wt_v => Atm%neststruct%wt_v
@@ -1726,23 +1385,6 @@ contains
       allocate(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2) )
       p_grid = 1.e25
 
-<<<<<<< HEAD
-         !Need to RECEIVE grid_global; matching mpp_send of grid_global from parent grid is in fv_control
-      if( is_master() ) then
-         p_ind = -1000000000
-
-         call mpp_recv(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2), size(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2)), &
-                       Atm%parent_grid%pelist(1))
-         !Check that the grid does not lie outside its parent
-         !3aug15: allows halo of nest to lie within halo of coarse grid.
-         !  NOTE: will this then work with the mpp_update_nest_fine?
-         if ( joffset + floor( real(1-ng) / real(refinement) ) < 1-ng .or. &
-              ioffset + floor( real(1-ng) / real(refinement) ) < 1-ng .or. &
-              joffset + floor( real(npy+ng) / real(refinement) ) > Atm%parent_grid%npy+ng .or. &
-              ioffset + floor( real(npx+ng) / real(refinement) ) > Atm%parent_grid%npx+ng ) then
-            call mpp_error(FATAL, 'nested grid lies outside its parent')
-         end if
-=======
          !Need to RECEIVE parent grid_global; 
       !matching mpp_send of grid_global from parent grid is in init_grid()
       if( is_master() ) then
@@ -1768,7 +1410,6 @@ contains
 !!$              ioffset + floor( real(npx+ng) / real(refinement) ) > Atm%parent_grid%npx+ng ) then
 !!$            call mpp_error(FATAL, 'nested grid lies outside its parent')
 !!$         end if
->>>>>>> rusty/master_test
 
          do j=1-ng,npy+ng
             jc = joffset + (j-1)/refinement !int( real(j-1) / real(refinement) )
@@ -1843,23 +1484,6 @@ contains
             end do
          end do
 
-<<<<<<< HEAD
-      end if
-
-      call mpp_broadcast(grid_global(1-ng:npx+ng,  1-ng:npy+ng  ,:,1), &
-           ((npx+ng)-(1-ng)+1)*((npy+ng)-(1-ng)+1)*ndims, mpp_root_pe() )
-      call mpp_broadcast(      p_ind(1-ng:npx+ng,  1-ng:npy+ng  ,1:4),   &
-           ((npx+ng)-(1-ng)+1)*((npy+ng)-(1-ng)+1)*4, mpp_root_pe() )
-      call mpp_broadcast(    pa_grid( isg:ieg  , jsg:jeg  , :), &
-           ((ieg-isg+1))*(jeg-jsg+1)*ndims, mpp_root_pe())
-      call mpp_broadcast(  p_grid_u( isg:ieg  , jsg:jeg+1, :), &
-           (ieg-isg+1)*(jeg-jsg+2)*ndims, mpp_root_pe())
-      call mpp_broadcast(  p_grid_v( isg:ieg+1, jsg:jeg  , :), &
-           (ieg-isg+2)*(jeg-jsg+1)*ndims, mpp_root_pe())
-
-      call mpp_broadcast( p_grid(isg-ng:ieg+ng+1, jsg-ng:jeg+ng+1, :), &
-           (ieg-isg+2+2*ng)*(jeg-jsg+2+2*ng)*ndims, mpp_root_pe() )
-=======
 !!$      !TODO: can we just send around ONE grid and re-calculate
 !!$      ! staggered grids from that??
 !!$      call mpp_broadcast(grid_global(1-ng:npx+ng,  1-ng:npy+ng  ,:,1), &
@@ -1872,7 +1496,6 @@ contains
 !!$           (ieg-isg+1)*(jeg-jsg+2)*ndims, mpp_root_pe())
 !!$      call mpp_broadcast(  p_grid_v( isg:ieg+1, jsg:jeg  , :), &
 !!$           (ieg-isg+2)*(jeg-jsg+1)*ndims, mpp_root_pe())
->>>>>>> rusty/master_test
 
       do n=1,ndims
          do j=jsd,jed+1
@@ -1928,11 +1551,6 @@ contains
       enddo
       enddo
 
-<<<<<<< HEAD
-         !In a concurrent simulation, p_ind was passed off to the parent processes above, so they can create ind_update_h
-
-=======
->>>>>>> rusty/master_test
       ind_u = -99999999
       !New BCs for wind components:
       ! For aligned grid segments (mod(j-1,R) == 0) set 
@@ -2204,10 +1822,6 @@ contains
       if (is_master()) then
          if (Atm%neststruct%nested) then
             !Nesting position information
-<<<<<<< HEAD
-=======
-            !BUG multiply by 180 not 90....
->>>>>>> rusty/master_test
             write(*,*) 'NESTED GRID ', Atm%grid_number
             ic = p_ind(1,1,1) ; jc = p_ind(1,1,1)
             write(*,'(A, 2I5, 4F10.4)') 'SW CORNER: ', ic, jc, grid_global(1,1,:,1)*90./pi
@@ -2218,11 +1832,7 @@ contains
             ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,1)
             write(*,'(A, 2I5, 4F10.4)') 'SE CORNER: ', ic, jc, grid_global(npx,1,:,1)*90./pi
          else         
-<<<<<<< HEAD
-            write(*,*) 'PARENT GRID ', Atm%parent_grid%grid_number, Atm%parent_grid%tile
-=======
             write(*,*) 'PARENT GRID ', Atm%parent_grid%grid_number, Atm%parent_grid%global_tile
->>>>>>> rusty/master_test
             ic = p_ind(1,1,1) ; jc = p_ind(1,1,1)
             write(*,'(A, 2I5, 4F10.4)') 'SW CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
             ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,1)
@@ -2388,7 +1998,6 @@ contains
          z = -r * sin(lat)
 #endif
  end subroutine spherical_to_cartesian
-<<<<<<< HEAD
 
 !>@brief The subroutine 'rot_3d' rotates points on a sphere in xyz coordinates.
 !>@details Converts angle from degrees to radians if necessary
@@ -2402,26 +2011,6 @@ contains
          integer, intent(IN), optional :: convert !< if present convert input point
                                                   !! from spherical to cartesian, rotate, 
                                                   !! and convert back
-=======
- 
-!-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     rot_3d :: rotate points on a sphere in xyz coords (convert angle from
-!               degrees to radians if necessary)
-!
-      subroutine rot_3d(axis, x1in, y1in, z1in, angle, x2out, y2out, z2out, degrees, convert)
-
-         integer, intent(IN) :: axis         ! axis of rotation 1=x, 2=y, 3=z
-         real(kind=R_GRID) , intent(IN)    :: x1in, y1in, z1in
-         real(kind=R_GRID) , intent(INOUT) :: angle        ! angle to rotate in radians
-         real(kind=R_GRID) , intent(OUT)   :: x2out, y2out, z2out
-         integer, intent(IN), optional :: degrees ! if present convert angle 
-                                                  ! from degrees to radians
-         integer, intent(IN), optional :: convert ! if present convert input point
-                                                  ! from spherical to cartesian, rotate, 
-                                                  ! and convert back
->>>>>>> rusty/master_test
 
          real(kind=R_GRID)  :: c, s
          real(kind=R_GRID)  :: x1,y1,z1, x2,y2,z2
@@ -2472,7 +2061,6 @@ contains
 
 
 
-<<<<<<< HEAD
 !>brief The function 'get_area_tri' gets the surface area of a cell defined as a triangle
 !!on the sphere. 
 !>@details The area is computed as the spherical excess [area units are based on the units of radius]
@@ -2480,19 +2068,6 @@ contains
                         result (myarea)
  
       integer, intent(IN)    :: ndims          !< 2=lat/lon, 3=xyz
-=======
-
-
-      real(kind=R_GRID)  function get_area_tri(ndims, p_1, p_2, p_3) &
-                        result (myarea)
- 
-!     get_area_tri :: get the surface area of a cell defined as a triangle
-!                  on the sphere. Area is computed as the spherical excess
-!                  [area units are based on the units of radius]
- 
-
-      integer, intent(IN)    :: ndims          ! 2=lat/lon, 3=xyz
->>>>>>> rusty/master_test
       real(kind=R_GRID) , intent(IN)    :: p_1(ndims) ! 
       real(kind=R_GRID) , intent(IN)    :: p_2(ndims) ! 
       real(kind=R_GRID) , intent(IN)    :: p_3(ndims) ! 
@@ -2512,15 +2087,14 @@ contains
         myarea = (angA+angB+angC - pi) * radius**2
 
       end function get_area_tri
-<<<<<<< HEAD
 
 !>@brief The subroutine 'grid_area' gets the surface area on a grid in lat/lon or xyz coordinates.
 !>@details Determined by 'ndims' argument: 2=lat/lon, 3=xyz)
 !! The area is returned in m^2 on a unit sphere.
-      subroutine grid_area(nx, ny, ndims, nregions, nested, gridstruct, domain, bd, regional )
+      subroutine grid_area(nx, ny, ndims, nregions, bounded_domain, gridstruct, domain, bd )
         type(fv_grid_bounds_type), intent(IN) :: bd
         integer, intent(IN) :: nx, ny, ndims, nregions
-        logical, intent(IN) :: nested, regional
+        logical, intent(IN) :: bounded_domain
         type(fv_grid_type), intent(IN), target :: gridstruct
         type(domain2d), intent(INOUT) :: domain
 
@@ -2528,31 +2102,6 @@ contains
          real(kind=R_GRID)  :: p_uL(ndims) !< upper Left
          real(kind=R_GRID)  :: p_lR(ndims) !< lower Right
          real(kind=R_GRID)  :: p_uR(ndims) !< upper Right
-=======
-!
-! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
-!-------------------------------------------------------------------------------
-
-!-------------------------------------------------------------------------------
-! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!
-!     grid_area :: get surface area on grid in lat/lon coords or xyz coords
-!                    (determined by ndims argument 2=lat/lon, 3=xyz)
-!                    [area is returned in m^2 on Unit sphere]
-!
-      subroutine grid_area(nx, ny, ndims, nregions, bounded_domain, gridstruct, domain, bd )
-
-        type(fv_grid_bounds_type), intent(IN) :: bd
-        integer, intent(IN) :: nx, ny, ndims, nregions
-        logical, intent(IN) :: bounded_domain
-        type(fv_grid_type), intent(IN), target :: gridstruct
-        type(domain2d), intent(INOUT) :: domain
-
-         real(kind=R_GRID)  :: p_lL(ndims) ! lower Left
-         real(kind=R_GRID)  :: p_uL(ndims) ! upper Left
-         real(kind=R_GRID)  :: p_lR(ndims) ! lower Right
-         real(kind=R_GRID)  :: p_uR(ndims) ! upper Right
->>>>>>> rusty/master_test
          real(kind=R_GRID)  :: a1, d1, d2, mydx, mydy, globalarea
 
          real(kind=R_GRID)  :: p1(ndims), p2(ndims), p3(ndims), pi1(ndims), pi2(ndims)
@@ -2569,11 +2118,7 @@ contains
          real(kind=R_GRID),    pointer, dimension(:,:)   :: area, area_c
          
          integer :: is,  ie,  js,  je
-<<<<<<< HEAD
-         integer :: isd, ied, jsd, jed
-=======
          integer :: isd, ied, jsd, jed, ng
->>>>>>> rusty/master_test
 
          is  = bd%is
          ie  = bd%ie
@@ -2583,10 +2128,7 @@ contains
          ied = bd%ied
          jsd = bd%jsd
          jed = bd%jed
-<<<<<<< HEAD
-=======
          ng  = bd%ng
->>>>>>> rusty/master_test
 
          grid  => gridstruct%grid_64
          agrid => gridstruct%agrid_64
@@ -2598,11 +2140,7 @@ contains
          area   => gridstruct%area_64
          area_c => gridstruct%area_c_64
 
-<<<<<<< HEAD
-         if (nested .or. regional) nh = ng
-=======
          if (bounded_domain) nh = ng
->>>>>>> rusty/master_test
 
          maxarea = -1.e25
          minarea =  1.e25
@@ -2611,11 +2149,7 @@ contains
          do j=js-nh,je+nh
             do i=is-nh,ie+nh
                do n=1,ndims
-<<<<<<< HEAD
-               if ( gridstruct%stretched_grid .or. nested ) then
-=======
                if ( gridstruct%stretched_grid .or. bounded_domain ) then
->>>>>>> rusty/master_test
                   p_lL(n) = grid(i  ,j  ,n)
                   p_uL(n) = grid(i  ,j+1,n)
                   p_lR(n) = grid(i+1,j  ,n)
@@ -2671,11 +2205,7 @@ contains
         if (is_master()) write(*,209) 'GLOBAL AREA (m*m):', globalarea, ' IDEAL GLOBAL AREA (m*m):', 4.0*pi*radius**2
  209  format(A,e21.14,A,e21.14)
 
-<<<<<<< HEAD
-        if (nested .or. regional) then
-=======
         if (bounded_domain) then
->>>>>>> rusty/master_test
            nh = ng-1 !cannot get rarea_c on boundary directly
            area_c = 1.e30
         end if
@@ -2683,11 +2213,7 @@ contains
          do j=js-nh,je+nh+1
             do i=is-nh,ie+nh+1
                do n=1,ndims
-<<<<<<< HEAD
-               if ( gridstruct%stretched_grid .or. nested ) then
-=======
                if ( gridstruct%stretched_grid .or. bounded_domain ) then
->>>>>>> rusty/master_test
                   p_lL(n) = agrid(i-1,j-1,n)
                   p_lR(n) = agrid(i  ,j-1,n)
                   p_uL(n) = agrid(i-1,j  ,n)
@@ -2705,11 +2231,7 @@ contains
          enddo
 
 ! Corners: assuming triangular cells
-<<<<<<< HEAD
-         if (gridstruct%cubed_sphere .and. .not. (nested .or. regional)) then
-=======
          if (gridstruct%cubed_sphere .and. .not. bounded_domain) then
->>>>>>> rusty/master_test
 ! SW:
             i=1
             j=1
@@ -2782,7 +2304,6 @@ contains
 
       end subroutine grid_area
 
-<<<<<<< HEAD
 !>@brief The function 'get_angle' gets the angle between 3 points on a sphere in lat/lon or
 !! xyz coordinates.
 !>@details Determined by the 'ndims' argument: 2=lat/lon, 3=xyz
@@ -2790,16 +2311,6 @@ contains
       real(kind=R_GRID)  function get_angle(ndims, p1, p2, p3, rad) result (angle)
 
          integer, intent(IN) :: ndims         !< 2=lat/lon, 3=xyz
-=======
-
-
-      real(kind=R_GRID)  function get_angle(ndims, p1, p2, p3, rad) result (angle)
-!     get_angle :: get angle between 3 points on a sphere in lat/lon coords or
-!                  xyz coords (determined by ndims argument 2=lat/lon, 3=xyz)
-!                  [angle is returned in degrees]
-
-         integer, intent(IN) :: ndims         ! 2=lat/lon, 3=xyz
->>>>>>> rusty/master_test
          real(kind=R_GRID) , intent(IN)   :: p1(ndims)
          real(kind=R_GRID) , intent(IN)   :: p2(ndims)
          real(kind=R_GRID) , intent(IN)   :: p3(ndims)
@@ -2824,26 +2335,13 @@ contains
 
       end function get_angle
  
-<<<<<<< HEAD
 !>@brief The subroutine 'mirror_grid' mirrors the grid across the 0-longitude line 
-=======
-
- 
-
-
->>>>>>> rusty/master_test
       subroutine mirror_grid(grid_global,ng,npx,npy,ndims,nregions)
          integer, intent(IN)    :: ng,npx,npy,ndims,nregions
          real(kind=R_GRID)   , intent(INOUT) :: grid_global(1-ng:npx  +ng,1-ng:npy  +ng,ndims,1:nregions)
          integer :: i,j,n,n1,n2,nreg
          real(kind=R_GRID) :: x1,y1,z1, x2,y2,z2, ang
-<<<<<<< HEAD
 
-=======
-!
-!    Mirror Across the 0-longitude
-!
->>>>>>> rusty/master_test
          nreg = 1
          do j=1,ceiling(npy/2.)
             do i=1,ceiling(npx/2.)
@@ -2969,11 +2467,5 @@ contains
 
   end subroutine mirror_grid
 
-<<<<<<< HEAD
-=======
-
-
-
->>>>>>> rusty/master_test
       end module fv_grid_tools_mod
 

@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
@@ -54,50 +53,15 @@ module nh_utils_mod
    use constants_mod,     only: rdgas, cp_air, grav
    use tp_core_mod,       only: fv_tp_2d
    use sw_core_mod,       only: fill_4corners, del6_vt_flux
-   use fv_arrays_mod,     only: fv_grid_bounds_type, fv_grid_type
+   use fv_arrays_mod,     only: fv_grid_bounds_type, fv_grid_type,fv_nest_BC_type_3d
 #ifdef MULTI_GASES
    use multi_gases_mod,  only:  vicpqd, vicvqd
 #endif
-=======
-!***********************************************************************
-!*                   GNU Lesser General Public License
-!*
-!* This file is part of the FV3 dynamical core.
-!*
-!* The FV3 dynamical core is free software: you can redistribute it
-!* and/or modify it under the terms of the
-!* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or
-!* (at your option) any later version.
-!*
-!* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-!* See the GNU General Public License for more details.
-!*
-!* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.
-!* If not, see <http://www.gnu.org/licenses/>.
-!***********************************************************************
-module nh_utils_mod
-! Developer: S.-J. Lin, NOAA/GFDL
-! To do list:
-! include moisture effect in pt
-!------------------------------
-   use constants_mod,     only: rdgas, cp_air, grav
-   use tp_core_mod,       only: fv_tp_2d
-   use sw_core_mod,       only: fill_4corners, del6_vt_flux
-   use fv_arrays_mod,     only: fv_grid_bounds_type, fv_grid_type, fv_nest_BC_type_3d
->>>>>>> rusty/master_test
 
    implicit none
    private
 
-<<<<<<< HEAD
-   public update_dz_c, update_dz_d, nest_halo_nh
-=======
    public update_dz_c, update_dz_d, nh_bc
->>>>>>> rusty/master_test
    public sim_solver, sim1_solver, sim3_solver
    public sim3p0_solver, rim_2d
    public Riem_Solver_c
@@ -248,11 +212,7 @@ CONTAINS
 
 
   subroutine update_dz_d(ndif, damp, hord, is, ie, js, je, km, ng, npx, npy, area, rarea,   &
-<<<<<<< HEAD
-                         dp0, zs, zh, crx, cry, xfx, yfx, delz, ws, rdt, gridstruct, bd, lim_fac, regional)
-=======
-                         dp0, zs, zh, crx, cry, xfx, yfx, ws, rdt, gridstruct, bd)
->>>>>>> rusty/master_test
+                         dp0, zs, zh, crx, cry, xfx, yfx, ws, rdt, gridstruct, bd, lim_fac)
 
   type(fv_grid_bounds_type), intent(IN) :: bd
   integer, intent(in):: is, ie, js, je, ng, km, npx, npy
@@ -265,19 +225,11 @@ CONTAINS
   integer, intent(inout):: ndif(km+1)
   real, intent(in   ) ::  zs(is-ng:ie+ng,js-ng:je+ng)
   real, intent(inout) ::  zh(is-ng:ie+ng,js-ng:je+ng,km+1)
-<<<<<<< HEAD
-  real, intent(  out) ::delz(is-ng:ie+ng,js-ng:je+ng,km)
-=======
->>>>>>> rusty/master_test
   real, intent(inout), dimension(is:ie+1,js-ng:je+ng,km):: crx, xfx
   real, intent(inout), dimension(is-ng:ie+ng,js:je+1,km):: cry, yfx
   real, intent(out)   :: ws(is:ie,js:je)
   type(fv_grid_type), intent(IN), target :: gridstruct
-<<<<<<< HEAD
   real, intent(in) :: lim_fac
-  logical,intent(in) :: regional
-=======
->>>>>>> rusty/master_test
 !-----------------------------------------------------
 ! Local array:
   real, dimension(is:   ie+1, js-ng:je+ng,km+1):: crx_adv, xfx_adv
@@ -313,11 +265,7 @@ CONTAINS
 
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,km,area,xfx_adv,yfx_adv, &
 !$OMP                                  damp,zh,crx_adv,cry_adv,npx,npy,hord,gridstruct,bd,  &
-<<<<<<< HEAD
-!$OMP                                  ndif,rarea,lim_fac,regional) &
-=======
-!$OMP                                  ndif,rarea) &
->>>>>>> rusty/master_test
+!$OMP                                  ndif,rarea,lim_fac) &
 !$OMP                          private(z2, fx2, fy2, ra_x, ra_y, fx, fy,wk2)
   do k=1,km+1
 
@@ -339,11 +287,7 @@ CONTAINS
         enddo
      enddo
      call fv_tp_2d(z2, crx_adv(is,jsd,k), cry_adv(isd,js,k), npx,  npy, hord, &
-<<<<<<< HEAD
-                  fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y, lim_fac, regional)
-=======
-                  fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y)
->>>>>>> rusty/master_test
+                  fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y, lim_fac)
      call del6_vt_flux(ndif(k), npx, npy, damp(k), z2, wk2, fx2, fy2, gridstruct, bd)
      do j=js,je
         do i=is,ie
@@ -353,11 +297,7 @@ CONTAINS
      enddo
    else
      call fv_tp_2d(zh(isd,jsd,k), crx_adv(is,jsd,k), cry_adv(isd,js,k), npx,  npy, hord, &
-<<<<<<< HEAD
-                   fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y, lim_fac, regional)
-=======
-                   fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y)
->>>>>>> rusty/master_test
+                   fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y, lim_fac)
      do j=js,je
         do i=is,ie
            zh(i,j,k) = (zh(i,j,k)*area(i,j)+fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))   &
@@ -385,7 +325,6 @@ CONTAINS
 
   end subroutine update_dz_d
 
-<<<<<<< HEAD
 
   subroutine Riem_Solver_c(ms,   dt,  is,   ie,   js, je, km,   ng,  &
                            akap, cappa, cp,  &
@@ -393,10 +332,6 @@ CONTAINS
                            kapad, &
 #endif
                            ptop, hs, w3,  pt, q_con, &
-=======
-  subroutine Riem_Solver_c(ms,   dt,  is,   ie,   js, je, km,   ng,  &
-                           akap, cappa, cp,  ptop, hs, w3,  pt, q_con, &
->>>>>>> rusty/master_test
                            delp, gz,  pef,  ws, p_fac, a_imp, scale_m)
 
    integer, intent(in):: is, ie, js, je, ng, km
@@ -405,12 +340,9 @@ CONTAINS
    real, intent(in):: ws(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, delp
    real, intent(in), dimension(is-ng:,js-ng:,1:):: q_con, cappa
-<<<<<<< HEAD
 #ifdef MULTI_GASES
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: kapad
 #endif
-=======
->>>>>>> rusty/master_test
    real, intent(in)::   hs(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: w3
 ! OUTPUT PARAMETERS 
@@ -419,12 +351,9 @@ CONTAINS
 ! Local:
   real, dimension(is-1:ie+1,km  ):: dm, dz2, w2, pm2, gm2, cp2
   real, dimension(is-1:ie+1,km+1):: pem, pe2, peg
-<<<<<<< HEAD
 #ifdef MULTI_GASES
   real, dimension(is-1:ie+1,km  ):: kapad2
 #endif
-=======
->>>>>>> rusty/master_test
   real gama, rgrav
   integer i, j, k
   integer is1, ie1
@@ -436,7 +365,6 @@ CONTAINS
    ie1 = ie + 1
 
 !$OMP parallel do default(none) shared(js,je,is1,ie1,km,delp,pef,ptop,gz,rgrav,w3,pt, &
-<<<<<<< HEAD
 #ifdef MULTI_GASES
 !$OMP                                  a_imp,dt,gama,akap,ws,p_fac,scale_m,ms,hs,q_con,cappa,kapad) &
 !$OMP                          private(cp2,gm2, dm, dz2, w2, pm2, pe2, pem, peg, kapad2)
@@ -444,10 +372,6 @@ CONTAINS
 !$OMP                                  a_imp,dt,gama,akap,ws,p_fac,scale_m,ms,hs,q_con,cappa) &
 !$OMP                          private(cp2,gm2, dm, dz2, w2, pm2, pe2, pem, peg)
 #endif
-=======
-!$OMP                                  a_imp,dt,gama,akap,ws,p_fac,scale_m,ms,hs,q_con,cappa) &
-!$OMP                          private(cp2,gm2, dm, dz2, w2, pm2, pe2, pem, peg)
->>>>>>> rusty/master_test
    do 2000 j=js-1, je+1
 
       do k=1,km
@@ -488,12 +412,9 @@ CONTAINS
 #else
             pm2(i,k) = dm(i,k)/log(pem(i,k+1)/pem(i,k))
 #endif
-<<<<<<< HEAD
 #ifdef MULTI_GASES
          kapad2(i,k) = kapad(i,j,k)
 #endif
-=======
->>>>>>> rusty/master_test
              dm(i,k) = dm(i,k) * rgrav
              w2(i,k) = w3(i,j,k)
          enddo
@@ -501,7 +422,6 @@ CONTAINS
 
 
       if ( a_imp < -0.01 ) then
-<<<<<<< HEAD
            call SIM3p0_solver(dt, is1, ie1, km, rdgas, gama, akap, &
 #ifdef MULTI_GASES
                               kapad2, &
@@ -525,18 +445,6 @@ CONTAINS
       endif
 
 
-=======
-           call SIM3p0_solver(dt, is1, ie1, km, rdgas, gama, akap, pe2, dm, &
-                              pem, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), p_fac, scale_m)
-      elseif ( a_imp <= 0.5 ) then
-           call RIM_2D(ms, dt, is1, ie1, km, rdgas, gama, gm2, pe2, &
-                       dm, pm2, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), .true.)
-      else
-           call SIM1_solver(dt, is1, ie1, km, rdgas, gama, gm2, cp2, akap, pe2,  &
-                            dm, pm2, pem, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), p_fac)
-      endif
-
->>>>>>> rusty/master_test
       do k=2,km+1
          do i=is1, ie1
             pef(i,j,k) = pe2(i,k) + pem(i,k)  ! add hydrostatic full-component
@@ -559,7 +467,6 @@ CONTAINS
   end subroutine Riem_Solver_c
 
 
-<<<<<<< HEAD
 !>GFDL - This routine will not give absoulte reproducibility when compiled with -fast-transcendentals.
 !! GFDL - It is now inside of nh_core.F90 and being compiled without -fast-transcendentals.
   subroutine Riem_Solver3test(ms, dt,   is,   ie,   js, je, km, ng,    &
@@ -567,12 +474,6 @@ CONTAINS
 #ifdef MULTI_GASES
                           kapad, &
 #endif
-=======
-!GFDL - This routine will not give absoulte reproducibility when compiled with -fast-transcendentals.
-!GFDL - It is now inside of nh_core.F90 and being compiled without -fast-transcendentals.
-  subroutine Riem_Solver3test(ms, dt,   is,   ie,   js, je, km, ng,    &
-                          isd, ied, jsd, jed, akap, cappa, cp,     &
->>>>>>> rusty/master_test
                           ptop, zs, q_con, w,  delz, pt,  &
                           delp, zh, pe, ppe, pk3, pk, peln, &
                           ws, scale_m,  p_fac, a_imp, &
@@ -592,33 +493,23 @@ CONTAINS
    real, intent(in):: ws(is:ie,js:je)
    real, intent(in), dimension(isd:,jsd:,1:):: q_con, cappa
    real, intent(in), dimension(isd:ied,jsd:jed,km):: delp, pt
-<<<<<<< HEAD
 #ifdef MULTI_GASES
    real, intent(in), dimension(isd:ied,jsd:jed,km):: kapad
 #endif
-=======
->>>>>>> rusty/master_test
    real, intent(inout), dimension(isd:ied,jsd:jed,km+1):: zh
    real, intent(inout), dimension(isd:ied,jsd:jed,km):: w
    real, intent(inout):: pe(is-1:ie+1,km+1,js-1:je+1)
    real, intent(out):: peln(is:ie,km+1,js:je)          ! ln(pe)
    real, intent(out), dimension(isd:ied,jsd:jed,km+1):: ppe
-<<<<<<< HEAD
-   real, intent(out):: delz(is-ng:ie+ng,js-ng:je+ng,km)
-=======
    real, intent(out):: delz(is:ie,js:je,km)
->>>>>>> rusty/master_test
    real, intent(out):: pk(is:ie,js:je,km+1)
    real, intent(out):: pk3(isd:ied,jsd:jed,km+1)
 ! Local:
   real, dimension(is:ie,km):: dm, dz2, pm2, w2, gm2, cp2
   real, dimension(is:ie,km+1)::pem, pe2, peln2, peg, pelng
-<<<<<<< HEAD
 #ifdef MULTI_GASES
   real, dimension(is:ie,km):: kapad2
 #endif
-=======
->>>>>>> rusty/master_test
   real gama, rgrav, ptk, peln1
   integer i, j, k
 
@@ -629,7 +520,6 @@ CONTAINS
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,delp,ptop,peln1,pk3,ptk,akap,rgrav,zh,pt, &
 !$OMP                                  w,a_imp,dt,gama,ws,p_fac,scale_m,ms,delz,last_call,  &
-<<<<<<< HEAD
 #ifdef MULTI_GASES
 !$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,kapad )          &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2,kapad2)
@@ -637,10 +527,6 @@ CONTAINS
 !$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con )          &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2)
 #endif
-=======
-!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con )          &
-!$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2)
->>>>>>> rusty/master_test
    do 2000 j=js, je
 
       do k=1,km
@@ -649,12 +535,9 @@ CONTAINS
 #ifdef MOIST_CAPPA
             cp2(i,k) = cappa(i,j,k)
 #endif
-<<<<<<< HEAD
 #ifdef MULTI_GASES
          kapad2(i,k) = kapad(i,j,k)
 #endif
-=======
->>>>>>> rusty/master_test
          enddo
       enddo
 
@@ -699,7 +582,6 @@ CONTAINS
          enddo
       enddo
 
-<<<<<<< HEAD
 
       if ( a_imp < -0.999 ) then
            call SIM3p0_solver(dt, is, ie, km, rdgas, gama, akap, &
@@ -735,30 +617,11 @@ CONTAINS
                            kapad2, &
 #endif
                            pe2, dm,  &
-=======
-      if ( a_imp < -0.999 ) then
-           call SIM3p0_solver(dt, is, ie, km, rdgas, gama, akap, pe2, dm,  &
-                              pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac, scale_m )
-      elseif ( a_imp < -0.5 ) then
-           call SIM3_solver(dt, is, ie, km, rdgas, gama, akap, pe2, dm,   &
-                        pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), abs(a_imp), p_fac, scale_m)
-      elseif ( a_imp <= 0.5 ) then
-           call RIM_2D(ms, dt, is, ie, km, rdgas, gama, gm2, pe2,   &
-                       dm, pm2, w2, dz2, pt(is:ie,j,1:km), ws(is,j), .false.)
-      elseif ( a_imp > 0.999 ) then
-           call SIM1_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, pe2, dm,   &
-                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac)
-      else
-           call SIM_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, pe2, dm,  &
->>>>>>> rusty/master_test
                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), &
                            a_imp, p_fac, scale_m)
       endif
 
-<<<<<<< HEAD
 
-=======
->>>>>>> rusty/master_test
       do k=1, km
          do i=is, ie
             w(i,j,k) = w2(i,k)
@@ -811,20 +674,11 @@ CONTAINS
 
   end subroutine Riem_Solver3test
 
-<<<<<<< HEAD
   subroutine imp_diff_w(j, is, ie, js, je, ng, km, cd, delz, ws, w, w3)
   integer, intent(in) :: j, is, ie, js, je, km, ng
   real, intent(in) :: cd
-  real, intent(in) :: delz(is-ng:ie+ng, km)  !< delta-height (m)
+  real, intent(in) :: delz(is:ie, km)  !< delta-height (m)
   real, intent(in) :: w(is:ie, km)  !< vertical vel. (m/s)
-=======
-
-  subroutine imp_diff_w(j, is, ie, js, je, ng, km, cd, delz, ws, w, w3)
-  integer, intent(in) :: j, is, ie, js, je, km, ng
-  real, intent(in) :: cd
-  real, intent(in) :: delz(is:ie, km)  ! delta-height (m)
-  real, intent(in) :: w(is:ie, km)  ! vertical vel. (m/s)
->>>>>>> rusty/master_test
   real, intent(in) :: ws(is:ie)
   real, intent(out) :: w3(is-ng:ie+ng,js-ng:je+ng,km)
 ! Local:
@@ -883,16 +737,11 @@ CONTAINS
   end subroutine imp_diff_w
 
 
-<<<<<<< HEAD
   subroutine RIM_2D(ms, bdt, is, ie, km, rgas, gama, gm2, &
 #ifdef MULTI_GASES
                     kapad2, &
 #endif
                     pe2, dm2, pm2, w2, dz2, pt2, ws, c_core )
-=======
-  subroutine RIM_2D(ms, bdt, is, ie, km, rgas, gama, gm2, pe2, &
-                    dm2, pm2, w2, dz2, pt2, ws, c_core )
->>>>>>> rusty/master_test
 
   integer, intent(in):: ms, is, ie, km
   real,    intent(in):: bdt, gama, rgas
@@ -904,12 +753,9 @@ CONTAINS
   real, intent(inout):: dz2(is:ie,km)
   real, intent(inout)::  w2(is:ie,km)
   real, intent(out  ):: pe2(is:ie,km+1)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
    real, intent(inout), dimension(is:ie,km):: kapad2
 #endif
-=======
->>>>>>> rusty/master_test
 ! Local:
   real:: ws2(is:ie)
   real, dimension(km+1):: m_bot, m_top, r_bot, r_top, pe1, pbar, wbar
@@ -917,12 +763,9 @@ CONTAINS
   real, dimension(km):: pf1, wc, cm , pp, pt1
   real:: dt, rdt, grg, z_frac, ptmp1, rden, pf, time_left
   real:: m_surf
-<<<<<<< HEAD
 #ifdef MULTI_GASES
    real  gamax
 #endif
-=======
->>>>>>> rusty/master_test
   integer:: i, k, n, ke, kt1, ktop
   integer:: ks0, ks1
 
@@ -959,16 +802,12 @@ CONTAINS
 !           dts(k) = -dz(k)/sqrt(gm2(i,k)*rgas*pf1(k)/rden)
             dts(k) = -dz(k)/sqrt(grg*pf1(k)/rden)
 #else
-<<<<<<< HEAD
 #ifdef MULTI_GASES
             gamax = 1./(1.-kapad2(i,k))
             pf1(k) = exp( gamax*log(rden*pt1(k)) )
 #else
             pf1(k) = exp( gama*log(rden*pt1(k)) )
 #endif
-=======
-            pf1(k) = exp( gama*log(rden*pt1(k)) )
->>>>>>> rusty/master_test
             dts(k) = -dz(k)/sqrt(grg*pf1(k)/rden)
 #endif
             if ( bdt > dts(k) ) then
@@ -1034,16 +873,12 @@ CONTAINS
 !     dts(k) = -dz(k) /  sqrt( gm2(i,k)*rgas*pf/rden )
       dts(k) = -dz(k) /  sqrt( grg*pf/rden )
 #else
-<<<<<<< HEAD
 #ifdef MULTI_GASES
           gamax = 1./(1.-kapad2(i,k))
           pf = exp( gamax*log(rden*pt1(k)) )
 #else
           pf = exp( gama*log(rden*pt1(k)) )
 #endif
-=======
-          pf = exp( gama*log(rden*pt1(k)) )
->>>>>>> rusty/master_test
       dts(k) = -dz(k) /  sqrt( grg*pf/rden )
 #endif
        ptmp1 = dts(k)*(pf - pm2(i,k))
@@ -1166,15 +1001,11 @@ CONTAINS
 
  end subroutine RIM_2D
 
-<<<<<<< HEAD
  subroutine SIM3_solver(dt,  is,  ie, km, rgas, gama, kappa, &
 #ifdef MULTI_GASES
                         kapad2, &
 #endif
                         pe2, dm,   &
-=======
- subroutine SIM3_solver(dt,  is,  ie, km, rgas, gama, kappa, pe2, dm,   &
->>>>>>> rusty/master_test
                         pem, w2, dz2, pt2, ws, alpha, p_fac, scale_m)
    integer, intent(in):: is, ie, km
    real, intent(in):: dt, rgas, gama, kappa, alpha, p_fac, scale_m
@@ -1183,23 +1014,17 @@ CONTAINS
    real, intent(in ), dimension(is:ie,km+1):: pem
    real, intent(out):: pe2(is:ie,km+1)
    real, intent(inout), dimension(is:ie,km):: dz2, w2
-<<<<<<< HEAD
 #ifdef MULTI_GASES
    real, intent(inout), dimension(is:ie,km):: kapad2
 #endif
-=======
->>>>>>> rusty/master_test
 ! Local
    real, dimension(is:ie,km  ):: aa, bb, dd, w1, wk, g_rat, gam
    real, dimension(is:ie,km+1):: pp
    real, dimension(is:ie):: p1, wk1, bet
    real  beta, t2, t1g, rdt, ra, capa1, r2g, r6g
-<<<<<<< HEAD
 #ifdef MULTI_GASES
    real  gamax, capa1x, t1gx
 #endif
-=======
->>>>>>> rusty/master_test
    integer i, k
 
     beta = 1. - alpha
@@ -1216,16 +1041,12 @@ CONTAINS
       do i=is, ie
          w1(i,k) = w2(i,k)
 ! Full pressure at center
-<<<<<<< HEAD
 #ifdef MULTI_GASES
          gamax = 1. / (1.-kapad2(i,k))
          aa(i,k) = exp(gamax*log(-dm(i,k)/dz2(i,k)*rgas*pt2(i,k)))
 #else
          aa(i,k) = exp(gama*log(-dm(i,k)/dz2(i,k)*rgas*pt2(i,k)))
 #endif
-=======
-         aa(i,k) = exp(gama*log(-dm(i,k)/dz2(i,k)*rgas*pt2(i,k)))
->>>>>>> rusty/master_test
       enddo
    enddo
 
@@ -1272,7 +1093,6 @@ CONTAINS
 
     do k=2, km
        do i=is, ie
-<<<<<<< HEAD
 #ifdef MULTI_GASES
           gamax = 1./(1.-kapad2(i,k))
           t1gx = gamax*2.*(alpha*dt)**2
@@ -1280,9 +1100,6 @@ CONTAINS
 #else
           aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k))*pe2(i,k)
 #endif
-=======
-          aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k))*pe2(i,k)
->>>>>>> rusty/master_test
           wk(i,k) = t2*aa(i,k)*(w1(i,k-1)-w1(i,k))
           aa(i,k) = aa(i,k) - scale_m*dm(i,1)
        enddo
@@ -1300,7 +1117,6 @@ CONTAINS
        enddo
     enddo
     do i=is, ie
-<<<<<<< HEAD
 #ifdef MULTI_GASES
           gamax = 1./(1.-kapad2(i,km))
           t1gx = gamax*2.*(alpha*dt)**2
@@ -1308,9 +1124,6 @@ CONTAINS
 #else
           wk1(i) = t1g/dz2(i,km)*pe2(i,km+1)
 #endif
-=======
-          wk1(i) = t1g/dz2(i,km)*pe2(i,km+1)
->>>>>>> rusty/master_test
        gam(i,km) = aa(i,km) / bet(i)
           bet(i) =  dm(i,km) - (aa(i,km)+wk1(i) + aa(i,km)*gam(i,km))
         w2(i,km) = (dm(i,km)*w1(i,km)+dt*(pp(i,km+1)-pp(i,km))-wk(i,km) +  &
@@ -1346,31 +1159,23 @@ CONTAINS
     do i=is, ie
 ! Recover cell-averaged pressure
            p1(i) = (pe2(i,km)+ 2.*pe2(i,km+1))*r3 - r6g*dm(i,km)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
        capa1x = kapad2(i,km) - 1.
        dz2(i,km) = -dm(i,km)*rgas*pt2(i,km)*exp( capa1x*log(p1(i)) )
 #else
        dz2(i,km) = -dm(i,km)*rgas*pt2(i,km)*exp( capa1*log(p1(i)) )
 #endif
-=======
-       dz2(i,km) = -dm(i,km)*rgas*pt2(i,km)*exp( capa1*log(p1(i)) )
->>>>>>> rusty/master_test
     enddo
 
     do k=km-1, 1, -1
        do i=is, ie
              p1(i) = (pe2(i,k)+bb(i,k)*pe2(i,k+1)+g_rat(i,k)*pe2(i,k+2))*r3 - g_rat(i,k)*p1(i)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
           capa1x = kapad2(i,k) - 1.
           dz2(i,k) = -dm(i,k)*rgas*pt2(i,k)*exp( capa1x*log(p1(i)) )
 #else
           dz2(i,k) = -dm(i,k)*rgas*pt2(i,k)*exp( capa1*log(p1(i)) )
 #endif
-=======
-          dz2(i,k) = -dm(i,k)*rgas*pt2(i,k)*exp( capa1*log(p1(i)) )
->>>>>>> rusty/master_test
        enddo
     enddo
 
@@ -1383,15 +1188,11 @@ CONTAINS
 
  end subroutine SIM3_solver
 
-<<<<<<< HEAD
  subroutine SIM3p0_solver(dt,  is,  ie, km, rgas, gama, kappa, &
 #ifdef MULTI_GASES
                           kapad2, &
 #endif
                           pe2, dm, &
-=======
- subroutine SIM3p0_solver(dt,  is,  ie, km, rgas, gama, kappa, pe2, dm, &
->>>>>>> rusty/master_test
                           pem, w2, dz2, pt2, ws, p_fac, scale_m)
 ! Sa SIM3, but for beta==0
    integer, intent(in):: is, ie, km
@@ -1401,23 +1202,17 @@ CONTAINS
    real, intent(in ):: pem(is:ie,km+1)
    real, intent(out):: pe2(is:ie,km+1)
    real, intent(inout), dimension(is:ie,km):: dz2, w2
-<<<<<<< HEAD
 #ifdef MULTI_GASES
    real, intent(inout), dimension(is:ie,km):: kapad2
 #endif
-=======
->>>>>>> rusty/master_test
 ! Local
    real, dimension(is:ie,km  ):: aa, bb, dd, w1, g_rat, gam
    real, dimension(is:ie,km+1):: pp
    real, dimension(is:ie):: p1, wk1, bet
    real  t1g, rdt, capa1, r2g, r6g
-<<<<<<< HEAD
 #ifdef MULTI_GASES
    real  gamax, capa1x, t1gx
 #endif
-=======
->>>>>>> rusty/master_test
    integer i, k
 
      t1g = 2.*gama*dt**2
@@ -1430,16 +1225,12 @@ CONTAINS
       do i=is, ie
          w1(i,k) = w2(i,k)
 ! Full pressure at center
-<<<<<<< HEAD
 #ifdef MULTI_GASES
          gamax = 1. / ( 1. - kapad2(i,k) )
          aa(i,k) = exp(gamax*log(-dm(i,k)/dz2(i,k)*rgas*pt2(i,k)))
 #else
          aa(i,k) = exp(gama*log(-dm(i,k)/dz2(i,k)*rgas*pt2(i,k)))
 #endif
-=======
-         aa(i,k) = exp(gama*log(-dm(i,k)/dz2(i,k)*rgas*pt2(i,k)))
->>>>>>> rusty/master_test
       enddo
    enddo
 
@@ -1486,7 +1277,6 @@ CONTAINS
 
     do k=2, km
        do i=is, ie
-<<<<<<< HEAD
 #ifdef MULTI_GASES
           gamax = 1. / (1.-kapad2(i,k))
           t1gx =  2.*gamax*dt**2
@@ -1494,9 +1284,6 @@ CONTAINS
 #else
           aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k))*pe2(i,k) - scale_m*dm(i,1)
 #endif
-=======
-          aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k))*pe2(i,k) - scale_m*dm(i,1)
->>>>>>> rusty/master_test
        enddo
     enddo
     do i=is, ie
@@ -1511,7 +1298,6 @@ CONTAINS
        enddo
     enddo
     do i=is, ie
-<<<<<<< HEAD
 #ifdef MULTI_GASES
           gamax = 1. / (1.-kapad2(i,km))
           t1gx =  2.*gamax*dt**2
@@ -1519,9 +1305,6 @@ CONTAINS
 #else
           wk1(i) = t1g/dz2(i,km)*pe2(i,km+1)
 #endif
-=======
-          wk1(i) = t1g/dz2(i,km)*pe2(i,km+1)
->>>>>>> rusty/master_test
        gam(i,km) = aa(i,km) / bet(i)
           bet(i) =  dm(i,km) - (aa(i,km)+wk1(i) + aa(i,km)*gam(i,km))
         w2(i,km) = (dm(i,km)*w1(i,km)+dt*(pp(i,km+1)-pp(i,km))-wk1(i)*ws(i) - &
@@ -1556,31 +1339,23 @@ CONTAINS
     do i=is, ie
 ! Recover cell-averaged pressure
            p1(i) = (pe2(i,km)+ 2.*pe2(i,km+1))*r3 - r6g*dm(i,km)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
        capa1x = kapad2(i,km) - 1.
        dz2(i,km) = -dm(i,km)*rgas*pt2(i,km)*exp( capa1x*log(p1(i)) )
 #else
        dz2(i,km) = -dm(i,km)*rgas*pt2(i,km)*exp( capa1*log(p1(i)) )
 #endif
-=======
-       dz2(i,km) = -dm(i,km)*rgas*pt2(i,km)*exp( capa1*log(p1(i)) )
->>>>>>> rusty/master_test
     enddo
 
     do k=km-1, 1, -1
        do i=is, ie
              p1(i) = (pe2(i,k)+bb(i,k)*pe2(i,k+1)+g_rat(i,k)*pe2(i,k+2))*r3-g_rat(i,k)*p1(i)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
           capa1x = kapad2(i,k) - 1.
           dz2(i,k) = -dm(i,k)*rgas*pt2(i,k)*exp( capa1x*log(p1(i)) )
 #else
           dz2(i,k) = -dm(i,k)*rgas*pt2(i,k)*exp( capa1*log(p1(i)) )
 #endif
-=======
-          dz2(i,k) = -dm(i,k)*rgas*pt2(i,k)*exp( capa1*log(p1(i)) )
->>>>>>> rusty/master_test
        enddo
     enddo
 
@@ -1593,15 +1368,11 @@ CONTAINS
  end subroutine SIM3p0_solver
 
 
-<<<<<<< HEAD
  subroutine SIM1_solver(dt,  is,  ie, km, rgas, gama, gm2, cp2, kappa, &
 #ifdef MULTI_GASES
                         kapad2, &
 #endif
                         pe, dm2,   &
-=======
- subroutine SIM1_solver(dt,  is,  ie, km, rgas, gama, gm2, cp2, kappa, pe, dm2,   &
->>>>>>> rusty/master_test
                         pm2, pem, w2, dz2, pt2, ws, p_fac)
    integer, intent(in):: is, ie, km
    real,    intent(in):: dt, rgas, gama, kappa, p_fac
@@ -1610,23 +1381,17 @@ CONTAINS
    real, intent(in ), dimension(is:ie,km+1):: pem
    real, intent(out)::  pe(is:ie,km+1)
    real, intent(inout), dimension(is:ie,km):: dz2, w2
-<<<<<<< HEAD
 #ifdef MULTI_GASES
    real, intent(inout), dimension(is:ie,km):: kapad2
 #endif
-=======
->>>>>>> rusty/master_test
 ! Local
    real, dimension(is:ie,km  ):: aa, bb, dd, w1, g_rat, gam
    real, dimension(is:ie,km+1):: pp
    real, dimension(is:ie):: p1, bet
    real t1g, rdt, capa1
-<<<<<<< HEAD
 #ifdef MULTI_GASES
    real  gamax, capa1x, t1gx
 #endif
-=======
->>>>>>> rusty/master_test
    integer i, k
 
 #ifdef MOIST_CAPPA
@@ -1642,7 +1407,6 @@ CONTAINS
 #ifdef MOIST_CAPPA
           pe(i,k) = exp(gm2(i,k)*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
 #else
-<<<<<<< HEAD
 #ifdef MULTI_GASES
           gamax = 1. / ( 1. - kapad2(i,k) )
           pe(i,k) = exp(gamax*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
@@ -1650,10 +1414,6 @@ CONTAINS
           pe(i,k) = exp(gama*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
 #endif
 #endif
-=======
-          pe(i,k) = exp(gama*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
-#endif
->>>>>>> rusty/master_test
           w1(i,k) = w2(i,k)
        enddo
     enddo
@@ -1694,7 +1454,6 @@ CONTAINS
 #ifdef MOIST_CAPPA
           aa(i,k) = t1g*0.5*(gm2(i,k-1)+gm2(i,k))/(dz2(i,k-1)+dz2(i,k)) * (pem(i,k)+pp(i,k))
 #else
-<<<<<<< HEAD
 #ifdef MULTI_GASES
           gamax = 1./(1.-kapad2(i,k))
           t1gx = gamax * 2.*dt*dt
@@ -1703,10 +1462,6 @@ CONTAINS
           aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k)) * (pem(i,k)+pp(i,k))
 #endif
 #endif
-=======
-          aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k)) * (pem(i,k)+pp(i,k))
-#endif
->>>>>>> rusty/master_test
        enddo
     enddo
     do i=is, ie
@@ -1724,7 +1479,6 @@ CONTAINS
 #ifdef MOIST_CAPPA
            p1(i) = t1g*gm2(i,km)/dz2(i,km)*(pem(i,km+1)+pp(i,km+1))
 #else
-<<<<<<< HEAD
 #ifdef MULTI_GASES
            gamax = 1./(1.-kapad2(i,km))
            t1gx = gamax * 2.*dt*dt
@@ -1733,10 +1487,6 @@ CONTAINS
            p1(i) = t1g/dz2(i,km)*(pem(i,km+1)+pp(i,km+1))
 #endif
 #endif
-=======
-           p1(i) = t1g/dz2(i,km)*(pem(i,km+1)+pp(i,km+1))
-#endif
->>>>>>> rusty/master_test
        gam(i,km) = aa(i,km) / bet(i)
           bet(i) =  dm2(i,km) - (aa(i,km)+p1(i) + aa(i,km)*gam(i,km))
         w2(i,km) = (dm2(i,km)*w1(i,km)+dt*(pp(i,km+1)-pp(i,km))-p1(i)*ws(i)-aa(i,km)*w2(i,km-1))/bet(i)
@@ -1761,7 +1511,6 @@ CONTAINS
 #ifdef MOIST_CAPPA
        dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp((cp2(i,km)-1.)*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
 #else
-<<<<<<< HEAD
 #ifdef MULTI_GASES
        capa1x = kapad2(i,km)-1.
        dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp(capa1x*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
@@ -1769,10 +1518,6 @@ CONTAINS
        dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp(capa1*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
 #endif
 #endif
-=======
-       dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp(capa1*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
-#endif
->>>>>>> rusty/master_test
     enddo
 
     do k=km-1, 1, -1
@@ -1780,7 +1525,6 @@ CONTAINS
           p1(i) = (pe(i,k) + bb(i,k)*pe(i,k+1) + g_rat(i,k)*pe(i,k+2))*r3 - g_rat(i,k)*p1(i)
 #ifdef MOIST_CAPPA
           dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp((cp2(i,k)-1.)*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
-<<<<<<< HEAD
       
 #else
 #ifdef MULTI_GASES
@@ -1790,25 +1534,16 @@ CONTAINS
           dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp(capa1*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
 #endif
 #endif
-=======
-#else
-          dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp(capa1*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
-#endif
->>>>>>> rusty/master_test
        enddo
     enddo
 
  end subroutine SIM1_solver
 
-<<<<<<< HEAD
  subroutine SIM_solver(dt,  is,  ie, km, rgas, gama, gm2, cp2, kappa,  &
 #ifdef MULTI_GASES
                        kapad2, &
 #endif
                        pe2, dm2,   &
-=======
- subroutine SIM_solver(dt,  is,  ie, km, rgas, gama, gm2, cp2, kappa, pe2, dm2,   &
->>>>>>> rusty/master_test
                        pm2, pem, w2, dz2, pt2, ws, alpha, p_fac, scale_m)
    integer, intent(in):: is, ie, km
    real, intent(in):: dt, rgas, gama, kappa, p_fac, alpha, scale_m
@@ -1817,23 +1552,17 @@ CONTAINS
    real, intent(in ), dimension(is:ie,km+1):: pem
    real, intent(out):: pe2(is:ie,km+1)
    real, intent(inout), dimension(is:ie,km):: dz2, w2
-<<<<<<< HEAD
 #ifdef MULTI_GASES
    real, intent(inout), dimension(is:ie,km):: kapad2
 #endif
-=======
->>>>>>> rusty/master_test
 ! Local
    real, dimension(is:ie,km  ):: aa, bb, dd, w1, wk, g_rat, gam
    real, dimension(is:ie,km+1):: pp
    real, dimension(is:ie):: p1, wk1, bet
    real  beta, t2, t1g, rdt, ra, capa1
-<<<<<<< HEAD
 #ifdef MULTI_GASES
    real  gamax, capa1x, t1gx
 #endif
-=======
->>>>>>> rusty/master_test
    integer i, k
 
     beta = 1. - alpha
@@ -1854,7 +1583,6 @@ CONTAINS
 #ifdef MOIST_CAPPA
          pe2(i,k) = exp(gm2(i,k)*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
 #else
-<<<<<<< HEAD
 #ifdef MULTI_GASES
          gamax = 1./(1.-kapad2(i,k))
          pe2(i,k) = exp(gamax*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
@@ -1862,10 +1590,6 @@ CONTAINS
          pe2(i,k) = exp(gama*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
 #endif
 #endif
-=======
-         pe2(i,k) = exp(gama*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
-#endif
->>>>>>> rusty/master_test
       enddo
    enddo
 
@@ -1911,7 +1635,6 @@ CONTAINS
 #ifdef MOIST_CAPPA
           aa(i,k) = t1g*0.5*(gm2(i,k-1)+gm2(i,k))/(dz2(i,k-1)+dz2(i,k))*pe2(i,k)
 #else
-<<<<<<< HEAD
 #ifdef MULTI_GASES
           gamax = 1./(1.-kapad2(i,k))
           t1gx = 2.*gamax*(alpha*dt)**2
@@ -1920,10 +1643,6 @@ CONTAINS
           aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k))*pe2(i,k)
 #endif
 #endif
-=======
-          aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k))*pe2(i,k)
-#endif
->>>>>>> rusty/master_test
           wk(i,k) = t2*aa(i,k)*(w1(i,k-1)-w1(i,k))
           aa(i,k) = aa(i,k) - scale_m*dm2(i,1)
        enddo
@@ -1947,7 +1666,6 @@ CONTAINS
 #ifdef MOIST_CAPPA
           wk1(i) = t1g*gm2(i,km)/dz2(i,km)*pe2(i,km+1)
 #else
-<<<<<<< HEAD
 #ifdef MULTI_GASES
           gamax = 1./(1.-kapad2(i,km))
           t1gx = 2.*gamax*(alpha*dt)**2
@@ -1956,10 +1674,6 @@ CONTAINS
           wk1(i) = t1g/dz2(i,km)*pe2(i,km+1)
 #endif
 #endif
-=======
-          wk1(i) = t1g/dz2(i,km)*pe2(i,km+1)
-#endif
->>>>>>> rusty/master_test
        gam(i,km) = aa(i,km) / bet(i)
           bet(i) =  dm2(i,km) - (aa(i,km)+wk1(i) + aa(i,km)*gam(i,km))
         w2(i,km) = (dm2(i,km)*w1(i,km) + dt*(pp(i,km+1)-pp(i,km)) - wk(i,km) +  &
@@ -1986,7 +1700,6 @@ CONTAINS
 #ifdef MOIST_CAPPA
        dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp((cp2(i,km)-1.)*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
 #else
-<<<<<<< HEAD
 #ifdef MULTI_GASES
        capa1x = kapad2(i,km)-1.
        dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp(capa1x*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
@@ -1994,10 +1707,6 @@ CONTAINS
        dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp(capa1*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
 #endif
 #endif
-=======
-       dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp(capa1*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
-#endif
->>>>>>> rusty/master_test
     enddo
 
     do k=km-1, 1, -1
@@ -2007,7 +1716,6 @@ CONTAINS
 #ifdef MOIST_CAPPA
           dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp((cp2(i,k)-1.)*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
 #else
-<<<<<<< HEAD
 #ifdef MULTI_GASES
           capa1x = kapad2(i,k)-1.
           dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp(capa1x*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
@@ -2015,10 +1723,6 @@ CONTAINS
           dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp(capa1*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
 #endif
 #endif
-=======
-          dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp(capa1*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
-#endif
->>>>>>> rusty/master_test
        enddo
     enddo
 
@@ -2189,15 +1893,8 @@ CONTAINS
 
  end subroutine edge_profile
 
-<<<<<<< HEAD
- subroutine nest_halo_nh(ptop, grav, kappa, cp, delp, delz, pt, phis, &
-#ifdef MULTI_GASES
-      q ,    &
-#endif
-=======
 !TODO LMH 25may18: do not need delz defined on full compute domain; pass appropriate BCs instead
  subroutine nh_bc(ptop, grav, kappa, cp, delp, delzBC, pt, phis, &
->>>>>>> rusty/master_test
 #ifdef USE_COND
       q_con, &
 #ifdef MOIST_CAPPA
@@ -2205,21 +1902,6 @@ CONTAINS
 #endif
 #endif
       pkc, gz, pk3, &
-<<<<<<< HEAD
-      npx, npy, npz, nested, pkc_pertn, computepk3, fullhalo, bd, regional)
-
-      !INPUT: delp, delz, pt
-      !OUTPUT: gz, pkc, pk3 (optional)
-      integer, intent(IN) :: npx, npy, npz
-      logical, intent(IN) :: pkc_pertn, computepk3, fullhalo, nested, regional
-      real, intent(IN) :: ptop, kappa, cp, grav
-      type(fv_grid_bounds_type), intent(IN) :: bd
-      real, intent(IN) :: phis(bd%isd:bd%ied,bd%jsd:bd%jed)
-      real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: pt, delp, delz
-#ifdef MULTI_GASES
-      real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz,*):: q
-#endif
-=======
       BC_step, BC_split, &
       npx, npy, npz, bounded_domain, pkc_pertn, computepk3, fullhalo, bd)
 
@@ -2232,7 +1914,6 @@ CONTAINS
       real, intent(IN) :: phis(bd%isd:bd%ied,bd%jsd:bd%jed)
       real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: pt, delp
       type(fv_nest_BC_type_3d), intent(IN) :: delzBC
->>>>>>> rusty/master_test
 #ifdef USE_COND
       real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: q_con
 #ifdef MOIST_CAPPA
@@ -2242,27 +1923,8 @@ CONTAINS
       real, intent(INOUT), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz+1):: gz, pkc, pk3
 
       integer :: i,j,k
-<<<<<<< HEAD
-      real :: gama !'gamma'
-      real :: ptk, rgrav, rkap, peln1, rdg
-
-      real, dimension(bd%isd:bd%ied, npz+1, bd%jsd:bd%jed ) :: pe, peln
-#ifdef USE_COND
-      real, dimension(bd%isd:bd%ied, npz+1 ) :: peg, pelng
-#endif
-      real, dimension(bd%isd:bd%ied, npz) :: gam, bb, dd, pkz
-      real, dimension(bd%isd:bd%ied, npz-1) :: g_rat
-      real, dimension(bd%isd:bd%ied) :: bet
-      real :: pm
-#ifdef MULTI_GASES
-      real gamax
-#endif
-
-      integer :: ifirst, ilast, jfirst, jlast
-=======
 
       integer :: istart, iend
->>>>>>> rusty/master_test
 
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
@@ -2276,144 +1938,6 @@ CONTAINS
       jsd = bd%jsd
       jed = bd%jed
 
-<<<<<<< HEAD
-      if (.not. (nested .or. regional)) return
-      ifirst = isd
-      jfirst = jsd
-      ilast = ied
-      jlast = jed
-
-      !Remember we want to compute these in the HALO. Note also this routine
-      !requires an appropriate
-
-      rgrav = 1./grav
-      gama = 1./(1.-kappa)
-      ptk = ptop ** kappa
-      rkap = 1./kappa
-      peln1 = log(ptop)
-      rdg = - rdgas * rgrav
-
-      !NOTE: Compiler does NOT like this sort of nested-grid BC code. Is it trying to do some ugly optimization?
-
-      if (is == 1) then
-
-         do j=jfirst,jlast
-
-            !GZ
-            do i=ifirst,0
-               gz(i,j,npz+1) = phis(i,j)
-            enddo
-            do k=npz,1,-1
-               do i=ifirst,0
-                  gz(i,j,k) = gz(i,j,k+1) - delz(i,j,k)*grav
-               enddo
-            enddo
-
-            !Hydrostatic interface pressure
-            do i=ifirst,0
-               pe(i,1,j) = ptop
-               peln(i,1,j) = peln1
-#ifdef USE_COND
-               peg(i,1) = ptop
-               pelng(i,1) = peln1
-#endif
-            enddo
-            do k=2,npz+1
-               do i=ifirst,0
-                  pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
-                  peln(i,k,j) = log(pe(i,k,j))
-#ifdef USE_COND
-                  peg(i,k) = peg(i,k-1) + delp(i,j,k-1)*(1.-q_con(i,j,k-1))
-                  pelng(i,k) = log(peg(i,k))
-#endif
-               enddo
-            enddo
-
-            !Perturbation nonhydro layer-mean pressure (NOT to the kappa)
-            do k=1,npz
-               do i=ifirst,0
-                  !Full p
-#ifdef MOIST_CAPPA
-                  pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
-#else
-#ifdef MULTI_GASES
-                  gamax = gama * (vicpqd(q(i,j,k,:))/vicvqd(q(i,j,k,:)))
-                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
-#else
-                  pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
-#endif
-#endif
-!                  !hydro
-#ifdef USE_COND
-                  pm = (peg(i,k+1)-peg(i,k))/(pelng(i,k+1)-pelng(i,k))
-#else
-                  pm = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
-#endif
-                  !Remove hydro cell-mean pressure
-                  pkz(i,k) = pkz(i,k) - pm
-               enddo
-            enddo
-
-            !pressure solver
-            do k=1,npz-1
-               do i=ifirst,0
-                  g_rat(i,k) = delp(i,j,k)/delp(i,j,k+1)
-                  bb(i,k) = 2.*(1. + g_rat(i,k))
-                  dd(i,k) = 3.*(pkz(i,k) + g_rat(i,k)*pkz(i,k+1))
-               enddo
-            enddo
-
-            do i=ifirst,0
-               bet(i) = bb(i,1)
-               pkc(i,j,1) = 0.
-               pkc(i,j,2) = dd(i,1)/bet(i)
-               bb(i,npz) = 2.
-               dd(i,npz) = 3.*pkz(i,npz)
-            enddo
-            do k=2,npz
-               do i=ifirst,0
-                  gam(i,k) = g_rat(i,k-1)/bet(i)
-                  bet(i) = bb(i,k) - gam(i,k)
-                  pkc(i,j,k+1) = (dd(i,k) - pkc(i,j,k))/bet(i)
-               enddo
-            enddo
-            do k=npz,2,-1
-               do i=ifirst,0
-                  pkc(i,j,k) = pkc(i,j,k) - gam(i,k)*pkc(i,j,k+1)
-#ifdef NHNEST_DEBUG
-                  if (abs(pkc(i,j,k)) > 1.e5) then
-                     print*, mpp_pe(), i,j,k, 'PKC: ', pkc(i,j,k)
-                  endif
-#endif
-               enddo
-            enddo
-
-         enddo
-
-         do j=jfirst,jlast
-
-            if (.not. pkc_pertn) then
-               do k=npz+1,1,-1
-                  do i=ifirst,0
-                     pkc(i,j,k) = pkc(i,j,k) + pe(i,k,j)
-                  enddo
-               enddo
-            endif
-
-            !pk3 if necessary; doesn't require condenstate loading calculation
-            if (computepk3) then
-               do i=ifirst,0
-                  pk3(i,j,1) = ptk
-               enddo
-               do k=2,npz+1
-                  do i=ifirst,0
-                     pk3(i,j,k) = exp(kappa*log(pe(i,k,j)))
-                  enddo
-               enddo
-            endif
-
-         enddo
-=======
       if (.not. bounded_domain) return
 
       if (is == 1) then
@@ -2428,373 +1952,11 @@ CONTAINS
               pkc, gz, pk3, &
               BC_step, BC_split, &
               pkc_pertn, computepk3, isd, ied, isd, 0, isd, 0, jsd, jed, jsd, jed, npz)
->>>>>>> rusty/master_test
 
       endif
 
       if (ie == npx-1) then
 
-<<<<<<< HEAD
-         do j=jfirst,jlast
-
-            !GZ
-            do i=npx,ilast
-               gz(i,j,npz+1) = phis(i,j)
-            enddo
-            do k=npz,1,-1
-               do i=npx,ilast
-                  gz(i,j,k) = gz(i,j,k+1) - delz(i,j,k)*grav
-               enddo
-            enddo
-
-            !Hydrostatic interface pressure
-            do i=npx,ilast
-               pe(i,1,j) = ptop
-               peln(i,1,j) = peln1
-#ifdef USE_COND
-               peg(i,1) = ptop
-               pelng(i,1) = peln1
-#endif
-            enddo
-            do k=2,npz+1
-               do i=npx,ilast
-                  pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
-                  peln(i,k,j) = log(pe(i,k,j))
-#ifdef USE_COND
-                  peg(i,k) = peg(i,k-1) + delp(i,j,k-1)*(1.-q_con(i,j,k-1))
-                  pelng(i,k) = log(peg(i,k))
-#endif
-               enddo
-            enddo
-
-            !Perturbation nonhydro layer-mean pressure (NOT to the kappa)
-            do k=1,npz
-               do i=npx,ilast
-                  !Full p
-#ifdef MOIST_CAPPA
-                  pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
-#else
-#ifdef MULTI_GASES
-                  gamax = gama * (vicpqd(q(i,j,k,:))/vicvqd(q(i,j,k,:)))
-                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
-#else
-                  pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
-#endif
-#endif
-                  !hydro
-#ifdef USE_COND
-                  pm = (peg(i,k+1)-peg(i,k))/(pelng(i,k+1)-pelng(i,k))
-#else
-                  pm = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
-#endif
-                  !Remove hydro cell-mean pressure
-                  pkz(i,k) = pkz(i,k) - pm
-               enddo
-            enddo
-
-            !pressure solver
-            do k=1,npz-1
-               do i=npx,ilast
-                  g_rat(i,k) = delp(i,j,k)/delp(i,j,k+1)
-                  bb(i,k) = 2.*(1. + g_rat(i,k))
-                  dd(i,k) = 3.*(pkz(i,k) + g_rat(i,k)*pkz(i,k+1))
-               enddo
-            enddo
-
-            do i=npx,ilast
-               bet(i) = bb(i,1)
-               pkc(i,j,1) = 0.
-               pkc(i,j,2) = dd(i,1)/bet(i)
-               bb(i,npz) = 2.
-               dd(i,npz) = 3.*pkz(i,npz)
-            enddo
-            do k=2,npz
-               do i=npx,ilast
-                  gam(i,k) = g_rat(i,k-1)/bet(i)
-                  bet(i) = bb(i,k) - gam(i,k)
-                  pkc(i,j,k+1) = (dd(i,k) - pkc(i,j,k))/bet(i)
-               enddo
-            enddo
-            do k=npz,2,-1
-               do i=npx,ilast
-                  pkc(i,j,k) = pkc(i,j,k) - gam(i,k)*pkc(i,j,k+1)
-               enddo
-            enddo
-
-
-         enddo
-
-         do j=jfirst,jlast
-
-            if (.not. pkc_pertn) then
-               do k=npz+1,1,-1
-                  do i=npx,ilast
-                     pkc(i,j,k) = pkc(i,j,k) + pe(i,k,j)
-                  enddo
-               enddo
-            endif
-
-            !pk3 if necessary
-            if (computepk3) then
-               do i=npx,ilast
-                  pk3(i,j,1) = ptk
-               enddo
-               do k=2,npz+1
-                  do i=npx,ilast
-                     pk3(i,j,k) = exp(kappa*log(pe(i,k,j)))
-                  enddo
-               enddo
-            endif
-
-         enddo
-
-      endif
-
-      if (js == 1) then
-
-         do j=jfirst,0
-
-            !GZ
-            do i=ifirst,ilast
-               gz(i,j,npz+1) = phis(i,j)
-            enddo
-            do k=npz,1,-1
-               do i=ifirst,ilast
-                  gz(i,j,k) = gz(i,j,k+1) - delz(i,j,k)*grav
-               enddo
-            enddo
-
-            !Hydrostatic interface pressure
-            do i=ifirst,ilast
-               pe(i,1,j) = ptop
-               peln(i,1,j) = peln1
-#ifdef USE_COND
-               peg(i,1) = ptop
-               pelng(i,1) = peln1
-#endif
-            enddo
-            do k=2,npz+1
-               do i=ifirst,ilast
-                  pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
-                  peln(i,k,j) = log(pe(i,k,j))
-#ifdef USE_COND
-                  peg(i,k) = peg(i,k-1) + delp(i,j,k-1)*(1.-q_con(i,j,k-1))
-                  pelng(i,k) = log(peg(i,k))
-#endif
-               enddo
-            enddo
-
-            !Perturbation nonhydro layer-mean pressure (NOT to the kappa)
-            do k=1,npz
-               do i=ifirst,ilast
-                  !Full p
-#ifdef MOIST_CAPPA
-                  pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
-#else
-#ifdef MULTI_GASES
-                  gamax = gama * (vicpqd(q(i,j,k,:))/vicvqd(q(i,j,k,:)))
-                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
-#else
-                  pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
-#endif
-#endif
-                  !hydro
-#ifdef USE_COND
-                  pm = (peg(i,k+1)-peg(i,k))/(pelng(i,k+1)-pelng(i,k))
-#else
-                  pm = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
-#endif
-                  !hydro
-                  pm = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
-                  !Remove hydro cell-mean pressure
-                  pkz(i,k) = pkz(i,k) - pm
-               enddo
-            enddo
-
-            !pressure solver
-            do k=1,npz-1
-               do i=ifirst,ilast
-                  g_rat(i,k) = delp(i,j,k)/delp(i,j,k+1)
-                  bb(i,k) = 2.*(1. + g_rat(i,k))
-                  dd(i,k) = 3.*(pkz(i,k) + g_rat(i,k)*pkz(i,k+1))
-               enddo
-            enddo
-
-            do i=ifirst,ilast
-               bet(i) = bb(i,1)
-               pkc(i,j,1) = 0.
-               pkc(i,j,2) = dd(i,1)/bet(i)
-               bb(i,npz) = 2.
-               dd(i,npz) = 3.*pkz(i,npz)
-            enddo
-            do k=2,npz
-               do i=ifirst,ilast
-                  gam(i,k) = g_rat(i,k-1)/bet(i)
-                  bet(i) = bb(i,k) - gam(i,k)
-                  pkc(i,j,k+1) = (dd(i,k) - pkc(i,j,k))/bet(i)
-               enddo
-            enddo
-            do k=npz,2,-1
-               do i=ifirst,ilast
-                  pkc(i,j,k) = pkc(i,j,k) - gam(i,k)*pkc(i,j,k+1)
-#ifdef NHNEST_DEBUG
-                  if (abs(pkc(i,j,k)) > 1.e5) then
-                     print*, mpp_pe(), i,j,k, 'PKC: ', pkc(i,j,k)
-                  endif
-#endif
-               enddo
-            enddo
-
-         enddo
-
-         do j=jfirst,0
-
-            if (.not. pkc_pertn) then
-               do k=npz+1,1,-1
-                  do i=ifirst,ilast
-                     pkc(i,j,k) = pkc(i,j,k) + pe(i,k,j)
-                  enddo
-               enddo
-            endif
-
-            !pk3 if necessary
-            if (computepk3) then
-               do i=ifirst,ilast
-                  pk3(i,j,1) = ptk
-               enddo
-               do k=2,npz+1
-                  do i=ifirst,ilast
-                     pk3(i,j,k) = exp(kappa*log(pe(i,k,j)))
-                  enddo
-               enddo
-            endif
-
-         enddo
-
-      endif
-
-      if (je == npy-1) then
-
-         do j=npy,jlast
-
-            !GZ
-            do i=ifirst,ilast
-               gz(i,j,npz+1) = phis(i,j)
-            enddo
-            do k=npz,1,-1
-               do i=ifirst,ilast
-                  gz(i,j,k) = gz(i,j,k+1) - delz(i,j,k)*grav
-               enddo
-            enddo
-
-            !Hydrostatic interface pressure
-            do i=ifirst,ilast
-               pe(i,1,j) = ptop
-               peln(i,1,j) = peln1
-#ifdef USE_COND
-               peg(i,1) = ptop
-               pelng(i,1) = peln1
-#endif
-            enddo
-            do k=2,npz+1
-               do i=ifirst,ilast
-                  pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
-                  peln(i,k,j) = log(pe(i,k,j))
-#ifdef USE_COND
-                  peg(i,k) = peg(i,k-1) + delp(i,j,k-1)*(1.-q_con(i,j,k-1))
-                  pelng(i,k) = log(peg(i,k))
-#endif
-               enddo
-            enddo
-
-            !Perturbation nonhydro layer-mean pressure (NOT to the kappa)
-            do k=1,npz
-               do i=ifirst,ilast
-                  !Full p
-#ifdef MOIST_CAPPA
-                  pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
-#else
-#ifdef MULTI_GASES
-                  gamax = gama * (vicpqd(q(i,j,k,:))/vicvqd(q(i,j,k,:)))
-                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
-#else
-                  pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
-#endif
-#endif
-                  !hydro
-#ifdef USE_COND
-                  pm = (peg(i,k+1)-peg(i,k))/(pelng(i,k+1)-pelng(i,k))
-#else
-                  pm = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
-#endif
-                  !hydro
-                  pm = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
-                  !Remove hydro cell-mean pressure
-                  pkz(i,k) = pkz(i,k) - pm
-               enddo
-            enddo
-
-            !Reversible interpolation on layer NH pressure perturbation
-            !                 to recover  lastge NH pressure perturbation
-            do k=1,npz-1
-               do i=ifirst,ilast
-                  g_rat(i,k) = delp(i,j,k)/delp(i,j,k+1)
-                  bb(i,k) = 2.*(1. + g_rat(i,k))
-                  dd(i,k) = 3.*(pkz(i,k) + g_rat(i,k)*pkz(i,k+1))
-               enddo
-            enddo
-
-            do i=ifirst,ilast
-               bet(i) = bb(i,1)
-               pkc(i,j,1) = 0.
-               pkc(i,j,2) = dd(i,1)/bet(i)
-               bb(i,npz) = 2.
-               dd(i,npz) = 3.*pkz(i,npz)
-            enddo
-            do k=2,npz
-               do i=ifirst,ilast
-                  gam(i,k) = g_rat(i,k-1)/bet(i)
-                  bet(i) = bb(i,k) - gam(i,k)
-                  pkc(i,j,k+1) = (dd(i,k) - pkc(i,j,k))/bet(i)
-               enddo
-            enddo
-            do k=npz,2,-1
-               do i=ifirst,ilast
-                  pkc(i,j,k) = pkc(i,j,k) - gam(i,k)*pkc(i,j,k+1)
-               enddo
-            enddo
-
-
-         enddo
-
-         do j=npy,jlast
-
-            if (.not. pkc_pertn) then
-               do k=npz+1,1,-1
-                  do i=ifirst,ilast
-                     pkc(i,j,k) = pkc(i,j,k) + pe(i,k,j)
-                  enddo
-               enddo
-            endif
-
-            !pk3 if necessary
-            if (computepk3) then
-               do i=ifirst,ilast
-                  pk3(i,j,1) = ptk
-               enddo
-               do k=2,npz+1
-                  do i=ifirst,ilast
-                     pk3(i,j,k) = exp(kappa*log(pe(i,k,j)))
-                  enddo
-               enddo
-            endif
-
-         enddo
-
-      endif
-
-end subroutine nest_halo_nh
-=======
          call nh_BC_k(ptop, grav, kappa, cp, delp, delzBC%east_t0, delzBC%east_t1, pt, phis, &
 #ifdef USE_COND
               q_con, &
@@ -3019,6 +2181,5 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
 
 end subroutine nh_BC_k
 
->>>>>>> rusty/master_test
 
 end module nh_utils_mod

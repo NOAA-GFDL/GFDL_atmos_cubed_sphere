@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
@@ -52,28 +51,6 @@
 !   </tr>
 ! </table>
 
-=======
-!***********************************************************************
-!*                   GNU Lesser General Public License
-!*
-!* This file is part of the FV3 dynamical core.
-!*
-!* The FV3 dynamical core is free software: you can redistribute it
-!* and/or modify it under the terms of the
-!* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or
-!* (at your option) any later version.
-!*
-!* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-!* See the GNU General Public License for more details.
-!*
-!* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.
-!* If not, see <http://www.gnu.org/licenses/>.
-!***********************************************************************
->>>>>>> rusty/master_test
 module fv_sg_mod
 
 !-----------------------------------------------------------------------
@@ -82,7 +59,6 @@ module fv_sg_mod
   use constants_mod,      only: rdgas, rvgas, cp_air, cp_vapor, hlv, hlf, kappa, grav
   use tracer_manager_mod, only: get_tracer_index
   use field_manager_mod,  only: MODEL_ATMOS
-<<<<<<< HEAD
 #ifndef GFS_PHYS
   use gfdl_cloud_microphys_mod, only: wqs1, wqs2, wqsat2_moist
 #endif
@@ -112,33 +88,6 @@ public  fv_subgrid_z, qsmith, neg_adj3, neg_adj2
   real, parameter:: hlf0 = 3.3358e5
 ! real, parameter:: hlv0 = 2.501e6   ! \cite emanuel1994atmospheri Appendix-2
 ! real, parameter:: hlf0 = 3.337e5   ! \cite emanuel1994atmospheri
-=======
-  use gfdl_cloud_microphys_mod, only: wqs1, wqs2, wqsat2_moist
-  use fv_mp_mod,          only: mp_reduce_min, is_master
-
-implicit none
-private
-
-public  fv_subgrid_z, qsmith, neg_adj3
-
-  real, parameter:: esl = 0.621971831
-  real, parameter:: tice = 273.16
-! real, parameter:: c_ice = 2106.  ! Emanuel table, page 566
-  real, parameter:: c_ice = 1972.  !  -15 C
-  real, parameter:: c_liq = 4.1855e+3    ! GFS
-! real, parameter:: c_liq = 4218.        ! ECMWF-IFS
-  real, parameter:: cv_vap = cp_vapor - rvgas  ! 1384.5
-  real, parameter:: c_con = c_ice
-
-! real, parameter:: dc_vap =  cp_vapor - c_liq   ! = -2368.
-  real, parameter:: dc_vap =  cv_vap - c_liq   ! = -2368.
-  real, parameter:: dc_ice =  c_liq - c_ice      ! = 2112.
-! Values at 0 Deg C
-  real, parameter:: hlv0 = 2.5e6
-  real, parameter:: hlf0 = 3.3358e5
-! real, parameter:: hlv0 = 2.501e6   ! Emanual Appendix-2
-! real, parameter:: hlf0 = 3.337e5   ! Emanual
->>>>>>> rusty/master_test
   real, parameter:: t_ice = 273.16
   real, parameter:: ri_max = 1.
   real, parameter:: ri_min = 0.25
@@ -146,17 +95,10 @@ public  fv_subgrid_z, qsmith, neg_adj3
   real, parameter:: t2_min = 165.
   real, parameter:: t2_max = 315.
   real, parameter:: t3_max = 325.
-<<<<<<< HEAD
   real, parameter:: Lv0 =  hlv0 - dc_vap*t_ice   !< = 3.147782e6
   real, parameter:: Li0 =  hlf0 - dc_ice*t_ice   !< = -2.431928e5 
 
   real, parameter:: zvir =  rvgas/rdgas - 1.     !< = 0.607789855
-=======
-  real, parameter:: Lv0 =  hlv0 - dc_vap*t_ice   ! = 3.147782e6
-  real, parameter:: Li0 =  hlf0 - dc_ice*t_ice   ! = -2.431928e5 
-
-  real, parameter:: zvir =  rvgas/rdgas - 1.     ! = 0.607789855
->>>>>>> rusty/master_test
   real, allocatable:: table(:),des(:)
   real:: lv00, d0_vap
 
@@ -164,13 +106,10 @@ contains
 
 
 #ifdef GFS_PHYS
-<<<<<<< HEAD
 !>@brief The subroutine 'fv_subgrid_z' performs dry convective adjustment mixing.
 !>@details Two different versions of this subroutine are implemented:
 !!-one for the GFS physics
 !!-one for the GFDL physics
-=======
->>>>>>> rusty/master_test
  subroutine fv_subgrid_z( isd, ied, jsd, jed, is, ie, js, je, km, nq, dt,    &
                          tau, nwat, delp, pe, peln, pkz, ta, qa, ua, va,  &
                          hydrostatic, w, delz, u_dt, v_dt, t_dt, k_bot )
@@ -178,21 +117,12 @@ contains
 !-------------------------------------------
       integer, intent(in):: is, ie, js, je, km, nq, nwat
       integer, intent(in):: isd, ied, jsd, jed
-<<<<<<< HEAD
       integer, intent(in):: tau         !< Relaxation time scale
       real, intent(in):: dt             !< model time step
       real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) 
       real, intent(in):: peln(is  :ie,  km+1,js  :je)
       real, intent(in):: delp(isd:ied,jsd:jed,km)      !< Delta p at each model level
-      real, intent(in):: delz(isd:,jsd:,1:)      !< Delta z at each model level
-=======
-      integer, intent(in):: tau         ! Relaxation time scale
-      real, intent(in):: dt             ! model time step
-      real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) 
-      real, intent(in):: peln(is  :ie,  km+1,js  :je)
-      real, intent(in):: delp(isd:ied,jsd:jed,km)      ! Delta p at each model level
-      real, intent(in):: delz(is:,js:,1:)      ! Delta z at each model level
->>>>>>> rusty/master_test
+      real, intent(in):: delz(is:,js:,1:)      !< Delta z at each model level
       real, intent(in)::  pkz(is:ie,js:je,km)
       logical, intent(in)::  hydrostatic
       integer, intent(in), optional:: k_bot
@@ -200,13 +130,8 @@ contains
       real, intent(inout):: ua(isd:ied,jsd:jed,km)
       real, intent(inout):: va(isd:ied,jsd:jed,km)
       real, intent(inout)::  w(isd:,jsd:,1:)
-<<<<<<< HEAD
       real, intent(inout):: ta(isd:ied,jsd:jed,km)      !< Temperature
       real, intent(inout):: qa(isd:ied,jsd:jed,km,nq)   !< Specific humidity & tracers
-=======
-      real, intent(inout):: ta(isd:ied,jsd:jed,km)      ! Temperature
-      real, intent(inout):: qa(isd:ied,jsd:jed,km,nq)   ! Specific humidity & tracers
->>>>>>> rusty/master_test
       real, intent(inout):: u_dt(isd:ied,jsd:jed,km) 
       real, intent(inout):: v_dt(isd:ied,jsd:jed,km) 
       real, intent(inout):: t_dt(is:ie,js:je,km) 
@@ -214,7 +139,6 @@ contains
       real, dimension(is:ie,km):: u0, v0, w0, t0, hd, te, gz, tvm, pm, den
       real q0(is:ie,km,nq), qcon(is:ie,km) 
       real, dimension(is:ie):: gzh, lcp2, icp2, cvm, cpm, qs
-<<<<<<< HEAD
 #ifdef MULTI_GASES
       real :: rkx, rdx, rzx, c_air
 #endif
@@ -222,12 +146,6 @@ contains
       real tv1, tv2, g2, h0, mc, fra, rk, rz, rdt, tvd, tv_surf
       real dh, dq, qsw, dqsdt, tcp3, t_max, t_min
       integer i, j, k, kk, n, m, iq, km1, im, kbot, l
-=======
-      real ri_ref, ri, pt1, pt2, ratio, tv, cv, tmp, q_liq, q_sol
-      real tv1, tv2, g2, h0, mc, fra, rk, rz, rdt, tvd, tv_surf
-      real dh, dq, qsw, dqsdt, tcp3, t_max, t_min
-      integer i, j, k, kk, n, m, iq, km1, im, kbot
->>>>>>> rusty/master_test
       real, parameter:: ustar2 = 1.E-4
       real:: cv_air, xvir
       integer :: sphum, liq_wat, rainwat, snowwat, graupel, ice_wat, cld_amt
@@ -284,7 +202,6 @@ contains
 !$OMP parallel do default(none) shared(im,is,ie,js,je,nq,kbot,qa,ta,sphum,ua,va,delp,peln,   &
 !$OMP                                  hydrostatic,pe,delz,g2,w,liq_wat,rainwat,ice_wat,     &
 !$OMP                                  snowwat,cv_air,m,graupel,pkz,rk,rz,fra, t_max, t_min, &
-<<<<<<< HEAD
 #ifdef MULTI_GASES
 !$OMP                                  u_dt,rdt,v_dt,xvir,nwat,km) &
 #else
@@ -295,11 +212,6 @@ contains
 #ifdef MULTI_GASES
 !$OMP                                  rkx,rdx,rzx,c_air,                                    &
 #endif
-=======
-!$OMP                                  u_dt,rdt,v_dt,xvir,nwat)                              &
-!$OMP                          private(kk,lcp2,icp2,tcp3,dh,dq,den,qs,qsw,dqsdt,qcon,q0,     &
-!$OMP                                  t0,u0,v0,w0,h0,pm,gzh,tvm,tmp,cpm,cvm,q_liq,q_sol,    &
->>>>>>> rusty/master_test
 !$OMP                                  tv,gz,hd,te,ratio,pt1,pt2,tv1,tv2,ri_ref, ri,mc,km1)
   do 1000 j=js,je  
 
@@ -314,15 +226,11 @@ contains
     do k=1,kbot
        do i=is,ie
           t0(i,k) = ta(i,j,k)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
           tvm(i,k) = t0(i,k)*virq(q0(i,k,:))
 #else
           tvm(i,k) = t0(i,k)*(1.+xvir*q0(i,k,sphum))
 #endif
-=======
-         tvm(i,k) = t0(i,k)*(1.+xvir*q0(i,k,sphum))
->>>>>>> rusty/master_test
           u0(i,k) = ua(i,j,k)
           v0(i,k) = va(i,j,k)
           pm(i,k) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
@@ -347,7 +255,6 @@ contains
        do k=kbot, 1, -1
        if ( nwat == 0 ) then
           do i=is,ie
-<<<<<<< HEAD
 #ifdef MULTI_GASES
              cpm(i) = cp_air*vicpqd(q0(i,k,:))
              cvm(i) = cv_air*vicvqd(q0(i,k,:))
@@ -427,39 +334,11 @@ contains
              cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
              cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
 #endif
-=======
-             cpm(i) = cp_air
-             cvm(i) = cv_air
-          enddo
-       elseif ( nwat==1 ) then
-          do i=is,ie
-             cpm(i) = (1.-q0(i,k,sphum))*cp_air + q0(i,k,sphum)*cp_vapor
-             cvm(i) = (1.-q0(i,k,sphum))*cv_air + q0(i,k,sphum)*cv_vap
-          enddo
-       elseif ( nwat==2 ) then   ! GFS
-          do i=is,ie
-             cpm(i) = (1.-q0(i,k,sphum))*cp_air + q0(i,k,sphum)*cp_vapor
-             cvm(i) = (1.-q0(i,k,sphum))*cv_air + q0(i,k,sphum)*cv_vap
-          enddo
-       elseif ( nwat==3 ) then
-          do i=is,ie
-             q_liq = q0(i,k,liq_wat) 
-             q_sol = q0(i,k,ice_wat)
-             cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
-             cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
-          enddo
-       elseif ( nwat==4 ) then
-          do i=is,ie
-             q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
-             cpm(i) = (1.-(q0(i,k,sphum)+q_liq))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq
-             cvm(i) = (1.-(q0(i,k,sphum)+q_liq))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq
->>>>>>> rusty/master_test
           enddo
        else
           do i=is,ie
              q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
              q_sol = q0(i,k,ice_wat) + q0(i,k,snowwat) + q0(i,k,graupel)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
              cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air*vicpqd(q0(i,k,:)) + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
              cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air*vicvqd(q0(i,k,:)) + q0(i,k,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
@@ -467,10 +346,6 @@ contains
              cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
              cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
 #endif
-=======
-             cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
-             cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
->>>>>>> rusty/master_test
           enddo
        endif
 
@@ -522,7 +397,6 @@ contains
    elseif ( nwat==4 ) then
       do k=1,kbot
          do i=is,ie
-<<<<<<< HEAD
 #ifndef CCPP
             qcon(i,k) = q0(i,k,liq_wat) + q0(i,k,rainwat)
 #else
@@ -534,9 +408,6 @@ contains
       do k=1,kbot
          do i=is,ie
             qcon(i,k) = q0(i,k,liq_wat)+q0(i,k,ice_wat)+q0(i,k,snowwat)+q0(i,k,rainwat)
-=======
-            qcon(i,k) = q0(i,k,liq_wat) + q0(i,k,rainwat)
->>>>>>> rusty/master_test
          enddo
       enddo
    else
@@ -552,7 +423,6 @@ contains
          do i=is,ie
 ! Richardson number = g*delz * del_theta/theta / (del_u**2 + del_v**2)
 ! Use exact form for "density temperature"
-<<<<<<< HEAD
 #ifdef MULTI_GASES
             tv1 = t0(i,km1)*virq_qpz(q0(i,km1,:),qcon(i,km1))
             tv2 = t0(i,k  )*virq_qpz(q0(i,k,  :),qcon(i,k  ))
@@ -560,10 +430,6 @@ contains
             tv1 = t0(i,km1)*(1.+xvir*q0(i,km1,sphum)-qcon(i,km1))
             tv2 = t0(i,k  )*(1.+xvir*q0(i,k  ,sphum)-qcon(i,k))
 #endif
-=======
-            tv1 = t0(i,km1)*(1.+xvir*q0(i,km1,sphum)-qcon(i,km1))
-            tv2 = t0(i,k  )*(1.+xvir*q0(i,k  ,sphum)-qcon(i,k))
->>>>>>> rusty/master_test
             pt1 = tv1 / pkz(i,j,km1)
             pt2 = tv2 / pkz(i,j,k  )
 !
@@ -604,7 +470,6 @@ contains
                  elseif ( nwat==3 ) then  ! AM3/AM4
                     qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,ice_wat)
                  elseif ( nwat==4 ) then  ! K_warm_rain scheme with fake ice
-<<<<<<< HEAD
 #ifndef CCPP
                     qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,rainwat)
 #else
@@ -614,9 +479,6 @@ contains
                  elseif ( nwat==5 ) then  ! K_warm_rain scheme with fake ice
                     qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,ice_wat) +                  &
                                   q0(i,km1,snowwat) + q0(i,km1,rainwat)
-=======
-                    qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,rainwat)
->>>>>>> rusty/master_test
                  else
                     qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,ice_wat) +                  &
                                   q0(i,km1,snowwat) + q0(i,km1,rainwat) + q0(i,km1,graupel)
@@ -654,7 +516,6 @@ contains
        if ( hydrostatic ) then
          kk = k
          do i=is,ie
-<<<<<<< HEAD
 #ifdef MULTI_GASES
             rkx = cp_air/rdgas * (vicpqd(q0(i,kk,:))/virqd(q0(i,kk,:))) + 1
             rdx = rdgas*virqd(q0(i,kk,:))
@@ -665,13 +526,10 @@ contains
             rdx = rdx + rzx*q0(i,kk,sphum)/(1.0-sum(q0(i,kk,sphum+1:sphum+nwat-1)))
             t0(i,kk) = t0(i,kk) / rdx
 #else
-=======
->>>>>>> rusty/master_test
             t0(i,kk) = (hd(i,kk)-gzh(i)-0.5*(u0(i,kk)**2+v0(i,kk)**2))  &
                      / ( rk - pe(i,kk,j)/pm(i,kk) )
               gzh(i) = gzh(i) + t0(i,kk)*(peln(i,kk+1,j)-peln(i,kk,j))
             t0(i,kk) = t0(i,kk) / ( rdgas + rz*q0(i,kk,sphum) )
-<<<<<<< HEAD
 #endif
          enddo
          kk = k-1
@@ -687,20 +545,12 @@ contains
             t0(i,kk) = (hd(i,kk)-gzh(i)-0.5*(u0(i,kk)**2+v0(i,kk)**2))  &
                      / ((rk-pe(i,kk,j)/pm(i,kk))*(rdgas+rz*q0(i,kk,sphum)))
 #endif
-=======
-         enddo
-         kk = k-1
-         do i=is,ie
-            t0(i,kk) = (hd(i,kk)-gzh(i)-0.5*(u0(i,kk)**2+v0(i,kk)**2))  &
-                     / ((rk-pe(i,kk,j)/pm(i,kk))*(rdgas+rz*q0(i,kk,sphum)))
->>>>>>> rusty/master_test
          enddo
        else
 ! Non-hydrostatic under constant volume heating/cooling
          do kk=k-1,k
            if ( nwat == 0 ) then
             do i=is,ie
-<<<<<<< HEAD
 #ifdef MULTI_GASES
                cpm(i) = cp_air*vicpqd(q0(i,kk,:))
                cvm(i) = cv_air*vicvqd(q0(i,kk,:))
@@ -731,26 +581,11 @@ contains
                cpm(i) = (1.-q0(i,kk,sphum))*cp_air + q0(i,kk,sphum)*cp_vapor
                cvm(i) = (1.-q0(i,kk,sphum))*cv_air + q0(i,kk,sphum)*cv_vap
 #endif
-=======
-               cpm(i) = cp_air
-               cvm(i) = cv_air
-            enddo
-           elseif ( nwat == 1 ) then
-            do i=is,ie
-               cpm(i) = (1.-q0(i,kk,sphum))*cp_air + q0(i,kk,sphum)*cp_vapor
-               cvm(i) = (1.-q0(i,kk,sphum))*cv_air + q0(i,kk,sphum)*cv_vap
-            enddo
-           elseif ( nwat == 2 ) then
-            do i=is,ie
-               cpm(i) = (1.-q0(i,kk,sphum))*cp_air + q0(i,kk,sphum)*cp_vapor
-               cvm(i) = (1.-q0(i,kk,sphum))*cv_air + q0(i,kk,sphum)*cv_vap
->>>>>>> rusty/master_test
             enddo
            elseif ( nwat == 3 ) then
             do i=is,ie
                q_liq = q0(i,kk,liq_wat)
                q_sol = q0(i,kk,ice_wat)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
                cpm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cp_air*vicpqd(q0(i,kk,:)) + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
                cvm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cv_air*vicvqd(q0(i,kk,:)) + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
@@ -795,22 +630,11 @@ contains
                cpm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cp_air + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
                cvm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cv_air + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
 #endif
-=======
-               cpm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cp_air + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
-               cvm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cv_air + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
-            enddo
-           elseif ( nwat == 4 ) then
-            do i=is,ie
-               q_liq = q0(i,kk,liq_wat) + q0(i,kk,rainwat)
-               cpm(i) = (1.-(q0(i,kk,sphum)+q_liq))*cp_air + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq
-               cvm(i) = (1.-(q0(i,kk,sphum)+q_liq))*cv_air + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq
->>>>>>> rusty/master_test
             enddo
            else
             do i=is,ie
                q_liq = q0(i,kk,liq_wat) + q0(i,kk,rainwat)
                q_sol = q0(i,kk,ice_wat) + q0(i,kk,snowwat) + q0(i,kk,graupel)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
                cpm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cp_air*vicpqd(q0(i,kk,:)) + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
                cvm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cv_air*vicvqd(q0(i,kk,:)) + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
@@ -818,10 +642,6 @@ contains
                cpm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cp_air + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
                cvm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cv_air + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
 #endif
-=======
-               cpm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cp_air + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
-               cvm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cv_air + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
->>>>>>> rusty/master_test
             enddo
            endif
      
@@ -899,21 +719,12 @@ contains
 !-------------------------------------------
       integer, intent(in):: is, ie, js, je, km, nq, nwat
       integer, intent(in):: isd, ied, jsd, jed
-<<<<<<< HEAD
       integer, intent(in):: tau         !< Relaxation time scale
       real, intent(in):: dt             !< model time step
       real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) 
       real, intent(in):: peln(is  :ie,  km+1,js  :je)
       real, intent(in):: delp(isd:ied,jsd:jed,km)      !< Delta p at each model level
-      real, intent(in):: delz(isd:,jsd:,1:)      !< Delta z at each model level
-=======
-      integer, intent(in):: tau         ! Relaxation time scale
-      real, intent(in):: dt             ! model time step
-      real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) 
-      real, intent(in):: peln(is  :ie,  km+1,js  :je)
-      real, intent(in):: delp(isd:ied,jsd:jed,km)      ! Delta p at each model level
-      real, intent(in):: delz(is:,js:,1:)      ! Delta z at each model level
->>>>>>> rusty/master_test
+      real, intent(in):: delz(is:,js:,1:)      !< Delta z at each model level
       real, intent(in)::  pkz(is:ie,js:je,km)
       logical, intent(in)::  hydrostatic
    integer, intent(in), optional:: k_bot
@@ -921,13 +732,8 @@ contains
       real, intent(inout):: ua(isd:ied,jsd:jed,km)
       real, intent(inout):: va(isd:ied,jsd:jed,km)
       real, intent(inout)::  w(isd:,jsd:,1:)
-<<<<<<< HEAD
       real, intent(inout):: ta(isd:ied,jsd:jed,km)      !< Temperature
       real, intent(inout):: qa(isd:ied,jsd:jed,km,nq)   !< Specific humidity & tracers
-=======
-      real, intent(inout):: ta(isd:ied,jsd:jed,km)      ! Temperature
-      real, intent(inout):: qa(isd:ied,jsd:jed,km,nq)   ! Specific humidity & tracers
->>>>>>> rusty/master_test
       real, intent(inout):: u_dt(isd:ied,jsd:jed,km) 
       real, intent(inout):: v_dt(isd:ied,jsd:jed,km) 
       real, intent(inout):: t_dt(is:ie,js:je,km) 
@@ -936,12 +742,9 @@ contains
       real, dimension(is:ie,km):: u0, v0, w0, t0, hd, te, gz, tvm, pm, den
       real q0(is:ie,km,nq), qcon(is:ie,km) 
       real, dimension(is:ie):: gzh, lcp2, icp2, cvm, cpm, qs
-<<<<<<< HEAD
 #ifdef MULTI_GASES
       real :: rkx, rdx, rzx, c_air
 #endif
-=======
->>>>>>> rusty/master_test
       real ri_ref, ri, pt1, pt2, ratio, tv, cv, tmp, q_liq, q_sol
       real tv1, tv2, g2, h0, mc, fra, rk, rz, rdt, tvd, tv_surf
       real dh, dq, qsw, dqsdt, tcp3
@@ -994,12 +797,9 @@ contains
 !$OMP                                  u_dt,rdt,v_dt,xvir,nwat)                 &
 !$OMP                          private(kk,lcp2,icp2,tcp3,dh,dq,den,qs,qsw,dqsdt,qcon,q0, &
 !$OMP                                  t0,u0,v0,w0,h0,pm,gzh,tvm,tmp,cpm,cvm, q_liq,q_sol,&
-<<<<<<< HEAD
 #ifdef MULTI_GASES
 !$OMP                                  rkx,rdx,rzx,c_air                                  &
 #endif
-=======
->>>>>>> rusty/master_test
 !$OMP                                  tv,gz,hd,te,ratio,pt1,pt2,tv1,tv2,ri_ref, ri,mc,km1)
   do 1000 j=js,je  
 
@@ -1014,15 +814,11 @@ contains
     do k=1,kbot
        do i=is,ie
           t0(i,k) = ta(i,j,k)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
          tvm(i,k) = t0(i,k)*virq(q0(i,k,:))
 #else
          tvm(i,k) = t0(i,k)*(1.+xvir*q0(i,k,sphum))
 #endif
-=======
-         tvm(i,k) = t0(i,k)*(1.+xvir*q0(i,k,sphum))
->>>>>>> rusty/master_test
           u0(i,k) = ua(i,j,k)
           v0(i,k) = va(i,j,k)
           pm(i,k) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
@@ -1047,7 +843,6 @@ contains
        do k=kbot, 1, -1
        if ( nwat == 0 ) then
           do i=is,ie
-<<<<<<< HEAD
 #ifdef MULTI_GASES
              cpm(i) = cp_air*vicpqd(q0(i,k,:))
              cvm(i) = cv_air*vicvqd(q0(i,k,:))
@@ -1065,20 +860,10 @@ contains
              cpm(i) = (1.-q0(i,k,sphum))*cp_air + q0(i,k,sphum)*cp_vapor
              cvm(i) = (1.-q0(i,k,sphum))*cv_air + q0(i,k,sphum)*cv_vap
 #endif
-=======
-             cpm(i) = cp_air
-             cvm(i) = cv_air
-          enddo
-       elseif ( nwat==1 ) then
-          do i=is,ie
-             cpm(i) = (1.-q0(i,k,sphum))*cp_air + q0(i,k,sphum)*cp_vapor
-             cvm(i) = (1.-q0(i,k,sphum))*cv_air + q0(i,k,sphum)*cv_vap
->>>>>>> rusty/master_test
           enddo
        elseif ( nwat==2 ) then   ! GFS
           do i=is,ie
              q_sol = q0(i,k,liq_wat)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
              c_air  = cp_air*vicpqd(q0(i,k,:))
              cpm(i) = c_air + (cp_vapor-c_air)*q0(i,k,sphum)/(1.0-q0(i,k,nwat))
@@ -1088,16 +873,11 @@ contains
              cpm(i) = (1.-q0(i,k,sphum))*cp_air + q0(i,k,sphum)*cp_vapor
              cvm(i) = (1.-q0(i,k,sphum))*cv_air + q0(i,k,sphum)*cv_vap
 #endif
-=======
-             cpm(i) = (1.-q0(i,k,sphum))*cp_air + q0(i,k,sphum)*cp_vapor
-             cvm(i) = (1.-q0(i,k,sphum))*cv_air + q0(i,k,sphum)*cv_vap
->>>>>>> rusty/master_test
           enddo
        elseif ( nwat==3 ) then
           do i=is,ie
              q_liq = q0(i,k,liq_wat) 
              q_sol = q0(i,k,ice_wat)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
              cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air*vicpqd(q0(i,k,:)) + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
              cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air*vicvqd(q0(i,k,:)) + q0(i,k,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
@@ -1141,22 +921,11 @@ contains
              cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
              cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
 #endif
-=======
-             cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
-             cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
-          enddo
-       elseif ( nwat==4 ) then
-          do i=is,ie
-             q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
-             cpm(i) = (1.-(q0(i,k,sphum)+q_liq))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq
-             cvm(i) = (1.-(q0(i,k,sphum)+q_liq))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq
->>>>>>> rusty/master_test
           enddo
        else
           do i=is,ie
              q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
              q_sol = q0(i,k,ice_wat) + q0(i,k,snowwat) + q0(i,k,graupel)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
              cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air*vicpqd(q0(i,k,:)) + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
              cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air*vicvqd(q0(i,k,:)) + q0(i,k,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
@@ -1164,10 +933,6 @@ contains
              cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
              cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
 #endif
-=======
-             cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
-             cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
->>>>>>> rusty/master_test
           enddo
        endif
 
@@ -1219,7 +984,6 @@ contains
    elseif ( nwat==4 ) then
       do k=1,kbot
          do i=is,ie
-<<<<<<< HEAD
 #ifndef CCPP
             qcon(i,k) = q0(i,k,liq_wat) + q0(i,k,rainwat)
 #else
@@ -1232,11 +996,6 @@ contains
          do i=is,ie
             qcon(i,k) = q0(i,k,liq_wat)+q0(i,k,ice_wat)+q0(i,k,snowwat)+q0(i,k,rainwat)
          enddo
-=======
-            qcon(i,k) = q0(i,k,liq_wat) + q0(i,k,rainwat)
-         enddo
-      enddo
->>>>>>> rusty/master_test
    else
       do k=1,kbot
          do i=is,ie
@@ -1248,7 +1007,6 @@ contains
       do k=kbot, 2, -1
          km1 = k-1
 #ifdef TEST_MQ
-<<<<<<< HEAD
 #ifdef MULTI_GASES
          if(nwat>0) call qsmith(im, km, im, 1, t0(is,km1), pm(is,km1), q0(is,km1,sphum), qs)
 #else
@@ -1265,15 +1023,6 @@ contains
             tv1 = t0(i,km1)*(1.+xvir*q0(i,km1,sphum)-qcon(i,km1))
             tv2 = t0(i,k  )*(1.+xvir*q0(i,k  ,sphum)-qcon(i,k))
 #endif
-=======
-         if(nwat>0) call qsmith(im, 1, 1, t0(is,km1), pm(is,km1), q0(is,km1,sphum), qs)
-#endif
-         do i=is,ie
-! Richardson number = g*delz * del_theta/theta / (del_u**2 + del_v**2)
-! Use exact form for "density temperature"
-            tv1 = t0(i,km1)*(1.+xvir*q0(i,km1,sphum)-qcon(i,km1))
-            tv2 = t0(i,k  )*(1.+xvir*q0(i,k  ,sphum)-qcon(i,k))
->>>>>>> rusty/master_test
             pt1 = tv1 / pkz(i,j,km1)
             pt2 = tv2 / pkz(i,j,k  )
             ri = (gz(i,km1)-gz(i,k))*(pt1-pt2)/( 0.5*(pt1+pt2)*        &
@@ -1304,7 +1053,6 @@ contains
                  elseif ( nwat==3 ) then  ! AM3/AM4
                     qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,ice_wat)
                  elseif ( nwat==4 ) then  ! K_warm_rain scheme with fake ice
-<<<<<<< HEAD
 #ifndef CCPP
                     qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,rainwat)
 #else
@@ -1313,9 +1061,6 @@ contains
                  elseif ( nwat==5 ) then
                     qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,ice_wat) +                  &
                                   q0(i,km1,snowwat) + q0(i,km1,rainwat)
-=======
-                    qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,rainwat)
->>>>>>> rusty/master_test
                  else
                     qcon(i,km1) = q0(i,km1,liq_wat) + q0(i,km1,ice_wat) +                  &
                                   q0(i,km1,snowwat) + q0(i,km1,rainwat) + q0(i,km1,graupel)
@@ -1353,7 +1098,6 @@ contains
        if ( hydrostatic ) then
          kk = k
          do i=is,ie
-<<<<<<< HEAD
 #ifdef MULTI_GASES
             rkx = cp_air/rdgas * (vicpqd(q0(i,kk,:))/virqd(q0(i,kk,:))) + 1
             rdx = rdgas*virqd(q0(i,kk,:))
@@ -1364,13 +1108,10 @@ contains
               gzh(i) = gzh(i) + t0(i,kk)*(peln(i,kk+1,j)-peln(i,kk,j))
             t0(i,kk) = t0(i,kk) / ( rdx + rzx*q0(i,kk,sphum) )
 #else
-=======
->>>>>>> rusty/master_test
             t0(i,kk) = (hd(i,kk)-gzh(i)-0.5*(u0(i,kk)**2+v0(i,kk)**2))  &
                      / ( rk - pe(i,kk,j)/pm(i,kk) )
               gzh(i) = gzh(i) + t0(i,kk)*(peln(i,kk+1,j)-peln(i,kk,j))
             t0(i,kk) = t0(i,kk) / ( rdgas + rz*q0(i,kk,sphum) )
-<<<<<<< HEAD
 #endif
          enddo
          kk = k-1
@@ -1386,20 +1127,12 @@ contains
             t0(i,kk) = (hd(i,kk)-gzh(i)-0.5*(u0(i,kk)**2+v0(i,kk)**2))  &
                      / ((rk-pe(i,kk,j)/pm(i,kk))*(rdgas+rz*q0(i,kk,sphum)))
 #endif
-=======
-         enddo
-         kk = k-1
-         do i=is,ie
-            t0(i,kk) = (hd(i,kk)-gzh(i)-0.5*(u0(i,kk)**2+v0(i,kk)**2))  &
-                     / ((rk-pe(i,kk,j)/pm(i,kk))*(rdgas+rz*q0(i,kk,sphum)))
->>>>>>> rusty/master_test
          enddo
        else
 ! Non-hydrostatic under constant volume heating/cooling
          do kk=k-1,k
            if ( nwat == 0 ) then
             do i=is,ie
-<<<<<<< HEAD
 #ifdef MULTI_GASES
                cpm(i) = cp_air*vicpqd(q0(i,kk,:))
                cvm(i) = cv_air*vicvqd(q0(i,kk,:))
@@ -1429,26 +1162,11 @@ contains
                cpm(i) = (1.-q0(i,kk,sphum))*cp_air + q0(i,kk,sphum)*cp_vapor
                cvm(i) = (1.-q0(i,kk,sphum))*cv_air + q0(i,kk,sphum)*cv_vap
 #endif
-=======
-               cpm(i) = cp_air
-               cvm(i) = cv_air
-            enddo
-           elseif ( nwat == 1 ) then
-            do i=is,ie
-               cpm(i) = (1.-q0(i,kk,sphum))*cp_air + q0(i,kk,sphum)*cp_vapor
-               cvm(i) = (1.-q0(i,kk,sphum))*cv_air + q0(i,kk,sphum)*cv_vap
-            enddo
-           elseif ( nwat == 2 ) then
-            do i=is,ie
-               cpm(i) = (1.-q0(i,kk,sphum))*cp_air + q0(i,kk,sphum)*cp_vapor
-               cvm(i) = (1.-q0(i,kk,sphum))*cv_air + q0(i,kk,sphum)*cv_vap
->>>>>>> rusty/master_test
             enddo
            elseif ( nwat == 3 ) then
             do i=is,ie
                q_liq = q0(i,kk,liq_wat)
                q_sol = q0(i,kk,ice_wat)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
                cpm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cp_air*vicpqd(q0(i,kk,:)) + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
                cvm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cv_air*vicvqd(q0(i,kk,:)) + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
@@ -1492,22 +1210,11 @@ contains
                cpm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cp_air + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
                cvm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cv_air + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
 #endif
-=======
-               cpm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cp_air + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
-               cvm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cv_air + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
-            enddo
-           elseif ( nwat == 4 ) then
-            do i=is,ie
-               q_liq = q0(i,kk,liq_wat) + q0(i,kk,rainwat)
-               cpm(i) = (1.-(q0(i,kk,sphum)+q_liq))*cp_air + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq
-               cvm(i) = (1.-(q0(i,kk,sphum)+q_liq))*cv_air + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq
->>>>>>> rusty/master_test
             enddo
            else
             do i=is,ie
                q_liq = q0(i,kk,liq_wat) + q0(i,kk,rainwat)
                q_sol = q0(i,kk,ice_wat) + q0(i,kk,snowwat) + q0(i,kk,graupel)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
                cpm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cp_air*vicpqd(q0(i,kk,:)) + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
                cvm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cv_air*vicvqd(q0(i,kk,:)) + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
@@ -1515,10 +1222,6 @@ contains
                cpm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cp_air + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
                cvm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cv_air + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
 #endif
-=======
-               cpm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cp_air + q0(i,kk,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
-               cvm(i) = (1.-(q0(i,kk,sphum)+q_liq+q_sol))*cv_air + q0(i,kk,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
->>>>>>> rusty/master_test
             enddo
            endif
 
@@ -1569,7 +1272,6 @@ contains
       if ( hydrostatic ) then
         do i=is, ie
 ! Compute pressure hydrostatically
-<<<<<<< HEAD
 #ifdef MULTI_GASES
            den(i,k) = pm(i,k)/(rdgas*t0(i,k)*virq(q0(i,k,:)))
 #else
@@ -1582,12 +1284,6 @@ contains
 #else
            cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
 #endif
-=======
-           den(i,k) = pm(i,k)/(rdgas*t0(i,k)*(1.+xvir*q0(i,k,sphum)))
-           q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
-           q_sol = q0(i,k,ice_wat) + q0(i,k,snowwat) + q0(i,k,graupel)
-           cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
->>>>>>> rusty/master_test
            lcp2(i) = hlv / cpm(i)
            icp2(i) = hlf / cpm(i)
         enddo
@@ -1596,15 +1292,11 @@ contains
            den(i,k) = -delp(i,j,k)/(grav*delz(i,j,k))
            q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
            q_sol = q0(i,k,ice_wat) + q0(i,k,snowwat) + q0(i,k,graupel)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
            cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air*vicvqd(q0(i,k,:)) + q0(i,k,sphum)*cv_vap + q_liq*c_liq + q_sol*c_ice
 #else
            cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap + q_liq*c_liq + q_sol*c_ice
 #endif
-=======
-           cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap + q_liq*c_liq + q_sol*c_ice
->>>>>>> rusty/master_test
            lcp2(i) = (Lv0+dc_vap*t0(i,k)) / cvm(i)
            icp2(i) = (Li0+dc_ice*t0(i,k)) / cvm(i)
         enddo
@@ -1693,7 +1385,6 @@ contains
   end subroutine qsmith_init
 
 
-<<<<<<< HEAD
 #ifdef MULTI_GASES
   subroutine qsmith(im, km, imx, kmx, t, p, q, qs, dqdt)
 #else
@@ -1708,29 +1399,18 @@ contains
   integer, intent(in):: im, km, k1
   real, intent(in),dimension(im,km)::  q
 #endif
-=======
-  subroutine qsmith(im, km, k1, t, p, q, qs, dqdt)
-! input T in deg K; p (Pa)
-  integer, intent(in):: im, km, k1
-  real, intent(in),dimension(im,km):: t, p, q
->>>>>>> rusty/master_test
   real, intent(out),dimension(im,km):: qs
   real, intent(out), optional:: dqdt(im,km)
 ! Local:
   real es(im,km)
   real ap1, eps10
   real Tmin
-<<<<<<< HEAD
   integer i, k, it, n
-=======
-  integer i, k, it
->>>>>>> rusty/master_test
 
   Tmin = tice-160.
   eps10  = 10.*esl
 
   if( .not. allocated(table) ) call  qsmith_init
-<<<<<<< HEAD
 
 #ifdef MULTI_GASES
       do k=1,kmx
@@ -1739,29 +1419,19 @@ contains
       do k=k1,km
          do i=1,im
 #endif
-=======
- 
-      do k=k1,km
-         do i=1,im
->>>>>>> rusty/master_test
             ap1 = 10.*DIM(t(i,k), Tmin) + 1.
             ap1 = min(2621., ap1)
             it = ap1
             es(i,k) = table(it) + (ap1-it)*des(it)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
             qs(i,k) = esl*es(i,k)*virq(q(i,k,1:num_gas))/p(i,k)
 #else
             qs(i,k) = esl*es(i,k)*(1.+zvir*q(i,k))/p(i,k)
 #endif
-=======
-            qs(i,k) = esl*es(i,k)*(1.+zvir*q(i,k))/p(i,k)
->>>>>>> rusty/master_test
          enddo
       enddo
 
       if ( present(dqdt) ) then
-<<<<<<< HEAD
 #ifdef MULTI_GASES
       do k=1,kmx
            do i=1,imx
@@ -1777,14 +1447,6 @@ contains
 #else
               dqdt(i,k) = eps10*(des(it)+(ap1-it)*(des(it+1)-des(it)))*(1.+zvir*q(i,k))/p(i,k)
 #endif
-=======
-      do k=k1,km
-           do i=1,im
-              ap1 = 10.*DIM(t(i,k), Tmin) + 1.
-              ap1 = min(2621., ap1) - 0.5
-              it  = ap1
-              dqdt(i,k) = eps10*(des(it)+(ap1-it)*(des(it+1)-des(it)))*(1.+zvir*q(i,k))/p(i,k)
->>>>>>> rusty/master_test
            enddo
       enddo
       endif
@@ -1877,7 +1539,6 @@ contains
 
  end subroutine qs_table_m
 
-<<<<<<< HEAD
  subroutine neg_adj3(is, ie, js, je, ng, kbot, hydrostatic, peln, delz, pt, dp,  &
 #ifdef MULTI_GASES
                     qvi,                                                         &
@@ -1885,17 +1546,12 @@ contains
                      qv,                                                         &
 #endif
                      ql, qr, qi, qs, qg, qa, check_negative)
-=======
- subroutine neg_adj3(is, ie, js, je, ng, kbot, hydrostatic,   &
-                     peln, delz, pt, dp, qv, ql, qr, qi, qs, qg, qa, check_negative)
->>>>>>> rusty/master_test
 
 ! This is designed for 6-class micro-physics schemes
  integer, intent(in):: is, ie, js, je, ng, kbot
  logical, intent(in):: hydrostatic
-<<<<<<< HEAD
  real, intent(in):: dp(is-ng:ie+ng,js-ng:je+ng,kbot)  !< total delp-p
- real, intent(in):: delz(is-ng:,js-ng:,1:)
+ real, intent(in):: delz(is:,js:,1:)
  real, intent(in):: peln(is:ie,kbot+1,js:je)           !< ln(pe)
  logical, intent(in), OPTIONAL :: check_negative
 #ifdef MULTI_GASES
@@ -1905,41 +1561,25 @@ contains
 #endif
  real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::    &
                                  pt, ql, qr, qi, qs, qg
-=======
- real, intent(in):: dp(is-ng:ie+ng,js-ng:je+ng,kbot)  ! total delp-p
- real, intent(in):: delz(is:,js:,1:)
- real, intent(in):: peln(is:ie,kbot+1,js:je)           ! ln(pe)
- logical, intent(in), OPTIONAL :: check_negative
- real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::    &
-                                 pt, qv, ql, qr, qi, qs, qg
->>>>>>> rusty/master_test
  real, intent(inout), OPTIONAL, dimension(is-ng:ie+ng,js-ng:je+ng,kbot):: qa
 ! Local:
  logical:: sat_adj = .false.
  real, parameter :: t48 = tice - 48.
-<<<<<<< HEAD
 #ifdef MULTI_GASES
  real, dimension(is-ng:ie+ng,js-ng:je+ng,kbot):: qv
 #endif
  real, dimension(is:ie,kbot):: dpk, q2
  real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk, lcpk
-=======
- real, dimension(is:ie,kbot):: dpk, q2
-real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk, lcpk
->>>>>>> rusty/master_test
  real:: cv_air
  real:: dq, qsum, dq1, q_liq, q_sol, cpm, sink, qsw, dwsdt
  integer i, j, k
 
  cv_air = cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
 
-<<<<<<< HEAD
 #ifdef MULTI_GASES
   qv(:,:,:) = qvi(:,:,:,1)
 #endif
 
-=======
->>>>>>> rusty/master_test
   if ( present(check_negative) ) then
   if ( check_negative ) then
      call prt_negative('Temperature', pt, is, ie, js, je, ng, kbot, 165.)
@@ -1949,12 +1589,9 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk,
      call prt_negative('ice_wat', qi, is, ie, js, je, ng, kbot, -1.e-7)
      call prt_negative('snowwat', qs, is, ie, js, je, ng, kbot, -1.e-7)
      call prt_negative('graupel', qg, is, ie, js, je, ng, kbot, -1.e-7)
-<<<<<<< HEAD
 #ifdef MULTI_GASES
      qvi(:,:,:,1) = qv(:,:,:)
 #endif
-=======
->>>>>>> rusty/master_test
   endif
   endif
 
@@ -1966,12 +1603,9 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk,
      lv00 = hlv0 - d0_vap*t_ice
 
 !$OMP parallel do default(none) shared(is,ie,js,je,kbot,qv,ql,qi,qs,qr,qg,dp,pt,       &
-<<<<<<< HEAD
 #ifdef MULTI_GASES
 !$OMP                                  qvi, num_gas,                                   &
 #endif
-=======
->>>>>>> rusty/master_test
 !$OMP                                  lv00, d0_vap,hydrostatic,peln,delz,cv_air,sat_adj) &
 !$OMP                          private(dq,dq1,qsum,dp2,p2,pt2,qv2,ql2,qi2,qs2,qg2,qr2, &
 !$OMP                                  lcpk,icpk,qsw,dwsdt,sink,q_liq,q_sol,cpm)
@@ -1995,16 +1629,12 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk,
              p2(i,j) = dp2(i,j)/(peln(i,k+1,j)-peln(i,k,j))
              q_liq = max(0., ql2(i,j) + qr2(i,j))
              q_sol = max(0., qi2(i,j) + qs2(i,j))
-<<<<<<< HEAD
 #ifdef MULTI_GASES
              cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cp_air*vicpqd_qpz(qvi(i,j,k,1:num_gas),qv2(i,j)+q_liq+q_sol) + &
                                                         qv2(i,j)*cp_vapor + q_liq*c_liq + q_sol*c_ice
 #else
              cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cp_air + qv2(i,j)*cp_vapor + q_liq*c_liq + q_sol*c_ice
 #endif
-=======
-             cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cp_air + qv2(i,j)*cp_vapor + q_liq*c_liq + q_sol*c_ice
->>>>>>> rusty/master_test
              lcpk(i,j) = hlv / cpm
              icpk(i,j) = hlf / cpm
           enddo
@@ -2012,7 +1642,6 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk,
      else
        do j=js, je
           do i=is, ie
-<<<<<<< HEAD
              q_liq = max(0., ql2(i,j) + qr2(i,j))
              q_sol = max(0., qi2(i,j) + qs2(i,j))
 #ifdef MULTI_GASES
@@ -2023,12 +1652,6 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk,
              p2(i,j) = -dp2(i,j)/(grav*delz(i,j,k))*rdgas*pt2(i,j)*(1.+zvir*qv2(i,j))
              cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cv_air + qv2(i,j)*cv_vap + q_liq*c_liq + q_sol*c_ice
 #endif
-=======
-             p2(i,j) = -dp2(i,j)/(grav*delz(i,j,k))*rdgas*pt2(i,j)*(1.+zvir*qv2(i,j))
-             q_liq = max(0., ql2(i,j) + qr2(i,j))
-             q_sol = max(0., qi2(i,j) + qs2(i,j))
-             cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cv_air + qv2(i,j)*cv_vap + q_liq*c_liq + q_sol*c_ice
->>>>>>> rusty/master_test
              lcpk(i,j) = (lv00+d0_vap*pt2(i,j)) / cpm
              icpk(i,j) = (Li0+dc_ice*pt2(i,j)) / cpm
           enddo
@@ -2183,12 +1806,9 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk,
         pt(i,j,k) = pt2(i,j)
      enddo
    enddo
-<<<<<<< HEAD
 #ifdef MULTI_GASES
    qvi(:,:,k,1) = qv(:,:,k)
 #endif
-=======
->>>>>>> rusty/master_test
 
  enddo
 
@@ -2273,12 +1893,9 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk,
      endif
      enddo ! i-loop
  enddo   ! j-loop
-<<<<<<< HEAD
 #ifdef MULTI_GASES
  qvi(:,:,:,1) = qv(:,:,:)
 #endif
-=======
->>>>>>> rusty/master_test
 
  
  if (present(qa)) then
@@ -2317,7 +1934,6 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk,
 
  end subroutine neg_adj3
 
-<<<<<<< HEAD
  subroutine neg_adj2(is, ie, js, je, ng, kbot, hydrostatic,   &
                      peln, delz, pt, dp, qv, ql, qr, qi, qs, qa, check_negative)
 
@@ -2638,8 +2254,6 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk,
 
  end subroutine neg_adj2
 
-=======
->>>>>>> rusty/master_test
  subroutine fillq(im, km, q, dp)
 ! Aggresive 1D filling algorithm for qr and qg
  integer, intent(in):: im, km

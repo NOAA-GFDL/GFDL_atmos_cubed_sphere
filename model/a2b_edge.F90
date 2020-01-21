@@ -1,5 +1,4 @@
 !***********************************************************************
-<<<<<<< HEAD
 !*                   GNU Lesser General Public License                 
 !*
 !* This file is part of the FV3 dynamical core.
@@ -39,28 +38,6 @@ module a2b_edge_mod
 !     <td>great_circle_dist, van2 </td>
 !   </tr>
 ! </table>
-=======
-!*                   GNU Lesser General Public License
-!*
-!* This file is part of the FV3 dynamical core.
-!*
-!* The FV3 dynamical core is free software: you can redistribute it
-!* and/or modify it under the terms of the
-!* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or
-!* (at your option) any later version.
-!*
-!* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-!* See the GNU General Public License for more details.
-!*
-!* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.
-!* If not, see <http://www.gnu.org/licenses/>.
-!***********************************************************************
-module a2b_edge_mod
->>>>>>> rusty/master_test
 
   use fv_grid_utils_mod, only: great_circle_dist
 #ifdef VAN2
@@ -75,21 +52,12 @@ module a2b_edge_mod
 !----------------------------
 ! 4-pt Lagrange interpolation
 !----------------------------
-<<<<<<< HEAD
   real, parameter:: a1 =  0.5625  !<  9/16
   real, parameter:: a2 = -0.0625  !< -1/16
 !----------------------
 ! PPM volume mean form:
 !----------------------
   real, parameter:: b1 =  7./12.     !< 0.58333333
-=======
-  real, parameter:: a1 =  0.5625  !  9/16
-  real, parameter:: a2 = -0.0625  ! -1/16
-!----------------------
-! PPM volume mean form:
-!----------------------
-  real, parameter:: b1 =  7./12.     ! 0.58333333
->>>>>>> rusty/master_test
   real, parameter:: b2 = -1./12.
 
   private
@@ -100,13 +68,8 @@ contains
 #ifndef USE_OLD_ALGORITHM
   subroutine a2b_ord4(qin, qout, gridstruct, npx, npy, is, ie, js, je, ng, replace)
   integer, intent(IN):: npx, npy, is, ie, js, je, ng
-<<<<<<< HEAD
   real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   !< A-grid field
   real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   !< Output B-grid field
-=======
-  real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   ! A-grid field
-  real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   ! Output  B-grid field
->>>>>>> rusty/master_test
   type(fv_grid_type), intent(IN), target :: gridstruct
   logical, optional, intent(IN):: replace
 ! local: compact 4-pt cubic
@@ -151,11 +114,7 @@ contains
 
 ! Corners:
 ! 3-way extrapolation
-<<<<<<< HEAD
-    if (gridstruct%nested .or. gridstruct%regional) then
-=======
     if (gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
 
     do j=js-2,je+2
        do i=is,ie+1
@@ -242,11 +201,7 @@ contains
 ! Y-Interior:
 !------------
 
-<<<<<<< HEAD
-    if (gridstruct%nested .or. gridstruct%regional) then
-=======
     if (gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
 
 
     do j=js,je+1
@@ -302,11 +257,7 @@ contains
     end if
 !--------------------------------------
 
-<<<<<<< HEAD
-    if (gridstruct%nested .or. gridstruct%regional) then
-=======
     if (gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
 
     do j=js, je+1
        do i=is,ie+1
@@ -402,13 +353,8 @@ contains
 ! Working version:
   subroutine a2b_ord4(qin, qout, gridstruct, npx, npy, is, ie, js, je, ng, replace)
   integer, intent(IN):: npx, npy, is, ie, js, je, ng
-<<<<<<< HEAD
   real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   !< A-grid field
   real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   !< Output B-grid field
-=======
-  real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   ! A-grid field
-  real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   ! Output  B-grid field
->>>>>>> rusty/master_test
   type(fv_grid_type), intent(IN), target :: gridstruct
   logical, optional, intent(IN):: replace
 ! local: compact 4-pt cubic
@@ -420,13 +366,8 @@ contains
 !-----------------------------
 ! 6-pt corner interpolation:
 !-----------------------------
-<<<<<<< HEAD
   real, parameter:: d1 =  0.375                   !<   0.5
   real, parameter:: d2 = -1./24.                  !<  -1./6.
-=======
-  real, parameter:: d1 =  0.375                   !   0.5
-  real, parameter:: d2 = -1./24.                  !  -1./6.
->>>>>>> rusty/master_test
 
   real qx(is:ie+1,js-ng:je+ng)
   real qy(is-ng:ie+ng,js:je+1)
@@ -522,11 +463,7 @@ contains
 !------------
 ! X-Interior:
 !------------
-<<<<<<< HEAD
-    if (gridstruct%nested .or. gridstruct%regional) then
-=======
     if (gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
 
     do j=js-2,je+2
        do i=is, ie+1
@@ -597,11 +534,7 @@ contains
 !------------
 ! Y-Interior:
 !------------
-<<<<<<< HEAD
-    if (gridstruct%nested .or. gridstruct%regional) then
-=======
     if (gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
 
     do j=js,je+1
        do i=is-2, ie+2
@@ -669,11 +602,7 @@ contains
 
  end if
 
-<<<<<<< HEAD
- if (gridstruct%nested .or. gridstruct%regional) then
-=======
  if (gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
 
     do j=js,je+1
        do i=is,ie+1
@@ -767,13 +696,8 @@ contains
 
   subroutine a2b_ord2(qin, qout, gridstruct, npx, npy, is, ie, js, je, ng, replace)
     integer, intent(IN   ) :: npx, npy, is, ie, js, je, ng
-<<<<<<< HEAD
     real   , intent(INOUT) ::  qin(is-ng:ie+ng,js-ng:je+ng)   !< A-grid field
     real   , intent(  OUT) :: qout(is-ng:ie+ng,js-ng:je+ng)   !< Output B-grid field
-=======
-    real   , intent(INOUT) ::  qin(is-ng:ie+ng,js-ng:je+ng)   ! A-grid field
-    real   , intent(  OUT) :: qout(is-ng:ie+ng,js-ng:je+ng)   ! Output  B-grid field
->>>>>>> rusty/master_test
     type(fv_grid_type), intent(IN), target :: gridstruct
     logical, optional, intent(IN) ::  replace
     ! local:
@@ -798,11 +722,7 @@ contains
 
     if (gridstruct%grid_type < 3) then
 
-<<<<<<< HEAD
-       if (gridstruct%nested .or. gridstruct%regional) then
-=======
        if (gridstruct%bounded_domain) then
->>>>>>> rusty/master_test
 
           do j=js-2,je+1+2
              do i=is-2,ie+1+2
@@ -913,13 +833,8 @@ contains
   subroutine a2b_ord4(qin, qout, grid, agrid, npx, npy, is, ie, js, je, ng, replace)
 ! use  tp_core_mod,      only: copy_corners
   integer, intent(IN):: npx, npy, is, ie, js, je, ng
-<<<<<<< HEAD
   real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   !< A-grid field
   real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   !< Output B-grid field
-=======
-  real, intent(INOUT)::  qin(is-ng:ie+ng,js-ng:je+ng)   ! A-grid field
-  real, intent(INOUT):: qout(is-ng:ie+ng,js-ng:je+ng)   ! Output  B-grid field
->>>>>>> rusty/master_test
   real,    intent(in) ::  grid(is-ng:ie+ng+1,js-ng:je+ng+1,2)
   real,    intent(in) :: agrid(is-ng:ie+ng,js-ng:je+ng,2)
   logical, optional, intent(IN):: replace
