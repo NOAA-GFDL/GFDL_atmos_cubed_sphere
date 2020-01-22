@@ -102,6 +102,12 @@ module fv_arrays_mod
      integer :: id_t_dt_phys, id_qv_dt_phys, id_ql_dt_phys, id_qi_dt_phys, id_u_dt_phys, id_v_dt_phys
      integer :: id_intqv, id_intql, id_intqi, id_intqr, id_intqs, id_intqg
 
+! ESM/CM 3-D diagostics
+     integer :: id_uq, id_vq, id_wq, id_iuq, id_ivq, id_iwq,   & ! moisture flux & vertical integral
+                id_ut, id_vt, id_wt, id_iut, id_ivt, id_iwt,   & ! heat flux
+                id_uu, id_uv, id_vv, id_ww,                    & ! momentum flux
+                id_iuu, id_iuv, id_iuw, id_ivv, id_ivw, id_iww   ! vertically integral of momentum flux
+
      integer :: id_uw, id_vw, id_hw, id_qvw, id_qlw, id_qiw, id_o3w
 
      logical :: initialized = .false.
