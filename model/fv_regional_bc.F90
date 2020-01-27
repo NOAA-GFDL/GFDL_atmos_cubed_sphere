@@ -1658,6 +1658,7 @@ contains
             call_remap=.true.
             side='north'
             bc_side_t1=>BC_t1%north
+            bc_side_t0=>BC_t0%north
           endif
         endif
 !
@@ -1666,6 +1667,7 @@ contains
             call_remap=.true.
             side='south'
             bc_side_t1=>BC_t1%south
+            bc_side_t0=>BC_t0%south
           endif
         endif
 !
@@ -1674,6 +1676,7 @@ contains
             call_remap=.true.
             side='east '
             bc_side_t1=>BC_t1%east
+            bc_side_t0=>BC_t0%east
           endif
         endif
 !
@@ -1682,6 +1685,7 @@ contains
             call_remap=.true.
             side='west '
             bc_side_t1=>BC_t1%west
+            bc_side_t0=>BC_t0%west
           endif
         endif
 !
@@ -3403,7 +3407,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 #endif
                                  ,q                                   &
                                  ,u,v,uc,vc                           &
-                                 ,bd, nlayers, ntracers               &
+                                 ,bd, nlayers                        &
                                  ,fcst_time )
 !
 !---------------------------------------------------------------------
@@ -3419,7 +3423,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  Input variables
 !--------------------
 !
-      integer,intent(in) :: nlayers, ntracers
+      integer,intent(in) :: nlayers
 !
       real,intent(in) :: fcst_time                                       !<-- Current forecast time (sec)
 !
@@ -3433,7 +3437,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                                                 delp  &
                                                                ,pt 
 ! 
-      real,dimension(bd%isd:,bd%jsd:,1:),intent(out) :: delz,w
+      real,dimension(bd%isd:,bd%jsd:,1:),intent(out) :: w
+      real,dimension(bd%is:,bd%js:,1:),intent(out) :: delz
 #ifdef USE_COND
       real,dimension(bd%isd:,bd%jsd:,1:),intent(out) :: q_con
 #endif

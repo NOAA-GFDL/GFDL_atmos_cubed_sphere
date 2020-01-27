@@ -826,7 +826,9 @@ endif        ! end last_step check
 
 ! Note: pt at this stage is T_v
 ! if ( (.not.do_adiabatic_init) .and. do_sat_adj ) then
-  if (do_adiabatic_init .or. do_sat_adj) then
+
+  if ((do_adiabatic_init .and. snowwat > 0 .and. ice_wat > 0 .and. rainwat > 0 .and. &
+      graupel > 0) .or. do_sat_adj) then
                                            call timing_on('sat_adj2')
 #ifdef CCPP
     if (ccpp_initialized(cdata)) then

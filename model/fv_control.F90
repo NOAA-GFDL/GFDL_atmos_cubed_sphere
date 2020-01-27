@@ -237,6 +237,7 @@ module fv_control_mod
      real    , pointer :: scale_z 
      real    , pointer :: w_max 
      real    , pointer :: z_min 
+     real    , pointer :: lim_fac
 
      integer , pointer :: nord
      integer , pointer :: nord_tr
@@ -280,7 +281,6 @@ module fv_control_mod
      real    , pointer :: p_fac
      real    , pointer :: a_imp
      integer , pointer :: n_split 
-
      real    , pointer :: fac_n_spl
      real    , pointer :: fhouri
      ! Default 
@@ -765,6 +765,7 @@ module fv_control_mod
        scale_z                       => Atm%flagstruct%scale_z
        w_max                         => Atm%flagstruct%w_max
        z_min                         => Atm%flagstruct%z_min
+       lim_fac                       => Atm%flagstruct%lim_fac
        nord                          => Atm%flagstruct%nord
        nord_tr                       => Atm%flagstruct%nord_tr
        dddmp                         => Atm%flagstruct%dddmp
@@ -808,6 +809,8 @@ module fv_control_mod
        p_fac                         => Atm%flagstruct%p_fac
        a_imp                         => Atm%flagstruct%a_imp
        n_split                       => Atm%flagstruct%n_split
+       fac_n_spl                     => Atm%flagstruct%fac_n_spl
+       fhouri                        => Atm%flagstruct%fhouri
        m_split                       => Atm%flagstruct%m_split
        k_split                       => Atm%flagstruct%k_split
        use_logp                      => Atm%flagstruct%use_logp
@@ -1011,7 +1014,7 @@ module fv_control_mod
             hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
             kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, do_f3d, &
             external_ic, read_increment, ncep_ic, nggps_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
-            external_eta, res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, &
+            external_eta, res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, lim_fac, &
             dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
             warm_start, adjust_dry_mass, mountain, d_con, ke_bg, nord, nord_tr, convert_ke, use_old_omega, &
             dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
@@ -1027,6 +1030,7 @@ module fv_control_mod
             nestbctype, nestupdate, nsponge, s_weight, &
             check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
             do_uni_zfull, adj_mass_vmr,fac_n_spl, fhouri, update_blend, regional, bc_update_interval
+
 #ifdef MULTI_GASES
    namelist /multi_gases_nml/ rilist,cpilist
 #endif

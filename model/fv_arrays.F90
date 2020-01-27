@@ -1511,6 +1511,7 @@ contains
     endif
 
     ! Allocate others
+    allocate ( Atm%diss_est(isd:ied  ,jsd:jed  ,npz) ) 
     allocate ( Atm%ts(is:ie,js:je) )
     allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
     allocate ( Atm%omga(isd:ied  ,jsd:jed  ,npz) ); Atm%omga=0.

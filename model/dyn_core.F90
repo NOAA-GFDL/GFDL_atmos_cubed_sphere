@@ -197,7 +197,7 @@ contains
     real, intent(inout), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz):: u  !< D grid zonal wind (m/s)
     real, intent(inout), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz):: v  !< D grid meridional wind (m/s)
     real, intent(inout) :: w(   bd%isd:,bd%jsd:,1:)  !< vertical vel. (m/s)
-    real, intent(inout) ::  delz(bd%isd:,bd%jsd:,1:)  !< delta-height (m, negative)
+    real, intent(inout) ::  delz(bd%is:,bd%js:,1:)  !< delta-height (m, negative)
     real, intent(inout) :: cappa(bd%isd:,bd%jsd:,1:) !< moist kappa
 #ifdef MULTI_GASES
     real, intent(inout) :: kapad(bd%isd:bd%ied,bd%jsd:bd%jed,1:npz) !< multi_gases kappa
