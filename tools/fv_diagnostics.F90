@@ -229,7 +229,7 @@ module fv_diagnostics_mod
  character(100) :: runname = 'test'
  integer :: yr_init, mo_init, dy_init, hr_init, mn_init, sec_init
 
- real              :: vrange(2), vsrange(2), wrange(2), trange(2), slprange(2), rhrange(2)
+ real              :: vrange(2), vsrange(2), wrange(2), trange(2), slprange(2), rhrange(2), skrange(2)
 
 
 
@@ -252,7 +252,6 @@ contains
 
     real, allocatable :: grid_xt(:), grid_yt(:), grid_xe(:), grid_ye(:), grid_xn(:), grid_yn(:)
     real, allocatable :: grid_x(:),  grid_y(:)
-    real              :: vrange(2), vsrange(2), wrange(2), trange(2), slprange(2), rhrange(2), skrange(2)
     real, allocatable :: a3(:,:,:)
     real              :: pfull(npz)
     real              :: hyam(npz), hybm(npz)
@@ -6203,5 +6202,162 @@ end subroutine eqv_pot
     return
   end function getqvi
 !-----------------------------------------------------------------------
+
+  subroutine debug_column(pt, delp, delz, u, v, w, q, npz, ncnst, sphum, nwat, hydrostatic, bd, Time)
+
+    type(fv_grid_bounds_type), intent(IN) :: bd
+    integer, intent(IN) :: npz, ncnst, sphum, nwat
+    logical, intent(IN) :: hydrostatic
+    real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz), intent(IN) :: pt, delp, w
+    real, dimension(bd%is:, bd%js:,1:), intent(IN) :: delz
+    real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed+1,npz), intent(IN) :: u
+    real, dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz), intent(IN) :: v
+    real, dimension(bd%isd:bd%ied, bd%jsd:bd%jed, npz, ncnst), intent(IN) :: q
+   
+
+    type(time_type), intent(IN) :: Time
+    integer :: i,j,k,n,l
+    real cond
+
+    do n=1,size(diag_debug_i)
+
+       i=diag_debug_i(n)
+       j=diag_debug_j(n)
+
+       if (i < bd%is .or. i > bd%ie) cycle
+       if (j < bd%js .or. j > bd%je) cycle
+
+       if (do_debug_diag_column(i,j)) then
+          call column_diagnostics_header(diag_debug_names(n), diag_debug_units(n), Time, n, &
+               diag_debug_lon, diag_debug_lat, diag_debug_i, diag_debug_j)
+
+          write(diag_debug_units(n),'(A4, A7, A8, A6, A8, A8, A8, A8, A9)') 'k', 'T', 'delp', 'delz', 'u', 'v', 'w', 'sphum', 'cond'
+          write(diag_debug_units(n),'(A4, A7, A8, A6, A8, A8, A8, A8, A9)') '', 'K', 'mb', 'm', 'm/s', 'm/s', 'm/s', 'g/kg', 'g/kg'
+          if (hydrostatic) then
+             call mpp_error(NOTE, 'Hydrostatic debug sounding not yet supported')
+          else
+             do k=2*npz/3,npz
+                cond = 0.
+                do l=2,nwat
+                   cond = cond + q(i,j,k,l)
+                enddo
+                write(diag_debug_units(n),'(I4, F7.2, F8.3, I6, F8.3, F8.3, F8.3, F8.3, F9.5 )') &
+                     k, pt(i,j,k), delp(i,j,k)*0.01, -int(delz(i,j,k)), u(i,j,k), v(i,j,k), w(i,j,k), &
+                     q(i,j,k,sphum)*1000., cond*1000.
+             enddo
+          endif
+
+          !call mpp_flush(diag_units(n))
+          
+       endif
+
+    enddo
+
+  end subroutine debug_column
+
+  subroutine sounding_column( pt, delp, delz, u, v, q, peln, pkz, phis, &
+       npz, ncnst, sphum, nwat, hydrostatic, moist_phys, zvir, ng, bd, Time )
+
+    type(fv_grid_bounds_type), intent(IN) :: bd
+    integer, intent(IN) :: npz, ncnst, sphum, nwat, ng
+    real,    intent(IN) :: zvir
+    logical, intent(IN) :: hydrostatic, moist_phys
+    real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz), intent(IN) :: pt, delp
+    real, dimension(bd%is:, bd%js:, 1:), intent(IN) :: delz
+    real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed+1,npz), intent(IN) :: u
+    real, dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz), intent(IN) :: v
+    real, dimension(bd%isd:bd%ied, bd%jsd:bd%jed, npz, ncnst), intent(IN) :: q
+    real, dimension(bd%is:bd%ie,npz+1,bd%js:bd%je), intent(in):: peln
+    real, dimension(bd%is:bd%ie,bd%js:bd%je,npz),   intent(in):: pkz
+    real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed),   intent(IN) :: phis
+    type(time_type), intent(IN) :: Time
+
+    real :: Tv, pres, hght(npz), dewpt, rh, mixr, tmp, qs(1), wspd, wdir, rpk, theta, thetav
+    real :: thetae(bd%is:bd%ie,bd%js:bd%je,npz)
+
+    real, PARAMETER :: rgrav = 1./grav
+    real, PARAMETER :: rdg = -rdgas*rgrav
+    real, PARAMETER :: sounding_top = 10.e2
+    real, PARAMETER :: ms_to_knot = 1.9438445
+    real, PARAMETER :: p0 = 1000.e2
+
+    integer :: i, j, k, n
+    integer :: yr_v, mo_v, dy_v, hr_v, mn_v, sec_v ! need to get numbers for these
+
+    if (.not. any(do_sonde_diag_column)) return
+    call get_date(Time, yr_v, mo_v, dy_v, hr_v, mn_v, sec_v)
+    call eqv_pot(thetae, pt, delp, delz, peln, pkz, q(bd%isd,bd%jsd,1,sphum), &
+         bd%is, bd%ie, bd%js, bd%je, ng, npz, hydrostatic, moist_phys)
+
+    do n=1,size(diag_sonde_i)
+
+       i=diag_sonde_i(n)
+       j=diag_sonde_j(n)
+
+       if (i < bd%is .or. i > bd%ie) cycle
+       if (j < bd%js .or. j > bd%je) cycle
+
+       if (do_sonde_diag_column(i,j)) then
+          !call column_diagnostics_header(diag_sonde_names(n), diag_sonde_units(n), Time, n, &
+          !     diag_sonde_lon, diag_sonde_lat, diag_sonde_i, diag_sonde_j)
+
+          write(diag_sonde_units(n),600)        &
+               trim(diag_sonde_names(n)), yr_v, mo_v, dy_v, hr_v, yr_init, mo_init, dy_init, hr_init, trim(runname)
+600       format(A,'.v', I4, I2.2, I2.2, I2.2, '.i', I4, I2.2, I2.2, I2.2, '.', A, '.dat########################################################')
+          write(diag_sonde_units(n),601) trim(diag_sonde_names(n)), yr_v, mo_v, dy_v, hr_v, yr_init, mo_init, dy_init, hr_init, &
+               trim(runname), diag_sonde_lon(n), diag_sonde_lat(n)
+601       format(3x, A16, ' Valid ', I4, I2.2, I2.2, '.', I2.2, 'Z  Init ', I4, I2.2, I2.2, '.', I2.2, 'Z \n', A, 2F8.3)
+          write(diag_sonde_units(n),*)  
+          write(diag_sonde_units(n),*)        '-------------------------------------------------------------------------------'
+          write(diag_sonde_units(n),'(11A7)') 'PRES', 'HGHT', "TEMP", "DWPT", "RELH", "MIXR", "DRCT", "SKNT", "THTA", "THTE", "THTV"
+          write(diag_sonde_units(n),'(11A7)') 'hPa', 'm', 'C', 'C', '%', 'g/kg', 'deg', 'knot', 'K', 'K', 'K'
+          write(diag_sonde_units(n),*)        '-------------------------------------------------------------------------------'
+
+          if (hydrostatic) then
+             call mpp_error(NOTE, 'Hydrostatic diagnostic sounding not yet supported')
+          else
+             hght(npz) = phis(i,j)*rgrav - 0.5*delz(i,j,npz)
+             do k=npz-1,1,-1
+                hght(k) = hght(k+1) - 0.5*(delz(i,j,k)+delz(i,j,k+1))
+             enddo
+
+             do k=npz,1,-1
+
+                Tv = pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))
+                pres = delp(i,j,k)/delz(i,j,k)*rdg*Tv
+                !if (pres < sounding_top) cycle
+
+                call qsmith(1, 1, 1, pt(i,j,k:k),   &
+                     (/pres/), q(i,j,k:k,sphum), qs)
+
+                mixr = q(i,j,k,sphum)/(1.-sum(q(i,j,k,1:nwat))) ! convert from sphum to mixing ratio
+                rh = q(i,j,k,sphum)/qs(1) 
+                tmp = ( log(max(rh,1.e-2))/ 17.27  + ( pt(i,j,k) - 273.14 )/ ( -35.84 + pt(i,j,k)) ) 
+                dewpt = 237.3* tmp/ ( 1. - tmp ) ! deg C
+                wspd = 0.5*sqrt((u(i,j,k)+u(i,j+1,k))*(u(i,j,k)+u(i,j+1,k)) + (v(i,j,k)+v(i+1,j,k))*(v(i,j,k)+v(i+1,j,k)))*ms_to_knot ! convert to knots
+                if (wspd > 0.01) then
+                   !https://www.eol.ucar.edu/content/wind-direction-quick-reference
+                   wdir = atan2(u(i,j,k)+u(i,j+1,k),v(i,j,k)+v(i+1,j,k)) * rad2deg
+                else
+                   wdir = 0.
+                endif
+                rpk = exp(-kappa*log(pres/p0))
+                theta = pt(i,j,k)*rpk
+                thetav = Tv*rpk
+
+                write(diag_sonde_units(n),'(F7.1, I7, F7.1, F7.1, I7, F7.2, I7, F7.2, F7.1, F7.1, F7.1)') & 
+                     pres*1.e-2, int(hght(k)), pt(i,j,k)-TFREEZE, dewpt, int(rh*100.), mixr*1.e3, int(wdir), wspd, theta, thetae(i,j,k), thetav
+             enddo
+          endif
+
+          !call mpp_flush(diag_units(n))
+          
+       endif
+
+    enddo
+
+
+  end subroutine sounding_column
+
 
 end module fv_diagnostics_mod
