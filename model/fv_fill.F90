@@ -81,20 +81,20 @@ contains
              zfix(i) = .true.
              if ( q(i,k-1,ic) > 0. ) then
 ! Borrow from above
-                dq = min ( q(i,k-1,ic)*dp(i,k-1), -q(i,k,ic)*dp(i,k) ) 
+                dq = min ( q(i,k-1,ic)*dp(i,k-1), -q(i,k,ic)*dp(i,k) )
                 q(i,k-1,ic) = q(i,k-1,ic) - dq/dp(i,k-1)
                 q(i,k  ,ic) = q(i,k  ,ic) + dq/dp(i,k  )
              endif
              if ( q(i,k,ic)<0.0 .and. q(i,k+1,ic)>0. ) then
 ! Borrow from below:
-                dq = min ( q(i,k+1,ic)*dp(i,k+1), -q(i,k,ic)*dp(i,k) ) 
+                dq = min ( q(i,k+1,ic)*dp(i,k+1), -q(i,k,ic)*dp(i,k) )
                 q(i,k+1,ic) = q(i,k+1,ic) - dq/dp(i,k+1)
                 q(i,k  ,ic) = q(i,k  ,ic) + dq/dp(i,k  )
              endif
           endif
          enddo
       enddo
- 
+
 ! Bottom layer
       k = km
       do i=1,im
@@ -104,7 +104,7 @@ contains
              qup =  q(i,k-1,ic)*dp(i,k-1)
              qly = -q(i,k  ,ic)*dp(i,k  )
              dup =  min(qly, qup)
-             q(i,k-1,ic) = q(i,k-1,ic) - dup/dp(i,k-1) 
+             q(i,k-1,ic) = q(i,k-1,ic) - dup/dp(i,k-1)
              q(i,k,  ic) = q(i,k,  ic) + dup/dp(i,k  )
           endif
       enddo

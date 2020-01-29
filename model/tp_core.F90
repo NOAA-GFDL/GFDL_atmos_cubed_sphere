@@ -135,7 +135,7 @@ contains
 
    do j=js,je+1
       do i=isd,ied
-         fyy(i,j) = yfx(i,j) * fy2(i,j) 
+         fyy(i,j) = yfx(i,j) * fy2(i,j)
       enddo
    enddo
    do j=js,je
@@ -289,7 +289,7 @@ contains
     endif
 
  endif
-      
+
  end subroutine copy_corners
 
  subroutine xppm(flux, q, c, iord, is,ie,isd,ied, jfirst,jlast,jsd,jed, npx, npy, dxa, bounded_domain, grid_type)
@@ -331,7 +331,7 @@ contains
 
   if ( iord < 8 ) then
 ! ord = 2: perfectly linear ppm scheme
-! Diffusivity: ord2 < ord5 < ord3 < ord4 < ord6 
+! Diffusivity: ord2 < ord5 < ord3 < ord4 < ord6
 
    do i=is1, ie3
       al(i) = p1*(q1(i-1)+q1(i)) + p2*(q1(i-2)+q1(i+1))
@@ -375,10 +375,10 @@ contains
          xt = c(i,j)
          if ( xt > 0. ) then
               qtmp = q1(i-1)
-              flux(i,j) = qtmp + (1.-xt)*(al(i)-qtmp-xt*(al(i-1)+al(i)-(qtmp+qtmp)))  
+              flux(i,j) = qtmp + (1.-xt)*(al(i)-qtmp-xt*(al(i-1)+al(i)-(qtmp+qtmp)))
          else
               qtmp = q1(i)
-              flux(i,j) = qtmp + (1.+xt)*(al(i)-qtmp+xt*(al(i)+al(i+1)-(qtmp+qtmp)))  
+              flux(i,j) = qtmp + (1.+xt)*(al(i)-qtmp+xt*(al(i)+al(i+1)-(qtmp+qtmp)))
          endif
 !        x0 = sign(dim(xt, 0.), 1.)
 !        x1 = sign(dim(0., xt), 1.)
@@ -468,7 +468,7 @@ contains
              fx1(i) = (1.+c(i,j))*(bl(i) + c(i,j)*b0(i))
              flux(i,j) = q1(i)
          endif
-         if (smt5(i-1).or.smt5(i)) flux(i,j) = flux(i,j) + fx1(i) 
+         if (smt5(i-1).or.smt5(i)) flux(i,j) = flux(i,j) + fx1(i)
       enddo
    endif
    goto 666
@@ -682,7 +682,7 @@ if ( jord < 8 ) then
               bl(i,j) = al(i,j  ) - q(i,j)
               br(i,j) = al(i,j+1) - q(i,j)
               b0(i,j) = bl(i,j) + br(i,j)
-                   x0 = abs(b0(i,j)) 
+                   x0 = abs(b0(i,j))
                    xt = abs(bl(i,j)-br(i,j))
               smt5(i,j) =    x0 < xt
               smt6(i,j) = 3.*x0 < xt
@@ -719,7 +719,7 @@ if ( jord < 8 ) then
               bl(i,j) = al(i,j  ) - q(i,j)
               br(i,j) = al(i,j+1) - q(i,j)
               b0(i,j) = bl(i,j) + br(i,j)
-                   x0 = abs(b0(i,j)) 
+                   x0 = abs(b0(i,j))
                    xt = abs(bl(i,j)-br(i,j))
               smt5(i,j) =    x0 < xt
               smt6(i,j) = 3.*x0 < xt
@@ -772,7 +772,7 @@ if ( jord < 8 ) then
                   fx1(i) = (1.+c(i,j))*(bl(i,j) + c(i,j)*b0(i,j))
                   flux(i,j) = q(i,j)
              endif
-             if (smt5(i,j-1).or.smt5(i,j)) flux(i,j) = flux(i,j) + fx1(i) 
+             if (smt5(i,j-1).or.smt5(i,j)) flux(i,j) = flux(i,j) + fx1(i)
           enddo
        enddo
    endif
@@ -782,7 +782,7 @@ else
 ! Monotonic constraints:
 ! ord = 8: PPM with Lin's PPM fast monotone constraint
 ! ord > 8: PPM with Lin's modification of Huynh 2nd constraint
- 
+
   do j=js-2,je+2
      do i=ifirst,ilast
              xt = 0.25*(q(i,j+1) - q(i,j-1))
@@ -829,7 +829,7 @@ else
                   pmp_2 = dq(i,j-1)
                   lac_2 = pmp_2 - 0.75*dq(i,j-2)
                   br(i,j) = min(max(0.,pmp_2,lac_2), max(br(i,j), min(0.,pmp_2,lac_2)))
-                  pmp_1 = -dq(i,j) 
+                  pmp_1 = -dq(i,j)
                   lac_1 = pmp_1 + 0.75*dq(i,j+1)
                   bl(i,j) = min(max(0.,pmp_1,lac_1), max(bl(i,j), min(0.,pmp_1,lac_1)))
              endif
@@ -921,7 +921,7 @@ endif
 !
 ! !DESCRIPTION:
 !
-!     Ghost 4d east/west 
+!     Ghost 4d east/west
 !
 ! !REVISION HISTORY:
 !    2005.08.22   Putman
@@ -1042,11 +1042,11 @@ endif
 #ifdef USE_SG
    real, pointer, dimension(:,:)   :: dx, dy, rdxc, rdyc
    real, pointer, dimension(:,:,:) :: sin_sg
-   dx       => gridstruct%dx     
-   dy       => gridstruct%dy     
-   rdxc     => gridstruct%rdxc   
-   rdyc     => gridstruct%rdyc   
-   sin_sg   => gridstruct%sin_sg 
+   dx       => gridstruct%dx
+   dy       => gridstruct%dy
+   rdxc     => gridstruct%rdxc
+   rdyc     => gridstruct%rdyc
+   sin_sg   => gridstruct%sin_sg
 #endif
 
    i1 = is-1-nord;    i2 = ie+1+nord

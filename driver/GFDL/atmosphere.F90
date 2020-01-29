@@ -932,7 +932,7 @@ contains
        call timing_on('TWOWAY_UPDATE')
        call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mygrid)
        call timing_off('TWOWAY_UPDATE')
-    endif   
+    endif
 
 #if !defined(ATMOS_NUDGE) && !defined(CLIMATE_NUDGE) && !defined(ADA_NUDGE)
    if ( .not.forecast_mode .and. Atm(mygrid)%flagstruct%nudge .and. Atm(mygrid)%flagstruct%na_init>0 ) then

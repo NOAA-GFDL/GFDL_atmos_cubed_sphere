@@ -319,7 +319,7 @@ contains
 #endif
 
    call set_domain(Atm(mygrid)%domain)
-      
+
  end subroutine atmosphere_init
 
 
@@ -612,7 +612,7 @@ contains
  subroutine atmosphere_domain ( fv_domain, layout, regional )
    type(domain2d), intent(out) :: fv_domain
    integer, intent(out) :: layout(2)
-   logical, intent(out) :: regional 
+   logical, intent(out) :: regional
 !  returns the domain2d variable associated with the coupling grid
 !  note: coupling is done using the mass/temperature grid with no halos
 
@@ -670,7 +670,7 @@ contains
    allocate(z(iec-isc+1,jec-jsc+1,npz+1))
    allocate(dz(iec-isc+1,jec-jsc+1,npz))
    z  = 0
-   dz = 0 
+   dz = 0
 
    if (Atm(mygrid)%flagstruct%hydrostatic) then
      !--- generate dz using hydrostatic assumption
@@ -731,7 +731,7 @@ contains
    ! ied    - horizontal resolution in i-dir with haloes
    ! jed    - horizontal resolution in j-dir with haloes
    ! ksize  - vertical resolution
-   ! data_p - optional input field in packed format (ix,k)  
+   ! data_p - optional input field in packed format (ix,k)
    !--------------------------------------------------------------------
    !--- interface variables ---
    real(kind=kind_phys), dimension(1:isize,1:jsize,ksize), intent(inout) :: data
@@ -777,7 +777,7 @@ contains
      call mpp_error(FATAL, modname//' - unsupported halo size')
    endif
 
-   !--- fill the halo points when at a corner of the cubed-sphere tile 
+   !--- fill the halo points when at a corner of the cubed-sphere tile
    !--- interior domain corners are handled correctly
    if ( (isc==1) .or. (jsc==1) .or. (iec==npx-1) .or. (jec==npy-1) ) then
      do k = 1, ksize
@@ -799,7 +799,7 @@ contains
  subroutine atmosphere_nggps_diag (Time, init)
    !----------------------------------------------
    ! api for output of NCEP/EMC diagnostics
-   ! 
+   !
    ! if register is present and set to .true.
    ! will make the initialization call
    !
@@ -1024,7 +1024,7 @@ contains
    call atmos_phys_qdt_diag(Atm(n)%q, Atm(n)%phys_diag, nt_dyn, dt_atmos, .true.)
 
 !--- put u/v tendencies into haloed arrays u_dt and v_dt
-!$OMP parallel do default (none) & 
+!$OMP parallel do default (none) &
 !$OMP              shared (rdt, n, nq, dnats, npz, ncnst, nwat, mygrid, u_dt, v_dt, t_dt,&
 !$OMP                      Atm, IPD_Data, Atm_block, sphum, liq_wat, rainwat, ice_wat,   &
 !$OMP                      snowwat, graupel, nq_adv)   &
@@ -1047,7 +1047,7 @@ contains
 
 
      do k = 1, npz
-       k1 = npz+1-k !reverse the k direction 
+       k1 = npz+1-k !reverse the k direction
        do ix = 1, blen
          i = Atm_block%index(nb)%ii(ix)
          j = Atm_block%index(nb)%jj(ix)
@@ -1065,10 +1065,10 @@ contains
 ! **********************************************************************************************************
 ! Dry mass: the following way of updating delp is key to mass conservation with hybrid 32-64 bit computation
 ! **********************************************************************************************************
-! The following example is for 2 water species. 
+! The following example is for 2 water species.
 !        q0 = Atm(n)%delp(i,j,k1)*(1.-(Atm(n)%q(i,j,k1,1)+Atm(n)%q(i,j,k1,2))) + q1 + q2
          qt = sum(qwat(1:nwat))
-         q0 = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:nwat))) + qt 
+         q0 = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:nwat))) + qt
          Atm(n)%delp(i,j,k1) = q0
          Atm(n)%q(i,j,k1,1:nq_adv) = qwat(1:nq_adv) / q0
          if (dnats .gt. 0) Atm(n)%q(i,j,k1,nq_adv+1:nq) = IPD_Data(nb)%Stateout%gq0(ix,k,nq_adv+1:nq)
@@ -1094,7 +1094,7 @@ contains
      !--- See Note in statein...
      do iq = nq+1, ncnst
        do k = 1, npz
-         k1 = npz+1-k !reverse the k direction 
+         k1 = npz+1-k !reverse the k direction
          do ix = 1, blen
            i = Atm_block%index(nb)%ii(ix)
            j = Atm_block%index(nb)%jj(ix)
@@ -1157,7 +1157,7 @@ contains
        call timing_on('TWOWAY_UPDATE')
        call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mygrid)
        call timing_off('TWOWAY_UPDATE')
-    endif   
+    endif
    call nullify_domain()
 
   !---- diagnostics for FV dynamics -----
@@ -1234,9 +1234,9 @@ contains
           allocate ( t0(isc:iec,jsc:jec, npz) )
      endif
 
-!$omp parallel do default (none) & 
+!$omp parallel do default (none) &
 !$omp              shared (nudge_dz, npz, jsc, jec, isc, iec, n, sphum, u0, v0, t0, dz0, dp0, Atm, zvir, mygrid) &
-!$omp             private (k, j, i) 
+!$omp             private (k, j, i)
        do k=1,npz
           do j=jsc,jec+1
              do i=isc,iec
@@ -1271,7 +1271,7 @@ contains
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
-                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      & 
+                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
@@ -1285,7 +1285,7 @@ contains
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
-                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      & 
+                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
@@ -1357,7 +1357,7 @@ contains
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
-                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      & 
+                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
@@ -1371,7 +1371,7 @@ contains
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
-                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      & 
+                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
@@ -1441,7 +1441,7 @@ contains
 ! Local GFS-phys consistent parameters:
 !--------------------------------------
    real(kind=kind_phys), parameter:: p00 = 1.e5
-   real(kind=kind_phys), parameter:: qmin = 1.0e-10   
+   real(kind=kind_phys), parameter:: qmin = 1.0e-10
    real(kind=kind_phys):: pk0inv, ptop, pktop
    real(kind=kind_phys) :: rTv, dm, qgrs_rad
    integer :: nb, blen, npz, i, j, k, ix, k1, dnats, nq_adv
@@ -1461,7 +1461,7 @@ contains
 !---------------------------------------------------------------------
 ! use most up to date atmospheric properties when running serially
 !---------------------------------------------------------------------
-!$OMP parallel do default (none) & 
+!$OMP parallel do default (none) &
 !$OMP             shared  (Atm_block, Atm, IPD_Data, npz, nq, ncnst, sphum, liq_wat, &
 !$OMP                      ice_wat, rainwat, snowwat, graupel, pk0inv, ptop,   &
 !$OMP                      pktop, zvir, mygrid, dnats, nq_adv) &
@@ -1514,14 +1514,14 @@ contains
                                             - IPD_Data(nb)%Statein%qgrs(ix,k,graupel)
          else !variable condensate numbers
             IPD_Data(nb)%Statein%prsl(ix,k) = IPD_Data(nb)%Statein%prsl(ix,k) &
-                                            - sum(IPD_Data(nb)%Statein%qgrs(ix,k,2:Atm(mygrid)%flagstruct%nwat))   
+                                            - sum(IPD_Data(nb)%Statein%qgrs(ix,k,2:Atm(mygrid)%flagstruct%nwat))
          endif
        enddo
      enddo
 
 ! Re-compute pressure (dry_mass + water_vapor) derived fields:
      do i=1,blen
-        IPD_Data(nb)%Statein%prsi(i,npz+1) = ptop 
+        IPD_Data(nb)%Statein%prsi(i,npz+1) = ptop
      enddo
      do k=npz,1,-1
         do i=1,blen
@@ -1583,7 +1583,7 @@ contains
     if ( Atm(mygrid)%flagstruct%hydrostatic .or. Atm(mygrid)%flagstruct%use_hydro_pressure ) then
         do k=2,npz
            do i=1,blen
-              IPD_Data(nb)%Statein%prsik(i,k) = exp( kappa*IPD_Data(nb)%Statein%prsik(i,k) )*pk0inv 
+              IPD_Data(nb)%Statein%prsik(i,k) = exp( kappa*IPD_Data(nb)%Statein%prsik(i,k) )*pk0inv
            enddo
         enddo
     endif
@@ -1613,7 +1613,7 @@ contains
       if (allocated(phys_diag%phys_qv_dt)) phys_diag%phys_qv_dt = q(isc:iec,jsc:jec,:,sphum)
       if (allocated(phys_diag%phys_ql_dt)) then
          if (liq_wat < 0) call mpp_error(FATAL, " phys_ql_dt needs at least one liquid water tracer defined")
-         phys_diag%phys_ql_dt = q(isc:iec,jsc:jec,:,liq_wat) 
+         phys_diag%phys_ql_dt = q(isc:iec,jsc:jec,:,liq_wat)
       endif
       if (allocated(phys_diag%phys_qi_dt)) then
          if (ice_wat < 0) then
@@ -1639,7 +1639,7 @@ contains
       if (snowwat > 0) phys_diag%phys_qi_dt = q(isc:iec,jsc:jec,:,snowwat) + phys_diag%phys_qi_dt
       if (graupel > 0) phys_diag%phys_qi_dt = q(isc:iec,jsc:jec,:,graupel) + phys_diag%phys_qi_dt
    endif
-      
+
    if (.not. begin) then
       if (allocated(phys_diag%phys_qv_dt)) phys_diag%phys_qv_dt = phys_diag%phys_qv_dt / dt
       if (allocated(phys_diag%phys_ql_dt)) phys_diag%phys_ql_dt = phys_diag%phys_ql_dt / dt

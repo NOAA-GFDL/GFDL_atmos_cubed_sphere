@@ -35,7 +35,7 @@ module fv_nggps_diags_mod
 
  real, parameter:: missing_value = -1.e10
  logical master
- integer :: id_ua, id_va, id_pt, id_delp, id_pfhy, id_pfnh, id_w, id_delz 
+ integer :: id_ua, id_va, id_pt, id_delp, id_pfhy, id_pfnh, id_w, id_delz
  integer, allocatable :: id_tracer(:)
 
  logical :: module_is_initialized=.false.
@@ -95,7 +95,7 @@ contains
        id_va = register_diag_field ( trim(field), 'vcomp', axes(1:3), Time,        &
             'meridional wind', 'm/sec', missing_value=missing_value, range=vrange)
 
-       if( Atm(n)%flagstruct%hydrostatic ) then 
+       if( Atm(n)%flagstruct%hydrostatic ) then
           id_pfhy = register_diag_field ( trim(field), 'pfhy', axes(1:3), Time,        &
                'hydrostatic pressure', 'pa', missing_value=missing_value )
        else
@@ -200,7 +200,7 @@ contains
     if( Atm(n)%flagstruct%hydrostatic .and. id_pfhy > 0 ) then
        do k=1,npz
          do j=jsc,jec
-           do i=isc,iec         
+           do i=isc,iec
              wk(i,j,k) = 0.5 *(Atm(n)%pe(i,k,j)+Atm(n)%pe(i,k+1,j))
            enddo
          enddo
@@ -213,7 +213,7 @@ contains
     if(id_delp > 0 .or. ((.not. Atm(n)%flagstruct%hydrostatic) .and. id_pfnh > 0)) then
        do k=1,npz
          do j=jsc,jec
-           do i=isc,iec         
+           do i=isc,iec
              wk(i,j,k) = Atm(n)%delp(i,j,k)*(1.-sum(Atm(n)%q(i,j,k,2:Atm(n)%flagstruct%nwat)))
            enddo
          enddo
@@ -225,9 +225,9 @@ contains
     if( (.not. Atm(n)%flagstruct%hydrostatic) .and. id_pfnh > 0) then
        do k=1,npz
          do j=jsc,jec
-           do i=isc,iec         
+           do i=isc,iec
              wk(i,j,k) = -wk(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*rdgas*          &
-                         Atm(n)%pt(i,j,k)*(1.+zvir*Atm(n)%q(i,j,k,sphum))     
+                         Atm(n)%pt(i,j,k)*(1.+zvir*Atm(n)%q(i,j,k,sphum))
            enddo
          enddo
        enddo
