@@ -177,7 +177,7 @@ character(len=4)      :: plabel
                        'Geopotential Height', 'm', standard_name='geopotential_height', axis='half')
 
 !-----------------------------------------------------------------------
-! register products of 3D variables (on model levels and pressure levels) 
+! register products of 3D variables (on model levels and pressure levels)
 
     ID_u2 = register_cmip_diag_field_3d (mod_name, 'u2', Time, &
                       'Square of Eastward Wind', 'm2 s-2', standard_name='square_of_eastward_wind')
@@ -480,64 +480,64 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
 
 !----------------------------------------------------------------------
 ! process 2D fields on specific pressure levels
-! 
+!
   if (id_ua10 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 10.e2, Atm(n)%peln, &
-                               Atm(n)%ua(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%ua(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_ua10, dat2, Time)
   endif
 
   if (id_ua200 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, &
-                               Atm(n)%ua(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%ua(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_ua200, dat2, Time)
   endif
 
   if (id_va200 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, &
-                               Atm(n)%va(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%va(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_va200, dat2, Time)
   endif
 
   if (id_ua850 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
-                               Atm(n)%ua(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%ua(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_ua850, dat2, Time)
   endif
 
   if (id_va850 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
-                               Atm(n)%va(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%va(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_va850, dat2, Time)
   endif
 
   if (id_ta500 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 500.e2, Atm(n)%peln, &
-                               Atm(n)%pt(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%pt(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_ta500, dat2, Time)
   endif
 
   if (id_ta700 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 700.e2, Atm(n)%peln, &
-                               Atm(n)%pt(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%pt(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_ta700, dat2, Time)
   endif
 
   if (id_ta850 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
-                               Atm(n)%pt(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%pt(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_ta850, dat2, Time)
     endif
 
   if (id_hus850 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
-                               Atm(n)%q(isc:iec,jsc:jec,:,sphum), dat2)          
+                               Atm(n)%q(isc:iec,jsc:jec,:,sphum), dat2)
     used = send_data (id_hus850, dat2, Time)
   endif
 
   if (id_wap500 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 500.e2, Atm(n)%peln, &
-                               Atm(n)%omga(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%omga(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_wap500, dat2, Time)
   endif
 

@@ -36,7 +36,7 @@ module nh_core_mod
    public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, nh_bc
    real, parameter:: r3 = 1./3.
 
-CONTAINS 
+CONTAINS
 
   subroutine Riem_Solver3(ms, dt,   is,   ie,   js, je, km, ng,    &
                           isd, ied, jsd, jed, akap, cappa, cp,     &

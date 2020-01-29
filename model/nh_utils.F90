@@ -39,7 +39,7 @@ module nh_utils_mod
    real, parameter:: dz_min = 2.
    real, parameter:: r3 = 1./3.
 
-CONTAINS 
+CONTAINS
 
   subroutine update_dz_c(is, ie, js, je, km, ng, dt, dp0, zs, area, ut, vt, gz, ws, &
        npx, npy, sw_corner, se_corner, ne_corner, nw_corner, bd, grid_type)
@@ -218,7 +218,7 @@ CONTAINS
 
   damp(km+1) = damp(km)
   ndif(km+1) = ndif(km)
-  
+
   isd = is - ng;  ied = ie + ng
   jsd = js - ng;  jed = je + ng
 
@@ -306,7 +306,7 @@ CONTAINS
    real, intent(in), dimension(is-ng:,js-ng:,1:):: q_con, cappa
    real, intent(in)::   hs(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: w3
-! OUTPUT PARAMETERS 
+! OUTPUT PARAMETERS
    real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: gz
    real, intent(  out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: pef
 ! Local:
@@ -620,7 +620,7 @@ CONTAINS
          wt(i,km) = (w(i,km) + 2.*ws(i)*cd/delz(i,km)**2                        &
                   +  a*wt(i,km-1))/(1. + a + (cd+cd)/delz(i,km)**2 + a*gam(i,km))
      enddo
- 
+
      do k=km-1,1,-1
         do i=is,ie
            wt(i,k) = wt(i,k) - gam(i,k+1)*wt(i,k+1)
@@ -659,7 +659,7 @@ CONTAINS
   integer:: i, k, n, ke, kt1, ktop
   integer:: ks0, ks1
 
-  grg = gama * rgas  
+  grg = gama * rgas
   rdt = 1. / bdt
   dt = bdt / real(ms)
 
@@ -696,7 +696,7 @@ CONTAINS
             dts(k) = -dz(k)/sqrt(grg*pf1(k)/rden)
 #endif
             if ( bdt > dts(k) ) then
-                 ks0 = k-1 
+                 ks0 = k-1
                  goto 222
             endif
          enddo
@@ -805,7 +805,7 @@ CONTAINS
             m_top(ke) = m_top(ke) + z_frac*dm(k)
             r_top(ke) = r_top(ke) + z_frac*r_hi(k)
             go to 444     ! next level
-        endif 
+        endif
      enddo
 444 continue
 
@@ -821,7 +821,7 @@ CONTAINS
              time_left = time_left -  dts(k)
              m_bot(ke) = m_bot(ke) +   dm(k)
              r_bot(ke) = r_bot(ke) + r_lo(k)
-        else 
+        else
                 z_frac = time_left/dts(k)
              m_bot(ke) = m_bot(ke) + z_frac*  dm(k)
              r_bot(ke) = r_bot(ke) + z_frac*r_lo(k)
@@ -1474,7 +1474,7 @@ CONTAINS
  real, intent(out), dimension(i1:i2,km+1):: qe
 !-----------------------------------------------------------------------
  real, parameter:: r2o3 = 2./3.
- real, parameter:: r4o3 = 4./3. 
+ real, parameter:: r4o3 = 4./3.
  real  gak(km)
  real  bet
  integer i, k
@@ -1584,7 +1584,7 @@ CONTAINS
         gam(i,k) = gk / bet
      enddo
   enddo
- 
+
   a_bot = 1. + gk*(gk+1.5)
     xt1 =   2.*gk*(gk+1.)
   do i=i1,i2
@@ -1751,7 +1751,7 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
 #endif
 #endif
       pkc, gz, pk3, &
-      BC_step, BC_split, &      
+      BC_step, BC_split, &
       pkc_pertn, computepk3, isd, ied, isd_BC, ied_BC, istart, iend, jsd, jed, jstart, jend, npz)
 
    integer, intent(IN) :: isd, ied, isd_BC, ied_BC, istart, iend, jsd, jed, jstart, jend, npz
@@ -1802,7 +1802,7 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
       enddo
       do k=npz,1,-1
          do i=istart,iend
-            delz_int = (delzBC_t0(i,j,k)*(BC_split-BC_step) + BC_step*delzBC_t1(i,j,k))*denom            
+            delz_int = (delzBC_t0(i,j,k)*(BC_split-BC_step) + BC_step*delzBC_t1(i,j,k))*denom
             gz(i,j,k) = gz(i,j,k+1) - delz_int*grav
          enddo
       enddo

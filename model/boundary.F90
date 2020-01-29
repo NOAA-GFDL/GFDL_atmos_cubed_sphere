@@ -120,7 +120,7 @@ contains
     else
        debug = .false.
     end if
-    
+
     if (is == 1) then
 
        if (pd) then
@@ -148,7 +148,7 @@ contains
           end do
 
        end if
-       
+
     end if
 
     if (js == 1) then
@@ -178,7 +178,7 @@ contains
           end do
 
        end if
-       
+
     end if
 
     if (ie == npx - 1) then
@@ -187,7 +187,7 @@ contains
 
           do j=jstart,jend+jstag
           do i=ie+1+istag,ied+istag
-             
+
              if (real(i) >= ie+istag + q(ie+istag,j)/(q(ie+istag-1,j)-q(ie+istag,j)+1.e-12) .and. &
                   q(ie+istag,j) < q(ie+istag-1,j)) then
                 q(i,j) = q(i-1,j)
@@ -258,7 +258,7 @@ contains
              else
                 q(i,j) = 0.5*( real(2-i)*q(1,j) - real(1-i)*q(2,j) )
              end if
-             
+
              if  (real(j) <= 1. - q(i,1)/(q(i,2) - q(i,1) + 1.e-12) .and. q(i,2) > q(i,1)) then
                 q(i,j) = q(i,j) + 0.5*q(i,j+1)
 
@@ -273,10 +273,10 @@ contains
 
           do j=jsd,0
           do i=isd,0
-                 
+
              q(i,j) = 0.5*( real(2-i)*q(1,j) - real(1-i)*q(2,j) ) + &
                   0.5*( real(2-j)*q(i,1) - real(1-j)*q(i,2) )
-             
+
           end do
           end do
 
@@ -305,7 +305,7 @@ contains
              else
                 q(i,j) = q(i,j) + 0.5*( real(j - (je+jstag-1))*q(i,je+jstag) + real((je+jstag) - j)*q(i,je+jstag-1) )
              end if
-                 
+
           end do
           end do
 
@@ -313,10 +313,10 @@ contains
 
           do j=je+1+jstag,jed+jstag
           do i=isd,0
-                 
+
              q(i,j) = 0.5*( real(2-i)*q(1,j) - real(1-i)*q(2,j) ) + &
                       0.5*( real(j - (je+jstag-1))*q(i,je+jstag) + real((je+jstag) - j)*q(i,je+jstag-1) )
-          
+
           end do
           end do
 
@@ -330,8 +330,8 @@ contains
 
           do j=je+1+jstag,jed+jstag
           do i=ie+1+istag,ied+istag
-                 
-             
+
+
              if (real(i) >= ie+istag + q(ie+istag,j)/(q(ie+istag-1,j)-q(ie+istag,j)+1.e-12) .and. &
                   q(ie+istag-1,j) > q(ie+istag,j)) then
                 q(i,j) = 0.5*q(i-1,j)
@@ -345,7 +345,7 @@ contains
              else
                 q(i,j) = q(i,j) + 0.5*( real(j - (je+jstag-1))*q(i,je+jstag) + real((je+jstag) - j)*q(i,je+jstag-1) )
              end if
-          
+
           end do
           end do
 
@@ -353,10 +353,10 @@ contains
 
           do j=je+1+jstag,jed+jstag
           do i=ie+1+istag,ied+istag
-                 
+
              q(i,j) = 0.5*( real(i - (ie+istag-1))*q(ie+istag,j) + real((ie+istag) - i)*q(ie+istag-1,j) ) + &
                       0.5*( real(j - (je+jstag-1))*q(i,je+jstag) + real((je+jstag) - j)*q(i,je+jstag-1) )
-          
+
           end do
           end do
 
@@ -370,22 +370,22 @@ contains
 
           do j=0,jsd,-1
           do i=ie+1+istag,ied+istag
-                 
-             
+
+
              if (real(i) >= ie+istag + q(ie+istag,j)/(q(ie+istag-1,j)-q(ie+istag,j)+1.e-12) .and. &
                   q(ie+istag-1,j) > q(ie+istag,j)) then
                 q(i,j) = 0.5*q(i-1,j)
              else
                 q(i,j) = 0.5*(real(i - (ie+istag-1))*q(ie+istag,j) + real((ie+istag) - i)*q(ie+istag-1,j))
              end if
-             
+
              if  (real(j) <= 1. - q(i,1)/(q(i,2) - q(i,1) + 1.e-12) .and. &
                   q(i,2) > q(i,1)) then
                 q(i,j) = q(i,j) + 0.5*q(i,j+1)
              else
                 q(i,j) = q(i,j) + 0.5*(real(2-j)*q(i,1) - real(1-j)*q(i,2))
              end if
-          
+
           end do
           end do
 
@@ -394,10 +394,10 @@ contains
 
           do j=jsd,0
           do i=ie+1+istag,ied+istag
-                 
+
              q(i,j) = 0.5*( real(i - (ie+istag-1))*q(ie+istag,j) + real((ie+istag) - i)*q(ie+istag-1,j) ) + &
                       0.5*( real(2-j)*q(i,1) - real(1-j)*q(i,2) )
-          
+
           end do
           end do
 
@@ -413,7 +413,7 @@ contains
 
    type(fv_grid_bounds_type), intent(IN) :: bd
    real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag), intent(INOUT) :: var_nest
-   real, dimension(isg:ieg+istag,jsg:jeg+jstag), intent(IN) :: var_coarse 
+   real, dimension(isg:ieg+istag,jsg:jeg+jstag), intent(IN) :: var_coarse
    integer, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,2), intent(IN) :: ind
    real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,4), intent(IN) :: wt
    integer, intent(IN) :: istag, jstag, isg, ieg, jsg, jeg
@@ -466,13 +466,13 @@ contains
            wt(i,j,1)*var_coarse(ic,  jc) +  &
            wt(i,j,2)*var_coarse(ic,  jc+1) +  &
            wt(i,j,3)*var_coarse(ic+1,jc+1) +  &
-           wt(i,j,4)*var_coarse(ic+1,jc) 
+           wt(i,j,4)*var_coarse(ic+1,jc)
 
    end do
    end do
 
  end subroutine fill_nested_grid_2D
- 
+
   subroutine fill_nested_grid_3D(var_nest, var_coarse, ind, wt, istag, jstag,  &
       isg, ieg, jsg, jeg, npz, bd, istart_in, iend_in, jstart_in, jend_in)
 
@@ -533,7 +533,7 @@ contains
            wt(i,j,1)*var_coarse(ic,  jc,  k) +  &
            wt(i,j,2)*var_coarse(ic,  jc+1,k) +  &
            wt(i,j,3)*var_coarse(ic+1,jc+1,k) +  &
-           wt(i,j,4)*var_coarse(ic+1,jc,  k) 
+           wt(i,j,4)*var_coarse(ic+1,jc,  k)
 
    end do
    end do
@@ -567,10 +567,10 @@ contains
 !!$
 !!$   call nested_grid_BC_mpp_3d(var_nest_3d, nest_domain, ind, wt, istag, jstag, &
 !!$      npx, npy, 1, bd, isg, ieg, jsg, jeg, nstep_in, nsplit_in, proc_in)
-!!$   
+!!$
 !!$
 !!$ end subroutine nested_grid_BC_mpp_2d
- 
+
  subroutine nested_grid_BC_mpp_3d(var_nest, var_coarse, nest_domain, ind, wt, istag, jstag, &
       npx, npy, npz, bd, isg, ieg, jsg, jeg, nest_level, nstep_in, nsplit_in, proc_in)
 
@@ -685,7 +685,7 @@ contains
                  wt(i,j,1)*wbuffer(ic,  jc,  k) +  &
                  wt(i,j,2)*wbuffer(ic,  jc+1,k) +  &
                  wt(i,j,3)*wbuffer(ic+1,jc+1,k) +  &
-                 wt(i,j,4)*wbuffer(ic+1,jc,  k) 
+                 wt(i,j,4)*wbuffer(ic+1,jc,  k)
 
          end do
       end do
@@ -718,7 +718,7 @@ contains
                  wt(i,j,1)*sbuffer(ic,  jc,  k) +  &
                  wt(i,j,2)*sbuffer(ic,  jc+1,k) +  &
                  wt(i,j,3)*sbuffer(ic+1,jc+1,k) +  &
-                 wt(i,j,4)*sbuffer(ic+1,jc,  k) 
+                 wt(i,j,4)*sbuffer(ic+1,jc,  k)
 
          end do
       end do
@@ -739,7 +739,7 @@ contains
                  wt(i,j,1)*ebuffer(ic,  jc,  k) +  &
                  wt(i,j,2)*ebuffer(ic,  jc+1,k) +  &
                  wt(i,j,3)*ebuffer(ic+1,jc+1,k) +  &
-                 wt(i,j,4)*ebuffer(ic+1,jc,  k) 
+                 wt(i,j,4)*ebuffer(ic+1,jc,  k)
 
          end do
       end do
@@ -772,7 +772,7 @@ contains
                  wt(i,j,1)*nbuffer(ic,  jc,  k) +  &
                  wt(i,j,2)*nbuffer(ic,  jc+1,k) +  &
                  wt(i,j,3)*nbuffer(ic+1,jc+1,k) +  &
-                 wt(i,j,4)*nbuffer(ic+1,jc,  k) 
+                 wt(i,j,4)*nbuffer(ic+1,jc,  k)
 
          end do
       end do
@@ -788,9 +788,9 @@ contains
  subroutine get_vector_position(position_x, position_y, gridtype)
    integer,          intent(OUT) :: position_x, position_y
    integer, optional, intent(IN) :: gridtype
-   
+
    integer :: grid_offset_type
-   
+
    grid_offset_type = AGRID
    if(present(gridtype)) grid_offset_type = gridtype
 
@@ -816,7 +816,7 @@ contains
 
  subroutine init_buffer(nest_domain, wbuffer, sbuffer, ebuffer, nbuffer, npz, nest_level, position)
    type(nest_domain_type),            intent(INOUT) :: nest_domain
-   real, allocatable, dimension(:,:,:), intent(OUT) :: wbuffer, sbuffer, ebuffer, nbuffer    
+   real, allocatable, dimension(:,:,:), intent(OUT) :: wbuffer, sbuffer, ebuffer, nbuffer
    integer,                             intent(IN)  :: npz, position, nest_level
    integer :: isw_f, iew_f, jsw_f, jew_f, isw_c, iew_c, jsw_c, jew_c
    integer :: ise_f, iee_f, jse_f, jee_f, ise_c, iee_c, jse_c, jee_c
@@ -935,7 +935,7 @@ contains
                  wt_u(i,j,1)*wbufferx(ic,  jc,  k) +  &
                  wt_u(i,j,2)*wbufferx(ic,  jc+1,k) +  &
                  wt_u(i,j,3)*wbufferx(ic+1,jc+1,k) +  &
-                 wt_u(i,j,4)*wbufferx(ic+1,jc,  k) 
+                 wt_u(i,j,4)*wbufferx(ic+1,jc,  k)
 
          end do
       end do
@@ -949,7 +949,7 @@ contains
                  wt_v(i,j,1)*wbuffery(ic,  jc,  k) +  &
                  wt_v(i,j,2)*wbuffery(ic,  jc+1,k) +  &
                  wt_v(i,j,3)*wbuffery(ic+1,jc+1,k) +  &
-                 wt_v(i,j,4)*wbuffery(ic+1,jc,  k) 
+                 wt_v(i,j,4)*wbuffery(ic+1,jc,  k)
 
          end do
       end do
@@ -983,7 +983,7 @@ contains
                  wt_u(i,j,1)*sbufferx(ic,  jc,  k) +  &
                  wt_u(i,j,2)*sbufferx(ic,  jc+1,k) +  &
                  wt_u(i,j,3)*sbufferx(ic+1,jc+1,k) +  &
-                 wt_u(i,j,4)*sbufferx(ic+1,jc,  k) 
+                 wt_u(i,j,4)*sbufferx(ic+1,jc,  k)
 
          end do
       end do
@@ -997,7 +997,7 @@ contains
                  wt_v(i,j,1)*sbuffery(ic,  jc,  k) +  &
                  wt_v(i,j,2)*sbuffery(ic,  jc+1,k) +  &
                  wt_v(i,j,3)*sbuffery(ic+1,jc+1,k) +  &
-                 wt_v(i,j,4)*sbuffery(ic+1,jc,  k) 
+                 wt_v(i,j,4)*sbuffery(ic+1,jc,  k)
 
          end do
       end do
@@ -1018,7 +1018,7 @@ contains
                  wt_u(i,j,1)*ebufferx(ic,  jc,  k) +  &
                  wt_u(i,j,2)*ebufferx(ic,  jc+1,k) +  &
                  wt_u(i,j,3)*ebufferx(ic+1,jc+1,k) +  &
-                 wt_u(i,j,4)*ebufferx(ic+1,jc,  k) 
+                 wt_u(i,j,4)*ebufferx(ic+1,jc,  k)
 
          end do
       end do
@@ -1032,7 +1032,7 @@ contains
                  wt_v(i,j,1)*ebuffery(ic,  jc,  k) +  &
                  wt_v(i,j,2)*ebuffery(ic,  jc+1,k) +  &
                  wt_v(i,j,3)*ebuffery(ic+1,jc+1,k) +  &
-                 wt_v(i,j,4)*ebuffery(ic+1,jc,  k) 
+                 wt_v(i,j,4)*ebuffery(ic+1,jc,  k)
 
          end do
       end do
@@ -1065,7 +1065,7 @@ contains
                  wt_u(i,j,1)*nbufferx(ic,  jc,  k) +  &
                  wt_u(i,j,2)*nbufferx(ic,  jc+1,k) +  &
                  wt_u(i,j,3)*nbufferx(ic+1,jc+1,k) +  &
-                 wt_u(i,j,4)*nbufferx(ic+1,jc,  k) 
+                 wt_u(i,j,4)*nbufferx(ic+1,jc,  k)
 
          end do
       end do
@@ -1079,7 +1079,7 @@ contains
                  wt_v(i,j,1)*nbuffery(ic,  jc,  k) +  &
                  wt_v(i,j,2)*nbuffery(ic,  jc+1,k) +  &
                  wt_v(i,j,3)*nbuffery(ic+1,jc+1,k) +  &
-                 wt_v(i,j,4)*nbuffery(ic+1,jc,  k) 
+                 wt_v(i,j,4)*nbuffery(ic+1,jc,  k)
 
          end do
       end do
@@ -1169,9 +1169,9 @@ contains
 
 
    allocate(wbuffer(1,1))
-   
+
    allocate(ebuffer(1,1))
-      
+
    allocate(sbuffer(1,1))
 
    allocate(nbuffer(1,1))
@@ -1301,7 +1301,7 @@ contains
                  wt(i,j,1)*wbuffer(ic,  jc) +  &
                  wt(i,j,2)*wbuffer(ic,  jc+1) +  &
                  wt(i,j,3)*wbuffer(ic+1,jc+1) +  &
-                 wt(i,j,4)*wbuffer(ic+1,jc) 
+                 wt(i,j,4)*wbuffer(ic+1,jc)
 
          end do
       end do
@@ -1331,7 +1331,7 @@ contains
                  wt(i,j,1)*sbuffer(ic,  jc) +  &
                  wt(i,j,2)*sbuffer(ic,  jc+1) +  &
                  wt(i,j,3)*sbuffer(ic+1,jc+1) +  &
-                 wt(i,j,4)*sbuffer(ic+1,jc) 
+                 wt(i,j,4)*sbuffer(ic+1,jc)
 
          end do
       end do
@@ -1349,7 +1349,7 @@ contains
                  wt(i,j,1)*ebuffer(ic,  jc) +  &
                  wt(i,j,2)*ebuffer(ic,  jc+1) +  &
                  wt(i,j,3)*ebuffer(ic+1,jc+1) +  &
-                 wt(i,j,4)*ebuffer(ic+1,jc) 
+                 wt(i,j,4)*ebuffer(ic+1,jc)
 
          end do
       end do
@@ -1379,7 +1379,7 @@ contains
                  wt(i,j,1)*nbuffer(ic,  jc) +  &
                  wt(i,j,2)*nbuffer(ic,  jc+1) +  &
                  wt(i,j,3)*nbuffer(ic+1,jc+1) +  &
-                 wt(i,j,4)*nbuffer(ic+1,jc) 
+                 wt(i,j,4)*nbuffer(ic+1,jc)
 
          end do
       end do
@@ -1437,7 +1437,7 @@ contains
                  wt(i,j,1)*var_coarse(ic,  jc) +  &
                  wt(i,j,2)*var_coarse(ic,  jc+1) +  &
                  wt(i,j,3)*var_coarse(ic+1,jc+1) +  &
-                 wt(i,j,4)*var_coarse(ic+1,jc) 
+                 wt(i,j,4)*var_coarse(ic+1,jc)
 
          end do
       end do
@@ -1467,7 +1467,7 @@ contains
                  wt(i,j,1)*var_coarse(ic,  jc) +  &
                  wt(i,j,2)*var_coarse(ic,  jc+1) +  &
                  wt(i,j,3)*var_coarse(ic+1,jc+1) +  &
-                 wt(i,j,4)*var_coarse(ic+1,jc) 
+                 wt(i,j,4)*var_coarse(ic+1,jc)
 
          end do
       end do
@@ -1485,7 +1485,7 @@ contains
                  wt(i,j,1)*var_coarse(ic,  jc) +  &
                  wt(i,j,2)*var_coarse(ic,  jc+1) +  &
                  wt(i,j,3)*var_coarse(ic+1,jc+1) +  &
-                 wt(i,j,4)*var_coarse(ic+1,jc) 
+                 wt(i,j,4)*var_coarse(ic+1,jc)
 
          end do
       end do
@@ -1516,7 +1516,7 @@ contains
                  wt(i,j,1)*var_coarse(ic,  jc) +  &
                  wt(i,j,2)*var_coarse(ic,  jc+1) +  &
                  wt(i,j,3)*var_coarse(ic+1,jc+1) +  &
-                 wt(i,j,4)*var_coarse(ic+1,jc) 
+                 wt(i,j,4)*var_coarse(ic+1,jc)
 
          end do
       end do
@@ -1574,7 +1574,7 @@ contains
                  wt(i,j,1)*var_coarse(ic,  jc,  k) +  &
                  wt(i,j,2)*var_coarse(ic,  jc+1,k) +  &
                  wt(i,j,3)*var_coarse(ic+1,jc+1,k) +  &
-                 wt(i,j,4)*var_coarse(ic+1,jc,  k) 
+                 wt(i,j,4)*var_coarse(ic+1,jc,  k)
 
          end do
       end do
@@ -1607,7 +1607,7 @@ contains
                  wt(i,j,1)*var_coarse(ic,  jc,  k) +  &
                  wt(i,j,2)*var_coarse(ic,  jc+1,k) +  &
                  wt(i,j,3)*var_coarse(ic+1,jc+1,k) +  &
-                 wt(i,j,4)*var_coarse(ic+1,jc,  k) 
+                 wt(i,j,4)*var_coarse(ic+1,jc,  k)
 
          end do
       end do
@@ -1628,7 +1628,7 @@ contains
                  wt(i,j,1)*var_coarse(ic,  jc,  k) +  &
                  wt(i,j,2)*var_coarse(ic,  jc+1,k) +  &
                  wt(i,j,3)*var_coarse(ic+1,jc+1,k) +  &
-                 wt(i,j,4)*var_coarse(ic+1,jc,  k) 
+                 wt(i,j,4)*var_coarse(ic+1,jc,  k)
 
          end do
       end do
@@ -1661,7 +1661,7 @@ contains
                  wt(i,j,1)*var_coarse(ic,  jc,  k) +  &
                  wt(i,j,2)*var_coarse(ic,  jc+1,k) +  &
                  wt(i,j,3)*var_coarse(ic+1,jc+1,k) +  &
-                 wt(i,j,4)*var_coarse(ic+1,jc,  k) 
+                 wt(i,j,4)*var_coarse(ic+1,jc,  k)
 
          end do
       end do
@@ -1795,7 +1795,7 @@ contains
             nest_BC_buffers%west_t1(i,j,k) = 1.e24
          enddo
          enddo
-         enddo         
+         enddo
       else
          allocate(nest_BC_buffers%west_t1(1,1,1))
          nest_BC_buffers%west_t1(1,1,1) = 1.e24
@@ -1856,7 +1856,7 @@ contains
    integer, intent(IN) :: npz
    type(fv_nest_BC_type_3d), intent(INOUT), target :: nest_BC_u_buffers, nest_BC_v_buffers
    integer,                  intent(IN)  :: nest_level
-   integer, optional, intent(IN) :: flags, gridtype  
+   integer, optional, intent(IN) :: flags, gridtype
 
    real, dimension(1,1,npz) :: u_coarse_dummy, v_coarse_dummy
 
@@ -1895,7 +1895,7 @@ contains
    !!NOTE: if declaring an ALLOCATABLE array with intent(OUT), the resulting dummy array
    !!      will NOT be allocated! This goes for allocatable members of derived types as well.
    type(fv_nest_BC_type_3d), intent(INOUT), target :: nest_BC, nest_BC_buffers
-   
+
    real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,npz) :: var_coarse_dummy
 
    real, dimension(:,:,:), pointer :: var_east, var_west, var_south, var_north
@@ -1953,7 +1953,7 @@ contains
                  wt(i,j,1)*buf_west(ic,  jc,k) +  &
                  wt(i,j,2)*buf_west(ic,  jc+1,k) +  &
                  wt(i,j,3)*buf_west(ic+1,jc+1,k) +  &
-                 wt(i,j,4)*buf_west(ic+1,jc,k) 
+                 wt(i,j,4)*buf_west(ic+1,jc,k)
 
          end do
       end do
@@ -1968,7 +1968,7 @@ contains
             var_west(i,j,k) = max(var_west(i,j,k), 0.5*nest_BC%west_t0(i,j,k))
          end do
          end do
-         end do         
+         end do
       endif
 
    end if
@@ -2000,7 +2000,7 @@ contains
                  wt(i,j,1)*buf_south(ic,  jc,k) +  &
                  wt(i,j,2)*buf_south(ic,  jc+1,k) +  &
                  wt(i,j,3)*buf_south(ic+1,jc+1,k) +  &
-                 wt(i,j,4)*buf_south(ic+1,jc,k) 
+                 wt(i,j,4)*buf_south(ic+1,jc,k)
 
          end do
       end do
@@ -2016,7 +2016,7 @@ contains
 
          end do
          end do
-         end do         
+         end do
       endif
 
    end if
@@ -2037,7 +2037,7 @@ contains
                  wt(i,j,1)*buf_east(ic,  jc,k) +  &
                  wt(i,j,2)*buf_east(ic,  jc+1,k) +  &
                  wt(i,j,3)*buf_east(ic+1,jc+1,k) +  &
-                 wt(i,j,4)*buf_east(ic+1,jc,k) 
+                 wt(i,j,4)*buf_east(ic+1,jc,k)
 
          end do
       end do
@@ -2053,7 +2053,7 @@ contains
 
          end do
          end do
-         end do         
+         end do
       endif
 
    end if
@@ -2085,7 +2085,7 @@ contains
                  wt(i,j,1)*buf_north(ic,  jc,k) +  &
                  wt(i,j,2)*buf_north(ic,  jc+1,k) +  &
                  wt(i,j,3)*buf_north(ic+1,jc+1,k) +  &
-                 wt(i,j,4)*buf_north(ic+1,jc,k) 
+                 wt(i,j,4)*buf_north(ic+1,jc,k)
 
          end do
       end do
@@ -2101,7 +2101,7 @@ contains
 
          end do
          end do
-         end do         
+         end do
       endif
 
    end if
@@ -2109,7 +2109,7 @@ contains
  end subroutine nested_grid_BC_save_proc
 
 
-  ! A NOTE ON BCTYPE: currently only an interpolation BC is implemented, 
+  ! A NOTE ON BCTYPE: currently only an interpolation BC is implemented,
   ! bctype >= 2 currently correspond
   ! to a flux BC on the tracers ONLY, which is implemented in fv_tracer.
 
@@ -2122,7 +2122,7 @@ contains
    integer, intent(IN) :: istag, jstag, npx, npy, npz
    real, intent(IN) :: split, step
    integer, intent(IN) :: bctype
-   
+
    type(fv_nest_BC_type_3D), intent(IN), target :: BC
    real, pointer, dimension(:,:,:) :: var_t0, var_t1
 
@@ -2338,7 +2338,7 @@ contains
    endif
 
    if (allocated(coarse_dat_recv)) deallocate(coarse_dat_recv)
-   
+
  end subroutine update_coarse_grid_mpp
 
  subroutine fill_coarse_data_send(coarse_dat_send, var_nest, dx, dy, area, &
@@ -2361,7 +2361,7 @@ contains
    if (istag == 0 .and. jstag == 0) then
       select case (nestupdate)
       case (1,2,6,7,8)
-         
+
 !$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,js_f,is_f,coarse_dat_send,var_nest,area,r) private(in,jn,val)
          do k=1,npz
             jn = js_f
@@ -2374,7 +2374,7 @@ contains
                do ini=in,in+r-1
                   val = val + var_nest(ini,jnj,k)*area(ini,jnj)
                end do
-            end do            
+            end do
             coarse_dat_send(i,j,k) = val !divide area on coarse grid
 
             in = in + r
@@ -2386,7 +2386,7 @@ contains
       end select
    else if (istag == 0 .and. jstag > 0) then
 
-      select case (nestupdate) 
+      select case (nestupdate)
       case (1,6,7,8)
 
 !$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,js_f,is_f,coarse_dat_send,var_nest,dx,r) private(in,jn,val)
@@ -2401,7 +2401,7 @@ contains
                val = val + var_nest(ini,jn,k)*dx(ini,jn)
             end do
             coarse_dat_send(i,j,k) = val
-            
+
             in = in + r
          end do
             jn = jn + r
@@ -2415,7 +2415,7 @@ contains
       end select
 
    else if (istag > 0 .and. jstag == 0) then
-      select case (nestupdate) 
+      select case (nestupdate)
 
       case (1,6,7,8)   !averaging update; in-line average for face-averaged values instead of areal average
 
@@ -2445,7 +2445,7 @@ contains
       end select
 
    else
-      
+
       call mpp_error(FATAL, "Cannot have both nonzero istag and jstag.")
 
    endif
@@ -2472,10 +2472,10 @@ contains
 
    if (istag == 0 .and. jstag == 0) then
 
-      select case (nestupdate) 
+      select case (nestupdate)
       case (1,2,6,7,8) ! 1 = Conserving update on all variables; 2 = conserving update for cell-centered values; 6 = conserving remap-update
 
-!$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,coarse_dat_recv,parent_grid,var_coarse) 
+!$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,coarse_dat_recv,parent_grid,var_coarse)
          do k=1,npz
          do j=js_c,je_c
          do i=is_c,ie_c
@@ -2495,10 +2495,10 @@ contains
    else if (istag == 0 .and. jstag > 0) then
 
 
-      select case (nestupdate) 
+      select case (nestupdate)
       case (1,6,7,8)
 
-!$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,coarse_dat_recv,parent_grid,var_coarse) 
+!$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,coarse_dat_recv,parent_grid,var_coarse)
          do k=1,npz
          do j=js_c,je_c+1
          do i=is_c,ie_c
@@ -2515,10 +2515,10 @@ contains
 
    else if (istag > 0 .and. jstag == 0) then
 
-      select case (nestupdate) 
+      select case (nestupdate)
       case (1,6,7,8)   !averaging update; in-line average for face-averaged values instead of areal average
 
-!$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,coarse_dat_recv,parent_grid,var_coarse) 
+!$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,coarse_dat_recv,parent_grid,var_coarse)
          do k=1,npz
          do j=js_c,je_c
          do i=is_c,ie_c+1
@@ -2622,7 +2622,7 @@ contains
 
    if (allocated(coarse_dat_recv_u)) deallocate(coarse_dat_recv_u)
    if (allocated(coarse_dat_recv_v)) deallocate(coarse_dat_recv_v)
-   
+
  end subroutine update_coarse_grid_mpp_vector
-   
+
 end module boundary_mod

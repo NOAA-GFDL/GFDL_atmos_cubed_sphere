@@ -38,20 +38,20 @@ module fv_io_mod
                                      restart_file_type, register_restart_field, &
                                      save_restart, restore_state, &
                                      set_domain, nullify_domain, set_filename_appendix, &
-                                     get_mosaic_tile_file, get_instance_filename, & 
+                                     get_mosaic_tile_file, get_instance_filename, &
                                      save_restart_border, restore_state_border, free_restart_type, &
                                      field_exist
   use mpp_mod,                 only: mpp_error, FATAL, NOTE, WARNING, mpp_root_pe, &
                                      mpp_sync, mpp_pe, mpp_declare_pelist
   use mpp_domains_mod,         only: domain2d, EAST, WEST, NORTH, CENTER, SOUTH, CORNER, &
-                                     mpp_get_compute_domain, mpp_get_data_domain, & 
+                                     mpp_get_compute_domain, mpp_get_data_domain, &
                                      mpp_get_layout, mpp_get_ntile_count, &
                                      mpp_get_global_domain
   use tracer_manager_mod,      only: tr_get_tracer_names=>get_tracer_names, &
                                      get_tracer_names, get_number_tracers, &
                                      set_tracer_profile, &
                                      get_tracer_index
-  use field_manager_mod,       only: MODEL_ATMOS  
+  use field_manager_mod,       only: MODEL_ATMOS
   use external_sst_mod,        only: sst_ncep, sst_anom, use_ncep_sst
   use fv_arrays_mod,           only: fv_atmos_type, fv_nest_BC_type_3D
   use fv_eta_mod,              only: set_external_eta
@@ -74,7 +74,7 @@ module fv_io_mod
   integer ::grid_xtdimid, grid_ytdimid, haloid, pfullid !For writing BCs
   integer ::grid_xtstagdimid, grid_ytstagdimid, oneid
 
-contains 
+contains
 
   !#####################################################################
   ! <SUBROUTINE NAME="fv_io_init">
@@ -107,7 +107,7 @@ contains
   ! <SUBROUTINE NAME="fv_io_read_restart">
   !
   ! <DESCRIPTION>
-  ! Write the fv core restart quantities 
+  ! Write the fv core restart quantities
   ! </DESCRIPTION>
   subroutine  fv_io_read_restart(fv_domain,Atm)
     type(domain2d),      intent(inout) :: fv_domain
@@ -141,7 +141,7 @@ contains
     else
        stile_name = ''
     endif
- 
+
     do n = 1, ntileMe
        call restore_state(Atm(n)%Fv_tile_restart)
 
@@ -399,10 +399,10 @@ contains
           if( is_master() ) write(*,*) 'Back from read_da_inc',pt_r(i,j,k)
        endif
 !      ====== end PJP added DA functionailty======
-       
+
        call rst_remap(npz_rst, npz, isc, iec, jsc, jec, isd, ied, jsd, jed, ntracers, ntprog,      &
                       delp_r,      u_r,      v_r,      w_r,      delz_r,      pt_r,  q_r,  qdiag_r,&
-                      Atm(n)%delp, Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%pt, Atm(n)%q, & 
+                      Atm(n)%delp, Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%pt, Atm(n)%q, &
                       Atm(n)%qdiag, ak_r,  bk_r, Atm(n)%ptop, Atm(n)%ak, Atm(n)%bk,                &
                       Atm(n)%flagstruct%hydrostatic, Atm(n)%flagstruct%make_nh, Atm(n)%domain,     &
                       Atm(n)%gridstruct%square_domain)
@@ -430,7 +430,7 @@ contains
   ! <SUBROUTINE NAME="fv_io_register_nudge_restart">
   !
   ! <DESCRIPTION>
-  !   register restart nudge field to be written out to restart file. 
+  !   register restart nudge field to be written out to restart file.
   ! </DESCRIPTION>
   subroutine  fv_io_register_nudge_restart(Atm)
     type(fv_atmos_type), intent(inout) :: Atm(:)
@@ -454,7 +454,7 @@ contains
   ! <SUBROUTINE NAME="fv_io_register_restart">
   !
   ! <DESCRIPTION>
-  !   register restart field to be written out to restart file. 
+  !   register restart field to be written out to restart file.
   ! </DESCRIPTION>
   subroutine  fv_io_register_restart(fv_domain,Atm)
     type(domain2d),      intent(inout) :: fv_domain
@@ -465,9 +465,9 @@ contains
     integer           :: id_restart
     integer           :: n, nt, ntracers, ntprog, ntdiag, ntileMe, ntiles
 
-    ntileMe = size(Atm(:)) 
-    ntprog = size(Atm(1)%q,4) 
-    ntdiag = size(Atm(1)%qdiag,4) 
+    ntileMe = size(Atm(:))
+    ntprog = size(Atm(1)%q,4)
+    ntdiag = size(Atm(1)%qdiag,4)
     ntracers = ntprog+ntdiag
 
 !--- set the 'nestXX' appendix for all files using fms_io
@@ -498,7 +498,7 @@ contains
 
     fname = 'fv_core.res.nc'
     id_restart = register_restart_field(Atm(1)%Fv_restart, fname, 'ak', Atm(1)%ak(:), no_domain=.true.)
-    id_restart = register_restart_field(Atm(1)%Fv_restart, fname, 'bk', Atm(1)%bk(:), no_domain=.true.) 
+    id_restart = register_restart_field(Atm(1)%Fv_restart, fname, 'bk', Atm(1)%bk(:), no_domain=.true.)
 
     do n = 1, ntileMe
        fname = 'fv_core.res'//trim(stile_name)//'.nc'
@@ -523,7 +523,7 @@ contains
        id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname, 'phis', Atm(n)%phis, &
                      domain=fv_domain, tile_count=n)
 
-       !--- include agrid winds in restarts for use in data assimilation 
+       !--- include agrid winds in restarts for use in data assimilation
        if (Atm(n)%flagstruct%agrid_vel_rst) then
          id_restart =  register_restart_field(Atm(n)%Fv_tile_restart, fname, 'ua', Atm(n)%ua, &
                        domain=fv_domain, tile_count=n, mandatory=.false.)
@@ -546,7 +546,7 @@ contains
           ! Optional terrain deviation (sgh) and land fraction (oro)
           fname = 'mg_drag.res'//trim(stile_name)//'.nc'
           id_restart =  register_restart_field(Atm(n)%Mg_restart, fname, 'ghprime', Atm(n)%sgh, &
-                        domain=fv_domain, tile_count=n)  
+                        domain=fv_domain, tile_count=n)
 
           fname = 'fv_land.res'//trim(stile_name)//'.nc'
           id_restart = register_restart_field(Atm(n)%Lnd_restart, fname, 'oro', Atm(n)%oro, &
@@ -584,7 +584,7 @@ contains
   ! <SUBROUTINE NAME="fv_io_write_restart">
   !
   ! <DESCRIPTION>
-  ! Write the fv core restart quantities 
+  ! Write the fv core restart quantities
   ! </DESCRIPTION>
   subroutine  fv_io_write_restart(Atm, timestamp)
 
@@ -595,7 +595,7 @@ contains
 !!$       call mpp_error(NOTE, 'READING FROM SST_RESTART DISABLED')
 !!$       !call save_restart(Atm%SST_restart, timestamp)
 !!$    endif
- 
+
     if ( (use_ncep_sst .or. Atm%flagstruct%nudge) .and. .not. Atm%gridstruct%nested ) then
        call save_restart(Atm%SST_restart, timestamp)
     endif
@@ -632,8 +632,8 @@ contains
     integer, allocatable, dimension(:) :: x2_pelist, y2_pelist
     logical :: is_root_pe
 
-    i_stag = 0 
-    j_stag = 0 
+    i_stag = 0
+    j_stag = 0
     if (present(istag)) i_stag = i_stag
     if (present(jstag)) j_stag = j_stag
     call mpp_get_global_domain(Atm%domain, xsize = npx, ysize = npy, position=CORNER )
@@ -677,7 +677,7 @@ contains
 !register west halo data in t1
     if (present(var_bc)) id_restart = register_restart_field(BCfile_sw, trim(fname_sw), &
                                         trim(var_name)//'_west_t1', &
-                                        var_bc%west_t1, & 
+                                        var_bc%west_t1, &
                                         indices, global_size, y2_pelist, &
                                         is_root_pe, jshift=y_halo)
 !register west prognostic halo data
@@ -692,7 +692,7 @@ contains
 !register east halo data in t1
     if (present(var_bc)) id_restart = register_restart_field(BCfile_ne, trim(fname_ne), &
                                         trim(var_name)//'_east_t1', &
-                                        var_bc%east_t1, & 
+                                        var_bc%east_t1, &
                                         indices, global_size, y1_pelist, &
                                         is_root_pe, jshift=y_halo)
 
@@ -726,7 +726,7 @@ contains
 !register south halo data in t1
     if (present(var_bc)) id_restart = register_restart_field(BCfile_sw, trim(fname_sw), &
                                         trim(var_name)//'_south_t1', &
-                                        var_bc%south_t1, & 
+                                        var_bc%south_t1, &
                                         indices, global_size, x2_pelist, &
                                         is_root_pe, x_halo=x_halo_ns)
 !register south prognostic halo data
@@ -741,7 +741,7 @@ contains
 !register north halo data in t1
     if (present(var_bc)) id_restart = register_restart_field(BCfile_ne, trim(fname_ne), &
                                         trim(var_name)//'_north_t1', &
-                                        var_bc%north_t1, & 
+                                        var_bc%north_t1, &
                                         indices, global_size, x1_pelist, &
                                         is_root_pe, x_halo=x_halo_ns)
 
@@ -823,7 +823,7 @@ contains
 !register west halo data in t1
     if (present(var_bc)) id_restart = register_restart_field(BCfile_sw, trim(fname_sw), &
                                         trim(var_name)//'_west_t1', &
-                                        var_bc%west_t1, & 
+                                        var_bc%west_t1, &
                                         indices, global_size, y2_pelist, &
                                         is_root_pe, jshift=y_halo, mandatory=mandatory)
 !register west prognostic halo data
@@ -838,7 +838,7 @@ contains
 !register east halo data in t1
     if (present(var_bc)) id_restart = register_restart_field(BCfile_ne, trim(fname_ne), &
                                         trim(var_name)//'_east_t1', &
-                                        var_bc%east_t1, & 
+                                        var_bc%east_t1, &
                                         indices, global_size, y1_pelist, &
                                         is_root_pe, jshift=y_halo, mandatory=mandatory)
 
@@ -873,7 +873,7 @@ contains
 !register south halo data in t1
     if (present(var_bc)) id_restart = register_restart_field(BCfile_sw, trim(fname_sw), &
                                         trim(var_name)//'_south_t1', &
-                                        var_bc%south_t1, & 
+                                        var_bc%south_t1, &
                                         indices, global_size, x2_pelist, &
                                         is_root_pe, x_halo=x_halo_ns, mandatory=mandatory)
 !register south prognostic halo data
@@ -888,7 +888,7 @@ contains
 !register north halo data in t1
     if (present(var_bc)) id_restart = register_restart_field(BCfile_ne, trim(fname_ne), &
                                         trim(var_name)//'_north_t1', &
-                                        var_bc%north_t1, & 
+                                        var_bc%north_t1, &
                                         indices, global_size, x1_pelist, &
                                         is_root_pe, x_halo=x_halo_ns, mandatory=mandatory)
 
@@ -940,7 +940,7 @@ contains
 #ifndef SW_DYNAMICS
     call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
                          fname_ne, fname_sw, 'pt', Atm%pt, Atm%neststruct%pt_BC)
-    if ((.not.Atm%flagstruct%hydrostatic)) then 
+    if ((.not.Atm%flagstruct%hydrostatic)) then
        if (is_master()) print*, 'fv_io_register_restart_BCs: REGISTERING NH BCs'
       call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
                            fname_ne, fname_sw, 'w', Atm%w, Atm%neststruct%w_BC, mandatory=.false.)

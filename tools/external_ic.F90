@@ -19,7 +19,7 @@
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 #ifdef OVERLOAD_R4
-#define _GET_VAR1 get_var1_real 
+#define _GET_VAR1 get_var1_real
 #else
 #define _GET_VAR1 get_var1_double
 #endif
@@ -45,7 +45,7 @@ module external_ic_mod
    use fv_arrays_mod,     only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type, R_GRID
    use fv_diagnostics_mod,only: prt_maxmin, prt_gb_nh_sh, prt_height
    use fv_grid_utils_mod, only: ptop_min, g_sum,mid_pt_sphere,get_unit_vect2,get_latlon_vector,inner_prod
-   use fv_io_mod,         only: fv_io_read_tracers 
+   use fv_io_mod,         only: fv_io_read_tracers
    use fv_mapz_mod,       only: mappm
    use fv_regional_mod,   only: dump_field, H_STAGGER, U_STAGGER, V_STAGGER
    use fv_mp_mod,         only: is_master, fill_corners, YDir, mp_reduce_min, mp_reduce_max
@@ -118,7 +118,7 @@ contains
       f0    => Atm%gridstruct%f0
 
 ! * Initialize coriolis param:
- 
+
       do j=jsd,jed+1
          do i=isd,ied+1
             fc(i,j) = 2.*omega*( -1.*cos(grid(i,j,1))*cos(grid(i,j,2))*sin(alpha) + &
@@ -137,14 +137,14 @@ contains
       if ( Atm%gridstruct%cubed_sphere .and. (.not. Atm%gridstruct%bounded_domain))then
          call fill_corners(f0, Atm%npx, Atm%npy, YDir)
       endif
- 
+
 ! Read in cubed_sphere terrain
       if ( Atm%flagstruct%mountain ) then
            call get_cubed_sphere_terrain(Atm, fv_domain)
       else
          if (.not. Atm%neststruct%nested) Atm%phis = 0. !TODO: Not sure about this line --- lmh 30 may 18
       endif
- 
+
 ! Read in the specified external dataset and do all the needed transformation
       if ( Atm%flagstruct%ncep_ic ) then
            nq = 1
@@ -204,7 +204,7 @@ contains
 
 !Now in fv_restart
 !!$      call p_var(Atm%npz,  is, ie, js, je, Atm%ak(1),  ptop_min,         &
-!!$                 Atm%delp, Atm%delz, Atm%pt, Atm%ps,               & 
+!!$                 Atm%delp, Atm%delz, Atm%pt, Atm%ps,               &
 !!$                 Atm%pe,   Atm%peln, Atm%pk, Atm%pkz,              &
 !!$                 kappa, Atm%q, ng, Atm%ncnst, Atm%gridstruct%area_64, Atm%flagstruct%dry_mass,           &
 !!$                 Atm%flagstruct%adjust_dry_mass, Atm%flagstruct%mountain, Atm%flagstruct%moist_phys,   &
@@ -251,8 +251,8 @@ contains
 
     call get_tile_string(fname, 'INPUT/fv_core.res'//trim(gn)//'.tile', tile_id(n), '.nc' )
     if (mpp_pe() == mpp_root_pe()) print*, 'external_ic: looking for ', fname
-    
-       
+
+
     if( file_exist(fname) ) then
        call read_data(fname, 'phis', Atm%phis(is:ie,js:je),      &
             domain=fv_domain, tile_count=n)
@@ -270,19 +270,19 @@ contains
 
 
     !Needed for reproducibility. DON'T REMOVE THIS!!
-    call mpp_update_domains( Atm%phis, Atm%domain ) 
+    call mpp_update_domains( Atm%phis, Atm%domain )
     ftop = g_sum(Atm%domain, Atm%phis(is:ie,js:je), is, ie, js, je, ng, Atm%gridstruct%area_64, 1)
- 
+
     call prt_maxmin('ZS', Atm%phis,  is, ie, js, je, ng, 1, 1./grav)
     if(is_master()) write(*,*) 'mean terrain height (m)=', ftop/grav
- 
+
   end subroutine get_cubed_sphere_terrain
 
 
   subroutine get_nggps_ic (Atm, fv_domain)
-!    read in data after it has been preprocessed with 
+!    read in data after it has been preprocessed with
 !    NCEP/EMC orography maker and global_chgres
-!    and has been horiztontally interpolated to the 
+!    and has been horiztontally interpolated to the
 !    current cubed-sphere grid
 !
 !--- variables read in from 'gfs_ctrl.nc'
@@ -301,10 +301,10 @@ contains
 !       U_S -  D-grid south face tangential wind component (m/s)
 !       V_S -  D-grid south face normal wind component (m/s)
 !       W   -  vertical velocity 'omega' (Pa/s)
-!       Q   -  prognostic tracer fields (Specific Humidity, 
+!       Q   -  prognostic tracer fields (Specific Humidity,
 !                                        O3 mixing ratio,
 !                                        Cloud mixing ratio)
-!--- Namelist variables 
+!--- Namelist variables
 !       filtered_terrain  -  use orography maker filtered terrain mapping
 
 
@@ -421,7 +421,7 @@ contains
       allocate (wk2(levp+1,2))
       allocate (ak(levp+1))
       allocate (bk(levp+1))
- 
+
       call read_data('INPUT/'//trim(fn_gfs_ctl),'vcoord',wk2, no_domain=.TRUE.)
       ak(1:levp+1) = wk2(1:levp+1,1)
       bk(1:levp+1) = wk2(1:levp+1,2)
@@ -483,14 +483,14 @@ contains
              call extrapolation_BC(oro_g, 0, 0, Atm%npx, Atm%npy, Atm%bd, .true.)
           endif
         endif
-     
+
         if ( Atm%flagstruct%fv_land ) then
           ! stddev
           id_res = register_restart_field (ORO_restart, fn_oro_ics, 'stddev', Atm%sgh, domain=Atm%domain)
           ! land-frac
           id_res = register_restart_field (ORO_restart, fn_oro_ics, 'land_frac', Atm%oro, domain=Atm%domain)
         endif
-     
+
         ! surface pressure (Pa)
         id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'ps', ps, domain=Atm%domain)
 
@@ -542,7 +542,7 @@ contains
 
         ! multiply NCEP ICs terrain 'phis' by gravity to be true geopotential
         Atm%phis = Atm%phis*grav
-        
+
         ! set the pressure levels and ptop to be used
         ! else eta is set in grid_init
         if (Atm%flagstruct%external_eta) then
@@ -568,7 +568,7 @@ contains
 !***  For regional runs read in each of the BC variables from the NetCDF boundary file
 !***  and remap in the vertical from the input levels to the model integration levels.
 !***  Here in the initialization we begn by allocating the regional domain's boundary
-!***  objects.  Then we need to read the first two regional BC files so the integration 
+!***  objects.  Then we need to read the first two regional BC files so the integration
 !***  can begin interpolating between those two times as the forecast proceeds.
 
         if (n==1.and.Atm%flagstruct%regional) then     !<-- Select the parent regional domain.
@@ -614,11 +614,11 @@ contains
         deallocate ( v_w )
         deallocate ( u_s )
         deallocate ( v_s )
-             
+
         call remap_dwinds(levp, npz, ak, bk, ps, ud, vd, Atm)
         deallocate ( ud )
         deallocate ( vd )
-   
+
         if (Atm%neststruct%nested) then
            if (is_master()) write(*,*) 'Blending nested and coarse grid topography'
            npx = Atm%npx
@@ -734,7 +734,7 @@ contains
               if (ntclamt > 0) Atm%q(i,j,k,ntclamt) = 0.0    ! Moorthi
            enddo
            enddo
-             
+
        enddo
       endif   !end trim(source) test
 
@@ -751,7 +751,7 @@ contains
            enddo
         endif
 
-!--- reset the tracers beyond condensate to a checkerboard pattern 
+!--- reset the tracers beyond condensate to a checkerboard pattern
         if (checker_tr) then
           nts = ntracers - nt_checker+1
           call checker_tracers(is,ie, js,je, isd,ied, jsd,jed, nt_checker, &
@@ -824,7 +824,7 @@ contains
       integer:: i, j, k, im, jm, km, npz, npt
       integer:: i1, i2, j1, ncid
       integer:: jbeg, jend, jn
-      integer tsize(3) 
+      integer tsize(3)
       logical:: read_ts = .true.
       logical:: land_ts = .false.
       logical:: found
@@ -868,7 +868,7 @@ contains
 
           allocate (  lon(im) )
           allocate (  lat(jm) )
- 
+
           call _GET_VAR1(ncid, 'lon', im, lon )
           call _GET_VAR1(ncid, 'lat', jm, lat )
 
@@ -920,7 +920,7 @@ contains
       do j=js,je
          do i=is,ie
               j1 = jdc(i,j)
-            jbeg = min(jbeg, j1) 
+            jbeg = min(jbeg, j1)
             jend = max(jend, j1+1)
          enddo
       enddo
@@ -944,10 +944,10 @@ contains
       allocate ( qncep(1:im,jbeg:jend, 1:km,2) )
       call get_var3_r4( ncid, 'Q', 1,im, jbeg,jend, 1,km, wk3 )
         if(is_master()) write(*,*) 'done reading sphumncep'
-        qncep(:,:,:,1) = wk3(:,:,:) 
+        qncep(:,:,:,1) = wk3(:,:,:)
       call get_var3_r4( ncid, 'CWAT', 1,im, jbeg,jend, 1,km, wk3 )
         if(is_master()) write(*,*) 'done reading cwatncep'
-        qncep(:,:,:,2) = wk3(:,:,:) 
+        qncep(:,:,:,2) = wk3(:,:,:)
       deallocate (wk3)
 
       if ( T_is_Tv ) then
@@ -1235,55 +1235,55 @@ contains
       type(domain2d),      intent(inout) :: fv_domain
 ! local:
       real :: ak_ec(138), bk_ec(138)
-      data ak_ec/ 0.000000,     2.000365,     3.102241,     4.666084,     6.827977,     9.746966, & 
-                 13.605424,    18.608931,    24.985718,    32.985710,    42.879242,    54.955463, & 
-                 69.520576,    86.895882,   107.415741,   131.425507,   159.279404,   191.338562, & 
-                227.968948,   269.539581,   316.420746,   368.982361,   427.592499,   492.616028, & 
-                564.413452,   643.339905,   729.744141,   823.967834,   926.344910,  1037.201172, & 
-               1156.853638,  1285.610352,  1423.770142,  1571.622925,  1729.448975,  1897.519287, & 
-               2076.095947,  2265.431641,  2465.770508,  2677.348145,  2900.391357,  3135.119385, & 
-               3381.743652,  3640.468262,  3911.490479,  4194.930664,  4490.817383,  4799.149414, & 
-               5119.895020,  5452.990723,  5798.344727,  6156.074219,  6526.946777,  6911.870605, & 
-               7311.869141,  7727.412109,  8159.354004,  8608.525391,  9076.400391,  9562.682617, & 
-              10065.978516, 10584.631836, 11116.662109, 11660.067383, 12211.547852, 12766.873047, & 
-              13324.668945, 13881.331055, 14432.139648, 14975.615234, 15508.256836, 16026.115234, & 
-              16527.322266, 17008.789063, 17467.613281, 17901.621094, 18308.433594, 18685.718750, & 
-              19031.289063, 19343.511719, 19620.042969, 19859.390625, 20059.931641, 20219.664063, & 
-              20337.863281, 20412.308594, 20442.078125, 20425.718750, 20361.816406, 20249.511719, & 
-              20087.085938, 19874.025391, 19608.572266, 19290.226563, 18917.460938, 18489.707031, & 
-              18006.925781, 17471.839844, 16888.687500, 16262.046875, 15596.695313, 14898.453125, & 
-              14173.324219, 13427.769531, 12668.257813, 11901.339844, 11133.304688, 10370.175781, & 
-               9617.515625,  8880.453125,  8163.375000,  7470.343750,  6804.421875,  6168.531250, & 
-               5564.382813,  4993.796875,  4457.375000,  3955.960938,  3489.234375,  3057.265625, & 
-               2659.140625,  2294.242188,  1961.500000,  1659.476563,  1387.546875,  1143.250000, & 
-                926.507813,   734.992188,   568.062500,   424.414063,   302.476563,   202.484375, & 
+      data ak_ec/ 0.000000,     2.000365,     3.102241,     4.666084,     6.827977,     9.746966, &
+                 13.605424,    18.608931,    24.985718,    32.985710,    42.879242,    54.955463, &
+                 69.520576,    86.895882,   107.415741,   131.425507,   159.279404,   191.338562, &
+                227.968948,   269.539581,   316.420746,   368.982361,   427.592499,   492.616028, &
+                564.413452,   643.339905,   729.744141,   823.967834,   926.344910,  1037.201172, &
+               1156.853638,  1285.610352,  1423.770142,  1571.622925,  1729.448975,  1897.519287, &
+               2076.095947,  2265.431641,  2465.770508,  2677.348145,  2900.391357,  3135.119385, &
+               3381.743652,  3640.468262,  3911.490479,  4194.930664,  4490.817383,  4799.149414, &
+               5119.895020,  5452.990723,  5798.344727,  6156.074219,  6526.946777,  6911.870605, &
+               7311.869141,  7727.412109,  8159.354004,  8608.525391,  9076.400391,  9562.682617, &
+              10065.978516, 10584.631836, 11116.662109, 11660.067383, 12211.547852, 12766.873047, &
+              13324.668945, 13881.331055, 14432.139648, 14975.615234, 15508.256836, 16026.115234, &
+              16527.322266, 17008.789063, 17467.613281, 17901.621094, 18308.433594, 18685.718750, &
+              19031.289063, 19343.511719, 19620.042969, 19859.390625, 20059.931641, 20219.664063, &
+              20337.863281, 20412.308594, 20442.078125, 20425.718750, 20361.816406, 20249.511719, &
+              20087.085938, 19874.025391, 19608.572266, 19290.226563, 18917.460938, 18489.707031, &
+              18006.925781, 17471.839844, 16888.687500, 16262.046875, 15596.695313, 14898.453125, &
+              14173.324219, 13427.769531, 12668.257813, 11901.339844, 11133.304688, 10370.175781, &
+               9617.515625,  8880.453125,  8163.375000,  7470.343750,  6804.421875,  6168.531250, &
+               5564.382813,  4993.796875,  4457.375000,  3955.960938,  3489.234375,  3057.265625, &
+               2659.140625,  2294.242188,  1961.500000,  1659.476563,  1387.546875,  1143.250000, &
+                926.507813,   734.992188,   568.062500,   424.414063,   302.476563,   202.484375, &
                 122.101563,    62.781250,    22.835938,     3.757813,     0.000000,     0.000000  /
 
-      data bk_ec/ 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       & 
-                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       & 
-                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       & 
-                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       & 
-                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       & 
-                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       & 
-                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       & 
-                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       & 
-                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       & 
-                  0.000000, 0.000007, 0.000024, 0.000059, 0.000112, 0.000199,       & 
-                  0.000340, 0.000562, 0.000890, 0.001353, 0.001992, 0.002857,       & 
-                  0.003971, 0.005378, 0.007133, 0.009261, 0.011806, 0.014816,       & 
-                  0.018318, 0.022355, 0.026964, 0.032176, 0.038026, 0.044548,       & 
-                  0.051773, 0.059728, 0.068448, 0.077958, 0.088286, 0.099462,       & 
-                  0.111505, 0.124448, 0.138313, 0.153125, 0.168910, 0.185689,       & 
-                  0.203491, 0.222333, 0.242244, 0.263242, 0.285354, 0.308598,       & 
-                  0.332939, 0.358254, 0.384363, 0.411125, 0.438391, 0.466003,       & 
-                  0.493800, 0.521619, 0.549301, 0.576692, 0.603648, 0.630036,       & 
-                  0.655736, 0.680643, 0.704669, 0.727739, 0.749797, 0.770798,       & 
-                  0.790717, 0.809536, 0.827256, 0.843881, 0.859432, 0.873929,       & 
-                  0.887408, 0.899900, 0.911448, 0.922096, 0.931881, 0.940860,       & 
-                  0.949064, 0.956550, 0.963352, 0.969513, 0.975078, 0.980072,       & 
+      data bk_ec/ 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       &
+                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       &
+                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       &
+                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       &
+                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       &
+                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       &
+                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       &
+                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       &
+                  0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,       &
+                  0.000000, 0.000007, 0.000024, 0.000059, 0.000112, 0.000199,       &
+                  0.000340, 0.000562, 0.000890, 0.001353, 0.001992, 0.002857,       &
+                  0.003971, 0.005378, 0.007133, 0.009261, 0.011806, 0.014816,       &
+                  0.018318, 0.022355, 0.026964, 0.032176, 0.038026, 0.044548,       &
+                  0.051773, 0.059728, 0.068448, 0.077958, 0.088286, 0.099462,       &
+                  0.111505, 0.124448, 0.138313, 0.153125, 0.168910, 0.185689,       &
+                  0.203491, 0.222333, 0.242244, 0.263242, 0.285354, 0.308598,       &
+                  0.332939, 0.358254, 0.384363, 0.411125, 0.438391, 0.466003,       &
+                  0.493800, 0.521619, 0.549301, 0.576692, 0.603648, 0.630036,       &
+                  0.655736, 0.680643, 0.704669, 0.727739, 0.749797, 0.770798,       &
+                  0.790717, 0.809536, 0.827256, 0.843881, 0.859432, 0.873929,       &
+                  0.887408, 0.899900, 0.911448, 0.922096, 0.931881, 0.940860,       &
+                  0.949064, 0.956550, 0.963352, 0.969513, 0.975078, 0.980072,       &
                   0.984542, 0.988500, 0.991984, 0.995003, 0.997630, 1.000000 /
 
-! The following L63 will be used in the model 
+! The following L63 will be used in the model
 ! The setting is the same as NCEP GFS's L64 except the top layer
       real, dimension(64):: ak_sj, bk_sj
       data ak_sj/64.247,       137.790,       221.958,      &
@@ -1355,7 +1355,7 @@ contains
       integer:: i, j, k, n, im, jm, km, npz, npt
       integer:: i1, i2, j1, ncid
       integer:: jbeg, jend, jn
-      integer tsize(3) 
+      integer tsize(3)
       logical:: found
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
@@ -1389,7 +1389,7 @@ contains
 
       npz = Atm%npz
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
-      if(is_master()) write(*,*) 'ntracers = ', ntracers, 'ntprog = ',ntprog 
+      if(is_master()) write(*,*) 'ntracers = ', ntracers, 'ntprog = ',ntprog
 
       sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
       liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
@@ -1406,12 +1406,12 @@ contains
             print *, 'rainwat = ', rainwat
             print *, 'iec_wat = ', ice_wat
             print *, 'snowwat = ', snowwat
-            print *, 'graupel = ', graupel 
+            print *, 'graupel = ', graupel
          endif
          print *, ' o3mr = ', o3mr
       endif
 
-      
+
 ! Set up model's ak and bk
       if (Atm%flagstruct%external_eta) then
          call set_external_eta (Atm%ak, Atm%bk, Atm%ptop, Atm%ks)
@@ -1441,7 +1441,7 @@ contains
       allocate (o3mr_gfs(is:ie,js:je,levp_gfs))
       allocate (ps_gfs(is:ie,js:je))
       allocate (zh_gfs(is:ie,js:je,levp_gfs+1))
-   
+
       id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'o3mr', o3mr_gfs, &
                                        mandatory=.false.,domain=Atm%domain)
       id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'ps', ps_gfs, domain=Atm%domain)
@@ -1458,9 +1458,9 @@ contains
       ak_gfs(1:levp_gfs+1) = wk2(1:levp_gfs+1,1)
       bk_gfs(1:levp_gfs+1) = wk2(1:levp_gfs+1,2)
       deallocate (wk2)
-   
+
       if ( bk_gfs(1) < 1.E-9 ) ak_gfs(1) = max(1.e-9, ak_gfs(1))
-  
+
       iq = o3mr
       if(is_master()) write(*,*) 'Reading o3mr from GFS_data.nc:'
       if(is_master()) write(*,*) 'o3mr =', iq
@@ -1475,7 +1475,7 @@ contains
 
       if( file_exist(fname) ) then
           call open_ncfile( fname, ncid )        ! open the file
-          
+
           call get_ncdim1( ncid, 'longitude', tsize(1) )
           call get_ncdim1( ncid, 'latitude',  tsize(2) )
           call get_ncdim1( ncid, 'level',     tsize(3) )
@@ -1487,7 +1487,7 @@ contains
 
           allocate (  lon(im) )
           allocate (  lat(jm) )
- 
+
           call _GET_VAR1(ncid, 'longitude', im, lon )
           call _GET_VAR1(ncid, 'latitude', jm, lat )
 
@@ -1530,7 +1530,7 @@ contains
       do j=js,je
          do i=is,ie
               j1 = jdc(i,j)
-            jbeg = min(jbeg, j1) 
+            jbeg = min(jbeg, j1)
             jend = max(jend, j1+1)
          enddo
       enddo
@@ -1725,7 +1725,7 @@ contains
       call remap_scalar(Atm, km, npz, 6, ak0, bk0, psc_r8, qc, zhc, wc)
       call mpp_update_domains(Atm%phis, Atm%domain)
       if(is_master()) write(*,*) 'done remap_scalar'
-       
+
       deallocate ( zhc )
       deallocate ( wc )
       deallocate ( qc )
@@ -1828,7 +1828,7 @@ contains
           jend = max(jend, j1+1)
         enddo
       enddo
- 
+
       ! read in EC wind data
       allocate ( uec(1:im,jbeg:jend, 1:km) )
       allocate ( vec(1:im,jbeg:jend, 1:km) )
@@ -1935,7 +1935,7 @@ contains
 
       if( file_exist(fname) ) then
           call field_size(fname, 'T', tsize, field_found=found)
-          if(is_master()) write(*,*) 'Using lat-lon FV restart:', fname 
+          if(is_master()) write(*,*) 'Using lat-lon FV restart:', fname
 
           if ( found ) then
                im = tsize(1); jm = tsize(2); km = tsize(3)
@@ -1953,9 +1953,9 @@ contains
           enddo
 
           do j=1,jm
-             lat(j) = -0.5*pi + real(j-1)*pi/real(jm-1)   ! SP to NP 
+             lat(j) = -0.5*pi + real(j-1)*pi/real(jm-1)   ! SP to NP
           enddo
- 
+
           allocate ( ak0(1:km+1) )
           allocate ( bk0(1:km+1) )
           allocate ( ps0(1:im,1:jm) )
@@ -1989,7 +1989,7 @@ contains
       fname = Atm%flagstruct%res_latlon_tracers
 
       if( file_exist(fname) ) then
-          if(is_master()) write(*,*) 'Using lat-lon tracer restart:', fname 
+          if(is_master()) write(*,*) 'Using lat-lon tracer restart:', fname
 
           allocate ( q0(im,jm,km,Atm%ncnst) )
           q0 = 0.
@@ -2012,8 +2012,8 @@ contains
 
       call d2a3d(u0, v0,  ua,  va, im, jm, km, lon)
 
-      deallocate ( u0 ) 
-      deallocate ( v0 ) 
+      deallocate ( u0 )
+      deallocate ( v0 )
 
       if(mpp_pe()==4) call pmaxmin( 'UA', ua, im*jm, km, 1.)
       if(mpp_pe()==4) call pmaxmin( 'VA', va, im*jm, km, 1.)
@@ -2040,17 +2040,17 @@ contains
       call remap_xyz( im, 1, jm, jm, km, npz, nq, Atm%ncnst, lon, lat, ak0, bk0,   &
                       ps0,  gz0, ua, va, t0, q0, Atm )
 
-      deallocate ( ak0 ) 
-      deallocate ( bk0 ) 
-      deallocate ( ps0 ) 
-      deallocate ( gz0 ) 
-      deallocate ( t0 ) 
-      deallocate ( q0 ) 
-      deallocate ( dp0 ) 
-      deallocate ( ua ) 
-      deallocate ( va ) 
-      deallocate ( lat ) 
-      deallocate ( lon ) 
+      deallocate ( ak0 )
+      deallocate ( bk0 )
+      deallocate ( ps0 )
+      deallocate ( gz0 )
+      deallocate ( t0 )
+      deallocate ( q0 )
+      deallocate ( dp0 )
+      deallocate ( ua )
+      deallocate ( va )
+      deallocate ( lat )
+      deallocate ( lon )
 
   end subroutine get_fv_ic
 !------------------------------------------------------------------
@@ -2292,7 +2292,7 @@ contains
    Atm%phis(is:ie,js:je) = zh(is:ie,js:je,km+1)*grav
 #endif
 
-  if (Atm%flagstruct%ecmwf_ic) then 
+  if (Atm%flagstruct%ecmwf_ic) then
       if (cld_amt .gt. 0) Atm%q(i,j,k,cld_amt) = 0.
   endif
 
@@ -2476,7 +2476,7 @@ contains
 !-----------------------------------------------------------------------
    if (trim(source) /= source_fv3gfs) then
       if ((Atm%flagstruct%nwat .eq. 3 .or. Atm%flagstruct%nwat .eq. 6) .and. &
-           (Atm%flagstruct%ncep_ic .or. Atm%flagstruct%nggps_ic)) then 
+           (Atm%flagstruct%ncep_ic .or. Atm%flagstruct%nggps_ic)) then
          do k=1,npz
             do i=is,ie
 
@@ -2576,7 +2576,7 @@ contains
   if (.not.Atm%gridstruct%bounded_domain) then
       call prt_gb_nh_sh('DATA_IC Z500', is,ie, js,je, z500, Atm%gridstruct%area_64(is:ie,js:je), Atm%gridstruct%agrid_64(is:ie,js:je,2))
       if ( .not. Atm%flagstruct%hydrostatic )  &
-      call prt_height('fv3_IC Z500', is,ie, js,je, 3, npz, 500.E2, Atm%phis, Atm%delz, Atm%peln,   & 
+      call prt_height('fv3_IC Z500', is,ie, js,je, 3, npz, 500.E2, Atm%phis, Atm%delz, Atm%peln,   &
                       Atm%gridstruct%area_64(is:ie,js:je), Atm%gridstruct%agrid_64(is:ie,js:je,2))
   endif
 
@@ -2653,7 +2653,7 @@ contains
         enddo
 123     ps_temp(i,j) = exp(pst)
      enddo   ! i-loop
-  
+
      do i=is,ie
         pe1(i,1) = Atm%ak(1)
         pn1(i,1) = log(pe1(i,1))
@@ -2693,7 +2693,7 @@ contains
 
 5000 continue
    call p_maxmin('o3mr remap', Atm%q(is:ie,js:je,1:npz,iq), is, ie, js, je, npz, 1.)
- 
+
    deallocate(ps_temp)
 
  end subroutine remap_scalar_single
@@ -2905,7 +2905,7 @@ contains
   real, pointer, dimension(:,:,:) :: agrid
 
 ! local:
-  real, dimension(Atm%bd%isd:Atm%bd%ied,Atm%bd%jsd:Atm%bd%jed,npz):: ut, vt   ! winds 
+  real, dimension(Atm%bd%isd:Atm%bd%ied,Atm%bd%jsd:Atm%bd%jed,npz):: ut, vt   ! winds
   real, dimension(Atm%bd%is:Atm%bd%ie,km):: up, vp, tp
   real, dimension(Atm%bd%is:Atm%bd%ie,km+1):: pe0, pn0
   real pt0(km), gz(km+1), pk0(km+1)
@@ -2941,7 +2941,7 @@ contains
         call mpp_error(FATAL,'SPHUM must be 1st tracer')
    endif
 
-  pk0(1) = ak0(1)**kappa 
+  pk0(1) = ak0(1)**kappa
 
   do i=1,im-1
      rdlon(i) = 1. / (lon(i+1) - lon(i))
@@ -3049,9 +3049,9 @@ contains
 #else
 
 ! * Adjust interpolated ps to model terrain
-       gz(km+1) = gzc 
+       gz(km+1) = gzc
        do k=km,1,-1
-           gz(k) = gz(k+1) + rdgas*tp(i,k)*(pn0(i,k+1)-pn0(i,k)) 
+           gz(k) = gz(k+1) + rdgas*tp(i,k)*(pn0(i,k+1)-pn0(i,k))
        enddo
 ! Only lowest layer potential temp is needed
           pt0(km) = tp(i,km)/(pk0(km+1)-pk0(km))*(kappa*(pn0(i,km+1)-pn0(i,km)))
@@ -3071,7 +3071,7 @@ contains
 123    Atm%ps(i,j) = pst**(1./kappa)
 #endif
      enddo   !i-loop
- 
+
 
 ! * Compute delp from ps
      do i=is,ie
@@ -3090,7 +3090,7 @@ contains
            Atm%delp(i,j,k) = pe1(i,k+1) - pe1(i,k)
         enddo
      enddo
- 
+
 ! Use kord=9 for winds; kord=11 for tracers
 !------
 ! map u
@@ -3196,7 +3196,7 @@ contains
   edge_vect_e => gridstruct%edge_vect_e
   edge_vect_s => gridstruct%edge_vect_s
   edge_vect_n => gridstruct%edge_vect_n
-  
+
   ew => gridstruct%ew
   es => gridstruct%es
 
@@ -3333,7 +3333,7 @@ contains
                       ve(3,i,j)*ew(3,i,j,2)
         enddo
      enddo
- 
+
    enddo         ! k-loop
 
  end subroutine cubed_a2d
@@ -3561,7 +3561,7 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
        real, dimension(im,levp+1):: pe0, pn0
 !      real:: qc
        integer:: i,j,k
-      
+
 !$OMP parallel do default(none) shared(im,jm,levp,ak0,bk0,zs,ps,t,q,zh) &
 !$OMP                          private(pe0,pn0)
        do j = 1, jm
