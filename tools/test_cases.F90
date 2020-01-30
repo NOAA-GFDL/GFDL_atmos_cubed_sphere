@@ -2815,7 +2815,9 @@
            pk1(k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
         enddo
 
+#ifndef GFS_PHYS
         call SuperCell_Sounding(npz, p00, pk1, ts1, qs1)
+#endif
 
         w(:,:,:) = 0.
         q(:,:,:,:) = 0.
@@ -6585,7 +6587,9 @@ end subroutine terminator_tracers
            pk1(k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
         enddo
 
+#ifndef GFS_PHYS
         call SuperCell_Sounding(npz, p00, pk1, ts1, qs1)
+#endif
 
         v(:,:,:) = 0.
         w(:,:,:) = 0.
@@ -6674,9 +6678,10 @@ end subroutine terminator_tracers
         do k=1,npz
            pk1(k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
         enddo
+#ifndef GFS_PHYS
 
         call SuperCell_Sounding(npz, p00, pk1, ts1, qs1)
-
+#endif
         w(:,:,:) = 0.
         q(:,:,:,:) = 0.
 
@@ -7248,7 +7253,7 @@ end subroutine terminator_tracers
 
  end subroutine superK_u 
 
-
+#ifndef GFS_PHYS
  subroutine SuperCell_Sounding(km, ps, pk1, tp, qp)
  use gfdl_cloud_microphys_mod, only: wqsat_moist, qsmith_init, qs_blend
 ! Morris Weisman & J. Klemp 2002 sounding
@@ -7272,11 +7277,11 @@ end subroutine terminator_tracers
  real:: dz0, zvir, fac_z, pk0, temp1, p2
  integer:: k, n, kk
 
-#ifdef GFS_PHYS
+!#ifdef GFS_PHYS
 
- call mpp_error(FATAL, 'SuperCell sounding cannot perform with GFS Physics.')
+! call mpp_error(FATAL, 'SuperCell sounding cannot perform with GFS Physics.')
 
-#else
+!#else
 
  zvir = rvgas/rdgas - 1.
  pk0 = p00**kappa
@@ -7376,9 +7381,10 @@ end subroutine terminator_tracers
     tp(k) = max(Tmin, tp(k))
  enddo
 
-#endif
+!#endif
 
  end subroutine SuperCell_Sounding
+#endif
 
  subroutine DCMIP16_BC(delp,pt,u,v,q,w,delz,&
       is,ie,js,je,isd,ied,jsd,jed,npz,nq,ak,bk,ptop, &

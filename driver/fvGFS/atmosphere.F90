@@ -740,10 +740,6 @@ contains
    type(grid_box_type),   intent(inout) :: Grid_box
    logical,               intent(in)    :: restart_endfcst
 
-  ! initialize domains for writing global physics data
-   call set_domain ( Atm(mygrid)%domain )
-
-   if ( Atm(mygrid)%flagstruct%nudge ) call fv_nwp_nudge_end
 #ifdef CCPP
    integer :: ierr
    if (Atm(mygrid)%flagstruct%do_sat_adj) then
@@ -760,6 +756,10 @@ contains
    end if
 #endif
 
+  ! initialize domains for writing global physics data
+   call set_domain ( Atm(mygrid)%domain )
+
+   if ( Atm(mygrid)%flagstruct%nudge ) call fv_nwp_nudge_end
    call nullify_domain ( )
    if (first_diag) then
       call timing_on('FV_DIAG')

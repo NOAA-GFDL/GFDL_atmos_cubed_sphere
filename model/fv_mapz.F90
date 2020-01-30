@@ -88,7 +88,7 @@ module fv_mapz_mod
   use fv_grid_utils_mod, only: g_sum, ptop_min, cubed_to_latlon, update_dwinds_phys
   use fv_fill_mod,       only: fillz
   use mpp_domains_mod,   only: mpp_update_domains, domain2d
-  use mpp_mod,           only: NOTE, mpp_error, get_unit, mpp_root_pe, mpp_pe
+  use mpp_mod,           only: NOTE, FATAL, mpp_error, get_unit, mpp_root_pe, mpp_pe
   use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, R_GRID
   use fv_timing_mod,     only: timing_on, timing_off
   use fv_mp_mod,         only: is_master, mp_reduce_min, mp_reduce_max
@@ -239,11 +239,10 @@ contains
   integer:: i,j,k
   integer:: kdelz
 #ifdef CCPP
-  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, iq, n, kp, k_next
+  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, ccn_cm3, iq, n, kp, k_next
   integer :: ierr
 #else
-  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, iq, n, kmp, kp, k_next
-  integer:: ccn_cm3
+  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, ccn_cm3,  iq, n, kmp, kp, k_next
 #endif
 
 #ifdef CCPP
@@ -644,7 +643,7 @@ contains
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
 !$OMP                               kord_tm,pe4, npx,npy,ccn_cm3,u_dt,v_dt, c2l_ord,bd,dp0,ps, &
-!OMP                                cdata,CCPP_interstitial)                           &
+!$OMP                                cdata,CCPP_interstitial)                           &
 #ifdef STATIC
 !$OMP                        shared(ccpp_suite)                                                &
 #endif
@@ -661,7 +660,7 @@ contains
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
 !$OMP                               fast_mp_consv,kord_tm, pe4,npx,npy, ccn_cm3,               &
-!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps,cdata,CPP_interstitial)        &
+!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps,cdata,CCPP_interstitial)        &
 #ifdef STATIC
 !$OMP                        shared(ccpp_suite)                                                &
 #endif
