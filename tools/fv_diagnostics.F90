@@ -25,7 +25,7 @@ module fv_diagnostics_mod
  use fms_mod,            only: write_version_number
  use fms_io_mod,         only: set_domain, nullify_domain, write_version_number
  use time_manager_mod,   only: time_type, get_date, get_time
- use mpp_domains_mod,    only: domain2d, mpp_update_domains, DGRID_NE
+ use mpp_domains_mod,    only: domain2d, mpp_update_domains, DGRID_NE, NORTH, EAST
  use diag_manager_mod,   only: diag_axis_init, register_diag_field, &
                                register_static_field, send_data, diag_grid_init, &
                                diag_field_add_attribute
@@ -275,9 +275,9 @@ contains
 !                              set_name=trim(field), Domain2=Domain, tile_count=n)
 
        id_x = diag_axis_init('grid_x',grid_x,'degrees_E','x','cell corner longitude', &
-                           set_name=trim(field),Domain2=Atm(n)%Domain, tile_count=n)
+                           set_name=trim(field),Domain2=Atm(n)%Domain, tile_count=n, pos=EAST)
        id_y = diag_axis_init('grid_y',grid_y,'degrees_N','y','cell corner latitude',  &
-                           set_name=trim(field), Domain2=Atm(n)%Domain, tile_count=n)
+                           set_name=trim(field), Domain2=Atm(n)%Domain, tile_count=n, pos=NORTH)
 
 !    end do
 !   deallocate(grid_xt, grid_yt, grid_xe, grid_ye, grid_xn, grid_yn)
