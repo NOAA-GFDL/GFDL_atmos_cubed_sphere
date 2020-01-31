@@ -211,9 +211,9 @@ contains
 !                              set_name=trim(field), Domain2=Domain, tile_count=n)
 
        id_x = diag_axis_init('grid_x',grid_x,'degrees_E','x','cell corner longitude', &
-                           set_name=trim(field),Domain2=Atm(n)%Domain, tile_count=n, pos=EAST)
+                           set_name=trim(field),Domain2=Atm(n)%Domain, tile_count=n, domain_position=EAST)
        id_y = diag_axis_init('grid_y',grid_y,'degrees_N','y','cell corner latitude',  &
-                           set_name=trim(field), Domain2=Atm(n)%Domain, tile_count=n, pos=NORTH)
+                           set_name=trim(field), Domain2=Atm(n)%Domain, tile_count=n, domain_position=NORTH)
 
 !    end do
 !   deallocate(grid_xt, grid_yt, grid_xe, grid_ye, grid_xn, grid_yn)
