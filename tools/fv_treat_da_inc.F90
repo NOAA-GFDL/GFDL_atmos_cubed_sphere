@@ -155,17 +155,18 @@ contains
   !! and added upon request.
   !>@author Xi.Chen <xi.chen@noaa.gov>
   !>@date 02/12/2016
-   subroutine read_da_inc(Atm, fv_domain, bd, npz_in, nq, u, v, q, delp, pt, delz, is_in, js_in, ie_in, je_in )
+   subroutine read_da_inc(Atm, fv_domain, bd, npz_in, nq, u, v, q, delp, pt, delz, is_in, js_in, ie_in, je_in,  &
+                                                                                   isc_in, jsc_in, iec_in, jec_in )
     type(fv_atmos_type),       intent(inout) :: Atm
     type(domain2d),            intent(inout) :: fv_domain
     type(fv_grid_bounds_type), intent(IN) :: bd
-    integer,                   intent(IN) :: npz_in, nq, is_in, js_in, ie_in, je_in
+    integer,                   intent(IN) :: npz_in, nq, is_in, js_in, ie_in, je_in, isc_in, jsc_in, iec_in, jec_in
     real, intent(inout), dimension(is_in:ie_in,  js_in:je_in+1,npz_in):: u  ! D grid zonal wind (m/s)
     real, intent(inout), dimension(is_in:ie_in+1,js_in:je_in  ,npz_in):: v  ! D grid meridional wind (m/s)
     real, intent(inout) :: delp(is_in:ie_in  ,js_in:je_in  ,npz_in)  ! pressure thickness (pascal)
     real, intent(inout) :: pt(  is_in:ie_in  ,js_in:je_in  ,npz_in)  ! temperature (K)
     real, intent(inout) :: q(   is_in:ie_in  ,js_in:je_in  ,npz_in, nq)  ! 
-    real, intent(inout) :: delz(is_in:ie_in  ,js_in:je_in  ,npz_in)  ! 
+    real, intent(inout) :: delz(isc_in:iec_in  ,jsc_in:jec_in  ,npz_in)  ! 
     ! local
     
     real :: deg2rad
@@ -282,8 +283,8 @@ contains
 
     call apply_inc_on_3d_scalar('T_inc',pt, is_in, js_in, ie_in, je_in)
     call apply_inc_on_3d_scalar('delp_inc',delp, is_in, js_in, ie_in, je_in)
-    if (.not. Atm%flagstruct%hydrostatic) then
-        call apply_inc_on_3d_scalar('delz_inc',delz, is_in, js_in, ie_in, je_in)
+    if ( .not. Atm%flagstruct%hydrostatic ) then
+        call apply_inc_on_3d_scalar('delz_inc',delz, isc_in, jsc_in, iec_in, jec_in)
     endif
     call apply_inc_on_3d_scalar('sphum_inc',q(:,:,:,sphum), is_in, js_in, ie_in, je_in)
     call apply_inc_on_3d_scalar('liq_wat_inc',q(:,:,:,liq_wat), is_in, js_in, ie_in, je_in)

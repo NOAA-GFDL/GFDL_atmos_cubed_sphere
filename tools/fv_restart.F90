@@ -358,7 +358,8 @@ contains
                    k = Atm(n)%npz/2
                    if( is_master() ) write(*,*) 'Calling read_da_inc',Atm(n)%pt(i,j,k)
                    call read_da_inc(Atm(n), Atm(n)%domain, Atm(n)%bd, Atm(n)%npz, Atm(n)%ncnst, &
-                        Atm(n)%u, Atm(n)%v, Atm(n)%q, Atm(n)%delp, Atm(n)%pt, Atm(n)%delz, isd, jsd, ied, jed)
+                        Atm(n)%u, Atm(n)%v, Atm(n)%q, Atm(n)%delp, Atm(n)%pt, Atm(n)%delz, isd, jsd, ied, jed, &
+                        isc, jsc, iec, jec )
                    if( is_master() ) write(*,*) 'Back from read_da_inc',Atm(n)%pt(i,j,k)
                 endif
                 !====== end PJP added DA functionailty======
