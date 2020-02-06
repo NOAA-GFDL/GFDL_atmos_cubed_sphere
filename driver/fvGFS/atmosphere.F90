@@ -1398,6 +1398,7 @@ contains
    real(kind=kind_phys):: rcp, q0, qwat(nq), qt, rdt
    real psum, qsum, psumb, qsumb, psuma, qsuma, betad
    real, allocatable, dimension(:,:,:,:) :: qtmp
+   logical in_iau_interval,use_iau_massfixer
    Time_prev = Time
    Time_next = Time + Time_step_atmos
    rdt = 1.d0 / dt_atmos
@@ -1406,8 +1407,17 @@ contains
    nwat = Atm(n)%flagstruct%nwat
    dnats = Atm(mytile)%flagstruct%dnats
    nq_adv = nq - dnats
+   in_iau_interval=IAU_Data%in_interval
+   use_iau_massfixer=IAU_Data%drymassfixer
 
    if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
+
+!SJL: perform vertical filling to fix the negative humidity if the SAS convection scheme is used
+!     This call may be commented out if RAS or other positivity-preserving CPS is used.
+!  do nb = 1,Atm_block%nblks
+!    blen = Atm_block%blksz(nb)
+!    call fill_gfs(blen, npz, IPD_Data(nb)%Statein%prsi, IPD_Data(nb)%Stateout%gq0, 1.e-9_kind_phys)
+!  enddo
 
    if (IAU_Data%in_interval) then
 
@@ -1500,8 +1510,13 @@ contains
                  sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(qtmp(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
                  isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area,1) 
          ! rescale water consitituents to ensure IAU doesn't change dry mass
+         ! following
+         ! https://onlinelibrary.wiley.com/doi/full/10.1111/j.1600-0870.2007.00299.x
          betad = (psuma - (psumb - qsumb))/qsuma
-         IPD_Data(nb)%Stateout%gq0 = betad*IPD_Data(nb)%Stateout%gq0
+         if (is_master()) print *,'betad = ',betad
+         do nb = 1,Atm_block%nblks
+            IPD_Data(nb)%Stateout%gq0(:,:,1:nwat) = betad*IPD_Data(nb)%Stateout%gq0(:,:,1:nwat)
+         enddo
          deallocate(qtmp)
       endif
 
@@ -1517,7 +1532,7 @@ contains
 #ifdef MULTI_GASES
 !$OMP                      num_gas,                                                      &
 #endif
-!$OMP                      snowwat, graupel, nq_adv, flip_vc)   &
+!$OMP                      in_iau_interval, use_iau_massfixer,snowwat, graupel, nq_adv, flip_vc)   &
 !$OMP             private (nb, blen, i, j, k, k1, ix, q0, qwat, qt)
    do nb = 1,Atm_block%nblks
 
@@ -1527,11 +1542,11 @@ contains
      call fill_gfs(blen, npz, IPD_Data(nb)%Statein%prsi, IPD_Data(nb)%Stateout%gq0, 1.e-9_kind_phys)
 
      do k = 1, npz
-           if(flip_vc) then
-             k1 = npz+1-k !reverse the k direction 
-           else
-             k1 = k
-           endif
+       if(flip_vc) then
+         k1 = npz+1-k !reverse the k direction 
+       else
+         k1 = k
+       endif
        do ix = 1, blen
          i = Atm_block%index(nb)%ii(ix)
          j = Atm_block%index(nb)%jj(ix)
@@ -1551,6 +1566,9 @@ contains
            q0 = IPD_Data(nb)%Statein%prsi(ix,k+1) - IPD_Data(nb)%Statein%prsi(ix,k)
          endif
          qwat(1:nq_adv) = q0*IPD_Data(nb)%Stateout%gq0(ix,k,1:nq_adv)
+         if (in_iau_interval .and. use_iau_massfixer) then
+         Atm(n)%q(i,j,k1,1:nq_adv) = IPD_Data(nb)%Stateout%gq0(ix,k,1:nq_adv)
+         else
 ! **********************************************************************************************************
 ! Dry mass: the following way of updating delp is key to mass conservation with hybrid 32-64 bit computation
 ! **********************************************************************************************************
@@ -1565,6 +1583,7 @@ contains
          Atm(n)%delp(i,j,k1) = q0
          Atm(n)%q(i,j,k1,1:nq_adv) = qwat(1:nq_adv) / q0
 !        if (dnats .gt. 0) Atm(n)%q(i,j,k1,nq_adv+1:nq) = IPD_Data(nb)%Stateout%gq0(ix,k,nq_adv+1:nq)
+         endif
        enddo
      enddo
 
@@ -1573,11 +1592,11 @@ contains
      !--- See Note in statein...
      do iq = nq+1, ncnst
        do k = 1, npz
-           if(flip_vc) then
-             k1 = npz+1-k !reverse the k direction 
-           else
-             k1 = k
-           endif
+         if(flip_vc) then
+           k1 = npz+1-k !reverse the k direction 
+         else
+           k1 = k
+         endif
          do ix = 1, blen
            i = Atm_block%index(nb)%ii(ix)
            j = Atm_block%index(nb)%jj(ix)
@@ -1587,6 +1606,20 @@ contains
      enddo
 
    enddo  ! nb-loop
+
+! print out dry mass inside IAU interval.
+   if (IAU_Data%in_interval) then
+      ! global mean total pressure
+      psum = g_sum(Atm(n)%domain,sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz),dim=3),&
+             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area,1) + Atm(n)%ptop
+      ! global mean total water
+      qsum = g_sum(Atm(n)%domain,&
+             sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
+             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area,1) 
+      if( is_master() ) then
+           print *,'dry surface pressure in IAU interval = ',psum-qsum
+      endif
+   endif
 
    call timing_off('GFS_TENDENCIES')
 
@@ -1632,17 +1665,6 @@ contains
                          Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop)
        call timing_off('FV_UPDATE_PHYS')
    call mpp_clock_end (id_dynam)
-
-   ! global mean total pressure
-   !psum = g_sum(Atm(n)%domain,sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz),dim=3),&
-   !       isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area,1) + Atm(n)%ptop
-   !! global mean total water
-   !qsum = g_sum(Atm(n)%domain,&
-   !       sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
-   !       isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area,1) 
-   !if( is_master() ) then
-   !     print *,'dry surface pressure after IAU/physics = ',psum-qsum
-   !endif
 
 !--- nesting update after updating atmospheric variables with
 !--- physics tendencies
