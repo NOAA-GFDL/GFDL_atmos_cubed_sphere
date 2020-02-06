@@ -179,11 +179,11 @@ use fv_eta_mod,         only: get_eta_level
 use fv_fill_mod,        only: fill_gfs
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
-use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
+use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height, prt_mass
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
-use fv_mp_mod,          only: switch_current_Atm
+use fv_mp_mod,          only: switch_current_Atm, is_master
 use fv_sg_mod,          only: fv_subgrid_z
 use fv_update_phys_mod, only: fv_update_phys
 use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
@@ -194,6 +194,7 @@ use fv_regional_mod,    only: start_regional_restart, read_new_bc_data, &
                               a_step, p_step, current_time_in_seconds
 
 use mpp_domains_mod,    only:  mpp_get_data_domain, mpp_get_compute_domain
+use fv_grid_utils_mod,  only: g_sum
 
 implicit none
 private
@@ -1395,6 +1396,8 @@ contains
    integer :: i, j, ix, k, k1, n, w_diff, nt_dyn, iq
    integer :: nb, blen, nwat, dnats, nq_adv
    real(kind=kind_phys):: rcp, q0, qwat(nq), qt, rdt
+   real psum, qsum, psumb, qsumb, psuma, qsuma, betad
+   real, allocatable, dimension(:,:,:,:) :: qtmp
    Time_prev = Time
    Time_next = Time + Time_step_atmos
    rdt = 1.d0 / dt_atmos
@@ -1407,6 +1410,32 @@ contains
    if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
 
    if (IAU_Data%in_interval) then
+
+      if (IAU_Data%drymassfixer) then
+         allocate ( qtmp(isd:ied  ,jsd:jed  ,npz, nwat) )
+         ! global mean total pressure and water before IAU
+         psumb = g_sum(Atm(n)%domain,sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz),dim=3),&
+                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area,1) 
+         do nb = 1,Atm_block%nblks
+            blen = Atm_block%blksz(nb)
+            do k=1,npz
+               if(flip_vc) then
+                 k1 = npz+1-k !reverse the k direction 
+               else
+                 k1 = k
+               endif
+               do ix = 1, blen
+                   i = Atm_block%index(nb)%ii(ix)
+                   j = Atm_block%index(nb)%jj(ix)
+                   qtmp(i,j,k1,1:nwat) = IPD_Data(nb)%Stateout%gq0(ix,k,1:nwat)
+               enddo
+            enddo
+         enddo
+         qsumb = g_sum(Atm(n)%domain,&
+                 sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(qtmp(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
+                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area,1) 
+      endif
+
 !     IAU increments are in units of 1/sec
 
 !     add analysis increment to u,v,t tendencies
@@ -1447,6 +1476,35 @@ contains
             enddo
          enddo
       enddo
+
+      if (IAU_data%drymassfixer) then
+         ! global mean total pressure and water after IAU
+         psuma = g_sum(Atm(n)%domain,sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz),dim=3),&
+                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area,1) 
+         do nb = 1,Atm_block%nblks
+            blen = Atm_block%blksz(nb)
+            do k=1,npz
+               if(flip_vc) then
+                 k1 = npz+1-k !reverse the k direction 
+               else
+                 k1 = k
+               endif
+               do ix = 1, blen
+                   i = Atm_block%index(nb)%ii(ix)
+                   j = Atm_block%index(nb)%jj(ix)
+                   qtmp(i,j,k1,1:nwat) = IPD_Data(nb)%Stateout%gq0(ix,k,1:nwat)
+               enddo
+            enddo
+         enddo
+         qsuma = g_sum(Atm(n)%domain,&
+                 sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(qtmp(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
+                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area,1) 
+         ! rescale water consitituents to ensure IAU doesn't change dry mass
+         betad = (psuma - (psumb - qsumb))/qsuma
+         IPD_Data(nb)%Stateout%gq0 = betad*IPD_Data(nb)%Stateout%gq0
+         deallocate(qtmp)
+      endif
+
    endif
 
    call set_domain ( Atm(mytile)%domain )
@@ -1501,7 +1559,7 @@ contains
 #ifdef MULTI_GASES
          q0 = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:max(nwat,num_gas)))) + sum(qwat(1:max(nwat,num_gas)))
 #else
-         qt = sum(qwat(1:nwat))
+         qt = sum(qwat(1:nwat)) 
          q0 = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:nwat))) + qt 
 #endif
          Atm(n)%delp(i,j,k1) = q0
@@ -1574,6 +1632,17 @@ contains
                          Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop)
        call timing_off('FV_UPDATE_PHYS')
    call mpp_clock_end (id_dynam)
+
+   ! global mean total pressure
+   !psum = g_sum(Atm(n)%domain,sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz),dim=3),&
+   !       isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area,1) + Atm(n)%ptop
+   !! global mean total water
+   !qsum = g_sum(Atm(n)%domain,&
+   !       sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
+   !       isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area,1) 
+   !if( is_master() ) then
+   !     print *,'dry surface pressure after IAU/physics = ',psum-qsum
+   !endif
 
 !--- nesting update after updating atmospheric variables with
 !--- physics tendencies
