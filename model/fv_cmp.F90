@@ -50,7 +50,7 @@ module fv_cmp_mod
 !     <td>gfdl_cloud_microphys_mod</td>
 !     <td>ql_gen, qi_gen, qi0_max, ql_mlt, ql0_max, qi_lim, qs_mlt,
 !         tau_r2g, tau_smlt, tau_i2s, tau_v2l, tau_l2v, tau_imlt, tau_l2r,
-!         rad_rain, rad_snow, rad_graupel, dw_ocean, dw_land</td>
+!         rad_rain, rad_snow, rad_graupel, dw_ocean, dw_land, tintqs</td>
 !   </tr>
 ! </table>
     
@@ -60,7 +60,7 @@ module fv_cmp_mod
     use gfdl_cloud_microphys_mod, only: ql_gen, qi_gen, qi0_max, ql_mlt, ql0_max, qi_lim, qs_mlt
     use gfdl_cloud_microphys_mod, only: icloud_f, sat_adj0, t_sub, cld_min
     use gfdl_cloud_microphys_mod, only: tau_r2g, tau_smlt, tau_i2s, tau_v2l, tau_l2v, tau_imlt, tau_l2r
-    use gfdl_cloud_microphys_mod, only: rad_rain, rad_snow, rad_graupel, dw_ocean, dw_land
+    use gfdl_cloud_microphys_mod, only: rad_rain, rad_snow, rad_graupel, dw_ocean, dw_land, tintqs
 #ifdef MULTI_GASES
     use multi_gases_mod,  only:   virq_qpz, vicpqd_qpz, vicvqd_qpz, num_gas
 #endif
@@ -774,9 +774,13 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, te0
             
             do i = is, ie
                 
-                tin = pt1 (i) - (lcp2 (i) * q_cond (i) + icp2 (i) * q_sol (i)) ! minimum temperature
+                if(tintqs) then 
+                  tin = pt1(i)
+                else 
+                  tin = pt1 (i) - (lcp2 (i) * q_cond (i) + icp2 (i) * q_sol (i)) ! minimum temperature
                 ! tin = pt1 (i) - ((lv00 + d0_vap * pt1 (i)) * q_cond (i) + &
                 ! (li00 + dc_ice * pt1 (i)) * q_sol (i)) / (mc_air (i) + qpz (i) * c_vap)
+                endif 
                 
                 ! -----------------------------------------------------------------------
                 ! determine saturated specific humidity
@@ -820,14 +824,14 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, te0
                 ! icloud_f = 2: binary cloud scheme (0 / 1)
                 ! -----------------------------------------------------------------------
                 
-                if (rh > 0.75 .and. qpz (i) > 1.e-6) then
+                if (rh > 0.75 .and. qpz (i) > 1.e-8) then
                     dq = hvar (i) * qpz (i)
                     q_plus = qpz (i) + dq
                     q_minus = qpz (i) - dq
                     if (icloud_f == 2) then
                         if (qpz (i) > qstar (i)) then
                             qa (i, j) = 1.
-                        elseif (qstar (i) < q_plus .and. q_cond (i) > 1.e-6) then
+                        elseif (qstar (i) < q_plus .and. q_cond (i) > 1.e-8) then
                             qa (i, j) = ((q_plus - qstar (i)) / dq) ** 2
                             qa (i, j) = min (1., qa (i, j))
                         else
@@ -847,7 +851,7 @@ subroutine fv_sat_adj (mdt, zvir, is, ie, js, je, ng, hydrostatic, consv_te, te0
                                 qa (i, j) = 0.
                             endif
                             ! impose minimum cloudiness if substantial q_cond (i) exist
-                            if (q_cond (i) > 1.e-6) then
+                            if (q_cond (i) > 1.e-8) then
                                 qa (i, j) = max (cld_min, qa (i, j))
                             endif
                             qa (i, j) = min (1., qa (i, j))

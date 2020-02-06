@@ -201,10 +201,6 @@ contains
   real, intent(inout)::   dtdt(is:ie,js:je,km)
   real, intent(out)::    pkz(is:ie,js:je,km)       !< layer-mean pk for converting t to pt
   real, intent(out)::     te(isd:ied,jsd:jed,km)
-#if !defined(CCPP) && defined(TRANSITION)
-  ! For bit-for-bit reproducibility
-  real, volatile:: volatile_var
-#endif
 
 ! !DESCRIPTION:
 !
@@ -663,9 +659,6 @@ contains
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
 !$OMP                               fast_mp_consv,kord_tm)                                     &
-#ifdef TRANSITION
-!$OMP                       private(volatile_var)                                              &
-#endif
 #ifdef MULTI_GASES
 !$OMP                        shared(num_gas)                                                   &
 #endif
@@ -854,27 +847,12 @@ endif        ! end last_step check
                  do j=js,je
                     do i=is,ie
 #ifdef MOIST_CAPPA
-#ifdef TRANSITION
-                       volatile_var = log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k))
-                       pkz(i,j,k) = exp(cappa(i,j,k)*volatile_var)
-#else
                        pkz(i,j,k) = exp(cappa(i,j,k)*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
-#endif
-#else
-#ifdef TRANSITION
-#ifdef MULTI_GASES
-                       volatile_var = log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k))
-                       pkz(i,j,k) = exp(akap*(virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))*volatile_var)
-#else
-                       volatile_var = log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k))
-                       pkz(i,j,k) = exp(akap*volatile_var)
-#endif
 #else
 #ifdef MULTI_GASES
                        pkz(i,j,k) = exp(akap*(virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #else
                        pkz(i,j,k) = exp(akap*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
-#endif
 #endif
 #endif
                     enddo
