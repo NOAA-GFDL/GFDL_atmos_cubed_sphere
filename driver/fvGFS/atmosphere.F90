@@ -183,7 +183,7 @@ use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_he
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
-use fv_mp_mod,          only: switch_current_Atm, is_master
+use fv_mp_mod,          only: switch_current_Atm
 use fv_sg_mod,          only: fv_subgrid_z
 use fv_update_phys_mod, only: fv_update_phys
 use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
@@ -1416,9 +1416,6 @@ contains
          qsumb = g_sum(Atm(n)%domain,&
                  sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
                  isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area,1) 
-         if( is_master() ) then
-            print *,'dry surface pressure in IAU interval (before) = ',psumb++Atm%ptop-qsumb
-         endif
       endif
 
 !     IAU increments are in units of 1/sec
@@ -1554,21 +1551,8 @@ contains
       qsum = g_sum(Atm(n)%domain,&
              sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
              isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area,1) 
-      if( is_master() ) then
-         print *,'dry surface pressure in IAU interval (after) =',&
-         psum+Atm%ptop-qsum
-      endif
       betad = (psum - (psumb - qsumb))/qsum
-      !if (is_master()) print *,'betad = ',betad
       Atm(n)%q(:,:,:,1:nwat) = betad*Atm(n)%q(:,:,:,1:nwat)
-      ! global mean total water after adjustment
-      !qsum = g_sum(Atm(n)%domain,&
-      !       sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
-      !       isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area,1) 
-      !if( is_master() ) then
-      !   print *,'dry surface pressure in IAU interval (after 2) =',&
-      !   psum+Atm%ptop-qsum
-      !endif
    endif
 
    call timing_off('GFS_TENDENCIES')
