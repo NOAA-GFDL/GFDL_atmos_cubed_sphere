@@ -150,7 +150,8 @@ character(len=7)   :: mod_name = 'atmos'
   real, allocatable :: qtend(:,:,:,:)
   real              :: mv = -1.e10
 !miz
-  type(cmip_diag_id_type) :: ID_tnta, ID_tnhusa
+  type(cmip_diag_id_type) :: ID_tnta, ID_tnhusa, ID_tnt, ID_tnhus
+  integer :: nqv, nql, nqi, nqa
 
   integer :: mytile = 1
   integer :: p_split = 1
@@ -360,6 +361,12 @@ contains
    ID_tnhusa = register_cmip_diag_field_3d (mod_name, 'tnhusa', Time, &
                          'Tendency of Specific Humidity due to Advection', 's-1', &
                          standard_name='tendency_of_specific_humidity_due_to_advection')
+   ID_tnt = register_cmip_diag_field_3d (mod_name, 'tnt', Time, &
+                         'Tendency of Air Temperature', 'K s-1', &
+                         standard_name='tendency_of_air_temperature')
+   ID_tnhus = register_cmip_diag_field_3d (mod_name, 'tnhus', Time, &
+                         'Tendency of Specific Humidity', 's-1', &
+                         standard_name='tendency_of_specific_humidity')
 
 !---allocate id_tracer_*
    allocate (id_tracerdt_dyn    (num_tracers))
@@ -374,11 +381,24 @@ contains
      endif
    enddo
    if (any(id_tracerdt_dyn(:)>0)) allocate(qtendyyf(isc:iec, jsc:jec,1:npz,num_tracers))
-   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) allocate(ttend(isc:iec, jsc:jec, 1:npz))
+   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) .or. query_cmip_diag_id(ID_tnt) ) &
+                                                      allocate(ttend(isc:iec, jsc:jec, 1:npz))
    if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or. &
-        query_cmip_diag_id(ID_tnhusa) )  allocate(qtend(isc:iec, jsc:jec, 1:npz, 4))
+        query_cmip_diag_id(ID_tnhusa) .or. query_cmip_diag_id(ID_tnhus) )  allocate(qtend(isc:iec, jsc:jec, 1:npz, 4))
 !miz
 
+! get tracer number for common moisture tracers
+   nqv = get_tracer_index(MODEL_ATMOS,'sphum')
+   nql = get_tracer_index(MODEL_ATMOS,'liq_wat')
+   nqi = get_tracer_index(MODEL_ATMOS,'ice_wat')
+   nqa = get_tracer_index(MODEL_ATMOS,'cld_amt')
+! could zero out diagnostics if nXX = 0
+   if (any((/nqv,nql,nqi,nqa/)==0)) call error_mesg ('atmosphere_mod', &
+         'at least one moisture tracer (sphum,liq_wat,ice_wat,cld_amt) does not exist', FATAL )
+   if (nqv > size(qtend,4)) id_qdt_dyn = 0
+   if (nql > size(qtend,4)) id_qldt_dyn = 0
+   if (nqi > size(qtend,4)) id_qidt_dyn = 0
+   if (nqa > size(qtend,4)) id_qadt_dyn = 0
 !  --- initialize clocks for dynamics, physics_down and physics_up
    id_dynam     = mpp_clock_id ('FV dy-core',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
    id_subgridz  = mpp_clock_id ('FV subgrid_z',flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
@@ -406,15 +426,17 @@ contains
 #ifndef use_AM3_physics
    Surf_diff%ddp_dyn(:,:,:) = Atm(mytile)%delp(isc:iec, jsc:jec, :)
    Surf_diff%tdt_dyn(:,:,:) = Atm(mytile)%pt(isc:iec, jsc:jec, :)
-   Surf_diff%qdt_dyn(:,:,:) = Atm(mytile)%q (isc:iec, jsc:jec, :, 1) + &
-                              Atm(mytile)%q (isc:iec, jsc:jec, :, 2) + &
-                              Atm(mytile)%q (isc:iec, jsc:jec, :, 3)
+   Surf_diff%qdt_dyn(:,:,:) = Atm(mytile)%q (isc:iec, jsc:jec, :, nqv) + &
+                              Atm(mytile)%q (isc:iec, jsc:jec, :, nql) + &
+                              Atm(mytile)%q (isc:iec, jsc:jec, :, nqi)
 #endif
 
 !miz[M d0
-   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) ttend(:, :, :) = Atm(mytile)%pt(isc:iec, jsc:jec, :)
+   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) .or. query_cmip_diag_id(ID_tnt) ) &
+                                             ttend(:, :, :) = Atm(mytile)%pt(isc:iec, jsc:jec, :)
    if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or. &
-        query_cmip_diag_id(ID_tnhusa) ) qtend(:, :, :, :) = Atm(mytile)%q (isc:iec, jsc:jec, :, :)
+        query_cmip_diag_id(ID_tnhusa) .or. query_cmip_diag_id(ID_tnhus) ) &
+                                             qtend(:, :, :, :) = Atm(mytile)%q (isc:iec, jsc:jec, :, 1:size(qtend,4))
 !miz
    do itrac = 1, num_tracers
      if (id_tracerdt_dyn (itrac) >0 ) &
@@ -458,27 +480,25 @@ contains
 #ifndef use_AM3_physics
    Surf_diff%ddp_dyn(:,:,:) =(Atm(mytile)%delp(isc:iec,jsc:jec,:)-Surf_diff%ddp_dyn(:,:,:))/dt_atmos
    Surf_diff%tdt_dyn(:,:,:) =(Atm(mytile)%pt(isc:iec,jsc:jec,:)  -Surf_diff%tdt_dyn(:,:,:))/dt_atmos
-   Surf_diff%qdt_dyn(:,:,:) =(Atm(mytile)%q (isc:iec,jsc:jec,:,1) + &
-                              Atm(mytile)%q (isc:iec,jsc:jec,:,2) + &
-                              Atm(mytile)%q (isc:iec,jsc:jec,:,3) - Surf_diff%qdt_dyn(:,:,:))/dt_atmos
+   Surf_diff%qdt_dyn(:,:,:) =(Atm(mytile)%q (isc:iec,jsc:jec,:,nqv) + &
+                              Atm(mytile)%q (isc:iec,jsc:jec,:,nql) + &
+                              Atm(mytile)%q (isc:iec,jsc:jec,:,nqi) - Surf_diff%qdt_dyn(:,:,:))/dt_atmos
 #endif
 !miz
-   if ( id_udt_dyn>0 )  used = send_data( id_udt_dyn, 2.0/dt_atmos*Atm(mytile)%ua(isc:iec,jsc:jec,:), Time)
-   if ( id_vdt_dyn>0 )  used = send_data( id_vdt_dyn, 2.0/dt_atmos*Atm(mytile)%va(isc:iec,jsc:jec,:), Time)
-   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) then
-        ttend = (Atm(mytile)%pt(isc:iec, jsc:jec, :)   - ttend(:, :, :   ))/dt_atmos
-        if (id_tdt_dyn>0)                used = send_data(id_tdt_dyn,  ttend(:,:,:),   Time)
-        if (query_cmip_diag_id(ID_tnta)) used = send_cmip_data_3d (ID_tnta, ttend(:,:,:), Time)
-   endif
+   if (id_udt_dyn>0)  used = send_data( id_udt_dyn, 2.0/dt_atmos*Atm(mytile)%ua(isc:iec,jsc:jec,:), Time)
+   if (id_vdt_dyn>0)  used = send_data( id_vdt_dyn, 2.0/dt_atmos*Atm(mytile)%va(isc:iec,jsc:jec,:), Time)
+   if (id_tdt_dyn > 0) used = send_data( id_tdt_dyn, (Atm(mytile)%pt(isc:iec,jsc:jec,:)-ttend(:,:,:))/dt_atmos, Time)
+   if (query_cmip_diag_id(ID_tnta)) &
+                 used = send_cmip_data_3d ( ID_tnta, (Atm(mytile)%pt(isc:iec,jsc:jec,:)-ttend(:,:,:))/dt_atmos, Time)
 
-   if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or.  query_cmip_diag_id(ID_tnhusa) ) then
-        qtend = (Atm(mytile)%q (isc:iec, jsc:jec, :, :)- qtend(:, :, :, :))/dt_atmos
-        if (id_qdt_dyn  > 0) used = send_data(id_qdt_dyn,  qtend(:,:,:,1), Time)
-        if (id_qldt_dyn > 0) used = send_data(id_qldt_dyn, qtend(:,:,:,2), Time)
-        if (id_qidt_dyn > 0) used = send_data(id_qidt_dyn, qtend(:,:,:,3), Time)
-        if (id_qadt_dyn > 0) used = send_data(id_qadt_dyn, qtend(:,:,:,4), Time)
-        if (query_cmip_diag_id(ID_tnhusa)) used = send_cmip_data_3d (ID_tnhusa, qtend(:,:,:,1), Time)
-   endif
+   if (id_qdt_dyn  > 0) used = send_data( id_qdt_dyn , (Atm(mytile)%q(isc:iec,jsc:jec,:,nqv)-qtend(:,:,:,nqv))/dt_atmos, Time)
+   if (id_qldt_dyn > 0) used = send_data( id_qldt_dyn, (Atm(mytile)%q(isc:iec,jsc:jec,:,nql)-qtend(:,:,:,nql))/dt_atmos, Time)
+   if (id_qidt_dyn > 0) used = send_data( id_qidt_dyn, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqi)-qtend(:,:,:,nqi))/dt_atmos, Time)
+   if (id_qadt_dyn > 0) used = send_data( id_qadt_dyn, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqa)-qtend(:,:,:,nqa))/dt_atmos, Time)
+   if (query_cmip_diag_id(ID_tnhusa)) &
+                  used = send_cmip_data_3d (ID_tnhusa, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqv)-qtend(:,:,:,nqv))/dt_atmos, Time)
+
+
 !miz
 
    do itrac = 1, num_tracers
@@ -733,7 +753,7 @@ contains
          p_surf(i,j) = Atm(mytile)%ps(i,j)
          t_bot(i,j) = Atm(mytile)%pt(i,j,npz)
          p_bot(i,j) = Atm(mytile)%delp(i,j,npz)/(Atm(mytile)%peln(i,npz+1,j)-Atm(mytile)%peln(i,npz,j))
-         z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(mytile)%q(i,j,npz,1)) *  &
+         z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(mytile)%q(i,j,npz,nqv)) *  &
                       (1. - Atm(mytile)%pe(i,npz,j)/p_bot(i,j))
       enddo
    enddo
@@ -819,9 +839,9 @@ contains
         do k=1,npz
            do i=isc,iec
 ! Warning: the following works only with AM2 physics: water vapor; cloud water, cloud ice.
-              wm(i,j) = wm(i,j) + Atm(mytile)%delp(i,j,k) * ( Atm(mytile)%q(i,j,k,1) +    &
-                                                         Atm(mytile)%q(i,j,k,2) +    &
-                                                         Atm(mytile)%q(i,j,k,3) )
+              wm(i,j) = wm(i,j) + Atm(mytile)%delp(i,j,k) * ( Atm(mytile)%q(i,j,k,nqv) +    &
+                                                         Atm(mytile)%q(i,j,k,nql) +    &
+                                                         Atm(mytile)%q(i,j,k,nqi) )
            enddo
         enddo
      enddo
@@ -929,6 +949,12 @@ contains
        call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir)
        call timing_off('TWOWAY_UPDATE')
     endif   
+
+!--- cmip6 total tendencies of temperature and specific humidity
+   if (query_cmip_diag_id(ID_tnt)) &
+                 used = send_cmip_data_3d ( ID_tnt, (Atm(mytile)%pt(isc:iec,jsc:jec,:)-ttend(:,:,:))/dt_atmos, Time)
+   if (query_cmip_diag_id(ID_tnhus)) &
+                  used = send_cmip_data_3d (ID_tnhus, (Atm(mytile)%q(isc:iec,jsc:jec,:,nqv)-qtend(:,:,:,nqv))/dt_atmos, Time)
 
 #if !defined(ATMOS_NUDGE) && !defined(CLIMATE_NUDGE) && !defined(ADA_NUDGE)
    if ( .not.forecast_mode .and. Atm(mytile)%flagstruct%nudge .and. Atm(mytile)%flagstruct%na_init>0 ) then
@@ -1168,6 +1194,7 @@ contains
 ! phase due to the way in which MPI interacts with nested OpenMP
 !----------------------------------------------------------------------
    call compute_g_avg(Time, 'co2', Radiation, Atm_block)
+   call compute_g_avg(Time, 'ch4', Radiation, Atm_block)
 
  end subroutine atmos_radiation_driver_inputs
 
