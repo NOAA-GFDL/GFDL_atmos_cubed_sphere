@@ -179,7 +179,7 @@ use fv_eta_mod,         only: get_eta_level
 use fv_fill_mod,        only: fill_gfs
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
-use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height, prt_mass
+use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
@@ -1408,9 +1408,7 @@ contains
 
    if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
 
-
    if (IAU_Data%in_interval) then
-
       if (IAU_Data%drymassfixer) then
          ! global mean total pressure and water before IAU
          psumb = g_sum(Atm(n)%domain,sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz),dim=3),&
@@ -1463,7 +1461,6 @@ contains
             enddo
          enddo
       enddo
-
    endif
 
    call set_domain ( Atm(mytile)%domain )
@@ -1518,7 +1515,7 @@ contains
 #ifdef MULTI_GASES
          q0 = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:max(nwat,num_gas)))) + sum(qwat(1:max(nwat,num_gas)))
 #else
-         qt = sum(qwat(1:nwat)) 
+         qt = sum(qwat(1:nwat))
          q0 = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:nwat))) + qt 
 #endif
          Atm(n)%delp(i,j,k1) = q0
