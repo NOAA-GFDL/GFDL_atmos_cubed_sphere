@@ -93,6 +93,7 @@ module fv_iau_mod
     real,allocatable :: delz_inc(:,:,:)
     real,allocatable :: tracer_inc(:,:,:,:)
     logical          :: in_interval = .false.
+    logical          :: drymassfixer = .false.
   end type iau_external_data_type
   type iau_state_type
       type(iau_internal_data_type):: inc1
@@ -280,6 +281,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
        call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(2)))
     endif
 !   print*,'in IAU init',dt,rdt
+    IAU_data%drymassfixer = IPD_control%iau_drymassfixer
 
 end subroutine IAU_initialize
 
