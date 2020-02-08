@@ -183,7 +183,7 @@ use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_he
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
-use fv_mp_mod,          only: switch_current_Atm
+use fv_mp_mod,          only: switch_current_Atm, is_master
 use fv_sg_mod,          only: fv_subgrid_z
 use fv_update_phys_mod, only: fv_update_phys
 use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
@@ -1416,6 +1416,9 @@ contains
          qsumb = g_sum(Atm(n)%domain,&
                  sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
                  isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1) 
+         if (is_master()) then
+           print *,'dry ps before IAU',psumb+Atm(n)%ptop-qsumb
+         endif
       endif
 
 !     IAU increments are in units of 1/sec
@@ -1552,7 +1555,16 @@ contains
              sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
              isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1) 
       betad = (psum - (psumb - qsumb))/qsum
+      if (is_master()) then
+        print *,'dry ps after IAU+physics',psum+Atm(n)%ptop-qsum
+      endif
       Atm(n)%q(:,:,:,1:nwat) = betad*Atm(n)%q(:,:,:,1:nwat)
+      qsum = g_sum(Atm(n)%domain,&
+             sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
+             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1) 
+      if (is_master()) then
+        print *,'dry ps after iau_drymassfixer',psum+Atm(n)%ptop-qsum
+      endif
    endif
 
    call timing_off('GFS_TENDENCIES')
