@@ -1417,7 +1417,7 @@ contains
                  sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
                  isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1) 
          if (is_master()) then
-           print *,'dry ps before IAU',psumb+Atm(n)%ptop-qsumb
+           print *,'dry ps before IAU/physics',psumb+Atm(n)%ptop-qsumb
          endif
       endif
 
@@ -1556,15 +1556,15 @@ contains
              isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1) 
       betad = (psum - (psumb - qsumb))/qsum
       if (is_master()) then
-        print *,'dry ps after IAU+physics',psum+Atm(n)%ptop-qsum
+        print *,'dry ps after IAU/physics',psum+Atm(n)%ptop-qsum
       endif
       Atm(n)%q(:,:,:,1:nwat) = betad*Atm(n)%q(:,:,:,1:nwat)
-      qsum = g_sum(Atm(n)%domain,&
-             sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
-             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1) 
-      if (is_master()) then
-        print *,'dry ps after iau_drymassfixer',psum+Atm(n)%ptop-qsum
-      endif
+      !qsum = g_sum(Atm(n)%domain,&
+      !       sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
+      !       isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1) 
+      !if (is_master()) then
+      !  print *,'dry ps after iau_drymassfixer',psum+Atm(n)%ptop-qsum
+      !endif
    endif
 
    call timing_off('GFS_TENDENCIES')
