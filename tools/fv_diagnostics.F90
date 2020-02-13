@@ -92,7 +92,8 @@ module fv_diagnostics_mod
 
  public :: fv_diag_init, fv_time, fv_diag, prt_mxm, prt_maxmin, range_check!, id_divg, id_te
  public :: prt_mass, prt_minmax, ppme, fv_diag_init_gn, z_sum, sphum_ll_fix, eqv_pot, qcly0, gn
- public :: prt_height, prt_gb_nh_sh, interpolate_vertical, rh_calc, get_height_field, get_height_given_pressure
+ public :: prt_height, prt_gb_nh_sh, interpolate_vertical, rh_calc, get_height_field
+ public :: get_height_given_pressure, get_vorticity
 
 #ifdef FEWER_PLEVS
  integer, parameter :: nplev = 10 ! 31 ! lmh
@@ -208,7 +209,7 @@ contains
 #ifdef HIWPP
     trange = (/    5.,  350. /)  ! temperature
 #else
-    trange = (/  100.,  350. /)  ! temperature
+    trange = (/  100.,  400. /)  ! temperature
 #endif
     slprange = (/800.,  1200./)  ! sea-level-pressure
 
@@ -273,9 +274,9 @@ contains
 !                              set_name=trim(field), Domain2=Domain, tile_count=n)
 
        id_x = diag_axis_init('grid_x',grid_x,'degrees_E','x','cell corner longitude', &
-                           set_name=trim(field),Domain2=Atm(n)%Domain, tile_count=n, pos=EAST)
+                           set_name=trim(field), Domain2=Atm(n)%Domain, tile_count=n, domain_position=EAST)
        id_y = diag_axis_init('grid_y',grid_y,'degrees_N','y','cell corner latitude',  &
-                           set_name=trim(field), Domain2=Atm(n)%Domain, tile_count=n, pos=NORTH)
+                           set_name=trim(field), Domain2=Atm(n)%Domain, tile_count=n, domain_position=NORTH)
 
 !    end do
 !   deallocate(grid_xt, grid_yt, grid_xe, grid_ye, grid_xn, grid_yn)
@@ -589,10 +590,11 @@ contains
            all(idiag%id_h(minloc(abs(levs-100)))>0) .or. all(idiag%id_h(minloc(abs(levs-200)))>0) .or. &
            all(idiag%id_h(minloc(abs(levs-250)))>0) .or. all(idiag%id_h(minloc(abs(levs-300)))>0) .or. &
            all(idiag%id_h(minloc(abs(levs-500)))>0) .or. all(idiag%id_h(minloc(abs(levs-700)))>0) .or. &
-           all(idiag%id_h(minloc(abs(levs-850)))>0) .or. all(idiag%id_h(minloc(abs(levs-1000)))>0) ) then
-           idiag%id_any_hght = 1
+           all(idiag%id_h(minloc(abs(levs-850)))>0) .or. all(idiag%id_h(minloc(abs(levs-925)))>0) .or. &
+           all(idiag%id_h(minloc(abs(levs-1000)))>0) ) then
+        idiag%id_any_hght = 1
       else
-           idiag%id_any_hght = 0
+        idiag%id_any_hght = 0
       endif
 !-----------------------------
 ! mean temp between 300-500 mb
@@ -1320,7 +1322,7 @@ contains
     integer :: isd, ied, jsd, jed, npz, itrac
     integer :: ngc, nwater
 
-    real, allocatable :: a2(:,:),a3(:,:,:),a4(:,:,:), wk(:,:,:), wz(:,:,:), ucoor(:,:,:), vcoor(:,:,:)
+    real, allocatable :: a2(:,:), a3(:,:,:), a4(:,:,:), wk(:,:,:), wz(:,:,:), ucoor(:,:,:), vcoor(:,:,:)
     real, allocatable :: ustm(:,:), vstm(:,:)
     real, allocatable :: slp(:,:), depress(:,:), ws_max(:,:), tc_count(:,:)
     real, allocatable :: u2(:,:), v2(:,:), x850(:,:), var1(:,:), var2(:,:), var3(:,:)
@@ -2979,7 +2981,7 @@ contains
             used=send_data(idiag%id_pmaskv2, a2, Time)
        endif
 
-       if ( idiag%id_u100m>0 .or. idiag%id_v100m>0 .or.  idiag%id_w100m>0 .or. idiag%id_w5km>0 .or. idiag%id_w2500m>0 &
+       if ( idiag%id_u100m>0 .or. idiag%id_v100m>0 .or. idiag%id_w100m>0 .or. idiag%id_w5km>0 .or. idiag%id_w2500m>0 &
             & .or. idiag%id_w1km>0 .or. idiag%id_basedbz>0 .or. idiag%id_dbz4km>0) then
           if (.not.allocated(wz)) allocate ( wz(isc:iec,jsc:jec,npz+1) )
           if ( Atm(n)%flagstruct%hydrostatic) then
@@ -3020,22 +3022,22 @@ contains
             used=send_data(idiag%id_rain5km, a2, Time)
             if(prt_minmax) call prt_maxmin('rain5km', a2, isc, iec, jsc, jec, 0, 1, 1.)
        endif
-       if ( idiag%id_w5km>0 ) then
+       if ( (.not.Atm(n)%flagstruct%hydrostatic) .and. idiag%id_w5km>0 ) then
             call interpolate_z(isc, iec, jsc, jec, npz, 5.e3, wz, Atm(n)%w(isc:iec,jsc:jec,:), a2)
             used=send_data(idiag%id_w5km, a2, Time)
             if(prt_minmax) call prt_maxmin('W5km', a2, isc, iec, jsc, jec, 0, 1, 1.)
        endif
-       if ( idiag%id_w2500m>0 ) then
+       if ( (.not.Atm(n)%flagstruct%hydrostatic) .and. idiag%id_w2500m>0 ) then
             call interpolate_z(isc, iec, jsc, jec, npz, 2.5e3, wz, Atm(n)%w(isc:iec,jsc:jec,:), a2)
             used=send_data(idiag%id_w2500m, a2, Time)
             if(prt_minmax) call prt_maxmin('W2500m', a2, isc, iec, jsc, jec, 0, 1, 1.)
        endif
-       if ( idiag%id_w1km>0 ) then
+       if ( (.not.Atm(n)%flagstruct%hydrostatic) .and. idiag%id_w1km>0 ) then
             call interpolate_z(isc, iec, jsc, jec, npz, 1.e3, wz, Atm(n)%w(isc:iec,jsc:jec,:), a2)
             used=send_data(idiag%id_w1km, a2, Time)
             if(prt_minmax) call prt_maxmin('W1km', a2, isc, iec, jsc, jec, 0, 1, 1.)
        endif
-       if ( idiag%id_w100m>0 ) then
+       if ( (.not.Atm(n)%flagstruct%hydrostatic) .and. idiag%id_w100m>0 ) then
             call interpolate_z(isc, iec, jsc, jec, npz, 100., wz, Atm(n)%w(isc:iec,jsc:jec,:), a2)
             used=send_data(idiag%id_w100m, a2, Time)
             if(prt_minmax) call prt_maxmin('w100m', a2, isc, iec, jsc, jec, 0, 1, 1.)
@@ -3226,6 +3228,12 @@ contains
          used=send_data(idiag%id_omg_plev, a3(isc:iec,jsc:jec,:), Time)
        endif
 
+       if ( idiag%id_x850>0 .and. idiag%id_vort850>0 ) then
+         x850(:,:) = x850(:,:)*a2(:,:)
+         used=send_data(idiag%id_x850, x850, Time)
+         deallocate ( x850 )
+       endif
+
        if( allocated(a3) ) deallocate (a3)
 ! *** End cs_intp
 
@@ -3318,11 +3326,9 @@ contains
              call eqv_pot(a3, Atm(n)%pt, Atm(n)%delp, Atm(n)%delz, Atm(n)%peln, Atm(n)%pkz, Atm(n)%q(isd,jsd,1,sphum),    &
                   isc, iec, jsc, jec, ngc, npz, Atm(n)%flagstruct%hydrostatic, Atm(n)%flagstruct%moist_phys)
           endif
+          if( prt_minmax ) call prt_maxmin('Theta_E', a3, isc, iec, jsc, jec, 0, npz, 1.)
+          used=send_data(idiag%id_theta_e, a3, Time)
 
-          if (idiag%id_theta_e > 0) then
-             if( prt_minmax ) call prt_maxmin('Theta_E', a3, isc, iec, jsc, jec, 0, npz, 1.)
-             used=send_data(idiag%id_theta_e, a3, Time)
-          end if
           theta_d = get_tracer_index (MODEL_ATMOS, 'theta_d')
           if ( theta_d>0 ) then
              if( prt_minmax ) then
@@ -3655,7 +3661,6 @@ contains
               Atm(n)%npz, Atm(n)%ncnst, sphum, Atm(n)%flagstruct%nwat, Atm(n)%flagstruct%hydrostatic, Atm(n)%flagstruct%moist_phys, &
               zvir, Atm(n)%ng, Atm(n)%bd, Time)
       endif
-
 
    ! enddo  ! end ntileMe do-loop
 
