@@ -1895,6 +1895,9 @@ CONTAINS
 
 !TODO LMH 25may18: do not need delz defined on full compute domain; pass appropriate BCs instead
  subroutine nh_bc(ptop, grav, kappa, cp, delp, delzBC, pt, phis, &
+#ifdef MULTI_GASES
+      q ,    &
+#endif
 #ifdef USE_COND
       q_con, &
 #ifdef MOIST_CAPPA
@@ -1914,6 +1917,9 @@ CONTAINS
       real, intent(IN) :: phis(bd%isd:bd%ied,bd%jsd:bd%jed)
       real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: pt, delp
       type(fv_nest_BC_type_3d), intent(IN) :: delzBC
+#ifdef MULTI_GASES
+      real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz,*):: q
+#endif
 #ifdef USE_COND
       real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: q_con
 #ifdef MOIST_CAPPA
@@ -1923,6 +1929,8 @@ CONTAINS
       real, intent(INOUT), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz+1):: gz, pkc, pk3
 
       integer :: i,j,k
+      real :: gama !'gamma'
+      real :: ptk, rgrav, rkap, peln1, rdg
 
       integer :: istart, iend
 
@@ -1943,6 +1951,9 @@ CONTAINS
       if (is == 1) then
 
          call nh_BC_k(ptop, grav, kappa, cp, delp, delzBC%west_t0, delzBC%west_t1, pt, phis, &
+#ifdef MULTI_GASES
+      q ,    &
+#endif
 #ifdef USE_COND
               q_con, &
 #ifdef MOIST_CAPPA
@@ -1958,6 +1969,9 @@ CONTAINS
       if (ie == npx-1) then
 
          call nh_BC_k(ptop, grav, kappa, cp, delp, delzBC%east_t0, delzBC%east_t1, pt, phis, &
+#ifdef MULTI_GASES
+      q ,    &
+#endif
 #ifdef USE_COND
               q_con, &
 #ifdef MOIST_CAPPA
@@ -1984,6 +1998,9 @@ CONTAINS
       if (js == 1) then
 
          call nh_BC_k(ptop, grav, kappa, cp, delp, delzBC%south_t0, delzBC%south_t1, pt, phis, &
+#ifdef MULTI_GASES
+      q ,    &
+#endif
 #ifdef USE_COND
               q_con, &
 #ifdef MOIST_CAPPA
@@ -1999,6 +2016,9 @@ CONTAINS
       if (je == npy-1) then
 
          call nh_BC_k(ptop, grav, kappa, cp, delp, delzBC%north_t0, delzBC%north_t1, pt, phis, &
+#ifdef MULTI_GASES
+      q ,    &
+#endif
 #ifdef USE_COND
               q_con, &
 #ifdef MOIST_CAPPA
@@ -2013,6 +2033,9 @@ CONTAINS
 end subroutine nh_bc
 
 subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, &
+#ifdef MULTI_GASES
+      q ,    &
+#endif
 #ifdef USE_COND
       q_con, &
 #ifdef MOIST_CAPPA
@@ -2031,6 +2054,9 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
    real, intent(IN) :: ptop, kappa, cp, grav
    real, intent(IN) :: phis(isd:ied,jsd:jed)
    real, intent(IN),  dimension(isd:ied,jsd:jed,npz):: pt, delp
+#ifdef MULTI_GASES
+      real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz,*):: q
+#endif
 #ifdef USE_COND
    real, intent(IN),  dimension(isd:ied,jsd:jed,npz):: q_con
 #ifdef MOIST_CAPPA
@@ -2054,7 +2080,9 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
 
 
    real :: pealn, pebln, rpkz
-
+#ifdef MULTI_GASES
+      real gamax
+#endif
    rgrav = 1./grav
    gama = 1./(1.-kappa)
    ptk = ptop ** kappa
@@ -2105,7 +2133,12 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
 #ifdef MOIST_CAPPA
             pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz_int*pt(i,j,k)))
 #else
-            pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz_int*rdgas*pt(i,j,k)))
+#ifdef MULTI_GASES
+                  gamax = gama * (vicpqd(q(i,j,k,:))/vicvqd(q(i,j,k,:)))
+                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
+#else
+                  pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz_int*rdgas*pt(i,j,k)))
+#endif
 #endif
             !hydro
 #ifdef USE_COND

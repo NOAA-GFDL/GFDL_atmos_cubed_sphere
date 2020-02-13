@@ -652,6 +652,9 @@ contains
 
              reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(0.5+(it-1))*dt
              call nh_bc(ptop, grav, akap, cp, delpc, delz_regBC, ptc, phis, &
+#ifdef MULTI_GASES
+                q, &
+#endif
 #ifdef USE_COND
                 q_con, &
 #ifdef MOIST_CAPPA
@@ -1068,6 +1071,9 @@ contains
 
         if (gridstruct%nested) then
            call nh_bc(ptop, grav, akap, cp, delp, neststruct%delz_BC, pt, phis, &
+#ifdef MULTI_GASES
+               q, &
+#endif
 #ifdef USE_COND
                 q_con, &
 #ifdef MOIST_CAPPA

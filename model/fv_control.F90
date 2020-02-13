@@ -1030,7 +1030,6 @@ module fv_control_mod
             nestbctype, nestupdate, nsponge, s_weight, &
             check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
             do_uni_zfull, adj_mass_vmr,fac_n_spl, fhouri, update_blend, regional, bc_update_interval
-
 #ifdef MULTI_GASES
    namelist /multi_gases_nml/ rilist,cpilist
 #endif
@@ -1060,6 +1059,22 @@ module fv_control_mod
        read (f_unit,fv_core_nml,iostat=ios)
        ierr = check_nml_error(ios,'fv_core_nml')
        call close_file(f_unit)
+#ifdef MULTI_GASES
+      if( is_master() ) print *,' enter multi_gases: ncnst = ',ncnst
+      allocate (rilist(0:ncnst))
+      allocate (cpilist(0:ncnst))
+      rilist     =    0.0
+      cpilist    =    0.0
+      rilist(0)  = rdgas
+      rilist(1)  = rvgas
+      cpilist(0) = cp_air
+      cpilist(1) = 4*cp_air
+   ! Read multi_gases namelist
+      rewind (f_unit)
+      read (f_unit,multi_gases_nml,iostat=ios)
+      ierr = check_nml_error(ios,'multi_gases_nml')
+#endif
+      call close_file(f_unit)
 #endif         
        call write_version_number ( 'FV_CONTROL_MOD', version )
        unit = stdlog()
