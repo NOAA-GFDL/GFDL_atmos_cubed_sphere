@@ -1412,10 +1412,10 @@ contains
       if (IAU_Data%drymassfixer) then
          ! global mean total pressure and water before IAU
          psumb = g_sum(Atm(n)%domain,sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz),dim=3),&
-                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1) 
+                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
          qsumb = g_sum(Atm(n)%domain,&
                  sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
-                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1) 
+                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
          if (is_master()) then
            print *,'dry ps before IAU/physics',psumb+Atm(n)%ptop-qsumb
          endif
@@ -1549,11 +1549,11 @@ contains
    if (IAU_Data%in_interval .and. IAU_data%drymassfixer) then
       ! global mean total pressure
       psum = g_sum(Atm(n)%domain,sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz),dim=3),&
-             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1) 
+             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
       ! global mean total water (before adjustment)
       qsum = g_sum(Atm(n)%domain,&
              sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
-             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1) 
+             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
       betad = (psum - (psumb - qsumb))/qsum
       if (is_master()) then
         print *,'dry ps after IAU/physics',psum+Atm(n)%ptop-qsum
