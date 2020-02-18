@@ -183,7 +183,7 @@ use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_he
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
-use fv_mp_mod,          only: switch_current_Atm
+use fv_mp_mod,          only: switch_current_Atm, is_master
 use fv_sg_mod,          only: fv_subgrid_z
 use fv_update_phys_mod, only: fv_update_phys
 use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
@@ -194,6 +194,7 @@ use fv_regional_mod,    only: start_regional_restart, read_new_bc_data, &
                               a_step, p_step, current_time_in_seconds
 
 use mpp_domains_mod,    only:  mpp_get_data_domain, mpp_get_compute_domain
+use fv_grid_utils_mod,  only: g_sum
 
 implicit none
 private
@@ -1395,6 +1396,7 @@ contains
    integer :: i, j, ix, k, k1, n, w_diff, nt_dyn, iq
    integer :: nb, blen, nwat, dnats, nq_adv
    real(kind=kind_phys):: rcp, q0, qwat(nq), qt, rdt
+   real psum, qsum, psumb, qsumb, betad
    Time_prev = Time
    Time_next = Time + Time_step_atmos
    rdt = 1.d0 / dt_atmos
@@ -1407,6 +1409,18 @@ contains
    if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
 
    if (IAU_Data%in_interval) then
+      if (IAU_Data%drymassfixer) then
+         ! global mean total pressure and water before IAU
+         psumb = g_sum(Atm(n)%domain,sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz),dim=3),&
+                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
+         qsumb = g_sum(Atm(n)%domain,&
+                 sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
+                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
+         if (is_master()) then
+           print *,'dry ps before IAU/physics',psumb+Atm(n)%ptop-qsumb
+         endif
+      endif
+
 !     IAU increments are in units of 1/sec
 
 !     add analysis increment to u,v,t tendencies
@@ -1469,11 +1483,11 @@ contains
      call fill_gfs(blen, npz, IPD_Data(nb)%Statein%prsi, IPD_Data(nb)%Stateout%gq0, 1.e-9_kind_phys)
 
      do k = 1, npz
-           if(flip_vc) then
-             k1 = npz+1-k !reverse the k direction 
-           else
-             k1 = k
-           endif
+       if(flip_vc) then
+         k1 = npz+1-k !reverse the k direction 
+       else
+         k1 = k
+       endif
        do ix = 1, blen
          i = Atm_block%index(nb)%ii(ix)
          j = Atm_block%index(nb)%jj(ix)
@@ -1515,11 +1529,11 @@ contains
      !--- See Note in statein...
      do iq = nq+1, ncnst
        do k = 1, npz
-           if(flip_vc) then
-             k1 = npz+1-k !reverse the k direction 
-           else
-             k1 = k
-           endif
+         if(flip_vc) then
+           k1 = npz+1-k !reverse the k direction 
+         else
+           k1 = k
+         endif
          do ix = 1, blen
            i = Atm_block%index(nb)%ii(ix)
            j = Atm_block%index(nb)%jj(ix)
@@ -1529,6 +1543,29 @@ contains
      enddo
 
    enddo  ! nb-loop
+
+! dry mass fixer in IAU interval following
+! https://onlinelibrary.wiley.com/doi/full/10.1111/j.1600-0870.2007.00299.x
+   if (IAU_Data%in_interval .and. IAU_data%drymassfixer) then
+      ! global mean total pressure
+      psum = g_sum(Atm(n)%domain,sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz),dim=3),&
+             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
+      ! global mean total water (before adjustment)
+      qsum = g_sum(Atm(n)%domain,&
+             sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
+             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
+      betad = (psum - (psumb - qsumb))/qsum
+      if (is_master()) then
+        print *,'dry ps after IAU/physics',psum+Atm(n)%ptop-qsum
+      endif
+      Atm(n)%q(:,:,:,1:nwat) = betad*Atm(n)%q(:,:,:,1:nwat)
+      !qsum = g_sum(Atm(n)%domain,&
+      !       sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
+      !       isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1) 
+      !if (is_master()) then
+      !  print *,'dry ps after iau_drymassfixer',psum+Atm(n)%ptop-qsum
+      !endif
+   endif
 
    call timing_off('GFS_TENDENCIES')
 
