@@ -6,7 +6,8 @@ The GFDL Microphysics is also available via this repository.
 
 # Where to find information
 
-See the [FV3 documentation and references](https://www.gfdl.noaa.gov/fv3/fv3-documentation-and-references/) for more information.
+See the [FV3 documentation and references](https://www.gfdl.noaa.gov/fv3/fv3-documentation-and-references/)
+for more information.
 
 # Proper usage attribution
 
@@ -17,14 +18,14 @@ Cite Chen et al (2013) and Zhou et al (2019) when using the GFDL Microphysics.
 
 The top level directory structure groups source code and input files as follow:
 
-| File/directory    | Purpose |
-| --------------    | ------- |
-| ```LICENSE.md```  | a copy of the Gnu lesser general public license, version 3. |
-| ```README.md```   | this file with basic pointers to more information |
-| ```model/```      | contains the source code for core of the FV3 dyanmical core |
-| ```driver/```     | contains drivers used by different models/modeling systems |
-| ```tools/```      | contains source code of tools used within the core |
-| ```GFDL_tools/``` | contains source code of tools specific to GFDL models |
+| File/directory       | Purpose |
+| --------------       | ------- |
+| ```LICENSE.md```     | a copy of the Gnu lesser general public license, version 3. |
+| ```README.md```      | this file with basic pointers to more information |
+| ```model/```         | contains the source code for core of the FV3 dyanmical core |
+| ```driver/```        | contains drivers used by different models/modeling systems |
+| ```tools/```         | contains source code of tools used within the core |
+| ```GFDL_tools/```    | contains source code of tools specific to GFDL models |
 
 # Disclaimer
 
