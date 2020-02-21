@@ -10,8 +10,8 @@ See the [FV3 documentation and references](https://www.gfdl.noaa.gov/fv3/fv3-doc
 
 # Proper usage attribution
 
-Cite either Putman and Lin (2007) or Harris and Lin (2013) when describing a model using the FV3 dynamical core.
-Cite Chen et al (2013) and Zhou et al (2019) if using the GFDL Microphysics.
+Cite Putman and Lin (2007) and Harris and Lin (2013) when describing a model using the FV3 dynamical core.
+Cite Chen et al (2013) and Zhou et al (2019) when using the GFDL Microphysics.
 
 # What files are what
 
@@ -22,7 +22,6 @@ The top level directory structure groups source code and input files as follow:
 | ```LICENSE.md```  | a copy of the Gnu lesser general public license, version 3. |
 | ```README.md```   | this file with basic pointers to more information |
 | ```model/```      | contains the source code for core of the FV3 dyanmical core |
-| ```model_nh/```   | contains the source code for non-hydrostatic extensions |
 | ```driver/```     | contains drivers used by different models/modeling systems |
 | ```tools/```      | contains source code of tools used within the core |
 | ```GFDL_tools/``` | contains source code of tools specific to GFDL models |
