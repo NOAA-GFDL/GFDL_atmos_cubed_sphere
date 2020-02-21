@@ -42,8 +42,10 @@ interface read_climate_nudge_data
    module procedure read_climate_nudge_data_3d
 end interface
 
-  character(len=128) :: version = '$Id$'
-  character(len=128) :: tagname = '$Name$'
+! version number of this module
+! Include variable "version" to be written to log file.
+#include<file_version.h>
+
   real, parameter :: P0 = 1.e5
   real, parameter :: D608 = RVGAS/RDGAS - 1.
 
@@ -59,7 +61,7 @@ end interface
                         INDEX_U  = 8, INDEX_V  = 9
   character(len=8), dimension(NUM_REQ_FLDS) :: required_field_names = &
        (/ 'P0  ', 'hyai', 'hybi', 'PHI ', 'PS  ', 'T   ', 'Q   ', 'U   ', 'V   ' /)
- 
+
   integer, parameter :: MAXFILES = 53
   character(len=256) :: filenames(MAXFILES)
   character(len=256) :: filename_tails(MAXFILES)
@@ -83,7 +85,7 @@ type filedata_type
   integer, dimension(NUM_REQ_FLDS) :: field_index   ! varid for variables
   integer, dimension(NUM_REQ_AXES) :: axis_index    ! varid for dimensions
   type(axistype),  dimension(NUM_REQ_FLDS) :: axes
-  type(fieldtype), dimension(NUM_REQ_FLDS) :: fields  
+  type(fieldtype), dimension(NUM_REQ_FLDS) :: fields
 end type
 
   type(filedata_type), allocatable :: Files(:)
@@ -133,7 +135,7 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
 !----- write version and namelist to log file -----
 
   iunit = stdlog()
-  call write_version_number ( version, tagname )
+  call write_version_number ( 'READ_CLIMATE_NUDGE_DATA_MOD', version )
   if (mpp_pe() == mpp_root_pe()) write (iunit, nml=read_climate_nudge_data_nml)
 
   ! determine the number of files
@@ -299,7 +301,7 @@ real, intent(out), dimension(:) :: lon, lat, ak, bk
       else
          ak = 0.
       endif
- 
+
       call mpp_read(Files(1)%ncid, Files(1)%fields(INDEX_BK), bk)
 
 
@@ -390,7 +392,7 @@ integer :: nread(4), start(4)
          call error_mesg ('read_climate_nudge_data_mod', 'itime out of range', FATAL)
       endif
 
-     ! check dimensions 
+     ! check dimensions
      if (present(js)) then
         if (size(dat,1) .ne. global_axis_size(INDEX_LON) .or. &
             size(dat,2) .ne. sub_domain_latitude_size) then
@@ -412,7 +414,7 @@ integer :: nread(4), start(4)
      else
          call error_mesg ('read_climate_nudge_data_mod', 'incorrect field requested in read_climate_nudge_data_2d', FATAL)
      endif
-     
+
      ! file index and actual time index in file
      n = file_index(itime)
      atime = itime - Files(n)%time_offset
@@ -425,9 +427,9 @@ integer :: nread(4), start(4)
      nread = 1
      nread(1) = size(dat,1)
      nread(2) = size(dat,2)
-     
+
      call mpp_read(Files(n)%ncid, Files(n)%fields(this_index), dat, start, nread)
-  
+
       ! geopotential height (convert to m2/s2 if necessary)
      if (field .eq. 'phis') then
         if (maxval(dat) > 1000.*GRAV) then
@@ -487,7 +489,7 @@ integer :: istat, atime, n, this_index, start(4), nread(4)
      else
         call error_mesg ('read_climate_nudge_data_mod', 'incorrect field requested in read_climate_nudge_data_3d', FATAL)
      endif
-     
+
 
      ! file index and actual time index in file
      n = file_index(itime)

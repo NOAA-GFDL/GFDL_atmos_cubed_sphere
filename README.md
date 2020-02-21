@@ -1,8 +1,8 @@
 # GFDL_atmos_cubed_sphere
 
-This is for the FV3 dynamical core and the GFDL Microphysics.
+The source contained herein reflects the 201912 release of the Finite Volume Cubed-Sphere Dynamical Core (FV3) from GFDL
 
-The source in this branch reflects the codebase delivered to NCEP/EMC for use in GFS.  Updates will be forthcoming.
+The GFDL Microphysics is also available via this repository.
 
 # Where to find information
 

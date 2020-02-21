@@ -36,10 +36,10 @@
       use mpp_domains_mod, only : GLOBAL_DATA_DOMAIN, BITWISE_EXACT_SUM, BGRID_NE, FOLD_NORTH_EDGE, CGRID_NE
       use mpp_domains_mod, only : MPP_DOMAIN_TIME, CYCLIC_GLOBAL_DOMAIN, NUPDATE,EUPDATE, XUPDATE, YUPDATE, SCALAR_PAIR
       use mpp_domains_mod, only : domain1D, domain2D, DomainCommunicator2D, mpp_get_ntile_count
-      use mpp_domains_mod, only : mpp_get_compute_domain, mpp_get_data_domain, mpp_domains_set_stack_size
+      use mpp_domains_mod, only : mpp_get_compute_domain, mpp_get_data_domain
       use mpp_domains_mod, only : mpp_global_field, mpp_global_sum, mpp_global_max, mpp_global_min
       use mpp_domains_mod, only : mpp_domains_init, mpp_domains_exit, mpp_broadcast_domain
-      use mpp_domains_mod, only : mpp_check_field, mpp_define_layout 
+      use mpp_domains_mod, only : mpp_check_field, mpp_define_layout
       use mpp_domains_mod, only : mpp_get_neighbor_pe, mpp_define_mosaic, mpp_define_io_domain
       use mpp_domains_mod, only : NORTH, NORTH_EAST, EAST, SOUTH_EAST
       use mpp_domains_mod, only : SOUTH, SOUTH_WEST, WEST, NORTH_WEST
@@ -47,14 +47,11 @@
       use mpp_domains_mod, only : mpp_group_update_initialized, mpp_do_group_update
       use mpp_domains_mod, only : mpp_create_group_update,mpp_reset_group_update_field
       use mpp_domains_mod, only : group_halo_update_type => mpp_group_update_type
+      use mpp_domains_mod, only: nest_domain_type
       use mpp_parameter_mod, only : WUPDATE, EUPDATE, SUPDATE, NUPDATE, XUPDATE, YUPDATE
-      use fv_arrays_mod, only: fv_atmos_type
+      use fv_arrays_mod, only: fv_atmos_type, fv_grid_bounds_type
       use fms_io_mod, only: set_domain
       use mpp_mod, only : mpp_get_current_pelist, mpp_set_current_pelist
-      use mpp_domains_mod, only : mpp_define_domains
-      use mpp_domains_mod, only : mpp_define_nest_domains, nest_domain_type
-      use mpp_domains_mod, only : mpp_get_C2F_index, mpp_update_nest_fine
-      use mpp_domains_mod, only : mpp_get_F2C_index, mpp_update_nest_coarse
       use mpp_domains_mod, only : mpp_get_domain_shift
       use ensemble_manager_mod, only : get_ensemble_id
 
@@ -62,6 +59,7 @@
       private
 
       integer, parameter:: ng    = 3     ! Number of ghost zones required
+      integer, parameter :: MAX_NNEST=20, MAX_NTILE=50
 
 #include "mpif.h"
       integer, parameter :: XDir=1
@@ -79,18 +77,21 @@
 
       logical :: master
 
-      type(nest_domain_type), allocatable, dimension(:)       :: nest_domain
       integer :: this_pe_grid = 0
-      integer, EXTERNAL :: omp_get_thread_num, omp_get_num_threads      
+      integer, EXTERNAL :: omp_get_thread_num, omp_get_num_threads
 
       integer :: npes_this_grid
 
       !! CLEANUP: these are currently here for convenience
       !! Right now calling switch_current_atm sets these to the value on the "current" grid
-      !!  (as well as changing the "current" domain) 
+      !!  (as well as changing the "current" domain)
       integer :: is, ie, js, je
       integer :: isd, ied, jsd, jed
       integer :: isc, iec, jsc, jec
+
+      integer, allocatable :: grids_master_procs(:)
+      integer, dimension(MAX_NNEST) :: tile_fine = 0 !Global index of LAST tile in a mosaic
+      type(nest_domain_type) :: global_nest_domain !ONE structure for ALL levels of nesting
 
       public mp_start, mp_assign_gid, mp_barrier, mp_stop!, npes
       public domain_decomp, mp_bcst, mp_reduce_max, mp_reduce_sum, mp_gather
@@ -98,12 +99,9 @@
       public fill_corners, XDir, YDir
       public switch_current_domain, switch_current_Atm, broadcast_domains
       public is_master, setup_master
-      !The following variables are declared public by this module for convenience;
-      !they will need to be switched when domains are switched
-!!! CLEANUP: ng is a PARAMETER and is OK to be shared by a use statement
-      public is, ie, js, je, isd, ied, jsd, jed, isc, iec, jsc, jec, ng
       public start_group_halo_update, complete_group_halo_update
-      public group_halo_update_type
+      public group_halo_update_type, grids_master_procs, tile_fine
+      public global_nest_domain, MAX_NNEST, MAX_NTILE
 
       interface start_group_halo_update
         module procedure start_var_group_update_2d
@@ -176,9 +174,6 @@
       END INTERFACE
 
       integer :: halo_update_type = 1
-!---- version number -----
-      character(len=128) :: version = '$Id$'
-      character(len=128) :: tagname = '$Name$'
 
 contains
 
@@ -242,7 +237,7 @@ contains
         integer, intent(IN) :: pelist_local(:)
 
         if (ANY(gid == pelist_local)) then
-        
+
            masterproc = pelist_local(1)
            master = (gid == masterproc)
 
@@ -256,11 +251,11 @@ contains
 !     mp_barrier :: Wait for all SPMD processes
 !
       subroutine mp_barrier()
-        
+
          call MPI_BARRIER(commglobal, ierror)
-      
+
       end subroutine mp_barrier
-!       
+!
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
 
@@ -286,54 +281,38 @@ contains
 !
 !     domain_decomp :: Setup domain decomp
 !
-      subroutine domain_decomp(npx,npy,nregions,grid_type,nested,Atm,layout,io_layout)
+      subroutine domain_decomp(npx,npy,nregions,grid_type,nested,layout,io_layout,bd,tile,square_domain,&
+           npes_per_tile,domain,domain_for_coupler,num_contact,pelist)
 
          integer, intent(IN)  :: npx,npy,grid_type
-         integer, intent(INOUT) :: nregions
+         integer, intent(INOUT) :: nregions, tile
          logical, intent(IN):: nested
-         type(fv_atmos_type), intent(INOUT), target :: Atm
          integer, intent(INOUT) :: layout(2), io_layout(2)
 
          integer, allocatable :: pe_start(:), pe_end(:)
 
          integer :: nx,ny,n,num_alloc
          character(len=32) :: type = "unknown"
-         logical :: is_symmetry 
+         logical :: is_symmetry
          logical :: debug=.false.
          integer, allocatable :: tile_id(:)
 
          integer i
-         integer :: npes_x, npes_y 
+         integer :: npes_x, npes_y
 
-         integer, pointer :: pelist(:), grid_number, num_contact, npes_per_tile
-         logical, pointer :: square_domain
-         type(domain2D), pointer :: domain, domain_for_coupler
+         integer, intent(INOUT) :: pelist(:)
+         integer, intent(OUT) :: num_contact, npes_per_tile
+         logical, intent(OUT) :: square_domain
+         type(domain2D), intent(OUT) :: domain, domain_for_coupler
+         type(fv_grid_bounds_type), intent(INOUT) :: bd
 
          nx = npx-1
          ny = npy-1
 
-         !! Init pointers
-         pelist                        => Atm%pelist
-         grid_number                   => Atm%grid_number
-         num_contact                   => Atm%num_contact
-         domain                        => Atm%domain
-         domain_for_coupler            => Atm%domain_for_coupler
-         npes_per_tile                 => Atm%npes_per_tile
-
          npes_x = layout(1)
          npes_y = layout(2)
 
-
          call mpp_domains_init(MPP_DOMAIN_TIME)
-
-       ! call mpp_domains_set_stack_size(10000)
-       ! call mpp_domains_set_stack_size(900000)
-       !  call mpp_domains_set_stack_size(1500000)
-#ifdef SMALL_PE
-         call mpp_domains_set_stack_size(6000000)
-#else
-         call mpp_domains_set_stack_size(3000000)
-#endif
 
          select case(nregions)
          case ( 1 )  ! Lat-Lon "cyclic"
@@ -351,21 +330,21 @@ contains
                is_symmetry = .true.
                call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
 
-               if ( npes_x == 0 ) then 
+               if ( npes_x == 0 ) then
                   npes_x = layout(1)
                endif
                if ( npes_y == 0 ) then
                   npes_y = layout(2)
                endif
 
-               if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  Atm%gridstruct%square_domain = .true.
+               if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  square_domain = .true.
 
                if ( (npx/npes_x < ng) .or. (npy/npes_y < ng) ) then
                   write(*,310) npes_x, npes_y, npx/npes_x, npy/npes_y
                  call mp_stop
                  call exit(1)
               endif
-           
+
               layout = (/npes_x,npes_y/)
             case (3)   ! Lat-Lon "cyclic"
                type="Lat-Lon: cyclic"
@@ -420,14 +399,14 @@ contains
             npes_per_tile = npes_x*npes_y
             call  mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
 
-            if ( npes_x == 0 ) then 
+            if ( npes_x == 0 ) then
                npes_x = layout(1)
             endif
             if ( npes_y == 0 ) then
                npes_y = layout(2)
             endif
 
-            if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  Atm%gridstruct%square_domain = .true.
+            if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  square_domain = .true.
 
             if ( (npx/npes_x < ng) .or. (npy/npes_y < ng) ) then
                write(*,310) npes_x, npes_y, npx/npes_x, npy/npes_y
@@ -435,7 +414,7 @@ contains
                call mp_stop
                call exit(1)
             endif
-           
+
             layout = (/npes_x,npes_y/)
          case default
             call mpp_error(FATAL, 'domain_decomp: no such test: '//type)
@@ -454,7 +433,7 @@ contains
          allocate(tile1(num_alloc), tile2(num_alloc) )
          allocate(istart1(num_alloc), iend1(num_alloc), jstart1(num_alloc), jend1(num_alloc) )
          allocate(istart2(num_alloc), iend2(num_alloc), jstart2(num_alloc), jend2(num_alloc) )
- 
+
          is_symmetry = .true.
          select case(nregions)
          case ( 1 )
@@ -576,8 +555,7 @@ contains
                if( nregions .NE. 1 ) then
                   call mpp_error(FATAL, 'domain_decomp: nregions should be 1 for nested region, contact developer')
                endif
-               tile_id(1) = 7   ! currently we assuming the nested tile is nested in one face of cubic sphere grid.
-                                ! we need a more general way to deal with nested grid tile id.
+               tile_id(1) = 7   ! TODO need update for multiple nests
             else
                do n = 1, nregions
                   tile_id(n) = n
@@ -604,27 +582,27 @@ contains
        deallocate(istart2, iend2, jstart2, jend2)
 
        !--- find the tile number
-       Atm%tile = (gid-pelist(1))/npes_per_tile+1 
+       tile = (gid-pelist(1))/npes_per_tile+1
        if (ANY(pelist == gid)) then
           npes_this_grid = npes_per_tile*nregions
-          tile = Atm%tile
+          tile = tile
           call mpp_get_compute_domain( domain, is,  ie,  js,  je  )
           call mpp_get_data_domain   ( domain, isd, ied, jsd, jed )
-          
-          Atm%bd%is = is
-          Atm%bd%js = js
-          Atm%bd%ie = ie
-          Atm%bd%je = je
 
-          Atm%bd%isd = isd
-          Atm%bd%jsd = jsd
-          Atm%bd%ied = ied
-          Atm%bd%jed = jed
+          bd%is = is
+          bd%js = js
+          bd%ie = ie
+          bd%je = je
 
-          Atm%bd%isc = is
-          Atm%bd%jsc = js
-          Atm%bd%iec = ie
-          Atm%bd%jec = je
+          bd%isd = isd
+          bd%jsd = jsd
+          bd%ied = ied
+          bd%jed = jed
+
+          bd%isc = is
+          bd%jsc = js
+          bd%iec = ie
+          bd%jec = je
 
           if (debug .and. nregions==1) then
              tile=1
@@ -634,21 +612,21 @@ contains
           endif
 200       format(i4.4, ' ', i4.4, ' ', i4.4, ' ', i4.4, ' ', i4.4, ' ')
        else
-          
-          Atm%bd%is = 0
-          Atm%bd%js = 0
-          Atm%bd%ie = -1
-          Atm%bd%je = -1
 
-          Atm%bd%isd = 0
-          Atm%bd%jsd = 0
-          Atm%bd%ied = -1
-          Atm%bd%jed = -1
+          bd%is = 0
+          bd%js = 0
+          bd%ie = -1
+          bd%je = -1
 
-          Atm%bd%isc = 0
-          Atm%bd%jsc = 0
-          Atm%bd%iec = -1
-          Atm%bd%jec = -1
+          bd%isd = 0
+          bd%jsd = 0
+          bd%ied = -1
+          bd%jed = -1
+
+          bd%isc = 0
+          bd%jsc = 0
+          bd%iec = -1
+          bd%jec = -1
 
        endif
 
@@ -667,18 +645,18 @@ subroutine start_var_group_update_2d(group, array, domain, flags, position, whal
   logical,      optional,       intent(in)    :: complete
   real                                        :: d_type
   logical                                     :: is_complete
-! Arguments: 
-!  (inout)   group - The data type that store information for group update. 
+! Arguments:
+!  (inout)   group - The data type that store information for group update.
 !                    This data will be used in do_group_pass.
 !  (inout)   array - The array which is having its halos points exchanged.
 !  (in)      domain - contains domain information.
 !  (in)      flags  - An optional integer indicating which directions the
-!                       data should be sent.  
+!                       data should be sent.
 !  (in)      position - An optional argument indicating the position.  This is
 !                       may be CORNER, but is CENTER by default.
 !  (in)      complete - An optional argument indicating whether the halo updates
-!                       should be initiated immediately or wait for second 
-!                       pass_..._start call.  Omitting complete is the same as 
+!                       should be initiated immediately or wait for second
+!                       pass_..._start call.  Omitting complete is the same as
 !                       setting complete to .true.
 
   if (mpp_group_update_initialized(group)) then
@@ -690,7 +668,7 @@ subroutine start_var_group_update_2d(group, array, domain, flags, position, whal
 
   is_complete = .TRUE.
   if(present(complete)) is_complete = complete
-  if(is_complete .and. halo_update_type == 1) then 
+  if(is_complete .and. halo_update_type == 1) then
      call mpp_start_group_update(group, domain, d_type)
   endif
 
@@ -708,18 +686,18 @@ subroutine start_var_group_update_3d(group, array, domain, flags, position, whal
   real                                        :: d_type
   logical                                     :: is_complete
 
-! Arguments: 
-!  (inout)   group - The data type that store information for group update. 
+! Arguments:
+!  (inout)   group - The data type that store information for group update.
 !                    This data will be used in do_group_pass.
 !  (inout)   array - The array which is having its halos points exchanged.
 !  (in)      domain - contains domain information.
 !  (in)      flags  - An optional integer indicating which directions the
-!                       data should be sent.  
+!                       data should be sent.
 !  (in)      position - An optional argument indicating the position.  This is
 !                       may be CORNER, but is CENTER by default.
 !  (in)      complete - An optional argument indicating whether the halo updates
-!                       should be initiated immediately or wait for second 
-!                       pass_..._start call.  Omitting complete is the same as 
+!                       should be initiated immediately or wait for second
+!                       pass_..._start call.  Omitting complete is the same as
 !                       setting complete to .true.
 
   if (mpp_group_update_initialized(group)) then
@@ -748,18 +726,18 @@ subroutine start_var_group_update_4d(group, array, domain, flags, position, whal
   real                                        :: d_type
   logical                                     :: is_complete
 
-! Arguments: 
-!  (inout)   group - The data type that store information for group update. 
+! Arguments:
+!  (inout)   group - The data type that store information for group update.
 !                    This data will be used in do_group_pass.
 !  (inout)   array - The array which is having its halos points exchanged.
 !  (in)      domain - contains domain information.
 !  (in)      flags  - An optional integer indicating which directions the
-!                       data should be sent.  
+!                       data should be sent.
 !  (in)      position - An optional argument indicating the position.  This is
 !                       may be CORNER, but is CENTER by default.
 !  (in)      complete - An optional argument indicating whether the halo updates
-!                       should be initiated immediately or wait for second 
-!                       pass_..._start call.  Omitting complete is the same as 
+!                       should be initiated immediately or wait for second
+!                       pass_..._start call.  Omitting complete is the same as
 !                       setting complete to .true.
 
   integer :: dirflag
@@ -792,22 +770,22 @@ subroutine start_vector_group_update_2d(group, u_cmpt, v_cmpt, domain, flags, gr
   real                                        :: d_type
   logical                                     :: is_complete
 
-! Arguments: 
-!  (inout)   group - The data type that store information for group update. 
+! Arguments:
+!  (inout)   group - The data type that store information for group update.
 !                    This data will be used in do_group_pass.
 !  (inout)   u_cmpt - The nominal zonal (u) component of the vector pair which
 !                     is having its halos points exchanged.
 !  (inout)   v_cmpt - The nominal meridional (v) component of the vector pair
-!                     which is having its halos points exchanged. 
+!                     which is having its halos points exchanged.
 !  (in)      domain - Contains domain decomposition information.
 !  (in)      flags - An optional integer indicating which directions the
-!                        data should be sent. 
+!                        data should be sent.
 !  (in)      gridtype - An optional flag, which may be one of A_GRID, BGRID_NE,
 !                      CGRID_NE or DGRID_NE, indicating where the two components of the
-!                      vector are discretized. 
+!                      vector are discretized.
 !  (in)      complete - An optional argument indicating whether the halo updates
-!                       should be initiated immediately or wait for second 
-!                       pass_..._start call.  Omitting complete is the same as 
+!                       should be initiated immediately or wait for second
+!                       pass_..._start call.  Omitting complete is the same as
 !                       setting complete to .true.
 
   if (mpp_group_update_initialized(group)) then
@@ -837,22 +815,22 @@ subroutine start_vector_group_update_3d(group, u_cmpt, v_cmpt, domain, flags, gr
   real                                        :: d_type
   logical                                     :: is_complete
 
-! Arguments: 
-!  (inout)   group - The data type that store information for group update. 
+! Arguments:
+!  (inout)   group - The data type that store information for group update.
 !                    This data will be used in do_group_pass.
 !  (inout)   u_cmpt - The nominal zonal (u) component of the vector pair which
 !                     is having its halos points exchanged.
 !  (inout)   v_cmpt - The nominal meridional (v) component of the vector pair
-!                     which is having its halos points exchanged. 
+!                     which is having its halos points exchanged.
 !  (in)      domain - Contains domain decomposition information.
 !  (in)      flags - An optional integer indicating which directions the
-!                        data should be sent. 
+!                        data should be sent.
 !  (in)      gridtype - An optional flag, which may be one of A_GRID, BGRID_NE,
 !                      CGRID_NE or DGRID_NE, indicating where the two components of the
-!                      vector are discretized. 
+!                      vector are discretized.
 !  (in)      complete - An optional argument indicating whether the halo updates
-!                       should be initiated immediately or wait for second 
-!                       pass_..._start call.  Omitting complete is the same as 
+!                       should be initiated immediately or wait for second
+!                       pass_..._start call.  Omitting complete is the same as
 !                       setting complete to .true.
 
   if (mpp_group_update_initialized(group)) then
@@ -877,8 +855,8 @@ subroutine complete_group_halo_update(group, domain)
   type(domain2d),               intent(inout) :: domain
   real                                        :: d_type
 
-! Arguments: 
-!  (inout)   group - The data type that store information for group update. 
+! Arguments:
+!  (inout)   group - The data type that store information for group update.
 !  (in)      domain - Contains domain decomposition information.
 
   if( halo_update_type == 1 ) then
@@ -891,12 +869,14 @@ end subroutine complete_group_halo_update
 
 
 
+!Depreciated
+subroutine broadcast_domains(Atm,current_pelist,current_npes)
 
-subroutine broadcast_domains(Atm)
-  
   type(fv_atmos_type), intent(INOUT) :: Atm(:)
+  integer, intent(IN) :: current_npes
+  integer, intent(IN) :: current_pelist(current_npes)
 
-  integer :: n, i1, i2, j1, j2, i
+  integer :: n, i
   integer :: ens_root_pe, ensemble_id
 
   !I think the idea is that each process needs to properly be part of a pelist,
@@ -909,20 +889,22 @@ subroutine broadcast_domains(Atm)
 
   !Pelist needs to be set to ALL ensemble PEs for broadcast_domain to work
   call mpp_set_current_pelist((/ (i,i=ens_root_pe,npes-1+ens_root_pe) /))
-     do n=1,size(Atm)
-        call mpp_broadcast_domain(Atm(n)%domain)
-        call mpp_broadcast_domain(Atm(n)%domain_for_coupler)
-     end do
+  do n=1,size(Atm)
+     call mpp_broadcast_domain(Atm(n)%domain)
+     call mpp_broadcast_domain(Atm(n)%domain_for_coupler)
+  end do
+  call mpp_set_current_pelist(current_pelist)
 
 end subroutine broadcast_domains
 
+!depreciated
 subroutine switch_current_domain(new_domain,new_domain_for_coupler)
 
   type(domain2D), intent(in), target :: new_domain, new_domain_for_coupler
   logical, parameter :: debug = .FALSE.
 
   !--- find the tile number
-  !tile = mpp_pe()/npes_per_tile+1 
+  !tile = mpp_pe()/npes_per_tile+1
   !ntiles = mpp_get_ntile_count(new_domain)
   call mpp_get_compute_domain( new_domain, is,  ie,  js,  je  )
   isc = is ; jsc = js
@@ -938,6 +920,7 @@ subroutine switch_current_domain(new_domain,new_domain_for_coupler)
 
 end subroutine switch_current_domain
 
+!depreciated
 subroutine switch_current_Atm(new_Atm, switch_domain)
 
   type(fv_atmos_type), intent(IN), target :: new_Atm
@@ -945,13 +928,16 @@ subroutine switch_current_Atm(new_Atm, switch_domain)
   logical, parameter :: debug = .false.
   logical :: swD
 
-  if (debug .AND. (gid==masterproc)) print*, 'SWITCHING ATM STRUCTURES', new_Atm%grid_number
-  if (present(switch_domain)) then
-     swD = switch_domain
-  else
-     swD = .true.
-  end if
-  if (swD) call switch_current_domain(new_Atm%domain, new_Atm%domain_for_coupler)
+
+  call mpp_error(FATAL, "switch_current_Atm depreciated. call set_domain instead.")
+
+!!$  if (debug .AND. (gid==masterproc)) print*, 'SWITCHING ATM STRUCTURES', new_Atm%grid_number
+!!$  if (present(switch_domain)) then
+!!$     swD = switch_domain
+!!$  else
+!!$     swD = .true.
+!!$  end if
+!!$  if (swD) call switch_current_domain(new_Atm%domain, new_Atm%domain_for_coupler)
 
 !!$  if (debug .AND. (gid==masterproc)) WRITE(*,'(A, 6I5)') 'NEW GRID DIMENSIONS: ', &
 !!$       isd, ied, jsd, jed, new_Atm%npx, new_Atm%npy
@@ -960,12 +946,12 @@ end subroutine switch_current_Atm
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !!
-!     
+!
       subroutine fill_corners_2d_r4(q, npx, npy, FILL, AGRID, BGRID)
          real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: q
          integer, intent(IN):: npx,npy
-         integer, intent(IN):: FILL  ! X-Dir or Y-Dir 
-         logical, OPTIONAL, intent(IN) :: AGRID, BGRID 
+         integer, intent(IN):: FILL  ! X-Dir or Y-Dir
+         logical, OPTIONAL, intent(IN) :: AGRID, BGRID
          integer :: i,j
 
          if (present(BGRID)) then
@@ -974,7 +960,7 @@ end subroutine switch_current_Atm
               case (XDir)
                  do j=1,ng
                     do i=1,ng
-                     if ((is==    1) .and. (js==    1)) q(1-i  ,1-j  ) = q(1-j  ,i+1    )  !SW Corner 
+                     if ((is==    1) .and. (js==    1)) q(1-i  ,1-j  ) = q(1-j  ,i+1    )  !SW Corner
                      if ((is==    1) .and. (je==npy-1)) q(1-i  ,npy+j) = q(1-j  ,npy-i  )  !NW Corner
                      if ((ie==npx-1) .and. (js==    1)) q(npx+i,1-j  ) = q(npx+j,i+1    )  !SE Corner
                      if ((ie==npx-1) .and. (je==npy-1)) q(npx+i,npy+j) = q(npx+j,npy-i  )  !NE Corner
@@ -983,7 +969,7 @@ end subroutine switch_current_Atm
               case (YDir)
                  do j=1,ng
                     do i=1,ng
-                     if ((is==    1) .and. (js==    1)) q(1-j  ,1-i  ) = q(i+1  ,1-j    )  !SW Corner 
+                     if ((is==    1) .and. (js==    1)) q(1-j  ,1-i  ) = q(i+1  ,1-j    )  !SW Corner
                      if ((is==    1) .and. (je==npy-1)) q(1-j  ,npy+i) = q(i+1  ,npy+j  )  !NW Corner
                      if ((ie==npx-1) .and. (js==    1)) q(npx+j,1-i  ) = q(npx-i,1-j    )  !SE Corner
                      if ((ie==npx-1) .and. (je==npy-1)) q(npx+j,npy+i) = q(npx-i,npy+j  )  !NE Corner
@@ -992,7 +978,7 @@ end subroutine switch_current_Atm
               case default
                  do j=1,ng
                     do i=1,ng
-                     if ((is==    1) .and. (js==    1)) q(1-i  ,1-j  ) = q(1-j  ,i+1    )  !SW Corner 
+                     if ((is==    1) .and. (js==    1)) q(1-i  ,1-j  ) = q(1-j  ,i+1    )  !SW Corner
                      if ((is==    1) .and. (je==npy-1)) q(1-i  ,npy+j) = q(1-j  ,npy-i  )  !NW Corner
                      if ((ie==npx-1) .and. (js==    1)) q(npx+i,1-j  ) = q(npx+j,i+1    )  !SE Corner
                      if ((ie==npx-1) .and. (je==npy-1)) q(npx+i,npy+j) = q(npx+j,npy-i  )  !NE Corner
@@ -1006,7 +992,7 @@ end subroutine switch_current_Atm
               case (XDir)
                  do j=1,ng
                     do i=1,ng
-                       if ((is==    1) .and. (js==    1)) q(1-i    ,1-j    ) = q(1-j    ,i        )  !SW Corner 
+                       if ((is==    1) .and. (js==    1)) q(1-i    ,1-j    ) = q(1-j    ,i        )  !SW Corner
                        if ((is==    1) .and. (je==npy-1)) q(1-i    ,npy-1+j) = q(1-j    ,npy-1-i+1)  !NW Corner
                        if ((ie==npx-1) .and. (js==    1)) q(npx-1+i,1-j    ) = q(npx-1+j,i        )  !SE Corner
                        if ((ie==npx-1) .and. (je==npy-1)) q(npx-1+i,npy-1+j) = q(npx-1+j,npy-1-i+1)  !NE Corner
@@ -1015,7 +1001,7 @@ end subroutine switch_current_Atm
               case (YDir)
                  do j=1,ng
                     do i=1,ng
-                       if ((is==    1) .and. (js==    1)) q(1-j    ,1-i    ) = q(i        ,1-j    )  !SW Corner 
+                       if ((is==    1) .and. (js==    1)) q(1-j    ,1-i    ) = q(i        ,1-j    )  !SW Corner
                        if ((is==    1) .and. (je==npy-1)) q(1-j    ,npy-1+i) = q(i        ,npy-1+j)  !NW Corner
                        if ((ie==npx-1) .and. (js==    1)) q(npx-1+j,1-i    ) = q(npx-1-i+1,1-j    )  !SE Corner
                        if ((ie==npx-1) .and. (je==npy-1)) q(npx-1+j,npy-1+i) = q(npx-1-i+1,npy-1+j)  !NE Corner
@@ -1023,13 +1009,13 @@ end subroutine switch_current_Atm
                  enddo
               case default
                  do j=1,ng
-                    do i=1,ng        
-                       if ((is==    1) .and. (js==    1)) q(1-j    ,1-i    ) = q(i        ,1-j    )  !SW Corner 
+                    do i=1,ng
+                       if ((is==    1) .and. (js==    1)) q(1-j    ,1-i    ) = q(i        ,1-j    )  !SW Corner
                        if ((is==    1) .and. (je==npy-1)) q(1-j    ,npy-1+i) = q(i        ,npy-1+j)  !NW Corner
                        if ((ie==npx-1) .and. (js==    1)) q(npx-1+j,1-i    ) = q(npx-1-i+1,1-j    )  !SE Corner
                        if ((ie==npx-1) .and. (je==npy-1)) q(npx-1+j,npy-1+i) = q(npx-1-i+1,npy-1+j)  !NE Corner
                    enddo
-                 enddo          
+                 enddo
               end select
             endif
           endif
@@ -1040,12 +1026,12 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !!
-!     
+!
       subroutine fill_corners_2d_r8(q, npx, npy, FILL, AGRID, BGRID)
          real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: q
          integer, intent(IN):: npx,npy
-         integer, intent(IN):: FILL  ! X-Dir or Y-Dir 
-         logical, OPTIONAL, intent(IN) :: AGRID, BGRID 
+         integer, intent(IN):: FILL  ! X-Dir or Y-Dir
+         logical, OPTIONAL, intent(IN) :: AGRID, BGRID
          integer :: i,j
 
          if (present(BGRID)) then
@@ -1054,7 +1040,7 @@ end subroutine switch_current_Atm
               case (XDir)
                  do j=1,ng
                     do i=1,ng
-                     if ((is==    1) .and. (js==    1)) q(1-i  ,1-j  ) = q(1-j  ,i+1    )  !SW Corner 
+                     if ((is==    1) .and. (js==    1)) q(1-i  ,1-j  ) = q(1-j  ,i+1    )  !SW Corner
                      if ((is==    1) .and. (je==npy-1)) q(1-i  ,npy+j) = q(1-j  ,npy-i  )  !NW Corner
                      if ((ie==npx-1) .and. (js==    1)) q(npx+i,1-j  ) = q(npx+j,i+1    )  !SE Corner
                      if ((ie==npx-1) .and. (je==npy-1)) q(npx+i,npy+j) = q(npx+j,npy-i  )  !NE Corner
@@ -1063,7 +1049,7 @@ end subroutine switch_current_Atm
               case (YDir)
                  do j=1,ng
                     do i=1,ng
-                     if ((is==    1) .and. (js==    1)) q(1-j  ,1-i  ) = q(i+1  ,1-j    )  !SW Corner 
+                     if ((is==    1) .and. (js==    1)) q(1-j  ,1-i  ) = q(i+1  ,1-j    )  !SW Corner
                      if ((is==    1) .and. (je==npy-1)) q(1-j  ,npy+i) = q(i+1  ,npy+j  )  !NW Corner
                      if ((ie==npx-1) .and. (js==    1)) q(npx+j,1-i  ) = q(npx-i,1-j    )  !SE Corner
                      if ((ie==npx-1) .and. (je==npy-1)) q(npx+j,npy+i) = q(npx-i,npy+j  )  !NE Corner
@@ -1072,7 +1058,7 @@ end subroutine switch_current_Atm
               case default
                  do j=1,ng
                     do i=1,ng
-                     if ((is==    1) .and. (js==    1)) q(1-i  ,1-j  ) = q(1-j  ,i+1    )  !SW Corner 
+                     if ((is==    1) .and. (js==    1)) q(1-i  ,1-j  ) = q(1-j  ,i+1    )  !SW Corner
                      if ((is==    1) .and. (je==npy-1)) q(1-i  ,npy+j) = q(1-j  ,npy-i  )  !NW Corner
                      if ((ie==npx-1) .and. (js==    1)) q(npx+i,1-j  ) = q(npx+j,i+1    )  !SE Corner
                      if ((ie==npx-1) .and. (je==npy-1)) q(npx+i,npy+j) = q(npx+j,npy-i  )  !NE Corner
@@ -1086,7 +1072,7 @@ end subroutine switch_current_Atm
               case (XDir)
                  do j=1,ng
                     do i=1,ng
-                       if ((is==    1) .and. (js==    1)) q(1-i    ,1-j    ) = q(1-j    ,i        )  !SW Corner 
+                       if ((is==    1) .and. (js==    1)) q(1-i    ,1-j    ) = q(1-j    ,i        )  !SW Corner
                        if ((is==    1) .and. (je==npy-1)) q(1-i    ,npy-1+j) = q(1-j    ,npy-1-i+1)  !NW Corner
                        if ((ie==npx-1) .and. (js==    1)) q(npx-1+i,1-j    ) = q(npx-1+j,i        )  !SE Corner
                        if ((ie==npx-1) .and. (je==npy-1)) q(npx-1+i,npy-1+j) = q(npx-1+j,npy-1-i+1)  !NE Corner
@@ -1095,7 +1081,7 @@ end subroutine switch_current_Atm
               case (YDir)
                  do j=1,ng
                     do i=1,ng
-                       if ((is==    1) .and. (js==    1)) q(1-j    ,1-i    ) = q(i        ,1-j    )  !SW Corner 
+                       if ((is==    1) .and. (js==    1)) q(1-j    ,1-i    ) = q(i        ,1-j    )  !SW Corner
                        if ((is==    1) .and. (je==npy-1)) q(1-j    ,npy-1+i) = q(i        ,npy-1+j)  !NW Corner
                        if ((ie==npx-1) .and. (js==    1)) q(npx-1+j,1-i    ) = q(npx-1-i+1,1-j    )  !SE Corner
                        if ((ie==npx-1) .and. (je==npy-1)) q(npx-1+j,npy-1+i) = q(npx-1-i+1,npy-1+j)  !NE Corner
@@ -1103,13 +1089,13 @@ end subroutine switch_current_Atm
                  enddo
               case default
                  do j=1,ng
-                    do i=1,ng        
-                       if ((is==    1) .and. (js==    1)) q(1-j    ,1-i    ) = q(i        ,1-j    )  !SW Corner 
+                    do i=1,ng
+                       if ((is==    1) .and. (js==    1)) q(1-j    ,1-i    ) = q(i        ,1-j    )  !SW Corner
                        if ((is==    1) .and. (je==npy-1)) q(1-j    ,npy-1+i) = q(i        ,npy-1+j)  !NW Corner
                        if ((ie==npx-1) .and. (js==    1)) q(npx-1+j,1-i    ) = q(npx-1-i+1,1-j    )  !SE Corner
                        if ((ie==npx-1) .and. (je==npy-1)) q(npx-1+j,npy-1+i) = q(npx-1-i+1,npy-1+j)  !NE Corner
                    enddo
-                 enddo          
+                 enddo
               end select
             endif
           endif
@@ -1270,16 +1256,16 @@ end subroutine switch_current_Atm
          real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: x
          real(kind=8), DIMENSION(isd:,jsd:), intent(INOUT):: y
          integer, intent(IN):: npx,npy
-         real(kind=8), intent(IN) :: mySign 
+         real(kind=8), intent(IN) :: mySign
          integer :: i,j
 
                do j=1,ng
                   do i=1,ng
-                   !   if ((is  ==  1) .and. (js  ==  1)) x(1-i    ,1-j  ) =        y(j+1  ,1-i    )  !SW Corner 
+                   !   if ((is  ==  1) .and. (js  ==  1)) x(1-i    ,1-j  ) =        y(j+1  ,1-i    )  !SW Corner
                    !   if ((is  ==  1) .and. (je+1==npy)) x(1-i    ,npy+j) = mySign*y(j+1  ,npy-1+i)  !NW Corner
                    !   if ((ie+1==npx) .and. (js  ==  1)) x(npx-1+i,1-j  ) = mySign*y(npx-j,1-i    )  !SE Corner
                    !   if ((ie+1==npx) .and. (je+1==npy)) x(npx-1+i,npy+j) =        y(npx-j,npy-1+i)  !NE Corner
-                      if ((is  ==  1) .and. (js  ==  1)) x(1-i    ,1-j  ) = mySign*y(1-j  ,i    )  !SW Corner 
+                      if ((is  ==  1) .and. (js  ==  1)) x(1-i    ,1-j  ) = mySign*y(1-j  ,i    )  !SW Corner
                       if ((is  ==  1) .and. (je+1==npy)) x(1-i    ,npy+j) =        y(1-j  ,npy-i)  !NW Corner
                       if ((ie+1==npx) .and. (js  ==  1)) x(npx-1+i,1-j  ) =        y(npx+j,i    )  !SE Corner
                       if ((ie+1==npx) .and. (je+1==npy)) x(npx-1+i,npy+j) = mySign*y(npx+j,npy-i)  !NE Corner
@@ -1287,11 +1273,11 @@ end subroutine switch_current_Atm
                enddo
                do j=1,ng
                   do i=1,ng
-                   !  if ((is  ==  1) .and. (js  ==  1)) y(1-i    ,1-j    ) =        x(1-j    ,i+1  )  !SW Corner 
+                   !  if ((is  ==  1) .and. (js  ==  1)) y(1-i    ,1-j    ) =        x(1-j    ,i+1  )  !SW Corner
                    !  if ((is  ==  1) .and. (je+1==npy)) y(1-i    ,npy-1+j) = mySign*x(1-j    ,npy-i)  !NW Corner
                    !  if ((ie+1==npx) .and. (js  ==  1)) y(npx+i  ,1-j    ) = mySign*x(npx-1+j,i+1  )  !SE Corner
                    !  if ((ie+1==npx) .and. (je+1==npy)) y(npx+i  ,npy-1+j) =        x(npx-1+j,npy-i)  !NE Corner
-                     if ((is  ==  1) .and. (js  ==  1)) y(1-i    ,1-j    ) = mySign*x(j      ,1-i  )  !SW Corner 
+                     if ((is  ==  1) .and. (js  ==  1)) y(1-i    ,1-j    ) = mySign*x(j      ,1-i  )  !SW Corner
                      if ((is  ==  1) .and. (je+1==npy)) y(1-i    ,npy-1+j) =        x(j      ,npy+i)  !NW Corner
                      if ((ie+1==npx) .and. (js  ==  1)) y(npx+i  ,1-j    ) =        x(npx-j  ,1-i  )  !SE Corner
                      if ((ie+1==npx) .and. (je+1==npy)) y(npx+i  ,npy-1+j) = mySign*x(npx-j  ,npy+i)  !NE Corner
@@ -1310,16 +1296,16 @@ end subroutine switch_current_Atm
          real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: x
          real(kind=4), DIMENSION(isd:,jsd:), intent(INOUT):: y
          integer, intent(IN):: npx,npy
-         real(kind=4), intent(IN) :: mySign 
+         real(kind=4), intent(IN) :: mySign
          integer :: i,j
 
                do j=1,ng
                   do i=1,ng
-                   !   if ((is  ==  1) .and. (js  ==  1)) x(1-i    ,1-j  ) =        y(j+1  ,1-i    )  !SW Corner 
+                   !   if ((is  ==  1) .and. (js  ==  1)) x(1-i    ,1-j  ) =        y(j+1  ,1-i    )  !SW Corner
                    !   if ((is  ==  1) .and. (je+1==npy)) x(1-i    ,npy+j) = mySign*y(j+1  ,npy-1+i)  !NW Corner
                    !   if ((ie+1==npx) .and. (js  ==  1)) x(npx-1+i,1-j  ) = mySign*y(npx-j,1-i    )  !SE Corner
                    !   if ((ie+1==npx) .and. (je+1==npy)) x(npx-1+i,npy+j) =        y(npx-j,npy-1+i)  !NE Corner
-                      if ((is  ==  1) .and. (js  ==  1)) x(1-i    ,1-j  ) = mySign*y(1-j  ,i    )  !SW Corner 
+                      if ((is  ==  1) .and. (js  ==  1)) x(1-i    ,1-j  ) = mySign*y(1-j  ,i    )  !SW Corner
                       if ((is  ==  1) .and. (je+1==npy)) x(1-i    ,npy+j) =        y(1-j  ,npy-i)  !NW Corner
                       if ((ie+1==npx) .and. (js  ==  1)) x(npx-1+i,1-j  ) =        y(npx+j,i    )  !SE Corner
                       if ((ie+1==npx) .and. (je+1==npy)) x(npx-1+i,npy+j) = mySign*y(npx+j,npy-i)  !NE Corner
@@ -1327,11 +1313,11 @@ end subroutine switch_current_Atm
                enddo
                do j=1,ng
                   do i=1,ng
-                   !  if ((is  ==  1) .and. (js  ==  1)) y(1-i    ,1-j    ) =        x(1-j    ,i+1  )  !SW Corner 
+                   !  if ((is  ==  1) .and. (js  ==  1)) y(1-i    ,1-j    ) =        x(1-j    ,i+1  )  !SW Corner
                    !  if ((is  ==  1) .and. (je+1==npy)) y(1-i    ,npy-1+j) = mySign*x(1-j    ,npy-i)  !NW Corner
                    !  if ((ie+1==npx) .and. (js  ==  1)) y(npx+i  ,1-j    ) = mySign*x(npx-1+j,i+1  )  !SE Corner
                    !  if ((ie+1==npx) .and. (je+1==npy)) y(npx+i  ,npy-1+j) =        x(npx-1+j,npy-i)  !NE Corner
-                     if ((is  ==  1) .and. (js  ==  1)) y(1-i    ,1-j    ) = mySign*x(j      ,1-i  )  !SW Corner 
+                     if ((is  ==  1) .and. (js  ==  1)) y(1-i    ,1-j    ) = mySign*x(j      ,1-i  )  !SW Corner
                      if ((is  ==  1) .and. (je+1==npy)) y(1-i    ,npy-1+j) =        x(j      ,npy+i)  !NW Corner
                      if ((ie+1==npx) .and. (js  ==  1)) y(npx+i  ,1-j    ) =        x(npx-j  ,1-i  )  !SE Corner
                      if ((ie+1==npx) .and. (je+1==npy)) y(npx+i  ,npy-1+j) = mySign*x(npx-j  ,npy+i)  !NE Corner
@@ -1355,7 +1341,7 @@ end subroutine switch_current_Atm
 
                   do j=1,ng
                      do i=1,ng
-                        if ((is  ==  1) .and. (js  ==  1)) x(1-i    ,1-j    ) =        y(j      ,1-i  )  !SW Corner 
+                        if ((is  ==  1) .and. (js  ==  1)) x(1-i    ,1-j    ) =        y(j      ,1-i  )  !SW Corner
                         if ((is  ==  1) .and. (je+1==npy)) x(1-i    ,npy-1+j) = mySign*y(j      ,npy+i)  !NW Corner
                         if ((ie+1==npx) .and. (js  ==  1)) x(npx+i  ,1-j    ) = mySign*y(npx-j  ,1-i  )  !SE Corner
                         if ((ie+1==npx) .and. (je+1==npy)) x(npx+i  ,npy-1+j) =        y(npx-j  ,npy+i)  !NE Corner
@@ -1363,13 +1349,13 @@ end subroutine switch_current_Atm
                   enddo
                   do j=1,ng
                      do i=1,ng
-                        if ((is  ==  1) .and. (js  ==  1)) y(1-i    ,1-j  ) =        x(1-j  ,i    )  !SW Corner 
+                        if ((is  ==  1) .and. (js  ==  1)) y(1-i    ,1-j  ) =        x(1-j  ,i    )  !SW Corner
                         if ((is  ==  1) .and. (je+1==npy)) y(1-i    ,npy+j) = mySign*x(1-j  ,npy-i)  !NW Corner
                         if ((ie+1==npx) .and. (js  ==  1)) y(npx-1+i,1-j  ) = mySign*x(npx+j,i    )  !SE Corner
                         if ((ie+1==npx) .and. (je+1==npy)) y(npx-1+i,npy+j) =        x(npx+j,npy-i)  !NE Corner
                      enddo
                   enddo
-      
+
       end subroutine fill_corners_cgrid_r4
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
@@ -1387,7 +1373,7 @@ end subroutine switch_current_Atm
 
                   do j=1,ng
                      do i=1,ng
-                        if ((is  ==  1) .and. (js  ==  1)) x(1-i    ,1-j    ) =        y(j      ,1-i  )  !SW Corner 
+                        if ((is  ==  1) .and. (js  ==  1)) x(1-i    ,1-j    ) =        y(j      ,1-i  )  !SW Corner
                         if ((is  ==  1) .and. (je+1==npy)) x(1-i    ,npy-1+j) = mySign*y(j      ,npy+i)  !NW Corner
                         if ((ie+1==npx) .and. (js  ==  1)) x(npx+i  ,1-j    ) = mySign*y(npx-j  ,1-i  )  !SE Corner
                         if ((ie+1==npx) .and. (je+1==npy)) x(npx+i  ,npy-1+j) =        y(npx-j  ,npy+i)  !NE Corner
@@ -1395,13 +1381,13 @@ end subroutine switch_current_Atm
                   enddo
                   do j=1,ng
                      do i=1,ng
-                        if ((is  ==  1) .and. (js  ==  1)) y(1-i    ,1-j  ) =        x(1-j  ,i    )  !SW Corner 
+                        if ((is  ==  1) .and. (js  ==  1)) y(1-i    ,1-j  ) =        x(1-j  ,i    )  !SW Corner
                         if ((is  ==  1) .and. (je+1==npy)) y(1-i    ,npy+j) = mySign*x(1-j  ,npy-i)  !NW Corner
                         if ((ie+1==npx) .and. (js  ==  1)) y(npx-1+i,1-j  ) = mySign*x(npx+j,i    )  !SE Corner
                         if ((ie+1==npx) .and. (je+1==npy)) y(npx-1+i,npy+j) =        x(npx+j,npy-i)  !NE Corner
                      enddo
                   enddo
-      
+
       end subroutine fill_corners_cgrid_r8
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
@@ -1470,417 +1456,39 @@ end subroutine switch_current_Atm
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
-
-!!$!-------------------------------------------------------------------------------
-!!$! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!!$!     
-!!$!     mp_corner_comm :: Point-based MPI communcation routine for Cubed-Sphere
-!!$!                       ghosted corner point on B-Grid 
-!!$!                       this routine sends 24 16-byte messages 
-!!$!     
-!!$      subroutine mp_corner_comm(q, npx, npy, tile)
-!!$         integer, intent(IN)  :: npx,npy, tile
-!!$         real  , intent(INOUT):: q(isd:ied+1,jsd:jed+1)
-!!$
-!!$         integer, parameter :: ntiles = 6
-!!$
-!!$         real :: qsend(24)
-!!$         real :: send_tag, recv_tag
-!!$         integer :: sqest(24), rqest(24)
-!!$         integer :: Stats(24*MPI_STATUS_SIZE)
-!!$         integer :: nsend, nrecv, nread
-!!$         integer :: dest_gid, src_gid
-!!$         integer :: n
-!!$
-!!$         qsend = 1.e25
-!!$         nsend=0
-!!$         nrecv=0
-!!$
-!!$         if ( mod(tile,2) == 0 ) then
-!!$! Even Face LL and UR pairs 6 2-way
-!!$            if ( (is==1) .and. (js==1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(is,js+1)
-!!$               send_tag = 300+tile
-!!$               dest_gid = (tile-2)*npes_x*npes_y - 1
-!!$               if (dest_gid < 0) dest_gid=npes+dest_gid
-!!$               recv_tag = 100+(tile-2)
-!!$               if (tile==2) recv_tag = 100+(ntiles)
-!!$               src_gid  = (tile-3)*npes_x*npes_y
-!!$               src_gid  = src_gid + npes_x*(npes_y-1) + npes_x - 1
-!!$               if (src_gid < 0) src_gid=npes+src_gid
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(is-1,js), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1
-!!$               else 
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(is-1,js), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif
-!!$            endif
-!!$            if ( (ie==npx-1) .and. (je==npy-1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(ie,je+1)
-!!$               send_tag = 100+tile
-!!$               dest_gid = (tile+1)*npes_x*npes_y
-!!$               if (dest_gid+1 > npes) dest_gid=dest_gid-npes
-!!$               recv_tag = 300+(tile+2)
-!!$               if (tile==6) recv_tag = 300+2
-!!$               src_gid  = (tile+1)*npes_x*npes_y
-!!$               if (src_gid+1 > npes) src_gid=src_gid-npes
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(ie+2,je+1), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1
-!!$               else
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(ie+2,je+1), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif
-!!$            endif
-!!$! wait for comm to complete
-!!$            if (npes==6) then
-!!$               if (nsend>0) then
-!!$                  call MPI_WAITALL(nsend, sqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               if (nrecv>0) then
-!!$                  call MPI_WAITALL(nrecv, rqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               nsend=0 ; nrecv=0
-!!$            endif
-!!$
-!!$! Even Face LR 1 pair ; 1 1-way
-!!$            if ( (tile==2) .and. (ie==npx-1) .and. (js==1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(ie,js)
-!!$               send_tag = 200+tile
-!!$               dest_gid = (tile+1)*npes_x*npes_y + npes_x-1
-!!$               recv_tag = 200+(tile+2)
-!!$               src_gid  = dest_gid
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(ie+2,js), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1
-!!$               else
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(ie+2,js), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif
-!!$            endif
-!!$            if ( (tile==4) .and. (ie==npx-1) .and. (js==1) ) then 
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(ie+1,js+1)
-!!$               send_tag = 200+tile
-!!$               dest_gid = (tile-3)*npes_x*npes_y + npes_x-1
-!!$               recv_tag = 200+(tile-2)
-!!$               src_gid  = dest_gid
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &     
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(ie+2,js), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &          
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1
-!!$               else
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &        
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(ie+2,js), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(ie,js)
-!!$               send_tag = 200+tile
-!!$               dest_gid = (tile+1)*npes_x*npes_y + npes_x-1
-!!$               call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                               send_tag, commglobal, sqest(nsend), ierror )
-!!$            endif
-!!$            if ( (tile==6) .and. (ie==npx-1) .and. (js==1) ) then
-!!$               recv_tag = 200+(tile-2)
-!!$               src_gid  = (tile-3)*npes_x*npes_y + npes_x-1
-!!$               nrecv=nrecv+1
-!!$               call MPI_IRECV( q(ie+2,js), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                               recv_tag, commglobal, rqest(nrecv), ierror )
-!!$            endif
-!!$
-!!$! wait for comm to complete 
-!!$            if (npes==6) then
-!!$               if (nsend>0) then
-!!$                  call MPI_WAITALL(nsend, sqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               if (nrecv>0) then
-!!$                  call MPI_WAITALL(nrecv, rqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               nsend=0 ; nrecv=0
-!!$            endif
-!!$
-!!$! Send to Odd face LR 3 1-way
-!!$            if ( (is==1) .and. (js==1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(is+1,js)
-!!$               send_tag = 200+tile
-!!$               dest_gid = (tile-2)*npes_x*npes_y + npes_x-1
-!!$               call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                               send_tag, commglobal, sqest(nsend), ierror )
-!!$            endif
-!!$
-!!$! Receive Even Face UL 3 1-way
-!!$            if ( (is==1) .and. (je==npy-1) ) then
-!!$               recv_tag = 400+(tile-1)
-!!$               src_gid  = (tile-2)*npes_x*npes_y + npes_x*(npes_y-1) + npes_x-1
-!!$               nrecv=nrecv+1
-!!$               call MPI_IRECV( q(is-1,je+1), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                               recv_tag, commglobal, rqest(nrecv), ierror )
-!!$            endif
-!!$
-!!$         else
-!!$
-!!$! Odd Face LL and UR pairs 6 2-way
-!!$            if ( (is==1) .and. (js==1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(is+1,js)
-!!$               send_tag = 300+tile
-!!$               dest_gid = (tile-2)*npes_x*npes_y - 1
-!!$               if (dest_gid < 0) dest_gid=npes+dest_gid
-!!$               recv_tag = 100+(tile-2)
-!!$               if (tile==1) recv_tag = 100+(ntiles-tile)
-!!$               src_gid  = (tile-3)*npes_x*npes_y
-!!$               src_gid  = src_gid + npes_x*(npes_y-1) + npes_x - 1
-!!$               if (src_gid < 0) src_gid=npes+src_gid
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(is-1,js), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &             
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1
-!!$               else 
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(is-1,js), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif
-!!$            endif
-!!$            if ( (ie==npx-1) .and. (je==npy-1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(ie+1,je)
-!!$               send_tag = 100+tile
-!!$               dest_gid = (tile+1)*npes_x*npes_y
-!!$               if (dest_gid+1 > npes) dest_gid=dest_gid-npes
-!!$               recv_tag = 300+(tile+2)
-!!$               if (tile==5) recv_tag = 300+1
-!!$               src_gid  = (tile+1)*npes_x*npes_y
-!!$               if (src_gid+1 > npes) src_gid=src_gid-npes
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &      
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(ie+2,je+1), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &             
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1
-!!$               else 
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(ie+2,je+1), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif
-!!$            endif
-!!$! wait for comm to complete 
-!!$            if (npes==6) then
-!!$               if (nsend>0) then
-!!$                  call MPI_WAITALL(nsend, sqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               if (nrecv>0) then
-!!$                  call MPI_WAITALL(nrecv, rqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               nsend=0 ; nrecv=0
-!!$            endif
-!!$            
-!!$! Odd Face UL 1 pair ; 1 1-way
-!!$            if ( (tile==1) .and. (is==1) .and. (je==npy-1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(is,je)
-!!$               send_tag = 400+tile
-!!$               dest_gid = (tile+1)*npes_x*npes_y + npes_x*(npes_y-1)
-!!$               recv_tag = 400+(tile+2)
-!!$               src_gid  = dest_gid
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(is-1,je+1), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1
-!!$               else
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(is-1,je+1), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif
-!!$            endif
-!!$            if ( (tile==3) .and. (is==1) .and. (je==npy-1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(is+1,je+1)
-!!$               send_tag = 400+tile
-!!$               dest_gid = npes_x*(npes_y-1)
-!!$               recv_tag = 400+(tile-2)           
-!!$               src_gid  = dest_gid
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &     
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(is-1,je+1), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &          
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1             
-!!$               else
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &        
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(is-1,je+1), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif            
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(is,je)
-!!$               send_tag = 400+tile
-!!$               dest_gid = (tile+1)*npes_x*npes_y + npes_x*(npes_y-1)
-!!$               call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                               send_tag, commglobal, sqest(nsend), ierror )
-!!$            endif
-!!$            if ( (tile==5) .and. (is==1) .and. (je==npy-1) ) then
-!!$               recv_tag = 400+(tile-2)
-!!$               src_gid  = (tile-3)*npes_x*npes_y + npes_x*(npes_y-1)
-!!$               nrecv=nrecv+1 
-!!$               call MPI_IRECV( q(is-1,je+1), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                               recv_tag, commglobal, rqest(nrecv), ierror ) 
-!!$            endif
-!!$
-!!$! wait for comm to complete 
-!!$            if (npes==6) then
-!!$               if (nsend>0) then
-!!$                  call MPI_WAITALL(nsend, sqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               if (nrecv>0) then
-!!$                  call MPI_WAITALL(nrecv, rqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               nsend=0 ; nrecv=0
-!!$            endif
-!!$
-!!$! Send to Even face UL 3 1-way 
-!!$            if ( (ie==npx-1) .and. (je==npy-1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(ie,je+1)
-!!$               send_tag = 400+tile
-!!$               dest_gid = tile*npes_x*npes_y + npes_x*(npes_y-1)
-!!$               call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                               send_tag, commglobal, sqest(nsend), ierror )
-!!$            endif
-!!$
-!!$! Receive Odd Face LR 3 1-way
-!!$            if ( (ie==npx-1) .and. (js==1) ) then
-!!$               recv_tag = 200+(tile+1)
-!!$               src_gid  = (tile-1)*npes_x*npes_y + npes_x*npes_y 
-!!$               nrecv=nrecv+1
-!!$               call MPI_IRECV( q(ie+2,js), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                               recv_tag, commglobal, rqest(nrecv), ierror )
-!!$            endif
-!!$
-!!$         endif
-!!$
-!!$! wait for comm to complete
-!!$         if (nsend>0) then
-!!$            call MPI_WAITALL(nsend, sqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$         endif
-!!$         if (nrecv>0) then
-!!$            call MPI_WAITALL(nrecv, rqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$         endif
-!!$
-!!$      end subroutine mp_corner_comm
-!!$!
-!!$! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
-!!$!-------------------------------------------------------------------------------
-
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!       
-!     mp_gather_4d_r4 :: Call SPMD Gather 
-!     
+!
+!     mp_gather_4d_r4 :: Call SPMD Gather
+!
       subroutine mp_gather_4d_r4(q, i1,i2, j1,j2, idim, jdim, kdim, ldim)
          integer, intent(IN)  :: i1,i2, j1,j2
          integer, intent(IN)  :: idim, jdim, kdim, ldim
          real(kind=4), intent(INOUT):: q(idim,jdim,kdim,ldim)
-         integer :: i,j,k,l,n,icnt 
+         integer :: i,j,k,l,n,icnt
          integer :: Lsize, Lsize_buf(1)
          integer :: Gsize
          integer :: LsizeS(npes_this_grid), Ldispl(npes_this_grid), cnts(npes_this_grid)
          integer :: Ldims(5), Gdims(5*npes_this_grid)
          real(kind=4), allocatable, dimension(:) :: larr, garr
-        
+
          Ldims(1) = i1
          Ldims(2) = i2
          Ldims(3) = j1
          Ldims(4) = j2
-         Ldims(5) = tile 
+         Ldims(5) = tile
          do l=1,npes_this_grid
             cnts(l) = 5
             Ldispl(l) = 5*(l-1)
-         enddo 
+         enddo
          call mpp_gather(Ldims, Gdims)
 !         call MPI_GATHERV(Ldims, 5, MPI_INTEGER, Gdims, cnts, Ldispl, MPI_INTEGER, masterproc, commglobal, ierror)
-      
+
          Lsize = ( (i2 - i1 + 1) * (j2 - j1 + 1) ) * kdim
          do l=1,npes_this_grid
             cnts(l) = 1
             Ldispl(l) = l-1
-         enddo 
+         enddo
          LsizeS(:)=1
          Lsize_buf(1) = Lsize
          call mpp_gather(Lsize_buf, LsizeS)
@@ -1937,18 +1545,18 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_gather_3d_r4 :: Call SPMD Gather 
+!     mp_gather_3d_r4 :: Call SPMD Gather
 !
       subroutine mp_gather_3d_r4(q, i1,i2, j1,j2, idim, jdim, ldim)
          integer, intent(IN)  :: i1,i2, j1,j2
          integer, intent(IN)  :: idim, jdim, ldim
          real(kind=4), intent(INOUT):: q(idim,jdim,ldim)
-         integer :: i,j,l,n,icnt 
+         integer :: i,j,l,n,icnt
          integer :: Lsize, Lsize_buf(1)
          integer :: Gsize
          integer :: LsizeS(npes_this_grid), Ldispl(npes_this_grid), cnts(npes_this_grid)
          integer :: Ldims(5), Gdims(5*npes_this_grid)
-         real(kind=4), allocatable, dimension(:) :: larr, garr 
+         real(kind=4), allocatable, dimension(:) :: larr, garr
 
          Ldims(1) = i1
          Ldims(2) = i2
@@ -1966,7 +1574,7 @@ end subroutine switch_current_Atm
          do l=1,npes_this_grid
             cnts(l) = 1
             Ldispl(l) = l-1
-         enddo 
+         enddo
          LsizeS(:)=1
          Lsize_buf(1) = Lsize
          call mpp_gather(Lsize_buf, LsizeS)
@@ -1976,7 +1584,7 @@ end subroutine switch_current_Atm
          icnt = 1
          do j=j1,j2
             do i=i1,i2
-               larr(icnt) = q(i,j,tile)  
+               larr(icnt) = q(i,j,tile)
                icnt=icnt+1
             enddo
          enddo
@@ -1996,7 +1604,7 @@ end subroutine switch_current_Atm
             do n=2,npes_this_grid
                icnt=1
                do l=Gdims( (n-1)*5 + 5 ), Gdims( (n-1)*5 + 5 )
-                  do j=Gdims( (n-1)*5 + 3 ), Gdims( (n-1)*5 + 4 ) 
+                  do j=Gdims( (n-1)*5 + 3 ), Gdims( (n-1)*5 + 4 )
                      do i=Gdims( (n-1)*5 + 1 ), Gdims( (n-1)*5 + 2 )
                         q(i,j,l) = garr(Ldispl(n)+icnt)
                         icnt=icnt+1
@@ -2016,7 +1624,7 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_gather_3d_r8 :: Call SPMD Gather 
+!     mp_gather_3d_r8 :: Call SPMD Gather
 !
       subroutine mp_gather_3d_r8(q, i1,i2, j1,j2, idim, jdim, ldim)
          integer, intent(IN)  :: i1,i2, j1,j2
@@ -2096,7 +1704,7 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_bcst_i4 :: Call SPMD broadcast 
+!     mp_bcst_i4 :: Call SPMD broadcast
 !
       subroutine mp_bcst_i4(q)
          integer, intent(INOUT)  :: q
@@ -2111,7 +1719,7 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_bcst_r4 :: Call SPMD broadcast 
+!     mp_bcst_r4 :: Call SPMD broadcast
 !
       subroutine mp_bcst_r4(q)
          real(kind=4), intent(INOUT)  :: q
@@ -2126,7 +1734,7 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_bcst_r8 :: Call SPMD broadcast 
+!     mp_bcst_r8 :: Call SPMD broadcast
 !
       subroutine mp_bcst_r8(q)
          real(kind=8), intent(INOUT)  :: q
@@ -2141,7 +1749,7 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_bcst_3d_r4 :: Call SPMD broadcast 
+!     mp_bcst_3d_r4 :: Call SPMD broadcast
 !
       subroutine mp_bcst_3d_r4(q, idim, jdim, kdim)
          integer, intent(IN)  :: idim, jdim, kdim
@@ -2157,7 +1765,7 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_bcst_3d_r8 :: Call SPMD broadcast 
+!     mp_bcst_3d_r8 :: Call SPMD broadcast
 !
       subroutine mp_bcst_3d_r8(q, idim, jdim, kdim)
          integer, intent(IN)  :: idim, jdim, kdim
@@ -2172,33 +1780,33 @@ end subroutine switch_current_Atm
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!       
-!     mp_bcst_4d_r4 :: Call SPMD broadcast 
+!
+!     mp_bcst_4d_r4 :: Call SPMD broadcast
 !
       subroutine mp_bcst_4d_r4(q, idim, jdim, kdim, ldim)
          integer, intent(IN)  :: idim, jdim, kdim, ldim
          real(kind=4), intent(INOUT)  :: q(idim,jdim,kdim,ldim)
 
          call MPI_BCAST(q, idim*jdim*kdim*ldim, MPI_REAL, masterproc, commglobal, ierror)
-        
+
       end subroutine mp_bcst_4d_r4
-!     
+!
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!       
-!     mp_bcst_4d_r8 :: Call SPMD broadcast 
+!
+!     mp_bcst_4d_r8 :: Call SPMD broadcast
 !
       subroutine mp_bcst_4d_r8(q, idim, jdim, kdim, ldim)
          integer, intent(IN)  :: idim, jdim, kdim, ldim
          real(kind=8), intent(INOUT)  :: q(idim,jdim,kdim,ldim)
 
          call MPI_BCAST(q, idim*jdim*kdim*ldim, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
-        
+
       end subroutine mp_bcst_4d_r8
-!     
+!
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
 
@@ -2237,44 +1845,44 @@ end subroutine switch_current_Atm
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!       
-!     mp_reduce_max_r4_1d :: Call SPMD REDUCE_MAX 
+!
+!     mp_reduce_max_r4_1d :: Call SPMD REDUCE_MAX
 !
       subroutine mp_reduce_max_r4_1d(mymax,npts)
          integer, intent(IN)  :: npts
          real(kind=4), intent(INOUT)  :: mymax(npts)
-        
+
          real(kind=4) :: gmax(npts)
-        
+
          call MPI_ALLREDUCE( mymax, gmax, npts, MPI_REAL, MPI_MAX, &
                              commglobal, ierror )
-      
+
          mymax = gmax
-        
+
       end subroutine mp_reduce_max_r4_1d
-!     
+!
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
 
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!       
-!     mp_reduce_max_r8_1d :: Call SPMD REDUCE_MAX 
+!
+!     mp_reduce_max_r8_1d :: Call SPMD REDUCE_MAX
 !
       subroutine mp_reduce_max_r8_1d(mymax,npts)
          integer, intent(IN)  :: npts
          real(kind=8), intent(INOUT)  :: mymax(npts)
-        
+
          real(kind=8) :: gmax(npts)
-        
+
          call MPI_ALLREDUCE( mymax, gmax, npts, MPI_DOUBLE_PRECISION, MPI_MAX, &
                              commglobal, ierror )
-      
+
          mymax = gmax
-        
+
       end subroutine mp_reduce_max_r8_1d
-!     
+!
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
 
@@ -2282,7 +1890,7 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_reduce_max_r4 :: Call SPMD REDUCE_MAX 
+!     mp_reduce_max_r4 :: Call SPMD REDUCE_MAX
 !
       subroutine mp_reduce_max_r4(mymax)
          real(kind=4), intent(INOUT)  :: mymax
@@ -2299,7 +1907,7 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_reduce_max_r8 :: Call SPMD REDUCE_MAX 
+!     mp_reduce_max_r8 :: Call SPMD REDUCE_MAX
 !
       subroutine mp_reduce_max_r8(mymax)
          real(kind=8), intent(INOUT)  :: mymax
@@ -2343,7 +1951,7 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_bcst_4d_i4 :: Call SPMD REDUCE_MAX 
+!     mp_bcst_4d_i4 :: Call SPMD REDUCE_MAX
 !
       subroutine mp_reduce_max_i4(mymax)
          integer, intent(INOUT)  :: mymax
@@ -2363,7 +1971,7 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_reduce_sum_r4 :: Call SPMD REDUCE_SUM 
+!     mp_reduce_sum_r4 :: Call SPMD REDUCE_SUM
 !
       subroutine mp_reduce_sum_r4(mysum)
          real(kind=4), intent(INOUT)  :: mysum
@@ -2383,7 +1991,7 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_reduce_sum_r8 :: Call SPMD REDUCE_SUM 
+!     mp_reduce_sum_r8 :: Call SPMD REDUCE_SUM
 !
       subroutine mp_reduce_sum_r8(mysum)
          real(kind=8), intent(INOUT)  :: mysum
@@ -2403,7 +2011,7 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_reduce_sum_r4_1d :: Call SPMD REDUCE_SUM 
+!     mp_reduce_sum_r4_1d :: Call SPMD REDUCE_SUM
 !
       subroutine mp_reduce_sum_r4_1d(mysum, sum1d, npts)
          integer, intent(in)  :: npts
@@ -2416,7 +2024,7 @@ end subroutine switch_current_Atm
          mysum = 0.0
          do i=1,npts
             mysum = mysum + sum1d(i)
-         enddo 
+         enddo
 
          call MPI_ALLREDUCE( mysum, gsum, 1, MPI_DOUBLE_PRECISION, MPI_SUM, &
                              commglobal, ierror )
@@ -2431,7 +2039,7 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
-!     mp_reduce_sum_r8_1d :: Call SPMD REDUCE_SUM 
+!     mp_reduce_sum_r8_1d :: Call SPMD REDUCE_SUM
 !
       subroutine mp_reduce_sum_r8_1d(mysum, sum1d, npts)
          integer, intent(in)  :: npts
@@ -2444,7 +2052,7 @@ end subroutine switch_current_Atm
          mysum = 0.0
          do i=1,npts
             mysum = mysum + sum1d(i)
-         enddo 
+         enddo
 
          call MPI_ALLREDUCE( mysum, gsum, 1, MPI_DOUBLE_PRECISION, MPI_SUM, &
                              commglobal, ierror )

@@ -25,7 +25,7 @@ module nh_core_mod
 !------------------------------
    use constants_mod,     only: rdgas, cp_air, grav
    use tp_core_mod,       only: fv_tp_2d
-   use nh_utils_mod,      only: update_dz_c, update_dz_d, nest_halo_nh
+   use nh_utils_mod,      only: update_dz_c, update_dz_d, nh_bc
    use nh_utils_mod,      only: sim_solver, sim1_solver, sim3_solver
    use nh_utils_mod,      only: sim3p0_solver, rim_2d
    use nh_utils_mod,      only: Riem_Solver_c
@@ -33,10 +33,10 @@ module nh_core_mod
    implicit none
    private
 
-   public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, nest_halo_nh
+   public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, nh_bc
    real, parameter:: r3 = 1./3.
 
-CONTAINS 
+CONTAINS
 
   subroutine Riem_Solver3(ms, dt,   is,   ie,   js, je, km, ng,    &
                           isd, ied, jsd, jed, akap, cappa, cp,     &
@@ -64,7 +64,7 @@ CONTAINS
    real, intent(inout):: pe(is-1:ie+1,km+1,js-1:je+1)
    real, intent(out):: peln(is:ie,km+1,js:je)          ! ln(pe)
    real, intent(out), dimension(isd:ied,jsd:jed,km+1):: ppe
-   real, intent(out):: delz(is-ng:ie+ng,js-ng:je+ng,km)
+   real, intent(out):: delz(is:ie,js:je,km)
    real, intent(out):: pk(is:ie,js:je,km+1)
    real, intent(out):: pk3(isd:ied,jsd:jed,km+1)
 ! Local:

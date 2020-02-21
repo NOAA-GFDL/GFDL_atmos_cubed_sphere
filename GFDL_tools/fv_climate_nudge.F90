@@ -45,8 +45,9 @@ private
 public :: fv_climate_nudge_init, fv_climate_nudge,  &
           fv_climate_nudge_end, do_ps
 
-character(len=128), parameter :: version = '$Id$'
-character(len=128), parameter :: tagname = '$Name$'
+! version number of this module
+! Include variable "version" to be written to log file.
+#include<file_version.h>
 
 type var_state_type
    integer :: is, ie, js, je, npz
@@ -134,11 +135,11 @@ real :: missing_value = -1.e10
 #else
    if (file_exist('input.nml') ) then
      unit = open_namelist_file()
-     ierr=1  
+     ierr=1
      do while (ierr /= 0)
-       read (unit, nml=fv_climate_nudge_nml, iostat=io, end=10) 
+       read (unit, nml=fv_climate_nudge_nml, iostat=io, end=10)
        ierr = check_nml_error (io, 'fv_climate_nudge_nml')
-     enddo   
+     enddo
 10   call close_file (unit)
    endif
 #endif
@@ -146,7 +147,7 @@ real :: missing_value = -1.e10
 !----- write version and namelist to log file -----
 
    unit = stdlog()
-   call write_version_number (version, tagname)
+   call write_version_number ('FV_CLIMATE_NUDGE_MOD', version)
    if (mpp_pe() == mpp_root_pe()) write (unit, nml=fv_climate_nudge_nml)
 
  ! initialize flags
@@ -340,7 +341,7 @@ logical :: virtual_temp_obs = .false.
 
  ! vertically dependent factor
    call get_factor (npz,pfull, factor)
- ! first time allocate state 
+ ! first time allocate state
    if (do_state_alloc) then
       call var_state_init ( is, ie, js, je, npz, State(1) )
       call var_state_init ( is, ie, js, je, npz, State(2) )
@@ -633,7 +634,7 @@ real    :: psurf
          factor(k,2) = 0.
       enddo
    endif
-   
+
 ! Specific humidity
    if (skip_top_q > 0) then
       do k = 1, skip_top_q
@@ -823,7 +824,7 @@ end subroutine prt_minmax_3d
 !
   integer, intent(out), dimension(is:ie,js:je  ):: id1, id2, jdc
   real,    intent(out), dimension(is:ie,js:je,4):: s2c
- 
+
 !===============================================================================================
 
 ! local:
@@ -832,7 +833,7 @@ end subroutine prt_minmax_3d
   real:: a1, b1
   integer i, j, i1, i2, jc, i0, j0
 
- !pk0(1) = ak_in(1)**KAPPA 
+ !pk0(1) = ak_in(1)**KAPPA
  !pn_top = log(ak_in(1))
 
   do i=isd,ied-1
@@ -1006,7 +1007,7 @@ end subroutine prt_minmax_3d
        gz(km+1) = gz_dat(i,j)
        pk0(km+1) = ph_dat(i,j,km+1)**KAPPA
        do k=km,1,-1
-           gz(k) = gz(k+1) + RDGAS*tp_dat(i,j,k)*(pn_dat(i,j,k+1)-pn_dat(i,j,k)) 
+           gz(k) = gz(k+1) + RDGAS*tp_dat(i,j,k)*(pn_dat(i,j,k+1)-pn_dat(i,j,k))
            pk0(k) = ph_dat(i,j,k)**KAPPA
        enddo
        if ( phis(i,j) .gt. gz_dat(i,j) ) then

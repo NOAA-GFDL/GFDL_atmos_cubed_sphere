@@ -69,7 +69,9 @@ namelist /fv_cmip_diag_nml/ dummy
 
 !-----------------------------------------------------------------------
 
-type(cmip_diag_id_type) :: ID_ta, ID_ua, ID_va, ID_hus, ID_hur, ID_wap, ID_zg
+type(cmip_diag_id_type) :: ID_ta, ID_ua, ID_va, ID_hus, ID_hur, ID_wap, ID_zg, &
+                           ID_u2, ID_v2, ID_t2, ID_wap2, ID_uv, ID_ut, ID_vt,  &
+                           ID_uwap, ID_vwap, ID_twap
 integer              :: id_ps, id_orog
 integer              :: id_ua200, id_va200, id_ua850, id_va850, &
                         id_ta500, id_ta700, id_ta850, id_zg500, &
@@ -78,8 +80,9 @@ integer              :: id_ua200, id_va200, id_ua850, id_va850, &
 
 character(len=5) :: mod_name = 'atmos'
 
-character(len=128) :: version = '$Id$'
-character(len=128) :: tagname = '$Name$'
+! version number of this module
+! Include variable "version" to be written to log file.
+#include<file_version.h>
 
 logical :: module_is_initialized=.false.
 
@@ -131,7 +134,7 @@ character(len=4)      :: plabel
 !----- write version and namelist to log file -----
 
   iunit = stdlog()
-  call write_version_number ( version, tagname )
+  call write_version_number ( 'FV_CMIP_DIAG_MOD', version )
   if (mpp_pe() == mpp_root_pe()) write (iunit, nml=fv_cmip_diag_nml)
 
 
@@ -171,9 +174,48 @@ character(len=4)      :: plabel
                        'Relative Humidity', '%', standard_name='relative_humidity')
 
     ID_zg = register_cmip_diag_field_3d (mod_name, 'zg', Time, &
-                       'Geopotential Height', 'm', standard_name='geopotential_height')
+                       'Geopotential Height', 'm', standard_name='geopotential_height', axis='half')
 
+!-----------------------------------------------------------------------
+! register products of 3D variables (on model levels and pressure levels)
 
+    ID_u2 = register_cmip_diag_field_3d (mod_name, 'u2', Time, &
+                      'Square of Eastward Wind', 'm2 s-2', standard_name='square_of_eastward_wind')
+
+    ID_v2 = register_cmip_diag_field_3d (mod_name, 'v2', Time, &
+                       'Square of Northward Wind', 'm2 s-2', standard_name='square_of_northward_wind')
+
+    ID_t2 = register_cmip_diag_field_3d (mod_name, 't2', Time, &
+                       'Square of Air Temperature', 'K2', standard_name='square_of_air_temperature')
+
+    ID_wap2 = register_cmip_diag_field_3d (mod_name, 'wap2', Time, &
+                       'Square of Omega', 'Pa2 s-2', standard_name='square_of_omega')
+
+    ID_uv = register_cmip_diag_field_3d (mod_name, 'uv', Time, &
+                        'Eastward Wind times Northward Wind', 'm2 s-2', &
+                         standard_name='product_of_eastward_wind_and_northward_wind')
+
+    ID_ut = register_cmip_diag_field_3d (mod_name, 'ut', Time, &
+                        'Air Temperature times Eastward Wind', 'K m s-1', &
+                         standard_name='product_of_eastward_wind_and_air_temperature')
+
+    ID_vt = register_cmip_diag_field_3d (mod_name, 'vt', Time, &
+                        'Air Temperature times Northward Wind', 'K m s-1', &
+                         standard_name='product_of_northward_wind_and_air_temperature')
+
+    ID_uwap = register_cmip_diag_field_3d (mod_name, 'uwap', Time, &
+                           'Eastward Wind times Omega', 'K m s-1', &
+                           standard_name='product_of_eastward_wind_and_omega')
+
+    ID_vwap = register_cmip_diag_field_3d (mod_name, 'vwap', Time, &
+                           'Northward Wind times Omega', 'K m s-1', &
+                           standard_name='product_of_northward_wind_and_omega')
+
+    ID_twap = register_cmip_diag_field_3d (mod_name, 'twap', Time, &
+                           'Air Temperature times Omega', 'K m s-1', &
+                           standard_name='product_of_omega_and_air_temperature')
+
+!-----------------------------------------------------------------------
     ! 2D fields
 
     id_ps = register_cmip_diag_field_2d (mod_name, 'ps', Time, &
@@ -394,88 +436,131 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
           used = send_cmip_data_3d (ID_zg, wz, Time, phalf=Atm(n)%peln, opt=1, ext=.true.)
 
 !----------------------------------------------------------------------
+  ! process product of fields on model levels and/or pressure levels
+
+  if (query_cmip_diag_id(ID_u2)) &
+          used = send_cmip_data_3d (ID_u2,  Atm(n)%ua  (isc:iec,jsc:jec,:)*Atm(n)%ua  (isc:iec,jsc:jec,:), &
+                                    Time, phalf=Atm(n)%peln, opt=1)
+
+  if (query_cmip_diag_id(ID_v2)) &
+          used = send_cmip_data_3d (ID_v2,  Atm(n)%va  (isc:iec,jsc:jec,:)*Atm(n)%va  (isc:iec,jsc:jec,:), &
+                                    Time, phalf=Atm(n)%peln, opt=1)
+
+  if (query_cmip_diag_id(ID_t2)) &
+          used = send_cmip_data_3d (ID_t2,  Atm(n)%pt  (isc:iec,jsc:jec,:)*Atm(n)%pt  (isc:iec,jsc:jec,:), &
+                                    Time, phalf=Atm(n)%peln, opt=1)
+
+  if (query_cmip_diag_id(ID_wap2)) &
+          used = send_cmip_data_3d (ID_wap2, Atm(n)%omga(isc:iec,jsc:jec,:)*Atm(n)%omga(isc:iec,jsc:jec,:), &
+                                    Time, phalf=Atm(n)%peln, opt=1)
+
+  if (query_cmip_diag_id(ID_uv)) &
+          used = send_cmip_data_3d (ID_uv,  Atm(n)%ua  (isc:iec,jsc:jec,:)*Atm(n)%va  (isc:iec,jsc:jec,:), &
+                                    Time, phalf=Atm(n)%peln, opt=1)
+
+  if (query_cmip_diag_id(ID_ut)) &
+          used = send_cmip_data_3d (ID_ut,  Atm(n)%ua  (isc:iec,jsc:jec,:)*Atm(n)%pt  (isc:iec,jsc:jec,:), &
+                                    Time, phalf=Atm(n)%peln, opt=1)
+
+  if (query_cmip_diag_id(ID_vt)) &
+          used = send_cmip_data_3d (ID_vt,  Atm(n)%va  (isc:iec,jsc:jec,:)*Atm(n)%pt  (isc:iec,jsc:jec,:), &
+                                    Time, phalf=Atm(n)%peln, opt=1)
+
+  if (query_cmip_diag_id(ID_uwap)) &
+          used = send_cmip_data_3d (ID_uwap, Atm(n)%ua  (isc:iec,jsc:jec,:)*Atm(n)%omga(isc:iec,jsc:jec,:), &
+                                    Time, phalf=Atm(n)%peln, opt=1)
+
+  if (query_cmip_diag_id(ID_vwap)) &
+          used = send_cmip_data_3d (ID_vwap, Atm(n)%va  (isc:iec,jsc:jec,:)*Atm(n)%omga(isc:iec,jsc:jec,:), &
+                                    Time, phalf=Atm(n)%peln, opt=1)
+
+  if (query_cmip_diag_id(ID_twap)) &
+          used = send_cmip_data_3d (ID_twap, Atm(n)%pt  (isc:iec,jsc:jec,:)*Atm(n)%omga(isc:iec,jsc:jec,:), &
+                                    Time, phalf=Atm(n)%peln, opt=1)
+
+!----------------------------------------------------------------------
 ! process 2D fields on specific pressure levels
-! 
+!
   if (id_ua10 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 10.e2, Atm(n)%peln, &
-                               Atm(n)%ua(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%ua(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_ua10, dat2, Time)
   endif
 
   if (id_ua200 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, &
-                               Atm(n)%ua(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%ua(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_ua200, dat2, Time)
   endif
 
   if (id_va200 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, &
-                               Atm(n)%va(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%va(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_va200, dat2, Time)
   endif
 
   if (id_ua850 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
-                               Atm(n)%ua(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%ua(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_ua850, dat2, Time)
   endif
 
   if (id_va850 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
-                               Atm(n)%va(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%va(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_va850, dat2, Time)
   endif
 
   if (id_ta500 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 500.e2, Atm(n)%peln, &
-                               Atm(n)%pt(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%pt(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_ta500, dat2, Time)
   endif
 
   if (id_ta700 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 700.e2, Atm(n)%peln, &
-                               Atm(n)%pt(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%pt(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_ta700, dat2, Time)
   endif
 
   if (id_ta850 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
-                               Atm(n)%pt(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%pt(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_ta850, dat2, Time)
     endif
 
   if (id_hus850 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, &
-                               Atm(n)%q(isc:iec,jsc:jec,:,sphum), dat2)          
+                               Atm(n)%q(isc:iec,jsc:jec,:,sphum), dat2)
     used = send_data (id_hus850, dat2, Time)
   endif
 
   if (id_wap500 > 0) then
     call interpolate_vertical (isc, iec, jsc, jec, npz, 500.e2, Atm(n)%peln, &
-                               Atm(n)%omga(isc:iec,jsc:jec,:), dat2)          
+                               Atm(n)%omga(isc:iec,jsc:jec,:), dat2)
     used = send_data (id_wap500, dat2, Time)
   endif
 
   if (id_zg10 > 0) then
-    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/id_zg10/), &
+    call get_height_given_pressure (isc, iec, jsc, jec, npz, wz, 1, (/id_zg10/), &
                                     (/log(10.e2)/), Atm(n)%peln, dat3)
     used = send_data (id_zg10, dat3(:,:,1), Time)
   endif
 
   if (id_zg100 > 0) then
-    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/id_zg100/), &
+    call get_height_given_pressure (isc, iec, jsc, jec, npz, wz, 1, (/id_zg100/), &
                                     (/log(100.e2)/), Atm(n)%peln, dat3)
     used = send_data (id_zg100, dat3(:,:,1), Time)
   endif
 
   if (id_zg500 > 0) then
-    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/id_zg500/), &
+    call get_height_given_pressure (isc, iec, jsc, jec, npz, wz, 1, (/id_zg500/), &
                                     (/log(500.e2)/), Atm(n)%peln, dat3)
     used = send_data (id_zg500, dat3(:,:,1), Time)
   endif
 
   if (id_zg1000 > 0) then
-    call get_height_given_pressure (isc, iec, jsc, jec, ngc, npz, wz, 1, (/id_zg1000/), &
+    call get_height_given_pressure (isc, iec, jsc, jec, npz, wz, 1, (/id_zg1000/), &
                                     (/log(1000.e2)/), Atm(n)%peln, dat3)
     used = send_data (id_zg1000, dat3(:,:,1), Time)
   endif
