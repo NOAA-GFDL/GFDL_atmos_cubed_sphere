@@ -1434,9 +1434,10 @@ contains
   !>@brief The subroutine 'fv_restart_end' writes ending restart files,
   !! terminates I/O, and prints out diagnostics including global totals
   !! and checksums.
-  subroutine fv_restart_end(Atm, grids_on_this_pe)
+  subroutine fv_restart_end(Atm, grids_on_this_pe, restart_endfcst)
     type(fv_atmos_type), intent(inout) :: Atm(:)
     logical, intent(INOUT) :: grids_on_this_pe(:)
+    logical, intent(in) :: restart_endfcst
 
     integer :: isc, iec, jsc, jec
     integer :: iq, n, ntileMe, ncnst, ntprog, ntdiag
@@ -1516,10 +1517,13 @@ contains
 
    enddo
 
-   call fv_io_write_restart(Atm, grids_on_this_pe)
-   do n=1,ntileMe
-      if (Atm(n)%neststruct%nested .and. grids_on_this_pe(n)) call fv_io_write_BCs(Atm(n))
-    end do
+   if ( restart_endfcst ) then
+     call fv_io_write_restart(Atm, grids_on_this_pe)
+!     print *,'af call fv_io_write_restart, restart_endfcst=',restart_endfcst
+     do n=1,ntileMe
+       if (Atm(n)%neststruct%nested .and. grids_on_this_pe(n)) call fv_io_write_BCs(Atm(n))
+     end do
+   endif
 
     module_is_initialized = .FALSE.
 

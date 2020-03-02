@@ -592,17 +592,18 @@ module fv_control_mod
 
 !>@brief The subroutine 'fv_end' terminates FV3, deallocates memory, 
 !! saves restart files, and stops I/O.
- subroutine fv_end(Atm, grids_on_this_pe)
+ subroutine fv_end(Atm, grids_on_this_pe, restart_endfcst)
 
     type(fv_atmos_type), intent(inout) :: Atm(:)
     logical, intent(INOUT) :: grids_on_this_pe(:)
+    logical, intent(in) :: restart_endfcst
 
     integer :: n
 
     call timing_off('TOTAL')
     call timing_prt( gid )
 
-    call fv_restart_end(Atm, grids_on_this_pe)
+    call fv_restart_end(Atm, grids_on_this_pe, restart_endfcst)
     call fv_io_exit()
 
   ! Free temporary memory from sw_core routines

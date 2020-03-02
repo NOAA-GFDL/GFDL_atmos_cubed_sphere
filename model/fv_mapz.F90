@@ -3465,12 +3465,25 @@ endif        ! end last_step check
      enddo
   case(4)              ! K_warm_rain with fake ice
      do i=is,ie 
+#ifndef CCPP
         qv(i) = q(i,j,k,sphum)
         qd(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
 #ifdef MULTI_GASES
         cvm(i) = (1.-(qv(i)+qd(i)))*cv_air*vicvqd(q(i,j,k,1:num_gas)) + qv(i)*cv_vap + qd(i)*c_liq
 #else
         cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + qd(i)*c_liq
+#endif
+#else
+       qv(i) = q(i,j,k,sphum)
+       ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
+       qs(i) = q(i,j,k,ice_wat)
+       qd(i) = ql(i) + qs(i)
+#ifdef MULTI_GASES
+        cvm(i) = (1.-(qv(i)+qd(i)))*cv_air*vicvqd(q(i,j,k,1:num_gas)) + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
+#else
+        cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
+#endif
+
 #endif
      enddo
   case(5)
@@ -3574,12 +3587,26 @@ endif        ! end last_step check
      enddo
   case(4)    ! K_warm_rain scheme with fake ice
      do i=is,ie
+#ifndef CCPP
         qv(i) = q(i,j,k,sphum)
         qd(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
 #ifdef MULTI_GASES
         cpm(i) = (1.-(qv(i)+qd(i)))*cp_air*vicpqd(q(i,j,k,:)) + qv(i)*cp_vapor + qd(i)*c_liq
 #else
         cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + qd(i)*c_liq
+#endif
+#else
+       qv(i) = q(i,j,k,sphum)
+       ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
+       qs(i) = q(i,j,k,ice_wat)
+       qd(i) = ql(i) + qs(i)
+#ifdef MULTI_GASES
+        cpm(i) = (1.-(qv(i)+qd(i)))*cp_air*vicpqd(q(i,j,k,:)) + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
+#else
+        cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
+#endif
+
+    
 #endif
      enddo
   case(5)
