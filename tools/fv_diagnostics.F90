@@ -3427,7 +3427,11 @@ contains
              do j=jsc,jec
              do i=isc,iec
                 wk(i,j,k) =  (Atm(n)%pt(i,j,k)*exp(-kappa*log(-Atm(n)%delp(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*rdgas*          &
+#ifdef MULTI_GASES
+                      Atm(n)%pt(i,j,k)*virq(Atm(n)%q(i,j,k,1:num_gas)))) - idiag%pt1(k)) * pk0
+#else
                       Atm(n)%pt(i,j,k)*(1.+zvir*Atm(n)%q(i,j,k,sphum)))) - idiag%pt1(k)) * pk0
+#endif
 !                 Atm(n)%pkz(i,j,k) = exp(kappa*log(-Atm(n)%delp(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*rdgas*          &
 !                      Atm(n)%pt(i,j,k)*(1.+zvir*Atm(n)%q(i,j,k,sphum))))
              enddo
@@ -5592,7 +5596,11 @@ end subroutine eqv_pot
 
      K_LOOP:do k=km,1,-1
             if ( hydrostatic ) then
+#ifdef MULTI_GASES
+                 dz(i) = rdg*pt(i,j,k)*virq(q(i,j,k,1:num_gas))*(peln(i,k+1,j)-peln(i,k,j))
+#else
                  dz(i) = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
+#endif
             else
                  dz(i) = - delz(i,j,k)
             endif
@@ -5649,7 +5657,11 @@ end subroutine eqv_pot
 !        if ( phis(i,j)/grav < 1.E3 ) then
   K_LOOP:do k=km,1,-1
             if ( hydrostatic ) then
+#ifdef MULTI_GASES
+                 dz(i) = rdg*pt(i,j,k)*virq(q(i,j,k,1:num_gas))*(peln(i,k+1,j)-peln(i,k,j))
+#else
                  dz(i) = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
+#endif
             else
                  dz(i) = - delz(i,j,k)
             endif
@@ -6323,12 +6335,22 @@ end subroutine eqv_pot
 
              do k=npz,1,-1
 
+#ifdef MULTI_GASES
+                Tv = pt(i,j,k)*virq(q(i,j,k,1:num_gas))
+#else
                 Tv = pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))
+#endif
                 pres = delp(i,j,k)/delz(i,j,k)*rdg*Tv
                 !if (pres < sounding_top) cycle
 
+#ifdef MULTI_GASES
+                call qsmith((bd%ie-bd%is+1)*(bd%je-bd%js+1), npz,  &
+                      1, 1, pt(i,j,k:k),   &
+                     (/pres/), q(i,j,k:k,sphum), qs)
+#else
                 call qsmith(1, 1, 1, pt(i,j,k:k),   &
                      (/pres/), q(i,j,k:k,sphum), qs)
+#endif
 
                 mixr = q(i,j,k,sphum)/(1.-sum(q(i,j,k,1:nwat))) ! convert from sphum to mixing ratio
                 rh = q(i,j,k,sphum)/qs(1) 

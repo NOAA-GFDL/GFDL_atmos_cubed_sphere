@@ -637,6 +637,9 @@ contains
 
            if (gridstruct%nested) then
            call nh_bc(ptop, grav, akap, cp, delpc, neststruct%delz_BC, ptc, phis, &
+#ifdef MULTI_GASES
+                q, &
+#endif
 #ifdef USE_COND
                 q_con, &
 #ifdef MOIST_CAPPA
@@ -1088,6 +1091,9 @@ contains
         if (flagstruct%regional) then
           reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+it*dt
           call nh_bc(ptop, grav, akap, cp, delp, delz_regBC, pt, phis, &
+#ifdef MULTI_GASES
+               q, &
+#endif
 #ifdef USE_COND
                q_con, &
 #ifdef MOIST_CAPPA

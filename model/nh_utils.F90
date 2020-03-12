@@ -2055,7 +2055,7 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
    real, intent(IN) :: phis(isd:ied,jsd:jed)
    real, intent(IN),  dimension(isd:ied,jsd:jed,npz):: pt, delp
 #ifdef MULTI_GASES
-      real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz,*):: q
+      real, intent(IN),  dimension(isd:ied,jsd:jed,npz,*):: q
 #endif
 #ifdef USE_COND
    real, intent(IN),  dimension(isd:ied,jsd:jed,npz):: q_con
@@ -2135,7 +2135,7 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
 #else
 #ifdef MULTI_GASES
                   gamax = gama * (vicpqd(q(i,j,k,:))/vicvqd(q(i,j,k,:)))
-                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz(i,j,k)*rdgas*pt(i,j,k)))
+                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz_int*rdgas*pt(i,j,k)))
 #else
                   pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz_int*rdgas*pt(i,j,k)))
 #endif

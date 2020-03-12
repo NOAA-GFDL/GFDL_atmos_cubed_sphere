@@ -281,7 +281,11 @@ contains
 #else
       logical used, last_step, do_omega
 #endif
+#ifdef MULTI_GASES
+      integer, parameter :: max_packs=13
+#else
       integer, parameter :: max_packs=12
+#endif
       type(group_halo_update_type), save :: i_pack(max_packs)
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed

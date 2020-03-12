@@ -3432,7 +3432,12 @@ endif        ! end last_step check
                      ice_wat, snowwat, graupel, q, qd, cvm, t1)
   integer, intent(in):: is, ie, isd,ied, jsd,jed, km, nwat, j, k
   integer, intent(in):: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel
+#ifdef MULTI_GASES
+  real, intent(in), dimension(isd:ied,jsd:jed,km,num_gas):: q
+#else
   real, intent(in), dimension(isd:ied,jsd:jed,km,nwat):: q
+#endif
+
   real, intent(out), dimension(is:ie):: cvm, qd
   real, intent(in), optional:: t1(is:ie)
 !
