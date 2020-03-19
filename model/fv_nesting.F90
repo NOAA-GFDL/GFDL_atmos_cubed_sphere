@@ -1791,7 +1791,7 @@ contains
 
  subroutine d2c_setup(u, v, &
       ua, va, &
-	  uc, vc, dord4, &
+      uc, vc, dord4, &
       isd,ied,jsd,jed, is,ie,js,je, npx,npy, &
       grid_type, bounded_domain, &
       se_corner, sw_corner, ne_corner, nw_corner, &
