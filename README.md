@@ -1,6 +1,6 @@
 # GFDL_atmos_cubed_sphere
 
-The source contained herein reflects the 201912 release of the Finite Volume Cubed-Sphere Dynamical Core (FV3) for use in the current GFDL models (AM4/CM4/ESM4).
+The source contained herein reflects the 201912 release of the Finite Volume Cubed-Sphere Dynamical Core (FV3) for use in the current GFDL models (AM4/CM4/ESM4/SPEAR).
 
 # Where to find information
 
