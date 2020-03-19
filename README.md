@@ -9,8 +9,7 @@ for more information.
 
 # Proper usage attribution
 
-Cite either Putman and Lin (2007) or Harris and Lin (2013) when describing a 
-model using the FV3 dynamical core.
+Cite Putman and Lin (2007) and Harris and Lin (2013) when describing a model using the FV3 dynamical core.
 
 # What files are what
 
@@ -28,7 +27,7 @@ The top level directory structure groups source code and input files as follow:
 # Dependencies
 
 The source code in this repository requires other NOAA-GFDL projects in
-order to compile.  As stated above, this branch is for use with the current 
+order to compile.  As stated above, this branch is for use with the current
 NOAA-GFDL/AM4 and NOAA-GFDL/CM4 projects and is included as a submodule within
 those projects.
 

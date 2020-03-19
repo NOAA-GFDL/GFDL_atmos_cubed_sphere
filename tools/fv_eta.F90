@@ -443,6 +443,13 @@ module fv_eta_mod
             bk(k) = b48(k)
          enddo
 
+        case (49)
+          ks = 28
+          do k=1,km+1
+            ak(k) = a49(k)
+            bk(k) = b49(k)
+          enddo
+
       case (50)
          ! *Very-low top: for idealized super-cell simulation:
          ptop = 50.e2
@@ -771,7 +778,7 @@ module fv_eta_mod
   real ep, es, alpha, beta, gama
   real, parameter:: akap = 2./7.
 !---- Tunable parameters:
-  real:: k_inc = 10   ! # of layers from bottom up to near const dz region
+  integer:: k_inc = 10   ! # of layers from bottom up to near const dz region
   real:: s0 = 0.8     ! lowest layer stretch factor
 !-----------------------
   real:: s_inc
