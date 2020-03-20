@@ -1,6 +1,6 @@
 # GFDL_atmos_cubed_sphere
 
-This is for the FV3 dynamical core used in the current GFDL models (AM4/CM4).
+The source contained herein reflects the 201912 release of the Finite Volume Cubed-Sphere Dynamical Core (FV3) for use in the current GFDL models (AM4/CM4/ESM4/SPEAR).
 
 # Where to find information
 
@@ -9,8 +9,7 @@ for more information.
 
 # Proper usage attribution
 
-Cite either Putman and Lin (2007) or Harris and Lin (2013) when describing a 
-model using the FV3 dynamical core.
+Cite Putman and Lin (2007) and Harris and Lin (2013) when describing a model using the FV3 dynamical core.
 
 # What files are what
 
@@ -21,7 +20,6 @@ The top level directory structure groups source code and input files as follow:
 | ```LICENSE.md```     | a copy of the Gnu lesser general public license, version 3. |
 | ```README.md```      | this file with basic pointers to more information |
 | ```model/```         | contains the source code for core of the FV3 dyanmical core |
-| ```model_nh_null/``` | contains the source stub code for satisfying references |
 | ```driver/```        | contains drivers used by different models/modeling systems |
 | ```tools/```         | contains source code of tools used within the core |
 | ```GFDL_tools/```    | contains source code of tools specific to GFDL models |
@@ -29,7 +27,7 @@ The top level directory structure groups source code and input files as follow:
 # Dependencies
 
 The source code in this repository requires other NOAA-GFDL projects in
-order to compile.  As stated above, this branch is for use with the current 
+order to compile.  As stated above, this branch is for use with the current
 NOAA-GFDL/AM4 and NOAA-GFDL/CM4 projects and is included as a submodule within
 those projects.
 

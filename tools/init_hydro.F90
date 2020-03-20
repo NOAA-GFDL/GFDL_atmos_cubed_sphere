@@ -18,7 +18,6 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
-! $Id$
 
 module init_hydro_mod
 
@@ -30,9 +29,6 @@ module init_hydro_mod
       use mpp_domains_mod,    only: domain2d
       use fv_arrays_mod,      only: R_GRID
 !     use fv_diagnostics_mod, only: prt_maxmin
-!!! DEBUG CODE
-      use mpp_mod,            only: mpp_pe
-!!! END DEBUG CODE
 
       implicit none
       private
@@ -45,8 +41,8 @@ contains
  subroutine p_var(km, ifirst, ilast, jfirst, jlast, ptop, ptop_min,    &
                   delp, delz, pt, ps,  pe, peln, pk, pkz, cappa, q, ng, nq, area,   &
                   dry_mass, adjust_dry_mass, mountain, moist_phys,      &
-                  hydrostatic, nwat, domain, make_nh)
-               
+                  hydrostatic, nwat, domain, adiabatic, make_nh)
+
 ! Given (ptop, delp) computes (ps, pk, pe, peln, pkz)
 ! Input:
    integer,  intent(in):: km
@@ -54,10 +50,10 @@ contains
    integer,  intent(in):: jfirst, jlast            ! Latitude strip
    integer,  intent(in):: nq, nwat
    integer,  intent(in):: ng
-   logical, intent(in):: adjust_dry_mass, mountain, moist_phys, hydrostatic
+   logical, intent(in):: adjust_dry_mass, mountain, moist_phys, hydrostatic, adiabatic
    real, intent(in):: dry_mass, cappa, ptop, ptop_min
    real, intent(in   )::   pt(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
-   real, intent(inout):: delz(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
+   real, intent(inout):: delz(ifirst:ilast,jfirst:jlast, km)
    real, intent(inout):: delp(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
    real, intent(inout)::    q(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km, nq)
    real(kind=R_GRID), intent(IN)   :: area(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)
@@ -72,7 +68,7 @@ contains
 
 ! Local
    integer  sphum, liq_wat, ice_wat
-   integer  rainwat, snowwat, graupel          ! Lin Micro-physics
+   integer  rainwat, snowwat, graupel          ! GFDL Cloud Microphysics
    real ratio(ifirst:ilast)
    real pek, lnp, ak1, rdg, dpd, zvir
    integer i, j, k
@@ -97,7 +93,7 @@ contains
       if ( adjust_dry_mass ) then
          do i=ifirst,ilast
             ratio(i) = 1. + dpd/(ps(i,j)-ptop)
-         enddo 
+         enddo
          do k=1,km
             do i=ifirst,ilast
                delp(i,j,k) = delp(i,j,k) * ratio(i)
@@ -139,18 +135,24 @@ contains
       endif
    enddo
 
+   if ( adiabatic  ) then
+      zvir = 0.
+   else
+      zvir = rvgas/rdgas - 1.
+   endif
+   sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
 
    if ( .not.hydrostatic ) then
 
       rdg = -rdgas / grav
       if ( present(make_nh) ) then
           if ( make_nh ) then
-             delz = 1.e25 
-!$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,delz,rdg,pt,peln)
+             delz = 1.e25
+!$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,delz,rdg,pt,peln,zvir,sphum,q)
              do k=1,km
                 do j=jfirst,jlast
                    do i=ifirst,ilast
-                      delz(i,j,k) = rdg*pt(i,j,k)*(peln(i,k+1,j)-peln(i,k,j))
+                      delz(i,j,k) = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
                    enddo
                 enddo
              enddo
@@ -162,8 +164,6 @@ contains
 !------------------------------------------------------------------
 ! The following form is the same as in "fv_update_phys.F90"
 !------------------------------------------------------------------
-       zvir = rvgas/rdgas - 1.
-       sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
 !$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,pkz,cappa,rdg, &
 !$OMP                                  delp,pt,zvir,q,sphum,delz)
        do k=1,km
@@ -192,14 +192,14 @@ contains
 
 
 
- subroutine drymadj(km,  ifirst, ilast, jfirst,  jlast,  ng, &  
+ subroutine drymadj(km,  ifirst, ilast, jfirst,  jlast,  ng, &
                     cappa,   ptop, ps, delp, q,  nq, area,  nwat,  &
                     dry_mass, adjust_dry_mass, moist_phys, dpd, domain)
 
 ! !INPUT PARAMETERS:
       integer km
       integer ifirst, ilast  ! Long strip
-      integer jfirst, jlast  ! Latitude strip    
+      integer jfirst, jlast  ! Latitude strip
       integer nq, ng, nwat
       real, intent(in):: dry_mass
       real, intent(in):: ptop
@@ -209,7 +209,7 @@ contains
       real(kind=R_GRID), intent(IN) :: area(ifirst-ng:ilast+ng, jfirst-ng:jlast+ng)
       type(domain2d), intent(IN) :: domain
 
-! !INPUT/OUTPUT PARAMETERS:     
+! !INPUT/OUTPUT PARAMETERS:
       real, intent(in)::   q(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km,nq)
       real, intent(in)::delp(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km)     !
       real, intent(inout):: ps(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)        ! surface pressure
@@ -219,7 +219,7 @@ contains
       real  psmo, psdry
       integer i, j, k
 
-!$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,ps,ptop,psd,delp,nwat,q) 
+!$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,ps,ptop,psd,delp,nwat,q)
       do j=jfirst,jlast
 
          do i=ifirst,ilast
@@ -248,13 +248,13 @@ contains
 
 ! Check global maximum/minimum
 #ifndef QUICK_SUM
-      psdry = g_sum(domain, psd, ifirst, ilast, jfirst, jlast, ng, area, 1, .true.) 
+      psdry = g_sum(domain, psd, ifirst, ilast, jfirst, jlast, ng, area, 1, .true.)
        psmo = g_sum(domain, ps(ifirst:ilast,jfirst:jlast), ifirst, ilast, jfirst, jlast,  &
-                     ng, area, 1, .true.) 
+                     ng, area, 1, .true.)
 #else
-      psdry = g_sum(domain, psd, ifirst, ilast, jfirst, jlast, ng, area, 1) 
+      psdry = g_sum(domain, psd, ifirst, ilast, jfirst, jlast, ng, area, 1)
        psmo = g_sum(domain, ps(ifirst:ilast,jfirst:jlast), ifirst, ilast, jfirst, jlast,  &
-                     ng, area, 1) 
+                     ng, area, 1)
 #endif
 
       if(is_master()) then
@@ -276,7 +276,7 @@ contains
 
  subroutine hydro_eq(km, is, ie, js, je, ps, hs, drym, delp, ak, bk,  &
                      pt, delz, area, ng, mountain, hydrostatic, hybrid_z, domain)
-! Input: 
+! Input:
   integer, intent(in):: is, ie, js, je, km, ng
   real, intent(in):: ak(km+1), bk(km+1)
   real, intent(in):: hs(is-ng:ie+ng,js-ng:je+ng)
@@ -290,14 +290,14 @@ contains
   real, intent(out):: ps(is-ng:ie+ng,js-ng:je+ng)
   real, intent(out)::   pt(is-ng:ie+ng,js-ng:je+ng,km)
   real, intent(out):: delp(is-ng:ie+ng,js-ng:je+ng,km)
-  real, intent(inout):: delz(is-ng:ie+ng,js-ng:je+ng,km)
+  real, intent(inout):: delz(is:,js:,1:)
 ! Local
   real   gz(is:ie,km+1)
   real   ph(is:ie,km+1)
   real mslp, z1, t1, p1, t0, a0, psm
   real ztop, c0
 #ifdef INIT_4BYTE
-  real(kind=4) ::  dps 
+  real(kind=4) ::  dps
 #else
   real dps    ! note that different PEs will get differt dps during initialization
               ! this has no effect after cold start
@@ -317,7 +317,7 @@ contains
         c0 = t0/a0
 
      if ( hybrid_z ) then
-          ptop = 100.   ! *** hardwired model top *** 
+          ptop = 100.   ! *** hardwired model top ***
      else
           ptop = ak(1)
      endif
@@ -352,8 +352,8 @@ contains
         ps(i,j) = ps(i,j) + dps
         gz(i,   1) = ztop
         gz(i,km+1) = hs(i,j)
-        ph(i,   1) = ptop                                                     
-        ph(i,km+1) = ps(i,j)                                               
+        ph(i,   1) = ptop
+        ph(i,km+1) = ps(i,j)
      enddo
 
      if ( hybrid_z ) then
@@ -362,14 +362,14 @@ contains
 !---------------
         do k=km,2,-1
            do i=is,ie
-              gz(i,k) = gz(i,k+1) - delz(i,j,k)*grav 
+              gz(i,k) = gz(i,k+1) - delz(i,j,k)*grav
            enddo
         enddo
 ! Correct delz at the top:
         do i=is,ie
             delz(i,j,1) = (gz(i,2) - ztop) / grav
         enddo
- 
+
         do k=2,km
            do i=is,ie
               if ( gz(i,k) >= z1 ) then
