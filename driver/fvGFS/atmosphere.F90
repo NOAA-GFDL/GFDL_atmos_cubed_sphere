@@ -509,7 +509,7 @@ contains
 !  --- initiate the start for a restarted regional forecast
    if ( Atm(mytile)%gridstruct%regional .and. Atm(mytile)%flagstruct%warm_start ) then
 
-     call start_regional_restart(Atm(1),             &
+     call start_regional_restart(Atm(1), dt_atmos,   &
                                  isc, iec, jsc, jec, &
                                  isd, ied, jsd, jed )
    endif
@@ -1630,6 +1630,7 @@ contains
 
      call nullify_domain()
      call timing_on('FV_DIAG')
+
      call fv_diag(Atm(mytile:mytile), zvir, fv_time, Atm(mytile)%flagstruct%print_freq)
      first_diag = .false.
      call timing_off('FV_DIAG')
