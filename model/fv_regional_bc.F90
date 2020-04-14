@@ -5539,14 +5539,14 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                                                 ,'yaxis_1'  &
                                                                 ,'yaxis_2'  &
                                                                 ,'zaxis_1'  &
-                                                                ,'Time'     &
+                                                                ,'Time   '  &
                                                                 /)
 !
       character(len=9),dimension(ndims_tracers) :: dim_names_tracers=(/           &
                                                                        'xaxis_1'  &
                                                                       ,'yaxis_1'  &
                                                                       ,'zaxis_1'  &
-                                                                      ,'Time'     &
+                                                                      ,'Time   '  &
                                                                       /)
 !
 !-----------------------------------------------------------------------

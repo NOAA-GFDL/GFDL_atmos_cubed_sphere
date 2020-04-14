@@ -112,7 +112,7 @@ module atmosphere_mod
 !   <tr>
 !     <td>mpp_mod</td>
 !     <td>mpp_error, stdout, FATAL, NOTE, input_nml_file, mpp_root_pe,
-!                    mpp_npes, mpp_pe, mpp_chksum,mpp_get_current_pelist,     
+!                    mpp_npes, mpp_pe, mpp_chksum,mpp_get_current_pelist,
 !                    mpp_set_current_pelist</td>
 !   </tr>
 !   <tr>
@@ -1269,7 +1269,7 @@ contains
    rrg  = rdgas / grav
 
    if (first_time) then
-     print *, 'calculating slp kr value'
+     if (mpp_pe() == mpp_root_pe()) print *, 'calculating slp kr value'
      ! determine 0.8 sigma reference level
      sigtop = Atm(mytile)%ak(1)/pstd_mks+Atm(mytile)%bk(1)
      do k = 1, npz
