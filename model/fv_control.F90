@@ -200,11 +200,12 @@ module fv_control_mod
      integer, dimension(MAX_NNEST) :: grid_pes = 0
      integer, dimension(MAX_NNEST) :: grid_coarse = -1
      integer, dimension(MAX_NNEST) :: nest_refine = 3 
-     integer, dimension(MAX_NNEST) :: nest_ioffsets = -999, nest_joffsets = -999
+     integer, dimension(MAX_NNEST) :: nest_ioffsets, nest_joffsets
      integer, dimension(MAX_NNEST) :: all_npx = 0
      integer, dimension(MAX_NNEST) :: all_npy = 0
      integer, dimension(MAX_NNEST) :: all_npz = 0
      integer, dimension(MAX_NNEST) :: all_ntiles = 0
+     integer, dimension(MAX_NNEST) :: all_twowaynest = 0 ! > 0 implies two-way
      !integer, dimension(MAX_NNEST) :: tile_fine = 0
      integer, dimension(MAX_NNEST) :: icount_coarse = 1
      integer, dimension(MAX_NNEST) :: jcount_coarse = 1
@@ -569,6 +570,8 @@ module fv_control_mod
      all_npz(this_grid) = npz
      call mpp_max(all_npz, ngrids, global_pelist)
 
+     if (Atm(this_grid)%neststruct%twowaynest) all_twowaynest(this_grid) = 1
+     call mpp_max(all_twowaynest, ngrids, global_pelist)
      ntiles_nest_all = 0
      do n=1,ngrids
         if (n/=this_grid) then
@@ -576,6 +579,7 @@ module fv_control_mod
            Atm(n)%flagstruct%npy = all_npy(n)
            Atm(n)%flagstruct%npz = all_npz(n)
            Atm(n)%flagstruct%ntiles = all_ntiles(n)
+           Atm(n)%neststruct%twowaynest = (all_twowaynest(n) > 0) ! disabled
         endif
         npes_nest_tile(ntiles_nest_all+1:ntiles_nest_all+all_ntiles(n)) = &
              Atm(n)%npes_this_grid / all_ntiles(n)
@@ -595,7 +599,7 @@ module fv_control_mod
         endif
      enddo
 
-     if (mpp_pe() == 0) then
+     if (mpp_pe() == 0 .and. ngrids > 1) then
         print*, ' NESTING TREE'
         do n=1,ngrids
            write(*,'(12i4)') n, nest_level(n), nest_ioffsets(n), nest_joffsets(n), icount_coarse(n), jcount_coarse(n), tile_fine(n), tile_coarse(n), nest_refine(n), all_ntiles(n), all_npx(n), all_npy(n)
@@ -665,24 +669,20 @@ module fv_control_mod
 
      endif
 
-     allocate(Atm(this_grid)%neststruct%child_grids(ngrids)) !only temporary?
+     allocate(Atm(this_grid)%neststruct%child_grids(ngrids)) 
      do n=1,ngrids
         Atm(this_grid)%neststruct%child_grids(n) = (grid_coarse(n) == this_grid)
         allocate(Atm(n)%neststruct%do_remap_bc(ngrids))
         Atm(n)%neststruct%do_remap_bc(:) = .false.
      enddo
-     Atm(this_grid)%neststruct%parent_proc = ANY(tile_coarse == Atm(this_grid)%global_tile)
-      !Atm(this_grid)%neststruct%child_proc = ANY(Atm(this_grid)%pelist == gid) !this means a nested grid
-!!$         if (Atm(this_grid)%neststruct%nestbctype > 1) then
-!!$            call mpp_error(FATAL, 'nestbctype > 1 not yet implemented')
-!!$            Atm(this_grid)%neststruct%upoff = 0
-!!$         endif
-!!$      end if
-!!$
-!!$      do nn=1,size(Atm)
-!!$         if (n == 1) allocate(Atm(nn)%neststruct%nest_domain_all(size(Atm)))
-!!$         Atm(nn)%neststruct%nest_domain_all(n) = Atm(this_grid)%neststruct%nest_domain
-!!$      enddo
+     Atm(this_grid)%neststruct%parent_proc = ANY(Atm(this_grid)%neststruct%child_grids) !ANY(tile_coarse == Atm(this_grid)%global_tile)
+     Atm(this_grid)%neststruct%child_proc = ASSOCIATED(Atm(this_grid)%parent_grid) !this means a nested grid
+
+     if (ngrids > 1) call setup_update_regions
+     if (Atm(this_grid)%neststruct%nestbctype > 1) then
+        call mpp_error(FATAL, 'nestbctype > 1 not yet implemented')
+        Atm(this_grid)%neststruct%upoff = 0
+     endif
 
      if (Atm(this_grid)%gridstruct%bounded_domain .and. is_master()) print*, &
           ' Bounded domain: nested = ', Atm(this_grid)%neststruct%nested, ', regional = ', Atm(this_grid)%flagstruct%regional
@@ -1188,6 +1188,61 @@ module fv_control_mod
 
      end subroutine read_namelist_fv_core_nml
 
+     subroutine setup_update_regions
+
+       integer :: isu, ieu, jsu, jeu ! update regions
+       integer :: isc, jsc, iec, jec
+       integer :: upoff
+
+       isc = Atm(this_grid)%bd%isc
+       jsc = Atm(this_grid)%bd%jsc
+       iec = Atm(this_grid)%bd%iec
+       jec = Atm(this_grid)%bd%jec
+
+       upoff = Atm(this_grid)%neststruct%upoff
+
+       do n=2,ngrids
+          write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 0: ', mpp_pe(), tile_coarse(n), Atm(this_grid)%global_tile
+          if (tile_coarse(n) == Atm(this_grid)%global_tile) then
+
+             isu = nest_ioffsets(n)
+             ieu = isu + icount_coarse(n) - 1
+             jsu = nest_joffsets(n)
+             jeu = jsu + jcount_coarse(n) - 1
+
+             !update offset adjustment
+             isu = isu + upoff
+             ieu = ieu - upoff
+             jsu = jsu + upoff
+             jeu = jeu - upoff
+
+             !restriction to current domain
+!!$             !!! DEBUG CODE
+!!$             if (Atm(this_grid)%flagstruct%fv_debug) then
+!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS  : ', isu, jsu, ieu, jeu
+!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 2: ', isc, jsc, iec, jsc
+!!$             endif
+!!$             !!! END DEBUG CODE
+             if (isu > iec .or. ieu < isc .or. &
+                 jsu > jec .or. jeu < jsc ) then
+                isu = -999 ; jsu = -999 ; ieu = -1000 ; jeu = -1000
+             else
+                isu = max(isu,isc) ; jsu = max(jsu,jsc)
+                ieu = min(ieu,iec) ; jeu = min(jeu,jec)
+             endif
+!!$             !!! DEBUG CODE
+!!$             if (Atm(this_grid)%flagstruct%fv_debug) &
+!!$                  write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 3: ', isu, jsu, ieu, jeu
+!!$             !!! END DEBUG CODE
+
+             Atm(n)%neststruct%isu = isu
+             Atm(n)%neststruct%ieu = ieu
+             Atm(n)%neststruct%jsu = jsu
+             Atm(n)%neststruct%jeu = jeu
+          endif
+       enddo
+
+     end subroutine setup_update_regions
 
    end subroutine fv_control_init
 
