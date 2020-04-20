@@ -148,7 +148,8 @@ private
 public :: twoway_nesting, setup_nested_grid_BCs, set_physics_BCs
 
 contains
-
+!>@brief The subroutine 'setup_nested_grid_BCs' fetches data from the coarse grid 	
+!! to set up  the nested-grid boundary conditions.
  subroutine setup_nested_grid_BCs(npx, npy, npz, zvir, ncnst,     &
                         u, v, w, pt, delp, delz,q, uc, vc, &
 #ifdef USE_COND

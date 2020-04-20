@@ -1088,8 +1088,8 @@ module fv_arrays_mod
                                          
      integer :: nestbctype = 1
      integer :: nsponge = 0
-     integer :: nestupdate = 0   !< Type of nested-grid update to use; details are given in
-                                 !< model/fv_nesting.F90.  The default is 0.
+     integer :: nestupdate = 7   !< Type of nested-grid update to use; details are given in
+                                 !< model/fv_nesting.F90.  The default is 7.
        
      logical :: twowaynest = .false.   !< Whether to use two-way nesting, the process by which
                                        !< the nested-grid solution can feed back onto the 
