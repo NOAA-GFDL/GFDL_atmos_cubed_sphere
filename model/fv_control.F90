@@ -568,7 +568,7 @@ module fv_control_mod
 
      endif
 
-     allocate(Atm(this_grid)%neststruct%child_grids(ngrids)) 
+     allocate(Atm(this_grid)%neststruct%child_grids(ngrids))
      do n=1,ngrids
         Atm(this_grid)%neststruct%child_grids(n) = (grid_coarse(n) == this_grid)
         allocate(Atm(n)%neststruct%do_remap_bc(ngrids))

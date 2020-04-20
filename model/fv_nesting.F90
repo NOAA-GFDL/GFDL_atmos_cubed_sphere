@@ -1785,7 +1785,7 @@ contains
 
  subroutine d2c_setup(u, v, &
       ua, va, &
-	  uc, vc, dord4, &
+      uc, vc, dord4, &
       isd,ied,jsd,jed, is,ie,js,je, npx,npy, &
       grid_type, bounded_domain, &
       se_corner, sw_corner, ne_corner, nw_corner, &
@@ -2455,7 +2455,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
 
 
       !We don't currently have a good way to communicate all namelist items between
-      ! grids (since we cannot assume that we have internal namelists available), so 
+      ! grids (since we cannot assume that we have internal namelists available), so
       ! we get the clutzy structure here.
       if ( (neststruct%child_proc .and. .not. flagstruct%hydrostatic) .or. &
            (parent_grid%neststruct%parent_proc .and. .not. parent_grid%flagstruct%hydrostatic) ) then
