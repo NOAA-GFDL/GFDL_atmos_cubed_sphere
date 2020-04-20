@@ -49,7 +49,6 @@ module fv_diagnostics_mod
 ! use gfdl_cloud_microphys_mod, only: wqs1, qsmith_init
  use lin_cld_microphys_mod, only: wqs1, qsmith_init
 
-
  use column_diagnostics_mod, only:  column_diagnostics_init, &
                                     initialize_diagnostic_columns, &
                                     column_diagnostics_header, &
