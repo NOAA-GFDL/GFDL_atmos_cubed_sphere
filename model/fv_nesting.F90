@@ -2541,7 +2541,9 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
               bd, isd_p, ied_p, jsd_p, jed_p, isd, ied, jsd, jed, &
               neststruct%isu, neststruct%ieu, neststruct%jsu, neststruct%jeu, &
               npx, npy, 0, 0, &
-              neststruct%refinement, neststruct%nestupdate, upoff, 0, parent_grid%neststruct%parent_proc, neststruct%child_proc, parent_grid, grid_number-1)
+              neststruct%refinement, neststruct%nestupdate, upoff, 0, &
+              parent_grid%neststruct%parent_proc, neststruct%child_proc, &
+              parent_grid, grid_number-1)
 
       !!! The mpp version of update_coarse_grid does not return a consistent value of ps
       !!! across PEs, as it does not go into the haloes of a given coarse-grid PE. This

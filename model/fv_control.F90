@@ -103,7 +103,7 @@ module fv_control_mod
      integer, dimension(MAX_NNEST) :: grid_pes = 0
      integer, dimension(MAX_NNEST) :: grid_coarse = -1
      integer, dimension(MAX_NNEST) :: nest_refine = 3
-     integer, dimension(MAX_NNEST) :: nest_ioffsets, nest_joffsets
+     integer, dimension(MAX_NNEST) :: nest_ioffsets = -999, nest_joffsets = -999
      integer, dimension(MAX_NNEST) :: all_npx = 0
      integer, dimension(MAX_NNEST) :: all_npy = 0
      integer, dimension(MAX_NNEST) :: all_npz = 0
