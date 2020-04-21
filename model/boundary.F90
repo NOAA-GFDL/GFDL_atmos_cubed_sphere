@@ -2306,6 +2306,8 @@ contains
       position = CENTER
    end if
 
+   !Note that *_c does not have values on the parent_proc.
+   !Must use isu, etc. to get bounds of update region on parent.
    call mpp_get_F2C_index(nest_domain, is_c, ie_c, js_c, je_c, is_f, ie_f, js_f, je_f, nest_level=nest_level, position=position)
    if (child_proc) then
       allocate(coarse_dat_send(is_c:ie_c, js_c:je_c,npz))
@@ -2332,9 +2334,9 @@ contains
    s = r/2 !rounds down (since r > 0)
    qr = r*upoff + nsponge - s
 
-   if (parent_proc .and. .not. (ie_c < is_c .or. je_c < js_c)) then
+   if (parent_proc .and. .not. (ieu < isu .or. jeu < jsu)) then
       call fill_var_coarse(var_coarse, coarse_dat_recv, isd_p, ied_p, jsd_p, jed_p, &
-           is_c, ie_c, js_c, je_c, npx, npy, npz, istag, jstag, nestupdate, parent_grid)
+           isu, ieu, jsu, jeu, npx, npy, npz, istag, jstag, nestupdate, parent_grid)
    endif
 
    if (allocated(coarse_dat_recv)) deallocate(coarse_dat_recv)
@@ -2454,14 +2456,14 @@ contains
  end subroutine fill_coarse_data_send
 
  subroutine fill_var_coarse(var_coarse, coarse_dat_recv, isd_p, ied_p, jsd_p, jed_p, &
-      is_c, ie_c, js_c, je_c, npx, npy, npz, istag, jstag, nestupdate, parent_grid)
+      isu, ieu, jsu, jeu, npx, npy, npz, istag, jstag, nestupdate, parent_grid)
 
    !This routine assumes the coarse and nested grids are properly
    ! aligned, and that in particular for odd refinement ratios all
    ! coarse-grid cells (faces) coincide with nested-grid cells (faces)
 
    integer, intent(IN) :: isd_p, ied_p, jsd_p, jed_p
-   integer, intent(IN) :: is_c, ie_c, js_c, je_c
+   integer, intent(IN) :: isu, ieu, jsu, jeu
    integer, intent(IN) :: istag, jstag
    integer, intent(IN) :: npx, npy, npz, nestupdate
    real, intent(INOUT) :: var_coarse(isd_p:ied_p+istag,jsd_p:jed_p+jstag,npz)
@@ -2475,10 +2477,10 @@ contains
       select case (nestupdate)
       case (1,2,6,7,8) ! 1 = Conserving update on all variables; 2 = conserving update for cell-centered values; 6 = conserving remap-update
 
-!$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,coarse_dat_recv,parent_grid,var_coarse)
+!$OMP parallel do default(none) shared(npz,jsu,jeu,isu,ieu,coarse_dat_recv,parent_grid,var_coarse)
          do k=1,npz
-         do j=js_c,je_c
-         do i=is_c,ie_c
+         do j=jsu,jeu
+         do i=isu,ieu
             var_coarse(i,j,k) = coarse_dat_recv(i,j,k)*parent_grid%gridstruct%rarea(i,j)
          end do
          end do
@@ -2498,10 +2500,10 @@ contains
       select case (nestupdate)
       case (1,6,7,8)
 
-!$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,coarse_dat_recv,parent_grid,var_coarse)
+!$OMP parallel do default(none) shared(npz,jsu,jeu,isu,ieu,coarse_dat_recv,parent_grid,var_coarse)
          do k=1,npz
-         do j=js_c,je_c+1
-         do i=is_c,ie_c
+         do j=jsu,jeu+1
+         do i=isu,ieu
             var_coarse(i,j,k) = coarse_dat_recv(i,j,k)*parent_grid%gridstruct%rdx(i,j)
          end do
          end do
@@ -2518,10 +2520,10 @@ contains
       select case (nestupdate)
       case (1,6,7,8)   !averaging update; in-line average for face-averaged values instead of areal average
 
-!$OMP parallel do default(none) shared(npz,js_c,je_c,is_c,ie_c,coarse_dat_recv,parent_grid,var_coarse)
+!$OMP parallel do default(none) shared(npz,jsu,jeu,isu,ieu,coarse_dat_recv,parent_grid,var_coarse)
          do k=1,npz
-         do j=js_c,je_c
-         do i=is_c,ie_c+1
+         do j=jsu,jeu
+         do i=isu,ieu+1
             var_coarse(i,j,k) = coarse_dat_recv(i,j,k)*parent_grid%gridstruct%rdy(i,j)
          end do
          end do
@@ -2611,13 +2613,13 @@ contains
    s = r/2 !rounds down (since r > 0)
    qr = r*upoff + nsponge - s
 
-   if (parent_proc .and. .not. (ie_cx < is_cx .or. je_cx < js_cx)) then
+   if (parent_proc .and. .not. (ieu < isu .or. jeu < jsu)) then
       call fill_var_coarse(u_coarse, coarse_dat_recv_u, isd_p, ied_p, jsd_p, jed_p, &
-           is_cx, ie_cx, js_cx, je_cx, npx, npy, npz, istag_u, jstag_u, nestupdate, parent_grid)
+           isu, ieu, jsu, jeu, npx, npy, npz, istag_u, jstag_u, nestupdate, parent_grid)
    endif
-   if (parent_proc .and. .not. (ie_cy < is_cy .or. je_cy < js_cy)) then
+   if (parent_proc .and. .not. (ieu < isu .or. jeu < jsu)) then
       call fill_var_coarse(v_coarse, coarse_dat_recv_v, isd_p, ied_p, jsd_p, jed_p, &
-           is_cy, ie_cy, js_cy, je_cy, npx, npy, npz, istag_v, jstag_v, nestupdate, parent_grid)
+           isu, ieu, jsu, jeu, npx, npy, npz, istag_v, jstag_v, nestupdate, parent_grid)
    endif
 
    if (allocated(coarse_dat_recv_u)) deallocate(coarse_dat_recv_u)

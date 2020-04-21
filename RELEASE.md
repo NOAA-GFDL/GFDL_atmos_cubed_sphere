@@ -28,4 +28,4 @@ The non-functional gfdl_cloud_microphys.F90 has been removed and replaced with t
 
 The namelist nggps_diag_nml has been eliminated. 'fdiag' is no longer handled by the dynamical core, and should be handled by the physics driver.
 
-For a complete technical description see the [forthcoming] GFDL Technical Memorandum.
+For a complete technical description see the NOAA Technical Memorandum OAR GFDL: https://repository.library.noaa.gov/view/noaa/23432

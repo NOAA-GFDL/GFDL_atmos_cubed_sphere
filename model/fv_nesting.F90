@@ -65,9 +65,6 @@ public :: twoway_nesting, setup_nested_grid_BCs, set_physics_BCs
 
 contains
 
-!!!!NOTE: Later we can add a flag to see if remap BCs are needed
-!!!  if not we can save some code complexity and cycles by skipping it
-
  subroutine setup_nested_grid_BCs(npx, npy, npz, zvir, ncnst,     &
                         u, v, w, pt, delp, delz,q, uc, vc, &
 #ifdef USE_COND
@@ -863,9 +860,6 @@ contains
 
    character(len=120) :: errstring
 
-!!$!!! DEBUG CODE
-!!$   write(*, '(A, 7I5)') 'setup_eul_delp_BC_k', mpp_pe(), isd_BC, ied_BC, istart, iend, lbound(pelagBC,1), ubound(pelagBC,1)
-!!$!!! END DEBUG CODE
 
 !$OMP parallel do default(none) shared(istart,iend,jstart,jend,pelagBC,ptop_src)
    do j=jstart,jend
@@ -2286,6 +2280,10 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
 
 !!!CLEANUP: this routine assumes that the PARENT GRID has pt = (regular) temperature,
 !!!not potential temperature; which may cause problems when updating if this is not the case.
+
+!!! NOTE ALSO: parent_grid%flagstruct is NOT SET UP by default and may be missing much information
+!!! Either make sure that parent_grid%flagstruct is filled in fv_control or that proper steps
+!!!   are taken to make sure null flags are not used
  subroutine twoway_nest_update(npx, npy, npz, zvir, ncnst, sphum,     &
                         u, v, w, pt, delp, q,   &
                         pe, pkz, delz, ps, ptop, ak, bk, &
@@ -2359,7 +2357,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
     !If pt is actual temperature, set conv_theta to .false.
     if (present(conv_theta_in)) conv_theta = conv_theta_in
 
-    if ((.not. neststruct%parent_proc) .and. (.not. neststruct%child_proc)) return
+    if ((.not. parent_grid%neststruct%parent_proc) .and. (.not. neststruct%child_proc)) return
 
     call mpp_get_data_domain( parent_grid%domain, &
          isd_p,  ied_p,  jsd_p,  jed_p  )
@@ -2388,7 +2386,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
        endif
     enddo
 
-    if (neststruct%parent_proc .and. is_master() .and. first_timestep) then
+    if (parent_grid%neststruct%parent_proc .and. is_master() .and. first_timestep) then
        print*, ' TWO-WAY BLENDING WEIGHTS'
        ph2 = parent_grid%ak(1)
        do k=1,parent_grid%npz
@@ -2399,130 +2397,6 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
        enddo
        first_timestep = .false.
     endif
-
-
-   !!! RENORMALIZATION UPDATE OPTION
-   if (neststruct%nestupdate /= 3 .and. neststruct%nestupdate /= 7 .and. neststruct%nestupdate /= 8) then
-
-!!$      allocate(qdp_coarse(isd_p:ied_p,jsd_p:jed_p,npz))
-!!$      if (parent_grid%flagstruct%nwat > 0) then
-!!$         allocate(q_diff(isd_p:ied_p,jsd_p:jed_p,npz))
-!!$         q_diff = 0.
-!!$      endif
-!!$
-!!$      do n=1,parent_grid%flagstruct%nwat
-!!$
-!!$         qdp_coarse = 0.
-!!$         if (neststruct%child_proc) then
-!!$            do k=1,npz
-!!$            do j=jsd,jed
-!!$            do i=isd,ied
-!!$               qdp(i,j,k) = q(i,j,k,n)*delp(i,j,k)
-!!$            enddo
-!!$            enddo
-!!$            enddo
-!!$         else
-!!$            qdp = 0.
-!!$         endif
-!!$
-!!$         if (neststruct%parent_proc) then
-!!$            !Add up ONLY region being replaced by nested grid
-!!$            do k=1,npz
-!!$            do j=jsu,jeu
-!!$            do i=isu,ieu
-!!$               qdp_coarse(i,j,k) = parent_grid%q(i,j,k,n)*parent_grid%delp(i,j,k)
-!!$            enddo
-!!$            enddo
-!!$            enddo
-!!$            call level_sum(qdp_coarse, parent_grid%gridstruct%area, parent_grid%domain, &
-!!$                 parent_grid%bd, npz, L_sum_b)
-!!$         else
-!!$            qdp_coarse = 0.
-!!$         endif
-!!$         if (neststruct%parent_proc) then
-!!$            if (n <= parent_grid%flagstruct%nwat) then
-!!$            do k=1,npz
-!!$            do j=jsu,jeu
-!!$            do i=isu,ieu
-!!$               q_diff(i,j,k) = q_diff(i,j,k) - qdp_coarse(i,j,k)
-!!$            enddo
-!!$            enddo
-!!$            enddo
-!!$            endif
-!!$         endif
-!!$
-!!$            call mpp_update_domains(qdp, domain)
-!!$            call update_coarse_grid(var_src, qdp, global_nest_domain, &
-!!$                 gridstruct%dx, gridstruct%dy, gridstruct%area, &
-!!$                 bd, isd_p, ied_p, jsd_p, jed_p, isd, ied, jsd, jed, &
-!!$                 neststruct%isu, neststruct%ieu, neststruct%jsu, neststruct%jeu, &
-!!$                 npx, npy, npz, 0, 0, &
-!!$                 neststruct%refinement, neststruct%nestupdate, upoff, 0, &
-!!$                 neststruct%parent_proc, neststruct%child_proc, parent_grid)
-!!$            if (neststruct%parent_proc) call remap_up_k(ps0, parent_grid%ps, &
-!!$                 ak, bk, parent_grid%ak, parent_grid%bk, var_src, qdp_coarse, &
-!!$                 parent_grid%bd, neststruct%isu, neststruct%ieu, neststruct%jsu, neststruct%jeu, &
-!!$                 0, 0, npz, parent_grid%npz, 0, parent_grid%flagstruct%kord_tr, blend_wt, log_pe=.false.)
-!!$
-!!$               call mpp_sync!self
-!!$
-!!$         if (neststruct%parent_proc) then
-!!$            call level_sum(qdp_coarse, parent_grid%gridstruct%area, parent_grid%domain, &
-!!$                 parent_grid%bd, npz, L_sum_a)
-!!$            do k=1,npz
-!!$               if (L_sum_a(k) > 0.) then
-!!$                  fix = L_sum_b(k)/L_sum_a(k)
-!!$               do j=jsu,jeu
-!!$               do i=isu,ieu
-!!$                  !Normalization mass fixer
-!!$                  parent_grid%q(i,j,k,n) = qdp_coarse(i,j,k)*fix
-!!$            enddo
-!!$            enddo
-!!$               endif
-!!$            enddo
-!!$               if (n == 1) sphum_ll_fix = 1. - fix
-!!$         endif
-!!$         if (neststruct%parent_proc) then
-!!$            if (n <= parent_grid%flagstruct%nwat) then
-!!$            do k=1,npz
-!!$            do j=jsu,jeu
-!!$            do i=isu,ieu
-!!$               q_diff(i,j,k) = q_diff(i,j,k) + parent_grid%q(i,j,k,n)
-!!$            enddo
-!!$            enddo
-!!$            enddo
-!!$            endif
-!!$         endif
-!!$
-!!$      end do
-!!$
-!!$         if (neststruct%parent_proc) then
-!!$            if (parent_grid%flagstruct%nwat > 0) then
-!!$               do k=1,npz
-!!$            do j=jsu,jeu
-!!$            do i=isu,ieu
-!!$               parent_grid%delp(i,j,k) = parent_grid%delp(i,j,k) + q_diff(i,j,k)
-!!$            enddo
-!!$            enddo
-!!$            enddo
-!!$         endif
-!!$
-!!$         do n=1,parent_grid%flagstruct%nwat
-!!$            do k=1,npz
-!!$         do j=jsu,jeu
-!!$         do i=isu,ieu
-!!$            parent_grid%q(i,j,k,n) = parent_grid%q(i,j,k,n)/parent_grid%delp(i,j,k)
-!!$         enddo
-!!$         enddo
-!!$         enddo
-!!$         enddo
-!!$         endif
-!!$
-!!$      deallocate(qdp_coarse)
-!!$      if  (allocated(q_diff)) deallocate(q_diff)
-
-   endif
-   !!! END RENORMALIZATION UPDATE
 
 #ifndef SW_DYNAMICS
    if (neststruct%nestupdate /= 3 .and. neststruct%nestupdate /= 8) then
@@ -2561,7 +2435,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
               neststruct%isu, neststruct%ieu, neststruct%jsu, neststruct%jeu, &
               npx, npy, npz, 0, 0, &
               neststruct%refinement, neststruct%nestupdate, upoff, 0, &
-              neststruct%parent_proc, neststruct%child_proc, parent_grid, grid_number-1)
+              parent_grid%neststruct%parent_proc, neststruct%child_proc, parent_grid, grid_number-1)
          if (neststruct%child_proc)  deallocate(t_nest)
       else
          if (neststruct%child_proc)  call mpp_update_domains(pt, domain, complete=.true.)
@@ -2573,14 +2447,18 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
               neststruct%isu, neststruct%ieu, neststruct%jsu, neststruct%jeu, &
               npx, npy, npz, 0, 0, &
               neststruct%refinement, neststruct%nestupdate, upoff, 0, &
-              neststruct%parent_proc, neststruct%child_proc, parent_grid, grid_number-1)
+              parent_grid%neststruct%parent_proc, neststruct%child_proc, parent_grid, grid_number-1)
 
       endif !conv_theta
 
       call mpp_sync!self
 
 
-      if (.not. flagstruct%hydrostatic) then
+      !We don't currently have a good way to communicate all namelist items between
+      ! grids (since we cannot assume that we have internal namelists available), so
+      ! we get the clutzy structure here.
+      if ( (neststruct%child_proc .and. .not. flagstruct%hydrostatic) .or. &
+           (parent_grid%neststruct%parent_proc .and. .not. parent_grid%flagstruct%hydrostatic) ) then
 
          allocate(w_src(isd_p:ied_p,jsd_p:jed_p,npz))
          w_src = -999.
@@ -2590,7 +2468,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
               neststruct%isu, neststruct%ieu, neststruct%jsu, neststruct%jeu, &
               npx, npy, npz, 0, 0, &
               neststruct%refinement, neststruct%nestupdate, upoff, 0, &
-              neststruct%parent_proc, neststruct%child_proc, parent_grid, grid_number-1)
+              parent_grid%neststruct%parent_proc, neststruct%child_proc, parent_grid, grid_number-1)
          call mpp_sync!self
 
             !Updating for delz not yet implemented;
@@ -2598,7 +2476,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
             ! consider updating specific volume instead?
 !!$            call update_coarse_grid(parent_grid%delz, delz, global_nest_domain, &
 !!$                 bd, isd_p, ied_p, jsd_p, jed_p, isd, ied, jsd, jed, npz, 0, 0, &
-!!$                 neststruct%refinement, neststruct%nestupdate, upoff, 0, neststruct%parent_proc, neststruct%child_proc)
+!!$                 neststruct%refinement, neststruct%nestupdate, upoff, 0, parent_grid%neststruct%parent_proc, neststruct%child_proc)
 
       end if
 
@@ -2616,7 +2494,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
         neststruct%isu, neststruct%ieu, neststruct%jsu, neststruct%jeu, &
         npx, npy, npz, 0, 1, 1, 0, &
         neststruct%refinement, neststruct%nestupdate, upoff, 0, &
-        neststruct%parent_proc, neststruct%child_proc, parent_grid, grid_number-1, gridtype=DGRID_NE)
+        parent_grid%neststruct%parent_proc, neststruct%child_proc, parent_grid, grid_number-1, gridtype=DGRID_NE)
 
    call mpp_sync()
 
@@ -2629,7 +2507,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
       !Re-compute nested (AND COARSE) grid ps
 
       allocate(ps0(isd_p:ied_p,jsd_p:jed_p))
-      if (neststruct%parent_proc) then
+      if (parent_grid%neststruct%parent_proc) then
 
          parent_grid%ps = parent_grid%ptop
 !$OMP parallel do default(none) shared(jsd_p,jed_p,isd_p,ied_p,parent_grid)
@@ -2663,13 +2541,15 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
               bd, isd_p, ied_p, jsd_p, jed_p, isd, ied, jsd, jed, &
               neststruct%isu, neststruct%ieu, neststruct%jsu, neststruct%jeu, &
               npx, npy, 0, 0, &
-              neststruct%refinement, neststruct%nestupdate, upoff, 0, neststruct%parent_proc, neststruct%child_proc, parent_grid, grid_number-1)
+              neststruct%refinement, neststruct%nestupdate, upoff, 0, &
+              parent_grid%neststruct%parent_proc, neststruct%child_proc, &
+              parent_grid, grid_number-1)
 
       !!! The mpp version of update_coarse_grid does not return a consistent value of ps
       !!! across PEs, as it does not go into the haloes of a given coarse-grid PE. This
       !!! update_domains call takes care of the problem.
 
-      if (neststruct%parent_proc) then
+      if (parent_grid%neststruct%parent_proc) then
          call mpp_update_domains(parent_grid%ps, parent_grid%domain, complete=.false.)
          call mpp_update_domains(ps0, parent_grid%domain, complete=.true.)
       endif
@@ -2678,7 +2558,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
 
       if (parent_grid%global_tile == neststruct%parent_tile) then
 
-         if (neststruct%parent_proc) then
+         if (parent_grid%neststruct%parent_proc) then
 
          !comment out if statement to always remap theta instead of t in the remap-update.
          !(In LtE typically we use remap_t = .true.: remapping t is better (except in
@@ -2736,7 +2616,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
               isc_p, iec_p, jsc_p, jec_p, isd_p, ied_p, jsd_p, jed_p, parent_grid%ptop, &
               neststruct%isu, neststruct%ieu, neststruct%jsu, neststruct%jeu, blend_wt)
 
-         endif !neststruct%parent_proc
+         endif !parent_grid%neststruct%parent_proc
 
       end if
 
