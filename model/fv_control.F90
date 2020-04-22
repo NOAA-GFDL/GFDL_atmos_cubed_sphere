@@ -1059,7 +1059,6 @@ module fv_control_mod
        upoff = Atm(this_grid)%neststruct%upoff
 
        do n=2,ngrids
-          write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 0: ', mpp_pe(), tile_coarse(n), Atm(this_grid)%global_tile
           if (tile_coarse(n) == Atm(this_grid)%global_tile) then
 
              isu = nest_ioffsets(n)
