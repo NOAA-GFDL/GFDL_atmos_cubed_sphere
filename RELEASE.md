@@ -23,7 +23,8 @@ Includes all of the features of the [201912 Public Release](https://github.com/N
 ***model_nh_null/*** 
   - has been removed 
   - non-hydrostatic capability is now included as a runtime configurable option
-  - update your build system as appropriate
+
+Update your build system as appropriate
 
 # Documentation
 
