@@ -6,25 +6,24 @@ This version has been tested within current GFDL Models (AM, CM, ESM, SPEAR, etc
 
 Includes all of the features of the [201912 Public Release](https://github.com/NOAA-GFDL/GFDL_atmos_cubed_sphere/releases/tag/201912_public_release) which include:
 
-- Updates to support new nesting capabilities in FMS (from Z Liang)
+- Updates to support new nesting capabilities in FMS
 - Re-written grid nesting code for efficiency and parallelization
 - Re-organized fv_eta for improved vertical level selection
-- 2018 Stand-alone regional capabilities (from T Black/J Abeles, EMC)
+- 2018 Stand-alone regional capabilities (from EMC)
 - Refactored model front-end (fv_control, fv_restart)
 - Support for point soundings
 - And other updates
 
 # Directory structure changes
 
-_drivers_: 
-  - renamed * *fvGFS* * to * *SHiELD* *
-  - renamed * *coupled* * to * *GFDL* *
-_model_nh_null_ has been removed 
+***drivers/*** 
+  - renamed ***fvGFS*** to ***SHiELD***
+  - renamed ***coupled*** to ***GFDL***
+
+***model_nh_null/*** 
+  - has been removed 
   - non-hydrostatic capability is now included as a runtime configurable option
-  - update your build system as appropriate.
-
-Those migrating from the internal GFDL project will note that _driver/coupled_ is now _driver/GFDL_
-
+  - update your build system as appropriate
 
 # Documentation
 
