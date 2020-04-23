@@ -270,29 +270,12 @@ contains
 !! and diagnostics.  
  subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, area)
 #ifdef CCPP
-#ifdef STATIC
-! For static builds, the ccpp_physics_{init,run,finalize} calls
-! are not pointing to code in the CCPP framework, but to auto-generated
-! ccpp_suite_cap and ccpp_group_*_cap modules behind a ccpp_static_api
-   use ccpp_api,          only: ccpp_init
    use ccpp_static_api,   only: ccpp_physics_init
-#else
-   use iso_c_binding,     only: c_loc
-   use ccpp_api,          only: ccpp_init,           &
-                                ccpp_physics_init,   &
-                                ccpp_field_add,      &
-                                ccpp_error
-#endif
    use CCPP_data,         only: ccpp_suite,          &
                                 cdata => cdata_tile, &
                                 CCPP_interstitial
 #ifdef OPENMP
    use omp_lib
-#endif
-#ifndef STATIC
-! Begin include auto-generated list of modules for ccpp
-#include "ccpp_modules_fast_physics.inc"
-! End include auto-generated list of modules for ccpp
 #endif
 #endif
    type (time_type),    intent(in)    :: Time_init, Time, Time_step
@@ -443,15 +426,8 @@ contains
 #ifdef CCPP
    ! Do CCPP fast physics initialization before call to adiabatic_init (since this calls fv_dynamics)
 
-   ! Initialize the cdata structure
-   call ccpp_init(trim(ccpp_suite), cdata, ierr)
-   if (ierr/=0) then
-      cdata%errmsg = ' atmosphere_dynamics: error in ccpp_init: ' // trim(cdata%errmsg)
-      call mpp_error (FATAL, cdata%errmsg)
-   end if
-   
-   ! For fast physics running over the entire domain, block and thread
-   ! number are not used; set to safe values
+   ! For fast physics running over the entire domain, block
+   ! and thread number are not used; set to safe values
    cdata%blk_no = 1
    cdata%thrd_no = 1
 
@@ -487,18 +463,9 @@ contains
 #endif
                                  mpirank=mpp_pe(), mpiroot=mpp_root_pe())
 
-#ifndef STATIC
-! Populate cdata structure with fields required to run fast physics (auto-generated).
-#include "ccpp_fields_fast_physics.inc"
-#endif
-
    if (Atm(mytile)%flagstruct%do_sat_adj) then
       ! Initialize fast physics
-#ifdef STATIC
       call ccpp_physics_init(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
-#else
-      call ccpp_physics_init(cdata, group_name="fast_physics", ierr=ierr)
-#endif
       if (ierr/=0) then
          cdata%errmsg = ' atmosphere_dynamics: error in ccpp_physics_init for group fast_physics: ' // trim(cdata%errmsg)
          call mpp_error (FATAL, cdata%errmsg)
@@ -715,15 +682,8 @@ contains
 !! FV3 dynamical core responsible for writing out a restart and final diagnostic state.
  subroutine atmosphere_end (Time, Grid_box, restart_endfcst)
 #ifdef CCPP
-#ifdef STATIC
-! For static builds, the ccpp_physics_{init,run,finalize} calls
-! are not pointing to code in the CCPP framework, but to auto-generated
-! ccpp_suite_cap and ccpp_group_*_cap modules behind a ccpp_static_api
    use ccpp_static_api,   only: ccpp_physics_finalize
    use CCPP_data,         only: ccpp_suite
-#else
-   use ccpp_api,          only: ccpp_physics_finalize
-#endif
    use CCPP_data,         only: cdata => cdata_tile
 #endif
    type (time_type),      intent(in)    :: Time
@@ -735,11 +695,7 @@ contains
 
    if (Atm(mytile)%flagstruct%do_sat_adj) then
       ! Finalize fast physics
-#ifdef STATIC
       call ccpp_physics_finalize(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
-#else
-      call ccpp_physics_finalize(cdata, group_name="fast_physics", ierr=ierr)
-#endif
       if (ierr/=0) then
          cdata%errmsg = ' atmosphere_dynamics: error in ccpp_physics_finalize for group fast_physics: ' // trim(cdata%errmsg)
          call mpp_error (FATAL, cdata%errmsg)

@@ -95,17 +95,10 @@ module fv_mapz_mod
 #ifndef CCPP
   use fv_cmp_mod,        only: qs_init, fv_sat_adj
 #else
-#ifdef STATIC
-! For static builds, the ccpp_physics_{init,run,finalize} calls
-! are not pointing to code in the CCPP framework, but to auto-generated
-! ccpp_suite_cap and ccpp_group_*_cap modules behind a ccpp_static_api
-  use ccpp_api,          only: ccpp_initialized
   use ccpp_static_api,   only: ccpp_physics_run
   use CCPP_data,         only: ccpp_suite
-#else
-  use ccpp_api,          only: ccpp_initialized, ccpp_physics_run
-#endif
-  use CCPP_data,         only: cdata => cdata_tile, CCPP_interstitial
+  use CCPP_data,         only: cdata => cdata_tile
+  use CCPP_data,         only: CCPP_interstitial
 #endif
 #ifdef MULTI_GASES
   use multi_gases_mod,  only:  virq, virqd, vicpqd, vicvqd, num_gas
@@ -259,7 +252,7 @@ contains
        endif
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,pe,ptop,kord_tm,hydrostatic, &
-!$OMP                                  pt,pk,rg,peln,q,nwat,liq_wat,rainwat,ice_wat,snowwat,    &
+!$OMP                                  pt,pk,rg,peln,q,nwat,liq_wat,rainwat,ice_wat,snowwat, &
 !$OMP                                  graupel,q_con,sphum,cappa,r_vir,rcp,k1k,delp, &
 !$OMP                                  delz,akap,pkz,te,u,v,ps, gridstruct, last_step, &
 !$OMP                                  ak,bk,nq,isd,ied,jsd,jed,kord_tr,fill, adiabatic, &
@@ -627,9 +620,7 @@ contains
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
 !$OMP                               kord_tm,cdata,CCPP_interstitial)                           &
-#ifdef STATIC
 !$OMP                        shared(ccpp_suite)                                                &
-#endif
 #ifdef MULTI_GASES
 !$OMP                        shared(num_gas)                                                   &
 #endif
@@ -643,9 +634,7 @@ contains
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
 !$OMP                               fast_mp_consv,kord_tm,cdata, CCPP_interstitial)            &
-#ifdef STATIC
 !$OMP                        shared(ccpp_suite)                                                &
-#endif
 #ifdef MULTI_GASES
 !$OMP                        shared(num_gas)                                                   &
 #endif
@@ -808,15 +797,11 @@ endif        ! end last_step check
   if ( do_sat_adj ) then
                                            call timing_on('sat_adj2')
 #ifdef CCPP
-    if (ccpp_initialized(cdata)) then
-#ifdef STATIC
+    if (cdata%initialized()) then
       call ccpp_physics_run(cdata, suite_name=trim(ccpp_suite), group_name='fast_physics', ierr=ierr)
-#else
-      call ccpp_physics_run(cdata, group_name='fast_physics', ierr=ierr)
-#endif
       if (ierr/=0) call mpp_error(FATAL, "Call to ccpp_physics_run for group 'fast_physics' failed")
     else
-      call mpp_error (FATAL, 'Lagrangian_to_Eulerian: can not call CCPP fast physics because cdata not initialized')
+      call mpp_error (FATAL, 'Lagrangian_to_Eulerian: can not call CCPP fast physics because CCPP not initialized')
     endif
 #else
 !$OMP do
