@@ -434,7 +434,7 @@ contains
 !miz
    if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) ttend(:, :, :) = Atm(mygrid)%pt(isc:iec, jsc:jec, :)
    if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or. &
-        query_cmip_diag_id(ID_tnhusa) ) qtend(:, :, :, :) = Atm(mygrid)%q (isc:iec, jsc:jec, :, :)
+        query_cmip_diag_id(ID_tnhusa) ) qtend(:, :, :, 1:4) = Atm(mygrid)%q (isc:iec, jsc:jec, :, 1:4)
 !miz
    do itrac = 1, num_tracers
      if (id_tracerdt_dyn (itrac) >0 ) &
