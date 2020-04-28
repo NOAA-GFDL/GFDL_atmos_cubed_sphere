@@ -154,7 +154,7 @@
      integer, parameter :: interpOrder = 1
 
       public :: pz0, zz0
-      public :: test_case, bubble_do, alpha, tracer_test, wind_field, nsolitons, soliton_Umax, soliton_size
+      public :: read_namelist_test_case_nml, alpha
       public :: init_case
       public :: case9_forcing1, case9_forcing2, case51_forcing
       public :: init_double_periodic
