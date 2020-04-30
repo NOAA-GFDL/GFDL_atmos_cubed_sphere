@@ -617,8 +617,8 @@ contains
 !----------------------------------------------------------------------------------------------------
                       if ( grid_global(i,j,1,n) < 0. )              &
                            grid_global(i,j,1,n) = grid_global(i,j,1,n) + 2.*pi
-                      if (ABS(grid_global(i,j,1,1)) < 1.d-10) grid_global(i,j,1,1) = 0.0
-                      if (ABS(grid_global(i,j,2,1)) < 1.d-10) grid_global(i,j,2,1) = 0.0
+                      if (ABS(grid_global(i,j,1,n)) < 1.d-10) grid_global(i,j,1,n) = 0.0
+                      if (ABS(grid_global(i,j,2,n)) < 1.d-10) grid_global(i,j,2,n) = 0.0
                    enddo
                    enddo
                    enddo
