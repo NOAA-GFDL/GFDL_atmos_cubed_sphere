@@ -385,6 +385,9 @@ module fv_control_mod
      logical, pointer :: nested, twowaynest
      logical, pointer :: regional
      integer, pointer :: bc_update_interval 
+     integer, pointer :: nrows_blend
+     logical, pointer :: regional_bcs_from_gsi
+     logical, pointer :: write_restart_with_bcs
      integer, pointer :: parent_tile, refinement, nestbctype, nestupdate, nsponge, ioffset, joffset
      real, pointer :: s_weight, update_blend
 
@@ -422,7 +425,7 @@ module fv_control_mod
      grids_on_this_pe(:) = .false.
 
      do n=1,ngrids
-        
+
         if (ngrids == 1 .or. grid_pes(n) == 0) then
            grid_pes(n) = npes - sum(grid_pes)
            if (grid_pes(n) == 0) then
@@ -553,6 +556,12 @@ module fv_control_mod
 
      endif
 
+     if (Atm(this_grid)%neststruct%regional) then
+        if ( Atm(this_grid)%flagstruct%consv_te > 0.) then
+           call mpp_error(FATAL, 'The global energy fixer cannot be used on a regional grid. consv_te must be set to 0.')
+        end if
+     endif
+
      !Now only one call to mpp_define_nest_domains for ALL nests
      ! set up nest_level, tile_fine, tile_coarse
      ! need number of tiles, npx, and npy on each grid
@@ -598,7 +607,7 @@ module fv_control_mod
            nest_level(n) = 0
         endif
      enddo
-
+         
      if (mpp_pe() == 0 .and. ngrids > 1) then
         print*, ' NESTING TREE'
         do n=1,ngrids
@@ -805,6 +814,9 @@ module fv_control_mod
        target_lon                    => Atm%flagstruct%target_lon
        regional                      => Atm%flagstruct%regional
        bc_update_interval            => Atm%flagstruct%bc_update_interval 
+       nrows_blend                   => Atm%flagstruct%nrows_blend
+       regional_bcs_from_gsi         => Atm%flagstruct%regional_bcs_from_gsi
+       write_restart_with_bcs        => Atm%flagstruct%write_restart_with_bcs
        reset_eta                     => Atm%flagstruct%reset_eta
        p_fac                         => Atm%flagstruct%p_fac
        a_imp                         => Atm%flagstruct%a_imp
@@ -1029,7 +1041,9 @@ module fv_control_mod
             nested, twowaynest, nudge_qv, &
             nestbctype, nestupdate, nsponge, s_weight, &
             check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
-            do_uni_zfull, adj_mass_vmr,fac_n_spl, fhouri, update_blend, regional, bc_update_interval
+            do_uni_zfull, adj_mass_vmr, fac_n_spl, fhouri, update_blend, regional, bc_update_interval,  &
+            regional_bcs_from_gsi, write_restart_with_bcs, nrows_blend
+
 #ifdef MULTI_GASES
    namelist /multi_gases_nml/ rilist,cpilist
 #endif

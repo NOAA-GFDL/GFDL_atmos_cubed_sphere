@@ -165,6 +165,7 @@ module fv_restart_mod
   use mpp_domains_mod,     only: mpp_global_field
   use fms_mod,             only: file_exist
   use fv_treat_da_inc_mod, only: read_da_inc
+  use fv_regional_mod,     only: write_full_fields
 #ifdef MULTI_GASES
   use multi_gases_mod,  only:  virq
 #endif
@@ -1354,7 +1355,6 @@ contains
     character(len=128):: tracer_name
     character(len=3):: gn
 
-
     call mpp_set_current_pelist(Atm%pelist)
 
     isc = Atm%bd%isc; iec = Atm%bd%iec; jsc = Atm%bd%jsc; jec = Atm%bd%jec
@@ -1416,6 +1416,9 @@ contains
    if ( restart_endfcst ) then
     call fv_io_write_restart(Atm)
     if (Atm%neststruct%nested) call fv_io_write_BCs(Atm)
+   endif
+   if(Atm%flagstruct%write_restart_with_bcs)then
+       call write_full_fields(Atm)
    endif
 
  module_is_initialized = .FALSE.

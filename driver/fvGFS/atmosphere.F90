@@ -156,9 +156,9 @@ use fms_mod,                only: file_exist, open_namelist_file,    &
                                   mpp_clock_end, CLOCK_SUBCOMPONENT, &
                                   clock_flag_default, nullify_domain
 use mpp_mod,                only: mpp_error, stdout, FATAL, WARNING, NOTE, &
-                                  input_nml_file, mpp_root_pe,    &
-                                  mpp_npes, mpp_pe, mpp_chksum,   &
-                                  mpp_get_current_pelist,         &
+                                  input_nml_file, mpp_root_pe,       &
+                                  mpp_npes, mpp_pe, mpp_chksum,      &
+                                  mpp_get_current_pelist,            &
                                   mpp_set_current_pelist, mpp_sync
 use mpp_parameter_mod,      only: EUPDATE, WUPDATE, SUPDATE, NUPDATE
 use mpp_domains_mod,        only: domain2d, mpp_update_domains
@@ -272,29 +272,12 @@ contains
 !! and diagnostics.  
  subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, area)
 #ifdef CCPP
-#ifdef STATIC
-! For static builds, the ccpp_physics_{init,run,finalize} calls
-! are not pointing to code in the CCPP framework, but to auto-generated
-! ccpp_suite_cap and ccpp_group_*_cap modules behind a ccpp_static_api
-   use ccpp_api,          only: ccpp_init
    use ccpp_static_api,   only: ccpp_physics_init
-#else
-   use iso_c_binding,     only: c_loc
-   use ccpp_api,          only: ccpp_init,           &
-                                ccpp_physics_init,   &
-                                ccpp_field_add,      &
-                                ccpp_error
-#endif
    use CCPP_data,         only: ccpp_suite,          &
                                 cdata => cdata_tile, &
                                 CCPP_interstitial
 #ifdef OPENMP
    use omp_lib
-#endif
-#ifndef STATIC
-! Begin include auto-generated list of modules for ccpp
-#include "ccpp_modules_fast_physics.inc"
-! End include auto-generated list of modules for ccpp
 #endif
 #endif
    type (time_type),    intent(in)    :: Time_init, Time, Time_step
@@ -445,15 +428,8 @@ contains
 #ifdef CCPP
    ! Do CCPP fast physics initialization before call to adiabatic_init (since this calls fv_dynamics)
 
-   ! Initialize the cdata structure
-   call ccpp_init(trim(ccpp_suite), cdata, ierr)
-   if (ierr/=0) then
-      cdata%errmsg = ' atmosphere_dynamics: error in ccpp_init: ' // trim(cdata%errmsg)
-      call mpp_error (FATAL, cdata%errmsg)
-   end if
-   
-   ! For fast physics running over the entire domain, block and thread
-   ! number are not used; set to safe values
+   ! For fast physics running over the entire domain, block
+   ! and thread number are not used; set to safe values
    cdata%blk_no = 1
    cdata%thrd_no = 1
 
@@ -489,18 +465,9 @@ contains
 #endif
                                  mpirank=mpp_pe(), mpiroot=mpp_root_pe())
 
-#ifndef STATIC
-! Populate cdata structure with fields required to run fast physics (auto-generated).
-#include "ccpp_fields_fast_physics.inc"
-#endif
-
    if (Atm(mygrid)%flagstruct%do_sat_adj) then
       ! Initialize fast physics
-#ifdef STATIC
       call ccpp_physics_init(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
-#else
-      call ccpp_physics_init(cdata, group_name="fast_physics", ierr=ierr)
-#endif
       if (ierr/=0) then
          cdata%errmsg = ' atmosphere_dynamics: error in ccpp_physics_init for group fast_physics: ' // trim(cdata%errmsg)
          call mpp_error (FATAL, cdata%errmsg)
@@ -511,7 +478,7 @@ contains
 !  --- initiate the start for a restarted regional forecast
    if ( Atm(mygrid)%gridstruct%regional .and. Atm(mygrid)%flagstruct%warm_start ) then
 
-     call start_regional_restart(Atm(1),             &
+     call start_regional_restart(Atm(1), dt_atmos,   &
                                  isc, iec, jsc, jec, &
                                  isd, ied, jsd, jed )
    endif
@@ -671,12 +638,12 @@ contains
 
       call timing_off('fv_dynamics')
 
-    if (ngrids > 1 .and. (psc < p_split .or. p_split < 0)) then
+      if (ngrids > 1 .and. (psc < p_split .or. p_split < 0)) then
        call mpp_sync()
-       call timing_on('TWOWAY_UPDATE')
+        call timing_on('TWOWAY_UPDATE')
        call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mygrid)
-       call timing_off('TWOWAY_UPDATE')
-    endif
+        call timing_off('TWOWAY_UPDATE')
+      endif
 
     end do !p_split
     call mpp_clock_end (id_dynam)
@@ -726,15 +693,8 @@ contains
 !! FV3 dynamical core responsible for writing out a restart and final diagnostic state.
  subroutine atmosphere_end (Time, Grid_box, restart_endfcst)
 #ifdef CCPP
-#ifdef STATIC
-! For static builds, the ccpp_physics_{init,run,finalize} calls
-! are not pointing to code in the CCPP framework, but to auto-generated
-! ccpp_suite_cap and ccpp_group_*_cap modules behind a ccpp_static_api
    use ccpp_static_api,   only: ccpp_physics_finalize
    use CCPP_data,         only: ccpp_suite
-#else
-   use ccpp_api,          only: ccpp_physics_finalize
-#endif
    use CCPP_data,         only: cdata => cdata_tile
 #endif
    type (time_type),      intent(in)    :: Time
@@ -745,11 +705,7 @@ contains
    integer :: ierr
    if (Atm(mygrid)%flagstruct%do_sat_adj) then
       ! Finalize fast physics
-#ifdef STATIC
       call ccpp_physics_finalize(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
-#else
-      call ccpp_physics_finalize(cdata, group_name="fast_physics", ierr=ierr)
-#endif
       if (ierr/=0) then
          cdata%errmsg = ' atmosphere_dynamics: error in ccpp_physics_finalize for group fast_physics: ' // trim(cdata%errmsg)
          call mpp_error (FATAL, cdata%errmsg)
@@ -964,7 +920,7 @@ contains
    allocate(z(iec-isc+1,jec-jsc+1,npz+1))
    allocate(dz(iec-isc+1,jec-jsc+1,npz))
    z  = 0
-   dz = 0 
+   dz = 0
 
    if (Atm(mygrid)%flagstruct%hydrostatic) then
      !--- generate dz using hydrostatic assumption
@@ -1297,7 +1253,6 @@ contains
    rrg  = rdgas / grav
 
    if (first_time) then
-     print *, 'calculating slp kr value'
      ! determine 0.8 sigma reference level
      sigtop = Atm(mygrid)%ak(1)/pstd_mks+Atm(mygrid)%bk(1)
      do k = 1, npz
@@ -1816,21 +1771,21 @@ contains
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
                      Atm(mygrid)%domain,Atm(mygrid)%diss_est)
-! Nudging back to IC
+!Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mygrid, nudge_dz, dz0) &
 !$omp             private (i, j, k, p00, q00)
        do k=1,npz
-          do j=jsc,jec+1
-             do i=isc,iec
+         do j=jsc,jec+1
+           do i=isc,iec
                 Atm(mygrid)%u(i,j,k) = xt*(Atm(mygrid)%u(i,j,k) + wt*u0(i,j,k))
-             enddo
-          enddo
-          do j=jsc,jec
-             do i=isc,iec+1
+           enddo
+         enddo
+         do j=jsc,jec
+           do i=isc,iec+1
                 Atm(mygrid)%v(i,j,k) = xt*(Atm(mygrid)%v(i,j,k) + wt*v0(i,j,k))
-             enddo
-          enddo
+           enddo
+         enddo
           if( Atm(mygrid)%flagstruct%nudge_qv ) then
 ! SJL note: Nudging water vaport towards HALOE climatology:
 ! In case of better IC (IFS) this step may not be necessary
@@ -1991,7 +1946,7 @@ contains
    pktop  = (ptop/p00)**kappa
    pk0inv = (1.0_kind_phys/p00)**kappa
 
-   npz = Atm_block%npz
+   npz    = Atm_block%npz
    dnats = Atm(mygrid)%flagstruct%dnats
    nq_adv = nq - dnats
 

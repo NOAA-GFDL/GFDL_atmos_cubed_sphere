@@ -208,11 +208,12 @@ module external_ic_mod
 
 contains
 
-   subroutine get_external_ic( Atm, fv_domain, cold_start )
+   subroutine get_external_ic( Atm, fv_domain, cold_start, dt_atmos )
 
       type(fv_atmos_type), intent(inout), target :: Atm
       type(domain2d),      intent(inout) :: fv_domain
       logical, intent(IN) :: cold_start
+      real, intent(IN) :: dt_atmos
       real:: alpha = 0.
       real rdg
       integer i,j,k,nq
@@ -290,7 +291,7 @@ contains
 #endif
       elseif ( Atm%flagstruct%nggps_ic ) then
                              call timing_on('NGGPS_IC')
-           call get_nggps_ic( Atm, fv_domain )
+           call get_nggps_ic( Atm, fv_domain, dt_atmos )
                              call timing_off('NGGPS_IC')
       elseif ( Atm%flagstruct%ecmwf_ic ) then
            if( is_master() ) write(*,*) 'Calling get_ecmwf_ic'
@@ -439,7 +440,7 @@ contains
 !>@brief The subroutine 'get_nggps_ic' reads in data after it has been preprocessed with 
 !!    NCEP/EMC orography maker and 'global_chgres', and has been horiztontally
 !! interpolated to the current cubed-sphere grid
-  subroutine get_nggps_ic (Atm, fv_domain)
+  subroutine get_nggps_ic (Atm, fv_domain, dt_atmos )
 
 !>variables read in from 'gfs_ctrl.nc'
 !>       VCOORD  -  level information
@@ -468,6 +469,7 @@ contains
 
       type(fv_atmos_type), intent(inout) :: Atm
       type(domain2d),      intent(inout) :: fv_domain
+      real, intent(in) :: dt_atmos
 ! local:
       real, dimension(:), allocatable:: ak, bk
       real, dimension(:,:), allocatable:: wk2, ps, oro_g
@@ -712,15 +714,6 @@ contains
           Atm%ak(1:npz+1) = ak(itoa:levp+1)
           Atm%bk(1:npz+1) = bk(itoa:levp+1)
           call set_external_eta (Atm%ak, Atm%bk, Atm%ptop, Atm%ks)
-!!$        else
-!!$          if ( (npz == 63 .or. npz == 64) .and. len(trim(Atm%flagstruct%npz_type)) == 0 ) then
-!!$             if (is_master()) print*, 'Using default GFS levels'
-!!$             Atm%ak(:) = ak_sj(:)
-!!$             Atm%bk(:) = bk_sj(:)
-!!$             Atm%ptop = Atm%ak(1)
-!!$          else
-!!$             call set_eta(npz, ks, Atm%ptop, Atm%ak, Atm%bk, Atm%flagstruct%npz_type)
-!!$          endif
         endif
         ! call vertical remapping algorithms
         if(is_master())  write(*,*) 'GFS ak(1)=', ak(1), ' ak(2)=', ak(2)
@@ -734,7 +727,7 @@ contains
 
         if (n==1.and.Atm%flagstruct%regional) then     !<-- Select the parent regional domain.
 
-          call start_regional_cold_start(Atm, ak, bk, levp, &
+          call start_regional_cold_start(Atm, dt_atmos, ak, bk, levp, &
                                          is, ie, js, je, &
                                          isd, ied, jsd, jed )
         endif
@@ -1613,14 +1606,6 @@ contains
       if (Atm%flagstruct%external_eta) then
          call set_external_eta (Atm%ak, Atm%bk, Atm%ptop, Atm%ks)
       endif
-!!$      if ( (npz == 64 .or. npz == 63)  .and. len(trim(Atm%flagstruct%npz_type)) == 0 ) then
-!!$         if (is_master()) print*, 'Using default GFS levels'
-!!$         Atm%ak(:) = ak_sj(:)
-!!$         Atm%bk(:) = bk_sj(:)
-!!$         Atm%ptop = Atm%ak(1)
-!!$      else
-!!$         call set_eta(npz, ks, Atm%ptop, Atm%ak, Atm%bk, Atm%flagstruct%npz_type)
-!!$      endif
 
 !! Read in model terrain from oro_data.tile?.nc
       if (filtered_terrain) then

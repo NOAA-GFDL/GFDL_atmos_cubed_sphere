@@ -552,7 +552,7 @@ module fv_eta_mod
             auto_routine = 1
 
          else
-            ks = 37
+            ks = 19
             do k=1,km+1
                ak(k) = a60(k)
                bk(k) = b60(k)
