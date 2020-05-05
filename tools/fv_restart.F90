@@ -331,7 +331,7 @@ contains
           !3. External_ic
           if (Atm(n)%flagstruct%external_ic) then
              if( is_master() ) write(*,*) 'Calling get_external_ic'
-             call get_external_ic(Atm(n), Atm(n)%domain, .not. do_read_restart) 
+             call get_external_ic(Atm(n), Atm(n)%domain, .not. do_read_restart, dt_atmos) 
              if( is_master() ) write(*,*) 'IC generated from the specified external source'
 
              !4. Restart

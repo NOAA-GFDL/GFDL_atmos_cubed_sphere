@@ -556,7 +556,7 @@ module fv_control_mod
 
      endif
 
-     if (Atm(this_grid)%neststruct%regional) then
+     if (Atm(this_grid)%flagstruct%regional) then
         if ( Atm(this_grid)%flagstruct%consv_te > 0.) then
            call mpp_error(FATAL, 'The global energy fixer cannot be used on a regional grid. consv_te must be set to 0.')
         end if

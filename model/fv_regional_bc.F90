@@ -1565,7 +1565,6 @@ contains
       integer :: npx, npy
 !
       character(len=60) :: var_name_root
-      integer :: nside,nt,index
       logical :: required
 !
       logical :: call_remap
@@ -1883,9 +1882,9 @@ contains
               call_remap=.true.
               side='east '
               bc_side_t1=>BC_t1%east
+              bc_side_t0=>BC_t0%east  
             endif
           endif
-        endif
 !
         if(nside==4)then
           if(west_bc)then
@@ -6025,7 +6024,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  update.  This is done in a restart look-alike file.
 !--------------------------------------------------------------------------------------
 !
-      type(fv_atmos_type), intent(inout), target :: Atm(:)
+      type(fv_atmos_type), intent(inout), target :: Atm
 !
       integer :: count_i,count_j
       integer :: iend,istart,jend,jstart,kend,kstart,nz
@@ -6064,7 +6063,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  Save the global limits of the domain and its vertical extent.
 !-----------------------------------------------------------------------
 !
-      call mpp_get_global_domain (Atm(1)%domain, isg, ieg, jsg, jeg, position=CENTER )
+      call mpp_get_global_domain (Atm%domain, isg, ieg, jsg, jeg, position=CENTER )
 !
 !-----------------------------------------------------------------------
 !***  Begin with the core restart file.
@@ -6092,7 +6091,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           iext=1
         endif
 !
-        call mpp_get_global_domain (atm(1)%domain, isg, ieg, jsg, jeg, position=CENTER )
+        call mpp_get_global_domain (atm%domain, isg, ieg, jsg, jeg, position=CENTER )
         istart_g=isg-halo
         iend_g  =ieg+halo+iext
         jstart_g=jsg-halo
@@ -6145,9 +6144,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !-----------------------------------------------------------------------
 !
         if(trim(fields_core(nv)%name)=='T')then
-          n=size(Atm)
           call sensible_temp(istart,iend,jstart,jend,nz                 &
-                            ,Atm(n)                                     &
+                            ,Atm                                     &
                             ,fields_core(nv)%ptr(istart:iend,jstart:jend,:))
         endif
 !
@@ -6193,7 +6191,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  boundary rows?
 !-----------------------------------------------------------------------
 !
-      call mpp_get_global_domain (atm(1)%domain, isg, ieg, jsg, jeg, position=CENTER )
+      call mpp_get_global_domain (atm%domain, isg, ieg, jsg, jeg, position=CENTER )
       istart_g=isg-halo
       iend_g  =ieg+halo
       jstart_g=jsg-halo
