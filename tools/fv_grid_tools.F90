@@ -565,6 +565,18 @@ contains
     latlon = .false.
     cubed_sphere = .false.
 
+    ! set corner flags
+    sw_corner = .false. 
+    se_corner = .false. 
+    ne_corner = .false. 
+    nw_corner = .false. 
+    if (Atm%flagstruct%grid_type < 3 .and. .not. Atm%gridstruct%bounded_domain) then 
+       if (       is==1 .and.  js==1 )      sw_corner = .true. 
+       if ( (ie+1)==npx .and.  js==1 )      se_corner = .true. 
+       if ( (ie+1)==npx .and. (je+1)==npy ) ne_corner = .true. 
+       if (       is==1 .and. (je+1)==npy ) nw_corner = .true. 
+    endif  
+
     if ( (Atm%flagstruct%do_schmidt .or. Atm%flagstruct%do_cube_transform) .and. abs(atm%flagstruct%stretch_fac-1.) > 1.E-5 ) then
        stretched_grid = .true.
        if (Atm%flagstruct%do_schmidt .and. Atm%flagstruct%do_cube_transform) then
