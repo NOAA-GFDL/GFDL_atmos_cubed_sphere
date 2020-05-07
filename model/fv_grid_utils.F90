@@ -215,18 +215,6 @@
       cos_sg(:,:,:) =  big_number
       sin_sg(:,:,:) = tiny_number
 
-      sw_corner = .false.
-      se_corner = .false.
-      ne_corner = .false.
-      nw_corner = .false.
-
-      if (grid_type < 3 .and. .not. Atm%gridstruct%bounded_domain) then
-         if (       is==1 .and.  js==1 )      sw_corner = .true.
-         if ( (ie+1)==npx .and.  js==1 )      se_corner = .true.
-         if ( (ie+1)==npx .and. (je+1)==npy ) ne_corner = .true.
-         if (       is==1 .and. (je+1)==npy ) nw_corner = .true.
-      endif
-
   if ( sw_corner ) then
        tmp1 = great_circle_dist(grid(1,1,1:2), agrid(1,1,1:2))
        tmp2 = great_circle_dist(grid(1,1,1:2), agrid(2,2,1:2))
