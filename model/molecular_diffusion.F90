@@ -40,7 +40,9 @@ module molecular_diffusion_mod
 
       use constants_mod,     only: rdgas, cp_air
       use     fv_mp_mod,     only: is_master
+#ifdef MULTI_GASES
       use multi_gases_mod,   only: ind_gas, num_gas
+#endif
 
 
       implicit none
@@ -62,22 +64,25 @@ module molecular_diffusion_mod
       real, parameter:: bz=1.3806505e-23   ! Boltzmann constant J/K
       real, parameter:: a12=9.69e18 ! O-O2 diffusion params
       real, parameter:: s12=0.774
+      integer :: ind_gas_str, ind_gas_end
 !
       public molecular_diffusion_init
       public molecular_diffusion_coefs
 
       CONTAINS
 ! --------------------------------------------------------
-      subroutine molecular_diffusion_init(tau_visc,tau_cond,tau_diff,md_impl,md_wait_hr)
+      subroutine molecular_diffusion_init(tau_visc,tau_cond,tau_diff,md_impl,md_wait_hr,ncnst,nwat)
 !--------------------------------------------
 ! molecular diffusion control for each effect
 ! Input: tau_visc : viscosity effect weighting
 !        tau_cond : conductivity effect weighting
 !        tau_diff : diffusivity effect weighting
 !        md_impl  : 1 for implicit, 0 for explicit
+!        wait_hr  : 0 for no wait to start otherwise by hour
+!        nwat     : number of water and the end location of water
 !--------------------------------------------
       real, intent(in):: tau_visc, tau_cond, tau_diff, md_wait_hr
-      integer, intent(in):: md_impl
+      integer, intent(in):: md_impl, ncnst, nwat
 !
       rtau_visc = abs(tau_visc)
       rtau_cond = abs(tau_cond)
@@ -102,6 +107,14 @@ module molecular_diffusion_mod
         write(*,*) ' conductivity day ',tau_cond,' with effect ',rtau_cond
         write(*,*) ' diffusivity  day ',tau_diff,' with effect ',rtau_diff
       endif
+
+#ifdef MULTI_GASES
+      ind_gas_str = ind_gas
+      ind_gas_end = num_gas
+#else
+      ind_gas_str = nwat + 1
+      ind_gas_end = ncnst
+#endif
 
       return
       end subroutine molecular_diffusion_init
@@ -130,11 +143,11 @@ module molecular_diffusion_mod
 !constants
       a12bz = a12 * bz
       avgdbz= avgd * bz
-      spfo3 = ind_gas
+      spfo3 = ind_gas_str
       spfo  = spfo3 + 1
       spfo2 = spfo  + 1
-      if( spfo.gt.num_gas ) spfo=0
-      if( spfo2.gt.num_gas ) spfo2=0
+      if( spfo.gt.ind_gas_end ) spfo=0
+      if( spfo2.gt.ind_gas_end ) spfo2=0
 
       do n=1,dim
 !check
@@ -154,7 +167,7 @@ module molecular_diffusion_mod
         endif
         
         fgas = 1.0
-        do i=2,ind_gas-1
+        do i=2,ind_gas_str-1
           fgas = fgas - max(0.0,q(n,i))
         enddo
         fgas = max(min(fgas,1.0),1.0E-20)	! reasonable assured

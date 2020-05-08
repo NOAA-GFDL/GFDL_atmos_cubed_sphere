@@ -147,7 +147,7 @@ module fv_dynamics_mod
    use fv_arrays_mod,       only: fv_grid_type, fv_flags_type, fv_atmos_type, fv_nest_type, fv_diag_type, fv_grid_bounds_type
    use fv_nwp_nudge_mod,    only: do_adiabatic_init
 #ifdef MULTI_GASES
-   use multi_gases_mod,  only:  virq, virqd, vicpqd
+   use multi_gases_mod,  only:  virq, vicpq, virqd, vicpqd
 #endif
 
 implicit none
@@ -573,6 +573,9 @@ contains
 !                          dp_ref, ptop, hydrostatic, flagstruct%rf_cutoff, bd)
 !         else
              call Rayleigh_Super(abs(bdt), npx, npy, npz, ks, pfull, phis, flagstruct%tau, u, v, w, pt,  &
+#ifdef MULTI_GASES
+                  q, ncnst,  &
+#endif
                   ua, va, delz, gridstruct%agrid, cp_air, rdgas, ptop, hydrostatic,    &
                  (.not. (neststruct%nested .or. flagstruct%regional)), flagstruct%rf_cutoff, gridstruct, domain, bd)
 !         endif
@@ -1156,6 +1159,9 @@ contains
 
 
  subroutine Rayleigh_Super(dt, npx, npy, npz, ks, pm, phis, tau, u, v, w, pt,  &
+#ifdef MULTI_GASES
+                           q, ncnst,  &
+#endif
                            ua, va, delz, agrid, cp, rg, ptop, hydrostatic,     &
                            conserve, rf_cutoff, gridstruct, domain, bd)
     real, intent(in):: dt
@@ -1173,6 +1179,10 @@ contains
     real, intent(inout):: ua(bd%isd:bd%ied,bd%jsd:bd%jed,npz) ! 
     real, intent(inout):: va(bd%isd:bd%ied,bd%jsd:bd%jed,npz) ! 
     real, intent(inout):: delz(bd%isd:    ,bd%jsd:      ,1: ) !< delta-height (m); non-hydrostatic only
+#ifdef MULTI_GASES
+    integer, intent(in):: ncnst
+    real,   intent(in) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,ncnst) ! 
+#endif
     real,   intent(in) :: agrid(bd%isd:bd%ied,  bd%jsd:bd%jed,2)
     real, intent(in) :: phis(bd%isd:bd%ied,bd%jsd:bd%jed)     !< Surface geopotential (g*Z_surf)
     type(fv_grid_type), intent(IN) :: gridstruct
@@ -1228,7 +1238,7 @@ contains
           do k=1, ks+1
              if( is_master() ) write(6,*) k, 0.01*pm(k)
           enddo
-          if( is_master() ) write(6,*) 'Rayleigh friction E-folding time (days):'
+          if( is_master() ) write(6,*) 'Rayleigh_Super E-folding time (days):'
           do k=1, npz
              if ( pm(k) < rf_cutoff ) then
                  if ( tau < 0 ) then ! GSM formula
@@ -1266,6 +1276,9 @@ contains
 #ifdef HIWPP
 !$OMP                                  u00,v00, &
 #endif
+#ifdef MULTI_GASES
+!$OMP                                  q, &
+#endif
 !$OMP                                  conserve,hydrostatic,pt,ua,va,u2f,cp,rg,ptop,rcv)
      do k=1,kmax
         if ( pm(k) < rf_cutoff ) then
@@ -1299,7 +1312,12 @@ contains
              else
                do j=js,je
                   do i=is,ie
+#ifdef MULTI_GASES
+                     pt(i,j,k) = pt(i,j,k) + 0.5*(ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2)*(1.-u2f(i,j,k)**2)   &
+                     /(cp*vicpq(q(i,j,k,:)) - rg*virq(q(i,j,k,:)))
+#else
                      pt(i,j,k) = pt(i,j,k) + 0.5*(ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2)*(1.-u2f(i,j,k)**2)*rcv
+#endif
                   enddo
                enddo
              endif

@@ -123,12 +123,18 @@ module fv_nggps_diags_mod
  logical :: use_wrtgridcomp_output=.false.
  integer :: sphum, liq_wat, ice_wat       !< GFDL physics
  integer :: rainwat, snowwat, graupel
+#ifdef MOLECULAR_DIFFUSION
+ real :: vrange(2) = (/ -830.,  830. /)  !< winds for wam
+ real :: wrange(2) = (/ -300.,  300. /)  !< vertical wind for wam
+ real :: trange(2) = (/  100., 3000. /)  !< temperature for wam
+#else
  real :: vrange(2) = (/ -330.,  330. /)  !< winds
  real :: wrange(2) = (/ -100.,  100. /)  !< vertical wind
 #ifdef MULTI_GASES
  real :: trange(2) = (/  100., 3000. /)  !< temperature
 #else
  real :: trange(2) = (/  100.,  350. /)  !< temperature
+#endif
 #endif
  real :: skrange(2) = (/ -10000000.0,  10000000.0 /)  !< dissipation estimate for SKEB
 

@@ -803,7 +803,7 @@ module fv_control_mod
 #endif
 #ifdef MOLECULAR_DIFFUSION
       write(unit, nml=molecular_diffusion_nml)
-      call molecular_diffusion_init(tau_visc,tau_cond,tau_diff,md_impl,md_wait_hr)
+      call molecular_diffusion_init(tau_visc,tau_cond,tau_diff,md_impl,md_wait_hr,ncnst,nwat)
 #endif
 
       if (len_trim(grid_file) /= 0) Atm(n)%flagstruct%grid_file = grid_file
