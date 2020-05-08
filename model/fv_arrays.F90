@@ -985,6 +985,7 @@ module fv_arrays_mod
                             !< The default value is 4 (recommended); fourth-order interpolation
                             !< is used unless c2l_ord = 2.
 
+   integer :: nrows_blend = 0   !< # of blending rows in the outer integration domain.
 
    real(kind=R_GRID) :: dx_const = 1000.   !< Specifies the (uniform) grid-cell-width in the x-direction
                                            !< on a doubly-periodic grid (grid_type = 4) in meters. 
@@ -1005,6 +1006,10 @@ module fv_arrays_mod
    logical :: regional = .false.       !< Default setting for the regional domain.
 
    integer :: bc_update_interval = 3   !< Default setting for interval (hours) between external regional BC data files.
+
+   logical :: regional_bcs_from_gsi = .false.   !< Default setting for using DA-updated BC files.
+
+   logical :: write_restart_with_bcs = .false.   !< Default setting for writing restart files with boundary rows.
 
    !>Convenience pointers
    integer, pointer :: grid_number

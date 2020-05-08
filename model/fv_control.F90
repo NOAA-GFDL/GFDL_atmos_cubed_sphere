@@ -331,6 +331,9 @@ module fv_control_mod
   logical, pointer :: nested, twowaynest
   logical, pointer :: regional
   integer, pointer :: bc_update_interval 
+  integer, pointer :: nrows_blend
+  logical, pointer :: regional_bcs_from_gsi
+  logical, pointer :: write_restart_with_bcs
   integer, pointer :: parent_tile, refinement, nestbctype, nestupdate, nsponge, ioffset, joffset
   real, pointer :: s_weight, update_blend
 
@@ -592,17 +595,18 @@ module fv_control_mod
 
 !>@brief The subroutine 'fv_end' terminates FV3, deallocates memory, 
 !! saves restart files, and stops I/O.
- subroutine fv_end(Atm, grids_on_this_pe)
+ subroutine fv_end(Atm, grids_on_this_pe, restart_endfcst)
 
     type(fv_atmos_type), intent(inout) :: Atm(:)
     logical, intent(INOUT) :: grids_on_this_pe(:)
+    logical, intent(in) :: restart_endfcst
 
     integer :: n
 
     call timing_off('TOTAL')
     call timing_prt( gid )
 
-    call fv_restart_end(Atm, grids_on_this_pe)
+    call fv_restart_end(Atm, grids_on_this_pe, restart_endfcst)
     call fv_io_exit()
 
   ! Free temporary memory from sw_core routines
@@ -669,7 +673,8 @@ module fv_control_mod
                          nested, twowaynest, parent_grid_num, parent_tile, nudge_qv, &
                          refinement, nestbctype, nestupdate, nsponge, s_weight, &
                          ioffset, joffset, check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
-                         do_uni_zfull, adj_mass_vmr, fac_n_spl, fhouri, regional, bc_update_interval
+                         do_uni_zfull, adj_mass_vmr, fac_n_spl, fhouri, regional, bc_update_interval,  &
+                         regional_bcs_from_gsi, write_restart_with_bcs, nrows_blend
 
    namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
 #ifdef MULTI_GASES
@@ -889,6 +894,12 @@ module fv_control_mod
          Atm(n)%neststruct%joffset                = -999   
          Atm(n)%neststruct%parent_tile            = -1      
          Atm(n)%neststruct%refinement             = -1
+      end if
+
+      if (Atm(n)%flagstruct%regional) then
+         if ( consv_te > 0.) then
+            call mpp_error(FATAL, 'The global energy fixer cannot be used on a regional grid. consv_te must be set to 0.')
+         end if
       end if
 
       if (Atm(n)%neststruct%nested) then
@@ -1232,6 +1243,9 @@ module fv_control_mod
      target_lon                    => Atm%flagstruct%target_lon
      regional                      => Atm%flagstruct%regional
      bc_update_interval            => Atm%flagstruct%bc_update_interval 
+     nrows_blend                   => Atm%flagstruct%nrows_blend
+     regional_bcs_from_gsi         => Atm%flagstruct%regional_bcs_from_gsi
+     write_restart_with_bcs        => Atm%flagstruct%write_restart_with_bcs
      reset_eta                     => Atm%flagstruct%reset_eta
      p_fac                         => Atm%flagstruct%p_fac
      a_imp                         => Atm%flagstruct%a_imp

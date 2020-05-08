@@ -112,7 +112,7 @@ module atmosphere_mod
 !   <tr>
 !     <td>mpp_mod</td>
 !     <td>mpp_error, stdout, FATAL, NOTE, input_nml_file, mpp_root_pe,
-!                    mpp_npes, mpp_pe, mpp_chksum,mpp_get_current_pelist,     
+!                    mpp_npes, mpp_pe, mpp_chksum,mpp_get_current_pelist,
 !                    mpp_set_current_pelist</td>
 !   </tr>
 !   <tr>
@@ -183,7 +183,7 @@ use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_he
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
-use fv_mp_mod,          only: switch_current_Atm
+use fv_mp_mod,          only: switch_current_Atm, is_master
 use fv_sg_mod,          only: fv_subgrid_z
 use fv_update_phys_mod, only: fv_update_phys
 use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
@@ -194,6 +194,7 @@ use fv_regional_mod,    only: start_regional_restart, read_new_bc_data, &
                               a_step, p_step, current_time_in_seconds
 
 use mpp_domains_mod,    only:  mpp_get_data_domain, mpp_get_compute_domain
+use fv_grid_utils_mod,  only: g_sum
 
 implicit none
 private
@@ -269,29 +270,12 @@ contains
 !! and diagnostics.  
  subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, area)
 #ifdef CCPP
-#ifdef STATIC
-! For static builds, the ccpp_physics_{init,run,finalize} calls
-! are not pointing to code in the CCPP framework, but to auto-generated
-! ccpp_suite_cap and ccpp_group_*_cap modules behind a ccpp_static_api
-   use ccpp_api,          only: ccpp_init
    use ccpp_static_api,   only: ccpp_physics_init
-#else
-   use iso_c_binding,     only: c_loc
-   use ccpp_api,          only: ccpp_init,           &
-                                ccpp_physics_init,   &
-                                ccpp_field_add,      &
-                                ccpp_error
-#endif
    use CCPP_data,         only: ccpp_suite,          &
                                 cdata => cdata_tile, &
                                 CCPP_interstitial
 #ifdef OPENMP
    use omp_lib
-#endif
-#ifndef STATIC
-! Begin include auto-generated list of modules for ccpp
-#include "ccpp_modules_fast_physics.inc"
-! End include auto-generated list of modules for ccpp
 #endif
 #endif
    type (time_type),    intent(in)    :: Time_init, Time, Time_step
@@ -442,15 +426,8 @@ contains
 #ifdef CCPP
    ! Do CCPP fast physics initialization before call to adiabatic_init (since this calls fv_dynamics)
 
-   ! Initialize the cdata structure
-   call ccpp_init(trim(ccpp_suite), cdata, ierr)
-   if (ierr/=0) then
-      cdata%errmsg = ' atmosphere_dynamics: error in ccpp_init: ' // trim(cdata%errmsg)
-      call mpp_error (FATAL, cdata%errmsg)
-   end if
-   
-   ! For fast physics running over the entire domain, block and thread
-   ! number are not used; set to safe values
+   ! For fast physics running over the entire domain, block
+   ! and thread number are not used; set to safe values
    cdata%blk_no = 1
    cdata%thrd_no = 1
 
@@ -486,18 +463,9 @@ contains
 #endif
                                  mpirank=mpp_pe(), mpiroot=mpp_root_pe())
 
-#ifndef STATIC
-! Populate cdata structure with fields required to run fast physics (auto-generated).
-#include "ccpp_fields_fast_physics.inc"
-#endif
-
    if (Atm(mytile)%flagstruct%do_sat_adj) then
       ! Initialize fast physics
-#ifdef STATIC
       call ccpp_physics_init(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
-#else
-      call ccpp_physics_init(cdata, group_name="fast_physics", ierr=ierr)
-#endif
       if (ierr/=0) then
          cdata%errmsg = ' atmosphere_dynamics: error in ccpp_physics_init for group fast_physics: ' // trim(cdata%errmsg)
          call mpp_error (FATAL, cdata%errmsg)
@@ -508,7 +476,7 @@ contains
 !  --- initiate the start for a restarted regional forecast
    if ( Atm(mytile)%gridstruct%regional .and. Atm(mytile)%flagstruct%warm_start ) then
 
-     call start_regional_restart(Atm(1),             &
+     call start_regional_restart(Atm(1), dt_atmos,   &
                                  isc, iec, jsc, jec, &
                                  isd, ied, jsd, jed )
    endif
@@ -712,32 +680,22 @@ contains
 
 !>@brief The subroutine 'atmosphere_end' is an API for the termination of the
 !! FV3 dynamical core responsible for writing out a restart and final diagnostic state.
- subroutine atmosphere_end (Time, Grid_box)
+ subroutine atmosphere_end (Time, Grid_box, restart_endfcst)
 #ifdef CCPP
-#ifdef STATIC
-! For static builds, the ccpp_physics_{init,run,finalize} calls
-! are not pointing to code in the CCPP framework, but to auto-generated
-! ccpp_suite_cap and ccpp_group_*_cap modules behind a ccpp_static_api
    use ccpp_static_api,   only: ccpp_physics_finalize
    use CCPP_data,         only: ccpp_suite
-#else
-   use ccpp_api,          only: ccpp_physics_finalize
-#endif
    use CCPP_data,         only: cdata => cdata_tile
 #endif
    type (time_type),      intent(in)    :: Time
    type(grid_box_type),   intent(inout) :: Grid_box
+   logical,               intent(in)    :: restart_endfcst
 
 #ifdef CCPP
    integer :: ierr
 
    if (Atm(mytile)%flagstruct%do_sat_adj) then
       ! Finalize fast physics
-#ifdef STATIC
       call ccpp_physics_finalize(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
-#else
-      call ccpp_physics_finalize(cdata, group_name="fast_physics", ierr=ierr)
-#endif
       if (ierr/=0) then
          cdata%errmsg = ' atmosphere_dynamics: error in ccpp_physics_finalize for group fast_physics: ' // trim(cdata%errmsg)
          call mpp_error (FATAL, cdata%errmsg)
@@ -754,7 +712,7 @@ contains
       call timing_off('FV_DIAG')
    endif
 
-   call fv_end(Atm, grids_on_this_pe)
+   call fv_end(Atm, grids_on_this_pe, restart_endfcst)
    deallocate (Atm)
 
    deallocate( u_dt, v_dt, t_dt, pref, dum1d )
@@ -1267,7 +1225,6 @@ contains
    rrg  = rdgas / grav
 
    if (first_time) then
-     print *, 'calculating slp kr value'
      ! determine 0.8 sigma reference level
      sigtop = Atm(mytile)%ak(1)/pstd_mks+Atm(mytile)%bk(1)
      do k = 1, npz
@@ -1394,6 +1351,7 @@ contains
    integer :: i, j, ix, k, k1, n, w_diff, nt_dyn, iq
    integer :: nb, blen, nwat, dnats, nq_adv
    real(kind=kind_phys):: rcp, q0, qwat(nq), qt, rdt
+   real psum, qsum, psumb, qsumb, betad
    Time_prev = Time
    Time_next = Time + Time_step_atmos
    rdt = 1.d0 / dt_atmos
@@ -1406,6 +1364,18 @@ contains
    if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
 
    if (IAU_Data%in_interval) then
+      if (IAU_Data%drymassfixer) then
+         ! global mean total pressure and water before IAU
+         psumb = g_sum(Atm(n)%domain,sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz),dim=3),&
+                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
+         qsumb = g_sum(Atm(n)%domain,&
+                 sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
+                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
+         if (is_master()) then
+           print *,'dry ps before IAU/physics',psumb+Atm(n)%ptop-qsumb
+         endif
+      endif
+
 !     IAU increments are in units of 1/sec
 
 !     add analysis increment to u,v,t tendencies
@@ -1468,11 +1438,11 @@ contains
      call fill_gfs(blen, npz, IPD_Data(nb)%Statein%prsi, IPD_Data(nb)%Stateout%gq0, 1.e-9_kind_phys)
 
      do k = 1, npz
-           if(flip_vc) then
-             k1 = npz+1-k !reverse the k direction 
-           else
-             k1 = k
-           endif
+       if(flip_vc) then
+         k1 = npz+1-k !reverse the k direction 
+       else
+         k1 = k
+       endif
        do ix = 1, blen
          i = Atm_block%index(nb)%ii(ix)
          j = Atm_block%index(nb)%jj(ix)
@@ -1514,11 +1484,11 @@ contains
      !--- See Note in statein...
      do iq = nq+1, ncnst
        do k = 1, npz
-           if(flip_vc) then
-             k1 = npz+1-k !reverse the k direction 
-           else
-             k1 = k
-           endif
+         if(flip_vc) then
+           k1 = npz+1-k !reverse the k direction 
+         else
+           k1 = k
+         endif
          do ix = 1, blen
            i = Atm_block%index(nb)%ii(ix)
            j = Atm_block%index(nb)%jj(ix)
@@ -1528,6 +1498,29 @@ contains
      enddo
 
    enddo  ! nb-loop
+
+! dry mass fixer in IAU interval following
+! https://onlinelibrary.wiley.com/doi/full/10.1111/j.1600-0870.2007.00299.x
+   if (IAU_Data%in_interval .and. IAU_data%drymassfixer) then
+      ! global mean total pressure
+      psum = g_sum(Atm(n)%domain,sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz),dim=3),&
+             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
+      ! global mean total water (before adjustment)
+      qsum = g_sum(Atm(n)%domain,&
+             sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
+             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
+      betad = (psum - (psumb - qsumb))/qsum
+      if (is_master()) then
+        print *,'dry ps after IAU/physics',psum+Atm(n)%ptop-qsum
+      endif
+      Atm(n)%q(:,:,:,1:nwat) = betad*Atm(n)%q(:,:,:,1:nwat)
+      !qsum = g_sum(Atm(n)%domain,&
+      !       sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
+      !       isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1) 
+      !if (is_master()) then
+      !  print *,'dry ps after iau_drymassfixer',psum+Atm(n)%ptop-qsum
+      !endif
+   endif
 
    call timing_off('GFS_TENDENCIES')
 
@@ -1592,6 +1585,7 @@ contains
 
      call nullify_domain()
      call timing_on('FV_DIAG')
+
      call fv_diag(Atm(mytile:mytile), zvir, fv_time, Atm(mytile)%flagstruct%print_freq)
      first_diag = .false.
      call timing_off('FV_DIAG')

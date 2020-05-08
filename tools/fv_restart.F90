@@ -165,6 +165,7 @@ module fv_restart_mod
   use fv_timing_mod,       only: timing_on, timing_off
   use fms_mod,             only: file_exist
   use fv_treat_da_inc_mod, only: read_da_inc
+  use fv_regional_mod,     only: write_full_fields
 #ifdef MULTI_GASES
   use multi_gases_mod,  only:  virq
 #endif
@@ -354,7 +355,7 @@ contains
     endif
     if ( Atm(n)%flagstruct%external_ic ) then
          if( is_master() ) write(*,*) 'Calling get_external_ic'
-         call get_external_ic(Atm(n:n), Atm(n)%domain, cold_start_grids(n)) 
+         call get_external_ic(Atm(n:n), Atm(n)%domain, cold_start_grids(n), dt_atmos) 
          if( is_master() ) write(*,*) 'IC generated from the specified external source'
     endif
 
@@ -1434,9 +1435,10 @@ contains
   !>@brief The subroutine 'fv_restart_end' writes ending restart files,
   !! terminates I/O, and prints out diagnostics including global totals
   !! and checksums.
-  subroutine fv_restart_end(Atm, grids_on_this_pe)
+  subroutine fv_restart_end(Atm, grids_on_this_pe, restart_endfcst)
     type(fv_atmos_type), intent(inout) :: Atm(:)
     logical, intent(INOUT) :: grids_on_this_pe(:)
+    logical, intent(in) :: restart_endfcst
 
     integer :: isc, iec, jsc, jec
     integer :: iq, n, ntileMe, ncnst, ntprog, ntdiag
@@ -1446,7 +1448,6 @@ contains
     integer, allocatable :: pelist(:)
     character(len=128):: tracer_name
     character(len=3):: gn
-
 
     ntileMe = size(Atm(:))
 
@@ -1516,10 +1517,18 @@ contains
 
    enddo
 
-   call fv_io_write_restart(Atm, grids_on_this_pe)
-   do n=1,ntileMe
-      if (Atm(n)%neststruct%nested .and. grids_on_this_pe(n)) call fv_io_write_BCs(Atm(n))
-    end do
+   if ( restart_endfcst ) then
+     call fv_io_write_restart(Atm, grids_on_this_pe)
+!     print *,'af call fv_io_write_restart, restart_endfcst=',restart_endfcst
+     do n=1,ntileMe
+       if (Atm(n)%neststruct%nested .and. grids_on_this_pe(n)) call fv_io_write_BCs(Atm(n))
+     end do
+
+     if(Atm(1)%flagstruct%write_restart_with_bcs)then
+       call write_full_fields(Atm)
+     endif
+
+   endif
 
     module_is_initialized = .FALSE.
 
