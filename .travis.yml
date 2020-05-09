@@ -13,7 +13,7 @@ before_script:
   - docker pull $CACHE_IMAGE:test || true
 
 script:
-  - docker login -u "$DOCKER_USERNAME" -p "$DOCKER_PASSWORD"
+  - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
   - docker build
     --target base
     --cache-from $CACHE_IMAGE:base
@@ -37,7 +37,7 @@ script:
    - docker push $CACHE_IMAGE:test
   
 after_success:
-  - docker login -u "$DOCKER_USERNAME" -p "$DOCKER_PASSWORD"
+  - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
   - docker push $CACHE_IMAGE:base
   - docker push $CACHE_IMAGE:build
   - docker push $CACHE_IMAGE:test
