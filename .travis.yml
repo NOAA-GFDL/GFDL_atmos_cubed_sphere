@@ -13,24 +13,28 @@ before_script:
   - docker pull $CACHE_IMAGE:test || true
 
 script:
+  - docker login -u "$DOCKER_USERNAME" -p "$DOCKER_PASSWORD"
   - docker build
     --target base
     --cache-from $CACHE_IMAGE:base
     --tag $CACHE_IMAGE:base
     --file docker/Dockerfile
     "."
+  - docker push $CACHE_IMAGE:base
   - docker build
     --target build
     --cache-from $CACHE_IMAGE:build
     --tag $CACHE_IMAGE:build
     --file docker/Dockerfile
     "."
+  - docker push $CACHE_IMAGE:build
   - docker build
     --target test
     --cache-from $CACHE_IMAGE:test
     --tag $CACHE_IMAGE:test
     --file docker/Dockerfile
     "."
+   - docker push $CACHE_IMAGE:test
   
 after_success:
   - docker login -u "$DOCKER_USERNAME" -p "$DOCKER_PASSWORD"
