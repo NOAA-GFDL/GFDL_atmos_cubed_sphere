@@ -1,0 +1,48 @@
+From b62a8c42517326b36799676e52350f7ae61a9381 Mon Sep 17 00:00:00 2001
+From: Oliver Fuhrer <oli@ginko.ch>
+Date: Fri, 8 May 2020 12:00:05 -0700
+Subject: [PATCH] fix logical comparisons
+
+---
+ atmos_model.F90 | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/atmos_model.F90 b/atmos_model.F90
+index a002efd..c024ea2 100644
+--- a/atmos_model.F90
++++ b/atmos_model.F90
+@@ -312,13 +312,13 @@ subroutine update_atmos_radiation_physics (Atmos)
+     end if
+ 
+     if(IPD_Control%do_ca)then
+-       if(IPD_Control%ca_sgs == .true.)then
++       if(IPD_Control%ca_sgs)then
+           call cellular_automata_sgs(IPD_Control%kdt,IPD_Data(:)%Statein,IPD_Data(:)%Coupling,IPD_Data(:)%Intdiag,Atm_block%nblks,IPD_Control%levs, &
+             IPD_Control%nca,IPD_Control%ncells,IPD_Control%nlives,IPD_Control%nfracseed,&
+             IPD_Control%nseed,IPD_Control%nthresh,IPD_Control%ca_global,IPD_Control%ca_sgs,IPD_Control%iseed_ca,&
+             IPD_Control%ca_smooth,IPD_Control%nspinup,Atm_block%blksz(1))
+        endif
+-       if(IPD_Control%ca_global == .true.)then
++       if(IPD_Control%ca_global)then
+           call cellular_automata_global(IPD_Control%kdt,IPD_Data(:)%Statein,IPD_Data(:)%Coupling,IPD_Data(:)%Intdiag,Atm_block%nblks,IPD_Control%levs, &
+             IPD_Control%nca_g,IPD_Control%ncells_g,IPD_Control%nlives_g,IPD_Control%nfracseed,&
+             IPD_Control%nseed_g,IPD_Control%nthresh,IPD_Control%ca_global,IPD_Control%ca_sgs,IPD_Control%iseed_ca,&
+@@ -661,13 +661,13 @@ subroutine atmos_model_init (Atmos, Time_init, Time, Time_step)
+       end if
+       ! *DH
+       if(IPD_Control%do_ca)then
+-       if(IPD_Control%ca_sgs == .true.)then
++       if(IPD_Control%ca_sgs)then
+           call cellular_automata_sgs(IPD_Control%kdt,IPD_Data(:)%Statein,IPD_Data(:)%Coupling,IPD_Data(:)%Intdiag,Atm_block%nblks,IPD_Control%levs, &
+             IPD_Control%nca,IPD_Control%ncells,IPD_Control%nlives,IPD_Control%nfracseed,&
+             IPD_Control%nseed,IPD_Control%nthresh,IPD_Control%ca_global,IPD_Control%ca_sgs,IPD_Control%iseed_ca,&
+             IPD_Control%ca_smooth,IPD_Control%nspinup,Atm_block%blksz(1))
+        endif
+-       if(IPD_Control%ca_global == .true.)then
++       if(IPD_Control%ca_global)then
+           call cellular_automata_global(IPD_Control%kdt,IPD_Data(:)%Statein,IPD_Data(:)%Coupling,IPD_Data(:)%Intdiag,Atm_block%nblks,IPD_Control%levs, &
+             IPD_Control%nca_g,IPD_Control%ncells_g,IPD_Control%nlives_g,IPD_Control%nfracseed,&
+             IPD_Control%nseed_g,IPD_Control%nthresh,IPD_Control%ca_global,IPD_Control%ca_sgs,IPD_Control%iseed_ca,&
+-- 
+2.24.0
+

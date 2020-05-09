@@ -1,0 +1,65 @@
+From a4e586df827e148c3722ca507283a7ef9bba8b4d Mon Sep 17 00:00:00 2001
+From: Oliver Fuhrer <oli@ginko.ch>
+Date: Fri, 8 May 2020 00:19:02 -0700
+Subject: [PATCH] fix affinity.c to use syscall
+
+---
+ affinity/affinity.c | 19 ++++++++++---------
+ 1 file changed, 10 insertions(+), 9 deletions(-)
+
+diff --git a/affinity/affinity.c b/affinity/affinity.c
+index cfd5285..bbaa5ee 100644
+--- a/affinity/affinity.c
++++ b/affinity/affinity.c
+@@ -27,12 +27,13 @@
+ #include <sys/resource.h>
+ #include <sys/syscall.h>
+ 
+-#ifndef __APPLE__
+-static pid_t gettid(void)
++
++static pid_t gettid1(void)
+ {
+-  return syscall(__NR_gettid);
+-}
++#ifndef __APPLE__
++  return syscall(SYS_gettid);
+ #endif
++}
+ 
+ /*
+  * Returns this thread's CPU affinity, if bound to a single core,
+@@ -44,8 +45,8 @@ int get_cpu_affinity(void)
+   cpu_set_t coremask;           /* core affinity mask */
+ 
+   CPU_ZERO(&coremask);
+-  if (sched_getaffinity(gettid(),sizeof(cpu_set_t),&coremask) != 0) {
+-    fprintf(stderr,"Unable to get thread %d affinity. %s\n",gettid(),strerror(errno));
++  if (sched_getaffinity(gettid1(),sizeof(cpu_set_t),&coremask) != 0) {
++    fprintf(stderr,"Unable to get thread %d affinity. %s\n",gettid1(),strerror(errno));
+   }
+ 
+   int cpu;
+@@ -71,8 +72,8 @@ int get_cpuset(int fsz, int *output, int pe, _Bool debug)
+   cpu_set_t coremask; /* core affinity mask */
+ 
+   CPU_ZERO(&coremask);
+-  if (sched_getaffinity(gettid(),sizeof(cpu_set_t),&coremask) != 0) {
+-    fprintf(stderr,"Unable to get thread %d affinity. %s\n",gettid(),strerror(errno));
++  if (sched_getaffinity(gettid1(),sizeof(cpu_set_t),&coremask) != 0) {
++    fprintf(stderr,"Unable to get thread %d affinity. %s\n",gettid1(),strerror(errno));
+   }
+ 
+   int  cpu;
+@@ -115,7 +116,7 @@ int set_cpu_affinity(int cpu)
+ 
+   CPU_ZERO(&coremask);
+   CPU_SET(cpu,&coremask);
+-  if (sched_setaffinity(gettid(),sizeof(cpu_set_t),&coremask) != 0) {
++  if (sched_setaffinity(gettid1(),sizeof(cpu_set_t),&coremask) != 0) {
+     return -1;
+   }
+ #endif
+-- 
+2.24.0
+

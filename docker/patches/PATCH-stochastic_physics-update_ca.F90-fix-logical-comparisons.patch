@@ -1,0 +1,25 @@
+From fe715358a087d1073777bab79740dd1d50a99231 Mon Sep 17 00:00:00 2001
+From: Oliver Fuhrer <oli@ginko.ch>
+Date: Fri, 8 May 2020 11:13:42 -0700
+Subject: [PATCH] fix logical comparison
+
+---
+ update_ca.F90 | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/update_ca.F90 b/update_ca.F90
+index 55d5305..05b0b6f 100644
+--- a/update_ca.F90
++++ b/update_ca.F90
+@@ -243,7 +243,7 @@ enddo !spinup
+      incj=incj+ncells
+   ENDDO
+ 
+-if(nca_plumes == .true.) then
++if(nca_plumes) then
+ !COMPUTE NUMBER OF CLUSTERS (CONVECTIVE PLUMES) IN EACH CA-CELL
+ !Note, at the moment we only use the count of the plumes found in a grid-cell
+ !In the future the routine "plumes" can also be used to give the size of 
+-- 
+2.24.0
+
