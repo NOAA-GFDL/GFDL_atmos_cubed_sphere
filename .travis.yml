@@ -1,0 +1,10 @@
+language: C
+
+services:
+  - docker
+
+before_install:
+  - make build
+  
+script:
+  - make run
