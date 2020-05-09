@@ -1,10 +1,6 @@
-ARG NCEP_IMAGE=fv3atm-ncep
-ARG FMS_IMAGE=fv3atm-fms
-ARG ESMF_IMAGE=fv3atm-esmf
-
 ## ---------------------------------------------------------------------------------
 ## Build environment image
-FROM ubuntu:19.10 AS fv3atm-environment
+FROM ubuntu:19.10 AS base
 
 RUN apt-get update && apt-get install -y \
     curl \
@@ -28,9 +24,6 @@ RUN git config --global user.email "you@example.com" && \
 
 ## ---------------------------------------------------------------------------------
 ## Build NCEPlibs
-FROM fv3atm-environment AS fv3atm-ncep
-
-# download and install NCEP libraries
 RUN git config --global http.sslverify false && \
     git clone https://github.com/NCAR/NCEPlibs.git /NCEPlibs && \
     mkdir /opt/NCEPlibs && \
@@ -40,14 +33,11 @@ RUN git config --global http.sslverify false && \
 
 ## ---------------------------------------------------------------------------------
 ## Build ESMF
-FROM fv3atm-environment AS fv3atm-esmf
-
-ENV ESMF_DIR=/esmf
-ENV ESMF_INSTALL_PREFIX=/usr/local/esmf
-ENV ESMF_NETCDF_INCLUDE=/usr/include
-ENV ESMF_NETCDF_LIBS="-lnetcdf -lnetcdff"
-ENV ESMF_BOPT=O3
-
+ENV ESMF_DIR=/esmf \
+    ESMF_INSTALL_PREFIX=/usr/local/esmf \
+    ESMF_NETCDF_INCLUDE=/usr/include \
+    ESMF_NETCDF_LIBS="-lnetcdf -lnetcdff" \
+    ESMF_BOPT=O3
 RUN git clone -b ESMF_8_0_0 --depth 1 https://git.code.sf.net/p/esmf/esmf $ESMF_DIR && \
     cd $ESMF_DIR && \
     make lib -j8 && \
@@ -56,31 +46,29 @@ RUN git clone -b ESMF_8_0_0 --depth 1 https://git.code.sf.net/p/esmf/esmf $ESMF_
 
 ## ---------------------------------------------------------------------------------
 ## Build FMS
-FROM fv3atm-environment AS fv3atm-fms
-
-ENV CC=mpicc
-ENV FC=mpifort
-ENV LDFLAGS="-L/usr/lib"
-ENV LOG_DRIVER_FLAGS="--comments"
-ENV CPPFLAGS="-I/usr/include -Duse_LARGEFILE -DMAXFIELDMETHODS_=500 -DGFS_PHYS"
-ENV FCFLAGS="-fcray-pointer -Waliasing -ffree-line-length-none -fno-range-check -fdefault-real-8 -fdefault-double-8 -fopenmp"
-
 COPY patches/PATCH-FMS-affinity.c-fix-getpid.patch /
 COPY patches/PATCH-FMS-libFMS_Makefile.am-add-sat-vapor-pres.patch /
 RUN git clone https://github.com/NOAA-GFDL/FMS.git /FMS && \
     cd /FMS && git checkout f68878549364e39591216874d5a922c06b7d3a91 && \
     git am /PATCH-FMS-affinity.c-fix-getpid.patch && \
     git am /PATCH-FMS-libFMS_Makefile.am-add-sat-vapor-pres.patch && \
-    autoreconf --install && ./configure && \
-    make -j8 && \
+    CC=mpicc FC=mpifort LDFLAGS="-L/usr/lib" LOG_DRIVER_FLAGS="--comments" \
+      CPPFLAGS="-I/usr/include -Duse_LARGEFILE -DMAXFIELDMETHODS_=500 -DGFS_PHYS" \
+      FCFLAGS="-fcray-pointer -Waliasing -ffree-line-length-none -fno-range-check -fdefault-real-8 -fdefault-double-8 -fopenmp" \
+      autoreconf --install && \
+    CC=mpicc FC=mpifort LDFLAGS="-L/usr/lib" LOG_DRIVER_FLAGS="--comments" \
+      CPPFLAGS="-I/usr/include -Duse_LARGEFILE -DMAXFIELDMETHODS_=500 -DGFS_PHYS" \
+      FCFLAGS="-fcray-pointer -Waliasing -ffree-line-length-none -fno-range-check -fdefault-real-8 -fdefault-double-8 -fopenmp" \
+      ./configure && \
+    CC=mpicc FC=mpifort LDFLAGS="-L/usr/lib" LOG_DRIVER_FLAGS="--comments" \
+      CPPFLAGS="-I/usr/include -Duse_LARGEFILE -DMAXFIELDMETHODS_=500 -DGFS_PHYS" \
+      FCFLAGS="-fcray-pointer -Waliasing -ffree-line-length-none -fno-range-check -fdefault-real-8 -fdefault-double-8 -fopenmp" \
+      make -j8 && \
     mv /FMS/*/*.mod /FMS/*/*.o /FMS/*/*.h /FMS/
 
 ## ---------------------------------------------------------------------------------
 ## Build fv3atm executable in its own image
-FROM $NCEP_IMAGE AS ncep_image
-FROM $FMS_IMAGE AS fms_image
-FROM $ESMF_IMAGE AS esmf_image
-FROM fv3atm-environment AS fv3atm-build
+FROM base AS build
 
 ENV NCEP_DIR=/NCEPlibs \
     FMS_DIR=/FMS \
@@ -89,9 +77,9 @@ ENV NCEP_DIR=/NCEPlibs \
 ENV ESMF_INC="-I/usr/local/esmf/include -I${ESMF_DIR}/mod/modO3/Linux.gfortran.64.mpiuni.default/" \
     LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${ESMF_DIR}/lib/libO3/Linux.gfortran.64.mpiuni.default/:${FMS_DIR}/libFMS/.libs/
 
-COPY --from=ncep_image /opt/NCEPlibs $NCEP_DIR
-COPY --from=fms_image /FMS $FMS_DIR
-COPY --from=esmf_image /usr/local/esmf $ESMF_DIR
+COPY --from=base /opt/NCEPlibs $NCEP_DIR
+COPY --from=base /FMS $FMS_DIR
+COPY --from=base /usr/local/esmf $ESMF_DIR
 
 ARG configure_file=configure.fv3.gnu_docker
 
@@ -115,7 +103,7 @@ RUN cd /FV3/atmos_cubed_sphere && make clean && cd /FV3 && make -j8
 
 ## ---------------------------------------------------------------------------------
 ## Build deployment image
-FROM fv3atm-environment AS fv3atm-deploy
+FROM base AS test
 
 RUN apt-get update && apt-get install -y \
     python3 \
@@ -126,8 +114,8 @@ RUN ln -s /bin/python3 /bin/python && \
     pip install --no-cache-dir pyyaml
 
 ENV LD_LIBRARY_PATH=/usr/local/lib
-COPY --from=fv3atm-fms /FMS/libFMS/.libs/* /usr/local/lib/
-COPY --from=fv3atm-esmf /usr/local/esmf/lib/libO3/Linux.gfortran.64.mpiuni.default/* /usr/local/lib/
+COPY --from=fv3atm-base /FMS/libFMS/.libs/* /usr/local/lib/
+COPY --from=fv3atm-base /usr/local/esmf/lib/libO3/Linux.gfortran.64.mpiuni.default/* /usr/local/lib/
 
 RUN git clone -b v0.3.2 https://github.com/VulcanClimateModeling/fv3config.git && \
     cd fv3config && \
@@ -136,9 +124,6 @@ RUN git clone -b v0.3.2 https://github.com/VulcanClimateModeling/fv3config.git &
 RUN mkdir /work
 WORKDIR /work
 COPY --from=fv3atm-build /FV3/fv3.exe /FV3/fv3.exe
-#COPY etc/create_rundir.py /work
-#COPY etc/default.yaml /work
-#COPY etc/run_test.sh /work
 
 # run model
 CMD ["/work/run_test.sh"]
