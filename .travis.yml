@@ -4,5 +4,6 @@ services:
   - docker
 
 script:
+  - cd docker
   - make build
   - make run
