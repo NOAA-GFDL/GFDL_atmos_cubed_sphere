@@ -1,0 +1,39 @@
+sudo: required
+
+services:
+  - docker
+
+env:
+  global:
+    CACHE_IMAGE: ofuhrer/fv3atm_test
+
+before_script:
+  - docker pull $CACHE_IMAGE:base || true
+  - docker pull $CACHE_IMAGE:build || true
+  - docker pull $CACHE_IMAGE:test || true
+
+script:
+  - docker build
+    --target base
+    --cache-from $CACHE_IMAGE:base
+    --tag $CACHE_IMAGE:base
+    --file docker/Dockerfile
+    "."
+  - docker build
+    --target build
+    --cache-from $CACHE_IMAGE:build
+    --tag $CACHE_IMAGE:build
+    --file docker/Dockerfile
+    "."
+  - docker build
+    --target test
+    --cache-from $CACHE_IMAGE:test
+    --tag $CACHE_IMAGE:test
+    --file docker/Dockerfile
+    "."
+  
+  after_success:
+    - docker login -u "$DOCKER_USERNAME" -p "$DOCKER_PASSWORD"
+    - docker push $CACHE_IMAGE:base
+    - docker push $CACHE_IMAGE:build
+    - docker push $CACHE_IMAGE:test
