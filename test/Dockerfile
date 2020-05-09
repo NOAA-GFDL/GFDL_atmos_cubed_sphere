@@ -46,8 +46,8 @@ RUN git clone -b ESMF_8_0_0 --depth 1 https://git.code.sf.net/p/esmf/esmf $ESMF_
 
 ## ---------------------------------------------------------------------------------
 ## Build FMS
-COPY patches/PATCH-FMS-affinity.c-fix-getpid.patch /
-COPY patches/PATCH-FMS-libFMS_Makefile.am-add-sat-vapor-pres.patch /
+COPY test/patches/PATCH-FMS-affinity.c-fix-getpid.patch /
+COPY test/patches/PATCH-FMS-libFMS_Makefile.am-add-sat-vapor-pres.patch /
 RUN git clone https://github.com/NOAA-GFDL/FMS.git /FMS && \
     cd /FMS && git checkout f68878549364e39591216874d5a922c06b7d3a91 && \
     git am /PATCH-FMS-affinity.c-fix-getpid.patch && \
@@ -83,11 +83,11 @@ COPY --from=base /usr/local/esmf $ESMF_DIR
 
 ARG configure_file=configure.fv3.gnu_docker
 
-COPY patches/PATCH-stochastic_physics-update_ca.F90-fix-logical-comparisons.patch /
+COPY test/patches/PATCH-stochastic_physics-update_ca.F90-fix-logical-comparisons.patch /
 RUN git clone https://github.com/noaa-psd/stochastic_physics.git /stochastic_physics && \
     cd /stochastic_physics && git checkout 01739da377d603c9c8d6d666afe2442260fd79d1
 
-COPY patches/PATCH-fv3atm-apply-fixes.patch /
+COPY test/patches/PATCH-fv3atm-apply-fixes.patch /
 RUN git clone https://github.com/NOAA-EMC/fv3atm.git /FV3 && \
     cd /FV3 && git checkout b48b640f4d8cae978e2d98e149412054d74dcce7 && \
     git submodule update --init && \
@@ -95,8 +95,8 @@ RUN git clone https://github.com/NOAA-EMC/fv3atm.git /FV3 && \
     mkdir namphysics && mkdir conf
 
 RUN /bin/rm -f /PATCH-*
-COPY etc/make.rules /FV3/conf/make.rules
-COPY etc/configure.fv3.gnu_docker /FV3/conf/configure.fv3
+COPY test/etc/make.rules /FV3/conf/make.rules
+COPY test/etc/configure.fv3.gnu_docker /FV3/conf/configure.fv3
 
 RUN cd /FV3 && make clean && make libs -j8
 RUN cd /FV3/atmos_cubed_sphere && make clean && cd /FV3 && make -j8

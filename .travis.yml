@@ -18,21 +18,21 @@ script:
     --target base
     --cache-from $CACHE_IMAGE:base
     --tag $CACHE_IMAGE:base
-    --file docker/Dockerfile
+    --file test/Dockerfile
     "."
   - docker push $CACHE_IMAGE:base
   - docker build
     --target build
     --cache-from $CACHE_IMAGE:build
     --tag $CACHE_IMAGE:build
-    --file docker/Dockerfile
+    --file test/Dockerfile
     "."
   - docker push $CACHE_IMAGE:build
   - docker build
     --target test
     --cache-from $CACHE_IMAGE:test
     --tag $CACHE_IMAGE:test
-    --file docker/Dockerfile
+    --file test/Dockerfile
     "."
    - docker push $CACHE_IMAGE:test
   
