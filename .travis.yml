@@ -32,8 +32,8 @@ script:
     --file docker/Dockerfile
     "."
   
-  after_success:
-    - docker login -u "$DOCKER_USERNAME" -p "$DOCKER_PASSWORD"
-    - docker push $CACHE_IMAGE:base
-    - docker push $CACHE_IMAGE:build
-    - docker push $CACHE_IMAGE:test
+after_success:
+  - docker login -u "$DOCKER_USERNAME" -p "$DOCKER_PASSWORD"
+  - docker push $CACHE_IMAGE:base
+  - docker push $CACHE_IMAGE:build
+  - docker push $CACHE_IMAGE:test
