@@ -1,0 +1,25 @@
+## ---------------------------------------------------------------------------------
+## Build test image
+FROM ofuhrer/fv3atm_test:base AS test
+
+MAINTAINER Oliver Fuhrer, oliverf@vulcan.com
+
+# inject code into container image
+#RUN /bin/rm -rf /FV3/atmos_cubed_sphere && \
+#    mkdir /FV3/atmos_cubed_sphere
+#COPY GFDL_tools /FV3/atmos_cubed_sphere/GFDL_tools
+#COPY driver /FV3/atmos_cubed_sphere/driver
+#COPY model /FV3/atmos_cubed_sphere/model
+#COPY tools /FV3/atmos_cubed_sphere/tools
+#COPY makefile /FV3/atmos_cubed_sphere/makefile
+
+# rebuild (with injected code)
+RUN cd /FV3 && make libs -j8 && make -j8
+
+# setup everything for testing
+ENV LD_LIBRARY_PATH=/FMS/libFMS/.libs:/usr/local/esmf/lib/libO3/Linux.gfortran.64.mpiuni.default
+
+RUN mkdir /work
+WORKDIR /work
+
+CMD ["/work/run_test.sh"]

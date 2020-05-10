@@ -9,35 +9,37 @@ env:
 
 before_script:
   - docker pull $CACHE_IMAGE:base || true
-  - docker pull $CACHE_IMAGE:build || true
   - docker pull $CACHE_IMAGE:test || true
 
-script:
-  - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-  - docker build
-    --target base
-    --cache-from $CACHE_IMAGE:base
-    --tag $CACHE_IMAGE:base
-    --file test/Dockerfile
-    "."
-  - docker push $CACHE_IMAGE:base
-  - docker build
-    --target build
-    --cache-from $CACHE_IMAGE:build
-    --tag $CACHE_IMAGE:build
-    --file test/Dockerfile
-    "."
-  - docker push $CACHE_IMAGE:build
-  - docker build
-    --target test
-    --cache-from $CACHE_IMAGE:test
-    --tag $CACHE_IMAGE:test
-    --file test/Dockerfile
-    "."
-   - docker push $CACHE_IMAGE:test
-  
+jobs:
+    include:
+        - stage: build base container
+          script:
+            - cd test
+            - docker build
+              --target base
+              --cache-from $CACHE_IMAGE:base
+              --tag $CACHE_IMAGE:base
+              --file test/Dockerfile.base
+              "."
+            - cd ../
+        - stage: build test container
+          script:
+            - docker build
+              --target test
+              --cache-from $CACHE_IMAGE:test
+              --tag $CACHE_IMAGE:test
+              --file test/Dockerfile.test
+              "."
+        - stage: run test
+          script:
+            docker run
+            -it
+            --rm
+            --mount type=bind,source=`pwd`/work,target=/work
+            --name=fv3_atm ofuhrer/fv3atm_test:test
+
 after_success:
   - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
   - docker push $CACHE_IMAGE:base
-  - docker push $CACHE_IMAGE:build
   - docker push $CACHE_IMAGE:test
