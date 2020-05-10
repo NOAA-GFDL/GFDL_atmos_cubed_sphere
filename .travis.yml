@@ -20,7 +20,7 @@ jobs:
               --target base
               --cache-from $CACHE_IMAGE:base
               --tag $CACHE_IMAGE:base
-              --file test/Dockerfile.base
+              --file Dockerfile.base
               "."
             - cd ../
         - stage: build test container
