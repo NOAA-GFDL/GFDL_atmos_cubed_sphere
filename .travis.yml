@@ -7,39 +7,33 @@ env:
   global:
     CACHE_IMAGE: ofuhrer/fv3atm_test
 
-before_script:
-  - docker pull $CACHE_IMAGE:base || true
-  - docker pull $CACHE_IMAGE:test || true
-
 jobs:
     include:
-        - stage: build base container
+        - stage: build docker images
           script:
+            - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
             - cd test
+            - docker pull $CACHE_IMAGE:base || true
             - docker build
               --target base
               --cache-from $CACHE_IMAGE:base
               --tag $CACHE_IMAGE:base
               --file Dockerfile.base
               "."
+            - docker push $CACHE_IMAGE:base
             - cd ../
-        - stage: build test container
-          script:
+            - docker pull $CACHE_IMAGE:test || true
             - docker build
               --target test
               --cache-from $CACHE_IMAGE:test
               --tag $CACHE_IMAGE:test
               --file test/Dockerfile.test
               "."
-        - stage: run test
+            - docker push $CACHE_IMAGE:test
+        - stage: run tests
           script:
             docker run
             -it
             --rm
-            --mount type=bind,source=`pwd`/work,target=/work
+            --mount type=bind,source=$TRAVIS_BUILD_DIR/test/work,target=/work
             --name=fv3_atm ofuhrer/fv3atm_test:test
-
-after_success:
-  - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-  - docker push $CACHE_IMAGE:base
-  - docker push $CACHE_IMAGE:test
