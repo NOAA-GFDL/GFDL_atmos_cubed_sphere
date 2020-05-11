@@ -12,11 +12,6 @@ env:
 before_install:
   - test -n $CC && unset CC
 
-#before_script:
-#  - echo $GCLOUD_SERVICE_KEY | gcloud auth activate-service-account ${GCLOUD_SERVICE_ACCOUNT} --key-file=-
-#  - gcloud --quiet config set project ${GCLOUD_PROJECT_ID}
-#  - gcloud --quiet config set compute/zone ${GCLOUD_COMPUTE_ZONE}
-
 jobs:
     include:
         - stage: build docker images
