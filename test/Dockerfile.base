@@ -112,12 +112,12 @@ COPY etc/configure.fv3.gnu_docker /FV3/conf/configure.fv3
 #RUN cd /FV3 && make clean && make libs -j8
 #RUN cd /FV3/atmos_cubed_sphere && make clean && cd /FV3 && make -j8
 
-## ---------------------------------------------------------------------------------
-## Install fv3config
-RUN git clone -b $FV3CONFIG_BRANCH https://github.com/VulcanClimateModeling/fv3config.git && \
-    cd fv3config && \
-    pip install --no-cache-dir -e . && \
-    python -m fv3config.download_data
+## ## ---------------------------------------------------------------------------------
+## ## Install fv3config
+## RUN git clone -b $FV3CONFIG_BRANCH https://github.com/VulcanClimateModeling/fv3config.git && \
+##     cd fv3config && \
+##     pip install --no-cache-dir -e . && \
+##     python -m fv3config.download_data
 
 ## ---------------------------------------------------------------------------------
 ## Not meant for entering

@@ -10,7 +10,8 @@ if [ -d ./rundir ] ; then
     exit 1
 fi
 
-./create_rundir.py
+#./create_rundir.py
+curl -X GET 'https://www.googleapis.com/storage/v1/b/vcm-ml-public/o/data_for_demos%2FTravisCI%2Frundir.tar.gz?alt=media' | tar xvz
 
 if [ ! -d ./rundir -o ! -f ./rundir/INPUT/gfs_data.tile1.nc ] ; then
     echo "ERROR: problem creating rundir"
