@@ -899,7 +899,7 @@ contains
            do j=js,je
            do i=is,ie
               !pe1 = Atm%ak(k+1) + Atm%bk(k+1)*Atm%ps(i,j)
-              Atm%q(i,j,k,tke) = 0.02 ! 1.*exp(-(Atm%ps(i,j) - pe1)**2)
+              Atm%q(i,j,k,tke) = 0.00 ! 1.*exp(-(Atm%ps(i,j) - pe1)**2)
            enddo
            enddo
            enddo
