@@ -444,6 +444,7 @@ contains
                                  Atm(mytile)%npz, Atm(mytile)%ng,                                              &
                                  dt_atmos, p_split, Atm(mytile)%flagstruct%k_split,                            &
                                  zvir, Atm(mytile)%flagstruct%p_ref, Atm(mytile)%ak, Atm(mytile)%bk,           &
+                                 liq_wat>0, ice_wat>0, rainwat>0, snowwat>0, graupel>0,                        &
                                  cld_amt>0, kappa, Atm(mytile)%flagstruct%hydrostatic,                         &
                                  Atm(mytile)%flagstruct%do_sat_adj,                                            &
                                  Atm(mytile)%delp, Atm(mytile)%delz, Atm(mytile)%gridstruct%area_64,           &
