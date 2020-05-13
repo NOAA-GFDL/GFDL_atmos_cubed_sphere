@@ -446,6 +446,7 @@ contains
                                  Atm(mygrid)%npz, Atm(mygrid)%ng,                                              &
                                  dt_atmos, p_split, Atm(mygrid)%flagstruct%k_split,                            &
                                  zvir, Atm(mygrid)%flagstruct%p_ref, Atm(mygrid)%ak, Atm(mygrid)%bk,           &
+                                 liq_wat>0, ice_wat>0, rainwat>0, snowwat>0, graupel>0,                        &
                                  cld_amt>0, kappa, Atm(mygrid)%flagstruct%hydrostatic,                         &
                                  Atm(mygrid)%flagstruct%do_sat_adj,                                            &
                                  Atm(mygrid)%delp, Atm(mygrid)%delz, Atm(mygrid)%gridstruct%area_64,           &
