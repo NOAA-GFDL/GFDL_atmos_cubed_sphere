@@ -4113,9 +4113,9 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           pt(i,j,k)=side_t0%pt_BC(i,j,k)                              &
                      +(side_t1%pt_BC(i,j,k)-side_t0%pt_BC(i,j,k))     &
                       *fraction_interval
-          delz(i,j,k)=side_t0%delz_BC(i,j,k)                            &
-                     +(side_t1%delz_BC(i,j,k)-side_t0%delz_BC(i,j,k))   &
-                      *fraction_interval
+!          delz(i,j,k)=side_t0%delz_BC(i,j,k)                            &
+!                     +(side_t1%delz_BC(i,j,k)-side_t0%delz_BC(i,j,k))   &
+!                      *fraction_interval
 #ifdef MOIST_CAPPA
           cappa(i,j,k)=side_t0%cappa_BC(i,j,k)                          &
                      +(side_t1%cappa_BC(i,j,k)-side_t0%cappa_BC(i,j,k)) &

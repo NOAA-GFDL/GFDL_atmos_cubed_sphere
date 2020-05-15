@@ -112,7 +112,7 @@ module atmosphere_mod
 !   <tr>
 !     <td>mpp_mod</td>
 !     <td>mpp_error, stdout, FATAL, NOTE, input_nml_file, mpp_root_pe,
-!                    mpp_npes, mpp_pe, mpp_chksum,mpp_get_current_pelist,     
+!                    mpp_npes, mpp_pe, mpp_chksum,mpp_get_current_pelist,
 !                    mpp_set_current_pelist</td>
 !   </tr>
 !   <tr>
@@ -1460,7 +1460,7 @@ contains
 !$OMP                      num_gas,                                                      &
 #endif
 !$OMP                      snowwat, graupel, nq_adv, flip_vc)   &
-!$OMP             private (nb, blen, i, j, k, k1, ix, q0, qwat, qt,tracer_name)
+!$OMP             private (nb, blen, i, j, k, k1, ix, q0, qwat, qt, tracer_name)
    do nb = 1,Atm_block%nblks
 
 !SJL: perform vertical filling to fix the negative humidity if the SAS convection scheme is used
