@@ -2309,9 +2309,10 @@ contains
    pointer(ptr_nest, var_nest_3d)
    pointer(ptr_coarse, var_coarse_3d)
 
-   if (child_proc .and. size(var_nest) > 1) ptr_nest = LOC(var_nest)
-   if (parent_proc .and. size(var_coarse) > 1) ptr_coarse = LOC(var_coarse)
-
+!   if (child_proc .and. size(var_nest) > 1) ptr_nest = LOC(var_nest)
+!   if (parent_proc .and. size(var_coarse) > 1) ptr_coarse = LOC(var_coarse)
+   ptr_nest = LOC(var_nest)
+   ptr_coarse = LOC(var_coarse)
    call update_coarse_grid_mpp(var_coarse_3d, var_nest_3d, &
         nest_domain, dx, dy, area, &
         bd, isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n, &
