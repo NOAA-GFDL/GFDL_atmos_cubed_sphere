@@ -60,6 +60,9 @@ module fv_arrays_mod
            id_dbz, id_maxdbz, id_basedbz, id_dbz4km, id_dbztop, id_dbz_m10C, &
            id_ctz, id_w1km, id_wmaxup, id_wmaxdn, id_cape, id_cin
 
+! Selected theta-level fields from 3D variables:
+ integer :: id_pv350K, id_pv550K
+
 ! Selected p-level fields from 3D variables:
  integer :: id_vort200, id_vort500, id_w500, id_w700
  integer :: id_vort850, id_w850, id_x850, id_srh25, &
