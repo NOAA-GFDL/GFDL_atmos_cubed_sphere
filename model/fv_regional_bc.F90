@@ -176,6 +176,10 @@ module fv_regional_mod
         type(fv_regional_BC_variables) :: north, south, east, west
       end type fv_domain_sides
 
+      type single_vbl3D_sides
+        real,dimension(:,:,:),pointer :: north, south, east, west
+      end type single_vbl3D_sides
+
       type vars_2d
         real,dimension(:,:),pointer :: ptr
         character(len=10) :: name
@@ -204,6 +208,9 @@ module fv_regional_mod
       type(vars_3d),dimension(:),allocatable :: fields_core             &
                                                ,fields_tracers
       type(fv_nest_BC_type_3D), public :: delz_regBC ! lmh
+
+      type(single_vbl3D_sides) :: delz_auxiliary    !<-- Boundary delz that follows integration through forecast time.
+
       integer :: ns = 0 ! lmh
 
       real,parameter :: tice=273.16                                     &
@@ -464,7 +471,8 @@ contains
                                         ,Atm%regional_bc_bounds%je_north_uvw &
                                         ,klev_out                            &
                                         ,ntracers                            &
-                                        ,BC_t1%north )
+                                        ,BC_t1%north                         &
+                                        ,delz_auxiliary%north )
 !
         call allocate_regional_BC_arrays('north'                             &
                                         ,north_bc,south_bc                   &
@@ -508,7 +516,8 @@ contains
                                         ,Atm%regional_bc_bounds%je_south_uvw &
                                         ,klev_out                            &
                                         ,ntracers                            &
-                                        ,BC_t1%south )
+                                        ,BC_t1%south                         &
+                                        ,delz_auxiliary%south )
 !
         call allocate_regional_BC_arrays('south'                             &
                                         ,north_bc,south_bc                   &
@@ -552,7 +561,8 @@ contains
                                         ,Atm%regional_bc_bounds%je_east_uvw  &
                                         ,klev_out                            &
                                         ,ntracers                            &
-                                        ,BC_t1%east )
+                                        ,BC_t1%east                          &
+                                        ,delz_auxiliary%east )
 !
         call allocate_regional_BC_arrays('east '                             &
                                         ,north_bc,south_bc                   &
@@ -596,7 +606,8 @@ contains
                                         ,Atm%regional_bc_bounds%je_west_uvw  &
                                         ,klev_out                            &
                                         ,ntracers                            &
-                                        ,BC_t1%west )
+                                        ,BC_t1%west                          &
+                                        ,delz_auxiliary%west )
 !
         call allocate_regional_BC_arrays('west '                             &
                                         ,north_bc,south_bc                   &
@@ -3221,7 +3232,7 @@ contains
               call check(status)
             endif
             if (status /= nf90_noerr) then
-              if (east_bc) write(0,*)' WARNING: Tracer ',trim(var_name),' not in input file'
+              if (east_bc.and.is_master()) write(0,*)' WARNING: Tracer ',trim(var_name),' not in input file'
               array_4d(:,:,:,tlev)=0.                                        !<-- Tracer not in input so set to zero in boundary.
             else
               call check(nf90_get_var(ncid,var_id                                         &
@@ -3277,7 +3288,8 @@ contains
                                             ,is_we,ie_we,js_we,je_we    &
                                             ,klev                       &
                                             ,ntracers                   &
-                                            ,BC_side    )
+                                            ,BC_side                    &
+                                            ,delz_side )
 !
 !-----------------------------------------------------------------------
       implicit none
@@ -3299,6 +3311,8 @@ contains
 !
       type(fv_regional_BC_variables),intent(out) :: BC_side
 !
+      real,dimension(:,:,:),pointer,intent(inout),optional :: delz_side  !<-- Boundary delz that follows integration through time.
+!
 !---------------------------------------------------------------------
 !*********************************************************************
 !---------------------------------------------------------------------
@@ -3316,6 +3330,11 @@ contains
       allocate(BC_side%pt_BC   (is_0:ie_0,js_0:je_0,klev)) ; BC_side%pt_BC=real_snan
       allocate(BC_side%w_BC    (is_0:ie_0,js_0:je_0,klev)) ; BC_side%w_BC=real_snan
       allocate(BC_side%delz_BC (is_0:ie_0,js_0:je_0,klev)) ; BC_side%delz_BC=real_snan
+      if(present(delz_side))then
+        if(.not.associated(delz_side))then
+          allocate(delz_side (is_0:ie_0,js_0:je_0,klev)) ; delz_side=real_snan
+        endif
+      endif
 #ifdef USE_COND
       allocate(BC_side%q_con_BC(is_0:ie_0,js_0:je_0,klev)) ; BC_side%q_con_BC=real_snan
 #ifdef MOIST_CAPPA
@@ -4083,6 +4102,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       integer :: i,ie,j,je,jend,jend_uvs,jend_uvw                     &
                 ,jstart,jstart_uvs,jstart_uvw,k,nt,nz
 !
+      real,dimension(:,:,:),pointer :: delz_ptr
+!
 !---------------------------------------------------------------------
 !*********************************************************************
 !---------------------------------------------------------------------
@@ -4104,6 +4125,17 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         jend_uvw=j2_uvw+nhalo_model
       endif
 !
+      select case (trim(side))
+        case ('north')
+          delz_ptr=>delz_auxiliary%north
+        case ('south')
+          delz_ptr=>delz_auxiliary%south
+        case ('east') 
+          delz_ptr=>delz_auxiliary%east
+        case ('west') 
+          delz_ptr=>delz_auxiliary%west
+      end select
+!
       do k=1,nlayers
         do j=jstart,jend
         do i=i1,i2
@@ -4116,6 +4148,9 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !          delz(i,j,k)=side_t0%delz_BC(i,j,k)                            &
 !                     +(side_t1%delz_BC(i,j,k)-side_t0%delz_BC(i,j,k))   &
 !                      *fraction_interval
+           delz_ptr(i,j,k)=side_t0%delz_BC(i,j,k)                            &
+                          +(side_t1%delz_BC(i,j,k)-side_t0%delz_BC(i,j,k))   &
+                           *fraction_interval
 #ifdef MOIST_CAPPA
           cappa(i,j,k)=side_t0%cappa_BC(i,j,k)                          &
                      +(side_t1%cappa_BC(i,j,k)-side_t0%cappa_BC(i,j,k)) &
@@ -6049,7 +6084,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       allocate( pelist(mpp_npes()) )
       call mpp_get_current_pelist(pelist)
-      write(0,*)' pelist=',pelist
+!     write(0,*)' pelist=',pelist
 !
       halo=nhalo_model
 !
@@ -6332,6 +6367,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       real :: rdg
 !
+      real,dimension(:,:,:),pointer :: delz_ptr
+!
 !---------------------------------------------------------------------
 !*********************************************************************
 !---------------------------------------------------------------------
@@ -6349,6 +6386,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         i2=iend
         j1=jstart
         j2=jstart+nhalo_model-1
+        delz_ptr=>delz_auxiliary%north
         call compute_halo_t
       endif
 !
@@ -6357,6 +6395,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         i2=iend
         j1=jend-nhalo_model+1
         j2=jend
+        delz_ptr=>delz_auxiliary%south
         call compute_halo_t
       endif
 !
@@ -6370,6 +6409,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         elseif(south_bc)then
           j2=jend-nhalo_model
         endif
+        delz_ptr=>delz_auxiliary%east
         call compute_halo_t
       endif
 !
@@ -6383,6 +6423,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         elseif(south_bc)then
           j2=jend-nhalo_model
         endif
+        delz_ptr=>delz_auxiliary%west
         call compute_halo_t
       endif
 !
@@ -6413,7 +6454,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
         part1=(1.+dp1)*(1.-Atm%q_con(i,j,k))
         part2=rdg*Atm%delp(i,j,k)*(1.+dp1)*(1.-Atm%q_con(i,j,k))      &
-              /Atm%delz(i,j,k)
+              /delz_ptr(i,j,k)
         temp(i,j,k)=exp((log(temp(i,j,k))-log(part1)+cappa*log(part2)) &
                          /(1.-cappa))
       enddo
