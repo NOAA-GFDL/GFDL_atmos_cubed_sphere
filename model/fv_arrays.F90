@@ -974,6 +974,10 @@ module fv_arrays_mod
                              !< Useful for perturbing initial conditions. -1 by default;
                              !< disabled if 0 or negative.
 
+   logical :: butterfly_effect = .false.   !< Flip the least-significant-bit of the lowest level temperature
+                                           !< at the center of the domain (the center of tile 1), if set to .true.
+                                           !< The default value is .false.
+
    integer :: a2b_ord = 4   !< Order of interpolation used by the pressure gradient force
                             !< to interpolate cell-centered (A-grid) values to the grid corners. 
                             !< The default value is 4 (recommended), which uses fourth-order 

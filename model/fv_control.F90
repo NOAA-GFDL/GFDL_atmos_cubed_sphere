@@ -316,6 +316,7 @@ module fv_control_mod
    logical , pointer :: make_hybrid_z  
    logical , pointer :: nudge_qv
    real,     pointer :: add_noise
+   logical , pointer :: butterfly_effect
 
    integer , pointer :: a2b_ord 
    integer , pointer :: c2l_ord 
@@ -669,7 +670,7 @@ module fv_control_mod
                          pnats, dnats, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
                          c2l_ord, dx_const, dy_const, umax, deglat,      &
                          deglon_start, deglon_stop, deglat_start, deglat_stop, &
-                         phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, &
+                         phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, butterfly_effect, &
                          nested, twowaynest, parent_grid_num, parent_tile, nudge_qv, &
                          refinement, nestbctype, nestupdate, nsponge, s_weight, &
                          ioffset, joffset, check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
@@ -1328,6 +1329,7 @@ module fv_control_mod
      make_hybrid_z                 => Atm%flagstruct%make_hybrid_z
      nudge_qv                      => Atm%flagstruct%nudge_qv
      add_noise                     => Atm%flagstruct%add_noise
+     butterfly_effect              => Atm%flagstruct%butterfly_effect
      a2b_ord                       => Atm%flagstruct%a2b_ord
      c2l_ord                       => Atm%flagstruct%c2l_ord
      ndims                         => Atm%flagstruct%ndims

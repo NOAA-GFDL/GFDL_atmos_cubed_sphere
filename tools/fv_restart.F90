@@ -222,6 +222,8 @@ contains
     integer :: npts
     real    :: sumpertn
 
+    integer :: i_butterfly, j_butterfly
+
     rgrav = 1. / grav
 
     if(.not.module_is_initialized) call mpp_error(FATAL, 'You must call fv_restart_init.')
@@ -625,6 +627,25 @@ contains
         call mpp_sum(npts)
         write(errstring,'(A, E16.9)') "RMS added noise: ", sqrt(sumpertn/npts)
         call mpp_error(NOTE, errstring)
+     endif
+
+     if (Atm(n)%flagstruct%butterfly_effect) then
+        if (n==1 .and. Atm(n)%tile == 1) then
+           i_butterfly = Atm(n)%npx / 2
+           j_butterfly = Atm(n)%npy / 2
+           if (isc <= i_butterfly .and. i_butterfly <= iec) then
+           if (jsc <= j_butterfly .and. j_butterfly <= jec) then
+
+              write(*,'(A, I0, A, I0)') "Adding butterfly effect at (i,j) ", i_butterfly, ", ", j_butterfly
+              write(*,'(A, E24.17)') "pt (before) :", Atm(n)%pt(i_butterfly,j_butterfly,Atm(n)%npz)
+
+              Atm(n)%pt(i_butterfly,j_butterfly,Atm(n)%npz) = nearest(Atm(n)%pt(i_butterfly,j_butterfly,Atm(n)%npz), -1.0)
+
+              write(*,'(A, E24.17)') "pt (after)  :", Atm(n)%pt(i_butterfly,j_butterfly,Atm(n)%npz)
+
+           endif
+           endif
+        endif
      endif
 
       if (Atm(n)%grid_number > 1) then
