@@ -663,7 +663,7 @@ contains
      endif
 
      if (Atm(n)%flagstruct%butterfly_effect) then
-        if (n==1 .and. Atm(n)%tile == 1) then
+        if (n==1 .and. Atm(n)%tile_of_mosaic == 1) then
            i_butterfly = Atm(n)%npx / 2
            j_butterfly = Atm(n)%npy / 2
            if (isc <= i_butterfly .and. i_butterfly <= iec) then
@@ -679,6 +679,7 @@ contains
            endif
            endif
         endif
+      endif
       if (Atm(n)%flagstruct%fv_sg_adj > 0 .and. Atm(n)%flagstruct%sg_cutoff > 0) then
         !Choose n_sponge from first reference level above sg_cutoff
         do k=1,npz
