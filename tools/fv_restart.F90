@@ -220,6 +220,7 @@ contains
     real    :: sumpertn
     real    :: zvir
 
+    integer :: i_butterfly, j_butterfly
     logical :: do_read_restart = .false.
     logical :: do_read_restart_bc = .false.
     integer, allocatable :: ideal_test_case(:), new_nest_topo(:)
@@ -661,7 +662,24 @@ contains
         call mpp_error(NOTE, errstring)
      endif
 
-     if (Atm(n)%flagstruct%fv_sg_adj > 0 .and. Atm(n)%flagstruct%sg_cutoff > 0) then
+     if (Atm(n)%flagstruct%butterfly_effect) then
+        if (n==1 .and. Atm(n)%tile == 1) then
+           i_butterfly = Atm(n)%npx / 2
+           j_butterfly = Atm(n)%npy / 2
+           if (isc <= i_butterfly .and. i_butterfly <= iec) then
+           if (jsc <= j_butterfly .and. j_butterfly <= jec) then
+
+              write(*,'(A, I0, A, I0)') "Adding butterfly effect at (i,j) ", i_butterfly, ", ", j_butterfly
+              write(*,'(A, E24.17)') "pt (before) :", Atm(n)%pt(i_butterfly,j_butterfly,Atm(n)%npz)
+
+              Atm(n)%pt(i_butterfly,j_butterfly,Atm(n)%npz) = nearest(Atm(n)%pt(i_butterfly,j_butterfly,Atm(n)%npz), -1.0)
+
+              write(*,'(A, E24.17)') "pt (after)  :", Atm(n)%pt(i_butterfly,j_butterfly,Atm(n)%npz)
+
+           endif
+           endif
+        endif
+      if (Atm(n)%flagstruct%fv_sg_adj > 0 .and. Atm(n)%flagstruct%sg_cutoff > 0) then
         !Choose n_sponge from first reference level above sg_cutoff
         do k=1,npz
            ph = Atm(n)%ak(k+1) +  Atm(n)%bk(k+1)*Atm(n)%flagstruct%p_ref
@@ -669,8 +687,8 @@ contains
         enddo
         Atm(n)%flagstruct%n_sponge = min(k,npz)
         write(errstring,'(A, I3, A)') ' Override n_sponge: applying 2dz filter to ', k , ' levels'
-        call mpp_error(NOTE, errstring)
-     endif
+        call mpp_error(NOTE, errstring)   
+      endif
 
       if (Atm(n)%grid_number > 1) then
          write(gn,'(A2, I1)') " g", Atm(n)%grid_number
