@@ -114,7 +114,7 @@ contains
 
 ! Corners:
 ! 3-way extrapolation
-    if (gridstruct%nested .or. gridstruct%regional) then
+    if (gridstruct%bounded_domain) then
 
     do j=js-2,je+2
        do i=is,ie+1
@@ -201,7 +201,7 @@ contains
 ! Y-Interior:
 !------------
 
-    if (gridstruct%nested .or. gridstruct%regional) then
+    if (gridstruct%bounded_domain) then
 
 
     do j=js,je+1
@@ -257,7 +257,7 @@ contains
     end if
 !--------------------------------------
 
-    if (gridstruct%nested .or. gridstruct%regional) then
+    if (gridstruct%bounded_domain) then
 
     do j=js, je+1
        do i=is,ie+1
@@ -463,7 +463,7 @@ contains
 !------------
 ! X-Interior:
 !------------
-    if (gridstruct%nested .or. gridstruct%regional) then
+    if (gridstruct%bounded_domain) then
 
     do j=js-2,je+2
        do i=is, ie+1
@@ -534,7 +534,7 @@ contains
 !------------
 ! Y-Interior:
 !------------
-    if (gridstruct%nested .or. gridstruct%regional) then
+    if (gridstruct%bounded_domain) then
 
     do j=js,je+1
        do i=is-2, ie+2
@@ -602,7 +602,7 @@ contains
 
  end if
 
- if (gridstruct%nested .or. gridstruct%regional) then
+ if (gridstruct%bounded_domain) then
 
     do j=js,je+1
        do i=is,ie+1
@@ -722,7 +722,7 @@ contains
 
     if (gridstruct%grid_type < 3) then
 
-       if (gridstruct%nested .or. gridstruct%regional) then
+       if (gridstruct%bounded_domain) then
 
           do j=js-2,je+1+2
              do i=is-2,ie+1+2

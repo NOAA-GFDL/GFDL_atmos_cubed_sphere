@@ -91,14 +91,11 @@
       use mpp_domains_mod, only : mpp_group_update_initialized, mpp_do_group_update
       use mpp_domains_mod, only : mpp_create_group_update,mpp_reset_group_update_field
       use mpp_domains_mod, only : group_halo_update_type => mpp_group_update_type
+      use mpp_domains_mod, only: nest_domain_type
       use mpp_parameter_mod, only : WUPDATE, EUPDATE, SUPDATE, NUPDATE, XUPDATE, YUPDATE
-      use fv_arrays_mod, only: fv_atmos_type
+      use fv_arrays_mod, only: fv_atmos_type, fv_grid_bounds_type
       use fms_io_mod, only: set_domain
-      use mpp_mod, only : mpp_get_current_pelist
-      use mpp_domains_mod, only : mpp_define_domains
-      use mpp_domains_mod, only : mpp_define_nest_domains, nest_domain_type
-      use mpp_domains_mod, only : mpp_get_C2F_index, mpp_update_nest_fine
-      use mpp_domains_mod, only : mpp_get_F2C_index, mpp_update_nest_coarse
+      use mpp_mod, only : mpp_get_current_pelist, mpp_set_current_pelist
       use mpp_domains_mod, only : mpp_get_domain_shift
       use ensemble_manager_mod, only : get_ensemble_id
 
@@ -106,6 +103,7 @@
       private
 
       integer, parameter:: ng    = 3     ! Number of ghost zones required
+      integer, parameter :: MAX_NNEST=20, MAX_NTILE=50
 
 #include "mpif.h"
       integer, parameter :: XDir=1
@@ -123,7 +121,6 @@
 
       logical :: master
 
-      type(nest_domain_type), allocatable, dimension(:)       :: nest_domain
       integer :: this_pe_grid = 0
       integer, EXTERNAL :: omp_get_thread_num, omp_get_num_threads      
 
@@ -136,6 +133,9 @@
       integer :: isd, ied, jsd, jed
       integer :: isc, iec, jsc, jec
 
+      integer, allocatable :: grids_master_procs(:)
+      integer, dimension(MAX_NNEST) :: tile_fine = 0 !Global index of LAST tile in a mosaic
+      type(nest_domain_type) :: global_nest_domain !ONE structure for ALL levels of nesting
 #ifdef CCPP
       public commglobal
 #endif
@@ -145,12 +145,9 @@
       public fill_corners, XDir, YDir
       public switch_current_domain, switch_current_Atm, broadcast_domains
       public is_master, setup_master
-      !The following variables are declared public by this module for convenience;
-      !they will need to be switched when domains are switched
-!!! CLEANUP: ng is a PARAMETER and is OK to be shared by a use statement
-      public is, ie, js, je, isd, ied, jsd, jed, isc, iec, jsc, jec, ng
       public start_group_halo_update, complete_group_halo_update
-      public group_halo_update_type
+      public group_halo_update_type, grids_master_procs, tile_fine
+      public global_nest_domain, MAX_NNEST, MAX_NTILE, ng
 
       interface start_group_halo_update
         module procedure start_var_group_update_2d
@@ -347,12 +344,11 @@ contains
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !>@brief The subroutine 'domain_decomp' sets up the domain decomposition.
-      subroutine domain_decomp(npx,npy,nregions,grid_type,nested,Atm,layout,io_layout)
-
+      subroutine domain_decomp(npx,npy,nregions,grid_type,nested,layout,io_layout,bd,tile,square_domain,&
+           npes_per_tile,domain,domain_for_coupler,num_contact,pelist)
          integer, intent(IN)  :: npx,npy,grid_type
-         integer, intent(INOUT) :: nregions
+         integer, intent(INOUT) :: nregions, tile
          logical, intent(IN):: nested
-         type(fv_atmos_type), intent(INOUT), target :: Atm
          integer, intent(INOUT) :: layout(2), io_layout(2)
 
          integer, allocatable :: pe_start(:), pe_end(:)
@@ -366,20 +362,14 @@ contains
          integer i
          integer :: npes_x, npes_y 
 
-         integer, pointer :: pelist(:), grid_number, num_contact, npes_per_tile
-         logical, pointer :: square_domain
-         type(domain2D), pointer :: domain, domain_for_coupler
+         integer, intent(INOUT) :: pelist(:)
+         integer, intent(OUT) :: num_contact, npes_per_tile
+         logical, intent(OUT) :: square_domain
+         type(domain2D), intent(OUT) :: domain, domain_for_coupler
+         type(fv_grid_bounds_type), intent(INOUT) :: bd
 
          nx = npx-1
          ny = npy-1
-
-         !! Init pointers
-         pelist                        => Atm%pelist
-         grid_number                   => Atm%grid_number
-         num_contact                   => Atm%num_contact
-         domain                        => Atm%domain
-         domain_for_coupler            => Atm%domain_for_coupler
-         npes_per_tile                 => Atm%npes_per_tile
 
          npes_x = layout(1)
          npes_y = layout(2)
@@ -410,7 +400,7 @@ contains
                   npes_y = layout(2)
                endif
 
-               if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  Atm%gridstruct%square_domain = .true.
+               if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  square_domain = .true.
 
                if ( (npx/npes_x < ng) .or. (npy/npes_y < ng) ) then
                   write(*,310) npes_x, npes_y, npx/npes_x, npy/npes_y
@@ -479,7 +469,7 @@ contains
                npes_y = layout(2)
             endif
 
-            if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  Atm%gridstruct%square_domain = .true.
+            if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  square_domain = .true.
 
             if ( (npx/npes_x < ng) .or. (npy/npes_y < ng) ) then
                write(*,310) npes_x, npes_y, npx/npes_x, npy/npes_y
@@ -628,8 +618,7 @@ contains
                if( nregions .NE. 1 ) then
                   call mpp_error(FATAL, 'domain_decomp: nregions should be 1 for nested region, contact developer')
                endif
-               tile_id(1) = 7   ! currently we assuming the nested tile is nested in one face of cubic sphere grid.
-                                ! we need a more general way to deal with nested grid tile id.
+               tile_id(1) = 7   ! TODO need update for multiple nests
             else
                do n = 1, nregions
                   tile_id(n) = n
@@ -656,27 +645,27 @@ contains
        deallocate(istart2, iend2, jstart2, jend2)
 
        !--- find the tile number
-       Atm%tile = (gid-pelist(1))/npes_per_tile+1 
+       tile = (gid-pelist(1))/npes_per_tile+1 
        if (ANY(pelist == gid)) then
           npes_this_grid = npes_per_tile*nregions
-          tile = Atm%tile
+          tile = tile
           call mpp_get_compute_domain( domain, is,  ie,  js,  je  )
           call mpp_get_data_domain   ( domain, isd, ied, jsd, jed )
           
-          Atm%bd%is = is
-          Atm%bd%js = js
-          Atm%bd%ie = ie
-          Atm%bd%je = je
+          bd%is = is
+          bd%js = js
+          bd%ie = ie
+          bd%je = je
 
-          Atm%bd%isd = isd
-          Atm%bd%jsd = jsd
-          Atm%bd%ied = ied
-          Atm%bd%jed = jed
+          bd%isd = isd
+          bd%jsd = jsd
+          bd%ied = ied
+          bd%jed = jed
 
-          Atm%bd%isc = is
-          Atm%bd%jsc = js
-          Atm%bd%iec = ie
-          Atm%bd%jec = je
+          bd%isc = is
+          bd%jsc = js
+          bd%iec = ie
+          bd%jec = je
 
           if (debug .and. nregions==1) then
              tile=1
@@ -687,20 +676,20 @@ contains
 200       format(i4.4, ' ', i4.4, ' ', i4.4, ' ', i4.4, ' ', i4.4, ' ')
        else
           
-          Atm%bd%is = 0
-          Atm%bd%js = 0
-          Atm%bd%ie = -1
-          Atm%bd%je = -1
+          bd%is = 0
+          bd%js = 0
+          bd%ie = -1
+          bd%je = -1
 
-          Atm%bd%isd = 0
-          Atm%bd%jsd = 0
-          Atm%bd%ied = -1
-          Atm%bd%jed = -1
+          bd%isd = 0
+          bd%jsd = 0
+          bd%ied = -1
+          bd%jed = -1
 
-          Atm%bd%isc = 0
-          Atm%bd%jsc = 0
-          Atm%bd%iec = -1
-          Atm%bd%jec = -1
+          bd%isc = 0
+          bd%jsc = 0
+          bd%iec = -1
+          bd%jec = -1
 
        endif
 
@@ -957,12 +946,14 @@ end subroutine complete_group_halo_update
 
 
 
-
-subroutine broadcast_domains(Atm)
+!Depreciated
+subroutine broadcast_domains(Atm,current_pelist,current_npes)
   
   type(fv_atmos_type), intent(INOUT) :: Atm(:)
+  integer, intent(IN) :: current_npes
+  integer, intent(IN) :: current_pelist(current_npes)
 
-  integer :: n, i1, i2, j1, j2, i
+  integer :: n, i
   integer :: ens_root_pe, ensemble_id
 
   !I think the idea is that each process needs to properly be part of a pelist,
@@ -975,13 +966,15 @@ subroutine broadcast_domains(Atm)
 
   !Pelist needs to be set to ALL ensemble PEs for broadcast_domain to work
   call mpp_set_current_pelist((/ (i,i=ens_root_pe,npes-1+ens_root_pe) /))
-     do n=1,size(Atm)
-        call mpp_broadcast_domain(Atm(n)%domain)
-        call mpp_broadcast_domain(Atm(n)%domain_for_coupler)
-     end do
+  do n=1,size(Atm)
+     call mpp_broadcast_domain(Atm(n)%domain)
+     call mpp_broadcast_domain(Atm(n)%domain_for_coupler)
+  end do
+  call mpp_set_current_pelist(current_pelist)
 
 end subroutine broadcast_domains
 
+!depreciated
 subroutine switch_current_domain(new_domain,new_domain_for_coupler)
 
   type(domain2D), intent(in), target :: new_domain, new_domain_for_coupler
@@ -1004,6 +997,7 @@ subroutine switch_current_domain(new_domain,new_domain_for_coupler)
 
 end subroutine switch_current_domain
 
+!depreciated
 subroutine switch_current_Atm(new_Atm, switch_domain)
 
   type(fv_atmos_type), intent(IN), target :: new_Atm
@@ -1011,13 +1005,16 @@ subroutine switch_current_Atm(new_Atm, switch_domain)
   logical, parameter :: debug = .false.
   logical :: swD
 
-  if (debug .AND. (gid==masterproc)) print*, 'SWITCHING ATM STRUCTURES', new_Atm%grid_number
-  if (present(switch_domain)) then
-     swD = switch_domain
-  else
-     swD = .true.
-  end if
-  if (swD) call switch_current_domain(new_Atm%domain, new_Atm%domain_for_coupler)
+
+  call mpp_error(FATAL, "switch_current_Atm depreciated. call set_domain instead.")
+
+!!$  if (debug .AND. (gid==masterproc)) print*, 'SWITCHING ATM STRUCTURES', new_Atm%grid_number
+!!$  if (present(switch_domain)) then
+!!$     swD = switch_domain
+!!$  else
+!!$     swD = .true.
+!!$  end if
+!!$  if (swD) call switch_current_domain(new_Atm%domain, new_Atm%domain_for_coupler)
 
 !!$  if (debug .AND. (gid==masterproc)) WRITE(*,'(A, 6I5)') 'NEW GRID DIMENSIONS: ', &
 !!$       isd, ied, jsd, jed, new_Atm%npx, new_Atm%npy
@@ -1536,387 +1533,11 @@ end subroutine switch_current_Atm
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
-
-!!$!-------------------------------------------------------------------------------
-!!$! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!!$!     
-!!$!     mp_corner_comm :: Point-based MPI communcation routine for Cubed-Sphere
-!!$!                       ghosted corner point on B-Grid 
-!!$!                       this routine sends 24 16-byte messages 
-!!$!     
-!!$      subroutine mp_corner_comm(q, npx, npy, tile)
-!!$         integer, intent(IN)  :: npx,npy, tile
-!!$         real  , intent(INOUT):: q(isd:ied+1,jsd:jed+1)
-!!$
-!!$         integer, parameter :: ntiles = 6
-!!$
-!!$         real :: qsend(24)
-!!$         real :: send_tag, recv_tag
-!!$         integer :: sqest(24), rqest(24)
-!!$         integer :: Stats(24*MPI_STATUS_SIZE)
-!!$         integer :: nsend, nrecv, nread
-!!$         integer :: dest_gid, src_gid
-!!$         integer :: n
-!!$
-!!$         qsend = 1.e25
-!!$         nsend=0
-!!$         nrecv=0
-!!$
-!!$         if ( mod(tile,2) == 0 ) then
-!!$! Even Face LL and UR pairs 6 2-way
-!!$            if ( (is==1) .and. (js==1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(is,js+1)
-!!$               send_tag = 300+tile
-!!$               dest_gid = (tile-2)*npes_x*npes_y - 1
-!!$               if (dest_gid < 0) dest_gid=npes+dest_gid
-!!$               recv_tag = 100+(tile-2)
-!!$               if (tile==2) recv_tag = 100+(ntiles)
-!!$               src_gid  = (tile-3)*npes_x*npes_y
-!!$               src_gid  = src_gid + npes_x*(npes_y-1) + npes_x - 1
-!!$               if (src_gid < 0) src_gid=npes+src_gid
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(is-1,js), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1
-!!$               else 
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(is-1,js), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif
-!!$            endif
-!!$            if ( (ie==npx-1) .and. (je==npy-1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(ie,je+1)
-!!$               send_tag = 100+tile
-!!$               dest_gid = (tile+1)*npes_x*npes_y
-!!$               if (dest_gid+1 > npes) dest_gid=dest_gid-npes
-!!$               recv_tag = 300+(tile+2)
-!!$               if (tile==6) recv_tag = 300+2
-!!$               src_gid  = (tile+1)*npes_x*npes_y
-!!$               if (src_gid+1 > npes) src_gid=src_gid-npes
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(ie+2,je+1), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1
-!!$               else
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(ie+2,je+1), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif
-!!$            endif
-!!$! wait for comm to complete
-!!$            if (npes==6) then
-!!$               if (nsend>0) then
-!!$                  call MPI_WAITALL(nsend, sqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               if (nrecv>0) then
-!!$                  call MPI_WAITALL(nrecv, rqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               nsend=0 ; nrecv=0
-!!$            endif
-!!$
-!!$! Even Face LR 1 pair ; 1 1-way
-!!$            if ( (tile==2) .and. (ie==npx-1) .and. (js==1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(ie,js)
-!!$               send_tag = 200+tile
-!!$               dest_gid = (tile+1)*npes_x*npes_y + npes_x-1
-!!$               recv_tag = 200+(tile+2)
-!!$               src_gid  = dest_gid
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(ie+2,js), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1
-!!$               else
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(ie+2,js), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif
-!!$            endif
-!!$            if ( (tile==4) .and. (ie==npx-1) .and. (js==1) ) then 
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(ie+1,js+1)
-!!$               send_tag = 200+tile
-!!$               dest_gid = (tile-3)*npes_x*npes_y + npes_x-1
-!!$               recv_tag = 200+(tile-2)
-!!$               src_gid  = dest_gid
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &     
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(ie+2,js), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &          
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1
-!!$               else
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &        
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(ie+2,js), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(ie,js)
-!!$               send_tag = 200+tile
-!!$               dest_gid = (tile+1)*npes_x*npes_y + npes_x-1
-!!$               call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                               send_tag, commglobal, sqest(nsend), ierror )
-!!$            endif
-!!$            if ( (tile==6) .and. (ie==npx-1) .and. (js==1) ) then
-!!$               recv_tag = 200+(tile-2)
-!!$               src_gid  = (tile-3)*npes_x*npes_y + npes_x-1
-!!$               nrecv=nrecv+1
-!!$               call MPI_IRECV( q(ie+2,js), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                               recv_tag, commglobal, rqest(nrecv), ierror )
-!!$            endif
-!!$
-!!$! wait for comm to complete 
-!!$            if (npes==6) then
-!!$               if (nsend>0) then
-!!$                  call MPI_WAITALL(nsend, sqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               if (nrecv>0) then
-!!$                  call MPI_WAITALL(nrecv, rqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               nsend=0 ; nrecv=0
-!!$            endif
-!!$
-!!$! Send to Odd face LR 3 1-way
-!!$            if ( (is==1) .and. (js==1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(is+1,js)
-!!$               send_tag = 200+tile
-!!$               dest_gid = (tile-2)*npes_x*npes_y + npes_x-1
-!!$               call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                               send_tag, commglobal, sqest(nsend), ierror )
-!!$            endif
-!!$
-!!$! Receive Even Face UL 3 1-way
-!!$            if ( (is==1) .and. (je==npy-1) ) then
-!!$               recv_tag = 400+(tile-1)
-!!$               src_gid  = (tile-2)*npes_x*npes_y + npes_x*(npes_y-1) + npes_x-1
-!!$               nrecv=nrecv+1
-!!$               call MPI_IRECV( q(is-1,je+1), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                               recv_tag, commglobal, rqest(nrecv), ierror )
-!!$            endif
-!!$
-!!$         else
-!!$
-!!$! Odd Face LL and UR pairs 6 2-way
-!!$            if ( (is==1) .and. (js==1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(is+1,js)
-!!$               send_tag = 300+tile
-!!$               dest_gid = (tile-2)*npes_x*npes_y - 1
-!!$               if (dest_gid < 0) dest_gid=npes+dest_gid
-!!$               recv_tag = 100+(tile-2)
-!!$               if (tile==1) recv_tag = 100+(ntiles-tile)
-!!$               src_gid  = (tile-3)*npes_x*npes_y
-!!$               src_gid  = src_gid + npes_x*(npes_y-1) + npes_x - 1
-!!$               if (src_gid < 0) src_gid=npes+src_gid
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(is-1,js), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &             
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1
-!!$               else 
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(is-1,js), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif
-!!$            endif
-!!$            if ( (ie==npx-1) .and. (je==npy-1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(ie+1,je)
-!!$               send_tag = 100+tile
-!!$               dest_gid = (tile+1)*npes_x*npes_y
-!!$               if (dest_gid+1 > npes) dest_gid=dest_gid-npes
-!!$               recv_tag = 300+(tile+2)
-!!$               if (tile==5) recv_tag = 300+1
-!!$               src_gid  = (tile+1)*npes_x*npes_y
-!!$               if (src_gid+1 > npes) src_gid=src_gid-npes
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &      
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(ie+2,je+1), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &             
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1
-!!$               else 
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(ie+2,je+1), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif
-!!$            endif
-!!$! wait for comm to complete 
-!!$            if (npes==6) then
-!!$               if (nsend>0) then
-!!$                  call MPI_WAITALL(nsend, sqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               if (nrecv>0) then
-!!$                  call MPI_WAITALL(nrecv, rqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               nsend=0 ; nrecv=0
-!!$            endif
-!!$            
-!!$! Odd Face UL 1 pair ; 1 1-way
-!!$            if ( (tile==1) .and. (is==1) .and. (je==npy-1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(is,je)
-!!$               send_tag = 400+tile
-!!$               dest_gid = (tile+1)*npes_x*npes_y + npes_x*(npes_y-1)
-!!$               recv_tag = 400+(tile+2)
-!!$               src_gid  = dest_gid
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(is-1,je+1), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1
-!!$               else
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(is-1,je+1), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif
-!!$            endif
-!!$            if ( (tile==3) .and. (is==1) .and. (je==npy-1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(is+1,je+1)
-!!$               send_tag = 400+tile
-!!$               dest_gid = npes_x*(npes_y-1)
-!!$               recv_tag = 400+(tile-2)           
-!!$               src_gid  = dest_gid
-!!$               if (npes>6) then
-!!$                  call MPI_SENDRECV( qsend(nsend), 1, MPI_DOUBLE_PRECISION, &     
-!!$                                     dest_gid, send_tag, &
-!!$                                     q(is-1,je+1), 1, MPI_DOUBLE_PRECISION, &
-!!$                                     src_gid, recv_tag, &          
-!!$                                     commglobal, Stats, ierror )
-!!$                  nsend=nsend-1             
-!!$               else
-!!$                  call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &        
-!!$                                  send_tag, commglobal, sqest(nsend), ierror )
-!!$                  nrecv=nrecv+1
-!!$                  call MPI_IRECV( q(is-1,je+1), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                                  recv_tag, commglobal, rqest(nrecv), ierror )
-!!$               endif            
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(is,je)
-!!$               send_tag = 400+tile
-!!$               dest_gid = (tile+1)*npes_x*npes_y + npes_x*(npes_y-1)
-!!$               call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                               send_tag, commglobal, sqest(nsend), ierror )
-!!$            endif
-!!$            if ( (tile==5) .and. (is==1) .and. (je==npy-1) ) then
-!!$               recv_tag = 400+(tile-2)
-!!$               src_gid  = (tile-3)*npes_x*npes_y + npes_x*(npes_y-1)
-!!$               nrecv=nrecv+1 
-!!$               call MPI_IRECV( q(is-1,je+1), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                               recv_tag, commglobal, rqest(nrecv), ierror ) 
-!!$            endif
-!!$
-!!$! wait for comm to complete 
-!!$            if (npes==6) then
-!!$               if (nsend>0) then
-!!$                  call MPI_WAITALL(nsend, sqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               if (nrecv>0) then
-!!$                  call MPI_WAITALL(nrecv, rqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$               endif
-!!$               nsend=0 ; nrecv=0
-!!$            endif
-!!$
-!!$! Send to Even face UL 3 1-way 
-!!$            if ( (ie==npx-1) .and. (je==npy-1) ) then
-!!$               nsend=nsend+1
-!!$               qsend(nsend) = q(ie,je+1)
-!!$               send_tag = 400+tile
-!!$               dest_gid = tile*npes_x*npes_y + npes_x*(npes_y-1)
-!!$               call MPI_ISEND( qsend(nsend), 1, MPI_DOUBLE_PRECISION, dest_gid, &
-!!$                               send_tag, commglobal, sqest(nsend), ierror )
-!!$            endif
-!!$
-!!$! Receive Odd Face LR 3 1-way
-!!$            if ( (ie==npx-1) .and. (js==1) ) then
-!!$               recv_tag = 200+(tile+1)
-!!$               src_gid  = (tile-1)*npes_x*npes_y + npes_x*npes_y 
-!!$               nrecv=nrecv+1
-!!$               call MPI_IRECV( q(ie+2,js), 1, MPI_DOUBLE_PRECISION, src_gid,  &
-!!$                               recv_tag, commglobal, rqest(nrecv), ierror )
-!!$            endif
-!!$
-!!$         endif
-!!$
-!!$! wait for comm to complete
-!!$         if (nsend>0) then
-!!$            call MPI_WAITALL(nsend, sqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$         endif
-!!$         if (nrecv>0) then
-!!$            call MPI_WAITALL(nrecv, rqest, Stats, ierror)
-!!$
-!!$
-!!$
-!!$         endif
-!!$
-!!$      end subroutine mp_corner_comm
-!!$!
-!!$! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
-!!$!-------------------------------------------------------------------------------
-
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
-!>@brief  The subroutine 'mp_gather_4d_r4' calls SPMD Gather. 
+!       
+!     mp_gather_4d_r4 :: Call SPMD Gather 
+!     
       subroutine mp_gather_4d_r4(q, i1,i2, j1,j2, idim, jdim, kdim, ldim)
          integer, intent(IN)  :: i1,i2, j1,j2
          integer, intent(IN)  :: idim, jdim, kdim, ldim

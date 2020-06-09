@@ -119,11 +119,12 @@ module fv_control_mod
    use field_manager_mod,   only: MODEL_ATMOS
    use fms_mod,             only: write_version_number, open_namelist_file, &
                                   check_nml_error, close_file, file_exist
+   use fms_io_mod,          only: set_domain
    use mpp_mod,             only: FATAL, mpp_error, mpp_pe, stdlog, &
                                   mpp_npes, mpp_get_current_pelist, &
                                   input_nml_file, get_unit, WARNING, &
                                   read_ascii_file, INPUT_STR_LENGTH
-   use mpp_domains_mod,     only: mpp_get_data_domain, mpp_get_compute_domain
+   use mpp_domains_mod,     only: mpp_get_data_domain, mpp_get_compute_domain, mpp_get_tile_id
    use tracer_manager_mod,  only: tm_get_number_tracers => get_number_tracers, &
                                   tm_get_tracer_index   => get_tracer_index,   &
                                   tm_get_tracer_indices => get_tracer_indices, &
@@ -139,17 +140,18 @@ module fv_control_mod
    use fv_grid_utils_mod,   only: grid_utils_init, grid_utils_end, ptop_min
    use fv_eta_mod,          only: set_eta
    use fv_grid_tools_mod,   only: init_grid
-   use fv_mp_mod,           only: mp_start, mp_assign_gid, domain_decomp
-   use fv_mp_mod,           only: ng, switch_current_Atm
-   use fv_mp_mod,           only: broadcast_domains, mp_barrier, is_master, setup_master
-!!! CLEANUP: should be replaced by a getter function?
-   use test_cases_mod,      only: test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
+   use fv_mp_mod,           only: mp_start, domain_decomp, mp_assign_gid, global_nest_domain
+   use fv_mp_mod,           only: broadcast_domains, mp_barrier, is_master, setup_master, grids_master_procs, tile_fine
+   use fv_mp_mod,           only: MAX_NNEST, MAX_NTILE
+   !use test_cases_mod,      only: test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
    use fv_timing_mod,       only: timing_on, timing_off, timing_init, timing_prt
    use mpp_domains_mod,     only: domain2D
    use mpp_domains_mod,     only: mpp_define_nest_domains, nest_domain_type, mpp_get_global_domain
-   use mpp_domains_mod,     only: mpp_get_C2F_index, mpp_get_F2C_index, mpp_broadcast_domain
+   use mpp_domains_mod,     only: mpp_get_C2F_index, mpp_get_F2C_index
    use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST, WEST, SOUTH
-   use mpp_mod,             only: mpp_send, mpp_sync, mpp_transmit, mpp_set_current_pelist, mpp_declare_pelist, mpp_root_pe, mpp_recv, mpp_sync_self, mpp_broadcast, read_input_nml
+   use mpp_mod,             only: mpp_send, mpp_sync, mpp_transmit, mpp_set_current_pelist, &
+                                  mpp_declare_pelist, mpp_root_pe, mpp_recv, mpp_sync_self, read_input_nml, &
+                                  mpp_max
    use fv_diagnostics_mod,  only: fv_diag_init_gn
 
 #ifdef MULTI_GASES
@@ -162,206 +164,19 @@ module fv_control_mod
    implicit none
    private
 
-!-----------------------------------------------------------------------
-! Grid descriptor file setup
-!-----------------------------------------------------------------------
-!------------------------------------------
-! Model Domain parameters
-! See fv_arrays.F90 for descriptions
-!------------------------------------------
-!CLEANUP module pointers
-   character(len=80) , pointer :: grid_name
-   character(len=120), pointer :: grid_file
-   integer, pointer :: grid_type
-   integer , pointer :: hord_mt 
-   integer , pointer :: kord_mt 
-   integer , pointer :: kord_wz 
-   integer , pointer :: hord_vt 
-   integer , pointer :: hord_tm 
-   integer , pointer :: hord_dp 
-   integer , pointer :: kord_tm 
-   integer , pointer :: hord_tr 
-   integer , pointer :: kord_tr 
-   real    , pointer :: scale_z 
-   real    , pointer :: w_max 
-   real    , pointer :: z_min 
-   real    , pointer :: lim_fac
-
-   integer , pointer :: nord
-   integer , pointer :: nord_tr
-   real    , pointer :: dddmp 
-   real    , pointer :: d2_bg 
-   real    , pointer :: d4_bg 
-   real    , pointer :: vtdm4 
-   real    , pointer :: trdm2 
-   real    , pointer :: d2_bg_k1 
-   real    , pointer :: d2_bg_k2 
-   real    , pointer :: d2_divg_max_k1 
-   real    , pointer :: d2_divg_max_k2 
-   real    , pointer :: damp_k_k1 
-   real    , pointer :: damp_k_k2 
-   integer , pointer ::    n_zs_filter
-   integer , pointer :: nord_zs_filter
-   logical , pointer :: full_zs_filter
-
-   logical , pointer :: RF_fast
-   logical , pointer :: consv_am
-   logical , pointer :: do_sat_adj
-   logical , pointer :: do_f3d
-   logical , pointer :: no_dycore 
-   logical , pointer :: convert_ke 
-   logical , pointer :: do_vort_damp 
-   logical , pointer :: use_old_omega 
-! PG off centering:
-   real    , pointer :: beta  
-   integer , pointer :: n_sponge 
-   real    , pointer :: d_ext 
-   integer , pointer :: nwat  
-   logical , pointer :: warm_start 
-   logical , pointer :: inline_q 
-   real , pointer :: shift_fac   
-   logical , pointer :: do_schmidt 
-   real(kind=R_GRID) , pointer :: stretch_fac 
-   real(kind=R_GRID) , pointer :: target_lat  
-   real(kind=R_GRID) , pointer :: target_lon  
-
-   logical , pointer :: reset_eta 
-   real    , pointer :: p_fac
-   real    , pointer :: a_imp
-   integer , pointer :: n_split 
-
-   real    , pointer :: fac_n_spl
-   real    , pointer :: fhouri
-                             ! Default 
-   integer , pointer :: m_split 
-   integer , pointer :: k_split 
-   logical , pointer :: use_logp
-
-   integer , pointer :: q_split 
-   integer , pointer :: print_freq 
-   logical , pointer :: write_3d_diags
-
-   integer , pointer :: npx           
-   integer , pointer :: npy           
-   integer , pointer :: npz
-   integer , pointer :: npz_rst 
-                                      
-   integer , pointer :: ncnst 
-   integer , pointer :: pnats 
-   integer , pointer :: dnats 
-   integer , pointer :: ntiles        
-   integer , pointer :: nf_omega  
-   integer , pointer :: fv_sg_adj 
-                                      
-   integer , pointer :: na_init 
-   logical , pointer :: nudge_dz
-   real    , pointer :: p_ref 
-   real    , pointer :: dry_mass 
-   integer , pointer :: nt_prog 
-   integer , pointer :: nt_phys 
-   real    , pointer :: tau_h2o 
-
-   real    , pointer :: delt_max
-   real    , pointer :: d_con 
-   real    , pointer :: ke_bg
-   real    , pointer :: consv_te 
-   real    , pointer :: tau 
-   real    , pointer :: rf_cutoff
-   logical , pointer :: filter_phys 
-   logical , pointer :: dwind_2d 
-   logical , pointer :: breed_vortex_inline 
-   logical , pointer :: range_warn 
-   logical , pointer :: fill 
-   logical , pointer :: fill_dp 
-   logical , pointer :: fill_wz 
-   logical , pointer :: check_negative
-   logical , pointer :: non_ortho 
-   logical , pointer :: adiabatic 
-   logical , pointer :: moist_phys 
-   logical , pointer :: do_Held_Suarez 
-   logical , pointer :: do_reed_physics
-   logical , pointer :: reed_cond_only
-   logical , pointer :: reproduce_sum 
-   logical , pointer :: adjust_dry_mass 
-   logical , pointer :: fv_debug  
-   logical , pointer :: srf_init  
-   logical , pointer :: mountain  
-   logical , pointer :: remap_t  
-   logical , pointer :: z_tracer 
-
-   logical , pointer :: old_divg_damp 
-   logical , pointer :: fv_land 
-   logical , pointer :: nudge 
-   logical , pointer :: nudge_ic
-   logical , pointer :: ncep_ic 
-   logical , pointer :: nggps_ic 
-   logical , pointer :: ecmwf_ic 
-   logical , pointer :: gfs_phil
-   logical , pointer :: agrid_vel_rst
-   logical , pointer :: use_new_ncep 
-   logical , pointer :: use_ncep_phy 
-   logical , pointer :: fv_diag_ic 
-   logical , pointer :: external_ic 
-   logical , pointer :: external_eta
-   logical , pointer :: read_increment
-   character(len=128) , pointer :: res_latlon_dynamics
-   character(len=128) , pointer :: res_latlon_tracers 
-   logical , pointer :: hydrostatic 
-   logical , pointer :: phys_hydrostatic
-   logical , pointer :: use_hydro_pressure
-   logical , pointer :: do_uni_zfull !miz
-   logical , pointer :: adj_mass_vmr ! f1p
-   logical , pointer :: hybrid_z    
-   logical , pointer :: Make_NH     
-   logical , pointer :: make_hybrid_z  
-   logical , pointer :: nudge_qv
-   real,     pointer :: add_noise
-   logical , pointer :: butterfly_effect
-
-   integer , pointer :: a2b_ord 
-   integer , pointer :: c2l_ord 
-
-   integer, pointer :: ndims
-
-  real(kind=R_GRID), pointer :: dx_const
-  real(kind=R_GRID), pointer :: dy_const
-  real(kind=R_GRID), pointer :: deglon_start, deglon_stop, &  ! boundaries of latlon patch
-          deglat_start, deglat_stop
-  real(kind=R_GRID), pointer :: deglat
-
-  logical, pointer :: nested, twowaynest
-  logical, pointer :: regional
-  integer, pointer :: bc_update_interval 
-  integer, pointer :: nrows_blend
-  logical, pointer :: regional_bcs_from_gsi
-  logical, pointer :: write_restart_with_bcs
-  integer, pointer :: parent_tile, refinement, nestbctype, nestupdate, nsponge, ioffset, joffset
-  real, pointer :: s_weight, update_blend
-
-  integer, pointer :: layout(:), io_layout(:)
-
-   integer :: ntilesMe                ! Number of tiles on this process =1 for now
-
 #ifdef OVERLOAD_R4
    real    :: too_big  = 1.E8
 #else
    real    :: too_big  = 1.E35
 #endif
-   public :: fv_init, fv_end
+   public :: fv_control_init, fv_end
 
    integer, public :: ngrids = 1
-   integer, public, allocatable :: pelist_all(:)
-   integer :: commID, max_refinement_of_global = 1.
-   integer :: gid
+   integer :: commID, global_commID
 
-   real :: umax = 350.           !< max wave speed for grid_type>3
-   integer :: parent_grid_num = -1
-
-   integer :: halo_update_type = 1 !< 1 for two-interfaces non-block
-                                   !< 2 for block
-                                   !< 3 for four-interfaces non-block
-
-
+   integer :: halo_update_type = 1 ! 1 for two-interfaces non-block
+                                   ! 2 for block
+                                   ! 3 for four-interfaces non-block
 
 ! version number of this module
 ! Include variable "version" to be written to log file.
@@ -370,361 +185,876 @@ module fv_control_mod
  contains
 
 !-------------------------------------------------------------------------------
-!>@brief The subroutine 'fv_init' initializes FV3.
-!>@details It allocates memory, sets up MPI and processor lists,
-!! sets up the grid, and controls FV3 namelist parameters.   
- subroutine fv_init(Atm, dt_atmos, grids_on_this_pe, p_split)
-
-   type(fv_atmos_type), allocatable, intent(inout), target :: Atm(:)
-   real,                intent(in)    :: dt_atmos
-   logical, allocatable, intent(INOUT) :: grids_on_this_pe(:)
-   integer, intent(INOUT) :: p_split
-
-   integer :: i, j, k, n, p
-   real :: sdt
-
-! tracers
-   integer :: num_family          !< output of register_tracers
-
-   integer :: isc_p, iec_p, jsc_p, jec_p, isg, ieg, jsg, jeg, upoff, jind
-   integer :: ic, jc
-
-   gid = mpp_pe()
-   call init_nesting(Atm, grids_on_this_pe, p_split)
-
-   !This call is needed to set up the pointers for fv_current_grid, even for a single-grid run
-   !call switch_current_Atm(Atm(1), .false.)
-   call setup_pointers(Atm(1))
-
-! Start up MPI
-
-   !call mp_assign_gid
-
-    ! Initialize timing routines
-      call timing_init
-      call timing_on('TOTAL')
-
-    ! Setup the run from namelist 
-      ntilesMe = size(Atm(:)) !Full number of Atm arrays; one less than number of grids, if multiple grids
-
-      call run_setup(Atm,dt_atmos, grids_on_this_pe, p_split)   ! initializes domain_decomp
-
-      do n=1,ntilesMe
-
-         !In a single-grid run this will still be needed to correctly set the domain
-         call switch_current_Atm(Atm(n))
-         call setup_pointers(Atm(n))
          
-         target_lon = target_lon * pi/180.
-         target_lat = target_lat * pi/180.
+   subroutine fv_control_init(Atm, dt_atmos, this_grid, grids_on_this_pe, p_split)
 
-!--------------------------------------------------
-! override number of tracers by reading field_table
-!--------------------------------------------------
+     type(fv_atmos_type), allocatable, intent(inout), target :: Atm(:)
+     real,                intent(in)    :: dt_atmos
+     integer,             intent(OUT)   :: this_grid
+     logical, allocatable, intent(OUT) :: grids_on_this_pe(:)
 
-         !not sure if this works with multiple grids
-         call tm_register_tracers (MODEL_ATMOS, ncnst, nt_prog, pnats, num_family)
-         if(is_master()) then
-            write(*,*) 'ncnst=', ncnst,' num_prog=',nt_prog,' pnats=',pnats,' dnats=',dnats,' num_family=',num_family         
-            print*, ''
-         endif
+     integer, intent(INOUT) :: p_split
+     character(100) :: pe_list_name, errstring
+     integer :: n, npes, pecounter, i, num_family, ntiles_nest_all
+     integer, allocatable :: global_pelist(:)
+     integer, dimension(MAX_NNEST) :: grid_pes = 0
+     integer, dimension(MAX_NNEST) :: grid_coarse = -1
+     integer, dimension(MAX_NNEST) :: nest_refine = 3 
+     integer, dimension(MAX_NNEST) :: nest_ioffsets, nest_joffsets
+     integer, dimension(MAX_NNEST) :: all_npx = 0
+     integer, dimension(MAX_NNEST) :: all_npy = 0
+     integer, dimension(MAX_NNEST) :: all_npz = 0
+     integer, dimension(MAX_NNEST) :: all_ntiles = 0
+     integer, dimension(MAX_NNEST) :: all_twowaynest = 0 ! > 0 implies two-way
+     !integer, dimension(MAX_NNEST) :: tile_fine = 0
+     integer, dimension(MAX_NNEST) :: icount_coarse = 1
+     integer, dimension(MAX_NNEST) :: jcount_coarse = 1
+     integer, dimension(MAX_NNEST) :: nest_level = 0
+     integer, dimension(MAX_NNEST) :: tile_coarse = 0
+     integer, dimension(MAX_NTILE) :: npes_nest_tile = 0
 
-         if (grids_on_this_pe(n)) then
-            call allocate_fv_atmos_type(Atm(n), Atm(n)%bd%isd, Atm(n)%bd%ied, Atm(n)%bd%jsd, Atm(n)%bd%jed, &
-                 Atm(n)%bd%isc, Atm(n)%bd%iec, Atm(n)%bd%jsc, Atm(n)%bd%jec, &
-                 npx, npy, npz, ndims, ncnst, ncnst-pnats, ng, .false., grids_on_this_pe(n), ngrids)
+     real :: sdt
+     integer :: unit, ens_root_pe, tile_id(1)
 
-            if (grids_on_this_pe(n)) then
+     !!!!!!!!!! POINTERS FOR READING NAMELISTS !!!!!!!!!!
 
-               call switch_current_Atm(Atm(n))
-               call setup_pointers(Atm(n))
+     !------------------------------------------
+     ! Model Domain parameters
+     ! See fv_arrays.F90 for descriptions
+     !------------------------------------------
+     !CLEANUP module pointers
+     character(len=80) , pointer :: grid_name
+     character(len=120), pointer :: grid_file
+     integer, pointer :: grid_type
+     integer , pointer :: hord_mt 
+     integer , pointer :: kord_mt 
+     integer , pointer :: kord_wz 
+     integer , pointer :: hord_vt 
+     integer , pointer :: hord_tm 
+     integer , pointer :: hord_dp 
+     integer , pointer :: kord_tm 
+     integer , pointer :: hord_tr 
+     integer , pointer :: kord_tr 
+     real    , pointer :: scale_z 
+     real    , pointer :: w_max 
+     real    , pointer :: z_min 
+     real    , pointer :: lim_fac
 
-               if ( (Atm(n)%bd%iec-Atm(n)%bd%isc+1).lt.4 .or. (Atm(n)%bd%jec-Atm(n)%bd%jsc+1).lt.4 ) then
-                  if (is_master()) write(*,'(6I6)') Atm(n)%bd%isc, Atm(n)%bd%iec, Atm(n)%bd%jsc, Atm(n)%bd%jec, n
-                  call mpp_error(FATAL,'Domain Decomposition:  Cubed Sphere compute domain has a &
-                       &minium requirement of 4 points in X and Y, respectively')
-               end if
+     integer , pointer :: nord
+     integer , pointer :: nord_tr
+     real    , pointer :: dddmp 
+     real    , pointer :: d2_bg 
+     real    , pointer :: d4_bg 
+     real    , pointer :: vtdm4 
+     real    , pointer :: trdm2 
+     real    , pointer :: d2_bg_k1 
+     real    , pointer :: d2_bg_k2 
+     real    , pointer :: d2_divg_max_k1 
+     real    , pointer :: d2_divg_max_k2 
+     real    , pointer :: damp_k_k1 
+     real    , pointer :: damp_k_k2 
+     integer , pointer ::    n_zs_filter
+     integer , pointer :: nord_zs_filter
+     logical , pointer :: full_zs_filter
 
-            endif
+     logical , pointer :: RF_fast
+     logical , pointer :: consv_am
+     logical , pointer :: do_sat_adj
+     logical , pointer :: do_f3d
+     logical , pointer :: no_dycore 
+     logical , pointer :: convert_ke 
+     logical , pointer :: do_vort_damp 
+     logical , pointer :: use_old_omega 
+     ! PG off centering:
+     real    , pointer :: beta  
+     integer , pointer :: n_sponge 
+     real    , pointer :: d_ext 
+     integer , pointer :: nwat  
+     logical , pointer :: warm_start 
+     logical , pointer :: inline_q 
+     real , pointer :: shift_fac   
+     logical , pointer :: do_schmidt, do_cube_transform 
+     real(kind=R_GRID) , pointer :: stretch_fac 
+     real(kind=R_GRID) , pointer :: target_lat  
+     real(kind=R_GRID) , pointer :: target_lon  
 
-            !!CLEANUP: Convenience pointers
-            Atm(n)%gridstruct%nested      => Atm(n)%neststruct%nested
-            Atm(n)%gridstruct%grid_type   => Atm(n)%flagstruct%grid_type
-            Atm(n)%flagstruct%grid_number => Atm(n)%grid_number
-            Atm(n)%gridstruct%regional  => Atm(n)%flagstruct%regional
+     logical , pointer :: reset_eta 
+     real    , pointer :: p_fac
+     real    , pointer :: a_imp
+     integer , pointer :: n_split 
+     real    , pointer :: fac_n_spl
+     real    , pointer :: fhouri
+     ! Default 
+     integer , pointer :: m_split 
+     integer , pointer :: k_split 
+     logical , pointer :: use_logp
 
-            call init_grid(Atm(n), grid_name, grid_file, npx, npy, npz, ndims, ntiles, ng)
+     integer , pointer :: q_split 
+     integer , pointer :: print_freq 
+     logical , pointer :: write_3d_diags
 
-            ! Initialize the SW (2D) part of the model
-            !!!CLEANUP: this call could definitely use some cleaning up
-            call grid_utils_init(Atm(n), npx, npy, npz, non_ortho, grid_type, c2l_ord)
+     integer , pointer :: npx           
+     integer , pointer :: npy           
+     integer , pointer :: npz     
+     character(len=24), pointer :: npz_type
+     integer , pointer :: npz_rst 
 
-            !!!CLEANUP: Are these correctly writing out on all pes?
-            if ( is_master() ) then
-               sdt =  dt_atmos/real(n_split*k_split*abs(p_split))
-               write(*,*) ' '
-               write(*,*) 'Divergence damping Coefficients'
-               write(*,*) 'For small dt=', sdt
-               write(*,*) 'External mode del-2 (m**2/s)=',  d_ext*Atm(n)%gridstruct%da_min_c/sdt
-               write(*,*) 'Internal mode del-2 SMAG dimensionless coeff=',  dddmp
-               write(*,*) 'Internal mode del-2 background diff=', d2_bg*Atm(n)%gridstruct%da_min_c/sdt
+     integer , pointer :: ncnst 
+     integer , pointer :: pnats 
+     integer , pointer :: dnats 
+     integer , pointer :: dnrts 
+     integer , pointer :: ntiles        
+     integer , pointer :: nf_omega  
+     integer , pointer :: fv_sg_adj 
+     real    , pointer :: sg_cutoff
 
-               if (nord==1) then
-                   write(*,*) 'Internal mode del-4 background diff=', d4_bg
-                   write(*,*) 'Vorticity del-4 (m**4/s)=', (vtdm4*Atm(n)%gridstruct%da_min)**2/sdt*1.E-6
-               endif
-               if (nord==2) write(*,*) 'Internal mode del-6 background diff=', d4_bg
-               if (nord==3) write(*,*) 'Internal mode del-8 background diff=', d4_bg
-               write(*,*) 'tracer del-2 diff=', trdm2
+     integer , pointer :: na_init 
+     logical , pointer :: nudge_dz
+     real    , pointer :: p_ref 
+     real    , pointer :: dry_mass 
+     integer , pointer :: nt_prog 
+     integer , pointer :: nt_phys 
+     real    , pointer :: tau_h2o 
 
-               write(*,*) 'Vorticity del-4 (m**4/s)=', (vtdm4*Atm(n)%gridstruct%da_min)**2/sdt*1.E-6
-               write(*,*) 'beta=', beta
-               write(*,*) ' '
-            endif
+     real    , pointer :: delt_max
+     real    , pointer :: d_con 
+     real    , pointer :: ke_bg
+     real    , pointer :: consv_te 
+     real    , pointer :: tau 
+     real    , pointer :: rf_cutoff
+     logical , pointer :: filter_phys 
+     logical , pointer :: dwind_2d 
+     logical , pointer :: breed_vortex_inline 
+     logical , pointer :: range_warn 
+     logical , pointer :: fill 
+     logical , pointer :: fill_dp 
+     logical , pointer :: fill_wz 
+     logical , pointer :: fill_gfs
+     logical , pointer :: check_negative
+     logical , pointer :: non_ortho 
+     logical , pointer :: adiabatic 
+     logical , pointer :: moist_phys 
+     logical , pointer :: do_Held_Suarez 
+     logical , pointer :: do_reed_physics
+     logical , pointer :: reed_cond_only
+     logical , pointer :: reproduce_sum 
+     logical , pointer :: adjust_dry_mass 
+     logical , pointer :: fv_debug  
+     logical , pointer :: srf_init  
+     logical , pointer :: mountain  
+     logical , pointer :: remap_t  
+     logical , pointer :: z_tracer 
+
+     logical , pointer :: old_divg_damp 
+     logical , pointer :: fv_land 
+     logical , pointer :: nudge 
+     logical , pointer :: nudge_ic
+     logical , pointer :: ncep_ic 
+     logical , pointer :: nggps_ic 
+     logical , pointer :: ecmwf_ic 
+     logical , pointer :: gfs_phil
+     logical , pointer :: agrid_vel_rst
+     logical , pointer :: use_new_ncep 
+     logical , pointer :: use_ncep_phy 
+     logical , pointer :: fv_diag_ic 
+     logical , pointer :: external_ic 
+     logical , pointer :: external_eta
+     logical , pointer :: read_increment
+     logical , pointer :: hydrostatic 
+     logical , pointer :: phys_hydrostatic
+     logical , pointer :: use_hydro_pressure
+     logical , pointer :: do_uni_zfull !miz
+     logical , pointer :: adj_mass_vmr ! f1p
+     logical , pointer :: hybrid_z    
+     logical , pointer :: Make_NH     
+     logical , pointer :: make_hybrid_z  
+     logical , pointer :: nudge_qv
+     real,     pointer :: add_noise
+     logical , pointer :: butterfly_effect
+
+     integer , pointer :: a2b_ord 
+     integer , pointer :: c2l_ord 
+
+     integer, pointer :: ndims
+
+     real(kind=R_GRID), pointer :: dx_const
+     real(kind=R_GRID), pointer :: dy_const
+     real(kind=R_GRID), pointer :: deglon_start, deglon_stop, &  ! boundaries of latlon patch
+          deglat_start, deglat_stop
+     real(kind=R_GRID), pointer :: deglat
+
+     logical, pointer :: nested, twowaynest
+     logical, pointer :: regional
+     integer, pointer :: bc_update_interval 
+     integer, pointer :: nrows_blend
+     logical, pointer :: regional_bcs_from_gsi
+     logical, pointer :: write_restart_with_bcs
+     integer, pointer :: parent_tile, refinement, nestbctype, nestupdate, nsponge, ioffset, joffset
+     real, pointer :: s_weight, update_blend
+
+     integer, pointer :: layout(:), io_layout(:)
+
+     !!!!!!!!!! END POINTERS !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+     this_grid = -1 ! default
+     call mp_assign_gid
+     ens_root_pe = mpp_root_pe()
+
+     ! 1. read nesting namelists
+     call read_namelist_nest_nml
+     call read_namelist_fv_nest_nml
+
+     ! 2. Set up Atm and PElists
+
+     ngrids = 1
+     do n=2,MAX_NNEST
+        if (grid_coarse(n) <= 0) then
+           exit
+        endif
+        ngrids = ngrids + 1
+     enddo
+     allocate(Atm(ngrids))
+     npes = mpp_npes() ! now on global pelist
+
+     allocate(global_pelist(npes))
+     call mpp_get_current_pelist(global_pelist, commID=global_commID) ! for commID
 
 
-            Atm(n)%ts   = 300.
-            Atm(n)%phis = too_big
-            ! The following statements are to prevent the phatom corner regions from
-            ! growing instability
-            Atm(n)%u  = 0.
-            Atm(n)%v  = 0.
-            Atm(n)%ua = too_big
-            Atm(n)%va = too_big
+     allocate(grids_master_procs(ngrids))
+     pecounter = 0
+     allocate(grids_on_this_pe(ngrids))
+     grids_on_this_pe(:) = .false.
 
-         else !this grid is NOT defined on this pe
+     do n=1,ngrids
 
-            !Allocate dummy arrays
-            call allocate_fv_atmos_type(Atm(n),  Atm(n)%bd%isd, Atm(n)%bd%ied, Atm(n)%bd%jsd, Atm(n)%bd%jed, &
-                 Atm(n)%bd%isc, Atm(n)%bd%iec, Atm(n)%bd%jsc, Atm(n)%bd%jec, &
-                 npx, npy, npz, ndims, ncnst, ncnst-pnats, ng, .true., .false., ngrids)
+        if (ngrids == 1 .or. grid_pes(n) == 0) then
+           grid_pes(n) = npes - sum(grid_pes)
+           if (grid_pes(n) == 0) then
+              if ( n > 1 ) then
+                 call mpp_error(FATAL, 'Only one zero entry in grid_pes permitted.') 
+              else
+                 grid_pes(n) = npes
+              endif
+           endif
+        endif
 
-            !Need to SEND grid_global to any child grids; this is received in setup_aligned_nest in fv_grid_tools
-            if (Atm(n)%neststruct%nested) then
+        allocate(Atm(n)%pelist(grid_pes(n)))
+        grids_master_procs(n) = pecounter
+        do i=1,grid_pes(n)
+           if (pecounter >= npes) then
+              if (mpp_pe() == 0) then
+                 print*, 'ngrids = ', ngrids, ', grid_pes = ', grid_pes(1:ngrids)
+              endif
+              call mpp_error(FATAL, 'grid_pes assigns more PEs than are available.')
+           endif
+           Atm(n)%pelist(i) = pecounter + ens_root_pe !TODO PELIST set up by mpp_define_nest_domains???
+           pecounter = pecounter + 1
+           Atm(n)%npes_this_grid = grid_pes(n)
+        enddo
+        Atm(n)%grid_number = n
 
-               call mpp_get_global_domain( Atm(n)%parent_grid%domain, &
-                    isg, ieg, jsg, jeg)
+        !TODO: we are required to use PE name for reading INTERNAL namelist
+        ! and the actual file name for EXTERNAL namelists. Need to clean up this code
+        if (n == 1) then
+           pe_list_name = ''
+        else
+           write(pe_list_name,'(A4, I2.2)') 'nest', n
+        endif
+        call mpp_declare_pelist(Atm(n)%pelist, pe_list_name)
+        !If nest need to re-initialize internal NML
+        if (n > 1) then
+           Atm(n)%nml_filename = 'input_'//trim(pe_list_name)//'.nml'
+        else
+           Atm(n)%nml_filename = 'input.nml'
+        endif
+        if (.not. file_exist(Atm(n)%nml_filename)) then
+           call mpp_error(FATAL, "Could not find nested grid namelist "//Atm(n)%nml_filename)
+        endif
+     enddo
 
-               !FIXME: Should replace this by generating the global grid (or at least one face thereof) on the 
-               ! nested PEs instead of sending it around.
-               if (gid == Atm(n)%parent_grid%pelist(1)) then
-                     call mpp_send(Atm(n)%parent_grid%grid_global(isg-ng:ieg+1+ng,jsg-ng:jeg+1+ng,1:2,parent_tile), &
-                          size(Atm(n)%parent_grid%grid_global(isg-ng:ieg+1+ng,jsg-ng:jeg+1+ng,1:2,parent_tile)), &
-                       Atm(n)%pelist(1)) !send to p_ind in setup_aligned_nest
-                  call mpp_sync_self()
-               endif
+     do n=1,ngrids        
+        !ONE grid per pe
+        if (ANY(mpp_pe() == Atm(n)%pelist)) then
+           if (this_grid > 0) then
+              print*, mpp_pe(), this_grid, n
+              call mpp_error(FATAL, " Grid assigned to multiple pes")
+           endif
+           call mpp_set_current_pelist(Atm(n)%pelist)
+           call setup_master(Atm(n)%pelist)
+           this_grid = n
+           grids_on_this_pe(n) = .true.
+        endif
+        Atm(n)%neststruct%nested = ( grid_coarse(n) > 0 )
 
-               if (Atm(n)%neststruct%twowaynest) then
+        if (Atm(n)%neststruct%nested) then
+           if ( grid_coarse(n) > ngrids .or. grid_coarse(n) == n .or. grid_coarse(n) < 1) then
+              write(errstring,'(2(A,I3))')  "Could not find parent grid #", grid_coarse(n), ' for grid #', n
+              call mpp_error(FATAL, errstring)
+           endif
+           Atm(n)%parent_grid => Atm(grid_coarse(n))
 
-                  !This in reality should be very simple. With the
-                  ! restriction that only the compute domain data is
-                  ! sent from the coarse grid, we can compute
-                  ! exactly which coarse grid cells should use
-                  ! which nested-grid data. We then don't need to send around p_ind.
+           Atm(n)%neststruct%ioffset                = nest_ioffsets(n)
+           Atm(n)%neststruct%joffset                = nest_joffsets(n)
+           Atm(n)%neststruct%parent_tile            = tile_coarse(n)  
+           Atm(n)%neststruct%refinement             = nest_refine(n)
 
-                  Atm(n)%neststruct%ind_update_h = -99999
+        else
 
-                  if (Atm(n)%parent_grid%tile == Atm(n)%neststruct%parent_tile) then
+           Atm(n)%neststruct%ioffset                = -999
+           Atm(n)%neststruct%joffset                = -999   
+           Atm(n)%neststruct%parent_tile            = -1      
+           Atm(n)%neststruct%refinement             = -1
 
-                     isc_p = Atm(n)%parent_grid%bd%isc
-                     iec_p = Atm(n)%parent_grid%bd%iec
-                     jsc_p = Atm(n)%parent_grid%bd%jsc
-                     jec_p = Atm(n)%parent_grid%bd%jec
-                     upoff = Atm(n)%neststruct%upoff
+        endif
 
-                     Atm(n)%neststruct%jsu = jsc_p
-                     Atm(n)%neststruct%jeu = jsc_p-1
-                     do j=jsc_p,jec_p+1
-                        if (j < joffset+upoff) then
-                           do i=isc_p,iec_p+1
-                              Atm(n)%neststruct%ind_update_h(i,j,2) = -9999
-                           enddo
-                           Atm(n)%neststruct%jsu = Atm(n)%neststruct%jsu + 1
-                        elseif (j > joffset + (npy-1)/refinement - upoff) then
-                           do i=isc_p,iec_p+1
-                              Atm(n)%neststruct%ind_update_h(i,j,2) = -9999
-                           enddo
-                        else
-                           jind = (j - joffset)*refinement + 1
-                           do i=isc_p,iec_p+1
-                              Atm(n)%neststruct%ind_update_h(i,j,2) = jind
-                           enddo
-                           if ( (j < joffset + (npy-1)/refinement - upoff) .and. j <= jec_p)  Atm(n)%neststruct%jeu = j
-                        endif
-                        !write(mpp_pe()+4000,*) j, joffset, upoff, Atm(n)%neststruct%ind_update_h(isc_p,j,2)
-                     enddo
+     enddo
 
-                     Atm(n)%neststruct%isu = isc_p
-                     Atm(n)%neststruct%ieu = isc_p-1
-                     do i=isc_p,iec_p+1
-                        if (i < ioffset+upoff) then
-                           Atm(n)%neststruct%ind_update_h(i,:,1) = -9999
-                           Atm(n)%neststruct%isu = Atm(n)%neststruct%isu + 1
-                        elseif (i > ioffset + (npx-1)/refinement - upoff) then
-                           Atm(n)%neststruct%ind_update_h(i,:,1) = -9999
-                        else
-                           Atm(n)%neststruct%ind_update_h(i,:,1) = (i-ioffset)*refinement + 1
-                           if ( (i < ioffset + (npx-1)/refinement - upoff) .and. i <= iec_p) Atm(n)%neststruct%ieu = i
-                           end if
-                        !write(mpp_pe()+5000,*) i, ioffset, upoff, Atm(n)%neststruct%ind_update_h(i,jsc_p,1)
-                     enddo
+     if (pecounter /= npes) then
+        if (mpp_pe() == 0) then
+           print*, 'npes = ', npes, ', grid_pes = ', grid_pes(1:ngrids)
+           call mpp_error(FATAL, 'grid_pes in fv_nest_Nml does not assign all of the available PEs')
+        endif
+     endif
+ 
+     ! 3pre. 
+     call timing_init
+     call timing_on('TOTAL')
+     
+     ! 3. Read namelists, do option processing and I/O
 
-                  end if
+     call set_namelist_pointers(Atm(this_grid))
+     call fv_diag_init_gn(Atm(this_grid))
+#ifdef INTERNAL_FILE_NML
+     if (this_grid .gt. 1) then
+        write(Atm(this_grid)%nml_filename,'(A4, I2.2)') 'nest', this_grid
+        if (.not. file_exist('input_'//trim(Atm(this_grid)%nml_filename)//'.nml')) then
+           call mpp_error(FATAL, "Could not find nested grid namelist "//'input_'//trim(Atm(this_grid)%nml_filename)//'.nml')
+        endif
+     else
+        Atm(this_grid)%nml_filename = ''
+     endif
+     call read_input_nml(Atm(this_grid)%nml_filename) !re-reads into internal namelist
+#endif
+     call read_namelist_fv_grid_nml
+     call read_namelist_fv_core_nml(Atm(this_grid)) ! do options processing here too?
+     !TODO test_case_nml moved to test_cases
+     call mpp_get_current_pelist(Atm(this_grid)%pelist, commID=commID) ! for commID
+     call mp_start(commID,halo_update_type)
+
+     ! 4. Set up domains
+     !    This should make use of new fv_nest_nml namelists
+     !!!! TODO TEMPORARY location for this code
+     if (Atm(this_grid)%neststruct%nested) then
+
+        if ( Atm(this_grid)%flagstruct%consv_te > 0.) then
+           call mpp_error(FATAL, 'The global energy fixer cannot be used on a nested grid. consv_te must be set to 0.')
+        end if
+
+        if (mod(Atm(this_grid)%flagstruct%npx-1 , Atm(this_grid)%neststruct%refinement) /= 0 .or. &
+            mod(Atm(this_grid)%flagstruct%npy-1, Atm(this_grid)%neststruct%refinement) /= 0) then
+           call mpp_error(FATAL, 'npx or npy not an even refinement of its coarse grid.')
+        endif
+
+     endif
+
+     if (Atm(this_grid)%flagstruct%regional) then
+        if ( Atm(this_grid)%flagstruct%consv_te > 0.) then
+           call mpp_error(FATAL, 'The global energy fixer cannot be used on a regional grid. consv_te must be set to 0.')
+        end if
+     endif
+
+     !Now only one call to mpp_define_nest_domains for ALL nests
+     ! set up nest_level, tile_fine, tile_coarse
+     ! need number of tiles, npx, and npy on each grid
+     ! need to define a global PElist
+
+     all_ntiles(this_grid) = ntiles
+     call mpp_max(all_ntiles, ngrids, global_pelist)
+
+     all_npx(this_grid) = npx
+     call mpp_max(all_npx, ngrids, global_pelist)
+
+     all_npy(this_grid) = npy
+     call mpp_max(all_npy, ngrids, global_pelist)
+
+     all_npz(this_grid) = npz
+     call mpp_max(all_npz, ngrids, global_pelist)
+
+     if (Atm(this_grid)%neststruct%twowaynest) all_twowaynest(this_grid) = 1
+     call mpp_max(all_twowaynest, ngrids, global_pelist)
+     ntiles_nest_all = 0
+     do n=1,ngrids
+        if (n/=this_grid) then
+           Atm(n)%flagstruct%npx = all_npx(n)
+           Atm(n)%flagstruct%npy = all_npy(n)
+           Atm(n)%flagstruct%npz = all_npz(n)
+           Atm(n)%flagstruct%ntiles = all_ntiles(n)
+           Atm(n)%neststruct%twowaynest = (all_twowaynest(n) > 0) ! disabled
+        endif
+        npes_nest_tile(ntiles_nest_all+1:ntiles_nest_all+all_ntiles(n)) = &
+             Atm(n)%npes_this_grid / all_ntiles(n)
+        ntiles_nest_all = ntiles_nest_all + all_ntiles(n)
+
+        if (n > 1) then
+           tile_fine(n) = all_ntiles(n) + tile_fine(n-1)
+           if (tile_coarse(n) < 1) then !set automatically; only works for single tile parents
+              tile_coarse(n) = tile_fine(grid_coarse(n)) 
+           endif
+           icount_coarse(n) = all_npx(n)/nest_refine(n)
+           jcount_coarse(n) = all_npy(n)/nest_refine(n)
+           nest_level(n) = nest_level(grid_coarse(n)) + 1
+        else
+           tile_fine(n) = all_ntiles(n)
+           nest_level(n) = 0
+        endif
+     enddo
+         
+     if (mpp_pe() == 0 .and. ngrids > 1) then
+        print*, ' NESTING TREE'
+        do n=1,ngrids
+           write(*,'(12i4)') n, nest_level(n), nest_ioffsets(n), nest_joffsets(n), icount_coarse(n), jcount_coarse(n), tile_fine(n), tile_coarse(n), nest_refine(n), all_ntiles(n), all_npx(n), all_npy(n)
+           write(*,*)
+        enddo
+        print*, npes_nest_tile(1:ntiles_nest_all)
+        print*, ''
+     endif
+
+     ! 5. domain_decomp()
+     call domain_decomp(Atm(this_grid)%flagstruct%npx,Atm(this_grid)%flagstruct%npy,Atm(this_grid)%flagstruct%ntiles,&
+          Atm(this_grid)%flagstruct%grid_type,Atm(this_grid)%neststruct%nested, &
+          Atm(this_grid)%layout,Atm(this_grid)%io_layout,Atm(this_grid)%bd,Atm(this_grid)%tile_of_mosaic, &
+          Atm(this_grid)%gridstruct%square_domain,Atm(this_grid)%npes_per_tile,Atm(this_grid)%domain, &
+          Atm(this_grid)%domain_for_coupler,Atm(this_grid)%num_contact,Atm(this_grid)%pelist)
+     call set_domain(Atm(this_grid)%domain)
+     call broadcast_domains(Atm,Atm(this_grid)%pelist,size(Atm(this_grid)%pelist))
+     do n=1,ngrids
+        tile_id = mpp_get_tile_id(Atm(n)%domain)       
+        Atm(n)%global_tile = tile_id(1) ! only meaningful locally
+        Atm(n)%npes_per_tile = size(Atm(n)%pelist)/Atm(n)%flagstruct%ntiles ! domain decomp doesn't set this globally
+     enddo
+
+     ! 6. Set up domain and Atm structure
+     call tm_register_tracers (MODEL_ATMOS, Atm(this_grid)%flagstruct%ncnst, Atm(this_grid)%flagstruct%nt_prog, &
+          Atm(this_grid)%flagstruct%pnats, num_family)
+     if(is_master()) then
+        write(*,*) 'ncnst=', ncnst,' num_prog=',Atm(this_grid)%flagstruct%nt_prog,' pnats=',Atm(this_grid)%flagstruct%pnats,' dnats=',dnats,&
+             ' num_family=',num_family         
+        print*, ''
+     endif
+     if (dnrts < 0) dnrts = dnats
+
+     do n=1,ngrids
+        !FIXME still setting up dummy structures for other grids for convenience reasons
+        !isc, etc. set in domain_decomp
+        call allocate_fv_atmos_type(Atm(n), &
+             Atm(n)%bd%isd, Atm(n)%bd%ied, &
+             Atm(n)%bd%jsd, Atm(n)%bd%jed, &
+             Atm(n)%bd%isc, Atm(n)%bd%iec, &
+             Atm(n)%bd%jsc, Atm(n)%bd%jec, &
+             Atm(n)%flagstruct%npx,    Atm(n)%flagstruct%npy,   Atm(n)%flagstruct%npz, &
+             Atm(n)%flagstruct%ndims,  Atm(n)%flagstruct%ncnst, Atm(n)%flagstruct%ncnst-Atm(n)%flagstruct%pnats, &
+             n/=this_grid, n==this_grid, ngrids) !TODO don't need both of the last arguments
+     enddo
+     if ( (Atm(this_grid)%bd%iec-Atm(this_grid)%bd%isc+1).lt.4 .or. (Atm(this_grid)%bd%jec-Atm(this_grid)%bd%jsc+1).lt.4 ) then
+        if (is_master()) write(*,'(6I6)') Atm(this_grid)%bd%isc, Atm(this_grid)%bd%iec, Atm(this_grid)%bd%jsc, Atm(this_grid)%bd%jec, this_grid
+        call mpp_error(FATAL,'Domain Decomposition:  Cubed Sphere compute domain has a &
+             &minium requirement of 4 points in X and Y, respectively')
+     end if
 
 
-               end if
+     !Tile_coarse is needed to determine which processors are needed to send around their
+     ! data for computing the interpolation coefficients
+     if (ngrids > 1) then
+        !reset to universal pelist
+        call mpp_set_current_pelist( global_pelist )
+        !Except for npes_nest_tile all arrays should be just the nests and should NOT include the top level
+        call mpp_define_nest_domains(global_nest_domain, Atm(this_grid)%domain, &
+             ngrids-1, nest_level=nest_level(2:ngrids) , &
+             istart_coarse=nest_ioffsets(2:ngrids), jstart_coarse=nest_joffsets(2:ngrids), &
+             icount_coarse=icount_coarse(2:ngrids), jcount_coarse=jcount_coarse(2:ngrids), &
+             npes_nest_tile=npes_nest_tile(1:ntiles_nest_all), &
+             tile_fine=tile_fine(2:ngrids), tile_coarse=tile_coarse(2:ngrids), &
+             x_refine=nest_refine(2:ngrids), y_refine=nest_refine(2:ngrids), name="global_nest_domain")
+        call mpp_set_current_pelist(Atm(this_grid)%pelist)
 
-            endif
-         endif
-      end do
-      
-    ! Initialize restart functions
-      call fv_restart_init()
+     endif
 
+     allocate(Atm(this_grid)%neststruct%child_grids(ngrids)) 
+     do n=1,ngrids
+        Atm(this_grid)%neststruct%child_grids(n) = (grid_coarse(n) == this_grid)
+        allocate(Atm(n)%neststruct%do_remap_bc(ngrids))
+        Atm(n)%neststruct%do_remap_bc(:) = .false.
+     enddo
+     Atm(this_grid)%neststruct%parent_proc = ANY(Atm(this_grid)%neststruct%child_grids) !ANY(tile_coarse == Atm(this_grid)%global_tile)
+     Atm(this_grid)%neststruct%child_proc = ASSOCIATED(Atm(this_grid)%parent_grid) !this means a nested grid
+
+     if (ngrids > 1) call setup_update_regions
+     if (Atm(this_grid)%neststruct%nestbctype > 1) then
+        call mpp_error(FATAL, 'nestbctype > 1 not yet implemented')
+        Atm(this_grid)%neststruct%upoff = 0
+     endif
+
+     if (Atm(this_grid)%gridstruct%bounded_domain .and. is_master()) print*, &
+          ' Bounded domain: nested = ', Atm(this_grid)%neststruct%nested, ', regional = ', Atm(this_grid)%flagstruct%regional
+
+     ! 7. Init_grid() (including two-way nesting)
+     call init_grid(Atm(this_grid), Atm(this_grid)%flagstruct%grid_name, Atm(this_grid)%flagstruct%grid_file, &
+          Atm(this_grid)%flagstruct%npx, Atm(this_grid)%flagstruct%npy, Atm(this_grid)%flagstruct%npz, Atm(this_grid)%flagstruct%ndims, Atm(this_grid)%flagstruct%ntiles, Atm(this_grid)%ng, tile_coarse)
+
+
+     ! 8. grid_utils_init()
+     ! Initialize the SW (2D) part of the model
+     call grid_utils_init(Atm(this_grid), Atm(this_grid)%flagstruct%npx, Atm(this_grid)%flagstruct%npy, Atm(this_grid)%flagstruct%npz, Atm(this_grid)%flagstruct%non_ortho, Atm(this_grid)%flagstruct%grid_type, Atm(this_grid)%flagstruct%c2l_ord)
+
+     ! Finish up initialization; write damping coefficients dependent upon 
+
+     if ( is_master() ) then
+        sdt =  dt_atmos/real(Atm(this_grid)%flagstruct%n_split*Atm(this_grid)%flagstruct%k_split*abs(p_split))
+        write(*,*) ' '
+        write(*,*) 'Divergence damping Coefficients'
+        write(*,*) 'For small dt=', sdt
+        write(*,*) 'External mode del-2 (m**2/s)=',  Atm(this_grid)%flagstruct%d_ext*Atm(this_grid)%gridstruct%da_min_c/sdt
+        write(*,*) 'Internal mode del-2 SMAG dimensionless coeff=',  Atm(this_grid)%flagstruct%dddmp
+        write(*,*) 'Internal mode del-2 background diff=', Atm(this_grid)%flagstruct%d2_bg*Atm(this_grid)%gridstruct%da_min_c/sdt
+
+        if (nord==1) then
+           write(*,*) 'Internal mode del-4 background diff=', Atm(this_grid)%flagstruct%d4_bg
+           write(*,*) 'Vorticity del-4 (m**4/s)=', (Atm(this_grid)%flagstruct%vtdm4*Atm(this_grid)%gridstruct%da_min)**2/sdt*1.E-6
+        endif
+        if (Atm(this_grid)%flagstruct%nord==2) write(*,*) 'Internal mode del-6 background diff=', Atm(this_grid)%flagstruct%d4_bg
+        if (Atm(this_grid)%flagstruct%nord==3) write(*,*) 'Internal mode del-8 background diff=', Atm(this_grid)%flagstruct%d4_bg
+        write(*,*) 'tracer del-2 diff=', Atm(this_grid)%flagstruct%trdm2
+
+        write(*,*) 'Vorticity del-4 (m**4/s)=', (Atm(this_grid)%flagstruct%vtdm4*Atm(this_grid)%gridstruct%da_min)**2/sdt*1.E-6
+        write(*,*) 'beta=', Atm(this_grid)%flagstruct%beta
+        write(*,*) ' '
+     endif
+
+
+!!$     Atm(this_grid)%ts   = 300.
+!!$     Atm(this_grid)%phis = too_big
+!!$     ! The following statements are to prevent the phantom corner regions from
+!!$     ! growing instability
+!!$     Atm(this_grid)%u  = 0.
+!!$     Atm(this_grid)%v  = 0.
+!!$     Atm(this_grid)%ua = too_big
+!!$     Atm(this_grid)%va = too_big
+!!$
+
+     !Initialize restart
+     call fv_restart_init()
 !     if ( reset_eta ) then
 !         do n=1, ntilesMe
-!            call set_eta(npz, Atm(n)%ks, ptop, Atm(n)%ak, Atm(n)%bk)
+!            call set_eta(npz, Atm(this_grid)%ks, ptop, Atm(this_grid)%ak, Atm(this_grid)%bk, Atm(this_grid)%flagstruct%npz_type)
 !         enddo
 !         if(is_master()) write(*,*) "Hybrid sigma-p coordinate has been reset"
 !     endif
 
-      if (ntilesMe > 1) call switch_current_Atm(Atm(1))
-      if (ntilesMe > 1) call setup_pointers(Atm(1))
 
- end subroutine fv_init
-!-------------------------------------------------------------------------------
+   contains
+!>@brief The subroutine 'setup_namelist_pointers' associates the MODULE flag pointers
+!! with the ARRAY flag variables for the grid active on THIS pe so the flags
+!! can be read in from the namelist.
+     subroutine set_namelist_pointers(Atm)
+       type(fv_atmos_type), intent(INOUT), target :: Atm
 
-!>@brief The subroutine 'fv_end' terminates FV3, deallocates memory, 
-!! saves restart files, and stops I/O.
- subroutine fv_end(Atm, grids_on_this_pe, restart_endfcst)
+       !This routine associates the MODULE flag pointers with the ARRAY flag variables for the grid active on THIS pe so the flags can be read in from the namelist.
 
-    type(fv_atmos_type), intent(inout) :: Atm(:)
-    logical, intent(INOUT) :: grids_on_this_pe(:)
-    logical, intent(in) :: restart_endfcst
+       grid_type                     => Atm%flagstruct%grid_type
+       grid_name                     => Atm%flagstruct%grid_name
+       grid_file                     => Atm%flagstruct%grid_file
+       hord_mt                       => Atm%flagstruct%hord_mt
+       kord_mt                       => Atm%flagstruct%kord_mt
+       kord_wz                       => Atm%flagstruct%kord_wz
+       hord_vt                       => Atm%flagstruct%hord_vt
+       hord_tm                       => Atm%flagstruct%hord_tm
+       hord_dp                       => Atm%flagstruct%hord_dp
+       kord_tm                       => Atm%flagstruct%kord_tm
+       hord_tr                       => Atm%flagstruct%hord_tr
+       kord_tr                       => Atm%flagstruct%kord_tr
+       scale_z                       => Atm%flagstruct%scale_z
+       w_max                         => Atm%flagstruct%w_max
+       z_min                         => Atm%flagstruct%z_min
+       lim_fac                       => Atm%flagstruct%lim_fac
+       nord                          => Atm%flagstruct%nord
+       nord_tr                       => Atm%flagstruct%nord_tr
+       dddmp                         => Atm%flagstruct%dddmp
+       d2_bg                         => Atm%flagstruct%d2_bg
+       d4_bg                         => Atm%flagstruct%d4_bg
+       vtdm4                         => Atm%flagstruct%vtdm4
+       trdm2                         => Atm%flagstruct%trdm2
+       d2_bg_k1                      => Atm%flagstruct%d2_bg_k1
+       d2_bg_k2                      => Atm%flagstruct%d2_bg_k2
+       d2_divg_max_k1                => Atm%flagstruct%d2_divg_max_k1
+       d2_divg_max_k2                => Atm%flagstruct%d2_divg_max_k2
+       damp_k_k1                     => Atm%flagstruct%damp_k_k1
+       damp_k_k2                     => Atm%flagstruct%damp_k_k2
+       n_zs_filter                   => Atm%flagstruct%n_zs_filter
+       nord_zs_filter                => Atm%flagstruct%nord_zs_filter
+       full_zs_filter                => Atm%flagstruct%full_zs_filter
+       RF_fast                       => Atm%flagstruct%RF_fast
+       consv_am                      => Atm%flagstruct%consv_am
+       do_sat_adj                    => Atm%flagstruct%do_sat_adj
+       do_f3d                        => Atm%flagstruct%do_f3d
+       no_dycore                     => Atm%flagstruct%no_dycore
+       convert_ke                    => Atm%flagstruct%convert_ke
+       do_vort_damp                  => Atm%flagstruct%do_vort_damp
+       use_old_omega                 => Atm%flagstruct%use_old_omega
+       beta                          => Atm%flagstruct%beta
+       n_sponge                      => Atm%flagstruct%n_sponge
+       d_ext                         => Atm%flagstruct%d_ext
+       nwat                          => Atm%flagstruct%nwat
+       use_logp                      => Atm%flagstruct%use_logp
+       warm_start                    => Atm%flagstruct%warm_start
+       inline_q                      => Atm%flagstruct%inline_q
+       shift_fac                     => Atm%flagstruct%shift_fac
+       do_schmidt                    => Atm%flagstruct%do_schmidt
+       do_cube_transform             => Atm%flagstruct%do_cube_transform
+       stretch_fac                   => Atm%flagstruct%stretch_fac
+       target_lat                    => Atm%flagstruct%target_lat
+       target_lon                    => Atm%flagstruct%target_lon
+       regional                      => Atm%flagstruct%regional
+       bc_update_interval            => Atm%flagstruct%bc_update_interval 
+       nrows_blend                   => Atm%flagstruct%nrows_blend
+       regional_bcs_from_gsi         => Atm%flagstruct%regional_bcs_from_gsi
+       write_restart_with_bcs        => Atm%flagstruct%write_restart_with_bcs
+       reset_eta                     => Atm%flagstruct%reset_eta
+       p_fac                         => Atm%flagstruct%p_fac
+       a_imp                         => Atm%flagstruct%a_imp
+       n_split                       => Atm%flagstruct%n_split
+       fac_n_spl                     => Atm%flagstruct%fac_n_spl
+       fhouri                        => Atm%flagstruct%fhouri
+       m_split                       => Atm%flagstruct%m_split
+       k_split                       => Atm%flagstruct%k_split
+       use_logp                      => Atm%flagstruct%use_logp
+       q_split                       => Atm%flagstruct%q_split
+       print_freq                    => Atm%flagstruct%print_freq
+       write_3d_diags                => Atm%flagstruct%write_3d_diags
+       npx                           => Atm%flagstruct%npx
+       npy                           => Atm%flagstruct%npy
+       npz                           => Atm%flagstruct%npz
+       npz_type                      => Atm%flagstruct%npz_type
+       npz_rst                       => Atm%flagstruct%npz_rst
+       ncnst                         => Atm%flagstruct%ncnst
+       pnats                         => Atm%flagstruct%pnats
+       dnats                         => Atm%flagstruct%dnats
+       dnrts                         => Atm%flagstruct%dnrts
+       ntiles                        => Atm%flagstruct%ntiles
+       nf_omega                      => Atm%flagstruct%nf_omega
+       fv_sg_adj                     => Atm%flagstruct%fv_sg_adj
+       sg_cutoff                     => Atm%flagstruct%sg_cutoff
+       na_init                       => Atm%flagstruct%na_init
+       nudge_dz                      => Atm%flagstruct%nudge_dz
+       p_ref                         => Atm%flagstruct%p_ref
+       dry_mass                      => Atm%flagstruct%dry_mass
+       nt_prog                       => Atm%flagstruct%nt_prog
+       nt_phys                       => Atm%flagstruct%nt_phys
+       tau_h2o                       => Atm%flagstruct%tau_h2o
+       delt_max                      => Atm%flagstruct%delt_max
+       d_con                         => Atm%flagstruct%d_con
+       ke_bg                         => Atm%flagstruct%ke_bg
+       consv_te                      => Atm%flagstruct%consv_te
+       tau                           => Atm%flagstruct%tau
+       rf_cutoff                     => Atm%flagstruct%rf_cutoff
+       filter_phys                   => Atm%flagstruct%filter_phys
+       dwind_2d                      => Atm%flagstruct%dwind_2d
+       breed_vortex_inline           => Atm%flagstruct%breed_vortex_inline
+       range_warn                    => Atm%flagstruct%range_warn
+       fill                          => Atm%flagstruct%fill
+       fill_dp                       => Atm%flagstruct%fill_dp
+       fill_wz                       => Atm%flagstruct%fill_wz
+       fill_gfs                      => Atm%flagstruct%fill_gfs
+       check_negative                => Atm%flagstruct%check_negative
+       non_ortho                     => Atm%flagstruct%non_ortho
+       adiabatic                     => Atm%flagstruct%adiabatic
+       moist_phys                    => Atm%flagstruct%moist_phys
+       do_Held_Suarez                => Atm%flagstruct%do_Held_Suarez
+       do_reed_physics               => Atm%flagstruct%do_reed_physics
+       reed_cond_only                => Atm%flagstruct%reed_cond_only
+       reproduce_sum                 => Atm%flagstruct%reproduce_sum
+       adjust_dry_mass               => Atm%flagstruct%adjust_dry_mass
+       fv_debug                      => Atm%flagstruct%fv_debug
+       srf_init                      => Atm%flagstruct%srf_init
+       mountain                      => Atm%flagstruct%mountain
+       remap_t                       => Atm%flagstruct%remap_t
+       z_tracer                      => Atm%flagstruct%z_tracer
+       old_divg_damp                 => Atm%flagstruct%old_divg_damp
+       fv_land                       => Atm%flagstruct%fv_land
+       nudge                         => Atm%flagstruct%nudge
+       nudge_ic                      => Atm%flagstruct%nudge_ic
+       ncep_ic                       => Atm%flagstruct%ncep_ic
+       nggps_ic                      => Atm%flagstruct%nggps_ic
+       ecmwf_ic                      => Atm%flagstruct%ecmwf_ic
+       gfs_phil                      => Atm%flagstruct%gfs_phil
+       agrid_vel_rst                 => Atm%flagstruct%agrid_vel_rst
+       use_new_ncep                  => Atm%flagstruct%use_new_ncep
+       use_ncep_phy                  => Atm%flagstruct%use_ncep_phy
+       fv_diag_ic                    => Atm%flagstruct%fv_diag_ic
+       external_ic                   => Atm%flagstruct%external_ic
+       external_eta                  => Atm%flagstruct%external_eta
+       read_increment                => Atm%flagstruct%read_increment
 
-    integer :: n
+       hydrostatic                   => Atm%flagstruct%hydrostatic
+       phys_hydrostatic              => Atm%flagstruct%phys_hydrostatic
+       use_hydro_pressure            => Atm%flagstruct%use_hydro_pressure
+       do_uni_zfull                  => Atm%flagstruct%do_uni_zfull !miz
+       adj_mass_vmr                  => Atm%flagstruct%adj_mass_vmr !f1p
+       hybrid_z                      => Atm%flagstruct%hybrid_z
+       Make_NH                       => Atm%flagstruct%Make_NH
+       make_hybrid_z                 => Atm%flagstruct%make_hybrid_z
+       nudge_qv                      => Atm%flagstruct%nudge_qv
+       add_noise                     => Atm%flagstruct%add_noise
+       butterfly_effect              => Atm%flagstruct%butterfly_effect
+       a2b_ord                       => Atm%flagstruct%a2b_ord
+       c2l_ord                       => Atm%flagstruct%c2l_ord
+       ndims                         => Atm%flagstruct%ndims
 
-    call timing_off('TOTAL')
-    call timing_prt( gid )
+       dx_const                      => Atm%flagstruct%dx_const
+       dy_const                      => Atm%flagstruct%dy_const
+       deglon_start                  => Atm%flagstruct%deglon_start
+       deglon_stop                   => Atm%flagstruct%deglon_stop
+       deglat_start                  => Atm%flagstruct%deglat_start
+       deglat_stop                   => Atm%flagstruct%deglat_stop
 
-    call fv_restart_end(Atm, grids_on_this_pe, restart_endfcst)
-    call fv_io_exit()
+       deglat                        => Atm%flagstruct%deglat
 
-  ! Free temporary memory from sw_core routines
+       nested                        => Atm%neststruct%nested
+       twowaynest                    => Atm%neststruct%twowaynest
+       parent_tile                   => Atm%neststruct%parent_tile
+       refinement                    => Atm%neststruct%refinement
+       nestbctype                    => Atm%neststruct%nestbctype
+       nestupdate                    => Atm%neststruct%nestupdate
+       nsponge                       => Atm%neststruct%nsponge
+       s_weight                      => Atm%neststruct%s_weight
+       ioffset                       => Atm%neststruct%ioffset
+       joffset                       => Atm%neststruct%joffset
+       update_blend                  => Atm%neststruct%update_blend
 
-  ! Deallocate
-    call grid_utils_end
-
-    do n = 1, ntilesMe
-       call deallocate_fv_atmos_type(Atm(n))
-    end do
+       layout                        => Atm%layout
+       io_layout                     => Atm%io_layout
+     end subroutine set_namelist_pointers
 
 
- end subroutine fv_end
-!-------------------------------------------------------------------------------
+     subroutine read_namelist_nest_nml
 
-!>@brief The subroutine 'run_setup' initializes the run from a namelist.
- subroutine run_setup(Atm, dt_atmos, grids_on_this_pe, p_split)
-   type(fv_atmos_type), intent(inout), target :: Atm(:)
-   real, intent(in)                   :: dt_atmos
-   logical, intent(INOUT) :: grids_on_this_pe(:)
-   integer, intent(INOUT) :: p_split
-   !--- local variables ---
-   character(len=80) :: tracerName, errString
-   character(len=32) :: nested_grid_filename
-   integer :: ios, ierr, f_unit, unit
-   logical :: exists
+       integer :: f_unit, ios, ierr, dum
+       namelist /nest_nml/ dum ! ngrids, ntiles, nest_pes, p_split !emptied lmh 7may2019
 
-   real :: dim0 = 180.           !< base dimension
-   real :: dt0  = 1800.          !< base time step
-   real :: ns0  = 5.             !< base nsplit for base dimension 
-                                 !< For cubed sphere 5 is better
-   !real :: umax = 350.          ! max wave speed for grid_type>3 ! Now defined above
-   real :: dimx, dl, dp, dxmin, dymin, d_fac
+#ifdef INTERNAL_FILE_NML
+       read (input_nml_file,nest_nml,iostat=ios)
+       ierr = check_nml_error(ios,'nest_nml')
+#else
+       f_unit=open_namelist_file()
+       rewind (f_unit)
+       read (f_unit,nest_nml,iostat=ios)
+       ierr = check_nml_error(ios,'nest_nml')
+       call close_file(f_unit)
+#endif
+       if (ierr > 0) then
+          call mpp_error(FATAL, " &nest_nml is depreciated. Please use &fv_nest_nml instead.")
+       endif
 
-   integer :: n0split
-   integer :: n, nn, i
+     end subroutine read_namelist_nest_nml
 
-   integer :: pe_counter
+     subroutine read_namelist_fv_nest_nml
 
-!  local version of these variables to allow PGI compiler to compile
-   character(len=128) :: res_latlon_dynamics = ''
-   character(len=128) :: res_latlon_tracers  = ''
-   character(len=80)  :: grid_name = ''
-   character(len=120) :: grid_file = ''
+       integer :: f_unit, ios, ierr
+       namelist /fv_nest_nml/ grid_pes, grid_coarse, tile_coarse, nest_refine, &
+            nest_ioffsets, nest_joffsets, p_split
 
-   namelist /fv_grid_nml/ grid_name, grid_file
-   namelist /fv_core_nml/npx, npy, ntiles, npz, npz_rst, layout, io_layout, ncnst, nwat,  &
-                         use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, write_3d_diags, do_schmidt,  &
-                         hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
-                         kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, do_f3d, &
-                         external_ic, read_increment, ncep_ic, nggps_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
-                         external_eta, res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, lim_fac, &
-                         dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
-                         warm_start, adjust_dry_mass, mountain, d_con, ke_bg, nord, nord_tr, convert_ke, use_old_omega, &
-                         dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
-                         consv_te, fill, filter_phys, fill_dp, fill_wz, consv_am, RF_fast, &
-                         range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
-                         tau, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, breed_vortex_inline,  &
-                         na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
-                         pnats, dnats, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
-                         c2l_ord, dx_const, dy_const, umax, deglat,      &
-                         deglon_start, deglon_stop, deglat_start, deglat_stop, &
-                         phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, butterfly_effect, &
-                         nested, twowaynest, parent_grid_num, parent_tile, nudge_qv, &
-                         refinement, nestbctype, nestupdate, nsponge, s_weight, &
-                         ioffset, joffset, check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
-                         do_uni_zfull, adj_mass_vmr, fac_n_spl, fhouri, regional, bc_update_interval,  &
-                         regional_bcs_from_gsi, write_restart_with_bcs, nrows_blend
+#ifdef INTERNAL_FILE_NML
+       read (input_nml_file,fv_nest_nml,iostat=ios)
+       ierr = check_nml_error(ios,'fv_nest_nml')
+#else
+       f_unit=open_namelist_file()
+       rewind (f_unit)
+       read (f_unit,fv_nest_nml,iostat=ios)
+       ierr = check_nml_error(ios,'fv_nest_nml')
+       call close_file(f_unit)
+#endif
 
-   namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
+     end subroutine read_namelist_fv_nest_nml
+
+     subroutine read_namelist_fv_grid_nml
+
+       integer :: f_unit, ios, ierr
+       !  local version of these variables to allow PGI compiler to compile
+       character(len=80)  :: grid_name = ''
+       character(len=120) :: grid_file = ''
+       namelist /fv_grid_nml/ grid_name, grid_file
+
+#ifdef INTERNAL_FILE_NML
+       ! Read Main namelist
+       read (input_nml_file,fv_grid_nml,iostat=ios)
+       ierr = check_nml_error(ios,'fv_grid_nml')
+#else
+       f_unit=open_namelist_file()
+       rewind (f_unit)
+       ! Read Main namelist
+       read (f_unit,fv_grid_nml,iostat=ios)
+       ierr = check_nml_error(ios,'fv_grid_nml')
+       rewind (f_unit)
+#endif
+       call write_version_number ( 'FV_CONTROL_MOD', version )
+       unit = stdlog()
+       write(unit, nml=fv_grid_nml)
+
+       !Basic option processing
+       if (len_trim(grid_file) /= 0) Atm(this_grid)%flagstruct%grid_file = grid_file
+       if (len_trim(grid_name) /= 0) Atm(this_grid)%flagstruct%grid_name = grid_name
+
+
+     end subroutine read_namelist_fv_grid_nml
+
+     subroutine read_namelist_fv_core_nml(Atm)
+
+       type(fv_atmos_type), intent(inout) :: Atm
+       integer :: f_unit, ios, ierr
+       real :: dim0 = 180.           ! base dimension
+       real :: dt0  = 1800.          ! base time step
+       real :: ns0  = 5.             ! base nsplit for base dimension 
+       real :: dimx, dl, dp, dxmin, dymin, d_fac
+       real :: umax = 350.           ! max wave speed for grid_type>3
+
+       integer :: n0split
+
+       !  local version of these variables to allow PGI compiler to compile
+       character(len=128) :: res_latlon_dynamics = ''
+       character(len=128) :: res_latlon_tracers  = ''
+
+       namelist /fv_core_nml/npx, npy, ntiles, npz, npz_type, npz_rst, layout, io_layout, ncnst, nwat,  &
+            use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, write_3d_diags, &
+            do_schmidt, do_cube_transform, &
+            hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
+            kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, do_f3d, &
+            external_ic, read_increment, ncep_ic, nggps_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
+            external_eta, res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, lim_fac, &
+            dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
+            warm_start, adjust_dry_mass, mountain, d_con, ke_bg, nord, nord_tr, convert_ke, use_old_omega, &
+            dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
+            consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, consv_am, RF_fast, &
+            range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
+            tau, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
+            na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
+            pnats, dnats, dnrts, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
+            c2l_ord, dx_const, dy_const, umax, deglat,      &
+            deglon_start, deglon_stop, deglat_start, deglat_stop, &
+            phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, butterfly_effect, &
+            nested, twowaynest, nudge_qv, &
+            nestbctype, nestupdate, nsponge, s_weight, &
+            check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
+            do_uni_zfull, adj_mass_vmr, fac_n_spl, fhouri, update_blend, regional, bc_update_interval,  &
+            regional_bcs_from_gsi, write_restart_with_bcs, nrows_blend
+
 #ifdef MULTI_GASES
    namelist /multi_gases_nml/ rilist,cpilist
 #endif
-
-
-   pe_counter = mpp_root_pe()
-
-! Make alpha = 0 the default:
-   alpha = 0.
-   bubble_do = .false.
-   test_case = 11   ! (USGS terrain)
-
 #ifdef INTERNAL_FILE_NML
-! Read Main namelist
-   read (input_nml_file,fv_grid_nml,iostat=ios)
-   ierr = check_nml_error(ios,'fv_grid_nml')
-#else
-   f_unit=open_namelist_file()
-   rewind (f_unit)
-! Read Main namelist
-   read (f_unit,fv_grid_nml,iostat=ios)
-   ierr = check_nml_error(ios,'fv_grid_nml')
-   call close_file(f_unit)
-#endif
-
-   call write_version_number ( 'FV_CONTROL_MOD', version )
-   unit = stdlog()
-   write(unit, nml=fv_grid_nml)
-
-   do n=1,size(Atm)
-
-      call switch_current_Atm(Atm(n), .false.)
-      call setup_pointers(Atm(n))
-      Atm(n)%grid_number = n
-      if (grids_on_this_pe(n)) then
-         call fv_diag_init_gn(Atm(n))
-      endif
-
-#ifdef INTERNAL_FILE_NML
-   ! Set input_file_nml for correct parent/nest initialization
-      if (n > 1) then
-         write(nested_grid_filename,'(A4, I2.2)') 'nest', n
-         call read_input_nml(nested_grid_filename)
-      endif
-   ! Read FVCORE namelist 
-      read (input_nml_file,fv_core_nml,iostat=ios)
-      ierr = check_nml_error(ios,'fv_core_nml')
+       ! Read FVCORE namelist 
+       read (input_nml_file,fv_core_nml,iostat=ios)
+       ierr = check_nml_error(ios,'fv_core_nml')
+       ! Reset input_file_nml to default behavior (CHECK do we still need this???)
+       !call read_input_nml
 #ifdef MULTI_GASES
       if( is_master() ) print *,' enter multi_gases: ncnst = ',ncnst
       allocate (rilist(0:ncnst))
@@ -739,26 +1069,12 @@ module fv_control_mod
       read (input_nml_file,multi_gases_nml,iostat=ios)
       ierr = check_nml_error(ios,'multi_gases_nml')
 #endif
-   ! Read Test_Case namelist
-      read (input_nml_file,test_case_nml,iostat=ios)
-      ierr = check_nml_error(ios,'test_case_nml')
-
-   ! Reset input_file_nml to default behavior
-      call read_input_nml
 #else
-      if (size(Atm) == 1) then
-         f_unit = open_namelist_file()
-      else if (n == 1) then
-         f_unit = open_namelist_file('input.nml')
-      else 
-         write(nested_grid_filename,'(A10, I2.2, A4)') 'input_nest', n, '.nml'
-         f_unit = open_namelist_file(nested_grid_filename)
-      endif
-
-   ! Read FVCORE namelist 
-      read (f_unit,fv_core_nml,iostat=ios)
-      ierr = check_nml_error(ios,'fv_core_nml')
-
+       f_unit = open_namelist_file(Atm%nml_filename)
+       ! Read FVCORE namelist 
+       read (f_unit,fv_core_nml,iostat=ios)
+       ierr = check_nml_error(ios,'fv_core_nml')
+       call close_file(f_unit)
 #ifdef MULTI_GASES
       if( is_master() ) print *,' enter multi_gases: ncnst = ',ncnst
       allocate (rilist(0:ncnst))
@@ -774,589 +1090,206 @@ module fv_control_mod
       read (f_unit,multi_gases_nml,iostat=ios)
       ierr = check_nml_error(ios,'multi_gases_nml')
 #endif
-   ! Read Test_Case namelist
-      rewind (f_unit)
-      read (f_unit,test_case_nml,iostat=ios)
-      ierr = check_nml_error(ios,'test_case_nml')
       call close_file(f_unit)
 #endif         
-      write(unit, nml=fv_core_nml)
-      write(unit, nml=test_case_nml)
+       call write_version_number ( 'FV_CONTROL_MOD', version )
+       unit = stdlog()
+       write(unit, nml=fv_core_nml)
 #ifdef MULTI_GASES
       write(unit, nml=multi_gases_nml)
       call multi_gases_init(ncnst,nwat)
 #endif
 
-      if (len_trim(grid_file) /= 0) Atm(n)%flagstruct%grid_file = grid_file
-      if (len_trim(grid_name) /= 0) Atm(n)%flagstruct%grid_name = grid_name
-      if (len_trim(res_latlon_dynamics) /= 0) Atm(n)%flagstruct%res_latlon_dynamics = res_latlon_dynamics
-      if (len_trim(res_latlon_tracers)  /= 0) Atm(n)%flagstruct%res_latlon_tracers = res_latlon_tracers
+       if (len_trim(res_latlon_dynamics) /= 0) Atm%flagstruct%res_latlon_dynamics = res_latlon_dynamics
+       if (len_trim(res_latlon_tracers)  /= 0) Atm%flagstruct%res_latlon_tracers = res_latlon_tracers
 
-      !*** single tile for Cartesian grids
-      if (grid_type>3) then
-         ntiles=1
-         non_ortho = .false.
-         nf_omega = 0
-      endif
+       !*** single tile for Cartesian grids
+       if (grid_type>3) then
+          ntiles=1
+          non_ortho = .false.
+          nf_omega = 0
+       endif
 
-      if (.not. (nested .or. regional)) Atm(n)%neststruct%npx_global = npx
+       if (.not. (nested .or. regional)) Atm%neststruct%npx_global = npx
 
-      ! Define n_split if not in namelist
-      if (ntiles == 6) then
-         dimx = 4.0*(npx-1)
-         if ( hydrostatic ) then
-            if ( npx >= 120 ) ns0 = 6
-         else
-            if ( npx <= 45 ) then
-               ns0 = 6
-            elseif ( npx <= 90 ) then
-               ns0 = 7
-            else
-               ns0 = 8
-            endif
-         endif
-      else
-         dimx = max ( npx, 2*(npy-1) )
-      endif
-          
-      if (grid_type < 4) then
-         n0split = nint ( ns0*abs(dt_atmos)*dimx/(dt0*dim0) + 0.49 )
-      elseif (grid_type == 4 .or. grid_type == 7) then
-         n0split = nint ( 2.*umax*dt_atmos/sqrt(dx_const**2 + dy_const**2) + 0.49 )
-      elseif (grid_type == 5 .or. grid_type == 6) then
-         if (grid_type == 6) then
-            deglon_start = 0.; deglon_stop  = 360.
-         endif
-         dl = (deglon_stop-deglon_start)*pi/(180.*(npx-1))
-         dp = (deglat_stop-deglat_start)*pi/(180.*(npy-1))
+       ! Define n_split if not in namelist
+       if (ntiles==6) then
+          dimx = 4.0*(npx-1)
+          if ( hydrostatic ) then
+             if ( npx >= 120 ) ns0 = 6
+          else
+             if ( npx <= 45 ) then
+                ns0 = 6
+             elseif ( npx <=90 ) then
+                ns0 = 7
+             else
+                ns0 = 8
+             endif
+          endif
+       else
+          dimx = max ( npx, 2*(npy-1) )
+       endif
 
-         dxmin=dl*radius*min(cos(deglat_start*pi/180.-ng*dp),   &
-                             cos(deglat_stop *pi/180.+ng*dp))
-         dymin=dp*radius
-         n0split = nint ( 2.*umax*dt_atmos/sqrt(dxmin**2 + dymin**2) + 0.49 )
-      endif
-      n0split = max ( 1, n0split )
+       if (grid_type < 4) then
+          n0split = nint ( ns0*abs(dt_atmos)*dimx/(dt0*dim0) + 0.49 )
+       elseif (grid_type == 4 .or. grid_type == 7) then
+          n0split = nint ( 2.*umax*dt_atmos/sqrt(dx_const**2 + dy_const**2) + 0.49 )
+       elseif (grid_type == 5 .or. grid_type == 6) then
+          if (grid_type == 6) then
+             deglon_start = 0.; deglon_stop  = 360.
+          endif
+          dl = (deglon_stop-deglon_start)*pi/(180.*(npx-1))
+          dp = (deglat_stop-deglat_start)*pi/(180.*(npy-1))
 
-      if ( n_split == 0 ) then
-           n_split = nint( real(n0split)/real(k_split*abs(p_split)) * stretch_fac + 0.5 )
-           if(is_master()) write(*,*) 'For k_split (remapping)=', k_split
-           if(is_master()) write(*,198) 'n_split is set to ', n_split, ' for resolution-dt=',npx,npy,ntiles,dt_atmos
-      else
+          dxmin=dl*radius*min(cos(deglat_start*pi/180.-Atm%bd%ng*dp),   &
+               cos(deglat_stop *pi/180.+Atm%bd%ng*dp))
+          dymin=dp*radius
+          n0split = nint ( 2.*umax*dt_atmos/sqrt(dxmin**2 + dymin**2) + 0.49 )
+       endif
+       n0split = max ( 1, n0split )
+
+       if ( n_split == 0 ) then
+          n_split = nint( real(n0split)/real(k_split*abs(p_split)) * stretch_fac + 0.5 )
+          if(is_master()) write(*,*) 'For k_split (remapping)=', k_split
+          if(is_master()) write(*,198) 'n_split is set to ', n_split, ' for resolution-dt=',npx,npy,ntiles,dt_atmos
+       else
           if(is_master()) write(*,199) 'Using n_split from the namelist: ', n_split
-      endif
-      if (is_master() .and. n == 1 .and. abs(p_split) > 1) then
-         write(*,199) 'Using p_split = ', p_split
-      endif
+       endif
+       if (is_master() .and. n == 1 .and. abs(p_split) > 1) then
+          write(*,199) 'Using p_split = ', p_split
+       endif
 
-      if (Atm(n)%neststruct%nested) then
-         do i=1,n-1
-            if (Atm(i)%grid_number == parent_grid_num) then
-               Atm(n)%parent_grid => Atm(i)
-               exit
-            end if
-         end do
-         if (.not. associated(Atm(n)%parent_grid)) then
-            write(errstring,'(2(A,I3))')  "Could not find parent grid #", parent_grid_num, ' for grid #', n
-            call mpp_error(FATAL, errstring)
-         end if
+       if (old_divg_damp) then
+          if (is_master()) write(*,*) " fv_control: using AM2/AM3 damping methods "
+          d2_bg_k1 = 6.         ! factor for d2_bg (k=1)  - default(4.)
+          d2_bg_k2 = 4.         ! factor for d2_bg (k=2)  - default(2.)
+          d2_divg_max_k1 = 0.02 ! d2_divg max value (k=1) - default(0.05)
+          d2_divg_max_k2 = 0.01 ! d2_divg max value (k=2) - default(0.02)
+          damp_k_k1 = 0.        ! damp_k value (k=1)      - default(0.05)
+          damp_k_k2 = 0.        ! damp_k value (k=2)      - default(0.025)
+       elseif (n_sponge == 0 ) then
+          if ( d2_bg_k1 > 1. ) d2_bg_k1 = 0.20
+          if ( d2_bg_k2 > 1. ) d2_bg_k2 = 0.015
+       endif
 
-         !Note that if a gnomonic grid has a parent it is a NESTED gnomonic grid and therefore only has one tile
-         if ( Atm(n)%parent_grid%flagstruct%grid_type < 3 .and. &
-              .not. associated(Atm(n)%parent_grid%parent_grid)) then
-            if (parent_tile > 6 .or. parent_tile < 1) then
-               call mpp_error(FATAL, 'parent tile must be between 1 and 6 if the parent is a cubed-sphere grid')
-            end if
-         else
-            if (parent_tile /= 1) then
-               call mpp_error(FATAL, 'parent tile must be 1 if the parent is not a cubed-sphere grid')
-            end if
-         end if
+       if ( .not.hydrostatic ) then
+          if ( m_split==0 ) then
+             m_split = 1. + abs(dt_atmos)/real(k_split*n_split*abs(p_split))
+             if (abs(a_imp) < 0.5) then
+                if(is_master()) write(*,199) 'm_split is set to ', m_split
+             endif
+          endif
+          if(is_master()) then
+             write(*,*) 'Off center implicit scheme param=', a_imp
+             write(*,*) ' p_fac=', p_fac
+          endif
+       endif
 
-         if ( refinement < 1 ) call mpp_error(FATAL, 'grid refinement must be positive')
+       if(is_master()) then
+          if (n_sponge >= 0) write(*,199) 'Using n_sponge : ', n_sponge
+          write(*,197) 'Using non_ortho : ', non_ortho
+       endif
 
-         if (nestupdate == 1 .or. nestupdate == 2) then
+197    format(A,l7)
+198    format(A,i2.2,A,i4.4,'x',i4.4,'x',i1.1,'-',f9.3)
+199    format(A,i3.3)
 
-            if (mod(npx-1,refinement) /= 0 .or. mod(npy-1,refinement) /= 0) then
-               call mpp_error(WARNING, 'npx-1 or npy-1 is not evenly divisible by the refinement ratio; averaging update cannot be mass-conservative.')
-            end if
+       !if (.not. (nested .or. regional)) alpha = alpha*pi  !TODO for test_case_nml
 
-         end if
+       !allocate(Atm%neststruct%child_grids(size(Atm))) !TODO want to remove
+       !Atm(N)%neststruct%child_grids = .false.
 
-         if ( consv_te > 0.) then
-            call mpp_error(FATAL, 'The global energy fixer cannot be used on a nested grid. consv_te must be set to 0.')
-         end if
+       target_lon = target_lon * pi/180.
+       target_lat = target_lat * pi/180.
 
-         Atm(n)%neststruct%refinement_of_global = Atm(n)%neststruct%refinement * Atm(n)%parent_grid%neststruct%refinement_of_global
-         max_refinement_of_global = max(Atm(n)%neststruct%refinement_of_global,max_refinement_of_global)
-         Atm(n)%neststruct%npx_global = Atm(n)%neststruct%refinement * Atm(n)%parent_grid%neststruct%npx_global
+     end subroutine read_namelist_fv_core_nml
 
-      else
-         Atm(n)%neststruct%ioffset                = -999
-         Atm(n)%neststruct%joffset                = -999   
-         Atm(n)%neststruct%parent_tile            = -1      
-         Atm(n)%neststruct%refinement             = -1
-      end if
+     subroutine setup_update_regions
 
-      if (Atm(n)%flagstruct%regional) then
-         if ( consv_te > 0.) then
-            call mpp_error(FATAL, 'The global energy fixer cannot be used on a regional grid. consv_te must be set to 0.')
-         end if
-      end if
+       integer :: isu, ieu, jsu, jeu ! update regions
+       integer :: isc, jsc, iec, jec
+       integer :: upoff
 
-      if (Atm(n)%neststruct%nested) then
-         if (Atm(n)%flagstruct%grid_type >= 4 .and. Atm(n)%parent_grid%flagstruct%grid_type >= 4) then
-            Atm(n)%flagstruct%dx_const = Atm(n)%parent_grid%flagstruct%dx_const / real(Atm(n)%neststruct%refinement)
-            Atm(n)%flagstruct%dy_const = Atm(n)%parent_grid%flagstruct%dy_const / real(Atm(n)%neststruct%refinement)
-         end if
-      end if
+       isc = Atm(this_grid)%bd%isc
+       jsc = Atm(this_grid)%bd%jsc
+       iec = Atm(this_grid)%bd%iec
+       jec = Atm(this_grid)%bd%jec
 
+       upoff = Atm(this_grid)%neststruct%upoff
 
-!----------------------------------------
-! Adjust divergence damping coefficients:
-!----------------------------------------
-!      d_fac = real(n0split)/real(n_split)
-!      dddmp = dddmp * d_fac
-!      d2_bg = d2_bg * d_fac
-!      d4_bg = d4_bg * d_fac
-!      d_ext = d_ext * d_fac
-!      vtdm4 = vtdm4 * d_fac
-      if (old_divg_damp) then
-        if (is_master()) write(*,*) " fv_control: using original values for divergence damping "
-        d2_bg_k1 = 6.         ! factor for d2_bg (k=1)  - default(4.)
-        d2_bg_k2 = 4.         ! factor for d2_bg (k=2)  - default(2.)
-        d2_divg_max_k1 = 0.02 ! d2_divg max value (k=1) - default(0.05)
-        d2_divg_max_k2 = 0.01 ! d2_divg max value (k=2) - default(0.02)
-        damp_k_k1 = 0.        ! damp_k value (k=1)      - default(0.05)
-        damp_k_k2 = 0.        ! damp_k value (k=2)      - default(0.025)
-      elseif (n_sponge == 0 ) then
-        if ( d2_bg_k1 > 1. ) d2_bg_k1 = 0.20
-        if ( d2_bg_k2 > 1. ) d2_bg_k2 = 0.015
-      endif
+       do n=2,ngrids
+          write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 0: ', mpp_pe(), tile_coarse(n), Atm(this_grid)%global_tile
+          if (tile_coarse(n) == Atm(this_grid)%global_tile) then
 
-!     if ( beta < 1.e-5 ) beta = 0.   ! beta < 0 is used for non-hydrostatic "one_grad_p"
+             isu = nest_ioffsets(n)
+             ieu = isu + icount_coarse(n) - 1
+             jsu = nest_joffsets(n)
+             jeu = jsu + jcount_coarse(n) - 1
 
-      if ( .not.hydrostatic ) then
-         if ( m_split==0 ) then
-            m_split = 1. + abs(dt_atmos)/real(k_split*n_split*abs(p_split))
-            if (abs(a_imp) < 0.5) then
-               if(is_master()) write(*,199) 'm_split is set to ', m_split
-            endif
-         endif
-         if(is_master()) then
-            write(*,*) 'Off center implicit scheme param=', a_imp
-            write(*,*) ' p_fac=', p_fac
-         endif
-      endif
+             !update offset adjustment
+             isu = isu + upoff
+             ieu = ieu - upoff
+             jsu = jsu + upoff
+             jeu = jeu - upoff
 
-      if(is_master()) then
-         if (n_sponge >= 0) write(*,199) 'Using n_sponge : ', n_sponge
-         write(*,197) 'Using non_ortho : ', non_ortho
-      endif
+             !restriction to current domain
+!!$             !!! DEBUG CODE
+!!$             if (Atm(this_grid)%flagstruct%fv_debug) then
+!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS  : ', isu, jsu, ieu, jeu
+!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 2: ', isc, jsc, iec, jsc
+!!$             endif
+!!$             !!! END DEBUG CODE
+             if (isu > iec .or. ieu < isc .or. &
+                 jsu > jec .or. jeu < jsc ) then
+                isu = -999 ; jsu = -999 ; ieu = -1000 ; jeu = -1000
+             else
+                isu = max(isu,isc) ; jsu = max(jsu,jsc)
+                ieu = min(ieu,iec) ; jeu = min(jeu,jec)
+             endif
+!!$             !!! DEBUG CODE
+!!$             if (Atm(this_grid)%flagstruct%fv_debug) &
+!!$                  write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 3: ', isu, jsu, ieu, jeu
+!!$             !!! END DEBUG CODE
 
- 197  format(A,l7)
- 198  format(A,i2.2,A,i4.4,'x',i4.4,'x',i1.1,'-',f9.3)
- 199  format(A,i3.3)
+             Atm(n)%neststruct%isu = isu
+             Atm(n)%neststruct%ieu = ieu
+             Atm(n)%neststruct%jsu = jsu
+             Atm(n)%neststruct%jeu = jeu
+          endif
+       enddo
 
-      if (.not. (nested .or. regional)) alpha = alpha*pi
+     end subroutine setup_update_regions
 
+   end subroutine fv_control_init
 
-      allocate(Atm(n)%neststruct%child_grids(size(Atm)))
-      Atm(N)%neststruct%child_grids = .false.
-
-      !Broadcast data
-
-      !Check layout
-
-   enddo
-
-   !Set pelists
-   do n=1,size(Atm)
-      if (ANY(Atm(n)%pelist == gid)) then
-            call mpp_set_current_pelist(Atm(n)%pelist)
-            call mpp_get_current_pelist(Atm(n)%pelist, commID=commID)
-            call mp_start(commID,halo_update_type)
-      endif
-
-      if (Atm(n)%neststruct%nested) then
-         Atm(n)%neststruct%parent_proc = ANY(Atm(n)%parent_grid%pelist == gid)
-         Atm(n)%neststruct%child_proc = ANY(Atm(n)%pelist == gid)
-      endif
-   enddo
-
-   do n=1,size(Atm)
-      
-      call switch_current_Atm(Atm(n),.false.)
-      call setup_pointers(Atm(n))
-      !! CLEANUP: WARNING not sure what changes to domain_decomp may cause
-      call domain_decomp(npx,npy,ntiles,grid_type,nested,Atm(n),layout,io_layout)
-   enddo
-
-   !!! CLEANUP: This sets the pelist to ALL, which is also
-   !!! required for the define_nest_domains step in the next loop.
-   !!! Later the pelist must be reset to the 'local' pelist.
-   call broadcast_domains(Atm)
-
-   do n=1,size(Atm)
-      call switch_current_Atm(Atm(n))
-      call setup_pointers(Atm(n))
-
-      if (nested) then
-         if (mod(npx-1 , refinement) /= 0 .or. mod(npy-1, refinement) /= 0) &
-              call mpp_error(FATAL, 'npx or npy not an even refinement of its coarse grid.')
+!-------------------------------------------------------------------------------
          
-         !Pelist needs to be set to ALL (which should have been done
-         !in broadcast_domains) to get this to work
-         call mpp_define_nest_domains(Atm(n)%neststruct%nest_domain, Atm(n)%domain, Atm(parent_grid_num)%domain, &
-              7, parent_tile, &
-              1, npx-1, 1, npy-1,                  & !Grid cells, not points
-              ioffset, ioffset + (npx-1)/refinement - 1, &
-              joffset, joffset + (npy-1)/refinement - 1,         &
-              (/ (i,i=0,mpp_npes()-1)  /), extra_halo = 0, name="nest_domain") !What pelist to use?
-         call mpp_define_nest_domains(Atm(n)%neststruct%nest_domain, Atm(n)%domain, Atm(parent_grid_num)%domain, &
-              7, parent_tile, &
-              1, npx-1, 1, npy-1,                  & !Grid cells, not points
-              ioffset, ioffset + (npx-1)/refinement - 1, &
-              joffset, joffset + (npy-1)/refinement - 1,         &
-              (/ (i,i=0,mpp_npes()-1)  /), extra_halo = 0, name="nest_domain") !What pelist to use?
-!              (/ (i,i=0,mpp_npes()-1)  /), extra_halo = 2, name="nest_domain_for_BC") !What pelist to use?
+ !>@brief The subroutine 'fv_end' terminates FV3, deallocates memory, 
+!! saves restart files, and stops I/O.
+ subroutine fv_end(Atm, this_grid, restart_endfcst)
 
-         Atm(parent_grid_num)%neststruct%child_grids(n) = .true.
+    type(fv_atmos_type), intent(inout) :: Atm(:)
+    integer, intent(IN) :: this_grid
+    logical, intent(in) :: restart_endfcst
 
-         if (Atm(n)%neststruct%nestbctype > 1) then
+    integer :: n
 
-            call mpp_error(FATAL, 'nestbctype > 1 not yet implemented')
+    call timing_off('TOTAL')
+    call timing_prt( mpp_pe() )
 
-            !This check is due to a bug which has not yet been identified. Beware.
-!            if (Atm(n)%parent_grid%flagstruct%hord_tr == 7) &
-!                 call mpp_error(FATAL, "Flux-form nested  BCs (nestbctype > 1) should not use hord_tr == 7 (on parent grid), since there is no guarantee of tracer mass conservation with this option.")
+    call fv_restart_end(Atm(this_grid), restart_endfcst)
+    call fv_io_exit()
 
-!!$            if (Atm(n)%flagstruct%q_split > 0 .and. Atm(n)%parent_grid%flagstruct%q_split > 0) then
-!!$               if (mod(Atm(n)%flagstruct%q_split,Atm(n)%parent_grid%flagstruct%q_split) /= 0) call mpp_error(FATAL, &
-!!$                    "Flux-form nested BCs (nestbctype > 1) require q_split on the nested grid to be evenly divisible by that on the coarse grid.")
-!!$            endif
-!!$            if (mod((Atm(n)%npx-1),Atm(n)%neststruct%refinement) /= 0 .or. mod((Atm(n)%npy-1),Atm(n)%neststruct%refinement) /= 0) call mpp_error(FATAL, &
-!!$                 "Flux-form nested BCs (nestbctype > 1) requires npx and npy to be one more than a multiple of the refinement ratio.")
-!!$            Atm(n)%parent_grid%neststruct%do_flux_BCs = .true.
-!!$            if (Atm(n)%neststruct%nestbctype == 3 .or. Atm(n)%neststruct%nestbctype == 4) Atm(n)%parent_grid%neststruct%do_2way_flux_BCs = .true.
-            Atm(n)%neststruct%upoff = 0
-         endif
+  ! Free temporary memory from sw_core routines
+  ! Deallocate
+    call grid_utils_end
 
-      end if
+    do n = 1, ngrids
+       call deallocate_fv_atmos_type(Atm(n))
+    end do
 
-      do nn=1,size(Atm)
-         if (n == 1) allocate(Atm(nn)%neststruct%nest_domain_all(size(Atm)))
-         Atm(nn)%neststruct%nest_domain_all(n) = Atm(n)%neststruct%nest_domain
-      enddo
 
-   end do
+ end subroutine fv_end
+!-------------------------------------------------------------------------------
 
-   do n=1,size(Atm)
-      if (ANY(Atm(n)%pelist == gid)) then
-         call mpp_set_current_pelist(Atm(n)%pelist)
-      endif
-   enddo
-
-  end subroutine run_setup
-  subroutine init_nesting(Atm, grids_on_this_pe, p_split)
-    
-    type(fv_atmos_type), intent(inout), allocatable :: Atm(:)
-   logical, allocatable, intent(INOUT) :: grids_on_this_pe(:)
-    integer, intent(INOUT) :: p_split
-    character(100) :: pe_list_name
-    integer :: nest_pes(100)
-    integer :: n, npes, ntiles, pecounter, i
-    integer, allocatable :: pelist(:)
-    integer :: f_unit, ios, ierr
-
-    !This is an OPTIONAL namelist, that needs to be read before everything else
-    namelist /nest_nml/ ngrids, ntiles, nest_pes, p_split
-
-    call mp_assign_gid
-
-    nest_pes = 0
-    ntiles = -999
-
-#ifdef INTERNAL_FILE_NML
-      read (input_nml_file,nest_nml,iostat=ios)
-      ierr = check_nml_error(ios,'nest_nml')
-#else
-      f_unit=open_namelist_file()
-      rewind (f_unit)
-      read (f_unit,nest_nml,iostat=ios)
-      ierr = check_nml_error(ios,'nest_nml')
-      call close_file(f_unit)
-#endif
-
-      if (ntiles /= -999) ngrids = ntiles
-      if (ngrids > 10) call mpp_error(FATAL, "More than 10 nested grids not supported")
-
-      allocate(Atm(ngrids))
-    
-      allocate(grids_on_this_pe(ngrids))
-      grids_on_this_pe = .false. !initialization
-
-      npes = mpp_npes()
-
-      ! Need to get a global pelist to send data around later?
-      allocate( pelist_all(npes) )
-      pelist_all = (/ (i,i=0,npes-1) /)
-      pelist_all = pelist_all + mpp_root_pe()
-
-      if (ngrids == 1) then
-
-         !Set up the single pelist
-         allocate(Atm(1)%pelist(npes))
-         Atm(1)%pelist = (/(i, i=0, npes-1)/)
-         Atm(1)%pelist = Atm(1)%pelist + mpp_root_pe()
-         call mpp_declare_pelist(Atm(1)%pelist)
-         call mpp_set_current_pelist(Atm(1)%pelist)
-         !Now set in domain_decomp
-         !masterproc = Atm(1)%pelist(1)
-         call setup_master(Atm(1)%pelist)
-         grids_on_this_pe(1) = .true.
-         Atm(1)%npes_this_grid = npes
-
-      else
-
-         pecounter = mpp_root_pe()
-         do n=1,ngrids
-            if (n == 1) then
-               pe_list_name = ''
-            else
-               write(pe_list_name,'(A4, I2.2)') 'nest', n
-            endif
-
-            if (nest_pes(n) == 0) then
-               if (n < ngrids) call mpp_error(FATAL, 'Only nest_pes(ngrids) in nest_nml can be zero; preceeding values must be nonzero.')
-               allocate(Atm(n)%pelist(npes-pecounter))
-               Atm(n)%pelist = (/(i, i=pecounter, npes-1)/)
-               if (n > 1) then
-                  call mpp_declare_pelist(Atm(n)%pelist, trim(pe_list_name))
-                  !Make sure nested-grid input file exists
-                  if (.not. file_exist('input_'//trim(pe_list_name)//'.nml')) then
-                     call mpp_error(FATAL, "Could not find nested grid namelist input_"//trim(pe_list_name)//".nml")
-                  endif
-               endif
-               exit
-            else
-               allocate(Atm(n)%pelist(nest_pes(n)))
-               Atm(n)%pelist = (/ (i, i=pecounter, pecounter+nest_pes(n)-1) /)
-               if (Atm(n)%pelist(nest_pes(n)) >= npes) then
-                  call mpp_error(FATAL, 'PEs assigned by nest_pes in nest_nml exceeds number of available PEs.')
-               endif
-
-               call mpp_declare_pelist(Atm(n)%pelist, trim(pe_list_name))
-               !Make sure nested-grid input file exists
-               if (n > 1) then
-                  if (.not. file_exist('input_'//trim(pe_list_name)//'.nml')) then
-                     call mpp_error(FATAL, "Could not find nested grid namelist input_"//trim(pe_list_name)//".nml")
-                  endif
-               endif
-               pecounter = pecounter+nest_pes(n)
-            endif
-         enddo
-
-         !Set pelists
-         do n=1,ngrids
-            Atm(n)%npes_this_grid = size(Atm(n)%pelist)
-            if (ANY(gid == Atm(n)%pelist)) then
-                  call mpp_set_current_pelist(Atm(n)%pelist)
-                  !now set in domain_decomp
-                  !masterproc = Atm(n)%pelist(1)
-                  call setup_master(Atm(n)%pelist)
-                  grids_on_this_pe(n) = .true.
-                  exit
-               endif
-         enddo
-
-         if (pecounter /= npes) then
-            call mpp_error(FATAL, 'nest_pes in nest_nml does not assign all of the available PEs.')
-         endif
-      endif
-
-      !Layout is checked later, in fv_control
-
-  end subroutine init_nesting
-
-!>@brief The subroutine 'setup_pointers' associates the MODULE flag pointers
-!! with the ARRAY flag variables for the grid active on THIS pe so the flags
-!! can be read in from the namelist.
-  subroutine setup_pointers(Atm)
-
-    type(fv_atmos_type), intent(INOUT), target :: Atm
-
-    !This routine associates the MODULE flag pointers with the ARRAY flag variables for the grid active on THIS pe so the flags can be read in from the namelist.
-
-     res_latlon_dynamics           => Atm%flagstruct%res_latlon_dynamics
-     res_latlon_tracers            => Atm%flagstruct%res_latlon_tracers
-
-     grid_type                     => Atm%flagstruct%grid_type
-     grid_name                     => Atm%flagstruct%grid_name
-     grid_file                     => Atm%flagstruct%grid_file
-     hord_mt                       => Atm%flagstruct%hord_mt
-     kord_mt                       => Atm%flagstruct%kord_mt
-     kord_wz                       => Atm%flagstruct%kord_wz
-     hord_vt                       => Atm%flagstruct%hord_vt
-     hord_tm                       => Atm%flagstruct%hord_tm
-     hord_dp                       => Atm%flagstruct%hord_dp
-     kord_tm                       => Atm%flagstruct%kord_tm
-     hord_tr                       => Atm%flagstruct%hord_tr
-     kord_tr                       => Atm%flagstruct%kord_tr
-     scale_z                       => Atm%flagstruct%scale_z
-     w_max                         => Atm%flagstruct%w_max
-     z_min                         => Atm%flagstruct%z_min
-     lim_fac                       => Atm%flagstruct%lim_fac
-     nord                          => Atm%flagstruct%nord
-     nord_tr                       => Atm%flagstruct%nord_tr
-     dddmp                         => Atm%flagstruct%dddmp
-     d2_bg                         => Atm%flagstruct%d2_bg
-     d4_bg                         => Atm%flagstruct%d4_bg
-     vtdm4                         => Atm%flagstruct%vtdm4
-     trdm2                         => Atm%flagstruct%trdm2
-     d2_bg_k1                      => Atm%flagstruct%d2_bg_k1
-     d2_bg_k2                      => Atm%flagstruct%d2_bg_k2
-     d2_divg_max_k1                => Atm%flagstruct%d2_divg_max_k1
-     d2_divg_max_k2                => Atm%flagstruct%d2_divg_max_k2
-     damp_k_k1                     => Atm%flagstruct%damp_k_k1
-     damp_k_k2                     => Atm%flagstruct%damp_k_k2
-     n_zs_filter                   => Atm%flagstruct%n_zs_filter
-     nord_zs_filter                => Atm%flagstruct%nord_zs_filter
-     full_zs_filter                => Atm%flagstruct%full_zs_filter
-     RF_fast                       => Atm%flagstruct%RF_fast
-     consv_am                      => Atm%flagstruct%consv_am
-     do_sat_adj                    => Atm%flagstruct%do_sat_adj
-     do_f3d                        => Atm%flagstruct%do_f3d
-     no_dycore                     => Atm%flagstruct%no_dycore
-     convert_ke                    => Atm%flagstruct%convert_ke
-     do_vort_damp                  => Atm%flagstruct%do_vort_damp
-     use_old_omega                 => Atm%flagstruct%use_old_omega
-     beta                          => Atm%flagstruct%beta
-     n_sponge                      => Atm%flagstruct%n_sponge
-     d_ext                         => Atm%flagstruct%d_ext
-     nwat                          => Atm%flagstruct%nwat
-     use_logp                      => Atm%flagstruct%use_logp
-     warm_start                    => Atm%flagstruct%warm_start
-     inline_q                      => Atm%flagstruct%inline_q
-     shift_fac                     => Atm%flagstruct%shift_fac
-     do_schmidt                    => Atm%flagstruct%do_schmidt
-     stretch_fac                   => Atm%flagstruct%stretch_fac
-     target_lat                    => Atm%flagstruct%target_lat
-     target_lon                    => Atm%flagstruct%target_lon
-     regional                      => Atm%flagstruct%regional
-     bc_update_interval            => Atm%flagstruct%bc_update_interval 
-     nrows_blend                   => Atm%flagstruct%nrows_blend
-     regional_bcs_from_gsi         => Atm%flagstruct%regional_bcs_from_gsi
-     write_restart_with_bcs        => Atm%flagstruct%write_restart_with_bcs
-     reset_eta                     => Atm%flagstruct%reset_eta
-     p_fac                         => Atm%flagstruct%p_fac
-     a_imp                         => Atm%flagstruct%a_imp
-     n_split                       => Atm%flagstruct%n_split
-     fac_n_spl                     => Atm%flagstruct%fac_n_spl
-     fhouri                        => Atm%flagstruct%fhouri
-     m_split                       => Atm%flagstruct%m_split
-     k_split                       => Atm%flagstruct%k_split
-     use_logp                      => Atm%flagstruct%use_logp
-     q_split                       => Atm%flagstruct%q_split
-     print_freq                    => Atm%flagstruct%print_freq
-     write_3d_diags                => Atm%flagstruct%write_3d_diags
-     npx                           => Atm%flagstruct%npx
-     npy                           => Atm%flagstruct%npy
-     npz                           => Atm%flagstruct%npz
-     npz_rst                       => Atm%flagstruct%npz_rst
-     ncnst                         => Atm%flagstruct%ncnst
-     pnats                         => Atm%flagstruct%pnats
-     dnats                         => Atm%flagstruct%dnats
-     ntiles                        => Atm%flagstruct%ntiles
-     nf_omega                      => Atm%flagstruct%nf_omega
-     fv_sg_adj                     => Atm%flagstruct%fv_sg_adj
-     na_init                       => Atm%flagstruct%na_init
-     nudge_dz                      => Atm%flagstruct%nudge_dz
-     p_ref                         => Atm%flagstruct%p_ref
-     dry_mass                      => Atm%flagstruct%dry_mass
-     nt_prog                       => Atm%flagstruct%nt_prog
-     nt_phys                       => Atm%flagstruct%nt_phys
-     tau_h2o                       => Atm%flagstruct%tau_h2o
-     delt_max                      => Atm%flagstruct%delt_max
-     d_con                         => Atm%flagstruct%d_con
-     ke_bg                         => Atm%flagstruct%ke_bg
-     consv_te                      => Atm%flagstruct%consv_te
-     tau                           => Atm%flagstruct%tau
-     rf_cutoff                     => Atm%flagstruct%rf_cutoff
-     filter_phys                   => Atm%flagstruct%filter_phys
-     dwind_2d                      => Atm%flagstruct%dwind_2d
-     breed_vortex_inline           => Atm%flagstruct%breed_vortex_inline
-     range_warn                    => Atm%flagstruct%range_warn
-     fill                          => Atm%flagstruct%fill
-     fill_dp                       => Atm%flagstruct%fill_dp
-     fill_wz                       => Atm%flagstruct%fill_wz
-     check_negative                => Atm%flagstruct%check_negative
-     non_ortho                     => Atm%flagstruct%non_ortho
-     adiabatic                     => Atm%flagstruct%adiabatic
-     moist_phys                    => Atm%flagstruct%moist_phys
-     do_Held_Suarez                => Atm%flagstruct%do_Held_Suarez
-     do_reed_physics               => Atm%flagstruct%do_reed_physics
-     reed_cond_only                => Atm%flagstruct%reed_cond_only
-     reproduce_sum                 => Atm%flagstruct%reproduce_sum
-     adjust_dry_mass               => Atm%flagstruct%adjust_dry_mass
-     fv_debug                      => Atm%flagstruct%fv_debug
-     srf_init                      => Atm%flagstruct%srf_init
-     mountain                      => Atm%flagstruct%mountain
-     remap_t                       => Atm%flagstruct%remap_t
-     z_tracer                      => Atm%flagstruct%z_tracer
-     old_divg_damp                 => Atm%flagstruct%old_divg_damp
-     fv_land                       => Atm%flagstruct%fv_land
-     nudge                         => Atm%flagstruct%nudge
-     nudge_ic                      => Atm%flagstruct%nudge_ic
-     ncep_ic                       => Atm%flagstruct%ncep_ic
-     nggps_ic                      => Atm%flagstruct%nggps_ic
-     ecmwf_ic                      => Atm%flagstruct%ecmwf_ic
-     gfs_phil                      => Atm%flagstruct%gfs_phil
-     agrid_vel_rst                 => Atm%flagstruct%agrid_vel_rst
-     use_new_ncep                  => Atm%flagstruct%use_new_ncep
-     use_ncep_phy                  => Atm%flagstruct%use_ncep_phy
-     fv_diag_ic                    => Atm%flagstruct%fv_diag_ic
-     external_ic                   => Atm%flagstruct%external_ic
-     external_eta                  => Atm%flagstruct%external_eta
-     read_increment                => Atm%flagstruct%read_increment
-
-     hydrostatic                   => Atm%flagstruct%hydrostatic
-     phys_hydrostatic              => Atm%flagstruct%phys_hydrostatic
-     use_hydro_pressure            => Atm%flagstruct%use_hydro_pressure
-     do_uni_zfull                  => Atm%flagstruct%do_uni_zfull !miz
-     adj_mass_vmr                  => Atm%flagstruct%adj_mass_vmr !f1p
-     hybrid_z                      => Atm%flagstruct%hybrid_z
-     Make_NH                       => Atm%flagstruct%Make_NH
-     make_hybrid_z                 => Atm%flagstruct%make_hybrid_z
-     nudge_qv                      => Atm%flagstruct%nudge_qv
-     add_noise                     => Atm%flagstruct%add_noise
-     butterfly_effect              => Atm%flagstruct%butterfly_effect
-     a2b_ord                       => Atm%flagstruct%a2b_ord
-     c2l_ord                       => Atm%flagstruct%c2l_ord
-     ndims                         => Atm%flagstruct%ndims
-    
-     dx_const                      => Atm%flagstruct%dx_const
-     dy_const                      => Atm%flagstruct%dy_const
-     deglon_start                  => Atm%flagstruct%deglon_start
-     deglon_stop                   => Atm%flagstruct%deglon_stop
-     deglat_start                  => Atm%flagstruct%deglat_start
-     deglat_stop                   => Atm%flagstruct%deglat_stop
-
-     deglat                        => Atm%flagstruct%deglat
-
-     nested                        => Atm%neststruct%nested
-     twowaynest                    => Atm%neststruct%twowaynest
-     parent_tile                   => Atm%neststruct%parent_tile
-     refinement                    => Atm%neststruct%refinement
-     nestbctype                    => Atm%neststruct%nestbctype
-     nestupdate                    => Atm%neststruct%nestupdate
-     nsponge                       => Atm%neststruct%nsponge
-     s_weight                      => Atm%neststruct%s_weight
-     ioffset                       => Atm%neststruct%ioffset
-     joffset                       => Atm%neststruct%joffset
-
-     layout                        => Atm%layout
-     io_layout                     => Atm%io_layout
-  end subroutine setup_pointers
-
-       
 end module fv_control_mod
