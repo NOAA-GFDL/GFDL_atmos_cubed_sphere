@@ -1042,6 +1042,8 @@ module fv_control_mod
 
 !> \param[in] add\_noise] Real: amplitude of random thermal noise (in K) to add upon startup. Useful for perturbing initial conditions. -1 by default; disabled if 0 or negative. 
 !!
+!> \param[in] butterfly\_effect Logical: whether to flip the least-significant-bit of the lowest level temperature. False by default. 
+!!
 !> \param[in] adjust\_dry\_mass Logical: whether to adjust the global dry-air mass to the value set by dry\_mass. This is only done in an initialization step, particularly when using an initial condition from an external dataset, interpolated from another resolution (either horizontal or vertical), or when changing the topography, so that the global mass of the atmosphere matches some estimate of observed value. False by default. It is recommended to only set this to True when initializing the model. 
 !!
 !> \param[in] breed\_vortex\_inline Logical: whether to bogus tropical cyclones into the model, which are specified by an external file. Options are set in fv\_nwp\_nudge\_nml. False by default. 
@@ -1067,6 +1069,8 @@ module fv_control_mod
 !> \param[in] nord\_zs\_filter Integer: order of the topography filter applied to n\_zs\_filter. Set to 2 to get a second-order filter, or 4 to get a fourth-order filter; other values do no filtering. 0 by default. This should not be set to a non-zero value on multiple successive simulations; the filter is applied every time the model restarts. This option is useful for testing the terrain filter, and should not be used for regular runs.
 !!
 !> \param[in] npz\_rst Integer: If using a restart file with a different number of vertical levels, set npz\_rst to be the number of levels in your restart file. The model will then remap the restart file data to the vertical coordinates specified by npz. 0 by default; if 0 or equal to npz no remapping is done. 
+!!
+!> \param[in] npz\_type Character(24): controls which level setup to use when several vertical level configurations use the same number of levels. These are defined in fv\_eta.F90; check there for details for defaults (ie. empty npz\_type) and alternates. Empty by default.
 !!
 !> \param[in] nudge Logical: whether to use the nudging towards the state in some externally-supplied file (such as from reanalysis or another simulation). Further nudging options are set in fv\_nwp\_nudge\_nml. False by default. 
 !!
@@ -1114,6 +1118,8 @@ module fv_control_mod
 !!
 !> \param[in] dnats Integer: The number of tracers which are not to be advected by the dynamical core, but still passed into the dynamical core; the last dnats+pnats tracers in field\_table are not advected. 0 by default.
 !!
+!> \param[in] dnrts Integer:  the Number of non-remapped consituents. Only makes sense for dnrts <= dnat.
+!!
 !> \param[in] dwind\_2d Logical: whether to use a simpler \& faster algorithm for interpolating the A-grid (cell-centered) wind tendencies computed from the physics to the D-grid. Typically, the A-grid wind tendencies are first converted in 3D cartesian coordinates and then interpolated before converting back to 2D local coordinates. When this option enabled, a much simpler but less accurate 2D interpolation is used. False by default. 
 !!
 !> \param[in] fill Logical: Fills in negative tracer values by taking positive tracers from the cells above and below. This option is useful when the physical parameterizations produced negatives. False by default.
@@ -1150,6 +1156,8 @@ module fv_control_mod
 !!
 !> \param[in] do\_schmidt  Logical: Whether to enable grid stretching and rotation using stretch\_fac, target\_lat, and target\_lon..false. by default. 
 !!
+!> \param[in] do\_cube\_transform logical: applies same transform as when do\_schmidt = True but rotates from the north pole instead of the south pole. If both do\_cube\_transform and do\_schmidt are True the model throws a fatal error. False by default.
+!!
 !> \param[in] dx\_const  Real: on a doubly-periodic grid (grid\_type = 4) specifies the (uniform) grid-cell-width in the x-direction, in meters. 1000 by default. 
 !!
 !> \param[in] dy\_const  Real: on a doubly-periodic grid (grid\_type = 4) specifies the (uniform) grid-cell-width in the y-direction, in meters. 1000 by default. 
@@ -1173,12 +1181,6 @@ module fv_control_mod
 !> \param[in] nested  Logical: whether this is a nested grid. False by default. 
 !!
 !> \param[in] twowaynest  Logical: whether to use two-way nesting, the process by which the nested-grid solution can feed back onto the coarse-grid solution. False by default. 
-!!
-!> \param[in] parent\_grid\_num  Integer: Number of the parent to this nested grid. The coarsest grid in a simulation is numbered 1; further nested grids are numbered sequentially. Required to be a positive value if nested = True. Unless you are nesting inside of nested grids or running multiple (coarse) grids that themselves do not interact, this should be set to 1. -1 by default, indicating that this grid does not have a parent grid. 
-!!
-!> \param[in] parent\_tile  Integer: number of the tile (ie. face) in which this nested grid is found in its parent. Required to be a positive value if nested = true. If the parent grid is not a cubed sphere, or itself is a nested grid, this should be set to 1. If the parent grid has been rotated (using do\_schmidt) with the intent of centering the nested grid at target\_lat and target\_lon, then parent\_tile should be set to 6. 1 by default. 
-!!
-!> \param[in] refinement  Integer: refinement ratio of the nested grid. This is the number of times that each coarse-grid cell face will be divided into smaller segments on the nested grid. Required to be a positive integer if nested = true. Nested grids are aligned with the coarse grid, so non-integer refinements are not permitted. 3 by default. 
 !!
 !> \param[in] nestupdate  Integer: type of nested-grid update to use; details are given in model/fv\_nesting.F90. 0 by default.
 !!
@@ -1204,6 +1206,8 @@ module fv_control_mod
 !!
 !> \param[in] fv\_sg\_adj  Integer: timescale (in seconds) at which to remove two-delta-z instability when the local (between two adjacent levels) Richardson number is less than 1. This is achieved by local mixing, which conserves  mass, momentum, and total energy.  Values of 0 or smaller disable this feature. If n\_sponge $< 0$ then the mixing is applied only to the top n\_sponge layers of the domain. Set to -1  (inactive) by default. Proper range is 0 to 3600.
 !!
+!> \param[in] sg\_cutoff Real (in Pa): the pressure above which the 2dz filter in fv_sg is applied, similar to the behavior of rf_cutoff. If this value is set to a non-negative value it overrides the value in n\_sponge. -1 by default, which disables this option and uses n_sponge instead.
+!! 
 !> \param[in] halo\_update\_type  Integer: which scheme to use for halo updates in multiprocessor simulations. If set to 1 non-blocking updates are used, which can improve simulation efficiency on some systems. Otherwise, blocking halo updates are performed. 1 by default.
 !! 
 !> \param[in] hord\_mt  Integer: horizontal advection scheme for momentum fluxes. A complete list of kord options is given in the table below. 9 by default, which uses the third-order piecewise-parabolic method with the monotonicity constraint of Huynh, which is less diffusive than other constraints. For hydrostatic simulation, 8 (the L04 monotonicity constraint) is recommended; for nonhydrostatic simulation, the completely unlimited (``linear'' or non-monotone) PPM scheme is recommended. If no monotonicity constraint is applied, enabling the flux damping (do\_vort\_damp = .true.) is highly recommended to control grid-scale noise. It is also recommended that hord\_mt, hord\_vt, hord\_tm, and hord\_dp use the same value, to ensure consistenttransport of all dynamical fields, unless a positivity constraint on mass advection (hord\_dp) is desired.
@@ -1349,17 +1353,35 @@ module fv_control_mod
 !!
 !> \param[in] alpha  Real: In certain shallow-water test cases specifies the angle (in fractions of a rotation, so 0.25 is a 45-degree rotation) through which the basic state is rotated. 0 by default. 
 !!
-!>##A.7  Entries in nest\_nml
+!>##A.7  Entries in fv\_nest\_nml
 !!
-!> \param[in] ngrids  Integer: number of grids in this simulation. 1 by default.  (The variable ntiles has the same effect, but its use is not recommended as it can be confused with the six tiles of the cubed sphere, which in this case form only one grid.)
+!> \param[in] grid\_pes Integer(:): Number of processor cores (or MPI ranks) assigned to each grid. The sum of the assigned cores in this array must sum to the number of cores allocated to the model. Up to one of the first ngrids entries may be 0, in which case all remaining cores are assigned to it. 0 by default.
 !!
-!> \param[in] nest\_pes  Integer(100): array carrying number of PEs assigned to each grid, in order. Must be set if ngrids > 1. 
+!> \param[in] grid_coarse Integer(:): Grid number of parent grid, if any. The first element is ignored; positive values in any successive element indicates that a new nested grid is to be created; the model continues to create grids until it finds a non-positive element. The total number of grids, ngrids, is determined from this array. -1 by default.
 !!
-!> \param[in] p\_split  Integer: number of times to sub-cycle dynamics, performing nested-grid BC interpolation and (if twowaynest ==.true.) two-way updating at the end of each set of dynamics calls. If p\_split  > 1 the user should decrease k\_split appropriately so the remapping and dynamics time steps remain the same. 1 by default.
+!> \param[in] tile\_coarse Integer(:): Absolute index of the tile (sub-component of a grid) a given grid is nested within. The first element is ignored. This is only useful when the parent grid has multiple tiles, such as for the six-tile cubed-sphere grid, or if the parent is a multi-tile nest. If grid_coarse(n) is a single-tile domain the coarse-grid tile can be determined automatically by setting it to a non-positive value. 0 by default.
 !!
-!>##A.8 Entries in nggps\_diag\_nml
+!> \param[in] nest\_refine Integer(:): Refinement ratio, relative to the parent, for each nest. The first element is ignored. FV3 supports any integer refinement ratio for nesting, although values larger than 6 may cause stability issues. 3 by default.
 !!
-!> \param[in] fdiag  Real(1028): Array listing the diagnostic output times (in hours) for the GFS physics. This can either be a list of times after initialization, or an interval if only the first entry is nonzero. All 0 by default, which will result in no outputs. 
+!> \param[in] nest\_ioffsets integer(:): Index within a tile or grid of the coarse grid cell closest to the local left-hand boundary with a nested grid cell within it. For example, if you have a coarse grid which is 12 grid cells long, and nest\_ioffset for its child is 3, then the nested grid will have its lower-left corner located in the i=3 grid cell.
+!!
+!> \param[in] nest\_joffsets Integer(:): as for nest\_ioffsets but in the local y-direction.
+!!
+!>##A.8 Entries in fv\_diag\_column\_nml
+!!
+!> \param[in] do\_diag\_sonde Logical: whether to enable sounding output specified by the namelist variables diag_sonde* . The output is intended to match the format of text files produced by the University of Wyoming text soundings, except that output is on uninterpolated model levels. False by default.
+!!
+!> \param[in] sound\_freq integer: Frequency, in hours, of diag_sonde column output. 3 by default.
+!!
+!> \param[in] runname Character(100): Name of the simulation. This is only to add the runname to the output to enable a user to easily determine the simulation that produced a certain sounding file.
+!!
+!> \param[in] diag\_sonde\_lon\_in Real (MAX_DIAG_COLUMN): List of longitudes (in degrees) for the desired sounding points. Longitudes may be used as [0, 360] (GFDL style) or [-180,180] (NCAR style).
+!!
+!> \param[in] diag\_sonde\_lat\_in Real(MAX_DIAG_COLUMN): As for diag_sonde_lon_in except for latitudes.
+!!
+!> \param[in] diag\_sonde\_names Character(MAX_DIAG_COLUMN): List of names for each sounding point.
+!!
+!> \param[in] do\_diag\_debug Logical: analogous to the functionality of do\_diag\_sonde, as well as including similar parameters: diag\_debug\_lon\_in, diag\_debug\_lat\_in, and diag\_debug\_names, but outputs different diagnostics at every dt_atmos more appropriate for debugging problems that are known to occur at a specific point in the model.  This functionality is only implemented for the nonhydrostatic solver
 !!
 !>##A.9 Entries in atmos\_model\_nml (for UFS)
 !!
@@ -1377,11 +1399,19 @@ module fv_control_mod
 !!
 !> \param[in] regional Logical: Controls whether this is a regional domain (and thereby needs external BC inputs
 !!
-!> \param[in] bc_update_interval Integer: Default setting for interval (hours) between external regional BC data files.
+!> \param[in] bc\_update\_interval Integer: Default setting for interval (hours) between external regional BC data files.
 !!
-!> \param[in] read_increment  Logical: Read in analysis increment and add to restart following are namelist parameters for Stochastic Energy Baskscatter dissipation estimate. This is useful as part of a data-assimilation cycling system or to use native restarts from the six-tile first guess, after which the analysis increment can be applied. 
+!> \param[in] update\_blend Real: Weights to control how much blending is done during two-way nesting update. Default is 1. 
 !!
-!> \param[in] do_sat_adj  Logical: The same as fast_sat_adj = .false.  has fast saturation adjustments
+!> \param[in] regional\_bcs\_from\_gsi Logical: whether DA-updated BC files are used. Default is false. 
+!!
+!> \param[in] write\_restart\_with\_bcs Logical: whether to write restart files with BC rows. 
+!!
+!> \param[in] nrows\_blend Integer: Number of blending rows in the files. 
+!!
+!> \param[in] read\_increment  Logical: Read in analysis increment and add to restart following are namelist parameters for Stochastic Energy Baskscatter dissipation estimate. This is useful as part of a data-assimilation cycling system or to use native restarts from the six-tile first guess, after which the analysis increment can be applied. 
+!!
+!> \param[in] do\_sat\_adj  Logical: The same as fast\_sat\_adj = .false.  has fast saturation adjustments
 !!
 !!
 !!
