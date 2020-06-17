@@ -1697,7 +1697,7 @@
 
 !
 ! compute diffusion with dimensional split alternatively for implicit
-! explicit diffusion has direct computation not splitting.
+! explicit diffusion has direct computation not dimensional splitting.
       idir = mod(it-1,2)+1
 
 ! t
@@ -1725,43 +1725,42 @@
 ! u
       if( .not. md_init_wait ) then
 
-      do j=jsd+1,jed-1
-         do i=isd,ied
-            utmp(i,j) = a2*(u(i,j-1)+u(i,j+2)) + a1*(u(i,j)+u(i,j+1))
-         enddo
-      enddo
-      do i=isd,ied
-         utmp(i,jsd) = 0.5*(u(i,jsd)+u(i,jsd+1))
-         utmp(i,jed) = 0.5*(u(i,jed)+u(i,jed+1))
-      end do
-      if( gridstruct%sw_corner ) then
-          do i=isd,is-1 ; utmp(i,js) = 0.5*(u(i,js)+u(i,js+1)) ; enddo ; endif
-      if( gridstruct%se_corner ) then
-          do i=ie+1,ied ; utmp(i,js) = 0.5*(u(i,js)+u(i,js+1)) ; enddo ; endif
-      if( gridstruct%nw_corner ) then
-          do i=isd,is-1 ; utmp(i,je) = 0.5*(u(i,je)+u(i,je+1)) ; enddo ; endif
-      if( gridstruct%ne_corner ) then
-          do i=ie+1,ied ; utmp(i,je) = 0.5*(u(i,je)+u(i,je+1)) ; enddo ; endif
+       do j=jsd+1,jed-1
+          do i=isd,ied
+             utmp(i,j) = a2*(u(i,j-1)+u(i,j+2)) + a1*(u(i,j)+u(i,j+1))
+          enddo
+       enddo
+       do i=isd,ied
+          utmp(i,jsd) = 0.5*(u(i,jsd)+u(i,jsd+1))
+          utmp(i,jed) = 0.5*(u(i,jed)+u(i,jed+1))
+       end do
+       if( gridstruct%sw_corner ) then
+           do i=isd,is-1 ; utmp(i,js) = 0.5*(u(i,js)+u(i,js+1)) ; enddo ; endif
+       if( gridstruct%se_corner ) then
+           do i=ie+1,ied ; utmp(i,js) = 0.5*(u(i,js)+u(i,js+1)) ; enddo ; endif
+       if( gridstruct%nw_corner ) then
+           do i=isd,is-1 ; utmp(i,je) = 0.5*(u(i,je)+u(i,je+1)) ; enddo ; endif
+       if( gridstruct%ne_corner ) then
+           do i=ie+1,ied ; utmp(i,je) = 0.5*(u(i,je)+u(i,je+1)) ; enddo ; endif
 ! v
-      do j=jsd,jed
-         do i=isd+1,ied-1
-            vtmp(i,j) = a2*(v(i-1,j)+v(i+2,j)) + a1*(v(i,j)+v(i+1,j))
-         enddo
-         vtmp(isd,j) = 0.5*(v(isd,j)+v(isd+1,j)) 
-         vtmp(ied,j) = 0.5*(v(ied,j)+v(ied+1,j))
-      enddo
-      if( gridstruct%sw_corner ) then
-          do j=jsd,js-1 ; vtmp(is,j) = 0.5*(v(is,j)+v(is+1,j)) ; enddo ; endif
-      if( gridstruct%se_corner ) then
-          do j=jsd,js-1 ; vtmp(ie,j) = 0.5*(v(ie,j)+v(ie+1,j)) ; enddo ; endif
-      if( gridstruct%nw_corner ) then
-          do j=je+1,jed ; vtmp(is,j) = 0.5*(v(is,j)+v(is+1,j)) ; enddo ; endif
-      if( gridstruct%ne_corner ) then
-          do j=je+1,jed ; vtmp(ie,j) = 0.5*(v(ie,j)+v(ie+1,j)) ; enddo ; endif
+       do j=jsd,jed
+          do i=isd+1,ied-1
+             vtmp(i,j) = a2*(v(i-1,j)+v(i+2,j)) + a1*(v(i,j)+v(i+1,j))
+          enddo
+          vtmp(isd,j) = 0.5*(v(isd,j)+v(isd+1,j)) 
+          vtmp(ied,j) = 0.5*(v(ied,j)+v(ied+1,j))
+       enddo
+       if( gridstruct%sw_corner ) then
+           do j=jsd,js-1 ; vtmp(is,j) = 0.5*(v(is,j)+v(is+1,j)) ; enddo ; endif
+       if( gridstruct%se_corner ) then
+           do j=jsd,js-1 ; vtmp(ie,j) = 0.5*(v(ie,j)+v(ie+1,j)) ; enddo ; endif
+       if( gridstruct%nw_corner ) then
+           do j=je+1,jed ; vtmp(is,j) = 0.5*(v(is,j)+v(is+1,j)) ; enddo ; endif
+       if( gridstruct%ne_corner ) then
+           do j=je+1,jed ; vtmp(ie,j) = 0.5*(v(ie,j)+v(ie+1,j)) ; enddo ; endif
 
 ! u v
-
-!!x   if( .not. md_init_wait ) then
+! at this point, utmp and vtmp are full values
        if( md_implicit ) then
            call deln_flux_implm_uv(idir,nord,is,ie,js,je,npx,npy,visc, &
                                    utmp,vtmp,gridstruct,bd)
@@ -1769,23 +1768,21 @@
            call deln_flux_explm_uv(nord,is,ie,js,je,npx,npy,visc, &
                                    utmp,vtmp,gridstruct,bd)
        endif
-!x    else
-!x         do j=jsd,jed; do i=isd,ied; wk(i,j)=visc(i,j)*0.01; enddo; enddo
-!x         call deln_flux_implm_uv(idir,nord,is,ie,js,je,npx,npy,wk, &
-!x                                 utmp,vtmp,gridstruct,bd)
-!!x   endif
-
+! all deln_flux_* return full values except *_uv return forcings
+! so at this point, utmp and vtmp are forcings
 !
-      do j=js,je+1
-         do i=is,ie
-            u(i,j) = a2*(utmp(i,j+1)+utmp(i,j-2)) + a1*(utmp(i,j)+utmp(i,j-1))
-         enddo
-      enddo
-      do j=js,je
-         do i=is,ie+1
-            v(i,j) = a2*(vtmp(i+1,j)+vtmp(i-2,j)) + a1*(vtmp(i,j)+vtmp(i-1,j))
-         enddo
-      enddo
+       do j=js,je+1
+          do i=is,ie
+             u(i,j) = u(i,j) +  &
+                      a2*(utmp(i,j+1)+utmp(i,j-2)) + a1*(utmp(i,j)+utmp(i,j-1))
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie+1
+             v(i,j) = v(i,j) +  &
+                      a2*(vtmp(i+1,j)+vtmp(i-2,j)) + a1*(vtmp(i,j)+vtmp(i-1,j))
+          enddo
+       enddo
 
       endif	! end if of not md_init_wait
 

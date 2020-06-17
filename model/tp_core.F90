@@ -1389,6 +1389,7 @@ endif
  subroutine deln_flux_implm_uv(idir,nord,is,ie,js,je,npx,npy,damp, &
                                u,v,gridstruct,bd)
 !> Del-2 dimensional split implicit damping for the cell-mean values (A grid)
+!  input u v are full values, output u v are forcings
 !------------------
 !> nord =  used for extra grid as side 
 !------------------
@@ -1531,11 +1532,12 @@ endif
    endif
 
    enddo	! m loop
-!---------------------------------------------
+!-------- input are full u v  ---------
+!-------- output are forcing ---------
    do j=bd%jsd,bd%jed
       do i=bd%isd,bd%ied
-         u(i,j) = d1(i,j)
-         v(i,j) = d2(i,j)
+         u(i,j) = d1(i,j) - u(i,j) 
+         v(i,j) = d2(i,j) - v(i,j)
       enddo
    enddo
    return
@@ -1788,11 +1790,13 @@ endif
       enddo
    enddo
 !
+!-------- input are full u v  ---------
+!-------- output are forcing ---------
    do j=j1+1,j2-1
       do i=i1+1,i2-1
-         u(i,j) = u(i,j) +            &
+         u(i,j) =   &
          (fx1(i,j)-fx1(i+1,j)+fy1(i,j)-fy1(i,j+1))*gridstruct%rarea(i,j)
-         v(i,j) = v(i,j) +            &
+         v(i,j) =   &
          (fx2(i,j)-fx2(i+1,j)+fy2(i,j)-fy2(i,j+1))*gridstruct%rarea(i,j)
       enddo
    enddo
