@@ -2036,7 +2036,7 @@ contains
 
 
 
-       if( idiag%id_slp>0 .or. idiag%id_tm>0 .or. idiag%id_any_hght>0 .or. idiag%id_hght3d .or. idiag%id_c15>0 .or. idiag%id_ctz ) then
+       if( idiag%id_slp>0 .or. idiag%id_tm>0 .or. idiag%id_any_hght>0 .or. idiag%id_hght3d>0 .or. idiag%id_c15>0 .or. idiag%id_ctz>0 ) then
 
           allocate ( wz(isc:iec,jsc:jec,npz+1) )
           call get_height_field(isc, iec, jsc, jec, ngc, npz, Atm(n)%flagstruct%hydrostatic, Atm(n)%delz,  &

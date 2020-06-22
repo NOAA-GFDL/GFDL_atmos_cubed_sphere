@@ -230,7 +230,7 @@
      integer, parameter :: interpOrder = 1
 
       public :: pz0, zz0
-      public :: test_case, bubble_do, alpha, tracer_test, wind_field, nsolitons, soliton_Umax, soliton_size
+      public :: read_namelist_test_case_nml, alpha
       public :: init_case
 #ifdef NCDF_OUTPUT
       public :: output, output_ncdf
@@ -6360,26 +6360,26 @@ end subroutine terminator_tracers
            call hydro_eq(npz, is, ie, js, je, ps, phis, dry_mass,      &
                          delp, ak, bk, pt, delz, area, ng, .false., hydrostatic, hybrid_z, domain)
 
-	   ! *** Add Initial perturbation ***
-	   if (bubble_do) then
-	       r0 = 100.*sqrt(dx_const**2 + dy_const**2)
-	       icenter = npx/2
-	       jcenter = npy/2
+           ! *** Add Initial perturbation ***
+           if (bubble_do) then
+               r0 = 100.*sqrt(dx_const**2 + dy_const**2)
+               icenter = npx/2
+               jcenter = npy/2
 
-	       do j=js,je
-		  do i=is,ie
-		     dist = (i-icenter)*dx_const*(i-icenter)*dx_const   &
-			   +(j-jcenter)*dy_const*(j-jcenter)*dy_const
-		     dist = min(r0, sqrt(dist))
-		     do k=1,npz
-			prf = ak(k) + ps(i,j)*bk(k)
-			if ( prf > 100.E2 ) then
-			     pt(i,j,k) = pt(i,j,k) + 0.01*(1. - (dist/r0)) * prf/ps(i,j) 
-			endif
-		     enddo
-		  enddo
-	       enddo
-	   endif
+               do j=js,je
+                  do i=is,ie
+                     dist = (i-icenter)*dx_const*(i-icenter)*dx_const   &
+                           +(j-jcenter)*dy_const*(j-jcenter)*dy_const
+                     dist = min(r0, sqrt(dist))
+                     do k=1,npz
+                        prf = ak(k) + ps(i,j)*bk(k)
+                        if ( prf > 100.E2 ) then
+                             pt(i,j,k) = pt(i,j,k) + 0.01*(1. - (dist/r0)) * prf/ps(i,j) 
+                        endif
+                     enddo
+                  enddo
+               enddo
+           endif
           if ( hydrostatic ) then
           call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
                      pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass, .false., .false., &
@@ -6734,26 +6734,26 @@ end subroutine terminator_tracers
                    .true., hydrostatic, nwat, domain, flagstruct%adiabatic)
 
 ! *** Add Initial perturbation ***
-	if (bubble_do) then
-	    r0 = 10.e3
-	    zc = 1.4e3         ! center of bubble  from surface
-	    icenter = (npx-1)/2 + 1
-	    jcenter = (npy-1)/2 + 1
-	    do k=1, npz
-	       zm = 0.5*(ze1(k)+ze1(k+1))
-	       ptmp = ( (zm-zc)/zc ) **2
-	       if ( ptmp < 1. ) then
-		  do j=js,je
-		     do i=is,ie
-		       dist = ptmp+((i-icenter)*dx_const/r0)**2+((j-jcenter)*dy_const/r0)**2
-		       if ( dist < 1. ) then
-			    pt(i,j,k) = pt(i,j,k) + pturb*(1.-sqrt(dist))
-		       endif
-		     enddo
-		  enddo
-	       endif
-	    enddo
-	 endif
+        if (bubble_do) then
+            r0 = 10.e3
+            zc = 1.4e3         ! center of bubble  from surface
+            icenter = (npx-1)/2 + 1
+            jcenter = (npy-1)/2 + 1
+            do k=1, npz
+               zm = 0.5*(ze1(k)+ze1(k+1))
+               ptmp = ( (zm-zc)/zc ) **2
+               if ( ptmp < 1. ) then
+                  do j=js,je
+                     do i=is,ie
+                        dist = ptmp+((i-icenter)*dx_const/r0)**2+((j-jcenter)*dy_const/r0)**2
+                         if ( dist < 1. ) then
+                              pt(i,j,k) = pt(i,j,k) + pturb*(1.-sqrt(dist))
+                         endif
+                     enddo
+                   enddo
+               endif
+             enddo
+        endif
 
         case ( 101 )
 
@@ -6904,6 +6904,7 @@ end subroutine terminator_tracers
         integer :: ierr, f_unit, unit, ios
 
 #include<file_version.h>
+        namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons,soliton_Umax, soliton_size
 
         unit = stdlog()
 
@@ -6911,7 +6912,6 @@ end subroutine terminator_tracers
         alpha = 0.
         bubble_do = .false.
         test_case = 11   ! (USGS terrain)
-        namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
         
 #ifdef INTERNAL_FILE_NML
         ! Read Test_Case namelist

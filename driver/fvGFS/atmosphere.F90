@@ -944,14 +944,14 @@ contains
    !--- if needed, flip the indexing during this step
    if (flip) then
      if (.not. relative) then
-       z(:,:,1) = Atm(mygrid)%phis(:,:)/grav
+       z(1:iec-isc+1,1:jec-jsc+1,1) = Atm(mygrid)%phis(isc:iec,jsc:jec)/grav
      endif
      do k = 2,npz+1
        z(:,:,k) = z(:,:,k-1) - dz(:,:,npz+2-k)
      enddo
    else
      if (.not. relative) then
-       z(:,:,npz+1) = Atm(mygrid)%phis(:,:)/grav
+       z(1:iec-isc+1,1:jec-jsc+1,npz+1) = Atm(mygrid)%phis(isc:iec,jsc:jec)/grav
      endif
      do k = npz,1,-1
        z(:,:,k) = z(:,:,k+1) - dz(:,:,k)

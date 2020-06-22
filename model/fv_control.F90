@@ -143,7 +143,7 @@ module fv_control_mod
    use fv_mp_mod,           only: mp_start, domain_decomp, mp_assign_gid, global_nest_domain
    use fv_mp_mod,           only: broadcast_domains, mp_barrier, is_master, setup_master, grids_master_procs, tile_fine
    use fv_mp_mod,           only: MAX_NNEST, MAX_NTILE
-   !use test_cases_mod,      only: test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
+   use test_cases_mod,      only: read_namelist_test_case_nml
    use fv_timing_mod,       only: timing_on, timing_off, timing_init, timing_prt
    use mpp_domains_mod,     only: domain2D
    use mpp_domains_mod,     only: mpp_define_nest_domains, nest_domain_type, mpp_get_global_domain
@@ -200,7 +200,7 @@ module fv_control_mod
      integer, dimension(MAX_NNEST) :: grid_pes = 0
      integer, dimension(MAX_NNEST) :: grid_coarse = -1
      integer, dimension(MAX_NNEST) :: nest_refine = 3 
-     integer, dimension(MAX_NNEST) :: nest_ioffsets, nest_joffsets
+     integer, dimension(MAX_NNEST) :: nest_ioffsets = -999, nest_joffsets = -999
      integer, dimension(MAX_NNEST) :: all_npx = 0
      integer, dimension(MAX_NNEST) :: all_npy = 0
      integer, dimension(MAX_NNEST) :: all_npz = 0
@@ -537,7 +537,7 @@ module fv_control_mod
 #endif
      call read_namelist_fv_grid_nml
      call read_namelist_fv_core_nml(Atm(this_grid)) ! do options processing here too?
-     !TODO test_case_nml moved to test_cases
+     call read_namelist_test_case_nml(Atm(this_grid)%nml_filename)
      call mpp_get_current_pelist(Atm(this_grid)%pelist, commID=commID) ! for commID
      call mp_start(commID,halo_update_type)
 
@@ -679,7 +679,7 @@ module fv_control_mod
 
      endif
 
-     allocate(Atm(this_grid)%neststruct%child_grids(ngrids)) 
+     allocate(Atm(this_grid)%neststruct%child_grids(ngrids))
      do n=1,ngrids
         Atm(this_grid)%neststruct%child_grids(n) = (grid_coarse(n) == this_grid)
         allocate(Atm(n)%neststruct%do_remap_bc(ngrids))
@@ -1218,7 +1218,6 @@ module fv_control_mod
        upoff = Atm(this_grid)%neststruct%upoff
 
        do n=2,ngrids
-          write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 0: ', mpp_pe(), tile_coarse(n), Atm(this_grid)%global_tile
           if (tile_coarse(n) == Atm(this_grid)%global_tile) then
 
              isu = nest_ioffsets(n)

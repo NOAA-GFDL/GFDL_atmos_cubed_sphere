@@ -2365,7 +2365,7 @@ contains
       position = CENTER
    end if
 
-   !Note that *_c does not have values on the parent_proc. 
+   !Note that *_c does not have values on the parent_proc.
    !Must use isu, etc. to get bounds of update region on parent.
    call mpp_get_F2C_index(nest_domain, is_c, ie_c, js_c, je_c, is_f, ie_f, js_f, je_f, nest_level=nest_level, position=position)
    if (child_proc) then
@@ -2536,7 +2536,7 @@ contains
       select case (nestupdate) 
       case (1,2,6,7,8) ! 1 = Conserving update on all variables; 2 = conserving update for cell-centered values; 6 = conserving remap-update
 
-!$OMP parallel do default(none) shared(npz,jsu,jeu,isu,ieu,coarse_dat_recv,parent_grid,var_coarse) 
+!$OMP parallel do default(none) shared(npz,jsu,jeu,isu,ieu,coarse_dat_recv,parent_grid,var_coarse)
          do k=1,npz
          do j=jsu,jeu
          do i=isu,ieu
@@ -2559,7 +2559,7 @@ contains
       select case (nestupdate) 
       case (1,6,7,8)
 
-!$OMP parallel do default(none) shared(npz,jsu,jeu,isu,ieu,coarse_dat_recv,parent_grid,var_coarse) 
+!$OMP parallel do default(none) shared(npz,jsu,jeu,isu,ieu,coarse_dat_recv,parent_grid,var_coarse)
          do k=1,npz
          do j=jsu,jeu+1
          do i=isu,ieu
@@ -2579,7 +2579,7 @@ contains
       select case (nestupdate) 
       case (1,6,7,8)   !averaging update; in-line average for face-averaged values instead of areal average
 
-!$OMP parallel do default(none) shared(npz,jsu,jeu,isu,ieu,coarse_dat_recv,parent_grid,var_coarse) 
+!$OMP parallel do default(none) shared(npz,jsu,jeu,isu,ieu,coarse_dat_recv,parent_grid,var_coarse)
          do k=1,npz
          do j=jsu,jeu
          do i=isu,ieu+1
