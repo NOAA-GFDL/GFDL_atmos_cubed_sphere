@@ -3431,6 +3431,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     print *, 'clwmr = ', liq_wat
     print *, ' o3mr = ', o3mr
     print *, 'ncnst = ', ncnst
+    print *, 'ntracers = ', ntracers
   endif
 
   if ( sphum/=1 ) then
@@ -6509,17 +6510,22 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     je=bd%je
 
 ! FIXME: MPI_COMM_WORLD
+#ifdef OVERLOAD_R4
+#define _DYN_MPI_REAL MPI_REAL
+#else
+#define _DYN_MPI_REAL MPI_DOUBLE_PRECISION
+#endif
 
 
 ! Receive from north
     if( north_pe /= NULL_PE )then
-       call MPI_Irecv(buf1,ibufexch,MPI_REAL,north_pe,north_pe &
+       call MPI_Irecv(buf1,ibufexch,_DYN_MPI_REAL,north_pe,north_pe &
                      ,MPI_COMM_WORLD,ihandle1,irecv)
     endif
 
 ! Receive from south
     if( south_pe /= NULL_PE )then
-       call MPI_Irecv(buf2,ibufexch,MPI_REAL,south_pe,south_pe &
+       call MPI_Irecv(buf2,ibufexch,_DYN_MPI_REAL,south_pe,south_pe &
                      ,MPI_COMM_WORLD,ihandle2,irecv)
     endif
 
@@ -6551,7 +6557,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
          enddo
 
        enddo
-       call MPI_Issend(buf3,ic,MPI_REAL,north_pe,mype &
+       call MPI_Issend(buf3,ic,_DYN_MPI_REAL,north_pe,mype &
                       ,MPI_COMM_WORLD,ihandle3,isend)
     endif
 
@@ -6583,7 +6589,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
          enddo
 
        enddo
-       call MPI_Issend(buf4,ic,MPI_REAL,south_pe,mype &
+       call MPI_Issend(buf4,ic,_DYN_MPI_REAL,south_pe,mype &
                       ,MPI_COMM_WORLD,ihandle4,isend)
     endif
 
