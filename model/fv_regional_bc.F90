@@ -6483,7 +6483,6 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     real, intent(inout) :: u   (bd%isd:bd%ied  ,bd%jsd:bd%jed+1,1:npz)
     real, intent(inout) :: v   (bd%isd:bd%ied+1,bd%jsd:bd%jed  ,1:npz)
 
-    integer,parameter :: ibufexch=2500000
     real, dimension(:), allocatable :: buf1,buf2,buf3,buf4
     integer :: ihandle1,ihandle2,ihandle3,ihandle4
     integer,dimension(MPI_STATUS_SIZE) :: istat
@@ -6524,13 +6523,13 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
 ! Receive from north
     if( north_pe /= NULL_PE )then
-       call MPI_Irecv(buf1,ibufexch,_DYN_MPI_REAL,north_pe,north_pe &
+       call MPI_Irecv(buf1,size(buf1),_DYN_MPI_REAL,north_pe,north_pe &
                      ,MPI_COMM_WORLD,ihandle1,irecv)
     endif
 
 ! Receive from south
     if( south_pe /= NULL_PE )then
-       call MPI_Irecv(buf2,ibufexch,_DYN_MPI_REAL,south_pe,south_pe &
+       call MPI_Irecv(buf2,size(buf2),_DYN_MPI_REAL,south_pe,south_pe &
                      ,MPI_COMM_WORLD,ihandle2,irecv)
     endif
 
@@ -6562,7 +6561,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
          enddo
 
        enddo
-       call MPI_Issend(buf3,ic,_DYN_MPI_REAL,north_pe,mype &
+       call MPI_Issend(buf3,size(buf3),_DYN_MPI_REAL,north_pe,mype &
                       ,MPI_COMM_WORLD,ihandle3,isend)
     endif
 
@@ -6594,7 +6593,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
          enddo
 
        enddo
-       call MPI_Issend(buf4,ic,_DYN_MPI_REAL,south_pe,mype &
+       call MPI_Issend(buf4,size(buf4),_DYN_MPI_REAL,south_pe,mype &
                       ,MPI_COMM_WORLD,ihandle4,isend)
     endif
 
