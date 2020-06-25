@@ -6508,6 +6508,11 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     js=bd%js
     je=bd%je
 
+    ! The size of these buffers must match the number of indices
+    ! required below to send/receive the data. In particular,
+    ! buf1 and buf4 must be of the same size (sim. for buf2 and buf3).
+    ! Changes to the code below should be tested with debug flags
+    ! enabled (out-of-bounds reads/writes).
     allocate(buf1(1:24*npz))
     allocate(buf2(1:36*npz))
     allocate(buf3(1:36*npz))
@@ -6559,8 +6564,9 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
            buf3(ic)=v(i,j,k)
          enddo
          enddo
-
        enddo
+       if (ic/=size(buf2).or.ic/=size(buf3)) &
+         call mpp_error(FATAL,'Buffer sizes buf2 and buf3 in routine exch_uv do not match actual message size')
        call MPI_Issend(buf3,size(buf3),_DYN_MPI_REAL,north_pe,mype &
                       ,MPI_COMM_WORLD,ihandle3,isend)
     endif
@@ -6593,6 +6599,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
          enddo
 
        enddo
+       if (ic/=size(buf1).or.ic/=size(buf4)) &
+         call mpp_error(FATAL,'Buffer sizes buf1 and buf4 in routine exch_uv do not match actual message size')
        call MPI_Issend(buf4,size(buf4),_DYN_MPI_REAL,south_pe,mype &
                       ,MPI_COMM_WORLD,ihandle4,isend)
     endif
