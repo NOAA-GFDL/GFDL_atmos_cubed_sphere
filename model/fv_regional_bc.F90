@@ -6484,7 +6484,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     real, intent(inout) :: v   (bd%isd:bd%ied+1,bd%jsd:bd%jed  ,1:npz)
 
     integer,parameter :: ibufexch=2500000
-    real,dimension(ibufexch) :: buf1,buf2,buf3,buf4
+    real, dimension(:), allocatable :: buf1,buf2,buf3,buf4
     integer :: ihandle1,ihandle2,ihandle3,ihandle4
     integer,dimension(MPI_STATUS_SIZE) :: istat
     integer :: ic, i, j, k, is, ie, js, je
@@ -6509,13 +6509,18 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     js=bd%js
     je=bd%je
 
+    allocate(buf1(1:24*npz))
+    allocate(buf2(1:36*npz))
+    allocate(buf3(1:36*npz))
+    allocate(buf4(1:24*npz))
+
 ! FIXME: MPI_COMM_WORLD
+
 #ifdef OVERLOAD_R4
 #define _DYN_MPI_REAL MPI_REAL
 #else
 #define _DYN_MPI_REAL MPI_DOUBLE_PRECISION
 #endif
-
 
 ! Receive from north
     if( north_pe /= NULL_PE )then
@@ -6654,6 +6659,11 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
        enddo
     endif
+
+    deallocate(buf1)
+    deallocate(buf2)
+    deallocate(buf3)
+    deallocate(buf4)
 
   end subroutine exch_uv
 
