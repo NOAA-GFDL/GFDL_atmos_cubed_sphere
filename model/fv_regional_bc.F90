@@ -3431,6 +3431,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     print *, 'clwmr = ', liq_wat
     print *, ' o3mr = ', o3mr
     print *, 'ncnst = ', ncnst
+    print *, 'ntracers = ', ntracers
   endif
 
   if ( sphum/=1 ) then
@@ -6482,8 +6483,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     real, intent(inout) :: u   (bd%isd:bd%ied  ,bd%jsd:bd%jed+1,1:npz)
     real, intent(inout) :: v   (bd%isd:bd%ied+1,bd%jsd:bd%jed  ,1:npz)
 
-    integer,parameter :: ibufexch=2500000
-    real,dimension(ibufexch) :: buf1,buf2,buf3,buf4
+    real, dimension(:), allocatable :: buf1,buf2,buf3,buf4
     integer :: ihandle1,ihandle2,ihandle3,ihandle4
     integer,dimension(MPI_STATUS_SIZE) :: istat
     integer :: ic, i, j, k, is, ie, js, je
@@ -6508,18 +6508,33 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     js=bd%js
     je=bd%je
 
+    ! The size of these buffers must match the number of indices
+    ! required below to send/receive the data. In particular,
+    ! buf1 and buf4 must be of the same size (sim. for buf2 and buf3).
+    ! Changes to the code below should be tested with debug flags
+    ! enabled (out-of-bounds reads/writes).
+    allocate(buf1(1:24*npz))
+    allocate(buf2(1:36*npz))
+    allocate(buf3(1:36*npz))
+    allocate(buf4(1:24*npz))
+
 ! FIXME: MPI_COMM_WORLD
 
+#ifdef OVERLOAD_R4
+#define _DYN_MPI_REAL MPI_REAL
+#else
+#define _DYN_MPI_REAL MPI_DOUBLE_PRECISION
+#endif
 
 ! Receive from north
     if( north_pe /= NULL_PE )then
-       call MPI_Irecv(buf1,ibufexch,MPI_REAL,north_pe,north_pe &
+       call MPI_Irecv(buf1,size(buf1),_DYN_MPI_REAL,north_pe,north_pe &
                      ,MPI_COMM_WORLD,ihandle1,irecv)
     endif
 
 ! Receive from south
     if( south_pe /= NULL_PE )then
-       call MPI_Irecv(buf2,ibufexch,MPI_REAL,south_pe,south_pe &
+       call MPI_Irecv(buf2,size(buf2),_DYN_MPI_REAL,south_pe,south_pe &
                      ,MPI_COMM_WORLD,ihandle2,irecv)
     endif
 
@@ -6549,9 +6564,10 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
            buf3(ic)=v(i,j,k)
          enddo
          enddo
-
        enddo
-       call MPI_Issend(buf3,ic,MPI_REAL,north_pe,mype &
+       if (ic/=size(buf2).or.ic/=size(buf3)) &
+         call mpp_error(FATAL,'Buffer sizes buf2 and buf3 in routine exch_uv do not match actual message size')
+       call MPI_Issend(buf3,size(buf3),_DYN_MPI_REAL,north_pe,mype &
                       ,MPI_COMM_WORLD,ihandle3,isend)
     endif
 
@@ -6583,7 +6599,9 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
          enddo
 
        enddo
-       call MPI_Issend(buf4,ic,MPI_REAL,south_pe,mype &
+       if (ic/=size(buf1).or.ic/=size(buf4)) &
+         call mpp_error(FATAL,'Buffer sizes buf1 and buf4 in routine exch_uv do not match actual message size')
+       call MPI_Issend(buf4,size(buf4),_DYN_MPI_REAL,south_pe,mype &
                       ,MPI_COMM_WORLD,ihandle4,isend)
     endif
 
@@ -6648,6 +6666,11 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
        enddo
     endif
+
+    deallocate(buf1)
+    deallocate(buf2)
+    deallocate(buf3)
+    deallocate(buf4)
 
   end subroutine exch_uv
 
