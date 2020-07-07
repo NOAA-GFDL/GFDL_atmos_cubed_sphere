@@ -157,8 +157,7 @@ module fv_control_mod
 #ifdef MULTI_GASES
    use constants_mod,       only: rvgas, cp_air
    use multi_gases_mod,     only: multi_gases_init, &
-                                  rilist => ri,     &
-                                  cpilist => cpi
+                                  read_namelist_multi_gases_nml
 #endif
 
    implicit none
@@ -537,6 +536,10 @@ module fv_control_mod
 #endif
      call read_namelist_fv_grid_nml
      call read_namelist_fv_core_nml(Atm(this_grid)) ! do options processing here too?
+#ifdef MULTI_GASES
+     call read_namelist_multi_gases_nml(Atm(this_grid)%nml_filename, &
+           Atm(this_grid)%flagstruct%ncnst,  Atm(this_grid)%flagstruct%nwat)
+#endif
      call read_namelist_test_case_nml(Atm(this_grid)%nml_filename)
      call mpp_get_current_pelist(Atm(this_grid)%pelist, commID=commID) ! for commID
      call mp_start(commID,halo_update_type)
@@ -1046,59 +1049,22 @@ module fv_control_mod
             do_uni_zfull, adj_mass_vmr, fac_n_spl, fhouri, update_blend, regional, bc_update_interval,  &
             regional_bcs_from_gsi, write_restart_with_bcs, nrows_blend
 
-#ifdef MULTI_GASES
-   namelist /multi_gases_nml/ rilist,cpilist
-#endif
 #ifdef INTERNAL_FILE_NML
        ! Read FVCORE namelist 
        read (input_nml_file,fv_core_nml,iostat=ios)
        ierr = check_nml_error(ios,'fv_core_nml')
        ! Reset input_file_nml to default behavior (CHECK do we still need this???)
        !call read_input_nml
-#ifdef MULTI_GASES
-      if( is_master() ) print *,' enter multi_gases: ncnst = ',ncnst
-      allocate (rilist(0:ncnst))
-      allocate (cpilist(0:ncnst))
-      rilist     =    0.0
-      cpilist    =    0.0
-      rilist(0)  = rdgas
-      rilist(1)  = rvgas
-      cpilist(0) = cp_air
-      cpilist(1) = 4*cp_air
-   ! Read multi_gases namelist
-      read (input_nml_file,multi_gases_nml,iostat=ios)
-      ierr = check_nml_error(ios,'multi_gases_nml')
-#endif
 #else
        f_unit = open_namelist_file(Atm%nml_filename)
        ! Read FVCORE namelist 
        read (f_unit,fv_core_nml,iostat=ios)
        ierr = check_nml_error(ios,'fv_core_nml')
        call close_file(f_unit)
-#ifdef MULTI_GASES
-      if( is_master() ) print *,' enter multi_gases: ncnst = ',ncnst
-      allocate (rilist(0:ncnst))
-      allocate (cpilist(0:ncnst))
-      rilist     =    0.0
-      cpilist    =    0.0
-      rilist(0)  = rdgas
-      rilist(1)  = rvgas
-      cpilist(0) = cp_air
-      cpilist(1) = 4*cp_air
-   ! Read multi_gases namelist
-      rewind (f_unit)
-      read (f_unit,multi_gases_nml,iostat=ios)
-      ierr = check_nml_error(ios,'multi_gases_nml')
-#endif
-      call close_file(f_unit)
 #endif         
        call write_version_number ( 'FV_CONTROL_MOD', version )
        unit = stdlog()
        write(unit, nml=fv_core_nml)
-#ifdef MULTI_GASES
-      write(unit, nml=multi_gases_nml)
-      call multi_gases_init(ncnst,nwat)
-#endif
 
        if (len_trim(res_latlon_dynamics) /= 0) Atm%flagstruct%res_latlon_dynamics = res_latlon_dynamics
        if (len_trim(res_latlon_tracers)  /= 0) Atm%flagstruct%res_latlon_tracers = res_latlon_tracers

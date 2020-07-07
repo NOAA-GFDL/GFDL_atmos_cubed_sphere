@@ -1938,6 +1938,10 @@ contains
    real(kind=kind_phys) :: pk0inv, ptop, pktop
    real(kind=kind_phys) :: rTv, dm, qgrs_rad
    integer :: nb, blen, npz, i, j, k, ix, k1, kz, dnats, nq_adv
+#ifdef MULTI_GASES
+   real :: q_grs(nq), q_min
+#endif
+
 
 !!! NOTES: lmh 6nov15
 !!! - "Layer" means "layer mean", ie. the average value in a layer
@@ -1958,7 +1962,13 @@ contains
 !$OMP             shared  (Atm_block, Atm, IPD_Data, npz, nq, ncnst, sphum, liq_wat, &
 !$OMP                      ice_wat, rainwat, snowwat, graupel, pk0inv, ptop,   &
 !$OMP                      pktop, zvir, mygrid, dnats, nq_adv, flip_vc) &
+#ifdef MULTI_GASES
+
+!$OMP             private (dm, nb, blen, i, j, ix, k1, kz, rTv, qgrs_rad, q_min, q_grs)
+
+#else
 !$OMP             private (dm, nb, blen, i, j, ix, k1, kz, rTv, qgrs_rad)
+#endif
 
    do nb = 1,Atm_block%nblks
 ! gas_phase_mass <-- prsl
@@ -2065,7 +2075,9 @@ contains
         do i=1,blen
 ! Geo-potential at interfaces:
 #ifdef MULTI_GASES
-           rTv = rdgas*IPD_Data(nb)%Statein%tgrs(i,k)*virq_max(IPD_Data(nb)%Statein%qgrs(i,k,:),qmin)
+           q_grs(1:nq_adv) = IPD_Data(nb)%Statein%qgrs(i,k,1:nq_adv)
+           q_min = qmin
+           rTv = rdgas*IPD_Data(nb)%Statein%tgrs(i,k)*virq_max(q_grs(:),q_min)
 #else
            qgrs_rad = max(qmin,IPD_Data(nb)%Statein%qgrs(i,k,sphum))
            rTv = rdgas*IPD_Data(nb)%Statein%tgrs(i,k)*(1.+zvir*qgrs_rad)

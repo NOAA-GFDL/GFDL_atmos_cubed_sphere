@@ -36,8 +36,10 @@ module multi_gases_mod
 !   </tr>
 ! </table>
 
-      use constants_mod,     only: rdgas, cp_air
+      use constants_mod,     only: rdgas, rvgas, cp_air
       use     fv_mp_mod,     only: is_master
+      use mpp_mod,           only: stdlog, input_nml_file
+      use fms_mod,           only: check_nml_error
 
 
       implicit none
@@ -53,7 +55,7 @@ module multi_gases_mod
 
       private num_wat, sphum, sphump1
       public vir, vicp, vicv, ind_gas, num_gas
-      public multi_gases_init
+      public multi_gases_init, read_namelist_multi_gases_nml
       public virq
       public virq_max
       public virqd
@@ -128,6 +130,46 @@ module multi_gases_mod
 
       return
       end subroutine multi_gases_init
+      subroutine read_namelist_multi_gases_nml(nml_filename,ncnst,nwat)
+
+        character(*), intent(IN) :: nml_filename
+        integer, intent(IN) :: ncnst, nwat
+        integer :: ierr, f_unit, unit, ios
+
+        namelist /multi_gases_nml/ ri,cpi
+
+       unit = stdlog()
+
+       allocate (ri(0:ncnst))
+       allocate (cpi(0:ncnst))
+
+       ri     =    0.0
+       cpi    =    0.0
+       ri(0)  = rdgas
+       ri(1)  = rvgas
+       cpi(0) = cp_air
+       cpi(1) = 4*cp_air
+#ifdef INTERNAL_FILE_NML
+
+      ! Read multi_gases namelist
+        read (input_nml_file,multi_gases_nml,iostat=ios)
+        ierr = check_nml_error(ios,'multi_gases_nml')
+                                                             
+#else
+      ! Read multi_gases namelist
+        f_unit = open_namelist_file(nml_filename)
+
+        rewind (f_unit)
+        read (f_unit,multi_gases_nml,iostat=ios)
+        ierr = check_nml_error(ios,'multi_gases_nml')
+        call close_file(f_unit)
+#endif
+      write(unit, nml=multi_gases_nml)
+      call multi_gases_init(ncnst,nwat)
+
+      return
+      end subroutine read_namelist_multi_gases_nml
+
 
 ! ----------------------------------------------------------------
 
