@@ -86,7 +86,7 @@
  use fv_arrays_mod,   only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type, &
                             R_GRID
  use fv_eta_mod,      only: set_eta
- use fv_mp_mod,       only: ng, is_master
+ use fv_mp_mod,       only: is_master
  use fv_mp_mod,       only: mp_reduce_sum, mp_reduce_min, mp_reduce_max
  use fv_mp_mod,       only: fill_corners, XDir, YDir
  use fv_timing_mod,   only: timing_on, timing_off
@@ -111,12 +111,13 @@
  public f_p 
  public ptop_min, big_number !CLEANUP: OK to keep since they are constants?
  public cos_angle
- public latlon2xyz, gnomonic_grids, &
+ public update_dwinds_phys, update2d_dwinds_phys, latlon2xyz, gnomonic_grids, &
         global_mx, unit_vect_latlon,  &
         cubed_to_latlon, c2l_ord2, g_sum, global_qsum, great_circle_dist,  &
         v_prod, get_unit_vect2, project_sphere_v
  public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, grid_utils_end, &
-        spherical_angle, cell_center2, get_area, inner_prod, fill_ghost, direct_transform,  &
+        spherical_angle, cell_center2, get_area, inner_prod, fill_ghost, &
+        direct_transform, cube_transform, &
         make_eta_level, expand_cell, cart_to_latlon, intp_great_circle, normalize_vect, &
         dist2side_latlon, spherical_linear_interpolation, get_latlon_vector
  public symm_grid
@@ -227,7 +228,7 @@
       ne_corner                     => Atm%gridstruct%ne_corner
       nw_corner                     => Atm%gridstruct%nw_corner
 
-      if ( Atm%flagstruct%do_schmidt .and. abs(Atm%flagstruct%stretch_fac-1.) > 1.E-5 ) then
+      if ( (Atm%flagstruct%do_schmidt .or. Atm%flagstruct%do_cube_transform) .and. abs(Atm%flagstruct%stretch_fac-1.) > 1.E-5 ) then
            Atm%gridstruct%stretched_grid = .true.
            symm_grid = .false.
       else
@@ -245,7 +246,7 @@
       elseif ( .not. Atm%flagstruct%hybrid_z ) then
 ! Initialize (ak,bk) for cold start; overwritten with restart file
            if (.not. Atm%flagstruct%external_eta) then
-              call set_eta(npz, Atm%ks, Atm%ptop, Atm%ak, Atm%bk)
+              call set_eta(npz, Atm%ks, Atm%ptop, Atm%ak, Atm%bk, Atm%flagstruct%npz_type)
               if ( is_master() ) then
                  write(*,*) 'Grid_init', npz, Atm%ks, Atm%ptop
                  tmp1 = Atm%ak(Atm%ks+1)
@@ -273,7 +274,7 @@
       ne_corner = .false.
       nw_corner = .false.
 
-      if (grid_type < 3 .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+      if (grid_type < 3 .and. .not. Atm%gridstruct%bounded_domain) then
          if (       is==1 .and.  js==1 )      sw_corner = .true.
          if ( (ie+1)==npx .and.  js==1 )      se_corner = .true.
          if ( (ie+1)==npx .and. (je+1)==npy ) ne_corner = .true.
@@ -288,9 +289,9 @@
 
   if (grid_type < 3) then
 !xxx if ( .not. Atm%neststruct%nested ) then
-     if ( .not. Atm%neststruct%nested .and. .not.Atm%flagstruct%regional ) then
-       call fill_corners(grid(:,:,1), npx, npy, FILL=XDir, BGRID=.true.)
-       call fill_corners(grid(:,:,2), npx, npy, FILL=XDir, BGRID=.true.)
+     if ( .not. Atm%gridstruct%bounded_domain ) then
+     call fill_corners(grid(:,:,1), npx, npy, FILL=XDir, BGRID=.true.)
+     call fill_corners(grid(:,:,2), npx, npy, FILL=XDir, BGRID=.true.)
      end if
 
      do j=jsd,jed+1
@@ -303,7 +304,7 @@
      call get_center_vect( npx, npy, grid3, ec1, ec2, Atm%bd )
 
 ! Fill arbitrary values in the non-existing corner regions:
-     if (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+     if (.not. Atm%gridstruct%bounded_domain) then
      do k=1,3
         call fill_ghost(ec1(k,:,:), npx, npy, big_number, Atm%bd)
         call fill_ghost(ec2(k,:,:), npx, npy, big_number, Atm%bd)
@@ -314,14 +315,14 @@
      do j=jsd,jed
         do i=isd+1,ied
         if ( ( (i<1   .and. j<1  ) .or. (i>npx .and. j<1  ) .or.  &
-             (i>npx .and. j>(npy-1)) .or. (i<1   .and. j>(npy-1)) )  .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+             (i>npx .and. j>(npy-1)) .or. (i<1   .and. j>(npy-1)) )  .and. .not. Atm%gridstruct%bounded_domain) then
              ew(1:3,i,j,1:2) = 0.
         else
            call mid_pt_cart( grid(i,j,1:2), grid(i,j+1,1:2), pp)
-           if (i==1 .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+           if (i==1 .and. .not. Atm%gridstruct%bounded_domain) then
               call latlon2xyz( agrid(i,j,1:2), p1)
               call vect_cross(p2, pp, p1)
-           elseif(i==npx .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+           elseif(i==npx .and. .not. Atm%gridstruct%bounded_domain) then
               call latlon2xyz( agrid(i-1,j,1:2), p1)
               call vect_cross(p2, p1, pp)
            else
@@ -342,14 +343,14 @@
      do j=jsd+1,jed
         do i=isd,ied
         if ( ( (i<1   .and. j<1  ) .or. (i>(npx-1) .and. j<1  ) .or.  &
-               (i>(npx-1) .and. j>npy) .or. (i<1   .and. j>npy) ) .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+               (i>(npx-1) .and. j>npy) .or. (i<1   .and. j>npy) ) .and. .not. Atm%gridstruct%bounded_domain) then
              es(1:3,i,j,1:2) = 0.
         else
            call mid_pt_cart(grid(i,j,1:2), grid(i+1,j,1:2), pp)
-           if (j==1 .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+           if (j==1 .and. .not. Atm%gridstruct%bounded_domain) then
               call latlon2xyz( agrid(i,j,1:2), p1)
               call vect_cross(p2, pp, p1)
-           elseif (j==npy .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+           elseif (j==npy .and. .not. Atm%gridstruct%bounded_domain) then
               call latlon2xyz( agrid(i,j-1,1:2), p1)
               call vect_cross(p2, p1, pp)
            else 
@@ -418,7 +419,7 @@
 ! For transport operation
 ! -------------------------------
 !xxx  if (.not. Atm%neststruct%nested) then
-      if (.not. Atm%neststruct%nested .and. .not. Atm%flagstruct%regional) then
+      if (.not. Atm%gridstruct%bounded_domain) then
       if ( sw_corner ) then
            do i=-2,0
               sin_sg(0,i,3) = sin_sg(i,1,2) 
@@ -516,9 +517,9 @@
         do j=js,je+1
            do i=is,ie+1
 ! unit vect in X-dir: ee1
-              if (i==1 .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+              if (i==1 .and. .not. Atm%gridstruct%bounded_domain) then
                   call vect_cross(pp, grid3(1,i,  j), grid3(1,i+1,j))
-              elseif(i==npx .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+              elseif(i==npx .and. .not. Atm%gridstruct%bounded_domain) then
                   call vect_cross(pp, grid3(1,i-1,j), grid3(1,i,  j))
               else
                   call vect_cross(pp, grid3(1,i-1,j), grid3(1,i+1,j))
@@ -527,9 +528,9 @@
               call normalize_vect( ee1(1:3,i,j) )
 
 ! unit vect in Y-dir: ee2
-              if (j==1 .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+              if (j==1 .and. .not. Atm%gridstruct%bounded_domain) then
                   call vect_cross(pp, grid3(1:3,i,j  ), grid3(1:3,i,j+1))
-              elseif(j==npy .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+              elseif(j==npy .and. .not. Atm%gridstruct%bounded_domain) then
                   call vect_cross(pp, grid3(1:3,i,j-1), grid3(1:3,i,j  ))
               else
                   call vect_cross(pp, grid3(1:3,i,j-1), grid3(1:3,i,j+1))
@@ -579,7 +580,7 @@
          enddo
       enddo
 ! Force the model to fail if incorrect corner values are to be used:
-      if (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+      if (.not. Atm%gridstruct%bounded_domain) then
          call fill_ghost(cosa_s, npx, npy,  big_number, Atm%bd)
       end if
 !------------------------------------
@@ -587,8 +588,8 @@
 !------------------------------------
       do j=js,je+1
          do i=is,ie+1
-            if ( i==npx .and. j==npy .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-            else if ( ( i==1 .or. i==npx .or. j==1 .or. j==npy ) .and. .not. (Atm%neststruct%nested.or.Atm%flagstruct%regional) ) then
+            if ( i==npx .and. j==npy .and. .not. Atm%gridstruct%bounded_domain) then
+            else if ( ( i==1 .or. i==npx .or. j==1 .or. j==npy ) .and. .not. Atm%gridstruct%bounded_domain ) then
                  rsina(i,j) = big_number
             else
 !                rsina(i,j) = 1. / sina(i,j)**2
@@ -599,7 +600,7 @@
 
       do j=jsd,jed
          do i=is,ie+1
-            if ( (i==1 .or. i==npx)  .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional) ) then
+            if ( (i==1 .or. i==npx)  .and. .not. Atm%gridstruct%bounded_domain ) then
 !                rsin_u(i,j) = 1. / sina_u(i,j)
                  rsin_u(i,j) = 1. / sign(max(tiny_number,abs(sina_u(i,j))), sina_u(i,j))
             endif
@@ -608,7 +609,7 @@
 
       do j=js,je+1
          do i=isd,ied
-            if ( (j==1 .or. j==npy) .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional) ) then
+            if ( (j==1 .or. j==npy) .and. .not. Atm%gridstruct%bounded_domain ) then
 !                rsin_v(i,j) = 1. / sina_v(i,j)
                  rsin_v(i,j) = 1. / sign(max(tiny_number,abs(sina_v(i,j))), sina_v(i,j))
             endif
@@ -619,12 +620,12 @@
       !values along the outward-facing edge of a tile in the corners, which is incorrect. 
       !What we will do is call fill_ghost and then fill in the appropriate values
 
-      if (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
-       do k=1,9
+      if (.not. Atm%gridstruct%bounded_domain) then
+     do k=1,9
         call fill_ghost(sin_sg(:,:,k), npx, npy, tiny_number, Atm%bd)  ! this will cause NAN if used
         call fill_ghost(cos_sg(:,:,k), npx, npy, big_number, Atm%bd)
-       enddo
-      end if
+     enddo
+     end if
 
 ! -------------------------------
 ! For transport operation
@@ -708,7 +709,7 @@
 ! Make normal vect at face edges after consines are computed:
 !-------------------------------------------------------------
 ! for old d2a2c_vect routines
-      if (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+      if (.not. Atm%gridstruct%bounded_domain) then
          do j=js-1,je+1
             if ( is==1 ) then
                i=1
@@ -762,7 +763,7 @@
 !!!  should we insert .not.regional into the following loops alongside .not.nested ????
 !xxxx
   do j=jsd,jed+1
-     if ((j==1 .OR. j==npy) .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+     if ((j==1 .OR. j==npy) .and. .not. Atm%gridstruct%bounded_domain) then
         do i=isd,ied
            divg_u(i,j) = 0.5*(sin_sg(i,j,2)+sin_sg(i,j-1,4))*dyc(i,j)/dx(i,j)
            del6_u(i,j) = 0.5*(sin_sg(i,j,2)+sin_sg(i,j-1,4))*dx(i,j)/dyc(i,j)
@@ -779,11 +780,11 @@
         divg_v(i,j) = sina_u(i,j)*dxc(i,j)/dy(i,j)
         del6_v(i,j) = sina_u(i,j)*dy(i,j)/dxc(i,j)
      enddo
-     if (is == 1 .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+     if (is == 1 .and. .not. Atm%gridstruct%bounded_domain) then
          divg_v(is,j) = 0.5*(sin_sg(1,j,1)+sin_sg(0,j,3))*dxc(is,j)/dy(is,j)
          del6_v(is,j) = 0.5*(sin_sg(1,j,1)+sin_sg(0,j,3))*dy(is,j)/dxc(is,j)
      endif
-     if (ie+1 == npx .and. .not. (Atm%neststruct%nested .or. Atm%flagstruct%regional)) then
+     if (ie+1 == npx .and. .not. Atm%gridstruct%bounded_domain) then
          divg_v(ie+1,j) = 0.5*(sin_sg(npx,j,1)+sin_sg(npx-1,j,3))*dxc(ie+1,j)/dy(ie+1,j)
          del6_v(ie+1,j) = 0.5*(sin_sg(npx,j,1)+sin_sg(npx-1,j,3))*dy(ie+1,j)/dxc(ie+1,j)
      endif
@@ -792,7 +793,7 @@
 ! Initialize cubed_sphere to lat-lon transformation:
      call init_cubed_to_latlon( Atm%gridstruct, Atm%flagstruct%hydrostatic, agrid, grid_type, c2l_order, Atm%bd )
 
-     call global_mx(area, ng, Atm%gridstruct%da_min, Atm%gridstruct%da_max, Atm%bd)
+     call global_mx(area, Atm%ng, Atm%gridstruct%da_min, Atm%gridstruct%da_max, Atm%bd)
      if( is_master() ) write(*,*) 'da_max/da_min=', Atm%gridstruct%da_max/Atm%gridstruct%da_min
 
      call global_mx_c(area_c(is:ie,js:je), is, ie, js, je, Atm%gridstruct%da_min_c, Atm%gridstruct%da_max_c)
@@ -803,7 +804,7 @@
 ! Initialization for interpolation at face edges
 !------------------------------------------------
 ! A->B scalar:
-     if (grid_type < 3 .and. .not. Atm%neststruct%nested .and. .not. Atm%flagstruct%regional ) then
+     if (grid_type < 3 .and. .not. Atm%gridstruct%bounded_domain ) then
         call mpp_update_domains(divg_v, divg_u, Atm%domain, flags=SCALAR_PAIR,      &
                                 gridtype=CGRID_NE_PARAM, complete=.true.)
         call mpp_update_domains(del6_v, del6_u, Atm%domain, flags=SCALAR_PAIR,      &
@@ -812,7 +813,7 @@
              Atm%gridstruct%edge_e, non_ortho, grid, agrid, npx, npy, Atm%bd)
         call efactor_a2c_v(Atm%gridstruct%edge_vect_s, Atm%gridstruct%edge_vect_n, &
              Atm%gridstruct%edge_vect_w, Atm%gridstruct%edge_vect_e, &
-             non_ortho, grid, agrid, npx, npy, Atm%neststruct%nested, Atm%bd, Atm%flagstruct%regional)
+             non_ortho, grid, agrid, npx, npy, Atm%gridstruct%bounded_domain, Atm%bd)
 !       call extend_cube_s(non_ortho, grid, agrid, npx, npy, .false., Atm%neststruct%nested)
 !       call van2d_init(grid, agrid, npx, npy)
      else
@@ -903,6 +904,7 @@
 
  
   subroutine grid_utils_end
+ 
 ! deallocate sst_ncep (if allocated)
 #ifndef DYCORE_SOLO
       if (allocated(sst_ncep)) deallocate( sst_ncep )
@@ -969,6 +971,70 @@
   end subroutine direct_transform
 
 
+  subroutine cube_transform(c, i1, i2, j1, j2, lon_p, lat_p, n, lon, lat)
+!
+! This is a direct transformation of the standard (symmetrical) cubic grid
+! to a locally enhanced high-res grid on the sphere; it is an application
+! of the Schmidt transformation at the **north** pole followed by a 
+! pole_shift_to_target (rotation) operation
+!
+    real(kind=R_GRID),    intent(in):: c              ! Stretching factor
+    real(kind=R_GRID),    intent(in):: lon_p, lat_p   ! center location of the target face, radian
+    integer, intent(in):: n              ! grid face number
+    integer, intent(in):: i1, i2, j1, j2
+!  0 <= lon <= 2*pi ;    -pi/2 <= lat <= pi/2
+    real(kind=R_GRID), intent(inout), dimension(i1:i2,j1:j2):: lon, lat
+!
+    real(f_p):: lat_t, sin_p, cos_p, sin_lat, cos_lat, sin_o, p2, two_pi
+    real(f_p):: c2p1, c2m1
+    integer:: i, j
+
+    p2 = 0.5d0*pi
+    two_pi = 2.d0*pi
+
+    if( is_master() .and. n==1 ) then
+        write(*,*) n, 'Cube transformation (revised Schmidt): stretching factor=', c, ' center=', lon_p, lat_p
+    endif
+
+    c2p1 = 1.d0 + c*c
+    c2m1 = 1.d0 - c*c
+
+    sin_p = sin(lat_p)
+    cos_p = cos(lat_p)
+
+    !Try rotating pole around before doing the regular rotation??
+
+    do j=j1,j2
+       do i=i1,i2
+          if ( abs(c2m1) > 1.d-7 ) then
+               sin_lat = sin(lat(i,j)) 
+               lat_t = asin( (c2m1+c2p1*sin_lat)/(c2p1+c2m1*sin_lat) ) 
+          else         ! no stretching
+               lat_t = lat(i,j)
+          endif
+          sin_lat = sin(lat_t) 
+          cos_lat = cos(lat_t) 
+               lon(i,j) = lon(i,j) + pi ! rotate around first to get final orientation correct
+            sin_o = -(sin_p*sin_lat + cos_p*cos_lat*cos(lon(i,j)))
+          if ( (1.-abs(sin_o)) < 1.d-7 ) then    ! poles
+               lon(i,j) = 0.d0
+               lat(i,j) = sign( p2, sin_o )
+          else
+               lat(i,j) = asin( sin_o )
+               lon(i,j) = lon_p + atan2( -cos_lat*sin(lon(i,j)),   &
+                          -sin_lat*cos_p+cos_lat*sin_p*cos(lon(i,j)))
+               if ( lon(i,j) < 0.d0 ) then
+                    lon(i,j) = lon(i,j) + two_pi
+               elseif( lon(i,j) >= two_pi ) then
+                    lon(i,j) = lon(i,j) - two_pi
+               endif
+          endif
+       enddo
+    enddo
+
+  end subroutine cube_transform
+
+
   real function inner_prod(v1, v2)
        real(kind=R_GRID),intent(in):: v1(3), v2(3)
        real (f_p) :: vp1(3), vp2(3), prod16
@@ -985,11 +1051,11 @@
 
 !>@brief The subroutine 'efactor_a2c_v' initializes interpolation factors at face edges
 !! for interpolating vectors from A to C grid
- subroutine efactor_a2c_v(edge_vect_s, edge_vect_n, edge_vect_w, edge_vect_e, non_ortho, grid, agrid, npx, npy, nested, bd, regional)
+ subroutine efactor_a2c_v(edge_vect_s, edge_vect_n, edge_vect_w, edge_vect_e, non_ortho, grid, agrid, npx, npy, bounded_domain, bd)
  type(fv_grid_bounds_type), intent(IN) :: bd
  real(kind=R_GRID),    intent(INOUT), dimension(bd%isd:bd%ied) :: edge_vect_s, edge_vect_n
  real(kind=R_GRID),    intent(INOUT), dimension(bd%jsd:bd%jed) :: edge_vect_w, edge_vect_e
- logical, intent(in):: non_ortho, nested, regional
+ logical, intent(in):: non_ortho, bounded_domain
  real(kind=R_GRID),    intent(in)::  grid(bd%isd:bd%ied+1,bd%jsd:bd%jed+1,2)
  real(kind=R_GRID),    intent(in):: agrid(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,2)
  integer, intent(in):: npx, npy
@@ -1024,7 +1090,7 @@
      edge_vect_w = big_number
      edge_vect_e = big_number
 
-     if ( npx /= npy .and. .not. (nested .or. regional)) call mpp_error(FATAL, 'efactor_a2c_v: npx /= npy')
+     if ( npx /= npy .and. .not. (bounded_domain)) call mpp_error(FATAL, 'efactor_a2c_v: npx /= npy')
      if ( (npx/2)*2 == npx ) call mpp_error(FATAL, 'efactor_a2c_v: npx/npy is not an odd number')
 
      im2 = (npx-1)/2
@@ -2342,7 +2408,7 @@
   end subroutine init_cubed_to_latlon
 
 
- subroutine cubed_to_latlon(u, v, ua, va, gridstruct, npx, npy, km, mode, grid_type, domain, nested, c2l_ord, bd)
+ subroutine cubed_to_latlon(u, v, ua, va, gridstruct, npx, npy, km, mode, grid_type, domain, bounded_domain, c2l_ord, bd)
  type(fv_grid_bounds_type), intent(IN) :: bd 
  integer, intent(in) :: km, npx, npy, grid_type, c2l_ord
  integer, intent(in) :: mode   ! update if present
@@ -2352,18 +2418,18 @@
  real, intent(out):: ua(bd%isd:bd%ied, bd%jsd:bd%jed,km)
  real, intent(out):: va(bd%isd:bd%ied, bd%jsd:bd%jed,km)
  type(domain2d), intent(INOUT) :: domain
- logical, intent(IN) :: nested
+ logical, intent(IN) :: bounded_domain
 
  if ( c2l_ord == 2 ) then
       call c2l_ord2(u, v, ua, va, gridstruct, km, grid_type, bd, .false.)
  else
-      call c2l_ord4(u, v, ua, va, gridstruct, npx, npy, km, grid_type, domain, nested, mode, bd)
+      call c2l_ord4(u, v, ua, va, gridstruct, npx, npy, km, grid_type, domain, bounded_domain, mode, bd)
  endif
 
  end subroutine cubed_to_latlon
 
 
- subroutine c2l_ord4(u, v, ua, va, gridstruct, npx, npy, km, grid_type, domain, nested, mode, bd)
+ subroutine c2l_ord4(u, v, ua, va, gridstruct, npx, npy, km, grid_type, domain, bounded_domain, mode, bd)
 
  type(fv_grid_bounds_type), intent(IN) :: bd
   integer, intent(in) :: km, npx, npy, grid_type
@@ -2374,7 +2440,7 @@
   real, intent(out)::  ua(bd%isd:bd%ied, bd%jsd:bd%jed,km)
   real, intent(out)::  va(bd%isd:bd%ied, bd%jsd:bd%jed,km)
   type(domain2d), intent(INOUT) :: domain
-  logical, intent(IN) :: nested
+  logical, intent(IN) :: bounded_domain
 ! Local 
 ! 4-pt Lagrange interpolation
   real :: a1 =  0.5625
@@ -2401,12 +2467,12 @@
                                   call timing_off('COMM_TOTAL')
   endif
 
-!$OMP parallel do default(none) shared(is,ie,js,je,km,npx,npy,grid_type,nested,c2,c1, &
+!$OMP parallel do default(none) shared(is,ie,js,je,km,npx,npy,grid_type,bounded_domain,c2,c1, &
 !$OMP                                  u,v,gridstruct,ua,va,a1,a2)         &
 !$OMP                          private(utmp, vtmp, wu, wv)
  do k=1,km
    if ( grid_type < 4 ) then
-    if (nested) then
+    if (bounded_domain) then
      do j=max(1,js),min(npy-1,je)
         do i=max(1,is),min(npx-1,ie)
            utmp(i,j) = c2*(u(i,j-1,k)+u(i,j+2,k)) + c1*(u(i,j,k)+u(i,j+1,k))
@@ -2482,7 +2548,7 @@
       enddo
     endif
 
- endif !nested
+ endif !bounded_domain
 
  !Transform local a-grid winds into latitude-longitude coordinates
      do j=js,je
@@ -3115,12 +3181,13 @@
   real, allocatable:: pem(:,:)
   real(kind=4) :: p4
   integer k, i, j
-  integer :: is,  ie,  js,  je
+  integer :: is,  ie,  js,  je, ng
 
   is  = bd%is
   ie  = bd%ie
   js  = bd%js
   je  = bd%je
+  ng  = bd%ng
 
      allocate ( pem(is:ie,js:je) )
 
@@ -3306,6 +3373,341 @@
  enddo
 
  end subroutine project_sphere_v
+
+!>@brief The subroutine 'update_dwinds_phys' transforms the wind tendencies from
+!! the A grid to the D grid for the final update.
+ subroutine update_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v, gridstruct, npx, npy, npz, domain)
+
+! Purpose; Transform wind tendencies on A grid to D grid for the final update
+ 
+  integer, intent(in):: is,  ie,  js,  je
+  integer, intent(in):: isd, ied, jsd, jed
+  integer, intent(IN) :: npx,npy, npz
+  real,    intent(in):: dt
+  real, intent(inout):: u(isd:ied,  jsd:jed+1,npz)
+  real, intent(inout):: v(isd:ied+1,jsd:jed  ,npz)
+  real, intent(inout), dimension(isd:ied,jsd:jed,npz):: u_dt, v_dt
+  type(fv_grid_type), intent(IN), target :: gridstruct
+  type(domain2d), intent(INOUT) :: domain
+
+! local:
+  real v3(is-1:ie+1,js-1:je+1,3)
+  real ue(is-1:ie+1,js:je+1,3)    ! 3D winds at edges
+  real ve(is:ie+1,js-1:je+1,  3)    ! 3D winds at edges
+  real, dimension(is:ie):: ut1, ut2, ut3
+  real, dimension(js:je):: vt1, vt2, vt3
+  real dt5, gratio
+  integer i, j, k, m, im2, jm2
+
+  real(kind=R_GRID), pointer, dimension(:,:,:) :: vlon, vlat
+  real(kind=R_GRID), pointer, dimension(:,:,:,:) :: es, ew
+  real(kind=R_GRID), pointer, dimension(:) :: edge_vect_w, edge_vect_e, edge_vect_s, edge_vect_n
+
+  es   => gridstruct%es
+  ew   => gridstruct%ew
+  vlon => gridstruct%vlon
+  vlat => gridstruct%vlat
+
+  edge_vect_w => gridstruct%edge_vect_w
+  edge_vect_e => gridstruct%edge_vect_e
+  edge_vect_s => gridstruct%edge_vect_s
+  edge_vect_n => gridstruct%edge_vect_n
+
+    dt5 = 0.5 * dt
+    im2 = (npx-1)/2
+    jm2 = (npy-1)/2
+
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,gridstruct,u,dt5,u_dt,v,v_dt,  &
+!$OMP                                  vlon,vlat,jm2,edge_vect_w,npx,edge_vect_e,im2, &
+!$OMP                                  edge_vect_s,npy,edge_vect_n,es,ew)             &
+!$OMP                          private(ut1, ut2, ut3, vt1, vt2, vt3, ue, ve, v3)
+    do k=1, npz
+
+     if ( gridstruct%grid_type > 3 ) then    ! Local & one tile configurations
+
+       do j=js,je+1
+          do i=is,ie
+             u(i,j,k) = u(i,j,k) + dt5*(u_dt(i,j-1,k) + u_dt(i,j,k))
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie+1
+             v(i,j,k) = v(i,j,k) + dt5*(v_dt(i-1,j,k) + v_dt(i,j,k))
+          enddo
+       enddo
+
+     else
+! Compute 3D wind tendency on A grid
+       do j=js-1,je+1
+          do i=is-1,ie+1
+             v3(i,j,1) = u_dt(i,j,k)*vlon(i,j,1) + v_dt(i,j,k)*vlat(i,j,1)
+             v3(i,j,2) = u_dt(i,j,k)*vlon(i,j,2) + v_dt(i,j,k)*vlat(i,j,2)
+             v3(i,j,3) = u_dt(i,j,k)*vlon(i,j,3) + v_dt(i,j,k)*vlat(i,j,3)
+          enddo
+       enddo
+
+! Interpolate to cell edges
+       do j=js,je+1
+          do i=is-1,ie+1
+             ue(i,j,1) = v3(i,j-1,1) + v3(i,j,1)
+             ue(i,j,2) = v3(i,j-1,2) + v3(i,j,2)
+             ue(i,j,3) = v3(i,j-1,3) + v3(i,j,3)
+          enddo
+       enddo
+
+       do j=js-1,je+1
+          do i=is,ie+1
+             ve(i,j,1) = v3(i-1,j,1) + v3(i,j,1)
+             ve(i,j,2) = v3(i-1,j,2) + v3(i,j,2)
+             ve(i,j,3) = v3(i-1,j,3) + v3(i,j,3)
+          enddo
+       enddo
+
+! --- E_W edges (for v-wind):
+     if ( is==1 .and. .not. gridstruct%bounded_domain ) then
+       i = 1
+       do j=js,je
+        if ( j>jm2 ) then
+             vt1(j) = edge_vect_w(j)*ve(i,j-1,1)+(1.-edge_vect_w(j))*ve(i,j,1)
+             vt2(j) = edge_vect_w(j)*ve(i,j-1,2)+(1.-edge_vect_w(j))*ve(i,j,2)
+             vt3(j) = edge_vect_w(j)*ve(i,j-1,3)+(1.-edge_vect_w(j))*ve(i,j,3)
+        else
+             vt1(j) = edge_vect_w(j)*ve(i,j+1,1)+(1.-edge_vect_w(j))*ve(i,j,1)
+             vt2(j) = edge_vect_w(j)*ve(i,j+1,2)+(1.-edge_vect_w(j))*ve(i,j,2)
+             vt3(j) = edge_vect_w(j)*ve(i,j+1,3)+(1.-edge_vect_w(j))*ve(i,j,3)
+        endif
+       enddo
+       do j=js,je
+          ve(i,j,1) = vt1(j)
+          ve(i,j,2) = vt2(j)
+          ve(i,j,3) = vt3(j)
+       enddo
+     endif
+     if ( (ie+1)==npx .and. .not. gridstruct%bounded_domain ) then
+       i = npx
+       do j=js,je
+        if ( j>jm2 ) then
+             vt1(j) = edge_vect_e(j)*ve(i,j-1,1)+(1.-edge_vect_e(j))*ve(i,j,1)
+             vt2(j) = edge_vect_e(j)*ve(i,j-1,2)+(1.-edge_vect_e(j))*ve(i,j,2)
+             vt3(j) = edge_vect_e(j)*ve(i,j-1,3)+(1.-edge_vect_e(j))*ve(i,j,3)
+        else
+             vt1(j) = edge_vect_e(j)*ve(i,j+1,1)+(1.-edge_vect_e(j))*ve(i,j,1)
+             vt2(j) = edge_vect_e(j)*ve(i,j+1,2)+(1.-edge_vect_e(j))*ve(i,j,2)
+             vt3(j) = edge_vect_e(j)*ve(i,j+1,3)+(1.-edge_vect_e(j))*ve(i,j,3)
+        endif
+       enddo
+       do j=js,je
+          ve(i,j,1) = vt1(j)
+          ve(i,j,2) = vt2(j)
+          ve(i,j,3) = vt3(j)
+       enddo
+     endif
+! N-S edges (for u-wind):
+     if ( js==1  .and. .not. gridstruct%bounded_domain) then
+       j = 1
+       do i=is,ie
+        if ( i>im2 ) then
+             ut1(i) = edge_vect_s(i)*ue(i-1,j,1)+(1.-edge_vect_s(i))*ue(i,j,1)
+             ut2(i) = edge_vect_s(i)*ue(i-1,j,2)+(1.-edge_vect_s(i))*ue(i,j,2)
+             ut3(i) = edge_vect_s(i)*ue(i-1,j,3)+(1.-edge_vect_s(i))*ue(i,j,3)
+        else
+             ut1(i) = edge_vect_s(i)*ue(i+1,j,1)+(1.-edge_vect_s(i))*ue(i,j,1)
+             ut2(i) = edge_vect_s(i)*ue(i+1,j,2)+(1.-edge_vect_s(i))*ue(i,j,2)
+             ut3(i) = edge_vect_s(i)*ue(i+1,j,3)+(1.-edge_vect_s(i))*ue(i,j,3)
+        endif
+       enddo
+       do i=is,ie
+          ue(i,j,1) = ut1(i)
+          ue(i,j,2) = ut2(i)
+          ue(i,j,3) = ut3(i)
+       enddo
+     endif
+     if ( (je+1)==npy  .and. .not. gridstruct%bounded_domain) then
+       j = npy
+       do i=is,ie
+        if ( i>im2 ) then
+             ut1(i) = edge_vect_n(i)*ue(i-1,j,1)+(1.-edge_vect_n(i))*ue(i,j,1)
+             ut2(i) = edge_vect_n(i)*ue(i-1,j,2)+(1.-edge_vect_n(i))*ue(i,j,2)
+             ut3(i) = edge_vect_n(i)*ue(i-1,j,3)+(1.-edge_vect_n(i))*ue(i,j,3)
+        else
+             ut1(i) = edge_vect_n(i)*ue(i+1,j,1)+(1.-edge_vect_n(i))*ue(i,j,1)
+             ut2(i) = edge_vect_n(i)*ue(i+1,j,2)+(1.-edge_vect_n(i))*ue(i,j,2)
+             ut3(i) = edge_vect_n(i)*ue(i+1,j,3)+(1.-edge_vect_n(i))*ue(i,j,3)
+        endif
+       enddo
+       do i=is,ie
+          ue(i,j,1) = ut1(i)
+          ue(i,j,2) = ut2(i)
+          ue(i,j,3) = ut3(i)
+       enddo
+     endif
+       do j=js,je+1
+          do i=is,ie
+             u(i,j,k) = u(i,j,k) + dt5*( ue(i,j,1)*es(1,i,j,1) +  &
+                                         ue(i,j,2)*es(2,i,j,1) +  &
+                                         ue(i,j,3)*es(3,i,j,1) )
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie+1
+             v(i,j,k) = v(i,j,k) + dt5*( ve(i,j,1)*ew(1,i,j,2) +  &
+                                         ve(i,j,2)*ew(2,i,j,2) +  &
+                                         ve(i,j,3)*ew(3,i,j,2) )
+          enddo
+       enddo
+! Update:
+      endif   ! end grid_type
+ 
+    enddo         ! k-loop
+
+ end subroutine update_dwinds_phys 
+
+!>@brief The subroutine 'update2d_dwinds_phys' transforms the wind tendencies
+!from
+!! the A grid to the D grid for the final update.
+ subroutine update2d_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v, gridstruct, npx, npy, npz, domain)
+
+! Purpose; Transform wind tendencies on A grid to D grid for the final update
+
+  integer, intent(in):: is,  ie,  js,  je
+  integer, intent(in):: isd, ied, jsd, jed
+  real,    intent(in):: dt
+  real, intent(inout):: u(isd:ied,  jsd:jed+1,npz)
+  real, intent(inout):: v(isd:ied+1,jsd:jed  ,npz)
+  real, intent(inout), dimension(isd:ied,jsd:jed,npz):: u_dt, v_dt
+  type(fv_grid_type), intent(IN), target :: gridstruct
+  integer, intent(IN) :: npx,npy, npz
+  type(domain2d), intent(INOUT) :: domain
+
+! local:
+  real ut(isd:ied,jsd:jed)
+  real:: dt5, gratio
+  integer i, j, k
+
+  real(kind=R_GRID), pointer, dimension(:,:,:) :: vlon, vlat
+  real(kind=R_GRID), pointer, dimension(:,:,:,:) :: es, ew
+  real(kind=R_GRID), pointer, dimension(:) :: edge_vect_w, edge_vect_e, edge_vect_s, edge_vect_n
+  real, pointer, dimension(:,:) :: z11, z12, z21, z22, dya, dxa
+
+  es   => gridstruct%es
+  ew   => gridstruct%ew
+  vlon => gridstruct%vlon
+  vlat => gridstruct%vlat
+
+  edge_vect_w => gridstruct%edge_vect_w
+  edge_vect_e => gridstruct%edge_vect_e
+  edge_vect_s => gridstruct%edge_vect_s
+  edge_vect_n => gridstruct%edge_vect_n
+
+  z11 => gridstruct%z11
+  z21 => gridstruct%z21
+  z12 => gridstruct%z12
+  z22 => gridstruct%z22
+
+  dxa => gridstruct%dxa
+  dya => gridstruct%dya
+
+! Transform wind tendency on A grid to local "co-variant" components:
+
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,z11,u_dt,z12,v_dt,z21,z22) &
+!$OMP                          private(ut)
+    do k=1,npz
+       do j=js,je
+          do i=is,ie
+                 ut(i,j) = z11(i,j)*u_dt(i,j,k) + z12(i,j)*v_dt(i,j,k)
+             v_dt(i,j,k) = z21(i,j)*u_dt(i,j,k) + z22(i,j)*v_dt(i,j,k)
+             u_dt(i,j,k) = ut(i,j)
+          enddo
+       enddo
+    enddo
+! (u_dt,v_dt) are now on local coordinate system
+       call timing_on('COMM_TOTAL')
+  call mpp_update_domains(u_dt, v_dt, domain, gridtype=AGRID_PARAM)
+       call timing_off('COMM_TOTAL')
+
+    dt5 = 0.5 * dt
+
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,gridstruct,u,dt5,u_dt,v,v_dt, &
+!$OMP                                  dya,npy,dxa,npx)                              &
+!$OMP                          private(gratio)
+    do k=1, npz
+
+     if ( gridstruct%grid_type > 3 .or. gridstruct%bounded_domain) then    ! Local & one tile configurations
+
+       do j=js,je+1
+          do i=is,ie
+             u(i,j,k) = u(i,j,k) + dt5*(u_dt(i,j-1,k) + u_dt(i,j,k))
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie+1
+             v(i,j,k) = v(i,j,k) + dt5*(v_dt(i-1,j,k) + v_dt(i,j,k))
+          enddo
+       enddo
+
+     else
+
+!--------
+! u-wind
+!--------
+! Edges:
+    if ( js==1 ) then
+       do i=is,ie
+          gratio = dya(i,2) / dya(i,1)
+          u(i,1,k) = u(i,1,k) + dt5*((2.+gratio)*(u_dt(i,0,k)+u_dt(i,1,k))  &
+                   -(u_dt(i,-1,k)+u_dt(i,2,k)))/(1.+gratio)
+       enddo
+    endif
+
+! Interior
+    do j=max(2,js),min(npy-1,je+1)
+       do i=is,ie
+          u(i,j,k) = u(i,j,k) + dt5*(u_dt(i,j-1,k)+u_dt(i,j,k))
+       enddo
+    enddo
+
+    if ( (je+1)==npy ) then
+       do i=is,ie
+          gratio = dya(i,npy-2) / dya(i,npy-1)
+          u(i,npy,k) = u(i,npy,k) + dt5*((2.+gratio)*(u_dt(i,npy-1,k)+u_dt(i,npy,k)) &
+                     -(u_dt(i,npy-2,k)+u_dt(i,npy+1,k)))/(1.+gratio)
+       enddo
+    endif
+
+!--------
+! v-wind
+!--------
+! West Edges:
+    if ( is==1 ) then
+       do j=js,je
+          gratio = dxa(2,j) / dxa(1,j)
+          v(1,j,k) = v(1,j,k) + dt5*((2.+gratio)*(v_dt(0,j,k)+v_dt(1,j,k)) &
+                   -(v_dt(-1,j,k)+v_dt(2,j,k)))/(1.+gratio)
+       enddo
+    endif
+
+! Interior
+    do j=js,je
+       do i=max(2,is),min(npx-1,ie+1)
+          v(i,j,k) = v(i,j,k) + dt5*(v_dt(i-1,j,k)+v_dt(i,j,k))
+       enddo
+    enddo
+
+! East Edges:
+    if ( (ie+1)==npx ) then
+       do j=js,je
+          gratio = dxa(npx-2,j) / dxa(npx-1,j)
+          v(npx,j,k) = v(npx,j,k) + dt5*((2.+gratio)*(v_dt(npx-1,j,k)+v_dt(npx,j,k)) &
+                     -(v_dt(npx-2,j,k)+v_dt(npx+1,j,k)))/(1.+gratio)
+       enddo
+    endif
+
+    endif   ! end grid_type
+
+    enddo         ! k-loop
+
+ end subroutine update2d_dwinds_phys
+
 
 #ifdef TO_DO_MQ
  subroutine init_mq(phis, gridstruct, npx, npy, is, ie, js, je, ng)

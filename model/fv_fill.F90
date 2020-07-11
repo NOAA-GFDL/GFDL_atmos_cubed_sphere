@@ -203,11 +203,11 @@ contains
 
 !>@brief The subroutine 'fill2D' fills in nonphysical negative values in a single scalar field 
 !! using a two-dimensional diffusive approach which conserves mass.
- subroutine fill2D(is, ie, js, je, ng, km, q, delp, area, domain, nested, regional, npx, npy)
+ subroutine fill2D(is, ie, js, je, ng, km, q, delp, area, domain, bounded_domain, npx, npy)
 ! This is a diffusive type filling algorithm
  type(domain2D), intent(INOUT) :: domain
  integer, intent(in):: is, ie, js, je, ng, km, npx, npy
- logical, intent(IN):: nested,regional
+ logical, intent(IN):: bounded_domain
  real, intent(in):: area(is-ng:ie+ng, js-ng:je+ng)
  real, intent(in):: delp(is-ng:ie+ng, js-ng:je+ng, km)
  real, intent(inout):: q(is-ng:ie+ng, js-ng:je+ng, km)
@@ -219,7 +219,7 @@ contains
  integer:: i, j, k
  integer :: is1, ie1, js1, je1
 
- if (nested .or. regional) then
+ if (bounded_domain) then
     if (is == 1) then
        is1 = is-1
     else

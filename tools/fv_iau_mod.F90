@@ -225,7 +225,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
          agrid(is-1+i,js-1+j,2)=Init_parm%xlat(i,j)
       enddo
     enddo
-    call remap_coef( is, ie, js, je, &
+    call remap_coef( is, ie, js, je, is, ie, js, je, &
         im, jm, lon, lat, id1, id2, jdc, s2c, &
         agrid)
     deallocate ( lon, lat,agrid )

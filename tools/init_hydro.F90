@@ -1,22 +1,21 @@
-
 !***********************************************************************
-!*                   GNU Lesser General Public License                 
+!*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
 !*
-!* The FV3 dynamical core is free software: you can redistribute it 
+!* The FV3 dynamical core is free software: you can redistribute it
 !* and/or modify it under the terms of the
 !* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
+!* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
 !* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
+!* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
@@ -83,7 +82,8 @@ contains
  subroutine p_var(km, ifirst, ilast, jfirst, jlast, ptop, ptop_min,    &
                   delp, delz, pt, ps,  pe, peln, pk, pkz, cappa, q, ng, nq, area,   &
                   dry_mass, adjust_dry_mass, mountain, moist_phys,      &
-                  hydrostatic, nwat, domain, make_nh)
+                  hydrostatic, nwat, domain, adiabatic, make_nh)
+               
 ! Given (ptop, delp) computes (ps, pk, pe, peln, pkz)
 ! Input:
    integer,  intent(in):: km
@@ -91,10 +91,10 @@ contains
    integer,  intent(in):: jfirst, jlast            !< Latitude strip
    integer,  intent(in):: nq, nwat
    integer,  intent(in):: ng
-   logical, intent(in):: adjust_dry_mass, mountain, moist_phys, hydrostatic
+   logical, intent(in):: adjust_dry_mass, mountain, moist_phys, hydrostatic, adiabatic
    real, intent(in):: dry_mass, cappa, ptop, ptop_min
    real, intent(in   )::   pt(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
-   real, intent(inout):: delz(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
+   real, intent(inout):: delz(ifirst:ilast,jfirst:jlast, km)
    real, intent(inout):: delp(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km)
    real, intent(inout)::    q(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng, km, nq)
    real(kind=R_GRID), intent(IN)   :: area(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)
@@ -176,6 +176,12 @@ contains
       endif
    enddo
 
+   if ( adiabatic  ) then
+      zvir = 0.
+   else
+      zvir = rvgas/rdgas - 1.
+   endif
+   sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
 
    if ( .not.hydrostatic ) then
 
@@ -183,11 +189,11 @@ contains
       if ( present(make_nh) ) then
           if ( make_nh ) then
              delz = 1.e25 
-!$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,delz,rdg,pt,peln)
+!$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,delz,rdg,pt,peln,zvir,sphum,q)
              do k=1,km
                 do j=jfirst,jlast
                    do i=ifirst,ilast
-                      delz(i,j,k) = rdg*pt(i,j,k)*(peln(i,k+1,j)-peln(i,k,j))
+                      delz(i,j,k) = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
                    enddo
                 enddo
              enddo
@@ -199,8 +205,6 @@ contains
 !------------------------------------------------------------------
 ! The following form is the same as in "fv_update_phys.F90"
 !------------------------------------------------------------------
-       zvir = rvgas/rdgas - 1.
-       sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
 !$OMP parallel do default(none) shared(ifirst,ilast,jfirst,jlast,km,pkz,cappa,rdg, &
 !$OMP                                 delp,pt,zvir,q,sphum,delz)
        do k=1,km
@@ -263,7 +267,7 @@ contains
 ! INPUT/OUTPUT PARAMETERS:     
       real, intent(in)::   q(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km,nq)
       real, intent(in)::delp(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng,km)     
-      real, intent(inout):: ps(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)        !< surface pressure
+      real, intent(inout):: ps(ifirst-ng:ilast+ng,jfirst-ng:jlast+ng)        ! surface pressure
       real, intent(out):: dpd
 ! Local
       real  psd(ifirst:ilast,jfirst:jlast)     !< surface pressure due to dry air mass
@@ -341,7 +345,7 @@ contains
   real, intent(out):: ps(is-ng:ie+ng,js-ng:je+ng)
   real, intent(out)::   pt(is-ng:ie+ng,js-ng:je+ng,km)
   real, intent(out):: delp(is-ng:ie+ng,js-ng:je+ng,km)
-  real, intent(inout):: delz(is-ng:ie+ng,js-ng:je+ng,km)
+  real, intent(inout):: delz(is:,js:,1:)
 ! Local
   real   gz(is:ie,km+1)
   real   ph(is:ie,km+1)

@@ -122,7 +122,7 @@ contains
       real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) 
       real, intent(in):: peln(is  :ie,  km+1,js  :je)
       real, intent(in):: delp(isd:ied,jsd:jed,km)      !< Delta p at each model level
-      real, intent(in):: delz(isd:,jsd:,1:)      !< Delta z at each model level
+      real, intent(in):: delz(is:,js:,1:)      !< Delta z at each model level
       real, intent(in)::  pkz(is:ie,js:je,km)
       logical, intent(in)::  hydrostatic
       integer, intent(in), optional:: k_bot
@@ -724,7 +724,7 @@ contains
       real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1) 
       real, intent(in):: peln(is  :ie,  km+1,js  :je)
       real, intent(in):: delp(isd:ied,jsd:jed,km)      !< Delta p at each model level
-      real, intent(in):: delz(isd:,jsd:,1:)      !< Delta z at each model level
+      real, intent(in):: delz(is:,js:,1:)      !< Delta z at each model level
       real, intent(in)::  pkz(is:ie,js:je,km)
       logical, intent(in)::  hydrostatic
    integer, intent(in), optional:: k_bot
@@ -1551,7 +1551,7 @@ contains
  integer, intent(in):: is, ie, js, je, ng, kbot
  logical, intent(in):: hydrostatic
  real, intent(in):: dp(is-ng:ie+ng,js-ng:je+ng,kbot)  !< total delp-p
- real, intent(in):: delz(is-ng:,js-ng:,1:)
+ real, intent(in):: delz(is:,js:,1:)
  real, intent(in):: peln(is:ie,kbot+1,js:je)           !< ln(pe)
  logical, intent(in), OPTIONAL :: check_negative
 #ifdef MULTI_GASES

@@ -360,7 +360,7 @@ module fv_nwp_nudge_mod
 
   real(kind=R_GRID), pointer :: da_min
 
-  logical, pointer :: nested, sw_corner, se_corner, nw_corner, ne_corner
+  logical, pointer :: bounded_domain, sw_corner, se_corner, nw_corner, ne_corner
 
   if ( .not. module_is_initialized ) then 
         call mpp_error(FATAL,'==> Error from fv_nwp_nudge: module not initialized')
@@ -382,7 +382,7 @@ module fv_nwp_nudge_mod
 
   da_min => gridstruct%da_min
 
-  nested => gridstruct%nested
+
   sw_corner => gridstruct%sw_corner
   se_corner => gridstruct%se_corner
   nw_corner => gridstruct%nw_corner
@@ -783,7 +783,6 @@ module fv_nwp_nudge_mod
 
   nullify(da_min)
 
-  nullify(nested)
   nullify(sw_corner)
   nullify(se_corner)
   nullify(nw_corner)
@@ -1504,7 +1503,7 @@ module fv_nwp_nudge_mod
 
 
   if( .not. file_exist(fname) ) then
-     call mpp_error(FATAL,'==> Error from get_ncep_analysis: file not found')
+     call mpp_error(FATAL,'==> Error from get_ncep_analysis: file not found: '//fname)
   else
      call open_ncfile( fname, ncid )        ! open the file
      if(master) write(*,*) 'Reading NCEP anlysis file:', fname 
@@ -3569,7 +3568,7 @@ module fv_nwp_nudge_mod
 
   real(kind=R_GRID), pointer :: da_min
 
-  logical, pointer :: nested, sw_corner, se_corner, nw_corner, ne_corner
+  logical, pointer :: bounded_domain, sw_corner, se_corner, nw_corner, ne_corner
 
    area => gridstruct%area
   rarea => gridstruct%rarea
@@ -3585,7 +3584,7 @@ module fv_nwp_nudge_mod
 
   da_min => gridstruct%da_min
 
-  nested => gridstruct%nested
+  bounded_domain => gridstruct%bounded_domain
   sw_corner => gridstruct%sw_corner
   se_corner => gridstruct%se_corner
   nw_corner => gridstruct%nw_corner
@@ -3611,13 +3610,13 @@ module fv_nwp_nudge_mod
 
    nt = ntimes - n
 
-!$OMP parallel do default(none) shared(is,ie,js,je,kmd,nt,dy,q,isd,jsd,npx,npy,nested,   &
+!$OMP parallel do default(none) shared(is,ie,js,je,kmd,nt,dy,q,isd,jsd,npx,npy,bounded_domain,   &
 !$OMP                                  bd,sw_corner,se_corner,nw_corner,ne_corner,       &
 !$OMP                                  sina_u,rdxc,sin_sg,dx,rdyc,sina_v,qdt,damp,rarea) &
 !$OMP                          private(fx, fy)
    do k=1,kmd
 
-      if(nt>0) call copy_corners(q(isd,jsd,k), npx, npy, 1, nested, bd, &
+      if(nt>0) call copy_corners(q(isd,jsd,k), npx, npy, 1, bounded_domain, bd, &
            sw_corner, se_corner, nw_corner, ne_corner)
       do j=js-nt,je+nt
          do i=is-nt,ie+1+nt
@@ -3629,7 +3628,7 @@ module fv_nwp_nudge_mod
             0.5*(sin_sg(npx,j,1) + sin_sg(npx-1,j,3))
       enddo
 
-      if(nt>0) call copy_corners(q(isd,jsd,k), npx, npy, 2, nested, bd, &
+      if(nt>0) call copy_corners(q(isd,jsd,k), npx, npy, 2, bounded_domain, bd, &
            sw_corner, se_corner, nw_corner, ne_corner)
       do j=js-nt,je+1+nt
          if (j == 1 .OR. j == npy) then
