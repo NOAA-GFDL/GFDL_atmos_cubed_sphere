@@ -112,15 +112,19 @@ module fv_regional_mod
 !     integer, parameter :: iend_nest = 1346
 !     integer, parameter :: jend_nest = 1290
 
-      integer,parameter :: nvars_core=7                                &   !<-- # of prognostic variables in restart file
-                          ,nvars_tracers=8                                 !<-- # of prognostic variables in restart file
-
+      integer,parameter :: nvars_core=7                                 &  !<-- # of prognostic variables in core restart file
+                          ,ndims_core=6                                 &  !<-- # of core restart dimensions
+                          ,ndims_tracers=4                                 !<-- # of tracer restart dimensions
+!
       real,parameter :: blend_exp1=0.5,blend_exp2=10.                      !<-- Define the exponential dropoff of weights
                                                                            !    for prescribed external values in the
                                                                            !    blending rows inside the domain boundary.
       real :: current_time_in_seconds
 !
-      integer,save :: ncid,next_time_to_read_bcs,npz,ntracers
+      integer,save :: isd_mod,ied_mod,jsd_mod,jed_mod
+!
+      integer,save :: ncid,next_time_to_read_bcs,nfields_tracers       &
+                     ,npz,ntracers
 !
       integer,save :: k_split,n_split
 !
@@ -152,6 +156,8 @@ module fv_regional_mod
 
       logical,save :: north_bc,south_bc,east_bc,west_bc                &
                      ,begin_regional_restart=.true.
+
+      logical,dimension(:),allocatable,save :: blend_this_tracer
 
       character(len=50) :: filename_core='INPUT/fv_core.res.temp.nc'
       character(len=50) :: filename_core_new='RESTART/fv_core.res.tile1_new.nc'
@@ -329,6 +335,11 @@ contains
       west_bc =.false.
 !
 !  write(0,*)' enter setup_regional_BC isd=',isd,' ied=',ied,' jsd=',jsd,' jed=',jed    
+      isd_mod=isd
+      ied_mod=ied
+      jsd_mod=jsd
+      jed_mod=jed
+!
 !-----------------------------------------------------------------------
 !***  Which side(s) of the domain does this task lie on if any?
 !-----------------------------------------------------------------------
@@ -412,20 +423,10 @@ contains
 !***  Compute the index limits within the boundary region on each
 !***  side of the domain for both scalars and winds.  Since the
 !***  domain does not move then the computations need to be done
-!***  only once.  Likewise find and save the locations of the
-!***  available tracers in the tracers array.
+!***  only once.
 !-----------------------------------------------------------------------
 !
       call compute_regional_bc_indices(Atm%regional_bc_bounds)
-!
-      sphum_index     =get_tracer_index(MODEL_ATMOS, 'sphum')
-      liq_water_index =get_tracer_index(MODEL_ATMOS, 'liq_wat')
-      ice_water_index =get_tracer_index(MODEL_ATMOS, 'ice_wat')
-      rain_water_index=get_tracer_index(MODEL_ATMOS, 'rainwat')
-      snow_water_index=get_tracer_index(MODEL_ATMOS, 'snowwat')
-      graupel_index   =get_tracer_index(MODEL_ATMOS, 'graupel')
-      cld_amt_index   =get_tracer_index(MODEL_ATMOS, 'cld_amt')
-      o3mr_index      =get_tracer_index(MODEL_ATMOS, 'o3mr')
 !
 !-----------------------------------------------------------------------
 !
@@ -435,7 +436,8 @@ contains
 !
 !-----------------------------------------------------------------------
 !
-      ntracers=Atm%ncnst - Atm%flagstruct%dnats                            !<-- # of advected tracers
+!     ntracers=Atm%ncnst - Atm%flagstruct%dnats                            !<-- # of advected tracers
+      ntracers=Atm%ncnst                                                   !<-- Total # of tracers
       npz=Atm%npz                                                          !<-- # of layers in vertical configuration of integration
       klev_out=npz
 !
@@ -733,6 +735,24 @@ contains
         enddo
         enddo
       endif
+!
+      sphum_index      = get_tracer_index(MODEL_ATMOS, 'sphum')
+      liq_water_index  = get_tracer_index(MODEL_ATMOS, 'liq_wat')
+      ice_water_index  = get_tracer_index(MODEL_ATMOS, 'ice_wat')
+      rain_water_index = get_tracer_index(MODEL_ATMOS, 'rainwat')
+      snow_water_index = get_tracer_index(MODEL_ATMOS, 'snowwat')
+      graupel_index    = get_tracer_index(MODEL_ATMOS, 'graupel')
+      cld_amt_index    = get_tracer_index(MODEL_ATMOS, 'cld_amt')
+      o3mr_index       = get_tracer_index(MODEL_ATMOS, 'o3mr')
+!  write(0,*)' setup_regional_bc'
+!  write(0,*)' sphum_index=',sphum_index
+!  write(0,*)' liq_water_index=',liq_water_index
+!  write(0,*)' ice_water_index=',ice_water_index
+!  write(0,*)' rain_water_index=',rain_water_index
+!  write(0,*)' snow_water_index=',snow_water_index
+!  write(0,*)' graupel_index=',graupel_index
+!  write(0,*)' cld_amt_index=',cld_amt_index
+!  write(0,*)' o3mr_index=',o3mr_index
 !
 !-----------------------------------------------------------------------
 !***  When nudging of specific humidity is selected then we need a 
@@ -1067,8 +1087,6 @@ contains
       i_start_data=2*(isd+nhalo_model)-1
       j_start_data=2*(jsd+nhalo_model)-1
 !
-!     write(0,11110)i_start_data,j_start_data
-11110 format(' i_start_data=',i5,' j_start_data=',i5)
 !---------------
 !***  Longitude
 !---------------
@@ -1248,7 +1266,7 @@ contains
                            ,isd, ied, jsd, jed                          &
                            ,ak, bk )
       call regional_bc_t1_to_t0(BC_t1, BC_t0                            &  !
-                               ,Atm%npz                                 &  !<-- Move BC t1 data
+                               ,Atm%npz                                 &  !<-- Move BC t1 data to t0.
                                ,ntracers                                &
                                ,Atm%regional_bc_bounds )                   !
 !
@@ -1277,13 +1295,14 @@ contains
       enddo
 !
 !-----------------------------------------------------------------------
-!***  If the GSI will need a restart file that includes the 
-!***  fields' boundary rows then create that file and define
-!***  its dimensions and variables.
+!***  If the GSI will need restart files that includes the
+!***  fields' boundary rows.  Those files were already created.
+!***  Prepare the objects that hold their variables' names and
+!***  values.
 !-----------------------------------------------------------------------
 !
       if(Atm%flagstruct%write_restart_with_bcs)then
-        call create_restart_with_bcs(Atm)
+        call prepare_full_fields(Atm)
       endif
 !
 !-----------------------------------------------------------------------
@@ -1389,14 +1408,14 @@ contains
       endif
 !
 !-----------------------------------------------------------------------
-!***  If the GSI will need a restart file that includes the 
+!***  If the GSI will need restart files that include the
 !***  fields' boundary rows after this forecast or forecast
-!***  segment completes then create that file and define
-!***  its dimensions and variables.
+!***  segment completes then prepare the objects that will
+!***  hold their variables' names and values.
 !-----------------------------------------------------------------------
 !
       if(Atm%flagstruct%write_restart_with_bcs)then
-        call create_restart_with_bcs(Atm)
+        call prepare_full_fields(Atm)
       endif
 !
 !-----------------------------------------------------------------------
@@ -2356,8 +2375,7 @@ contains
 !***  FV3's modified virtual potential temperature.
 !-----------------------------------------------------------------------
 !
-      call convert_to_virt_pot_temp(isd,ied,jsd,jed,npz                 &
-                                   ,sphum_index,liq_water_index )
+      call convert_to_virt_pot_temp(isd,ied,jsd,jed,npz)
 !
 !-----------------------------------------------------------------------
 !***  If nudging of the specific humidity has been selected then
@@ -2924,17 +2942,14 @@ contains
       implicit none
 !-----------------------------------------------------------------------
 !
-!---------------------
-!***  Input variables
-!---------------------
+!------------------------
+!***  Argument variables
+!------------------------
 !
       integer,intent(in) :: i1,i2,j1,j2
 !
-      real,dimension(i1:i2,j1:j2,1:npz) :: cappa,temp,liq_wat,sphum
-!
-!----------------------
-!***  Output variables
-!----------------------
+      real,dimension(i1:i2,j1:j2,1:npz),intent(in) :: temp,liq_wat,sphum
+      real,dimension(i1:i2,j1:j2,1:npz),intent(inout) :: cappa
 !
 !---------------------
 !***  Local variables
@@ -2967,7 +2982,7 @@ contains
           ql=qd-qs
           qv=max(0.,sphum(i,j,k))
           cvm=(1.-(qv+qd))*cv_air + qv*cv_vap + ql*c_liq + qs*c_ice
- !
+!
           cappa(i,j,k)=rdgas/(rdgas+cvm/(1.+zvir*sphum(i,j,k)))
 !
         enddo
@@ -3044,7 +3059,7 @@ contains
 !
       character(len=80) :: var_name                                        !<-- Variable name in the boundary NetCDF file
 !
-      logical :: call_get_var
+      logical :: call_get_var,is_root_pe
       logical :: required_local
 !
 !-----------------------------------------------------------------------
@@ -3060,6 +3075,8 @@ contains
       else
         required_local=.true.
       endif
+!
+      is_root_pe=(mpp_pe()==mpp_root_pe())
 !
 !-----------------------------------------------------------------------
 !***  Loop through the four sides of the domain.
@@ -3227,13 +3244,16 @@ contains
 !
         if(call_get_var)then
           if (present(array_4d)) then   !<-- 4-D variable
-            status=nf90_inq_varid(ncid,trim(var_name),var_id)                         !<-- Get this variable's ID.
+            status=nf90_inq_varid(ncid,trim(var_name),var_id)                !<-- Get this variable's ID.
             if (required_local) then
               call check(status)
             endif
             if (status /= nf90_noerr) then
               if (east_bc.and.is_master()) write(0,*)' WARNING: Tracer ',trim(var_name),' not in input file'
               array_4d(:,:,:,tlev)=0.                                        !<-- Tracer not in input so set to zero in boundary.
+!
+              blend_this_tracer(tlev)=.false.                                !<-- Tracer not in input so do not apply blending.
+!
             else
               call check(nf90_get_var(ncid,var_id                                         &
                                      ,array_4d(i_start_array:i_end_array                  &  !<-- Fill this task's domain boundary halo.
@@ -3326,6 +3346,11 @@ contains
 !
       allocate(BC_side%q_BC    (is_0:ie_0,js_0:je_0,1:klev,1:ntracers)) ; BC_side%q_BC=real_snan
 !
+      if(.not.allocated(blend_this_tracer))then
+        allocate(blend_this_tracer(1:ntracers))
+        blend_this_tracer=.true.                                        !<-- Start with blending all tracers.
+      endif
+!
 #ifndef SW_DYNAMICS
       allocate(BC_side%pt_BC   (is_0:ie_0,js_0:je_0,klev)) ; BC_side%pt_BC=real_snan
       allocate(BC_side%w_BC    (is_0:ie_0,js_0:je_0,klev)) ; BC_side%w_BC=real_snan
@@ -3415,14 +3440,14 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
 !---------------------------------------------------------------------------------
 !
-  sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
-  liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
-  ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
-  rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
-  snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
-  graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
-  cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
-  o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
+  sphum   = sphum_index
+  liq_wat = liq_water_index
+  ice_wat = ice_water_index
+  rainwat = rain_water_index
+  snowwat = snow_water_index
+  graupel = graupel_index
+  cld_amt = cld_amt_index
+  o3mr    = o3mr_index
 
   k2 = max(10, km/2)
 
@@ -3587,7 +3612,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
              BC_side%q_BC(i,j,k,iq) = qn1(i,k)
            enddo
          enddo
-       endif ! skip cld_amt in the remap since it is not included in the input
+       endif
       enddo
 
 !---------------------------------------------------
@@ -4272,7 +4297,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       real,dimension(:,:,:),pointer :: bc_t0,bc_t1                       !<-- Boundary data at the two bracketing times.
 !
-      logical :: call_interp
+      logical :: blend,call_interp
 !
 !---------------------------------------------------------------------
 !*********************************************************************
@@ -4282,9 +4307,11 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         return
       endif
 !
+      blend=.true.
       iq=0
       if(present(index4))then
         iq=index4
+        blend=blend_this_tracer(iq)
       endif
 !
 !---------------------------------------------------------------------
@@ -4486,7 +4513,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                     ,fcst_time                           &
                                     ,bc_update_interval                  &
                                     ,i1_blend,i2_blend,j1_blend,j2_blend &
-                                    ,i_bc,j_bc, nside, bc_vbl_name )
+                                    ,i_bc,j_bc,nside,bc_vbl_name,blend )
         endif
 !
 !---------------------------------------------------------------------
@@ -4616,7 +4643,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                       ,fcst_time                           &
                                       ,bc_update_interval                  &
                                       ,i1_blend,i2_blend,j1_blend,j2_blend &
-				      ,i_bc,j_bc,nside, bc_vbl_name )
+				      ,i_bc,j_bc,nside,bc_vbl_name,blend )
 
 !---------------------------------------------------------------------
 !***  Update the boundary region of the input array at the given
@@ -4645,12 +4672,12 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       real,intent(in) :: fcst_time                                       !<-- Current forecast time (sec)
 !
-      real :: rdenom
-!
-      real,dimension(lbnd1:ubnd1,lbnd2:ubnd2,1:ubnd_z) :: bc_t0        & !<-- Interpolate between these
-                                                         ,bc_t1          !    two boundary region states.
+      real,dimension(lbnd1:ubnd1,lbnd2:ubnd2,1:ubnd_z),intent(in) :: bc_t0  & !<-- Interpolate between these
+                                                                    ,bc_t1    !    two boundary region states.
 !
       character(len=*),intent(in) :: bc_vbl_name
+!
+      logical,intent(in) :: blend                                        !<-- Can blending be applied to this variable?
 !
 !---------------------
 !*** Output variables
@@ -4665,7 +4692,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       integer :: i,j,k
 !
-      real :: blend_value,factor_dist,fraction_interval
+      real :: blend_value,factor_dist,fraction_interval,rdenom
 !
 !---------------------------------------------------------------------
 !*********************************************************************
@@ -4689,6 +4716,15 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         enddo
         enddo
       enddo
+!
+!---------------------------------------------------------------------
+!***  If this tracer is not in the external BC file then it will not
+!***  be blended.
+!---------------------------------------------------------------------
+!
+      if(.not.blend)then
+        return
+      endif
 !
 !---------------------------------------------------------------------
 !***  Use specified external data to blend with integration values
@@ -4990,8 +5026,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !---------------------------------------------------------------------
 !
-      subroutine convert_to_virt_pot_temp(isd,ied,jsd,jed,npz           &
-                                         ,sphum,liq_wat )
+      subroutine convert_to_virt_pot_temp(isd,ied,jsd,jed,npz)
 !
 !-----------------------------------------------------------------------
 !***  Convert the incoming sensible temperature to virtual potential
@@ -5000,13 +5035,11 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       implicit none
 !-----------------------------------------------------------------------
 !
-!---------------------
-!***  Input arguments
-!---------------------
+!------------------------
+!***  Argument variables
+!------------------------
 !
       integer,intent(in) :: isd,ied,jsd,jed,npz
-!
-      integer,intent(in) :: liq_wat,sphum
 !
 !---------------------
 !***  Local variables
@@ -5136,11 +5169,11 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
         do j=j1,j2
         do i=i1,i2
-          dp1 = zvir*q(i,j,k,sphum)
+          dp1 = zvir*q(i,j,k,sphum_index)
 #ifdef USE_COND
 #ifdef MOIST_CAPPA
-          cvm=(1.-q(i,j,k,sphum)+q_con(i,j,k))*cv_air                   &
-             +q(i,j,k,sphum)*cv_vap+q(i,j,k,liq_wat)*c_liq
+          cvm=(1.-q(i,j,k,sphum_index)+q_con(i,j,k))*cv_air             &
+             +q(i,j,k,sphum_index)*cv_vap+q(i,j,k,liq_water_index)*c_liq
           pkz=exp(cappa(i,j,k)*log(rdg*delp(i,j,k)*pt(i,j,k)            &
               *(1.+dp1)*(1.-q_con(i,j,k))/delz(i,j,k)))
 #else
@@ -5718,25 +5751,35 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !-----------------------------------------------------------------------
 !
-      subroutine create_restart_with_bcs(Atm)
+      subroutine prepare_full_fields(Atm)
 !
 !-----------------------------------------------------------------------
-!***  Create the netcdf files into which full fields of the
-!***  restart variables will be written INCLUDING BOUNDARY ROWS
-!***  so the GSI can update both the interior and BCs.
+!***  Prepare the objects that will hold the names and values of
+!***  the core and tracer fields to be written into the expanded
+!***  restart files that include the boundary rows so the GSI
+!***  can update both the interior and BCs.
 !-----------------------------------------------------------------------
 !
-      integer,parameter :: ndims_core=6                                 &  !<-- # of core restart dimensions
-                          ,ndims_tracers=4                                 !<-- # of tracer restart dimensions
+!------------------------
+!***  Argument variables
+!------------------------
 !
       type(fv_atmos_type),target,intent(inout) :: Atm                      !<-- Atm object for the current domain
 !
-      integer :: dimid,n,na,natts                                       &
-                ,ncid_core,ncid_core_new                                &
-                ,ncid_tracers,ncid_tracers_new                          &
-                ,nctype,ndims,ngatts,nn,nv_core,nv_tracers,var_id
+!---------------------
+!***  Local variables
+!---------------------
+!
+      integer :: index,istat,n                                          &
+                ,ncid_core_new                                          &
+                ,ncid_tracers_new                                       &
+                ,ndims,nkount,nv_core,nv_tracers                        &
+                ,var_id
+!
+      integer :: lbnd1,lbnd2,lbnd3,ubnd1,ubnd2,ubnd3
 !
       integer,dimension(ndims_core) :: dim_lengths_core
+!
       integer,dimension(ndims_tracers) :: dim_lengths_tracers
 !
       integer,dimension(1:4) :: dimids=(/0,0,0,0/)
@@ -5772,7 +5815,9 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !-----------------------------------------------------------------------
 !***  All tasks are given pointers into the model data that will
 !***  be written to the new restart file.  The following are the
-!***  prognostic variables in the core rstart file.
+!***  prognostic variables in the core restart file.  Note that
+!***  we must add the halo region back into DZ since we need the
+!***  domain boundary points for all the fields.
 !-----------------------------------------------------------------------
 !
       allocate(fields_core(1:nvars_core))
@@ -5786,7 +5831,15 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       fields_core(3)%ptr=>Atm%w
       fields_core(3)%name='W'
 !
-      fields_core(4)%ptr=>Atm%delz
+      lbnd1=lbound(Atm%delz,1)
+      ubnd1=ubound(Atm%delz,1)
+      lbnd2=lbound(Atm%delz,2)
+      ubnd2=ubound(Atm%delz,2)
+      lbnd3=1
+      ubnd3=ubound(Atm%delz,3)
+      allocate(fields_core(4)%ptr(lbnd1-nhalo_model:ubnd1+nhalo_model   &
+                                 ,lbnd2-nhalo_model:ubnd2+nhalo_model   &
+                                 ,lbnd3:ubnd3))
       fields_core(4)%name='DZ'
 !
       fields_core(5)%ptr=>Atm%pt
@@ -5798,267 +5851,70 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       allocate(fields_core(7)%ptr(lbound(Atm%phis,1):ubound(Atm%phis,1) &
                             ,lbound(Atm%phis,2):ubound(Atm%phis,2)      &
                             ,1:1))
-      fields_core(7)%ptr(:,:,1)=Atm%phis(:,:)                              !<-- For generality treat the 2-D phis as 3-D     
+      fields_core(7)%ptr(:,:,1)=Atm%phis(:,:)                              !<-- For generality treat the 2-D phis as 3-D
       fields_core(7)%name='phis'
 !
 !-----------------------------------------------------------------------
-!***  Also point at the proper tracer arrays and set their names.
+!***  We need to point at the tracers in the model's tracer array.
+!***  Those tracers depend on the physics that was selected so they
+!***  cannot be pre-specified like the variables in the core restart
+!***  file were.  Read them from the expanded tracer restart file
+!***  that was created prior to the start for the forecast.
 !-----------------------------------------------------------------------
 !
-      allocate(fields_tracers(1:nvars_tracers))
+      call check(nf90_open(path=filename_tracers_new                    &  !<-- The expanded tracer restart file.
+                          ,mode=nf90_nowrite                            &  !<-- File access.
+                          ,ncid=ncid_tracers_new ))                        !<-- The expanded tracer restart file's ID
 !
-      lbnd_x_tracers=lbound(Atm%q,1)
-      ubnd_x_tracers=ubound(Atm%q,1)
-      lbnd_y_tracers=lbound(Atm%q,2)
-      ubnd_y_tracers=ubound(Atm%q,2)
+      call check(nf90_inquire(ncid      =ncid_tracers_new               &  !<-- The expanded tracer restart file's ID.
+                             ,nvariables=nv_tracers       ))               !<-- The TOTAL number of tracer restart file variables.
 !
-      fields_tracers(1)%ptr=>Atm%q(:,:,:,sphum_index)
-      fields_tracers(1)%name='sphum'
-!
-      fields_tracers(2)%ptr=>Atm%q(:,:,:,liq_water_index)
-      fields_tracers(2)%name='liq_wat'
-!
-      fields_tracers(3)%ptr=>Atm%q(:,:,:,ice_water_index)
-      fields_tracers(3)%name='ice_wat'
-!
-      fields_tracers(4)%ptr=>Atm%q(:,:,:,rain_water_index)
-      fields_tracers(4)%name='rainwat'
-!
-      fields_tracers(5)%ptr=>Atm%q(:,:,:,snow_water_index)
-      fields_tracers(5)%name='snowwat'
-!
-      fields_tracers(6)%ptr=>Atm%q(:,:,:,graupel_index)
-      fields_tracers(6)%name='graupel'
-!
-      fields_tracers(7)%ptr=>Atm%q(:,:,:,o3mr_index)
-      fields_tracers(7)%name='o3mr'
-!
-      fields_tracers(8)%ptr=>Atm%q(:,:,:,cld_amt_index)
-      fields_tracers(8)%name='cld_amt'
-!
-!-----------------------------------------------------------------------
-!***  Only one compute task prepares the new restart files.  The task
-!***  with the highest rank knows the upper bounds of the domain so
-!***  it does the work.  All other tasks may exit.
-!-----------------------------------------------------------------------
-!
-      if(mpp_pe()/=Atm%layout(1)*Atm%layout(2)-1)then
-        return
-      endif
-!
-      call check(nf90_create(filename_core_new                          &
-                            ,cmode=or(nf90_clobber,nf90_64bit_offset)   &
-                            ,ncid=ncid_core_new))
-!
-!-----------------------------------------------------------------------
-!***  Define the output file's dimensions and insert them into the file.
-!-----------------------------------------------------------------------
-!
-      dim_lengths_core(1)=Atm%bd%ied+nhalo_model                           !<-- x
-      dim_lengths_core(2)=dim_lengths_core(1)+1                            !<-- x+1
-      dim_lengths_core(3)=Atm%bd%jed+nhalo_model+1                         !<-- y+1
-      dim_lengths_core(4)=dim_lengths_core(3)-1                            !<-- y
-      dim_lengths_core(5)=Atm%npz                                          !<-- z
-      dim_lengths_core(6)=nf90_unlimited                                   !<-- time
-!
-      do n=1,ndims_core
-        call check(nf90_def_dim(ncid_core_new                           &
-                  ,dim_names_core(n)                                    &
-                  ,dim_lengths_core(n)                                  &
-                  ,dimid))
-      enddo
-!
-!-----------------------------------------------------------------------
-!***  The new file's variables must be defined while that file
-!***  is still in define mode.  Define each of the restart file's
-!***  variables in the new file.
-!-----------------------------------------------------------------------
-!
-      call check(nf90_open(filename_core,nf90_nowrite,ncid_core))          !<-- The core restart file's ID
-!
-      call check(nf90_inquire(ncid_core,nvariables=nv_core))               !<-- The TOTAL number of core restart file variables
-!
-      do n=1,nv_core
-        var_id=n
-        call check(nf90_inquire_variable(ncid_core,var_id,var_name,nctype &  !<-- Name and type of this variable
-                  ,ndims,dimids,natts))                                      !<-- # of dimensions and attributes in this variable
-!
-      call check(nf90_def_var(ncid_core_new,var_name,nctype,dimids(1:ndims),var_id)) !<-- Define the variable in the new file.
-!
-!-----------------------------------------------------------------------
-!***  Copy this variable's attributes to the new core file's
-!***  variable.
-!-----------------------------------------------------------------------
-!
-        if(natts>0)then
-          do na=1,natts
-            call check(nf90_inq_attname(ncid_core,var_id,na,att_name))     !<-- Get the attribute's name and ID from restart.
-            call check(nf90_copy_att(ncid_core,var_id,att_name,ncid_core_new,var_id))  !<-- Copy to the new file.
-          enddo
+      nfields_tracers=nv_tracers-ndims_tracers                             !<-- # of 3-D tracer fields
+      allocate(fields_tracers(1:nfields_tracers),stat=istat)
+      if(istat/=0)then
+        call mpp_error(FATAL,' Failed to allocate fields_tracers.')
+      else
+        if(is_master())then
+          write(0,33012)nfields_tracers
+33012     format(' Allocated fields_tracers(1:',i3,')')
         endif
-!
-      enddo
-!
-!-----------------------------------------------------------------------
-!***  Find the number of global attributes in the restart file and
-!***  copy them to the new file.
-!-----------------------------------------------------------------------
-!
-      call check(nf90_inquire(ncid_core,nattributes=ngatts))
-!
-      do n=1,ngatts
-        call check(nf90_inq_attname(ncid_core,nf90_global,n,att_name))
-        call check(nf90_copy_att(ncid_core,nf90_global,att_name,ncid_core_new,nf90_global))
-      enddo
-!
-!-----------------------------------------------------------------------
-!
-      call check(nf90_enddef(ncid_core_new))                               !<-- Put the output file into data mode.
-!
-!-----------------------------------------------------------------------
-!***  Insert the dimension values.
-!-----------------------------------------------------------------------
-!
-      do n=1,ndims_core-1
-        allocate(dim_values(1:dim_lengths_core(n)))
-        do nn=1,dim_lengths_core(n)
-          dim_values(nn)=nn
-        enddo
-        var_id=n
-        call check(nf90_put_var(ncid_core_new,var_id                    &
-                  ,dim_values(:)                                        &
-                  ,start=(/1/)                                          &
-                  ,count=(/dim_lengths_core(n)/)))
-        deallocate(dim_values)
-      enddo
-!
-      write( 0,*)' nf90_unlimited=',nf90_unlimited
-      var_id=ndims_core                                                    !<-- Time is the final dimension; treat it separately.
-      allocate(dim_values(1))
-      dim_values(1)=1
-      call check(nf90_put_var(ncid_core_new,var_id                      &
-                ,dim_values(:)))
-      deallocate(dim_values)
-!
-!-----------------------------------------------------------------------
-!
-      call check(nf90_close(ncid_core_new))
-      call check(nf90_close(ncid_core))
-!
-!-----------------------------------------------------------------------
-!***  The second file to be handled is the tracer restart file.
-!-----------------------------------------------------------------------
-!
-      call check(nf90_create(filename_tracers_new                       &
-                            ,cmode=or(nf90_clobber,nf90_64bit_offset)   &
-                            ,ncid=ncid_tracers_new))
-!
-!-----------------------------------------------------------------------
-!***  Define the output file's dimensions and insert them into the file.
-!-----------------------------------------------------------------------
-!
-      dim_lengths_tracers(1)=Atm%bd%ied+nhalo_model                        !<-- x
-      dim_lengths_tracers(2)=Atm%bd%jed+nhalo_model                        !<-- y
-      dim_lengths_tracers(3)=Atm%npz                                       !<-- z
-      dim_lengths_tracers(4)=nf90_unlimited                                !<-- time
-!
-      do n=1,ndims_tracers
-        call check(nf90_def_dim(ncid_tracers_new                        &
-                  ,dim_names_tracers(n)                                 &
-                  ,dim_lengths_tracers(n)                               &
-                  ,dimid))
-      enddo
-!
-!-----------------------------------------------------------------------
-!***  The new file's variables must be defined while that file
-!***  is still in define mode.  Define each of the restart file's
-!***  variables in the new file.
-!-----------------------------------------------------------------------
-!
-      call check(nf90_open(filename_tracers,nf90_nowrite,ncid_tracers))    !<-- The tracer restart file's ID
-!
-      call check(nf90_inquire(ncid_tracers,nvariables=nv_tracers))         !<-- The TOTAL number of tracer restart file variables
+      endif
+      nkount=0
 !
       do n=1,nv_tracers
         var_id=n
-        call check(nf90_inquire_variable(ncid_tracers,var_id,var_name,nctype &  !<-- Name and type of this variable
-                  ,ndims,dimids,natts))                                         !<-- # of dimensions and attributes in this variable
+        call check(nf90_inquire_variable(ncid =ncid_tracers_new         &  !<-- The file's ID.
+                                        ,varid=var_id                   &  !<-- The variable's ID.
+                                        ,name =var_name ))                 !<-- The variable's name.
 !
-        call check(nf90_def_var(ncid_tracers_new,var_name,nctype,dimids(1:ndims),var_id)) !<-- Define the variable in the new file.
-!
-!-----------------------------------------------------------------------
-!***  Copy this variable's attributes to the new tracers file's
-!***  variable.
-!-----------------------------------------------------------------------
-!
-        if(natts>0)then
-          do na=1,natts
-            call check(nf90_inq_attname(ncid_tracers,var_id,na,att_name))  !<-- Get the attribute's name and ID from restart.
-            call check(nf90_copy_att(ncid_tracers,var_id,att_name,ncid_tracers_new,var_id))  !<-- Copy to the new file.
-          enddo
+        if(n>ndims_tracers)then
+          nkount=nkount+1
+          fields_tracers(nkount)%name=trim(var_name)
+          index=get_tracer_index(MODEL_ATMOS, trim(var_name))
+          fields_tracers(nkount)%ptr=>Atm%q(:,:,:, index)
         endif
 !
       enddo
-!
-!-----------------------------------------------------------------------
-!***  Find the number of global attributes in the restart file and
-!***  copy them to the new file.
-!-----------------------------------------------------------------------
-!
-      call check(nf90_inquire(ncid_tracers,nattributes=ngatts))
-!
-      do n=1,ngatts
-        call check(nf90_inq_attname(ncid_tracers,nf90_global,n,att_name))
-        call check(nf90_copy_att(ncid_tracers,nf90_global,att_name,ncid_tracers_new,nf90_global))
-      enddo
-!
-!-----------------------------------------------------------------------
-!
-      call check(nf90_enddef(ncid_tracers_new))                            !<-- Put the output file into data mode.
-!
-!-----------------------------------------------------------------------
-!***  Insert the dimension values.
-!-----------------------------------------------------------------------
-!
-      do n=1,ndims_tracers-1
-        allocate(dim_values(1:dim_lengths_tracers(n)))
-        do nn=1,dim_lengths_tracers(n)
-          dim_values(nn)=nn
-        enddo
-        var_id=n
-        call check(nf90_put_var(ncid_tracers_new,var_id                 &
-                  ,dim_values(:)                                        &
-                  ,start=(/1/)                                          &
-                  ,count=(/dim_lengths_tracers(n)/)))
-        deallocate(dim_values)
-     enddo
-!
-     var_id=ndims_tracers                                                  !<-- Time is the final dimension; treat it separately.
-     allocate(dim_values(1))
-     dim_values(1)=1
-     call check(nf90_put_var(ncid_tracers_new,var_id                    &
-               ,dim_values(:)))
-     deallocate(dim_values)
 !
 !-----------------------------------------------------------------------
 !
       call check(nf90_close(ncid_tracers_new))
-      call check(nf90_close(ncid_tracers))
 !
 !-----------------------------------------------------------------------
 !
-      end subroutine create_restart_with_bcs
+      end subroutine prepare_full_fields
 !
 !-----------------------------------------------------------------------
-!--------------------------------------------------------------------------------------
+!+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+!-----------------------------------------------------------------------
 !
       subroutine write_full_fields(Atm)
 !
-!--------------------------------------------------------------------------------------
+!-----------------------------------------------------------------------
 !***  Write out full fields of the primary restart variables
 !***  INCLUDING BOUNDARY ROWS so the GSI can include BCs in its
 !***  update.  This is done in a restart look-alike file.
-!--------------------------------------------------------------------------------------
+!-----------------------------------------------------------------------
 !
       type(fv_atmos_type), intent(inout), target :: Atm
 !
@@ -6177,30 +6033,35 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  halo points need to be converted to sensible temperature.
 !***  Each boundary task will now do the conversion before the
 !***  values are gathered onto the root task for writing out.
+!***  Also since the DZ array no longer has halo points we must
+!***  insert values back into the domain boundary rows of the
+!***  object holding DZ.
 !-----------------------------------------------------------------------
 !
-        if(trim(fields_core(nv)%name)=='T')then
-          call sensible_temp(istart,iend,jstart,jend,nz                 &
-                            ,Atm                                     &
-                            ,fields_core(nv)%ptr(istart:iend,jstart:jend,:))
+        if(trim(fields_core(nv)%name)=='T'                              &
+                        .or.                                            &
+           trim(fields_core(nv)%name)=='DZ') then
+!
+          call apply_delz_boundary(istart,iend,jstart,jend,nz           &
+                                  ,Atm                                  &
+                                  ,fields_core(nv)%name                 &
+                                  ,fields_core(nv)%ptr(istart:iend,jstart:jend,:))
         endif
 !
 !-----------------------------------------------------------------------
-!***  Since we are gathering onto a single task then do so one layer 
-!***  at a time to avoid potential memory problems for large high
-!***  resolution domains.  Then that task writes the full data to the 
-!***  new file.
+!***  Gather onto a single task one layer at a time.  That task
+!***  writes the full data to the new larger restart file.
 !-----------------------------------------------------------------------
 !
         do k=1,nz
-          call mpp_gather(istart,iend,jstart,jend                                  &
-                         ,pelist, fields_core(nv)%ptr(istart:iend,jstart:jend,k)   &
+          call mpp_gather(istart,iend,jstart,jend                                &
+                         ,pelist, fields_core(nv)%ptr(istart:iend,jstart:jend,k) &
                          ,global_field(:,:,k), is_root_pe, halo, halo)
 !
           if(is_root_pe)then
-            call check(nf90_put_var(ncid_core_new,var_id                                     &
-                                   ,global_field(:,:,k)                                      &
-                                   ,start=(/1,1,k/)                                          &
+            call check(nf90_put_var(ncid_core_new,var_id                         &
+                                   ,global_field(:,:,k)                          &
+                                   ,start=(/1,1,k/)                              &
                                    ,count=(/count_i,count_j,1/)))
           endif 
         enddo
@@ -6219,7 +6080,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       if(is_root_pe)then
         call check(nf90_open(filename_tracers_new,nf90_write,ncid_tracers_new))  !<-- Open the new netcdf file
-        write(0,*)' Opened core restart with BCs: ',trim(filename_tracers_new)
+        write(0,*)' Opened tracer restart with BCs: ',trim(filename_tracers_new)
       endif
 !
 !-----------------------------------------------------------------------
@@ -6227,7 +6088,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  boundary rows?
 !-----------------------------------------------------------------------
 !
-      call mpp_get_global_domain (atm%domain, isg, ieg, jsg, jeg, position=CENTER )
+      call mpp_get_global_domain (Atm%domain, isg, ieg, jsg, jeg, position=CENTER )
       istart_g=isg-halo
       iend_g  =ieg+halo
       jstart_g=jsg-halo
@@ -6250,6 +6111,11 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !-----------------------------------------------------------------------
 !***  The following are local bounds based on the global indexing.
 !-----------------------------------------------------------------------
+!
+      lbnd_x_tracers=lbound(Atm%q,1)
+      ubnd_x_tracers=ubound(Atm%q,1)
+      lbnd_y_tracers=lbound(Atm%q,2)
+      ubnd_y_tracers=ubound(Atm%q,2)
 !
       istart=lbnd_x_tracers
       if(istart>1)then
@@ -6301,7 +6167,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  Loop through that file's prognostic tracers.
 !-----------------------------------------------------------------------
 !
-      vbls_tracers: do nv=1,nvars_tracers
+      vbls_tracers: do nv=1,nfields_tracers
 !
         var_name=fields_tracers(nv)%name
         if(is_root_pe)then
@@ -6309,10 +6175,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         endif
 !
 !-----------------------------------------------------------------------
-!***  Since we are gathering onto a single task then do so one layer 
-!***  at a time to avoid potential memory problems for large high
-!***  resolution domains.  Then that task writes the full data to the 
-!***  new file.
+!***  Gather onto a single task one layer at a time.  That task
+!***  writes the full data to the new larger restart file.
 !-----------------------------------------------------------------------
 !
         do k=1,nz
@@ -6321,9 +6185,9 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                          ,global_field(:,:,k), is_root_pe, halo, halo)
 !
           if(is_root_pe)then
-            call check(nf90_put_var(ncid_tracers_new,var_id                                  &
-                                   ,global_field(:,:,k)                                      &
-                                   ,start=(/1,1,k/)                                          &
+            call check(nf90_put_var(ncid_tracers_new,var_id             &
+                                   ,global_field(:,:,k)                 &
+                                   ,start=(/1,1,k/)                     &
                                    ,count=(/count_i,count_j,1/)))
           endif 
         enddo
@@ -6341,13 +6205,15 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !---------------------------------------------------------------------
 !---------------------------------------------------------------------
 !
-      subroutine sensible_temp(istart,iend,jstart,jend,nz             &
-                              ,Atm                                    &
-                              ,temp)
+      subroutine apply_delz_boundary(istart,iend,jstart,jend,nz       &
+                                    ,Atm                              &
+                                    ,name                             &
+                                    ,field)
 !
 !---------------------------------------------------------------------
-!***  Convert the special potential temperature in the domain
-!***  halo rows to sensible temperature.
+!***  Use the current boundary values of delz to convert the
+!***  boundary potential temperature to sensible temperature
+!***  and to fill in the boundary rows of the 3D delz array.
 !---------------------------------------------------------------------
 !
 !------------------------
@@ -6356,15 +6222,18 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       integer,intent(in) :: istart,iend,jstart,jend
 !
+      character(len=*),intent(in) :: name
+!
       type(fv_atmos_type),intent(inout) :: Atm
 !
-      real,dimension(istart:iend,jstart:jend,1:nz),intent(inout) :: temp
+      real,dimension(istart:iend,jstart:jend,1:nz),intent(inout) :: field
 !
 !---------------------
 !***  Local variables
 !---------------------
 !
       integer :: i1,i2,j1,j2,nz
+      integer :: lbnd1,lbnd2,ubnd1,ubnd2,i,j,k
 !
       real :: rdg
 !
@@ -6373,6 +6242,28 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !---------------------------------------------------------------------
 !*********************************************************************
 !---------------------------------------------------------------------
+!
+!fill interior delz points before dealing with boundaries
+!
+!---------------------------------------------------------------------
+!***  Fill the interior of the full delz array using Atm%delz
+!***  which does not have a boundary.
+!---------------------------------------------------------------------
+!
+      if (trim(name)=='DZ') then
+        lbnd1=lbound(Atm%delz,1)
+        ubnd1=ubound(Atm%delz,1)
+        lbnd2=lbound(Atm%delz,2)
+        ubnd2=ubound(Atm%delz,2)
+!
+        do k=1,nz
+        do j=lbnd2,ubnd2
+        do i=lbnd1,ubnd1
+          field(i,j,k)=Atm%delz(i,j,k)
+        enddo
+        enddo
+        enddo
+      endif
 !
       if(.not.(north_bc.or.south_bc.or.east_bc.or.west_bc))then
         return                                                           !<-- Tasks not on the boundary may exit.
@@ -6388,7 +6279,13 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         j1=jstart
         j2=jstart+nhalo_model-1
         delz_ptr=>delz_auxiliary%north
-        call compute_halo_t
+!
+        if(trim(name)=='T')then
+          call compute_halo_t
+        elseif(trim(name)=='DZ')then
+          call fill_delz
+        endif
+!
       endif
 !
       if(south_bc)then
@@ -6397,7 +6294,13 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         j1=jend-nhalo_model+1
         j2=jend
         delz_ptr=>delz_auxiliary%south
-        call compute_halo_t
+!
+        if(trim(name)=='T')then
+          call compute_halo_t
+        elseif(trim(name)=='DZ')then
+          call fill_delz
+        endif
+!
       endif
 !
       if(east_bc)then
@@ -6411,7 +6314,13 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           j2=jend-nhalo_model
         endif
         delz_ptr=>delz_auxiliary%east
-        call compute_halo_t
+!
+        if(trim(name)=='T')then
+          call compute_halo_t
+        elseif(trim(name)=='DZ')then
+          call fill_delz
+        endif
+!
       endif
 !
       if(west_bc)then
@@ -6425,7 +6334,13 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           j2=jend-nhalo_model
         endif
         delz_ptr=>delz_auxiliary%west
-        call compute_halo_t
+!
+        if(trim(name)=='T')then
+          call compute_halo_t
+        elseif(trim(name)=='DZ')then
+          call fill_delz
+        endif
+!
       endif
 !
 !---------------------------------------------------------------------
@@ -6456,8 +6371,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         part1=(1.+dp1)*(1.-Atm%q_con(i,j,k))
         part2=rdg*Atm%delp(i,j,k)*(1.+dp1)*(1.-Atm%q_con(i,j,k))      &
               /delz_ptr(i,j,k)
-        temp(i,j,k)=exp((log(temp(i,j,k))-log(part1)+cappa*log(part2)) &
-                         /(1.-cappa))
+        field(i,j,k)=exp((log(field(i,j,k))-log(part1)+cappa*log(part2)) &
+                        /(1.-cappa))
       enddo
       enddo
       enddo
@@ -6466,7 +6381,34 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       end subroutine compute_halo_t
 !---------------------------------------------------------------------
 !
-      end subroutine sensible_temp
+      subroutine fill_delz
+!
+!---------------------------------------------------------------------
+!
+      integer :: i,j,k
+      integer :: lbnd1,lbnd2,ubnd1,ubnd2
+!
+!---------------------------------------------------------------------
+!*********************************************************************
+!---------------------------------------------------------------------
+!
+!---------------------------------------------------------------------
+!***  Now fill the boundary rows using data from the BC files.
+!---------------------------------------------------------------------
+!
+      do k=1,nz
+      do j=j1,j2
+      do i=i1,i2
+        field(i,j,k)=delz_ptr(i,j,k)
+      enddo
+      enddo
+      enddo
+!
+!---------------------------------------------------------------------
+      end subroutine fill_delz
+!---------------------------------------------------------------------
+!
+      end subroutine apply_delz_boundary
 !
 !---------------------------------------------------------------------
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

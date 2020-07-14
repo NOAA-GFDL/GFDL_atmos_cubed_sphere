@@ -996,7 +996,7 @@ module fv_control_mod
        ! Read Main namelist
        read (f_unit,fv_grid_nml,iostat=ios)
        ierr = check_nml_error(ios,'fv_grid_nml')
-       rewind (f_unit)
+       call close_file (f_unit)
 #endif
        call write_version_number ( 'FV_CONTROL_MOD', version )
        unit = stdlog()
