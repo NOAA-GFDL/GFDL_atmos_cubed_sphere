@@ -113,7 +113,7 @@
 
       use mpp_mod,           only: mpp_error, FATAL, mpp_root_pe, mpp_broadcast, mpp_sum
       use mpp_mod,           only: stdlog, input_nml_file
-      use fms_mod,           only: check_nml_error
+      use fms_mod,           only: check_nml_error, close_file, open_namelist_file
       use mpp_domains_mod,   only: mpp_update_domains, domain2d
       use mpp_parameter_mod, only: AGRID_PARAM=>AGRID,CGRID_NE_PARAM=>CGRID_NE, &
                                    SCALAR_PAIR
