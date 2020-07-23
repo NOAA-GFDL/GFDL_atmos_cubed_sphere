@@ -39,7 +39,7 @@ module multi_gases_mod
       use constants_mod,     only: rdgas, rvgas, cp_air
       use     fv_mp_mod,     only: is_master
       use mpp_mod,           only: stdlog, input_nml_file
-      use fms_mod,           only: check_nml_error
+      use fms_mod,           only: check_nml_error, open_namelist_file, close_file
 
 
       implicit none
