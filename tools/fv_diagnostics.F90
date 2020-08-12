@@ -1737,6 +1737,7 @@ contains
 
 
           if ( idiag%id_pv > 0 .or. idiag%id_pv350K >0 .or. idiag%id_pv550K >0) then
+              if (allocated(a3)) deallocate(a3)
               allocate ( a3(isc:iec,jsc:jec,npz+1) )
             ! Modified pv_entropy to get potential temperature at layer interfaces (last variable)
             ! The values are needed for interpolate_z
@@ -4996,8 +4997,8 @@ contains
         enddo
 #else
 ! Compute PT at layer edges.
-!$OMP parallel do default(none) shared(is,ie,js,je,km,pt,pkz,w3d,delp,te2,te) &
-!$OMP                          private(t2, delp2)
+!$OMP parallel do default(none) shared(is,ie,js,je,km,pt,pkz,w3d,delp,te) &
+!$OMP                          private(t2, te2, delp2)
      do j=js,je
         do k=1,km
           do i=is,ie
@@ -5016,7 +5017,8 @@ contains
         enddo
      enddo
 
-!$OMP parallel do default(none) shared(is,ie,js,je,km,vort,f_d,te,w3d,delp,grav)
+!$OMP parallel do default(none) shared(is,ie,js,je,km,vort,te,w3d,delp,grav) &
+!$OMP                           private(f_d)
      do k=1,km
         do j=js,je
           do i=is,ie
