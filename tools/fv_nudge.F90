@@ -612,8 +612,8 @@ module fv_nwp_nudge_mod
   if ( nudge_hght .and. kht<npz ) then     ! averaged (in log-p) temperature
        rdt = factor_nwp*1. / (tau_hght/factor + dt)
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,ak,h2,delp,kht,t_obs,q_obs,pt,zvir, &
-!$OMP                                  q,rdt,ps_fac,mask,t_dt) &
-!$OMP                          private(pe2, peln,climate_nudging )
+!$OMP                                  q,rdt,ps_fac,mask,t_dt, climate_nudging) &
+!$OMP                          private(pe2, peln )
        do j=js,je
            do i=is,ie
               pe2(i,1) = ak(1)
