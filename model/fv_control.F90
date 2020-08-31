@@ -707,7 +707,7 @@ module fv_control_mod
 !!
 !> \param[in] res\_latlon\_tracers character(len=128) If external\_ic =.true. and both ncep\_ic and fv\_diag\_ic are.false., this variable gives the filename of the initial conditions for the tracers, assumed to be a legacy lat-lon FV core restart file. INPUT/atmos\_tracers.res.nc by default. 
 !!
-!> \param[in] warm\_start] Logical; whether to start from restart files, instead of cold-starting the model. True by default; if this is set to true and restart files cannot be found the model will stop.
+!> \param[in] warm\_start Logical: whether to start from restart files, instead of cold-starting the model. True by default; if this is set to true and restart files cannot be found the model will stop.
 !!
 !>###A1.3 I/O and diagnostic options:
 !!
@@ -742,6 +742,8 @@ module fv_control_mod
 !> \param[in] dwind\_2d Logical: whether to use a simpler \& faster algorithm for interpolating the A-grid (cell-centered) wind tendencies computed from the physics to the D-grid. Typically, the A-grid wind tendencies are first converted in 3D cartesian coordinates and then interpolated before converting back to 2D local coordinates. When this option enabled, a much simpler but less accurate 2D interpolation is used. False by default. 
 !!
 !> \param[in] fill Logical: Fills in negative tracer values by taking positive tracers from the cells above and below. This option is useful when the physical parameterizations produced negatives. False by default.
+!!
+!> \param[in] gfs_phil Logical: Obsolete - to be removed
 !!
 !> \param[in] inline\_q Logical: whether to compute tracer transport in-line with the rest of the dynamics instead of sub-cycling, so that tracer transport is done at the same time and on the same time step as is `p` and potential temperature. False by default; if true, q\_split and z\_tracer are ignored. 
 !!
@@ -945,6 +947,8 @@ module fv_control_mod
 !> \param[in] filtered\_terrain  Logical: whether to use the terrain filtered by the preprocessing tools rather than the raw terrain. .true. by default. Only active if nggps\_ic = .true. or ecmwf\_ic = .true.
 !!
 !> \param[in] levp  Integer: number of levels in the input (remapped) initial conditions. 64 by default. Only active if nggps\_ic = .true.
+!!
+!> \param[in] gfs_dwinds  Logical: obsolete - to be removed
 !!
 !> \param[in] checker\_tr  Logical: whether to enable the ``checkerboard'' tracer test. .false. by default. Only active if nggps\_ic = .true.
 !!
