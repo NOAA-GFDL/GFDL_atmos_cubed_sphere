@@ -896,7 +896,7 @@ module fv_control_mod
 !!
 !> \param[in] d2\_bg\_k1  Real: strength of second-order diffusion in the top sponge layer. 0.16 by default. This value, and d2\_bg\_k2, will be changed appropriately in the model (depending on the height of model top), so the actual damping may be very reduced. See atmos\_cubed\_sphere/model/dyn\_core.F90 for details. Recommended range is 0. to 0.2. Note that since diffusion is converted to heat if d\_con > 0 larger amounts of sponge-layer diffusion may be *less* stable.
 !!
-!> \param[in] d2\_bg\_k2  Real: strength of second-order diffusion in the second sponge layer from the model top. 0.02 by default. This value should be lower than d2\_bg\_k1.
+!> \param[in] d2\_bg\_k2  Real: strength of second-order diffusion in the second sponge layer from the model top. 0.02 by default. This value should be lower than d2\_bg\_k1. If d2\_bg\_k2=0, then d2\_bg\_k1 is applied throughout the depth of the sponge layer (the bottom of the sponge layer is set by rf_cutoff). The amplitude is d2\_bg\_k1 at the top, then decreases downward with the same vertical dependence as the rayleigh damping, going to zero at rf_cutoff.
 !!
 !> \param[in] d4\_bg  Real: Dimensionless coefficient for background higher-order divergence damping. 0.0 by default. If no second-order divergence damping is used, then values between 0.1 and 0.16 are recommended. Requires nord > 0. Note that the scaling for d4\_bg differs from that of d2\_bg; nord >= 1 and d4\_bg = 0.16 will be less diffusive than nord = 0 and d2\_bg = 0.02.
 !!
@@ -920,29 +920,7 @@ module fv_control_mod
 !!
 !> \param[in] vtdm4  Real: coefficient for background other-variable damping. The value of vtdm4 should be less than that of d4\_bg. A good first guess for vtdm4 is about one-third the value of d4\_bg. 0.0 by default. Requires do\_vort\_damp to be .true. Disabled for values less than 1.e-3. Other-variable damping should not be used if a monotonic horizontal advection scheme is used.
 !!
-!>##A.2 Entries in coupler\_nml
-!!
-!> \param[in] months, days,hours,minutes,seconds  Integer: length of the model integration in the corresponding units. All are 0 by default, which initializes the model and then immediately writes out the restart files and halts.
-!!
-!> \param[in] dt\_atmos  Integer: time step for the largest atmosphere model loop, corresponding to the frequency at which the top level routine in the dynamics is called, and the physics timestep. Must be set.
-!!
-!> \param[in] current\_date  Integer(6): initialization date (in the chosen calendar) for the model, in year, month, day, hour, minute, and second. (0,0,0,0,0,0) by default, a value that is useful for control integrations of coupled models.
-!!
-!> \param[in] calendar  Character(17): calendar selection; JULIAN is typically recommended, although the other values (THIRTY\_DAY\_MONTHS, NOLEAP, NO\_CALENDAR) have particular uses in idealized models. Must be set.
-!!
-!> \param[in] force\_date\_from\_namelist  Logical: if .true., will read the initialization date from the namelist variable current\_date, rather than taking the value from a restart file. If the model is being cold-started (such as what is typically but not necessarily done if external\_ic = .true.) then the initialization date must be specified in current\_date, otherwise the model will stop. .false. by default.
-!!
-!> \param[in] atmos\_nthreads  Integer: number of threads for OpenMP multi-threading. 1 by default.
-!!
-!> \param[in] use\_hyper\_thread  Logical: indicates that some of the threads in atmos\_nthreads may be hyperthreads. .false. by default.
-!!
-!> \param[in] ncores\_per\_node  Integer: number of processor codes per physical compute node. Used when setting up hyperthreading to determine number of virtual vs. hardware threads. 0 by default.
-!!
-!> \param[in] debug\_affinity  Logical: if .true. prints out a message describing cpu affinity characteristics while initializing OpenMP. .false. by default.
-!!
-!> \param[in] restart\_days, restart\_secs]  Integer: frequency at which to write out "intermediate" restart files, which are useful for checkpointing in the middle of a long run, or to be able to diagnose problems during the model integration. Both are 0 by default, in which case intermediate restarts are not written out.
-!!
-!>##A.3 Entries in external\_ic\_nml
+!>##A.2 Entries in external\_ic\_nml
 !!
 !> \param[in] filtered\_terrain  Logical: whether to use the terrain filtered by the preprocessing tools rather than the raw terrain. .true. by default. Only active if nggps\_ic = .true. or ecmwf\_ic = .true.
 !!
@@ -954,7 +932,7 @@ module fv_control_mod
 !!
 !> \param[in] nt\_checker  Integer: number of tracers (at the end of the list of tracers defined in field\_table) to initialize with an idealized ``checkerboard'' pattern, with values of either 0 or 1. This is intended to test the monotonicity or positivity constraint in the advection scheme. 0 by default. Only active if nggps\_ic = .true.
 !!
-!>##A.4 Entries in surf\_map\_nml
+!>##A.3 Entries in surf\_map\_nml
 !!
 !> \param[in] surf\_file  Character(len=128): File containing topography data. This file must be in NetCDF format. INPUT/topo1min.nc by default. (Previous versions of the model have used 5 minute USGS data, which is not recommended.) 
 !!
@@ -966,19 +944,19 @@ module fv_control_mod
 !!
 !> \param[in] zs\_filter  Logical: whether to apply smoothing to the topography. True by default. 
 !!
-!>##A.5 Entries in fv\_grid\_nml
+!>##A.4 Entries in fv\_grid\_nml
 !!
 !> \param[in] grid\_name Character(len=80): Name of the grid either being read in (if grid\_spec = -1) or being created. This is only used for writing out a binary file in the directory from which the model is run. Gnomonic by default. 
 !!
 !> \param[in] grid\_file  Character(len=120): If grid\_type = -1 the name of the grid\_spec file to read in. INPUT/grid\_spec.nc by default; other values will not work. 
 !!
-!>##A.6 Entries in test\_case\_nml
+!>##A.5 Entries in test\_case\_nml
 !!
 !> \param[in] test\_case  Integer: number of the idealized test case to run. A number of nest cases are defined in tools/test\_cases.F90, of which numbers 19 are intended for the shallow-water model. Requires warm\_start =.false. 11 by default; this creates a resting atmosphere with a very basic thermodynamic profile, with topography. If you wish to initialize an Aquaplanet simulation (no topography) set to 14. 
 !!
 !> \param[in] alpha  Real: In certain shallow-water test cases specifies the angle (in fractions of a rotation, so 0.25 is a 45-degree rotation) through which the basic state is rotated. 0 by default. 
 !!
-!>##A.7  Entries in nest\_nml
+!>##A.6  Entries in nest\_nml
 !!
 !> \param[in] ngrids  Integer: number of grids in this simulation. 1 by default.  (The variable ntiles has the same effect, but its use is not recommended as it can be confused with the six tiles of the cubed sphere, which in this case form only one grid.)
 !!
@@ -986,23 +964,11 @@ module fv_control_mod
 !!
 !> \param[in] p\_split  Integer: number of times to sub-cycle dynamics, performing nested-grid BC interpolation and (if twowaynest ==.true.) two-way updating at the end of each set of dynamics calls. If p\_split  > 1 the user should decrease k\_split appropriately so the remapping and dynamics time steps remain the same. 1 by default.
 !!
-!>##A.8 Entries in nggps\_diag\_nml
-!!
-!> \param[in] fdiag  Real(1028): Array listing the diagnostic output times (in hours) for the GFS physics. This can either be a list of times after initialization, or an interval if only the first entry is nonzero. All 0 by default, which will result in no outputs. 
-!!
-!>##A.9 Entries in atmos\_model\_nml (for UFS)
-!!
-!> \param[in] blocksize  Integer: Number of columns in each ``block'' sent to the physics. OpenMP threading is done over the number of blocks. For best performance this number should divide the number of grid cells per processor ( (npx-1)*(npy-1) /(layout\_x)*(layout\_y) ) and be small enough so the data can best fit into cache?values around 32 appear to be optimal on Gaea. 1 by default
-!!
-!> \param[in] chksum\_debug  Logical: whether to compute checksums for all variables passed into the GFS physics, before and after each physics timestep. This is very useful for reproducibility checking. .false. by default.
-!!
-!> \param[in] dycore\_only  Logical: whether only the dynamical core (and not the GFS physics) is executed when running the model, essentially running the model as a solo dynamical core. .false. by default.
-!!
-!>##A.10 Entries in fms\_nml
+!>##A.7 Entries in fms\_nml
 !!
 !> \param[in] domains\_stack\_size  Integer: size (in bytes) of memory array reserved for domains. For large grids or reduced processor counts this can be large (>10 M); if it is not large enough the model will stop and print a recommended value of the stack size. Default is 0., reverting to the default set in MPP (which is probably not large enough for modern applications).
 !!
-!>##A.11
+!>##A.8
 !!
 !> \param[in] regional Logical: Controls whether this is a regional domain (and thereby needs external BC inputs
 !!
