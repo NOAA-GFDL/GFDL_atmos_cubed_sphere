@@ -703,6 +703,8 @@ module fv_control_mod
 !!
 !> \param[in] n\_zs\_filter Integer: number of times to apply a diffusive filter to the topography upon startup, if mountain is True and the model is not being cold-started. This is applied every time the model is warm-started, so if you want to smooth the topography make sure this is set to 0 after the first simulation. 0 by default. If initializing the model from cold-start the topography is already being filtered by an amount appropriate for the model resolution. 
 !!
+!> \param[in] read_increment  Logical: Read in analysis increment and add to restart following are namelist parameters for Stochastic Energy Baskscatter dissipation estimate. This is useful as part of a data-assimilation cycling system or to use native restarts from the six-tile first guess, after which the analysis increment can be applied. 
+!!
 !> \param[in] res\_latlon\_dynamics character(len=128) If external\_ic =.true. gives the filename of the input IC file. INPUT/fv\_rst.res.nc by default. 
 !!
 !> \param[in] res\_latlon\_tracers character(len=128) If external\_ic =.true. and both ncep\_ic and fv\_diag\_ic are.false., this variable gives the filename of the initial conditions for the tracers, assumed to be a legacy lat-lon FV core restart file. INPUT/atmos\_tracers.res.nc by default. 
@@ -712,6 +714,8 @@ module fv_control_mod
 !>###A1.3 I/O and diagnostic options:
 !!
 !> \param[in] agrid\_vel\_rst Logical: whether to write the unstaggered latitude-longitude winds (u<sub>a</sub> and v<sub>a</sub>) to the restart files. This is useful for data assimilation cycling systems which do not handle staggered winds. .false. by default.
+!!
+!> \param[in] bc_update_interval Integer: Default setting for interval (hours) between external regional BC data files.
 !!
 !> \param[in] check\_negative Logical: whether to print the most negative global value of microphysical tracers.
 !!
@@ -736,6 +740,8 @@ module fv_control_mod
 !> \param[in] do\_Held\_Suarez Logical: whether to use Held-Suarez forcing. Requires adiabatic to be false. False by default; this option has no effect if not running solo\_core. 
 !!
 !> \param[in] do\_uni\_zfull Logical: whether to compute z\_full (the height of each model layer, as opposed to z\_half, the height of each model interface) as the midpoint of the layer, as is done for the nonhydrostatic solver, instead of the height of the location where <SPAN STYLE="text-decoration:overline">p</SPAN>  the mean pressure in the layer. This option is not available for fvGFS or the solo\_core. .false. by default.
+!!
+!> \param[in] do_sat_adj  Logical: The same as fast_sat_adj = .false.  has fast saturation adjustments
 !!
 !> \param[in] dnats Integer: The number of tracers which are not to be advected by the dynamical core, but still passed into the dynamical core; the last dnats+pnats tracers in field\_table are not advected. 0 by default.
 !!
@@ -808,6 +814,8 @@ module fv_control_mod
 !> \param[in] refinement  Integer: refinement ratio of the nested grid. This is the number of times that each coarse-grid cell face will be divided into smaller segments on the nested grid. Required to be a positive integer if nested = true. Nested grids are aligned with the coarse grid, so non-integer refinements are not permitted. 3 by default. 
 !!
 !> \param[in] nestupdate  Integer: type of nested-grid update to use; details are given in model/fv\_nesting.F90. 0 by default.
+!!
+!> \param[in] regional Logical: Controls whether this is a regional domain (and thereby needs external BC inputs)
 !!
 !>###A.1.7 Solver options
 !!
@@ -967,17 +975,6 @@ module fv_control_mod
 !>##A.7 Entries in fms\_nml
 !!
 !> \param[in] domains\_stack\_size  Integer: size (in bytes) of memory array reserved for domains. For large grids or reduced processor counts this can be large (>10 M); if it is not large enough the model will stop and print a recommended value of the stack size. Default is 0., reverting to the default set in MPP (which is probably not large enough for modern applications).
-!!
-!>##A.8
-!!
-!> \param[in] regional Logical: Controls whether this is a regional domain (and thereby needs external BC inputs
-!!
-!> \param[in] bc_update_interval Integer: Default setting for interval (hours) between external regional BC data files.
-!!
-!> \param[in] read_increment  Logical: Read in analysis increment and add to restart following are namelist parameters for Stochastic Energy Baskscatter dissipation estimate. This is useful as part of a data-assimilation cycling system or to use native restarts from the six-tile first guess, after which the analysis increment can be applied. 
-!!
-!> \param[in] do_sat_adj  Logical: The same as fast_sat_adj = .false.  has fast saturation adjustments
-!!
 !!
 !!
 !! 
