@@ -185,7 +185,7 @@ contains
 #endif
 
 #ifdef MOLECULAR_DIFFUSION
-    use molecular_diffusion_mod, only: md_implicit, md_init_wait, md_wait_sec
+    use molecular_diffusion_mod, only: md_init_wait, md_wait_sec
 #endif
 
     real, intent(IN) :: bdt  !< Large time-step

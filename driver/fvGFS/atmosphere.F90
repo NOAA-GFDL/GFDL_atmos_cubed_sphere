@@ -1277,7 +1277,7 @@ contains
    rrg  = rdgas / grav
 
    if (first_time) then
-     print *, 'calculating slp kr value'
+!    print *, 'calculating slp kr value'
      ! determine 0.8 sigma reference level
      sigtop = Atm(mytile)%ak(1)/pstd_mks+Atm(mytile)%bk(1)
      do k = 1, npz

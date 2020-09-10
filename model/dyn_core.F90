@@ -113,6 +113,7 @@ module dyn_core_mod
   use fv_mp_mod,          only: start_group_halo_update, complete_group_halo_update
   use fv_mp_mod,          only: group_halo_update_type
 #ifdef MOLECULAR_DIFFUSION
+  use molecular_diffusion_mod,        only: md_layers
   use sw_core_mod,        only: c_sw, d_sw, d_md
 #else
   use sw_core_mod,        only: c_sw, d_sw
@@ -201,7 +202,11 @@ contains
     real, intent(inout), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz):: v  !< D grid meridional wind (m/s)
     real, intent(inout) :: w(   bd%isd:,bd%jsd:,1:)  !< vertical vel. (m/s)
     real, intent(inout) ::  delz(bd%isd:,bd%jsd:,1:)  !< delta-height (m, negative)
+#ifdef MOLECULAR_DIFFUSION
+    real, intent(inout) :: cappa(bd%isd:bd%ied,bd%jsd:bd%jed,1:npz)
+#else
     real, intent(inout) :: cappa(bd%isd:,bd%jsd:,1:) !< moist kappa
+#endif
 #ifdef MULTI_GASES
     real, intent(inout) :: kapad(bd%isd:bd%ied,bd%jsd:bd%jed,1:npz) !< multi_gases kappa
 #endif
@@ -1240,12 +1245,14 @@ contains
     call start_group_halo_update(i_pack(2),pkzf,  domain)
     call start_group_halo_update(i_pack(7), w, domain)
     call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
-
     if ( nq > 0 ) then
                                        call timing_on('COMM_TRACER')
                     call start_group_halo_update(i_pack(10), q, domain)
                                        call timing_off('COMM_TRACER')
     endif
+#ifdef MOIST_CAPPA
+    call start_group_halo_update(i_pack(12), cappa, domain)
+#endif
 
     call complete_group_halo_update(i_pack(1), domain)	! delp. pt
     call complete_group_halo_update(i_pack(2), domain)	! pkzf
@@ -1256,12 +1263,21 @@ contains
          call complete_group_halo_update(i_pack(10), domain)
                                        call timing_off('COMM_TRACER')
     endif
+#ifdef MOIST_CAPPA
+    call complete_group_halo_update(i_pack(12), domain)
+#endif
                              call timing_off('COMM_TOTAL')
 
     if( flagstruct%nord>0 .and. (.not. (flagstruct%regional))) then
         i=mod(it-1,2)+1		! alternatively to avoid bias
         do k=1,npz
+        call copy_corners(pt(isd,jsd,k), npx, npy, i, gridstruct%nested, bd, &
+                          gridstruct%sw_corner, gridstruct%se_corner, &
+                          gridstruct%nw_corner, gridstruct%ne_corner)
         call copy_corners(pkzf(isd,jsd,k), npx, npy, i, gridstruct%nested, bd, &
+                          gridstruct%sw_corner, gridstruct%se_corner, &
+                          gridstruct%nw_corner, gridstruct%ne_corner)
+        call copy_corners(cappa(isd,jsd,k), npx, npy, i, gridstruct%nested,bd, &
                           gridstruct%sw_corner, gridstruct%se_corner, &
                           gridstruct%nw_corner, gridstruct%ne_corner)
         enddo
@@ -1271,10 +1287,10 @@ contains
 !$OMP parallel do default(none) shared(npz,flagstruct,gridstruct,bd,      &
 !$OMP                                  is,ie,js,je,isd,ied,jsd,jed,it,dt, &
 !$OMP                                  pt,u,v,w,q,pkz,pkzf,cappa,akap,nq, &
-!$OMP                                  zvir)                              &
+!$OMP                                  zvir,md_layers)                    &
 !$OMP                          private(k,i,j,p,t)
 ! ----------------
-    do k=1, npz
+    do k=1, md_layers
 ! ----------------
 
 ! ------- prepare p and t for molecular diffusion coefficients

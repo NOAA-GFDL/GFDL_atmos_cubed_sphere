@@ -51,7 +51,11 @@ module nh_utils_mod
 ! </table>
 
    use constants_mod,     only: rdgas, cp_air, grav
+#ifdef DEEP_ATMOS_DYNAMICS
+   use tp_core_mod,       only: fv_tp_2d, copy_corners
+#else
    use tp_core_mod,       only: fv_tp_2d
+#endif
    use sw_core_mod,       only: fill_4corners, del6_vt_flux
    use fv_arrays_mod,     only: fv_grid_bounds_type, fv_grid_type
 #ifdef MULTI_GASES
@@ -93,9 +97,18 @@ CONTAINS
   integer:: is1, ie1, js1, je1
   integer:: ie2, je2
   real:: rdt, top_ratio, bot_ratio, int_ratio
+
+#ifdef DEEP_ATMOS_DYNAMICS
+  real:: botm(is-ng:ie+ng,js-ng:je+ng)	!hmhj
+  real:: alns		!hmhj
+#endif
 !--------------------------------------------------------------------
 
   rdt = 1. / dt
+
+#ifdef DEEP_ATMOS_DYNAMICS
+  alns = alog(1.0)	!hmhj
+#endif
 
   top_ratio = dp0(1 ) / (dp0(   1)+dp0(2 ))
   bot_ratio = dp0(km) / (dp0(km-1)+dp0(km))
@@ -112,33 +125,71 @@ CONTAINS
 !$OMP parallel do default(none) shared(js1,je1,is1,ie2,km,je2,ie1,ut,top_ratio,vt, &
 !$OMP                                  bot_ratio,dp0,js,je,ng,is,ie,gz,grid_type,  &
 !$OMP                                  bd,npx,npy,sw_corner,se_corner,ne_corner,   &
+#ifdef DEEP_ATMOS_DYNAMICS
+!$OMP                                  nw_corner,area,zs,alns) &	!hmhj
+!$OMP                          private(gz2, botm, xfx, yfx, fx, fy, int_ratio)
+#else
 !$OMP                                  nw_corner,area) &
 !$OMP                          private(gz2, xfx, yfx, fx, fy, int_ratio)
+#endif
   do 6000 k=1,km+1
 
      if ( k==1 ) then
         do j=js1, je1
            do i=is1, ie2
+#ifdef DEEP_ATMOS_DYNAMICS
+              xfx(i,j) = ut(i,j,1) 	!hmhj
+#else
               xfx(i,j) = ut(i,j,1) + (ut(i,j,1)-ut(i,j,2))*top_ratio
+#endif
            enddo
         enddo
         do j=js1, je2
            do i=is1, ie1
+#ifdef DEEP_ATMOS_DYNAMICS
+              yfx(i,j) = vt(i,j,1) 	!hmhj
+#else
               yfx(i,j) = vt(i,j,1) + (vt(i,j,1)-vt(i,j,2))*top_ratio
+#endif
            enddo
         enddo
      elseif ( k==km+1 ) then
 ! Bottom extrapolation
+#ifdef DEEP_ATMOS_DYNAMICS
+       do j=js-ng, je+ng
+          do i=is-ng, ie+ng
+             botm(i,j) = max(0.5*(gz(i,j,km)-gz(i,j,km+1)), 5.0)
+             botm(i,j) = alns/alog(botm(i,j))
+          enddo
+       enddo
+       if (grid_type < 3) call fill_4corners(botm, 1, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
+#endif
+
         do j=js1, je1
            do i=is1, ie2
+#ifdef DEEP_ATMOS_DYNAMICS
+              xfx(i,j) = ut(i,j,km) * botm(i,j)		!hmhj
+!hmhj         xfx(i,j) = ut(i,j,km) 			!hmhj test non-slip
+#else
               xfx(i,j) = ut(i,j,km) + (ut(i,j,km)-ut(i,j,km-1))*bot_ratio
+#endif
 !             xfx(i,j) = r14*(3.*ut(i,j,km-2)-13.*ut(i,j,km-1)+24.*ut(i,j,km))
 !             if ( xfx(i,j)*ut(i,j,km)<0. ) xfx(i,j) = 0.
            enddo
         enddo
+
+#ifdef DEEP_ATMOS_DYNAMICS
+       if (grid_type < 3) call fill_4corners(botm, 2, bd, npx, npy, sw_corner, se_corner, ne_corner, nw_corner)
+#endif
+
         do j=js1, je2
            do i=is1, ie1
+#ifdef DEEP_ATMOS_DYNAMICS
+              yfx(i,j) = vt(i,j,km) * botm(i,j)		!hmhj
+!hmhj         yfx(i,j) = vt(i,j,km) 			!hmhj test non-slip
+#else
               yfx(i,j) = vt(i,j,km) + (vt(i,j,km)-vt(i,j,km-1))*bot_ratio
+#endif
 !             yfx(i,j) = r14*(3.*vt(i,j,km-2)-13.*vt(i,j,km-1)+24.*vt(i,j,km))
 !             if ( yfx(i,j)*vt(i,j,km)<0. ) yfx(i,j) = 0.
            enddo
@@ -243,11 +294,19 @@ CONTAINS
   real, dimension(is-ng:ie+ng  ,js-ng:je+ng  ):: wk2, z2
   real:: ra_x(is:ie,js-ng:je+ng)
   real:: ra_y(is-ng:ie+ng,js:je)
+#ifdef DEEP_ATMOS_DYNAMICS
+  real:: botm(is-ng:ie+ng,js-ng:je+ng)	!hmhj
+  real:: alns       			!hmhj
+#endif
 !--------------------------------------------------------------------
   integer  i, j, k, isd, ied, jsd, jed
   logical:: uniform_grid
 
   uniform_grid = .false.
+
+#ifdef DEEP_ATMOS_DYNAMICS
+  alns = alog(1.0)	!hmhj
+#endif
 
   damp(km+1) = damp(km)
   ndif(km+1) = ndif(km)
@@ -255,8 +314,42 @@ CONTAINS
   isd = is - ng;  ied = ie + ng
   jsd = js - ng;  jed = je + ng
 
+#ifdef DEEP_ATMOS_DYNAMICS
+  do j=jsd, jed
+     do i=isd, ied
+        botm(i,j) = max(0.5*(zh(i,j,km)-zh(i,j,km+1)), 5.0)
+        botm(i,j) = alns/alog(botm(i,j))
+     enddo
+  enddo
+  if (.not. (regional)) call copy_corners(botm, npx, npy, 1, &
+                             gridstruct%nested, bd, &
+                             gridstruct%sw_corner, gridstruct%se_corner, &
+                             gridstruct%nw_corner, gridstruct%ne_corner)
+
+!$OMP parallel do default(none) shared(jsd,jed,isd,ied,botm, is, ie, & 
+!$OMP             km,dp0,uniform_grid,crx,xfx,crx_adv,xfx_adv)
+  do j=jsd,jed
+     call edge_profile(crx, xfx, crx_adv, xfx_adv, is,  ie+1, jsd, jed, j, km, &
+                            dp0, uniform_grid, 0, isd, ied, jsd, jed, botm)	
+  enddo
+
+  if (.not. (regional)) call copy_corners(botm, npx, npy, 2, & 
+                             gridstruct%nested, bd, &
+                             gridstruct%sw_corner, gridstruct%se_corner, &
+                             gridstruct%nw_corner, gridstruct%ne_corner)
+
+!$OMP parallel do default(none) shared(js,je,isd,ied,jsd,jed,botm, & 
+!$OMP                                  km,dp0,uniform_grid,cry,yfx,cry_adv,yfx_adv) 
+  do j=js,je+1
+     call edge_profile(cry, yfx, cry_adv, yfx_adv, isd, ied,  js, je+1, j, km, &
+                            dp0, uniform_grid, 0, isd, ied, jsd, jed, botm)
+  enddo
+
+#else
+
 !$OMP parallel do default(none) shared(jsd,jed,crx,xfx,crx_adv,xfx_adv,is,ie,isd,ied, &
 !$OMP                                  km,dp0,uniform_grid,js,je,cry,yfx,cry_adv,yfx_adv)
+
   do j=jsd,jed
      call edge_profile(crx, xfx, crx_adv, xfx_adv, is,  ie+1, jsd, jed, j, km, &
                             dp0, uniform_grid, 0)
@@ -264,6 +357,8 @@ CONTAINS
      call edge_profile(cry, yfx, cry_adv, yfx_adv, isd, ied,  js, je+1, j, km, &
                             dp0, uniform_grid, 0)
   enddo
+
+#endif
 
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,km,area,xfx_adv,yfx_adv, &
 !$OMP                                  damp,zh,crx_adv,cry_adv,npx,npy,hord,gridstruct,bd,  &
@@ -1786,10 +1881,17 @@ CONTAINS
  end subroutine edge_scalar
 
 
-
+#ifdef DEEP_ATMOS_DYNAMICS
+ subroutine edge_profile(q1, q2, q1e, q2e, i1, i2, j1, j2, j, km, dp0, uniform_grid, limiter, ib1, ib2, jb1, jb2, botm)	!hmhj
+#else
  subroutine edge_profile(q1, q2, q1e, q2e, i1, i2, j1, j2, j, km, dp0, uniform_grid, limiter)
+#endif
 ! Optimized for wind profile reconstruction:
  integer, intent(in):: i1, i2, j1, j2
+#ifdef DEEP_ATMOS_DYNAMICS
+ integer, intent(in):: ib1, ib2, jb1, jb2	!hmhj
+ real, intent(in),  dimension(ib1:ib2,jb1:jb2):: botm	!hmhj
+#endif
  integer, intent(in):: j, km
  integer, intent(in):: limiter
  logical, intent(in):: uniform_grid
@@ -1871,6 +1973,15 @@ CONTAINS
      enddo
   enddo
  endif
+
+!
+#ifdef DEEP_ATMOS_DYNAMICS
+  do i=i1,i2
+     qe1(i,1)    = q1(i,j,1)
+     qe1(i,km+1) = q1(i,j,km) * botm(i,j)	!hmhj
+!    qe1(i,km+1) = q1(i,j,km) 			!hmhj test non-slip
+  enddo
+#endif
 
 !------------------
 ! Apply constraints

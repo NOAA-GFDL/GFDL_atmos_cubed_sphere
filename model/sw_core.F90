@@ -1,4 +1,3 @@
-
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -47,12 +46,11 @@
 
 #ifdef MOLECULAR_DIFFUSION
  use molecular_diffusion_mod,  only: molecular_diffusion_coefs, &
-                                     rtau_visc, rtau_cond, rtau_diff, &
-                                     md_implicit, md_init_wait
+                                     atau_visc, atau_cond, atau_diff, &
+                                     md_init_wait
  use fv_mp_mod,         only: ng, is_master
  use tp_core_mod,       only: fv_tp_2d, pert_ppm, copy_corners,    &
-                              deln_flux_implm, deln_flux_implm_uv, &
-                              deln_flux_explm, deln_flux_explm_uv
+                              deln_flux_explm, deln_flux_explm_udvd
 #else
  use fv_mp_mod,         only: ng
  use tp_core_mod,       only: fv_tp_2d, pert_ppm, copy_corners
@@ -1632,9 +1630,12 @@
       real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed,1:nq)::  qtra
       real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: temp, plyr
       real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: visc, cond, diff
+      
+      real :: coefmin, coefmax
 
-      integer :: i, j, iq
+      integer :: i, j, iq, n
       integer :: ijm,idir
+      integer :: n_visc, n_cond, n_diff
 
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
@@ -1687,13 +1688,36 @@
                                          cond(isd,jsd  ),diff(isd,jsd))
 
 ! time scale  and options
+
       do j=jsd,jed
          do i=isd,ied
-            visc(i,j) = visc(i,j)*abs(dt)*rtau_visc
-            cond(i,j) = cond(i,j)*abs(dt)*rtau_cond
-            diff(i,j) = diff(i,j)*abs(dt)*rtau_diff
+            visc(i,j) = visc(i,j)*abs(dt)*atau_visc
+            cond(i,j) = cond(i,j)*abs(dt)*atau_cond
+            diff(i,j) = diff(i,j)*abs(dt)*atau_diff
          enddo
       enddo
+      
+! check and rescale
+      coefmax = 0.25 * gridstruct%da_min ** 2
+      n_visc  = 0
+      n_cond  = 0
+      n_diff  = 0
+      do j=jsd,jed
+         do i=isd,ied
+            if( visc(i,j).gt.coefmax ) then
+                visc(i,j) = coefmax ; n_visc = n_visc + 1 
+            endif
+            if( cond(i,j).gt.coefmax ) then
+                cond(i,j) = coefmax ; n_cond = n_cond + 1 
+            endif
+            if( diff(i,j).gt.coefmax ) then
+                diff(i,j) = coefmax ; n_diff = n_diff + 1 
+            endif
+         enddo
+      enddo
+      if(n_visc.gt.0) write(*,*) ' correct visc coef ',n_visc,' times'
+      if(n_cond.gt.0) write(*,*) ' correct cond coef ',n_cond,' times'
+      if(n_diff.gt.0) write(*,*) ' correct diff coef ',n_diff,' times'
 
 !
 ! compute diffusion with dimensional split alternatively for implicit
@@ -1703,97 +1727,28 @@
 ! t
 !
       if( .not. md_init_wait ) then
-        if( md_implicit ) then
-            call deln_flux_implm(idir,nord,is,ie,js,je,npx,npy,cond,t,gridstruct,bd)
-        else
-            call deln_flux_explm(nord,is,ie,js,je,npx,npy,cond,t,gridstruct,bd)
-        endif
+        call deln_flux_explm(nord,is,ie,js,je,npx,npy,cond,t,gridstruct,bd)
       endif
 
 !
 ! q
       if( .not. md_init_wait ) then
         do iq=1,nq
-          if( md_implicit ) then
-              call deln_flux_implm(idir,nord,is,ie,js,je,npx,npy,diff,q(isd,jsd,k,iq),gridstruct,bd)
-          else
-              call deln_flux_explm(nord,is,ie,js,je,npx,npy,diff,q(isd,jsd,k,iq),gridstruct,bd)
-          endif
+          call deln_flux_explm(nord,is,ie,js,je,npx,npy,diff,q(isd,jsd,k,iq),gridstruct,bd)
         enddo 
       endif
 
 ! u
+
       if( .not. md_init_wait ) then
-
-       do j=jsd+1,jed-1
-          do i=isd,ied
-             utmp(i,j) = a2*(u(i,j-1)+u(i,j+2)) + a1*(u(i,j)+u(i,j+1))
-          enddo
-       enddo
-       do i=isd,ied
-          utmp(i,jsd) = 0.5*(u(i,jsd)+u(i,jsd+1))
-          utmp(i,jed) = 0.5*(u(i,jed)+u(i,jed+1))
-       end do
-       if( gridstruct%sw_corner ) then
-           do i=isd,is-1 ; utmp(i,js) = 0.5*(u(i,js)+u(i,js+1)) ; enddo ; endif
-       if( gridstruct%se_corner ) then
-           do i=ie+1,ied ; utmp(i,js) = 0.5*(u(i,js)+u(i,js+1)) ; enddo ; endif
-       if( gridstruct%nw_corner ) then
-           do i=isd,is-1 ; utmp(i,je) = 0.5*(u(i,je)+u(i,je+1)) ; enddo ; endif
-       if( gridstruct%ne_corner ) then
-           do i=ie+1,ied ; utmp(i,je) = 0.5*(u(i,je)+u(i,je+1)) ; enddo ; endif
-! v
-       do j=jsd,jed
-          do i=isd+1,ied-1
-             vtmp(i,j) = a2*(v(i-1,j)+v(i+2,j)) + a1*(v(i,j)+v(i+1,j))
-          enddo
-          vtmp(isd,j) = 0.5*(v(isd,j)+v(isd+1,j)) 
-          vtmp(ied,j) = 0.5*(v(ied,j)+v(ied+1,j))
-       enddo
-       if( gridstruct%sw_corner ) then
-           do j=jsd,js-1 ; vtmp(is,j) = 0.5*(v(is,j)+v(is+1,j)) ; enddo ; endif
-       if( gridstruct%se_corner ) then
-           do j=jsd,js-1 ; vtmp(ie,j) = 0.5*(v(ie,j)+v(ie+1,j)) ; enddo ; endif
-       if( gridstruct%nw_corner ) then
-           do j=je+1,jed ; vtmp(is,j) = 0.5*(v(is,j)+v(is+1,j)) ; enddo ; endif
-       if( gridstruct%ne_corner ) then
-           do j=je+1,jed ; vtmp(ie,j) = 0.5*(v(ie,j)+v(ie+1,j)) ; enddo ; endif
-
 ! u v
-! at this point, utmp and vtmp are full values
-       if( md_implicit ) then
-           call deln_flux_implm_uv(idir,nord,is,ie,js,je,npx,npy,visc, &
-                                   utmp,vtmp,gridstruct,bd)
-       else
-           call deln_flux_explm_uv(nord,is,ie,js,je,npx,npy,visc, &
-                                   utmp,vtmp,gridstruct,bd)
-       endif
-! all deln_flux_* return full values except *_uv return forcings
-! so at this point, utmp and vtmp are forcings
-!
-       do j=js,je+1
-          do i=is,ie
-             u(i,j) = u(i,j) +  &
-                      a2*(utmp(i,j+1)+utmp(i,j-2)) + a1*(utmp(i,j)+utmp(i,j-1))
-          enddo
-       enddo
-       do j=js,je
-          do i=is,ie+1
-             v(i,j) = v(i,j) +  &
-                      a2*(vtmp(i+1,j)+vtmp(i-2,j)) + a1*(vtmp(i,j)+vtmp(i-1,j))
-          enddo
-       enddo
-
-      endif	! end if of not md_init_wait
-
+        call deln_flux_explm_udvd(nord,is,ie,js,je,npx,npy,visc, &
+                                     u,v,gridstruct,bd)
+      endif
 !
 ! w
       if( .not. md_init_wait ) then
-        if( md_implicit ) then
-            call deln_flux_implm(idir,nord,is,ie,js,je,npx,npy,visc,w,gridstruct,bd)
-        else
-            call deln_flux_explm(nord,is,ie,js,je,npx,npy,visc,w,gridstruct,bd)
-        endif
+        call deln_flux_explm(nord,is,ie,js,je,npx,npy,visc,w,gridstruct,bd)
       endif
 
       return

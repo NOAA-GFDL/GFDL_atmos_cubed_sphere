@@ -679,9 +679,10 @@ module fv_control_mod
    namelist /multi_gases_nml/ rilist,cpilist
 #endif
 #ifdef MOLECULAR_DIFFUSION
-   namelist /molecular_diffusion_nml/ tau_visc, tau_cond, tau_diff, md_wait_hr, md_impl
+   namelist /molecular_diffusion_nml/ tau_visc, tau_cond, tau_diff, &
+                                      md_n_layer, md_wait_hr
    real tau_visc, tau_cond, tau_diff, md_wait_hr
-   integer md_impl
+   integer md_n_layer
 #endif
 
 
@@ -742,7 +743,8 @@ module fv_control_mod
       ierr = check_nml_error(ios,'multi_gases_nml')
 #endif
 #ifdef MOLECULAR_DIFFUSION
-      tau_visc=0.0; tau_cond=0.0; tau_diff=0.0; md_impl=0; md_wait_hr=0.0
+      tau_visc=0.0; tau_cond=0.0; tau_diff=0.0
+      md_n_layer=0; md_wait_hr=0.0
    ! Read molecular_diffusion namelist
       read (input_nml_file,molecular_diffusion_nml,iostat=ios)
       ierr = check_nml_error(ios,'molecular_diffusion_nml')
@@ -783,7 +785,8 @@ module fv_control_mod
       ierr = check_nml_error(ios,'multi_gases_nml')
 #endif
 #ifdef MOLECULAR_DIFFUSION
-      tau_visc=0.0; tau_cond=0.0; tau_diff=0.0; md_impl=0; md_wait_hr=0.0
+      tau_visc=0.0; tau_cond=0.0; tau_diff=0.0 
+      md_n_layer=0; md_wait_hr=0.0
    ! Read molecular_diffusion namelist
       rewind (f_unit)
       read (f_unit,molecular_diffusion_nml,iostat=ios)
@@ -803,7 +806,8 @@ module fv_control_mod
 #endif
 #ifdef MOLECULAR_DIFFUSION
       write(unit, nml=molecular_diffusion_nml)
-      call molecular_diffusion_init(tau_visc,tau_cond,tau_diff,md_impl,md_wait_hr,ncnst,nwat)
+      call molecular_diffusion_init(tau_visc,tau_cond,tau_diff, &
+                                    md_n_layer,md_wait_hr,ncnst,nwat)
 #endif
 
       if (len_trim(grid_file) /= 0) Atm(n)%flagstruct%grid_file = grid_file

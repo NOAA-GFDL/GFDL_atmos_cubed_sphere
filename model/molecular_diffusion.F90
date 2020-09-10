@@ -47,9 +47,11 @@ module molecular_diffusion_mod
 
       implicit none
 
-      real rtau_visc, rtau_cond, rtau_diff    
+      integer :: ind_gas_str, ind_gas_end
+      integer :: md_layers
+      logical md_init_wait
+      real atau_visc, atau_cond, atau_diff    
       real md_wait_sec
-      logical md_implicit, md_init_wait
       real, parameter:: amo=15.9994, amo2=31.9999, amo3=47.9982     !g/mol
       real, parameter::              amn2=28.013,  amh2o=18.0154    !g/mol
 !hmhj muo3 and muh2o are not precise, correct later
@@ -64,48 +66,48 @@ module molecular_diffusion_mod
       real, parameter:: bz=1.3806505e-23   ! Boltzmann constant J/K
       real, parameter:: a12=9.69e18 ! O-O2 diffusion params
       real, parameter:: s12=0.774
-      integer :: ind_gas_str, ind_gas_end
 !
       public molecular_diffusion_init
       public molecular_diffusion_coefs
 
       CONTAINS
 ! --------------------------------------------------------
-      subroutine molecular_diffusion_init(tau_visc,tau_cond,tau_diff,md_impl,md_wait_hr,ncnst,nwat)
+      subroutine molecular_diffusion_init(tau_visc,tau_cond,tau_diff, &
+                 md_n_layer,md_wait_hr,ncnst,nwat)
 !--------------------------------------------
 ! molecular diffusion control for each effect
 ! Input: tau_visc : viscosity effect weighting
 !        tau_cond : conductivity effect weighting
 !        tau_diff : diffusivity effect weighting
-!        md_impl  : 1 for implicit, 0 for explicit
-!        wait_hr  : 0 for no wait to start otherwise by hour
+!        md_n_layer  : how many layers are applied md, counted from top
+!        md_wait_hr  : 0 for no wait to start otherwise by hour
+!        ncnst    : number of all prognostic tracers
 !        nwat     : number of water and the end location of water
 !--------------------------------------------
       real, intent(in):: tau_visc, tau_cond, tau_diff, md_wait_hr
-      integer, intent(in):: md_impl, ncnst, nwat
+      integer, intent(in):: md_n_layer, ncnst, nwat
 !
-      rtau_visc = abs(tau_visc)
-      rtau_cond = abs(tau_cond)
-      rtau_diff = abs(tau_diff)
+      atau_visc = abs(tau_visc)
+      atau_cond = abs(tau_cond)
+      atau_diff = abs(tau_diff)
+      md_layers   = md_n_layer
 !
-      if( md_impl.eq.1 ) then
-        md_implicit = .true.
-        md_init_wait= .false.
-      else
-        md_implicit = .false.
+      if( md_wait_hr.gt.0.0 ) then
         md_init_wait= .true.
+        md_wait_sec = md_wait_hr * 3600.0
+      else
+        md_init_wait= .false.
+        md_wait_sec = 0.0
       endif
-      md_wait_sec = 0.0
-      if( md_init_wait ) md_wait_sec = md_wait_hr * 3600.0
       
       if( is_master() ) then
         write(*,*) ' molecular_diffusion is on'
-        write(*,*) ' molecular_diffusion implicit is ',md_implicit
         write(*,*) ' molecular_diffusion initial wait is ',md_init_wait
-        write(*,*) ' molecular_diffusion initial wait seconds is ',md_wait_sec
-        write(*,*) ' viscosity    day ',tau_visc,' with effect ',rtau_visc
-        write(*,*) ' conductivity day ',tau_cond,' with effect ',rtau_cond
-        write(*,*) ' diffusivity  day ',tau_diff,' with effect ',rtau_diff
+        write(*,*) ' molecular_diffusion initial wait seconds ',md_wait_sec
+        write(*,*) ' molecular_diffusion number of layers ',md_layers
+        write(*,*) ' viscosity    day ',tau_visc,' with effect ',atau_visc
+        write(*,*) ' conductivity day ',tau_cond,' with effect ',atau_cond
+        write(*,*) ' diffusivity  day ',tau_diff,' with effect ',atau_diff
       endif
 
 #ifdef MULTI_GASES
