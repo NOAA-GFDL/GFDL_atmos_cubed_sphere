@@ -143,7 +143,7 @@ module fv_control_mod
    use fv_mp_mod,           only: mp_start, domain_decomp, mp_assign_gid, global_nest_domain
    use fv_mp_mod,           only: broadcast_domains, mp_barrier, is_master, setup_master, grids_master_procs, tile_fine
    use fv_mp_mod,           only: MAX_NNEST, MAX_NTILE
-   !use test_cases_mod,      only: test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
+   use test_cases_mod,      only: read_namelist_test_case_nml
    use fv_timing_mod,       only: timing_on, timing_off, timing_init, timing_prt
    use mpp_domains_mod,     only: domain2D
    use mpp_domains_mod,     only: mpp_define_nest_domains, nest_domain_type, mpp_get_global_domain
@@ -157,8 +157,7 @@ module fv_control_mod
 #ifdef MULTI_GASES
    use constants_mod,       only: rvgas, cp_air
    use multi_gases_mod,     only: multi_gases_init, &
-                                  rilist => ri,     &
-                                  cpilist => cpi
+                                  read_namelist_multi_gases_nml
 #endif
 
    implicit none
@@ -200,7 +199,7 @@ module fv_control_mod
      integer, dimension(MAX_NNEST) :: grid_pes = 0
      integer, dimension(MAX_NNEST) :: grid_coarse = -1
      integer, dimension(MAX_NNEST) :: nest_refine = 3 
-     integer, dimension(MAX_NNEST) :: nest_ioffsets, nest_joffsets
+     integer, dimension(MAX_NNEST) :: nest_ioffsets = -999, nest_joffsets = -999
      integer, dimension(MAX_NNEST) :: all_npx = 0
      integer, dimension(MAX_NNEST) :: all_npy = 0
      integer, dimension(MAX_NNEST) :: all_npz = 0
@@ -537,7 +536,11 @@ module fv_control_mod
 #endif
      call read_namelist_fv_grid_nml
      call read_namelist_fv_core_nml(Atm(this_grid)) ! do options processing here too?
-     !TODO test_case_nml moved to test_cases
+#ifdef MULTI_GASES
+     call read_namelist_multi_gases_nml(Atm(this_grid)%nml_filename, &
+           Atm(this_grid)%flagstruct%ncnst,  Atm(this_grid)%flagstruct%nwat)
+#endif
+     call read_namelist_test_case_nml(Atm(this_grid)%nml_filename)
      call mpp_get_current_pelist(Atm(this_grid)%pelist, commID=commID) ! for commID
      call mp_start(commID,halo_update_type)
 
@@ -679,7 +682,7 @@ module fv_control_mod
 
      endif
 
-     allocate(Atm(this_grid)%neststruct%child_grids(ngrids)) 
+     allocate(Atm(this_grid)%neststruct%child_grids(ngrids))
      do n=1,ngrids
         Atm(this_grid)%neststruct%child_grids(n) = (grid_coarse(n) == this_grid)
         allocate(Atm(n)%neststruct%do_remap_bc(ngrids))
@@ -993,7 +996,7 @@ module fv_control_mod
        ! Read Main namelist
        read (f_unit,fv_grid_nml,iostat=ios)
        ierr = check_nml_error(ios,'fv_grid_nml')
-       rewind (f_unit)
+       call close_file (f_unit)
 #endif
        call write_version_number ( 'FV_CONTROL_MOD', version )
        unit = stdlog()
@@ -1441,59 +1444,22 @@ module fv_control_mod
             do_uni_zfull, adj_mass_vmr, fac_n_spl, fhouri, update_blend, regional, bc_update_interval,  &
             regional_bcs_from_gsi, write_restart_with_bcs, nrows_blend
 
-#ifdef MULTI_GASES
-   namelist /multi_gases_nml/ rilist,cpilist
-#endif
 #ifdef INTERNAL_FILE_NML
        ! Read FVCORE namelist 
        read (input_nml_file,fv_core_nml,iostat=ios)
        ierr = check_nml_error(ios,'fv_core_nml')
        ! Reset input_file_nml to default behavior (CHECK do we still need this???)
        !call read_input_nml
-#ifdef MULTI_GASES
-      if( is_master() ) print *,' enter multi_gases: ncnst = ',ncnst
-      allocate (rilist(0:ncnst))
-      allocate (cpilist(0:ncnst))
-      rilist     =    0.0
-      cpilist    =    0.0
-      rilist(0)  = rdgas
-      rilist(1)  = rvgas
-      cpilist(0) = cp_air
-      cpilist(1) = 4*cp_air
-   ! Read multi_gases namelist
-      read (input_nml_file,multi_gases_nml,iostat=ios)
-      ierr = check_nml_error(ios,'multi_gases_nml')
-#endif
 #else
        f_unit = open_namelist_file(Atm%nml_filename)
        ! Read FVCORE namelist 
        read (f_unit,fv_core_nml,iostat=ios)
        ierr = check_nml_error(ios,'fv_core_nml')
        call close_file(f_unit)
-#ifdef MULTI_GASES
-      if( is_master() ) print *,' enter multi_gases: ncnst = ',ncnst
-      allocate (rilist(0:ncnst))
-      allocate (cpilist(0:ncnst))
-      rilist     =    0.0
-      cpilist    =    0.0
-      rilist(0)  = rdgas
-      rilist(1)  = rvgas
-      cpilist(0) = cp_air
-      cpilist(1) = 4*cp_air
-   ! Read multi_gases namelist
-      rewind (f_unit)
-      read (f_unit,multi_gases_nml,iostat=ios)
-      ierr = check_nml_error(ios,'multi_gases_nml')
-#endif
-      call close_file(f_unit)
 #endif         
        call write_version_number ( 'FV_CONTROL_MOD', version )
        unit = stdlog()
        write(unit, nml=fv_core_nml)
-#ifdef MULTI_GASES
-      write(unit, nml=multi_gases_nml)
-      call multi_gases_init(ncnst,nwat)
-#endif
 
        if (len_trim(res_latlon_dynamics) /= 0) Atm%flagstruct%res_latlon_dynamics = res_latlon_dynamics
        if (len_trim(res_latlon_tracers)  /= 0) Atm%flagstruct%res_latlon_tracers = res_latlon_tracers
@@ -1613,7 +1579,6 @@ module fv_control_mod
        upoff = Atm(this_grid)%neststruct%upoff
 
        do n=2,ngrids
-          write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 0: ', mpp_pe(), tile_coarse(n), Atm(this_grid)%global_tile
           if (tile_coarse(n) == Atm(this_grid)%global_tile) then
 
              isu = nest_ioffsets(n)

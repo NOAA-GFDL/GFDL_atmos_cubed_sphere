@@ -159,7 +159,7 @@ contains
    ord_ou = hord
 
    if (.not. gridstruct%bounded_domain) &
-	call copy_corners(q, npx, npy, 2, gridstruct%bounded_domain, bd, &
+        call copy_corners(q, npx, npy, 2, gridstruct%bounded_domain, bd, &
                           gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
    call yppm(fy2, q, cry, ord_in, isd,ied,isd,ied, js,je,jsd,jed, npx,npy, gridstruct%dya, gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
@@ -178,7 +178,7 @@ contains
    call xppm(fx, q_i, crx(is,js), ord_ou, is,ie,isd,ied, js,je,jsd,jed, npx,npy, gridstruct%dxa, gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)
 
   if (.not. gridstruct%bounded_domain) &
-	call copy_corners(q, npx, npy, 1, gridstruct%bounded_domain, bd, &
+       call copy_corners(q, npx, npy, 1, gridstruct%bounded_domain, bd, &
                                gridstruct%sw_corner, gridstruct%se_corner, gridstruct%nw_corner, gridstruct%ne_corner)
 
   call xppm(fx2, q, crx, ord_in, is,ie,isd,ied, jsd,jed,jsd,jed, npx,npy, gridstruct%dxa, gridstruct%bounded_domain, gridstruct%grid_type, lim_fac)

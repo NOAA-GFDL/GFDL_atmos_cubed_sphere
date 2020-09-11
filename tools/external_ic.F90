@@ -577,7 +577,6 @@ contains
       call get_data_source(source,Atm%flagstruct%regional)
       if (trim(source) == source_fv3gfs) then
          call mpp_error(NOTE, "READING FROM REGRIDDED FV3GFS NEMSIO FILE")
-         levp = 65
       endif
 !
 !--- read in ak and bk from the gfs control file using fms_io read_data ---

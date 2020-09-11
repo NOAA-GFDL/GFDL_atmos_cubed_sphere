@@ -23,7 +23,7 @@ endif
 
 LIBRARY  = libfv3core.a
 
-FFLAGS   += -I$(FMS_DIR) -I../gfsphysics -I../ipd -I../io
+FFLAGS   += -I$(FMS_DIR) -I../gfsphysics -I../ipd -I../io -I.
 
 SRCS_f   =
 

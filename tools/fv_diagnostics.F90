@@ -2036,7 +2036,7 @@ contains
 
 
 
-       if( idiag%id_slp>0 .or. idiag%id_tm>0 .or. idiag%id_any_hght>0 .or. idiag%id_hght3d .or. idiag%id_c15>0 .or. idiag%id_ctz ) then
+       if( idiag%id_slp>0 .or. idiag%id_tm>0 .or. idiag%id_any_hght>0 .or. idiag%id_hght3d>0 .or. idiag%id_c15>0 .or. idiag%id_ctz>0 ) then
 
           allocate ( wz(isc:iec,jsc:jec,npz+1) )
           call get_height_field(isc, iec, jsc, jec, ngc, npz, Atm(n)%flagstruct%hydrostatic, Atm(n)%delz,  &
@@ -5572,7 +5572,7 @@ end subroutine eqv_pot
    real, intent(in):: grav, zvir, z_bot, z_top
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt
    real, intent(in), dimension(is:ie,js:je,km):: vort
-   real, intent(in):: delz(is-ng:ie+ng,js-ng:je+ng,km)
+   real, intent(in):: delz(is:ie,js:je,km)
    real, intent(in):: q(is-ng:ie+ng,js-ng:je+ng,km,*)
    real, intent(in):: phis(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in):: peln(is:ie,km+1,js:je)
@@ -5630,7 +5630,7 @@ end subroutine eqv_pot
    real, intent(in):: grav, zvir, z_bot, z_top
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, w
    real, intent(in), dimension(is:ie,js:je,km):: vort
-   real, intent(in):: delz(is-ng:ie+ng,js-ng:je+ng,km)
+   real, intent(in):: delz(is:ie,js:je,km)
    real, intent(in):: q(is-ng:ie+ng,js-ng:je+ng,km,*)
    real, intent(in):: phis(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in):: peln(is:ie,km+1,js:je)
