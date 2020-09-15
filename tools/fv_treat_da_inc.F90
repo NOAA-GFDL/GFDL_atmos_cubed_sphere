@@ -129,8 +129,7 @@ module fv_treat_da_inc_mod
                                mid_pt_sphere, get_unit_vect2, &
                                get_latlon_vector, inner_prod, &
                                cubed_to_latlon
-  use fv_mp_mod,         only: ng, &
-                               is_master, &
+  use fv_mp_mod,         only: is_master, &
                                fill_corners, &
                                YDir, &
                                mp_reduce_min, &
@@ -156,12 +155,20 @@ contains
   !! and added upon request.
   !>@author Xi.Chen <xi.chen@noaa.gov>
   !>@date 02/12/2016
-  subroutine read_da_inc(Atm, fv_domain)
-    type(fv_atmos_type), intent(inout) :: Atm(:)
-    type(domain2d),      intent(inout) :: fv_domain
+   subroutine read_da_inc(Atm, fv_domain, bd, npz_in, nq, u, v, q, delp, pt, delz, is_in, js_in, ie_in, je_in,  &
+                                                                                   isc_in, jsc_in, iec_in, jec_in )
+    type(fv_atmos_type),       intent(inout) :: Atm
+    type(domain2d),            intent(inout) :: fv_domain
+    type(fv_grid_bounds_type), intent(IN) :: bd
+    integer,                   intent(IN) :: npz_in, nq, is_in, js_in, ie_in, je_in, isc_in, jsc_in, iec_in, jec_in
+    real, intent(inout), dimension(is_in:ie_in,  js_in:je_in+1,npz_in):: u  ! D grid zonal wind (m/s)
+    real, intent(inout), dimension(is_in:ie_in+1,js_in:je_in  ,npz_in):: v  ! D grid meridional wind (m/s)
+    real, intent(inout) :: delp(is_in:ie_in  ,js_in:je_in  ,npz_in)  ! pressure thickness (pascal)
+    real, intent(inout) :: pt(  is_in:ie_in  ,js_in:je_in  ,npz_in)  ! temperature (K)
+    real, intent(inout) :: q(   is_in:ie_in  ,js_in:je_in  ,npz_in, nq)  ! 
+    real, intent(inout) :: delz(isc_in:iec_in  ,jsc_in:jec_in  ,npz_in)  ! 
     ! local
-    integer :: nq
-
+    
     real :: deg2rad
     character(len=128) :: fname
     real(kind=4), allocatable:: wk1(:), wk2(:,:), wk3(:,:,:)
@@ -170,17 +177,17 @@ contains
     real, dimension(:,:,:), allocatable:: u_inc, v_inc, ud_inc, vd_inc
     real, allocatable:: lat(:), lon(:)
     real, allocatable:: pt_c(:,:,:), pt_d(:,:,:)
-    real:: s2c(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je,4)
-    real:: s2c_c(Atm(1)%bd%is:Atm(1)%bd%ie+1,Atm(1)%bd%js:Atm(1)%bd%je,4)
-    real:: s2c_d(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je+1,4)
-    integer, dimension(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je):: &
+    real:: s2c(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je,4)
+    real:: s2c_c(Atm%bd%is:Atm%bd%ie+1,Atm%bd%js:Atm%bd%je,4)
+    real:: s2c_d(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je+1,4)
+    integer, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je):: &
         id1, id2, jdc
-    integer, dimension(Atm(1)%bd%is:Atm(1)%bd%ie+1,Atm(1)%bd%js:Atm(1)%bd%je)::&
+    integer, dimension(Atm%bd%is:Atm%bd%ie+1,Atm%bd%js:Atm%bd%je)::&
         id1_c, id2_c, jdc_c
-    integer, dimension(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je+1)::&
+    integer, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je+1)::&
         id1_d, id2_d, jdc_d
 
-    integer:: i, j, k, im, jm, km, npz, npt
+    integer:: i, j, k, im, jm, km, npt
     integer:: i1, i2, j1, ncid
     integer:: jbeg, jend
     integer tsize(3)
@@ -197,20 +204,18 @@ contains
     integer :: o3mr
 #endif
 
-    is  = Atm(1)%bd%is
-    ie  = Atm(1)%bd%ie
-    js  = Atm(1)%bd%js
-    je  = Atm(1)%bd%je
-    isd = Atm(1)%bd%isd
-    ied = Atm(1)%bd%ied
-    jsd = Atm(1)%bd%jsd
-    jed = Atm(1)%bd%jed
+    is  = Atm%bd%is
+    ie  = Atm%bd%ie
+    js  = Atm%bd%js
+    je  = Atm%bd%je
+    isd = Atm%bd%isd
+    ied = Atm%bd%ied
+    jsd = Atm%bd%jsd
+    jed = Atm%bd%jed
 
     deg2rad = pi/180.
 
-    npz = Atm(1)%npz
-
-    fname = 'INPUT/'//Atm(1)%flagstruct%res_latlon_dynamics
+    fname = 'INPUT/'//Atm%flagstruct%res_latlon_dynamics
 
     if( file_exist(fname) ) then
       call open_ncfile( fname, ncid )        ! open the file
@@ -220,10 +225,10 @@ contains
 
       im = tsize(1); jm = tsize(2); km = tsize(3)
 
-      if (km.ne.npz) then
+      if (km.ne.npz_in) then
         if (is_master()) print *, 'km = ', km
         call mpp_error(FATAL, &
-            '==> Error in read_da_inc: km is not equal to npz')
+            '==> Error in read_da_inc: km is not equal to npz_in')
       endif
 
       if(is_master())  write(*,*) fname, ' DA increment dimensions:', tsize
@@ -248,9 +253,9 @@ contains
     endif
 
     ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
-    call remap_coef( is, ie, js, je, &
+    call remap_coef( is, ie, js, je, isd, ied, jsd, jed, &
         im, jm, lon, lat, id1, id2, jdc, s2c, &
-        Atm(1)%gridstruct%agrid(is:ie,js:je,:))
+        Atm%gridstruct%agrid)
 
     ! Find bounding latitudes:
     jbeg = jm-1;         jend = 2
@@ -276,38 +281,38 @@ contains
     allocate ( wk3(1:im,jbeg:jend, 1:km) )
     allocate (  tp(is:ie,js:je,km) )
 
-    call apply_inc_on_3d_scalar('T_inc',Atm(1)%pt)
-    call apply_inc_on_3d_scalar('delp_inc',Atm(1)%delp)
-    if (.not. Atm(1)%flagstruct%hydrostatic) then
-        call apply_inc_on_3d_scalar('delz_inc',Atm(1)%delz)
+    call apply_inc_on_3d_scalar('T_inc',pt, is_in, js_in, ie_in, je_in)
+    call apply_inc_on_3d_scalar('delp_inc',delp, is_in, js_in, ie_in, je_in)
+    if ( .not. Atm%flagstruct%hydrostatic ) then
+        call apply_inc_on_3d_scalar('delz_inc',delz, isc_in, jsc_in, iec_in, jec_in)
     endif
-    call apply_inc_on_3d_scalar('sphum_inc',Atm(1)%q(:,:,:,sphum))
-    call apply_inc_on_3d_scalar('liq_wat_inc',Atm(1)%q(:,:,:,liq_wat))
+    call apply_inc_on_3d_scalar('sphum_inc',q(:,:,:,sphum), is_in, js_in, ie_in, je_in)
+    call apply_inc_on_3d_scalar('liq_wat_inc',q(:,:,:,liq_wat), is_in, js_in, ie_in, je_in)
 #ifdef MULTI_GASES
-    call apply_inc_on_3d_scalar('spfo3_inc',Atm(1)%q(:,:,:,spfo3))
-    call apply_inc_on_3d_scalar('spfo_inc',Atm(1)%q(:,:,:,spfo))
-    call apply_inc_on_3d_scalar('spfo2_inc',Atm(1)%q(:,:,:,spfo2))
+    call apply_inc_on_3d_scalar('spfo3_inc',q(:,:,:,spfo3), is_in, js_in, ie_in, je_in)
+    call apply_inc_on_3d_scalar('spfo_inc',q(:,:,:,spfo), is_in, js_in, ie_in, je_in)
+    call apply_inc_on_3d_scalar('spfo2_inc',q(:,:,:,spfo2), is_in, js_in, ie_in, je_in)
 #else
-    call apply_inc_on_3d_scalar('o3mr_inc',Atm(1)%q(:,:,:,o3mr))
+    call apply_inc_on_3d_scalar('o3mr_inc',q(:,:,:,o3mr), is_in, js_in, ie_in, je_in)
 #endif
 
     deallocate ( tp )
     deallocate ( wk3 )
 
     ! perform increments on winds
-    allocate (pt_c(is:ie+1,js:je  ,2))
-    allocate (pt_d(is:ie  ,js:je+1,2))
+    allocate (pt_c(isd:ied+1,jsd:jed  ,2))
+    allocate (pt_d(isd:ied  ,jsd:jed+1,2))
     allocate (ud_inc(is:ie  , js:je+1, km))
     allocate (vd_inc(is:ie+1, js:je  , km))
 
     call get_staggered_grid( &
         is, ie, js, je, &
         isd, ied, jsd, jed, &
-        Atm(1)%gridstruct%grid, pt_c, pt_d)
+        Atm%gridstruct%grid, pt_c, pt_d)
 
     !------ pt_c part ------
     ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
-    call remap_coef( is, ie+1, js, je, &
+    call remap_coef( is, ie+1, js, je, isd, ied+1, jsd, jed, &
         im, jm, lon, lat, id1_c, id2_c, jdc_c, s2c_c, &
         pt_c)
 
@@ -343,14 +348,14 @@ contains
                          s2c_c(i,j,2)*wk3_v(i2,j1  ,k) + &
                          s2c_c(i,j,3)*wk3_v(i2,j1+1,k) + &
                          s2c_c(i,j,4)*wk3_v(i1,j1+1,k)
-          p1(:) = Atm(1)%gridstruct%grid(i,j  ,1:2)
-          p2(:) = Atm(1)%gridstruct%grid(i,j+1,1:2)
+          p1(:) = Atm%gridstruct%grid(i,j  ,1:2)
+          p2(:) = Atm%gridstruct%grid(i,j+1,1:2)
           call  mid_pt_sphere(p1, p2, p3)
           call get_unit_vect2(p1, p2, e2)
           call get_latlon_vector(p3, ex, ey)
           vd_inc(i,j,k) = u_inc(i,j,k)*inner_prod(e2,ex) + &
                           v_inc(i,j,k)*inner_prod(e2,ey)
-          Atm(1)%v(i,j,k) = Atm(1)%v(i,j,k) + vd_inc(i,j,k)
+          v(i,j,k) = v(i,j,k) + vd_inc(i,j,k)
         enddo
       enddo
     enddo
@@ -360,7 +365,7 @@ contains
 
     !------ pt_d part ------
     ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
-    call remap_coef( is, ie, js, je+1,&
+    call remap_coef( is, ie, js, je+1, isd, ied, jsd, jed+1, &
         im, jm, lon, lat, id1_d, id2_d, jdc_d, s2c_d, &
         pt_d)
 
@@ -396,14 +401,14 @@ contains
                          s2c_d(i,j,2)*wk3_v(i2,j1  ,k) + &
                          s2c_d(i,j,3)*wk3_v(i2,j1+1,k) + &
                          s2c_d(i,j,4)*wk3_v(i1,j1+1,k)
-          p1(:) = Atm(1)%gridstruct%grid(i,  j,1:2)
-          p2(:) = Atm(1)%gridstruct%grid(i+1,j,1:2)
+          p1(:) = Atm%gridstruct%grid(i,  j,1:2)
+          p2(:) = Atm%gridstruct%grid(i+1,j,1:2)
           call  mid_pt_sphere(p1, p2, p3)
           call get_unit_vect2(p1, p2, e1)
           call get_latlon_vector(p3, ex, ey)
           ud_inc(i,j,k) = u_inc(i,j,k)*inner_prod(e1,ex) + &
                           v_inc(i,j,k)*inner_prod(e1,ey)
-          Atm(1)%u(i,j,k) = Atm(1)%u(i,j,k) + ud_inc(i,j,k)
+          u(i,j,k) = u(i,j,k) + ud_inc(i,j,k)
         enddo
       enddo
     enddo
@@ -412,11 +417,11 @@ contains
     deallocate ( wk3_u, wk3_v )
 
 !rab The following is not necessary as ua/va will be re-calculated during model startup
-!rab    call cubed_to_latlon(Atm(1)%u, Atm(1)%v, Atm(1)%ua, Atm(1)%va, &
-!rab        Atm(1)%gridstruct, Atm(1)%flagstruct%npx, Atm(1)%flagstruct%npy, &
-!rab        Atm(1)%flagstruct%npz, 1, Atm(1)%gridstruct%grid_type, &
-!rab        fv_domain, Atm(1)%gridstruct%nested, &
-!rab        Atm(1)%flagstruct%c2l_ord, Atm(1)%bd)
+!rab    call cubed_to_latlon(Atm%u, Atm%v, Atm%ua, Atm%va, &
+!rab        Atm%gridstruct, Atm%flagstruct%npx, Atm%flagstruct%npy, &
+!rab        Atm%flagstruct%npz, 1, Atm%gridstruct%grid_type, &
+!rab        fv_domain, Atm%gridstruct%nested, &
+!rab        Atm%flagstruct%c2l_ord, Atm%bd)
 
     !------ winds clean up ------
     deallocate ( pt_c, pt_d, ud_inc, vd_inc )
@@ -427,9 +432,10 @@ contains
    !---------------------------------------------------------------------------
    !> @brief The subroutine 'apply_inc_on3d_scalar' applies the input increments
    !! to the prognostic variables.
-    subroutine apply_inc_on_3d_scalar(field_name,var)
+    subroutine apply_inc_on_3d_scalar(field_name,var, is_in, js_in, ie_in, je_in)
       character(len=*), intent(in) :: field_name
-      real, dimension(isd:ied,jsd:jed,1:km), intent(inout) :: var
+      integer, intent(IN) :: is_in, js_in, ie_in, je_in
+      real, dimension(is_in:ie_in,js_in:je_in,1:km), intent(inout) :: var
       integer :: ierr
 
       call check_var_exists(ncid, field_name, ierr)
@@ -460,15 +466,15 @@ contains
   !=============================================================================
   !>@brief The subroutine 'remap_coef' calculates the coefficients for horizonal regridding.
 
-  subroutine remap_coef( is, ie, js, je,&
+  subroutine remap_coef( is, ie, js, je, isd, ied, jsd, jed, &
       im, jm, lon, lat, id1, id2, jdc, s2c, agrid )
 
-    integer, intent(in):: is, ie, js, je
+    integer, intent(in):: is, ie, js, je, isd, ied, jsd, jed
     integer, intent(in):: im, jm
     real,    intent(in):: lon(im), lat(jm)
     real,    intent(out):: s2c(is:ie,js:je,4)
     integer, intent(out), dimension(is:ie,js:je):: id1, id2, jdc
-    real,    intent(in):: agrid(is:ie,js:je,2)
+    real,    intent(in):: agrid(isd:ied,jsd:jed,2)
     ! local:
     real :: rdlon(im)
     real :: rdlat(jm)
@@ -545,11 +551,10 @@ contains
       is, ie, js, je, &
       isd, ied, jsd, jed, &
       pt_b, pt_c, pt_d)
-    integer, intent(in) :: is, ie, js, je
-    integer, intent(in) :: isd, ied, jsd, jed
+    integer, intent(in) :: is, ie, js, je, isd, ied, jsd, jed
     real, dimension(isd:ied+1,jsd:jed+1,2), intent(in) :: pt_b
-    real, dimension(is:ie+1,js:je  ,2), intent(out) :: pt_c
-    real, dimension(is:ie  ,js:je+1,2), intent(out) :: pt_d
+    real, dimension(isd:ied+1,jsd:jed  ,2), intent(out) :: pt_c
+    real, dimension(isd:ied  ,jsd:jed+1,2), intent(out) :: pt_d
     ! local
     real(kind=R_GRID), dimension(2):: p1, p2, p3
     integer :: i, j

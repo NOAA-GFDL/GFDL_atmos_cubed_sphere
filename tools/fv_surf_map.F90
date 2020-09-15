@@ -72,7 +72,6 @@
 
       use fv_grid_utils_mod, only: great_circle_dist, latlon2xyz, v_prod, normalize_vect
       use fv_grid_utils_mod, only: g_sum, global_mx, vect_cross
-      use fv_mp_mod,         only: ng
       use fv_mp_mod,         only: mp_stop, mp_reduce_min, mp_reduce_max, is_master
       use fv_timing_mod,     only: timing_on, timing_off
       use fv_arrays_mod,     only: fv_grid_bounds_type, R_GRID
@@ -131,7 +130,7 @@
       contains
 
       subroutine surfdrv(npx, npy, grid, agrid, area, dx, dy, dxa, dya, dxc, dyc, sin_sg, phis, &
-                         stretch_fac, nested, npx_global, domain,grid_number, bd, regional)
+                         stretch_fac, nested, bounded_domain, npx_global, domain,grid_number, bd)
 
       implicit         none
 #include <netcdf.inc>
@@ -139,24 +138,24 @@
 
     ! INPUT arrays
       type(fv_grid_bounds_type), intent(IN) :: bd
-      real(kind=R_GRID), intent(in)::area(bd%is-ng:bd%ie+ng, bd%js-ng:bd%je+ng)
-      real, intent(in):: dx(bd%is-ng:bd%ie+ng, bd%js-ng:bd%je+ng+1)
-      real, intent(in):: dy(bd%is-ng:bd%ie+ng+1, bd%js-ng:bd%je+ng)
-      real, intent(in), dimension(bd%is-ng:bd%ie+ng, bd%js-ng:bd%je+ng)::dxa, dya
-      real, intent(in)::dxc(bd%is-ng:bd%ie+ng+1, bd%js-ng:bd%je+ng)
-      real, intent(in)::dyc(bd%is-ng:bd%ie+ng, bd%js-ng:bd%je+ng+1)
+      real(kind=R_GRID), intent(in)::area(bd%isd:bd%ied, bd%jsd:bd%jed)
+      real, intent(in):: dx(bd%isd:bd%ied, bd%jsd:bd%jed+1)
+      real, intent(in):: dy(bd%isd:bd%ied+1, bd%jsd:bd%jed)
+      real, intent(in), dimension(bd%isd:bd%ied, bd%jsd:bd%jed)::dxa, dya
+      real, intent(in)::dxc(bd%isd:bd%ied+1, bd%jsd:bd%jed)
+      real, intent(in)::dyc(bd%isd:bd%ied, bd%jsd:bd%jed+1)
 
-      real(kind=R_GRID), intent(in):: grid(bd%is-ng:bd%ie+ng+1, bd%js-ng:bd%je+ng+1,2)
-      real(kind=R_GRID), intent(in):: agrid(bd%is-ng:bd%ie+ng, bd%js-ng:bd%je+ng,2)
+      real(kind=R_GRID), intent(in):: grid(bd%isd:bd%ied+1, bd%jsd:bd%jed+1,2)
+      real(kind=R_GRID), intent(in):: agrid(bd%isd:bd%ied, bd%jsd:bd%jed,2)
       real, intent(IN):: sin_sg(bd%isd:bd%ied,bd%jsd:bd%jed,9)
       real(kind=R_GRID), intent(IN):: stretch_fac
-      logical, intent(IN) :: nested, regional
+      logical, intent(IN) :: nested, bounded_domain
       integer, intent(IN) :: npx_global
       type(domain2d), intent(INOUT) :: domain
       integer, intent(IN) :: grid_number
 
     ! OUTPUT arrays
-      real, intent(out):: phis(bd%is-ng:bd%ie+ng, bd%js-ng:bd%je+ng)
+      real, intent(out):: phis(bd%isd:bd%ied, bd%jsd:bd%jed)
 ! Local:
       real, allocatable :: z2(:,:)
 ! Position of edges of the box containing the original data point:
@@ -176,7 +175,7 @@
       integer status
 
       integer :: is,  ie,  js,  je
-      integer :: isd, ied, jsd, jed
+      integer :: isd, ied, jsd, jed, ng
       real phis_coarse(bd%isd:bd%ied, bd%jsd:bd%jed)
       real wt
 
@@ -188,6 +187,7 @@
       ied = bd%ied
       jsd = bd%jsd
       jed = bd%jed
+      ng  = bd%ng
       if (nested) then
       !Divide all by grav
          rgrav = 1./grav
@@ -375,7 +375,7 @@
       allocate ( sgh_g(isd:ied, jsd:jed) )
                                                      call timing_on('map_to_cubed')
       call map_to_cubed_raw(igh, nlon, jt, lat1(jstart:jend+1), lon1, zs, ft, grid, agrid,  &
-                            phis, oro_g, sgh_g, npx, npy, jstart, jend, stretch_fac, nested, npx_global, bd, regional)
+                            phis, oro_g, sgh_g, npx, npy, jstart, jend, stretch_fac, bounded_domain, npx_global, bd)
       if (is_master()) write(*,*) 'map_to_cubed_raw: master PE done'
                                                      call timing_off('map_to_cubed')
 
@@ -435,8 +435,8 @@
             write(*,*) 'Applying terrain filters. zero_ocean is', zero_ocean
          endif
          call FV3_zs_filter (bd, isd, ied, jsd, jed, npx, npy, npx_global,  &
-                             stretch_fac, nested, domain, area, dxa, dya, dx, dy, dxc, dyc, grid,  &
-                             agrid, sin_sg, phis, oro_g, regional)
+                             stretch_fac, bounded_domain, domain, area, dxa, dya, dx, dy, dxc, dyc, grid,  &
+                             agrid, sin_sg, phis, oro_g)
          call mpp_update_domains(phis, domain)
       endif          ! end terrain filter
                                                     call timing_off('Terrain_filter')
@@ -496,7 +496,7 @@
 !-----------------------------------------------
       call global_mx(area, ng, da_min, da_max, bd)
 
-      if(zs_filter) call del4_cubed_sphere(npx, npy, sgh_g, area, dx, dy, dxc, dyc, sin_sg, 1, zero_ocean, oro_g, nested, domain, bd, regional)
+      if(zs_filter) call del4_cubed_sphere(npx, npy, sgh_g, area, dx, dy, dxc, dyc, sin_sg, 1, zero_ocean, oro_g, bounded_domain, domain, bd)
 
       call global_mx(real(sgh_g,kind=R_GRID), ng, da_min, da_max, bd)
       if ( is_master() ) write(*,*) 'After  filter SGH', trim(grid_string), ' min=', da_min, ' Max=', da_max
@@ -509,8 +509,8 @@
  end subroutine surfdrv
 
  subroutine FV3_zs_filter (bd, isd, ied, jsd, jed, npx, npy, npx_global,  &
-                           stretch_fac, nested, domain, area, dxa, dya, dx, dy, dxc, dyc, grid,  &
-                            agrid, sin_sg,  phis, oro ,regional)
+                           stretch_fac, bounded_domain, domain, area, dxa, dya, dx, dy, dxc, dyc, grid,  &
+                            agrid, sin_sg,  phis, oro )
       integer, intent(in):: isd, ied, jsd, jed, npx, npy, npx_global
       type(fv_grid_bounds_type), intent(IN) :: bd
       real(kind=R_GRID), intent(in), dimension(isd:ied,jsd:jed)::area
@@ -522,7 +522,7 @@
       real(kind=R_GRID), intent(in):: agrid(isd:ied,   jsd:jed,  2)
       real, intent(IN):: sin_sg(isd:ied,jsd:jed,9)
       real(kind=R_GRID), intent(IN):: stretch_fac
-      logical, intent(IN) :: nested, regional
+      logical, intent(IN) :: bounded_domain
       real, intent(inout):: phis(isd:ied,jsd,jed)
       real, intent(inout):: oro(isd:ied,jsd,jed)
       type(domain2d), intent(INOUT) :: domain
@@ -532,12 +532,12 @@
       if (is_master()) print*, ' Calling FV3_zs_filter...'
 
       if (.not. namelist_read) call read_namelist !when calling from external_ic
-      call global_mx(area, ng, da_min, da_max, bd)
+      call global_mx(area, bd%ng, da_min, da_max, bd)
 
       mdim = nint( real(npx_global) * min(10., stretch_fac) )
 
 ! Del-2: high resolution only
-! call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, n_del2, cd2, zero_ocean, oro, nested, domain, bd)
+! call del2_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, n_del2, cd2, zero_ocean, oro, bounded_domain, domain, bd)
       if (n_del2_strong < 0) then
          if ( npx_global<=97) then
               n_del2_strong = 0
@@ -551,7 +551,7 @@
 ! Applying strong 2-delta-filter:
       if ( n_del2_strong > 0 )   &
            call two_delta_filter(npx, npy, phis, area, dx, dy, dxa, dya, dxc, dyc, sin_sg, cd2, zero_ocean,  &
-                                 .true., 0, oro, nested, domain, bd, n_del2_strong, regional)
+                                 .true., 0, oro, bounded_domain, domain, bd, n_del2_strong)
 
 ! MFCT Del-4:
       if (n_del4 < 0) then
@@ -563,18 +563,18 @@
               n_del4 = 3
          endif
       endif
-      call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, n_del4, zero_ocean, oro, nested, domain, bd, regional)
+      call del4_cubed_sphere(npx, npy, phis, area, dx, dy, dxc, dyc, sin_sg, n_del4, zero_ocean, oro, bounded_domain, domain, bd)
 ! Applying weak 2-delta-filter:
       cd2 = 0.12*da_min
       call two_delta_filter(npx, npy, phis, area, dx, dy, dxa, dya, dxc, dyc, sin_sg, cd2, zero_ocean,  &
-                               .true., 1, oro, nested, domain, bd, n_del2_weak, regional)
+                               .true., 1, oro, bounded_domain, domain, bd, n_del2_weak)
 
 
  end subroutine FV3_zs_filter
 
 
  subroutine two_delta_filter(npx, npy, q, area, dx, dy, dxa, dya, dxc, dyc, sin_sg, cd, zero_ocean,  &
-                            check_slope, filter_type, oro, nested, domain, bd, ntmax, regional)
+                            check_slope, filter_type, oro, bounded_domain, domain, bd, ntmax)
    type(fv_grid_bounds_type), intent(IN) :: bd
    integer, intent(in):: npx, npy
    integer, intent(in):: ntmax
@@ -591,7 +591,7 @@
    real, intent(in):: sin_sg(bd%isd:bd%ied,bd%jsd:bd%jed,9)
    real, intent(in):: oro(bd%isd:bd%ied,  bd%jsd:bd%jed)        !< 0==water, 1==land
    logical, intent(in):: zero_ocean, check_slope
-   logical, intent(in):: nested, regional
+   logical, intent(in):: bounded_domain
    type(domain2d), intent(inout) :: domain
 ! OUTPUT arrays
    real, intent(inout):: q(bd%isd:bd%ied, bd%jsd:bd%jed)
@@ -623,7 +623,7 @@
    jsd = bd%jsd
    jed = bd%jed
 
-   if ( nested ) then
+   if ( bounded_domain ) then
         is1 = is-1;         ie2 = ie+2
         js1 = js-1;         je2 = je+2
    else
@@ -665,7 +665,7 @@
     endif
 
 ! First step: average the corners:
-  if ( .not. (nested .or. regional) .and. nt==1 ) then
+  if ( .not. bounded_domain .and. nt==1 ) then
     if ( is==1 .and. js==1 ) then
          q(1,1) = (q(1,1)*area(1,1)+q(0,1)*area(0,1)+q(1,0)*area(1,0))  &
                 / (       area(1,1)+       area(0,1)+       area(1,0) )
@@ -700,7 +700,7 @@
        a1(i) = p1*(q(i-1,j)+q(i,j)) + p2*(q(i-2,j)+q(i+1,j))
     enddo
 
-    if ( .not. (nested .or. regional) ) then
+    if ( .not. bounded_domain ) then
       if ( is==1 ) then
         a1(0) = c1*q(-2,j) + c2*q(-1,j) + c3*q(0,j)
         a1(1) = 0.5*(((2.*dxa(0,j)+dxa(-1,j))*q(0,j)-dxa(0,j)*q(-1,j))/(dxa(-1,j)+dxa(0,j)) &
@@ -752,7 +752,7 @@
          a2(i,j) = p1*(q(i,j-1)+q(i,j)) + p2*(q(i,j-2)+q(i,j+1))
       enddo
    enddo
-   if ( .not. (nested .or. regional) ) then
+   if ( .not. bounded_domain ) then
       if( js==1 ) then
         do i=is,ie
            a2(i,0) = c1*q(i,-2) + c2*q(i,-1) + c3*q(i,0)
@@ -856,7 +856,7 @@
 
 
 
- subroutine del2_cubed_sphere(npx, npy, q, area, dx, dy, dxc, dyc, sin_sg, nmax, cd, zero_ocean, oro, nested, domain, bd, regional)
+ subroutine del2_cubed_sphere(npx, npy, q, area, dx, dy, dxc, dyc, sin_sg, nmax, cd, zero_ocean, oro, bounded_domain, domain, bd)
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(in):: npx, npy
       integer, intent(in):: nmax
@@ -870,16 +870,17 @@
       real, intent(in):: dyc(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
       real, intent(IN):: sin_sg(bd%isd:bd%ied,bd%jsd:bd%jed,9)
       real, intent(in):: oro(bd%isd:bd%ied,  bd%jsd:bd%jed)        !< 0==water, 1==land
-      logical, intent(IN) :: nested, regional
+      logical, intent(IN) :: bounded_domain
       type(domain2d), intent(INOUT) :: domain
     ! OUTPUT arrays
-      real, intent(inout):: q(bd%is-ng:bd%ie+ng, bd%js-ng:bd%je+ng)
+      real, intent(inout):: q(bd%isd:bd%ied, bd%jsd:bd%jed)
 ! Local:
       real ddx(bd%is:bd%ie+1,bd%js:bd%je), ddy(bd%is:bd%ie,bd%js:bd%je+1)
       integer i,j,n
 
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
+      integer :: ng
 
       is  = bd%is
       ie  = bd%ie
@@ -889,30 +890,30 @@
       ied = bd%ied
       jsd = bd%jsd
       jed = bd%jed
-
+      ng  = bd%ng
 
       call mpp_update_domains(q,domain,whalo=ng,ehalo=ng,shalo=ng,nhalo=ng)
 
 ! First step: average the corners:
-      if ( is==1 .and. js==1  .and. .not. (nested .or. regional)) then
+      if ( is==1 .and. js==1  .and. .not. bounded_domain) then
            q(1,1) = (q(1,1)*area(1,1)+q(0,1)*area(0,1)+q(1,0)*area(1,0))  &
                   / (       area(1,1)+       area(0,1)+       area(1,0) )
            q(0,1) =  q(1,1)
            q(1,0) =  q(1,1)
       endif
-      if ( (ie+1)==npx .and. js==1  .and. .not. (nested .or. regional)) then
+      if ( (ie+1)==npx .and. js==1  .and. .not. bounded_domain) then
            q(ie, 1) = (q(ie,1)*area(ie,1)+q(npx,1)*area(npx,1)+q(ie,0)*area(ie,0)) &
                     / (        area(ie,1)+         area(npx,1)+        area(ie,0))
            q(npx,1) =  q(ie,1)
            q(ie, 0) =  q(ie,1)
       endif
-      if ( (ie+1)==npx .and. (je+1)==npy .and. .not. (nested .or. regional) ) then
+      if ( (ie+1)==npx .and. (je+1)==npy .and. .not. bounded_domain ) then
            q(ie, je) = (q(ie,je)*area(ie,je)+q(npx,je)*area(npx,je)+q(ie,npy)*area(ie,npy))  &
                      / (         area(ie,je)+          area(npx,je)+          area(ie,npy))
            q(npx,je) =  q(ie,je)
            q(ie,npy) =  q(ie,je)
       endif
-      if ( is==1 .and. (je+1)==npy  .and. .not. (nested .or. regional)) then
+      if ( is==1 .and. (je+1)==npy  .and. .not. bounded_domain) then
            q(1, je) = (q(1,je)*area(1,je)+q(0,je)*area(0,je)+q(1,npy)*area(1,npy))   &
                     / (        area(1,je)+        area(0,je)+         area(1,npy))
            q(0, je) =  q(1,je)
@@ -958,7 +959,7 @@
  end subroutine del2_cubed_sphere
 
 
- subroutine del4_cubed_sphere(npx, npy, q, area, dx, dy, dxc, dyc, sin_sg, nmax, zero_ocean, oro, nested, domain, bd, regional)
+ subroutine del4_cubed_sphere(npx, npy, q, area, dx, dy, dxc, dyc, sin_sg, nmax, zero_ocean, oro, bounded_domain, domain, bd)
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(in):: npx, npy, nmax
       logical, intent(in):: zero_ocean
@@ -969,8 +970,8 @@
       real, intent(in):: dxc(bd%isd:bd%ied+1,bd%jsd:bd%jed)
       real, intent(in):: dyc(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
       real, intent(IN):: sin_sg(bd%isd:bd%ied,bd%jsd:bd%jed,9)
-      real, intent(inout):: q(bd%is-ng:bd%ie+ng, bd%js-ng:bd%je+ng)
-      logical, intent(IN) :: nested, regional
+      real, intent(inout):: q(bd%isd:bd%ied, bd%jsd:bd%jed)
+      logical, intent(IN) :: bounded_domain
       type(domain2d), intent(INOUT) :: domain
 ! diffusivity
       real :: diff(bd%is-3:bd%ie+2,bd%js-3:bd%je+2)
@@ -995,7 +996,7 @@
       jsd = bd%jsd
       jed = bd%jed
 
-      !On a nested grid the haloes are not filled. Set to zero.
+      !On a bounded_domain grid the haloes are not filled. Set to zero.
       d2 = 0.
       win = 0.
       wou = 0.
@@ -1016,28 +1017,28 @@
      call mpp_update_domains(q,domain)
 
 ! First step: average the corners:
-      if ( is==1 .and. js==1 .and. .not. (nested .or. regional)) then
+      if ( is==1 .and. js==1 .and. .not. bounded_domain) then
            q(1,1) = (q(1,1)*area(1,1)+q(0,1)*area(0,1)+q(1,0)*area(1,0))  &
                   / (       area(1,1)+       area(0,1)+       area(1,0) )
            q(0,1) = q(1,1)
            q(1,0) = q(1,1)
            q(0,0) = q(1,1)
       endif
-      if ( (ie+1)==npx .and. js==1  .and. .not. (nested .or. regional)) then
+      if ( (ie+1)==npx .and. js==1  .and. .not. bounded_domain) then
            q(ie, 1) = (q(ie,1)*area(ie,1)+q(npx,1)*area(npx,1)+q(ie,0)*area(ie,0)) &
                     / (        area(ie,1)+         area(npx,1)+        area(ie,0))
            q(npx,1) = q(ie,1)
            q(ie, 0) = q(ie,1)
            q(npx,0) = q(ie,1)
       endif
-      if ( (ie+1)==npx .and. (je+1)==npy  .and. .not. (nested .or. regional)) then
+      if ( (ie+1)==npx .and. (je+1)==npy  .and. .not. bounded_domain) then
            q(ie, je) = (q(ie,je)*area(ie,je)+q(npx,je)*area(npx,je)+q(ie,npy)*area(ie,npy))  &
                      / (         area(ie,je)+          area(npx,je)+          area(ie,npy))
            q(npx, je) = q(ie,je)
            q(ie, npy) = q(ie,je)
            q(npx,npy) = q(ie,je)
       endif
-      if ( is==1 .and. (je+1)==npy  .and. .not. (nested .or. regional)) then
+      if ( is==1 .and. (je+1)==npy  .and. .not. bounded_domain) then
            q(1, je) = (q(1,je)*area(1,je)+q(0,je)*area(0,je)+q(1,npy)*area(1,npy))   &
                     / (        area(1,je)+        area(0,je)+         area(1,npy))
            q(0, je) =  q(1,je)
@@ -1194,7 +1195,7 @@
 
  subroutine map_to_cubed_raw(igh, im, jt, lat1, lon1, zs, ft,  grid, agrid,  &
                               q2, f2, h2, npx, npy, jstart, jend, stretch_fac, &
-                              nested, npx_global, bd, regional)
+                              bounded_domain, npx_global, bd)
 
 ! Input
       type(fv_grid_bounds_type), intent(IN) :: bd
@@ -1207,7 +1208,7 @@
       real(kind=R_GRID), intent(in):: agrid(bd%isd:bd%ied,   bd%jsd:bd%jed,  2)
       integer, intent(in):: jstart, jend
       real(kind=R_GRID), intent(IN) :: stretch_fac
-      logical, intent(IN) :: nested, regional
+      logical, intent(IN) :: bounded_domain
 ! Output
       real, intent(out):: q2(bd%isd:bd%ied,bd%jsd:bd%jed) !< Mapped data at the target resolution
       real, intent(out):: f2(bd%isd:bd%ied,bd%jsd:bd%jed) !< oro
@@ -1347,7 +1348,7 @@
           if (((i < is .and. j < js) .or. &
                (i < is .and. j > je) .or. &
                (i > ie .and. j < js) .or. &
-               (i > ie .and. j > je)) .and. .not. (nested .or. regional)) then
+               (i > ie .and. j > je)) .and. .not. bounded_domain) then
              q2(i,j) = 1.e25
              f2(i,j) = 1.e25
              h2(i,j) = 1.e25
@@ -1594,12 +1595,14 @@
 !>@brief The subroutine 'read_namelis' reads the namelist file, 
 !! writes the namelist to log file, and initializes constants.
 subroutine read_namelist
-  integer :: unit, ierr, io
+
+   integer :: unit, ierr, io
 !   real    :: dtr, ght
 
 !  read namelist
 
    if (namelist_read) return
+
 #ifdef INTERNAL_FILE_NML
     read  (input_nml_file, nml=surf_map_nml, iostat=io)
     ierr = check_nml_error(io,'surf_map_nml')
@@ -1626,6 +1629,7 @@ end subroutine read_namelist
 
 !> The sugroutine 'zonal_mean' replaces 'p' with its zonal mean.
 subroutine zonal_mean(im, p, zmean)
+! replace p with its zonal mean
    integer, intent(in):: im
    real(kind=4), intent(inout):: p(im)
    real, intent(out):: zmean
