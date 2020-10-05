@@ -4409,6 +4409,12 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
             j1=jsd
             j2=jed
 !
+! CHJ --- s ---
+            if(trim(bc_vbl_name)=='vc'.or.trim(bc_vbl_name)=='u')then
+              j2=jed+1
+            endif
+! CHJ --- e ---
+
             i1=isd
             i2=is-1
 !
@@ -4453,7 +4459,13 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
             j1=jsd
             j2=jed
-!
+
+! CHJ --- s ---
+            if(trim(bc_vbl_name)=='vc'.or.trim(bc_vbl_name)=='u')then
+              j2=jed+1
+            endif
+! CHJ --- e ---
+
             i1=ie+1
             i2=ied
             if(trim(bc_vbl_name)=='uc'.or.trim(bc_vbl_name)=='v')then
