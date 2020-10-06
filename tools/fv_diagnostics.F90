@@ -4266,6 +4266,7 @@ contains
                  go to 1000
              endif
           enddo
+       a2(i,j,n) =missing_value
 1000   continue
     enddo
  enddo
