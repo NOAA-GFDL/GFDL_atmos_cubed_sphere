@@ -495,7 +495,8 @@ contains
         enddo
         do i=is-1,ie+1
            if( abs(da1(i)) < -a4(i) ) then
-           if( q1(i)+0.25/a4(i)*da1(i)**2+a4(i)*r12 < 0. ) then
+!           if( q1(i)+0.25/a4(i)*da1(i)**2+a4(i)*r12 < 0. ) then
+           if( q1(i)+0.25*da1(i)**2/a4(i)+a4(i)*r12 < 0. ) then
              if( .not. smt5(i) ) then
                 br(i) = 0.
                 bl(i) = 0.
@@ -823,7 +824,8 @@ if ( jord < 8 ) then
              enddo
              do i=ifirst,ilast
                 if( abs(xt1(i)) < -a4(i) ) then
-                  if( q(i,j)+0.25/a4(i)*xt1(i)**2+a4(i)*r12 < 0. ) then
+!                  if( q(i,j)+0.25/a4(i)*xt1(i)**2+a4(i)*r12 < 0. ) then
+                  if( q(i,j)+0.25*xt1(i)**2/a4(i)+a4(i)*r12 < 0. ) then
                     if( .not. smt5(i,j) ) then
                         br(i,j) = 0.
                         bl(i,j) = 0.
