@@ -1388,9 +1388,11 @@ CONTAINS
 #endif
 ! Local
    real, dimension(is:ie,km  ):: aa, bb, dd, w1, g_rat, gam
+   real, dimension(is:ie,km  ):: epslon !SK2020Sep28
    real, dimension(is:ie,km+1):: pp
    real, dimension(is:ie):: p1, bet
    real t1g, rdt, capa1
+   logical, parameter :: check_epslon = .false.
 #ifdef MULTI_GASES
    real  gamax, capa1x, t1gx
 #endif
@@ -1449,6 +1451,18 @@ CONTAINS
           pp(i,k) = pp(i,k) - gam(i,k)*pp(i,k+1)
        enddo
     enddo
+
+!SK2020Sep28
+    if (check_epslon) then
+! Compute epsilon
+    do k=1, km
+      do i=is, ie
+        epslon(i,k) = abs(pp(i,k+1)-pp(i,k))/(grav*dm2(i,k))
+      enddo
+    enddo
+    print*,' SIM1_solver:minmax(epslon)= ',minval(epslon),maxval(epslon)
+    endif
+!sk
 
 ! Start the w-solver
     do k=2, km
