@@ -46,8 +46,7 @@
 
 #ifdef MOLECULAR_DIFFUSION
  use molecular_diffusion_mod,  only: molecular_diffusion_coefs, &
-                                     atau_visc, atau_cond, atau_diff, &
-                                     md_init_wait
+                                     atau_visc, atau_cond, atau_diff
  use fv_mp_mod,         only: ng, is_master
  use tp_core_mod,       only: fv_tp_2d, pert_ppm, copy_corners,    &
                               deln_flux_explm, deln_flux_explm_udvd
@@ -1725,31 +1724,18 @@
       idir = mod(it-1,2)+1
 
 ! t
-!
-      if( .not. md_init_wait ) then
         call deln_flux_explm(nord,is,ie,js,je,npx,npy,cond,t,gridstruct,bd)
-      endif
 
-!
 ! q
-      if( .not. md_init_wait ) then
         do iq=1,nq
           call deln_flux_explm(nord,is,ie,js,je,npx,npy,diff,q(isd,jsd,k,iq),gridstruct,bd)
         enddo 
-      endif
 
-! u
-
-      if( .not. md_init_wait ) then
 ! u v
         call deln_flux_explm_udvd(nord,is,ie,js,je,npx,npy,visc, &
                                      u,v,gridstruct,bd)
-      endif
-!
 ! w
-      if( .not. md_init_wait ) then
         call deln_flux_explm(nord,is,ie,js,je,npx,npy,visc,w,gridstruct,bd)
-      endif
 
       return
 

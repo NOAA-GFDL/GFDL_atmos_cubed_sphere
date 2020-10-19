@@ -185,7 +185,7 @@ contains
 #endif
 
 #ifdef MOLECULAR_DIFFUSION
-    use molecular_diffusion_mod, only: md_init_wait, md_wait_sec
+    use molecular_diffusion_mod, only: md_time, md_wait_sec
 #endif
 
     real, intent(IN) :: bdt  !< Large time-step
@@ -836,8 +836,8 @@ contains
   enddo    ! n_map loop
                                                   call timing_off('FV_DYN_LOOP')
 #ifdef MOLECULAR_DIFFUSION
-  if( md_init_wait .and. time_total - time_offset .gt. md_wait_sec ) then
-    md_init_wait= .false.
+  if( .not. md_time .and. time_total - time_offset .gt. md_wait_sec ) then
+    md_time= .true.
     if( is_master() ) then
         write(*,*) 'Molecular diffusion is on with explicit scheme '
     endif

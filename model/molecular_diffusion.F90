@@ -48,8 +48,8 @@ module molecular_diffusion_mod
       implicit none
 
       integer :: ind_gas_str, ind_gas_end
-      integer :: md_layers
-      logical md_init_wait
+      integer :: md_layers, md_repeat
+      logical md_time
       real atau_visc, atau_cond, atau_diff    
       real md_wait_sec
       real, parameter:: amo=15.9994, amo2=31.9999, amo3=47.9982     !g/mol
@@ -73,36 +73,32 @@ module molecular_diffusion_mod
       CONTAINS
 ! --------------------------------------------------------
       subroutine molecular_diffusion_init(tau_visc,tau_cond,tau_diff, &
-                 md_n_layer,md_wait_hr,ncnst,nwat)
+                 md_n_layers,md_n_repeat,md_wait_hr,ncnst,nwat)
 !--------------------------------------------
 ! molecular diffusion control for each effect
 ! Input: tau_visc : viscosity effect weighting
 !        tau_cond : conductivity effect weighting
 !        tau_diff : diffusivity effect weighting
-!        md_n_layer  : how many layers are applied md, counted from top
+!        md_n_layers : how many layers are applied md, counted from top
+!        md_n_repeat  : how many time to repeat md  at given time
 !        md_wait_hr  : 0 for no wait to start otherwise by hour
 !        ncnst    : number of all prognostic tracers
 !        nwat     : number of water and the end location of water
 !--------------------------------------------
       real, intent(in):: tau_visc, tau_cond, tau_diff, md_wait_hr
-      integer, intent(in):: md_n_layer, ncnst, nwat
+      integer, intent(in):: md_n_layers, md_n_repeat, ncnst, nwat
 !
       atau_visc = abs(tau_visc)
       atau_cond = abs(tau_cond)
       atau_diff = abs(tau_diff)
-      md_layers   = md_n_layer
+      md_layers   = md_n_layers
+      md_repeat   = md_n_repeat
 !
-      if( md_wait_hr.gt.0.0 ) then
-        md_init_wait= .true.
-        md_wait_sec = md_wait_hr * 3600.0
-      else
-        md_init_wait= .false.
-        md_wait_sec = 0.0
-      endif
+      md_wait_sec = md_wait_hr * 3600.0
+      md_time = .false.
       
       if( is_master() ) then
         write(*,*) ' molecular_diffusion is on'
-        write(*,*) ' molecular_diffusion initial wait is ',md_init_wait
         write(*,*) ' molecular_diffusion initial wait seconds ',md_wait_sec
         write(*,*) ' molecular_diffusion number of layers ',md_layers
         write(*,*) ' viscosity    day ',tau_visc,' with effect ',atau_visc

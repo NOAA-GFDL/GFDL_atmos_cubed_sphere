@@ -113,7 +113,7 @@ module dyn_core_mod
   use fv_mp_mod,          only: start_group_halo_update, complete_group_halo_update
   use fv_mp_mod,          only: group_halo_update_type
 #ifdef MOLECULAR_DIFFUSION
-  use molecular_diffusion_mod,        only: md_layers
+  use molecular_diffusion_mod,        only: md_time, md_repeat, md_layers
   use sw_core_mod,        only: c_sw, d_sw, d_md
 #else
   use sw_core_mod,        only: c_sw, d_sw
@@ -276,6 +276,7 @@ contains
     real p(bd%isd:bd%ied,bd%jsd:bd%jed)
     real t(bd%isd:bd%ied,bd%jsd:bd%jed)
     real pkzf(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    integer nrpt
 #endif
 ! new array for stochastic kinetic energy backscatter (SKEB)
     real diss_e(bd%is:bd%ie,bd%js:bd%je)
@@ -1228,9 +1229,11 @@ contains
 
 #ifdef MOLECULAR_DIFFUSION
 ! -----------------------------------------------------
-! time-split and dimensional-split implicit scheme
-! and optional with direct explicit molecular diffusion
+! direct explicit molecular diffusion
 ! -----------------------------------------------------
+    if( md_time ) then
+! -----------------------------------------------------
+    do nrpt=1, md_repeat
 ! ------- update halo to prepare for diffusion -------
     pkzf = 0.0
     do k=1,npz
@@ -1334,6 +1337,10 @@ contains
 
 ! -------------------------------------------------
     enddo	! k loop of 2d molecular diffusion
+! -------------------------------------------------
+    enddo	! nrpt loop of md_repeat
+! -------------------------------------------------
+    endif 	! end of md_time
 ! -------------------------------------------------
 
 #endif		! for MOLECULAR_DIFFUSION
