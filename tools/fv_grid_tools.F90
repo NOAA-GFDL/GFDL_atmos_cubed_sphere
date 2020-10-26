@@ -573,9 +573,9 @@ contains
     real(kind=R_GRID), pointer, dimension(:,:) :: area, area_c
 #ifdef MOLECULAR_DIFFUSION
     real(kind=R_GRID), pointer, dimension(:,:) ::  area_u,  area_v
-    real(kind=R_GRID), pointer, dimension(:,:) :: rarea_u, rarea_v
     real(kind=R_GRID), pointer, dimension(:,:) ::  dx6,  dy6
-    real(kind=R_GRID), pointer, dimension(:,:) :: rdx6, rdy6
+    real, pointer, dimension(:,:) :: rarea_u, rarea_v
+    real, pointer, dimension(:,:) :: rdx6, rdy6
 #endif
 
     real(kind=R_GRID), pointer, dimension(:,:) :: sina, cosa, dx, dy, dxc, dyc, dxa, dya
@@ -618,12 +618,12 @@ contains
 #ifdef MOLECULAR_DIFFUSION
     area_u  => Atm%gridstruct%area_u_64
     area_v  => Atm%gridstruct%area_v_64
+    dx6     => Atm%gridstruct%dx6_64
+    dy6     => Atm%gridstruct%dy6_64
     rarea_u => Atm%gridstruct%rarea_u
     rarea_v => Atm%gridstruct%rarea_v
-    dx6    => Atm%gridstruct%dx6_64
-    dy6    => Atm%gridstruct%dy6_64
-    rdx6   => Atm%gridstruct%rdx6
-    rdy6   => Atm%gridstruct%rdy6
+    rdx6    => Atm%gridstruct%rdx6
+    rdy6    => Atm%gridstruct%rdy6
 #endif
 
     sina   => Atm%gridstruct%sina_64
