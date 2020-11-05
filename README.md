@@ -1,6 +1,5 @@
-# GFDL_atmos_cubed_sphere
-
 This is for the FV3 dynamical core and the GFDL Microphysics for use by NCEP/EMC within GFS.
+The source in this branch reflects the codebase delivered to NCEP/EMC for use in GFS.  Updates will be forthcoming.
 
 # Where to find information
 
