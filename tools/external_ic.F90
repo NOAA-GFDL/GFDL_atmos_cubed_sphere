@@ -148,7 +148,7 @@ module external_ic_mod
    use external_sst_mod,   only: i_sst, j_sst, sst_ncep
    use fms_mod,            only: file_exist, read_data, field_exist, write_version_number
    use fms_mod,            only: open_namelist_file, check_nml_error, close_file
-   use fms_mod,            only: get_mosaic_tile_file, read_data, error_mesg
+   use fms_mod,            only: get_mosaic_tile_file, error_mesg
    use fms_io_mod,         only: get_tile_string, field_size, free_restart_type
    use fms_io_mod,         only: restart_file_type, register_restart_field
    use fms_io_mod,         only: save_restart, restore_state, set_filename_appendix, get_global_att_value
