@@ -1655,48 +1655,31 @@ contains
     allocate ( Atm%gridstruct% dyc_64(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
     allocate ( Atm%gridstruct%rdyc(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
     
-    allocate ( Atm%gridstruct% dxa(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) ; Atm%gridstruct% dxa=real_snan
-    allocate ( Atm%gridstruct% dxa_64(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) ; Atm%gridstruct% dxa_64=real_snan
-    allocate ( Atm%gridstruct%rdxa(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) ; Atm%gridstruct%rdxa=real_snan
-    allocate ( Atm%gridstruct% dya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) ; Atm%gridstruct% dya=real_snan
-    allocate ( Atm%gridstruct% dya_64(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) ; Atm%gridstruct% dya_64=real_snan
-    allocate ( Atm%gridstruct%rdya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) ; Atm%gridstruct%rdya=real_snan
+    allocate ( Atm%gridstruct% dxa(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
+    allocate ( Atm%gridstruct% dxa_64(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) 
+    allocate ( Atm%gridstruct%rdxa(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) 
+    allocate ( Atm%gridstruct% dya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) 
+    allocate ( Atm%gridstruct% dya_64(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) 
+    allocate ( Atm%gridstruct%rdya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) 
 
 #ifdef MOLECULAR_DIFFUSION
     allocate ( Atm%gridstruct% area_u_64(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) ) 
-               Atm%gridstruct% area_u_64=real_snan 
     allocate ( Atm%gridstruct% area_v_64(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) ) 
-               Atm%gridstruct% area_v_64=real_snan 
     allocate ( Atm%gridstruct% dx6_64(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-               Atm%gridstruct% dx6_64=real_snan
     allocate ( Atm%gridstruct% dy6_64(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-               Atm%gridstruct% dy6_64=real_snan
     allocate ( Atm%gridstruct% area_u(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) ) 
-               Atm%gridstruct% area_u=real_snan 
     allocate ( Atm%gridstruct% area_v(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) ) 
-               Atm%gridstruct% area_v=real_snan 
     allocate ( Atm%gridstruct% dx6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-               Atm%gridstruct% dx6=real_snan
     allocate ( Atm%gridstruct% dy6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-               Atm%gridstruct% dy6=real_snan
     allocate ( Atm%gridstruct%rarea_u(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) ) 
-               Atm%gridstruct%rarea_u=real_snan 
     allocate ( Atm%gridstruct%rarea_v(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) ) 
-               Atm%gridstruct%rarea_v=real_snan 
     allocate ( Atm%gridstruct%rdx6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-               Atm%gridstruct%rdx6=real_snan
     allocate ( Atm%gridstruct%rdy6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-               Atm%gridstruct%rdy6=real_snan
     allocate ( Atm%gridstruct%sina_6(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
-               Atm%gridstruct%sina_6=real_snan
     allocate ( Atm%gridstruct%delu_6(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
-               Atm%gridstruct%delu_6=real_snan
     allocate ( Atm%gridstruct%delv_6(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
-               Atm%gridstruct%delv_6=real_snan
     allocate ( Atm%gridstruct%delu_5(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
-               Atm%gridstruct%delu_5=real_snan
     allocate ( Atm%gridstruct%delv_5(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
-               Atm%gridstruct%delv_5=real_snan
 #endif
     
     allocate ( Atm%gridstruct%grid (isd_2d:ied_2d+1,jsd_2d:jed_2d+1,1:ndims_2d) )

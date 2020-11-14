@@ -599,6 +599,7 @@ contains
 #ifdef MOLECULAR_DIFFUSION
    time_total = seconds + 86400. * days
 #endif
+
 !  if (seconds < 10800 .and. days == 0) then
 !    n_split_loc = (Atm(n)%flagstruct%n_split * 3) / 2
    if (seconds < nint(3600*Atm(n)%flagstruct%fhouri) .and. Atm(n)%flagstruct%fac_n_spl > 1.0) then
@@ -1264,7 +1265,6 @@ contains
    rrg  = rdgas / grav
 
    if (first_time) then
-!    print *, 'calculating slp kr value'
      ! determine 0.8 sigma reference level
      sigtop = Atm(mygrid)%ak(1)/pstd_mks+Atm(mygrid)%bk(1)
      do k = 1, npz
@@ -1749,8 +1749,8 @@ contains
 #ifdef MOLECULAR_DIFFUSION
        time_total = seconds + 86400. * days
 #endif
-      if (seconds < nint(3600*Atm(mytile)%flagstruct%fhouri) .and. Atm(mytile)%flagstruct%fac_n_spl > 1.0) then
-        n_split_loc = nint(Atm(mytile)%flagstruct%n_split * Atm(mytile)%flagstruct%fac_n_spl)
+      if (seconds < nint(3600*Atm(mygrid)%flagstruct%fhouri) .and. Atm(mygrid)%flagstruct%fac_n_spl > 1.0) then
+        n_split_loc = nint(Atm(mygrid)%flagstruct%n_split * Atm(mygrid)%flagstruct%fac_n_spl)
       else
         n_split_loc = Atm(mygrid)%flagstruct%n_split
       endif
@@ -1760,42 +1760,42 @@ contains
 
      do m=1,Atm(mygrid)%flagstruct%na_init
 ! Forward call
-       call fv_dynamics(Atm(mytile)%npx, Atm(mytile)%npy, npz,  nq, Atm(mytile)%ng, dt_atmos, 0.,                 &
-                        Atm(mytile)%flagstruct%fill, Atm(mytile)%flagstruct%reproduce_sum, kappa, cp_air, zvir,   &
-!                       Atm(mytile)%ptop, Atm(mytile)%ks, nq, Atm(mytile)%flagstruct%n_split,                     &
-                        Atm(mytile)%ptop, Atm(mytile)%ks, nq,  n_split_loc,                                       &
-                        Atm(mytile)%flagstruct%q_split, Atm(mytile)%u, Atm(mytile)%v, Atm(mytile)%w,              &
-                        Atm(mytile)%delz, Atm(mytile)%flagstruct%hydrostatic,                                     & 
-                        Atm(mytile)%pt, Atm(mytile)%delp, Atm(mytile)%q, Atm(mytile)%ps,                          &
-                        Atm(mytile)%pe, Atm(mytile)%pk, Atm(mytile)%peln, Atm(mytile)%pkz, Atm(mytile)%phis,      &
-                        Atm(mytile)%q_con, Atm(mytile)%omga, Atm(mytile)%ua, Atm(mytile)%va, Atm(mytile)%uc, Atm(mytile)%vc, &
-                        Atm(mytile)%ak, Atm(mytile)%bk, Atm(mytile)%mfx, Atm(mytile)%mfy,                         &
-                        Atm(mytile)%cx, Atm(mytile)%cy, Atm(mytile)%ze0, Atm(mytile)%flagstruct%hybrid_z,         &
-                        Atm(mytile)%gridstruct, Atm(mytile)%flagstruct,                                           &
-                        Atm(mytile)%neststruct, Atm(mytile)%idiag, Atm(mytile)%bd, Atm(mytile)%parent_grid,       &
+    call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, dt_atmos, 0.,      &
+                     Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
+!                     Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
+                     Atm(mygrid)%ptop, Atm(mygrid)%ks, nq,  n_split_loc,                                       &
+                     Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
+                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      & 
+                     Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
+                     Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
+                     Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
+                     Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
+                     Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
+                     Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
+                     Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
 #ifdef MOLECULAR_DIFFUSION
-                        Atm(mytile)%domain,Atm(mytile)%diss_est,time_total)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est,time_total)
 #else
-                        Atm(mytile)%domain,Atm(mytile)%diss_est)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est)
 #endif
 ! Backward
-       call fv_dynamics(Atm(mytile)%npx, Atm(mytile)%npy, npz,  nq, Atm(mytile)%ng, -dt_atmos, 0.,                &
-                        Atm(mytile)%flagstruct%fill, Atm(mytile)%flagstruct%reproduce_sum, kappa, cp_air, zvir,   &
-!                       Atm(mytile)%ptop, Atm(mytile)%ks, nq, Atm(mytile)%flagstruct%n_split,                     &
-                        Atm(mytile)%ptop, Atm(mytile)%ks, nq, n_split_loc,                                        &
-                        Atm(mytile)%flagstruct%q_split, Atm(mytile)%u, Atm(mytile)%v, Atm(mytile)%w,              &
-                        Atm(mytile)%delz, Atm(mytile)%flagstruct%hydrostatic,                                     & 
-                        Atm(mytile)%pt, Atm(mytile)%delp, Atm(mytile)%q, Atm(mytile)%ps,                          &
-                        Atm(mytile)%pe, Atm(mytile)%pk, Atm(mytile)%peln, Atm(mytile)%pkz, Atm(mytile)%phis,      &
-                        Atm(mytile)%q_con, Atm(mytile)%omga, Atm(mytile)%ua, Atm(mytile)%va, Atm(mytile)%uc, Atm(mytile)%vc, &
-                        Atm(mytile)%ak,    Atm(mytile)%bk,   Atm(mytile)%mfx, Atm(mytile)%mfy,                    &
-                        Atm(mytile)%cx,    Atm(mytile)%cy,   Atm(mytile)%ze0, Atm(mytile)%flagstruct%hybrid_z,    &
-                        Atm(mytile)%gridstruct, Atm(mytile)%flagstruct,                                           &
-                        Atm(mytile)%neststruct, Atm(mytile)%idiag, Atm(mytile)%bd, Atm(mytile)%parent_grid,       &
+    call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, -dt_atmos, 0.,      &
+                     Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
+!                    Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
+                     Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, n_split_loc,                                        &
+                     Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
+                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      & 
+                     Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
+                     Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
+                     Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
+                     Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
+                     Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
+                     Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
+                     Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
 #ifdef MOLECULAR_DIFFUSION
-                        Atm(mytile)%domain,Atm(mytile)%diss_est,time_total)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est,time_total)
 #else
-                        Atm(mytile)%domain,Atm(mytile)%diss_est)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est)
 #endif
 !Nudging back to IC
 !$omp parallel do default (none) &
@@ -1860,42 +1860,40 @@ contains
        enddo
 
 ! Backward
-       call fv_dynamics(Atm(mytile)%npx, Atm(mytile)%npy, npz,  nq, Atm(mytile)%ng, -dt_atmos, 0.,                &
-                        Atm(mytile)%flagstruct%fill, Atm(mytile)%flagstruct%reproduce_sum, kappa, cp_air, zvir,   &
-!                       Atm(mytile)%ptop, Atm(mytile)%ks, nq, Atm(mytile)%flagstruct%n_split,                     &
-                        Atm(mytile)%ptop, Atm(mytile)%ks, nq, n_split_loc,                                        &
-                        Atm(mytile)%flagstruct%q_split, Atm(mytile)%u, Atm(mytile)%v, Atm(mytile)%w,              &
-                        Atm(mytile)%delz, Atm(mytile)%flagstruct%hydrostatic,                                     & 
-                        Atm(mytile)%pt, Atm(mytile)%delp, Atm(mytile)%q, Atm(mytile)%ps,                          &
-                        Atm(mytile)%pe, Atm(mytile)%pk, Atm(mytile)%peln, Atm(mytile)%pkz, Atm(mytile)%phis,      &
-                        Atm(mytile)%q_con, Atm(mytile)%omga, Atm(mytile)%ua, Atm(mytile)%va, Atm(mytile)%uc, Atm(mytile)%vc, &
-                        Atm(mytile)%ak, Atm(mytile)%bk, Atm(mytile)%mfx, Atm(mytile)%mfy,                         &
-                        Atm(mytile)%cx, Atm(mytile)%cy, Atm(mytile)%ze0, Atm(mytile)%flagstruct%hybrid_z,         &
-                        Atm(mytile)%gridstruct, Atm(mytile)%flagstruct,                                           &
-                        Atm(mytile)%neststruct, Atm(mytile)%idiag, Atm(mytile)%bd, Atm(mytile)%parent_grid,       &
+    call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, -dt_atmos, 0.,      &
+                     Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
+                     Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
+                     Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
+                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      & 
+                     Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
+                     Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
+                     Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
+                     Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
+                     Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
+                     Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
+                     Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
 #ifdef MOLECULAR_DIFFUSION
-                        Atm(mytile)%domain,Atm(mytile)%diss_est,time_total)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est,time_total)
 #else
-                        Atm(mytile)%domain,Atm(mytile)%diss_est)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est)
 #endif
 ! Forward call
-       call fv_dynamics(Atm(mytile)%npx, Atm(mytile)%npy, npz,  nq, Atm(mytile)%ng, dt_atmos, 0.,                 &
-                        Atm(mytile)%flagstruct%fill, Atm(mytile)%flagstruct%reproduce_sum, kappa, cp_air, zvir,   &
-!                       Atm(mytile)%ptop, Atm(mytile)%ks, nq, Atm(mytile)%flagstruct%n_split,                     &
-                        Atm(mytile)%ptop, Atm(mytile)%ks, nq, n_split_loc,                                        &
-                        Atm(mytile)%flagstruct%q_split, Atm(mytile)%u, Atm(mytile)%v, Atm(mytile)%w,              &
-                        Atm(mytile)%delz, Atm(mytile)%flagstruct%hydrostatic,                                     & 
-                        Atm(mytile)%pt, Atm(mytile)%delp, Atm(mytile)%q, Atm(mytile)%ps,                          &
-                        Atm(mytile)%pe, Atm(mytile)%pk, Atm(mytile)%peln, Atm(mytile)%pkz, Atm(mytile)%phis,      &
-                        Atm(mytile)%q_con, Atm(mytile)%omga, Atm(mytile)%ua, Atm(mytile)%va, Atm(mytile)%uc, Atm(mytile)%vc, &
-                        Atm(mytile)%ak, Atm(mytile)%bk, Atm(mytile)%mfx, Atm(mytile)%mfy,                         &
-                        Atm(mytile)%cx, Atm(mytile)%cy, Atm(mytile)%ze0, Atm(mytile)%flagstruct%hybrid_z,         &
-                        Atm(mytile)%gridstruct, Atm(mytile)%flagstruct,                                           &
-                        Atm(mytile)%neststruct, Atm(mytile)%idiag, Atm(mytile)%bd, Atm(mytile)%parent_grid,       &
+    call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, dt_atmos, 0.,      &
+                     Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
+                     Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
+                     Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
+                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      & 
+                     Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
+                     Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
+                     Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
+                     Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
+                     Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
+                     Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
+                     Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
 #ifdef MOLECULAR_DIFFUSION
-                        Atm(mytile)%domain,Atm(mytile)%diss_est,time_total)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est,time_total)
 #else
-                        Atm(mytile)%domain,Atm(mytile)%diss_est)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est)
 #endif
 ! Nudging back to IC
 !$omp parallel do default (none) &

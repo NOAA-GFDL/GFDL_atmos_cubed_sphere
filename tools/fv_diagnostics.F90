@@ -1580,6 +1580,7 @@ contains
          call range_check('VA', Atm(n)%va, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
                            -250., 250., bad_range, Time)
 #endif
+
 #ifndef SW_DYNAMICS
          call range_check('TA', Atm(n)%pt, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
 #ifdef HIWPP
@@ -1587,7 +1588,7 @@ contains
                            130., 3500., bad_range, Time)
 #else
                            130., 350., bad_range, Time) !DCMIP ICs have very low temperatures
-#endif
+#endif	! MOLECULAR_DIFFUSION
 #else
 #ifdef MULTI_GASES
                            130., 3500., bad_range, Time)
@@ -1596,8 +1597,11 @@ contains
                            130., 3500., bad_range, Time)
 #else
                            150., 350., bad_range, Time)
-#endif
-#endif
+#endif	! MOLECULAR_DIFFUSION
+#endif	! MULTI_GASES
+#endif	! HIWPP
+#endif	! SW_DYNAMICS
+
          call range_check('Qv', Atm(n)%q(:,:,:,sphum), isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
                           -1.e-8, 1.e20, bad_range, Time)
 

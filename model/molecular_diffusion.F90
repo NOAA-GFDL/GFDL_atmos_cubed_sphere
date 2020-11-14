@@ -40,6 +40,8 @@ module molecular_diffusion_mod
 
       use constants_mod,     only: rdgas, cp_air
       use     fv_mp_mod,     only: is_master
+      use mpp_mod,           only: stdlog, input_nml_file
+      use fms_mod,           only: check_nml_error, open_namelist_file, close_file
 #ifdef MULTI_GASES
       use multi_gases_mod,   only: ind_gas, num_gas
 #endif
@@ -48,10 +50,11 @@ module molecular_diffusion_mod
       implicit none
 
       integer :: ind_gas_str, ind_gas_end
-      integer :: md_layers, md_repeat
-      logical md_time
-      real atau_visc, atau_cond, atau_diff    
+      integer :: md_layers, md_reflev, md_repeat
+      real tau_visc, tau_cond, tau_diff    
+      real md_wait_hr
       real md_wait_sec
+      logical md_time
       real, parameter:: amo=15.9994, amo2=31.9999, amo3=47.9982     !g/mol
       real, parameter::              amn2=28.013,  amh2o=18.0154    !g/mol
 !hmhj muo3 and muh2o are not precise, correct later
@@ -67,32 +70,19 @@ module molecular_diffusion_mod
       real, parameter:: a12=9.69e18 ! O-O2 diffusion params
       real, parameter:: s12=0.774
 !
-      public molecular_diffusion_init
+      public molecular_diffusion_init, read_namelist_molecular_diffusion_nml
       public molecular_diffusion_coefs
 
       CONTAINS
 ! --------------------------------------------------------
-      subroutine molecular_diffusion_init(tau_visc,tau_cond,tau_diff, &
-                 md_n_layers,md_n_repeat,md_wait_hr,ncnst,nwat)
+      subroutine molecular_diffusion_init(ncnst,nwat)
 !--------------------------------------------
-! molecular diffusion control for each effect
-! Input: tau_visc : viscosity effect weighting
-!        tau_cond : conductivity effect weighting
-!        tau_diff : diffusivity effect weighting
-!        md_n_layers : how many layers are applied md, counted from top
-!        md_n_repeat  : how many time to repeat md  at given time
-!        md_wait_hr  : 0 for no wait to start otherwise by hour
+! molecular diffusion control for each effect from namelist
+! Input: 
 !        ncnst    : number of all prognostic tracers
 !        nwat     : number of water and the end location of water
 !--------------------------------------------
-      real, intent(in):: tau_visc, tau_cond, tau_diff, md_wait_hr
-      integer, intent(in):: md_n_layers, md_n_repeat, ncnst, nwat
-!
-      atau_visc = abs(tau_visc)
-      atau_cond = abs(tau_cond)
-      atau_diff = abs(tau_diff)
-      md_layers   = md_n_layers
-      md_repeat   = md_n_repeat
+      integer, intent(in):: ncnst, nwat
 !
       md_wait_sec = md_wait_hr * 3600.0
       md_time = .false.
@@ -101,9 +91,10 @@ module molecular_diffusion_mod
         write(*,*) ' molecular_diffusion is on'
         write(*,*) ' molecular_diffusion initial wait seconds ',md_wait_sec
         write(*,*) ' molecular_diffusion number of layers ',md_layers
-        write(*,*) ' viscosity    day ',tau_visc,' with effect ',atau_visc
-        write(*,*) ' conductivity day ',tau_cond,' with effect ',atau_cond
-        write(*,*) ' diffusivity  day ',tau_diff,' with effect ',atau_diff
+        write(*,*) ' molecular_diffusion ref level for coeff ',md_reflev
+        write(*,*) ' viscosity    day ',tau_visc,' with effect ',tau_visc
+        write(*,*) ' conductivity day ',tau_cond,' with effect ',tau_cond
+        write(*,*) ' diffusivity  day ',tau_diff,' with effect ',tau_diff
       endif
 
 #ifdef MULTI_GASES
@@ -116,6 +107,40 @@ module molecular_diffusion_mod
 
       return
       end subroutine molecular_diffusion_init
+
+! --------------------------------------------------------
+      subroutine read_namelist_molecular_diffusion_nml(nml_filename,ncnst,nwat)
+
+      character(*), intent(IN) :: nml_filename
+      integer, intent(IN) :: ncnst, nwat
+      integer :: ierr, f_unit, unit, ios
+
+      namelist /molecular_diffusion_nml/ tau_visc, tau_cond, tau_diff, &
+                                         md_layers, md_reflev, md_repeat, &
+                                         md_wait_hr
+
+      unit = stdlog()
+
+#ifdef INTERNAL_FILE_NML
+
+      ! Read molecular_diffusion namelist
+        read (input_nml_file,molecular_diffusion_nml,iostat=ios)
+        ierr = check_nml_error(ios,'molecular_diffusion_nml')
+
+#else
+      ! Read molecular_diffusion namelist
+        f_unit = open_namelist_file(nml_filename)
+        rewind (f_unit)
+        read (f_unit,molecular_diffusion_nml,iostat=ios)
+        ierr = check_nml_error(ios,'molecular_diffusion_nml')
+        call close_file(f_unit)
+#endif
+      write(unit, nml=molecular_diffusion_nml)
+      call molecular_diffusion_init(ncnst,nwat)
+
+      return
+      end subroutine read_namelist_molecular_diffusion_nml
+
 ! --------------------------------------------------------
       subroutine molecular_diffusion_coefs(dim,plyr,temp,q,mur,lam,d12)
 !--------------------------------------------
