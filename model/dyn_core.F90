@@ -113,7 +113,9 @@ module dyn_core_mod
   use fv_mp_mod,          only: start_group_halo_update, complete_group_halo_update
   use fv_mp_mod,          only: group_halo_update_type
 #ifdef MOLECULAR_DIFFUSION
-  use molecular_diffusion_mod,        only: md_time, md_repeat, md_layers
+  use molecular_diffusion_mod,        only: md_time, md_repeat, md_layers, &
+                                            tau_visc, tau_cond, tau_diff,  &
+                                            md_reflev
   use sw_core_mod,        only: c_sw, d_sw, d_md
 #else
   use sw_core_mod,        only: c_sw, d_sw
@@ -1316,11 +1318,18 @@ contains
 !$OMP parallel do default(none) shared(npz,flagstruct,gridstruct,bd,      &
 !$OMP                                  is,ie,js,je,isd,ied,jsd,jed,it,dt, &
 !$OMP                                  pt,u,v,w,q,pkz,pkzf,cappa,akap,nq, &
-!$OMP                                  zvir,md_layers)                    &
+!$OMP                                  tau_visc,tau_cond,tau_diff,        &
+!$OMP                                  zvir,md_layers,md_reflev)          &
 !$OMP                          private(k,i,j,p,t)
 ! ----------------
     do k=1, md_layers
 ! ----------------
+     
+       if( md_reflev .gt. 0 ) then
+           tau_diff = min( 1.0, 0.5 * (1.0+real(k-1)/real(md_reflev)) )
+           tau_cond = tau_diff
+           tau_visc = tau_diff
+       endif
 
 ! ------- prepare p and t for molecular diffusion coefficients
 
