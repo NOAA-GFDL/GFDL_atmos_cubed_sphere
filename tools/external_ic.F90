@@ -197,10 +197,11 @@ module external_ic_mod
 
    real, parameter:: zvir = rvgas/rdgas - 1.
    real(kind=R_GRID), parameter :: cnst_0p20=0.20d0
-   real :: deg2rad
-   character (len = 80) :: source   ! This tells what the input source was for the data
+   real, parameter :: deg2rad = pi/180.
+   character (len = 80),public :: source   ! This tells what the input source was for the data
    character(len=27), parameter :: source_fv3gfs = 'FV3GFS GAUSSIAN NEMSIO FILE'
-  public get_external_ic, get_cubed_sphere_terrain
+   public get_external_ic, get_cubed_sphere_terrain
+   public remap_scalar, remap_dwinds
 
 ! version number of this module
 ! Include variable "version" to be written to log file.
@@ -999,8 +1000,6 @@ contains
       jsd = Atm%bd%jsd
       jed = Atm%bd%jed
 
-      deg2rad = pi/180.
-
       npz = Atm%npz
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
       if(is_master()) write(*,*) 'ntracers = ', ntracers, 'ntprog = ',ntprog
@@ -1563,8 +1562,6 @@ contains
       ied = Atm%bd%ied
       jsd = Atm%bd%jsd
       jed = Atm%bd%jed
-
-      deg2rad = pi/180.
 
       npz = Atm%npz
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
