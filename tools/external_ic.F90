@@ -148,7 +148,7 @@ module external_ic_mod
    use external_sst_mod,   only: i_sst, j_sst, sst_ncep
    use fms_mod,            only: file_exist, read_data, field_exist, write_version_number
    use fms_mod,            only: open_namelist_file, check_nml_error, close_file
-   use fms_mod,            only: get_mosaic_tile_file, read_data, error_mesg
+   use fms_mod,            only: get_mosaic_tile_file, error_mesg
    use fms_io_mod,         only: get_tile_string, field_size, free_restart_type
    use fms_io_mod,         only: restart_file_type, register_restart_field
    use fms_io_mod,         only: save_restart, restore_state, set_filename_appendix, get_global_att_value
@@ -197,10 +197,11 @@ module external_ic_mod
 
    real, parameter:: zvir = rvgas/rdgas - 1.
    real(kind=R_GRID), parameter :: cnst_0p20=0.20d0
-   real :: deg2rad
-   character (len = 80) :: source   ! This tells what the input source was for the data
+   real, parameter :: deg2rad = pi/180.
+   character (len = 80),public :: source   ! This tells what the input source was for the data
    character(len=27), parameter :: source_fv3gfs = 'FV3GFS GAUSSIAN NEMSIO FILE'
-  public get_external_ic, get_cubed_sphere_terrain
+   public get_external_ic, get_cubed_sphere_terrain
+   public remap_scalar, remap_dwinds
 
 ! version number of this module
 ! Include variable "version" to be written to log file.
@@ -999,8 +1000,6 @@ contains
       jsd = Atm%bd%jsd
       jed = Atm%bd%jed
 
-      deg2rad = pi/180.
-
       npz = Atm%npz
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
       if(is_master()) write(*,*) 'ntracers = ', ntracers, 'ntprog = ',ntprog
@@ -1563,8 +1562,6 @@ contains
       ied = Atm%bd%ied
       jsd = Atm%bd%jsd
       jed = Atm%bd%jed
-
-      deg2rad = pi/180.
 
       npz = Atm%npz
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
