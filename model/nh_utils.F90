@@ -1834,6 +1834,51 @@ CONTAINS
      enddo
  else
 ! Assuming grid varying in vertical only
+
+#ifdef DEEP_ATMOS_DYNAMICS
+
+  g0  = dp0(1) / dp0(2)
+  bet = 1.5 + 2.*g0
+  do i=i1,i2
+      qe1(i,2) = 3.*( 0.5*q1(i,j,1) + g0*q1(i,j,2) ) / bet
+      qe2(i,2) = 3.*( 0.5*q2(i,j,1) + g0*q2(i,j,2) ) / bet
+      gam(i,1) =  g0/bet
+  enddo
+
+  do k=2,km-2
+     gk = dp0(k) / dp0(k+1)
+     do i=i1,i2
+        bet =  2. + 2.*gk - gam(i,k-1)
+        qe1(i,k+1) = ( 3.*(q1(i,j,k)+gk*q1(i,j,k+1)) - qe1(i,k) ) / bet
+        qe2(i,k+1) = ( 3.*(q2(i,j,k)+gk*q2(i,j,k+1)) - qe2(i,k) ) / bet
+        gam(i,k) = gk / bet
+     enddo
+  enddo
+
+  gk = dp0(km-1) / dp0(km)
+  do i=i1,i2
+     bet =  2. + 1.5*gk - gam(i,km-2)
+     qe1(i,km) = ( 3.*(q1(i,j,km-1)+0.5*gk*q1(i,j,km)) - qe1(i,km-1) ) / bet
+     qe2(i,km) = ( 3.*(q2(i,j,km-1)+0.5*gk*q2(i,j,km)) - qe2(i,km-1) ) / bet
+     gam(i,km-1) = gk / bet
+  enddo
+
+  do i=i1,i2
+     qe1(i,km+1) = 1.5*q1(i,j,km) - 0.5*qe1(i,km)
+     qe2(i,km+1) = 1.5*q2(i,j,km) - 0.5*qe2(i,km)
+  enddo
+
+  do i=i1,i2
+     do k=km,2,-1
+        qe1(i,k) = qe1(i,k) - gam(i,k-1)*qe1(i,k+1)
+        qe2(i,k) = qe2(i,k) - gam(i,k-1)*qe2(i,k+1)
+     enddo
+     qe1(i,1) = 1.5*q1(i,j,1) - 0.5*qe1(i,2)
+     qe2(i,1) = 1.5*q2(i,j,1) - 0.5*qe2(i,2)
+  enddo
+
+#else	! DEEP_ATMOS_DYNAMICS (nonslip above; 2nd order BC below)
+
    g0 = dp0(2) / dp0(1)
   xt1 = 2.*g0*(g0+1. )
   bet =    g0*(g0+0.5)
@@ -1867,6 +1912,9 @@ CONTAINS
         qe2(i,k) = qe2(i,k) - gam(i,k)*qe2(i,k+1)
      enddo
   enddo
+
+#endif	! DEEP_ATMOS_DYNAMICS
+
  endif
 
 !------------------

@@ -137,11 +137,11 @@ module multi_gases_mod
       end subroutine multi_gases_init
       subroutine read_namelist_multi_gases_nml(nml_filename,ncnst,nwat)
 
-        character(*), intent(IN) :: nml_filename
-        integer, intent(IN) :: ncnst, nwat
-        integer :: ierr, f_unit, unit, ios
+       character(*), intent(IN) :: nml_filename
+       integer, intent(IN) :: ncnst, nwat
+       integer :: ierr, f_unit, unit, ios
 
-        namelist /multi_gases_nml/ ri,cpi
+       namelist /multi_gases_nml/ ri,cpi
 
        unit = stdlog()
 
