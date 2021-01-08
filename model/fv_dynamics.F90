@@ -180,8 +180,12 @@ contains
                         parent_grid, domain, diss_est, time_total)
 
 #ifdef CCPP
-    use mpp_mod,   only: FATAL, mpp_error
-    use CCPP_data, only: CCPP_interstitial
+    use mpp_mod,           only: FATAL, mpp_error
+    use ccpp_static_api,   only: ccpp_physics_timestep_init,    &
+                                 ccpp_physics_timestep_finalize
+    use CCPP_data,         only: ccpp_suite
+    use CCPP_data,         only: cdata => cdata_tile
+    use CCPP_data,         only: CCPP_interstitial
 #endif
 
     real, intent(IN) :: bdt  !< Large time-step
@@ -323,7 +327,8 @@ contains
       rdg     = -rdgas * agrav
 
 #ifdef CCPP
-
+      ! Call CCPP timestep init
+      call ccpp_physics_timestep_init(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
       ! Reset all interstitial variables for CCPP version
       ! of fast physics, and manually set runtime parameters
       call CCPP_interstitial%reset()
@@ -998,6 +1003,9 @@ contains
   endif
 
 #ifdef CCPP
+  ! Call CCPP timestep finalize
+  call ccpp_physics_timestep_finalize(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
+
   end associate ccpp_associate
 #endif
 
