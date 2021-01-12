@@ -629,7 +629,7 @@ contains
 
     if (Atm%neststruct%nested .or. ANY(Atm%neststruct%child_grids)) then
         grid_global => Atm%grid_global
-    else if( trim(grid_file) .NE. 'INPUT/grid_spec.nc') then
+    else if( trim(grid_file) .EQ. 'Inline') then
        allocate(grid_global(1-ng:npx  +ng,1-ng:npy  +ng,ndims,1:nregions))
     endif
     
@@ -683,7 +683,7 @@ contains
              ! still need to set up 
              call setup_aligned_nest(Atm)
           else
-           if(trim(grid_file) == 'INPUT/grid_spec.nc') then  
+           if(trim(grid_file) .NE. 'Inline') then
              call read_grid(Atm, grid_file, ndims, nregions, ng)
            else
             if (Atm%flagstruct%grid_type>=0) call gnomonic_grids(Atm%flagstruct%grid_type, npx-1, xs, ys)
@@ -1180,8 +1180,8 @@ contains
     enddo
 
     if (Atm%neststruct%nested .or. ANY(Atm%neststruct%child_grids)) then
-    nullify(grid_global)
-    else if( trim(grid_file) .NE. 'INPUT/grid_spec.nc') then
+       nullify(grid_global)
+    else if( trim(grid_file) .EQ. 'Inline') then
        deallocate(grid_global)
     endif
 
