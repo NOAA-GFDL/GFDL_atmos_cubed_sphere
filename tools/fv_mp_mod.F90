@@ -136,9 +136,7 @@
       integer, allocatable :: grids_master_procs(:)
       integer, dimension(MAX_NNEST) :: tile_fine = 0 !Global index of LAST tile in a mosaic
       type(nest_domain_type) :: global_nest_domain !ONE structure for ALL levels of nesting
-#ifdef CCPP
       public commglobal
-#endif
       public mp_start, mp_assign_gid, mp_barrier, mp_stop!, npes
       public domain_decomp, mp_bcst, mp_reduce_max, mp_reduce_sum, mp_gather
       public mp_reduce_min
