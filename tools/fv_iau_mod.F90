@@ -53,8 +53,15 @@ module fv_iau_mod
                                  get_var1_double,     &
                                  get_var3_r4,         &
                                  get_var1_real, check_var_exists
+#ifdef GFS_TYPES
+  use GFS_typedefs,        only: IPD_init_type => GFS_init_type, &
+                                 IPD_control_type => GFS_control_type, &
+                                 kind_phys
+#else
   use IPD_typedefs,        only: IPD_init_type, IPD_control_type, &
                                  kind_phys => IPD_kind_phys
+#endif
+
   use block_control_mod,   only: block_control_type
   use fv_treat_da_inc_mod, only: remap_coef
   use tracer_manager_mod,  only: get_tracer_names,get_tracer_index, get_number_tracers
