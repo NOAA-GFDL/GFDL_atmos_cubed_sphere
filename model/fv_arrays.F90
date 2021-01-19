@@ -1123,6 +1123,13 @@ module fv_arrays_mod
      integer                :: num_nest_level ! number of nest levels.
      type(nest_level_type), allocatable :: nest(:) ! store data for each level.
 
+#ifdef MOVING_NEST
+     ! Moving Nest Namelist Variables
+     logical               :: is_moving_nest = .false.
+     character(len=120)    :: surface_dir = "  "
+#endif
+
+
      !Interpolation arrays for grid nesting
      integer, allocatable, dimension(:,:,:) :: ind_h, ind_u, ind_v, ind_b
      real, allocatable, dimension(:,:,:) :: wt_h, wt_u, wt_v, wt_b
@@ -1369,6 +1376,11 @@ interface allocate_fv_nest_BC_type
      integer :: atmos_axes(4)
 
      type(phys_diag_type) :: phys_diag
+
+
+     ! Persist these from fv_control.F90 during initialization to be used in moving nest
+     
+
 
   end type fv_atmos_type
 
@@ -2154,12 +2166,14 @@ subroutine deallocate_fv_nest_BC_type_3d(BC)
 
   type(fv_nest_BC_type_3d) :: BC
 
-  if (.not. BC%allocated) return
+  !if (.not. BC%allocated) return
 
+  if (allocated(BC%north_t1)) then  ! Added WDR
      deallocate(BC%north_t1)
      deallocate(BC%south_t1)
      deallocate(BC%west_t1)
      deallocate(BC%east_t1)
+     endif ! Added WDR
 
   if (allocated(BC%north_t0)) then
      deallocate(BC%north_t0)

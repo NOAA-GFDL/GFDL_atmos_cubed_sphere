@@ -160,6 +160,11 @@ module fv_control_mod
                                   read_namelist_multi_gases_nml
 #endif
 
+#ifdef MOVING_NEST
+   use fms_io_mod,         only: fms_io_exit
+#endif
+
+
    implicit none
    private
 
@@ -176,6 +181,7 @@ module fv_control_mod
    integer :: halo_update_type = 1 ! 1 for two-interfaces non-block
                                    ! 2 for block
                                    ! 3 for four-interfaces non-block
+
 
 ! version number of this module
 ! Include variable "version" to be written to log file.
@@ -211,6 +217,12 @@ module fv_control_mod
      integer, dimension(MAX_NNEST) :: nest_level = 0
      integer, dimension(MAX_NNEST) :: tile_coarse = 0
      integer, dimension(MAX_NTILE) :: npes_nest_tile = 0
+
+#ifdef MOVING_NEST
+     ! Moving Nest Namelist Variables
+     logical, dimension(MAX_NNEST) :: is_moving_nest
+     character(len=120)            :: surface_dir
+#endif
 
      real :: sdt
      integer :: unit, ens_root_pe, tile_id(1)
@@ -392,6 +404,7 @@ module fv_control_mod
      real, pointer :: s_weight, update_blend
 
      integer, pointer :: layout(:), io_layout(:)
+     
 
      !!!!!!!!!! END POINTERS !!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -402,6 +415,10 @@ module fv_control_mod
      ! 1. read nesting namelists
      call read_namelist_nest_nml
      call read_namelist_fv_nest_nml
+#ifdef MOVING_NEST
+     call read_namelist_moving_nest_nml
+#endif 
+
 
      ! 2. Set up Atm and PElists
 
@@ -497,12 +514,24 @@ module fv_control_mod
            Atm(n)%neststruct%parent_tile            = tile_coarse(n)  
            Atm(n)%neststruct%refinement             = nest_refine(n)
 
+#ifdef MOVING_NEST         
+           Atm(n)%neststruct%is_moving_nest         = is_moving_nest(n)
+           Atm(n)%neststruct%surface_dir            = trim(surface_dir)
+#endif         
+
         else
 
            Atm(n)%neststruct%ioffset                = -999
            Atm(n)%neststruct%joffset                = -999   
            Atm(n)%neststruct%parent_tile            = -1      
            Atm(n)%neststruct%refinement             = -1
+
+#ifdef MOVING_NEST         
+           Atm(n)%neststruct%is_moving_nest         = .false.
+
+#endif         
+
+
 
         endif
 
@@ -671,6 +700,11 @@ module fv_control_mod
         !reset to universal pelist
         call mpp_set_current_pelist( global_pelist )
         !Except for npes_nest_tile all arrays should be just the nests and should NOT include the top level
+
+        print '("[INFO] WDR tile_coarse fv_control.F90 npe=",I0," tile_coarse(",I0,"-",I0") ngrids=",I0," tile_coarse(1)=",I0," tile_coarse(2)=",I0)', mpp_pe(), &
+           lbound(tile_coarse,1), ubound(tile_coarse,1), ngrids, tile_coarse(1), tile_coarse(2)
+
+
         call mpp_define_nest_domains(global_nest_domain, Atm(this_grid)%domain, &
              ngrids-1, nest_level=nest_level(2:ngrids) , &
              istart_coarse=nest_ioffsets(2:ngrids), jstart_coarse=nest_joffsets(2:ngrids), &
@@ -977,6 +1011,29 @@ module fv_control_mod
 #endif
 
      end subroutine read_namelist_fv_nest_nml
+
+#ifdef MOVING_NEST
+     subroutine read_namelist_moving_nest_nml
+       integer :: f_unit, ios, ierr
+       namelist /fv_moving_nest_nml/ surface_dir, is_moving_nest
+
+#ifdef INTERNAL_FILE_NML
+       read (input_nml_file,fv_moving_nest_nml,iostat=ios)
+       ierr = check_nml_error(ios,'fv_moving_nest_nml')
+#else
+       f_unit=open_namelist_file()
+       rewind (f_unit)
+       read (f_unit,fv_moving_nest_nml,iostat=ios)
+       ierr = check_nml_error(ios,'fv_moving_nest_nml')
+       call close_file(f_unit)
+#endif
+
+       
+     end subroutine read_namelist_moving_nest_nml
+#endif
+
+
+
 
      subroutine read_namelist_fv_grid_nml
 
@@ -1638,6 +1695,12 @@ module fv_control_mod
     call timing_prt( mpp_pe() )
 
     call fv_restart_end(Atm(this_grid), restart_endfcst)
+
+#ifdef MOVING_NEST
+    call fms_io_exit()   !! Force the output of the buffered NC files
+#endif
+
+
     call fv_io_exit()
 
   ! Free temporary memory from sw_core routines

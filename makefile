@@ -23,7 +23,7 @@ endif
 
 LIBRARY  = libfv3core.a
 
-FFLAGS   += -I$(FMS_DIR) -I../gfsphysics -I../ipd -I../io -I.
+FFLAGS   += -DMOVING_NEST=Y -I$(FMS_DIR) -I../gfsphysics -I../ipd -I../io -I.
 
 SRCS_f   =
 
@@ -44,6 +44,10 @@ SRCS_F90 = \
 		   ./model/fv_grid_utils.F90                      \
 		   ./model/fv_mapz.F90                            \
 		   ./model/fv_nesting.F90                         \
+		   ./model/fv_moving_nest.F90                     \
+		   ./model/fv_moving_nest_logging.F90             \
+		   ./model/fv_moving_nest_utils.F90               \
+		   ./model/bounding_box.F90                       \
 		   ./model/fv_regional_bc.F90                     \
 		   ./model/fv_sg.F90                              \
 		   ./model/fv_tracer2d.F90                        \

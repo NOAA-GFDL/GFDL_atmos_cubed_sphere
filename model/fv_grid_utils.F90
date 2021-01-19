@@ -844,6 +844,11 @@
       Atm%gridstruct%cosa   = Atm%gridstruct%cosa_64
       Atm%gridstruct%sina   = Atm%gridstruct%sina_64
 
+#ifndef MOVING_NEST
+! WDR Need to use these arrays again if moving the nest
+!     So don't deallocate them.
+!     TODO clean them up at end of model run for completeness
+     
 !--- deallocate the higher-order gridstruct arrays
 !rab      deallocate ( Atm%gridstruct%grid_64 )
 !rab      deallocate ( Atm%gridstruct%agrid_64 )
@@ -857,6 +862,7 @@
       deallocate ( Atm%gridstruct%dyc_64 )
       deallocate ( Atm%gridstruct%cosa_64 )
       deallocate ( Atm%gridstruct%sina_64 )
+#endif !MOVING_NEST
 
       nullify(agrid)
       nullify(grid)
