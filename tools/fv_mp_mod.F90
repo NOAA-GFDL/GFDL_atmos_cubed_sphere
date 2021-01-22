@@ -72,7 +72,7 @@
 ! !USES:
       use fms_mod,         only : fms_init, fms_end
       use mpp_mod,         only : FATAL, MPP_DEBUG, NOTE, MPP_CLOCK_SYNC,MPP_CLOCK_DETAILED, WARNING
-      use mpp_mod,         only : mpp_pe, mpp_npes, mpp_node, mpp_root_pe, mpp_error, mpp_set_warn_level
+      use mpp_mod,         only : mpp_pe, mpp_npes, mpp_root_pe, mpp_error, mpp_set_warn_level
       use mpp_mod,         only : mpp_declare_pelist, mpp_set_current_pelist, mpp_sync
       use mpp_mod,         only : mpp_clock_begin, mpp_clock_end, mpp_clock_id
       use mpp_mod,         only : mpp_chksum, stdout, stderr, mpp_broadcast
@@ -136,9 +136,7 @@
       integer, allocatable :: grids_master_procs(:)
       integer, dimension(MAX_NNEST) :: tile_fine = 0 !Global index of LAST tile in a mosaic
       type(nest_domain_type) :: global_nest_domain !ONE structure for ALL levels of nesting
-#ifdef CCPP
       public commglobal
-#endif
       public mp_start, mp_assign_gid, mp_barrier, mp_stop!, npes
       public domain_decomp, mp_bcst, mp_reduce_max, mp_reduce_sum, mp_gather
       public mp_reduce_min

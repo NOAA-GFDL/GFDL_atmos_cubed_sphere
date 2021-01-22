@@ -167,7 +167,11 @@ use field_manager_mod,      only: MODEL_ATMOS
 use tracer_manager_mod,     only: get_tracer_index, get_number_tracers, &
                                   NO_TRACER, get_tracer_names
 use DYCORE_typedefs,        only: DYCORE_data_type
+#ifdef GFS_TYPES
+use GFS_typedefs,           only: IPD_data_type => GFS_data_type, kind_phys
+#else
 use IPD_typedefs,           only: IPD_data_type, kind_phys => IPD_kind_phys
+#endif
 use fv_iau_mod,             only: IAU_external_data_type
 
 !-----------------
@@ -243,10 +247,7 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
   logical :: cold_start = .false.     !  used in initial condition
 
   integer, dimension(:), allocatable :: id_tracerdt_dyn
-  integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel  ! condensate species tracer indices
-#ifdef CCPP
-  integer :: cld_amt
-#endif
+  integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, cld_amt  ! condensate species tracer indices
 
   integer :: mygrid = 1
   integer :: p_split = 1
@@ -271,7 +272,7 @@ contains
 !! including the grid structures, memory, initial state (self-initialization or restart), 
 !! and diagnostics.  
  subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, area)
-#ifdef CCPP
+
    use ccpp_static_api,   only: ccpp_physics_init
    use CCPP_data,         only: ccpp_suite,          &
                                 cdata => cdata_tile, &
@@ -279,7 +280,7 @@ contains
 #ifdef OPENMP
    use omp_lib
 #endif
-#endif
+
    type (time_type),    intent(in)    :: Time_init, Time, Time_step
    type(grid_box_type), intent(inout) :: Grid_box
    real(kind=kind_phys), pointer, dimension(:,:), intent(inout) :: area
@@ -289,11 +290,7 @@ contains
    logical :: do_atmos_nudge
    character(len=32) :: tracer_name, tracer_units
    real    :: ps1, ps2
-#ifdef CCPP
-   integer :: nthreads
-   integer :: ierr
-#endif
-
+   integer :: nthreads, ierr
    integer :: nlunit = 9999
    character (len = 64) :: fn_nml = 'input.nml'
 
@@ -354,9 +351,7 @@ contains
    rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat' )
    snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat' )
    graupel = get_tracer_index (MODEL_ATMOS, 'graupel' )
-#ifdef CCPP
    cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
-#endif
 
    if (max(sphum,liq_wat,ice_wat,rainwat,snowwat,graupel) > Atm(mygrid)%flagstruct%nwat) then
       call mpp_error (FATAL,' atmosphere_init: condensate species are not first in the list of &
@@ -425,7 +420,6 @@ contains
 
                     call timing_off('ATMOS_INIT')
 
-#ifdef CCPP
    ! Do CCPP fast physics initialization before call to adiabatic_init (since this calls fv_dynamics)
 
    ! For fast physics running over the entire domain, block
@@ -474,7 +468,6 @@ contains
          call mpp_error (FATAL, cdata%errmsg)
       end if
    end if
-#endif
 
 !  --- initiate the start for a restarted regional forecast
    if ( Atm(mygrid)%gridstruct%regional .and. Atm(mygrid)%flagstruct%warm_start ) then
@@ -693,17 +686,16 @@ contains
 !>@brief The subroutine 'atmosphere_end' is an API for the termination of the
 !! FV3 dynamical core responsible for writing out a restart and final diagnostic state.
  subroutine atmosphere_end (Time, Grid_box, restart_endfcst)
-#ifdef CCPP
+
    use ccpp_static_api,   only: ccpp_physics_finalize
    use CCPP_data,         only: ccpp_suite
    use CCPP_data,         only: cdata => cdata_tile
-#endif
+
    type (time_type),      intent(in)    :: Time
    type(grid_box_type),   intent(inout) :: Grid_box
    logical,               intent(in)    :: restart_endfcst
-
-#ifdef CCPP
    integer :: ierr
+
    if (Atm(mygrid)%flagstruct%do_sat_adj) then
       ! Finalize fast physics
       call ccpp_physics_finalize(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
@@ -712,7 +704,6 @@ contains
          call mpp_error (FATAL, cdata%errmsg)
       end if
    end if
-#endif
 
   ! initialize domains for writing global physics data
    call set_domain ( Atm(mygrid)%domain )

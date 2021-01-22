@@ -3701,7 +3701,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 ! If the source is from old GFS or operational GSM then the tracers will be fixed in the boundaries
 ! and may not provide a very good result
 ! 
-!  if (cld_amt .gt. 0) BC_side%q_BC(:,:,:,cld_amt) = 0.
+  if (cld_amt .gt. 0) BC_side%q_BC(:,:,:,cld_amt) = 0.
   if (trim(data_source) /= 'FV3GFS GAUSSIAN NEMSIO FILE') then
    if ( Atm%flagstruct%nwat .eq. 6 ) then
       do k=1,npz
