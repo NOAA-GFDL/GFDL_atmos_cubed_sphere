@@ -30,10 +30,13 @@ module fv_mapz_mod
   use fv_fill_mod,       only: fillz
   use mpp_domains_mod,   only: mpp_update_domains, domain2d
   use mpp_mod,           only: NOTE, mpp_error, get_unit, mpp_root_pe, mpp_pe
-  use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, R_GRID
+  use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, R_GRID, inline_mp_type
   use fv_timing_mod,     only: timing_on, timing_off
   use fv_mp_mod,         only: is_master, mp_reduce_min, mp_reduce_max
   use fv_cmp_mod,        only: qs_init, fv_sat_adj
+#ifndef DYCORE_SOLO
+  use gfdl_mp_mod,       only: gfdl_mp_driver
+#endif
 
   implicit none
   real, parameter:: consv_min = 0.001   ! below which no correction applies
@@ -41,22 +44,22 @@ module fv_mapz_mod
   real, parameter:: r3 = 1./3., r23 = 2./3., r12 = 1./12.
   real, parameter:: cv_vap = 3.*rvgas  ! 1384.5
   real, parameter:: cv_air =  cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
-! real, parameter:: c_ice = 2106.           ! heat capacity of ice at 0.C
-  real, parameter:: c_ice = 1972.           ! heat capacity of ice at -15.C
-  real, parameter:: c_liq = 4.1855e+3    ! GFS: heat capacity of water at 0C
-! real, parameter:: c_liq = 4218.        ! ECMWF-IFS
+  real, parameter:: c_ice = 2106.           ! heat capacity of ice at 0.C
+! real, parameter:: c_ice = 1972.           ! heat capacity of ice at -15.C
+! real, parameter:: c_liq = 4.1855e+3    ! GFS: heat capacity of water at 0C
+  real, parameter:: c_liq = 4218.        ! ECMWF-IFS
   real, parameter:: cp_vap = cp_vapor   ! 1846.
   real, parameter:: tice = 273.16
 
-  real, parameter :: w_max = 60.
-  real, parameter :: w_min = -30.
-  logical, parameter :: w_limiter = .false. ! doesn't work so well??
+  real, parameter :: w_max = 90.
+  real, parameter :: w_min = -60.
+  logical, parameter :: w_limiter = .False.
 
   real(kind=4) :: E_Flux = 0.
   private
 
   public compute_total_energy, Lagrangian_to_Eulerian, moist_cv, moist_cp,   &
-         rst_remap, mappm, E_Flux, remap_2d
+         rst_remap, mappm, E_Flux, remap_2d, map_scalar
 
 contains
 
@@ -66,8 +69,8 @@ contains
                       akap, cappa, kord_mt, kord_wz, kord_tr, kord_tm,  peln, te0_2d,        &
                       ng, ua, va, omga, te, ws, fill, reproduce_sum, out_dt, dtdt,      &
                       ptop, ak, bk, pfull, gridstruct, domain, do_sat_adj, &
-                      hydrostatic, hybrid_z, do_omega, adiabatic, do_adiabatic_init, &
-                      c2l_ord, bd, fv_debug, &
+                      hydrostatic, phys_hydrostatic, hybrid_z, do_omega, adiabatic, do_adiabatic_init, &
+                      do_inline_mp, inline_mp, c2l_ord, bd, fv_debug, &
                       moist_phys)
   logical, intent(in):: last_step
   logical, intent(in):: fv_debug
@@ -96,6 +99,7 @@ contains
   real, intent(in):: ws(is:ie,js:je)
 
   logical, intent(in):: do_sat_adj
+  logical, intent(in):: do_inline_mp
   logical, intent(in):: fill                  ! fill negative tracers
   logical, intent(in):: reproduce_sum
   logical, intent(in):: do_omega, adiabatic, do_adiabatic_init
@@ -122,7 +126,7 @@ contains
                                                      ! as input; output: temperature
   real, intent(inout), dimension(isd:,jsd:,1:)::q_con, cappa
   real, intent(inout), dimension(is:,js:,1:)::delz
-  logical, intent(in):: hydrostatic
+  logical, intent(in):: hydrostatic, phys_hydrostatic
   logical, intent(in):: hybrid_z
   logical, intent(in):: out_dt
   logical, intent(in):: moist_phys
@@ -135,6 +139,7 @@ contains
   real, intent(out)::    pkz(is:ie,js:je,km)       ! layer-mean pk for converting t to pt
   real, intent(out)::     te(isd:ied,jsd:jed,km)
 
+  type(inline_mp_type), intent(inout):: inline_mp
 
 ! !DESCRIPTION:
 !
@@ -352,6 +357,59 @@ contains
            enddo
         enddo
 
+        !Fix excessive w - momentum conserving --- sjl
+        ! gz(:) used here as a temporary array
+        if ( w_limiter ) then
+           do k=1,km
+              do i=is,ie
+                 w2(i,k) = w(i,j,k)
+              enddo
+           enddo
+           do k=1, km-1
+              do i=is,ie
+                 if ( w2(i,k) > w_max ) then
+                    gz(i) = (w2(i,k)-w_max) * dp2(i,k)
+                    w2(i,k  ) = w_max
+                    w2(i,k+1) = w2(i,k+1) + gz(i)/dp2(i,k+1)
+                    print*, ' W_LIMITER down: ', i,j,k, w2(i,k:k+1), w(i,j,k:k+1)
+                 elseif ( w2(i,k) < w_min ) then
+                    gz(i) = (w2(i,k)-w_min) * dp2(i,k)
+                    w2(i,k  ) = w_min
+                    w2(i,k+1) = w2(i,k+1) + gz(i)/dp2(i,k+1)
+                    print*, ' W_LIMITER down: ', i,j,k, w2(i,k:k+1), w(i,j,k:k+1)
+                 endif
+              enddo
+           enddo
+           do k=km, 2, -1
+              do i=is,ie
+                 if ( w2(i,k) > w_max ) then
+                    gz(i) = (w2(i,k)-w_max) * dp2(i,k)
+                    w2(i,k  ) = w_max
+                    w2(i,k-1) = w2(i,k-1) + gz(i)/dp2(i,k-1)
+                    print*, ' W_LIMITER up: ', i,j,k, w2(i,k-1:k), w(i,j,k-1:k)
+                 elseif ( w2(i,k) < w_min ) then
+                    gz(i) = (w2(i,k)-w_min) * dp2(i,k)
+                    w2(i,k  ) = w_min
+                    w2(i,k-1) = w2(i,k-1) + gz(i)/dp2(i,k-1)
+                    print*, ' W_LIMITER up: ', i,j,k, w2(i,k-1:k), w(i,j,k-1:k)
+                 endif
+              enddo
+           enddo
+           do i=is,ie
+              if (w2(i,1) > w_max*2. ) then
+                 w2(i,1) = w_max*2 ! sink out of the top of the domain
+                 print*, ' W_LIMITER top limited: ', i,j,1, w2(i,1), w(i,j,1)
+              elseif (w2(i,1) < w_min*2. ) then
+                 w2(i,1) = w_min*2.
+                 print*, ' W_LIMITER top limited: ', i,j,1, w2(i,1), w(i,j,1)
+              endif
+           enddo
+           do k=1,km
+              do i=is,ie
+                 w(i,j,k) = w2(i,k)
+              enddo
+           enddo
+        endif
    endif
 
 !----------
@@ -504,17 +562,54 @@ contains
 
 1000  continue
 
+!-----------------------------------------------------------------------
+! Inline GFDL MP
+!-----------------------------------------------------------------------
+
+  if ((.not. do_adiabatic_init) .and. do_inline_mp) then
+
+    allocate(u_dt(isd:ied,jsd:jed,km))
+    allocate(v_dt(isd:ied,jsd:jed,km))
+
+    do k=1,km
+    do j=jsd,jed
+    do i=isd,ied
+       u_dt(i,j,k) = 0.
+       v_dt(i,j,k) = 0.
+    enddo
+    enddo
+    enddo
+
+    ! save D grid u and v
+    if (consv .gt. consv_min) then
+      allocate(u0(isd:ied,jsd:jed+1,km))
+      allocate(v0(isd:ied+1,jsd:jed,km))
+      u0 = u
+      v0 = v
+    endif
+
+    ! D grid wind to A grid wind remap
+    call cubed_to_latlon(u, v, ua, va, gridstruct, npx, npy, km, 1, gridstruct%grid_type, &
+             domain, gridstruct%bounded_domain, c2l_ord, bd)
+
+    ! save delp
+    if (consv .gt. consv_min) then
+      allocate(dp0(isd:ied,jsd:jed,km))
+      dp0 = delp
+    endif
+
+  endif
 
 !$OMP parallel default(none) shared(is,ie,js,je,km,kmp,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt, &
-!$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln,adiabatic, &
+!$OMP                               te_2d,te,delp,hydrostatic,phys_hydrostatic,hs,rg,pt,peln,adiabatic, &
 !$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,       &
 !$OMP                               graupel,q_con,r_vir,sphum,w,pk,pkz,last_step,consv, &
 !$OMP                               do_adiabatic_init,zsum1,zsum0,te0_2d,domain,        &
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,      &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,  &
 !$OMP                               fast_mp_consv,kord_tm,pe4, &
-!$OMP                               npx,npy,ccn_cm3,u_dt,v_dt,   &
-!$OMP                               c2l_ord,bd,dp0,ps) &
+!$OMP                               npx,npy,ccn_cm3,inline_mp,u_dt,v_dt,   &
+!$OMP                               do_inline_mp,c2l_ord,bd,dp0,ps) &
 !$OMP                       private(q2,pe0,pe1,pe2,pe3,qv,cvm,gz,gsize,phis,dpln,dp2,t0)
 
 !$OMP do
@@ -662,8 +757,8 @@ endif        ! end last_step check
                              te(isd,jsd,k), q(isd,jsd,k,sphum), q(isd,jsd,k,liq_wat),   &
                              q(isd,jsd,k,ice_wat), q(isd,jsd,k,rainwat),    &
                              q(isd,jsd,k,snowwat), q(isd,jsd,k,graupel),    &
-                             dpln, delz(is:ie,js:je,k), pt(isd,jsd,k), delp(isd,jsd,k), q_con(isd:,jsd:,k), &
-                             cappa(isd:,jsd:,k), gridstruct%area_64, dtdt(is,js,k), out_dt, last_step, cld_amt>0, q(isd,jsd,k,cld_amt))
+                             hs ,dpln, delz(is:ie,js:je,k), pt(isd,jsd,k), delp(isd,jsd,k), q_con(isd:,jsd:,k), & ! TEMPORARY
+              cappa(isd:,jsd:,k), gridstruct%area_64, dtdt(is,js,k), out_dt, last_step, cld_amt>0, q(isd,jsd,k,cld_amt))
               if ( .not. hydrostatic  ) then
                  do j=js,je
                     do i=is,ie
@@ -690,6 +785,108 @@ endif        ! end last_step check
 
                                            call timing_off('sat_adj2')
   endif   ! do_sat_adj
+
+!-----------------------------------------------------------------------
+! Inline GFDL MP
+!-----------------------------------------------------------------------
+
+  if ((.not. do_adiabatic_init) .and. do_inline_mp) then
+
+!$OMP do
+    do j = js, je
+
+        gsize(is:ie) = sqrt(gridstruct%area_64(is:ie,j))
+
+        if (ccn_cm3 .gt. 0) then
+          q2(is:ie,:) = q(is:ie,j,:,ccn_cm3)
+        else
+          q2(is:ie,:) = 0.0
+        endif
+
+        ! note: ua and va are A-grid variables
+        ! note: pt is virtual temperature at this point
+        ! note: w is vertical velocity (m/s)
+        ! note: delz is negative, delp is positive, delz doesn't change in constant volume situation
+        ! note: hs is geopotential height (m^2/s^2)
+        ! note: the unit of q2 is #/cc
+        ! note: the unit of area is m^2
+        ! note: the unit of prer, prei, pres, preg is mm/day
+
+        ! save ua, va for wind tendency calculation
+        u_dt(is:ie,j,:) = ua(is:ie,j,:)
+        v_dt(is:ie,j,:) = va(is:ie,j,:)
+
+        !save temperature and qv for tendencies
+        dp2(is:ie,:) = q(is:ie,j,:,sphum)
+        t0(is:ie,:) = pt(is:ie,j,:)
+
+
+        if (allocated(inline_mp%ql_dt)) inline_mp%ql_dt(is:ie,j,:) = q(is:ie,j,:,liq_wat) + q(is:ie,j,:,rainwat)
+        if (allocated(inline_mp%qi_dt)) inline_mp%qi_dt(is:ie,j,:) = &
+             q(is:ie,j,:,ice_wat) + q(is:ie,j,:,snowwat) + q(is:ie,j,:,graupel)
+
+        if (allocated(inline_mp%liq_wat_dt)) inline_mp%liq_wat_dt(is:ie,j,:) = q(is:ie,j,:,liq_wat)
+        if (allocated(inline_mp%qr_dt)) inline_mp%qr_dt(is:ie,j,:) = q(is:ie,j,:,rainwat)
+        if (allocated(inline_mp%ice_wat_dt)) inline_mp%ice_wat_dt(is:ie,j,:) = q(is:ie,j,:,ice_wat)
+        if (allocated(inline_mp%qg_dt)) inline_mp%qg_dt(is:ie,j,:) = q(is:ie,j,:,graupel)
+        if (allocated(inline_mp%qs_dt)) inline_mp%qs_dt(is:ie,j,:) = q(is:ie,j,:,snowwat)
+
+#ifndef DYCORE_SOLO
+        call gfdl_mp_driver(q(is:ie,j,:,sphum), q(is:ie,j,:,liq_wat), &
+                       q(is:ie,j,:,rainwat), q(is:ie,j,:,ice_wat), q(is:ie,j,:,snowwat), &
+                       q(is:ie,j,:,graupel), q(is:ie,j,:,cld_amt), q2(is:ie,:), &
+                       pt(is:ie,j,:), w(is:ie,j,:), ua(is:ie,j,:), va(is:ie,j,:), &
+                       delz(is:ie,j,:), delp(is:ie,j,:), gsize, abs(mdt), &
+                       hs(is:ie,j), inline_mp%prer(is:ie,j), inline_mp%pres(is:ie,j), &
+                       inline_mp%prei(is:ie,j), inline_mp%preg(is:ie,j), &
+                       hydrostatic, phys_hydrostatic, &
+                       is, ie, 1, km, q_con(is:ie,j,:), cappa(is:ie,j,:), consv>consv_min, &
+                       te(is:ie,j,:), last_step)
+#endif
+
+        ! compute wind tendency at A grid fori D grid wind update
+        u_dt(is:ie,j,:) = (ua(is:ie,j,:) - u_dt(is:ie,j,:)) / abs(mdt)
+        v_dt(is:ie,j,:) = (va(is:ie,j,:) - v_dt(is:ie,j,:)) / abs(mdt)
+
+        if (.not. do_adiabatic_init) then
+           if (allocated(inline_mp%qv_dt)) inline_mp%qv_dt(is:ie,j,:) = (q(is:ie,j,:,sphum) - dp2(is:ie,:)) / abs(mdt)
+           if (allocated(inline_mp%ql_dt)) inline_mp%ql_dt(is:ie,j,:) = &
+                (q(is:ie,j,:,liq_wat) + q(is:ie,j,:,rainwat) - inline_mp%ql_dt(is:ie,j,:)) / abs(mdt)
+           if (allocated(inline_mp%qi_dt)) inline_mp%qi_dt(is:ie,j,:) = &
+                (q(is:ie,j,:,ice_wat) + q(is:ie,j,:,snowwat) + q(is:ie,j,:,graupel) - inline_mp%qi_dt(is:ie,j,:)) / abs(mdt)
+
+           if (allocated(inline_mp%liq_wat_dt)) inline_mp%liq_wat_dt(is:ie,j,:) = (q(is:ie,j,:,liq_wat) - inline_mp%liq_wat_dt(is:ie,j,:)) / abs(mdt)
+           if (allocated(inline_mp%qr_dt)) inline_mp%qr_dt(is:ie,j,:) = (q(is:ie,j,:,rainwat) - inline_mp%qr_dt(is:ie,j,:)) / abs(mdt)
+           if (allocated(inline_mp%ice_wat_dt)) inline_mp%ice_wat_dt(is:ie,j,:) = (q(is:ie,j,:,ice_wat) - inline_mp%ice_wat_dt(is:ie,j,:)) / abs(mdt)
+           if (allocated(inline_mp%qg_dt)) inline_mp%qg_dt(is:ie,j,:) = (q(is:ie,j,:,graupel) - inline_mp%qg_dt(is:ie,j,:)) / abs(mdt)
+           if (allocated(inline_mp%qs_dt)) inline_mp%qs_dt(is:ie,j,:) = (q(is:ie,j,:,snowwat) - inline_mp%qs_dt(is:ie,j,:)) / abs(mdt)
+           if (allocated(inline_mp%t_dt))  inline_mp%t_dt(is:ie,j,:)  = (pt(is:ie,j,:)      -  t0(is:ie,:)) / abs(mdt)
+           if (allocated(inline_mp%u_dt)) inline_mp%u_dt(is:ie,j,:) = u_dt(is:ie,j,:)
+           if (allocated(inline_mp%v_dt)) inline_mp%v_dt(is:ie,j,:) = v_dt(is:ie,j,:)
+        endif
+
+        ! update pe, peln, pk, ps
+        do k=2,km+1
+            pe(is:ie,k,j) = pe(is:ie,k-1,j)+delp(is:ie,j,k-1)
+            peln(is:ie,k,j) = log(pe(is:ie,k,j))
+            pk(is:ie,j,k) = exp(akap*peln(is:ie,k,j))
+        enddo
+
+        ps(is:ie,j) = pe(is:ie,km+1,j)
+
+        ! update pkz
+        if (.not. hydrostatic) then
+#ifdef MOIST_CAPPA
+            pkz(is:ie,j,:) = exp(cappa(is:ie,j,:)*log(rrg*delp(is:ie,j,:)/delz(is:ie,j,:)*pt(is:ie,j,:)))
+#else
+            pkz(is:ie,j,:) = exp(akap*log(rrg*delp(is:ie,j,:)/delz(is:ie,j,:)*pt(is:ie,j,:)))
+#endif
+        endif
+
+    enddo
+
+  endif
+
 
   if ( last_step ) then
        ! Output temperature if last_step
@@ -738,6 +935,78 @@ endif        ! end last_step check
     endif
   endif
 !$OMP end parallel
+
+!-----------------------------------------------------------------------
+! Inline GFDL MP
+!-----------------------------------------------------------------------
+
+  if ((.not. do_adiabatic_init) .and. do_inline_mp) then
+
+    ! Note: (ua,va) are *lat-lon* wind tendenies on cell centers
+    if ( gridstruct%square_domain ) then
+         call mpp_update_domains(u_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.false.)
+         call mpp_update_domains(v_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
+    else
+         call mpp_update_domains(u_dt, domain, complete=.false.)
+         call mpp_update_domains(v_dt, domain, complete=.true.)
+    endif
+    ! update u_dt and v_dt in halo
+    call mpp_update_domains(u_dt, v_dt, domain)
+
+    ! update D grid wind
+    call update_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, abs(mdt), u_dt, v_dt, u, v, &
+             gridstruct, npx, npy, km, domain)
+
+    ! update dry total energy
+    if (consv .gt. consv_min) then
+      do j=js,je
+        if (hydrostatic) then
+          do k = 1, km
+            do i=is,ie
+              te0_2d(i,j) = te0_2d(i,j) + te(i,j,k) + delp(i,j,k) * &
+                           (0.25*gridstruct%rsin2(i,j)*(u(i,j,k)**2+u(i,j+1,k)**2 +  &
+                                                        v(i,j,k)**2+v(i+1,j,k)**2 -  &
+                           (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*gridstruct%cosa_s(i,j))) &
+                                                    - dp0(i,j,k) * &
+                           (0.25*gridstruct%rsin2(i,j)*(u0(i,j,k)**2+u0(i,j+1,k)**2 +  &
+                                                        v0(i,j,k)**2+v0(i+1,j,k)**2 -  &
+                           (u0(i,j,k)+u0(i,j+1,k))*(v0(i,j,k)+v0(i+1,j,k))*gridstruct%cosa_s(i,j)))
+            enddo
+          enddo
+        else
+          do i=is,ie
+             phis(i,km+1) = hs(i,j)
+          enddo
+          do k=km,1,-1
+             do i=is,ie
+                phis(i,k) = phis(i,k+1) - grav*delz(i,j,k)
+             enddo
+          enddo
+          do k = 1, km
+            do i=is,ie
+              te0_2d(i,j) = te0_2d(i,j) + te(i,j,k) + delp(i,j,k) * &
+                             (0.5*(phis(i,k)+phis(i,k+1) + w(i,j,k)**2 + 0.5*gridstruct%rsin2(i,j)*( &
+                              u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -  &
+                             (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*gridstruct%cosa_s(i,j)))) &
+                                                    - dp0(i,j,k) * &
+                             (0.5*(phis(i,k)+phis(i,k+1) + w(i,j,k)**2 + 0.5*gridstruct%rsin2(i,j)*( &
+                              u0(i,j,k)**2+u0(i,j+1,k)**2 + v0(i,j,k)**2+v0(i+1,j,k)**2 -  &
+                             (u0(i,j,k)+u0(i,j+1,k))*(v0(i,j,k)+v0(i+1,j,k))*gridstruct%cosa_s(i,j))))
+            enddo
+          enddo
+        endif
+      enddo
+    end if
+
+    deallocate(u_dt)
+    deallocate(v_dt)
+    if (consv .gt. consv_min) then
+      deallocate(u0)
+      deallocate(v0)
+      deallocate(dp0)
+    endif
+
+  endif
 
  end subroutine Lagrangian_to_Eulerian
 
@@ -1126,7 +1395,7 @@ endif        ! end last_step check
  integer, intent(in) :: ibeg, iend, jbeg, jend
  integer, intent(in) :: km                ! Original vertical dimension
  integer, intent(in) :: kn                ! Target vertical dimension
- real, intent(in) ::   qs(i1:i2)       ! bottom BC
+ real, intent(in) ::   qs(i1:i2)       ! bottom BC (only used if iv == -2 ?? )
  real, intent(in) ::  pe1(i1:i2,km+1)  ! pressure at layer edges
                                        ! (from model top to bottom surface)
                                        ! in the original vertical coordinate
@@ -1526,12 +1795,12 @@ endif        ! end last_step check
  real, intent(inout):: a4(4,i1:i2,km)     ! Interpolated values
  real, intent(in):: qmin
 !-----------------------------------------------------------------------
- logical, dimension(i1:i2,km):: extm, ext6
+ logical, dimension(i1:i2,km):: extm, ext5, ext6
  real  gam(i1:i2,km)
  real    q(i1:i2,km+1)
  real   d4(i1:i2)
  real   bet, a_bot, grat
- real   pmp_1, lac_1, pmp_2, lac_2
+ real   pmp_1, lac_1, pmp_2, lac_2, x0, x1
  integer i, k, im
 
  if ( iv .eq. -2 ) then
@@ -1660,10 +1929,13 @@ endif        ! end last_step check
           extm(i,k) = gam(i,k)*gam(i,k+1) < 0.
        enddo
      endif
-     if ( abs(kord)==16 ) then
+     if ( abs(kord) > 9 ) then
        do i=i1,i2
-          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-          ext6(i,k) = abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k))
+          x0 = 2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k))
+          x1 = abs(a4(2,i,k)-a4(3,i,k))
+          a4(4,i,k) = 3.*x0
+          ext5(i,k) = abs(x0) > x1
+          ext6(i,k) = abs(a4(4,i,k)) > x1
        enddo
      endif
   enddo
@@ -1758,31 +2030,35 @@ endif        ! end last_step check
        enddo
      elseif ( abs(kord)==10 ) then
        do i=i1,i2
-          if( extm(i,k) ) then
-              if( a4(1,i,k)<qmin .or. extm(i,k-1) .or. extm(i,k+1) ) then
-! grid-scale 2-delta-z wave detected; or q is too small -> ehance vertical mixing
+          if( ext5(i,k) ) then
+              if( ext5(i,k-1) .or. ext5(i,k+1) ) then
                    a4(2,i,k) = a4(1,i,k)
                    a4(3,i,k) = a4(1,i,k)
-                   a4(4,i,k) = 0.
-              else
-! True local extremum
-                a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+              elseif ( ext6(i,k-1) .or. ext6(i,k+1) ) then
+                   pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                   lac_1 = pmp_1 + 1.5*gam(i,k+2)
+                   a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
+                                                  max(a4(1,i,k), pmp_1, lac_1) )
+                   pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                   lac_2 = pmp_2 - 1.5*gam(i,k-1)
+                   a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
+                                                  max(a4(1,i,k), pmp_2, lac_2) )
               endif
-          else        ! not a local extremum
-            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-! Check within the smooth region if subgrid profile is non-monotonic
-            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
+          elseif( ext6(i,k) ) then
+              if( ext5(i,k-1) .or. ext5(i,k+1) ) then
                   pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
                   lac_1 = pmp_1 + 1.5*gam(i,k+2)
-              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
-                                             max(a4(1,i,k), pmp_1, lac_1) )
+                  a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
+                                                 max(a4(1,i,k), pmp_1, lac_1) )
                   pmp_2 = a4(1,i,k) + 2.*gam(i,k)
                   lac_2 = pmp_2 - 1.5*gam(i,k-1)
-              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
-                                             max(a4(1,i,k), pmp_2, lac_2) )
-              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-            endif
+                  a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
+                                                 max(a4(1,i,k), pmp_2, lac_2) )
+              endif
           endif
+       enddo
+       do i=i1,i2
+          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
      elseif ( abs(kord)==12 ) then
        do i=i1,i2
@@ -1808,38 +2084,55 @@ endif        ! end last_step check
        enddo
      elseif ( abs(kord)==13 ) then
        do i=i1,i2
-          if( extm(i,k) ) then
-             if ( extm(i,k-1) .and. extm(i,k+1) ) then
+          if( ext6(i,k) ) then
+             if ( ext6(i,k-1) .and. ext6(i,k+1) ) then
 ! grid-scale 2-delta-z wave detected
                  a4(2,i,k) = a4(1,i,k)
                  a4(3,i,k) = a4(1,i,k)
-                 a4(4,i,k) = 0.
-             else
-                 ! Left  edges
-                 pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                 lac_1 = pmp_1 + 1.5*gam(i,k+2)
-                 a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),   &
-                                     max(a4(1,i,k), pmp_1, lac_1) )
-                 ! Right edges
-                 pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                 lac_2 = pmp_2 - 1.5*gam(i,k-1)
-                 a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
-                                     max(a4(1,i,k), pmp_2, lac_2) )
-                 a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
              endif
-          else
-             a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
           endif
+       enddo
+       do i=i1,i2
+          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
      elseif ( abs(kord)==14 ) then
 
        do i=i1,i2
           a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
+
+     elseif ( abs(kord)==15 ) then   ! Revised abs(kord)=9 scheme
+       do i=i1,i2
+          if ( ext5(i,k) .and. ext5(i,k-1) ) then
+               a4(2,i,k) = a4(1,i,k)
+               a4(3,i,k) = a4(1,i,k)
+          else if ( ext5(i,k) .and. ext5(i,k+1) ) then
+               a4(2,i,k) = a4(1,i,k)
+               a4(3,i,k) = a4(1,i,k)
+          else if ( ext5(i,k) .and. a4(1,i,k)<qmin ) then
+               a4(2,i,k) = a4(1,i,k)
+               a4(3,i,k) = a4(1,i,k)
+          elseif( ext6(i,k) ) then
+                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
+              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
+                                             max(a4(1,i,k), pmp_1, lac_1) )
+                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
+              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
+                                             max(a4(1,i,k), pmp_2, lac_2) )
+          endif
+       enddo
+       do i=i1,i2
+          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+       enddo
      elseif ( abs(kord)==16 ) then
        do i=i1,i2
-          if( ext6(i,k) ) then
-             if ( extm(i,k-1) .or. extm(i,k+1) ) then
+          if( ext5(i,k) ) then
+             if ( ext5(i,k-1) .or. ext5(i,k+1) ) then
+                 a4(2,i,k) = a4(1,i,k)
+                 a4(3,i,k) = a4(1,i,k)
+             elseif ( ext6(i,k-1) .or. ext6(i,k+1) ) then
                  ! Left  edges
                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
@@ -1850,13 +2143,15 @@ endif        ! end last_step check
                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
                  a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
                                      max(a4(1,i,k), pmp_2, lac_2) )
-                 a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
              endif
           endif
        enddo
+       do i=i1,i2
+          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+       enddo
      else      ! kord = 11, 13
        do i=i1,i2
-         if ( extm(i,k) .and. (extm(i,k-1).or.extm(i,k+1).or.a4(1,i,k)<qmin) ) then
+         if ( ext5(i,k) .and. (ext5(i,k-1).or.ext5(i,k+1).or.a4(1,i,k)<qmin) ) then
 ! Noisy region:
               a4(2,i,k) = a4(1,i,k)
               a4(3,i,k) = a4(1,i,k)
@@ -1909,12 +2204,12 @@ endif        ! end last_step check
  real, intent(in)   :: delp(i1:i2,km)     ! layer pressure thickness
  real, intent(inout):: a4(4,i1:i2,km)     ! Interpolated values
 !-----------------------------------------------------------------------
- logical:: extm(i1:i2,km)
+ logical, dimension(i1:i2,km):: extm, ext5, ext6
  real  gam(i1:i2,km)
  real    q(i1:i2,km+1)
  real   d4(i1:i2)
  real   bet, a_bot, grat
- real   pmp_1, lac_1, pmp_2, lac_2
+ real   pmp_1, lac_1, pmp_2, lac_2, x0, x1
  integer i, k, im
 
  if ( iv .eq. -2 ) then
@@ -2043,6 +2338,15 @@ endif        ! end last_step check
           extm(i,k) = gam(i,k)*gam(i,k+1) < 0.
        enddo
      endif
+     if ( abs(kord) > 9 ) then
+       do i=i1,i2
+          x0 = 2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k))
+          x1 = abs(a4(2,i,k)-a4(3,i,k))
+          a4(4,i,k) = 3.*x0
+          ext5(i,k) = abs(x0) > x1
+          ext6(i,k) = abs(a4(4,i,k)) > x1
+       enddo
+     endif
   enddo
 
 !---------------------------
@@ -2130,31 +2434,35 @@ endif        ! end last_step check
        enddo
      elseif ( abs(kord)==10 ) then
        do i=i1,i2
-          if( extm(i,k) ) then
-              if( extm(i,k-1) .or. extm(i,k+1) ) then
-! grid-scale 2-delta-z wave detected
+          if( ext5(i,k) ) then
+              if( ext5(i,k-1) .or. ext5(i,k+1) ) then
                    a4(2,i,k) = a4(1,i,k)
                    a4(3,i,k) = a4(1,i,k)
-                   a4(4,i,k) = 0.
-              else
-! True local extremum
-                a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+              elseif ( ext6(i,k-1) .or. ext6(i,k+1) ) then
+                   pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                   lac_1 = pmp_1 + 1.5*gam(i,k+2)
+                   a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
+                                                  max(a4(1,i,k), pmp_1, lac_1) )
+                   pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                   lac_2 = pmp_2 - 1.5*gam(i,k-1)
+                   a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
+                                                  max(a4(1,i,k), pmp_2, lac_2) )
               endif
-          else        ! not a local extremum
-            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-! Check within the smooth region if subgrid profile is non-monotonic
-            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
+          elseif( ext6(i,k) ) then
+              if( ext5(i,k-1) .or. ext5(i,k+1) ) then
                   pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
                   lac_1 = pmp_1 + 1.5*gam(i,k+2)
-              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
-                                             max(a4(1,i,k), pmp_1, lac_1) )
+                  a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
+                                                 max(a4(1,i,k), pmp_1, lac_1) )
                   pmp_2 = a4(1,i,k) + 2.*gam(i,k)
                   lac_2 = pmp_2 - 1.5*gam(i,k-1)
-              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
-                                             max(a4(1,i,k), pmp_2, lac_2) )
-              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-            endif
+                  a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
+                                                 max(a4(1,i,k), pmp_2, lac_2) )
+              endif
           endif
+       enddo
+       do i=i1,i2
+          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
      elseif ( abs(kord)==12 ) then
        do i=i1,i2
@@ -2181,13 +2489,53 @@ endif        ! end last_step check
        enddo
      elseif ( abs(kord)==13 ) then
        do i=i1,i2
-          if( extm(i,k) ) then
-             if ( extm(i,k-1) .and. extm(i,k+1) ) then
+          if( ext6(i,k) ) then
+             if ( ext6(i,k-1) .and. ext6(i,k+1) ) then
 ! grid-scale 2-delta-z wave detected
                  a4(2,i,k) = a4(1,i,k)
                  a4(3,i,k) = a4(1,i,k)
-                 a4(4,i,k) = 0.
-             else
+             endif
+          endif
+       enddo
+       do i=i1,i2
+          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+       enddo
+     elseif ( abs(kord)==14 ) then
+
+       do i=i1,i2
+          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+       enddo
+
+     elseif ( abs(kord)==15 ) then   ! revised kord=9 scehem
+       do i=i1,i2
+          if ( ext5(i,k) ) then  ! c90_mp122
+             if ( ext5(i,k-1) .or. ext5(i,k+1) ) then  ! c90_mp122
+! grid-scale 2-delta-z wave detected
+                  a4(2,i,k) = a4(1,i,k)
+                  a4(3,i,k) = a4(1,i,k)
+             endif
+          elseif( ext6(i,k) ) then
+! Check within the smooth region if subgrid profile is non-monotonic
+                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
+              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
+                                             max(a4(1,i,k), pmp_1, lac_1) )
+                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
+              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
+                                             max(a4(1,i,k), pmp_2, lac_2) )
+          endif
+       enddo
+       do i=i1,i2
+          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+       enddo
+     elseif ( abs(kord)==16 ) then
+       do i=i1,i2
+          if( ext5(i,k) ) then
+             if ( ext5(i,k-1) .or. ext5(i,k+1) ) then
+                 a4(2,i,k) = a4(1,i,k)
+                 a4(3,i,k) = a4(1,i,k)
+             elseif ( ext6(i,k-1) .or. ext6(i,k+1) ) then
                  ! Left  edges
                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
@@ -2198,19 +2546,15 @@ endif        ! end last_step check
                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
                  a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
                                      max(a4(1,i,k), pmp_2, lac_2) )
-                 a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
              endif
-          else
-             a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
           endif
        enddo
-     elseif ( abs(kord)==14 ) then
        do i=i1,i2
           a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
      else      ! kord = 11
        do i=i1,i2
-         if ( extm(i,k) .and. (extm(i,k-1) .or. extm(i,k+1)) ) then
+         if ( ext5(i,k) .and. (ext5(i,k-1) .or. ext5(i,k+1)) ) then
 ! Noisy region:
               a4(2,i,k) = a4(1,i,k)
               a4(3,i,k) = a4(1,i,k)

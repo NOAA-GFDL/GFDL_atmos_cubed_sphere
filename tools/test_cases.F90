@@ -6811,14 +6811,13 @@ end subroutine terminator_tracers
 
 #include<file_version.h>
 
-        namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
-
         unit = stdlog()
 
         ! Make alpha = 0 the default:
         alpha = 0.
         bubble_do = .false.
         test_case = 11   ! (USGS terrain)
+        namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
 
 #ifdef INTERNAL_FILE_NML
         ! Read Test_Case namelist

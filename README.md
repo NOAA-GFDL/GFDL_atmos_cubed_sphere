@@ -1,13 +1,12 @@
 # GFDL_atmos_cubed_sphere
 
-The source contained herein reflects the 201912 release of the Finite Volume Cubed-Sphere Dynamical Core (FV3) from GFDL
+The source contained herein reflects the 202101 release of the Finite Volume Cubed-Sphere Dynamical Core (FV3) from GFDL
 
 The GFDL Microphysics is also available via this repository.
 
 # Where to find information
 
-See the [FV3 documentation and references](https://www.gfdl.noaa.gov/fv3/fv3-documentation-and-references/)
-for more information.
+Visit the [FV3 website](https://www.gfdl.noaa.gov/fv3/) for more information. Reference material is available at [FV3 documentation and references](https://www.gfdl.noaa.gov/fv3/fv3-documentation-and-references/). 
 
 # Proper usage attribution
 
@@ -22,10 +21,17 @@ The top level directory structure groups source code and input files as follow:
 | --------------       | ------- |
 | ```LICENSE.md```     | a copy of the Gnu lesser general public license, version 3. |
 | ```README.md```      | this file with basic pointers to more information |
+| ```RELEASE.md```     | notes describing each release in the main branch |
 | ```model/```         | contains the source code for core of the FV3 dyanmical core |
 | ```driver/```        | contains drivers used by different models/modeling systems |
 | ```tools/```         | contains source code of tools used within the core |
 | ```GFDL_tools/```    | contains source code of tools specific to GFDL models |
+| ```docs/```          | contains documentation for the FV3 dynamical core |
+
+# Generating PDF Documentation
+To update the ```refmans.pdf``` file:
+1. In the ```docs/``` directory enter the command ```doxygen Doxyfile```
+2. Navigate to the ```latex/``` directory and enter the command ```make pdf```
 
 # Disclaimer
 
