@@ -225,9 +225,7 @@ contains
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed, ng
       integer :: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel
-#ifdef CCPP
       integer :: liq_aero, ice_aero
-#endif
 #ifdef MULTI_GASES
       integer :: spfo, spfo2, spfo3
 #else
@@ -327,10 +325,8 @@ contains
 #else
         o3mr      = get_tracer_index(MODEL_ATMOS, 'o3mr')
 #endif
-#ifdef CCPP
         liq_aero  = get_tracer_index(MODEL_ATMOS, 'liq_aero')
         ice_aero  = get_tracer_index(MODEL_ATMOS, 'ice_aero')
-#endif
 
         if ( liq_wat > 0 ) &
         call prt_maxmin('liq_wat', Atm%q(:,:,:,liq_wat), is, ie, js, je, ng, Atm%npz, 1.)
@@ -353,12 +349,10 @@ contains
         if ( o3mr > 0    ) &
         call prt_maxmin('O3MR',    Atm%q(:,:,:,o3mr),    is, ie, js, je, ng, Atm%npz, 1.)
 #endif
-#ifdef CCPP
         if ( liq_aero > 0) &
         call prt_maxmin('liq_aero',Atm%q(:,:,:,liq_aero),is, ie, js, je, ng, Atm%npz, 1.)
         if ( ice_aero > 0) &
         call prt_maxmin('ice_aero',Atm%q(:,:,:,ice_aero),is, ie, js, je, ng, Atm%npz, 1.)
-#endif
       endif
 
 !Now in fv_restart
