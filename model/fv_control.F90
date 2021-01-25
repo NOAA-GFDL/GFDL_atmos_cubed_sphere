@@ -370,6 +370,8 @@ module fv_control_mod
      logical , pointer :: nudge_qv
      real,     pointer :: add_noise
      logical , pointer :: butterfly_effect
+     real ,    pointer :: dz_min
+     integer , pointer :: psm_bc
 
      integer , pointer :: a2b_ord 
      integer , pointer :: c2l_ord 
@@ -908,6 +910,8 @@ module fv_control_mod
        nudge_qv                      => Atm%flagstruct%nudge_qv
        add_noise                     => Atm%flagstruct%add_noise
        butterfly_effect              => Atm%flagstruct%butterfly_effect
+       dz_min                        => Atm%flagstruct%dz_min
+       psm_bc                        => Atm%flagstruct%psm_bc
        a2b_ord                       => Atm%flagstruct%a2b_ord
        c2l_ord                       => Atm%flagstruct%c2l_ord
        ndims                         => Atm%flagstruct%ndims
@@ -1046,6 +1050,10 @@ module fv_control_mod
 !> \param[in] add\_noise] Real: amplitude of random thermal noise (in K) to add upon startup. Useful for perturbing initial conditions. -1 by default; disabled if 0 or negative. 
 !!
 !> \param[in] butterfly\_effect Logical: whether to flip the least-significant-bit of the lowest level temperature. False by default. 
+!!
+!> \param[in] dz\_min  Real: Minimum layer thickness to enforce monotonicity of height to prevent blowup. Set to 2 by default. 
+!!
+!> \param[in] psm\_bc  Integer: Options to use origional BCs (0) or zero-gradient BCs (1) to reconstruct interface u/v for the advection of height. Set to 0 by default. 
 !!
 !> \param[in] adjust\_dry\_mass Logical: whether to adjust the global dry-air mass to the value set by dry\_mass. This is only done in an initialization step, particularly when using an initial condition from an external dataset, interpolated from another resolution (either horizontal or vertical), or when changing the topography, so that the global mass of the atmosphere matches some estimate of observed value. False by default. It is recommended to only set this to True when initializing the model. 
 !!
@@ -1438,7 +1446,7 @@ module fv_control_mod
             c2l_ord, dx_const, dy_const, umax, deglat,      &
             deglon_start, deglon_stop, deglat_start, deglat_stop, &
             phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, butterfly_effect, &
-            nested, twowaynest, nudge_qv, &
+            dz_min, psm_bc, nested, twowaynest, nudge_qv, &
             nestbctype, nestupdate, nsponge, s_weight, &
             check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
             do_uni_zfull, adj_mass_vmr, fac_n_spl, fhouri, update_blend, regional, bc_update_interval,  &
