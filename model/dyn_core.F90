@@ -34,6 +34,7 @@ module dyn_core_mod
   use tp_core_mod,        only: copy_corners
   use fv_timing_mod,      only: timing_on, timing_off
   use fv_diagnostics_mod, only: prt_maxmin, fv_time, prt_mxm
+  use fv_diag_column_mod, only: do_diag_debug_dyn, debug_column_dyn
 #ifdef ROT3
   use fv_update_phys_mod, only: update_dwinds_phys
 #endif
@@ -74,6 +75,7 @@ public :: dyn_core, del2_cubed, init_ijk_mem
   integer:: k_rf = 0
   logical:: RFF_initialized = .false.
   integer :: kmax=1
+  real, parameter    ::     rad2deg = 180./pi
 
 contains
 
@@ -783,7 +785,7 @@ contains
     endif
                                                      call timing_off('d_sw')
 
-    if( flagstruct%fill_dp ) call mix_dp(hydrostatic, w, delp, pt, npz, ak, bk, .false., flagstruct%fv_debug, bd)
+    if( flagstruct%fill_dp ) call mix_dp(hydrostatic, w, delp, pt, npz, ak, bk, .false., flagstruct%fv_debug, bd, gridstruct)
 
                                                              call timing_on('COMM_TOTAL')
     call start_group_halo_update(i_pack(1), delp, domain, complete=.false.)
@@ -878,15 +880,17 @@ contains
 #ifndef SW_DYNAMICS
                                             call timing_on('UPDATE_DZ')
         call update_dz_d(nord_v, damp_vt, flagstruct%hord_tm, is, ie, js, je, npz, ng, npx, npy, gridstruct%area,  &
-                         gridstruct%rarea, dp_ref, zs, zh, crx, cry, xfx, yfx, ws, rdt, gridstruct, bd)
+                         gridstruct%rarea, dp_ref, zs, zh, crx, cry, xfx, yfx, ws, rdt, gridstruct, bd, flagstruct%lim_fac)
                                             call timing_off('UPDATE_DZ')
     if ( flagstruct%fv_debug ) then
-         if ( .not. flagstruct%hydrostatic )    &
-         call prt_mxm('delz updated',  delz, is, ie, js, je, 0, npz, 1., gridstruct%area_64, domain)
+         if ( .not. flagstruct%hydrostatic )    then
+            call prt_mxm('delz updated',  delz, is, ie, js, je, 0, npz, 1., gridstruct%area_64, domain)
+            call prt_maxmin('WS', ws, is, ie, js, je, 0, 1, 1.)
+         endif
     endif
 
         if (idiag%id_ws>0 .and. last_step) then
-!           call prt_maxmin('WS', ws, is, ie, js, je, 0, 1, 1., master)
+!           call prt_maxmin('WS', ws, is, ie, js, je, 0, 1, 1.)
             used=send_data(idiag%id_ws, ws, fv_time)
         endif
 
@@ -902,6 +906,7 @@ contains
                          flagstruct%scale_z, flagstruct%p_fac, flagstruct%a_imp, &
                          flagstruct%use_logp, remap_step, beta<-0.1)
                                                          call timing_off('Riem_Solver')
+
                                        call timing_on('COMM_TOTAL')
         if ( gridstruct%square_domain ) then
           call start_group_halo_update(i_pack(4), zh ,  domain)
@@ -1026,6 +1031,10 @@ contains
    endif
                                        call timing_off('PG_D')
 
+! *** Inline Rayleigh friction here?
+   if( flagstruct%RF_fast .and. flagstruct%tau > 0. )  &
+   call Ray_fast(abs(dt), npx, npy, npz, pfull, flagstruct%tau, u, v, w,  &
+                      ks, dp_ref, ptop, hydrostatic, flagstruct%rf_cutoff, bd)
 
 !-------------------------------------------------------------------------------------------------------
     if ( flagstruct%breed_vortex_inline ) then
@@ -1178,6 +1187,12 @@ contains
 
          call mpp_update_domains(u, v, domain, gridtype=DGRID_NE)
       end if
+
+      if ( do_diag_debug_dyn ) then
+         call debug_column_dyn( pt, delp, delz, u, v, w, q, heat_source, cappa, akap, &
+              allocated(heat_source), npz, nq, sphum, flagstruct%nwat, zvir, ptop, hydrostatic, bd, fv_time, n_map, it)
+      endif
+
 
 !-----------------------------------------------------
   enddo   ! time split loop
@@ -2016,13 +2031,15 @@ enddo    ! end k-loop
 end subroutine grad1_p_update
 
 
-subroutine mix_dp(hydrostatic, w, delp, pt, km, ak, bk, CG, fv_debug, bd)
+subroutine mix_dp(hydrostatic, w, delp, pt, km, ak, bk, CG, fv_debug, bd, gridstruct)
 integer, intent(IN) :: km
 real   , intent(IN) :: ak(km+1), bk(km+1)
 type(fv_grid_bounds_type), intent(IN) :: bd
 real, intent(INOUT), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,km):: pt, delp
 real, intent(INOUT), dimension(bd%isd:,bd%jsd:,1:):: w
 logical, intent(IN) :: hydrostatic, CG, fv_debug
+type(fv_grid_type),  intent(INOUT), target :: gridstruct
+
 ! Local:
 real dp, dpmin
 integer i, j, k, ip
@@ -2052,7 +2069,7 @@ endif
 
 
 !$OMP parallel do default(none) shared(jfirst,jlast,km,ifirst,ilast,delp,ak,bk,pt, &
-!$OMP                                  hydrostatic,w,fv_debug) &
+!$OMP                                  hydrostatic,w,fv_debug,gridstruct) &
 !$OMP                          private(ip, dpmin, dp)
 do 1000 j=jfirst,jlast
 
@@ -2061,8 +2078,9 @@ do 1000 j=jfirst,jlast
    do k=1, km-1
       dpmin = 0.01 * ( ak(k+1)-ak(k) + (bk(k+1)-bk(k))*1.E5 )
       do i=ifirst, ilast
-         if(delp(i,j,k) < dpmin) then
-            if (fv_debug) write(*,*) 'Mix_dp: ', i, j, k, mpp_pe(), delp(i,j,k), pt(i,j,k)
+         if(.not. delp(i,j,k) >= dpmin) then ! catches NaN
+!         if(delp(i,j,k) < dpmin) then
+            if (fv_debug) write(*,*) 'Mix_dp: ', i, j, k, mpp_pe(), delp(i,j,k), pt(i,j,k), gridstruct%agrid(i,j,:)*rad2deg
             ! Remap from below and mix pt
             dp = dpmin - delp(i,j,k)
             pt(i,j,k) = (pt(i,j,k)*delp(i,j,k) + pt(i,j,k+1)*dp) / dpmin
@@ -2077,8 +2095,9 @@ do 1000 j=jfirst,jlast
    ! Bottom (k=km):
    dpmin = 0.01 * ( ak(km+1)-ak(km) + (bk(km+1)-bk(km))*1.E5 )
    do i=ifirst, ilast
-      if(delp(i,j,km) < dpmin) then
-         if (fv_debug) write(*,*) 'Mix_dp: ', i, j, km, mpp_pe(), delp(i,j,km), pt(i,j,km)
+      if(.not. delp(i,j,km) >= dpmin) then ! catches NaN
+!      if(delp(i,j,km) < dpmin) then
+         if (fv_debug) write(*,*) 'Mix_dp: ', i, j, km, mpp_pe(), delp(i,j,km), pt(i,j,km), gridstruct%agrid(i,j,:)*rad2deg
          ! Remap from above and mix pt
          dp = dpmin - delp(i,j,km)
          pt(i,j,km) = (pt(i,j,km)*delp(i,j,km) + pt(i,j,km-1)*dp)/dpmin
@@ -2357,23 +2376,26 @@ do 1000 j=jfirst,jlast
  end subroutine init_ijk_mem
 
 
- subroutine Rayleigh_fast(dt, npx, npy, npz, pfull, tau, u, v, w,  &
-                          ptop, hydrostatic, rf_cutoff, bd)
+ subroutine Ray_fast(dt, npx, npy, npz, pfull, tau, u, v, w,  &
+                          ks, dp, ptop, hydrostatic, rf_cutoff, bd)
 ! Simple "inline" version of the Rayleigh friction
     real, intent(in):: dt
     real, intent(in):: tau              ! time scale (days)
     real, intent(in):: ptop, rf_cutoff
     real, intent(in),  dimension(npz):: pfull
-    integer, intent(in):: npx, npy, npz
+    integer, intent(in):: npx, npy, npz, ks
     logical, intent(in):: hydrostatic
     type(fv_grid_bounds_type), intent(IN) :: bd
     real, intent(inout):: u(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) ! D grid zonal wind (m/s)
     real, intent(inout):: v(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz) ! D grid meridional wind (m/s)
-    real, intent(inout)::  w(bd%isd:      ,bd%jsd:      ,1: ) ! cell center vertical wind (m/s)
+    real, intent(inout):: w(bd%isd:      ,bd%jsd:      ,1: ) ! cell center vertical wind (m/s)
+    real, intent(in):: dp(npz)
 !
     real(kind=R_GRID):: rff(npz)
     real, parameter:: sday = 86400.
-    real:: tau0
+    real, dimension(bd%is:bd%ie+1):: dmv
+    real, dimension(bd%is:bd%ie):: dmu
+    real:: tau0, dm
     integer i, j, k
 
     integer :: is,  ie,  js,  je
@@ -2406,33 +2428,71 @@ do 1000 j=jfirst,jlast
                   exit
              endif
           enddo
+          dm = 0.
+          do k=1,ks
+             if ( pfull(k) < rf_cutoff + min(100., 10.*ptop) ) then
+                  dm = dm + dp(k)
+                  k_rf = k
+             else
+                  exit
+             endif
+          enddo
+          if( is_master() ) write(6,*) 'k_rf=', k_rf, 0.01*pfull(k_rf), 'dm=', dm
           RFF_initialized = .true.
      endif
 
-!$OMP parallel do default(none) shared(is,ie,js,je,kmax,pfull,rf_cutoff,w,rf,u,v,hydrostatic)
-     do k=1,kmax
-        if ( pfull(k) < rf_cutoff ) then
-             do j=js,je+1
+!$OMP parallel do default(none) shared(k_rf,is,ie,js,je,kmax,pfull,rf_cutoff,w,rf,dp,u,v,hydrostatic) &
+!$OMP          private(dm, dmu, dmv)
+     do j=js,je+1
+
+        dm = 0.
+        do k=1, k_rf
+           dm = dm + dp(k)
+        enddo
+
+        dmu(:) = 0.
+        dmv(:) = 0.
+        do k=1,kmax
+           do i=is,ie
+                dmu(i) = dmu(i) + (1.-rf(k))*dp(k)*u(i,j,k)
+              u(i,j,k) = rf(k)*u(i,j,k)
+           enddo
+           if ( j/=je+1 ) then
+              do i=is,ie+1
+                   dmv(i) = dmv(i) + (1.-rf(k))*dp(k)*v(i,j,k)
+                 v(i,j,k) = rf(k)*v(i,j,k)
+              enddo
+              if ( .not. hydrostatic ) then
                 do i=is,ie
-                   u(i,j,k) = rf(k)*u(i,j,k)
+                   w(i,j,k) = rf(k)*w(i,j,k)
                 enddo
-             enddo
-             do j=js,je
-                do i=is,ie+1
-                   v(i,j,k) = rf(k)*v(i,j,k)
-                enddo
-             enddo
-             if ( .not. hydrostatic ) then
-                do j=js,je
-                   do i=is,ie
-                      w(i,j,k) = rf(k)*w(i,j,k)
-                   enddo
-                enddo
-             endif
+              endif
+           endif
+        enddo
+
+        do i=is,ie
+           dmu(i) = dmu(i) / dm
+        enddo
+        if ( j/=je+1 ) then
+           do i=is,ie+1
+              dmv(i) = dmv(i) / dm
+           enddo
         endif
+
+        do k=1, k_rf
+           do i=is,ie
+              u(i,j,k) = u(i,j,k) + dmu(i)
+           enddo
+           if ( j/=je+1 ) then
+              do i=is,ie+1
+                 v(i,j,k) = v(i,j,k) + dmv(i)
+              enddo
+           endif
+        enddo
+
      enddo
 
- end subroutine Rayleigh_fast
+ end subroutine Ray_fast
 
  subroutine gz_bc(gz,delzBC,bd,npx,npy,npz,step,split)
 

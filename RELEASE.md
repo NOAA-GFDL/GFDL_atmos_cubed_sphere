@@ -1,4 +1,31 @@
-# RELEASE NOTES for FV3: Summary
+# RELEASE NOTES for FV3 202101: Summary
+
+FV3-202101-public --- 22 January 2021
+Lucas Harris, GFDL <lucas.harris@noaa.gov>
+
+This version has been tested against the current SHiELD (formerly fvGFS) physics
+and with FMS release candidate 2020.04 from https://github.com/NOAA-GFDL/FMS
+
+This release includes the following:
+
+- Positive-definite advection scheme
+- In-line GFDL Microphysics
+- Fast-timescale Rayleigh damping
+- Updated namelist documentation
+- Implemented multiple same-level and telescoping nests for the global system (from J Mouallem)
+- Updated coarse-graining capabilities (from S Clark)
+- Re-organized fv_diagnostics, moving the revised fv_diag_column functionality and the declaration of diagnostic IDs to separate files
+- and other updates and general cleanup
+
+This version of FV3 is described as component of SHiELD in Harris et al. (2020, JAMES).
+
+## Interface changes in 202101
+
+drivers: renamed 'fvGFS' directory to SHiELD
+
+atmosphere.F90: if using the in-line GFDL microphysics the precipitation rates (available in the structure Atm%inline_mp for rain, ice, snow, and graupel separately) must be passed into the physics and/or land model as appropriate. Here we demonstrate how to do this in SHiELD by copying them into IPD_Data(nb)%Statein%prep (and so on), which are newly defined in the IPD_Data structure within the SHiELD physics.
+
+# RELEASE NOTES for FV3 201912: Summary
 
 FV3-201912-public --- 10 January 2020
 Lucas Harris, GFDL <lucas.harris@noaa.gov>
@@ -18,7 +45,7 @@ Includes all of the features of the GFDL Release to EMC, as well as:
 - Support for point soundings
 - And other updates
 
-# Interface changes
+## Interface changes
 
 drivers: renamed 'fvGFS' directory to SHiELD
 

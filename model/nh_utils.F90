@@ -182,7 +182,7 @@ CONTAINS
 
 
   subroutine update_dz_d(ndif, damp, hord, is, ie, js, je, km, ng, npx, npy, area, rarea,   &
-                         dp0, zs, zh, crx, cry, xfx, yfx, ws, rdt, gridstruct, bd)
+                         dp0, zs, zh, crx, cry, xfx, yfx, ws, rdt, gridstruct, bd, lim_fac)
 
   type(fv_grid_bounds_type), intent(IN) :: bd
   integer, intent(in):: is, ie, js, je, ng, km, npx, npy
@@ -199,6 +199,7 @@ CONTAINS
   real, intent(inout), dimension(is-ng:ie+ng,js:je+1,km):: cry, yfx
   real, intent(out)   :: ws(is:ie,js:je)
   type(fv_grid_type), intent(IN), target :: gridstruct
+  real, intent(in) :: lim_fac
 !-----------------------------------------------------
 ! Local array:
   real, dimension(is:   ie+1, js-ng:je+ng,km+1):: crx_adv, xfx_adv
@@ -234,7 +235,7 @@ CONTAINS
 
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,km,area,xfx_adv,yfx_adv, &
 !$OMP                                  damp,zh,crx_adv,cry_adv,npx,npy,hord,gridstruct,bd,  &
-!$OMP                                  ndif,rarea) &
+!$OMP                                  ndif,rarea,lim_fac) &
 !$OMP                          private(z2, fx2, fy2, ra_x, ra_y, fx, fy,wk2)
   do k=1,km+1
 
@@ -256,7 +257,7 @@ CONTAINS
         enddo
      enddo
      call fv_tp_2d(z2, crx_adv(is,jsd,k), cry_adv(isd,js,k), npx,  npy, hord, &
-                  fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y)
+                  fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y, lim_fac)
      call del6_vt_flux(ndif(k), npx, npy, damp(k), z2, wk2, fx2, fy2, gridstruct, bd)
      do j=js,je
         do i=is,ie
@@ -266,7 +267,7 @@ CONTAINS
      enddo
    else
      call fv_tp_2d(zh(isd,jsd,k), crx_adv(is,jsd,k), cry_adv(isd,js,k), npx,  npy, hord, &
-                   fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y)
+                   fx, fy, xfx_adv(is,jsd,k), yfx_adv(isd,js,k), gridstruct, bd, ra_x, ra_y, lim_fac)
      do j=js,je
         do i=is,ie
            zh(i,j,k) = (zh(i,j,k)*area(i,j)+fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))   &

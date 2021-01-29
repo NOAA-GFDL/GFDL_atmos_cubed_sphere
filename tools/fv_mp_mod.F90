@@ -28,7 +28,7 @@
 ! !USES:
       use fms_mod,         only : fms_init, fms_end
       use mpp_mod,         only : FATAL, MPP_DEBUG, NOTE, MPP_CLOCK_SYNC,MPP_CLOCK_DETAILED, WARNING
-      use mpp_mod,         only : mpp_pe, mpp_npes, mpp_node, mpp_root_pe, mpp_error, mpp_set_warn_level
+      use mpp_mod,         only : mpp_pe, mpp_npes, mpp_root_pe, mpp_error, mpp_set_warn_level
       use mpp_mod,         only : mpp_declare_pelist, mpp_set_current_pelist, mpp_sync
       use mpp_mod,         only : mpp_clock_begin, mpp_clock_end, mpp_clock_id
       use mpp_mod,         only : mpp_chksum, stdout, stderr, mpp_broadcast
@@ -281,9 +281,10 @@ contains
 !
 !     domain_decomp :: Setup domain decomp
 !
-      subroutine domain_decomp(npx,npy,nregions,grid_type,nested,layout,io_layout,bd,tile,square_domain,&
+      subroutine domain_decomp(grid_num,npx,npy,nregions,grid_type,nested,layout,io_layout,bd,tile,square_domain,&
            npes_per_tile,domain,domain_for_coupler,num_contact,pelist)
 
+         integer, intent(IN)  :: grid_num
          integer, intent(IN)  :: npx,npy,grid_type
          integer, intent(INOUT) :: nregions, tile
          logical, intent(IN):: nested
@@ -312,13 +313,14 @@ contains
          npes_x = layout(1)
          npes_y = layout(2)
 
+
          call mpp_domains_init(MPP_DOMAIN_TIME)
 
          select case(nregions)
          case ( 1 )  ! Lat-Lon "cyclic"
 
             select case (grid_type)
-            case (0,1,2) !Gnomonic nested grid
+            case (0,1,2,5) !Gnomonic nested grid
                if (nested) then
                   type = "Cubed-sphere nested grid"
                else
@@ -368,12 +370,6 @@ contains
                else
                   call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
                endif
-            case (5)   ! latlon patch
-               type="Lat-Lon: patch"
-               nregions = 1
-               num_contact = 0
-               npes_per_tile = npes/nregions
-               call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
             case (6)   ! latlon strip
                type="Lat-Lon: strip"
                nregions = 1
@@ -555,7 +551,7 @@ contains
                if( nregions .NE. 1 ) then
                   call mpp_error(FATAL, 'domain_decomp: nregions should be 1 for nested region, contact developer')
                endif
-               tile_id(1) = 7   ! TODO need update for multiple nests
+               tile_id(1) = tile_fine(grid_num)
             else
                do n = 1, nregions
                   tile_id(n) = n

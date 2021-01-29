@@ -93,7 +93,11 @@ use amip_interp_mod,      only: forecast_mode
 #endif
 
 use mpp_domains_mod,      only:  mpp_get_data_domain, mpp_get_compute_domain
-use boundary_mod,         only: update_coarse_grid
+use gfdl_mp_mod,        only: gfdl_mp_init, gfdl_mp_end
+use cloud_diagnosis_mod,only: cloud_diagnosis_init
+use coarse_graining_mod, only: coarse_graining_init
+use coarse_grained_diagnostics_mod, only: fv_coarse_diag_init, fv_coarse_diag
+use coarse_grained_restart_files_mod, only: fv_coarse_restart_init
 
 implicit none
 private
@@ -163,7 +167,7 @@ character(len=7)   :: mod_name = 'atmos'
   real, parameter:: w0_big = 60.  ! to prevent negative w-tracer diffusion
 
 !---dynamics tendencies for use in fv_subgrid_z and during fv_update_phys
-  real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt
+  real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt, qv_dt
   real, allocatable, dimension(:,:,:,:) :: q_dt
   real, allocatable :: pref(:,:), dum1d(:)
 
@@ -209,6 +213,16 @@ contains
    cold_start = (.not.file_exist('INPUT/fv_core.res.nc') .and. .not.file_exist('INPUT/fv_core.res.tile1.nc'))
 
    call fv_control_init( Atm, dt_atmos, mygrid, grids_on_this_pe, p_split )  ! allocates Atm components; sets mygrid
+
+   if (Atm(mygrid)%coarse_graining%write_coarse_restart_files .or. &
+        Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
+      call coarse_graining_init(Atm(mygrid)%flagstruct%npx, Atm(mygrid)%npz, &
+           Atm(mygrid)%layout, Atm(mygrid)%bd%is, Atm(mygrid)%bd%ie, &
+           Atm(mygrid)%bd%js, Atm(mygrid)%bd%je, Atm(mygrid)%coarse_graining%factor, &
+           Atm(mygrid)%coarse_graining%nx_coarse, &
+           Atm(mygrid)%coarse_graining%strategy, &
+           Atm(mygrid)%coarse_graining%domain)
+   endif
 
    Atm(mygrid)%Time_init = Time_init
 
@@ -281,9 +295,15 @@ contains
    allocate( u_dt(isd:ied,jsd:jed,npz), &
              v_dt(isd:ied,jsd:jed,npz), &
              t_dt(isc:iec,jsc:jec,npz), &
+             qv_dt(isc:iec,jsc:jec,npz), &
              q_dt(isc:iec,jsc:jec,npz,nq) )
 !--- allocate pref
     allocate(pref(npz+1,2), dum1d(npz+1))
+
+   if (Atm(mygrid)%flagstruct%do_inline_mp) then
+     call gfdl_mp_init(mpp_pe(), mpp_root_pe(), nlunit, input_nml_file, stdlog(), fn_nml)
+     call cloud_diagnosis_init(nlunit, input_nml_file, stdlog(), fn_nml)
+   endif
 
    call fv_restart(Atm(mygrid)%domain, Atm, dt_atmos, seconds, days, cold_start, Atm(mygrid)%gridstruct%grid_type, mygrid)
 
@@ -292,6 +312,20 @@ contains
 !----- initialize atmos_axes and fv_dynamics diagnostics
        !I've had trouble getting this to work with multiple grids at a time; worth revisiting?
    call fv_diag_init(Atm(mygrid:mygrid), Atm(mygrid)%atmos_axes, Time, npx, npy, npz, Atm(mygrid)%flagstruct%p_ref)
+
+   if (Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
+      call fv_coarse_diag_init(Atm, Time, Atm(mygrid)%atmos_axes(3), &
+           Atm(mygrid)%atmos_axes(4), Atm(mygrid)%coarse_graining)
+   endif
+   if (Atm(mygrid)%coarse_graining%write_coarse_restart_files) then
+      call fv_coarse_restart_init(mygrid, Atm(mygrid)%npz, Atm(mygrid)%flagstruct%nt_prog, &
+           Atm(mygrid)%flagstruct%nt_phys, Atm(mygrid)%flagstruct%hydrostatic, &
+           Atm(mygrid)%flagstruct%hybrid_z, Atm(mygrid)%flagstruct%fv_land, &
+           Atm(mygrid)%coarse_graining%write_coarse_dgrid_vel_rst, &
+           Atm(mygrid)%coarse_graining%write_coarse_agrid_vel_rst, &
+           Atm(mygrid)%coarse_graining%domain, &
+           Atm(mygrid)%coarse_graining%restart)
+   endif
 
 !---------- reference profile -----------
     ps1 = 101325.
@@ -349,46 +383,42 @@ contains
    !and so for now we will only define for the coarsest grid
 
 !miz
-   id_udt_dyn    =register_diag_field(mod_name,'udt_dyn',    Atm(mygrid)%atmos_axes(1:3),  &
-                         Time,'udt_dyn',    'm/s/s', missing_value=mv)
-   id_vdt_dyn    =register_diag_field(mod_name,'vdt_dyn',    Atm(mygrid)%atmos_axes(1:3),  &
-                         Time,'vdt_dyn',    'm/s/s', missing_value=mv)
-   id_tdt_dyn    =register_diag_field(mod_name,'tdt_dyn',    Atm(mygrid)%atmos_axes(1:3),  &
-                         Time,'tdt_dyn',    'K/s', missing_value=mv)
-   id_qdt_dyn    =register_diag_field(mod_name,'qdt_dyn',    Atm(mygrid)%atmos_axes(1:3),  &
-                         Time,'qdt_dyn',    'kg/kg/s', missing_value=mv)
-   id_qldt_dyn   =register_diag_field(mod_name,'qldt_dyn',   Atm(mygrid)%atmos_axes(1:3),  &
-                         Time,'qldt_dyn',   'kg/kg/s', missing_value=mv)
-   id_qidt_dyn   =register_diag_field(mod_name,'qidt_dyn',   Atm(mygrid)%atmos_axes(1:3),  &
-                         Time,'qidt_dyn',   'kg/kg/s', missing_value=mv)
-   id_qadt_dyn   =register_diag_field(mod_name,'qadt_dyn',   Atm(mygrid)%atmos_axes(1:3),  &
-                         Time,'qadt_dyn',   '1/s', missing_value=mv)
-!--- register cmip tendency fields ---
-   ID_tnta = register_cmip_diag_field_3d (mod_name, 'tnta', Time, &
-                         'Tendency of Air Temperature due to Advection', 'K s-1', &
-                         standard_name='tendency_of_air_temperature_due_to_advection')
-   ID_tnhusa = register_cmip_diag_field_3d (mod_name, 'tnhusa', Time, &
-                         'Tendency of Specific Humidity due to Advection', 's-1', &
-                         standard_name='tendency_of_specific_humidity_due_to_advection')
-   ID_tnt = register_cmip_diag_field_3d (mod_name, 'tnt', Time, &
-                         'Tendency of Air Temperature', 'K s-1', &
-                         standard_name='tendency_of_air_temperature')
-   ID_tnhus = register_cmip_diag_field_3d (mod_name, 'tnhus', Time, &
-                         'Tendency of Specific Humidity', 's-1', &
-                         standard_name='tendency_of_specific_humidity')
-
 !---allocate id_tracer_*
    allocate (id_tracerdt_dyn    (num_tracers))
-!---loop for tracers
-   do itrac = 1, num_tracers
-     call get_tracer_names (MODEL_ATMOS, itrac, name = tracer_name, units = tracer_units)
-     if (get_tracer_index(MODEL_ATMOS,tracer_name)>0) then
-         id_tracerdt_dyn(itrac) = register_diag_field(mod_name, TRIM(tracer_name)//'dt_dyn',  &
-                                      Atm(mygrid)%atmos_axes(1:3),Time,                       &
-                                      TRIM(tracer_name)//' total tendency from advection',    &
-                                      TRIM(tracer_units)//'/s', missing_value = mv)
-     endif
-   enddo
+   if ( Atm(mygrid)%flagstruct%write_3d_diags) then
+      id_udt_dyn    =register_diag_field(mod_name,'udt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
+           Time,'udt_dyn',    'm/s/s', missing_value=mv)
+      id_vdt_dyn    =register_diag_field(mod_name,'vdt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
+           Time,'vdt_dyn',    'm/s/s', missing_value=mv)
+      id_tdt_dyn    =register_diag_field(mod_name,'tdt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
+           Time,'tdt_dyn',    'K/s', missing_value=mv)
+      id_qdt_dyn    =register_diag_field(mod_name,'qdt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
+           Time,'qdt_dyn',    'kg/kg/s', missing_value=mv)
+      id_qldt_dyn   =register_diag_field(mod_name,'qldt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
+           Time,'qldt_dyn',   'kg/kg/s', missing_value=mv)
+      id_qidt_dyn   =register_diag_field(mod_name,'qidt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
+           Time,'qidt_dyn',   'kg/kg/s', missing_value=mv)
+      id_qadt_dyn   =register_diag_field(mod_name,'qadt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
+           Time,'qadt_dyn',   '1/s', missing_value=mv)
+      !--- register cmip tendency fields ---
+      ID_tnta = register_cmip_diag_field_3d (mod_name, 'tnta', Time, &
+           'Tendency of Air Temperature due to Advection', 'K s-1', &
+           standard_name='tendency_of_air_temperature_due_to_advection')
+      ID_tnhusa = register_cmip_diag_field_3d (mod_name, 'tnhusa', Time, &
+           'Tendency of Specific Humidity due to Advection', 's-1', &
+           standard_name='tendency_of_specific_humidity_due_to_advection')
+
+      !---loop for tracers
+      do itrac = 1, num_tracers
+         call get_tracer_names (MODEL_ATMOS, itrac, name = tracer_name, units = tracer_units)
+         if (get_tracer_index(MODEL_ATMOS,tracer_name)>0) then
+            id_tracerdt_dyn(itrac) = register_diag_field(mod_name, TRIM(tracer_name)//'dt_dyn',  &
+                 Atm(mygrid)%atmos_axes(1:3),Time,                       &
+                 TRIM(tracer_name)//' total tendency from advection',    &
+                 TRIM(tracer_units)//'/s', missing_value = mv)
+         endif
+      enddo
+   endif
    if (any(id_tracerdt_dyn(:)>0)) allocate(qtendyyf(isc:iec, jsc:jec,1:npz,num_tracers))
    if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) .or. query_cmip_diag_id(ID_tnt) ) &
                                                       allocate(ttend(isc:iec, jsc:jec, 1:npz))
@@ -420,6 +450,8 @@ contains
    integer :: itrac, n, psc
    integer :: k, w_diff, nt_dyn
    type(surf_diff_type), intent(inout):: surf_diff
+   logical :: used
+   real :: rdt
 
 !---- Call FV dynamics -----
 
@@ -461,7 +493,7 @@ contains
                       Atm(n)%flagstruct%hybrid_z,                          &
                       Atm(n)%gridstruct, Atm(n)%flagstruct,                &
                       Atm(n)%neststruct, Atm(n)%idiag, Atm(n)%bd,          &
-                      Atm(n)%parent_grid, Atm(n)%domain)
+                      Atm(n)%parent_grid, Atm(n)%domain, Atm(n)%inline_mp)
 
      call timing_off('fv_dynamics')
 
@@ -508,10 +540,13 @@ contains
 !-----------------------------------------------------
 !--- zero out tendencies
     call mpp_clock_begin (id_subgridz)
-    u_dt(:,:,:)   = 0.
+    u_dt(:,:,:)   = 0. ! These are updated by fv_subgrid_z
     v_dt(:,:,:)   = 0.
-    t_dt(:,:,:)   = 0.
+    t_dt(:,:,:)   = Atm(n)%pt(isc:iec,jsc:jec,:)
+    qv_dt(:,:,:)  = Atm(n)%q (isc:iec,jsc:jec,:,sphum)
     q_dt(:,:,:,:) = 0.
+
+    rdt = 1./dt_atmos
 
     w_diff = get_tracer_index (MODEL_ATMOS, 'w_diff' )
     if ( Atm(n)%flagstruct%fv_sg_adj > 0 ) then
@@ -537,6 +572,21 @@ contains
           q_dt(:,:,k,w_diff) = 0.
         enddo
     endif
+
+    if (Atm(1)%idiag%id_u_dt_sg > 0) then
+       used = send_data(Atm(1)%idiag%id_u_dt_sg, u_dt(isc:iec,jsc:jec,:), fv_time)
+    end if
+    if (Atm(1)%idiag%id_v_dt_sg > 0) then
+       used = send_data(Atm(1)%idiag%id_v_dt_sg, v_dt(isc:iec,jsc:jec,:), fv_time)
+    end if
+    if (Atm(1)%idiag%id_t_dt_sg > 0) then
+       t_dt(:,:,:) = rdt*(Atm(1)%pt(isc:iec,jsc:jec,:) - t_dt(:,:,:))
+       used = send_data(Atm(1)%idiag%id_t_dt_sg, t_dt, fv_time)
+    end if
+    if (Atm(1)%idiag%id_qv_dt_sg > 0) then
+       qv_dt(:,:,:) = rdt*(Atm(1)%q(isc:iec,jsc:jec,:,sphum) - qv_dt(:,:,:))
+       used = send_data(Atm(1)%idiag%id_qv_dt_sg, qv_dt, fv_time)
+    end if
 
    call mpp_clock_end (id_subgridz)
 
@@ -564,13 +614,17 @@ contains
    if ( Atm(mygrid)%flagstruct%nudge ) call fv_nwp_nudge_end
 #endif
 
+   if (Atm(mygrid)%flagstruct%do_inline_mp) then
+     call gfdl_mp_end ( )
+   endif
+
    call atmos_global_diag_end
    call fv_cmip_diag_end
    call nullify_domain ( )
    call fv_end(Atm, mygrid)
    deallocate (Atm)
 
-   deallocate( u_dt, v_dt, t_dt, q_dt, pref, dum1d )
+   deallocate( u_dt, v_dt, t_dt, qv_dt, q_dt, pref, dum1d )
 
  end subroutine atmosphere_end
 
@@ -955,6 +1009,9 @@ contains
      call get_time (fv_time, seconds,  days)
 
      call fv_diag(Atm(mygrid:mygrid), zvir, fv_time, Atm(mygrid)%flagstruct%print_freq)
+      if (Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
+         call fv_coarse_diag(Atm(mygrid:mygrid), fv_time)
+      endif
      call fv_cmip_diag(Atm(mygrid:mygrid), zvir, fv_time)
 
      call timing_off('FV_DIAG')
@@ -1046,7 +1103,7 @@ contains
                      Atm(n)%cx, Atm(n)%cy, Atm(n)%ze0, Atm(n)%flagstruct%hybrid_z,    &
                      Atm(n)%gridstruct, Atm(n)%flagstruct,                            &
                      Atm(n)%neststruct, Atm(n)%idiag, Atm(n)%bd,                      &
-                     Atm(n)%parent_grid, Atm(n)%domain)
+                     Atm(n)%parent_grid, Atm(n)%domain, Atm(n)%inline_mp)
 
 ! No large-scale nudging at "Time_prev"
     if ( do_nudge ) then
@@ -1264,7 +1321,7 @@ contains
     endif
     if (do_uni_zfull) then
        do k=1,npz
-       	  z_full(:,:,k)=0.5*(z_half(:,:,k)+z_half(:,:,k+1))
+         z_full(:,:,k)=0.5*(z_half(:,:,k)+z_half(:,:,k+1))
        enddo
     endif
   end subroutine fv_compute_p_z
