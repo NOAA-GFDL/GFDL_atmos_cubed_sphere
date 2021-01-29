@@ -111,7 +111,7 @@ public :: atmos_phys_driver_statein
 ! version number of this module
 ! Include variable "version" to be written to log file.
 #include<file_version.h>
-character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
+character(len=20)   :: mod_name = 'SHiELD/atmosphere_mod'
 
 !---- private data ----
   type (time_type) :: Time_step_atmos
@@ -201,7 +201,7 @@ contains
    Atm(mygrid)%Time_init = Time_init
 
 !----- write version and namelist to log file -----
-   call write_version_number ( 'fvGFS/ATMOSPHERE_MOD', version )
+   call write_version_number ( mod_name, version )
 
 !-----------------------------------
 

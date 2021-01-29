@@ -30,71 +30,74 @@ module atmosphere_mod
 !-----------------
 ! FMS modules:
 !-----------------
-use atmos_co2_mod,      only: atmos_co2_rad, co2_radiation_override
-use block_control_mod,  only: block_control_type
-use constants_mod,      only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
-use time_manager_mod,   only: time_type, get_time, set_time, operator(+)
-use fms_mod,            only: file_exist, open_namelist_file,    &
-                              close_file, error_mesg, FATAL,     &
-                              check_nml_error, stdlog,           &
-                              write_version_number,              &
-                              mpp_pe, mpp_root_pe, set_domain,   &
-                              mpp_clock_id, mpp_clock_begin,     &
-                              mpp_clock_end, CLOCK_SUBCOMPONENT, &
-                              clock_flag_default, nullify_domain
-use mpp_mod,            only: mpp_error, FATAL, NOTE, input_nml_file, &
-                              mpp_npes, mpp_get_current_pelist, &
-                              mpp_set_current_pelist, stdout, &
-                              mpp_pe, mpp_chksum
-use mpp_domains_mod,    only: domain2d
-use xgrid_mod,          only: grid_box_type
+use atmos_co2_mod,         only: atmos_co2_rad, co2_radiation_override
+use block_control_mod,     only: block_control_type
+use constants_mod,         only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
+use time_manager_mod,      only: time_type, get_time, set_time, operator(+)
+use fms_mod,               only: file_exist, open_namelist_file,    &
+                                 close_file, error_mesg, FATAL,     &
+                                 check_nml_error, stdlog,           &
+                                 write_version_number,              &
+                                 mpp_pe, mpp_root_pe, set_domain,   &
+                                 mpp_clock_id, mpp_clock_begin,     &
+                                 mpp_clock_end, CLOCK_SUBCOMPONENT, &
+                                 clock_flag_default, nullify_domain
+use mpp_mod,               only: mpp_error, FATAL, NOTE, input_nml_file, &
+                                 mpp_npes, mpp_get_current_pelist, &
+                                 mpp_set_current_pelist, stdout, &
+                                 mpp_pe, mpp_chksum
+use mpp_domains_mod,       only: domain2d
+use xgrid_mod,             only: grid_box_type
 !miz
-use diag_manager_mod,   only: register_diag_field, send_data
-use field_manager_mod,  only: MODEL_ATMOS
-use tracer_manager_mod, only: get_tracer_index,&
-                              get_number_tracers, &
-                              get_tracer_names, NO_TRACER
-use physics_driver_mod, only: surf_diff_type
-use physics_types_mod,  only: physics_type, &
-                              physics_tendency_type
-use radiation_types_mod,only: radiation_type, compute_g_avg
-use atmos_cmip_diag_mod,only: atmos_cmip_diag_init, &
-                              register_cmip_diag_field_3d, &
-                              send_cmip_data_3d, cmip_diag_id_type, &
-                              query_cmip_diag_id
-#ifndef use_AM3_physics
-use  atmos_global_diag_mod, only: atmos_global_diag_init, &
-                                  atmos_global_diag_end
-#endif
+use diag_manager_mod,      only: register_diag_field, send_data
+use field_manager_mod,     only: MODEL_ATMOS
+use tracer_manager_mod,    only: get_tracer_index,&
+                                 get_number_tracers, &
+                                 get_tracer_names, NO_TRACER
+use physics_driver_mod,    only: surf_diff_type
+use physics_types_mod,     only: physics_type, &
+                                 physics_tendency_type
+use radiation_types_mod,   only: radiation_type, compute_g_avg
+use atmos_cmip_diag_mod,   only: atmos_cmip_diag_init, &
+                                 register_cmip_diag_field_3d, &
+                                 send_cmip_data_3d, cmip_diag_id_type, &
+                                 query_cmip_diag_id
+use atmos_global_diag_mod, only: atmos_global_diag_init, &
+                                 atmos_global_diag_end
 
 !-----------------
 ! FV core modules:
 !-----------------
-use fv_arrays_mod,      only: fv_atmos_type
-use fv_control_mod,     only: fv_control_init, fv_end, ngrids
-use fv_eta_mod,         only: get_eta_level
-use fv_io_mod,          only: fv_io_register_nudge_restart
-use fv_dynamics_mod,    only: fv_dynamics
-use fv_nesting_mod,     only: twoway_nesting
-use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin
-use fv_cmip_diag_mod,   only: fv_cmip_diag_init, fv_cmip_diag, fv_cmip_diag_end
-use fv_restart_mod,     only: fv_restart, fv_write_restart
-use fv_timing_mod,      only: timing_on, timing_off
-use fv_mp_mod,          only: switch_current_Atm
-use fv_sg_mod,          only: fv_subgrid_z
-use fv_update_phys_mod, only: fv_update_phys
+use fv_arrays_mod,        only: fv_atmos_type
+use fv_control_mod,       only: fv_control_init, fv_end, ngrids
+use fv_eta_mod,           only: get_eta_level
+use fv_io_mod,            only: fv_io_register_nudge_restart
+use fv_dynamics_mod,      only: fv_dynamics
+use fv_nesting_mod,       only: twoway_nesting
+use fv_diagnostics_mod,   only: fv_diag_init, fv_diag, fv_time, prt_maxmin
+use fv_cmip_diag_mod,     only: fv_cmip_diag_init, fv_cmip_diag, fv_cmip_diag_end
+use fv_restart_mod,       only: fv_restart, fv_write_restart
+use fv_timing_mod,        only: timing_on, timing_off
+use fv_mp_mod,            only: switch_current_Atm
+use fv_sg_mod,            only: fv_subgrid_z
+use fv_update_phys_mod,   only: fv_update_phys
 #if defined (ATMOS_NUDGE)
-use atmos_nudge_mod,    only: atmos_nudge_init, atmos_nudge_end
+use atmos_nudge_mod,      only: atmos_nudge_init, atmos_nudge_end
 #elif defined (CLIMATE_NUDGE)
-use fv_climate_nudge_mod,only: fv_climate_nudge_init,fv_climate_nudge_end
+use fv_climate_nudge_mod, only: fv_climate_nudge_init,fv_climate_nudge_end
 #elif defined (ADA_NUDGE)
-use fv_ada_nudge_mod,   only: fv_ada_nudge_init, fv_ada_nudge_end
+use fv_ada_nudge_mod,     only: fv_ada_nudge_init, fv_ada_nudge_end
 #else
-use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
-use amip_interp_mod,    only: forecast_mode
+use fv_nwp_nudge_mod,     only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
+use amip_interp_mod,      only: forecast_mode
 #endif
 
-use mpp_domains_mod, only:  mpp_get_data_domain, mpp_get_compute_domain
+use mpp_domains_mod,      only:  mpp_get_data_domain, mpp_get_compute_domain
+use gfdl_mp_mod,        only: gfdl_mp_init, gfdl_mp_end
+use cloud_diagnosis_mod,only: cloud_diagnosis_init
+use coarse_graining_mod, only: coarse_graining_init
+use coarse_grained_diagnostics_mod, only: fv_coarse_diag_init, fv_coarse_diag
+use coarse_grained_restart_files_mod, only: fv_coarse_restart_init
 
 implicit none
 private
@@ -139,31 +142,32 @@ character(len=7)   :: mod_name = 'atmos'
 
   integer, dimension(:), allocatable :: id_tracerdt_dyn
   integer :: num_tracers = 0
+
 !miz
   !Diagnostics
-  integer :: id_tdt_dyn, id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn
+  type(cmip_diag_id_type) :: ID_tnta, ID_tnhusa, ID_tnt, ID_tnhus
+  integer :: id_udt_dyn, id_vdt_dyn, id_tdt_dyn, id_qdt_dyn
+  integer :: id_qldt_dyn, id_qidt_dyn, id_qadt_dyn
   logical :: used
   character(len=64) :: field
   real, allocatable :: ttend(:,:,:)
   real, allocatable :: qtendyyf(:,:,:,:)
   real, allocatable :: qtend(:,:,:,:)
-  real              :: mv = -1.e10
+  real              :: mv = -1.e10   ! missing value for diagnostics
+  integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel  !condensate species
+  integer :: cld_amt
 !miz
-  type(cmip_diag_id_type) :: ID_tnta, ID_tnhusa
 
-  integer :: mytile = 1
+  integer :: mygrid = 1
   integer :: p_split = 1
   integer, allocatable :: pelist(:)
   logical, allocatable :: grids_on_this_pe(:)
-  integer :: this_grid
   type(fv_atmos_type), allocatable, target :: Atm(:)
-
-  integer :: id_udt_dyn, id_vdt_dyn
 
   real, parameter:: w0_big = 60.  ! to prevent negative w-tracer diffusion
 
 !---dynamics tendencies for use in fv_subgrid_z and during fv_update_phys
-  real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt
+  real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt, qv_dt
   real, allocatable, dimension(:,:,:,:) :: q_dt
   real, allocatable :: pref(:,:), dum1d(:)
 
@@ -208,38 +212,59 @@ contains
    !NOTE do we still need the second file_exist call?
    cold_start = (.not.file_exist('INPUT/fv_core.res.nc') .and. .not.file_exist('INPUT/fv_core.res.tile1.nc'))
 
-   call fv_control_init( Atm, dt_atmos, this_grid, grids_on_this_pe, p_split )  ! allocates Atm components
+   call fv_control_init( Atm, dt_atmos, mygrid, grids_on_this_pe, p_split )  ! allocates Atm components; sets mygrid
 
-   do n=1,ngrids
-      if (grids_on_this_pe(n)) mytile = n
-   enddo
+   if (Atm(mygrid)%coarse_graining%write_coarse_restart_files .or. &
+        Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
+      call coarse_graining_init(Atm(mygrid)%flagstruct%npx, Atm(mygrid)%npz, &
+           Atm(mygrid)%layout, Atm(mygrid)%bd%is, Atm(mygrid)%bd%ie, &
+           Atm(mygrid)%bd%js, Atm(mygrid)%bd%je, Atm(mygrid)%coarse_graining%factor, &
+           Atm(mygrid)%coarse_graining%nx_coarse, &
+           Atm(mygrid)%coarse_graining%strategy, &
+           Atm(mygrid)%coarse_graining%domain)
+   endif
+
+   Atm(mygrid)%Time_init = Time_init
 
 !----- write version and namelist to log file -----
    call write_version_number ( 'COUPLED/ATMOSPHERE_MOD', version )
 
 !-----------------------------------
 
-   npx   = Atm(mytile)%npx
-   npy   = Atm(mytile)%npy
-   npz   = Atm(mytile)%npz
-   ncnst = Atm(mytile)%ncnst
-   pnats = Atm(mytile)%flagstruct%pnats
+   npx   = Atm(mygrid)%npx
+   npy   = Atm(mygrid)%npy
+   npz   = Atm(mygrid)%npz
+   ncnst = Atm(mygrid)%ncnst
+   pnats = Atm(mygrid)%flagstruct%pnats
 
-   isc = Atm(mytile)%bd%isc
-   iec = Atm(mytile)%bd%iec
-   jsc = Atm(mytile)%bd%jsc
-   jec = Atm(mytile)%bd%jec
+   isc = Atm(mygrid)%bd%isc
+   iec = Atm(mygrid)%bd%iec
+   jsc = Atm(mygrid)%bd%jsc
+   jec = Atm(mygrid)%bd%jec
 
-   isd = isc - Atm(mytile)%bd%ng
-   ied = iec + Atm(mytile)%bd%ng
-   jsd = jsc - Atm(mytile)%bd%ng
-   jed = jec + Atm(mytile)%bd%ng
+   isd = isc - Atm(mygrid)%bd%ng
+   ied = iec + Atm(mygrid)%bd%ng
+   jsd = jsc - Atm(mygrid)%bd%ng
+   jed = jec + Atm(mygrid)%bd%ng
 
    nq = ncnst-pnats
+   sphum   = get_tracer_index (MODEL_ATMOS, 'sphum' )
+   liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat' )
+   ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat' )
+   rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat' )
+   snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat' )
+   graupel = get_tracer_index (MODEL_ATMOS, 'graupel' )
+   cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt' )
+
+   if (max(sphum,liq_wat,ice_wat,rainwat,snowwat,graupel) > Atm(mygrid)%flagstruct%nwat) then
+      call mpp_error (FATAL,' atmosphere_init: condensate species are not first in the list of &
+                            &tracers defined in the field_table')
+   endif
 
    ! Allocate grid variables to be used to calculate gradient in 2nd order flux exchange
    ! This data is only needed for the COARSEST grid.
-   call switch_current_Atm(Atm(mytile))
+   !call switch_current_Atm(Atm(mygrid))
+   call set_domain(Atm(mygrid)%domain)
 
    allocate(Grid_box%dx    (   isc:iec  , jsc:jec+1))
    allocate(Grid_box%dy    (   isc:iec+1, jsc:jec  ))
@@ -252,80 +277,99 @@ contains
    allocate(Grid_box%en2   (3, isc:iec+1, jsc:jec  ))
    allocate(Grid_box%vlon  (3, isc:iec  , jsc:jec  ))
    allocate(Grid_box%vlat  (3, isc:iec  , jsc:jec  ))
-   Grid_box%dx    (   isc:iec  , jsc:jec+1) = Atm(mytile)%gridstruct%dx    (   isc:iec,   jsc:jec+1)
-   Grid_box%dy    (   isc:iec+1, jsc:jec  ) = Atm(mytile)%gridstruct%dy    (   isc:iec+1, jsc:jec  )
-   Grid_box%area  (   isc:iec  , jsc:jec  ) = Atm(mytile)%gridstruct%area  (   isc:iec  , jsc:jec  )
-   Grid_box%edge_w(              jsc:jec+1) = Atm(mytile)%gridstruct%edge_w(              jsc:jec+1)
-   Grid_box%edge_e(              jsc:jec+1) = Atm(mytile)%gridstruct%edge_e(              jsc:jec+1)
-   Grid_box%edge_s(   isc:iec+1           ) = Atm(mytile)%gridstruct%edge_s(   isc:iec+1)
-   Grid_box%edge_n(   isc:iec+1           ) = Atm(mytile)%gridstruct%edge_n(   isc:iec+1)
-   Grid_box%en1   (:, isc:iec  , jsc:jec+1) = Atm(mytile)%gridstruct%en1   (:, isc:iec  , jsc:jec+1)
-   Grid_box%en2   (:, isc:iec+1, jsc:jec  ) = Atm(mytile)%gridstruct%en2   (:, isc:iec+1, jsc:jec  )
+   Grid_box%dx    (   isc:iec  , jsc:jec+1) = Atm(mygrid)%gridstruct%dx    (   isc:iec,   jsc:jec+1)
+   Grid_box%dy    (   isc:iec+1, jsc:jec  ) = Atm(mygrid)%gridstruct%dy    (   isc:iec+1, jsc:jec  )
+   Grid_box%area  (   isc:iec  , jsc:jec  ) = Atm(mygrid)%gridstruct%area  (   isc:iec  , jsc:jec  )
+   Grid_box%edge_w(              jsc:jec+1) = Atm(mygrid)%gridstruct%edge_w(              jsc:jec+1)
+   Grid_box%edge_e(              jsc:jec+1) = Atm(mygrid)%gridstruct%edge_e(              jsc:jec+1)
+   Grid_box%edge_s(   isc:iec+1           ) = Atm(mygrid)%gridstruct%edge_s(   isc:iec+1)
+   Grid_box%edge_n(   isc:iec+1           ) = Atm(mygrid)%gridstruct%edge_n(   isc:iec+1)
+   Grid_box%en1   (:, isc:iec  , jsc:jec+1) = Atm(mygrid)%gridstruct%en1   (:, isc:iec  , jsc:jec+1)
+   Grid_box%en2   (:, isc:iec+1, jsc:jec  ) = Atm(mygrid)%gridstruct%en2   (:, isc:iec+1, jsc:jec  )
    do i = 1,3
-     Grid_box%vlon  (i, isc:iec  , jsc:jec  ) = Atm(mytile)%gridstruct%vlon  (isc:iec ,  jsc:jec, i )
-     Grid_box%vlat  (i, isc:iec  , jsc:jec  ) = Atm(mytile)%gridstruct%vlat  (isc:iec ,  jsc:jec, i )
+     Grid_box%vlon  (i, isc:iec  , jsc:jec  ) = Atm(mygrid)%gridstruct%vlon  (isc:iec ,  jsc:jec, i )
+     Grid_box%vlat  (i, isc:iec  , jsc:jec  ) = Atm(mygrid)%gridstruct%vlat  (isc:iec ,  jsc:jec, i )
    enddo
 
 !----- allocate and zero out the dynamics (and accumulated) tendencies
    allocate( u_dt(isd:ied,jsd:jed,npz), &
              v_dt(isd:ied,jsd:jed,npz), &
              t_dt(isc:iec,jsc:jec,npz), &
+             qv_dt(isc:iec,jsc:jec,npz), &
              q_dt(isc:iec,jsc:jec,npz,nq) )
 !--- allocate pref
     allocate(pref(npz+1,2), dum1d(npz+1))
 
-   call set_domain ( Atm(mytile)%domain )
-   call fv_restart(Atm(mytile)%domain, Atm, dt_atmos, seconds, days, cold_start, Atm(mytile)%gridstruct%grid_type, mytile)
+   if (Atm(mygrid)%flagstruct%do_inline_mp) then
+     call gfdl_mp_init(mpp_pe(), mpp_root_pe(), nlunit, input_nml_file, stdlog(), fn_nml)
+     call cloud_diagnosis_init(nlunit, input_nml_file, stdlog(), fn_nml)
+   endif
+
+   call fv_restart(Atm(mygrid)%domain, Atm, dt_atmos, seconds, days, cold_start, Atm(mygrid)%gridstruct%grid_type, mygrid)
 
    fv_time = Time
 
 !----- initialize atmos_axes and fv_dynamics diagnostics
        !I've had trouble getting this to work with multiple grids at a time; worth revisiting?
-   call fv_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time, npx, npy, npz, Atm(mytile)%flagstruct%p_ref)
+   call fv_diag_init(Atm(mygrid:mygrid), Atm(mygrid)%atmos_axes, Time, npx, npy, npz, Atm(mygrid)%flagstruct%p_ref)
+
+   if (Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
+      call fv_coarse_diag_init(Atm, Time, Atm(mygrid)%atmos_axes(3), &
+           Atm(mygrid)%atmos_axes(4), Atm(mygrid)%coarse_graining)
+   endif
+   if (Atm(mygrid)%coarse_graining%write_coarse_restart_files) then
+      call fv_coarse_restart_init(mygrid, Atm(mygrid)%npz, Atm(mygrid)%flagstruct%nt_prog, &
+           Atm(mygrid)%flagstruct%nt_phys, Atm(mygrid)%flagstruct%hydrostatic, &
+           Atm(mygrid)%flagstruct%hybrid_z, Atm(mygrid)%flagstruct%fv_land, &
+           Atm(mygrid)%coarse_graining%write_coarse_dgrid_vel_rst, &
+           Atm(mygrid)%coarse_graining%write_coarse_agrid_vel_rst, &
+           Atm(mygrid)%coarse_graining%domain, &
+           Atm(mygrid)%coarse_graining%restart)
+   endif
 
 !---------- reference profile -----------
     ps1 = 101325.
     ps2 =  81060.
     pref(npz+1,1) = ps1
     pref(npz+1,2) = ps2
-    call get_eta_level ( npz, ps1, pref(1,1), dum1d, Atm(mytile)%ak, Atm(mytile)%bk )
-    call get_eta_level ( npz, ps2, pref(1,2), dum1d, Atm(mytile)%ak, Atm(mytile)%bk )
+    call get_eta_level ( npz, ps1, pref(1,1), dum1d, Atm(mygrid)%ak, Atm(mygrid)%bk )
+    call get_eta_level ( npz, ps2, pref(1,2), dum1d, Atm(mygrid)%ak, Atm(mygrid)%bk )
 
 !---- initialize cmip diagnostic output ----
-   call atmos_cmip_diag_init   ( Atm(mytile)%ak, Atm(mytile)%bk, pref(1,1), Atm(mytile)%atmos_axes, Time )
-#ifndef use_AM3_physics
-   call atmos_global_diag_init ( Atm(mytile)%atmos_axes, Atm(mytile)%gridstruct%area(isc:iec,jsc:jec) )
-#endif
-   call fv_cmip_diag_init      ( Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time )
+   call atmos_cmip_diag_init   ( Atm(mygrid)%ak, Atm(mygrid)%bk, pref(1,1), Atm(mygrid)%atmos_axes, Time )
+   call atmos_global_diag_init ( Atm(mygrid)%atmos_axes, Atm(mygrid)%gridstruct%area(isc:iec,jsc:jec) )
+   call fv_cmip_diag_init      ( Atm(mygrid:mygrid), Atm(mygrid)%atmos_axes, Time )
 
 !--- initialize nudging module ---
 #if defined (ATMOS_NUDGE)
-    call atmos_nudge_init ( Time, Atm(mytile)%atmos_axes(1:3), flag=do_atmos_nudge )
-    if ( do_atmos_nudge .and. Atm(mytile)%flagstruct%nudge ) then
+    call atmos_nudge_init ( Time, Atm(mygrid)%atmos_axes(1:3), flag=do_atmos_nudge )
+    if ( do_atmos_nudge .and. Atm(mygrid)%flagstruct%nudge ) then
          call mpp_error(NOTE, 'Code compiled with atmospheric nudging, but fv_core_nml nudge is also set to .true.')
     elseif ( do_atmos_nudge) then
          call mpp_error(NOTE, 'Code compiled with and using atmospheric nudging')
     endif
-    Atm(mytile)%flagstruct%nudge = do_atmos_nudge
+    Atm(mygrid)%flagstruct%nudge = do_atmos_nudge
 #elif defined (CLIMATE_NUDGE)
-    call fv_climate_nudge_init ( Time, Atm(mytile)%atmos_axes(1:3), flag=do_atmos_nudge )
-    if ( do_atmos_nudge .and. Atm(1)%flagstruct%nudge ) then
+    call fv_climate_nudge_init ( Time, Atm(mygrid)%atmos_axes(1:3), flag=do_atmos_nudge )
+    if ( do_atmos_nudge .and. Atm(mygrid)%flagstruct%nudge ) then
          call mpp_error(NOTE, 'Code compiled with climate nudging, but fv_core_nml nudge is also set to .true.')
     elseif ( do_atmos_nudge ) then
          call mpp_error(NOTE, 'Code compiled with and using climate nudging')
     endif
-    Atm(mytile)%flagstruct%nudge = do_atmos_nudge
+    Atm(mygrid)%flagstruct%nudge = do_atmos_nudge
 #elif defined (ADA_NUDGE)
-    if ( Atm(1)%flagstruct%nudge ) then
-        call fv_ada_nudge_init( Time, Atm(mytile)%atmos_axes, npz, zvir, Atm(1)%ak, Atm(1)%bk, Atm(1)%ts, &
-           Atm(1)%phis, Atm(1)%gridstruct, Atm(1)%ks, Atm(1)%npx, Atm(1)%neststruct, Atm(1)%bd, Atm(1)%domain)
+    if ( Atm(mygrid)%flagstruct%nudge ) then
+        call fv_ada_nudge_init( Time, Atm(mygrid)%atmos_axes, npz, zvir, Atm(mygrid)%ak, Atm(mygrid)%bk, &
+           Atm(mygrid)%ts, Atm(mygrid)%phis, Atm(mygrid)%gridstruct, Atm(mygrid)%ks, Atm(mygrid)%npx,    &
+           Atm(mygrid)%neststruct, Atm(mygrid)%bd, Atm(mygrid)%domain)
         call mpp_error(NOTE, 'ADA nudging is active')
      endif
 #else
    !Only do nudging on coarse grid for now
-   if ( Atm(mytile)%flagstruct%nudge ) then
-      call fv_nwp_nudge_init( Time, Atm(mytile)%atmos_axes, npz, zvir, Atm(1)%ak, Atm(1)%bk, Atm(1)%ts, &
-           Atm(1)%phis, Atm(1)%gridstruct, Atm(1)%ks, Atm(1)%npx, Atm(1)%neststruct, Atm(1)%bd)
+   if ( Atm(mygrid)%flagstruct%nudge ) then
+      call fv_nwp_nudge_init( Time, Atm(mygrid)%atmos_axes, npz, zvir, Atm(mygrid)%ak, Atm(mygrid)%bk, &
+           Atm(mygrid)%ts, Atm(mygrid)%phis, Atm(mygrid)%gridstruct, Atm(mygrid)%ks, Atm(mygrid)%npx,  &
+           Atm(mygrid)%neststruct, Atm(mygrid)%bd)
         call mpp_error(NOTE, 'NWP nudging is active')
    endif
 #endif
@@ -339,22 +383,22 @@ contains
    !and so for now we will only define for the coarsest grid
 
 !miz
-   !---allocate id_tracer_*
+!---allocate id_tracer_*
    allocate (id_tracerdt_dyn    (num_tracers))
-   if ( Atm(mytile)%flagstruct%write_3d_diags) then
-      id_udt_dyn    =register_diag_field(mod_name,'udt_dyn',    Atm(mytile)%atmos_axes(1:3),  &
+   if ( Atm(mygrid)%flagstruct%write_3d_diags) then
+      id_udt_dyn    =register_diag_field(mod_name,'udt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
            Time,'udt_dyn',    'm/s/s', missing_value=mv)
-      id_vdt_dyn    =register_diag_field(mod_name,'vdt_dyn',    Atm(mytile)%atmos_axes(1:3),  &
+      id_vdt_dyn    =register_diag_field(mod_name,'vdt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
            Time,'vdt_dyn',    'm/s/s', missing_value=mv)
-      id_tdt_dyn    =register_diag_field(mod_name,'tdt_dyn',    Atm(mytile)%atmos_axes(1:3),  &
+      id_tdt_dyn    =register_diag_field(mod_name,'tdt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
            Time,'tdt_dyn',    'K/s', missing_value=mv)
-      id_qdt_dyn    =register_diag_field(mod_name,'qdt_dyn',    Atm(mytile)%atmos_axes(1:3),  &
+      id_qdt_dyn    =register_diag_field(mod_name,'qdt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
            Time,'qdt_dyn',    'kg/kg/s', missing_value=mv)
-      id_qldt_dyn   =register_diag_field(mod_name,'qldt_dyn',   Atm(mytile)%atmos_axes(1:3),  &
+      id_qldt_dyn   =register_diag_field(mod_name,'qldt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
            Time,'qldt_dyn',   'kg/kg/s', missing_value=mv)
-      id_qidt_dyn   =register_diag_field(mod_name,'qidt_dyn',   Atm(mytile)%atmos_axes(1:3),  &
+      id_qidt_dyn   =register_diag_field(mod_name,'qidt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
            Time,'qidt_dyn',   'kg/kg/s', missing_value=mv)
-      id_qadt_dyn   =register_diag_field(mod_name,'qadt_dyn',   Atm(mytile)%atmos_axes(1:3),  &
+      id_qadt_dyn   =register_diag_field(mod_name,'qadt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
            Time,'qadt_dyn',   '1/s', missing_value=mv)
       !--- register cmip tendency fields ---
       ID_tnta = register_cmip_diag_field_3d (mod_name, 'tnta', Time, &
@@ -369,16 +413,23 @@ contains
          call get_tracer_names (MODEL_ATMOS, itrac, name = tracer_name, units = tracer_units)
          if (get_tracer_index(MODEL_ATMOS,tracer_name)>0) then
             id_tracerdt_dyn(itrac) = register_diag_field(mod_name, TRIM(tracer_name)//'dt_dyn',  &
-                 Atm(mytile)%atmos_axes(1:3),Time,                       &
+                 Atm(mygrid)%atmos_axes(1:3),Time,                       &
                  TRIM(tracer_name)//' total tendency from advection',    &
                  TRIM(tracer_units)//'/s', missing_value = mv)
          endif
       enddo
    endif
    if (any(id_tracerdt_dyn(:)>0)) allocate(qtendyyf(isc:iec, jsc:jec,1:npz,num_tracers))
-   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) allocate(ttend(isc:iec, jsc:jec, 1:npz))
+   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) .or. query_cmip_diag_id(ID_tnt) ) &
+                                                      allocate(ttend(isc:iec, jsc:jec, 1:npz))
    if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or. &
-        query_cmip_diag_id(ID_tnhusa) )  allocate(qtend(isc:iec, jsc:jec, 1:npz, 4))
+        query_cmip_diag_id(ID_tnhusa) .or. query_cmip_diag_id(ID_tnhus) )  allocate(qtend(isc:iec, jsc:jec, 1:npz, 4))
+
+! could zero out diagnostics if tracer field not defined
+   if (sphum > size(qtend,4)) id_qdt_dyn = 0
+   if (liq_wat > size(qtend,4)) id_qldt_dyn = 0
+   if (ice_wat > size(qtend,4)) id_qidt_dyn = 0
+   if (cld_amt > size(qtend,4)) id_qadt_dyn = 0
 !miz
 
 !  --- initialize clocks for dynamics, physics_down and physics_up
@@ -386,8 +437,9 @@ contains
    id_subgridz  = mpp_clock_id ('FV subgrid_z',flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
    id_fv_diag   = mpp_clock_id ('FV Diag',     flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
-   n = mytile
-   call switch_current_Atm(Atm(n))
+                    call timing_off('ATMOS_INIT')
+
+   call set_domain(Atm(mygrid)%domain)
 
  end subroutine atmosphere_init
 
@@ -398,30 +450,30 @@ contains
    integer :: itrac, n, psc
    integer :: k, w_diff, nt_dyn
    type(surf_diff_type), intent(inout):: surf_diff
+   logical :: used
+   real :: rdt
 
 !---- Call FV dynamics -----
 
    call mpp_clock_begin (id_dynam)
-!miz
-#ifndef use_AM3_physics
-   Surf_diff%ddp_dyn(:,:,:) = Atm(mytile)%delp(isc:iec, jsc:jec, :)
-   Surf_diff%tdt_dyn(:,:,:) = Atm(mytile)%pt(isc:iec, jsc:jec, :)
-   Surf_diff%qdt_dyn(:,:,:) = Atm(mytile)%q (isc:iec, jsc:jec, :, 1) + &
-                              Atm(mytile)%q (isc:iec, jsc:jec, :, 2) + &
-                              Atm(mytile)%q (isc:iec, jsc:jec, :, 3)
-#endif
 
-!miz[M d0
-   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) ttend(:, :, :) = Atm(mytile)%pt(isc:iec, jsc:jec, :)
+   Surf_diff%ddp_dyn(:,:,:) = Atm(mygrid)%delp(isc:iec, jsc:jec, :)
+   Surf_diff%tdt_dyn(:,:,:) = Atm(mygrid)%pt(isc:iec, jsc:jec, :)
+   Surf_diff%qdt_dyn(:,:,:) = Atm(mygrid)%q (isc:iec, jsc:jec, :, sphum) + &
+                              Atm(mygrid)%q (isc:iec, jsc:jec, :, liq_wat) + &
+                              Atm(mygrid)%q (isc:iec, jsc:jec, :, ice_wat)
+
+!miz
+   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) ttend(:, :, :) = Atm(mygrid)%pt(isc:iec, jsc:jec, :)
    if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or. &
-        query_cmip_diag_id(ID_tnhusa) ) qtend(:, :, :, :) = Atm(mytile)%q (isc:iec, jsc:jec, :, :)
+        query_cmip_diag_id(ID_tnhusa) ) qtend(:, :, :, 1:4) = Atm(mygrid)%q (isc:iec, jsc:jec, :, 1:4)
 !miz
    do itrac = 1, num_tracers
      if (id_tracerdt_dyn (itrac) >0 ) &
-            qtendyyf(:,:,:,itrac) = Atm(mytile)%q(isc:iec,jsc:jec,:,itrac)
+            qtendyyf(:,:,:,itrac) = Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac)
    enddo
 
-   n = mytile
+   n = mygrid
    do psc=1,abs(p_split)
                     call timing_on('fv_dynamics')
 !uc/vc only need be same on coarse grid? However BCs do need to be the same
@@ -447,46 +499,39 @@ contains
 
     if (ngrids > 1 .and. (psc < p_split .or. p_split < 0)) then
        call timing_on('TWOWAY_UPDATE')
-       call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mytile)
+       call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mygrid)
        call timing_off('TWOWAY_UPDATE')
     endif
 
     end do !p_split
     call mpp_clock_end (id_dynam)
 
-!miz
-#ifndef use_AM3_physics
-   Surf_diff%ddp_dyn(:,:,:) =(Atm(mytile)%delp(isc:iec,jsc:jec,:)-Surf_diff%ddp_dyn(:,:,:))/dt_atmos
-   Surf_diff%tdt_dyn(:,:,:) =(Atm(mytile)%pt(isc:iec,jsc:jec,:)  -Surf_diff%tdt_dyn(:,:,:))/dt_atmos
-   Surf_diff%qdt_dyn(:,:,:) =(Atm(mytile)%q (isc:iec,jsc:jec,:,1) + &
-                              Atm(mytile)%q (isc:iec,jsc:jec,:,2) + &
-                              Atm(mytile)%q (isc:iec,jsc:jec,:,3) - Surf_diff%qdt_dyn(:,:,:))/dt_atmos
-#endif
-!miz
-   if ( id_udt_dyn>0 )  used = send_data( id_udt_dyn, 2.0/dt_atmos*Atm(mytile)%ua(isc:iec,jsc:jec,:), Time)
-   if ( id_vdt_dyn>0 )  used = send_data( id_vdt_dyn, 2.0/dt_atmos*Atm(mytile)%va(isc:iec,jsc:jec,:), Time)
-   if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) then
-        ttend = (Atm(mytile)%pt(isc:iec, jsc:jec, :)   - ttend(:, :, :   ))/dt_atmos
-        if (id_tdt_dyn>0)                used = send_data(id_tdt_dyn,  ttend(:,:,:),   Time)
-        if (query_cmip_diag_id(ID_tnta)) used = send_cmip_data_3d (ID_tnta, ttend(:,:,:), Time)
-   endif
+   Surf_diff%ddp_dyn(:,:,:) =(Atm(mygrid)%delp(isc:iec,jsc:jec,:)-Surf_diff%ddp_dyn(:,:,:))/dt_atmos
+   Surf_diff%tdt_dyn(:,:,:) =(Atm(mygrid)%pt(isc:iec,jsc:jec,:)  -Surf_diff%tdt_dyn(:,:,:))/dt_atmos
+   Surf_diff%qdt_dyn(:,:,:) =(Atm(mygrid)%q (isc:iec,jsc:jec,:,sphum) + &
+                              Atm(mygrid)%q (isc:iec,jsc:jec,:,liq_wat) + &
+                              Atm(mygrid)%q (isc:iec,jsc:jec,:,ice_wat) - Surf_diff%qdt_dyn(:,:,:))/dt_atmos
 
-   if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or.  query_cmip_diag_id(ID_tnhusa) ) then
-        qtend = (Atm(mytile)%q (isc:iec, jsc:jec, :, :)- qtend(:, :, :, :))/dt_atmos
-        if (id_qdt_dyn  > 0) used = send_data(id_qdt_dyn,  qtend(:,:,:,1), Time)
-        if (id_qldt_dyn > 0) used = send_data(id_qldt_dyn, qtend(:,:,:,2), Time)
-        if (id_qidt_dyn > 0) used = send_data(id_qidt_dyn, qtend(:,:,:,3), Time)
-        if (id_qadt_dyn > 0) used = send_data(id_qadt_dyn, qtend(:,:,:,4), Time)
-        if (query_cmip_diag_id(ID_tnhusa)) used = send_cmip_data_3d (ID_tnhusa, qtend(:,:,:,1), Time)
-   endif
+!miz
+   if (id_udt_dyn>0)  used = send_data( id_udt_dyn, 2.0/dt_atmos*Atm(mygrid)%ua(isc:iec,jsc:jec,:), Time)
+   if (id_vdt_dyn>0)  used = send_data( id_vdt_dyn, 2.0/dt_atmos*Atm(mygrid)%va(isc:iec,jsc:jec,:), Time)
+   if (id_tdt_dyn > 0) used = send_data( id_tdt_dyn, (Atm(mygrid)%pt(isc:iec,jsc:jec,:)-ttend(:,:,:))/dt_atmos, Time)
+   if (query_cmip_diag_id(ID_tnta)) &
+                 used = send_cmip_data_3d ( ID_tnta, (Atm(mygrid)%pt(isc:iec,jsc:jec,:)-ttend(:,:,:))/dt_atmos, Time)
+
+   if (id_qdt_dyn  > 0) used = send_data( id_qdt_dyn , (Atm(mygrid)%q(isc:iec,jsc:jec,:,sphum)-qtend(:,:,:,sphum))/dt_atmos, Time)
+   if (id_qldt_dyn > 0) used = send_data( id_qldt_dyn, (Atm(mygrid)%q(isc:iec,jsc:jec,:,liq_wat)-qtend(:,:,:,liq_wat))/dt_atmos, Time)
+   if (id_qidt_dyn > 0) used = send_data( id_qidt_dyn, (Atm(mygrid)%q(isc:iec,jsc:jec,:,ice_wat)-qtend(:,:,:,ice_wat))/dt_atmos, Time)
+   if (id_qadt_dyn > 0) used = send_data( id_qadt_dyn, (Atm(mygrid)%q(isc:iec,jsc:jec,:,cld_amt)-qtend(:,:,:,cld_amt))/dt_atmos, Time)
+   if (query_cmip_diag_id(ID_tnhusa)) &
+                  used = send_cmip_data_3d (ID_tnhusa, (Atm(mygrid)%q(isc:iec,jsc:jec,:,sphum)-qtend(:,:,:,sphum))/dt_atmos, Time)
 !miz
 
    do itrac = 1, num_tracers
      if(id_tracerdt_dyn(itrac)>0) then
-       qtendyyf(:,:,:,itrac) = (Atm(mytile)%q (isc:iec, jsc:jec, :,itrac)-  &
-                                        qtendyyf(:,:,:,itrac))/dt_atmos
-       used = send_data(id_tracerdt_dyn(itrac), qtendyyf(:,:,:,itrac), &
-                                                           Time)
+       qtendyyf(:,:,:,itrac) = (Atm(mygrid)%q (isc:iec, jsc:jec, :,itrac)-  &
+                                qtendyyf(:,:,:,itrac))/dt_atmos
+       used = send_data(id_tracerdt_dyn(itrac), qtendyyf(:,:,:,itrac), Time)
      endif
    enddo
 
@@ -495,10 +540,13 @@ contains
 !-----------------------------------------------------
 !--- zero out tendencies
     call mpp_clock_begin (id_subgridz)
-    u_dt(:,:,:)   = 0.
+    u_dt(:,:,:)   = 0. ! These are updated by fv_subgrid_z
     v_dt(:,:,:)   = 0.
-    t_dt(:,:,:)   = 0.
+    t_dt(:,:,:)   = Atm(n)%pt(isc:iec,jsc:jec,:)
+    qv_dt(:,:,:)  = Atm(n)%q (isc:iec,jsc:jec,:,sphum)
     q_dt(:,:,:,:) = 0.
+
+    rdt = 1./dt_atmos
 
     w_diff = get_tracer_index (MODEL_ATMOS, 'w_diff' )
     if ( Atm(n)%flagstruct%fv_sg_adj > 0 ) then
@@ -525,6 +573,21 @@ contains
         enddo
     endif
 
+    if (Atm(1)%idiag%id_u_dt_sg > 0) then
+       used = send_data(Atm(1)%idiag%id_u_dt_sg, u_dt(isc:iec,jsc:jec,:), fv_time)
+    end if
+    if (Atm(1)%idiag%id_v_dt_sg > 0) then
+       used = send_data(Atm(1)%idiag%id_v_dt_sg, v_dt(isc:iec,jsc:jec,:), fv_time)
+    end if
+    if (Atm(1)%idiag%id_t_dt_sg > 0) then
+       t_dt(:,:,:) = rdt*(Atm(1)%pt(isc:iec,jsc:jec,:) - t_dt(:,:,:))
+       used = send_data(Atm(1)%idiag%id_t_dt_sg, t_dt, fv_time)
+    end if
+    if (Atm(1)%idiag%id_qv_dt_sg > 0) then
+       qv_dt(:,:,:) = rdt*(Atm(1)%q(isc:iec,jsc:jec,:,sphum) - qv_dt(:,:,:))
+       used = send_data(Atm(1)%idiag%id_qv_dt_sg, qv_dt, fv_time)
+    end if
+
    call mpp_clock_end (id_subgridz)
 
  end subroutine atmosphere_dynamics
@@ -537,29 +600,31 @@ contains
 !rab   type (physics_type),   intent(inout) :: Physics
 
   ! initialize domains for writing global physics data
-   call set_domain ( Atm(mytile)%domain )
+   call set_domain ( Atm(mygrid)%domain )
 
 
 !--- end nudging module ---
 #if defined (ATMOS_NUDGE)
-   if ( Atm(mytile)%flagstruct%nudge ) call atmos_nudge_end
+   if ( Atm(mygrid)%flagstruct%nudge ) call atmos_nudge_end
 #elif defined (CLIMATE_NUDGE)
-   if ( Atm(mytile)%flagstruct%nudge ) call fv_climate_nudge_end
+   if ( Atm(mygrid)%flagstruct%nudge ) call fv_climate_nudge_end
 #elif defined (ADA_NUDGE)
-   if ( Atm(mytile)%flagstruct%nudge ) call fv_ada_nudge_end
+   if ( Atm(mygrid)%flagstruct%nudge ) call fv_ada_nudge_end
 #else
-   if ( Atm(mytile)%flagstruct%nudge ) call fv_nwp_nudge_end
+   if ( Atm(mygrid)%flagstruct%nudge ) call fv_nwp_nudge_end
 #endif
 
-#ifndef use_AM3_physics
+   if (Atm(mygrid)%flagstruct%do_inline_mp) then
+     call gfdl_mp_end ( )
+   endif
+
    call atmos_global_diag_end
-#endif
    call fv_cmip_diag_end
    call nullify_domain ( )
-   call fv_end(Atm, mytile)
+   call fv_end(Atm, mygrid)
    deallocate (Atm)
 
-   deallocate( u_dt, v_dt, t_dt, q_dt, pref, dum1d )
+   deallocate( u_dt, v_dt, t_dt, qv_dt, q_dt, pref, dum1d )
 
  end subroutine atmosphere_end
 
@@ -573,7 +638,7 @@ contains
   subroutine atmosphere_restart(timestamp)
     character(len=*),  intent(in) :: timestamp
 
-    call fv_write_restart(Atm(mytile), timestamp)
+    call fv_write_restart(Atm(mygrid), timestamp)
 
   end subroutine atmosphere_restart
   ! </SUBROUTINE>
@@ -608,15 +673,15 @@ contains
  subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, do_uni_zfull) !miz
    integer, intent(out)           :: i1, i2, j1, j2, kt
    logical, intent(out), optional :: p_hydro, hydro, do_uni_zfull !miz
-   i1 = Atm(mytile)%bd%isc
-   i2 = Atm(mytile)%bd%iec
-   j1 = Atm(mytile)%bd%jsc
-   j2 = Atm(mytile)%bd%jec
-   kt = Atm(mytile)%npz
+   i1 = Atm(mygrid)%bd%isc
+   i2 = Atm(mygrid)%bd%iec
+   j1 = Atm(mygrid)%bd%jsc
+   j2 = Atm(mygrid)%bd%jec
+   kt = Atm(mygrid)%npz
 
-   if (present(p_hydro)) p_hydro = Atm(mytile)%flagstruct%phys_hydrostatic
-   if (present(  hydro))   hydro = Atm(mytile)%flagstruct%hydrostatic
-   if (present(do_uni_zfull)) do_uni_zfull = Atm(mytile)%flagstruct%do_uni_zfull
+   if (present(p_hydro)) p_hydro = Atm(mygrid)%flagstruct%phys_hydrostatic
+   if (present(  hydro))   hydro = Atm(mygrid)%flagstruct%hydrostatic
+   if (present(do_uni_zfull)) do_uni_zfull = Atm(mygrid)%flagstruct%do_uni_zfull
 
  end subroutine atmosphere_control_data
 
@@ -624,7 +689,7 @@ contains
  subroutine atmosphere_cell_area  (area_out)
    real, dimension(:,:),  intent(out)          :: area_out
 
-   area_out(1:iec-isc+1, 1:jec-jsc+1) =  Atm(mytile)%gridstruct%area (isc:iec,jsc:jec)
+   area_out(1:iec-isc+1, 1:jec-jsc+1) =  Atm(mygrid)%gridstruct%area (isc:iec,jsc:jec)
 
  end subroutine atmosphere_cell_area
 
@@ -640,8 +705,8 @@ contains
 
     do j=jsc,jec
        do i=isc,iec
-          lon(i-isc+1,j-jsc+1) = Atm(mytile)%gridstruct%agrid_64(i,j,1)
-          lat(i-isc+1,j-jsc+1) = Atm(mytile)%gridstruct%agrid_64(i,j,2)
+          lon(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%agrid_64(i,j,1)
+          lat(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%agrid_64(i,j,2)
        enddo
     end do
 
@@ -666,8 +731,8 @@ contains
 
     do j=jsc,jec+1
        do i=isc,iec+1
-          blon(i-isc+1,j-jsc+1) = Atm(mytile)%gridstruct%grid(i,j,1)
-          blat(i-isc+1,j-jsc+1) = Atm(mytile)%gridstruct%grid(i,j,2)
+          blon(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid(i,j,1)
+          blat(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid(i,j,2)
        enddo
     end do
 
@@ -675,7 +740,7 @@ contains
 
 
  subroutine set_atmosphere_pelist ()
-   call mpp_set_current_pelist(Atm(mytile)%pelist, no_sync=.TRUE.)
+   call mpp_set_current_pelist(Atm(mygrid)%pelist, no_sync=.TRUE.)
  end subroutine set_atmosphere_pelist
 
 
@@ -684,7 +749,7 @@ contains
 !  returns the domain2d variable associated with the coupling grid
 !  note: coupling is done using the mass/temperature grid with no halos
 
-   fv_domain = Atm(mytile)%domain_for_coupler
+   fv_domain = Atm(mygrid)%domain_for_coupler
 
  end subroutine atmosphere_domain
 
@@ -698,7 +763,7 @@ contains
                                'get_atmosphere_axes in atmosphere_mod', &
                                'size of argument is incorrect', FATAL   )
 
-   axes (1:size(axes(:))) = Atm(mytile)%atmos_axes (1:size(axes(:)))
+   axes (1:size(axes(:))) = Atm(mygrid)%atmos_axes (1:size(axes(:)))
 
  end subroutine get_atmosphere_axes
 
@@ -721,19 +786,19 @@ contains
 
    do j=jsc,jec
       do i=isc,iec
-         p_surf(i,j) = Atm(mytile)%ps(i,j)
-         t_bot(i,j) = Atm(mytile)%pt(i,j,npz)
-         p_bot(i,j) = Atm(mytile)%delp(i,j,npz)/(Atm(mytile)%peln(i,npz+1,j)-Atm(mytile)%peln(i,npz,j))
-         z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(mytile)%q(i,j,npz,1)) *  &
-                      (1. - Atm(mytile)%pe(i,npz,j)/p_bot(i,j))
+         p_surf(i,j) = Atm(mygrid)%ps(i,j)
+         t_bot(i,j) = Atm(mygrid)%pt(i,j,npz)
+         p_bot(i,j) = Atm(mygrid)%delp(i,j,npz)/(Atm(mygrid)%peln(i,npz+1,j)-Atm(mygrid)%peln(i,npz,j))
+         z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(mygrid)%q(i,j,npz,sphum)) *  &
+                      (1. - Atm(mygrid)%pe(i,npz,j)/p_bot(i,j))
       enddo
    enddo
 
    if ( present(slp) ) then
      ! determine 0.8 sigma reference level
-     sigtop = Atm(mytile)%ak(1)/pstd_mks+Atm(mytile)%bk(1)
+     sigtop = Atm(mygrid)%ak(1)/pstd_mks+Atm(mygrid)%bk(1)
      do k = 1, npz
-        sigbot = Atm(mytile)%ak(k+1)/pstd_mks+Atm(mytile)%bk(k+1)
+        sigbot = Atm(mygrid)%ak(k+1)/pstd_mks+Atm(mygrid)%bk(k+1)
         if (sigbot+sigtop > 1.6) then
            kr = k
            exit
@@ -743,9 +808,9 @@ contains
      do j=jsc,jec
         do i=isc,iec
            ! sea level pressure
-           tref(i,j) = Atm(mytile)%pt(i,j,kr) * (Atm(mytile)%delp(i,j,kr)/ &
-                            ((Atm(mytile)%peln(i,kr+1,j)-Atm(mytile)%peln(i,kr,j))*Atm(mytile)%ps(i,j)))**(-rrg*tlaps)
-           slp(i,j) = Atm(mytile)%ps(i,j)*(1.+tlaps*Atm(mytile)%phis(i,j)/(tref(i,j)*grav))**(1./(rrg*tlaps))
+           tref(i,j) = Atm(mygrid)%pt(i,j,kr) * (Atm(mygrid)%delp(i,j,kr)/ &
+                            ((Atm(mygrid)%peln(i,kr+1,j)-Atm(mygrid)%peln(i,kr,j))*Atm(mygrid)%ps(i,j)))**(-rrg*tlaps)
+           slp(i,j) = Atm(mygrid)%ps(i,j)*(1.+tlaps*Atm(mygrid)%phis(i,j)/(tref(i,j)*grav))**(1./(rrg*tlaps))
         enddo
      enddo
    endif
@@ -754,7 +819,7 @@ contains
    do m=1,nq
       do j=jsc,jec
          do i=isc,iec
-            tr_bot(i,j,m) = Atm(mytile)%q(i,j,npz,m)
+            tr_bot(i,j,m) = Atm(mygrid)%q(i,j,npz,m)
          enddo
       enddo
    enddo
@@ -771,8 +836,8 @@ contains
 
    do j=jsc,jec
       do i=isc,iec
-         u_bot(i,j) = Atm(mytile)%u_srf(i,j)
-         v_bot(i,j) = Atm(mytile)%v_srf(i,j)
+         u_bot(i,j) = Atm(mygrid)%u_srf(i,j)
+         v_bot(i,j) = Atm(mygrid)%v_srf(i,j)
       enddo
    enddo
 
@@ -792,7 +857,7 @@ contains
    integer i,j,k
    real, pointer :: area(:,:)
 
-   area => Atm(mytile)%gridstruct%area
+   area => Atm(mygrid)%gridstruct%area
 
    select case (index)
 
@@ -810,9 +875,9 @@ contains
         do k=1,npz
            do i=isc,iec
 ! Warning: the following works only with AM2 physics: water vapor; cloud water, cloud ice.
-              wm(i,j) = wm(i,j) + Atm(mytile)%delp(i,j,k) * ( Atm(mytile)%q(i,j,k,1) +    &
-                                                         Atm(mytile)%q(i,j,k,2) +    &
-                                                         Atm(mytile)%q(i,j,k,3) )
+              wm(i,j) = wm(i,j) + Atm(mygrid)%delp(i,j,k) * ( Atm(mygrid)%q(i,j,k,sphum)   +  &
+                                                              Atm(mygrid)%q(i,j,k,liq_wat) +  &
+                                                              Atm(mygrid)%q(i,j,k,ice_wat) )
            enddo
         enddo
      enddo
@@ -849,9 +914,9 @@ contains
    Time_prev = Time
    Time_next = Time + Time_step_atmos
 
-   n = mytile
+   n = mygrid
 
-   call set_domain ( Atm(mytile)%domain )
+   call set_domain ( Atm(mygrid)%domain )
 
 !--- put u/v tendencies into haloed arrays u_dt and v_dt
 !$OMP parallel do default(shared) private(nb, ibs, ibe, jbs, jbe)
@@ -868,7 +933,7 @@ contains
 
 !--- diagnostic tracers are being updated in-place
 !--- tracer fields must be returned to the Atm structure
-     Atm(mytile)%qdiag(ibs:ibe,jbs:jbe,:,:) = Physics_tendency%block(nb)%qdiag
+     Atm(mygrid)%qdiag(ibs:ibe,jbs:jbe,:,:) = Physics_tendency%block(nb)%qdiag
 
    enddo
 
@@ -909,7 +974,8 @@ contains
                          .true., Time_next, Atm(n)%flagstruct%nudge, Atm(n)%gridstruct,    &
                          Atm(n)%gridstruct%agrid(:,:,1), Atm(n)%gridstruct%agrid(:,:,2),   &
                          Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%flagstruct,            &
-                         Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop, Atm(n)%phys_diag, q_dt)
+                         Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop,         &
+                         Atm(n)%phys_diag, q_dt)
        call timing_off('FV_UPDATE_PHYS')
    call mpp_clock_end (id_dynam)
 
@@ -917,27 +983,36 @@ contains
 !--- physics tendencies
     if (ngrids > 1 .and. p_split > 0) then
        call timing_on('TWOWAY_UPDATE')
-       call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mytile)
+       call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mygrid)
        call timing_off('TWOWAY_UPDATE')
     endif
 
+!--- cmip6 total tendencies of temperature and specific humidity
+   if (query_cmip_diag_id(ID_tnt)) &
+                 used = send_cmip_data_3d ( ID_tnt, (Atm(mygrid)%pt(isc:iec,jsc:jec,:)-ttend(:,:,:))/dt_atmos, Time)
+   if (query_cmip_diag_id(ID_tnhus)) &
+                  used = send_cmip_data_3d (ID_tnhus, (Atm(mygrid)%q(isc:iec,jsc:jec,:,sphum)-qtend(:,:,:,sphum))/dt_atmos, Time)
+
 #if !defined(ATMOS_NUDGE) && !defined(CLIMATE_NUDGE) && !defined(ADA_NUDGE)
-   if ( .not.forecast_mode .and. Atm(mytile)%flagstruct%nudge .and. Atm(mytile)%flagstruct%na_init>0 ) then
+   if ( .not.forecast_mode .and. Atm(mygrid)%flagstruct%nudge .and. Atm(mygrid)%flagstruct%na_init>0 ) then
         if(mod(seconds, 21600)==0)  call adiabatic_init_drv (Time_prev, Time_next)
    endif
 #endif
 
    call nullify_domain()
   !---- diagnostics for FV dynamics -----
-   if (Atm(mytile)%flagstruct%print_freq /= -99) then
+   if (Atm(mygrid)%flagstruct%print_freq /= -99) then
      call mpp_clock_begin(id_fv_diag)
      call timing_on('FV_DIAG')
 
      fv_time = Time_next
      call get_time (fv_time, seconds,  days)
 
-     call fv_diag(Atm(mytile:mytile), zvir, fv_time, Atm(mytile)%flagstruct%print_freq)
-     call fv_cmip_diag(Atm(mytile:mytile), zvir, fv_time)
+     call fv_diag(Atm(mygrid:mygrid), zvir, fv_time, Atm(mygrid)%flagstruct%print_freq)
+      if (Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
+         call fv_coarse_diag(Atm(mygrid:mygrid), fv_time)
+      endif
+     call fv_cmip_diag(Atm(mygrid:mygrid), zvir, fv_time)
 
      call timing_off('FV_DIAG')
      call mpp_clock_end(id_fv_diag)
@@ -957,10 +1032,10 @@ contains
 !---------------------------------------------------
 ! Call the adiabatic forward-backward initialization
 !---------------------------------------------------
-   write(errstr,'(A, I4, A)') 'Performing adiabatic nudging',  Atm(mytile)%flagstruct%na_init, ' times'
+   write(errstr,'(A, I4, A)') 'Performing adiabatic nudging',  Atm(mygrid)%flagstruct%na_init, ' times'
    call mpp_error(NOTE, errstr)
 
-        ngc = Atm(mytile)%ng
+        ngc = Atm(mygrid)%ng
         isd = isc - ngc
         ied = iec + ngc
         jsd = jsc - ngc
@@ -975,7 +1050,7 @@ contains
 
      do_adiabatic_init = .true.
 
-     do n=1,Atm(mytile)%flagstruct%na_init
+     do n=1,Atm(mygrid)%flagstruct%na_init
         call adiabatic_init(Atm, Time_next, -dt_atmos, u_dt, v_dt, t_dt, q_dt, .false.)  ! Backward in time one step
         fv_time = Time_prev
         call adiabatic_init(Atm, Time_next,  dt_atmos, u_dt, v_dt, t_dt, q_dt, .true. )  ! Forward to the original time
@@ -1009,8 +1084,8 @@ contains
 
     Time_next = Time + Time_step_atmos
 
-    n = mytile
-    ngc = Atm(mytile)%ng
+    n = mygrid
+    ngc = Atm(mygrid)%ng
     isd = isc - ngc
     ied = iec + ngc
     jsd = jsc - ngc
@@ -1043,7 +1118,8 @@ contains
                          .true., Time_next, Atm(n)%flagstruct%nudge, Atm(n)%gridstruct,  &
                          Atm(n)%gridstruct%agrid(:,:,1), Atm(n)%gridstruct%agrid(:,:,2), &
                          Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%flagstruct,          &
-                         Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop, q_dt)
+                         Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop,       &
+                         Atm(n)%phys_diag, q_dt)
 
     endif
 
@@ -1066,21 +1142,21 @@ contains
      jbs = Atm_block%jbs(nb)
      jbe = Atm_block%jbe(nb)
 
-     Physics%block(nb)%phis = Atm(mytile)%phis(ibs:ibe,jbs:jbe)
-     Physics%block(nb)%u    = Atm(mytile)%ua(ibs:ibe,jbs:jbe,:)
-     Physics%block(nb)%v    = Atm(mytile)%va(ibs:ibe,jbs:jbe,:)
-     Physics%block(nb)%t    = Atm(mytile)%pt(ibs:ibe,jbs:jbe,:)
-     Physics%block(nb)%q    = Atm(mytile)%q(ibs:ibe,jbs:jbe,:,:)
-     Physics%block(nb)%omega= Atm(mytile)%omga(ibs:ibe,jbs:jbe,:)
-     Physics%block(nb)%pe   = Atm(mytile)%pe(ibs:ibe,:,jbs:jbe)
-     Physics%block(nb)%peln = Atm(mytile)%peln(ibs:ibe,:,jbs:jbe)
-     Physics%block(nb)%delp = Atm(mytile)%delp(ibs:ibe,jbs:jbe,:)
+     Physics%block(nb)%phis = Atm(mygrid)%phis(ibs:ibe,jbs:jbe)
+     Physics%block(nb)%u    = Atm(mygrid)%ua(ibs:ibe,jbs:jbe,:)
+     Physics%block(nb)%v    = Atm(mygrid)%va(ibs:ibe,jbs:jbe,:)
+     Physics%block(nb)%t    = Atm(mygrid)%pt(ibs:ibe,jbs:jbe,:)
+     Physics%block(nb)%q    = Atm(mygrid)%q(ibs:ibe,jbs:jbe,:,:)
+     Physics%block(nb)%omega= Atm(mygrid)%omga(ibs:ibe,jbs:jbe,:)
+     Physics%block(nb)%pe   = Atm(mygrid)%pe(ibs:ibe,:,jbs:jbe)
+     Physics%block(nb)%peln = Atm(mygrid)%peln(ibs:ibe,:,jbs:jbe)
+     Physics%block(nb)%delp = Atm(mygrid)%delp(ibs:ibe,jbs:jbe,:)
      if (.not.Physics%control%phys_hydrostatic) then
-        Physics%block(nb)%delz = Atm(mytile)%delz(ibs:ibe,jbs:jbe,:)
-        Physics%block(nb)%w    = Atm(mytile)%w(ibs:ibe,jbs:jbe,:)
+        Physics%block(nb)%delz = Atm(mygrid)%delz(ibs:ibe,jbs:jbe,:)
+        Physics%block(nb)%w    = Atm(mygrid)%w(ibs:ibe,jbs:jbe,:)
      endif
      if (_ALLOCATED(Physics%block(nb)%tmp_4d)) &
-        Physics%block(nb)%tmp_4d = Atm(mytile)%qdiag(ibs:ibe,jbs:jbe,:,:)
+        Physics%block(nb)%tmp_4d = Atm(mygrid)%qdiag(ibs:ibe,jbs:jbe,:,:)
 
      call fv_compute_p_z (Atm_block%npz, Physics%block(nb)%phis, Physics%block(nb)%pe, &
                           Physics%block(nb)%peln, Physics%block(nb)%delp, Physics%block(nb)%delz, &
@@ -1088,9 +1164,9 @@ contains
                           Physics%block(nb)%p_full, Physics%block(nb)%p_half, &
                           Physics%block(nb)%z_full, Physics%block(nb)%z_half, &
 #ifdef USE_COND
-                          Atm(mytile)%q_con(ibs:ibe,jbs:jbe,:), &
+                          Atm(mygrid)%q_con(ibs:ibe,jbs:jbe,:), &
 #else
-                          Atm(mytile)%q_con, &
+                          Atm(mygrid)%q_con, &
 #endif
                           Physics%control%phys_hydrostatic, Physics%control%do_uni_zfull) !miz
 
@@ -1104,7 +1180,7 @@ contains
        Physics_tendency%block(nb)%v_dt = v_dt(ibs:ibe,jbs:jbe,:)
        Physics_tendency%block(nb)%t_dt = t_dt(ibs:ibe,jbs:jbe,:)
        Physics_tendency%block(nb)%q_dt = q_dt(ibs:ibe,jbs:jbe,:,:)
-       Physics_tendency%block(nb)%qdiag = Atm(mytile)%qdiag(ibs:ibe,jbs:jbe,:,:)
+       Physics_tendency%block(nb)%qdiag = Atm(mygrid)%qdiag(ibs:ibe,jbs:jbe,:,:)
      endif
    enddo
 
@@ -1128,14 +1204,14 @@ contains
      jbs = Atm_block%jbs(nb)
      jbe = Atm_block%jbe(nb)
 
-     Radiation%block(nb)%phis = Atm(mytile)%phis(ibs:ibe,jbs:jbe)
-     Radiation%block(nb)%t    = Atm(mytile)%pt(ibs:ibe,jbs:jbe,:)
-     Radiation%block(nb)%q    = Atm(mytile)%q(ibs:ibe,jbs:jbe,:,:)
-     Radiation%block(nb)%pe   = Atm(mytile)%pe(ibs:ibe,:,jbs:jbe)
-     Radiation%block(nb)%peln = Atm(mytile)%peln(ibs:ibe,:,jbs:jbe)
-     Radiation%block(nb)%delp = Atm(mytile)%delp(ibs:ibe,jbs:jbe,:)
+     Radiation%block(nb)%phis = Atm(mygrid)%phis(ibs:ibe,jbs:jbe)
+     Radiation%block(nb)%t    = Atm(mygrid)%pt(ibs:ibe,jbs:jbe,:)
+     Radiation%block(nb)%q    = Atm(mygrid)%q(ibs:ibe,jbs:jbe,:,:)
+     Radiation%block(nb)%pe   = Atm(mygrid)%pe(ibs:ibe,:,jbs:jbe)
+     Radiation%block(nb)%peln = Atm(mygrid)%peln(ibs:ibe,:,jbs:jbe)
+     Radiation%block(nb)%delp = Atm(mygrid)%delp(ibs:ibe,jbs:jbe,:)
      if (.not.Radiation%control%phys_hydrostatic) &
-        Radiation%block(nb)%delz = Atm(mytile)%delz(ibs:ibe,jbs:jbe,:)
+        Radiation%block(nb)%delz = Atm(mygrid)%delz(ibs:ibe,jbs:jbe,:)
 
      call fv_compute_p_z (Atm_block%npz, Radiation%block(nb)%phis, Radiation%block(nb)%pe, &
                           Radiation%block(nb)%peln, Radiation%block(nb)%delp, Radiation%block(nb)%delz, &
@@ -1143,9 +1219,9 @@ contains
                           Radiation%block(nb)%p_full, Radiation%block(nb)%p_half, &
                           Radiation%block(nb)%z_full, Radiation%block(nb)%z_half, &
 #ifdef USE_COND
-                          Atm(mytile)%q_con(ibs:ibe,jbs:jbe,:), &
+                          Atm(mygrid)%q_con(ibs:ibe,jbs:jbe,:), &
 #else
-                          Atm(mytile)%q_con, &
+                          Atm(mygrid)%q_con, &
 #endif
                           Radiation%control%phys_hydrostatic, Radiation%control%do_uni_zfull) !miz
    enddo
@@ -1159,6 +1235,7 @@ contains
 ! phase due to the way in which MPI interacts with nested OpenMP
 !----------------------------------------------------------------------
    call compute_g_avg(Time, 'co2', Radiation, Atm_block)
+   call compute_g_avg(Time, 'ch4', Radiation, Atm_block)
 
  end subroutine atmos_radiation_driver_inputs
 
@@ -1244,7 +1321,7 @@ contains
     endif
     if (do_uni_zfull) then
        do k=1,npz
-          z_full(:,:,k)=0.5*(z_half(:,:,k)+z_half(:,:,k+1))
+         z_full(:,:,k)=0.5*(z_half(:,:,k)+z_half(:,:,k+1))
        enddo
     endif
   end subroutine fv_compute_p_z
@@ -1267,8 +1344,8 @@ contains
       jbs = Atm_block%jbs(nb)
       jbe = Atm_block%jbe(nb)
 
-      Atm(mytile)%q(ibs:ibe,jbs:jbe,:,:) = Physics%block(nb)%q
-      Atm(mytile)%qdiag(ibs:ibe,jbs:jbe,:,:) = Physics_tendency%block(nb)%qdiag
+      Atm(mygrid)%q(ibs:ibe,jbs:jbe,:,:) = Physics%block(nb)%q
+      Atm(mygrid)%qdiag(ibs:ibe,jbs:jbe,:,:) = Physics_tendency%block(nb)%qdiag
     enddo
 
  end subroutine reset_atmos_tracers
