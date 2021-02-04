@@ -21,8 +21,6 @@ This version of FV3 is described as component of SHiELD in Harris et al. (2020, 
 
 ## Interface changes in 202101
 
-drivers: renamed 'fvGFS' directory to SHiELD
-
 atmosphere.F90: if using the in-line GFDL microphysics the precipitation rates (available in the structure Atm%inline_mp for rain, ice, snow, and graupel separately) must be passed into the physics and/or land model as appropriate. Here we demonstrate how to do this in SHiELD by copying them into IPD_Data(nb)%Statein%prep (and so on), which are newly defined in the IPD_Data structure within the SHiELD physics.
 
 # RELEASE NOTES for FV3 201912: Summary
