@@ -663,12 +663,12 @@ contains
    !  delta_j_c = -1 is northward
 
    !if (first_time) then
-   if (a_step .eq. 1 .or. mod(a_step,10) .eq. 0) then
+   if (a_step .eq. 1 .or. mod(a_step,40) .eq. 0) then
       do_move = .true.
       delta_i_c = 1
       delta_j_c = 0
       first_time = .false.
-   else if (mod(a_step,5) .eq. 0) then
+   else if (mod(a_step,20) .eq. 0) then
       do_move = .true.
       delta_i_c = 0
       delta_j_c = -1
