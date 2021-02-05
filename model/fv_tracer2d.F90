@@ -749,6 +749,9 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
                                                reg_bc_update_time,      &
                                                iq )
             enddo
+            call timing_on('COMM_TOTAL')
+            call mpp_update_domains(q, domain, complete=.true.)
+            call timing_off('COMM_TOTAL')
       endif
 
 
