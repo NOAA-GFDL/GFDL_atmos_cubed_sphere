@@ -118,12 +118,12 @@
       type(fv_flags_type), intent(IN), target :: flagstruct
 
 ! Local:
-      logical:: sw_corner, se_corner, ne_corner, nw_corner 
+      logical:: sw_corner, se_corner, ne_corner, nw_corner
       real, dimension(bd%is-1:bd%ie+1,bd%js-1:bd%je+1):: vort, ke
       real, dimension(bd%is-1:bd%ie+2,bd%js-1:bd%je+1):: fx, fx1, fx2
       real, dimension(bd%is-1:bd%ie+1,bd%js-1:bd%je+2):: fy, fy1, fy2
       real :: dt4
-      integer :: i,j, is2, ie1
+      integer :: i,j
       integer iep1, jep1
 
       integer :: is,  ie,  js,  je
@@ -2878,7 +2878,7 @@ end subroutine ytp_v
   utmp(:,:) = big_number
   vtmp(:,:) = big_number 
 
- if ( bounded_domain ) then  
+ if ( bounded_domain ) then
 
      do j=jsd+1,jed-1
         do i=isd,ied

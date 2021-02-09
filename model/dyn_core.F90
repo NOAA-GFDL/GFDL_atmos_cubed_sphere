@@ -555,19 +555,23 @@ contains
       endif
 
       if (flagstruct%regional) then
+        call timing_on('COMM_TOTAL')
         reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(0.5+(it-1))*dt
         call regional_boundary_update(delpc, 'delp', &
                                       isd, ied, jsd, jed, npz, &
                                       is,  ie,  js,  je,       &
                                       isd, ied, jsd, jed,      &
                                       reg_bc_update_time )
+        call mpp_update_domains(delpc, domain, complete=.true.)
 #ifndef SW_DYNAMICS
         call regional_boundary_update(ptc, 'pt', &
                                       isd, ied, jsd, jed, npz, &
                                       is,  ie,  js,  je,       &
                                       isd, ied, jsd, jed,      &
                                       reg_bc_update_time )
+        call mpp_update_domains(ptc, domain, complete=.true.)
 #endif
+        call timing_off('COMM_TOTAL')
       endif
 
       if ( hydrostatic ) then
@@ -670,7 +674,7 @@ contains
 
            endif
 
-#endif SW_DYNAMICS
+#endif
 
       endif   ! end hydro check
 
@@ -719,9 +723,7 @@ contains
 
       if (flagstruct%regional) then
 
-        !call exch_uv(domain, bd, npz, vc, uc)
         call mpp_update_domains(uc, vc, domain, gridtype=CGRID_NE)
-        
         reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(0.5+(it-1))*dt
         call regional_boundary_update(vc, 'vc', &
                                       isd, ied, jsd, jed+1, npz, &
@@ -734,13 +736,18 @@ contains
                                       isd, ied, jsd, jed,      &
                                       reg_bc_update_time )
         call mpp_update_domains(uc, vc, domain, gridtype=CGRID_NE)
+
 !!! Currently divgd is always 0.0 in the regional domain boundary area.
-        reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(it-1)*dt
-        call regional_boundary_update(divgd, 'divgd', &
-                                      isd, ied+1, jsd, jed+1, npz, &
-                                      is,  ie,  js,  je,       &
-                                      isd, ied, jsd, jed,      &
-                                      reg_bc_update_time )
+! DH* 2021-02-03: no need to execute this code, because divgd is always
+! 0.0 in the regional domain boundary area. This code breaks b4b reproducibility
+! when changing the MPI decomposition for regional runs.
+!        reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(it-1)*dt
+!        call regional_boundary_update(divgd, 'divgd', &
+!                                      isd, ied+1, jsd, jed+1, npz, &
+!                                      is,  ie,  js,  je,       &
+!                                      isd, ied, jsd, jed,      &
+!                                      reg_bc_update_time )
+! *DH
       endif
 
     if ( flagstruct%inline_q ) then
@@ -986,7 +993,7 @@ contains
 #ifdef USE_COND
        call nested_grid_BC_apply_intT(q_con, &
             0, 0, npx, npy, npz, bd, split_timestep_BC+1, real(n_split*flagstruct%k_split), &
-            neststruct%q_con_BC, bctype=neststruct%nestbctype  )       
+            neststruct%q_con_BC, bctype=neststruct%nestbctype  )
 #endif
 
 #endif
@@ -994,28 +1001,31 @@ contains
     end if
 
     if (flagstruct%regional) then
+      call timing_on('COMM_TOTAL')
       reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(it-1)*dt
       call regional_boundary_update(delp, 'delp', &
                                     isd, ied, jsd, jed, npz, &
                                     is,  ie,  js,  je,       &
                                     isd, ied, jsd, jed,      &
                                     reg_bc_update_time )
+      call mpp_update_domains(delp, domain, complete=.true.)
 #ifndef SW_DYNAMICS
       call regional_boundary_update(pt, 'pt', &
                                     isd, ied, jsd, jed, npz, &
                                     is,  ie,  js,  je,       &
                                     isd, ied, jsd, jed,      &
                                     reg_bc_update_time )
-
+      call mpp_update_domains(pt, domain, complete=.true.)
 #ifdef USE_COND
       call regional_boundary_update(q_con, 'q_con', &
                                     isd, ied, jsd, jed, npz, &
                                     is,  ie,  js,  je,       &
                                     isd, ied, jsd, jed,      &
                                     reg_bc_update_time )
+      call mpp_update_domains(q_con, domain, complete=.true.)
 #endif
-
 #endif
+      call timing_off('COMM_TOTAL')
     endif
 
      if ( hydrostatic ) then
@@ -1122,7 +1132,7 @@ contains
            call complete_group_halo_update(i_pack(5), domain)
                                        call timing_off('COMM_TOTAL')
         endif
-#endif SW_DYNAMICS
+#endif
      endif    ! end hydro check
 
 #ifdef SW_DYNAMICS
@@ -1238,7 +1248,7 @@ contains
     endif
 
 #ifndef ROT3
-    if ( it/=n_split)   &
+    if (.not. flagstruct%regional .and. it/=n_split)   &
          call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
 #endif
                                                      call timing_off('COMM_TOTAL')
@@ -1308,7 +1318,7 @@ contains
                0, 0, npx, npy, npz, bd, split_timestep_BC+1, real(n_split*flagstruct%k_split), &
                neststruct%w_BC, bctype=neststruct%nestbctype  )
        end if
-#endif SW_DYNAMICS
+#endif
             call nested_grid_BC_apply_intT(u, &
             0, 1, npx, npy, npz, bd, split_timestep_BC+1, real(n_split*flagstruct%k_split), &
             neststruct%u_BC, bctype=neststruct%nestbctype  )
@@ -1319,7 +1329,7 @@ contains
       end if
 
       if (flagstruct%regional) then
-
+         call timing_on('COMM_TOTAL')
 #ifndef SW_DYNAMICS
          if (.not. hydrostatic) then
            reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+it*dt
@@ -1329,7 +1339,7 @@ contains
                                          isd, ied, jsd, jed,      &
                                          reg_bc_update_time )
          endif
-#endif SW_DYNAMICS
+#endif
 
          call regional_boundary_update(u, 'u', &
                                        isd, ied, jsd, jed+1, npz, &
@@ -1341,8 +1351,12 @@ contains
                                        is,  ie,  js,  je,       &
                                        isd, ied, jsd, jed,      &
                                        reg_bc_update_time )
-      
          call mpp_update_domains(u, v, domain, gridtype=DGRID_NE)
+#ifndef ROT3
+         if (it/=n_split)   &
+            call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
+#endif
+         call timing_off('COMM_TOTAL')
       end if
 
 !-----------------------------------------------------
