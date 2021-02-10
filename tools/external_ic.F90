@@ -148,7 +148,7 @@ module external_ic_mod
    use external_sst_mod,   only: i_sst, j_sst, sst_ncep
    use fms_mod,            only: file_exist, read_data, field_exist, write_version_number
    use fms_mod,            only: open_namelist_file, check_nml_error, close_file
-   use fms_mod,            only: get_mosaic_tile_file, read_data, error_mesg
+   use fms_mod,            only: get_mosaic_tile_file, error_mesg
    use fms_io_mod,         only: get_tile_string, field_size, free_restart_type
    use fms_io_mod,         only: restart_file_type, register_restart_field
    use fms_io_mod,         only: save_restart, restore_state, set_filename_appendix, get_global_att_value
@@ -197,10 +197,11 @@ module external_ic_mod
 
    real, parameter:: zvir = rvgas/rdgas - 1.
    real(kind=R_GRID), parameter :: cnst_0p20=0.20d0
-   real :: deg2rad
-   character (len = 80) :: source   ! This tells what the input source was for the data
+   real, parameter :: deg2rad = pi/180.
+   character (len = 80),public :: source   ! This tells what the input source was for the data
    character(len=27), parameter :: source_fv3gfs = 'FV3GFS GAUSSIAN NEMSIO FILE'
-  public get_external_ic, get_cubed_sphere_terrain
+   public get_external_ic, get_cubed_sphere_terrain
+   public remap_scalar, remap_dwinds
 
 ! version number of this module
 ! Include variable "version" to be written to log file.
@@ -224,9 +225,7 @@ contains
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed, ng
       integer :: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel
-#ifdef CCPP
       integer :: liq_aero, ice_aero
-#endif
 #ifdef MULTI_GASES
       integer :: spfo, spfo2, spfo3
 #else
@@ -326,10 +325,8 @@ contains
 #else
         o3mr      = get_tracer_index(MODEL_ATMOS, 'o3mr')
 #endif
-#ifdef CCPP
         liq_aero  = get_tracer_index(MODEL_ATMOS, 'liq_aero')
         ice_aero  = get_tracer_index(MODEL_ATMOS, 'ice_aero')
-#endif
 
         if ( liq_wat > 0 ) &
         call prt_maxmin('liq_wat', Atm%q(:,:,:,liq_wat), is, ie, js, je, ng, Atm%npz, 1.)
@@ -352,12 +349,10 @@ contains
         if ( o3mr > 0    ) &
         call prt_maxmin('O3MR',    Atm%q(:,:,:,o3mr),    is, ie, js, je, ng, Atm%npz, 1.)
 #endif
-#ifdef CCPP
         if ( liq_aero > 0) &
         call prt_maxmin('liq_aero',Atm%q(:,:,:,liq_aero),is, ie, js, je, ng, Atm%npz, 1.)
         if ( ice_aero > 0) &
         call prt_maxmin('ice_aero',Atm%q(:,:,:,ice_aero),is, ie, js, je, ng, Atm%npz, 1.)
-#endif
       endif
 
 !Now in fv_restart
@@ -570,8 +565,10 @@ contains
 
 !--- read in the number of tracers in the NCEP NGGPS ICs
       call read_data ('INPUT/'//trim(fn_gfs_ctl), 'ntrac', ntrac, no_domain=.TRUE.)
-      if (ntrac > ntracers) call mpp_error(FATAL,'==> External_ic::get_nggps_ic: more NGGPS tracers &
-                                 &than defined in field_table '//trim(fn_gfs_ctl)//' for NGGPS IC')
+      ! DH* 20200922 - this breaks Ferrier-Aligo MP runs
+      !if (ntrac > ntracers) call mpp_error(FATAL,'==> External_ic::get_nggps_ic: more NGGPS tracers &
+      !                           &than defined in field_table '//trim(fn_gfs_ctl)//' for NGGPS IC')
+      ! *DH 20200922
 
 !
       call get_data_source(source,Atm%flagstruct%regional)
@@ -996,8 +993,6 @@ contains
       ied = Atm%bd%ied
       jsd = Atm%bd%jsd
       jed = Atm%bd%jed
-
-      deg2rad = pi/180.
 
       npz = Atm%npz
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
@@ -1561,8 +1556,6 @@ contains
       ied = Atm%bd%ied
       jsd = Atm%bd%jsd
       jed = Atm%bd%jed
-
-      deg2rad = pi/180.
 
       npz = Atm%npz
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
