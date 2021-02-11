@@ -758,14 +758,22 @@ contains
    !--- if needed, flip the indexing during this step
    if (flip) then
      if (.not. relative) then
-       z(:,:,1) = Atm(mygrid)%phis(:,:)/grav
+       do j = jsc, jec
+       do i = isc, iec
+         z(i-isc+1,j-jsc+1,1) = Atm(mygrid)%phis(i,j)/grav
+       enddo
+       enddo
      endif
      do k = 2,npz+1
        z(:,:,k) = z(:,:,k-1) - dz(:,:,npz+2-k)
      enddo
    else
      if (.not. relative) then
-       z(:,:,npz+1) = Atm(mygrid)%phis(:,:)/grav
+       do j = jsc, jec
+       do i = isc, iec
+         z(i-isc+1,j-jsc+1,npz+1) = Atm(mygrid)%phis(i,j)/grav
+       enddo
+       enddo
      endif
      do k = npz,1,-1
        z(:,:,k) = z(:,:,k+1) - dz(:,:,k)
@@ -875,7 +883,7 @@ contains
    logical, optional, intent(in) :: init
 
    if (PRESENT(init)) then
-     if (init == .true.) then
+     if (init .eqv. .true.) then
        call fv_nggps_diag_init(Atm(mygrid:mygrid), Atm(mygrid)%atmos_axes, Time)
        return
      else
