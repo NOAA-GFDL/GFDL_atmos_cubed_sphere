@@ -3,11 +3,15 @@ The vertical Lagrangian Solver {#lagrangian}
 
 ##Chapter 4 
 
+Enhanced documentation coming in a future release (target date May 2021)
+
+(This information is a reproduction of Sections 3 and 4 from HCZC20)
+
 ###4.1 Lagrangian vertical coordinates
 
-A *Lagrangian* vertical coordinate is used in FV3. This coordinate uses the depth of each layer (in terms of mass or as geometric height) as a prognostic variable, allowing the layer interfaces to deform freely as the flow evolves. Further, the flow is constrained within the Lagrangian layers, with no flow across the layer interfaces (even for non-adiabatic flows). Instead, the flow deforms the layers themselves by advecting the layer thickness and by straining the layers by the vertical gradient of explicit vertical motion. This form is automatically consistent with the LR96 scheme, avoids the need for explicit calculation and dimensional splitting of verticaladvection, greatly reduces implicit vertical diffusion, and has no vertical Courant number restriction.
+A *Lagrangian* vertical coordinate is used in FV<sup>3</sup>. This coordinate uses the depth of each layer (in terms of mass or as geometric height) as a prognostic variable, allowing the layer interfaces to deform freely as the flow evolves. Further, the flow is constrained within the Lagrangian layers, with no flow across the layer interfaces (even for non-adiabatic flows). Instead, the flow deforms the layers themselves by advecting the layer thickness and by straining the layers by the vertical gradient of explicit vertical motion. This form is automatically consistent with the LR96 scheme, avoids the need for explicit calculation and dimensional splitting of verticaladvection, greatly reduces implicit vertical diffusion, and has no vertical Courant number restriction.
 
-FV3 uses a hybrid-pressure coordinate based on the hydrostatic surface pressure \f$p_s^*\f$:
+FV<sup>3</sup> uses a hybrid-pressure coordinate based on the hydrostatic surface pressure \f$p_s^*\f$:
 
 \f[
  p_k^* = a_k + b_kp_s^*  \\  \tag {4.1}
@@ -35,7 +39,7 @@ The continuous Lagrangian equations of motion, in a layer of finite depth \f$\de
 
 Note that these equations are exact: no discretization has been made yet, and the only change from the original differential form of Euler’s equations is to integrate over an arbitrary depth \f$\delta p^*\f$. The operator \f$D_L\f$ is the “vertically-Lagrangian” derivative, formally equal to \f$\frac{\partial \psi}{\partial t} + \frac{\partial}{\partial z}(w \psi)\f$ for an arbitrary scalar \f$\psi\f$. The flow is entirely along the Lagrangian surfaces, including the vertical motion (which deforms the surfaces as appropriate, an effect included in the semi-implicit solver).
 
-####Prognostic variables in FV3
+####Prognostic variables in FV<sup>3</sup>
 
 Variable         | Description
 :--------------: | :---------- 
@@ -46,7 +50,7 @@ Variable         | Description
 \f$w\f$          | Cell-mean vertical velocity
 \f$\delta z\f$   | Geometric layer height
 
-The vertical component of absolute vorticity is given as \f$\Omega\f$ and \f$p\f$ is the full nonhydrostatic pressure. The kinetic energy is given as \f$K = \frac{1}{2}(\tilde{u}u + \tilde{v}v)\f$: since FV3 does not assume that the horizontal coordinate system is orthogonal, we use the covariant (\f$u\f$ and \f$v\f$) components of the wind vector as prognostic variables and the contravariant (\f$\tilde{u}\f$ and \f$\tilde{v}\f$) components for advection, avoiding the need to explicitly include metric terms. See PL07 and HL13 for more information about covariant and contravariant components.
+The vertical component of absolute vorticity is given as \f$\Omega\f$ and \f$p\f$ is the full nonhydrostatic pressure. The kinetic energy is given as \f$K = \frac{1}{2}(\tilde{u}u + \tilde{v}v)\f$: since FV<sup>3</sup> does not assume that the horizontal coordinate system is orthogonal, we use the covariant (\f$u\f$ and \f$v\f$) components of the wind vector as prognostic variables and the contravariant (\f$\tilde{u}\f$ and \f$\tilde{v}\f$) components for advection, avoiding the need to explicitly include metric terms. See PL07 and HL13 for more information about covariant and contravariant components.
 
 The nonhydrostatic pressure gradient term in the \f$w\f$ equation is computed by the semi-implicit solver described section 5, which also computes the prognostic equation for \f$\delta z\f$. There is no projection of the vertical pressure gradient force into the horizontal; similarly, there is no projection of the horizontal winds \f$u\f$, \f$v\f$into the vertical, despite the slopes of the Lagrangian surfaces.
 

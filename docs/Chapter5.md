@@ -3,13 +3,15 @@ The horizontal discretization and Lagrangian Dynamics {#horizontal}
 
 ##Chapter 5 
 
-More documenation coming in a future release
+Enhanced documentation coming in a future release (target date May 2021)
+
+(This information is a reproduction of Section 5 from HCZC20)
 
 ###5.1 Dynamics along Lagrangian surfaces
 
 The layer-integrated equations (4.3) are discretized along the Lagrangian surfaces and integrated on the “acoustic” or “dynamical” time step \f$\delta t\f$ using forward-backward time-stepping as in LR97. The vertical velocity \f$w\f$ is a three-dimensional cell-mean value and partially advanced using the advection scheme. The geometric layer depth \f$\delta z\f$ is simply the difference of the heights of the successive layer interfaces, which with \f$\delta p^*\f$ defines the layer-mean density and the location of the Lagrangian surfaces. The air mass is the total air mass, including water vapor and condensate species.
 
-FV3 places the wind components using the D-grid (following Arakawa’s terminology), which defines the winds as face-tangential quantities. The D-grid permits us to compute the cell-mean absolute vorticity \f$\Omega\f$ exactly using Stokes’ theorem and a cell-mean value of the local Coriolis parameter \f$f\f$, without performing any averages or interpolations. The wind components themselves are face-mean values “along the cell edges” (not cell-mean values).
+FV<sup>3</sup> places the wind components using the D-grid (following Arakawa’s terminology), which defines the winds as face-tangential quantities. The D-grid permits us to compute the cell-mean absolute vorticity \f$\Omega\f$ exactly using Stokes’ theorem and a cell-mean value of the local Coriolis parameter \f$f\f$, without performing any averages or interpolations. The wind components themselves are face-mean values “along the cell edges” (not cell-mean values).
 
 Following the notation from L04, PL07, and HL13, we can write the discretized forms of (4.3), excluding the vertical components, as:
 

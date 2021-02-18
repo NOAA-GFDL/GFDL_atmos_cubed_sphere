@@ -3,13 +3,15 @@ Physics-dynamics coupling {#physics}
 
 ##Chapter 8
 
+(This information is a reproduction of Chapter 3 from LPH17)
+
 ###8.1 Staggered wind interpolation
 
-The coupling to physical parameterizations and surface models is straight forward; the primary complication is interpolating between cell-centered, orthogonal winds used by most physics packages and the FV&sup3; staggered non-orthogonal D-grid. The unstaggered orthogonal wind is defined by horizontal components in longitude and latitude; the staggered non-orthogonal D-grid wind is defined by the winds tangential to the grid-cell interfaces by the horizontal covariant components in the cubed-sphere curvilinear components. A two-stage horizontal re-mapping of the wind is used when coupuling the physics packages to the dynamics. The D-grid winds are first transformed to locally orthogonal and unstaggered wind components at cell centers, as input to the physics. After the physics returns its tendencies, the wind tendencies (du/dt, dv/dt) are then remapped (using high-order algorithm) back to the native grid for updating the prognostic winds. This procedure satisfies the “no data no harm” principle — that the interpolation/remapping procedure creates no tendency on its own if there are no external sources from physics or data assimilation.
+The coupling to physical parameterizations and surface models is straight forward; the primary complication is interpolating between cell-centered, orthogonal winds used by most physics packages and the FV<sup>3</sup> staggered non-orthogonal D-grid. The unstaggered orthogonal wind is defined by horizontal components in longitude and latitude; the staggered non-orthogonal D-grid wind is defined by the winds tangential to the grid-cell interfaces by the horizontal covariant components in the cubed-sphere curvilinear components. A two-stage horizontal re-mapping of the wind is used when coupuling the physics packages to the dynamics. The D-grid winds are first transformed to locally orthogonal and unstaggered wind components at cell centers, as input to the physics. After the physics returns its tendencies, the wind tendencies (du/dt, dv/dt) are then remapped (using high-order algorithm) back to the native grid for updating the prognostic winds. This procedure satisfies the “no data no harm” principle — that the interpolation/remapping procedure creates no tendency on its own if there are no external sources from physics or data assimilation.
 
 ###8.2 Condensate loading and mass conservation
 
-The mass &delta;m, and thereby also &delta;p<sup>*</sup>, in FV&sup3; is the total mass of both the dry air and of the water categories, including the vapor and condensate phases; the precise number N of water species is dependent upon the microphysics scheme used, or may be zero. This incorporates the effect of condensate loading into the air mass without a special parameterization for loading. The dry weight (per unit area) can be given as:
+The mass &delta;m, and thereby also &delta;p<sup>*</sup>, in FV<sup>3</sup> is the total mass of both the dry air and of the water categories, including the vapor and condensate phases; the precise number N of water species is dependent upon the microphysics scheme used, or may be zero. This incorporates the effect of condensate loading into the air mass without a special parameterization for loading. The dry weight (per unit area) can be given as:
 
 \f[
  g \delta m_d  =  \delta p^* \left( 1 - \sum_{m=1}^N q_m  \right)  =  \left( \delta p^* - \sum_{m=1}^N Q_m  \right) \\  \tag {8.1}

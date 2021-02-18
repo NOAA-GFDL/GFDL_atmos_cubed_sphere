@@ -75,7 +75,7 @@ WARN_FORMAT            = "$file:$line: $text"
 WARN_LOGFILE           =
 INPUT = 			./documentation.dox \
 				./Preface.md \
-                                ./Forward.md \
+                                ./Foreword.md \
                                 ./Chapter1.md \
                                 ./Chapter2.md \
                                 ./Chapter3.md \

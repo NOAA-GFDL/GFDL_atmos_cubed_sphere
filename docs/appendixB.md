@@ -1,6 +1,6 @@
 Variables and notation {#variables}
 ===========
-
+(This information is a reproduction of Appendix B excluding B.2 and B.3 from LPH17)
 
 Variables  |        Notation
 ------------- | -------------

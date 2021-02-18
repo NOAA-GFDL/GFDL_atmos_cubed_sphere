@@ -1,7 +1,7 @@
 /**@page Desc Description of the GFDL Finite-Volume Cubed-Sphere Dynamical Core
 
    + @subpage preface
-   + @subpage forward
+   + @subpage foreword
    + @subpage introduction
    + @subpage cube
    + @subpage flux
