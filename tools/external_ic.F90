@@ -228,7 +228,7 @@ contains
       integer :: liq_aero, ice_aero
 #endif
 #ifdef MULTI_GASES
-      integer :: spfo, spfo2, spfo3
+      integer :: spo, spo2, spo3
 #else
       integer :: o3mr
 #endif
@@ -320,9 +320,9 @@ contains
         snowwat   = get_tracer_index(MODEL_ATMOS, 'snowwat')
         graupel   = get_tracer_index(MODEL_ATMOS, 'graupel')
 #ifdef MULTI_GASES
-        spfo      = get_tracer_index(MODEL_ATMOS, 'spfo')
-        spfo2     = get_tracer_index(MODEL_ATMOS, 'spfo2')
-        spfo3     = get_tracer_index(MODEL_ATMOS, 'spfo3')
+        spo       = get_tracer_index(MODEL_ATMOS, 'spo')
+        spo2      = get_tracer_index(MODEL_ATMOS, 'spo2')
+        spo3      = get_tracer_index(MODEL_ATMOS, 'spo3')
 #else
         o3mr      = get_tracer_index(MODEL_ATMOS, 'o3mr')
 #endif
@@ -342,12 +342,12 @@ contains
         if ( graupel > 0 ) &
         call prt_maxmin('graupel', Atm%q(:,:,:,graupel), is, ie, js, je, ng, Atm%npz, 1.)
 #ifdef MULTI_GASES
-        if ( spfo > 0    ) &
-        call prt_maxmin('SPFO',    Atm%q(:,:,:,spfo),    is, ie, js, je, ng, Atm%npz, 1.)
-        if ( spfo2 > 0   ) &
-        call prt_maxmin('SPFO2',   Atm%q(:,:,:,spfo2),   is, ie, js, je, ng, Atm%npz, 1.)
-        if ( spfo3 > 0   ) &
-        call prt_maxmin('SPFO3',   Atm%q(:,:,:,spfo3),   is, ie, js, je, ng, Atm%npz, 1.)
+        if ( spo > 0    ) &
+        call prt_maxmin('SPO',    Atm%q(:,:,:,spo),    is, ie, js, je, ng, Atm%npz, 1.)
+        if ( spo2 > 0   ) &
+        call prt_maxmin('SPO2',   Atm%q(:,:,:,spo2),   is, ie, js, je, ng, Atm%npz, 1.)
+        if ( spo3 > 0   ) &
+        call prt_maxmin('SPO3',   Atm%q(:,:,:,spo3),   is, ie, js, je, ng, Atm%npz, 1.)
 #else
         if ( o3mr > 0    ) &
         call prt_maxmin('O3MR',    Atm%q(:,:,:,o3mr),    is, ie, js, je, ng, Atm%npz, 1.)
@@ -1530,7 +1530,7 @@ contains
       integer :: isd, ied, jsd, jed
       integer :: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel
 #ifdef MULTI_GASES
-      integer :: spfo, spfo2, spfo3
+      integer :: spo, spo2, spo3
 #else
       integer :: o3mr
 #endif
@@ -1540,7 +1540,7 @@ contains
       real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
       real, allocatable:: ps_gfs(:,:), zh_gfs(:,:,:)
 #ifdef MULTI_GASES
-      real, allocatable:: spfo_gfs(:,:,:), spfo2_gfs(:,:,:), spfo3_gfs(:,:,:)
+      real, allocatable:: spo_gfs(:,:,:), spo2_gfs(:,:,:), spo3_gfs(:,:,:)
 #else
       real, allocatable:: o3mr_gfs(:,:,:)
 #endif
@@ -1577,9 +1577,9 @@ contains
       snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
       graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
 #ifdef MULTI_GASES
-      spfo    = get_tracer_index(MODEL_ATMOS, 'spfo')
-      spfo2   = get_tracer_index(MODEL_ATMOS, 'spfo2')
-      spfo3   = get_tracer_index(MODEL_ATMOS, 'spfo3')
+      spo     = get_tracer_index(MODEL_ATMOS, 'spo')
+      spo2    = get_tracer_index(MODEL_ATMOS, 'spo2')
+      spo3    = get_tracer_index(MODEL_ATMOS, 'spo3')
 #else
       o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
 #endif
@@ -1594,9 +1594,9 @@ contains
             print *, 'graupel = ', graupel 
          endif
 #ifdef MULTI_GASES
-         print *, ' spfo3 = ', spfo3
-         print *, ' spfo  = ', spfo
-         print *, ' spfo2 = ', spfo2
+         print *, ' spo3 = ', spo3
+         print *, ' spo  = ', spo
+         print *, ' spo2 = ', spo2
 #else
          print *, ' o3mr = ', o3mr
 #endif
@@ -1622,9 +1622,9 @@ contains
 
 !! Read in o3mr, ps and zh from GFS_data.tile?.nc
 #ifdef MULTI_GASES
-      allocate (spfo3_gfs(is:ie,js:je,levp_gfs))
-      allocate ( spfo_gfs(is:ie,js:je,levp_gfs))
-      allocate (spfo2_gfs(is:ie,js:je,levp_gfs))
+      allocate (spo3_gfs(is:ie,js:je,levp_gfs))
+      allocate ( spo_gfs(is:ie,js:je,levp_gfs))
+      allocate (spo2_gfs(is:ie,js:je,levp_gfs))
 #else
       allocate (o3mr_gfs(is:ie,js:je,levp_gfs))
 #endif
@@ -1632,11 +1632,11 @@ contains
       allocate (zh_gfs(is:ie,js:je,levp_gfs+1))
    
 #ifdef MULTI_GASES
-      id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'spfo3', spfo3_gfs, &
+      id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'spo3', spo3_gfs, &
                                        mandatory=.false.,domain=Atm%domain)
-      id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'spfo', spfo_gfs, &
+      id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'spo', spo_gfs, &
                                        mandatory=.false.,domain=Atm%domain)
-      id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'spfo2', spfo2_gfs, &
+      id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'spo2', spo2_gfs, &
                                        mandatory=.false.,domain=Atm%domain)
 #else
       id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'o3mr', o3mr_gfs, &
@@ -1660,18 +1660,18 @@ contains
       if ( bk_gfs(1) < 1.E-9 ) ak_gfs(1) = max(1.e-9, ak_gfs(1))
   
 #ifdef MULTI_GASES
-      iq = spfo3
-      if(is_master()) write(*,*) 'Reading spfo3 from GFS_data.nc:'
-      if(is_master()) write(*,*) 'spfo3 =', iq
-      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spfo3_gfs, zh_gfs, iq)
-      iq = spfo
-      if(is_master()) write(*,*) 'Reading spfo from GFS_data.nc:'
-      if(is_master()) write(*,*) 'spfo =', iq
-      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spfo_gfs, zh_gfs, iq)
-      iq = spfo2
-      if(is_master()) write(*,*) 'Reading spfo2 from GFS_data.nc:'
-      if(is_master()) write(*,*) 'spfo2 =', iq
-      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spfo2_gfs, zh_gfs, iq)
+      iq = spo3
+      if(is_master()) write(*,*) 'Reading spo3 from GFS_data.nc:'
+      if(is_master()) write(*,*) 'spo3 =', iq
+      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spo3_gfs, zh_gfs, iq)
+      iq = spo
+      if(is_master()) write(*,*) 'Reading spo from GFS_data.nc:'
+      if(is_master()) write(*,*) 'spo =', iq
+      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spo_gfs, zh_gfs, iq)
+      iq = spo2
+      if(is_master()) write(*,*) 'Reading spo2 from GFS_data.nc:'
+      if(is_master()) write(*,*) 'spo2 =', iq
+      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spo2_gfs, zh_gfs, iq)
 #else
       iq = o3mr
       if(is_master()) write(*,*) 'Reading o3mr from GFS_data.nc:'
@@ -1682,9 +1682,9 @@ contains
       deallocate (ak_gfs, bk_gfs)
       deallocate (ps_gfs, zh_gfs)
 #ifdef MULTI_GASES
-      deallocate (spfo3_gfs)
-      deallocate ( spfo_gfs)
-      deallocate (spfo2_gfs)
+      deallocate (spo3_gfs)
+      deallocate ( spo_gfs)
+      deallocate (spo2_gfs)
 #else
       deallocate (o3mr_gfs)
 #endif
@@ -2471,7 +2471,7 @@ contains
   integer i,j,k,l,m, k2,iq
   integer  sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt, liq_aero, ice_aero
 #ifdef MULTI_GASES
-  integer  spfo, spfo2, spfo3
+  integer  spo, spo2, spo3
 #else
   integer o3mr
 #endif
@@ -2490,9 +2490,9 @@ contains
   graupel  = get_tracer_index(MODEL_ATMOS, 'graupel')
   cld_amt  = get_tracer_index(MODEL_ATMOS, 'cld_amt')
 #ifdef MULTI_GASES
-  spfo     = get_tracer_index(MODEL_ATMOS, 'spfo')
-  spfo2    = get_tracer_index(MODEL_ATMOS, 'spfo2')
-  spfo3    = get_tracer_index(MODEL_ATMOS, 'spfo3')
+  spo      = get_tracer_index(MODEL_ATMOS, 'spo')
+  spo2     = get_tracer_index(MODEL_ATMOS, 'spo2')
+  spo3     = get_tracer_index(MODEL_ATMOS, 'spo3')
 #else
   o3mr     = get_tracer_index(MODEL_ATMOS, 'o3mr')
 #endif
@@ -2508,9 +2508,9 @@ contains
     print *, 'sphum    = ', sphum
     print *, 'clwmr    = ', liq_wat
 #ifdef MULTI_GASES
-    print *, 'spfo3    = ', spfo3
-    print *, ' spfo    = ', spfo
-    print *, 'spfo2    = ', spfo2
+    print *, 'spo3    = ', spo3
+    print *, ' spo    = ', spo
+    print *, 'spo2    = ', spo2
 #else
     print *, ' o3mr    = ', o3mr
 #endif

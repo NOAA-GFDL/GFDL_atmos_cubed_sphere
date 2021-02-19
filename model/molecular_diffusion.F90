@@ -157,7 +157,7 @@ module molecular_diffusion_mod
       real, intent(in):: plyr(dim), temp(dim), q(dim,*)
       real, intent(out):: mur(dim), lam(dim), d12(dim)
 ! Local:
-      integer i, n, spfo3, spfo, spfo2
+      integer i, n, spo3, spo, spo2
       real   am, fgas, a12bz, avgdbz
       real   qo,  qo2,  qo3,  qn2,  qh2o
       real   o_n, o2_n, o3_n, n2_n, h2o_n
@@ -166,11 +166,11 @@ module molecular_diffusion_mod
 !constants
       a12bz = a12 * bz
       avgdbz= avgd * bz
-      spfo3 = ind_gas_str
-      spfo  = spfo3 + 1
-      spfo2 = spfo  + 1
-      if( spfo.gt.ind_gas_end ) spfo=0
-      if( spfo2.gt.ind_gas_end ) spfo2=0
+      spo3  = ind_gas_str
+      spo   = spo3 + 1
+      spo2  = spo  + 1
+      if( spo.gt.ind_gas_end ) spo=0
+      if( spo2.gt.ind_gas_end ) spo2=0
 
       do n=1,dim
 !check
@@ -200,9 +200,9 @@ module molecular_diffusion_mod
         qo   = 0.0
         qo2  = 0.0
         qo3  = 0.0
-        if(spfo .ne.0) qo   = max(0.0,q(n,spfo ))*fgas
-        if(spfo2.ne.0) qo2  = max(0.0,q(n,spfo2))*fgas
-        if(spfo3.ne.0) qo3  = max(0.0,q(n,spfo3))*fgas
+        if(spo .ne.0) qo   = max(0.0,q(n,spo ))*fgas
+        if(spo2.ne.0) qo2  = max(0.0,q(n,spo2))*fgas
+        if(spo3.ne.0) qo3  = max(0.0,q(n,spo3))*fgas
         qn2 = 1.0 - qo - qo2 - qo3 - qh2o
 
 ! reasonable values assure
