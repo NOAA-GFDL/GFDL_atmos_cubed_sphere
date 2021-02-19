@@ -3,7 +3,7 @@ Cubed-sphere grid {#cube}
 
 ##Chapter 2
 
-Enhanced documentation coming in a future release (target date May 2021)
+GFDL will provide the additional documentation by the end of May 2021.
 
 (This information is a reproduction of Appendix A from PL07)
 

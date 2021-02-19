@@ -3,7 +3,7 @@ The vertical Lagrangian Solver {#lagrangian}
 
 ##Chapter 4 
 
-Enhanced documentation coming in a future release (target date May 2021)
+GFDL will provide the additional documentation by the end of May 2021.
 
 (This information is a reproduction of Sections 3 and 4 from HCZC20)
 

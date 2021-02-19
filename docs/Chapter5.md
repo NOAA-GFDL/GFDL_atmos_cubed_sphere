@@ -3,7 +3,7 @@ The horizontal discretization and Lagrangian Dynamics {#horizontal}
 
 ##Chapter 5 
 
-Enhanced documentation coming in a future release (target date May 2021)
+GFDL will provide the additional documentation by the end of May 2021.
 
 (This information is a reproduction of Section 5 from HCZC20)
 
