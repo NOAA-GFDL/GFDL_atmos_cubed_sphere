@@ -3,6 +3,8 @@ The Nonhydrostatic Solver {#solver}
 
 ##Chapter 6
 
+GFDL will provide the additional documentation by the end of May 2021.
+
 (This information is a reproduction of Section 6 from HCZC20)
 
 An equation for \f$z\f$ can be derived from the definition of \f$w\f$:
