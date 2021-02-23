@@ -105,10 +105,83 @@ module fv_moving_nest_mod
 contains
 
 
-  !!=====================================================================================                                   
+  subroutine permit_move_nest(Atm, parent_grid_num, child_grid_num, delta_i_c, delta_j_c, do_move)
+    type(fv_atmos_type), intent(in)   :: Atm(:)
+    integer, intent(in)               :: parent_grid_num, child_grid_num
+    integer, intent(inout)            :: delta_i_c, delta_j_c
+    logical, intent(inout)            :: do_move
+
+    !  Figure out the bounds of the cube face
+    
+    ! x parent bounds: 1 to Atm(parent_grid_num)%flagstruct%npx
+    ! y parent bounds: 1 to Atm(parent_grid_num)%flagstruct%npy
+
+    !  Figure out the bounds of the nest
+
+
+    ! x nest bounds: 1 to Atm(child_grid_num)%flagstruct%npx
+    ! y nest bounds: 1 to Atm(child_grid_num)%flagstruct%npy
+
+    ! Nest refinement: Atm(child_grid_num)%neststruct%refinement
+    ! Nest starting cell in x direction:  Atm(child_grid_num)%neststruct%ioffset
+    ! Nest starting cell in y direction:  Atm(child_grid_num)%neststruct%joffset
+
+    integer :: nest_i_c, nest_j_c
+    integer :: nis, nie, njs, nje
+    integer :: this_pe
+    this_pe = mpp_pe()
+
+    nest_i_c = ( Atm(child_grid_num)%flagstruct%npx - 1 ) / Atm(child_grid_num)%neststruct%refinement
+    nest_j_c = ( Atm(child_grid_num)%flagstruct%npy - 1 ) / Atm(child_grid_num)%neststruct%refinement
+
+    nis = Atm(child_grid_num)%neststruct%ioffset + delta_i_c
+    nie = Atm(child_grid_num)%neststruct%ioffset + nest_i_c + delta_i_c
+
+    njs = Atm(child_grid_num)%neststruct%joffset + delta_j_c
+    nje = Atm(child_grid_num)%neststruct%joffset + nest_j_c + delta_j_c
+
+
+    print '("[INFO] WDR permit_move_nest. npe=",I0," delta_i_c=",I0," nis=",I0," nie=",I0," npx=",I0)', this_pe, delta_i_c, nis, nie, Atm(parent_grid_num)%flagstruct%npx
+    print '("[INFO] WDR permit_move_nest. npe=",I0," delta_j_c=",I0," njs=",I0," nje=",I0," npy=",I0)', this_pe, delta_j_c, njs, nje, Atm(parent_grid_num)%flagstruct%npy
+
+
+    !  Will the nest motion push the nest over one of the edges?
+    !  Handle each direction individually, so that nest could slide along edge
+    !  Start out leaving one extra point at each edge 
+
+    ! Causes a crash if we use .le. 1
+    if (nis .le. 2) then
+       delta_i_c = 0
+       print '("[INFO] WDR permit_move_nest nis too small. npe=",I0," nis=",I0)', this_pe, nis
+    end if
+    if (njs .le. 2) then
+       delta_j_c = 0
+       print '("[INFO] WDR permit_move_nest njs too small. npe=",I0," njs=",I0)', this_pe, njs
+    end if
+
+    if (nie .ge. Atm(parent_grid_num)%flagstruct%npx - 1) then
+       delta_i_c = 0
+       print '("[INFO] WDR permit_move_nest nie too big. npe=",I0," nie=",I0)', this_pe, nie
+    end if
+    if (nje .ge. Atm(parent_grid_num)%flagstruct%npy - 1) then
+       delta_j_c = 0
+       print '("[INFO] WDR permit_move_nest nje too big. npe=",I0," nje=",I0)', this_pe, nje
+    end if
+
+    if (delta_i_c .eq. 0 .and. delta_j_c .eq. 0) then
+       do_move = .false.
+       print '("[INFO] WDR permit_move_nest BLOCKED. npe=",I0)', this_pe
+    else
+       print '("[INFO] WDR permit_move_nest PERMITTED. npe=",I0)', this_pe
+    end if
+
+  end subroutine permit_move_nest
+
+
+  !!===================================================================================== 
   !! Step 2 -- Fill the nest edge halos from parent grid before nest motion 
   !!            OR Refill the nest edge halos from parent grid after nest motion   
-  !!            Parent and nest PEs need to execute these subroutines                                                       
+  !!            Parent and nest PEs need to execute these subroutines
   !!=====================================================================================           
 
 
@@ -387,8 +460,10 @@ contains
     call mn_var_fill_intern_nest_halos(Atm%ua, domain_fine, is_fine_pe)
     call mn_var_fill_intern_nest_halos(Atm%va, domain_fine, is_fine_pe)
 
-    call check_array(Atm%u, this_pe, "Atm%u", -300.0, 300.0)
-    call check_array(Atm%v, this_pe, "Atm%v", -300.0, 300.0)
+    if (debug_log) then
+       call check_array(Atm%u, this_pe, "Atm%u", -300.0, 300.0)
+       call check_array(Atm%v, this_pe, "Atm%v", -300.0, 300.0)
+    end if
 
     call mn_var_fill_intern_nest_halos(Atm%u, Atm%v, domain_fine, is_fine_pe)
 
@@ -501,8 +576,9 @@ contains
     type(grid_geometry), intent(in)              :: fp_super_tile_geo
     real(kind=R_GRID), allocatable, intent(out)  :: p_grid(:,:,:), n_grid(:,:,:), p_grid_u(:,:,:), n_grid_u(:,:,:), p_grid_v(:,:,:), n_grid_v(:,:,:)
 
+    logical, save  :: first_nest_move = .true.
+    integer, save  :: p_istart_fine, p_iend_fine, p_jstart_fine, p_jend_fine
 
-    integer  :: p_istart_fine, p_iend_fine, p_jstart_fine, p_jend_fine
     integer  :: x, y, fp_i, fp_j
     integer  :: position, position_u, position_v
     integer  :: x_refine, y_refine 
@@ -530,11 +606,16 @@ contains
 
     write(res_str, '(I0)'), Atm(1)%npx - 1 
 
-    call load_nest_latlons_from_nc(trim(Atm(child_grid_num)%neststruct%surface_dir) //  '/C' // trim(res_str) //  '_grid.tile6.nc', &
-         Atm(1)%npx, Atm(1)%npy, 1, &
-         parent_geo, &
-         p_istart_fine, p_iend_fine, p_jstart_fine, p_jend_fine)
-
+    if (first_nest_move) then
+       print '("[INFO] WDR mn_latlon_load_parent READING static coarse file on npe=",I0)', this_pe
+       call load_nest_latlons_from_nc(trim(Atm(child_grid_num)%neststruct%surface_dir) //  '/C' // trim(res_str) //  '_grid.tile6.nc', &
+            Atm(1)%npx, Atm(1)%npy, 1, &
+            parent_geo, &
+            p_istart_fine, p_iend_fine, p_jstart_fine, p_jend_fine)
+       first_nest_move = .false.
+    else
+       print '("[INFO] WDR mn_latlon_load_parent SKIPPING static coarse file on npe=",I0)', this_pe
+    end if
 
     parent_geo%nxp = Atm(1)%npx
     parent_geo%nyp = Atm(1)%npy
@@ -542,10 +623,10 @@ contains
     parent_geo%nx = Atm(1)%npx - 1
     parent_geo%ny = Atm(1)%npy - 1
 
-
-    call show_tile_geo(parent_geo, this_pe, "parent_geo")
-    call show_atm_grids(Atm, n)
-
+    if (debug_log) then
+       call show_tile_geo(parent_geo, this_pe, "parent_geo")
+       call show_atm_grids(Atm, n)
+    end if
 
     ! Actually, is the nest in grid_global??
 
@@ -591,7 +672,7 @@ contains
        end do
     end do
 
-    call show_tile_geo(tile_geo, this_pe, "tile_geo")
+    if (debug_log) call show_tile_geo(tile_geo, this_pe, "tile_geo")
     call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
 
 
@@ -619,7 +700,7 @@ contains
        end do
     end do
 
-    call show_tile_geo(tile_geo_u, this_pe, "tile_geo_u")
+    if (debug_log) call show_tile_geo(tile_geo_u, this_pe, "tile_geo_u")
 
 
     ! Allocate tile_geo_v just for this PE, copied from Atm(n)%gridstruct%grid
@@ -646,7 +727,7 @@ contains
        end do
     end do
 
-    call show_tile_geo(tile_geo_v, this_pe, "tile_geo_v")
+    if (debug_log) call show_tile_geo(tile_geo_v, this_pe, "tile_geo_v")
 
 
     !===========================================================
@@ -1187,7 +1268,7 @@ contains
     joffset = Atm(child_grid_num)%neststruct%joffset
 
     ! Log the bounds of this PE's grid after nest motion.  TODO replace step 4 with timestep
-    if (is_fine_pe) then
+    if (is_fine_pe .and. debug_log) then
        call show_nest_grid(Atm(n), this_pe, 4)
     end if
 
@@ -1343,7 +1424,7 @@ contains
     !if (debug_log) print '("[INFO] WDR REINIT CW fv_moving_nest.F90. npe=",I0)', this_pe
 
     do nn = 1, size(Atm)
-       call show_atm("3", Atm(nn), nn, this_pe)
+       if (debug_log) call show_atm("3", Atm(nn), nn, this_pe)
     end do
 
 
@@ -1704,32 +1785,32 @@ contains
     !integer            :: position_u = NORTH
     !integer            :: position_v = EAST
 
-    call mn_var_dump_to_netcdf(Atm%pt   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
-         time_val, Atm%global_tile, file_prefix, "tempK")
-    call mn_var_dump_to_netcdf(Atm%delp , is_fine_pe, domain_coarse, domain_fine, position, nz, &
-         time_val, Atm%global_tile, file_prefix, "DELP")
-    call mn_var_dump_to_netcdf(Atm%delz , is_fine_pe, domain_coarse, domain_fine, position, nz, &
-         time_val, Atm%global_tile, file_prefix, "DELZ")
+    !call mn_var_dump_to_netcdf(Atm%pt   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
+    !     time_val, Atm%global_tile, file_prefix, "tempK")
+    !call mn_var_dump_to_netcdf(Atm%delp , is_fine_pe, domain_coarse, domain_fine, position, nz, &
+    !     time_val, Atm%global_tile, file_prefix, "DELP")
+    !call mn_var_dump_to_netcdf(Atm%delz , is_fine_pe, domain_coarse, domain_fine, position, nz, &
+    !     time_val, Atm%global_tile, file_prefix, "DELZ")
     call mn_var_dump_to_netcdf(Atm%q_con, is_fine_pe, domain_coarse, domain_fine, position, nz, &
          time_val, Atm%global_tile, file_prefix, "qcon")
 
-    call mn_var_dump_to_netcdf(Atm%w    , is_fine_pe, domain_coarse, domain_fine, position, nz, &
-         time_val, Atm%global_tile, file_prefix, "WWND")
-    call mn_var_dump_to_netcdf(Atm%ua   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
-         time_val, Atm%global_tile, file_prefix, "UA")
-    call mn_var_dump_to_netcdf(Atm%va   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
-         time_val, Atm%global_tile, file_prefix, "VA")
+    !call mn_var_dump_to_netcdf(Atm%w    , is_fine_pe, domain_coarse, domain_fine, position, nz, &
+    !     time_val, Atm%global_tile, file_prefix, "WWND")
+    !call mn_var_dump_to_netcdf(Atm%ua   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
+    !     time_val, Atm%global_tile, file_prefix, "UA")
+    !call mn_var_dump_to_netcdf(Atm%va   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
+    !     time_val, Atm%global_tile, file_prefix, "VA")
 
     call mn_var_dump_to_netcdf(Atm%ps   , is_fine_pe, domain_coarse, domain_fine, position, 1 , &
          time_val, Atm%global_tile, file_prefix, "PS")
 
-    ! TODO figure out what to do with ze0;  different bounds - only compute domain
+    !! TODO figure out what to do with ze0;  different bounds - only compute domain
 
-    ! TODO Wind worked fine when in its own file.  Can it merge in with the regular file??
-    !call mn_var_dump_to_netcdf(Atm%u, is_fine_pe, domain_coarse, domain_fine, position_u, nz, &
-    !     time_val, Atm%global_tile, "wxvarU", "UWND")
-    !call mn_var_dump_to_netcdf(Atm%v, is_fine_pe, domain_coarse, domain_fine, position_v, nz, &
-    !     time_val, Atm%global_tile, "wxvarU", "VWND")
+    !! TODO Wind worked fine when in its own file.  Can it merge in with the regular file??
+    !!call mn_var_dump_to_netcdf(Atm%u, is_fine_pe, domain_coarse, domain_fine, position_u, nz, &
+    !!     time_val, Atm%global_tile, "wxvarU", "UWND")
+    !!call mn_var_dump_to_netcdf(Atm%v, is_fine_pe, domain_coarse, domain_fine, position_v, nz, &
+    !!     time_val, Atm%global_tile, "wxvarU", "VWND")
 
 
 
@@ -1739,11 +1820,11 @@ contains
     call mn_var_dump_to_netcdf( Atm%gridstruct%agrid(:,:,1), is_fine_pe, domain_coarse, domain_fine, position, nz, &
          time_val, Atm%global_tile, file_prefix, "lonrad")
 
-    do n_moist = lbound(Atm%q, 4), ubound(Atm%q, 4)
-       call get_tracer_names(MODEL_ATMOS, n_moist, out_var_name)
-       call mn_var_dump_to_netcdf( Atm%q(:,:,:,n_moist), is_fine_pe, domain_coarse, domain_fine, position, nz, &
-            time_val, Atm%global_tile, file_prefix, trim(out_var_name))
-    end do
+    !do n_moist = lbound(Atm%q, 4), ubound(Atm%q, 4)
+    !   call get_tracer_names(MODEL_ATMOS, n_moist, out_var_name)
+    !   call mn_var_dump_to_netcdf( Atm%q(:,:,:,n_moist), is_fine_pe, domain_coarse, domain_fine, position, nz, &
+    !        time_val, Atm%global_tile, file_prefix, trim(out_var_name))
+    !end do
 
   end subroutine mn_prog_dump_to_netcdf
 
