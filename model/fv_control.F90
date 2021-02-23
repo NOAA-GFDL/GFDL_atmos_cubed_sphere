@@ -701,8 +701,8 @@ module fv_control_mod
         call mpp_set_current_pelist( global_pelist )
         !Except for npes_nest_tile all arrays should be just the nests and should NOT include the top level
 
-        print '("[INFO] WDR tile_coarse fv_control.F90 npe=",I0," tile_coarse(",I0,"-",I0") ngrids=",I0," tile_coarse(1)=",I0," tile_coarse(2)=",I0)', mpp_pe(), &
-           lbound(tile_coarse,1), ubound(tile_coarse,1), ngrids, tile_coarse(1), tile_coarse(2)
+        !print '("[INFO] WDR tile_coarse fv_control.F90 npe=",I0," tile_coarse(",I0,"-",I0") ngrids=",I0," tile_coarse(1)=",I0," tile_coarse(2)=",I0)', mpp_pe(), &
+        !          lbound(tile_coarse,1), ubound(tile_coarse,1), ngrids, tile_coarse(1), tile_coarse(2)
 
 
         call mpp_define_nest_domains(global_nest_domain, Atm(this_grid)%domain, &
