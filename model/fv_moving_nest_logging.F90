@@ -675,8 +675,8 @@ contains
     call check_2d_array(gridstruct%rarea, this_pe, "SG gridstruct%rarea", 0.0, 1.0e12)
     call check_2d_array(gridstruct%rarea_c, this_pe, "SG gridstruct%rarea_c", 0.0, 1.0e12)
 
-    call check_2d_array(gridstruct%sina, this_pe, "SG gridstruct%sina",  0.0, 1.0e12)
-    call check_2d_array(gridstruct%cosa, this_pe, "SG gridstruct%cosa",  0.0, 1.0e12)
+    call check_2d_array(gridstruct%sina, this_pe, "SG gridstruct%sina",  -1.0, 1.0)
+    call check_2d_array(gridstruct%cosa, this_pe, "SG gridstruct%cosa", -1.0, 1.0)
 
     call check_2d_array(gridstruct%dx, this_pe, "SG gridstruct%dx", 0.0, 1.0e12)
     call check_2d_array(gridstruct%dy, this_pe, "SG gridstruct%dy", 0.0, 1.0e12)
