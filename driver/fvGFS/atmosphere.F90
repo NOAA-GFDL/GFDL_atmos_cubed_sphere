@@ -244,6 +244,10 @@ use fv_moving_nest_mod,         only: mn_meta_move_nest, mn_meta_recalc, mn_meta
 use fv_moving_nest_mod,         only: mn_latlon_read_hires_parent, mn_latlon_load_parent
 use fv_moving_nest_utils_mod,   only: load_nest_latlons_from_nc
 
+!      Bounds checking routines
+use fv_moving_nest_mod,         only: permit_move_nest
+
+
 !      Grid reset routines
 use fv_moving_nest_mod,         only: grid_geometry, assign_n_p_grids, move_nest_geo
 use fv_moving_nest_utils_mod,   only: fill_grid_from_supergrid, fill_weight_grid
@@ -332,6 +336,7 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
 
   logical :: first_diag = .true.
 
+  # Moving Nest diagnostics
   logical :: debug_log = .false.
   logical :: tsvar_out = .true.
   logical :: wxvar_out = .false.
@@ -654,7 +659,8 @@ contains
    integer, intent(out)              :: delta_i_c, delta_j_c
    
    logical, save :: first_time = .true.
-
+   integer       :: move_incr
+   
    ! On the tropical channel configuration, tile 6 numbering starts at 0,0 off the coast of Spain
    !  delta_i_c = +1 is westward
    !  delta_i_c = -1 is eastward
@@ -663,12 +669,22 @@ contains
    !  delta_j_c = -1 is northward
 
    !if (first_time) then
-   if (a_step .eq. 1 .or. mod(a_step,10) .eq. 0) then
+
+   if (dt_atmos < 100) then
+      move_incr = 20
+   else
+      move_incr = 5
+   end if
+
+   !move_incr = 1
+
+
+   if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
       do_move = .true.
       delta_i_c = 1
       delta_j_c = 0
       first_time = .false.
-   else if (mod(a_step,5) .eq. 0) then
+   else if (mod(a_step,move_incr) .eq. 0) then
       do_move = .true.
       delta_i_c = 0
       delta_j_c = -1
@@ -729,12 +745,17 @@ contains
    integer  :: istart_coarse, iend_coarse, jstart_coarse, jend_coarse
 
    integer  :: nx, ny, nz, nx_cubic, ny_cubic
-   integer  :: fp_super_istart_fine, fp_super_jstart_fine,fp_super_iend_fine, fp_super_jend_fine
    integer  :: p_istart_fine, p_iend_fine, p_jstart_fine, p_jend_fine
 
    integer  :: nest_num, child_grid_num, parent_grid_num, parent_tile
 
-   type(grid_geometry)              :: tile_geo, parent_geo, fp_super_tile_geo, tile_geo_u, tile_geo_v
+   ! Parent tile data, saved between timesteps
+   logical, save                          :: first_nest_move = .true.
+   type(grid_geometry), save              :: parent_geo
+   type(grid_geometry), save              :: fp_super_tile_geo
+   integer, save      :: fp_super_istart_fine, fp_super_jstart_fine,fp_super_iend_fine, fp_super_jend_fine
+
+   type(grid_geometry)              :: tile_geo, tile_geo_u, tile_geo_v
    real(kind=R_GRID), allocatable   :: p_grid(:,:,:), n_grid(:,:,:)
    real(kind=R_GRID), allocatable   :: p_grid_u(:,:,:), n_grid_u(:,:,:)
    real(kind=R_GRID), allocatable   :: p_grid_v(:,:,:), n_grid_v(:,:,:)
@@ -749,6 +770,7 @@ contains
    logical :: found_nest_domain = .false.
    
    ! Variables to enable debugging use of mpp_sync
+   logical              :: debug_sync = .false.
    integer, allocatable :: full_pelist(:)
    integer              :: pp, p1, p2 
    
@@ -825,6 +847,12 @@ contains
 
     if (is_moving_nest) then
        call eval_move_nest(Atm, a_step, do_move, delta_i_c, delta_j_c)
+       if (do_move) then
+          ! Verifies if nest motion is permitted
+          ! If nest would cross the cube face edge, do_move is reset to .false. and delta_i_c, delta_j_c are set to 0
+          call permit_move_nest(Atm, parent_grid_num, child_grid_num, delta_i_c, delta_j_c, do_move)
+       
+       end if       
     end if
 
     !! This tile is 1-6 for the global tiles, 7 for nest 1, 8 for nest 2, etc.
@@ -836,16 +864,19 @@ contains
 
     is_fine_pe = Atm(n)%neststruct%nested .and. ANY(Atm(n)%pelist(:) == this_pe)
     
-    if (is_fine_pe) then
-       print '("[INFO] WDR move_nest FINE. npe=",I0, " ", I2.2, " ", I2.2," do_move=",L1," delta_i_c=",I0," delta_j_c=",I0)', this_pe, n, this_tile, do_move, delta_i_c, delta_j_c
-    else
-       print '("[INFO] WDR move_nest COARSE. npe=",I0, " ", I2.2, " ", I2.2)', this_pe, n, this_tile
-    end if
+    if (debug_log) then
+       if (is_fine_pe) then
+          print '("[INFO] WDR move_nest FINE. npe=",I0, " ", I2.2, " ", I2.2," do_move=",L1," delta_i_c=",I0," delta_j_c=",I0)', this_pe, n, this_tile, do_move, delta_i_c, delta_j_c
+       else
+          print '("[INFO] WDR move_nest COARSE. npe=",I0, " ", I2.2, " ", I2.2)', this_pe, n, this_tile
+       end if
 
-    do nn = 1, size(Atm)
-       call show_atm("1", Atm(nn), nn, this_pe)
-    end do
-    if (debug_log) print '("[INFO] WDR diag Atm DONE npe=",I0," Atm(",I0,") this_tile=",I0)', this_pe, n, this_tile
+       do nn = 1, size(Atm)
+          call show_atm("1", Atm(nn), nn, this_pe)
+       end do
+       print '("[INFO] WDR diag Atm DONE npe=",I0," Atm(",I0,") this_tile=",I0)', this_pe, n, this_tile
+    end if
+       
 
     if (a_step .eq. 1) then
        if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step-1, "tsvar", is_fine_pe, domain_coarse, domain_fine, nz)
@@ -859,10 +890,9 @@ contains
        !! Step 1.1 -- Show the nest grids
        !!================================================================
 
-       
-       call show_nest_grid(Atm(n), this_pe, 0)
-
-       if (debug_log) then
+       !if (debug_log) then
+       if (this_pe .eq. 0) then
+          !call show_nest_grid(Atm(n), this_pe, 0)
           print '("[INFO] WDR BD init atmosphere.F90 npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, Atm(n)%bd%is,  Atm(n)%bd%ie,  Atm(n)%bd%js,  Atm(n)%bd%je
           print '("[INFO] WDR BD init atmosphere.F90 npe=",I0," isd=",I0," ied=",I0," jsd=",I0," jed=",I0)', this_pe, Atm(n)%bd%isd,  Atm(n)%bd%ied,  Atm(n)%bd%jsd,  Atm(n)%bd%jed
           print '("[INFO] WDR BD init atmosphere.F90 npe=",I0," isc=",I0," iec=",I0," jsc=",I0," jec=",I0)', this_pe, Atm(n)%bd%isc,  Atm(n)%bd%iec,  Atm(n)%bd%jsc, Atm(n)%bd%jec
@@ -947,10 +977,12 @@ contains
        !! Step 1.4 -- Read in the full panel grid definition
        !!============================================================================
 
-       if (debug_log) print '("[INFO] WDR check grid_global atmosphere.F90 npe=",I0," n=",I0)', this_pe, 1
-       call check_array(Atm(1)%grid_global, this_pe, "grid_global", -2.0*3.1415926536, 2.0*3.1415926536)
-       if (debug_log) print '("[INFO] WDR check grid_global atmosphere.F90 npe=",I0," n=",I0)', this_pe, 2
-       call check_array(Atm(2)%grid_global, this_pe, "grid_global", -2.0*3.1415926536, 2.0*3.1415926536)
+       if (debug_log) then
+          print '("[INFO] WDR check grid_global atmosphere.F90 npe=",I0," n=",I0)', this_pe, 1
+          call check_array(Atm(1)%grid_global, this_pe, "grid_global", -2.0*3.1415926536, 2.0*3.1415926536)
+          print '("[INFO] WDR check grid_global atmosphere.F90 npe=",I0," n=",I0)', this_pe, 2
+          call check_array(Atm(2)%grid_global, this_pe, "grid_global", -2.0*3.1415926536, 2.0*3.1415926536)
+       end if
 
        if (is_fine_pe) then
 
@@ -968,16 +1000,24 @@ contains
           ! Read in static lat/lon data for parent at nest resolution; returns fp_ full panel variables
           ! TODO - consider running only once during model initialization      
 
-          call mn_latlon_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, fp_super_tile_geo, &
-               fp_super_istart_fine, fp_super_iend_fine, fp_super_jstart_fine, fp_super_jend_fine, &
-               Atm(child_grid_num)%neststruct%surface_dir)
-          
-          !  Validation/logging calls that can be disabled
-          call show_tile_geo(fp_super_tile_geo, this_pe, "fp_super_tile_geo")
-          call show_gridstruct(Atm(n)%gridstruct, this_pe)
-          !call validate_hires_parent(fp_super_tile_geo, Atm(n)%gridstruct%grid, Atm(n)%gridstruct%agrid, &
-          !     x_refine, y_refine, ioffset, joffset)
+          if (first_nest_move) then
+             print '("[INFO] WDR mn_latlon_read_hires_parent READING static fine file on npe=",I0)', this_pe
 
+             call mn_latlon_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, fp_super_tile_geo, &
+                  fp_super_istart_fine, fp_super_iend_fine, fp_super_jstart_fine, fp_super_jend_fine, &
+                  Atm(child_grid_num)%neststruct%surface_dir)
+             first_nest_move = .false.
+          else
+             print '("[INFO] WDR mn_latlon_read_hires_parent SKIPPING static fine file on npe=",I0)', this_pe
+          end if
+
+          !  Validation/logging calls that can be disabled
+          if (debug_log) then
+             call show_tile_geo(fp_super_tile_geo, this_pe, "fp_super_tile_geo")
+             call show_gridstruct(Atm(n)%gridstruct, this_pe)
+             !call validate_hires_parent(fp_super_tile_geo, Atm(n)%gridstruct%grid, Atm(n)%gridstruct%agrid, &
+             !     x_refine, y_refine, ioffset, joffset)
+          end if
        end if
 
 
@@ -1015,7 +1055,7 @@ contains
        ioffset = ioffset + delta_i_c
        joffset = joffset + delta_j_c
 
-       call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
+       if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
        !!============================================================================
        !! Step 4  -- Fill the internal nest halos for the prognostic variables, 
@@ -1035,7 +1075,7 @@ contains
           if (debug_log) print '("[INFO] WDR MV_NST4 skip step 4 atmosphere.F90 npe=",I0)', this_pe
        end if
 
-       call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
+       if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
        !!============================================================================
        !! Step 5  --  Recalculate nest halo weights (for fine PEs only) and indices
@@ -1052,6 +1092,7 @@ contains
           if (debug_log) print '("[INFO] WDR MV_NST5 run step 5 atmosphere.F90 npe=",I0, " tile_geo%lats allocated:",L1)', this_pe, allocated(tile_geo%lats)
           if (debug_log) print '("[INFO] WDR MV_NST5 run step 5 atmosphere.F90 npe=",I0, " parent_geo%lats allocated:",L1)', this_pe, allocated(parent_geo%lats)
 
+          ! parent_geo is only loaded first time; afterwards it is reused.
           call mn_latlon_load_parent(Atm, n, delta_i_c, delta_j_c, child_grid_num, &
                parent_geo, tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, &
                p_grid, n_grid, p_grid_u, n_grid_u, p_grid_v, n_grid_v)
@@ -1080,7 +1121,7 @@ contains
        call mn_shift_index(delta_i_c, delta_j_c, Atm(child_grid_num)%neststruct%ind_v)
        call mn_shift_index(delta_i_c, delta_j_c, Atm(child_grid_num)%neststruct%ind_b)
 
-       call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
+       if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
        !!============================================================================
        !! Step 6   Shift the data on each nest PE 
@@ -1100,7 +1141,7 @@ contains
 
        if (debug_log) print '("[INFO] WDR MV_NST6 complete step 6 atmosphere.F90 npe=",I0)', this_pe
 
-       call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
+       if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
        !!=====================================================================================
        !! Step 7 --  Reset the grid definition data and buffer sizes and weights after the nest motion
@@ -1127,7 +1168,7 @@ contains
           call mn_phys_fill_intern_nest_halos(Atm(n), domain_fine, is_fine_pe)
        end if
 
-       call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
+       if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
        !!============================================================================
        !!  Step 8 -- Dump to netCDF 
@@ -1139,7 +1180,7 @@ contains
        if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
        output_step = output_step + 1
 
-       call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
+       if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
        !!=========================================================================================
        !! Step 9 -- Perform vertical remapping on nest(s) and recalculate auxiliary pressures
@@ -1216,7 +1257,7 @@ contains
 
        end if
 
-       call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
+       if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
        !! Uncomment to exit and force file IO after single nest move, without dynamics
        !    call fms_io_exit()   !! Force the output of the buffered NC files
@@ -1227,8 +1268,8 @@ contains
     else
        if (debug_log) print '("[INFO] WDR move_nest not nested PE  npe=",I0)', this_pe
     end if
-
-    call show_nest_grid(Atm(n), this_pe, 99)
+    
+    if (debug_log) call show_nest_grid(Atm(n), this_pe, 99)
 
 !===== End moving nest functionality
 #endif ! MOVING_NEST
@@ -1279,14 +1320,16 @@ contains
       end if
 
 
-      if (a_step .lt. 10 .or. mod(a_step, 10) .eq. 0) then
+      !if (a_step .lt. 10 .or. mod(a_step, 10) .eq. 0) then
+      if (mod(a_step, 400) .eq. 0) then
          if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step, "tsvar", is_fine_pe, domain_coarse, domain_fine, nz)
       endif
 
       call date_and_time(TIME=str_time)
-      print '("[INFO] WDR TIMESTEP atmosphere.F90 npe=",I0," a_step=",I0," time=",A12)', this_pe, a_step, str_time
       
-      if (a_step .eq. 241) then
+      if (this_pe .eq. 0) print '("[INFO] WDR TIMESTEP atmosphere.F90 npe=",I0," a_step=",I0," fcst_hr=",F8.2," time=",A12)', this_pe, a_step, a_step * dt_atmos / 3600.0, str_time
+      
+      if (tsvar_out .and. a_step .eq. 4800) then
          call fms_io_exit()   !! Force the output of the buffered NC files
          print '("[INFO] WDR calling mpp_exit after moving nest atmosphere.F90 npe=",I0)', this_pe
          call fv_io_exit()
