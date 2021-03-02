@@ -128,10 +128,21 @@ contains
     ! Nest starting cell in x direction:  Atm(child_grid_num)%neststruct%ioffset
     ! Nest starting cell in y direction:  Atm(child_grid_num)%neststruct%joffset
 
-    integer :: nest_i_c, nest_j_c
-    integer :: nis, nie, njs, nje
-    integer :: this_pe
+    integer      :: nest_i_c, nest_j_c
+    integer      :: nis, nie, njs, nje
+    integer      :: this_pe
+    logical,save :: block_moves = .false.
+    integer      :: edge_buffer = 5
+
     this_pe = mpp_pe()
+
+    if (block_moves) then
+       delta_i_c = 0 
+       delta_j_c = 0
+       do_move = .false.
+       print '("[INFO] WDR permit_move_nest BLOCKED for rest of run. npe=",I0)', this_pe
+       return
+    end if
 
     nest_i_c = ( Atm(child_grid_num)%flagstruct%npx - 1 ) / Atm(child_grid_num)%neststruct%refinement
     nest_j_c = ( Atm(child_grid_num)%flagstruct%npy - 1 ) / Atm(child_grid_num)%neststruct%refinement
@@ -149,24 +160,28 @@ contains
 
     !  Will the nest motion push the nest over one of the edges?
     !  Handle each direction individually, so that nest could slide along edge
-    !  Start out leaving one extra point at each edge 
+    !  Started out leaving one extra point at each edge; adjusted to using edge_buffer=5 for safety
 
     ! Causes a crash if we use .le. 1
-    if (nis .le. 2) then
+    if (nis .le. edge_buffer) then
        delta_i_c = 0
+       block_moves = .true.
        print '("[INFO] WDR permit_move_nest nis too small. npe=",I0," nis=",I0)', this_pe, nis
     end if
-    if (njs .le. 2) then
+    if (njs .le. edge_buffer) then
        delta_j_c = 0
+       block_moves = .true.
        print '("[INFO] WDR permit_move_nest njs too small. npe=",I0," njs=",I0)', this_pe, njs
     end if
 
-    if (nie .ge. Atm(parent_grid_num)%flagstruct%npx - 1) then
+    if (nie .ge. Atm(parent_grid_num)%flagstruct%npx - edge_buffer) then
        delta_i_c = 0
+       block_moves = .true.
        print '("[INFO] WDR permit_move_nest nie too big. npe=",I0," nie=",I0)', this_pe, nie
     end if
-    if (nje .ge. Atm(parent_grid_num)%flagstruct%npy - 1) then
+    if (nje .ge. Atm(parent_grid_num)%flagstruct%npy - edge_buffer) then
        delta_j_c = 0
+       block_moves = .true.
        print '("[INFO] WDR permit_move_nest nje too big. npe=",I0," nje=",I0)', this_pe, nje
     end if
 
