@@ -76,6 +76,8 @@ module fv_moving_nest_mod
   real, parameter:: real_snan=x'FFF7FFFFFFFFFFFF'
 #endif
 
+  real, allocatable ::  delz_local(:,:,:)    !< layer thickness (meters)
+
   logical :: debug_log = .false.
 
 
@@ -177,6 +179,135 @@ contains
 
   end subroutine permit_move_nest
 
+  !!===================================================================================== 
+  !! Step 1.9 -- Allocate and fill the temporary variable(s)
+  !!            This is to manage variables that are not allocated with a halo
+  !!            on the Atm structure
+  !!=====================================================================================           
+
+
+  subroutine mn_prog_fill_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
+    type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
+    integer, intent(in)                              :: n, child_grid_num
+    logical, intent(in)                              :: is_fine_pe
+    integer, intent(in)                              :: npz
+
+    !allocate ( Atm%delz(is:ie, js:je  ,npz) )
+    !Atm%delz(i,j,k) = real_big
+
+    integer :: isd, ied, jsd, jed
+    integer :: is, ie, js, je
+    integer :: this_pe
+
+    this_pe = mpp_pe()
+
+
+    if (debug_log) print '("[INFO] WDR start mn_prog_fill_temp_variables. npe=",I0," n=",I0)', this_pe, n
+
+    isd = Atm(n)%bd%isd
+    ied = Atm(n)%bd%ied
+    jsd = Atm(n)%bd%jsd
+    jed = Atm(n)%bd%jed
+    
+    if (debug_log) print '("[INFO] WDR mn_prog_fill_temp_variables. npe=",I0," isd=",I0," ied=",I0," jsd=",I0," jed=",I0)', this_pe, isd, ied, jsd, jed
+
+    is = Atm(n)%bd%is
+    ie = Atm(n)%bd%ie
+    js = Atm(n)%bd%js
+    je = Atm(n)%bd%je
+    
+    if (debug_log) print '("[INFO] WDR mn_prog_fill_temp_variables. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
+    
+    allocate ( delz_local(isd:ied, jsd:jed  ,npz) )
+    delz_local = +99999.9
+    
+    delz_local(is:ie, js:je, 1:npz) =  Atm(n)%delz(is:ie, js:je, 1:npz) 
+
+    if (debug_log) print '("[INFO] WDR Z mn_prog_fill_temp_variables. npe=",I0," npz=",I0," ",I0," ",I0)', this_pe, npz, lbound(Atm(n)%delz,3), ubound(Atm(n)%delz,3)
+
+    if (debug_log) print '("[INFO] WDR end mn_prog_fill_temp_variables. npe=",I0," n=",I0)', this_pe, n
+
+    
+  end subroutine mn_prog_fill_temp_variables
+
+  subroutine mn_prog_apply_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
+    type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
+    integer, intent(in)                              :: n, child_grid_num
+    logical, intent(in)                              :: is_fine_pe
+    integer, intent(in)                              :: npz
+
+    integer :: is, ie, js, je
+    integer :: this_pe
+    integer :: i,j,k
+    integer :: bad_values, good_values
+
+    this_pe = mpp_pe()
+
+    if (debug_log) print '("[INFO] WDR start mn_prog_apply_temp_variables. npe=",I0," n=",I0)', this_pe, n
+    
+    ! Check if the variables were filled in properly.
+    
+    if (debug_log) then
+       good_values = 0
+       bad_values = 0
+       
+       if (is_fine_pe) then
+          do i = Atm(n)%bd%isd, Atm(n)%bd%ied
+             do j = Atm(n)%bd%jsd, Atm(n)%bd%jed
+                do k = 1, npz
+                   if (delz_local(i,j,k) .gt. 20000.0) then
+                      print '("[WARN] WDR BAD NEST delz_local value. npe=",I0," delz_local(",I0,",",I0,",",I0,")=",F12.3)', this_pe, i, j, k, delz_local(i,j,k)
+                      bad_values = bad_values + 1
+                   else
+                      good_values = good_values + 1
+                   end if
+                end do
+             end do
+          end do
+       else
+          do i = Atm(n)%bd%is, Atm(n)%bd%ie
+             do j = Atm(n)%bd%js, Atm(n)%bd%je
+                do k = 1, npz
+                   if (delz_local(i,j,k) .gt. 20000.0) then
+                      print '("[WARN] WDR BAD GLOBAL delz_local value. npe=",I0," delz_local(",I0,",",I0,",",I0,")=",F12.3)', this_pe, i, j, k, delz_local(i,j,k)
+                      bad_values = bad_values + 1
+                   else
+                      good_values = good_values + 1
+                   end if
+                end do
+             end do
+          end do
+       end if
+       
+
+       i = Atm(n)%bd%is
+       j = Atm(n)%bd%js
+       k = npz
+       
+       print '("[WARN] WDR Surface delz_local value. npe=",I0," delz_local(",I0,",",I0,",",I0,")=",F18.3)', this_pe, i, j, k, delz_local(i,j,k)
+
+       print '("INFO] WDR delz_local values. npe=",I0," good_values=",I0," bad_values=",I0)', this_pe, good_values, bad_values
+    end if
+       
+
+    if (is_fine_pe) then
+       is = Atm(n)%bd%is
+       ie = Atm(n)%bd%ie
+       js = Atm(n)%bd%js
+       je = Atm(n)%bd%je
+
+       if (debug_log) print '("[INFO] WDR mn_prog_apply_temp_variables. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
+
+
+       Atm(n)%delz(is:ie, js:je, 1:npz) =  delz_local(is:ie, js:je, 1:npz) 
+    end if
+
+    deallocate(delz_local)
+
+    if (debug_log) print '("[INFO] WDR end mn_prog_apply_temp_variables. npe=",I0," n=",I0)', this_pe, n
+
+  end subroutine mn_prog_apply_temp_variables
+
 
   !!===================================================================================== 
   !! Step 2 -- Fill the nest edge halos from parent grid before nest motion 
@@ -241,6 +372,12 @@ contains
     !     Atm(child_grid_num)%neststruct%ind_h, &
     !     x_refine, y_refine, &
     !     is_fine_pe, nest_domain, position, nz)
+
+    call fill_nest_halos_from_parent("delz", delz_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+         Atm(child_grid_num)%neststruct%ind_h, &
+         x_refine, y_refine, &
+         is_fine_pe, nest_domain, position, nz)
+
 
     call fill_nest_halos_from_parent("q", Atm(n)%q, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
          Atm(child_grid_num)%neststruct%ind_h, &
@@ -456,6 +593,7 @@ contains
     !call mn_var_fill_intern_nest_halos(Atm%omga, domain_fine, is_fine_pe)
     call mn_var_fill_intern_nest_halos(Atm%delp, domain_fine, is_fine_pe)
     !call mn_var_fill_intern_nest_halos(Atm%delz, domain_fine, is_fine_pe)
+    call mn_var_fill_intern_nest_halos(delz_local, domain_fine, is_fine_pe)
 
     call mn_var_fill_intern_nest_halos(Atm%ua, domain_fine, is_fine_pe)
     call mn_var_fill_intern_nest_halos(Atm%va, domain_fine, is_fine_pe)
@@ -924,6 +1062,11 @@ contains
     !     delta_i_c, delta_j_c, &
     !     x_refine, y_refine, &
     !     is_fine_pe, nest_domain, position, nz)
+
+    call mn_var_shift_data(delz_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+         delta_i_c, delta_j_c, &
+         x_refine, y_refine, &
+         is_fine_pe, nest_domain, position, nz)
 
 
     call mn_var_shift_data(Atm(n)%ua, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
@@ -1789,8 +1932,8 @@ contains
     !     time_val, Atm%global_tile, file_prefix, "tempK")
     !call mn_var_dump_to_netcdf(Atm%delp , is_fine_pe, domain_coarse, domain_fine, position, nz, &
     !     time_val, Atm%global_tile, file_prefix, "DELP")
-    !call mn_var_dump_to_netcdf(Atm%delz , is_fine_pe, domain_coarse, domain_fine, position, nz, &
-    !     time_val, Atm%global_tile, file_prefix, "DELZ")
+    call mn_var_dump_to_netcdf(Atm%delz , is_fine_pe, domain_coarse, domain_fine, position, nz, &
+         time_val, Atm%global_tile, file_prefix, "DELZ")
     call mn_var_dump_to_netcdf(Atm%q_con, is_fine_pe, domain_coarse, domain_fine, position, nz, &
          time_val, Atm%global_tile, file_prefix, "qcon")
 
@@ -2784,10 +2927,10 @@ contains
   subroutine calc_nest_halo_weights(bbox_fine, bbox_coarse, p_grid, n_grid, wt, istart_coarse, jstart_coarse, x_refine, y_refine)
     implicit none
 
-    type(bbox), intent(in)               :: bbox_coarse, bbox_fine
-    real(kind=R_GRID), allocatable, intent(in)        :: p_grid(:,:,:), n_grid(:,:,:)
-    real, allocatable, intent(inout)     :: wt(:,:,:)
-    integer, intent(in)                  :: istart_coarse, jstart_coarse, x_refine, y_refine
+    type(bbox), intent(in)                       :: bbox_coarse, bbox_fine
+    real(kind=R_GRID), allocatable, intent(in)   :: p_grid(:,:,:), n_grid(:,:,:)
+    real, allocatable, intent(inout)             :: wt(:,:,:)
+    integer, intent(in)                          :: istart_coarse, jstart_coarse, x_refine, y_refine
 
 
     integer       :: i,j, ic, jc
@@ -2797,9 +2940,9 @@ contains
 
     integer       :: this_pe
 
-    real(kind=R_GRID) :: pi = 4 * atan(1.0d0)
-    real                :: pi180
-    real                :: rad2deg, deg2rad
+    real(kind=R_GRID)  :: pi = 4 * atan(1.0d0)
+    real               :: pi180
+    real               :: rad2deg, deg2rad
 
     pi180 = pi / 180.0
     deg2rad = pi / 180.0

@@ -1,4 +1,3 @@
-
 !***********************************************************************
 !*                   GNU Lesser General Public License                 
 !*
@@ -239,6 +238,9 @@ use fv_moving_nest_mod,         only: mn_phys_fill_intern_nest_halos, mn_phys_fi
 
 !      Metadata routines
 use fv_moving_nest_mod,         only: mn_meta_move_nest, mn_meta_recalc, mn_meta_reset_gridstruct, mn_shift_index
+
+!      Temporary variable routines (delz)
+use fv_moving_nest_mod,         only: mn_prog_fill_temp_variables, mn_prog_apply_temp_variables
 
 !      Load static datasets
 use fv_moving_nest_mod,         only: mn_latlon_read_hires_parent, mn_latlon_load_parent
@@ -668,16 +670,15 @@ contains
    !  delta_j_c = +1 is southward
    !  delta_j_c = -1 is northward
 
-   !if (first_time) then
-
-   if (dt_atmos < 100) then
-      move_incr = 20
+   if (dt_atmos > 100) then
+      ! move once every 40 timesteps for 300s = 3 hours 20 minutes; appropriate for C96
+      move_incr = 40
    else
-      move_incr = 5
+      ! move once every 20 timesteps for 90s = 30 minutes; appropriate for C768
+      move_incr = 20
    end if
 
    !move_incr = 1
-
 
    if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
       do_move = .true.
@@ -1020,12 +1021,18 @@ contains
           end if
        end if
 
+       !!=====================================================================================           
+       !! Step 1.9 -- Allocate and fill the temporary variable(s)                                              
+       !!=====================================================================================           
+
+       call mn_prog_fill_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
 
        !!============================================================================
        !! Step 2 -- Fill in the halos from the coarse grids
        !!============================================================================
        if (debug_log) print '("WDR_NEST_HALO_RECV,",I0,"===STEP 2====")', this_pe
        if (debug_log) print '("[INFO] WDR MV_NST2 run step 2 atmosphere.F90 npe=",I0)', this_pe
+
 
        !  The halos seem to be empty at least on the first model timestep.
        !  These calls need to be executed by the parent and nest PEs in order to do the communication
@@ -1169,6 +1176,13 @@ contains
        end if
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
+
+
+       !!=====================================================================================           
+       !! Step 7.9 -- Allocate and fill the temporary variable(s)                                              
+       !!=====================================================================================           
+
+       call mn_prog_apply_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
 
        !!============================================================================
        !!  Step 8 -- Dump to netCDF 
@@ -1329,14 +1343,15 @@ contains
       
       if (this_pe .eq. 0) print '("[INFO] WDR TIMESTEP atmosphere.F90 npe=",I0," a_step=",I0," fcst_hr=",F8.2," time=",A12)', this_pe, a_step, a_step * dt_atmos / 3600.0, str_time
       
-      if (tsvar_out .and. a_step .eq. 4800) then
-         call fms_io_exit()   !! Force the output of the buffered NC files
-         print '("[INFO] WDR calling mpp_exit after moving nest atmosphere.F90 npe=",I0)', this_pe
-         call fv_io_exit()
-         call mpp_exit()
-         print '("[INFO] WDR calling STOP after moving nest atmosphere.F90 npe=",I0)', this_pe
-         stop
-      end if
+      !! Re-enable to output buffered NC files early in a run.
+      !if (tsvar_out .and. a_step .eq. 4800) then
+      !   call fms_io_exit()   !! Force the output of the buffered NC files
+      !   print '("[INFO] WDR calling mpp_exit after moving nest atmosphere.F90 npe=",I0)', this_pe
+      !   call fv_io_exit()
+      !   call mpp_exit()
+      !   print '("[INFO] WDR calling STOP after moving nest atmosphere.F90 npe=",I0)', this_pe
+      !   stop
+      !end if
 
       !! WDR End code      
 #endif ! MOVING_NEST
