@@ -1158,7 +1158,7 @@ contains
        if (debug_log) print '("WDR_NEST_HALO_RECV,",I0,"===STEP 7====")', this_pe
        if (debug_log) print '("[INFO] WDR MV_NST7 run step 7 atmosphere.F90 npe=",I0," n=",I0)', this_pe, n
 
-       call mn_meta_reset_gridstruct(Atm, n, child_grid_num, global_nest_domain, fp_super_tile_geo, x_refine, y_refine, is_fine_pe, wt_h, wt_u, wt_v)
+       call mn_meta_reset_gridstruct(Atm, n, child_grid_num, global_nest_domain, fp_super_tile_geo, x_refine, y_refine, is_fine_pe, wt_h, wt_u, wt_v, a_step, dt_atmos)
 
        !!=====================================================================================
        !! Step 7.1   Refill the nest edge halos from parent grid after nest motion

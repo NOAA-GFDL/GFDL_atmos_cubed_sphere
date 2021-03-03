@@ -140,7 +140,7 @@ contains
        delta_i_c = 0 
        delta_j_c = 0
        do_move = .false.
-       print '("[INFO] WDR permit_move_nest BLOCKED for rest of run. npe=",I0)', this_pe
+       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest MOVE NEST BLOCKED for rest of run. npe=",I0)', this_pe
        return
     end if
 
@@ -154,8 +154,8 @@ contains
     nje = Atm(child_grid_num)%neststruct%joffset + nest_j_c + delta_j_c
 
 
-    print '("[INFO] WDR permit_move_nest. npe=",I0," delta_i_c=",I0," nis=",I0," nie=",I0," npx=",I0)', this_pe, delta_i_c, nis, nie, Atm(parent_grid_num)%flagstruct%npx
-    print '("[INFO] WDR permit_move_nest. npe=",I0," delta_j_c=",I0," njs=",I0," nje=",I0," npy=",I0)', this_pe, delta_j_c, njs, nje, Atm(parent_grid_num)%flagstruct%npy
+    if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest. npe=",I0," delta_i_c=",I0," nis=",I0," nie=",I0," npx=",I0)', this_pe, delta_i_c, nis, nie, Atm(parent_grid_num)%flagstruct%npx
+    if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest. npe=",I0," delta_j_c=",I0," njs=",I0," nje=",I0," npy=",I0)', this_pe, delta_j_c, njs, nje, Atm(parent_grid_num)%flagstruct%npy
 
 
     !  Will the nest motion push the nest over one of the edges?
@@ -166,30 +166,30 @@ contains
     if (nis .le. edge_buffer) then
        delta_i_c = 0
        block_moves = .true.
-       print '("[INFO] WDR permit_move_nest nis too small. npe=",I0," nis=",I0)', this_pe, nis
+       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest nis too small. npe=",I0," nis=",I0)', this_pe, nis
     end if
     if (njs .le. edge_buffer) then
        delta_j_c = 0
        block_moves = .true.
-       print '("[INFO] WDR permit_move_nest njs too small. npe=",I0," njs=",I0)', this_pe, njs
+       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest njs too small. npe=",I0," njs=",I0)', this_pe, njs
     end if
 
     if (nie .ge. Atm(parent_grid_num)%flagstruct%npx - edge_buffer) then
        delta_i_c = 0
        block_moves = .true.
-       print '("[INFO] WDR permit_move_nest nie too big. npe=",I0," nie=",I0)', this_pe, nie
+       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest nie too big. npe=",I0," nie=",I0)', this_pe, nie
     end if
     if (nje .ge. Atm(parent_grid_num)%flagstruct%npy - edge_buffer) then
        delta_j_c = 0
        block_moves = .true.
-       print '("[INFO] WDR permit_move_nest nje too big. npe=",I0," nje=",I0)', this_pe, nje
+       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest nje too big. npe=",I0," nje=",I0)', this_pe, nje
     end if
 
     if (delta_i_c .eq. 0 .and. delta_j_c .eq. 0) then
        do_move = .false.
-       print '("[INFO] WDR permit_move_nest BLOCKED. npe=",I0)', this_pe
+       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest MOVE NEST BLOCKED. npe=",I0)', this_pe
     else
-       print '("[INFO] WDR permit_move_nest PERMITTED. npe=",I0)', this_pe
+       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest MOVE NEST PERMITTED. npe=",I0)', this_pe
     end if
 
   end subroutine permit_move_nest
@@ -1404,7 +1404,7 @@ contains
   !================================================================================ 
 
 
-  subroutine mn_meta_reset_gridstruct(Atm, n, child_grid_num, nest_domain, fp_super_tile_geo, x_refine, y_refine, is_fine_pe, wt_h, wt_u, wt_v)
+  subroutine mn_meta_reset_gridstruct(Atm, n, child_grid_num, nest_domain, fp_super_tile_geo, x_refine, y_refine, is_fine_pe, wt_h, wt_u, wt_v, a_step, dt_atmos)
     type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
     integer, intent(in)                              :: n, child_grid_num
     type(nest_domain_type),     intent(in)           :: nest_domain
@@ -1412,11 +1412,20 @@ contains
     integer, intent(in)                              :: x_refine, y_refine   
     logical, intent(in)                              :: is_fine_pe
     real, allocatable, intent(in)                    :: wt_h(:,:,:), wt_u(:,:,:), wt_v(:,:,:)   
+    integer, intent(in)                              :: a_step
+    real, intent(in)                                 :: dt_atmos
+    
 
     integer :: isg, ieg, jsg, jeg
     integer :: ng, pp, nn, parent_tile, refinement, ioffset, joffset
     integer :: this_pe, gid
     integer :: tile_coarse(2)
+    integer :: half_x, half_y
+
+    real(kind=R_GRID)   :: pi = 4 * atan(1.0d0)
+    real                :: rad2deg, half_lat, half_lon
+
+    rad2deg = 180.0 / pi
 
     this_pe = mpp_pe()
     gid = this_pe
@@ -1585,6 +1594,25 @@ contains
        if (debug_log) call show_atm("3", Atm(nn), nn, this_pe)
     end do
 
+
+    ! Output the center lat/lon of the nest
+    !   only the PE that holds the center point will output this information to the logfile
+    !   lat = agrid(:,:,2) and lon = agrid(:,:,1), in radians
+    if (is_fine_pe) then
+       half_x = Atm(child_grid_num)%npx / 2
+       half_y = Atm(child_grid_num)%npy / 2
+
+       if (half_x .ge. Atm(child_grid_num)%bd%is .and. half_x .le. Atm(child_grid_num)%bd%ie .and. half_y .ge. Atm(child_grid_num)%bd%js .and. half_y .le. Atm(child_grid_num)%bd%je) then
+
+           half_lat = Atm(child_grid_num)%gridstruct%agrid(half_x, half_y,2) * rad2deg
+           half_lon = Atm(child_grid_num)%gridstruct%agrid(half_x, half_y,1) * rad2deg
+           if (half_lon .gt. 180.0) half_lon = half_lon - 360.0
+           
+           print '("[INFO] fv_moving_nest.F90 NEST MOVED to npe=",I0," x=",I0," y=",I0," lat=",F6.2," lon=",F7.2," a_step=",I8," fcst_hr=",F12.3)', this_pe, \
+           half_x, half_y, half_lat, half_lon, a_step,  a_step * dt_atmos / 3600.0
+        end if
+
+    end if
 
 
     ! Reallocate the halo buffers in the neststruct, as some are now the wrong size
