@@ -8,7 +8,6 @@ module fv_diag_column_mod
   use fms_mod,            only: write_version_number, lowercase
   use mpp_mod,            only: mpp_error, FATAL, stdlog, mpp_pe, mpp_root_pe, mpp_sum, &
                                 mpp_max, NOTE, input_nml_file, get_unit
-  use mpp_io_mod,         only: mpp_flush
   use fv_sg_mod,          only: qsmith
 
   implicit none
@@ -395,9 +394,6 @@ contains
        write(unit, *) '==================================================================='
        write(unit, *)
        
-       call mpp_flush(unit)
-
-
     enddo
 
   end subroutine debug_column
@@ -487,8 +483,6 @@ contains
        write(unit, *) '==================================================================='
        write(unit, *)
        
-       call mpp_flush(unit)
-
     enddo
 
   end subroutine debug_column_dyn
@@ -581,8 +575,6 @@ contains
                      pres*1.e-2, int(hght(k)), pt(i,j,k)-TFREEZE, dewpt, int(rh*100.), mixr*1.e3, int(wdir), wspd, theta, thetae(i,j,k), thetav
              enddo
           endif
-
-          call mpp_flush(unit)
 
     enddo
 

@@ -21,11 +21,10 @@
 module fv_cmip_diag_mod
 
 use mpp_mod,            only: input_nml_file
-use fms_mod,            only: open_namelist_file, check_nml_error, &
-                              close_file, stdlog, mpp_pe, mpp_root_pe, &
-                              write_version_number, file_exist, &
+use fms_mod,            only: check_nml_error, string, &
+                              stdlog, mpp_pe, mpp_root_pe, &
+                              write_version_number, &
                               error_mesg, FATAL, WARNING, NOTE
-use fms_io_mod,         only: set_domain, nullify_domain, string
 use time_manager_mod,   only: time_type
 use mpp_domains_mod,    only: domain2d
 use diag_manager_mod,   only: register_diag_field, diag_axis_init, &
@@ -120,30 +119,14 @@ integer               :: id_pl700, id_pl700_bnds, id_nv
   endif
 
 !----- read namelist -----
-#ifdef INTERNAL_FILE_NML
   read (input_nml_file, nml=fv_cmip_diag_nml, iostat=io)
   ierr = check_nml_error (io, 'fv_cmip_diag_nml')
-#else
-  if (file_exist('input.nml') ) then
-    iunit = open_namelist_file()
-    ierr=1
-    do while (ierr /= 0)
-      read (iunit, nml=fv_cmip_diag_nml, iostat=io, end=10)
-      ierr = check_nml_error (io, 'fv_cmip_diag_nml')
-    enddo
-10  call close_file (iunit)
-  endif
-#endif
 
 !----- write version and namelist to log file -----
 
   iunit = stdlog()
   call write_version_number ( 'FV_CMIP_DIAG_MOD', version )
   if (mpp_pe() == mpp_root_pe()) write (iunit, nml=fv_cmip_diag_nml)
-
-
-! Set domain so that diag_manager can access tile information
-  call set_domain(Atm(1)%domain)
 
 ! axis identifiers
   area_id = get_diag_field_id ('dynamics', 'area')
@@ -411,7 +394,6 @@ integer               :: id_pl700, id_pl700_bnds, id_nv
         call diag_field_add_attribute (id_zg1000, 'coordinates', 'p1000')
 
 !--- done ---
-  call nullify_domain()
   module_is_initialized=.true.
 
 !-----------------------------------------------------------------------
@@ -454,8 +436,6 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
   jsc = Atm(n)%bd%jsc; jec = Atm(n)%bd%jec
   ngc = Atm(n)%ng
   npz = Atm(n)%npz
-
-  call set_domain(Atm(n)%domain)
 
   ! set flags for computing quantities
   compute_rh = .false.
@@ -687,10 +667,6 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
                                     (/log(1000.e2)/), Atm(n)%peln, dat3)
     used = send_data (id_zg1000, dat3(:,:,1), Time)
   endif
-
-!----------------------------------------------------------------------
-
-  call nullify_domain()
 
 !----------------------------------------------------------------------
 

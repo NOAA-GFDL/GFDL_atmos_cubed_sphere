@@ -6819,19 +6819,9 @@ end subroutine terminator_tracers
         bubble_do = .false.
         test_case = 11   ! (USGS terrain)
 
-#ifdef INTERNAL_FILE_NML
         ! Read Test_Case namelist
         read (input_nml_file,test_case_nml,iostat=ios)
         ierr = check_nml_error(ios,'test_case_nml')
-#else
-        f_unit = open_namelist_file(nml_filename)
-
-        ! Read Test_Case namelist
-        rewind (f_unit)
-        read (f_unit,test_case_nml,iostat=ios)
-        ierr = check_nml_error(ios,'test_case_nml')
-        call close_file(f_unit)
-#endif
         write(unit, nml=test_case_nml)
 
 

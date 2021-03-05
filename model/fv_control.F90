@@ -28,9 +28,8 @@ module fv_control_mod
 
    use constants_mod,       only: pi=>pi_8, kappa, radius, grav, rdgas
    use field_manager_mod,   only: MODEL_ATMOS
-   use fms_mod,             only: write_version_number, open_namelist_file, &
-                                  check_nml_error, close_file, file_exist
-   use fms_io_mod,          only: set_domain
+   use fms_mod,             only: write_version_number, check_nml_error
+   use fms2_io_mod,         only: file_exists
    use mpp_mod,             only: FATAL, mpp_error, mpp_pe, stdlog, &
                                   mpp_npes, mpp_get_current_pelist, &
                                   input_nml_file, get_unit, WARNING, &
@@ -382,7 +381,7 @@ module fv_control_mod
         else
            Atm(n)%nml_filename = 'input.nml'
         endif
-        if (.not. file_exist(Atm(n)%nml_filename)) then
+        if (.not. file_exists(Atm(n)%nml_filename)) then
            call mpp_error(FATAL, "Could not find nested grid namelist "//Atm(n)%nml_filename)
         endif
      enddo
@@ -442,7 +441,7 @@ module fv_control_mod
 #ifdef INTERNAL_FILE_NML
      if (this_grid .gt. 1) then
         write(Atm(this_grid)%nml_filename,'(A4, I2.2)') 'nest', this_grid
-        if (.not. file_exist('input_'//trim(Atm(this_grid)%nml_filename)//'.nml')) then
+        if (.not. file_exists('input_'//trim(Atm(this_grid)%nml_filename)//'.nml')) then
            call mpp_error(FATAL, "Could not find nested grid namelist "//'input_'//trim(Atm(this_grid)%nml_filename)//'.nml')
         endif
      else
@@ -538,7 +537,6 @@ module fv_control_mod
           Atm(this_grid)%layout,Atm(this_grid)%io_layout,Atm(this_grid)%bd,Atm(this_grid)%tile_of_mosaic, &
           Atm(this_grid)%gridstruct%square_domain,Atm(this_grid)%npes_per_tile,Atm(this_grid)%domain, &
           Atm(this_grid)%domain_for_coupler,Atm(this_grid)%num_contact,Atm(this_grid)%pelist)
-     call set_domain(Atm(this_grid)%domain)
      call broadcast_domains(Atm,Atm(this_grid)%pelist,size(Atm(this_grid)%pelist))
      do n=1,ngrids
         tile_id = mpp_get_tile_id(Atm(n)%domain)
@@ -858,16 +856,8 @@ module fv_control_mod
        integer :: f_unit, ios, ierr, dum
        namelist /nest_nml/ dum ! ngrids, ntiles, nest_pes, p_split !emptied lmh 7may2019
 
-#ifdef INTERNAL_FILE_NML
        read (input_nml_file,nest_nml,iostat=ios)
        ierr = check_nml_error(ios,'nest_nml')
-#else
-       f_unit=open_namelist_file()
-       rewind (f_unit)
-       read (f_unit,nest_nml,iostat=ios)
-       ierr = check_nml_error(ios,'nest_nml')
-       call close_file(f_unit)
-#endif
        if (ierr > 0) then
           call mpp_error(FATAL, " &nest_nml is depreciated. Please use &fv_nest_nml instead.")
        endif
@@ -880,16 +870,8 @@ module fv_control_mod
        namelist /fv_nest_nml/ grid_pes, num_tile_top, tile_coarse, nest_refine, &
             nest_ioffsets, nest_joffsets, p_split
 
-#ifdef INTERNAL_FILE_NML
        read (input_nml_file,fv_nest_nml,iostat=ios)
        ierr = check_nml_error(ios,'fv_nest_nml')
-#else
-       f_unit=open_namelist_file()
-       rewind (f_unit)
-       read (f_unit,fv_nest_nml,iostat=ios)
-       ierr = check_nml_error(ios,'fv_nest_nml')
-       call close_file(f_unit)
-#endif
 
      end subroutine read_namelist_fv_nest_nml
 
@@ -901,18 +883,10 @@ module fv_control_mod
        character(len=120) :: grid_file = ''
        namelist /fv_grid_nml/ grid_name, grid_file
 
-#ifdef INTERNAL_FILE_NML
        ! Read Main namelist
        read (input_nml_file,fv_grid_nml,iostat=ios)
        ierr = check_nml_error(ios,'fv_grid_nml')
-#else
-       f_unit=open_namelist_file()
-       rewind (f_unit)
-       ! Read Main namelist
-       read (f_unit,fv_grid_nml,iostat=ios)
-       ierr = check_nml_error(ios,'fv_grid_nml')
-       rewind (f_unit)
-#endif
+ 
        call write_version_number ( 'FV_CONTROL_MOD', version )
        unit = stdlog()
        write(unit, nml=fv_grid_nml)
@@ -968,19 +942,12 @@ module fv_control_mod
             write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst
             
 
-#ifdef INTERNAL_FILE_NML
        ! Read FVCORE namelist
        read (input_nml_file,fv_core_nml,iostat=ios)
        ierr = check_nml_error(ios,'fv_core_nml')
        ! Reset input_file_nml to default behavior (CHECK do we still need this???)
        !call read_input_nml
-#else
-       f_unit = open_namelist_file(Atm%nml_filename)
-       ! Read FVCORE namelist
-       read (f_unit,fv_core_nml,iostat=ios)
-       ierr = check_nml_error(ios,'fv_core_nml')
-       call close_file(f_unit)
-#endif
+ 
        call write_version_number ( 'FV_CONTROL_MOD', version )
        unit = stdlog()
        write(unit, nml=fv_core_nml)
