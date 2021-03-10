@@ -356,11 +356,6 @@ contains
     !If the number of tiles is equal to 1, and it is not a nested case add the ".tile1" suffix to the filename
     if (ntiles == 1 .and. .not. Atm(1)%neststruct%nested) then
        suffix = ''//trim(suffix)//'.tile1'
-    !If this is a nested case add the ".tileXX" suffix to the filename
-    elseif (Atm(1)%neststruct%nested) then
-       tile_num = ''
-       write(tile_num,'(I1)') Atm(1)%neststruct%nestupdate
-       suffix = '.tile' //trim(tile_num)//''
     endif
 
     fname = 'INPUT/fv_core.res'//trim(suffix)//'.nc'
@@ -1193,11 +1188,11 @@ contains
     character(len=120)                 :: fname_ne, fname_sw
 
     if (present(timestamp)) then
-      fname_ne = trim(timestamp)//'fv_BC_ne.res.nc'
-      fname_sw = trim(timestamp)//'fv_BC_sw.res.nc'
+      fname_ne = 'RESTART/'//trim(timestamp)//'fv_BC_ne.res.nc'
+      fname_sw = 'RESTART/'//trim(timestamp)//'fv_BC_sw.res.nc'
     else
-      fname_ne = 'fv_BC_ne.res.nc'
-      fname_sw = 'fv_BC_sw.res.nc'
+      fname_ne = 'RESTART/fv_BC_ne.res.nc'
+      fname_sw = 'RESTART/fv_BC_sw.res.nc'
     endif
 
     allocate(all_pelist(mpp_npes()))
@@ -1231,8 +1226,8 @@ contains
     character(len=1)                   :: tile_num
     character(len=120)                 :: fname_ne, fname_sw
 
-    fname_ne = 'fv_BC_ne.res.nc'
-    fname_sw = 'fv_BC_sw.res.nc'
+    fname_ne = 'RESTART/fv_BC_ne.res.nc'
+    fname_sw = 'RESTART/fv_BC_sw.res.nc'
 
     allocate(all_pelist(mpp_npes()))
     call mpp_get_current_pelist(all_pelist)

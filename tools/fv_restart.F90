@@ -60,6 +60,7 @@ module fv_restart_mod
   use mpp_domains_mod,     only: mpp_global_field
   use fv_treat_da_inc_mod, only: read_da_inc
   use fms2_io_mod,         only: file_exists, set_filename_appendix
+  use fms_io_mod,          only: fmsset_filename_appendix=> set_filename_appendix
   use coarse_grained_restart_files_mod, only: fv_io_write_restart_coarse
 
   implicit none
@@ -183,6 +184,13 @@ contains
 
        !2. Register restarts
        !No longer need to register restarts in fv_restart_mod with fms2_io implementation
+
+       ! The two calls are needed until everything uses fms2io
+       if (Atm(n)%neststruct%nested .and. n==this_grid) then
+          write(gnn,'(A4, I2.2)') "nest", Atm(n)%grid_number
+          call set_filename_appendix(gnn)
+          call fmsset_filename_appendix(gnn)
+       endif
 
        !3preN. Topography BCs for nest, including setup for blending
 
