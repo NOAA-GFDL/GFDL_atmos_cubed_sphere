@@ -241,6 +241,7 @@ use fv_moving_nest_mod,         only: mn_meta_move_nest, mn_meta_recalc, mn_meta
 
 !      Temporary variable routines (delz)
 use fv_moving_nest_mod,         only: mn_prog_fill_temp_variables, mn_prog_apply_temp_variables
+use fv_moving_nest_mod,         only: mn_phys_fill_temp_variables, mn_phys_apply_temp_variables
 
 !      Load static datasets
 use fv_moving_nest_mod,         only: mn_latlon_read_hires_parent, mn_latlon_load_parent
@@ -317,6 +318,13 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
   integer :: nq                       !  number of transported tracers
   integer :: sec, seconds, days
   integer :: id_dynam, id_fv_diag, id_subgridz
+#ifdef MOVING_NEST
+!  --- Clock ids for moving_nest
+  integer :: id_movnest1, id_movnest1_9, id_movnest2, id_movnest3, id_movnest4, id_movnest5
+  integer :: id_movnest6, id_movnest7_0, id_movnest7_1, id_movnest7_2, id_movnest7_3, id_movnest8, id_movnest9
+#endif MOVING_NEST
+
+
   logical :: cold_start = .false.     !  used in initial condition
 
   integer, dimension(:), allocatable :: id_tracerdt_dyn
@@ -342,6 +350,7 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
   logical :: debug_log = .false.
   logical :: tsvar_out = .true.
   logical :: wxvar_out = .false.
+
 
 
 contains
@@ -497,6 +506,25 @@ contains
    id_subgridz  = mpp_clock_id ('FV subgrid_z',flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
    id_fv_diag   = mpp_clock_id ('FV Diag',     flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
+#ifdef MOVING_NEST
+!  --- initialize clocks for moving_nest
+   id_movnest1     = mpp_clock_id ('MN Part 1 Init',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+   id_movnest1_9   = mpp_clock_id ('MN Part 1.9 Copy delz',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+   id_movnest2     = mpp_clock_id ('MN Part 2 Fill Halos from Parent',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+   id_movnest3     = mpp_clock_id ('MN Part 3 Meta Move Nest',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+   id_movnest4     = mpp_clock_id ('MN Part 4 Fill Intern Nest Halos',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+   id_movnest5     = mpp_clock_id ('MN Part 5 Recalc Weights',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+   id_movnest6     = mpp_clock_id ('MN Part 6 EOSHIFT',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+
+   id_movnest7_0   = mpp_clock_id ('MN Part 7.0 Recalc gridstruct',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+   id_movnest7_1   = mpp_clock_id ('MN Part 7.1 Refill halos from Parent',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+   id_movnest7_2   = mpp_clock_id ('MN Part 7.2 Refill Intern Nest Halos',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+   id_movnest7_3   = mpp_clock_id ('MN Part 7.3 Fill delz',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+
+   id_movnest8     = mpp_clock_id ('MN Part 8 Dump to netCDF',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+   id_movnest9     = mpp_clock_id ('MN Part 9 Aux Pressure',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+
+#endif MOVING_NEST
                     call timing_off('ATMOS_INIT')
 
    ! Do CCPP fast physics initialization before call to adiabatic_init (since this calls fv_dynamics)
@@ -679,15 +707,20 @@ contains
    end if
 
    !move_incr = 1
+   !move_incr = 80
+
+   !move_incr = 10
 
    if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
       do_move = .true.
       delta_i_c = 1
-      delta_j_c = 0
+      !delta_j_c = 0
+      delta_j_c = -1
       first_time = .false.
    else if (mod(a_step,move_incr) .eq. 0) then
       do_move = .true.
-      delta_i_c = 0
+      !delta_i_c = 0
+      delta_i_c = 1
       delta_j_c = -1
       first_time = .false.
    else
@@ -832,6 +865,8 @@ contains
    !!================================================================
    !! Step 1 -- Initialization
    !!================================================================
+
+
    
    if (debug_log) print '("WDR_NEST_HALO_RECV,",I0,"===STEP 1====")', this_pe
    if (debug_log) print '("[INFO] WDR MV_NST1 run step 1 atmosphere.F90 npe=",I0)', this_pe
@@ -881,11 +916,13 @@ contains
 
     if (a_step .eq. 1) then
        if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step-1, "tsvar", is_fine_pe, domain_coarse, domain_fine, nz)
+       if (tsvar_out) call mn_phys_dump_to_netcdf(Atm(n), a_step-1, "tsvar", is_fine_pe, domain_coarse, domain_fine, nz)
     end if
 
 
     !if (Atm(child_grid_num)%gridstruct%nested .and. is_moving_nest .and. do_move) then
     if (is_moving_nest .and. do_move) then
+       call mpp_clock_begin (id_movnest1)
 
        !!================================================================
        !! Step 1.1 -- Show the nest grids
@@ -972,6 +1009,7 @@ contains
 
        if (debug_log) print '("[INFO] WDR MV_NST0 run step 0 atmosphere.F90 npe=",I0)', this_pe
        if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+       if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
        output_step = output_step + 1
 
        !!============================================================================
@@ -1021,11 +1059,18 @@ contains
           end if
        end if
 
+       call mpp_clock_end (id_movnest1)
+       call mpp_clock_begin (id_movnest1_9)
+
        !!=====================================================================================           
        !! Step 1.9 -- Allocate and fill the temporary variable(s)                                              
        !!=====================================================================================           
 
        call mn_prog_fill_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
+       call mn_phys_fill_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
+
+       call mpp_clock_end (id_movnest1_9)
+       call mpp_clock_begin (id_movnest2)
 
        !!============================================================================
        !! Step 2 -- Fill in the halos from the coarse grids
@@ -1040,6 +1085,9 @@ contains
 
        call mn_prog_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
        call mn_phys_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
+
+       call mpp_clock_end (id_movnest2)
+       call mpp_clock_begin (id_movnest3)
 
        !!============================================================================
        !! Step 3 -- Redefine the nest domain to new location  
@@ -1058,11 +1106,15 @@ contains
             istart_coarse, iend_coarse, jstart_coarse, jend_coarse,  &
             istart_fine, iend_fine, jstart_fine, jend_fine)
 
+
        ! This code updates the values in neststruct; ioffset/joffset are pointers:  ioffset => Atm(child_grid_num)%neststruct%ioffset
        ioffset = ioffset + delta_i_c
        joffset = joffset + delta_j_c
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
+
+       call mpp_clock_end (id_movnest3)
+       call mpp_clock_begin (id_movnest4)
 
        !!============================================================================
        !! Step 4  -- Fill the internal nest halos for the prognostic variables, 
@@ -1083,6 +1135,9 @@ contains
        end if
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
+
+       call mpp_clock_end (id_movnest4)
+       call mpp_clock_begin (id_movnest5)
 
        !!============================================================================
        !! Step 5  --  Recalculate nest halo weights (for fine PEs only) and indices
@@ -1130,6 +1185,10 @@ contains
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
+       call mpp_clock_end (id_movnest5)
+       call mpp_clock_begin (id_movnest6)
+
+
        !!============================================================================
        !! Step 6   Shift the data on each nest PE 
        !!            -- similar to med_nest_move in HWRF
@@ -1150,6 +1209,9 @@ contains
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
+       call mpp_clock_end (id_movnest6)
+       call mpp_clock_begin (id_movnest7_0)
+
        !!=====================================================================================
        !! Step 7 --  Reset the grid definition data and buffer sizes and weights after the nest motion
        !!             Mostly needed when dynamics is executed
@@ -1160,6 +1222,9 @@ contains
 
        call mn_meta_reset_gridstruct(Atm, n, child_grid_num, global_nest_domain, fp_super_tile_geo, x_refine, y_refine, is_fine_pe, wt_h, wt_u, wt_v, a_step, dt_atmos)
 
+       call mpp_clock_end (id_movnest7_0)
+       call mpp_clock_begin (id_movnest7_1)
+
        !!=====================================================================================
        !! Step 7.1   Refill the nest edge halos from parent grid after nest motion
        !!            Parent and nest PEs need to execute these subroutines
@@ -1169,20 +1234,32 @@ contains
        call mn_prog_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
        call mn_phys_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
 
+       call mpp_clock_end (id_movnest7_1)
+
        if (is_fine_pe) then
+          call mpp_clock_begin (id_movnest7_2)
+
           ! Refill the internal halos after nest motion
           call mn_prog_fill_intern_nest_halos(Atm(n), domain_fine, is_fine_pe)
           call mn_phys_fill_intern_nest_halos(Atm(n), domain_fine, is_fine_pe)
+
+          call mpp_clock_end (id_movnest7_2)
        end if
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
 
        !!=====================================================================================           
-       !! Step 7.9 -- Allocate and fill the temporary variable(s)                                              
+       !! Step 7.3 -- Allocate and fill the temporary variable(s)                                              
        !!=====================================================================================           
+       call mpp_clock_begin (id_movnest7_3)
 
        call mn_prog_apply_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
+       call mn_phys_apply_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
+
+       call mpp_clock_end (id_movnest7_3)
+       call mpp_clock_begin (id_movnest8)
+
 
        !!============================================================================
        !!  Step 8 -- Dump to netCDF 
@@ -1192,9 +1269,14 @@ contains
        if (debug_log) print '("[INFO] WDR MV_NST8 run step 8 atmosphere.F90 npe=",I0)', this_pe
 
        if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+       if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
        output_step = output_step + 1
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
+
+       call mpp_clock_end (id_movnest8)
+       call mpp_clock_begin (id_movnest9)
+
 
        !!=========================================================================================
        !! Step 9 -- Perform vertical remapping on nest(s) and recalculate auxiliary pressures
@@ -1267,9 +1349,13 @@ contains
 
 
           if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+          if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
           output_step = output_step + 1
 
        end if
+
+       call mpp_clock_end (id_movnest9)
+
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
@@ -1284,6 +1370,8 @@ contains
     end if
     
     if (debug_log) call show_nest_grid(Atm(n), this_pe, 99)
+
+
 
 !===== End moving nest functionality
 #endif ! MOVING_NEST
@@ -1329,14 +1417,16 @@ contains
 
       if (is_fine_pe) then
          if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+         if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
          output_step = output_step + 1
          if (debug_log) print '("[INFO] WDR after outputting to netCDF fv_dynamics atmosphere.F90 npe=",I0, " psc=",I0)', this_pe, psc
       end if
 
 
       !if (a_step .lt. 10 .or. mod(a_step, 10) .eq. 0) then
-      if (mod(a_step, 400) .eq. 0) then
+      if (mod(a_step, 100) .eq. 0) then
          if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step, "tsvar", is_fine_pe, domain_coarse, domain_fine, nz)
+         if (tsvar_out) call mn_phys_dump_to_netcdf(Atm(n), a_step, "tsvar", is_fine_pe, domain_coarse, domain_fine, nz)
       endif
 
       call date_and_time(TIME=str_time)
