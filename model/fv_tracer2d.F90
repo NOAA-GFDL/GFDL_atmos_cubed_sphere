@@ -1,21 +1,21 @@
 !***********************************************************************
-!*                   GNU Lesser General Public License                 
+!*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
 !*
-!* The FV3 dynamical core is free software: you can redistribute it 
+!* The FV3 dynamical core is free software: you can redistribute it
 !* and/or modify it under the terms of the
 !* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
+!* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
 !* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
+!* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
@@ -40,7 +40,7 @@
 !   <tr>
 !   <tr>
 !     <td>fv_mp_mod</td>
-!     <td>mp_reduce_max, ng, mp_gather, is_master, group_halo_update_type, 
+!     <td>mp_reduce_max, ng, mp_gather, is_master, group_halo_update_type,
 !         start_group_halo_update, complete_group_halo_update</td>
 !   </tr>
 !    <tr>
@@ -86,11 +86,11 @@ contains
 
 !>@brief The subroutine 'tracer_2d_1L' performs 2-D horizontal-to-lagrangian transport.
 !>@details This subroutine is called if 'z_tracer = .true.'
-!! It modifies 'tracer_2d' so that each layer uses a different diagnosed number 
+!! It modifies 'tracer_2d' so that each layer uses a different diagnosed number
 !! of split tracer timesteps. This potentially accelerates tracer advection when there
 !! is a large difference in layer-maximum wind speeds (cf. polar night jet).
 subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
-                        nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm, lim_fac)
+                        nq,  hord, q_split, dt, id_divg, q_pack, dp1_pack, nord_tr, trdm, lim_fac)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(IN) :: npx
@@ -102,7 +102,7 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, n
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt, trdm
       real   , intent(IN) :: lim_fac
-      type(group_halo_update_type), intent(inout) :: q_pack
+      type(group_halo_update_type), intent(inout) :: q_pack, dp1_pack
       real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   !< Tracers
       real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    !< DELP before dyn_core
       real   , intent(INOUT) :: mfx(bd%is:bd%ie+1,bd%js:bd%je,  npz)    !< Mass Flux X-Dir
@@ -146,10 +146,10 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, n
       rarea => gridstruct%rarea
 
       sin_sg => gridstruct%sin_sg
-      dxa    => gridstruct%dxa 
-      dya    => gridstruct%dya 
-      dx     => gridstruct%dx  
-      dy     => gridstruct%dy  
+      dxa    => gridstruct%dxa
+      dya    => gridstruct%dya
+      dx     => gridstruct%dx
+      dy     => gridstruct%dy
 
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,cx,xfx,dxa,dy, &
 !$OMP                                  sin_sg,cy,yfx,dya,dx,cmax)
@@ -189,6 +189,14 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, n
      endif
   enddo  ! k-loop
 
+    if (trdm>1.e-4) then
+                        call timing_on('COMM_TOTAL')
+                            call timing_on('COMM_TRACER')
+      call complete_group_halo_update(dp1_pack, domain)
+                           call timing_off('COMM_TRACER')
+                       call timing_off('COMM_TOTAL')
+
+    endif
   call mp_reduce_max(cmax,npz)
 
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,cx,xfx, &
@@ -314,7 +322,7 @@ end subroutine tracer_2d_1L
 
 !>@brief The subroutine 'tracer_2d' is the standard routine for sub-cycled tracer advection.
 subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
-                     nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm, lim_fac)
+                     nq,  hord, q_split, dt, id_divg, q_pack, dp1_pack, nord_tr, trdm, lim_fac)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(IN) :: npx
@@ -326,7 +334,7 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy,
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt, trdm
       real   , intent(IN) :: lim_fac
-      type(group_halo_update_type), intent(inout) :: q_pack
+      type(group_halo_update_type), intent(inout) :: q_pack, dp1_pack
       real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   !< Tracers
       real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    !< DELP before dyn_core
       real   , intent(INOUT) :: mfx(bd%is:bd%ie+1,bd%js:bd%je,  npz)    !< Mass Flux X-Dir
@@ -371,12 +379,12 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy,
       rarea => gridstruct%rarea
 
       sin_sg => gridstruct%sin_sg
-      dxa    => gridstruct%dxa 
-      dya    => gridstruct%dya 
-      dx     => gridstruct%dx  
-      dy     => gridstruct%dy  
+      dxa    => gridstruct%dxa
+      dya    => gridstruct%dya
+      dx     => gridstruct%dx
+      dy     => gridstruct%dy
 
-!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,cx,xfx,dxa,dy, &  
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,cx,xfx,dxa,dy, &
 !$OMP                                  sin_sg,cy,yfx,dya,dx,cmax,q_split,ksplt)
     do k=1,npz
        do j=jsd,jed
@@ -477,6 +485,14 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy,
         enddo
     endif
 
+    if (trdm>1.e-4) then
+                        call timing_on('COMM_TOTAL')
+                            call timing_on('COMM_TRACER')
+      call complete_group_halo_update(dp1_pack, domain)
+                           call timing_off('COMM_TRACER')
+                       call timing_off('COMM_TOTAL')
+
+    endif
     do it=1,nsplt
                         call timing_on('COMM_TOTAL')
                             call timing_on('COMM_TRACER')
@@ -554,7 +570,7 @@ end subroutine tracer_2d
 
 
 subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
-                     nq,  hord, q_split, dt, id_divg, q_pack, nord_tr, trdm, &
+                     nq,  hord, q_split, dt, id_divg, q_pack, dp1_pack, nord_tr, trdm, &
                      k_split, neststruct, parent_grid, n_map, lim_fac)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
@@ -567,7 +583,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt, trdm
       real   , intent(IN) :: lim_fac
-      type(group_halo_update_type), intent(inout) :: q_pack
+      type(group_halo_update_type), intent(inout) :: q_pack, dp1_pack
       real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   !< Tracers
       real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    !< DELP before dyn_core
       real   , intent(INOUT) :: mfx(bd%is:bd%ie+1,bd%js:bd%je,  npz)    !< Mass Flux X-Dir
@@ -591,7 +607,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       real :: cmax_t
       real :: c_global
       real :: frac, rdt
-      real ::  recip_nsplt, reg_bc_update_time
+      real :: reg_bc_update_time
       integer :: nsplt, nsplt_parent, msg_split_steps = 1
       integer :: i,j,k,it,iq
 
@@ -615,10 +631,10 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       rarea => gridstruct%rarea
 
       sin_sg => gridstruct%sin_sg
-      dxa    => gridstruct%dxa 
-      dya    => gridstruct%dya 
-      dx     => gridstruct%dx  
-      dy     => gridstruct%dy  
+      dxa    => gridstruct%dxa
+      dya    => gridstruct%dya
+      dx     => gridstruct%dx
+      dy     => gridstruct%dy
 
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,cx,xfx,dxa,dy, &
 !$OMP                                  sin_sg,cy,yfx,dya,dx)
@@ -687,7 +703,6 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
 !--------------------------------------------------------------------------------
 
    frac  = 1. / real(nsplt)
-   recip_nsplt = 1. / real(nsplt)
 
       if( nsplt /= 1 ) then
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,cx,frac,xfx,mfx,cy,yfx,mfy)
@@ -729,7 +744,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       call complete_group_halo_update(q_pack, domain)
                            call timing_off('COMM_TRACER')
                        call timing_off('COMM_TOTAL')
-	    
+
       if (gridstruct%nested) then
             do iq=1,nq
                  call nested_grid_BC_apply_intT(q(isd:ied,jsd:jed,:,iq), &
@@ -740,7 +755,9 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       endif
 
       if (gridstruct%regional) then
-            reg_bc_update_time=current_time_in_seconds+ (real(n_map-1) + real(it-1)*recip_nsplt)*dt   !<-- dt is the k_split timestep length
+            !This is more accurate than the nested BC calculation
+            ! since it takes into account varying nsplit
+            reg_bc_update_time=current_time_in_seconds+(real(n_map-1) + real(it-1)*frac)*dt
             do iq=1,nq
                  call regional_boundary_update(q(:,:,:,iq), 'q', &
                                                isd, ied, jsd, jed, npz, &
@@ -749,6 +766,15 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
                                                reg_bc_update_time,      &
                                                iq )
             enddo
+      endif
+
+      if (trdm>1.e-4) then
+                        call timing_on('COMM_TOTAL')
+                            call timing_on('COMM_TRACER')
+         call complete_group_halo_update(dp1_pack, domain)
+                           call timing_off('COMM_TRACER')
+                       call timing_off('COMM_TOTAL')
+
       endif
 
 

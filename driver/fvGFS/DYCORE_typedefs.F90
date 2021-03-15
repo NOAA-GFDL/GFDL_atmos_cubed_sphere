@@ -163,6 +163,6 @@ module DYCORE_typedefs
 
     class(DYCORE_diag_type)            :: Diag
 
-  end subroutine diag_zero 
+  end subroutine diag_zero
 
 end module DYCORE_typedefs

@@ -1,22 +1,22 @@
 
 !***********************************************************************
-!*                   GNU Lesser General Public License                 
+!*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
 !*
-!* The FV3 dynamical core is free software: you can redistribute it 
+!* The FV3 dynamical core is free software: you can redistribute it
 !* and/or modify it under the terms of the
 !* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
+!* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
 !* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
+!* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
@@ -46,7 +46,7 @@ module atmosphere_mod
 !     <td>fms_mod</td>
 !     <td>file_exist, open_namelist_file,close_file, error_mesg, FATAL,
 !         check_nml_error, stdlog,write_version_number,set_domain,
-!         mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_SUBCOMPONENT, 
+!         mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_SUBCOMPONENT,
 !         clock_flag_default, nullify_domain</td>
 !   </tr>
 !   <tr>
@@ -150,15 +150,14 @@ use fms_mod,                only: file_exist, open_namelist_file,    &
                                   close_file, error_mesg, FATAL,     &
                                   check_nml_error, stdlog,           &
                                   write_version_number,              &
-                                  set_domain,                        &
-                                  read_data,                         &
+                                  set_domain,   &
                                   mpp_clock_id, mpp_clock_begin,     &
                                   mpp_clock_end, CLOCK_SUBCOMPONENT, &
                                   clock_flag_default, nullify_domain
 use mpp_mod,                only: mpp_error, stdout, FATAL, WARNING, NOTE, &
-                                  input_nml_file, mpp_root_pe,       &
-                                  mpp_npes, mpp_pe, mpp_chksum,      &
-                                  mpp_get_current_pelist,            &
+                                  input_nml_file, mpp_root_pe,    &
+                                  mpp_npes, mpp_pe, mpp_chksum,   &
+                                  mpp_get_current_pelist,         &
                                   mpp_set_current_pelist, mpp_sync
 use mpp_parameter_mod,      only: EUPDATE, WUPDATE, SUPDATE, NUPDATE
 use mpp_domains_mod,        only: domain2d, mpp_update_domains
@@ -173,6 +172,9 @@ use GFS_typedefs,           only: IPD_data_type => GFS_data_type, kind_phys
 use IPD_typedefs,           only: IPD_data_type, kind_phys => IPD_kind_phys
 #endif
 use fv_iau_mod,             only: IAU_external_data_type
+#ifdef MULTI_GASES
+use multi_gases_mod,  only: virq, virq_max, num_gas, ri, cpi
+#endif
 
 !-----------------
 ! FV core modules:
@@ -192,14 +194,15 @@ use fv_sg_mod,          only: fv_subgrid_z
 use fv_update_phys_mod, only: fv_update_phys
 use fv_io_mod,          only: fv_io_register_nudge_restart
 use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
-#ifdef MULTI_GASES
-use multi_gases_mod,  only: virq, virq_max, num_gas, ri, cpi
-#endif
 use fv_regional_mod,    only: start_regional_restart, read_new_bc_data, &
                               a_step, p_step, current_time_in_seconds
-
-use mpp_domains_mod,    only:  mpp_get_data_domain, mpp_get_compute_domain
 use fv_grid_utils_mod,  only: g_sum
+
+use mpp_domains_mod, only:  mpp_get_data_domain, mpp_get_compute_domain
+use coarse_graining_mod, only: coarse_graining_init
+use coarse_grained_diagnostics_mod, only: fv_coarse_diag_init, fv_coarse_diag
+use coarse_grained_restart_files_mod, only: fv_coarse_restart_init
+use diag_manager_mod,   only: send_data
 
 implicit none
 private
@@ -216,7 +219,7 @@ public :: atmosphere_resolution,   atmosphere_grid_bdry,         &
           atmosphere_hgt,          atmosphere_scalar_field_halo, &
 ! experimental APIs not ready for use
 !         atmosphere_tracer_postinit, &
-          atmosphere_diss_est,         & ! dissipation estimate for SKEB 
+          atmosphere_diss_est,         & ! dissipation estimate for SKEB
           atmosphere_get_bottom_layer, &
           atmosphere_nggps_diag,       &
           get_bottom_mass, get_bottom_wind,   &
@@ -260,7 +263,7 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
   real, parameter:: w0_big = 60.  ! to prevent negative w-tracer diffusion
 
 !---dynamics tendencies for use in fv_subgrid_z and during fv_update_phys
-  real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt
+  real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt, qv_dt
   real, allocatable                     :: pref(:,:), dum1d(:)
 
   logical :: first_diag = .true.
@@ -269,8 +272,8 @@ contains
 
 
 !>@brief The subroutine 'atmosphere_init' is an API to initialize the FV3 dynamical core,
-!! including the grid structures, memory, initial state (self-initialization or restart), 
-!! and diagnostics.  
+!! including the grid structures, memory, initial state (self-initialization or restart),
+!! and diagnostics.
  subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, area)
 
    use ccpp_static_api,   only: ccpp_physics_init
@@ -321,10 +324,20 @@ contains
 
    if(Atm(mygrid)%flagstruct%warm_start) then
      a_step = nint(current_time_in_seconds/dt_atmos)
+
+     if (Atm(mygrid)%coarse_graining%write_coarse_restart_files .or. &
+         Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
+           call coarse_graining_init(Atm(mygrid)%flagstruct%npx, Atm(mygrid)%npz, &
+                Atm(mygrid)%layout, Atm(mygrid)%bd%is, Atm(mygrid)%bd%ie, &
+                Atm(mygrid)%bd%js, Atm(mygrid)%bd%je, Atm(mygrid)%coarse_graining%factor, &
+                Atm(mygrid)%coarse_graining%nx_coarse, &
+                Atm(mygrid)%coarse_graining%strategy, &
+                Atm(mygrid)%coarse_graining%domain)
+     endif
    endif
 
 !----- write version and namelist to log file -----
-   call write_version_number ( 'fvGFS/ATMOSPHERE_MOD', version )
+   call write_version_number ( mod_name, version )
 
 !-----------------------------------
 
@@ -393,7 +406,8 @@ contains
 !----- allocate and zero out the dynamics (and accumulated) tendencies
    allocate( u_dt(isd:ied,jsd:jed,npz), &
              v_dt(isd:ied,jsd:jed,npz), &
-             t_dt(isc:iec,jsc:jec,npz) )
+             t_dt(isc:iec,jsc:jec,npz), &
+             qv_dt(isc:iec,jsc:jec,npz) )
 !--- allocate pref
    allocate(pref(npz+1,2), dum1d(npz+1))
 
@@ -404,6 +418,20 @@ contains
 !----- initialize atmos_axes and fv_dynamics diagnostics
        !I've had trouble getting this to work with multiple grids at a time; worth revisiting?
    call fv_diag_init(Atm(mygrid:mygrid), Atm(mygrid)%atmos_axes, Time, npx, npy, npz, Atm(mygrid)%flagstruct%p_ref)
+
+   if (Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
+      call fv_coarse_diag_init(Atm, Time, Atm(mygrid)%atmos_axes(3), &
+           Atm(mygrid)%atmos_axes(4), Atm(mygrid)%coarse_graining)
+   endif
+   if (Atm(mygrid)%coarse_graining%write_coarse_restart_files) then
+      call fv_coarse_restart_init(mygrid, Atm(mygrid)%npz, Atm(mygrid)%flagstruct%nt_prog, &
+           Atm(mygrid)%flagstruct%nt_phys, Atm(mygrid)%flagstruct%hydrostatic, &
+           Atm(mygrid)%flagstruct%hybrid_z, Atm(mygrid)%flagstruct%fv_land, &
+           Atm(mygrid)%coarse_graining%write_coarse_dgrid_vel_rst, &
+           Atm(mygrid)%coarse_graining%write_coarse_agrid_vel_rst, &
+           Atm(mygrid)%coarse_graining%domain, &
+           Atm(mygrid)%coarse_graining%restart)
+   endif
 
 !---------- reference profile -----------
     ps1 = 101325.
@@ -505,15 +533,18 @@ contains
 #ifdef DEBUG
    call nullify_domain()
    call fv_diag(Atm(mygrid:mygrid), zvir, Time, -1)
+   if (Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
+      call fv_coarse_diag(Atm(mygrid:mygrid), fv_time)
+   endif
 #endif
 
    call set_domain(Atm(mygrid)%domain)
-      
+
  end subroutine atmosphere_init
 
 
 !>@brief The subroutine 'p_adi' computes (ps, pk, pe, peln, pkz)
-!! given (ptop, delp). 
+!! given (ptop, delp).
  subroutine p_adi(km, ng, ifirst, ilast, jfirst, jlast, ptop,   &
                   delp, pt, ps, pe, peln, pk, pkz, hydrostatic)
 ! Given (ptop, delp) computes (ps, pk, pe, peln, pkz)
@@ -548,9 +579,9 @@ contains
 
       do k=2,km+1
          do i=ifirst,ilast
-            pe(i,k,j)   = pe(i,k-1,j) + delp(i,j,k-1)
+            pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
             peln(i,k,j) = log(pe(i,k,j))
-            pk(i,j,k)   = exp( kappa*peln(i,k,j) )
+            pk(i,j,k) = exp( kappa*peln(i,k,j) )
          enddo
       enddo
 
@@ -576,7 +607,8 @@ contains
    type(time_type),intent(in) :: Time
    integer :: n, psc, atmos_time_step
    integer :: k, w_diff, nt_dyn, n_split_loc, seconds, days
-
+   logical :: used
+   real    :: rdt
    type(time_type) :: atmos_time
 
 !---- Call FV dynamics -----
@@ -611,33 +643,33 @@ contains
       p_step = psc
                     call timing_on('fv_dynamics')
 !uc/vc only need be same on coarse grid? However BCs do need to be the same
-      call fv_dynamics(npx, npy, npz, nq, Atm(n)%ng, dt_atmos/real(abs(p_split)),&
-                       Atm(n)%flagstruct%consv_te, Atm(n)%flagstruct%fill,       &
-                       Atm(n)%flagstruct%reproduce_sum, kappa, cp_air, zvir,     &
-                       Atm(n)%ptop, Atm(n)%ks, nq,                               &
-                       n_split_loc, Atm(n)%flagstruct%q_split,                   &
-!                      Atm(n)%flagstruct%n_split, Atm(n)%flagstruct%q_split,     &
-                       Atm(n)%u,    Atm(n)%v,     Atm(n)%w,  Atm(n)%delz,        &
-                       Atm(n)%flagstruct%hydrostatic,                            &
-                       Atm(n)%pt  , Atm(n)%delp,  Atm(n)%q,  Atm(n)%ps,          &
-                       Atm(n)%pe,   Atm(n)%pk,    Atm(n)%peln,                   &
-                       Atm(n)%pkz,  Atm(n)%phis,  Atm(n)%q_con,                  &
-                       Atm(n)%omga, Atm(n)%ua,    Atm(n)%va, Atm(n)%uc,          &
-                       Atm(n)%vc,   Atm(n)%ak,    Atm(n)%bk, Atm(n)%mfx,         &
-                       Atm(n)%mfy , Atm(n)%cx,    Atm(n)%cy, Atm(n)%ze0,         &
-                       Atm(n)%flagstruct%hybrid_z,                               &
-                       Atm(n)%gridstruct,  Atm(n)%flagstruct,                    &
-                       Atm(n)%neststruct,  Atm(n)%idiag, Atm(n)%bd,              &
-                       Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est)
+     call fv_dynamics(npx, npy, npz, nq, Atm(n)%ng, dt_atmos/real(abs(p_split)),&
+                      Atm(n)%flagstruct%consv_te, Atm(n)%flagstruct%fill,       &
+                      Atm(n)%flagstruct%reproduce_sum, kappa, cp_air, zvir,     &
+                      Atm(n)%ptop, Atm(n)%ks, nq,                               &
+                      n_split_loc, Atm(n)%flagstruct%q_split,                   &
+!                     Atm(n)%flagstruct%n_split, Atm(n)%flagstruct%q_split,     &
+                      Atm(n)%u,    Atm(n)%v,     Atm(n)%w,  Atm(n)%delz,        &
+                      Atm(n)%flagstruct%hydrostatic,                            &                       Atm(n)%pt  , Atm(n)%delp,  Atm(n)%q,  Atm(n)%ps,          &
+                      Atm(n)%pe,   Atm(n)%pk,    Atm(n)%peln,                   &
+                      Atm(n)%pkz,  Atm(n)%phis,  Atm(n)%q_con,                  &
+                      Atm(n)%omga, Atm(n)%ua,    Atm(n)%va, Atm(n)%uc,          &
+                      Atm(n)%vc,   Atm(n)%ak,    Atm(n)%bk, Atm(n)%mfx,         &
+                      Atm(n)%mfy , Atm(n)%cx,    Atm(n)%cy, Atm(n)%ze0,         &
+                      Atm(n)%flagstruct%hybrid_z,                               &
+                      Atm(n)%gridstruct,  Atm(n)%flagstruct,                    &
+                      Atm(n)%neststruct,  Atm(n)%idiag, Atm(n)%bd,              &
+                      Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est,        &
+                      Atm(n)%inline_mp)
 
-      call timing_off('fv_dynamics')
+     call timing_off('fv_dynamics')
 
-      if (ngrids > 1 .and. (psc < p_split .or. p_split < 0)) then
+    if (ngrids > 1 .and. (psc < p_split .or. p_split < 0)) then
        call mpp_sync()
-        call timing_on('TWOWAY_UPDATE')
+       call timing_on('TWOWAY_UPDATE')
        call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mygrid)
-        call timing_off('TWOWAY_UPDATE')
-      endif
+       call timing_off('TWOWAY_UPDATE')
+    endif
 
     end do !p_split
     call mpp_clock_end (id_dynam)
@@ -647,9 +679,16 @@ contains
 !-----------------------------------------------------
 !--- zero out tendencies
     call mpp_clock_begin (id_subgridz)
-    u_dt(:,:,:)   = 0.
+    u_dt(:,:,:)   = 0. ! These are updated by fv_subgrid_z
     v_dt(:,:,:)   = 0.
-    t_dt(:,:,:)   = 0.
+! t_dt is used for two different purposes:
+!    1 - to calculate the diagnostic temperature tendency from fv_subgrid_z
+!    2 - as an accumulator for the IAU increment and physics tendency
+! because of this, it will need to be zeroed out after the diagnostic is calculated
+    t_dt(:,:,:)   = Atm(n)%pt(isc:iec,jsc:jec,:)
+    qv_dt(:,:,:)  = Atm(n)%q (isc:iec,jsc:jec,:,sphum)
+
+    rdt = 1./dt_atmos
 
     w_diff = get_tracer_index (MODEL_ATMOS, 'w_diff' )
     if ( Atm(n)%flagstruct%fv_sg_adj > 0 ) then
@@ -677,6 +716,24 @@ contains
         enddo
     endif
 #endif
+
+    if (Atm(1)%idiag%id_u_dt_sg > 0) then
+       used = send_data(Atm(1)%idiag%id_u_dt_sg, u_dt(isc:iec,jsc:jec,:), fv_time)
+    end if
+    if (Atm(1)%idiag%id_v_dt_sg > 0) then
+       used = send_data(Atm(1)%idiag%id_v_dt_sg, v_dt(isc:iec,jsc:jec,:), fv_time)
+    end if
+    if (Atm(1)%idiag%id_t_dt_sg > 0) then
+       t_dt(:,:,:) = rdt*(Atm(1)%pt(isc:iec,jsc:jec,:) - t_dt(:,:,:))
+       used = send_data(Atm(1)%idiag%id_t_dt_sg, t_dt, fv_time)
+    end if
+    if (Atm(1)%idiag%id_qv_dt_sg > 0) then
+       qv_dt(:,:,:) = rdt*(Atm(1)%q(isc:iec,jsc:jec,:,sphum) - qv_dt(:,:,:))
+       used = send_data(Atm(1)%idiag%id_qv_dt_sg, qv_dt, fv_time)
+    end if
+
+! zero out t_dt for use as an accumulator
+    t_dt = 0.
 
    call mpp_clock_end (id_subgridz)
 
@@ -715,6 +772,9 @@ contains
       call fv_diag(Atm(mygrid:mygrid), zvir, fv_time, Atm(mygrid)%flagstruct%print_freq)
       call fv_nggps_diag_init(Atm(mygrid:mygrid), Atm(mygrid)%atmos_axes, fv_time)
       call fv_nggps_diag(Atm(mygrid:mygrid), zvir, fv_time)
+      if (Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
+         call fv_coarse_diag(Atm(mygrid:mygrid), fv_time)
+      endif
       first_diag = .false.
       call timing_off('FV_DIAG')
    endif
@@ -722,7 +782,7 @@ contains
    call fv_end(Atm, mygrid, restart_endfcst)
    deallocate (Atm)
 
-   deallocate( u_dt, v_dt, t_dt, pref, dum1d )
+   deallocate( u_dt, v_dt, t_dt, qv_dt, pref, dum1d )
 
  end subroutine atmosphere_end
 
@@ -737,10 +797,10 @@ contains
     call fv_write_restart(Atm(mygrid), timestamp)
 
   end subroutine atmosphere_restart
- 
 
-!>@brief The subroutine 'atmospehre_resolution' is an API to return the local 
-!! extents of the current MPI-rank or the global extents of the current 
+
+!>@brief The subroutine 'atmospehre_resolution' is an API to return the local
+!! extents of the current MPI-rank or the global extents of the current
 !! cubed-sphere tile.
  subroutine atmosphere_resolution (i_size, j_size, global)
    integer, intent(out)          :: i_size, j_size
@@ -787,7 +847,7 @@ contains
  end subroutine atmosphere_control_data
 
 
-!>@brief The subroutine 'atmosphere_grid_ctr' is an API that returns the longitude and 
+!>@brief The subroutine 'atmosphere_grid_ctr' is an API that returns the longitude and
 !! latitude cell centers of the current MPI-rank.
  subroutine atmosphere_grid_ctr (lon, lat)
     real(kind=kind_phys), intent(out) :: lon(:,:), lat(:,:)   !< Unit: radian
@@ -804,7 +864,7 @@ contains
  end subroutine atmosphere_grid_ctr
 
 
-!>@brief The subroutine 'atmosphere_grid_bdry' is an API to returns the 
+!>@brief The subroutine 'atmosphere_grid_bdry' is an API to returns the
 !! longitude and latitude finite volume edges (grid box) for the current MPI-rank.
  subroutine atmosphere_grid_bdry (blon, blat, global)
     real,    intent(out) :: blon(:,:), blat(:,:)   !< Unit: radian
@@ -833,7 +893,7 @@ contains
 
 
 !>@brief The subroutine 'atmosphere_domain' is an API to return
-!! the "domain2d" variable associated with the coupling grid and the 
+!! the "domain2d" variable associated with the coupling grid and the
 !! decomposition for the current cubed-sphere tile.
 !>@detail Coupling is done using the mass/temperature grid with no halos.
  subroutine atmosphere_domain ( fv_domain, layout, regional, nested, pelist )
@@ -964,10 +1024,10 @@ contains
  end subroutine atmosphere_hgt
 
 
-!>@brief The subroutine 'atmosphere_scalar_field_halo' is an API to return halo information 
+!>@brief The subroutine 'atmosphere_scalar_field_halo' is an API to return halo information
 !! of the current MPI_rank for an input scalar field.
 !>@detail Up to three point haloes can be returned by this API which includes special handling for
-!! the cubed-sphere tile corners. Output will be in (i,j,k) while input can be in (i,j,k) or 
+!! the cubed-sphere tile corners. Output will be in (i,j,k) while input can be in (i,j,k) or
 !! horizontally-packed form (ix,k).
  subroutine atmosphere_scalar_field_halo (data, halo, isize, jsize, ksize, data_p)
    !--------------------------------------------------------------------
@@ -978,7 +1038,7 @@ contains
    ! ied    - horizontal resolution in i-dir with haloes
    ! jed    - horizontal resolution in j-dir with haloes
    ! ksize  - vertical resolution
-   ! data_p - optional input field in packed format (ix,k)  
+   ! data_p - optional input field in packed format (ix,k)
    !--------------------------------------------------------------------
    !--- interface variables ---
    real(kind=kind_phys), dimension(1:isize,1:jsize,ksize), intent(inout) :: data !< output array to return the field with halo (i,j,k)
@@ -1026,7 +1086,7 @@ contains
      call mpp_error(FATAL, modname//' - unsupported halo size')
    endif
 
-   !--- fill the halo points when at a corner of the cubed-sphere tile 
+   !--- fill the halo points when at a corner of the cubed-sphere tile
    !--- interior domain corners are handled correctly
    if ( (isc==1) .or. (jsc==1) .or. (iec==npx-1) .or. (jec==npy-1) ) then
      do k = 1, ksize
@@ -1304,8 +1364,8 @@ contains
 
 
  subroutine get_stock_pe(index, value)
-   integer, intent(in)  :: index
-   real,    intent(out) :: value
+   integer, intent(in) :: index
+   real,   intent(out) :: value
 
 #ifdef USE_STOCK
    include 'stock.inc'
@@ -1388,10 +1448,10 @@ contains
       if (IAU_Data%drymassfixer) then
          ! global mean total pressure and water before IAU
          psumb = g_sum(Atm(n)%domain,sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz),dim=3),&
-                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
+                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.)
          qsumb = g_sum(Atm(n)%domain,&
                  sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
-                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
+                 isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.)
          if (is_master()) then
            print *,'dry ps before IAU/physics',psumb+Atm(n)%ptop-qsumb
          endif
@@ -1426,7 +1486,7 @@ contains
          blen = Atm_block%blksz(nb)
          do k = 1, npz
            if(flip_vc) then
-             k1 = npz+1-k !reverse the k direction 
+             k1 = npz+1-k !reverse the k direction
            else
              k1 = k
            endif
@@ -1444,7 +1504,7 @@ contains
    call timing_on('GFS_TENDENCIES')
    call atmos_phys_qdt_diag(Atm(n)%q, Atm(n)%phys_diag, nt_dyn, dt_atmos, .true.)
 !--- put u/v tendencies into haloed arrays u_dt and v_dt
-!$OMP parallel do default (none) & 
+!$OMP parallel do default (none) &
 !$OMP              shared (rdt, n, nq, dnats, npz, ncnst, nwat, mygrid, u_dt, v_dt, t_dt,&
 !$OMP                      Atm, IPD_Data, Atm_block, sphum, liq_wat, rainwat, ice_wat,   &
 #ifdef MULTI_GASES
@@ -1471,7 +1531,7 @@ contains
 
      do k = 1, npz
        if(flip_vc) then
-         k1 = npz+1-k !reverse the k direction 
+         k1 = npz+1-k !reverse the k direction
        else
          k1 = k
        endif
@@ -1497,13 +1557,13 @@ contains
 ! **********************************************************************************************************
 ! Dry mass: the following way of updating delp is key to mass conservation with hybrid 32-64 bit computation
 ! **********************************************************************************************************
-! The following example is for 2 water species. 
+! The following example is for 2 water species.
 !        q0 = Atm(n)%delp(i,j,k1)*(1.-(Atm(n)%q(i,j,k1,1)+Atm(n)%q(i,j,k1,2))) + q1 + q2
 #ifdef MULTI_GASES
          q0 = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:max(nwat,num_gas)))) + sum(qwat(1:max(nwat,num_gas)))
 #else
          qt = sum(qwat(1:nwat))
-         q0 = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:nwat))) + qt 
+         q0 = Atm(n)%delp(i,j,k1)*(1.-sum(Atm(n)%q(i,j,k1,1:nwat))) + qt
 #endif
          Atm(n)%delp(i,j,k1) = q0
          Atm(n)%q(i,j,k1,1:nq_adv) = qwat(1:nq_adv) / q0
@@ -1517,7 +1577,7 @@ contains
      do iq = nq+1, ncnst
        do k = 1, npz
          if(flip_vc) then
-           k1 = npz+1-k !reverse the k direction 
+           k1 = npz+1-k !reverse the k direction
          else
            k1 = k
          endif
@@ -1536,11 +1596,11 @@ contains
    if (IAU_Data%in_interval .and. IAU_data%drymassfixer) then
       ! global mean total pressure
       psum = g_sum(Atm(n)%domain,sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz),dim=3),&
-             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
+             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.)
       ! global mean total water (before adjustment)
       qsum = g_sum(Atm(n)%domain,&
              sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
-             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.) 
+             isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1,reproduce=.true.)
       betad = (psum - (psumb - qsumb))/qsum
       if (is_master()) then
         print *,'dry ps after IAU/physics',psum+Atm(n)%ptop-qsum
@@ -1548,7 +1608,7 @@ contains
       Atm(n)%q(:,:,:,1:nwat) = betad*Atm(n)%q(:,:,:,1:nwat)
       !qsum = g_sum(Atm(n)%domain,&
       !       sum(Atm(n)%delp(isc:iec,jsc:jec,1:npz)*sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:nwat),4),dim=3),&
-      !       isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1) 
+      !       isc,iec,jsc,jec,Atm(n)%ng,Atm(n)%gridstruct%area_64,1)
       !if (is_master()) then
       !  print *,'dry ps after iau_drymassfixer',psum+Atm(n)%ptop-qsum
       !endif
@@ -1595,7 +1655,8 @@ contains
                          .true., Time_next, Atm(n)%flagstruct%nudge, Atm(n)%gridstruct,    &
                          Atm(n)%gridstruct%agrid(:,:,1), Atm(n)%gridstruct%agrid(:,:,2),   &
                          Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%flagstruct,            &
-                         Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop, Atm(n)%phys_diag)
+                         Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop,         &
+                         Atm(n)%phys_diag, Atm(n)%nudge_diag )
        call timing_off('FV_UPDATE_PHYS')
    call mpp_clock_end (id_dynam)
 
@@ -1606,7 +1667,7 @@ contains
        call timing_on('TWOWAY_UPDATE')
        call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mygrid)
        call timing_off('TWOWAY_UPDATE')
-    endif   
+    endif
    call nullify_domain()
 
   !---- diagnostics for FV dynamics -----
@@ -1619,6 +1680,9 @@ contains
      call nullify_domain()
      call timing_on('FV_DIAG')
      call fv_diag(Atm(mygrid:mygrid), zvir, fv_time, Atm(mygrid)%flagstruct%print_freq)
+      if (Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
+         call fv_coarse_diag(Atm(mygrid:mygrid), fv_time)
+      endif
      first_diag = .false.
      call timing_off('FV_DIAG')
 
@@ -1628,7 +1692,7 @@ contains
  end subroutine atmosphere_state_update
 
 
-!>@brief The subroutine 'adiabatic_init' is an optional step during initialization 
+!>@brief The subroutine 'adiabatic_init' is an optional step during initialization
 !! to pre-condition a solution via backward-forward steps with capability for various
 !! nudgings.
  subroutine adiabatic_init(zvir,nudge_dz,time)
@@ -1687,9 +1751,9 @@ contains
           allocate ( t0(isc:iec,jsc:jec, npz) )
      endif
 
-!$omp parallel do default (none) & 
+!$omp parallel do default (none) &
 !$omp              shared (nudge_dz, npz, jsc, jec, isc, iec, n, sphum, u0, v0, t0, dz0, dp0, Atm, zvir, mygrid) &
-!$omp             private (k, j, i) 
+!$omp             private (k, j, i)
        do k=1,npz
           do j=jsc,jec+1
              do i=isc,iec
@@ -1739,7 +1803,7 @@ contains
 !                     Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq,  n_split_loc,                                       &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
-                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      & 
+                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
@@ -1747,14 +1811,14 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp)
 ! Backward
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, -dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
 !                    Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, n_split_loc,                                        &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
-                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      & 
+                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
@@ -1762,7 +1826,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp)
 !Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mygrid, nudge_dz, dz0) &
@@ -1830,7 +1894,7 @@ contains
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
-                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      & 
+                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
@@ -1838,13 +1902,13 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp)
 ! Forward call
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
-                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      & 
+                     Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
@@ -1852,7 +1916,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp)
 ! Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (nudge_dz,npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dz0, dp0, xt, zvir, mygrid) &
@@ -1904,8 +1968,8 @@ contains
 
 
 
-!>@brief The subroutine 'atmos_phys_driver_statein' is an API to populate 
-!! the IPD_Data%Statein container with the prognostic state at the end of 
+!>@brief The subroutine 'atmos_phys_driver_statein' is an API to populate
+!! the IPD_Data%Statein container with the prognostic state at the end of
 !! the advection (dynamics) step of integration.
 !>@detail Performs a mass adjustment to be consistent with the
 !! GFS physics and if necessary, converts quantities to hydrostatic
@@ -1925,7 +1989,7 @@ contains
 ! Local GFS-phys consistent parameters:
 !--------------------------------------
    real(kind=kind_phys), parameter :: p00 = 1.e5
-   real(kind=kind_phys), parameter :: qmin = 1.0e-10   
+   real(kind=kind_phys), parameter :: qmin = 1.0e-10
    real(kind=kind_phys) :: pk0inv, ptop, pktop
    real(kind=kind_phys) :: rTv, dm, qgrs_rad
    integer :: nb, blen, npz, i, j, k, ix, k1, kz, dnats, nq_adv
@@ -1949,7 +2013,7 @@ contains
 !---------------------------------------------------------------------
 ! use most up to date atmospheric properties when running serially
 !---------------------------------------------------------------------
-!$OMP parallel do default (none) & 
+!$OMP parallel do default (none) &
 !$OMP             shared  (Atm_block, Atm, IPD_Data, npz, nq, ncnst, sphum, liq_wat, &
 !$OMP                      ice_wat, rainwat, snowwat, graupel, pk0inv, ptop,   &
 !$OMP                      pktop, zvir, mygrid, dnats, nq_adv, flip_vc) &
@@ -2023,7 +2087,7 @@ contains
                                             - IPD_Data(nb)%Statein%qgrs(ix,k,graupel)
          else !variable condensate numbers
             IPD_Data(nb)%Statein%prsl(ix,k) = IPD_Data(nb)%Statein%prsl(ix,k) &
-                                            - sum(IPD_Data(nb)%Statein%qgrs(ix,k,2:Atm(mygrid)%flagstruct%nwat))   
+                                            - sum(IPD_Data(nb)%Statein%qgrs(ix,k,2:Atm(mygrid)%flagstruct%nwat))
          endif
        enddo
      enddo
@@ -2031,7 +2095,7 @@ contains
 ! Re-compute pressure (dry_mass + water_vapor) derived fields:
      if(flip_vc) then
        do i=1,blen
-         IPD_Data(nb)%Statein%prsi(i,npz+1) = ptop 
+         IPD_Data(nb)%Statein%prsi(i,npz+1) = ptop
        enddo
        do k=npz,1,-1
          do i=1,blen
@@ -2044,7 +2108,7 @@ contains
        enddo
      else
        do i=1,blen
-         IPD_Data(nb)%Statein%prsi(i,    1) = ptop 
+         IPD_Data(nb)%Statein%prsi(i,    1) = ptop
        enddo
        do k=1,npz
          do i=1,blen
@@ -2113,7 +2177,7 @@ contains
     if ( Atm(mygrid)%flagstruct%hydrostatic .or. Atm(mygrid)%flagstruct%use_hydro_pressure ) then
         do k=2,npz
            do i=1,blen
-              IPD_Data(nb)%Statein%prsik(i,k) = exp( kappa*IPD_Data(nb)%Statein%prsik(i,k) )*pk0inv 
+              IPD_Data(nb)%Statein%prsik(i,k) = exp( kappa*IPD_Data(nb)%Statein%prsik(i,k) )*pk0inv
            enddo
         enddo
     endif
@@ -2143,7 +2207,7 @@ contains
       if (allocated(phys_diag%phys_qv_dt)) phys_diag%phys_qv_dt = q(isc:iec,jsc:jec,:,sphum)
       if (allocated(phys_diag%phys_ql_dt)) then
          if (liq_wat < 0) call mpp_error(FATAL, " phys_ql_dt needs at least one liquid water tracer defined")
-         phys_diag%phys_ql_dt = q(isc:iec,jsc:jec,:,liq_wat) 
+         phys_diag%phys_ql_dt = q(isc:iec,jsc:jec,:,liq_wat)
       endif
       if (allocated(phys_diag%phys_qi_dt)) then
          if (ice_wat < 0) then
@@ -2152,13 +2216,33 @@ contains
          endif
          phys_diag%phys_qi_dt = q(isc:iec,jsc:jec,:,ice_wat)
       endif
+
+      if (liq_wat > 0) then
+         if (allocated(phys_diag%phys_liq_wat_dt)) phys_diag%phys_liq_wat_dt = q(isc:iec,jsc:jec,:,liq_wat)
+      endif
+
+      if (rainwat > 0) then
+         if (allocated(phys_diag%phys_qr_dt)) phys_diag%phys_qr_dt = q(isc:iec,jsc:jec,:,rainwat)
+      endif
+
+      if (ice_wat > 0) then
+         if (allocated(phys_diag%phys_ice_wat_dt)) phys_diag%phys_ice_wat_dt = q(isc:iec,jsc:jec,:,ice_wat)
+      endif
+
+      if (graupel > 0) then
+         if (allocated(phys_diag%phys_qg_dt)) phys_diag%phys_qg_dt = q(isc:iec,jsc:jec,:,graupel)
+      endif
+
+      if (snowwat > 0) then
+         if (allocated(phys_diag%phys_qs_dt)) phys_diag%phys_qs_dt = q(isc:iec,jsc:jec,:,snowwat)
+      endif
    else
       if (allocated(phys_diag%phys_qv_dt)) phys_diag%phys_qv_dt = q(isc:iec,jsc:jec,:,sphum) - phys_diag%phys_qv_dt
       if (allocated(phys_diag%phys_ql_dt)) then
          phys_diag%phys_ql_dt = q(isc:iec,jsc:jec,:,liq_wat) - phys_diag%phys_ql_dt
       endif
       if (allocated(phys_diag%phys_qi_dt)) then
-         phys_diag%phys_qi_dt = q(isc:iec,jsc:jec,:,ice_wat) - phys_diag%phys_qv_dt
+         phys_diag%phys_qi_dt = q(isc:iec,jsc:jec,:,ice_wat) - phys_diag%phys_qi_dt
       endif
    endif
 
@@ -2169,13 +2253,32 @@ contains
       if (snowwat > 0) phys_diag%phys_qi_dt = q(isc:iec,jsc:jec,:,snowwat) + phys_diag%phys_qi_dt
       if (graupel > 0) phys_diag%phys_qi_dt = q(isc:iec,jsc:jec,:,graupel) + phys_diag%phys_qi_dt
    endif
-      
+
    if (.not. begin) then
       if (allocated(phys_diag%phys_qv_dt)) phys_diag%phys_qv_dt = phys_diag%phys_qv_dt / dt
       if (allocated(phys_diag%phys_ql_dt)) phys_diag%phys_ql_dt = phys_diag%phys_ql_dt / dt
       if (allocated(phys_diag%phys_qi_dt)) phys_diag%phys_qi_dt = phys_diag%phys_qi_dt / dt
-   endif
 
+      if (liq_wat > 0) then
+         if (allocated(phys_diag%phys_liq_wat_dt)) phys_diag%phys_liq_wat_dt = (q(isc:iec,jsc:jec,:,liq_wat) - phys_diag%phys_liq_wat_dt) / dt
+      endif
+
+      if (rainwat > 0) then
+         if (allocated(phys_diag%phys_qr_dt)) phys_diag%phys_qr_dt = (q(isc:iec,jsc:jec,:,rainwat) - phys_diag%phys_qr_dt) / dt
+      endif
+
+      if (ice_wat > 0) then
+         if (allocated(phys_diag%phys_ice_wat_dt)) phys_diag%phys_ice_wat_dt = (q(isc:iec,jsc:jec,:,ice_wat) - phys_diag%phys_ice_wat_dt) / dt
+      endif
+
+      if (graupel > 0) then
+         if (allocated(phys_diag%phys_qg_dt)) phys_diag%phys_qg_dt = (q(isc:iec,jsc:jec,:,graupel) - phys_diag%phys_qg_dt) / dt
+      endif
+
+      if (snowwat > 0) then
+         if (allocated(phys_diag%phys_qs_dt)) phys_diag%phys_qs_dt = (q(isc:iec,jsc:jec,:,snowwat) - phys_diag%phys_qs_dt) / dt
+      endif
+   endif
 
  end subroutine atmos_phys_qdt_diag
 
