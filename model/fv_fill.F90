@@ -1,21 +1,21 @@
 !***********************************************************************
-!*                   GNU Lesser General Public License                 
+!*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
 !*
-!* The FV3 dynamical core is free software: you can redistribute it 
+!* The FV3 dynamical core is free software: you can redistribute it
 !* and/or modify it under the terms of the
 !* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
+!* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
 !* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
+!* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 module fv_fill_mod
@@ -46,7 +46,7 @@ module fv_fill_mod
 
 contains
 
-!>@brief The subroutine 'fillz' is for mass-conservative filling of nonphysical negative values in the tracers. 
+!>@brief The subroutine 'fillz' is for mass-conservative filling of nonphysical negative values in the tracers.
 !>@details This routine takes mass from adjacent cells in the same column to fill negatives, if possible.
  subroutine fillz(im, km, nq, q, dp)
    integer,  intent(in):: im                !< No. of longitudes
@@ -99,20 +99,20 @@ contains
              zfix(i) = .true.
              if ( q(i,k-1,ic) > 0. ) then
 ! Borrow from above
-                dq = min ( q(i,k-1,ic)*dp(i,k-1), -q(i,k,ic)*dp(i,k) ) 
+                dq = min ( q(i,k-1,ic)*dp(i,k-1), -q(i,k,ic)*dp(i,k) )
                 q(i,k-1,ic) = q(i,k-1,ic) - dq/dp(i,k-1)
                 q(i,k  ,ic) = q(i,k  ,ic) + dq/dp(i,k  )
              endif
              if ( q(i,k,ic)<0.0 .and. q(i,k+1,ic)>0. ) then
 ! Borrow from below:
-                dq = min ( q(i,k+1,ic)*dp(i,k+1), -q(i,k,ic)*dp(i,k) ) 
+                dq = min ( q(i,k+1,ic)*dp(i,k+1), -q(i,k,ic)*dp(i,k) )
                 q(i,k+1,ic) = q(i,k+1,ic) - dq/dp(i,k+1)
                 q(i,k  ,ic) = q(i,k  ,ic) + dq/dp(i,k  )
              endif
           endif
          enddo
       enddo
- 
+
 ! Bottom layer
       k = km
       do i=1,im
@@ -122,7 +122,7 @@ contains
              qup =  q(i,k-1,ic)*dp(i,k-1)
              qly = -q(i,k  ,ic)*dp(i,k  )
              dup =  min(qly, qup)
-             q(i,k-1,ic) = q(i,k-1,ic) - dup/dp(i,k-1) 
+             q(i,k-1,ic) = q(i,k-1,ic) - dup/dp(i,k-1)
              q(i,k,  ic) = q(i,k,  ic) + dup/dp(i,k  )
           endif
       enddo
@@ -155,9 +155,9 @@ contains
    enddo
  end subroutine fillz
 
-!>@brief The subroutine 'fill_gfs' is for mass-conservative filling of nonphysical negative values in the tracers. 
-!>@details This routine is the same as 'fillz', but only fills one scalar field 
-!! using specified q_min instead of 0 with the k-index flipped as in the GFS physics. 
+!>@brief The subroutine 'fill_gfs' is for mass-conservative filling of nonphysical negative values in the tracers.
+!>@details This routine is the same as 'fillz', but only fills one scalar field
+!! using specified q_min instead of 0 with the k-index flipped as in the GFS physics.
 !! It accepts edge pressure instead of delp.
  subroutine fill_gfs(im, km, pe2, q, q_min)
 !SJL: this routine is the equivalent of fillz except that the vertical index is upside down
@@ -201,7 +201,7 @@ contains
 
  end subroutine fill_gfs
 
-!>@brief The subroutine 'fill2D' fills in nonphysical negative values in a single scalar field 
+!>@brief The subroutine 'fill2D' fills in nonphysical negative values in a single scalar field
 !! using a two-dimensional diffusive approach which conserves mass.
  subroutine fill2D(is, ie, js, je, ng, km, q, delp, area, domain, bounded_domain, npx, npy)
 ! This is a diffusive type filling algorithm

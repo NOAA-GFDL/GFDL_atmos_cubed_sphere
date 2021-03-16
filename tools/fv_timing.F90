@@ -96,7 +96,7 @@
 ! ... To reduce the overhead for the first call
 !
 #if defined(SPMD)
-    wclk = MPI_Wtime() 
+    wclk = MPI_Wtime()
     totim = wclk
 #else
 #   if defined( IRIX64 ) || ( defined FFC )
@@ -120,7 +120,7 @@
 
 
          character(len=20) :: UC_blk_name
-         character(len=20) ::  ctmp 
+         character(len=20) ::  ctmp
          integer i
          integer iblk
 
@@ -146,7 +146,7 @@
                iblk =i
             endif
          enddo
-      
+
          if ( iblk .eq. 0 ) then
             tblk=tblk+1
             iblk=tblk
@@ -171,7 +171,7 @@
         last(iblk)%usr = wclk
         last(iblk)%sys = 0.0
 # endif
-#endif  
+#endif
 
         end subroutine timing_on
 
@@ -201,12 +201,12 @@
               iblk =i
            endif
         enddo
-      
+
 !         write(*,*) 'timing_off ', ctmp, tblk, tblk
         if ( iblk .eq. 0 ) then
             call mpp_error(FATAL,'fv_timing_mod: timing_off called before timing_on for: '//trim(blk_name))
 !           write(*,*) 'stop in timing off in ', ctmp
-!           stop 
+!           stop
         endif
 
 #if defined(SPMD)
@@ -216,7 +216,7 @@
         last(iblk)%usr  = wclk
         last(iblk)%sys  = 0.0
 #else
-# if defined( IRIX64 ) || ( defined FFC ) 
+# if defined( IRIX64 ) || ( defined FFC )
         totim = etime(tarray)
         accum(iblk)%usr = accum(iblk)%usr +           &
                         tarray(1) - last(iblk)%usr

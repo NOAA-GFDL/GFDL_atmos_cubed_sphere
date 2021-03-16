@@ -1,24 +1,23 @@
 !***********************************************************************
-!*                   GNU Lesser General Public License                 
+!*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
 !*
-!* The FV3 dynamical core is free software: you can redistribute it 
+!* The FV3 dynamical core is free software: you can redistribute it
 !* and/or modify it under the terms of the
 !* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
+!* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
 !* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
+!* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
-
  module fv_surf_map_mod
 
 ! <table>
@@ -96,8 +95,8 @@
 ! New NASA SRTM30 data: SRTM30.nc
 !         nlon = 43200
 !         nlat = 21600
-      logical::  zs_filter = .true. 
-      logical:: zero_ocean = .true.          ! if true, no diffusive flux into water/ocean area 
+      logical::  zs_filter = .true.
+      logical:: zero_ocean = .true.          ! if true, no diffusive flux into water/ocean area
       integer           ::  nlon = 21600
       integer           ::  nlat = 10800
       real:: cd4 = 0.15      !< Dimensionless coeff for del-4 diffusion (with FCT)
@@ -108,13 +107,13 @@
       integer:: n_del2_weak = 12
       integer:: n_del2_strong = -1
       integer:: n_del4 = -1
-      
+
 
       character(len=128)::  surf_file = "INPUT/topo1min.nc"
       character(len=6)  ::  surf_format = 'netcdf'
       logical :: namelist_read = .false.
 
-      real(kind=R_GRID) da_min 
+      real(kind=R_GRID) da_min
       real cos_grid
       character(len=3) :: grid_string = ''
 
@@ -218,12 +217,12 @@
 !
 ! surface file must be in NetCDF format
 !
-      if ( file_exist(surf_file) ) then 
+      if ( file_exist(surf_file) ) then
          if (surf_format == "netcdf") then
 
           status = nf_open (surf_file, NF_NOWRITE, ncid)
           if (status .ne. NF_NOERR) call handle_err(status)
-  
+
           status = nf_inq_dimid (ncid, 'lon', lonid)
           if (status .ne. NF_NOERR) call handle_err(status)
           status = nf_inq_dimlen (ncid, lonid, londim)
@@ -243,7 +242,7 @@
                 write(*,*) 'Opening USGS datset file:', surf_file, surf_format, nlon, nlat
               endif
           endif
-  
+
        else
           call error_mesg ( 'surfdrv','Raw IEEE data format no longer supported !!!', FATAL )
        endif
@@ -466,7 +465,7 @@
       ! nested grids this allows us to do the smoothing near the boundary
       ! without having to fill the boundary halo from the coarse grid
 
-      !ALSO for nesting: note that we are smoothing the terrain using 
+      !ALSO for nesting: note that we are smoothing the terrain using
       !  the nested-grid's outer halo filled with the terrain computed
       !  directly from the input file computed here, and then
       !  replacing it with interpolated topography in fv_restart, so
@@ -636,7 +635,7 @@
    else
         m_slope = 10.
    endif
-         
+
 
    do 777 nt=1, ntmax
     call mpp_update_domains(q, domain)
@@ -645,13 +644,13 @@
     if ( nt==1 .and. check_slope ) then
          do j=js,je
             do i=is,ie+1
-               ddx(i,j) = (q(i,j) - q(i-1,j))/dxc(i,j) 
+               ddx(i,j) = (q(i,j) - q(i-1,j))/dxc(i,j)
                ddx(i,j) = abs(ddx(i,j))
             enddo
          enddo
          do j=js,je+1
             do i=is,ie
-               ddy(i,j) = (q(i,j) - q(i,j-1))/dyc(i,j) 
+               ddy(i,j) = (q(i,j) - q(i,j-1))/dyc(i,j)
                ddy(i,j) = abs(ddy(i,j))
             enddo
          enddo
@@ -833,13 +832,13 @@
          call mpp_update_domains(q, domain)
          do j=js,je
             do i=is,ie+1
-               ddx(i,j) = (q(i,j) - q(i-1,j))/dxc(i,j) 
+               ddx(i,j) = (q(i,j) - q(i-1,j))/dxc(i,j)
                ddx(i,j) = abs(ddx(i,j))
             enddo
          enddo
          do j=js,je+1
             do i=is,ie
-               ddy(i,j) = (q(i,j) - q(i,j-1))/dyc(i,j) 
+               ddy(i,j) = (q(i,j) - q(i,j-1))/dyc(i,j)
                ddy(i,j) = abs(ddy(i,j))
             enddo
          enddo
@@ -975,11 +974,11 @@
       type(domain2d), intent(INOUT) :: domain
 ! diffusivity
       real :: diff(bd%is-3:bd%ie+2,bd%js-3:bd%je+2)
-! diffusive fluxes: 
+! diffusive fluxes:
       real :: fx1(bd%is:bd%ie+1,bd%js:bd%je), fy1(bd%is:bd%ie,bd%js:bd%je+1)
       real :: fx2(bd%is:bd%ie+1,bd%js:bd%je), fy2(bd%is:bd%ie,bd%js:bd%je+1)
       real :: fx4(bd%is:bd%ie+1,bd%js:bd%je), fy4(bd%is:bd%ie,bd%js:bd%je+1)
-      real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: d2, win, wou 
+      real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: d2, win, wou
       real, dimension(bd%is:bd%ie,bd%js:bd%je):: qlow, qmin, qmax, q0
       real, parameter:: esl = 1.E-20
       integer i,j, n
@@ -1150,18 +1149,18 @@
       do j=js,je
          do i=is,ie+1
             if ( fx4(i,j) > 0. ) then
-                 fx4(i,j) = min(1., wou(i-1,j), win(i,j)) * fx4(i,j) 
+                 fx4(i,j) = min(1., wou(i-1,j), win(i,j)) * fx4(i,j)
             else
-                 fx4(i,j) = min(1., win(i-1,j), wou(i,j)) * fx4(i,j) 
+                 fx4(i,j) = min(1., win(i-1,j), wou(i,j)) * fx4(i,j)
             endif
          enddo
       enddo
       do j=js,je+1
          do i=is,ie
             if ( fy4(i,j) > 0. ) then
-                 fy4(i,j) = min(1., wou(i,j-1), win(i,j)) * fy4(i,j) 
+                 fy4(i,j) = min(1., wou(i,j-1), win(i,j)) * fy4(i,j)
             else
-                 fy4(i,j) = min(1., win(i,j-1), wou(i,j)) * fy4(i,j) 
+                 fy4(i,j) = min(1., win(i,j-1), wou(i,j)) * fy4(i,j)
             endif
          enddo
       enddo
@@ -1270,7 +1269,7 @@
      if(is_master()) write(*,*) 'surf_map: Search started ....'
 
 ! stretch_fac * pi5/(npx-1)  / (pi/nlat)
-    lat_crit = nint( stretch_fac*real(nlat)/real(npx_global-1) ) 
+    lat_crit = nint( stretch_fac*real(nlat)/real(npx_global-1) )
     lat_crit = min( jt, max( 4,  lat_crit ) )
 
     if ( jstart==1 ) then
@@ -1300,7 +1299,7 @@
          hsum = 0.
          np = 0
          do j=1,lat_crit
-            do i=1,im 
+            do i=1,im
                np = np + 1
                hsum = hsum + (qsp-zs(i,j))**2
             enddo
@@ -1331,7 +1330,7 @@
          np = 0
          do jp=jend-lat_crit+1, jend
             j = jp - jstart + 1
-            do i=1,im 
+            do i=1,im
                np = np + 1
                hsum = hsum + (qnp-zs(i,j))**2
             enddo
@@ -1387,7 +1386,7 @@
             j1 = j1 - jstart + 1
             j2 = j2 - jstart + 1
 
-            lon_w = min( grid(i,j,1), grid(i+1,j,1), grid(i,j+1,1), grid(i+1,j+1,1) ) 
+            lon_w = min( grid(i,j,1), grid(i+1,j,1), grid(i,j+1,1), grid(i+1,j+1,1) )
             lon_e = max( grid(i,j,1), grid(i+1,j,1), grid(i,j+1,1), grid(i+1,j+1,1) )
 
             if ( (lon_e-lon_w) > pi ) then
@@ -1423,7 +1422,7 @@
                pc(k) = p1(k) + p2(k) + p3(k) + p4(k)
             enddo
             call normalize_vect( pc )
- 
+
             th0 = min( v_prod(p1,p3), v_prod(p2, p4) )
             th1 = min( cos_grid, cos(0.25*acos(max(v_prod(p1,p3), v_prod(p2, p4)))))
 
@@ -1545,7 +1544,7 @@
  subroutine remove_ice_sheets (lon, lat, lfrac, bd )
 !---------------------------------
 ! Bruce Wyman's fix for Antarctic
-!--------------------------------- 
+!---------------------------------
       type(fv_grid_bounds_type), intent(IN) :: bd
       real(kind=R_GRID), intent(in)    :: lon(bd%isd:bd%ied,bd%jsd:bd%jed), lat(bd%isd:bd%ied,bd%jsd:bd%jed)
       real, intent(inout) :: lfrac(bd%isd:bd%ied,bd%jsd:bd%jed)
@@ -1556,10 +1555,10 @@
 ! lon   = longitude in radians
 ! lat   = latitude in radians
 ! lfrac = land-sea mask (land=1, sea=0)
-            
+
       integer :: i, j
       real :: dtr, phs, phn
-            
+
       is  = bd%is
       ie  = bd%ie
       js  = bd%js
@@ -1568,12 +1567,12 @@
       ied = bd%ied
       jsd = bd%jsd
       jed = bd%jed
-        
+
       dtr = acos(0.)/90.
-      phs = -83.9999*dtr                                  
+      phs = -83.9999*dtr
 !     phn = -78.9999*dtr
       phn = -76.4*dtr
-            
+
       do j = jsd, jed
          do i = isd, ied
          if ( lat(i,j) < phn ) then
@@ -1585,14 +1584,14 @@
                               ! replace between 270 and 360 deg
          if ( sin(lon(i,j)) < 0. .and. cos(lon(i,j)) > 0.) then
               lfrac(i,j) = 1.0
-              cycle 
+              cycle
          endif
          endif
          enddo
       enddo
  end subroutine remove_ice_sheets
 
-!>@brief The subroutine 'read_namelis' reads the namelist file, 
+!>@brief The subroutine 'read_namelis' reads the namelist file,
 !! writes the namelist to log file, and initializes constants.
 subroutine read_namelist
 
@@ -1608,7 +1607,7 @@ subroutine read_namelist
     ierr = check_nml_error(io,'surf_map_nml')
 #else
     unit = open_namelist_file ( )
-    ierr=1 
+    ierr=1
     do while (ierr /= 0)
       read  (unit, nml=surf_map_nml, iostat=io, end=10)
       ierr = check_nml_error(io,'surf_map_nml')
