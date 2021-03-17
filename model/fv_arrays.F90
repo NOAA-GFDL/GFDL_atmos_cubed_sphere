@@ -863,6 +863,9 @@ module fv_arrays_mod
                                            !< at the center of the domain (the center of tile 1), if set to .true.
                                            !< The default value is .false.
 
+   real :: dz_min = 2        !< Minimum thickness depth to  to enforce monotonicity of height to prevent blowup.
+                             !< 2 by default
+
    integer :: a2b_ord = 4   !< Order of interpolation used by the pressure gradient force
                             !< to interpolate cell-centered (A-grid) values to the grid corners.
                             !< The default value is 4 (recommended), which uses fourth-order

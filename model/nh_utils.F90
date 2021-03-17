@@ -65,18 +65,17 @@ module nh_utils_mod
    public sim3p0_solver, rim_2d
    public Riem_Solver_c
 
-   real, parameter:: dz_min = 6.
    real, parameter:: r3 = 1./3.
 
 CONTAINS
 
   subroutine update_dz_c(is, ie, js, je, km, ng, dt, dp0, zs, area, ut, vt, gz, ws, &
-       npx, npy, sw_corner, se_corner, ne_corner, nw_corner, bd, grid_type)
+       npx, npy, sw_corner, se_corner, ne_corner, nw_corner, bd, grid_type, dz_min)
 ! !INPUT PARAMETERS:
   type(fv_grid_bounds_type), intent(IN) :: bd
   integer, intent(in):: is, ie, js, je, ng, km, npx, npy, grid_type
   logical, intent(IN):: sw_corner, se_corner, ne_corner, nw_corner
-  real, intent(in):: dt
+  real, intent(in):: dt, dz_min
   real, intent(in):: dp0(km)
   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: ut, vt
   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng):: area
@@ -195,15 +194,15 @@ CONTAINS
 6000 continue
 
 ! Enforce monotonicity of height to prevent blowup
-!$OMP parallel do default(none) shared(is1,ie1,js1,je1,ws,zs,gz,rdt,km)
+!$OMP parallel do default(none) shared(is1,ie1,js1,je1,ws,zs,gz,rdt,km,dz_min)
   do j=js1, je1
-     do k=2, km+1
-        do i=is1, ie1
-           gz(i,j,k) = min( gz(i,j,k), gz(i,j,k-1) - dz_min )
-        enddo
-     enddo
      do i=is1, ie1
         ws(i,j) = ( zs(i,j) - gz(i,j,km+1) ) * rdt
+     enddo
+     do k=km, 1, -1
+        do i=is1, ie1
+           gz(i,j,k) = max( gz(i,j,k), gz(i,j,k+1) + dz_min )
+        enddo
      enddo
   enddo
 
@@ -211,12 +210,12 @@ CONTAINS
 
 
   subroutine update_dz_d(ndif, damp, hord, is, ie, js, je, km, ng, npx, npy, area, rarea,   &
-                         dp0, zs, zh, crx, cry, xfx, yfx, ws, rdt, gridstruct, bd, lim_fac)
+                         dp0, zs, zh, crx, cry, xfx, yfx, ws, rdt, gridstruct, bd, lim_fac, dz_min)
 
   type(fv_grid_bounds_type), intent(IN) :: bd
   integer, intent(in):: is, ie, js, je, ng, km, npx, npy
   integer, intent(in):: hord
-  real, intent(in)   :: rdt
+  real, intent(in)   :: rdt, dz_min
   real, intent(in)   :: dp0(km)
   real, intent(in)   :: area(is-ng:ie+ng,js-ng:je+ng)
   real, intent(in)   :: rarea(is-ng:ie+ng,js-ng:je+ng)
@@ -309,16 +308,16 @@ CONTAINS
 
   enddo
 
-!$OMP parallel do default(none) shared(is,ie,js,je,km,ws,zs,zh,rdt)
+!$OMP parallel do default(none) shared(is,ie,js,je,km,ws,zs,zh,rdt,dz_min)
   do j=js, je
-     do k=2, km+1
-        do i=is, ie
-! Enforce monotonicity of height to prevent blowup
-           zh(i,j,k) = min( zh(i,j,k), zh(i,j,k-1) - dz_min )
-        enddo
-     enddo
      do i=is,ie
         ws(i,j) = ( zs(i,j) - zh(i,j,km+1) ) * rdt
+     enddo
+     do k=km, 1, -1
+        do i=is, ie
+! Enforce monotonicity of height to prevent blowup
+           zh(i,j,k) = max( zh(i,j,k), zh(i,j,k+1) + dz_min )
+        enddo
      enddo
   enddo
 
