@@ -373,6 +373,7 @@ module fv_control_mod
      real,     pointer :: add_noise
      logical , pointer :: butterfly_effect
      real,     pointer :: dz_min
+     integer,  pointer :: psm_bc
 
      integer , pointer :: a2b_ord
      integer , pointer :: c2l_ord
@@ -936,6 +937,7 @@ module fv_control_mod
        add_noise                     => Atm%flagstruct%add_noise
        butterfly_effect              => Atm%flagstruct%butterfly_effect
        dz_min                        => Atm%flagstruct%dz_min
+       psm_bc                        => Atm%flagstruct%psm_bc
        a2b_ord                       => Atm%flagstruct%a2b_ord
        c2l_ord                       => Atm%flagstruct%c2l_ord
        ndims                         => Atm%flagstruct%ndims
@@ -1445,7 +1447,7 @@ module fv_control_mod
             c2l_ord, dx_const, dy_const, umax, deglat,      &
             deglon_start, deglon_stop, deglat_start, deglat_stop, &
             phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, butterfly_effect, &
-            dz_min, nested, twowaynest, nudge_qv, &
+            dz_min, psm_bc, nested, twowaynest, nudge_qv, &
             nestbctype, nestupdate, nsponge, s_weight, &
             check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
             do_uni_zfull, adj_mass_vmr, fac_n_spl, fhouri, update_blend, regional, bc_update_interval,  &
