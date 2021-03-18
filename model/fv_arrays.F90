@@ -866,6 +866,10 @@ module fv_arrays_mod
    real :: dz_min = 2        !< Minimum thickness depth to  to enforce monotonicity of height to prevent blowup.
                              !< 2 by default
 
+   integer :: psm_bc = 0     !< Option to use origional BCs (0) or zero-gradient BCs (1)
+                             !< to reconstruct interface u/v with the Parabolic Spline Method
+                             !< for the advection of height. 0 by default.
+
    integer :: a2b_ord = 4   !< Order of interpolation used by the pressure gradient force
                             !< to interpolate cell-centered (A-grid) values to the grid corners.
                             !< The default value is 4 (recommended), which uses fourth-order
