@@ -112,6 +112,12 @@ contains
     integer :: nx
 
     nx = npx - 1
+
+    if (coarsening_factor < 1) then
+       write(error_message, *) 'Invalid coarsening_factor chosen'
+       call mpp_error(FATAL, error_message)
+    endif
+
     if (mod(nx, coarsening_factor) > 0) then
        write(error_message, *) 'coarse_graining_init: coarsening_factor does not evenly divide the native resolution.'
        call mpp_error(FATAL, error_message)
