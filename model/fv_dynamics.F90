@@ -431,7 +431,7 @@ contains
 #else
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,liq_wat, &
 #endif
-!$OMP                                  rainwat,ice_wat,snowwat,graupel,pkz,flagstruct, &
+!$OMP                                  rainwat,ice_wat,snowwat,graupel,hailwat,pkz,flagstruct, &
 #ifdef MULTI_GASES
 !$OMP                                  kapad,                                          &
 #endif
