@@ -138,7 +138,7 @@
       type(nest_domain_type) :: global_nest_domain !ONE structure for ALL levels of nesting
       public mp_start, mp_assign_gid, mp_barrier, mp_stop!, npes
       public domain_decomp, mp_bcst, mp_reduce_max, mp_reduce_sum, mp_gather
-      public mp_reduce_min
+      public mp_reduce_min, mp_reduce_maxloc, mp_reduce_minloc
       public fill_corners, XDir, YDir
       public switch_current_domain, switch_current_Atm, broadcast_domains
       public is_master, setup_master
@@ -193,6 +193,20 @@
         MODULE PROCEDURE mp_bcst_4d_r8
         MODULE PROCEDURE mp_bcst_3d_i8
         MODULE PROCEDURE mp_bcst_4d_i8
+      END INTERFACE
+
+      !> The interface 'mp_reduce_maxloc' contains routines that get a maximum
+      !! value and the location of the maximum using MPI_Allreduce and MPI_Bcast.
+      INTERFACE mp_reduce_maxloc
+        MODULE PROCEDURE mp_reduce_maxloc_r4
+        MODULE PROCEDURE mp_reduce_maxloc_r8
+      END INTERFACE
+
+      !> The interface 'mp_reduce_minloc' contains routines that get a minimum
+      !! value and the location of the minimum using MPI_Allreduce and MPI_Bcast.
+      INTERFACE mp_reduce_minloc
+        MODULE PROCEDURE mp_reduce_minloc_r4
+        MODULE PROCEDURE mp_reduce_minloc_r8
       END INTERFACE
 
       !> The interface 'mp_reduce_min' contains routines that call SPMD_REDUCE.
@@ -2093,6 +2107,118 @@ end subroutine switch_current_Atm
          mysum = gsum
 
       end subroutine mp_reduce_sum_r4_1d
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_maxloc_r8: get maximum and location of maximum
+!
+      subroutine mp_reduce_maxloc_r8(mymax,myloc,nloc)
+         real(kind=8), intent(INOUT)  :: mymax
+         real(kind=8), intent(INOUT) :: myloc(nloc)
+         integer, intent(in) :: nloc
+         
+         real(kind=8) :: lmaxloc(2), gmaxloc(2)
+         integer :: maxrank
+
+         gmaxloc=-1
+         lmaxloc(1)=mymax
+         lmaxloc(2)=gid
+
+         call MPI_ALLREDUCE( lmaxloc, gmaxloc, 1, MPI_2DOUBLE_PRECISION, MPI_MAXLOC, &
+                             commglobal, ierror )
+         mymax = gmaxloc(1)
+         maxrank = nint(gmaxloc(2))
+         call MPI_BCAST( myloc, nloc, MPI_DOUBLE_PRECISION, maxrank, commglobal, ierror)
+
+       end subroutine mp_reduce_maxloc_r8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_maxloc_r4: get maximum and location of maximum
+!
+      subroutine mp_reduce_maxloc_r4(mymax,myloc,nloc)
+         real(kind=4), intent(INOUT)  :: mymax
+         real(kind=4), intent(INOUT) :: myloc(nloc)
+         integer, intent(in) :: nloc
+         
+         real(kind=8) :: lmaxloc(2), gmaxloc(2) ! kind=8 to avoid truncating mpi rank
+         integer :: maxrank
+
+         gmaxloc=-1
+         lmaxloc(1)=mymax
+         lmaxloc(2)=gid
+
+         call MPI_ALLREDUCE( lmaxloc, gmaxloc, 1, MPI_2DOUBLE_PRECISION, MPI_MAXLOC, &
+                             commglobal, ierror )
+         mymax = gmaxloc(1)
+         maxrank = nint(gmaxloc(2))
+         call MPI_BCAST( myloc, nloc, MPI_REAL, maxrank, commglobal, ierror)
+
+       end subroutine mp_reduce_maxloc_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_minloc_r8: get minimum and location of minimum
+!
+      subroutine mp_reduce_minloc_r8(mymin,myloc,nloc)
+         real(kind=8), intent(INOUT)  :: mymin
+         real(kind=8), intent(INOUT) :: myloc(nloc)
+         integer, intent(in) :: nloc
+         
+         real(kind=8) :: lminloc(2), gminloc(2)
+         integer :: minrank
+
+         gminloc=-1
+         lminloc(1)=mymin
+         lminloc(2)=gid
+
+         call MPI_ALLREDUCE( lminloc, gminloc, 1, MPI_2DOUBLE_PRECISION, MPI_MINLOC, &
+                             commglobal, ierror )
+         mymin = gminloc(1)
+         minrank = nint(gminloc(2))
+         call MPI_BCAST( myloc, nloc, MPI_DOUBLE_PRECISION, minrank, commglobal, ierror)
+
+       end subroutine mp_reduce_minloc_r8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_minloc_r4: get minimum and location of minimum
+!
+      subroutine mp_reduce_minloc_r4(mymin,myloc,nloc)
+         real(kind=4), intent(INOUT)  :: mymin
+         real(kind=4), intent(INOUT) :: myloc(nloc)
+         integer, intent(in) :: nloc
+         
+         real(kind=8) :: lminloc(2), gminloc(2) ! kind=8 to avoid truncating mpi rank
+         integer :: minrank
+
+         gminloc=-1
+         lminloc(1)=mymin
+         lminloc(2)=gid
+
+         call MPI_ALLREDUCE( lminloc, gminloc, 1, MPI_2DOUBLE_PRECISION, MPI_MINLOC, &
+                             commglobal, ierror )
+         mymin = gminloc(1)
+         minrank = nint(gminloc(2))
+         call MPI_BCAST( myloc, nloc, MPI_REAL, minrank, commglobal, ierror)
+
+       end subroutine mp_reduce_minloc_r4
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
