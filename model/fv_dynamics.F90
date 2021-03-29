@@ -583,7 +583,11 @@ contains
   mdt = bdt / real(k_split)
 
   if ( idiag%id_mdt > 0 .and. (.not. do_adiabatic_init) ) then
+#ifdef __GFORTRAN__
+!$OMP parallel do default(none) shared(is,ie,js,je,npz)
+#else
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,dtdt_m)
+#endif
        do k=1,npz
           do j=js,je
              do i=is,ie
