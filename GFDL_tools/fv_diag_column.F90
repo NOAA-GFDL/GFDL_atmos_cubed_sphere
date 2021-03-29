@@ -50,7 +50,7 @@ module fv_diag_column_mod
 #include<file_version.h>
 
 contains
- 
+
  subroutine fv_diag_column_init(Atm, yr_init, mo_init, dy_init, hr_init, do_diag_debug_out, do_diag_sonde_out, sound_freq_out)
 
    type(fv_atmos_type), intent(inout), target :: Atm
@@ -60,7 +60,7 @@ contains
 
    integer :: ios, nlunit
    logical :: exists
-   
+
    call write_version_number ( 'FV_DIAG_COLUMN_MOD', version )
 
     diag_debug_names(:) = ''
@@ -99,7 +99,7 @@ contains
     endif
 
     if (do_diag_debug) then
-       allocate(diag_debug_units(num_diag_debug))       
+       allocate(diag_debug_units(num_diag_debug))
        call find_diagnostic_column("DEBUG", diag_debug_names, diag_debug_i, diag_debug_j, diag_debug_tile, diag_debug_lat, diag_debug_lon, diag_debug_units, Atm%gridstruct%grid_64, Atm%gridstruct%agrid_64, num_diag_debug, Atm%gridstruct%ntiles_g, Atm%bd, Atm%global_tile, Atm%npx, Atm%npy)
     endif
     if (do_diag_sonde) then
@@ -113,7 +113,7 @@ contains
     do_diag_debug_out = do_diag_debug
     do_diag_sonde_out = do_diag_sonde
     sound_freq_out    = sound_freq
-    
+
 
  end subroutine fv_diag_column_init
 
@@ -142,7 +142,7 @@ contains
     character(len=256)    :: record
     character(len=10)     :: dum1, dum2
 
-    iunit = get_unit()    
+    iunit = get_unit()
     open(iunit, file='column_table', action='READ', iostat=io)
     if(io/=0) call mpp_error(FATAL, ' find_diagnostic_column: Error in opening column_table')
 
@@ -154,7 +154,7 @@ contains
        read(iunit,'(a)',end=100) record
        if (record(1:1) == '#') cycle
        if (record(1:10) == '          ') cycle
-       
+
        !Debug record with index point (index point not supported for sonde output)
        !if (is_master()) print*, index(lowercase(record), "debug"), index(lowercase(record), "index"), trim(record)
        if (index(lowercase(record), "debug") .ne. 0 .and. index(lowercase(record), "index") .ne. 0) then
@@ -183,14 +183,14 @@ contains
                 call mpp_error(FATAL,'error in column_table format')
              endif
           endif
-          
+
        endif
-       
+
     enddo
 100 continue
-    
+
   end subroutine read_column_table
-  
+
  !Note that output lat-lon are in degrees but input is in radians
   subroutine find_diagnostic_column(diag_class, diag_names, diag_i, diag_j, diag_tile, diag_lat, diag_lon, diag_units, grid, agrid, num_diag, ntiles, bd, tile, npx, npy)
 
@@ -204,7 +204,7 @@ contains
     integer, dimension(num_diag), intent(OUT) :: diag_units
     real(kind=R_GRID), intent(IN) :: grid(bd%isd+1:bd%ied+1,bd%jsd+1:bd%jed+1,2)
     real(kind=R_GRID), intent(IN) :: agrid(bd%isd:bd%ied,bd%jsd:bd%jed,2)
-    
+
     integer :: i,j,m,io
     character(80) :: filename
     real(kind=R_GRID), dimension(2):: pp
@@ -213,7 +213,7 @@ contains
     integer :: isc, iec, jsc, jec
     integer :: isd, ied, jsd, jed
     logical :: point_found
-    
+
     isd = bd%isd
     ied = bd%ied
     jsd = bd%jsd
@@ -223,11 +223,11 @@ contains
     jsc = bd%jsc
     jec = bd%jec
 
-    
+
     do m=1,num_diag
 
        point_found = .false.
-       
+
        !Index specified
        if (diag_i(m) >= -10 .and. diag_j(m) >= -10) then
 
@@ -241,7 +241,7 @@ contains
 
           i=diag_i(m)
           j=diag_j(m)
-          
+
           if (diag_tile(m) == tile .and. i >= isc .and. i <= iec .and. &
                j >= jsc .and. j <= jec) then
              diag_lon(m) = agrid(i,j,1)*rad2deg
@@ -281,7 +281,7 @@ contains
              enddo
           enddo
           !print*, 'lat-lon point:', mpp_pe(), dmin, diag_i(m), diag_j(m), isc, iec, jsc, jec
-          
+
           if ( diag_i(m) < isc .or. diag_i(m) > iec .or. diag_j(m) < jsc .or. diag_j(m) > jec ) then
              diag_i(m) = -999
              diag_j(m) = -999
@@ -295,11 +295,11 @@ contains
              diag_tile(m) = tile
              point_found = .true.
           endif
-          
+
        endif
 
        if (point_found) then
-          
+
           !Initialize output file
           diag_units(m) = get_unit()
           write(filename, 202) trim(diag_names(m)), trim(diag_class)
@@ -312,7 +312,7 @@ contains
        endif
 
     enddo
-    
+
   end subroutine find_diagnostic_column
 
   subroutine debug_column(pt, delp, delz, u, v, w, q, npz, ncnst, sphum, nwat, zvir, ptop, hydrostatic, bd, Time)
@@ -353,7 +353,7 @@ contains
 !<
 !< longitude =  271.354 latitude  =   42.063
 !< on processor #    162 :   processor i =     2 ,   processor j =    30
-       
+
        write(unit, *) "DEBUG POINT ",  diag_debug_names(n)
        write(unit, *)
        call get_date(Time, yr, mon, dd, hr, mn, seconds)
@@ -362,7 +362,7 @@ contains
        write(unit, '(A, F8.3, A, F8.3)') ' longitude = ', diag_debug_lon(n), ' latitude = ', diag_debug_lat(n)
        write(unit, '(A, I8, A, I6, A, I6, A, I3)') ' on processor # ', mpp_pe(), ' :  local i = ', i, ',   local j = ', j, ' tile = ', diag_debug_tile(n)
        write(unit, *)
-       
+
        write(unit,500) 'k', 'T', 'delp', 'delz',   'u',   'v',   'w', 'sphum', 'cond', 'pres', 'NHprime'!, 'pdry', 'NHpdry'
        write(unit,500) ' ', 'K',   'mb',    'm', 'm/s', 'm/s', 'm/s',  'g/kg', 'g/kg', 'mb',   'mb'!,    !  'mb',   'mb'
 500    format(A4, A7, A8, A6, A8, A8, A8, A8, A9, A9, A9)
@@ -377,7 +377,7 @@ contains
              !pehyddry(k+1) = pehyddry(k) + delp(i,j,k)*(1.-sum(q(i,j,k,1:nwat)))
              !preshyddry(k) = (pehyddry(k+1) - pehyddry(k))/log(pehyddry(k+1)/pehyddry(k))
           enddo
-          
+
           !do k=2*npz/3,npz
           do k=max(diag_debug_kbottom-diag_debug_nlevels,1),min(diag_debug_kbottom,npz)
              cond = 0.
@@ -391,10 +391,10 @@ contains
                   q(i,j,k,sphum)*1000., cond*1000., pres*1.e-2, (pres-preshyd(k))*1.e-2!, presdry*1.e-2, (presdry-preshyddry(k))*1.e-2
           enddo
        endif
-       
+
        write(unit, *) '==================================================================='
        write(unit, *)
-       
+
        call mpp_flush(unit)
 
 
@@ -433,7 +433,7 @@ contains
        i=diag_debug_i(n)
        j=diag_debug_j(n)
        unit=diag_debug_units(n)
-       
+
        if (i < bd%is .or. i > bd%ie) cycle
        if (j < bd%js .or. j > bd%je) cycle
 
@@ -446,7 +446,7 @@ contains
        write(unit, '(A, F8.3, A, F8.3)') ' longitude = ', diag_debug_lon(n), ' latitude = ', diag_debug_lat(n)
        write(unit, '(A, I8, A, I6, A, I6)') ' on processor # ', mpp_pe(), ' :  local i = ', i, ',   local j = ', j
        write(unit, *)
-       
+
        write(unit,500) 'k', 'T', 'delp', 'delz',   'u',   'v',   'w', 'sphum', 'cond', 'pres', 'NHprime', 'heat'
        write(unit,500)  ' ', 'K',   'mb',    'm', 'm/s', 'm/s', 'm/s',  'g/kg', 'g/kg', 'mb', 'mb', 'K'
 500    format(A4, A7, A8, A6, A8, A8, A8, A8, A9, A9, A9, A8)
@@ -486,7 +486,7 @@ contains
 
        write(unit, *) '==================================================================='
        write(unit, *)
-       
+
        call mpp_flush(unit)
 
     enddo
@@ -590,5 +590,5 @@ contains
   end subroutine sounding_column
 
 
- 
+
 end module fv_diag_column_mod

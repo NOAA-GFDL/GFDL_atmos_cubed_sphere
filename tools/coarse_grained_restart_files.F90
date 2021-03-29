@@ -165,14 +165,14 @@ contains
             filename, 'v', restart%v, domain=coarse_domain, position=EAST, &
             tile_count=tile_count)
     endif
-    
+
     if (write_coarse_agrid_vel_rst) then
        id_restart = register_restart_field(restart%fv_core_coarse, &
             filename, 'ua', restart%ua, domain=coarse_domain, tile_count=tile_count)
        id_restart = register_restart_field(restart%fv_core_coarse, &
             filename, 'va', restart%va, domain=coarse_domain, tile_count=tile_count)
     endif
-    
+
     if (.not. hydrostatic) then
        id_restart = register_restart_field(restart%fv_core_coarse, &
             filename, 'W', restart%w, domain=coarse_domain, mandatory=.false., tile_count=tile_count)
@@ -281,7 +281,7 @@ contains
        call mpp_error(FATAL, error_message)
     endif
   end subroutine coarse_grain_restart_data
-  
+
   subroutine coarse_grain_restart_data_on_model_levels(Atm)
     type(fv_atmos_type), intent(inout) :: Atm
 
@@ -415,7 +415,7 @@ contains
          Atm%oro(is:ie,js:je), Atm%coarse_graining%restart%oro)
   end subroutine coarse_grain_fv_land_restart_data
 
-  subroutine coarse_grain_fv_core_restart_data_on_pressure_levels(& 
+  subroutine coarse_grain_fv_core_restart_data_on_pressure_levels(&
      Atm, phalf, coarse_phalf, coarse_phalf_on_fine, masked_mass_weights, masked_area_weights)
      type(fv_atmos_type), intent(inout) :: Atm
      real, intent(in) :: phalf(is-1:ie+1,js-1:je+1,1:npz+1)
@@ -472,7 +472,7 @@ contains
      real, allocatable :: remapped(:,:,:)
      character(len=64) :: tracer_name
      integer :: n_tracer
- 
+
      allocate(remapped(is:ie,js:je,1:npz))
 
      do n_tracer = 1, n_prognostic_tracers
@@ -489,7 +489,7 @@ contains
            Atm%coarse_graining%restart%q(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz,n_tracer))
        endif
      enddo
- 
+
      do n_tracer = n_prognostic_tracers + 1, n_tracers
        call vertically_remap_field(phalf(is:ie,js:je,1:npz+1), &
          Atm%qdiag(is:ie,js:je,1:npz,n_tracer), coarse_phalf_on_fine, Atm%ptop, remapped)
@@ -503,7 +503,7 @@ contains
      real, intent(in) :: delz(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
      real, intent(in) :: phis(is_coarse:ie_coarse,js_coarse:je_coarse)
      real, intent(out) :: top_height(is_coarse:ie_coarse,js_coarse:je_coarse)
- 
+
      top_height = (phis / GRAV) - sum(delz, dim=3)
    end subroutine compute_top_height
 
@@ -512,10 +512,10 @@ contains
      real, intent(in) :: temp(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
      real, intent(in) :: sphum(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
      real, intent(out) :: delz(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
- 
+
      real, allocatable :: virtual_temp(:,:,:), dlogp(:,:,:)
      integer :: k
- 
+
      allocate(virtual_temp(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz))
      allocate(dlogp(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz))
 
@@ -530,7 +530,7 @@ contains
      real, intent(in) :: top_height(is_coarse:ie_coarse,js_coarse:je_coarse)
      real, intent(in) :: delz(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
      real, intent(out) :: phis(is_coarse:ie_coarse,js_coarse:je_coarse)
- 
+
      phis = GRAV * (top_height + sum(delz, dim=3))
    end subroutine delz_and_top_height_to_phis
 
@@ -543,7 +543,7 @@ contains
      allocate(top_height(is_coarse:ie_coarse,js_coarse:je_coarse))
 
      sphum = get_tracer_index(MODEL_ATMOS, 'sphum')
-     
+
      call compute_top_height(Atm%coarse_graining%restart%delz, Atm%coarse_graining%restart%phis, top_height)
      call hydrostatic_delz(coarse_phalf, Atm%coarse_graining%restart%pt, Atm%coarse_graining%restart%q(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz,sphum), Atm%coarse_graining%restart%delz)
      call delz_and_top_height_to_phis(top_height, Atm%coarse_graining%restart%delz, Atm%coarse_graining%restart%phis)
@@ -556,7 +556,7 @@ contains
      real, intent(out) :: coarse_phalf(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz+1)
      real, intent(out) :: coarse_phalf_on_fine(is:ie,js:je,1:npz+1)
      real, intent(out), dimension(is:ie,js:je,1:npz) :: masked_mass_weights, masked_area_weights
-     
+
      ! Do a halo update on delp before proceeding here, because the remapping procedure
      ! for the winds requires interpolating across tile edges.
      call mpp_update_domains(Atm%delp, Atm%domain, complete=.true.)

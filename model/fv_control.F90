@@ -320,7 +320,7 @@ module fv_control_mod
            endif
         endif
      enddo
-     
+
      ngrids = 1
      do n=2,MAX_NNEST
         if (grid_coarse(n) <= 0) then
@@ -966,7 +966,7 @@ module fv_control_mod
             write_coarse_diagnostics,&
             write_only_coarse_intermediate_restarts, &
             write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst
-            
+
 
 #ifdef INTERNAL_FILE_NML
        ! Read FVCORE namelist
