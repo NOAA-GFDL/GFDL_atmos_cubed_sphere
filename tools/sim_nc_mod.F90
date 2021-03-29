@@ -47,7 +47,7 @@ module sim_nc_mod
  public  open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var2_double,   &
          get_var3_real, get_var3_double, get_var3_r4, get_var2_real, get_var2_r4,   &
          handle_err, check_var, get_var1_real, get_var_att_double, &
-         check_var_exists 
+         check_var_exists
 
  contains
 
@@ -261,7 +261,7 @@ module sim_nc_mod
          start(4) = time_slice
       end if
 
-      nreco(1) = ie - is + 1 
+      nreco(1) = ie - is + 1
       nreco(2) = je - js + 1
       nreco(3) = ke - ks + 1
       nreco(4) = 1
@@ -281,7 +281,7 @@ module sim_nc_mod
       real*4:: wk4(im,jm,km,4)
       real*4, intent(out):: var4(im,jm)
       integer::  status, var4id
-      integer:: start(4), icount(4) 
+      integer:: start(4), icount(4)
       integer:: i,j
 
       start(1) = 1
@@ -321,7 +321,7 @@ module sim_nc_mod
       real(kind=8), intent(out):: var4(im,jm,km,1)
       integer::  status, var4id
 !
-      integer:: start(4), icount(4) 
+      integer:: start(4), icount(4)
 
       start(1) = 1
       start(2) = 1
@@ -375,7 +375,7 @@ module sim_nc_mod
       integer::  status, var3id
 
       status = nf_inq_varid (ncid, var3_name, var3id)
-      check_var = (status == NF_NOERR) 
+      check_var = (status == NF_NOERR)
 
       end function check_var
 
@@ -434,7 +434,7 @@ module sim_nc_mod
 ! Local variables
 !
       integer irem4,irem100
-      integer mdays(12)                           !< number day of month 
+      integer mdays(12)                           !< number day of month
       data mdays /31,28,31,30,31,30,31,31,30,31,30,31/
 !**** consider leap year
 !

@@ -1,22 +1,21 @@
-
 !***********************************************************************
-!*                   GNU Lesser General Public License                 
+!*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
 !*
-!* The FV3 dynamical core is free software: you can redistribute it 
+!* The FV3 dynamical core is free software: you can redistribute it
 !* and/or modify it under the terms of the
 !* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
+!* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
 !* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
+!* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
@@ -68,7 +67,7 @@ module nh_utils_mod
 
    real, parameter:: r3 = 1./3.
 
-CONTAINS 
+CONTAINS
 
   subroutine update_dz_c(is, ie, js, je, km, ng, dt, dp0, zs, area, ut, vt, gz, ws, &
        npx, npy, sw_corner, se_corner, ne_corner, nw_corner, bd, grid_type, dz_min)
@@ -197,13 +196,13 @@ CONTAINS
 ! Enforce monotonicity of height to prevent blowup
 !$OMP parallel do default(none) shared(is1,ie1,js1,je1,ws,zs,gz,rdt,km,dz_min)
   do j=js1, je1
-     do k=km, 1, -1 
+     do i=is1, ie1
+        ws(i,j) = ( zs(i,j) - gz(i,j,km+1) ) * rdt
+     enddo
+     do k=km, 1, -1
         do i=is1, ie1
            gz(i,j,k) = max( gz(i,j,k), gz(i,j,k+1) + dz_min )
         enddo
-     enddo
-     do i=is1, ie1
-        ws(i,j) = ( zs(i,j) - gz(i,j,km+1) ) * rdt
      enddo
   enddo
 
@@ -248,29 +247,29 @@ CONTAINS
 
   damp(km+1) = damp(km)
   ndif(km+1) = ndif(km)
-  
+
   isd = is - ng;  ied = ie + ng
   jsd = js - ng;  jed = je + ng
 
-  if (psm_bc == 0 )then
-!$OMP parallel do default(none) shared(jsd,jed,crx,xfx,crx_adv,xfx_adv,is,ie,isd,ied,     &
-!$OMP                                  km,dp0,uniform_grid,js,je,cry,yfx,cry_adv,yfx_adv) 
+  if (psm_bc == 0 ) then
+!$OMP parallel do default(none) shared(jsd,jed,crx,xfx,crx_adv,xfx_adv,is,ie,isd,ied, &
+!$OMP                                  km,dp0,uniform_grid,js,je,cry,yfx,cry_adv,yfx_adv)
       do j=jsd,jed
-           call edge_profile(crx, xfx, crx_adv, xfx_adv, is,  ie+1, jsd, jed, j, km, &
-                            dp0, uniform_grid, 0)
-           if ( j<=je+1 .and. j>=js )      &
-           call edge_profile(cry, yfx, cry_adv, yfx_adv, isd, ied,  js, je+1, j, km, &
-                            dp0, uniform_grid, 0)
+         call edge_profile(crx, xfx, crx_adv, xfx_adv, is,  ie+1, jsd, jed, j, km, &
+                           dp0, uniform_grid, 0)
+         if ( j<=je+1 .and. j>=js )      &
+         call edge_profile(cry, yfx, cry_adv, yfx_adv, isd, ied,  js, je+1, j, km, &
+                           dp0, uniform_grid, 0)
       enddo
   else
 !$OMP parallel do default(none) shared(jsd,jed,crx,xfx,crx_adv,xfx_adv,is,ie,isd,ied,     &
-!$OMP                                  km,dp0,uniform_grid,js,je,cry,yfx,cry_adv,yfx_adv) 
+!$OMP                                  km,dp0,uniform_grid,js,je,cry,yfx,cry_adv,yfx_adv)
       do j=jsd,jed
            call edge_profile_0grad(crx, xfx, crx_adv, xfx_adv, is,  ie+1, jsd, jed, j, km, &
-                            dp0, uniform_grid, 0)
+                           dp0, uniform_grid, 0)
            if ( j<=je+1 .and. j>=js )      &
            call edge_profile_0grad(cry, yfx, cry_adv, yfx_adv, isd, ied,  js, je+1, j, km, &
-                            dp0, uniform_grid, 0)
+                           dp0, uniform_grid, 0)
       enddo
   endif
 
@@ -323,14 +322,14 @@ CONTAINS
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,ws,zs,zh,rdt,dz_min)
   do j=js, je
+     do i=is,ie
+        ws(i,j) = ( zs(i,j) - zh(i,j,km+1) ) * rdt
+     enddo
      do k=km, 1, -1
         do i=is, ie
 ! Enforce monotonicity of height to prevent blowup
            zh(i,j,k) = max( zh(i,j,k), zh(i,j,k+1) + dz_min )
         enddo
-     enddo
-     do i=is,ie
-        ws(i,j) = ( zs(i,j) - zh(i,j,km+1) ) * rdt
      enddo
   enddo
 
@@ -356,7 +355,7 @@ CONTAINS
 #endif
    real, intent(in)::   hs(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: w3
-! OUTPUT PARAMETERS 
+! OUTPUT PARAMETERS
    real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: gz
    real, intent(  out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: pef
 ! Local:
@@ -455,7 +454,6 @@ CONTAINS
                             dm, pm2, pem, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), p_fac)
       endif
 
-
       do k=2,km+1
          do i=is1, ie1
             pef(i,j,k) = pe2(i,k) + pem(i,k)  ! add hydrostatic full-component
@@ -479,7 +477,7 @@ CONTAINS
 
 
 !>GFDL - This routine will not give absoulte reproducibility when compiled with -fast-transcendentals.
-!! GFDL - It is now inside of nh_core.F90 and being compiled without -fast-transcendentals.
+!!GFDL - It is now inside of nh_core.F90 and being compiled without -fast-transcendentals.
   subroutine Riem_Solver3test(ms, dt,   is,   ie,   js, je, km, ng,    &
                           isd, ied, jsd, jed, akap, cappa, cp,     &
 #ifdef MULTI_GASES
@@ -593,7 +591,6 @@ CONTAINS
          enddo
       enddo
 
-
       if ( a_imp < -0.999 ) then
            call SIM3p0_solver(dt, is, ie, km, rdgas, gama, akap, &
 #ifdef MULTI_GASES
@@ -631,7 +628,6 @@ CONTAINS
                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), &
                            a_imp, p_fac, scale_m)
       endif
-
 
       do k=1, km
          do i=is, ie
@@ -685,6 +681,7 @@ CONTAINS
 
   end subroutine Riem_Solver3test
 
+
   subroutine imp_diff_w(j, is, ie, js, je, ng, km, cd, delz, ws, w, w3)
   integer, intent(in) :: j, is, ie, js, je, km, ng
   real, intent(in) :: cd
@@ -732,7 +729,7 @@ CONTAINS
          wt(i,km) = (w(i,km) + 2.*ws(i)*cd/delz(i,km)**2                        &
                   +  a*wt(i,km-1))/(1. + a + (cd+cd)/delz(i,km)**2 + a*gam(i,km))
      enddo
- 
+
      do k=km-1,1,-1
         do i=is,ie
            wt(i,k) = wt(i,k) - gam(i,k+1)*wt(i,k+1)
@@ -780,7 +777,7 @@ CONTAINS
   integer:: i, k, n, ke, kt1, ktop
   integer:: ks0, ks1
 
-  grg = gama * rgas  
+  grg = gama * rgas
   rdt = 1. / bdt
   dt = bdt / real(ms)
 
@@ -822,7 +819,7 @@ CONTAINS
             dts(k) = -dz(k)/sqrt(grg*pf1(k)/rden)
 #endif
             if ( bdt > dts(k) ) then
-                 ks0 = k-1 
+                 ks0 = k-1
                  goto 222
             endif
          enddo
@@ -936,7 +933,7 @@ CONTAINS
             m_top(ke) = m_top(ke) + z_frac*dm(k)
             r_top(ke) = r_top(ke) + z_frac*r_hi(k)
             go to 444     ! next level
-        endif 
+        endif
      enddo
 444 continue
 
@@ -952,7 +949,7 @@ CONTAINS
              time_left = time_left -  dts(k)
              m_bot(ke) = m_bot(ke) +   dm(k)
              r_bot(ke) = r_bot(ke) + r_lo(k)
-        else 
+        else
                 z_frac = time_left/dts(k)
              m_bot(ke) = m_bot(ke) + z_frac*  dm(k)
              r_bot(ke) = r_bot(ke) + z_frac*r_lo(k)
@@ -1536,7 +1533,7 @@ CONTAINS
           p1(i) = (pe(i,k) + bb(i,k)*pe(i,k+1) + g_rat(i,k)*pe(i,k+2))*r3 - g_rat(i,k)*p1(i)
 #ifdef MOIST_CAPPA
           dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp((cp2(i,k)-1.)*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
-      
+
 #else
 #ifdef MULTI_GASES
           capa1x = kapad2(i,k)-1.
@@ -1754,7 +1751,7 @@ CONTAINS
  real, intent(out), dimension(i1:i2,km+1):: qe
 !-----------------------------------------------------------------------
  real, parameter:: r2o3 = 2./3.
- real, parameter:: r4o3 = 4./3. 
+ real, parameter:: r4o3 = 4./3.
  real  gak(km)
  real  bet
  integer i, k
@@ -1864,7 +1861,7 @@ CONTAINS
         gam(i,k) = gk / bet
      enddo
   enddo
- 
+
   a_bot = 1. + gk*(gk+1.5)
     xt1 =   2.*gk*(gk+1.)
   do i=i1,i2
@@ -2166,7 +2163,7 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
 #endif
 #endif
       pkc, gz, pk3, &
-      BC_step, BC_split, &      
+      BC_step, BC_split, &
       pkc_pertn, computepk3, isd, ied, isd_BC, ied_BC, istart, iend, jsd, jed, jstart, jend, npz)
 
    integer, intent(IN) :: isd, ied, isd_BC, ied_BC, istart, iend, jsd, jed, jstart, jend, npz
@@ -2222,7 +2219,7 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
       enddo
       do k=npz,1,-1
          do i=istart,iend
-            delz_int = (delzBC_t0(i,j,k)*(BC_split-BC_step) + BC_step*delzBC_t1(i,j,k))*denom            
+            delz_int = (delzBC_t0(i,j,k)*(BC_split-BC_step) + BC_step*delzBC_t1(i,j,k))*denom
             gz(i,j,k) = gz(i,j,k+1) - delz_int*grav
          enddo
       enddo
