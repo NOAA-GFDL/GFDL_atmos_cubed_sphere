@@ -48,11 +48,11 @@ module fv_diagnostics_mod
  use mpp_io_mod,         only: mpp_flush
  use sat_vapor_pres_mod, only: compute_qs, lookup_es
 
- use fv_arrays_mod, only: max_step 
+ use fv_arrays_mod, only: max_step
  use gfdl_mp_mod, only: wqs1, qsmith_init, c_liq
 
  use fv_diag_column_mod, only: fv_diag_column_init, sounding_column, debug_column
- 
+
  implicit none
  private
 
@@ -84,8 +84,8 @@ module fv_diagnostics_mod
  real, parameter    ::     rad2deg = 180./pi
  logical :: do_diag_sonde, do_diag_debug
  integer :: sound_freq
- logical :: prt_sounding = .false. 
- 
+ logical :: prt_sounding = .false.
+
 ! tracers
  character(len=128)   :: tname
  character(len=256)   :: tlongname, tunits
@@ -96,9 +96,9 @@ module fv_diagnostics_mod
  public :: prt_mass, prt_minmax, ppme, fv_diag_init_gn, z_sum, sphum_ll_fix, eqv_pot, qcly0, gn
  public :: prt_height, prt_gb_nh_sh, interpolate_vertical, rh_calc, get_height_field, dbzcalc
  public :: max_vv, get_vorticity, max_uh
- public :: max_vorticity, max_vorticity_hy1, bunkers_vector, helicity_relative_CAPS 
+ public :: max_vorticity, max_vorticity_hy1, bunkers_vector, helicity_relative_CAPS
  public :: cs3_interpolator, get_height_given_pressure
- 
+
  integer, parameter :: MAX_PLEVS = 31
 #ifdef FEWER_PLEVS
  integer :: nplev = 11 !< # of levels in plev interpolated standard level output, with levels given by levs. 11 by default
@@ -126,7 +126,7 @@ module fv_diagnostics_mod
 
 !Constants
 #include<fv_diagnostics.h>
- 
+
 contains
 
  subroutine fv_diag_init(Atm, axes, Time, npx, npy, npz, p_ref)
@@ -375,7 +375,7 @@ contains
        call mpp_error(NOTE, "fv_diag_plevs_nml: k500 set incorrectly, finding closest entry in plevs")
        k500 = minloc(abs(levs(1:nplev)-500),1)
     endif
-    
+
     nplev_ave = 0
     if (levs_ave(1) > 0 ) then
        do i=1,MAX_PLEVS-1
@@ -388,7 +388,7 @@ contains
           nplev_ave = nplev_ave + 1
        enddo
     end if
-       
+
     id_plev = diag_axis_init('plev', levs(1:nplev)*1.0, 'mb', 'z', &
             'actual pressure level', direction=-1, set_name="dynamics")
 
@@ -684,7 +684,7 @@ contains
           id_qs_dt_phys = register_diag_field ( trim(field), 'qs_dt_phys', axes(1:3), Time,           &
                'snow water tendency from physics', 'kg/kg/s', missing_value=missing_value )
           if (id_qs_dt_phys > 0) allocate (Atm(n)%phys_diag%phys_qs_dt(isc:iec,jsc:jec,npz))
-          
+
           idiag%id_T_dt_sg = register_diag_field ( trim(field), 'T_dt_sg', axes(1:3), Time,           &
                'temperature tendency from 2dz subgrid mixing', 'K/s', missing_value=missing_value )
           idiag%id_u_dt_sg = register_diag_field ( trim(field), 'u_dt_sg', axes(1:3), Time,           &
@@ -735,7 +735,7 @@ contains
           if ((id_v_dt_nudge > 0) .and. (.not. allocated(Atm(n)%nudge_diag%nudge_v_dt))) then
              allocate (Atm(n)%nudge_diag%nudge_v_dt(isc:iec,jsc:jec,npz))
              Atm(n)%nudge_diag%nudge_v_dt(isc:iec,jsc:jec,1:npz) = 0.0
-          endif          
+          endif
        endif
 
 !
@@ -1321,7 +1321,7 @@ contains
 
     call fv_diag_column_init(Atm(n), yr_init, mo_init, dy_init, hr_init, do_diag_debug, do_diag_sonde, sound_freq)
 
-    
+
  end subroutine fv_diag_init
 
 
@@ -1677,7 +1677,7 @@ contains
        if (id_delp_dt_nudge > 0) used=send_data(id_delp_dt_nudge,  Atm(n)%nudge_diag%nudge_delp_dt(isc:iec,jsc:jec,1:npz), Time)
        if (id_u_dt_nudge > 0) used=send_data(id_u_dt_nudge,  Atm(n)%nudge_diag%nudge_u_dt(isc:iec,jsc:jec,1:npz), Time)
        if (id_v_dt_nudge > 0) used=send_data(id_v_dt_nudge,  Atm(n)%nudge_diag%nudge_v_dt(isc:iec,jsc:jec,1:npz), Time)
-       
+
        if(id_c15>0 .or. id_c25>0 .or. id_c35>0 .or. id_c45>0) then
           call wind_max(isc, iec, jsc, jec ,isd, ied, jsd, jed, Atm(n)%ua(isc:iec,jsc:jec,npz),   &
                         Atm(n)%va(isc:iec,jsc:jec,npz), ws_max, Atm(n)%domain)
@@ -1878,7 +1878,7 @@ contains
                 call interpolate_z(isc, iec, jsc, jec, npz, 550., a3, wk, a2)
                 used = send_data( id_pv550K, a2, Time)
               endif
-                deallocate ( a3 ) 
+                deallocate ( a3 )
               if (prt_minmax) call prt_maxmin('PV', wk, isc, iec, jsc, jec, 0, 1, 1.)
           endif
 
@@ -3281,7 +3281,7 @@ contains
        allocate(a3(isc:iec,jsc:jec,nplev_ave))
        if (allocated(a2)) deallocate(a2)
        allocate(a2(isc:iec,nplev_ave+1))
-       
+
        !Use logp to interpolate temperature
        do k=1,nplev_ave+1
           a2(:,k) = log(real(levs_ave(k))*100.)
@@ -3332,7 +3332,7 @@ contains
        deallocate(a2)
        deallocate(a3)
        !!! END LAYER AVERAGED DIAGNOSTICS
-       
+
        if (allocated(a2)) deallocate(a2)
        allocate ( a2(isc:iec,jsc:jec) )
 
@@ -5739,7 +5739,7 @@ end subroutine eqv_pot
                maxvort(i,j) = max(maxvort(i,j),vort(i,j,k))
             else
                maxvort(i,j) = max(maxvort(i,j),vort(i,j,k))
-               EXIT K_LOOP 
+               EXIT K_LOOP
             endif
          enddo K_LOOP
 !      maxvorthy1(i,j)=max(maxvorthy1(i,j),vort(i,j,km))
@@ -5796,7 +5796,7 @@ end subroutine eqv_pot
                if(w(i,j,k).lt.0)then
                   uh(i,j) = 0.
                   EXIT K_LOOP
-               endif 
+               endif
                uh(i,j) = vort(i,j,k)*w(i,j,k)*(zh(i) - z_bot)
                below(i) = .false.
 ! Compute mean winds below z_top
@@ -5815,15 +5815,15 @@ end subroutine eqv_pot
                EXIT K_LOOP
             endif
          enddo K_LOOP
-        if (uh(i,j) > uphmax(i,j)) then 
+        if (uh(i,j) > uphmax(i,j)) then
            uphmax(i,j) = uh(i,j)
-        elseif (uh(i,j) < uphmin(i,j)) then 
+        elseif (uh(i,j) < uphmin(i,j)) then
            uphmin(i,j) = uh(i,j)
-        endif 
+        endif
       enddo  ! i-loop
    enddo   ! j-loop
 
- end subroutine max_uh 
+ end subroutine max_uh
 
  subroutine max_vv(is,ie,js,je,npz,ng,up2,dn2,pe,w)
 ! !INPUT PARAMETERS:
@@ -5835,14 +5835,14 @@ end subroutine eqv_pot
       do j=js,je
          do i=is,ie
             do k=3,npz
-              if (pe(i,k,j) >= 100.e2) then 
+              if (pe(i,k,j) >= 100.e2) then
                   up2(i,j) = max(up2(i,j),w(i,j,k))
                   dn2(i,j) = min(dn2(i,j),w(i,j,k))
               endif
              enddo
          enddo
       enddo
- end subroutine max_vv 
+ end subroutine max_vv
 
 !#######################################################################
 
