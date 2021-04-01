@@ -584,7 +584,7 @@ contains
     endif
 #else
     !--- DELP
-    if(id_delp > 0) call store_data(id_delp, Atm(n)%delp(isco:ieco,jsco:jeco,:), Time, kstt_delp)
+    if(id_delp > 0) call store_data(id_delp, Atm(n)%delp(isco:ieco,jsco:jeco,:), Time, kstt_delp, kend_delp)
 
     !--- Surface Pressure (PS)
     if( id_ps > 0) then
