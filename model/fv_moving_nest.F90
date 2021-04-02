@@ -1706,8 +1706,6 @@ contains
        id_reset5     = mpp_clock_id ('MN 7 Reset 5',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
        id_reset6     = mpp_clock_id ('MN 7 Reset 6',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
        id_reset7     = mpp_clock_id ('MN 7 Reset 7',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-
-       first_time = .false.
     end if
 
     
@@ -1754,8 +1752,9 @@ contains
             lbound(Atm(n)%grid_global,3), ubound(Atm(n)%grid_global,3), &
             lbound(Atm(n)%grid_global,4), ubound(Atm(n)%grid_global,4)
 
-       call fill_grid_from_supergrid(Atm(n)%grid_global, CORNER, fp_super_tile_geo, &
-            ioffset, joffset, x_refine, y_refine)
+       !! Let this get reset in init_grid()/setup_aligned_nest()
+       !call fill_grid_from_supergrid(Atm(n)%grid_global, CORNER, fp_super_tile_geo, &
+       !     ioffset, joffset, x_refine, y_refine)
 
        call mpp_clock_end (id_reset1)
        call mpp_clock_begin (id_reset2)
@@ -1795,7 +1794,12 @@ contains
 
     ! TODO phrase this more carefully to choose the parent master PE grid if we are operating in a nested setup. 
     ! Unlike in fv_control.F90, this will be running on Atm(1) when it's on pe=0, so we don't need to navigate to parent_grid.
-    if (this_pe .eq. 0) then
+
+    first_time = .false.
+
+    ! Seems like we do not need to resend this -- setup_aligned_nest now saves the parent tile information during model initialization,
+    !  which happens before we enter the moving nest code.  
+    if (this_pe .eq. 0 .and. first_time) then
 
        ! This is the Atm index for the nest values.  
        pp = child_grid_num
@@ -1825,6 +1829,10 @@ contains
        if (debug_log) print '("[INFO] WDR INIT_GRID AP6 fv_moving_nest.F90 npe=",I0)', this_pe
        !endif
     endif
+
+
+
+
 
     if (debug_log) print '("[INFO] WDR INIT_GRID AP9 fv_moving_nest.F90 npe=",I0)', this_pe
 

@@ -322,6 +322,7 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
 !  --- Clock ids for moving_nest
   integer :: id_movnest1, id_movnest1_9, id_movnest2, id_movnest3, id_movnest4, id_movnest5
   integer :: id_movnest6, id_movnest7_0, id_movnest7_1, id_movnest7_2, id_movnest7_3, id_movnest8, id_movnest9
+  integer :: id_movnestTot
 #endif MOVING_NEST
 
 
@@ -524,6 +525,9 @@ contains
    id_movnest8     = mpp_clock_id ('MN Part 8 Dump to netCDF',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
    id_movnest9     = mpp_clock_id ('MN Part 9 Aux Pressure',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
+
+   id_movnestTot     = mpp_clock_id ('Moving Nest Total',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+
 #endif MOVING_NEST
                     call timing_off('ATMOS_INIT')
 
@@ -690,7 +694,8 @@ contains
    
    logical, save :: first_time = .true.
    integer       :: move_incr
-   
+   logical       :: move_diag
+
    ! On the tropical channel configuration, tile 6 numbering starts at 0,0 off the coast of Spain
    !  delta_i_c = +1 is westward
    !  delta_i_c = -1 is eastward
@@ -706,32 +711,42 @@ contains
       move_incr = 20
    end if
 
-   !move_incr = 1
-   !move_incr = 80
+   move_diag = .false.
+   
+   if (move_diag) then
+      ! If moving diagonal, only have to shift half as often.
+      if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
+         do_move = .true.
+         delta_i_c = 1
+         delta_j_c = -1
+         first_time = .false.
+      else
+         do_move = .false.
+         delta_i_c = 0
+         delta_j_c = 0
+      end if
 
-   !move_incr = 10
-
-   if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
-      do_move = .true.
-      delta_i_c = 1
-      !delta_j_c = 0
-      delta_j_c = -1
-      first_time = .false.
-   else if (mod(a_step,move_incr) .eq. 0) then
-      do_move = .true.
-      !delta_i_c = 0
-      delta_i_c = 1
-      delta_j_c = -1
-      first_time = .false.
    else
-      do_move = .false.
-      delta_i_c = 0
-      delta_j_c = 0
+      
+      if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
+         do_move = .true.
+         delta_i_c = 1
+         delta_j_c = 0
+         first_time = .false.
+      else if (mod(a_step,move_incr) .eq. 0) then
+         do_move = .true.
+         delta_i_c = 0
+         delta_j_c = -1
+         first_time = .false.
+      else
+         do_move = .false.
+         delta_i_c = 0
+         delta_j_c = 0
+      end if
    end if
-
-
+   
  end subroutine eval_move_nest
-
+ 
 #endif ! MOVING_NEST
 
 
@@ -922,6 +937,7 @@ contains
 
     !if (Atm(child_grid_num)%gridstruct%nested .and. is_moving_nest .and. do_move) then
     if (is_moving_nest .and. do_move) then
+       call mpp_clock_begin (id_movnestTot)
        call mpp_clock_begin (id_movnest1)
 
        !!================================================================
@@ -1355,6 +1371,7 @@ contains
        end if
 
        call mpp_clock_end (id_movnest9)
+       call mpp_clock_end (id_movnestTot)
 
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
