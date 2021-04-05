@@ -19,9 +19,9 @@
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 !>@brief The module 'sorted_index' sorts cell corner indices in lat-lon
-!! space to ensure the same order of operations regardless of the 
+!! space to ensure the same order of operations regardless of the
 !! orientation in index space.
-!>@details  i/jinta are indices of b-grid locations needed for line integrals 
+!>@details  i/jinta are indices of b-grid locations needed for line integrals
 !! around an a-grid cell including ghosting.
 !! i/jintb are indices of a-grid locations needed for line integrals
 !! around a b-grid cell with no ghosting.
@@ -39,7 +39,7 @@ contains
 !! based on grid locations in index space..
 !>@details If not the grid is notcubed_sphere, it assumes that
 !! the orientations in index  and latlon space are identical.
-!! i/jinta are indices of b-grid locations needed for line integrals 
+!! i/jinta are indices of b-grid locations needed for line integrals
 !! around an a-grid cell including ghosting.
 !! i/jintb are indices of a-grid locations needed for line integrals
 !! around a b-grid cell, no ghosting.
@@ -60,7 +60,7 @@ contains
     !------------------------------------------------------------------!
     if (cubed_sphere) then
        !---------------------------------------------------------------!
-       ! get order of indices for line integral around a-grid cell     ! 
+       ! get order of indices for line integral around a-grid cell     !
        !---------------------------------------------------------------!
        do j=jsd,jed
           do i=isd,ied
@@ -80,7 +80,7 @@ contains
              iinta(i,j,1)=i  ; jinta(i,j,1)=j
              iinta(i,j,2)=i  ; jinta(i,j,2)=j+1
              iinta(i,j,3)=i+1; jinta(i,j,3)=j+1
-             iinta(i,j,4)=i+1; jinta(i,j,4)=j  
+             iinta(i,j,4)=i+1; jinta(i,j,4)=j
           enddo
        enddo
     endif
@@ -102,7 +102,7 @@ contains
       ysorted(:)=10.
       isorted(:)=0
       jsorted(:)=0
-             
+
       do l=1,4
          do ll=1,4
             if (xsort(l)<xsorted(ll)) then
@@ -131,7 +131,7 @@ contains
       ysorted(:)=10.
       isorted(:)=0
       jsorted(:)=0
-      
+
       do l=1,4
          do ll=1,4
             if (ysort(l)<ysorted(ll)) then
@@ -160,14 +160,14 @@ contains
             iind(1)=i  ; jind(1)=j
             iind(2)=i  ; jind(2)=j+1
             iind(3)=i+1; jind(3)=j+1
-            iind(4)=i+1; jind(4)=j  
+            iind(4)=i+1; jind(4)=j
          elseif ( isorted(2)==i+1 .and. jsorted(2)==j ) then
             iind(1)=i  ; jind(1)=j
             iind(2)=i+1; jind(2)=j
             iind(3)=i+1; jind(3)=j+1
             iind(4)=i  ; jind(4)=j+1
          endif
-         
+
       elseif ( isorted(1)==i .and. jsorted(1)==j+1 ) then
          if ( isorted(2)==i+1 .and. jsorted(2)==j ) then
             isorted(2)=isorted(3); jsorted(2)=jsorted(3)
@@ -176,14 +176,14 @@ contains
             iind(1)=i  ; jind(1)=j+1
             iind(2)=i+1; jind(2)=j+1
             iind(3)=i+1; jind(3)=j
-            iind(4)=i  ; jind(4)=j  
+            iind(4)=i  ; jind(4)=j
          elseif ( isorted(2)==i   .and. jsorted(2)==j ) then
             iind(1)=i  ; jind(1)=j+1
             iind(2)=i  ; jind(2)=j
             iind(3)=i+1; jind(3)=j
             iind(4)=i+1; jind(4)=j+1
          endif
-         
+
       elseif ( isorted(1)==i+1 .and. jsorted(1)==j+1 ) then
          if ( isorted(2)==i .and. jsorted(2)==j ) then
             isorted(2)=isorted(3); jsorted(2)=jsorted(3)
@@ -192,14 +192,14 @@ contains
             iind(1)=i+1; jind(1)=j+1
             iind(2)=i+1; jind(2)=j
             iind(3)=i  ; jind(3)=j
-            iind(4)=i  ; jind(4)=j+1  
+            iind(4)=i  ; jind(4)=j+1
          elseif ( isorted(2)==i   .and. jsorted(2)==j+1 ) then
             iind(1)=i+1; jind(1)=j+1
             iind(2)=i  ; jind(2)=j+1
             iind(3)=i  ; jind(3)=j
             iind(4)=i+1; jind(4)=j
          endif
-         
+
       elseif ( isorted(1)==i+1 .and. jsorted(1)==j ) then
          if ( isorted(2)==i .and. jsorted(2)==j+1 ) then
             isorted(2)=isorted(3); jsorted(2)=jsorted(3)
@@ -213,9 +213,9 @@ contains
             iind(1)=i+1; jind(1)=j
             iind(2)=i+1; jind(2)=j+1
             iind(3)=i  ; jind(3)=j+1
-            iind(4)=i  ; jind(4)=j  
+            iind(4)=i  ; jind(4)=j
          endif
-         
+
       endif
 
     end subroutine sort_rectangle
@@ -226,7 +226,7 @@ contains
 !!  based on grid locations in index space.
 !>@details If not the grid is notcubed_sphere, it assumes that
 !! the orientations in index  and latlon space are identical.
-!! i/jinta are indices of b-grid locations needed for line integrals 
+!! i/jinta are indices of b-grid locations needed for line integrals
 !! around an a-grid cell including ghosting.
 !! i/jintb are indices of a-grid locations needed for line integrals
 !! around a b-grid cell, no ghosting.
@@ -240,7 +240,7 @@ contains
     !------------------------------------------------------------------!
     ! local variables                                                  !
     !------------------------------------------------------------------!
-    real,    dimension(4) :: xsort, ysort, xsorted, ysorted 
+    real,    dimension(4) :: xsort, ysort, xsorted, ysorted
     integer, dimension(4) :: isort, jsort, isorted, jsorted
     integer :: i, j, l, ll, lll
     !------------------------------------------------------------------!
@@ -248,7 +248,7 @@ contains
     !------------------------------------------------------------------!
     if (cubed_sphere) then
        !---------------------------------------------------------------!
-       ! get order of indices for line integral around b-grid cell     ! 
+       ! get order of indices for line integral around b-grid cell     !
        !---------------------------------------------------------------!
        do j=js,je+1
           do i=is,ie+1
@@ -265,7 +265,7 @@ contains
        if ( (is==1) .and. (js==1) ) then
           i=1
           j=1
-          xsort(1)=agrid(i  ,j  ,1); ysort(1)=agrid(i  ,j  ,2); isort(1)=i  ; jsort(1)=j  
+          xsort(1)=agrid(i  ,j  ,1); ysort(1)=agrid(i  ,j  ,2); isort(1)=i  ; jsort(1)=j
           xsort(2)=agrid(i  ,j-1,1); ysort(2)=agrid(i  ,j-1,2); isort(2)=i  ; jsort(2)=j-1
           xsort(3)=agrid(i-1,j  ,1); ysort(3)=agrid(i-1,j  ,2); isort(3)=i-1; jsort(3)=j
           call sort_triangle()
@@ -291,7 +291,7 @@ contains
           call sort_triangle()
           iintb(4,i,j)=i; jintb(4,i,j)=j
        endif
-       
+
        if ( (is==1) .and. (je+1==npy) ) then
           i=1
           j=npy
@@ -310,7 +310,7 @@ contains
              iintb(1,i,j)=i  ; jintb(1,i,j)=j
              iintb(2,i,j)=i  ; jintb(2,i,j)=j-1
              iintb(3,i,j)=i-1; jintb(3,i,j)=j-1
-             iintb(4,i,j)=i-1; jintb(4,i,j)=j  
+             iintb(4,i,j)=i-1; jintb(4,i,j)=j
           enddo
        enddo
     endif
@@ -323,7 +323,7 @@ contains
       !----------------------------------------------------------------!
       ! local variables                                                !
       !----------------------------------------------------------------!
-      real,    dimension(4) :: xsorted, ysorted 
+      real,    dimension(4) :: xsorted, ysorted
       integer, dimension(4) :: isorted, jsorted
       !----------------------------------------------------------------!
       ! sort in east west                                              !
@@ -332,7 +332,7 @@ contains
       ysorted(:)=10.
       isorted(:)=0
       jsorted(:)=0
-             
+
       do l=1,4
          do ll=1,4
             if (xsort(l)<xsorted(ll)) then
@@ -361,7 +361,7 @@ contains
       ysorted(:)=10.
       isorted(:)=0
       jsorted(:)=0
-      
+
       do l=1,4
          do ll=1,4
             if (ysort(l)<ysorted(ll)) then
@@ -390,14 +390,14 @@ contains
             iind(1)=i  ; jind(1)=j
             iind(2)=i  ; jind(2)=j-1
             iind(3)=i-1; jind(3)=j-1
-            iind(4)=i-1; jind(4)=j  
+            iind(4)=i-1; jind(4)=j
          elseif ( isorted(2)==i-1 .and. jsorted(2)==j ) then
             iind(1)=i  ; jind(1)=j
             iind(2)=i-1; jind(2)=j
             iind(3)=i-1; jind(3)=j-1
             iind(4)=i  ; jind(4)=j-1
          endif
-         
+
       elseif ( isorted(1)==i .and. jsorted(1)==j-1 ) then
          if ( isorted(2)==i-1 .and. jsorted(2)==j ) then
             isorted(2)=isorted(3); jsorted(2)=jsorted(3)
@@ -406,14 +406,14 @@ contains
             iind(1)=i  ; jind(1)=j-1
             iind(2)=i-1; jind(2)=j-1
             iind(3)=i-1; jind(3)=j
-            iind(4)=i  ; jind(4)=j  
+            iind(4)=i  ; jind(4)=j
          elseif ( isorted(2)==i   .and. jsorted(2)==j ) then
             iind(1)=i  ; jind(1)=j-1
             iind(2)=i  ; jind(2)=j
             iind(3)=i-1; jind(3)=j
             iind(4)=i-1; jind(4)=j-1
          endif
-         
+
       elseif ( isorted(1)==i-1 .and. jsorted(1)==j-1 ) then
          if ( isorted(2)==i .and. jsorted(2)==j ) then
             isorted(2)=isorted(3); jsorted(2)=jsorted(3)
@@ -422,14 +422,14 @@ contains
             iind(1)=i-1; jind(1)=j-1
             iind(2)=i-1; jind(2)=j
             iind(3)=i  ; jind(3)=j
-            iind(4)=i  ; jind(4)=j-1  
+            iind(4)=i  ; jind(4)=j-1
          elseif ( isorted(2)==i   .and. jsorted(2)==j-1 ) then
             iind(1)=i-1; jind(1)=j-1
             iind(2)=i  ; jind(2)=j-1
             iind(3)=i  ; jind(3)=j
             iind(4)=i-1; jind(4)=j
          endif
-         
+
       elseif ( isorted(1)==i-1 .and. jsorted(1)==j ) then
          if ( isorted(2)==i .and. jsorted(2)==j-1 ) then
             isorted(2)=isorted(3); jsorted(2)=jsorted(3)
@@ -443,9 +443,9 @@ contains
             iind(1)=i-1; jind(1)=j
             iind(2)=i-1; jind(2)=j-1
             iind(3)=i  ; jind(3)=j-1
-            iind(4)=i  ; jind(4)=j  
+            iind(4)=i  ; jind(4)=j
          endif
-         
+
       endif
 
     end subroutine sort_rectangle
@@ -487,7 +487,7 @@ contains
       ysorted(1:3)=10.
       isorted(1:3)=0
       jsorted(1:3)=0
-      
+
       do l=1,3
          do ll=1,3
             if (ysort(l)<ysorted(ll)) then
@@ -511,7 +511,7 @@ contains
       iintb(1,i,j)=isorted(1) ; jintb(1,i,j)=jsorted(1)
       iintb(2,i,j)=isorted(2) ; jintb(2,i,j)=jsorted(2)
       iintb(3,i,j)=isorted(3) ; jintb(3,i,j)=jsorted(3)
-   
+
     end subroutine sort_triangle
     !------------------------------------------------------------------!
   end subroutine sorted_intb

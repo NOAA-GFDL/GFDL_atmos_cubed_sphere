@@ -1,22 +1,22 @@
 
 !***********************************************************************
-!*                   GNU Lesser General Public License                 
+!*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
 !*
-!* The FV3 dynamical core is free software: you can redistribute it 
+!* The FV3 dynamical core is free software: you can redistribute it
 !* and/or modify it under the terms of the
 !* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
+!* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
 !* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
+!* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
@@ -78,7 +78,7 @@ module fv_nggps_diags_mod
  use field_manager_mod,  only: MODEL_ATMOS
  use fv_diagnostics_mod, only: range_check, dbzcalc,max_vv,get_vorticity, &
                                max_uh,max_vorticity,bunkers_vector,       &
-                               helicity_relative_CAPS,max_vorticity_hy1 
+                               helicity_relative_CAPS,max_vorticity_hy1
  use fv_arrays_mod,      only: fv_atmos_type
  use mpp_domains_mod,    only: domain1d, domainUG
 #ifdef MULTI_GASES
@@ -208,7 +208,7 @@ contains
          windvect = 0.
        endif
 
-       if( Atm(n)%flagstruct%hydrostatic ) then 
+       if( Atm(n)%flagstruct%hydrostatic ) then
           id_pfhy = register_diag_field ( trim(file_name), 'pfhy', axes(1:3), Time,        &
                'hydrostatic pressure', 'pa', missing_value=missing_value )
           if (id_pfhy>0) then
@@ -351,7 +351,7 @@ contains
        if( id_wmaxup > 0) then
           allocate ( up2(isco:ieco,jsco:jeco) )
           kstt_wup = nlevs+1; kend_wup = nlevs+1
-          nlevs = nlevs + 1 
+          nlevs = nlevs + 1
        endif
        id_wmaxdn = register_diag_field ( trim(file_name), 'wmaxdn',axes(1:2), Time,      &
           'Max hourly downdraft velocity', 'm/s', missing_value=missing_value )
@@ -468,7 +468,7 @@ contains
     !--- A-GRID WINDS
     if ( .not. allocated(buffer_dyn)) allocate(buffer_dyn(isco:ieco,jsco:jeco,nlevs))
     if(id_ua > 0) call store_data(id_ua, Atm(n)%ua(isco:ieco,jsco:jeco,:), Time, kstt_ua, kend_ua)
-    
+
     if(id_va > 0) call store_data(id_va, Atm(n)%va(isco:ieco,jsco:jeco,:), Time, kstt_va, kend_va)
 
     !--- set up 3D wind vector
@@ -525,7 +525,7 @@ contains
     if( Atm(n)%flagstruct%hydrostatic .and. id_pfhy > 0 ) then
        do k=1,npzo
          do j=jsco,jeco
-           do i=isco,ieco         
+           do i=isco,ieco
              wk(i,j,k) = 0.5 *(Atm(n)%pe(i,k,j)+Atm(n)%pe(i,k+1,j))
            enddo
          enddo
@@ -538,7 +538,7 @@ contains
     if(id_delp > 0 .or. ((.not. Atm(n)%flagstruct%hydrostatic) .and. id_pfnh > 0)) then
        do k=1,npzo
          do j=jsco,jeco
-           do i=isco,ieco         
+           do i=isco,ieco
              wk(i,j,k) = Atm(n)%delp(i,j,k)*(1.-sum(Atm(n)%q(i,j,k,2:Atm(n)%flagstruct%nwat)))
            enddo
          enddo
@@ -634,7 +634,7 @@ contains
 !       'rdgas=',rdgas,'grav=',grav,'stndrd_atmos_lapse=',stndrd_atmos_lapse,rdgas/grav*stndrd_atmos_lapse
       call store_data(id_ps, wk, Time, kstt_ps, kend_ps)
     endif
-    
+
     if( id_hs > 0) then
       do j=jsco,jeco
         do i=isco,ieco
@@ -648,12 +648,12 @@ contains
     if ( rainwat > 0 .and. id_dbz>0) then
       call dbzcalc(Atm(n)%q, Atm(n)%pt, Atm(n)%delp, Atm(n)%peln, Atm(n)%delz, &
                    wk, wk2, allmax, Atm(n)%bd, npzo, Atm(n)%ncnst, Atm(n)%flagstruct%hydrostatic, &
-                   zvir, .false., .false., .false., .true. ) ! GFDL MP has constant N_0 intercept
+                   zvir, .false., .false., .false., .true., Atm(n)%flagstruct%do_inline_mp ) ! GFDL MP has constant N_0 intercept
       call store_data(id_dbz, wk, Time, kstt_dbz, kend_dbz)
     endif
 
     deallocate ( wk )
-    !---u and v comp of storm motion, 0-1, 0-3km SRH 
+    !---u and v comp of storm motion, 0-1, 0-3km SRH
     if ( id_ustm > 0 .or. id_vstm > 0 .or. id_srh01 > 0 .or. id_srh03 > 0) then
       if ( id_ustm > 0 .and. id_vstm > 0 .and. id_srh01 > 0 .and. id_srh03 > 0) then
         call bunkers_vector(isco,ieco,jsco,jeco,ngc,npzo,zvir,sphum,ustm,vstm,    &
@@ -696,12 +696,12 @@ contains
     if ( id_maxvort02 > 0) then
       call store_data(id_maxvort02, maxvort02, Time, kstt_maxvort02, kend_maxvort02)
     endif
-    !--- max hourly hybrid lev 1 vert. vorticity 
+    !--- max hourly hybrid lev 1 vert. vorticity
     if ( id_maxvorthy1 > 0) then
       call store_data(id_maxvorthy1, maxvorthy1, Time, kstt_maxvorthy1, kend_maxvorthy1)
     endif
-!   
-    !--- max hourly updraft velocity 
+!
+    !--- max hourly updraft velocity
     if ( id_wmaxup > 0) then
       call store_data(id_wmaxup, up2, Time, kstt_wup, kend_wup)
     endif
@@ -709,7 +709,7 @@ contains
     if ( id_wmaxdn > 0) then
       call store_data(id_wmaxdn, dn2, Time, kstt_wdn, kend_wdn)
     endif
-    !--- max hourly max 0-3km updraft helicity 
+    !--- max hourly max 0-3km updraft helicity
     if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmax03 > 0) then
       call store_data(id_uhmax03, uhmax03, Time, kstt_uhmax03, kend_uhmax03)
     endif
@@ -718,7 +718,7 @@ contains
     if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmin03 > 0) then
       call store_data(id_uhmin03, uhmin03, Time, kstt_uhmin03, kend_uhmin03)
     endif
-!   
+!
     !--- max hourly max 2-5km updraft helicity
     if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmax25 > 0) then
       call store_data(id_uhmax25, uhmax25, Time, kstt_uhmax25, kend_uhmax25)
@@ -743,7 +743,7 @@ contains
     real, save :: first_time = 0.
     integer, save :: kdtt = 0
     real :: avg_max_length
-    real,dimension(:,:,:),allocatable :: vort 
+    real,dimension(:,:,:),allocatable :: vort
     n = 1
     ngc = Atm(n)%ng
     nq = size (Atm(n)%q,4)
@@ -757,7 +757,7 @@ contains
 !abort
 !
      if(id_wmaxup > 0 .and. id_wmaxdn > 0 .and. id_uhmax03 > 0 .and. id_uhmin03 > 0 &
-          .and. id_uhmax25 > 0 .and. id_uhmin25 > 0 .and. id_maxvort01 > 0  & 
+          .and. id_uhmax25 > 0 .and. id_uhmin25 > 0 .and. id_maxvort01 > 0  &
           .and. id_maxvorthy1 > 0 .and. id_maxvort02 > 0) then
        allocate ( vort(isco:ieco,jsco:jeco,npzo) )
        if (first_call) then
@@ -1003,7 +1003,7 @@ contains
    endif
 
    do id = 1,num_axes
-     axis_length =  get_axis_global_length(axes(id)) 
+     axis_length =  get_axis_global_length(axes(id))
      allocate(axis_data(axis_length))
      call get_diag_axis( axes(id), axis_name(id), units, long_name, cart_name, &
                          direction, edges, Domain, DomainU, axis_data,         &
@@ -1369,7 +1369,7 @@ contains
    real(4),dimension(:,:),    pointer :: temp_r2d
    logical, save :: first=.true.
 !
-!*** create esmf field  
+!*** create esmf field
    if( present(l3Dvector) ) then
      temp_r4d => windvect(1:3,isco:ieco,jsco:jeco,kstt:kend)
      call ESMF_LogWrite('create winde vector esmf field', ESMF_LOGMSG_INFO, rc=rc)
@@ -1377,7 +1377,7 @@ contains
       line=__LINE__, &
       file=__FILE__)) &
       return  ! bail out
-!jw      field = ESMF_FieldCreate(dyn_grid, temp_r4d, datacopyflag=ESMF_DATACOPY_VALUE, 
+!jw      field = ESMF_FieldCreate(dyn_grid, temp_r4d, datacopyflag=ESMF_DATACOPY_VALUE,
      field = ESMF_FieldCreate(dyn_grid, temp_r4d, datacopyflag=ESMF_DATACOPY_REFERENCE, &
                             gridToFieldMap=(/2,3/), ungriddedLBound=(/1,kstt/), ungriddedUBound=(/3,kend/), &
                             name="windvector", indexFlag=ESMF_INDEX_DELOCAL, rc=rc)
