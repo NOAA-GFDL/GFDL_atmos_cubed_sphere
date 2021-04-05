@@ -659,18 +659,25 @@ contains
     graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
     ntclamt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
     if (trim(source) == source_fv3gfs) then
+!--- The code here assumes:
+!       (a) that hydrostatic pressure (proportional to mass) is based on moist mass
+!           ie. dry air + water vapor
+!       (b) that tracers are tracer mass divided by total mass
+!           ie. moist mass + all condensates
+!    To the best of our understanding this is the convention in the GFS v15 and
+!    later analyses.
     do k=1,npz
       do j=js,je
         do i=is,ie
           wt = Atm%delp(i,j,k)
           if ( Atm%flagstruct%nwat == 6 ) then
-            qt = wt/(1. - (Atm%q(i,j,k,liq_wat) + &
-            Atm%q(i,j,k,ice_wat) + &
-            Atm%q(i,j,k,rainwat) + &
-            Atm%q(i,j,k,snowwat) + &
-            Atm%q(i,j,k,graupel)))
+            qt = wt/(1. + (Atm%q(i,j,k,liq_wat) + &
+                           Atm%q(i,j,k,ice_wat) + &
+                           Atm%q(i,j,k,rainwat) + &
+                           Atm%q(i,j,k,snowwat) + &
+                           Atm%q(i,j,k,graupel)))
           else   ! all other values of nwat
-            qt = wt/(1. - sum(Atm%q(i,j,k,2:Atm%flagstruct%nwat)))
+            qt = wt/(1. + sum(Atm%q(i,j,k,2:Atm%flagstruct%nwat)))
           endif
           Atm%delp(i,j,k) = qt
           if (ntclamt > 0) Atm%q(i,j,k,ntclamt) = 0.0    ! Moorthi
@@ -681,6 +688,9 @@ contains
           else
 !--- Add cloud condensate from GFS to total MASS
 ! 20160928: Adjust the mixing ratios consistently...
+!--- The code here assumes that hydrostatic pressure (proportional to mass) and all
+!    tracers are based on moist mass, as was the case in the "Legacy" GFSv14 and
+!    earlier.
     do k=1,npz
       do j=js,je
         do i=is,ie
