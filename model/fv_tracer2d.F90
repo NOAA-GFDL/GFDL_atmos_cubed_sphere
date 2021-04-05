@@ -715,7 +715,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       if (gridstruct%regional) then
             !This is more accurate than the nested BC calculation
             ! since it takes into account varying nsplit
-            reg_bc_update_time=current_time_in_seconds+(real(n_map-1) + real(it-1)/frac)*dt
+            reg_bc_update_time=current_time_in_seconds+(real(n_map-1) + real(it-1)*frac)*dt
             do iq=1,nq
                  call regional_boundary_update(q(:,:,:,iq), 'q', &
                                                isd, ied, jsd, jed, npz, &
