@@ -716,8 +716,9 @@ contains
 
           cubed_sphere = .true.
 
+          if (Atm%neststruct%nested) then
              !Read grid if it exists
-             ! still need to set up 
+
              call mpp_clock_begin (id_timer3a)
              if (Atm%flagstruct%grid_type < 0) then
                 !Note that read_grid only reads in grid corners. Will still need to compute all other grid metrics.
