@@ -1723,7 +1723,8 @@ contains
 !***  Sensible temperature
 !--------------------------
 !
-      if (data_source == 'FV3GFS GAUSSIAN NEMSIO FILE') then
+      if (trim(data_source) == 'FV3GFS GAUSSIAN NEMSIO FILE' .or.             & 
+          trim(data_source) == 'FV3GFS GAUSSIAN NETCDF FILE'    ) then
         nlev=klev_in
         var_name_root='t'
         call read_regional_bc_file(is_input,ie_input,js_input,je_input  &
@@ -3676,7 +3677,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
 ! Compute true temperature using hydrostatic balance if not read from input.
 
-        if (data_source /= 'FV3GFS GAUSSIAN NEMSIO FILE') then
+        if (trim(data_source) /= 'FV3GFS GAUSSIAN NEMSIO FILE' .and.          &
+            trim(data_source) /= 'FV3GFS GAUSSIAN NETCDF FILE'       ) then
           do k=1,npz
             BC_side%pt_BC(i,j,k) = (gz_fv(k)-gz_fv(k+1))/( rdgas*(pn1(i,k+1)-pn1(i,k))*(1.+zvir*BC_side%q_BC(i,j,k,sphum)) )
           enddo
@@ -3696,13 +3698,14 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 ! From Jan-Huey Chen's HiRAM code
 !-----------------------------------------------------------------------
 !
-! If the source is FV3GFS GAUSSIAN NEMSIO FILE then all the tracers are in the boundary files
+! If the source is FV3GFS GAUSSIAN NEMSIO/NETCDF FILE then all the tracers are in the boundary files
 ! and will be read in.
 ! If the source is from old GFS or operational GSM then the tracers will be fixed in the boundaries
 ! and may not provide a very good result
 !
   if (cld_amt .gt. 0) BC_side%q_BC(:,:,:,cld_amt) = 0.
-  if (trim(data_source) /= 'FV3GFS GAUSSIAN NEMSIO FILE') then
+  if (trim(data_source) /= 'FV3GFS GAUSSIAN NEMSIO FILE' .and.        &
+      trim(data_source) /= 'FV3GFS GAUSSIAN NETCDF FILE'       ) then
    if ( Atm%flagstruct%nwat .eq. 6 ) then
       do k=1,npz
          do i=is,ie
@@ -3745,7 +3748,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
          enddo
       enddo
    endif
-  endif ! data source /= FV3GFS GAUSSIAN NEMSIO FILE
+  endif ! data source /= FV3GFS GAUSSIAN NEMSIO/NETCDF FILE
 !
 ! For GFS spectral input, omega in pa/sec is stored as w in the input data so actual w(m/s) is calculated
 ! For GFS nemsio input, omega is 0, so best not to use for input since boundary data will not exist for w
@@ -3762,7 +3765,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
       call mappm(km, pe0, qp, npz, pe1, qn1, is,ie, -1, 4, Atm%ptop)
 
-      if (data_source == 'FV3GFS GAUSSIAN NEMSIO FILE') then
+      if (trim(data_source) == 'FV3GFS GAUSSIAN NEMSIO FILE' .or.        &
+          trim(data_source) == 'FV3GFS GAUSSIAN NETCDF FILE'      ) then
         do k=1,npz
           do i=is,ie
             BC_side%w_BC(i,j,k) = qn1(i,k)
@@ -3785,7 +3789,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           enddo
         enddo
 
-      else          !<-- datasource /= 'FV3GFS GAUSSIAN NEMSIO FILE'
+      else          !<-- datasource /= 'FV3GFS GAUSSIAN NEMSIO/NETCDF FILE'
         do k=1,npz
           do i=is,ie
             BC_side%w_BC(i,j,k) = qn1(i,k)/BC_side%delp_BC(i,j,k)*BC_side%delz_BC(i,j,k)
@@ -6683,7 +6687,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
    graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
    cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
 !
-   source: if (trim(data_source) == 'FV3GFS GAUSSIAN NEMSIO FILE') then
+   source: if (trim(data_source) == 'FV3GFS GAUSSIAN NEMSIO FILE' .or.        &
+               trim(data_source) == 'FV3GFS GAUSSIAN NETCDF FILE'      ) then
 !
 !    if (cld_amt > 0) BC_side%q_BC(:,:,:,cld_amt) = 0.0    ! Moorthi
      do k=1,npz
