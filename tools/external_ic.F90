@@ -576,6 +576,8 @@ contains
          call mpp_error(NOTE, "READING FROM REGRIDDED FV3GFS NEMSIO FILE")
       else if (trim(source) == 'FV3GFS GAUSSIAN NETCDF FILE') then
          call mpp_error(NOTE, "READING FROM REGRIDDED FV3GFS NETCDF FILE")
+      else if (trim(source) == 'FV3GFS GRIB2 FILE') then
+         call mpp_error(NOTE, "READING FROM REGRIDDED FV3GFS GRIB2 FILE")
       endif
 !
 !--- read in ak and bk from the gfs control file using fms_io read_data ---
@@ -843,8 +845,9 @@ contains
         snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
         graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
         ntclamt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
-        if (trim(source) == 'FV3GFS GAUSSIAN NEMSIO FILE' .or.       & 
-            trim(source) == 'FV3GFS GAUSSIAN NETCDF FILE'     ) then
+        if (trim(source) == 'FV3GFS GAUSSIAN NEMSIO FILE' .or.        & 
+            trim(source) == 'FV3GFS GAUSSIAN NETCDF FILE' .or.        &
+            trim(source) == 'FV3GFS GRIB2 FILE'                ) then
         do k=1,npz
           do j=js,je
             do i=is,ie
@@ -863,7 +866,7 @@ contains
             enddo
           enddo
         enddo
-       else ! not NEMSIO/NETCDF
+       else ! not NEMSIO/NETCDF/GRIB2
 !--- Add cloud condensate from GFS to total MASS
 ! 20160928: Adjust the mixing ratios consistently...
            do k=1,npz
@@ -3377,8 +3380,9 @@ contains
 !----------------------------------------------------
 ! Compute true temperature using hydrostatic balance
 !----------------------------------------------------
-      if ( (trim(source) /= 'FV3GFS GAUSSIAN NEMSIO FILE' .and. trim(source) /= 'FV3GFS GAUSSIAN NETCDF FILE' ) &
-            .or. .not. present(t_in)  ) then
+      if ( (trim(source) /= 'FV3GFS GAUSSIAN NEMSIO FILE' .and. &  
+            trim(source) /= 'FV3GFS GAUSSIAN NETCDF FILE' .and. &
+            trim(source) /= 'FV3GFS GRIB2 FILE') .or. .not. present(t_in)  ) then
         do k=1,npz
 #ifdef MULTI_GASES
            Atm%pt(i,j,k) = (gz_fv(k)-gz_fv(k+1))/( rdgas*(pn1(i,k+1)-pn1(i,k))*virq(Atm%q(i,j,k,:)) )
@@ -3414,7 +3418,8 @@ contains
 ! only use for NCEP IC and GFDL microphy
 !-----------------------------------------------------------------------
    if (trim(source) /= 'FV3GFS GAUSSIAN NEMSIO FILE' .and.        &
-       trim(source) /= 'FV3GFS GAUSSIAN NETCDF FILE'       ) then
+       trim(source) /= 'FV3GFS GAUSSIAN NETCDF FILE' .and.        &
+       trim(source) /= 'FV3GFS GRIB2 FILE'                 ) then
       if ((Atm%flagstruct%nwat .eq. 3 .or. Atm%flagstruct%nwat .eq. 6) .and. &
            (Atm%flagstruct%ncep_ic .or. Atm%flagstruct%nggps_ic)) then
          do k=1,npz
@@ -3463,7 +3468,7 @@ contains
             enddo
          enddo
       endif
-  endif ! data source /= FV3GFS GAUSSIAN NEMSIO/NETCDF FILE
+  endif ! data source /= FV3GFS GAUSSIAN NEMSIO/NETCDF and GRIB2 FILE
 
 ! For GFS spectral input, omega in pa/sec is stored as w in the input data so actual w(m/s) is calculated
 ! For GFS nemsio input, omega is 0, so best not to use for input since boundary data will not exist for w
@@ -3479,7 +3484,8 @@ contains
       enddo
       call mappm(km, pe0, qp, npz, pe1, qn1, is,ie, -1, 4, Atm%ptop)
     if (trim(source) == 'FV3GFS GAUSSIAN NEMSIO FILE' .or.        &
-        trim(source) == 'FV3GFS GAUSSIAN NETCDF FILE'      ) then
+        trim(source) == 'FV3GFS GAUSSIAN NETCDF FILE' .or.        &
+        trim(source) == 'FV3GFS GRIB2 FILE'                ) then
       do k=1,npz
          do i=is,ie
             atm%w(i,j,k) = qn1(i,k)
