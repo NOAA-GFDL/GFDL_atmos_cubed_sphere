@@ -296,6 +296,24 @@ contains
    integer :: nthreads, ierr
    integer :: nlunit = 9999
    character (len = 64) :: fn_nml = 'input.nml'
+   ! DH* 20210326
+   ! This is a temporary workaround until the implementation
+   ! of the generic interface to call GFDL or CCPP physics is
+   ! completed. We need the name of the CCPP suite here in order
+   ! to run the adiabatic init with fast physics turned on. All
+   ! other vaiables are ignored (set to the same default value
+   ! as in fv3atm's atmos_model.F90.
+   integer :: io
+   integer :: blocksize    = 1
+   logical :: chksum_debug = .false.
+   logical :: dycore_only  = .false.
+   logical :: debug        = .false.
+   logical :: sync         = .false.
+   integer, parameter     :: maxhr = 4096
+   real, dimension(maxhr) :: fdiag = 0.
+   real                   :: fhmax=384.0, fhmaxhf=120.0, fhout=3.0, fhouthf=1.0,avg_max_length=3600.
+   namelist /atmos_model_nml/ blocksize, chksum_debug, dycore_only, debug, sync, fdiag, fhmax, fhmaxhf, fhout, fhouthf, ccpp_suite, avg_max_length
+   ! *DH 20210326
 
    !For regional
    a_step = 0
@@ -449,6 +467,25 @@ contains
                     call timing_off('ATMOS_INIT')
 
    ! Do CCPP fast physics initialization before call to adiabatic_init (since this calls fv_dynamics)
+
+   ! DH* 20210326
+   ! First, read atmos_model_nml namelist section - this is a workaround to avoid
+   ! unnecessary additional changes to the input namelists, in anticipation of the
+   ! implementation of a generic interface for GFDL and CCPP fast physics soon
+#ifdef INTERNAL_FILE_NML
+   read(input_nml_file, nml=atmos_model_nml, iostat=io)
+   ierr = check_nml_error(io, 'atmos_model_nml')
+#else
+   unit = open_namelist_file ( )
+   ierr=1
+   do while (ierr /= 0)
+      read  (unit, nml=atmos_model_nml, iostat=io, end=10)
+      ierr = check_nml_error(io,'atmos_model_nml')
+   enddo
+10 call close_file (unit)
+#endif
+   !write(0,'(a)') "It's me, and my physics suite is '" // trim(ccpp_suite) // "'"
+   ! *DH 20210326
 
    ! For fast physics running over the entire domain, block
    ! and thread number are not used; set to safe values
