@@ -30,7 +30,7 @@
 !-------------------------------------------------------------------------------
 
 #ifdef OVERLOAD_R4
-#define _GET_VAR1 get_var1_real 
+#define _GET_VAR1 get_var1_real
 #else
 #define _GET_VAR1 get_var1_double
 #endif
@@ -41,9 +41,9 @@ module fv_iau_mod
   use mpp_mod,             only: mpp_error, FATAL, NOTE, mpp_pe
   use mpp_domains_mod,     only: domain2d
 
-  use constants_mod,       only: pi=>pi_8 
+  use constants_mod,       only: pi=>pi_8
   use fv_arrays_mod,       only: fv_atmos_type,       &
-                                 fv_grid_type,        & 
+                                 fv_grid_type,        &
                                  fv_grid_bounds_type, &
                                  R_GRID
   use fv_mp_mod,           only: is_master
@@ -209,7 +209,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
 
       ! Convert to radians
       do i=1,im
-        lon(i) = lon(i) * deg2rad 
+        lon(i) = lon(i) * deg2rad
       enddo
       do j=1,jm
         lat(j) = lat(j) * deg2rad
@@ -237,7 +237,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
         agrid)
     deallocate ( lon, lat,agrid )
 
-   
+
     allocate(IAU_Data%ua_inc(is:ie, js:je, km))
     allocate(IAU_Data%va_inc(is:ie, js:je, km))
     allocate(IAU_Data%temp_inc(is:ie, js:je, km))
@@ -256,7 +256,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
     if (IPD_Control%iau_filter_increments) then
        ! compute increment filter weights, sum to obtain normalization factor
        dtp=IPD_control%dtp
-       nstep = 0.5*IPD_Control%iau_delthrs*3600/dtp 
+       nstep = 0.5*IPD_Control%iau_delthrs*3600/dtp
        ! compute normalization factor for filter weights
        normfact = 0.
        do k=1,2*nstep+1
@@ -293,13 +293,13 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
 end subroutine IAU_initialize
 
 subroutine getiauforcing(IPD_Control,IAU_Data)
-        
-   implicit none 
+
+   implicit none
    type (IPD_control_type), intent(in) :: IPD_Control
    type(IAU_external_data_type),  intent(inout) :: IAU_Data
    real(kind=kind_phys) t1,t2,sx,wx,wt,dtp
    integer n,i,j,k,sphum,kstep,nstep
-  
+
    IAU_Data%in_interval=.false.
    if (nfiles.LE.0) then
        return
@@ -314,7 +314,7 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
       ! in window kstep=-nstep,nstep (2*nstep+1 total)
       ! time step IPD_control%dtp
       dtp=IPD_control%dtp
-      nstep = 0.5*IPD_Control%iau_delthrs*3600/dtp 
+      nstep = 0.5*IPD_Control%iau_delthrs*3600/dtp
       ! compute normalized filter weight
       kstep = (IPD_Control%fhour-(t1+IPD_Control%iau_delthrs*0.5))*3600./dtp
       if (kstep .ge. -nstep .and. kstep .le. nstep) then
@@ -338,7 +338,7 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
       if ( IPD_Control%fhour < t1 .or. IPD_Control%fhour >= t2 ) then
 !         if (is_master()) print *,'no iau forcing',t1,IPD_Control%fhour,t2
          IAU_Data%in_interval=.false.
-      else 
+      else
          if (IPD_Control%iau_filter_increments) call setiauforcing(IPD_Control,IAU_Data,iau_state%wt)
          if (is_master()) print *,'apply iau forcing',t1,IPD_Control%fhour,t2
          IAU_Data%in_interval=.true.
@@ -351,7 +351,7 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
       if (IPD_Control%fhour < IPD_Control%iaufhrs(1) .or. IPD_Control%fhour >= IPD_Control%iaufhrs(nfiles)) then
 !         if (is_master()) print *,'no iau forcing',IPD_Control%iaufhrs(1),IPD_Control%fhour,IPD_Control%iaufhrs(nfiles)
          IAU_Data%in_interval=.false.
-      else 
+      else
          IAU_Data%in_interval=.true.
          do k=nfiles,1,-1
             if (IPD_Control%iaufhrs(k) > IPD_Control%fhour) then
@@ -373,13 +373,13 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
  end subroutine getiauforcing
 
 subroutine updateiauforcing(IPD_Control,IAU_Data,wt)
-      
-   implicit none 
+
+   implicit none
    type (IPD_control_type),        intent(in) :: IPD_Control
    type(IAU_external_data_type),  intent(inout) :: IAU_Data
    real(kind_phys) delt,wt
    integer i,j,k,l
-  
+
 !   if (is_master()) print *,'in updateiauforcing',nfiles,IPD_Control%iaufhrs(1:nfiles)
    delt = (iau_state%hr2-(IPD_Control%fhour))/(IAU_state%hr2-IAU_state%hr1)
    do j = js,je
@@ -400,8 +400,8 @@ subroutine updateiauforcing(IPD_Control,IAU_Data,wt)
 
 
  subroutine setiauforcing(IPD_Control,IAU_Data,wt)
-      
- implicit none 
+
+ implicit none
  type (IPD_control_type),        intent(in) :: IPD_Control
  type(IAU_external_data_type),  intent(inout) :: IAU_Data
  real(kind_phys) delt, dt,wt
@@ -427,7 +427,7 @@ subroutine updateiauforcing(IPD_Control,IAU_Data,wt)
 
 subroutine read_iau_forcing(IPD_Control,increments,fname)
     type (IPD_control_type), intent(in) :: IPD_Control
-    type(iau_internal_data_type), intent(inout):: increments  
+    type(iau_internal_data_type), intent(inout):: increments
     character(len=*),  intent(in) :: fname
 !locals
     real, dimension(:,:,:), allocatable:: u_inc, v_inc
@@ -462,7 +462,7 @@ subroutine read_iau_forcing(IPD_Control,increments,fname)
     do j=js,je
       do i=is,ie
           j1 = jdc(i,j)
-        jbeg = min(jbeg, j1) 
+        jbeg = min(jbeg, j1)
         jend = max(jend, j1+1)
       enddo
     enddo
