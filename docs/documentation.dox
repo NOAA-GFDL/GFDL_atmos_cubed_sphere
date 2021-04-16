@@ -1,7 +1,13 @@
 /**@page Desc Description of the GFDL Finite-Volume Cubed-Sphere Dynamical Core
 
    + @subpage preface
+   + @subpage foreword
    + @subpage introduction
+   + @subpage cube
+   + @subpage flux
+   + @subpage lagrangian
+   + @subpage horizontal
+   + @subpage solver
    + @subpage stabilization
    + @subpage physics
    + @subpage grid
