@@ -6654,16 +6654,18 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
        source='No Source Attribute'
       endif
 
-! source groups --------
-! 1: GFS NEMSIO, NETCDF, GRIB2
-! 2: others
+! data source groups --------
+! 1: FV3GFS NEMSIO, NETCDF, GRIB2
+! 0: others
 
       if ( trim(source)=='FV3GFS GAUSSIAN NEMSIO FILE' .or.        &
            trim(source)=='FV3GFS GAUSSIAN NETCDF FILE' .or.        &
            trim(source)=='FV3GFS GRIB2 FILE'                ) then
          data_source_group = 1
-         if (mpp_pe()==0) write(*,*) 'IC data source group=',data_source_group
+      else
+         data_source_group = 0
       endif
+      if (mpp_pe()==0) write(*,*) 'IC data source group=',data_source_group
 
   end subroutine get_data_source
 
