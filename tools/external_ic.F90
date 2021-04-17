@@ -196,8 +196,7 @@ module external_ic_mod
    real, parameter:: zvir = rvgas/rdgas - 1.
    real(kind=R_GRID), parameter :: cnst_0p20=0.20d0
    real, parameter :: deg2rad = pi/180.
-   character (len = 80),public :: source   ! This tells what the input source was for the data
-   character(len=27), parameter :: source_fv3gfs = 'FV3GFS GAUSSIAN NEMSIO FILE'
+   integer:: data_source_group
    public get_external_ic, get_cubed_sphere_terrain
    public remap_scalar, remap_dwinds
 
@@ -572,9 +571,9 @@ contains
       ! *DH 20200922
 
 !
-      call get_data_source(source,Atm%flagstruct%regional)
-      if (trim(source) == source_fv3gfs) then
-         call mpp_error(NOTE, "READING FROM REGRIDDED FV3GFS NEMSIO FILE")
+      call get_data_source(data_source_group,Atm%flagstruct%regional)
+      if ( data_source_group==1 ) then
+         call mpp_error(NOTE, "READING FROM REGRIDDED FV3GFS NEMSIO/NETCDF/GRIB2 FILE")
       endif
 !
 !--- read in ak and bk from the gfs control file using fms_io read_data ---
@@ -842,7 +841,7 @@ contains
         snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
         graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
         ntclamt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
-        if (trim(source) == source_fv3gfs) then
+        if ( data_source_group==1 ) then
         do k=1,npz
           do j=js,je
             do i=is,ie
@@ -861,7 +860,7 @@ contains
             enddo
           enddo
         enddo
-       else
+       else ! not NEMSIO/NETCDF/GRIB2
 !--- Add cloud condensate from GFS to total MASS
 ! 20160928: Adjust the mixing ratios consistently...
            do k=1,npz
@@ -887,7 +886,7 @@ contains
            enddo
 
        enddo
-      endif   !end trim(source) test
+      endif   !end source group
 
 
         tke = get_tracer_index(MODEL_ATMOS, 'sgs_tke')
@@ -3231,7 +3230,7 @@ contains
   endif
 
 !$OMP parallel do default(none) &
-!$OMP             shared(sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,liq_aero,ice_aero,source,   &
+!$OMP             shared(sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,liq_aero,ice_aero,data_source_group, &
 !$OMP                    cld_amt,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,t_in,zh,omga,qa,Atm,z500) &
 !$OMP             private(l,m,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
   do 5000 j=js,je
@@ -3375,7 +3374,7 @@ contains
 !----------------------------------------------------
 ! Compute true temperature using hydrostatic balance
 !----------------------------------------------------
-      if (trim(source) /= source_fv3gfs .or. .not. present(t_in)) then
+      if ( data_source_group/=1 .or. .not. present(t_in)  ) then
         do k=1,npz
 #ifdef MULTI_GASES
            Atm%pt(i,j,k) = (gz_fv(k)-gz_fv(k+1))/( rdgas*(pn1(i,k+1)-pn1(i,k))*virq(Atm%q(i,j,k,:)) )
@@ -3410,7 +3409,7 @@ contains
 ! seperate cloud water and cloud ice from Jan-Huey Chen's HiRAM code
 ! only use for NCEP IC and GFDL microphy
 !-----------------------------------------------------------------------
-   if (trim(source) /= source_fv3gfs) then
+   if ( data_source_group/=1 ) then
       if ((Atm%flagstruct%nwat .eq. 3 .or. Atm%flagstruct%nwat .eq. 6) .and. &
            (Atm%flagstruct%ncep_ic .or. Atm%flagstruct%nggps_ic)) then
          do k=1,npz
@@ -3459,7 +3458,7 @@ contains
             enddo
          enddo
       endif
-  endif ! data source /= FV3GFS GAUSSIAN NEMSIO FILE
+  endif ! data source /= FV3GFS GAUSSIAN NEMSIO/NETCDF and GRIB2 FILE
 
 ! For GFS spectral input, omega in pa/sec is stored as w in the input data so actual w(m/s) is calculated
 ! For GFS nemsio input, omega is 0, so best not to use for input since boundary data will not exist for w
@@ -3474,7 +3473,7 @@ contains
          enddo
       enddo
       call mappm(km, pe0, qp, npz, pe1, qn1, is,ie, -1, 4, Atm%ptop)
-    if (trim(source) == source_fv3gfs) then
+    if ( data_source_group==1 ) then
       do k=1,npz
          do i=is,ie
             atm%w(i,j,k) = qn1(i,k)
