@@ -177,8 +177,23 @@ contains
     type(coarse_restart_type), intent(inout) :: restart
     character(len=*), optional, intent(in) :: timestamp
 
+    character(len=8), dimension(4) :: dim_names_4d, dim_names_4d2, dim_names_4d3
+    character(len=8), dimension(3) :: dim_names_3d
     character(len=64) :: filename
     integer, dimension(1) :: zsize
+
+    dim_names_4d(1) = "xaxis_1"
+    dim_names_4d(2) = "yaxis_1"
+    dim_names_4d(3) = "zaxis_1"
+    dim_names_4d(4) = "Time"
+    dim_names_4d2 = dim_names_4d
+    dim_names_4d2(1) = "xaxis_2"
+    dim_names_4d2(2) = "yaxis_2"
+    dim_names_4d3 = dim_names_4d
+    dim_names_4d3(2) = "yaxis_2"
+    dim_names_3d(1) = "xaxis_1"
+    dim_names_3d(2) = "yaxis_2"
+    dim_names_3d(3) = "Time"
 
     if (present(timestamp)) then
       filename = 'RESTART/'//trim(timestamp)//'.fv_core_coarse.res.nc'
@@ -194,35 +209,35 @@ contains
 
       if (write_coarse_dgrid_vel_rst) then
          call register_restart_field(restart%fv_core_coarse, &
-              'u', restart%u, (/"xaxis_1","yaxis_1","zaxis_1","Time"/))
+              'u', restart%u, dim_names_4d)
          call register_restart_field(restart%fv_core_coarse, &
-              'v', restart%v, (/"xaxis_2","yaxis_2","zaxis_1","Time"/))
+              'v', restart%v, dim_names_4d2)
       endif
     
       if (write_coarse_agrid_vel_rst) then
          call register_restart_field(restart%fv_core_coarse, &
-              'ua', restart%ua, (/"xaxis_1","yaxis_2","zaxis_1","Time"/))
+              'ua', restart%ua, dim_names_4d3)
          call register_restart_field(restart%fv_core_coarse, &
-              'va', restart%va, (/"xaxis_1","yaxis_2","zaxis_1","Time"/))
+              'va', restart%va, dim_names_4d3)
       endif
     
       if (.not. hydrostatic) then
          call register_restart_field(restart%fv_core_coarse, &
-              'W', restart%w, (/"xaxis_1","yaxis_2","zaxis_1","Time"/), is_optional=.true.)
+              'W', restart%w, dim_names_4d3, is_optional=.true.)
          call register_restart_field(restart%fv_core_coarse, &
-              'DZ', restart%delz, (/"xaxis_1","yaxis_2","zaxis_1","Time"/), is_optional=.true.)
+              'DZ', restart%delz, dim_names_4d3, is_optional=.true.)
          if (hybrid_z) then
             call register_restart_field(restart%fv_core_coarse, &
-                 'ZE0', restart%ze0, (/"xaxis_1","yaxis_2","zaxis_1","Time"/), is_optional=.false.)
+                 'ZE0', restart%ze0, dim_names_4d3, is_optional=.false.)
          endif
       endif
 
       call register_restart_field(restart%fv_core_coarse, &
-           'T', restart%pt, (/"xaxis_1","yaxis_2","zaxis_1","Time"/))
+           'T', restart%pt, dim_names_4d3)
       call register_restart_field(restart%fv_core_coarse, &
-           'delp', restart%delp, (/"xaxis_1","yaxis_2","zaxis_1","Time"/))
+           'delp', restart%delp, dim_names_4d3)
       call register_restart_field(restart%fv_core_coarse, &
-           'phis', restart%phis, (/"xaxis_1","yaxis_2","Time"/))
+           'phis', restart%phis, dim_names_3d)
     endif
   end subroutine register_fv_core_coarse
 
@@ -231,9 +246,15 @@ contains
     type(coarse_restart_type), intent(inout) :: restart
     character(len=*), optional, intent(in) :: timestamp
 
+    character(len=8), dimension(4) :: dim_names_4d
     character(len=64) :: filename, tracer_name
     integer :: n_tracer
     integer, dimension(1) :: zsize
+
+    dim_names_4d(1) = "xaxis_1"
+    dim_names_4d(2) = "yaxis_1"
+    dim_names_4d(3) = "zaxis_1"
+    dim_names_4d(4) = "Time"
 
     if (present(timestamp)) then
       filename = 'RESTART/'//trim(timestamp)//'.fv_tracer_coarse.res.nc'
@@ -251,7 +272,7 @@ contains
          call get_tracer_names(MODEL_ATMOS, n_tracer, tracer_name)
          call set_tracer_profile(MODEL_ATMOS, n_tracer, restart%q(:,:,:,n_tracer))
          call register_restart_field(restart%fv_tracer_coarse, &
-              tracer_name, restart%q(:,:,:,n_tracer), (/"xaxis_1","yaxis_1","zaxis_1","Time"/), &
+              tracer_name, restart%q(:,:,:,n_tracer), dim_names_4d, &
               is_optional=.true.)
       enddo
 
@@ -259,7 +280,7 @@ contains
          call get_tracer_names(MODEL_ATMOS, n_tracer, tracer_name)
          call set_tracer_profile(MODEL_ATMOS, n_tracer, restart%qdiag(:,:,:,n_tracer))
          call register_restart_field(restart%fv_tracer_coarse, &
-              tracer_name, restart%qdiag(:,:,:,n_tracer), (/"xaxis_1","yaxis_1","zaxis_1","Time"/), &
+              tracer_name, restart%qdiag(:,:,:,n_tracer), dim_names_4d, &
               is_optional=.true.)
       enddo
     endif
@@ -270,7 +291,12 @@ contains
     type(coarse_restart_type), intent(inout) :: restart
     character(len=*), optional, intent(in) :: timestamp
 
+    character(len=8), dimension(3) :: dim_names_3d
     character(len=64) :: filename
+
+    dim_names_3d(1) = "xaxis_1"
+    dim_names_3d(2) = "yaxis_1"
+    dim_names_3d(3) = "Time"
 
     if (present(timestamp)) then
       filename = 'RESTART/'//trim(timestamp)//'.fv_srf_wnd_coarse.res.nc'
@@ -284,9 +310,9 @@ contains
       call fv_io_register_axis(restart%fv_srf_wnd_coarse, numx=1 ,numy=1, xpos=(/CENTER/) ,ypos=(/CENTER/))
 
       call register_restart_field(restart%fv_srf_wnd_coarse, &
-           'u_srf', restart%u_srf, (/"xaxis_1","yaxis_1","Time"/))
+           'u_srf', restart%u_srf, dim_names_3d)
       call register_restart_field(restart%fv_srf_wnd_coarse, &
-           'v_srf', restart%v_srf, (/"xaxis_1","yaxis_1","Time"/))
+           'v_srf', restart%v_srf, dim_names_3d)
     endif
   end subroutine register_fv_srf_wnd_coarse
 
@@ -295,7 +321,12 @@ contains
     type(coarse_restart_type), intent(out) :: restart
     character(len=*), optional, intent(in) :: timestamp
 
+    character(len=8), dimension(3) :: dim_names_3d
     character(len=64) :: filename
+
+    dim_names_3d(1) = "xaxis_1"
+    dim_names_3d(2) = "yaxis_1"
+    dim_names_3d(3) = "Time"
 
     if (present(timestamp)) then
       filename = 'RESTART/'//trim(timestamp)//'.mg_drag_coarse.res.nc'
@@ -309,7 +340,7 @@ contains
       call fv_io_register_axis(restart%mg_drag_coarse, numx=1, numy=1, xpos=(/CENTER/), ypos=(/CENTER/))
 
       call register_restart_field(restart%mg_drag_coarse, &
-          'ghprime', restart%sgh, (/"xaxis_1","yaxis_1","Time"/))
+          'ghprime', restart%sgh, dim_names_3d)
     endif
   end subroutine register_mg_drag_coarse
 
@@ -318,7 +349,12 @@ contains
     type(coarse_restart_type), intent(inout) :: restart
     character(len=*), optional, intent(in) :: timestamp
 
+    character(len=8), dimension(3) :: dim_names_3d
     character(len=64) :: filename
+
+    dim_names_3d(1) = "xaxis_1"
+    dim_names_3d(2) = "yaxis_1"
+    dim_names_3d(3) = "Time"
 
     if (present(timestamp)) then
       filename = 'RESTART/'//trim(timestamp)//'.fv_land_coarse.res.nc'
@@ -332,7 +368,7 @@ contains
       call fv_io_register_axis(restart%fv_land_coarse, numx=1, numy=1, xpos=(/CENTER/), ypos=(/CENTER/))
 
       call register_restart_field(restart%fv_land_coarse, &
-          'oro', restart%oro, (/"xaxis_1","yaxis_1","Time"/))
+          'oro', restart%oro, dim_names_3d)
     endif
   end subroutine register_fv_land_coarse
 

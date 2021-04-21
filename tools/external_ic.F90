@@ -328,6 +328,8 @@ contains
     integer :: ios, ierr, unit, id_res
     type(FmsNetcdfDomainFile_t) :: ORO_restart, SFC_restart, GFS_restart
     type(FmsNetcdfFile_t) :: Gfs_ctl
+    character(len=8), dimension(2) :: dim_names_2d
+    character(len=8), dimension(3) :: dim_names_3d, dim_names_3d2, dim_names_3d3, dim_names_3d4
     character(len=6)  :: gn, stile_name
     character(len=64) :: fname
     character(len=64) :: tracer_name
@@ -435,12 +437,16 @@ contains
       enddo
     endif
 
+   ! set dimensions for register restart
+   dim_names_2d(1) = "lat"
+   dim_names_2d(2) = "lon"
+
     !--- read in surface temperature (k) and land-frac
     ! surface skin temperature
    if( open_file(SFC_restart, fn_sfc_ics, "read", Atm%domain, is_restart=.true., dont_add_res_to_filename=.true.) ) then
       call register_axis(SFC_restart, "lat", "y")
       call register_axis(SFC_restart, "lon", "x")
-      call register_restart_field(SFC_restart, 'tsea', Atm%ts, (/"lat","lon"/))
+      call register_restart_field(SFC_restart, 'tsea', Atm%ts, dim_names_2d)
       call read_restart(SFC_restart)
       call close_file(SFC_restart)
     else
@@ -453,16 +459,16 @@ contains
       call register_axis(ORO_restart, "lat", "y")
       call register_axis(ORO_restart, "lon", "x")
       if (filtered_terrain) then
-        call register_restart_field(ORO_restart, 'orog_filt', Atm%phis, (/"lat", "lon"/))
+        call register_restart_field(ORO_restart, 'orog_filt', Atm%phis, dim_names_2d)
       elseif (.not. filtered_terrain) then
-        call register_restart_field(ORO_restart, 'orog_raw', Atm%phis, (/"lat", "lon"/))
+        call register_restart_field(ORO_restart, 'orog_raw', Atm%phis, dim_names_2d)
       endif
 
       if ( Atm%flagstruct%full_zs_filter) then
         allocate (oro_g(isd:ied,jsd:jed))
         oro_g = 0.
         ! land-frac
-        call register_restart_field(ORO_restart, 'land_frac', oro_g, (/"lat", "lon"/))
+        call register_restart_field(ORO_restart, 'land_frac', oro_g, dim_names_2d)
         call mpp_update_domains(oro_g, Atm%domain)
         if (Atm%neststruct%nested) then
           call extrapolation_BC(oro_g, 0, 0, Atm%npx, Atm%npy, Atm%bd, .true.)
@@ -471,9 +477,9 @@ contains
 
       if ( Atm%flagstruct%fv_land ) then
         ! stddev
-        call register_restart_field(ORO_restart, 'stddev', Atm%sgh, (/"lat", "lon"/))
+        call register_restart_field(ORO_restart, 'stddev', Atm%sgh, dim_names_2d)
         ! land-frac
-        call register_restart_field(ORO_restart, 'land_frac', Atm%oro, (/"lat", "lon"/))
+        call register_restart_field(ORO_restart, 'land_frac', Atm%oro, dim_names_2d)
       endif
       call read_restart(ORO_restart)
       call close_file(ORO_restart)
@@ -753,6 +759,17 @@ contains
         allocate ( v_s(is:ie, js:je+1, 1:levp) )
         if (trim(source) == source_fv3gfs) allocate (temp(is:ie,js:je,1:levp))
 
+        ! initialize dim_names for register restart
+        dim_names_3d(1) = "lev"
+        dim_names_3d(2) = "lat"
+        dim_names_3d(3) = "lonp"
+        dim_names_3d2 = dim_names_3d
+        dim_names_3d2(2) = "latp"
+        dim_names_3d2(3) = "lon"
+        dim_names_3d3 = dim_names_3d
+        dim_names_3d3(3) = "lon"
+        dim_names_3d4 = dim_names_3d3
+        dim_names_3d4(1) = "levp"
 
         ! surface pressure (Pa)
         if( open_file(GFS_restart, fn_gfs_ics, "read", Atm%domain, is_restart=.true., dont_add_res_to_filename=.true.) ) then
@@ -763,28 +780,28 @@ contains
           call register_axis(GFS_restart, "lev", size(u_w,3))
           call register_axis(GFS_restart, 'levp', size(zh,3))
 
-          call register_restart_field(GFS_restart, 'ps', ps, (/"lat", "lon"/))
+          call register_restart_field(GFS_restart, 'ps', ps, dim_names_2d)
           ! D-grid west  face tangential wind component (m/s)
-          call register_restart_field(GFS_restart, 'u_w', u_w, (/"lev", "lat", "lonp"/))
+          call register_restart_field(GFS_restart, 'u_w', u_w, dim_names_3d)
           ! D-grid west  face normal wind component (m/s)
-          call register_restart_field(GFS_restart, 'v_w', v_w, (/"lev", "lat", "lonp"/))
+          call register_restart_field(GFS_restart, 'v_w', v_w, dim_names_3d)
           ! D-grid south face tangential wind component (m/s)
-          call register_restart_field(GFS_restart, 'u_s', u_s, (/"lev", "latp", "lon"/))
+          call register_restart_field(GFS_restart, 'u_s', u_s, dim_names_3d2)
           ! D-grid south face normal wind component (m/s)
-          call register_restart_field(GFS_restart, 'v_s', v_s, (/"lev", "latp", "lon"/))
+          call register_restart_field(GFS_restart, 'v_s', v_s, dim_names_3d2)
           ! vertical velocity 'omega' (Pa/s)
-          call register_restart_field(GFS_restart, 'w', omga, (/"lev", "lat", "lon"/))
+          call register_restart_field(GFS_restart, 'w', omga, dim_names_3d3)
           ! GFS grid height at edges (including surface height)
-          call register_restart_field(GFS_restart, 'zh', zh, (/"levp", "lat", "lon"/))
+          call register_restart_field(GFS_restart, 'zh', zh, dim_names_3d4)
 
           ! real temperature (K)
-          if (trim(source) == source_fv3gfs) call register_restart_field(GFS_restart, 't', temp, (/"lev", "lat", "lon"/), is_optional=.true.)       
+          if (trim(source) == source_fv3gfs) call register_restart_field(GFS_restart, 't', temp, dim_names_3d3, is_optional=.true.)
 
           ! prognostic tracers
           do nt = 1, ntracers
              q(:,:,:,nt) = -999.99
             call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
-            call register_restart_field(GFS_restart, trim(tracer_name), q(:,:,:,nt), (/"lev", "lat", "lon"/),is_optional=.true.)
+            call register_restart_field(GFS_restart, trim(tracer_name), q(:,:,:,nt), dim_names_3d3, is_optional=.true.)
           enddo
 
           ! read in the gfs_data and free the restart type to be re-used by the nest
@@ -855,26 +872,26 @@ contains
 
 
 
-          call register_restart_field(GFS_restart, 'ps', ps, (/"lat", "lon"/))
+          call register_restart_field(GFS_restart, 'ps', ps, dim_names_2d)
           ! D-grid west  face tangential wind component (m/s)
-          call register_restart_field(GFS_restart, 'u_w', u_w_tmp, (/"lev", "lat", "lonp"/))
+          call register_restart_field(GFS_restart, 'u_w', u_w_tmp, dim_names_3d)
           ! D-grid west  face normal wind component (m/s)
-          call register_restart_field(GFS_restart, 'v_w', v_w_tmp, (/"lev", "lat", "lonp"/))
+          call register_restart_field(GFS_restart, 'v_w', v_w_tmp, dim_names_3d)
           ! D-grid south face tangential wind component (m/s)
-          call register_restart_field(GFS_restart, 'u_s', u_s_tmp, (/"lev", "latp", "lon"/))
+          call register_restart_field(GFS_restart, 'u_s', u_s_tmp, dim_names_3d2)
           ! D-grid south face normal wind component (m/s)
-          call register_restart_field(GFS_restart, 'v_s', v_s_tmp, (/"lev", "latp", "lon"/))
+          call register_restart_field(GFS_restart, 'v_s', v_s_tmp, dim_names_3d2)
           ! vertical velocity 'omega' (Pa/s)
-          call register_restart_field(GFS_restart, 'w', omga_tmp, (/"lev", "lat", "lon"/))
+          call register_restart_field(GFS_restart, 'w', omga_tmp, dim_names_3d3)
           ! GFS grid height at edges (including surface height)
-          call register_restart_field(GFS_restart, 'zh', zh_tmp, (/"levp", "lat", "lon"/))
+          call register_restart_field(GFS_restart, 'zh', zh_tmp, dim_names_3d4)
           ! real temperature (K)
-          call register_restart_field(GFS_restart, 't', temp_tmp, (/"lev", "lat", "lon"/), is_optional=.true.)
+          call register_restart_field(GFS_restart, 't', temp_tmp, dim_names_3d3, is_optional=.true.)
 
           ! Prognostic tracers
           do nt = 1, ntracers
             call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
-            call register_restart_field(GFS_restart, trim(tracer_name), q_tmp(:,:,:,nt), (/"lev", "lat", "lon"/), is_optional=.true.)
+            call register_restart_field(GFS_restart, trim(tracer_name), q_tmp(:,:,:,nt), dim_names_3d3, is_optional=.true.)
           enddo
 
 
@@ -950,6 +967,8 @@ contains
       integer :: ios, ierr, unit, id_res
       type (FmsNetcdfDomainFile_t) :: ORO_restart, SFC_restart, HRRR_restart
       type(FmsNetcdfFile_t) :: Hrr_ctl
+      character(len=8), dimension(2) :: dim_names_2d
+      character(len=8), dimension(3) :: dim_names_3d, dim_names_3d2, dim_names_3d3, dim_names_3d4
       character(len=6)  :: gn, stile_name
       character(len=64) :: fname
       character(len=64) :: tracer_name
@@ -1045,13 +1064,16 @@ contains
             enddo
           enddo
         endif
+       ! set dimensions for register restart
+       dim_names_2d(1) = "lat"
+       dim_names_2d(2) = "lon"
 
 !--- read in surface temperature (k) and land-frac
         ! surface skin temperature
        if( open_file(SFC_restart, fn_sfc_ics, "read", Atm%domain, is_restart=.true., dont_add_res_to_filename=.true.) ) then
           call register_axis(SFC_restart, "lat", "y")
           call register_axis(SFC_restart, "lon", "x")
-          call register_restart_field(SFC_restart, 'tsea', Atm%ts, (/"lat","lon"/))
+          call register_restart_field(SFC_restart, 'tsea', Atm%ts, dim_names_2d)
           call read_restart(SFC_restart)
           call close_file(SFC_restart)
         else
@@ -1064,16 +1086,16 @@ contains
           call register_axis(ORO_restart, "lat", "y")
           call register_axis(ORO_restart, "lon", "x")
           if (filtered_terrain) then
-            call register_restart_field(ORO_restart, 'orog_filt', Atm%phis, (/"lat", "lon"/))
+            call register_restart_field(ORO_restart, 'orog_filt', Atm%phis, dim_names_2d)
           elseif (.not. filtered_terrain) then
-            call register_restart_field(ORO_restart, 'orog_raw', Atm%phis, (/"lat", "lon"/))
+            call register_restart_field(ORO_restart, 'orog_raw', Atm%phis, dim_names_2d)
           endif
 
           if ( Atm%flagstruct%full_zs_filter) then
             allocate (oro_g(isd:ied,jsd:jed))
             oro_g = 0.
             ! land-frac
-            call register_restart_field(ORO_restart, 'land_frac', oro_g, (/"lat", "lon"/))
+            call register_restart_field(ORO_restart, 'land_frac', oro_g, dim_names_2d)
             call mpp_update_domains(oro_g, Atm%domain)
             if (Atm%neststruct%nested) then
               call extrapolation_BC(oro_g, 0, 0, Atm%npx, Atm%npy, Atm%bd, .true.)
@@ -1082,7 +1104,7 @@ contains
 
           if ( Atm%flagstruct%fv_land ) then
             ! stddev
-            call register_restart_field(ORO_restart, 'stddev', Atm%sgh, (/"lat", "lon"/))
+            call register_restart_field(ORO_restart, 'stddev', Atm%sgh, dim_names_2d)
             ! land-frac
             call register_restart_field(ORO_restart, 'land_frac', Atm%oro, (/"lat", "lon"/))
           endif
@@ -1093,6 +1115,18 @@ contains
         endif
         call mpp_error(NOTE,'==> External_ic::get_hrrr_ic: using tiled data file '//trim(fn_oro_ics)//' for HRRR IC')
 
+        ! initialize dim_names for register restart
+        dim_names_3d(1) = "lev"
+        dim_names_3d(2) = "lat"
+        dim_names_3d(3) = "lonp"
+        dim_names_3d2 = dim_names_3d
+        dim_names_3d2(2) = "latp"
+        dim_names_3d2(3) = "lon"
+        dim_names_3d3 = dim_names_3d
+        dim_names_3d3(3) = "lon"
+        dim_names_3d4 = dim_names_3d3
+        dim_names_3d4(1) = "levp"
+
         ! edge pressure (Pa)
         if( open_file(HRRR_restart, fn_hrr_ics, "read", Atm%domain,is_restart=.true., dont_add_res_to_filename=.true.) ) then
           call register_axis(HRRR_restart, "lat", "y")
@@ -1102,26 +1136,26 @@ contains
           call register_axis(HRRR_restart, "lev", size(u_w,3))
           call register_axis(HRRR_restart, "levp", size(zh,3))
 
-          call register_restart_field(HRRR_restart, 'ps', ps, (/"lat", "lon"/))
+          call register_restart_field(HRRR_restart, 'ps', ps, dim_names_2d)
           ! physical temperature (K)
-          call register_restart_field(HRRR_restart, 'pt', t, (/"lat", "lon"/))
+          call register_restart_field(HRRR_restart, 'pt', t, dim_names_2d)
           ! D-grid west  face tangential wind component (m/s)
-          call register_restart_field(HRRR_restart, 'u_w', u_w, (/"lev","lat","lonp"/))
+          call register_restart_field(HRRR_restart, 'u_w', u_w, dim_names_3d)
           ! D-grid west  face normal wind component (m/s)
-          call register_restart_field(HRRR_restart, 'v_w', v_w, (/"lev","lat","lonp"/))
+          call register_restart_field(HRRR_restart, 'v_w', v_w, dim_names_3d)
           ! D-grid south face tangential wind component (m/s)
-          call register_restart_field(HRRR_restart, 'u_s', u_s, (/"lev","latp","lon"/))
+          call register_restart_field(HRRR_restart, 'u_s', u_s, dim_names_3d2)
           ! D-grid south face normal wind component (m/s)
-          call register_restart_field(HRRR_restart, 'v_s', v_s, (/"lev","latp","lon"/))
+          call register_restart_field(HRRR_restart, 'v_s', v_s, dim_names_3d2)
           ! vertical velocity 'omega' (m/s)
-          call register_restart_field(HRRR_restart, 'w', w, (/"lev","lat","lon"/))
+          call register_restart_field(HRRR_restart, 'w', w, dim_names_3d3)
           ! GFS grid height at edges (including surface height)
-          call register_restart_field(HRRR_restart, 'zh', zh, (/"levp","lat","lon"/))
+          call register_restart_field(HRRR_restart, 'zh', zh, dim_names_3d4)
 
           ! prognostic tracers
           do nt = 1, ntracers
             call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
-            call register_restart_field(HRRR_restart, trim(tracer_name), q(:,:,:,nt), (/"lev","lat","lon"/), is_optional=.true.)
+            call register_restart_field(HRRR_restart, trim(tracer_name), q(:,:,:,nt), dim_names_3d3, is_optional=.true.)
           enddo
           call read_restart(HRRR_restart)
           call close_file(HRRR_restart)
@@ -1867,6 +1901,8 @@ contains
                  0.97771,       0.98608,       0.99347,  1./
 
       character(len=128) :: fname
+      character(len=8), dimension(2) :: dim_names_2d
+      character(len=8), dimension(3) :: dim_names_3d3, dim_names_3d4
       real, allocatable:: wk2(:,:)
       real(kind=4), allocatable:: wk2_r4(:,:)
       real, dimension(:,:,:), allocatable:: ud, vd
@@ -1972,14 +2008,23 @@ contains
          fn_gfs_ics = fn_gfs_ics(1:len_trim(fn_gfs_ics)-2)//trim(suffix)//".nc"
       endif
 
+! initialize dim_names for register_restart
+      dim_names_2d(1) = "lat"
+      dim_names_2d(2) = "lon"
+      dim_names_3d3(1) = "lev"
+      dim_names_3d3(2) = "lat"
+      dim_names_3d3(3) = "lon"
+      dim_names_3d4 = dim_names_3d3
+      dim_names_3d4(1) = "levp"
+
 !! Read in model terrain from oro_data.tile?.nc
       if( open_file(ORO_restart, fn_oro_ics, "read", Atm%domain, is_restart=.true., dont_add_res_to_filename=.true.) ) then
         call register_axis(ORO_restart, "lat", "y")
         call register_axis(ORO_restart, "lon", "x")
         if (filtered_terrain) then
-            call register_restart_field(ORO_restart, 'orog_filt', Atm%phis, (/"lat","lon"/))
+            call register_restart_field(ORO_restart, 'orog_filt', Atm%phis, dim_names_2d)
           elseif (.not. filtered_terrain) then
-            call register_restart_field(ORO_restart, 'orog_raw', Atm%phis, (/"lat","lon"/))
+            call register_restart_field(ORO_restart, 'orog_raw', Atm%phis, dim_names_2d)
         endif
         call read_restart(ORO_restart)
         call close_file(ORO_restart)
@@ -1998,9 +2043,9 @@ contains
         call register_axis(GFS_restart, "lon", "x")
         call register_axis(GFS_restart, "lev", size(o3mr_gfs,3))
         call register_axis(GFS_restart, "levp", size(zh_gfs,3))
-        call register_restart_field(GFS_restart, 'o3mr', o3mr_gfs, (/"lev","lat","lon"/), is_optional=.true.)
-        call register_restart_field(GFS_restart, 'ps', ps_gfs, (/"lat","lon"/))
-        call register_restart_field(GFS_restart, 'ZH', zh_gfs, (/"levp","lat","lon"/))
+        call register_restart_field(GFS_restart, 'o3mr', o3mr_gfs, dim_names_3d3, is_optional=.true.)
+        call register_restart_field(GFS_restart, 'ps', ps_gfs, dim_names_2d)
+        call register_restart_field(GFS_restart, 'ZH', zh_gfs, dim_names_3d4)
         call read_restart(GFS_restart)
         call close_file(GFS_restart)
       endif

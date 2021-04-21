@@ -203,12 +203,22 @@ contains
     integer, dimension(2) :: ypos_2d
     integer, dimension(numz) :: zsize
 
-    dim_names_2d =  (/"xaxis_1", "Time"/)
-    dim_names_3d =  (/"xaxis_1", "yaxis_2", "Time"/)
-    dim_names_3d2 =  (/"xaxis_1", "yaxis_1", "Time"/)
-    dim_names_4d =  (/"xaxis_1", "yaxis_1", "zaxis_1", "Time"/)
-    dim_names_4d2 =  (/"xaxis_2", "yaxis_2", "zaxis_1", "Time"/)
-    dim_names_4d3 =  (/"xaxis_1", "yaxis_2", "zaxis_1", "Time"/)
+    dim_names_2d(1) = "xaxis_1"
+    dim_names_2d(2) = "Time"
+    dim_names_3d(1) = "xaxis_1"
+    dim_names_3d(2) = "yaxis_2"
+    dim_names_3d(3) = "Time"
+    dim_names_3d2 = dim_names_3d
+    dim_names_3d2(2) = "yaxis_1"
+    dim_names_4d(1) = "xaxis_1"
+    dim_names_4d(2) = "yaxis_1"
+    dim_names_4d(3) = "zaxis_1"
+    dim_names_4d(4) = "Time"
+    dim_names_4d2 = dim_names_4d
+    dim_names_4d2(1) = "xaxis_2"
+    dim_names_4d2(2) = "yaxis_2"
+    dim_names_4d3 = dim_names_4d
+    dim_names_4d3(2) = "yaxis_2"
     
     ntprog = size(Atm%q,4)
     ntdiag = size(Atm%qdiag,4)

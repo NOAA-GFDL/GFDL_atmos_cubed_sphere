@@ -6019,6 +6019,11 @@ subroutine remap_scalar_regional_bc_nh(Atm                            &
     integer, allocatable, dimension(:)  :: pelist
     character(len=1)                    :: stagname
     integer                             :: isection_s, isection_e, jsection_s, jsection_e
+    character(len=8), dimension(3)  :: dim_names_3d
+
+    dim_names_3d(1) = "grid_xt"
+    dim_names_3d(2) = "grid_yt"
+    dim_names_3d(3) = "lev"
 
     write(fname,"(A,A,A,I1.1,A)") "regional_",name,".tile", 7 , ".nc"
     write(0,*)'dump_field_3d: file name = |', trim(fname) , '|'
@@ -6102,7 +6107,7 @@ subroutine remap_scalar_regional_bc_nh(Atm                            &
         call register_global_attribute(fileobj, "jhalo_shift", halo )
         call register_global_attribute(fileobj,  "hstagger", stagname )
 
-        call register_field(fileobj, name, "double", (/"grid_xt", "grid_yt", "lev"/))
+        call register_field(fileobj, name, "double", dim_names_3d)
 
         call write_data(fileobj, name, glob_field)
 
@@ -6129,6 +6134,12 @@ subroutine remap_scalar_regional_bc_nh(Atm                            &
     integer, allocatable, dimension(:)  :: pelist
     character(len=1)                    :: stagname
     integer                             :: isection_s, isection_e, jsection_s, jsection_e
+
+    character(len=8), dimension(3)  :: dim_names_3d
+
+    dim_names_3d(1) = "grid_xt"
+    dim_names_3d(2) = "grid_yt"
+    dim_names_3d(3) = "lev"
 
     write(fname,"(A,A,A,I1.1,A)") "regional_",name,".tile", 7 , ".nc"
 !    write(0,*)'dump_field_3d: file name = |', trim(fname) , '|'
@@ -6205,7 +6216,7 @@ subroutine remap_scalar_regional_bc_nh(Atm                            &
         call register_global_attribute(fileobj, "jhalo_shift", halo )
         call register_global_attribute(fileobj,  "hstagger", stagname )
 
-        call register_field(fileobj, name, "double", (/"grid_xt", "grid_yt", "lev"/))
+        call register_field(fileobj, name, "double", dim_names_3d)
 
         call write_data(fileobj, name, glob_field)
 
