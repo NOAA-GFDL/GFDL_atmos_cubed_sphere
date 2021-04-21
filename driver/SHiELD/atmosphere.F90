@@ -196,7 +196,7 @@ contains
            Atm(mygrid)%coarse_graining%strategy, &
            Atm(mygrid)%coarse_graining%domain)
    endif
-   
+
    Atm(mygrid)%Time_init = Time_init
 
 !----- write version and namelist to log file -----
@@ -297,7 +297,7 @@ contains
            Atm(mygrid)%coarse_graining%write_coarse_agrid_vel_rst, &
            Atm(mygrid)%coarse_graining%restart)
    endif
-   
+
 !---------- reference profile -----------
     ps1 = 101325.
     ps2 =  81060.
@@ -479,7 +479,7 @@ contains
     qv_dt(:,:,:)  = Atm(n)%q (isc:iec,jsc:jec,:,sphum)
 
     rdt = 1./dt_atmos
-    
+
     w_diff = get_tracer_index (MODEL_ATMOS, 'w_diff' )
     if ( Atm(n)%flagstruct%fv_sg_adj > 0 ) then
       nt_dyn = nq

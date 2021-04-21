@@ -4,7 +4,7 @@ module coarse_graining_mod
   use mpp_domains_mod, only: domain2d, mpp_define_io_domain, mpp_define_mosaic, mpp_get_compute_domain
   use fv_mapz_mod, only: mappm
   use mpp_mod, only: FATAL, input_nml_file, mpp_error, mpp_npes
-  
+
   implicit none
   private
 
@@ -14,7 +14,7 @@ module coarse_graining_mod
        block_upsample, mask_area_weights, PRESSURE_LEVEL, vertical_remapping_requirements, &
        vertically_remap_field, mask_mass_weights, remap_edges_along_x, remap_edges_along_y, &
        block_edge_sum_x, block_edge_sum_y
-  
+
   interface block_sum
      module procedure block_sum_2d
   end interface block_sum
@@ -26,7 +26,7 @@ module coarse_graining_mod
   interface block_edge_sum_y
      module procedure block_edge_sum_y_2d_full_input
   end interface block_edge_sum_y
-  
+
   interface weighted_block_average
      module procedure weighted_block_average_2d
      module procedure weighted_block_average_3d_field_2d_weights
@@ -42,7 +42,7 @@ module coarse_graining_mod
      module procedure weighted_block_edge_average_y_2d
      module procedure weighted_block_edge_average_y_3d_field_2d_weights
   end interface weighted_block_edge_average_y
-  
+
   interface block_upsample
      module procedure block_upsample_2d
      module procedure block_upsample_3d
@@ -68,7 +68,7 @@ module coarse_graining_mod
   integer :: coarsening_factor = 8  !< factor the coarse grid is downsampled by (e.g. 8 if coarsening from C384 to C48 resolution)
   integer :: coarse_io_layout(2) = (/1, 1/)  !< I/O layout for coarse-grid fields
   character(len=64) :: strategy = 'model_level'  !< Valid values are 'model_level' and 'pressure_level'
-  
+
   namelist /coarse_graining_nml/ coarsening_factor, coarse_io_layout, strategy
 
 contains
@@ -110,7 +110,7 @@ contains
 
     character(len=256) :: error_message
     integer :: nx
-    
+
     nx = npx - 1
 
     if (coarsening_factor < 1) then
@@ -134,7 +134,7 @@ contains
     layout_x = layout(1)
     layout_y = layout(2)
 
-    if (mod(nx_coarse, layout_x) > 0 .or. mod(nx_coarse, layout_y) > 0) then 
+    if (mod(nx_coarse, layout_x) > 0 .or. mod(nx_coarse, layout_y) > 0) then
        write(error_message, *) 'coarse_graining_init: domain decomposition layout does not evenly divide the coarse grid.'
        call mpp_error(FATAL, error_message)
     endif
@@ -189,7 +189,7 @@ contains
        mass(:,:,k) = area * delp(:,:,k)
     enddo
   end subroutine compute_mass_weights
-  
+
   subroutine block_sum_2d(fine, coarse)
     real, intent(in) :: fine(is:ie,js:je)
     real, intent(out) :: coarse(is_coarse:ie_coarse,js_coarse:je_coarse)
@@ -205,7 +205,7 @@ contains
        enddo
     enddo
   end subroutine
-  
+
   subroutine weighted_block_average_2d(weights, fine, coarse)
     real, intent(in) :: weights(is:ie,js:je), fine(is:ie,js:je)
     real, intent(out) :: coarse(is_coarse:ie_coarse,js_coarse:je_coarse)
@@ -258,7 +258,7 @@ contains
        enddo
     enddo
   end subroutine block_edge_sum_x_2d
-  
+
   subroutine weighted_block_edge_average_x_2d(weights, fine, coarse)
     real, intent(in) :: weights(is:ie,js:je+1)
     real, intent(in) :: fine(is:ie,js:je+1)
@@ -845,7 +845,7 @@ contains
     ! 6. Coarsen the remapped field
     call weighted_block_edge_average_y_pre_downsampled(remapped, dy, result, mask, npz)
   end subroutine remap_edges_along_y
-  
+
   subroutine block_edge_sum_x_2d_full_input(fine, coarse)
     real, intent(in) :: fine(is:ie,js:je+1)
     real, intent(out) :: coarse(is_coarse:ie_coarse,js_coarse:je_coarse+1)

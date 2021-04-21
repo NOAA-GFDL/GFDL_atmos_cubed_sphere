@@ -671,7 +671,7 @@ contains
                            Atm%flagstruct%target_lon, Atm%flagstruct%target_lat, &
                            n, grid_global(1:npx,1:npy,1,n), grid_global(1:npx,1:npy,2,n))
                    enddo
-                else
+                elseif ( Atm%flagstruct%do_cube_transform) then
                    do n=1,nregions
                       call cube_transform(Atm%flagstruct%stretch_fac, 1, npx, 1, npy, &
                            Atm%flagstruct%target_lon, Atm%flagstruct%target_lat, &

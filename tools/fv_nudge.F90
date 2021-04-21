@@ -1360,7 +1360,7 @@ module fv_nwp_nudge_mod
     call close_ncfile( ncid )
 
 ! Note: definition of NCEP hybrid is p(k) = a(k)*1.E5 + b(k)*ps
-    if ( .not. using_merra2) then 
+    if ( .not. using_merra2) then
       ! This is not needed for MERRA2 data
       ak0(:) = ak0(:) * 1.E5
     endif
