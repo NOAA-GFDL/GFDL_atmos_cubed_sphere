@@ -113,9 +113,8 @@ module dyn_core_mod
   use fv_mp_mod,          only: start_group_halo_update, complete_group_halo_update
   use fv_mp_mod,          only: group_halo_update_type
 #ifdef MOLECULAR_DIFFUSION
-  use molecular_diffusion_mod,        only: md_time, md_repeat, md_layers, &
-                                            tau_visc, tau_cond, tau_diff,  &
-                                            md_reflev
+  use fv_mp_mod,          only: mp_reduce_sum
+  use molecular_diffusion_mod,        only: md_time, md_consv, md_layers
   use sw_core_mod,        only: c_sw, d_sw, d_md
 #else
   use sw_core_mod,        only: c_sw, d_sw
@@ -280,6 +279,8 @@ contains
     real t(bd%isd:bd%ied,bd%jsd:bd%jed)
     real pkzf(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
     integer nrpt
+    real, save :: global_area = 0.0
+    real       :: aave_a0, aave_t0, aave_t1
 #endif
 ! new array for stochastic kinetic energy backscatter (SKEB)
     real diss_e(bd%is:bd%ie,bd%js:bd%je)
@@ -1261,7 +1262,6 @@ contains
 ! -----------------------------------------------------
     if( md_time ) then
 ! -----------------------------------------------------
-    do nrpt=1, md_repeat
 ! ------- update halo to prepare for diffusion -------
     pkzf = 0.0
     do k=1,npz
@@ -1315,22 +1315,15 @@ contains
     endif
                                        call timing_on('d_md')
 
-!$OMP parallel do default(none) shared(npz,flagstruct,gridstruct,bd,      &
-!$OMP                                  is,ie,js,je,isd,ied,jsd,jed,it,dt, &
-!$OMP                                  pt,u,v,w,q,pkz,pkzf,cappa,akap,nq, &
-!$OMP                                  tau_visc,tau_cond,tau_diff,        &
-!$OMP                                  zvir,md_layers,md_reflev)          &
-!$OMP                          private(k,i,j,p,t)
+!!$OMP parallel do default(none) shared(npz,flagstruct,gridstruct,bd,      &
+!!$OMP                                  is,ie,js,je,isd,ied,jsd,jed,it,dt, &
+!!$OMP                                  pt,u,v,w,q,pkz,pkzf,cappa,akap,nq, &
+!!$OMP                                  zvir,md_layers)          &
+!!$OMP                          private(k,i,j,p,t)
 ! ----------------
     do k=1, md_layers
 ! ----------------
      
-       if( md_reflev .gt. 0 ) then
-           tau_diff = min( 1.0, 0.5 * (1.0+real(k-1)/real(md_reflev)) )
-           tau_cond = tau_diff
-           tau_visc = tau_diff
-       endif
-
 ! ------- prepare p and t for molecular diffusion coefficients
 
        do j=jsd,jed
@@ -1348,6 +1341,24 @@ contains
           enddo
        enddo
 
+       if( global_area .eq. 0.0 ) then
+         aave_a0 = 0.0
+         do j=js,je
+            do i=is,ie
+               aave_a0 = aave_a0 + gridstruct%area(i,j)
+            enddo
+         enddo
+         call mp_reduce_sum(aave_a0)
+         global_area = aave_a0
+       endif
+       aave_t0 = 0.0
+       do j=js,je
+          do i=is,ie
+             aave_t0 = aave_t0 + t(i,j)*gridstruct%area(i,j)
+          enddo
+       enddo
+       call mp_reduce_sum(aave_t0)
+
 ! compute molecular diffusion with implicit time and dimensional splits
 
        call d_md( p(isd,jsd), t(isd,jsd),                        &
@@ -1355,8 +1366,20 @@ contains
                   it, nq, k, npz, dt,                            &
                   gridstruct, flagstruct, bd)
 
+       aave_t1 = 0.0
        do j=js,je
           do i=is,ie
+             aave_t1 = aave_t1 + t(i,j)*gridstruct%area(i,j)
+          enddo
+       enddo
+       call mp_reduce_sum(aave_t1)
+       if( is_master() ) print *,' k t0 t1 ',k,aave_t0,aave_t1
+       aave_t0 = ( aave_t0 - aave_t1 ) / global_area
+       if( is_master() ) print *,' k t0-t1 garea ',k,aave_t0,global_area
+
+       do j=js,je
+          do i=is,ie
+             t(i,j) = t(i,j) + aave_t0
 #ifdef MOIST_CAPPA
              pkz(i,j,k) = exp( log(p(i,j)) * cappa(i,j,k) )
 #else
@@ -1372,8 +1395,6 @@ contains
 
 ! -------------------------------------------------
     enddo	! k loop of 2d molecular diffusion
-! -------------------------------------------------
-    enddo	! nrpt loop of md_repeat
 ! -------------------------------------------------
     endif 	! end of md_time
 ! -------------------------------------------------

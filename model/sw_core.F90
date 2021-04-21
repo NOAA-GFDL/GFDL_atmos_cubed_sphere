@@ -47,7 +47,8 @@
 #ifdef MOLECULAR_DIFFUSION
  use molecular_diffusion_mod,  only: molecular_diffusion_coefs, &
                                      tau_visc, tau_cond, tau_diff
- use fv_mp_mod,         only: ng, is_master
+ use fv_mp_mod,         only: ng, is_master, mp_reduce_sum,  &
+                              mp_reduce_min, mp_reduce_max
  use tp_core_mod,       only: fv_tp_2d, pert_ppm, copy_corners,    &
                               deln_flux_explm, deln_flux_explm_udvd
 #else
@@ -1614,7 +1615,8 @@
       real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: temp, plyr
       real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: visc, cond, diff
 
-      real :: coefmin, coefmax
+!     real :: sum_area, sum_visc, sum_cond, sum_diff
+      real :: coefmax
 
       integer :: i, j, iq, n
       integer :: ijm,idir
@@ -1669,38 +1671,48 @@
       call molecular_diffusion_coefs(ijm,plyr(isd,jsd  ),temp(isd,jsd),&
                                          qtra(isd,jsd,1),visc(isd,jsd),&
                                          cond(isd,jsd  ),diff(isd,jsd))
+! mean coefficient to have non local diffusion
+!     sum_area=0.0
+!     sum_visc=0.0
+!     sum_cond=0.0
+!     sum_diff=0.0
+!     do j=js,je
+!        do i=is,ie
+!           sum_area = sum_area + 1.0
+!           sum_visc = sum_visc + visc(i,j) 
+!           sum_cond = sum_cond + cond(i,j) 
+!           sum_diff = sum_diff + diff(i,j) 
+!        enddo
+!     enddo
+!     call mp_reduce_sum(sum_area)
+!     call mp_reduce_sum(sum_visc)
+!     call mp_reduce_sum(sum_cond)
+!     call mp_reduce_sum(sum_diff)
+!     sum_visc = sum_visc / sum_area
+!     sum_cond = sum_cond / sum_area
+!     sum_diff = sum_diff / sum_area
+!     do j=jsd,jed
+!        do i=isd,ied
+!           visc(i,j) = sum_visc
+!           cond(i,j) = sum_cond
+!           diff(i,j) = sum_diff
+!        enddo
+!     enddo
 
 ! time scale  and options
 
+      coefmax=0.125*min(gridstruct%da_min,gridstruct%da_min_c)/abs(dt)
+      if( is_master() ) &
+         write(*,'(a,i5,5g13.6)') &
+              ' k coefmax da_c da dx dy',k,coefmax,gridstruct%da_min_c,&
+            gridstruct%da_min,gridstruct%dx(is,js),gridstruct%dy(is,js)
       do j=jsd,jed
          do i=isd,ied
-            visc(i,j) = visc(i,j)*abs(dt)*tau_visc
-            cond(i,j) = cond(i,j)*abs(dt)*tau_cond
-            diff(i,j) = diff(i,j)*abs(dt)*tau_diff
+            visc(i,j) = min(coefmax,visc(i,j))*abs(dt)*tau_visc
+            cond(i,j) = min(coefmax,cond(i,j))*abs(dt)*tau_cond
+            diff(i,j) = min(coefmax,diff(i,j))*abs(dt)*tau_diff
          enddo
       enddo
-
-! check and rescale
-      coefmax = 0.25 * gridstruct%da_min ** 2
-      n_visc  = 0
-      n_cond  = 0
-      n_diff  = 0
-      do j=jsd,jed
-         do i=isd,ied
-            if( visc(i,j).gt.coefmax ) then
-                visc(i,j) = coefmax ; n_visc = n_visc + 1
-            endif
-            if( cond(i,j).gt.coefmax ) then
-                cond(i,j) = coefmax ; n_cond = n_cond + 1
-            endif
-            if( diff(i,j).gt.coefmax ) then
-                diff(i,j) = coefmax ; n_diff = n_diff + 1
-            endif
-         enddo
-      enddo
-      if(n_visc.gt.0) write(*,*) ' correct visc coef ',n_visc,' times'
-      if(n_cond.gt.0) write(*,*) ' correct cond coef ',n_cond,' times'
-      if(n_diff.gt.0) write(*,*) ' correct diff coef ',n_diff,' times'
 
 !
 ! compute diffusion with dimensional split alternatively for implicit

@@ -50,17 +50,17 @@ module molecular_diffusion_mod
       implicit none
 
       integer :: ind_gas_str, ind_gas_end
-      integer :: md_layers, md_reflev, md_repeat
+      integer :: md_layers, md_consv
       real tau_visc, tau_cond, tau_diff    
       real md_wait_hr
       real md_wait_sec
       logical md_time
       real, parameter:: amo=15.9994, amo2=31.9999, amo3=47.9982     !g/mol
       real, parameter::              amn2=28.013,  amh2o=18.0154    !g/mol
-!hmhj muo3 and muh2o are not precise, correct later
+!< muo3 and muh2o are not precise, correct later
       real, parameter:: muo=3.9e-7, muo2=4.03e-7,  muo3=4.03e-7     !kg/m/s
       real, parameter::             mun2=3.43e-7,  muh2o=3.43e-7    !kg/m/s
-! hmhj lao3 is not precise values, but o3_n is very small
+!< lao3 is not precise values, but o3_n is very small
       real, parameter:: lao=75.9e-5, lao2=56.e-5,  lao3=36.e-5     !kg/m/s
       real, parameter::              lan2=56.e-5,  lah2o=55.e-5    !kg/m/s
       real, parameter:: cpo=1299.185, cpo2=918.0969, cpo3=820.2391
@@ -91,7 +91,6 @@ module molecular_diffusion_mod
         write(*,*) ' molecular_diffusion is on'
         write(*,*) ' molecular_diffusion initial wait seconds ',md_wait_sec
         write(*,*) ' molecular_diffusion number of layers ',md_layers
-        write(*,*) ' molecular_diffusion ref level for coeff ',md_reflev
         write(*,*) ' viscosity    day ',tau_visc,' with effect ',tau_visc
         write(*,*) ' conductivity day ',tau_cond,' with effect ',tau_cond
         write(*,*) ' diffusivity  day ',tau_diff,' with effect ',tau_diff
@@ -116,7 +115,7 @@ module molecular_diffusion_mod
       integer :: ierr, f_unit, unit, ios
 
       namelist /molecular_diffusion_nml/ tau_visc, tau_cond, tau_diff, &
-                                         md_layers, md_reflev, md_repeat, &
+                                         md_layers, md_consv, &
                                          md_wait_hr
 
       unit = stdlog()

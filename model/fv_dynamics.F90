@@ -155,6 +155,7 @@ implicit none
    logical :: pt_initialized = .false.
    logical :: bad_range = .false.
    real, allocatable ::  rf(:)
+   real, allocatable ::  rw(:)   !< related to tau_w
    integer :: kmax=1
    integer :: k_rf = 0
 
@@ -561,7 +562,7 @@ contains
 !            call Ray_fast(abs(dt), npx, npy, npz, pfull, flagstruct%tau, u, v, w,  &
 !                          dp_ref, ptop, hydrostatic, flagstruct%rf_cutoff, bd)
 !         else
-             call Rayleigh_Super(abs(bdt), npx, npy, npz, ks, pfull, phis, flagstruct%tau, u, v, w, pt,  &
+             call Rayleigh_Super(abs(bdt), npx, npy, npz, ks, pfull, phis, flagstruct%tau, flagstruct%tau_w, u, v, w, pt,  &
 #ifdef MULTI_GASES
                   q, ncnst,  &
 #endif
@@ -1158,7 +1159,7 @@ contains
 
 
 
- subroutine Rayleigh_Super(dt, npx, npy, npz, ks, pm, phis, tau, u, v, w, pt,  &
+ subroutine Rayleigh_Super(dt, npx, npy, npz, ks, pm, phis, tau, tau_w, u, v, w, pt,  &
 #ifdef MULTI_GASES
                            q, ncnst,  &
 #endif
@@ -1166,6 +1167,7 @@ contains
                            conserve, rf_cutoff, gridstruct, domain, bd)
     real, intent(in):: dt
     real, intent(in):: tau              !< time scale (days)
+    real, intent(in):: tau_w            !< time scale (days) for w 
     real, intent(in):: cp, rg, ptop, rf_cutoff
     real, intent(in),  dimension(npz):: pm
     integer, intent(in):: npx, npy, npz, ks
@@ -1189,9 +1191,10 @@ contains
     type(domain2d), intent(INOUT) :: domain
 !
     real, allocatable ::  u2f(:,:,:)
+    real, allocatable ::  w2f(:,:,:)   !< related to tau_w
     real, parameter:: u0   = 60.   !< scaling velocity
     real, parameter:: sday = 86400.
-    real rcv, tau0
+    real rcp, rcv, tau0, tau1
     integer i, j, k
 
     integer :: is,  ie,  js,  je
@@ -1206,6 +1209,7 @@ contains
       jsd = bd%jsd
       jed = bd%jed
 
+    rcp = 1. /  cp
     rcv = 1. / (cp - rg)
 
      if ( .not. RF_initialized ) then
@@ -1228,23 +1232,30 @@ contains
 #endif
 #ifdef SMALL_EARTH
           tau0 = abs( tau )
+          tau1 = abs( tau_w )
 #else
           tau0 = abs( tau * sday )
+          tau1 = abs( tau_w * sday )	
 #endif
-          if( is_master() ) write(6,*) 'Rayleigh_Super tau=',tau
+          if( tau_w .eq. 0.0 )  tau1 = tau0
+          if( is_master() ) write(6,*) 'Rayleigh_Super in sec tau=',tau0,' tau_w=',tau1
           allocate( rf(npz) )
+          allocate( rw(npz) )
           rf(:) = 0.
+          rw(:) = 0.
 
           do k=1, ks+1
              if( is_master() ) write(6,*) k, 0.01*pm(k)
           enddo
-          if( is_master() ) write(6,*) 'Rayleigh_Super E-folding time (days):'
+          if( is_master() ) write(6,*) 'Rayleigh_Super E-folding time (mb days):'
           do k=1, npz
              if ( pm(k) < rf_cutoff ) then
-                 if ( tau < 0 ) then ! GSM formula
+                 if ( tau < 0 ) then !< GSM formula 
                   rf(k) = dt/tau0*( log(rf_cutoff/pm(k)) )**2
+                  rw(k) = dt/tau1*( log(rf_cutoff/pm(k)) )**2	
                  else
                   rf(k) = dt/tau0*sin(0.5*pi*log(rf_cutoff/pm(k))/log(rf_cutoff/ptop))**2
+                  rw(k) = dt/tau1*sin(0.5*pi*log(rf_cutoff/pm(k))/log(rf_cutoff/ptop))**2
                  endif
                   if( is_master() ) write(6,*) k, 0.01*pm(k), dt/(rf(k)*sday)
                   kmax = k
@@ -1258,18 +1269,22 @@ contains
     call c2l_ord2(u, v, ua, va, gridstruct, npz, gridstruct%grid_type, bd, gridstruct%bounded_domain)
 
     allocate( u2f(isd:ied,jsd:jed,kmax) )
+    allocate( w2f(isd:ied,jsd:jed,kmax) )  
 
 !$OMP parallel do default(none) shared(is,ie,js,je,kmax,pm,rf_cutoff,hydrostatic,ua,va,agrid, &
-!$OMP                                  u2f,rf,w)
+!$OMP                                  u2f,w2f,rf,rw,w)
     do k=1,kmax
        if ( pm(k) < rf_cutoff ) then
           u2f(:,:,k) = 1. / (1.+rf(k))
+          w2f(:,:,k) = 1. / (1.+rw(k))	
        else
           u2f(:,:,k) = 1.
+          w2f(:,:,k) = 1.
        endif
     enddo
                                         call timing_on('COMM_TOTAL')
     call mpp_update_domains(u2f, domain)
+    call mpp_update_domains(w2f, domain)   
                                         call timing_off('COMM_TOTAL')
 
 !$OMP parallel do default(none) shared(is,ie,js,je,kmax,pm,rf_cutoff,w,rf,u,v, &
@@ -1279,14 +1294,14 @@ contains
 #ifdef MULTI_GASES
 !$OMP                                  q, &
 #endif
-!$OMP                                  conserve,hydrostatic,pt,ua,va,u2f,cp,rg,ptop,rcv)
+!$OMP                                  conserve,hydrostatic,pt,ua,va,u2f,w2f,cp,rg,ptop,rcp,rcv)
      do k=1,kmax
         if ( pm(k) < rf_cutoff ) then
 #ifdef HIWPP
            if (.not. hydrostatic) then
               do j=js,je
                  do i=is,ie
-                    w(i,j,k) = w(i,j,k)/(1.+rf(k))
+                    w(i,j,k) = w(i,j,k)/(1.+rw(k))
                  enddo
               enddo
            endif
@@ -1313,10 +1328,10 @@ contains
                do j=js,je
                   do i=is,ie
 #ifdef MULTI_GASES
-                     pt(i,j,k) = pt(i,j,k) + 0.5*(ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2)*(1.-u2f(i,j,k)**2)   &
+                     pt(i,j,k) = pt(i,j,k) + 0.5*((ua(i,j,k)**2+va(i,j,k)**2)*(1.-u2f(i,j,k)**2)+w(i,j,k)**2*(1.-w2f(i,j,k)**2))   &
                      /(cp*vicpq(q(i,j,k,:)) - rg*virq(q(i,j,k,:)))
 #else
-                     pt(i,j,k) = pt(i,j,k) + 0.5*(ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2)*(1.-u2f(i,j,k)**2)*rcv
+                     pt(i,j,k) = pt(i,j,k) + 0.5*((ua(i,j,k)**2+va(i,j,k)**2)*(1.-u2f(i,j,k)**2)+w(i,j,k)**2*(1.-w2f(i,j,k)**2))*rcv
 #endif
                   enddo
                enddo
@@ -1336,7 +1351,7 @@ contains
           if ( .not. hydrostatic ) then
              do j=js,je
                 do i=is,ie
-                   w(i,j,k) = u2f(i,j,k)*w(i,j,k)
+                   w(i,j,k) = w2f(i,j,k)*w(i,j,k)
                 enddo
              enddo
           endif
@@ -1345,6 +1360,7 @@ contains
      enddo
 
      deallocate ( u2f )
+     deallocate ( w2f )  
 
  end subroutine Rayleigh_Super
 

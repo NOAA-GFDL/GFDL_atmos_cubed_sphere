@@ -493,7 +493,7 @@ contains
 
 !------------
 ! Compute pkz
-!hmhj pk is pe**kappa(=rgas/cp_air), but pkz=plyr**kappa(=r/cp)
+!< pk is pe**kappa(=rgas/cp_air), but pkz=plyr**kappa(=r/cp)
 !------------
    if ( hydrostatic ) then
       do k=1,km

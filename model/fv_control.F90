@@ -324,6 +324,7 @@ module fv_control_mod
      real    , pointer :: ke_bg
      real    , pointer :: consv_te 
      real    , pointer :: tau 
+     real    , pointer :: tau_w  
      real    , pointer :: rf_cutoff
      logical , pointer :: filter_phys 
      logical , pointer :: dwind_2d 
@@ -866,6 +867,7 @@ module fv_control_mod
        ke_bg                         => Atm%flagstruct%ke_bg
        consv_te                      => Atm%flagstruct%consv_te
        tau                           => Atm%flagstruct%tau
+       tau_w                         => Atm%flagstruct%tau_w   
        rf_cutoff                     => Atm%flagstruct%rf_cutoff
        filter_phys                   => Atm%flagstruct%filter_phys
        dwind_2d                      => Atm%flagstruct%dwind_2d
@@ -1440,7 +1442,7 @@ module fv_control_mod
             dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
             consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, consv_am, RF_fast, &
             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
-            tau, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
+            tau, tau_w, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
             na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
             pnats, dnats, dnrts, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
             c2l_ord, dx_const, dy_const, umax, deglat,      &
