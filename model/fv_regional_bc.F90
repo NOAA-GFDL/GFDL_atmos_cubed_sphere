@@ -6654,7 +6654,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
        source='No Source Attribute'
       endif
 
-! data source string to global string --------
+! Logical flag for fv3gfs nemsio/netcdf/grib2 --------
       if ( trim(source)=='FV3GFS GAUSSIAN NEMSIO FILE' .or.        &
            trim(source)=='FV3GFS GAUSSIAN NETCDF FILE' .or.        &
            trim(source)=='FV3GFS GRIB2 FILE'                ) then
