@@ -331,9 +331,8 @@ contains
     character(len=8), dimension(2) :: dim_names_2d
     character(len=8), dimension(3) :: dim_names_3d, dim_names_3d2, dim_names_3d3, dim_names_3d4
     character(len=6)  :: gn, stile_name
-    character(len=64) :: fname
     character(len=64) :: tracer_name
-    character(len=64) :: fn_gfs_ctl = 'gfs_ctrl.nc'
+    character(len=64) :: fn_gfs_ctl = 'INPUT/gfs_ctrl.nc'
     character(len=64) :: fn_gfs_ics = 'INPUT/gfs_data.nc'
     character(len=64) :: fn_sfc_ics = 'INPUT/sfc_data.nc'
     character(len=64) :: fn_oro_ics = 'INPUT/oro_data.nc'
@@ -395,8 +394,7 @@ contains
     call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
     ntdiag = ntracers-ntprog
 
-    fname = 'INPUT/'//trim(fn_gfs_ctl)
-    if( open_file(Gfs_ctl, fname, "read") ) then
+    if( open_file(Gfs_ctl, fn_gfs_ctl, "read") ) then
 !--- read in the number of tracers in the NCEP NGGPS ICs
       call read_data (Gfs_ctl, 'ntrac', ntrac)
       call close_file(Gfs_ctl)
@@ -414,7 +412,7 @@ contains
 
 
 !--- read in the number of levp
-    call open_ncfile( 'INPUT/'//trim(fn_gfs_ctl), ncid )        ! open the file
+    call open_ncfile(fn_gfs_ctl, ncid )        ! open the file
     call get_ncdim1( ncid, 'levsp', levsp )
     call close_ncfile( ncid )
 
@@ -740,8 +738,7 @@ contains
         allocate (ak(levp+1))
         allocate (bk(levp+1))
 
-        fname = 'INPUT/'//trim(fn_gfs_ctl)
-        if( open_file(Gfs_ctl, fname, "read") ) then
+        if( open_file(Gfs_ctl, fn_gfs_ctl, "read") ) then
           call read_data(Gfs_ctl,'vcoord',wk2)
           ak(1:levp+1) = wk2(1:levp+1,1)
           bk(1:levp+1) = wk2(1:levp+1,2)
@@ -850,8 +847,7 @@ contains
         !--- read in ak and bk from the gfs control file using fms_io read_data ---
         !
         ! put the lowest 64 levels into ak and bk
-        fname = 'INPUT/'//trim(fn_gfs_ctl)
-        if( open_file(Gfs_ctl, fname, "read") ) then
+        if( open_file(Gfs_ctl, fn_gfs_ctl, "read") ) then
           call read_data(Gfs_ctl,'vcoord',wk2_tmp)
           ak(1:levp+1) = wk2_tmp(2:levsp,1)
           bk(1:levp+1) = wk2_tmp(2:levsp,2)
@@ -970,9 +966,8 @@ contains
       character(len=8), dimension(2) :: dim_names_2d
       character(len=8), dimension(3) :: dim_names_3d, dim_names_3d2, dim_names_3d3, dim_names_3d4
       character(len=6)  :: gn, stile_name
-      character(len=64) :: fname
       character(len=64) :: tracer_name
-      character(len=64) :: fn_hrr_ctl = 'hrrr_ctrl.nc'
+      character(len=64) :: fn_hrr_ctl = 'INPUT/hrrr_ctrl.nc'
       character(len=64) :: fn_hrr_ics = 'INPUT/hrrr_data.nc'
       character(len=64) :: fn_sfc_ics = 'INPUT/sfc_data.nc'
       character(len=64) :: fn_oro_ics = 'INPUT/oro_data.nc'
@@ -1023,8 +1018,7 @@ contains
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
       ntdiag = ntracers-ntprog
 
-      fname = 'INPUT/'//trim(fn_hrr_ctl)
-      if( open_file(Hrr_ctl, fname, "read") ) then
+      if( open_file(Hrr_ctl, fn_hrr_ctl, "read") ) then
 !--- read in the number of tracers in the HRRR ICs
         call read_data (Hrr_ctl, 'ntrac', ntrac)
         if (ntrac > ntracers) call mpp_error(FATAL,'==> External_ic::get_hrrr_ic: more HRRR tracers &
@@ -1945,7 +1939,7 @@ contains
       type(FmsNetcdfFile_t) :: Gfs_ctl
       character(len=64) :: fn_oro_ics = 'INPUT/oro_data.nc'
       character(len=64) :: fn_gfs_ics = 'INPUT/gfs_data.nc'
-      character(len=64) :: fn_gfs_ctl = 'gfs_ctrl.nc'
+      character(len=64) :: fn_gfs_ctl = 'INPUT/gfs_ctrl.nc'
       character(len=20) :: suffix
       character(len=1) :: tile_num
       logical :: filtered_terrain = .true.
@@ -2054,8 +2048,7 @@ contains
       allocate (wk2(levp_gfs+1,2))
       allocate (ak_gfs(levp_gfs+1))
       allocate (bk_gfs(levp_gfs+1))
-      fname = 'INPUT/'//trim(fn_gfs_ctl)
-      if( open_file(Gfs_ctl, fname, "read") ) then
+      if( open_file(Gfs_ctl, fn_gfs_ctl, "read") ) then
         call read_data(Gfs_ctl,'vcoord',wk2)
         call close_file(Gfs_ctl)
       endif
