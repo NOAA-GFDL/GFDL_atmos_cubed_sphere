@@ -60,6 +60,7 @@ module fv_restart_mod
   use mpp_domains_mod,     only: mpp_global_field
   use fms_mod,             only: file_exist
   use fv_treat_da_inc_mod, only: read_da_inc
+  use coarse_grained_restart_files_mod, only: fv_io_write_restart_coarse
 
   implicit none
   private
@@ -126,6 +127,7 @@ contains
     logical :: do_read_restart = .false.
     logical :: do_read_restart_bc = .false.
     integer, allocatable :: ideal_test_case(:), new_nest_topo(:)
+    integer :: nest_level
 
     rgrav = 1. / grav
 
@@ -200,24 +202,8 @@ contains
                  .not. do_read_restart_bc .or. &
                  Atm(n)%flagstruct%external_ic  ) ) then
              new_nest_topo(n) = 1
-             if (n==this_grid) then
-
+             if (n==this_grid .or. this_grid==Atm(n)%parent_grid%grid_number) then
                 call fill_nested_grid_topo(Atm(n), n==this_grid)
-                call fill_nested_grid_topo_halo(Atm(n), n==this_grid) !TODO can we combine these?
-                call nested_grid_BC(Atm(n)%ps, Atm(n)%parent_grid%ps, global_nest_domain, &
-                     Atm(n)%neststruct%ind_h, Atm(n)%neststruct%wt_h, 0, 0, &
-                     Atm(n)%npx, Atm(n)%npy, Atm(n)%bd, 1, Atm(n)%npx-1, 1, Atm(n)%npy-1)
-
-             elseif (this_grid==Atm(n)%parent_grid%grid_number) then !this_grid is grid n's parent
-
-                call fill_nested_grid_topo(Atm(n), n==this_grid)
-                call fill_nested_grid_topo_halo(Atm(n), n==this_grid) !TODO can we combine these?
-                !call mpp_get_data_domain( Atm(n)%parent_grid%domain, isd, ied, jsd, jed)
-                call nested_grid_BC(Atm(n)%parent_grid%ps, global_nest_domain, 0, 0, n-1)
-                !Atm(n)%ps, Atm(n)%parent_grid%ps, global_nest_domain, &
-                !Atm(n)%neststruct%ind_h, Atm(n)%neststruct%wt_h, 0, 0, &
-                !Atm(n)%npx, Atm(n)%npy, Atm(n)%bd, isd, ied, jsd, jed, proc_in=n==this_grid)
-
              endif
 
           endif
@@ -441,10 +427,35 @@ contains
 
     end do !break cycling loop to finish nesting setup
 
+!Send data to nests per levels
+     do nest_level=1,Atm(this_grid)%neststruct%num_nest_level
+
+        if (Atm(this_grid)%neststruct%nested .AND. Atm(this_grid)%neststruct%nlevel==nest_level)then
+           call nested_grid_BC(Atm(this_grid)%ps, Atm(this_grid)%parent_grid%ps, global_nest_domain, &
+                Atm(this_grid)%neststruct%ind_h, Atm(this_grid)%neststruct%wt_h, 0, 0, &
+                Atm(this_grid)%npx, Atm(this_grid)%npy, Atm(this_grid)%bd, 1, Atm(this_grid)%npx-1, 1,&
+                Atm(this_grid)%npy-1,nest_level=Atm(this_grid)%neststruct%nlevel)
+           call nested_grid_BC(Atm(this_grid)%phis, Atm(this_grid)%parent_grid%phis, global_nest_domain, &
+                Atm(this_grid)%neststruct%ind_h, Atm(this_grid)%neststruct%wt_h, 0, 0, &
+                Atm(this_grid)%npx, Atm(this_grid)%npy, Atm(this_grid)%bd, 1, Atm(this_grid)%npx-1, 1, &
+                Atm(this_grid)%npy-1,nest_level=Atm(this_grid)%neststruct%nlevel)
+       endif
+
+        if (ANY (Atm(this_grid)%neststruct%child_grids) .AND. Atm(this_grid)%neststruct%nlevel==nest_level-1) then
+           call nested_grid_BC(Atm(this_grid)%ps, global_nest_domain, 0, 0, nest_level=Atm(this_grid)%neststruct%nlevel+1)
+           call nested_grid_BC(Atm(this_grid)%phis, global_nest_domain, 0, 0, nest_level=Atm(this_grid)%neststruct%nlevel+1)
+        endif
+
+    enddo
+
 
     do n = ntileMe,1,-1
        if (new_nest_topo(n) > 0) then
-          call twoway_topo_update(Atm(n), n==this_grid)
+          if (Atm(n)%parent_grid%grid_number==this_grid) then    !only parent?!
+             call twoway_topo_update(Atm(n), n==this_grid)
+          elseif (n==this_grid .or. Atm(this_grid)%neststruct%nlevel==Atm(n)%neststruct%nlevel) then
+             call twoway_topo_update(Atm(this_grid), n==this_grid)
+          endif
        endif
     end do
 
@@ -1157,7 +1168,7 @@ contains
     iec_p = Atm%parent_grid%bd%iec
     jsc_p = Atm%parent_grid%bd%jsc
     jec_p = Atm%parent_grid%bd%jec
-    sending_proc = Atm%parent_grid%pelist(1) + (Atm%neststruct%parent_tile-1)*Atm%parent_grid%npes_per_tile
+    !sending_proc = Atm%parent_grid%pelist(1) + (Atm%neststruct%parent_tile-1)*Atm%parent_grid%npes_per_tile
 
     call mpp_get_global_domain( Atm%parent_grid%domain, &
          isg, ieg, jsg, jeg, xsize=npx_p, ysize=npy_p)
@@ -1175,13 +1186,14 @@ contains
                Atm%neststruct%isu, Atm%neststruct%ieu, Atm%neststruct%jsu, Atm%neststruct%jeu, &
                Atm%npx, Atm%npy, 0, 0, &
                Atm%neststruct%refinement, Atm%neststruct%nestupdate, 0, 0, &
-               Atm%neststruct%parent_proc, Atm%neststruct%child_proc, Atm%parent_grid, Atm%grid_number-1)
+               ANY(Atm%parent_grid%pelist == mpp_pe()), Atm%neststruct%child_proc, Atm%parent_grid, Atm%neststruct%nlevel)
           Atm%parent_grid%neststruct%parent_of_twoway = .true.
           !NOTE: mpp_update_nest_coarse (and by extension, update_coarse_grid) does **NOT** pass data
           !allowing a two-way update into the halo of the coarse grid. It only passes data so that the INTERIOR
           ! can have the two-way update. Thus, on the nest's cold start, if this update_domains call is not done,
           ! the coarse grid will have the wrong topography in the halo, which will CHANGE when a restart is done!!
-          if (Atm%neststruct%parent_proc) call mpp_update_domains(Atm%parent_grid%phis, Atm%parent_grid%domain)
+         !if (Atm%neststruct%parent_proc) call mpp_update_domains(Atm%parent_grid%phis, Atm%parent_grid%domain)
+         if (ANY(Atm%parent_grid%pelist == mpp_pe())) call mpp_update_domains(Atm%parent_grid%phis, Atm%parent_grid%domain)
        end if
 
     end if
@@ -1222,7 +1234,15 @@ contains
     type(fv_atmos_type), intent(inout) :: Atm
     character(len=*),    intent(in)    :: timestamp
 
-    call fv_io_write_restart(Atm, timestamp)
+    if (Atm%coarse_graining%write_coarse_restart_files) then
+       call fv_io_write_restart_coarse(Atm, timestamp)
+       if (.not. Atm%coarse_graining%write_only_coarse_intermediate_restarts) then
+          call fv_io_write_restart(Atm, timestamp)
+       endif
+    else
+       call fv_io_write_restart(Atm, timestamp)
+    endif
+
     if (Atm%neststruct%nested) then
        call fv_io_write_BCs(Atm)
     endif
@@ -1310,7 +1330,11 @@ contains
     ! Write4 energy correction term
 #endif
 
- call fv_io_write_restart(Atm)
+       if (Atm%coarse_graining%write_coarse_restart_files) then
+          call fv_io_write_restart_coarse(Atm)
+       endif
+       call fv_io_write_restart(Atm)
+
  if (Atm%neststruct%nested) call fv_io_write_BCs(Atm)
 
  module_is_initialized = .FALSE.

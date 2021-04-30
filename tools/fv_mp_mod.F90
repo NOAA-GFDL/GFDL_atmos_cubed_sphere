@@ -281,9 +281,10 @@ contains
 !
 !     domain_decomp :: Setup domain decomp
 !
-      subroutine domain_decomp(npx,npy,nregions,grid_type,nested,layout,io_layout,bd,tile,square_domain,&
+      subroutine domain_decomp(grid_num,npx,npy,nregions,grid_type,nested,layout,io_layout,bd,tile,square_domain,&
            npes_per_tile,domain,domain_for_coupler,num_contact,pelist)
 
+         integer, intent(IN)  :: grid_num
          integer, intent(IN)  :: npx,npy,grid_type
          integer, intent(INOUT) :: nregions, tile
          logical, intent(IN):: nested
@@ -312,13 +313,14 @@ contains
          npes_x = layout(1)
          npes_y = layout(2)
 
+
          call mpp_domains_init(MPP_DOMAIN_TIME)
 
          select case(nregions)
          case ( 1 )  ! Lat-Lon "cyclic"
 
             select case (grid_type)
-            case (0,1,2) !Gnomonic nested grid
+            case (0,1,2,5) !Gnomonic nested grid
                if (nested) then
                   type = "Cubed-sphere nested grid"
                else
@@ -368,12 +370,6 @@ contains
                else
                   call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
                endif
-            case (5)   ! latlon patch
-               type="Lat-Lon: patch"
-               nregions = 1
-               num_contact = 0
-               npes_per_tile = npes/nregions
-               call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
             case (6)   ! latlon strip
                type="Lat-Lon: strip"
                nregions = 1
@@ -555,7 +551,7 @@ contains
                if( nregions .NE. 1 ) then
                   call mpp_error(FATAL, 'domain_decomp: nregions should be 1 for nested region, contact developer')
                endif
-               tile_id(1) = 7   ! TODO need update for multiple nests
+               tile_id(1) = tile_fine(grid_num)
             else
                do n = 1, nregions
                   tile_id(n) = n

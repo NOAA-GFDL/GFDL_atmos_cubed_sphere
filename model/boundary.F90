@@ -2248,6 +2248,8 @@ contains
 
    real :: var_nest_3d(is_n:ie_n+istag,js_n:je_n+jstag,1)
    real :: var_coarse_3d(isd_p:ied_p+istag,jsd_p:jed_p+jstag,1)
+   integer( KIND = 8) :: ptr_nest=0
+   integer( KIND = 8) :: ptr_coarse=0
    pointer(ptr_nest, var_nest_3d)
    pointer(ptr_coarse, var_coarse_3d)
 
@@ -2495,7 +2497,6 @@ contains
       end select
 
    else if (istag == 0 .and. jstag > 0) then
-
 
       select case (nestupdate)
       case (1,6,7,8)

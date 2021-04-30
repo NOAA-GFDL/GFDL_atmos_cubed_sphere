@@ -18,7 +18,6 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
-!!! This code contributed by Tom Black and Jim Abeles at NCEP/EMC !!!
 
 module fv_regional_mod
 
@@ -54,7 +53,7 @@ module fv_regional_mod
    use fv_grid_utils_mod, only: g_sum,mid_pt_sphere,get_unit_vect2      &
                                ,get_latlon_vector,inner_prod            &
                                ,cell_center2
-   use fv_mapz_mod,       only: mappm, moist_cp, moist_cv
+   use fv_mapz_mod,       only: mappm, moist_cp, moist_cv, map_scalar
    use fv_mp_mod,         only: is_master, mp_reduce_min, mp_reduce_max
    use fv_fill_mod,       only: fillz
    use fv_eta_mod,        only: get_eta_level
@@ -83,8 +82,7 @@ module fv_regional_mod
             ,current_time_in_seconds                                    &
             ,a_step, p_step, k_step, n_step
 
-      integer,parameter :: bc_time_interval=3                           &
-                          ,nhalo_data =4                                &
+      integer,parameter :: nhalo_data =4                                &
                           ,nhalo_model=3
 
       integer, public, parameter :: H_STAGGER = 1
@@ -111,8 +109,12 @@ module fv_regional_mod
 !     integer, parameter :: jend_nest = 1290
 
       real :: current_time_in_seconds
+      integer :: bc_time_interval
       integer,save :: ncid,next_time_to_read_bcs,npz,ntracers
-      integer,save :: liq_water_index,o3mr_index,sphum_index               !<-- Locations of tracer vbls in the tracers array
+
+      !Locations of tracer vbls in the tracers array
+      integer,save :: o3mr_index, liq_wat_index, sphum_index
+      integer,save :: ice_wat_index, rainwat_index, snowwat_index, graupel_index
       integer,save :: bc_hour, ntimesteps_per_bc_update
 
       real(kind=R_GRID),dimension(:,:,:),allocatable :: agrid_reg      &   !<-- Lon/lat of cell centers
@@ -161,8 +163,10 @@ module fv_regional_mod
 
       real,parameter :: tice=273.16                                     &
                        ,t_i0=15.
-      real, parameter :: c_liq = 4185.5 ! gfdl: heat capacity of liquid at 15 deg c
-      real, parameter :: c_ice = 1972.0 ! gfdl: heat capacity of ice at - 15 deg c
+      !real, parameter :: c_liq = 4185.5 ! gfdl: heat capacity of liquid at 15 deg c
+      !real, parameter :: c_ice = 1972.0 ! gfdl: heat capacity of ice at - 15 deg c
+      real, parameter :: c_liq = 4218.0 ! gfdl: heat capacity of liquid at 0 deg c
+      real, parameter :: c_ice = 2106.0 ! gfdl: heat capacity of ice at 0 deg c
       real, parameter :: zvir = rvgas/rdgas - 1.                        &
                         ,cv_air = cp_air - rdgas                        &
                         ,cv_vap = cp_vapor - rvgas
@@ -257,6 +261,8 @@ contains
 !
 !-----------------------------------------------------------------------
 !
+      bc_time_interval = Atm%flagstruct%bc_update_interval ! kyc: set up bc_time_interval according to the namelist
+
       north_bc=.false.
       south_bc=.false.
       east_bc =.false.
@@ -289,6 +295,7 @@ contains
 !
 !-----------------------------------------------------------------------
 !
+
       ntracers=Atm%ncnst                                                   !<-- # of advected tracers
       npz=Atm%npz                                                          !<-- # of layers in vertical configuration of integration
       klev_out=npz
@@ -305,9 +312,13 @@ contains
 !
       call compute_regional_bc_indices(Atm%regional_bc_bounds)
 !
-      liq_water_index=get_tracer_index(MODEL_ATMOS, 'liq_wat')
+      liq_wat_index=get_tracer_index(MODEL_ATMOS, 'liq_wat')
       o3mr_index     =get_tracer_index(MODEL_ATMOS, 'o3mr')
       sphum_index    =get_tracer_index(MODEL_ATMOS, 'sphum')
+      ice_wat_index=get_tracer_index(MODEL_ATMOS, 'ice_wat')
+      rainwat_index=get_tracer_index(MODEL_ATMOS, 'rainwat')
+      snowwat_index=get_tracer_index(MODEL_ATMOS, 'snowwat')
+      graupel_index=get_tracer_index(MODEL_ATMOS, 'graupel')
 !
 !-----------------------------------------------------------------------
 !***  Allocate the objects that will hold the boundary variables
@@ -1092,7 +1103,8 @@ contains
 !***  Local variables
 !---------------------
 !
-      integer :: k
+      integer :: i, j, k
+      real    :: ps0(isd:ied  ,jsd:jed)
 !
 !-----------------------------------------------------------------------
 !***********************************************************************
@@ -1107,6 +1119,13 @@ contains
                            ,is, ie, js, je                              &
                            ,isd, ied, jsd, jed                          &
                            ,ak, bk )
+
+      do j=jsd,jed
+      do i=isd,ied
+        ps0(i,j) = Atm%ps(i,j)
+      enddo
+      enddo
+
       call regional_bc_t1_to_t0(BC_t1, BC_t0                            &  !
                                ,Atm%npz                                 &  !<-- Move BC t1 data
                                ,Atm%ncnst                               &  !    to t0.
@@ -1117,7 +1136,14 @@ contains
       call regional_bc_data(Atm, bc_hour                                &  !<-- Fill time level t1
                            ,is, ie, js, je                              &  !    from the 2nd time level
                            ,isd, ied, jsd, jed                          &  !    in the BC file.
-                           ,ak, bk )                                       !
+                           ,ak, bk )
+
+      do j=jsd,jed
+      do i=isd,ied
+        Atm%ps(i,j) = ps0(i,j)
+      enddo
+      enddo
+!
 !
       allocate (ak_in(1:levp+1))                                           !<-- Save the input vertical structure for
       allocate (bk_in(1:levp+1))                                           !    remapping BC updates during the forecast.
@@ -1129,6 +1155,7 @@ contains
 !-----------------------------------------------------------------------
 !
       end subroutine start_regional_cold_start
+
 !
 !-----------------------------------------------------------------------
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -1356,6 +1383,7 @@ contains
       real,dimension(:,:,:),allocatable :: ps_input,w_input,zh_input
       real,dimension(:,:,:),allocatable :: u_s_input,v_s_input          &
                                           ,u_w_input,v_w_input
+      real,dimension(:,:,:),allocatable :: pt_input
       real,dimension(:,:,:,:),allocatable :: tracers_input
 !
       real(kind=R_GRID), dimension(2):: p1, p2, p3, p4
@@ -1439,6 +1467,10 @@ contains
 !
       allocate(tracers_input(is_input:ie_input,js_input:je_input,klev_in,ntracers)) !; tracers_input=real_snan
       tracers_input=0. ! Temporary fix
+
+      if (Atm%flagstruct%hrrrv3_ic) then
+        allocate(  pt_input(is_input:ie_input,js_input:je_input,1:klev_in)) ; pt_input=real_snan
+      endif
 !
 !-----------------------------------------------------------------------
 !***  Extract each variable from the regional BC file.  The final
@@ -1482,11 +1514,12 @@ contains
 !                               ,Atm%regional_bc_bounds                 &
                                 ,'liq_wat'                              &
                                 ,array_4d=tracers_input                 &
-                                ,tlev=liq_water_index )
+                                ,tlev=liq_wat_index )
+
 !
-!-----------
+!------------------
 !***  Ozone
-!-----------
+!------------------
 !
       nlev=klev_in
       call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
@@ -1496,6 +1529,8 @@ contains
                                 ,'o3mr   '                              &
                                 ,array_4d=tracers_input                 &
                                 ,tlev=o3mr_index )
+
+
 !
 !-----------------------
 !***  Vertical velocity
@@ -1569,6 +1604,81 @@ contains
                                 ,'v_w    '                              &
                                 ,array_3d=v_w_input)
 !
+
+
+if (Atm%flagstruct%hrrrv3_ic) then
+!
+!-----------------------
+!***  Virtual temp.
+!-----------------------
+!
+      nlev=klev_in
+      call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
+                                ,nlev                                   &
+                                ,ntracers                               &
+!                               ,Atm%regional_bc_bounds                 &
+                                ,'pt     '                              &
+                                ,array_3d=pt_input)
+!
+
+!
+!------------------
+!***  Ice water
+!------------------
+!
+      nlev=klev_in
+      call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
+                                ,nlev                                   &
+                                ,ntracers                               &
+!                               ,Atm%regional_bc_bounds                 &
+                                ,'ice_wat'                              &
+                                ,array_4d=tracers_input                 &
+                                ,tlev=ice_wat_index )
+
+!
+!------------------
+!***  Rain water
+!------------------
+!
+      nlev=klev_in
+      call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
+                                ,nlev                                   &
+                                ,ntracers                               &
+!                               ,Atm%regional_bc_bounds                 &
+                                ,'rainwat'                              &
+                                ,array_4d=tracers_input                 &
+                                ,tlev=rainwat_index )
+
+
+!
+!------------------
+!***  Snow water
+!------------------
+!
+      nlev=klev_in
+      call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
+                                ,nlev                                   &
+                                ,ntracers                               &
+!                               ,Atm%regional_bc_bounds                 &
+                                ,'snowwat'                              &
+                                ,array_4d=tracers_input                 &
+                                ,tlev=snowwat_index )
+
+!
+!------------------
+!***  Graupel water
+!------------------
+!
+      nlev=klev_in
+      call read_regional_bc_file(is_input,ie_input,js_input,je_input    &
+                                ,nlev                                   &
+                                ,ntracers                               &
+!                               ,Atm%regional_bc_bounds                 &
+                                ,'graupel'                              &
+                                ,array_4d=tracers_input                 &
+                                ,tlev=graupel_index )
+
+endif
 !-----------------------------------------------------------------------
 !***  We now have the boundary variables from the BC file on the
 !***  levels of the input data.  Before remapping the 3-D variables
@@ -1613,8 +1723,36 @@ contains
 !-----------
 !
       if(north_bc)then
-!
-          call remap_scalar_nggps_regional_bc(Atm                          &
+
+          if (Atm%flagstruct%hrrrv3_ic) then
+             call remap_scalar_regional_bc_nh(Atm                          &
+                                             ,'north'                      &
+
+                                             ,isd,ied,jsd,jed              &  !<-- Atm array indices w/halo
+
+                                             ,is_input                     &  !<--
+                                             ,ie_input                     &  !  Input array
+                                             ,js_input                     &  !  index limits.
+                                             ,je_input                     &  !<--
+
+                                             ,klev_in, klev_out            &
+                                             ,ntracers                     &
+                                             ,ak, bk                       &
+
+                                             ,ps_input                     &  !<--
+                                             ,tracers_input                &  !  BC vbls on
+                                             ,w_input                      &  !  input model levels
+                                             ,pt_input                     &
+                                             ,zh_input                     &  !<--
+
+                                             ,phis_reg                     &  !<-- Filtered topography
+
+                                             ,ps_reg                       &  !<-- Derived FV3 psfc in regional domain boundary region
+
+                                             ,BC_t1%north )                   !<-- North BC vbls on final integration levels
+          else
+
+           call remap_scalar_nggps_regional_bc(Atm                          &
                                              ,'north'                      &
 
                                              ,isd,ied,jsd,jed              &  !<-- Atm array indices w/halo
@@ -1638,6 +1776,8 @@ contains
                                              ,ps_reg                       &  !<-- Derived FV3 psfc in regional domain boundary region
 
                                              ,BC_t1%north )                   !<-- North BC vbls on final integration levels
+
+          endif
 
           if (is == 1) then
              istart = 1
@@ -1690,30 +1830,63 @@ contains
 !
       if(south_bc)then
 !
-        call remap_scalar_nggps_regional_bc(Atm                            &
-                                           ,'south'                        &
 
-                                           ,isd,ied,jsd,jed                &  !<-- Atm array indices w/halo
+          if (Atm%flagstruct%hrrrv3_ic) then
+             call remap_scalar_regional_bc_nh(Atm                          &
+                                             ,'south'                      &
 
-                                           ,is_input                       &  !<--
-                                           ,ie_input                       &  !  Input array
-                                           ,js_input                       &  !  index limits.
-                                           ,je_input                       &  !<--
+                                             ,isd,ied,jsd,jed              &  !<-- Atm array indices w/halo
 
-                                           ,klev_in, klev_out              &
-                                           ,ntracers                       &
-                                           ,ak, bk                         &
+                                             ,is_input                     &  !<--
+                                             ,ie_input                     &  !  Input array
+                                             ,js_input                     &  !  index limits.
+                                             ,je_input                     &  !<--
 
-                                           ,ps_input                       &  !<--
-                                           ,tracers_input                  &  !  BC vbls on
-                                           ,w_input                        &  !  input model levels
-                                           ,zh_input                       &  !<--
+                                             ,klev_in, klev_out            &
+                                             ,ntracers                     &
+                                             ,ak, bk                       &
 
-                                           ,phis_reg                       &  !<-- Filtered topography
+                                             ,ps_input                     &  !<--
+                                             ,tracers_input                &  !  BC vbls on
+                                             ,w_input                      &  !  input model levels
+                                             ,pt_input                     &
+                                             ,zh_input                     &  !<--
 
-                                           ,ps_reg                         &  !<-- Derived FV3 psfc in regional domain boundary region
+                                             ,phis_reg                     &  !<-- Filtered topography
 
-                                           ,BC_t1%south )                     !<-- South BC vbls on final integration levels
+                                             ,ps_reg                       &  !<-- Derived FV3 psfc in regional domain boundary region
+
+                                             ,BC_t1%south )                   !<-- North BC vbls on final integration levels
+          else
+
+           call remap_scalar_nggps_regional_bc(Atm                          &
+                                             ,'south'                      &
+
+                                             ,isd,ied,jsd,jed              &  !<-- Atm array indices w/halo
+
+                                             ,is_input                     &  !<--
+                                             ,ie_input                     &  !  Input array
+                                             ,js_input                     &  !  index limits.
+                                             ,je_input                     &  !<--
+
+                                             ,klev_in, klev_out            &
+                                             ,ntracers                     &
+                                             ,ak, bk                       &
+
+                                             ,ps_input                     &  !<--
+                                             ,tracers_input                &  !  BC vbls on
+                                             ,w_input                      &  !  input model levels
+                                             ,zh_input                     &  !<--
+
+                                             ,phis_reg                     &  !<-- Filtered topography
+
+                                             ,ps_reg                       &  !<-- Derived FV3 psfc in regional domain boundary region
+
+                                             ,BC_t1%south )                   !<-- North BC vbls on final integration levels
+
+          endif
+
+
 !
 
           if (is == 1) then
@@ -1766,41 +1939,72 @@ contains
 !
       if(east_bc)then
 !
-        call remap_scalar_nggps_regional_bc(Atm                            &
-                                           ,'east '                        &
 
-                                           ,isd,ied,jsd,jed                &  !<-- Atm array indices w/halo
+          if (Atm%flagstruct%hrrrv3_ic) then
+             call remap_scalar_regional_bc_nh(Atm                          &
+                                             ,'east '                      &
 
-                                           ,is_input                       &  !<--
-                                           ,ie_input                       &  !  Input array
-                                           ,js_input                       &  !  index limits.
-                                           ,je_input                       &  !<--
+                                             ,isd,ied,jsd,jed              &  !<-- Atm array indices w/halo
 
-                                           ,klev_in, klev_out              &
-                                           ,ntracers                       &
-                                           ,ak, bk                         &
+                                             ,is_input                     &  !<--
+                                             ,ie_input                     &  !  Input array
+                                             ,js_input                     &  !  index limits.
+                                             ,je_input                     &  !<--
 
-                                           ,ps_input                       &  !<--
-                                           ,tracers_input                  &  !  BC vbls on
-                                           ,w_input                        &  !  input model levels
-                                           ,zh_input                       &  !<--
+                                             ,klev_in, klev_out            &
+                                             ,ntracers                     &
+                                             ,ak, bk                       &
 
-                                           ,phis_reg                       &  !<-- Filtered topography
+                                             ,ps_input                     &  !<--
+                                             ,tracers_input                &  !  BC vbls on
+                                             ,w_input                      &  !  input model levels
+                                             ,pt_input                     &
+                                             ,zh_input                     &  !<--
 
-                                           ,ps_reg                         &  !<-- Derived FV3 psfc in regional domain boundary region
+                                             ,phis_reg                     &  !<-- Filtered topography
 
-                                           ,BC_t1%east )
+                                             ,ps_reg                       &  !<-- Derived FV3 psfc in regional domain boundary region
+
+                                             ,BC_t1%east )                   !<-- North BC vbls on final integration levels
+          else
+
+            call remap_scalar_nggps_regional_bc(Atm                        &
+                                             ,'east '                      &
+
+                                             ,isd,ied,jsd,jed              &  !<-- Atm array indices w/halo
+
+                                             ,is_input                     &  !<--
+                                             ,ie_input                     &  !  Input array
+                                             ,js_input                     &  !  index limits.
+                                             ,je_input                     &  !<--
+
+                                             ,klev_in, klev_out            &
+                                             ,ntracers                     &
+                                             ,ak, bk                       &
+
+                                             ,ps_input                     &  !<--
+                                             ,tracers_input                &  !  BC vbls on
+                                             ,w_input                      &  !  input model levels
+                                             ,zh_input                     &  !<--
+
+                                             ,phis_reg                     &  !<-- Filtered topography
+
+                                             ,ps_reg                       &  !<-- Derived FV3 psfc in regional domain boundary region
+
+                                             ,BC_t1%east )                   !<-- North BC vbls on final integration levels
+
+          endif
 !
-        if (js == 1) then
-           jstart = 1
-        else
-           jstart = jsd
-        endif
-        if (je == npy-1) then
-           jend = je
-        else
-           jend = jed
-        endif
+          if (js == 1) then
+             jstart = 1
+          else
+             jstart = jsd
+          endif
+          if (je == npy-1) then
+             jend = je
+          else
+             jend = jed
+          endif
 
 
           do k=1,npz
@@ -1820,41 +2024,71 @@ contains
 !
       if(west_bc)then
 !
-        call remap_scalar_nggps_regional_bc(Atm                            &
-                                           ,'west '                        &
+          if (Atm%flagstruct%hrrrv3_ic) then
+             call remap_scalar_regional_bc_nh(Atm                          &
+                                             ,'west '                      &
 
-                                           ,isd,ied,jsd,jed                &  !<-- Atm array indices w/halo
+                                             ,isd,ied,jsd,jed              &  !<-- Atm array indices w/halo
 
-                                           ,is_input                       &  !<--
-                                           ,ie_input                       &  !  Input array
-                                           ,js_input                       &  !  index limits.
-                                           ,je_input                       &  !<--
+                                             ,is_input                     &  !<--
+                                             ,ie_input                     &  !  Input array
+                                             ,js_input                     &  !  index limits.
+                                             ,je_input                     &  !<--
 
-                                           ,klev_in, klev_out              &
-                                           ,ntracers                       &
-                                           ,ak, bk                         &
+                                             ,klev_in, klev_out            &
+                                             ,ntracers                     &
+                                             ,ak, bk                       &
 
-                                           ,ps_input                       &  !<--
-                                           ,tracers_input                  &  !  BC vbls on
-                                           ,w_input                        &  !  input model levels
-                                           ,zh_input                       &  !<--
+                                             ,ps_input                     &  !<--
+                                             ,tracers_input                &  !  BC vbls on
+                                             ,w_input                      &  !  input model levels
+                                             ,pt_input                     &
+                                             ,zh_input                     &  !<--
 
-                                           ,phis_reg                       &  !<-- Filtered topography
+                                             ,phis_reg                     &  !<-- Filtered topography
 
-                                           ,ps_reg                         &  !<-- Derived FV3 psfc in regional domain boundary region
+                                             ,ps_reg                       &  !<-- Derived FV3 psfc in regional domain boundary region
 
-                                           ,BC_t1%west )
+                                             ,BC_t1%west )                   !<-- North BC vbls on final integration levels
+          else
+
+            call remap_scalar_nggps_regional_bc(Atm                        &
+                                             ,'west '                      &
+
+                                             ,isd,ied,jsd,jed              &  !<-- Atm array indices w/halo
+
+                                             ,is_input                     &  !<--
+                                             ,ie_input                     &  !  Input array
+                                             ,js_input                     &  !  index limits.
+                                             ,je_input                     &  !<--
+
+                                             ,klev_in, klev_out            &
+                                             ,ntracers                     &
+                                             ,ak, bk                       &
+
+                                             ,ps_input                     &  !<--
+                                             ,tracers_input                &  !  BC vbls on
+                                             ,w_input                      &  !  input model levels
+                                             ,zh_input                     &  !<--
+
+                                             ,phis_reg                     &  !<-- Filtered topography
+
+                                             ,ps_reg                       &  !<-- Derived FV3 psfc in regional domain boundary region
+
+                                             ,BC_t1%west )                   !<-- North BC vbls on final integration levels
+
+          endif
 !
-        if (js == 1) then
-           jstart = 1
-        else
-           jstart = jsd
-        endif
-        if (je == npy-1) then
-           jend = je
-        else
-           jend = jed
-        endif
+          if (js == 1) then
+             jstart = 1
+          else
+             jstart = jsd
+          endif
+          if (je == npy-1) then
+             jend = je
+          else
+             jend = jed
+          endif
 
           do k=1,npz
           do j=jstart,jend
@@ -1932,34 +2166,44 @@ contains
         do k=1,nlev
           do j=js_u,je_u
           do i=is_u,ie_u
-            p1(:) = grid_reg(i,  j,1:2)
-            p2(:) = grid_reg(i+1,j,1:2)
-            call  mid_pt_sphere(p1, p2, p3)
-            call get_unit_vect2(p1, p2, e1)
-            call get_latlon_vector(p3, ex, ey)
-            ud(i,j,k) = u_s_input(i,j,k)*inner_prod(e1,ex)+v_s_input(i,j,k)*inner_prod(e1,ey)
-            p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-            call get_unit_vect2(p3, p4, e2) !C-grid V-wind unit vector
-            vc(i,j,k) = u_s_input(i,j,k)*inner_prod(e2,ex)+v_s_input(i,j,k)*inner_prod(e2,ey)
+            if (Atm%flagstruct%hrrrv3_ic) then
+                ud(i,j,k) = u_s_input(i,j,k)
+                vc(i,j,k) = v_s_input(i,j,k)
+            else
+                p1(:) = grid_reg(i,  j,1:2)
+                p2(:) = grid_reg(i+1,j,1:2)
+                call  mid_pt_sphere(p1, p2, p3)
+                call get_unit_vect2(p1, p2, e1)
+                call get_latlon_vector(p3, ex, ey)
+                ud(i,j,k) = u_s_input(i,j,k)*inner_prod(e1,ex)+v_s_input(i,j,k)*inner_prod(e1,ey)
+                p4(:) = agrid_reg(i,j,1:2) ! cell centroid
+                call get_unit_vect2(p3, p4, e2) !C-grid V-wind unit vector
+                vc(i,j,k) = u_s_input(i,j,k)*inner_prod(e2,ex)+v_s_input(i,j,k)*inner_prod(e2,ey)
+            endif
           enddo
           enddo
 !
           do j=js_v,je_v
             do i=is_v,ie_v
-              p1(:) = grid_reg(i,j  ,1:2)
-              p2(:) = grid_reg(i,j+1,1:2)
-              call  mid_pt_sphere(p1, p2, p3)
-              call get_unit_vect2(p1, p2, e2)
-              call get_latlon_vector(p3, ex, ey)
-              vd(i,j,k) = u_w_input(i,j,k)*inner_prod(e2,ex)+v_w_input(i,j,k)*inner_prod(e2,ey)
-              p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-              call get_unit_vect2(p3, p4, e1) !C-grid U-wind unit vector
-              uc(i,j,k) = u_w_input(i,j,k)*inner_prod(e1,ex)+v_w_input(i,j,k)*inner_prod(e1,ey)
+              if (Atm%flagstruct%hrrrv3_ic) then
+                  vd(i,j,k) = v_w_input(i,j,k)
+                  uc(i,j,k) = u_w_input(i,j,k)
+              else
+                  p1(:) = grid_reg(i,j  ,1:2)
+                  p2(:) = grid_reg(i,j+1,1:2)
+                  call  mid_pt_sphere(p1, p2, p3)
+                  call get_unit_vect2(p1, p2, e2)
+                  call get_latlon_vector(p3, ex, ey)
+                  vd(i,j,k) = u_w_input(i,j,k)*inner_prod(e2,ex)+v_w_input(i,j,k)*inner_prod(e2,ey)
+                  p4(:) = agrid_reg(i,j,1:2) ! cell centroid
+                  call get_unit_vect2(p3, p4, e1) !C-grid U-wind unit vector
+                  uc(i,j,k) = u_w_input(i,j,k)*inner_prod(e1,ex)+v_w_input(i,j,k)*inner_prod(e1,ey)
+              endif
             enddo
           enddo
         enddo
 !
-        call remap_dwinds_regional_bc(Atm                                  &
+          call remap_dwinds_regional_bc(Atm                                  &
 
                                      ,is_input                             &  !<--
                                      ,ie_input                             &  !  Index limits for scalars
@@ -2014,34 +2258,44 @@ contains
         do k=1,nlev
           do j=js_u,je_u
           do i=is_u,ie_u
-            p1(:) = grid_reg(i,  j,1:2)
-            p2(:) = grid_reg(i+1,j,1:2)
-            call  mid_pt_sphere(p1, p2, p3)
-            call get_unit_vect2(p1, p2, e1)
-            call get_latlon_vector(p3, ex, ey)
-            ud(i,j,k) = u_s_input(i,j,k)*inner_prod(e1,ex)+v_s_input(i,j,k)*inner_prod(e1,ey)
-            p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-            call get_unit_vect2(p3, p4, e2) !C-grid V-wind unit vector
-            vc(i,j,k) = u_s_input(i,j,k)*inner_prod(e2,ex)+v_s_input(i,j,k)*inner_prod(e2,ey)
+            if (Atm%flagstruct%hrrrv3_ic) then
+                ud(i,j,k) = u_s_input(i,j,k)
+                vc(i,j,k) = v_s_input(i,j,k)
+            else
+                p1(:) = grid_reg(i,  j,1:2)
+                p2(:) = grid_reg(i+1,j,1:2)
+                call  mid_pt_sphere(p1, p2, p3)
+                call get_unit_vect2(p1, p2, e1)
+                call get_latlon_vector(p3, ex, ey)
+                ud(i,j,k) = u_s_input(i,j,k)*inner_prod(e1,ex)+v_s_input(i,j,k)*inner_prod(e1,ey)
+                p4(:) = agrid_reg(i,j,1:2) ! cell centroid
+                call get_unit_vect2(p3, p4, e2) !C-grid V-wind unit vector
+                vc(i,j,k) = u_s_input(i,j,k)*inner_prod(e2,ex)+v_s_input(i,j,k)*inner_prod(e2,ey)
+            endif
           enddo
           enddo
 !
           do j=js_v,je_v
             do i=is_v,ie_v
-              p1(:) = grid_reg(i,j  ,1:2)
-              p2(:) = grid_reg(i,j+1,1:2)
-              call  mid_pt_sphere(p1, p2, p3)
-              call get_unit_vect2(p1, p2, e2)
-              call get_latlon_vector(p3, ex, ey)
-              vd(i,j,k) = u_w_input(i,j,k)*inner_prod(e2,ex)+v_w_input(i,j,k)*inner_prod(e2,ey)
-              p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-              call get_unit_vect2(p3, p4, e1) !C-grid U-wind unit vector
-              uc(i,j,k) = u_w_input(i,j,k)*inner_prod(e1,ex)+v_w_input(i,j,k)*inner_prod(e1,ey)
+              if (Atm%flagstruct%hrrrv3_ic) then
+                  vd(i,j,k) = v_w_input(i,j,k)
+                  uc(i,j,k) = u_w_input(i,j,k)
+              else
+                  p1(:) = grid_reg(i,j  ,1:2)
+                  p2(:) = grid_reg(i,j+1,1:2)
+                  call  mid_pt_sphere(p1, p2, p3)
+                  call get_unit_vect2(p1, p2, e2)
+                  call get_latlon_vector(p3, ex, ey)
+                  vd(i,j,k) = u_w_input(i,j,k)*inner_prod(e2,ex)+v_w_input(i,j,k)*inner_prod(e2,ey)
+                  p4(:) = agrid_reg(i,j,1:2) ! cell centroid
+                  call get_unit_vect2(p3, p4, e1) !C-grid U-wind unit vector
+                  uc(i,j,k) = u_w_input(i,j,k)*inner_prod(e1,ex)+v_w_input(i,j,k)*inner_prod(e1,ey)
+              endif
             enddo
           enddo
         enddo
 !
-        call remap_dwinds_regional_bc(Atm                                  &
+          call remap_dwinds_regional_bc(Atm                                  &
 
                                      ,is_input                             &  !<--
                                      ,ie_input                             &  !  Index limits for scalars
@@ -2050,20 +2304,20 @@ contains
 
                                      ,is_u                                 &  !<--
                                      ,ie_u                                 &  !  Index limits for u component
-                                     ,js_u                                 &  !  on north edge of BC region grid cells.
+                                     ,js_u                                 &  !  on south edge of BC region grid cells.
                                      ,je_u                                 &  !<--
 
                                      ,is_v                                 &  !<--
                                      ,ie_v                                 &  !  Index limits for v component
-                                     ,js_v                                 &  !  on east edge of BC region grid cells.
+                                     ,js_v                                 &  !  on south edge of BC region grid cells.
                                      ,je_v                                 &  !<--
 
                                      ,klev_in, klev_out                    &  !<-- data / model levels
                                      ,ak, bk                               &
 
                                      ,ps_reg                               &  !<-- BC values of sfc pressure
-                                     ,ud, vd                               &  !<-- BC values of D-grid u and v
-                                     ,uc, vc                               &  !<-- BC values of C-grid u and v
+                                     ,ud ,vd                               &  !<-- BC values of D-grid u and v
+                                     ,uc ,vc                               &  !<-- BC values of C-grid u and v
 
                                      ,BC_t1%south )                           !<-- South BC vbls on final integration levels
 !
@@ -2096,59 +2350,67 @@ contains
         do k=1,nlev
           do j=js_u,je_u
           do i=is_u,ie_u
-            p1(:) = grid_reg(i,  j,1:2)
-            p2(:) = grid_reg(i+1,j,1:2)
-            call  mid_pt_sphere(p1, p2, p3)
-            call get_unit_vect2(p1, p2, e1)
-            call get_latlon_vector(p3, ex, ey)
-            ud(i,j,k) = u_s_input(i,j,k)*inner_prod(e1,ex)+v_s_input(i,j,k)*inner_prod(e1,ey)
-            p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-            call get_unit_vect2(p3, p4, e2) !C-grid V-wind unit vector
-            vc(i,j,k) = u_s_input(i,j,k)*inner_prod(e2,ex)+v_s_input(i,j,k)*inner_prod(e2,ey)
+            if (Atm%flagstruct%hrrrv3_ic) then
+                ud(i,j,k) = u_s_input(i,j,k)
+                vc(i,j,k) = v_s_input(i,j,k)
+            else
+                p1(:) = grid_reg(i,  j,1:2)
+                p2(:) = grid_reg(i+1,j,1:2)
+                call  mid_pt_sphere(p1, p2, p3)
+                call get_unit_vect2(p1, p2, e1)
+                call get_latlon_vector(p3, ex, ey)
+                ud(i,j,k) = u_s_input(i,j,k)*inner_prod(e1,ex)+v_s_input(i,j,k)*inner_prod(e1,ey)
+                p4(:) = agrid_reg(i,j,1:2) ! cell centroid
+                call get_unit_vect2(p3, p4, e2) !C-grid V-wind unit vector
+                vc(i,j,k) = u_s_input(i,j,k)*inner_prod(e2,ex)+v_s_input(i,j,k)*inner_prod(e2,ey)
+            endif
           enddo
           enddo
-!
 !
           do j=js_v,je_v
             do i=is_v,ie_v
-              p1(:) = grid_reg(i,j  ,1:2)
-              p2(:) = grid_reg(i,j+1,1:2)
-              call  mid_pt_sphere(p1, p2, p3)
-              call get_unit_vect2(p1, p2, e2)
-              call get_latlon_vector(p3, ex, ey)
-              vd(i,j,k) = u_w_input(i,j,k)*inner_prod(e2,ex)+v_w_input(i,j,k)*inner_prod(e2,ey)
-              p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-              call get_unit_vect2(p3, p4, e1) !C-grid U-wind unit vector
-              uc(i,j,k) = u_w_input(i,j,k)*inner_prod(e1,ex)+v_w_input(i,j,k)*inner_prod(e1,ey)
+              if (Atm%flagstruct%hrrrv3_ic) then
+                  vd(i,j,k) = v_w_input(i,j,k)
+                  uc(i,j,k) = u_w_input(i,j,k)
+              else
+                  p1(:) = grid_reg(i,j  ,1:2)
+                  p2(:) = grid_reg(i,j+1,1:2)
+                  call  mid_pt_sphere(p1, p2, p3)
+                  call get_unit_vect2(p1, p2, e2)
+                  call get_latlon_vector(p3, ex, ey)
+                  vd(i,j,k) = u_w_input(i,j,k)*inner_prod(e2,ex)+v_w_input(i,j,k)*inner_prod(e2,ey)
+                  p4(:) = agrid_reg(i,j,1:2) ! cell centroid
+                  call get_unit_vect2(p3, p4, e1) !C-grid U-wind unit vector
+                  uc(i,j,k) = u_w_input(i,j,k)*inner_prod(e1,ex)+v_w_input(i,j,k)*inner_prod(e1,ey)
+              endif
             enddo
           enddo
         enddo
 !
-        call remap_dwinds_regional_bc(Atm                                 &
+          call remap_dwinds_regional_bc(Atm                                  &
 
-                                     ,is_input                            &  !<--
-                                     ,ie_input                            &  !  Index limits for scalars
-                                     ,js_input                            &  !  at center of east BC region grid cells.
-                                     ,je_input                            &  !<--
+                                     ,is_input                             &  !<--
+                                     ,ie_input                             &  !  Index limits for scalars
+                                     ,js_input                             &  !  at center of east BC region grid cells.
+                                     ,je_input                             &  !<--
 
-                                     ,is_u                                &  !<--
-                                     ,ie_u                                &  !  Index limits for u component
-                                     ,js_u                                &  !  on north edge of BC region grid cells.
-                                     ,je_u                                &  !<--
+                                     ,is_u                                 &  !<--
+                                     ,ie_u                                 &  !  Index limits for u component
+                                     ,js_u                                 &  !  on east edge of BC region grid cells.
+                                     ,je_u                                 &  !<--
 
-                                     ,is_v                                &  !<--
-                                     ,ie_v                                &  !  Index limits for v component
-                                     ,js_v                                &  !  on east edge of BC region grid cells.
-                                     ,je_v                                &  !<--
+                                     ,is_v                                 &  !<--
+                                     ,ie_v                                 &  !  Index limits for v component
+                                     ,js_v                                 &  !  on east edge of BC region grid cells.
+                                     ,je_v                                 &  !<--
 
-                                     ,klev_in, klev_out                   &  !<-- data / model levels
-                                     ,ak, bk                              &
+                                     ,klev_in, klev_out                    &  !<-- data / model levels
+                                     ,ak, bk                               &
 
-                                     ,ps_reg                              &  !<-- BC values of sfc pressure
-                                     ,ud, vd                              &  !<-- BC values of D-grid u and v
-                                     ,uc, vc                              &  !<-- BC values of C-grid u and v
-
-                                     ,BC_t1%east )                           !<-- East BC vbls on final integration levels
+                                     ,ps_reg                               &  !<-- BC values of sfc pressure
+                                     ,ud ,vd                               &  !<-- BC values of D-grid u and v
+                                     ,uc ,vc                               &  !<-- BC values of C-grid u and v
+                                     ,BC_t1%east )                            !<-- East BC vbls on final integration levels
 !
         deallocate(ud,vd,uc,vc)
 !
@@ -2179,58 +2441,67 @@ contains
         do k=1,nlev
           do j=js_u,je_u
           do i=is_u,ie_u
-            p1(:) = grid_reg(i,  j,1:2)
-            p2(:) = grid_reg(i+1,j,1:2)
-            call  mid_pt_sphere(p1, p2, p3)
-            call get_unit_vect2(p1, p2, e1)
-            call get_latlon_vector(p3, ex, ey)
-            ud(i,j,k) = u_s_input(i,j,k)*inner_prod(e1,ex)+v_s_input(i,j,k)*inner_prod(e1,ey)
-            p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-            call get_unit_vect2(p3, p4, e2) !C-grid V-wind unit vector
-            vc(i,j,k) = u_s_input(i,j,k)*inner_prod(e2,ex)+v_s_input(i,j,k)*inner_prod(e2,ey)
+            if (Atm%flagstruct%hrrrv3_ic) then
+                ud(i,j,k) = u_s_input(i,j,k)
+                vc(i,j,k) = v_s_input(i,j,k)
+            else
+                p1(:) = grid_reg(i,  j,1:2)
+                p2(:) = grid_reg(i+1,j,1:2)
+                call  mid_pt_sphere(p1, p2, p3)
+                call get_unit_vect2(p1, p2, e1)
+                call get_latlon_vector(p3, ex, ey)
+                ud(i,j,k) = u_s_input(i,j,k)*inner_prod(e1,ex)+v_s_input(i,j,k)*inner_prod(e1,ey)
+                p4(:) = agrid_reg(i,j,1:2) ! cell centroid
+                call get_unit_vect2(p3, p4, e2) !C-grid V-wind unit vector
+                vc(i,j,k) = u_s_input(i,j,k)*inner_prod(e2,ex)+v_s_input(i,j,k)*inner_prod(e2,ey)
+            endif
           enddo
           enddo
 !
           do j=js_v,je_v
             do i=is_v,ie_v
-              p1(:) = grid_reg(i,j  ,1:2)
-              p2(:) = grid_reg(i,j+1,1:2)
-              call  mid_pt_sphere(p1, p2, p3)
-              call get_unit_vect2(p1, p2, e2)
-              call get_latlon_vector(p3, ex, ey)
-              vd(i,j,k) = u_w_input(i,j,k)*inner_prod(e2,ex)+v_w_input(i,j,k)*inner_prod(e2,ey)
-              p4(:) = agrid_reg(i,j,1:2) ! cell centroid
-              call get_unit_vect2(p3, p4, e1) !C-grid U-wind unit vector
-              uc(i,j,k) = u_w_input(i,j,k)*inner_prod(e1,ex)+v_w_input(i,j,k)*inner_prod(e1,ey)
+              if (Atm%flagstruct%hrrrv3_ic) then
+                  vd(i,j,k) = v_w_input(i,j,k)
+                  uc(i,j,k) = u_w_input(i,j,k)
+              else
+                  p1(:) = grid_reg(i,j  ,1:2)
+                  p2(:) = grid_reg(i,j+1,1:2)
+                  call  mid_pt_sphere(p1, p2, p3)
+                  call get_unit_vect2(p1, p2, e2)
+                  call get_latlon_vector(p3, ex, ey)
+                  vd(i,j,k) = u_w_input(i,j,k)*inner_prod(e2,ex)+v_w_input(i,j,k)*inner_prod(e2,ey)
+                  p4(:) = agrid_reg(i,j,1:2) ! cell centroid
+                  call get_unit_vect2(p3, p4, e1) !C-grid U-wind unit vector
+                  uc(i,j,k) = u_w_input(i,j,k)*inner_prod(e1,ex)+v_w_input(i,j,k)*inner_prod(e1,ey)
+              endif
             enddo
           enddo
         enddo
 !
-        call remap_dwinds_regional_bc(Atm                                 &
+          call remap_dwinds_regional_bc(Atm                                  &
 
-                                     ,is_input                            &  !<--
-                                     ,ie_input                            &  !  Index limits for scalars
-                                     ,js_input                            &  !  at center of west BC region grid cells.
-                                     ,je_input                            &  !<--
+                                     ,is_input                             &  !<--
+                                     ,ie_input                             &  !  Index limits for scalars
+                                     ,js_input                             &  !  at center of west BC region grid cells.
+                                     ,je_input                             &  !<--
 
-                                     ,is_u                                &  !<--
-                                     ,ie_u                                &  !  Index limits for u component
-                                     ,js_u                                &  !  on north edge of BC region grid cells.
-                                     ,je_u                                &  !<--
+                                     ,is_u                                 &  !<--
+                                     ,ie_u                                 &  !  Index limits for u component
+                                     ,js_u                                 &  !  on west edge of BC region grid cells.
+                                     ,je_u                                 &  !<--
 
-                                     ,is_v                                &  !<--
-                                     ,ie_v                                &  !  Index limits for v component
-                                     ,js_v                                &  !  on east edge of BC region grid cells.
-                                     ,je_v                                &  !<--
+                                     ,is_v                                 &  !<--
+                                     ,ie_v                                 &  !  Index limits for v component
+                                     ,js_v                                 &  !  on west edge of BC region grid cells.
+                                     ,je_v                                 &  !<--
 
-                                     ,klev_in, klev_out                   &  !<-- data / model levels
-                                     ,ak, bk                              &
+                                     ,klev_in, klev_out                    &  !<-- data / model levels
+                                     ,ak, bk                               &
 
-                                     ,ps_reg                              &  !<-- BC values of sfc pressure
-                                     ,ud, vd                              &  !<-- BC values of D-grid u and v
-                                     ,uc, vc                              &  !<-- BC values of C-grid u and v
-
-                                     ,BC_t1%west )                           !<-- West BC vbls on final integration levels
+                                     ,ps_reg                               &  !<-- BC values of sfc pressure
+                                     ,ud ,vd                               &  !<-- BC values of D-grid u and v
+                                     ,uc ,vc                               &  !<-- BC values of C-grid u and v
+                                     ,BC_t1%west )                            !<-- West BC vbls on final integration levels
 !
         deallocate(ud,vd,uc,vc)
 !
@@ -2272,6 +2543,9 @@ contains
       if(allocated(v_w_input))then
         deallocate(v_w_input)
       endif
+      if(allocated(pt_input))then
+        deallocate(pt_input)
+      endif
 !
 !-----------------------------------------------------------------------
 !***  Fill the remaining boundary arrays starting with the divergence.
@@ -2299,7 +2573,7 @@ contains
 !-----------------------------------------------------------------------
 !
       call convert_to_virt_pot_temp(isd,ied,jsd,jed,npz                 &
-                                   ,sphum_index,liq_water_index )
+                                   ,sphum_index,liq_wat_index )
 !
 !-----------------------------------------------------------------------
 !***  If nudging of the specific humidity has been selected then
@@ -2441,7 +2715,7 @@ contains
         do k=1,klev_out
           do j=js_north,je_north
           do i=is_north,ie_north
-            BC_t1%north%q_con_BC(i,j,k)=BC_t1%north%q_BC(i,j,k,liq_water_index)
+            BC_t1%north%q_con_BC(i,j,k)=BC_t1%north%q_BC(i,j,k,liq_wat_index)
           enddo
           enddo
         enddo
@@ -2458,7 +2732,7 @@ contains
         do k=1,klev_out
           do j=js_south,je_south
           do i=is_south,ie_south
-            BC_t1%south%q_con_BC(i,j,k)=BC_t1%south%q_BC(i,j,k,liq_water_index)
+            BC_t1%south%q_con_BC(i,j,k)=BC_t1%south%q_BC(i,j,k,liq_wat_index)
           enddo
           enddo
         enddo
@@ -2474,7 +2748,7 @@ contains
         do k=1,klev_out
           do j=js_east,je_east
           do i=is_east,ie_east
-            BC_t1%east%q_con_BC(i,j,k)=BC_t1%east%q_BC(i,j,k,liq_water_index)
+            BC_t1%east%q_con_BC(i,j,k)=BC_t1%east%q_BC(i,j,k,liq_wat_index)
           enddo
           enddo
         enddo
@@ -2491,7 +2765,7 @@ contains
         do k=1,klev_out
           do j=js_west,je_west
           do i=is_west,ie_west
-            BC_t1%west%q_con_BC(i,j,k)=BC_t1%west%q_BC(i,j,k,liq_water_index)
+            BC_t1%west%q_con_BC(i,j,k)=BC_t1%west%q_BC(i,j,k,liq_wat_index)
           enddo
           enddo
         enddo
@@ -2535,7 +2809,7 @@ contains
         j2=ubound(BC_t1%north%cappa_BC,2)
         cappa  =>BC_t1%north%cappa_BC
         temp   =>BC_t1%north%pt_BC
-        liq_wat=>BC_t1%north%q_BC(:,:,:,liq_water_index)
+        liq_wat=>BC_t1%north%q_BC(:,:,:,liq_wat_index)
         sphum  =>BC_t1%north%q_BC(:,:,:,sphum_index)
         call compute_cappa(i1,i2,j1,j2,cappa,temp,liq_wat,sphum)
       endif
@@ -2547,7 +2821,7 @@ contains
         j2=ubound(BC_t1%south%cappa_BC,2)
         cappa  =>BC_t1%south%cappa_BC
         temp   =>BC_t1%south%pt_BC
-        liq_wat=>BC_t1%south%q_BC(:,:,:,liq_water_index)
+        liq_wat=>BC_t1%south%q_BC(:,:,:,liq_wat_index)
         sphum  =>BC_t1%south%q_BC(:,:,:,sphum_index)
         call compute_cappa(i1,i2,j1,j2,cappa,temp,liq_wat,sphum)
       endif
@@ -2559,7 +2833,7 @@ contains
         j2=ubound(BC_t1%east%cappa_BC,2)
         cappa  =>BC_t1%east%cappa_BC
         temp   =>BC_t1%east%pt_BC
-        liq_wat=>BC_t1%east%q_BC(:,:,:,liq_water_index)
+        liq_wat=>BC_t1%east%q_BC(:,:,:,liq_wat_index)
         sphum  =>BC_t1%east%q_BC(:,:,:,sphum_index)
         call compute_cappa(i1,i2,j1,j2,cappa,temp,liq_wat,sphum)
       endif
@@ -2571,7 +2845,7 @@ contains
         j2=ubound(BC_t1%west%cappa_BC,2)
         cappa  =>BC_t1%west%cappa_BC
         temp   =>BC_t1%west%pt_BC
-        liq_wat=>BC_t1%west%q_BC(:,:,:,liq_water_index)
+        liq_wat=>BC_t1%west%q_BC(:,:,:,liq_wat_index)
         sphum  =>BC_t1%west%q_BC(:,:,:,sphum_index)
         call compute_cappa(i1,i2,j1,j2,cappa,temp,liq_wat,sphum)
       endif
@@ -2648,6 +2922,7 @@ contains
 !-----------------------------------------------------------------------
 !
       end subroutine regional_bc_data
+
 
 !-----------------------------------------------------------------------
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -3523,6 +3798,387 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !---------------------------------------------------------------------
 
  end subroutine remap_scalar_nggps_regional_bc
+
+!---------------------------------------------------------------------
+!+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+!---------------------------------------------------------------------
+
+!---------------------------------------------------------------------
+!+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+!---------------------------------------------------------------------
+
+subroutine remap_scalar_regional_bc_nh(Atm                            &
+                                         ,side                        &
+                                         ,isd,ied,jsd,jed             &
+                                         ,is_bc,ie_bc,js_bc,je_bc     &
+                                         ,km, npz, ncnst, ak0, bk0    &
+                                         ,psc, qa, w, pt, zh          &
+                                         ,phis_reg                    &
+                                         ,ps                          &
+                                         ,BC_side )
+
+  type(fv_atmos_type), intent(inout) :: Atm
+  integer, intent(in):: isd,ied,jsd,jed          !<-- index limits of the Atm arrays w/halo=nhalo_model
+  integer, intent(in):: is_bc,ie_bc,js_bc,je_bc  !<-- index limits of working arrays on boundary task subdomains (halo=nhalo_data)
+  integer, intent(in):: km    &                  !<-- # of levels in 3-D input variables
+                       ,npz   &                  !<-- # of levels in final 3-D integration variables
+                       ,ncnst                    !<-- # of tracer variables
+  real,    intent(in):: ak0(km+1), bk0(km+1)
+  real,    intent(in), dimension(is_bc:ie_bc,js_bc:je_bc):: psc
+  real,    intent(in), dimension(is_bc:ie_bc,js_bc:je_bc,km):: w, pt
+  real,    intent(in), dimension(is_bc:ie_bc,js_bc:je_bc,km,ncnst):: qa
+  real,    intent(in), dimension(is_bc:ie_bc,js_bc:je_bc,km+1):: zh
+
+  real,    intent(inout), dimension(isd-1:ied+1,jsd-1:jed+1):: phis_reg   !<-- Filtered sfc geopotential from preprocessing.
+  real,    intent(out),dimension(is_bc:ie_bc,js_bc:je_bc) :: ps  !<-- sfc p in regional domain boundary region
+  character(len=5),intent(in) :: side
+  type(fv_regional_BC_variables),intent(inout) :: BC_side   !<-- The BC variables on a domain side at the final integration levels.
+
+! local:
+!
+  real, dimension(:,:),allocatable :: pe0
+  real, dimension(:,:),allocatable :: qn1
+  real, dimension(:,:),allocatable :: dp2
+  real, dimension(:,:),allocatable :: pe1
+  real, dimension(:,:),allocatable :: qp
+!
+  real wk(is_bc:ie_bc,js_bc:je_bc)
+  real, dimension(is_bc:ie_bc,js_bc:je_bc):: phis
+
+!!! High-precision
+  real(kind=R_GRID), dimension(is_bc:ie_bc,npz+1):: pn1
+  real(kind=R_GRID):: gz_fv(npz+1)
+  real(kind=R_GRID), dimension(2*km+1):: gz, pn
+  real(kind=R_GRID), dimension(is_bc:ie_bc,km+1):: pn0
+  real(kind=R_GRID):: pst
+!!! High-precision
+  integer i,ie,is,je,js,k,l,m, k2,iq
+  integer  sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt
+!
+!---------------------------------------------------------------------------------
+!
+  sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
+  liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
+  ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
+  rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
+  snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
+  graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
+  cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
+  o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
+
+  k2 = max(10, km/2)
+
+  if (mpp_pe()==1) then
+    print *, 'sphum = ', sphum
+    print *, 'clwmr = ', liq_wat
+    print *, ' o3mr = ', o3mr
+    print *, 'ncnst = ', ncnst
+  endif
+
+  if ( sphum/=1 ) then
+       call mpp_error(FATAL,'SPHUM must be 1st tracer')
+  endif
+!
+!---------------------------------------------------------------------------------
+!***  First compute over the extended boundary regions with halo=nhalo_data.
+!***  This is needed to obtain pressures that will surround the wind points.
+!---------------------------------------------------------------------------------
+!
+      is=is_bc
+      if(side=='west')then
+        is=ie_bc-nhalo_data+1
+      endif
+!
+      ie=ie_bc
+      if(side=='east')then
+        ie=is_bc+nhalo_data-1
+      endif
+!
+      js=js_bc
+      if(side=='south')then
+        js=je_bc-nhalo_data+1
+      endif
+!
+      je=je_bc
+      if(side=='north')then
+        je=js_bc+nhalo_data-1
+      endif
+!
+
+      allocate(pe0(is:ie,km+1)) ; pe0=real_snan
+      allocate(qn1(is:ie,npz)) ; qn1=real_snan
+      allocate(dp2(is:ie,npz)) ; dp2=real_snan
+      allocate(pe1(is:ie,npz+1)) ; pe1=real_snan
+      allocate(qp (is:ie,km)) ; qp=real_snan
+!
+!---------------------------------------------------------------------------------
+      jloop1: do j=js,je
+!---------------------------------------------------------------------------------
+!
+     do k=1,km+1
+        do i=is,ie
+           pe0(i,k) = ak0(k) + bk0(k)*psc(i,j)
+           pn0(i,k) = log(pe0(i,k))
+        enddo
+     enddo
+
+     do i=is,ie
+        do k=1,km+1
+           pn(k) = pn0(i,k)
+           gz(k) = zh(i,j,k)*grav
+        enddo
+! Use log-p for interpolation/extrapolation
+! mirror image method:
+        do k=km+2, km+k2
+               l = 2*(km+1) - k
+           gz(k) = 2.*gz(km+1) - gz(l)
+           pn(k) = 2.*pn(km+1) - pn(l)
+        enddo
+
+        do k=km+k2-1, 2, -1
+          if( phis_reg(i,j).le.gz(k) .and. phis_reg(i,j).ge.gz(k+1) ) then
+            pst = pn(k) + (pn(k+1)-pn(k))*(gz(k)-phis_reg(i,j))/(gz(k)-gz(k+1))
+            go to 123
+          endif
+        enddo
+  123   ps(i,j) = exp(pst)
+
+     enddo   ! i-loop
+
+!---------------------------------------------------------------------------------
+     enddo jloop1
+!---------------------------------------------------------------------------------
+
+!---------------------------------------------------------------------------------
+!***  Transfer values from the expanded boundary array for sfc pressure into
+!***  the Atm object.
+!---------------------------------------------------------------------------------
+!
+      is=lbound(Atm%ps,1)
+      ie=ubound(Atm%ps,1)
+      js=lbound(Atm%ps,2)
+      je=ubound(Atm%ps,2)
+!
+      do j=js,je
+      do i=is,ie
+        Atm%ps(i,j)=ps(i,j)
+      enddo
+      enddo
+!
+!---------------------------------------------------------------------------------
+!***  Now compute over the normal boundary regions with halo=nhalo_model.
+!***  Use the dimensions of one of the permanent BC variables in Atm
+!***  as the loop limits so any side of the domain can be addressed.
+!---------------------------------------------------------------------------------
+!
+      is=lbound(BC_side%delp_BC,1)
+      ie=ubound(BC_side%delp_BC,1)
+      js=lbound(BC_side%delp_BC,2)
+      je=ubound(BC_side%delp_BC,2)
+!
+!---------------------------------------------------------------------------------
+    jloop2: do j=js,je
+!---------------------------------------------------------------------------------
+     do k=1,km+1
+        do i=is,ie
+           pe0(i,k) = ak0(k) + bk0(k)*psc(i,j)
+           pn0(i,k) = log(pe0(i,k))
+        enddo
+      enddo
+!
+     do i=is,ie
+        pe1(i,1) = Atm%ak(1)
+        pn1(i,1) = log(pe1(i,1))
+     enddo
+     do k=2,npz+1
+       do i=is,ie
+          pe1(i,k) = Atm%ak(k) + Atm%bk(k)*ps(i,j)
+          pn1(i,k) = log(pe1(i,k))
+       enddo
+     enddo
+
+! * Compute delp
+      do k=1,npz
+        do i=is,ie
+          dp2(i,k) = pe1(i,k+1) - pe1(i,k)
+          BC_side%delp_BC(i,j,k) = dp2(i,k)
+        enddo
+      enddo
+
+! Need to set unassigned tracers to 0??
+! map shpum, o3mr, liq_wat tracers
+      do iq=1,ncnst
+         do k=1,km
+            do i=is,ie
+               qp(i,k) = qa(i,j,k,iq)
+            enddo
+         enddo
+
+         call mappm(km, pe0, qp, npz, pe1,  qn1, is,ie, 0, 8, Atm%ptop)
+
+         if ( iq==sphum ) then
+         call fillq(ie-is+1, npz, 1, qn1, dp2)
+         else
+            call fillz(ie-is+1, npz, 1, qn1, dp2)
+         endif
+! The HiRam step of blending model sphum with NCEP data is obsolete because nggps is always cold starting...
+         do k=1,npz
+           do i=is,ie
+             BC_side%q_BC(i,j,k,iq) = qn1(i,k)
+           enddo
+         enddo
+      enddo
+
+! map virtual temperature
+
+      do k=1,km
+         do i=is,ie
+            qp(i,k) = pt(i,j,k)
+         enddo
+      enddo
+      call mappm(km, log(pe0), qp, npz, log(pe1), qn1, is,ie, 2, 4, Atm%ptop)
+      do k=1,npz
+         do i=is,ie
+            BC_side%pt_BC(i,j,k) = qn1(i,k)
+         enddo
+      enddo
+
+!      call map_scalar(km,  REAL(pn0), pt, pt(is:,j,km),   &
+!                      npz, REAL(pn1), BC_side%pt_BC, &
+!                      is, ie, j, is_bc, ie_bc, js_bc, je_bc, 1, 8, 184.)
+
+!---------------------------------------------------
+! Retrieve temperature using GFS geopotential height
+!---------------------------------------------------
+!
+   i_loop: do i=is,ie
+!
+! Make sure FV3 top is lower than GFS; can not do extrapolation above the top at this point
+      if ( pn1(i,1) .lt. pn0(i,1) ) then
+           call mpp_error(FATAL,'FV3 top higher than NCEP/GFS')
+      endif
+
+      do k=1,km+1
+         pn(k) = pn0(i,k)
+         gz(k) = zh(i,j,k)*grav
+      enddo
+!-------------------------------------------------
+      do k=km+2, km+k2
+         l = 2*(km+1) - k
+         gz(k) = 2.*gz(km+1) - gz(l)
+         pn(k) = 2.*pn(km+1) - pn(l)
+      enddo
+!-------------------------------------------------
+
+      gz_fv(npz+1) = phis_reg(i,j)
+
+      m = 1
+
+      do k=1,npz
+! Searching using FV3 log(pe): pn1
+#ifdef USE_ISOTHERMO
+         do l=m,km
+            if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
+                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
+                goto 555
+            elseif ( pn1(i,k) .gt. pn(km+1) ) then
+! Isothermal under ground; linear in log-p extra-polation
+                gz_fv(k) = gz(km+1) + (gz_fv(npz+1)-gz(km+1))*(pn1(i,k)-pn(km+1))/(pn1(i,npz+1)-pn(km+1))
+                goto 555
+            endif
+         enddo
+#else
+         do l=m,km+k2-1
+            if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
+                gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
+                goto 555
+            endif
+         enddo
+#endif
+555   m = l
+      enddo
+
+!xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+!xxx  DO WE NEED Atm%peln to have values in the boundary region?
+!xxx  FOR NOW COMMENT IT OUT.
+!xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+!xxx  do k=1,npz+1
+!xxx     Atm%peln(i,k,j) = pn1(i,k)
+!xxx  enddo
+
+
+
+
+
+
+      if ( .not. Atm%flagstruct%hydrostatic ) then
+         do k=1,npz
+            BC_side%delz_BC(i,j,k) = (gz_fv(k+1) - gz_fv(k)) / grav
+         enddo
+      endif
+
+   enddo i_loop
+
+!-----------------------------------------------------------------------
+! seperate cloud water and cloud ice
+! From Jan-Huey Chen's HiRAM code
+!-----------------------------------------------------------------------
+
+   if ( Atm%flagstruct%nwat .eq. 6 ) then
+      do k=1,npz
+         do i=is,ie
+
+            call mp_auto_conversion(BC_side%q_BC(i,j,k,liq_wat), BC_side%q_BC(i,j,k,rainwat),  &
+                                    BC_side%q_BC(i,j,k,ice_wat), BC_side%q_BC(i,j,k,snowwat) )
+         enddo
+      enddo
+   endif
+
+!-------------------------------------------------------------
+! map omega
+!------- ------------------------------------------------------
+
+      do k=1,km
+         do i=is,ie
+            qp(i,k) = w(i,j,k)
+         enddo
+      enddo
+       call mappm(km, pe0, qp, npz, pe1, qn1, is,ie, -1, 4, Atm%ptop)
+      do k=1,npz
+         do i=is,ie
+            BC_side%w_BC(i,j,k) = qn1(i,k)
+         enddo
+      enddo
+
+
+   enddo jloop2
+
+! Add some diagnostics:
+!xxxcall p_maxmin('PS_model (mb)', Atm%ps(is:ie,js:je), is, ie, js, je, 1, 0.01)
+!xxxcall p_maxmin('PT_model', Atm%pt(is:ie,js:je,1:npz), is, ie, js, je, npz, 1.)
+  do j=js,je
+     do i=is,ie
+        wk(i,j) = phis_reg(i,j)/grav - zh(i,j,km+1)
+     enddo
+  enddo
+!call pmaxmn('ZS_diff (m)', wk, is, ie, js, je, 1, 1., Atm%gridstruct%area_64, Atm%domain)
+
+  do j=js,je
+     do i=is,ie
+        wk(i,j) = ps(i,j) - psc(i,j)
+     enddo
+  enddo
+!call pmaxmn('PS_diff (mb)', wk, is, ie, js, je, 1, 0.01, Atm%gridstruct%area_64, Atm%domain)
+ deallocate (pe0,qn1,dp2,pe1,qp)
+  if (is_master()) write(*,*) 'done remap_scalar_regional_bc_nh'
+!---------------------------------------------------------------------
+
+ end subroutine remap_scalar_regional_bc_nh
+
+
+!---------------------------------------------------------------------
+!+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+!---------------------------------------------------------------------
 
 !---------------------------------------------------------------------
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
