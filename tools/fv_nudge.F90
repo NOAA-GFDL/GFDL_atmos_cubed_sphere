@@ -222,7 +222,7 @@ module fv_nwp_nudge_mod
                           kbot_t, kbot_q, p_wvp, time_varying, time_interval, use_pt_inc, pt_lim,  &
                           tau_vt_rad, r_lo, r_hi, use_high_top, add_bg_wind, conserve_mom, conserve_hgt,  &
                           min_nobs, min_mslp, nudged_time, r_fac, r_min, r_inc, ibtrack, track_file_name, file_names,         &
-                          input_fname_list, analysis_file_first, analysis_file_last, P_relax, P_norelax,  &
+                          input_fname_list, analysis_file_first, analysis_file_last, P_relax, P_norelax, &
                           nwp_nudge_int, time_varying_nwp, using_merra2, climate_nudging
 
  contains
@@ -352,9 +352,9 @@ module fv_nwp_nudge_mod
 !$OMP parallel do default(none) shared(npz,press,P_norelax,prof_t)
     do k=1,npz
       if ( press(k) < 10.E2 ) then
-        prof_t(k) =  max(0.01, press(k)/10.E2) 
+        prof_t(k) =  max(0.01, press(k)/10.E2)
       endif
-      ! above P_norelax, no nudging. 
+      ! above P_norelax, no nudging.
       if( press(k) < P_norelax ) prof_t(k) = 0.0
     enddo
   else
@@ -373,7 +373,7 @@ module fv_nwp_nudge_mod
 !$OMP parallel do default(none) shared(npz,press,P_norelax,prof_q)
     do k=1,npz
       if ( press(k) < 200.E2 ) then
-          prof_q(k) =  max(0., press(k)/200.E2) 
+          prof_q(k) =  max(0., press(k)/200.E2)
       endif
       if( press(k) < P_norelax ) prof_q(k) = 0.0
     enddo
@@ -414,12 +414,12 @@ module fv_nwp_nudge_mod
 
   if ( time_varying_nwp ) then
     if (mod(seconds, nwp_nudge_int) == 0) then
-        factor_nwp = 1.0
-     else
-        factor_nwp = 0.0
+      factor_nwp = 1.0
+    else
+      factor_nwp = 0.0
     endif
-   else
-     factor_nwp = 1.0
+  else
+    factor_nwp = 1.0
   endif
 
   if ( do_adiabatic_init ) factor = 2.*factor
@@ -526,9 +526,9 @@ module fv_nwp_nudge_mod
      if ( nf_uv>0 ) call del2_uv(du_obs, dv_obs, del2_cd, npz, nf_uv, bd, npx, npy, gridstruct, domain)
 
 !$OMP parallel do default(none) shared(kstart,kbot_winds,npz,is,ie,js,je,du_obs,dv_obs, &
-!$OMP                                  mask,ps_fac,u_dt,v_dt,ua,va,dt,climate_nudging)
+!$OMP                                  mask,ps_fac,u_dt,v_dt,ua,va,dt, climate_nudging)
      do k=kstart, npz - kbot_winds
-       if ( climate_nudging) then
+       if ( climate_nudging ) then
          do j=js,je
            do i=is,ie
 ! Apply TC mask
@@ -560,10 +560,10 @@ module fv_nwp_nudge_mod
                du_obs(i,j,k) = du_obs(i,j,k) * mask(i,j)
                dv_obs(i,j,k) = dv_obs(i,j,k) * mask(i,j)
 !
-                 u_dt(i,j,k) = u_dt(i,j,k) + du_obs(i,j,k)
-                 v_dt(i,j,k) = v_dt(i,j,k) + dv_obs(i,j,k)
-                   ua(i,j,k) =   ua(i,j,k) + du_obs(i,j,k)*dt
-                   va(i,j,k) =   va(i,j,k) + dv_obs(i,j,k)*dt
+               u_dt(i,j,k) = u_dt(i,j,k) + du_obs(i,j,k)
+               v_dt(i,j,k) = v_dt(i,j,k) + dv_obs(i,j,k)
+                 ua(i,j,k) =   ua(i,j,k) + du_obs(i,j,k)*dt
+                 va(i,j,k) =   va(i,j,k) + dv_obs(i,j,k)*dt
              enddo
            enddo
          endif
@@ -585,7 +585,7 @@ module fv_nwp_nudge_mod
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,kstart,kht,t_dt,prof_t,t_obs,zvir, &
 !$OMP                                  q,pt,rdt,ps_fac,climate_nudging)
      do k=kstart, kht
-       if ( climate_nudging) then
+       if ( climate_nudging ) then
          do j=js,je
            do i=is,ie
              t_dt(i,j,k) = prof_t(k)*(t_obs(i,j,k)-pt(i,j,k))*rdt
@@ -612,7 +612,7 @@ module fv_nwp_nudge_mod
   if ( nudge_hght .and. kht<npz ) then     ! averaged (in log-p) temperature
        rdt = factor_nwp*1. / (tau_hght/factor + dt)
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,ak,h2,delp,kht,t_obs,q_obs,pt,zvir, &
-!$OMP                                  q,rdt,ps_fac,mask,t_dt, climate_nudging) &
+!$OMP                                  q,rdt,ps_fac,mask,t_dt,climate_nudging) &
 !$OMP                          private(pe2, peln )
        do j=js,je
            do i=is,ie
@@ -635,7 +635,7 @@ module fv_nwp_nudge_mod
 ! Difference between "Mean virtual tempearture" (pseudo height)
                 if ( climate_nudging ) then
                   h2(i,j) = h2(i,j) + ((t_obs(i,j,k)*(1.+zvir*q_obs(i,j,k))-pt(i,j,k))*(1.+zvir*q(i,j,k,1))) &
-                           *(peln(i,k+1)-peln(i,k))
+                          *(peln(i,k+1)-peln(i,k))
                 else
                   h2(i,j) = h2(i,j) + (t_obs(i,j,k)-pt(i,j,k)*(1.+zvir*q(i,j,k,1)))*(peln(i,k+1)-peln(i,k))
                 endif
@@ -1366,7 +1366,7 @@ module fv_nwp_nudge_mod
     call close_ncfile( ncid )
 
 ! Note: definition of NCEP hybrid is p(k) = a(k)*1.E5 + b(k)*ps
-    if ( .not. using_merra2) then 
+    if ( .not. using_merra2) then
       ! This is not needed for MERRA2 data
       ak0(:) = ak0(:) * 1.E5
     endif

@@ -30,7 +30,7 @@ module fv_eta_mod
 
  contains
 
-!!!NOTE: USE_VAR_ETA not used in SHiELD
+!!!NOTE: USE_VAR_ETA not used in fvGFS
 !!! This routine will be kept here
 !!! for the time being to not disrupt idealized tests
 #ifdef USE_VAR_ETA
@@ -260,7 +260,7 @@ module fv_eta_mod
 
 
 #else
- !This is the version of set_eta used in SHiELD and AM4
+ !This is the version of set_eta used in fvGFS and AM4
  subroutine set_eta(km, ks, ptop, ak, bk, npz_type)
 
 !Level definitions are now in this header file
@@ -443,19 +443,19 @@ module fv_eta_mod
             bk(k) = b48(k)
          enddo
 
-        case (49)
-          ks = 28
-          do k=1,km+1
-            ak(k) = a49(k)
-            bk(k) = b49(k)
-          enddo
-
       case (50)
-         ! *Very-low top: for idealized super-cell simulation:
-         ptop = 50.e2
-         pint = 250.E2
-         stretch_fac = 1.03
-         auto_routine = 1
+         ! ! *Very-low top: for idealized super-cell simulation:
+         ! ptop = 50.e2
+         ! pint = 250.E2
+         ! stretch_fac = 1.03
+         ! auto_routine = 1
+
+
+         ks = 19
+         do k=1,km+1
+            ak(k) = a50(k)
+            bk(k) = b50(k)
+         enddo
 
       case (51)
          if (trim(npz_type) == 'lowtop') then
@@ -556,7 +556,7 @@ module fv_eta_mod
             stretch_fac = 1.035
             auto_routine = 1
          else!if (trim(npz_type) == 'gfs') then
-            !Used for SHiELD
+            !Used for fvGFS
             ! GFS L64 equivalent setting
             ks = 23
             do k=1,km+1
@@ -778,7 +778,7 @@ module fv_eta_mod
   real ep, es, alpha, beta, gama
   real, parameter:: akap = 2./7.
 !---- Tunable parameters:
-  integer:: k_inc = 10   ! # of layers from bottom up to near const dz region
+  real:: k_inc = 10   ! # of layers from bottom up to near const dz region
   real:: s0 = 0.8     ! lowest layer stretch factor
 !-----------------------
   real:: s_inc

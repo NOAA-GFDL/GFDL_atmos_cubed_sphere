@@ -18,6 +18,7 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+! $Id$
 
 module init_hydro_mod
 
@@ -391,17 +392,37 @@ contains
           enddo
        enddo
 
-       do k=2,km
+!!$       do k=2,km
+!!$          do i=is,ie
+!!$             if ( ph(i,k-1) <= p1 ) then
+!!$! Isothermal
+!!$                 gz(i,k) = gz(i,k-1) + (rdgas*t1)*log(ph(i,k-1)/ph(i,k))
+!!$             else
+!!$! Constant lapse rate region (troposphere)
+!!$                 !gz(i,k) = (hs(i,j)+c0)/(ph(i,k)/ps(i,j))**(a0*rdgas) - c0
+!!$                 gz(i,k) = (hs(i,j)+c0)/(ph(i,k)/ps(i,j))**(a0*rdgas) - c0
+!!$             endif
+!!$          enddo
+!!$       enddo
+       !bottom-up
+
+       do k=km,2,-1
           do i=is,ie
-             if ( ph(i,k) <= p1 ) then
-! Isothermal
-                 gz(i,k) = ztop + (rdgas*t1)*log(ptop/ph(i,k))
+             if (ph(i,k) <= p1) then
+                gz(i,k) = gz(i,k+1) +  (rdgas*t1)*log(ph(i,k+1)/ph(i,k))
              else
-! Constant lapse rate region (troposphere)
-                 gz(i,k) = (hs(i,j)+c0)/(ph(i,k)/ps(i,j))**(a0*rdgas) - c0
+                gz(i,k) = (hs(i,j)+c0)/(ph(i,k)/ps(i,j))**(a0*rdgas) - c0
              endif
           enddo
        enddo
+       !model top
+          do i=is,ie
+             if (ph(i,1) <= p1) then
+                gz(i,1) = gz(i,2) +  (rdgas*t1)*log(ph(i,2)/ph(i,1))
+             else
+                gz(i,1) = (hs(i,j)+c0)/(ph(i,1)/ps(i,j))**(a0*rdgas) - c0
+             endif
+          enddo
        if ( .not. hydrostatic ) then
           do k=1,km
              do i=is,ie
@@ -419,6 +440,13 @@ contains
             delp(i,j,k) = ph(i,k+1) - ph(i,k)
          enddo
       enddo
+      if (is_master() .and. j==js) then
+         i = is
+         do k=1,km
+            write(*,*) k, pt(i,j,k), gz(i,k+1), (gz(i,k)-gz(i,k+1)), ph(i,k)
+         enddo
+      endif
+
    enddo    ! j-loop
 
 

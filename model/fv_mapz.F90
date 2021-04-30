@@ -30,7 +30,7 @@ module fv_mapz_mod
   use fv_fill_mod,       only: fillz
   use mpp_domains_mod,   only: mpp_update_domains, domain2d
   use mpp_mod,           only: NOTE, mpp_error, get_unit, mpp_root_pe, mpp_pe
-  use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, R_GRID
+  use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, R_GRID, inline_mp_type
   use fv_timing_mod,     only: timing_on, timing_off
   use fv_mp_mod,         only: is_master, mp_reduce_min, mp_reduce_max
   use fv_cmp_mod,        only: qs_init, fv_sat_adj
@@ -56,7 +56,7 @@ module fv_mapz_mod
   private
 
   public compute_total_energy, Lagrangian_to_Eulerian, moist_cv, moist_cp,   &
-         rst_remap, mappm, E_Flux, remap_2d
+         rst_remap, mappm, E_Flux, remap_2d, map_scalar
 
 contains
 
@@ -66,8 +66,8 @@ contains
                       akap, cappa, kord_mt, kord_wz, kord_tr, kord_tm,  peln, te0_2d,        &
                       ng, ua, va, omga, te, ws, fill, reproduce_sum, out_dt, dtdt,      &
                       ptop, ak, bk, pfull, gridstruct, domain, do_sat_adj, &
-                      hydrostatic, hybrid_z, do_omega, adiabatic, do_adiabatic_init, &
-                      c2l_ord, bd, fv_debug, &
+                      hydrostatic, phys_hydrostatic, hybrid_z, do_omega, adiabatic, do_adiabatic_init, &
+                      do_inline_mp, inline_mp, c2l_ord, bd, fv_debug, &
                       moist_phys)
   logical, intent(in):: last_step
   logical, intent(in):: fv_debug
@@ -96,6 +96,7 @@ contains
   real, intent(in):: ws(is:ie,js:je)
 
   logical, intent(in):: do_sat_adj
+  logical, intent(in):: do_inline_mp
   logical, intent(in):: fill                  ! fill negative tracers
   logical, intent(in):: reproduce_sum
   logical, intent(in):: do_omega, adiabatic, do_adiabatic_init
@@ -122,7 +123,7 @@ contains
                                                      ! as input; output: temperature
   real, intent(inout), dimension(isd:,jsd:,1:)::q_con, cappa
   real, intent(inout), dimension(is:,js:,1:)::delz
-  logical, intent(in):: hydrostatic
+  logical, intent(in):: hydrostatic, phys_hydrostatic
   logical, intent(in):: hybrid_z
   logical, intent(in):: out_dt
   logical, intent(in):: moist_phys
@@ -135,6 +136,7 @@ contains
   real, intent(out)::    pkz(is:ie,js:je,km)       ! layer-mean pk for converting t to pt
   real, intent(out)::     te(isd:ied,jsd:jed,km)
 
+  type(inline_mp_type), intent(inout):: inline_mp
 
 ! !DESCRIPTION:
 !
@@ -662,7 +664,7 @@ endif        ! end last_step check
                              te(isd,jsd,k), q(isd,jsd,k,sphum), q(isd,jsd,k,liq_wat),   &
                              q(isd,jsd,k,ice_wat), q(isd,jsd,k,rainwat),    &
                              q(isd,jsd,k,snowwat), q(isd,jsd,k,graupel),    &
-                             dpln, delz(is:ie,js:je,k), pt(isd,jsd,k), delp(isd,jsd,k), q_con(isd:,jsd:,k), &
+                             hs, dpln, delz(is:ie,js:je,k), pt(isd,jsd,k), delp(isd,jsd,k), q_con(isd:,jsd:,k), &
                              cappa(isd:,jsd:,k), gridstruct%area_64, dtdt(is,js,k), out_dt, last_step, cld_amt>0, q(isd,jsd,k,cld_amt))
               if ( .not. hydrostatic  ) then
                  do j=js,je
