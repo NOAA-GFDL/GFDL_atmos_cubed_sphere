@@ -3409,7 +3409,7 @@ contains
 ! seperate cloud water and cloud ice from Jan-Huey Chen's HiRAM code
 ! only use for NCEP IC and GFDL microphy
 !-----------------------------------------------------------------------
-   if ( .not.data_source_fv3gfs ) then
+   if ( .not. data_source_fv3gfs ) then
       if ((Atm%flagstruct%nwat .eq. 3 .or. Atm%flagstruct%nwat .eq. 6) .and. &
            (Atm%flagstruct%ncep_ic .or. Atm%flagstruct%nggps_ic)) then
          do k=1,npz
