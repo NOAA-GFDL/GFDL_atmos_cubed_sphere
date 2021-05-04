@@ -1116,12 +1116,6 @@ contains
    if (query_cmip_diag_id(ID_tnhus)) &
                   used = send_cmip_data_3d (ID_tnhus, (Atm(mygrid)%q(isc:iec,jsc:jec,:,sphum)-qtend(:,:,:,sphum))/dt_atmos, Time)
 
-#if !defined(ATMOS_NUDGE) && !defined(CLIMATE_NUDGE) && !defined(ADA_NUDGE)
-   if ( .not.forecast_mode .and. Atm(mygrid)%flagstruct%nudge .and. Atm(mygrid)%flagstruct%na_init>0 ) then
-        if(mod(seconds, 21600)==0)  call adiabatic_init_drv (Time_prev, Time_next)
-   endif
-#endif
-
    call nullify_domain()
   !---- diagnostics for FV dynamics -----
    if (Atm(mygrid)%flagstruct%print_freq /= -99) then
