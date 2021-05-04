@@ -1,27 +1,26 @@
-
 !***********************************************************************
-!*                   GNU Lesser General Public License                 
+!*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
 !*
-!* The FV3 dynamical core is free software: you can redistribute it 
+!* The FV3 dynamical core is free software: you can redistribute it
 !* and/or modify it under the terms of the
 !* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
+!* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
 !* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
+!* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
 !>@brief The module 'fv_mapz' contains the vertical mapping routines \cite lin2004vertically
-!>@note April 12, 2012 -SJL: This revision may actually produce rounding level differences 
+!>@note April 12, 2012 -SJL: This revision may actually produce rounding level differences
 !! due to the elimination of KS to compute pressure level for remapping.
 
 module fv_mapz_mod
@@ -45,10 +44,6 @@ module fv_mapz_mod
 !     <td>fv_grid_type</td>
 !   </tr>
 !   <tr>
-!     <td>fv_cmp_mod</td>
-!     <td>qs_init, fv_sat_adj</td>
-!   </tr>
-!   <tr>
 !     <td>fv_fill_mod</td>
 !     <td>fillz</td>
 !   </tr>
@@ -59,6 +54,14 @@ module fv_mapz_mod
 !   <tr>
 !     <td>fv_mp_mod</td>
 !     <td>is_master</td>
+!   </tr>
+!   <tr>
+!     <td>ccpp_static_api</td>
+!     <td>ccpp_physics_run</td>
+!   </tr>
+!   <tr>
+!     <td>CCPP_data</td>
+!     <td>ccpp_suite, cdata_tile, CCPP_interstitial</td>
 !   </tr>
 !   <tr>
 !     <td>fv_timing_mod</td>
@@ -89,17 +92,14 @@ module fv_mapz_mod
   use fv_fill_mod,       only: fillz
   use mpp_domains_mod,   only: mpp_update_domains, domain2d
   use mpp_mod,           only: NOTE, FATAL, mpp_error, get_unit, mpp_root_pe, mpp_pe
-  use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, R_GRID
+  use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, R_GRID, inline_mp_type
   use fv_timing_mod,     only: timing_on, timing_off
   use fv_mp_mod,         only: is_master, mp_reduce_min, mp_reduce_max
-#ifndef CCPP
-  use fv_cmp_mod,        only: qs_init, fv_sat_adj
-#else
+  ! CCPP fast physics
   use ccpp_static_api,   only: ccpp_physics_run
   use CCPP_data,         only: ccpp_suite
   use CCPP_data,         only: cdata => cdata_tile
   use CCPP_data,         only: CCPP_interstitial
-#endif
 #ifdef MULTI_GASES
   use multi_gases_mod,  only:  virq, virqd, vicpqd, vicvqd, num_gas
 #endif
@@ -125,7 +125,7 @@ module fv_mapz_mod
   private
 
   public compute_total_energy, Lagrangian_to_Eulerian, moist_cv, moist_cp,   &
-         rst_remap, mappm, E_Flux, remap_2d
+         rst_remap, mappm, E_Flux, remap_2d, map_scalar
 
 contains
 
@@ -137,8 +137,8 @@ contains
                       akap, cappa, kord_mt, kord_wz, kord_tr, kord_tm,  peln, te0_2d,        &
                       ng, ua, va, omga, te, ws, fill, reproduce_sum, out_dt, dtdt,      &
                       ptop, ak, bk, pfull, gridstruct, domain, do_sat_adj, &
-                      hydrostatic, hybrid_z, do_omega, adiabatic, do_adiabatic_init, &
-                      c2l_ord, bd, fv_debug, &
+                      hydrostatic, phys_hydrostatic, hybrid_z, do_omega, adiabatic, do_adiabatic_init, &
+                      do_inline_mp, inline_mp, c2l_ord, bd, fv_debug, &
                       moist_phys)
   logical, intent(in):: last_step
   logical, intent(in):: fv_debug
@@ -166,6 +166,7 @@ contains
   real, intent(in):: ws(is:ie,js:je)
 
   logical, intent(in):: do_sat_adj
+  logical, intent(in):: do_inline_mp
   logical, intent(in):: fill                  !< fill negative tracers
   logical, intent(in):: reproduce_sum
   logical, intent(in):: do_omega, adiabatic, do_adiabatic_init
@@ -188,11 +189,11 @@ contains
   real, intent(inout)::  u(isd:ied  ,jsd:jed+1,km)   !< u-wind (m/s)
   real, intent(inout)::  v(isd:ied+1,jsd:jed  ,km)   !< v-wind (m/s)
   real, intent(inout)::  w(isd:     ,jsd:     ,1:)   !< vertical velocity (m/s)
-  real, intent(inout):: pt(isd:ied  ,jsd:jed  ,km)   !< cp*virtual potential temperature 
+  real, intent(inout):: pt(isd:ied  ,jsd:jed  ,km)   !< cp*virtual potential temperature
                                                      !< as input; output: temperature
   real, intent(inout), dimension(isd:,jsd:,1:):: q_con, cappa
   real, intent(inout), dimension(is:,js:,1:)::delz
-  logical, intent(in):: hydrostatic
+  logical, intent(in):: hydrostatic, phys_hydrostatic
   logical, intent(in):: hybrid_z
   logical, intent(in):: out_dt
   logical, intent(in):: moist_phys
@@ -205,6 +206,7 @@ contains
   real, intent(out)::    pkz(is:ie,js:je,km)       !< layer-mean pk for converting t to pt
   real, intent(out)::     te(isd:ied,jsd:jed,km)
 
+  type(inline_mp_type), intent(inout):: inline_mp
 
 ! !DESCRIPTION:
 !
@@ -214,11 +216,7 @@ contains
 !-----------------------------------------------------------------------
   real, allocatable, dimension(:,:,:) :: dp0, u0, v0
   real, allocatable, dimension(:,:,:) :: u_dt, v_dt
-#ifdef CCPP
   real, dimension(is:ie,js:je):: te_2d, zsum0, zsum1
-#else
-  real, dimension(is:ie,js:je):: te_2d, zsum0, zsum1, dpln
-#endif
   real, dimension(is:ie,km)  :: q2, dp2, t0, w2
   real, dimension(is:ie,km+1):: pe1, pe2, pk1, pk2, pn2, phis
   real, dimension(isd:ied,jsd:jed,km):: pe4
@@ -226,22 +224,13 @@ contains
   real, dimension(is:ie):: gsize, gz, cvm, qv
 
   real rcp, rg, rrg, bkh, dtmp, k1k
-#ifndef CCPP
-  logical:: fast_mp_consv
-#endif
   integer:: i,j,k
   integer:: kdelz
-#ifdef CCPP
   integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, ccn_cm3, iq, n, kp, k_next
   integer :: ierr
-#else
-  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, ccn_cm3,  iq, n, kmp, kp, k_next
-#endif
 
-#ifdef CCPP
       ccpp_associate: associate( fast_mp_consv => CCPP_interstitial%fast_mp_consv, &
                                  kmp           => CCPP_interstitial%kmp            )
-#endif
 
        k1k = rdgas/cv_air   ! akap / (1.-akap) = rg/Cv=0.4
         rg = rdgas
@@ -258,13 +247,6 @@ contains
 
        if ( do_adiabatic_init .or. do_sat_adj ) then
             fast_mp_consv = (.not.do_adiabatic_init) .and. consv>consv_min
-#ifndef CCPP
-            do k=1,km
-               kmp = k
-               if ( pfull(k) > 10.E2 ) exit
-            enddo
-            call qs_init(kmp)
-#endif
        endif
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,pe,ptop,kord_tm,hydrostatic, &
@@ -412,7 +394,7 @@ contains
 
    if ( kord_tm<0 ) then
 !----------------------------------
-! Map t using logp 
+! Map t using logp
 !----------------------------------
          call map_scalar(km,  peln(is,1,j),  pt, gz,   &
                          km,  pn2,           pt,              &
@@ -459,6 +441,60 @@ contains
               delz(i,j,k) = -delz(i,j,k)*dp2(i,k)
            enddo
         enddo
+
+        !Fix excessive w - momentum conserving --- sjl
+        ! gz(:) used here as a temporary array
+        if ( w_limiter ) then
+           do k=1,km
+              do i=is,ie
+                 w2(i,k) = w(i,j,k)
+              enddo
+           enddo
+           do k=1, km-1
+              do i=is,ie
+                 if ( w2(i,k) > w_max ) then
+                    gz(i) = (w2(i,k)-w_max) * dp2(i,k)
+                    w2(i,k  ) = w_max
+                    w2(i,k+1) = w2(i,k+1) + gz(i)/dp2(i,k+1)
+                    print*, ' W_LIMITER down: ', i,j,k, w2(i,k:k+1), w(i,j,k:k+1)
+                 elseif ( w2(i,k) < w_min ) then
+                    gz(i) = (w2(i,k)-w_min) * dp2(i,k)
+                    w2(i,k  ) = w_min
+                    w2(i,k+1) = w2(i,k+1) + gz(i)/dp2(i,k+1)
+                    print*, ' W_LIMITER down: ', i,j,k, w2(i,k:k+1), w(i,j,k:k+1)
+                 endif
+              enddo
+           enddo
+           do k=km, 2, -1
+              do i=is,ie
+                 if ( w2(i,k) > w_max ) then
+                    gz(i) = (w2(i,k)-w_max) * dp2(i,k)
+                    w2(i,k  ) = w_max
+                    w2(i,k-1) = w2(i,k-1) + gz(i)/dp2(i,k-1)
+                    print*, ' W_LIMITER up: ', i,j,k, w2(i,k-1:k), w(i,j,k-1:k)
+                 elseif ( w2(i,k) < w_min ) then
+                    gz(i) = (w2(i,k)-w_min) * dp2(i,k)
+                    w2(i,k  ) = w_min
+                    w2(i,k-1) = w2(i,k-1) + gz(i)/dp2(i,k-1)
+                    print*, ' W_LIMITER up: ', i,j,k, w2(i,k-1:k), w(i,j,k-1:k)
+                 endif
+              enddo
+           enddo
+           do i=is,ie
+              if (w2(i,1) > w_max*2. ) then
+                 w2(i,1) = w_max*2 ! sink out of the top of the domain
+                 print*, ' W_LIMITER top limited: ', i,j,1, w2(i,1), w(i,j,1)
+              elseif (w2(i,1) < w_min*2. ) then
+                 w2(i,1) = w_min*2.
+                 print*, ' W_LIMITER top limited: ', i,j,1, w2(i,1), w(i,j,1)
+              endif
+           enddo
+           do k=1,km
+              do i=is,ie
+                 w(i,j,k) = w2(i,k)
+              enddo
+           enddo
+        endif
    endif
 
 !----------
@@ -627,7 +663,7 @@ contains
 
 1000  continue
 
-#if defined(CCPP) && defined(__GFORTRAN__)
+#ifdef __GFORTRAN__
 !$OMP parallel default(none) shared(is,ie,js,je,km,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt,     &
 !$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln, adiabatic,        &
 !$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,              &
@@ -642,7 +678,7 @@ contains
 !$OMP                        shared(num_gas)                                                   &
 #endif
 !$OMP                       private(q2,pe0,pe1,pe2,pe3,qv,cvm,gz,gsize,phis,kdelz,dp2,t0, ierr)
-#elif defined(CCPP)
+#else
 !$OMP parallel default(none) shared(is,ie,js,je,km,kmp,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt, &
 !$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln, adiabatic,        &
 !$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,              &
@@ -656,23 +692,7 @@ contains
 #ifdef MULTI_GASES
 !$OMP                        shared(num_gas)                                                   &
 #endif
-
 !$OMP                       private(q2,pe0,pe1,pe2,pe3,qv,cvm,gz,gsize,phis,kdelz,dp2,t0, ierr)
-#else
-!$OMP parallel default(none) shared(is,ie,js,je,km,kmp,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt, &
-!$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln,adiabatic, &
-!$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,       &
-!$OMP                               graupel,q_con,r_vir,sphum,w,pk,pkz,last_step,consv, &
-!$OMP                               do_adiabatic_init,zsum1,zsum0,te0_2d,domain,        &
-!$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,      &
-!$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,  &
-!$OMP                               fast_mp_consv,kord_tm,pe4,npx,npy,ccn_cm3,          &
-!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps)                       &
-
-#ifdef MULTI_GASES
-!$OMP                        shared(num_gas)                                                   &
-#endif
-!$OMP                       private(q2,pe0,pe1,pe2,pe3,qv,cvm,gz,gsize,phis,kdelz,dpln,dp2,t0)
 #endif
 
 !$OMP do
@@ -817,65 +837,13 @@ endif        ! end last_step check
 
   if ( do_sat_adj ) then
                                            call timing_on('sat_adj2')
-#ifdef CCPP
+    ! Call to CCPP fast_physics group
     if (cdata%initialized()) then
       call ccpp_physics_run(cdata, suite_name=trim(ccpp_suite), group_name='fast_physics', ierr=ierr)
       if (ierr/=0) call mpp_error(FATAL, "Call to ccpp_physics_run for group 'fast_physics' failed")
     else
       call mpp_error (FATAL, 'Lagrangian_to_Eulerian: can not call CCPP fast physics because CCPP not initialized')
     endif
-#else
-!$OMP do
-           do k=kmp,km
-              do j=js,je
-                 do i=is,ie
-                    dpln(i,j) = peln(i,k+1,j) - peln(i,k,j)
-                 enddo
-              enddo
-              if (hydrostatic) then
-                 kdelz = 1
-              else
-                 kdelz = k
-              end if
-              call fv_sat_adj(abs(mdt), r_vir, is, ie, js, je, ng, hydrostatic, fast_mp_consv, &
-                             te(isd,jsd,k),                                 &
-#ifdef MULTI_GASES
-                             km,                                            &
-#endif
-                             q(isd,jsd,k,sphum),   q(isd,jsd,k,liq_wat),    &
-                             q(isd,jsd,k,ice_wat), q(isd,jsd,k,rainwat),    &
-                             q(isd,jsd,k,snowwat), q(isd,jsd,k,graupel),    &
-                             hs, dpln, delz(is:ie,js:je,kdelz), pt(isd,jsd,k), delp(isd,jsd,k), q_con(isd:,jsd:,k), & 
-                             cappa(isd:,jsd:,k), gridstruct%area_64, dtdt(is,js,k), out_dt, last_step, cld_amt>0, q(isd,jsd,k,cld_amt))
-              if ( .not. hydrostatic  ) then
-                 do j=js,je
-                    do i=is,ie
-#ifdef MOIST_CAPPA
-                       pkz(i,j,k) = exp(cappa(i,j,k)*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
-#else
-#ifdef MULTI_GASES
-                       pkz(i,j,k) = exp(akap*(virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
-#else
-                       pkz(i,j,k) = exp(akap*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
-#endif
-#endif
-                    enddo
-                 enddo
-              endif
-           enddo    ! OpenMP k-loop
-
-
-           if ( fast_mp_consv ) then
-!$OMP do
-                do j=js,je
-                   do i=is,ie
-                      do k=kmp,km
-                         te0_2d(i,j) = te0_2d(i,j) + te(i,j,k)
-                      enddo
-                   enddo
-                enddo
-           endif
-#endif
                                            call timing_off('sat_adj2')
   endif   ! do_sat_adj
 
@@ -943,9 +911,7 @@ endif        ! end last_step check
   endif
 !$OMP end parallel
 
-#ifdef CCPP
   end associate ccpp_associate
-#endif
 
  end subroutine Lagrangian_to_Eulerian
 
@@ -1165,8 +1131,10 @@ endif        ! end last_step check
       integer, intent(in) :: kn                !< Target vertical dimension
       integer, intent(in) :: iv
 
-      real, intent(in) ::  pe1(i1:i2,km+1)     !< height at layer edges from model top to bottom surface
-      real, intent(in) ::  pe2(i1:i2,kn+1)     !< height at layer edges from model top to bottom surface
+      real, intent(in) ::  pe1(i1:i2,km+1)     !< height at layer edges
+                                               !! (from model top to bottom surface)
+      real, intent(in) ::  pe2(i1:i2,kn+1)     !< hieght at layer edges
+                                               !! (from model top to bottom surface)
       real, intent(in) ::  q1(i1:i2,km)        !< Field input
 
 ! INPUT/OUTPUT PARAMETERS:
@@ -1250,10 +1218,14 @@ endif        ! end last_step check
  integer, intent(in) :: km                !< Original vertical dimension
  integer, intent(in) :: kn                !< Target vertical dimension
  real, intent(in) ::   qs(i1:i2)       !< bottom BC
- real, intent(in) ::  pe1(i1:i2,km+1)  !< pressure at layer edges from model top to bottom surface in the original vertical coordinate
- real, intent(in) ::  pe2(i1:i2,kn+1)  !< pressure at layer edges from model top to bottom surface in the new vertical coordinate
+ real, intent(in) ::  pe1(i1:i2,km+1)  !< pressure at layer edges
+                                       !! (from model top to bottom surface)
+                                       !! in the original vertical coordinate
+ real, intent(in) ::  pe2(i1:i2,kn+1)  !< pressure at layer edges
+                                       !! (from model top to bottom surface)
+                                       !! in the new vertical coordinate
  real, intent(in) ::    q1(ibeg:iend,jbeg:jend,km) !< Field input
-! INPUT/OUTPUT PARAMETERS:
+! !INPUT/OUTPUT PARAMETERS:
  real, intent(inout)::  q2(ibeg:iend,jbeg:jend,kn) !< Field output
  real, intent(in):: q_min
 
@@ -1339,10 +1311,14 @@ endif        ! end last_step check
  integer, intent(in) :: km                !< Original vertical dimension
  integer, intent(in) :: kn                !< Target vertical dimension
  real, intent(in) ::   qs(i1:i2)       !< bottom BC
- real, intent(in) ::  pe1(i1:i2,km+1)  !< pressure at layer edges from model top to bottom surface in the original vertical coordinate
- real, intent(in) ::  pe2(i1:i2,kn+1)  !< pressure at layer edges from model top to bottom surface in the new vertical coordinate
+ real, intent(in) ::  pe1(i1:i2,km+1)  !< pressure at layer edges
+                                       !! (from model top to bottom surface)
+                                       !! in the original vertical coordinate
+ real, intent(in) ::  pe2(i1:i2,kn+1)  !< pressure at layer edges
+                                       !! (from model top to bottom surface)
+                                       !! in the new vertical coordinate
  real, intent(in) ::    q1(ibeg:iend,jbeg:jend,km) !< Field input
-! INPUT/OUTPUT PARAMETERS:
+! !INPUT/OUTPUT PARAMETERS:
  real, intent(inout)::  q2(ibeg:iend,jbeg:jend,kn) !< Field output
 
 ! DESCRIPTION:
@@ -1423,8 +1399,12 @@ endif        ! end last_step check
       integer, intent(in):: j, nq, i1, i2
       integer, intent(in):: isd, ied, jsd, jed
       integer, intent(in):: kord(nq)
-      real, intent(in)::  pe1(i1:i2,km+1)     !< pressure at layer edges from model top to bottom surface in the original vertical coordinate
-      real, intent(in)::  pe2(i1:i2,km+1)     !< pressure at layer edges from model top to bottom surface in the new vertical coordinate
+      real, intent(in)::  pe1(i1:i2,km+1)     !< pressure at layer edges
+                                              !! (from model top to bottom surface)
+                                              !! in the original vertical coordinate
+      real, intent(in)::  pe2(i1:i2,km+1)     !< pressure at layer edges
+                                              !! (from model top to bottom surface)
+                                              !! in the new vertical coordinate
       real, intent(in)::  dp2(i1:i2,km)
       real, intent(in)::  q_min
       logical, intent(in):: fill
@@ -1465,7 +1445,7 @@ endif        ! end last_step check
 ! entire new grid is within the original grid
             pr = (pe2(i,k+1)-pe1(i,l)) / dp1(i,l)
             fac1 = pr + pl
-            fac2 = r3*(pr*fac1 + pl*pl) 
+            fac2 = r3*(pr*fac1 + pl*pl)
             fac1 = 0.5*fac1
             do iq=1,nq
                q2(i,k,iq) = q4(2,i,l,iq) + (q4(4,i,l,iq)+q4(3,i,l,iq)-q4(2,i,l,iq))*fac1  &
@@ -1543,9 +1523,13 @@ endif        ! end last_step check
       integer, intent(in) :: km                !< Original vertical dimension
       integer, intent(in) :: kn                !< Target vertical dimension
 
-      real, intent(in) ::  pe1(i1:i2,km+1)     !< pressure at layer edges from model top to bottom surface in the original vertical coordinate
-      real, intent(in) ::  pe2(i1:i2,kn+1)     !< pressure at layer edges from model top to bottom surface in the new vertical coordinate
-      real, intent(in) ::  q1(ibeg:iend,jbeg:jend,km) !< Field input
+      real, intent(in) ::  pe1(i1:i2,km+1)     !< pressure at layer edges
+                                               !! (from model top to bottom surface)
+                                               !! in the original vertical coordinate
+      real, intent(in) ::  pe2(i1:i2,kn+1)     !< pressure at layer edges
+                                               !! (from model top to bottom surface)
+                                               !! in the new vertical coordinate
+      real, intent(in) ::  q1(ibeg:iend,jbeg:jend,km) ! Field input
       real, intent(in) ::  dp2(i1:i2,kn)
       real, intent(in) ::  q_min
 ! INPUT/OUTPUT PARAMETERS:
@@ -1626,11 +1610,15 @@ endif        ! end last_step check
    integer, intent(in):: kord
    integer, intent(in):: km               !< Original vertical dimension
    integer, intent(in):: kn               !< Target vertical dimension
-   real, intent(in):: pe1(i1:i2,km+1)     !< Pressure at layer edges from model top to bottom surface in the original vertical coordinate
-   real, intent(in):: pe2(i1:i2,kn+1)     !< Pressure at layer edges from model top to bottom surface in the new vertical coordinate
+   real, intent(in):: pe1(i1:i2,km+1)     !< pressure at layer edges
+                                          !! (from model top to bottom surface)
+                                          !! in the original vertical coordinate
+   real, intent(in):: pe2(i1:i2,kn+1)     !< pressure at layer edges
+                                          !! (from model top to bottom surface)
+                                          !! in the new vertical coordinate
    real, intent(in) :: q1(i1:i2,km) !< Field input
    real, intent(out):: q2(i1:i2,kn) !< Field output
-! LOCAL VARIABLES:
+! !LOCAL VARIABLES:
    real   qs(i1:i2)
    real   dp1(i1:i2,km)
    real   q4(4,i1:i2,km)
@@ -1725,7 +1713,7 @@ endif        ! end last_step check
  real  gam(i1:i2,km)
  real    q(i1:i2,km+1)
  real   d4(i1:i2)
- real   bet, a_bot, grat 
+ real   bet, a_bot, grat
  real   pmp_1, lac_1, pmp_2, lac_2, x0, x1
  integer i, k, im
 
@@ -1743,7 +1731,7 @@ endif        ! end last_step check
          enddo
       enddo
       do i=i1,i2
-            grat = delp(i,km-1) / delp(i,km) 
+            grat = delp(i,km-1) / delp(i,km)
          q(i,km) = (3.*(a4(1,i,km-1)+a4(1,i,km)) - grat*qs(i) - q(i,km-1)) /  &
                    (2. + grat + grat - gam(i,km))
          q(i,km+1) = qs(i)
@@ -1769,7 +1757,7 @@ endif        ! end last_step check
         gam(i,k) = d4(i) / bet
      enddo
   enddo
- 
+
   do i=i1,i2
          a_bot = 1. + d4(i)*(d4(i)+1.5)
      q(i,km+1) = (2.*d4(i)*(d4(i)+1.)*a4(1,i,km)+a4(1,i,km-1)-a_bot*q(i,km))  &
@@ -1800,7 +1788,7 @@ endif        ! end last_step check
 !------------------
   im = i2 - i1 + 1
 
-! Apply *large-scale* constraints 
+! Apply *large-scale* constraints
   do i=i1,i2
      q(i,2) = min( q(i,2), max(a4(1,i,1), a4(1,i,2)) )
      q(i,2) = max( q(i,2), min(a4(1,i,1), a4(1,i,2)) )
@@ -1876,7 +1864,7 @@ endif        ! end last_step check
      do i=i1,i2
         a4(2,i,1) = max(0., a4(2,i,1))
      enddo
-  elseif ( iv==-1 ) then 
+  elseif ( iv==-1 ) then
       do i=i1,i2
          if ( a4(2,i,1)*a4(1,i,1) <= 0. ) a4(2,i,1) = 0.
       enddo
@@ -2100,7 +2088,7 @@ endif        ! end last_step check
      do i=i1,i2
         a4(3,i,km) = max(0., a4(3,i,km))
      enddo
-  elseif ( iv .eq. -1 ) then 
+  elseif ( iv .eq. -1 ) then
       do i=i1,i2
          if ( a4(3,i,km)*a4(1,i,km) <= 0. )  a4(3,i,km) = 0.
       enddo
@@ -2133,7 +2121,7 @@ endif        ! end last_step check
  real  gam(i1:i2,km)
  real    q(i1:i2,km+1)
  real   d4(i1:i2)
- real   bet, a_bot, grat 
+ real   bet, a_bot, grat
  real   pmp_1, lac_1, pmp_2, lac_2, x0, x1
  integer i, k, im
 
@@ -2151,7 +2139,7 @@ endif        ! end last_step check
          enddo
       enddo
       do i=i1,i2
-            grat = delp(i,km-1) / delp(i,km) 
+            grat = delp(i,km-1) / delp(i,km)
          q(i,km) = (3.*(a4(1,i,km-1)+a4(1,i,km)) - grat*qs(i) - q(i,km-1)) /  &
                    (2. + grat + grat - gam(i,km))
          q(i,km+1) = qs(i)
@@ -2177,7 +2165,7 @@ endif        ! end last_step check
         gam(i,k) = d4(i) / bet
      enddo
   enddo
- 
+
   do i=i1,i2
          a_bot = 1. + d4(i)*(d4(i)+1.5)
      q(i,km+1) = (2.*d4(i)*(d4(i)+1.)*a4(1,i,km)+a4(1,i,km-1)-a_bot*q(i,km))  &
@@ -2208,7 +2196,7 @@ endif        ! end last_step check
 !------------------
   im = i2 - i1 + 1
 
-! Apply *large-scale* constraints 
+! Apply *large-scale* constraints
   do i=i1,i2
      q(i,2) = min( q(i,2), max(a4(1,i,1), a4(1,i,2)) )
      q(i,2) = max( q(i,2), min(a4(1,i,1), a4(1,i,2)) )
@@ -2284,7 +2272,7 @@ endif        ! end last_step check
      do i=i1,i2
         a4(2,i,1) = max(0., a4(2,i,1))
      enddo
-  elseif ( iv==-1 ) then 
+  elseif ( iv==-1 ) then
       do i=i1,i2
          if ( a4(2,i,1)*a4(1,i,1) <= 0. ) a4(2,i,1) = 0.
       enddo
@@ -2502,7 +2490,7 @@ endif        ! end last_step check
      do i=i1,i2
         a4(3,i,km) = max(0., a4(3,i,km))
      enddo
-  elseif ( iv .eq. -1 ) then 
+  elseif ( iv .eq. -1 ) then
       do i=i1,i2
          if ( a4(3,i,km)*a4(1,i,km) <= 0. )  a4(3,i,km) = 0.
       enddo
@@ -2600,14 +2588,17 @@ endif        ! end last_step check
 
  subroutine ppm_profile(a4, delp, km, i1, i2, iv, kord)
 
-! INPUT PARAMETERS:
- integer, intent(in):: iv      !< iv =-1: winds iv = 0: positive definite scalars iv = 1: others iv = 2: temp (if remap_t) and w (iv=-2)
+! !INPUT PARAMETERS:
+ integer, intent(in):: iv      !< iv =-1: winds
+                               !! iv = 0: positive definite scalars
+                               !! iv = 1: others
+                               !! iv = 2: temp (if remap_t) and w (iv=-2)
  integer, intent(in):: i1      !< Starting longitude
  integer, intent(in):: i2      !< Finishing longitude
- integer, intent(in):: km      !< Vertical dimension
+ integer, intent(in):: km      !< vertical dimension
  integer, intent(in):: kord    !< Order (or more accurately method no.):
-                               ! 
- real , intent(in):: delp(i1:i2,km)     !< Layer pressure thickness
+                               !!
+ real , intent(in):: delp(i1:i2,km)     !< layer pressure thickness
 
 ! !INPUT/OUTPUT PARAMETERS:
  real , intent(inout):: a4(4,i1:i2,km)  !< Interpolated values
@@ -2615,8 +2606,8 @@ endif        ! end last_step check
 ! DESCRIPTION:
 !
 !   Perform the piecewise parabolic reconstruction
-! 
-! !REVISION HISTORY: 
+!
+! !REVISION HISTORY:
 ! S.-J. Lin   revised at GFDL 2007
 !-----------------------------------------------------------------------
 ! local arrays:
@@ -2699,7 +2690,7 @@ endif        ! end last_step check
          do i=i1,i2
             a4(2,i,1) = max(0., a4(2,i,1))
             a4(2,i,2) = max(0., a4(2,i,2))
-         enddo 
+         enddo
       elseif( iv==-1 ) then
          do i=i1,i2
             if ( a4(2,i,1)*a4(1,i,1) <= 0. ) a4(2,i,1) = 0.
@@ -2792,7 +2783,7 @@ endif        ! end last_step check
 ! Method#2 - better
             h2(i,k) = 2.*(dc(i,k+1)/delp(i,k+1) - dc(i,k-1)/delp(i,k-1))  &
                      / ( delp(i,k)+0.5*(delp(i,k-1)+delp(i,k+1)) )        &
-                     * delp(i,k)**2 
+                     * delp(i,k)**2
 ! Method#3
 !!!            h2(i,k) = dc(i,k+1) - dc(i,k-1)
          enddo
@@ -2861,7 +2852,7 @@ endif        ! end last_step check
       real , intent(in):: dm(*)     !< Linear slope
       integer, intent(in) :: itot      !< Total Longitudes
       integer, intent(in) :: lmt       !< 0: Standard PPM constraint 1: Improved full monotonicity constraint
-                                       !< (Lin) 2: Positive definite constraint 
+                                       !< (Lin) 2: Positive definite constraint
                                        !< 3: do nothing (return immediately)
 ! INPUT/OUTPUT PARAMETERS:
       real , intent(inout) :: a4(4,*)   !< PPM array AA <-- a4(1,i) AL <-- a4(2,i) AR <-- a4(3,i) A6 <-- a4(4,i)
@@ -2939,7 +2930,7 @@ endif        ! end last_step check
  integer, intent(in) :: km, i1, i2
    real , intent(in) ::  dp(i1:i2,km)       !< Grid size
    real , intent(in) ::  dq(i1:i2,km)       !< Backward diff of q
-   real , intent(in) ::  d4(i1:i2,km)       !< Backward sum:  dp(k)+ dp(k-1) 
+   real , intent(in) ::  d4(i1:i2,km)       !< Backward sum:  dp(k)+ dp(k-1)
    real , intent(in) :: df2(i1:i2,km)       !< First guess mismatch
    real , intent(in) ::  dm(i1:i2,km)       !< Monotonic mismatch
 ! INPUT/OUTPUT PARAMETERS:
@@ -3129,7 +3120,7 @@ endif        ! end last_step check
                    kn, pe2,   u(is:ie,j:j,1:kn),       &
                    is, ie, -1, kord)
 
-  if ( j /= (je+1) )  then 
+  if ( j /= (je+1) )  then
 
 !---------------
 ! Hybrid sigma-p
@@ -3184,7 +3175,7 @@ endif        ! end last_step check
              w(i,j,k) = 0.
           endif
        enddo
-       enddo         
+       enddo
 #endif
 
 #ifndef HYDRO_DELZ_REMAP
@@ -3276,15 +3267,15 @@ endif        ! end last_step check
  end subroutine rst_remap
 
 !>@brief The subroutine 'mappm' is a general-purpose routine for remapping
-!! one set of vertical levels to another. 
+!! one set of vertical levels to another.
  subroutine mappm(km, pe1, q1, kn, pe2, q2, i1, i2, iv, kord, ptop)
 
 ! IV = 0: constituents
 ! IV = 1: potential temp
 ! IV =-1: winds
- 
+
 ! Mass flux preserving mapping: q1(im,km) -> q2(im,kn)
- 
+
 ! pe1: pressure at layer edges (from model top to bottom surface)
 !      in the original vertical coordinate
 ! pe2: pressure at layer edges (from model top to bottom surface)
@@ -3292,8 +3283,8 @@ endif        ! end last_step check
 
  integer, intent(in):: i1, i2, km, kn, kord, iv
  real, intent(in ):: pe1(i1:i2,km+1), pe2(i1:i2,kn+1) !< pe1: pressure at layer edges from model top to bottom
-                                                      !!      surface in the ORIGINAL vertical coordinate 
-                                                      !< pe2: pressure at layer edges from model top to bottom 
+                                                      !!      surface in the ORIGINAL vertical coordinate
+                                                      !< pe2: pressure at layer edges from model top to bottom
                                                       !!      surface in the NEW vertical coordinate
 ! Mass flux preserving mapping: q1(im,km) -> q2(im,kn)
  real, intent(in )::  q1(i1:i2,km)
@@ -3422,7 +3413,7 @@ endif        ! end last_step check
 #else
   real, intent(in), dimension(isd:ied,jsd:jed,km,nwat):: q
 #endif
-  real, intent(out), dimension(is:ie):: cvm, qd
+  real, intent(out), dimension(is:ie):: cvm, qd  !< qd is q_con
   real, intent(in), optional:: t1(is:ie)
 !
   real, parameter:: t_i0 = 15.
@@ -3465,22 +3456,13 @@ endif        ! end last_step check
   case (3)
      do i=is,ie
         qv(i) = q(i,j,k,sphum)
-        ql(i) = q(i,j,k,liq_wat) 
+        ql(i) = q(i,j,k,liq_wat)
         qs(i) = q(i,j,k,ice_wat)
         qd(i) = ql(i) + qs(i)
         cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
      enddo
   case(4)              ! K_warm_rain with fake ice
-     do i=is,ie 
-#ifndef CCPP
-        qv(i) = q(i,j,k,sphum)
-        qd(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
-#ifdef MULTI_GASES
-        cvm(i) = (1.-(qv(i)+qd(i)))*cv_air*vicvqd(q(i,j,k,1:num_gas)) + qv(i)*cv_vap + qd(i)*c_liq
-#else
-        cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + qd(i)*c_liq
-#endif
-#else
+     do i=is,ie
        qv(i) = q(i,j,k,sphum)
        ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
        qs(i) = q(i,j,k,ice_wat)
@@ -3490,13 +3472,11 @@ endif        ! end last_step check
 #else
         cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
 #endif
-
-#endif
      enddo
   case(5)
-     do i=is,ie 
+     do i=is,ie
         qv(i) = q(i,j,k,sphum)
-        ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) 
+        ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
         qs(i) = q(i,j,k,ice_wat) + q(i,j,k,snowwat)
         qd(i) = ql(i) + qs(i)
 #ifdef MULTI_GASES
@@ -3505,10 +3485,11 @@ endif        ! end last_step check
         cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
 #endif
      enddo
+
   case(6)
-     do i=is,ie 
+     do i=is,ie
         qv(i) = q(i,j,k,sphum)
-        ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) 
+        ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
         qs(i) = q(i,j,k,ice_wat) + q(i,j,k,snowwat) + q(i,j,k,graupel)
         qd(i) = ql(i) + qs(i)
 #ifdef MULTI_GASES
@@ -3518,8 +3499,8 @@ endif        ! end last_step check
 #endif
      enddo
   case default
-     call mpp_error (NOTE, 'fv_mapz::moist_cv - using default cv_air')
-     do i=is,ie 
+     !call mpp_error (NOTE, 'fv_mapz::moist_cv - using default cv_air')
+     do i=is,ie
          qd(i) = 0.
 #ifdef MULTI_GASES
         cvm(i) = cv_air*vicvqd(q(i,j,k,1:num_gas))
@@ -3587,7 +3568,7 @@ endif        ! end last_step check
   case(3)
      do i=is,ie
         qv(i) = q(i,j,k,sphum)
-        ql(i) = q(i,j,k,liq_wat) 
+        ql(i) = q(i,j,k,liq_wat)
         qs(i) = q(i,j,k,ice_wat)
         qd(i) = ql(i) + qs(i)
 #ifdef MULTI_GASES
@@ -3598,15 +3579,6 @@ endif        ! end last_step check
      enddo
   case(4)    ! K_warm_rain scheme with fake ice
      do i=is,ie
-#ifndef CCPP
-        qv(i) = q(i,j,k,sphum)
-        qd(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
-#ifdef MULTI_GASES
-        cpm(i) = (1.-(qv(i)+qd(i)))*cp_air*vicpqd(q(i,j,k,:)) + qv(i)*cp_vapor + qd(i)*c_liq
-#else
-        cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + qd(i)*c_liq
-#endif
-#else
        qv(i) = q(i,j,k,sphum)
        ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
        qs(i) = q(i,j,k,ice_wat)
@@ -3616,14 +3588,11 @@ endif        ! end last_step check
 #else
         cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
 #endif
-
-    
-#endif
      enddo
   case(5)
-     do i=is,ie 
+     do i=is,ie
         qv(i) = q(i,j,k,sphum)
-        ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) 
+        ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
         qs(i) = q(i,j,k,ice_wat) + q(i,j,k,snowwat)
         qd(i) = ql(i) + qs(i)
 #ifdef MULTI_GASES
@@ -3632,10 +3601,11 @@ endif        ! end last_step check
         cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
 #endif
      enddo
+
   case(6)
-     do i=is,ie 
+     do i=is,ie
         qv(i) = q(i,j,k,sphum)
-        ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) 
+        ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat)
         qs(i) = q(i,j,k,ice_wat) + q(i,j,k,snowwat) + q(i,j,k,graupel)
         qd(i) = ql(i) + qs(i)
 #ifdef MULTI_GASES
@@ -3645,8 +3615,8 @@ endif        ! end last_step check
 #endif
      enddo
   case default
-     call mpp_error (NOTE, 'fv_mapz::moist_cp - using default cp_air')
-     do i=is,ie 
+     !call mpp_error (NOTE, 'fv_mapz::moist_cp - using default cp_air')
+     do i=is,ie
         qd(i) = 0.
 #ifdef MULTI_GASES
         cpm(i) = cp_air*vicpqd(q(i,j,k,:))

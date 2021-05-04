@@ -1,65 +1,75 @@
-Grid refinement techniques {#grid}
+The vertical Lagrangian Solver {#lagrangian}
 =========================================
 
-##Chapter 4
+##Chapter 4 
 
-There is a need for increasingly high-resolution numerical models for weather and climate simulation, but also an increasing need for coupling the newly resolved scales to the large and global-scale circulations, for which limited area models are only of limited use. However, uniformly-high resolution global models are not always practical on present-day computers. The solution to this problem is to locally refine a global grid, allowing for enhanced resolution over the area of interest while also representing the global grid. FV&sup3; has two variable-resolution methods: a simple Schmidt transformation for grid stretching, and two-way regional-to-global nesting. These methods can be combined for maximum flexibility.
+GFDL will provide the additional documentation by the end of May 2021.
 
-FV&sup3; can also be configured as a doubly-periodic solver, in which the cubed-sphere is replaced by a Cartesian-coordinate doubly-periodic horizontal grid; otherwise the solver is unchanged. This can be useful for idealized simulations at a variety of resolutions, including very high horizontal resolutions useful for studying explicit convection.
+(This information is a reproduction of Sections 3 and 4 from HCZC20)
 
-###4.1 Grid stretching
-Here we follow the development of HLT16. A relatively simple variable resolution grid can be created by taking the original cubed-sphere grid and applying the transformation of F. Schmidt (Beitr. Atmos. Phys., 1977) to “pull” grid intersections towards a “target” point, corresponding to the center point of the high-resolution region. This is done in two steps: the grid is distorted towards the south pole to get the desired degree of refinement, and then the south pole is rotated to the target point using a solid-body rotation. Distorting to the south pole means that the longitudes of the points are not changed, only the latitudes, greatly simplifying the transformation.
+###4.1 Lagrangian vertical coordinates
 
-The transformation of the latitude &theta; to &thetasym; is given by:
+A *Lagrangian* vertical coordinate is used in FV<sup>3</sup>. This coordinate uses the depth of each layer (in terms of mass or as geometric height) as a prognostic variable, allowing the layer interfaces to deform freely as the flow evolves. Further, the flow is constrained within the Lagrangian layers, with no flow across the layer interfaces (even for non-adiabatic flows). Instead, the flow deforms the layers themselves by advecting the layer thickness and by straining the layers by the vertical gradient of explicit vertical motion. This form is automatically consistent with the LR96 scheme, avoids the need for explicit calculation and dimensional splitting of verticaladvection, greatly reduces implicit vertical diffusion, and has no vertical Courant number restriction.
 
-\f[
- 	sin\vartheta  =  \frac{D + sin\theta}{1 + Dsin\theta} \\  \tag {4.1}
-  \f]
-
-where the distortion is a function of the stretching factor c, which can be any positive number:
+FV<sup>3</sup> uses a hybrid-pressure coordinate based on the hydrostatic surface pressure \f$p_s^*\f$:
 
 \f[
- 	D  =  \frac{1 - c^2}{1 + c^2} \\  \tag {4.2}
-  \f]
+ p_k^* = a_k + b_kp_s^*  \\  \tag {4.1}
+ \f]
 
-Using c = 1 causes no stretching. Note that other forms for the transformation could also be used without making any other changes to the solver.
+where *k* is the vertical index of the layer interface, counting from the top down, and \f$a_k\f$, \f$b_k\f$ are pre-defined coefficients. Typically, the top interface is at a constant pressure \f$p_T\f$, so \f$a_0 = p_T\f$ and \f$b_0 = 0\f$. The spacing of the levels depends on the particular application, and is chosen depending on how high of a model top is desired, where additional vertical resolution is applied (typically in the boundary layer, but sometimes also near the tropical tropopause), and where to transition from hybrid \f$b_k > 0\f$ to pure pressure \f$b_k = 0\f$ coordinates.
 
-Although the grid has been deformed, the solver still uses the assumption that the grid cells are bounded by great-circle arcs, which are not strictly identical to a Schmidt transformation of the cubed-sphere arcs of the unstretched grid.
+###4.2 Prognostic variables and governing equations
 
-###4.2 Grid nesting
-
-Using grid nesting can greatly increase the flexibility of grid refinement in the model, at the cost of greater complexity in the solver. The major strength of grid nesting is its ability to use independent configurations on each grid, including different time steps and physical parameterizations, most appropriate for that particular grid. The ability to use a longer time step on the coarse grid than on the nested grid can greatly improve the efficiency of a nested-grid model; and choosing parameterizations independently allows values appropriate for each resolution without needing compromise or “scale-aware” parameterizations.
-
-Here we follow the development of HL13, with additional updates necessary for the nonhydrostatic solver. Implementing two-way grid nesting involves two processes: interpolating the global grid variables to create boundary conditions for the nested-grid, and then updating the coarse-grid solution with nested-grid data in the region they overlap. The goal is to do so in as efficient of a manner consistent with the finite-volume methodology.
-
-A major feature of FV&sup3;’s nesting is to use concurrent nesting, in which the nested and coarse grids run simultaneously, akin to how coupled models run their atmosphere and ocean components at the same time on different sets of processors. This can greatly reduce the amount of load imbalance between the different processors.
-
-The entire nesting cycle is as follows, starting at the beginning of call to the solver:
-
-- For each `p_split` step:
-	- Call solver
-	- Fetch boundary condition data from coarse grid
-	- In Lagrangian dynamics, update boundary conditions at each ¢t by extrapolating from two earlier coarse-grid states.
-	- Perform tracer transport and vertical remapping
-	- Perform two-way update
-- Call physics
-
-Note that we do not do a compile cycle every coarse-grid time step, unlike many regional nested-grid models. The cycling can be carried out multiple times per physics time step, if more frequent updates of the boundary conditions and of the two-way communication are considered necessary. There is also an option to perform the last two-way update after the physics, instead of before, which changes how the physical parameterizations interact with the nested-grid solution passed to the coarse grid. Performing the update before calling the physics has been found to yield better results in real-data forecasts.
-
-Currently, nested grids in FV&sup3; are constrained to be a proper refinement of a subset of coarse-grid cells; that is, each coarse-grid cell in the nested grid region is subdivided into N x N nested-grid cells. This greatly simplifies the nested-grid boundary condition interpolation and the two-way updating. Nested grids are also static and constrained to lie within one coarse-grid face. However, the algorithm does not require an aligned, static grid in one cube face, and any of these conditions may be relaxed in the future.
-
-The nested-grid boundary conditions are implemented in a simple way. Coarse-grid data is interpolated from the coarse grid into the halo of the nested grid, thereby providing the nested-grid boundary conditions. Linear interpolation, although it is simple and and is not conserving, does have the advantage of not introducing new extrema in the interpolated field. The boundary conditions for staggered variables are interpolated directly from the staggered coarse grids. Boundary conditions are needed for each prognostic variable, including the tracers; also, boundary conditions are needed for the C-grid winds, available at each half-time step, and for the divergence when using fourth or higher-order divergence damping.
-
-Finally, boundary conditions for the layer-interface nonhydrostatic pressure anomalies are also needed to evaluate the pressure-gradient force. Instead of interpolating these interface values from the coarse grid, they are instead diagnosed and interpolated from the other boundary condition variables using the same methods as the semi-implicit solver.
-
-Most nested-grid models perform time-interpolation between two coarse grid states on each time step, but since the grids are integrated concurrently in FV&sup3;, interpolation is not possible. Instead, we can extrapolate between two earlier coarse-grid states. If interpolated coarse-grid variables are available at times t and t - &Delta; &tau;, where &Delta; &tau; = N &Delta;t, then the extrapolation for a given variable &phi; at time t + n&delta;t  (n=1,...,N) is given by:
+The mass per unit area \f$\delta m\f$ can be expressed in terms of the difference in hydrostatic pressure \f$\delta p^*\f$ between the top and bottom of the layers; and, using the hydrostatic equation, can also be written in terms of the layer depth \f$\delta z^1\f$:
 
 \f[
- 	\phi^{t+n\delta t}  = \left( 1 + \frac{n}{N} \right) \phi^t - \frac{n}{N} \phi^{t-\Delta \tau} \\  \tag {4.3}
+ \delta m = \frac{\delta p^*}{g} = -p \delta z  \\  \tag {4.2} 
   \f]
 
-The extrapolation is constrained for positive-definite scalars so that the value of the boundary condition at t + &Delta;&tau; is non-negative, which is done by the substitution  &phi;<sup>t - &Delta;&tau; </sup>   &rarr; min(&phi;<sup>t - &Delta;&tau; </sup>, 2&phi;<sup>t</sup> ).
+The continuous Lagrangian equations of motion, in a layer of finite depth \f$\delta z\f$ and mass \f$\delta p^*\f$, are then given as
 
-Two-way updates from the nested to the coarse grid are performed consistent with the finite-volume numerics. Scalars are updated to the coarse grid by performing an average of nested-grid cells, consistent with the values being cell-averages. The staggered horizontal winds are updated by averaging the winds on the faces of nested-grid cells abutting the coarse-grid cell being updated, so that the update preserves the average of the vorticity on the nested-grid cells. In FV&sup3; only the three wind components and the temperature is updated to the coarse grid; the air and tracer masses are not updated, trivially conserving their masses on the nested grid, and reducing the amount of noise created through overspecification of the solution on the coarse grid. Since the air mass determines the vertical coordinate, which will differ between the two grids, the averaged nested-grid data is remapped onto the coarse-grid’s vertical coordinate.
+\f[
+ D_L \delta p^* + \nabla \cdot (V \delta p^*) = 0  \\
+ D_L \delta p^* \Theta_v + \nabla \cdot (V \delta p^* \Theta_v) = 0  \\
+ D_L \delta p^*w + \nabla \cdot (V \delta p^*w) = -g \delta z \frac{\partial p'}{\partial z}  \\
+ D_L u = \Omega u - \frac{\partial}{\partial x} K - \frac{1}{p} \frac{\partial p}{\partial x} \biggr\rvert_{z} \\
+ D_L v = - \Omega u - \frac{\partial}{\partial y} K - \frac{1}{p} \frac{\partial p}{\partial y} \biggr\rvert_{z}  \\  \tag {4.3}
+  \f]
+
+Note that these equations are exact: no discretization has been made yet, and the only change from the original differential form of Euler’s equations is to integrate over an arbitrary depth \f$\delta p^*\f$. The operator \f$D_L\f$ is the “vertically-Lagrangian” derivative, formally equal to \f$\frac{\partial \psi}{\partial t} + \frac{\partial}{\partial z}(w \psi)\f$ for an arbitrary scalar \f$\psi\f$. The flow is entirely along the Lagrangian surfaces, including the vertical motion (which deforms the surfaces as appropriate, an effect included in the semi-implicit solver).
+
+####Prognostic variables in FV<sup>3</sup>
+
+Variable         | Description
+:--------------: | :---------- 
+\f$\delta p^*\f$ | Vertical difference in hydrostatic pressure, proportional to mass
+\f$u\f$          | D-grid face-mean horizontal x-direction wind
+\f$v\f$          | D-grid face-mean horizontal y-direction wind
+\f$\Theta_v\f$   | Cell-mean virtual potential temperature
+\f$w\f$          | Cell-mean vertical velocity
+\f$\delta z\f$   | Geometric layer height
+
+The vertical component of absolute vorticity is given as \f$\Omega\f$ and \f$p\f$ is the full nonhydrostatic pressure. The kinetic energy is given as \f$K = \frac{1}{2}(\tilde{u}u + \tilde{v}v)\f$: since FV<sup>3</sup> does not assume that the horizontal coordinate system is orthogonal, we use the covariant (\f$u\f$ and \f$v\f$) components of the wind vector as prognostic variables and the contravariant (\f$\tilde{u}\f$ and \f$\tilde{v}\f$) components for advection, avoiding the need to explicitly include metric terms. See PL07 and HL13 for more information about covariant and contravariant components.
+
+The nonhydrostatic pressure gradient term in the \f$w\f$ equation is computed by the semi-implicit solver described section 5, which also computes the prognostic equation for \f$\delta z\f$. There is no projection of the vertical pressure gradient force into the horizontal; similarly, there is no projection of the horizontal winds \f$u\f$, \f$v\f$into the vertical, despite the slopes of the Lagrangian surfaces.
+
+Finally, the ideal gas law:
+
+\f[
+ p = p^* + p' = \rho R_dT_v = - \frac{\partial p^*}{g \delta z} R_d T_v  \\  \tag {4.4}
+  \f]
+
+where
+
+\f[
+ T_v = T(1 + \in q_v)(1 - q_{cond})  \\ \tag {4.5}
+  \f]
+
+is the “condensate modified” virtual temperature, or density temperature, is used to close the system of equations. Here, \f$d_{cond}\f$ is the (moist) mixingratio of all of the liquid and solid-phase microphysical species, if present. When the gas law is used, the mass \f$p^*\f$ in this computation must be the mass of only the dry air and water vapor, and not including the mass of the condensate (non-gas) species. A rigorous derivation of the virtual and density temperatures is given in K. Emanuel, Atmospheric Convection (1994, Oxford), Sec. 4.3.
+
+These equations are also applicable to hydrostatic flow, in which \f$w\f$ is not prognosed and \f$p = p^*\f$  is entirely hydrostatic.
 
 
+______________________________
+<sup>1</sup> In this document, to avoid confusion we write \f$\delta z\f$ as if it is a positive-definite quantity. In the solver itself, \f$\delta z\f$ is defined to be negative-definite, incorporating the negative sign into the definition of \f$\delta z\f$; this definition has the additional advantage of being consistent with how \f$\delta z\f$ is defined, being measured as the difference in hydrostatic pressure between the bottom and top of a layer.

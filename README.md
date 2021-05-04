@@ -1,28 +1,28 @@
-This is for the FV3 dynamical core and the GFDL Microphysics for use by NCEP/EMC within GFS.
-The source in this branch reflects the codebase delivered to NCEP/EMC for use in GFS.  Updates will be forthcoming.
+# GFDL_atmos_cubed_sphere
 
+This is for the FV3 dynamical core and the GFDL Microphysics for use by NCEP/EMC within GFS.
+The source in this branch reflects the codebase used by NCEP/EMC for use in GFS and UFS.
 # Where to find information
 
-See the [FV3 documentation and references](https://www.gfdl.noaa.gov/fv3/fv3-documentation-and-references/) for more information.
+Visit the [FV3 website](https://www.gfdl.noaa.gov/fv3/) for more information. Reference material is available at [FV3 documentation and references](https://www.gfdl.noaa.gov/fv3/fv3-documentation-and-references/). 
 
 # Proper usage attribution
 
-Cite either Putman and Lin (2007) or Harris and Lin (2013) when describing a model using the FV3 dynamical core.
-Cite Chen et al (2013) and Zhou et al (2019) if using the GFDL Microphysics.
+Cite Putman and Lin (2007) and Harris and Lin (2013) when describing a model using the FV3 dynamical core.
+Cite Chen et al (2013) and Zhou et al (2019) when using the GFDL Microphysics.
 
 # What files are what
 
 The top level directory structure groups source code and input files as follow:
 
-| File/directory    | Purpose |
-| --------------    | ------- |
-| ```LICENSE.md```  | a copy of the Gnu lesser general public license, version 3. |
-| ```README.md```   | this file with basic pointers to more information |
-| ```model/```      | contains the source code for core of the FV3 dyanmical core |
-| ```model_nh/```   | contains the source code for non-hydrostatic extensions |
-| ```driver/```     | contains drivers used by different models/modeling systems |
-| ```tools/```      | contains source code of tools used within the core |
-| ```GFDL_tools/``` | contains source code of tools specific to GFDL models |
+| File/directory       | Purpose |
+| --------------       | ------- |
+| ```LICENSE.md```     | a copy of the Gnu lesser general public license, version 3. |
+| ```README.md```      | this file with basic pointers to more information |
+| ```model/```         | contains the source code for core of the FV3 dyanmical core |
+| ```driver/```        | contains drivers used by different models/modeling systems |
+| ```tools/```         | contains source code of tools used within the core |
+| ```docs/```          | contains documentation for the FV3 dynamical core |
 
 # Disclaimer
 

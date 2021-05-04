@@ -1,22 +1,21 @@
-
 !***********************************************************************
-!*                   GNU Lesser General Public License                 
+!*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
 !*
-!* The FV3 dynamical core is free software: you can redistribute it 
+!* The FV3 dynamical core is free software: you can redistribute it
 !* and/or modify it under the terms of the
 !* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
+!* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
 !* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
+!* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
@@ -25,7 +24,7 @@
 !>@details This module includes functions to read in the externally calculated increments
 !! and applies the increments to the restart variables. Specifically, if the increments are
 !! zero, FV3 should reproduce directly from the restart files.
-!>@note Please treat the following subroutines as API interfaces, and consult the FV3 team 
+!>@note Please treat the following subroutines as API interfaces, and consult the FV3 team
 !! code modification proposal.
 !>@warning Expanding the list of increments without the proper knowledge of the FV3 dynamical
 !! core is EXTREMELY RISKY, especially for the non-hydrostatic scenario. Such a modification
@@ -38,7 +37,7 @@
 !-------------------------------------------------------------------------------
 
 #ifdef OVERLOAD_R4
-#define _GET_VAR1 get_var1_real 
+#define _GET_VAR1 get_var1_real
 #else
 #define _GET_VAR1 get_var1_double
 #endif
@@ -62,7 +61,7 @@ module fv_treat_da_inc_mod
 !     <td>fms_mod</td>
 !     <td>file_exist, open_namelist_file,close_file, error_mesg, FATAL,
 !         check_nml_error, stdlog,write_version_number,set_domain,
-!         mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_SUBCOMPONENT, 
+!         mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_SUBCOMPONENT,
 !         clock_flag_default, nullify_domain</td>
 !   </tr>
 !   <tr>
@@ -97,7 +96,7 @@ module fv_treat_da_inc_mod
 !   </tr>
 !   <tr>
 !     <td>sim_nc_mod</td>
-!     <td>open_ncfile, close_ncfile, get_ncdim1, get_var1_double, 
+!     <td>open_ncfile, close_ncfile, get_ncdim1, get_var1_double,
 !         get_var2_real, get_var3_r4, get_var1_real</td>
 !   </tr>
 !   <tr>
@@ -149,7 +148,7 @@ module fv_treat_da_inc_mod
 
 contains
   !=============================================================================
-  !>@brief The subroutine 'read_da_inc' reads the increments of the diagnostic variables 
+  !>@brief The subroutine 'read_da_inc' reads the increments of the diagnostic variables
   !! from the DA-generated files.
   !>@details Additional support of prognostic variables such as tracers can be assessed
   !! and added upon request.
@@ -165,10 +164,10 @@ contains
     real, intent(inout), dimension(is_in:ie_in+1,js_in:je_in  ,npz_in):: v  ! D grid meridional wind (m/s)
     real, intent(inout) :: delp(is_in:ie_in  ,js_in:je_in  ,npz_in)  ! pressure thickness (pascal)
     real, intent(inout) :: pt(  is_in:ie_in  ,js_in:je_in  ,npz_in)  ! temperature (K)
-    real, intent(inout) :: q(   is_in:ie_in  ,js_in:je_in  ,npz_in, nq)  ! 
-    real, intent(inout) :: delz(isc_in:iec_in  ,jsc_in:jec_in  ,npz_in)  ! 
+    real, intent(inout) :: q(   is_in:ie_in  ,js_in:je_in  ,npz_in, nq)  !
+    real, intent(inout) :: delz(isc_in:iec_in  ,jsc_in:jec_in  ,npz_in)  !
+
     ! local
-    
     real :: deg2rad
     character(len=128) :: fname
     real(kind=4), allocatable:: wk1(:), wk2(:,:), wk3(:,:,:)
@@ -262,7 +261,7 @@ contains
     do j=js,je
       do i=is,ie
           j1 = jdc(i,j)
-        jbeg = min(jbeg, j1) 
+        jbeg = min(jbeg, j1)
         jend = max(jend, j1+1)
       enddo
     enddo
@@ -321,7 +320,7 @@ contains
     do j=js,je
       do i=is,ie+1
           j1 = jdc_c(i,j)
-        jbeg = min(jbeg, j1) 
+        jbeg = min(jbeg, j1)
         jend = max(jend, j1+1)
       enddo
     enddo
@@ -374,7 +373,7 @@ contains
     do j=js,je+1
       do i=is,ie
           j1 = jdc_d(i,j)
-        jbeg = min(jbeg, j1) 
+        jbeg = min(jbeg, j1)
         jend = max(jend, j1+1)
       enddo
     enddo
@@ -462,7 +461,7 @@ contains
     end subroutine apply_inc_on_3d_scalar
     !---------------------------------------------------------------------------
   end subroutine read_da_inc
- 
+
   !=============================================================================
   !>@brief The subroutine 'remap_coef' calculates the coefficients for horizonal regridding.
 
