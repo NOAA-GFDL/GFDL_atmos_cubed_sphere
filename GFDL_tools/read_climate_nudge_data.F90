@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License
 !*
@@ -28,7 +29,7 @@ use fms2_io_mod,   only: open_file, close_file, get_num_dimensions, &
                          get_num_variables, get_variable_names, get_variable_size, &
                          get_variable_num_dimensions, get_variable_units, &
                          get_time_calendar, read_data, variable_att_axists
-use mpp_mod,       only: input_nml_file
+use mpp_mod,       only: input_nml_file, mpp_npes, mpp_get_current_pelist
 use constants_mod, only: PI, GRAV, RDGAS, RVGAS
 
 implicit none
@@ -105,6 +106,7 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
   integer :: istat, i, j, k, n, nd, siz(4), i1, i2
   character(len=32), allocatable :: fields(:)
   type(FmsNetcdfFile_t) :: fileobj
+  integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pelist
 
   if (module_is_initialized) return
   ! initial file names to blanks
@@ -138,8 +140,11 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
   numtime = 0
 
 ! open input file(s)
+  allocate(pes(mpp_npes()))
+  call mpp_get_current_pelist(pes)
+
   do n = 1, nfiles
-     if (open_file(fileobj, trim(filenames(n)), "read")) then
+     if (open_file(fileobj, trim(filenames(n)), "read", pelist=pes)) then
          Files(n)%ndim=get_num_dimensions(fileobj)
 
          allocate (Files(n)%dim_size(Files(n)%ndim))
@@ -188,9 +193,10 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
             endif
          enddo
          deallocate(fields)
-         call close_file()
+         call close_file(fileobj)
      endif
   enddo ! "n" files loop
+  deallocate(pes)
 
   ! setup file indexing
   allocate(file_index(numtime))
@@ -221,6 +227,8 @@ character(len=*), intent(out) :: units, calendar
 integer :: istat, i1, i2, n
 real :: l_times(size(times))
 character(len=32), save:: time_axis
+type(FmsNetcdfFile_t) :: fileobj
+integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pelist
 
    if (.not.module_is_initialized) then
      call error_mesg ('read_climate_nudge_data_mod/read_time',  &
@@ -233,24 +241,27 @@ character(len=32), save:: time_axis
 
  ! data
    i2 = 0
+   allocate(pes(mpp_npes()))
+   call mpp_get_current_pelist(pes)
    do n = 1, nfiles
-      if (open_file(fileobj, trim(filenames(n)), "read")) then
+      if (open_file(fileobj, trim(filenames(n)), "read", pelist=pes)) then
           i1 = i2+1
           i2 = i2+Files(n)%ntim
           if( n == 1) then
              time_axis = Files(n)%axes(INDEX_TIME)
              call get_variable_units(fileobj, time_axis, units)
              if( variable_att_exists(fileobj, time_axis, calendar) then
-                 call get_time_calendar(file_obj, time_axis, calendar)
+                 call get_time_calendar(fileobj, time_axis, calendar)
              else
                  calendar = 'gregorian  '
              endif
           endif
-          call read_data(file_obj,time_axis, l_times(i1:i2))
+          call read_data(fileobj,time_axis, l_times(i1:i2))
           times(i1:i2) = l_times(i1:i2)
-          call close_file(file_obj)
+          call close_file(fileobj)
       endif
    enddo
+   deallocate(pes)
 
 ! NOTE: need to do the conversion to time_type in this routine
 !       this will allow different units and calendars for each file
@@ -264,6 +275,8 @@ real, intent(out), dimension(:) :: lon, lat, ak, bk
 
  real :: pref
  integer :: istat
+ type(FmsNetcdfFile_t) :: fileobj
+ integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pelist
 
    if (.not.module_is_initialized) then
      call error_mesg ('read_climate_nudge_data_mod/read_grid',  &
@@ -272,7 +285,9 @@ real, intent(out), dimension(:) :: lon, lat, ak, bk
 
 
     ! static fields from first file only
-      if (open_file(fileobj, trim(filenames(1)), "read")) then
+      allocate(pes(mpp_npes()))
+      call mpp_get_current_pelist(pes)
+      if (open_file(fileobj, trim(filenames(1)), "read", pelist=pes)) then
           call read_data(fileobj, Files(1)%axes(INDEX_LON), lon)
           call read_data(fileobj, Files(1)%axes(INDEX_LAT), lat)
 
@@ -283,9 +298,9 @@ real, intent(out), dimension(:) :: lon, lat, ak, bk
 
         ! vertical coodinate
           if (Files(1)%field_index(INDEX_AK) .gt. 0) then
-             call read_data(file_obj, Files(1)%fields(INDEX_AK), ak)
+             call read_data(fileobj, Files(1)%fields(INDEX_AK), ak)
              if (Files(1)%field_index(INDEX_P0) .gt. 0) then
-                call read_data(file_obj, Files(1)%fields(INDEX_P0), pref)
+                call read_data(fileobj, Files(1)%fields(INDEX_P0), pref)
              else
                 pref = P0
              endif
@@ -297,6 +312,7 @@ real, intent(out), dimension(:) :: lon, lat, ak, bk
           call read_data(fileobj, Files(1)%fields(INDEX_BK), bk)
           call close_file(fileobj)
       endif
+      deallocate(pes)
 
 end subroutine read_grid
 
@@ -375,6 +391,8 @@ real,             intent(out), dimension(:,:) :: dat
 integer,          intent(in),  optional       :: is, js
 integer :: istat, atime, n, this_index
 integer :: nread(4), start(4)
+type(FmsNetcdfFile_t) :: fileobj
+integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pelist
 
    if (.not.module_is_initialized) then
      call error_mesg ('read_climate_nudge_data_mod',  &
@@ -421,10 +439,13 @@ integer :: nread(4), start(4)
      nread(1) = size(dat,1)
      nread(2) = size(dat,2)
 
-     if (open_file(fileobj, trim(filenames(n)), "read")) then
+     allocate(pes(mpp_npes()))
+     call mpp_get_current_pelist(pes)
+     if (open_file(fileobj, trim(filenames(n)), "read", pelist=pes)) then
          call read_data(fileobj, Files(n)%fields(this_index), dat, corner=start, edge_lengths=nread)
          call close_file(fileobj)
      endif
+     deallocate(pes)
 
       ! geopotential height (convert to m2/s2 if necessary)
      if (field .eq. 'phis') then
@@ -445,6 +466,8 @@ character(len=4), intent(in) :: field
 real,             intent(out), dimension(:,:,:) :: dat
 integer,          intent(in),  optional         :: is, js
 integer :: istat, atime, n, this_index, start(4), nread(4)
+type(FmsNetcdfFile_t) :: fileobj
+integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pelist
 !logical :: convert_virt_temp = .false.
 
    if (.not.module_is_initialized) then
@@ -501,10 +524,13 @@ integer :: istat, atime, n, this_index, start(4), nread(4)
      nread(2) = size(dat,2)
      nread(3) = size(dat,3)
 
-     if (open_file(fileobj, trim(filenames(n)), "read")) then
+     allocate(pes(mpp_npes()))
+     call mpp_get_current_pelist(pes)
+     if (open_file(fileobj, trim(filenames(n)), "read", pelist=pes)) then
          call read_data(fileobj, Files(n)%fields(this_index), dat, corner=start, edge_lengths=nread)
          call close_file(fileobj)
      endif
+     deallocate(pes)
 
      ! convert virtual temp to temp
      ! necessary for some of the high resol AVN analyses

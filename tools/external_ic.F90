@@ -33,7 +33,7 @@ module external_ic_mod
                                  FmsNetcdfFile_t, FmsNetcdfDomainFile_t, read_restart, &
                                  register_restart_field, register_axis
    use mpp_mod,            only: mpp_error, FATAL, NOTE, mpp_pe, mpp_root_pe
-   use mpp_mod,            only: stdlog, input_nml_file
+   use mpp_mod,            only: stdlog, input_nml_file, mpp_npes, mpp_get_current_pelist
    use mpp_parameter_mod,  only: AGRID_PARAM=>AGRID
    use mpp_domains_mod,    only: mpp_get_tile_id, domain2d, mpp_update_domains, NORTH, EAST
    use tracer_manager_mod, only: get_tracer_names, get_number_tracers, get_tracer_index
@@ -223,8 +223,6 @@ contains
     type(FmsNetcdfDomainFile_t) :: Fv_core
     integer :: tile_id(1)
     character(len=64)    :: fname
-    character(len=7)  :: gn
-    integer              ::  n=1
     integer              ::  jbeg, jend
     real ftop
     real, allocatable :: g_dat2(:,:,:)
@@ -244,16 +242,9 @@ contains
     jed = Atm%bd%jed
     ng  = Atm%bd%ng
 
-    if (Atm%grid_number > 1) then
-       !write(gn,'(A2, I1)') ".g", Atm%grid_number
-       write(gn,'(A5, I2.2)') ".nest", Atm%grid_number
-    else
-       gn = ''
-    end if
-
     tile_id = mpp_get_tile_id( fv_domain )
 
-    fname = 'INPUT/fv_core.res'//trim(gn)//'.nc'
+    fname = 'INPUT/fv_core.res.nc'
     call mpp_error(NOTE, 'external_ic: looking for '//fname)
 
 
@@ -328,9 +319,10 @@ contains
     integer :: ios, ierr, unit, id_res
     type(FmsNetcdfDomainFile_t) :: ORO_restart, SFC_restart, GFS_restart
     type(FmsNetcdfFile_t) :: Gfs_ctl
+    integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
     character(len=8), dimension(2) :: dim_names_2d
     character(len=8), dimension(3) :: dim_names_3d, dim_names_3d2, dim_names_3d3, dim_names_3d4
-    character(len=6)  :: gn, stile_name
+    character(len=6)  :: stile_name
     character(len=64) :: tracer_name
     character(len=64) :: fn_gfs_ctl = 'INPUT/gfs_ctrl.nc'
     character(len=64) :: fn_gfs_ics = 'INPUT/gfs_data.nc'
@@ -394,13 +386,16 @@ contains
     call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
     ntdiag = ntracers-ntprog
 
-    if( open_file(Gfs_ctl, fn_gfs_ctl, "read") ) then
+    allocate(pes(mpp_npes()))
+    call mpp_get_current_pelist(pes)
+    if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes) ) then
 !--- read in the number of tracers in the NCEP NGGPS ICs
       call read_data (Gfs_ctl, 'ntrac', ntrac)
       call close_file(Gfs_ctl)
     else
       call mpp_error(FATAL,'==> Error in External_ic::get_nggps_ic: file '//trim(fn_gfs_ctl)//' for NGGPS IC does not exist')
     endif
+    deallocate(pes)
     call mpp_error(NOTE,'==> External_ic::get_nggps_ic: using control file '//trim(fn_gfs_ctl)//' for NGGPS IC')
 
     if (ntrac > ntracers) call mpp_error(FATAL,'==> External_ic::get_nggps_ic: more NGGPS tracers &
@@ -738,13 +733,16 @@ contains
         allocate (ak(levp+1))
         allocate (bk(levp+1))
 
-        if( open_file(Gfs_ctl, fn_gfs_ctl, "read") ) then
+        allocate(pes(mpp_npes()))
+        call mpp_get_current_pelist(pes)
+        if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes) ) then
           call read_data(Gfs_ctl,'vcoord',wk2)
           ak(1:levp+1) = wk2(1:levp+1,1)
           bk(1:levp+1) = wk2(1:levp+1,2)
           deallocate (wk2)
           call close_file(Gfs_ctl)
         endif
+        deallocate(pes)
 
         allocate (zh(is:ie,js:je,levp+1))   ! SJL
         allocate (ps(is:ie,js:je))
@@ -847,7 +845,9 @@ contains
         !--- read in ak and bk from the gfs control file using fms_io read_data ---
         !
         ! put the lowest 64 levels into ak and bk
-        if( open_file(Gfs_ctl, fn_gfs_ctl, "read") ) then
+        allocate(pes(mpp_npes()))
+        call mpp_get_current_pelist(pes)
+        if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes) ) then
           call read_data(Gfs_ctl,'vcoord',wk2_tmp)
           ak(1:levp+1) = wk2_tmp(2:levsp,1)
           bk(1:levp+1) = wk2_tmp(2:levsp,2)
@@ -855,6 +855,7 @@ contains
           deallocate (wk2_tmp)
           call close_file(Gfs_ctl)
         endif
+        deallocate(pes)
 
         ! surface pressure (Pa)
 
@@ -963,9 +964,10 @@ contains
       integer :: ios, ierr, unit, id_res
       type (FmsNetcdfDomainFile_t) :: ORO_restart, SFC_restart, HRRR_restart
       type(FmsNetcdfFile_t) :: Hrr_ctl
+      integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
       character(len=8), dimension(2) :: dim_names_2d
       character(len=8), dimension(3) :: dim_names_3d, dim_names_3d2, dim_names_3d3, dim_names_3d4
-      character(len=6)  :: gn, stile_name
+      character(len=6)  :: stile_name
       character(len=64) :: tracer_name
       character(len=64) :: fn_hrr_ctl = 'INPUT/hrrr_ctrl.nc'
       character(len=64) :: fn_hrr_ics = 'INPUT/hrrr_data.nc'
@@ -1018,7 +1020,9 @@ contains
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
       ntdiag = ntracers-ntprog
 
-      if( open_file(Hrr_ctl, fn_hrr_ctl, "read") ) then
+      allocate(pes(mpp_npes()))
+      call mpp_get_current_pelist(pes)
+      if( open_file(Hrr_ctl, fn_hrr_ctl, "read", pelist=pes) ) then
 !--- read in the number of tracers in the HRRR ICs
         call read_data (Hrr_ctl, 'ntrac', ntrac)
         if (ntrac > ntracers) call mpp_error(FATAL,'==> External_ic::get_hrrr_ic: more HRRR tracers &
@@ -1036,6 +1040,7 @@ contains
       else
         call mpp_error(FATAL,'==> Error in External_ic::get_hrrr_ic: file '//trim(fn_hrr_ctl)//' for HRRR IC does not exist')
       endif
+      deallocate(pes)
       call mpp_error(NOTE,'==> External_ic::get_hrrr_ic: using control file '//trim(fn_hrr_ctl)//' for HRRR IC')
 
       allocate (zh(is:ie,js:je,levp+1))
@@ -1937,6 +1942,7 @@ contains
       integer :: levp_gfs = 64
       type(FmsNetcdfDomainFile_t) :: ORO_restart, GFS_restart
       type(FmsNetcdfFile_t) :: Gfs_ctl
+      integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
       character(len=64) :: fn_oro_ics = 'INPUT/oro_data.nc'
       character(len=64) :: fn_gfs_ics = 'INPUT/gfs_data.nc'
       character(len=64) :: fn_gfs_ctl = 'INPUT/gfs_ctrl.nc'
@@ -2048,10 +2054,13 @@ contains
       allocate (wk2(levp_gfs+1,2))
       allocate (ak_gfs(levp_gfs+1))
       allocate (bk_gfs(levp_gfs+1))
-      if( open_file(Gfs_ctl, fn_gfs_ctl, "read") ) then
+      allocate(pes(mpp_npes()))
+      call mpp_get_current_pelist(pes)
+      if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes) ) then
         call read_data(Gfs_ctl,'vcoord',wk2)
         call close_file(Gfs_ctl)
       endif
+      deallocate(pes)
       ak_gfs(1:levp_gfs+1) = wk2(1:levp_gfs+1,1)
       bk_gfs(1:levp_gfs+1) = wk2(1:levp_gfs+1,2)
       deallocate (wk2)
@@ -2514,6 +2523,7 @@ contains
       integer, intent(in):: nq
 
       type(FmsNetcdfFile_t) :: Latlon_dyn, Latlon_tra
+      integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
       character(len=128) :: fname, tracer_name
       real, allocatable:: ps0(:,:), gz0(:,:), u0(:,:,:), v0(:,:,:), t0(:,:,:), dp0(:,:,:), q0(:,:,:,:)
       real, allocatable:: ua(:,:,:), va(:,:,:)
@@ -2530,8 +2540,9 @@ contains
 
 ! Read in lat-lon FV core restart file
       fname = Atm%flagstruct%res_latlon_dynamics
-
-      if( file_exists(fname) .and. open_file(Latlon_dyn, fname, "read", is_restart=.true.) ) then
+      allocate(pes(mpp_npes()))
+      call mpp_get_current_pelist(pes)
+      if( open_file(Latlon_dyn, fname, "read", is_restart=.true., pelist=pes) ) then
           call get_variable_size(Latlon_dyn, 'T', tsize)
           if(is_master()) write(*,*) 'Using lat-lon FV restart:', fname
 
@@ -2585,8 +2596,7 @@ contains
 
 ! Read in tracers: only AM2 "physics tracers" at this point
       fname = Atm%flagstruct%res_latlon_tracers
-
-      if( file_exists(fname) .and. open_file(Latlon_tra, fname, "read", is_restart=.true.) ) then
+      if( open_file(Latlon_tra, fname, "read", is_restart=.true., pelist=pes) ) then
           if(is_master()) write(*,*) 'Using lat-lon tracer restart:', fname
 
           allocate ( q0(im,jm,km,Atm%ncnst) )
@@ -2604,6 +2614,7 @@ contains
       else
           call mpp_error(FATAL,'==> Error in get_external_ic: Expected file '//trim(fname)//' for tracers does not exist')
       endif
+      deallocate(pes)
 
 ! D to A transform on lat-lon grid:
       allocate (  ua(im,jm,km) )
@@ -4531,22 +4542,26 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
       integer              :: ncids,sourceLength
       logical :: lstatus,regional
       type(FmsNetcdfFile_t) :: Gfs_data
+      integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
 !
 ! Use the fms call here so we can actually get the return code value.
 !
+      allocate(pes(mpp_npes()))
+      call mpp_get_current_pelist(pes)
       if (regional) then
-       if (open_file(Gfs_data , 'INPUT/gfs_data.nc', "read")) then
+       if (open_file(Gfs_data , 'INPUT/gfs_data.nc', "read", pelist=pes)) then
          lstatus = global_att_exists(Gfs_data, "source")
          if(lstatus) call get_global_attribute(Gfs_data, "source", source)
          call close_file(Gfs_data)
        endif
       else
-       if (open_file(Gfs_data , 'INPUT/gfs_data.tile1.nc', "read")) then
+       if (open_file(Gfs_data , 'INPUT/gfs_data.tile1.nc', "read", pelist=pes)) then
          lstatus = global_att_exists(Gfs_data, "source")
          if(lstatus) call get_global_attribute(Gfs_data, "source", source)
          call close_file(Gfs_data)
        endif
       endif
+      deallocate(pes)
       if (.not. lstatus) then
          if (mpp_pe() == 0) write(0,*) 'INPUT source not found ',lstatus,' set source=No Source Attribute'
          source='No Source Attribute'

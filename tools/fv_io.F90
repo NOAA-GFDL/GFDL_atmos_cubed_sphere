@@ -342,16 +342,21 @@ contains
     character(len=120) :: fname
     character(len=20) :: suffix
     character(len=1) :: tile_num
+    integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
+
+    allocate(pes(mpp_npes()))
+    call mpp_get_current_pelist(pes)
 
     suffix = ''
     fname = 'INPUT/fv_core.res.nc'
-    Atm(1)%Fv_restart_is_open = open_file(Atm(1)%Fv_restart,fname,"read", is_restart=.true.)
+    Atm(1)%Fv_restart_is_open = open_file(Atm(1)%Fv_restart,fname,"read", is_restart=.true., pelist=pes)
     if (Atm(1)%Fv_restart_is_open) then
       call fv_io_register_restart(Atm(1))
       call read_restart(Atm(1)%Fv_restart)
       call close_file(Atm(1)%Fv_restart)
       Atm(1)%Fv_restart_is_open = .false.
     endif
+    deallocate(pes)
 
     if (Atm(1)%flagstruct%external_eta) then
        call set_external_eta(Atm(1)%ak, Atm(1)%bk, Atm(1)%ptop, Atm(1)%ks)
@@ -498,6 +503,7 @@ contains
 
     type(FmsNetcdfDomainFile_t) :: FV_tile_restart_r, Tra_restart_r
     type(FmsNetcdfFile_t)       :: Fv_restart_r
+    integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
 
 !
 !-------------------------------------------------------------------------
@@ -546,11 +552,14 @@ contains
     endif
 
     fname = 'INPUT/fv_core.res.nc'
-    if (open_file(Fv_restart_r,fname,"read", is_restart=.true.)) then
+    allocate(pes(mpp_npes()))
+    call mpp_get_current_pelist(pes)
+    if (open_file(Fv_restart_r,fname,"read", is_restart=.true., pelist=pes)) then
        call read_data(Fv_restart_r, 'ak', ak_r(:))
        call read_data(Fv_restart_r, 'bk', bk_r(:))
        call close_file(Fv_restart_r)
     endif
+    deallocate(pes)
 
 ! fix for single tile runs where you need fv_core.res.nc and fv_core.res.tile1.nc
     ntiles = mpp_get_ntile_count(fv_domain)
@@ -718,6 +727,7 @@ contains
     character(len=120) :: fname
     character(len=20) :: suffix
     character(len=1) :: tile_num
+    integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
     fv_domain = Atm%domain
 
 !!$    if ( use_ncep_sst .or. Atm%flagstruct%nudge .or. Atm%flagstruct%ncep_ic ) then
@@ -735,13 +745,16 @@ contains
     else
       fname = 'RESTART/fv_core.res'//trim(suffix)//'.nc'
     endif
-    Atm%Fv_restart_is_open = open_file(Atm%Fv_restart, fname, "overwrite", is_restart=.true.)
+    allocate(pes(mpp_npes()))
+    call mpp_get_current_pelist(pes)
+    Atm%Fv_restart_is_open = open_file(Atm%Fv_restart, fname, "overwrite", is_restart=.true., pelist=pes)
     if (Atm%Fv_restart_is_open) then
        call fv_io_register_restart(Atm)
        call write_restart(Atm%Fv_restart)
        call close_file(Atm%Fv_restart)
        Atm%Fv_restart_is_open = .false.
     endif
+    deallocate(pes)
 
     ntiles = mpp_get_ntile_count(fv_domain)
     !If the number of tiles is equal to 1, and it is not a nested case add the ".tile1" suffix to the filename

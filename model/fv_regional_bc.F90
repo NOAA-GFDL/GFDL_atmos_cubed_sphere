@@ -1188,6 +1188,7 @@ contains
 !---------------------
 !
       type(FmsNetcdfFile_t) :: Grid_input
+      integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
       integer :: ierr, ios
       real, allocatable :: wk2(:,:)
 !
@@ -1224,10 +1225,13 @@ contains
      allocate (wk2(levp+1,2))
      allocate (ak_in(levp+1))                                               !<-- Save the input vertical structure for
      allocate (bk_in(levp+1))                                               !    remapping BC updates during the forecast.
-     if (open_file(Grid_input, 'INPUT/gfs_ctrl.nc', "read")) then
+     allocate(pes(mpp_npes()))
+     call mpp_get_current_pelist(pes)
+     if (open_file(Grid_input, 'INPUT/gfs_ctrl.nc', "read", pelist=pes)) then
        call read_data(Grid_input,'vcoord',wk2)
        call close_file(Grid_input)
      endif
+     deallocate(pes)
      ak_in(1:levp+1) = wk2(1:levp+1,1)
      ak_in(1) = 1.e-9
      bk_in(1:levp+1) = wk2(1:levp+1,2)
@@ -6079,6 +6083,7 @@ subroutine remap_scalar_regional_bc_nh(Atm                            &
         call register_variable_attribute(fileobj, "grid_xt", "units", "km", str_len=len("km"))
         call register_variable_attribute(fileobj, "grid_xt", "long_name", "X distance", str_len=len("X distance"))
         call register_variable_attribute(fileobj, "grid_xt", "cartesian", "X", str_len=1)
+        call write_data(fileobj, "grid_xt", (/(i*1.0,i=1,nxg)/))
 
         call register_axis(fileobj, "grid_yt", nyg)
         call register_field(fileobj, "grid_yt", "double", (/"grid_yt"/))
@@ -6086,12 +6091,14 @@ subroutine remap_scalar_regional_bc_nh(Atm                            &
         call register_variable_attribute(fileobj, "grid_yt", "units", "km", str_len=len("km"))
         call register_variable_attribute(fileobj, "grid_yt", "long_name", "Y distance", str_len=len("Y distance"))
         call register_variable_attribute(fileobj, "grid_yt", "cartesian", "Y", str_len=1)
+        call write_data(fileobj, "grid_yt", (/(j*1.0,j=1,nyg)/))
 
         call register_axis(fileobj, "lev", nz)
         call register_field(fileobj, "lev", "double", (/"lev"/))
         call register_variable_attribute(fileobj, "lev", "axis", "Z", str_len=1)
         call register_variable_attribute(fileobj, "lev", "units", "km", str_len=len("km"))
         call register_variable_attribute(fileobj, "lev", "long_name", "Z distance", str_len=len("Z distance"))
+        call write_data(fileobj, "lev", (/(i*1.0,i=1,nz)/))
 
         call register_global_attribute(fileobj, "stretch_factor", stretch_factor )
         call register_global_attribute(fileobj, "target_lon", target_lon )
@@ -6194,6 +6201,7 @@ subroutine remap_scalar_regional_bc_nh(Atm                            &
         call register_variable_attribute(fileobj, "grid_xt", "units", "km", str_len=len("km"))
         call register_variable_attribute(fileobj, "grid_xt", "long_name", "X distance", str_len=len("X distance"))
         call register_variable_attribute(fileobj, "grid_xt", "cartesian", "X", str_len=1)
+        call write_data(fileobj, "grid_xt", (/(i*1.0,i=1,nxg)/))
 
         call register_axis(fileobj, "grid_yt", nyg)
         call register_field(fileobj, "grid_yt", "double", (/"grid_yt"/))
@@ -6201,6 +6209,7 @@ subroutine remap_scalar_regional_bc_nh(Atm                            &
         call register_variable_attribute(fileobj, "grid_yt", "units", "km", str_len=len("km"))
         call register_variable_attribute(fileobj, "grid_yt", "long_name", "Y distance", str_len=len("Y distance"))
         call register_variable_attribute(fileobj, "grid_yt", "cartesian", "Y", str_len=1)
+        call write_data(fileobj, "grid_yt", (/(j*1.0,j=1,nyg)/))
 
         call register_global_attribute(fileobj, "stretch_factor", stretch_factor )
         call register_global_attribute(fileobj, "target_lon", target_lon )

@@ -59,7 +59,7 @@ module fv_restart_mod
   use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST,  mpp_get_C2F_index, WEST, SOUTH
   use mpp_domains_mod,     only: mpp_global_field
   use fv_treat_da_inc_mod, only: read_da_inc
-  use fms2_io_mod,         only: file_exists, set_filename_appendix
+  use fms2_io_mod,         only: file_exists, set_filename_appendix, FmsNetcdfFile_t, open_file, close_file
   use fms_io_mod,          only: fmsset_filename_appendix=> set_filename_appendix
   use coarse_grained_restart_files_mod, only: fv_io_write_restart_coarse
 
@@ -126,6 +126,7 @@ contains
     real    :: sumpertn
     real    :: zvir
 
+    type(FmsNetcdfFile_t) :: fileobj
     logical :: do_read_restart = .false.
     logical :: do_read_restart_bc = .false.
     integer, allocatable :: ideal_test_case(:), new_nest_topo(:)
@@ -178,7 +179,8 @@ contains
           Atm(N)%neststruct%first_step = .not. do_read_restart_bc
        else
           fname='INPUT/fv_core.res.nc'
-          do_read_restart = file_exists('INPUT/fv_core.res.nc') .or. file_exists('INPUT/fv_core.res.tile1.nc')
+          do_read_restart = open_file(fileobj, fname, "read", is_restart=.true.)
+          if (do_read_restart) call close_file(fileobj)
           if (is_master()) print*, 'FV_RESTART: ', n, do_read_restart, do_read_restart_bc
        endif
 

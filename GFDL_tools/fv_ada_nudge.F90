@@ -64,6 +64,7 @@ module fv_ada_nudge_mod
  use fms2_io_mod,       only : register_restart_field, open_file, close_file, &
                                read_restart, register_axis, register_field, &
                                register_variable_attribute, file_exists
+ use fv_io_mod,         only : fv_io_register_axis
  use axis_utils_mod, only : frac_index
 
 #ifdef ENABLE_ADA
@@ -236,6 +237,7 @@ module fv_ada_nudge_mod
 
   type(FmsNetcdfFile_t) :: ada_driver_restart ! snz
   character(len=*), parameter :: restart_file="INPUT/ada_driver.res.nc" ! snz
+  character(len=8), dimension(4) :: dim_names_4d
 
 #ifdef ENABLE_ADA ! snz
   type(model_data_type) :: Atm_var
@@ -1781,21 +1783,27 @@ endif
 
 ! snz add the following lines for recording the return values from the previous assim run
 
+! set dimensions for register restart
+    dim_names_4d(1) = "xaxis_1"
+    dim_names_4d(2) = "yaxis_1"
+    dim_names_4d(3) = "zaxis_1"
+    dim_names_4d(4) = "Time"
+
     if (open_file(ada_driver_restart, restart_file, "read", domain, is_restart=.true.)
-      call register_axis(ada_driver_restart, "xaxis_1", size(Atm_var%u_adj,1)
-      call register_axis(ada_driver_restart, "yaxis_1", size(Atm_var%u_adj,2)
+      call register_axis(ada_driver_restart, "xaxis_1", "X")
+      call register_axis(ada_driver_restart, "yaxis_1", "Y")
       call register_axis(ada_driver_restart, "zaxis_1", size(Atm_var%u_adj,3)
       call register_axis(ada_driver_restart, "Time", unlimited)
       call register_restart_field(ada_driver_restart, &
-           & "u_adj", Atm_var%u_adj(:,:,:), (/"xaxis_1", "yaxis_1", "zaxis_1", "Time"/))
+           & "u_adj", Atm_var%u_adj(:,:,:), dim_names_4d)
       call register_restart_field(ada_driver_restart, &
-           & "v_adj", Atm_var%v_adj(:,:,:), (/"xaxis_1", "yaxis_1", "zaxis_1", "Time"/))
+           & "v_adj", Atm_var%v_adj(:,:,:), dim_names_4d)
       call register_restart_field(ada_driver_restart, &
-           & "t_adj", Atm_var%t_adj(:,:,:), (/"xaxis_1", "yaxis_1", "zaxis_1", "Time"/))
+           & "t_adj", Atm_var%t_adj(:,:,:), dim_names_4d)
       call register_restart_field(ada_driver_restart, &
-           & "q_adj", Atm_var%q_adj(:,:,:), (/"xaxis_1", "yaxis_1", "zaxis_1", "Time"/))
+           & "q_adj", Atm_var%q_adj(:,:,:), dim_names_4d)
       call register_restart_field(ada_driver_restart, &
-           & "ps_adj", Atm_var%ps_adj(:,:), (/"xaxis_1", "yaxis_1", "zaxis_1", "Time"/))
+           & "ps_adj", Atm_var%ps_adj(:,:), dim_names_4d)
 
       if ( mpp_pe() .eq. mpp_root_pe() ) then
           write (stdout_unit,*) 'Reading ada restart information from ', 'INPUT/'//trim(restart_file)
@@ -2507,30 +2515,17 @@ endif
 #ifdef ENABLE_ADA ! snz
 
     if (open_file(ada_driver_restart, restart_file, "overwrite", domain, is_restart=.true.) then
-       call register_axis(ada_driver_restart, "xaxis_1", size(Atm_var%u_adj,1)
-       call register_field(ada_driver_restart, "xaxis_1", "double", (/"xaxis_1"/))
-       call register_variable_attribute(ada_driver_restart,"xaxis_1", "axis", "X", str_len=1)
-       call register_axis(ada_driver_restart, "yaxis_1", size(Atm_var%u_adj,2)
-       call register_field(ada_driver_restart, "yaxis_1", "double", (/"yaxis_1"/))
-       call register_variable_attribute(ada_driver_restart,"yaxis_1", "axis", "Y", str_len=1)
-       call register_axis(ada_driver_restart, "zaxis_1", size(Atm_var%u_adj,3)
-       call register_field(ada_driver_restart, "zaxis_1", "double", (/"zaxis_1"/))
-       call register_variable_attribute(ada_driver_restart,"zaxis_1", "axis", "Z", str_len=1)
-       call register_axis(ada_driver_restart, "Time", unlimited)
-       call register_field(ada_driver_restart, "Time", "double", (/"Time"/))
-       call register_variable_attribute(ada_driver_restart, "Time", "cartesian_axis", "T",
-       call register_variable_attribute(ada_driver_restart, "Time", "units", "time level", str_len=len("time level")
-       call register_variable_attribute(ada_driver_restart, "Time", "long_name", "Time", str_len=len("Time")
+       call fv_io_register_axis(ada_driver_restart, numx=1, numy=1, numz=1, zsize=(/size(Atm_var%u_adj,3)/))
        call register_restart_field(ada_driver_restart, &
-            & "u_adj", Atm_var%u_adj(:,:,:), (/"xaxis_1", "yaxis_1", "zaxis_1", "Time"/))
+            & "u_adj", Atm_var%u_adj(:,:,:), dim_names_4d)
        call register_restart_field(ada_driver_restart, &
-            & "v_adj", Atm_var%v_adj(:,:,:), (/"xaxis_1", "yaxis_1", "zaxis_1", "Time"/))
+            & "v_adj", Atm_var%v_adj(:,:,:), dim_names_4d)
        call register_restart_field(ada_driver_restart, &
-            & "t_adj", Atm_var%t_adj(:,:,:), (/"xaxis_1", "yaxis_1", "zaxis_1", "Time"/))
+            & "t_adj", Atm_var%t_adj(:,:,:), dim_names_4d)
        call register_restart_field(ada_driver_restart, &
-            & "q_adj", Atm_var%q_adj(:,:,:), (/"xaxis_1", "yaxis_1", "zaxis_1", "Time"/))
+            & "q_adj", Atm_var%q_adj(:,:,:), dim_names_4d)
        call register_restart_field(ada_driver_restart, &
-            & "ps_adj", Atm_var%ps_adj(:,:), (/"xaxis_1", "yaxis_1", "zaxis_1", "Time"/))
+            & "ps_adj", Atm_var%ps_adj(:,:), dim_names_4d)
        call write_restart(ada_driver_restart)
        call close_file(ada_driver_restart)
     endif
