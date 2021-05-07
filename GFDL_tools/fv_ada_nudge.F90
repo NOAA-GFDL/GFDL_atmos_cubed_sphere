@@ -62,7 +62,7 @@ module fv_ada_nudge_mod
  use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, fv_nest_type, R_GRID
 
  use fms2_io_mod,       only : register_restart_field, open_file, close_file, &
-                               read_restart, register_axis, register_field, &
+                               read_restart, register_field, &
                                register_variable_attribute, file_exists
  use fv_io_mod,         only : fv_io_register_axis
  use axis_utils_mod, only : frac_index
@@ -1789,11 +1789,8 @@ endif
     dim_names_4d(3) = "zaxis_1"
     dim_names_4d(4) = "Time"
 
-    if (open_file(ada_driver_restart, restart_file, "read", domain, is_restart=.true.)
-      call register_axis(ada_driver_restart, "xaxis_1", "X")
-      call register_axis(ada_driver_restart, "yaxis_1", "Y")
-      call register_axis(ada_driver_restart, "zaxis_1", size(Atm_var%u_adj,3)
-      call register_axis(ada_driver_restart, "Time", unlimited)
+    if (open_file(ada_driver_restart, restart_file, "read", domain, is_restart=.true.))
+      call fv_io_register_axis(ada_driver_restart, numx=1, numy=1, numz=1, zsize=(/size(Atm_var%u_adj,3)/))
       call register_restart_field(ada_driver_restart, &
            & "u_adj", Atm_var%u_adj(:,:,:), dim_names_4d)
       call register_restart_field(ada_driver_restart, &
@@ -2514,7 +2511,7 @@ endif
 
 #ifdef ENABLE_ADA ! snz
 
-    if (open_file(ada_driver_restart, restart_file, "overwrite", domain, is_restart=.true.) then
+    if (open_file(ada_driver_restart, restart_file, "overwrite", domain, is_restart=.true.)) then
        call fv_io_register_axis(ada_driver_restart, numx=1, numy=1, numz=1, zsize=(/size(Atm_var%u_adj,3)/))
        call register_restart_field(ada_driver_restart, &
             & "u_adj", Atm_var%u_adj(:,:,:), dim_names_4d)

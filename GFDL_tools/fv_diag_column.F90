@@ -78,20 +78,7 @@ contains
     diag_sonde_j(:) = -999
     diag_sonde_tile(:) = -99
 
-#ifdef INTERNAL_FILE_NML
     read(input_nml_file, nml=fv_diag_column_nml,iostat=ios)
-#else
-    inquire (file=trim(Atm%nml_filename), exist=exists)
-    if (.not. exists) then
-      write(errmsg,*) 'fv_diag_column_nml: namelist file ',trim(Atm%nml_filename),' does not exist'
-      call mpp_error(FATAL, errmsg)
-    else
-      open (unit=nlunit, file=Atm%nml_filename, READONLY, status='OLD', iostat=ios)
-    endif
-    rewind(nlunit)
-    read (nlunit, nml=fv_diag_column_nml, iostat=ios)
-    close (nlunit)
-#endif
 
     if (do_diag_debug .or. do_diag_sonde) then
        call read_column_table
@@ -393,6 +380,7 @@ contains
 
        write(unit, *) '==================================================================='
        write(unit, *)
+       flush(unit)
  
     enddo
 
