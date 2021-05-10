@@ -1241,6 +1241,8 @@ contains
 ! and surface pressure
 !--------------------------------------------------------------
    !--- interface variables ---
+   !--- p_bot: lowest layer-mean hydrostatic pressure
+   !--- z_bot: height depth of the lowest level above the surfae
    real, intent(out), dimension(isc:iec,jsc:jec):: t_bot, p_bot, z_bot, p_surf
    real, intent(out), optional, dimension(isc:iec,jsc:jec):: slp
    real, intent(out), dimension(isc:iec,jsc:jec,nq):: tr_bot
@@ -1256,8 +1258,10 @@ contains
       do i=isc,iec
          p_surf(i,j) = Atm(mygrid)%ps(i,j)
          t_bot(i,j) = Atm(mygrid)%pt(i,j,npz)
-         p_bot(i,j) = Atm(mygrid)%delp(i,j,npz)/(Atm(mygrid)%peln(i,npz+1,j)-Atm(mygrid)%peln(i,npz,j))
-         z_bot(i,j) = rrg*t_bot(i,j)*(1. - Atm(mygrid)%pe(i,npz,j)/p_bot(i,j))
+         p_bot(i,j) = (Atm(mygrid)%pe(i,npz+1,j)-Atm(mygrid)%pe(i,npz,j))/   &
+                       (log(Atm(mygrid)%pe(i,npz+1,j)/Atm(mygrid)%pe(i,npz,j)))
+         z_bot(i,j) = rrg*t_bot(i,j)*(Atm(mygrid)%pe(i,npz+1,j)/p_bot(i,j)-1.)
+
 #ifdef MULTI_GASES
          z_bot(i,j) = z_bot(i,j)*virq(Atm(mygrid)%q(i,j,npz,:))
 #else
@@ -1360,6 +1364,9 @@ contains
      first_time = .false.
    endif
 
+   !--- p_bot: lowest layer-mean hydrostatic pressure
+   !--- z_bot: height depth of the lowest level above the surfae
+
 !$OMP parallel do default (none) &
 !$OMP              shared (Atm_block, DYCORE_Data, Atm, mygrid, npz, kr, rrg, zvir, nq) &
 !$OMP             private (nb, ix, i, j, tref, nt)
@@ -1371,12 +1378,13 @@ contains
        DYCORE_Data(nb)%Coupling%p_srf(ix) = Atm(mygrid)%ps(i,j)
        !--- bottom layer temperature, pressure, & winds
        DYCORE_Data(nb)%Coupling%t_bot(ix) = Atm(mygrid)%pt(i,j,npz)
-       DYCORE_Data(nb)%Coupling%p_bot(ix) = Atm(mygrid)%delp(i,j,npz)/(Atm(mygrid)%peln(i,npz+1,j)-Atm(mygrid)%peln(i,npz,j))
+       DYCORE_Data(nb)%Coupling%p_bot(ix) = (Atm(mygrid)%pe(i,npz+1,j)-Atm(mygrid)%pe(i,npz,j))/  &
+                                        (log(Atm(mygrid)%pe(i,npz+1,j)/Atm(mygrid)%pe(i,npz,j)))
        DYCORE_Data(nb)%Coupling%u_bot(ix) = Atm(mygrid)%u_srf(i,j)
        DYCORE_Data(nb)%Coupling%v_bot(ix) = Atm(mygrid)%v_srf(i,j)
        !--- bottom layer height based on hydrostatic assumptions
        DYCORE_Data(nb)%Coupling%z_bot(ix) = rrg*DYCORE_Data(nb)%Coupling%t_bot(ix) * &
-                                        (1. - Atm(mygrid)%pe(i,npz,j)/DYCORE_Data(nb)%Coupling%p_bot(ix))
+                                        (Atm(mygrid)%pe(i,npz+1,j)/DYCORE_Data(nb)%Coupling%p_bot(ix) - 1.)
 #ifdef MULTI_GASES
        DYCORE_Data(nb)%Coupling%z_bot(ix) = DYCORE_Data(nb)%Coupling%z_bot(ix)*virq(Atm(mygrid)%q(i,j,npz,:))
 #else
