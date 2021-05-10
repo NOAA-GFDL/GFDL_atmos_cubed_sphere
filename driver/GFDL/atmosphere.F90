@@ -34,14 +34,14 @@ use atmos_co2_mod,         only: atmos_co2_rad, co2_radiation_override
 use block_control_mod,     only: block_control_type
 use constants_mod,         only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
 use time_manager_mod,      only: time_type, get_time, set_time, operator(+)
-use fms_mod,               only: file_exist, open_namelist_file,    &
-                                 close_file, error_mesg, FATAL,     &
+use fms_mod,               only: error_mesg, FATAL,                 &
                                  check_nml_error, stdlog,           &
                                  write_version_number,              &
-                                 mpp_pe, mpp_root_pe, set_domain,   &
+                                 mpp_pe, mpp_root_pe,               &
                                  mpp_clock_id, mpp_clock_begin,     &
                                  mpp_clock_end, CLOCK_SUBCOMPONENT, &
-                                 clock_flag_default, nullify_domain
+                                 clock_flag_default
+use fms2_io_mod,           only: file_exists
 use mpp_mod,               only: mpp_error, FATAL, NOTE, input_nml_file, &
                                  mpp_npes, mpp_get_current_pelist, &
                                  mpp_set_current_pelist, stdout, &
@@ -210,7 +210,7 @@ contains
 
 !----- initialize FV dynamical core -----
    !NOTE do we still need the second file_exist call?
-   cold_start = (.not.file_exist('INPUT/fv_core.res.nc') .and. .not.file_exist('INPUT/fv_core.res.tile1.nc'))
+   cold_start = (.not.file_exists('INPUT/fv_core.res.nc') .and. .not.file_exists('INPUT/fv_core.res.tile1.nc'))
 
    call fv_control_init( Atm, dt_atmos, mygrid, grids_on_this_pe, p_split )  ! allocates Atm components; sets mygrid
 
@@ -264,7 +264,6 @@ contains
    ! Allocate grid variables to be used to calculate gradient in 2nd order flux exchange
    ! This data is only needed for the COARSEST grid.
    !call switch_current_Atm(Atm(mygrid))
-   call set_domain(Atm(mygrid)%domain)
 
    allocate(Grid_box%dx    (   isc:iec  , jsc:jec+1))
    allocate(Grid_box%dy    (   isc:iec+1, jsc:jec  ))
@@ -318,12 +317,11 @@ contains
            Atm(mygrid)%atmos_axes(4), Atm(mygrid)%coarse_graining)
    endif
    if (Atm(mygrid)%coarse_graining%write_coarse_restart_files) then
-      call fv_coarse_restart_init(mygrid, Atm(mygrid)%npz, Atm(mygrid)%flagstruct%nt_prog, &
+      call fv_coarse_restart_init(Atm(mygrid)%npz, Atm(mygrid)%flagstruct%nt_prog, &
            Atm(mygrid)%flagstruct%nt_phys, Atm(mygrid)%flagstruct%hydrostatic, &
            Atm(mygrid)%flagstruct%hybrid_z, Atm(mygrid)%flagstruct%fv_land, &
            Atm(mygrid)%coarse_graining%write_coarse_dgrid_vel_rst, &
            Atm(mygrid)%coarse_graining%write_coarse_agrid_vel_rst, &
-           Atm(mygrid)%coarse_graining%domain, &
            Atm(mygrid)%coarse_graining%restart)
    endif
 
@@ -438,8 +436,6 @@ contains
    id_fv_diag   = mpp_clock_id ('FV Diag',     flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
                     call timing_off('ATMOS_INIT')
-
-   call set_domain(Atm(mygrid)%domain)
 
  end subroutine atmosphere_init
 
@@ -599,10 +595,6 @@ contains
 !rab   type (radiation_type), intent(inout) :: Radiation
 !rab   type (physics_type),   intent(inout) :: Physics
 
-  ! initialize domains for writing global physics data
-   call set_domain ( Atm(mygrid)%domain )
-
-
 !--- end nudging module ---
 #if defined (ATMOS_NUDGE)
    if ( Atm(mygrid)%flagstruct%nudge ) call atmos_nudge_end
@@ -620,7 +612,6 @@ contains
 
    call atmos_global_diag_end
    call fv_cmip_diag_end
-   call nullify_domain ( )
    call fv_end(Atm, mygrid)
    deallocate (Atm)
 
@@ -916,8 +907,6 @@ contains
 
    n = mygrid
 
-   call set_domain ( Atm(mygrid)%domain )
-
 !--- put u/v tendencies into haloed arrays u_dt and v_dt
 !$OMP parallel do default(shared) private(nb, ibs, ibe, jbs, jbe)
    do nb = 1,Atm_block%nblks
@@ -999,7 +988,6 @@ contains
    endif
 #endif
 
-   call nullify_domain()
   !---- diagnostics for FV dynamics -----
    if (Atm(mygrid)%flagstruct%print_freq /= -99) then
      call mpp_clock_begin(id_fv_diag)
