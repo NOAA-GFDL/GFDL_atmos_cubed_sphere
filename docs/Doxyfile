@@ -1,6 +1,7 @@
 DOXYFILE_ENCODING      = UTF-8
 PROJECT_NAME           = "FV3DYCORE"
-PROJECT_LOGO           = image/UFSLogo.png
+PROJECT_LOGO	       = image/UFSLogo.png
+PROJECT_NUMBER         = "Version 2.0.0"
 CREATE_SUBDIRS         = NO
 OUTPUT_LANGUAGE        = English
 BRIEF_MEMBER_DESC      = YES
@@ -72,6 +73,68 @@ WARN_IF_DOC_ERROR      = YES
 WARN_NO_PARAMDOC       = NO
 WARN_FORMAT            = "$file:$line: $text"
 WARN_LOGFILE           =
+<<<<<<< HEAD
+INPUT = 			./documentation.dox \
+				./Preface.md \
+                                ./Foreword.md \
+                                ./Chapter1.md \
+                                ./Chapter2.md \
+                                ./Chapter3.md \
+                                ./Chapter4.md \
+                                ./Chapter5.md \
+                                ./Chapter6.md \
+                                ./Chapter7.md \
+                                ./Chapter8.md \
+                                ./Chapter9.md \
+                                ./appendixA.md \
+                                ./appendixB.md \
+                                ./appendixB1.md \
+				./appendixB2.md \
+                                ./AdvectionOperators.md \
+                                ./OverviewFV3Dycore.md \
+                                ./Links.md \
+			../model/gwdps.f \
+			../model/a2b_edge.F90 \
+			../model/boundary.F90 \
+			../model/dyn_core.F90 \
+			../model/fv_arrays.F90 \
+			../model/fv_cmp.F90 \
+			../model/fv_control.F90 \
+			../model/fv_dynamics.F90 \
+			../model/fv_fill.F90 \
+			../model/fv_grid_utils.F90 \
+			../model/fv_mapz.F90 \
+			../model/fv_nesting.F90 \
+			../model/fv_regional_bc.F90 \
+			../model/fv_sg.F90 \
+			../model/fv_tracer2d.F90 \
+			../model/fv_update_phys.F90 \
+			../model/multi_gases.F90 \
+			../model/nh_core.F90 \
+			../model/nh_utils.F90 \
+			../model/sw_core.F90 \
+			../model/tp_core.F90 \
+			../tools/external_ic.F90 \
+			../tools/external_sst.F90 \
+			../tools/fv_diagnostics.F90 \
+			../tools/fv_eta.F90 \
+			../tools/fv_grid_tools.F90 \
+			../tools/fv_iau_mod.F90 \
+			../tools/fv_io.F90 \
+			../tools/fv_mp_mod.F90 \
+			../tools/fv_nudge.F90 \
+			../tools/fv_restart.F90 \
+			../tools/fv_surf_map.F90 \
+			../tools/fv_timing.F90 \
+			../tools/fv_treat_da_inc.F90 \
+			../tools/init_hydro.F90 \
+			../tools/sim_nc_mod.F90 \
+			../tools/sorted_index.F90 \
+			../tools/test_cases.F90 \			
+			../driver/fvGFS/atmosphere.F90 \
+			../driver/fvGFS/DYCORE_typedefs.F90 \
+			../driver/fvGFS/fv_nggps_diag.F90 
+=======
 INPUT =                 ./documentation.dox \
                         ./Preface.md \
                         ./Chapter1.md \
@@ -128,6 +191,7 @@ INPUT =                 ./documentation.dox \
                         ../driver/fvGFS/atmosphere.F90 \
                         ../driver/fvGFS/DYCORE_typedefs.F90 \
                         ../driver/fvGFS/fv_nggps_diag.F90
+>>>>>>> 6944f421bba37887394ef9552d8b88869f82dd49
 INPUT_ENCODING         = UTF-8
 FILE_PATTERNS          =
 RECURSIVE              = YES

@@ -248,7 +248,7 @@ module fv_regional_mod
 
       integer :: a_step, p_step, k_step, n_step
 !
-      integer :: data_source_group
+      logical :: data_source_fv3gfs
 contains
 
 !-----------------------------------------------------------------------
@@ -1254,7 +1254,7 @@ contains
 !***  Get the source of the input data
 !-----------------------------------------------------------------------
 !
-      call get_data_source(data_source_group,Atm%flagstruct%regional)
+      call get_data_source(data_source_fv3gfs,Atm%flagstruct%regional)
 !
       call setup_regional_BC(Atm, dt_atmos                              &
                             ,isd, ied, jsd, jed                         &
@@ -1367,7 +1367,7 @@ contains
 !***  Get the source of the input data.
 !-----------------------------------------------------------------------
 !
-      call get_data_source(data_source_group,Atm%flagstruct%regional)
+      call get_data_source(data_source_fv3gfs,Atm%flagstruct%regional)
 !
 !-----------------------------------------------------------------------
 !***  Preliminary setup for the forecast.
@@ -1723,7 +1723,7 @@ contains
 !***  Sensible temperature
 !--------------------------
 !
-      if ( data_source_group==1 ) then  ! GFS NEMSIO/NETCDF/GRIB2
+      if ( data_source_fv3gfs ) then
         nlev=klev_in
         var_name_root='t'
         call read_regional_bc_file(is_input,ie_input,js_input,je_input  &
@@ -3676,7 +3676,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
 ! Compute true temperature using hydrostatic balance if not read from input.
 
-        if ( data_source_group/=1 ) then ! NOT GFS NEMSIO/NETCDF/GRIB2
+        if ( .not. data_source_fv3gfs ) then
           do k=1,npz
             BC_side%pt_BC(i,j,k) = (gz_fv(k)-gz_fv(k+1))/( rdgas*(pn1(i,k+1)-pn1(i,k))*(1.+zvir*BC_side%q_BC(i,j,k,sphum)) )
           enddo
@@ -3702,7 +3702,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 ! and may not provide a very good result
 !
   if (cld_amt .gt. 0) BC_side%q_BC(:,:,:,cld_amt) = 0.
-  if ( data_source_group/=1 ) then  ! NOT GFS NEMSIO/NETCDF/GRIB2
+  if ( .not. data_source_fv3gfs ) then
    if ( Atm%flagstruct%nwat .eq. 6 ) then
       do k=1,npz
          do i=is,ie
@@ -3762,7 +3762,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
       call mappm(km, pe0, qp, npz, pe1, qn1, is,ie, -1, 4, Atm%ptop)
 
-      if ( data_source_group==1 ) then
+      if ( data_source_fv3gfs ) then
         do k=1,npz
           do i=is,ie
             BC_side%w_BC(i,j,k) = qn1(i,k)
@@ -6632,13 +6632,15 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !---------------------------------------------------------------------
 
-  subroutine get_data_source(data_source_group,regional)
+  subroutine get_data_source(data_source_fv3gfs,regional)
 !
 ! This routine extracts the data source information if it is present in the datafile.
 !
-      character (len = 80) :: source      
-      integer :: data_source_group
-      logical :: lstatus,regional
+      logical, intent(in):: regional
+      logical, intent(out):: data_source_fv3gfs
+
+      character (len=80) :: source      
+      logical :: lstatus
 !
 ! Use the fms call here so we can actually get the return code value.
 ! The term 'source' is specified by 'chgres_cube'
@@ -6648,24 +6650,21 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       else
        lstatus = get_global_att_value('INPUT/gfs_data.tile1.nc',"source", source)
       endif
-      if (mpp_pe()==0) write(*,*) 'INPUT gfs_data source=',source
       if (.not. lstatus) then
        if (mpp_pe() == 0) write(0,*) 'INPUT source not found ',lstatus,' set source=No Source Attribute'
        source='No Source Attribute'
       endif
+      if (mpp_pe()==0) write(*,*) 'INPUT gfs_data source string=',source
 
-! data source groups --------
-! 1: FV3GFS NEMSIO, NETCDF, GRIB2
-! 0: others
-
+! Logical flag for fv3gfs nemsio/netcdf/grib2 --------
       if ( trim(source)=='FV3GFS GAUSSIAN NEMSIO FILE' .or.        &
            trim(source)=='FV3GFS GAUSSIAN NETCDF FILE' .or.        &
            trim(source)=='FV3GFS GRIB2 FILE'                ) then
-         data_source_group = 1
+         data_source_fv3gfs = .TRUE.
       else
-         data_source_group = 0
+         data_source_fv3gfs = .FALSE.
       endif
-      if (mpp_pe()==0) write(*,*) 'IC data source group=',data_source_group
+      if (mpp_pe()==0) write(*,*) 'data_source_fv3gfs=',data_source_fv3gfs
 
   end subroutine get_data_source
 
@@ -6699,7 +6698,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
    graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
    cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
 !
-   source: if ( data_source_group==1 ) then  ! GFS NEMSIO/NETCDF/GRIB2
+   source: if ( data_source_fv3gfs ) then
 !
 !    if (cld_amt > 0) BC_side%q_BC(:,:,:,cld_amt) = 0.0    ! Moorthi
      do k=1,npz
