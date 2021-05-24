@@ -10,6 +10,7 @@ module fv_diag_column_mod
                                 mpp_max, NOTE, input_nml_file, get_unit
   use mpp_io_mod,         only: mpp_flush
   use fv_sg_mod,          only: qsmith
+  use fms_mod,            only: open_namelist_file, close_file
 
   implicit none
   private
@@ -60,6 +61,7 @@ contains
 
    integer :: ios, nlunit
    logical :: exists
+   character(len=64) :: errmsg
 
    call write_version_number ( 'FV_DIAG_COLUMN_MOD', version )
 
@@ -87,11 +89,11 @@ contains
       write(errmsg,*) 'fv_diag_column_nml: namelist file ',trim(Atm%nml_filename),' does not exist'
       call mpp_error(FATAL, errmsg)
     else
-      open (unit=nlunit, file=Atm%nml_filename, READONLY, status='OLD', iostat=ios)
+      nlunit=open_namelist_file(Atm%nml_filename)
     endif
     rewind(nlunit)
     read (nlunit, nml=fv_diag_column_nml, iostat=ios)
-    close (nlunit)
+    call close_file(nlunit)
 #endif
 
     if (do_diag_debug .or. do_diag_sonde) then
