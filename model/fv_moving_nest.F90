@@ -60,6 +60,7 @@ module fv_moving_nest_mod
   use fv_moving_nest_utils_mod,  only: alloc_halo_buffer, load_nest_latlons_from_nc, grid_geometry, output_grid_to_nc, find_nest_alignment
   use fv_moving_nest_utils_mod,  only: fill_nest_from_buffer, fill_nest_from_buffer_cell_center, fill_nest_from_buffer_nearest_neighbor
   use fv_moving_nest_utils_mod,  only: fill_nest_halos_from_parent, fill_grid_from_supergrid, fill_weight_grid
+  use fv_moving_nest_utils_mod,  only: load_nest_orog_from_nc
 
   implicit none
 
@@ -205,8 +206,8 @@ contains
 
 
   subroutine mn_prog_fill_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
-    type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
-    integer, intent(in)                              :: n, child_grid_num
+    type(fv_atmos_type), allocatable, intent(in)     :: Atm(:)
+    integer, intent(in)                              :: n, child_grid_num   !  n is the nest level
     logical, intent(in)                              :: is_fine_pe
     integer, intent(in)                              :: npz
 
@@ -236,7 +237,7 @@ contains
     
     if (debug_log) print '("[INFO] WDR mn_prog_fill_temp_variables. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
     
-    allocate ( delz_local(isd:ied, jsd:jed  ,npz) )
+    allocate ( delz_local(isd:ied, jsd:jed, 1:npz) )
     delz_local = +99999.9
     
     delz_local(is:ie, js:je, 1:npz) =  Atm(n)%delz(is:ie, js:je, 1:npz) 
@@ -449,7 +450,7 @@ contains
   !!            Parent and nest PEs need to execute these subroutines
   !!=====================================================================================           
 
-
+  !  TODO clarify the child_grid_num or child_grid_level to handle multiple levels of nesting
   subroutine mn_prog_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, nest_domain, nz)
     type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
     integer, intent(in)                              :: n, child_grid_num
@@ -465,6 +466,7 @@ contains
     !  TODO: examine how the static nesting code handles this
     !  TODO move terrain and surface parameters, including phis
 
+    !  TODO Rename this from interp_type to stagger_type
     interp_type = 1    ! cell-centered A-grid
     interp_type_u = 4  ! D-grid
     interp_type_v = 4  ! D-grid
@@ -1088,6 +1090,36 @@ contains
 
 
 
+  subroutine mn_orog_read_hires_parent(npx, npy, x_refine, surface_dir, filtered_terrain, orog_grid)
+    integer, intent(in)                :: npx, npy, x_refine
+    character(len=120), intent(in)     :: surface_dir
+    logical, intent(in)                :: filtered_terrain
+    real, allocatable, intent(inout)   :: orog_grid(:,:)
+
+    integer :: nx_cubic
+    character(len=256) :: res_str, parent_str
+    character(len=16)  :: orog_var_name
+    integer :: parent_tile = 6 ! Later this will be configurable
+    
+    nx_cubic = npx - 1
+    write(res_str, '(I0)'), nx_cubic * x_refine
+
+    write(parent_str, '(I0)'), parent_tile
+
+    if (filtered_terrain) then
+       orog_var_name = 'orog_filt'    
+    else
+       orog_var_name = 'orog_raw'
+    end if
+
+    ! This should be changed from hard coded parent tile 6 to reading the parent tile from the data structures
+
+    call load_nest_orog_from_nc(trim(surface_dir) // '/C' // trim(res_str) // '_oro_data.tile' // trim(parent_str) // '.nc', &
+         npx, npy, x_refine, orog_var_name, orog_grid)
+  end subroutine mn_orog_read_hires_parent
+
+
+
 
   !!============================================================================                                            
   !! Step 5.2 -- Recalculate nest halo weights
@@ -1306,6 +1338,8 @@ contains
   !!============================================================================                                            
   !! Step 6 - per variable
   !!============================================================================                                            
+
+  !  TODO do we need a version of this for integer data?  land sea
 
   subroutine mn_var_shift_data2D(data_var, interp_type, wt, ind, delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
 
@@ -2362,6 +2396,10 @@ contains
     !  Skin temp/SST
     call mn_var_dump_to_netcdf(Atm%ts   , is_fine_pe, domain_coarse, domain_fine, position, 1, &
          time_val, Atm%global_tile, file_prefix, "SSTK")
+
+    !  Terrain height == phis / grav
+    call mn_var_dump_to_netcdf(Atm%phis / grav   , is_fine_pe, domain_coarse, domain_fine, position, 1, &
+         time_val, Atm%global_tile, file_prefix, "orog")
 
 
     ! Latitude and longitude in radians

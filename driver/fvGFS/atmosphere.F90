@@ -246,6 +246,7 @@ use fv_moving_nest_mod,         only: mn_phys_fill_temp_variables, mn_phys_apply
 
 !      Load static datasets
 use fv_moving_nest_mod,         only: mn_latlon_read_hires_parent, mn_latlon_load_parent
+use fv_moving_nest_mod,         only: mn_orog_read_hires_parent
 use fv_moving_nest_utils_mod,   only: load_nest_latlons_from_nc
 
 !      Bounds checking routines
@@ -738,6 +739,8 @@ contains
       move_incr = 20
    end if
 
+   move_incr = 5
+
    move_diag = .false.
    
    if (move_diag) then
@@ -762,8 +765,10 @@ contains
          first_time = .false.
       else if (mod(a_step,move_incr) .eq. 0) then
          do_move = .true.
-         delta_i_c = 0
-         delta_j_c = -1
+         !delta_i_c = 0
+         !delta_j_c = -1
+         delta_i_c = 1
+         delta_j_c = 0
          first_time = .false.
       else
          do_move = .false.
@@ -831,6 +836,7 @@ contains
    type(grid_geometry), save              :: parent_geo
    type(grid_geometry), save              :: fp_super_tile_geo
    integer, save      :: fp_super_istart_fine, fp_super_jstart_fine,fp_super_iend_fine, fp_super_jend_fine
+   real, allocatable, save  :: orog_grid(:,:)              ! TODO deallocate this at end of model run
 
    type(grid_geometry)              :: tile_geo, tile_geo_u, tile_geo_v
    real(kind=R_GRID), allocatable   :: p_grid(:,:,:), n_grid(:,:,:)
@@ -841,6 +847,10 @@ contains
    real, allocatable  :: wt_v(:,:,:)
    real :: ua(isd:ied,jsd:jed)
    real :: va(isd:ied,jsd:jed)
+
+
+
+   logical            :: filtered_terrain = .True.   ! TODO set this from namelist
 
    integer :: i, j, x, y, z, p, nn, n_moist
 
@@ -1081,7 +1091,7 @@ contains
           if (debug_log) print '("[INFO] WDR MV_NST0 atmosphere.F90 processing Atm(n) npe=",I0," nx_cubic=",I0," ny_cubic=",I0," nx=",I0," ny=",I0)', this_pe, nx_cubic, ny_cubic, nx ,ny
 
           ! Read in static lat/lon data for parent at nest resolution; returns fp_ full panel variables
-          ! TODO - consider running only once during model initialization      
+          ! Also read in other static variables from the orography and surface files
 
           if (first_nest_move) then
              print '("[INFO] WDR mn_latlon_read_hires_parent READING static fine file on npe=",I0)', this_pe
@@ -1089,6 +1099,11 @@ contains
              call mn_latlon_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, fp_super_tile_geo, &
                   fp_super_istart_fine, fp_super_iend_fine, fp_super_jstart_fine, fp_super_jend_fine, &
                   Atm(child_grid_num)%neststruct%surface_dir)
+
+             print '("[INFO] WDR mn_orog_read_hires_parent BEFORE READING static orog fine file on npe=",I0)', this_pe
+             call mn_orog_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(child_grid_num)%neststruct%surface_dir, filtered_terrain, orog_grid)
+             print '("[INFO] WDR mn_orog_read_hires_parent COMPLETED READING static orog fine file on npe=",I0)', this_pe
+
              first_nest_move = .false.
           else
              print '("[INFO] WDR mn_latlon_read_hires_parent SKIPPING static fine file on npe=",I0)', this_pe
@@ -1199,6 +1214,7 @@ contains
           if (debug_log) print '("[INFO] WDR MV_NST5 run step 5 atmosphere.F90 npe=",I0, " parent_geo%lats allocated:",L1)', this_pe, allocated(parent_geo%lats)
 
           ! parent_geo is only loaded first time; afterwards it is reused.
+          ! This is the coarse resolution data for the parent
           call mn_latlon_load_parent(Atm, n, delta_i_c, delta_j_c, child_grid_num, &
                parent_geo, tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, &
                p_grid, n_grid, p_grid_u, n_grid_u, p_grid_v, n_grid_v)
@@ -1268,6 +1284,18 @@ contains
 
        call mpp_clock_end (id_movnest7_0)
        call mpp_clock_begin (id_movnest7_1)
+       
+       !!=====================================================================================
+       !! Step 7.01 --  Reset the orography
+       !!
+       !!=====================================================================================
+       
+       if (is_fine_pe) then
+          ! phis is allocated in fv_arrays.F90 as:  allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
+          Atm(n)%phis(isd:ied, jsd:jed) = orog_grid(ioffset*x_refine+isd:ioffset*x_refine+ied, joffset*y_refine+jsd:joffset*y_refine+jed) * grav
+       end if
+
+
 
        !!=====================================================================================
        !! Step 7.1   Refill the nest edge halos from parent grid after nest motion
@@ -1469,7 +1497,7 @@ contains
      end if
 
      !if (a_step .lt. 10 .or. mod(a_step, 10) .eq. 0) then
-     if (mod(a_step, 100) .eq. 0) then
+     if (mod(a_step, 20) .eq. 0) then
         if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step, "tsvar", is_fine_pe, domain_coarse, domain_fine, nz)
         if (tsvar_out) call mn_phys_dump_to_netcdf(Atm(n), a_step, "tsvar", is_fine_pe, domain_coarse, domain_fine, nz)
      endif

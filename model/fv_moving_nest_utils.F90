@@ -696,6 +696,74 @@ end subroutine fill_nest_halos_from_parent4D
 
 
 
+
+
+
+!  subroutine load_nest_orog_vars_from_nc(nc_filename, nxp, nyp, refine, &
+!       fp_tile_geo, fp_istart_fine, fp_iend_fine, fp_jstart_fine, fp_jend_fine)
+
+  subroutine load_nest_orog_from_nc(nc_filename, nxp, nyp, refine, orog_var_name, orog_grid)
+    implicit none
+
+    character(*), intent(in)              :: nc_filename
+    integer, intent(in)                   :: nxp, nyp, refine
+    character(*), intent(in)              :: orog_var_name
+    real, allocatable, intent(inout)      :: orog_grid(:,:)
+
+!    type(grid_geometry), intent(out)      :: fp_tile_geo
+
+
+    integer                      :: fp_istart_fine, fp_iend_fine, fp_jstart_fine, fp_jend_fine
+
+
+    integer                      :: nx, ny
+
+    !integer                      :: nn
+    integer                      :: fp_nx, fp_ny, mid_nx, mid_ny
+    !integer                      :: super_nx, super_ny
+    !type(grid_geometry)          :: temp_tile_geo
+    ! Full panel nest data
+    !integer                      :: i, j, fi, fj
+    integer                      :: this_pe
+
+    this_pe = mpp_pe()
+
+
+    if (debug_log) print '("[INFO] WDR NCSTATIC load_nest_orog_from_nc start npe=",I0," nxp=",I0," nyp=",I0)', this_pe, nxp, nyp
+
+
+    nx = nxp - 1
+    ny = nyp - 1
+
+    fp_istart_fine = 0
+    fp_iend_fine = nx * refine
+    fp_jstart_fine = 0
+    fp_jend_fine = ny * refine
+
+    fp_nx = fp_iend_fine - fp_istart_fine
+    fp_ny = fp_jend_fine - fp_jstart_fine
+
+    mid_nx = (fp_iend_fine - fp_istart_fine) / 2 
+    mid_ny = (fp_jend_fine - fp_jstart_fine) / 2
+
+
+
+    !if (debug_log) print '("[INFO] WDR LOFB load_nest_orog_from_nc temp_tile_geo%lats npe=",I0," dims: ",I4,":",I4,I4,":",I4,I4)', this_pe, 1, super_nxp, 1, super_nyp
+
+
+    if (debug_log) print '("[INFO] WDR NCREAD LOFC load_nest_orog_from_nc npe=",I0,I4,I4,I4,I4," ",A128)', this_pe, fp_nx, fp_ny, mid_nx,mid_ny, nc_filename
+
+
+    call alloc_read_data(nc_filename, orog_var_name, fp_nx, fp_ny, orog_grid)
+
+
+  end subroutine load_nest_orog_from_nc
+
+
+
+
+
+
   subroutine alloc_read_data(nc_filename, var_name, x_size, y_size, data_array)
     character(len=*), intent(in)           :: nc_filename, var_name
     integer, intent(in)                    :: x_size, y_size
@@ -724,7 +792,7 @@ end subroutine fill_nest_halos_from_parent4D
     nread(1) = x_size
     nread(2) = y_size
 
-    if (debug_log) print '("[INFO] WDR NCREAD NCRA alloc_read_data. npe=",I0," ",A96, A16)', this_pe, trim(nc_filename), var_name
+    if (debug_log) print '("[INFO] WDR NCREAD NCRA alloc_read_data. npe=",I0," ",A96," ", A16)', this_pe, trim(nc_filename), var_name
     if (debug_log) print '("[INFO] WDR NCREAD NCRB alloc_read_data, nread npe=",I0, " ", A16,I4,I4,I4,I4)', this_pe, var_name, start(1), start(2), nread(1), nread(2)
 
     call read_data(nc_filename, var_name, data_array, start, nread, no_domain=.TRUE.)
@@ -1283,7 +1351,7 @@ end subroutine find_nest_alignment
              
              !call check_array(buffer, this_pe, "buffer"//dir_str, -300.0, 300.0)
              !call check_array(wt, this_pe, "wt"//dir_str, 0.0, 1.0)
-             if (debug_log) print '("[INFO] WDR FILL WEIGHTS ",A8,"  npe=",I0," (",I0,",",I0,",",I0,") ic,jc=(",I0,",",I0,"): wt:",F12.5,F12.5,F12.5,F12.5)', dir_str, this_pe, i, j, k, ic, jc, wt(i,j,1), wt(i,j,2), wt(i,j,3), wt(i,j,4)
+             if (debug_log) print '("[INFO] WDR FILL WEIGHTS ",A8,"  npe=",I0," (",I0,",",I0,") ic,jc=(",I0,",",I0,"): wt:",F12.5,F12.5,F12.5,F12.5)', dir_str, this_pe, i, j, ic, jc, wt(i,j,1), wt(i,j,2), wt(i,j,3), wt(i,j,4)
           end do
        end do
     else
