@@ -33,6 +33,7 @@
 module fv_moving_nest_mod
 #ifdef MOVING_NEST
   
+  use block_control_mod,      only : block_control_type
   use fms_mod,                only : mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_ROUTINE, clock_flag_default
   use mpp_mod,                only : mpp_pe, mpp_sync, mpp_sync_self, mpp_send, mpp_error, FATAL 
   use mpp_domains_mod,        only : mpp_update_domains, mpp_get_data_domain, mpp_get_global_domain
@@ -80,6 +81,9 @@ module fv_moving_nest_mod
 
   real, allocatable ::  delz_local(:,:,:)    !< layer thickness (meters)
   real, allocatable ::  ts_local(:,:)        !< 2D skin temperature/SST
+  real (kind=kind_phys), allocatable :: smc_local (:,:,:)  !< soil moisture content
+  real (kind=kind_phys), allocatable :: stc_local (:,:,:)  !< soil temperature
+  real (kind=kind_phys), allocatable :: slc_local (:,:,:)  !< soil liquid water content
 
   logical :: debug_log = .false.
 
@@ -250,18 +254,20 @@ contains
   end subroutine mn_prog_fill_temp_variables
 
 
-  subroutine mn_phys_fill_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
+  subroutine mn_phys_fill_temp_variables(Atm, Atm_block, IPD_Control, IPD_Data, n, child_grid_num, is_fine_pe, npz)
     type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
+    type (block_control_type), intent(in)            :: Atm_block
+    type(IPD_control_type), intent(in)               :: IPD_Control
+    type(IPD_data_type), intent(inout)               :: IPD_Data
     integer, intent(in)                              :: n, child_grid_num
     logical, intent(in)                              :: is_fine_pe
     integer, intent(in)                              :: npz
 
-    !allocate ( Atm%ts(is:ie, js:je ) )
-    !Atm%ts(i,j,k) = real_big
-
     integer :: isd, ied, jsd, jed
     integer :: is, ie, js, je
     integer :: this_pe
+
+    integer :: nb, blen, i, j, k, ix 
 
     this_pe = mpp_pe()
 
@@ -282,18 +288,39 @@ contains
     
     if (debug_log) print '("[INFO] WDR mn_phys_fill_temp_variables. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
     
-    allocate ( ts_local(isd:ied, jsd:jed ) )
+    allocate ( ts_local(isd:ied, jsd:jed) )
+    allocate ( smc_local(isd:ied, jsd:jed, IPD_Control%lsoil) )
+    allocate ( stc_local(isd:ied, jsd:jed, IPD_Control%lsoil) )
+    allocate ( slc_local(isd:ied, jsd:jed, IPD_Control%lsoil) )
     ts_local = +99999.9
+    smc_local = +99999.9
+    stc_local = +99999.9
+    slc_local = +99999.9
     
     ts_local(is:ie, js:je) =  Atm(n)%ts(is:ie, js:je) 
 
-    if (debug_log) print '("[INFO] WDR end mn_phys_fill_temp_variables. npe=",I0," n=",I0)', this_pe, n
+    do nb = 1,Atm_block%nblks
+      blen = Atm_block%blksz(nb)
+      do k = 1, IPD_Control%lsoil
+        do ix = 1, blen
+          i = Atm_block%index(nb)%ii(ix)
+          j = Atm_block%index(nb)%jj(ix)
+          smc_local(i,j,k) = IPD_Data(nb)%Sfcprop%smc(ix,k)
+          stc_local(i,j,k) = IPD_Data(nb)%Sfcprop%stc(ix,k)
+          slc_local(i,j,k) = IPD_Data(nb)%Sfcprop%slc(ix,k)
+        enddo
+      enddo
+    enddo
 
+    if (debug_log) print '("[INFO] WDR end mn_phys_fill_temp_variables. npe=",I0," n=",I0)', this_pe, n
     
   end subroutine mn_phys_fill_temp_variables
 
-  subroutine mn_prog_apply_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
+  subroutine mn_prog_apply_temp_variables(Atm, Atm_block, n, child_grid_num, is_fine_pe, npz)
     type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
+    type (block_control_type), intent(in)            :: Atm_block
+    type(IPD_control_type), intent(in)               :: IPD_Control
+    type(IPD_data_type), intent(inout)               :: IPD_Data
     integer, intent(in)                              :: n, child_grid_num
     logical, intent(in)                              :: is_fine_pe
     integer, intent(in)                              :: npz
@@ -370,15 +397,17 @@ contains
 
   end subroutine mn_prog_apply_temp_variables
 
-  subroutine mn_phys_apply_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
+  subroutine mn_phys_apply_temp_variables(Atm, IPD_Control, IPD_Data, n, child_grid_num, is_fine_pe, npz)
     type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
+    type(IPD_control_type), intent(in)               :: IPD_Control
+    type(IPD_data_type), intent(inout)               :: IPD_Data
     integer, intent(in)                              :: n, child_grid_num
     logical, intent(in)                              :: is_fine_pe
     integer, intent(in)                              :: npz
 
     integer :: is, ie, js, je
     integer :: this_pe
-    integer :: i,j !,k
+    integer :: nb, blen, i, j ,k, ix
     integer :: bad_values, good_values
 
     this_pe = mpp_pe()
@@ -435,9 +464,26 @@ contains
 
 
        Atm(n)%ts(is:ie, js:je) =  ts_local(is:ie, js:je) 
+
+       do nb = 1,Atm_block%nblks
+         blen = Atm_block%blksz(nb)
+         do k = 1, IPD_Control%lsoil
+           do ix = 1, blen
+             i = Atm_block%index(nb)%ii(ix)
+             j = Atm_block%index(nb)%jj(ix)
+             IPD_Data(nb)%Sfcprop%smc(ix,k) = smc_local(i,j,k)
+             IPD_Data(nb)%Sfcprop%stc(ix,k) = stc_local(i,j,k)
+             IPD_Data(nb)%Sfcprop%slc(ix,k) = slc_local(i,j,k)
+           enddo
+         enddo
+       enddo
+
     end if
 
     deallocate(ts_local)
+    deallocate(smc_local)
+    deallocate(stc_local)
+    deallocate(slc_local)
 
     if (debug_log) print '("[INFO] WDR end mn_phys_apply_temp_variables. npe=",I0," n=",I0)', this_pe, n
 
@@ -557,8 +603,10 @@ contains
   end subroutine mn_prog_fill_nest_halos_from_parent
 
 
-  subroutine mn_phys_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, nest_domain, nz)
+  subroutine mn_phys_fill_nest_halos_from_parent(Atm, IPD_Control, IPD_Data, n, child_grid_num, is_fine_pe, nest_domain, nz)
     type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
+    type(IPD_control_type), intent(in)               :: IPD_Control
+    type(IPD_data_type), intent(inout)               :: IPD_Data
     integer, intent(in)                              :: n, child_grid_num
     logical, intent(in)                              :: is_fine_pe
     type(nest_domain_type), intent(inout)            :: nest_domain
@@ -596,6 +644,18 @@ contains
          Atm(child_grid_num)%neststruct%ind_h, &
          x_refine, y_refine, &
          is_fine_pe, nest_domain, position)
+    call fill_nest_halos_from_parent("smc", smc_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+         Atm(child_grid_num)%neststruct%ind_h, &
+         x_refine, y_refine, &
+         is_fine_pe, nest_domain, position, IPD_Control%lsoil)
+    call fill_nest_halos_from_parent("stc", stc_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+         Atm(child_grid_num)%neststruct%ind_h, &
+         x_refine, y_refine, &
+         is_fine_pe, nest_domain, position, IPD_Control%lsoil)
+    call fill_nest_halos_from_parent("slc", slc_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+         Atm(child_grid_num)%neststruct%ind_h, &
+         x_refine, y_refine, &
+         is_fine_pe, nest_domain, position, IPD_Control%lsoil)
 
   end subroutine mn_phys_fill_nest_halos_from_parent
 
@@ -753,16 +813,21 @@ contains
 
   ! Fill internal nest halos for physics variables
   ! 
-  subroutine mn_phys_fill_intern_nest_halos(Atm, domain_fine, is_fine_pe)
-    type(fv_atmos_type), intent(inout)  :: Atm  
-    type(domain2d), intent(inout)       :: domain_fine
-    logical, intent(in)                 :: is_fine_pe
+  subroutine mn_phys_fill_intern_nest_halos(Atm, IPD_Control, IPD_Data, domain_fine, is_fine_pe)
+    type(fv_atmos_type), intent(inout)               :: Atm  
+    type(IPD_control_type), intent(in)               :: IPD_Control
+    type(IPD_data_type), intent(inout)               :: IPD_Data
+    type(domain2d), intent(inout)                    :: domain_fine
+    logical, intent(in)                              :: is_fine_pe
 
 
     ! TODO PHYSICS Add processing of physics variables, following example in mn_prog_fill_intern_nest_halos
 
     !call mn_var_fill_intern_nest_halos(Atm%pt, domain_fine, is_fine_pe)
     call mn_var_fill_intern_nest_halos(ts_local, domain_fine, is_fine_pe)   !! Skin Temp/SST
+    call mn_var_fill_intern_nest_halos(smc_local, domain_fine, is_fine_pe)
+    call mn_var_fill_intern_nest_halos(stc_local, domain_fine, is_fine_pe)
+    call mn_var_fill_intern_nest_halos(slc_local, domain_fine, is_fine_pe)
     !call check_array(Atm%u, this_pe, "Atm%pt", 100.0, 400.0)
 
   end subroutine mn_phys_fill_intern_nest_halos
@@ -1294,10 +1359,12 @@ contains
 
   end subroutine mn_prog_shift_data
 
-  subroutine mn_phys_shift_data(Atm, n, child_grid_num, wt_h, wt_u, wt_v, &
+  subroutine mn_phys_shift_data(Atm, IPD_Control, IPD_Data, n, child_grid_num, wt_h, wt_u, wt_v, &
        delta_i_c, delta_j_c, x_refine, y_refine, &
        is_fine_pe, nest_domain, nz)
     type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
+    type(IPD_control_type), intent(in)               :: IPD_Control
+    type(IPD_data_type), intent(inout)               :: IPD_Data
     integer, intent(in)                              :: n, child_grid_num
     real, allocatable, intent(in)                    :: wt_h(:,:,:), wt_u(:,:,:), wt_v(:,:,:)
     integer, intent(in)                              :: delta_i_c, delta_j_c, x_refine, y_refine   
@@ -1328,7 +1395,19 @@ contains
          x_refine, y_refine, &
          is_fine_pe, nest_domain, position)
 
-
+    !! Soil variables
+    call mn_var_shift_data(smc_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+         delta_i_c, delta_j_c, &
+         x_refine, y_refine, &
+         is_fine_pe, nest_domain, position, IPD_Control%lsoil)
+    call mn_var_shift_data(stc_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+         delta_i_c, delta_j_c, &
+         x_refine, y_refine, &
+         is_fine_pe, nest_domain, position, IPD_Control%lsoil)
+    call mn_var_shift_data(slc_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+         delta_i_c, delta_j_c, &
+         x_refine, y_refine, &
+         is_fine_pe, nest_domain, position, IPD_Control%lsoil)
 
   end subroutine mn_phys_shift_data
 
@@ -2371,8 +2450,10 @@ contains
 
 
 
-  subroutine mn_phys_dump_to_netcdf(Atm, time_val, file_prefix, is_fine_pe, domain_coarse, domain_fine, nz)
+  subroutine mn_phys_dump_to_netcdf(Atm, IPD_Control, IPD_Data, time_val, file_prefix, is_fine_pe, domain_coarse, domain_fine, nz)
     type(fv_atmos_type), intent(in)            :: Atm
+    type(IPD_control_type), intent(in)         :: IPD_Control
+    type(IPD_data_type), intent(in)            :: IPD_Data
     integer, intent(in)                        :: time_val
     character(len=*), intent(in)               :: file_prefix
     logical, intent(in)                        :: is_fine_pe

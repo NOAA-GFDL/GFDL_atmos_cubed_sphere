@@ -60,10 +60,12 @@ use tracer_manager_mod,     only: get_tracer_index, get_number_tracers, &
                                   NO_TRACER, get_tracer_names
 use DYCORE_typedefs,        only: DYCORE_data_type
 #ifdef GFS_TYPES
-use GFS_typedefs,           only: IPD_data_type => GFS_data_type, kind_phys
+use GFS_typedefs,           only: IPD_data_type => GFS_data_type, &
+                                  IPD_control_type => GFS_control_type, kind_phys
 #else
-use IPD_typedefs,           only: IPD_data_type, kind_phys => IPD_kind_phys
+use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => IPD_kind_phys
 #endif
+
 use fv_iau_mod,             only: IAU_external_data_type
 #ifdef MULTI_GASES
 use multi_gases_mod,  only: virq, virq_max, num_gas, ri, cpi
@@ -72,7 +74,7 @@ use multi_gases_mod,  only: virq, virq_max, num_gas, ri, cpi
 !-----------------
 ! FV core modules:
 !-----------------
-use atmosphere_mod,     only: mygrid
+use atmosphere_mod,     only: Atm, mygrid
 use fv_arrays_mod,      only: fv_atmos_type, R_GRID, fv_grid_bounds_type, phys_diag_type
 use fv_control_mod,     only: fv_control_init, fv_end, ngrids
 use fv_eta_mod,         only: get_eta_level
@@ -183,9 +185,10 @@ integer :: id_movnestTot
 
 contains
 
-  subroutine update_moving_nest(Atm, GFS_data, time_step)
-    type(fv_atmos_type), allocatable, target, intent(inout) :: Atm(:)
-    type(IPD_data_type), intent(inout) :: GFS_data
+  subroutine update_moving_nest(Atm_block, IPD_control, IPD_data, time_step)
+    type(block_control_type), intent(in) :: Atm_block
+    type(IPD_control_type), intent(in) :: IPD_control
+    type(IPD_data_type), intent(inout) :: IPD_data
     type(time_type), intent(in)     :: time_step
 
     logical :: is_moving_nest = .True.  !! TODO connect to namelist for each nest
@@ -223,7 +226,7 @@ contains
        end if
        
        if (do_move) then
-          call fv_moving_nest_exec(Atm, delta_i_c, delta_j_c, n, nest_num, parent_grid_num, child_grid_num, dt_atmos)
+          call fv_moving_nest_exec(Atm, Atm_block, IPD_control, IPD_data, delta_i_c, delta_j_c, n, nest_num, parent_grid_num, child_grid_num, dt_atmos)
        end if
        
     end if
@@ -328,8 +331,11 @@ contains
   end subroutine eval_move_nest
   
   ! TODO  clarify the naming of all the grid indices;  are some of these repeated?  
-  subroutine fv_moving_nest_exec(Atm, delta_i_c, delta_j_c, n, nest_num, parent_grid_num, child_grid_num, dt_atmos)
+  subroutine fv_moving_nest_exec(Atm, Atm_block, IPD_control, IPD_data, delta_i_c, delta_j_c, n, nest_num, parent_grid_num, child_grid_num, dt_atmos)
     type(fv_atmos_type), allocatable, target, intent(inout) :: Atm(:)
+    type(block_control_type), intent(in) :: Atm_block
+    type(IPD_control_type), intent(inout) :: IPD_control
+    type(IPD_data_type), intent(inout) :: IPD_data
     integer, intent(in)  :: delta_i_c, delta_j_c
     integer, intent(in)  :: n, nest_num, parent_grid_num, child_grid_num 
     real, intent(in)     :: dt_atmos
@@ -599,7 +605,7 @@ contains
 
        if (debug_log) print '("[INFO] WDR MV_NST0 run step 0 fv_moving_nest_main.F90 npe=",I0)', this_pe
        if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
-       if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+       if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), IPD_control, IPD_data, output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
        output_step = output_step + 1
 
        !!============================================================================
@@ -662,7 +668,7 @@ contains
        !!=====================================================================================           
 
        call mn_prog_fill_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
-       call mn_phys_fill_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
+       call mn_phys_fill_temp_variables(Atm, Atm_block, IPD_control, IPD_data, n, child_grid_num, is_fine_pe, npz)
 
        call mpp_clock_end (id_movnest1_9)
        call mpp_clock_begin (id_movnest2)
@@ -679,7 +685,7 @@ contains
        !  This is before any nest motion has occurred
 
        call mn_prog_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
-       call mn_phys_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
+       call mn_phys_fill_nest_halos_from_parent(Atm, IPD_control, IPD_data, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
 
        call mpp_clock_end (id_movnest2)
        call mpp_clock_begin (id_movnest3)
@@ -724,7 +730,7 @@ contains
        ! TODO should/can this run before the mn_meta_move_nest?
        if (is_fine_pe) then
           call mn_prog_fill_intern_nest_halos(Atm(n), domain_fine, is_fine_pe)
-          call mn_phys_fill_intern_nest_halos(Atm(n), domain_fine, is_fine_pe)
+          call mn_phys_fill_intern_nest_halos(Atm(n), IPD_control, IPD_data, domain_fine, is_fine_pe)
        else
           if (debug_log) print '("[INFO] WDR MV_NST4 skip step 4 fv_moving_nest_main.F90 npe=",I0)', this_pe
        end if
@@ -797,7 +803,7 @@ contains
             delta_i_c, delta_j_c, x_refine, y_refine, &
             is_fine_pe, global_nest_domain, nz)
 
-       call mn_phys_shift_data(Atm, n, child_grid_num, wt_h, wt_u, wt_v, &
+       call mn_phys_shift_data(Atm, IPD_control, IPD_data, n, child_grid_num, wt_h, wt_u, wt_v, &
             delta_i_c, delta_j_c, x_refine, y_refine, &
             is_fine_pe, global_nest_domain, nz)
 
@@ -840,7 +846,7 @@ contains
 
        ! Refill the halos around the edge of the nest from the parent
        call mn_prog_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
-       call mn_phys_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
+       call mn_phys_fill_nest_halos_from_parent(Atm, IPD_control, IPD_data, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
 
        call mpp_clock_end (id_movnest7_1)
 
@@ -849,7 +855,7 @@ contains
 
           ! Refill the internal halos after nest motion
           call mn_prog_fill_intern_nest_halos(Atm(n), domain_fine, is_fine_pe)
-          call mn_phys_fill_intern_nest_halos(Atm(n), domain_fine, is_fine_pe)
+          call mn_phys_fill_intern_nest_halos(Atm(n), IPD_control, IPD_data, domain_fine, is_fine_pe)
 
           call mpp_clock_end (id_movnest7_2)
        end if
@@ -863,7 +869,7 @@ contains
        call mpp_clock_begin (id_movnest7_3)
 
        call mn_prog_apply_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
-       call mn_phys_apply_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
+       call mn_phys_apply_temp_variables(Atm, Atm_block, IPD_control, IPD_data, n, child_grid_num, is_fine_pe, npz)
 
        call mpp_clock_end (id_movnest7_3)
        call mpp_clock_begin (id_movnest8)
@@ -957,7 +963,7 @@ contains
 
 
           if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
-          if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+          if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), IPD_control, IPD_data, output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
           output_step = output_step + 1
 
        end if
