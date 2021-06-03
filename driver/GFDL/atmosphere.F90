@@ -33,7 +33,8 @@ module atmosphere_mod
 use atmos_co2_mod,         only: atmos_co2_rad, co2_radiation_override
 use block_control_mod,     only: block_control_type
 use constants_mod,         only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
-use time_manager_mod,      only: time_type, get_time, set_time, operator(+)
+use time_manager_mod,      only: time_type, get_time, set_time, operator(+), &
+                                 operator(-), operator(/), time_type_to_real
 use fms_mod,               only: error_mesg, FATAL,                 &
                                  check_nml_error, stdlog,           &
                                  write_version_number,              &
@@ -396,7 +397,6 @@ contains
    call fv_io_register_nudge_restart ( Atm )
 
    if ( Atm(mygrid)%flagstruct%na_init>0 ) then
-      call nullify_domain ( )
       if ( .not. Atm(mygrid)%flagstruct%hydrostatic ) then
            call prt_maxmin('Before adi: W', Atm(mygrid)%w, isc, iec, jsc, jec, Atm(mygrid)%ng, npz, 1.)
       endif
@@ -600,7 +600,6 @@ contains
      call timing_off('fv_dynamics')
 
     if (ngrids > 1 .and. (psc < p_split .or. p_split < 0)) then
-       call mpp_sync()
        call timing_on('TWOWAY_UPDATE')
        call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mygrid)
        call timing_off('TWOWAY_UPDATE')
