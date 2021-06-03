@@ -28,7 +28,7 @@ use fms2_io_mod,   only: open_file, close_file, get_num_dimensions, &
                          get_dimension_names, get_dimension_size, FmsNetcdfFile_t, &
                          get_num_variables, get_variable_names, get_variable_size, &
                          get_variable_num_dimensions, get_variable_units, &
-                         get_time_calendar, read_data, variable_att_axists
+                         get_time_calendar, read_data, variable_att_exists
 use mpp_mod,       only: input_nml_file, mpp_npes, mpp_get_current_pelist
 use constants_mod, only: PI, GRAV, RDGAS, RVGAS
 
@@ -80,7 +80,7 @@ end interface
   integer, allocatable :: file_index(:)
 
 type filedata_type
-  integer, allocatable :: dim_size
+  integer, pointer :: length_axes(:)
   integer :: ndim, nvar, ntim
   integer :: time_offset
   integer, dimension(NUM_REQ_FLDS) :: field_index   ! varid for variables
@@ -147,23 +147,23 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
      if (open_file(fileobj, trim(filenames(n)), "read", pelist=pes)) then
          Files(n)%ndim=get_num_dimensions(fileobj)
 
-         allocate (Files(n)%dim_size(Files(n)%ndim))
-  
+         allocate (Files(n)%length_axes(Files(n)%ndim))
+
          ! inquire dimension sizes
          do i = 1, Files(n)%ndim
             call get_dimension_names(fileobj, Files(n)%axes)
             do j = 1, NUM_REQ_AXES
                if (trim(Files(n)%axes(j)) .eq. trim(required_axis_names(j))) then
-                  call get_dimension_size(fileobj, Files(n)%axes(j), Files(n)%dim_size(j))
-                  call check_axis_size (j,Files(n)%dim_size(j))
+                  call get_dimension_size(fileobj, Files(n)%axes(j), Files(n)%length_axes(j))
+                  call check_axis_size (j,Files(n)%length_axes(j))
                   Files(n)%axis_index(j) = i
                   exit
                endif
             enddo
          enddo
          ! time axis indexing
-         call get_dimension_size(fileobj, Files(n)%axes(INDEX_TIME), Files(n)%dim_size(INDEX_TIME))
-         Files(n)%ntim = Files(n)%dim_size(INDEX_TIME)
+         call get_dimension_size(fileobj, Files(n)%axes(INDEX_TIME), Files(n)%length_axes(INDEX_TIME))
+         Files(n)%ntim = Files(n)%length_axes(INDEX_TIME)
          Files(n)%time_offset = numtime
          numtime = numtime + Files(n)%ntim
 
@@ -250,7 +250,7 @@ integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pe
           if( n == 1) then
              time_axis = Files(n)%axes(INDEX_TIME)
              call get_variable_units(fileobj, time_axis, units)
-             if( variable_att_exists(fileobj, time_axis, calendar) then
+             if( variable_att_exists(fileobj, time_axis, calendar) ) then
                  call get_time_calendar(fileobj, time_axis, calendar)
              else
                  calendar = 'gregorian  '
@@ -308,7 +308,7 @@ real, intent(out), dimension(:) :: lon, lat, ak, bk
           else
              ak = 0.
           endif
-    
+
           call read_data(fileobj, Files(1)%fields(INDEX_BK), bk)
           call close_file(fileobj)
       endif
