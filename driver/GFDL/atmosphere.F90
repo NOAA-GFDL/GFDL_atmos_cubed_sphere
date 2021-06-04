@@ -38,7 +38,6 @@ use time_manager_mod,      only: time_type, get_time, set_time, operator(+), &
 use fms_mod,               only: error_mesg, FATAL,                 &
                                  check_nml_error, stdlog,           &
                                  write_version_number,              &
-                                 mpp_pe, mpp_root_pe,               &
                                  mpp_clock_id, mpp_clock_begin,     &
                                  mpp_clock_end, CLOCK_SUBCOMPONENT, &
                                  clock_flag_default
@@ -46,24 +45,24 @@ use fms2_io_mod,           only: file_exists
 use mpp_mod,               only: mpp_error, FATAL, NOTE, input_nml_file, &
                                  mpp_npes, mpp_get_current_pelist, &
                                  mpp_set_current_pelist, stdout, &
-                                 mpp_pe, mpp_chksum
+                                 mpp_pe, mpp_root_pe, mpp_chksum
 use mpp_domains_mod,       only: domain2d
 use xgrid_mod,             only: grid_box_type
 !miz
-use diag_manager_mod,       only: register_diag_field, send_data
-use field_manager_mod,      only: MODEL_ATMOS
-use tracer_manager_mod,     only: get_tracer_index, get_number_tracers, &
-                                  NO_TRACER, get_tracer_names
-use physics_driver_mod,     only: surf_diff_type
-use physics_types_mod,      only: physics_type, &
-                                  physics_tendency_type
-use radiation_types_mod,    only: radiation_type, compute_g_avg
-use atmos_cmip_diag_mod,    only: atmos_cmip_diag_init, &
-                                  register_cmip_diag_field_3d, &
-                                  send_cmip_data_3d, cmip_diag_id_type, &
-                                  query_cmip_diag_id
-use atmos_global_diag_mod,  only: atmos_global_diag_init, &
-                                  atmos_global_diag_end
+use diag_manager_mod,      only: register_diag_field, send_data
+use field_manager_mod,     only: MODEL_ATMOS
+use tracer_manager_mod,    only: get_tracer_index, get_number_tracers, &
+                                 NO_TRACER, get_tracer_names
+use physics_driver_mod,    only: surf_diff_type
+use physics_types_mod,     only: physics_type, &
+                                 physics_tendency_type
+use radiation_types_mod,   only: radiation_type, compute_g_avg
+use atmos_cmip_diag_mod,   only: atmos_cmip_diag_init, &
+                                 register_cmip_diag_field_3d, &
+                                 send_cmip_data_3d, cmip_diag_id_type, &
+                                 query_cmip_diag_id
+use atmos_global_diag_mod, only: atmos_global_diag_init, &
+                                 atmos_global_diag_end
 
 !-----------------
 ! FV core modules:
@@ -704,11 +703,9 @@ contains
  end subroutine atmosphere_dynamics
 
 
- subroutine atmosphere_end (Time, Grid_box )!rab, Radiation, Physics)
+ subroutine atmosphere_end (Time, Grid_box )
    type (time_type),      intent(in)    :: Time
    type(grid_box_type),   intent(inout) :: Grid_box
-!rab   type (radiation_type), intent(inout) :: Radiation
-!rab   type (physics_type),   intent(inout) :: Physics
 
 !--- end nudging module ---
 #if defined (ATMOS_NUDGE)
@@ -729,9 +726,10 @@ contains
    call atmos_global_diag_end
    call fv_cmip_diag_end
    call fv_end(Atm, mygrid)
-   deallocate (Atm)
+      call timing_off('FV_DIAG')
 
-   deallocate( u_dt, v_dt, t_dt, qv_dt, q_dt, pref, dum1d )
+   deallocate ( Atm )
+   deallocate ( u_dt, v_dt, t_dt, qv_dt, q_dt, pref, dum1d )
 
  end subroutine atmosphere_end
 
