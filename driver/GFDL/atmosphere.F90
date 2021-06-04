@@ -30,42 +30,39 @@ module atmosphere_mod
 !-----------------
 ! FMS modules:
 !-----------------
-use atmos_co2_mod,          only: atmos_co2_rad, co2_radiation_override
-use block_control_mod,      only: block_control_type
-use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks, pi
-use time_manager_mod,       only: time_type, get_time, set_time, operator(+), &
-                                  operator(-), operator(/), time_type_to_real
-use fms_mod,                only: file_exist, open_namelist_file,    &
-                                  close_file, error_mesg, FATAL,     &
-                                  check_nml_error, stdlog,           &
-                                  write_version_number,              &
-                                  set_domain,   &
-                                  mpp_clock_id, mpp_clock_begin,     &
-                                  mpp_clock_end, CLOCK_SUBCOMPONENT, &
-                                  clock_flag_default, nullify_domain
-use mpp_mod,                only: mpp_error, stdout, FATAL, WARNING, NOTE, &
-                                  input_nml_file, mpp_root_pe,    &
-                                  mpp_npes, mpp_pe, mpp_chksum,   &
-                                  mpp_get_current_pelist,         &
-                                  mpp_set_current_pelist, mpp_sync
-use mpp_parameter_mod,      only: EUPDATE, WUPDATE, SUPDATE, NUPDATE
-use mpp_domains_mod,        only: domain2d, mpp_update_domains
-use xgrid_mod,              only: grid_box_type
+use atmos_co2_mod,         only: atmos_co2_rad, co2_radiation_override
+use block_control_mod,     only: block_control_type
+use constants_mod,         only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
+use time_manager_mod,      only: time_type, get_time, set_time, operator(+), &
+                                 operator(-), operator(/), time_type_to_real
+use fms_mod,               only: error_mesg, FATAL,                 &
+                                 check_nml_error, stdlog,           &
+                                 write_version_number,              &
+                                 mpp_clock_id, mpp_clock_begin,     &
+                                 mpp_clock_end, CLOCK_SUBCOMPONENT, &
+                                 clock_flag_default
+use fms2_io_mod,           only: file_exists
+use mpp_mod,               only: mpp_error, FATAL, NOTE, input_nml_file, &
+                                 mpp_npes, mpp_get_current_pelist, &
+                                 mpp_set_current_pelist, stdout, &
+                                 mpp_pe, mpp_root_pe, mpp_chksum
+use mpp_domains_mod,       only: domain2d
+use xgrid_mod,             only: grid_box_type
 !miz
-use diag_manager_mod,       only: register_diag_field, send_data
-use field_manager_mod,      only: MODEL_ATMOS
-use tracer_manager_mod,     only: get_tracer_index, get_number_tracers, &
-                                  NO_TRACER, get_tracer_names
-use physics_driver_mod,     only: surf_diff_type
-use physics_types_mod,      only: physics_type, &
-                                  physics_tendency_type
-use radiation_types_mod,    only: radiation_type, compute_g_avg
-use atmos_cmip_diag_mod,    only: atmos_cmip_diag_init, &
-                                  register_cmip_diag_field_3d, &
-                                  send_cmip_data_3d, cmip_diag_id_type, &
-                                  query_cmip_diag_id
-use atmos_global_diag_mod,  only: atmos_global_diag_init, &
-                                  atmos_global_diag_end
+use diag_manager_mod,      only: register_diag_field, send_data
+use field_manager_mod,     only: MODEL_ATMOS
+use tracer_manager_mod,    only: get_tracer_index, get_number_tracers, &
+                                 NO_TRACER, get_tracer_names
+use physics_driver_mod,    only: surf_diff_type
+use physics_types_mod,     only: physics_type, &
+                                 physics_tendency_type
+use radiation_types_mod,   only: radiation_type, compute_g_avg
+use atmos_cmip_diag_mod,   only: atmos_cmip_diag_init, &
+                                 register_cmip_diag_field_3d, &
+                                 send_cmip_data_3d, cmip_diag_id_type, &
+                                 query_cmip_diag_id
+use atmos_global_diag_mod, only: atmos_global_diag_init, &
+                                 atmos_global_diag_end
 
 !-----------------
 ! FV core modules:
@@ -222,7 +219,7 @@ contains
 
 !----- initialize FV dynamical core -----
    !NOTE do we still need the second file_exist call?
-   cold_start = (.not.file_exist('INPUT/fv_core.res.nc') .and. .not.file_exist('INPUT/fv_core.res.tile1.nc'))
+   cold_start = (.not.file_exists('INPUT/fv_core.res.nc') .and. .not.file_exists('INPUT/fv_core.res.tile1.nc'))
 
    call fv_control_init( Atm, dt_atmos, mygrid, grids_on_this_pe, p_split )  ! allocates Atm components; sets mygrid
 
@@ -276,7 +273,6 @@ contains
    ! Allocate grid variables to be used to calculate gradient in 2nd order flux exchange
    ! This data is only needed for the COARSEST grid.
    !call switch_current_Atm(Atm(mygrid))
-   call set_domain(Atm(mygrid)%domain)
 
    allocate(Grid_box%dx    (   isc:iec  , jsc:jec+1))
    allocate(Grid_box%dy    (   isc:iec+1, jsc:jec  ))
@@ -330,12 +326,11 @@ contains
            Atm(mygrid)%atmos_axes(4), Atm(mygrid)%coarse_graining)
    endif
    if (Atm(mygrid)%coarse_graining%write_coarse_restart_files) then
-      call fv_coarse_restart_init(mygrid, Atm(mygrid)%npz, Atm(mygrid)%flagstruct%nt_prog, &
+      call fv_coarse_restart_init(Atm(mygrid)%npz, Atm(mygrid)%flagstruct%nt_prog, &
            Atm(mygrid)%flagstruct%nt_phys, Atm(mygrid)%flagstruct%hydrostatic, &
            Atm(mygrid)%flagstruct%hybrid_z, Atm(mygrid)%flagstruct%fv_land, &
            Atm(mygrid)%coarse_graining%write_coarse_dgrid_vel_rst, &
            Atm(mygrid)%coarse_graining%write_coarse_agrid_vel_rst, &
-           Atm(mygrid)%coarse_graining%domain, &
            Atm(mygrid)%coarse_graining%restart)
    endif
 
@@ -401,7 +396,6 @@ contains
    call fv_io_register_nudge_restart ( Atm )
 
    if ( Atm(mygrid)%flagstruct%na_init>0 ) then
-      call nullify_domain ( )
       if ( .not. Atm(mygrid)%flagstruct%hydrostatic ) then
            call prt_maxmin('Before adi: W', Atm(mygrid)%w, isc, iec, jsc, jec, Atm(mygrid)%ng, npz, 1.)
       endif
@@ -481,8 +475,6 @@ contains
    id_fv_diag   = mpp_clock_id ('FV Diag',     flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
                     call timing_off('ATMOS_INIT')
-
-   call set_domain(Atm(mygrid)%domain)
 
  end subroutine atmosphere_init
 
@@ -607,7 +599,6 @@ contains
      call timing_off('fv_dynamics')
 
     if (ngrids > 1 .and. (psc < p_split .or. p_split < 0)) then
-       call mpp_sync()
        call timing_on('TWOWAY_UPDATE')
        call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mygrid)
        call timing_off('TWOWAY_UPDATE')
@@ -712,15 +703,9 @@ contains
  end subroutine atmosphere_dynamics
 
 
- subroutine atmosphere_end (Time, Grid_box )!rab, Radiation, Physics)
+ subroutine atmosphere_end (Time, Grid_box )
    type (time_type),      intent(in)    :: Time
    type(grid_box_type),   intent(inout) :: Grid_box
-!rab   type (radiation_type), intent(inout) :: Radiation
-!rab   type (physics_type),   intent(inout) :: Physics
-
-  ! initialize domains for writing global physics data
-   call set_domain ( Atm(mygrid)%domain )
-
 
 !--- end nudging module ---
 #if defined (ATMOS_NUDGE)
@@ -740,12 +725,11 @@ contains
       call timing_on('FV_DIAG')
    call atmos_global_diag_end
    call fv_cmip_diag_end
-      call timing_off('FV_DIAG')
-   call nullify_domain ( )
    call fv_end(Atm, mygrid)
-   deallocate (Atm)
+      call timing_off('FV_DIAG')
 
-   deallocate( u_dt, v_dt, t_dt, qv_dt, q_dt, pref, dum1d )
+   deallocate ( Atm )
+   deallocate ( u_dt, v_dt, t_dt, qv_dt, q_dt, pref, dum1d )
 
  end subroutine atmosphere_end
 
@@ -1037,8 +1021,6 @@ contains
 
    n = mygrid
 
-   call set_domain ( Atm(mygrid)%domain )
-
 !--- put u/v tendencies into haloed arrays u_dt and v_dt
 !$OMP parallel do default(shared) private(nb, ibs, ibe, jbs, jbe)
    do nb = 1,Atm_block%nblks
@@ -1116,7 +1098,6 @@ contains
    if (query_cmip_diag_id(ID_tnhus)) &
                   used = send_cmip_data_3d (ID_tnhus, (Atm(mygrid)%q(isc:iec,jsc:jec,:,sphum)-qtend(:,:,:,sphum))/dt_atmos, Time)
 
-   call nullify_domain()
   !---- diagnostics for FV dynamics -----
    if (Atm(mygrid)%flagstruct%print_freq /= -99) then
      call mpp_clock_begin(id_fv_diag)

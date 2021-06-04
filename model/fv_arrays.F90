@@ -24,7 +24,7 @@
 module fv_arrays_mod
 #include <fms_platform.h>
   use mpp_domains_mod,       only: domain2d
-  use fms_io_mod,            only: restart_file_type
+  use fms2_io_mod,           only: FmsNetcdfFile_t, FmsNetcdfDomainFile_t
   use time_manager_mod,      only: time_type
   use horiz_interp_type_mod, only: horiz_interp_type
   use mpp_mod,               only: mpp_broadcast
@@ -999,8 +999,9 @@ module fv_arrays_mod
 
      !These are for tracer flux BCs
      logical :: do_flux_BCs, do_2way_flux_BCs !<For a parent grid; determine whether there is a need to send BCs
-     type(restart_file_type) :: BCfile_ne, BCfile_sw
-
+     type(FmsNetcdfFile_t) :: BCfile_ne, BCfile_sw
+     logical :: BCfile_ne_is_open=.false.
+     logical :: BCfile_sw_is_open=.false.
   end type fv_nest_type
 
   type inline_mp_type
@@ -1067,11 +1068,17 @@ module fv_arrays_mod
      real, _ALLOCATABLE :: oro(:,:)
      real, _ALLOCATABLE :: ze0(:,:,:)
 
-     type(restart_file_type) :: fv_core_coarse
-     type(restart_file_type) :: fv_tracer_coarse
-     type(restart_file_type) :: fv_srf_wnd_coarse
-     type(restart_file_type) :: mg_drag_coarse
-     type(restart_file_type) :: fv_land_coarse
+     type(FmsNetcdfDomainFile_t) :: fv_core_coarse
+     type(FmsNetcdfDomainFile_t) :: fv_tracer_coarse
+     type(FmsNetcdfDomainFile_t) :: fv_srf_wnd_coarse
+     type(FmsNetcdfDomainFile_t) :: mg_drag_coarse
+     type(FmsNetcdfDomainFile_t) :: fv_land_coarse
+
+     logical :: fv_core_coarse_is_open=.false.
+     logical :: fv_tracer_coarse_is_open=.false.
+     logical :: fv_srf_wnd_coarse_is_open=.false.
+     logical :: mg_drag_coarse_is_open=.false.
+     logical :: fv_land_coarse_is_open=.false.
 
   end type coarse_restart_type
 
@@ -1281,8 +1288,16 @@ module fv_arrays_mod
 !!!!!!!!!!!!!!
 ! From fv_io !
 !!!!!!!!!!!!!!
-     type(restart_file_type) :: Fv_restart, SST_restart, Fv_tile_restart, &
+     type(FmsNetcdfFile_t) :: Fv_restart
+     type(FmsNetcdfDomainFile_t) :: SST_restart, Fv_restart_tile, &
           Rsf_restart, Mg_restart, Lnd_restart, Tra_restart
+     logical :: Fv_restart_is_open=.false.
+     logical :: SST_restart_is_open=.false.
+     logical :: Fv_restart_tile_is_open=.false.
+     logical :: Rsf_restart_is_open=.false.
+     logical :: Mg_restart_is_open=.false.
+     logical :: Lnd_restart_is_open=.false.
+     logical :: Tra_restart_is_open=.false.
      type(fv_nest_type) :: neststruct
 
      !Hold on to coarse-grid global grid, so we don't have to waste processor time getting it again when starting to do grid nesting

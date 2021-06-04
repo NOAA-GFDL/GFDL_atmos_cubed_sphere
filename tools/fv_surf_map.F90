@@ -20,9 +20,9 @@
 !***********************************************************************
  module fv_surf_map_mod
 
-      use fms_mod,           only: file_exist, check_nml_error,            &
-                                   open_namelist_file, close_file, stdlog, &
+      use fms_mod,           only: check_nml_error, stdlog, &
                                    mpp_pe, mpp_root_pe, FATAL, error_mesg
+      use fms2_io_mod,       only: file_exists
       use mpp_mod,           only: get_unit, input_nml_file, mpp_error
       use mpp_domains_mod,   only: mpp_update_domains, domain2d
       use constants_mod,     only: grav, radius, pi=>pi_8
@@ -175,7 +175,7 @@
 !
 ! surface file must be in NetCDF format
 !
-      if ( file_exist(surf_file) ) then
+      if ( file_exists(surf_file) ) then
          if (surf_format == "netcdf") then
 
           status = nf_open (surf_file, NF_NOWRITE, ncid)
@@ -1561,18 +1561,8 @@ subroutine read_namelist
 
    if (namelist_read) return
 
-#ifdef INTERNAL_FILE_NML
     read  (input_nml_file, nml=surf_map_nml, iostat=io)
     ierr = check_nml_error(io,'surf_map_nml')
-#else
-    unit = open_namelist_file ( )
-    ierr=1
-    do while (ierr /= 0)
-      read  (unit, nml=surf_map_nml, iostat=io, end=10)
-      ierr = check_nml_error(io,'surf_map_nml')
-    enddo
- 10 call close_file (unit)
-#endif
 
 !  write version and namelist to log file
 

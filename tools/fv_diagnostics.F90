@@ -27,7 +27,6 @@ module fv_diagnostics_mod
  use constants_mod,      only: grav, rdgas, rvgas, pi=>pi_8, radius, kappa, WTMAIR, WTMCO2, &
                                omega, hlv, cp_air, cp_vapor, TFREEZE
  use fms_mod,            only: write_version_number
- use fms_io_mod,         only: set_domain, nullify_domain
  use time_manager_mod,   only: time_type, get_date, get_time
  use mpp_domains_mod,    only: domain2d, mpp_update_domains, DGRID_NE, NORTH, EAST
  use diag_manager_mod,   only: diag_axis_init, register_diag_field, &
@@ -45,7 +44,6 @@ module fv_diagnostics_mod
  use tracer_manager_mod, only: get_tracer_names, get_number_tracers, get_tracer_index
  use field_manager_mod,  only: MODEL_ATMOS
  use mpp_mod,            only: mpp_error, FATAL, stdlog, mpp_pe, mpp_root_pe, mpp_sum, mpp_max, NOTE, input_nml_file
- use mpp_io_mod,         only: mpp_flush
  use sat_vapor_pres_mod, only: compute_qs, lookup_es
 
  use fv_arrays_mod, only: max_step
@@ -176,8 +174,6 @@ contains
 
     ncnst = Atm(1)%ncnst
     m_calendar = Atm(1)%flagstruct%moist_phys
-
-    call set_domain(Atm(1)%domain)  ! Set domain so that diag_manager can access tile information
 
     sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
     liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
@@ -1311,8 +1307,6 @@ contains
        yr_init = 0 ; mo_init = 0 ; hr_init = 0 ; mn_init = 0
     endif
 
-    call nullify_domain()  ! Nullify  set_domain info
-
     module_is_initialized=.true.
     istep = 0
 #ifndef GFS_PHYS
@@ -1468,7 +1462,6 @@ contains
     endif
 
     fv_time = Time
-    call set_domain(Atm(1)%domain)
 
     if ( m_calendar ) then
          call get_date(fv_time, yr, mon, dd, hr, mn, seconds)
@@ -3779,8 +3772,6 @@ contains
     if (allocated(wz)) deallocate(wz)
     if (allocated(dmmr)) deallocate(dmmr)
     if (allocated(dvmr)) deallocate(dvmr)
-
-    call nullify_domain()
 
  end subroutine fv_diag
 

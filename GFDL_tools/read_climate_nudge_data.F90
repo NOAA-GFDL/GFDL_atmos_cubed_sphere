@@ -1,3 +1,4 @@
+
 !***********************************************************************
 !*                   GNU Lesser General Public License
 !*
@@ -20,14 +21,15 @@
 !***********************************************************************
 module read_climate_nudge_data_mod
 
-use fms_mod, only: open_namelist_file, check_nml_error, close_file, &
+use fms_mod, only: check_nml_error, &
                    stdlog, mpp_pe, mpp_root_pe, write_version_number, &
-                   string, error_mesg, FATAL, NOTE, file_exist
-use mpp_mod, only: input_nml_file
-use mpp_io_mod,    only: mpp_open, MPP_NETCDF, MPP_RDONLY,MPP_MULTI, MPP_SINGLE
-use mpp_io_mod,    only: axistype, fieldtype, mpp_get_time_axis, mpp_get_atts
-use mpp_io_mod,    only: mpp_get_fields, mpp_get_info, mpp_get_axes, mpp_get_times
-use mpp_io_mod,    only: mpp_get_axis_data, mpp_read, mpp_close, mpp_get_default_calendar
+                   string, error_mesg, FATAL, NOTE
+use fms2_io_mod,   only: open_file, close_file, get_num_dimensions, &
+                         get_dimension_names, get_dimension_size, FmsNetcdfFile_t, &
+                         get_num_variables, get_variable_names, get_variable_size, &
+                         get_variable_num_dimensions, get_variable_units, &
+                         get_time_calendar, read_data, variable_att_exists
+use mpp_mod,       only: input_nml_file, mpp_npes, mpp_get_current_pelist
 use constants_mod, only: PI, GRAV, RDGAS, RVGAS
 
 implicit none
@@ -50,7 +52,7 @@ end interface
   real, parameter :: D608 = RVGAS/RDGAS - 1.
 
   integer, parameter :: NUM_REQ_AXES = 3
-  integer, parameter :: INDEX_LON = 1, INDEX_LAT = 2, INDEX_LEV = 3
+  integer, parameter :: INDEX_LON = 1, INDEX_LAT = 2, INDEX_LEV = 3, INDEX_TIME = 4
   character(len=8), dimension(NUM_REQ_AXES) :: required_axis_names = &
                                      (/ 'lon', 'lat', 'lev' /)
 
@@ -78,14 +80,13 @@ end interface
   integer, allocatable :: file_index(:)
 
 type filedata_type
-  integer :: ncid
-  integer,  pointer :: length_axes(:)  ! length of all dimensions in file
-  integer :: ndim, nvar, natt, ntim, varid_time
+  integer, pointer :: length_axes(:)
+  integer :: ndim, nvar, ntim
   integer :: time_offset
   integer, dimension(NUM_REQ_FLDS) :: field_index   ! varid for variables
   integer, dimension(NUM_REQ_AXES) :: axis_index    ! varid for dimensions
-  type(axistype),  dimension(NUM_REQ_FLDS) :: axes
-  type(fieldtype), dimension(NUM_REQ_FLDS) :: fields
+  character(len=32), dimension(NUM_REQ_FLDS+1) :: axes
+  character(len=32), dimension(NUM_REQ_FLDS) :: fields
 end type
 
   type(filedata_type), allocatable :: Files(:)
@@ -102,10 +103,10 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
 !   ntime       number of time levels
 
   integer :: iunit, ierr, io
-  character(len=128) :: name
   integer :: istat, i, j, k, n, nd, siz(4), i1, i2
-  type(axistype), allocatable :: axes(:)
-  type(fieldtype), allocatable :: fields(:)
+  character(len=32), allocatable :: fields(:)
+  type(FmsNetcdfFile_t) :: fileobj
+  integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pelist
 
   if (module_is_initialized) return
   ! initial file names to blanks
@@ -117,20 +118,8 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
   enddo
 
 !----- read namelist -----
-#ifdef INTERNAL_FILE_NML
   read (input_nml_file, nml=read_climate_nudge_data_nml, iostat=io)
   ierr = check_nml_error (io, 'read_climate_nudge_data_nml')
-#else
-  if (file_exist('input.nml') ) then
-    iunit = open_namelist_file()
-    ierr=1
-    do while (ierr /= 0)
-      read (iunit, nml=read_climate_nudge_data_nml, iostat=io, end=10)
-      ierr = check_nml_error (io, 'read_climate_nudge_data_nml')
-    enddo
-10  call close_file (iunit)
-  endif
-#endif
 
 !----- write version and namelist to log file -----
 
@@ -151,60 +140,63 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
   numtime = 0
 
 ! open input file(s)
+  allocate(pes(mpp_npes()))
+  call mpp_get_current_pelist(pes)
+
   do n = 1, nfiles
-     call mpp_open(Files(n)%ncid, trim(filenames(n)), form=MPP_NETCDF,action=MPP_RDONLY,threading=MPP_MULTI, &
-             fileset=MPP_SINGLE )
-!     call error_mesg ('read_climate_nudge_data_mod', 'Buffer size for reading = '//trim(string(read_buffer_size)), NOTE)
+     if (open_file(fileobj, trim(filenames(n)), "read", pelist=pes)) then
+         Files(n)%ndim=get_num_dimensions(fileobj)
 
-     call mpp_get_info(Files(n)%ncid, Files(n)%ndim, Files(n)%nvar, Files(n)%natt, Files(n)%ntim)
+         allocate (Files(n)%length_axes(Files(n)%ndim))
 
-     allocate (Files(n)%length_axes(Files(n)%ndim))
-     allocate (axes(Files(n)%ndim))
-     call mpp_get_axes(Files(n)%ncid,axes)
+         ! inquire dimension sizes
+         do i = 1, Files(n)%ndim
+            call get_dimension_names(fileobj, Files(n)%axes)
+            do j = 1, NUM_REQ_AXES
+               if (trim(Files(n)%axes(j)) .eq. trim(required_axis_names(j))) then
+                  call get_dimension_size(fileobj, Files(n)%axes(j), Files(n)%length_axes(j))
+                  call check_axis_size (j,Files(n)%length_axes(j))
+                  Files(n)%axis_index(j) = i
+                  exit
+               endif
+            enddo
+         enddo
+         ! time axis indexing
+         call get_dimension_size(fileobj, Files(n)%axes(INDEX_TIME), Files(n)%length_axes(INDEX_TIME))
+         Files(n)%ntim = Files(n)%length_axes(INDEX_TIME)
+         Files(n)%time_offset = numtime
+         numtime = numtime + Files(n)%ntim
 
-     ! inquire dimension sizes
-     do i = 1, Files(n)%ndim
-        call mpp_get_atts(axes(i), name=name, len=Files(n)%length_axes(i))
-        do j = 1, NUM_REQ_AXES
-           if (trim(name) .eq. trim(required_axis_names(j))) then
-              call check_axis_size (j,Files(n)%length_axes(i))
-              Files(n)%axes(j) = axes(i)
-              Files(n)%axis_index(j) = i
-              exit
-           endif
-        enddo
-     enddo
-     deallocate(axes)
-     ! time axis indexing
-     Files(n)%time_offset = numtime
-     numtime = numtime + Files(n)%ntim
+         Files(n)%nvar = get_num_variables(fileobj)
+         allocate(fields(Files(n)%nvar))
+         call get_variable_names(fileobj, fields)
+         Files(n)%field_index = 0
+         do i = 1, Files(n)%nvar
+            nd = get_variable_num_dimensions(fileobj, fields(i))
+            call get_variable_size(fileobj, fields(i), siz)
+            do j = 1, NUM_REQ_FLDS
+               if (trim(fields(i)) .eq. trim(required_field_names(j))) then
+                  Files(n)%field_index(j) = i
+                  Files(n)%fields(j) = fields(i)
+                  if (j .gt. 3) then
+                     call check_resolution (siz(1:nd))
+                  endif
+                  exit
+               endif
+            enddo
 
-     allocate(fields(Files(n)%nvar))
-     call mpp_get_fields(Files(n)%ncid,fields)
-     Files(n)%field_index = 0
-     do i = 1, Files(n)%nvar
-        call mpp_get_atts(fields(i), name=name, ndim=nd, siz=siz)
-        do j = 1, NUM_REQ_FLDS
-           if (trim(name) .eq. trim(required_field_names(j))) then
-              Files(n)%field_index(j) = i
-              Files(n)%fields(j) = fields(i)
-              if (j .gt. 3) then
-                 call check_resolution (siz(1:nd))
-              endif
-              exit
-           endif
-        enddo
-
-        ! special case for surface geopotential (sometimes the name is PHIS)
-        if (trim(name) .eq. 'PHIS') then
-           Files(n)%field_index(INDEX_ZS) = i
-           Files(n)%fields(INDEX_ZS) = fields(i)
-           call check_resolution (siz(1:nd))
-        endif
-     enddo
-     deallocate(fields)
-
+            ! special case for surface geopotential (sometimes the name is PHIS)
+            if (trim(fields(i)) .eq. 'PHIS') then
+               Files(n)%field_index(INDEX_ZS) = i
+               Files(n)%fields(INDEX_ZS) = fields(i)
+               call check_resolution (siz(1:nd))
+            endif
+         enddo
+         deallocate(fields)
+         call close_file(fileobj)
+     endif
   enddo ! "n" files loop
+  deallocate(pes)
 
   ! setup file indexing
   allocate(file_index(numtime))
@@ -234,8 +226,9 @@ real(8),          intent(out) :: times(:)
 character(len=*), intent(out) :: units, calendar
 integer :: istat, i1, i2, n
 real :: l_times(size(times))
-type(axistype), save:: time_axis
-character(len=32) :: default_calendar
+character(len=32), save:: time_axis
+type(FmsNetcdfFile_t) :: fileobj
+integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pelist
 
    if (.not.module_is_initialized) then
      call error_mesg ('read_climate_nudge_data_mod/read_time',  &
@@ -248,18 +241,27 @@ character(len=32) :: default_calendar
 
  ! data
    i2 = 0
+   allocate(pes(mpp_npes()))
+   call mpp_get_current_pelist(pes)
    do n = 1, nfiles
-      i1 = i2+1
-      i2 = i2+Files(n)%ntim
-      if( n == 1) then
-         default_calendar = mpp_get_default_calendar()
-         call mpp_get_time_axis( Files(n)%ncid, time_axis)
-         call mpp_get_atts(time_axis, units=units, calendar=calendar)
-         if( trim(calendar) == trim(default_calendar)) calendar = 'gregorian  '
+      if (open_file(fileobj, trim(filenames(n)), "read", pelist=pes)) then
+          i1 = i2+1
+          i2 = i2+Files(n)%ntim
+          if( n == 1) then
+             time_axis = Files(n)%axes(INDEX_TIME)
+             call get_variable_units(fileobj, time_axis, units)
+             if( variable_att_exists(fileobj, time_axis, calendar) ) then
+                 call get_time_calendar(fileobj, time_axis, calendar)
+             else
+                 calendar = 'gregorian  '
+             endif
+          endif
+          call read_data(fileobj,time_axis, l_times(i1:i2))
+          times(i1:i2) = l_times(i1:i2)
+          call close_file(fileobj)
       endif
-      call mpp_get_times(Files(n)%ncid, l_times(i1:i2))
-      times(i1:i2) = l_times(i1:i2)
    enddo
+   deallocate(pes)
 
 ! NOTE: need to do the conversion to time_type in this routine
 !       this will allow different units and calendars for each file
@@ -273,6 +275,8 @@ real, intent(out), dimension(:) :: lon, lat, ak, bk
 
  real :: pref
  integer :: istat
+ type(FmsNetcdfFile_t) :: fileobj
+ integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pelist
 
    if (.not.module_is_initialized) then
      call error_mesg ('read_climate_nudge_data_mod/read_grid',  &
@@ -281,29 +285,34 @@ real, intent(out), dimension(:) :: lon, lat, ak, bk
 
 
     ! static fields from first file only
-      call mpp_get_axis_data(Files(1)%axes(INDEX_LON), lon)
-      call mpp_get_axis_data(Files(1)%axes(INDEX_LAT), lat)
+      allocate(pes(mpp_npes()))
+      call mpp_get_current_pelist(pes)
+      if (open_file(fileobj, trim(filenames(1)), "read", pelist=pes)) then
+          call read_data(fileobj, Files(1)%axes(INDEX_LON), lon)
+          call read_data(fileobj, Files(1)%axes(INDEX_LAT), lat)
 
-    ! units are assumed to be degrees east and north
-    ! convert to radians
-      lon = lon * PI/180.
-      lat = lat * PI/180.
+        ! units are assumed to be degrees east and north
+        ! convert to radians
+          lon = lon * PI/180.
+          lat = lat * PI/180.
 
-    ! vertical coodinate
-      if (Files(1)%field_index(INDEX_AK) .gt. 0) then
-         call mpp_read(Files(1)%ncid, Files(1)%fields(INDEX_AK), ak)
-         if (Files(1)%field_index(INDEX_P0) .gt. 0) then
-            call mpp_read(Files(1)%ncid, Files(1)%fields(INDEX_P0), pref)
-         else
-            pref = P0
-         endif
-         ak = ak*pref
-      else
-         ak = 0.
+        ! vertical coodinate
+          if (Files(1)%field_index(INDEX_AK) .gt. 0) then
+             call read_data(fileobj, Files(1)%fields(INDEX_AK), ak)
+             if (Files(1)%field_index(INDEX_P0) .gt. 0) then
+                call read_data(fileobj, Files(1)%fields(INDEX_P0), pref)
+             else
+                pref = P0
+             endif
+             ak = ak*pref
+          else
+             ak = 0.
+          endif
+
+          call read_data(fileobj, Files(1)%fields(INDEX_BK), bk)
+          call close_file(fileobj)
       endif
-
-      call mpp_read(Files(1)%ncid, Files(1)%fields(INDEX_BK), bk)
-
+      deallocate(pes)
 
 end subroutine read_grid
 
@@ -382,6 +391,8 @@ real,             intent(out), dimension(:,:) :: dat
 integer,          intent(in),  optional       :: is, js
 integer :: istat, atime, n, this_index
 integer :: nread(4), start(4)
+type(FmsNetcdfFile_t) :: fileobj
+integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pelist
 
    if (.not.module_is_initialized) then
      call error_mesg ('read_climate_nudge_data_mod',  &
@@ -428,7 +439,13 @@ integer :: nread(4), start(4)
      nread(1) = size(dat,1)
      nread(2) = size(dat,2)
 
-     call mpp_read(Files(n)%ncid, Files(n)%fields(this_index), dat, start, nread)
+     allocate(pes(mpp_npes()))
+     call mpp_get_current_pelist(pes)
+     if (open_file(fileobj, trim(filenames(n)), "read", pelist=pes)) then
+         call read_data(fileobj, Files(n)%fields(this_index), dat, corner=start, edge_lengths=nread)
+         call close_file(fileobj)
+     endif
+     deallocate(pes)
 
       ! geopotential height (convert to m2/s2 if necessary)
      if (field .eq. 'phis') then
@@ -449,6 +466,8 @@ character(len=4), intent(in) :: field
 real,             intent(out), dimension(:,:,:) :: dat
 integer,          intent(in),  optional         :: is, js
 integer :: istat, atime, n, this_index, start(4), nread(4)
+type(FmsNetcdfFile_t) :: fileobj
+integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pelist
 !logical :: convert_virt_temp = .false.
 
    if (.not.module_is_initialized) then
@@ -505,7 +524,13 @@ integer :: istat, atime, n, this_index, start(4), nread(4)
      nread(2) = size(dat,2)
      nread(3) = size(dat,3)
 
-     call mpp_read(Files(n)%ncid, Files(n)%fields(this_index), dat, start, nread)
+     allocate(pes(mpp_npes()))
+     call mpp_get_current_pelist(pes)
+     if (open_file(fileobj, trim(filenames(n)), "read", pelist=pes)) then
+         call read_data(fileobj, Files(n)%fields(this_index), dat, corner=start, edge_lengths=nread)
+         call close_file(fileobj)
+     endif
+     deallocate(pes)
 
      ! convert virtual temp to temp
      ! necessary for some of the high resol AVN analyses
@@ -521,9 +546,6 @@ subroutine read_climate_nudge_data_end
 integer :: istat, n
 
   if ( .not.module_is_initialized) return
-  do n = 1, nfiles
-     call mpp_close(Files(n)%ncid)
-  enddo
   deallocate (Files)
   module_is_initialized = .false.
 

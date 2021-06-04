@@ -32,7 +32,7 @@ module fv_restart_mod
   use constants_mod,       only: kappa, pi=>pi_8, omega, rdgas, grav, rvgas, cp_air, radius
   use fv_arrays_mod,       only: fv_atmos_type, fv_nest_type, fv_grid_bounds_type, R_GRID
   use fv_io_mod,           only: fv_io_init, fv_io_read_restart, fv_io_write_restart, &
-                                 remap_restart, fv_io_register_restart, fv_io_register_nudge_restart, &
+                                 remap_restart, fv_io_register_nudge_restart, &
                                  fv_io_register_restart_BCs, fv_io_write_BCs, fv_io_read_BCs
   use fv_grid_utils_mod,   only: ptop_min, fill_ghost, g_sum, &
                                  make_eta_level, cubed_to_latlon, great_circle_dist
@@ -58,8 +58,9 @@ module fv_restart_mod
   use mpp_mod,             only: mpp_send, mpp_recv, mpp_sync_self, mpp_set_current_pelist, mpp_get_current_pelist, mpp_npes, mpp_pe, mpp_sync
   use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST,  mpp_get_C2F_index, WEST, SOUTH
   use mpp_domains_mod,     only: mpp_global_field
-  use fms_mod,             only: file_exist
   use fv_treat_da_inc_mod, only: read_da_inc
+  use fms2_io_mod,         only: file_exists, set_filename_appendix, FmsNetcdfFile_t, open_file, close_file
+  use fms_io_mod,          only: fmsset_filename_appendix=> set_filename_appendix
   use coarse_grained_restart_files_mod, only: fv_io_write_restart_coarse
 
   implicit none
@@ -118,12 +119,14 @@ contains
     character(len=128):: tname, errstring, fname, tracer_name
     character(len=120):: fname_ne, fname_sw
     character(len=3) :: gn
+    character(len=6) :: gnn
 
     integer :: npts, sphum
     integer, allocatable :: pelist(:), smoothed_topo(:)
     real    :: sumpertn
     real    :: zvir
 
+    type(FmsNetcdfFile_t) :: fileobj
     logical :: do_read_restart = .false.
     logical :: do_read_restart_bc = .false.
     integer, allocatable :: ideal_test_case(:), new_nest_topo(:)
@@ -167,8 +170,8 @@ contains
           write(fname_ne,'(A, I2.2, A)') 'INPUT/fv_BC_ne.res.nest', Atm(n)%grid_number, '.nc'
           write(fname_sw,'(A, I2.2, A)') 'INPUT/fv_BC_sw.res.nest', Atm(n)%grid_number, '.nc'
           if (is_master()) print*, 'Searching for nested grid BC files ', trim(fname_ne), ' ', trim (fname_sw)
-          do_read_restart = file_exist(fname, Atm(n)%domain)
-          do_read_restart_bc = file_exist(fname_ne, Atm(n)%domain) .and. file_exist(fname_sw, Atm(n)%domain)
+          do_read_restart = file_exists(fname)
+          do_read_restart_bc = file_exists(fname_ne) .and. file_exists(fname_sw)
           if (is_master()) then
              print*, 'FV_RESTART: ', n, do_read_restart, do_read_restart_bc
              if (.not. do_read_restart_bc) write(*,*) 'BC files not found, re-generating nested grid boundary conditions'
@@ -176,16 +179,20 @@ contains
           Atm(N)%neststruct%first_step = .not. do_read_restart_bc
        else
           fname='INPUT/fv_core.res.nc'
-          do_read_restart = file_exist('INPUT/fv_core.res.nc') .or. file_exist('INPUT/fv_core.res.tile1.nc')
+          do_read_restart = open_file(fileobj, fname, "read", is_restart=.true.)
+          if (do_read_restart) call close_file(fileobj)
           if (is_master()) print*, 'FV_RESTART: ', n, do_read_restart, do_read_restart_bc
        endif
 
        !2. Register restarts
-       !--- call fv_io_register_restart to register restart field to be written out in fv_io_write_restart
-       if ( n==this_grid ) call fv_io_register_restart(Atm(n)%domain,Atm(n:n))
+       !No longer need to register restarts in fv_restart_mod with fms2_io implementation
 
-       !if (Atm(n)%neststruct%nested) call fv_io_register_restart_BCs(Atm(n)) !TODO put into fv_io_register_restart
-
+       ! The two calls are needed until everything uses fms2io
+       if (Atm(n)%neststruct%nested .and. n==this_grid) then
+          write(gnn,'(A4, I2.2)') "nest", Atm(n)%grid_number
+          call set_filename_appendix(gnn)
+          call fmsset_filename_appendix(gnn)
+       endif
 
        !3preN. Topography BCs for nest, including setup for blending
 

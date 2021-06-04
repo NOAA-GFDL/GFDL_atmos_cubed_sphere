@@ -20,10 +20,10 @@
 !***********************************************************************
 module fv_climate_nudge_mod
 
-use fms_mod,          only: open_namelist_file, check_nml_error,  &
-                            close_file, stdlog, mpp_pe, mpp_root_pe, &
+use fms_mod,          only: check_nml_error,  &
+                            stdlog, mpp_pe, mpp_root_pe, &
                             write_version_number, string, error_mesg, &
-                            FATAL, WARNING, NOTE, file_exist
+                            FATAL, WARNING, NOTE
 use mpp_mod,          only: input_nml_file
 use diag_manager_mod, only: register_diag_field, send_data,   &
                             register_static_field
@@ -129,20 +129,8 @@ real :: missing_value = -1.e10
    if (module_is_initialized) return
 
  ! read namelist
-#ifdef INTERNAL_FILE_NML
    read (input_nml_file, nml=fv_climate_nudge_nml, iostat=io)
    ierr = check_nml_error (io, 'fv_climate_nudge_nml')
-#else
-   if (file_exist('input.nml') ) then
-     unit = open_namelist_file()
-     ierr=1
-     do while (ierr /= 0)
-       read (unit, nml=fv_climate_nudge_nml, iostat=io, end=10)
-       ierr = check_nml_error (io, 'fv_climate_nudge_nml')
-     enddo
-10   call close_file (unit)
-   endif
-#endif
 
 !----- write version and namelist to log file -----
 
