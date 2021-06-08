@@ -188,7 +188,7 @@ contains
   subroutine update_moving_nest(Atm_block, IPD_control, IPD_data, time_step)
     type(block_control_type), intent(in) :: Atm_block
     type(IPD_control_type), intent(in) :: IPD_control
-    type(IPD_data_type), intent(inout) :: IPD_data
+    type(IPD_data_type), intent(inout) :: IPD_data(:)
     type(time_type), intent(in)     :: time_step
 
     logical :: is_moving_nest = .True.  !! TODO connect to namelist for each nest
@@ -334,8 +334,8 @@ contains
   subroutine fv_moving_nest_exec(Atm, Atm_block, IPD_control, IPD_data, delta_i_c, delta_j_c, n, nest_num, parent_grid_num, child_grid_num, dt_atmos)
     type(fv_atmos_type), allocatable, target, intent(inout) :: Atm(:)
     type(block_control_type), intent(in) :: Atm_block
-    type(IPD_control_type), intent(inout) :: IPD_control
-    type(IPD_data_type), intent(inout) :: IPD_data
+    type(IPD_control_type), intent(in) :: IPD_control
+    type(IPD_data_type), intent(inout) :: IPD_data(:)
     integer, intent(in)  :: delta_i_c, delta_j_c
     integer, intent(in)  :: n, nest_num, parent_grid_num, child_grid_num 
     real, intent(in)     :: dt_atmos
@@ -605,7 +605,8 @@ contains
 
        if (debug_log) print '("[INFO] WDR MV_NST0 run step 0 fv_moving_nest_main.F90 npe=",I0)', this_pe
        if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
-       if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), IPD_control, IPD_data, output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+       !if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), IPD_control, IPD_data, output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+       if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
        output_step = output_step + 1
 
        !!============================================================================
@@ -686,7 +687,7 @@ contains
 
        call mn_prog_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
        call mn_phys_fill_nest_halos_from_parent(Atm, IPD_control, IPD_data, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
-
+       
        call mpp_clock_end (id_movnest2)
        call mpp_clock_begin (id_movnest3)
 
@@ -963,7 +964,8 @@ contains
 
 
           if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
-          if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), IPD_control, IPD_data, output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+          !if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), IPD_control, IPD_data, output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+          if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
           output_step = output_step + 1
 
        end if
