@@ -1230,6 +1230,25 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: peln(:,:,:)   _NULL  !< ln(pe)
     real, _ALLOCATABLE :: pkz (:,:,:)   _NULL  !< finite-volume mean pk
 
+#ifdef MOVING_NEST
+! For internal vortex tracker
+    real, _ALLOCATABLE :: vort850(:,:)  _NULL  !< relative vorticity at 850 mb
+    real, _ALLOCATABLE :: spd850(:,:)   _NULL  !< wind speed at 850 mb
+    real, _ALLOCATABLE :: u850(:,:)     _NULL  !< ua at 850 mb
+    real, _ALLOCATABLE :: v850(:,:)     _NULL  !< va at 850 mb
+    real, _ALLOCATABLE :: z850(:,:)     _NULL  !< geopotential height at 850 mb
+    real, _ALLOCATABLE :: vort700(:,:)  _NULL  !< relative vorticity at 700 mb
+    real, _ALLOCATABLE :: spd700(:,:)   _NULL  !< wind speed at 700 mb
+    real, _ALLOCATABLE :: u700(:,:)     _NULL  !< ua at 700 mb
+    real, _ALLOCATABLE :: v700(:,:)     _NULL  !< va at 700 mb
+    real, _ALLOCATABLE :: z700(:,:)     _NULL  !< geopotential height at 700 mb
+    real, _ALLOCATABLE :: vort10m(:,:)  _NULL  !< relative vorticity at 10-m
+    real, _ALLOCATABLE :: spd10m(:,:)   _NULL  !< wind speed at 10-m
+    real, _ALLOCATABLE :: u10m(:,:)     _NULL  !< ua at 10-m
+    real, _ALLOCATABLE :: v10m(:,:)     _NULL  !< va at 10-m
+    real, _ALLOCATABLE :: slp(:,:)      _NULL  !< sea level pressure
+#endif
+
 ! For phys coupling:
     real, _ALLOCATABLE :: u_srf(:,:)    _NULL  !< Surface u-wind
     real, _ALLOCATABLE :: v_srf(:,:)    _NULL  !< Surface v-wind
@@ -1469,6 +1488,25 @@ contains
     allocate (   Atm%pk(is:ie    ,js:je  , npz+1) )
     allocate ( Atm%peln(is:ie,npz+1,js:je) )
     allocate (  Atm%pkz(is:ie,js:je,npz) )
+
+#ifdef MOVING_NEST
+    ! Allocate internal vortex tracker arrays
+    allocate ( Atm%vort850(is:ie,js:je) )
+    allocate ( Atm%spd850(is:ie,js:je) )
+    allocate ( Atm%u850(is:ie,js:je) )
+    allocate ( Atm%v850(is:ie,js:je) )
+    allocate ( Atm%z850(is:ie,js:je) )
+    allocate ( Atm%vort700(is:ie,js:je) )
+    allocate ( Atm%spd700(is:ie,js:je) )
+    allocate ( Atm%u700(is:ie,js:je) )
+    allocate ( Atm%v700(is:ie,js:je) )
+    allocate ( Atm%z700(is:ie,js:je) )
+    allocate ( Atm%vort10m(is:ie,js:je) )
+    allocate ( Atm%spd10m(is:ie,js:je) )
+    allocate ( Atm%u10m(is:ie,js:je) )
+    allocate ( Atm%v10m(is:ie,js:je) )
+    allocate ( Atm%slp(is:ie,js:je) )
+#endif
 
     allocate ( Atm%u_srf(is:ie,js:je) )
     allocate ( Atm%v_srf(is:ie,js:je) )
@@ -1835,6 +1873,25 @@ contains
     deallocate ( Atm%inline_mp%prei )
     deallocate ( Atm%inline_mp%pres )
     deallocate ( Atm%inline_mp%preg )
+
+#ifdef MOVING_NEST
+    ! Deallocate internal vortex tracker arrays
+    deallocate ( Atm%vort850 )
+    deallocate ( Atm%spd850 )
+    deallocate ( Atm%u850 )
+    deallocate ( Atm%v850 )
+    deallocate ( Atm%z850 )
+    deallocate ( Atm%vort700 )
+    deallocate ( Atm%spd700 )
+    deallocate ( Atm%u700 )
+    deallocate ( Atm%v700 )
+    deallocate ( Atm%z700 )
+    deallocate ( Atm%vort10m )
+    deallocate ( Atm%spd10m )
+    deallocate ( Atm%u10m )
+    deallocate ( Atm%v10m )
+    deallocate ( Atm%slp )
+#endif
 
     deallocate ( Atm%u_srf )
     deallocate ( Atm%v_srf )

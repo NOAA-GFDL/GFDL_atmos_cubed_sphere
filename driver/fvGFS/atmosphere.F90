@@ -185,6 +185,9 @@ use fv_fill_mod,        only: fill_gfs
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
+#ifdef MOVING_NEST
+use fv_diagnostics_mod, only: fv_diag_tracker
+#endif
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
@@ -1815,6 +1818,22 @@ contains
 
      call mpp_clock_end(id_fv_diag)
    endif
+
+#ifdef MOVING_NEST
+  !---- diagnostics for FV vortex tracker -----
+   fv_time = Time_next
+   call get_time (fv_time, seconds,  days)
+   call get_time (Time_step_atmos, sec)
+   ! Currently hard-coded to run diag_tracker every two time steps 
+   if (mod(seconds,2*sec) .eq. 0) then
+     !call mpp_clock_begin(id_fv_diag_tracker)
+     !call timing_on('FV_DIAG_TRACKER')
+     call fv_diag_tracker(Atm(mygrid:mygrid), zvir, fv_time)
+     !call fv_vortex_tracker(Atm(mygrid:mygrid), zvir, fv_time)
+     !call timing_off('FV_DIAG_TRACKER')
+     !call mpp_clock_end(id_fv_diag_tracker)
+   endif
+#endif
 
  end subroutine atmosphere_state_update
 
