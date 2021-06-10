@@ -2623,13 +2623,12 @@ contains
   end subroutine mn_prog_dump_to_netcdf
 
 
-
-!  subroutine mn_phys_dump_to_netcdf(Atm, Atm_block, IPD_Control, IPD_Data, time_val, file_prefix, is_fine_pe, domain_coarse, domain_fine, nz)
-  subroutine mn_phys_dump_to_netcdf(Atm, time_val, file_prefix, is_fine_pe, domain_coarse, domain_fine, nz)
+!  subroutine mn_phys_dump_to_netcdf(Atm, time_val, file_prefix, is_fine_pe, domain_coarse, domain_fine, nz)
+  subroutine mn_phys_dump_to_netcdf(Atm, Atm_block, IPD_Control, IPD_Data, time_val, file_prefix, is_fine_pe, domain_coarse, domain_fine, nz)
     type(fv_atmos_type), intent(in)            :: Atm
-    !type (block_control_type), intent(in)      :: Atm_block
-    !type(IPD_control_type), intent(in)         :: IPD_Control
-    !type(IPD_data_type), intent(in)            :: IPD_Data(:)
+    type (block_control_type), intent(in)      :: Atm_block
+    type(IPD_control_type), intent(in)         :: IPD_Control
+    type(IPD_data_type), intent(in)            :: IPD_Data(:)
     integer, intent(in)                        :: time_val
     character(len=*), intent(in)               :: file_prefix
     logical, intent(in)                        :: is_fine_pe
@@ -2648,9 +2647,16 @@ contains
 
 
     ! TODO PHYSICS Add processing of physics variables, following example in mn_prog_dump_to_netcdf
-    real (kind=kind_phys), allocatable :: smc_pr_local (:,:,:)  !< soil moisture content
-    real (kind=kind_phys), allocatable :: stc_pr_local (:,:,:)  !< soil temperature
-    real (kind=kind_phys), allocatable :: slc_pr_local (:,:,:)  !< soil liquid water content
+    !real (kind=kind_phys), allocatable :: smc_pr_local (:,:,:)  !< soil moisture content
+    !real (kind=kind_phys), allocatable :: stc_pr_local (:,:,:)  !< soil temperature
+    !real (kind=kind_phys), allocatable :: slc_pr_local (:,:,:)  !< soil liquid water content
+    
+
+    ! Coerce the high precision variables from physics into regular precision for debugging netCDF output
+    ! Does not affect values used in calculations.
+    real, allocatable :: smc_pr_local (:,:,:)  !< soil moisture content
+    real, allocatable :: stc_pr_local (:,:,:)  !< soil temperature
+    real, allocatable :: slc_pr_local (:,:,:)  !< soil liquid water content
     
 
 
@@ -2673,60 +2679,55 @@ contains
     !     time_val, Atm%global_tile, file_prefix, "lonrad")
 
 
-
-
-
     this_pe = mpp_pe()
 
-
-
-    !is = Atm(n)%bd%is
-    !ie = Atm(n)%bd%ie
-    !js = Atm(n)%bd%js
-    !je = Atm(n)%bd%je
+    is = Atm%bd%is
+    ie = Atm%bd%ie
+    js = Atm%bd%js
+    je = Atm%bd%je
     
-    !if (debug_log) print '("[INFO] WDR mn_phys_fill_temp_variables. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
+    if (debug_log) print '("[INFO] WDR mn_phys_dump_to_netcdf. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
 
-    !! Just allocate compute domain size here for outputs;  
-    !allocate ( smc_pr_local(is:ie, js:je, IPD_Control%lsoil) )
-    !allocate ( stc_pr_local(is:ie, js:je, IPD_Control%lsoil) )
-    !allocate ( slc_pr_local(is:ie, js:je, IPD_Control%lsoil) )
+    ! Just allocate compute domain size here for outputs;  
+    allocate ( smc_pr_local(is:ie, js:je, IPD_Control%lsoil) )
+    allocate ( stc_pr_local(is:ie, js:je, IPD_Control%lsoil) )
+    allocate ( slc_pr_local(is:ie, js:je, IPD_Control%lsoil) )
 
-    !smc_pr_local = +99999.9
-    !stc_pr_local = +99999.9
-    !slc_pr_local = +99999.9
+    smc_pr_local = +99999.9
+    stc_pr_local = +99999.9
+    slc_pr_local = +99999.9
     
 
 
-    !do nb = 1,Atm_block%nblks
-    !  blen = Atm_block%blksz(nb)
-    !  do k = 1, IPD_Control%lsoil
-    !    do ix = 1, blen
-    !      i = Atm_block%index(nb)%ii(ix)
-    !      j = Atm_block%index(nb)%jj(ix)
-    !      smc_pr_local(i,j,k) = IPD_Data(nb)%Sfcprop%smc(ix,k)
-    !      stc_pr_local(i,j,k) = IPD_Data(nb)%Sfcprop%stc(ix,k)
-    !      slc_pr_local(i,j,k) = IPD_Data(nb)%Sfcprop%slc(ix,k)
-    !    enddo
-    !  enddo
-    !enddo
+    do nb = 1,Atm_block%nblks
+      blen = Atm_block%blksz(nb)
+      do k = 1, IPD_Control%lsoil
+        do ix = 1, blen
+          i = Atm_block%index(nb)%ii(ix)
+          j = Atm_block%index(nb)%jj(ix)
+          smc_pr_local(i,j,k) = IPD_Data(nb)%Sfcprop%smc(ix,k)
+          stc_pr_local(i,j,k) = IPD_Data(nb)%Sfcprop%stc(ix,k)
+          slc_pr_local(i,j,k) = IPD_Data(nb)%Sfcprop%slc(ix,k)
+        enddo
+      enddo
+    enddo
 
 
 
-    !call mn_var_dump_to_netcdf(stc_pr_local   , is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%lsoil, &
-    !     time_val, Atm%global_tile, file_prefix, "SOILT")
+    call mn_var_dump_to_netcdf(stc_pr_local   , is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%lsoil, &
+         time_val, Atm%global_tile, file_prefix, "SOILT")
 
-    !call mn_var_dump_to_netcdf(smc_pr_local   , is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%lsoil, &
-    !     time_val, Atm%global_tile, file_prefix, "SOILM")
+    call mn_var_dump_to_netcdf(smc_pr_local   , is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%lsoil, &
+         time_val, Atm%global_tile, file_prefix, "SOILM")
 
-    !call mn_var_dump_to_netcdf(slc_pr_local   , is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%lsoil, &
-    !     time_val, Atm%global_tile, file_prefix, "SOILL")
+    call mn_var_dump_to_netcdf(slc_pr_local   , is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%lsoil, &
+         time_val, Atm%global_tile, file_prefix, "SOILL")
 
-    !deallocate(smc_pr_local)
-    !deallocate(stc_pr_local)
-    !deallocate(slc_pr_local)
+    deallocate(smc_pr_local)
+    deallocate(stc_pr_local)
+    deallocate(slc_pr_local)
 
-    !if (debug_log) print '("[INFO] WDR end mn_phys_fill_temp_variables. npe=",I0," n=",I0)', this_pe, n
+    if (debug_log) print '("[INFO] WDR end mn_phys_dump_tp_netcdf npe=",I0)', this_pe
 
 
   end subroutine mn_phys_dump_to_netcdf
