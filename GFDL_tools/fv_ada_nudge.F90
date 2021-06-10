@@ -63,7 +63,7 @@ module fv_ada_nudge_mod
 
  use fms2_io_mod,       only : register_restart_field, open_file, close_file, &
                                read_restart, register_field, &
-                               register_variable_attribute, file_exists
+                               register_variable_attribute, file_exists, FmsNetcdfFile_t
  use fv_io_mod,         only : fv_io_register_axis
  use axis_utils_mod, only : frac_index
 
@@ -1807,7 +1807,7 @@ endif
       end if
       call read_restart(ada_driver_restart)
       call close_file(ada_driver_restart)
-    endif 
+    endif
 
 #endif ! snz for ENABLE_ADA
 
