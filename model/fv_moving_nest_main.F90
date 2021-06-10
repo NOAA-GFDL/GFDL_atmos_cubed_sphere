@@ -182,6 +182,8 @@ logical :: wxvar_out = .false.
 integer :: id_movnest1, id_movnest1_9, id_movnest2, id_movnest3, id_movnest4, id_movnest5
 integer :: id_movnest6, id_movnest7_0, id_movnest7_1, id_movnest7_2, id_movnest7_3, id_movnest8, id_movnest9
 integer :: id_movnestTot
+!integer, save :: a_step = 0
+integer, save :: output_step = 0
 
 contains
 
@@ -196,11 +198,7 @@ contains
     real :: dt_atmos = 90.0  !! TODO connect to timestep
 
     logical :: do_move
-
-    
-    integer, save :: a_step = 0
     integer :: delta_i_c, delta_j_c
-    
     integer :: parent_grid_num, child_grid_num, nest_num
     integer :: n
     
@@ -213,8 +211,6 @@ contains
     parent_grid_num = 1 
     child_grid_num = 2
     nest_num = 1
-    
-    
     
     if (is_moving_nest) then
        call eval_move_nest(Atm, a_step, do_move, delta_i_c, delta_j_c, dt_atmos)
@@ -231,10 +227,54 @@ contains
        
     end if
     
-    a_step = a_step + 1
+    !a_step = a_step + 1
     
   end subroutine update_moving_nest
 
+
+  subroutine dump_moving_nest(Atm_block, IPD_control, IPD_data, time_step)
+    type(block_control_type), intent(in) :: Atm_block
+    type(IPD_control_type), intent(in) :: IPD_control
+    type(IPD_data_type), intent(inout) :: IPD_data(:)
+    type(time_type), intent(in)     :: time_step
+
+    logical :: tsvar_out = .true.
+    logical :: wxvar_out = .false.
+
+    type(domain2d), pointer           :: domain_coarse, domain_fine
+    logical :: is_fine_pe
+    integer :: parent_grid_num, child_grid_num, nz
+    integer :: this_pe, n
+
+    this_pe = mpp_pe()
+    n = mygrid
+
+    parent_grid_num = 1 
+    child_grid_num = 2
+
+    domain_fine => Atm(child_grid_num)%domain
+    domain_coarse => Atm(parent_grid_num)%domain
+    is_fine_pe = Atm(n)%neststruct%nested .and. ANY(Atm(n)%pelist(:) == this_pe)
+    nz = Atm(n)%npz
+
+
+    if (debug_log) print '("[INFO] WDR ptbounds 3 atmosphere.F90  npe=",I0," pt(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(Atm(n)%pt,1), ubound(Atm(n)%pt,1), lbound(Atm(n)%pt,2), ubound(Atm(n)%pt,2), lbound(Atm(n)%pt,3), ubound(Atm(n)%pt,3)
+    
+    !if (is_fine_pe) then
+    !   if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxavar", is_fine_pe, domain_coarse, domain_fine, nz)
+    !   if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), Atm_block, IPD_control, IPD_data, output_step, "wxavar", is_fine_pe, domain_coarse, domain_fine, nz)
+    !   output_step = output_step + 1
+    !   if (debug_log) print '("[INFO] WDR after outputting to netCDF fv_dynamics atmosphere.F90 npe=",I0, " psc=",I0)', this_pe, psc
+    !end if
+    
+    !if (a_step .lt. 10 .or. mod(a_step, 10) .eq. 0) then
+    if (mod(a_step, 20) .eq. 0) then
+       if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
+       if (tsvar_out) call mn_phys_dump_to_netcdf(Atm(n), Atm_block, IPD_control, IPD_data, a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
+    endif
+    
+
+  end subroutine dump_moving_nest
 
 
   subroutine fv_moving_nest_init_clocks()
@@ -510,10 +550,10 @@ contains
     end if
        
 
-    if (a_step .eq. 1) then
-       if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step-1, "tsvar", is_fine_pe, domain_coarse, domain_fine, nz)
-       if (tsvar_out) call mn_phys_dump_to_netcdf(Atm(n), a_step-1, "tsvar", is_fine_pe, domain_coarse, domain_fine, nz)
-    end if
+    !if (a_step .eq. 1) then
+    !   if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step-1, "tsvar", is_fine_pe, domain_coarse, domain_fine, nz)
+    !   if (tsvar_out) call mn_phys_dump_to_netcdf(Atm(n), a_step-1, "tsvar", is_fine_pe, domain_coarse, domain_fine, nz)
+    !end if
 
 
     !if (Atm(child_grid_num)%gridstruct%nested .and. is_moving_nest .and. do_move) then
@@ -604,9 +644,9 @@ contains
        !!============================================================================
 
        if (debug_log) print '("[INFO] WDR MV_NST0 run step 0 fv_moving_nest_main.F90 npe=",I0)', this_pe
-       if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+       !if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
        !if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), IPD_control, IPD_data, output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
-       if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+       !if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
        output_step = output_step + 1
 
        !!============================================================================
@@ -883,8 +923,8 @@ contains
        if (debug_log) print '("WDR_NEST_HALO_RECV,",I0,"===STEP 8====")', this_pe
        if (debug_log) print '("[INFO] WDR MV_NST8 run step 8 fv_moving_nest_main.F90 npe=",I0)', this_pe
 
-       if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
-       if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+       !if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+       !if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
        output_step = output_step + 1
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
@@ -963,9 +1003,9 @@ contains
           if (debug_log) print '("[INFO] WDR PTVAL fv_dynamics.F90 npe=",I0," AfterNestMove ================================================")', this_pe
 
 
-          if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+          !if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
           !if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), IPD_control, IPD_data, output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
-          if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+          !if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
           output_step = output_step + 1
 
        end if

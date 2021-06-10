@@ -293,8 +293,6 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
 
   # Moving Nest diagnostics
   logical :: debug_log = .false.
-  logical :: tsvar_out = .true.
-  logical :: wxvar_out = .false.
 
 
 
@@ -656,7 +654,6 @@ contains
 
    character(len=15) :: str_time
 
-   integer, save :: output_step = 0
    type(domain2d), pointer           :: domain_coarse, domain_fine
 
    !! TODO Refine this per Atm(n) structure to allow some static and some moving nests in same run
@@ -762,20 +759,6 @@ contains
      ! WDR start code to output moving nest debug information after timestep.  
      !  This is solely debugging information; not required for moving nest functionality.
 #ifdef MOVING_NEST
-     if (debug_log) print '("[INFO] WDR ptbounds 3 atmosphere.F90  npe=",I0," pt(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(Atm(n)%pt,1), ubound(Atm(n)%pt,1), lbound(Atm(n)%pt,2), ubound(Atm(n)%pt,2), lbound(Atm(n)%pt,3), ubound(Atm(n)%pt,3)
-
-     if (is_fine_pe) then
-        if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxavar", is_fine_pe, domain_coarse, domain_fine, nz)
-        if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxavar", is_fine_pe, domain_coarse, domain_fine, nz)
-        output_step = output_step + 1
-        if (debug_log) print '("[INFO] WDR after outputting to netCDF fv_dynamics atmosphere.F90 npe=",I0, " psc=",I0)', this_pe, psc
-     end if
-
-     !if (a_step .lt. 10 .or. mod(a_step, 10) .eq. 0) then
-     if (mod(a_step, 20) .eq. 0) then
-        if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
-        if (tsvar_out) call mn_phys_dump_to_netcdf(Atm(n), a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
-     endif
 
      call date_and_time(TIME=str_time)
       
