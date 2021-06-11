@@ -165,7 +165,7 @@ module fv_arrays_mod
 
      real(kind=R_GRID) :: global_area
      logical :: g_sum_initialized = .false. !< Not currently used but can be useful
-     logical:: sw_corner, se_corner, ne_corner, nw_corner
+     logical:: sw_corner = .false., se_corner = .false., ne_corner = .false., nw_corner = .false.
 
      real(kind=R_GRID) :: da_min, da_max, da_min_c, da_max_c
 
