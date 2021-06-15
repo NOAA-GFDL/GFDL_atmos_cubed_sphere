@@ -428,6 +428,9 @@ contains
    type(grid_geometry), save              :: fp_super_tile_geo
    integer, save      :: fp_super_istart_fine, fp_super_jstart_fine,fp_super_iend_fine, fp_super_jend_fine
    real, allocatable, save  :: orog_grid(:,:)              ! TODO deallocate this at end of model run
+   real, allocatable, save  :: orog_std_grid(:,:)              ! TODO deallocate this at end of model run
+   real, allocatable, save  :: ls_mask_grid(:,:)              ! TODO deallocate this at end of model run
+   real, allocatable, save  :: land_frac_grid(:,:)              ! TODO deallocate this at end of model run
 
    type(grid_geometry)              :: tile_geo, tile_geo_u, tile_geo_v
    real(kind=R_GRID), allocatable   :: p_grid(:,:,:), n_grid(:,:,:)
@@ -684,7 +687,8 @@ contains
                   Atm(child_grid_num)%neststruct%surface_dir)
 
              print '("[INFO] WDR mn_orog_read_hires_parent BEFORE READING static orog fine file on npe=",I0)', this_pe
-             call mn_orog_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(child_grid_num)%neststruct%surface_dir, filtered_terrain, orog_grid)
+             call mn_orog_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(child_grid_num)%neststruct%surface_dir, filtered_terrain, &
+                  orog_grid, orog_std_grid, ls_mask_grid, land_frac_grid)
              print '("[INFO] WDR mn_orog_read_hires_parent COMPLETED READING static orog fine file on npe=",I0)', this_pe
 
              first_nest_move = .false.
@@ -869,13 +873,29 @@ contains
        call mpp_clock_begin (id_movnest7_1)
        
        !!=====================================================================================
-       !! Step 7.01 --  Reset the orography
+       !! Step 7.01 --  Reset the orography data that was read from the hires static file
        !!
        !!=====================================================================================
        
        if (is_fine_pe) then
           ! phis is allocated in fv_arrays.F90 as:  allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
           Atm(n)%phis(isd:ied, jsd:jed) = orog_grid(ioffset*x_refine+isd:ioffset*x_refine+ied, joffset*y_refine+jsd:joffset*y_refine+jed) * grav
+
+          ! sgh and oro were only fully allocated if fv_land is True
+          !      if false, oro is (1,1), and sgh is not allocated
+          if ( Atm(n)%flagstruct%fv_land ) then
+             print '("[INFO] WDR shift orography data fv_land TRUE npe=",I0)', this_pe
+             ! oro and sgh are allocated only for the compute domain -- they do not have halos
+          
+             !fv_arrays.F90 oro() !< land fraction (1: all land; 0: all water)
+             !real, _ALLOCATABLE :: oro(:,:)      _NULL  !< land fraction (1: all land; 0: all water)
+             Atm(n)%oro(isc:iec, jsc:jec) = land_frac_grid(ioffset*x_refine+isc:ioffset*x_refine+iec, joffset*y_refine+jsc:joffset*y_refine+jec)
+          
+             !real, _ALLOCATABLE :: sgh(:,:)      _NULL  !< Terrain standard deviation
+             Atm(n)%sgh(isc:iec, jsc:jec) = orog_std_grid(ioffset*x_refine+isc:ioffset*x_refine+iec, joffset*y_refine+jsc:joffset*y_refine+jec)
+          else
+             print '("[INFO] WDR shift orography data fv_land FALSE npe=",I0)', this_pe
+          end if
        end if
 
 

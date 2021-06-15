@@ -69,7 +69,7 @@ use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => 
   use fv_moving_nest_utils_mod,  only: alloc_halo_buffer, load_nest_latlons_from_nc, grid_geometry, output_grid_to_nc, find_nest_alignment
   use fv_moving_nest_utils_mod,  only: fill_nest_from_buffer, fill_nest_from_buffer_cell_center, fill_nest_from_buffer_nearest_neighbor
   use fv_moving_nest_utils_mod,  only: fill_nest_halos_from_parent, fill_grid_from_supergrid, fill_weight_grid
-  use fv_moving_nest_utils_mod,  only: load_nest_orog_from_nc
+  use fv_moving_nest_utils_mod,  only: load_nest_orog_from_nc, alloc_read_data
 
   implicit none
 
@@ -93,6 +93,9 @@ use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => 
   real (kind=kind_phys), allocatable :: stc_local (:,:,:)  !< soil temperature
   real (kind=kind_phys), allocatable :: slc_local (:,:,:)  !< soil liquid water content
 
+  real (kind=kind_phys), allocatable :: phy_f2d_local (:,:,:)    !< 2D physics variables
+  real (kind=kind_phys), allocatable :: phy_f3d_local (:,:,:,:)  !< 3D physics variables
+
   logical :: debug_log = .false.
 
 
@@ -105,6 +108,7 @@ use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => 
      module procedure mn_var_fill_intern_nest_halos3D
      module procedure mn_var_fill_intern_nest_halos3D_kindphys
      module procedure mn_var_fill_intern_nest_halos4D
+     module procedure mn_var_fill_intern_nest_halos4D_kindphys
      module procedure mn_var_fill_intern_nest_halos_wind
   end interface mn_var_fill_intern_nest_halos
 
@@ -115,6 +119,7 @@ use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => 
      module procedure mn_var_shift_data3D
      module procedure mn_var_shift_data3D_kindphys
      module procedure mn_var_shift_data4D
+     module procedure mn_var_shift_data4D_kindphys
   end interface mn_var_shift_data
 
   !! Step 8
@@ -278,7 +283,7 @@ contains
     integer :: is, ie, js, je
     integer :: this_pe
 
-    integer :: nb, blen, i, j, k, ix 
+    integer :: nb, blen, i, j, k, ix, nv
 
     this_pe = mpp_pe()
 
@@ -303,23 +308,44 @@ contains
     allocate ( smc_local(isd:ied, jsd:jed, IPD_Control%lsoil) )
     allocate ( stc_local(isd:ied, jsd:jed, IPD_Control%lsoil) )
     allocate ( slc_local(isd:ied, jsd:jed, IPD_Control%lsoil) )
+
+    allocate ( phy_f2d_local(isd:ied, jsd:jed, IPD_Control%ntot2d) )
+    allocate ( phy_f3d_local(isd:ied, jsd:jed, IPD_Control%levs, IPD_Control%ntot3d) )
+
+    print '("[INFO] WDR mn_phys_fill_temp_variables. npe=",I0," ntot2d=",I0," ntot3d=",I0, " levs=",I0)', this_pe, IPD_Control%ntot2d, IPD_Control%ntot2d, IPD_Control%levs
+
     ts_local = +99999.9
     smc_local = +99999.9
     stc_local = +99999.9
     slc_local = +99999.9
+
+    phy_f2d_local = +99999.9
+    phy_f3d_local = +99999.9
     
     ts_local(is:ie, js:je) =  Atm(n)%ts(is:ie, js:je) 
 
     do nb = 1,Atm_block%nblks
       blen = Atm_block%blksz(nb)
-      do k = 1, IPD_Control%lsoil
-        do ix = 1, blen
-          i = Atm_block%index(nb)%ii(ix)
-          j = Atm_block%index(nb)%jj(ix)
+      do ix = 1, blen
+         ! Get the indices only once, before iterating through vertical levels or number of variables
+         !  Was there a different efficiency from having the k loop outside?
+         i = Atm_block%index(nb)%ii(ix)  
+         j = Atm_block%index(nb)%jj(ix)
+         do k = 1, IPD_Control%lsoil            
           smc_local(i,j,k) = IPD_Data(nb)%Sfcprop%smc(ix,k)
           stc_local(i,j,k) = IPD_Data(nb)%Sfcprop%stc(ix,k)
           slc_local(i,j,k) = IPD_Data(nb)%Sfcprop%slc(ix,k)
         enddo
+
+        do nv = 1, IPD_Control%ntot2d
+           phy_f2d_local(i,j,nv) = IPD_Data(nb)%Tbd%phy_f2d(ix, nv)
+        end do
+
+        do k = 1, IPD_Control%levs
+           do nv = 1, IPD_Control%ntot3d
+              phy_f3d_local(i,j,k,nv) = IPD_Data(nb)%Tbd%phy_f3d(ix, k, nv)
+           end do
+        end do
       enddo
     enddo
 
@@ -420,7 +446,7 @@ contains
 
     integer :: is, ie, js, je
     integer :: this_pe
-    integer :: nb, blen, i, j ,k, ix
+    integer :: nb, blen, i, j ,k, ix, nv
     integer :: bad_values, good_values
 
     this_pe = mpp_pe()
@@ -466,7 +492,8 @@ contains
        print '("INFO] WDR ts_local values. npe=",I0," good_values=",I0," bad_values=",I0)', this_pe, good_values, bad_values
     end if
        
-
+    !  Needed to fill the local grids for parent and nest PEs in order to transmit/interpolate data from parent to nest
+    !  But only the nest PE's have changed the values with nest motion, so they are the only ones that need to update the original arrays
     if (is_fine_pe) then
        is = Atm(n)%bd%is
        ie = Atm(n)%bd%ie
@@ -477,29 +504,42 @@ contains
 
 
        Atm(n)%ts(is:ie, js:je) =  ts_local(is:ie, js:je) 
-
+       
        do nb = 1,Atm_block%nblks
-         blen = Atm_block%blksz(nb)
-         do k = 1, IPD_Control%lsoil
-           do ix = 1, blen
+          blen = Atm_block%blksz(nb)
+          do ix = 1, blen
              i = Atm_block%index(nb)%ii(ix)
              j = Atm_block%index(nb)%jj(ix)
-             IPD_Data(nb)%Sfcprop%smc(ix,k) = smc_local(i,j,k)
-             IPD_Data(nb)%Sfcprop%stc(ix,k) = stc_local(i,j,k)
-             IPD_Data(nb)%Sfcprop%slc(ix,k) = slc_local(i,j,k)
-           enddo
-         enddo
+             do k = 1, IPD_Control%lsoil
+                IPD_Data(nb)%Sfcprop%smc(ix,k) = smc_local(i,j,k)
+                IPD_Data(nb)%Sfcprop%stc(ix,k) = stc_local(i,j,k)
+                IPD_Data(nb)%Sfcprop%slc(ix,k) = slc_local(i,j,k)
+             enddo
+
+             do nv = 1, IPD_Control%ntot2d
+                IPD_Data(nb)%Tbd%phy_f2d(ix, nv) = phy_f2d_local(i,j,nv)
+             enddo
+             
+             do k = 1, IPD_Control%levs
+                do nv = 1, IPD_Control%ntot3d
+                   IPD_Data(nb)%Tbd%phy_f3d(ix, k, nv) = phy_f3d_local(i,j,k,nv)
+                enddo
+             enddo
+          enddo
        enddo
-
-    end if
-
-    deallocate(ts_local)
-    deallocate(smc_local)
-    deallocate(stc_local)
-    deallocate(slc_local)
-
-    if (debug_log) print '("[INFO] WDR end mn_phys_apply_temp_variables. npe=",I0," n=",I0)', this_pe, n
-
+       
+   end if
+   
+   deallocate(ts_local)
+   deallocate(smc_local)
+   deallocate(stc_local)
+   deallocate(slc_local)
+   
+   deallocate(phy_f2d_local)
+   deallocate(phy_f3d_local)
+   
+   if (debug_log) print '("[INFO] WDR end mn_phys_apply_temp_variables. npe=",I0," n=",I0)', this_pe, n
+   
   end subroutine mn_phys_apply_temp_variables
 
 
@@ -669,6 +709,17 @@ contains
          Atm(child_grid_num)%neststruct%ind_h, &
          x_refine, y_refine, &
          is_fine_pe, nest_domain, position, IPD_Control%lsoil)
+
+    call fill_nest_halos_from_parent("phy_f2d", phy_f2d_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+         Atm(child_grid_num)%neststruct%ind_h, &
+         x_refine, y_refine, &
+         is_fine_pe, nest_domain, position, IPD_Control%ntot2d)
+
+    call fill_nest_halos_from_parent("phy_f3d", phy_f3d_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+         Atm(child_grid_num)%neststruct%ind_h, &
+         x_refine, y_refine, &
+         is_fine_pe, nest_domain, position, IPD_Control%levs)
+
 
   end subroutine mn_phys_fill_nest_halos_from_parent
 
@@ -841,6 +892,10 @@ contains
     call mn_var_fill_intern_nest_halos(smc_local, domain_fine, is_fine_pe)
     call mn_var_fill_intern_nest_halos(stc_local, domain_fine, is_fine_pe)
     call mn_var_fill_intern_nest_halos(slc_local, domain_fine, is_fine_pe)
+
+    call mn_var_fill_intern_nest_halos(phy_f2d_local, domain_fine, is_fine_pe)
+    call mn_var_fill_intern_nest_halos(phy_f3d_local, domain_fine, is_fine_pe)
+
     !call check_array(Atm%u, this_pe, "Atm%pt", 100.0, 400.0)
 
   end subroutine mn_phys_fill_intern_nest_halos
@@ -982,6 +1037,28 @@ contains
     end if
 
   end subroutine mn_var_fill_intern_nest_halos4D
+
+
+  subroutine mn_var_fill_intern_nest_halos4D_kindphys(data_var, domain_fine, is_fine_pe)
+    real(kind=kind_phys), allocatable, intent(inout)            :: data_var(:,:,:,:)
+    type(domain2d), intent(inout)               :: domain_fine
+    logical, intent(in)                         :: is_fine_pe
+
+    integer                      :: this_pe
+    this_pe = mpp_pe()
+
+    if (is_fine_pe) then
+       if (debug_log) print '("[INFO] WDR INH4 before call to mpp_update_domains. npe=",I0)', this_pe
+       ! mpp_update_domains fills the halo region of the fine grids for the interior of the nest.  
+       ! The fine nest boundary with the coarse grid remains unchanged.
+       ! seems that this only performs communication between fine nest PEs
+       ! Just transfers halo data between tiles of same resolution -- doesn't perform any interpolation!
+       call mpp_update_domains(data_var, domain_fine,  flags=NUPDATE + EUPDATE + SUPDATE + WUPDATE)
+
+       if (debug_log) print '("[INFO] WDR INH4 after call to mpp_update_domains. npe=",I0)', this_pe
+    end if
+
+  end subroutine mn_var_fill_intern_nest_halos4D_kindphys
 
 
 
@@ -1211,21 +1288,48 @@ contains
 
 
 
-  subroutine mn_orog_read_hires_parent(npx, npy, x_refine, surface_dir, filtered_terrain, orog_grid)
-    integer, intent(in)                :: npx, npy, x_refine
+  subroutine mn_orog_read_hires_parent(npx, npy, refine, surface_dir, filtered_terrain, orog_grid, orog_std_grid, ls_mask_grid, land_frac_grid)
+    integer, intent(in)                :: npx, npy, refine
     character(len=120), intent(in)     :: surface_dir
     logical, intent(in)                :: filtered_terrain
-    real, allocatable, intent(inout)   :: orog_grid(:,:)
+    real, allocatable, intent(out)     :: orog_grid(:,:)
+    real, allocatable, intent(out)     :: orog_std_grid(:,:)
+    real, allocatable, intent(out)     :: ls_mask_grid(:,:)
+    real, allocatable, intent(out)     :: land_frac_grid(:,:)
 
-    integer :: nx_cubic
+    integer :: nx_cubic, nx, ny, fp_nx, fp_ny, mid_nx, mid_ny
+    integer :: fp_istart_fine, fp_iend_fine, fp_jstart_fine, fp_jend_fine
+
+
     character(len=256) :: res_str, parent_str
+    character(len=512) :: nc_filename
     character(len=16)  :: orog_var_name
-    integer :: parent_tile = 6 ! Later this will be configurable
-    
-    nx_cubic = npx - 1
-    write(res_str, '(I0)'), nx_cubic * x_refine
 
+    integer :: parent_tile = 6 ! TODO: Later this will be configurable from namelist
+    integer :: this_pe
+
+    this_pe = mpp_pe()
+
+    nx_cubic = npx - 1
+    nx = npx - 1
+    ny = npy - 1
+
+    fp_istart_fine = 0
+    fp_iend_fine = nx * refine
+    fp_jstart_fine = 0
+    fp_jend_fine = ny * refine
+
+    fp_nx = fp_iend_fine - fp_istart_fine
+    fp_ny = fp_jend_fine - fp_jstart_fine
+
+    mid_nx = (fp_iend_fine - fp_istart_fine) / 2 
+    mid_ny = (fp_jend_fine - fp_jstart_fine) / 2
+
+    if (debug_log) print '("[INFO] WDR NCREAD LOFC load_nest_orog_from_nc npe=",I0,I4,I4,I4,I4," ",A128)', this_pe, fp_nx, fp_ny, mid_nx,mid_ny, nc_filename
+
+    write(res_str, '(I0)'), nx_cubic * refine
     write(parent_str, '(I0)'), parent_tile
+    nc_filename = trim(surface_dir) // '/C' // trim(res_str) // '_oro_data.tile' // trim(parent_str) // '.nc'
 
     if (filtered_terrain) then
        orog_var_name = 'orog_filt'    
@@ -1233,10 +1337,12 @@ contains
        orog_var_name = 'orog_raw'
     end if
 
-    ! This should be changed from hard coded parent tile 6 to reading the parent tile from the data structures
+    call alloc_read_data(nc_filename, orog_var_name, fp_nx, fp_ny, orog_grid)
+    call alloc_read_data(nc_filename, 'stddev', fp_nx, fp_ny, orog_std_grid)
 
-    call load_nest_orog_from_nc(trim(surface_dir) // '/C' // trim(res_str) // '_oro_data.tile' // trim(parent_str) // '.nc', &
-         npx, npy, x_refine, orog_var_name, orog_grid)
+    call alloc_read_data(nc_filename, 'slmsk', fp_nx, fp_ny, ls_mask_grid)
+    call alloc_read_data(nc_filename, 'land_frac', fp_nx, fp_ny, land_frac_grid)
+
   end subroutine mn_orog_read_hires_parent
 
 
@@ -1464,6 +1570,17 @@ contains
          delta_i_c, delta_j_c, &
          x_refine, y_refine, &
          is_fine_pe, nest_domain, position, IPD_Control%lsoil)
+
+
+    call mn_var_shift_data(phy_f2d_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+         delta_i_c, delta_j_c, &
+         x_refine, y_refine, &
+         is_fine_pe, nest_domain, position, IPD_control%ntot2d)
+
+    call mn_var_shift_data(phy_f3d_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+         delta_i_c, delta_j_c, &
+         x_refine, y_refine, &
+         is_fine_pe, nest_domain, position, IPD_Control%levs)
 
   end subroutine mn_phys_shift_data
 
@@ -1950,6 +2067,130 @@ contains
     deallocate(wbuffer)
 
   end subroutine mn_var_shift_data4D
+
+
+  subroutine mn_var_shift_data4D_kindphys(data_var, interp_type, wt, ind, delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position, nz)
+
+    real(kind=kind_phys), allocatable, intent(inout)            :: data_var(:,:,:,:)
+    integer, intent(in)                         :: interp_type
+    real, allocatable, intent(in)               :: wt(:,:,:)
+    integer, allocatable, intent(in)            :: ind(:,:,:)
+    integer, intent(in)                         :: delta_i_c, delta_j_c, x_refine, y_refine
+    logical, intent(in)                         :: is_fine_pe
+    type(nest_domain_type), intent(inout)       :: nest_domain
+    integer, intent(in)                         :: position, nz
+
+    real(kind=kind_phys), dimension(:,:,:,:), allocatable         :: nbuffer, sbuffer, ebuffer, wbuffer
+    logical         :: parent_proc, child_proc
+    type(bbox)      :: north_fine, north_coarse ! step 4
+    type(bbox)      :: south_fine, south_coarse
+    type(bbox)      :: east_fine, east_coarse
+    type(bbox)      :: west_fine, west_coarse
+    integer         :: my_stat
+    character(256)  :: my_errmsg
+    integer         :: n4d
+    integer         :: this_pe
+    integer         :: is, ie, js, je
+    integer         :: nest_level = 1  ! WDR TODO allow to vary
+
+
+    this_pe = mpp_pe()
+
+    n4d = ubound(data_var, 4)
+
+    !!===========================================================
+    !!
+    !! Fill halo buffers
+    !!
+    !!===========================================================
+
+    if (debug_log) print '("[INFO] WDR NRD5. npe=",I0)', this_pe
+
+
+    if (debug_log) print '("[INFO] show_nest_domain npe=",I0," nest_domain%tile_fine=",I0," %tile_coarse=",I0)', this_pe, nest_domain%tile_fine, nest_domain%tile_coarse
+
+    if (debug_log) print '("[INFO] show_nest_domain npe=",I0," nest_domain%istart_fine=",I0," %iend_fine=",I0)', this_pe, nest_domain%istart_fine,  nest_domain%iend_fine
+    if (debug_log) print '("[INFO] show_nest_domain npe=",I0," nest_domain%jstart_fine=",I0," %jend_fine=",I0)', this_pe, nest_domain%jstart_fine,  nest_domain%jend_fine
+
+    if (debug_log) print '("[INFO] show_nest_domain npe=",I0," nest_domain%istart_coarse=",I0," %iend_coarse=",I0)', this_pe, nest_domain%istart_coarse,  nest_domain%iend_coarse
+    if (debug_log) print '("[INFO] show_nest_domain npe=",I0," nest_domain%jstart_coarse=",I0," %jend_coarse=",I0)', this_pe, nest_domain%jstart_coarse,  nest_domain%jend_coarse
+
+    if (debug_log) print '("[INFO] data_var npe=",I0," data_var(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe,  lbound(data_var, 1), ubound(data_var, 1), lbound(data_var, 2), ubound(data_var, 2), lbound(data_var, 3), ubound(data_var, 3)
+
+    if (debug_log) print '("[INFO] wt npe=",I0," wt(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe,  lbound(wt, 1), ubound(wt, 1), lbound(wt, 2), ubound(wt, 2), lbound(wt, 3), ubound(wt, 3)
+
+    !====================================================
+    if (debug_log) print '("[INFO] WDR ALL1. npe=",I0," position=",I0," nz=",I0)', this_pe, position, nz
+
+    call alloc_halo_buffer(nbuffer, north_fine, north_coarse, nest_domain, NORTH,  position, nz, n4d)
+    call alloc_halo_buffer(sbuffer, south_fine, south_coarse, nest_domain, SOUTH,  position, nz, n4d)
+    call alloc_halo_buffer(ebuffer, east_fine,  east_coarse,  nest_domain, EAST,   position, nz, n4d)
+    call alloc_halo_buffer(wbuffer, west_fine,  west_coarse,  nest_domain, WEST,   position, nz, n4d)
+
+    if (debug_log) print '("[INFO] WDR allocate_halo_buffers DONE. npe=",I0)', this_pe
+
+
+    !====================================================
+
+    !call mpp_sync(full_pelist)
+
+    if (debug_log) print '("[INFO] WDR NRF0.d mn_var_shift_data npe=",I0," data_var(",I0,",",I0,",",I0,",",",I0,")")', this_pe, size(data_var,1), size(data_var,2), size(data_var,3), size(data_var,4)
+    if (debug_log) print '("[INFO] WDR NRF1 mn_var_shift_data start. npe=",I0)', this_pe
+
+    ! Passes data from coarse grid to fine grid's halo
+    call mpp_update_nest_fine(data_var, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer, nest_level, position=position)
+
+    if (debug_log) print '("[INFO] WDR NRF2 mn_var_shift_data start. npe=",I0)', this_pe
+
+    if (is_fine_pe) then
+       if (debug_log) print '("[INFO] WDR NRF3 mn_var_shift_data start. npe=",I0)', this_pe
+
+       !!===========================================================
+       !!
+       !! Shift grids internal to each nest PE
+       !!
+       !!===========================================================
+
+       if ( delta_i_c .ne. 0 ) then
+          if (debug_log) print '("[INFO] WDR NREX mn_var_shift_data start. npe=",I0)', this_pe
+          data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
+       end if
+
+       if (delta_j_c .ne.  0) then
+          if (debug_log) print '("[INFO] WDR NREY mn_var_shift_data start. npe=",I0)', this_pe
+          data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
+       end if
+
+       !call output_logical_grid("FF", isd_fine, ied_fine, jsd_fine, jed_fine, nz, x)
+
+       !!===========================================================
+       !!
+       !! Apply halo data
+       !!
+       !!===========================================================
+
+       if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
+
+       call fill_nest_from_buffer(interp_type, data_var, nbuffer, north_fine, north_coarse, nz, NORTH, x_refine, y_refine, wt, ind)
+       if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
+
+       call fill_nest_from_buffer(interp_type, data_var, sbuffer, south_fine, south_coarse, nz, SOUTH, x_refine, y_refine, wt, ind)
+       if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
+
+       call fill_nest_from_buffer(interp_type, data_var, ebuffer, east_fine, east_coarse, nz, EAST, x_refine, y_refine, wt, ind)
+       if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
+
+       call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, nz, WEST, x_refine, y_refine, wt, ind)
+       if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
+
+    end if
+
+    deallocate(nbuffer)
+    deallocate(sbuffer)
+    deallocate(ebuffer)
+    deallocate(wbuffer)
+
+  end subroutine mn_var_shift_data4D_kindphys
 
 
 
@@ -2636,11 +2877,11 @@ contains
     integer, intent(in)                        :: nz
 
     integer :: is, ie, js, je
-    integer :: nb, blen, i, j, k, ix 
+    integer :: nb, blen, i, j, k, ix, nv 
     integer :: this_pe
 
     integer            :: n_moist
-    character(len=16)  :: out_var_name
+    character(len=16)  :: out_var_name, phys_var_name
     integer            :: position = CENTER 
     !integer            :: position_u = NORTH
     !integer            :: position_v = EAST
@@ -2657,7 +2898,11 @@ contains
     real, allocatable :: smc_pr_local (:,:,:)  !< soil moisture content
     real, allocatable :: stc_pr_local (:,:,:)  !< soil temperature
     real, allocatable :: slc_pr_local (:,:,:)  !< soil liquid water content
+
+    real, allocatable :: phy_f2d_pr_local (:,:,:)
+    real, allocatable :: phy_f3d_pr_local (:,:,:,:)
     
+    this_pe = mpp_pe()
 
 
     !call mn_var_dump_to_netcdf(Atm%pt   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
@@ -2670,7 +2915,22 @@ contains
     !  Terrain height == phis / grav
     call mn_var_dump_to_netcdf(Atm%phis / grav   , is_fine_pe, domain_coarse, domain_fine, position, 1, &
          time_val, Atm%global_tile, file_prefix, "orog")
-
+    
+    ! sgh and oro were only fully allocated if fv_land is True
+    !      if false, oro is (1,1), and sgh is not allocated
+    if ( Atm%flagstruct%fv_land ) then
+       print '("[INFO] WDR mn_phys_dump_tp_netcdf fv_land TRUE npe=",I0," size(oro)=(",I0,",",I0,")")', this_pe, size(Atm%oro, 1), size(Atm%oro, 1)
+       print '("[INFO] WDR mn_phys_dump_tp_netcdf fv_land TRUE npe=",I0," size(sgh)=(",I0,",",I0,")")', this_pe, size(Atm%sgh, 1), size(Atm%sgh, 1)
+       ! land frac --  called oro in fv_array.F90
+       call mn_var_dump_to_netcdf(Atm%oro   , is_fine_pe, domain_coarse, domain_fine, position, 1, &
+            time_val, Atm%global_tile, file_prefix, "LFRAC")
+       
+       ! terrain standard deviation --  called sgh in fv_array.F90
+       call mn_var_dump_to_netcdf(Atm%sgh   , is_fine_pe, domain_coarse, domain_fine, position, 1, &
+            time_val, Atm%global_tile, file_prefix, "STDDEV")
+    else 
+       print '("[INFO] WDR mn_phys_dump_tp_netcdf fv_land FALSE npe=",I0, " size(oro)=(",I0,",",I0,")")', this_pe, size(Atm%oro, 1), size(Atm%oro, 1)
+    end if
 
     ! Latitude and longitude in radians
     !call mn_var_dump_to_netcdf( Atm%gridstruct%agrid(:,:,2), is_fine_pe, domain_coarse, domain_fine, position, nz, &
@@ -2679,7 +2939,6 @@ contains
     !     time_val, Atm%global_tile, file_prefix, "lonrad")
 
 
-    this_pe = mpp_pe()
 
     is = Atm%bd%is
     ie = Atm%bd%ie
@@ -2688,31 +2947,47 @@ contains
     
     if (debug_log) print '("[INFO] WDR mn_phys_dump_to_netcdf. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
 
-    ! Just allocate compute domain size here for outputs;  
+    ! Just allocate compute domain size here for outputs;  the nest moving code also has halos added, but we don't need them here.
     allocate ( smc_pr_local(is:ie, js:je, IPD_Control%lsoil) )
     allocate ( stc_pr_local(is:ie, js:je, IPD_Control%lsoil) )
     allocate ( slc_pr_local(is:ie, js:je, IPD_Control%lsoil) )
 
+    allocate ( phy_f2d_pr_local(is:ie, js:je, IPD_Control%ntot2d) )
+    allocate ( phy_f3d_pr_local(is:ie, js:je, IPD_Control%levs, IPD_Control%ntot3d) )
+
     smc_pr_local = +99999.9
     stc_pr_local = +99999.9
     slc_pr_local = +99999.9
+
+    phy_f2d_pr_local = +99999.9
+    phy_f3d_pr_local = +99999.9
     
-
-
     do nb = 1,Atm_block%nblks
       blen = Atm_block%blksz(nb)
-      do k = 1, IPD_Control%lsoil
         do ix = 1, blen
           i = Atm_block%index(nb)%ii(ix)
           j = Atm_block%index(nb)%jj(ix)
-          smc_pr_local(i,j,k) = IPD_Data(nb)%Sfcprop%smc(ix,k)
-          stc_pr_local(i,j,k) = IPD_Data(nb)%Sfcprop%stc(ix,k)
-          slc_pr_local(i,j,k) = IPD_Data(nb)%Sfcprop%slc(ix,k)
-        enddo
+
+          do k = 1, IPD_Control%lsoil
+             ! Use real() to lower the precision
+             smc_pr_local(i,j,k) = real(IPD_Data(nb)%Sfcprop%smc(ix,k))
+             stc_pr_local(i,j,k) = real(IPD_Data(nb)%Sfcprop%stc(ix,k))
+             slc_pr_local(i,j,k) = real(IPD_Data(nb)%Sfcprop%slc(ix,k))
+          enddo
+
+          do nv = 1, IPD_Control%ntot2d
+             ! Use real() to lower the precision
+             phy_f2d_pr_local(i,j,nv) = real(IPD_Data(nb)%Tbd%phy_f2d(ix, nv))
+          end do
+          
+          do k = 1, IPD_Control%levs
+             do nv = 1, IPD_Control%ntot3d
+                ! Use real() to lower the precision
+                phy_f3d_pr_local(i,j,k,nv) = real(IPD_Data(nb)%Tbd%phy_f3d(ix, k, nv))
+             end do
+          end do
       enddo
     enddo
-
-
 
     call mn_var_dump_to_netcdf(stc_pr_local   , is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%lsoil, &
          time_val, Atm%global_tile, file_prefix, "SOILT")
@@ -2723,9 +2998,28 @@ contains
     call mn_var_dump_to_netcdf(slc_pr_local   , is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%lsoil, &
          time_val, Atm%global_tile, file_prefix, "SOILL")
 
+    
+    do nv = 1, IPD_Control%ntot2d
+       write (phys_var_name, "(A4,I0.3)")  'PH2D', nv
+       call mn_var_dump_to_netcdf(phy_f2d_pr_local(:,:,nv), is_fine_pe, domain_coarse, domain_fine, position, 1, &
+            time_val, Atm%global_tile, file_prefix, phys_var_name)       
+    end do
+
+    do nv = 1, IPD_Control%ntot3d
+       write (phys_var_name, "(A4,I0.3)")  'PH3D', nv
+       call mn_var_dump_to_netcdf(phy_f3d_pr_local(:,:,:,nv), is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%levs, &
+            time_val, Atm%global_tile, file_prefix, phys_var_name)       
+    end do
+
+
+
+
     deallocate(smc_pr_local)
     deallocate(stc_pr_local)
     deallocate(slc_pr_local)
+
+    deallocate(phy_f2d_pr_local)
+    deallocate(phy_f3d_pr_local)
 
     if (debug_log) print '("[INFO] WDR end mn_phys_dump_tp_netcdf npe=",I0)', this_pe
 
