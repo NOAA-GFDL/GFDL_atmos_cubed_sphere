@@ -1249,8 +1249,8 @@ contains
     character(len=1)                   :: tile_num
     character(len=120)                 :: fname_ne, fname_sw
 
-    fname_ne = 'RESTART/fv_BC_ne.res.nc'
-    fname_sw = 'RESTART/fv_BC_sw.res.nc'
+    fname_ne = 'INPUT/fv_BC_ne.res.nc'
+    fname_sw = 'INPUT/fv_BC_sw.res.nc'
 
     allocate(all_pelist(mpp_npes()))
     call mpp_get_current_pelist(all_pelist)
