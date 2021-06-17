@@ -87,7 +87,7 @@
 \title{A Scientific Description of the GFDL Finite-Volume Cubed-Sphere Dynamical Core}
 \newcommand{\subtitle}{GFDL Weather and Climate Dynamics Division\\Technical Memorandum GFDL2021001}
 \author{Lucas Harris\\Xi Chen\\William Putman\\Linjiong Zhou\\Jan-Huey Chen}
-\date{14 June 2021}
+\date{14 June 2021\\Revision v1.0a 16 June 2021}
 
 
 
@@ -324,7 +324,7 @@ where $a = \frac{\sqrt{6}}{3}R_e$, $R_e$ is the radius of the sphere, $\theta_x,
    \label{fig:gridmetricsCoordinates}
 \end{figure}
 
-\section{Vector geometry: covariant vs. contravariant components} \label{sec:covarcontravarstaggered}
+\section{Vector geometry: covariant vs. contravariant components} \label{sec:covarcontravar}
 
 The gnomonic coordinate system is non-orthogonal, so a vector decomposed into its components will have a projection into both coordinate directions. This violates one of the assumptions made when the traditional decomposition of the momentum equation into its components is done, and typically extra metric terms appear when attempting to do the decomposition correctly. (Recall that the vector form of the momentum equation applies regardless of horizontal coordinate system.) Furthermore, it turns out that different quantities transform between coordinate systems differently if the coordinates are non-orthogonal. Most notably, the gradient of a scalar field does not transform the same way as a vector.
 
@@ -1189,19 +1189,19 @@ Several methods for horizontal numerical diffusion exist\footnote{In the vertica
 
 This combination of implicit vorticity damping and explicit divergence damping was a powerful and very effective control of grid-scale modes (both physical and erroneous), and could also be used to create a sponge layer at the top of the domain (Section~\ref{sec:sponge}). However the implicit diffusion from the monotonicity constraint is nonlinear and difficult to understand and control. For many applications the monotonicity constraint is too diffusive to marginally-resolved modes, especially for storm-scale simulation. Further, implicitly-diffused kinetic energy cannot be restored as heat, unless total energy is a prognostic variable. Thus an explicit diffusion for the vortical modes has been implemented (Section~\ref{sec:vortdamp}), which is more configurable but also allows for dissipative heating (Section~\ref{sec:dissiphtg}). 
 
-We have established a set of baseline settings, balancing implicit and explicit diffusion, for different applications. The options are given in Table~\ref{table:diffusionsettings}. Good choices for lower-resolution hydrostatic simulation are the ``monotonic'' or the ``traditional climate'' settings, the former being best if emphasizing tropical cyclones and mesoscale variability. In nonhydrostatic simulations, for which we recommend using non-monotonic advection schemes, there are two choices. The ``effectively-inviscid'' setting uses the minimal amount of numerical diffusion necessary to maintain stability and remove energy cascading to grid scale; modes of wavelength $4\Delta x$ or longer and $2\Delta x$ updrafts are unaffected.  The ``minimally-diffusive'' setting adds some additional diffusion to marginally-resolved modes, which can help control the intensity and the influence of these features upon larger-scale circulations. This is most apparent in simulations of tropical cyclones, in which the ``minimally-diffusive'' settings tend to have better track skill (and often also have better large-scale circulations) but weaker intensity as a result compared to those in the ``effectively-inviscid'' simulations. The ``traditional weather'' settings are useful for global medium-range and subseasonal prediction, as they are safer options that are more tolerant of quirks in the physics or initialization.
+We have established a set of baseline settings, balancing implicit and explicit diffusion, for different applications. The options are given in Table~\ref{table:diffusionsettings}. Good choices for lower-resolution hydrostatic simulation are the ``monotonic'' or the ``traditional climate'' settings, the former being best if emphasizing tropical cyclones and mesoscale variability, although ``traditional weather'' is also a good choice for these purposes. In nonhydrostatic simulations, for which we recommend using non-monotonic advection schemes, there are two choices. The ``effectively-inviscid'' setting uses the minimal amount of numerical diffusion necessary to maintain stability and remove energy cascading to grid scale; modes of wavelength $4\Delta x$ or longer and $2\Delta x$ updrafts are unaffected.  The ``minimally-diffusive'' setting adds some additional diffusion to marginally-resolved modes, which can help control the intensity and the influence of these features upon larger-scale circulations. This is most apparent in simulations of tropical cyclones, in which the ``minimally-diffusive'' settings tend to have better track skill (and often also have better large-scale circulations) but weaker intensity as a result compared to those in the ``effectively-inviscid'' simulations. The ``traditional weather'' settings are useful for global medium-range and subseasonal prediction, as they are safer options that are more tolerant of quirks in the physics or initialization.
 
 
 \begin{table}[htp]
 \begin{center}
-\caption{Standard sets of diffusion settings for full-physics simulations in FV3.}
+\caption{Standard sets of diffusion settings for full-physics simulations in FV3. These settings are only provided as broad guidelines: precise configurations may depend on the application and how the dynamics interacts with the physics.}
 \begin{tabular}{rccccc}
           & Effectively- & Minimally- &           & Traditional & Traditional\\
 Parameters & Inviscid    & diffusive  & Monotonic & Weather     & Climate\\ \hline
-\texttt{hord_xx} & 5 & 6 & 8 or 10 & 6 & 10 \\ 
-\texttt{hord_tr} & -5 & -5 & 8 or 10 & 8 & 10\\
-\texttt{nord} & 3 & 3 & 3 & 2& 2\\
-\texttt{d4_bg} & 0.15 & 0.15 & 0.15 & 0.12 & 0.12\\
+\texttt{hord_xx} & 5 & 6 & 8 or 10 & 5 & 10 \\ 
+\texttt{hord_tr} & -5 & -5 & 8  & 8 or -5 & 8\\
+\texttt{nord} & 3 & 3 & 2 & 2& 2\\
+\texttt{d4_bg} & 0.15 & 0.15 & 0.12 & 0.12 & 0.12\\
 \texttt{do_vort_damp} & .T.  & .T. & .F. & .T. & .F.\\
 \texttt{vtdm4} & 0.03 & 0.06 & n/a & 0.06 & n/a
 \end{tabular}
@@ -1331,18 +1331,20 @@ In most engineering CFD solvers the total energy is a prognostic variable, and s
 
 Two forms of damping are applied at the top of the domain to absorb vertically-propagating waves nearing the upper boundary. The first is a diffusive sponge layer, which applies second-order damping to the divergence and to the the vorticity, mass, and $w$-flux\footnote{This differs from FV and earlier versions of FV3, which instead of adding explicit damping applied first-order upwind advection in the sponge layer, the strength of which is flow-dependent and not user-controllable.}.  The damping is computed as in \eqref{eqn:divdamp}, although typically a very strong value of $d_{2D}$ (parameters \texttt{d2_bg_k1} and \texttt{d2_bg_k2}; the latter should be the smaller but neither should be larger than 0.2) is used to ensure the vertically-propagating waves are sufficiently damped. This $\nabla^2$ sponge-layer damping is applied to the top two layers of the model, with a weaker damping also applied in the third layer if \texttt{d2_bg_k2}$> 0.05$. Since the model top is at a constant pressure, not constant height, it acts as a flexible lid, and therefore does not reflect gravity waves as strongly as a rigid lid would. Diffused kinetic energy in the sponge layer can again be restored as heat as in Section~\ref{sec:dissiphtg}.
 
-The second form of damping is a Rayleigh damping, which damps all three components of the winds to zero with a timescale which is shortest at the top of the domain and longer (weaker) lower down, until a cutoff pressure is reached. Given a minimum timescale $\tau_0$ (\texttt{tau}) and a cutoff pressure $p_c$ (\texttt{rf_cutoff}) the damping timescale is:
+The second form of damping is a Rayleigh damping, which damps all three components of the winds to zero with a timescale which is shortest at the top of the domain and longer (weaker) lower down, until a cutoff pressure is reached. Given a minimum timescale $\tau_0$ (\texttt{tau}, days) and a cutoff pressure $p_c$ (\texttt{rf_cutoff}, Pa) the damping timescale is:
 \begin{equation}
-\tau \left(p^*\right) = \tau_0 \sin \left ( \frac{\pi}{2} \frac{\log(p_c/p^*) }{\log(p_c/p_T)} \right )^2 .
+\tau \left(p^*\right) = \frac{\Delta t}{ \tau_0} \sin \left ( \frac{\pi}{2} \frac{\log(p_c/p^*) }{\log(p_c/p_T)} \right )^2 .
 \end{equation}
-The strength of the applied damping is then determined by the magnitude of the cell-mean 3D vector wind $U_{3D}$, including the vertical velocity, divided by a scaling velocity $U_0$. The Rayleigh damping is applied one per large (physics) timestep before the Lagrangian dynamics is first called, by:
+The Rayleigh damping is applied one per large (physics) timestep before the Lagrangian dynamics is first called, to each local component of the winds in turn:
 \begin{equation}
-u \leftarrow u \left ( 1 + \tau U_{3D}/U_0  \right )^{-1}.
+ u \mapsto u \left ( 1 + \tau \left(p^*\right)  \right )^{-1},
 \end{equation}
-The dissipated kinetic energy can then be restored as heat:
+and similarly for $v$ and $w$ (in a nonhydrostatic simulation). The dissipated kinetic energy can then be restored as heat:
 \begin{equation}
-T \mapsto T + \frac{1}{2} U_{3D}* \left ( 1 - \left ( 1 + \tau U_{3D}/U_0 \right )^{-2} \right )  / C_v.
+T \mapsto T + \mathcal{K}_{3D}* \left ( 1 -  \left ( 1 + \tau \left(p^*\right)  \right )^{-2} \right )  / C_v,
 \end{equation}
+in which $\mathcal{K}_{3D}$ is the three-dimensional kinetic energy in a nonhydrostatic simulation, and the horizontal kinetic energy in a hydrostatic simulation.
+
 Optionally, there is a ``fast Rayleigh friction'' which can be applied on each acoustic timestep, after the winds are updated with the pressure-gradient force. This is more rapidly applied (although on the same damping timescale) and thus can be more stable, although it does not yet support energy conservation. This can be enabled with the \texttt{rf_fast} namelist option.
 
 %stopped 5pm 9 april 2021
@@ -1639,5 +1641,13 @@ The communication between the nests and their parents is done per level. For ins
 
 \bibliographystyle{ametsoc2014}
 \bibliography{fv3references}
+
+\chapter*{Revision History}
+\addcontentsline{toc}{chapter}{Revision History}
+
+\begin{description}
+\item[Initial release 14 June 2021] 
+\item[v1.0a 16 June 2021] Updates to Table~\ref{table:diffusionsettings} and corrections in Section~\ref{sec:sponge}.
+\end{description}
 
 \end{document}
