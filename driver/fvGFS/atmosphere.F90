@@ -707,9 +707,10 @@ contains
                       Atm(n)%neststruct,  Atm(n)%idiag, Atm(n)%bd,              &
                       Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est,        &
 #ifdef MOLECULAR_DIFFUSION
-                     time_total,                                                &
-#endif
+                      Atm(n)%inline_mp,time_total)
+#else
                       Atm(n)%inline_mp)
+#endif
 
      call timing_off('fv_dynamics')
 
@@ -1876,9 +1877,10 @@ contains
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
                      Atm(mygrid)%domain,Atm(mygrid)%diss_est,                                             &
 #ifdef MOLECULAR_DIFFUSION
-                     time_total,                                                                          &
+                     Atm(mygrid)%inline_mp, time_total)
+#else
+                     Atm(mygrid)%inline_mp)
 #endif
-                      Atm(mygrid)%inline_mp)
 ! Backward
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, -dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1895,9 +1897,10 @@ contains
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
                      Atm(mygrid)%domain,Atm(mygrid)%diss_est,                                             & 
 #ifdef MOLECULAR_DIFFUSION
-                     time_total,                                                                          &
-#endif
+                     Atm(mygrid)%inline_mp, time_total)
+#else
                      Atm(mygrid)%inline_mp)
+#endif
 !Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mygrid, nudge_dz, dz0) &
@@ -1975,9 +1978,10 @@ contains
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
                      Atm(mygrid)%domain,Atm(mygrid)%diss_est,                                             &
 #ifdef MOLECULAR_DIFFUSION
-                     time_total,                                                                          &
-#endif
+                     Atm(mygrid)%inline_mp, time_total)
+#else
                      Atm(mygrid)%inline_mp)
+#endif
 ! Forward call
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1993,9 +1997,10 @@ contains
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
                      Atm(mygrid)%domain,Atm(mygrid)%diss_est,                                             &
 #ifdef MOLECULAR_DIFFUSION
-                     time_total,                                                                          &
-#endif
+                     Atm(mygrid)%inline_mp, time_total)
+#else
                      Atm(mygrid)%inline_mp)
+#endif
 ! Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (nudge_dz,npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dz0, dp0, xt, zvir, mygrid) &
