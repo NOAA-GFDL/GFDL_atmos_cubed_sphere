@@ -274,7 +274,11 @@ contains
       integer :: rainwat = -999, snowwat = -999, graupel = -999, cld_amt = -999
       integer :: theta_d = -999
       logical used, do_omega
+#ifdef MULTI_GASES
       integer, parameter :: max_packs=13
+#else
+      integer, parameter :: max_packs=12
+#endif
       type(group_halo_update_type), save :: i_pack(max_packs)
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
@@ -630,7 +634,9 @@ contains
          enddo
       enddo
       if ( flagstruct%trdm2 > 1.e-4 ) then
+#ifdef MULTI_GASES
          call start_group_halo_update(i_pack(13), dp1, domain)
+#endif
       endif
 
       if ( n_map==k_split ) last_step = .true.
@@ -676,18 +682,27 @@ contains
        !!! CLEANUP: merge these two calls?
        if (gridstruct%bounded_domain) then
          call tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
-                        flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), i_pack(13), &
+                        flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), &
+#ifdef MULTI_GASES
+                        i_pack(13), &
+#endif
                         flagstruct%nord_tr, flagstruct%trdm2, &
                         k_split, neststruct, parent_grid, n_map, flagstruct%lim_fac)
        else
          if ( flagstruct%z_tracer ) then
-            call tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
-                 flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), i_pack(13), &
-                 flagstruct%nord_tr, flagstruct%trdm2, flagstruct%lim_fac)
+         call tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
+                 flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), &
+#ifdef MULTI_GASES
+                        i_pack(13), &
+#endif
+                        flagstruct%nord_tr, flagstruct%trdm2, flagstruct%lim_fac)
          else
-            call tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
-                 flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), i_pack(13), &
-                 flagstruct%nord_tr, flagstruct%trdm2, flagstruct%lim_fac)
+         call tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
+                 flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), &
+#ifdef MULTI_GASES
+                        i_pack(13), &
+#endif
+                        flagstruct%nord_tr, flagstruct%trdm2, flagstruct%lim_fac)
          endif
        endif
                                              call timing_off('tracer_2d')

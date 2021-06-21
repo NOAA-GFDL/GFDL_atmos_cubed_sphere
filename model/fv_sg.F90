@@ -944,6 +944,7 @@ contains
          do i=is,ie
             qcon(i,k) = q0(i,k,liq_wat)+q0(i,k,ice_wat)+q0(i,k,snowwat)+q0(i,k,rainwat)
          enddo
+      enddo
    else
       do k=1,kbot
          do i=is,ie

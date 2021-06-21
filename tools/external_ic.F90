@@ -456,7 +456,7 @@ contains
 !>       Q   -  prognostic tracer fields
 !> Namelist variables
 !>       filtered_terrain  -  use orography maker filtered terrain mapping
-#ifdef __PGI
+#if defined(__PGI) && defined(GFS_PHYS)
       use GFS_restart, only : GFS_restart_type
 
       implicit none
@@ -1791,7 +1791,7 @@ contains
 !>@authors Jan-Huey Chen, Xi Chen, Shian-Jiann Lin
   subroutine get_ecmwf_ic( Atm, fv_domain )
 
-#ifdef __PGI
+#if defined(__PGI) && defined(GFS_PHYS)
       use GFS_restart, only : GFS_restart_type
 
       implicit none

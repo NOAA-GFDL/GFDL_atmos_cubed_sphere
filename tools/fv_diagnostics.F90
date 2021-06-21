@@ -141,6 +141,7 @@ module fv_diagnostics_mod
  use sat_vapor_pres_mod, only: compute_qs, lookup_es
 
  use fv_arrays_mod, only: max_step
+ use fms_mod,            only: open_namelist_file, close_file
 
 #ifndef GFS_PHYS
  use gfdl_cloud_microphys_mod, only: wqs1, qsmith_init, c_liq
@@ -444,11 +445,11 @@ contains
       write(errmsg,*) 'fv_diag_plevs_nml: namelist file ',trim(Atm(n)%nml_filename),' does not exist'
       call mpp_error(FATAL, errmsg)
     else
-      open (unit=nlunit, file=Atm(n)%nml_filename, READONLY, status='OLD', iostat=ios)
+      nlunit=open_namelist_file(Atm(n)%nml_filename)
     endif
     rewind(nlunit)
     read (nlunit, nml=fv_diag_plevs_nml, iostat=ios)
-    close (nlunit)
+    call close_file(nlunit)
 #endif
     if (nplev > MAX_PLEVS) then
        if (is_master()) then

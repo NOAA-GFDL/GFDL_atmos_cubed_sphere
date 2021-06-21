@@ -90,7 +90,11 @@ contains
 !! of split tracer timesteps. This potentially accelerates tracer advection when there
 !! is a large difference in layer-maximum wind speeds (cf. polar night jet).
 subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
-                        nq,  hord, q_split, dt, id_divg, q_pack, dp1_pack, nord_tr, trdm, lim_fac)
+                        nq,  hord, q_split, dt, id_divg, q_pack, &
+#ifdef MULTI_GASES
+                        dp1_pack, &
+#endif
+                        nord_tr, trdm, lim_fac)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(IN) :: npx
@@ -102,7 +106,10 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, n
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt, trdm
       real   , intent(IN) :: lim_fac
-      type(group_halo_update_type), intent(inout) :: q_pack, dp1_pack
+      type(group_halo_update_type), intent(inout) :: q_pack
+#ifdef MULTI_GASES
+      type(group_halo_update_type), intent(inout) :: dp1_pack
+#endif
       real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   !< Tracers
       real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    !< DELP before dyn_core
       real   , intent(INOUT) :: mfx(bd%is:bd%ie+1,bd%js:bd%je,  npz)    !< Mass Flux X-Dir
@@ -190,12 +197,14 @@ subroutine tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, n
   enddo  ! k-loop
 
     if (trdm>1.e-4) then
+#ifdef MULTI_GASES
                         call timing_on('COMM_TOTAL')
                             call timing_on('COMM_TRACER')
       call complete_group_halo_update(dp1_pack, domain)
                            call timing_off('COMM_TRACER')
                        call timing_off('COMM_TOTAL')
 
+#endif
     endif
   call mp_reduce_max(cmax,npz)
 
@@ -322,7 +331,11 @@ end subroutine tracer_2d_1L
 
 !>@brief The subroutine 'tracer_2d' is the standard routine for sub-cycled tracer advection.
 subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
-                     nq,  hord, q_split, dt, id_divg, q_pack, dp1_pack, nord_tr, trdm, lim_fac)
+                     nq,  hord, q_split, dt, id_divg, q_pack, &
+#ifdef MULTI_GASES
+                     dp1_pack, &
+#endif
+                     nord_tr, trdm, lim_fac)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(IN) :: npx
@@ -334,7 +347,10 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy,
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt, trdm
       real   , intent(IN) :: lim_fac
-      type(group_halo_update_type), intent(inout) :: q_pack, dp1_pack
+      type(group_halo_update_type), intent(inout) :: q_pack
+#ifdef MULTI_GASES
+      type(group_halo_update_type), intent(inout) :: dp1_pack
+#endif
       real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   !< Tracers
       real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    !< DELP before dyn_core
       real   , intent(INOUT) :: mfx(bd%is:bd%ie+1,bd%js:bd%je,  npz)    !< Mass Flux X-Dir
@@ -451,12 +467,15 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy,
 !$OMP                          private( frac )
         do k=1,npz
 
-#ifdef GLOBAL_CFL
-           ksplt(k) = nsplt
-#else
-           ksplt(k) = int(1. + cmax(k))
-#endif
-           frac  = 1. / real(ksplt(k))
+!phl #ifdef GLOBAL_CFL
+          if (q_split > 0) then
+            ksplt(k) = nsplt
+          else
+!phl #else
+            ksplt(k) = int(1. + cmax(k))
+          end if
+!phl #endif
+          frac  = 1. / real(ksplt(k))
 
            do j=jsd,jed
               do i=is,ie+1
@@ -486,12 +505,13 @@ subroutine tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy,
     endif
 
     if (trdm>1.e-4) then
+#ifdef MULTI_GASES
                         call timing_on('COMM_TOTAL')
                             call timing_on('COMM_TRACER')
       call complete_group_halo_update(dp1_pack, domain)
                            call timing_off('COMM_TRACER')
                        call timing_off('COMM_TOTAL')
-
+#endif
     endif
     do it=1,nsplt
                         call timing_on('COMM_TOTAL')
@@ -570,8 +590,11 @@ end subroutine tracer_2d
 
 
 subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz,   &
-                     nq,  hord, q_split, dt, id_divg, q_pack, dp1_pack, nord_tr, trdm, &
-                     k_split, neststruct, parent_grid, n_map, lim_fac)
+                     nq,  hord, q_split, dt, id_divg, q_pack, &
+#ifdef MULTI_GASES
+                        dp1_pack, &
+#endif
+                     nord_tr, trdm, k_split, neststruct, parent_grid, n_map, lim_fac)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
       integer, intent(IN) :: npx
@@ -583,7 +606,10 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       integer, intent(IN) :: id_divg
       real   , intent(IN) :: dt, trdm
       real   , intent(IN) :: lim_fac
-      type(group_halo_update_type), intent(inout) :: q_pack, dp1_pack
+      type(group_halo_update_type), intent(inout) :: q_pack
+#ifdef MULTI_GASES
+      type(group_halo_update_type), intent(inout) :: dp1_pack
+#endif
       real   , intent(INOUT) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq)   !< Tracers
       real   , intent(INOUT) :: dp1(bd%isd:bd%ied,bd%jsd:bd%jed,npz)    !< DELP before dyn_core
       real   , intent(INOUT) :: mfx(bd%is:bd%ie+1,bd%js:bd%je,  npz)    !< Mass Flux X-Dir
@@ -769,12 +795,13 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
       endif
 
       if (trdm>1.e-4) then
+#ifdef MULTI_GASES
                         call timing_on('COMM_TOTAL')
                             call timing_on('COMM_TRACER')
          call complete_group_halo_update(dp1_pack, domain)
                            call timing_off('COMM_TRACER')
                        call timing_off('COMM_TOTAL')
-
+#endif
       endif
 
 
