@@ -28,7 +28,7 @@
 !
 ! =======================================================================!
 
-
+#define REMAP 1 
 
 module fv_moving_nest_mod
 #ifdef MOVING_NEST
@@ -1338,14 +1338,53 @@ contains
     end if
 
     call alloc_read_data(nc_filename, orog_var_name, fp_nx, fp_ny, orog_grid)
-    call alloc_read_data(nc_filename, 'stddev', fp_nx, fp_ny, orog_std_grid)
+    call alloc_read_data(nc_filename, 'stddev', fp_nx, fp_ny, orog_std_grid)  ! Not needed
 
     call alloc_read_data(nc_filename, 'slmsk', fp_nx, fp_ny, ls_mask_grid)
-    call alloc_read_data(nc_filename, 'land_frac', fp_nx, fp_ny, land_frac_grid)
+    call alloc_read_data(nc_filename, 'land_frac', fp_nx, fp_ny, land_frac_grid)  ! Not needed
 
   end subroutine mn_orog_read_hires_parent
 
 
+
+  subroutine mn_static_read_hires(npx, npy, refine, surface_dir, file_prefix, var_name, data_grid)
+    integer, intent(in)                :: npx, npy, refine
+    character(len=*), intent(in)     :: surface_dir, file_prefix
+    character(len=*), intent(in)      :: var_name
+    real, allocatable, intent(out)     :: data_grid(:,:)
+
+    integer :: nx_cubic, nx, ny, fp_nx, fp_ny
+    integer :: fp_istart_fine, fp_iend_fine, fp_jstart_fine, fp_jend_fine
+
+    character(len=256) :: res_str, parent_str
+    character(len=512) :: nc_filename
+
+    integer :: parent_tile = 6 ! TODO: Later this will be configurable from namelist
+    integer :: this_pe
+
+    this_pe = mpp_pe()
+
+    nx_cubic = npx - 1
+    nx = npx - 1
+    ny = npy - 1
+
+    fp_istart_fine = 0
+    fp_iend_fine = nx * refine
+    fp_jstart_fine = 0
+    fp_jend_fine = ny * refine
+
+    fp_nx = fp_iend_fine - fp_istart_fine
+    fp_ny = fp_jend_fine - fp_jstart_fine
+
+    if (debug_log) print '("[INFO] WDR NCREAD LOFC mn_static_read_hires npe=",I0,I4,I4," ",A128," ",A128)', this_pe, fp_nx, fp_ny, var_name, nc_filename
+
+    write(res_str, '(I0)'), nx_cubic * refine
+    write(parent_str, '(I0)'), parent_tile
+    nc_filename = trim(surface_dir) // '/C' // trim(res_str) // '.' // trim(file_prefix) // '.tile' // trim(parent_str) // '.nc'
+
+    call alloc_read_data(nc_filename, var_name, fp_nx, fp_ny, data_grid)
+
+  end subroutine mn_static_read_hires
 
 
   !!============================================================================                                            
@@ -2864,7 +2903,6 @@ contains
   end subroutine mn_prog_dump_to_netcdf
 
 
-!  subroutine mn_phys_dump_to_netcdf(Atm, time_val, file_prefix, is_fine_pe, domain_coarse, domain_fine, nz)
   subroutine mn_phys_dump_to_netcdf(Atm, Atm_block, IPD_Control, IPD_Data, time_val, file_prefix, is_fine_pe, domain_coarse, domain_fine, nz)
     type(fv_atmos_type), intent(in)            :: Atm
     type (block_control_type), intent(in)      :: Atm_block
@@ -2899,14 +2937,12 @@ contains
     real, allocatable :: stc_pr_local (:,:,:)  !< soil temperature
     real, allocatable :: slc_pr_local (:,:,:)  !< soil liquid water content
 
+    real, allocatable, dimension(:,:) :: sealand_pr_local, deep_soil_t_pr_local, soil_type_pr_local, veg_type_pr_local, slope_type_pr_local, facsf_pr_local, max_snow_alb_pr_local
+
     real, allocatable :: phy_f2d_pr_local (:,:,:)
     real, allocatable :: phy_f3d_pr_local (:,:,:,:)
-    
+
     this_pe = mpp_pe()
-
-
-    !call mn_var_dump_to_netcdf(Atm%pt   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
-    !     time_val, Atm%global_tile, file_prefix, "tempK")
 
     !  Skin temp/SST
     call mn_var_dump_to_netcdf(Atm%ts   , is_fine_pe, domain_coarse, domain_fine, position, 1, &
@@ -2952,12 +2988,34 @@ contains
     allocate ( stc_pr_local(is:ie, js:je, IPD_Control%lsoil) )
     allocate ( slc_pr_local(is:ie, js:je, IPD_Control%lsoil) )
 
+    allocate ( sealand_pr_local(is:ie, js:je) )
+
     allocate ( phy_f2d_pr_local(is:ie, js:je, IPD_Control%ntot2d) )
     allocate ( phy_f3d_pr_local(is:ie, js:je, IPD_Control%levs, IPD_Control%ntot3d) )
+
+
+    allocate ( deep_soil_t_pr_local(is:ie, js:je) )
+    allocate ( soil_type_pr_local(is:ie, js:je) )
+
+    !allocate ( veg_frac_pr_local(is:ie, js:je) )
+    allocate ( veg_type_pr_local(is:ie, js:je) )
+
+    allocate ( slope_type_pr_local(is:ie, js:je) )
+
+    allocate ( facsf_pr_local(is:ie, js:je) )
+    allocate ( max_snow_alb_pr_local(is:ie, js:je) )
+
+
+
+
+
+
 
     smc_pr_local = +99999.9
     stc_pr_local = +99999.9
     slc_pr_local = +99999.9
+    
+    sealand_pr_local = +99999.9
 
     phy_f2d_pr_local = +99999.9
     phy_f3d_pr_local = +99999.9
@@ -2974,6 +3032,23 @@ contains
              stc_pr_local(i,j,k) = real(IPD_Data(nb)%Sfcprop%stc(ix,k))
              slc_pr_local(i,j,k) = real(IPD_Data(nb)%Sfcprop%slc(ix,k))
           enddo
+
+          sealand_pr_local(i,j) = real(IPD_Data(nb)%Sfcprop%slmsk(ix))
+
+          deep_soil_t_pr_local(i, j) = IPD_data(nb)%Sfcprop%tg3(ix)
+          soil_type_pr_local(i, j) = IPD_data(nb)%Sfcprop%stype(ix)
+
+          !veg_frac_pr_local(i, j) = IPD_data(nb)%Sfcprop%vfrac(ix)
+          veg_type_pr_local(i, j) = IPD_data(nb)%Sfcprop%vtype(ix)
+
+          slope_type_pr_local(i, j) = IPD_data(nb)%Sfcprop%slope(ix)
+
+          facsf_pr_local(i, j) = IPD_data(nb)%Sfcprop%facsf(ix)
+          max_snow_alb_pr_local(i, j) = IPD_data(nb)%Sfcprop%snoalb(ix)
+
+
+
+
 
           do nv = 1, IPD_Control%ntot2d
              ! Use real() to lower the precision
@@ -2998,6 +3073,15 @@ contains
     call mn_var_dump_to_netcdf(slc_pr_local   , is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%lsoil, &
          time_val, Atm%global_tile, file_prefix, "SOILL")
 
+    call mn_var_dump_to_netcdf(sealand_pr_local   , is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "LMASK")
+
+    call mn_var_dump_to_netcdf(deep_soil_t_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "DEEPSOIL")
+    call mn_var_dump_to_netcdf(soil_type_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "SOILTP")
+    !call mn_var_dump_to_netcdf(veg_frac_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "VEGFRAC")
+    call mn_var_dump_to_netcdf(veg_type_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "VEGTYPE")
+    call mn_var_dump_to_netcdf(slope_type_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "SLOPE")
+    call mn_var_dump_to_netcdf(facsf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "FACSF")
+    call mn_var_dump_to_netcdf(max_snow_alb_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "SNOWALB")
     
     do nv = 1, IPD_Control%ntot2d
        write (phys_var_name, "(A4,I0.3)")  'PH2D', nv
@@ -3017,6 +3101,9 @@ contains
     deallocate(smc_pr_local)
     deallocate(stc_pr_local)
     deallocate(slc_pr_local)
+
+    deallocate(sealand_pr_local, deep_soil_t_pr_local, soil_type_pr_local, veg_type_pr_local, facsf_pr_local, max_snow_alb_pr_local)
+
 
     deallocate(phy_f2d_pr_local)
     deallocate(phy_f3d_pr_local)
@@ -3215,7 +3302,7 @@ contains
     integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel  ! condensate species tracer indices
 
 
-    integer :: npz, ncnst, pnats, nq
+    integer :: npz, ncnst, pnats, nq, nr
 
 
 #ifdef CCPP
@@ -3264,6 +3351,9 @@ contains
     pnats = Atm%flagstruct%pnats
 
     nq = ncnst-pnats
+    !nr = nq_tot - flagstruct%dnrts  ! from fv_dynamics.F90
+
+
     sphum   = get_tracer_index (MODEL_ATMOS, 'sphum' )
     liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat' )
     ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat' )
@@ -3445,23 +3535,53 @@ contains
 
     !nq = nq_tot - Atm%flagstruct%dnats
 
-    call Lagrangian_to_Eulerian(last_step, Atm%flagstruct%consv_te,      &
-         Atm%ps, Atm%pe, Atm%delp,                 &
-         Atm%pkz, Atm%pk, mdt, bdt, Atm%npz, &
+
+
+    ! From updated fv_dynamics.F90 on June 24, 2021
+!    call Lagrangian_to_Eulerian(last_step, consv_te, &
+!         ps, pe, delp,          &
+!         pkz, pk, mdt, bdt, npx, npy, npz, &
+!         is,ie,js,je, isd,ied,jsd,jed,       &
+!         nr, nwat, sphum, &
+!         q_con, u,  v, w, &
+!         delz, pt, q, phis,    &
+!         zvir, cp_air, akap, cappa, flagstruct%kord_mt, flagstruct%kord_wz, &
+!         kord_tracer, flagstruct%kord_tm, peln, te_2d,               &
+!         ng, ua, va, omga, dp1, ws, &
+!         fill, reproduce_sum,             &
+!         idiag%id_mdt>0, dtdt_m, &
+!         ptop, ak, bk, pfull, gridstruct, domain,   &
+!         flagstruct%do_sat_adj, hydrostatic, flagstruct%phys_hydrostatic, &
+!         hybrid_z, do_omega,     &
+!         flagstruct%adiabatic, do_adiabatic_init, &
+!         flagstruct%do_inline_mp, &
+!         inline_mp, flagstruct%c2l_ord, bd, flagstruct%fv_debug, &
+!         flagstruct%moist_phys)
+    
+
+
+
+    call Lagrangian_to_Eulerian(last_step, Atm%flagstruct%consv_te,  &
+         Atm%ps, Atm%pe, Atm%delp,                              &
+         Atm%pkz, Atm%pk, mdt, bdt, Atm%npx, Atm%npy, Atm%npz,  &  
          Atm%bd%is,Atm%bd%ie,Atm%bd%js,Atm%bd%je,               &
          Atm%bd%isd, Atm%bd%ied, Atm%bd%jsd, Atm%bd%jed,        &
-         nq, Atm%flagstruct%nwat, sphum,                                                   &
+         nq, Atm%flagstruct%nwat, sphum,                        &  ! TODO check if nq is the same as nr?
          Atm%q_con, Atm%u,  Atm%v, Atm%w,                       &
          Atm%delz, Atm%pt, Atm%q, Atm%phis,                     &
          zvir, cp_air, akap, cappa, Atm%flagstruct%kord_mt, Atm%flagstruct%kord_wz, &
          kord_tracer, Atm%flagstruct%kord_tm, Atm%peln, te_2d,                      &
-         Atm%ng, Atm%ua, Atm%va, Atm%omga, te_local, ws, &
+         Atm%ng, Atm%ua, Atm%va, Atm%omga, te_local, ws, &  ! TODO check if te_local is the same as dp1?
          Atm%flagstruct%fill, Atm%flagstruct%reproduce_sum,  &
          Atm%idiag%id_mdt>0, dtdt_m, &
          Atm%ptop, Atm%ak, Atm%bk, pfull, Atm%gridstruct, Atm%domain,   &
-         Atm%flagstruct%do_sat_adj, Atm%flagstruct%hydrostatic, &
+         Atm%flagstruct%do_sat_adj, Atm%flagstruct%hydrostatic, Atm%flagstruct%phys_hydrostatic, &
          Atm%flagstruct%hybrid_z, do_omega,            &
-         Atm%flagstruct%adiabatic, do_adiabatic_init)
+         Atm%flagstruct%adiabatic, do_adiabatic_init, &
+         Atm%flagstruct%do_inline_mp, &
+         Atm%inline_mp, Atm%flagstruct%c2l_ord, Atm%bd, Atm%flagstruct%fv_debug, &
+         Atm%flagstruct%moist_phys)
+
 
 
     !call vertical_remap(Atm, last_step, mdt, bdt, nq, sphum,       &

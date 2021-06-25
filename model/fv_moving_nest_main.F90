@@ -74,14 +74,14 @@ use multi_gases_mod,  only: virq, virq_max, num_gas, ri, cpi
 !-----------------
 ! FV core modules:
 !-----------------
-use atmosphere_mod,     only: Atm, mygrid
+use atmosphere_mod,     only: Atm, mygrid, p_split
 use fv_arrays_mod,      only: fv_atmos_type, R_GRID, fv_grid_bounds_type, phys_diag_type
 use fv_control_mod,     only: fv_control_init, fv_end, ngrids
 use fv_eta_mod,         only: get_eta_level
 use fv_fill_mod,        only: fill_gfs
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
-use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
+use fv_diagnostics_mod, only: fv_diag_init, fv_diag_reinit, fv_diag, fv_time, prt_maxmin, prt_height
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
@@ -138,7 +138,7 @@ use fv_moving_nest_mod,         only: mn_phys_fill_temp_variables, mn_phys_apply
 
 !      Load static datasets
 use fv_moving_nest_mod,         only: mn_latlon_read_hires_parent, mn_latlon_load_parent
-use fv_moving_nest_mod,         only: mn_orog_read_hires_parent
+use fv_moving_nest_mod,         only: mn_orog_read_hires_parent, mn_static_read_hires
 use fv_moving_nest_utils_mod,   only: load_nest_latlons_from_nc
 
 !      Bounds checking routines
@@ -149,7 +149,7 @@ use fv_moving_nest_mod,         only: grid_geometry, assign_n_p_grids, move_nest
 use fv_moving_nest_utils_mod,   only: fill_grid_from_supergrid, fill_weight_grid
 
 !      Recalculation routines
-use fv_moving_nest_mod,         only: reallocate_BC_buffers, recalc_aux_pressures!, vertical_remap_nest, reinit_parent_indices
+use fv_moving_nest_mod,         only: reallocate_BC_buffers, recalc_aux_pressures, vertical_remap_nest !, reinit_parent_indices
 
 !      Logging and debugging information
 use fv_moving_nest_mod,         only: check_array
@@ -184,6 +184,37 @@ integer :: id_movnest6, id_movnest7_0, id_movnest7_1, id_movnest7_2, id_movnest7
 integer :: id_movnestTot
 !integer, save :: a_step = 0
 integer, save :: output_step = 0
+
+type mn_surface_grids
+   real, allocatable  :: orog_grid(:,:)                _NULL  ! orography -- raw or filtered depending on namelist option, in meters
+   real, allocatable  :: orog_std_grid(:,:)            _NULL  ! terrain standard deviation for gravity wave drag, in meters (?)
+   real, allocatable  :: ls_mask_grid(:,:)             _NULL  ! land sea mask -- 0 for ocean/lakes, 1, for land.  Perhaps 2 for sea ice. 
+   real, allocatable  :: land_frac_grid(:,:)           _NULL  ! Continuous land fraction - 0.0 ocean, 0.5 half of each, 1.0 all land
+
+   ! Soil variables
+   real, allocatable  :: deep_soil_temp_grid(:,:)      _NULL  ! deep soil temperature at 5m, in degrees K
+   real, allocatable  :: soil_type_grid(:,:)           _NULL  ! STATSGO soil type
+
+   ! Vegetation variables
+   real, allocatable  :: veg_frac_grid(:,:)           _NULL  ! vegetation fraction 
+   real, allocatable  :: veg_type_grid(:,:)           _NULL  ! IGBP vegetation type
+   real, allocatable  :: veg_greenness_grid(:,:)      _NULL  ! NESDIS vegetation greenness; netCDF file has monthly values
+
+   ! Orography variables
+   real, allocatable  :: slope_type_grid(:,:)         _NULL  ! legacy 1 degree GFS slope type 
+
+   ! Albedo variables
+   real, allocatable  :: facsf_grid(:,:)              _NULL  ! legacy 1 degree GFS fractional coverage for strong/weak zenith angle dependent albedo
+   real, allocatable  :: max_snow_alb_grid(:,:)       _NULL  ! max snow albedo
+   ! Snow free albedo
+   real, allocatable  :: vis_black_alb_grid(:,:)      _NULL  ! Visible black sky albeo; netCDF file has monthly values
+   real, allocatable  :: vis_white_alb_grid(:,:)      _NULL  ! Visible white sky albeo; netCDF file has monthly values
+   real, allocatable  :: ir_black_alb_grid(:,:)       _NULL  ! Near IR black sky albeo; netCDF file has monthly values
+   real, allocatable  :: ir_white_alb_grid(:,:)       _NULL  ! Near IR white sky albeo; netCDF file has monthly values
+
+end type mn_surface_grids
+
+
 
 contains
 
@@ -426,11 +457,8 @@ contains
    logical, save                          :: first_nest_move = .true.
    type(grid_geometry), save              :: parent_geo
    type(grid_geometry), save              :: fp_super_tile_geo
-   integer, save      :: fp_super_istart_fine, fp_super_jstart_fine,fp_super_iend_fine, fp_super_jend_fine
-   real, allocatable, save  :: orog_grid(:,:)              ! TODO deallocate this at end of model run
-   real, allocatable, save  :: orog_std_grid(:,:)              ! TODO deallocate this at end of model run
-   real, allocatable, save  :: ls_mask_grid(:,:)              ! TODO deallocate this at end of model run
-   real, allocatable, save  :: land_frac_grid(:,:)              ! TODO deallocate this at end of model run
+   integer, save                          :: fp_super_istart_fine, fp_super_jstart_fine,fp_super_iend_fine, fp_super_jend_fine
+   type(mn_surface_grids), save           :: mn_static
 
    type(grid_geometry)              :: tile_geo, tile_geo_u, tile_geo_v
    real(kind=R_GRID), allocatable   :: p_grid(:,:,:), n_grid(:,:,:)
@@ -464,6 +492,10 @@ contains
    integer :: isc, iec, jsc, jec
    integer :: isd, ied, jsd, jed
    integer :: nq                       !  number of transported tracers
+
+   ! For iterating through physics/surface vector data
+   integer :: nb, blen, ix, i_pe, j_pe, i_idx, j_idx
+
 
    integer, save :: output_step = 0
    
@@ -688,8 +720,26 @@ contains
 
              print '("[INFO] WDR mn_orog_read_hires_parent BEFORE READING static orog fine file on npe=",I0)', this_pe
              call mn_orog_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(child_grid_num)%neststruct%surface_dir, filtered_terrain, &
-                  orog_grid, orog_std_grid, ls_mask_grid, land_frac_grid)
+                  mn_static%orog_grid, mn_static%orog_std_grid, mn_static%ls_mask_grid, mn_static%land_frac_grid)
              print '("[INFO] WDR mn_orog_read_hires_parent COMPLETED READING static orog fine file on npe=",I0)', this_pe
+
+
+
+
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "substrate_temperature", "substrate_temperature", mn_static%deep_soil_temp_grid)
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "soil_type", "soil_type", mn_static%soil_type_grid)
+
+             !call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "", mn_static%veg_frac_grid)
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "vegetation_type", "vegetation_type", mn_static%veg_type_grid)
+
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "slope_type", "slope_type", mn_static%slope_type_grid)
+
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "facsf", "facsf", mn_static%facsf_grid)
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "maximum_snow_albedo", "maximum_snow_albedo", mn_static%max_snow_alb_grid)
+
+             ! Monthly static data
+             !call mn_static_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(child_grid_num)%neststruct%surface_dir, "vegetation_greenness", mn_static%veg_greenness_grid)
+             ! Add snowfree albedo variables here
 
              first_nest_move = .false.
           else
@@ -879,7 +929,10 @@ contains
        
        if (is_fine_pe) then
           ! phis is allocated in fv_arrays.F90 as:  allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
-          Atm(n)%phis(isd:ied, jsd:jed) = orog_grid(ioffset*x_refine+isd:ioffset*x_refine+ied, joffset*y_refine+jsd:joffset*y_refine+jed) * grav
+          Atm(n)%phis(isd:ied, jsd:jed) = mn_static%orog_grid(ioffset*x_refine+isd:ioffset*x_refine+ied, joffset*y_refine+jsd:joffset*y_refine+jed) * grav
+
+          ! Reinitialize diagnostics -- zsurf which is g * Atm%phis
+          call fv_diag_reinit(Atm(n:n))
 
           ! sgh and oro were only fully allocated if fv_land is True
           !      if false, oro is (1,1), and sgh is not allocated
@@ -889,13 +942,46 @@ contains
           
              !fv_arrays.F90 oro() !< land fraction (1: all land; 0: all water)
              !real, _ALLOCATABLE :: oro(:,:)      _NULL  !< land fraction (1: all land; 0: all water)
-             Atm(n)%oro(isc:iec, jsc:jec) = land_frac_grid(ioffset*x_refine+isc:ioffset*x_refine+iec, joffset*y_refine+jsc:joffset*y_refine+jec)
+             Atm(n)%oro(isc:iec, jsc:jec) = mn_static%land_frac_grid(ioffset*x_refine+isc:ioffset*x_refine+iec, joffset*y_refine+jsc:joffset*y_refine+jec)
           
              !real, _ALLOCATABLE :: sgh(:,:)      _NULL  !< Terrain standard deviation
-             Atm(n)%sgh(isc:iec, jsc:jec) = orog_std_grid(ioffset*x_refine+isc:ioffset*x_refine+iec, joffset*y_refine+jsc:joffset*y_refine+jec)
+             Atm(n)%sgh(isc:iec, jsc:jec) = mn_static%orog_std_grid(ioffset*x_refine+isc:ioffset*x_refine+iec, joffset*y_refine+jsc:joffset*y_refine+jec)
           else
              print '("[INFO] WDR shift orography data fv_land FALSE npe=",I0)', this_pe
           end if
+
+          ! Reset the land sea mask from the hires parent data
+          !  Reset the variables from the fix_sfc files
+          do nb = 1,Atm_block%nblks
+             blen = Atm_block%blksz(nb)
+             do ix = 1, blen
+                i_pe = Atm_block%index(nb)%ii(ix)  
+                j_pe = Atm_block%index(nb)%jj(ix)
+                
+                i_idx = ioffset*x_refine + i_pe
+                j_idx = joffset*y_refine + j_pe
+                
+                IPD_data(nb)%Sfcprop%slmsk(ix) = mn_static%ls_mask_grid(i_idx, j_idx)
+                
+                IPD_data(nb)%Sfcprop%tg3(ix) = mn_static%deep_soil_temp_grid(i_idx, j_idx)
+                IPD_data(nb)%Sfcprop%stype(ix) = mn_static%soil_type_grid(i_idx, j_idx)
+                
+                !IPD_data(nb)%Sfcprop%vfrac(ix) = mn_static%veg_frac_grid(i_idx, j_idx) 
+                IPD_data(nb)%Sfcprop%vtype(ix) = mn_static%veg_type_grid(i_idx, j_idx)
+                ! Add veg_greenness_grid here, monthly
+                
+                IPD_data(nb)%Sfcprop%slope(ix) = mn_static%slope_type_grid(i_idx, j_idx)
+                
+                IPD_data(nb)%Sfcprop%facsf(ix) = mn_static%facsf_grid(i_idx, j_idx)      ! fractional coverage for strong zenith angle albedo
+                !IPD_data(nb)%Sfcprop%facwf(ix) = mn_static%facsf_grid(i_idx, j_idx)     ! fractional coverage for weak zenith angle albedo
+                
+                IPD_data(nb)%Sfcprop%snoalb(ix) = mn_static%max_snow_alb_grid(i_idx, j_idx)
+                ! Add Vis/Near IR black/white sky albedo, monthly
+                
+                
+                
+             end do
+          end do
        end if
 
 
@@ -967,9 +1053,9 @@ contains
 
 
           !! TODO Enable vertical remapping.  Likely needed when nests move over land.
-          !if (debug_log) print '("[INFO] WDR MV_NST L2E before vertical remapping fv_moving_nest_main.F90 npe=",I0)', this_pe
-          !call vertical_remap_nest(Atm(n), dt_atmos, p_split)          
-          !if (debug_log) print '("[INFO] WDR MV_NST L2E after vertical remapping fv_moving_nest_main.F90 npe=",I0)', this_pe
+          if (debug_log) print '("[INFO] WDR MV_NST L2E before vertical remapping fv_moving_nest_main.F90 npe=",I0)', this_pe
+          call vertical_remap_nest(Atm(n), dt_atmos, p_split)          
+          if (debug_log) print '("[INFO] WDR MV_NST L2E after vertical remapping fv_moving_nest_main.F90 npe=",I0)', this_pe
 
 
           !! Recalculate omga; not sure if Lagrangian_to_Eulerian did this earlier
