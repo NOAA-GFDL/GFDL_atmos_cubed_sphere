@@ -40,7 +40,7 @@ module fv_restart_mod
   use init_hydro_mod,      only: p_var
   use mpp_domains_mod,     only: mpp_update_domains, domain2d, DGRID_NE
   use mpp_mod,             only: mpp_chksum, stdout, mpp_error, FATAL, NOTE
-  use mpp_mod,             only: get_unit, mpp_sum, mpp_broadcast
+  use mpp_mod,             only: get_unit, mpp_sum, mpp_broadcast, mpp_max, mpp_npes
   use mpp_mod,             only: mpp_get_current_pelist, mpp_npes, mpp_set_current_pelist
   use test_cases_mod,      only: alpha, init_case, init_double_periodic!, init_latlon
   use fv_mp_mod,           only: is_master, mp_reduce_min, mp_reduce_max, corners_YDir => YDir, fill_corners, tile_fine, global_nest_domain
@@ -122,7 +122,7 @@ contains
     character(len=6) :: gnn
 
     integer :: npts, sphum
-    integer, allocatable :: pelist(:), smoothed_topo(:)
+    integer, allocatable :: pelist(:), global_pelist(:), smoothed_topo(:)
     real    :: sumpertn
     real    :: zvir
 
@@ -131,6 +131,7 @@ contains
     logical :: do_read_restart_bc = .false.
     integer, allocatable :: ideal_test_case(:), new_nest_topo(:)
     integer :: nest_level
+    integer, allocatable :: BC_remap_level(:)
 
     rgrav = 1. / grav
 
@@ -213,6 +214,27 @@ contains
                 call fill_nested_grid_topo(Atm(n), n==this_grid)
              endif
 
+! This sets the nest BCs. Ideally, it should be done outside of this loop but
+! it is moved here -before ex_ic- to avoid repro issues on the nest
+             do nest_level=1,Atm(this_grid)%neststruct%num_nest_level
+
+                if (Atm(this_grid)%neststruct%nested .AND. Atm(this_grid)%neststruct%nlevel==nest_level)then
+                   call nested_grid_BC(Atm(this_grid)%ps, Atm(this_grid)%parent_grid%ps, global_nest_domain, &
+                        Atm(this_grid)%neststruct%ind_h, Atm(this_grid)%neststruct%wt_h, 0, 0, &
+                        Atm(this_grid)%npx, Atm(this_grid)%npy, Atm(this_grid)%bd, 1, Atm(this_grid)%npx-1, 1,&
+                        Atm(this_grid)%npy-1,nest_level=Atm(this_grid)%neststruct%nlevel)
+                   call nested_grid_BC(Atm(this_grid)%phis, Atm(this_grid)%parent_grid%phis, global_nest_domain, &
+                        Atm(this_grid)%neststruct%ind_h, Atm(this_grid)%neststruct%wt_h, 0, 0, &
+                        Atm(this_grid)%npx, Atm(this_grid)%npy, Atm(this_grid)%bd, 1, Atm(this_grid)%npx-1, 1, &
+                        Atm(this_grid)%npy-1,nest_level=Atm(this_grid)%neststruct%nlevel)
+               endif
+
+                if (ANY (Atm(this_grid)%neststruct%child_grids) .AND. Atm(this_grid)%neststruct%nlevel==nest_level-1) then
+                   call nested_grid_BC(Atm(this_grid)%ps, global_nest_domain, 0, 0, nest_level=Atm(this_grid)%neststruct%nlevel+1)
+                   call nested_grid_BC(Atm(this_grid)%phis, global_nest_domain, 0, 0, nest_level=Atm(this_grid)%neststruct%nlevel+1)
+                endif
+
+            enddo
           endif
        endif
 
@@ -434,34 +456,45 @@ contains
 
     end do !break cycling loop to finish nesting setup
 
-!Send data to nests per levels
-     do nest_level=1,Atm(this_grid)%neststruct%num_nest_level
-
-        if (Atm(this_grid)%neststruct%nested .AND. Atm(this_grid)%neststruct%nlevel==nest_level)then
-           call nested_grid_BC(Atm(this_grid)%ps, Atm(this_grid)%parent_grid%ps, global_nest_domain, &
-                Atm(this_grid)%neststruct%ind_h, Atm(this_grid)%neststruct%wt_h, 0, 0, &
-                Atm(this_grid)%npx, Atm(this_grid)%npy, Atm(this_grid)%bd, 1, Atm(this_grid)%npx-1, 1,&
-                Atm(this_grid)%npy-1,nest_level=Atm(this_grid)%neststruct%nlevel)
-           call nested_grid_BC(Atm(this_grid)%phis, Atm(this_grid)%parent_grid%phis, global_nest_domain, &
-                Atm(this_grid)%neststruct%ind_h, Atm(this_grid)%neststruct%wt_h, 0, 0, &
-                Atm(this_grid)%npx, Atm(this_grid)%npy, Atm(this_grid)%bd, 1, Atm(this_grid)%npx-1, 1, &
-                Atm(this_grid)%npy-1,nest_level=Atm(this_grid)%neststruct%nlevel)
+    ! The following section is simply to set up the logical do_remap_BC_level
+    ! do_remap_BC_level is true if the BCs of any grid need remapping at a certain nest level
+    ! This is to accomodate the BC communications in fv_nesting which is done by level
+    ! and does not mean that all nests at a certain level are undergoing a BC remapping
+    ! remapping is actually happening when do_remap_BC=.true.
+    if (ntileMe>1) then
+       if (.not. allocated (BC_remap_level))then
+          allocate (BC_remap_level(Atm(this_grid)%neststruct%num_nest_level))
+          BC_remap_level(:)=0
        endif
 
-        if (ANY (Atm(this_grid)%neststruct%child_grids) .AND. Atm(this_grid)%neststruct%nlevel==nest_level-1) then
-           call nested_grid_BC(Atm(this_grid)%ps, global_nest_domain, 0, 0, nest_level=Atm(this_grid)%neststruct%nlevel+1)
-           call nested_grid_BC(Atm(this_grid)%phis, global_nest_domain, 0, 0, nest_level=Atm(this_grid)%neststruct%nlevel+1)
-        endif
+       do nest_level=1,Atm(this_grid)%neststruct%num_nest_level
+          if (Atm(this_grid)%neststruct%nlevel==nest_level .AND. (Atm(this_grid)%neststruct%do_remap_BC(this_grid))) then
+             BC_remap_level(nest_level) = 1
+          endif
+       enddo
 
-    enddo
+       call mpp_set_current_pelist() !global
 
+       if (.not. allocated (global_pelist))     allocate(global_pelist(mpp_npes()))
 
+       call mpp_get_current_pelist(global_pelist)
+       call mpp_max(BC_remap_level,ntileme,global_pelist)
+       call mpp_set_current_pelist(pelist)
+
+       do nest_level=1,Atm(this_grid)%neststruct%num_nest_level
+          Atm(this_grid)%neststruct%do_remap_BC_level(nest_level) = (BC_remap_level(nest_level) == 1 )
+       enddo
+    endif
+
+    ! Topo twoway update
     do n = ntileMe,1,-1
-       if (new_nest_topo(n) > 0) then
-          if (Atm(n)%parent_grid%grid_number==this_grid) then    !only parent?!
-             call twoway_topo_update(Atm(n), n==this_grid)
-          elseif (n==this_grid .or. Atm(this_grid)%neststruct%nlevel==Atm(n)%neststruct%nlevel) then
-             call twoway_topo_update(Atm(this_grid), n==this_grid)
+       if (atm(n)%neststruct%twowaynest) then
+          if (new_nest_topo(n) > 0) then
+             if (Atm(n)%parent_grid%grid_number==this_grid) then    !only parent?!
+                call twoway_topo_update(Atm(n), n==this_grid)
+             elseif (n==this_grid .or. Atm(this_grid)%neststruct%nlevel==Atm(n)%neststruct%nlevel) then
+                call twoway_topo_update(Atm(this_grid), n==this_grid)
+             endif
           endif
        endif
     end do
@@ -1142,12 +1175,10 @@ contains
 
     type(fv_atmos_type), intent(INOUT) :: Atm
     logical, intent(IN), OPTIONAL :: proc_in
-    real, allocatable :: g_dat(:,:,:), pt_coarse(:,:,:)
     integer :: i,j,k,nq, sphum, ncnst, istart, iend, npz
     integer :: isc, iec, jsc, jec, isd, ied, jsd, jed
     integer :: isd_p, ied_p, jsd_p, jed_p, isc_p, iec_p, jsc_p, jec_p
     integer :: isg, ieg, jsg,jeg, npx_p, npy_p
-    integer :: isg_n, ieg_n, jsg_n, jeg_n, npx_n, npy_n
     real zvir
 
     integer :: p , sending_proc
@@ -1184,7 +1215,7 @@ contains
     !NOW: what we do is to update the nested-grid terrain to the coarse grid,
     !to ensure consistency between the two grids.
     if ( process ) call mpp_update_domains(Atm%phis, Atm%domain, complete=.true.)
-    if (Atm%neststruct%twowaynest) then
+ !   if (Atm%neststruct%twowaynest) then
        if (ANY(Atm%parent_grid%pelist == mpp_pe()) .or. Atm%neststruct%child_proc) then
           call update_coarse_grid(Atm%parent_grid%phis, &
                Atm%phis, global_nest_domain, &
@@ -1203,7 +1234,7 @@ contains
          if (ANY(Atm%parent_grid%pelist == mpp_pe())) call mpp_update_domains(Atm%parent_grid%phis, Atm%parent_grid%domain)
        end if
 
-    end if
+  !  end if
 
 
 #ifdef SW_DYNAMICS
