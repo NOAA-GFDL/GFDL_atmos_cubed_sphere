@@ -29,11 +29,11 @@ module fv_grid_tools_mod
                            spherical_linear_interpolation, big_number
   use fv_timing_mod,  only: timing_on, timing_off
   use fv_mp_mod,      only: is_master, fill_corners, XDir, YDir
-  use fv_mp_mod,      only: mp_gather, mp_bcst, mp_reduce_max, mp_stop, grids_master_procs
+  use fv_mp_mod,      only: mp_bcst, mp_reduce_max, mp_stop, grids_master_procs
   use sorted_index_mod,  only: sorted_inta, sorted_intb
   use mpp_mod,           only: mpp_error, FATAL, get_unit, mpp_chksum, mpp_pe, stdout, &
                                mpp_send, mpp_recv, mpp_sync_self, EVENT_RECV, mpp_npes, &
-                               mpp_sum, mpp_max, mpp_min, mpp_root_pe, mpp_broadcast
+                               mpp_sum, mpp_max, mpp_min, mpp_root_pe, mpp_broadcast, mpp_gather
   use mpp_domains_mod,   only: mpp_update_domains, mpp_get_boundary, &
                                mpp_get_ntile_count, mpp_get_pelist, &
                                mpp_get_compute_domains, mpp_global_field, &
@@ -85,7 +85,7 @@ contains
     integer,             intent(IN)    :: nregions
     integer,             intent(IN)    :: ng
 
-    type(FmsNetcdfFile_t) :: Grid_input    
+    type(FmsNetcdfFile_t) :: Grid_input
     real, allocatable, dimension(:,:)  :: tmpx, tmpy
     real(kind=R_GRID), pointer, dimension(:,:,:)    :: grid
     character(len=128)                 :: units = ""
@@ -502,6 +502,7 @@ contains
     integer :: is,  ie,  js,  je
     integer :: isd, ied, jsd, jed
     integer :: istart, iend, jstart, jend
+    integer :: isection_s, isection_e, jsection_s, jsection_e
 
     is  = Atm%bd%is
     ie  = Atm%bd%ie
@@ -605,6 +606,41 @@ contains
           else
              if( trim(grid_file) == 'INPUT/grid_spec.nc' .or. Atm%flagstruct%grid_type < 0  ) then
                 call read_grid(Atm, grid_file, ndims, nregions, ng)
+
+             ! Here if we are reading from grid_spec and the grid has a nest we need to assemble
+             ! the global grid array 'grid_global' to be sent at the end of this routine to the nest
+                if (ANY(Atm%neststruct%child_grids)) then
+                   grid_global(:,:,:,1)=-99999
+                   isection_s = is
+                   isection_e = ie
+                   jsection_s = js
+                   jsection_e = je
+
+                   if ( isd < 0 )     isection_s = isd
+                   if ( ied > npx-1 ) isection_e = ied
+                   if ( jsd < 0 )     jsection_s = jsd
+                   if ( jed > npy-1 ) jsection_e = jed
+                   ! if there is a nest, we need to setup grid_global on pe master
+                   ! to send it to the nest at the end of init_grid
+                   call mpp_gather(isection_s,isection_e,jsection_s,jsection_e,atm%pelist, &
+                                   grid(isection_s:isection_e,jsection_s:jsection_e,1),grid_global(1-ng:npx+ng,1-ng:npy+ng,1,1),is_master(),ng,ng)
+                   call mpp_gather(isection_s,isection_e,jsection_s,jsection_e,atm%pelist, &
+                                   grid(isection_s:isection_e,jsection_s:jsection_e,2),grid_global(1-ng:npx+ng,1-ng:npy+ng,2,1),is_master(),ng,ng)
+                   !do we need the haloes?!
+                   !do j=jsd,jed
+                   !do i=isd,ied
+                     !grid_global(i,j,1,1)=grid(i,j,1)
+                     !grid_global(i,j,2,1)=grid(i,j,2)
+                   !enddo
+                   !enddo
+                   !do j=1,npy
+                   !do i=1,npx
+                     !call mpp_max(grid_global(i,j,1,1),atm%pelist)
+                     !call mpp_max(grid_global(i,j,2,1),atm%pelist)
+                   !enddo
+                   !enddo
+                endif
+
              else
 
                 if (Atm%flagstruct%grid_type>=0) call gnomonic_grids(Atm%flagstruct%grid_type, npx-1, xs, ys)

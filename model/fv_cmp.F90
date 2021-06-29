@@ -37,7 +37,7 @@ module fv_cmp_mod
 
     private
 
-    public fv_sat_adj, qs_init
+    public fv_sat_adj, qs_init, c_ice, c_liq
 
     ! real, parameter :: cp_air = cp_air ! 1004.6, heat capacity of dry air at constant pressure, come from constants_mod
     real, parameter :: cp_vap = 4.0 * rvgas ! 1846.0, heat capacity of water vapor at constant pressure
