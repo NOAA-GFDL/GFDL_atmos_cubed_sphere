@@ -187,7 +187,7 @@ contains
   ! </DESCRIPTION>
   subroutine  fv_io_register_restart(Atm)
 
-    type(fv_atmos_type), intent(inout) :: Atm 
+    type(fv_atmos_type), intent(inout) :: Atm
     character(len=64) :: tracer_name
     character(len=8), dimension(1)  :: dim_names
     character(len=8), dimension(2)  :: dim_names_2d
@@ -219,7 +219,7 @@ contains
     dim_names_4d2(2) = "yaxis_2"
     dim_names_4d3 = dim_names_4d
     dim_names_4d3(2) = "yaxis_2"
-    
+
     ntprog = size(Atm%q,4)
     ntdiag = size(Atm%qdiag,4)
     ntracers = ntprog+ntdiag
@@ -1223,9 +1223,9 @@ contains
 
     Atm%neststruct%BCfile_sw_is_open = open_file(Atm%neststruct%BCfile_sw, fname_sw, "overwrite", is_restart=.true., pelist=all_pelist)
     Atm%neststruct%BCfile_ne_is_open = open_file(Atm%neststruct%BCfile_ne, fname_ne, "overwrite", is_restart=.true., pelist=all_pelist)
-    call fv_io_register_restart_BCs(Atm) 
+    call fv_io_register_restart_BCs(Atm)
 
-    if (Atm%neststruct%BCfile_sw_is_open) then    
+    if (Atm%neststruct%BCfile_sw_is_open) then
       call write_restart_bc(Atm%neststruct%BCfile_sw)
       call close_file(Atm%neststruct%BCfile_sw)
     endif
@@ -1257,9 +1257,9 @@ contains
 
     Atm%neststruct%BCfile_sw_is_open = open_file(Atm%neststruct%BCfile_sw, fname_sw, "read", is_restart=.true., pelist=all_pelist)
     Atm%neststruct%BCfile_ne_is_open = open_file(Atm%neststruct%BCfile_ne, fname_ne, "read", is_restart=.true., pelist=all_pelist)
-    call fv_io_register_restart_BCs(Atm) 
+    call fv_io_register_restart_BCs(Atm)
 
-    if (Atm%neststruct%BCfile_sw_is_open) then    
+    if (Atm%neststruct%BCfile_sw_is_open) then
       call read_restart_bc(Atm%neststruct%BCfile_sw)
       call close_file(Atm%neststruct%BCfile_sw)
     endif
