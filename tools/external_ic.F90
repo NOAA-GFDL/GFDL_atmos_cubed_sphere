@@ -33,7 +33,7 @@ module external_ic_mod
                                  get_variable_size, get_global_attribute, global_att_exists, &
                                  FmsNetcdfFile_t, FmsNetcdfDomainFile_t, read_restart, &
                                  register_restart_field, register_axis, get_dimension_size, &
-                                 get_variable_dimension_names
+                                 get_variable_dimension_names, get_variable_num_dimensions
    use mpp_mod,            only: mpp_error, FATAL, NOTE, mpp_pe, mpp_root_pe
    use mpp_mod,            only: stdlog, input_nml_file, mpp_npes, mpp_get_current_pelist
    use mpp_parameter_mod,  only: AGRID_PARAM=>AGRID
@@ -327,6 +327,7 @@ contains
     type(FmsNetcdfDomainFile_t) :: ORO_restart, SFC_restart, GFS_restart
     type(FmsNetcdfFile_t) :: Gfs_ctl
     integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
+    character(len=8), allocatable  :: dim_names_alloc(:)
     character(len=8), dimension(2) :: dim_names_2d
     character(len=8), dimension(3) :: dim_names_3d, dim_names_3d2, dim_names_3d3, dim_names_3d4
     character(len=6)  :: stile_name
@@ -345,7 +346,7 @@ contains
     character(len=1) :: tile_num
     real(kind=R_GRID), dimension(2):: p1, p2, p3
     real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
-    integer:: i,j,k,nts, ks
+    integer:: i,j,k,nts, ks, naxis_dims
     integer:: liq_wat, ice_wat, rainwat, snowwat, graupel, tke, ntclamt
     namelist /external_ic_nml/ filtered_terrain, levp, gfs_dwinds, &
                                checker_tr, nt_checker
@@ -435,12 +436,15 @@ contains
     !--- read in surface temperature (k) and land-frac
     ! surface skin temperature
    if( open_file(SFC_restart, fn_sfc_ics, "read", Atm%domain, is_restart=.true., dont_add_res_to_filename=.true.) ) then
-      call get_variable_dimension_names(SFC_restart, 'tsea', dim_names_2d)
-      call register_axis(SFC_restart, dim_names_2d(2), "y")
-      call register_axis(SFC_restart, dim_names_2d(1), "x")
-      call register_restart_field(SFC_restart, 'tsea', Atm%ts, dim_names_2d)
+      naxis_dims = get_variable_num_dimensions(SFC_restart, 'tsea')
+      allocate (dim_names_alloc(naxis_dims))
+      call get_variable_dimension_names(SFC_restart, 'tsea', dim_names_alloc)
+      call register_axis(SFC_restart, dim_names_alloc(2), "y")
+      call register_axis(SFC_restart, dim_names_alloc(1), "x")
+      call register_restart_field(SFC_restart, 'tsea', Atm%ts, dim_names_alloc)
       call read_restart(SFC_restart)
       call close_file(SFC_restart)
+      deallocate (dim_names_alloc)
     else
       call mpp_error(FATAL,'==> Error in External_ic::get_nggps_ic: tiled file '//trim(fn_sfc_ics)//' for NGGPS IC does not exist')
     endif

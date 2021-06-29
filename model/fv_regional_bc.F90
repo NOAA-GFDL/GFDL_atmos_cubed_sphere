@@ -1397,6 +1397,7 @@ contains
       else
         call get_data_source(data_source_fv3gfs,Atm%flagstruct%regional)
       endif
+!
 !-----------------------------------------------------------------------
 !***  Preliminary setup for the forecast.
 !-----------------------------------------------------------------------
