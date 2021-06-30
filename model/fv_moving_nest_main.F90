@@ -137,7 +137,7 @@ use fv_moving_nest_mod,         only: mn_prog_fill_temp_variables, mn_prog_apply
 use fv_moving_nest_mod,         only: mn_phys_fill_temp_variables, mn_phys_apply_temp_variables
 
 !      Load static datasets
-use fv_moving_nest_mod,         only: mn_latlon_read_hires_parent, mn_latlon_load_parent
+use fv_moving_nest_mod,         only: mn_latlon_read_hires_parent, mn_latlon_load_parent, mn_reset_phys_latlon
 use fv_moving_nest_mod,         only: mn_orog_read_hires_parent, mn_static_read_hires
 use fv_moving_nest_utils_mod,   only: load_nest_latlons_from_nc
 
@@ -367,7 +367,8 @@ contains
     
     if (move_diag) then
        ! If moving diagonal, only have to shift half as often.
-       if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
+       !if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
+       if ( mod(a_step,2*move_incr) .eq. 0) then
           do_move = .true.
           delta_i_c = 1
           delta_j_c = -1
@@ -380,7 +381,8 @@ contains
        
     else
        
-       if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
+       !if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
+       if ( mod(a_step,2*move_incr) .eq. 0) then
           do_move = .true.
           delta_i_c = 1
           delta_j_c = 0
@@ -457,7 +459,6 @@ contains
    logical, save                          :: first_nest_move = .true.
    type(grid_geometry), save              :: parent_geo
    type(grid_geometry), save              :: fp_super_tile_geo
-   integer, save                          :: fp_super_istart_fine, fp_super_jstart_fine,fp_super_iend_fine, fp_super_jend_fine
    type(mn_surface_grids), save           :: mn_static
 
    type(grid_geometry)              :: tile_geo, tile_geo_u, tile_geo_v
@@ -715,7 +716,6 @@ contains
              print '("[INFO] WDR mn_latlon_read_hires_parent READING static fine file on npe=",I0)', this_pe
 
              call mn_latlon_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, fp_super_tile_geo, &
-                  fp_super_istart_fine, fp_super_iend_fine, fp_super_jstart_fine, fp_super_jend_fine, &
                   Atm(child_grid_num)%neststruct%surface_dir)
 
              print '("[INFO] WDR mn_orog_read_hires_parent BEFORE READING static orog fine file on npe=",I0)', this_pe
@@ -855,6 +855,12 @@ contains
           call mn_latlon_load_parent(Atm, n, delta_i_c, delta_j_c, child_grid_num, &
                parent_geo, tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, &
                p_grid, n_grid, p_grid_u, n_grid_u, p_grid_v, n_grid_v)
+
+
+          ! tile_geo holds the center lat/lons for the entire nest (all PEs). 
+          call mn_reset_phys_latlon(Atm, n, tile_geo, fp_super_tile_geo, Atm_block, IPD_control, IPD_data)
+          
+
 
           !!============================================================================
           !! Step 5.2 -- Fill the wt* variables for each stagger

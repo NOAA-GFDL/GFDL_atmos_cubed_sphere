@@ -100,7 +100,7 @@ contains
     real(kind=R_GRID), intent(in), allocatable  :: array(:,:)
     integer, intent(in)                    :: this_pe
     character(len=*), intent(in)           :: var_name
-    real(kind=R_GRID), intent(in)                       :: min_range, max_range
+    real(kind=R_GRID), intent(in)          :: min_range, max_range
 
     integer  :: i,j
     integer  :: num_invalid
@@ -502,11 +502,11 @@ contains
     print '("[INFO] WDR 2Darray npe=",I0," ",A32, "nx=", I0," ny=", I0," nxp=",I0," nyp=",I0)', this_pe, var_name, tile_geo%nx, tile_geo%ny, tile_geo%nxp, tile_geo%nyp
 
 
-    call check_2d_array(tile_geo%lats, this_pe, var_name // "%lats", -90.0, 90.0)
-    call check_2d_array(tile_geo%lons, this_pe, var_name // "%lons", -360.0, 360.0)
-    call check_2d_array(tile_geo%dx, this_pe, var_name // "%dx", 0.0, 1.0e9)
-    call check_2d_array(tile_geo%dy, this_pe, var_name // "%dy", 0.0, 1.0e9)
-    call check_2d_array(tile_geo%area, this_pe, var_name // "%area", 0.0, 1.0e9)
+    call check_array(tile_geo%lats, this_pe, var_name // "%lats", -90.0D0, 90.0D0)
+    call check_array(tile_geo%lons, this_pe, var_name // "%lons", -360.0D0, 360.0D0)
+    call check_array(tile_geo%dx, this_pe, var_name // "%dx", 0.0, 1.0e9)
+    call check_array(tile_geo%dy, this_pe, var_name // "%dy", 0.0, 1.0e9)
+    call check_array(tile_geo%area, this_pe, var_name // "%area", 0.0D0, 1.0D9)
 
 
   end subroutine show_tile_geo

@@ -90,14 +90,19 @@ use IPD_typedefs,           only: kind_phys => IPD_kind_phys
   type grid_geometry
      integer   :: nx, ny, nxp, nyp
 
-     real, allocatable  :: lats(:,:)
-     real, allocatable  :: lons(:,:)
+     real(kind=kind_phys), allocatable  :: lats(:,:)
+     real(kind=kind_phys), allocatable  :: lons(:,:)
 
      real, allocatable  :: dx(:,:)
      real, allocatable  :: dy(:,:)
-     real, allocatable  :: area(:,:)
+     real(kind=kind_phys), allocatable  :: area(:,:)
   end type grid_geometry
 
+
+  interface alloc_read_data
+     module procedure alloc_read_data_dyn
+     module procedure alloc_read_data_kind_phys
+  end interface alloc_read_data
 
   interface fill_nest_halos_from_parent
      module procedure fill_nest_halos_from_parent2D
@@ -856,32 +861,16 @@ end subroutine fill_nest_halos_from_parent4D_kindphys
     integer                      :: this_pe
 
 
-    real(kind=R_GRID) :: pi = 4 * atan(1.0d0)
-    real                :: pi180
-    real                :: rad2deg, deg2rad
+    real(kind=kind_phys) :: pi = 4d0 * atan(1.0d0)
+    !real(kind=kind_phys) :: pi180, rad2deg, deg2rad
+    real(kind=kind_phys) :: deg2rad
 
-    pi180 = pi / 180.0
-    deg2rad = pi / 180.0
-    rad2deg = 1.0 / pi180
-
-
+    !pi180 = pi / 180.0d0
+    deg2rad = pi / 180.0d0
+    !rad2deg = 1.0d0 / pi180
 
 
     this_pe = mpp_pe()
-
-    !nn = this_tile
-
-    !if ( nn < 10 ) then
-    !   write (nc_filename, "(A13,I1,A3)") "C96_grid.tile", nn, ".nc"
-    !else
-    !   write (nc_filename, "(A13,I2,A3)") "C96_grid.tile", nn, ".nc"
-    !end if
-
-    !write (nc_filename, "(A73,I1,A3)") "/scratch2/NAGAPE/aoml-hafs1/William.Ramstrom/static_grids/C384_grid.tile", parent_tile, ".nc"
-
-    !nc_filename = trim(nc_filename)
-
-    !call fms_io_init()
 
     if (debug_log) print '("[INFO] WDR NCREAD LLFE load_nest_latlons_from_nc fp interp_single_nest start, nread npe=",I0," nxp=",I0," nyp=",I0," refine=",I0)', this_pe, nxp, nyp, refine
 
@@ -930,6 +919,7 @@ end subroutine fill_nest_halos_from_parent4D_kindphys
 
     call alloc_read_data(nc_filename, 'x', super_nxp, super_nyp, fp_tile_geo%lons)
     call alloc_read_data(nc_filename, 'y', super_nxp, super_nyp, fp_tile_geo%lats)
+    call alloc_read_data(nc_filename, 'area', super_nx, super_ny, fp_tile_geo%area)
 
     !  double dx(nyp, nx) 
     !call alloc_read_data(nc_filename, 'dx', super_nx, super_nyp, fp_tile_geo%dx)
@@ -1036,10 +1026,7 @@ end subroutine fill_nest_halos_from_parent4D_kindphys
 
 
 
-
-
-
-  subroutine alloc_read_data(nc_filename, var_name, x_size, y_size, data_array)
+  subroutine alloc_read_data_dyn(nc_filename, var_name, x_size, y_size, data_array)
     character(len=*), intent(in)           :: nc_filename, var_name
     integer, intent(in)                    :: x_size, y_size
     real, allocatable, intent(inout)       :: data_array(:,:)
@@ -1075,7 +1062,49 @@ end subroutine fill_nest_halos_from_parent4D_kindphys
     if (debug_log) print '("[INFO] WDR NCREAD NCRC alloc_read_data, nread npe=",I0, " ", A16,I4,I4,I4,I4)', this_pe, var_name, start(1), start(2), nread(1), nread(2)
 
 
-  end subroutine alloc_read_data
+  end subroutine alloc_read_data_dyn
+
+
+
+
+
+  subroutine alloc_read_data_kind_phys(nc_filename, var_name, x_size, y_size, data_array)
+    character(len=*), intent(in)           :: nc_filename, var_name
+    integer, intent(in)                    :: x_size, y_size
+    real(kind=kind_phys), allocatable, intent(inout)       :: data_array(:,:)
+
+
+    integer                      :: start(4), nread(4)    
+    integer                      :: this_pe
+
+    ! Allocate data_array to match the expected data size, then read in the data
+    ! This subroutine consolidates the allocation and reading of data to ensure consistency of data sizing and simplify code 
+    ! Could later extend this function to determine data size based on netCDF file metadata
+
+    this_pe = mpp_pe()
+
+    allocate(data_array(x_size, y_size))
+    data_array = -9999.9
+
+    if (debug_log) print '("[INFO] WDR alloc_read_data allocate  npe=",I0," ",A16," dims: ",I4,":",I4,I4,":",I4,I4)', this_pe, var_name, 1, x_size, 1, y_size
+
+    start = 1
+    nread = 1
+
+    start(1) = 1
+    start(2) = 1
+    nread(1) = x_size
+    nread(2) = y_size
+
+    if (debug_log) print '("[INFO] WDR NCREAD NCRA alloc_read_data. npe=",I0," ",A96," ", A16)', this_pe, trim(nc_filename), var_name
+    if (debug_log) print '("[INFO] WDR NCREAD NCRB alloc_read_data, nread npe=",I0, " ", A16,I4,I4,I4,I4)', this_pe, var_name, start(1), start(2), nread(1), nread(2)
+
+    call read_data(nc_filename, var_name, data_array, start, nread, no_domain=.TRUE.)
+
+    if (debug_log) print '("[INFO] WDR NCREAD NCRC alloc_read_data, nread npe=",I0, " ", A16,I4,I4,I4,I4)', this_pe, var_name, start(1), start(2), nread(1), nread(2)
+
+
+  end subroutine alloc_read_data_kind_phys
 
 
 

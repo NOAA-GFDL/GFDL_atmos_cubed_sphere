@@ -10,7 +10,15 @@
 module bounding_box_mod
   use mpp_domains_mod, only : mpp_get_C2F_index, nest_domain_type
   use mpp_mod,         only : mpp_pe
-  use fv_arrays_mod,   only: R_GRID
+  use fv_arrays_mod,   only : R_GRID
+
+#ifdef GFS_TYPES
+use GFS_typedefs,      only : kind_phys
+#else
+use IPD_typedefs,      only : kind_phys => IPD_kind_phys
+#endif
+
+
 
   ! Simple aggregation of the start and end indices of a 2D grid
   ! Makes argument lists clearer to read
@@ -96,7 +104,7 @@ contains
   subroutine show_bbox(tag, in_bbox, lats, lons)
     character(len=*) :: tag
     type(bbox), intent(out) :: in_bbox
-    real, allocatable, intent(in)        :: lats(:,:), lons(:,:)
+    real(kind=kind_phys), allocatable, intent(in)        :: lats(:,:), lons(:,:)
 
     integer  :: x,y
     real(kind=R_GRID) :: pi = 4 * atan(1.0d0)

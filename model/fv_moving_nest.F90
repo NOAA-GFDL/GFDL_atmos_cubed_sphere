@@ -49,6 +49,7 @@ use GFS_typedefs,           only: IPD_data_type => GFS_data_type, &
 #else
 use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => IPD_kind_phys
 #endif
+  use GFS_init,               only: GFS_grid_populate
 
 
   use boundary_mod,           only: update_coarse_grid, update_coarse_grid_mpp
@@ -1160,9 +1161,11 @@ contains
 
     allocate(tile_geo%lons(lbound(Atm(n)%gridstruct%agrid, 1):ubound(Atm(n)%gridstruct%agrid, 1), lbound(Atm(n)%gridstruct%agrid, 2):ubound(Atm(n)%gridstruct%agrid, 2)))
     allocate(tile_geo%lats(lbound(Atm(n)%gridstruct%agrid, 1):ubound(Atm(n)%gridstruct%agrid, 1), lbound(Atm(n)%gridstruct%agrid, 2):ubound(Atm(n)%gridstruct%agrid, 2)))
+    !allocate(tile_geo%area(lbound(Atm(n)%gridstruct%agrid, 1):ubound(Atm(n)%gridstruct%agrid, 1), lbound(Atm(n)%gridstruct%agrid, 2):ubound(Atm(n)%gridstruct%agrid, 2)))
 
     tile_geo%lats = -999.9
     tile_geo%lons = -999.9
+    !tile_geo%area = -999.9
 
     do x = lbound(Atm(n)%gridstruct%agrid, 1), ubound(Atm(n)%gridstruct%agrid, 1)
        do y = lbound(Atm(n)%gridstruct%agrid, 2), ubound(Atm(n)%gridstruct%agrid, 2)
@@ -1267,12 +1270,12 @@ contains
   end subroutine mn_latlon_load_parent
 
 
-  subroutine mn_latlon_read_hires_parent(npx, npy, x_refine, fp_super_tile_geo, fp_super_istart_fine, fp_super_iend_fine, fp_super_jstart_fine, fp_super_jend_fine, surface_dir)
+  subroutine mn_latlon_read_hires_parent(npx, npy, x_refine, fp_super_tile_geo, surface_dir)
     integer, intent(in)                :: npx, npy, x_refine
     type(grid_geometry), intent(inout) :: fp_super_tile_geo
-    integer, intent(out)               :: fp_super_istart_fine, fp_super_jstart_fine,fp_super_iend_fine, fp_super_jend_fine
     character(len=120), intent(in)     :: surface_dir
 
+    integer                            :: fp_super_istart_fine, fp_super_jstart_fine,fp_super_iend_fine, fp_super_jend_fine
     integer :: nx_cubic
     character(len=256) :: res_str
 
@@ -1283,6 +1286,7 @@ contains
          npx, npy, x_refine, &
          fp_super_tile_geo, &
          fp_super_istart_fine, fp_super_iend_fine, fp_super_jstart_fine, fp_super_jend_fine)
+
 
   end subroutine mn_latlon_read_hires_parent
 
@@ -1385,6 +1389,99 @@ contains
     call alloc_read_data(nc_filename, var_name, fp_nx, fp_ny, data_grid)
 
   end subroutine mn_static_read_hires
+
+
+
+  subroutine mn_reset_phys_latlon(Atm, n, tile_geo, fp_super_tile_geo, Atm_block, IPD_control, IPD_data)
+    type(fv_atmos_type), intent(in)      :: Atm(:)
+    integer, intent(in)                  :: n
+    type(grid_geometry), intent(in)      :: tile_geo
+    type(grid_geometry), intent(in)      :: fp_super_tile_geo
+    type(block_control_type), intent(in) :: Atm_block
+    type(IPD_control_type), intent(in) :: IPD_control
+    type(IPD_data_type), intent(inout) :: IPD_data(:)
+    !type(time_type), intent(in)     :: time_step
+    
+    integer :: isc, jsc, iec, jec
+    integer :: x, y, fp_i, fp_j !, fpa_i, fpa_j
+    integer :: nest_x, nest_y, parent_x, parent_y
+    integer :: this_pe
+
+    real(kind=kind_phys), allocatable :: lats(:,:), lons(:,:), area(:,:)
+
+
+    this_pe = mpp_pe()
+
+    isc = Atm(n)%bd%isc
+    jsc = Atm(n)%bd%jsc
+    iec = Atm(n)%bd%iec
+    jec = Atm(n)%bd%jec
+
+    allocate(lats(isc:iec, jsc:jec))
+    allocate(lons(isc:iec, jsc:jec))
+    allocate(area(isc:iec, jsc:jec))
+
+    print '("WDR mn_reset_phys_latlon AA npe=",I0)', this_pe
+
+    ! This is going to be slow -- replace with better way to calculate index offsets, or pass them from earlier calculations
+    call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
+    print '("WDR mn_reset_phys_latlon AB npe=",I0)', this_pe
+
+    do x = isc, iec
+       do y = jsc, jec
+          fp_i = (x - nest_x) * 2 + parent_x
+          fp_j = (y - nest_y) * 2 + parent_y
+
+          !fpa_i = (x - nest_x) * 2 + parent_x - 1
+          !fpa_j = (y - nest_y) * 2 + parent_y - 1
+
+          print '("WDR mn_reset_phys_latlon BB npe=",I0," ix=",I0," x,y=",I0,",",I0)', this_pe, x,y
+          lons(x,y) = fp_super_tile_geo%lons(fp_i, fp_j)
+          print '("WDR mn_reset_phys_latlon CC npe=",I0," ix=",I0," x,y=",I0,",",I0)', this_pe, x,y
+          lats(x,y) = fp_super_tile_geo%lats(fp_i, fp_j)
+          print '("WDR mn_reset_phys_latlon DD npe=",I0," ix=",I0," x,y=",I0,",",I0)', this_pe, x,y
+
+          ! Need to add the areas from 4 squares, because the netCDF file has areas calculated for the supergrid cells
+          !  We need the area of the whole center of the cell.  
+          !  Example dimensions for C288_grid.tile6.nc
+          !   longitude -- x(577,577)
+          !   latitude  -- y(577,577)
+          !   area      -- x(576,576)
+
+
+          !  Extracting lat/lon/area from Supergrid
+          !
+          !   1,1----2,1----3,1
+          !    |      |      |
+          !    | a1,1 | a2,1 |
+          !    |      |      |
+          !   1,2----2,2----3,2
+          !    |      |      |
+          !    | a1,2 | a2,2 |
+          !    |      |      |
+          !   1,3----2,3----3,3
+          ! 
+          !  The model A-grid cell 1,1 is centered at supergrid location 2,2
+          !    The area of the A-grid cell is the sum of the 4 supergrid areas   A = a(1,1) + a(1,2) + a(2,1) + a(2,2)
+
+          area(x,y) = fp_super_tile_geo%area(fp_i - 1, fp_j - 1) + fp_super_tile_geo%area(fp_i - 1, fp_j) + &
+               fp_super_tile_geo%area(fp_i, fp_j - 1) + fp_super_tile_geo%area(fp_i, fp_j)   ! TODO make sure these offsets are correct.  
+          print '("WDR mn_reset_phys_latlon EE npe=",I0," ix=",I0," x,y=",I0,",",I0)', this_pe, x,y
+       end do
+    end do
+
+    print '("WDR mn_reset_phys_latlon FF npe=",I0," xlon_d=",F15.10," xlat_d=",F15.10," area=",F20.5)', this_pe, IPD_data(1)%Grid%xlon_d(1), IPD_data(1)%Grid%xlat_d(1), IPD_data(1)%Grid%area(1)
+
+    call GFS_grid_populate(IPD_data%Grid, lons, lats, area, pe=this_pe)
+    
+    print '("WDR mn_reset_phys_latlon GG npe=",I0," xlon_d=",F15.10," xlat_d=",F15.10," area=",F20.5)', this_pe, IPD_data(1)%Grid%xlon_d(1), IPD_data(1)%Grid%xlat_d(1), IPD_data(1)%Grid%area(1)
+
+    deallocate(lats)
+    deallocate(lons)
+    deallocate(area)
+
+  end subroutine mn_reset_phys_latlon
+
 
 
   !!============================================================================                                            
