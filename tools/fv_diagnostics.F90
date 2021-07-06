@@ -246,6 +246,8 @@ contains
 
     !print '("[INFO] WDR fv_diag_reinit npe=",I0," i=",I0,"-",I0," j=",I0,"-",I0)', this_pe, isc, iec, jsc, jec
 
+    ginv = 1./GRAV
+
     do j=jsc,jec
        do i=isc,iec
           zsurf(i,j) = ginv * Atm(n)%phis(i,j)
