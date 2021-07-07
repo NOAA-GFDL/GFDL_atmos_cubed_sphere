@@ -351,6 +351,26 @@ module fv_eta_mod
          auto_routine = 2
       end select
 
+! Jili Dong add ak/bk input
+   else if (trim(npz_type) == 'input') then
+       open (113,file="global_hyblev_fcst.txt")
+       read(113,*)
+       do k=km+1,1,-1
+          read(113,*) ak(k),bk(k)
+       end do
+       close(113)
+
+       do k=1,km+1
+          if (bk(k) .eq. 0.0) then
+             ks=k
+             exit
+          end if
+       end do
+
+       ks=ks-2
+! Jili Dong add ak/bk input
+
+
    else
 
       select case (km)
