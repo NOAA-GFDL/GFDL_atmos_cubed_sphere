@@ -563,7 +563,7 @@ module fv_control_mod
              Atm(n)%bd%isc, Atm(n)%bd%iec, &
              Atm(n)%bd%jsc, Atm(n)%bd%jec, &
              Atm(n)%flagstruct%npx,    Atm(n)%flagstruct%npy,   Atm(n)%flagstruct%npz, &
-             Atm(n)%flagstruct%ndims,  Atm(n)%flagstruct%ncnst, Atm(n)%flagstruct%ncnst-Atm(n)%flagstruct%pnats, &
+             Atm(n)%flagstruct%ndims, Atm(n)%flagstruct%ntiles,  Atm(n)%flagstruct%ncnst, Atm(n)%flagstruct%ncnst-Atm(n)%flagstruct%pnats, &
              n/=this_grid, n==this_grid, ngrids) !TODO don't need both of the last arguments
      enddo
      if ( (Atm(this_grid)%bd%iec-Atm(this_grid)%bd%isc+1).lt.4 .or. (Atm(this_grid)%bd%jec-Atm(this_grid)%bd%jsc+1).lt.4 ) then
@@ -594,7 +594,9 @@ module fv_control_mod
      do n=1,ngrids
         Atm(this_grid)%neststruct%child_grids(n) = (grid_coarse(n) == this_grid)
         allocate(Atm(n)%neststruct%do_remap_bc(ngrids))
+        allocate(Atm(n)%neststruct%do_remap_bc_level(Atm(n)%neststruct%num_nest_level))
         Atm(n)%neststruct%do_remap_bc(:) = .false.
+        Atm(n)%neststruct%do_remap_bc_level(:) = .false.
      enddo
      Atm(this_grid)%neststruct%parent_proc = ANY(Atm(this_grid)%neststruct%child_grids) !ANY(tile_coarse == Atm(this_grid)%global_tile)
      Atm(this_grid)%neststruct%child_proc = ASSOCIATED(Atm(this_grid)%parent_grid) !this means a nested grid
@@ -641,30 +643,8 @@ module fv_control_mod
         write(*,*) ' '
      endif
 
-
-!!$     Atm(this_grid)%ts   = 300.
-!!$     Atm(this_grid)%phis = too_big
-!!$     ! The following statements are to prevent the phantom corner regions from
-!!$     ! growing instability
-!!$     Atm(this_grid)%u  = 0.
-!!$     Atm(this_grid)%v  = 0.
-!!$     Atm(this_grid)%ua = too_big
-!!$     Atm(this_grid)%va = too_big
-!!$
-!!$     Atm(this_grid)%inline_mp%prer = too_big
-!!$     Atm(this_grid)%inline_mp%prei = too_big
-!!$     Atm(this_grid)%inline_mp%pres = too_big
-!!$     Atm(this_grid)%inline_mp%preg = too_big
-
      !Initialize restart
      call fv_restart_init()
-!     if ( reset_eta ) then
-!         do n=1, ntilesMe
-!            call set_eta(npz, Atm(this_grid)%ks, ptop, Atm(this_grid)%ak, Atm(this_grid)%bk, Atm(this_grid)%flagstruct%npz_type)
-!         enddo
-!         if(is_master()) write(*,*) "Hybrid sigma-p coordinate has been reset"
-!     endif
-
 
 
    contains
@@ -886,7 +866,7 @@ module fv_control_mod
        ! Read Main namelist
        read (input_nml_file,fv_grid_nml,iostat=ios)
        ierr = check_nml_error(ios,'fv_grid_nml')
- 
+
        call write_version_number ( 'FV_CONTROL_MOD', version )
        unit = stdlog()
        write(unit, nml=fv_grid_nml)
@@ -947,7 +927,7 @@ module fv_control_mod
        ierr = check_nml_error(ios,'fv_core_nml')
        ! Reset input_file_nml to default behavior (CHECK do we still need this???)
        !call read_input_nml
- 
+
        call write_version_number ( 'FV_CONTROL_MOD', version )
        unit = stdlog()
        write(unit, nml=fv_core_nml)
@@ -1058,9 +1038,11 @@ module fv_control_mod
 
      subroutine setup_update_regions
 
-       integer :: isu, ieu, jsu, jeu ! update regions
+       integer :: isu, ieu, jsu, jeu ! update regions for centered variables
        integer :: isc, jsc, iec, jec
        integer :: upoff
+       integer :: isu_stag, jsu_stag, ieu_stag, jeu_stag ! update regions for u
+       integer :: isv_stag, jsv_stag, iev_stag, jev_stag ! update regions for v
 
        isc = Atm(this_grid)%bd%isc
        jsc = Atm(this_grid)%bd%jsc
@@ -1078,19 +1060,39 @@ module fv_control_mod
              jsu = nest_joffsets(n)
              jeu = jsu + jcount_coarse(n) - 1
 
+             isu_stag = isu
+             jsu_stag = jsu
+             ieu_stag = ieu
+             jeu_stag = jeu+1
+
+             isv_stag = isu
+             jsv_stag = jsu
+             iev_stag = ieu+1
+             jev_stag = jeu
+
              !update offset adjustment
              isu = isu + upoff
              ieu = ieu - upoff
              jsu = jsu + upoff
              jeu = jeu - upoff
 
-             !restriction to current domain
-!!$             !!! DEBUG CODE
-!!$             if (Atm(this_grid)%flagstruct%fv_debug) then
-!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS  : ', isu, jsu, ieu, jeu
-!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 2: ', isc, jsc, iec, jsc
-!!$             endif
-!!$             !!! END DEBUG CODE
+             isu_stag = isu_stag + upoff
+             ieu_stag = ieu_stag - upoff
+             jsu_stag = jsu_stag + upoff
+             jeu_stag = jeu_stag - upoff
+
+             isv_stag = isv_stag + upoff
+             iev_stag = iev_stag - upoff
+             jsv_stag = jsv_stag + upoff
+             jev_stag = jev_stag - upoff
+
+! Absolute boundary for the staggered point update region on the parent.
+! This is used in remap_uv to control the update of the last staggered point
+! when the the update region coincides with a pe domain to avoid cross-restart repro issues
+
+             Atm(n)%neststruct%jeu_stag_boundary = jeu_stag
+             Atm(n)%neststruct%iev_stag_boundary = iev_stag
+
              if (isu > iec .or. ieu < isc .or. &
                  jsu > jec .or. jeu < jsc ) then
                 isu = -999 ; jsu = -999 ; ieu = -1000 ; jeu = -1000
@@ -1098,15 +1100,49 @@ module fv_control_mod
                 isu = max(isu,isc) ; jsu = max(jsu,jsc)
                 ieu = min(ieu,iec) ; jeu = min(jeu,jec)
              endif
-!!$             !!! DEBUG CODE
-!!$             if (Atm(this_grid)%flagstruct%fv_debug) &
-!!$                  write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 3: ', isu, jsu, ieu, jeu
-!!$             !!! END DEBUG CODE
+
+! Update region for staggered quantity to avoid cross repro issues when the pe domain boundary
+! coincide with the nest. Basically write the staggered update on compute domains
+
+             if (isu_stag > iec .or. ieu_stag < isc .or. &
+                 jsu_stag > jec .or. jeu_stag < jsc ) then
+                isu_stag = -999 ; jsu_stag = -999 ; ieu_stag = -1000 ; jeu_stag = -1000
+             else
+                isu_stag = max(isu_stag,isc) ; jsu_stag = max(jsu_stag,jsc)
+                ieu_stag = min(ieu_stag,iec) ; jeu_stag = min(jeu_stag,jec)
+             endif
+
+             if (isv_stag > iec .or. iev_stag < isc .or. &
+                 jsv_stag > jec .or. jev_stag < jsc ) then
+                isv_stag = -999 ; jsv_stag = -999 ; iev_stag = -1000 ; jev_stag = -1000
+             else
+                isv_stag = max(isv_stag,isc) ; jsv_stag = max(jsv_stag,jsc)
+                iev_stag = min(iev_stag,iec) ; jev_stag = min(jev_stag,jec)
+             endif
+             if (isu > iec .or. ieu < isc .or. &
+                 jsu > jec .or. jeu < jsc ) then
+                isu = -999 ; jsu = -999 ; ieu = -1000 ; jeu = -1000
+             else
+                isu = max(isu,isc) ; jsu = max(jsu,jsc)
+                ieu = min(ieu,iec) ; jeu = min(jeu,jec)
+             endif
+
+             ! lump indices
+             isu=max(isu, isu_stag, isv_stag)
+             jsu=max(jsu, jsu_stag, jsv_stag)
+             jeu_stag=max(jeu, jeu_stag)
+             jev_stag=max(jeu, jev_stag)
+             ieu_stag=max(ieu ,ieu_stag)
+             iev_stag=max(ieu ,iev_stag)
 
              Atm(n)%neststruct%isu = isu
-             Atm(n)%neststruct%ieu = ieu
+             Atm(n)%neststruct%ieu = ieu_stag
              Atm(n)%neststruct%jsu = jsu
-             Atm(n)%neststruct%jeu = jeu
+             Atm(n)%neststruct%jeu = jev_stag
+
+             Atm(n)%neststruct%jeu_stag = jeu_stag
+             Atm(n)%neststruct%iev_stag = iev_stag
+
           endif
        enddo
 

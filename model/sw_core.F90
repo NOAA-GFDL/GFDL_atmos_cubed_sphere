@@ -1840,26 +1840,6 @@
           enddo
        enddo
 
-!!$       !Edges
-!!$
-!!$       !West, East
-!!$       do j=jsd+1,jed
-!!$          divg_d(isd  ,j) = (vf(isd,j-1) - vf(isd,j) + uf(isd,j) - uf(isd+1,j))*rarea_c(isd,j)
-!!$          divg_d(ied+1,j) = (vf(ied+1,j-1) - vf(ied+1,j) + uf(ied-1,j) - uf(ied,j))*rarea_c(ied,j)
-!!$       end do
-!!$
-!!$       !North, South
-!!$       do i=isd+1,ied
-!!$          divg_d(i,jsd  ) = (vf(i,jsd) - vf(i,jsd+1) + uf(i-1,jsd) - uf(i,jsd))*rarea_c(i,jsd)
-!!$          divg_d(i,jed+1) = (vf(i,jed-1) - vf(i,jed) + uf(i-1,jed+1) - uf(i,jed+1))*rarea_c(i,jed)
-!!$       end do
-!!$
-!!$       !Corners (just use next corner value)
-!!$       divg_d(isd,jsd)   = divg_d(isd+1,jsd+1)
-!!$       divg_d(isd,jed+1) = divg_d(isd+1,jed)
-!!$       divg_d(ied+1,jsd)   = divg_d(ied,jsd+1)
-!!$       divg_d(ied+1,jed+1) = divg_d(ied,jed)
-
     endif
 
 
