@@ -643,30 +643,8 @@ module fv_control_mod
         write(*,*) ' '
      endif
 
-
-!!$     Atm(this_grid)%ts   = 300.
-!!$     Atm(this_grid)%phis = too_big
-!!$     ! The following statements are to prevent the phantom corner regions from
-!!$     ! growing instability
-!!$     Atm(this_grid)%u  = 0.
-!!$     Atm(this_grid)%v  = 0.
-!!$     Atm(this_grid)%ua = too_big
-!!$     Atm(this_grid)%va = too_big
-!!$
-!!$     Atm(this_grid)%inline_mp%prer = too_big
-!!$     Atm(this_grid)%inline_mp%prei = too_big
-!!$     Atm(this_grid)%inline_mp%pres = too_big
-!!$     Atm(this_grid)%inline_mp%preg = too_big
-
      !Initialize restart
      call fv_restart_init()
-!     if ( reset_eta ) then
-!         do n=1, ntilesMe
-!            call set_eta(npz, Atm(this_grid)%ks, ptop, Atm(this_grid)%ak, Atm(this_grid)%bk, Atm(this_grid)%flagstruct%npz_type)
-!         enddo
-!         if(is_master()) write(*,*) "Hybrid sigma-p coordinate has been reset"
-!     endif
-
 
 
    contains
@@ -1108,16 +1086,6 @@ module fv_control_mod
              jsv_stag = jsv_stag + upoff
              jev_stag = jev_stag - upoff
 
-             !restriction to current domain
-!!$             !!! DEBUG CODE
-!!$             if (Atm(this_grid)%flagstruct%fv_debug) then
-!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 1: ', isu, jsu, ieu, jeu
-!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 11: ', isu_stag, jsu_stag, ieu_stag, jeu_stag
-!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 111: ', isv_stag, jsv_stag, iev_stag, jev_stag
-!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 2: ', isc, jsc, iec, jec
-!!$             endif
-!!$             !!! END DEBUG CODE
-
 ! Absolute boundary for the staggered point update region on the parent.
 ! This is used in remap_uv to control the update of the last staggered point
 ! when the the update region coincides with a pe domain to avoid cross-restart repro issues
@@ -1167,12 +1135,6 @@ module fv_control_mod
              ieu_stag=max(ieu ,ieu_stag)
              iev_stag=max(ieu ,iev_stag)
 
-!!$             !!! DEBUG CODE
-!!$             if (Atm(this_grid)%flagstruct%fv_debug) &
-!!$                 write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 3: ', isu, jsu, ieu, jeu
-!!$                 write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 4: ', jeu_stag, iev_stag, ieu_stag, jev_stag
-!!$             !!! END DEBUG CODE
-
              Atm(n)%neststruct%isu = isu
              Atm(n)%neststruct%ieu = ieu_stag
              Atm(n)%neststruct%jsu = jsu
@@ -1180,9 +1142,6 @@ module fv_control_mod
 
              Atm(n)%neststruct%jeu_stag = jeu_stag
              Atm(n)%neststruct%iev_stag = iev_stag
-
-!!$                 write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 5: ', Atm(n)%neststruct%isu, Atm(n)%neststruct%jsu, Atm(n)%neststruct%ieu, Atm(n)%neststruct%jeu
-!!$                 write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 6: ', Atm(n)%neststruct%jeu_stag, Atm(n)%neststruct%iev_stag
 
           endif
        enddo

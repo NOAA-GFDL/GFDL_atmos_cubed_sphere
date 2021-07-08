@@ -1129,9 +1129,6 @@ contains
        if (Atm%neststruct%child_grids(n) .and. is_master()) then
           !need to get tile_coarse AND determine local number for tile
           if (ntiles_g > 1) then ! coarse grid only!!
-!!$             !!! DEBUG CODE
-!!$             print*, 'SENDING GRID_GLOBAL: ', mpp_pe(), tile_coarse(n), grids_master_procs(n), grid_global(1,npy,:,tile_coarse(n))
-!!$             !!! END DEBUG CODE
              call mpp_send(grid_global(:,:,:,tile_coarse(n)), &
                   size(grid_global)/Atm%flagstruct%ntiles,grids_master_procs(n))
           else
@@ -1677,25 +1674,10 @@ contains
 
          call mpp_recv(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2), size(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2)), &
                        Atm%parent_grid%pelist(1))
-!!$         !!!! DEBUG CODE
-!!$         print*, 'RECEIVING GRID GLOBAL: ', mpp_pe(), Atm%parent_grid%pelist(1), p_grid(1,jeg+1,:)
-!!$         !!!! END DEBUG CODE
-
       endif
 
       call mpp_broadcast( p_grid(isg-ng:ieg+ng+1, jsg-ng:jeg+ng+1, :), &
            (ieg-isg+2+2*ng)*(jeg-jsg+2+2*ng)*ndims, mpp_root_pe() )
-
-         !NOTE : Grid now allowed to lie outside of parent
-         !Check that the grid does not lie outside its parent
-         !3aug15: allows halo of nest to lie within halo of coarse grid.
-!!$         !  NOTE: will this then work with the mpp_update_nest_fine?
-!!$         if ( joffset + floor( real(1-ng) / real(refinement) ) < 1-ng .or. &
-!!$              ioffset + floor( real(1-ng) / real(refinement) ) < 1-ng .or. &
-!!$              joffset + floor( real(npy+ng) / real(refinement) ) > Atm%parent_grid%npy+ng .or. &
-!!$              ioffset + floor( real(npx+ng) / real(refinement) ) > Atm%parent_grid%npx+ng ) then
-!!$            call mpp_error(FATAL, 'nested grid lies outside its parent')
-!!$         end if
 
       ! Generate grid global and parent_grid indices
       ! Grid global only needed in case we create a new child nest on-the-fly?
@@ -1795,10 +1777,6 @@ contains
 
 
             if (imod < refinement/2) then
-!!$               !!! DEBUG CODE
-!!$               if (ic /= ic) print*, gid, ' Bad ic ', i, j
-!!$               print*, i, j, ic
-!!$               !!! END DEBUG CODE
                ind_h(i,j,1) = ic - 1
             else
                ind_h(i,j,1) = ic
@@ -1847,9 +1825,6 @@ contains
             ind_u(i,j,1) = ic
 #else
             if (imod < refinement/2) then
-!!$               !!! DEBUG CODE
-!!$               print*, i, j, ic
-!!$               !!! END DEBUG CODE
                ind_u(i,j,1) = ic - 1
             else
                ind_u(i,j,1) = ic
@@ -2467,33 +2442,6 @@ contains
               !globalarea = globalarea + area(i,j)
             enddo
          enddo
-
-!!$         allocate( p_R8(nx-1,ny-1,ntiles_g) )   ! this is a "global" array
-!!$         do j=js,je
-!!$            do i=is,ie
-!!$               p_R8(i,j,tile) = area(i,j)
-!!$            enddo
-!!$         enddo
-!!$         call mp_gather(p_R8, is,ie, js,je, nx-1, ny-1, ntiles_g)
-!!$         if (is_master()) then
-!!$            globalarea = 0.0
-!!$            do n=1,ntiles_g
-!!$               do j=1,ny-1
-!!$                  do i=1,nx-1
-!!$                     globalarea = globalarea + p_R8(i,j,n)
-!!$                  enddo
-!!$               enddo
-!!$            enddo
-!!$         endif
-!!$
-!!$         call mpp_broadcast(globalarea, mpp_root_pe())
-!!$
-!!$         deallocate( p_R8 )
-!!$
-!!$         call mp_reduce_max(maxarea)
-!!$         minarea = -minarea
-!!$         call mp_reduce_max(minarea)
-!!$         minarea = -minarea
 
          globalarea = mpp_global_sum(domain, area)
          maxarea = mpp_global_max(domain, area)

@@ -161,10 +161,6 @@ contains
        ntprog = size(Atm(n)%q,4)
        ntdiag = size(Atm(n)%qdiag,4)
 
-!!$       if (is_master()) then
-!!$          print*, 'FV_RESTART: ', n, cold_start_grids(n)
-!!$       endif
-
        !1. sort out restart, external_ic, and cold-start (idealized)
        if (Atm(n)%neststruct%nested) then
           write(fname,   '(A, I2.2, A)') 'INPUT/fv_core.res.nest', Atm(n)%grid_number, '.nc'
@@ -390,11 +386,6 @@ contains
           !Currently even though we do fill in the nested-grid IC from
           ! init_case or external_ic we appear to overwrite it using
           !  coarse-grid data
-!!$          if (Atm(n)%neststruct%nested) then
-!!$             if (.not. Atm(n)%flagstruct%external_ic .and.  .not. Atm(n)%flagstruct%nggps_ic .and. grid_type < 4 ) then
-!!$                call fill_nested_grid_data(Atm(n:n))
-!!$             endif
-!!$          end if
 
 !       endif  !end cold_start check
 
@@ -760,8 +751,6 @@ contains
     else
        process = .true.
     endif
-
-!!$    if (.not. Atm%neststruct%nested) return
 
     call mpp_get_global_domain( Atm%parent_grid%domain, &
          isg, ieg, jsg, jeg)
@@ -1238,17 +1227,6 @@ contains
 
 
 #ifdef SW_DYNAMICS
-!!$    !ps: first level only
-!!$    !This is only valid for shallow-water simulations
-!!$    if (process) then
-!!$    do j=jsd,jed
-!!$       do i=isd,ied
-!!$
-!!$          Atm%ps(i,j) = Atm%delp(i,j,1)/grav
-!!$
-!!$       end do
-!!$    end do
-!!$    endif
 #else
     !Reset p_var after updating topography
     if (process) call p_var(npz, isc, iec, jsc, jec, Atm%ptop, ptop_min, Atm%delp, &

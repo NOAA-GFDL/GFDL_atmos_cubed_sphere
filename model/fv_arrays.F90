@@ -1413,22 +1413,6 @@ contains
        nq_2d=   1
     endif
 
-!This should be set up in fv_mp_mod
-!!$    Atm%bd%isd = isd_in
-!!$    Atm%bd%ied = ied_in
-!!$    Atm%bd%jsd = jsd_in
-!!$    Atm%bd%jed = jed_in
-!!$
-!!$    Atm%bd%is = is_in
-!!$    Atm%bd%ie = ie_in
-!!$    Atm%bd%js = js_in
-!!$    Atm%bd%je = je_in
-!!$
-!!$    Atm%bd%isc = Atm%bd%is
-!!$    Atm%bd%iec = Atm%bd%ie
-!!$    Atm%bd%jsc = Atm%bd%js
-!!$    Atm%bd%jec = Atm%bd%je
-
     !Convenience pointers
     Atm%npx => Atm%flagstruct%npx
     Atm%npy => Atm%flagstruct%npy
@@ -1437,9 +1421,6 @@ contains
 
     Atm%ng => Atm%bd%ng
 
-!!$    Atm%npx = npx_in
-!!$    Atm%npy = npy_in
-!!$    Atm%npz = npz_in
     Atm%flagstruct%ndims = ndims_in
 
     allocate (    Atm%u(isd:ied  ,jsd:jed+1,npz) )
