@@ -10,10 +10,10 @@ and with FMS release 2021.02 from https://github.com/NOAA-GFDL/FMS
 This release includes the following:
 
 - Comprehensive documentation in LaTEX format (FV3 team)
-- Default changes to some nameilst options and updated inline documentation
+- Default changes to some namelist options and updated inline documentation
 - Multiple same-level and telescoping nests for the Regional domain (J Mouallem)
 - Updated fms2_io functionality (L Chilutti)
-- Revised Regional domain code (K Chen)
+- Revised Regional domain code (K-Y Cheng)
 - Reproducibility fixes for global+nests and regional+nests (tested for absolute reproducibility across PE counts, restarts)
 - Other updates and general cleanup
 
