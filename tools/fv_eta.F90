@@ -284,7 +284,7 @@ module fv_eta_mod
 
 #else
  !This is the version of set_eta used in SHiELD and AM4
- subroutine set_eta(km, ks, ptop, ak, bk, npz_type)
+ subroutine set_eta(km, ks, ptop, ak, bk, npz_type,fv_eta_file)
 
 !Level definitions are now in this header file
 #include <tools/fv_eta.h>
@@ -295,6 +295,8 @@ module fv_eta_mod
    real, intent(out):: bk(km+1)
    real, intent(out):: ptop         ! model top (Pa)
    character(24), intent(IN) :: npz_type
+   character(120), intent(IN) :: fv_eta_file 
+   integer :: eta_level_unit
 
    real:: p0=1000.E2
    real:: pc=200.E2
@@ -353,23 +355,14 @@ module fv_eta_mod
 
 ! Jili Dong add ak/bk input
    else if (trim(npz_type) == 'input') then
-       open (113,file="global_hyblev_fcst.txt")
-       read(113,*)
+       open (newunit=eta_level_unit, file=trim(fv_eta_file))
+       read(eta_level_unit,*)
        do k=km+1,1,-1
-          read(113,*) ak(k),bk(k)
+          read(eta_level_unit,*) ak(k),bk(k)
        end do
-       close(113)
-
-       do k=1,km+1
-          if (bk(k) .eq. 0.0) then
-             ks=k
-             exit
-          end if
-       end do
-
-       ks=ks-2
+       close(eta_level_unit)
+       call set_external_eta(ak, bk, ptop, ks)
 ! Jili Dong add ak/bk input
-
 
    else
 

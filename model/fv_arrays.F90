@@ -587,6 +587,7 @@ module fv_arrays_mod
 #else
    character(24) :: npz_type = ''  !< Option for selecting vertical level setup (empty by default)
 #endif
+   character(120) :: fv_eta_file = 'global_hyblev_fcst.txt'  !< FV3 user specified eta file
    integer :: npz_rst = 0    !< If using a restart file with a different number of vertical
                              !< levels, set npz_rst to be the number of levels in your restart file.
                              !< The model will then remap the restart file data to the vertical coordinates
