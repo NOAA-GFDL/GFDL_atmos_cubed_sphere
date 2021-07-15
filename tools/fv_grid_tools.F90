@@ -597,7 +597,7 @@ contains
 
     logical, save       :: first_time = .true.
     integer, save       :: id_timer1, id_timer2, id_timer3, id_timer3a, id_timer4, id_timer5, id_timer6, id_timer7, id_timer8
-    logical             :: debug_log = .true.
+    logical             :: debug_log = .false.
     integer             :: this_pe
 
     this_pe = mpp_pe()
@@ -1960,12 +1960,12 @@ contains
               lbound(grid_global,3):ubound(grid_global,3), &
               lbound(grid_global,4):ubound(grid_global,4) ) )
 
-         print '("[INFO] WDR bounds grid_global setup_nest_grid npe=",I0," grid_global(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(grid_global,1), ubound(grid_global,1), &
+         if (debug_log) print '("[INFO] WDR bounds grid_global setup_nest_grid npe=",I0," grid_global(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(grid_global,1), ubound(grid_global,1), &
               lbound(grid_global,2), ubound(grid_global,2), &
               lbound(grid_global,3), ubound(grid_global,3), &
               lbound(grid_global,4), ubound(grid_global,4) 
 
-         print '("[INFO] WDR bounds out_grid setup_nest_grid npe=",I0," out_grid(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(out_grid,1), ubound(out_grid,1), &
+         if (debug_log) print '("[INFO] WDR bounds out_grid setup_nest_grid npe=",I0," out_grid(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(out_grid,1), ubound(out_grid,1), &
               lbound(out_grid,2), ubound(out_grid,2), &
               lbound(out_grid,3), ubound(out_grid,3), &
               lbound(out_grid,4), ubound(out_grid,4)
@@ -1988,13 +1988,12 @@ contains
          
       
          if ( delta_i_c .ne. 0 ) then
-            print '("[INFO] setup_nest_grid EOSHIFT delta_i_c=",I0," start. npe=",I0)', delta_i_c, this_pe
+            if (debug_log) print '("[INFO] setup_nest_grid EOSHIFT delta_i_c=",I0," start. npe=",I0)', delta_i_c, this_pe
             out_grid = eoshift(out_grid, refinement * delta_i_c, 0.0, 1)
          end if
          
          if (delta_j_c .ne.  0) then
-            !if (debug_log) print '("[INFO] WDR NREY mn_var_shift_data start. npe=",I0)', this_pe
-            print '("[INFO] setup_nest_grid EOSHIFT delta_j_c=",I0," start. npe=",I0)', delta_j_c, this_pe
+            if (debug_log) print '("[INFO] setup_nest_grid EOSHIFT delta_j_c=",I0," start. npe=",I0)', delta_j_c, this_pe
             out_grid = eoshift(out_grid, refinement * delta_j_c, 0.0, 2)
          end if
 

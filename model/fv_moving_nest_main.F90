@@ -139,7 +139,7 @@ use fv_moving_nest_mod,         only: mn_phys_fill_temp_variables, mn_phys_apply
 !      Load static datasets
 use fv_moving_nest_mod,         only: mn_latlon_read_hires_parent, mn_latlon_load_parent, mn_reset_phys_latlon
 use fv_moving_nest_mod,         only: mn_orog_read_hires_parent, mn_static_read_hires
-use fv_moving_nest_utils_mod,   only: load_nest_latlons_from_nc
+use fv_moving_nest_utils_mod,   only: load_nest_latlons_from_nc, compare_terrain
 
 !      Bounds checking routines
 use fv_moving_nest_mod,         only: permit_move_nest
@@ -174,7 +174,7 @@ real, parameter:: real_snan=x'FFF7FFFFFFFFFFFF'
 #endif
 
 logical :: debug_log = .false.
-logical :: tsvar_out = .true.
+logical :: tsvar_out = .false.
 logical :: wxvar_out = .false.
 
 
@@ -248,7 +248,7 @@ contains
        if (do_move) then
           ! Verifies if nest motion is permitted
           ! If nest would cross the cube face edge, do_move is reset to .false. and delta_i_c, delta_j_c are set to 0
-          call permit_move_nest(Atm, parent_grid_num, child_grid_num, delta_i_c, delta_j_c, do_move)
+          call permit_move_nest(Atm, a_step, parent_grid_num, child_grid_num, delta_i_c, delta_j_c, do_move)
           
        end if
        
@@ -269,8 +269,8 @@ contains
     type(IPD_data_type), intent(inout) :: IPD_data(:)
     type(time_type), intent(in)     :: time_step
 
-    logical :: tsvar_out = .true.
-    logical :: wxvar_out = .false.
+    !logical :: tsvar_out = .true.
+    !logical :: wxvar_out = .false.
 
     type(domain2d), pointer           :: domain_coarse, domain_fine
     logical :: is_fine_pe
@@ -298,8 +298,8 @@ contains
     !   if (debug_log) print '("[INFO] WDR after outputting to netCDF fv_dynamics atmosphere.F90 npe=",I0, " psc=",I0)', this_pe, psc
     !end if
     
-    !if (a_step .lt. 10 .or. mod(a_step, 10) .eq. 0) then
-    if (mod(a_step, 20) .eq. 0) then
+    if (a_step .lt. 10 .or. mod(a_step, 5) .eq. 0) then
+    !if (mod(a_step, 20) .eq. 0) then
        if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
        if (tsvar_out) call mn_phys_dump_to_netcdf(Atm(n), Atm_block, IPD_control, IPD_data, a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
     endif
@@ -400,6 +400,14 @@ contains
           delta_j_c = 0
        end if
     end if
+
+    ! Override to prevent move on first timestep
+    if (a_step .eq. 0) then
+       do_move = .false.
+       delta_i_c = 0
+       delta_j_c = 0
+    end if
+    
     
   end subroutine eval_move_nest
   
@@ -522,7 +530,14 @@ contains
 !-----------------------------------
 
 
-   print '("[INFO] WDR NESTIDX fv_moving_nest_main.F90 npe=",I0, " n=",I0," n=",I0," nest_num=",I0," parent_grid_num=",I0," child_grid_num=",I0)', this_pe, n, n, nest_num, parent_grid_num, child_grid_num    
+   !print '("[INFO] WDR NESTIDX fv_moving_nest_main.F90 npe=",I0, " n=",I0," n=",I0," nest_num=",I0," parent_grid_num=",I0," child_grid_num=",I0)', this_pe, n, n, nest_num, parent_grid_num, child_grid_num    
+   
+   if (first_nest_move) then
+      !print '("[INFO] WDR Start Clocks npe=",I0)', this_pe
+      call fv_moving_nest_init_clocks()
+   end if
+
+
 
    ! mygrid and n are the same in atmosphere.F90
    npx   = Atm(n)%npx
@@ -602,7 +617,7 @@ contains
        !!================================================================
 
        !if (debug_log) then
-       if (this_pe .eq. 0) then
+       if (debug_log .and. this_pe .eq. 0) then
           !call show_nest_grid(Atm(n), this_pe, 0)
           print '("[INFO] WDR BD init fv_moving_nest_main.F90 npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, Atm(n)%bd%is,  Atm(n)%bd%ie,  Atm(n)%bd%js,  Atm(n)%bd%je
           print '("[INFO] WDR BD init fv_moving_nest_main.F90 npe=",I0," isd=",I0," ied=",I0," jsd=",I0," jed=",I0)', this_pe, Atm(n)%bd%isd,  Atm(n)%bd%ied,  Atm(n)%bd%jsd,  Atm(n)%bd%jed
@@ -718,10 +733,10 @@ contains
              call mn_latlon_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, fp_super_tile_geo, &
                   Atm(child_grid_num)%neststruct%surface_dir)
 
-             print '("[INFO] WDR mn_orog_read_hires_parent BEFORE READING static orog fine file on npe=",I0)', this_pe
+             !print '("[INFO] WDR mn_orog_read_hires_parent BEFORE READING static orog fine file on npe=",I0)', this_pe
              call mn_orog_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(child_grid_num)%neststruct%surface_dir, filtered_terrain, &
                   mn_static%orog_grid, mn_static%orog_std_grid, mn_static%ls_mask_grid, mn_static%land_frac_grid)
-             print '("[INFO] WDR mn_orog_read_hires_parent COMPLETED READING static orog fine file on npe=",I0)', this_pe
+             !print '("[INFO] WDR mn_orog_read_hires_parent COMPLETED READING static orog fine file on npe=",I0)', this_pe
 
 
 
@@ -742,8 +757,16 @@ contains
              ! Add snowfree albedo variables here
 
              first_nest_move = .false.
-          else
-             print '("[INFO] WDR mn_latlon_read_hires_parent SKIPPING static fine file on npe=",I0)', this_pe
+          !else
+           !  print '("[INFO] WDR mn_latlon_read_hires_parent SKIPPING static fine file on npe=",I0)', this_pe
+
+             ! Debug outputs of hires terrain 
+             !call mn_var_dump_to_netcdf(Atm(n)%phis(isd:ied, jsd:jed), is_fine_pe, domain_coarse, domain_fine, position, 1, &
+             !     time_val, Atm%global_tile, "terrain", "PHIS")
+             !call mn_var_dump_to_netcdf(mn_static%orog_grid(ioffset*x_refine+isd:ioffset*x_refine+ied, joffset*y_refine+jsd:joffset*y_refine+jed) * grav, &
+             !     is_fine_pe, domain_coarse, domain_fine, position, 1, &
+             !     time_val, Atm%global_tile, "terrain", "ORG")
+
           end if
 
           !  Validation/logging calls that can be disabled
@@ -935,7 +958,7 @@ contains
        
        if (is_fine_pe) then
           ! phis is allocated in fv_arrays.F90 as:  allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
-          Atm(n)%phis(isd:ied, jsd:jed) = mn_static%orog_grid(ioffset*x_refine+isd:ioffset*x_refine+ied, joffset*y_refine+jsd:joffset*y_refine+jed) * grav
+          Atm(n)%phis(isd:ied, jsd:jed) = mn_static%orog_grid((ioffset-1)*x_refine+isd:(ioffset-1)*x_refine+ied, (joffset-1)*y_refine+jsd:(joffset-1)*y_refine+jed) * grav
 
           ! Reinitialize diagnostics -- zsurf which is g * Atm%phis
           call fv_diag_reinit(Atm(n:n))
@@ -943,7 +966,7 @@ contains
           ! sgh and oro were only fully allocated if fv_land is True
           !      if false, oro is (1,1), and sgh is not allocated
           if ( Atm(n)%flagstruct%fv_land ) then
-             print '("[INFO] WDR shift orography data fv_land TRUE npe=",I0)', this_pe
+             !print '("[INFO] WDR shift orography data fv_land TRUE npe=",I0)', this_pe
              ! oro and sgh are allocated only for the compute domain -- they do not have halos
           
              !fv_arrays.F90 oro() !< land fraction (1: all land; 0: all water)
@@ -952,8 +975,8 @@ contains
           
              !real, _ALLOCATABLE :: sgh(:,:)      _NULL  !< Terrain standard deviation
              Atm(n)%sgh(isc:iec, jsc:jec) = mn_static%orog_std_grid(ioffset*x_refine+isc:ioffset*x_refine+iec, joffset*y_refine+jsc:joffset*y_refine+jec)
-          else
-             print '("[INFO] WDR shift orography data fv_land FALSE npe=",I0)', this_pe
+          !else
+          !   print '("[INFO] WDR shift orography data fv_land FALSE npe=",I0)', this_pe
           end if
 
           ! Reset the land sea mask from the hires parent data
@@ -1137,6 +1160,8 @@ contains
     else
        if (debug_log) print '("[INFO] WDR move_nest not nested PE  npe=",I0)', this_pe
     end if
+
+    !call compare_terrain("phis", Atm(n)%phis, 1, Atm(n)%neststruct%ind_h, x_refine, y_refine, is_fine_pe, global_nest_domain)
     
     if (debug_log) call show_nest_grid(Atm(n), this_pe, 99)
 

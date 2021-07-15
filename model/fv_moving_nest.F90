@@ -177,9 +177,9 @@ use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => 
 contains
 
 
-  subroutine permit_move_nest(Atm, parent_grid_num, child_grid_num, delta_i_c, delta_j_c, do_move)
+  subroutine permit_move_nest(Atm, a_step, parent_grid_num, child_grid_num, delta_i_c, delta_j_c, do_move)
     type(fv_atmos_type), intent(in)   :: Atm(:)
-    integer, intent(in)               :: parent_grid_num, child_grid_num
+    integer, intent(in)               :: a_step, parent_grid_num, child_grid_num
     integer, intent(inout)            :: delta_i_c, delta_j_c
     logical, intent(inout)            :: do_move
 
@@ -210,7 +210,7 @@ contains
        delta_i_c = 0 
        delta_j_c = 0
        do_move = .false.
-       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest MOVE NEST BLOCKED for rest of run. npe=",I0)', this_pe
+       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest MOVE NEST BLOCKED for rest of run. npe=",I0," a_step=",I0)', this_pe, a_step
        return
     end if
 
@@ -224,8 +224,8 @@ contains
     nje = Atm(child_grid_num)%neststruct%joffset + nest_j_c + delta_j_c
 
 
-    if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest. npe=",I0," delta_i_c=",I0," nis=",I0," nie=",I0," npx=",I0)', this_pe, delta_i_c, nis, nie, Atm(parent_grid_num)%flagstruct%npx
-    if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest. npe=",I0," delta_j_c=",I0," njs=",I0," nje=",I0," npy=",I0)', this_pe, delta_j_c, njs, nje, Atm(parent_grid_num)%flagstruct%npy
+    if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest. npe=",I0," delta_i_c=",I0," nis=",I0," nie=",I0," npx=",I0," a_step=",I0)', this_pe, delta_i_c, nis, nie, Atm(parent_grid_num)%flagstruct%npx, a_step
+    if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest. npe=",I0," delta_j_c=",I0," njs=",I0," nje=",I0," npy=",I0," a_step=",I0)', this_pe, delta_j_c, njs, nje, Atm(parent_grid_num)%flagstruct%npy, a_step
 
 
     !  Will the nest motion push the nest over one of the edges?
@@ -257,9 +257,9 @@ contains
 
     if (delta_i_c .eq. 0 .and. delta_j_c .eq. 0) then
        do_move = .false.
-       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest MOVE NEST BLOCKED. npe=",I0)', this_pe
+       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest MOVE NEST BLOCKED. npe=",I0," a_step=",I0)', this_pe, a_step
     else
-       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest MOVE NEST PERMITTED. npe=",I0)', this_pe
+       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest MOVE NEST PERMITTED. npe=",I0," a_step=",I0)', this_pe, a_step
     end if
 
   end subroutine permit_move_nest
@@ -404,7 +404,7 @@ contains
     end if
 
 
-    print '("[INFO] WDR mn_phys_fill_temp_variables. npe=",I0," ntot2d=",I0," ntot3d=",I0, " levs=",I0)', this_pe, IPD_Control%ntot2d, IPD_Control%ntot2d, IPD_Control%levs
+    if (debug_log) print '("[INFO] WDR mn_phys_fill_temp_variables. npe=",I0," ntot2d=",I0," ntot3d=",I0, " levs=",I0)', this_pe, IPD_Control%ntot2d, IPD_Control%ntot2d, IPD_Control%levs
 
     ts_local = +99999.9
     if (move_physics) then
@@ -1563,8 +1563,8 @@ contains
             parent_geo, &
             p_istart_fine, p_iend_fine, p_jstart_fine, p_jend_fine)
        first_nest_move = .false.
-    else
-       print '("[INFO] WDR mn_latlon_load_parent SKIPPING static coarse file on npe=",I0)', this_pe
+    !else
+    !   print '("[INFO] WDR mn_latlon_load_parent SKIPPING static coarse file on npe=",I0)', this_pe
     end if
 
     parent_geo%nxp = Atm(1)%npx
@@ -1779,8 +1779,6 @@ contains
     mid_nx = (fp_iend_fine - fp_istart_fine) / 2 
     mid_ny = (fp_jend_fine - fp_jstart_fine) / 2
 
-    if (debug_log) print '("[INFO] WDR NCREAD LOFC load_nest_orog_from_nc npe=",I0,I4,I4,I4,I4," ",A128)', this_pe, fp_nx, fp_ny, mid_nx,mid_ny, nc_filename
-
     write(res_str, '(I0)'), nx_cubic * refine
     write(parent_str, '(I0)'), parent_tile
     nc_filename = trim(surface_dir) // '/C' // trim(res_str) // '_oro_data.tile' // trim(parent_str) // '.nc'
@@ -1790,6 +1788,9 @@ contains
     else
        orog_var_name = 'orog_raw'
     end if
+
+    !if (debug_log) print '("[INFO] WDR NCREAD LOFC load_nest_orog_from_nc npe=",I0,I4,I4,I4,I4," ",A12," ",A128)', this_pe, fp_nx, fp_ny, mid_nx,mid_ny, orog_var_name, nc_filename
+    print '("[INFO] WDR NCREAD LOFC load_nest_orog_from_nc npe=",I0,I4,I4,I4,I4," ",A12," ",A128)', this_pe, fp_nx, fp_ny, mid_nx,mid_ny, orog_var_name, nc_filename
 
     call alloc_read_data(nc_filename, orog_var_name, fp_nx, fp_ny, orog_grid)
     call alloc_read_data(nc_filename, 'stddev', fp_nx, fp_ny, orog_std_grid)  ! Not needed
@@ -1871,11 +1872,11 @@ contains
     allocate(lons(isc:iec, jsc:jec))
     allocate(area(isc:iec, jsc:jec))
 
-    print '("WDR mn_reset_phys_latlon AA npe=",I0)', this_pe
+    !print '("WDR mn_reset_phys_latlon AA npe=",I0)', this_pe
 
     ! This is going to be slow -- replace with better way to calculate index offsets, or pass them from earlier calculations
     call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
-    print '("WDR mn_reset_phys_latlon AB npe=",I0)', this_pe
+    !print '("WDR mn_reset_phys_latlon AB npe=",I0)', this_pe
 
     do x = isc, iec
        do y = jsc, jec
@@ -1885,11 +1886,11 @@ contains
           !fpa_i = (x - nest_x) * 2 + parent_x - 1
           !fpa_j = (y - nest_y) * 2 + parent_y - 1
 
-          print '("WDR mn_reset_phys_latlon BB npe=",I0," ix=",I0," x,y=",I0,",",I0)', this_pe, x,y
+          !print '("WDR mn_reset_phys_latlon BB npe=",I0," ix=",I0," x,y=",I0,",",I0)', this_pe, x,y
           lons(x,y) = fp_super_tile_geo%lons(fp_i, fp_j)
-          print '("WDR mn_reset_phys_latlon CC npe=",I0," ix=",I0," x,y=",I0,",",I0)', this_pe, x,y
+          !print '("WDR mn_reset_phys_latlon CC npe=",I0," ix=",I0," x,y=",I0,",",I0)', this_pe, x,y
           lats(x,y) = fp_super_tile_geo%lats(fp_i, fp_j)
-          print '("WDR mn_reset_phys_latlon DD npe=",I0," ix=",I0," x,y=",I0,",",I0)', this_pe, x,y
+          !print '("WDR mn_reset_phys_latlon DD npe=",I0," ix=",I0," x,y=",I0,",",I0)', this_pe, x,y
 
           ! Need to add the areas from 4 squares, because the netCDF file has areas calculated for the supergrid cells
           !  We need the area of the whole center of the cell.  
@@ -1916,15 +1917,15 @@ contains
 
           area(x,y) = fp_super_tile_geo%area(fp_i - 1, fp_j - 1) + fp_super_tile_geo%area(fp_i - 1, fp_j) + &
                fp_super_tile_geo%area(fp_i, fp_j - 1) + fp_super_tile_geo%area(fp_i, fp_j)   ! TODO make sure these offsets are correct.  
-          print '("WDR mn_reset_phys_latlon EE npe=",I0," ix=",I0," x,y=",I0,",",I0)', this_pe, x,y
+          !print '("WDR mn_reset_phys_latlon EE npe=",I0," ix=",I0," x,y=",I0,",",I0)', this_pe, x,y
        end do
     end do
 
-    print '("WDR mn_reset_phys_latlon FF npe=",I0," xlon_d=",F15.10," xlat_d=",F15.10," area=",F20.5)', this_pe, IPD_data(1)%Grid%xlon_d(1), IPD_data(1)%Grid%xlat_d(1), IPD_data(1)%Grid%area(1)
+    !print '("WDR mn_reset_phys_latlon FF npe=",I0," xlon_d=",F15.10," xlat_d=",F15.10," area=",F20.5)', this_pe, IPD_data(1)%Grid%xlon_d(1), IPD_data(1)%Grid%xlat_d(1), IPD_data(1)%Grid%area(1)
 
     call GFS_grid_populate(IPD_data%Grid, lons, lats, area)
     
-    print '("WDR mn_reset_phys_latlon GG npe=",I0," xlon_d=",F15.10," xlat_d=",F15.10," area=",F20.5)', this_pe, IPD_data(1)%Grid%xlon_d(1), IPD_data(1)%Grid%xlat_d(1), IPD_data(1)%Grid%area(1)
+    !print '("WDR mn_reset_phys_latlon GG npe=",I0," xlon_d=",F15.10," xlat_d=",F15.10," area=",F20.5)', this_pe, IPD_data(1)%Grid%xlon_d(1), IPD_data(1)%Grid%xlat_d(1), IPD_data(1)%Grid%area(1)
 
     deallocate(lats)
     deallocate(lons)
@@ -3711,7 +3712,7 @@ contains
 
     real, allocatable, dimension(:,:) ::  tsfco_pr_local, tsfcl_pr_local, vegfrac_pr_local, alvsf_pr_local, alvwf_pr_local
 
-    real, allocatable, dimension(:,:) :: tref_pr_local, c_0_pr_local, xt_pr_local,  xu_pr_local,  xv_pr_local
+    real, allocatable, dimension(:,:) :: tref_pr_local, c_0_pr_local, xt_pr_local,  xu_pr_local,  xv_pr_local, ifd_pr_local
 
     real, allocatable :: phy_f2d_pr_local (:,:,:)
     real, allocatable :: phy_f3d_pr_local (:,:,:,:)
@@ -3729,8 +3730,8 @@ contains
     ! sgh and oro were only fully allocated if fv_land is True
     !      if false, oro is (1,1), and sgh is not allocated
     if ( Atm%flagstruct%fv_land ) then
-       print '("[INFO] WDR mn_phys_dump_tp_netcdf fv_land TRUE npe=",I0," size(oro)=(",I0,",",I0,")")', this_pe, size(Atm%oro, 1), size(Atm%oro, 1)
-       print '("[INFO] WDR mn_phys_dump_tp_netcdf fv_land TRUE npe=",I0," size(sgh)=(",I0,",",I0,")")', this_pe, size(Atm%sgh, 1), size(Atm%sgh, 1)
+       !print '("[INFO] WDR mn_phys_dump_to_netcdf fv_land TRUE npe=",I0," size(oro)=(",I0,",",I0,")")', this_pe, size(Atm%oro, 1), size(Atm%oro, 1)
+       !print '("[INFO] WDR mn_phys_dump_to_netcdf fv_land TRUE npe=",I0," size(sgh)=(",I0,",",I0,")")', this_pe, size(Atm%sgh, 1), size(Atm%sgh, 1)
        ! land frac --  called oro in fv_array.F90
        call mn_var_dump_to_netcdf(Atm%oro   , is_fine_pe, domain_coarse, domain_fine, position, 1, &
             time_val, Atm%global_tile, file_prefix, "LFRAC")
@@ -3738,8 +3739,8 @@ contains
        ! terrain standard deviation --  called sgh in fv_array.F90
        call mn_var_dump_to_netcdf(Atm%sgh   , is_fine_pe, domain_coarse, domain_fine, position, 1, &
             time_val, Atm%global_tile, file_prefix, "STDDEV")
-    else 
-       print '("[INFO] WDR mn_phys_dump_tp_netcdf fv_land FALSE npe=",I0, " size(oro)=(",I0,",",I0,")")', this_pe, size(Atm%oro, 1), size(Atm%oro, 1)
+    !else 
+       !print '("[INFO] WDR mn_phys_dump_to_netcdf fv_land FALSE npe=",I0, " size(oro)=(",I0,",",I0,")")', this_pe, size(Atm%oro, 1), size(Atm%oro, 1)
     end if
 
     ! Latitude and longitude in radians
@@ -3794,6 +3795,7 @@ contains
        allocate ( xt_pr_local(is:ie, js:je) )
        allocate ( xu_pr_local(is:ie, js:je) )
        allocate ( xv_pr_local(is:ie, js:je) )
+       allocate ( ifd_pr_local(is:ie, js:je) )
     end if
 
     
@@ -3819,6 +3821,7 @@ contains
        xt_pr_local = +99999.9
        xu_pr_local = +99999.9
        xv_pr_local = +99999.9
+       ifd_pr_local = +99999.9
     end if 
 
     do nb = 1,Atm_block%nblks
@@ -3874,6 +3877,8 @@ contains
              xt_pr_local(i, j) = IPD_data(nb)%Sfcprop%xt(ix)
              xu_pr_local(i, j) = IPD_data(nb)%Sfcprop%xu(ix)
              xv_pr_local(i, j) = IPD_data(nb)%Sfcprop%xv(ix)
+
+             ifd_pr_local(i, j) = IPD_data(nb)%Sfcprop%ifd(ix)
              
           end if
           
@@ -3931,6 +3936,8 @@ contains
        call mn_var_dump_to_netcdf(xu_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "XU")
        call mn_var_dump_to_netcdf(xv_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "XV")
 
+       call mn_var_dump_to_netcdf(ifd_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "IFD")
+
     end if
 
     ! TODO does skin temp need to be deallocated?
@@ -3946,7 +3953,7 @@ contains
        deallocate(phy_f2d_pr_local)
        deallocate(phy_f3d_pr_local)
     end if
-    if (move_nsst) deallocate(tref_pr_local, c_0_pr_local, xt_pr_local,  xu_pr_local,  xv_pr_local)
+    if (move_nsst) deallocate(tref_pr_local, c_0_pr_local, xt_pr_local,  xu_pr_local,  xv_pr_local, ifd_pr_local)
 
     if (debug_log) print '("[INFO] WDR end mn_phys_dump_tp_netcdf npe=",I0)', this_pe
 
@@ -4191,7 +4198,7 @@ contains
     pnats = Atm%flagstruct%pnats
 
     nq = ncnst-pnats
-    !nr = nq_tot - flagstruct%dnrts  ! from fv_dynamics.F90
+    nr = nq - Atm%flagstruct%dnrts  ! from fv_dynamics.F90
 
 
     sphum   = get_tracer_index (MODEL_ATMOS, 'sphum' )
@@ -4223,7 +4230,7 @@ contains
          Atm%q, Atm%ng, Atm%flagstruct%ncnst, Atm%gridstruct%area_64, 0.,  &
          .false.,  .false., & !mountain argument not used
          Atm%flagstruct%moist_phys,  Atm%flagstruct%hydrostatic, &
-         Atm%flagstruct%nwat, Atm%domain, .false.)
+         Atm%flagstruct%nwat, Atm%domain, Atm%flagstruct%adiabatic, .false.)
 
 
 
@@ -4287,6 +4294,8 @@ contains
     bdt = dt_atmos/real(abs(p_split))
     mdt = bdt / real(Atm%flagstruct%k_split)
 
+    ! print '("[INFO] WDR REMAP npe=",I0," nr=",I0," nq=",I0)', this_pe, nr, nq    !! TODO Validate which is correct to use here
+    
     do iq=1,nq
        kord_tracer(iq) = Atm%flagstruct%kord_tr
        if ( iq==cld_amt )  kord_tracer(iq) = 9      ! monotonic        
@@ -4354,10 +4363,10 @@ contains
 
     out_dt = Atm%idiag%id_mdt>0   ! This determines whether dtdt_m is used; is false for current testing configuration
 
-    call check_local_array(cappa, this_pe, "L2E cappa", -1.0e9,1.0e9)
-    call check_local_array(dp1, this_pe, "L2E dp1", -1.0e9,1.0e9)
-    call check_local_array(dtdt_m, this_pe, "L2E dtdt_m", -1.0e9,1.0e9)
-    call check_local_array(te_2d, this_pe, "L2E te_2d", -1.0e9,1.0e9)
+    if (debug_log) call check_local_array(cappa, this_pe, "L2E cappa", -1.0e9,1.0e9)
+    if (debug_log) call check_local_array(dp1, this_pe, "L2E dp1", -1.0e9,1.0e9)
+    if (debug_log) call check_local_array(dtdt_m, this_pe, "L2E dtdt_m", -1.0e9,1.0e9)
+    if (debug_log) call check_local_array(te_2d, this_pe, "L2E te_2d", -1.0e9,1.0e9)
 
     if (debug_log) print '("[INFO] WDR VERT_REMAP L2E bounds  npe=",I0," ",A32,"(",I4,":",I4,",",I4,":",I4,",",I4,":",I4,")")', this_pe, "cappa", lbound(cappa,1), ubound(cappa,1), lbound(cappa,2), ubound(cappa,2), lbound(cappa,3), ubound(cappa,3)
 
@@ -4368,8 +4377,8 @@ contains
     if (debug_log) print '("[INFO] WDR VERT_REMAP L2E bounds  npe=",I0," ",A32,"(",I4,":",I4,",",I4,":",I4,")")', this_pe, "te_2d", lbound(te_2d,1), ubound(te_2d,1), lbound(te_2d,2), ubound(te_2d,2)
 
 
-    call check_array(te_local, this_pe, "L2E te_local", -1.0e9,1.0e9)
-    call check_array(ws, this_pe, "L2E ws", -1.0e9,1.0e9)
+    if (debug_log) call check_array(te_local, this_pe, "L2E te_local", -1.0e9,1.0e9)
+    if (debug_log) call check_array(ws, this_pe, "L2E ws", -1.0e9,1.0e9)
 
     if (debug_log) print '("[INFO] WDR VERT_REMAP MV_NST L2E fv_moving_nest.F90 npe=",I0," out_dt(whether dtdt_m is used)=",L1, " last_step=",L1, " do_omega=",L1)', this_pe, out_dt, last_step, do_omega
 
