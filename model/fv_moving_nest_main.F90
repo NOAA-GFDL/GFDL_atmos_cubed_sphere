@@ -174,7 +174,7 @@ real, parameter:: real_snan=x'FFF7FFFFFFFFFFFF'
 #endif
 
 logical :: debug_log = .false.
-logical :: tsvar_out = .false.
+logical :: tsvar_out = .true.
 logical :: wxvar_out = .false.
 
 
@@ -992,6 +992,15 @@ contains
                 
                 IPD_data(nb)%Sfcprop%slmsk(ix) = mn_static%ls_mask_grid(i_idx, j_idx)
                 
+                !  IFD values are 0 for land, and 1 for oceans/lakes -- reverse of the land sea mask
+                !  Land Sea Mask has values of 0 for oceans/lakes, 1 for land, 2 for sea ice
+                !  TODO figure out what ifd should be for sea ice
+                if (mn_static%ls_mask_grid(i_idx, j_idx) .eq. 1 ) then
+                   IPD_data(nb)%Sfcprop%ifd(ix) = 0   ! Land
+                else
+                   IPD_data(nb)%Sfcprop%ifd(ix) = 1   ! Ocean
+                end if
+
                 IPD_data(nb)%Sfcprop%tg3(ix) = mn_static%deep_soil_temp_grid(i_idx, j_idx)
                 IPD_data(nb)%Sfcprop%stype(ix) = mn_static%soil_type_grid(i_idx, j_idx)
                 

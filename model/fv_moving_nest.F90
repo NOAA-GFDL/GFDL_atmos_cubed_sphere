@@ -137,6 +137,8 @@ use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => 
   real (kind=kind_phys), allocatable :: xzts_local (:,:)     !< d(xz)/d(ts) for NSSTM
   real (kind=kind_phys), allocatable :: d_conv_local (:,:)   !< think of free convection layer for NSSTM
   ! real (kind=kind_phys), allocatable :: ifd_local (:,:)      !< index to start DTM run  for NSSTM   ! TODO Probably can't interpolate an index.  
+  !  IFD values are 0 for land, and 1 for oceans/lakes -- reverse of the land sea mask
+  !  Land Sea Mask has values of 0 for oceans/lakes, 1 for land, 2 for sea ice
   real (kind=kind_phys), allocatable :: dt_cool_local (:,:)  !< sub-layer cooling amount for NSSTM
   real (kind=kind_phys), allocatable :: qrain_local (:,:)    !< sensible heat flux due to rainfall for NSSTM 
 
@@ -3757,6 +3759,7 @@ contains
     je = Atm%bd%je
     
     if (debug_log) print '("[INFO] WDR mn_phys_dump_to_netcdf. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
+
 
     ! Just allocate compute domain size here for outputs;  the nest moving code also has halos added, but we don't need them here.
     if (move_physics) then
