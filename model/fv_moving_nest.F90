@@ -99,6 +99,9 @@ use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => 
   real (kind=kind_phys), allocatable :: alvwf_local(:,:)    !< visible white sky albedo
   real (kind=kind_phys), allocatable :: alnsf_local(:,:)    !< near IR black sky albedo
   real (kind=kind_phys), allocatable :: alnwf_local(:,:)    !< near IR white sky albedo
+
+  real (kind=kind_phys), allocatable :: facsf_local(:,:)    !< fractional coverage for strong zenith angle albedo
+  real (kind=kind_phys), allocatable :: facwf_local(:,:)    !< fractional coverage for strong zenith angle albedo
   
   real (kind=kind_phys), allocatable :: canopy_local (:,:)    !< canopy water content
   real (kind=kind_phys), allocatable :: vegfrac_local (:,:)   !< vegetation fraction
@@ -366,6 +369,9 @@ contains
        allocate ( alvwf_local(isd:ied, jsd:jed) )
        allocate ( alnsf_local(isd:ied, jsd:jed) )
        allocate ( alnwf_local(isd:ied, jsd:jed) )
+
+       allocate ( facsf_local(isd:ied, jsd:jed) )
+       allocate ( facwf_local(isd:ied, jsd:jed) )
        
        allocate ( canopy_local(isd:ied, jsd:jed) )
        allocate ( vegfrac_local(isd:ied, jsd:jed) )
@@ -419,6 +425,9 @@ contains
        alvwf_local = +99999.9
        alnsf_local = +99999.9
        alnwf_local = +99999.9
+
+       facsf_local = +99999.9
+       facwf_local = +99999.9
        
        canopy_local = +99999.9
        vegfrac_local = +99999.9
@@ -482,6 +491,9 @@ contains
             alnsf_local(i,j) = IPD_Data(nb)%Sfcprop%alnsf(ix)
             alnwf_local(i,j) = IPD_Data(nb)%Sfcprop%alnwf(ix)
             
+            facsf_local(i,j) = IPD_data(nb)%Sfcprop%facsf(ix)   ! fractional coverage for strong zenith angle albedo
+            facwf_local(i,j) = IPD_data(nb)%Sfcprop%facwf(ix)   ! fractional coverage for weak zenith angle albedo
+
             canopy_local(i,j) = IPD_Data(nb)%Sfcprop%canopy(ix)
             vegfrac_local(i,j)= IPD_Data(nb)%Sfcprop%vfrac(ix)
             uustar_local(i,j) = IPD_Data(nb)%Sfcprop%uustar(ix)
@@ -705,6 +717,9 @@ contains
                 IPD_Data(nb)%Sfcprop%alvwf(ix) = alvwf_local(i,j)
                 IPD_Data(nb)%Sfcprop%alnsf(ix) = alnsf_local(i,j)
                 IPD_Data(nb)%Sfcprop%alnwf(ix) = alnwf_local(i,j)
+
+                IPD_Data(nb)%Sfcprop%facsf(ix) = facsf_local(i,j)
+                IPD_Data(nb)%Sfcprop%facwf(ix) = facwf_local(i,j)
                 
                 IPD_Data(nb)%Sfcprop%canopy(ix) = canopy_local(i,j)
                 IPD_Data(nb)%Sfcprop%vfrac(ix)  = vegfrac_local(i,j)
@@ -767,6 +782,9 @@ contains
       deallocate(alvwf_local)
       deallocate(alnsf_local)
       deallocate(alnwf_local)
+
+      deallocate(facsf_local)
+      deallocate(facwf_local)
       
       deallocate(canopy_local)
       deallocate(vegfrac_local)
@@ -1006,6 +1024,17 @@ contains
             is_fine_pe, nest_domain, position)
        
        call fill_nest_halos_from_parent("alnwf", alnwf_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+            Atm(child_grid_num)%neststruct%ind_h, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+
+
+       call fill_nest_halos_from_parent("facsf", facsf_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+            Atm(child_grid_num)%neststruct%ind_h, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+
+       call fill_nest_halos_from_parent("facwf", facwf_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
@@ -1314,6 +1343,9 @@ contains
        call mn_var_fill_intern_nest_halos(alvwf_local, domain_fine, is_fine_pe)
        call mn_var_fill_intern_nest_halos(alnsf_local, domain_fine, is_fine_pe)
        call mn_var_fill_intern_nest_halos(alnwf_local, domain_fine, is_fine_pe)
+
+       call mn_var_fill_intern_nest_halos(facsf_local, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(facwf_local, domain_fine, is_fine_pe)
        
        call mn_var_fill_intern_nest_halos(canopy_local, domain_fine, is_fine_pe)
        call mn_var_fill_intern_nest_halos(vegfrac_local, domain_fine, is_fine_pe)
@@ -2182,6 +2214,15 @@ contains
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
        call mn_var_shift_data(alnwf_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+            delta_i_c, delta_j_c, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+
+       call mn_var_shift_data(facsf_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+            delta_i_c, delta_j_c, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(facwf_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
@@ -3709,11 +3750,9 @@ contains
     real, allocatable :: stc_pr_local (:,:,:)  !< soil temperature
     real, allocatable :: slc_pr_local (:,:,:)  !< soil liquid water content
 
-    real, allocatable, dimension(:,:) :: sealand_pr_local, deep_soil_t_pr_local, soil_type_pr_local, veg_type_pr_local, slope_type_pr_local, facsf_pr_local, max_snow_alb_pr_local
+    real, allocatable, dimension(:,:) :: sealand_pr_local, deep_soil_t_pr_local, soil_type_pr_local, veg_type_pr_local, slope_type_pr_local, max_snow_alb_pr_local
 
-
-    real, allocatable, dimension(:,:) ::  tsfco_pr_local, tsfcl_pr_local, vegfrac_pr_local, alvsf_pr_local, alvwf_pr_local
-
+    real, allocatable, dimension(:,:) ::  tsfco_pr_local, tsfcl_pr_local, vegfrac_pr_local, alvsf_pr_local, alvwf_pr_local, facsf_pr_local, facwf_pr_local
     real, allocatable, dimension(:,:) :: tref_pr_local, c_0_pr_local, xt_pr_local,  xu_pr_local,  xv_pr_local, ifd_pr_local
 
     real, allocatable :: phy_f2d_pr_local (:,:,:)
@@ -3788,8 +3827,11 @@ contains
        
        allocate ( slope_type_pr_local(is:ie, js:je) )
        
-       allocate ( facsf_pr_local(is:ie, js:je) )
        allocate ( max_snow_alb_pr_local(is:ie, js:je) )
+
+       allocate ( facsf_pr_local(is:ie, js:je) )
+       allocate ( facwf_pr_local(is:ie, js:je) )
+
     end if
 
     if (move_nsst) then
@@ -3817,6 +3859,9 @@ contains
        vegfrac_pr_local = +99999.9
        alvsf_pr_local = +99999.9
        alvwf_pr_local = +99999.9
+
+
+
     end if
     if (move_nsst) then
        tref_pr_local = +99999.9
@@ -3852,6 +3897,8 @@ contains
              slope_type_pr_local(i, j) = IPD_data(nb)%Sfcprop%slope(ix)
              
              facsf_pr_local(i, j) = IPD_data(nb)%Sfcprop%facsf(ix)
+             facwf_pr_local(i, j) = IPD_data(nb)%Sfcprop%facwf(ix)
+
              max_snow_alb_pr_local(i, j) = IPD_data(nb)%Sfcprop%snoalb(ix)
              
              
@@ -3907,7 +3954,6 @@ contains
        !call mn_var_dump_to_netcdf(veg_frac_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "VEGFRAC")
        call mn_var_dump_to_netcdf(veg_type_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "VEGTYPE")
        call mn_var_dump_to_netcdf(slope_type_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "SLOPE")
-       call mn_var_dump_to_netcdf(facsf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "FACSF")
        call mn_var_dump_to_netcdf(max_snow_alb_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "SNOWALB")
        
        
@@ -3917,6 +3963,8 @@ contains
        call mn_var_dump_to_netcdf(alvsf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ALVSF")
        call mn_var_dump_to_netcdf(alvwf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ALVWF")
        
+       call mn_var_dump_to_netcdf(facsf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "FACSF")
+       call mn_var_dump_to_netcdf(facwf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "FACWF")
        
        
        do nv = 1, IPD_Control%ntot2d
@@ -3949,9 +3997,10 @@ contains
        deallocate(stc_pr_local)
        deallocate(slc_pr_local)
        
-       deallocate(sealand_pr_local, deep_soil_t_pr_local, soil_type_pr_local, veg_type_pr_local, facsf_pr_local, max_snow_alb_pr_local)
+       deallocate(sealand_pr_local, deep_soil_t_pr_local, soil_type_pr_local, veg_type_pr_local, max_snow_alb_pr_local)
        
        deallocate(tsfco_pr_local, tsfcl_pr_local, vegfrac_pr_local, alvsf_pr_local, alvwf_pr_local)
+       deallocate(facsf_pr_local, facwf_pr_local)
 
        deallocate(phy_f2d_pr_local)
        deallocate(phy_f3d_pr_local)

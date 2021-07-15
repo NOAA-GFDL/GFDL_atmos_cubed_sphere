@@ -204,7 +204,6 @@ type mn_surface_grids
    real, allocatable  :: slope_type_grid(:,:)         _NULL  ! legacy 1 degree GFS slope type 
 
    ! Albedo variables
-   real, allocatable  :: facsf_grid(:,:)              _NULL  ! legacy 1 degree GFS fractional coverage for strong/weak zenith angle dependent albedo
    real, allocatable  :: max_snow_alb_grid(:,:)       _NULL  ! max snow albedo
    ! Snow free albedo
    real, allocatable  :: vis_black_alb_grid(:,:)      _NULL  ! Visible black sky albeo; netCDF file has monthly values
@@ -749,7 +748,6 @@ contains
 
              call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "slope_type", "slope_type", mn_static%slope_type_grid)
 
-             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "facsf", "facsf", mn_static%facsf_grid)
              call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "maximum_snow_albedo", "maximum_snow_albedo", mn_static%max_snow_alb_grid)
 
              ! Monthly static data
@@ -1009,9 +1007,6 @@ contains
                 ! Add veg_greenness_grid here, monthly
                 
                 IPD_data(nb)%Sfcprop%slope(ix) = mn_static%slope_type_grid(i_idx, j_idx)
-                
-                IPD_data(nb)%Sfcprop%facsf(ix) = mn_static%facsf_grid(i_idx, j_idx)      ! fractional coverage for strong zenith angle albedo
-                !IPD_data(nb)%Sfcprop%facwf(ix) = mn_static%facsf_grid(i_idx, j_idx)     ! fractional coverage for weak zenith angle albedo
                 
                 IPD_data(nb)%Sfcprop%snoalb(ix) = mn_static%max_snow_alb_grid(i_idx, j_idx)
                 ! Add Vis/Near IR black/white sky albedo, monthly
