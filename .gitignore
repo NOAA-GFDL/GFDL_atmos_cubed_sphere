@@ -2,3 +2,6 @@
 *.mod
 *.sw[a-p]
 *~
+
+build*/
+install*/

@@ -11,12 +11,13 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 include(GNUInstallDirs)
 
 if(NOT CMAKE_BUILD_TYPE MATCHES "^(Debug|Release|Repro|MinSizeRel|RelWithDebInfo)$")
-  message(STATUS "Setting build type to 'Release' as none was specified.")
+  message(STATUS "No build type specified.")
   set(CMAKE_BUILD_TYPE "Release"
       CACHE STRING "Choose the type of build." FORCE)
   set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
-                     "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
+                     "Debug" "Release" "Repro" "MinSizeRel" "RelWithDebInfo")
 endif()
+message(STATUS "Setting build type to '${CMAKE_BUILD_TYPE}'.")
 
 if(NOT CMAKE_Fortran_COMPILER_ID MATCHES "^(Intel|GNU)$")
   message(WARNING "Compiler not officially supported: ${CMAKE_Fortran_COMPILER_ID}")
@@ -36,7 +37,9 @@ if(OPENMP)
   find_package(OpenMP REQUIRED)
 endif()
 find_package(NetCDF REQUIRED C Fortran)
-find_package(ESMF REQUIRED)
+if(use_WRTCOMP)
+  find_package(ESMF REQUIRED)
+endif()
 
 if(32BIT)
   set(FMS_COMPONENTS "R4")
@@ -161,6 +164,9 @@ set_target_properties(fv3 PROPERTIES COMPILE_FLAGS "${${kind}_flags}")
 set_target_properties(fv3 PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/fv3)
 target_include_directories(fv3 INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/fv3>
                                          $<INSTALL_INTERFACE:include/fv3>)
+
+target_include_directories(fv3 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+                                       ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 
 target_compile_definitions(fv3 PRIVATE "${fv3_defs}")
 
