@@ -22,7 +22,9 @@ endif()
 
 find_dependency(MPI COMPONENTS Fortran)
 find_dependency(NetCDF COMPONENTS C Fortran)
-find_dependency(ESMF)
+if(@use_WRTCOMP@)
+  find_dependency(ESMF)
+endif()
 
 set(FV3Version "${PACKAGE_VERSION}")
 set_and_check(FV3_INSTALL_PREFIX "${PACKAGE_PREFIX_DIR}")

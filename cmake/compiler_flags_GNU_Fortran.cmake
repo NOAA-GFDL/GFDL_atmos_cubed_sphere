@@ -2,10 +2,15 @@
 set(r8_flags "-fdefault-real-8 -fdefault-double-8") # Fortran flags for 64BIT precision
 
 # GNU Fortan
-set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -fcray-pointer -fconvert=big-endian -ffree-line-length-none -fno-range-check -fbacktrace")
+set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -ggdb -fbacktrace -cpp -fcray-pointer -ffree-line-length-none -fno-range-check")
+if(${CMAKE_Fortran_COMPILER_VERSION} VERSION_GREATER_EQUAL 10)
+    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -fallow-argument-mismatch -fallow-invalid-boz")
+endif()
+
+set(CMAKE_Fortran_FLAGS_REPRO "-O2 -funroll-all-loops -finline-functions")
 
 set(CMAKE_Fortran_FLAGS_RELEASE "-O3 -funroll-all-loops -finline-functions")
 
-set(CMAKE_Fortran_FLAGS_DEBUG "-O0 -g -fcheck=bounds -ffpe-trap=invalid,zero,overflow,underflow" )
+set(CMAKE_Fortran_FLAGS_DEBUG "-O0 -fno-unsafe-math-optimizations -frounding-math -fsignaling-nans -ffpe-trap=invalid,zero,overflow -fbounds-check")
 
 set(CMAKE_Fortran_LINK_FLAGS "" )

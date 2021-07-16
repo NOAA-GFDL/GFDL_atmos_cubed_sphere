@@ -10,7 +10,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 
 include(GNUInstallDirs)
 
-if(NOT CMAKE_BUILD_TYPE MATCHES "^(Debug|Release|MinSizeRel|RelWithDebInfo)$")
+if(NOT CMAKE_BUILD_TYPE MATCHES "^(Debug|Release|Repro|MinSizeRel|RelWithDebInfo)$")
   message(STATUS "Setting build type to 'Release' as none was specified.")
   set(CMAKE_BUILD_TYPE "Release"
       CACHE STRING "Choose the type of build." FORCE)
@@ -103,9 +103,8 @@ list(APPEND driver_srcs
   driver/fvGFS/fv_nggps_diag.F90
   driver/fvGFS/atmosphere.F90)
 
-list(APPEND fv3dycore_srcs ${model_srcs}
-                           ${tools_srcs}
-                           ${driver_srcs})
+list(APPEND fv3_srcs ${model_srcs}
+                     ${tools_srcs})
 
 list(APPEND fv3_defs SPMD
                      MOIST_CAPPA
@@ -130,6 +129,7 @@ endif()
 
 if(use_WRTCOMP)
   list(APPEND fv3_defs use_WRTCOMP)
+  list(APPEND fv3_srcs ${driver_srcs})
 endif()
 
 if(MULTI_GASES)
@@ -150,7 +150,7 @@ include(fv3_compiler_flags)
 
 set(moduleDir "${CMAKE_CURRENT_BINARY_DIR}/${includeDir}")
 
-add_library(fv3 ${fv3dycore_srcs})
+add_library(fv3 ${fv3_srcs})
 add_library(FV3::fv3 ALIAS fv3)
 
 set_property(SOURCE model/nh_utils.F90 APPEND_STRING PROPERTY COMPILE_FLAGS "${FAST}")
@@ -164,8 +164,11 @@ target_include_directories(fv3 INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINAR
 
 target_compile_definitions(fv3 PRIVATE "${fv3_defs}")
 
-target_link_libraries(fv3 PUBLIC fms
-                                 esmf)
+target_link_libraries(fv3 PUBLIC fms)
+
+if(use_WRTCOMP)
+  target_link_libraries(fv3 PUBLIC esmf)
+endif()
 
 if(OPENMP)
   target_link_libraries(fv3 PUBLIC OpenMP::OpenMP_Fortran)
