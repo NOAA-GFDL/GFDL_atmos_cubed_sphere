@@ -246,7 +246,7 @@
       elseif ( .not. Atm%flagstruct%hybrid_z ) then
 ! Initialize (ak,bk) for cold start; overwritten with restart file
            if (.not. Atm%flagstruct%external_eta) then
-              call set_eta(npz, Atm%ks, Atm%ptop, Atm%ak, Atm%bk, Atm%flagstruct%npz_type)
+              call set_eta(npz, Atm%ks, Atm%ptop, Atm%ak, Atm%bk, Atm%flagstruct%npz_type, Atm%flagstruct%fv_eta_file)
               if ( is_master() ) then
                  write(*,*) 'Grid_init', npz, Atm%ks, Atm%ptop
                  tmp1 = Atm%ak(Atm%ks+1)
