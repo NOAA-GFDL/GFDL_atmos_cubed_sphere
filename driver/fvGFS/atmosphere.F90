@@ -276,10 +276,12 @@ contains
 !! and diagnostics.
  subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, area)
 
+#ifdef GFS_PHYS
    use ccpp_static_api,   only: ccpp_physics_init
    use CCPP_data,         only: ccpp_suite,          &
                                 cdata => cdata_tile, &
                                 CCPP_interstitial
+#endif
 #ifdef OPENMP
    use omp_lib
 #endif
@@ -484,7 +486,6 @@ contains
    enddo
 10 call close_file (unit)
 #endif
-   !write(0,'(a)') "It's me, and my physics suite is '" // trim(ccpp_suite) // "'"
    ! *DH 20210326
 
    ! For fast physics running over the entire domain, block
@@ -498,6 +499,7 @@ contains
 #else
    nthreads = 1
 #endif
+#ifdef GFS_PHYS
    ! Create interstitial data type for fast physics; for multi-gases physics,
    ! pass q(:,:,:,1:num_gas) as qvi, otherwise pass q(:,:,:,1:1) as 4D array
    call CCPP_interstitial%create(Atm(mygrid)%bd%is, Atm(mygrid)%bd%ie, Atm(mygrid)%bd%isd, Atm(mygrid)%bd%ied, &
@@ -533,6 +535,11 @@ contains
          call mpp_error (FATAL, cdata%errmsg)
       end if
    end if
+#else
+   if (Atm(mygrid)%flagstruct%do_sat_adj) then
+      call mpp_error (FATAL, "Logic error, cannot do saturation adjustment when GFS physics are off")
+   end if
+#endif
 
 !  --- initiate the start for a restarted regional forecast
    if ( Atm(mygrid)%gridstruct%regional .and. Atm(mygrid)%flagstruct%warm_start ) then
@@ -782,15 +789,17 @@ contains
 !! FV3 dynamical core responsible for writing out a restart and final diagnostic state.
  subroutine atmosphere_end (Time, Grid_box, restart_endfcst)
 
+#ifdef GFS_PHYS
    use ccpp_static_api,   only: ccpp_physics_finalize
    use CCPP_data,         only: ccpp_suite
    use CCPP_data,         only: cdata => cdata_tile
-
+#endif
    type (time_type),      intent(in)    :: Time
    type(grid_box_type),   intent(inout) :: Grid_box
    logical,               intent(in)    :: restart_endfcst
    integer :: ierr
 
+#ifdef GFS_PHYS
    if (Atm(mygrid)%flagstruct%do_sat_adj) then
       ! Finalize fast physics
       call ccpp_physics_finalize(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
@@ -799,6 +808,11 @@ contains
          call mpp_error (FATAL, cdata%errmsg)
       end if
    end if
+#else
+   if (Atm(mygrid)%flagstruct%do_sat_adj) then
+      call mpp_error (FATAL, "Logic error, cannot do saturation adjustment when GFS physics are off")
+   end if
+#endif
 
   ! initialize domains for writing global physics data
    call set_domain ( Atm(mygrid)%domain )

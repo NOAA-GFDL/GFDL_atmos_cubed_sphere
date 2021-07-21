@@ -48,7 +48,7 @@ else()
   set(FMS_COMPONENTS "R8")
   set(kind "r8")
 endif()
-find_package(FMS REQUIRED COMPONENTS ${FMS_COMPONENTS})
+find_package(FMS REQUIRED COMPONENTS ${FMS_COMPONENTS} PATHS /Users/dom.heinzeller/scratch/fms/fms-2020.04.03-private-compiler-defs/install)
 
 add_library(fms ALIAS FMS::fms_${kind})
 #if(32BIT)
@@ -92,7 +92,6 @@ list(APPEND tools_srcs
   tools/fv_mp_mod.F90
   tools/fv_nudge.F90
   tools/fv_treat_da_inc.F90
-  tools/fv_iau_mod.F90
   tools/fv_restart.F90
   tools/fv_surf_map.F90
   tools/fv_timing.F90
@@ -100,6 +99,9 @@ list(APPEND tools_srcs
   tools/sim_nc_mod.F90
   tools/sorted_index.F90
   tools/test_cases.F90)
+
+list(APPEND tools_srcs_extra
+  tools/fv_iau_mod.F90)
 
 list(APPEND driver_srcs
   driver/fvGFS/DYCORE_typedefs.F90
@@ -132,7 +134,8 @@ endif()
 
 if(use_WRTCOMP)
   list(APPEND fv3_defs use_WRTCOMP)
-  list(APPEND fv3_srcs ${driver_srcs})
+  list(APPEND fv3_srcs ${tools_srcs_extra}
+                       ${driver_srcs})
 endif()
 
 if(MULTI_GASES)

@@ -84,10 +84,9 @@ contains
 #else
     inquire (file=trim(Atm%nml_filename), exist=exists)
     if (.not. exists) then
-      write(errmsg,*) 'fv_diag_column_nml: namelist file ',trim(Atm%nml_filename),' does not exist'
-      call mpp_error(FATAL, errmsg)
+      call mpp_error(FATAL, 'fv_diag_column_nml: namelist file ' // trim(Atm%nml_filename) // ' does not exist')
     else
-      open (unit=nlunit, file=Atm%nml_filename, READONLY, status='OLD', iostat=ios)
+      open (unit=nlunit, file=Atm%nml_filename, action='READ', status='OLD', iostat=ios)
     endif
     rewind(nlunit)
     read (nlunit, nml=fv_diag_column_nml, iostat=ios)

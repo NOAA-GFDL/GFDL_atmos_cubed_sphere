@@ -1,3 +1,4 @@
+#define GFS_PHYS
 !***********************************************************************
 !*                   GNU Lesser General Public License
 !*
@@ -444,7 +445,7 @@ contains
       write(errmsg,*) 'fv_diag_plevs_nml: namelist file ',trim(Atm(n)%nml_filename),' does not exist'
       call mpp_error(FATAL, errmsg)
     else
-      open (unit=nlunit, file=Atm(n)%nml_filename, READONLY, status='OLD', iostat=ios)
+      open (unit=nlunit, file=Atm(n)%nml_filename, action='READ', status='OLD', iostat=ios)
     endif
     rewind(nlunit)
     read (nlunit, nml=fv_diag_plevs_nml, iostat=ios)

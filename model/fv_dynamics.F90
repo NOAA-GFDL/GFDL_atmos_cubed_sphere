@@ -179,11 +179,13 @@ contains
                         parent_grid, domain, diss_est, inline_mp, time_total)
 
     use mpp_mod,           only: FATAL, mpp_error
+#ifdef GFS_PHYS
     use ccpp_static_api,   only: ccpp_physics_timestep_init,    &
                                  ccpp_physics_timestep_finalize
     use CCPP_data,         only: ccpp_suite
     use CCPP_data,         only: cdata => cdata_tile
     use CCPP_data,         only: CCPP_interstitial
+#endif
 
     real, intent(IN) :: bdt  !< Large time-step
     real, intent(IN) :: consv_te
@@ -280,12 +282,35 @@ contains
       integer :: isd, ied, jsd, jed
       real    :: dt2
       integer :: ierr
+#ifndef GFS_PHYS
+      real, dimension(:,:,:), allocatable :: cappa
+      real, dimension(:,:,:), allocatable :: dp1
+      real, dimension(:,:,:), allocatable :: dtdt_m
+      logical :: last_step
+      real, dimension(:,:), allocatable :: te_2d
 
+#ifdef MOIST_CAPPA
+      allocate (cappa  (isd:ied, jsd:jed, 1:npz) )
+#else
+      allocate (cappa  (isd:isd, jsd:jsd, 1)     )
+#endif
+      allocate (dp1    (isd:ied, jsd:jed, 1:npz) )
+      allocate (dtdt_m (is:ie, js:je, 1:npz)     )
+      allocate (te_2d  (is:ie, js:je)            )
+
+      cappa  = 0.0
+      dp1    = 0.0
+      dtdt_m = 0.0
+      te_2d  = 0.0
+#endif
+
+#ifdef GFS_PHYS
       ccpp_associate: associate( cappa     => CCPP_interstitial%cappa,     &
                                  dp1       => CCPP_interstitial%te0,       &
                                  dtdt_m    => CCPP_interstitial%dtdt,      &
                                  last_step => CCPP_interstitial%last_step, &
                                  te_2d     => CCPP_interstitial%te0_2d     )
+#endif
 
       is  = bd%is
       ie  = bd%ie
@@ -307,6 +332,7 @@ contains
       nr = nq_tot - flagstruct%dnrts
       rdg = -rdgas * agrav
 
+#ifdef GFS_PHYS
       ! Call CCPP timestep init
       call ccpp_physics_timestep_init(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
       ! Reset all interstitial variables for CCPP version
@@ -315,6 +341,7 @@ contains
       if (flagstruct%do_sat_adj) then
          CCPP_interstitial%out_dt = (idiag%id_mdt > 0)
       end if
+#endif
 
 #ifdef MULTI_GASES
       allocate ( kapad(isd:ied, jsd:jed, npz) )
@@ -968,10 +995,12 @@ contains
                          -50., 100., bad_range, fv_time)
   endif
 
+#ifdef GFS_PHYS
   ! Call CCPP timestep finalize
   call ccpp_physics_timestep_finalize(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
 
   end associate ccpp_associate
+#endif
 
   end subroutine fv_dynamics
 

@@ -1,3 +1,4 @@
+#define GFS_PHYS
 !***********************************************************************
 !*                   GNU Lesser General Public License
 !*
