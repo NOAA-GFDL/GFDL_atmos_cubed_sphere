@@ -4,7 +4,7 @@ This is for the FV3 dynamical core and the GFDL Microphysics for use by NCEP/EMC
 The source in this branch reflects the codebase used by NCEP/EMC for use in GFS and UFS.
 # Where to find information
 
-Visit the [FV3 website](https://www.gfdl.noaa.gov/fv3/) for more information. Reference material is available at [FV3 documentation and references](https://www.gfdl.noaa.gov/fv3/fv3-documentation-and-references/). 
+Visit the [FV3 website](https://www.gfdl.noaa.gov/fv3/) for more information. Reference material is available at [FV3 documentation and references](https://www.gfdl.noaa.gov/fv3/fv3-documentation-and-references/).
 
 # Proper usage attribution
 
@@ -23,6 +23,8 @@ The top level directory structure groups source code and input files as follow:
 | ```driver/```        | contains drivers used by different models/modeling systems |
 | ```tools/```         | contains source code of tools used within the core |
 | ```docs/```          | contains documentation for the FV3 dynamical core |
+| ```CMakeLists.txt``` | is the main project CMakeLists.txt file |
+| ```cmake/```         | contains code to build FV3 dynamical core with CMake |
 
 # Disclaimer
 
