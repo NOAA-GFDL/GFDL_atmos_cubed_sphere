@@ -48,7 +48,7 @@ else()
   set(FMS_COMPONENTS "R8")
   set(kind "r8")
 endif()
-find_package(FMS REQUIRED COMPONENTS ${FMS_COMPONENTS} PATHS /Users/dom.heinzeller/scratch/fms/fms-2020.04.03-private-compiler-defs/install)
+find_package(FMS REQUIRED COMPONENTS ${FMS_COMPONENTS})
 
 add_library(fms ALIAS FMS::fms_${kind})
 #if(32BIT)
