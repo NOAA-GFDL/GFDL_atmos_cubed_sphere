@@ -50,8 +50,9 @@ module molecular_diffusion_mod
       implicit none
 
       integer :: ind_gas_str, ind_gas_end
-      integer :: md_layers, md_consv
+      integer :: md_layers, md_tadj_layers
       real tau_visc, tau_cond, tau_diff    
+      real md_consv_te
       real md_wait_hr
       real md_wait_sec
       logical md_time
@@ -91,6 +92,8 @@ module molecular_diffusion_mod
         write(*,*) ' molecular_diffusion is on'
         write(*,*) ' molecular_diffusion initial wait seconds ',md_wait_sec
         write(*,*) ' molecular_diffusion number of layers ',md_layers
+        write(*,*) ' thermosphere adjustment number of layers ',md_tadj_layers
+        write(*,*) ' energy conservation of MD (0:off, 1:on) ',md_consv_te
         write(*,*) ' viscosity    day ',tau_visc,' with effect ',tau_visc
         write(*,*) ' conductivity day ',tau_cond,' with effect ',tau_cond
         write(*,*) ' diffusivity  day ',tau_diff,' with effect ',tau_diff
@@ -115,8 +118,8 @@ module molecular_diffusion_mod
       integer :: ierr, f_unit, unit, ios
 
       namelist /molecular_diffusion_nml/ tau_visc, tau_cond, tau_diff, &
-                                         md_layers, md_consv, &
-                                         md_wait_hr
+                                         md_layers, md_tadj_layers, &
+                                         md_wait_hr, md_consv_te
 
       unit = stdlog()
 
@@ -160,7 +163,7 @@ module molecular_diffusion_mod
       real   am, fgas, a12bz, avgdbz
       real   qo,  qo2,  qo3,  qn2,  qh2o
       real   o_n, o2_n, o3_n, n2_n, h2o_n
-      real   mu, la, t69, rho, cpx
+      real   mu, la, t69, rho, cpx, cvx
 
 !constants
       a12bz = a12 * bz
@@ -210,8 +213,9 @@ module molecular_diffusion_mod
         qo3  = max(min(qo3,1.0),0.0)
         qn2  = max(min(qn2,1.0),0.0)
         qh2o = max(min(qh2o,1.0),0.0)
-        cpx  = ( cpo*qo + cpo2*qo2 + cpn2*qn2 + cph2o*qh2o ) / &
-               (     qo +      qo2 +      qn2 +       qh2o )
+        cpx  = ( cpo*qo + cpo2*qo2 + cpo3*qo3 + cpn2*qn2 + cph2o*qh2o ) / &
+               (     qo +      qo2 +      qo3 +      qn2 +       qh2o )
+        cvx  = cpx - rdgas
 
         am = qo/amo + qo2/amo2 + qo3/amo3 + qn2/amn2 +qh2o/amh2o
         am = 1.0 / am				! g/mol
@@ -227,7 +231,8 @@ module molecular_diffusion_mod
         rho = 1e-3 * am * plyr(n)/temp(n) / avgdbz	! km/m^3
         
         mur(n) = mu * t69 / rho
-        lam(n) = la * t69 / rho / cpx
+        lam(n) = la * t69 / rho / cvx
+!       lam(n) = la * t69 / rho / cpx
 
 !reasonable assured
          mur(n) = min(mur(n),1.0e15)	! viscosity

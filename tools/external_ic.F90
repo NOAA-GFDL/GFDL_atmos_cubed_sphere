@@ -2019,9 +2019,9 @@ contains
 
 !! Read in o3mr, ps and zh from GFS_data.tile?.nc
 #ifdef MULTI_GASES
-      allocate (spo3_gfs(is:ie,js:je,levp_gfs))
       allocate ( spo_gfs(is:ie,js:je,levp_gfs))
       allocate (spo2_gfs(is:ie,js:je,levp_gfs))
+      allocate (spo3_gfs(is:ie,js:je,levp_gfs))
 #else
       allocate (o3mr_gfs(is:ie,js:je,levp_gfs))
 #endif
@@ -2029,11 +2029,11 @@ contains
       allocate (zh_gfs(is:ie,js:je,levp_gfs+1))
 
 #ifdef MULTI_GASES
-      id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'spo3', spo3_gfs, &
-                                       mandatory=.false.,domain=Atm%domain)
       id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'spo', spo_gfs, &
                                        mandatory=.false.,domain=Atm%domain)
       id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'spo2', spo2_gfs, &
+                                       mandatory=.false.,domain=Atm%domain)
+      id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'spo3', spo3_gfs, &
                                        mandatory=.false.,domain=Atm%domain)
 #else
       id_res = register_restart_field (GFS_restart, fn_gfs_ics, 'o3mr', o3mr_gfs, &
@@ -2057,10 +2057,6 @@ contains
       if ( bk_gfs(1) < 1.E-9 ) ak_gfs(1) = max(1.e-9, ak_gfs(1))
 
 #ifdef MULTI_GASES
-      iq = spo3
-      if(is_master()) write(*,*) 'Reading spo3 from GFS_data.nc:'
-      if(is_master()) write(*,*) 'spo3 =', iq
-      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spo3_gfs, zh_gfs, iq)
       iq = spo
       if(is_master()) write(*,*) 'Reading spo from GFS_data.nc:'
       if(is_master()) write(*,*) 'spo =', iq
@@ -2069,6 +2065,10 @@ contains
       if(is_master()) write(*,*) 'Reading spo2 from GFS_data.nc:'
       if(is_master()) write(*,*) 'spo2 =', iq
       call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spo2_gfs, zh_gfs, iq)
+      iq = spo3
+      if(is_master()) write(*,*) 'Reading spo3 from GFS_data.nc:'
+      if(is_master()) write(*,*) 'spo3 =', iq
+      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spo3_gfs, zh_gfs, iq)
 #else
       iq = o3mr
       if(is_master()) write(*,*) 'Reading o3mr from GFS_data.nc:'
@@ -2079,9 +2079,9 @@ contains
       deallocate (ak_gfs, bk_gfs)
       deallocate (ps_gfs, zh_gfs)
 #ifdef MULTI_GASES
-      deallocate (spo3_gfs)
       deallocate ( spo_gfs)
       deallocate (spo2_gfs)
+      deallocate (spo3_gfs)
 #else
       deallocate (o3mr_gfs)
 #endif
@@ -3201,9 +3201,9 @@ contains
     print *, 'sphum    = ', sphum
     print *, 'clwmr    = ', liq_wat
 #ifdef MULTI_GASES
-    print *, 'spo3    = ', spo3
-    print *, ' spo    = ', spo
+    print *, 'spo     = ', spo
     print *, 'spo2    = ', spo2
+    print *, 'spo3    = ', spo3
 #else
     print *, ' o3mr    = ', o3mr
 #endif
