@@ -1,8 +1,8 @@
 # GFDL_atmos_cubed_sphere
 
-The source contained herein reflects the 202101 release of the Finite Volume Cubed-Sphere Dynamical Core (FV3) from GFDL
+The source contained herein reflects the 202107 release of the Finite Volume Cubed-Sphere Dynamical Core (FV3) from GFDL
 
-The GFDL Microphysics is also available via this repository.
+The GFDL Microphysics is also available within this repository.
 
 # Where to find information
 
@@ -10,8 +10,9 @@ Visit the [FV3 website](https://www.gfdl.noaa.gov/fv3/) for more information. Re
 
 # Proper usage attribution
 
-Cite Putman and Lin (2007) and Harris and Lin (2013) when describing a model using the FV3 dynamical core.
-Cite Chen et al (2013) and Zhou et al (2019) when using the GFDL Microphysics.
+Cite _Putman and Lin (2007)_ and _Harris and Lin (2013)_ when describing a model using the FV3 dynamical core.
+
+Cite _Chen et al (2013)_ and _Zhou et al (2019)_ when using the GFDL Microphysics.
 
 # What files are what
 
@@ -28,10 +29,11 @@ The top level directory structure groups source code and input files as follow:
 | ```GFDL_tools/```    | contains source code of tools specific to GFDL models |
 | ```docs/```          | contains documentation for the FV3 dynamical core |
 
-# Generating PDF Documentation
-To update the ```refmans.pdf``` file:
-1. In the ```docs/``` directory enter the command ```doxygen Doxyfile```
-2. Navigate to the ```latex/``` directory and enter the command ```make pdf```
+# Documentation
+
+The up-to-date FV3 Scientific reference guide is included in LaTex and PDF formats in the ```docs/``` directory.
+
+A DOI referenceable version will soon be available in the [_NOAA Institutional Repository_](https://repository.library.noaa.gov/)
 
 # Disclaimer
 
