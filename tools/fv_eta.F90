@@ -22,6 +22,7 @@ module fv_eta_mod
  use constants_mod,  only: kappa, grav, cp_air, rdgas
  use fv_mp_mod,      only: is_master
  use fms_mod,        only: FATAL, error_mesg
+ use fms2_io_mod,    only: ascii_read
  implicit none
  private
  public set_eta, set_external_eta, get_eta_level, compute_dz_var,  &
@@ -275,14 +276,14 @@ module fv_eta_mod
    real, intent(out):: ptop         ! model top (Pa)
    character(24), intent(IN) :: npz_type
    character(120), intent(IN) :: fv_eta_file
-   integer :: eta_level_unit
+   character(len=:), dimension(:), allocatable :: eta_level_unit
 
    real:: p0=1000.E2
    real:: pc=200.E2
 
    real pt, lnpe, dlnp
    real press(km+1), pt1(km)
-   integer  k
+   integer :: l, k
    integer :: var_fn = 0
 
    real :: pint = 100.E2
@@ -332,17 +333,22 @@ module fv_eta_mod
          auto_routine = 2
       end select
 
-! Jili Dong add ak/bk input
    else if (trim(npz_type) == 'input') then
-       open (newunit=eta_level_unit, file=trim(fv_eta_file))
-       read(eta_level_unit,*)
-       do k=km+1,1,-1
-          read(eta_level_unit,*) ak(k),bk(k)
-       end do
-       close(eta_level_unit)
-       call set_external_eta(ak, bk, ptop, ks)
 ! Jili Dong add ak/bk input
-
+       call ascii_read (trim(fv_eta_file), eta_level_unit)
+       if (size(eta_level_unit(:)) /= km+2) then
+          print *,' size is ', size(eta_level_unit(:))
+          call error_mesg ('FV3 set_eta',trim(fv_eta_file)//" has too few or too many entries or has extra &
+                          &spaces at the end of the file", FATAL)
+       endif
+       l = 1
+       read(eta_level_unit(l),*)
+       do k=km+1,1,-1
+          l = l + 1
+          read(eta_level_unit(l),*) ak(k),bk(k)
+       end do
+       deallocate (eta_level_unit)
+       call set_external_eta(ak, bk, ptop, ks)
    else
 
       select case (km)
