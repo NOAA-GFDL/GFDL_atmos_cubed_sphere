@@ -33,7 +33,7 @@ The top level directory structure groups source code and input files as follow:
 
 The up-to-date FV3 Scientific reference guide is included in LaTex and PDF formats in the ```docs/``` directory.
 
-A DOI referenceable version is available in the [_NOAA Institutional Repository_]([FV3 Scientific Documentation](https://repository.library.noaa.gov/view/noaa/30725))
+A DOI referenceable version is available in the [_NOAA Institutional Repository_](https://repository.library.noaa.gov/view/noaa/30725)
 
 # Disclaimer
 
