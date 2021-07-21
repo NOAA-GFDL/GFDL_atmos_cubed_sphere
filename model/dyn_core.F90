@@ -113,8 +113,9 @@ module dyn_core_mod
   use fv_mp_mod,          only: start_group_halo_update, complete_group_halo_update
   use fv_mp_mod,          only: group_halo_update_type
 #ifdef MOLECULAR_DIFFUSION
-  use fv_mp_mod,          only: mp_reduce_sum
-  use molecular_diffusion_mod,        only: md_time, md_consv, md_layers
+  use fv_grid_utils_mod,  only: g_sum
+  use molecular_diffusion_mod,       &
+                          only: md_time, md_layers, md_consv_te, md_tadj_layers
   use sw_core_mod,        only: c_sw, d_sw, d_md
 #else
   use sw_core_mod,        only: c_sw, d_sw
@@ -145,7 +146,7 @@ module dyn_core_mod
   use test_cases_mod,      only: test_case, case9_forcing1, case9_forcing2
 #endif
 #ifdef MULTI_GASES
-    use multi_gases_mod,  only:  virqd, vicpqd, vicvqd
+    use multi_gases_mod,  only:  virqd, vicpqd, vicvqd, virq, vicvq
 #endif
   use fv_regional_mod,     only: dump_field, exch_uv, H_STAGGER, U_STAGGER, V_STAGGER
   use fv_regional_mod,     only: a_step, p_step, k_step, n_step
@@ -277,10 +278,9 @@ contains
 #ifdef MOLECULAR_DIFFUSION
     real p(bd%isd:bd%ied,bd%jsd:bd%jed)
     real t(bd%isd:bd%ied,bd%jsd:bd%jed)
+    real e(bd%isd:bd%ied,bd%jsd:bd%jed)
     real pkzf(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-    integer nrpt
-    real, save :: global_area = 0.0
-    real       :: aave_a0, aave_t0, aave_t1
+    real       :: correct, aave_t1, ttsave, dtsave
 #endif
 ! new array for stochastic kinetic energy backscatter (SKEB)
     real diss_e(bd%is:bd%ie,bd%js:bd%je)
@@ -1315,11 +1315,11 @@ contains
     endif
                                        call timing_on('d_md')
 
-!!$OMP parallel do default(none) shared(npz,flagstruct,gridstruct,bd,      &
-!!$OMP                                  is,ie,js,je,isd,ied,jsd,jed,it,dt, &
-!!$OMP                                  pt,u,v,w,q,pkz,pkzf,cappa,akap,nq, &
-!!$OMP                                  zvir,md_layers)          &
-!!$OMP                          private(k,i,j,p,t)
+!$OMP parallel do default(none) shared(npz,flagstruct,gridstruct,bd,      &
+!$OMP                                  is,ie,js,je,isd,ied,jsd,jed,it,dt, &
+!$OMP                                  pt,u,v,w,q,pkz,pkzf,cappa,akap,nq, &
+!$OMP                                  zvir,cv_air,md_layers,md_consv_te) &
+!$OMP                          private(k,i,j,p,t,e)
 ! ----------------
     do k=1, md_layers
 ! ----------------
@@ -1329,67 +1329,71 @@ contains
        do j=jsd,jed
           do i=isd,ied
              t(i,j) = pt(i,j,k) * pkzf(i,j,k)
+#ifdef MULTI_GASES
+             t(i,j) = t(i,j) / virq(q(i,j,k,:))
+#else
+             t(i,j) = t(i,j) / (1+zvir*q(i,j,k,1))
+#endif
 #ifdef MOIST_CAPPA
              p(i,j) = exp( log(pkzf(i,j,k)) / cappa(i,j,k) )
 #else
 #ifdef MULTI_GASES
-             p(i,j) = exp( log(pkzf(i,j,k)) / (akap*virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:))) )
+             p(i,j) = exp( log(pkzf(i,j,k)) / &
+                      (akap*virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:))) )
 #else
              p(i,j) = exp( log(pkzf(i,j,k)) / akap )
 #endif
 #endif
+             if( md_consv_te .gt. 0.0 ) &
+               e(i,j) = 0.5*(w(i,j,k)**2 + 0.5*gridstruct%rsin2(i,j)*(         &
+                        u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -&
+                       (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*            &
+                        gridstruct%cosa_s(i,j))) 
           enddo
        enddo
-
-       if( global_area .eq. 0.0 ) then
-         aave_a0 = 0.0
-         do j=js,je
-            do i=is,ie
-               aave_a0 = aave_a0 + gridstruct%area(i,j)
-            enddo
-         enddo
-         call mp_reduce_sum(aave_a0)
-         global_area = aave_a0
-       endif
-       aave_t0 = 0.0
-       do j=js,je
-          do i=is,ie
-             aave_t0 = aave_t0 + t(i,j)*gridstruct%area(i,j)
-          enddo
-       enddo
-       call mp_reduce_sum(aave_t0)
 
 ! compute molecular diffusion with implicit time and dimensional splits
 
-       call d_md( p(isd,jsd), t(isd,jsd),                        &
+       call d_md( p(isd,jsd), t(isd,jsd),         &
                   u(isd,jsd,k), v(isd,jsd,k), w(isd:,jsd:,k), q, &
                   it, nq, k, npz, dt,                            &
                   gridstruct, flagstruct, bd)
 
-       aave_t1 = 0.0
        do j=js,je
           do i=is,ie
-             aave_t1 = aave_t1 + t(i,j)*gridstruct%area(i,j)
-          enddo
-       enddo
-       call mp_reduce_sum(aave_t1)
-       if( is_master() ) print *,' k t0 t1 ',k,aave_t0,aave_t1
-       aave_t0 = ( aave_t0 - aave_t1 ) / global_area
-       if( is_master() ) print *,' k t0-t1 garea ',k,aave_t0,global_area
-
-       do j=js,je
-          do i=is,ie
-             t(i,j) = t(i,j) + aave_t0
+             if( md_consv_te .gt. 0.0 ) then
+               e(i,j) = e(i,j) -  &
+                        0.5*(w(i,j,k)**2 + 0.5*gridstruct%rsin2(i,j)*(         &
+                        u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -&
+                       (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*            &
+                        gridstruct%cosa_s(i,j))) 
 #ifdef MOIST_CAPPA
+               t(i,j) = t(i,j) + e(i,j) / &
+#ifdef MULTI_GASES
+                     (rdgas* virq(q(i,j,k,:))  *(1./cappa(i,j,k)-1.))
+#else
+                     (rdgas*(1+zvir*q(i,j,k,1))*(1./cappa(i,j,k)-1.))
+#endif
+             endif
              pkz(i,j,k) = exp( log(p(i,j)) * cappa(i,j,k) )
 #else
 #ifdef MULTI_GASES
-             pkz(i,j,k) = exp( log(p(i,j)) * (akap*virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:))) )
+               t(i,j) = t(i,j) + e(i,j) / (cv_air*vicvqd(q(i,j,k,:)))
+             endif
+             pkz(i,j,k) = exp( log(p(i,j)) * &
+                          (akap*virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:))) )
 #else
+               t(i,j) = t(i,j) + e(i,j)/cv_air
+             endif
              pkz(i,j,k) = exp( log(p(i,j)) * akap )
 #endif
 #endif
-             pt(i,j,k) = t(i,j) / pkz(i,j,k)
+#ifdef MULTI_GASES
+             t(i,j) = t(i,j) * virq(q(i,j,k,:))
+#else
+             t(i,j) = t(i,j) * (1+zvir*q(i,j,k,1))
+#endif
+            pt(i,j,k) = t(i,j) / pkz(i,j,k)
           enddo
        enddo
 
@@ -1515,6 +1519,53 @@ contains
   enddo   ! time split loop
   first_call=.false.
 !-----------------------------------------------------
+
+!#ifdef MOLECULAR_DIFFUSION
+! do thermosphere adjustment if necessary
+!  if( md_tadj_layers .gt.0 .and. md_time ) then
+!    k=md_tadj_layers
+!    do j=js,je
+!       do i=is,ie
+!          t(i,j) = pt(i,j,k) * pkz(i,j,k)
+!       enddo
+!    enddo
+!    aave_t1 = g_sum(domain,t,is,ie,js,je,ng,gridstruct%area_64, 1)
+!    k=md_tadj_layers-1
+!    do j=js,je
+!       do i=is,ie
+!          t(i,j) = pt(i,j,k) * pkz(i,j,k)
+!       enddo
+!    enddo
+!    ttsave = g_sum(domain,t,is,ie,js,je,ng,gridstruct%area_64, 1)
+!    dtsave = ttsave - aave_t1
+!    if( is_master() ) write(*,*) ' k t1 ts ',k,aave_t1,ttsave
+!    do k=md_tadj_layers-2,1,-1
+!       do j=js,je
+!          do i=is,ie
+!             t(i,j) = pt(i,j,k) * pkz(i,j,k)
+!          enddo
+!       enddo
+!       aave_t1 = g_sum(domain,t,is,ie,js,je,ng,gridstruct%area_64, 1)
+!       if( is_master() ) write(*,*) ' k ts t1 ',k,ttsave,aave_t1
+!       if( aave_t1 .gt. ttsave ) then
+!          dtsave = min(dtsave,aave_t1-ttsave)
+!          ttsave = ttsave + dtsave
+!       else
+!          dtsave = 0.0
+!       endif
+!       correct = ttsave - aave_t1
+!       if( is_master() ) write(*,*) ' k t1 ts correct ',k,aave_t1,ttsave,correct
+!       if( correct .ne. 0.0 ) then
+!          do j=js,je
+!             do i=is,ie
+!                t(i,j) = t(i,j)  + correct
+!                pt(i,j,k) = t(i,j) / pkz(i,j,k)
+!             enddo
+!          enddo
+!       endif
+!    enddo
+!  endif ! md_tadj_layers
+!#endif ! MOLECULAR_DIFFUSION
 
     if ( nq > 0 .and. .not. flagstruct%inline_q ) then
        call timing_on('COMM_TOTAL')

@@ -181,7 +181,12 @@ module fv_diagnostics_mod
  logical :: prt_minmax =.false.
  logical :: m_calendar
  integer  sphum, liq_wat, ice_wat, cld_amt    ! GFDL physics
- integer  rainwat, snowwat, graupel, o3mr
+ integer  rainwat, snowwat, graupel
+#ifdef MULTI_GASES
+ integer  spo, spo2, spo3
+#else
+ integer  o3mr
+#endif
  integer :: istep, mp_top
  real    :: ptop
  real, parameter    ::     rad2deg = 180./pi
@@ -297,7 +302,13 @@ contains
     rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
     snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
     graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+#ifdef MULTI_GASES
+    spo     = get_tracer_index (MODEL_ATMOS, 'spo')
+    spo2    = get_tracer_index (MODEL_ATMOS, 'spo2')
+    spo3    = get_tracer_index (MODEL_ATMOS, 'spo3')
+#else
     o3mr    = get_tracer_index (MODEL_ATMOS, 'o3mr')
+#endif
     cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
 
 ! valid range for some fields
@@ -2802,8 +2813,14 @@ contains
        if(idiag%id_ua > 0) used=send_data(idiag%id_ua, Atm(n)%ua(isc:iec,jsc:jec,:), Time)
        if(idiag%id_va > 0) used=send_data(idiag%id_va, Atm(n)%va(isc:iec,jsc:jec,:), Time)
 
+#ifdef MULTI_GASES
+       if(idiag%id_uw > 0 .or. idiag%id_vw > 0 .or. idiag%id_hw > 0 .or. idiag%id_qvw > 0 .or. &
+            idiag%id_qlw > 0 .or. idiag%id_qiw > 0 .or. idiag%id_o3w > 0 .or. &
+            idiag%id_o2w > 0 .or. idiag%id_ow > 0  ) then
+#else
        if(idiag%id_uw > 0 .or. idiag%id_vw > 0 .or. idiag%id_hw > 0 .or. idiag%id_qvw > 0 .or. &
             idiag%id_qlw > 0 .or. idiag%id_qiw > 0 .or. idiag%id_o3w > 0 ) then
+#endif
           allocate( a3(isc:iec,jsc:jec,npz) )
 
           do k=1,npz
@@ -2891,6 +2908,47 @@ contains
              enddo
              used = send_data(idiag%id_qiw, a3, Time)
           endif
+#ifdef MULTI_GASES
+          if (idiag%id_ow > 0) then
+             if (spo3 < 0) then
+                call mpp_error(FATAL, 'ow does not work without spo defined')
+             endif
+             do k=1,npz
+             do j=jsc,jec
+             do i=isc,iec
+                a3(i,j,k) = Atm(n)%q(i,j,k,spo)*wk(i,j,k)
+             enddo
+             enddo
+             enddo
+             used = send_data(idiag%id_ow, a3, Time)
+          endif
+          if (idiag%id_o2w > 0) then
+             if (spo3 < 0) then
+                call mpp_error(FATAL, 'o2w does not work without spo2 defined')
+             endif
+             do k=1,npz
+             do j=jsc,jec
+             do i=isc,iec
+                a3(i,j,k) = Atm(n)%q(i,j,k,spo2)*wk(i,j,k)
+             enddo
+             enddo
+             enddo
+             used = send_data(idiag%id_o2w, a3, Time)
+          endif
+          if (idiag%id_o3w > 0) then
+             if (spo3 < 0) then
+                call mpp_error(FATAL, 'o3w does not work without spo3 defined')
+             endif
+             do k=1,npz
+             do j=jsc,jec
+             do i=isc,iec
+                a3(i,j,k) = Atm(n)%q(i,j,k,spo3)*wk(i,j,k)
+             enddo
+             enddo
+             enddo
+             used = send_data(idiag%id_o3w, a3, Time)
+          endif
+#else
           if (idiag%id_o3w > 0) then
              if (o3mr < 0) then
                 call mpp_error(FATAL, 'o3w does not work without o3mr defined')
@@ -2904,6 +2962,7 @@ contains
              enddo
              used = send_data(idiag%id_o3w, a3, Time)
           endif
+#endif
 
           deallocate(a3)
        endif

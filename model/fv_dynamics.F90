@@ -186,7 +186,7 @@ contains
 #endif
 
 #ifdef MOLECULAR_DIFFUSION
-    use molecular_diffusion_mod, only: md_time, md_wait_sec
+    use molecular_diffusion_mod, only: md_time, md_wait_sec, md_tadj_layers
 #endif
 
     real, intent(IN) :: bdt  !< Large time-step
@@ -276,6 +276,9 @@ contains
 #endif
 #ifdef MOLECULAR_DIFFUSION
       real, save :: time_offset = -1.00
+      real t(bd%isd:bd%ied,bd%jsd:bd%jed)
+      real       :: correct, aave_t1, ttsave, tdsave
+!     real       :: correct_sum
 #endif
       real:: akap, rdg, ph1, ph2, mdt, gam, amdt, u0
       real:: recip_k_split,reg_bc_update_time
@@ -567,7 +570,11 @@ contains
                   q, ncnst,  &
 #endif
                   ua, va, delz, gridstruct%agrid, cp_air, rdgas, ptop, hydrostatic,    &
+#ifdef MOLECULAR_DIFFUSION
+                                        consv_te, flagstruct%rf_cutoff, gridstruct, domain, bd)
+#else
                  .not. gridstruct%bounded_domain, flagstruct%rf_cutoff, gridstruct, domain, bd)
+#endif
 !         endif
         else
              call Rayleigh_Friction(abs(bdt), npx, npy, npz, ks, pfull, flagstruct%tau, u, v, w, pt,  &
@@ -785,8 +792,68 @@ contains
                      flagstruct%c2l_ord, bd, flagstruct%fv_debug, &
                      flagstruct%moist_phys)
 
+#ifdef MOLECULAR_DIFFUSION
+! do thermosphere adjustment if it is turned on and at last_step.
+  if( md_tadj_layers .gt.0 .and. md_time .and. last_step ) then
+    k=md_tadj_layers
+    do j=js,je
+       do i=is,ie
+          t(i,j) = pt(i,j,k) 
+       enddo
+    enddo
+    aave_t1 = g_sum(domain,t,is,ie,js,je,ng,gridstruct%area_64, 1)
+    k=md_tadj_layers-1
+    do j=js,je
+       do i=is,ie
+          t(i,j) = pt(i,j,k) 
+       enddo
+    enddo
+    ttsave = g_sum(domain,t,is,ie,js,je,ng,gridstruct%area_64, 1)
+    tdsave = ttsave - aave_t1
+!   if( is_master() ) write(*,*) ' k t1 ts ',k,aave_t1,ttsave
+!   correct_sum = 0.0
+    do k=md_tadj_layers-2,1,-1
+       do j=js,je
+          do i=is,ie
+             t(i,j) = pt(i,j,k) 
+          enddo
+       enddo
+       aave_t1 = g_sum(domain,t,is,ie,js,je,ng,gridstruct%area_64, 1)
+!      if( is_master() ) write(*,*) ' k ts t1 ',k,ttsave,aave_t1
+       if( aave_t1 .gt. ttsave ) then
+          tdsave = min(tdsave,aave_t1-ttsave)
+          ttsave = ttsave + tdsave
+       else
+          tdsave = 0.0
+       endif
+       correct = ttsave - aave_t1
+!      if( is_master() ) write(*,*) ' k t1 ts correct ',k,aave_t1,ttsave,correct
+       if( correct .ne. 0.0 ) then
+          do j=js,je
+             do i=is,ie
+                pt(i,j,k) = t(i,j)  + correct
+             enddo
+          enddo
+       endif
+!      correct_sum = correct_sum + correct
+    enddo
+! adjust for energy conserving by evenly distribute total correction
+!   if( correct_sum .ne. 0.0 ) then
+!      correct = - correct_sum / (md_tadj_layers + 10)
+!      if( is_master() ) write(*,*) ' sum=',correct_sum,' correct=',correct
+!      do k=1,md_tadj_layers+10
+!         do j=js,je
+!            do i=is,ie
+!               pt(i,j,k) = t(i,j)  + correct
+!            enddo
+!         enddo
+!      enddo
+!   endif
+  endif ! md_tadj_layers>0 and md_time and last_step
+#endif ! MOLECULAR_DIFFUSION
+
      if ( flagstruct%fv_debug ) then
-        if (is_master()) write(*,'(A, I3, A1, I3)') 'finished k_split ', n_map, '/', k_split
+!       if (is_master()) write(*,'(A, I3, A1, I3)') 'finished k_split ', n_map, '/', k_split
        call prt_mxm('T_dyn_a3',    pt, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
        if (sphum   > 0) call prt_mxm('SPHUM_dyn',   q(isd,jsd,1,sphum  ), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
        if (liq_wat > 0) call prt_mxm('liq_wat_dyn', q(isd,jsd,1,liq_wat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
@@ -1011,9 +1078,9 @@ contains
   if ( flagstruct%range_warn ) then
 #ifdef MOLECULAR_DIFFUSION
        call range_check('UA_dyn', ua, is, ie, js, je, ng, npz,gridstruct%agrid,&
-                         -680., 680., bad_range)
+                         -880., 880., bad_range)
        call range_check('VA_dyn', ua, is, ie, js, je, ng, npz,gridstruct%agrid,&
-                         -680., 680., bad_range)
+                         -880., 880., bad_range)
        call range_check('TA_dyn', pt, is, ie, js, je, ng, npz,gridstruct%agrid,&
                          150.,3350., bad_range)
        call range_check('W_dyn', w, is, ie, js, je, ng, npz,gridstruct%agrid, &
@@ -1172,7 +1239,11 @@ contains
     real, intent(in),  dimension(npz):: pm
     integer, intent(in):: npx, npy, npz, ks
     logical, intent(in):: hydrostatic
+#ifdef MOLECULAR_DIFFUSION
+    real, intent(in):: conserve
+#else
     logical, intent(in):: conserve
+#endif
     type(fv_grid_bounds_type), intent(IN) :: bd
     real, intent(inout):: u(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) !< D grid zonal wind (m/s)
     real, intent(inout):: v(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz) !< D grid meridional wind (m/s)
@@ -1317,7 +1388,12 @@ contains
              enddo
 #else
 ! Add heat so as to conserve TE
+
+#ifdef MOLECULAR_DIFFUSION
+          if ( conserve > 0. ) then
+#else
           if ( conserve ) then
+#endif
              if ( hydrostatic ) then
                do j=js,je
                   do i=is,ie

@@ -106,6 +106,9 @@ module fv_arrays_mod
      integer :: id_intqv, id_intql, id_intqi, id_intqr, id_intqs, id_intqg
 
      integer :: id_uw, id_vw, id_hw, id_qvw, id_qlw, id_qiw, id_o3w
+#ifdef MULTI_GASES
+     integer :: id_ow, id_o2w
+#endif
 
      logical :: initialized = .false.
      real  sphum, liq_wat, ice_wat       ! GFDL physics
