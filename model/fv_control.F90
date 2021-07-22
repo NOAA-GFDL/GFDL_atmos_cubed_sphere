@@ -301,6 +301,7 @@ module fv_control_mod
      integer , pointer :: npy
      integer , pointer :: npz
      character(len=24), pointer :: npz_type
+     character(len=120), pointer :: fv_eta_file 
      integer , pointer :: npz_rst
 
      integer , pointer :: ncnst
@@ -873,6 +874,7 @@ module fv_control_mod
        npy                           => Atm%flagstruct%npy
        npz                           => Atm%flagstruct%npz
        npz_type                      => Atm%flagstruct%npz_type
+       fv_eta_file                   => Atm%flagstruct%fv_eta_file
        npz_rst                       => Atm%flagstruct%npz_rst
        ncnst                         => Atm%flagstruct%ncnst
        pnats                         => Atm%flagstruct%pnats
@@ -1439,7 +1441,7 @@ module fv_control_mod
 !!
 !!
 !> @{
-       namelist /fv_core_nml/npx, npy, ntiles, npz, npz_type, npz_rst, layout, io_layout, ncnst, nwat,  &
+       namelist /fv_core_nml/npx, npy, ntiles, npz, npz_type, fv_eta_file, npz_rst, layout, io_layout, ncnst, nwat,  &
             use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, write_3d_diags, &
             do_schmidt, do_cube_transform, &
             hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
