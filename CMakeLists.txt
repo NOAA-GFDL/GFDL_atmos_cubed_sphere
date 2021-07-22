@@ -6,7 +6,7 @@ project(FV3
   HOMEPAGE_URL "https://www.gfdl.noaa.gov/gfdl_atmos_cubed_sphere"
   LANGUAGES Fortran)
 
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 include(GNUInstallDirs)
 
@@ -38,24 +38,22 @@ if(OPENMP)
 endif()
 find_package(NetCDF REQUIRED C Fortran)
 if(use_WRTCOMP)
+  if(NOT ESMF_FOUND)
   find_package(ESMF REQUIRED)
+  endif()
 endif()
 
-if(32BIT)
-  set(FMS_COMPONENTS "R4")
-  set(kind "r4")
-else()
-  set(FMS_COMPONENTS "R8")
-  set(kind "r8")
+if(NOT FMS_FOUND)
+  if(32BIT)
+    set(FMS_COMPONENTS "R4")
+    set(fms_kind "r4")
+  else()
+    set(FMS_COMPONENTS "R8")
+    set(fms_kind "r8")
+  endif()
+  find_package(FMS REQUIRED COMPONENTS ${FMS_COMPONENTS})
+  add_library(fms ALIAS FMS::fms_${fms_kind})
 endif()
-find_package(FMS REQUIRED COMPONENTS ${FMS_COMPONENTS})
-
-add_library(fms ALIAS FMS::fms_${kind})
-#if(32BIT)
-#  add_library(fms ALIAS FMS::fms_r4)
-#else()
-#  add_library(fms ALIAS FMS::fms_r8)
-#endif()
 
 list(APPEND model_srcs
   model/a2b_edge.F90
@@ -174,6 +172,10 @@ target_include_directories(fv3 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 target_compile_definitions(fv3 PRIVATE "${fv3_defs}")
 
 target_link_libraries(fv3 PUBLIC fms)
+
+if(GFS_PHYS)
+  target_link_libraries(fv3 PUBLIC fv3ccpp)
+endif()
 
 if(use_WRTCOMP)
   target_link_libraries(fv3 PUBLIC esmf)
