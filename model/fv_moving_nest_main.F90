@@ -139,7 +139,7 @@ use fv_moving_nest_mod,         only: mn_phys_fill_temp_variables, mn_phys_apply
 !      Load static datasets
 use fv_moving_nest_mod,         only: mn_latlon_read_hires_parent, mn_latlon_load_parent, mn_reset_phys_latlon
 use fv_moving_nest_mod,         only: mn_orog_read_hires_parent, mn_static_read_hires
-use fv_moving_nest_utils_mod,   only: load_nest_latlons_from_nc, compare_terrain
+use fv_moving_nest_utils_mod,   only: load_nest_latlons_from_nc, compare_terrain, set_smooth_nest_terrain, set_blended_terrain
 
 !      Bounds checking routines
 use fv_moving_nest_mod,         only: permit_move_nest
@@ -190,6 +190,9 @@ type mn_surface_grids
    real, allocatable  :: orog_std_grid(:,:)            _NULL  ! terrain standard deviation for gravity wave drag, in meters (?)
    real, allocatable  :: ls_mask_grid(:,:)             _NULL  ! land sea mask -- 0 for ocean/lakes, 1, for land.  Perhaps 2 for sea ice. 
    real, allocatable  :: land_frac_grid(:,:)           _NULL  ! Continuous land fraction - 0.0 ocean, 0.5 half of each, 1.0 all land
+
+   real, allocatable  :: parent_orog_grid(:,:)         _NULL  ! parent orography -- only used for terrain_smoother=1.  
+                                                              !     raw or filtered depending on namelist option, in meters
 
    ! Soil variables
    real, allocatable  :: deep_soil_temp_grid(:,:)      _NULL  ! deep soil temperature at 5m, in degrees K
@@ -508,6 +511,7 @@ contains
    integer, save :: output_step = 0
    
    integer, allocatable :: pelist(:)
+   character(len=16) :: errstring
    
    !! TODO Refine this per Atm(n) structure to allow some static and some moving nests in same run
    logical  :: is_moving_nest = .true.  ! Attach this to the namelist reading 
@@ -737,8 +741,14 @@ contains
                   mn_static%orog_grid, mn_static%orog_std_grid, mn_static%ls_mask_grid, mn_static%land_frac_grid)
              !print '("[INFO] WDR mn_orog_read_hires_parent COMPLETED READING static orog fine file on npe=",I0)', this_pe
 
-
-
+             ! If terrain_smoother method 1 is chosen, we need the parent coarse terrain
+             if (Atm(n)%neststruct%terrain_smoother .eq. 1) then
+                if (filtered_terrain) then
+                   call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, trim(Atm(child_grid_num)%neststruct%surface_dir), "oro_data", "orog_filt", mn_static%parent_orog_grid)
+                else
+                   call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, trim(Atm(child_grid_num)%neststruct%surface_dir), "oro_data", "orog_raw", mn_static%parent_orog_grid)
+                end if
+             end if
 
              call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "substrate_temperature", "substrate_temperature", mn_static%deep_soil_temp_grid)
              call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "soil_type", "soil_type", mn_static%soil_type_grid)
@@ -956,8 +966,30 @@ contains
        
        if (is_fine_pe) then
           ! phis is allocated in fv_arrays.F90 as:  allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
-          Atm(n)%phis(isd:ied, jsd:jed) = mn_static%orog_grid((ioffset-1)*x_refine+isd:(ioffset-1)*x_refine+ied, (joffset-1)*y_refine+jsd:(joffset-1)*y_refine+jed) * grav
-
+          ! 0 -- all high-resolution data, 1 - static nest smoothing algorithm, 5 - 5 point smoother, 9 - 9 point smoother
+          ! Defaults to 1 - static nest smoothing algorithm; this seems to produce the most stable solutions 
+          select case(Atm(n)%neststruct%terrain_smoother)
+          case (0)
+             ! High-resolution terrain for entire nest
+             print '("[INFO] WDR Moving Nest terrain_smoother=0 High-resolution terrain. npe=",I0)', this_pe
+             Atm(n)%phis(isd:ied, jsd:jed) = mn_static%orog_grid((ioffset-1)*x_refine+isd:(ioffset-1)*x_refine+ied, (joffset-1)*y_refine+jsd:(joffset-1)*y_refine+jed) * grav
+          case (1)
+             ! Static nest smoothing algorithm - interpolation of coarse terrain in halo zone and 5 point blending zone of coarse and fine data
+             print '("[INFO] WDR Moving Nest terrain_smoother=1 Blending algorithm. npe=",I0)', this_pe
+             call set_blended_terrain(Atm(n), mn_static%parent_orog_grid, mn_static%orog_grid, x_refine, Atm(n)%bd%ng, 5, a_step)
+          case (5)
+             ! 5 pt smoother.  blend zone of 5 to match static nest
+             print '("[INFO] WDR Moving Nest terrain_smoother=5  5-point smoother. npe=",I0)', this_pe
+             call set_smooth_nest_terrain(Atm(n), mn_static%orog_grid, x_refine, 5, Atm(n)%bd%ng, 5)   
+          case (9)
+             ! 9 pt smoother.  blend zone of 5 to match static nest
+             print '("[INFO] WDR Moving Nest terrain_smoother=9  9-point smoother. npe=",I0)', this_pe
+             call set_smooth_nest_terrain(Atm(n), mn_static%orog_grid, x_refine, 9, Atm(n)%bd%ng, 5)
+          case default
+             write (errstring, "(I0)") Atm(n)%neststruct%terrain_smoother
+             call mpp_error(FATAL,'Invalid terrain_smoother in fv_moving_nest_main '//errstring)
+          end select
+          
           ! Reinitialize diagnostics -- zsurf which is g * Atm%phis
           call fv_diag_reinit(Atm(n:n))
 

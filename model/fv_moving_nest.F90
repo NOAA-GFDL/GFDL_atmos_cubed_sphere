@@ -1869,7 +1869,12 @@ contains
 
     write(res_str, '(I0)'), nx_cubic * refine
     write(parent_str, '(I0)'), parent_tile
-    nc_filename = trim(surface_dir) // '/C' // trim(res_str) // '.' // trim(file_prefix) // '.tile' // trim(parent_str) // '.nc'
+    
+    if (trim(file_prefix) .eq. "oro_data") then
+       nc_filename = trim(surface_dir) // '/C' // trim(res_str) // '_' // trim(file_prefix) // '.tile' // trim(parent_str) // '.nc'
+    else
+       nc_filename = trim(surface_dir) // '/C' // trim(res_str) // '.' // trim(file_prefix) // '.tile' // trim(parent_str) // '.nc'
+    end if
 
     call alloc_read_data(nc_filename, var_name, fp_nx, fp_ny, data_grid)
 

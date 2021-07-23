@@ -998,6 +998,7 @@ module fv_arrays_mod
      ! Moving Nest Namelist Variables
      logical               :: is_moving_nest = .false.
      character(len=120)    :: surface_dir = "  "
+     integer               :: terrain_smoother = 1
 #endif
 
 

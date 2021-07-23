@@ -55,8 +55,7 @@ use GFS_typedefs,           only: kind_phys
 use IPD_typedefs,           only: kind_phys => IPD_kind_phys
 #endif
 
-
-
+  use constants_mod,     only: grav
 
   ! Added WDR
   use boundary_mod,      only: update_coarse_grid, update_coarse_grid_mpp
@@ -151,7 +150,178 @@ use IPD_typedefs,           only: kind_phys => IPD_kind_phys
 
 contains
 
-  ! Compare terrain for parent and nest cells
+! GEMPAK 5-point smoother
+!SM5S  Smooth scalar grid using a 5-point smoother
+!      SM5S ( S ) = .5 * S (i,j) + .125 * ( S (i+1,j) + S (i,j+1) +
+!                                           S (i-1,j) + S (i,j-1) ) 
+! GEMPAK 9-point smoother
+!SM9S  Smooth scalar grid using a 9-point smoother
+!      SM5S ( S ) = .25 * S (i,j) + .125 * ( S (i+1,j) + S (i,j+1) +
+!                                            S (i-1,j) + S (i,j-1) )
+!                                 + .0625 * ( S (i+1,j+1) +
+!                                             S (i+1,j-1) +
+!                                             S (i-1,j+1) +
+!                                             S (i-1,j-1) )
+
+
+  subroutine smooth_5_point(data_var, i, j, val)
+    real, allocatable, intent(in)               :: data_var(:,:)
+    integer                                     :: i,j
+    real, intent(out)                           :: val
+
+    ! Stay in bounds of the array
+    if ( (i-1) .ge. lbound(data_var,1) .and. i .le. ubound(data_var,1) .and. (j-1) .ge. lbound(data_var,2) .and. j .le. ubound(data_var,2) ) then
+       val = .5 * data_var(i,j) + .125 * ( data_var(i+1,j) + data_var(i,j+1) + data_var(i-1,j) + data_var(i,j-1) ) 
+    else       
+       ! Don't smooth if at the edge.  Could do partial smoothing here also, but don't expect moving nest to reach the edge.
+       val = data_var(i,j)  
+    end if
+
+  end subroutine smooth_5_point
+
+
+  subroutine smooth_9_point(data_var, i, j, val)
+    real, allocatable, intent(in)               :: data_var(:,:)
+    integer                                     :: i,j
+    real, intent(out)                           :: val
+
+    ! Stay in bounds of the array
+    if ( (i-1) .ge. lbound(data_var,1) .and. i .le. ubound(data_var,1) .and. (j-1) .ge. lbound(data_var,2) .and. j .le. ubound(data_var,2) ) then
+       val = .25 * data_var(i,j) + .125 * ( data_var(i+1,j) + data_var(i,j+1) + data_var(i-1,j) + data_var(i,j-1) ) &
+            + .0625 * ( data_var(i+1,j+1) + data_var(i+1,j-1) + data_var(i-1,j+1) + data_var(i-1,j-1) )
+    else
+       ! Don't smooth if at the edge.  Could do partial smoothing here also, but don't expect moving nest to reach the edge.
+       val = data_var(i,j)  
+    end if
+
+  end subroutine smooth_9_point
+    
+  subroutine set_blended_terrain(Atm, parent_orog_grid, nest_orog_grid, refine, halo_size, blend_size, a_step)
+    type(fv_atmos_type), intent(inout), target :: Atm
+    real, allocatable, intent(in)              :: parent_orog_grid(:,:)   ! Coarse grid orography
+    real, allocatable, intent(in)              :: nest_orog_grid(:,:)     ! orography for the full panel of the parent, at high-resolution
+    integer, intent(in)                        :: refine, halo_size, blend_size, a_step
+    
+    integer            :: i, j, ic, jc
+    integer            :: ioffset, joffset
+    integer            :: npx, npy, isd, ied, jsd, jed
+    real               :: smoothed_orog, hires_orog, blend_wt, blend_orog
+
+    real, pointer, dimension(:,:,:) :: wt
+    integer, pointer, dimension(:,:,:) :: ind
+    integer :: this_pe
+
+    this_pe = mpp_pe()
+
+    npx   = Atm%npx
+    npy   = Atm%npy
+
+    isd = Atm%bd%isc - halo_size
+    ied = Atm%bd%iec + halo_size
+    jsd = Atm%bd%jsc - halo_size
+    jed = Atm%bd%jec + halo_size
+
+    ioffset = Atm%neststruct%ioffset
+    joffset = Atm%neststruct%joffset
+
+    wt => Atm%neststruct%wt_h
+    ind => Atm%neststruct%ind_h
+
+    do j=jsd, jed 
+       do i=isd, ied 
+          ic = ind(i,j,1)
+          jc = ind(i,j,2)
+          
+          smoothed_orog = &
+               wt(i,j,1)*parent_orog_grid(ic,  jc  ) +  &
+               wt(i,j,2)*parent_orog_grid(ic,  jc+1) +  &
+               wt(i,j,3)*parent_orog_grid(ic+1,jc+1) +  &
+               wt(i,j,4)*parent_orog_grid(ic+1,jc  )
+          
+          hires_orog = nest_orog_grid((ioffset-1)*refine+i, (joffset-1)*refine+j)
+          
+          ! From tools/external_ic.F90
+          blend_wt = max(0.,min(1.,real(5 - min(i,j,npx-i,npy-j,5))/5. ))
+          blend_orog = (1.-blend_wt)*hires_orog + blend_wt*smoothed_orog 
+          Atm%phis(i,j) = blend_orog * grav
+
+          !if (this_pe .ge. 96) then
+          !   print '("[INFO] WDR BLEND npe=",I0," a_step=",I0," i,j=",I0,",",I0," smoothed_orog=",F10.5," hires_orog=",F10.5," blend_wt=",F6.4," blend_orog=",F10.5)', this_pe, a_step, i, j, smoothed_orog, hires_orog, blend_wt, blend_orog
+          !end if
+
+       end do
+    end do
+    
+  end subroutine set_blended_terrain
+
+  subroutine set_smooth_nest_terrain(Atm, fp_orog, refine, num_points, halo_size, blend_size)
+    type(fv_atmos_type), intent(inout) :: Atm
+    real, allocatable, intent(in)      :: fp_orog(:,:)   ! orography for the full panel of the parent, at high-resolution
+    integer, intent(in)                :: refine, num_points, halo_size, blend_size
+
+    integer            :: i,j
+    integer            :: ioffset, joffset
+    integer            :: npx, npy, isd, ied, jsd, jed
+    integer            :: smooth_i_lo, smooth_i_hi, smooth_j_lo, smooth_j_hi
+    real               :: smoothed_orog
+    character(len=16)  :: errstring
+
+    npx   = Atm%npx
+    npy   = Atm%npy
+
+    isd = Atm%bd%isc - halo_size
+    ied = Atm%bd%iec + halo_size
+    jsd = Atm%bd%jsc - halo_size
+    jed = Atm%bd%jec + halo_size
+
+    ioffset = Atm%neststruct%ioffset
+    joffset = Atm%neststruct%joffset
+    
+
+    smooth_i_lo = 1 + blend_size
+    smooth_i_hi = npx - blend_size - halo_size
+
+    smooth_j_lo = 1 + blend_size
+    smooth_j_hi = npy - blend_size - halo_size
+
+
+    !Atm(n)%phis(isd:ied, jsd:jed) = mn_static%orog_grid((ioffset-1)*x_refine+isd:(ioffset-1)*x_refine+ied, (joffset-1)*y_refine+jsd:(joffset-1)*y_refine+jed) * grav
+    
+    select case(num_points)
+       case (5)
+
+       do j=jsd, jed 
+          do i=isd, ied 
+             if (i .lt. smooth_i_lo .or. i .gt. smooth_i_hi .or. j .lt. smooth_j_lo .or. j .gt. smooth_j_hi) then
+                call smooth_5_point(fp_orog, (ioffset-1)*refine + i, (joffset-1)*refine + j, smoothed_orog)
+                Atm%phis(i,j) = smoothed_orog * grav
+             else
+                Atm%phis(i,j) = fp_orog((ioffset-1)*refine + i, (joffset-1)*refine + j) * grav
+             end if
+          end do
+       end do
+
+       case (9)
+
+       do j=jsd, jed 
+          do i=isd, ied 
+             if (i .lt. smooth_i_lo .or. i .gt. smooth_i_hi .or. j .lt. smooth_j_lo .or. j .gt. smooth_j_hi) then
+                call smooth_9_point(fp_orog, (ioffset-1)*refine + i, (joffset-1)*refine + j, smoothed_orog)
+                Atm%phis(i,j) = smoothed_orog * grav
+             else
+                Atm%phis(i,j) = fp_orog((ioffset-1)*refine + i, (joffset-1)*refine + j) * grav
+             end if
+          end do
+       end do
+
+    case default
+       write (errstring, "(I0)") num_points
+       call mpp_error(FATAL,'Invalid terrain_smoother in set_smooth_nest_terrain '//errstring)
+    end select
+
+  end subroutine set_smooth_nest_terrain
+
+  ! Compare terrain for parent and nest cells - for debugging
   
   subroutine compare_terrain(var_name, data_var, interp_type, ind, x_refine, y_refine, is_fine_pe, nest_domain)
     character(len=*), intent(in)                :: var_name
