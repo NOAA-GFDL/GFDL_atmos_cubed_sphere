@@ -3031,12 +3031,12 @@ contains
        if(id_va > 0) used=send_data(id_va, Atm(n)%va(isc:iec,jsc:jec,:), Time)
 
 #ifdef MULTI_GASES
-       if(idiag%id_uw > 0 .or. idiag%id_vw > 0 .or. idiag%id_hw > 0 .or. idiag%id_qvw > 0 .or. &
-            idiag%id_qlw > 0 .or. idiag%id_qiw > 0 .or. idiag%id_o3w > 0 .or. &
+       if(id_uw > 0 .or. id_vw > 0 .or. id_hw > 0 .or. id_qvw > 0 .or. &
+            id_qlw > 0 .or. id_qiw > 0 .or. id_o3w > 0 .or. &
             idiag%id_o2w > 0 .or. idiag%id_ow > 0  ) then
 #else
-       if(idiag%id_uw > 0 .or. idiag%id_vw > 0 .or. idiag%id_hw > 0 .or. idiag%id_qvw > 0 .or. &
-            idiag%id_qlw > 0 .or. idiag%id_qiw > 0 .or. idiag%id_o3w > 0 ) then
+       if(id_uw > 0 .or. id_vw > 0 .or. id_hw > 0 .or. id_qvw > 0 .or. &
+            id_qlw > 0 .or. id_qiw > 0 .or. id_o3w > 0 ) then
 #endif
           allocate( a3(isc:iec,jsc:jec,npz) )
 
@@ -3130,7 +3130,7 @@ contains
              enddo
              used = send_data(idiag%id_o2w, a3, Time)
           endif
-          if (idiag%id_o3w > 0) then
+          if (id_o3w > 0) then
              if (spo3 < 0) then
                 call mpp_error(FATAL, 'o3w does not work without spo3 defined')
              endif
@@ -3141,10 +3141,10 @@ contains
              enddo
              enddo
              enddo
-             used = send_data(idiag%id_o3w, a3, Time)
+             used = send_data(id_o3w, a3, Time)
           endif
 #else
-          if (idiag%id_o3w > 0) then
+          if (id_o3w > 0) then
              if (o3mr < 0) then
                 call mpp_error(FATAL, 'o3w does not work without o3mr defined')
              endif
