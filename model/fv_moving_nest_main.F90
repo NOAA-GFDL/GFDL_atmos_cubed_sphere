@@ -1118,9 +1118,9 @@ contains
 
 
           !! TODO Enable vertical remapping.  Likely needed when nests move over land.
-          if (debug_log) print '("[INFO] WDR MV_NST L2E before vertical remapping fv_moving_nest_main.F90 npe=",I0)', this_pe
-          call vertical_remap_nest(Atm(n), dt_atmos, p_split)          
-          if (debug_log) print '("[INFO] WDR MV_NST L2E after vertical remapping fv_moving_nest_main.F90 npe=",I0)', this_pe
+          !if (debug_log) print '("[INFO] WDR MV_NST L2E before vertical remapping fv_moving_nest_main.F90 npe=",I0)', this_pe
+          !call vertical_remap_nest(Atm(n), dt_atmos, p_split)          
+          !if (debug_log) print '("[INFO] WDR MV_NST L2E after vertical remapping fv_moving_nest_main.F90 npe=",I0)', this_pe
 
 
           !! Recalculate omga; not sure if Lagrangian_to_Eulerian did this earlier
