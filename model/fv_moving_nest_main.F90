@@ -174,7 +174,7 @@ real, parameter:: real_snan=x'FFF7FFFFFFFFFFFF'
 #endif
 
 logical :: debug_log = .false.
-logical :: tsvar_out = .true.
+logical :: tsvar_out = .false.
 logical :: wxvar_out = .false.
 
 

@@ -94,6 +94,11 @@ use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => 
   real (kind=kind_phys), allocatable :: stc_local (:,:,:)  !< soil temperature
   real (kind=kind_phys), allocatable :: slc_local (:,:,:)  !< soil liquid water content
 
+  real (kind=kind_phys), allocatable :: u10m_local (:,:)    !< 10m u wind (a-grid?) 
+  real (kind=kind_phys), allocatable :: v10m_local (:,:)    !< 10m v wind (a-grid?) 
+
+  real (kind=kind_phys), allocatable :: tprcp_local (:,:)    !< total (of all precip types) precipitation rate
+  
   real (kind=kind_phys), allocatable :: zorl_local (:,:)    !< roughness length
   real (kind=kind_phys), allocatable :: alvsf_local(:,:)    !< visible black sky albedo
   real (kind=kind_phys), allocatable :: alvwf_local(:,:)    !< visible white sky albedo
@@ -113,7 +118,7 @@ use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => 
   !real (kind=kind_phys), allocatable :: zorlw_local (:,:)    !< wave surface roughness length! TODO do we need this?
   real (kind=kind_phys), allocatable :: tsfco_local (:,:)     !< surface temperature ocean
   real (kind=kind_phys), allocatable :: tsfcl_local (:,:)     !< surface temperature land
-  !real (kind=kind_phys), allocatable :: tsfc_local (:,:)     !< surface temperature ! TODO do we need this?
+  real (kind=kind_phys), allocatable :: tsfc_local (:,:)      !< surface temperature
 
   real (kind=kind_phys), allocatable :: cv_local  (:,:)    !< fraction of convective cloud
   real (kind=kind_phys), allocatable :: cvt_local (:,:)    !< convective cloud top pressure
@@ -363,6 +368,10 @@ contains
        allocate ( smc_local(isd:ied, jsd:jed, IPD_Control%lsoil) )
        allocate ( stc_local(isd:ied, jsd:jed, IPD_Control%lsoil) )
        allocate ( slc_local(isd:ied, jsd:jed, IPD_Control%lsoil) )
+
+       allocate ( u10m_local(isd:ied, jsd:jed) )
+       allocate ( v10m_local(isd:ied, jsd:jed) )
+       allocate ( tprcp_local(isd:ied, jsd:jed) )
        
        allocate ( zorl_local(isd:ied, jsd:jed) )
        allocate ( alvsf_local(isd:ied, jsd:jed) )
@@ -381,6 +390,7 @@ contains
        allocate ( zorll_local(isd:ied, jsd:jed) )
        allocate ( tsfco_local(isd:ied, jsd:jed) )
        allocate ( tsfcl_local(isd:ied, jsd:jed) )
+       allocate ( tsfc_local(isd:ied, jsd:jed) )
        
        allocate ( cv_local(isd:ied, jsd:jed) )
        allocate ( cvt_local(isd:ied, jsd:jed) )
@@ -419,6 +429,10 @@ contains
        smc_local = +99999.9
        stc_local = +99999.9
        slc_local = +99999.9
+
+       u10m_local = +99999.9
+       v10m_local = +99999.9
+       tprcp_local = +99999.9
        
        zorl_local = +99999.9
        alvsf_local = +99999.9
@@ -437,6 +451,7 @@ contains
        zorll_local = +99999.9
        tsfco_local = +99999.9
        tsfcl_local = +99999.9
+       tsfc_local = +99999.9
        
        cv_local = +99999.9
        cvt_local = +99999.9
@@ -484,6 +499,10 @@ contains
                stc_local(i,j,k) = IPD_Data(nb)%Sfcprop%stc(ix,k)
                slc_local(i,j,k) = IPD_Data(nb)%Sfcprop%slc(ix,k)
             enddo
+
+            u10m_local(i,j)  = IPD_Data(nb)%IntDiag%u10m(ix)
+            v10m_local(i,j)  = IPD_Data(nb)%IntDiag%v10m(ix)
+            tprcp_local(i,j)  = IPD_Data(nb)%Sfcprop%tprcp(ix)
             
             zorl_local(i,j)  = IPD_Data(nb)%Sfcprop%zorl(ix)
             alvsf_local(i,j) = IPD_Data(nb)%Sfcprop%alvsf(ix)
@@ -502,7 +521,8 @@ contains
             zorll_local(i,j)  = IPD_Data(nb)%Sfcprop%zorll(ix)
             tsfco_local(i,j)  = IPD_Data(nb)%Sfcprop%tsfco(ix)
             tsfcl_local(i,j)  = IPD_Data(nb)%Sfcprop%tsfcl(ix)
-            
+            tsfc_local(i,j)   = IPD_Data(nb)%Sfcprop%tsfc(ix)
+
             do nv = 1, IPD_Control%ntot2d
                phy_f2d_local(i,j,nv) = IPD_Data(nb)%Tbd%phy_f2d(ix, nv)
             end do
@@ -711,6 +731,10 @@ contains
                    IPD_Data(nb)%Sfcprop%stc(ix,k) = stc_local(i,j,k)
                    IPD_Data(nb)%Sfcprop%slc(ix,k) = slc_local(i,j,k)
                 enddo
+
+                IPD_Data(nb)%IntDiag%u10m(ix) = u10m_local(i,j)
+                IPD_Data(nb)%IntDiag%v10m(ix) = v10m_local(i,j)
+                IPD_Data(nb)%Sfcprop%tprcp(ix) = tprcp_local(i,j)
                 
                 IPD_Data(nb)%Sfcprop%zorl(ix) = zorl_local(i,j)
                 IPD_Data(nb)%Sfcprop%alvsf(ix) = alvsf_local(i,j)
@@ -728,7 +752,8 @@ contains
                 IPD_Data(nb)%Sfcprop%shdmax(ix) = shdmax_local(i,j)
                 IPD_Data(nb)%Sfcprop%zorll(ix)  = zorll_local(i,j)
                 IPD_Data(nb)%Sfcprop%tsfco(ix)  = tsfco_local(i,j)
-                IPD_Data(nb)%Sfcprop%tsfcl(ix) = tsfcl_local(i,j)
+                IPD_Data(nb)%Sfcprop%tsfcl(ix)  = tsfcl_local(i,j)
+                IPD_Data(nb)%Sfcprop%tsfc(ix)   = tsfc_local(i,j)
                 
                 ! Cloud properties
                 IPD_Data(nb)%Cldprop%cv(ix) = cv_local(i,j)
@@ -776,6 +801,10 @@ contains
       deallocate(smc_local)
       deallocate(stc_local)
       deallocate(slc_local)
+
+      deallocate(u10m_local)
+      deallocate(v10m_local)
+      deallocate(tprcp_local)
       
       deallocate(zorl_local)
       deallocate(alvsf_local)
@@ -794,6 +823,7 @@ contains
       deallocate(zorll_local)
       deallocate(tsfco_local)
       deallocate(tsfcl_local)
+      deallocate(tsfc_local)
       
       deallocate(cv_local)
       deallocate(cvt_local)
@@ -1002,6 +1032,19 @@ contains
             is_fine_pe, nest_domain, position, IPD_Control%levs)
        
        !!  Surface variables
+       call fill_nest_halos_from_parent("u10m", u10m_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+            Atm(child_grid_num)%neststruct%ind_h, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       call fill_nest_halos_from_parent("v10m", v10m_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+            Atm(child_grid_num)%neststruct%ind_h, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       call fill_nest_halos_from_parent("tprcp", tprcp_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+            Atm(child_grid_num)%neststruct%ind_h, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+
        
        call fill_nest_halos_from_parent("zorl", zorl_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
@@ -1070,6 +1113,10 @@ contains
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
        call fill_nest_halos_from_parent("tsfcl", tsfcl_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+            Atm(child_grid_num)%neststruct%ind_h, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       call fill_nest_halos_from_parent("tsfc", tsfc_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
@@ -1337,6 +1384,10 @@ contains
        
        call mn_var_fill_intern_nest_halos(phy_f2d_local, domain_fine, is_fine_pe)
        call mn_var_fill_intern_nest_halos(phy_f3d_local, domain_fine, is_fine_pe)
+
+       call mn_var_fill_intern_nest_halos(u10m_local, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(v10m_local, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(tprcp_local, domain_fine, is_fine_pe)
        
        call mn_var_fill_intern_nest_halos(zorl_local, domain_fine, is_fine_pe)
        call mn_var_fill_intern_nest_halos(alvsf_local, domain_fine, is_fine_pe)
@@ -1355,6 +1406,7 @@ contains
        call mn_var_fill_intern_nest_halos(zorll_local, domain_fine, is_fine_pe)
        call mn_var_fill_intern_nest_halos(tsfco_local, domain_fine, is_fine_pe)
        call mn_var_fill_intern_nest_halos(tsfcl_local, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(tsfc_local, domain_fine, is_fine_pe)
        
        call mn_var_fill_intern_nest_halos(cv_local, domain_fine, is_fine_pe)
        call mn_var_fill_intern_nest_halos(cvt_local, domain_fine, is_fine_pe)
@@ -2202,6 +2254,20 @@ contains
        
        
        ! Surface variables
+       call mn_var_shift_data(u10m_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+         delta_i_c, delta_j_c, &
+         x_refine, y_refine, &
+         is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(v10m_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+         delta_i_c, delta_j_c, &
+         x_refine, y_refine, &
+         is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(tprcp_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+         delta_i_c, delta_j_c, &
+         x_refine, y_refine, &
+         is_fine_pe, nest_domain, position)
+
+
        call mn_var_shift_data(zorl_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
          delta_i_c, delta_j_c, &
          x_refine, y_refine, &
@@ -2262,6 +2328,10 @@ contains
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
        call mn_var_shift_data(tsfcl_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+            delta_i_c, delta_j_c, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(tsfc_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
@@ -3757,7 +3827,7 @@ contains
 
     real, allocatable, dimension(:,:) :: sealand_pr_local, deep_soil_t_pr_local, soil_type_pr_local, veg_type_pr_local, slope_type_pr_local, max_snow_alb_pr_local
 
-    real, allocatable, dimension(:,:) ::  tsfco_pr_local, tsfcl_pr_local, vegfrac_pr_local, alvsf_pr_local, alvwf_pr_local, facsf_pr_local, facwf_pr_local
+    real, allocatable, dimension(:,:) ::  tsfco_pr_local, tsfcl_pr_local, tsfc_pr_local, vegfrac_pr_local, alvsf_pr_local, alvwf_pr_local, facsf_pr_local, facwf_pr_local
     real, allocatable, dimension(:,:) :: tref_pr_local, c_0_pr_local, xt_pr_local,  xu_pr_local,  xv_pr_local, ifd_pr_local
 
     real, allocatable :: phy_f2d_pr_local (:,:,:)
@@ -3819,6 +3889,7 @@ contains
        
        allocate ( tsfco_pr_local(is:ie, js:je) )
        allocate ( tsfcl_pr_local(is:ie, js:je) )
+       allocate ( tsfc_pr_local(is:ie, js:je) )
        allocate ( vegfrac_pr_local(is:ie, js:je) )
        allocate ( alvsf_pr_local(is:ie, js:je) )
        allocate ( alvwf_pr_local(is:ie, js:je) )
@@ -3861,6 +3932,7 @@ contains
        
        tsfco_pr_local = +99999.9
        tsfcl_pr_local = +99999.9
+       tsfc_pr_local = +99999.9
        vegfrac_pr_local = +99999.9
        alvsf_pr_local = +99999.9
        alvwf_pr_local = +99999.9
@@ -3909,6 +3981,7 @@ contains
              
              tsfco_pr_local(i, j) = IPD_data(nb)%Sfcprop%tsfco(ix)
              tsfcl_pr_local(i, j) = IPD_data(nb)%Sfcprop%tsfcl(ix)
+             tsfc_pr_local(i, j)  = IPD_data(nb)%Sfcprop%tsfc(ix)
              vegfrac_pr_local(i, j) = IPD_data(nb)%Sfcprop%vfrac(ix)
              alvsf_pr_local(i, j) = IPD_data(nb)%Sfcprop%alvsf(ix)
              alvwf_pr_local(i, j) = IPD_data(nb)%Sfcprop%alvwf(ix)
@@ -3964,6 +4037,8 @@ contains
        
        call mn_var_dump_to_netcdf(tsfco_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "TSFCO")
        call mn_var_dump_to_netcdf(tsfcl_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "TSFCL")
+       call mn_var_dump_to_netcdf(tsfc_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "TSFC")
+
        call mn_var_dump_to_netcdf(vegfrac_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "VEGFRAC")
        call mn_var_dump_to_netcdf(alvsf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ALVSF")
        call mn_var_dump_to_netcdf(alvwf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ALVWF")
@@ -4004,7 +4079,7 @@ contains
        
        deallocate(sealand_pr_local, deep_soil_t_pr_local, soil_type_pr_local, veg_type_pr_local, max_snow_alb_pr_local)
        
-       deallocate(tsfco_pr_local, tsfcl_pr_local, vegfrac_pr_local, alvsf_pr_local, alvwf_pr_local)
+       deallocate(tsfco_pr_local, tsfcl_pr_local, tsfc_pr_local, vegfrac_pr_local, alvsf_pr_local, alvwf_pr_local)
        deallocate(facsf_pr_local, facwf_pr_local)
 
        deallocate(phy_f2d_pr_local)
