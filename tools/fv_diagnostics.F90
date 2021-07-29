@@ -1119,6 +1119,14 @@ contains
             'vertical ice water flux', 'kg/m**2/s', missing_value=missing_value )
        id_o3w = register_diag_field ( trim(field), 'o3w', axes(1:3), Time, &
             'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
+#ifdef MULTI_GASES
+       id_ow = register_diag_field ( trim(field), 'spow', axes(1:3), Time, &
+            'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
+       id_o2w = register_diag_field ( trim(field), 'spo2w', axes(1:3), Time, &
+            'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
+       id_o3w = register_diag_field ( trim(field), 'spo3w', axes(1:3), Time, &
+            'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
+#endif
        endif
 
 ! Total energy (only when moist_phys = .T.)
@@ -3033,7 +3041,7 @@ contains
 #ifdef MULTI_GASES
        if(id_uw > 0 .or. id_vw > 0 .or. id_hw > 0 .or. id_qvw > 0 .or. &
             id_qlw > 0 .or. id_qiw > 0 .or. id_o3w > 0 .or. &
-            idiag%id_o2w > 0 .or. idiag%id_ow > 0  ) then
+            id_o2w > 0 .or. id_ow > 0  ) then
 #else
        if(id_uw > 0 .or. id_vw > 0 .or. id_hw > 0 .or. id_qvw > 0 .or. &
             id_qlw > 0 .or. id_qiw > 0 .or. id_o3w > 0 ) then
@@ -3104,7 +3112,7 @@ contains
              used = send_data(id_qiw, a3, Time)
           endif
 #ifdef MULTI_GASES
-          if (idiag%id_ow > 0) then
+          if (id_ow > 0) then
              if (spo3 < 0) then
                 call mpp_error(FATAL, 'ow does not work without spo defined')
              endif
@@ -3115,9 +3123,9 @@ contains
              enddo
              enddo
              enddo
-             used = send_data(idiag%id_ow, a3, Time)
+             used = send_data(id_ow, a3, Time)
           endif
-          if (idiag%id_o2w > 0) then
+          if (id_o2w > 0) then
              if (spo3 < 0) then
                 call mpp_error(FATAL, 'o2w does not work without spo2 defined')
              endif
@@ -3128,7 +3136,7 @@ contains
              enddo
              enddo
              enddo
-             used = send_data(idiag%id_o2w, a3, Time)
+             used = send_data(id_o2w, a3, Time)
           endif
           if (id_o3w > 0) then
              if (spo3 < 0) then

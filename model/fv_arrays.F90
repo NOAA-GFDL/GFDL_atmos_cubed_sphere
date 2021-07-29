@@ -54,9 +54,6 @@ module fv_arrays_mod
 
      integer :: id_u_dt_sg, id_v_dt_sg, id_t_dt_sg, id_qv_dt_sg
      integer :: id_ws, id_te, id_amdt, id_mdt, id_divg, id_aam
-#ifdef MULTI_GASES
-     integer :: id_ow, id_o2w
-#endif
      logical :: initialized = .false.
      real  sphum, liq_wat, ice_wat       ! GFDL physics
      real  rainwat, snowwat, graupel

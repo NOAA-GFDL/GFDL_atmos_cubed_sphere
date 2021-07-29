@@ -646,9 +646,7 @@ contains
    integer :: k, w_diff, nt_dyn, n_split_loc, seconds, days
    logical :: used
    real    :: rdt
-#ifdef MOLECULAR_DIFFUSION
    real time_total
-#endif
 
    type(time_type) :: atmos_time
 
@@ -659,9 +657,7 @@ contains
    n = mygrid
 
    call get_time (time, seconds,  days)
-#ifdef MOLECULAR_DIFFUSION
    time_total = seconds + 86400. * days
-#endif
 
 !  if (seconds < 10800 .and. days == 0) then
 !    n_split_loc = (Atm(n)%flagstruct%n_split * 3) / 2
@@ -706,11 +702,7 @@ contains
                       Atm(n)%gridstruct,  Atm(n)%flagstruct,                    &
                       Atm(n)%neststruct,  Atm(n)%idiag, Atm(n)%bd,              &
                       Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est,        &
-#ifdef MOLECULAR_DIFFUSION
-                      Atm(n)%inline_mp,time_total)
-#else
-                      Atm(n)%inline_mp)
-#endif
+                      Atm(n)%inline_mp, time_total)
 
      call timing_off('fv_dynamics')
 
@@ -1772,9 +1764,7 @@ contains
    real:: xt, p00, q00
    integer:: isc, iec, jsc, jec, npz
    integer:: m, n, i,j,k, ngc, n_split_loc, days
-#ifdef MOLECULAR_DIFFUSION
    real time_total
-#endif
 
    character(len=80) :: errstr
 
@@ -1848,9 +1838,7 @@ contains
        enddo
 
        call get_time (time, seconds, days)
-#ifdef MOLECULAR_DIFFUSION
        time_total = seconds + 86400. * days
-#endif
       if (seconds < nint(3600*Atm(mygrid)%flagstruct%fhouri) .and. Atm(mygrid)%flagstruct%fac_n_spl > 1.0) then
         n_split_loc = nint(Atm(mygrid)%flagstruct%n_split * Atm(mygrid)%flagstruct%fac_n_spl)
       else
@@ -1876,11 +1864,7 @@ contains
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
                      Atm(mygrid)%domain,Atm(mygrid)%diss_est,                                             &
-#ifdef MOLECULAR_DIFFUSION
                      Atm(mygrid)%inline_mp, time_total)
-#else
-                     Atm(mygrid)%inline_mp)
-#endif
 ! Backward
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, -dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1896,11 +1880,7 @@ contains
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
                      Atm(mygrid)%domain,Atm(mygrid)%diss_est,                                             & 
-#ifdef MOLECULAR_DIFFUSION
                      Atm(mygrid)%inline_mp, time_total)
-#else
-                     Atm(mygrid)%inline_mp)
-#endif
 !Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mygrid, nudge_dz, dz0) &
@@ -1977,11 +1957,7 @@ contains
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
                      Atm(mygrid)%domain,Atm(mygrid)%diss_est,                                             &
-#ifdef MOLECULAR_DIFFUSION
                      Atm(mygrid)%inline_mp, time_total)
-#else
-                     Atm(mygrid)%inline_mp)
-#endif
 ! Forward call
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1996,11 +1972,7 @@ contains
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
                      Atm(mygrid)%domain,Atm(mygrid)%diss_est,                                             &
-#ifdef MOLECULAR_DIFFUSION
                      Atm(mygrid)%inline_mp, time_total)
-#else
-                     Atm(mygrid)%inline_mp)
-#endif
 ! Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (nudge_dz,npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dz0, dp0, xt, zvir, mygrid) &
