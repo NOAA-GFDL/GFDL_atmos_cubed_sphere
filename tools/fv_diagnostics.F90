@@ -191,7 +191,7 @@ module fv_diagnostics_mod
  real :: sphum_ll_fix = 0.
  real :: qcly0 ! initial value for terminator test
 
- public :: fv_diag_init, fv_time, fv_diag, prt_mxm, prt_maxmin, range_check!, id_divg, id_te
+ public :: fv_diag_init, fv_diag_reinit, fv_time, fv_diag, prt_mxm, prt_maxmin, range_check!, id_divg, id_te
  public :: prt_mass, prt_minmax, ppme, fv_diag_init_gn, z_sum, sphum_ll_fix, eqv_pot, qcly0, gn
  public :: prt_height, prt_gb_nh_sh, interpolate_vertical, rh_calc, get_height_field, dbzcalc
  public :: max_vv, get_vorticity, max_uh
@@ -227,6 +227,40 @@ module fv_diagnostics_mod
 #include<fv_diagnostics.h>
 
 contains
+
+ ! For reinitializing zsurf after moving nest advances -- Ramstrom, HRD/AOML 
+ subroutine fv_diag_reinit(Atm)
+    type(fv_atmos_type), intent(inout), target :: Atm(:)
+    !integer, intent(out) :: axes(4)
+    !type(time_type), intent(in) :: Time
+    !integer,         intent(in) :: npx, npy, npz
+    !real, intent(in):: p_ref
+
+    integer :: i, j, n
+    integer :: isc, iec, jsc, jec
+
+
+    n=1  ! Hardcoded to 1 because we pass in only the Atm that defines the nest grid - e.g. Atm(2:2).
+    isc = Atm(n)%bd%isc; iec = Atm(n)%bd%iec
+    jsc = Atm(n)%bd%jsc; jec = Atm(n)%bd%jec
+
+    !print '("[INFO] WDR fv_diag_reinit npe=",I0," i=",I0,"-",I0," j=",I0,"-",I0)', this_pe, isc, iec, jsc, jec
+
+    ginv = 1./GRAV
+
+    do j=jsc,jec
+       do i=isc,iec
+          zsurf(i,j) = ginv * Atm(n)%phis(i,j)
+       enddo
+    enddo
+
+    ! Appears to update the zsurf data at each time this subroutine is called, not just at init.
+!#ifndef DYNAMICS_ZS
+!       if (id_zsurf > 0) used = send_data(id_zsurf, zsurf, Time)
+!#endif
+
+
+  end subroutine fv_diag_reinit
 
  subroutine fv_diag_init(Atm, axes, Time, npx, npy, npz, p_ref)
     type(fv_atmos_type), intent(inout), target :: Atm(:)
@@ -266,6 +300,7 @@ contains
     real, allocatable :: dx(:,:), dy(:,:)
 
     call write_version_number ( 'FV_DIAGNOSTICS_MOD', version )
+
     idiag => Atm(1)%idiag
 
 ! For total energy diagnostics:

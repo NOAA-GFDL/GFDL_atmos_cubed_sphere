@@ -1,9 +1,34 @@
 !***********************************************************************
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+!* If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
+
+!----------------------------------------------------------
+! Moving Nest Initial Release    W. Ramstrom - 07/28/2021
+!----------------------------------------------------------
+
+
+!***********************************************************************
 !>@brief!   Provides subroutines to enable moving nest functionality in FV3 dynamic core.  
-!!>@author Bill Ramstrom, AOML/HRD   01/15/2021
+!!>@author W. Ramstrom, AOML/HRD   01/15/2021
 !
 ! =======================================================================!
-!
 
 
 ! Notes
@@ -55,8 +80,7 @@ use GFS_typedefs,           only: kind_phys
 use IPD_typedefs,           only: kind_phys => IPD_kind_phys
 #endif
 
-
-
+  use constants_mod,     only: grav
 
   ! Added WDR
   use boundary_mod,      only: update_coarse_grid, update_coarse_grid_mpp
@@ -65,9 +89,6 @@ use IPD_typedefs,           only: kind_phys => IPD_kind_phys
   use fv_arrays_mod,     only: R_GRID
   use fv_arrays_mod,     only: fv_atmos_type
 
-  !use bounding_box,              only: bbox
-  !use fv_moving_nest,     only: bbox, grid_geometry, fill_nest_from_buffer
-  !use fv_moving_nest,     only: grid_geometry
   implicit none
 
 #ifdef NO_QUAD_PRECISION
@@ -90,41 +111,54 @@ use IPD_typedefs,           only: kind_phys => IPD_kind_phys
   type grid_geometry
      integer   :: nx, ny, nxp, nyp
 
-     real, allocatable  :: lats(:,:)
-     real, allocatable  :: lons(:,:)
+     real(kind=kind_phys), allocatable  :: lats(:,:)
+     real(kind=kind_phys), allocatable  :: lons(:,:)
 
      real, allocatable  :: dx(:,:)
      real, allocatable  :: dy(:,:)
-     real, allocatable  :: area(:,:)
+     real(kind=kind_phys), allocatable  :: area(:,:)
   end type grid_geometry
 
 
+  interface alloc_read_data
+     module procedure alloc_read_data_dyn
+     module procedure alloc_read_data_kind_phys
+  end interface alloc_read_data
+
   interface fill_nest_halos_from_parent
      module procedure fill_nest_halos_from_parent2D
+     module procedure fill_nest_halos_from_parent2D_kindphys
      module procedure fill_nest_halos_from_parent3D
      module procedure fill_nest_halos_from_parent3D_kindphys
      module procedure fill_nest_halos_from_parent4D
+     module procedure fill_nest_halos_from_parent4D_kindphys
   end interface fill_nest_halos_from_parent
   
   interface alloc_halo_buffer
      module procedure alloc_2D_halo_buffer
+     module procedure alloc_2D_halo_buffer_kindphys
      module procedure alloc_3D_halo_buffer
      module procedure alloc_3D_halo_buffer_kindphys
      module procedure alloc_4D_halo_buffer
+     module procedure alloc_4D_halo_buffer_kindphys
   end interface alloc_halo_buffer
 
   interface fill_nest_from_buffer
      module procedure fill_nest_from_buffer2D
+     module procedure fill_nest_from_buffer2D_kindphys
      module procedure fill_nest_from_buffer3D
      module procedure fill_nest_from_buffer3D_kindphys
      module procedure fill_nest_from_buffer4D
+     module procedure fill_nest_from_buffer4D_kindphys
   end interface fill_nest_from_buffer
 
   interface fill_nest_from_buffer_cell_center
      module procedure fill_nest_from_buffer_cell_center2D
+     module procedure fill_nest_from_buffer_cell_center2D_kindphys
      module procedure fill_nest_from_buffer_cell_center3D
      module procedure fill_nest_from_buffer_cell_center3D_kindphys
      module procedure fill_nest_from_buffer_cell_center4D
+     module procedure fill_nest_from_buffer_cell_center4D_kindphys
   end interface fill_nest_from_buffer_cell_center
 
   interface output_grid_to_nc
@@ -140,6 +174,308 @@ use IPD_typedefs,           only: kind_phys => IPD_kind_phys
   end interface fill_grid_from_supergrid
 
 contains
+
+! GEMPAK 5-point smoother
+!SM5S  Smooth scalar grid using a 5-point smoother
+!      SM5S ( S ) = .5 * S (i,j) + .125 * ( S (i+1,j) + S (i,j+1) +
+!                                           S (i-1,j) + S (i,j-1) ) 
+! GEMPAK 9-point smoother
+!SM9S  Smooth scalar grid using a 9-point smoother
+!      SM5S ( S ) = .25 * S (i,j) + .125 * ( S (i+1,j) + S (i,j+1) +
+!                                            S (i-1,j) + S (i,j-1) )
+!                                 + .0625 * ( S (i+1,j+1) +
+!                                             S (i+1,j-1) +
+!                                             S (i-1,j+1) +
+!                                             S (i-1,j-1) )
+
+
+  subroutine smooth_5_point(data_var, i, j, val)
+    real, allocatable, intent(in)               :: data_var(:,:)
+    integer                                     :: i,j
+    real, intent(out)                           :: val
+
+    ! Stay in bounds of the array
+    if ( (i-1) .ge. lbound(data_var,1) .and. i .le. ubound(data_var,1) .and. (j-1) .ge. lbound(data_var,2) .and. j .le. ubound(data_var,2) ) then
+       val = .5 * data_var(i,j) + .125 * ( data_var(i+1,j) + data_var(i,j+1) + data_var(i-1,j) + data_var(i,j-1) ) 
+    else       
+       ! Don't smooth if at the edge.  Could do partial smoothing here also, but don't expect moving nest to reach the edge.
+       val = data_var(i,j)  
+    end if
+
+  end subroutine smooth_5_point
+
+
+  subroutine smooth_9_point(data_var, i, j, val)
+    real, allocatable, intent(in)               :: data_var(:,:)
+    integer                                     :: i,j
+    real, intent(out)                           :: val
+
+    ! Stay in bounds of the array
+    if ( (i-1) .ge. lbound(data_var,1) .and. i .le. ubound(data_var,1) .and. (j-1) .ge. lbound(data_var,2) .and. j .le. ubound(data_var,2) ) then
+       val = .25 * data_var(i,j) + .125 * ( data_var(i+1,j) + data_var(i,j+1) + data_var(i-1,j) + data_var(i,j-1) ) &
+            + .0625 * ( data_var(i+1,j+1) + data_var(i+1,j-1) + data_var(i-1,j+1) + data_var(i-1,j-1) )
+    else
+       ! Don't smooth if at the edge.  Could do partial smoothing here also, but don't expect moving nest to reach the edge.
+       val = data_var(i,j)  
+    end if
+
+  end subroutine smooth_9_point
+    
+  subroutine set_blended_terrain(Atm, parent_orog_grid, nest_orog_grid, refine, halo_size, blend_size, a_step)
+    type(fv_atmos_type), intent(inout), target :: Atm
+    real, allocatable, intent(in)              :: parent_orog_grid(:,:)   ! Coarse grid orography
+    real, allocatable, intent(in)              :: nest_orog_grid(:,:)     ! orography for the full panel of the parent, at high-resolution
+    integer, intent(in)                        :: refine, halo_size, blend_size, a_step
+    
+    integer            :: i, j, ic, jc
+    integer            :: ioffset, joffset
+    integer            :: npx, npy, isd, ied, jsd, jed
+    real               :: smoothed_orog, hires_orog, blend_wt, blend_orog
+
+    real, pointer, dimension(:,:,:) :: wt
+    integer, pointer, dimension(:,:,:) :: ind
+    integer :: this_pe
+
+    this_pe = mpp_pe()
+
+    npx   = Atm%npx
+    npy   = Atm%npy
+
+    isd = Atm%bd%isc - halo_size
+    ied = Atm%bd%iec + halo_size
+    jsd = Atm%bd%jsc - halo_size
+    jed = Atm%bd%jec + halo_size
+
+    ioffset = Atm%neststruct%ioffset
+    joffset = Atm%neststruct%joffset
+
+    wt => Atm%neststruct%wt_h
+    ind => Atm%neststruct%ind_h
+
+    do j=jsd, jed 
+       do i=isd, ied 
+          ic = ind(i,j,1)
+          jc = ind(i,j,2)
+          
+          smoothed_orog = &
+               wt(i,j,1)*parent_orog_grid(ic,  jc  ) +  &
+               wt(i,j,2)*parent_orog_grid(ic,  jc+1) +  &
+               wt(i,j,3)*parent_orog_grid(ic+1,jc+1) +  &
+               wt(i,j,4)*parent_orog_grid(ic+1,jc  )
+          
+          hires_orog = nest_orog_grid((ioffset-1)*refine+i, (joffset-1)*refine+j)
+          
+          ! From tools/external_ic.F90
+          blend_wt = max(0.,min(1.,real(5 - min(i,j,npx-i,npy-j,5))/5. ))
+          blend_orog = (1.-blend_wt)*hires_orog + blend_wt*smoothed_orog 
+          Atm%phis(i,j) = blend_orog * grav
+
+          !if (this_pe .ge. 96) then
+          !   print '("[INFO] WDR BLEND npe=",I0," a_step=",I0," i,j=",I0,",",I0," smoothed_orog=",F10.5," hires_orog=",F10.5," blend_wt=",F6.4," blend_orog=",F10.5)', this_pe, a_step, i, j, smoothed_orog, hires_orog, blend_wt, blend_orog
+          !end if
+
+       end do
+    end do
+    
+  end subroutine set_blended_terrain
+
+  subroutine set_smooth_nest_terrain(Atm, fp_orog, refine, num_points, halo_size, blend_size)
+    type(fv_atmos_type), intent(inout) :: Atm
+    real, allocatable, intent(in)      :: fp_orog(:,:)   ! orography for the full panel of the parent, at high-resolution
+    integer, intent(in)                :: refine, num_points, halo_size, blend_size
+
+    integer            :: i,j
+    integer            :: ioffset, joffset
+    integer            :: npx, npy, isd, ied, jsd, jed
+    integer            :: smooth_i_lo, smooth_i_hi, smooth_j_lo, smooth_j_hi
+    real               :: smoothed_orog
+    character(len=16)  :: errstring
+
+    npx   = Atm%npx
+    npy   = Atm%npy
+
+    isd = Atm%bd%isc - halo_size
+    ied = Atm%bd%iec + halo_size
+    jsd = Atm%bd%jsc - halo_size
+    jed = Atm%bd%jec + halo_size
+
+    ioffset = Atm%neststruct%ioffset
+    joffset = Atm%neststruct%joffset
+    
+
+    smooth_i_lo = 1 + blend_size
+    smooth_i_hi = npx - blend_size - halo_size
+
+    smooth_j_lo = 1 + blend_size
+    smooth_j_hi = npy - blend_size - halo_size
+
+
+    !Atm(n)%phis(isd:ied, jsd:jed) = mn_static%orog_grid((ioffset-1)*x_refine+isd:(ioffset-1)*x_refine+ied, (joffset-1)*y_refine+jsd:(joffset-1)*y_refine+jed) * grav
+    
+    select case(num_points)
+       case (5)
+
+       do j=jsd, jed 
+          do i=isd, ied 
+             if (i .lt. smooth_i_lo .or. i .gt. smooth_i_hi .or. j .lt. smooth_j_lo .or. j .gt. smooth_j_hi) then
+                call smooth_5_point(fp_orog, (ioffset-1)*refine + i, (joffset-1)*refine + j, smoothed_orog)
+                Atm%phis(i,j) = smoothed_orog * grav
+             else
+                Atm%phis(i,j) = fp_orog((ioffset-1)*refine + i, (joffset-1)*refine + j) * grav
+             end if
+          end do
+       end do
+
+       case (9)
+
+       do j=jsd, jed 
+          do i=isd, ied 
+             if (i .lt. smooth_i_lo .or. i .gt. smooth_i_hi .or. j .lt. smooth_j_lo .or. j .gt. smooth_j_hi) then
+                call smooth_9_point(fp_orog, (ioffset-1)*refine + i, (joffset-1)*refine + j, smoothed_orog)
+                Atm%phis(i,j) = smoothed_orog * grav
+             else
+                Atm%phis(i,j) = fp_orog((ioffset-1)*refine + i, (joffset-1)*refine + j) * grav
+             end if
+          end do
+       end do
+
+    case default
+       write (errstring, "(I0)") num_points
+       call mpp_error(FATAL,'Invalid terrain_smoother in set_smooth_nest_terrain '//errstring)
+    end select
+
+  end subroutine set_smooth_nest_terrain
+
+  ! Compare terrain for parent and nest cells - for debugging
+  
+  subroutine compare_terrain(var_name, data_var, interp_type, ind, x_refine, y_refine, is_fine_pe, nest_domain)
+    character(len=*), intent(in)                :: var_name
+    real, allocatable, intent(in)               :: data_var(:,:)
+    integer, intent(in)                         :: interp_type
+    integer, allocatable, intent(in)            :: ind(:,:,:)
+    integer, intent(in)                         :: x_refine, y_refine
+    logical, intent(in)                         :: is_fine_pe
+    type(nest_domain_type), intent(inout)          :: nest_domain
+    
+    
+    integer                             :: position = CENTER
+    
+    
+    real, dimension(:,:), allocatable   :: nbuffer, sbuffer, ebuffer, wbuffer
+    type(bbox)                          :: north_fine, north_coarse
+    type(bbox)                          :: south_fine, south_coarse
+    type(bbox)                          :: east_fine, east_coarse
+    type(bbox)                          :: west_fine, west_coarse
+    integer                             :: this_pe
+    integer                             :: nest_level = 1  ! WDR TODO allow to vary
+    
+    this_pe = mpp_pe()
+    
+    !  Get the parent terrain through halo mechanism
+    !print '("[INFO] WDR compare_terrain AA. npe=",I0)', this_pe
+    call alloc_halo_buffer(nbuffer, north_fine, north_coarse, nest_domain, NORTH,  position)
+    !print '("[INFO] WDR compare_terrain BB. npe=",I0)', this_pe
+    call alloc_halo_buffer(sbuffer, south_fine, south_coarse, nest_domain, SOUTH,  position)
+    !print '("[INFO] WDR compare_terrain CC. npe=",I0)', this_pe
+    call alloc_halo_buffer(ebuffer, east_fine,  east_coarse,  nest_domain, EAST,   position)
+    !print '("[INFO] WDR compare_terrain DD. npe=",I0)', this_pe
+    call alloc_halo_buffer(wbuffer, west_fine,  west_coarse,  nest_domain, WEST,   position)
+    !print '("[INFO] WDR compare_terrain EE. npe=",I0)', this_pe
+    
+    if (debug_log) print '("[INFO] WDR NRF0.d mn_var_shift_data npe=",I0," data_var(",I0,",",I0,")")', this_pe, size(data_var,1), size(data_var,2)
+    
+    ! Passes data from coarse grid to fine grid's halo
+    call mpp_update_nest_fine(data_var, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer, nest_level, position=position)
+    
+    !print '("[INFO] WDR compare_terrain FF. npe=",I0)', this_pe
+
+    ! Figure out alignment of parent and child data and compare 
+    ! At most one of the buffers will have any data in it from the parent
+
+    if (is_fine_pe) then
+       call compare_buffer(north_coarse, north_fine, ind, nbuffer, data_var)
+       !print '("[INFO] WDR compare_terrain GG. npe=",I0)', this_pe
+       call compare_buffer(south_coarse, south_fine, ind, sbuffer, data_var)
+       !print '("[INFO] WDR compare_terrain HH. npe=",I0)', this_pe
+       call compare_buffer(east_coarse, east_fine, ind, ebuffer, data_var)
+       !print '("[INFO] WDR compare_terrain II. npe=",I0)', this_pe
+       call compare_buffer(west_coarse, west_fine, ind, wbuffer, data_var)
+       !print '("[INFO] WDR compare_terrain JJ. npe=",I0)', this_pe
+    end if
+
+    print '("[INFO] WDR compare_terrain ZZ. npe=",I0)', this_pe
+
+    deallocate(nbuffer)
+    deallocate(sbuffer)
+    deallocate(ebuffer)
+    deallocate(wbuffer)
+
+  end subroutine compare_terrain
+  
+
+  subroutine compare_buffer(bbox_coarse, bbox_fine, ind, buffer, fine_var)
+    type(bbox), intent(in)                      :: bbox_coarse, bbox_fine
+    integer, allocatable, intent(in)            :: ind(:,:,:)
+    real, allocatable, intent(in)               :: buffer(:,:)
+    real, allocatable, intent(in)               :: fine_var(:,:)
+
+    
+    integer :: i, j, ic, jc
+    integer :: this_pe
+
+    this_pe = mpp_pe()
+
+
+    if ( bbox_coarse%ie .GE. bbox_coarse%is .AND. bbox_coarse%je .GE. bbox_coarse%js ) then
+       !debug_log = .true.
+    
+       !if (debug_log) print '("[INFO] WDR BUFR print large buffer. npe=",I0," buffer(is_c, js_c)=",F12.5," buffer(ie_c-1, je_c-1)=",F12.5)', this_pe, buffer(bbox_coarse%is, bbox_coarse%js),  buffer(bbox_coarse%ie-1, bbox_coarse%je-1)
+       
+       if (debug_log) print '("[INFO] WDR BOUNDS i npe=",I0," is_f=",I0," ie_f=",I0," is_c=",I0," ie_c=",I0)', this_pe, bbox_fine%is, bbox_fine%ie, bbox_coarse%is, bbox_coarse%ie
+       if (debug_log) print '("[INFO] WDR BOUNDS j npe=",I0," js_f=",I0," je_f=",I0," js_c=",I0," je_c=",I0)', this_pe, bbox_fine%js, bbox_fine%je, bbox_coarse%js, bbox_coarse%je
+
+       if (debug_log) print '("[INFO] WDR BOUNDS fine_var npe=",I0," fine_var(",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(fine_var,1), ubound(fine_var,1), lbound(fine_var,2), ubound(fine_var,2)
+       if (debug_log) print '("[INFO] WDR BOUNDS buffer npe=",I0," buffer(",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(buffer,1), ubound(buffer,1), lbound(buffer,2), ubound(buffer,2)
+
+       
+       do i=bbox_fine%is, bbox_fine%ie
+          do j=bbox_fine%js, bbox_fine%je
+             
+             ic = ind(i,j,1)
+             jc = ind(i,j,2)
+   
+             !print '("[INFO] WDR BOUNDS_ITER  npe=",I0," i=",I0," j=",I0," ic=",I0," jc=",I0)', this_pe, i, j, ic, jc
+             !print '("[INFO] WDR BOUNDS_FINE npe=",I0," i=",I0," j=",I0," fine_var=",F12.5)', this_pe, i, j, fine_var(i,j)
+             !print '("[INFO] WDR BOUNDS_BUFFER1 npe=",I0," ic=",I0," jc=",I0," buffer=",F12.5)', this_pe, ic, jc, buffer(ic,jc)
+             !print '("[INFO] WDR BOUNDS_BUFFER2 npe=",I0," ic=",I0," jc=",I0," buffer=",F12.5)', this_pe, ic, jc+1, buffer(ic,jc+1)
+             !print '("[INFO] WDR BOUNDS_BUFFER3 npe=",I0," ic=",I0," jc=",I0," buffer=",F12.5)', this_pe, ic+1, jc+1, buffer(ic+1,jc+1)
+             !print '("[INFO] WDR BOUNDS_BUFFER4 npe=",I0," ic=",I0," jc=",I0," buffer=",F12.5)', this_pe, ic+1, jc, buffer(ic+1,jc)
+
+
+          
+             if ( (fine_var(i,j) .gt. 0.01) .or. &
+                  (buffer(ic,jc) .gt. 0.01) .or. &
+                  (buffer(ic,jc+1) .gt. 0.01) .or. &
+                  (buffer(ic+1,jc+1) .gt. 0.01) .or. &
+                  (buffer(ic+1,jc) .gt. 0.01)) then
+                print '("[INFO] WDR COMP_TERR npe=",I0," i=",I0," j=",I0," ic=",I0," jc=",I0,F10.3," ",F10.3," ",F10.3," ",F10.3," ",F10.3)', this_pe, i, j, ic, jc, fine_var(i,j), buffer(ic,  jc  ), buffer(ic,  jc+1), buffer(ic+1,jc+1), buffer(ic+1,jc  )
+          end if
+          
+             !wt(i,j,1)*buffer(ic,  jc  ) +  &
+             !wt(i,j,2)*buffer(ic,  jc+1) +  &
+             !wt(i,j,3)*buffer(ic+1,jc+1) +  &
+             !wt(i,j,4)*buffer(ic+1,jc  )
+
+
+          end do
+       end do
+       !print '("[INFO] WDR BOUNDS_DONE npe=",I0," i=",I0," j=",I0)', this_pe, i, j
+
+       debug_log = .false.
+    !else
+    !   print '("[INFO] WDR NIL BUFR. npe=",I0)', this_pe       
+    end if
+  end subroutine compare_buffer
 
 
   !==================================================================================================
@@ -230,15 +566,106 @@ subroutine fill_nest_halos_from_parent2D(var_name, data_var, interp_type, wt, in
 
   end if
 
+  if (debug_log) print '("[INFO] WDR End fill_nest_halos_from_parent2D. npe=",I0," var_name=",A16)', this_pe, var_name
 
   deallocate(nbuffer)
   deallocate(sbuffer)
   deallocate(ebuffer)
   deallocate(wbuffer)
 
-  if (debug_log) print '("[INFO] WDR End fill_nest_halos_from_parent2D. npe=",I0," var_name=",A16)', this_pe, var_name
-
 end subroutine fill_nest_halos_from_parent2D
+
+
+
+subroutine fill_nest_halos_from_parent2D_kindphys(var_name, data_var, interp_type, wt, ind, x_refine, y_refine, is_fine_pe, nest_domain, position)
+  character(len=*), intent(in)                :: var_name
+  real(kind=kind_phys), allocatable, intent(inout)            :: data_var(:,:)
+  integer, intent(in)                         :: interp_type
+  real, allocatable, intent(in)               :: wt(:,:,:)
+  integer, allocatable, intent(in)            :: ind(:,:,:)
+  integer, intent(in)                         :: x_refine, y_refine
+  logical, intent(in)                         :: is_fine_pe
+  type(nest_domain_type), intent(inout)       :: nest_domain
+  integer, intent(in)                         :: position
+
+
+  real(kind=kind_phys), dimension(:,:), allocatable   :: nbuffer, sbuffer, ebuffer, wbuffer
+  type(bbox)                          :: north_fine, north_coarse
+  type(bbox)                          :: south_fine, south_coarse
+  type(bbox)                          :: east_fine, east_coarse
+  type(bbox)                          :: west_fine, west_coarse
+  integer                             :: this_pe
+  integer                             :: nest_level = 1  ! WDR TODO allow to vary
+
+  this_pe = mpp_pe()
+
+  !!===========================================================
+  !!
+  !! Fill halo buffers
+  !!
+  !!===========================================================
+
+  if (debug_log) then
+
+     print '("[INFO] WDR Start fill_nest_halos_from_parent2D_kindphys. npe=",I0," var_name=",A16)', this_pe, var_name
+     print '("[INFO] fill_nest_halos npe=",I0," nest_domain%tile_fine=",I0," %tile_coarse=",I0)', this_pe, nest_domain%tile_fine, nest_domain%tile_coarse
+     print '("[INFO] fill_nest_halos npe=",I0," nest_domain%istart_fine=",I0," %iend_fine=",I0)', this_pe, nest_domain%istart_fine,  nest_domain%iend_fine
+     print '("[INFO] fill_nest_halos npe=",I0," nest_domain%jstart_fine=",I0," %jend_fine=",I0)', this_pe, nest_domain%jstart_fine,  nest_domain%jend_fine
+     print '("[INFO] fill_nest_halos npe=",I0," nest_domain%istart_coarse=",I0," %iend_coarse=",I0)', this_pe, nest_domain%istart_coarse,  nest_domain%iend_coarse
+     print '("[INFO] fill_nest_halos npe=",I0," nest_domain%jstart_coarse=",I0," %jend_coarse=",I0)', this_pe, nest_domain%jstart_coarse,  nest_domain%jend_coarse
+     print '("[INFO] data_var npe=",I0," var_name=",A16," data_var(",I0,"-",I0,",",I0,"-",I0,")")', &
+          this_pe,  var_name, lbound(data_var, 1), ubound(data_var, 1), lbound(data_var, 2), ubound(data_var, 2)
+     print '("[INFO] wt npe=",I0," var_name=",A16," wt(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', &
+          this_pe,  var_name, lbound(wt, 1), ubound(wt, 1), lbound(wt, 2), ubound(wt, 2), lbound(wt, 3), ubound(wt, 3)
+  end if
+
+  !====================================================
+
+  if (debug_log) print '("[INFO] WDR ALL1. npe=",I0," position=",I0)', this_pe, position
+
+  call alloc_halo_buffer(nbuffer, north_fine, north_coarse, nest_domain, NORTH,  position)
+  call alloc_halo_buffer(sbuffer, south_fine, south_coarse, nest_domain, SOUTH,  position)
+  call alloc_halo_buffer(ebuffer, east_fine,  east_coarse,  nest_domain, EAST,   position)
+  call alloc_halo_buffer(wbuffer, west_fine,  west_coarse,  nest_domain, WEST,   position)
+
+  if (debug_log) print '("[INFO] WDR NRF0.d mn_var_shift_data npe=",I0," data_var(",I0,",",I0,")")', this_pe, size(data_var,1), size(data_var,2)
+
+  ! Passes data from coarse grid to fine grid's halo
+  call mpp_update_nest_fine(data_var, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer, nest_level, position=position)
+
+  if (is_fine_pe) then
+
+     !!===========================================================
+     !!
+     !! Apply halo data
+     !!
+     !!===========================================================
+
+     if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
+
+     call fill_nest_from_buffer(interp_type, data_var, nbuffer, north_fine, north_coarse, NORTH, x_refine, y_refine, wt, ind)
+     if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
+
+     call fill_nest_from_buffer(interp_type, data_var, sbuffer, south_fine, south_coarse, SOUTH, x_refine, y_refine, wt, ind)
+     if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
+
+     call fill_nest_from_buffer(interp_type, data_var, ebuffer, east_fine, east_coarse, EAST, x_refine, y_refine, wt, ind)
+     if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
+
+     call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, WEST, x_refine, y_refine, wt, ind)
+     if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
+
+  end if
+
+
+  deallocate(nbuffer)
+  deallocate(sbuffer)
+  deallocate(ebuffer)
+  deallocate(wbuffer)
+
+  if (debug_log) print '("[INFO] WDR End fill_nest_halos_from_parent2D_kindphys. npe=",I0," var_name=",A16)', this_pe, var_name
+
+end subroutine fill_nest_halos_from_parent2D_kindphys
 
 
 subroutine fill_nest_halos_from_parent3D(var_name, data_var, interp_type, wt, ind, x_refine, y_refine, is_fine_pe, nest_domain, position, nz)
@@ -524,6 +951,107 @@ subroutine fill_nest_halos_from_parent4D(var_name, data_var, interp_type, wt, in
 end subroutine fill_nest_halos_from_parent4D
 
 
+subroutine fill_nest_halos_from_parent4D_kindphys(var_name, data_var, interp_type, wt, ind, x_refine, y_refine, is_fine_pe, nest_domain, position, nz)
+  character(len=*), intent(in)                :: var_name
+  real(kind=kind_phys), allocatable, intent(inout)            :: data_var(:,:,:,:)
+  integer, intent(in)                         :: interp_type
+  real, allocatable, intent(in)               :: wt(:,:,:)
+  integer, allocatable, intent(in)            :: ind(:,:,:)
+  integer, intent(in)                         :: x_refine, y_refine
+  logical, intent(in)                         :: is_fine_pe
+  type(nest_domain_type), intent(inout)       :: nest_domain
+  integer, intent(in)                         :: position, nz
+
+  real(kind=kind_phys), dimension(:,:,:,:), allocatable :: nbuffer, sbuffer, ebuffer, wbuffer
+  type(bbox)                            :: north_fine, north_coarse 
+  type(bbox)                            :: south_fine, south_coarse
+  type(bbox)                            :: east_fine, east_coarse
+  type(bbox)                            :: west_fine, west_coarse
+  integer                               :: n4d, this_pe
+  integer                               :: nest_level = 1  ! WDR TODO allow to vary
+
+  this_pe = mpp_pe()
+
+  !!===========================================================
+  !!
+  !! Fill halo buffers
+  !!
+  !!===========================================================
+
+  if (debug_log) print '("[INFO] WDR Start fill_nest_halos_from_parent4D_kindphys. npe=",I0," var_name=",A16)', this_pe, var_name
+
+  n4d = ubound(data_var, 4)
+
+  if (debug_log) print '("[INFO] fill_nest_halos npe=",I0," nest_domain%tile_fine=",I0," %tile_coarse=",I0)', this_pe, nest_domain%tile_fine, nest_domain%tile_coarse
+
+  if (debug_log) print '("[INFO] fill_nest_halos npe=",I0," nest_domain%istart_fine=",I0," %iend_fine=",I0)', this_pe, nest_domain%istart_fine,  nest_domain%iend_fine
+  if (debug_log) print '("[INFO] fill_nest_halos npe=",I0," nest_domain%jstart_fine=",I0," %jend_fine=",I0)', this_pe, nest_domain%jstart_fine,  nest_domain%jend_fine
+
+  if (debug_log) print '("[INFO] fill_nest_halos npe=",I0," nest_domain%istart_coarse=",I0," %iend_coarse=",I0)', this_pe, nest_domain%istart_coarse,  nest_domain%iend_coarse
+  if (debug_log) print '("[INFO] fill_nest_halos npe=",I0," nest_domain%jstart_coarse=",I0," %jend_coarse=",I0)', this_pe, nest_domain%jstart_coarse,  nest_domain%jend_coarse
+
+  if (debug_log) print '("[INFO] data_var 4D npe=",I0," var_name=",A16," data_var(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe,  var_name, lbound(data_var, 1), ubound(data_var, 1), lbound(data_var, 2), ubound(data_var, 2), lbound(data_var, 3), ubound(data_var, 3), lbound(data_var, 4), ubound(data_var, 4)
+
+
+  if (debug_log) print '("[INFO] wt npe=",I0," var_name=",A16," wt(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, var_name, lbound(wt, 1), ubound(wt, 1), lbound(wt, 2), ubound(wt, 2), lbound(wt, 3), ubound(wt, 3)
+
+
+  !====================================================
+
+  if (debug_log) print '("[INFO] WDR ALL1. npe=",I0," position=",I0," nz=",I0)', this_pe, position, nz
+
+  call alloc_halo_buffer(nbuffer, north_fine, north_coarse, nest_domain, NORTH,  position, nz, n4d)
+  call alloc_halo_buffer(sbuffer, south_fine, south_coarse, nest_domain, SOUTH,  position, nz, n4d)
+  call alloc_halo_buffer(ebuffer, east_fine,  east_coarse,  nest_domain, EAST,   position, nz, n4d)
+  call alloc_halo_buffer(wbuffer, west_fine,  west_coarse,  nest_domain, WEST,   position, nz, n4d)
+
+  if (debug_log) print '("[INFO] WDR allocate_halo_buffers DONE. npe=",I0)', this_pe
+
+  !====================================================
+
+  if (debug_log) print '("[INFO] WDR NRF0.d mn_var_shift_data npe=",I0," data_var(",I0,",",I0,",",I0,")")', this_pe, size(data_var,1), size(data_var,2), size(data_var,3)
+
+  ! Passes data from coarse grid to fine grid's halo
+  ! Coarse parent PEs send data from data_var
+  ! Fine halo PEs receive data into one or more of the halo buffers
+  call mpp_update_nest_fine(data_var, nest_domain, wbuffer, sbuffer, ebuffer, nbuffer, nest_level, position=position)
+
+  if (debug_log) print '("[INFO] WDR NRF2 mn_var_shift_data start. npe=",I0)', this_pe
+
+  if (is_fine_pe) then
+
+     !!===========================================================
+     !!
+     !! Apply halo data
+     !!
+     !!===========================================================
+
+     if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
+
+     call fill_nest_from_buffer(interp_type, data_var, nbuffer, north_fine, north_coarse, nz, NORTH, x_refine, y_refine, wt, ind)
+     if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
+
+     call fill_nest_from_buffer(interp_type, data_var, sbuffer, south_fine, south_coarse, nz, SOUTH, x_refine, y_refine, wt, ind)
+     if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
+
+     call fill_nest_from_buffer(interp_type, data_var, ebuffer, east_fine, east_coarse, nz, EAST, x_refine, y_refine, wt, ind)
+     if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
+
+     call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, nz, WEST, x_refine, y_refine, wt, ind)
+     if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
+
+  end if
+
+  deallocate(nbuffer)
+  deallocate(sbuffer)
+  deallocate(ebuffer)
+  deallocate(wbuffer)
+
+  if (debug_log) print '("[INFO] WDR End fill_nest_halos_from_parent4D_kindphys. npe=",I0," var_name=",A16)', this_pe, var_name
+
+end subroutine fill_nest_halos_from_parent4D_kindphys
+
+
 
 
   !==================================================================================================
@@ -533,10 +1061,44 @@ end subroutine fill_nest_halos_from_parent4D
   !==================================================================================================
 
 
+  subroutine alloc_2D_halo_buffer_kindphys(buffer, bbox_fine, bbox_coarse, nest_domain, direction, position)
+    real(kind=kind_phys), dimension(:,:), allocatable, intent(out)   :: buffer
+    type(bbox), intent(out)                          :: bbox_fine, bbox_coarse 
+    type(nest_domain_type), intent(in)            :: nest_domain
+    integer, intent(in)                              :: direction, position
+
+
+    integer                             :: my_stat
+    character(256)                      :: my_errmsg
+    integer                             :: this_pe
+
+    this_pe = mpp_pe()
+
+    call bbox_get_C2F_index(nest_domain, bbox_fine, bbox_coarse, direction,  position)
+    if (debug_log) print '("[INFO] WDR FNHC npe=",I0," direction=",I0," bbox_coarse(",I0,"-",I0,",",I0,"-",I0,")")', this_pe, direction, bbox_coarse.is, bbox_coarse.ie, bbox_coarse.js, bbox_coarse.je
+    if (debug_log) print '("[INFO] WDR FNHF npe=",I0," direction=",I0,"   bbox_fine(",I0,"-",I0,",",I0,"-",I0,")")', this_pe, direction, bbox_fine.is, bbox_fine.ie, bbox_fine.js, bbox_fine.je
+
+
+    if( bbox_coarse.ie .GE. bbox_coarse.is .AND. bbox_coarse.je .GE. bbox_coarse.js ) then
+       if (debug_log) print '("[INFO] WDR BUFR Allocating large buffer. npe=",I0," i=",I0,"-",I0," j=",I0,"-",I0)', this_pe, bbox_coarse.is, bbox_coarse.ie, bbox_coarse.js, bbox_coarse.je
+       allocate(buffer(bbox_coarse.is:bbox_coarse.ie, bbox_coarse.js:bbox_coarse.je), stat=my_stat, errmsg=my_errmsg)
+       if (my_stat .ne. 0) print '("[ERROR] WDR NBFR error allocating buffer. npe=",I0,I0,A80)', this_pe, my_stat, my_errmsg
+
+    else
+       ! The buffer must have some storage allocated, whether it's a useful buffer or just a dummy.
+       if (debug_log) print '("[INFO] WDR NBFR only allocating single entry buffer. npe=",I0," direction=",I0," i=",I0,"-",I0," j=",I0,"-",I0)', this_pe, direction, bbox_coarse.is, bbox_coarse.ie, bbox_coarse.js, bbox_coarse.je
+       allocate(buffer(1,1))
+    endif
+
+    buffer = 0
+
+  end subroutine alloc_2D_halo_buffer_kindphys
+
+
   subroutine alloc_2D_halo_buffer(buffer, bbox_fine, bbox_coarse, nest_domain, direction, position)
     real, dimension(:,:), allocatable, intent(out)   :: buffer
     type(bbox), intent(out)                          :: bbox_fine, bbox_coarse 
-    type(nest_domain_type), intent(inout)            :: nest_domain
+    type(nest_domain_type), intent(in)            :: nest_domain
     integer, intent(in)                              :: direction, position
 
 
@@ -569,7 +1131,7 @@ end subroutine fill_nest_halos_from_parent4D
   subroutine alloc_3D_halo_buffer(buffer, bbox_fine, bbox_coarse, nest_domain, direction, position, nz)
     real, dimension(:,:,:), allocatable, intent(out) :: buffer
     type(bbox), intent(out)                          :: bbox_fine, bbox_coarse 
-    type(nest_domain_type), intent(inout)            :: nest_domain
+    type(nest_domain_type), intent(in)            :: nest_domain
     integer, intent(in)                              :: direction, position, nz
 
 
@@ -602,7 +1164,7 @@ end subroutine fill_nest_halos_from_parent4D
   subroutine alloc_3D_halo_buffer_kindphys(buffer, bbox_fine, bbox_coarse, nest_domain, direction, position, nz)
     real(kind=kind_phys), dimension(:,:,:), allocatable, intent(out) :: buffer
     type(bbox), intent(out)                          :: bbox_fine, bbox_coarse 
-    type(nest_domain_type), intent(inout)            :: nest_domain
+    type(nest_domain_type), intent(in)            :: nest_domain
     integer, intent(in)                              :: direction, position, nz
 
 
@@ -637,7 +1199,7 @@ end subroutine fill_nest_halos_from_parent4D
   subroutine alloc_4D_halo_buffer(buffer, bbox_fine, bbox_coarse, nest_domain, direction, position, nz, n4d)
     real, dimension(:,:,:,:), allocatable, intent(out) :: buffer
     type(bbox), intent(out)                          :: bbox_fine, bbox_coarse 
-    type(nest_domain_type), intent(inout)            :: nest_domain
+    type(nest_domain_type), intent(in)            :: nest_domain
     integer, intent(in)                              :: direction, position, nz, n4d
 
 
@@ -666,6 +1228,40 @@ end subroutine fill_nest_halos_from_parent4D
     buffer = 0
 
   end subroutine alloc_4D_halo_buffer
+
+
+  subroutine alloc_4D_halo_buffer_kindphys(buffer, bbox_fine, bbox_coarse, nest_domain, direction, position, nz, n4d)
+    real(kind=kind_phys), dimension(:,:,:,:), allocatable, intent(out) :: buffer
+    type(bbox), intent(out)                          :: bbox_fine, bbox_coarse 
+    type(nest_domain_type), intent(in)            :: nest_domain
+    integer, intent(in)                              :: direction, position, nz, n4d
+
+
+    integer                             :: my_stat
+    character(256)                      :: my_errmsg
+    integer                             :: this_pe
+
+    this_pe = mpp_pe()
+
+    call bbox_get_C2F_index(nest_domain, bbox_fine, bbox_coarse, direction,  position)
+    if (debug_log) print '("[INFO] WDR FNHC4 npe=",I0," direction=",I0," bbox_coarse(",I0,"-",I0,",",I0,"-",I0,")")', this_pe, direction, bbox_coarse.is, bbox_coarse.ie, bbox_coarse.js, bbox_coarse.je
+    if (debug_log) print '("[INFO] WDR FNHF4 npe=",I0," direction=",I0,"   bbox_fine(",I0,"-",I0,",",I0,"-",I0,")")', this_pe, direction, bbox_fine.is, bbox_fine.ie, bbox_fine.js, bbox_fine.je
+
+
+    if( bbox_coarse.ie .GE. bbox_coarse.is .AND. bbox_coarse.je .GE. bbox_coarse.js ) then
+       if (debug_log) print '("[INFO] WDR BUFR4 Allocating large buffer. npe=",I0," i=",I0,"-",I0," j=",I0,"-",I0," k=",I0," n4d=",I0)', this_pe, bbox_coarse.is, bbox_coarse.ie, bbox_coarse.js, bbox_coarse.je, nz, n4d
+       allocate(buffer(bbox_coarse.is:bbox_coarse.ie, bbox_coarse.js:bbox_coarse.je, 1:nz, 1:n4d), stat=my_stat, errmsg=my_errmsg)
+       if (my_stat .ne. 0)  print '("[ERROR] WDR NBFR4 error allocating buffer. npe=",I0,I0,A80)', this_pe, my_stat, my_errmsg
+
+    else
+       ! The buffer must have some storage allocated, whether it's a useful buffer or just a dummy.
+       if (debug_log) print '("[INFO] WDR NBFR4 only allocating single entry buffer. npe=",I0," direction=",I0," i=",I0,"-",I0," j=",I0,"-",I0)', this_pe, direction, bbox_coarse.is, bbox_coarse.ie, bbox_coarse.js, bbox_coarse.je
+       allocate(buffer(1,1,1,1))
+    endif
+
+    buffer = 0
+
+  end subroutine alloc_4D_halo_buffer_kindphys
 
 
 
@@ -717,32 +1313,16 @@ end subroutine fill_nest_halos_from_parent4D
     integer                      :: this_pe
 
 
-    real(kind=R_GRID) :: pi = 4 * atan(1.0d0)
-    real                :: pi180
-    real                :: rad2deg, deg2rad
+    real(kind=kind_phys) :: pi = 4d0 * atan(1.0d0)
+    !real(kind=kind_phys) :: pi180, rad2deg, deg2rad
+    real(kind=kind_phys) :: deg2rad
 
-    pi180 = pi / 180.0
-    deg2rad = pi / 180.0
-    rad2deg = 1.0 / pi180
-
-
+    !pi180 = pi / 180.0d0
+    deg2rad = pi / 180.0d0
+    !rad2deg = 1.0d0 / pi180
 
 
     this_pe = mpp_pe()
-
-    !nn = this_tile
-
-    !if ( nn < 10 ) then
-    !   write (nc_filename, "(A13,I1,A3)") "C96_grid.tile", nn, ".nc"
-    !else
-    !   write (nc_filename, "(A13,I2,A3)") "C96_grid.tile", nn, ".nc"
-    !end if
-
-    !write (nc_filename, "(A73,I1,A3)") "/scratch2/NAGAPE/aoml-hafs1/William.Ramstrom/static_grids/C384_grid.tile", parent_tile, ".nc"
-
-    !nc_filename = trim(nc_filename)
-
-    !call fms_io_init()
 
     if (debug_log) print '("[INFO] WDR NCREAD LLFE load_nest_latlons_from_nc fp interp_single_nest start, nread npe=",I0," nxp=",I0," nyp=",I0," refine=",I0)', this_pe, nxp, nyp, refine
 
@@ -791,6 +1371,7 @@ end subroutine fill_nest_halos_from_parent4D
 
     call alloc_read_data(nc_filename, 'x', super_nxp, super_nyp, fp_tile_geo%lons)
     call alloc_read_data(nc_filename, 'y', super_nxp, super_nyp, fp_tile_geo%lats)
+    call alloc_read_data(nc_filename, 'area', super_nx, super_ny, fp_tile_geo%area)
 
     !  double dx(nyp, nx) 
     !call alloc_read_data(nc_filename, 'dx', super_nx, super_nyp, fp_tile_geo%dx)
@@ -833,19 +1414,15 @@ end subroutine fill_nest_halos_from_parent4D
 
 
 
-
-
-
-!  subroutine load_nest_orog_vars_from_nc(nc_filename, nxp, nyp, refine, &
-!       fp_tile_geo, fp_istart_fine, fp_iend_fine, fp_jstart_fine, fp_jend_fine)
-
-  subroutine load_nest_orog_from_nc(nc_filename, nxp, nyp, refine, orog_var_name, orog_grid)
+  subroutine load_nest_orog_from_nc(nc_filename, nxp, nyp, refine, orog_var_name, orog_grid, ls_mask_grid, land_frac_grid)
     implicit none
 
     character(*), intent(in)              :: nc_filename
     integer, intent(in)                   :: nxp, nyp, refine
     character(*), intent(in)              :: orog_var_name
     real, allocatable, intent(inout)      :: orog_grid(:,:)
+    real, allocatable, intent(inout)      :: ls_mask_grid(:,:)
+    real, allocatable, intent(inout)      :: land_frac_grid(:,:)
 
 !    type(grid_geometry), intent(out)      :: fp_tile_geo
 
@@ -893,15 +1470,15 @@ end subroutine fill_nest_halos_from_parent4D
 
     call alloc_read_data(nc_filename, orog_var_name, fp_nx, fp_ny, orog_grid)
 
+    call alloc_read_data(nc_filename, orog_var_name, fp_nx, fp_ny, ls_mask_grid)
+    call alloc_read_data(nc_filename, orog_var_name, fp_nx, fp_ny, land_frac_grid)
+
 
   end subroutine load_nest_orog_from_nc
 
 
 
-
-
-
-  subroutine alloc_read_data(nc_filename, var_name, x_size, y_size, data_array)
+  subroutine alloc_read_data_dyn(nc_filename, var_name, x_size, y_size, data_array)
     character(len=*), intent(in)           :: nc_filename, var_name
     integer, intent(in)                    :: x_size, y_size
     real, allocatable, intent(inout)       :: data_array(:,:)
@@ -937,7 +1514,49 @@ end subroutine fill_nest_halos_from_parent4D
     if (debug_log) print '("[INFO] WDR NCREAD NCRC alloc_read_data, nread npe=",I0, " ", A16,I4,I4,I4,I4)', this_pe, var_name, start(1), start(2), nread(1), nread(2)
 
 
-  end subroutine alloc_read_data
+  end subroutine alloc_read_data_dyn
+
+
+
+
+
+  subroutine alloc_read_data_kind_phys(nc_filename, var_name, x_size, y_size, data_array)
+    character(len=*), intent(in)           :: nc_filename, var_name
+    integer, intent(in)                    :: x_size, y_size
+    real(kind=kind_phys), allocatable, intent(inout)       :: data_array(:,:)
+
+
+    integer                      :: start(4), nread(4)    
+    integer                      :: this_pe
+
+    ! Allocate data_array to match the expected data size, then read in the data
+    ! This subroutine consolidates the allocation and reading of data to ensure consistency of data sizing and simplify code 
+    ! Could later extend this function to determine data size based on netCDF file metadata
+
+    this_pe = mpp_pe()
+
+    allocate(data_array(x_size, y_size))
+    data_array = -9999.9
+
+    if (debug_log) print '("[INFO] WDR alloc_read_data allocate  npe=",I0," ",A16," dims: ",I4,":",I4,I4,":",I4,I4)', this_pe, var_name, 1, x_size, 1, y_size
+
+    start = 1
+    nread = 1
+
+    start(1) = 1
+    start(2) = 1
+    nread(1) = x_size
+    nread(2) = y_size
+
+    if (debug_log) print '("[INFO] WDR NCREAD NCRA alloc_read_data. npe=",I0," ",A96," ", A16)', this_pe, trim(nc_filename), var_name
+    if (debug_log) print '("[INFO] WDR NCREAD NCRB alloc_read_data, nread npe=",I0, " ", A16,I4,I4,I4,I4)', this_pe, var_name, start(1), start(2), nread(1), nread(2)
+
+    call read_data(nc_filename, var_name, data_array, start, nread, no_domain=.TRUE.)
+
+    if (debug_log) print '("[INFO] WDR NCREAD NCRC alloc_read_data, nread npe=",I0, " ", A16,I4,I4,I4,I4)', this_pe, var_name, start(1), start(2), nread(1), nread(2)
+
+
+  end subroutine alloc_read_data_kind_phys
 
 
 
@@ -1345,6 +1964,46 @@ end subroutine find_nest_alignment
 
   end subroutine fill_nest_from_buffer2D
 
+
+  !>@brief  This subroutine fills the nest halo data from the coarse grid data by downscaling.
+  !>@details  Applicable to any interpolation type
+
+  subroutine fill_nest_from_buffer2D_kindphys(interp_type, x, buffer, bbox_fine, bbox_coarse, dir, x_refine, y_refine, wt, ind)
+    implicit none
+
+    integer, intent(in)                         :: interp_type
+    real(kind=kind_phys), allocatable, intent(inout) :: x(:,:)
+    real(kind=kind_phys), allocatable, intent(in)    :: buffer(:,:)
+    type(bbox), intent(in)                      :: bbox_fine, bbox_coarse
+    integer, intent(in)                         :: dir, x_refine, y_refine
+    real, allocatable, intent(in)               :: wt(:,:,:)    ! The final dimension is always 4                          
+    integer, allocatable, intent(in)            :: ind(:,:,:) 
+
+    integer   :: this_pe
+    this_pe = mpp_pe()
+
+
+    ! Output the interpolation type                                                                                          
+    select case (interp_type)
+    case (1)
+       if (debug_log) print '("[INFO] WDR FNB this_tile. npe=",I0," interp_type=",I0,"= cell centered")', this_pe, interp_type
+       call fill_nest_from_buffer_cell_center("A", x, buffer, bbox_fine, bbox_coarse, dir, x_refine, y_refine, wt, ind)
+       !     case (3)                                                                                                             
+       !        if (debug_log) print '("[INFO] WDR FNB this_tile. npe=",I0," interp_type=",I0,"= C grid staggered")', this_pe, interp_type     
+    case (4)                                                                                                             
+       if (debug_log) print '("[INFO] WDR FNB this_tile. npe=",I0," interp_type=",I0,"= D grid staggered")', this_pe, interp_type
+       call fill_nest_from_buffer_cell_center("D", x, buffer, bbox_fine, bbox_coarse, dir, x_refine, y_refine, wt, ind)     
+    case (9)
+       if (debug_log) print '("[INFO] WDR FNB this_tile. npe=",I0," interp_type=",I0,"= nearest neighbor cell centered")', this_pe, interp_type
+       !call fill_nest_from_buffer_nearest_neighbor(x, buffer, bbox_fine, bbox_coarse, dir, wt)
+       call mpp_error(FATAL, '2D fill_nest_from_buffer_nearest_neighbor not yet implemented.')
+    case default
+       if (debug_log) print '("[ERROR] WDR FNB this_tile. npe=",I0," UNDEFINED interp_type=",I0)', this_pe, interp_type
+       call mpp_error(FATAL, 'interp_single_nest got invalid value for interp_type from namelist.')
+    end select
+
+  end subroutine fill_nest_from_buffer2D_kindphys
+
   subroutine fill_nest_from_buffer3D(interp_type, x, buffer, bbox_fine, bbox_coarse, nz, dir, x_refine, y_refine, wt, ind)
     implicit none
 
@@ -1461,6 +2120,44 @@ end subroutine find_nest_alignment
   end subroutine fill_nest_from_buffer4D
 
 
+  subroutine fill_nest_from_buffer4D_kindphys(interp_type, x, buffer, bbox_fine, bbox_coarse, nz, dir, x_refine, y_refine, wt, ind)
+    implicit none
+
+    integer, intent(in)                         :: interp_type
+    real(kind=kind_phys), allocatable, intent(inout)         :: x(:,:,:,:)
+    real(kind=kind_phys), allocatable, intent(in)            :: buffer(:,:,:,:)
+    type(bbox), intent(in)                      :: bbox_fine, bbox_coarse
+    integer, intent(in)                         :: nz
+    integer, intent(in)                         :: dir, x_refine, y_refine
+    real, allocatable, intent(in)               :: wt(:,:,:)    ! The final dimension is always 4                          
+    integer, allocatable, intent(in)            :: ind(:,:,:) 
+
+    integer   :: this_pe
+    this_pe = mpp_pe()
+
+
+    ! Output the interpolation type                                                                                          
+    select case (interp_type)
+    case (1)
+       if (debug_log) print '("[INFO] WDR FNB this_tile. npe=",I0," interp_type=",I0,"= cell centered")', this_pe, interp_type
+       call fill_nest_from_buffer_cell_center("A", x, buffer, bbox_fine, bbox_coarse, nz, dir, x_refine, y_refine, wt, ind)
+       !     case (3)                                                                                                             
+       !        if (debug_log) print '("[INFO] WDR FNB this_tile. npe=",I0," interp_type=",I0,"= C grid staggered")', this_pe, interp_type     
+    case (4)                                                                                                             
+       if (debug_log) print '("[INFO] WDR FNB this_tile. npe=",I0," interp_type=",I0,"= D grid staggered")', this_pe, interp_type
+       call fill_nest_from_buffer_cell_center("D", x, buffer, bbox_fine, bbox_coarse, nz, dir, x_refine, y_refine, wt, ind)     
+    case (9)
+       if (debug_log) print '("[INFO] WDR FNB this_tile. npe=",I0," interp_type=",I0,"= nearest neighbor cell centered")', this_pe, interp_type
+       !call fill_nest_from_buffer_nearest_neighbor(x, buffer, bbox_fine, bbox_coarse, nz, dir, wt)
+       call mpp_error(FATAL, '4D fill_nest_from_buffer_nearest_neighbor not yet implemented.')
+    case default
+       if (debug_log) print '("[ERROR] WDR FNB this_tile. npe=",I0," UNDEFINED interp_type=",I0)', this_pe, interp_type
+       call mpp_error(FATAL, 'interp_single_nest got invalid value for interp_type from namelist.')
+    end select
+
+  end subroutine fill_nest_from_buffer4D_kindphys
+
+
 
 
   !>@brief  This subroutine fills the nest halo data from the coarse grid data by downscaling.  It can accommodate all grid staggers, using the stagger variable.  [The routine needs to be renamed since "_from_cell_center" has become incorrect.)
@@ -1537,6 +2234,79 @@ end subroutine find_nest_alignment
     if (debug_log) print '("[INFO] WDR FILLNEST DONE print ",A8,"  buffer. npe=",I0)', dir_str, this_pe       
     
   end subroutine fill_nest_from_buffer_cell_center2D
+
+
+  subroutine fill_nest_from_buffer_cell_center2D_kindphys(stagger, x, buffer, bbox_fine, bbox_coarse, dir, x_refine, y_refine, wt, ind)
+    implicit none
+    character ( len = 1 ), intent(in)             :: stagger
+    real(kind=kind_phys), allocatable, intent(inout)           :: x(:,:)
+    real(kind=kind_phys), allocatable, intent(in)              :: buffer(:,:)
+    type(bbox), intent(in)                        :: bbox_fine, bbox_coarse
+    integer, intent(in)                           :: dir, x_refine, y_refine
+    real, allocatable, intent(in)                 :: wt(:,:,:)    ! The final dimension is always 4
+    integer, allocatable, intent(in)              :: ind(:,:,:) 
+
+    character(len=8)       :: dir_str
+    integer                :: i, j, k, ic, jc
+    integer                :: focus_i = 1
+    integer                :: focus_j = 1
+    integer                :: this_pe
+
+    this_pe = mpp_pe()
+
+
+    select case(dir)
+    case (NORTH)
+       dir_str = "NORTH"
+    case (SOUTH)
+       dir_str = "SOUTH"
+    case (EAST)
+       dir_str = "EAST"
+    case (WEST)
+       dir_str = "WEST"
+    case default
+       dir_str = "ERR DIR"
+    end select
+
+    if (debug_log) print '("[INFO] WDR FNFBCC start if (debug_log) print ",A1," ",A8,"  buffer. npe=",I0," buffer(",I0,"-",I0,",",I0,"-",I0,")")', stagger, dir_str, this_pe, lbound(buffer,1), ubound(buffer,1), lbound(buffer,2), ubound(buffer,2)
+
+    if (debug_log) print '("[INFO] WDR FNFBCCX start print ",A1," ",A8,"  x. npe=",I0," x(",I0,"-",I0,",",I0,"-",I0,")")', stagger, dir_str, this_pe, lbound(x,1), ubound(x,1), lbound(x,2), ubound(x,2)
+
+    if( bbox_coarse%ie .GE. bbox_coarse%is .AND. bbox_coarse%je .GE. bbox_coarse%js ) then
+
+       if (debug_log) print '("[INFO] WDR BUFR print ",A8," large buffer. npe=",I0," buffer(is_c, js_c)=",F12.5," buffer(ie_c-1, je_c-1)=",F12.5)', dir_str, this_pe, buffer(bbox_coarse%is, bbox_coarse%js),  buffer(bbox_coarse%ie-1, bbox_coarse%je-1)
+
+       if (debug_log) print '("[INFO] WDR ",A8," BOUNDS i npe=",I0," is_f=",I0," ie_f=",I0," is_c=",I0," ie_c=",I0)', dir_str, this_pe, bbox_fine%is, bbox_fine%ie, bbox_coarse%is, bbox_coarse%ie
+       if (debug_log) print '("[INFO] WDR ",A8," BOUNDS j npe=",I0," js_f=",I0," je_f=",I0," js_c=",I0," je_c=",I0)', dir_str, this_pe, bbox_fine%js, bbox_fine%je, bbox_coarse%js, bbox_coarse%je
+
+       do j=bbox_fine%js, bbox_fine%je
+          do i=bbox_fine%is, bbox_fine%ie
+             !if (stagger == "A") then
+             !else if (stagger == "C") then
+             !else if (stagger == "D") then
+             !end if
+             
+             ic = ind(i,j,1)
+             jc = ind(i,j,2)
+             
+             x(i,j) = &
+                  wt(i,j,1)*buffer(ic,  jc  ) +  &
+                  wt(i,j,2)*buffer(ic,  jc+1) +  &
+                  wt(i,j,3)*buffer(ic+1,jc+1) +  &
+                  wt(i,j,4)*buffer(ic+1,jc  )
+             
+             !call check_array(buffer, this_pe, "buffer"//dir_str, -300.0, 300.0)
+             !call check_array(wt, this_pe, "wt"//dir_str, 0.0, 1.0)
+             if (debug_log) print '("[INFO] WDR FILL WEIGHTS ",A8,"  npe=",I0," (",I0,",",I0,") ic,jc=(",I0,",",I0,"): wt:",F12.5,F12.5,F12.5,F12.5)', dir_str, this_pe, i, j, ic, jc, wt(i,j,1), wt(i,j,2), wt(i,j,3), wt(i,j,4)
+          end do
+       end do
+    else
+       if (debug_log) print '("[INFO] WDR NIL BUFR print ",A8,"  buffer. npe=",I0)', dir_str, this_pe       
+    endif
+
+    if (debug_log) print '("[INFO] WDR FILLNEST DONE print ",A8,"  buffer. npe=",I0)', dir_str, this_pe       
+    
+  end subroutine fill_nest_from_buffer_cell_center2D_kindphys
 
 
   subroutine fill_nest_from_buffer_cell_center3D(stagger, x, buffer, bbox_fine, bbox_coarse, nz, dir, x_refine, y_refine, wt, ind)
@@ -1822,6 +2592,107 @@ end subroutine find_nest_alignment
     if (debug_log) print '("[INFO] WDR FILLNEST4D DONE print ",A8,"  buffer. npe=",I0)', dir_str, this_pe       
 
   end subroutine fill_nest_from_buffer_cell_center4D
+
+
+  subroutine fill_nest_from_buffer_cell_center4D_kindphys(stagger, x, buffer, bbox_fine, bbox_coarse, nz, dir, x_refine, y_refine, wt, ind)
+    implicit none
+    character ( len = 1 ), intent(in)             :: stagger
+    real(kind=kind_phys), allocatable, intent(inout)           :: x(:,:,:,:)
+    real(kind=kind_phys), allocatable, intent(in)              :: buffer(:,:,:,:)
+    type(bbox), intent(in)                        :: bbox_fine, bbox_coarse
+    integer, intent(in)                           :: nz
+    integer, intent(in)                           :: dir, x_refine, y_refine
+    real, allocatable, intent(in)                 :: wt(:,:,:)    ! The final dimension is always 4
+    integer, allocatable, intent(in)              :: ind(:,:,:) 
+
+    character(len=8)       :: dir_str
+    integer                :: i, j, k, v, ic, jc
+    integer                :: focus_i = 1
+    integer                :: focus_j = 1
+    integer                :: this_pe
+
+    this_pe = mpp_pe()
+
+
+    select case(dir)
+    case (NORTH)
+       dir_str = "NORTH"
+    case (SOUTH)
+       dir_str = "SOUTH"
+    case (EAST)
+       dir_str = "EAST"
+    case (WEST)
+       dir_str = "WEST"
+    case default
+       dir_str = "ERR DIR"
+    end select
+
+    if (debug_log) print '("[INFO] WDR FNFBCC4D start print ",A1," ",A8,"  buffer. npe=",I0," buffer(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', stagger, dir_str, this_pe, lbound(buffer,1), ubound(buffer,1), lbound(buffer,2), ubound(buffer,2), lbound(buffer,3), ubound(buffer,3), lbound(buffer,4), ubound(buffer,4)
+
+    if( bbox_coarse%ie .GE. bbox_coarse%is .AND. bbox_coarse%je .GE. bbox_coarse%js ) then
+
+       if (debug_log) print '("[INFO] WDR BUFR print ",A8," large buffer. npe=",I0," buffer(is_c, js_c, nz, 1)=",F12.5," buffer(ie_c-1, je_c-1, nz, 1)=",F12.5)', dir_str, this_pe, buffer(bbox_coarse%is, bbox_coarse%js, nz, 1),  buffer(bbox_coarse%ie-1, bbox_coarse%je-1, nz, 1)
+
+       if (debug_log) print '("[INFO] WDR ",A8," BOUNDS i npe=",I0,"is_f=",I0," ie_f=",I0," is_c=",I0," ie_c=",I0)', dir_str, this_pe, bbox_fine%is, bbox_fine%ie, bbox_coarse%is, bbox_coarse%ie
+       if (debug_log) print '("[INFO] WDR ",A8," BOUNDS j npe=",I0,"js_f=",I0," je_f=",I0," js_c=",I0," je_c=",I0)', dir_str, this_pe, bbox_fine%js, bbox_fine%je, bbox_coarse%js, bbox_coarse%je
+
+       do v=1,ubound(buffer,4)
+          do k=1,nz
+             do j=bbox_fine%js, bbox_fine%je
+                do i=bbox_fine%is, bbox_fine%ie
+                   ic = ind(i,j,1)
+                   jc = ind(i,j,2)
+
+
+                   !if (debug_log) print '("[INFO] WDR fill_nest from ",A8," buffer. npe=",I0," i,j=(",I0,",",I0,") ic,jc=(",I0,",",I0")")', dir_str, this_pe, i, j, ic, jc
+
+
+                   !if (debug_log) print '("[INFO] WDR before FILL nest from ",A8," buffer. npe=",I0," x(",I0,",",I0,",",I0,")=",F12.5)', dir_str, this_pe, i, j, k, x(i,j,k,v)
+
+
+                   !  Fill in with weighted interpolation
+                   !                x(i,j,k) = &
+                   !                     wt(i,j,1)*buffer(ic,  jc,  k) +  &
+                   !                     wt(i,j,2)*buffer(ic,  jc+1,k) +  &
+                   !                     wt(i,j,3)*buffer(ic+1,jc+1,k) +  &
+                   !                     wt(i,j,4)*buffer(ic+1,jc,  k)
+
+                   !        wt(iw,jw,1)=dist2*dist3      ! ic,   jc    weight
+                   !        wt(iw,jw,2)=dist3*dist4      ! ic,   jc+2  weight
+                   !        wt(iw,jw,3)=dist4*dist1      ! ic+2, jc+2  weight
+                   !        wt(iw,jw,4)=dist1*dist2      ! ic+2, jc    weight
+
+
+
+                   x(i,j,k,v) = &
+                        wt(i,j,1)*buffer(ic,  jc,  k, v) +  &
+                        wt(i,j,2)*buffer(ic,  jc+1,k, v) +  &
+                        wt(i,j,3)*buffer(ic+1,jc+1,k, v) +  &
+                        wt(i,j,4)*buffer(ic+1,jc,  k, v)
+
+                   !call check_array(buffer, this_pe, "buffer"//dir_str, -300.0, 300.0)
+                   !call check_array(wt, this_pe, "wt"//dir_str, 0.0, 1.0)
+
+
+                   !if (debug_log) print '("[INFO] WDR FILL WEIGHTS ",A8,"  npe=",I0," (",I0,",",I0,",",I0,",",I0,") ic,jc=(",I0,",",I0,"): wt:",F12.5,F12.5,F12.5,F12.5)', dir_str, this_pe, i, j, k, v, ic, jc, wt(i,j,1), wt(i,j,2), wt(i,j,3), wt(i,j,4)
+                   !if (debug_log) print '("[INFO] WDR FILL WEIGHTS ",A8,"  npe=",I0," (",I0,",",I0,",",I0,",",I0,") : buffer:",F12.5,F12.5,F12.5,F12.5)', dir_str, this_pe, i, j, k, v, buffer(ic,jc,k,v), buffer(ic,jc+1,k,v), buffer(ic+1,jc+1,k,v), buffer(ic+1,jc,k,v)
+
+
+                   !if (debug_log) print '("[INFO] WDR after FILL nest from ",A8," buffer. npe=",I0," x(",I0,",",I0,",",I0,",",I0,")=",F12.5)', dir_str, this_pe, i, j, k, v,x(i,j,k,v)
+
+                   !if (debug_log) print '("[INFO] WDR FILLNEST4D from ",A8," buffer. npe=",I0," i,j=(",I0,",",I0,") ic,jc=(",I0,",",I0") x=",F12.5)', dir_str, this_pe, i, j, ic, jc, x(i,j,k,v) 
+
+                end do
+             end do
+          end do
+       end do
+    else
+       if (debug_log) print '("[INFO] WDR NIL BUFR print ",A8,"  buffer. npe=",I0)', dir_str, this_pe       
+    endif
+
+    if (debug_log) print '("[INFO] WDR FILLNEST4D DONE print ",A8,"  buffer. npe=",I0)', dir_str, this_pe       
+
+  end subroutine fill_nest_from_buffer_cell_center4D_kindphys
 
 
   subroutine fill_nest_from_buffer_nearest_neighbor(x, buffer, bbox_fine, bbox_coarse, nz, dir, wt)

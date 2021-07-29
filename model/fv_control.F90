@@ -220,8 +220,9 @@ module fv_control_mod
 
 #ifdef MOVING_NEST
      ! Moving Nest Namelist Variables
-     logical, dimension(MAX_NNEST) :: is_moving_nest
+     logical, dimension(MAX_NNEST) :: is_moving_nest = .False.
      character(len=120)            :: surface_dir
+     integer, dimension(MAX_NNEST) :: terrain_smoother = 1  ! 0 -- all high-resolution data, 1 - static nest smoothing algorithm, 5 - 5 point smoother, 9 - 9 point smoother
 #endif
 
      real :: sdt
@@ -534,6 +535,7 @@ module fv_control_mod
 #ifdef MOVING_NEST         
            Atm(n)%neststruct%is_moving_nest         = is_moving_nest(n)
            Atm(n)%neststruct%surface_dir            = trim(surface_dir)
+           Atm(n)%neststruct%terrain_smoother       = terrain_smoother(n)
 #endif         
 
         else
@@ -1050,7 +1052,7 @@ module fv_control_mod
 #ifdef MOVING_NEST
      subroutine read_namelist_moving_nest_nml
        integer :: f_unit, ios, ierr
-       namelist /fv_moving_nest_nml/ surface_dir, is_moving_nest
+       namelist /fv_moving_nest_nml/ surface_dir, is_moving_nest, terrain_smoother
 
 #ifdef INTERNAL_FILE_NML
        read (input_nml_file,fv_moving_nest_nml,iostat=ios)

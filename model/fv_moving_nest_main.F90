@@ -24,10 +24,15 @@
 
 module fv_moving_nest_main_mod
 #ifdef MOVING_NEST
-!-----------------------------------------
+!----------------------------------------------------------
+! Moving Nest Initial Release    W. Ramstrom - 07/28/2021
+!----------------------------------------------------------
+
+!--------------------------------------------------------
 ! Moving Nest Top Level Functionality
 ! W. Ramstrom - AOML/HRD/CIMAS 05/27/2021
-!-----------------------------------------
+!--------------------------------------------------------
+
 
 
 #include <fms_platform.h>
@@ -74,14 +79,14 @@ use multi_gases_mod,  only: virq, virq_max, num_gas, ri, cpi
 !-----------------
 ! FV core modules:
 !-----------------
-use atmosphere_mod,     only: Atm, mygrid
+use atmosphere_mod,     only: Atm, mygrid, p_split, dt_atmos
 use fv_arrays_mod,      only: fv_atmos_type, R_GRID, fv_grid_bounds_type, phys_diag_type
 use fv_control_mod,     only: fv_control_init, fv_end, ngrids
 use fv_eta_mod,         only: get_eta_level
 use fv_fill_mod,        only: fill_gfs
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
-use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
+use fv_diagnostics_mod, only: fv_diag_init, fv_diag_reinit, fv_diag, fv_time, prt_maxmin, prt_height
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
@@ -137,9 +142,9 @@ use fv_moving_nest_mod,         only: mn_prog_fill_temp_variables, mn_prog_apply
 use fv_moving_nest_mod,         only: mn_phys_fill_temp_variables, mn_phys_apply_temp_variables
 
 !      Load static datasets
-use fv_moving_nest_mod,         only: mn_latlon_read_hires_parent, mn_latlon_load_parent
-use fv_moving_nest_mod,         only: mn_orog_read_hires_parent
-use fv_moving_nest_utils_mod,   only: load_nest_latlons_from_nc
+use fv_moving_nest_mod,         only: mn_latlon_read_hires_parent, mn_latlon_load_parent, mn_reset_phys_latlon
+use fv_moving_nest_mod,         only: mn_orog_read_hires_parent, mn_static_read_hires
+use fv_moving_nest_utils_mod,   only: load_nest_latlons_from_nc, compare_terrain, set_smooth_nest_terrain, set_blended_terrain
 
 !      Bounds checking routines
 use fv_moving_nest_mod,         only: permit_move_nest
@@ -149,7 +154,7 @@ use fv_moving_nest_mod,         only: grid_geometry, assign_n_p_grids, move_nest
 use fv_moving_nest_utils_mod,   only: fill_grid_from_supergrid, fill_weight_grid
 
 !      Recalculation routines
-use fv_moving_nest_mod,         only: reallocate_BC_buffers, recalc_aux_pressures!, vertical_remap_nest, reinit_parent_indices
+use fv_moving_nest_mod,         only: reallocate_BC_buffers, recalc_aux_pressures, vertical_remap_nest !, reinit_parent_indices
 
 !      Logging and debugging information
 use fv_moving_nest_mod,         only: check_array
@@ -173,9 +178,10 @@ real, parameter:: real_snan=x'FFBFFFFF'
 real, parameter:: real_snan=x'FFF7FFFFFFFFFFFF'
 #endif
 
-logical :: debug_log = .false.
-logical :: tsvar_out = .true.
-logical :: wxvar_out = .false.
+! Enable these for more debugging outputs
+logical :: debug_log = .false.    ! Produces logging to out.* file
+logical :: tsvar_out = .false.    ! Produces netCDF outputs; be careful to not exceed file number limits
+logical :: wxvar_out = .false.    ! Produces netCDF outputs; be careful to not exceed file number limits
 
 
 !  --- Clock ids for moving_nest performance metering
@@ -185,6 +191,39 @@ integer :: id_movnestTot
 !integer, save :: a_step = 0
 integer, save :: output_step = 0
 
+type mn_surface_grids
+   real, allocatable  :: orog_grid(:,:)                _NULL  ! orography -- raw or filtered depending on namelist option, in meters
+   real, allocatable  :: orog_std_grid(:,:)            _NULL  ! terrain standard deviation for gravity wave drag, in meters (?)
+   real, allocatable  :: ls_mask_grid(:,:)             _NULL  ! land sea mask -- 0 for ocean/lakes, 1, for land.  Perhaps 2 for sea ice. 
+   real, allocatable  :: land_frac_grid(:,:)           _NULL  ! Continuous land fraction - 0.0 ocean, 0.5 half of each, 1.0 all land
+
+   real, allocatable  :: parent_orog_grid(:,:)         _NULL  ! parent orography -- only used for terrain_smoother=1.  
+                                                              !     raw or filtered depending on namelist option, in meters
+
+   ! Soil variables
+   real, allocatable  :: deep_soil_temp_grid(:,:)      _NULL  ! deep soil temperature at 5m, in degrees K
+   real, allocatable  :: soil_type_grid(:,:)           _NULL  ! STATSGO soil type
+
+   ! Vegetation variables
+   real, allocatable  :: veg_frac_grid(:,:)           _NULL  ! vegetation fraction 
+   real, allocatable  :: veg_type_grid(:,:)           _NULL  ! IGBP vegetation type
+   real, allocatable  :: veg_greenness_grid(:,:)      _NULL  ! NESDIS vegetation greenness; netCDF file has monthly values
+
+   ! Orography variables
+   real, allocatable  :: slope_type_grid(:,:)         _NULL  ! legacy 1 degree GFS slope type 
+
+   ! Albedo variables
+   real, allocatable  :: max_snow_alb_grid(:,:)       _NULL  ! max snow albedo
+   ! Snow free albedo
+   real, allocatable  :: vis_black_alb_grid(:,:)      _NULL  ! Visible black sky albeo; netCDF file has monthly values
+   real, allocatable  :: vis_white_alb_grid(:,:)      _NULL  ! Visible white sky albeo; netCDF file has monthly values
+   real, allocatable  :: ir_black_alb_grid(:,:)       _NULL  ! Near IR black sky albeo; netCDF file has monthly values
+   real, allocatable  :: ir_white_alb_grid(:,:)       _NULL  ! Near IR white sky albeo; netCDF file has monthly values
+
+end type mn_surface_grids
+
+
+
 contains
 
   subroutine update_moving_nest(Atm_block, IPD_control, IPD_data, time_step)
@@ -193,31 +232,43 @@ contains
     type(IPD_data_type), intent(inout) :: IPD_data(:)
     type(time_type), intent(in)     :: time_step
 
-    logical :: is_moving_nest = .True.  !! TODO connect to namelist for each nest
-
-    real :: dt_atmos = 90.0  !! TODO connect to timestep
-
+    logical :: is_moving_nest
     logical :: do_move
     integer :: delta_i_c, delta_j_c
     integer :: parent_grid_num, child_grid_num, nest_num
     integer :: n
+    integer :: this_pe
+
+    this_pe = mpp_pe()
     
     do_move = .false.
     
-    ! Get dt_atmos from Atm()%Time_step_atmos -  seems like some transformations might be needed
+    print '("[INFO] WDR update_moving_nest AA npe=",I0)', this_pe
+
+    ! dt_atmos was initialized in atmosphere.F90::atmosphere_init()
     
     n = mygrid   ! Public variable from atmosphere.F90
+
+    print '("[INFO] WDR update_moving_nest BB npe=",I0)', this_pe
+
+
     ! These will need to be looked up on each PE when multiple and telescoped nests are enabled.
     parent_grid_num = 1 
     child_grid_num = 2
     nest_num = 1
+
+    is_moving_nest = Atm(child_grid_num)%neststruct%is_moving_nest
+
+    print '("[INFO] WDR update_moving_nest CC npe=",I0," is_moving_nest=",L1)', this_pe, is_moving_nest
+    print '("[INFO] WDR update_moving_nest DD npe=",I0," dt_atmos=",F8.3)', this_pe, dt_atmos
+
     
     if (is_moving_nest) then
        call eval_move_nest(Atm, a_step, do_move, delta_i_c, delta_j_c, dt_atmos)
        if (do_move) then
           ! Verifies if nest motion is permitted
           ! If nest would cross the cube face edge, do_move is reset to .false. and delta_i_c, delta_j_c are set to 0
-          call permit_move_nest(Atm, parent_grid_num, child_grid_num, delta_i_c, delta_j_c, do_move)
+          call permit_move_nest(Atm, a_step, parent_grid_num, child_grid_num, delta_i_c, delta_j_c, do_move)
           
        end if
        
@@ -238,8 +289,8 @@ contains
     type(IPD_data_type), intent(inout) :: IPD_data(:)
     type(time_type), intent(in)     :: time_step
 
-    logical :: tsvar_out = .true.
-    logical :: wxvar_out = .false.
+    !logical :: tsvar_out = .true.
+    !logical :: wxvar_out = .false.
 
     type(domain2d), pointer           :: domain_coarse, domain_fine
     logical :: is_fine_pe
@@ -267,8 +318,8 @@ contains
     !   if (debug_log) print '("[INFO] WDR after outputting to netCDF fv_dynamics atmosphere.F90 npe=",I0, " psc=",I0)', this_pe, psc
     !end if
     
-    !if (a_step .lt. 10 .or. mod(a_step, 10) .eq. 0) then
-    if (mod(a_step, 20) .eq. 0) then
+    if (a_step .lt. 10 .or. mod(a_step, 5) .eq. 0) then
+    !if (mod(a_step, 20) .eq. 0) then
        if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
        if (tsvar_out) call mn_phys_dump_to_netcdf(Atm(n), Atm_block, IPD_control, IPD_data, a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
     endif
@@ -309,7 +360,7 @@ contains
     integer, intent(in)               :: a_step
     logical, intent(out)              :: do_move
     integer, intent(out)              :: delta_i_c, delta_j_c
-    real, intent(out)              :: dt_atmos  !! only needed for the simple version of this subroutine
+    real, intent(in)                  :: dt_atmos  !! only needed for the simple version of this subroutine
     
     logical, save :: first_time = .true.
     integer       :: move_incr
@@ -336,7 +387,8 @@ contains
     
     if (move_diag) then
        ! If moving diagonal, only have to shift half as often.
-       if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
+       !if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
+       if ( mod(a_step,2*move_incr) .eq. 0) then
           do_move = .true.
           delta_i_c = 1
           delta_j_c = -1
@@ -349,7 +401,8 @@ contains
        
     else
        
-       if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
+       !if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
+       if ( mod(a_step,2*move_incr) .eq. 0) then
           do_move = .true.
           delta_i_c = 1
           delta_j_c = 0
@@ -367,6 +420,14 @@ contains
           delta_j_c = 0
        end if
     end if
+
+    ! Override to prevent move on first timestep
+    if (a_step .eq. 0) then
+       do_move = .false.
+       delta_i_c = 0
+       delta_j_c = 0
+    end if
+    
     
   end subroutine eval_move_nest
   
@@ -426,8 +487,7 @@ contains
    logical, save                          :: first_nest_move = .true.
    type(grid_geometry), save              :: parent_geo
    type(grid_geometry), save              :: fp_super_tile_geo
-   integer, save      :: fp_super_istart_fine, fp_super_jstart_fine,fp_super_iend_fine, fp_super_jend_fine
-   real, allocatable, save  :: orog_grid(:,:)              ! TODO deallocate this at end of model run
+   type(mn_surface_grids), save           :: mn_static
 
    type(grid_geometry)              :: tile_geo, tile_geo_u, tile_geo_v
    real(kind=R_GRID), allocatable   :: p_grid(:,:,:), n_grid(:,:,:)
@@ -462,9 +522,14 @@ contains
    integer :: isd, ied, jsd, jed
    integer :: nq                       !  number of transported tracers
 
+   ! For iterating through physics/surface vector data
+   integer :: nb, blen, ix, i_pe, j_pe, i_idx, j_idx
+
+
    integer, save :: output_step = 0
    
    integer, allocatable :: pelist(:)
+   character(len=16) :: errstring
    
    !! TODO Refine this per Atm(n) structure to allow some static and some moving nests in same run
    logical  :: is_moving_nest = .true.  ! Attach this to the namelist reading 
@@ -486,7 +551,14 @@ contains
 !-----------------------------------
 
 
-   print '("[INFO] WDR NESTIDX fv_moving_nest_main.F90 npe=",I0, " n=",I0," n=",I0," nest_num=",I0," parent_grid_num=",I0," child_grid_num=",I0)', this_pe, n, n, nest_num, parent_grid_num, child_grid_num    
+   !print '("[INFO] WDR NESTIDX fv_moving_nest_main.F90 npe=",I0, " n=",I0," n=",I0," nest_num=",I0," parent_grid_num=",I0," child_grid_num=",I0)', this_pe, n, n, nest_num, parent_grid_num, child_grid_num    
+   
+   if (first_nest_move) then
+      !print '("[INFO] WDR Start Clocks npe=",I0)', this_pe
+      call fv_moving_nest_init_clocks()
+   end if
+
+
 
    ! mygrid and n are the same in atmosphere.F90
    npx   = Atm(n)%npx
@@ -566,7 +638,7 @@ contains
        !!================================================================
 
        !if (debug_log) then
-       if (this_pe .eq. 0) then
+       if (debug_log .and. this_pe .eq. 0) then
           !call show_nest_grid(Atm(n), this_pe, 0)
           print '("[INFO] WDR BD init fv_moving_nest_main.F90 npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, Atm(n)%bd%is,  Atm(n)%bd%ie,  Atm(n)%bd%js,  Atm(n)%bd%je
           print '("[INFO] WDR BD init fv_moving_nest_main.F90 npe=",I0," isd=",I0," ied=",I0," jsd=",I0," jed=",I0)', this_pe, Atm(n)%bd%isd,  Atm(n)%bd%ied,  Atm(n)%bd%jsd,  Atm(n)%bd%jed
@@ -680,16 +752,47 @@ contains
              print '("[INFO] WDR mn_latlon_read_hires_parent READING static fine file on npe=",I0)', this_pe
 
              call mn_latlon_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, fp_super_tile_geo, &
-                  fp_super_istart_fine, fp_super_iend_fine, fp_super_jstart_fine, fp_super_jend_fine, &
                   Atm(child_grid_num)%neststruct%surface_dir)
 
-             print '("[INFO] WDR mn_orog_read_hires_parent BEFORE READING static orog fine file on npe=",I0)', this_pe
-             call mn_orog_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(child_grid_num)%neststruct%surface_dir, filtered_terrain, orog_grid)
-             print '("[INFO] WDR mn_orog_read_hires_parent COMPLETED READING static orog fine file on npe=",I0)', this_pe
+             !print '("[INFO] WDR mn_orog_read_hires_parent BEFORE READING static orog fine file on npe=",I0)', this_pe
+             call mn_orog_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(child_grid_num)%neststruct%surface_dir, filtered_terrain, &
+                  mn_static%orog_grid, mn_static%orog_std_grid, mn_static%ls_mask_grid, mn_static%land_frac_grid)
+             !print '("[INFO] WDR mn_orog_read_hires_parent COMPLETED READING static orog fine file on npe=",I0)', this_pe
+
+             ! If terrain_smoother method 1 is chosen, we need the parent coarse terrain
+             if (Atm(n)%neststruct%terrain_smoother .eq. 1) then
+                if (filtered_terrain) then
+                   call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, trim(Atm(child_grid_num)%neststruct%surface_dir), "oro_data", "orog_filt", mn_static%parent_orog_grid)
+                else
+                   call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, trim(Atm(child_grid_num)%neststruct%surface_dir), "oro_data", "orog_raw", mn_static%parent_orog_grid)
+                end if
+             end if
+
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "substrate_temperature", "substrate_temperature", mn_static%deep_soil_temp_grid)
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "soil_type", "soil_type", mn_static%soil_type_grid)
+
+             !call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "", mn_static%veg_frac_grid)
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "vegetation_type", "vegetation_type", mn_static%veg_type_grid)
+
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "slope_type", "slope_type", mn_static%slope_type_grid)
+
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "maximum_snow_albedo", "maximum_snow_albedo", mn_static%max_snow_alb_grid)
+
+             ! Monthly static data
+             !call mn_static_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(child_grid_num)%neststruct%surface_dir, "vegetation_greenness", mn_static%veg_greenness_grid)
+             ! Add snowfree albedo variables here
 
              first_nest_move = .false.
-          else
-             print '("[INFO] WDR mn_latlon_read_hires_parent SKIPPING static fine file on npe=",I0)', this_pe
+          !else
+           !  print '("[INFO] WDR mn_latlon_read_hires_parent SKIPPING static fine file on npe=",I0)', this_pe
+
+             ! Debug outputs of hires terrain 
+             !call mn_var_dump_to_netcdf(Atm(n)%phis(isd:ied, jsd:jed), is_fine_pe, domain_coarse, domain_fine, position, 1, &
+             !     time_val, Atm%global_tile, "terrain", "PHIS")
+             !call mn_var_dump_to_netcdf(mn_static%orog_grid(ioffset*x_refine+isd:ioffset*x_refine+ied, joffset*y_refine+jsd:joffset*y_refine+jed) * grav, &
+             !     is_fine_pe, domain_coarse, domain_fine, position, 1, &
+             !     time_val, Atm%global_tile, "terrain", "ORG")
+
           end if
 
           !  Validation/logging calls that can be disabled
@@ -802,6 +905,12 @@ contains
                parent_geo, tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, &
                p_grid, n_grid, p_grid_u, n_grid_u, p_grid_v, n_grid_v)
 
+
+          ! tile_geo holds the center lat/lons for the entire nest (all PEs). 
+          call mn_reset_phys_latlon(Atm, n, tile_geo, fp_super_tile_geo, Atm_block, IPD_control, IPD_data)
+          
+
+
           !!============================================================================
           !! Step 5.2 -- Fill the wt* variables for each stagger
           !!============================================================================
@@ -869,13 +978,93 @@ contains
        call mpp_clock_begin (id_movnest7_1)
        
        !!=====================================================================================
-       !! Step 7.01 --  Reset the orography
+       !! Step 7.01 --  Reset the orography data that was read from the hires static file
        !!
        !!=====================================================================================
        
        if (is_fine_pe) then
           ! phis is allocated in fv_arrays.F90 as:  allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
-          Atm(n)%phis(isd:ied, jsd:jed) = orog_grid(ioffset*x_refine+isd:ioffset*x_refine+ied, joffset*y_refine+jsd:joffset*y_refine+jed) * grav
+          ! 0 -- all high-resolution data, 1 - static nest smoothing algorithm, 5 - 5 point smoother, 9 - 9 point smoother
+          ! Defaults to 1 - static nest smoothing algorithm; this seems to produce the most stable solutions 
+          select case(Atm(n)%neststruct%terrain_smoother)
+          case (0)
+             ! High-resolution terrain for entire nest
+             if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=0 High-resolution terrain. npe=",I0)', this_pe
+             Atm(n)%phis(isd:ied, jsd:jed) = mn_static%orog_grid((ioffset-1)*x_refine+isd:(ioffset-1)*x_refine+ied, (joffset-1)*y_refine+jsd:(joffset-1)*y_refine+jed) * grav
+          case (1)
+             ! Static nest smoothing algorithm - interpolation of coarse terrain in halo zone and 5 point blending zone of coarse and fine data
+             if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=1 Blending algorithm. npe=",I0)', this_pe
+             call set_blended_terrain(Atm(n), mn_static%parent_orog_grid, mn_static%orog_grid, x_refine, Atm(n)%bd%ng, 5, a_step)
+          case (5)
+             ! 5 pt smoother.  blend zone of 5 to match static nest
+             if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=5  5-point smoother. npe=",I0)', this_pe
+             call set_smooth_nest_terrain(Atm(n), mn_static%orog_grid, x_refine, 5, Atm(n)%bd%ng, 5)   
+          case (9)
+             ! 9 pt smoother.  blend zone of 5 to match static nest
+             if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=9  9-point smoother. npe=",I0)', this_pe
+             call set_smooth_nest_terrain(Atm(n), mn_static%orog_grid, x_refine, 9, Atm(n)%bd%ng, 5)
+          case default
+             write (errstring, "(I0)") Atm(n)%neststruct%terrain_smoother
+             call mpp_error(FATAL,'Invalid terrain_smoother in fv_moving_nest_main '//errstring)
+          end select
+          
+          ! Reinitialize diagnostics -- zsurf which is g * Atm%phis
+          call fv_diag_reinit(Atm(n:n))
+
+          ! sgh and oro were only fully allocated if fv_land is True
+          !      if false, oro is (1,1), and sgh is not allocated
+          if ( Atm(n)%flagstruct%fv_land ) then
+             if (debug_log) print '("[INFO] WDR shift orography data fv_land TRUE npe=",I0)', this_pe
+             ! oro and sgh are allocated only for the compute domain -- they do not have halos
+          
+             !fv_arrays.F90 oro() !< land fraction (1: all land; 0: all water)
+             !real, _ALLOCATABLE :: oro(:,:)      _NULL  !< land fraction (1: all land; 0: all water)
+             Atm(n)%oro(isc:iec, jsc:jec) = mn_static%land_frac_grid(ioffset*x_refine+isc:ioffset*x_refine+iec, joffset*y_refine+jsc:joffset*y_refine+jec)
+          
+             !real, _ALLOCATABLE :: sgh(:,:)      _NULL  !< Terrain standard deviation
+             Atm(n)%sgh(isc:iec, jsc:jec) = mn_static%orog_std_grid(ioffset*x_refine+isc:ioffset*x_refine+iec, joffset*y_refine+jsc:joffset*y_refine+jec)
+          else
+                if (debug_log) print '("[INFO] WDR shift orography data fv_land FALSE npe=",I0)', this_pe
+          end if
+
+          ! Reset the land sea mask from the hires parent data
+          !  Reset the variables from the fix_sfc files
+          do nb = 1,Atm_block%nblks
+             blen = Atm_block%blksz(nb)
+             do ix = 1, blen
+                i_pe = Atm_block%index(nb)%ii(ix)  
+                j_pe = Atm_block%index(nb)%jj(ix)
+                
+                i_idx = ioffset*x_refine + i_pe
+                j_idx = joffset*y_refine + j_pe
+                
+                IPD_data(nb)%Sfcprop%slmsk(ix) = mn_static%ls_mask_grid(i_idx, j_idx)
+                
+                !  IFD values are 0 for land, and 1 for oceans/lakes -- reverse of the land sea mask
+                !  Land Sea Mask has values of 0 for oceans/lakes, 1 for land, 2 for sea ice
+                !  TODO figure out what ifd should be for sea ice
+                if (mn_static%ls_mask_grid(i_idx, j_idx) .eq. 1 ) then
+                   IPD_data(nb)%Sfcprop%ifd(ix) = 0   ! Land
+                else
+                   IPD_data(nb)%Sfcprop%ifd(ix) = 1   ! Ocean
+                end if
+
+                IPD_data(nb)%Sfcprop%tg3(ix) = mn_static%deep_soil_temp_grid(i_idx, j_idx)
+                IPD_data(nb)%Sfcprop%stype(ix) = mn_static%soil_type_grid(i_idx, j_idx)
+                
+                !IPD_data(nb)%Sfcprop%vfrac(ix) = mn_static%veg_frac_grid(i_idx, j_idx) 
+                IPD_data(nb)%Sfcprop%vtype(ix) = mn_static%veg_type_grid(i_idx, j_idx)
+                ! Add veg_greenness_grid here, monthly
+                
+                IPD_data(nb)%Sfcprop%slope(ix) = mn_static%slope_type_grid(i_idx, j_idx)
+                
+                IPD_data(nb)%Sfcprop%snoalb(ix) = mn_static%max_snow_alb_grid(i_idx, j_idx)
+                ! Add Vis/Near IR black/white sky albedo, monthly
+                
+                
+                
+             end do
+          end do
        end if
 
 
@@ -1025,6 +1214,8 @@ contains
     else
        if (debug_log) print '("[INFO] WDR move_nest not nested PE  npe=",I0)', this_pe
     end if
+
+    !call compare_terrain("phis", Atm(n)%phis, 1, Atm(n)%neststruct%ind_h, x_refine, y_refine, is_fine_pe, global_nest_domain)
     
     if (debug_log) call show_nest_grid(Atm(n), this_pe, 99)
 
