@@ -1,6 +1,31 @@
 !***********************************************************************
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+!* If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
+
+!----------------------------------------------------------
+! Moving Nest Initial Release    W. Ramstrom - 07/28/2021
+!----------------------------------------------------------
+
+!***********************************************************************
 !>@brief!   Provides subroutines to debug and log moving nest functionality 
-!!>@author Bill Ramstrom, AOML/HRD   01/15/2021
+!!>@author W. Ramstrom, AOML/HRD   01/15/2021
 !
 !   This code is in a separate module so that code review and optimization 
 !     can focus on the algorithm code in fv_moving_nest.F90 that implements

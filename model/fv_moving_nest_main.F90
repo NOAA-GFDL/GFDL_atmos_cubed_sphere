@@ -24,10 +24,15 @@
 
 module fv_moving_nest_main_mod
 #ifdef MOVING_NEST
-!-----------------------------------------
+!----------------------------------------------------------
+! Moving Nest Initial Release    W. Ramstrom - 07/28/2021
+!----------------------------------------------------------
+
+!--------------------------------------------------------
 ! Moving Nest Top Level Functionality
 ! W. Ramstrom - AOML/HRD/CIMAS 05/27/2021
-!-----------------------------------------
+!--------------------------------------------------------
+
 
 
 #include <fms_platform.h>
@@ -74,7 +79,7 @@ use multi_gases_mod,  only: virq, virq_max, num_gas, ri, cpi
 !-----------------
 ! FV core modules:
 !-----------------
-use atmosphere_mod,     only: Atm, mygrid, p_split
+use atmosphere_mod,     only: Atm, mygrid, p_split, dt_atmos
 use fv_arrays_mod,      only: fv_atmos_type, R_GRID, fv_grid_bounds_type, phys_diag_type
 use fv_control_mod,     only: fv_control_init, fv_end, ngrids
 use fv_eta_mod,         only: get_eta_level
@@ -173,9 +178,10 @@ real, parameter:: real_snan=x'FFBFFFFF'
 real, parameter:: real_snan=x'FFF7FFFFFFFFFFFF'
 #endif
 
-logical :: debug_log = .false.
-logical :: tsvar_out = .false.
-logical :: wxvar_out = .false.
+! Enable these for more debugging outputs
+logical :: debug_log = .false.    ! Produces logging to out.* file
+logical :: tsvar_out = .false.    ! Produces netCDF outputs; be careful to not exceed file number limits
+logical :: wxvar_out = .false.    ! Produces netCDF outputs; be careful to not exceed file number limits
 
 
 !  --- Clock ids for moving_nest performance metering
@@ -226,24 +232,36 @@ contains
     type(IPD_data_type), intent(inout) :: IPD_data(:)
     type(time_type), intent(in)     :: time_step
 
-    logical :: is_moving_nest = .True.  !! TODO connect to namelist for each nest
-
-    real :: dt_atmos = 90.0  !! TODO connect to timestep
-
+    logical :: is_moving_nest
     logical :: do_move
     integer :: delta_i_c, delta_j_c
     integer :: parent_grid_num, child_grid_num, nest_num
     integer :: n
+    integer :: this_pe
+
+    this_pe = mpp_pe()
     
     do_move = .false.
     
-    ! Get dt_atmos from Atm()%Time_step_atmos -  seems like some transformations might be needed
+    print '("[INFO] WDR update_moving_nest AA npe=",I0)', this_pe
+
+    ! dt_atmos was initialized in atmosphere.F90::atmosphere_init()
     
     n = mygrid   ! Public variable from atmosphere.F90
+
+    print '("[INFO] WDR update_moving_nest BB npe=",I0)', this_pe
+
+
     ! These will need to be looked up on each PE when multiple and telescoped nests are enabled.
     parent_grid_num = 1 
     child_grid_num = 2
     nest_num = 1
+
+    is_moving_nest = Atm(child_grid_num)%neststruct%is_moving_nest
+
+    print '("[INFO] WDR update_moving_nest CC npe=",I0," is_moving_nest=",L1)', this_pe, is_moving_nest
+    print '("[INFO] WDR update_moving_nest DD npe=",I0," dt_atmos=",F8.3)', this_pe, dt_atmos
+
     
     if (is_moving_nest) then
        call eval_move_nest(Atm, a_step, do_move, delta_i_c, delta_j_c, dt_atmos)
@@ -342,7 +360,7 @@ contains
     integer, intent(in)               :: a_step
     logical, intent(out)              :: do_move
     integer, intent(out)              :: delta_i_c, delta_j_c
-    real, intent(out)              :: dt_atmos  !! only needed for the simple version of this subroutine
+    real, intent(in)                  :: dt_atmos  !! only needed for the simple version of this subroutine
     
     logical, save :: first_time = .true.
     integer       :: move_incr
@@ -971,19 +989,19 @@ contains
           select case(Atm(n)%neststruct%terrain_smoother)
           case (0)
              ! High-resolution terrain for entire nest
-             print '("[INFO] WDR Moving Nest terrain_smoother=0 High-resolution terrain. npe=",I0)', this_pe
+             if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=0 High-resolution terrain. npe=",I0)', this_pe
              Atm(n)%phis(isd:ied, jsd:jed) = mn_static%orog_grid((ioffset-1)*x_refine+isd:(ioffset-1)*x_refine+ied, (joffset-1)*y_refine+jsd:(joffset-1)*y_refine+jed) * grav
           case (1)
              ! Static nest smoothing algorithm - interpolation of coarse terrain in halo zone and 5 point blending zone of coarse and fine data
-             print '("[INFO] WDR Moving Nest terrain_smoother=1 Blending algorithm. npe=",I0)', this_pe
+             if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=1 Blending algorithm. npe=",I0)', this_pe
              call set_blended_terrain(Atm(n), mn_static%parent_orog_grid, mn_static%orog_grid, x_refine, Atm(n)%bd%ng, 5, a_step)
           case (5)
              ! 5 pt smoother.  blend zone of 5 to match static nest
-             print '("[INFO] WDR Moving Nest terrain_smoother=5  5-point smoother. npe=",I0)', this_pe
+             if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=5  5-point smoother. npe=",I0)', this_pe
              call set_smooth_nest_terrain(Atm(n), mn_static%orog_grid, x_refine, 5, Atm(n)%bd%ng, 5)   
           case (9)
              ! 9 pt smoother.  blend zone of 5 to match static nest
-             print '("[INFO] WDR Moving Nest terrain_smoother=9  9-point smoother. npe=",I0)', this_pe
+             if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=9  9-point smoother. npe=",I0)', this_pe
              call set_smooth_nest_terrain(Atm(n), mn_static%orog_grid, x_refine, 9, Atm(n)%bd%ng, 5)
           case default
              write (errstring, "(I0)") Atm(n)%neststruct%terrain_smoother
@@ -996,7 +1014,7 @@ contains
           ! sgh and oro were only fully allocated if fv_land is True
           !      if false, oro is (1,1), and sgh is not allocated
           if ( Atm(n)%flagstruct%fv_land ) then
-             !print '("[INFO] WDR shift orography data fv_land TRUE npe=",I0)', this_pe
+             if (debug_log) print '("[INFO] WDR shift orography data fv_land TRUE npe=",I0)', this_pe
              ! oro and sgh are allocated only for the compute domain -- they do not have halos
           
              !fv_arrays.F90 oro() !< land fraction (1: all land; 0: all water)
@@ -1005,8 +1023,8 @@ contains
           
              !real, _ALLOCATABLE :: sgh(:,:)      _NULL  !< Terrain standard deviation
              Atm(n)%sgh(isc:iec, jsc:jec) = mn_static%orog_std_grid(ioffset*x_refine+isc:ioffset*x_refine+iec, joffset*y_refine+jsc:joffset*y_refine+jec)
-          !else
-          !   print '("[INFO] WDR shift orography data fv_land FALSE npe=",I0)', this_pe
+          else
+                if (debug_log) print '("[INFO] WDR shift orography data fv_land FALSE npe=",I0)', this_pe
           end if
 
           ! Reset the land sea mask from the hires parent data

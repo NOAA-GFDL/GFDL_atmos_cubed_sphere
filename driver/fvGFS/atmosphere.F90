@@ -254,7 +254,7 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
 
 !---- private data ----
   type (time_type) :: Time_step_atmos
-  public Atm, mygrid, p_split  ! Share over to moving nest functions.
+  public Atm, mygrid, p_split, dt_atmos  ! Share over to moving nest functions.
 
   !These are convenience variables for local use only, and are set to values in Atm%
   real    :: dt_atmos

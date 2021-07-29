@@ -1,9 +1,33 @@
 !***********************************************************************
-!>@brief!   Provides subroutines to setup moving nest functionality in FV3 dynamic core.  
-!!>@author Bill Ramstrom, AOML/HRD
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+!* If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
+
+!----------------------------------------------------------
+! Moving Nest Initial Release    W. Ramstrom - 07/28/2021
+!----------------------------------------------------------
+
+
+!***********************************************************************
+!>@brief!   Provides subroutines for grid bounding boxes as part of moving nest functionality in FV3 dynamic core.  
+!!>@author W. Ramstrom, AOML/HRD
 !
-!   Storm tracking code will be located in module fv_storm_tracking.F90
-! 
 ! =======================================================================!
 !
 
