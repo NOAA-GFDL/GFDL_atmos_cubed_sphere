@@ -243,14 +243,9 @@ contains
     
     do_move = .false.
     
-    print '("[INFO] WDR update_moving_nest AA npe=",I0)', this_pe
-
     ! dt_atmos was initialized in atmosphere.F90::atmosphere_init()
     
     n = mygrid   ! Public variable from atmosphere.F90
-
-    print '("[INFO] WDR update_moving_nest BB npe=",I0)', this_pe
-
 
     ! These will need to be looked up on each PE when multiple and telescoped nests are enabled.
     parent_grid_num = 1 
@@ -259,10 +254,6 @@ contains
 
     is_moving_nest = Atm(child_grid_num)%neststruct%is_moving_nest
 
-    print '("[INFO] WDR update_moving_nest CC npe=",I0," is_moving_nest=",L1)', this_pe, is_moving_nest
-    print '("[INFO] WDR update_moving_nest DD npe=",I0," dt_atmos=",F8.3)', this_pe, dt_atmos
-
-    
     if (is_moving_nest) then
        call eval_move_nest(Atm, a_step, do_move, delta_i_c, delta_j_c, dt_atmos)
        if (do_move) then
