@@ -336,7 +336,12 @@ module fv_eta_mod
    else if (trim(npz_type) == 'input') then
 ! Jili Dong add ak/bk input
        call ascii_read (trim(fv_eta_file), eta_level_unit)
-       if (size(eta_level_unit(:)) /= km+2) then
+       !--- fv_eta_file being read in must have the following format:
+       !       include a single line description
+       !       ak/bk pairs, with each pair occupying a single line
+       !       the pairs must be ordered from surface to TOA
+       !       the pairs define the levels of the grid to create levels-1 layers
+       if (size(eta_level_unit(:)) /= km+1) then
           print *,' size is ', size(eta_level_unit(:))
           call error_mesg ('FV3 set_eta',trim(fv_eta_file)//" has too few or too many entries or has extra &
                           &spaces at the end of the file", FATAL)
