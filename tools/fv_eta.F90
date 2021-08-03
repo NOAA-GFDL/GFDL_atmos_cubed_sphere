@@ -341,7 +341,7 @@ module fv_eta_mod
        !       ak/bk pairs, with each pair occupying a single line
        !       the pairs must be ordered from surface to TOA
        !       the pairs define the levels of the grid to create levels-1 layers
-       if (size(eta_level_unit(:)) /= km+1) then
+       if (size(eta_level_unit(:)) /= km+2) then
           print *,' size is ', size(eta_level_unit(:))
           call error_mesg ('FV3 set_eta',trim(fv_eta_file)//" has too few or too many entries or has extra &
                           &spaces at the end of the file", FATAL)
