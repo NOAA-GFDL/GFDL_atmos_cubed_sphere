@@ -469,7 +469,7 @@ contains
        if (.not. allocated (global_pelist))     allocate(global_pelist(mpp_npes()))
 
        call mpp_get_current_pelist(global_pelist)
-       call mpp_max(BC_remap_level,ntileme,global_pelist)
+       call mpp_max(BC_remap_level,Atm(this_grid)%neststruct%num_nest_level,global_pelist)
        call mpp_set_current_pelist(pelist)
 
        do nest_level=1,Atm(this_grid)%neststruct%num_nest_level

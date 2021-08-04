@@ -1116,10 +1116,11 @@ contains
           write(*,*) ' Radius is ', radius, ', omega is ', omega, ' small_fac = ', small_fac
           write(*,*  ) ' Cubed-Sphere Grid Stats : ', npx,'x',npy,'x',nregions
           print*, dxN, dxM, dxAV, dxN, dxM
-          write(*,201) '      Grid Length               : min: ', dxN,' max: ', dxM,' avg: ', dxAV, ' min/max: ',dxN/dxM
-          write(*,200) '      Deviation from Orthogonal : min: ',angN,' max: ',angM,' avg: ',angAV
-          write(*,200) '      Aspect Ratio              : min: ',aspN,' max: ',aspM,' avg: ',aspAV
+          write(*,'(A,f11.2,A,f11.2,A,f11.2,A,f11.2)') '      Grid Length               : min: ', dxN,' max: ', dxM,' avg: ', dxAV, ' min/max: ',dxN/dxM
+          write(*,'(A,e21.14,A,e21.14,A,e21.14)') '      Deviation from Orthogonal : min: ',angN,' max: ',angM,' avg: ',angAV
+          write(*,'(A,e21.14,A,e21.14,A,e21.14)') '      Aspect Ratio              : min: ',aspN,' max: ',aspM,' avg: ',aspAV
           write(*,*  ) ''
+
        endif
     endif!if gridtype > 3
 
@@ -1562,7 +1563,7 @@ contains
         write(*,210) '   GLOBAL AREA (m*m):', globalarea
         write(*,*  ) ''
 
-201  format(A,f9.2,A,f9.2,A,f9.2,A,f9.2)
+201  format(A,f11.2,A,f11.2,A,f11.2,A,f11.2)
 209  format(A,e21.14,A,e21.14)
 210  format(A,e21.14)
 
