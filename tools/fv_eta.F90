@@ -21,7 +21,8 @@
 module fv_eta_mod
  use constants_mod,  only: kappa, grav, cp_air, rdgas
  use fv_mp_mod,      only: is_master
- use mpp_mod,        only: FATAL, mpp_error
+ use fms_mod,        only: FATAL, error_mesg
+ use fms2_io_mod,    only: ascii_read
  implicit none
  private
  public set_eta, set_external_eta, get_eta_level, compute_dz_var,  &
@@ -256,6 +257,8 @@ module fv_eta_mod
       ptop = ak(1)
       pint = ak(ks+1)
 
+      call check_eta_levels (ak, bk)
+
  end subroutine set_eta
 
 
@@ -264,7 +267,7 @@ module fv_eta_mod
  subroutine set_eta(km, ks, ptop, ak, bk, npz_type,fv_eta_file)
 
 !Level definitions are now in this header file
-#include <tools/fv_eta.h>
+#include <fv_eta.h>
 
    integer,  intent(in)::  km           ! vertical dimension
    integer,  intent(out):: ks           ! number of pure p layers
@@ -273,14 +276,14 @@ module fv_eta_mod
    real, intent(out):: ptop         ! model top (Pa)
    character(24), intent(IN) :: npz_type
    character(120), intent(IN) :: fv_eta_file
-   integer :: eta_level_unit
+   character(len=:), dimension(:), allocatable :: eta_level_unit
 
    real:: p0=1000.E2
    real:: pc=200.E2
 
    real pt, lnpe, dlnp
    real press(km+1), pt1(km)
-   integer  k
+   integer :: l, k
    integer :: var_fn = 0
 
    real :: pint = 100.E2
@@ -330,17 +333,27 @@ module fv_eta_mod
          auto_routine = 2
       end select
 
-! Jili Dong add ak/bk input
    else if (trim(npz_type) == 'input') then
-       open (newunit=eta_level_unit, file=trim(fv_eta_file))
-       read(eta_level_unit,*)
-       do k=km+1,1,-1
-          read(eta_level_unit,*) ak(k),bk(k)
-       end do
-       close(eta_level_unit)
-       call set_external_eta(ak, bk, ptop, ks)
 ! Jili Dong add ak/bk input
-
+       call ascii_read (trim(fv_eta_file), eta_level_unit)
+       !--- fv_eta_file being read in must have the following format:
+       !       include a single line description
+       !       ak/bk pairs, with each pair occupying a single line
+       !       the pairs must be ordered from surface to TOA
+       !       the pairs define the levels of the grid to create levels-1 layers
+       if (size(eta_level_unit(:)) /= km+2) then
+          print *,' size is ', size(eta_level_unit(:))
+          call error_mesg ('FV3 set_eta',trim(fv_eta_file)//" has too few or too many entries or has extra &
+                          &spaces at the end of the file", FATAL)
+       endif
+       l = 1
+       read(eta_level_unit(l),*)
+       do k=km+1,1,-1
+          l = l + 1
+          read(eta_level_unit(l),*) ak(k),bk(k)
+       end do
+       deallocate (eta_level_unit)
+       call set_external_eta(ak, bk, ptop, ks)
    else
 
       select case (km)
@@ -741,6 +754,8 @@ module fv_eta_mod
    ptop = ak(1)
    pint = ak(ks+1)
 
+   call check_eta_levels (ak, bk)
+
    if (is_master()) then
       write(*, '(A4, A13, A13, A11)') 'klev', 'ak', 'bk', 'p_ref'
       do k=1,km+1
@@ -770,7 +785,10 @@ module fv_eta_mod
    enddo
    !--- change ks to layers from levels
    ks = ks - 1
+
    if (is_master()) write(6,*) ' ptop & ks ', ptop, ks
+
+   call check_eta_levels (ak, bk)
 
  end subroutine set_external_eta
 
@@ -1822,6 +1840,40 @@ module fv_eta_mod
 
  end subroutine hybrid_z_dz
 
+
+ subroutine check_eta_levels(ak, bk)
+  real,    intent(in) :: ak(:)
+  real,    intent(in) :: bk(:)
+  !--- local variables
+  real :: ph1, tmp
+  integer :: nlev, k
+  logical :: monotonic
+
+  nlev = size(ak(:))
+
+  monotonic = .true.
+  ph1 = ak(1)
+  do k=2,nlev
+     tmp = ak(k) + bk(k)*1000.E2
+     if (tmp <= ph1) then
+       monotonic = .false.
+       exit
+     endif
+     ph1 = tmp
+  enddo
+
+  if (.not. monotonic) then
+    if (is_master()) then
+       write(*, '(A4, A13, A13, A11)') 'klev', 'ak', 'bk', 'p_ref'
+       do k=1,nlev
+          write(*,'(I4, F13.5, F13.5, F11.2)') k, ak(k), bk(k), ak(k) + bk(k)*1000.E2
+       enddo
+    endif
+    call error_mesg ('FV3 check_eta_levels',"ak/bk pairs do not provide a monotonic vertical coordinate", &
+                    & FATAL)
+  endif
+
+ end subroutine check_eta_levels
 
 
  subroutine get_eta_level(npz, p_s, pf, ph, ak, bk, pscale)
