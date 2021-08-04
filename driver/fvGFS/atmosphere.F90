@@ -1935,6 +1935,9 @@ contains
 
        enddo
 
+! Adjust mixing ratios of prognostic tracers to conserve total mass
+    call adjust_tracer_mass()
+
 ! Backward
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, -dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -2001,6 +2004,9 @@ contains
 
      enddo
 
+! Adjust mixing ratios of prognostic tracers to conserve total mass
+     call adjust_tracer_mass()
+
      deallocate ( u0 )
      deallocate ( v0 )
      deallocate (dp0 )
@@ -2009,6 +2015,27 @@ contains
 
      do_adiabatic_init = .false.
      call timing_off('adiabatic_init')
+
+ contains
+
+   subroutine adjust_tracer_mass()
+
+     ! Adjust prognostic tracer mixing ratios for consistency with updated layer mass
+!$omp parallel do default (none) &
+!$omp              shared (jsc, jec, isc, iec, npz, nq, sphum, Atm, dp0, mygrid) &
+!$omp             private (i, j, k, n)
+     do n = 1, nq
+       if (Atm(mygrid)%flagstruct%nudge_qv .and. n == sphum) cycle
+       do k = 1, npz
+         do j = jsc, jec
+           do i = isc, iec
+             Atm(mygrid)%q(i,j,k,n) = Atm(mygrid)%q(i,j,k,n) * (1. + wt * (1. - dp0(i,j,k) / Atm(mygrid)%delp(i,j,k)))
+           end do
+         end do
+       end do
+     end do
+
+   end subroutine adjust_tracer_mass
 
  end subroutine adiabatic_init
 
