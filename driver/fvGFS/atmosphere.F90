@@ -308,13 +308,11 @@ contains
    logical :: chksum_debug = .false.
    logical :: dycore_only  = .false.
    logical :: debug        = .false.
-   logical :: merge_import = .true.
-   logical :: debug_merge  = .false.
    logical :: sync         = .false.
    integer, parameter     :: maxhr = 4096
    real, dimension(maxhr) :: fdiag = 0.
    real                   :: fhmax=384.0, fhmaxhf=120.0, fhout=3.0, fhouthf=1.0,avg_max_length=3600.
-   namelist /atmos_model_nml/ blocksize, chksum_debug, dycore_only, debug, sync, fdiag, fhmax, fhmaxhf, fhout, fhouthf, ccpp_suite, avg_max_length, merge_import, debug_merge
+   namelist /atmos_model_nml/ blocksize, chksum_debug, dycore_only, debug, sync, fdiag, fhmax, fhmaxhf, fhout, fhouthf, ccpp_suite, avg_max_length
    ! *DH 20210326
 
    !For regional
