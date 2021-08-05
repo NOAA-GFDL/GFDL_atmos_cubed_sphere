@@ -116,13 +116,12 @@ module fv_control_mod
 
    use constants_mod,       only: pi=>pi_8, kappa, radius, grav, rdgas
    use field_manager_mod,   only: MODEL_ATMOS
-   use fms_mod,             only: write_version_number, open_namelist_file, &
-                                  check_nml_error, close_file, file_exist
-   use fms_io_mod,          only: set_domain
+   use fms_mod,             only: write_version_number, check_nml_error
+   use fms2_io_mod,         only: file_exists
    use mpp_mod,             only: FATAL, mpp_error, mpp_pe, stdlog, &
                                   mpp_npes, mpp_get_current_pelist, &
                                   input_nml_file, get_unit, WARNING, &
-                                  read_ascii_file, INPUT_STR_LENGTH
+                                  read_ascii_file
    use mpp_domains_mod,     only: mpp_get_data_domain, mpp_get_compute_domain, mpp_get_tile_id
    use tracer_manager_mod,  only: tm_get_number_tracers => get_number_tracers, &
                                   tm_get_tracer_index   => get_tracer_index,   &
@@ -297,7 +296,7 @@ module fv_control_mod
      integer , pointer :: npy
      integer , pointer :: npz
      character(len=24), pointer :: npz_type
-     character(len=120), pointer :: fv_eta_file 
+     character(len=120), pointer :: fv_eta_file
      integer , pointer :: npz_rst
 
      integer , pointer :: ncnst
@@ -485,7 +484,7 @@ module fv_control_mod
         else
            Atm(n)%nml_filename = 'input.nml'
         endif
-        if (.not. file_exist(Atm(n)%nml_filename)) then
+        if (.not. file_exists(Atm(n)%nml_filename)) then
            call mpp_error(FATAL, "Could not find nested grid namelist "//Atm(n)%nml_filename)
         endif
      enddo
@@ -545,7 +544,7 @@ module fv_control_mod
 #ifdef INTERNAL_FILE_NML
      if (this_grid .gt. 1) then
         write(Atm(this_grid)%nml_filename,'(A4, I2.2)') 'nest', this_grid
-        if (.not. file_exist('input_'//trim(Atm(this_grid)%nml_filename)//'.nml')) then
+        if (.not. file_exists('input_'//trim(Atm(this_grid)%nml_filename)//'.nml')) then
            call mpp_error(FATAL, "Could not find nested grid namelist "//'input_'//trim(Atm(this_grid)%nml_filename)//'.nml')
         endif
      else
@@ -650,7 +649,6 @@ module fv_control_mod
           Atm(this_grid)%layout,Atm(this_grid)%io_layout,Atm(this_grid)%bd,Atm(this_grid)%tile_of_mosaic, &
           Atm(this_grid)%gridstruct%square_domain,Atm(this_grid)%npes_per_tile,Atm(this_grid)%domain, &
           Atm(this_grid)%domain_for_coupler,Atm(this_grid)%num_contact,Atm(this_grid)%pelist)
-     call set_domain(Atm(this_grid)%domain)
      call broadcast_domains(Atm,Atm(this_grid)%pelist,size(Atm(this_grid)%pelist))
      do n=1,ngrids
         tile_id = mpp_get_tile_id(Atm(n)%domain)
@@ -677,7 +675,7 @@ module fv_control_mod
              Atm(n)%bd%isc, Atm(n)%bd%iec, &
              Atm(n)%bd%jsc, Atm(n)%bd%jec, &
              Atm(n)%flagstruct%npx,    Atm(n)%flagstruct%npy,   Atm(n)%flagstruct%npz, &
-             Atm(n)%flagstruct%ndims,  Atm(n)%flagstruct%ncnst, Atm(n)%flagstruct%ncnst-Atm(n)%flagstruct%pnats, &
+             Atm(n)%flagstruct%ndims, Atm(n)%flagstruct%ntiles,  Atm(n)%flagstruct%ncnst, Atm(n)%flagstruct%ncnst-Atm(n)%flagstruct%pnats, &
              n/=this_grid, n==this_grid, ngrids) !TODO don't need both of the last arguments
      enddo
      if ( (Atm(this_grid)%bd%iec-Atm(this_grid)%bd%isc+1).lt.4 .or. (Atm(this_grid)%bd%jec-Atm(this_grid)%bd%jsc+1).lt.4 ) then
@@ -708,7 +706,9 @@ module fv_control_mod
      do n=1,ngrids
         Atm(this_grid)%neststruct%child_grids(n) = (grid_coarse(n) == this_grid)
         allocate(Atm(n)%neststruct%do_remap_bc(ngrids))
+        allocate(Atm(n)%neststruct%do_remap_bc_level(Atm(n)%neststruct%num_nest_level))
         Atm(n)%neststruct%do_remap_bc(:) = .false.
+        Atm(n)%neststruct%do_remap_bc_level(:) = .false.
      enddo
      Atm(this_grid)%neststruct%parent_proc = ANY(Atm(this_grid)%neststruct%child_grids) !ANY(tile_coarse == Atm(this_grid)%global_tile)
      Atm(this_grid)%neststruct%child_proc = ASSOCIATED(Atm(this_grid)%parent_grid) !this means a nested grid
@@ -755,30 +755,8 @@ module fv_control_mod
         write(*,*) ' '
      endif
 
-
-!!$     Atm(this_grid)%ts   = 300.
-!!$     Atm(this_grid)%phis = too_big
-!!$     ! The following statements are to prevent the phantom corner regions from
-!!$     ! growing instability
-!!$     Atm(this_grid)%u  = 0.
-!!$     Atm(this_grid)%v  = 0.
-!!$     Atm(this_grid)%ua = too_big
-!!$     Atm(this_grid)%va = too_big
-!!$
-!!$     Atm(this_grid)%inline_mp%prer = too_big
-!!$     Atm(this_grid)%inline_mp%prei = too_big
-!!$     Atm(this_grid)%inline_mp%pres = too_big
-!!$     Atm(this_grid)%inline_mp%preg = too_big
-
      !Initialize restart
      call fv_restart_init()
-!     if ( reset_eta ) then
-!         do n=1, ntilesMe
-!            call set_eta(npz, Atm(this_grid)%ks, ptop, Atm(this_grid)%ak, Atm(this_grid)%bk, Atm(this_grid)%flagstruct%npz_type)
-!         enddo
-!         if(is_master()) write(*,*) "Hybrid sigma-p coordinate has been reset"
-!     endif
-
 
 
    contains
@@ -981,16 +959,8 @@ module fv_control_mod
        integer :: f_unit, ios, ierr, dum
        namelist /nest_nml/ dum ! ngrids, ntiles, nest_pes, p_split !emptied lmh 7may2019
 
-#ifdef INTERNAL_FILE_NML
        read (input_nml_file,nest_nml,iostat=ios)
        ierr = check_nml_error(ios,'nest_nml')
-#else
-       f_unit=open_namelist_file()
-       rewind (f_unit)
-       read (f_unit,nest_nml,iostat=ios)
-       ierr = check_nml_error(ios,'nest_nml')
-       call close_file(f_unit)
-#endif
        if (ierr > 0) then
           call mpp_error(FATAL, " &nest_nml is depreciated. Please use &fv_nest_nml instead.")
        endif
@@ -1003,16 +973,8 @@ module fv_control_mod
        namelist /fv_nest_nml/ grid_pes, num_tile_top, tile_coarse, nest_refine, &
             nest_ioffsets, nest_joffsets, p_split
 
-#ifdef INTERNAL_FILE_NML
        read (input_nml_file,fv_nest_nml,iostat=ios)
        ierr = check_nml_error(ios,'fv_nest_nml')
-#else
-       f_unit=open_namelist_file()
-       rewind (f_unit)
-       read (f_unit,fv_nest_nml,iostat=ios)
-       ierr = check_nml_error(ios,'fv_nest_nml')
-       call close_file(f_unit)
-#endif
 
      end subroutine read_namelist_fv_nest_nml
 
@@ -1024,18 +986,10 @@ module fv_control_mod
        character(len=120) :: grid_file = ''
        namelist /fv_grid_nml/ grid_name, grid_file
 
-#ifdef INTERNAL_FILE_NML
        ! Read Main namelist
        read (input_nml_file,fv_grid_nml,iostat=ios)
        ierr = check_nml_error(ios,'fv_grid_nml')
-#else
-       f_unit=open_namelist_file()
-       rewind (f_unit)
-       ! Read Main namelist
-       read (f_unit,fv_grid_nml,iostat=ios)
-       ierr = check_nml_error(ios,'fv_grid_nml')
-       call close_file (f_unit)
-#endif
+
        call write_version_number ( 'FV_CONTROL_MOD', version )
        unit = stdlog()
        write(unit, nml=fv_grid_nml)
@@ -1460,19 +1414,12 @@ module fv_control_mod
             write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst
 
 
-#ifdef INTERNAL_FILE_NML
        ! Read FVCORE namelist
        read (input_nml_file,fv_core_nml,iostat=ios)
        ierr = check_nml_error(ios,'fv_core_nml')
        ! Reset input_file_nml to default behavior (CHECK do we still need this???)
        !call read_input_nml
-#else
-       f_unit = open_namelist_file(Atm%nml_filename)
-       ! Read FVCORE namelist
-       read (f_unit,fv_core_nml,iostat=ios)
-       ierr = check_nml_error(ios,'fv_core_nml')
-       call close_file(f_unit)
-#endif
+
        call write_version_number ( 'FV_CONTROL_MOD', version )
        unit = stdlog()
        write(unit, nml=fv_core_nml)
@@ -1583,9 +1530,11 @@ module fv_control_mod
 
      subroutine setup_update_regions
 
-       integer :: isu, ieu, jsu, jeu ! update regions
+       integer :: isu, ieu, jsu, jeu ! update regions for centered variables
        integer :: isc, jsc, iec, jec
        integer :: upoff
+       integer :: isu_stag, jsu_stag, ieu_stag, jeu_stag ! update regions for u
+       integer :: isv_stag, jsv_stag, iev_stag, jev_stag ! update regions for v
 
        isc = Atm(this_grid)%bd%isc
        jsc = Atm(this_grid)%bd%jsc
@@ -1603,19 +1552,39 @@ module fv_control_mod
              jsu = nest_joffsets(n)
              jeu = jsu + jcount_coarse(n) - 1
 
+             isu_stag = isu
+             jsu_stag = jsu
+             ieu_stag = ieu
+             jeu_stag = jeu+1
+
+             isv_stag = isu
+             jsv_stag = jsu
+             iev_stag = ieu+1
+             jev_stag = jeu
+
              !update offset adjustment
              isu = isu + upoff
              ieu = ieu - upoff
              jsu = jsu + upoff
              jeu = jeu - upoff
 
-             !restriction to current domain
-!!$             !!! DEBUG CODE
-!!$             if (Atm(this_grid)%flagstruct%fv_debug) then
-!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS  : ', isu, jsu, ieu, jeu
-!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 2: ', isc, jsc, iec, jsc
-!!$             endif
-!!$             !!! END DEBUG CODE
+             isu_stag = isu_stag + upoff
+             ieu_stag = ieu_stag - upoff
+             jsu_stag = jsu_stag + upoff
+             jeu_stag = jeu_stag - upoff
+
+             isv_stag = isv_stag + upoff
+             iev_stag = iev_stag - upoff
+             jsv_stag = jsv_stag + upoff
+             jev_stag = jev_stag - upoff
+
+! Absolute boundary for the staggered point update region on the parent.
+! This is used in remap_uv to control the update of the last staggered point
+! when the the update region coincides with a pe domain to avoid cross-restart repro issues
+
+             Atm(n)%neststruct%jeu_stag_boundary = jeu_stag
+             Atm(n)%neststruct%iev_stag_boundary = iev_stag
+
              if (isu > iec .or. ieu < isc .or. &
                  jsu > jec .or. jeu < jsc ) then
                 isu = -999 ; jsu = -999 ; ieu = -1000 ; jeu = -1000
@@ -1623,15 +1592,49 @@ module fv_control_mod
                 isu = max(isu,isc) ; jsu = max(jsu,jsc)
                 ieu = min(ieu,iec) ; jeu = min(jeu,jec)
              endif
-!!$             !!! DEBUG CODE
-!!$             if (Atm(this_grid)%flagstruct%fv_debug) &
-!!$                  write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 3: ', isu, jsu, ieu, jeu
-!!$             !!! END DEBUG CODE
+
+! Update region for staggered quantity to avoid cross repro issues when the pe domain boundary
+! coincide with the nest. Basically write the staggered update on compute domains
+
+             if (isu_stag > iec .or. ieu_stag < isc .or. &
+                 jsu_stag > jec .or. jeu_stag < jsc ) then
+                isu_stag = -999 ; jsu_stag = -999 ; ieu_stag = -1000 ; jeu_stag = -1000
+             else
+                isu_stag = max(isu_stag,isc) ; jsu_stag = max(jsu_stag,jsc)
+                ieu_stag = min(ieu_stag,iec) ; jeu_stag = min(jeu_stag,jec)
+             endif
+
+             if (isv_stag > iec .or. iev_stag < isc .or. &
+                 jsv_stag > jec .or. jev_stag < jsc ) then
+                isv_stag = -999 ; jsv_stag = -999 ; iev_stag = -1000 ; jev_stag = -1000
+             else
+                isv_stag = max(isv_stag,isc) ; jsv_stag = max(jsv_stag,jsc)
+                iev_stag = min(iev_stag,iec) ; jev_stag = min(jev_stag,jec)
+             endif
+             if (isu > iec .or. ieu < isc .or. &
+                 jsu > jec .or. jeu < jsc ) then
+                isu = -999 ; jsu = -999 ; ieu = -1000 ; jeu = -1000
+             else
+                isu = max(isu,isc) ; jsu = max(jsu,jsc)
+                ieu = min(ieu,iec) ; jeu = min(jeu,jec)
+             endif
+
+             ! lump indices
+             isu=max(isu, isu_stag, isv_stag)
+             jsu=max(jsu, jsu_stag, jsv_stag)
+             jeu_stag=max(jeu, jeu_stag)
+             jev_stag=max(jeu, jev_stag)
+             ieu_stag=max(ieu ,ieu_stag)
+             iev_stag=max(ieu ,iev_stag)
 
              Atm(n)%neststruct%isu = isu
-             Atm(n)%neststruct%ieu = ieu
+             Atm(n)%neststruct%ieu = ieu_stag
              Atm(n)%neststruct%jsu = jsu
-             Atm(n)%neststruct%jeu = jeu
+             Atm(n)%neststruct%jeu = jev_stag
+
+             Atm(n)%neststruct%jeu_stag = jeu_stag
+             Atm(n)%neststruct%iev_stag = iev_stag
+
           endif
        enddo
 

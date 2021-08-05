@@ -91,8 +91,8 @@ module fv_diagnostics_mod
 !     <td>timing_on, timing_off</td>
 !   </tr>
 !   <tr>
-!     <td>gfdl_cloud_microphys_mod</td>
-!     <td>wqs1, qsmith_init</td>
+!     <td>gfdl_mp_mod</td>
+!     <td>wqs1, qsmith_init, c_liq</td>
 !   </tr>
 !   <tr>
 !     <td>mpp_mod</td>
@@ -119,7 +119,6 @@ module fv_diagnostics_mod
  use constants_mod,      only: grav, rdgas, rvgas, pi=>pi_8, radius, kappa, WTMAIR, WTMCO2, &
                                omega, hlv, cp_air, cp_vapor, TFREEZE
  use fms_mod,            only: write_version_number
- use fms_io_mod,         only: set_domain, nullify_domain, write_version_number
  use time_manager_mod,   only: time_type, get_date, get_time
  use mpp_domains_mod,    only: domain2d, mpp_update_domains, DGRID_NE, NORTH, EAST
  use diag_manager_mod,   only: diag_axis_init, register_diag_field, &
@@ -137,13 +136,12 @@ module fv_diagnostics_mod
  use tracer_manager_mod, only: get_tracer_names, get_number_tracers, get_tracer_index
  use field_manager_mod,  only: MODEL_ATMOS
  use mpp_mod,            only: mpp_error, FATAL, stdlog, mpp_pe, mpp_root_pe, mpp_sum, mpp_max, NOTE, input_nml_file
- use mpp_io_mod,         only: mpp_flush
  use sat_vapor_pres_mod, only: compute_qs, lookup_es
 
  use fv_arrays_mod, only: max_step
 
 #ifndef GFS_PHYS
- use gfdl_cloud_microphys_mod, only: wqs1, qsmith_init, c_liq
+ use gfdl_mp_mod, only: wqs1, qsmith_init, c_liq
 #endif
 
  use fv_diag_column_mod, only: fv_diag_column_init, sounding_column, debug_column
@@ -275,8 +273,6 @@ contains
 
     ncnst = Atm(1)%ncnst
     m_calendar = Atm(1)%flagstruct%moist_phys
-
-    call set_domain(Atm(1)%domain)  ! Set domain so that diag_manager can access tile information
 
     sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
     liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
@@ -895,11 +891,6 @@ contains
                'layer-averaged temperature tendency from physics', 'K/s', missing_value=missing_value )
         if (id_t_dt_phys_plev_ave > 0 .and. .not. allocated(Atm(n)%phys_diag%phys_t_dt) ) allocate(Atm(n)%phys_diag%phys_t_dt(isc:iec,jsc:jec,npz))
       ! flag for calculation of geopotential
-!!$      if ( all(id_h(minloc(abs(levs-10)))>0)  .or. all(id_h(minloc(abs(levs-50)))>0)  .or. &
-!!$           all(id_h(minloc(abs(levs-100)))>0) .or. all(id_h(minloc(abs(levs-200)))>0) .or. &
-!!$           all(id_h(minloc(abs(levs-250)))>0) .or. all(id_h(minloc(abs(levs-300)))>0) .or. &
-!!$           all(id_h(minloc(abs(levs-500)))>0) .or. all(id_h(minloc(abs(levs-700)))>0) .or. &
-!!$           all(id_h(minloc(abs(levs-850)))>0) .or. all(id_h(minloc(abs(levs-1000)))>0).or. &
       if ( any(id_h > 0) .or. id_h_plev>0 .or. id_hght3d>0) then
            id_any_hght = 1
       else
@@ -1419,8 +1410,6 @@ contains
        yr_init = 0 ; mo_init = 0 ; hr_init = 0 ; mn_init = 0
     endif
 
-    call nullify_domain()  ! Nullify  set_domain info
-
     module_is_initialized=.true.
     istep = 0
 #ifndef GFS_PHYS
@@ -1576,7 +1565,6 @@ contains
     endif
 
     fv_time = Time
-    call set_domain(Atm(1)%domain)
 
     if ( m_calendar ) then
          call get_date(fv_time, yr, mon, dd, hr, mn, seconds)
@@ -1991,36 +1979,6 @@ contains
           endif
 
        endif
-
-
-
-!!$       if ( id_srh > 0 ) then
-!!$          call helicity_relative(isc, iec, jsc, jec, ngc, npz, zvir, sphum, a2, &
-!!$               Atm(n)%ua, Atm(n)%va, Atm(n)%delz, Atm(n)%q,   &
-!!$               Atm(n)%flagstruct%hydrostatic, Atm(n)%pt, Atm(n)%peln, Atm(n)%phis, grav, 0., 3.e3)
-!!$          used = send_data ( id_srh, a2, Time )
-!!$          if(prt_minmax) then
-!!$             do j=jsc,jec
-!!$                do i=isc,iec
-!!$                   tmp = rad2deg * Atm(n)%gridstruct%agrid(i,j,1)
-!!$                   tmp2 = rad2deg * Atm(n)%gridstruct%agrid(i,j,2)
-!!$                   if (  tmp2<25. .or. tmp2>50.    &
-!!$                        .or. tmp<235. .or. tmp>300. ) then
-!!$                      a2(i,j) = 0.
-!!$                   endif
-!!$                enddo
-!!$             enddo
-!!$             call prt_maxmin('SRH over CONUS', a2, isc, iec, jsc, jec, 0,   1, 1.)
-!!$          endif
-!!$       endif
-
-!!$       if ( id_srh25 > 0 ) then
-!!$          call helicity_relative(isc, iec, jsc, jec, ngc, npz, zvir, sphum, a2, &
-!!$               Atm(n)%ua, Atm(n)%va, Atm(n)%delz, Atm(n)%q,   &
-!!$               Atm(n)%flagstruct%hydrostatic, Atm(n)%pt, Atm(n)%peln, Atm(n)%phis, grav, 2.e3, 5.e3)
-!!$          used = send_data ( id_srh25, a2, Time )
-!!$       endif
-
 
        ! Relative Humidity
        if ( id_rh > 0 ) then
@@ -2860,8 +2818,6 @@ contains
                         a2(i,j) = missing_value3
                         var1(i,j) = missing_value3
                         var2(i,j) = missing_value2
-!!$                           a2(i,j) = Atm(n)%pt(i,j,k)
-!!$                         var1(i,j) = 0.01*Atm(n)%pe(i,k+1,j)   ! surface pressure
                      endif
                   enddo
                enddo
@@ -3991,8 +3947,6 @@ contains
     if (allocated(wz)) deallocate(wz)
     if (allocated(dmmr)) deallocate(dmmr)
     if (allocated(dvmr)) deallocate(dvmr)
-
-    call nullify_domain()
 
  end subroutine fv_diag
 
@@ -6159,6 +6113,7 @@ end subroutine eqv_pot
    enddo   ! j-loop
 
  end subroutine max_uh
+
  subroutine max_vv(is,ie,js,je,npz,ng,up2,dn2,pe,w)
 ! !INPUT PARAMETERS:
    integer, intent(in):: is, ie, js, je, ng, npz
@@ -6177,6 +6132,8 @@ end subroutine eqv_pot
          enddo
       enddo
  end subroutine max_vv
+
+!#######################################################################
 
  subroutine fv_diag_init_gn(Atm)
    type(fv_atmos_type), intent(inout), target :: Atm
@@ -6355,65 +6312,6 @@ end subroutine eqv_pot
       enddo
     ENDIF
     if(debug_level.ge.100) print *,'  kmin,maxthe = ',kmin,maxthe
-
-!!$  ELSEIF(source.eq.3)THEN
-!!$    ! use mixed layer
-!!$
-!!$    IF( dz(nk).gt.ml_depth )THEN
-!!$      ! the second level is above the mixed-layer depth:  just use the
-!!$      ! lowest level
-!!$
-!!$      avgth = th(nk)
-!!$      avgqv = q(nk)
-!!$      kmin = nk
-!!$
-!!$    ELSEIF( z(1).lt.ml_depth )THEN
-!!$      ! the top-most level is within the mixed layer:  just use the
-!!$      ! upper-most level (not
-!!$
-!!$      avgth = th(1)
-!!$      avgqv = q(1)
-!!$      kmin = 1
-!!$
-!!$    ELSE
-!!$      ! calculate the mixed-layer properties:
-!!$
-!!$      avgth = 0.0
-!!$      avgqv = 0.0
-!!$      k = nk-1
-!!$      if(debug_level.ge.100) print *,'  ml_depth = ',ml_depth
-!!$      if(debug_level.ge.100) print *,'  k,z,th,q:'
-!!$      if(debug_level.ge.100) print *,nk,z(nk),th(nk),q(nk)
-!!$
-!!$      do while( (z(k).le.ml_depth) .and. (k.ge.1) )
-!!$
-!!$        if(debug_level.ge.100) print *,k,z(k),th(k),q(k)
-!!$
-!!$        avgth = avgth + dz(k)*th(k)
-!!$        avgqv = avgqv + dz(k)*q(k)
-!!$
-!!$        k = k - 1
-!!$
-!!$      enddo
-!!$
-!!$      th2 = th(k+1)+(th(k)-th(k+1))*(ml_depth-z(k-1))/dz(k)
-!!$      qv2 =  q(k+1)+( q(k)- q(k+1))*(ml_depth-z(k-1))/dz(k)
-!!$
-!!$      if(debug_level.ge.100) print *,999,ml_depth,th2,qv2
-!!$
-!!$      avgth = avgth + 0.5*(ml_depth-z(k-1))*(th2+th(k-1))
-!!$      avgqv = avgqv + 0.5*(ml_depth-z(k-1))*(qv2+q(k-1))
-!!$
-!!$      if(debug_level.ge.100) print *,k,z(k),th(k),q(k)
-!!$
-!!$      avgth = avgth/ml_depth
-!!$      avgqv = avgqv/ml_depth
-!!$
-!!$      kmin = nk
-!!$
-!!$    ENDIF
-!!$
-!!$    if(debug_level.ge.100) print *,avgth,avgqv
 
   ELSE
 
@@ -6629,19 +6527,6 @@ end subroutine eqv_pot
     return
   end subroutine getcape
 
-!!$  subroutine divg_diagnostics(divg, ..., idiag, bd, npz,gridstruct%area_64, domain, fv_time))
-!!$    real, INPUT(IN) :: divg(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-!!$    ....
-!!$
-!!$    if (id_divg>0) then
-!!$       used = send_data(id_divg, divg, fv_time)
-!!$
-!!$    endif
-!!$
-!!$
-!!$             if(flagstruct%fv_debug) call prt_mxm('divg',  dp1, is, ie, js, je, 0, npz, 1.,gridstruct%area_64, domain)
-!!$  end subroutine divg_diagnostics
-!!$
 !-----------------------------------------------------------------------
 !ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 !-----------------------------------------------------------------------
