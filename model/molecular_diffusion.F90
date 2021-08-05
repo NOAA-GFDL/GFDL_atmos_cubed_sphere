@@ -38,12 +38,17 @@ module molecular_diffusion_mod
 !   </tr>
 ! </table>
 
-      use constants_mod,     only: rdgas, cp_air
-      use     fv_mp_mod,     only: is_master
-      use mpp_mod,           only: stdlog, input_nml_file
-      use fms_mod,           only: check_nml_error, open_namelist_file, close_file
+      use constants_mod,      only: rdgas, cp_air
+      use fv_mp_mod,          only: is_master 
+      use mpp_mod,            only: stdlog, input_nml_file
+      use fms_mod,            only: check_nml_error, open_namelist_file, close_file
+      use fv_grid_utils_mod,  only: g_sum
+      use mpp_domains_mod,    only: domain2d
+      use fv_arrays_mod,      only: fv_grid_type, fv_grid_bounds_type
+
+
 #ifdef MULTI_GASES
-      use multi_gases_mod,   only: ind_gas, num_gas
+      use multi_gases_mod,   only: ind_gas, num_gas, virqd, vicpqd, vicvq, vicvqd, virq
 #endif
 
 
@@ -72,7 +77,7 @@ module molecular_diffusion_mod
       real, parameter:: s12=0.774
 !
       public molecular_diffusion_init, read_namelist_molecular_diffusion_nml
-      public molecular_diffusion_coefs
+      public molecular_diffusion_coefs, thermosphere_adjustment
 
       CONTAINS
 ! --------------------------------------------------------
@@ -195,7 +200,7 @@ module molecular_diffusion_mod
         do i=2,ind_gas_str-1
           fgas = fgas - max(0.0,q(n,i))
         enddo
-        fgas = max(min(fgas,1.0),1.0E-20)	! reasonable assured
+        fgas = max(min(fgas,1.0),1.0E-20)         ! reasonable assured
         fgas = 1./fgas
 
         qh2o = max(0.0,q(n,1))*fgas
@@ -218,7 +223,7 @@ module molecular_diffusion_mod
         cvx  = cpx - rdgas
 
         am = qo/amo + qo2/amo2 + qo3/amo3 + qn2/amn2 +qh2o/amh2o
-        am = 1.0 / am				! g/mol
+        am = 1.0 / am    ! g/mol
         o_n   = qo   * am / amo
         o2_n  = qo2  * am / amo2
         o3_n  = qo3  * am / amo3
@@ -228,21 +233,101 @@ module molecular_diffusion_mod
         la = o_n*lao + o2_n*lao2 + o3_n*lao3 + n2_n*lan2 + h2o_n*lah2o
 
         t69 = temp(n) ** 0.69
-        rho = 1e-3 * am * plyr(n)/temp(n) / avgdbz	! km/m^3
+        rho = 1e-3 * am * plyr(n)/temp(n) / avgdbz    ! km/m^3
         
         mur(n) = mu * t69 / rho
         lam(n) = la * t69 / rho / cvx
 !       lam(n) = la * t69 / rho / cpx
 
 !reasonable assured
-         mur(n) = min(mur(n),1.0e15)	! viscosity
-         lam(n) = min(lam(n),1.0e15)	! conductivity
-         d12(n) = min(d12(n),1.0e15)	! diffusivity
+         mur(n) = min(mur(n),1.0e15)    ! viscosity
+         lam(n) = min(lam(n),1.0e15)    ! conductivity
+         d12(n) = min(d12(n),1.0e15)    ! diffusivity
 
       enddo
 
       return
       end subroutine molecular_diffusion_coefs
-!--------------------------------------------
+      subroutine thermosphere_adjustment(domain,gridstruct,npz,bd,ng,pt)
+      type(fv_grid_bounds_type), intent(IN) :: bd
+      real ,      intent(INOUT) ::    pt(bd%is:bd%ie  ,bd%js:bd%je, npz)
+      type(fv_grid_type), intent(IN), target :: gridstruct
+      type(domain2d), intent(INOUT) :: domain
+      integer, intent(IN) :: ng, npz
+      real       :: correct, aave_t1, ttsave, tdsave
+      integer :: k, j, i
+      real :: t(bd%is:bd%ie,bd%js:bd%je)
+      integer :: is,  ie,  js,  je
+      integer :: isd, ied, jsd, jed
+
+
+      is  = bd%is
+      ie  = bd%ie
+      js  = bd%js
+      je  = bd%je
+      isd = bd%isd
+      ied = bd%ied
+      jsd = bd%jsd
+      jed = bd%jed
+
+
+
+
+    k=md_tadj_layers
+    do j=js,je
+       do i=is,ie
+          t(i,j) = pt(i,j,k) 
+       enddo
+    enddo
+    aave_t1 = g_sum(domain,t,is,ie,js,je,ng,gridstruct%area_64, 1)
+    k=md_tadj_layers-1
+    do j=js,je
+       do i=is,ie
+          t(i,j) = pt(i,j,k) 
+       enddo
+    enddo
+    ttsave = g_sum(domain,t,is,ie,js,je,ng,gridstruct%area_64, 1)
+    tdsave = ttsave - aave_t1
+!   if( is_master() ) write(*,*) ' k t1 ts ',k,aave_t1,ttsave
+!   correct_sum = 0.0
+    do k=md_tadj_layers-2,1,-1
+       do j=js,je
+          do i=is,ie
+             t(i,j) = pt(i,j,k) 
+          enddo
+       enddo
+       aave_t1 = g_sum(domain,t,is,ie,js,je,ng,gridstruct%area_64, 1)
+!      if( is_master() ) write(*,*) ' k ts t1 ',k,ttsave,aave_t1
+       if( aave_t1 .gt. ttsave ) then
+          tdsave = min(tdsave,aave_t1-ttsave)
+          ttsave = ttsave + tdsave
+       else
+          tdsave = 0.0
+       endif
+       correct = ttsave - aave_t1
+!      if( is_master() ) write(*,*) ' k t1 ts correct ',k,aave_t1,ttsave,correct
+       if( correct .ne. 0.0 ) then
+          do j=js,je
+             do i=is,ie
+                pt(i,j,k) = t(i,j)  + correct
+             enddo
+          enddo
+       endif
+!      correct_sum = correct_sum + correct
+    enddo
+! adjust for energy conserving by evenly distribute total correction
+!   if( correct_sum .ne. 0.0 ) then
+!      correct = - correct_sum / (md_tadj_layers + 10)
+!      if( is_master() ) write(*,*) ' sum=',correct_sum,' correct=',correct
+!      do k=1,md_tadj_layers+10
+!         do j=js,je
+!            do i=is,ie
+!               pt(i,j,k) = t(i,j)  + correct
+!            enddo
+!         enddo
+!      enddo
+!   endif
+  return
+  end subroutine thermosphere_adjustment
 
 end module molecular_diffusion_mod

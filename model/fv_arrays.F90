@@ -88,7 +88,7 @@ module fv_arrays_mod
      real, allocatable, dimension(:,:) :: rdxc, rdyc
      real, allocatable, dimension(:,:) :: rdxa, rdya
 
-#ifdef MOLECULAR_DIFFUSION
+!  MOLECULAR_DIFFUSION
      real(kind=R_GRID), allocatable, dimension(:,:) :: area_u_64, area_v_64
      real(kind=R_GRID), allocatable, dimension(:,:) :: dx6_64, dy6_64
      real, allocatable, dimension(:,:) ::  area_u,  area_v
@@ -98,7 +98,6 @@ module fv_arrays_mod
      real, allocatable, dimension(:,:) :: sina_6
      real, allocatable, dimension(:,:) :: delu_6, delv_6
      real, allocatable, dimension(:,:) :: delu_5, delv_5
-#endif
 
      ! Scalars:
      real(kind=R_GRID), allocatable :: edge_s(:)
@@ -876,6 +875,8 @@ module fv_arrays_mod
    logical :: butterfly_effect = .false.   !< Flip the least-significant-bit of the lowest level temperature
                                            !< at the center of the domain (the center of tile 1), if set to .true.
                                            !< The default value is .false.
+   logical :: molecular_diffusion = .false.  !< Apply Whole Atmosphere Model (WAM) molecular diffusion 
+                                             !< developed by Henry Juang
 
    real :: dz_min = 2        !< Minimum thickness depth to  to enforce monotonicity of height to prevent blowup.
                              !< 2 by default
@@ -1623,25 +1624,25 @@ contains
     allocate ( Atm%gridstruct% dya_64(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
     allocate ( Atm%gridstruct%rdya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) 
 
-#ifdef MOLECULAR_DIFFUSION
-    allocate ( Atm%gridstruct% area_u_64(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) ) 
-    allocate ( Atm%gridstruct% area_v_64(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) ) 
-    allocate ( Atm%gridstruct% dx6_64(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-    allocate ( Atm%gridstruct% dy6_64(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-    allocate ( Atm%gridstruct% area_u(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) ) 
-    allocate ( Atm%gridstruct% area_v(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) ) 
-    allocate ( Atm%gridstruct% dx6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-    allocate ( Atm%gridstruct% dy6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-    allocate ( Atm%gridstruct%rarea_u(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) ) 
-    allocate ( Atm%gridstruct%rarea_v(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) ) 
-    allocate ( Atm%gridstruct%rdx6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-    allocate ( Atm%gridstruct%rdy6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-    allocate ( Atm%gridstruct%sina_6(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
-    allocate ( Atm%gridstruct%delu_6(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
-    allocate ( Atm%gridstruct%delv_6(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
-    allocate ( Atm%gridstruct%delu_5(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
-    allocate ( Atm%gridstruct%delv_5(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
-#endif
+    if ( Atm%flagstruct%molecular_diffusion ) then
+        allocate ( Atm%gridstruct% area_u_64(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) ) 
+        allocate ( Atm%gridstruct% area_v_64(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) ) 
+        allocate ( Atm%gridstruct% dx6_64(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
+        allocate ( Atm%gridstruct% dy6_64(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
+        allocate ( Atm%gridstruct% area_u(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) ) 
+        allocate ( Atm%gridstruct% area_v(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) ) 
+        allocate ( Atm%gridstruct% dx6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
+        allocate ( Atm%gridstruct% dy6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
+        allocate ( Atm%gridstruct%rarea_u(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) ) 
+        allocate ( Atm%gridstruct%rarea_v(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) ) 
+        allocate ( Atm%gridstruct%rdx6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
+        allocate ( Atm%gridstruct%rdy6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
+        allocate ( Atm%gridstruct%sina_6(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
+        allocate ( Atm%gridstruct%delu_6(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
+        allocate ( Atm%gridstruct%delv_6(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
+        allocate ( Atm%gridstruct%delu_5(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
+        allocate ( Atm%gridstruct%delv_5(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
+    endif
     
     allocate ( Atm%gridstruct%grid (isd_2d:ied_2d+1,jsd_2d:jed_2d+1,1:ndims_2d) )
     allocate ( Atm%gridstruct%grid_64 (isd_2d:ied_2d+1,jsd_2d:jed_2d+1,1:ndims_2d) )
@@ -1889,21 +1890,21 @@ contains
     deallocate ( Atm%gridstruct% dya )
     deallocate ( Atm%gridstruct%rdya )
 
-#ifdef MOLECULAR_DIFFUSION
-    deallocate ( Atm%gridstruct% area_u )
-    deallocate ( Atm%gridstruct% area_v )
-    deallocate ( Atm%gridstruct%rarea_u )
-    deallocate ( Atm%gridstruct%rarea_v )
-    deallocate ( Atm%gridstruct% dx6 )
-    deallocate ( Atm%gridstruct% dy6 )
-    deallocate ( Atm%gridstruct%rdx6 )
-    deallocate ( Atm%gridstruct%rdy6 )
-    deallocate ( Atm%gridstruct%sina_6 )
-    deallocate ( Atm%gridstruct%delu_6 )
-    deallocate ( Atm%gridstruct%delv_6 )
-    deallocate ( Atm%gridstruct%delu_5 )
-    deallocate ( Atm%gridstruct%delv_5 )
-#endif
+    if ( Atm%flagstruct%molecular_diffusion ) then
+       deallocate ( Atm%gridstruct% area_u )
+       deallocate ( Atm%gridstruct% area_v )
+       deallocate ( Atm%gridstruct%rarea_u )
+       deallocate ( Atm%gridstruct%rarea_v )
+       deallocate ( Atm%gridstruct% dx6 )
+       deallocate ( Atm%gridstruct% dy6 )
+       deallocate ( Atm%gridstruct%rdx6 )
+       deallocate ( Atm%gridstruct%rdy6 )
+       deallocate ( Atm%gridstruct%sina_6 )
+       deallocate ( Atm%gridstruct%delu_6 )
+       deallocate ( Atm%gridstruct%delv_6 )
+       deallocate ( Atm%gridstruct%delu_5 )
+       deallocate ( Atm%gridstruct%delv_5 )
+    endif
     
     deallocate ( Atm%gridstruct%grid  )
     deallocate ( Atm%gridstruct%agrid )

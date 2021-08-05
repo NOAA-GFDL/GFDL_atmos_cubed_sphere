@@ -44,16 +44,11 @@
 !   </tr>
 ! </table>
 
-#ifdef MOLECULAR_DIFFUSION
  use molecular_diffusion_mod,  only: molecular_diffusion_coefs, &
                                      tau_visc, tau_cond, tau_diff
- use fv_mp_mod,         only: is_master
  use tp_core_mod,       only: fv_tp_2d, pert_ppm, copy_corners,    &
                               deln_flux_explm, deln_flux_explm_udvd
-#else
- use tp_core_mod,       only: fv_tp_2d, pert_ppm, copy_corners
-#endif
- use fv_mp_mod, only: fill_corners, XDir, YDir
+ use fv_mp_mod, only: is_master, fill_corners, XDir, YDir
  use fv_arrays_mod, only: fv_grid_type, fv_grid_bounds_type, fv_flags_type
  use a2b_edge_mod, only: a2b_ord4
 
@@ -101,12 +96,8 @@
 
 
       private
-#ifdef MOLECULAR_DIFFUSION
       public :: c_sw, d_sw, d_md, fill_4corners, &
                 del6_vt_flux, divergence_corner, divergence_corner_nest
-#else
-      public :: c_sw, d_sw, fill_4corners, del6_vt_flux, divergence_corner, divergence_corner_nest
-#endif
 
   contains
 
@@ -1587,7 +1578,6 @@
 
  end subroutine d_sw
 
-#ifdef MOLECULAR_DIFFUSION
 
 ! d_md :: D-Grid 2D molecular diffusion
 
@@ -1705,7 +1695,6 @@
 
  end subroutine d_md
 
-#endif  ! for MOLECULAR_DIFFUSION
 
 !>@brief The subroutine 'del6_vt_flux' applies 2nd, 4th, or 6th-order damping
 !! to fluxes ("vorticity damping")

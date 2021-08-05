@@ -56,10 +56,8 @@ module tp_core_mod
 
  private
  public fv_tp_2d, pert_ppm, copy_corners
-#ifdef MOLECULAR_DIFFUSION
  public deln_flux_explm, deln_flux_explm_udvd
  public copy_corners_for_udvd
-#endif
 
  real, parameter:: ppm_fac = 1.5   !< nonlinear scheme limiter: between 1 and 2
  real, parameter:: r3 = 1./3.
@@ -1388,7 +1386,6 @@ endif
 
  end subroutine deln_flux
 
-#ifdef MOLECULAR_DIFFUSION
 
 !===========================================
  subroutine deln_flux_explm(nord,is,ie,js,je,npx,npy,damp,q,gridstruct,bd)
@@ -1715,7 +1712,6 @@ type(fv_grid_bounds_type), intent(IN) :: bd
 
  end subroutine copy_corners_for_udvd
 
-#endif  ! for MOLECULAR_DIFFUSION
 
 
 end module tp_core_mod

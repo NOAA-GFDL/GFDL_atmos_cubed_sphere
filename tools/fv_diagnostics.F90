@@ -218,6 +218,7 @@ module fv_diagnostics_mod
  integer :: id_dx, id_dy
 
  real              :: vrange(2), vsrange(2), wrange(2), trange(2), slprange(2), rhrange(2), skrange(2)
+ real              :: vrange_bad(2), trange_bad(2)
 
  ! integer :: id_d_grid_ucomp, id_d_grid_vcomp   ! D grid winds
  ! integer :: id_c_grid_ucomp, id_c_grid_vcomp   ! C grid winds
@@ -305,20 +306,25 @@ contains
 
     vsrange = (/ -200.,  200. /)  ! surface (lowest layer) winds
 
-#ifdef MOLECULAR_DIFFUSION
+    if (Atm(1)%flagstruct%molecular_diffusion) then
     vrange = (/ -850.,  850. /)  ! winds
     wrange = (/ -300.,  300. /)  ! vertical wind
     trange = (/    5., 3500. /)  ! temperature
-#else
+    vrange_bad = (/ -850.,  850. /)  ! winds
+    trange_bad = (/  130., 3500. /)  ! temperature
+    else
     vrange = (/ -330.,  330. /)  ! winds
     wrange = (/ -100.,  100. /)  ! vertical wind
+    vrange_bad = (/ -250.,  250. /)  ! winds
 #ifdef HIWPP
     trange = (/    5.,  350. /)  ! temperature
+    trange_bad = (/   130.,  350. /)  ! temperature
 #else
     trange = (/  100.,  350. /)  ! temperature
+    trange_bad = (/  150.,  350. /)  ! temperature
 #endif
-#endif
-     rhrange = (/  -10.,  150. /)  ! RH
+    endif
+    rhrange = (/  -10.,  150. /)  ! RH
     slprange = (/800.,  1200./)  ! sea-level-pressure
     skrange  = (/ -10000000.0,  10000000.0 /)  ! dissipation estimate for SKEB
 
@@ -1120,11 +1126,11 @@ contains
        id_o3w = register_diag_field ( trim(field), 'o3w', axes(1:3), Time, &
             'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
 #ifdef MULTI_GASES
-       id_ow = register_diag_field ( trim(field), 'spow', axes(1:3), Time, &
+       id_spow = register_diag_field ( trim(field), 'spow', axes(1:3), Time, &
             'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
-       id_o2w = register_diag_field ( trim(field), 'spo2w', axes(1:3), Time, &
+       id_spo2w = register_diag_field ( trim(field), 'spo2w', axes(1:3), Time, &
             'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
-       id_o3w = register_diag_field ( trim(field), 'spo3w', axes(1:3), Time, &
+       id_spo3w = register_diag_field ( trim(field), 'spo3w', axes(1:3), Time, &
             'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
 #endif
        endif
@@ -1735,37 +1741,18 @@ contains
     elseif ( Atm(n)%flagstruct%range_warn ) then
          call range_check('DELP', Atm(n)%delp, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,    &
                            0.01*ptop, 200.E2, bad_range, Time)
-#ifdef MOLECULAR_DIFFUSION
          call range_check('UA', Atm(n)%ua, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
-                           -850., 850., bad_range, Time)
+                           vrange_bad(1), vrange_bad(2), bad_range, Time)
          call range_check('VA', Atm(n)%va, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
-                           -850., 850., bad_range, Time)
-#else
-         call range_check('UA', Atm(n)%ua, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
-                           -250., 250., bad_range, Time)
-         call range_check('VA', Atm(n)%va, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
-                           -250., 250., bad_range, Time)
-#endif
+                           vrange_bad(1),vrange_bad(2), bad_range, Time)
 
 #ifndef SW_DYNAMICS
          call range_check('TA', Atm(n)%pt, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
-#ifdef HIWPP
-#ifdef MOLECULAR_DIFFUSION
-                           130., 3500., bad_range, Time)
-#else
-                           130., 350., bad_range, Time) !DCMIP ICs have very low temperatures
-#endif	! MOLECULAR_DIFFUSION
-#else
 #ifdef MULTI_GASES
                            130., 3500., bad_range, Time)
 #else
-#ifdef MOLECULAR_DIFFUSION
-                           130., 3500., bad_range, Time)
-#else
-                           150., 350., bad_range, Time)
-#endif	! MOLECULAR_DIFFUSION
-#endif	! MULTI_GASES
-#endif	! HIWPP
+                           trange_bad(1),trange_bad(2), bad_range, Time)
+#endif
 #endif	! SW_DYNAMICS
 
          call range_check('Qv', Atm(n)%q(:,:,:,sphum), isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
@@ -3040,8 +3027,8 @@ contains
 
 #ifdef MULTI_GASES
        if(id_uw > 0 .or. id_vw > 0 .or. id_hw > 0 .or. id_qvw > 0 .or. &
-            id_qlw > 0 .or. id_qiw > 0 .or. id_o3w > 0 .or. &
-            id_o2w > 0 .or. id_ow > 0  ) then
+            id_qlw > 0 .or. id_qiw > 0 .or. id_spo3w > 0 .or. &
+            id_spo2w > 0 .or. id_spow > 0  ) then
 #else
        if(id_uw > 0 .or. id_vw > 0 .or. id_hw > 0 .or. id_qvw > 0 .or. &
             id_qlw > 0 .or. id_qiw > 0 .or. id_o3w > 0 ) then
@@ -3112,8 +3099,8 @@ contains
              used = send_data(id_qiw, a3, Time)
           endif
 #ifdef MULTI_GASES
-          if (id_ow > 0) then
-             if (spo3 < 0) then
+          if (id_spow > 0) then
+             if (spo < 0) then
                 call mpp_error(FATAL, 'ow does not work without spo defined')
              endif
              do k=1,npz
@@ -3123,10 +3110,10 @@ contains
              enddo
              enddo
              enddo
-             used = send_data(id_ow, a3, Time)
+             used = send_data(id_spow, a3, Time)
           endif
-          if (id_o2w > 0) then
-             if (spo3 < 0) then
+          if (id_spo2w > 0) then
+             if (spo2 < 0) then
                 call mpp_error(FATAL, 'o2w does not work without spo2 defined')
              endif
              do k=1,npz
@@ -3136,9 +3123,9 @@ contains
              enddo
              enddo
              enddo
-             used = send_data(id_o2w, a3, Time)
+             used = send_data(id_spo2w, a3, Time)
           endif
-          if (id_o3w > 0) then
+          if (id_spo3w > 0) then
              if (spo3 < 0) then
                 call mpp_error(FATAL, 'o3w does not work without spo3 defined')
              endif
@@ -3149,7 +3136,7 @@ contains
              enddo
              enddo
              enddo
-             used = send_data(id_o3w, a3, Time)
+             used = send_data(id_spo3w, a3, Time)
           endif
 #else
           if (id_o3w > 0) then

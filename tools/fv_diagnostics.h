@@ -98,6 +98,6 @@
 ! EMC additions
      integer :: id_diss, id_zratio, id_hw, id_qvw, id_qlw, id_qiw, id_o3w
 #ifdef MULTI_GASES
-     integer :: id_o2w, id_ow
+     integer :: id_spo2w, id_spow, id_spo3w
 #endif
 #endif _FV_DIAG__
