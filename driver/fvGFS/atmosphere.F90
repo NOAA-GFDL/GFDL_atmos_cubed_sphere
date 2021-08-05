@@ -2020,20 +2020,21 @@ contains
 
    subroutine adjust_tracer_mass()
 
-     ! Adjust prognostic tracer mixing ratios for consistency with updated layer mass
+     if ( nq > Atm(mygrid)%flagstruct%nwat ) then
+       ! Adjust prognostic tracer mixing ratios for consistency with updated layer mass
 !$omp parallel do default (none) &
-!$omp              shared (jsc, jec, isc, iec, npz, nq, sphum, Atm, dp0, mygrid) &
+!$omp              shared (jsc, jec, isc, iec, npz, nq, Atm, dp0, mygrid) &
 !$omp             private (i, j, k, n)
-     do n = 1, nq
-       if (Atm(mygrid)%flagstruct%nudge_qv .and. n == sphum) cycle
-       do k = 1, npz
-         do j = jsc, jec
-           do i = isc, iec
-             Atm(mygrid)%q(i,j,k,n) = Atm(mygrid)%q(i,j,k,n) * (1. + wt * (1. - dp0(i,j,k) / Atm(mygrid)%delp(i,j,k)))
+       do n = Atm(mygrid)%flagstruct%nwat + 1, nq
+         do k = 1, npz
+           do j = jsc, jec
+             do i = isc, iec
+               Atm(mygrid)%q(i,j,k,n) = Atm(mygrid)%q(i,j,k,n) * (1. + wt * (1. - dp0(i,j,k) / Atm(mygrid)%delp(i,j,k)))
+             end do
            end do
          end do
        end do
-     end do
+     end if
 
    end subroutine adjust_tracer_mass
 
