@@ -44,11 +44,14 @@ module atmosphere_mod
 !   </tr>
 !   <tr>
 !     <td>fms_mod</td>
-!     <td>file_exist, open_namelist_file,close_file, error_mesg, FATAL,
-!         check_nml_error, stdlog,write_version_number,set_domain,
-!         mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_SUBCOMPONENT,
-!         clock_flag_default, nullify_domain</td>
+!     <td>file_exist, error_mesg, FATAL, check_nml_error,
+!         stdlog,write_version_number, mpp_clock_id,
+!         mpp_clock_begin, mpp_clock_end, CLOCK_SUBCOMPONENT,
+!         clock_flag_default</td>
 !   </tr>
+!   <tr>
+!     <td>fms2_io_mod</td>
+!     <td>file_exists</td>
 !   <tr>
 !     <td>fv_arrays_mod</td>
 !     <td>fv_atmos_type, R_GRID</td>
@@ -1535,8 +1538,6 @@ contains
          enddo
       enddo
    endif
-
-   call set_domain ( Atm(mygrid)%domain )
 
    call timing_on('GFS_TENDENCIES')
    call atmos_phys_qdt_diag(Atm(n)%q, Atm(n)%phys_diag, nt_dyn, dt_atmos, .true.)
