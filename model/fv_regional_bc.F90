@@ -1390,7 +1390,7 @@ contains
         call get_dimension_size(Gfs_ctl, 'levsp', levsp)
         call close_file(Gfs_ctl)
       else
-        call mpp_error(FATAL,'==> Error in fv_regional::start_regional_restart file '//trim(fn_gfs_ctl)//' for NGGPS IC does not exist')
+        call mpp_error(FATAL,'==> Error in fv_regional::start_regional_restart file INPUT/gfs_ctl.nc does not exist')
       endif
 
       levp = levsp-1
