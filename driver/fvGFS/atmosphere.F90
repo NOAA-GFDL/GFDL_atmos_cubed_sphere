@@ -796,10 +796,6 @@ contains
   ! initialize domains for writing global physics data
    if ( Atm(mygrid)%flagstruct%nudge ) call fv_nwp_nudge_end
 
-   if (Atm(mygrid)%flagstruct%do_inline_mp) then
-     call gfdl_mp_end ( )
-   endif
-
    if (first_diag) then
       call timing_on('FV_DIAG')
       call fv_diag(Atm(mygrid:mygrid), zvir, fv_time, Atm(mygrid)%flagstruct%print_freq)
