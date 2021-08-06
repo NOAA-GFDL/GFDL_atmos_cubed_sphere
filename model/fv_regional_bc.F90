@@ -1353,6 +1353,7 @@ contains
 !***  Local variables
 !---------------------
 !
+      type(FmsNetcdfFile_t) :: Gfs_ctl
       type(FmsNetcdfFile_t) :: Grid_input
       integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
       integer :: ierr, ios
@@ -1391,7 +1392,6 @@ contains
       else
         call mpp_error(FATAL,'==> Error in fv_regional::start_regional_restart file '//trim(fn_gfs_ctl)//' for NGGPS IC does not exist')
       endif
-      deallocate(pes)
 
       levp = levsp-1
 !
@@ -1416,8 +1416,6 @@ contains
       allocate (wk2(levp+1,2))
       allocate (ak_in(levp+1))                                               !<-- Save the input vertical structure for
       allocate (bk_in(levp+1))                                               !    remapping BC updates during the forecast.
-      allocate(pes(mpp_npes()))
-      call mpp_get_current_pelist(pes)
       if (Atm%flagstruct%hrrrv3_ic) then
         if (open_file(Grid_input, 'INPUT/hrrr_ctrl.nc', "read", pelist=pes)) then
           call read_data(Grid_input,'vcoord',wk2)
