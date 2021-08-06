@@ -881,8 +881,6 @@ module fv_arrays_mod
                             !< The default value is 4 (recommended); fourth-order interpolation
                             !< is used unless c2l_ord = 2.
 
-   integer :: nrows_blend = 0   !< # of blending rows in the outer integration domain.
-
   real(kind=R_GRID) :: dx_const = 1000.   !< Specifies the (uniform) grid-cell-width in the x-direction
                                           !< on a doubly-periodic grid (grid_type = 4) in meters.
                                           !< The default value is 1000.
