@@ -30,8 +30,7 @@ module fv_regional_mod
                                 NORTH, SOUTH, EAST, WEST,               &
                                 CENTER, CORNER,                         &
                                 mpp_domains_set_stack_size,             &
-                                mpp_update_domains, mpp_get_neighbor_pe,&
-                                mpp_get_current_pelist
+                                mpp_update_domains, mpp_get_neighbor_pe
    use mpp_mod,           only: FATAL, input_nml_file,                  &
                                 mpp_error ,mpp_pe, mpp_sync,            &
                                 mpp_npes, mpp_root_pe, mpp_gather,      &
