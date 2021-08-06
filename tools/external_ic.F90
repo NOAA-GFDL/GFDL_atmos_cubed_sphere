@@ -3471,6 +3471,7 @@ contains
                Atm%q(i,j,k,iq) = qn1(i,k)
             enddo
          enddo
+         endif
       enddo
 
       do k=1,km
