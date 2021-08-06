@@ -194,10 +194,9 @@ contains
 !>@details The modules also writes out restart files at the end of the
 !! model run, and prints out diagnostics of the initial state.
 !! There are several options to control the initialization process.
-  subroutine fv_restart(fv_domain, Atm, dt_atmos, seconds, days, cold_start, grid_type, this_grid)
+  subroutine fv_restart(fv_domain, Atm, seconds, days, cold_start, grid_type, this_grid)
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
-    real,                intent(in)    :: dt_atmos
     integer,             intent(out)   :: seconds
     integer,             intent(out)   :: days
     logical,             intent(inout)    :: cold_start
@@ -344,7 +343,7 @@ contains
           !3. External_ic
           if (Atm(n)%flagstruct%external_ic) then
              if( is_master() ) write(*,*) 'Calling get_external_ic'
-             call get_external_ic(Atm(n), Atm(n)%domain, .not. do_read_restart, dt_atmos)
+             call get_external_ic(Atm(n), Atm(n)%domain, .not. do_read_restart)
              if( is_master() ) write(*,*) 'IC generated from the specified external source'
 
              !4. Restart
