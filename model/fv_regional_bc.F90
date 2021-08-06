@@ -1366,7 +1366,6 @@ contains
       namelist /external_ic_nml/ filtered_terrain, levp, gfs_dwinds     &
                                 ,checker_tr, nt_checker
       ! variables for reading the dimension from the gfs_ctrl
-      integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
       integer levsp
 !-----------------------------------------------------------------------
 !***********************************************************************
