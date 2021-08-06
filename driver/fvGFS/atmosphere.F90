@@ -534,7 +534,7 @@ contains
 !  --- initiate the start for a restarted regional forecast
    if ( Atm(mygrid)%gridstruct%regional .and. Atm(mygrid)%flagstruct%warm_start ) then
 
-     call start_regional_restart(Atm(1), dt_atmos,   &
+     call start_regional_restart(Atm(1),       &
                                  isc, iec, jsc, jec, &
                                  isd, ied, jsd, jed )
    endif
