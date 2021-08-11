@@ -552,7 +552,7 @@ contains
     deallocate(pes)
     call mpp_error(NOTE,'==> External_ic::get_nggps_ic: using control file '//trim(fn_gfs_ctl)//' for NGGPS IC')
 
-    if (ntrac > ntracers) call mpp_error(FATAL,'==> External_ic::get_nggps_ic: more NGGPS tracers &
+    if (ntrac > ntracers) call mpp_error(NOTE,'==> External_ic::get_nggps_ic: more NGGPS tracers &
                                &than defined in field_table '//trim(fn_gfs_ctl)//' for NGGPS IC')
 
 
@@ -795,18 +795,12 @@ contains
         do i=is,ie
           wt = Atm%delp(i,j,k)
           if ( Atm%flagstruct%nwat == 6 ) then
-!rab            qt = wt/(1. - (Atm%q(i,j,k,liq_wat) + &
-!rab                           Atm%q(i,j,k,ice_wat) + &
-!rab                           Atm%q(i,j,k,rainwat) + &
-!rab                           Atm%q(i,j,k,snowwat) + &
-!rab                           Atm%q(i,j,k,graupel)))
-            qt = wt*(1. + Atm%q(i,j,k,liq_wat) + &
-                          Atm%q(i,j,k,ice_wat) + &
-                          Atm%q(i,j,k,rainwat) + &
-                          Atm%q(i,j,k,snowwat) + &
-                          Atm%q(i,j,k,graupel))
+            qt = wt/(1. - (Atm%q(i,j,k,liq_wat) + &
+                           Atm%q(i,j,k,ice_wat) + &
+                           Atm%q(i,j,k,rainwat) + &
+                           Atm%q(i,j,k,snowwat) + &
+                           Atm%q(i,j,k,graupel)))
           else   ! all other values of nwat
-!rab            qt = wt/(1. - sum(Atm%q(i,j,k,2:Atm%flagstruct%nwat)))
             qt = wt*(1. + sum(Atm%q(i,j,k,2:Atm%flagstruct%nwat)))
           endif
           Atm%delp(i,j,k) = qt
@@ -944,7 +938,6 @@ contains
 
           ! prognostic tracers
           do nt = 1, ntracers
-             q(:,:,:,nt) = -999.99
             call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
             call register_restart_field(GFS_restart, trim(tracer_name), q(:,:,:,nt), dim_names_3d3, is_optional=.true.)
           enddo
@@ -3090,7 +3083,6 @@ contains
 
 ! map tracers
       do iq=1,ncnst
-         if (floor(qa(is,j,1,iq)) > -999) then !skip missing scalars
          do k=1,km
             do i=is,ie
                qp(i,k) = qa(i,j,k,iq)
@@ -3108,7 +3100,6 @@ contains
                Atm%q(i,j,k,iq) = qn1(i,k)
             enddo
          enddo
-         endif
       enddo
 
 !---------------------------------------------------
