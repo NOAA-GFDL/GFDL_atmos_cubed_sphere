@@ -1359,15 +1359,8 @@ contains
       integer :: ierr, ios
       real, allocatable :: wk2(:,:)
 !
-      logical :: filtered_terrain = .true.
-      logical :: gfs_dwinds       = .true.
-      integer :: levp             = 64
-      logical :: checker_tr       = .false.
-      integer :: nt_checker       = 0
-      namelist /external_ic_nml/ filtered_terrain, levp, gfs_dwinds     &
-                                ,checker_tr, nt_checker
       ! variables for reading the dimension from the gfs_ctrl
-      integer levsp
+      integer :: levp, levsp
 !-----------------------------------------------------------------------
 !***********************************************************************
 !-----------------------------------------------------------------------
@@ -1375,14 +1368,6 @@ contains
 !-----------------------------------------------------------------------
 !*** Read the number of model layers in the external forecast (=levp).
 !-----------------------------------------------------------------------
-!
-      read (input_nml_file,external_ic_nml,iostat=ios)
-      ierr = check_nml_error(ios,'external_ic_nml')
-      if(ierr/=0)then
-        write(0,11011)ierr
-11011   format(' start_regional_restart failed to read external_ic_nml ierr=',i3)
-      endif
-
       allocate(pes(mpp_npes()))
       call mpp_get_current_pelist(pes)
       if( open_file(Gfs_ctl, 'INPUT/gfs_ctrl.nc', "read", pelist=pes) ) then
