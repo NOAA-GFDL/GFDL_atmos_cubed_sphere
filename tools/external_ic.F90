@@ -801,7 +801,7 @@ contains
                            Atm%q(i,j,k,snowwat) + &
                            Atm%q(i,j,k,graupel)))
           else   ! all other values of nwat
-            qt = wt*(1. - sum(Atm%q(i,j,k,2:Atm%flagstruct%nwat)))
+            qt = wt/(1. - sum(Atm%q(i,j,k,2:Atm%flagstruct%nwat)))
           endif
           Atm%delp(i,j,k) = qt
           if (ntclamt > 0) Atm%q(i,j,k,ntclamt) = 0.0    ! Moorthi
