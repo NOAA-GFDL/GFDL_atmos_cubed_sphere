@@ -2341,13 +2341,6 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
        first_timestep = .false.
     endif
 
-
-   !!! RENORMALIZATION UPDATE OPTION
-   if (neststruct%nestupdate /= 3 .and. neststruct%nestupdate /= 7 .and. neststruct%nestupdate /= 8) then
-
-   endif
-   !!! END RENORMALIZATION UPDATE
-
 #ifndef SW_DYNAMICS
    if (neststruct%nestupdate /= 3 .and. neststruct%nestupdate /= 8) then
 
