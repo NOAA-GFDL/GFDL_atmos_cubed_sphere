@@ -582,6 +582,7 @@ module fv_arrays_mod
 #else
    character(24) :: npz_type = ''  !< Option for selecting vertical level setup (empty by default)
 #endif
+   character(120) :: fv_eta_file = 'global_hyblev_fcst.txt'  !< FV3 user specified eta file
    integer :: npz_rst = 0    !< If using a restart file with a different number of vertical
                              !< levels, set npz_rst to be the number of levels in your restart file.
                              !< The model will then remap the restart file data to the vertical coordinates
@@ -1413,22 +1414,6 @@ contains
        nq_2d=   1
     endif
 
-!This should be set up in fv_mp_mod
-!!$    Atm%bd%isd = isd_in
-!!$    Atm%bd%ied = ied_in
-!!$    Atm%bd%jsd = jsd_in
-!!$    Atm%bd%jed = jed_in
-!!$
-!!$    Atm%bd%is = is_in
-!!$    Atm%bd%ie = ie_in
-!!$    Atm%bd%js = js_in
-!!$    Atm%bd%je = je_in
-!!$
-!!$    Atm%bd%isc = Atm%bd%is
-!!$    Atm%bd%iec = Atm%bd%ie
-!!$    Atm%bd%jsc = Atm%bd%js
-!!$    Atm%bd%jec = Atm%bd%je
-
     !Convenience pointers
     Atm%npx => Atm%flagstruct%npx
     Atm%npy => Atm%flagstruct%npy
@@ -1437,9 +1422,6 @@ contains
 
     Atm%ng => Atm%bd%ng
 
-!!$    Atm%npx = npx_in
-!!$    Atm%npy = npy_in
-!!$    Atm%npz = npz_in
     Atm%flagstruct%ndims = ndims_in
 
     allocate (    Atm%u(isd:ied  ,jsd:jed+1,npz) )

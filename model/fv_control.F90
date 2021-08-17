@@ -33,7 +33,7 @@ module fv_control_mod
    use mpp_mod,             only: FATAL, mpp_error, mpp_pe, stdlog, &
                                   mpp_npes, mpp_get_current_pelist, &
                                   input_nml_file, get_unit, WARNING, &
-                                  read_ascii_file, INPUT_STR_LENGTH
+                                  read_ascii_file
    use mpp_domains_mod,     only: mpp_get_data_domain, mpp_get_compute_domain, mpp_get_tile_id
    use tracer_manager_mod,  only: tm_get_number_tracers => get_number_tracers, &
                                   tm_get_tracer_index   => get_tracer_index,   &
@@ -200,6 +200,7 @@ module fv_control_mod
      integer , pointer :: npy
      integer , pointer :: npz
      character(len=24), pointer :: npz_type
+     character(len=120), pointer :: fv_eta_file
      integer , pointer :: npz_rst
 
      integer , pointer :: ncnst
@@ -643,30 +644,8 @@ module fv_control_mod
         write(*,*) ' '
      endif
 
-
-!!$     Atm(this_grid)%ts   = 300.
-!!$     Atm(this_grid)%phis = too_big
-!!$     ! The following statements are to prevent the phantom corner regions from
-!!$     ! growing instability
-!!$     Atm(this_grid)%u  = 0.
-!!$     Atm(this_grid)%v  = 0.
-!!$     Atm(this_grid)%ua = too_big
-!!$     Atm(this_grid)%va = too_big
-!!$
-!!$     Atm(this_grid)%inline_mp%prer = too_big
-!!$     Atm(this_grid)%inline_mp%prei = too_big
-!!$     Atm(this_grid)%inline_mp%pres = too_big
-!!$     Atm(this_grid)%inline_mp%preg = too_big
-
      !Initialize restart
      call fv_restart_init()
-!     if ( reset_eta ) then
-!         do n=1, ntilesMe
-!            call set_eta(npz, Atm(this_grid)%ks, ptop, Atm(this_grid)%ak, Atm(this_grid)%bk, Atm(this_grid)%flagstruct%npz_type)
-!         enddo
-!         if(is_master()) write(*,*) "Hybrid sigma-p coordinate has been reset"
-!     endif
-
 
 
    contains
@@ -746,6 +725,7 @@ module fv_control_mod
        npy                           => Atm%flagstruct%npy
        npz                           => Atm%flagstruct%npz
        npz_type                      => Atm%flagstruct%npz_type
+       fv_eta_file                   => Atm%flagstruct%fv_eta_file
        npz_rst                       => Atm%flagstruct%npz_rst
        ncnst                         => Atm%flagstruct%ncnst
        pnats                         => Atm%flagstruct%pnats
@@ -916,7 +896,7 @@ module fv_control_mod
        character(len=128) :: res_latlon_dynamics = ''
        character(len=128) :: res_latlon_tracers  = ''
 
-       namelist /fv_core_nml/npx, npy, ntiles, npz, npz_type, npz_rst, layout, io_layout, ncnst, nwat,  &
+       namelist /fv_core_nml/npx, npy, ntiles, npz, npz_type, fv_eta_file, npz_rst, layout, io_layout, ncnst, nwat,  &
             use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, write_3d_diags, &
             do_schmidt, do_cube_transform, &
             hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
@@ -1108,16 +1088,6 @@ module fv_control_mod
              jsv_stag = jsv_stag + upoff
              jev_stag = jev_stag - upoff
 
-             !restriction to current domain
-!!$             !!! DEBUG CODE
-!!$             if (Atm(this_grid)%flagstruct%fv_debug) then
-!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 1: ', isu, jsu, ieu, jeu
-!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 11: ', isu_stag, jsu_stag, ieu_stag, jeu_stag
-!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 111: ', isv_stag, jsv_stag, iev_stag, jev_stag
-!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 2: ', isc, jsc, iec, jec
-!!$             endif
-!!$             !!! END DEBUG CODE
-
 ! Absolute boundary for the staggered point update region on the parent.
 ! This is used in remap_uv to control the update of the last staggered point
 ! when the the update region coincides with a pe domain to avoid cross-restart repro issues
@@ -1167,12 +1137,6 @@ module fv_control_mod
              ieu_stag=max(ieu ,ieu_stag)
              iev_stag=max(ieu ,iev_stag)
 
-!!$             !!! DEBUG CODE
-!!$             if (Atm(this_grid)%flagstruct%fv_debug) &
-!!$                 write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 3: ', isu, jsu, ieu, jeu
-!!$                 write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 4: ', jeu_stag, iev_stag, ieu_stag, jev_stag
-!!$             !!! END DEBUG CODE
-
              Atm(n)%neststruct%isu = isu
              Atm(n)%neststruct%ieu = ieu_stag
              Atm(n)%neststruct%jsu = jsu
@@ -1180,9 +1144,6 @@ module fv_control_mod
 
              Atm(n)%neststruct%jeu_stag = jeu_stag
              Atm(n)%neststruct%iev_stag = iev_stag
-
-!!$                 write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 5: ', Atm(n)%neststruct%isu, Atm(n)%neststruct%jsu, Atm(n)%neststruct%ieu, Atm(n)%neststruct%jeu
-!!$                 write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 6: ', Atm(n)%neststruct%jeu_stag, Atm(n)%neststruct%iev_stag
 
           endif
        enddo

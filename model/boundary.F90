@@ -542,35 +542,6 @@ contains
 
  end subroutine fill_nested_grid_3D
 
-!!$ subroutine nested_grid_BC_mpp_2d(var_nest, nest_domain, ind, wt, istag, jstag, &
-!!$      npx, npy, bd, isg, ieg, jsg, jeg, nstep_in, nsplit_in, proc_in)
-!!$
-!!$   type(fv_grid_bounds_type), intent(IN) :: bd
-!!$   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag), intent(INOUT) :: var_nest
-!!$   real, dimension(isg:ieg+istag,jsg:jeg+jstag), intent(IN) :: var_coarse
-!!$   type(nest_domain_type), intent(INOUT) :: nest_domain
-!!$   integer, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,2), intent(IN) :: ind
-!!$   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,4), intent(IN) :: wt
-!!$   integer, intent(IN) :: istag, jstag, npx, npy, isg, ieg, jsg, jeg
-!!$   integer, intent(IN), OPTIONAL :: nstep_in, nsplit_in
-!!$   logical, intent(IN), OPTIONAL :: proc_in
-!!$
-!!$   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,1) :: var_nest_3d
-!!$
-!!$   integer :: i,j
-!!$
-!!$   do j=bd%jsd,bd%jed+jstag
-!!$   do i=bd%isd,bd%ied+istag
-!!$      var_nest_3d(i,j,1) = var_nest(i,j)
-!!$   enddo
-!!$   enddo
-!!$
-!!$   call nested_grid_BC_mpp_3d(var_nest_3d, nest_domain, ind, wt, istag, jstag, &
-!!$      npx, npy, 1, bd, isg, ieg, jsg, jeg, nstep_in, nsplit_in, proc_in)
-!!$
-!!$
-!!$ end subroutine nested_grid_BC_mpp_2d
-
  subroutine nested_grid_BC_mpp_3d(var_nest, var_coarse, nest_domain, ind, wt, istag, jstag, &
       npx, npy, npz, bd, isg, ieg, jsg, jeg, nest_level, nstep_in, nsplit_in, proc_in)
 
@@ -1716,11 +1687,6 @@ contains
    real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,npz) :: var_coarse_dummy
 
    integer                      :: position
-
-!!$   integer                      :: isw_f, iew_f, jsw_f, jew_f, isw_c, iew_c, jsw_c, jew_c
-!!$   integer                      :: ise_f, iee_f, jse_f, jee_f, ise_c, iee_c, jse_c, jee_c
-!!$   integer                      :: iss_f, ies_f, jss_f, jes_f, iss_c, ies_c, jss_c, jes_c
-!!$   integer                      :: isn_f, ien_f, jsn_f, jen_f, isn_c, ien_c, jsn_c, jen_c
 
    integer :: i,j, k
 

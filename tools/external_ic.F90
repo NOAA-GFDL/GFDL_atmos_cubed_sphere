@@ -212,14 +212,6 @@ contains
         call prt_maxmin('cld_amt', Atm%q(:,:,:,cld_amt), is, ie, js, je, ng, Atm%npz, 1.)
       endif
 
-!Now in fv_restart
-!!$      call p_var(Atm%npz,  is, ie, js, je, Atm%ak(1),  ptop_min,         &
-!!$                 Atm%delp, Atm%delz, Atm%pt, Atm%ps,               &
-!!$                 Atm%pe,   Atm%peln, Atm%pk, Atm%pkz,              &
-!!$                 kappa, Atm%q, ng, Atm%ncnst, Atm%gridstruct%area_64, Atm%flagstruct%dry_mass,           &
-!!$                 Atm%flagstruct%adjust_dry_mass, Atm%flagstruct%mountain, Atm%flagstruct%moist_phys,   &
-!!$                 Atm%flagstruct%hydrostatic, Atm%flagstruct%nwat, Atm%domain, Atm%flagstruct%adiabatic, Atm%flagstruct%make_nh)
-
   end subroutine get_external_ic
 
 
@@ -512,15 +504,6 @@ contains
       Atm%ak(1:npz+1) = ak(itoa:levp+1)
       Atm%bk(1:npz+1) = bk(itoa:levp+1)
       call set_external_eta (Atm%ak, Atm%bk, Atm%ptop, Atm%ks)
-!!$        else
-!!$          if ( (npz == 63 .or. npz == 64) .and. len(trim(Atm%flagstruct%npz_type)) == 0 ) then
-!!$             if (is_master()) print*, 'Using default GFS levels'
-!!$             Atm%ak(:) = ak_sj(:)
-!!$             Atm%bk(:) = bk_sj(:)
-!!$             Atm%ptop = Atm%ak(1)
-!!$          else
-!!$             call set_eta(npz, ks, Atm%ptop, Atm%ak, Atm%bk, Atm%flagstruct%npz_type)
-!!$          endif
     endif
     ! call vertical remapping algorithms
     if(is_master())  write(*,*) 'GFS ak(1)=', ak(1), ' ak(2)=', ak(2)
@@ -1868,14 +1851,6 @@ contains
       if (Atm%flagstruct%external_eta) then
          call set_external_eta (Atm%ak, Atm%bk, Atm%ptop, Atm%ks)
       endif
-!!$      if ( (npz == 64 .or. npz == 63)  .and. len(trim(Atm%flagstruct%npz_type)) == 0 ) then
-!!$         if (is_master()) print*, 'Using default GFS levels'
-!!$         Atm%ak(:) = ak_sj(:)
-!!$         Atm%bk(:) = bk_sj(:)
-!!$         Atm%ptop = Atm%ak(1)
-!!$      else
-!!$         call set_eta(npz, ks, Atm%ptop, Atm%ak, Atm%bk, Atm%flagstruct%npz_type)
-!!$      endif
 
       !!! If a nested grid, add "nestXX.tileX" to the filename
       if (Atm%neststruct%nested) then

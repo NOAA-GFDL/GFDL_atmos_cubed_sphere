@@ -392,20 +392,6 @@ contains
           enddo
        enddo
 
-!!$       do k=2,km
-!!$          do i=is,ie
-!!$             if ( ph(i,k-1) <= p1 ) then
-!!$! Isothermal
-!!$                 gz(i,k) = gz(i,k-1) + (rdgas*t1)*log(ph(i,k-1)/ph(i,k))
-!!$             else
-!!$! Constant lapse rate region (troposphere)
-!!$                 !gz(i,k) = (hs(i,j)+c0)/(ph(i,k)/ps(i,j))**(a0*rdgas) - c0
-!!$                 gz(i,k) = (hs(i,j)+c0)/(ph(i,k)/ps(i,j))**(a0*rdgas) - c0
-!!$             endif
-!!$          enddo
-!!$       enddo
-       !bottom-up
-
        do k=km,2,-1
           do i=is,ie
              if (ph(i,k) <= p1) then
