@@ -50,10 +50,6 @@ module fv_diagnostics_mod
 !     <td>write_version_number</td>
 !   </tr>
 !   <tr>
-!     <td>fms_io_mod</td>
-!     <td>set_domain, nullify_domain, write_version_number</td>
-!   </tr>
-!   <tr>
 !     <td>fv_arrays_mod</td>
 !     <td>fv_atmos_type, fv_grid_type, fv_diag_type, fv_grid_bounds_type,
 !         R_GRIDmax_step</td>
