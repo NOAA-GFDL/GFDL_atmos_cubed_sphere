@@ -4,11 +4,19 @@ The source contained herein merges in the [2021 January Release](https://github.
 
 # Where to find information
 
-Visit the [FV3 website](https://www.gfdl.noaa.gov/fv3/) for more information. Reference material is available at [FV3 documentation and references](https://www.gfdl.noaa.gov/fv3/fv3-documentation-and-references/). 
+Visit the [FV3 website](https://www.gfdl.noaa.gov/fv3/) for more information. Reference material is available at [FV3 documentation and references](https://www.gfdl.noaa.gov/fv3/fv3-documentation-and-references/).
 
 # Proper usage attribution
 
-Cite Putman and Lin (2007) and Harris and Lin (2013) when describing a model using the FV3 dynamical core.
+Cite _Putman and Lin (2007)_ and _Harris and Lin (2013)_ when describing a model using the FV3 dynamical core.
+
+Cite _Chen et al (2013)_ and _Zhou et al (2019)_ when using the GFDL Microphysics.
+
+# Documentation
+
+The up-to-date FV3 Scientific reference guide is included in LaTex and PDF formats in the ```docs/``` directory. There are also some notebooks in docs/examples demonstrating basic FV3 capabilities and analysis techniques.
+
+A [DOI referenceable version](https://doi.org/10.25923/6nhs-5897) is available in the [_NOAA Institutional Repository_](https://repository.library.noaa.gov/view/noaa/30725)
 
 # What files are what
 
@@ -23,12 +31,7 @@ The top level directory structure groups source code and input files as follow:
 | ```driver/```        | contains drivers used by different models/modeling systems |
 | ```tools/```         | contains source code of tools used within the core |
 | ```GFDL_tools/```    | contains source code of tools specific to GFDL models |
-| ```docs/```          | contains documentation for the FV3 dynamical core |
-
-# Generating PDF Documentation
-To update the ```refmans.pdf``` file:
-1. In the ```docs/``` directory enter the command ```doxygen Doxyfile```
-2. Navigate to the ```latex/``` directory and enter the command ```make pdf```
+| ```docs/```          | contains documentation for the FV3 dynamical core, and Python notebooks demonstrating basic capabilities. |
 
 # Dependencies
 

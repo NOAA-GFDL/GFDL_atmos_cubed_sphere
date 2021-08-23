@@ -213,14 +213,14 @@ contains
          call register_restart_field(restart%fv_core_coarse, &
               'v', restart%v, dim_names_4d2)
       endif
-    
+
       if (write_coarse_agrid_vel_rst) then
          call register_restart_field(restart%fv_core_coarse, &
               'ua', restart%ua, dim_names_4d3)
          call register_restart_field(restart%fv_core_coarse, &
               'va', restart%va, dim_names_4d3)
       endif
-    
+
       if (.not. hydrostatic) then
          call register_restart_field(restart%fv_core_coarse, &
               'W', restart%w, dim_names_4d3, is_optional=.true.)
