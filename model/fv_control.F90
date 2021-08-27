@@ -223,6 +223,14 @@ module fv_control_mod
      logical, dimension(MAX_NNEST) :: is_moving_nest = .False.
      character(len=120)            :: surface_dir
      integer, dimension(MAX_NNEST) :: terrain_smoother = 1  ! 0 -- all high-resolution data, 1 - static nest smoothing algorithm, 5 - 5 point smoother, 9 - 9 point smoother
+     integer, dimension(MAX_NNEST) :: vortex_tracker = 0 ! 0 - not a moving nest, tracker not needed
+                                                         ! 1 - prescribed nest moving
+                                                         ! 2 - following child domain center
+                                                         ! 3 - tracking Min MSLP
+                                                         ! 6 - simplified version of GFDL tracker, adopted from HWRF's internal vortex tracker.
+                                                         ! 7 - nearly the full storm tracking algorithm from GFDL vortex tracker. The only part that is missing is the part that gives up when the storm dissipates, which is left out intentionally. Adopted from HWRF's internal vortex tracker.
+     integer, dimension(MAX_NNEST) :: ntrack = 1 ! number of dt_atmos steps to call the vortex tracker, tracker time step = ntrack * dt_atmos
+     integer, dimension(MAX_NNEST) :: outatcf_lun = 600  ! fortran unit number to write out the partial atcfunix file from the internal tracker
 #endif
 
      real :: sdt
@@ -536,6 +544,9 @@ module fv_control_mod
            Atm(n)%neststruct%is_moving_nest         = is_moving_nest(n)
            Atm(n)%neststruct%surface_dir            = trim(surface_dir)
            Atm(n)%neststruct%terrain_smoother       = terrain_smoother(n)
+           Atm(n)%neststruct%vortex_tracker         = vortext_tracker(n)
+           Atm(n)%neststruct%ntrack                 = ntrack(n)
+           Atm(n)%neststruct%outatcf_lun            = outatcf_lun(n)
 #endif         
 
         else
@@ -547,6 +558,9 @@ module fv_control_mod
 
 #ifdef MOVING_NEST         
            Atm(n)%neststruct%is_moving_nest         = .false.
+           Atm(n)%neststruct%vortex_tracker         = 0
+           Atm(n)%neststruct%ntrack                 = 1
+           Atm(n)%neststruct%outatcf_lun            = 600
 
 #endif         
 
@@ -1052,7 +1066,7 @@ module fv_control_mod
 #ifdef MOVING_NEST
      subroutine read_namelist_moving_nest_nml
        integer :: f_unit, ios, ierr
-       namelist /fv_moving_nest_nml/ surface_dir, is_moving_nest, terrain_smoother
+       namelist /fv_moving_nest_nml/ surface_dir, is_moving_nest, terrain_smoother, vortex_tracker, ntrack, outatcf_lun
 
 #ifdef INTERNAL_FILE_NML
        read (input_nml_file,fv_moving_nest_nml,iostat=ios)

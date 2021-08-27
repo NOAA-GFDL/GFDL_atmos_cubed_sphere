@@ -187,6 +187,7 @@ use fv_nesting_mod,     only: twoway_nesting
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
 #ifdef MOVING_NEST
 use fv_diagnostics_mod, only: fv_diag_tracker
+use fv_tracker_mod,     only: ncep_tracker_init, ncep_tracker_center, ncep_tracker_post_move, ncep_tracker_move
 #endif
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
@@ -1808,11 +1809,12 @@ contains
    call get_time (fv_time, seconds,  days)
    call get_time (Time_step_atmos, sec)
    ! Currently hard-coded to run diag_tracker every two time steps 
-   if (mod(seconds,2*sec) .eq. 0) then
+   if (mod(seconds,Atm(mygrid:mygrid)%neststruct%ntrack*sec) .eq. 0) then
      !call mpp_clock_begin(id_fv_diag_tracker)
      !call timing_on('FV_DIAG_TRACKER')
      call fv_diag_tracker(Atm(mygrid:mygrid), zvir, fv_time)
-     !call fv_vortex_tracker(Atm(mygrid:mygrid), zvir, fv_time)
+     call ncep_tracker_center(Atm(mygrid:mygrid))
+     call ncep_tracker_move(Atm(mygrid:mygrid))
      !call timing_off('FV_DIAG_TRACKER')
      !call mpp_clock_end(id_fv_diag_tracker)
    endif

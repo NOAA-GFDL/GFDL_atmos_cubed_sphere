@@ -999,6 +999,8 @@ module fv_arrays_mod
      logical               :: is_moving_nest = .false.
      character(len=120)    :: surface_dir = "  "
      integer               :: terrain_smoother = 1
+     integer               :: vortex_tracker = 0
+     integer               :: ntrack = 1
 #endif
 
 
@@ -1243,11 +1245,51 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: u700(:,:)     _NULL  !< ua at 700 mb
     real, _ALLOCATABLE :: v700(:,:)     _NULL  !< va at 700 mb
     real, _ALLOCATABLE :: z700(:,:)     _NULL  !< geopotential height at 700 mb
+!   real, _ALLOCATABLE :: u500(:,:)     _NULL  !< ua at 500 mb
+!   real, _ALLOCATABLE :: v500(:,:)     _NULL  !< va at 500 mb
     real, _ALLOCATABLE :: vort10m(:,:)  _NULL  !< relative vorticity at 10-m
     real, _ALLOCATABLE :: spd10m(:,:)   _NULL  !< wind speed at 10-m
     real, _ALLOCATABLE :: u10m(:,:)     _NULL  !< ua at 10-m
     real, _ALLOCATABLE :: v10m(:,:)     _NULL  !< va at 10-m
     real, _ALLOCATABLE :: slp(:,:)      _NULL  !< sea level pressure
+
+! For inline NCEP tracker
+    real, _ALLOCATABLE :: distsq(:,:)             _NULL  !< Square of distance from nest center
+    real, _ALLOCATABLE :: tracker_distsq(:,:)     _NULL  !< Square of distance from tracker fix location
+    real, _ALLOCATABLE :: tracker_angle(:,:)      _NULL  !< Angle to storm center (East=0, North=pi/2, etc.)
+    real, _ALLOCATABLE :: tracker_fixes(:,:)      _NULL  !< Tracker fix information for debugging
+
+    logical :: track_have_guess = .false. !< Is a first guess available?
+    real :: track_guess_lat !< First guess latitude
+    real :: track_guess_lon !< First guess longitude
+    real :: tracker_edge_dist !< Distance from storm center to domain edge
+    integer :: track_n_old = 0 !< Number of old tracker latitudes
+    integer, parameter :: num_old_fixes = 5
+    real :: track_old_lon(num_old_fixes) = 0. !< Old tracker longitudes
+    real :: track_old_lat(num_old_fixes) = 0. !< Old tracker latitudes
+    integer :: track_old_ntsd(num_old_fixes) = 0 !< Old tracker times
+
+    real :: track_stderr_m1 = -99.9 !< Standard deviation of tracker centers one hour ago
+    real :: track_stderr_m2 = -99.9 !< Standard deviation of tracker centers two hours ago
+    real :: track_stderr_m3 = -99.9 !< Standard deviation of tracker centers three hours ago
+
+    integer :: track_last_hour=0 !< Last completed forecast hour
+
+    real :: tracker_fixlon = -999.0 !< Storm fix longitude according to inline NCEP tracker
+    real :: tracker_fixlat = -999.0 !< Storm fix latitude according to inline NCEP tracker
+    integer :: tracker_ifix = -99 !< Storm fix i location
+    integer :: tracker_jfix = -99 !< Storm fix j location
+
+    real :: tracker_rmw = -99. !< Storm RMW according to inline NCEP tracker
+    real :: tracker_pmin = -99999. !< Storm min MSLP according to inline NCEP tracker
+    real :: tracker_vmax =-99. !< Storm max 10m wind according to inline NCEP tracker
+
+    logical :: tracker_havefix = .false. !< True = storm fix locations are valid
+    logical :: tracker_gave_up = .false. !< True = inline tracker gave up on tracking the storm
+
+    logical :: mvnest = .false.
+    integer :: move_cd_x = 0
+    integer :: move_cd_y = 0
 #endif
 
 ! For phys coupling:
@@ -1507,6 +1549,11 @@ contains
     allocate ( Atm%u10m(is:ie,js:je) )
     allocate ( Atm%v10m(is:ie,js:je) )
     allocate ( Atm%slp(is:ie,js:je) )
+
+    allocate ( Atm%distsq(is:ie,js:je) )
+    allocate ( Atm%tracker_distsq(is:ie,js:je) )
+    allocate ( Atm%tracker_angle(is:ie,js:je) )
+    allocate ( Atm%tracker_fixes(is:ie,js:je) )
 #endif
 
     allocate ( Atm%u_srf(is:ie,js:je) )
