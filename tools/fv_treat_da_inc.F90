@@ -79,8 +79,8 @@ module fv_treat_da_inc_mod
 !         get_latlon_vector, inner_prod, cubed_to_latlon</td>
 !   </tr>
 !   <tr>
-!     <td>fms_mod</td>
-!     <td>file_exist, read_data, field_exist, write_version_number</td>
+!     <td>fms2_io_mod</td>
+!     <td>file_exists
 !   </tr>
 !   <tr>
 !     <td>fv_mp_mod</td>
@@ -105,8 +105,7 @@ module fv_treat_da_inc_mod
 !   </tr>
 ! </table>
 
-  use fms_mod,           only: file_exist, read_data, &
-                               field_exist, write_version_number
+  use fms2_io_mod,       only: file_exists
   use mpp_mod,           only: mpp_error, FATAL, NOTE, mpp_pe
   use mpp_domains_mod,   only: mpp_get_tile_id, &
                                domain2d, &
@@ -216,7 +215,7 @@ contains
 
     fname = 'INPUT/'//Atm%flagstruct%res_latlon_dynamics
 
-    if( file_exist(fname) ) then
+    if( file_exists(fname) ) then
       call open_ncfile( fname, ncid )        ! open the file
       call get_ncdim1( ncid, 'lon',   tsize(1) )
       call get_ncdim1( ncid, 'lat',   tsize(2) )
