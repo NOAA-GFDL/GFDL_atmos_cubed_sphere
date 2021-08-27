@@ -241,6 +241,13 @@ contains
     call mp_reduce_sum(sumdya)
     dxdymean=0.5*(sumdxa + sumdya)/((ide-ids) * (jde-jds)) / 1000.0
 
+    ! Get the square of the approximate distance to the domain center
+    ! at all points:
+    call get_distsq(Atm, &
+         IDS,IDE,JDS,JDE,KDS,KDE, &
+         IMS,IME,JMS,JME,KMS,KME, &
+         IPS,IPE,JPS,JPE,KPS,KPE)
+
     ! Get the first guess from the prior nest motion timestep:
     have_guess=Atm%track_have_guess
     if(have_guess) then
@@ -1243,6 +1250,50 @@ contains
        !write(0,*) 'center found; lon=',lonout,' lat=',latout
     endif resultif
   end subroutine find_center
+
+  subroutine get_distsq(Atm, &
+         IDS,IDE,JDS,JDE,KDS,KDE, &
+         IMS,IME,JMS,JME,KMS,KME, &
+         ITS,ITE,JTS,JTE,KTS,KTE)
+    ! This computes approximate distances in km from the domain
+    ! center of the various points in the domain.  It uses the same
+    ! computation as used for distsq: the calculation is done in
+    ! gridpoint space, approximating the domain as flat.
+    ! Point-to-point distances come from Atm%gridstruct%dxa and Atm%gridstruct%dya.
+    ! This routine also determines the distance from the tracker
+    ! center location to the nearest point in the domain edge.
+    implicit none
+    type(fv_atmos_type), intent(INOUT) :: Atm
+    character*255 message
+    integer, intent(in) :: IDS,IDE,JDS,JDE,KDS,KDE
+    integer, intent(in) :: IMS,IME,JMS,JME,KMS,KME
+    integer, intent(in) :: ITS,ITE,JTS,JTE,KTS,KTE
+    integer i,j,cx,cy,ierr
+    integer wilbur,harvey ! filler variables for a function call
+    real xfar,yfar,far,xshift,max_edge_distsq,clatr,clonr
+    real ylat1,ylat2,xlon1,xlon2,mindistsq
+
+    cx=(IDE-IDS+1)/2+IDS
+    cy=(JDE-JDS+1)/2+JDS
+
+    call get_lonlat(Atm,cx,cy,clonr,clatr,ierr, &
+         IDS,IDE,JDS,JDE,KDS,KDE, &
+         IMS,IME,JMS,JME,KMS,KME, &
+         ITS,ITE,JTS,JTE,KTS,KTE)
+    if(ierr/=0) then
+       call mpp_error(FATAL, 'Domain center location is not inside domain.')
+    end if
+
+    do j=jts,min(jte,jde-1)
+       do i=its,min(ite,ide-1)
+          xfar=(i-cx)*Atm%gridstruct%dxa(i,j)
+          yfar=(j-cy)*Atm%gridstruct%dya(i,j)
+          far = xfar*xfar + yfar*yfar
+          Atm%distsq(i,j)=far
+       enddo
+    enddo
+
+  end subroutine get_distsq
 
   subroutine get_tracker_distsq(Atm, &
          IDS,IDE,JDS,JDE,KDS,KDE, &
