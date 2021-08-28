@@ -77,10 +77,10 @@ contains
     Atm%track_stderr_m1=-99.9
     Atm%track_stderr_m2=-99.9
     Atm%track_stderr_m3=-99.9
-    Atm%track_n_old=0
-    Atm%track_old_lon=0
-    Atm%track_old_lat=0
-    Atm%track_old_ntsd=0
+  ! Atm%track_n_old=0
+  ! Atm%track_old_lon=0
+  ! Atm%track_old_lat=0
+  ! Atm%track_old_ntsd=0
 
     Atm%tracker_angle=0
     Atm%tracker_fixlon=-999.0
@@ -248,14 +248,14 @@ contains
 
    ! If we could not get the first guess from the prior nest motion
    ! timestep, then use the default first guess: the domain center.
-    if(Atm%vortex_tracker==6 .or. .not.have_guess) then
+    if(Atm%neststruct%vortex_tracker==6 .or. .not.have_guess) then
        ! vt=6: hard coded first-guess center is domain center:
        ! vt=7: first guess comes from prior timestep
        !     Initial first guess is domain center.
        !     Backup first guess is domain center if first guess is unusable.
        iguess=(ide-ids)/2+ids
        jguess=(jde-jds)/2+jds
-       if(Atm%vortex_tracker==7) then
+       if(Atm%neststruct%vortex_tracker==7) then
           call mpp_error(NOTE, 'Using domain center as first guess since no valid first guess is available.')
        endif
        call get_lonlat(Atm,iguess,jguess,longuess,latguess,ierr, &
@@ -314,7 +314,7 @@ contains
          ips,ipe,jps,jpe,kps,kpe)
 
     ! Find wind minima.  Requires a first guess center:
-    windmin: if(Atm%vortex_tracker==6) then
+    windmin: if(Atm%neststruct%vortex_tracker==6) then
        call find_center(Atm,Atm%spd850,srsq, &
             icen(3),jcen(3),rcen(3),calcparm(3),loncen(3),latcen(3),dxdymean,'wind', &
             ids,ide,jds,jde,kds,kde, &
@@ -474,7 +474,7 @@ contains
     do j=jps,min(jde-1,jpe)
        do i=ips,min(ide-1,ipe)
           dy=abs(lat-Atm%gridstruct%agrid(i,j,2)*rad_to_deg)
-          dx=abs(mod(3600.+180.+(lon-Atm%gridstruct%agrid(i,j,1)*rad_to_deg,360.)-180.)
+          dx=abs(mod(3600.+180.+(lon-Atm%gridstruct%agrid(i,j,1)*rad_to_deg),360.)-180.)
           d=dx*dx+dy*dy
           if(d<dmin) then
              dmin=d
@@ -583,8 +583,8 @@ contains
     do j=jts,min(jte,jde-1)
        do i=its,min(ite,ide-1)
           if(Atm%tracker_distsq(i,j)<sdistsq) then
-             windsq=Atm%u10(i,j)*Atm%u10(i,j) + &
-                    Atm%v10(i,j)*Atm%v10(i,j)
+             windsq=Atm%u10m(i,j)*Atm%u10m(i,j) + &
+                    Atm%v10m(i,j)*Atm%v10m(i,j)
              if(windsq>localextreme) then
                 localextreme=windsq
                 locali=i
@@ -1321,7 +1321,7 @@ contains
     do j=jts,min(jte,jde-1)
        do i=its,min(ite,ide-1)
           xlon2=Atm%gridstruct%agrid(i,j,1)*rad_to_deg
-          ylon2=Atm%gridstruct%agrid(i,j,2)*rad_to_deg
+          ylat2=Atm%gridstruct%agrid(i,j,2)*rad_to_deg
           call clean_lon_lat(xlon2,ylat2)
           xlon2=xlon2*deg_to_rad
           ylat2=ylat2*deg_to_rad

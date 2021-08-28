@@ -999,8 +999,9 @@ module fv_arrays_mod
      logical               :: is_moving_nest = .false.
      character(len=120)    :: surface_dir = "  "
      integer               :: terrain_smoother = 1
-     integer               :: vortex_tracker = 0
-     integer               :: ntrack = 1
+     integer               :: vortex_tracker = 7
+     integer               :: ntrack = 2
+     integer               :: outatcf_lun = 600
 #endif
 
 
@@ -1245,8 +1246,6 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: u700(:,:)     _NULL  !< ua at 700 mb
     real, _ALLOCATABLE :: v700(:,:)     _NULL  !< va at 700 mb
     real, _ALLOCATABLE :: z700(:,:)     _NULL  !< geopotential height at 700 mb
-!   real, _ALLOCATABLE :: u500(:,:)     _NULL  !< ua at 500 mb
-!   real, _ALLOCATABLE :: v500(:,:)     _NULL  !< va at 500 mb
     real, _ALLOCATABLE :: vort10m(:,:)  _NULL  !< relative vorticity at 10-m
     real, _ALLOCATABLE :: spd10m(:,:)   _NULL  !< wind speed at 10-m
     real, _ALLOCATABLE :: u10m(:,:)     _NULL  !< ua at 10-m
@@ -1263,11 +1262,6 @@ module fv_arrays_mod
     real :: track_guess_lat !< First guess latitude
     real :: track_guess_lon !< First guess longitude
     real :: tracker_edge_dist !< Distance from storm center to domain edge
-    integer :: track_n_old = 0 !< Number of old tracker latitudes
-    integer, parameter :: num_old_fixes = 5
-    real :: track_old_lon(num_old_fixes) = 0. !< Old tracker longitudes
-    real :: track_old_lat(num_old_fixes) = 0. !< Old tracker latitudes
-    integer :: track_old_ntsd(num_old_fixes) = 0 !< Old tracker times
 
     real :: track_stderr_m1 = -99.9 !< Standard deviation of tracker centers one hour ago
     real :: track_stderr_m2 = -99.9 !< Standard deviation of tracker centers two hours ago
