@@ -187,7 +187,7 @@ use fv_nesting_mod,     only: twoway_nesting
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
 #ifdef MOVING_NEST
 use fv_diagnostics_mod, only: fv_diag_tracker
-use fv_tracker_mod,     only: fv_tracker_init, fv_tracker_center, fv_tracker_post_move, fv_tracker_move
+use fv_tracker_mod,     only: fv_tracker_init, fv_tracker_center, fv_tracker_post_move
 #endif
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
@@ -1810,12 +1810,11 @@ contains
    fv_time = Time_next
    call get_time (fv_time, seconds,  days)
    call get_time (Time_step_atmos, sec)
-   if (mod(seconds,Atm(mygrid:mygrid)%neststruct%ntrack*sec) .eq. 0) then
+   if (mod(seconds,Atm(mygrid)%neststruct%ntrack*sec) .eq. 0) then
      call mpp_clock_begin(id_fv_tracker)
      call timing_on('FV_TRACKER')
      call fv_diag_tracker(Atm(mygrid:mygrid), zvir, fv_time)
-     call fv_tracker_center(Atm(mygrid:mygrid))
-     call fv_tracker_move(Atm(mygrid:mygrid))
+     call fv_tracker_center(Atm(mygrid))
      call timing_off('FV_TRACKER')
      call mpp_clock_end(id_fv_tracker)
    endif

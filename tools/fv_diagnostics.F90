@@ -197,6 +197,9 @@ module fv_diagnostics_mod
  public :: max_vv, get_vorticity, max_uh
  public :: max_vorticity, max_vorticity_hy1, bunkers_vector, helicity_relative_CAPS
  public :: cs3_interpolator, get_height_given_pressure
+#ifdef MOVING_NEST
+ public :: fv_diag_tracker
+#endif
 
  integer, parameter :: MAX_PLEVS = 31
 #ifdef FEWER_PLEVS
@@ -4044,7 +4047,7 @@ contains
 
     real, allocatable :: a2(:,:),a3(:,:,:),a4(:,:,:), wk(:,:,:), wz(:,:,:)
     real height(2)
-    real, parameter:: nplev_tracker=2
+    integer, parameter:: nplev_tracker=2
     real:: plevs(nplev_tracker), pout(nplev_tracker)
     integer:: idg(nplev_tracker), id1(nplev_tracker)
 
@@ -4116,7 +4119,7 @@ contains
        call interpolate_vertical(isc, iec, jsc, jec, npz,   &
                                      850.e2, Atm(n)%peln, wk, a2)
        Atm(n)%vort850=a2(:,:)
-       call interpolate_z(isc, iec, jsc, jec, npz, 10., wz, Atm(n)%wk(isc:iec,jsc:jec,:), a2)
+       call interpolate_z(isc, iec, jsc, jec, npz, 10., wz, wk, a2)
        Atm(n)%vort10m=a2(:,:)
 
        do j=jsc,jec
