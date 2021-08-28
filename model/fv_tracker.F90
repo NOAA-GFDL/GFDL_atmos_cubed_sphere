@@ -19,47 +19,40 @@
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
-!>@brief The module 'fv_tracker' contains the TC center finding routines
-!!Marchok2016:Scientific Documentation for the Community release of the GFDL Vortex Tracker
-!>@note May 18, 2021-Xuejin: This version was re-written for TC tracker in HAFS
+!>@brief The module 'fv_tracker' contains the internal GFDL/NCEP vortex tracker
+!adapted from HWRF internal vortex tracker, mainly based on the GFDL vortex
+!tracker.
 
 module fv_tracker_mod
 
 #ifdef MOVING_NEST
 
-#include <fms_platform.h>
-!-----------------
-! FMS modules:
-!-----------------
-use time_manager_mod,       only: time_type, get_time, set_time, operator(+), &
+   use constants_mod,       only: pi=>pi_8, rad_to_deg, deg_to_rad
+   use time_manager_mod,    only: time_type, get_time, set_time, operator(+), &
                                   operator(-), operator(/), time_type_to_real
-use mpp_mod,                only: mpp_error, stdout, FATAL, WARNING, NOTE, &
+   use mpp_mod,             only: mpp_error, stdout, FATAL, WARNING, NOTE, &
                                   mpp_root_pe, mpp_npes, mpp_pe, mpp_chksum, &
                                   mpp_get_current_pelist, &
                                   mpp_set_current_pelist, mpp_sync
-!-----------------
-! FV core modules:
-!-----------------
-use fv_arrays_mod,      only: fv_atmos_type, R_GRID
-use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
-use fv_mp_mod,          only: is_master
-use fv_mp_mod,          only: mp_reduce_sum, mp_reduce_max, mp_reduce_min
-use fv_mp_mod,          only: mp_reduce_minval, mp_reduce_maxval, mp_reduce_minloc, mp_reduce_maxloc
-use mpp_domains_mod,    only: mpp_get_data_domain, mpp_get_compute_domain
+   use mpp_domains_mod,     only: mpp_get_data_domain, mpp_get_compute_domain
+   use fv_arrays_mod,       only: fv_atmos_type, R_GRID
+   use fv_diagnostics_mod,  only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
+   use fv_mp_mod,           only: is_master, &
+                                  mp_reduce_sum, mp_reduce_max, mp_reduce_min, &
+                                  mp_reduce_minval, mp_reduce_maxval, &
+                                  mp_reduce_minloc, mp_reduce_maxloc
 
   implicit none
   private
-  public :: ncep_tracker_init, ncep_tracker_center, ncep_tracker_post_move, ncep_tracker_move
+  public :: fv_tracker_init, fv_tracker_center, fv_tracker_post_move, fv_tracker_move
+
+  integer, parameter :: maxtp=11 ! number of tracker parameters
 
   real, parameter :: invE=0.36787944117 ! 1/e
-
-  ! Copied from tracker:
-  real,parameter :: searchrad_6=250.0 ! km - ignore data more than this far from domain center
-  real,parameter :: searchrad_7=200.0 ! km - ignore data more than this far from domain center
-  integer, parameter :: maxtp=11 ! number of tracker parameters
-  real, parameter :: uverrmax = 225.0  ! For use in get_uv_guess
-  real, parameter :: ecircum = 40030.2  ! Earth's circumference
-  ! (km) using erad=6371.e3
+  real, parameter :: searchrad_6=250.0 ! km - ignore data more than this far from domain center
+  real, parameter :: searchrad_7=200.0 ! km - ignore data more than this far from domain center
+  real, parameter :: uverrmax=225.0 ! For use in get_uv_guess
+  real, parameter :: ecircum=40030.2 ! Earth's circumference (km) using erad=6371.e3
   real, parameter :: rads_vmag=120.0 ! max search radius for wind minimum
   real, parameter :: err_reg_init=300.0 ! max err at initial time (km)
   real, parameter :: err_reg_max=225.0 ! max err at other times (km)
@@ -70,45 +63,16 @@ use mpp_domains_mod,    only: mpp_get_data_domain, mpp_get_compute_domain
   real, parameter :: max_wind_search_radius=searchrad_7 ! max radius for vmax search
   real, parameter :: min_mlsp_search_radius=searchrad_7 ! max radius for pmin search
 
-  real, parameter :: km2nmi= 0.539957, kn2mps=0.514444, mps2kn=1./kn2mps
-  real, parameter :: pi=4*atan(1.0d0)
-  real, parameter :: pi180=pi/180.0
-  real, parameter :: deg2rad=pi/180.0
-  real, parameter :: rad2deg=1.0/deg2rad
+  real, parameter :: km2nmi=0.539957, kn2mps=0.514444, mps2kn=1./kn2mps
 
 contains
 
-  !----------------------------------------------------------------------------------
-  ! These two simple routines return an N, S, E or W for the
-  ! hemisphere of a latitude or longitude.  They are copied from
-  ! module_HIFREQ to avoid a relatively pointless compiler dependency.
-
-  character(1) function get_lat_ns(lat)
-    ! This could be written simply as merge('N','S',lat>=0) if WRF allowed F95
-    implicit none ; real lat
-    if(lat>=0) then
-       get_lat_ns='N'
-    else
-       get_lat_ns='S'
-    endif
-  end function get_lat_ns
-  character(1) function get_lon_ew(lon)
-    ! This could be written simply as merge('E','W',lon>=0) if WRF allowed F95
-    implicit none ; real lon
-    if(lon>=0) then
-       get_lon_ew='E'
-    else
-       get_lon_ew='W'
-    endif
-  end function get_lon_ew
-
-  subroutine ncep_tracker_init(Atm)
+  subroutine fv_tracker_init(Atm)
     ! Initialize tracker variables in the Atm structure.
     implicit none
-    type(fv_atmos_type), intent(INOUT) :: Atm
-    logical :: debug_log = .false.
+    type(fv_atmos_type), intent(inout) :: Atm
 
-    call mpp_error(NOTE, 'ncep_tracker_init')
+    call mpp_error(NOTE, 'fv_tracker_init')
 
     Atm%track_stderr_m1=-99.9
     Atm%track_stderr_m2=-99.9
@@ -133,21 +97,21 @@ contains
     Atm%track_guess_lat=-999.0
     Atm%track_guess_lon=-999.0
 
-  end subroutine ncep_tracker_init
+  end subroutine fv_tracker_init
 
-  subroutine ncep_tracker_center(Atm)
-    ! Top-level entry to the inline ncep tracker.  Finds the center of
+  subroutine fv_tracker_center(Atm)
+    ! Top-level entry to the internal GFDL/NCEP vortex tracker. Finds the center of
     ! the storm in the specified Atm and updates the Atm variables.
     ! Will do nothing and return immediately if
     ! Atm%tracker_gave_up=.true.
     implicit none
     type(fv_atmos_type), intent(inout) :: Atm
 
-    integer :: IDS,IDE,JDS,JDE,KDS,KDE
-    integer :: IMS,IME,JMS,JME,KMS,KME
-    integer :: IPS,IPE,JPS,JPE,KPS,KPE
+    integer :: ids,ide,jds,jde,kds,kde
+    integer :: ims,ime,jms,jme,kms,kme
+    integer :: ips,ipe,jps,jpe,kps,kpe
 
-    call mpp_error(NOTE, 'ncep_tracker_center')
+    call mpp_error(NOTE, 'fv_tracker_center')
     CALL get_ijk_from_domain(Atm,         &
          ids, ide, jds, jde, kds, kde,    &
          ims, ime, jms, jme, kms, kme,    &
@@ -158,41 +122,41 @@ contains
          ims, ime, jms, jme, kms, kme,    &
          ips, ipe, jps, jpe, kps, kpe    )
 
-  end subroutine ncep_tracker_center
+  end subroutine fv_tracker_center
 
   subroutine ntc_impl(Atm,      &
-       IDS,IDE,JDS,JDE,KDS,KDE, &
-       IMS,IME,JMS,JME,KMS,KME, &
-       IPS,IPE,JPS,JPE,KPS,KPE)
+       ids,ide,jds,jde,kds,kde, &
+       ims,ime,jms,jme,kms,kme, &
+       ips,ipe,jps,jpe,kps,kpe)
     ! This is the main entry point to the tracker.  It is most similar
     ! to the function "tracker" in the GFDL/NCEP vortex tracker.
 
     implicit none
     type(fv_atmos_type), intent(inout) :: Atm
-    integer, intent(in) :: IDS,IDE,JDS,JDE,KDS,KDE
-    integer, intent(in) :: IMS,IME,JMS,JME,KMS,KME
-    integer, intent(in) :: IPS,IPE,JPS,JPE,KPS,KPE
+    integer, intent(in) :: ids,ide,jds,jde,kds,kde
+    integer, intent(in) :: ims,ime,jms,jme,kms,kme
+    integer, intent(in) :: ips,ipe,jps,jpe,kps,kpe
 
     real :: dxdymean, sumdxa, sumdya
-    integer :: i,j,iweights,ip
+    integer :: i, j, iweights, ip
 
     integer :: iguess, jguess ! first guess location
     real :: latguess, longuess ! same, but in lat & lon
 
     integer :: iuvguess, juvguess ! "second guess" location using everything except wind maxima
     real :: srsq
-    integer :: ifinal,jfinal
-    real :: latfinal,lonfinal
+    integer :: ifinal, jfinal
+    real :: latfinal, lonfinal
     integer :: ierr
     integer :: icen(maxtp), jcen(maxtp) ! center locations for each parameter
     real :: loncen(maxtp), latcen(maxtp) ! lat, lon locations in degrees
     logical :: calcparm(maxtp) ! do we have a valid center location for this parameter?
-    real :: max_wind,min_pres ! for ATCF output
+    real :: max_wind, min_pres ! for ATCF output
     real :: rcen(maxtp) ! center value (max wind, min mslp, etc.)
     character*255 :: message
     logical :: north_hemi ! true = northern hemisphere
     logical :: have_guess ! first guess is available
-    real :: guessdist,guessdeg ! first guess distance to nearest point on grid
+    real :: guessdist, guessdeg ! first guess distance to nearest point on grid
     real :: latnear, lonnear ! nearest point in grid to first guess
 
     ! icen,jcen: Same meaning as clon, clat in tracker, but uses i and
@@ -228,7 +192,7 @@ contains
        srsq=searchrad_7*searchrad_7*1e6
     endif
 
-    ! Get the mean grid spacing
+    ! Estimate the domain wide mean grid spacing in km
     sumdxa=0.0
     sumdya=0.0
     do j=jps,min(jde-1,jpe)
@@ -244,9 +208,9 @@ contains
     ! Get the square of the approximate distance to the domain center
     ! at all points:
     call get_distsq(Atm, &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         IPS,IPE,JPS,JPE,KPS,KPE)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         ips,ipe,jps,jpe,kps,kpe)
 
     ! Get the first guess from the prior nest motion timestep:
     have_guess=Atm%track_have_guess
@@ -257,11 +221,11 @@ contains
        call get_nearest_lonlat(Atm,iguess,jguess,ierr,longuess,latguess, &
             ids,ide, jds,jde, kds,kde, &
             ims,ime, jms,jme, kms,kme, &
-            ips,ipe, jps,jpe, kps,kpe,     lonnear, latnear)
+            ips,ipe, jps,jpe, kps,kpe, &
+            lonnear, latnear)
        if(ierr==0) then
           call calcdist(longuess,latguess, lonnear,latnear, guessdist,guessdeg)
-          ! Check if we want to use refinement_ratio for 3 later on
-          if(guessdist>3*dxdymean) then
+          if(guessdist > Atm%neststruct%refinement*dxdymean) then
 108          format('WARNING: guess lon=',F0.3,',lat=',F0.3, &
                   ' too far (',F0.3,'km) from nearest point lon=',F0.3,',lat=',F0.3, &
                   '.  Will use domain center as first guess.')
@@ -289,8 +253,8 @@ contains
        ! vt=7: first guess comes from prior timestep
        !     Initial first guess is domain center.
        !     Backup first guess is domain center if first guess is unusable.
-       iguess=(ide-1)/2 + 1
-       jguess=(jde-1)/2 + 1
+       iguess=(ide-ids)/2+ids
+       jguess=(jde-jds)/2+jds
        if(Atm%vortex_tracker==7) then
           call mpp_error(NOTE, 'Using domain center as first guess since no valid first guess is available.')
        endif
@@ -313,80 +277,80 @@ contains
     ! Find the centers of all fields except the wind minima:
     call find_center(Atm,Atm%vort850,srsq, &
          icen(1),jcen(1),rcen(1),calcparm(1),loncen(1),latcen(1),dxdymean,'zeta', &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         IPS,IPE,JPS,JPE,KPS,KPE, north_hemi=north_hemi)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         ips,ipe,jps,jpe,kps,kpe, north_hemi=north_hemi)
     call find_center(Atm,Atm%vort700,srsq, &
          icen(2),jcen(2),rcen(2),calcparm(2),loncen(2),latcen(2),dxdymean,'zeta', &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         IPS,IPE,JPS,JPE,KPS,KPE, north_hemi=north_hemi)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         ips,ipe,jps,jpe,kps,kpe, north_hemi=north_hemi)
     call find_center(Atm,Atm%z850,srsq, &
          icen(7),jcen(7),rcen(7),calcparm(7),loncen(7),latcen(7),dxdymean,'hgt', &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         IPS,IPE,JPS,JPE,KPS,KPE)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         ips,ipe,jps,jpe,kps,kpe)
     call find_center(Atm,Atm%z700,srsq, &
          icen(8),jcen(8),rcen(8),calcparm(8),loncen(8),latcen(8),dxdymean,'hgt', &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         IPS,IPE,JPS,JPE,KPS,KPE)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         ips,ipe,jps,jpe,kps,kpe)
     call find_center(Atm,Atm%slp,srsq, &
          icen(9),jcen(9),rcen(9),calcparm(9),loncen(9),latcen(9),dxdymean,'slp', &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         IPS,IPE,JPS,JPE,KPS,KPE)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         ips,ipe,jps,jpe,kps,kpe)
     call find_center(Atm,Atm%vort10m,srsq, &
          icen(11),jcen(11),rcen(11),calcparm(11),loncen(11),latcen(11),dxdymean,'zeta', &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         IPS,IPE,JPS,JPE,KPS,KPE, north_hemi=north_hemi)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         ips,ipe,jps,jpe,kps,kpe, north_hemi=north_hemi)
 
     ! Get a guess center location for the wind minimum searches:
     call get_uv_guess(Atm,icen,jcen,loncen,latcen,calcparm, &
          iguess,jguess,longuess,latguess,iuvguess,juvguess, &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         IPS,IPE,JPS,JPE,KPS,KPE)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         ips,ipe,jps,jpe,kps,kpe)
 
     ! Find wind minima.  Requires a first guess center:
     windmin: if(Atm%vortex_tracker==6) then
        call find_center(Atm,Atm%spd850,srsq, &
             icen(3),jcen(3),rcen(3),calcparm(3),loncen(3),latcen(3),dxdymean,'wind', &
-            IDS,IDE,JDS,JDE,KDS,KDE, &
-            IMS,IME,JMS,JME,KMS,KME, &
-            IPS,IPE,JPS,JPE,KPS,KPE, &
+            ids,ide,jds,jde,kds,kde, &
+            ims,ime,jms,jme,kms,kme, &
+            ips,ipe,jps,jpe,kps,kpe, &
             iuvguess=iuvguess, juvguess=juvguess)
        call find_center(Atm,Atm%spd700,srsq, &
             icen(5),jcen(5),rcen(5),calcparm(5),loncen(5),latcen(5),dxdymean,'wind', &
-            IDS,IDE,JDS,JDE,KDS,KDE, &
-            IMS,IME,JMS,JME,KMS,KME, &
-            IPS,IPE,JPS,JPE,KPS,KPE, &
+            ids,ide,jds,jde,kds,kde, &
+            ims,ime,jms,jme,kms,kme, &
+            ips,ipe,jps,jpe,kps,kpe, &
             iuvguess=iuvguess, juvguess=juvguess)
        call find_center(Atm,Atm%spd10m,srsq, &
             icen(10),jcen(10),rcen(10),calcparm(10),loncen(10),latcen(10),dxdymean,'wind', &
-            IDS,IDE,JDS,JDE,KDS,KDE, &
-            IMS,IME,JMS,JME,KMS,KME, &
-            IPS,IPE,JPS,JPE,KPS,KPE, &
+            ids,ide,jds,jde,kds,kde, &
+            ims,ime,jms,jme,kms,kme, &
+            ips,ipe,jps,jpe,kps,kpe, &
             iuvguess=iuvguess, juvguess=juvguess)
     else
        call get_uv_center(Atm,Atm%spd850, &
             icen(3),jcen(3),rcen(3),calcparm(3),loncen(3),latcen(3),dxdymean,'wind', &
-            IDS,IDE,JDS,JDE,KDS,KDE, &
-            IMS,IME,JMS,JME,KMS,KME, &
-            IPS,IPE,JPS,JPE,KPS,KPE, &
+            ids,ide,jds,jde,kds,kde, &
+            ims,ime,jms,jme,kms,kme, &
+            ips,ipe,jps,jpe,kps,kpe, &
             iuvguess=iuvguess, juvguess=juvguess)
        call get_uv_center(Atm,Atm%spd700, &
             icen(5),jcen(5),rcen(5),calcparm(5),loncen(5),latcen(5),dxdymean,'wind', &
-            IDS,IDE,JDS,JDE,KDS,KDE, &
-            IMS,IME,JMS,JME,KMS,KME, &
-            IPS,IPE,JPS,JPE,KPS,KPE, &
+            ids,ide,jds,jde,kds,kde, &
+            ims,ime,jms,jme,kms,kme, &
+            ips,ipe,jps,jpe,kps,kpe, &
             iuvguess=iuvguess, juvguess=juvguess)
        call get_uv_center(Atm,Atm%spd10m, &
             icen(10),jcen(10),rcen(10),calcparm(10),loncen(10),latcen(10),dxdymean,'wind', &
-            IDS,IDE,JDS,JDE,KDS,KDE, &
-            IMS,IME,JMS,JME,KMS,KME, &
-            IPS,IPE,JPS,JPE,KPS,KPE, &
+            ids,ide,jds,jde,kds,kde, &
+            ims,ime,jms,jme,kms,kme, &
+            ips,ipe,jps,jpe,kps,kpe, &
             iuvguess=iuvguess, juvguess=juvguess)
     endif windmin
 
@@ -436,26 +400,51 @@ contains
     endif
 
     call get_tracker_distsq(Atm, &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         IPS,IPE,JPS,JPE,KPS,KPE)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         ips,ipe,jps,jpe,kps,kpe)
 
     call get_wind_pres_intensity(Atm, &
          Atm%tracker_pmin,Atm%tracker_vmax,Atm%tracker_rmw, &
          max_wind_search_radius, min_mlsp_search_radius, &
          lonfinal,latfinal, &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         IPS,IPE,JPS,JPE,KPS,KPE)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         ips,ipe,jps,jpe,kps,kpe)
 
     if(is_master()) then
        call output_partial_atcfunix(Atm, &
-            IDS,IDE,JDS,JDE,KDS,KDE, &
-            IMS,IME,JMS,JME,KMS,KME, &
-            IPS,IPE,JPS,JPE,KPS,KPE)
+            ids,ide,jds,jde,kds,kde, &
+            ims,ime,jms,jme,kms,kme, &
+            ips,ipe,jps,jpe,kps,kpe)
     endif
-
   end subroutine ntc_impl
+
+  subroutine get_ijk_from_domain(Atm,  &
+         ids, ide, jds, jde, kds, kde, &
+         ims, ime, jms, jme, kms, kme, &
+         ips, ipe, jps, jpe, kps, kpe )
+    ! This is
+    implicit none
+    type(fv_atmos_type), intent(in) :: Atm
+
+    integer, intent(out) :: ids,ide,jds,jde,kds,kde
+    integer, intent(out) :: ims,ime,jms,jme,kms,kme
+    integer, intent(out) :: ips,ipe,jps,jpe,kps,kpe
+
+    ids = 1
+    ide = Atm%npx
+    jds = 1
+    jde = Atm%npy
+    kds = 1
+    kde = Atm%npz
+    call mpp_get_data_domain(Atm%domain, ims, ime, jms, jme)
+    kms = 1
+    kme = Atm%npz
+    call mpp_get_compute_domain(Atm%domain, ips, ipe, jps, jpe)
+    kps = 1
+    kpe = Atm%npz
+  end subroutine get_ijk_from_domain
 
   subroutine get_nearest_lonlat(Atm,iloc,jloc,ierr,lon,lat, &
                ids,ide, jds,jde, kds,kde, &
@@ -466,9 +455,9 @@ contains
     ! location.
     implicit none
     type(fv_atmos_type), intent(inout) :: Atm
-    integer, intent(in) :: IDS,IDE,JDS,JDE,KDS,KDE
-    integer, intent(in) :: IMS,IME,JMS,JME,KMS,KME
-    integer, intent(in) :: IPS,IPE,JPS,JPE,KPS,KPE
+    integer, intent(in) :: ids,ide,jds,jde,kds,kde
+    integer, intent(in) :: ims,ime,jms,jme,kms,kme
+    integer, intent(in) :: ips,ipe,jps,jpe,kps,kpe
     integer, intent(out) :: iloc,jloc,ierr
     real, intent(in) :: lon,lat
     real :: dx,dy,d,dmin, zdummy, latmin,lonmin
@@ -484,15 +473,15 @@ contains
     ierr=0
     do j=jps,min(jde-1,jpe)
        do i=ips,min(ide-1,ipe)
-          dy=abs(lat-Atm%gridstruct%agrid(i,j,2)*rad2deg)
-          dx=abs(mod(3600.+180.+(lon-Atm%gridstruct%agrid(i,j,1)*rad2deg,360.)-180.)
+          dy=abs(lat-Atm%gridstruct%agrid(i,j,2)*rad_to_deg)
+          dx=abs(mod(3600.+180.+(lon-Atm%gridstruct%agrid(i,j,1)*rad_to_deg,360.)-180.)
           d=dx*dx+dy*dy
           if(d<dmin) then
              dmin=d
              imin=i
              jmin=j
-             latmin=Atm%gridstruct%agrid(i,j,2)*rad2deg
-             lonmin=Atm%gridstruct%agrid(i,j,1)*rad2deg
+             latmin=Atm%gridstruct%agrid(i,j,2)*rad_to_deg
+             lonmin=Atm%gridstruct%agrid(i,j,1)*rad_to_deg
           endif
        enddo
     enddo
@@ -508,30 +497,30 @@ contains
   end subroutine get_nearest_lonlat
 
   subroutine output_partial_atcfunix(Atm, &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         ITS,ITE,JTS,JTE,KTS,KTE)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         its,ite,jts,jte,kts,kte)
     ! This outputs to a format that can be easily converted to ATCF,
     ! using units used by ATCF.
     implicit none
-    type(fv_atmos_type), intent(INOUT) :: Atm
-    integer, intent(in) :: IDS,IDE,JDS,JDE,KDS,KDE
-    integer, intent(in) :: IMS,IME,JMS,JME,KMS,KME
-    integer, intent(in) :: ITS,ITE,JTS,JTE,KTS,KTE
-    real :: seconds
+    type(fv_atmos_type), intent(inout) :: Atm
+    integer, intent(in) :: ids,ide,jds,jde,kds,kde
+    integer, intent(in) :: ims,ime,jms,jme,kms,kme
+    integer, intent(in) :: its,ite,jts,jte,kts,kte
+    real :: sec
     character*255 message
 
-    seconds=time_type_to_real(Atm%Time-Atm%Time_Init)
+    sec=time_type_to_real(Atm%Time-Atm%Time_Init)
 313 format(F11.2,", ",                                  &
            "W10 = ",F7.3," kn, PMIN = ",F8.3," mbar, ", &
            "LAT = ",F6.3,A1,", LON = ",F7.3,A1,", ",    &
            "RMW = ",F7.3," nmi")
-    write(Atm%neststruct%outatcf_lun,313) seconds,               &
+    write(Atm%neststruct%outatcf_lun+Atm%grid_number,313) sec,   &
          Atm%tracker_vmax*mps2kn,Atm%tracker_pmin/100.,          &
          abs(Atm%tracker_fixlat),get_lat_ns(Atm%tracker_fixlat), &
          abs(Atm%tracker_fixlon),get_lon_ew(Atm%tracker_fixlon), &
          Atm%tracker_rmw*km2nmi
-    ! write(message,313) seconds,                                  &
+    ! write(message,313) sec,                                      &
     !      Atm%tracker_vmax*mps2kn,Atm%tracker_pmin/100.,          &
     !      abs(Atm%tracker_fixlat),get_lat_ns(Atm%tracker_fixlat), &
     !      abs(Atm%tracker_fixlon),get_lon_ew(Atm%tracker_fixlon), &
@@ -542,17 +531,17 @@ contains
   subroutine get_wind_pres_intensity(Atm, &
        min_mslp,max_wind,rmw, &
        max_wind_search_radius, min_mlsp_search_radius, clon,clat, &
-       IDS,IDE,JDS,JDE,KDS,KDE, &
-       IMS,IME,JMS,JME,KMS,KME, &
-       ITS,ITE,JTS,JTE,KTS,KTE)
+       ids,ide,jds,jde,kds,kde, &
+       ims,ime,jms,jme,kms,kme, &
+       its,ite,jts,jte,kts,kte)
     ! This determines the maximum wind, RMW and minimum mslp in the domain.
     implicit none
-    type(fv_atmos_type), intent(INOUT) :: Atm
+    type(fv_atmos_type), intent(inout) :: Atm
     real, intent(out) :: min_mslp,max_wind,rmw
     real, intent(in) :: max_wind_search_radius, min_mlsp_search_radius,clon,clat
-    integer, intent(in) :: IDS,IDE,JDS,JDE,KDS,KDE
-    integer, intent(in) :: IMS,IME,JMS,JME,KMS,KME
-    integer, intent(in) :: ITS,ITE,JTS,JTE,KTS,KTE
+    integer, intent(in) :: ids,ide,jds,jde,kds,kde
+    integer, intent(in) :: ims,ime,jms,jme,kms,kme
+    integer, intent(in) :: its,ite,jts,jte,kts,kte
 
     real :: localextreme,globalextreme, sdistsq,windsq
     real :: globallat,globallon,degrees
@@ -671,7 +660,7 @@ contains
          ids,ide, jds,jde, kds,kde, &
          ims,ime, jms,jme, kms,kme, &
          ips,ipe, jps,jpe, kps,kpe
-    type(fv_atmos_type), intent(INOUT) :: Atm
+    type(fv_atmos_type), intent(inout) :: Atm
     integer, intent(in) :: icen(maxtp), jcen(maxtp)
     real, intent(in) :: loncen(maxtp), latcen(maxtp)
     logical, intent(inout) :: calcparm(maxtp)
@@ -687,7 +676,7 @@ contains
     character*255 :: message
     real :: errdist(maxtp),avgerr,errmax,errinit,xavg_stderr
     real :: dist,degrees, total
-    real :: minutes,hours,trkerr_avg, dist_from_mean(maxtp),wsum
+    real :: minutes,hours,trkerr_avg,dist_from_mean(maxtp),wsum
     integer :: ip,itot4next,iclose,count,ifound,ierr
     integer(kind=8) :: isum,jsum
     real :: irsum,jrsum,errtmp,devia,wtpos
@@ -914,8 +903,8 @@ contains
     ! We jump here if we're giving up on finding the center
 999 continue
     ! Use domain center as storm location
-    Atm%tracker_ifix=(ide-1)/2+1
-    Atm%tracker_jfix=(jde-1)/2+1
+    Atm%tracker_ifix=(ide-ids)/2+ids
+    Atm%tracker_jfix=(jde-jds)/2+jds
     Atm%tracker_havefix=.false.
     Atm%tracker_gave_up=.true.
     call get_lonlat(Atm,ifinal,jfinal,lonfinal,latfinal,ierr, &
@@ -934,9 +923,9 @@ contains
 
   subroutine get_uv_guess(Atm,icen,jcen,loncen,latcen,calcparm, &
        iguess,jguess,longuess,latguess,iout,jout, &
-       IDS,IDE,JDS,JDE,KDS,KDE, &
-       IMS,IME,JMS,JME,KMS,KME, &
-       ITS,ITE,JTS,JTE,KTS,KTE)
+       ids,ide,jds,jde,kds,kde, &
+       ims,ime,jms,jme,kms,kme, &
+       its,ite,jts,jte,kts,kte)
     ! This is a rewrite of the gettrk_main.f get_uv_guess.  Original comment:
     ! ABSTRACT: The purpose of this subroutine is to get a modified
     !           first guess lat/lon position before searching for the
@@ -960,10 +949,10 @@ contains
     !  iout,jout - uv guess center location
 
     implicit none
-    type(fv_atmos_type), intent(INOUT) :: Atm
-    integer, intent(in) :: IDS,IDE,JDS,JDE,KDS,KDE
-    integer, intent(in) :: IMS,IME,JMS,JME,KMS,KME
-    integer, intent(in) :: ITS,ITE,JTS,JTE,KTS,KTE
+    type(fv_atmos_type), intent(inout) :: Atm
+    integer, intent(in) :: ids,ide,jds,jde,kds,kde
+    integer, intent(in) :: ims,ime,jms,jme,kms,kme
+    integer, intent(in) :: its,ite,jts,jte,kts,kte
 
     integer, intent(in) :: icen(maxtp), jcen(maxtp)
     real, intent(in) :: loncen(maxtp), latcen(maxtp)
@@ -1009,15 +998,15 @@ contains
   subroutine get_uv_center(Atm,orig, &
        iout,jout,rout,calcparm,lonout,latout, &
        dxdymean,cparm, &
-       IDS,IDE,JDS,JDE,KDS,KDE, &
-       IMS,IME,JMS,JME,KMS,KME, &
-       IPS,IPE,JPS,JPE,KPS,KPE, &
+       ids,ide,jds,jde,kds,kde, &
+       ims,ime,jms,jme,kms,kme, &
+       ips,ipe,jps,jpe,kps,kpe, &
        iuvguess,juvguess)
 
     implicit none
 
     integer, intent(in) :: iuvguess,juvguess
-    type(fv_atmos_type), intent(INOUT) :: Atm
+    type(fv_atmos_type), intent(inout) :: Atm
     character*(*), intent(in) :: cparm
     real, intent(in) :: dxdymean
     real, intent(inout) :: rout
@@ -1036,8 +1025,8 @@ contains
     ! Restrict the search area.  By default, we search everywhere except the boundary:
     istart=max(ids+1,ips)
     istop=min(ide-2,ipe)
-    jstart=max(jds+2,jps)
-    jstop=min(jde-3,jpe)
+    jstart=max(jds+1,jps)
+    jstop=min(jde-2,jpe)
 
     ! If the guess location is given, then further restrict the search area:
     istart=max(istart,iuvguess-nint(rads_vmag/(2.*dxdymean)))
@@ -1060,14 +1049,12 @@ contains
        enddo
     enddo
 
-       call mp_reduce_minval(rcen,icen,jcen)
-       !write(0,*) 'global',icen,jcen,rcen
+    call mp_reduce_minval(rcen,icen,jcen)
 
     ! Return result:
     resultif: if(icen==-99 .or. jcen==-99) then
        ! No center found.
        calcparm=.false.
-       !write(0,*) 'no center found'
     else
        iout=icen
        jout=jcen
@@ -1078,23 +1065,23 @@ contains
             ims,ime, jms,jme, kms,kme, &
             ips,ipe, jps,jpe, kps,kpe)
        if(ierr/=0) then
-          !write(0,*) 'bad lonlat'
           calcparm=.false.
           return
        endif
-       !write(0,*) 'center found; lon=',lonout,' lat=',latout
     endif resultif
   end subroutine get_uv_center
 
   subroutine find_center(Atm,orig,srsq, &
        iout,jout,rout,calcparm,lonout,latout, &
        dxdymean,cparm, &
-       IDS,IDE,JDS,JDE,KDS,KDE, &
-       IMS,IME,JMS,JME,KMS,KME, &
-       IPS,IPE,JPS,JPE,KPS,KPE, &
+       ids,ide,jds,jde,kds,kde, &
+       ims,ime,jms,jme,kms,kme, &
+       ips,ipe,jps,jpe,kps,kpe, &
        iuvguess,juvguess,north_hemi)
     ! This routine replaces the gettrk_main functions find_maxmin and
     ! get_uv_center.
+
+    ! Note: Currently, the smoothing is not yet implemented.
 
     ! Finds the minimum or maximum value of the smoothed version
     ! (smooth) of the given field (orig).  If a center cannot be
@@ -1124,7 +1111,7 @@ contains
     implicit none
 
     integer, intent(in), optional :: iuvguess,juvguess
-    type(fv_atmos_type), intent(INOUT) :: Atm
+    type(fv_atmos_type), intent(inout) :: Atm
     character*(*), intent(in) :: cparm
     real, intent(in) :: dxdymean, srsq
     real, intent(inout) :: rout
@@ -1143,15 +1130,15 @@ contains
     integer :: icen,jcen,i,j,ismooth,ierr
     real :: rcen, here, sum, mean, cendist, heredist
 
-    integer :: istart,istop, jstart,jstop,itemp
+    integer :: istart,istop,jstart,jstop,itemp
 
     logical :: findmin
 
     ! Restrict the search area.  By default, we search everywhere except the boundary:
     istart=max(ids+1,ips)
     istop=min(ide-2,ipe)
-    jstart=max(jds+2,jps)
-    jstop=min(jde-3,jpe)
+    jstart=max(jds+1,jps)
+    jstop=min(jde-2,jpe)
 
     ! If the guess location is given, then further restrict the search area:
     if(present(iuvguess)) then
@@ -1188,11 +1175,6 @@ contains
        call mpp_error(FATAL, message)
     endif ifmin
 
-3011 format('ips=',I0,' ipe=',I0,' istart=',I0,' istop=',I0)
-3012 format('jps=',I0,' jpe=',I0,' jstart=',I0,' jstop=',I0)
-    !write(0,3011) ips,ipe,istart,istop
-    !write(0,3012) jps,jpe,jstart,jstop
-
     ! Find the extremum:
     icen=-99
     jcen=-99
@@ -1207,10 +1189,7 @@ contains
              endif
           enddo
        enddo
-3013   format(A,' minval i=',I0,' j=',I0,' r=',F0.3)
-       !write(0,3013) 'local',icen,jcen,rcen
        call mp_reduce_minval(rcen,icen,jcen)
-       !write(0,3013) 'global',icen,jcen,rcen
     else ! Find a maximum
 3014   format(A,' maxval i=',I0,' j=',I0,' r=',F0.3)
        rcen=-9e9
@@ -1223,16 +1202,13 @@ contains
              endif
           enddo
        enddo
-       !write(0,3014) 'local',icen,jcen,rcen
        call mp_reduce_maxval(rcen,icen,jcen)
-       !write(0,3014) 'global',icen,jcen,rcen
     endif findminmax
 
     ! Return result:
     resultif: if(icen==-99 .or. jcen==-99) then
        ! No center found.
        calcparm=.false.
-       !write(0,*) 'no center found'
     else
        iout=icen
        jout=jcen
@@ -1243,43 +1219,41 @@ contains
             ims,ime, jms,jme, kms,kme, &
             ips,ipe, jps,jpe, kps,kpe)
        if(ierr/=0) then
-          !write(0,*) 'bad lonlat'
           calcparm=.false.
           return
        endif
-       !write(0,*) 'center found; lon=',lonout,' lat=',latout
     endif resultif
   end subroutine find_center
 
   subroutine get_distsq(Atm, &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         ITS,ITE,JTS,JTE,KTS,KTE)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         its,ite,jts,jte,kts,kte)
     ! This computes approximate distances in km from the domain
-    ! center of the various points in the domain.  It uses the same
+    ! center of the various points in the domain. It uses the same
     ! computation as used for distsq: the calculation is done in
     ! gridpoint space, approximating the domain as flat.
     ! Point-to-point distances come from Atm%gridstruct%dxa and Atm%gridstruct%dya.
     ! This routine also determines the distance from the tracker
     ! center location to the nearest point in the domain edge.
     implicit none
-    type(fv_atmos_type), intent(INOUT) :: Atm
+    type(fv_atmos_type), intent(inout) :: Atm
     character*255 message
-    integer, intent(in) :: IDS,IDE,JDS,JDE,KDS,KDE
-    integer, intent(in) :: IMS,IME,JMS,JME,KMS,KME
-    integer, intent(in) :: ITS,ITE,JTS,JTE,KTS,KTE
+    integer, intent(in) :: ids,ide,jds,jde,kds,kde
+    integer, intent(in) :: ims,ime,jms,jme,kms,kme
+    integer, intent(in) :: its,ite,jts,jte,kts,kte
     integer i,j,cx,cy,ierr
     integer wilbur,harvey ! filler variables for a function call
     real xfar,yfar,far,xshift,max_edge_distsq,clatr,clonr
     real ylat1,ylat2,xlon1,xlon2,mindistsq
 
-    cx=(IDE-IDS+1)/2+IDS
-    cy=(JDE-JDS+1)/2+JDS
+    cx=(ide-ids)/2+ids
+    cy=(jde-jds)/2+jds
 
     call get_lonlat(Atm,cx,cy,clonr,clatr,ierr, &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         ITS,ITE,JTS,JTE,KTS,KTE)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         its,ite,jts,jte,kts,kte)
     if(ierr/=0) then
        call mpp_error(FATAL, 'Domain center location is not inside domain.')
     end if
@@ -1296,9 +1270,9 @@ contains
   end subroutine get_distsq
 
   subroutine get_tracker_distsq(Atm, &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         ITS,ITE,JTS,JTE,KTS,KTE)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         its,ite,jts,jte,kts,kte)
     ! This computes approximate distances in km from the tracker
     ! center of the various points in the domain.  It uses the same
     ! computation as used for distsq: the calculation is done in
@@ -1307,11 +1281,11 @@ contains
     ! This routine also determines the distance from the tracker
     ! center location to the nearest point in the domain edge.
     implicit none
-    type(fv_atmos_type), intent(INOUT) :: Atm
+    type(fv_atmos_type), intent(inout) :: Atm
     character*255 message
-    integer, intent(in) :: IDS,IDE,JDS,JDE,KDS,KDE
-    integer, intent(in) :: IMS,IME,JMS,JME,KMS,KME
-    integer, intent(in) :: ITS,ITE,JTS,JTE,KTS,KTE
+    integer, intent(in) :: ids,ide,jds,jde,kds,kde
+    integer, intent(in) :: ims,ime,jms,jme,kms,kme
+    integer, intent(in) :: its,ite,jts,jte,kts,kte
     integer i,j,cx,cy,ierr
     integer wilbur,harvey ! filler variables for a function call
     real xfar,yfar,far,xshift,max_edge_distsq,clatr,clonr
@@ -1321,9 +1295,9 @@ contains
     cy=Atm%tracker_jfix
 
     call get_lonlat(Atm,cx,cy,clonr,clatr,ierr, &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         ITS,ITE,JTS,JTE,KTS,KTE)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         its,ite,jts,jte,kts,kte)
     if(ierr/=0) then
        call mpp_error(FATAL, 'Tracker fix location is not inside domain.')
     end if
@@ -1342,15 +1316,15 @@ contains
     ! lat/lon.  (Geographic East=0, geographic North=pi/2.)
     xlon1=clonr ; ylat1=clatr
     call clean_lon_lat(xlon1,ylat1)
-    xlon1=xlon1*pi180
-    ylat1=ylat1*pi180
+    xlon1=xlon1*deg_to_rad
+    ylat1=ylat1*deg_to_rad
     do j=jts,min(jte,jde-1)
        do i=its,min(ite,ide-1)
-          xlon2=Atm%gridstruct%agrid(i,j,1)/pi180
-          ylon2=Atm%gridstruct%agrid(i,j,2)/pi180
+          xlon2=Atm%gridstruct%agrid(i,j,1)*rad_to_deg
+          ylon2=Atm%gridstruct%agrid(i,j,2)*rad_to_deg
           call clean_lon_lat(xlon2,ylat2)
-          xlon2=xlon2*pi180
-          ylat2=ylat2*pi180
+          xlon2=xlon2*deg_to_rad
+          ylat2=ylat2*deg_to_rad
           Atm%tracker_angle(i,j)=atan2(xlon2-xlon1,ylat2-ylat1)
        enddo
     enddo
@@ -1381,23 +1355,6 @@ contains
     write(message,17) clonr, clatr, Atm%tracker_edge_dist
     call mpp_error(NOTE, message)
   end subroutine get_tracker_distsq
-
-  subroutine clean_lon_lat(xlon1,ylat1)
-    real, intent(inout) :: xlon1,ylat1
-    ! This modifies a (lat,lon) pair so that the longitude fits
-    ! between [-180,180] and the latitude between [-90,90], taking
-    ! into account spherical geometry.
-    ! NOTE: inputs and outputs are in degrees
-    xlon1=(mod(xlon1+3600.+180.,360.)-180.)
-    ylat1=(mod(ylat1+3600.+180.,360.)-180.)
-    if(ylat1>90.) then
-       ylat1=180.-ylat1
-       xlon1=mod(xlon1+360.,360.)-180.
-    elseif(ylat1<-90.) then
-       ylat1=-180. - ylat1
-       xlon1=mod(xlon1+360.,360.)-180.
-    endif
-  end subroutine clean_lon_lat
 
   subroutine calcdist(rlonb,rlatb,rlonc,rlatc,xdist,degrees)
     ! Copied from gettrk_main.f
@@ -1494,8 +1451,8 @@ contains
     zjunk=1
     if(iguess>=ips .and. iguess<=ipe .and. jguess>=jps .and. jguess<=jpe) then
        weight=1
-       longuess=Atm%gridstruct%agrid(iguess,jguess,1)*rad2deg
-       latguess=Atm%gridstruct%agrid(iguess,jguess,2)*rad2deg
+       longuess=Atm%gridstruct%agrid(iguess,jguess,1)*rad_to_deg
+       latguess=Atm%gridstruct%agrid(iguess,jguess,2)*rad_to_deg
        itemp=iguess
        jtemp=jguess
     else
@@ -1513,14 +1470,55 @@ contains
     endif
   end subroutine get_lonlat
 
-  subroutine ncep_tracker_post_move(Atm)
+  subroutine clean_lon_lat(xlon1,ylat1)
+    real, intent(inout) :: xlon1,ylat1
+    ! This modifies a (lat,lon) pair so that the longitude fits
+    ! between [-180,180] and the latitude between [-90,90], taking
+    ! into account spherical geometry.
+    ! NOTE: inputs and outputs are in degrees
+    xlon1=(mod(xlon1+3600.+180.,360.)-180.)
+    ylat1=(mod(ylat1+3600.+180.,360.)-180.)
+    if(ylat1>90.) then
+       ylat1=180.-ylat1
+       xlon1=mod(xlon1+360.,360.)-180.
+    elseif(ylat1<-90.) then
+       ylat1=-180. - ylat1
+       xlon1=mod(xlon1+360.,360.)-180.
+    endif
+  end subroutine clean_lon_lat
+
+  !----------------------------------------------------------------------------------
+  ! These two simple routines return an N, S, E or W for the
+  ! hemisphere of a latitude or longitude.
+  character(1) function get_lat_ns(lat)
+    ! This could be written simply as merge('N','S',lat>=0) if F95 allowed
+    implicit none
+    real :: lat
+    if(lat>=0) then
+       get_lat_ns='N'
+    else
+       get_lat_ns='S'
+    endif
+  end function get_lat_ns
+  character(1) function get_lon_ew(lon)
+    ! This could be written simply as merge('E','W',lon>=0) if F95 allowed
+    implicit none
+    real :: lon
+    if(lon>=0) then
+       get_lon_ew='E'
+    else
+       get_lon_ew='W'
+    endif
+  end function get_lon_ew
+
+  subroutine fv_tracker_post_move(Atm)
     ! This updates the tracker i/j fix location and square of the
     ! distance to the tracker center after a nest move.
-    type(fv_atmos_type), intent(INOUT) :: Atm
+    type(fv_atmos_type), intent(inout) :: Atm
     integer :: ierr, &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         IPS,IPE,JPS,JPE,KPS,KPE
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         ips,ipe,jps,jpe,kps,kpe
 
     ! Get the grid bounds:
     CALL get_ijk_from_domain(Atm,         &
@@ -1532,48 +1530,20 @@ contains
     ierr=0
     call get_nearest_lonlat(Atm,Atm%tracker_ifix,Atm%tracker_jfix, &
          ierr,Atm%tracker_fixlon,Atm%tracker_fixlat, &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         IPS,IPE,JPS,JPE,KPS,KPE)
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         ips,ipe,jps,jpe,kps,kpe)
 
     ! Get the square of the approximate distance to the tracker center
     ! at all points:
     if(ierr==0) &
          call get_tracker_distsq(Atm, &
-         IDS,IDE,JDS,JDE,KDS,KDE, &
-         IMS,IME,JMS,JME,KMS,KME, &
-         IPS,IPE,JPS,JPE,KPS,KPE)
-  end subroutine ncep_tracker_post_move
+         ids,ide,jds,jde,kds,kde, &
+         ims,ime,jms,jme,kms,kme, &
+         ips,ipe,jps,jpe,kps,kpe)
+  end subroutine fv_tracker_post_move
 
-  subroutine get_ijk_from_domain(Atm,       &
-         ids, ide, jds, jde, kds, kde,    &
-         ims, ime, jms, jme, kms, kme,    &
-         ips, ipe, jps, jpe, kps, kpe    )
-
-    ! This is
-    implicit none
-    type(fv_atmos_type), intent(in) :: Atm
-
-    integer, intent(out) :: ids,ide,jds,jde,kds,kde
-    integer, intent(out) :: ims,ime,jms,jme,kms,kme
-    integer, intent(out) :: ips,ipe,jps,jpe,kps,kpe
-
-    ids = 1
-    ide = Atm%npx
-    jds = 1
-    jde = Atm%npy
-    kds = 1
-    kde = Atm%npz
-    call mpp_get_data_domain(Atm%domain, ims, ime, jms, jme)
-    kms = 1
-    kme = Atm%npz
-    call mpp_get_compute_domain(Atm%domain, ips, ipe, jps, jpe)
-    kps = 1
-    kpe = Atm%npz
-
-  end subroutine get_ijk_from_domain
-
-  subroutine ncep_tracker_move(Atm)
+  subroutine fv_tracker_move(Atm)
     ! This is for
     implicit none
     type(fv_atmos_type), intent(inout) :: Atm
@@ -1588,6 +1558,7 @@ contains
     if(Atm%grid_number==1) then ! Do nothing for MOAD
        return
     endif
+
     if(Atm%tracker_gave_up) then
        call mpp_error(NOTE,'Not moving: tracker decided the storm dissapated')
        return
@@ -1598,23 +1569,26 @@ contains
        return
     endif
 
-    cx=(Atm%npx-1)/2 + 1
-    cy=(Atm%npy-1)/2 + 1
+    ! Calcuate domain center indexes
+    cx=(Atm%npx-1)/2+1
+    cy=(Atm%npy-1)/2+1
 
+    ! Calculate distance in parent grid index space between storm center and
+    ! domain center
     xdiff=(Atm%tracker_ifix-real(cx))/Atm%neststruct%refinement
     ydiff=(Atm%tracker_jfix-real(cy))/Atm%neststruct%refinement
 
-    if(xdiff .GE. 1.0) then
+    if(xdiff .ge. 1.0) then
        Atm%move_cd_x=1
-    else if(xdiff .LE. -1.0) then
+    else if(xdiff .le. -1.0) then
        Atm%move_cd_x=-1
     else
        Atm%move_cd_x=0
     endif
 
-    if(ydiff .GE. 1.0) then
+    if(ydiff .ge. 1.0) then
        Atm%move_cd_y=1
-    else if(ydiff .LE. -1.0) then
+    else if(ydiff .le. -1.0) then
        Atm%move_cd_y=-1
     else
        Atm%move_cd_y=0
@@ -1627,8 +1601,7 @@ contains
        Atm%mvnest=.false.
        call mpp_error(NOTE,'Not moving: tracker center is near nest center')
     endif
-
-  end subroutine ncep_tracker_move
+  end subroutine fv_tracker_move
 
 #endif
 

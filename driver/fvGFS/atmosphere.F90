@@ -187,7 +187,7 @@ use fv_nesting_mod,     only: twoway_nesting
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
 #ifdef MOVING_NEST
 use fv_diagnostics_mod, only: fv_diag_tracker
-use fv_tracker_mod,     only: ncep_tracker_init, ncep_tracker_center, ncep_tracker_post_move, ncep_tracker_move
+use fv_tracker_mod,     only: fv_tracker_init, fv_tracker_center, fv_tracker_post_move, fv_tracker_move
 #endif
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
@@ -269,6 +269,7 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
   integer :: nq                       !  number of transported tracers
   integer :: sec, seconds, days
   integer :: id_dynam, id_fv_diag, id_subgridz
+  integer :: id_fv_tracker
 
 
   logical :: cold_start = .false.     !  used in initial condition
@@ -474,6 +475,7 @@ contains
    id_dynam     = mpp_clock_id ('FV dy-core',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
    id_subgridz  = mpp_clock_id ('FV subgrid_z',flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
    id_fv_diag   = mpp_clock_id ('FV Diag',     flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+   id_fv_tracker= mpp_clock_id ('FV tracker',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
 #ifdef MOVING_NEST
    
@@ -1804,19 +1806,18 @@ contains
    endif
 
 #ifdef MOVING_NEST
-  !---- diagnostics for FV vortex tracker -----
+  !---- FV internal vortex tracker -----
    fv_time = Time_next
    call get_time (fv_time, seconds,  days)
    call get_time (Time_step_atmos, sec)
-   ! Currently hard-coded to run diag_tracker every two time steps 
    if (mod(seconds,Atm(mygrid:mygrid)%neststruct%ntrack*sec) .eq. 0) then
-     !call mpp_clock_begin(id_fv_diag_tracker)
-     !call timing_on('FV_DIAG_TRACKER')
+     call mpp_clock_begin(id_fv_tracker)
+     call timing_on('FV_TRACKER')
      call fv_diag_tracker(Atm(mygrid:mygrid), zvir, fv_time)
-     call ncep_tracker_center(Atm(mygrid:mygrid))
-     call ncep_tracker_move(Atm(mygrid:mygrid))
-     !call timing_off('FV_DIAG_TRACKER')
-     !call mpp_clock_end(id_fv_diag_tracker)
+     call fv_tracker_center(Atm(mygrid:mygrid))
+     call fv_tracker_move(Atm(mygrid:mygrid))
+     call timing_off('FV_TRACKER')
+     call mpp_clock_end(id_fv_tracker)
    endif
 #endif
 
