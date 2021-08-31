@@ -999,8 +999,13 @@ module fv_arrays_mod
      logical               :: is_moving_nest = .false.
      character(len=120)    :: surface_dir = "  "
      integer               :: terrain_smoother = 1
-     integer               :: vortex_tracker = 7
-     integer               :: ntrack = 2
+     integer               :: vortex_tracker = 0
+     integer               :: ntrack = 1
+     integer               :: move_cd_x = 0
+     integer               :: move_cd_y = 0
+     integer               :: corral_x = 5
+     integer               :: corral_y = 5
+
      integer               :: outatcf_lun = 600
 #endif
 
@@ -1281,9 +1286,6 @@ module fv_arrays_mod
     logical :: tracker_havefix = .false. !< True = storm fix locations are valid
     logical :: tracker_gave_up = .false. !< True = inline tracker gave up on tracking the storm
 
-    logical :: mvnest = .false.
-    integer :: move_cd_x = 0
-    integer :: move_cd_y = 0
 #endif
 
 ! For phys coupling:

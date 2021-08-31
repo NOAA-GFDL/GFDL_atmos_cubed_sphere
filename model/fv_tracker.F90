@@ -44,7 +44,7 @@ module fv_tracker_mod
 
   implicit none
   private
-  public :: fv_tracker_init, fv_tracker_center, fv_tracker_post_move, fv_tracker_move
+  public :: fv_tracker_init, fv_tracker_center, fv_tracker_post_move
 
   integer, parameter :: maxtp=11 ! number of tracker parameters
 
@@ -1542,66 +1542,6 @@ contains
          ims,ime,jms,jme,kms,kme, &
          ips,ipe,jps,jpe,kps,kpe)
   end subroutine fv_tracker_post_move
-
-  subroutine fv_tracker_move(Atm)
-    ! This is for
-    implicit none
-    type(fv_atmos_type), intent(inout) :: Atm
-    integer :: cx,cy
-    real xdiff,ydiff
-    character*255 message
-
-    Atm%mvnest=.false.
-    Atm%move_cd_x=0
-    Atm%move_cd_y=0
-
-    if(Atm%grid_number==1) then ! Do nothing for MOAD
-       return
-    endif
-
-    if(Atm%tracker_gave_up) then
-       call mpp_error(NOTE,'Not moving: tracker decided the storm dissapated')
-       return
-    endif
-
-    if(.not.Atm%tracker_havefix) then
-       call mpp_error(NOTE,'Not moving: tracker did not find a storm')
-       return
-    endif
-
-    ! Calcuate domain center indexes
-    cx=(Atm%npx-1)/2+1
-    cy=(Atm%npy-1)/2+1
-
-    ! Calculate distance in parent grid index space between storm center and
-    ! domain center
-    xdiff=(Atm%tracker_ifix-real(cx))/Atm%neststruct%refinement
-    ydiff=(Atm%tracker_jfix-real(cy))/Atm%neststruct%refinement
-
-    if(xdiff .ge. 1.0) then
-       Atm%move_cd_x=1
-    else if(xdiff .le. -1.0) then
-       Atm%move_cd_x=-1
-    else
-       Atm%move_cd_x=0
-    endif
-
-    if(ydiff .ge. 1.0) then
-       Atm%move_cd_y=1
-    else if(ydiff .le. -1.0) then
-       Atm%move_cd_y=-1
-    else
-       Atm%move_cd_y=0
-    endif
-
-    if(abs(Atm%move_cd_x)>0 .or. abs(Atm%move_cd_y)>0) then
-       Atm%mvnest=.true.
-       call mpp_error(NOTE,'Moving: tracker center shifted from nest center')
-    else
-       Atm%mvnest=.false.
-       call mpp_error(NOTE,'Not moving: tracker center is near nest center')
-    endif
-  end subroutine fv_tracker_move
 
 #endif
 

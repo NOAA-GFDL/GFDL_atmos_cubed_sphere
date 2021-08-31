@@ -356,15 +356,16 @@ contains
   !  This is a simple prescribed motion routine; and will be replaced by code that performs 
   !  the storm tracking algorithm
   subroutine eval_move_nest(Atm, a_step, do_move, delta_i_c, delta_j_c, dt_atmos)
-    type(fv_atmos_type), intent(in)   :: Atm(:)
+    type(fv_atmos_type), intent(inout)   :: Atm(:)
     integer, intent(in)               :: a_step
     logical, intent(out)              :: do_move
     integer, intent(out)              :: delta_i_c, delta_j_c
     real, intent(in)                  :: dt_atmos  !! only needed for the simple version of this subroutine
     
-    logical, save :: first_time = .true.
-    integer       :: move_incr
-    logical       :: move_diag
+    integer       :: n
+    integer       :: cx, cy
+    real          :: xdiff, ydiff
+    character*255 :: message
     
     ! On the tropical channel configuration, tile 6 numbering starts at 0,0 off the coast of Spain
     !  delta_i_c = +1 is westward
@@ -373,52 +374,75 @@ contains
     !  delta_j_c = +1 is southward
     !  delta_j_c = -1 is northward
     
-    if (dt_atmos > 100) then
-       ! move once every 40 timesteps for 300s = 3 hours 20 minutes; appropriate for C96
-       move_incr = 40
-    else
-       ! move once every 20 timesteps for 90s = 30 minutes; appropriate for C768
-       move_incr = 20
-    end if
-    
-    move_incr = 5
-    
-    move_diag = .false.
-    
-    if (move_diag) then
-       ! If moving diagonal, only have to shift half as often.
-       !if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
-       if ( mod(a_step,2*move_incr) .eq. 0) then
+    n = mygrid   ! Public variable from atmosphere.F90
+
+    do_move = .false.
+    delta_i_c = 0
+    delta_j_c = 0
+
+    if ( Atm(n)%neststruct%vortex_tracker .eq. 0  .or. Atm(n)%grid_number .eq. 1) then
+       ! No need to move
+       do_move = .false.
+       delta_i_c = 0
+       delta_j_c = 0
+    else if ( Atm(n)%neststruct%vortex_tracker .eq. 1 ) then
+       ! Prescribed move according to ntrack, move_cd_x and move_cd_y
+       ! Move every ntrack of dt_atmos time step
+       if ( mod(a_step,Atm(n)%neststruct%ntrack) .eq. 0) then
           do_move = .true.
-          delta_i_c = 1
-          delta_j_c = -1
-          first_time = .false.
-       else
-          do_move = .false.
-          delta_i_c = 0
-          delta_j_c = 0
+          delta_i_c = Atm(n)%neststruct%move_cd_x
+          delta_j_c = Atm(n)%neststruct%move_cd_y
+       endif
+    else if ( Atm(n)%neststruct%vortex_tracker .eq. 2 .or. &
+              Atm(n)%neststruct%vortex_tracker .eq. 6 .or. &
+              Atm(n)%neststruct%vortex_tracker .eq. 7 ) then
+       ! Automatic moving following the internal storm tracker
+       if ( mod(a_step,Atm(n)%neststruct%ntrack) .eq. 0) then
+          if(Atm(n)%tracker_gave_up) then
+             call mpp_error(NOTE,'Not moving: tracker decided the storm dissapated')
+             return
+          endif
+          if(.not.Atm(n)%tracker_havefix) then
+             call mpp_error(NOTE,'Not moving: tracker did not find a storm')
+             return
+          endif
+          ! Calcuate domain center indexes
+          cx=(Atm(n)%npx-1)/2+1
+          cy=(Atm(n)%npy-1)/2+1
+          ! Calculate distance in parent grid index space between storm
+          ! center and domain center
+          ! Consider using xydiff as integers in the future?
+          xdiff=(Atm(n)%tracker_ifix-real(cx))/Atm(n)%neststruct%refinement
+          ydiff=(Atm(n)%tracker_jfix-real(cy))/Atm(n)%neststruct%refinement
+          if(xdiff .ge. 1.0) then
+             Atm(n)%neststruct%move_cd_x=1
+          else if(xdiff .le. -1.0) then
+             Atm(n)%neststruct%move_cd_x=-1
+          else
+             Atm(n)%neststruct%move_cd_x=0
+          endif
+          if(ydiff .ge. 1.0) then
+             Atm(n)%neststruct%move_cd_y=1
+          else if(ydiff .le. -1.0) then
+             Atm(n)%neststruct%move_cd_y=-1
+          else
+             Atm(n)%neststruct%move_cd_y=0
+          endif
+          if(abs(Atm(n)%neststruct%move_cd_x)>0 .or. abs(Atm(n)%neststruct%move_cd_y)>0) then
+             call mpp_error(NOTE,'Moving: tracker center shifted from nest center')
+             do_move = .true.
+             delta_i_c = Atm(n)%neststruct%move_cd_x
+             delta_j_c = Atm(n)%neststruct%move_cd_y
+          else
+             call mpp_error(NOTE,'Not moving: tracker center is near nest center')
+             do_move = .false.
+             delta_i_c = 0
+             delta_j_c = 0
+          endif
        end if
-       
     else
-       
-       !if (a_step .eq. 1 .or. mod(a_step,2*move_incr) .eq. 0) then
-       if ( mod(a_step,2*move_incr) .eq. 0) then
-          do_move = .true.
-          delta_i_c = 1
-          delta_j_c = 0
-          first_time = .false.
-       else if (mod(a_step,move_incr) .eq. 0) then
-          do_move = .true.
-          !delta_i_c = 0
-          !delta_j_c = -1
-          delta_i_c = 1
-          delta_j_c = 0
-          first_time = .false.
-       else
-          do_move = .false.
-          delta_i_c = 0
-          delta_j_c = 0
-       end if
+       write(message,*) 'Wrong vortex_tracker option: ', Atm(n)%neststruct%vortex_tracker
+       call mpp_error(FATAL,message)
     end if
 
     ! Override to prevent move on first timestep
@@ -427,7 +451,6 @@ contains
        delta_i_c = 0
        delta_j_c = 0
     end if
-    
     
   end subroutine eval_move_nest
   
