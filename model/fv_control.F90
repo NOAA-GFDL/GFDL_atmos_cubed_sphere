@@ -494,7 +494,7 @@ module fv_control_mod
 !          Atm(n)%nml_filename = 'input.nml'
            Atm(n)%nml_filename = trim(nml_filename)
         endif
-        if (.not. file_exist(Atm(n)%nml_filename) .and. .not. skip_nml_read) then
+        if (.not. file_exists(Atm(n)%nml_filename) .and. .not. skip_nml_read) then
            call mpp_error(FATAL, "Could not find nested grid namelist "//Atm(n)%nml_filename)
         endif
      enddo
