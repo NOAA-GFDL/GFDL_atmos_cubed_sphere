@@ -1383,10 +1383,6 @@
 ! Initiate the westerly-wind-burst:
         ubar = soliton_Umax
         r0   = soliton_size
-!!$        ubar = 200.       ! maxmium wind speed (m/s)
-!!$        r0 = 250.e3
-!!$        ubar = 50.       ! maxmium wind speed (m/s)
-!!$        r0 = 750.e3
 ! #1 1: westerly
         p0(1) = pi*0.5
         p0(2) = 0.
@@ -1539,10 +1535,6 @@
 ! Initiate the westerly-wind-burst:
         ubar = soliton_Umax
         r0   = soliton_size
-!!$        ubar = 200.       ! maxmium wind speed (m/s)
-!!$        r0 = 250.e3
-!!$        ubar = 50.       ! maxmium wind speed (m/s)
-!!$        r0 = 750.e3
         p0(1) = pi*0.5
         p0(2) = 0.
 
@@ -2542,9 +2534,6 @@
          case (1) !DCMIP 11
 
          !Need to set up pressure arrays
-!!$         p00 = 1.e5
-!!$         ps = p00
-!!$         phis = 0.
 
          !NOTE: since we have an isothermal atmosphere and specify constant height-thickness layers we will disregard ak and bk and specify the initial pressures in a different way
 
@@ -2758,8 +2747,6 @@
             !     pt(i,j,k), phis(i,j), ps(i,j), dum6, q(i,j,k,1))
             delp(i,j,k) = pe(i,k+1,j) - pe(i,k,j)
             !Analytic point-value
-!!$            ptmp = 0.5*(pe(i,k,j)+pe(i,k+1,j))
-!!$            pt(i,j,k) = t00*(ptmp/p00)**exponent
             !ANalytic layer-mean
             pt(i,j,k) = -grav*t00*p00/(rdgas*gamma + grav)/delp(i,j,k) * &
                  ( (pe(i,k,j)/p00)**(exponent+1.) - (pe(i,k+1,j)/p00)**(exponent+1.)  )
@@ -2863,16 +2850,6 @@
               vtmp = 8.5*tanh(zm/1000.)
               ubar = utmp - 8.5
               vbar = vtmp - 4.25
-!!$              ! SRH = 45
-!!$              utmp = 16.0*(1.+tanh(zm/2000. - 1.4))
-!!$              vtmp = 8.5*tanh(zm/1000.)
-!!$              ubar = utmp - 10.
-!!$              vbar = vtmp - 4.25
-!!$              ! SRH = 27 (really)
-!!$              utmp = 0.5*us0*(1.+tanh((zm-3500.)/2000.))
-!!$              vtmp = 8.*tanh(zm/1000.)
-!!$              ubar = utmp - 10.
-!!$              vbar = vtmp - 4.
            endif
 
            if( is_master() ) then
@@ -3423,13 +3400,6 @@
 ! Initiate the westerly-wind-burst:
          ubar = soliton_Umax
          r0 = soliton_size
-!!$        if (test_case == 46) then
-!!$           ubar = 200.
-!!$           r0 = 250.e3
-!!$        else
-!!$           ubar = 50.       ! Initial maxmium wind speed (m/s)
-!!$           r0 = 500.e3
-!!$        endif
         p0(1) = pi*0.5
         p0(2) = 0.
 
@@ -5350,19 +5320,9 @@ end subroutine terminator_tracers
         bubble_do = .false.
         test_case = 11   ! (USGS terrain)
 
-#ifdef INTERNAL_FILE_NML
         ! Read Test_Case namelist
         read (input_nml_file,test_case_nml,iostat=ios)
         ierr = check_nml_error(ios,'test_case_nml')
-#else
-        f_unit = open_namelist_file(nml_filename)
-
-        ! Read Test_Case namelist
-        rewind (f_unit)
-        read (f_unit,test_case_nml,iostat=ios)
-        ierr = check_nml_error(ios,'test_case_nml')
-        call close_file(f_unit)
-#endif
         write(unit, nml=test_case_nml)
 
 
@@ -6557,7 +6517,6 @@ end subroutine terminator_tracers
 
  end subroutine DCMIP16_TC
 
-
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
@@ -6745,7 +6704,6 @@ end subroutine terminator_tracers
             call interp_left_edge_1d(uout(:,j), uin(:,j), dxa(:,j), isd, ied, interpOrder)
          enddo
          do i=isd,ied
-!!$            tmp1j(:) = vout(i,:)
             tmp2j(:) = vin(i,:)
             tmp3j(:) = dya(i,:)
             call interp_left_edge_1d(tmp1j, tmp2j, tmp3j, jsd, jed, interpOrder)
@@ -6755,14 +6713,12 @@ end subroutine terminator_tracers
 #else
 
          do j=jsd,jed
-!!$            tmp1i(:) = uout(:,j)
             tmp2i(:) = uin(:,j)*dya(:,j)
             tmp3i(:) = dxa(:,j)
             call interp_left_edge_1d(tmp1i, tmp2i, tmp3i, isd, ied, interpOrder)
             uout(:,j) = tmp1i(:)/dy(:,j)
          enddo
          do i=isd,ied
-!!$            tmp1j(:) = vout(i,:)
             tmp2j(:) = vin(i,:)*dxa(i,:)
             tmp3j(:) = dya(i,:)
             call interp_left_edge_1d(tmp1j, tmp2j, tmp3j, jsd, jed, interpOrder)
