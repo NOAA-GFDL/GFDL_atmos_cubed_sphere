@@ -45,10 +45,6 @@ module fv_nggps_diags_mod
 !     <td>MODEL_ATMOS</td>
 !   </tr>
 !   <tr>
-!     <td>fms_io_mod</td>
-!     <td>set_domain, nullify_domain</td>
-!   </tr>
-!   <tr>
 !     <td>fv_arrays_mod</td>
 !     <td>fv_atmos_type</td>
 !   </tr>
@@ -68,7 +64,6 @@ module fv_nggps_diags_mod
 
  use mpp_mod,            only: mpp_pe, mpp_root_pe,FATAL,mpp_error
  use constants_mod,      only: grav, rdgas
- use fms_io_mod,         only: set_domain, nullify_domain
  use time_manager_mod,   only: time_type, get_time
  use diag_manager_mod,   only: register_diag_field, send_data
  use diag_axis_mod,      only: get_axis_global_length, get_diag_axis, get_diag_axis_name
@@ -162,8 +157,6 @@ contains
     isdo = Atm(n)%bd%isd; iedo = Atm(n)%bd%ied
     jsdo = Atm(n)%bd%jsd; jedo = Atm(n)%bd%jed
     hydrostatico = Atm(n)%flagstruct%hydrostatic
-
-    call set_domain(Atm(1)%domain)  ! Set domain so that diag_manager can access tile information
 
     sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
     liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
@@ -596,7 +589,7 @@ contains
     endif
 #else
     !--- DELP
-    if(id_delp > 0) call store_data(id_delp, Atm(n)%delp(isco:ieco,jsco:jeco,:), Time, kstt_delp)
+    if(id_delp > 0) call store_data(id_delp, Atm(n)%delp(isco:ieco,jsco:jeco,:), Time, kstt_delp, kend_delp)
 
     !--- Surface Pressure (PS)
     if( id_ps > 0) then
@@ -740,8 +733,6 @@ contains
     if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmin25 > 0) then
       call store_data(id_uhmin25, uhmin25, Time, kstt_uhmin25, kend_uhmin25)
     endif
-
-    call nullify_domain()
 
  end subroutine fv_nggps_diag
 
