@@ -1,5 +1,22 @@
 # RELEASE NOTES for GFDL FV3: Summary
 
+# RELEASE NOTES for GFDL_2021.03.01: Summary
+GFDL_2021.03.01 --- August 2021
+
+This version has been tested within the current GFDL Models (AM4+, CM4+, ESM4+, SPEAR, etc.) and requires a
+release of the [FMS infrastructure](https://github.com/NOAA-GFDL/FMS) 2021.03 or greater.
+
+This release includes the following:
+
+- Comprehensive documentation in LaTEX format (FV3 team)
+- Default changes to some namelist options and updated inline documentation
+- Multiple same-level and telescoping nests for the Regional domain (J Mouallem)
+- Updated fms2_io functionality (L Chilutti)
+- Revised Regional domain code (K-Y Cheng)
+- Reproducibility fixes for global+nests and regional+nests (tested for absolute reproducibility across PE counts, restarts)
+- Other updates and general cleanup
+
+
 # RELEASE NOTES for GFDL_2021.01: Summary
 GFDL_2021.01 --- April 2021
 
@@ -12,8 +29,8 @@ Includes all of the features from the [202101 Public Release](https://github.com
 - In-line GFDL Microphysics
 - Fast-timescale Rayleigh damping
 - Updated namelist documentation
-- Implemented multiple same-level and telescoping nests for the global system (from J Mouallem)
-- Updated coarse-graining capabilities (from S Clark)
+- Implemented multiple same-level and telescoping nests for the global system (J Mouallem)
+- Updated coarse-graining capabilities (S Clark)
 - Re-organized fv_diagnostics, moving the revised fv_diag_column functionality and the declaration of diagnostic IDs to separate files
 - and other updates and general cleanup
 
@@ -21,7 +38,6 @@ This version of FV3 is described as component of SHiELD in Harris et al. (2020, 
 
 
 # RELEASE NOTES for 2020.02: Summary
-
 2020.02 --- 22 April 2020
 
 This version has been tested within current GFDL Models (AM4+, CM4+, ESM4+, SPEAR, etc.) and requires the 2020.02 release of the [FMS infrastructure](https://github.com/NOAA-GFDL/FMS).
@@ -47,7 +63,3 @@ Includes all of the features from the [201912 Public Release](https://github.com
   - has been removed
 
 Update your build system as appropriate
-
-# Documentation
-
-For a complete technical description see the NOAA Technical Memorandum OAR GFDL: https://repository.library.noaa.gov/view/noaa/23432

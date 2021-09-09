@@ -791,11 +791,6 @@ contains
                'layer-averaged temperature tendency from physics', 'K/s', missing_value=missing_value )
         if (id_t_dt_phys_plev_ave > 0 .and. .not. allocated(Atm(n)%phys_diag%phys_t_dt) ) allocate(Atm(n)%phys_diag%phys_t_dt(isc:iec,jsc:jec,npz))
       ! flag for calculation of geopotential
-!!$      if ( all(id_h(minloc(abs(levs-10)))>0)  .or. all(id_h(minloc(abs(levs-50)))>0)  .or. &
-!!$           all(id_h(minloc(abs(levs-100)))>0) .or. all(id_h(minloc(abs(levs-200)))>0) .or. &
-!!$           all(id_h(minloc(abs(levs-250)))>0) .or. all(id_h(minloc(abs(levs-300)))>0) .or. &
-!!$           all(id_h(minloc(abs(levs-500)))>0) .or. all(id_h(minloc(abs(levs-700)))>0) .or. &
-!!$           all(id_h(minloc(abs(levs-850)))>0) .or. all(id_h(minloc(abs(levs-1000)))>0).or. &
       if ( any(id_h > 0) .or. id_h_plev>0 .or. id_hght3d>0) then
            id_any_hght = 1
       else
@@ -1877,36 +1872,6 @@ contains
 
        endif
 
-
-
-!!$       if ( id_srh > 0 ) then
-!!$          call helicity_relative(isc, iec, jsc, jec, ngc, npz, zvir, sphum, a2, &
-!!$               Atm(n)%ua, Atm(n)%va, Atm(n)%delz, Atm(n)%q,   &
-!!$               Atm(n)%flagstruct%hydrostatic, Atm(n)%pt, Atm(n)%peln, Atm(n)%phis, grav, 0., 3.e3)
-!!$          used = send_data ( id_srh, a2, Time )
-!!$          if(prt_minmax) then
-!!$             do j=jsc,jec
-!!$                do i=isc,iec
-!!$                   tmp = rad2deg * Atm(n)%gridstruct%agrid(i,j,1)
-!!$                   tmp2 = rad2deg * Atm(n)%gridstruct%agrid(i,j,2)
-!!$                   if (  tmp2<25. .or. tmp2>50.    &
-!!$                        .or. tmp<235. .or. tmp>300. ) then
-!!$                      a2(i,j) = 0.
-!!$                   endif
-!!$                enddo
-!!$             enddo
-!!$             call prt_maxmin('SRH over CONUS', a2, isc, iec, jsc, jec, 0,   1, 1.)
-!!$          endif
-!!$       endif
-
-!!$       if ( id_srh25 > 0 ) then
-!!$          call helicity_relative(isc, iec, jsc, jec, ngc, npz, zvir, sphum, a2, &
-!!$               Atm(n)%ua, Atm(n)%va, Atm(n)%delz, Atm(n)%q,   &
-!!$               Atm(n)%flagstruct%hydrostatic, Atm(n)%pt, Atm(n)%peln, Atm(n)%phis, grav, 2.e3, 5.e3)
-!!$          used = send_data ( id_srh25, a2, Time )
-!!$       endif
-
-
        ! Relative Humidity
        if ( id_rh > 0 ) then
           ! Compute FV mean pressure
@@ -2739,8 +2704,6 @@ contains
                         a2(i,j) = missing_value3
                         var1(i,j) = missing_value3
                         var2(i,j) = missing_value2
-!!$                           a2(i,j) = Atm(n)%pt(i,j,k)
-!!$                         var1(i,j) = 0.01*Atm(n)%pe(i,k+1,j)   ! surface pressure
                      endif
                   enddo
                enddo
@@ -6011,65 +5974,6 @@ end subroutine eqv_pot
     ENDIF
     if(debug_level.ge.100) print *,'  kmin,maxthe = ',kmin,maxthe
 
-!!$  ELSEIF(source.eq.3)THEN
-!!$    ! use mixed layer
-!!$
-!!$    IF( dz(nk).gt.ml_depth )THEN
-!!$      ! the second level is above the mixed-layer depth:  just use the
-!!$      ! lowest level
-!!$
-!!$      avgth = th(nk)
-!!$      avgqv = q(nk)
-!!$      kmin = nk
-!!$
-!!$    ELSEIF( z(1).lt.ml_depth )THEN
-!!$      ! the top-most level is within the mixed layer:  just use the
-!!$      ! upper-most level (not
-!!$
-!!$      avgth = th(1)
-!!$      avgqv = q(1)
-!!$      kmin = 1
-!!$
-!!$    ELSE
-!!$      ! calculate the mixed-layer properties:
-!!$
-!!$      avgth = 0.0
-!!$      avgqv = 0.0
-!!$      k = nk-1
-!!$      if(debug_level.ge.100) print *,'  ml_depth = ',ml_depth
-!!$      if(debug_level.ge.100) print *,'  k,z,th,q:'
-!!$      if(debug_level.ge.100) print *,nk,z(nk),th(nk),q(nk)
-!!$
-!!$      do while( (z(k).le.ml_depth) .and. (k.ge.1) )
-!!$
-!!$        if(debug_level.ge.100) print *,k,z(k),th(k),q(k)
-!!$
-!!$        avgth = avgth + dz(k)*th(k)
-!!$        avgqv = avgqv + dz(k)*q(k)
-!!$
-!!$        k = k - 1
-!!$
-!!$      enddo
-!!$
-!!$      th2 = th(k+1)+(th(k)-th(k+1))*(ml_depth-z(k-1))/dz(k)
-!!$      qv2 =  q(k+1)+( q(k)- q(k+1))*(ml_depth-z(k-1))/dz(k)
-!!$
-!!$      if(debug_level.ge.100) print *,999,ml_depth,th2,qv2
-!!$
-!!$      avgth = avgth + 0.5*(ml_depth-z(k-1))*(th2+th(k-1))
-!!$      avgqv = avgqv + 0.5*(ml_depth-z(k-1))*(qv2+q(k-1))
-!!$
-!!$      if(debug_level.ge.100) print *,k,z(k),th(k),q(k)
-!!$
-!!$      avgth = avgth/ml_depth
-!!$      avgqv = avgqv/ml_depth
-!!$
-!!$      kmin = nk
-!!$
-!!$    ENDIF
-!!$
-!!$    if(debug_level.ge.100) print *,avgth,avgqv
-
   ELSE
 
     print *
@@ -6284,19 +6188,6 @@ end subroutine eqv_pot
     return
   end subroutine getcape
 
-!!$  subroutine divg_diagnostics(divg, ..., idiag, bd, npz,gridstruct%area_64, domain, fv_time))
-!!$    real, INPUT(IN) :: divg(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-!!$    ....
-!!$
-!!$    if (id_divg>0) then
-!!$       used = send_data(id_divg, divg, fv_time)
-!!$
-!!$    endif
-!!$
-!!$
-!!$             if(flagstruct%fv_debug) call prt_mxm('divg',  dp1, is, ie, js, je, 0, npz, 1.,gridstruct%area_64, domain)
-!!$  end subroutine divg_diagnostics
-!!$
 !-----------------------------------------------------------------------
 !ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 !-----------------------------------------------------------------------
