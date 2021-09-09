@@ -475,9 +475,9 @@ contains
    id_dynam     = mpp_clock_id ('FV dy-core',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
    id_subgridz  = mpp_clock_id ('FV subgrid_z',flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
    id_fv_diag   = mpp_clock_id ('FV Diag',     flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-   id_fv_tracker= mpp_clock_id ('FV tracker',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
 #ifdef MOVING_NEST
+   id_fv_tracker= mpp_clock_id ('FV tracker',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
    
    !! TODO Restructure to remove circular dependency between modules
    !!call fv_moving_nest_init_clocks()
@@ -1807,6 +1807,11 @@ contains
 
 #ifdef MOVING_NEST
   !---- FV internal vortex tracker -----
+   if ( Atm(mygrid)%neststruct%is_moving_nest ) then
+   if ( Atm(mygrid)%neststruct%vortex_tracker .eq. 2 .or. &
+        Atm(mygrid)%neststruct%vortex_tracker .eq. 6 .or. &
+        Atm(mygrid)%neststruct%vortex_tracker .eq. 7 ) then
+
    fv_time = Time_next
    call get_time (fv_time, seconds,  days)
    call get_time (Time_step_atmos, sec)
@@ -1814,9 +1819,12 @@ contains
      call mpp_clock_begin(id_fv_tracker)
      call timing_on('FV_TRACKER')
      call fv_diag_tracker(Atm(mygrid:mygrid), zvir, fv_time)
-     call fv_tracker_center(Atm(mygrid))
+     call fv_tracker_center(Atm(mygrid), fv_time)
      call timing_off('FV_TRACKER')
      call mpp_clock_end(id_fv_tracker)
+   endif
+
+   endif
    endif
 #endif
 

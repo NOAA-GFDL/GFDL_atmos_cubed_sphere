@@ -61,7 +61,7 @@ module fv_moving_nest_mod
   
   use block_control_mod,      only : block_control_type
   use fms_mod,                only : mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_ROUTINE, clock_flag_default
-  use mpp_mod,                only : mpp_pe, mpp_sync, mpp_sync_self, mpp_send, mpp_error, FATAL 
+  use mpp_mod,                only : mpp_pe, mpp_sync, mpp_sync_self, mpp_send, mpp_error, NOTE, FATAL
   use mpp_domains_mod,        only : mpp_update_domains, mpp_get_data_domain, mpp_get_global_domain
   use mpp_domains_mod,        only : mpp_define_nest_domains, mpp_shift_nest_domains, nest_domain_type, domain2d
   use mpp_domains_mod,        only : mpp_get_C2F_index, mpp_update_nest_fine
@@ -237,6 +237,7 @@ contains
     integer      :: nest_i_c, nest_j_c
     integer      :: nis, nie, njs, nje
     integer      :: this_pe
+    character*255 :: message
 !   logical,save :: block_moves = .false.
 
     this_pe = mpp_pe()
@@ -294,6 +295,11 @@ contains
        if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest MOVE NEST BLOCKED. npe=",I0," a_step=",I0)', this_pe, a_step
     else
        if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest MOVE NEST PERMITTED. npe=",I0," a_step=",I0)', this_pe, a_step
+    end if
+
+    if ( do_move ) then
+       write(message, *) 'permit_move_nest: move_cd_x=', delta_i_c, 'move_cd_y=', delta_j_c
+       call mpp_error(NOTE,message)
     end if
 
   end subroutine permit_move_nest

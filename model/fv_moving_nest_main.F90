@@ -451,6 +451,10 @@ contains
        delta_i_c = 0
        delta_j_c = 0
     end if
+    if ( do_move ) then
+       write(message, *) 'eval_move_nest: move_cd_x=', delta_i_c, 'move_cd_y=', delta_j_c
+       call mpp_error(NOTE,message)
+    endif
     
   end subroutine eval_move_nest
   

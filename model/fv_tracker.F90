@@ -99,32 +99,33 @@ contains
 
   end subroutine fv_tracker_init
 
-  subroutine fv_tracker_center(Atm)
+  subroutine fv_tracker_center(Atm, Time)
     ! Top-level entry to the internal GFDL/NCEP vortex tracker. Finds the center of
     ! the storm in the specified Atm and updates the Atm variables.
     ! Will do nothing and return immediately if
     ! Atm%tracker_gave_up=.true.
     implicit none
     type(fv_atmos_type), intent(inout) :: Atm
+    type(time_type),     intent(in) :: Time
 
     integer :: ids,ide,jds,jde,kds,kde
     integer :: ims,ime,jms,jme,kms,kme
     integer :: ips,ipe,jps,jpe,kps,kpe
 
     call mpp_error(NOTE, 'fv_tracker_center')
-    CALL get_ijk_from_domain(Atm,         &
+    call get_ijk_from_domain(Atm,         &
          ids, ide, jds, jde, kds, kde,    &
          ims, ime, jms, jme, kms, kme,    &
          ips, ipe, jps, jpe, kps, kpe    )
 
-    call ntc_impl(Atm,                    &
+    call ntc_impl(Atm, Time,              &
          ids, ide, jds, jde, kds, kde,    &
          ims, ime, jms, jme, kms, kme,    &
          ips, ipe, jps, jpe, kps, kpe    )
 
   end subroutine fv_tracker_center
 
-  subroutine ntc_impl(Atm,      &
+  subroutine ntc_impl(Atm,Time, &
        ids,ide,jds,jde,kds,kde, &
        ims,ime,jms,jme,kms,kme, &
        ips,ipe,jps,jpe,kps,kpe)
@@ -133,6 +134,7 @@ contains
 
     implicit none
     type(fv_atmos_type), intent(inout) :: Atm
+    type(time_type),     intent(in) :: Time
     integer, intent(in) :: ids,ide,jds,jde,kds,kde
     integer, intent(in) :: ims,ime,jms,jme,kms,kme
     integer, intent(in) :: ips,ipe,jps,jpe,kps,kpe
@@ -412,8 +414,16 @@ contains
          ims,ime,jms,jme,kms,kme, &
          ips,ipe,jps,jpe,kps,kpe)
 
+205 format('tracker fixlon=',F8.3, ' fixlat=',F8.3, &
+          ' ifix=',I6,' jfix=',I6, &
+          ' pmin=',F12.3,' vmax=',F8.3,' rmw=',F8.3)
+    write(message,205) Atm%tracker_fixlon, Atm%tracker_fixlat, &
+        Atm%tracker_ifix, Atm%tracker_jfix, &
+        Atm%tracker_pmin, Atm%tracker_vmax, Atm%tracker_rmw
+    call mpp_error(NOTE, message)
+
     if(is_master()) then
-       call output_partial_atcfunix(Atm, &
+       call output_partial_atcfunix(Atm,Time, &
             ids,ide,jds,jde,kds,kde, &
             ims,ime,jms,jme,kms,kme, &
             ips,ipe,jps,jpe,kps,kpe)
@@ -496,7 +506,7 @@ contains
     if(present(lonnear)) lonnear=lonmin
   end subroutine get_nearest_lonlat
 
-  subroutine output_partial_atcfunix(Atm, &
+  subroutine output_partial_atcfunix(Atm,Time, &
          ids,ide,jds,jde,kds,kde, &
          ims,ime,jms,jme,kms,kme, &
          its,ite,jts,jte,kts,kte)
@@ -504,13 +514,17 @@ contains
     ! using units used by ATCF.
     implicit none
     type(fv_atmos_type), intent(inout) :: Atm
+    type(time_type),     intent(in) :: Time
     integer, intent(in) :: ids,ide,jds,jde,kds,kde
     integer, intent(in) :: ims,ime,jms,jme,kms,kme
     integer, intent(in) :: its,ite,jts,jte,kts,kte
+    integer :: days, seconds
     real :: sec
     character*255 message
 
-    sec=time_type_to_real(Atm%Time-Atm%Time_Init)
+    call get_time(fv_time, seconds, days)
+    sec=seconds
+    !write(0,*) 'output_partial_atcfunix: sec=', sec
 313 format(F11.2,", ",                                  &
            "W10 = ",F7.3," kn, PMIN = ",F8.3," mbar, ", &
            "LAT = ",F6.3,A1,", LON = ",F7.3,A1,", ",    &
@@ -1178,10 +1192,12 @@ contains
     ! Find the extremum:
     icen=-99
     jcen=-99
+
     findminmax: if(findmin) then ! Find a minimum
        rcen=9e9
        do j=jstart,jstop
           do i=istart,istop
+            !write(0,*) 'i,j,smooth(i,j),rcen,Atm%distsq(i,j),srsq=',i,j,smooth(i,j),rcen,Atm%distsq(i,j),srsq
              if(smooth(i,j)<rcen .and. Atm%distsq(i,j)<srsq) then
                 rcen=smooth(i,j)
                 icen=i
@@ -1191,10 +1207,10 @@ contains
        enddo
        call mp_reduce_minval(rcen,icen,jcen)
     else ! Find a maximum
-3014   format(A,' maxval i=',I0,' j=',I0,' r=',F0.3)
        rcen=-9e9
        do j=jstart,jstop
           do i=istart,istop
+            !write(0,*) 'i,j,smooth(i,j),rcen,Atm%distsq(i,j),srsq=',i,j,smooth(i,j),rcen,Atm%distsq(i,j),srsq
              if(smooth(i,j)>rcen .and. Atm%distsq(i,j)<srsq) then
                 rcen=smooth(i,j)
                 icen=i

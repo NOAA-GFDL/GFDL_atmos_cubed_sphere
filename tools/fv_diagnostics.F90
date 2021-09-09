@@ -4088,28 +4088,38 @@ contains
                              wz, Atm(n)%pt, Atm(n)%q, Atm(n)%peln, zvir)
 
        call get_pressure_given_height(isc, iec, jsc, jec, ngc, npz, wz, 1, height(2),   &
-                                     Atm(n)%pt(:,:,npz), Atm(n)%peln, a2, 0.01)
+                                     Atm(n)%pt(:,:,npz), Atm(n)%peln, a2, 1.)
+       ! sea level pressure in Pa
        Atm(n)%slp=a2(:,:)
+       call prt_maxmin('slp', Atm(n)%slp, isc, iec, jsc, jec, 0, 1, 1.)
 
        idg(:) = 1
        call get_height_given_pressure(isc, iec, jsc, jec, npz, wz, nplev_tracker, idg, plevs, Atm(n)%peln, a3)
        Atm(n)%z700=a3(isc:iec,jsc:jec,1)
        Atm(n)%z850=a3(isc:iec,jsc:jec,2)
+       call prt_maxmin('z700', Atm(n)%z700, isc, iec, jsc, jec, 0, 1, 1.)
+       call prt_maxmin('z850', Atm(n)%z850, isc, iec, jsc, jec, 0, 1, 1.)
 
        call cs3_interpolator(isc,iec,jsc,jec,npz, Atm(n)%ua(isc:iec,jsc:jec,:), nplev_tracker,    &
                             pout(1:nplev_tracker), wz, Atm(n)%pe(isc:iec,1:npz+1,jsc:jec), idg, a3, -1)
        Atm(n)%u700=a3(isc:iec,jsc:jec,1)
        Atm(n)%u850=a3(isc:iec,jsc:jec,2)
+       call prt_maxmin('u700', Atm(n)%u700, isc, iec, jsc, jec, 0, 1, 1.)
+       call prt_maxmin('u850', Atm(n)%u850, isc, iec, jsc, jec, 0, 1, 1.)
 
        call cs3_interpolator(isc,iec,jsc,jec,npz, Atm(n)%va(isc:iec,jsc:jec,:), nplev_tracker,    &
                             pout(1:nplev), wz, Atm(n)%pe(isc:iec,1:npz+1,jsc:jec), idg, a3, -1)
        Atm(n)%v700=a3(isc:iec,jsc:jec,1)
        Atm(n)%v850=a3(isc:iec,jsc:jec,2)
+       call prt_maxmin('v700', Atm(n)%v700, isc, iec, jsc, jec, 0, 1, 1.)
+       call prt_maxmin('v850', Atm(n)%v850, isc, iec, jsc, jec, 0, 1, 1.)
 
        call interpolate_z(isc, iec, jsc, jec, npz, 10., wz, Atm(n)%ua(isc:iec,jsc:jec,:), a2)
        Atm(n)%u10m=a2(isc:iec,jsc:jec)
        call interpolate_z(isc, iec, jsc, jec, npz, 10., wz, Atm(n)%va(isc:iec,jsc:jec,:), a2)
        Atm(n)%v10m=a2(isc:iec,jsc:jec)
+       call prt_maxmin('u10m', Atm(n)%u10m, isc, iec, jsc, jec, 0, 1, 1.)
+       call prt_maxmin('v10m', Atm(n)%v10m, isc, iec, jsc, jec, 0, 1, 1.)
 
        call get_vorticity(isc, iec, jsc, jec, isd, ied, jsd, jed, npz, Atm(n)%u, Atm(n)%v, wk, &
              Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy, Atm(n)%gridstruct%rarea)
@@ -4121,6 +4131,9 @@ contains
        Atm(n)%vort850=a2(:,:)
        call interpolate_z(isc, iec, jsc, jec, npz, 10., wz, wk, a2)
        Atm(n)%vort10m=a2(:,:)
+       call prt_maxmin('vort700', Atm(n)%vort700, isc, iec, jsc, jec, 0, 1, 1.)
+       call prt_maxmin('vort850', Atm(n)%vort850, isc, iec, jsc, jec, 0, 1, 1.)
+       call prt_maxmin('vort10m', Atm(n)%vort10m, isc, iec, jsc, jec, 0, 1, 1.)
 
        do j=jsc,jec
        do i=isc,iec

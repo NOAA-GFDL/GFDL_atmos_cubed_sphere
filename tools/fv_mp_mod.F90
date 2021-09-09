@@ -2033,7 +2033,8 @@ end subroutine switch_current_Atm
          integer :: bcast(2), mrank
          real(kind=4) :: inreduce(2), outreduce(2)
 
-         inreduce=(/mymax, real(mpp_pe(),4)/)
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymax, real(mrank,4)/)
          bcast=(/idex, jdex/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2REAL, MPI_MAXLOC, &
                              commglobal, ierror )
@@ -2060,7 +2061,8 @@ end subroutine switch_current_Atm
          integer :: bcast(2), mrank
          real(kind=8) :: inreduce(2), outreduce(2)
 
-         inreduce=(/mymax, real(mpp_pe(),8)/)
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymax, real(mrank,8)/)
          bcast=(/idex, jdex/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2DOUBLE_PRECISION, MPI_MAXLOC, &
                              commglobal, ierror )
@@ -2088,7 +2090,8 @@ end subroutine switch_current_Atm
          integer :: mrank
          real(kind=4) :: inreduce(2), outreduce(2), bcast(5)
 
-         inreduce=(/mymax, real(mpp_pe(),4)/)
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymax, real(mrank,4)/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2REAL, MPI_MAXLOC, &
                              commglobal, ierror )
          mymax=outreduce(1)
@@ -2119,7 +2122,8 @@ end subroutine switch_current_Atm
          integer :: mrank
          real(kind=8) :: inreduce(2), outreduce(2), bcast(5)
 
-         inreduce=(/mymax, real(mpp_pe(),8)/)
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymax, real(mrank,8)/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2DOUBLE_PRECISION, MPI_MAXLOC, &
                              commglobal, ierror )
          mymax=outreduce(1)
@@ -2189,7 +2193,8 @@ end subroutine switch_current_Atm
          integer :: bcast(2), mrank
          real(kind=4) :: inreduce(2), outreduce(2)
 
-         inreduce=(/mymin, real(mpp_pe(),4)/)
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymin, real(mrank,4)/)
          bcast=(/idex, jdex/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2REAL, MPI_MINLOC, &
                              commglobal, ierror )
@@ -2216,7 +2221,8 @@ end subroutine switch_current_Atm
          integer :: bcast(2), mrank
          real(kind=8) :: inreduce(2), outreduce(2)
 
-         inreduce=(/mymin, real(mpp_pe(),8)/)
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymin, real(mrank,8)/)
          bcast=(/idex, jdex/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2DOUBLE_PRECISION, MPI_MINLOC, &
                              commglobal, ierror )
@@ -2244,7 +2250,8 @@ end subroutine switch_current_Atm
          integer :: mrank
          real(kind=4) :: inreduce(2), outreduce(2), bcast(5)
 
-         inreduce=(/mymin, real(mpp_pe(),4)/)
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymin, real(mrank,4)/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2REAL, MPI_MINLOC, &
                              commglobal, ierror )
          mymin=outreduce(1)
@@ -2275,7 +2282,8 @@ end subroutine switch_current_Atm
          integer :: mrank
          real(kind=8) :: inreduce(2), outreduce(2), bcast(5)
 
-         inreduce=(/mymin, real(mpp_pe(),8)/)
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymin, real(mrank,8)/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2DOUBLE_PRECISION, MPI_MINLOC, &
                              commglobal, ierror )
          mymin=outreduce(1)
