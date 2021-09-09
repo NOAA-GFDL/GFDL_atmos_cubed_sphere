@@ -923,17 +923,6 @@ subroutine switch_current_Atm(new_Atm, switch_domain)
 
   call mpp_error(FATAL, "switch_current_Atm depreciated. call set_domain instead.")
 
-!!$  if (debug .AND. (gid==masterproc)) print*, 'SWITCHING ATM STRUCTURES', new_Atm%grid_number
-!!$  if (present(switch_domain)) then
-!!$     swD = switch_domain
-!!$  else
-!!$     swD = .true.
-!!$  end if
-!!$  if (swD) call switch_current_domain(new_Atm%domain, new_Atm%domain_for_coupler)
-
-!!$  if (debug .AND. (gid==masterproc)) WRITE(*,'(A, 6I5)') 'NEW GRID DIMENSIONS: ', &
-!!$       isd, ied, jsd, jed, new_Atm%npx, new_Atm%npy
-
 end subroutine switch_current_Atm
 
 !-------------------------------------------------------------------------------

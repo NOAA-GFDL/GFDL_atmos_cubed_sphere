@@ -1531,9 +1531,6 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk,
       do j=js,je
          do i=is,ie
             qmin = min(qmin, q(i,j,k))
-!!$            if (q(i,j,k) < threshold) then
-!!$               print*, mpp_pe(), " Negative found in ", trim(qname), i, j, k, q(i,j,k)
-!!$            endif
          enddo
       enddo
       enddo
