@@ -113,7 +113,7 @@ use mpp_domains_mod,    only: NORTH, NORTH_EAST, EAST, SOUTH_EAST, CORNER, CENTE
 use mpp_domains_mod,    only: nest_domain_type
 use mpp_mod,            only: mpp_sync, mpp_exit
 use mpp_domains_mod,    only: mpp_get_global_domain
-use mpp_mod,            only: mpp_send, mpp_sync_self
+use mpp_mod,            only: mpp_send, mpp_sync_self, mpp_broadcast
 
 use fv_mp_mod,          only: global_nest_domain
 
@@ -145,9 +145,6 @@ use fv_moving_nest_mod,         only: mn_phys_fill_temp_variables, mn_phys_apply
 use fv_moving_nest_mod,         only: mn_latlon_read_hires_parent, mn_latlon_load_parent, mn_reset_phys_latlon
 use fv_moving_nest_mod,         only: mn_orog_read_hires_parent, mn_static_read_hires
 use fv_moving_nest_utils_mod,   only: load_nest_latlons_from_nc, compare_terrain, set_smooth_nest_terrain, set_blended_terrain
-
-!      Bounds checking routines
-use fv_moving_nest_mod,         only: permit_move_nest
 
 !      Grid reset routines
 use fv_moving_nest_mod,         only: grid_geometry, assign_n_p_grids, move_nest_geo
@@ -236,6 +233,7 @@ contains
     logical :: do_move
     integer :: delta_i_c, delta_j_c
     integer :: parent_grid_num, child_grid_num, nest_num
+    integer, allocatable :: global_pelist(:)
     integer :: n
     integer :: this_pe
 
@@ -243,14 +241,13 @@ contains
     
     do_move = .false.
     
-    print '("[INFO] WDR update_moving_nest AA npe=",I0)', this_pe
+   !print '("[INFO] WDR update_moving_nest AA npe=",I0)', this_pe
 
     ! dt_atmos was initialized in atmosphere.F90::atmosphere_init()
     
     n = mygrid   ! Public variable from atmosphere.F90
 
-    print '("[INFO] WDR update_moving_nest BB npe=",I0)', this_pe
-
+   !print '("[INFO] WDR update_moving_nest BB npe=",I0)', this_pe
 
     ! These will need to be looked up on each PE when multiple and telescoped nests are enabled.
     parent_grid_num = 1 
@@ -259,19 +256,25 @@ contains
 
     is_moving_nest = Atm(child_grid_num)%neststruct%is_moving_nest
 
-    print '("[INFO] WDR update_moving_nest CC npe=",I0," is_moving_nest=",L1)', this_pe, is_moving_nest
-    print '("[INFO] WDR update_moving_nest DD npe=",I0," dt_atmos=",F8.3)', this_pe, dt_atmos
+   !print '("[INFO] WDR update_moving_nest CC npe=",I0," is_moving_nest=",L1)', this_pe, is_moving_nest
+   !print '("[INFO] WDR update_moving_nest DD npe=",I0," dt_atmos=",F8.3)', this_pe, dt_atmos
 
-    
     if (is_moving_nest) then
-       call eval_move_nest(Atm, a_step, do_move, delta_i_c, delta_j_c, dt_atmos)
-       if (do_move) then
-          ! Verifies if nest motion is permitted
-          ! If nest would cross the cube face edge, do_move is reset to .false. and delta_i_c, delta_j_c are set to 0
-          call permit_move_nest(Atm, a_step, parent_grid_num, child_grid_num, delta_i_c, delta_j_c, do_move)
-          
-       end if
-       
+       call eval_move_nest(Atm, a_step, parent_grid_num, child_grid_num, do_move, delta_i_c, delta_j_c, dt_atmos)
+
+       allocate(global_pelist(Atm(parent_grid_num)%npes_this_grid+Atm(child_grid_num)%npes_this_grid))
+       global_pelist=(/Atm(parent_grid_num)%pelist, Atm(child_grid_num)%pelist/)
+
+      !print '("[INFO] WDR update_moving_nest before mpp_broadcast npe, delta_i/j_c, do_move=",3I6, L)', this_pe, delta_i_c, delta_j_c, do_move
+
+       call mpp_set_current_pelist(global_pelist)
+       call mpp_broadcast( delta_i_c, Atm(child_grid_num)%pelist(1), global_pelist )
+       call mpp_broadcast( delta_j_c, Atm(child_grid_num)%pelist(1), global_pelist )
+       call mpp_broadcast( do_move, Atm(child_grid_num)%pelist(1), global_pelist )
+       call mpp_set_current_pelist(Atm(n)%pelist)
+
+      !print '("[INFO] WDR update_moving_nest after mpp_broadcast npe, delta_i/j_c, do_move=",3I6, L)', this_pe, delta_i_c, delta_j_c, do_move
+
        if (do_move) then
           call fv_moving_nest_exec(Atm, Atm_block, IPD_control, IPD_data, delta_i_c, delta_j_c, n, nest_num, parent_grid_num, child_grid_num, dt_atmos)
        end if
@@ -355,9 +358,9 @@ contains
   !  and in which direction.  
   !  This is a simple prescribed motion routine; and will be replaced by code that performs 
   !  the storm tracking algorithm
-  subroutine eval_move_nest(Atm, a_step, do_move, delta_i_c, delta_j_c, dt_atmos)
+  subroutine eval_move_nest(Atm, a_step, parent_grid_num, child_grid_num, do_move, delta_i_c, delta_j_c, dt_atmos)
     type(fv_atmos_type), intent(inout)   :: Atm(:)
-    integer, intent(in)               :: a_step
+    integer, intent(in)               :: a_step, parent_grid_num, child_grid_num
     logical, intent(out)              :: do_move
     integer, intent(out)              :: delta_i_c, delta_j_c
     real, intent(in)                  :: dt_atmos  !! only needed for the simple version of this subroutine
@@ -365,6 +368,9 @@ contains
     integer       :: n
     integer       :: cx, cy
     real          :: xdiff, ydiff
+    integer       :: nest_i_c, nest_j_c
+    integer       :: nis, nie, njs, nje
+    integer       :: this_pe
     character*255 :: message
     
     ! On the tropical channel configuration, tile 6 numbering starts at 0,0 off the coast of Spain
@@ -374,6 +380,8 @@ contains
     !  delta_j_c = +1 is southward
     !  delta_j_c = -1 is northward
     
+    this_pe = mpp_pe()
+
     n = mygrid   ! Public variable from atmosphere.F90
 
     do_move = .false.
@@ -451,11 +459,69 @@ contains
        delta_i_c = 0
        delta_j_c = 0
     end if
-    if ( do_move ) then
-       write(message, *) 'eval_move_nest: move_cd_x=', delta_i_c, 'move_cd_y=', delta_j_c
-       call mpp_error(NOTE,message)
-    endif
+
+    ! Check whether or not the nest move is permitted
+    if (n==child_grid_num) then
+    !  Figure out the bounds of the cube face
     
+    ! x parent bounds: 1 to Atm(parent_grid_num)%flagstruct%npx
+    ! y parent bounds: 1 to Atm(parent_grid_num)%flagstruct%npy
+
+    !  Figure out the bounds of the nest
+
+
+    ! x nest bounds: 1 to Atm(child_grid_num)%flagstruct%npx
+    ! y nest bounds: 1 to Atm(child_grid_num)%flagstruct%npy
+
+    ! Nest refinement: Atm(child_grid_num)%neststruct%refinement
+    ! Nest starting cell in x direction:  Atm(child_grid_num)%neststruct%ioffset
+    ! Nest starting cell in y direction:  Atm(child_grid_num)%neststruct%joffset
+
+    nest_i_c = ( Atm(child_grid_num)%flagstruct%npx - 1 ) / Atm(child_grid_num)%neststruct%refinement
+    nest_j_c = ( Atm(child_grid_num)%flagstruct%npy - 1 ) / Atm(child_grid_num)%neststruct%refinement
+
+    nis = Atm(child_grid_num)%neststruct%ioffset + delta_i_c
+    nie = Atm(child_grid_num)%neststruct%ioffset + nest_i_c + delta_i_c
+
+    njs = Atm(child_grid_num)%neststruct%joffset + delta_j_c
+    nje = Atm(child_grid_num)%neststruct%joffset + nest_j_c + delta_j_c
+
+
+    !  Will the nest motion push the nest over one of the edges?
+    !  Handle each direction individually, so that nest could slide along edge
+
+    ! Causes a crash if we use .le. 1
+    if (nis .le. Atm(child_grid_num)%neststruct%corral_x) then
+       delta_i_c = 0
+!      block_moves = .true.
+       if (mpp_pe()==mpp_root_pe()) print '("[INFO] WDR eval_move_nest nis too small. npe=",I0," nis=",I0)', this_pe, nis
+    end if
+    if (njs .le. Atm(child_grid_num)%neststruct%corral_y) then
+       delta_j_c = 0
+!      block_moves = .true.
+       if (mpp_pe()==mpp_root_pe()) print '("[INFO] WDR eval_move_nest njs too small. npe=",I0," njs=",I0)', this_pe, njs
+    end if
+
+    if (nie .ge. Atm(parent_grid_num)%flagstruct%npx - Atm(child_grid_num)%neststruct%corral_x) then
+       delta_i_c = 0
+!      block_moves = .true.
+       if (mpp_pe()==mpp_root_pe()) print '("[INFO] WDR eval_move_nest nie too big. npe=",I0," nie=",I0)', this_pe, nie
+    end if
+    if (nje .ge. Atm(parent_grid_num)%flagstruct%npy - Atm(child_grid_num)%neststruct%corral_y) then
+       delta_j_c = 0
+!      block_moves = .true.
+       if (mpp_pe()==mpp_root_pe()) print '("[INFO] WDR eval_move_nest nje too big. npe=",I0," nje=",I0)', this_pe, nje
+    end if
+
+    if (delta_i_c .eq. 0 .and. delta_j_c .eq. 0) then
+       do_move = .false.
+    end if
+
+    end if
+
+    write(message, *) 'eval_move_nest: move_cd_x=', delta_i_c, 'move_cd_y=', delta_j_c, 'do_move=', do_move
+    call mpp_error(NOTE,message)
+
   end subroutine eval_move_nest
   
   ! TODO  clarify the naming of all the grid indices;  are some of these repeated?  

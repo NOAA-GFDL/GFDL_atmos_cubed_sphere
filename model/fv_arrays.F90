@@ -1001,12 +1001,15 @@ module fv_arrays_mod
      integer               :: terrain_smoother = 1
      integer               :: vortex_tracker = 0
      integer               :: ntrack = 1
-     integer               :: move_cd_x = 0
-     integer               :: move_cd_y = 0
      integer               :: corral_x = 5
      integer               :: corral_y = 5
 
      integer               :: outatcf_lun = 600
+
+     ! Moving nest related variables
+     integer               :: move_cd_x = 0
+     integer               :: move_cd_y = 0
+     logical               :: do_move = .false.
 #endif
 
 
