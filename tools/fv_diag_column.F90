@@ -8,7 +8,6 @@ module fv_diag_column_mod
   use fms_mod,            only: write_version_number, lowercase
   use mpp_mod,            only: mpp_error, FATAL, stdlog, mpp_pe, mpp_root_pe, mpp_sum, &
                                 mpp_max, NOTE, input_nml_file, get_unit
-  use mpp_io_mod,         only: mpp_flush
   use fv_sg_mod,          only: qsmith
 
   implicit none
@@ -79,19 +78,7 @@ contains
     diag_sonde_j(:) = -999
     diag_sonde_tile(:) = -99
 
-#ifdef INTERNAL_FILE_NML
     read(input_nml_file, nml=fv_diag_column_nml,iostat=ios)
-#else
-    inquire (file=trim(Atm%nml_filename), exist=exists)
-    if (.not. exists) then
-      call mpp_error(FATAL, 'fv_diag_column_nml: namelist file ' // trim(Atm%nml_filename) // ' does not exist')
-    else
-      open (unit=nlunit, file=Atm%nml_filename, action='READ', status='OLD', iostat=ios)
-    endif
-    rewind(nlunit)
-    read (nlunit, nml=fv_diag_column_nml, iostat=ios)
-    close (nlunit)
-#endif
 
     if (do_diag_debug .or. do_diag_sonde) then
        call read_column_table
@@ -393,9 +380,7 @@ contains
 
        write(unit, *) '==================================================================='
        write(unit, *)
-
-       call mpp_flush(unit)
-
+       flush(unit)
 
     enddo
 
@@ -485,8 +470,6 @@ contains
 
        write(unit, *) '==================================================================='
        write(unit, *)
-
-       call mpp_flush(unit)
 
     enddo
 
@@ -583,8 +566,6 @@ contains
                      pres*1.e-2, int(hght(k)), pt(i,j,k)-TFREEZE, dewpt, int(rh*100.), mixr*1.e3, int(wdir), wspd, theta, thetae(i,j,k), thetav
              enddo
           endif
-
-          call mpp_flush(unit)
 
     enddo
 

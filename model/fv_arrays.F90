@@ -24,7 +24,7 @@
 module fv_arrays_mod
 #include <fms_platform.h>
   use mpp_domains_mod,       only: domain2d
-  use fms_io_mod,            only: restart_file_type
+  use fms2_io_mod,           only: FmsNetcdfFile_t, FmsNetcdfDomainFile_t
   use time_manager_mod,      only: time_type
   use horiz_interp_type_mod, only: horiz_interp_type
   use mpp_mod,               only: mpp_broadcast
@@ -225,13 +225,13 @@ module fv_arrays_mod
 !  -> moved to grid_tools
 
 !> Momentum (or KE) options:
-   integer :: hord_mt = 9    !< Horizontal advection scheme for momentum fluxes. A
+   integer :: hord_mt = 10   !< Horizontal advection scheme for momentum fluxes. A
                              !< complete list of kord options is given in the
                              !< corresponding table in Appendix A of the
-                             !< FV3 technical document. The default value is 9, which
+                             !< FV3 technical document. The default value is 10, which
                              !< uses the third-order piecewise-parabolic method with the
                              !< monotonicity constraint of Huynh, which is less diffusive
-                             !< but more expensive than other constraints. For hydrostatic simulation, 8
+                             !< but more expensive than other monotonic constraints. For hydrostatic simulation, 8
                              !< (the L04 monotonicity constraint) or 10 are recommended; for
                              !< nonhydrostatic simulation, the completely unlimited (“linear”
                              !< or non-monotone) PPM scheme is recommended. If no monotonicity
@@ -250,22 +250,22 @@ module fv_arrays_mod
                              !< for 'kord_wz' as for 'kord_mt'.
 
 !> Vorticity & w transport options:
-   integer :: hord_vt = 9    !< Horizontal advection scheme for absolute vorticity and for
-                             !< vertical velocity in nonhydrostatic simulations. 9 by default.
+   integer :: hord_vt = 10   !< Horizontal advection scheme for absolute vorticity and for
+                             !< vertical velocity in nonhydrostatic simulations. 10 by default.
 
 !> Heat & air mass (delp) transport options:
-   integer :: hord_tm = 9    !< Horizontal advection scheme for potential temperature and
-                             !< layer thickness in nonhydrostatic simulations. 9 by default.
-   integer :: hord_dp = 9    !< Horizontal advection scheme for mass. A positivity
+   integer :: hord_tm = 10   !< Horizontal advection scheme for potential temperature and
+                             !< layer thickness in nonhydrostatic simulations. 10 by default.
+   integer :: hord_dp = 10   !< Horizontal advection scheme for mass. A positivity
                              !< constraint may be warranted for hord_dp but not strictly
-                             !< necessary. 9 by default.
+                             !< necessary. 10 by default.
    integer :: kord_tm =-8    !< Vertical remapping scheme for temperature. If positive
                              !< (not recommended), then vertical remapping is performed on
                              !< total energy instead of temperature (see 'remap_t').
                              !< The default value is -8.
 
 !> Tracer transport options:
-   integer :: hord_tr = 12   !< Horizontal advection scheme for tracers. The default is 12.
+   integer :: hord_tr = 8    !< Horizontal advection scheme for tracers. The default is 8, for efficiency reasons.
                              !< This value can differ from the other hord options since
                              !< tracers are subcycled (if inline_q == .false.) and require
                              !< positive-definite advection to control the appearance of
@@ -881,8 +881,6 @@ module fv_arrays_mod
                             !< The default value is 4 (recommended); fourth-order interpolation
                             !< is used unless c2l_ord = 2.
 
-   integer :: nrows_blend = 0   !< # of blending rows in the outer integration domain.
-
   real(kind=R_GRID) :: dx_const = 1000.   !< Specifies the (uniform) grid-cell-width in the x-direction
                                           !< on a doubly-periodic grid (grid_type = 4) in meters.
                                           !< The default value is 1000.
@@ -900,9 +898,10 @@ module fv_arrays_mod
 
    integer :: bc_update_interval = 3   !< Default setting for interval (hours) between external regional BC data files.
 
-   logical :: regional_bcs_from_gsi = .false.   !< Default setting for using DA-updated BC files.
+  integer :: nrows_blend = 0          !< # of blending rows in the outer integration domain.
+  logical :: write_restart_with_bcs = .false.   !< Default setting for using DA-updated BC files
+  logical :: regional_bcs_from_gsi = .false.    !< Default setting for writing restart files with boundary rows
 
-   logical :: write_restart_with_bcs = .false.   !< Default setting for writing restart files with boundary rows.
 
   !>Convenience pointers
   integer, pointer :: grid_number
@@ -986,8 +985,12 @@ module fv_arrays_mod
      integer :: npx_global
      integer :: upoff = 1 !< currently the same for all variables
      integer :: isu = -999, ieu = -1000, jsu = -999, jeu = -1000 !< limits of update regions on coarse grid
+     integer :: jeu_stag = -1000, iev_stag = -1000 !< limits of update regions on coarse grid for staggered variables in j,i
+     integer :: jeu_stag_boundary = -1000, iev_stag_boundary = -1000 !< BC location
+
      real    :: update_blend = 1. !< option for controlling how much "blending" is done during two-way update
      logical, allocatable :: do_remap_BC(:)
+     logical, allocatable :: do_remap_BC_level(:)
 
      !nest_domain now a global structure defined in fv_mp_mod
      !type(nest_domain_type) :: nest_domain !Structure holding link from this grid to its parent
@@ -1026,8 +1029,9 @@ module fv_arrays_mod
 
      !These are for tracer flux BCs
      logical :: do_flux_BCs, do_2way_flux_BCs !<For a parent grid; determine whether there is a need to send BCs
-     type(restart_file_type) :: BCfile_ne, BCfile_sw
-
+     type(FmsNetcdfFile_t) :: BCfile_ne, BCfile_sw
+     logical :: BCfile_ne_is_open=.false.
+     logical :: BCfile_sw_is_open=.false.
   end type fv_nest_type
 
   type inline_mp_type
@@ -1094,11 +1098,17 @@ module fv_arrays_mod
      real, _ALLOCATABLE :: oro(:,:)
      real, _ALLOCATABLE :: ze0(:,:,:)
 
-     type(restart_file_type) :: fv_core_coarse
-     type(restart_file_type) :: fv_tracer_coarse
-     type(restart_file_type) :: fv_srf_wnd_coarse
-     type(restart_file_type) :: mg_drag_coarse
-     type(restart_file_type) :: fv_land_coarse
+     type(FmsNetcdfDomainFile_t) :: fv_core_coarse
+     type(FmsNetcdfDomainFile_t) :: fv_tracer_coarse
+     type(FmsNetcdfDomainFile_t) :: fv_srf_wnd_coarse
+     type(FmsNetcdfDomainFile_t) :: mg_drag_coarse
+     type(FmsNetcdfDomainFile_t) :: fv_land_coarse
+
+     logical :: fv_core_coarse_is_open=.false.
+     logical :: fv_tracer_coarse_is_open=.false.
+     logical :: fv_srf_wnd_coarse_is_open=.false.
+     logical :: mg_drag_coarse_is_open=.false.
+     logical :: fv_land_coarse_is_open=.false.
 
   end type coarse_restart_type
 
@@ -1307,8 +1317,16 @@ module fv_arrays_mod
 !!!!!!!!!!!!!!
 ! From fv_io !
 !!!!!!!!!!!!!!
-     type(restart_file_type) :: Fv_restart, SST_restart, Fv_tile_restart, &
+     type(FmsNetcdfFile_t) :: Fv_restart
+     type(FmsNetcdfDomainFile_t) :: SST_restart, Fv_restart_tile, &
           Rsf_restart, Mg_restart, Lnd_restart, Tra_restart
+     logical :: Fv_restart_is_open=.false.
+     logical :: SST_restart_is_open=.false.
+     logical :: Fv_restart_tile_is_open=.false.
+     logical :: Rsf_restart_is_open=.false.
+     logical :: Mg_restart_is_open=.false.
+     logical :: Lnd_restart_is_open=.false.
+     logical :: Tra_restart_is_open=.false.
      type(fv_nest_type) :: neststruct
 
      !Hold on to coarse-grid global grid, so we don't have to waste processor time getting it again when starting to do grid nesting
@@ -1329,7 +1347,7 @@ contains
 !>@details It includes an option to define dummy grids that have scalar and
 !! small arrays defined as null 3D arrays.
   subroutine allocate_fv_atmos_type(Atm, isd_in, ied_in, jsd_in, jed_in, is_in, ie_in, js_in, je_in, &
-       npx_in, npy_in, npz_in, ndims_in, ncnst_in, nq_in, dummy, alloc_2d, ngrids_in)
+       npx_in, npy_in, npz_in, ndims_in, ntiles_in, ncnst_in, nq_in, dummy, alloc_2d, ngrids_in)
 
     !WARNING: Before calling this routine, be sure to have set up the
     ! proper domain parameters from the namelists (as is done in
@@ -1338,7 +1356,7 @@ contains
     implicit none
     type(fv_atmos_type), intent(INOUT), target :: Atm
     integer, intent(IN) :: isd_in, ied_in, jsd_in, jed_in, is_in, ie_in, js_in, je_in
-    integer, intent(IN) :: npx_in, npy_in, npz_in, ndims_in, ncnst_in, nq_in
+    integer, intent(IN) :: npx_in, npy_in, npz_in, ndims_in, ntiles_in, ncnst_in, nq_in
     logical, intent(IN) :: dummy, alloc_2d
     integer, intent(IN) :: ngrids_in
     integer:: isd, ied, jsd, jed, is, ie, js, je
@@ -1415,22 +1433,6 @@ contains
        nq_2d=   1
     endif
 
-!This should be set up in fv_mp_mod
-!!$    Atm%bd%isd = isd_in
-!!$    Atm%bd%ied = ied_in
-!!$    Atm%bd%jsd = jsd_in
-!!$    Atm%bd%jed = jed_in
-!!$
-!!$    Atm%bd%is = is_in
-!!$    Atm%bd%ie = ie_in
-!!$    Atm%bd%js = js_in
-!!$    Atm%bd%je = je_in
-!!$
-!!$    Atm%bd%isc = Atm%bd%is
-!!$    Atm%bd%iec = Atm%bd%ie
-!!$    Atm%bd%jsc = Atm%bd%js
-!!$    Atm%bd%jec = Atm%bd%je
-
     !Convenience pointers
     Atm%npx => Atm%flagstruct%npx
     Atm%npy => Atm%flagstruct%npy
@@ -1439,9 +1441,6 @@ contains
 
     Atm%ng => Atm%bd%ng
 
-!!$    Atm%npx = npx_in
-!!$    Atm%npy = npy_in
-!!$    Atm%npz = npz_in
     Atm%flagstruct%ndims = ndims_in
 
     allocate (    Atm%u(isd:ied  ,jsd:jed+1,npz) )
@@ -1766,11 +1765,14 @@ contains
     if( ngrids_in > 1 ) then
        if (Atm%flagstruct%grid_type < 4) then
           if (Atm%neststruct%nested) then
-             allocate(Atm%grid_global(1-Atm%ng:npx_2d  +Atm%ng,1-Atm%ng:npy_2d  +Atm%ng,2,1))
+             allocate(Atm%grid_global(1-Atm%ng:npx_2d  +Atm%ng,1-Atm%ng:npy_2d  +Atm%ng,2,ntiles_in))
           else
-             allocate(Atm%grid_global(1-Atm%ng:npx_2d  +Atm%ng,1-Atm%ng:npy_2d  +Atm%ng,2,1:6))
+             allocate(Atm%grid_global(1-Atm%ng:npx_2d  +Atm%ng,1-Atm%ng:npy_2d  +Atm%ng,2,1:ntiles_in))
           endif
        end if
+       if (Atm%flagstruct%grid_type == 4) then
+          allocate(Atm%grid_global(1-Atm%ng:npx_2d  +Atm%ng,1-Atm%ng:npy_2d  +Atm%ng,2,ntiles_in))
+       endif
     endif
 
 
