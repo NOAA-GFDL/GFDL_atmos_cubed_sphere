@@ -7,11 +7,12 @@ module coarse_grained_restart_files_mod
        remap_edges_along_y, vertically_remap_field
   use constants_mod, only: GRAV, RDGAS, RVGAS
   use field_manager_mod, only: MODEL_ATMOS
-  use fms_io_mod,      only: register_restart_field, save_restart
+  use fms2_io_mod,      only: register_restart_field, write_restart, open_file, close_file
   use fv_arrays_mod, only: coarse_restart_type, fv_atmos_type
-  use mpp_domains_mod, only: domain2d, EAST, NORTH, mpp_update_domains
+  use mpp_domains_mod, only: domain2d, EAST, NORTH, CENTER, mpp_update_domains
   use mpp_mod, only: FATAL, mpp_error
   use tracer_manager_mod, only: get_tracer_names, get_tracer_index, set_tracer_profile
+  use fv_io_mod, only: fv_io_register_axis
 
   implicit none
   private
@@ -25,14 +26,13 @@ module coarse_grained_restart_files_mod
 
 contains
 
-  subroutine fv_coarse_restart_init(tile_count, nz, nt_prog, &
+  subroutine fv_coarse_restart_init(nz, nt_prog, &
        nt_phys, hydrostatic, hybrid_z, fv_land, &
        write_coarse_dgrid_vel_rst, write_coarse_agrid_vel_rst, &
-       coarse_domain, restart)
-    integer, intent(in) :: tile_count, nz, nt_prog, nt_phys
+       restart)
+    integer, intent(in) :: nz, nt_prog, nt_phys
     logical, intent(in) :: hydrostatic, hybrid_z, fv_land
     logical, intent(in) :: write_coarse_dgrid_vel_rst, write_coarse_agrid_vel_rst
-    type(domain2d), intent(inout) :: coarse_domain
     type(coarse_restart_type), intent(inout) :: restart
 
     call get_fine_array_bounds(is, ie, js, je)
@@ -45,9 +45,6 @@ contains
     call allocate_coarse_restart_type(hydrostatic, hybrid_z, &
          fv_land, write_coarse_dgrid_vel_rst, write_coarse_agrid_vel_rst, &
          restart)
-    call register_coarse_restart_files(tile_count, hydrostatic, &
-         hybrid_z, fv_land, write_coarse_dgrid_vel_rst, &
-         write_coarse_agrid_vel_rst, coarse_domain, restart)
   end subroutine fv_coarse_restart_init
 
   subroutine fv_io_write_restart_coarse(Atm, timestamp)
@@ -56,13 +53,41 @@ contains
 
     integer :: tile_count, n_tiles
 
+    call register_coarse_restart_files(Atm%flagstruct%hydrostatic, &
+           Atm%flagstruct%hybrid_z, Atm%flagstruct%fv_land, &
+           Atm%coarse_graining%write_coarse_dgrid_vel_rst, &
+           Atm%coarse_graining%write_coarse_agrid_vel_rst, &
+           Atm%coarse_graining%domain, &
+           Atm%coarse_graining%restart, timestamp)
+
     call coarse_grain_restart_data(Atm)
-    call save_restart(Atm%coarse_graining%restart%fv_core_coarse, timestamp)
-    call save_restart(Atm%coarse_graining%restart%fv_tracer_coarse, timestamp)
-    call save_restart(Atm%coarse_graining%restart%fv_srf_wnd_coarse, timestamp)
+
+    if (Atm%coarse_graining%restart%fv_core_coarse_is_open) then
+      call write_restart(Atm%coarse_graining%restart%fv_core_coarse)
+      call close_file(Atm%coarse_graining%restart%fv_core_coarse)
+      Atm%coarse_graining%restart%fv_core_coarse_is_open=.false.
+    endif
+    if (Atm%coarse_graining%restart%fv_tracer_coarse_is_open) then
+      call write_restart(Atm%coarse_graining%restart%fv_tracer_coarse)
+      call close_file(Atm%coarse_graining%restart%fv_tracer_coarse)
+      Atm%coarse_graining%restart%fv_tracer_coarse_is_open=.false.
+    endif
+    if (Atm%coarse_graining%restart%fv_srf_wnd_coarse_is_open) then
+      call write_restart(Atm%coarse_graining%restart%fv_srf_wnd_coarse)
+      call close_file(Atm%coarse_graining%restart%fv_srf_wnd_coarse)
+      Atm%coarse_graining%restart%fv_srf_wnd_coarse_is_open=.false.
+    endif
     if (Atm%flagstruct%fv_land) then
-       call save_restart(Atm%coarse_graining%restart%mg_drag_coarse, timestamp)
-       call save_restart(Atm%coarse_graining%restart%fv_land_coarse, timestamp)
+       if (Atm%coarse_graining%restart%mg_drag_coarse_is_open) then
+         call write_restart(Atm%coarse_graining%restart%mg_drag_coarse)
+         call close_file(Atm%coarse_graining%restart%mg_drag_coarse)
+         Atm%coarse_graining%restart%mg_drag_coarse_is_open=.false.
+       endif
+       if (Atm%coarse_graining%restart%fv_land_coarse_is_open) then
+         call write_restart(Atm%coarse_graining%restart%fv_land_coarse)
+         call close_file(Atm%coarse_graining%restart%fv_land_coarse)
+         Atm%coarse_graining%restart%fv_land_coarse_is_open=.false.
+       endif
     endif
   end subroutine fv_io_write_restart_coarse
 
@@ -123,148 +148,228 @@ contains
     if (allocated(restart%ze0)) deallocate(restart%ze0)
   end subroutine deallocate_coarse_restart_type
 
-  subroutine register_coarse_restart_files(tile_count, hydrostatic, &
+  subroutine register_coarse_restart_files(hydrostatic, &
        hybrid_z, fv_land, write_coarse_dgrid_vel_rst, write_coarse_agrid_vel_rst, &
-       coarse_domain, restart)
-    integer, intent(in) :: tile_count
+       coarse_domain, restart, timestamp)
     logical, intent(in) :: hydrostatic, hybrid_z, fv_land
     logical, intent(in) :: write_coarse_dgrid_vel_rst, write_coarse_agrid_vel_rst
     type(domain2d), intent(in) :: coarse_domain
     type(coarse_restart_type), intent(inout) :: restart
+    character(len=*), optional, intent(in) :: timestamp
 
-    call register_fv_core_coarse(tile_count, hydrostatic, hybrid_z, &
+    call register_fv_core_coarse(hydrostatic, hybrid_z, &
          write_coarse_dgrid_vel_rst, write_coarse_agrid_vel_rst, &
-         coarse_domain, restart)
-    call register_fv_tracer_coarse(tile_count, coarse_domain, restart)
-    call register_fv_srf_wnd_coarse(tile_count, coarse_domain, restart)
+         coarse_domain, restart, timestamp)
+    call register_fv_tracer_coarse(coarse_domain, restart, timestamp)
+    call register_fv_srf_wnd_coarse(coarse_domain, restart, timestamp)
     if (fv_land) then
-       call register_mg_drag_coarse(tile_count, coarse_domain, restart)
-       call register_fv_land_coarse(tile_count, coarse_domain, restart)
+       call register_mg_drag_coarse(coarse_domain, restart, timestamp)
+       call register_fv_land_coarse(coarse_domain, restart, timestamp)
     endif
   end subroutine register_coarse_restart_files
 
-  subroutine register_fv_core_coarse(tile_count, hydrostatic, hybrid_z, &
+  subroutine register_fv_core_coarse(hydrostatic, hybrid_z, &
        write_coarse_dgrid_vel_rst, write_coarse_agrid_vel_rst, coarse_domain, &
-       restart)
-    integer, intent(in) :: tile_count
+       restart, timestamp)
     logical, intent(in) :: hydrostatic, hybrid_z
     logical, intent(in) :: write_coarse_dgrid_vel_rst, write_coarse_agrid_vel_rst
     type(domain2d), intent(in) :: coarse_domain
     type(coarse_restart_type), intent(inout) :: restart
+    character(len=*), optional, intent(in) :: timestamp
 
+    character(len=8), dimension(4) :: dim_names_4d, dim_names_4d2, dim_names_4d3
+    character(len=8), dimension(3) :: dim_names_3d
     character(len=64) :: filename
-    integer :: id_restart
+    integer, dimension(1) :: zsize
 
-    filename = 'fv_core_coarse.res.nc'
+    dim_names_4d(1) = "xaxis_1"
+    dim_names_4d(2) = "yaxis_1"
+    dim_names_4d(3) = "zaxis_1"
+    dim_names_4d(4) = "Time"
+    dim_names_4d2 = dim_names_4d
+    dim_names_4d2(1) = "xaxis_2"
+    dim_names_4d2(2) = "yaxis_2"
+    dim_names_4d3 = dim_names_4d
+    dim_names_4d3(2) = "yaxis_2"
+    dim_names_3d(1) = "xaxis_1"
+    dim_names_3d(2) = "yaxis_2"
+    dim_names_3d(3) = "Time"
 
-    if (write_coarse_dgrid_vel_rst) then
-       id_restart = register_restart_field(restart%fv_core_coarse, &
-            filename, 'u', restart%u, domain=coarse_domain, position=NORTH, &
-            tile_count=tile_count)
-       id_restart = register_restart_field(restart%fv_core_coarse, &
-            filename, 'v', restart%v, domain=coarse_domain, position=EAST, &
-            tile_count=tile_count)
+    if (present(timestamp)) then
+      filename = 'RESTART/'//trim(timestamp)//'.fv_core_coarse.res.nc'
+    else
+      filename = 'RESTART/fv_core_coarse.res.nc'
     endif
 
-    if (write_coarse_agrid_vel_rst) then
-       id_restart = register_restart_field(restart%fv_core_coarse, &
-            filename, 'ua', restart%ua, domain=coarse_domain, tile_count=tile_count)
-       id_restart = register_restart_field(restart%fv_core_coarse, &
-            filename, 'va', restart%va, domain=coarse_domain, tile_count=tile_count)
-    endif
+    restart%fv_core_coarse_is_open = open_file(restart%fv_core_coarse, filename, &
+            "overwrite", coarse_domain, is_restart=.true.)
+    if (restart%fv_core_coarse_is_open) then
+      zsize = (/size(restart%u,3)/)
+      call fv_io_register_axis(restart%fv_core_coarse, numx=2 ,numy=2, xpos=(/CENTER, EAST/) ,ypos=(/NORTH, CENTER/) ,numz=1, zsize=zsize)
 
-    if (.not. hydrostatic) then
-       id_restart = register_restart_field(restart%fv_core_coarse, &
-            filename, 'W', restart%w, domain=coarse_domain, mandatory=.false., tile_count=tile_count)
-       id_restart = register_restart_field(restart%fv_core_coarse, &
-            filename, 'DZ', restart%delz, domain=coarse_domain, mandatory=.false., tile_count=tile_count)
-       if (hybrid_z) then
-          id_restart = register_restart_field(restart%fv_core_coarse, &
-            filename, 'ZE0', restart%ze0, domain=coarse_domain, mandatory=.false., tile_count=tile_count)
-       endif
-    endif
+      if (write_coarse_dgrid_vel_rst) then
+         call register_restart_field(restart%fv_core_coarse, &
+              'u', restart%u, dim_names_4d)
+         call register_restart_field(restart%fv_core_coarse, &
+              'v', restart%v, dim_names_4d2)
+      endif
 
-    id_restart = register_restart_field(restart%fv_core_coarse, &
-         filename, 'T', restart%pt, domain=coarse_domain, tile_count=tile_count)
-    id_restart = register_restart_field(restart%fv_core_coarse, &
-            filename, 'delp', restart%delp, domain=coarse_domain, tile_count=tile_count)
-    id_restart = register_restart_field(restart%fv_core_coarse, &
-            filename, 'phis', restart%phis, domain=coarse_domain, tile_count=tile_count)
+      if (write_coarse_agrid_vel_rst) then
+         call register_restart_field(restart%fv_core_coarse, &
+              'ua', restart%ua, dim_names_4d3)
+         call register_restart_field(restart%fv_core_coarse, &
+              'va', restart%va, dim_names_4d3)
+      endif
+
+      if (.not. hydrostatic) then
+         call register_restart_field(restart%fv_core_coarse, &
+              'W', restart%w, dim_names_4d3, is_optional=.true.)
+         call register_restart_field(restart%fv_core_coarse, &
+              'DZ', restart%delz, dim_names_4d3, is_optional=.true.)
+         if (hybrid_z) then
+            call register_restart_field(restart%fv_core_coarse, &
+                 'ZE0', restart%ze0, dim_names_4d3, is_optional=.false.)
+         endif
+      endif
+
+      call register_restart_field(restart%fv_core_coarse, &
+           'T', restart%pt, dim_names_4d3)
+      call register_restart_field(restart%fv_core_coarse, &
+           'delp', restart%delp, dim_names_4d3)
+      call register_restart_field(restart%fv_core_coarse, &
+           'phis', restart%phis, dim_names_3d)
+    endif
   end subroutine register_fv_core_coarse
 
-  subroutine register_fv_tracer_coarse(tile_count, coarse_domain, restart)
-    integer, intent(in) :: tile_count
+  subroutine register_fv_tracer_coarse(coarse_domain, restart, timestamp)
     type(domain2d), intent(in) :: coarse_domain
     type(coarse_restart_type), intent(inout) :: restart
+    character(len=*), optional, intent(in) :: timestamp
 
+    character(len=8), dimension(4) :: dim_names_4d
     character(len=64) :: filename, tracer_name
-    integer :: id_restart, n_tracer
+    integer :: n_tracer
+    integer, dimension(1) :: zsize
 
-    filename = 'fv_tracer_coarse.res.nc'
+    dim_names_4d(1) = "xaxis_1"
+    dim_names_4d(2) = "yaxis_1"
+    dim_names_4d(3) = "zaxis_1"
+    dim_names_4d(4) = "Time"
 
-    do n_tracer = 1, n_prognostic_tracers
-       call get_tracer_names(MODEL_ATMOS, n_tracer, tracer_name)
-       call set_tracer_profile(MODEL_ATMOS, n_tracer, restart%q(:,:,:,n_tracer))
-       id_restart = register_restart_field(restart%fv_tracer_coarse, &
-            filename, tracer_name, restart%q(:,:,:,n_tracer), domain=coarse_domain, &
-            mandatory=.false., tile_count=tile_count)
-    enddo
+    if (present(timestamp)) then
+      filename = 'RESTART/'//trim(timestamp)//'.fv_tracer_coarse.res.nc'
+    else
+      filename = 'RESTART/fv_tracer_coarse.res.nc'
+    endif
 
-    do n_tracer = n_prognostic_tracers + 1, n_tracers
-       call get_tracer_names(MODEL_ATMOS, n_tracer, tracer_name)
-       call set_tracer_profile(MODEL_ATMOS, n_tracer, restart%qdiag(:,:,:,n_tracer))
-       id_restart = register_restart_field(restart%fv_tracer_coarse, &
-            filename, tracer_name, restart%qdiag(:,:,:,n_tracer), domain=coarse_domain, &
-            mandatory=.false., tile_count=tile_count)
-    enddo
+    restart%fv_tracer_coarse_is_open = open_file(restart%fv_tracer_coarse, filename, &
+            "overwrite", coarse_domain, is_restart=.true.)
+    if (restart%fv_tracer_coarse_is_open) then
+      zsize=(/size(restart%q,3)/)
+      call fv_io_register_axis(restart%fv_tracer_coarse, numx=1 ,numy=1, xpos=(/CENTER/) ,ypos=(/CENTER/) ,numz=1, zsize=zsize)
+
+      do n_tracer = 1, n_prognostic_tracers
+         call get_tracer_names(MODEL_ATMOS, n_tracer, tracer_name)
+         call set_tracer_profile(MODEL_ATMOS, n_tracer, restart%q(:,:,:,n_tracer))
+         call register_restart_field(restart%fv_tracer_coarse, &
+              tracer_name, restart%q(:,:,:,n_tracer), dim_names_4d, &
+              is_optional=.true.)
+      enddo
+
+      do n_tracer = n_prognostic_tracers + 1, n_tracers
+         call get_tracer_names(MODEL_ATMOS, n_tracer, tracer_name)
+         call set_tracer_profile(MODEL_ATMOS, n_tracer, restart%qdiag(:,:,:,n_tracer))
+         call register_restart_field(restart%fv_tracer_coarse, &
+              tracer_name, restart%qdiag(:,:,:,n_tracer), dim_names_4d, &
+              is_optional=.true.)
+      enddo
+    endif
   end subroutine register_fv_tracer_coarse
 
-  subroutine register_fv_srf_wnd_coarse(tile_count, coarse_domain, restart)
-    integer, intent(in) :: tile_count
+  subroutine register_fv_srf_wnd_coarse(coarse_domain, restart, timestamp)
     type(domain2d), intent(in) :: coarse_domain
     type(coarse_restart_type), intent(inout) :: restart
+    character(len=*), optional, intent(in) :: timestamp
 
+    character(len=8), dimension(3) :: dim_names_3d
     character(len=64) :: filename
-    integer :: id_restart
 
-    filename = 'fv_srf_wnd_coarse.res.nc'
+    dim_names_3d(1) = "xaxis_1"
+    dim_names_3d(2) = "yaxis_1"
+    dim_names_3d(3) = "Time"
 
-    id_restart = register_restart_field(restart%fv_srf_wnd_coarse, &
-         filename, 'u_srf', restart%u_srf, domain=coarse_domain, &
-         tile_count=tile_count)
-    id_restart = register_restart_field(restart%fv_srf_wnd_coarse, &
-         filename, 'v_srf', restart%v_srf, domain=coarse_domain, &
-         tile_count=tile_count)
+    if (present(timestamp)) then
+      filename = 'RESTART/'//trim(timestamp)//'.fv_srf_wnd_coarse.res.nc'
+    else
+      filename = 'RESTART/fv_srf_wnd_coarse.res.nc'
+    endif
+
+    restart%fv_srf_wnd_coarse_is_open = open_file(restart%fv_srf_wnd_coarse, filename, &
+            "overwrite", coarse_domain, is_restart=.true.)
+    if (restart%fv_srf_wnd_coarse_is_open) then
+      call fv_io_register_axis(restart%fv_srf_wnd_coarse, numx=1 ,numy=1, xpos=(/CENTER/) ,ypos=(/CENTER/))
+
+      call register_restart_field(restart%fv_srf_wnd_coarse, &
+           'u_srf', restart%u_srf, dim_names_3d)
+      call register_restart_field(restart%fv_srf_wnd_coarse, &
+           'v_srf', restart%v_srf, dim_names_3d)
+    endif
   end subroutine register_fv_srf_wnd_coarse
 
-  subroutine register_mg_drag_coarse(tile_count, coarse_domain, restart)
-    integer, intent(in) :: tile_count
+  subroutine register_mg_drag_coarse(coarse_domain, restart, timestamp)
     type(domain2d), intent(in) :: coarse_domain
     type(coarse_restart_type), intent(out) :: restart
+    character(len=*), optional, intent(in) :: timestamp
 
+    character(len=8), dimension(3) :: dim_names_3d
     character(len=64) :: filename
-    integer :: id_restart
 
-    filename = 'mg_drag_coarse.res.nc'
+    dim_names_3d(1) = "xaxis_1"
+    dim_names_3d(2) = "yaxis_1"
+    dim_names_3d(3) = "Time"
 
-    id_restart = register_restart_field(restart%mg_drag_coarse, &
-         filename, 'ghprime', restart%sgh, domain=coarse_domain, &
-         tile_count=tile_count)
+    if (present(timestamp)) then
+      filename = 'RESTART/'//trim(timestamp)//'.mg_drag_coarse.res.nc'
+    else
+      filename = 'RESTART/mg_drag_coarse.res.nc'
+    endif
+
+    restart%mg_drag_coarse_is_open = open_file(restart%mg_drag_coarse, filename, &
+            "overwrite", coarse_domain, is_restart=.true.)
+    if (restart%mg_drag_coarse_is_open) then
+      call fv_io_register_axis(restart%mg_drag_coarse, numx=1, numy=1, xpos=(/CENTER/), ypos=(/CENTER/))
+
+      call register_restart_field(restart%mg_drag_coarse, &
+          'ghprime', restart%sgh, dim_names_3d)
+    endif
   end subroutine register_mg_drag_coarse
 
-  subroutine register_fv_land_coarse(tile_count, coarse_domain, restart)
-    integer, intent(in) :: tile_count
+  subroutine register_fv_land_coarse(coarse_domain, restart, timestamp)
     type(domain2d), intent(in) :: coarse_domain
     type(coarse_restart_type), intent(inout) :: restart
+    character(len=*), optional, intent(in) :: timestamp
 
+    character(len=8), dimension(3) :: dim_names_3d
     character(len=64) :: filename
-    integer :: id_restart
 
-    filename = 'fv_land_coarse.res.nc'
+    dim_names_3d(1) = "xaxis_1"
+    dim_names_3d(2) = "yaxis_1"
+    dim_names_3d(3) = "Time"
 
-    id_restart = register_restart_field(restart%fv_land_coarse, &
-         filename, 'oro', restart%oro, domain=coarse_domain, &
-         tile_count=tile_count)
+    if (present(timestamp)) then
+      filename = 'RESTART/'//trim(timestamp)//'.fv_land_coarse.res.nc'
+    else
+      filename = 'RESTART/fv_land_coarse.res.nc'
+    endif
+
+    restart%fv_land_coarse_is_open = open_file(restart%fv_land_coarse, filename, &
+            "overwrite", coarse_domain, is_restart=.true.)
+    if (restart%fv_land_coarse_is_open) then
+      call fv_io_register_axis(restart%fv_land_coarse, numx=1, numy=1, xpos=(/CENTER/), ypos=(/CENTER/))
+
+      call register_restart_field(restart%fv_land_coarse, &
+          'oro', restart%oro, dim_names_3d)
+    endif
   end subroutine register_fv_land_coarse
 
   subroutine coarse_grain_restart_data(Atm)
