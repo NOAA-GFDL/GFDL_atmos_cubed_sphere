@@ -31,6 +31,8 @@ option(USE_GFSL63  "Enable compiler definition -DUSE_GFSL63"               OFF)
 option(GFS_PHYS    "Enable compiler definition -DGFS_PHYS"                 OFF)
 option(GFS_TYPES   "Enable compiler definition -DGFS_TYPES"                OFF)
 option(use_WRTCOMP "Enable compiler definition -Duse_WRTCOMP"              OFF)
+option(INTERNAL_FILE_NML     "Enable compiler definition -DINTERNAL_FILE_NML"      ON)
+option(ENABLE_QUAD_PRECISION "Enable compiler definition -DENABLE_QUAD_PRECISION"  ON)
 
 find_package(MPI REQUIRED)
 if(OPENMP)
@@ -143,6 +145,14 @@ endif()
 if(32BIT)
   list(APPEND fv3_defs OVERLOAD_R4
                        OVERLOAD_R8)
+endif()
+
+if(INTERNAL_FILE_NML)
+  list(APPEND fv3_defs INTERNAL_FILE_NML)
+endif()
+
+if(ENABLE_QUAD_PRECISION)
+  list(APPEND fv3_defs ENABLE_QUAD_PRECISION)
 endif()
 
 if(OPENMP)
