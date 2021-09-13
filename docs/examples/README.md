@@ -11,13 +11,13 @@ RHwave
 : Rossby-Haurwitz wave, a test of height-vorticity consistency
 
 BTwave
-: Barotropic instability, demonstrating wave breaking (cf. Galewsky et al. 2004; Scott, Harris, and Polvani 2016)
+: Barotropic instability, demonstrating vorticity preservation and wave breaking (cf. Galewsky et al. 2004; Scott, Harris, and Polvani 2016)
 
 BLvortex
 : Bates-Li forced polar vortex
 
 SWmodon
-: Lin-Chen-Yao modon demonstrating the crucial nature of nonlinear vorticity dynamics. **See Lin et al. (JAMES, 2017)**
+: Lin-Chen-Yao modon demonstrating the crucial nature of nonlinear vorticity dynamics. Notebook forthcoming; see [Lin et al. (JAMES, 2017)](http://dx.doi.org/10.1002/2017MS000965)
 
 ## 3D Global Cases
 
@@ -38,7 +38,7 @@ TornadicSupercell
 MountainWaveIC
 : A demonstration of how to rigorously compute thermodynamic quantities in FV3 of importance for mountain wave simulation
 
-mtn_wave tests
+mtn_wave_tests
 : Standard mountain wave over Schar topography, to demonstrate mountain-wave propagation and 2D FV3 capabilities; and a resting atmosphere over Schar topography, to diagnose pressure-gradient force truncation error on small scales and errors due to hybridization of the vertical coordinate
 
 ## 3D Doubly-periodic Cases
