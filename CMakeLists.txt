@@ -209,10 +209,6 @@ install(
 include(CMakePackageConfigHelpers)
 set(CONFIG_INSTALL_DESTINATION lib/cmake/fv3)
 
-export(EXPORT FV3Exports
-  NAMESPACE FV3::
-  FILE fv3-targets.cmake)
-
 configure_package_config_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FV3Config.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/fv3-config.cmake
   INSTALL_DESTINATION ${CONFIG_INSTALL_DESTINATION})
@@ -225,3 +221,9 @@ write_basic_package_version_file(
   COMPATIBILITY AnyNewerVersion)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/fv3-config-version.cmake
   DESTINATION ${CONFIG_INSTALL_DESTINATION})
+
+install(EXPORT FV3Exports
+  NAMESPACE FV3::
+  FILE fv3-targets.cmake
+  DESTINATION ${CONFIG_INSTALL_DESTINATION})
+
