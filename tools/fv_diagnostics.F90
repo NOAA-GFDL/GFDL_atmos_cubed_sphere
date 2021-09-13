@@ -1114,9 +1114,9 @@ contains
             'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
 #ifdef MULTI_GASES
        id_spow = register_diag_field ( trim(field), 'spow', axes(1:3), Time, &
-            'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
+            'vertical oxygen atom flux', 'kg/m**2/s', missing_value=missing_value )
        id_spo2w = register_diag_field ( trim(field), 'spo2w', axes(1:3), Time, &
-            'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
+            'vertical oxygen flux', 'kg/m**2/s', missing_value=missing_value )
        id_spo3w = register_diag_field ( trim(field), 'spo3w', axes(1:3), Time, &
             'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
 #endif

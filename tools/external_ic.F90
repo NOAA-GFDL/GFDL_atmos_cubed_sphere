@@ -2079,13 +2079,13 @@ contains
       if( open_file(GFS_restart, fn_gfs_ics, "read", Atm%domain, is_restart=.true., dont_add_res_to_filename=.true.) ) then
         call register_axis(GFS_restart, "lat", "y")
         call register_axis(GFS_restart, "lon", "x")
-        call register_axis(GFS_restart, "lev", size(o3mr_gfs,3))
         call register_axis(GFS_restart, "levp", size(zh_gfs,3))
 #ifdef MULTI_GASES
         call register_restart_field(GFS_restart, 'spo3', spo3_gfs, dim_names_3d3, is_optional=.true.)
         call register_restart_field(GFS_restart, 'spo',  spo_gfs,  dim_names_3d3, is_optional=.true.)
         call register_restart_field(GFS_restart, 'spo2', spo2_gfs, dim_names_3d3, is_optional=.true.)
 #else
+        call register_axis(GFS_restart, "lev", size(o3mr_gfs,3))
         call register_restart_field(GFS_restart, 'o3mr', o3mr_gfs, dim_names_3d3, is_optional=.true.)
 #endif
         call register_restart_field(GFS_restart, 'ps', ps_gfs, dim_names_2d)
@@ -2954,7 +2954,7 @@ contains
   integer i,j,k,l,m, k2,iq
   integer  sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt, sgs_tke
 #ifdef MULTI_GASES
-  integer  spfo, spfo2, spfo3
+  integer  spo, spo2, spo3
 #else
   integer o3mr
 #endif
@@ -2973,9 +2973,9 @@ contains
   graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
   cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
 #ifdef MULTI_GASES
-  spfo    = get_tracer_index(MODEL_ATMOS, 'spo')
-  spfo2   = get_tracer_index(MODEL_ATMOS, 'spo2')
-  spfo3   = get_tracer_index(MODEL_ATMOS, 'spo3')
+  spo    = get_tracer_index(MODEL_ATMOS, 'spo')
+  spo2   = get_tracer_index(MODEL_ATMOS, 'spo2')
+  spo3   = get_tracer_index(MODEL_ATMOS, 'spo3')
 #else
   o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
 #endif
