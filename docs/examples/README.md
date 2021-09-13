@@ -17,7 +17,7 @@ BLvortex
 : Bates-Li forced polar vortex
 
 SWmodon
-: Lin-Chen-Yao modon demonstrating the crucial nature of nonlinear vorticity dynamics
+: Lin-Chen-Yao modon demonstrating the crucial nature of nonlinear vorticity dynamics. **See Lin et al. (JAMES, 2017)**
 
 ## 3D Global Cases
 
@@ -38,11 +38,8 @@ TornadicSupercell
 MountainWaveIC
 : A demonstration of how to rigorously compute thermodynamic quantities in FV3 of importance for mountain wave simulation
 
-mtn_schar_500m
-: Standard mountain wave over Schar topography, to demonstrate mountain-wave propagation and 2D FV3 capabilities
-
-mtn_rest_shear_1km
-: Resting atmosphere over Schar topography, to diagnose pressure-gradient force truncation error on small scales and errors due to hybridization of the vertical coordinate
+mtn_wave tests
+: Standard mountain wave over Schar topography, to demonstrate mountain-wave propagation and 2D FV3 capabilities; and a resting atmosphere over Schar topography, to diagnose pressure-gradient force truncation error on small scales and errors due to hybridization of the vertical coordinate
 
 ## 3D Doubly-periodic Cases
 
