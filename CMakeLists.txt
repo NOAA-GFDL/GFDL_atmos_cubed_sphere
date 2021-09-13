@@ -225,9 +225,3 @@ write_basic_package_version_file(
   COMPATIBILITY AnyNewerVersion)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/fv3-config-version.cmake
   DESTINATION ${CONFIG_INSTALL_DESTINATION})
-
-install(EXPORT FV3Exports
-  NAMESPACE FV3::
-  FILE fv3-targets.cmake
-  DESTINATION ${CONFIG_INSTALL_DESTINATION})
-
