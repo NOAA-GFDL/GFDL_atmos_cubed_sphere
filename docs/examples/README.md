@@ -31,7 +31,7 @@ mtn_rest_100km
 : Resting atmosphere over oscilliatory topography, to diagnose pressure-gradient force truncation error on large scales
 
 TornadicSupercell
-: Global super-stretched grid with Toy semi-circle hodograph creating supercell thunderstorms with tornado-like vortices, demonstrating the importance of vorticity preservation at kilometer scales
+: Global super-stretched grid with Toy semi-circle hodograph creating supercell thunderstorms with tornado-like vortices, demonstrating the importance of vorticity preservation at kilometer scales. See animations on [Google Drive](https://drive.google.com/drive/folders/1pVNAuKrYKwxVAlCdVa5faIVRBaK2hdVI) (noaa.gov only).
 
 ## 2D Periodic 
 
