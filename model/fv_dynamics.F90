@@ -764,7 +764,7 @@ contains
          if( md_tadj_layers .gt.0 .and. md_time .and. last_step ) then
              call thermosphere_adjustment(domain,gridstruct,npz,bd,ng,pt)
         endif ! md_tadj_layers>0 and md_time and last_step
-     endif 
+     endif
 
      if ( flagstruct%fv_debug ) then
        if (is_master()) write(*,'(A, I3, A1, I3)') 'finished k_split ', n_map, '/', k_split
@@ -1142,7 +1142,7 @@ contains
                            conserve, molecular_diffusion, consv_te, rf_cutoff, gridstruct, domain, bd)
     real, intent(in):: dt
     real, intent(in):: tau              !< time scale (days)
-    real, intent(in):: tau_w            !< time scale (days) for w 
+    real, intent(in):: tau_w            !< time scale (days) for w
     real, intent(in):: cp, rg, ptop, rf_cutoff
     real, intent(in),  dimension(npz):: pm
     integer, intent(in):: npx, npy, npz, ks
@@ -1159,7 +1159,7 @@ contains
     real, intent(inout):: delz(bd%is:     ,bd%js:       ,1: ) !< delta-height (m); non-hydrostatic only
 #ifdef MULTI_GASES
     integer, intent(in):: ncnst
-    real,   intent(in) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,ncnst) ! 
+    real,   intent(in) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,ncnst) !
 #endif
     real,   intent(in) :: agrid(bd%isd:bd%ied,  bd%jsd:bd%jed,2)
     real, intent(in) :: phis(bd%isd:bd%ied,bd%jsd:bd%jed)     !< Surface geopotential (g*Z_surf)
@@ -1190,14 +1190,14 @@ contains
     rcv = 1. / (cp - rg)
 
     convert=conserve
-    if ( molecular_diffusion )then 
+    if ( molecular_diffusion )then
         if ( consv_te>0 ) then
          convert=.true.
         else
          convert=.false.
         endif
     endif
- 
+
 
      if ( .not. RF_initialized ) then
 #ifdef HIWPP
@@ -1256,7 +1256,7 @@ contains
     call c2l_ord2(u, v, ua, va, gridstruct, npz, gridstruct%grid_type, bd, gridstruct%bounded_domain)
 
     allocate( u2f(isd:ied,jsd:jed,kmax) )
-    allocate( w2f(isd:ied,jsd:jed,kmax) )  
+    allocate( w2f(isd:ied,jsd:jed,kmax) )
 
 !$OMP parallel do default(none) shared(is,ie,js,je,kmax,pm,rf_cutoff,hydrostatic,ua,va,agrid, &
 !$OMP                                  u2f,w2f,rf,rw,w)
@@ -1271,7 +1271,7 @@ contains
     enddo
                                         call timing_on('COMM_TOTAL')
     call mpp_update_domains(u2f, domain)
-    call mpp_update_domains(w2f, domain)   
+    call mpp_update_domains(w2f, domain)
                                         call timing_off('COMM_TOTAL')
 
 !$OMP parallel do default(none) shared(is,ie,js,je,kmax,pm,rf_cutoff,w,rf,u,v, &
@@ -1349,7 +1349,7 @@ contains
      enddo
 
      deallocate ( u2f )
-     deallocate ( w2f )  
+     deallocate ( w2f )
 
  end subroutine Rayleigh_Super
 

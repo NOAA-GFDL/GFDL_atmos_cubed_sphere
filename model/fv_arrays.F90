@@ -92,7 +92,7 @@ module fv_arrays_mod
      real(kind=R_GRID), allocatable, dimension(:,:) :: area_u_64, area_v_64
      real(kind=R_GRID), allocatable, dimension(:,:) :: dx6_64, dy6_64
      real, allocatable, dimension(:,:) ::  area_u,  area_v
-     real, allocatable, dimension(:,:) :: rarea_u, rarea_v     
+     real, allocatable, dimension(:,:) :: rarea_u, rarea_v
      real, allocatable, dimension(:,:) ::  dx6,  dy6
      real, allocatable, dimension(:,:) :: rdx6, rdy6
      real, allocatable, dimension(:,:) :: sina_6
@@ -682,7 +682,7 @@ module fv_arrays_mod
                               !< original value before entering the physics; a value of 0.7 roughly
                               !< causes the energy fixer to compensate for the amount of energy changed
                               !< by the physics in GFDL HiRAM or AM3.
-   real    :: tau_w = 0.      !< Time scale (in days) for Rayleigh friction applied to vertical wind 
+   real    :: tau_w = 0.      !< Time scale (in days) for Rayleigh friction applied to vertical wind
    real    :: tau = 0.   !< Time scale (in days) for Rayleigh friction applied to horizontal
                          !< and vertical winds; lost kinetic energy is converted to heat, except
                          !< on nested grids. The default value is 0.0, which disables damping.
@@ -875,7 +875,7 @@ module fv_arrays_mod
    logical :: butterfly_effect = .false.   !< Flip the least-significant-bit of the lowest level temperature
                                            !< at the center of the domain (the center of tile 1), if set to .true.
                                            !< The default value is .false.
-   logical :: molecular_diffusion = .false.  !< Apply Whole Atmosphere Model (WAM) molecular diffusion 
+   logical :: molecular_diffusion = .false.  !< Apply Whole Atmosphere Model (WAM) molecular diffusion
                                              !< developed by Henry Juang
 
    real :: dz_min = 2        !< Minimum thickness depth to  to enforce monotonicity of height to prevent blowup.
@@ -1621,28 +1621,28 @@ contains
     allocate ( Atm%gridstruct%rdxa(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
     allocate ( Atm%gridstruct% dya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
     allocate ( Atm%gridstruct% dya_64(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
-    allocate ( Atm%gridstruct%rdya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) 
+    allocate ( Atm%gridstruct%rdya(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )
 
     if ( Atm%flagstruct%molecular_diffusion ) then
-        allocate ( Atm%gridstruct% area_u_64(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) ) 
-        allocate ( Atm%gridstruct% area_v_64(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) ) 
-        allocate ( Atm%gridstruct% dx6_64(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-        allocate ( Atm%gridstruct% dy6_64(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-        allocate ( Atm%gridstruct% area_u(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) ) 
-        allocate ( Atm%gridstruct% area_v(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) ) 
-        allocate ( Atm%gridstruct% dx6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-        allocate ( Atm%gridstruct% dy6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-        allocate ( Atm%gridstruct%rarea_u(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) ) 
-        allocate ( Atm%gridstruct%rarea_v(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) ) 
-        allocate ( Atm%gridstruct%rdx6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-        allocate ( Atm%gridstruct%rdy6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) ) 
-        allocate ( Atm%gridstruct%sina_6(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
-        allocate ( Atm%gridstruct%delu_6(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
-        allocate ( Atm%gridstruct%delv_6(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
-        allocate ( Atm%gridstruct%delu_5(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
-        allocate ( Atm%gridstruct%delv_5(isd_2d:ied_2d,jsd_2d:jed_2d) ) 
+        allocate ( Atm%gridstruct% area_u_64(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
+        allocate ( Atm%gridstruct% area_v_64(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
+        allocate ( Atm%gridstruct% dx6_64(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
+        allocate ( Atm%gridstruct% dy6_64(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
+        allocate ( Atm%gridstruct% area_u(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
+        allocate ( Atm%gridstruct% area_v(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
+        allocate ( Atm%gridstruct% dx6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
+        allocate ( Atm%gridstruct% dy6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
+        allocate ( Atm%gridstruct%rarea_u(isd_2d:ied_2d  ,jsd_2d:jed_2d+1) )
+        allocate ( Atm%gridstruct%rarea_v(isd_2d:ied_2d+1,jsd_2d:jed_2d  ) )
+        allocate ( Atm%gridstruct%rdx6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
+        allocate ( Atm%gridstruct%rdy6(isd_2d:ied_2d+1,jsd_2d:jed_2d+1) )
+        allocate ( Atm%gridstruct%sina_6(isd_2d:ied_2d,jsd_2d:jed_2d) )
+        allocate ( Atm%gridstruct%delu_6(isd_2d:ied_2d,jsd_2d:jed_2d) )
+        allocate ( Atm%gridstruct%delv_6(isd_2d:ied_2d,jsd_2d:jed_2d) )
+        allocate ( Atm%gridstruct%delu_5(isd_2d:ied_2d,jsd_2d:jed_2d) )
+        allocate ( Atm%gridstruct%delv_5(isd_2d:ied_2d,jsd_2d:jed_2d) )
     endif
-    
+
     allocate ( Atm%gridstruct%grid (isd_2d:ied_2d+1,jsd_2d:jed_2d+1,1:ndims_2d) )
     allocate ( Atm%gridstruct%grid_64 (isd_2d:ied_2d+1,jsd_2d:jed_2d+1,1:ndims_2d) )
     allocate ( Atm%gridstruct%agrid(isd_2d:ied_2d  ,jsd_2d:jed_2d  ,1:ndims_2d) )
@@ -1907,7 +1907,7 @@ contains
        deallocate ( Atm%gridstruct%delu_5 )
        deallocate ( Atm%gridstruct%delv_5 )
     endif
-    
+
     deallocate ( Atm%gridstruct%grid  )
     deallocate ( Atm%gridstruct%agrid )
     deallocate ( Atm%gridstruct%sina )   ! SIN(angle of intersection)

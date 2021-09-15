@@ -1352,7 +1352,7 @@ contains
                                        reg_bc_update_time )
 
          call mpp_update_domains(u, v, domain, gridtype=DGRID_NE)
-    
+
     endif
 
       if ( do_diag_debug_dyn ) then
@@ -2801,7 +2801,7 @@ do 1000 j=jfirst,jlast
                             gridstruct,flagstruct,domain,i_pack,npx,npy,npz, &
                             nq,dt,it,akap,zvir,cv_air)
   type(fv_grid_bounds_type), intent(IN) :: bd
-  real, intent(inout):: pkz(bd%is:bd%ie,bd%js:bd%je,npz)        
+  real, intent(inout):: pkz(bd%is:bd%ie,bd%js:bd%je,npz)
   real, intent(inout):: pt(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
   real, intent(inout):: delp(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
   real, intent(inout):: cappa(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
@@ -2816,9 +2816,6 @@ do 1000 j=jfirst,jlast
   type(fv_flags_type), intent(IN),    target :: flagstruct
   type(domain2d), intent(inout) :: domain
   type(group_halo_update_type), intent(inout) :: i_pack(*)
-
-
-
 
   real :: pkzf(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
   real, dimension (bd%isd:bd%ied,bd%jsd:bd%jed) :: p, t, e
@@ -2897,7 +2894,7 @@ do 1000 j=jfirst,jlast
 ! ----------------
     do k=1, md_layers
 ! ----------------
-     
+
 ! ------- prepare p and t for molecular diffusion coefficients
 
        do j=jsd,jed
@@ -2922,7 +2919,7 @@ do 1000 j=jfirst,jlast
                e(i,j) = 0.5*(w(i,j,k)**2 + 0.5*gridstruct%rsin2(i,j)*(         &
                         u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -&
                        (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*            &
-                        gridstruct%cosa_s(i,j))) 
+                        gridstruct%cosa_s(i,j)))
           enddo
        enddo
 
@@ -2940,7 +2937,7 @@ do 1000 j=jfirst,jlast
                         0.5*(w(i,j,k)**2 + 0.5*gridstruct%rsin2(i,j)*(         &
                         u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -&
                        (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*            &
-                        gridstruct%cosa_s(i,j))) 
+                        gridstruct%cosa_s(i,j)))
 #ifdef MOIST_CAPPA
                t(i,j) = t(i,j) + e(i,j) / &
 #ifdef MULTI_GASES

@@ -321,9 +321,9 @@ module fv_control_mod
      real    , pointer :: delt_max
      real    , pointer :: d_con
      real    , pointer :: ke_bg
-     real    , pointer :: consv_te 
-     real    , pointer :: tau 
-     real    , pointer :: tau_w  
+     real    , pointer :: consv_te
+     real    , pointer :: tau
+     real    , pointer :: tau_w
      real    , pointer :: rf_cutoff
      logical , pointer :: filter_phys
      logical , pointer :: dwind_2d
@@ -873,7 +873,7 @@ module fv_control_mod
        ke_bg                         => Atm%flagstruct%ke_bg
        consv_te                      => Atm%flagstruct%consv_te
        tau                           => Atm%flagstruct%tau
-       tau_w                         => Atm%flagstruct%tau_w   
+       tau_w                         => Atm%flagstruct%tau_w
        rf_cutoff                     => Atm%flagstruct%rf_cutoff
        filter_phys                   => Atm%flagstruct%filter_phys
        dwind_2d                      => Atm%flagstruct%dwind_2d

@@ -1366,10 +1366,10 @@ contains
        nullify( area_v)
        nullify(rarea_u)
        nullify(rarea_v)
-       nullify( dx6) 
-       nullify( dy6) 
-       nullify(rdx6) 
-       nullify(rdy6) 
+       nullify( dx6)
+       nullify( dy6)
+       nullify(rdx6)
+       nullify(rdy6)
     endif
 
     nullify(sina)

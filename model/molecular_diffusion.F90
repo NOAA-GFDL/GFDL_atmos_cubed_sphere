@@ -1,25 +1,25 @@
 !***********************************************************************
-!*                   GNU Lesser General Public License                 
+!*                   GNU Lesser General Public License
 !*
 !* This file is part of the FV3 dynamical core.
 !*
-!* The FV3 dynamical core is free software: you can redistribute it 
+!* The FV3 dynamical core is free software: you can redistribute it
 !* and/or modify it under the terms of the
 !* GNU Lesser General Public License as published by the
-!* Free Software Foundation, either version 3 of the License, or 
+!* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !*
-!* The FV3 dynamical core is distributed in the hope that it will be 
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty 
-!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
 !* You should have received a copy of the GNU Lesser General Public
-!* License along with the FV3 dynamical core.  
+!* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
-!>@brief Molecular diffusion coefficients of 
+!>@brief Molecular diffusion coefficients of
 !>       viscosity (mur), conductivity (lam), and diffusivity (d12)
 !>       and their efolding time effectiveness
 !>@author H.-M. H. Juang, NOAA/NWS/NCEP/EMC
@@ -39,7 +39,7 @@ module molecular_diffusion_mod
 ! </table>
 
       use constants_mod,      only: rdgas, cp_air
-      use fv_mp_mod,          only: is_master 
+      use fv_mp_mod,          only: is_master
       use mpp_mod,            only: stdlog, input_nml_file
       use fms_mod,            only: check_nml_error, open_namelist_file, close_file
       use fv_grid_utils_mod,  only: g_sum
@@ -56,7 +56,7 @@ module molecular_diffusion_mod
 
       integer :: ind_gas_str, ind_gas_end
       integer :: md_layers, md_tadj_layers
-      real tau_visc, tau_cond, tau_diff    
+      real tau_visc, tau_cond, tau_diff
       real md_consv_te
       real md_wait_hr
       real md_wait_sec
@@ -84,7 +84,7 @@ module molecular_diffusion_mod
       subroutine molecular_diffusion_init(ncnst,nwat)
 !--------------------------------------------
 ! molecular diffusion control for each effect from namelist
-! Input: 
+! Input:
 !        ncnst    : number of all prognostic tracers
 !        nwat     : number of water and the end location of water
 !--------------------------------------------
@@ -92,7 +92,7 @@ module molecular_diffusion_mod
 !
       md_wait_sec = md_wait_hr * 3600.0
       md_time = .false.
-      
+
       if( is_master() ) then
         write(*,*) ' molecular_diffusion is on'
         write(*,*) ' molecular_diffusion initial wait seconds ',md_wait_sec
@@ -195,7 +195,7 @@ module molecular_diffusion_mod
           write(*,*) 'ERROR negative d12 a12bz temp plyr s12 ', &
                       d12(n),a12bz,temp(n),plyr(n),s12
         endif
-        
+
         fgas = 1.0
         do i=2,ind_gas_str-1
           fgas = fgas - max(0.0,q(n,i))
@@ -234,7 +234,7 @@ module molecular_diffusion_mod
 
         t69 = temp(n) ** 0.69
         rho = 1e-3 * am * plyr(n)/temp(n) / avgdbz    ! km/m^3
-        
+
         mur(n) = mu * t69 / rho
         lam(n) = la * t69 / rho / cvx
 !       lam(n) = la * t69 / rho / cpx
@@ -276,14 +276,14 @@ module molecular_diffusion_mod
     k=md_tadj_layers
     do j=js,je
        do i=is,ie
-          t(i,j) = pt(i,j,k) 
+          t(i,j) = pt(i,j,k)
        enddo
     enddo
     aave_t1 = g_sum(domain,t,is,ie,js,je,ng,gridstruct%area_64, 1)
     k=md_tadj_layers-1
     do j=js,je
        do i=is,ie
-          t(i,j) = pt(i,j,k) 
+          t(i,j) = pt(i,j,k)
        enddo
     enddo
     ttsave = g_sum(domain,t,is,ie,js,je,ng,gridstruct%area_64, 1)
@@ -293,7 +293,7 @@ module molecular_diffusion_mod
     do k=md_tadj_layers-2,1,-1
        do j=js,je
           do i=is,ie
-             t(i,j) = pt(i,j,k) 
+             t(i,j) = pt(i,j,k)
           enddo
        enddo
        aave_t1 = g_sum(domain,t,is,ie,js,je,ng,gridstruct%area_64, 1)

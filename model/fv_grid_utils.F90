@@ -597,7 +597,7 @@
             enddo
          enddo
       endif
-     
+
       do j=jsd,jed
          do i=isd,ied
             cosa_s(i,j) = cos_sg(i,j,5)
