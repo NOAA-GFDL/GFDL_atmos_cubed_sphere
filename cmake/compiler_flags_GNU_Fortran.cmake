@@ -1,5 +1,5 @@
 # Precision-based Fortran compiler flags
-set(r8_flags "-fdefault-real-8 -fdefault-double-8") # Fortran flags for 64BIT precision
+set(R8_flags "-fdefault-real-8 -fdefault-double-8") # Fortran flags for 64BIT precision
 
 # GNU Fortan
 set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -ggdb -fbacktrace -cpp -fcray-pointer -ffree-line-length-none -fno-range-check ${${kind}_flags}")
