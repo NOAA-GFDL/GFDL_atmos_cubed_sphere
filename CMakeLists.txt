@@ -160,7 +160,9 @@ if(OPENMP)
 endif()
 
 # Obtain compiler-specific flags
-include(fv3_compiler_flags)
+if(NOT UFS_FV3)
+  include(fv3_compiler_flags)
+endif()
 
 set(moduleDir "${CMAKE_CURRENT_BINARY_DIR}/${includeDir}")
 
