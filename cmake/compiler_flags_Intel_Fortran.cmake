@@ -4,7 +4,7 @@ set(r8_flags "-real-size 64") # Fortran flags for 64BIT precision
 set(r8_flags "${r8_flags} -no-prec-div -no-prec-sqrt")
 
 # Intel Fortran
-set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -g -traceback -fpp -fno-alias -auto -safe-cray-ptr -ftz -assume byterecl -nowarn -sox -align array64byte -qno-opt-dynamic-align ${${fms_kind}_flags}")
+set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -g -traceback -fpp -fno-alias -auto -safe-cray-ptr -ftz -assume byterecl -nowarn -sox -align array64byte -qno-opt-dynamic-align ${${kind}_flags}")
 
 set(CMAKE_Fortran_FLAGS_REPRO "-O2 -debug minimal -fp-model consistent -qoverride-limits")
 

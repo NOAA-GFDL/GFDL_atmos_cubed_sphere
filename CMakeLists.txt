@@ -45,16 +45,20 @@ if(use_WRTCOMP)
   endif()
 endif()
 
+if(32BIT)
+  set(kind "r4")
+else()
+  set(kind "r8")
+endif()
+
 if(NOT FMS_FOUND)
   if(32BIT)
     set(FMS_COMPONENTS "R4")
-    set(fms_kind "r4")
   else()
     set(FMS_COMPONENTS "R8")
-    set(fms_kind "r8")
   endif()
   find_package(FMS REQUIRED COMPONENTS ${FMS_COMPONENTS})
-  add_library(fms ALIAS FMS::fms_${fms_kind})
+  add_library(fms ALIAS FMS::fms_${kind})
 endif()
 
 list(APPEND model_srcs
@@ -164,15 +168,11 @@ if(NOT UFS_FV3)
   include(fv3_compiler_flags)
 endif()
 
-set(moduleDir "${CMAKE_CURRENT_BINARY_DIR}/${includeDir}")
-
 add_library(fv3 ${fv3_srcs})
 add_library(FV3::fv3 ALIAS fv3)
 
 set_property(SOURCE model/nh_utils.F90 APPEND_STRING PROPERTY COMPILE_FLAGS "${FAST}")
 set_property(SOURCE model/fv_mapz.F90  APPEND_STRING PROPERTY COMPILE_FLAGS "${FAST}")
-
-set_target_properties(fv3 PROPERTIES COMPILE_FLAGS "${${kind}_flags}")
 
 set_target_properties(fv3 PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/fv3)
 target_include_directories(fv3 INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/fv3>
