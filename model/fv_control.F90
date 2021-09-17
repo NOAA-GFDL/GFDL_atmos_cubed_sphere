@@ -1746,7 +1746,7 @@ module fv_control_mod
     call fv_restart_end(Atm(this_grid), restart_endfcst)
 
 #ifdef MOVING_NEST
-    call fms_io_exit()   !! Force the output of the buffered NC files
+    !call fms_io_exit()   !! Force the output of the buffered NC files
 #endif
 
 
