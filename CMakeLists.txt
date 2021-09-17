@@ -159,9 +159,7 @@ if(OPENMP)
 endif()
 
 # Obtain compiler-specific flags
-if(NOT UFS_FV3)
-  include(fv3_compiler_flags)
-endif()
+include(fv3_compiler_flags)
 
 # Enable -fPIC compiler flag for all targets
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
