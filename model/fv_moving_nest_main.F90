@@ -610,7 +610,7 @@ contains
 
    ! For iterating through physics/surface vector data
    integer :: nb, blen, ix, i_pe, j_pe, i_idx, j_idx
-
+   real(kind=kind_phys)    :: phys_oro
 
    integer, save :: output_step = 0
    
@@ -1105,24 +1105,25 @@ contains
           
              !fv_arrays.F90 oro() !< land fraction (1: all land; 0: all water)
              !real, _ALLOCATABLE :: oro(:,:)      _NULL  !< land fraction (1: all land; 0: all water)
-             Atm(n)%oro(isc:iec, jsc:jec) = mn_static%land_frac_grid(ioffset*x_refine+isc:ioffset*x_refine+iec, joffset*y_refine+jsc:joffset*y_refine+jec)
+             Atm(n)%oro(isc:iec, jsc:jec) = mn_static%land_frac_grid((ioffset-1)*x_refine+isc:(ioffset-1)*x_refine+iec, (joffset-1)*y_refine+jsc:(joffset-1)*y_refine+jec)
           
              !real, _ALLOCATABLE :: sgh(:,:)      _NULL  !< Terrain standard deviation
-             Atm(n)%sgh(isc:iec, jsc:jec) = mn_static%orog_std_grid(ioffset*x_refine+isc:ioffset*x_refine+iec, joffset*y_refine+jsc:joffset*y_refine+jec)
+             Atm(n)%sgh(isc:iec, jsc:jec) = mn_static%orog_std_grid((ioffset-1)*x_refine+isc:(ioffset-1)*x_refine+iec, (joffset-1)*y_refine+jsc:(joffset-1)*y_refine+jec)
           else
                 if (debug_log) print '("[INFO] WDR shift orography data fv_land FALSE npe=",I0)', this_pe
           end if
 
           ! Reset the land sea mask from the hires parent data
           !  Reset the variables from the fix_sfc files
+          !  Reset the oro and oro_uf from the smoothed values calculated above
           do nb = 1,Atm_block%nblks
              blen = Atm_block%blksz(nb)
              do ix = 1, blen
                 i_pe = Atm_block%index(nb)%ii(ix)  
                 j_pe = Atm_block%index(nb)%jj(ix)
                 
-                i_idx = ioffset*x_refine + i_pe
-                j_idx = joffset*y_refine + j_pe
+                i_idx = (ioffset-1)*x_refine + i_pe
+                j_idx = (joffset-1)*y_refine + j_pe
                 
                 IPD_data(nb)%Sfcprop%slmsk(ix) = mn_static%ls_mask_grid(i_idx, j_idx)
                 
@@ -1130,9 +1131,13 @@ contains
                 !  Land Sea Mask has values of 0 for oceans/lakes, 1 for land, 2 for sea ice
                 !  TODO figure out what ifd should be for sea ice
                 if (mn_static%ls_mask_grid(i_idx, j_idx) .eq. 1 ) then
-                   IPD_data(nb)%Sfcprop%ifd(ix) = 0   ! Land
+                   IPD_data(nb)%Sfcprop%ifd(ix) = 0         ! Land
+                   IPD_data(nb)%Sfcprop%oceanfrac(ix) = 0   ! Land -- TODO permit fractions
+                   IPD_data(nb)%Sfcprop%landfrac(ix) = 1    ! Land -- TODO permit fractions
                 else
-                   IPD_data(nb)%Sfcprop%ifd(ix) = 1   ! Ocean
+                   IPD_data(nb)%Sfcprop%ifd(ix) = 1         ! Ocean
+                   IPD_data(nb)%Sfcprop%oceanfrac(ix) = 1   ! Ocean -- TODO permit fractions
+                   IPD_data(nb)%Sfcprop%landfrac(ix) = 0    ! Ocean -- TODO permit fractions
                 end if
 
                 IPD_data(nb)%Sfcprop%tg3(ix) = mn_static%deep_soil_temp_grid(i_idx, j_idx)
@@ -1146,8 +1151,14 @@ contains
                 
                 IPD_data(nb)%Sfcprop%snoalb(ix) = mn_static%max_snow_alb_grid(i_idx, j_idx)
                 ! Add Vis/Near IR black/white sky albedo, monthly
-                
-                
+
+                ! Reset the orography in the physics arrays, using the smoothed values from above
+                phys_oro =  Atm(n)%phis(i_pe, j_pe) / grav
+                !if (phys_oro .gt. 15000.0) then
+                !   phys_oro = 0.0
+                !end if
+                IPD_data(nb)%Sfcprop%oro(ix) = phys_oro
+                IPD_data(nb)%Sfcprop%oro_uf(ix) = phys_oro
                 
              end do
           end do
