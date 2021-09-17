@@ -197,6 +197,9 @@ module fv_diagnostics_mod
  public :: max_vv, get_vorticity, max_uh
  public :: max_vorticity, max_vorticity_hy1, bunkers_vector, helicity_relative_CAPS
  public :: cs3_interpolator, get_height_given_pressure
+#ifdef MOVING_NEST
+ public :: fv_diag_tracker
+#endif
 
  integer, parameter :: MAX_PLEVS = 31
 #ifdef FEWER_PLEVS
@@ -4030,6 +4033,127 @@ contains
     call nullify_domain()
 
  end subroutine fv_diag
+
+#ifdef MOVING_NEST
+ subroutine fv_diag_tracker(Atm, zvir, Time)
+
+    type(fv_atmos_type), intent(inout) :: Atm(:)
+    type(time_type),     intent(in) :: Time
+    real,                intent(in):: zvir
+
+    integer :: isc, iec, jsc, jec, n, ntileMe
+    integer :: isd, ied, jsd, jed, npz, itrac
+    integer :: ngc
+
+    real, allocatable :: a2(:,:),a3(:,:,:),a4(:,:,:), wk(:,:,:), wz(:,:,:)
+    real height(2)
+    integer, parameter:: nplev_tracker=2
+    real:: plevs(nplev_tracker), pout(nplev_tracker)
+    integer:: idg(nplev_tracker), id1(nplev_tracker)
+
+    integer i,j,k, yr, mon, dd, hr, mn, days, seconds, nq, theta_d
+    character(len=128)   :: tname
+
+    height(1) = 5.E3      ! for computing 5-km "pressure"
+    height(2) = 0.        ! for sea-level pressure
+
+    pout(1) = 700 * 1.e2
+    plevs(1) = log( pout(1) )
+    pout(2) = 850 * 1.e2
+    plevs(2) = log( pout(2) )
+
+    ntileMe = size(Atm(:))
+    n = 1
+    isc = Atm(n)%bd%isc; iec = Atm(n)%bd%iec
+    jsc = Atm(n)%bd%jsc; jec = Atm(n)%bd%jec
+    ngc = Atm(n)%ng
+    npz = Atm(n)%npz
+    ptop = Atm(n)%ak(1)
+    nq = size (Atm(n)%q,4)
+
+    isd = Atm(n)%bd%isd; ied = Atm(n)%bd%ied
+    jsd = Atm(n)%bd%jsd; jed = Atm(n)%bd%jed
+
+    fv_time = Time
+    call set_domain(Atm(1)%domain)
+
+    if (.not. allocated(a2)) allocate ( a2(isc:iec,jsc:jec) )
+    if (.not. allocated(wk)) allocate ( wk(isc:iec,jsc:jec,npz) )
+    if (.not. allocated(a3)) allocate ( a3(isc:iec,jsc:jec,nplev_tracker) )
+    if (.not. allocated(wz)) allocate ( wz(isc:iec,jsc:jec,npz+1) )
+
+!    do n = 1, ntileMe
+    n = 1
+       call get_height_field(isc, iec, jsc, jec, ngc, npz, Atm(n)%flagstruct%hydrostatic, Atm(n)%delz,  &
+                             wz, Atm(n)%pt, Atm(n)%q, Atm(n)%peln, zvir)
+
+       call get_pressure_given_height(isc, iec, jsc, jec, ngc, npz, wz, 1, height(2),   &
+                                     Atm(n)%pt(:,:,npz), Atm(n)%peln, a2, 1.)
+       ! sea level pressure in Pa
+       Atm(n)%slp=a2(:,:)
+       call prt_maxmin('slp', Atm(n)%slp, isc, iec, jsc, jec, 0, 1, 1.)
+
+       idg(:) = 1
+       call get_height_given_pressure(isc, iec, jsc, jec, npz, wz, nplev_tracker, idg, plevs, Atm(n)%peln, a3)
+       Atm(n)%z700=a3(isc:iec,jsc:jec,1)
+       Atm(n)%z850=a3(isc:iec,jsc:jec,2)
+       call prt_maxmin('z700', Atm(n)%z700, isc, iec, jsc, jec, 0, 1, 1.)
+       call prt_maxmin('z850', Atm(n)%z850, isc, iec, jsc, jec, 0, 1, 1.)
+
+       call cs3_interpolator(isc,iec,jsc,jec,npz, Atm(n)%ua(isc:iec,jsc:jec,:), nplev_tracker,    &
+                            pout(1:nplev_tracker), wz, Atm(n)%pe(isc:iec,1:npz+1,jsc:jec), idg, a3, -1)
+       Atm(n)%u700=a3(isc:iec,jsc:jec,1)
+       Atm(n)%u850=a3(isc:iec,jsc:jec,2)
+       call prt_maxmin('u700', Atm(n)%u700, isc, iec, jsc, jec, 0, 1, 1.)
+       call prt_maxmin('u850', Atm(n)%u850, isc, iec, jsc, jec, 0, 1, 1.)
+
+       call cs3_interpolator(isc,iec,jsc,jec,npz, Atm(n)%va(isc:iec,jsc:jec,:), nplev_tracker,    &
+                            pout(1:nplev), wz, Atm(n)%pe(isc:iec,1:npz+1,jsc:jec), idg, a3, -1)
+       Atm(n)%v700=a3(isc:iec,jsc:jec,1)
+       Atm(n)%v850=a3(isc:iec,jsc:jec,2)
+       call prt_maxmin('v700', Atm(n)%v700, isc, iec, jsc, jec, 0, 1, 1.)
+       call prt_maxmin('v850', Atm(n)%v850, isc, iec, jsc, jec, 0, 1, 1.)
+
+       call interpolate_z(isc, iec, jsc, jec, npz, 10., wz, Atm(n)%ua(isc:iec,jsc:jec,:), a2)
+       Atm(n)%u10m=a2(isc:iec,jsc:jec)
+       call interpolate_z(isc, iec, jsc, jec, npz, 10., wz, Atm(n)%va(isc:iec,jsc:jec,:), a2)
+       Atm(n)%v10m=a2(isc:iec,jsc:jec)
+       call prt_maxmin('u10m', Atm(n)%u10m, isc, iec, jsc, jec, 0, 1, 1.)
+       call prt_maxmin('v10m', Atm(n)%v10m, isc, iec, jsc, jec, 0, 1, 1.)
+
+       call get_vorticity(isc, iec, jsc, jec, isd, ied, jsd, jed, npz, Atm(n)%u, Atm(n)%v, wk, &
+             Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy, Atm(n)%gridstruct%rarea)
+       call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                     700.e2, Atm(n)%peln, wk, a2)
+       Atm(n)%vort700=a2(:,:)
+       call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+                                     850.e2, Atm(n)%peln, wk, a2)
+       Atm(n)%vort850=a2(:,:)
+       call interpolate_z(isc, iec, jsc, jec, npz, 10., wz, wk, a2)
+       Atm(n)%vort10m=a2(:,:)
+       call prt_maxmin('vort700', Atm(n)%vort700, isc, iec, jsc, jec, 0, 1, 1.)
+       call prt_maxmin('vort850', Atm(n)%vort850, isc, iec, jsc, jec, 0, 1, 1.)
+       call prt_maxmin('vort10m', Atm(n)%vort10m, isc, iec, jsc, jec, 0, 1, 1.)
+
+       do j=jsc,jec
+       do i=isc,iec
+          Atm(n)%spd700(i,j)=sqrt(Atm(n)%u700(i,j)**2 + Atm(n)%v700(i,j)**2)
+          Atm(n)%spd850(i,j)=sqrt(Atm(n)%u850(i,j)**2 + Atm(n)%v850(i,j)**2)
+          Atm(n)%spd10m(i,j)=sqrt(Atm(n)%u10m(i,j)**2 + Atm(n)%v10m(i,j)**2)
+       enddo
+       enddo
+   ! enddo  ! end ntileMe do-loop
+
+    if (allocated(a2)) deallocate(a2)
+    if (allocated(wk)) deallocate(wk)
+    if (allocated(a3)) deallocate(a3)
+    if (allocated(wz)) deallocate(wz)
+
+    call nullify_domain()
+
+ end subroutine fv_diag_tracker
+
+#endif
 
  subroutine wind_max(isc, iec, jsc, jec ,isd, ied, jsd, jed, us, vs, ws_max, domain)
  integer isc, iec, jsc, jec

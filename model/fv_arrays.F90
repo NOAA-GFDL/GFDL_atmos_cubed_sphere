@@ -999,6 +999,17 @@ module fv_arrays_mod
      logical               :: is_moving_nest = .false.
      character(len=120)    :: surface_dir = "  "
      integer               :: terrain_smoother = 1
+     integer               :: vortex_tracker = 0
+     integer               :: ntrack = 1
+     integer               :: corral_x = 5
+     integer               :: corral_y = 5
+
+     integer               :: outatcf_lun = 600
+
+     ! Moving nest related variables
+     integer               :: move_cd_x = 0
+     integer               :: move_cd_y = 0
+     logical               :: do_move = .false.
 #endif
 
 
@@ -1230,6 +1241,55 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: pk  (:,:,:)   _NULL  !< pe**cappa
     real, _ALLOCATABLE :: peln(:,:,:)   _NULL  !< ln(pe)
     real, _ALLOCATABLE :: pkz (:,:,:)   _NULL  !< finite-volume mean pk
+
+#ifdef MOVING_NEST
+! For internal vortex tracker
+    real, _ALLOCATABLE :: vort850(:,:)  _NULL  !< relative vorticity at 850 mb
+    real, _ALLOCATABLE :: spd850(:,:)   _NULL  !< wind speed at 850 mb
+    real, _ALLOCATABLE :: u850(:,:)     _NULL  !< ua at 850 mb
+    real, _ALLOCATABLE :: v850(:,:)     _NULL  !< va at 850 mb
+    real, _ALLOCATABLE :: z850(:,:)     _NULL  !< geopotential height at 850 mb
+    real, _ALLOCATABLE :: vort700(:,:)  _NULL  !< relative vorticity at 700 mb
+    real, _ALLOCATABLE :: spd700(:,:)   _NULL  !< wind speed at 700 mb
+    real, _ALLOCATABLE :: u700(:,:)     _NULL  !< ua at 700 mb
+    real, _ALLOCATABLE :: v700(:,:)     _NULL  !< va at 700 mb
+    real, _ALLOCATABLE :: z700(:,:)     _NULL  !< geopotential height at 700 mb
+    real, _ALLOCATABLE :: vort10m(:,:)  _NULL  !< relative vorticity at 10-m
+    real, _ALLOCATABLE :: spd10m(:,:)   _NULL  !< wind speed at 10-m
+    real, _ALLOCATABLE :: u10m(:,:)     _NULL  !< ua at 10-m
+    real, _ALLOCATABLE :: v10m(:,:)     _NULL  !< va at 10-m
+    real, _ALLOCATABLE :: slp(:,:)      _NULL  !< sea level pressure
+
+! For inline NCEP tracker
+    real, _ALLOCATABLE :: distsq(:,:)             _NULL  !< Square of distance from nest center
+    real, _ALLOCATABLE :: tracker_distsq(:,:)     _NULL  !< Square of distance from tracker fix location
+    real, _ALLOCATABLE :: tracker_angle(:,:)      _NULL  !< Angle to storm center (East=0, North=pi/2, etc.)
+    real, _ALLOCATABLE :: tracker_fixes(:,:)      _NULL  !< Tracker fix information for debugging
+
+    logical :: track_have_guess = .false. !< Is a first guess available?
+    real :: track_guess_lat !< First guess latitude
+    real :: track_guess_lon !< First guess longitude
+    real :: tracker_edge_dist !< Distance from storm center to domain edge
+
+    real :: track_stderr_m1 = -99.9 !< Standard deviation of tracker centers one hour ago
+    real :: track_stderr_m2 = -99.9 !< Standard deviation of tracker centers two hours ago
+    real :: track_stderr_m3 = -99.9 !< Standard deviation of tracker centers three hours ago
+
+    integer :: track_last_hour=0 !< Last completed forecast hour
+
+    real :: tracker_fixlon = -999.0 !< Storm fix longitude according to inline NCEP tracker
+    real :: tracker_fixlat = -999.0 !< Storm fix latitude according to inline NCEP tracker
+    integer :: tracker_ifix = -99 !< Storm fix i location
+    integer :: tracker_jfix = -99 !< Storm fix j location
+
+    real :: tracker_rmw = -99. !< Storm RMW according to inline NCEP tracker
+    real :: tracker_pmin = -99999. !< Storm min MSLP according to inline NCEP tracker
+    real :: tracker_vmax =-99. !< Storm max 10m wind according to inline NCEP tracker
+
+    logical :: tracker_havefix = .false. !< True = storm fix locations are valid
+    logical :: tracker_gave_up = .false. !< True = inline tracker gave up on tracking the storm
+
+#endif
 
 ! For phys coupling:
     real, _ALLOCATABLE :: u_srf(:,:)    _NULL  !< Surface u-wind
@@ -1470,6 +1530,30 @@ contains
     allocate (   Atm%pk(is:ie    ,js:je  , npz+1) )
     allocate ( Atm%peln(is:ie,npz+1,js:je) )
     allocate (  Atm%pkz(is:ie,js:je,npz) )
+
+#ifdef MOVING_NEST
+    ! Allocate internal vortex tracker arrays
+    allocate ( Atm%vort850(is:ie,js:je) )
+    allocate ( Atm%spd850(is:ie,js:je) )
+    allocate ( Atm%u850(is:ie,js:je) )
+    allocate ( Atm%v850(is:ie,js:je) )
+    allocate ( Atm%z850(is:ie,js:je) )
+    allocate ( Atm%vort700(is:ie,js:je) )
+    allocate ( Atm%spd700(is:ie,js:je) )
+    allocate ( Atm%u700(is:ie,js:je) )
+    allocate ( Atm%v700(is:ie,js:je) )
+    allocate ( Atm%z700(is:ie,js:je) )
+    allocate ( Atm%vort10m(is:ie,js:je) )
+    allocate ( Atm%spd10m(is:ie,js:je) )
+    allocate ( Atm%u10m(is:ie,js:je) )
+    allocate ( Atm%v10m(is:ie,js:je) )
+    allocate ( Atm%slp(is:ie,js:je) )
+
+    allocate ( Atm%distsq(is:ie,js:je) )
+    allocate ( Atm%tracker_distsq(is:ie,js:je) )
+    allocate ( Atm%tracker_angle(is:ie,js:je) )
+    allocate ( Atm%tracker_fixes(is:ie,js:je) )
+#endif
 
     allocate ( Atm%u_srf(is:ie,js:je) )
     allocate ( Atm%v_srf(is:ie,js:je) )
@@ -1836,6 +1920,25 @@ contains
     deallocate ( Atm%inline_mp%prei )
     deallocate ( Atm%inline_mp%pres )
     deallocate ( Atm%inline_mp%preg )
+
+#ifdef MOVING_NEST
+    ! Deallocate internal vortex tracker arrays
+    deallocate ( Atm%vort850 )
+    deallocate ( Atm%spd850 )
+    deallocate ( Atm%u850 )
+    deallocate ( Atm%v850 )
+    deallocate ( Atm%z850 )
+    deallocate ( Atm%vort700 )
+    deallocate ( Atm%spd700 )
+    deallocate ( Atm%u700 )
+    deallocate ( Atm%v700 )
+    deallocate ( Atm%z700 )
+    deallocate ( Atm%vort10m )
+    deallocate ( Atm%spd10m )
+    deallocate ( Atm%u10m )
+    deallocate ( Atm%v10m )
+    deallocate ( Atm%slp )
+#endif
 
     deallocate ( Atm%u_srf )
     deallocate ( Atm%v_srf )

@@ -61,7 +61,7 @@ module fv_moving_nest_mod
   
   use block_control_mod,      only : block_control_type
   use fms_mod,                only : mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_ROUTINE, clock_flag_default
-  use mpp_mod,                only : mpp_pe, mpp_sync, mpp_sync_self, mpp_send, mpp_error, FATAL 
+  use mpp_mod,                only : mpp_pe, mpp_sync, mpp_sync_self, mpp_send, mpp_error, NOTE, FATAL
   use mpp_domains_mod,        only : mpp_update_domains, mpp_get_data_domain, mpp_get_global_domain
   use mpp_domains_mod,        only : mpp_define_nest_domains, mpp_shift_nest_domains, nest_domain_type, domain2d
   use mpp_domains_mod,        only : mpp_get_C2F_index, mpp_update_nest_fine
@@ -211,94 +211,6 @@ use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => 
   end interface mn_var_dump_to_netcdf
 
 contains
-
-
-  subroutine permit_move_nest(Atm, a_step, parent_grid_num, child_grid_num, delta_i_c, delta_j_c, do_move)
-    type(fv_atmos_type), intent(in)   :: Atm(:)
-    integer, intent(in)               :: a_step, parent_grid_num, child_grid_num
-    integer, intent(inout)            :: delta_i_c, delta_j_c
-    logical, intent(inout)            :: do_move
-
-    !  Figure out the bounds of the cube face
-    
-    ! x parent bounds: 1 to Atm(parent_grid_num)%flagstruct%npx
-    ! y parent bounds: 1 to Atm(parent_grid_num)%flagstruct%npy
-
-    !  Figure out the bounds of the nest
-
-
-    ! x nest bounds: 1 to Atm(child_grid_num)%flagstruct%npx
-    ! y nest bounds: 1 to Atm(child_grid_num)%flagstruct%npy
-
-    ! Nest refinement: Atm(child_grid_num)%neststruct%refinement
-    ! Nest starting cell in x direction:  Atm(child_grid_num)%neststruct%ioffset
-    ! Nest starting cell in y direction:  Atm(child_grid_num)%neststruct%joffset
-
-    integer      :: nest_i_c, nest_j_c
-    integer      :: nis, nie, njs, nje
-    integer      :: this_pe
-    logical,save :: block_moves = .false.
-    integer      :: edge_buffer = 5
-
-    this_pe = mpp_pe()
-
-    if (block_moves) then
-       delta_i_c = 0 
-       delta_j_c = 0
-       do_move = .false.
-       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest MOVE NEST BLOCKED for rest of run. npe=",I0," a_step=",I0)', this_pe, a_step
-       return
-    end if
-
-    nest_i_c = ( Atm(child_grid_num)%flagstruct%npx - 1 ) / Atm(child_grid_num)%neststruct%refinement
-    nest_j_c = ( Atm(child_grid_num)%flagstruct%npy - 1 ) / Atm(child_grid_num)%neststruct%refinement
-
-    nis = Atm(child_grid_num)%neststruct%ioffset + delta_i_c
-    nie = Atm(child_grid_num)%neststruct%ioffset + nest_i_c + delta_i_c
-
-    njs = Atm(child_grid_num)%neststruct%joffset + delta_j_c
-    nje = Atm(child_grid_num)%neststruct%joffset + nest_j_c + delta_j_c
-
-
-    if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest. npe=",I0," delta_i_c=",I0," nis=",I0," nie=",I0," npx=",I0," a_step=",I0)', this_pe, delta_i_c, nis, nie, Atm(parent_grid_num)%flagstruct%npx, a_step
-    if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest. npe=",I0," delta_j_c=",I0," njs=",I0," nje=",I0," npy=",I0," a_step=",I0)', this_pe, delta_j_c, njs, nje, Atm(parent_grid_num)%flagstruct%npy, a_step
-
-
-    !  Will the nest motion push the nest over one of the edges?
-    !  Handle each direction individually, so that nest could slide along edge
-    !  Started out leaving one extra point at each edge; adjusted to using edge_buffer=5 for safety
-
-    ! Causes a crash if we use .le. 1
-    if (nis .le. edge_buffer) then
-       delta_i_c = 0
-       block_moves = .true.
-       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest nis too small. npe=",I0," nis=",I0)', this_pe, nis
-    end if
-    if (njs .le. edge_buffer) then
-       delta_j_c = 0
-       block_moves = .true.
-       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest njs too small. npe=",I0," njs=",I0)', this_pe, njs
-    end if
-
-    if (nie .ge. Atm(parent_grid_num)%flagstruct%npx - edge_buffer) then
-       delta_i_c = 0
-       block_moves = .true.
-       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest nie too big. npe=",I0," nie=",I0)', this_pe, nie
-    end if
-    if (nje .ge. Atm(parent_grid_num)%flagstruct%npy - edge_buffer) then
-       delta_j_c = 0
-       block_moves = .true.
-       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest nje too big. npe=",I0," nje=",I0)', this_pe, nje
-    end if
-
-    if (delta_i_c .eq. 0 .and. delta_j_c .eq. 0) then
-       do_move = .false.
-       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest MOVE NEST BLOCKED. npe=",I0," a_step=",I0)', this_pe, a_step
-    else
-       if (this_pe .eq. 0) print '("[INFO] WDR permit_move_nest MOVE NEST PERMITTED. npe=",I0," a_step=",I0)', this_pe, a_step
-    end if
-
-  end subroutine permit_move_nest
 
   !!===================================================================================== 
   !! Step 1.9 -- Allocate and fill the temporary variable(s)

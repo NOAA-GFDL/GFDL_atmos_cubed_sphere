@@ -185,6 +185,10 @@ use fv_fill_mod,        only: fill_gfs
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
+#ifdef MOVING_NEST
+use fv_diagnostics_mod, only: fv_diag_tracker
+use fv_tracker_mod,     only: fv_tracker_init, fv_tracker_center, fv_tracker_post_move
+#endif
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
@@ -265,6 +269,7 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
   integer :: nq                       !  number of transported tracers
   integer :: sec, seconds, days
   integer :: id_dynam, id_fv_diag, id_subgridz
+  integer :: id_fv_tracker
 
 
   logical :: cold_start = .false.     !  used in initial condition
@@ -472,6 +477,7 @@ contains
    id_fv_diag   = mpp_clock_id ('FV Diag',     flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
 #ifdef MOVING_NEST
+   id_fv_tracker= mpp_clock_id ('FV tracker',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
    
    !! TODO Restructure to remove circular dependency between modules
    !!call fv_moving_nest_init_clocks()
@@ -1798,6 +1804,29 @@ contains
 
      call mpp_clock_end(id_fv_diag)
    endif
+
+#ifdef MOVING_NEST
+  !---- FV internal vortex tracker -----
+   if ( Atm(mygrid)%neststruct%is_moving_nest ) then
+   if ( Atm(mygrid)%neststruct%vortex_tracker .eq. 2 .or. &
+        Atm(mygrid)%neststruct%vortex_tracker .eq. 6 .or. &
+        Atm(mygrid)%neststruct%vortex_tracker .eq. 7 ) then
+
+   fv_time = Time_next
+   call get_time (fv_time, seconds,  days)
+   call get_time (Time_step_atmos, sec)
+   if (mod(seconds,Atm(mygrid)%neststruct%ntrack*sec) .eq. 0) then
+     call mpp_clock_begin(id_fv_tracker)
+     call timing_on('FV_TRACKER')
+     call fv_diag_tracker(Atm(mygrid:mygrid), zvir, fv_time)
+     call fv_tracker_center(Atm(mygrid), fv_time)
+     call timing_off('FV_TRACKER')
+     call mpp_clock_end(id_fv_tracker)
+   endif
+
+   endif
+   endif
+#endif
 
  end subroutine atmosphere_state_update
 
