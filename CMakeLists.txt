@@ -163,6 +163,9 @@ if(NOT UFS_FV3)
   include(fv3_compiler_flags)
 endif()
 
+# Enable -fPIC compiler flag for all targets
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 add_library(fv3 ${fv3_srcs})
 add_library(FV3::fv3 ALIAS fv3)
 
