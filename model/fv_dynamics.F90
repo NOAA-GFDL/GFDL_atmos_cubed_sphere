@@ -145,6 +145,8 @@ module fv_dynamics_mod
    use boundary_mod,        only: nested_grid_BC_apply_intT
    use fv_arrays_mod,       only: fv_grid_type, fv_flags_type, fv_atmos_type, fv_nest_type, fv_diag_type, fv_grid_bounds_type, inline_mp_type
    use fv_nwp_nudge_mod,    only: do_adiabatic_init
+   use time_manager_mod,    only: get_time
+
 #ifdef MULTI_GASES
    use multi_gases_mod,  only:  virq, vicpq, virqd, vicpqd
 #endif
@@ -177,7 +179,7 @@ contains
                         ps, pe, pk, peln, pkz, phis, q_con, omga, ua, va, uc, vc,     &
                         ak, bk, mfx, mfy, cx, cy, ze0, hybrid_z,                      &
                         gridstruct, flagstruct, neststruct, idiag, bd,                &
-                        parent_grid, domain, diss_est, inline_mp, time_total)
+                        parent_grid, domain, diss_est, inline_mp)
 
     use mpp_mod,           only: FATAL, mpp_error
     use ccpp_static_api,   only: ccpp_physics_timestep_init,    &
@@ -193,7 +195,6 @@ contains
     real, intent(IN) :: consv_te
     real, intent(IN) :: kappa, cp_air
     real, intent(IN) :: zvir, ptop
-    real, intent(IN), optional :: time_total
 
     integer, intent(IN) :: npx
     integer, intent(IN) :: npy
@@ -287,6 +288,8 @@ contains
       integer :: isd, ied, jsd, jed
       real    :: dt2
       integer :: ierr
+      real :: time_total
+      integer :: seconds, days
 
       ccpp_associate: associate( cappa     => CCPP_interstitial%cappa,     &
                                  dp1       => CCPP_interstitial%te0,       &
@@ -328,7 +331,11 @@ contains
       call init_ijk_mem(isd,ied, jsd,jed, npz, kapad, kappa)
 #endif
 
-      if (flagstruct%molecular_diffusion .and. time_offset .lt. 0.0) time_offset = time_total
+      if (flagstruct%molecular_diffusion ) then
+         call get_time(fv_time, seconds, days)
+         time_total = seconds + 86400. * days
+         if( time_offset .lt. 0.0) time_offset = time_total
+      endif
 
       !We call this BEFORE converting pt to virtual potential temperature,
       !since we interpolate on (regular) temperature rather than theta.
