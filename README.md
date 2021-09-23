@@ -31,6 +31,8 @@ The top level directory structure groups source code and input files as follow:
 | ```driver/```        | contains drivers used by different models/modeling systems |
 | ```tools/```         | contains source code of tools used within the core |
 | ```docs/```          | contains documentation for the FV3 dynamical core, and Python notebooks demonstrating basic capabilities. |
+| ```CMakeLists.txt``` | is the main project CMakeLists.txt file |
+| ```cmake/```         | contains code to build FV3 dynamical core with CMake |
 
 # Disclaimer
 
