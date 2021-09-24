@@ -1384,7 +1384,7 @@ contains
     write(res_str, '(I0)'), Atm(1)%npx - 1 
 
     if (first_nest_move) then
-       print '("[INFO] WDR mn_latlon_load_parent READING static coarse file on npe=",I0)', this_pe
+       if (debug_log) print '("[INFO] WDR mn_latlon_load_parent READING static coarse file on npe=",I0)', this_pe
        call load_nest_latlons_from_nc(trim(Atm(child_grid_num)%neststruct%surface_dir) //  '/C' // trim(res_str) //  '_grid.tile6.nc', &
             Atm(1)%npx, Atm(1)%npy, 1, &
             parent_geo, &
@@ -1616,7 +1616,7 @@ contains
        orog_var_name = 'orog_raw'
     end if
 
-    print '("[INFO] WDR NCREAD LOFC mn_orog_read_hires_parent npe=",I0,I4,I4,I4,I4," ",A12," ",A128)', this_pe, fp_nx, fp_ny, mid_nx,mid_ny, orog_var_name, nc_filename
+    if (debug_log) print '("[INFO] WDR NCREAD LOFC mn_orog_read_hires_parent npe=",I0,I4,I4,I4,I4," ",A12," ",A128)', this_pe, fp_nx, fp_ny, mid_nx,mid_ny, orog_var_name, nc_filename
 
     call alloc_read_data(nc_filename, orog_var_name, fp_nx, fp_ny, orog_grid)
     call alloc_read_data(nc_filename, 'stddev', fp_nx, fp_ny, orog_std_grid)  ! Not needed

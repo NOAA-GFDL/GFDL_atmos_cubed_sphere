@@ -1884,7 +1884,7 @@ contains
          delta_j_c = joffset - prev_joffset
       end if
 
-      print '("[INFO] WDR setup_aligned_nest fv_grid_tools.F90. npe=",I0," delta_i_c=",I0," delta_j_c=",I0," ioffset=",I0," joffset=",I0)', this_pe, delta_i_c, delta_j_c, ioffset, joffset
+      if (debug_log) print '("[INFO] WDR setup_aligned_nest fv_grid_tools.F90. npe=",I0," delta_i_c=",I0," delta_j_c=",I0," ioffset=",I0," joffset=",I0)', this_pe, delta_i_c, delta_j_c, ioffset, joffset
 
       call mpp_get_data_domain( Atm%parent_grid%domain, &
            isd_p,  ied_p,  jsd_p,  jed_p  )
