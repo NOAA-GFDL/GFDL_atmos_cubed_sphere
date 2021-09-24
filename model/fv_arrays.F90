@@ -29,6 +29,15 @@ module fv_arrays_mod
   use horiz_interp_type_mod, only: horiz_interp_type
   use mpp_mod,               only: mpp_broadcast
   use platform_mod,          only: r8_kind
+
+#ifdef MOVING_NEST
+#ifdef GFS_TYPES
+use GFS_typedefs,           only: kind_phys
+#else
+use IPD_typedefs,           only: kind_phys => IPD_kind_phys
+#endif
+#endif
+
   public
 
   integer, public, parameter :: R_GRID = r8_kind
@@ -1184,6 +1193,81 @@ module fv_arrays_mod
                ,is_west_uvw  ,ie_west_uvw  ,js_west_uvw  ,je_west_uvw
 
   end type fv_regional_bc_bounds_type
+
+#ifdef MOVING_NEST
+  type fv_moving_nest_prog_type
+     real, _ALLOCATABLE                  :: delz(:,:,:)      _NULL   !< layer thickness (meters)
+  end type fv_moving_nest_prog_type
+
+
+  type fv_moving_nest_physics_type
+     real, _ALLOCATABLE                  :: ts(:,:)          _NULL   !< 2D skin temperature/SST
+     real (kind=kind_phys), _ALLOCATABLE :: smc (:,:,:)      _NULL   !< soil moisture content
+     real (kind=kind_phys), _ALLOCATABLE :: stc (:,:,:)      _NULL   !< soil temperature
+     real (kind=kind_phys), _ALLOCATABLE :: slc (:,:,:)      _NULL   !< soil liquid water content
+     
+     real (kind=kind_phys), _ALLOCATABLE :: u10m (:,:)       _NULL   !< 10m u wind (a-grid?) 
+     real (kind=kind_phys), _ALLOCATABLE :: v10m (:,:)       _NULL   !< 10m v wind (a-grid?) 
+     real (kind=kind_phys), _ALLOCATABLE :: hprime (:,:,:)   _NULL   !< orographic metrics (maybe standard deviation?)
+     
+     real (kind=kind_phys), _ALLOCATABLE :: tprcp (:,:)      _NULL   !< total (of all precip types) precipitation rate
+     
+     real (kind=kind_phys), _ALLOCATABLE :: zorl (:,:)       _NULL   !< roughness length
+     real (kind=kind_phys), _ALLOCATABLE :: zorll (:,:)      _NULL   !< land roughness length
+     !real (kind=kind_phys), _ALLOCATABLE :: zorli (:,:)     _NULL   !< ice surface roughness length ! TODO do we need this?
+     real (kind=kind_phys), _ALLOCATABLE :: zorlw (:,:)      _NULL   !< wave surface roughness length
+     real (kind=kind_phys), _ALLOCATABLE :: zorlo (:,:)      _NULL   !< ocean surface roughness length in cm
+     
+     real (kind=kind_phys), _ALLOCATABLE :: alvsf(:,:)       _NULL   !< visible black sky albedo
+     real (kind=kind_phys), _ALLOCATABLE :: alvwf(:,:)       _NULL   !< visible white sky albedo
+     real (kind=kind_phys), _ALLOCATABLE :: alnsf(:,:)       _NULL   !< near IR black sky albedo
+     real (kind=kind_phys), _ALLOCATABLE :: alnwf(:,:)       _NULL   !< near IR white sky albedo
+     
+     real (kind=kind_phys), _ALLOCATABLE :: facsf(:,:)       _NULL   !< fractional coverage for strong zenith angle albedo
+     real (kind=kind_phys), _ALLOCATABLE :: facwf(:,:)       _NULL   !< fractional coverage for strong zenith angle albedo
+     
+     real (kind=kind_phys), _ALLOCATABLE :: canopy (:,:)     _NULL   !< canopy water content
+     real (kind=kind_phys), _ALLOCATABLE :: vegfrac (:,:)    _NULL   !< vegetation fraction
+     real (kind=kind_phys), _ALLOCATABLE :: uustar (:,:)     _NULL   !< u* wind in similarity theory
+     real (kind=kind_phys), _ALLOCATABLE :: shdmin (:,:)     _NULL   !< min fractional coverage of green vegetation 
+     real (kind=kind_phys), _ALLOCATABLE :: shdmax (:,:)     _NULL   !< max fractional coverage of green vegetation 
+     real (kind=kind_phys), _ALLOCATABLE :: tsfco (:,:)      _NULL   !< surface temperature ocean
+     real (kind=kind_phys), _ALLOCATABLE :: tsfcl (:,:)      _NULL   !< surface temperature land
+     real (kind=kind_phys), _ALLOCATABLE :: tsfc (:,:)       _NULL   !< surface temperature
+     
+     real (kind=kind_phys), _ALLOCATABLE :: cv  (:,:)        _NULL   !< fraction of convective cloud
+     real (kind=kind_phys), _ALLOCATABLE :: cvt (:,:)        _NULL   !< convective cloud top pressure
+     real (kind=kind_phys), _ALLOCATABLE :: cvb (:,:)        _NULL   !< convective cloud bottom pressure
+     
+     real (kind=kind_phys), _ALLOCATABLE :: phy_f2d (:,:,:)  _NULL   !< 2D physics variables
+     real (kind=kind_phys), _ALLOCATABLE :: phy_f3d(:,:,:,:) _NULL   !< 3D physics variables
+     
+     ! NSST Variables
+     
+     real (kind=kind_phys), _ALLOCATABLE :: tref (:,:)       _NULL   !< reference temperature for NSSTM
+     real (kind=kind_phys), _ALLOCATABLE :: z_c (:,:)        _NULL   !< coefficient for NSSTM
+     real (kind=kind_phys), _ALLOCATABLE :: c_0 (:,:)        _NULL   !< coefficient for NSSTM
+     real (kind=kind_phys), _ALLOCATABLE :: c_d (:,:)        _NULL   !< coefficient for NSSTM
+     real (kind=kind_phys), _ALLOCATABLE :: w_0 (:,:)        _NULL   !< coefficient for NSSTM
+     real (kind=kind_phys), _ALLOCATABLE :: w_d (:,:)        _NULL   !< coefficient for NSSTM
+     real (kind=kind_phys), _ALLOCATABLE :: xt (:,:)         _NULL   !< heat content  for NSSTM
+     real (kind=kind_phys), _ALLOCATABLE :: xs (:,:)         _NULL   !< salinity for NSSTM
+     real (kind=kind_phys), _ALLOCATABLE :: xu (:,:)         _NULL   !< u current constant for NSSTM
+     real (kind=kind_phys), _ALLOCATABLE :: xv (:,:)         _NULL   !< v current constant for NSSTM
+     real (kind=kind_phys), _ALLOCATABLE :: xz (:,:)         _NULL   !< DTL thickness for NSSTM
+     real (kind=kind_phys), _ALLOCATABLE :: zm (:,:)         _NULL   !< MXL for NSSTM
+     real (kind=kind_phys), _ALLOCATABLE :: xtts (:,:)       _NULL   !< d(xt)/d(ts) for NSSTM
+     real (kind=kind_phys), _ALLOCATABLE :: xzts (:,:)       _NULL   !< d(xz)/d(ts) for NSSTM
+     real (kind=kind_phys), _ALLOCATABLE :: d_conv (:,:)     _NULL   !< think of free convection layer for NSSTM
+     ! real (kind=kind_phys), _ALLOCATABLE :: ifd (:,:)      _NULL   !< index to start DTM run  for NSSTM   ! TODO Probably can't interpolate an index.  
+     !  IFD values are 0 for land, and 1 for oceans/lakes -- reverse of the land sea mask
+     !  Land Sea Mask has values of 0 for oceans/lakes, 1 for land, 2 for sea ice
+     real (kind=kind_phys), _ALLOCATABLE :: dt_cool (:,:)    _NULL   !< sub-layer cooling amount for NSSTM
+     real (kind=kind_phys), _ALLOCATABLE :: qrain (:,:)      _NULL   !< sensible heat flux due to rainfall for NSSTM 
+     
+  end type fv_moving_nest_physics_type
+#endif
+
   type fv_atmos_type
 
      logical :: allocated = .false.
@@ -1243,6 +1327,9 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: pkz (:,:,:)   _NULL  !< finite-volume mean pk
 
 #ifdef MOVING_NEST
+    type(fv_moving_nest_prog_type)    :: mn_prog
+    type(fv_moving_nest_physics_type) :: mn_phys
+
 ! For internal vortex tracker
     real, _ALLOCATABLE :: vort850(:,:)  _NULL  !< relative vorticity at 850 mb
     real, _ALLOCATABLE :: spd850(:,:)   _NULL  !< wind speed at 850 mb
@@ -2109,6 +2196,11 @@ contains
 
     end if
 
+#ifdef MOVING_NEST
+    call deallocate_fv_moving_nest_prog_type(Atm%mn_prog)
+    call deallocate_fv_moving_nest_physics_type(Atm%mn_phys)
+#endif
+
     if (Atm%flagstruct%grid_type < 4) then
        if(allocated(Atm%grid_global)) deallocate(Atm%grid_global)
     end if
@@ -2251,6 +2343,243 @@ subroutine deallocate_fv_nest_BC_type_3d(BC)
   BC%allocated = .false.
 
 end subroutine deallocate_fv_nest_BC_type_3d
+
+#ifdef MOVING_NEST
+
+  subroutine  allocate_fv_moving_nest_prog_type(isd, ied, jsd, jed, npz, mn_prog)
+    integer, intent(in)                           :: isd, ied, jsd, jed, npz
+    type(fv_moving_nest_prog_type), intent(inout) :: mn_prog
+    
+    allocate ( mn_prog%delz(isd:ied, jsd:jed, 1:npz) )
+    mn_prog%delz = +99999.9
+
+  end subroutine allocate_fv_moving_nest_prog_type
+
+  subroutine  deallocate_fv_moving_nest_prog_type(mn_prog)
+    type(fv_moving_nest_prog_type), intent(inout) :: mn_prog
+    
+    if (allocated(mn_prog%delz)) deallocate(mn_prog%delz)
+
+  end subroutine deallocate_fv_moving_nest_prog_type
+
+  subroutine  allocate_fv_moving_nest_physics_type(isd, ied, jsd, jed, npz, move_physics, move_nsst, lsoil, nmtvr, levs, ntot2d, ntot3d, mn_phys)
+    integer, intent(in)                           :: isd, ied, jsd, jed, npz
+    logical, intent(in)                           :: move_physics, move_nsst
+    integer, intent(in)                           :: lsoil, nmtvr, levs, ntot2d, ntot3d    ! From IPD_Control
+    type(fv_moving_nest_physics_type), intent(inout) :: mn_phys
+
+
+    ! The local/temporary variables need to be allocated to the larger data (compute + halos) domain so that the nest motion code has halos to use
+
+    allocate ( mn_phys%ts(isd:ied, jsd:jed) )
+
+    if (move_physics) then
+       allocate ( mn_phys%smc(isd:ied, jsd:jed, lsoil) )
+       allocate ( mn_phys%stc(isd:ied, jsd:jed, lsoil) )
+       allocate ( mn_phys%slc(isd:ied, jsd:jed, lsoil) )
+
+       allocate ( mn_phys%u10m(isd:ied, jsd:jed) )
+       allocate ( mn_phys%v10m(isd:ied, jsd:jed) )
+       allocate ( mn_phys%tprcp(isd:ied, jsd:jed) )
+
+       allocate ( mn_phys%hprime(isd:ied, jsd:jed, nmtvr) )
+       
+       allocate ( mn_phys%zorl(isd:ied, jsd:jed) )
+       allocate ( mn_phys%zorll(isd:ied, jsd:jed) )
+       allocate ( mn_phys%zorlo(isd:ied, jsd:jed) )
+       allocate ( mn_phys%zorlw(isd:ied, jsd:jed) )
+
+       allocate ( mn_phys%alvsf(isd:ied, jsd:jed) )
+       allocate ( mn_phys%alvwf(isd:ied, jsd:jed) )
+       allocate ( mn_phys%alnsf(isd:ied, jsd:jed) )
+       allocate ( mn_phys%alnwf(isd:ied, jsd:jed) )
+
+       allocate ( mn_phys%facsf(isd:ied, jsd:jed) )
+       allocate ( mn_phys%facwf(isd:ied, jsd:jed) )
+       
+       allocate ( mn_phys%canopy(isd:ied, jsd:jed) )
+       allocate ( mn_phys%vegfrac(isd:ied, jsd:jed) )
+       allocate ( mn_phys%uustar(isd:ied, jsd:jed) )
+       allocate ( mn_phys%shdmin(isd:ied, jsd:jed) )
+       allocate ( mn_phys%shdmax(isd:ied, jsd:jed) )
+       allocate ( mn_phys%tsfco(isd:ied, jsd:jed) )
+       allocate ( mn_phys%tsfcl(isd:ied, jsd:jed) )
+       allocate ( mn_phys%tsfc(isd:ied, jsd:jed) )
+       
+       allocate ( mn_phys%cv(isd:ied, jsd:jed) )
+       allocate ( mn_phys%cvt(isd:ied, jsd:jed) )
+       allocate ( mn_phys%cvb(isd:ied, jsd:jed) )
+       
+       allocate ( mn_phys%phy_f2d(isd:ied, jsd:jed, ntot2d) )
+       allocate ( mn_phys%phy_f3d(isd:ied, jsd:jed, levs, ntot3d) )
+    end if
+
+    if (move_nsst) then
+       allocate ( mn_phys%tref(isd:ied, jsd:jed) )
+       allocate ( mn_phys%z_c(isd:ied, jsd:jed) )
+       allocate ( mn_phys%c_0(isd:ied, jsd:jed) )
+       allocate ( mn_phys%c_d(isd:ied, jsd:jed) )
+       allocate ( mn_phys%w_0(isd:ied, jsd:jed) )
+       allocate ( mn_phys%w_d(isd:ied, jsd:jed) )
+       allocate ( mn_phys%xt(isd:ied, jsd:jed) ) 
+       allocate ( mn_phys%xs(isd:ied, jsd:jed) )
+       allocate ( mn_phys%xu(isd:ied, jsd:jed) )
+       allocate ( mn_phys%xv(isd:ied, jsd:jed) )
+       allocate ( mn_phys%xz(isd:ied, jsd:jed) )
+       allocate ( mn_phys%zm(isd:ied, jsd:jed) )
+       allocate ( mn_phys%xtts(isd:ied, jsd:jed) )
+       allocate ( mn_phys%xzts(isd:ied, jsd:jed) )
+       allocate ( mn_phys%d_conv(isd:ied, jsd:jed) )
+       !allocate ( mn_phys%ifd(isd:ied, jsd:jed) )
+       allocate ( mn_phys%dt_cool(isd:ied, jsd:jed) )
+       allocate ( mn_phys%qrain(isd:ied, jsd:jed) )
+    end if
+
+
+    mn_phys%ts = +99999.9
+    if (move_physics) then
+       mn_phys%smc = +99999.9
+       mn_phys%stc = +99999.9
+       mn_phys%slc = +99999.9
+
+       mn_phys%u10m = +99999.9
+       mn_phys%v10m = +99999.9
+       mn_phys%tprcp = +99999.9
+
+       mn_phys%hprime = +99999.9
+       
+       mn_phys%zorl = +99999.9
+       mn_phys%zorll = +99999.9
+       mn_phys%zorlo = +99999.9
+       mn_phys%zorlw = +99999.9
+
+       mn_phys%alvsf = +99999.9
+       mn_phys%alvwf = +99999.9
+       mn_phys%alnsf = +99999.9
+       mn_phys%alnwf = +99999.9
+
+       mn_phys%facsf = +99999.9
+       mn_phys%facwf = +99999.9
+       
+       mn_phys%canopy = +99999.9
+       mn_phys%vegfrac = +99999.9
+       mn_phys%uustar = +99999.9
+       mn_phys%shdmin = +99999.9
+       mn_phys%shdmax = +99999.9
+       mn_phys%tsfco = +99999.9
+       mn_phys%tsfcl = +99999.9
+       mn_phys%tsfc = +99999.9
+       
+       mn_phys%cv = +99999.9
+       mn_phys%cvt = +99999.9
+       mn_phys%cvb = +99999.9
+       
+       mn_phys%phy_f2d = +99999.9
+       mn_phys%phy_f3d = +99999.9
+    end if 
+
+    if (move_nsst) then
+       mn_phys%tref = +99999.9
+       mn_phys%z_c = +99999.9
+       mn_phys%c_0 = +99999.9
+       mn_phys%c_d = +99999.9
+       mn_phys%w_0 = +99999.9
+       mn_phys%w_d = +99999.9
+       mn_phys%xt = +99999.9 
+       mn_phys%xs = +99999.9
+       mn_phys%xu = +99999.9
+       mn_phys%xv = +99999.9
+       mn_phys%xz = +99999.9
+       mn_phys%zm = +99999.9
+       mn_phys%xtts = +99999.9
+       mn_phys%xzts = +99999.9
+       mn_phys%d_conv = +99999.9
+       !mn_phys%ifd = +99999.9
+       mn_phys%dt_cool = +99999.9
+       mn_phys%qrain = +99999.9
+    end if
+
+  end subroutine allocate_fv_moving_nest_physics_type
+
+
+
+  subroutine  deallocate_fv_moving_nest_physics_type(mn_phys)
+    type(fv_moving_nest_physics_type), intent(inout) :: mn_phys
+
+    if (allocated(mn_phys%ts)) then
+       deallocate ( mn_phys%ts )
+    else
+       ! If ts was not allocated, then none of this structure was allocated.
+       return
+    end if
+
+    !  if move_phys
+    if (allocated(mn_phys%smc)) then
+       deallocate( mn_phys%smc )
+       deallocate( mn_phys%stc )
+       deallocate( mn_phys%slc )
+
+       deallocate( mn_phys%u10m )
+       deallocate( mn_phys%v10m )
+       deallocate( mn_phys%tprcp )
+
+       deallocate( mn_phys%hprime )
+       
+       deallocate( mn_phys%zorl )
+       deallocate( mn_phys%zorll )
+       deallocate( mn_phys%zorlo )
+       deallocate( mn_phys%zorlw )
+
+       deallocate( mn_phys%alvsf )
+       deallocate( mn_phys%alvwf )
+       deallocate( mn_phys%alnsf )
+       deallocate( mn_phys%alnwf )
+
+       deallocate( mn_phys%facsf )
+       deallocate( mn_phys%facwf )
+       
+       deallocate( mn_phys%canopy )
+       deallocate( mn_phys%vegfrac )
+       deallocate( mn_phys%uustar )
+       deallocate( mn_phys%shdmin )
+       deallocate( mn_phys%shdmax )
+       deallocate( mn_phys%tsfco )
+       deallocate( mn_phys%tsfcl )
+       deallocate( mn_phys%tsfc )
+       
+       deallocate( mn_phys%cv )
+       deallocate( mn_phys%cvt )
+       deallocate( mn_phys%cvb )
+       
+       deallocate( mn_phys%phy_f2d )
+       deallocate( mn_phys%phy_f3d )
+    end if
+
+    ! if move_nsst
+    if (allocated( mn_phys%tref )) then
+       deallocate( mn_phys%tref )
+       deallocate( mn_phys%z_c )
+       deallocate( mn_phys%c_0 )
+       deallocate( mn_phys%c_d )
+       deallocate( mn_phys%w_0 )
+       deallocate( mn_phys%w_d )
+       deallocate( mn_phys%xt ) 
+       deallocate( mn_phys%xs )
+       deallocate( mn_phys%xu )
+       deallocate( mn_phys%xv )
+       deallocate( mn_phys%xz )
+       deallocate( mn_phys%zm )
+       deallocate( mn_phys%xtts )
+       deallocate( mn_phys%xzts )
+       deallocate( mn_phys%d_conv )
+       !deallocate( mn_phys%ifd )
+       deallocate( mn_phys%dt_cool )
+       deallocate( mn_phys%qrain )
+    end if
+
+  end subroutine deallocate_fv_moving_nest_physics_type
+
+#endif
 
 
 end module fv_arrays_mod

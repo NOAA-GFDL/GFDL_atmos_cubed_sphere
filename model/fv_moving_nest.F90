@@ -84,6 +84,7 @@ use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => 
   use field_manager_mod,      only: MODEL_ATMOS
   use fms_io_mod,             only: read_data, write_data, get_global_att_value, fms_io_init, fms_io_exit
   use fv_arrays_mod,          only: fv_atmos_type, fv_nest_type, fv_grid_type, R_GRID
+  use fv_arrays_mod,          only: fv_moving_nest_prog_type, fv_moving_nest_physics_type
   use fv_arrays_mod,          only: allocate_fv_nest_bc_type, deallocate_fv_nest_bc_type
   use fv_grid_tools_mod,      only: init_grid
   use fv_grid_utils_mod,      only: grid_utils_init, ptop_min, dist2side_latlon
@@ -96,7 +97,7 @@ use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => 
   use fv_moving_nest_utils_mod,  only: alloc_halo_buffer, load_nest_latlons_from_nc, grid_geometry, output_grid_to_nc, find_nest_alignment
   use fv_moving_nest_utils_mod,  only: fill_nest_from_buffer, fill_nest_from_buffer_cell_center, fill_nest_from_buffer_nearest_neighbor
   use fv_moving_nest_utils_mod,  only: fill_nest_halos_from_parent, fill_grid_from_supergrid, fill_weight_grid
-  use fv_moving_nest_utils_mod,  only: load_nest_orog_from_nc, alloc_read_data
+  use fv_moving_nest_utils_mod,  only: alloc_read_data
 
   implicit none
 
@@ -113,71 +114,6 @@ use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => 
 #else
   real, parameter:: real_snan=x'FFF7FFFFFFFFFFFF'
 #endif
-
-  real, allocatable ::  delz_local(:,:,:)    !< layer thickness (meters)
-  real, allocatable ::  ts_local(:,:)        !< 2D skin temperature/SST
-  real (kind=kind_phys), allocatable :: smc_local (:,:,:)  !< soil moisture content
-  real (kind=kind_phys), allocatable :: stc_local (:,:,:)  !< soil temperature
-  real (kind=kind_phys), allocatable :: slc_local (:,:,:)  !< soil liquid water content
-
-  real (kind=kind_phys), allocatable :: u10m_local (:,:)    !< 10m u wind (a-grid?) 
-  real (kind=kind_phys), allocatable :: v10m_local (:,:)    !< 10m v wind (a-grid?) 
-  real (kind=kind_phys), allocatable :: hprime_local (:,:,:)    !< orographic metrics (maybe standard deviation?)
-
-  real (kind=kind_phys), allocatable :: tprcp_local (:,:)    !< total (of all precip types) precipitation rate
-  
-  real (kind=kind_phys), allocatable :: zorl_local (:,:)    !< roughness length
-
-  real (kind=kind_phys), allocatable :: alvsf_local(:,:)    !< visible black sky albedo
-  real (kind=kind_phys), allocatable :: alvwf_local(:,:)    !< visible white sky albedo
-  real (kind=kind_phys), allocatable :: alnsf_local(:,:)    !< near IR black sky albedo
-  real (kind=kind_phys), allocatable :: alnwf_local(:,:)    !< near IR white sky albedo
-
-  real (kind=kind_phys), allocatable :: facsf_local(:,:)    !< fractional coverage for strong zenith angle albedo
-  real (kind=kind_phys), allocatable :: facwf_local(:,:)    !< fractional coverage for strong zenith angle albedo
-  
-  real (kind=kind_phys), allocatable :: canopy_local (:,:)    !< canopy water content
-  real (kind=kind_phys), allocatable :: vegfrac_local (:,:)   !< vegetation fraction
-  real (kind=kind_phys), allocatable :: uustar_local (:,:)    !< u* wind in similarity theory
-  real (kind=kind_phys), allocatable :: shdmin_local (:,:)    !< min fractional coverage of green vegetation 
-  real (kind=kind_phys), allocatable :: shdmax_local (:,:)    !< max fractional coverage of green vegetation 
-  real (kind=kind_phys), allocatable :: zorll_local (:,:)     !< land roughness length
-  !real (kind=kind_phys), allocatable :: zorli_local (:,:)    !< ice surface roughness length ! TODO do we need this?
-  real (kind=kind_phys), allocatable :: zorlw_local (:,:)     !< wave surface roughness length
-  real (kind=kind_phys), allocatable :: zorlo_local (:,:)     !< ocean surface roughness length in cm
-  real (kind=kind_phys), allocatable :: tsfco_local (:,:)     !< surface temperature ocean
-  real (kind=kind_phys), allocatable :: tsfcl_local (:,:)     !< surface temperature land
-  real (kind=kind_phys), allocatable :: tsfc_local (:,:)      !< surface temperature
-
-  real (kind=kind_phys), allocatable :: cv_local  (:,:)    !< fraction of convective cloud
-  real (kind=kind_phys), allocatable :: cvt_local (:,:)    !< convective cloud top pressure
-  real (kind=kind_phys), allocatable :: cvb_local (:,:)    !< convective cloud bottom pressure
-
-  real (kind=kind_phys), allocatable :: phy_f2d_local (:,:,:)    !< 2D physics variables
-  real (kind=kind_phys), allocatable :: phy_f3d_local (:,:,:,:)  !< 3D physics variables
-  
-  ! NSST Variables
-
-  real (kind=kind_phys), allocatable :: tref_local (:,:)     !< reference temperature for NSSTM
-  real (kind=kind_phys), allocatable :: z_c_local (:,:)      !< coefficient for NSSTM
-  real (kind=kind_phys), allocatable :: c_0_local (:,:)      !< coefficient for NSSTM
-  real (kind=kind_phys), allocatable :: c_d_local (:,:)      !< coefficient for NSSTM
-  real (kind=kind_phys), allocatable :: w_0_local (:,:)      !< coefficient for NSSTM
-  real (kind=kind_phys), allocatable :: w_d_local (:,:)      !< coefficient for NSSTM
-  real (kind=kind_phys), allocatable :: xt_local (:,:)       !< heat content  for NSSTM
-  real (kind=kind_phys), allocatable :: xs_local (:,:)       !< salinity for NSSTM
-  real (kind=kind_phys), allocatable :: xu_local (:,:)       !< u current constant for NSSTM
-  real (kind=kind_phys), allocatable :: xv_local (:,:)       !< v current constant for NSSTM
-  real (kind=kind_phys), allocatable :: xz_local (:,:)       !< DTL thickness for NSSTM
-  real (kind=kind_phys), allocatable :: zm_local (:,:)       !< MXL for NSSTM
-  real (kind=kind_phys), allocatable :: xtts_local (:,:)     !< d(xt)/d(ts) for NSSTM
-  real (kind=kind_phys), allocatable :: xzts_local (:,:)     !< d(xz)/d(ts) for NSSTM
-  real (kind=kind_phys), allocatable :: d_conv_local (:,:)   !< think of free convection layer for NSSTM
-  ! real (kind=kind_phys), allocatable :: ifd_local (:,:)      !< index to start DTM run  for NSSTM   ! TODO Probably can't interpolate an index.  
-  !  IFD values are 0 for land, and 1 for oceans/lakes -- reverse of the land sea mask
-  !  Land Sea Mask has values of 0 for oceans/lakes, 1 for land, 2 for sea ice
-  real (kind=kind_phys), allocatable :: dt_cool_local (:,:)  !< sub-layer cooling amount for NSSTM
-  real (kind=kind_phys), allocatable :: qrain_local (:,:)    !< sensible heat flux due to rainfall for NSSTM 
 
   logical :: debug_log = .false.
   logical :: move_physics = .true.
@@ -223,20 +159,19 @@ contains
 
 
   subroutine mn_prog_fill_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
-    type(fv_atmos_type), allocatable, intent(in)     :: Atm(:)
+    type(fv_atmos_type), allocatable, target, intent(in)     :: Atm(:)
     integer, intent(in)                              :: n, child_grid_num   !  n is the nest level
     logical, intent(in)                              :: is_fine_pe
     integer, intent(in)                              :: npz
 
-    !allocate ( Atm%delz(is:ie, js:je  ,npz) )
-    !Atm%delz(i,j,k) = real_big
-
     integer :: isd, ied, jsd, jed
     integer :: is, ie, js, je
     integer :: this_pe
+    type(fv_moving_nest_prog_type), pointer :: mn_prog
 
+    mn_prog => Atm(n)%mn_prog
+    
     this_pe = mpp_pe()
-
 
     if (debug_log) print '("[INFO] WDR start mn_prog_fill_temp_variables. npe=",I0," n=",I0)', this_pe, n
 
@@ -254,10 +189,10 @@ contains
     
     if (debug_log) print '("[INFO] WDR mn_prog_fill_temp_variables. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
     
-    allocate ( delz_local(isd:ied, jsd:jed, 1:npz) )
-    delz_local = +99999.9
+    ! Reset this to a dummy value, to help flag if the halos don't get updated later.
+    mn_prog%delz = +99999.9
     
-    delz_local(is:ie, js:je, 1:npz) =  Atm(n)%delz(is:ie, js:je, 1:npz) 
+    mn_prog%delz(is:ie, js:je, 1:npz) =  Atm(n)%delz(is:ie, js:je, 1:npz) 
 
     if (debug_log) print '("[INFO] WDR Z mn_prog_fill_temp_variables. npe=",I0," npz=",I0," ",I0," ",I0)', this_pe, npz, lbound(Atm(n)%delz,3), ubound(Atm(n)%delz,3)
 
@@ -268,7 +203,7 @@ contains
 
 
   subroutine mn_phys_fill_temp_variables(Atm, Atm_block, IPD_Control, IPD_Data, n, child_grid_num, is_fine_pe, npz)
-    type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
+    type(fv_atmos_type), allocatable, target, intent(inout)  :: Atm(:)
     type (block_control_type), intent(in)            :: Atm_block
     type(IPD_control_type), intent(in)               :: IPD_Control
     type(IPD_data_type), intent(inout)               :: IPD_Data(:)
@@ -281,6 +216,7 @@ contains
     integer :: this_pe
 
     integer :: nb, blen, i, j, k, ix, nv
+    type(fv_moving_nest_physics_type), pointer       :: mn_phys
 
     this_pe = mpp_pe()
 
@@ -301,139 +237,9 @@ contains
     
     if (debug_log) print '("[INFO] WDR mn_phys_fill_temp_variables. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
     
-    ! The local/temporary variables need to be allocated to the larger data (compute + halos) domain so that the nest motion code has halos to use
+    mn_phys => Atm(n)%mn_phys
 
-    allocate ( ts_local(isd:ied, jsd:jed) )
-
-    if (move_physics) then
-       allocate ( smc_local(isd:ied, jsd:jed, IPD_Control%lsoil) )
-       allocate ( stc_local(isd:ied, jsd:jed, IPD_Control%lsoil) )
-       allocate ( slc_local(isd:ied, jsd:jed, IPD_Control%lsoil) )
-
-       allocate ( u10m_local(isd:ied, jsd:jed) )
-       allocate ( v10m_local(isd:ied, jsd:jed) )
-       allocate ( tprcp_local(isd:ied, jsd:jed) )
-
-       allocate ( hprime_local(isd:ied, jsd:jed, IPD_Control%nmtvr) )
-       
-       allocate ( zorl_local(isd:ied, jsd:jed) )
-       allocate ( alvsf_local(isd:ied, jsd:jed) )
-       allocate ( alvwf_local(isd:ied, jsd:jed) )
-       allocate ( alnsf_local(isd:ied, jsd:jed) )
-       allocate ( alnwf_local(isd:ied, jsd:jed) )
-
-       allocate ( facsf_local(isd:ied, jsd:jed) )
-       allocate ( facwf_local(isd:ied, jsd:jed) )
-       
-       allocate ( canopy_local(isd:ied, jsd:jed) )
-       allocate ( vegfrac_local(isd:ied, jsd:jed) )
-       allocate ( uustar_local(isd:ied, jsd:jed) )
-       allocate ( shdmin_local(isd:ied, jsd:jed) )
-       allocate ( shdmax_local(isd:ied, jsd:jed) )
-       allocate ( zorll_local(isd:ied, jsd:jed) )
-       allocate ( zorlo_local(isd:ied, jsd:jed) )
-       allocate ( zorlw_local(isd:ied, jsd:jed) )
-       allocate ( tsfco_local(isd:ied, jsd:jed) )
-       allocate ( tsfcl_local(isd:ied, jsd:jed) )
-       allocate ( tsfc_local(isd:ied, jsd:jed) )
-       
-       allocate ( cv_local(isd:ied, jsd:jed) )
-       allocate ( cvt_local(isd:ied, jsd:jed) )
-       allocate ( cvb_local(isd:ied, jsd:jed) )
-       
-       allocate ( phy_f2d_local(isd:ied, jsd:jed, IPD_Control%ntot2d) )
-       allocate ( phy_f3d_local(isd:ied, jsd:jed, IPD_Control%levs, IPD_Control%ntot3d) )
-    end if
-
-    if (move_nsst) then
-       allocate ( tref_local(isd:ied, jsd:jed) )
-       allocate ( z_c_local(isd:ied, jsd:jed) )
-       allocate ( c_0_local(isd:ied, jsd:jed) )
-       allocate ( c_d_local(isd:ied, jsd:jed) )
-       allocate ( w_0_local(isd:ied, jsd:jed) )
-       allocate ( w_d_local(isd:ied, jsd:jed) )
-       allocate ( xt_local(isd:ied, jsd:jed) ) 
-       allocate ( xs_local(isd:ied, jsd:jed) )
-       allocate ( xu_local(isd:ied, jsd:jed) )
-       allocate ( xv_local(isd:ied, jsd:jed) )
-       allocate ( xz_local(isd:ied, jsd:jed) )
-       allocate ( zm_local(isd:ied, jsd:jed) )
-       allocate ( xtts_local(isd:ied, jsd:jed) )
-       allocate ( xzts_local(isd:ied, jsd:jed) )
-       allocate ( d_conv_local(isd:ied, jsd:jed) )
-       !allocate ( ifd_local(isd:ied, jsd:jed) )
-       allocate ( dt_cool_local(isd:ied, jsd:jed) )
-       allocate ( qrain_local(isd:ied, jsd:jed) )
-    end if
-
-
-    if (debug_log) print '("[INFO] WDR mn_phys_fill_temp_variables. npe=",I0," ntot2d=",I0," ntot3d=",I0, " levs=",I0)', this_pe, IPD_Control%ntot2d, IPD_Control%ntot2d, IPD_Control%levs
-
-    ts_local = +99999.9
-    if (move_physics) then
-       smc_local = +99999.9
-       stc_local = +99999.9
-       slc_local = +99999.9
-
-       u10m_local = +99999.9
-       v10m_local = +99999.9
-       tprcp_local = +99999.9
-
-       hprime_local = +99999.9
-       
-       zorl_local = +99999.9
-
-       alvsf_local = +99999.9
-       alvwf_local = +99999.9
-       alnsf_local = +99999.9
-       alnwf_local = +99999.9
-
-       facsf_local = +99999.9
-       facwf_local = +99999.9
-       
-       canopy_local = +99999.9
-       vegfrac_local = +99999.9
-       uustar_local = +99999.9
-       shdmin_local = +99999.9
-       shdmax_local = +99999.9
-       zorll_local = +99999.9
-       zorlo_local = +99999.9
-       zorlw_local = +99999.9
-       tsfco_local = +99999.9
-       tsfcl_local = +99999.9
-       tsfc_local = +99999.9
-       
-       cv_local = +99999.9
-       cvt_local = +99999.9
-       cvb_local = +99999.9
-       
-       phy_f2d_local = +99999.9
-       phy_f3d_local = +99999.9
-    end if 
-
-    if (move_nsst) then
-       tref_local = +99999.9
-       z_c_local = +99999.9
-       c_0_local = +99999.9
-       c_d_local = +99999.9
-       w_0_local = +99999.9
-       w_d_local = +99999.9
-       xt_local = +99999.9 
-       xs_local = +99999.9
-       xu_local = +99999.9
-       xv_local = +99999.9
-       xz_local = +99999.9
-       zm_local = +99999.9
-       xtts_local = +99999.9
-       xzts_local = +99999.9
-       d_conv_local = +99999.9
-       !ifd_local = +99999.9
-       dt_cool_local = +99999.9
-       qrain_local = +99999.9
-    end if
-
-
-    ts_local(is:ie, js:je) =  Atm(n)%ts(is:ie, js:je) 
+    mn_phys%ts(is:ie, js:je) =  Atm(n)%ts(is:ie, js:je) 
 
     do nb = 1,Atm_block%nblks
       blen = Atm_block%blksz(nb)
@@ -445,75 +251,75 @@ contains
 
          if (move_physics) then
             do k = 1, IPD_Control%lsoil            
-               smc_local(i,j,k) = IPD_Data(nb)%Sfcprop%smc(ix,k)
-               stc_local(i,j,k) = IPD_Data(nb)%Sfcprop%stc(ix,k)
-               slc_local(i,j,k) = IPD_Data(nb)%Sfcprop%slc(ix,k)
+               mn_phys%smc(i,j,k) = IPD_Data(nb)%Sfcprop%smc(ix,k)
+               mn_phys%stc(i,j,k) = IPD_Data(nb)%Sfcprop%stc(ix,k)
+               mn_phys%slc(i,j,k) = IPD_Data(nb)%Sfcprop%slc(ix,k)
             enddo
 
-            u10m_local(i,j)  = IPD_Data(nb)%IntDiag%u10m(ix)
-            v10m_local(i,j)  = IPD_Data(nb)%IntDiag%v10m(ix)
-            tprcp_local(i,j)  = IPD_Data(nb)%Sfcprop%tprcp(ix)
+            mn_phys%u10m(i,j)  = IPD_Data(nb)%IntDiag%u10m(ix)
+            mn_phys%v10m(i,j)  = IPD_Data(nb)%IntDiag%v10m(ix)
+            mn_phys%tprcp(i,j)  = IPD_Data(nb)%Sfcprop%tprcp(ix)
 
             do k = 1, IPD_Control%nmtvr
-               hprime_local(i,j,k)  = IPD_Data(nb)%Sfcprop%hprime(ix,k)
+               mn_phys%hprime(i,j,k)  = IPD_Data(nb)%Sfcprop%hprime(ix,k)
             end do
             
-            zorl_local(i,j)  = IPD_Data(nb)%Sfcprop%zorl(ix)
-            alvsf_local(i,j) = IPD_Data(nb)%Sfcprop%alvsf(ix)
-            alvwf_local(i,j) = IPD_Data(nb)%Sfcprop%alvwf(ix)
-            alnsf_local(i,j) = IPD_Data(nb)%Sfcprop%alnsf(ix)
-            alnwf_local(i,j) = IPD_Data(nb)%Sfcprop%alnwf(ix)
+            mn_phys%zorl(i,j)  = IPD_Data(nb)%Sfcprop%zorl(ix)
+            mn_phys%alvsf(i,j) = IPD_Data(nb)%Sfcprop%alvsf(ix)
+            mn_phys%alvwf(i,j) = IPD_Data(nb)%Sfcprop%alvwf(ix)
+            mn_phys%alnsf(i,j) = IPD_Data(nb)%Sfcprop%alnsf(ix)
+            mn_phys%alnwf(i,j) = IPD_Data(nb)%Sfcprop%alnwf(ix)
             
-            facsf_local(i,j) = IPD_data(nb)%Sfcprop%facsf(ix)   ! fractional coverage for strong zenith angle albedo
-            facwf_local(i,j) = IPD_data(nb)%Sfcprop%facwf(ix)   ! fractional coverage for weak zenith angle albedo
+            mn_phys%facsf(i,j) = IPD_data(nb)%Sfcprop%facsf(ix)   ! fractional coverage for strong zenith angle albedo
+            mn_phys%facwf(i,j) = IPD_data(nb)%Sfcprop%facwf(ix)   ! fractional coverage for weak zenith angle albedo
 
-            canopy_local(i,j) = IPD_Data(nb)%Sfcprop%canopy(ix)
-            vegfrac_local(i,j)= IPD_Data(nb)%Sfcprop%vfrac(ix)
-            uustar_local(i,j) = IPD_Data(nb)%Sfcprop%uustar(ix)
-            shdmin_local(i,j) = IPD_Data(nb)%Sfcprop%shdmin(ix)
-            shdmax_local(i,j) = IPD_Data(nb)%Sfcprop%shdmax(ix)
-            zorll_local(i,j)  = IPD_Data(nb)%Sfcprop%zorll(ix)
-            zorlo_local(i,j)  = IPD_Data(nb)%Sfcprop%zorlo(ix)
-            zorlw_local(i,j)  = IPD_Data(nb)%Sfcprop%zorlw(ix)
-            tsfco_local(i,j)  = IPD_Data(nb)%Sfcprop%tsfco(ix)
-            tsfcl_local(i,j)  = IPD_Data(nb)%Sfcprop%tsfcl(ix)
-            tsfc_local(i,j)   = IPD_Data(nb)%Sfcprop%tsfc(ix)
+            mn_phys%canopy(i,j) = IPD_Data(nb)%Sfcprop%canopy(ix)
+            mn_phys%vegfrac(i,j)= IPD_Data(nb)%Sfcprop%vfrac(ix)
+            mn_phys%uustar(i,j) = IPD_Data(nb)%Sfcprop%uustar(ix)
+            mn_phys%shdmin(i,j) = IPD_Data(nb)%Sfcprop%shdmin(ix)
+            mn_phys%shdmax(i,j) = IPD_Data(nb)%Sfcprop%shdmax(ix)
+            mn_phys%zorll(i,j)  = IPD_Data(nb)%Sfcprop%zorll(ix)
+            mn_phys%zorlo(i,j)  = IPD_Data(nb)%Sfcprop%zorlo(ix)
+            mn_phys%zorlw(i,j)  = IPD_Data(nb)%Sfcprop%zorlw(ix)
+            mn_phys%tsfco(i,j)  = IPD_Data(nb)%Sfcprop%tsfco(ix)
+            mn_phys%tsfcl(i,j)  = IPD_Data(nb)%Sfcprop%tsfcl(ix)
+            mn_phys%tsfc(i,j)   = IPD_Data(nb)%Sfcprop%tsfc(ix)
 
             do nv = 1, IPD_Control%ntot2d
-               phy_f2d_local(i,j,nv) = IPD_Data(nb)%Tbd%phy_f2d(ix, nv)
+               mn_phys%phy_f2d(i,j,nv) = IPD_Data(nb)%Tbd%phy_f2d(ix, nv)
             end do
             
             do k = 1, IPD_Control%levs
                do nv = 1, IPD_Control%ntot3d
-                  phy_f3d_local(i,j,k,nv) = IPD_Data(nb)%Tbd%phy_f3d(ix, k, nv)
+                  mn_phys%phy_f3d(i,j,k,nv) = IPD_Data(nb)%Tbd%phy_f3d(ix, k, nv)
                end do
             end do
             
             ! Cloud prop data has x,y dimensions
-            cv_local(i,j)  = IPD_Data(nb)%Cldprop%cv(ix)
-            cvt_local(i,j) = IPD_Data(nb)%Cldprop%cvt(ix)
-            cvb_local(i,j) = IPD_Data(nb)%Cldprop%cvb(ix)
+            mn_phys%cv(i,j)  = IPD_Data(nb)%Cldprop%cv(ix)
+            mn_phys%cvt(i,j) = IPD_Data(nb)%Cldprop%cvt(ix)
+            mn_phys%cvb(i,j) = IPD_Data(nb)%Cldprop%cvb(ix)
          end if
          
          if (move_nsst) then
-            tref_local(i,j)   = IPD_Data(nb)%Sfcprop%tref(ix)
-            z_c_local(i,j)    = IPD_Data(nb)%Sfcprop%z_c(ix)
-            c_0_local(i,j)    = IPD_Data(nb)%Sfcprop%c_0(ix)
-            c_d_local(i,j)    = IPD_Data(nb)%Sfcprop%c_d(ix)
-            w_0_local(i,j)    = IPD_Data(nb)%Sfcprop%w_0(ix)
-            w_d_local(i,j)    = IPD_Data(nb)%Sfcprop%w_d(ix)
-            xt_local(i,j)     = IPD_Data(nb)%Sfcprop%xt(ix) 
-            xs_local(i,j)     = IPD_Data(nb)%Sfcprop%xs(ix)
-            xu_local(i,j)     = IPD_Data(nb)%Sfcprop%xu(ix)
-            xv_local(i,j)     = IPD_Data(nb)%Sfcprop%xv(ix)
-            xz_local(i,j)     = IPD_Data(nb)%Sfcprop%xz(ix)
-            zm_local(i,j)     = IPD_Data(nb)%Sfcprop%zm(ix)
-            xtts_local(i,j)   = IPD_Data(nb)%Sfcprop%xtts(ix)
-            xzts_local(i,j)   = IPD_Data(nb)%Sfcprop%xzts(ix)
-            d_conv_local(i,j) = IPD_Data(nb)%Sfcprop%d_conv(ix)
-            !ifd_local(i,j)    = IPD_Data(nb)%Sfcprop%ifd(ix)
-            dt_cool_local(i,j)= IPD_Data(nb)%Sfcprop%dt_cool(ix)
-            qrain_local(i,j)  = IPD_Data(nb)%Sfcprop%qrain(ix)
+            mn_phys%tref(i,j)   = IPD_Data(nb)%Sfcprop%tref(ix)
+            mn_phys%z_c(i,j)    = IPD_Data(nb)%Sfcprop%z_c(ix)
+            mn_phys%c_0(i,j)    = IPD_Data(nb)%Sfcprop%c_0(ix)
+            mn_phys%c_d(i,j)    = IPD_Data(nb)%Sfcprop%c_d(ix)
+            mn_phys%w_0(i,j)    = IPD_Data(nb)%Sfcprop%w_0(ix)
+            mn_phys%w_d(i,j)    = IPD_Data(nb)%Sfcprop%w_d(ix)
+            mn_phys%xt(i,j)     = IPD_Data(nb)%Sfcprop%xt(ix) 
+            mn_phys%xs(i,j)     = IPD_Data(nb)%Sfcprop%xs(ix)
+            mn_phys%xu(i,j)     = IPD_Data(nb)%Sfcprop%xu(ix)
+            mn_phys%xv(i,j)     = IPD_Data(nb)%Sfcprop%xv(ix)
+            mn_phys%xz(i,j)     = IPD_Data(nb)%Sfcprop%xz(ix)
+            mn_phys%zm(i,j)     = IPD_Data(nb)%Sfcprop%zm(ix)
+            mn_phys%xtts(i,j)   = IPD_Data(nb)%Sfcprop%xtts(ix)
+            mn_phys%xzts(i,j)   = IPD_Data(nb)%Sfcprop%xzts(ix)
+            mn_phys%d_conv(i,j) = IPD_Data(nb)%Sfcprop%d_conv(ix)
+            !mn_phys%ifd(i,j)    = IPD_Data(nb)%Sfcprop%ifd(ix)
+            mn_phys%dt_cool(i,j)= IPD_Data(nb)%Sfcprop%dt_cool(ix)
+            mn_phys%qrain(i,j)  = IPD_Data(nb)%Sfcprop%qrain(ix)
          end if
       enddo
     enddo
@@ -522,20 +328,19 @@ contains
     
   end subroutine mn_phys_fill_temp_variables
 
-  !subroutine mn_prog_apply_temp_variables(Atm, Atm_block, IPD_Control, IPD_Data, n, child_grid_num, is_fine_pe, npz)
   subroutine mn_prog_apply_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
-    type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
-    !type (block_control_type), intent(in)            :: Atm_block
-    !type(IPD_control_type), intent(in)               :: IPD_Control
-    !type(IPD_data_type), intent(inout)               :: IPD_Data
-    integer, intent(in)                              :: n, child_grid_num
-    logical, intent(in)                              :: is_fine_pe
-    integer, intent(in)                              :: npz
+    type(fv_atmos_type), allocatable, target, intent(inout)  :: Atm(:)
+    integer, intent(in)                                      :: n, child_grid_num
+    logical, intent(in)                                      :: is_fine_pe
+    integer, intent(in)                                      :: npz
 
     integer :: is, ie, js, je
     integer :: this_pe
     integer :: i,j,k
     integer :: bad_values, good_values
+    type(fv_moving_nest_prog_type), pointer :: mn_prog
+
+    mn_prog => Atm(n)%mn_prog
 
     this_pe = mpp_pe()
 
@@ -551,8 +356,8 @@ contains
           do i = Atm(n)%bd%isd, Atm(n)%bd%ied
              do j = Atm(n)%bd%jsd, Atm(n)%bd%jed
                 do k = 1, npz
-                   if (delz_local(i,j,k) .gt. 20000.0) then
-                      print '("[WARN] WDR BAD NEST delz_local value. npe=",I0," delz_local(",I0,",",I0,",",I0,")=",F12.3)', this_pe, i, j, k, delz_local(i,j,k)
+                   if (mn_prog%delz(i,j,k) .gt. 20000.0) then
+                      print '("[WARN] WDR BAD NEST mn_prog%delz value. npe=",I0," mn_prog%delz(",I0,",",I0,",",I0,")=",F12.3)', this_pe, i, j, k, mn_prog%delz(i,j,k)
                       bad_values = bad_values + 1
                    else
                       good_values = good_values + 1
@@ -564,8 +369,8 @@ contains
           do i = Atm(n)%bd%is, Atm(n)%bd%ie
              do j = Atm(n)%bd%js, Atm(n)%bd%je
                 do k = 1, npz
-                   if (delz_local(i,j,k) .gt. 20000.0) then
-                      print '("[WARN] WDR BAD GLOBAL delz_local value. npe=",I0," delz_local(",I0,",",I0,",",I0,")=",F12.3)', this_pe, i, j, k, delz_local(i,j,k)
+                   if (mn_prog%delz(i,j,k) .gt. 20000.0) then
+                      print '("[WARN] WDR BAD GLOBAL mn_prog%delz value. npe=",I0," mn_prog%delz(",I0,",",I0,",",I0,")=",F12.3)', this_pe, i, j, k, mn_prog%delz(i,j,k)
                       bad_values = bad_values + 1
                    else
                       good_values = good_values + 1
@@ -580,9 +385,9 @@ contains
        j = Atm(n)%bd%js
        k = npz
        
-       print '("[WARN] WDR Surface delz_local value. npe=",I0," delz_local(",I0,",",I0,",",I0,")=",F18.3)', this_pe, i, j, k, delz_local(i,j,k)
+       print '("[WARN] WDR Surface mn_prog%delz value. npe=",I0," mn_prog%delz(",I0,",",I0,",",I0,")=",F18.3)', this_pe, i, j, k, mn_prog%delz(i,j,k)
 
-       print '("INFO] WDR delz_local values. npe=",I0," good_values=",I0," bad_values=",I0)', this_pe, good_values, bad_values
+       print '("INFO] WDR mn_prog%delz values. npe=",I0," good_values=",I0," bad_values=",I0)', this_pe, good_values, bad_values
     end if
        
 
@@ -595,17 +400,15 @@ contains
        if (debug_log) print '("[INFO] WDR mn_prog_apply_temp_variables. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
 
 
-       Atm(n)%delz(is:ie, js:je, 1:npz) =  delz_local(is:ie, js:je, 1:npz) 
+       Atm(n)%delz(is:ie, js:je, 1:npz) =  mn_prog%delz(is:ie, js:je, 1:npz) 
     end if
-
-    deallocate(delz_local)
 
     if (debug_log) print '("[INFO] WDR end mn_prog_apply_temp_variables. npe=",I0," n=",I0)', this_pe, n
 
   end subroutine mn_prog_apply_temp_variables
 
   subroutine mn_phys_apply_temp_variables(Atm, Atm_block, IPD_Control, IPD_Data, n, child_grid_num, is_fine_pe, npz)
-    type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
+    type(fv_atmos_type), allocatable, target, intent(inout)  :: Atm(:)
     type (block_control_type), intent(in)            :: Atm_block
     type(IPD_control_type), intent(in)               :: IPD_Control
     type(IPD_data_type), intent(inout)               :: IPD_Data(:)
@@ -617,8 +420,10 @@ contains
     integer :: this_pe
     integer :: nb, blen, i, j ,k, ix, nv
     integer :: bad_values, good_values
+    type(fv_moving_nest_physics_type), pointer       :: mn_phys
 
     this_pe = mpp_pe()
+    mn_phys => Atm(n)%mn_phys
 
     if (debug_log) print '("[INFO] WDR start mn_phys_apply_temp_variables. npe=",I0," n=",I0)', this_pe, n
     
@@ -631,8 +436,8 @@ contains
        if (is_fine_pe) then
           do i = Atm(n)%bd%isd, Atm(n)%bd%ied
              do j = Atm(n)%bd%jsd, Atm(n)%bd%jed
-                if (ts_local(i,j) .gt. 20000.0) then
-                   print '("[WARN] WDR BAD NEST ts_local value. npe=",I0," ts_local(",I0,",",I0,")=",F12.3)', this_pe, i, j, ts_local(i,j)
+                if (mn_phys%ts(i,j) .gt. 20000.0) then
+                   print '("[WARN] WDR BAD NEST ts value. npe=",I0," ts(",I0,",",I0,")=",F12.3)', this_pe, i, j, mn_phys%ts(i,j)
                    bad_values = bad_values + 1
                 else
                    good_values = good_values + 1
@@ -642,8 +447,8 @@ contains
        else
           do i = Atm(n)%bd%is, Atm(n)%bd%ie
              do j = Atm(n)%bd%js, Atm(n)%bd%je
-                if (ts_local(i,j) .gt. 20000.0) then
-                   print '("[WARN] WDR BAD GLOBAL ts_local value. npe=",I0," ts_local(",I0,",",I0")=",F12.3)', this_pe, i, j, ts_local(i,j)
+                if (mn_phys%ts(i,j) .gt. 20000.0) then
+                   print '("[WARN] WDR BAD GLOBAL ts value. npe=",I0," ts(",I0,",",I0")=",F12.3)', this_pe, i, j, mn_phys%ts(i,j)
                    bad_values = bad_values + 1
                 else
                    good_values = good_values + 1
@@ -656,9 +461,9 @@ contains
        i = Atm(n)%bd%is
        j = Atm(n)%bd%js
        
-       print '("[WARN] WDR Surface ts_local value. npe=",I0," ts_local(",I0,",",I0,")=",F18.3)', this_pe, i, j, ts_local(i,j)
+       print '("[WARN] WDR Surface ts value. npe=",I0," ts(",I0,",",I0,")=",F18.3)', this_pe, i, j, mn_phys%ts(i,j)
 
-       print '("INFO] WDR ts_local values. npe=",I0," good_values=",I0," bad_values=",I0)', this_pe, good_values, bad_values
+       print '("INFO] WDR ts values. npe=",I0," good_values=",I0," bad_values=",I0)', this_pe, good_values, bad_values
     end if
        
     !  Needed to fill the local grids for parent and nest PEs in order to transmit/interpolate data from parent to nest
@@ -671,8 +476,8 @@ contains
 
        if (debug_log) print '("[INFO] WDR mn_phys_apply_temp_variables. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
 
-
-       Atm(n)%ts(is:ie, js:je) =  ts_local(is:ie, js:je) 
+       ! SST directly in Atm structure
+       Atm(n)%ts(is:ie, js:je) =  mn_phys%ts(is:ie, js:je) 
        
        do nb = 1,Atm_block%nblks
           blen = Atm_block%blksz(nb)
@@ -683,143 +488,80 @@ contains
              if (move_physics) then
                 ! Surface properties
                 do k = 1, IPD_Control%lsoil
-                   IPD_Data(nb)%Sfcprop%smc(ix,k) = smc_local(i,j,k)
-                   IPD_Data(nb)%Sfcprop%stc(ix,k) = stc_local(i,j,k)
-                   IPD_Data(nb)%Sfcprop%slc(ix,k) = slc_local(i,j,k)
+                   IPD_Data(nb)%Sfcprop%smc(ix,k) = mn_phys%smc(i,j,k)
+                   IPD_Data(nb)%Sfcprop%stc(ix,k) = mn_phys%stc(i,j,k)
+                   IPD_Data(nb)%Sfcprop%slc(ix,k) = mn_phys%slc(i,j,k)
                 enddo
 
-                IPD_Data(nb)%IntDiag%u10m(ix) = u10m_local(i,j)
-                IPD_Data(nb)%IntDiag%v10m(ix) = v10m_local(i,j)
-                IPD_Data(nb)%Sfcprop%tprcp(ix) = tprcp_local(i,j)
+                IPD_Data(nb)%IntDiag%u10m(ix) = mn_phys%u10m(i,j)
+                IPD_Data(nb)%IntDiag%v10m(ix) = mn_phys%v10m(i,j)
+                IPD_Data(nb)%Sfcprop%tprcp(ix) = mn_phys%tprcp(i,j)
 
                 do k = 1, IPD_Control%nmtvr
-                   IPD_Data(nb)%Sfcprop%hprime(ix,k) = hprime_local(i,j,k)
+                   IPD_Data(nb)%Sfcprop%hprime(ix,k) = mn_phys%hprime(i,j,k)
                 end do
                 
-                IPD_Data(nb)%Sfcprop%zorl(ix) = zorl_local(i,j)
-                IPD_Data(nb)%Sfcprop%alvsf(ix) = alvsf_local(i,j)
-                IPD_Data(nb)%Sfcprop%alvwf(ix) = alvwf_local(i,j)
-                IPD_Data(nb)%Sfcprop%alnsf(ix) = alnsf_local(i,j)
-                IPD_Data(nb)%Sfcprop%alnwf(ix) = alnwf_local(i,j)
+                IPD_Data(nb)%Sfcprop%zorl(ix) = mn_phys%zorl(i,j)
+                IPD_Data(nb)%Sfcprop%alvsf(ix) = mn_phys%alvsf(i,j)
+                IPD_Data(nb)%Sfcprop%alvwf(ix) = mn_phys%alvwf(i,j)
+                IPD_Data(nb)%Sfcprop%alnsf(ix) = mn_phys%alnsf(i,j)
+                IPD_Data(nb)%Sfcprop%alnwf(ix) = mn_phys%alnwf(i,j)
 
-                IPD_Data(nb)%Sfcprop%facsf(ix) = facsf_local(i,j)
-                IPD_Data(nb)%Sfcprop%facwf(ix) = facwf_local(i,j)
+                IPD_Data(nb)%Sfcprop%facsf(ix) = mn_phys%facsf(i,j)
+                IPD_Data(nb)%Sfcprop%facwf(ix) = mn_phys%facwf(i,j)
                 
-                IPD_Data(nb)%Sfcprop%canopy(ix) = canopy_local(i,j)
-                IPD_Data(nb)%Sfcprop%vfrac(ix)  = vegfrac_local(i,j)
-                IPD_Data(nb)%Sfcprop%uustar(ix) = uustar_local(i,j)
-                IPD_Data(nb)%Sfcprop%shdmin(ix) = shdmin_local(i,j)
-                IPD_Data(nb)%Sfcprop%shdmax(ix) = shdmax_local(i,j)
-                IPD_Data(nb)%Sfcprop%zorll(ix)  = zorll_local(i,j)
-                IPD_Data(nb)%Sfcprop%zorlo(ix)  = zorlo_local(i,j)
-                IPD_Data(nb)%Sfcprop%zorlw(ix)  = zorlw_local(i,j)
-                IPD_Data(nb)%Sfcprop%tsfco(ix)  = tsfco_local(i,j)
-                IPD_Data(nb)%Sfcprop%tsfcl(ix)  = tsfcl_local(i,j)
-                IPD_Data(nb)%Sfcprop%tsfc(ix)   = tsfc_local(i,j)
+                IPD_Data(nb)%Sfcprop%canopy(ix) = mn_phys%canopy(i,j)
+                IPD_Data(nb)%Sfcprop%vfrac(ix)  = mn_phys%vegfrac(i,j)
+                IPD_Data(nb)%Sfcprop%uustar(ix) = mn_phys%uustar(i,j)
+                IPD_Data(nb)%Sfcprop%shdmin(ix) = mn_phys%shdmin(i,j)
+                IPD_Data(nb)%Sfcprop%shdmax(ix) = mn_phys%shdmax(i,j)
+                IPD_Data(nb)%Sfcprop%zorll(ix)  = mn_phys%zorll(i,j)
+                IPD_Data(nb)%Sfcprop%zorlo(ix)  = mn_phys%zorlo(i,j)
+                IPD_Data(nb)%Sfcprop%zorlw(ix)  = mn_phys%zorlw(i,j)
+                IPD_Data(nb)%Sfcprop%tsfco(ix)  = mn_phys%tsfco(i,j)
+                IPD_Data(nb)%Sfcprop%tsfcl(ix)  = mn_phys%tsfcl(i,j)
+                IPD_Data(nb)%Sfcprop%tsfc(ix)   = mn_phys%tsfc(i,j)
                 
                 ! Cloud properties
-                IPD_Data(nb)%Cldprop%cv(ix) = cv_local(i,j)
-                IPD_Data(nb)%Cldprop%cvt(ix) = cvt_local(i,j)
-                IPD_Data(nb)%Cldprop%cvb(ix) = cvb_local(i,j)
+                IPD_Data(nb)%Cldprop%cv(ix) = mn_phys%cv(i,j)
+                IPD_Data(nb)%Cldprop%cvt(ix) = mn_phys%cvt(i,j)
+                IPD_Data(nb)%Cldprop%cvb(ix) = mn_phys%cvb(i,j)
                 
                 do nv = 1, IPD_Control%ntot2d
-                   IPD_Data(nb)%Tbd%phy_f2d(ix, nv) = phy_f2d_local(i,j,nv)
+                   IPD_Data(nb)%Tbd%phy_f2d(ix, nv) = mn_phys%phy_f2d(i,j,nv)
                 enddo
                 
                 do k = 1, IPD_Control%levs
                    do nv = 1, IPD_Control%ntot3d
-                      IPD_Data(nb)%Tbd%phy_f3d(ix, k, nv) = phy_f3d_local(i,j,k,nv)
+                      IPD_Data(nb)%Tbd%phy_f3d(ix, k, nv) = mn_phys%phy_f3d(i,j,k,nv)
                    enddo
                 enddo
              end if
 
              if (move_nsst) then
-                IPD_Data(nb)%Sfcprop%tref(ix)    = tref_local(i,j)
-                IPD_Data(nb)%Sfcprop%z_c(ix)     = z_c_local(i,j)
-                IPD_Data(nb)%Sfcprop%c_0(ix)     = c_0_local(i,j)
-                IPD_Data(nb)%Sfcprop%c_d(ix)     = c_d_local(i,j)
-                IPD_Data(nb)%Sfcprop%w_0(ix)     = w_0_local(i,j)
-                IPD_Data(nb)%Sfcprop%w_d(ix)     = w_d_local(i,j)
-                IPD_Data(nb)%Sfcprop%xt(ix)      = xt_local(i,j)
-                IPD_Data(nb)%Sfcprop%xs(ix)      = xs_local(i,j)
-                IPD_Data(nb)%Sfcprop%xu(ix)      = xu_local(i,j)
-                IPD_Data(nb)%Sfcprop%xv(ix)      = xv_local(i,j)
-                IPD_Data(nb)%Sfcprop%xz(ix)      = xz_local(i,j)
-                IPD_Data(nb)%Sfcprop%zm(ix)      = zm_local(i,j)
-                IPD_Data(nb)%Sfcprop%xtts(ix)    = xtts_local(i,j)
-                IPD_Data(nb)%Sfcprop%xzts(ix)    = xzts_local(i,j)
-                IPD_Data(nb)%Sfcprop%d_conv(ix)  = d_conv_local(i,j)
-                !IPD_Data(nb)%Sfcprop%ifd(ix)    = ifd_local(i,j)
-                IPD_Data(nb)%Sfcprop%dt_cool(ix) = dt_cool_local(i,j)
-                IPD_Data(nb)%Sfcprop%qrain(ix)   = qrain_local(i,j)
+                IPD_Data(nb)%Sfcprop%tref(ix)    = mn_phys%tref(i,j)
+                IPD_Data(nb)%Sfcprop%z_c(ix)     = mn_phys%z_c(i,j)
+                IPD_Data(nb)%Sfcprop%c_0(ix)     = mn_phys%c_0(i,j)
+                IPD_Data(nb)%Sfcprop%c_d(ix)     = mn_phys%c_d(i,j)
+                IPD_Data(nb)%Sfcprop%w_0(ix)     = mn_phys%w_0(i,j)
+                IPD_Data(nb)%Sfcprop%w_d(ix)     = mn_phys%w_d(i,j)
+                IPD_Data(nb)%Sfcprop%xt(ix)      = mn_phys%xt(i,j)
+                IPD_Data(nb)%Sfcprop%xs(ix)      = mn_phys%xs(i,j)
+                IPD_Data(nb)%Sfcprop%xu(ix)      = mn_phys%xu(i,j)
+                IPD_Data(nb)%Sfcprop%xv(ix)      = mn_phys%xv(i,j)
+                IPD_Data(nb)%Sfcprop%xz(ix)      = mn_phys%xz(i,j)
+                IPD_Data(nb)%Sfcprop%zm(ix)      = mn_phys%zm(i,j)
+                IPD_Data(nb)%Sfcprop%xtts(ix)    = mn_phys%xtts(i,j)
+                IPD_Data(nb)%Sfcprop%xzts(ix)    = mn_phys%xzts(i,j)
+                IPD_Data(nb)%Sfcprop%d_conv(ix)  = mn_phys%d_conv(i,j)
+                !IPD_Data(nb)%Sfcprop%ifd(ix)    = mn_phys%ifd(i,j)
+                IPD_Data(nb)%Sfcprop%dt_cool(ix) = mn_phys%dt_cool(i,j)
+                IPD_Data(nb)%Sfcprop%qrain(ix)   = mn_phys%qrain(i,j)
              end if
           enddo
        enddo       
    end if
-   
-   deallocate(ts_local)
-
-   if (move_physics) then
-      deallocate(smc_local)
-      deallocate(stc_local)
-      deallocate(slc_local)
-
-      deallocate(u10m_local)
-      deallocate(v10m_local)
-      deallocate(tprcp_local)
-
-      deallocate(hprime_local)
       
-      deallocate(zorl_local)
-      deallocate(alvsf_local)
-      deallocate(alvwf_local)
-      deallocate(alnsf_local)
-      deallocate(alnwf_local)
-
-      deallocate(facsf_local)
-      deallocate(facwf_local)
-      
-      deallocate(canopy_local)
-      deallocate(vegfrac_local)
-      deallocate(uustar_local)
-      deallocate(shdmin_local)
-      deallocate(shdmax_local)
-      deallocate(zorll_local)
-      deallocate(zorlo_local)
-      deallocate(zorlw_local)
-      deallocate(tsfco_local)
-      deallocate(tsfcl_local)
-      deallocate(tsfc_local)
-      
-      deallocate(cv_local)
-      deallocate(cvt_local)
-      deallocate(cvb_local)
-      
-      deallocate(phy_f2d_local)
-      deallocate(phy_f3d_local)
-   end if
-   
-   if (move_nsst) then
-      deallocate(tref_local)
-      deallocate(z_c_local)
-      deallocate(c_0_local)
-      deallocate(c_d_local)
-      deallocate(w_0_local)
-      deallocate(w_d_local)
-      deallocate(xt_local) 
-      deallocate(xs_local)
-      deallocate(xu_local)
-      deallocate(xv_local)
-      deallocate(xz_local)
-      deallocate(zm_local)
-      deallocate(xtts_local)
-      deallocate(xzts_local)
-      deallocate(d_conv_local)
-      !deallocate(ifd_local)
-      deallocate(dt_cool_local)
-      deallocate(qrain_local)
-   end if
-   
    if (debug_log) print '("[INFO] WDR end mn_phys_apply_temp_variables. npe=",I0," n=",I0)', this_pe, n
    
   end subroutine mn_phys_apply_temp_variables
@@ -833,16 +575,19 @@ contains
 
   !  TODO clarify the child_grid_num or child_grid_level to handle multiple levels of nesting
   subroutine mn_prog_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, nest_domain, nz)
-    type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
-    integer, intent(in)                              :: n, child_grid_num
-    logical, intent(in)                              :: is_fine_pe
-    type(nest_domain_type), intent(inout)            :: nest_domain
-    integer, intent(in)                              :: nz
+    type(fv_atmos_type), allocatable, target, intent(inout)  :: Atm(:)
+    integer, intent(in)                                      :: n, child_grid_num
+    logical, intent(in)                                      :: is_fine_pe
+    type(nest_domain_type), intent(inout)                    :: nest_domain
+    integer, intent(in)                                      :: nz
 
 
     integer  :: position, position_u, position_v
     integer  :: interp_type, interp_type_u, interp_type_v
     integer  :: x_refine, y_refine
+    type(fv_moving_nest_prog_type), pointer :: mn_prog
+
+    mn_prog => Atm(n)%mn_prog
 
     !  TODO: examine how the static nesting code handles this
     !  TODO move terrain and surface parameters, including phis
@@ -890,7 +635,7 @@ contains
     !     x_refine, y_refine, &
     !     is_fine_pe, nest_domain, position, nz)
 
-    call fill_nest_halos_from_parent("delz", delz_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+    call fill_nest_halos_from_parent("delz", mn_prog%delz, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
          Atm(child_grid_num)%neststruct%ind_h, &
          x_refine, y_refine, &
          is_fine_pe, nest_domain, position, nz)
@@ -939,7 +684,7 @@ contains
 
 
   subroutine mn_phys_fill_nest_halos_from_parent(Atm, IPD_Control, IPD_Data, n, child_grid_num, is_fine_pe, nest_domain, nz)
-    type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
+    type(fv_atmos_type), allocatable, target, intent(inout)  :: Atm(:)
     type(IPD_control_type), intent(in)               :: IPD_Control
     type(IPD_data_type), intent(inout)               :: IPD_Data(:)
     integer, intent(in)                              :: n, child_grid_num
@@ -951,6 +696,7 @@ contains
     integer  :: position, position_u, position_v
     integer  :: interp_type, interp_type_u, interp_type_v
     integer  :: x_refine, y_refine
+    type(fv_moving_nest_physics_type), pointer :: mn_phys
 
     !  TODO: examine how the static nesting code handles this
     !  TODO move terrain and surface parameters, including phis
@@ -966,151 +712,153 @@ contains
     x_refine = Atm(child_grid_num)%neststruct%refinement
     y_refine = x_refine
 
+    mn_phys => Atm(n)%mn_phys
+
     !  Fill centered-grid variables
 
-    call fill_nest_halos_from_parent("ts", ts_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+    call fill_nest_halos_from_parent("ts", mn_phys%ts, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
          Atm(child_grid_num)%neststruct%ind_h, &
          x_refine, y_refine, &
          is_fine_pe, nest_domain, position)
 
     if (move_physics) then
-       call fill_nest_halos_from_parent("smc", smc_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("smc", mn_phys%smc, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position, IPD_Control%lsoil)
-       call fill_nest_halos_from_parent("stc", stc_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("stc", mn_phys%stc, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position, IPD_Control%lsoil)
-       call fill_nest_halos_from_parent("slc", slc_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("slc", mn_phys%slc, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position, IPD_Control%lsoil)
        
-       call fill_nest_halos_from_parent("phy_f2d", phy_f2d_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("phy_f2d", mn_phys%phy_f2d, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position, IPD_Control%ntot2d)
        
-       call fill_nest_halos_from_parent("phy_f3d", phy_f3d_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("phy_f3d", mn_phys%phy_f3d, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position, IPD_Control%levs)
        
        !!  Surface variables
-       call fill_nest_halos_from_parent("u10m", u10m_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("u10m", mn_phys%u10m, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("v10m", v10m_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("v10m", mn_phys%v10m, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("tprcp", tprcp_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("tprcp", mn_phys%tprcp, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
 
-       call fill_nest_halos_from_parent("hprime", hprime_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("hprime", mn_phys%hprime, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position, IPD_Control%nmtvr)
        
-       call fill_nest_halos_from_parent("zorl", zorl_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("zorl", mn_phys%zorl, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
        
-       call fill_nest_halos_from_parent("alvsf", alvsf_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("alvsf", mn_phys%alvsf, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
        
-       call fill_nest_halos_from_parent("alvwf", alvwf_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("alvwf", mn_phys%alvwf, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
        
-       call fill_nest_halos_from_parent("alnsf", alnsf_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("alnsf", mn_phys%alnsf, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
        
-       call fill_nest_halos_from_parent("alnwf", alnwf_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("alnwf", mn_phys%alnwf, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
 
 
-       call fill_nest_halos_from_parent("facsf", facsf_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("facsf", mn_phys%facsf, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
 
-       call fill_nest_halos_from_parent("facwf", facwf_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("facwf", mn_phys%facwf, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
        
        !!
        
-       call fill_nest_halos_from_parent("canopy", canopy_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("canopy", mn_phys%canopy, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("vegfrac", vegfrac_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("vegfrac", mn_phys%vegfrac, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("uustar", uustar_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("uustar", mn_phys%uustar, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("shdmin", shdmin_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("shdmin", mn_phys%shdmin, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("shdmax", shdmax_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("shdmax", mn_phys%shdmax, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("zorll", zorll_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("zorll", mn_phys%zorll, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("zorlo", zorlo_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("zorlo", mn_phys%zorlo, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("zorlw", zorlw_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("zorlw", mn_phys%zorlw, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
 
 
-       call fill_nest_halos_from_parent("tsfco", tsfco_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("tsfco", mn_phys%tsfco, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("tsfcl", tsfcl_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("tsfcl", mn_phys%tsfcl, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("tsfc", tsfc_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("tsfc", mn_phys%tsfc, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
        
        
-       call fill_nest_halos_from_parent("cv", cv_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("cv", mn_phys%cv, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("cvt", cvt_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("cvt", mn_phys%cvt, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("cvb", cvb_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("cvb", mn_phys%cvb, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
@@ -1118,75 +866,75 @@ contains
 
     if (move_nsst) then
 
-       call fill_nest_halos_from_parent("tref", tref_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("tref", mn_phys%tref, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("z_c", z_c_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("z_c", mn_phys%z_c, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("c_0", c_0_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("c_0", mn_phys%c_0, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("c_d", c_d_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("c_d", mn_phys%c_d, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("w_0", w_0_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("w_0", mn_phys%w_0, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("w_d", w_d_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("w_d", mn_phys%w_d, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("xt", xt_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, & 
+       call fill_nest_halos_from_parent("xt", mn_phys%xt, interp_type, Atm(child_grid_num)%neststruct%wt_h, & 
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("xs", xs_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("xs", mn_phys%xs, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("xu", xu_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("xu", mn_phys%xu, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("xv", xv_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("xv", mn_phys%xv, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("xz", xz_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("xz", mn_phys%xz, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("zm", zm_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("zm", mn_phys%zm, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("xtts", xtts_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("xtts", mn_phys%xtts, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("xzts", xzts_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("xzts", mn_phys%xzts, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("d_conv", d_conv_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("d_conv", mn_phys%d_conv, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       !call fill_nest_halos_from_parent("ifd", ifd_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       !call fill_nest_halos_from_parent("ifd", mn_phys%ifd, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
        !     Atm(child_grid_num)%neststruct%ind_h, &
        !     x_refine, y_refine, &
        !     is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("dt_cool", dt_cool_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("dt_cool", mn_phys%dt_cool, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call fill_nest_halos_from_parent("qrain", qrain_local, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+       call fill_nest_halos_from_parent("qrain", mn_phys%qrain, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
@@ -1315,12 +1063,17 @@ contains
 
   ! Fill internal nest halos for prognostic variables
   subroutine mn_prog_fill_intern_nest_halos(Atm, domain_fine, is_fine_pe)
-    type(fv_atmos_type), intent(inout)  :: Atm  
-    type(domain2d), intent(inout)       :: domain_fine
-    logical, intent(in)                 :: is_fine_pe
+    type(fv_atmos_type), target, intent(inout)  :: Atm  
+    type(domain2d), intent(inout)               :: domain_fine
+    logical, intent(in)                         :: is_fine_pe
 
 
     integer :: this_pe
+    type(fv_moving_nest_prog_type), pointer :: mn_prog
+
+    mn_prog => Atm%mn_prog
+
+
     this_pe = mpp_pe()
 
     call mn_var_fill_intern_nest_halos(Atm%q_con, domain_fine, is_fine_pe)
@@ -1329,7 +1082,7 @@ contains
     !call mn_var_fill_intern_nest_halos(Atm%omga, domain_fine, is_fine_pe)
     call mn_var_fill_intern_nest_halos(Atm%delp, domain_fine, is_fine_pe)
     !call mn_var_fill_intern_nest_halos(Atm%delz, domain_fine, is_fine_pe)
-    call mn_var_fill_intern_nest_halos(delz_local, domain_fine, is_fine_pe)
+    call mn_var_fill_intern_nest_halos(mn_prog%delz, domain_fine, is_fine_pe)
 
     call mn_var_fill_intern_nest_halos(Atm%ua, domain_fine, is_fine_pe)
     call mn_var_fill_intern_nest_halos(Atm%va, domain_fine, is_fine_pe)
@@ -1350,72 +1103,76 @@ contains
   ! Fill internal nest halos for physics variables
   ! 
   subroutine mn_phys_fill_intern_nest_halos(Atm, IPD_Control, IPD_Data, domain_fine, is_fine_pe)
-    type(fv_atmos_type), intent(inout)               :: Atm  
+    type(fv_atmos_type), target, intent(inout)       :: Atm  
     type(IPD_control_type), intent(in)               :: IPD_Control
     type(IPD_data_type), intent(inout)               :: IPD_Data(:)
     type(domain2d), intent(inout)                    :: domain_fine
     logical, intent(in)                              :: is_fine_pe
 
-    call mn_var_fill_intern_nest_halos(ts_local, domain_fine, is_fine_pe)   !! Skin Temp/SST
+    type(fv_moving_nest_physics_type), pointer :: mn_phys
+
+    mn_phys => Atm%mn_phys
+
+    call mn_var_fill_intern_nest_halos(mn_phys%ts, domain_fine, is_fine_pe)   !! Skin Temp/SST
     if (move_physics) then
-       call mn_var_fill_intern_nest_halos(smc_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(stc_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(slc_local, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%smc, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%stc, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%slc, domain_fine, is_fine_pe)
        
-       call mn_var_fill_intern_nest_halos(phy_f2d_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(phy_f3d_local, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%phy_f2d, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%phy_f3d, domain_fine, is_fine_pe)
 
-       call mn_var_fill_intern_nest_halos(u10m_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(v10m_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(tprcp_local, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%u10m, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%v10m, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%tprcp, domain_fine, is_fine_pe)
 
-       call mn_var_fill_intern_nest_halos(hprime_local, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%hprime, domain_fine, is_fine_pe)
        
-       call mn_var_fill_intern_nest_halos(zorl_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(alvsf_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(alvwf_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(alnsf_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(alnwf_local, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%zorl, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%alvsf, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%alvwf, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%alnsf, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%alnwf, domain_fine, is_fine_pe)
 
-       call mn_var_fill_intern_nest_halos(facsf_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(facwf_local, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%facsf, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%facwf, domain_fine, is_fine_pe)
        
-       call mn_var_fill_intern_nest_halos(canopy_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(vegfrac_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(uustar_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(shdmin_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(shdmax_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(zorll_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(zorlo_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(zorlw_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(tsfco_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(tsfcl_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(tsfc_local, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%canopy, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%vegfrac, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%uustar, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%shdmin, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%shdmax, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%zorll, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%zorlo, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%zorlw, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%tsfco, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%tsfcl, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%tsfc, domain_fine, is_fine_pe)
        
-       call mn_var_fill_intern_nest_halos(cv_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(cvt_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(cvb_local, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%cv, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%cvt, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%cvb, domain_fine, is_fine_pe)
     end if
 
     if (move_nsst) then
-       call mn_var_fill_intern_nest_halos(tref_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(z_c_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(c_0_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(c_d_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(w_0_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(w_d_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(xt_local, domain_fine, is_fine_pe) 
-       call mn_var_fill_intern_nest_halos(xs_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(xu_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(xv_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(xz_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(zm_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(xtts_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(xzts_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(d_conv_local, domain_fine, is_fine_pe)
-       !call mn_var_fill_intern_nest_halos(ifd_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(dt_cool_local, domain_fine, is_fine_pe)
-       call mn_var_fill_intern_nest_halos(qrain_local, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%tref, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%z_c, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%c_0, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%c_d, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%w_0, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%w_d, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%xt, domain_fine, is_fine_pe) 
+       call mn_var_fill_intern_nest_halos(mn_phys%xs, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%xu, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%xv, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%xz, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%zm, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%xtts, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%xzts, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%d_conv, domain_fine, is_fine_pe)
+       !call mn_var_fill_intern_nest_halos(mn_phys%ifd, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%dt_cool, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%qrain, domain_fine, is_fine_pe)
     end if
     !call check_array(Atm%u, this_pe, "Atm%pt", 100.0, 400.0)
 
@@ -1859,8 +1616,7 @@ contains
        orog_var_name = 'orog_raw'
     end if
 
-    !if (debug_log) print '("[INFO] WDR NCREAD LOFC load_nest_orog_from_nc npe=",I0,I4,I4,I4,I4," ",A12," ",A128)', this_pe, fp_nx, fp_ny, mid_nx,mid_ny, orog_var_name, nc_filename
-    print '("[INFO] WDR NCREAD LOFC load_nest_orog_from_nc npe=",I0,I4,I4,I4,I4," ",A12," ",A128)', this_pe, fp_nx, fp_ny, mid_nx,mid_ny, orog_var_name, nc_filename
+    print '("[INFO] WDR NCREAD LOFC mn_orog_read_hires_parent npe=",I0,I4,I4,I4,I4," ",A12," ",A128)', this_pe, fp_nx, fp_ny, mid_nx,mid_ny, orog_var_name, nc_filename
 
     call alloc_read_data(nc_filename, orog_var_name, fp_nx, fp_ny, orog_grid)
     call alloc_read_data(nc_filename, 'stddev', fp_nx, fp_ny, orog_std_grid)  ! Not needed
@@ -2099,13 +1855,13 @@ contains
   subroutine mn_prog_shift_data(Atm, n, child_grid_num, wt_h, wt_u, wt_v, &
        delta_i_c, delta_j_c, x_refine, y_refine, &
        is_fine_pe, nest_domain, nz)
-    type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
-    integer, intent(in)                              :: n, child_grid_num
-    real, allocatable, intent(in)                    :: wt_h(:,:,:), wt_u(:,:,:), wt_v(:,:,:)
-    integer, intent(in)                              :: delta_i_c, delta_j_c, x_refine, y_refine   
-    logical, intent(in)                              :: is_fine_pe
-    type(nest_domain_type), intent(inout)            :: nest_domain
-    integer, intent(in)                              :: nz
+    type(fv_atmos_type), allocatable, target, intent(inout)  :: Atm(:)
+    integer, intent(in)                                      :: n, child_grid_num
+    real, allocatable, intent(in)                            :: wt_h(:,:,:), wt_u(:,:,:), wt_v(:,:,:)
+    integer, intent(in)                                      :: delta_i_c, delta_j_c, x_refine, y_refine   
+    logical, intent(in)                                      :: is_fine_pe
+    type(nest_domain_type), intent(inout)                    :: nest_domain
+    integer, intent(in)                                      :: nz
 
     ! Constants for mpp calls
     integer  :: interp_type   = 1    ! cell-centered A-grid
@@ -2114,6 +1870,11 @@ contains
     integer  :: position      = CENTER ! CENTER, NORTH, EAST
     integer  :: position_u    = NORTH
     integer  :: position_v    = EAST
+
+    type(fv_moving_nest_prog_type), pointer :: mn_prog
+
+    mn_prog => Atm(n)%mn_prog
+
 
     call mn_var_shift_data(Atm(n)%q_con, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
          delta_i_c, delta_j_c, &
@@ -2145,7 +1906,7 @@ contains
     !     x_refine, y_refine, &
     !     is_fine_pe, nest_domain, position, nz)
 
-    call mn_var_shift_data(delz_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+    call mn_var_shift_data(mn_prog%delz, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
          delta_i_c, delta_j_c, &
          x_refine, y_refine, &
          is_fine_pe, nest_domain, position, nz)
@@ -2186,7 +1947,7 @@ contains
   subroutine mn_phys_shift_data(Atm, IPD_Control, IPD_Data, n, child_grid_num, wt_h, wt_u, wt_v, &
        delta_i_c, delta_j_c, x_refine, y_refine, &
        is_fine_pe, nest_domain, nz)
-    type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)
+    type(fv_atmos_type), allocatable, target, intent(inout)  :: Atm(:)
     type(IPD_control_type), intent(in)               :: IPD_Control
     type(IPD_data_type), intent(inout)               :: IPD_Data(:)
     integer, intent(in)                              :: n, child_grid_num
@@ -2203,145 +1964,148 @@ contains
     integer  :: position      = CENTER ! CENTER, NORTH, EAST
     integer  :: position_u    = NORTH
     integer  :: position_v    = EAST
-    
+    type(fv_moving_nest_physics_type), pointer :: mn_phys
+
+    mn_phys => Atm(n)%mn_phys
+
     !! Skin temp/SST
-    call mn_var_shift_data(ts_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+    call mn_var_shift_data(mn_phys%ts, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
          delta_i_c, delta_j_c, &
          x_refine, y_refine, &
          is_fine_pe, nest_domain, position)
 
     if (move_physics) then
        !! Soil variables
-       call mn_var_shift_data(smc_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%smc, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position, IPD_Control%lsoil)
-       call mn_var_shift_data(stc_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%stc, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position, IPD_Control%lsoil)
-       call mn_var_shift_data(slc_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%slc, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position, IPD_Control%lsoil)
        
        !! Physics arrays
-       call mn_var_shift_data(phy_f2d_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%phy_f2d, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position, IPD_control%ntot2d)
        
-       call mn_var_shift_data(phy_f3d_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%phy_f3d, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position, IPD_Control%levs)
        
        
        ! Surface variables
-       call mn_var_shift_data(u10m_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%u10m, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
          delta_i_c, delta_j_c, &
          x_refine, y_refine, &
          is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(v10m_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%v10m, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
          delta_i_c, delta_j_c, &
          x_refine, y_refine, &
          is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(tprcp_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%tprcp, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
          delta_i_c, delta_j_c, &
          x_refine, y_refine, &
          is_fine_pe, nest_domain, position)
 
-       call mn_var_shift_data(hprime_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%hprime, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
          delta_i_c, delta_j_c, &
          x_refine, y_refine, &
          is_fine_pe, nest_domain, position, IPD_Control%nmtvr)
        
 
-       call mn_var_shift_data(zorl_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%zorl, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
          delta_i_c, delta_j_c, &
          x_refine, y_refine, &
          is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(alvsf_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%alvsf, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(alvwf_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%alvwf, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(alnsf_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%alnsf, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(alnwf_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%alnwf, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
 
-       call mn_var_shift_data(facsf_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%facsf, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(facwf_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-            delta_i_c, delta_j_c, &
-            x_refine, y_refine, &
-            is_fine_pe, nest_domain, position)
-       
-       
-       call mn_var_shift_data(canopy_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-            delta_i_c, delta_j_c, &
-            x_refine, y_refine, &
-            is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(vegfrac_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-            delta_i_c, delta_j_c, &
-            x_refine, y_refine, &
-            is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(uustar_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-            delta_i_c, delta_j_c, &
-            x_refine, y_refine, &
-            is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(shdmin_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-            delta_i_c, delta_j_c, &
-            x_refine, y_refine, &
-            is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(shdmax_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-            delta_i_c, delta_j_c, &
-            x_refine, y_refine, &
-            is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(zorll_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-            delta_i_c, delta_j_c, &
-            x_refine, y_refine, &
-            is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(zorlo_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-            delta_i_c, delta_j_c, &
-            x_refine, y_refine, &
-            is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(zorlw_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-            delta_i_c, delta_j_c, &
-            x_refine, y_refine, &
-            is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(tsfco_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-            delta_i_c, delta_j_c, &
-            x_refine, y_refine, &
-            is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(tsfcl_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-            delta_i_c, delta_j_c, &
-            x_refine, y_refine, &
-            is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(tsfc_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%facwf, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
        
-       call mn_var_shift_data(cv_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       
+       call mn_var_shift_data(mn_phys%canopy, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(cvt_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%vegfrac, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(cvb_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+       call mn_var_shift_data(mn_phys%uustar, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+            delta_i_c, delta_j_c, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(mn_phys%shdmin, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+            delta_i_c, delta_j_c, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(mn_phys%shdmax, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+            delta_i_c, delta_j_c, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(mn_phys%zorll, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+            delta_i_c, delta_j_c, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(mn_phys%zorlo, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+            delta_i_c, delta_j_c, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(mn_phys%zorlw, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+            delta_i_c, delta_j_c, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(mn_phys%tsfco, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+            delta_i_c, delta_j_c, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(mn_phys%tsfcl, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+            delta_i_c, delta_j_c, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(mn_phys%tsfc, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+            delta_i_c, delta_j_c, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       
+       call mn_var_shift_data(mn_phys%cv, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+            delta_i_c, delta_j_c, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(mn_phys%cvt, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+            delta_i_c, delta_j_c, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(mn_phys%cvb, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
             delta_i_c, delta_j_c, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
@@ -2349,41 +2113,41 @@ contains
        end if
        
        if (move_nsst) then
-          call mn_var_shift_data(tref_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%tref, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(z_c_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%z_c, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(c_0_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%c_0, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(c_d_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%c_d, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(w_0_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%w_0, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(w_d_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%w_d, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(xt_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, & 
+          call mn_var_shift_data(mn_phys%xt, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, & 
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(xs_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%xs, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(xu_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%xu, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(xv_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%xv, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(xz_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%xz, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(zm_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%zm, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(xtts_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%xtts, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(xzts_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%xzts, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(d_conv_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%d_conv, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          !call mn_var_shift_data(ifd_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          !call mn_var_shift_data(mn_phys%ifd, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
           !     delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(dt_cool_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%dt_cool, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-          call mn_var_shift_data(qrain_local, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+          call mn_var_shift_data(mn_phys%qrain, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)          
        end if
 
@@ -4773,196 +4537,6 @@ contains
 
 
   end subroutine move_nest_geo
-
-
-  !  Assigns lat/lons of the nest grids, using the values from the full panel supergrid (fp_super_tile_geo)
-  !  Puts the supergrid values into tile_geo%lats and tile_geo%long
-  !  Puts the (centered?) grid values into n_grid
-
-  !  What is the role of halos here?
-  !  full panel (fp_) data will not have a halo -- it is the full parent tile at nest refinement
-  !  The nested grids should have halos --  the halo points are where downscaling from parent occurs
-
-  ! This version expects centered grid in tile_geo
-  !  and  supergrids in fp_super_tile_geo
-
-  subroutine assign_nest_latlons(nx_fine, ny_fine, &
-       fp_istart_fine, fp_jstart_fine, &
-       istart_fine, jstart_fine, iend_fine, jend_fine, &
-       ehalo, whalo, nhalo, shalo, &
-       tile_geo, parent_geo_dummy, fp_super_tile_geo, n_grid)
-
-    implicit none
-    integer, intent(in)                   :: nx_fine, ny_fine
-    integer, intent(in)                   :: fp_istart_fine, fp_jstart_fine
-    integer, intent(in)                   :: istart_fine, jstart_fine
-    integer, intent(in)                   :: iend_fine, jend_fine
-    integer, intent(in)                   :: ehalo, whalo, nhalo, shalo
-
-
-    type(grid_geometry), intent(inout)  :: tile_geo,fp_super_tile_geo
-    type(grid_geometry), intent(in)     :: parent_geo_dummy ! is not used
-
-    !real, allocatable, intent(inout)            :: tile_lats(:,:), tile_lons(:,:)
-    !real, allocatable, intent(inout)            :: parent_lats(:,:), parent_lons(:,:)
-    !real, allocatable, intent(inout)            :: fp_tile_lats(:,:), fp_tile_lons(:,:)
-    real(kind=R_GRID), allocatable, intent(inout)            :: n_grid(:,:,:)
-
-    integer                      :: super_nx, super_ny, mid_nx, mid_ny
-    integer                      :: i, j, fi, fj
-    integer        :: this_pe
-    integer :: nest_x, nest_y, parent_x, parent_y
-
-
-
-    this_pe = mpp_pe()
-
-    call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
-
-    super_nx = 2*(iend_fine - istart_fine  + 1) + 2 * ( ehalo + whalo ) + 1
-    super_ny = 2*(jend_fine - jstart_fine  + 1) + 2 * ( nhalo + shalo ) + 1
-    mid_nx = (iend_fine - istart_fine) 
-    mid_ny = (jend_fine - jstart_fine) 
-
-    ! Brute force way of moving the data, but accurate
-    ! tile_geo%lats and fp_super_tile_geo%lats are on supergrid
-    ! istart_fine and fp_istart_fine are on cell-centered grid
-
-    if (debug_log) print '("[INFO] WDR assign_nest_latlons A1 fp_istart_fine, fp_jstart_fine npe=",I0,I4,I4)', this_pe, fp_istart_fine, fp_jstart_fine
-    if (debug_log) print '("[INFO] WDR assign_nest_latlons A2 istart_fine, jstart_fine npe=",I0,I4,I4)', this_pe, istart_fine, jstart_fine
-    if (debug_log) print '("[INFO] WDR assign_nest_latlons A3 super_nx, super_ny npe=",I0,I4,I4)', this_pe, super_nx, super_ny
-
-    do j=1-2*nhalo,super_ny-2*nhalo
-       do i=1-2*ehalo,super_nx-2*ehalo
-          !fi = i - 2*ehalo - fp_istart_fine + istart_fine
-          !fj = j - 2*nhalo - fp_jstart_fine + jstart_fine
-
-          ! Map the large fine supergrid data onto the moving fine supergrid
-
-
-          fi = i - 2 - 2*ehalo - 2*fp_istart_fine + 2*istart_fine
-          fj = j - 2 - 2*nhalo - 2*fp_jstart_fine + 2*jstart_fine
-
-          tile_geo%lats(i, j) = fp_super_tile_geo%lats(fi, fj)
-          tile_geo%lons(i, j) = fp_super_tile_geo%lons(fi, fj)
-          if (debug_log) print '("[INFO] WDR assign_nest_latlons B1 npe=",I0,I4,I4,I4,I4, F12.4, F12.4)', this_pe, i, j, fi, fj,  tile_geo%lats(i, j), tile_geo%lons(i, j) - 360.0
-          if (debug_log) print '("[INFO] WDR assign_nest_latlons B2 tile_geo%lats bounds npe=",I0,I4,I4,I4,I4)', this_pe, lbound(tile_geo%lats,1), ubound(tile_geo%lats,1), lbound(tile_geo%lats,2), ubound(tile_geo%lats,2)
-          if (debug_log) print '("[INFO] WDR assign_nest_latlons B3 fp_super_tile_geo%lats bounds npe=",I0,I4,I4,I4,I4)', this_pe, lbound(fp_super_tile_geo%lats,1), ubound(fp_super_tile_geo%lats,1), lbound(fp_super_tile_geo%lats,2), ubound(fp_super_tile_geo%lats,2)
-       end do
-    end do
-
-    if (debug_log) print '("[INFO] WDR assign_nest_latlons C1 npe=",I0,I4,I4)', this_pe
-
-    do j = 1-nhalo, ny_fine+shalo
-       do i = 1-ehalo, nx_fine+whalo
-          ! supergrid version
-          !n_grid(i, j, 1) = tile_geo%lats(i*2+1, j*2+1)
-          !n_grid(i, j, 2) = tile_geo%lons(i*2+1, j*2+1)
-
-          ! centered grid version
-          n_grid(i, j, 1) = tile_geo%lats(i, j)
-          n_grid(i, j, 2) = tile_geo%lons(i, j)
-
-          if (debug_log) print '("[INFO] WDR center from C2 supergrid npe=",I0, I4,I4,I4,I4, F12.4, F12.4)', this_pe, i, j, i*2+1, j*2+1, n_grid(i,j,1), n_grid(i,j,2)
-
-       end do
-    end do
-
-    if (debug_log) print '("[INFO] WDR assign_nest_latlons DONE npe=",I0,I4,I4)', this_pe
-
-  end subroutine assign_nest_latlons
-
-
-
-  !  Assigns lat/lons of the nest grids, using the values from the full panel supergrid (fp_super_tile_geo)
-  !  Puts the supergrid values into tile_geo%lats and tile_geo%long
-  !  Puts the (centered?) grid values into n_grid
-
-  !  What is the role of halos here?
-  !  full panel (fp_) data will not have a halo -- it is the full parent tile at nest refinement
-  !  The nested grids should have halos --  the halo points are where downscaling from parent occurs
-
-  ! This version expects supergrids in tile_geo and fp_super_tile_geo
-  ! This was the original version
-  subroutine assign_supergrid_nest_latlons(nx_fine, ny_fine, &
-       fp_istart_fine, fp_jstart_fine, &
-       istart_fine, jstart_fine, iend_fine, jend_fine, &
-       ehalo, whalo, nhalo, shalo, &
-       tile_geo, parent_geo_dummy, fp_super_tile_geo, n_grid)
-
-    implicit none
-    integer, intent(in)                   :: nx_fine, ny_fine
-    integer, intent(in)                   :: fp_istart_fine, fp_jstart_fine
-    integer, intent(in)                   :: istart_fine, jstart_fine
-    integer, intent(in)                   :: iend_fine, jend_fine
-    integer, intent(in)                   :: ehalo, whalo, nhalo, shalo
-
-
-    type(grid_geometry), intent(inout)  :: tile_geo,fp_super_tile_geo
-    type(grid_geometry), intent(in)     :: parent_geo_dummy ! is not used
-
-    !real, allocatable, intent(inout)            :: tile_lats(:,:), tile_lons(:,:)
-    !real, allocatable, intent(inout)            :: parent_lats(:,:), parent_lons(:,:)
-    !real, allocatable, intent(inout)            :: fp_tile_lats(:,:), fp_tile_lons(:,:)
-    real, allocatable, intent(inout)            :: n_grid(:,:,:)
-
-    integer                      :: super_nx, super_ny, mid_nx, mid_ny
-    integer                      :: i, j, fi, fj
-    integer        :: this_pe
-
-
-    this_pe = mpp_pe()
-
-
-    super_nx = 2*(iend_fine - istart_fine  + 1) + 2 * ( ehalo + whalo ) + 1
-    super_ny = 2*(jend_fine - jstart_fine  + 1) + 2 * ( nhalo + shalo ) + 1
-    mid_nx = (iend_fine - istart_fine) 
-    mid_ny = (jend_fine - jstart_fine) 
-
-    ! Brute force way of moving the data, but accurate
-    ! tile_geo%lats and fp_super_tile_geo%lats are on supergrid
-    ! istart_fine and fp_istart_fine are on cell-centered grid
-
-    if (debug_log) print '("[INFO] WDR assign_nest_latlons A1 fp_istart_fine, fp_jstart_fine npe=",I0,I4,I4)', this_pe, fp_istart_fine, fp_jstart_fine
-    if (debug_log) print '("[INFO] WDR assign_nest_latlons A2 istart_fine, jstart_fine npe=",I0,I4,I4)', this_pe, istart_fine, jstart_fine
-    if (debug_log) print '("[INFO] WDR assign_nest_latlons A3 super_nx, super_ny npe=",I0,I4,I4)', this_pe, super_nx, super_ny
-
-    do j=1-2*nhalo,super_ny-2*nhalo
-       do i=1-2*ehalo,super_nx-2*ehalo
-          !fi = i - 2*ehalo - fp_istart_fine + istart_fine
-          !fj = j - 2*nhalo - fp_jstart_fine + jstart_fine
-
-          ! Map the large fine supergrid data onto the moving fine supergrid
-
-
-          fi = i - 2 - 2*ehalo - 2*fp_istart_fine + 2*istart_fine
-          fj = j - 2 - 2*nhalo - 2*fp_jstart_fine + 2*jstart_fine
-
-          tile_geo%lats(i, j) = fp_super_tile_geo%lats(fi, fj)
-          tile_geo%lons(i, j) = fp_super_tile_geo%lons(fi, fj)
-          if (debug_log) print '("[INFO] WDR assign_nest_latlons B1 npe=",I0,I4,I4,I4,I4, F12.4, F12.4)', this_pe, i, j, fi, fj,  tile_geo%lats(i, j), tile_geo%lons(i, j) - 360.0
-          if (debug_log) print '("[INFO] WDR assign_nest_latlons B2 tile_geo%lats bounds npe=",I0,I4,I4,I4,I4)', this_pe, lbound(tile_geo%lats,1), ubound(tile_geo%lats,1), lbound(tile_geo%lats,2), ubound(tile_geo%lats,2)
-          if (debug_log) print '("[INFO] WDR assign_nest_latlons B3 fp_super_tile_geo%lats bounds npe=",I0,I4,I4,I4,I4)', this_pe, lbound(fp_super_tile_geo%lats,1), ubound(fp_super_tile_geo%lats,1), lbound(fp_super_tile_geo%lats,2), ubound(fp_super_tile_geo%lats,2)
-       end do
-    end do
-
-    if (debug_log) print '("[INFO] WDR assign_nest_latlons C1 npe=",I0,I4,I4)', this_pe
-
-    do j = 1-nhalo, ny_fine+shalo
-       do i = 1-ehalo, nx_fine+whalo
-          n_grid(i, j, 1) = tile_geo%lats(i*2+1, j*2+1)
-          n_grid(i, j, 2) = tile_geo%lons(i*2+1, j*2+1)
-
-          if (debug_log) print '("[INFO] WDR center from C2 supergrid npe=",I0, I4,I4,I4,I4, F12.4, F12.4)', this_pe, i, j, i*2+1, j*2+1, n_grid(i,j,1), n_grid(i,j,2)
-
-       end do
-    end do
-
-    if (debug_log) print '("[INFO] WDR assign_nest_latlons DONE npe=",I0,I4,I4)', this_pe
-
-  end subroutine assign_supergrid_nest_latlons
-
-
 
   subroutine assign_n_p_grids(parent_geo, tile_geo, p_grid, n_grid, position)
     type(grid_geometry), intent(in)          ::  parent_geo, tile_geo

@@ -81,28 +81,13 @@ use multi_gases_mod,  only: virq, virq_max, num_gas, ri, cpi
 !-----------------
 use atmosphere_mod,     only: Atm, mygrid, p_split, dt_atmos
 use fv_arrays_mod,      only: fv_atmos_type, R_GRID, fv_grid_bounds_type, phys_diag_type
-use fv_control_mod,     only: fv_control_init, fv_end, ngrids
-use fv_eta_mod,         only: get_eta_level
-use fv_fill_mod,        only: fill_gfs
-use fv_dynamics_mod,    only: fv_dynamics
-use fv_nesting_mod,     only: twoway_nesting
+use fv_arrays_mod,      only: allocate_fv_moving_nest_prog_type, allocate_fv_moving_nest_physics_type
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag_reinit, fv_diag, fv_time, prt_maxmin, prt_height
-use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
 use fv_mp_mod,          only: is_master
-use fv_sg_mod,          only: fv_subgrid_z
-use fv_update_phys_mod, only: fv_update_phys
-use fv_io_mod,          only: fv_io_register_nudge_restart
-use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
 use fv_regional_mod,    only: start_regional_restart, read_new_bc_data, &
                               a_step, p_step, current_time_in_seconds
-use fv_grid_utils_mod,  only: g_sum
-use mpp_domains_mod, only:  mpp_get_data_domain, mpp_get_compute_domain
-use coarse_graining_mod, only: coarse_graining_init
-use coarse_grained_diagnostics_mod, only: fv_coarse_diag_init, fv_coarse_diag
-use coarse_grained_restart_files_mod, only: fv_coarse_restart_init
-use diag_manager_mod,   only: send_data
 
 
 !-----------------------------------------
@@ -149,6 +134,9 @@ use fv_moving_nest_utils_mod,   only: load_nest_latlons_from_nc, compare_terrain
 !      Grid reset routines
 use fv_moving_nest_mod,         only: grid_geometry, assign_n_p_grids, move_nest_geo
 use fv_moving_nest_utils_mod,   only: fill_grid_from_supergrid, fill_weight_grid
+
+!      Physics moving 
+use fv_moving_nest_mod,         only: move_physics, move_nsst
 
 !      Recalculation routines
 use fv_moving_nest_mod,         only: reallocate_BC_buffers, recalc_aux_pressures, vertical_remap_nest !, reinit_parent_indices
@@ -639,11 +627,6 @@ contains
 
    !print '("[INFO] WDR NESTIDX fv_moving_nest_main.F90 npe=",I0, " n=",I0," n=",I0," nest_num=",I0," parent_grid_num=",I0," child_grid_num=",I0)', this_pe, n, n, nest_num, parent_grid_num, child_grid_num    
    
-   if (first_nest_move) then
-      !print '("[INFO] WDR Start Clocks npe=",I0)', this_pe
-      call fv_moving_nest_init_clocks()
-   end if
-
 
 
    ! mygrid and n are the same in atmosphere.F90
@@ -664,6 +647,21 @@ contains
    jed = jec + Atm(n)%bd%ng
 
    nq = ncnst-pnats
+
+
+   if (first_nest_move) then
+      !print '("[INFO] WDR Start Clocks npe=",I0)', this_pe
+      call fv_moving_nest_init_clocks()
+
+      ! This will only allocate the mn_prog and mn_phys for the active Atm(n), not all of them
+      !  The others can safely remain unallocated.
+      call allocate_fv_moving_nest_prog_type(isd, ied, jsd, jed, npz, Atm(n)%mn_prog)
+      call allocate_fv_moving_nest_physics_type(isd, ied, jsd, jed, npz, move_physics, move_nsst, &
+           IPD_Control%lsoil, IPD_Control%nmtvr, IPD_Control%levs, IPD_Control%ntot2d, IPD_Control%ntot3d, &
+           Atm(n)%mn_phys)
+   end if
+
+
 
 
    !==================================================================================================
