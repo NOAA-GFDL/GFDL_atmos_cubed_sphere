@@ -559,6 +559,7 @@ contains
 
    ! Parent tile data, saved between timesteps
    logical, save                          :: first_nest_move = .true.
+   logical, save                          :: allocated_mn_arrays = .false.
    type(grid_geometry), save              :: parent_geo
    type(grid_geometry), save              :: fp_super_tile_geo
    type(mn_surface_grids), save           :: mn_static
@@ -653,12 +654,18 @@ contains
       !print '("[INFO] WDR Start Clocks npe=",I0)', this_pe
       call fv_moving_nest_init_clocks()
 
-      ! This will only allocate the mn_prog and mn_phys for the active Atm(n), not all of them
-      !  The others can safely remain unallocated.
-      call allocate_fv_moving_nest_prog_type(isd, ied, jsd, jed, npz, Atm(n)%mn_prog)
-      call allocate_fv_moving_nest_physics_type(isd, ied, jsd, jed, npz, move_physics, move_nsst, &
-           IPD_Control%lsoil, IPD_Control%nmtvr, IPD_Control%levs, IPD_Control%ntot2d, IPD_Control%ntot3d, &
-           Atm(n)%mn_phys)
+      if (.not. allocated_mn_arrays) then
+
+         ! This will only allocate the mn_prog and mn_phys for the active Atm(n), not all of them
+         !  The others can safely remain unallocated.
+         print '("[INFO] WDR call allocate_fv_moving_nest_prog npe=",I0," n=",I0)', this_pe, n
+         call allocate_fv_moving_nest_prog_type(isd, ied, jsd, jed, npz, Atm(n)%mn_prog)
+         call allocate_fv_moving_nest_physics_type(isd, ied, jsd, jed, npz, move_physics, move_nsst, &
+              IPD_Control%lsoil, IPD_Control%nmtvr, IPD_Control%levs, IPD_Control%ntot2d, IPD_Control%ntot3d, &
+              Atm(n)%mn_phys)
+         allocated_mn_arrays = .True.
+
+      end if
    end if
 
 
