@@ -559,7 +559,6 @@ contains
 
    ! Parent tile data, saved between timesteps
    logical, save                          :: first_nest_move = .true.
-   logical, save                          :: allocated_mn_arrays = .false.
    type(grid_geometry), save              :: parent_geo
    type(grid_geometry), save              :: fp_super_tile_geo
    type(mn_surface_grids), save           :: mn_static
@@ -651,24 +650,17 @@ contains
 
 
    if (first_nest_move) then
-      !print '("[INFO] WDR Start Clocks npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR Start Clocks npe=",I0," n=",I0)', this_pe, n
       call fv_moving_nest_init_clocks()
-
-      if (.not. allocated_mn_arrays) then
-
-         ! This will only allocate the mn_prog and mn_phys for the active Atm(n), not all of them
-         !  The others can safely remain unallocated.
-         print '("[INFO] WDR call allocate_fv_moving_nest_prog npe=",I0," n=",I0)', this_pe, n
-         call allocate_fv_moving_nest_prog_type(isd, ied, jsd, jed, npz, Atm(n)%mn_prog)
-         call allocate_fv_moving_nest_physics_type(isd, ied, jsd, jed, npz, move_physics, move_nsst, &
-              IPD_Control%lsoil, IPD_Control%nmtvr, IPD_Control%levs, IPD_Control%ntot2d, IPD_Control%ntot3d, &
-              Atm(n)%mn_phys)
-         allocated_mn_arrays = .True.
-
-      end if
+      
+      ! This will only allocate the mn_prog and mn_phys for the active Atm(n), not all of them
+      !  The others can safely remain unallocated.
+      if (debug_log) print '("[INFO] WDR call allocate_fv_moving_nest_prog npe=",I0," n=",I0)', this_pe, n
+      call allocate_fv_moving_nest_prog_type(isd, ied, jsd, jed, npz, Atm(n)%mn_prog)
+      call allocate_fv_moving_nest_physics_type(isd, ied, jsd, jed, npz, move_physics, move_nsst, &
+           IPD_Control%lsoil, IPD_Control%nmtvr, IPD_Control%levs, IPD_Control%ntot2d, IPD_Control%ntot3d, &
+           Atm(n)%mn_phys)
    end if
-
-
 
 
    !==================================================================================================
@@ -840,7 +832,7 @@ contains
           ! Also read in other static variables from the orography and surface files
 
           if (first_nest_move) then
-             print '("[INFO] WDR mn_latlon_read_hires_parent READING static fine file on npe=",I0)', this_pe
+             if (debug_log) print '("[INFO] WDR mn_latlon_read_hires_parent READING static fine file on npe=",I0)', this_pe
 
              call mn_latlon_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, fp_super_tile_geo, &
                   Atm(child_grid_num)%neststruct%surface_dir)
@@ -873,7 +865,7 @@ contains
              !call mn_static_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(child_grid_num)%neststruct%surface_dir, "vegetation_greenness", mn_static%veg_greenness_grid)
              ! Add snowfree albedo variables here
 
-             first_nest_move = .false.
+             !first_nest_move = .false.
           !else
            !  print '("[INFO] WDR mn_latlon_read_hires_parent SKIPPING static fine file on npe=",I0)', this_pe
 
@@ -894,6 +886,8 @@ contains
              !     x_refine, y_refine, ioffset, joffset)
           end if
        end if
+
+       if (first_nest_move) first_nest_move = .false.
 
        call mpp_clock_end (id_movnest1)
        call mpp_clock_begin (id_movnest1_9)
