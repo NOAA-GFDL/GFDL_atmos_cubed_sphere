@@ -1703,11 +1703,11 @@
  integer, save       :: id_latlon
 
 
-    if (first_time) then
-       id_latlon     = mpp_clock_id ('latlon2xyz',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-    end if
+    !if (first_time) then
+    !   id_latlon     = mpp_clock_id ('latlon2xyz',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+    !end if
 
-    call mpp_clock_begin (id_latlon)
+    !call mpp_clock_begin (id_latlon)
 
     do n=1,2
        q(n) = p(n)
@@ -1723,7 +1723,7 @@
     e(2) = e2
     e(3) = e3
 
-    call mpp_clock_end (id_latlon)
+    !call mpp_clock_end (id_latlon)
 
  end subroutine latlon2xyz
 

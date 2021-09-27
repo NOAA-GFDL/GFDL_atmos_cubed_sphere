@@ -656,6 +656,7 @@ contains
    logical  :: is_fine_pe, do_move
 
    character(len=15) :: str_time
+   character*255 :: message
 
    type(domain2d), pointer           :: domain_coarse, domain_fine
 
@@ -765,7 +766,11 @@ contains
 
      call date_and_time(TIME=str_time)
       
-     if (this_pe .eq. 0) print '("[INFO] WDR TIMESTEP atmosphere.F90 npe=",I0," a_step=",I0," fcst_hr=",F8.2," time=",A12)', this_pe, a_step, a_step * dt_atmos / 3600.0, str_time
+     !if (this_pe .eq. 0) print '("[INFO] WDR TIMESTEP atmosphere.F90 npe=",I0," a_step=",I0," fcst_hr=",F8.2," time=",A12)', this_pe, a_step, a_step * dt_atmos / 3600.0, str_time
+
+     write(message,'("TIMESTEP atmosphere.F90 a_step=",I0," fcst_hr=",F8.2," time=",A12)')  a_step, a_step * dt_atmos / 3600.0, str_time
+     call mpp_error(NOTE,message)
+
       
      !! Re-enable to output buffered NC files early in a run.
      !if (tsvar_out .and. a_step .eq. 4800) then

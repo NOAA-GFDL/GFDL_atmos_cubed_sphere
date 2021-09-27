@@ -173,6 +173,7 @@ logical :: wxvar_out = .false.    ! Produces netCDF outputs; be careful to not e
 integer :: id_movnest1, id_movnest1_9, id_movnest2, id_movnest3, id_movnest4, id_movnest5
 integer :: id_movnest6, id_movnest7_0, id_movnest7_1, id_movnest7_2, id_movnest7_3, id_movnest8, id_movnest9
 integer :: id_movnestTot
+logical :: use_timers = .False. ! Set this to true for detailed performance profiling.  False only profiles total moving nest time.
 !integer, save :: a_step = 0
 integer, save :: output_step = 0
 
@@ -315,22 +316,23 @@ contains
   subroutine fv_moving_nest_init_clocks()
   
     !  --- initialize clocks for moving_nest
-    id_movnest1     = mpp_clock_id ('MN Part 1 Init',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-    id_movnest1_9   = mpp_clock_id ('MN Part 1.9 Copy delz',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-    id_movnest2     = mpp_clock_id ('MN Part 2 Fill Halos from Parent',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-    id_movnest3     = mpp_clock_id ('MN Part 3 Meta Move Nest',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-    id_movnest4     = mpp_clock_id ('MN Part 4 Fill Intern Nest Halos',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-    id_movnest5     = mpp_clock_id ('MN Part 5 Recalc Weights',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-    id_movnest6     = mpp_clock_id ('MN Part 6 EOSHIFT',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-    
-    id_movnest7_0   = mpp_clock_id ('MN Part 7.0 Recalc gridstruct',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-    id_movnest7_1   = mpp_clock_id ('MN Part 7.1 Refill halos from Parent',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-    id_movnest7_2   = mpp_clock_id ('MN Part 7.2 Refill Intern Nest Halos',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-    id_movnest7_3   = mpp_clock_id ('MN Part 7.3 Fill delz',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-    
-    id_movnest8     = mpp_clock_id ('MN Part 8 Dump to netCDF',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-    id_movnest9     = mpp_clock_id ('MN Part 9 Aux Pressure',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-    
+    if (use_timers) then
+       id_movnest1     = mpp_clock_id ('MN Part 1 Init',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       id_movnest1_9   = mpp_clock_id ('MN Part 1.9 Copy delz',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       id_movnest2     = mpp_clock_id ('MN Part 2 Fill Halos from Parent',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       id_movnest3     = mpp_clock_id ('MN Part 3 Meta Move Nest',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       id_movnest4     = mpp_clock_id ('MN Part 4 Fill Intern Nest Halos',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       id_movnest5     = mpp_clock_id ('MN Part 5 Recalc Weights',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       id_movnest6     = mpp_clock_id ('MN Part 6 EOSHIFT',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       
+       id_movnest7_0   = mpp_clock_id ('MN Part 7.0 Recalc gridstruct',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       id_movnest7_1   = mpp_clock_id ('MN Part 7.1 Refill halos from Parent',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       id_movnest7_2   = mpp_clock_id ('MN Part 7.2 Refill Intern Nest Halos',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       id_movnest7_3   = mpp_clock_id ('MN Part 7.3 Fill delz',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       
+       id_movnest8     = mpp_clock_id ('MN Part 8 Dump to netCDF',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       id_movnest9     = mpp_clock_id ('MN Part 9 Aux Pressure',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+    end if
     
     id_movnestTot     = mpp_clock_id ('Moving Nest Total',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
   end subroutine fv_moving_nest_init_clocks
@@ -475,23 +477,27 @@ contains
     if (nis .le. Atm(child_grid_num)%neststruct%corral_x) then
        delta_i_c = 0
 !      block_moves = .true.
-       if (mpp_pe()==mpp_root_pe()) print '("[INFO] WDR eval_move_nest nis too small. npe=",I0," nis=",I0)', this_pe, nis
+       write(message,*) 'eval_move_nest motion in x direction blocked.  small nis: ', nis
+       call mpp_error(WARNING,message)
     end if
     if (njs .le. Atm(child_grid_num)%neststruct%corral_y) then
        delta_j_c = 0
 !      block_moves = .true.
-       if (mpp_pe()==mpp_root_pe()) print '("[INFO] WDR eval_move_nest njs too small. npe=",I0," njs=",I0)', this_pe, njs
+       write(message,*) 'eval_move_nest motion in y direction blocked.  small njs: ', njs
+       call mpp_error(WARNING,message)
     end if
 
     if (nie .ge. Atm(parent_grid_num)%flagstruct%npx - Atm(child_grid_num)%neststruct%corral_x) then
        delta_i_c = 0
 !      block_moves = .true.
-       if (mpp_pe()==mpp_root_pe()) print '("[INFO] WDR eval_move_nest nie too big. npe=",I0," nie=",I0)', this_pe, nie
+       write(message,*) 'eval_move_nest motion in x direction blocked.  large nie: ', nie
+       call mpp_error(WARNING,message)
     end if
     if (nje .ge. Atm(parent_grid_num)%flagstruct%npy - Atm(child_grid_num)%neststruct%corral_y) then
        delta_j_c = 0
 !      block_moves = .true.
-       if (mpp_pe()==mpp_root_pe()) print '("[INFO] WDR eval_move_nest nje too big. npe=",I0," nje=",I0)', this_pe, nje
+       write(message,*) 'eval_move_nest motion in y direction blocked.  large nje: ', nje
+       call mpp_error(WARNING,message)
     end if
 
     if (delta_i_c .eq. 0 .and. delta_j_c .eq. 0) then
@@ -714,7 +720,7 @@ contains
     !if (Atm(child_grid_num)%gridstruct%nested .and. is_moving_nest .and. do_move) then
     if (is_moving_nest .and. do_move) then
        call mpp_clock_begin (id_movnestTot)
-       call mpp_clock_begin (id_movnest1)
+       if (use_timers) call mpp_clock_begin (id_movnest1)
 
        !!================================================================
        !! Step 1.1 -- Show the nest grids
@@ -889,8 +895,8 @@ contains
 
        if (first_nest_move) first_nest_move = .false.
 
-       call mpp_clock_end (id_movnest1)
-       call mpp_clock_begin (id_movnest1_9)
+       if (use_timers) call mpp_clock_end (id_movnest1)
+       if (use_timers) call mpp_clock_begin (id_movnest1_9)
 
        !!=====================================================================================           
        !! Step 1.9 -- Allocate and fill the temporary variable(s)                                              
@@ -899,8 +905,8 @@ contains
        call mn_prog_fill_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
        call mn_phys_fill_temp_variables(Atm, Atm_block, IPD_control, IPD_data, n, child_grid_num, is_fine_pe, npz)
 
-       call mpp_clock_end (id_movnest1_9)
-       call mpp_clock_begin (id_movnest2)
+       if (use_timers) call mpp_clock_end (id_movnest1_9)
+       if (use_timers) call mpp_clock_begin (id_movnest2)
 
        !!============================================================================
        !! Step 2 -- Fill in the halos from the coarse grids
@@ -916,8 +922,8 @@ contains
        call mn_prog_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
        call mn_phys_fill_nest_halos_from_parent(Atm, IPD_control, IPD_data, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
        
-       call mpp_clock_end (id_movnest2)
-       call mpp_clock_begin (id_movnest3)
+       if (use_timers) call mpp_clock_end (id_movnest2)
+       if (use_timers) call mpp_clock_begin (id_movnest3)
 
        !!============================================================================
        !! Step 3 -- Redefine the nest domain to new location  
@@ -943,8 +949,8 @@ contains
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
-       call mpp_clock_end (id_movnest3)
-       call mpp_clock_begin (id_movnest4)
+       if (use_timers) call mpp_clock_end (id_movnest3)
+       if (use_timers) call mpp_clock_begin (id_movnest4)
 
        !!============================================================================
        !! Step 4  -- Fill the internal nest halos for the prognostic variables, 
@@ -966,8 +972,8 @@ contains
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
-       call mpp_clock_end (id_movnest4)
-       call mpp_clock_begin (id_movnest5)
+       if (use_timers) call mpp_clock_end (id_movnest4)
+       if (use_timers) call mpp_clock_begin (id_movnest5)
 
        !!============================================================================
        !! Step 5  --  Recalculate nest halo weights (for fine PEs only) and indices
@@ -1022,8 +1028,8 @@ contains
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
-       call mpp_clock_end (id_movnest5)
-       call mpp_clock_begin (id_movnest6)
+       if (use_timers) call mpp_clock_end (id_movnest5)
+       if (use_timers) call mpp_clock_begin (id_movnest6)
 
 
        !!============================================================================
@@ -1046,8 +1052,8 @@ contains
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
-       call mpp_clock_end (id_movnest6)
-       call mpp_clock_begin (id_movnest7_0)
+       if (use_timers) call mpp_clock_end (id_movnest6)
+       if (use_timers) call mpp_clock_begin (id_movnest7_0)
 
        !!=====================================================================================
        !! Step 7 --  Reset the grid definition data and buffer sizes and weights after the nest motion
@@ -1059,8 +1065,8 @@ contains
 
        call mn_meta_reset_gridstruct(Atm, n, child_grid_num, global_nest_domain, fp_super_tile_geo, x_refine, y_refine, is_fine_pe, wt_h, wt_u, wt_v, a_step, dt_atmos)
 
-       call mpp_clock_end (id_movnest7_0)
-       call mpp_clock_begin (id_movnest7_1)
+       if (use_timers) call mpp_clock_end (id_movnest7_0)
+       if (use_timers) call mpp_clock_begin (id_movnest7_1)
        
        !!=====================================================================================
        !! Step 7.01 --  Reset the orography data that was read from the hires static file
@@ -1174,16 +1180,16 @@ contains
        call mn_prog_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
        call mn_phys_fill_nest_halos_from_parent(Atm, IPD_control, IPD_data, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
 
-       call mpp_clock_end (id_movnest7_1)
+       if (use_timers) call mpp_clock_end (id_movnest7_1)
 
        if (is_fine_pe) then
-          call mpp_clock_begin (id_movnest7_2)
+          if (use_timers) call mpp_clock_begin (id_movnest7_2)
 
           ! Refill the internal halos after nest motion
           call mn_prog_fill_intern_nest_halos(Atm(n), domain_fine, is_fine_pe)
           call mn_phys_fill_intern_nest_halos(Atm(n), IPD_control, IPD_data, domain_fine, is_fine_pe)
 
-          call mpp_clock_end (id_movnest7_2)
+          if (use_timers) call mpp_clock_end (id_movnest7_2)
        end if
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
@@ -1192,13 +1198,13 @@ contains
        !!=====================================================================================           
        !! Step 7.3 -- Allocate and fill the temporary variable(s)                                              
        !!=====================================================================================           
-       call mpp_clock_begin (id_movnest7_3)
+       if (use_timers) call mpp_clock_begin (id_movnest7_3)
 
        call mn_prog_apply_temp_variables(Atm, n, child_grid_num, is_fine_pe, npz)
        call mn_phys_apply_temp_variables(Atm, Atm_block, IPD_control, IPD_data, n, child_grid_num, is_fine_pe, npz)
 
-       call mpp_clock_end (id_movnest7_3)
-       call mpp_clock_begin (id_movnest8)
+       if (use_timers) call mpp_clock_end (id_movnest7_3)
+       if (use_timers) call mpp_clock_begin (id_movnest8)
 
 
        !!============================================================================
@@ -1214,8 +1220,8 @@ contains
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
-       call mpp_clock_end (id_movnest8)
-       call mpp_clock_begin (id_movnest9)
+       if (use_timers) call mpp_clock_end (id_movnest8)
+       if (use_timers) call mpp_clock_begin (id_movnest9)
 
 
        !!=========================================================================================
@@ -1295,7 +1301,7 @@ contains
 
        end if
 
-       call mpp_clock_end (id_movnest9)
+       if (use_timers) call mpp_clock_end (id_movnest9)
        call mpp_clock_end (id_movnestTot)
 
 

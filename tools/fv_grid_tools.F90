@@ -597,26 +597,28 @@ contains
 
     logical, save       :: first_time = .true.
     integer, save       :: id_timer1, id_timer2, id_timer3, id_timer3a, id_timer4, id_timer5, id_timer6, id_timer7, id_timer8
+    logical             :: use_timer = .false.  ! Set to True for detailed performance profiling
     logical             :: debug_log = .false.
     integer             :: this_pe
 
     this_pe = mpp_pe()
     
     if (first_time) then
-       id_timer1     = mpp_clock_id ('init_grid Step 1',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-       id_timer2     = mpp_clock_id ('init_grid Step 2',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-       id_timer3     = mpp_clock_id ('init_grid Step 3',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-       id_timer3a    = mpp_clock_id ('init_grid Step 3a',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-       id_timer4     = mpp_clock_id ('init_grid Step 4',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-       id_timer5     = mpp_clock_id ('init_grid Step 5',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-       id_timer6     = mpp_clock_id ('init_grid Step 6',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-       id_timer7     = mpp_clock_id ('init_grid Step 7',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-       id_timer8     = mpp_clock_id ('init_grid Step 8',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-
+       if (use_timer) then
+          id_timer1     = mpp_clock_id ('init_grid Step 1',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer2     = mpp_clock_id ('init_grid Step 2',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer3     = mpp_clock_id ('init_grid Step 3',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer3a    = mpp_clock_id ('init_grid Step 3a',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer4     = mpp_clock_id ('init_grid Step 4',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer5     = mpp_clock_id ('init_grid Step 5',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer6     = mpp_clock_id ('init_grid Step 6',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer7     = mpp_clock_id ('init_grid Step 7',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer8     = mpp_clock_id ('init_grid Step 8',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+       end if
        first_time = .false.
     end if
 
-    call mpp_clock_begin (id_timer1)
+    if (use_timer) call mpp_clock_begin (id_timer1)
 
     is  = Atm%bd%is
     ie  = Atm%bd%ie
@@ -695,11 +697,11 @@ contains
        endif
     endif
 
-    call mpp_clock_end (id_timer1)
+    if (use_timer) call mpp_clock_end (id_timer1)
 
 
     if (Atm%flagstruct%grid_type>3) then
-       call mpp_clock_begin (id_timer2)
+       if (use_timer) call mpp_clock_begin (id_timer2)
 
        if (Atm%flagstruct%grid_type == 4) then
           call setup_cartesian(npx, npy, Atm%flagstruct%dx_const, Atm%flagstruct%dy_const, &
@@ -709,17 +711,17 @@ contains
        else
           call mpp_error(FATAL, 'init_grid: unsupported grid type')
        endif
-       call mpp_clock_end (id_timer2)
+       if (use_timer) call mpp_clock_end (id_timer2)
 
     else
-       call mpp_clock_begin (id_timer3)
+       if (use_timer) call mpp_clock_begin (id_timer3)
 
           cubed_sphere = .true.
 
           if (Atm%neststruct%nested) then
              !Read grid if it exists
 
-             call mpp_clock_begin (id_timer3a)
+             if (use_timer) call mpp_clock_begin (id_timer3a)
              if (Atm%flagstruct%grid_type < 0) then
                 !Note that read_grid only reads in grid corners. Will still need to compute all other grid metrics.
                 !NOTE: cannot currently read in mosaic for both coarse and nested grids simultaneously
@@ -727,7 +729,7 @@ contains
              endif
              ! still need to set up weights
              call setup_aligned_nest(Atm)
-             call mpp_clock_end (id_timer3a)
+             if (use_timer) call mpp_clock_end (id_timer3a)
 
           else
            if(trim(grid_file) .NE. 'Inline' .or. Atm%flagstruct%grid_type < 0) then
@@ -925,8 +927,8 @@ contains
           end if !if nested
 
 
-    call mpp_clock_end (id_timer3)
-    call mpp_clock_begin (id_timer4)
+    if (use_timer) call mpp_clock_end (id_timer3)
+    if (use_timer) call mpp_clock_begin (id_timer4)
 
        do j=jsd,jed
           do i=isd+1,ied
@@ -954,8 +956,8 @@ contains
           dyc(i,jed+1) = dyc(i,jed)
        end do
 
-       call mpp_clock_end (id_timer4)
-       call mpp_clock_begin (id_timer5)
+       if (use_timer) call mpp_clock_end (id_timer4)
+       if (use_timer) call mpp_clock_begin (id_timer5)
 
 
        if( .not. stretched_grid )      &
@@ -965,13 +967,13 @@ contains
        call grid_area( npx, npy, ndims, nregions, Atm%gridstruct%bounded_domain, Atm%gridstruct, Atm%domain, Atm%bd )
 !      stretched_grid = .false.
 
-       call mpp_clock_end (id_timer5)
+       if (use_timer) call mpp_clock_end (id_timer5)
 
 
 !----------------------------------
 ! Compute area_c, rarea_c, dxc, dyc
 !----------------------------------
-       call mpp_clock_begin (id_timer6)
+       if (use_timer) call mpp_clock_begin (id_timer6)
   if ( .not. stretched_grid .and. (.not. (Atm%gridstruct%bounded_domain))) then
 ! For symmetrical grids:
        if ( is==1 ) then
@@ -1069,8 +1071,8 @@ contains
        endif
    endif
 !-----------------
-       call mpp_clock_end (id_timer6)
-       call mpp_clock_begin (id_timer7)
+       if (use_timer) call mpp_clock_end (id_timer6)
+       if (use_timer) call mpp_clock_begin (id_timer7)
 
        call mpp_update_domains( dxc, dyc, Atm%domain, flags=SCALAR_PAIR,   &
                                 gridtype=CGRID_NE_PARAM, complete=.true.)
@@ -1150,8 +1152,8 @@ contains
           enddo
        enddo
 
-       call mpp_clock_end (id_timer7)
-       call mpp_clock_begin (id_timer8)
+       if (use_timer) call mpp_clock_end (id_timer7)
+       if (use_timer) call mpp_clock_begin (id_timer8)
 
 200    format(A,f9.2,A,f9.2,A,f9.2)
 201    format(A,f9.2,A,f9.2,A,f9.2,A,f9.2)
@@ -1294,7 +1296,7 @@ contains
 
     nullify(domain)
 
-    call mpp_clock_end (id_timer8)
+    if (use_timer) call mpp_clock_end (id_timer8)
 
 
 
@@ -1821,7 +1823,7 @@ contains
 
     logical             :: moving_nest = .true.  ! TODO set this from the Atm structure
 
-    if (first_time) then
+    if (first_time .and. use_timer) then
        id_timer1     = mpp_clock_id ('setup_aligned_nest Step 1',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
        id_timer2     = mpp_clock_id ('setup_aligned_nest Step 2 sph_lin_interp',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
        id_timer3a    = mpp_clock_id ('setup_aligned_nest Step 3a mid_pt_sphere',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
@@ -1841,7 +1843,7 @@ contains
        !first_time = .false.
     end if
 
-    call mpp_clock_begin (id_timer1)
+    if (use_timer) call mpp_clock_begin (id_timer1)
 
 
 
@@ -1927,8 +1929,8 @@ contains
          
       end if
 
-      call mpp_clock_end (id_timer1)
-      call mpp_clock_begin (id_timer2)
+      if (use_timer) call mpp_clock_end (id_timer1)
+      if (use_timer) call mpp_clock_begin (id_timer2)
       
 
 
@@ -2107,7 +2109,7 @@ contains
          end if
 
 
-         call mpp_clock_end (id_timer2)
+         if (use_timer) call mpp_clock_end (id_timer2)
 
          !if (.not. first_time) then
          !   do i = 44,47
@@ -2165,7 +2167,7 @@ contains
             !  calls to this routine to save processing time.
 
 
-            call mpp_clock_begin (id_timer3a)
+            if (use_timer) call mpp_clock_begin (id_timer3a)
 
             !!  Setup parent staggered grids
             !!  INPUTS:  p_grid
@@ -2181,8 +2183,8 @@ contains
                end do
             end do
             
-            call mpp_clock_end (id_timer3a)
-            call mpp_clock_begin (id_timer3b)
+            if (use_timer) call mpp_clock_end (id_timer3a)
+            if (use_timer) call mpp_clock_begin (id_timer3b)
             
             
             do j=jsg,jeg
@@ -2191,8 +2193,8 @@ contains
                   !call mid_pt_sphere(p_grid(i,  j,1:2), p_grid(i+1,  j,1:2), p_grid_v(i,j,:))
                end do
             end do
-            call mpp_clock_end (id_timer3b)
-            call mpp_clock_begin (id_timer3c)
+            if (use_timer) call mpp_clock_end (id_timer3b)
+            if (use_timer) call mpp_clock_begin (id_timer3c)
             
             
             do j=jsg,jeg
@@ -2216,12 +2218,12 @@ contains
 !!$      call mpp_broadcast(  p_grid_v( isg:ieg+1, jsg:jeg  , :), &
 !!$           (ieg-isg+2)*(jeg-jsg+1)*ndims, mpp_root_pe())
 
-            call mpp_clock_end (id_timer3c)
+            if (use_timer) call mpp_clock_end (id_timer3c)
 
          end if
 
          
-         call mpp_clock_begin (id_timer3d)
+         if (use_timer) call mpp_clock_begin (id_timer3d)
 
 
          !!  Setup "grid" -- what is this doing??
@@ -2239,8 +2241,8 @@ contains
             enddo
          endif
 
-    call mpp_clock_end (id_timer3d)
-    call mpp_clock_begin (id_timer4)
+    if (use_timer) call mpp_clock_end (id_timer3d)
+    if (use_timer) call mpp_clock_begin (id_timer4)
 
     !!  Setup ind_h
     !!  INPUTS:  p_ind, refinement
@@ -2380,8 +2382,8 @@ contains
 
          call mpp_update_domains( agrid, Atm%domain, position=CENTER, complete=.true. )
 
-    call mpp_clock_end (id_timer4)
-    call mpp_clock_begin (id_timer5)
+    if (use_timer) call mpp_clock_end (id_timer4)
+    if (use_timer) call mpp_clock_begin (id_timer5)
 
 
     !!  Setup dx,dy
@@ -2439,8 +2441,8 @@ contains
      
        if (.not. moving_nest) deallocate(pa_grid)
 
-    call mpp_clock_end (id_timer5)
-    call mpp_clock_begin (id_timer6)
+    if (use_timer) call mpp_clock_end (id_timer5)
+    if (use_timer) call mpp_clock_begin (id_timer6)
 
     !!  Setup wt_b -- seems not to be used
     !!  INPUTS:  p_grid, grid, ind_b
@@ -2503,8 +2505,8 @@ contains
          end do
       end do
 
-      call mpp_clock_end (id_timer6)
-      call mpp_clock_begin (id_timer7)
+      if (use_timer) call mpp_clock_end (id_timer6)
+      if (use_timer) call mpp_clock_begin (id_timer7)
 
 
       !!  Setup wt_u
@@ -2563,8 +2565,8 @@ contains
       end do
       !v weights
 
-      call mpp_clock_end (id_timer7)
-      call mpp_clock_begin (id_timer8)
+      if (use_timer) call mpp_clock_end (id_timer7)
+      if (use_timer) call mpp_clock_begin (id_timer8)
 
 
       !!  Setup wt_v
@@ -2621,7 +2623,7 @@ contains
       if (.not. moving_nest) deallocate(p_grid_u)
       if (.not. moving_nest) deallocate(p_grid_v)
 
-      call mpp_clock_end (id_timer8)
+      if (use_timer) call mpp_clock_end (id_timer8)
 
       if (is_master()) then
          if (Atm%neststruct%nested) then

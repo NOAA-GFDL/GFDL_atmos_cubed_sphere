@@ -2912,8 +2912,10 @@ contains
     logical, save       :: first_time = .true.
     integer, save       :: id_reset1, id_reset2, id_reset3, id_reset4, id_reset5, id_reset6, id_reset7
 
+    logical             :: use_timers = .false. !  Set this to true to generate performance profiling information in out.* file
 
-    if (first_time) then
+
+    if (first_time .and. use_timers) then
        id_reset1     = mpp_clock_id ('MN 7 Reset 1',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
        id_reset2     = mpp_clock_id ('MN 7 Reset 2',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
        id_reset3     = mpp_clock_id ('MN 7 Reset 3',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
@@ -2942,7 +2944,7 @@ contains
     !  Reset the gridstruct values for the nest
     if (is_fine_pe) then
        ! Fill in values from high resolution, full panel, supergrid 
-       call mpp_clock_begin (id_reset1)
+       if (use_timers) call mpp_clock_begin (id_reset1)
 
        call fill_grid_from_supergrid(Atm(n)%gridstruct%grid, CORNER, fp_super_tile_geo, ioffset, joffset, &
             x_refine, y_refine)
@@ -2971,8 +2973,8 @@ contains
        !call fill_grid_from_supergrid(Atm(n)%grid_global, CORNER, fp_super_tile_geo, &
        !     ioffset, joffset, x_refine, y_refine)
 
-       call mpp_clock_end (id_reset1)
-       call mpp_clock_begin (id_reset2)
+       if (use_timers) call mpp_clock_end (id_reset1)
+       if (use_timers) call mpp_clock_begin (id_reset2)
 
 
 
@@ -2983,13 +2985,13 @@ contains
        ! WDR TODO -- Seems like this is not used anywhere, other than being allocated, filled, deallocated
        !call fill_weight_grid(Atm(n)%neststruct%wt_b, wt_b)
 
-       call mpp_clock_end (id_reset2)
+       if (use_timers) call mpp_clock_end (id_reset2)
 
     end if
 
     if (debug_log) print '("[INFO] WDR INIT_GRID AP1 fv_moving_nest.F90 npe=",I0," n=",I0)', this_pe, n
 
-    call mpp_clock_begin (id_reset3)
+    if (use_timers) call mpp_clock_begin (id_reset3)
 
 
     ! TODO Write clearer comments on what is happening here.
@@ -3054,8 +3056,8 @@ contains
     !if (ngrids > 1) call setup_update_regions   ! Originally from fv_control.F90
     call mn_setup_update_regions(Atm, n, nest_domain)
 
-    call mpp_clock_end (id_reset3)
-    call mpp_clock_begin (id_reset4)
+    if (use_timers) call mpp_clock_end (id_reset3)
+    if (use_timers) call mpp_clock_begin (id_reset4)
 
 
     if (Atm(n)%neststruct%nested) then
@@ -3083,8 +3085,8 @@ contains
        if (debug_log) print '("[INFO] WDR INIT_GRID setup_aligned_nestB fv_moving_nest.F90 npe=",I0)', this_pe
     end if
 
-    call mpp_clock_end (id_reset4)
-    call mpp_clock_begin (id_reset5)
+    if (use_timers) call mpp_clock_end (id_reset4)
+    if (use_timers) call mpp_clock_begin (id_reset5)
 
     !  Reset the gridstruct values for the nest
     if (is_fine_pe) then
@@ -3097,8 +3099,8 @@ contains
        if (debug_log) print '("[INFO] WDR INIT_GRID CC fv_moving_nest.F90 npe=",I0)', this_pe
     end if
     
-    call mpp_clock_end (id_reset5)
-    call mpp_clock_begin (id_reset6)
+    if (use_timers) call mpp_clock_end (id_reset5)
+    if (use_timers) call mpp_clock_begin (id_reset6)
 
 
     if (debug_log) print '("[INFO] WDR NEST_DOMAIN ZZ fv_moving_nest.F90 npe=",I0)', this_pe
@@ -3153,8 +3155,8 @@ contains
 
 
     ! TODO Write comments on the t0 and t1 buffers
-    call mpp_clock_end (id_reset6)
-    call mpp_clock_begin (id_reset7)
+    if (use_timers) call mpp_clock_end (id_reset6)
+    if (use_timers) call mpp_clock_begin (id_reset7)
 
     if (is_fine_pe) then
        !call reallocate_BC_buffers(Atm(child_grid_num))
@@ -3187,7 +3189,7 @@ contains
        !call set_BCs_t0(ncnst, flagstruct%hydrostatic, neststruct)
 
     end if
-    call mpp_clock_end (id_reset7)
+    if (use_timers) call mpp_clock_end (id_reset7)
 
   end subroutine mn_meta_reset_gridstruct
 
