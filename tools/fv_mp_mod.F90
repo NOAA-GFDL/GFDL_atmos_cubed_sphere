@@ -70,7 +70,7 @@
 
 #if defined(SPMD)
 ! !USES:
-      use fms_mod,         only : fms_init, fms_end
+      use fms_mod,         only : fms_end
       use mpp_mod,         only : FATAL, MPP_DEBUG, NOTE, MPP_CLOCK_SYNC,MPP_CLOCK_DETAILED, WARNING
       use mpp_mod,         only : mpp_pe, mpp_npes, mpp_root_pe, mpp_error, mpp_set_warn_level
       use mpp_mod,         only : mpp_declare_pelist, mpp_set_current_pelist, mpp_sync
@@ -94,7 +94,6 @@
       use mpp_domains_mod, only: nest_domain_type
       use mpp_parameter_mod, only : WUPDATE, EUPDATE, SUPDATE, NUPDATE, XUPDATE, YUPDATE
       use fv_arrays_mod, only: fv_atmos_type, fv_grid_bounds_type
-      use fms_io_mod, only: set_domain
       use mpp_mod, only : mpp_get_current_pelist, mpp_set_current_pelist
       use mpp_domains_mod, only : mpp_get_domain_shift
       use ensemble_manager_mod, only : get_ensemble_id
@@ -976,9 +975,6 @@ subroutine switch_current_domain(new_domain,new_domain_for_coupler)
 !  if (debug .AND. (gid==masterproc)) write(*,200) tile, is, ie, js, je
 !200 format('New domain: ', i4.4, ' ', i4.4, ' ', i4.4, ' ', i4.4, ' ', i4.4, ' ')
 
-  call set_domain(new_domain)
-
-
 end subroutine switch_current_domain
 
 !depreciated
@@ -991,17 +987,6 @@ subroutine switch_current_Atm(new_Atm, switch_domain)
 
 
   call mpp_error(FATAL, "switch_current_Atm depreciated. call set_domain instead.")
-
-!!$  if (debug .AND. (gid==masterproc)) print*, 'SWITCHING ATM STRUCTURES', new_Atm%grid_number
-!!$  if (present(switch_domain)) then
-!!$     swD = switch_domain
-!!$  else
-!!$     swD = .true.
-!!$  end if
-!!$  if (swD) call switch_current_domain(new_Atm%domain, new_Atm%domain_for_coupler)
-
-!!$  if (debug .AND. (gid==masterproc)) WRITE(*,'(A, 6I5)') 'NEW GRID DIMENSIONS: ', &
-!!$       isd, ied, jsd, jed, new_Atm%npx, new_Atm%npy
 
 end subroutine switch_current_Atm
 
