@@ -116,35 +116,37 @@ use fv_io_mod,          only: fv_io_exit
 use fv_moving_nest_mod,         only: mn_prog_fill_intern_nest_halos, mn_prog_fill_nest_halos_from_parent, &
      mn_prog_dump_to_netcdf, mn_prog_shift_data
 !      Physics variable routines
-use fv_moving_nest_mod,         only: mn_phys_fill_intern_nest_halos, mn_phys_fill_nest_halos_from_parent, &
-     mn_phys_dump_to_netcdf, mn_phys_shift_data
+use fv_moving_nest_physics_mod, only: mn_phys_fill_intern_nest_halos, mn_phys_fill_nest_halos_from_parent, &
+     mn_phys_dump_to_netcdf, mn_phys_shift_data, mn_phys_reset_sfc_props
 
 !      Metadata routines
 use fv_moving_nest_mod,         only: mn_meta_move_nest, mn_meta_recalc, mn_meta_reset_gridstruct, mn_shift_index
 
 !      Temporary variable routines (delz)
 use fv_moving_nest_mod,         only: mn_prog_fill_temp_variables, mn_prog_apply_temp_variables
-use fv_moving_nest_mod,         only: mn_phys_fill_temp_variables, mn_phys_apply_temp_variables
+use fv_moving_nest_physics_mod, only: mn_phys_fill_temp_variables, mn_phys_apply_temp_variables
 
 !      Load static datasets
-use fv_moving_nest_mod,         only: mn_latlon_read_hires_parent, mn_latlon_load_parent, mn_reset_phys_latlon
+use fv_moving_nest_mod,         only: mn_latlon_read_hires_parent, mn_latlon_load_parent
 use fv_moving_nest_mod,         only: mn_orog_read_hires_parent, mn_static_read_hires
 use fv_moving_nest_utils_mod,   only: load_nest_latlons_from_nc, compare_terrain, set_smooth_nest_terrain, set_blended_terrain
+
+use fv_moving_nest_physics_mod, only: mn_reset_phys_latlon, mn_surface_grids
 
 !      Grid reset routines
 use fv_moving_nest_mod,         only: grid_geometry, assign_n_p_grids, move_nest_geo
 use fv_moving_nest_utils_mod,   only: fill_grid_from_supergrid, fill_weight_grid
 
 !      Physics moving 
-use fv_moving_nest_mod,         only: move_physics, move_nsst
+use fv_moving_nest_physics_mod, only: move_physics, move_nsst
 
 !      Recalculation routines
 use fv_moving_nest_mod,         only: reallocate_BC_buffers, recalc_aux_pressures, vertical_remap_nest !, reinit_parent_indices
 
 !      Logging and debugging information
 use fv_moving_nest_mod,         only: check_array
-use fv_moving_nest_logging_mod, only: show_atm, show_atm_grids, show_tile_geo, show_nest_grid, show_gridstruct, grid_equal
-use fv_moving_nest_logging_mod, only: validate_hires_parent
+use fv_moving_nest_utils_mod, only  : show_atm, show_atm_grids, show_tile_geo, show_nest_grid, show_gridstruct, grid_equal
+use fv_moving_nest_utils_mod, only  : validate_hires_parent
 
 
 
@@ -176,38 +178,6 @@ integer :: id_movnestTot
 logical :: use_timers = .False. ! Set this to true for detailed performance profiling.  False only profiles total moving nest time.
 !integer, save :: a_step = 0
 integer, save :: output_step = 0
-
-type mn_surface_grids
-   real, allocatable  :: orog_grid(:,:)                _NULL  ! orography -- raw or filtered depending on namelist option, in meters
-   real, allocatable  :: orog_std_grid(:,:)            _NULL  ! terrain standard deviation for gravity wave drag, in meters (?)
-   real, allocatable  :: ls_mask_grid(:,:)             _NULL  ! land sea mask -- 0 for ocean/lakes, 1, for land.  Perhaps 2 for sea ice. 
-   real, allocatable  :: land_frac_grid(:,:)           _NULL  ! Continuous land fraction - 0.0 ocean, 0.5 half of each, 1.0 all land
-
-   real, allocatable  :: parent_orog_grid(:,:)         _NULL  ! parent orography -- only used for terrain_smoother=1.  
-                                                              !     raw or filtered depending on namelist option, in meters
-
-   ! Soil variables
-   real, allocatable  :: deep_soil_temp_grid(:,:)      _NULL  ! deep soil temperature at 5m, in degrees K
-   real, allocatable  :: soil_type_grid(:,:)           _NULL  ! STATSGO soil type
-
-   ! Vegetation variables
-   real, allocatable  :: veg_frac_grid(:,:)           _NULL  ! vegetation fraction 
-   real, allocatable  :: veg_type_grid(:,:)           _NULL  ! IGBP vegetation type
-   real, allocatable  :: veg_greenness_grid(:,:)      _NULL  ! NESDIS vegetation greenness; netCDF file has monthly values
-
-   ! Orography variables
-   real, allocatable  :: slope_type_grid(:,:)         _NULL  ! legacy 1 degree GFS slope type 
-
-   ! Albedo variables
-   real, allocatable  :: max_snow_alb_grid(:,:)       _NULL  ! max snow albedo
-   ! Snow free albedo
-   real, allocatable  :: vis_black_alb_grid(:,:)      _NULL  ! Visible black sky albeo; netCDF file has monthly values
-   real, allocatable  :: vis_white_alb_grid(:,:)      _NULL  ! Visible white sky albeo; netCDF file has monthly values
-   real, allocatable  :: ir_black_alb_grid(:,:)       _NULL  ! Near IR black sky albeo; netCDF file has monthly values
-   real, allocatable  :: ir_white_alb_grid(:,:)       _NULL  ! Near IR white sky albeo; netCDF file has monthly values
-
-end type mn_surface_grids
-
 
 
 contains
@@ -601,10 +571,6 @@ contains
    integer :: isc, iec, jsc, jec
    integer :: isd, ied, jsd, jed
    integer :: nq                       !  number of transported tracers
-
-   ! For iterating through physics/surface vector data
-   integer :: nb, blen, ix, i_pe, j_pe, i_idx, j_idx
-   real(kind=kind_phys)    :: phys_oro
 
    integer, save :: output_step = 0
    
@@ -1118,55 +1084,7 @@ contains
                 if (debug_log) print '("[INFO] WDR shift orography data fv_land FALSE npe=",I0)', this_pe
           end if
 
-          ! Reset the land sea mask from the hires parent data
-          !  Reset the variables from the fix_sfc files
-          !  Reset the oro and oro_uf from the smoothed values calculated above
-          do nb = 1,Atm_block%nblks
-             blen = Atm_block%blksz(nb)
-             do ix = 1, blen
-                i_pe = Atm_block%index(nb)%ii(ix)  
-                j_pe = Atm_block%index(nb)%jj(ix)
-                
-                i_idx = (ioffset-1)*x_refine + i_pe
-                j_idx = (joffset-1)*y_refine + j_pe
-                
-                IPD_data(nb)%Sfcprop%slmsk(ix) = mn_static%ls_mask_grid(i_idx, j_idx)
-                
-                !  IFD values are 0 for land, and 1 for oceans/lakes -- reverse of the land sea mask
-                !  Land Sea Mask has values of 0 for oceans/lakes, 1 for land, 2 for sea ice
-                !  TODO figure out what ifd should be for sea ice
-                if (mn_static%ls_mask_grid(i_idx, j_idx) .eq. 1 ) then
-                   IPD_data(nb)%Sfcprop%ifd(ix) = 0         ! Land
-                   IPD_data(nb)%Sfcprop%oceanfrac(ix) = 0   ! Land -- TODO permit fractions
-                   IPD_data(nb)%Sfcprop%landfrac(ix) = 1    ! Land -- TODO permit fractions
-                else
-                   IPD_data(nb)%Sfcprop%ifd(ix) = 1         ! Ocean
-                   IPD_data(nb)%Sfcprop%oceanfrac(ix) = 1   ! Ocean -- TODO permit fractions
-                   IPD_data(nb)%Sfcprop%landfrac(ix) = 0    ! Ocean -- TODO permit fractions
-                end if
-
-                IPD_data(nb)%Sfcprop%tg3(ix) = mn_static%deep_soil_temp_grid(i_idx, j_idx)
-                IPD_data(nb)%Sfcprop%stype(ix) = mn_static%soil_type_grid(i_idx, j_idx)
-                
-                !IPD_data(nb)%Sfcprop%vfrac(ix) = mn_static%veg_frac_grid(i_idx, j_idx) 
-                IPD_data(nb)%Sfcprop%vtype(ix) = mn_static%veg_type_grid(i_idx, j_idx)
-                ! Add veg_greenness_grid here, monthly
-                
-                IPD_data(nb)%Sfcprop%slope(ix) = mn_static%slope_type_grid(i_idx, j_idx)
-                
-                IPD_data(nb)%Sfcprop%snoalb(ix) = mn_static%max_snow_alb_grid(i_idx, j_idx)
-                ! Add Vis/Near IR black/white sky albedo, monthly
-
-                ! Reset the orography in the physics arrays, using the smoothed values from above
-                phys_oro =  Atm(n)%phis(i_pe, j_pe) / grav
-                !if (phys_oro .gt. 15000.0) then
-                !   phys_oro = 0.0
-                !end if
-                IPD_data(nb)%Sfcprop%oro(ix) = phys_oro
-                IPD_data(nb)%Sfcprop%oro_uf(ix) = phys_oro
-                
-             end do
-          end do
+          call mn_phys_reset_sfc_props(Atm, n, mn_static, Atm_block, IPD_data, ioffset, joffset, x_refine)
        end if
 
 

@@ -206,18 +206,6 @@ use coarse_grained_diagnostics_mod, only: fv_coarse_diag_init, fv_coarse_diag
 use coarse_grained_restart_files_mod, only: fv_coarse_restart_init
 use diag_manager_mod,   only: send_data
 
-#ifdef MOVING_NEST
-!      Bounds checking routines
-!use fv_moving_nest_mod,         only: permit_move_nest
-
-!      debug logging of variables
-use fv_moving_nest_mod,         only: mn_prog_dump_to_netcdf, mn_phys_dump_to_netcdf
-!use fv_moving_nest_main_mod,    only: fv_moving_nest_init_clocks, eval_move_nest, fv_moving_nest_exec
-
-
-
-#endif
-
 implicit none
 private
 
@@ -477,11 +465,7 @@ contains
    id_fv_diag   = mpp_clock_id ('FV Diag',     flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
 #ifdef MOVING_NEST
-   id_fv_tracker= mpp_clock_id ('FV tracker',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-   
-   !! TODO Restructure to remove circular dependency between modules
-   !!call fv_moving_nest_init_clocks()
-
+   id_fv_tracker= mpp_clock_id ('FV tracker',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )   
 #endif MOVING_NEST
                     call timing_off('ATMOS_INIT')
 
@@ -651,19 +635,8 @@ contains
    integer :: this_pe
    integer :: nz
 #ifdef MOVING_NEST
-   integer  :: delta_i_c, delta_j_c
-   integer  :: nest_num, child_grid_num, parent_grid_num, parent_tile
-   logical  :: is_fine_pe, do_move
-
    character(len=15) :: str_time
    character*255 :: message
-
-   type(domain2d), pointer           :: domain_coarse, domain_fine
-
-   !! TODO Refine this per Atm(n) structure to allow some static and some moving nests in same run
-   logical  :: is_moving_nest = .true.  ! Attach this to the namelist reading 
-
-
 #endif MOVING_NEST
 
 
@@ -689,41 +662,6 @@ contains
 !               ' n_split=',Atm(mytile)%flagstruct%n_split,' mytile=',mytile
 
    a_step = a_step + 1
-
-#ifdef MOVING_NEST
-    ! TODO move away from hard-coded grid numbers and enable multi nests
-    parent_grid_num = 1 
-    child_grid_num = 2
-    nest_num = 1
-    is_moving_nest = Atm(child_grid_num)%neststruct%is_moving_nest
-
-    domain_fine => Atm(child_grid_num)%domain
-    parent_tile = Atm(child_grid_num)%neststruct%parent_tile
-    domain_coarse => Atm(parent_grid_num)%domain
-
-    is_fine_pe = Atm(n)%neststruct%nested .and. ANY(Atm(n)%pelist(:) == this_pe)
-    nz = Atm(n)%npz
-
-    if (debug_log) print '("[INFO] WDR TIME A  START atmosphere.F90. npe=",I0, " ", I0)', this_pe, a_step
-
-    !! This is now called in FV3/module_fcst_grid_comp.F90::fcst_run_phase_1() using update_moving_nest()
-    !do_move = .false.
-
-    !if (is_moving_nest) then
-    !   call eval_move_nest(Atm, a_step, do_move, delta_i_c, delta_j_c, dt_atmos)
-    !   if (do_move) then
-    !      ! Verifies if nest motion is permitted
-    !      ! If nest would cross the cube face edge, do_move is reset to .false. and delta_i_c, delta_j_c are set to 0
-    !      call permit_move_nest(Atm, parent_grid_num, child_grid_num, delta_i_c, delta_j_c, do_move)
-    !   
-    !   end if       
-    !end if
-    !
-    !if (do_move) then
-    !   call fv_moving_nest_exec(Atm, delta_i_c, delta_j_c, n, nest_num, parent_grid_num, child_grid_num, dt_atmos)
-    !end if
-
-#endif ! MOVING_NEST
 
 !
 !*** If this is a regional run then read in the next boundary data when it is time.
