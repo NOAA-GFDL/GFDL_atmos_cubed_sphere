@@ -163,7 +163,6 @@ subroutine dealloc_nested_buffers(Atm)
 
   if (debug_log) print '("[INFO] WDR NBC deallocating buffers fv_nesting.F90 npe=",I0)', this_pe
 
-
   call deallocate_fv_nest_BC_type(u_buf)
   call deallocate_fv_nest_BC_type(v_buf)
   call deallocate_fv_nest_BC_type(uc_buf)
@@ -180,7 +179,6 @@ subroutine dealloc_nested_buffers(Atm)
   call deallocate_fv_nest_BC_type(pe_v_buf)
   call deallocate_fv_nest_BC_type(pe_b_buf)
 
-
   ncnst = size(q_buf)
   do n=1,ncnst
      call deallocate_fv_nest_BC_type(q_buf(n))
@@ -188,47 +186,45 @@ subroutine dealloc_nested_buffers(Atm)
 
   ! TODO remove the allocation steps
 
-
-  ! Reallocate based on the new Atm structure                                                                               
+  ! Reallocate based on the new Atm structure
   !ns = Atm%neststruct%nsponge
 
   !! The code for using the BC buffers will allocate when needed in boundary.F90::nested_grid_BC_recv()
 
+  !allocate_fv_nest_BC_type_3D_Atm(BC,Atm,ns,istag,jstag,dummy)
 
-  !allocate_fv_nest_BC_type_3D_Atm(BC,Atm,ns,istag,jstag,dummy)                                                             
+  ! Rely on the previously set values for istag, jstag
 
-  ! Rely on the previously set values for istag, jstag                                                                      
+!       call allocate_fv_nest_BC_type(Atm%neststruct%delp_BC,Atm,ns,0,0,dummy)
+!       call allocate_fv_nest_BC_type(Atm%neststruct%u_BC,Atm,ns,0,1,dummy)
+!       call allocate_fv_nest_BC_type(Atm%neststruct%v_BC,Atm,ns,1,0,dummy)
+!       call allocate_fv_nest_BC_type(Atm%neststruct%uc_BC,Atm,ns,1,0,dummy)
+!       call allocate_fv_nest_BC_type(Atm%neststruct%vc_BC,Atm,ns,0,1,dummy)
+!       call allocate_fv_nest_BC_type(Atm%neststruct%divg_BC,Atm,ns,1,1,dummy)
 
-!       call allocate_fv_nest_BC_type(Atm%neststruct%delp_BC,Atm,ns,0,0,dummy)                                              
-!       call allocate_fv_nest_BC_type(Atm%neststruct%u_BC,Atm,ns,0,1,dummy)                                                 
-!       call allocate_fv_nest_BC_type(Atm%neststruct%v_BC,Atm,ns,1,0,dummy)                                                 
-!       call allocate_fv_nest_BC_type(Atm%neststruct%uc_BC,Atm,ns,1,0,dummy)                                                
-!       call allocate_fv_nest_BC_type(Atm%neststruct%vc_BC,Atm,ns,0,1,dummy)                                                
-!       call allocate_fv_nest_BC_type(Atm%neststruct%divg_BC,Atm,ns,1,1,dummy)                                              
+!       if (ncnst > 0) then
+!          allocate(Atm%neststruct%q_BC(ncnst))
+!          do n=1,ncnst
+!             call allocate_fv_nest_BC_type(Atm%neststruct%q_BC(n),Atm,ns,0,0,dummy)
+!          enddo
+!       endif
 
-!       if (ncnst > 0) then                                                                                                 
-!          allocate(Atm%neststruct%q_BC(ncnst))                                                                             
-!          do n=1,ncnst                                                                                                     
-!             call allocate_fv_nest_BC_type(Atm%neststruct%q_BC(n),Atm,ns,0,0,dummy)                                        
-!          enddo                                                                                                            
-!       endif                                                                                                               
+  !call allocate_fv_nest_BC_type_3D_Atm(u_buf, Atm, ns, u_buf%istag, u_buf%jstag, dummy)
+  !call allocate_fv_nest_BC_type_3D_Atm(v_buf, Atm, ns, v_buf%istag, v_buf%jstag, dummy)
+  !call allocate_fv_nest_BC_type_3D_Atm(uc_buf, Atm, ns, uc_buf%istag, uc_buf%jstag, dummy)
+  !call allocate_fv_nest_BC_type_3D_Atm(vc_buf, Atm, ns, vc_buf%istag, vc_buf%jstag, dummy)
 
-  !call allocate_fv_nest_BC_type_3D_Atm(u_buf, Atm, ns, u_buf%istag, u_buf%jstag, dummy)                                    
-  !call allocate_fv_nest_BC_type_3D_Atm(v_buf, Atm, ns, v_buf%istag, v_buf%jstag, dummy)                                    
-  !call allocate_fv_nest_BC_type_3D_Atm(uc_buf, Atm, ns, uc_buf%istag, uc_buf%jstag, dummy)                                 
-  !call allocate_fv_nest_BC_type_3D_Atm(vc_buf, Atm, ns, vc_buf%istag, vc_buf%jstag, dummy)                                 
+  !call allocate_fv_nest_BC_type_3D_Atm(delp_buf, Atm, ns, 0, 0, dummy)
+  !call allocate_fv_nest_BC_type_3D_Atm(delz_buf, Atm, ns, delz_buf%istag, delz_buf%jstag, dummy)
 
-  !call allocate_fv_nest_BC_type_3D_Atm(delp_buf, Atm, ns, 0, 0, dummy)                                                     
-  !call allocate_fv_nest_BC_type_3D_Atm(delz_buf, Atm, ns, delz_buf%istag, delz_buf%jstag, dummy)                           
+  !call allocate_fv_nest_BC_type_3D_Atm(pt_buf, Atm, ns, pt_buf%istag, pt_buf%jstag, dummy)
+  !call allocate_fv_nest_BC_type_3D_Atm(pkz_buf, Atm, ns, pkz_buf%istag, pkz_buf%jstag, dummy)
+  !call allocate_fv_nest_BC_type_3D_Atm(w_buf, Atm, ns, w_buf%istag, w_buf%jstag, dummy)
+  !call allocate_fv_nest_BC_type_3D_Atm(divg_buf, Atm, ns, divg_buf%istag, divg_buf%jstag, dummy)
 
-  !call allocate_fv_nest_BC_type_3D_Atm(pt_buf, Atm, ns, pt_buf%istag, pt_buf%jstag, dummy)                                 
-  !call allocate_fv_nest_BC_type_3D_Atm(pkz_buf, Atm, ns, pkz_buf%istag, pkz_buf%jstag, dummy)                              
-  !call allocate_fv_nest_BC_type_3D_Atm(w_buf, Atm, ns, w_buf%istag, w_buf%jstag, dummy)                                    
-  !call allocate_fv_nest_BC_type_3D_Atm(divg_buf, Atm, ns, divg_buf%istag, divg_buf%jstag, dummy)                           
-
-  !do n=1,ncnst                                                                                                             
-  !   call allocate_fv_nest_BC_type_3D_Atm(q_buf(n), Atm, ns, q_buf(n)%istag, q_buf(n)%jstag, dummy)                        
-  !end do                                                                                                                   
+  !do n=1,ncnst
+  !   call allocate_fv_nest_BC_type_3D_Atm(q_buf(n), Atm, ns, q_buf(n)%istag, q_buf(n)%jstag, dummy)
+  !end do
 
 end subroutine dealloc_nested_buffers
 
@@ -389,7 +385,7 @@ end subroutine dealloc_nested_buffers
                delz_buf, nnest)
        endif
 #endif
-       if (neststruct%do_remap_BC(flagstruct%grid_number)) then
+       if (neststruct%do_remap_BC_level(nest_level)) then
           call nested_grid_BC_recv(global_nest_domain, npz_coarse+1, bd, &
                pe_u_buf, pe_v_buf, nnest, gridtype=DGRID_NE)
           call nested_grid_BC_recv(global_nest_domain, 1, 1,  npz_coarse+1, bd, &
@@ -421,7 +417,7 @@ end subroutine dealloc_nested_buffers
           endif
 #endif
 
-          if (any(neststruct%do_remap_BC)) then
+          if (neststruct%do_remap_BC_level(nest_level)) then
 
           !Compute and send staggered pressure
              !u points
@@ -528,13 +524,6 @@ end subroutine dealloc_nested_buffers
                neststruct%delp_BC, delp_buf, pd_in=do_pd)
        endif
 
-!!$       do n=1,ncnst
-!!$          call nested_grid_BC_save_proc(global_nest_domain, &
-!!$               neststruct%ind_h, neststruct%wt_h, 0, 0, npx,  npy,  npz_coarse, bd, &
-!!$               lag_BC, q_buf(n), pd_in=do_pd)
-!!$          !This remapping appears to have some trouble with rounding error random noise
-!!$          call remap_BC(pe_lag_BC, pe_eul_BC, lag_BC, neststruct%q_BC(n), npx, npy, npz, npz_coarse, bd, 0, 0, 0, flagstruct%kord_tr, 'q')
-!!$       enddo
 #ifndef SW_DYNAMICS
        if (neststruct%do_remap_BC(flagstruct%grid_number)) then
 
@@ -705,10 +694,6 @@ end subroutine dealloc_nested_buffers
           call nested_grid_BC_apply_intT(w, &
                0, 0, npx, npy, npz, bd, 1., 1., &
                neststruct%w_BC, bctype=neststruct%nestbctype  )
-          !Removed halo from delz --- BCs now directly applied in nh_BC --- lmh june 2018
-!!$          call nested_grid_BC_apply_intT(delz, &
-!!$               0, 0, npx, npy, npz, bd, 1., 1., &
-!!$               neststruct%delz_BC, bctype=neststruct%nestbctype  )
        endif
 #ifdef USE_COND
        call nested_grid_BC_apply_intT(q_con, &
@@ -733,11 +718,6 @@ end subroutine dealloc_nested_buffers
        call nested_grid_BC_apply_intT(uc, &
             1, 0, npx, npy, npz, bd, 1., 1., &
             neststruct%uc_BC, bctype=neststruct%nestbctype  )
-       !!!NOTE: Divg not available here but not needed
-       !!! until dyn_core anyway.
-!!$       call nested_grid_BC_apply_intT(divg, &
-!!$            1, 1, npx, npy, npz, bd, 1., 1., &
-!!$            neststruct%divg_BC, bctype=neststruct%nestbctype  )
 
        !Update domains needed for Rayleigh damping
        if (.not. flagstruct%hydrostatic) call mpp_update_domains(w, domain)
@@ -753,16 +733,6 @@ end subroutine dealloc_nested_buffers
        if (neststruct%nested) call set_NH_BCs_t0(neststruct)
        flagstruct%make_nh= .false.
     endif
-
-    !Unnecessary?
-!!$    if ( neststruct%nested .and. .not. neststruct%divg_BC%initialized) then
-!!$       neststruct%divg_BC%east_t0  = neststruct%divg_BC%east_t1
-!!$       neststruct%divg_BC%west_t0  = neststruct%divg_BC%west_t1
-!!$       neststruct%divg_BC%north_t0 = neststruct%divg_BC%north_t1
-!!$       neststruct%divg_BC%south_t0 = neststruct%divg_BC%south_t1
-!!$       neststruct%divg_BC%initialized = .true.
-!!$    endif
-
 
     call mpp_sync_self
 
@@ -799,7 +769,7 @@ end subroutine dealloc_nested_buffers
    do nest_level=1,neststruct%num_nest_level
     if (gridstruct%nested .AND. neststruct%nlevel==nest_level) then
 
-      if (neststruct%do_remap_BC(flagstruct%grid_number)) then
+      if (neststruct%do_remap_BC_level(nest_level)) then
 
          npz_coarse = neststruct%parent_grid%npz
 
@@ -810,21 +780,24 @@ end subroutine dealloc_nested_buffers
               npx, npy, bd, 1, npx-1, 1, npy-1)
          call nested_grid_BC_recv(global_nest_domain, npz_coarse, bd, u_dt_buf, v_dt_buf, nnest, gridtype=AGRID)
 
-         call allocate_fv_nest_BC_type(pe_src_BC, is,ie,js,je,isd,ied,jsd,jed,npx,npy,npz_coarse+1,ng,0,0,0,.false.)
-         call allocate_fv_nest_BC_type(pe_dst_BC, is,ie,js,je,isd,ied,jsd,jed,npx,npy,npz+1,ng,0,0,0,.false.)
+         if (neststruct%do_remap_BC(flagstruct%grid_number)) then
 
-         call copy_ps_BC(ps, pe_src_BC, npx, npy, npz_coarse, 0, 0, bd)
-         call setup_eul_pe_BC(pe_src_BC, pe_dst_BC, ak, bk, npx, npy, npz, npz_coarse, 0, 0, bd, &
-              make_src_in=.true., ak_src=neststruct%parent_grid%ak, bk_src=neststruct%parent_grid%bk)
+            call allocate_fv_nest_BC_type(pe_src_BC, is,ie,js,je,isd,ied,jsd,jed,npx,npy,npz_coarse+1,ng,0,0,0,.false.)
+            call allocate_fv_nest_BC_type(pe_dst_BC, is,ie,js,je,isd,ied,jsd,jed,npx,npy,npz+1,ng,0,0,0,.false.)
 
-         !Note that iv=-1 is used for remapping winds, which sets the lower reconstructed values to 0 if
-         ! there is a 2dx signal. Is this the best for **tendencies** though?? Probably not---so iv=1 here
-         call set_BC_direct( pe_src_BC, pe_dst_BC, u_dt_buf, u_dt, neststruct, npx, npy, npz, npz_coarse, ng, bd, 0, 0, 1, flagstruct%kord_mt)
-         call set_BC_direct( pe_src_BC, pe_dst_BC, v_dt_buf, v_dt, neststruct, npx, npy, npz, npz_coarse, ng, bd, 0, 0, 1, flagstruct%kord_mt)
+            call copy_ps_BC(ps, pe_src_BC, npx, npy, npz_coarse, 0, 0, bd)
+            call setup_eul_pe_BC(pe_src_BC, pe_dst_BC, ak, bk, npx, npy, npz, npz_coarse, 0, 0, bd, &
+                 make_src_in=.true., ak_src=neststruct%parent_grid%ak, bk_src=neststruct%parent_grid%bk)
 
-         call deallocate_fv_nest_BC_type(pe_src_BC)
-         call deallocate_fv_nest_BC_type(pe_dst_BC)
+            !Note that iv=-1 is used for remapping winds, which sets the lower reconstructed values to 0 if
+            ! there is a 2dx signal. Is this the best for **tendencies** though?? Probably not---so iv=1 here
+            call set_BC_direct( pe_src_BC, pe_dst_BC, u_dt_buf, u_dt, neststruct, npx, npy, npz, npz_coarse, ng, bd, 0, 0, 1, flagstruct%kord_mt)
+            call set_BC_direct( pe_src_BC, pe_dst_BC, v_dt_buf, v_dt, neststruct, npx, npy, npz, npz_coarse, ng, bd, 0, 0, 1, flagstruct%kord_mt)
 
+            call deallocate_fv_nest_BC_type(pe_src_BC)
+            call deallocate_fv_nest_BC_type(pe_dst_BC)
+
+         endif
       else
          call nested_grid_BC(u_dt, v_dt, dum, dum, global_nest_domain, neststruct%ind_h, neststruct%ind_h, &
               neststruct%wt_h, neststruct%wt_h, 0, 0, 0, 0, npx, npy, npz, bd, 1, npx-1, 1, npy-1, nnest, gridtype=AGRID)
@@ -833,7 +806,7 @@ end subroutine dealloc_nested_buffers
     endif
 
       if (ANY (neststruct%child_grids) .AND. neststruct%nlevel==nest_level-1) then
-         if (any(neststruct%do_remap_BC)) &
+         if (neststruct%do_remap_BC_level(nest_level)) &
               call nested_grid_BC(ps, global_nest_domain, 0, 0, nnest+1)
          call nested_grid_BC_send(u_dt, v_dt, global_nest_domain, nnest+1, gridtype=AGRID)
       endif
@@ -1060,23 +1033,6 @@ end subroutine dealloc_nested_buffers
    enddo
    enddo
    enddo
-
-!!$!!! DEBUG CODE
-!!$   !If more than a few percent difference then log the error
-!!$   do k=1,npz
-!!$   do j=jstart,jend
-!!$   do i=istart,iend
-!!$      if (delpeulBC(i,j,k) <= 0.) then
-!!$         write(errstring,'(3I5, 3(2x, G))'), i, j, k, pelagBC(i,j,k), peeulBC(i,j,k)
-!!$         call mpp_error(WARNING, ' Invalid pressure BC at '//errstring)
-!!$      else if (abs( peeulBC(i,j,k) - pelagBC(i,j,k)) > 100.0 ) then
-!!$         write(errstring,'(3I5, 3(2x, G))'), i, j, k, pelagBC(i,j,k), peeulBC(i,j,k)
-!!$         call mpp_error(WARNING, ' Remap BC: pressure deviation at '//errstring)
-!!$      endif
-!!$   enddo
-!!$   enddo
-!!$   enddo
-!!$!!! END DEBUG CODE
 
  end subroutine setup_eul_delp_BC_k
 
@@ -1382,24 +1338,12 @@ end subroutine dealloc_nested_buffers
 
          do k=1,npz_coarse+1
          do i=istart,iend
-!!$!!! DEBUG CODE
-!!$            if (pe_lagBC(i,j,k) <= 0.) then
-!!$               write(errstring,'(3I5, 2x, G)'), i, j, k, pe_lagBC(i,j,k)
-!!$               call mpp_error(WARNING, ' Remap BC: invalid pressure at at '//errstring)
-!!$            endif
-!!$!!! END DEBUG CODE
             peln_lag(i,k) = log(pe_lagBC(i,j,k))
          enddo
          enddo
 
          do k=1,npz+1
          do i=istart,iend
-!!$!!! DEBUG CODE
-!!$            if (pe_lagBC(i,j,k) <= 0.) then
-!!$               write(errstring,'(3I5, 2x, G)'), i, j, k, pe_lagBC(i,j,k)
-!!$               call mpp_error(WARNING, ' Remap BC: invalid pressure at at '//errstring)
-!!$            endif
-!!$!!! END DEBUG CODE
             peln_eul(i,k) = log(pe_eulBC(i,j,k))
          enddo
          enddo
@@ -1501,12 +1445,6 @@ end subroutine dealloc_nested_buffers
    do j=jstart,jend
    do i=istart,iend
       delzBC(i,j,k) = -delzBC(i,j,k)/delpBC(i,j,k)
-!!$!!! DEBUG CODE
-!!$      if (delzBC(i,j,k) <= 0. ) then
-!!$         write(errstring,'(3I5, 2(2x, G))'), i, j, k, delzBC(i,j,k), delpBC(i,j,k)
-!!$         call mpp_error(WARNING, ' Remap BC (sfc volume): invalid delz at '//errstring)
-!!$      endif
-!!$!!! END DEBUG CODE
    end do
    end do
    end do
@@ -1527,12 +1465,6 @@ end subroutine dealloc_nested_buffers
    do j=jstart,jend
    do i=istart,iend
       delzBC(i,j,k) = -delzBC(i,j,k)*delpBC(i,j,k)
-!!$!!! DEBUG CODE
-!!$      if (delzBC(i,j,k) >=0. ) then
-!!$         write(errstring,'(3I5, 2(2x, G))'), i, j, k, delzBC(i,j,k), delpBC(i,j,k)
-!!$         call mpp_error(WARNING, ' Remap BC (compute delz): invalid delz at '//errstring)
-!!$      endif
-!!$!!! END DEBUG CODE
    end do
    end do
    end do
@@ -1819,10 +1751,6 @@ end subroutine dealloc_nested_buffers
 
    rdg = -rdgas / grav
    cv_air =  cp_air - rdgas
-
-!!$!!! DEBUG CODE
-!!$   write(*, '(A, 7I5)') 'setup_pt_NH_BC_k', mpp_pe(), isd, ied, istart, iend, lbound(ptBC,1), ubound(ptBC,1)
-!!$!!! END DEBUG CODE
 
 !$OMP parallel do default(none) shared(istart,iend,jstart,jend,npz,zvir,ptBC,sphumBC,delpBC,delzBC,liq_watBC,rainwatBC,ice_watBC,snowwatBC,graupelBC, &
 #ifdef USE_COND
@@ -2427,14 +2355,14 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
                     Atm(n)%pt, Atm(n)%delp, Atm(n)%q, &
                     Atm(n)%pe, Atm(n)%pkz, Atm(n)%delz, Atm(n)%ps, Atm(n)%ptop, Atm(n)%ak, Atm(n)%bk, &
                     Atm(n)%gridstruct, Atm(n)%flagstruct, Atm(n)%neststruct, Atm(n)%domain, &
-                    Atm(n)%parent_grid, Atm(n)%bd, atm(n)%neststruct%nlevel, .false.)
+                    Atm(n)%parent_grid, Atm(n)%bd, .false.)
             elseif (n==this_grid .or. Atm(this_grid)%neststruct%nlevel==Atm(n)%neststruct%nlevel) then
                call twoway_nest_update(Atm(this_grid)%npx, Atm(this_grid)%npy, Atm(this_grid)%npz, zvir, &
                     Atm(this_grid)%ncnst, sphum, Atm(this_grid)%u, Atm(this_grid)%v, Atm(this_grid)%w, &
                     Atm(this_grid)%pt, Atm(this_grid)%delp, Atm(this_grid)%q, &
                     Atm(this_grid)%pe, Atm(this_grid)%pkz, Atm(this_grid)%delz, Atm(this_grid)%ps, Atm(this_grid)%ptop, Atm(this_grid)%ak, Atm(this_grid)%bk, &
                     Atm(this_grid)%gridstruct, Atm(this_grid)%flagstruct, Atm(this_grid)%neststruct, Atm(this_grid)%domain, &
-                    Atm(this_grid)%parent_grid, Atm(this_grid)%bd, atm(this_grid)%neststruct%nlevel, .false.)
+                    Atm(this_grid)%parent_grid, Atm(this_grid)%bd, .false.)
             endif
          endif
 
@@ -2467,12 +2395,12 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
                         u, v, w, pt, delp, q,   &
                         pe, pkz, delz, ps, ptop, ak, bk, &
                         gridstruct, flagstruct, neststruct, &
-                        domain, parent_grid, bd, grid_number, conv_theta_in)
+                        domain, parent_grid, bd, conv_theta_in)
 
     real, intent(IN) :: zvir, ptop, ak(npz+1), bk(npz+1)
 
     integer, intent(IN) :: npx, npy, npz
-    integer, intent(IN) :: ncnst, sphum, grid_number
+    integer, intent(IN) :: ncnst, sphum
     logical, intent(IN), OPTIONAL :: conv_theta_in
 
     type(fv_grid_bounds_type), intent(IN) :: bd
@@ -2653,9 +2581,6 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
             !Updating for delz not yet implemented;
             ! may need to think very carefully how one would do this!!!
             ! consider updating specific volume instead?
-!!$            call update_coarse_grid(parent_grid%delz, delz, global_nest_domain, &
-!!$                 bd, isd_p, ied_p, jsd_p, jed_p, isd, ied, jsd, jed, npz, 0, 0, &
-!!$                 neststruct%refinement, neststruct%nestupdate, upoff, 0, parent_grid%neststruct%parent_proc, neststruct%child_proc)
 
       end if
 
@@ -2667,11 +2592,15 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
    allocate(v_src(isd_p:ied_p+1,jsd_p:jed_p,npz))
    u_src = -999.
    v_src = -999.
+
+!the domain setup by setup_region in fv_control include the staggered points, however
+!0,1,1,0 is still needed for mpp_update_nest_coarse to work correctly between the parent and nest
+!fill coarse only need the region deffined in fv_control
    call update_coarse_grid(u_src, v_src, u, v, global_nest_domain, &
         gridstruct%dx, gridstruct%dy, gridstruct%area, &
         bd, isd_p, ied_p, jsd_p, jed_p, isd, ied, jsd, jed, &
-        neststruct%isu, neststruct%ieu, neststruct%jsu, neststruct%jeu, &
-        npx, npy, npz, 0, 1, 1, 0, &
+        neststruct%isu, neststruct%ieu, neststruct%jsu, neststruct%jeu, neststruct%jeu_stag, neststruct%iev_stag,&
+        npx, npy, npz, 0, 1,1, 0, &
         neststruct%refinement, neststruct%nestupdate, upoff, 0, &
         parent_grid%neststruct%parent_proc, neststruct%child_proc, parent_grid, neststruct%nlevel, gridtype=DGRID_NE)
 
@@ -2713,6 +2642,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
                end do
             end do
          end do
+         call mpp_update_domains(ps, domain, complete=.true.)
       endif
 
       call update_coarse_grid(ps0, ps, global_nest_domain, &
@@ -2753,15 +2683,6 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
                end do
             end do
          end if
-!!$!!!! DEBUG CODE
-!!$         do k=1,parent_grid%npz
-!!$            write(mpp_pe()+3000,*) 'k = ', k, parent_grid%ak(k), parent_grid%bk(k)
-!!$         enddo
-!!$         write(mpp_pe()+3000,*)
-!!$         do k=1,npz
-!!$            write(mpp_pe()+3000,*) 'k = ', k, ak(k), bk(k)
-!!$         enddo
-!!$!!!! END DEBUG CODE
 
          call update_remap_tqw(parent_grid%npz, parent_grid%ak, parent_grid%bk, &
               parent_grid%ps, &
@@ -2786,12 +2707,13 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
             end do
          end if
 
-         call update_remap_uv(parent_grid%npz, parent_grid%ak, parent_grid%bk, &
+        call update_remap_uv(parent_grid%npz, parent_grid%ak, parent_grid%bk, &
               parent_grid%ps, parent_grid%u, parent_grid%v, &
               npz, ak, bk, ps0, u_src, v_src, &
               parent_grid%flagstruct%kord_mt, &
               isc_p, iec_p, jsc_p, jec_p, isd_p, ied_p, jsd_p, jed_p, parent_grid%ptop, &
-              neststruct%isu, neststruct%ieu, neststruct%jsu, neststruct%jeu, blend_wt)
+              neststruct%isu, neststruct%ieu, neststruct%jsu, neststruct%jeu, &
+              neststruct%jeu_stag, neststruct%iev_stag, neststruct%jeu_stag_boundary, neststruct%iev_stag_boundary, blend_wt)
 
          endif !parent_grid%neststruct%parent_proc
 
@@ -2866,13 +2788,6 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
 
    if (iend < istart) return
    if (jend < jstart) return
-
-!!$!!!! DEBUG CODE
-!!$      write(debug_unit,*) bd%isd,bd%ied,bd%jsd,bd%jed
-!!$      write(debug_unit,*) istart,iend,jstart,jend,istag,jstag
-!!$      write(debug_unit,*)
-!!$!!! END DEBUG CODE
-
 
    !Compute Eulerian pressures
    !NOTE: assumes that istag + jstag <= 1
@@ -3182,7 +3097,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
                             kmd, ak_src, bk_src, ps_src, u_src, v_src, &
                             kord_mt, &
                             is, ie, js, je, isd, ied, jsd, jed, ptop, &
-                            istart, iend, jstart, jend, blend_wt)
+                            istart, iend, jstart, jend, jeu_stag,iev_stag,ju_end_boundary,iv_end_boundary, blend_wt)
   integer, intent(in):: npz
   real,    intent(in):: ak_dst(npz+1), bk_dst(npz+1), blend_wt(npz)
   real,    intent(in):: ps_dst(isd:ied,jsd:jed)
@@ -3198,6 +3113,8 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
   real,    intent(IN) :: ptop
   integer,  intent(in) ::  is, ie, js, je, isd, ied, jsd, jed
   integer,  intent(IN) :: istart, iend, jstart, jend
+  integer,  intent(IN) :: iev_stag, jeu_stag
+  integer,  intent(IN) :: ju_end_boundary, iv_end_boundary
 !
 ! local:
   real, dimension(is:ie+1,kmd+1):: pe0
@@ -3205,19 +3122,25 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
   real, dimension(is:ie+1,kmd):: qt
   real, dimension(is:ie+1,npz):: qn1
   integer i,j,k
+  integer jend_u, iend_v
   real :: wt1, wt2
 
   !This line to check if the update region is correctly defined or not is
   ! IMPORTANT. Sometimes one or the other pair of limits will give a
   ! non-empty loop, even though no data was transferred!
-  if (istart > iend .or. jstart > jend) return
+
+  if (.not. (istart > iend .or. jstart > jeu_stag)) then
+
+!set the last index to not go past the stag boundary set in setup_update_regions
+!to avoid cross-restart repro issue when the update region northern boundary coincides with a pe domain boundary
+  jend_u=min(jeu_stag, ju_end_boundary-1)
 
 !------
 ! map u
 !------
-!$OMP parallel do default(none) shared(js,je,kmd,is,ie,ak_dst,bk_dst,ps_dst,u_dst,v_dst,npz,ak_src,bk_src,ps_src,u_src,v_src,ptop,kord_mt,istart,iend,jstart,jend,blend_wt) &
+!$OMP parallel do default(none) shared(js,je,kmd,is,ie,ak_dst,bk_dst,ps_dst,u_dst,v_dst,npz,ak_src,bk_src,ps_src,u_src,v_src,ptop,kord_mt,istart,iend,jstart,jend_u,blend_wt) &
 !$OMP          private(pe0,pe1,qt,qn1,wt1,wt2)
-  do j=jstart,jend+1
+  do j=jstart,jend_u+1
 !------
 ! Data
 !------
@@ -3254,18 +3177,25 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
       enddo
 
    end do
+  endif
+
+  if (.not. (istart > iev_stag .or. jstart > jend)) then
+
+!set the last index to not go past the stag boundary set in setup_update_regions
+!to avoid cross-restart repro issue when the update region eastern boundary coincides with a pe domain boundary
+  iend_v=min(iev_stag, iv_end_boundary-1)
 
 !------
 ! map v
 !------
-!$OMP parallel do default(none) shared(js,je,kmd,is,ie,ak_dst,bk_dst,ps_dst,u_dst,v_dst,ak_src,bk_src,ps_src,npz,u_src,v_src,ptop,istart,iend,jstart,jend,blend_wt) &
+!$OMP parallel do default(none) shared(js,je,kmd,is,ie,ak_dst,bk_dst,ps_dst,u_dst,v_dst,ak_src,bk_src,ps_src,npz,u_src,v_src,ptop,istart,iend_v,jstart,jend,blend_wt) &
 !$OMP          private(pe0,pe1,qt,qn1,wt1,wt2)
    do j=jstart,jend
 !------
 ! Data
 !------
      do k=1,kmd+1
-        do i=istart,iend+1
+        do i=istart,iend_v+1
           pe0(i,k) = ak_src(k) + bk_src(k)*0.5*(ps_src(i,j)+ps_src(i-1,j))
        enddo
      enddo
@@ -3273,7 +3203,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
 ! Model
 !------
      do k=1,npz+1
-        do i=istart,iend+1
+        do i=istart,iend_v+1
           pe1(i,k) = ak_dst(k) + bk_dst(k)*0.5*(ps_dst(i,j)+ps_dst(i-1,j))
        enddo
      enddo
@@ -3282,21 +3212,21 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
 !------
      qt = 0.
       do k=1,kmd
-         do i=istart,iend+1
+         do i=istart,iend_v+1
             qt(i,k) = v_src(i,j,k)
          enddo
       enddo
       qn1 = 0.
-      call mappm(kmd, pe0(istart:iend+1,:), qt(istart:iend+1,:), npz, pe1(istart:iend+1,:), qn1(istart:iend+1,:), istart,iend+1, -1, 8, ptop)
+      call mappm(kmd, pe0(istart:iend_v+1,:), qt(istart:iend_v+1,:), npz, pe1(istart:iend_v+1,:), qn1(istart:iend_v+1,:), istart,iend_v+1, -1, 8, ptop)
       do k=1,npz
          wt1 = blend_wt(k)
          wt2 = 1. - wt1
-         do i=istart,iend+1
+         do i=istart,iend_v+1
             v_dst(i,j,k) = qn1(i,k)*wt1 + v_dst(i,j,k)*wt2  !Does this kill OMP???
          enddo
       enddo
    end do
-
+  endif
  end subroutine update_remap_uv
 
 

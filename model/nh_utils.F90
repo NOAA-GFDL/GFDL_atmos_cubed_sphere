@@ -681,6 +681,7 @@ CONTAINS
 
   end subroutine Riem_Solver3test
 
+
   subroutine imp_diff_w(j, is, ie, js, je, ng, km, cd, delz, ws, w, w3)
   integer, intent(in) :: j, is, ie, js, je, km, ng
   real, intent(in) :: cd
@@ -728,6 +729,7 @@ CONTAINS
          wt(i,km) = (w(i,km) + 2.*ws(i)*cd/delz(i,km)**2                        &
                   +  a*wt(i,km-1))/(1. + a + (cd+cd)/delz(i,km)**2 + a*gam(i,km))
      enddo
+
      do k=km-1,1,-1
         do i=is,ie
            wt(i,k) = wt(i,k) - gam(i,k+1)*wt(i,k+1)

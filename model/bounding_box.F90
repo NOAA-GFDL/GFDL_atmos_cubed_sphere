@@ -23,9 +23,8 @@
 ! Moving Nest Initial Release    W. Ramstrom - 07/28/2021
 !----------------------------------------------------------
 
-
 !***********************************************************************
-!>@brief!   Provides subroutines for grid bounding boxes as part of moving nest functionality in FV3 dynamic core.  
+!>@brief!   Provides subroutines for grid bounding boxes as part of moving nest functionality in FV3 dynamic core.
 !!>@author W. Ramstrom, AOML/HRD
 !
 ! =======================================================================!
@@ -42,14 +41,11 @@ use GFS_typedefs,      only : kind_phys
 use IPD_typedefs,      only : kind_phys => IPD_kind_phys
 #endif
 
-
-
   ! Simple aggregation of the start and end indices of a 2D grid
   ! Makes argument lists clearer to read
   type bbox
      integer :: is, ie, js, je
   end type bbox
-
 
   interface fill_bbox
      module procedure fill_bbox2D
@@ -141,20 +137,18 @@ contains
 
     x = in_bbox.is
     y = in_bbox.js
-    !print '("[INFO] WDR show_bbox ",A8," lats(",I0,",",I0,")=",F10.5," lons(",I0,",",I0,")="F10.5)', tag, x, y, lats(x,y)*rad2deg,  x, y, lons(x,y)*rad2deg 
+    !print '("[INFO] WDR show_bbox ",A8," lats(",I0,",",I0,")=",F10.5," lons(",I0,",",I0,")="F10.5)', tag, x, y, lats(x,y)*rad2deg,  x, y, lons(x,y)*rad2deg
     x = in_bbox.ie
     y = in_bbox.js
-    !print '("[INFO] WDR show_bbox ",A8," lats(",I0,",",I0,")=",F10.5," lons(",I0,",",I0,")="F10.5)', tag, x, y, lats(x,y)*rad2deg,  x, y, lons(x,y)*rad2deg 
+    !print '("[INFO] WDR show_bbox ",A8," lats(",I0,",",I0,")=",F10.5," lons(",I0,",",I0,")="F10.5)', tag, x, y, lats(x,y)*rad2deg,  x, y, lons(x,y)*rad2deg
     x = in_bbox.is
     y = in_bbox.je
-    !print '("[INFO] WDR show_bbox ",A8," lats(",I0,",",I0,")=",F10.5," lons(",I0,",",I0,")="F10.5)', tag, x, y, lats(x,y)*rad2deg,  x, y, lons(x,y)*rad2deg 
+    !print '("[INFO] WDR show_bbox ",A8," lats(",I0,",",I0,")=",F10.5," lons(",I0,",",I0,")="F10.5)', tag, x, y, lats(x,y)*rad2deg,  x, y, lons(x,y)*rad2deg
     x = in_bbox.ie
     y = in_bbox.je
-    !print '("[INFO] WDR show_bbox ",A8," lats(",I0,",",I0,")=",F10.5," lons(",I0,",",I0,")="F10.5)', tag, x, y, lats(x,y)*rad2deg,  x, y, lons(x,y)*rad2deg 
-
+    !print '("[INFO] WDR show_bbox ",A8," lats(",I0,",",I0,")=",F10.5," lons(",I0,",",I0,")="F10.5)', tag, x, y, lats(x,y)*rad2deg,  x, y, lons(x,y)*rad2deg
 
   end subroutine show_bbox
-
 
 
   !>@brief This subroutine returns the nest grid indices that correspond to the input nest domain, direction, and position
@@ -181,4 +175,3 @@ contains
   end subroutine bbox_get_C2F_index
 
 end module bounding_box_mod
-
