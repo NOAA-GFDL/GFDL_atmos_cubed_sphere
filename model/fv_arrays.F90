@@ -682,7 +682,10 @@ module fv_arrays_mod
                               !< original value before entering the physics; a value of 0.7 roughly
                               !< causes the energy fixer to compensate for the amount of energy changed
                               !< by the physics in GFDL HiRAM or AM3.
-   real    :: tau_w = 0.      !< Time scale (in days) for Rayleigh friction applied to vertical wind
+   real    :: tau_w = 0.      !< Time scale (in days) for Rayleigh friction applied to vertical winds
+                              !< This option allows the vertical and horizontal winds use different time
+                              !< scales for Rayleigh friction. The default value is 0.0, then tau_w=tau,
+                              !< the same time scale appiled to horizontal and vertical winds.   
    real    :: tau = 0.   !< Time scale (in days) for Rayleigh friction applied to horizontal
                          !< and vertical winds; lost kinetic energy is converted to heat, except
                          !< on nested grids. The default value is 0.0, which disables damping.
