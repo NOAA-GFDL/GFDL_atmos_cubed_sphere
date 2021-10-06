@@ -840,7 +840,10 @@ endif        ! end last_step check
     ! Call to CCPP fast_physics group
     if (cdata%initialized()) then
       call ccpp_physics_run(cdata, suite_name=trim(ccpp_suite), group_name='fast_physics', ierr=ierr)
-      if (ierr/=0) call mpp_error(FATAL, "Call to ccpp_physics_run for group 'fast_physics' failed")
+      if (ierr/=0) then
+        call mpp_error(NOTE, trim(cdata%errmsg))
+        call mpp_error(FATAL, "Call to ccpp_physics_run for group 'fast_physics' failed")
+      endif
     else
       call mpp_error (FATAL, 'Lagrangian_to_Eulerian: can not call CCPP fast physics because CCPP not initialized')
     endif
