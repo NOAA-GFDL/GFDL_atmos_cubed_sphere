@@ -40,7 +40,8 @@ module fv_regional_mod
                                 register_global_attribute, read_data,   &
                                 register_field, FmsNetcdfFile_t,        &
                                 FmsNetcdfDomainFile_t, write_data,      &
-                                get_global_attribute, global_att_exists
+                                get_global_attribute, global_att_exists,&
+                                get_dimension_size
    use tracer_manager_mod,only: get_tracer_index,get_tracer_names
    use field_manager_mod, only: MODEL_ATMOS
    use time_manager_mod,  only: get_time                                &
@@ -1352,20 +1353,14 @@ contains
 !***  Local variables
 !---------------------
 !
+      type(FmsNetcdfFile_t) :: Gfs_ctl
       type(FmsNetcdfFile_t) :: Grid_input
       integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
       integer :: ierr, ios
       real, allocatable :: wk2(:,:)
 !
-      logical :: filtered_terrain = .true.
-      logical :: gfs_dwinds       = .true.
-      integer :: levp             = 64
-      logical :: checker_tr       = .false.
-      integer :: nt_checker       = 0
-      namelist /external_ic_nml/ filtered_terrain, levp, gfs_dwinds     &
-                                ,checker_tr, nt_checker
       ! variables for reading the dimension from the gfs_ctrl
-      integer ncid, levsp
+      integer :: levp, levsp
 !-----------------------------------------------------------------------
 !***********************************************************************
 !-----------------------------------------------------------------------
@@ -1373,18 +1368,15 @@ contains
 !-----------------------------------------------------------------------
 !*** Read the number of model layers in the external forecast (=levp).
 !-----------------------------------------------------------------------
-!
-      read (input_nml_file,external_ic_nml,iostat=ios)
-      ierr = check_nml_error(ios,'external_ic_nml')
-      if(ierr/=0)then
-        write(0,11011)ierr
-11011   format(' start_regional_restart failed to read external_ic_nml ierr=',i3)
+      allocate(pes(mpp_npes()))
+      call mpp_get_current_pelist(pes)
+      if( open_file(Gfs_ctl, 'INPUT/gfs_ctrl.nc', "read", pelist=pes) ) then
+!--- read in the number of levsp
+        call get_dimension_size(Gfs_ctl, 'levsp', levsp)
+        call close_file(Gfs_ctl)
+      else
+        call mpp_error(FATAL,'==> Error in fv_regional::start_regional_restart file INPUT/gfs_ctl.nc does not exist')
       endif
-
-!--- read in ak and bk from the control file using fms_io read_data ---
-      call open_ncfile( 'INPUT/gfs_ctrl.nc', ncid )        ! open the file
-      call get_ncdim1( ncid, 'levsp', levsp )
-      call close_ncfile( ncid )
 
       levp = levsp-1
 !
@@ -1409,8 +1401,6 @@ contains
       allocate (wk2(levp+1,2))
       allocate (ak_in(levp+1))                                               !<-- Save the input vertical structure for
       allocate (bk_in(levp+1))                                               !    remapping BC updates during the forecast.
-      allocate(pes(mpp_npes()))
-      call mpp_get_current_pelist(pes)
       if (Atm%flagstruct%hrrrv3_ic) then
         if (open_file(Grid_input, 'INPUT/hrrr_ctrl.nc', "read", pelist=pes)) then
           call read_data(Grid_input,'vcoord',wk2)
