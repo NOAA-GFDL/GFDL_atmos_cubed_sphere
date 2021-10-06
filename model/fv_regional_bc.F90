@@ -3772,7 +3772,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
             BC_side%q_BC(i,j,k,rainwat) = 0.
             BC_side%q_BC(i,j,k,snowwat) = 0.
             BC_side%q_BC(i,j,k,graupel) = 0.
-            BC_side%q_BC(i,j,k,cld_amt) = 0.
+            if (cld_amt > 0) BC_side%q_BC(i,j,k,cld_amt) = 0.
             if ( BC_side%pt_BC(i,j,k) > 273.16 ) then       ! > 0C all liq_wat
                BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)
                BC_side%q_BC(i,j,k,ice_wat) = 0.
