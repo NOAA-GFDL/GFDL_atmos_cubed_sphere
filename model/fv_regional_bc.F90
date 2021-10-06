@@ -3772,7 +3772,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
             BC_side%q_BC(i,j,k,rainwat) = 0.
             BC_side%q_BC(i,j,k,snowwat) = 0.
             BC_side%q_BC(i,j,k,graupel) = 0.
-            BC_side%q_BC(i,j,k,cld_amt) = 0.
+            if (cld_amt > 0) BC_side%q_BC(i,j,k,cld_amt) = 0.
             if ( BC_side%pt_BC(i,j,k) > 273.16 ) then       ! > 0C all liq_wat
                BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)
                BC_side%q_BC(i,j,k,ice_wat) = 0.
@@ -6748,21 +6748,17 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 ! Use the fms call here so we can actually get the return code value.
 ! The term 'source' is specified by 'chgres_cube'
 !
+      lstatus=.false.
       allocate(pes(mpp_npes()))
       call mpp_get_current_pelist(pes)
-      if (regional) then
-        if (open_file(Gfs_data , 'INPUT/gfs_data.nc', "read", pelist=pes)) then
+
+        if (open_file(Gfs_data , 'INPUT/gfs_data.nc', "read", pelist=pes) .or. &
+            open_file(Gfs_data , 'INPUT/gfs_data.tile1.nc', "read", pelist=pes)) then
           lstatus = global_att_exists(Gfs_data, "source")
           if(lstatus) call get_global_attribute(Gfs_data, "source", source)
           call close_file(Gfs_data)
         endif
-      else
-        if (open_file(Gfs_data , 'INPUT/gfs_data.tile1.nc', "read", pelist=pes)) then
-          lstatus = global_att_exists(Gfs_data, "source")
-          if(lstatus) call get_global_attribute(Gfs_data, "source", source)
-          call close_file(Gfs_data)
-        endif
-      endif
+
       deallocate(pes)
       if (.not. lstatus) then
        if (mpp_pe() == 0) write(0,*) 'INPUT source not found ',lstatus,' set source=No Source Attribute'
