@@ -154,8 +154,7 @@ use fms_mod,                only: error_mesg, FATAL,                 &
                                   write_version_number,              &
                                   mpp_clock_id, mpp_clock_begin,     &
                                   mpp_clock_end, CLOCK_SUBCOMPONENT, &
-                                  clock_flag_default,                &
-                                  open_namelist_file, close_file
+                                  clock_flag_default
 use fms2_io_mod,            only: file_exists
 use mpp_mod,                only: mpp_error, stdout, FATAL, WARNING, NOTE, &
                                   input_nml_file, mpp_root_pe,    &
@@ -473,18 +472,8 @@ contains
    ! First, read atmos_model_nml namelist section - this is a workaround to avoid
    ! unnecessary additional changes to the input namelists, in anticipation of the
    ! implementation of a generic interface for GFDL and CCPP fast physics soon
-#ifdef INTERNAL_FILE_NML
    read(input_nml_file, nml=atmos_model_nml, iostat=io)
    ierr = check_nml_error(io, 'atmos_model_nml')
-#else
-   nlunit = open_namelist_file ( )
-   ierr=1
-   do while (ierr /= 0)
-      read  (nlunit, nml=atmos_model_nml, iostat=io, end=10)
-      ierr = check_nml_error(io,'atmos_model_nml')
-   enddo
-10 call close_file (nlunit)
-#endif
    !write(0,'(a)') "It's me, and my physics suite is '" // trim(ccpp_suite) // "'"
    ! *DH 20210326
 
