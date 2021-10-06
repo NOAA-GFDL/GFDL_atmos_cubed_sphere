@@ -266,7 +266,7 @@ contains
                if ( Atm%flagstruct%hybrid_z ) then
                    call register_restart_field(Atm%Fv_restart_tile,  'ZE0', Atm%ze0, dim_names_4d3, is_optional=.true.)
                endif
-          else !The restart file has the non-hydrostatic variables 
+          else !The restart file has the non-hydrostatic variables
                call register_restart_field(Atm%Fv_restart_tile,  'W', Atm%w, dim_names_4d3)
                call register_restart_field(Atm%Fv_restart_tile,  'DZ', Atm%delz, dim_names_4d3)
                if ( Atm%flagstruct%hybrid_z ) then
@@ -274,7 +274,6 @@ contains
                endif
           endif
        endif
-
        call register_restart_field(Atm%Fv_restart_tile,  'T', Atm%pt, dim_names_4d3)
        call register_restart_field(Atm%Fv_restart_tile,  'delp', Atm%delp, dim_names_4d3)
        call register_restart_field(Atm%Fv_restart_tile,  'phis', Atm%phis, dim_names_3d)
