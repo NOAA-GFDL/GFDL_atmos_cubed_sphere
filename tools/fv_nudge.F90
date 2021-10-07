@@ -782,7 +782,8 @@ module fv_nwp_nudge_mod
     if ( kmax < km ) call mpp_error(FATAL,'==> KMAX must be larger than km')
 
     do j=js,je
-       do 666 i=is,ie
+       do i=is,ie
+          go to 666
        do k=1, km+1
           pk0(k) = (ak0(k) + bk0(k)*ps_obs(i,j))**kappa
        enddo
@@ -800,8 +801,8 @@ module fv_nwp_nudge_mod
            pt0 = tm(i,j)/(pk0(km+1)-pk0(km))*(kappa*(pn0(km+1)-pn0(km)))
            pst = pk0(km+1) + (gz0(i,j)-phis(i,j))/(cp_air*pt0)
       endif
-666   continue ! i-loop
-      ps_dt(i,j) = pst**(1./kappa) - ps(i,j)
+666   ps_dt(i,j) = pst**(1./kappa) - ps(i,j)
+      enddo   ! i-loop
       enddo   ! j-loop
 
       if( nf_ps>0 ) call del2_scalar(ps_dt, del2_cd, 1, nf_ps, bd, npx, npy, gridstruct, domain)
