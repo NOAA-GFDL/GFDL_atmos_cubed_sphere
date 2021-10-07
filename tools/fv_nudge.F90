@@ -783,7 +783,6 @@ module fv_nwp_nudge_mod
 
     do j=js,je
        do i=is,ie
-          go to 666
        do k=1, km+1
           pk0(k) = (ak0(k) + bk0(k)*ps_obs(i,j))**kappa
        enddo
