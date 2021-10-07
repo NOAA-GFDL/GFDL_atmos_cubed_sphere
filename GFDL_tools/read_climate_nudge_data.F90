@@ -28,7 +28,8 @@ use fms2_io_mod,   only: open_file, close_file, get_num_dimensions, &
                          get_dimension_names, get_dimension_size, FmsNetcdfFile_t, &
                          get_num_variables, get_variable_names, get_variable_size, &
                          get_variable_num_dimensions, get_variable_units, &
-                         get_time_calendar, read_data, variable_att_exists
+                         get_time_calendar, read_data, variable_att_exists, &
+                         is_dimension_unlimited
 use mpp_mod,       only: input_nml_file, mpp_npes, mpp_get_current_pelist
 use constants_mod, only: PI, GRAV, RDGAS, RVGAS
 
@@ -107,6 +108,7 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
   character(len=32), allocatable :: fields(:)
   type(FmsNetcdfFile_t) :: fileobj
   integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pelist
+  character(len=128), dimension(:), allocatable :: names
 
   if (module_is_initialized) return
   ! initial file names to blanks
@@ -147,22 +149,32 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
      if (open_file(fileobj, trim(filenames(n)), "read", pelist=pes)) then
          Files(n)%ndim=get_num_dimensions(fileobj)
 
-         allocate (Files(n)%length_axes(Files(n)%ndim))
+         allocate(files(n)%length_axes(Files(n)%ndim))
+         allocate(names(files(n)%ndim))
+         call get_dimension_names(fileobj, names)
+         files(n)%axes(:) = ""
 
          ! inquire dimension sizes
          do i = 1, Files(n)%ndim
-            call get_dimension_names(fileobj, Files(n)%axes)
             do j = 1, NUM_REQ_AXES
-               if (trim(Files(n)%axes(j)) .eq. trim(required_axis_names(j))) then
+               if (trim(names(i)) .eq. trim(required_axis_names(j))) then
+                  files(n)%axes(j) = trim(names(i))
                   call get_dimension_size(fileobj, Files(n)%axes(j), Files(n)%length_axes(j))
                   call check_axis_size (j,Files(n)%length_axes(j))
                   Files(n)%axis_index(j) = i
                   exit
                endif
             enddo
+            if (j .gt. num_req_axes) then
+              if (is_dimension_unlimited(fileobj, trim(names(i)))) then
+                ! time axis indexing
+                files(n)%axes(index_time) = trim(names(i))
+                call get_dimension_size(fileobj, files(n)%axes(index_time), &
+                                        files(n)%length_axes(index_time))
+              endif
+            endif
          enddo
-         ! time axis indexing
-         call get_dimension_size(fileobj, Files(n)%axes(INDEX_TIME), Files(n)%length_axes(INDEX_TIME))
+         deallocate(names)
          Files(n)%ntim = Files(n)%length_axes(INDEX_TIME)
          Files(n)%time_offset = numtime
          numtime = numtime + Files(n)%ntim
@@ -173,7 +185,7 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
          Files(n)%field_index = 0
          do i = 1, Files(n)%nvar
             nd = get_variable_num_dimensions(fileobj, fields(i))
-            call get_variable_size(fileobj, fields(i), siz)
+            call get_variable_size(fileobj, fields(i), siz(1:nd))
             do j = 1, NUM_REQ_FLDS
                if (trim(fields(i)) .eq. trim(required_field_names(j))) then
                   Files(n)%field_index(j) = i
