@@ -48,78 +48,78 @@ use IPD_typedefs,      only : kind_phys => IPD_kind_phys
   end type bbox
 
   interface fill_bbox
-     module procedure fill_bbox2D
-     module procedure fill_bbox3D
-     module procedure fill_bbox4D
-     module procedure fill_bbox2D64
-     module procedure fill_bbox3D64
-     module procedure fill_bbox4D64
+     module procedure fill_bbox_r4_2d
+     module procedure fill_bbox_r4_3d
+     module procedure fill_bbox_r4_4d
+     module procedure fill_bbox_r8_2d
+     module procedure fill_bbox_r8_3d
+     module procedure fill_bbox_r8_4d
   end interface fill_bbox
 
 contains
 
-  subroutine fill_bbox2D(out_bbox, in_grid)
-    type(bbox), intent(out)       :: out_bbox
-    real, allocatable, intent(in) :: in_grid(:,:)
+  subroutine fill_bbox_r4_2d(out_bbox, in_grid)
+    type(bbox), intent(out)         :: out_bbox
+    real*4, allocatable, intent(in) :: in_grid(:,:)
 
     out_bbox%is = lbound(in_grid, 1)
     out_bbox%ie = ubound(in_grid, 1)
     out_bbox%js = lbound(in_grid, 2)
     out_bbox%je = ubound(in_grid, 2)
-  end subroutine fill_bbox2D
+  end subroutine fill_bbox_r4_2d
 
 
-  subroutine fill_bbox3D(out_bbox, in_grid)
-    type(bbox), intent(out)       :: out_bbox
-    real, allocatable, intent(in) :: in_grid(:,:,:)
-
-    out_bbox%is = lbound(in_grid, 1)
-    out_bbox%ie = ubound(in_grid, 1)
-    out_bbox%js = lbound(in_grid, 2)
-    out_bbox%je = ubound(in_grid, 2)
-  end subroutine fill_bbox3D
-
-  subroutine fill_bbox4D(out_bbox, in_grid)
-    type(bbox), intent(out)       :: out_bbox
-    real, allocatable, intent(in) :: in_grid(:,:,:,:)
+  subroutine fill_bbox_r4_3d(out_bbox, in_grid)
+    type(bbox), intent(out)         :: out_bbox
+    real*4, allocatable, intent(in) :: in_grid(:,:,:)
 
     out_bbox%is = lbound(in_grid, 1)
     out_bbox%ie = ubound(in_grid, 1)
     out_bbox%js = lbound(in_grid, 2)
     out_bbox%je = ubound(in_grid, 2)
-  end subroutine fill_bbox4D
+  end subroutine fill_bbox_r4_3d
 
-
-  subroutine fill_bbox2D64(out_bbox, in_grid)
-    type(bbox), intent(out)                    :: out_bbox
-    real(kind=R_GRID), allocatable, intent(in) :: in_grid(:,:)
-
-    out_bbox%is = lbound(in_grid, 1)
-    out_bbox%ie = ubound(in_grid, 1)
-    out_bbox%js = lbound(in_grid, 2)
-    out_bbox%je = ubound(in_grid, 2)
-  end subroutine fill_bbox2D64
-
-  subroutine fill_bbox3D64(out_bbox, in_grid)
-    type(bbox), intent(out)                    :: out_bbox
-    real(kind=R_GRID), allocatable, intent(in) :: in_grid(:,:,:)
+  subroutine fill_bbox_r4_4d(out_bbox, in_grid)
+    type(bbox), intent(out)         :: out_bbox
+    real*4, allocatable, intent(in) :: in_grid(:,:,:,:)
 
     out_bbox%is = lbound(in_grid, 1)
     out_bbox%ie = ubound(in_grid, 1)
     out_bbox%js = lbound(in_grid, 2)
     out_bbox%je = ubound(in_grid, 2)
-  end subroutine fill_bbox3D64
+  end subroutine fill_bbox_r4_4d
 
 
-  subroutine fill_bbox4D64(out_bbox, in_grid)
-    type(bbox), intent(out)                     :: out_bbox
-    real(kind=R_GRID), allocatable, intent(in)  :: in_grid(:,:,:,:)
+  subroutine fill_bbox_r8_2d(out_bbox, in_grid)
+    type(bbox), intent(out)         :: out_bbox
+    real*8, allocatable, intent(in) :: in_grid(:,:)
 
     out_bbox%is = lbound(in_grid, 1)
     out_bbox%ie = ubound(in_grid, 1)
     out_bbox%js = lbound(in_grid, 2)
     out_bbox%je = ubound(in_grid, 2)
-  end subroutine fill_bbox4D64
+  end subroutine fill_bbox_r8_2d
+
+  subroutine fill_bbox_r8_3d(out_bbox, in_grid)
+    type(bbox), intent(out)         :: out_bbox
+    real*8, allocatable, intent(in) :: in_grid(:,:,:)
+
+    out_bbox%is = lbound(in_grid, 1)
+    out_bbox%ie = ubound(in_grid, 1)
+    out_bbox%js = lbound(in_grid, 2)
+    out_bbox%je = ubound(in_grid, 2)
+  end subroutine fill_bbox_r8_3d
+
+
+  subroutine fill_bbox_r8_4d(out_bbox, in_grid)
+    type(bbox), intent(out)          :: out_bbox
+    real*8, allocatable, intent(in)  :: in_grid(:,:,:,:)
+
+    out_bbox%is = lbound(in_grid, 1)
+    out_bbox%ie = ubound(in_grid, 1)
+    out_bbox%js = lbound(in_grid, 2)
+    out_bbox%je = ubound(in_grid, 2)
+  end subroutine fill_bbox_r8_4d
 
   subroutine show_bbox(tag, in_bbox, lats, lons)
     character(len=*) :: tag

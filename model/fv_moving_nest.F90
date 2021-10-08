@@ -120,24 +120,27 @@ module fv_moving_nest_mod
 
   !! Step 2
   interface mn_var_fill_intern_nest_halos
-     module procedure mn_var_fill_intern_nest_halos2D
-     module procedure mn_var_fill_intern_nest_halos2D_kindphys
-     module procedure mn_var_fill_intern_nest_halos3D
-     module procedure mn_var_fill_intern_nest_halos3D_kindphys
-     module procedure mn_var_fill_intern_nest_halos4D
-     module procedure mn_var_fill_intern_nest_halos4D_kindphys
+     module procedure mn_var_fill_intern_nest_halos_r4_2d
+     module procedure mn_var_fill_intern_nest_halos_r4_3d
+     module procedure mn_var_fill_intern_nest_halos_r4_4d
+
+     module procedure mn_var_fill_intern_nest_halos_r8_2d
+     module procedure mn_var_fill_intern_nest_halos_r8_3d
+     module procedure mn_var_fill_intern_nest_halos_r8_4d
+
      module procedure mn_var_fill_intern_nest_halos_wind
   end interface mn_var_fill_intern_nest_halos
 
 
   !! Step 6
   interface mn_var_shift_data
-     module procedure mn_var_shift_data2D
-     module procedure mn_var_shift_data2D_kindphys
-     module procedure mn_var_shift_data3D
-     module procedure mn_var_shift_data3D_kindphys
-     module procedure mn_var_shift_data4D
-     module procedure mn_var_shift_data4D_kindphys
+     module procedure mn_var_shift_data_r4_2d
+     module procedure mn_var_shift_data_r4_3d
+     module procedure mn_var_shift_data_r4_4d
+
+     module procedure mn_var_shift_data_r8_2d
+     module procedure mn_var_shift_data_r8_3d
+     module procedure mn_var_shift_data_r8_4d
   end interface mn_var_shift_data
 
   !! Step 8
@@ -527,8 +530,8 @@ contains
   !
   !================================================================================
 
-  subroutine mn_var_fill_intern_nest_halos2D(data_var, domain_fine, is_fine_pe)
-    real, allocatable, intent(inout)            :: data_var(:,:)
+  subroutine mn_var_fill_intern_nest_halos_r4_2d(data_var, domain_fine, is_fine_pe)
+    real*4, allocatable, intent(inout)          :: data_var(:,:)
     type(domain2d), intent(inout)               :: domain_fine
     logical, intent(in)                         :: is_fine_pe
 
@@ -546,11 +549,11 @@ contains
        if (debug_log) print '("[INFO] WDR INH2 after call to mpp_update_domains. npe=",I0)', this_pe
     end if
 
-  end subroutine mn_var_fill_intern_nest_halos2D
+  end subroutine mn_var_fill_intern_nest_halos_r4_2d
 
 
-  subroutine mn_var_fill_intern_nest_halos2D_kindphys(data_var, domain_fine, is_fine_pe)
-    real(kind=kind_phys), allocatable, intent(inout)            :: data_var(:,:)
+  subroutine mn_var_fill_intern_nest_halos_r8_2d(data_var, domain_fine, is_fine_pe)
+    real*8, allocatable, intent(inout)          :: data_var(:,:)
     type(domain2d), intent(inout)               :: domain_fine
     logical, intent(in)                         :: is_fine_pe
 
@@ -568,11 +571,11 @@ contains
        if (debug_log) print '("[INFO] WDR INH2p after call to mpp_update_domains. npe=",I0)', this_pe
     end if
 
-  end subroutine mn_var_fill_intern_nest_halos2D_kindphys
+  end subroutine mn_var_fill_intern_nest_halos_r8_2d
 
 
-  subroutine mn_var_fill_intern_nest_halos3D(data_var, domain_fine, is_fine_pe)
-    real, allocatable, intent(inout)            :: data_var(:,:,:)
+  subroutine mn_var_fill_intern_nest_halos_r4_3d(data_var, domain_fine, is_fine_pe)
+    real*4, allocatable, intent(inout)          :: data_var(:,:,:)
     type(domain2d), intent(inout)               :: domain_fine
     logical, intent(in)                         :: is_fine_pe
 
@@ -590,11 +593,11 @@ contains
        if (debug_log) print '("[INFO] WDR INH3 after call to mpp_update_domains. npe=",I0)', this_pe
     end if
 
-  end subroutine mn_var_fill_intern_nest_halos3D
+  end subroutine mn_var_fill_intern_nest_halos_r4_3d
 
 
-  subroutine mn_var_fill_intern_nest_halos3D_kindphys(data_var, domain_fine, is_fine_pe)
-    real(kind=kind_phys), allocatable, intent(inout)            :: data_var(:,:,:)
+  subroutine mn_var_fill_intern_nest_halos_r8_3d(data_var, domain_fine, is_fine_pe)
+    real*8, allocatable, intent(inout)          :: data_var(:,:,:)
     type(domain2d), intent(inout)               :: domain_fine
     logical, intent(in)                         :: is_fine_pe
 
@@ -612,7 +615,7 @@ contains
        if (debug_log) print '("[INFO] WDR INH3p after call to mpp_update_domains. npe=",I0)', this_pe
     end if
 
-  end subroutine mn_var_fill_intern_nest_halos3D_kindphys
+  end subroutine mn_var_fill_intern_nest_halos_r8_3d
 
 
   subroutine mn_var_fill_intern_nest_halos_wind(u_var, v_var, domain_fine, is_fine_pe)
@@ -638,8 +641,8 @@ contains
   end subroutine mn_var_fill_intern_nest_halos_wind
 
 
-  subroutine mn_var_fill_intern_nest_halos4D(data_var, domain_fine, is_fine_pe)
-    real, allocatable, intent(inout)            :: data_var(:,:,:,:)
+  subroutine mn_var_fill_intern_nest_halos_r4_4d(data_var, domain_fine, is_fine_pe)
+    real*4, allocatable, intent(inout)          :: data_var(:,:,:,:)
     type(domain2d), intent(inout)               :: domain_fine
     logical, intent(in)                         :: is_fine_pe
 
@@ -657,11 +660,11 @@ contains
        if (debug_log) print '("[INFO] WDR INH4 after call to mpp_update_domains. npe=",I0)', this_pe
     end if
 
-  end subroutine mn_var_fill_intern_nest_halos4D
+  end subroutine mn_var_fill_intern_nest_halos_r4_4d
 
 
-  subroutine mn_var_fill_intern_nest_halos4D_kindphys(data_var, domain_fine, is_fine_pe)
-    real(kind=kind_phys), allocatable, intent(inout)            :: data_var(:,:,:,:)
+  subroutine mn_var_fill_intern_nest_halos_r8_4d(data_var, domain_fine, is_fine_pe)
+    real*8, allocatable, intent(inout)          :: data_var(:,:,:,:)
     type(domain2d), intent(inout)               :: domain_fine
     logical, intent(in)                         :: is_fine_pe
 
@@ -679,7 +682,7 @@ contains
        if (debug_log) print '("[INFO] WDR INH4 after call to mpp_update_domains. npe=",I0)', this_pe
     end if
 
-  end subroutine mn_var_fill_intern_nest_halos4D_kindphys
+  end subroutine mn_var_fill_intern_nest_halos_r8_4d
 
 
   !!============================================================================
@@ -1179,11 +1182,9 @@ contains
   !! Step 6 - per variable
   !!============================================================================
 
-  !  TODO do we need a version of this for integer data?  land sea
+  subroutine mn_var_shift_data_r4_2d(data_var, interp_type, wt, ind, delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
 
-  subroutine mn_var_shift_data2D(data_var, interp_type, wt, ind, delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-
-    real, allocatable, intent(inout)            :: data_var(:,:)
+    real*4, allocatable, intent(inout)          :: data_var(:,:)
     integer, intent(in)                         :: interp_type
     real, allocatable, intent(in)               :: wt(:,:,:)
     integer, allocatable, intent(in)            :: ind(:,:,:)
@@ -1192,7 +1193,7 @@ contains
     type(nest_domain_type), intent(inout)       :: nest_domain
     integer, intent(in)                         :: position
 
-    real, dimension(:,:), allocatable :: nbuffer, sbuffer, ebuffer, wbuffer
+    real*4, dimension(:,:), allocatable :: nbuffer, sbuffer, ebuffer, wbuffer
     logical         :: parent_proc, child_proc
     type(bbox)      :: north_fine, north_coarse ! step 4
     type(bbox)      :: south_fine, south_coarse
@@ -1292,12 +1293,12 @@ contains
     deallocate(ebuffer)
     deallocate(wbuffer)
 
-  end subroutine mn_var_shift_data2D
+  end subroutine mn_var_shift_data_r4_2d
 
 
-  subroutine mn_var_shift_data2D_kindphys(data_var, interp_type, wt, ind, delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
+  subroutine mn_var_shift_data_r8_2d(data_var, interp_type, wt, ind, delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
 
-    real(kind=kind_phys), allocatable, intent(inout)            :: data_var(:,:)
+    real*8, allocatable, intent(inout)          :: data_var(:,:)
     integer, intent(in)                         :: interp_type
     real, allocatable, intent(in)               :: wt(:,:,:)
     integer, allocatable, intent(in)            :: ind(:,:,:)
@@ -1306,7 +1307,7 @@ contains
     type(nest_domain_type), intent(inout)       :: nest_domain
     integer, intent(in)                         :: position
 
-    real(kind=kind_phys), dimension(:,:), allocatable :: nbuffer, sbuffer, ebuffer, wbuffer
+    real*8, dimension(:,:), allocatable :: nbuffer, sbuffer, ebuffer, wbuffer
     logical         :: parent_proc, child_proc
     type(bbox)      :: north_fine, north_coarse ! step 4
     type(bbox)      :: south_fine, south_coarse
@@ -1406,12 +1407,12 @@ contains
     deallocate(ebuffer)
     deallocate(wbuffer)
 
-  end subroutine mn_var_shift_data2D_kindphys
+  end subroutine mn_var_shift_data_r8_2d
 
 
-  subroutine mn_var_shift_data3D(data_var, interp_type, wt, ind, delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position, nz)
+  subroutine mn_var_shift_data_r4_3d(data_var, interp_type, wt, ind, delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position, nz)
 
-    real, allocatable, intent(inout)            :: data_var(:,:,:)
+    real*4, allocatable, intent(inout)          :: data_var(:,:,:)
     integer, intent(in)                         :: interp_type
     real, allocatable, intent(in)               :: wt(:,:,:)
     integer, allocatable, intent(in)            :: ind(:,:,:)
@@ -1420,7 +1421,7 @@ contains
     type(nest_domain_type), intent(inout)       :: nest_domain
     integer, intent(in)                         :: position, nz
 
-    real, dimension(:,:,:), allocatable :: nbuffer, sbuffer, ebuffer, wbuffer
+    real*4, dimension(:,:,:), allocatable :: nbuffer, sbuffer, ebuffer, wbuffer
     logical         :: parent_proc, child_proc
     type(bbox)      :: north_fine, north_coarse ! step 4
     type(bbox)      :: south_fine, south_coarse
@@ -1521,12 +1522,12 @@ contains
     deallocate(ebuffer)
     deallocate(wbuffer)
 
-  end subroutine mn_var_shift_data3D
+  end subroutine mn_var_shift_data_r4_3d
 
 
-  subroutine mn_var_shift_data3D_kindphys(data_var, interp_type, wt, ind, delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position, nz)
+  subroutine mn_var_shift_data_r8_3d(data_var, interp_type, wt, ind, delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position, nz)
 
-    real(kind=kind_phys), allocatable, intent(inout)            :: data_var(:,:,:)
+    real*8, allocatable, intent(inout)          :: data_var(:,:,:)
     integer, intent(in)                         :: interp_type
     real, allocatable, intent(in)               :: wt(:,:,:)
     integer, allocatable, intent(in)            :: ind(:,:,:)
@@ -1535,7 +1536,7 @@ contains
     type(nest_domain_type), intent(inout)       :: nest_domain
     integer, intent(in)                         :: position, nz
 
-    real(kind=kind_phys), dimension(:,:,:), allocatable :: nbuffer, sbuffer, ebuffer, wbuffer
+    real*8, dimension(:,:,:), allocatable :: nbuffer, sbuffer, ebuffer, wbuffer
     logical         :: parent_proc, child_proc
     type(bbox)      :: north_fine, north_coarse ! step 4
     type(bbox)      :: south_fine, south_coarse
@@ -1636,12 +1637,12 @@ contains
     deallocate(ebuffer)
     deallocate(wbuffer)
 
-  end subroutine mn_var_shift_data3D_kindphys
+  end subroutine mn_var_shift_data_r8_3d
 
 
-  subroutine mn_var_shift_data4D(data_var, interp_type, wt, ind, delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position, nz)
+  subroutine mn_var_shift_data_r4_4d(data_var, interp_type, wt, ind, delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position, nz)
 
-    real, allocatable, intent(inout)            :: data_var(:,:,:,:)
+    real*4, allocatable, intent(inout)          :: data_var(:,:,:,:)
     integer, intent(in)                         :: interp_type
     real, allocatable, intent(in)               :: wt(:,:,:)
     integer, allocatable, intent(in)            :: ind(:,:,:)
@@ -1650,7 +1651,7 @@ contains
     type(nest_domain_type), intent(inout)       :: nest_domain
     integer, intent(in)                         :: position, nz
 
-    real, dimension(:,:,:,:), allocatable         :: nbuffer, sbuffer, ebuffer, wbuffer
+    real*4, dimension(:,:,:,:), allocatable     :: nbuffer, sbuffer, ebuffer, wbuffer
     logical         :: parent_proc, child_proc
     type(bbox)      :: north_fine, north_coarse ! step 4
     type(bbox)      :: south_fine, south_coarse
@@ -1757,12 +1758,12 @@ contains
     deallocate(ebuffer)
     deallocate(wbuffer)
 
-  end subroutine mn_var_shift_data4D
+  end subroutine mn_var_shift_data_r4_4d
 
 
-  subroutine mn_var_shift_data4D_kindphys(data_var, interp_type, wt, ind, delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position, nz)
+  subroutine mn_var_shift_data_r8_4d(data_var, interp_type, wt, ind, delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position, nz)
 
-    real(kind=kind_phys), allocatable, intent(inout)            :: data_var(:,:,:,:)
+    real*8, allocatable, intent(inout)          :: data_var(:,:,:,:)
     integer, intent(in)                         :: interp_type
     real, allocatable, intent(in)               :: wt(:,:,:)
     integer, allocatable, intent(in)            :: ind(:,:,:)
@@ -1771,7 +1772,7 @@ contains
     type(nest_domain_type), intent(inout)       :: nest_domain
     integer, intent(in)                         :: position, nz
 
-    real(kind=kind_phys), dimension(:,:,:,:), allocatable         :: nbuffer, sbuffer, ebuffer, wbuffer
+    real*8, dimension(:,:,:,:), allocatable     :: nbuffer, sbuffer, ebuffer, wbuffer
     logical         :: parent_proc, child_proc
     type(bbox)      :: north_fine, north_coarse ! step 4
     type(bbox)      :: south_fine, south_coarse
@@ -1878,7 +1879,7 @@ contains
     deallocate(ebuffer)
     deallocate(wbuffer)
 
-  end subroutine mn_var_shift_data4D_kindphys
+  end subroutine mn_var_shift_data_r8_4d
 
 
   !================================================================================
