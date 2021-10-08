@@ -262,7 +262,7 @@ integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pe
           if( n == 1) then
              time_axis = Files(n)%axes(INDEX_TIME)
              call get_variable_units(fileobj, time_axis, units)
-             if( variable_att_exists(fileobj, time_axis, calendar) ) then
+             if( variable_att_exists(fileobj, time_axis, "calendar") ) then
                  call get_time_calendar(fileobj, time_axis, calendar)
              else
                  calendar = 'gregorian  '
@@ -445,16 +445,15 @@ integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pe
      start = 1
      if (present(is)) start(1) = is
      if (present(js)) start(2) = js
-     start(3) = atime
 
-     nread = 1
      nread(1) = size(dat,1)
      nread(2) = size(dat,2)
 
      allocate(pes(mpp_npes()))
      call mpp_get_current_pelist(pes)
      if (open_file(fileobj, trim(filenames(n)), "read", pelist=pes)) then
-         call read_data(fileobj, Files(n)%fields(this_index), dat, corner=start, edge_lengths=nread)
+         call read_data(fileobj, Files(n)%fields(this_index), dat, unlim_dim_level=atime, &
+                        corner=start(1:2), edge_lengths=nread(1:2))
          call close_file(fileobj)
      endif
      deallocate(pes)
@@ -529,9 +528,7 @@ integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pe
      start = 1
      if (present(is)) start(1) = is
      if (present(js)) start(2) = js
-     start(4) = atime
 
-     nread = 1
      nread(1) = size(dat,1)
      nread(2) = size(dat,2)
      nread(3) = size(dat,3)
@@ -539,7 +536,8 @@ integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pe
      allocate(pes(mpp_npes()))
      call mpp_get_current_pelist(pes)
      if (open_file(fileobj, trim(filenames(n)), "read", pelist=pes)) then
-         call read_data(fileobj, Files(n)%fields(this_index), dat, corner=start, edge_lengths=nread)
+         call read_data(fileobj, Files(n)%fields(this_index), dat, unlim_dim_level=atime, &
+                        corner=start(1:3), edge_lengths=nread(1:3))
          call close_file(fileobj)
      endif
      deallocate(pes)
