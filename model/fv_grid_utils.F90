@@ -201,6 +201,7 @@
       sina   => Atm%gridstruct%sina_64
       cosa   => Atm%gridstruct%cosa_64
 ! MOLECULAR_DIFFUSION
+   if ( Atm%flagstruct%molecular_diffusion ) then
       area_u  => Atm%gridstruct%area_u_64
       area_v  => Atm%gridstruct%area_v_64
       dx6    => Atm%gridstruct%dx6_64
@@ -210,6 +211,7 @@
       delv_6 => Atm%gridstruct%delv_6
       delu_5 => Atm%gridstruct%delu_5
       delv_5 => Atm%gridstruct%delv_5
+   endif
 
       divg_u => Atm%gridstruct%divg_u
       divg_v => Atm%gridstruct%divg_v
@@ -530,7 +532,9 @@
            cosa = big_number
            sina = big_number
 ! MOLECULAR_DIFFUSION
+      if ( Atm%flagstruct%molecular_diffusion ) then
            sina_6 = big_number
+      endif
 
         do j=js,je+1
            do i=is,ie+1
@@ -726,7 +730,9 @@
            cosa_s = 0.
            rsin_u = 1.
            rsin_v = 1.
-           sina_6 = 1.
+           if ( Atm%flagstruct%molecular_diffusion ) then
+               sina_6 = 1.
+           endif
    endif
 
    if ( grid_type < 3 ) then
