@@ -112,14 +112,16 @@ module fv_moving_nest_utils_mod
      real(kind=kind_phys), allocatable  :: lats(:,:)
      real(kind=kind_phys), allocatable  :: lons(:,:)
 
-     real, allocatable  :: dx(:,:)
-     real, allocatable  :: dy(:,:)
+     !real, allocatable  :: dx(:,:)
+     !real, allocatable  :: dy(:,:)
      real(kind=kind_phys), allocatable  :: area(:,:)
   end type grid_geometry
 
 
   interface alloc_read_data
+#ifdef OVERLOAD_R8
      module procedure alloc_read_data_r4_2d
+#endif
      module procedure alloc_read_data_r8_2d
   end interface alloc_read_data
 
@@ -164,8 +166,8 @@ module fv_moving_nest_utils_mod
   end interface fill_nest_from_buffer_cell_center
 
   interface output_grid_to_nc
-     module procedure output_grid_to_nc_r4_2d
-     module procedure output_grid_to_nc_r4_3d
+     module procedure output_grid_to_nc_2d
+     module procedure output_grid_to_nc_3d
   end interface output_grid_to_nc
 
   interface fill_grid_from_supergrid
@@ -187,6 +189,8 @@ module fv_moving_nest_utils_mod
   interface check_local_array
      module procedure check_local_array_r4_2d
      module procedure check_local_array_r4_3d
+     module procedure check_local_array_r8_2d
+     module procedure check_local_array_r8_3d
   end interface check_local_array
 
 contains
@@ -1376,11 +1380,11 @@ end subroutine fill_nest_halos_from_parent_r8_4d
 
   end subroutine load_nest_latlons_from_nc
 
-
+#ifdef OVERLOAD_R8
   subroutine alloc_read_data_r4_2d(nc_filename, var_name, x_size, y_size, data_array)
     character(len=*), intent(in)           :: nc_filename, var_name
     integer, intent(in)                    :: x_size, y_size
-    real*4, allocatable, intent(inout)     :: data_array(:,:)
+    real*4, allocatable, intent(inout)       :: data_array(:,:)
 
     integer                      :: start(4), nread(4)
     integer                      :: this_pe
@@ -1412,7 +1416,7 @@ end subroutine fill_nest_halos_from_parent_r8_4d
     if (debug_log) print '("[INFO] WDR NCREAD NCRC alloc_read_data, nread npe=",I0, " ", A16,I4,I4,I4,I4)', this_pe, var_name, start(1), start(2), nread(1), nread(2)
 
   end subroutine alloc_read_data_r4_2d
-
+#endif
 
   subroutine alloc_read_data_r8_2d(nc_filename, var_name, x_size, y_size, data_array)
     character(len=*), intent(in)           :: nc_filename, var_name
@@ -1444,7 +1448,7 @@ end subroutine fill_nest_halos_from_parent_r8_4d
     if (debug_log) print '("[INFO] WDR NCREAD NCRA alloc_read_data. npe=",I0," ",A96," ", A16)', this_pe, trim(nc_filename), var_name
     if (debug_log) print '("[INFO] WDR NCREAD NCRB alloc_read_data, nread npe=",I0, " ", A16,I4,I4,I4,I4)', this_pe, var_name, start(1), start(2), nread(1), nread(2)
 
-    call read_data(nc_filename, var_name, data_array, start, nread, no_domain=.TRUE.)   ! r8_2d
+    call read_data(nc_filename, var_name, data_array, start, nread, no_domain=.TRUE.)  ! r8_2d
 
     if (debug_log) print '("[INFO] WDR NCREAD NCRC alloc_read_data, nread npe=",I0, " ", A16,I4,I4,I4,I4)', this_pe, var_name, start(1), start(2), nread(1), nread(2)
 
@@ -1518,12 +1522,12 @@ end subroutine find_nest_alignment
   !
   !==================================================================================================
 
-  subroutine output_grid_to_nc_r4_3d(flag, istart, iend, jstart, jend, k, grid, file_str, var_name, time_step, dom, position)
+  subroutine output_grid_to_nc_3d(flag, istart, iend, jstart, jend, k, grid, file_str, var_name, time_step, dom, position)
     implicit none
 
     character(len=*), intent(in)  :: flag
     integer, intent(in)           :: istart, iend, jstart, jend, k
-    real*4, dimension(:,:,:), intent(in)   :: grid
+    real, dimension(:,:,:), intent(in)   :: grid
 
     character(len=*), intent(in)  :: file_str, var_name
     integer, intent(in)           :: time_step
@@ -1553,15 +1557,15 @@ end subroutine find_nest_alignment
 
     call write_data(filename, var_name, grid, dom, position=position)   ! r4_3d
 
-  end subroutine output_grid_to_nc_r4_3d
+  end subroutine output_grid_to_nc_3d
 
 
-  subroutine output_grid_to_nc_r4_2d(flag, istart, iend, jstart, jend, k, grid, file_str, var_name, time_step, dom, position)
+  subroutine output_grid_to_nc_2d(flag, istart, iend, jstart, jend, k, grid, file_str, var_name, time_step, dom, position)
     implicit none
 
     character(len=*), intent(in)  :: flag
     integer, intent(in)           :: istart, iend, jstart, jend, k
-    real*4, dimension(:,:),   intent(in)   :: grid
+    real, dimension(:,:),   intent(in)   :: grid
 
     character(len=*), intent(in)  :: file_str, var_name
     integer, intent(in)           :: time_step
@@ -1580,7 +1584,8 @@ end subroutine find_nest_alignment
 
     call write_data(filename, var_name, grid, dom, position=position)  ! r4_2d
 
-  end subroutine output_grid_to_nc_r4_2d
+  end subroutine output_grid_to_nc_2d
+
 
 
   !==================================================================================================
@@ -2785,6 +2790,41 @@ end subroutine find_nest_alignment
 
   end subroutine check_local_array_r4_2d
 
+  subroutine check_local_array_r8_2d(array, this_pe, var_name, min_range, max_range)
+    real*8, intent(in)                     :: array(:,:)
+    integer, intent(in)                    :: this_pe
+    character(len=*), intent(in)           :: var_name
+    real, intent(in)                       :: min_range, max_range
+
+    integer  :: i,j
+    integer  :: num_invalid
+    integer  :: num_valid
+    real     :: eps = 0.0001
+
+    print '("[INFO] WDR 2DLarray allocated  npe=",I0," ",A32,"(",I4,":",I4,",",I4,":",I4,")")', this_pe, var_name, lbound(array,1), ubound(array,1), lbound(array,2), ubound(array,2)
+
+    num_invalid = 0
+    num_valid = 0
+
+    do i = lbound(array,1), ubound(array,1)
+       do j =lbound(array,2), ubound(array,2)
+          if (array(i,j) < min_range - eps) then
+             num_invalid = num_invalid + 1
+          elseif (array(i,j) > max_range + eps) then
+             num_invalid = num_invalid + 1
+          else
+             num_valid = num_valid + 1
+          end if
+       end do
+    end do
+
+    if (num_invalid > 0 ) then
+       print '("[ERROR] WDR 2DLarray invalid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
+    else
+       print '("[INFO] WDR 2DLarray all valid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
+    end if
+
+  end subroutine check_local_array_r8_2d
 
   subroutine check_array_r4_3d(array, this_pe, var_name, min_range, max_range)
     real*4, intent(in), allocatable        :: array(:,:,:)
@@ -2917,6 +2957,46 @@ end subroutine find_nest_alignment
     end if
 
   end subroutine check_local_array_r4_3d
+
+  subroutine check_local_array_r8_3d(array, this_pe, var_name, min_range, max_range)
+    real*8, intent(in)                     :: array(:,:,:)
+    integer, intent(in)                    :: this_pe
+    character(len=*), intent(in)           :: var_name
+    real, intent(in)                       :: min_range, max_range
+
+    integer  :: i,j,k
+    integer  :: num_invalid
+    integer  :: num_valid
+    real     :: eps = 0.0001
+
+    print '("[INFO] WDR 3DLarray bounds npe=",I0," ",A32,"(",I4,":",I4,",",I4,":",I4,",",I4,":",I4,")")', this_pe, var_name, lbound(array,1), ubound(array,1), lbound(array,2), ubound(array,2), lbound(array,3), ubound(array,3)
+
+    num_invalid = 0
+    num_valid = 0
+
+    do i = lbound(array,1), ubound(array,1)
+       do j =lbound(array,2), ubound(array,2)
+          do k =lbound(array,3), ubound(array,3)
+             if (isnan(array(i,j,k))) then
+                num_invalid = num_invalid + 1
+             elseif (array(i,j,k) < min_range - eps) then
+                num_invalid = num_invalid + 1
+             elseif (array(i,j,k) > max_range + eps) then
+                num_invalid = num_invalid + 1
+             else
+                num_valid = num_valid + 1
+             end if
+          end do
+       end do
+    end do
+
+    if (num_invalid > 0 ) then
+       print '("[ERROR] WDR 3DLarray invalid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
+    else
+       print '("[INFO] WDR 3DLarray all valid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
+    end if
+
+  end subroutine check_local_array_r8_3d
 
 
   subroutine check_array_r4_4d(array, this_pe, var_name, min_range, max_range)
@@ -3139,8 +3219,8 @@ end subroutine find_nest_alignment
 
     call check_array(tile_geo%lats, this_pe, var_name // "%lats", -90.0D0, 90.0D0)
     call check_array(tile_geo%lons, this_pe, var_name // "%lons", -360.0D0, 360.0D0)
-    call check_array(tile_geo%dx, this_pe, var_name // "%dx", 0.0, 1.0e9)
-    call check_array(tile_geo%dy, this_pe, var_name // "%dy", 0.0, 1.0e9)
+    !call check_array(tile_geo%dx, this_pe, var_name // "%dx", 0.0, 1.0e9)
+    !call check_array(tile_geo%dy, this_pe, var_name // "%dy", 0.0, 1.0e9)
     call check_array(tile_geo%area, this_pe, var_name // "%area", 0.0D0, 1.0D9)
 
   end subroutine show_tile_geo
