@@ -472,18 +472,8 @@ contains
    ! First, read atmos_model_nml namelist section - this is a workaround to avoid
    ! unnecessary additional changes to the input namelists, in anticipation of the
    ! implementation of a generic interface for GFDL and CCPP fast physics soon
-#ifdef INTERNAL_FILE_NML
    read(input_nml_file, nml=atmos_model_nml, iostat=io)
    ierr = check_nml_error(io, 'atmos_model_nml')
-#else
-   unit = open_namelist_file ( )
-   ierr=1
-   do while (ierr /= 0)
-      read  (unit, nml=atmos_model_nml, iostat=io, end=10)
-      ierr = check_nml_error(io,'atmos_model_nml')
-   enddo
-10 call close_file (unit)
-#endif
    !write(0,'(a)') "It's me, and my physics suite is '" // trim(ccpp_suite) // "'"
    ! *DH 20210326
 
