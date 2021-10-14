@@ -185,6 +185,51 @@ contains
     end do
     endif
 
+  !#####################################################################
+  ! <SUBROUTINE NAME="fv_io_register_axis">
+  !
+  ! <DESCRIPTION>
+  ! Register the fv axis for new fms2 io
+  ! </DESCRIPTION>
+  !
+  subroutine fv_io_register_axis(file_obj, numx, xpos, numy, ypos, numz, zsize)
+    type(FmsNetcdfDomainFile_t), intent(inout) ::  file_obj
+    integer, intent(in), optional :: numx, numy, numz
+    integer, dimension(:), intent(in), optional :: xpos, ypos, zsize
+
+    integer :: i, ie, is, j
+    integer, dimension(:), allocatable :: buffer
+    character(len=1) :: suffix
+    character(len=7) :: axisname
+
+    if (present(numx)) then
+    do i=1, numx
+      write(suffix,'(I1)') i
+      axisname = 'xaxis_'//suffix
+      call register_axis(file_obj, axisname, 'X', domain_position=xpos(i))
+      if (.not. file_obj%is_readonly) then !if writing file
+        call register_field(file_obj, axisname, "double", (/axisname/))
+        call register_variable_attribute(file_obj,axisname, "axis", "X", str_len=1)
+        call get_global_io_domain_indices(file_obj, axisname, is, ie, buffer)
+        call write_data(file_obj, axisname, buffer)
+      endif
+    end do
+    endif
+
+    if (present(numy)) then
+    do i=1, numy
+      write(suffix,'(I1)') i
+      axisname = 'yaxis_'//suffix
+      call register_axis(file_obj, axisname, 'Y', domain_position=ypos(i))
+      if (.not. file_obj%is_readonly) then !if writing file
+        call register_field(file_obj, axisname, "double", (/axisname/))
+        call register_variable_attribute(file_obj,axisname, "axis", "Y", str_len=1)
+        call get_global_io_domain_indices(file_obj, axisname, is, ie, buffer)
+        call write_data(file_obj, axisname, buffer)
+      endif
+    end do
+    endif
+
     if (present(numz)) then
       do i= 1, numz
         write(suffix,'(I1)') i
@@ -203,6 +248,172 @@ contains
         endif
       end do
     endif
+
+    call register_axis(file_obj, "Time", unlimited)
+    if (.not. file_obj%is_readonly) then !if writing file
+       call register_field(file_obj, "Time", "double", (/"Time"/))
+       call register_variable_attribute(file_obj, "Time", "cartesian_axis", "T", str_len=1)
+       call register_variable_attribute(file_obj, "Time", "units", "time level", &
+                                        str_len=len("time level"))
+       call register_variable_attribute(file_obj, "Time", "long_name", "Time", &
+                                        str_len=len("Time"))
+       call write_data(file_obj, "Time", 1)
+    endif
+
+  end subroutine fv_io_register_axis
+  ! </SUBROUTINE> NAME="fv_io_register_axis"
+
+!#####################################################################
+  ! <SUBROUTINE NAME="fv_io_register_restart">
+  !
+  ! <DESCRIPTION>
+  !   register restart field to be written out to restart file.
+  ! </DESCRIPTION>
+  subroutine  fv_io_register_restart(Atm)
+
+    type(fv_atmos_type), intent(inout) :: Atm
+    character(len=64) :: tracer_name
+    character(len=8), dimension(1)  :: dim_names
+    character(len=8), dimension(2)  :: dim_names_2d
+    character(len=8), dimension(4)  :: dim_names_4d, dim_names_4d2, dim_names_4d3
+    character(len=8), dimension(3)  :: dim_names_3d, dim_names_3d2
+    integer           :: i, j
+    integer           :: nt, ntracers, ntprog, ntdiag
+    integer, dimension(:), allocatable :: buffer
+    integer, parameter :: numx=1, numx_2d=2, numy=1, numy_2d=2, numz=1
+    integer, dimension(1) :: xpos
+    integer, dimension(2) :: xpos_2d
+    integer, dimension(1) :: ypos
+    integer, dimension(2) :: ypos_2d
+    integer, dimension(numz) :: zsize
+
+    dim_names_2d(1) = "xaxis_1"
+    dim_names_2d(2) = "Time"
+    dim_names_3d(1) = "xaxis_1"
+    dim_names_3d(2) = "yaxis_2"
+    dim_names_3d(3) = "Time"
+    dim_names_3d2 = dim_names_3d
+    dim_names_3d2(2) = "yaxis_1"
+    dim_names_4d(1) = "xaxis_1"
+    dim_names_4d(2) = "yaxis_1"
+    dim_names_4d(3) = "zaxis_1"
+    dim_names_4d(4) = "Time"
+    dim_names_4d2 = dim_names_4d
+    dim_names_4d2(1) = "xaxis_2"
+    dim_names_4d2(2) = "yaxis_2"
+    dim_names_4d3 = dim_names_4d
+    dim_names_4d3(2) = "yaxis_2"
+
+    ntprog = size(Atm%q,4)
+    ntdiag = size(Atm%qdiag,4)
+    ntracers = ntprog+ntdiag
+
+    xpos = (/CENTER/)
+    xpos_2d = (/CENTER, EAST/)
+    ypos = (/CENTER/)
+    ypos_2d = (/NORTH, CENTER/)
+
+    ! fname = 'fv_core.res.nc'
+    if (Atm%Fv_restart_is_open) then
+       call register_axis(Atm%Fv_restart, "xaxis_1", size(Atm%ak(:), 1))
+       call register_axis(Atm%Fv_restart, "Time", unlimited)
+       if (.not. Atm%Fv_restart%is_readonly) then !if writing file
+          call register_field(Atm%Fv_restart, "xaxis_1", "double", (/"xaxis_1"/))
+          call register_variable_attribute(Atm%Fv_restart,"xaxis_1", "axis", "X", str_len=1)
+          if (allocated(buffer)) deallocate(buffer)
+          allocate(buffer(size(Atm%ak(:), 1)))
+          do j = 1, size(Atm%ak(:), 1)
+             buffer(j) = j
+          end do
+          call write_data(Atm%Fv_restart, "xaxis_1", buffer)
+          deallocate(buffer)
+          call register_field(Atm%Fv_restart, "Time", "double", (/"Time"/))
+          call register_variable_attribute(Atm%Fv_restart, dim_names_2d(2), "cartesian_axis", "T", str_len=1)
+          call register_variable_attribute(Atm%Fv_restart, dim_names_2d(2), "units", "time level", str_len=len("time level"))
+          call register_variable_attribute(Atm%Fv_restart, dim_names_2d(2), "long_name", dim_names_2d(2), str_len=len(dim_names_2d(2)))
+          call write_data(Atm%Fv_restart, "Time", 1)
+       endif
+       call register_restart_field (Atm%Fv_restart, 'ak', Atm%ak(:), dim_names_2d)
+       call register_restart_field (Atm%Fv_restart, 'bk', Atm%bk(:), dim_names_2d)
+
+    ! fname= 'fv_core.res'//trim(stile_name)//'.nc'
+    elseif (Atm%Fv_restart_tile_is_open) then
+       zsize = (/size(Atm%u,3)/)
+       call fv_io_register_axis(Atm%Fv_restart_tile, numx=numx_2d, numy=numy_2d, xpos=xpos_2d, ypos=ypos_2d, numz=numz, zsize=zsize)
+       call register_restart_field(Atm%Fv_restart_tile, 'u', Atm%u, dim_names_4d)
+       call register_restart_field(Atm%Fv_restart_tile, 'v', Atm%v, dim_names_4d2)
+
+       if (.not.Atm%flagstruct%hydrostatic) then
+          if (Atm%flagstruct%make_nh) then ! Hydrostatic restarts dont have these variables
+               call register_restart_field(Atm%Fv_restart_tile,  'W', Atm%w, dim_names_4d3, is_optional=.true.)
+               call register_restart_field(Atm%Fv_restart_tile,  'DZ', Atm%delz, dim_names_4d3, is_optional=.true.)
+               if ( Atm%flagstruct%hybrid_z ) then
+                   call register_restart_field(Atm%Fv_restart_tile,  'ZE0', Atm%ze0, dim_names_4d3, is_optional=.true.)
+               endif
+          else !The restart file has the non-hydrostatic variables
+               call register_restart_field(Atm%Fv_restart_tile,  'W', Atm%w, dim_names_4d3)
+               call register_restart_field(Atm%Fv_restart_tile,  'DZ', Atm%delz, dim_names_4d3)
+               if ( Atm%flagstruct%hybrid_z ) then
+                   call register_restart_field(Atm%Fv_restart_tile,  'ZE0', Atm%ze0, dim_names_4d3)
+               endif
+          endif
+       endif
+       call register_restart_field(Atm%Fv_restart_tile,  'T', Atm%pt, dim_names_4d3)
+       call register_restart_field(Atm%Fv_restart_tile,  'delp', Atm%delp, dim_names_4d3)
+       call register_restart_field(Atm%Fv_restart_tile,  'phis', Atm%phis, dim_names_3d)
+
+       !--- include agrid winds in restarts for use in data assimilation
+        if (Atm%flagstruct%agrid_vel_rst) then
+          call register_restart_field(Atm%Fv_restart_tile,  'ua', Atm%ua, dim_names_4d3)
+          call register_restart_field(Atm%Fv_restart_tile,  'va', Atm%va, dim_names_4d3)
+       endif
+
+    ! fname = 'fv_srf_wnd.res'//trim(stile_name)//'.nc
+    elseif (Atm%Rsf_restart_is_open) then
+       call fv_io_register_axis(Atm%Rsf_restart, numx=numx, numy=numy, xpos=xpos, ypos=ypos)
+       call register_restart_field(Atm%Rsf_restart, 'u_srf', Atm%u_srf, dim_names_3d2)
+       call register_restart_field(Atm%Rsf_restart, 'v_srf', Atm%v_srf, dim_names_3d2)
+#ifdef SIM_PHYS
+       call register_restart_field(Atm%Rsf_restart, 'ts', Atm%ts, dim_names_3d2)
+#endif
+
+    ! fname = 'mg_drag.res'//trim(stile_name)//'.nc'
+    elseif (Atm%Mg_restart_is_open) then
+       call fv_io_register_axis(Atm%Mg_restart, numx=numx, numy=numy, xpos=xpos, ypos=ypos)
+       call register_restart_field (Atm%Mg_restart, 'ghprime', Atm%sgh, dim_names_3d2)
+
+    ! fname = 'fv_land.res'//trim(stile_name)//'.nc'
+    elseif (Atm%Lnd_restart_is_open) then
+       call fv_io_register_axis(Atm%Lnd_restart, numx=numx, numy=numy, xpos=xpos, ypos=ypos)
+       call register_restart_field (Atm%Lnd_restart, 'oro', Atm%oro, dim_names_3d2)
+
+    ! fname = 'fv_tracer.res'//trim(stile_name)//'.nc'
+    elseif (Atm%Tra_restart_is_open) then
+       zsize = (/size(Atm%q,3)/)
+       call fv_io_register_axis(Atm%Tra_restart, numx=numx, numy=numy, xpos=xpos, ypos=ypos, numz=numz, zsize=zsize)
+       do nt = 1, ntprog
+          call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
+          if(Atm%Tra_restart%is_readonly) then !if reading file (don't do this if writing)
+          ! set all tracers to an initial profile value
+             call set_tracer_profile (MODEL_ATMOS, nt, Atm%q(:,:,:,nt)  )
+          endif
+          call register_restart_field(Atm%Tra_restart, tracer_name, Atm%q(:,:,:,nt), &
+                       dim_names_4d, is_optional=.true.)
+       enddo
+       do nt = ntprog+1, ntracers
+          call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
+          if(Atm%Tra_restart%is_readonly) then !if reading file (don't do this if writing)
+          ! set all tracers to an initial profile value
+             call set_tracer_profile (MODEL_ATMOS, nt, Atm%qdiag(:,:,:,nt)  )
+          endif
+          call register_restart_field(Atm%Tra_restart, tracer_name, Atm%qdiag(:,:,:,nt), &
+                       dim_names_4d, is_optional=.true.)
+       enddo
+    endif
+  end subroutine  fv_io_register_restart
+  ! </SUBROUTINE> NAME="fv_io_register_restart"
+
+>>>>>>> master
 
     call register_axis(file_obj, "Time", unlimited)
     if (.not. file_obj%is_readonly) then !if writing file

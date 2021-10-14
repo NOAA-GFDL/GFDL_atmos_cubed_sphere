@@ -894,7 +894,7 @@ module fv_nwp_nudge_mod
     if ( kmax < km ) call mpp_error(FATAL,'==> KMAX must be larger than km')
 
     do j=js,je
-       do 666 i=is,ie
+       do i=is,ie
 #ifdef MULTI_GASES
        do k=1,km
           kappax(k)= virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))
@@ -931,6 +931,7 @@ module fv_nwp_nudge_mod
 #else
 666   ps_dt(i,j) = pst**(1./kappa) - ps(i,j)
 #endif
+      enddo   ! i-loop
       enddo   ! j-loop
 
       if( nf_ps>0 ) call del2_scalar(ps_dt, del2_cd, 1, nf_ps, bd, npx, npy, gridstruct, domain)

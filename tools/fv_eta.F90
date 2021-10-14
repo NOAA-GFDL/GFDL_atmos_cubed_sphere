@@ -832,8 +832,8 @@ module fv_eta_mod
   real ep, es, alpha, beta, gama
   real, parameter:: akap = 2./7.
 !---- Tunable parameters:
-  real:: k_inc = 10   !< number of layers from bottom up to near const dz region
-  real:: s0 = 0.8     !< lowest layer stretch factor
+  integer:: k_inc = 10   ! # of layers from bottom up to near const dz region
+  real:: s0 = 0.8     ! lowest layer stretch factor
 !-----------------------
   real:: s_inc
   integer  k
