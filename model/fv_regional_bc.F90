@@ -66,10 +66,6 @@ module fv_regional_mod
    use fv_eta_mod,        only: get_eta_level
    use fms_mod,           only: check_nml_error
    use boundary_mod,      only: fv_nest_BC_type_3D
-   use fv_cmp_mod,        only: c_liq, c_ice
-   use sim_nc_mod,        only: open_ncfile, close_ncfile, get_ncdim1
-
-   implicit none
 
    implicit none
 
