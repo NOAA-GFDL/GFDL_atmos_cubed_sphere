@@ -211,8 +211,8 @@ module fv_diagnostics_mod
  integer :: yr_init, mo_init, dy_init, hr_init, mn_init, sec_init
  integer :: id_dx, id_dy
 
- real              :: vrange(2), vsrange(2), wrange(2), trange(2), slprange(2), rhrange(2), skrange(2)
- real              :: vrange_bad(2), trange_bad(2)
+ real,dimension(2)    :: vrange, vsrange, wrange, trange, slprange, rhrange, skrange
+ real,dimension(2)    :: vrange_bad, trange_bad
 
  ! integer :: id_d_grid_ucomp, id_d_grid_vcomp   ! D grid winds
  ! integer :: id_c_grid_ucomp, id_c_grid_vcomp   ! C grid winds
@@ -295,30 +295,30 @@ contains
 ! valid range for some fields
 
 !!!  This will need mods for more than 1 tile per pe  !!!
+     vsrange(1) = -200. ; vsrange(2) = 200.      ! surface (lowest layer) winds
+     rhrange(1) = -10. ; rhrange(2) = 150.       ! RH
+     slprange(1) = 800. ; slprange(2) = 1200.    ! surface (lowest layer) winds
+     skrange(1) = -10000000.0 ; skrange(2) = 10000000.0  ! dissipation estimate for SKEB
 
-    vsrange = (/ -200.,  200. /)  ! surface (lowest layer) winds
-
-    if (Atm(1)%flagstruct%molecular_diffusion) then
-    vrange = (/ -850.,  850. /)  ! winds
-    wrange = (/ -300.,  300. /)  ! vertical wind
-    trange = (/    5., 3500. /)  ! temperature
-    vrange_bad = (/ -850.,  850. /)  ! winds
-    trange_bad = (/  130., 3500. /)  ! temperature
+    if (  Atm(1)%flagstruct%molecular_diffusion ) then
+     vrange(1) = -850. ; vrange(2) = 850.  
+     wrange(1) = -300. ; wrange(2) = 300.  
+     trange(1) = 5. ; trange(2) = 3500.  
+     vrange_bad(1) = -850. ;  vrange_bad(2) = 850.   
+     trange_bad(1) = 130. ; trange_bad(2) = 3500.  
     else
-    vrange = (/ -330.,  330. /)  ! winds
-    wrange = (/ -100.,  100. /)  ! vertical wind
-    vrange_bad = (/ -250.,  250. /)  ! winds
+     vrange(1) = -330. ; vrange(2) = 330.  ! winds
+     wrange(1) = -100. ; wrange(2) = 100.  ! vertical wind
+     vrange_bad(1) = -250. ; vrange_bad(2) = 250. !winds 
 #ifdef HIWPP
-    trange = (/    5.,  350. /)  ! temperature
-    trange_bad = (/   130.,  350. /)  ! temperature
+     trange(1) = 5. ; trange(2)=350.  ! temperature
+     trange_bad(1) = 130. ; trange_bad(2) = 350.  ! temperature
 #else
-    trange = (/  100.,  350. /)  ! temperature
-    trange_bad = (/  150.,  350. /)  ! temperature
+     trange(1) = 100. ; trange(2) = 350.  ! temperature
+     trange_bad(1) = 150. ; trange_bad(2) = 350.  ! temperature
 #endif
     endif
-    rhrange = (/  -10.,  150. /)  ! RH
-    slprange = (/800.,  1200./)  ! sea-level-pressure
-    skrange  = (/ -10000000.0,  10000000.0 /)  ! dissipation estimate for SKEB
+
 
     ginv = 1./GRAV
      if (Atm(1)%grid_number == 1) fv_time = Time
@@ -1110,14 +1110,15 @@ contains
             'vertical liquid water flux', 'kg/m**2/s', missing_value=missing_value )
        id_qiw = register_diag_field ( trim(field), 'qiw', axes(1:3), Time, &
             'vertical ice water flux', 'kg/m**2/s', missing_value=missing_value )
-       id_o3w = register_diag_field ( trim(field), 'o3w', axes(1:3), Time, &
-            'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
 #ifdef MULTI_GASES
        id_spow = register_diag_field ( trim(field), 'spow', axes(1:3), Time, &
             'vertical oxygen atom flux', 'kg/m**2/s', missing_value=missing_value )
        id_spo2w = register_diag_field ( trim(field), 'spo2w', axes(1:3), Time, &
             'vertical oxygen flux', 'kg/m**2/s', missing_value=missing_value )
        id_spo3w = register_diag_field ( trim(field), 'spo3w', axes(1:3), Time, &
+            'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
+#else
+       id_o3w = register_diag_field ( trim(field), 'o3w', axes(1:3), Time, &
             'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
 #endif
        endif
@@ -2978,11 +2979,11 @@ contains
        if(id_va > 0) used=send_data(id_va, Atm(n)%va(isc:iec,jsc:jec,:), Time)
 
 #ifdef MULTI_GASES
-       if(id_uw > 0 .or. id_vw > 0 .or. id_hw > 0 .or. id_qvw > 0 .or. &
+       if( id_hw > 0 .or. id_qvw > 0 .or. &
             id_qlw > 0 .or. id_qiw > 0 .or. id_spo3w > 0 .or. &
             id_spo2w > 0 .or. id_spow > 0  ) then
 #else
-       if(id_uw > 0 .or. id_vw > 0 .or. id_hw > 0 .or. id_qvw > 0 .or. &
+       if( id_hw > 0 .or. id_qvw > 0 .or. &
             id_qlw > 0 .or. id_qiw > 0 .or. id_o3w > 0 ) then
 #endif
           allocate( a3(isc:iec,jsc:jec,npz) )
