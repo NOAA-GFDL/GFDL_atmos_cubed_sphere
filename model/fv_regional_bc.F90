@@ -235,11 +235,11 @@ module fv_regional_mod
                            ,oro_data ='oro_data.tile7.halo4.nc'
 
 #ifdef OVERLOAD_R4
-      real, parameter:: real_snan=x'FFBFFFFF'
+      real, parameter:: real_snan=real(Z'FFBFFFFF')
 #else
-      real, parameter:: real_snan=x'FFF7FFFFFFFFFFFF'
+      real, parameter:: real_snan=real(Z'FFF7FFFFFFFFFFFF')
 #endif
-      real(kind=R_GRID), parameter:: dbl_snan=x'FFF7FFFFFFFFFFFF'
+      real(kind=R_GRID), parameter:: dbl_snan=real(Z'FFF7FFFFFFFFFFFF',kind=R_GRID)
 
       interface dump_field
         module procedure dump_field_3d

@@ -938,7 +938,7 @@ contains
 
           ! prognostic tracers
           do nt = 1, ntracers
-            q(:,:,:,nt) = -999.99
+             q(:,:,:,nt) = -999.99
             call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
             call register_restart_field(GFS_restart, trim(tracer_name), q(:,:,:,nt), dim_names_3d3, is_optional=.true.)
           enddo
