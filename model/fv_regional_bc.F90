@@ -6799,12 +6799,19 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       allocate(pes(mpp_npes()))
       call mpp_get_current_pelist(pes)
 
-        if (open_file(Gfs_data , 'INPUT/gfs_data.nc', "read", pelist=pes) .or. &
-            open_file(Gfs_data , 'INPUT/gfs_data.tile1.nc', "read", pelist=pes)) then
+      if (regional) then
+        if (open_file(Gfs_data , 'INPUT/gfs_data.nc', "read", pelist=pes)) then
           lstatus = global_att_exists(Gfs_data, "source")
           if(lstatus) call get_global_attribute(Gfs_data, "source", source)
           call close_file(Gfs_data)
         endif
+      else
+        if (open_file(Gfs_data , 'INPUT/gfs_data.tile1.nc', "read", pelist=pes)) then
+          lstatus = global_att_exists(Gfs_data, "source")
+          if(lstatus) call get_global_attribute(Gfs_data, "source", source)
+          call close_file(Gfs_data)
+        endif
+      endif
 
       deallocate(pes)
       if (.not. lstatus) then
