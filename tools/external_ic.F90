@@ -158,8 +158,12 @@ module external_ic_mod
    use tracer_manager_mod, only: get_tracer_names, get_number_tracers, get_tracer_index
    use tracer_manager_mod, only: set_tracer_profile
    use field_manager_mod,  only: MODEL_ATMOS
-
+   use platform_mod,       only: r4_kind, r8_kind
+#ifdef OVERLOAD_R4
+   use constantsR4_mod,     only: pi=>pi_8, omega, grav, kappa, rdgas, rvgas, cp_air
+#else
    use constants_mod,     only: pi=>pi_8, omega, grav, kappa, rdgas, rvgas, cp_air
+#endif
    use fv_arrays_mod,     only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type, R_GRID
    use fv_diagnostics_mod,only: prt_maxmin, prt_gb_nh_sh, prt_height
    use fv_grid_utils_mod, only: ptop_min, g_sum,mid_pt_sphere,get_unit_vect2,get_latlon_vector,inner_prod
@@ -4162,29 +4166,33 @@ contains
 
   end subroutine d2a3d
 
-
-
   subroutine pmaxmin( qname, a, im, jm, fac )
 
       integer, intent(in):: im, jm
       character(len=*) :: qname
       integer i, j
-      real a(im,jm)
+      class(*) a(im,jm)
 
-      real qmin(jm), qmax(jm)
-      real pmax, pmin
-      real fac                     ! multiplication factor
+      real(r4_kind) qmin(jm), qmax(jm)
+      real(r4_kind)  pmax, pmin
+      class(*)  fac                     ! multiplication factor
+      real(r8_kind) qmin8(jm), qmax8(jm)
+      real(r8_kind)  pmax8, pmin8
 
-      do j=1,jm
-         pmax = a(1,j)
-         pmin = a(1,j)
-         do i=2,im
-            pmax = max(pmax, a(i,j))
-            pmin = min(pmin, a(i,j))
+      select type (fac)
+      type is (real(kind=r4_kind))
+         select type (a)
+         type is (real(kind=r4_kind))
+         do j=1,jm
+            pmax = a(1,j)
+            pmin = a(1,j)
+            do i=2,im
+               pmax = max(pmax, a(i,j))
+               pmin = min(pmin, a(i,j))
+            enddo
+            qmax(j) = pmax
+            qmin(j) = pmin
          enddo
-         qmax(j) = pmax
-         qmin(j) = pmin
-      enddo
 !
 ! Now find max/min of amax/amin
 !
@@ -4195,11 +4203,39 @@ contains
             pmin = min(pmin, qmin(j))
          enddo
 
-      write(*,*) qname, ' max = ', pmax*fac, ' min = ', pmin*fac
+         write(*,*) qname, ' max = ', pmax*fac, ' min = ', pmin*fac
+         end select
+
+      type is (real(kind=r8_kind))
+         select type (a)
+         type is (real(kind=r8_kind))
+         do j=1,jm
+            pmax8 = a(1,j)
+            pmin8 = a(1,j)
+            do i=2,im
+               pmax8 = max(pmax8, a(i,j))
+               pmin8 = min(pmin8, a(i,j))
+            enddo
+            qmax8(j) = pmax8
+            qmin8(j) = pmin8
+         enddo
+!
+! Now find max/min of amax/amin
+!
+            pmax8 = qmax8(1)
+            pmin8 = qmin8(1)
+         do j=2,jm
+            pmax8 = max(pmax8, qmax8(j))
+            pmin8 = min(pmin8, qmin8(j))
+         enddo
+
+         write(*,*) qname, ' max = ', pmax8*fac, ' min = ', pmin8*fac
+         end select
+      end select
 
  end subroutine pmaxmin
 
-subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
+ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
       character(len=*), intent(in)::  qname
       integer, intent(in):: is, ie, js, je
       integer, intent(in):: km

@@ -112,7 +112,11 @@ module fv_diagnostics_mod
 !   </tr>
 ! </table>
 
+#ifdef OVERLOAD_R4
+ use constantsR4_mod,      only: grav, rdgas, rvgas, pi=>pi_8, radius, kappa, WTMAIR, WTMCO2, &
+#else
  use constants_mod,      only: grav, rdgas, rvgas, pi=>pi_8, radius, kappa, WTMAIR, WTMCO2, &
+#endif
                                omega, hlv, cp_air, cp_vapor, TFREEZE
  use fms_mod,            only: write_version_number
  use time_manager_mod,   only: time_type, get_date, get_time
