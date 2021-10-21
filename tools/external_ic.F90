@@ -938,7 +938,7 @@ contains
 
           ! prognostic tracers
           do nt = 1, ntracers
-            q(:,:,:,nt) = -999.99
+             q(:,:,:,nt) = -999.99
             call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
             call register_restart_field(GFS_restart, trim(tracer_name), q(:,:,:,nt), dim_names_3d3, is_optional=.true.)
           enddo
@@ -3084,6 +3084,7 @@ contains
 
 ! map tracers
       do iq=1,ncnst
+        if (floor(qa(is,j,1,iq)) == -1000) cycle !skip missing scalars [floor(-999.99) is -1000]
          do k=1,km
             do i=is,ie
                qp(i,k) = qa(i,j,k,iq)
