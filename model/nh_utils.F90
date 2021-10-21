@@ -23,7 +23,12 @@ module nh_utils_mod
 ! To do list:
 ! include moisture effect in pt
 !------------------------------
+
+#ifdef OVERLOAD_R4
+   use constantsR4_mod,     only: rdgas, cp_air, grav
+#else
    use constants_mod,     only: rdgas, cp_air, grav
+#endif
    use tp_core_mod,       only: fv_tp_2d
    use sw_core_mod,       only: fill_4corners, del6_vt_flux
    use fv_arrays_mod,     only: fv_grid_bounds_type, fv_grid_type, fv_nest_BC_type_3d

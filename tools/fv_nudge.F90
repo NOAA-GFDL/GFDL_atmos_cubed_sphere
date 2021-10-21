@@ -28,12 +28,17 @@ module fv_nwp_nudge_mod
 
  use external_sst_mod,  only: i_sst, j_sst, sst_ncep, sst_anom, forecast_mode
  use diag_manager_mod,  only: register_diag_field, send_data
+#ifdef OVERLOAD_R4
+ use constantsR4_mod,     only: pi=>pi_8, grav, rdgas, cp_air, kappa, cnst_radius =>radius
+#else
  use constants_mod,     only: pi=>pi_8, grav, rdgas, cp_air, kappa, cnst_radius =>radius
+#endif
  use fms_mod,           only: write_version_number, check_nml_error
  use fms2_io_mod,       only: file_exists
  use mpp_mod,           only: mpp_error, FATAL, stdlog, get_unit, mpp_pe, input_nml_file
  use mpp_domains_mod,   only: mpp_update_domains, domain2d
  use time_manager_mod,  only: time_type,  get_time, get_date
+ use platform_mod,      only: r4_kind, r8_kind
 
  use fv_grid_utils_mod, only: great_circle_dist, intp_great_circle
  use fv_grid_utils_mod, only: latlon2xyz, vect_cross, normalize_vect
@@ -3395,22 +3400,29 @@ module fv_nwp_nudge_mod
       character(len=*)  qname
       integer imax, jmax
       integer i, j
-      real a(imax,jmax)
+      class(*) a(imax,jmax)
+      class(*) fac                     ! multiplication factor
 
-      real qmin(jmax), qmax(jmax)
-      real pmax, pmin
-      real fac                     ! multiplication factor
+      real(r4_kind) qmin(jmax), qmax(jmax)
+      real(r4_kind) pmax, pmin
 
-      do j=1,jmax
-         pmax = a(1,j)
-         pmin = a(1,j)
-         do i=2,imax
-            pmax = max(pmax, a(i,j))
-            pmin = min(pmin, a(i,j))
+      real(r8_kind) qmin8(jmax), qmax8(jmax)
+      real(r8_kind) pmax8, pmin8
+
+      select type (fac)
+      type is (real(kind=r4_kind))
+         select type (a)
+         type is (real(kind=r4_kind))
+         do j=1,jmax
+            pmax = a(1,j)
+            pmin = a(1,j)
+            do i=2,imax
+               pmax = max(pmax, a(i,j))
+               pmin = min(pmin, a(i,j))
+            enddo
+            qmax(j) = pmax
+            qmin(j) = pmin
          enddo
-         qmax(j) = pmax
-         qmin(j) = pmin
-      enddo
 !
 ! Now find max/min of amax/amin
 !
@@ -3421,7 +3433,35 @@ module fv_nwp_nudge_mod
             pmin = min(pmin, qmin(j))
          enddo
 
-      write(*,*) qname, ' max = ', pmax*fac, ' min = ', pmin*fac
+         write(*,*) qname, ' max = ', pmax*fac, ' min = ', pmin*fac
+         end select
+
+      type is (real(kind=r8_kind))
+         select type (a)
+         type is (real(kind=r8_kind))
+         do j=1,jmax
+            pmax8 = a(1,j)
+            pmin8 = a(1,j)
+            do i=2,imax
+               pmax8 = max(pmax8, a(i,j))
+               pmin8 = min(pmin8, a(i,j))
+            enddo
+            qmax8(j) = pmax8
+            qmin8(j) = pmin8
+         enddo
+!
+! Now find max/min of amax/amin
+!
+            pmax8 = qmax8(1)
+            pmin8 = qmin8(1)
+         do j=2,jmax
+            pmax8 = max(pmax8, qmax8(j))
+            pmin8 = min(pmin8, qmin8(j))
+         enddo
+
+         write(*,*) qname, ' max = ', pmax8*fac, ' min = ', pmin8*fac
+         end select
+      end select
 
  end subroutine pmaxmin
 
