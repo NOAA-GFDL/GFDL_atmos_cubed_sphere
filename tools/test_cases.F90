@@ -182,6 +182,9 @@
       real    :: alpha = 0.0
       integer :: Nsolitons = 1
       real    :: soliton_size = 750.e3, soliton_Umax = 50.
+      integer :: t_profile = 0, q_profile = 0, ws_profile = 0, do_coriolis = 0, bubble_type = 0
+      real    :: bubble_t = 2., bubble_q = 0., bubble_rad = 10.0E3, bubble_zc = 1.4E3
+      real    :: iso_t = 300., adi_th = 300., us0 = 30.
 
 ! Case 0 parameters
       real :: p0_c0 = 3.0
@@ -199,6 +202,27 @@
       integer, parameter :: initWindsCase5 = 5
       integer, parameter :: initWindsCase6 =-1
       integer, parameter :: initWindsCase9 =-1
+
+ !LJR PARAMS ADDED
+   real, parameter :: hlv0 = 2.501e6
+   real, parameter :: c_liq = 4185.5                       !< gfdl: heat capacity of water at 15 deg c
+   real, parameter :: cp_vap = 4.0 * rvgas                 !< 1846.0, heatcapacity of water vapore at constnat pressure
+   real, parameter :: hlf0 = 3.337e5
+   real, parameter :: e00 = 611.21
+   real, parameter :: c_ice = 1972.0                       !< gfdl: heat capacity of ice at - 15 deg c
+   real, parameter :: eps = rdgas / rvgas                  !< 0.6219934995
+   real, parameter :: zvir = rvgas / rdgas - 1.            !< 0.6077338443
+   real, parameter :: t_ice = 273.16                       !< freezingtemperature
+   real, parameter :: table_ice = 273.16                   !< freezing point forqs table
+   real, parameter :: dc_ice = c_liq - c_ice               !< 2213.5, isobaricheating / colling
+   real, parameter :: dc_vap = cp_vap - c_liq              !< - 2339.5, isobaric heating / cooling
+   real, parameter :: lv0 = hlv0 - dc_vap * t_ice          !< 3.13905782e6, evaporation latent heat coefficient at 0 deg k
+   real, allocatable :: table (:), table2 (:), table3 (:), tablew (:)
+   real, allocatable :: des (:), des2 (:), des3 (:), desw (:)
+   real, parameter :: li00 = hlf0 - dc_ice * t_ice         !< -2.7105966e5,fusion latent heat coefficient at 0 deg k
+   real, parameter :: li2 = lv0 + li00                     !< 2.86799816e6, sublimation latent heat coefficient at 0 deg k
+   real, parameter :: d2ice = dc_vap + dc_ice              !< - 126, isobaricheating/cooling
+   logical :: tables_are_initialized = .false.
 
       real, allocatable, dimension(:) :: pz0, zz0
 
@@ -687,7 +711,7 @@
 
 ! Super-Cell
       real :: us0 = 30.
-      real, dimension(npz):: pk1, ts1, qs1, uz1, zs1, dudz
+      real, dimension(npz):: pk1, ts1, qs1, uz1, zs1, dudz,dummy2
       real:: zm, zc
       real(kind=R_GRID):: pp0(2)       ! center position
 
@@ -2758,8 +2782,9 @@
 
       else if ( abs(test_case)==30 .or.  abs(test_case)==31 ) then
 !------------------------------------
-! Super-Cell; with or with rotation
+      print*, "Super-Cell; with or with rotation"
 !------------------------------------
+        
         if ( abs(test_case)==30) then
            f0(:,:) = 0.
            fC(:,:) = 0.
@@ -2881,7 +2906,9 @@
               enddo
            enddo
         enddo
-
+! computes auxiliary pressure variables for a hydrostatic state.
+! The variables are: surfce, interface, layer-mean pressure, exener function
+! Given (ptop, delp) computes (ps, pk, pe, peln, pkz)
      call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
                 pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass, .false., .false., &
                 .true., hydrostatic, nwat, domain, adiabatic)
@@ -3721,7 +3748,185 @@
               ak, bk, ptop, pk, peln, pe, pkz, gz, phis, &
               ps, grid, agrid, hydrostatic, nwat, adiabatic)
 
-      else
+      else if (test_case == 69 ) then
+        print*, " NSSL Idealized Supercell Experiment (NISE) test case"
+        if ( .not. do_coriolis ) then
+           f0(:,:) = 0.
+           fC(:,:) = 0.
+        endif
+
+        zvir = rvgas/rdgas - 1.
+        p00 = 1000.E2
+        ps(:,:) = p00
+        phis(:,:) = 0.
+        do j=js,je
+           do i=is,ie
+                pk(i,j,1) = ptop**kappa
+                pe(i,1,j) = ptop
+              peln(i,1,j) = log(ptop)
+           enddo
+        enddo
+
+        do k=1,npz
+           do j=js,je
+              do i=is,ie
+                 delp(i,j,k) = ak(k+1)-ak(k) + ps(i,j)*(bk(k+1)-bk(k))
+                 pe(i,k+1,j) = ak(k+1) + ps(i,j)*bk(k+1)
+                 peln(i,k+1,j) = log(pe(i,k+1,j))
+                   pk(i,j,k+1) = exp( kappa*peln(i,k+1,j) )
+              enddo
+           enddo
+        enddo
+
+        i = is
+        j = js
+        do k=1,npz
+           pk1(k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
+        enddo
+
+        if ( t_profile == 0 ) then
+          call SuperCell_Sounding(npz, p00, pk1, ts1, qs1)
+        elseif (t_profile == 1 ) then
+          !adiabatic
+          do k=1,npz
+            ts1(k) = adi_th * ( pe(1,k,1) / 1E5) ** kappa
+            print*, ts1(k)
+          enddo
+        elseif (t_profile == 2) then
+          !isothermal
+          ts1(:) = iso_t
+        else
+          call mpp_error(FATAL, " t_profile ", t_profile ,"  not defined" )
+        endif
+
+        if ( q_profile==0 ) then
+          if (t_profile == 0) then
+            ! qs1 already computed prior, move along
+          else
+            call SuperCell_Sounding(npz, p00, pk1, dummy2, qs1)
+          endif
+        elseif (q_profile==1 ) then
+          ! dry environment
+          qs1(:) = 1E-9
+        else
+          call mpp_error(FATAL, " q_profile ", q_profile ,"  not defined" )
+        endif
+
+        ! Compute delz from ts1 and qs1
+        w(:,:,:) = 0.
+        q(:,:,:,:) = 0.
+
+        pp0(1) = 262.0/180.*pi   ! OKC
+        pp0(2) =  35.0/180.*pi
+
+        do k=1,npz
+           do j=js,je
+              do i=is,ie
+                 pt(i,j,k)   = ts1(k)
+                  q(i,j,k,1) = qs1(k)
+                 delz(i,j,k) =rdgas/grav*ts1(k)*(1.+zvir*qs1(k))*(peln(i,k,j)-peln(i,k+1,j))
+                enddo
+             enddo
+          enddo
+
+        ze1(npz+1) = 0.
+        do k=npz,1,-1
+           ze1(k) = ze1(k+1) - delz(is,js,k)
+        enddo
+
+        if ( ws_profile==0 ) then
+        ! Quarter-circle hodograph (Harris approximation)
+          !us0=30.
+          do k=1,npz
+            zm = 0.5*(ze1(k)+ze1(k+1))
+            if ( zm .le. 2.e3 ) then
+               utmp = 8.*(1.-cos(pi*zm/4.e3))
+               vtmp = 8.*sin(pi*zm/4.e3)
+            elseif (zm .le. 6.e3 ) then
+               utmp = 8. + (us0-8.)*(zm-2.e3)/4.e3
+               vtmp = 8.
+            else
+               utmp = us0
+               vtmp = 8.
+            endif
+            ubar = utmp - 8.
+            vbar = vtmp - 4.
+            
+            do j=js,je
+              do i=is,ie+1
+                 p1(:) = grid(i  ,j ,1:2)
+                 p2(:) = grid(i,j+1 ,1:2)
+                 call mid_pt_sphere(p1, p2, p3)
+                 call get_unit_vect2(p1, p2, e2)
+                 call get_latlon_vector(p3, ex, ey)
+! Scaling factor is a Gaussian decay from center
+                 v(i,j,k) = exp(-8.*great_circle_dist(pp0,p3,radius)/radius) *&
+                           (ubar*inner_prod(e2,ex) + vbar*inner_prod(e2,ey))
+              enddo
+            enddo
+            do j=js,je+1
+              do i=is,ie
+                 p1(:) = grid(i,  j,1:2)
+                 p2(:) = grid(i+1,j,1:2)
+                 call mid_pt_sphere(p1, p2, p3)
+                 call get_unit_vect2(p1, p2, e1)
+                 call get_latlon_vector(p3, ex, ey)
+! Scaling factor is a Gaussian decay from center
+                 u(i,j,k) = exp(-8.*great_circle_dist(pp0,p3,radius)/radius) *&
+                           (ubar*inner_prod(e1,ex) + vbar*inner_prod(e1,ey))
+              enddo
+            enddo
+          enddo
+        elseif (ws_profile==1 ) then
+        ! Linear WK shear
+          v(:,:,:) = 0.
+          do k=1,npz
+            zm = 0.5*(ze1(k)+ze1(k+1))
+            if ( zm .le. 6.e3 ) then
+              u(:,:,zm) = us0 * tanh(zm/3.e3)
+            else
+              u(:,:,zm) = us0
+            endif
+          enddo
+        elseif (ws_profile==2 ) then
+        ! constant u, v=0
+          u(:,:,:) = us0
+          v(:,:,:) = 0.
+        elseif (ws_profile==3 ) then
+        ! constant v, u=0
+          u(:,:,:) = 0.
+          v(:,:,:) = us0
+        elseif (ws_profile==4 ) then
+          u(:,:,:) = 0.
+          v(:,:,:) = 0.
+        else
+          call mpp_error(FATAL, " ws_profile ", ws_profile ,"  not defined" )
+        endif
+
+        call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,&
+                   pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass, .false.,.false., &
+                  .true., hydrostatic, nwat, domain, adiabatic)
+
+! *** Add Initial perturbation ***
+        pturb = bubble_t
+        r0 = bubble_rad     ! radius
+        zc = bubble_zc     ! center of bubble from surface
+        do k=1, npz
+           zm = 0.5*(ze1(k)+ze1(k+1))   ! center of the layer
+           ptmp = ( (zm-zc)/zc ) **2
+           if ( ptmp < 1. ) then
+              do j=js,je
+                 do i=is,ie
+                    dist = ptmp + (great_circle_dist(pp0, agrid(i,j,1:2),radius)/r0)**2
+                    if ( dist < 1. ) then
+                         pt(i,j,k) = pt(i,j,k) + pturb*(1.-sqrt(dist))
+                         q(i,j,k,1)= q(i,j,k,1) + bubble_q*(1.-sqrt(dist))
+                    endif
+                 enddo
+              enddo
+           endif
+        enddo
+      else 
 
          call mpp_error(FATAL, " test_case not defined" )
 
@@ -4629,8 +4834,8 @@ end subroutine terminator_tracers
         type(fv_flags_type), target :: flagstruct
 
         real, dimension(bd%is:bd%ie):: pm, qs
-        real, dimension(1:npz):: pk1, ts1, qs1
-        real :: us0 = 30.
+        real, dimension(1:npz):: pk1, ts1, qs1, dummy
+        !real :: us0 = 30.
         real :: dist, r0, f0_const, prf, rgrav
         real :: ptmp, ze, zc, zm, utmp, vtmp
         real :: t00, p00, xmax, xc, xx, yy, pk0, pturb, ztop
@@ -4660,6 +4865,8 @@ end subroutine terminator_tracers
 
         integer :: is,  ie,  js,  je
         integer :: isd, ied, jsd, jed
+   
+        integer :: n_bub, b
 
         is  = bd%is
         ie  = bd%ie
@@ -5161,6 +5368,13 @@ end subroutine terminator_tracers
                endif
             enddo
         endif
+        uc(isd:ied,:,:) =  u(:,jsd:jed,:)
+        uc(ied+1,:,:) = u(ied,jsd:jed,:)
+        ua(:,:,:) = u(:,jsd:jed,:)
+
+        vc(:,jsd:jed,:) = v(isd:ied,:,:)
+        vc(:,jed+1,:) = v(isd:ied,jed,:)
+        va(:,:,:) = v(isd:ied,:,:)
 
         case ( 101 )
 
@@ -5263,7 +5477,187 @@ end subroutine terminator_tracers
               enddo
            enddo
 
-        end select
+      case(69)
+      !  NSSL Idealized Supercell Experiment (NISE) test case
+
+        zvir = rvgas/rdgas - 1.
+        p00 = 1000.E2
+        ps(:,:) = p00
+        phis(:,:) = 0.
+        do j=js,je
+           do i=is,ie
+                pk(i,j,1) = ptop**kappa
+                pe(i,1,j) = ptop
+              peln(i,1,j) = log(ptop)
+           enddo
+        enddo
+
+        do k=1,npz
+           do j=js,je
+              do i=is,ie
+                 delp(i,j,k) = ak(k+1)-ak(k) + ps(i,j)*(bk(k+1)-bk(k))
+                 pe(i,k+1,j) = ak(k+1) + ps(i,j)*bk(k+1)
+                 peln(i,k+1,j) = log(pe(i,k+1,j))
+                   pk(i,j,k+1) = exp( kappa*peln(i,k+1,j) )
+              enddo
+           enddo
+        enddo
+
+        i = is
+        j = js
+        do k=1,npz
+           pk1(k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
+        enddo
+
+        if ( t_profile == 0 ) then
+          call SuperCell_Sounding(npz, p00, pk1, ts1, qs1)
+        elseif (t_profile == 1 ) then
+          !adiabatic
+          print*, "kappa, adi_th = ", kappa, adi_th
+          do k=1,npz
+            ts1(k) = adi_th * ( pe(i,k,j) / 1E5) ** kappa
+            print*, k, pe(i,k,j), ts1(k)
+          enddo
+        elseif (t_profile == 2) then
+          !isothermal
+          ts1(:) = iso_t
+        else
+          call mpp_error(FATAL, " t_profile ", t_profile ,"  not defined" )
+        endif
+
+        if ( q_profile==0 ) then
+          if (t_profile == 0) then
+            ! qs1 already computed prior, move along
+          else
+            call SuperCell_Sounding(npz, p00, pk1, dummy, qs1)
+          endif
+        elseif (q_profile==1 ) then
+          ! dry environment
+          qs1(:) = 1E-9
+        else
+          call mpp_error(FATAL, " q_profile ", q_profile ,"  not defined" )
+        endif
+
+        ! Compute delz from ts1 and qs1
+        w(:,:,:) = 0.
+        q(:,:,:,:) = 0.
+
+        do k=1,npz
+           do j=js,je
+              do i=is,ie
+                 pt(i,j,k)   = ts1(k)
+                  q(i,j,k,1) = qs1(k)
+                 delz(i,j,k)=rdgas/grav*ts1(k)*(1.+zvir*qs1(k))*(peln(i,k,j)-peln(i,k+1,j))
+                enddo
+             enddo
+          enddo
+
+        ze1(npz+1) = 0.
+        do k=npz,1,-1
+           ze1(k) = ze1(k+1) - delz(is,js,k)
+        enddo
+
+        if ( ws_profile==0 ) then
+        ! Quarter-circle hodograph (Harris approximation)
+          do k=1,npz
+           zm = 0.5*(ze1(k)+ze1(k+1))
+           if ( zm .le. 2.e3 ) then
+               utmp = 8.*(1.-cos(pi*zm/4.e3))
+               vtmp = 8.*sin(pi*zm/4.e3)
+           elseif (zm .le. 6.e3 ) then
+               utmp = 8. + (us0-8.)*(zm-2.e3)/4.e3
+               vtmp = 8.
+           else
+               utmp = us0
+               vtmp = 8.
+           endif
+! u-wind
+           do j=js,je+1
+              do i=is,ie
+                 u(i,j,k) = utmp - 8.
+             enddo
+           enddo
+! v-wind
+           do j=js,je
+              do i=is,ie+1
+                 v(i,j,k) = vtmp - 4.
+             enddo
+           enddo
+          enddo
+        elseif (ws_profile==1 ) then
+        ! Linear WK shear
+          v(:,:,:) = 0.
+          do k=1,npz
+            zm = 0.5*(ze1(k)+ze1(k+1))
+            if ( zm .le. 6.e3 ) then
+              u(:,:,k) = us0 * tanh(zm/3.e3)
+            else
+              u(:,:,k) = us0
+            endif
+          enddo
+        elseif (ws_profile==2 ) then
+        ! constant u, v=0
+          u(:,:,:) = us0
+          v(:,:,:) = 0.
+        elseif (ws_profile==3 ) then
+        ! constant v, u=0
+          u(:,:,:) = 0.
+          v(:,:,:) = us0
+        elseif (ws_profile==4 ) then
+          u(:,:,:) = 0.
+          v(:,:,:) = 0.
+        else
+          call mpp_error(FATAL, " ws_profile ", ws_profile ,"  not defined" )
+        endif
+
+        call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,&
+                   pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass,.false.,.false., &
+                  .true., hydrostatic, nwat, domain, flagstruct%adiabatic)
+
+        if (bubble_type > 0) then
+! *** Add Initial perturbation ***
+          pturb = bubble_t
+          r0 = bubble_rad     ! radius
+          zc = bubble_zc     ! center of bubble from surface
+          if (bubble_type == 1) then
+            icenter = (npx-1)/2 + 1
+            jcenter = (npy-1)/2 + 1
+            n_bub = 1
+          elseif (bubble_type == 2) then
+            n_bub = floor(float(npy)*dy_const/r0)
+            print*, "initializing ", n_bub , " bubbles"
+            icenter = 3 * ceiling(r0/dy_const)
+            jcenter = 0
+          endif
+          do b = 1, n_bub
+            if (bubble_type == 2) jcenter = jcenter + ceiling(r0/dy_const)
+            print*, "icenter, jcenter =", icenter, jcenter
+            do k=1, npz
+              zm = 0.5*(ze1(k)+ze1(k+1))
+              ptmp = ( (zm-zc)/zc ) **2
+              if ( ptmp < 1. ) then
+                do j=js,je
+                  do i=is,ie
+                    dist =ptmp+((i-icenter)*dx_const/r0)**2+((j-jcenter)*dy_const/r0)**2
+                    if ( dist < 1. ) then
+                      pt(i,j,k) = pt(i,j,k) + pturb*(1.-sqrt(dist))
+                      q(i,j,k,1)= q(i,j,k,1) + bubble_q*(1.-sqrt(dist))
+                    endif !dist
+                  enddo !i
+                enddo !j
+              endif ! ptmp
+            enddo!npz
+          enddo!nbub
+        endif!bubble_type
+    
+        uc(isd:ied,:,:) =  u(:,jsd:jed,:)
+        uc(ied+1,:,:) = u(ied,jsd:jed,:)
+        ua(:,:,:) = u(:,jsd:jed,:)
+
+        vc(:,jsd:jed,:) = v(isd:ied,:,:)
+        vc(:,jed+1,:) = v(isd:ied,jed,:)
+        va(:,:,:) = v(isd:ied,:,:)
+      end select
 
         nullify(grid)
         nullify(agrid)
@@ -5309,7 +5703,9 @@ end subroutine terminator_tracers
 
         character(*), intent(IN) :: nml_filename
         integer :: ierr, f_unit, unit, ios
-        namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
+        namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size, &
+                                t_profile, q_profile, ws_profile, bubble_t, bubble_q, bubble_rad, &
+                                bubble_zc, do_coriolis, iso_t, adi_th, us0, bubble_type
 
 #include<file_version.h>
 
@@ -5652,9 +6048,9 @@ end subroutine terminator_tracers
 
 
  subroutine SuperCell_Sounding(km, ps, pk1, tp, qp)
-#ifndef GFS_PHYS
- use gfdl_cloud_microphys_mod, only: wqsat_moist, qsmith_init, qs_blend
-#endif
+!!!#ifndef GFS_PHYS
+!!! use gfdl_cloud_microphys_mod, only: wqsat_moist, qsmith_init, qs_blend
+!!!!#endif
 ! Morris Weisman & J. Klemp 2002 sounding
 ! Output sounding on pressure levels:
  integer, intent(in):: km
@@ -5676,11 +6072,11 @@ end subroutine terminator_tracers
  real:: dz0, zvir, fac_z, pk0, temp1, p2
  integer:: k, n, kk
 
-#ifdef GFS_PHYS
+!!!#ifdef GFS_PHYS
+!!!
+!!! call mpp_error(FATAL, 'SuperCell sounding cannot perform with GFS Physics.')
 
- call mpp_error(FATAL, 'SuperCell sounding cannot perform with GFS Physics.')
-
-#else
+!!!#else
 
  zvir = rvgas/rdgas - 1.
  pk0 = p00**kappa
@@ -5780,7 +6176,7 @@ end subroutine terminator_tracers
     tp(k) = max(Tmin, tp(k))
  enddo
 
-#endif
+!!!#endif
 
  end subroutine SuperCell_Sounding
 
@@ -7474,6 +7870,280 @@ end subroutine terminator_tracers
 
  end subroutine sm1_edge
 
+real function wqsat_moist (ta, qv, pa)
 
+    implicit none
+
+    real, intent (in) :: ta, pa, qv
+
+    real :: es, ap1, tmin
+
+    integer :: it
+
+    tmin = table_ice - 160.
+    ap1 = 10. * dim (ta, tmin) + 1.
+    ap1 = min (2621., ap1)
+    it = ap1
+    es = tablew (it) + (ap1 - it) * desw (it)
+    wqsat_moist = eps * es * (1. + zvir * qv) / pa
+
+end function wqsat_moist
+
+subroutine qsmith_init
+
+    implicit none
+
+    integer, parameter :: length = 2621
+
+    integer :: i
+
+    if (.not. tables_are_initialized) then
+
+       ! master = (mpp_pe () .eq. mpp_root_pe ())
+       ! if (master) print *, ' gfdl mp: initializing qs tables'
+
+       ! debug code
+       ! print *, mpp_pe (), allocated (table), allocated (table2), &
+       ! allocated (table3), allocated (tablew), allocated (des), &
+       ! allocated (des2), allocated (des3), allocated (desw)
+       ! end debug code
+
+       ! generate es table (dt = 0.1 deg. c)
+
+       allocate (table (length))
+       allocate (table2 (length))
+       allocate (table3 (length))
+       allocate (tablew (length))
+       allocate (des (length))
+       allocate (des2 (length))
+       allocate (des3 (length))
+       allocate (desw (length))
+
+       call qs_table (length)
+       call qs_table2 (length)
+       call qs_table3 (length)
+       call qs_tablew (length)
+
+       do i = 1, length - 1
+           des (i) = max (0., table (i + 1) - table (i))
+           des2 (i) = max (0., table2 (i + 1) - table2 (i))
+           des3 (i) = max (0., table3 (i + 1) - table3 (i))
+           desw (i) = max (0., tablew (i + 1) - tablew (i))
+       enddo
+       des (length) = des (length - 1)
+       des2 (length) = des2 (length - 1)
+       des3 (length) = des3 (length - 1)
+       desw (length) = desw (length - 1)
+
+        tables_are_initialized = .true.
+
+    endif
+
+end subroutine qsmith_init
+
+subroutine qs_tablew (n)
+
+    implicit none
+
+    integer, intent (in) :: n
+
+    real :: delt = 0.1
+    real :: tmin, tem, fac0, fac1, fac2
+
+    integer :: i
+
+    tmin = table_ice - 160.
+
+    ! -----------------------------------------------------------------------
+    ! compute es over water
+    ! -----------------------------------------------------------------------
+
+    do i = 1, n
+        tem = tmin + delt * real (i - 1)
+        fac0 = (tem - t_ice) / (tem * t_ice)
+        fac1 = fac0 * lv0
+        fac2 = (dc_vap * log (tem / t_ice) + fac1) / rvgas
+        tablew (i) = e00 * exp (fac2)
+    enddo
+
+end subroutine qs_tablew
+
+subroutine qs_table2 (n)
+
+    implicit none
+
+    integer, intent (in) :: n
+
+    real :: delt = 0.1
+    real :: tmin, tem0, tem1, fac0, fac1, fac2
+
+    integer :: i, i0, i1
+
+    tmin = table_ice - 160.
+
+    do i = 1, n
+        tem0 = tmin + delt * real (i - 1)
+        fac0 = (tem0 - t_ice) / (tem0 * t_ice)
+        if (i <= 1600) then
+            ! -----------------------------------------------------------------------
+            ! compute es over ice between - 160 deg c and 0 deg c.
+            ! -----------------------------------------------------------------------
+            fac1 = fac0 * li2
+            fac2 = (d2ice * log (tem0 / t_ice) + fac1) / rvgas
+        else
+            ! -----------------------------------------------------------------------
+            ! compute es over water between 0 deg c and 102 deg c.
+            ! -----------------------------------------------------------------------
+            fac1 = fac0 * lv0
+            fac2 = (dc_vap * log (tem0 / t_ice) + fac1) / rvgas
+        endif
+        table2 (i) = e00 * exp (fac2)
+    enddo
+
+    ! -----------------------------------------------------------------------
+    ! smoother around 0 deg c
+    ! -----------------------------------------------------------------------
+
+    i0 = 1600
+    i1 = 1601
+    tem0 = 0.25 * (table2 (i0 - 1) + 2. * table (i0) + table2 (i0 + 1))
+    tem1 = 0.25 * (table2 (i1 - 1) + 2. * table (i1) + table2 (i1 + 1))
+    table2 (i0) = tem0
+    table2 (i1) = tem1
+
+end subroutine qs_table2
+
+subroutine qs_table3 (n)
+
+    implicit none
+
+    integer, intent (in) :: n
+
+    real :: delt = 0.1
+    real :: esbasw, tbasw, esbasi, tmin, tem, aa, b, c, d, e
+    real :: tem0, tem1
+
+    integer :: i, i0, i1
+
+    esbasw = 1013246.0
+    tbasw = table_ice + 100.
+    esbasi = 6107.1
+    tmin = table_ice - 160.
+
+    do i = 1, n
+        tem = tmin + delt * real (i - 1)
+        ! if (i <= 1600) then
+        if (i <= 1580) then ! change to - 2 c
+            ! -----------------------------------------------------------------------
+            ! compute es over ice between - 160 deg c and 0 deg c.
+            ! see smithsonian meteorological tables page 350.
+            ! -----------------------------------------------------------------------
+            aa = - 9.09718 * (table_ice / tem - 1.)
+            b = - 3.56654 * alog10 (table_ice / tem)
+            c = 0.876793 * (1. - tem / table_ice)
+            e = alog10 (esbasi)
+            table3 (i) = 0.1 * 10 ** (aa + b + c + e)
+        else
+            ! -----------------------------------------------------------------------
+            ! compute es over water between - 2 deg c and 102 deg c.
+            ! see smithsonian meteorological tables page 350.
+            ! -----------------------------------------------------------------------
+            aa = - 7.90298 * (tbasw / tem - 1.)
+            b = 5.02808 * alog10 (tbasw / tem)
+            c = - 1.3816e-7 * (10 ** ((1. - tem / tbasw) * 11.344) - 1.)
+            d = 8.1328e-3 * (10 ** ((tbasw / tem - 1.) * (- 3.49149)) - 1.)
+            e = alog10 (esbasw)
+            table3 (i) = 0.1 * 10 ** (aa + b + c + d + e)
+        endif
+    enddo
+    ! -----------------------------------------------------------------------
+    ! smoother around - 2 deg c
+    ! -----------------------------------------------------------------------
+
+    i0 = 1580
+    i1 = 1581
+    tem0 = 0.25 * (table3 (i0 - 1) + 2. * table (i0) + table3 (i0 + 1))
+    tem1 = 0.25 * (table3 (i1 - 1) + 2. * table (i1) + table3 (i1 + 1))
+    table3 (i0) = tem0
+    table3 (i1) = tem1
+
+end subroutine qs_table3
+
+real function qs_blend (t, p, q)
+
+    implicit none
+
+    real, intent (in) :: t, p, q
+
+    real :: es, ap1, tmin
+
+    integer :: it
+
+    tmin = table_ice - 160.
+    ap1 = 10. * dim (t, tmin) + 1.
+    ap1 = min (2621., ap1)
+    it = ap1
+    es = table (it) + (ap1 - it) * des (it)
+    qs_blend = eps * es * (1. + zvir * q) / p
+
+end function qs_blend
+
+subroutine qs_table (n)
+
+    implicit none
+
+    integer, intent (in) :: n
+
+    real :: delt = 0.1
+    real :: tmin, tem, esh20
+    real :: wice, wh2o, fac0, fac1, fac2
+    real :: esupc (200)
+
+    integer :: i
+
+    tmin = table_ice - 160.
+
+    ! -----------------------------------------------------------------------
+    ! compute es over ice between - 160 deg c and 0 deg c.
+    ! -----------------------------------------------------------------------
+
+    do i = 1, 1600
+        tem = tmin + delt * real (i - 1)
+        fac0 = (tem - t_ice) / (tem * t_ice)
+        fac1 = fac0 * li2
+        fac2 = (d2ice * log (tem / t_ice) + fac1) / rvgas
+        table (i) = e00 * exp (fac2)
+    enddo
+
+    ! -----------------------------------------------------------------------
+    ! compute es over water between - 20 deg c and 102 deg c.
+    ! -----------------------------------------------------------------------
+
+    do i = 1, 1221
+        tem = 253.16 + delt * real (i - 1)
+        fac0 = (tem - t_ice) / (tem * t_ice)
+        fac1 = fac0 * lv0
+        fac2 = (dc_vap * log (tem / t_ice) + fac1) / rvgas
+        esh20 = e00 * exp (fac2)
+        if (i <= 200) then
+            esupc (i) = esh20
+        else
+            table (i + 1400) = esh20
+        endif
+    enddo
+
+    ! -----------------------------------------------------------------------
+    ! derive blended es over ice and supercooled water between - 20 deg c and 0
+    ! deg c
+    ! -----------------------------------------------------------------------
+
+    do i = 1, 200
+        tem = 253.16 + delt * real (i - 1)
+        wice = 0.05 * (table_ice - tem)
+        wh2o = 0.05 * (tem - 253.16)
+        table (i + 1400) = wice * table (i + 1400) + wh2o * esupc (i)
+    enddo
+
+end subroutine qs_table
 
 end module test_cases_mod
