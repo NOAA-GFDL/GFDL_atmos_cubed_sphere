@@ -191,8 +191,8 @@ module fv_control_mod
      real,                intent(in)    :: dt_atmos
      integer,             intent(OUT)   :: this_grid
      logical, allocatable, intent(OUT) :: grids_on_this_pe(:)
-     character(len=32), optional,      intent(in)    :: nml_filename_in
-     logical, optional,                intent(in)    :: skip_nml_read_in
+     character(len=32), optional,      intent(in)    :: nml_filename_in ! alternate nml 
+     logical, optional,                intent(in)    :: skip_nml_read_in ! use previously loaded nml
 
      integer, intent(INOUT) :: p_split
      character(100) :: pe_list_name, errstring
