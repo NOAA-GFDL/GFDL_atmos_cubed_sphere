@@ -231,6 +231,14 @@ contains
     index = index + 1
     coarse_diagnostics(index)%axes = 3
     coarse_diagnostics(index)%module_name = DYNAMICS
+    coarse_diagnostics(index)%name = 'qh_dt_phys_coarse'
+    coarse_diagnostics(index)%description = 'coarse-grained hail tracer tendency from physics'                          
+    coarse_diagnostics(index)%units = 'kg/kg/s'
+    coarse_diagnostics(index)%reduction_method = MASS_WEIGHTED
+
+    index = index + 1
+    coarse_diagnostics(index)%axes = 3
+    coarse_diagnostics(index)%module_name = DYNAMICS
     coarse_diagnostics(index)%name = 't_dt_phys_coarse'
     coarse_diagnostics(index)%description = 'coarse-grained temperature tendency from physics'
     coarse_diagnostics(index)%units = 'K/s'
@@ -362,6 +370,15 @@ contains
     coarse_diagnostics(index)%module_name = DYNAMICS
     coarse_diagnostics(index)%name = 'int_qg_dt_phys_coarse'
     coarse_diagnostics(index)%description = 'coarse-grained vertically integrated graupel tracer tendency from physics'
+    coarse_diagnostics(index)%units = 'kg/m**2/s'
+    coarse_diagnostics(index)%vertically_integrated = .true.
+    coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
+
+    index = index + 1
+    coarse_diagnostics(index)%axes = 2
+    coarse_diagnostics(index)%module_name = DYNAMICS
+    coarse_diagnostics(index)%name = 'int_qh_dt_phys_coarse'
+    coarse_diagnostics(index)%description = 'coarse-grained vertically integrated hail tracer tendency from physics'
     coarse_diagnostics(index)%units = 'kg/m**2/s'
     coarse_diagnostics(index)%vertically_integrated = .true.
     coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED

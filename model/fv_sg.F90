@@ -309,7 +309,7 @@ contains
              cvm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cv_air + q0(i,k,sphum)*cv_vap   + q_liq*c_liq + q_sol*c_ice
 #endif
           enddo
-       elseif ( nwat >= 5 ) then
+       elseif ( nwat == 5 ) then
           do i=is,ie
              q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
              q_sol = q0(i,k,ice_wat) + q0(i,k,snowwat)
