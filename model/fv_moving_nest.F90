@@ -951,9 +951,11 @@ contains
     if (debug_log) print '("[INFO] WDR NCREAD LOFC mn_orog_read_hires_parent npe=",I0,I4,I4,I4,I4," ",A12," ",A128)', this_pe, fp_nx, fp_ny, mid_nx,mid_ny, orog_var_name, nc_filename
 
     call alloc_read_data(nc_filename, orog_var_name, fp_nx, fp_ny, orog_grid)
+    !call check_array(orog_grid, this_pe, "parent coarse" // orog_var_name, -1000.0, 5000.0)
     call alloc_read_data(nc_filename, 'stddev', fp_nx, fp_ny, orog_std_grid)  ! Not needed
 
     call alloc_read_data(nc_filename, 'slmsk', fp_nx, fp_ny, ls_mask_grid)
+    !call check_array(ls_mask_grid, this_pe, 'slmsk', 0.0, 3.0)
     call alloc_read_data(nc_filename, 'land_frac', fp_nx, fp_ny, land_frac_grid)  ! Not needed
 
   end subroutine mn_orog_read_hires_parent
@@ -2479,6 +2481,8 @@ contains
 
     !call mn_var_dump_to_netcdf(Atm%pt   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
     !     time_val, Atm%global_tile, file_prefix, "tempK")
+    !call mn_var_dump_to_netcdf(Atm%pt(:,:,64)   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
+    !     time_val, Atm%global_tile, file_prefix, "T64")
     !call mn_var_dump_to_netcdf(Atm%delp , is_fine_pe, domain_coarse, domain_fine, position, nz, &
     !     time_val, Atm%global_tile, file_prefix, "DELP")
     call mn_var_dump_to_netcdf(Atm%delz , is_fine_pe, domain_coarse, domain_fine, position, nz, &

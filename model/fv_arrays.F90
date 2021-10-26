@@ -1228,13 +1228,25 @@ use IPD_typedefs,           only: kind_phys => IPD_kind_phys
      real (kind=kind_phys), _ALLOCATABLE :: zorlw (:,:)      _NULL   !< wave surface roughness length
      real (kind=kind_phys), _ALLOCATABLE :: zorlwav (:,:)      _NULL   !< wave surface roughness in cm derived from wave model
 
+     real (kind=kind_phys), _ALLOCATABLE :: sfalb_lnd(:,:)   _NULL   !< surface albedo over land for LSM
+     real (kind=kind_phys), _ALLOCATABLE :: emis_lnd(:,:)    _NULL   !< surface emissivity over land for LSM
+     real (kind=kind_phys), _ALLOCATABLE :: sfalb_lnd_bck(:,:) _NULL !< snow-free albedo over land
+
      real (kind=kind_phys), _ALLOCATABLE :: alvsf(:,:)       _NULL   !< visible black sky albedo
      real (kind=kind_phys), _ALLOCATABLE :: alvwf(:,:)       _NULL   !< visible white sky albedo
      real (kind=kind_phys), _ALLOCATABLE :: alnsf(:,:)       _NULL   !< near IR black sky albedo
      real (kind=kind_phys), _ALLOCATABLE :: alnwf(:,:)       _NULL   !< near IR white sky albedo
 
+     real (kind=kind_phys), _ALLOCATABLE :: albdirvis_lnd(:,:)       _NULL   !<
+     real (kind=kind_phys), _ALLOCATABLE :: albdirnir_lnd(:,:)       _NULL   !<
+     real (kind=kind_phys), _ALLOCATABLE :: albdifvis_lnd(:,:)       _NULL   !<
+     real (kind=kind_phys), _ALLOCATABLE :: albdifnir_lnd(:,:)       _NULL   !<
+
      real (kind=kind_phys), _ALLOCATABLE :: facsf(:,:)       _NULL   !< fractional coverage for strong zenith angle albedo
      real (kind=kind_phys), _ALLOCATABLE :: facwf(:,:)       _NULL   !< fractional coverage for strong zenith angle albedo
+
+     real (kind=kind_phys), _ALLOCATABLE :: lakefrac (:,:)   _NULL   !< lake  fraction [0:1] 
+     real (kind=kind_phys), _ALLOCATABLE :: lakedepth (:,:)  _NULL   !< lake  depth [ m ]    
 
      real (kind=kind_phys), _ALLOCATABLE :: canopy (:,:)     _NULL   !< canopy water content
      real (kind=kind_phys), _ALLOCATABLE :: vegfrac (:,:)    _NULL   !< vegetation fraction
@@ -2373,6 +2385,10 @@ end subroutine deallocate_fv_nest_BC_type_3d
        allocate ( mn_phys%stc(isd:ied, jsd:jed, lsoil) )
        allocate ( mn_phys%slc(isd:ied, jsd:jed, lsoil) )
 
+       allocate ( mn_phys%sfalb_lnd(isd:ied, jsd:jed) )
+       allocate ( mn_phys%emis_lnd(isd:ied, jsd:jed) )
+       allocate ( mn_phys%sfalb_lnd_bck(isd:ied, jsd:jed) )
+
        allocate ( mn_phys%u10m(isd:ied, jsd:jed) )
        allocate ( mn_phys%v10m(isd:ied, jsd:jed) )
        allocate ( mn_phys%tprcp(isd:ied, jsd:jed) )
@@ -2392,6 +2408,9 @@ end subroutine deallocate_fv_nest_BC_type_3d
        allocate ( mn_phys%facsf(isd:ied, jsd:jed) )
        allocate ( mn_phys%facwf(isd:ied, jsd:jed) )
 
+       allocate ( mn_phys%lakefrac(isd:ied, jsd:jed) )
+       allocate ( mn_phys%lakedepth(isd:ied, jsd:jed) )
+
        allocate ( mn_phys%canopy(isd:ied, jsd:jed) )
        allocate ( mn_phys%vegfrac(isd:ied, jsd:jed) )
        allocate ( mn_phys%uustar(isd:ied, jsd:jed) )
@@ -2400,6 +2419,12 @@ end subroutine deallocate_fv_nest_BC_type_3d
        allocate ( mn_phys%tsfco(isd:ied, jsd:jed) )
        allocate ( mn_phys%tsfcl(isd:ied, jsd:jed) )
        allocate ( mn_phys%tsfc(isd:ied, jsd:jed) )
+
+
+       allocate ( mn_phys%albdirvis_lnd (isd:ied, jsd:jed) )
+       allocate ( mn_phys%albdirnir_lnd (isd:ied, jsd:jed) )
+       allocate ( mn_phys%albdifvis_lnd (isd:ied, jsd:jed) )
+       allocate ( mn_phys%albdifnir_lnd (isd:ied, jsd:jed) )
 
        allocate ( mn_phys%cv(isd:ied, jsd:jed) )
        allocate ( mn_phys%cvt(isd:ied, jsd:jed) )
@@ -2436,6 +2461,11 @@ end subroutine deallocate_fv_nest_BC_type_3d
        mn_phys%stc = +99999.9
        mn_phys%slc = +99999.9
 
+
+       mn_phys%sfalb_lnd = +99999.9
+       mn_phys%emis_lnd = +99999.9
+       mn_phys%sfalb_lnd_bck = +99999.9
+
        mn_phys%u10m = +99999.9
        mn_phys%v10m = +99999.9
        mn_phys%tprcp = +99999.9
@@ -2455,6 +2485,9 @@ end subroutine deallocate_fv_nest_BC_type_3d
        mn_phys%facsf = +99999.9
        mn_phys%facwf = +99999.9
 
+       mn_phys%lakefrac = +99999.9
+       mn_phys%lakedepth = +99999.9
+
        mn_phys%canopy = +99999.9
        mn_phys%vegfrac = +99999.9
        mn_phys%uustar = +99999.9
@@ -2463,6 +2496,11 @@ end subroutine deallocate_fv_nest_BC_type_3d
        mn_phys%tsfco = +99999.9
        mn_phys%tsfcl = +99999.9
        mn_phys%tsfc = +99999.9
+
+       mn_phys%albdirvis_lnd = +99999.9
+       mn_phys%albdirnir_lnd = +99999.9
+       mn_phys%albdifvis_lnd = +99999.9
+       mn_phys%albdifnir_lnd = +99999.9
 
        mn_phys%cv = +99999.9
        mn_phys%cvt = +99999.9
@@ -2512,6 +2550,10 @@ end subroutine deallocate_fv_nest_BC_type_3d
        deallocate( mn_phys%stc )
        deallocate( mn_phys%slc )
 
+       deallocate( mn_phys%sfalb_lnd )
+       deallocate( mn_phys%emis_lnd )
+       deallocate( mn_phys%sfalb_lnd_bck )
+
        deallocate( mn_phys%u10m )
        deallocate( mn_phys%v10m )
        deallocate( mn_phys%tprcp )
@@ -2531,6 +2573,9 @@ end subroutine deallocate_fv_nest_BC_type_3d
        deallocate( mn_phys%facsf )
        deallocate( mn_phys%facwf )
 
+       deallocate( mn_phys%lakefrac )
+       deallocate( mn_phys%lakedepth )
+
        deallocate( mn_phys%canopy )
        deallocate( mn_phys%vegfrac )
        deallocate( mn_phys%uustar )
@@ -2539,6 +2584,11 @@ end subroutine deallocate_fv_nest_BC_type_3d
        deallocate( mn_phys%tsfco )
        deallocate( mn_phys%tsfcl )
        deallocate( mn_phys%tsfc )
+
+       deallocate( mn_phys%albdirvis_lnd )
+       deallocate( mn_phys%albdirnir_lnd )
+       deallocate( mn_phys%albdifvis_lnd )
+       deallocate( mn_phys%albdifnir_lnd )
 
        deallocate( mn_phys%cv )
        deallocate( mn_phys%cvt )
