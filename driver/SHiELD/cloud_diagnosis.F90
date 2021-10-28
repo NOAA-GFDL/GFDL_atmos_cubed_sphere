@@ -518,20 +518,7 @@ subroutine cloud_diagnosis_init (nlunit, input_nml_file, logunit, fn_nml)
     integer :: ios
     logical :: exists
 
-#ifdef INTERNAL_FILE_NML
     read (input_nml_file, nml = cloud_diagnosis_nml, iostat = ios)
-#else
-    inquire (file = trim (fn_nml), exist = exists)
-    if (.not. exists) then
-        write (6, *) 'cloud_diagnosis :: namelist file: ', trim (fn_nml), ' does not exist'
-        stop
-    else
-        open (unit = nlunit, file = fn_nml, readonly, status = 'old', iostat = ios)
-    endif
-    rewind (nlunit)
-    read (nlunit, nml = cloud_diagnosis_nml)
-    close (nlunit)
-#endif
 
 end subroutine cloud_diagnosis_init
 

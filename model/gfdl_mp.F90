@@ -3090,20 +3090,7 @@ subroutine gfdl_mp_init (me, master, nlunit, input_nml_file, logunit, fn_nml)
     ! call write_version_number ('gfdl_mp_mod', version)
     ! logunit = stdlog ()
 
-#ifdef INTERNAL_FILE_NML
     read (input_nml_file, nml = gfdl_mp_nml)
-#else
-    inquire (file = trim (fn_nml), exist = exists)
-    if (.not. exists) then
-        write (6, *) 'gfdl - mp :: namelist file: ', trim (fn_nml), ' does not exist'
-        stop
-    else
-        open (unit = nlunit, file = fn_nml, readonly, status = 'old', iostat = ios)
-    endif
-    rewind (nlunit)
-    read (nlunit, nml = gfdl_mp_nml)
-    close (nlunit)
-#endif
 
     ! write version number and namelist to log file
 

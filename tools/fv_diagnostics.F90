@@ -332,20 +332,7 @@ contains
 #endif
     levs_ave = 0
     levs_ave(1:4) = (/50,400,850,1000/)
-#ifdef INTERNAL_FILE_NML
     read(input_nml_file, nml=fv_diag_plevs_nml,iostat=ios)
-#else
-    inquire (file=trim(Atm(n)%nml_filename), exist=exists)
-    if (.not. exists) then
-      write(errmsg,*) 'fv_diag_plevs_nml: namelist file ',trim(Atm(n)%nml_filename),' does not exist'
-      call mpp_error(FATAL, errmsg)
-    else
-      open (unit=nlunit, file=Atm(n)%nml_filename, READONLY, status='OLD', iostat=ios)
-    endif
-    rewind(nlunit)
-    read (nlunit, nml=fv_diag_plevs_nml, iostat=ios)
-    close (nlunit)
-#endif
     if (nplev > MAX_PLEVS) then
        if (is_master()) then
           print*, ' fv_diagnostics: nplev = ', nplev, ' is too large'
