@@ -439,17 +439,7 @@ module fv_control_mod
 
      call set_namelist_pointers(Atm(this_grid))
      call fv_diag_init_gn(Atm(this_grid))
-#ifdef INTERNAL_FILE_NML
-     if (this_grid .gt. 1) then
-        write(Atm(this_grid)%nml_filename,'(A4, I2.2)') 'nest', this_grid
-        if (.not. file_exists('input_'//trim(Atm(this_grid)%nml_filename)//'.nml')) then
-           call mpp_error(FATAL, "Could not find nested grid namelist "//'input_'//trim(Atm(this_grid)%nml_filename)//'.nml')
-        endif
-     else
-        Atm(this_grid)%nml_filename = ''
-     endif
-     call read_input_nml(Atm(this_grid)%nml_filename) !re-reads into internal namelist
-#endif
+     call read_input_nml(alt_input_nml_path=Atm(this_grid)%nml_filename) !re-reads into internal namelist
      call read_namelist_fv_grid_nml
      call read_namelist_fv_core_nml(Atm(this_grid)) ! do options processing here too?
      call read_namelist_test_case_nml(Atm(this_grid)%nml_filename)
