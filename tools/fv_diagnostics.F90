@@ -695,6 +695,16 @@ contains
        id_zsurf = register_diag_field ( trim(field), 'zsurf', axes(1:2), Time,           &
                                        'surface height', 'm')
 #endif
+
+#ifdef MOVING_NEST
+!-------------------
+! Time-dependent lon-lat (moving nest) [Ahern, AOML/HRD]
+!-------------------
+       id_mlont = register_diag_field ( trim(field), 'grid_mlont', (/id_xt,id_yt/), Time, &
+            'longitude', 'degrees_E' )
+       id_mlatt = register_diag_field ( trim(field), 'grid_mlatt', (/id_xt,id_yt/), Time, &
+            'latitude', 'degrees_N' )
+#endif
 !-------------------
 ! Surface pressure
 !-------------------
@@ -1768,6 +1778,11 @@ contains
 
 #ifdef DYNAMICS_ZS
        if(id_zsurf > 0)  used=send_data(id_zsurf, zsurf, Time)
+#endif
+#ifdef MOVING_NEST
+       ! send current lon/lat data for moving nest/grid [Ahern, AOML/HRD]
+       if(id_mlont > 0) used=send_data(id_mlont, rad2deg*Atm(n)%gridstruct%agrid(isc:iec,jsc:jec,1), Time)
+       if(id_mlatt > 0) used=send_data(id_mlatt, rad2deg*Atm(n)%gridstruct%agrid(isc:iec,jsc:jec,2), Time)
 #endif
        if(id_ps > 0) used=send_data(id_ps, Atm(n)%ps(isc:iec,jsc:jec), Time)
 
