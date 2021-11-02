@@ -1,0 +1,37 @@
+@PACKAGE_INIT@
+
+#fv3-config.cmake
+#
+# Output variables set:
+#  * @PROJECT_NAME@_FOUND
+#
+# Imported interface targets provided:
+#  * @PROJECT_NAME@::fv3 - FV3 dynamical core library target
+
+# Include targets file.  This will create IMPORTED target fv3
+include("${CMAKE_CURRENT_LIST_DIR}/fv3-targets.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/fv3-config-version.cmake")
+include(CMakeFindDependencyMacro)
+
+find_dependency(MPI COMPONENTS Fortran)
+
+# ON/OFF implies FV3 was compiled with/without OpenMP
+if(@OPENMP@)
+  find_dependency(OpenMP COMPONENTS Fortran)
+endif()
+
+find_dependency(MPI COMPONENTS Fortran)
+find_dependency(NetCDF COMPONENTS C Fortran)
+if(@use_WRTCOMP@)
+  find_dependency(ESMF)
+endif()
+
+set(FV3Version "${PACKAGE_VERSION}")
+set_and_check(FV3_INSTALL_PREFIX "${PACKAGE_PREFIX_DIR}")
+get_property(FV3_LIBRARIES TARGET @PROJECT_NAME@::fv3 PROPERTY LOCATION)
+
+check_required_components("@PROJECT_NAME@")
+
+get_target_property(location @PROJECT_NAME@::fv3 LOCATION)
+message(STATUS "Found @PROJECT_NAME@: \"${FV3_INSTALL_PREFIX}\" (Version: \"${FV3Version}\")")
+message(STATUS "Found @PROJECT_NAME@::fv3 [Lib: ${FV3_LIBRARIES}]")

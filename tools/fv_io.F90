@@ -299,10 +299,18 @@ contains
        call register_restart_field(Atm%Fv_restart_tile, 'v', Atm%v, dim_names_4d2)
 
        if (.not.Atm%flagstruct%hydrostatic) then
-          call register_restart_field(Atm%Fv_restart_tile,  'W', Atm%w, dim_names_4d3)
-          call register_restart_field(Atm%Fv_restart_tile,  'DZ', Atm%delz, dim_names_4d3)
-          if ( Atm%flagstruct%hybrid_z ) then
-             call register_restart_field(Atm%Fv_restart_tile,  'ZE0', Atm%ze0, dim_names_4d3)
+          if (Atm%flagstruct%make_nh) then ! Hydrostatic restarts dont have these variables
+               call register_restart_field(Atm%Fv_restart_tile,  'W', Atm%w, dim_names_4d3, is_optional=.true.)
+               call register_restart_field(Atm%Fv_restart_tile,  'DZ', Atm%delz, dim_names_4d3, is_optional=.true.)
+               if ( Atm%flagstruct%hybrid_z ) then
+                   call register_restart_field(Atm%Fv_restart_tile,  'ZE0', Atm%ze0, dim_names_4d3, is_optional=.true.)
+               endif
+          else !The restart file has the non-hydrostatic variables
+               call register_restart_field(Atm%Fv_restart_tile,  'W', Atm%w, dim_names_4d3)
+               call register_restart_field(Atm%Fv_restart_tile,  'DZ', Atm%delz, dim_names_4d3)
+               if ( Atm%flagstruct%hybrid_z ) then
+                   call register_restart_field(Atm%Fv_restart_tile,  'ZE0', Atm%ze0, dim_names_4d3)
+               endif
           endif
        endif
        call register_restart_field(Atm%Fv_restart_tile,  'T', Atm%pt, dim_names_4d3)

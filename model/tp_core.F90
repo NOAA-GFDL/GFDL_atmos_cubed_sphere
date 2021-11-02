@@ -56,6 +56,8 @@ module tp_core_mod
 
  private
  public fv_tp_2d, pert_ppm, copy_corners
+ public deln_flux_explm, deln_flux_explm_udvd
+ public copy_corners_for_udvd
 
  real, parameter:: ppm_fac = 1.5   !< nonlinear scheme limiter: between 1 and 2
  real, parameter:: r3 = 1./3.
@@ -1383,6 +1385,333 @@ endif
    endif
 
  end subroutine deln_flux
+
+
+!===========================================
+ subroutine deln_flux_explm(nord,is,ie,js,je,npx,npy,damp,q,gridstruct,bd)
+!> Del-2 time split explicit damping for the cell-mean values (A grid)
+!------------------
+!> nord =  used for extra grid as side
+!------------------
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   integer, intent(in):: nord            !< del-n
+   integer, intent(in):: is,ie,js,je, npx, npy
+   real, intent(in):: damp(bd%isd:bd%ied, bd%jsd:bd%jed)
+   real, intent(inout):: q(bd%isd:bd%ied, bd%jsd:bd%jed)  ! q ghosted on input
+   type(fv_grid_type), intent(IN), target :: gridstruct
+! local:
+   real fx2(bd%isd:bd%ied,bd%jsd:bd%jed), fy2(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real xv(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real d2(bd%isd:bd%ied,bd%jsd:bd%jed)
+   integer i, j, m, n, nt, i1, i2, j1, j2
+
+#ifdef USE_SG
+   real, pointer, dimension(:,:)   :: dx, dy, rdxc, rdyc
+   real, pointer, dimension(:,:,:) :: sin_sg
+
+   dx       => gridstruct%dx
+   dy       => gridstruct%dy
+   rdxc     => gridstruct%rdxc
+   rdyc     => gridstruct%rdyc
+   sin_sg   => gridstruct%sin_sg
+#endif
+
+   i1 = is-1-nord;    i2 = ie+1+nord
+   j1 = js-1-nord;    j2 = je+1+nord
+
+   do j=bd%jsd,bd%jed
+      do i=bd%isd,bd%ied
+         xv(i,j) = damp(i,j)
+         d2(i,j) = q(i,j)
+      enddo
+   enddo
+
+! explicit scheme
+! for dadx * dy
+   call copy_corners(d2, npx, npy, 1, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+   call copy_corners(xv, npx, npy, 1, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+!
+   do j=j1,j2
+      do i=i1+1,i2
+#ifdef USE_SG
+         fx2(i,j) = 0.5*(sin_sg(i-1,j,3)+sin_sg(i,j,1))*dy(i,j)*(d2(i-1,j)-d2(i,j))*rdxc(i,j)
+#else
+         fx2(i,j) = gridstruct%del6_v(i,j)*(d2(i-1,j)-d2(i,j))
+#endif
+         fx2(i,j) = 0.5*(xv(i-1,j)+xv(i,j))*fx2(i,j)
+      enddo
+   enddo
+! for dady * dx
+   call copy_corners(d2, npx, npy, 2, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+   call copy_corners(xv, npx, npy, 2, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+!
+   do i=i1,i2
+      do j=j1+1,j2
+#ifdef USE_SG
+         fy2(i,j) = 0.5*(sin_sg(i,j-1,4)+sin_sg(i,j,2))*dx(i,j)*(d2(i,j-1)-d2(i,j))*rdyc(i,j)
+#else
+         fy2(i,j) = gridstruct%del6_u(i,j)*(d2(i,j-1)-d2(i,j))
+#endif
+         fy2(i,j) = 0.5*(xv(i,j-1)+xv(i,j))*fy2(i,j)
+      enddo
+   enddo
+!
+   do j=j1+1,j2-1
+      do i=i1+1,i2-1
+         q(i,j) = q(i,j) +            &
+         (fx2(i,j)-fx2(i+1,j)+fy2(i,j)-fy2(i,j+1))*gridstruct%rarea(i,j)
+      enddo
+   enddo
+
+   return
+ end subroutine deln_flux_explm
+
+ subroutine deln_flux_explm_udvd(nord,is,ie,js,je,npx,npy,damp,u,v,gridstruct,bd)
+!> Del-2 time split explicit damping for the cell-edge values (D grid)
+!------------------
+!> nord =  used for extra grid as side
+!------------------
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   integer, intent(in):: nord            !< del-n
+   integer, intent(in):: is,ie,js,je, npx, npy
+   real, intent(in):: damp(bd%isd:bd%ied, bd%jsd:bd%jed)
+   real, intent(inout):: u(bd%isd:bd%ied  , bd%jsd:bd%jed+1)
+   real, intent(inout):: v(bd%isd:bd%ied+1, bd%jsd:bd%jed  )
+   type(fv_grid_type), intent(IN), target :: gridstruct
+! local:
+   real fx1(bd%isd:bd%ied,bd%jsd:bd%jed), fy1(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real fx2(bd%isd:bd%ied,bd%jsd:bd%jed), fy2(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real x5(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real x6(bd%isd:bd%ied,bd%jsd:bd%jed)
+   real d1(bd%isd:bd%ied  ,bd%jsd:bd%jed+1)
+   real d2(bd%isd:bd%ied+1,bd%jsd:bd%jed  )
+   integer i, j, m, n, nt, i1, i2, j1, j2
+
+#ifdef USE_SG
+   real, pointer, dimension(:,:)   ::  dxa,  dya,  dx6,  dy6
+   real, pointer, dimension(:,:)   :: rdxa, rdya, rdx6, rdy6
+   real, pointer, dimension(:,:)   :: sina_6
+   real, pointer, dimension(:,:,:) :: sin_sg
+
+   sin_sg   => gridstruct%sin_sg
+   sina_6   => gridstruct%sina_6
+   dxa      => gridstruct%dxa
+   dya      => gridstruct%dya
+   rdxa     => gridstruct%rdxa
+   rdya     => gridstruct%rdya
+   dx6      => gridstruct%dx6
+   dy6      => gridstruct%dy6
+   rdx6     => gridstruct%rdx6
+   rdy6     => gridstruct%rdy6
+#endif
+
+   i1 = is-1-nord;    i2 = ie+1+nord
+   j1 = js-1-nord;    j2 = je+1+nord
+
+   do j=bd%jsd,bd%jed
+      do i=bd%isd,bd%ied
+         x5(i,j) = damp(i,j)
+      enddo
+   enddo
+   do j=bd%jsd,bd%jed+1
+      do i=bd%isd,bd%ied
+         d1(i,j) = u(i,j)
+      enddo
+   enddo
+   do j=bd%jsd,bd%jed
+      do i=bd%isd,bd%ied+1
+         d2(i,j) = v(i,j)
+      enddo
+   enddo
+
+! explicit scheme
+
+!
+   call copy_corners_for_udvd(d1,d2, npx, npy, 1, gridstruct%nested, bd,  &
+                              gridstruct%sw_corner, gridstruct%se_corner, &
+                              gridstruct%nw_corner, gridstruct%ne_corner)
+   call copy_corners(x5, npx, npy, 1, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+   do j=bd%jsd+1,bd%jed
+      do i=bd%isd+1,bd%ied
+         x6(i,j) = 0.25*(x5(i,j)+x5(i,j-1)+x5(i-1,j)+x5(i-1,j-1))
+      enddo
+   enddo
+!
+! dux
+   do j=j1+1,j2
+      do i=i1+1,i2
+#ifdef USE_SG
+         fx1(i,j) = sina_6(i,j)*dy6(i,j)*rdx6(i,j)*(d1(i-1,j)-d1(i,j))
+#else
+         fx1(i,j) = gridstruct%delu_6(i,j)*(d1(i-1,j)-d1(i,j))
+#endif
+         fx1(i,j) = x6(i,j)*fx1(i,j)
+      enddo
+   enddo
+! dvx
+   do j=j1,j2
+      do i=i1,i2
+#ifdef USE_SG
+         fx2(i,j) = sin_sg(i,j,5)*dya(i,j)*rdxa(i,j)*(d2(i,j)-d2(i+1,j))
+#else
+         fx2(i,j) = gridstruct%delv_5(i,j)*(d2(i,j)-d2(i+1,j))
+#endif
+         fx2(i,j) = x5(i,j)*fx2(i,j)
+      enddo
+   enddo
+!
+   call copy_corners_for_udvd(d1,d2, npx, npy, 2, gridstruct%nested, bd,  &
+                              gridstruct%sw_corner, gridstruct%se_corner, &
+                              gridstruct%nw_corner, gridstruct%ne_corner)
+   call copy_corners(x5, npx, npy, 2, gridstruct%nested, bd, &
+                     gridstruct%sw_corner, gridstruct%se_corner, &
+                     gridstruct%nw_corner, gridstruct%ne_corner)
+   do j=bd%jsd+1,bd%jed
+      do i=bd%isd+1,bd%ied
+         x6(i,j) = 0.25*(x5(i,j)+x5(i,j-1)+x5(i-1,j)+x5(i-1,j-1))
+      enddo
+   enddo
+!
+! duy
+   do j=j1,j2
+      do i=i1,i2
+#ifdef USE_SG
+         fy1(i,j) = sin_sg(i,j,5)*dxa(i,j)*rdya(i,j)*(d1(i,j)-d1(i,j+1))
+#else
+         fy1(i,j) = gridstruct%delu_5(i,j)*(d1(i,j)-d1(i,j+1))
+#endif
+         fy1(i,j) = x5(i,j)*fy1(i,j)
+      enddo
+   enddo
+! dvy
+   do j=j1+1,j2
+      do i=i1+1,i2
+#ifdef USE_SG
+         fy2(i,j) = sina_6(i,j)*dx6(i,j)*rdy6(i,j)*(d2(i,j-1)-d2(i,j))
+#else
+         fy2(i,j) = gridstruct%delv_6(i,j)*(d2(i,j-1)-d2(i,j))
+#endif
+         fy2(i,j) = x6(i,j)*fy2(i,j)
+      enddo
+   enddo
+! ------------------
+   do j=j1+1,j2
+      do i=i1+1,i2-1
+         u(i,j) = u(i,j) +  &
+                 (fx1(i,j)-fx1(i+1,j)+fy1(i,j-1)-fy1(i,j)) *  &
+                  gridstruct%rarea_u(i,j)
+      enddo
+   enddo
+   do j=j1+1,j2-1
+      do i=i1+1,i2
+         v(i,j) = v(i,j) +  &
+                 (fx2(i-1,j)-fx2(i,j)+fy2(i,j)-fy2(i,j+1)) * &
+                  gridstruct%rarea_v(i,j)
+      enddo
+   enddo
+
+   return
+ end subroutine deln_flux_explm_udvd
+
+
+ subroutine copy_corners_for_udvd(ud, vd, npx, npy, dir, nested, bd, &
+                                  sw_corner, se_corner, nw_corner, ne_corner)
+type(fv_grid_bounds_type), intent(IN) :: bd
+ integer, intent(in):: npx, npy, dir
+ real, intent(inout):: ud(bd%isd:bd%ied  ,bd%jsd:bd%jed+1)
+ real, intent(inout):: vd(bd%isd:bd%ied+1,bd%jsd:bd%jed  )
+ logical, intent(IN) :: nested, sw_corner, se_corner, nw_corner, ne_corner
+ integer  i,j,ng
+
+ ng = bd%ng
+
+ if (nested) return
+
+ if ( dir == 1 ) then
+! XDir: D grid (note that npx = npy at grid corners
+    if ( sw_corner ) then
+         do j=1-ng,0
+            do i=1-ng,0
+               ud(i,j) = -vd(j,1-i)
+               vd(i,j) =  ud(j,2-i)
+            enddo
+         enddo
+    endif
+    if ( se_corner ) then
+         do j=1-ng,0
+            do i=npx,npx+ng-1
+               ud(i  ,j) =  vd(npy-j+1,i-npx+1)
+               vd(i+1,j) = -ud(npy-j  ,i-npx+2)
+            enddo
+         enddo
+    endif
+    if ( ne_corner ) then
+         do j=npy,npy+ng-1
+            do i=npx,npx+ng-1
+               ud(i  ,j+1) = -vd(j+1,2*npx-1-i)
+               vd(i+1,j  ) =  ud(j  ,2*npx-1-i)
+            enddo
+         enddo
+    endif
+    if ( nw_corner ) then
+         do j=npy,npy+ng-1
+            do i=1-ng,0
+               ud(i,j+1) =  vd(npy-j,i-1+npx)
+               vd(i,j  ) = -ud(npy-j,i-1+npx)
+            enddo
+         enddo
+    endif
+
+ elseif ( dir == 2 ) then
+! YDir: D grid
+
+    if ( sw_corner ) then
+         do j=1-ng,0
+            do i=1-ng,0
+               ud(i,j) =  vd(2-j,i)
+               vd(i,j) = -ud(1-j,i)
+            enddo
+         enddo
+    endif
+    if ( se_corner ) then
+         do j=1-ng,0
+            do i=npx,npx+ng-1
+               ud(i  ,j) = -vd(npy+j-1,npx-i)
+               vd(i+1,j) =  ud(npy+j-1,npx-i)
+            enddo
+         enddo
+    endif
+    if ( ne_corner ) then
+         do j=npy,npy+ng-1
+            do i=npx,npx+ng-1
+               ud(i  ,j+1) =  vd(2*npy-1-j,i  )
+               vd(i+1,j  ) = -ud(2*npy-1-j,i+1)
+            enddo
+         enddo
+    endif
+    if ( nw_corner ) then
+         do j=npy,npy+ng-1
+            do i=1-ng,0
+               ud(i,j+1) = -vd(j+2-npy,npx-i  )
+               vd(i,j  ) =  ud(j+1-npy,npx-i+1)
+            enddo
+         enddo
+    endif
+
+ endif
+
+ end subroutine copy_corners_for_udvd
+
 
 
 end module tp_core_mod

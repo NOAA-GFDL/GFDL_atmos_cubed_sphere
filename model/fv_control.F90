@@ -158,6 +158,8 @@ module fv_control_mod
    use multi_gases_mod,     only: multi_gases_init, &
                                   read_namelist_multi_gases_nml
 #endif
+   use molecular_diffusion_mod,     only: molecular_diffusion_init, &
+                                          read_namelist_molecular_diffusion_nml
 
    implicit none
    private
@@ -321,6 +323,7 @@ module fv_control_mod
      real    , pointer :: ke_bg
      real    , pointer :: consv_te
      real    , pointer :: tau
+     real    , pointer :: tau_w
      real    , pointer :: rf_cutoff
      logical , pointer :: filter_phys
      logical , pointer :: dwind_2d
@@ -372,6 +375,7 @@ module fv_control_mod
      logical , pointer :: nudge_qv
      real,     pointer :: add_noise
      logical , pointer :: butterfly_effect
+     logical , pointer :: molecular_diffusion
      real,     pointer :: dz_min
      integer,  pointer :: psm_bc
 
@@ -558,6 +562,10 @@ module fv_control_mod
      call read_namelist_multi_gases_nml(Atm(this_grid)%nml_filename, &
            Atm(this_grid)%flagstruct%ncnst,  Atm(this_grid)%flagstruct%nwat)
 #endif
+     if ( Atm(this_grid)%flagstruct%molecular_diffusion ) then
+        call read_namelist_molecular_diffusion_nml(Atm(this_grid)%nml_filename, &
+                  Atm(this_grid)%flagstruct%ncnst,  Atm(this_grid)%flagstruct%nwat)
+     endif
      call read_namelist_test_case_nml(Atm(this_grid)%nml_filename)
      call mpp_get_current_pelist(Atm(this_grid)%pelist, commID=commID) ! for commID
      call mp_start(commID,halo_update_type)
@@ -865,6 +873,7 @@ module fv_control_mod
        ke_bg                         => Atm%flagstruct%ke_bg
        consv_te                      => Atm%flagstruct%consv_te
        tau                           => Atm%flagstruct%tau
+       tau_w                         => Atm%flagstruct%tau_w
        rf_cutoff                     => Atm%flagstruct%rf_cutoff
        filter_phys                   => Atm%flagstruct%filter_phys
        dwind_2d                      => Atm%flagstruct%dwind_2d
@@ -916,6 +925,7 @@ module fv_control_mod
        nudge_qv                      => Atm%flagstruct%nudge_qv
        add_noise                     => Atm%flagstruct%add_noise
        butterfly_effect              => Atm%flagstruct%butterfly_effect
+       molecular_diffusion           => Atm%flagstruct%molecular_diffusion
        dz_min                        => Atm%flagstruct%dz_min
        psm_bc                        => Atm%flagstruct%psm_bc
        a2b_ord                       => Atm%flagstruct%a2b_ord
@@ -1029,13 +1039,13 @@ module fv_control_mod
             dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
             consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, consv_am, RF_fast, &
             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
-            tau, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
+            tau, tau_w, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
             na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
             pnats, dnats, dnrts, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
             c2l_ord, dx_const, dy_const, umax, deglat,      &
             deglon_start, deglon_stop, deglat_start, deglat_stop, &
             phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, butterfly_effect, &
-            dz_min, psm_bc, nested, twowaynest, nudge_qv, &
+            molecular_diffusion, dz_min, psm_bc, nested, twowaynest, nudge_qv, &
             nestbctype, nestupdate, nsponge, s_weight, &
             check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
             do_uni_zfull, adj_mass_vmr, fac_n_spl, fhouri, update_blend, regional, bc_update_interval,  &
