@@ -6741,7 +6741,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       logical, intent(out):: data_source_fv3gfs
 
       character (len=80) :: source
-      logical :: lstatus
+      logical :: lstatus = .false.
       type(FmsNetcdfFile_t) :: Gfs_data
       integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
 !
