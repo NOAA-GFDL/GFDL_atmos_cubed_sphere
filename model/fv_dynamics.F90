@@ -149,8 +149,10 @@ module fv_dynamics_mod
    use boundary_mod,        only: nested_grid_BC_apply_intT
    use fv_arrays_mod,       only: fv_grid_type, fv_flags_type, fv_atmos_type, fv_nest_type, fv_diag_type, fv_grid_bounds_type, inline_mp_type
    use fv_nwp_nudge_mod,    only: do_adiabatic_init
+   use time_manager_mod,    only: get_time
+
 #ifdef MULTI_GASES
-   use multi_gases_mod,  only:  virq, virqd, vicpqd
+   use multi_gases_mod,  only:  virq, vicpq, virqd, vicpqd
 #endif
 
 implicit none
@@ -158,6 +160,7 @@ implicit none
    logical :: pt_initialized = .false.
    logical :: bad_range = .false.
    real, allocatable ::  rf(:)
+   real, allocatable ::  rw(:)   !< related to tau_w
    integer :: kmax=1
    integer :: k_rf = 0
 
@@ -180,7 +183,7 @@ contains
                         ps, pe, pk, peln, pkz, phis, q_con, omga, ua, va, uc, vc,     &
                         ak, bk, mfx, mfy, cx, cy, ze0, hybrid_z,                      &
                         gridstruct, flagstruct, neststruct, idiag, bd,                &
-                        parent_grid, domain, diss_est, inline_mp, time_total)
+                        parent_grid, domain, diss_est, inline_mp)
 
     use mpp_mod,           only: FATAL, mpp_error
     use ccpp_static_api,   only: ccpp_physics_timestep_init,    &
@@ -189,11 +192,13 @@ contains
     use CCPP_data,         only: cdata => cdata_tile
     use CCPP_data,         only: CCPP_interstitial
 
+    use molecular_diffusion_mod, only: md_time, md_wait_sec, md_tadj_layers,          &
+                                       thermosphere_adjustment
+
     real, intent(IN) :: bdt  !< Large time-step
     real, intent(IN) :: consv_te
     real, intent(IN) :: kappa, cp_air
     real, intent(IN) :: zvir, ptop
-    real, intent(IN), optional :: time_total
 
     integer, intent(IN) :: npx
     integer, intent(IN) :: npy
@@ -270,6 +275,9 @@ contains
 #ifdef MULTI_GASES
       real, allocatable :: kapad(:,:,:)
 #endif
+      real, save :: time_offset = -1.00
+      real t(bd%isd:bd%ied,bd%jsd:bd%jed)
+      real       :: correct, aave_t1, ttsave, tdsave
       real:: akap, rdg, ph1, ph2, mdt, gam, amdt, u0
       real:: recip_k_split,reg_bc_update_time
       integer:: kord_tracer(ncnst)
@@ -284,6 +292,8 @@ contains
       integer :: isd, ied, jsd, jed
       real    :: dt2
       integer :: ierr
+      real :: time_total
+      integer :: seconds, days
 
       ccpp_associate: associate( cappa     => CCPP_interstitial%cappa,     &
                                  dp1       => CCPP_interstitial%te0,       &
@@ -324,6 +334,12 @@ contains
       allocate ( kapad(isd:ied, jsd:jed, npz) )
       call init_ijk_mem(isd,ied, jsd,jed, npz, kapad, kappa)
 #endif
+
+      if (flagstruct%molecular_diffusion ) then
+         call get_time(fv_time, seconds, days)
+         time_total = seconds + 86400. * days
+         if( time_offset .lt. 0.0) time_offset = time_total
+      endif
 
       !We call this BEFORE converting pt to virtual potential temperature,
       !since we interpolate on (regular) temperature rather than theta.
@@ -525,9 +541,12 @@ contains
 !            call Ray_fast(abs(dt), npx, npy, npz, pfull, flagstruct%tau, u, v, w,  &
 !                          dp_ref, ptop, hydrostatic, flagstruct%rf_cutoff, bd)
 !         else
-             call Rayleigh_Super(abs(bdt), npx, npy, npz, ks, pfull, phis, flagstruct%tau, u, v, w, pt,  &
+             call Rayleigh_Super(abs(bdt), npx, npy, npz, ks, pfull, phis, flagstruct%tau, flagstruct%tau_w, u, v, w, pt,  &
+#ifdef MULTI_GASES
+                  q, ncnst,  &
+#endif
                   ua, va, delz, gridstruct%agrid, cp_air, rdgas, ptop, hydrostatic,    &
-                 .not. gridstruct%bounded_domain, flagstruct%rf_cutoff, gridstruct, domain, bd)
+                .not. gridstruct%bounded_domain, flagstruct%molecular_diffusion, consv_te, flagstruct%rf_cutoff, gridstruct, domain, bd)
 !         endif
         else
              call Rayleigh_Friction(abs(bdt), npx, npy, npz, ks, pfull, flagstruct%tau, u, v, w, pt,  &
@@ -751,8 +770,15 @@ contains
                      inline_mp, flagstruct%c2l_ord, bd, flagstruct%fv_debug, &
                      flagstruct%moist_phys)
 
+     if ( flagstruct%molecular_diffusion ) then
+! do thermosphere adjustment if it is turned on and at last_step.
+         if( md_tadj_layers .gt.0 .and. md_time .and. last_step ) then
+             call thermosphere_adjustment(domain,gridstruct,npz,bd,ng,pt)
+        endif ! md_tadj_layers>0 and md_time and last_step
+     endif
+
      if ( flagstruct%fv_debug ) then
-        if (is_master()) write(*,'(A, I3, A1, I3)') 'finished k_split ', n_map, '/', k_split
+       if (is_master()) write(*,'(A, I3, A1, I3)') 'finished k_split ', n_map, '/', k_split
        call prt_mxm('T_dyn_a4',    pt, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
        if (sphum   > 0) call prt_mxm('SPHUM_dyn',   q(isd,jsd,1,sphum  ), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
        if (liq_wat > 0) call prt_mxm('liq_wat_dyn', q(isd,jsd,1,liq_wat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
@@ -802,6 +828,13 @@ contains
 #endif
   enddo    ! n_map loop
                                                   call timing_off('FV_DYN_LOOP')
+  if ( flagstruct%molecular_diffusion ) then
+     if( .not. md_time .and. time_total - time_offset .gt. md_wait_sec ) then
+         md_time= .true.
+         if( is_master() ) write(*,*) 'Molecular diffusion is on with explicit scheme '
+     endif
+  endif
+
   if ( idiag%id_mdt > 0 .and. (.not.do_adiabatic_init) ) then
 ! Output temperature tendency due to inline moist physics:
 #ifdef __GFORTRAN__
@@ -961,6 +994,16 @@ contains
   endif
 
   if ( flagstruct%range_warn ) then
+     if ( flagstruct%molecular_diffusion ) then
+       call range_check('UA_dyn', ua, is, ie, js, je, ng, npz,gridstruct%agrid,&
+                         -880., 880., bad_range)
+       call range_check('VA_dyn', ua, is, ie, js, je, ng, npz,gridstruct%agrid,&
+                         -880., 880., bad_range)
+       call range_check('TA_dyn', pt, is, ie, js, je, ng, npz,gridstruct%agrid,&
+                         150.,3350., bad_range)
+       call range_check('W_dyn', w, is, ie, js, je, ng, npz,gridstruct%agrid, &
+                         -250., 250., bad_range)
+     else
        call range_check('UA_dyn', ua, is, ie, js, je, ng, npz, gridstruct%agrid,   &
                          -280., 280., bad_range, fv_time)
        call range_check('VA_dyn', ua, is, ie, js, je, ng, npz, gridstruct%agrid,   &
@@ -970,6 +1013,7 @@ contains
        if ( .not. hydrostatic ) &
             call range_check('W_dyn', w, is, ie, js, je, ng, npz, gridstruct%agrid,   &
                          -50., 100., bad_range, fv_time)
+     endif
   endif
 
   ! Call CCPP timestep finalize
@@ -1101,16 +1145,21 @@ contains
 
 
 
- subroutine Rayleigh_Super(dt, npx, npy, npz, ks, pm, phis, tau, u, v, w, pt,  &
+ subroutine Rayleigh_Super(dt, npx, npy, npz, ks, pm, phis, tau, tau_w, u, v, w, pt,  &
+#ifdef MULTI_GASES
+                           q, ncnst,  &
+#endif
                            ua, va, delz, agrid, cp, rg, ptop, hydrostatic,     &
-                           conserve, rf_cutoff, gridstruct, domain, bd)
+                           conserve, molecular_diffusion, consv_te, rf_cutoff, gridstruct, domain, bd)
     real, intent(in):: dt
     real, intent(in):: tau              !< time scale (days)
+    real, intent(in):: tau_w            !< time scale (days) for w
     real, intent(in):: cp, rg, ptop, rf_cutoff
     real, intent(in),  dimension(npz):: pm
     integer, intent(in):: npx, npy, npz, ks
     logical, intent(in):: hydrostatic
-    logical, intent(in):: conserve
+    logical, intent(in):: conserve, molecular_diffusion
+    real, intent(in):: consv_te
     type(fv_grid_bounds_type), intent(IN) :: bd
     real, intent(inout):: u(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) !< D grid zonal wind (m/s)
     real, intent(inout):: v(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz) !< D grid meridional wind (m/s)
@@ -1119,30 +1168,47 @@ contains
     real, intent(inout):: ua(bd%isd:bd%ied,bd%jsd:bd%jed,npz) !
     real, intent(inout):: va(bd%isd:bd%ied,bd%jsd:bd%jed,npz) !
     real, intent(inout):: delz(bd%is:     ,bd%js:       ,1: ) !< delta-height (m); non-hydrostatic only
+#ifdef MULTI_GASES
+    integer, intent(in):: ncnst
+    real,   intent(in) :: q(bd%isd:bd%ied,bd%jsd:bd%jed,npz,ncnst) !
+#endif
     real,   intent(in) :: agrid(bd%isd:bd%ied,  bd%jsd:bd%jed,2)
     real, intent(in) :: phis(bd%isd:bd%ied,bd%jsd:bd%jed)     !< Surface geopotential (g*Z_surf)
     type(fv_grid_type), intent(IN) :: gridstruct
     type(domain2d), intent(INOUT) :: domain
 !
     real, allocatable ::  u2f(:,:,:)
+    real, allocatable ::  w2f(:,:,:)   !< related to tau_w
     real, parameter:: u0   = 60.   !< scaling velocity
     real, parameter:: sday = 86400.
-    real rcv, tau0
+    real rcp, rcv, tau0, tau1
     integer i, j, k
+    logical convert
 
     integer :: is,  ie,  js,  je
     integer :: isd, ied, jsd, jed
 
-      is  = bd%is
-      ie  = bd%ie
-      js  = bd%js
-      je  = bd%je
-      isd = bd%isd
-      ied = bd%ied
-      jsd = bd%jsd
-      jed = bd%jed
+    is  = bd%is
+    ie  = bd%ie
+    js  = bd%js
+    je  = bd%je
+    isd = bd%isd
+    ied = bd%ied
+    jsd = bd%jsd
+    jed = bd%jed
 
+    rcp = 1. /  cp
     rcv = 1. / (cp - rg)
+
+    convert=conserve
+    if ( molecular_diffusion )then
+        if ( consv_te>0 ) then
+         convert=.true.
+        else
+         convert=.false.
+        endif
+    endif
+
 
      if ( .not. RF_initialized ) then
 #ifdef HIWPP
@@ -1164,23 +1230,30 @@ contains
 #endif
 #ifdef SMALL_EARTH_TEST ! changed!!!
           tau0 = abs( tau )
+          tau1 = abs( tau_w )
 #else
           tau0 = abs( tau * sday )
+          tau1 = abs( tau_w * sday )
 #endif
-          if( is_master() ) write(6,*) 'Rayleigh_Super tau=',tau
+          if( tau_w .eq. 0.0 )  tau1 = tau0
+          if( is_master() ) write(6,*) 'Rayleigh_Super in sec tau=',tau0,' tau_w=',tau1
           allocate( rf(npz) )
+          allocate( rw(npz) )
           rf(:) = 0.
+          rw(:) = 0.
 
           do k=1, ks+1
              if( is_master() ) write(6,*) k, 0.01*pm(k)
           enddo
-          if( is_master() ) write(6,*) 'Rayleigh friction E-folding time (days):'
+          if( is_master() ) write(6,*) 'Rayleigh_Super E-folding time (mb days):'
           do k=1, npz
              if ( pm(k) < rf_cutoff ) then
-                 if ( tau < 0 ) then ! GSM formula
+                 if ( tau < 0 ) then !< GSM formula
                   rf(k) = dt/tau0*( log(rf_cutoff/pm(k)) )**2
+                  rw(k) = dt/tau1*( log(rf_cutoff/pm(k)) )**2
                  else
                   rf(k) = dt/tau0*sin(0.5*pi*log(rf_cutoff/pm(k))/log(rf_cutoff/ptop))**2
+                  rw(k) = dt/tau1*sin(0.5*pi*log(rf_cutoff/pm(k))/log(rf_cutoff/ptop))**2
                  endif
                   if( is_master() ) write(6,*) k, 0.01*pm(k), dt/(rf(k)*sday)
                   kmax = k
@@ -1194,32 +1267,40 @@ contains
     call c2l_ord2(u, v, ua, va, gridstruct, npz, gridstruct%grid_type, bd, gridstruct%bounded_domain)
 
     allocate( u2f(isd:ied,jsd:jed,kmax) )
+    allocate( w2f(isd:ied,jsd:jed,kmax) )
 
 !$OMP parallel do default(none) shared(is,ie,js,je,kmax,pm,rf_cutoff,hydrostatic,ua,va,agrid, &
-!$OMP                                  u2f,rf,w)
+!$OMP                                  u2f,w2f,rf,rw,w)
     do k=1,kmax
        if ( pm(k) < rf_cutoff ) then
           u2f(:,:,k) = 1. / (1.+rf(k))
+          w2f(:,:,k) = 1. / (1.+rw(k))
        else
           u2f(:,:,k) = 1.
+          w2f(:,:,k) = 1.
        endif
     enddo
                                         call timing_on('COMM_TOTAL')
     call mpp_update_domains(u2f, domain)
+    call mpp_update_domains(w2f, domain)
                                         call timing_off('COMM_TOTAL')
 
 !$OMP parallel do default(none) shared(is,ie,js,je,kmax,pm,rf_cutoff,w,rf,u,v, &
 #ifdef HIWPP
 !$OMP                                  u00,v00, &
 #endif
-!$OMP                                  conserve,hydrostatic,pt,ua,va,u2f,cp,rg,ptop,rcv)
+#ifdef MULTI_GASES
+!$OMP                                  q, &
+#endif
+!$OMP                                  convert,molecular_diffusion, consv_te, &
+!$OMP                                   hydrostatic,pt,ua,va,u2f,w2f,cp,rg,ptop,rcp,rcv)
      do k=1,kmax
         if ( pm(k) < rf_cutoff ) then
 #ifdef HIWPP
            if (.not. hydrostatic) then
               do j=js,je
                  do i=is,ie
-                    w(i,j,k) = w(i,j,k)/(1.+rf(k))
+                    w(i,j,k) = w(i,j,k)/(1.+rw(k))
                  enddo
               enddo
            endif
@@ -1235,7 +1316,8 @@ contains
              enddo
 #else
 ! Add heat so as to conserve TE
-          if ( conserve ) then
+
+          if ( convert ) then
              if ( hydrostatic ) then
                do j=js,je
                   do i=is,ie
@@ -1245,7 +1327,12 @@ contains
              else
                do j=js,je
                   do i=is,ie
-                     pt(i,j,k) = pt(i,j,k) + 0.5*(ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2)*(1.-u2f(i,j,k)**2)*rcv
+#ifdef MULTI_GASES
+                     pt(i,j,k) = pt(i,j,k) + 0.5*((ua(i,j,k)**2+va(i,j,k)**2)*(1.-u2f(i,j,k)**2)+w(i,j,k)**2*(1.-w2f(i,j,k)**2))   &
+                     /(cp*vicpq(q(i,j,k,:)) - rg*virq(q(i,j,k,:)))
+#else
+                     pt(i,j,k) = pt(i,j,k) + 0.5*((ua(i,j,k)**2+va(i,j,k)**2)*(1.-u2f(i,j,k)**2)+w(i,j,k)**2*(1.-w2f(i,j,k)**2))*rcv
+#endif
                   enddo
                enddo
              endif
@@ -1264,7 +1351,7 @@ contains
           if ( .not. hydrostatic ) then
              do j=js,je
                 do i=is,ie
-                   w(i,j,k) = u2f(i,j,k)*w(i,j,k)
+                   w(i,j,k) = w2f(i,j,k)*w(i,j,k)
                 enddo
              enddo
           endif
@@ -1273,6 +1360,7 @@ contains
      enddo
 
      deallocate ( u2f )
+     deallocate ( w2f )
 
  end subroutine Rayleigh_Super
 

@@ -3645,7 +3645,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         enddo
       enddo
 
-! map shpum, o3mr, liq_wat tracers
+! map shpum, o3mr/spo3, liq_wat tracers
       do iq=1,ncnst
 !       if (iq == sphum .or. iq == liq_wat .or.  iq == o3mr) then ! only remap if the data is already set
        if (iq /= cld_amt) then ! don't remap cld_amt

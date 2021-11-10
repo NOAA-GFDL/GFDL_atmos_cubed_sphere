@@ -176,7 +176,12 @@ module fv_diagnostics_mod
  logical :: prt_minmax =.false.
  logical :: m_calendar
  integer  sphum, liq_wat, ice_wat, cld_amt    ! GFDL physics
- integer  rainwat, snowwat, graupel, o3mr
+ integer  rainwat, snowwat, graupel
+#ifdef MULTI_GASES
+ integer  spo, spo2, spo3
+#else
+ integer  o3mr
+#endif
  integer :: istep, mp_top
  real    :: ptop
  real, parameter    ::     rad2deg = 180./pi
@@ -211,7 +216,8 @@ module fv_diagnostics_mod
  integer :: yr_init, mo_init, dy_init, hr_init, mn_init, sec_init
  integer :: id_dx, id_dy
 
- real              :: vrange(2), vsrange(2), wrange(2), trange(2), slprange(2), rhrange(2), skrange(2)
+ real,dimension(2)    :: vrange, vsrange, wrange, trange, slprange, rhrange, skrange
+ real,dimension(2)    :: vrange_bad, trange_bad
 
  ! integer :: id_d_grid_ucomp, id_d_grid_vcomp   ! D grid winds
  ! integer :: id_c_grid_ucomp, id_c_grid_vcomp   ! C grid winds
@@ -282,23 +288,39 @@ contains
     rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
     snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
     graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+#ifdef MULTI_GASES
+    spo     = get_tracer_index (MODEL_ATMOS, 'spo')
+    spo2    = get_tracer_index (MODEL_ATMOS, 'spo2')
+    spo3    = get_tracer_index (MODEL_ATMOS, 'spo3')
+#else
     o3mr    = get_tracer_index (MODEL_ATMOS, 'o3mr')
+#endif
     cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
 
 ! valid range for some fields
 
 !!!  This will need mods for more than 1 tile per pe  !!!
-
     vsrange = (/ -200.,  200. /)  ! surface (lowest layer) winds
 
+    if (Atm(1)%flagstruct%molecular_diffusion) then
+    vrange = (/ -850.,  850. /)  ! winds
+    wrange = (/ -300.,  300. /)  ! vertical wind
+    trange = (/    5., 3500. /)  ! temperature
+    vrange_bad = (/ -850.,  850. /)  ! winds
+    trange_bad = (/  130., 3500. /)  ! temperature
+    else
     vrange = (/ -330.,  330. /)  ! winds
     wrange = (/ -100.,  100. /)  ! vertical wind
-   rhrange = (/  -10.,  150. /)  ! RH
+    vrange_bad = (/ -250.,  250. /)  ! winds
 #ifdef HIWPP
     trange = (/    5.,  350. /)  ! temperature
+    trange_bad = (/   130.,  350. /)  ! temperature
 #else
     trange = (/  100.,  350. /)  ! temperature
+    trange_bad = (/  150.,  350. /)  ! temperature
 #endif
+    endif
+    rhrange = (/  -10.,  150. /)  ! RH
     slprange = (/800.,  1200./)  ! sea-level-pressure
     skrange  = (/ -10000000.0,  10000000.0 /)  ! dissipation estimate for SKEB
 
@@ -1092,8 +1114,17 @@ contains
             'vertical liquid water flux', 'kg/m**2/s', missing_value=missing_value )
        id_qiw = register_diag_field ( trim(field), 'qiw', axes(1:3), Time, &
             'vertical ice water flux', 'kg/m**2/s', missing_value=missing_value )
+#ifdef MULTI_GASES
+       id_spow = register_diag_field ( trim(field), 'spow', axes(1:3), Time, &
+            'vertical oxygen atom flux', 'kg/m**2/s', missing_value=missing_value )
+       id_spo2w = register_diag_field ( trim(field), 'spo2w', axes(1:3), Time, &
+            'vertical oxygen flux', 'kg/m**2/s', missing_value=missing_value )
+       id_spo3w = register_diag_field ( trim(field), 'spo3w', axes(1:3), Time, &
+            'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
+#else
        id_o3w = register_diag_field ( trim(field), 'o3w', axes(1:3), Time, &
             'vertical ozone flux', 'kg/m**2/s', missing_value=missing_value )
+#endif
        endif
 
 ! Total energy (only when moist_phys = .T.)
@@ -1700,17 +1731,19 @@ contains
          call range_check('DELP', Atm(n)%delp, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,    &
                            0.01*ptop, 200.E2, bad_range, Time)
          call range_check('UA', Atm(n)%ua, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
-                           -250., 250., bad_range, Time)
+                           vrange_bad(1), vrange_bad(2), bad_range, Time)
          call range_check('VA', Atm(n)%va, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
-                           -250., 250., bad_range, Time)
+                           vrange_bad(1),vrange_bad(2), bad_range, Time)
+
 #ifndef SW_DYNAMICS
          call range_check('TA', Atm(n)%pt, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
-#ifdef HIWPP
-                           130., 350., bad_range, Time) !DCMIP ICs have very low temperatures
+#ifdef MULTI_GASES
+                           130., 3500., bad_range, Time)
 #else
-                           150., 350., bad_range, Time)
+                           trange_bad(1),trange_bad(2), bad_range, Time)
 #endif
-#endif
+#endif	! SW_DYNAMICS
+
          call range_check('Qv', Atm(n)%q(:,:,:,sphum), isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
                           -1.e-8, 1.e20, bad_range, Time)
 
@@ -2949,7 +2982,14 @@ contains
        if(id_ua > 0) used=send_data(id_ua, Atm(n)%ua(isc:iec,jsc:jec,:), Time)
        if(id_va > 0) used=send_data(id_va, Atm(n)%va(isc:iec,jsc:jec,:), Time)
 
-       if(id_hw > 0 .or. id_qvw > 0 .or. id_qlw > 0 .or. id_qiw > 0 .or. id_o3w > 0 ) then
+#ifdef MULTI_GASES
+       if( id_hw > 0 .or. id_qvw > 0 .or. &
+            id_qlw > 0 .or. id_qiw > 0 .or. id_spo3w > 0 .or. &
+            id_spo2w > 0 .or. id_spow > 0  ) then
+#else
+       if( id_hw > 0 .or. id_qvw > 0 .or. &
+            id_qlw > 0 .or. id_qiw > 0 .or. id_o3w > 0 ) then
+#endif
           allocate( a3(isc:iec,jsc:jec,npz) )
 
           do k=1,npz
@@ -3015,6 +3055,47 @@ contains
              enddo
              used = send_data(id_qiw, a3, Time)
           endif
+#ifdef MULTI_GASES
+          if (id_spow > 0) then
+             if (spo < 0) then
+                call mpp_error(FATAL, 'ow does not work without spo defined')
+             endif
+             do k=1,npz
+             do j=jsc,jec
+             do i=isc,iec
+                a3(i,j,k) = Atm(n)%q(i,j,k,spo)*wk(i,j,k)
+             enddo
+             enddo
+             enddo
+             used = send_data(id_spow, a3, Time)
+          endif
+          if (id_spo2w > 0) then
+             if (spo2 < 0) then
+                call mpp_error(FATAL, 'o2w does not work without spo2 defined')
+             endif
+             do k=1,npz
+             do j=jsc,jec
+             do i=isc,iec
+                a3(i,j,k) = Atm(n)%q(i,j,k,spo2)*wk(i,j,k)
+             enddo
+             enddo
+             enddo
+             used = send_data(id_spo2w, a3, Time)
+          endif
+          if (id_spo3w > 0) then
+             if (spo3 < 0) then
+                call mpp_error(FATAL, 'o3w does not work without spo3 defined')
+             endif
+             do k=1,npz
+             do j=jsc,jec
+             do i=isc,iec
+                a3(i,j,k) = Atm(n)%q(i,j,k,spo3)*wk(i,j,k)
+             enddo
+             enddo
+             enddo
+             used = send_data(id_spo3w, a3, Time)
+          endif
+#else
           if (id_o3w > 0) then
              if (o3mr < 0) then
                 call mpp_error(FATAL, 'o3w does not work without o3mr defined')
@@ -3028,6 +3109,7 @@ contains
              enddo
              used = send_data(id_o3w, a3, Time)
           endif
+#endif
 
           deallocate(a3)
        endif

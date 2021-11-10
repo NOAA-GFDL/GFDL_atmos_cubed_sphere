@@ -159,6 +159,12 @@
       real(kind=R_GRID), pointer, dimension(:,:,:) :: agrid, grid
       real(kind=R_GRID), pointer, dimension(:,:) :: area, area_c
       real(kind=R_GRID), pointer, dimension(:,:) :: sina, cosa, dx, dy, dxc, dyc, dxa, dya
+!     For MOLECULAR_DIFFUSION
+      real(kind=R_GRID), pointer, dimension(:,:) :: area_u, area_v
+      real(kind=R_GRID), pointer, dimension(:,:) :: dx6, dy6
+      real, pointer, dimension(:,:) :: sina_6
+      real, pointer, dimension(:,:) :: delu_6, delv_6, delu_5, delv_5
+
       real, pointer, dimension(:,:) :: del6_u, del6_v
       real, pointer, dimension(:,:) :: divg_u, divg_v
       real, pointer, dimension(:,:) :: cosa_u, cosa_v, cosa_s
@@ -194,6 +200,18 @@
       dya    => Atm%gridstruct%dya_64
       sina   => Atm%gridstruct%sina_64
       cosa   => Atm%gridstruct%cosa_64
+! MOLECULAR_DIFFUSION
+   if ( Atm%flagstruct%molecular_diffusion ) then
+      area_u  => Atm%gridstruct%area_u_64
+      area_v  => Atm%gridstruct%area_v_64
+      dx6    => Atm%gridstruct%dx6_64
+      dy6    => Atm%gridstruct%dy6_64
+      sina_6 => Atm%gridstruct%sina_6
+      delu_6 => Atm%gridstruct%delu_6
+      delv_6 => Atm%gridstruct%delv_6
+      delu_5 => Atm%gridstruct%delu_5
+      delv_5 => Atm%gridstruct%delv_5
+   endif
 
       divg_u => Atm%gridstruct%divg_u
       divg_v => Atm%gridstruct%divg_v
@@ -513,6 +531,10 @@
            rsin2  = big_number
            cosa = big_number
            sina = big_number
+! MOLECULAR_DIFFUSION
+      if ( Atm%flagstruct%molecular_diffusion ) then
+           sina_6 = big_number
+      endif
 
         do j=js,je+1
            do i=is,ie+1
@@ -571,6 +593,14 @@
             rsin_v(i,j) =  1. / max(tiny_number, sina_v(i,j)**2)
          enddo
       enddo
+      if ( Atm%flagstruct%molecular_diffusion ) then
+         do j=jsd+1,jed
+            do i=isd+1,ied
+               sina_6(i,j) = 0.25*(sin_sg(i-1,j  ,7)+sin_sg(i,j  ,6)+ &
+                                sin_sg(i-1,j-1,8)+sin_sg(i,j-1,9))
+            enddo
+         enddo
+      endif
 
       do j=jsd,jed
          do i=isd,ied
@@ -700,6 +730,9 @@
            cosa_s = 0.
            rsin_u = 1.
            rsin_v = 1.
+           if ( Atm%flagstruct%molecular_diffusion ) then
+               sina_6 = 1.
+           endif
    endif
 
    if ( grid_type < 3 ) then
@@ -786,6 +819,20 @@
          del6_v(ie+1,j) = 0.5*(sin_sg(npx,j,1)+sin_sg(npx-1,j,3))*dy(ie+1,j)/dxc(ie+1,j)
      endif
   enddo
+  if ( Atm%flagstruct%molecular_diffusion ) then
+     do j=jsd,jed
+        do i=isd,ied
+           delu_5(i,j) = sin_sg(i,j,5)*dxa(i,j)/dya(i,j)
+           delv_5(i,j) = sin_sg(i,j,5)*dya(i,j)/dxa(i,j)
+        enddo
+     enddo
+     do j=jsd+1,jed
+        do i=isd+1,ied
+           delu_6(i,j) = sina_6(i,j)*dy6(i,j)/dx6(i,j)
+           delv_6(i,j) = sina_6(i,j)*dx6(i,j)/dy6(i,j)
+        enddo
+     enddo
+  endif
 
 ! Initialize cubed_sphere to lat-lon transformation:
      call init_cubed_to_latlon( Atm%gridstruct, Atm%flagstruct%hydrostatic, agrid, grid_type, c2l_order, Atm%bd )
@@ -806,6 +853,12 @@
                                 gridtype=CGRID_NE_PARAM, complete=.true.)
         call mpp_update_domains(del6_v, del6_u, Atm%domain, flags=SCALAR_PAIR,      &
                                 gridtype=CGRID_NE_PARAM, complete=.true.)
+     if ( Atm%flagstruct%molecular_diffusion ) then
+        call mpp_update_domains(delu_5, Atm%domain, complete=.true.)
+        call mpp_update_domains(delv_5, Atm%domain, complete=.true.)
+        call mpp_update_domains(delu_6, Atm%domain, complete=.true.)
+        call mpp_update_domains(delv_6, Atm%domain, complete=.true.)
+     endif
         call edge_factors (Atm%gridstruct%edge_s, Atm%gridstruct%edge_n, Atm%gridstruct%edge_w, &
              Atm%gridstruct%edge_e, non_ortho, grid, agrid, npx, npy, Atm%bd)
         call efactor_a2c_v(Atm%gridstruct%edge_vect_s, Atm%gridstruct%edge_vect_n, &
@@ -840,6 +893,12 @@
       Atm%gridstruct%dyc    = Atm%gridstruct%dyc_64
       Atm%gridstruct%cosa   = Atm%gridstruct%cosa_64
       Atm%gridstruct%sina   = Atm%gridstruct%sina_64
+      if ( Atm%flagstruct%molecular_diffusion ) then
+           Atm%gridstruct%area_u = Atm%gridstruct%area_u_64
+           Atm%gridstruct%area_v = Atm%gridstruct%area_v_64
+           Atm%gridstruct%dx6    = Atm%gridstruct%dx6_64
+           Atm%gridstruct%dy6    = Atm%gridstruct%dy6_64
+      endif
 
 !--- deallocate the higher-order gridstruct arrays
 !rab      deallocate ( Atm%gridstruct%grid_64 )
@@ -854,6 +913,21 @@
       deallocate ( Atm%gridstruct%dyc_64 )
       deallocate ( Atm%gridstruct%cosa_64 )
       deallocate ( Atm%gridstruct%sina_64 )
+      if ( Atm%flagstruct%molecular_diffusion ) then
+         deallocate ( Atm%gridstruct%area_u_64 )
+         deallocate ( Atm%gridstruct%area_v_64 )
+         deallocate ( Atm%gridstruct%dx6_64 )
+         deallocate ( Atm%gridstruct%dy6_64 )
+         nullify(area_u)
+         nullify(area_v)
+         nullify(dx6)
+         nullify(dy6)
+         nullify(sina_6)
+         nullify(delu_6)
+         nullify(delv_6)
+         nullify(delu_5)
+         nullify(delv_5)
+      endif
 
       nullify(agrid)
       nullify(grid)
@@ -865,6 +939,7 @@
       nullify(dyc)
       nullify(dxa)
       nullify(dya)
+!
       nullify(sina)
       nullify(cosa)
       nullify(divg_u)

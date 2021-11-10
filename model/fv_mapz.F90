@@ -529,7 +529,7 @@ contains
 
 !------------
 ! Compute pkz
-!hmhj pk is pe**kappa(=rgas/cp_air), but pkz=plyr**kappa(=r/cp)
+!< pk is pe**kappa(=rgas/cp_air), but pkz=plyr**kappa(=r/cp)
 !------------
    if ( hydrostatic ) then
       do k=1,km
@@ -3522,7 +3522,11 @@ endif        ! end last_step check
 
   integer, intent(in):: is, ie, isd,ied, jsd,jed, km, nwat, j, k
   integer, intent(in):: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel
+#ifdef MULTI_GASES
+  real, intent(in), dimension(isd:ied,jsd:jed,km,num_gas):: q
+#else
   real, intent(in), dimension(isd:ied,jsd:jed,km,nwat):: q
+#endif
   real, intent(out), dimension(is:ie):: cpm, qd
   real, intent(in), optional:: t1(is:ie)
 !

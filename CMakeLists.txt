@@ -59,6 +59,7 @@ endif()
 list(APPEND model_srcs
   model/a2b_edge.F90
   model/multi_gases.F90
+  model/molecular_diffusion.F90
   model/boundary.F90
   model/dyn_core.F90
   model/fv_arrays.F90
@@ -169,6 +170,7 @@ add_library(FV3::fv3 ALIAS fv3)
 
 set_property(SOURCE model/nh_utils.F90 APPEND_STRING PROPERTY COMPILE_FLAGS "${FAST}")
 set_property(SOURCE model/fv_mapz.F90  APPEND_STRING PROPERTY COMPILE_FLAGS "${FAST}")
+set_property(SOURCE tools/fv_diagnostics.F90  APPEND_STRING PROPERTY COMPILE_FLAGS "-O0")
 
 set_target_properties(fv3 PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/fv3)
 target_include_directories(fv3 INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/fv3>

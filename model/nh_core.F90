@@ -155,7 +155,7 @@ CONTAINS
             peg(i,k) = peg(i,k-1) + dm(i,k-1)*(1.-q_con(i,j,k-1))
             pelng(i,k) = log(peg(i,k))
 #endif
-!hmhj pk3 at interface , interface pk is using constant akap
+!< pk3 at interface , interface pk is using constant akap
             pk3(i,j,k) = exp(akap*peln2(i,k))
          enddo
       enddo
