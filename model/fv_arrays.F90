@@ -61,6 +61,10 @@ module fv_arrays_mod
      real :: efx(max_step), efx_sum, efx_nest(max_step), efx_sum_nest, mtq(max_step), mtq_sum
      integer :: steps
 
+     !for hailcast
+     integer :: id_hailcast_dhail1, id_hailcast_dhail2, id_hailcast_dhail3, id_hailcast_dhail4, id_hailcast_dhail5
+     integer :: id_hailcast_diam_mean, id_hailcast_diam_std
+
   end type fv_diag_type
 
 

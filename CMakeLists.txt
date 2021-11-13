@@ -96,6 +96,7 @@ list(APPEND tools_srcs
   tools/fv_surf_map.F90
   tools/fv_timing.F90
   tools/init_hydro.F90
+  tools/module_diag_hailcast.F90
   tools/sim_nc_mod.F90
   tools/sorted_index.F90
   tools/test_cases.F90)
