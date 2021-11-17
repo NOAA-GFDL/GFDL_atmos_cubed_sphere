@@ -795,6 +795,11 @@ contains
 
     if (debug_log) call show_tile_geo(tile_geo, this_pe, "tile_geo")
     call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
+    
+    if (parent_x .eq. -999) then
+       print '("[ERROR] WDR mn_latlon_load_parent on npe=",I0," parent and nest grids are not aligned!")', this_pe       
+       call mpp_error(FATAL, "mn_latlon_load_parent parent and nest grids are not aligned.")
+    end if
 
     ! Allocate tile_geo_u just for this PE, copied from Atm(n)%gridstruct%grid
     ! grid is 1 larger than agrid
@@ -814,6 +819,8 @@ contains
        do y = lbound(tile_geo_u%lats, 2), ubound(tile_geo_u%lats, 2)
           fp_i = (x - nest_x) * 2 + parent_x - 1
           fp_j = (y - nest_y) * 2 + parent_y
+
+          !print '("[INFO] WDR mn_latlon_load_parent on npe=",I0," fp_i=",I0," fp_j=",I0,4I6)', this_pe, fp_i, fp_j, nest_x, nest_y, parent_x, parent_y
 
           tile_geo_u%lons(x,y) = fp_super_tile_geo%lons(fp_i, fp_j)
           tile_geo_u%lats(x,y) = fp_super_tile_geo%lats(fp_i, fp_j)
@@ -2174,7 +2181,7 @@ contains
   end subroutine mn_meta_reset_gridstruct
 
 
-  ! WDR Copied and adapted from fv_control.F90; where it is an internal subroutine
+  ! WDR Copied and adapted from fv_control.F90::setup_update_regions(); where it is an internal subroutine
   ! Modifications only to pass necessary variables as arguments
   subroutine mn_setup_update_regions(Atm, this_grid, nest_domain)
     type(fv_atmos_type), allocatable, intent(INOUT) :: Atm(:)
@@ -2185,7 +2192,8 @@ contains
     integer :: isc, jsc, iec, jec
     integer :: upoff
     integer :: ngrids, n, nn
-
+    integer :: isu_stag, isv_stag, jsu_stag, jsv_stag
+    integer :: ieu_stag, iev_stag, jeu_stag, jev_stag
     integer :: this_pe
 
     this_pe = mpp_pe()
@@ -2221,6 +2229,8 @@ contains
        nn = n - 1  !  WDR TODO revise this to handle multiple nests.  This adjusts to match fv_control.F90 where these
        !  arrays are passed in to mpp_define_nest_domains with bounds (2:ngrids)
 
+       ! Updated code from new fv_control.F90   November 8. 2021 Ramstrom
+
        if (nest_domain%tile_coarse(nn) == Atm(this_grid)%global_tile) then
 
           !isu = nest_ioffsets(n)
@@ -2233,19 +2243,43 @@ contains
           !jeu = jsu + jcount_coarse(n) - 1
           jeu = jsu + (nest_domain%jend_coarse(nn) - nest_domain%jstart_coarse(nn) + 1) - 1
 
+          !!! Begin new
+          isu_stag = isu
+          jsu_stag = jsu
+          ieu_stag = ieu
+          jeu_stag = jeu+1
+
+          isv_stag = isu
+          jsv_stag = jsu
+          iev_stag = ieu+1
+          jev_stag = jeu
+          !!! End new
+
+
           !update offset adjustment
           isu = isu + upoff
           ieu = ieu - upoff
           jsu = jsu + upoff
           jeu = jeu - upoff
 
-          !restriction to current domain
-!!$             !!! DEBUG CODE
-!!$             if (Atm(this_grid)%flagstruct%fv_debug) then
-!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS  : ', isu, jsu, ieu, jeu
-!!$                write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 2: ', isc, jsc, iec, jsc
-!!$             endif
-!!$             !!! END DEBUG CODE
+          !!! Begin new
+          isu_stag = isu_stag + upoff
+          ieu_stag = ieu_stag - upoff
+          jsu_stag = jsu_stag + upoff
+          jeu_stag = jeu_stag - upoff
+
+          isv_stag = isv_stag + upoff
+          iev_stag = iev_stag - upoff
+          jsv_stag = jsv_stag + upoff
+          jev_stag = jev_stag - upoff
+
+          ! Absolute boundary for the staggered point update region on the parent.
+          ! This is used in remap_uv to control the update of the last staggered point
+          ! when the the update region coincides with a pe domain to avoid cross-restart repro issues
+          
+          Atm(n)%neststruct%jeu_stag_boundary = jeu_stag
+          Atm(n)%neststruct%iev_stag_boundary = iev_stag
+          
           if (isu > iec .or. ieu < isc .or. &
                jsu > jec .or. jeu < jsc ) then
              isu = -999 ; jsu = -999 ; ieu = -1000 ; jeu = -1000
@@ -2253,15 +2287,50 @@ contains
              isu = max(isu,isc) ; jsu = max(jsu,jsc)
              ieu = min(ieu,iec) ; jeu = min(jeu,jec)
           endif
-!!$             !!! DEBUG CODE
-!!$             if (Atm(this_grid)%flagstruct%fv_debug) &
-!!$                  write(*,'(I, A, 4I)') mpp_pe(), 'SETUP_UPDATE_REGIONS 3: ', isu, jsu, ieu, jeu
-!!$             !!! END DEBUG CODE
+          
+          ! Update region for staggered quantity to avoid cross repro issues when the pe domain boundary
+          ! coincide with the nest. Basically write the staggered update on compute domains
+          
+          if (isu_stag > iec .or. ieu_stag < isc .or. &
+               jsu_stag > jec .or. jeu_stag < jsc ) then
+             isu_stag = -999 ; jsu_stag = -999 ; ieu_stag = -1000 ; jeu_stag = -1000
+          else
+             isu_stag = max(isu_stag,isc) ; jsu_stag = max(jsu_stag,jsc)
+             ieu_stag = min(ieu_stag,iec) ; jeu_stag = min(jeu_stag,jec)
+          endif
+          
+          if (isv_stag > iec .or. iev_stag < isc .or. &
+               jsv_stag > jec .or. jev_stag < jsc ) then
+             isv_stag = -999 ; jsv_stag = -999 ; iev_stag = -1000 ; jev_stag = -1000
+          else
+             isv_stag = max(isv_stag,isc) ; jsv_stag = max(jsv_stag,jsc)
+             iev_stag = min(iev_stag,iec) ; jev_stag = min(jev_stag,jec)
+          endif
+          !!! End new
 
+          if (isu > iec .or. ieu < isc .or. &
+               jsu > jec .or. jeu < jsc ) then
+             isu = -999 ; jsu = -999 ; ieu = -1000 ; jeu = -1000
+          else
+             isu = max(isu,isc) ; jsu = max(jsu,jsc)
+             ieu = min(ieu,iec) ; jeu = min(jeu,jec)
+          endif
+
+          ! lump indices
+          isu=max(isu, isu_stag, isv_stag)
+          jsu=max(jsu, jsu_stag, jsv_stag)
+          jeu_stag=max(jeu, jeu_stag)
+          jev_stag=max(jeu, jev_stag)
+          ieu_stag=max(ieu ,ieu_stag)
+          iev_stag=max(ieu ,iev_stag)
+          
           Atm(n)%neststruct%isu = isu
-          Atm(n)%neststruct%ieu = ieu
+          Atm(n)%neststruct%ieu = ieu_stag
           Atm(n)%neststruct%jsu = jsu
-          Atm(n)%neststruct%jeu = jeu
+          Atm(n)%neststruct%jeu = jev_stag
+          
+          Atm(n)%neststruct%jeu_stag = jeu_stag
+          Atm(n)%neststruct%iev_stag = iev_stag
        endif
     enddo
 
@@ -2478,11 +2547,11 @@ contains
     integer            :: position = CENTER
     !integer            :: position_u = NORTH
     !integer            :: position_v = EAST
-
-    !call mn_var_dump_to_netcdf(Atm%pt   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
-    !     time_val, Atm%global_tile, file_prefix, "tempK")
-    !call mn_var_dump_to_netcdf(Atm%pt(:,:,64)   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
-    !     time_val, Atm%global_tile, file_prefix, "T64")
+    
+    call mn_var_dump_to_netcdf(Atm%pt   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
+         time_val, Atm%global_tile, file_prefix, "tempK")
+    call mn_var_dump_to_netcdf(Atm%pt(:,:,64)   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
+         time_val, Atm%global_tile, file_prefix, "T64")
     !call mn_var_dump_to_netcdf(Atm%delp , is_fine_pe, domain_coarse, domain_fine, position, nz, &
     !     time_val, Atm%global_tile, file_prefix, "DELP")
     call mn_var_dump_to_netcdf(Atm%delz , is_fine_pe, domain_coarse, domain_fine, position, nz, &
