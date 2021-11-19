@@ -36,6 +36,9 @@ module multi_gases_mod
 !   </tr>
 ! </table>
 
+!* --------- Default gas values for wam ----------------------------------------
+!* R_n2+= 295.3892, R_h2o= 461.50, R_o3=173.2247, R_o= 519.674, R_o2=259.8370
+!* Cpn2+=1031.1083, Cph2o=1846.00, Cpo3=820.2391, Cpo=1299.185, Cpo2=918.0969
       use constants_mod,     only: rdgas, rvgas, cp_air
       use     fv_mp_mod,     only: is_master
       use mpp_mod,           only: stdlog, input_nml_file
@@ -59,10 +62,12 @@ module multi_gases_mod
       public virq
       public virq_max
       public virqd
+      public vicpq
       public vicpqd
       public virq_nodq
       public virq_qpz
       public vicpqd_qpz
+      public vicvq
       public vicvqd
       public vicvqd_qpz
 
@@ -132,11 +137,11 @@ module multi_gases_mod
       end subroutine multi_gases_init
       subroutine read_namelist_multi_gases_nml(nml_filename,ncnst,nwat)
 
-        character(*), intent(IN) :: nml_filename
-        integer, intent(IN) :: ncnst, nwat
-        integer :: ierr, f_unit, unit, ios
+       character(*), intent(IN) :: nml_filename
+       integer, intent(IN) :: ncnst, nwat
+       integer :: ierr, f_unit, unit, ios
 
-        namelist /multi_gases_nml/ ri,cpi
+       namelist /multi_gases_nml/ ri,cpi
 
        unit = stdlog()
 
@@ -190,7 +195,7 @@ module multi_gases_mod
       virq = vir(0)+virq/(1.0-sum(q(sphump1:sphum+num_wat-1)))
 
       return
-      end function
+      end function virq
 !--------------------------------------------
 
 ! --------------------------------------------------------
@@ -209,7 +214,7 @@ module multi_gases_mod
       end do
 
       return
-      end function
+      end function virq_nodq
 !--------------------------------------------
 
 ! --------------------------------------------------------
@@ -231,7 +236,7 @@ module multi_gases_mod
 
 
       return
-      end function
+      end function virq_max
 !--------------------------------------------
 
 ! --------------------------------------------------------
@@ -253,7 +258,7 @@ module multi_gases_mod
 
 
       return
-      end function
+      end function virq_qpz
 !--------------------------------------------
 
 ! --------------------------------------------------------
@@ -273,7 +278,27 @@ module multi_gases_mod
       virqd = vir(0)+virqd/(1.0-sum(q(sphum:sphum+num_wat-1)))
 
       return
-      end function
+      end function virqd
+!--------------------------------------------
+
+! --------------------------------------------------------
+      pure real function vicpq(q)
+!--------------------------------------------
+! !OUTPUT PARAMETERS
+! Ouput: variable gas 1+zvir/(1-qc)
+!--------------------------------------------
+      real, intent(in)           :: q(num_gas)
+! Local:
+      integer :: n
+
+      vicpq = vicp(sphum)*q(sphum)
+      do n=ind_gas,num_gas
+         vicpq = vicpq+vicp(n)*q(sphum+n-1)
+      end do
+      vicpq = vicp(0)+vicpq/(1.0-sum(q(sphump1:sphum+num_wat-1)))
+
+      return
+      end function vicpq
 !--------------------------------------------
 
 ! --------------------------------------------------------
@@ -293,7 +318,7 @@ module multi_gases_mod
       vicpqd = vicp(0)+vicpqd/(1.0-sum(q(sphum:sphum+num_wat-1)))
 
       return
-      end function
+      end function vicpqd
 !--------------------------------------------
 
 ! --------------------------------------------------------
@@ -314,7 +339,7 @@ module multi_gases_mod
       vicpqd_qpz = vicp(0)+vicpqd_qpz/(1.0-qpz)
 
       return
-      end function
+      end function vicpqd_qpz
 !--------------------------------------------
 
 ! --------------------------------------------------------
@@ -334,7 +359,27 @@ module multi_gases_mod
       vicvqd = vicv(0)+vicvqd/(1.0-sum(q(sphum:sphum+num_wat-1)))
 
       return
-      end function
+      end function vicvqd
+!--------------------------------------------
+
+! --------------------------------------------------------
+      pure real function vicvq(q)
+!--------------------------------------------
+! !OUTPUT PARAMETERS
+! Ouput: variable gas 1+zvir/(1-qc)
+!--------------------------------------------
+      real, intent(in)           :: q(num_gas)
+! Local:
+      integer :: n
+
+      vicvq = vicv(sphum)*q(sphum)
+      do n=ind_gas,num_gas
+         vicvq = vicvq+vicv(n)*q(sphum+n-1)
+      end do
+      vicvq = vicv(0)+vicvq/(1.0-sum(q(sphump1:sphum+num_wat-1)))
+
+      return
+      end function vicvq
 !--------------------------------------------
 
 ! --------------------------------------------------------
@@ -355,7 +400,7 @@ module multi_gases_mod
       vicvqd_qpz = vicv(0)+vicvqd_qpz/(1.0-qpz)
 
       return
-      end function
+      end function vicvqd_qpz
 !--------------------------------------------
 
 end module multi_gases_mod

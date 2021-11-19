@@ -197,7 +197,7 @@ contains
     integer :: isd, ied, jsd, jed
     integer :: sphum, liq_wat
 #ifdef MULTI_GASES
-    integer :: spfo, spfo2, spfo3
+    integer :: spo, spo2, spo3
 #else
     integer :: o3mr
 #endif
@@ -267,9 +267,9 @@ contains
 
     sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
 #ifdef MULTI_GASES
-    spfo3   = get_tracer_index(MODEL_ATMOS, 'spfo3')
-    spfo    = get_tracer_index(MODEL_ATMOS, 'spfo')
-    spfo2   = get_tracer_index(MODEL_ATMOS, 'spfo2')
+    spo3    = get_tracer_index(MODEL_ATMOS, 'spo3')
+    spo     = get_tracer_index(MODEL_ATMOS, 'spo')
+    spo2    = get_tracer_index(MODEL_ATMOS, 'spo2')
 #else
     o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
 #endif
@@ -287,9 +287,9 @@ contains
     call apply_inc_on_3d_scalar('sphum_inc',q(:,:,:,sphum), is_in, js_in, ie_in, je_in)
     call apply_inc_on_3d_scalar('liq_wat_inc',q(:,:,:,liq_wat), is_in, js_in, ie_in, je_in)
 #ifdef MULTI_GASES
-    call apply_inc_on_3d_scalar('spfo3_inc',q(:,:,:,spfo3), is_in, js_in, ie_in, je_in)
-    call apply_inc_on_3d_scalar('spfo_inc',q(:,:,:,spfo), is_in, js_in, ie_in, je_in)
-    call apply_inc_on_3d_scalar('spfo2_inc',q(:,:,:,spfo2), is_in, js_in, ie_in, je_in)
+    call apply_inc_on_3d_scalar('spo_inc',q(:,:,:,spo), is_in, js_in, ie_in, je_in)
+    call apply_inc_on_3d_scalar('spo2_inc',q(:,:,:,spo2), is_in, js_in, ie_in, je_in)
+    call apply_inc_on_3d_scalar('spo3_inc',q(:,:,:,spo3), is_in, js_in, ie_in, je_in)
 #else
     call apply_inc_on_3d_scalar('o3mr_inc',q(:,:,:,o3mr), is_in, js_in, ie_in, je_in)
 #endif

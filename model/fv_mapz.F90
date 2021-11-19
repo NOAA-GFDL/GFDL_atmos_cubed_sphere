@@ -529,7 +529,7 @@ contains
 
 !------------
 ! Compute pkz
-!hmhj pk is pe**kappa(=rgas/cp_air), but pkz=plyr**kappa(=r/cp)
+!< pk is pe**kappa(=rgas/cp_air), but pkz=plyr**kappa(=r/cp)
 !------------
    if ( hydrostatic ) then
       do k=1,km
@@ -840,7 +840,10 @@ endif        ! end last_step check
     ! Call to CCPP fast_physics group
     if (cdata%initialized()) then
       call ccpp_physics_run(cdata, suite_name=trim(ccpp_suite), group_name='fast_physics', ierr=ierr)
-      if (ierr/=0) call mpp_error(FATAL, "Call to ccpp_physics_run for group 'fast_physics' failed")
+      if (ierr/=0) then
+        call mpp_error(NOTE, trim(cdata%errmsg))
+        call mpp_error(FATAL, "Call to ccpp_physics_run for group 'fast_physics' failed")
+      endif
     else
       call mpp_error (FATAL, 'Lagrangian_to_Eulerian: can not call CCPP fast physics because CCPP not initialized')
     endif
@@ -3519,7 +3522,11 @@ endif        ! end last_step check
 
   integer, intent(in):: is, ie, isd,ied, jsd,jed, km, nwat, j, k
   integer, intent(in):: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel
+#ifdef MULTI_GASES
+  real, intent(in), dimension(isd:ied,jsd:jed,km,num_gas):: q
+#else
   real, intent(in), dimension(isd:ied,jsd:jed,km,nwat):: q
+#endif
   real, intent(out), dimension(is:ie):: cpm, qd
   real, intent(in), optional:: t1(is:ie)
 !
