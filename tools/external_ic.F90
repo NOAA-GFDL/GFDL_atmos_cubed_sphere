@@ -4204,6 +4204,8 @@ contains
          enddo
 
          write(*,*) qname, ' max = ', pmax*fac, ' min = ', pmin*fac
+         class default
+            call mpp_error(FATAL,'==> Error in external_ic: unsupported types in pmaxmin')
          end select
 
       type is (real(kind=r8_kind))
@@ -4230,7 +4232,11 @@ contains
          enddo
 
          write(*,*) qname, ' max = ', pmax8*fac, ' min = ', pmin8*fac
+         class default
+            call mpp_error(FATAL,'==> Error in external_ic: unsupported types in pmaxmin')
          end select
+      class default
+         call mpp_error(FATAL,'==> Error in external_ic: unsupported types in pmaxmin')
       end select
 
  end subroutine pmaxmin
