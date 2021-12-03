@@ -1229,6 +1229,7 @@ use IPD_typedefs,           only: kind_phys => IPD_kind_phys
 
   type fv_moving_nest_physics_type
      real, _ALLOCATABLE                  :: ts(:,:)          _NULL   !< 2D skin temperature/SST
+     real, _ALLOCATABLE                  :: slmsk(:,:)       _NULL   !< land sea mask -- 0 for ocean/lakes, 1, for land.  Perhaps 2 for sea ice.
      real (kind=kind_phys), _ALLOCATABLE :: smc (:,:,:)      _NULL   !< soil moisture content
      real (kind=kind_phys), _ALLOCATABLE :: stc (:,:,:)      _NULL   !< soil temperature
      real (kind=kind_phys), _ALLOCATABLE :: slc (:,:,:)      _NULL   !< soil liquid water content
@@ -1248,6 +1249,10 @@ use IPD_typedefs,           only: kind_phys => IPD_kind_phys
      real (kind=kind_phys), _ALLOCATABLE :: sfalb_lnd(:,:)   _NULL   !< surface albedo over land for LSM
      real (kind=kind_phys), _ALLOCATABLE :: emis_lnd(:,:)    _NULL   !< surface emissivity over land for LSM
      real (kind=kind_phys), _ALLOCATABLE :: sfalb_lnd_bck(:,:) _NULL !< snow-free albedo over land
+
+     !real (kind=kind_phys), _ALLOCATABLE :: semis(:,:)       _NULL   !< surface lw emissivity in fraction 
+     !real (kind=kind_phys), _ALLOCATABLE :: semisbase(:,:)   _NULL   !< background surface emissivity 
+     !real (kind=kind_phys), _ALLOCATABLE :: sfalb(:,:)       _NULL   !< mean surface diffused sw albedo 
 
      real (kind=kind_phys), _ALLOCATABLE :: alvsf(:,:)       _NULL   !< visible black sky albedo
      real (kind=kind_phys), _ALLOCATABLE :: alvwf(:,:)       _NULL   !< visible white sky albedo
@@ -1273,6 +1278,7 @@ use IPD_typedefs,           only: kind_phys => IPD_kind_phys
      real (kind=kind_phys), _ALLOCATABLE :: tsfco (:,:)      _NULL   !< surface temperature ocean
      real (kind=kind_phys), _ALLOCATABLE :: tsfcl (:,:)      _NULL   !< surface temperature land
      real (kind=kind_phys), _ALLOCATABLE :: tsfc (:,:)       _NULL   !< surface temperature
+     !real (kind=kind_phys), _ALLOCATABLE :: tsfc_radtime (:,:) _NULL !< surface temperature on radiative timestep
 
      real (kind=kind_phys), _ALLOCATABLE :: cv  (:,:)        _NULL   !< fraction of convective cloud
      real (kind=kind_phys), _ALLOCATABLE :: cvt (:,:)        _NULL   !< convective cloud top pressure
@@ -2434,6 +2440,7 @@ end subroutine deallocate_fv_nest_BC_type_3d
     allocate ( mn_phys%ts(isd:ied, jsd:jed) )
 
     if (move_physics) then
+       allocate ( mn_phys%slmsk(isd:ied, jsd:jed) )
        allocate ( mn_phys%smc(isd:ied, jsd:jed, lsoil) )
        allocate ( mn_phys%stc(isd:ied, jsd:jed, lsoil) )
        allocate ( mn_phys%slc(isd:ied, jsd:jed, lsoil) )
@@ -2441,6 +2448,10 @@ end subroutine deallocate_fv_nest_BC_type_3d
        allocate ( mn_phys%sfalb_lnd(isd:ied, jsd:jed) )
        allocate ( mn_phys%emis_lnd(isd:ied, jsd:jed) )
        allocate ( mn_phys%sfalb_lnd_bck(isd:ied, jsd:jed) )
+
+       !allocate ( mn_phys%semis(isd:ied, jsd:jed) )
+       !allocate ( mn_phys%semisbase(isd:ied, jsd:jed) )
+       !allocate ( mn_phys%sfalb(isd:ied, jsd:jed) )
 
        allocate ( mn_phys%u10m(isd:ied, jsd:jed) )
        allocate ( mn_phys%v10m(isd:ied, jsd:jed) )
@@ -2472,6 +2483,7 @@ end subroutine deallocate_fv_nest_BC_type_3d
        allocate ( mn_phys%tsfco(isd:ied, jsd:jed) )
        allocate ( mn_phys%tsfcl(isd:ied, jsd:jed) )
        allocate ( mn_phys%tsfc(isd:ied, jsd:jed) )
+       !allocate ( mn_phys%tsfc_radtime(isd:ied, jsd:jed) )
 
 
        allocate ( mn_phys%albdirvis_lnd (isd:ied, jsd:jed) )
@@ -2510,6 +2522,7 @@ end subroutine deallocate_fv_nest_BC_type_3d
 
     mn_phys%ts = +99999.9
     if (move_physics) then
+       mn_phys%slmsk = +99999.9
        mn_phys%smc = +99999.9
        mn_phys%stc = +99999.9
        mn_phys%slc = +99999.9
@@ -2518,6 +2531,10 @@ end subroutine deallocate_fv_nest_BC_type_3d
        mn_phys%sfalb_lnd = +99999.9
        mn_phys%emis_lnd = +99999.9
        mn_phys%sfalb_lnd_bck = +99999.9
+
+       !mn_phys%semis = +99999.9
+       !mn_phys%semisbase = +99999.9
+       !mn_phys%sfalb = +99999.9
 
        mn_phys%u10m = +99999.9
        mn_phys%v10m = +99999.9
@@ -2549,6 +2566,7 @@ end subroutine deallocate_fv_nest_BC_type_3d
        mn_phys%tsfco = +99999.9
        mn_phys%tsfcl = +99999.9
        mn_phys%tsfc = +99999.9
+       !mn_phys%tsfc_radtime = +99999.9
 
        mn_phys%albdirvis_lnd = +99999.9
        mn_phys%albdirnir_lnd = +99999.9
@@ -2599,6 +2617,7 @@ end subroutine deallocate_fv_nest_BC_type_3d
 
     !  if move_phys
     if (allocated(mn_phys%smc)) then
+       deallocate( mn_phys%slmsk )
        deallocate( mn_phys%smc )
        deallocate( mn_phys%stc )
        deallocate( mn_phys%slc )
@@ -2606,6 +2625,10 @@ end subroutine deallocate_fv_nest_BC_type_3d
        deallocate( mn_phys%sfalb_lnd )
        deallocate( mn_phys%emis_lnd )
        deallocate( mn_phys%sfalb_lnd_bck )
+
+       !deallocate( mn_phys%semis )
+       !deallocate( mn_phys%semisbase )
+       !deallocate( mn_phys%sfalb )
 
        deallocate( mn_phys%u10m )
        deallocate( mn_phys%v10m )
@@ -2637,6 +2660,7 @@ end subroutine deallocate_fv_nest_BC_type_3d
        deallocate( mn_phys%tsfco )
        deallocate( mn_phys%tsfcl )
        deallocate( mn_phys%tsfc )
+       !deallocate( mn_phys%tsfc_radtime )
 
        deallocate( mn_phys%albdirvis_lnd )
        deallocate( mn_phys%albdirnir_lnd )

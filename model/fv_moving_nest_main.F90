@@ -860,7 +860,7 @@ contains
        !  This is before any nest motion has occurred
 
        call mn_prog_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
-       call mn_phys_fill_nest_halos_from_parent(Atm, IPD_control, IPD_data, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
+       call mn_phys_fill_nest_halos_from_parent(Atm, IPD_control, IPD_data, mn_static, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
 
        if (use_timers) call mpp_clock_end (id_movnest2)
        if (use_timers) call mpp_clock_begin (id_movnest3)
@@ -1063,7 +1063,7 @@ contains
 
        ! Refill the halos around the edge of the nest from the parent
        call mn_prog_fill_nest_halos_from_parent(Atm, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
-       call mn_phys_fill_nest_halos_from_parent(Atm, IPD_control, IPD_data, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
+       call mn_phys_fill_nest_halos_from_parent(Atm, IPD_control, IPD_data, mn_static, n, child_grid_num, is_fine_pe, global_nest_domain, nz)
 
        if (use_timers) call mpp_clock_end (id_movnest7_1)
 
@@ -1099,6 +1099,26 @@ contains
 
        !if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
        !if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), output_step, "wxvar", is_fine_pe, domain_coarse, domain_fine, nz)
+       if (is_fine_pe) then
+          do i=isc,iec
+             do j=jsc,jec
+                !if (Atm(n)%mn_phys%semis(i,j) .lt. 0.0) then
+                !   print '("[INFO] WDR SEMIS fv_moving_nest_main.F90 npe=",I0," semis(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%semis(i,j)
+                !end if
+                !if (Atm(n)%mn_phys%semisbase(i,j) .lt. 0.0) then
+                !   print '("[INFO] WDR SEMISBASE fv_moving_nest_main.F90 npe=",I0," semisbase(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%semisbase(i,j)
+                !end if
+                if (Atm(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) then
+                   print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%emis_lnd(i,j)
+                end if
+                if (Atm(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) then
+                   print '("[INFO] WDR ALBLND fv_moving_nest_main.F90 npe=",I0," albdirvis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%albdirvis_lnd(i,j)
+                end if
+             end do
+          end do
+       end if
+
+
        output_step = output_step + 1
 
        if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
