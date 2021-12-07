@@ -1027,7 +1027,7 @@ contains
     integer, intent(inout) :: iout,jout
     logical, intent(inout) :: calcparm
     real, intent(inout) :: latout,lonout
-    real, intent(in) :: orig(ims:ime,jms:jme)
+    real, allocatable, intent(in) :: orig(:,:)
 
     integer, intent(in) :: IDS,IDE,JDS,JDE,KDS,KDE
     integer, intent(in) :: IMS,IME,JMS,JME,KMS,KME
@@ -1132,7 +1132,7 @@ contains
     integer, intent(inout) :: iout,jout
     logical, intent(inout) :: calcparm
     real, intent(inout) :: latout,lonout
-    real, intent(in) :: orig(ims:ime,jms:jme)
+    real, allocatable, intent(in) :: orig(:,:)
     real :: smooth(ims:ime,jms:jme)
     character*255 :: message
     logical, optional :: north_hemi
@@ -1147,6 +1147,8 @@ contains
     integer :: istart,istop,jstart,jstop,itemp
 
     logical :: findmin
+
+
 
     ! Restrict the search area.  By default, we search everywhere except the boundary:
     istart=max(ids+1,ips)
@@ -1168,6 +1170,9 @@ contains
     do j=jps,min(jde-1,jpe)
        do i=ips,min(ide-1,ipe)
           smooth(i,j)=orig(i,j)
+#ifdef DEBUG
+          call check_validity(cparm, smooth(i,j), i, j)
+#endif
        enddo
     enddo
 
@@ -1559,6 +1564,54 @@ contains
          ips,ipe,jps,jpe,kps,kpe)
   end subroutine fv_tracker_post_move
 
-#endif
+#ifdef DEBUG
+  subroutine check_validity(cparm, v, i, j)
+    ! [KA] Checks value of a tracking parameter for validity
+    character*(*), intent(in) :: cparm
+    real, intent(in) :: v
+    integer, intent(in) :: i, j
+    real :: min_v, max_v
+    integer :: this_pe
+
+    min_v = -9e9
+    max_v =  9e9
+    this_pe = mpp_pe()
+
+    !< set validity range
+    select case (trim(cparm))
+      case ("zeta")
+        !< low-level vorticity
+        min_v = -1e-2
+        max_v = 1e-2
+      case ("hgt")
+        !< low-level geopotential height
+        min_v = 1e2
+        max_v = 1e4
+      case ("slp")
+        !< sea-level pressure
+        min_v = 0.85e5
+        max_v = 1.10e5
+      case ("wind")
+        !< low-level wind
+        min_v = 1e-3
+        max_v = 2e2
+      case default
+        !< Unrecognized parameter; must be invalid
+        write(0,"(A,A8)") "[KA] inval track variable:",trim(cparm)
+        return
+    end select
+
+    !< check value for validity
+    if (v < min_v .OR. v > max_v) then
+      !< report bad value, its name, its indices, the containing pe
+      write(0,"(A,A8,A,E8.1,A,I3,A,2I3)") &
+            "[KA] inval track val:",trim(cparm)," val:",v," pe:",this_pe," i,j:",i,j
+    endif
+
+  end subroutine check_validity
+
+#endif !< DEBUG
+
+#endif !< MOVING_NEST
 
 end module fv_tracker_mod
