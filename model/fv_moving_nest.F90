@@ -387,7 +387,7 @@ contains
   !!============================================================================
 
   subroutine mn_meta_move_nest(delta_i_c, delta_j_c, pelist, is_fine_pe, extra_halo, &
-       nest_domain, domain_fine, domain_coarse, tile_fine, tile_coarse, &
+       nest_domain, domain_fine, domain_coarse, &  !tile_fine, tile_coarse, 
        istart_coarse, iend_coarse, jstart_coarse, jend_coarse,  istart_fine, iend_fine, jstart_fine, jend_fine)
 
     implicit none
@@ -399,7 +399,7 @@ contains
 
     type(nest_domain_type), intent(inout) :: nest_domain
     type(domain2d), intent(inout)         :: domain_coarse, domain_fine
-    integer, intent(inout)                :: tile_coarse, tile_fine
+    !integer, intent(inout)                :: tile_coarse, tile_fine
     integer, intent(inout)                :: istart_coarse, iend_coarse, jstart_coarse, jend_coarse
     integer, intent(in)                   :: istart_fine, iend_fine, jstart_fine, jend_fine
 
@@ -690,9 +690,10 @@ contains
   !!             update parent_geo, tile_geo*, p_grid*, n_grid*
   !!============================================================================
 
-  subroutine mn_latlon_load_parent(Atm, n, delta_i_c, delta_j_c, child_grid_num, parent_geo, tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, p_grid, n_grid, p_grid_u, n_grid_u, p_grid_v, n_grid_v)
+  subroutine mn_latlon_load_parent(surface_dir, Atm, n, parent_tile, delta_i_c, delta_j_c, child_grid_num, parent_geo, tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, p_grid, n_grid, p_grid_u, n_grid_u, p_grid_v, n_grid_v)
+    character(len=*), intent(in)                 :: surface_dir
     type(fv_atmos_type), allocatable, intent(in) :: Atm(:)
-    integer, intent(in)                          :: n, delta_i_c, delta_j_c, child_grid_num
+    integer, intent(in)                          :: n, parent_tile, delta_i_c, delta_j_c, child_grid_num
     type(grid_geometry), intent(inout)           :: parent_geo, tile_geo, tile_geo_u, tile_geo_v
     type(grid_geometry), intent(in)              :: fp_super_tile_geo
     real(kind=R_GRID), allocatable, intent(out)  :: p_grid(:,:,:), n_grid(:,:,:), p_grid_u(:,:,:), n_grid_u(:,:,:), p_grid_v(:,:,:), n_grid_v(:,:,:)
@@ -705,7 +706,7 @@ contains
     integer  :: x_refine, y_refine
     integer  :: nest_x, nest_y, parent_x, parent_y
 
-    character(len=256) :: res_str
+    character(len=256) :: grid_filename
 
     integer :: this_pe
 
@@ -725,14 +726,21 @@ contains
     !parent_geo%lons = Atm(1)%grid_global(:,:,1,6)
     !parent_geo%lats = Atm(1)%grid_global(:,:,2,6)
 
-    write(res_str, '(I0)'), Atm(1)%npx - 1
+    !write(res_str, '(I0)'), Atm(1)%npx - 1
 
     if (first_nest_move) then
        if (debug_log) print '("[INFO] WDR mn_latlon_load_parent READING static coarse file on npe=",I0)', this_pe
-       call load_nest_latlons_from_nc(trim(Atm(child_grid_num)%neststruct%surface_dir) //  '/C' // trim(res_str) //  '_grid.tile6.nc', &
-            Atm(1)%npx, Atm(1)%npy, 1, &
-            parent_geo, &
-            p_istart_fine, p_iend_fine, p_jstart_fine, p_jend_fine)
+       !call load_nest_latlons_from_nc(trim(Atm(child_grid_num)%neststruct%surface_dir) //  '/C' // trim(res_str) //  '_grid.tile6.nc', &
+       !     Atm(1)%npx, Atm(1)%npy, 1, &
+       !     parent_geo, &
+       !     p_istart_fine, p_iend_fine, p_jstart_fine, p_jend_fine)
+       
+       !call mn_static_filename('./INPUT', parent_tile, 'grid', x_refine, grid_filename)
+       call mn_static_filename(surface_dir, parent_tile, 'grid', 1, grid_filename)
+
+       call load_nest_latlons_from_nc(grid_filename, Atm(1)%npx, Atm(1)%npy, 1, &
+            parent_geo, p_istart_fine, p_iend_fine, p_jstart_fine, p_jend_fine)
+
        first_nest_move = .false.
     !else
     !   print '("[INFO] WDR mn_latlon_load_parent SKIPPING static coarse file on npe=",I0)', this_pe
@@ -744,10 +752,10 @@ contains
     parent_geo%nx = Atm(1)%npx - 1
     parent_geo%ny = Atm(1)%npy - 1
 
-    if (debug_log) then
+    !if (debug_log) then
        call show_tile_geo(parent_geo, this_pe, "parent_geo")
        call show_atm_grids(Atm, n)
-    end if
+    !end if
 
     ! Actually, is the nest in grid_global??
 
@@ -889,47 +897,150 @@ contains
   end subroutine mn_latlon_load_parent
 
 
-  subroutine mn_latlon_read_hires_parent(npx, npy, x_refine, fp_super_tile_geo, surface_dir)
-    integer, intent(in)                :: npx, npy, x_refine
+  subroutine mn_static_filename(surface_dir, tile_num, tag, refine, grid_filename)
+    character(len=*), intent(in)       :: surface_dir, tag
+    integer, intent(in)                :: tile_num, refine
+    character(len=*), intent(out)      :: grid_filename
+
+    character(len=256) :: refine_str, parent_str
+    character(len=1)   :: divider
+    logical            :: file_exists
+
+    write(parent_str, '(I0)'), tile_num
+
+    if (refine .eq. 1 .and. (tag .eq. 'grid' .or. tag .eq. 'oro_data')) then
+       ! For 1x files in INPUT directory; go at the symbolic link 
+       !grid_filename = trim(trim(surface_dir) // '/' // trim(tag) // '.nc')
+       grid_filename = trim(trim(surface_dir) // '/' // trim(tag) // '.tile' // trim(parent_str) // '.nc')
+    else
+       if (refine .eq. 1) then
+          grid_filename = trim(trim(surface_dir) // '/' // trim(tag) // '.tile' // trim(parent_str) // '.nc')
+       else
+          write(refine_str, '(I0,A1)'), refine, 'x'
+          grid_filename = trim(trim(surface_dir) // '/' // trim(tag) // '.tile' // trim(parent_str) // '.' // trim(refine_str) // '.nc')
+       end if
+    end if
+
+    !if (regional) then
+    !   if (halo0) then
+    !grid_filename = trim(trim(surface_dir) // '/C' // trim(res_str) // divider // trim(tag) // '.tile' // trim(parent_str) // '.halo0.nc')
+    !   else
+    !      grid_filename = trim(trim(surface_dir) // '/C' // trim(res_str) // divider // trim(tag) // '.tile' // trim(parent_str) // '.nc')
+    !   end if
+    !else
+    !      if (tag .eq. 'oro_data' .and. surface_dir .eq. './INPUT') then
+    !      ! INPUT for global oro_data doesn't have C{res}
+    !      grid_filename = trim(trim(surface_dir) //  '/' // trim(tag) // '.tile' // trim(parent_str) // '.nc')
+    !   else
+    !      grid_filename = trim(trim(surface_dir) // '/C' // trim(res_str) // divider // trim(tag) // '.tile' // trim(parent_str) // '.nc')
+    !   end if
+    !end if
+
+    grid_filename = trim(grid_filename)
+
+    inquire(FILE=grid_filename, EXIST=file_exists)
+    if (file_exists) then
+       print '("[INFO] WDR mn_static_filename DOES EXIST npe=",I0," exists="L1," ",A256)', mpp_pe(), file_exists, grid_filename
+    else
+       print '("[ERROR] WDR mn_static_filename DOES NOT EXIST npe=",I0," exists="L1," ",A256)', mpp_pe(), file_exists, grid_filename
+    end if
+  end subroutine mn_static_filename
+
+
+  subroutine old_mn_static_filename(surface_dir, resolution, regional, tile_num, tag, halo0, grid_filename)
+    character(len=*), intent(in)       :: surface_dir, tag
+    logical, intent(in)                :: regional, halo0
+    integer, intent(in)                :: resolution, tile_num
+    character(len=*), intent(out)    :: grid_filename
+
+
+    character(len=256) :: res_str, parent_str
+    character(len=1)   :: divider
+    logical            :: file_exists
+
+    write(res_str, '(I0)'), resolution
+    write(parent_str, '(I0)'), tile_num
+
+    if (tag .eq. 'grid' .or. tag .eq. 'oro_data') then
+       divider = '_'
+    else
+       divider = '.'
+    end if
+
+
+    if (regional) then
+       if (halo0) then
+          grid_filename = trim(trim(surface_dir) // '/C' // trim(res_str) // divider // trim(tag) // '.tile' // trim(parent_str) // '.halo0.nc')
+       else
+          grid_filename = trim(trim(surface_dir) // '/C' // trim(res_str) // divider // trim(tag) // '.tile' // trim(parent_str) // '.nc')
+       end if
+    else
+
+       if (tag .eq. 'oro_data' .and. surface_dir .eq. './INPUT') then
+          ! INPUT for global oro_data doesn't have C{res}
+          grid_filename = trim(trim(surface_dir) //  '/' // trim(tag) // '.tile' // trim(parent_str) // '.nc')
+       else
+          grid_filename = trim(trim(surface_dir) // '/C' // trim(res_str) // divider // trim(tag) // '.tile' // trim(parent_str) // '.nc')
+    end if
+    end if
+
+
+
+
+
+    grid_filename = trim(grid_filename)
+
+    inquire(FILE=grid_filename, EXIST=file_exists)
+    if (file_exists) then
+       print '("[INFO] WDR mn_static_filename DOES EXIST npe=",I0," exists="L1," ",A256)', mpp_pe(), file_exists, grid_filename
+    else
+       print '("[ERROR] WDR mn_static_filename DOES NOT EXIST npe=",I0," exists="L1," ",A256)', mpp_pe(), file_exists, grid_filename
+    end if
+  end subroutine old_mn_static_filename
+
+  subroutine mn_latlon_read_hires_parent(npx, npy, refine, fp_super_tile_geo, surface_dir, parent_tile)
+    integer, intent(in)                :: npx, npy, refine
     type(grid_geometry), intent(inout) :: fp_super_tile_geo
-    character(len=120), intent(in)     :: surface_dir
+    character(len=*), intent(in)       :: surface_dir
+    integer, intent(in)                :: parent_tile
 
     integer                            :: fp_super_istart_fine, fp_super_jstart_fine,fp_super_iend_fine, fp_super_jend_fine
-    integer :: nx_cubic
-    character(len=256) :: res_str
+    character(len=256)                 :: grid_filename
 
-    nx_cubic = npx - 1
-    write(res_str, '(I0)'), nx_cubic * x_refine
+    print '("[INFO] WDR mn_latlon_read_hires_parent ",I0)', parent_tile
 
-    call load_nest_latlons_from_nc(trim(surface_dir) // '/C' // trim(res_str) // '_grid.tile6.nc', &
-         npx, npy, x_refine, &
-         fp_super_tile_geo, &
+    call mn_static_filename(surface_dir, parent_tile, 'grid',  refine, grid_filename)
+
+    call load_nest_latlons_from_nc(trim(grid_filename), npx, npy, refine, fp_super_tile_geo, &
          fp_super_istart_fine, fp_super_iend_fine, fp_super_jstart_fine, fp_super_jend_fine)
 
   end subroutine mn_latlon_read_hires_parent
 
 
-  subroutine mn_orog_read_hires_parent(npx, npy, refine, surface_dir, filtered_terrain, orog_grid, orog_std_grid, ls_mask_grid, land_frac_grid)
+  subroutine mn_orog_read_hires_parent(npx, npy, refine, surface_dir, filtered_terrain, orog_grid, orog_std_grid, ls_mask_grid, land_frac_grid, parent_tile)
     integer, intent(in)                :: npx, npy, refine
-    character(len=120), intent(in)     :: surface_dir
+    character(len=*), intent(in)       :: surface_dir
     logical, intent(in)                :: filtered_terrain
     real, allocatable, intent(out)     :: orog_grid(:,:)
     real, allocatable, intent(out)     :: orog_std_grid(:,:)
     real, allocatable, intent(out)     :: ls_mask_grid(:,:)
     real, allocatable, intent(out)     :: land_frac_grid(:,:)
+    integer, intent(in)                :: parent_tile
 
     integer :: nx_cubic, nx, ny, fp_nx, fp_ny, mid_nx, mid_ny
     integer :: fp_istart_fine, fp_iend_fine, fp_jstart_fine, fp_jend_fine
 
-    character(len=256) :: res_str, parent_str
+    !character(len=256) :: res_str, parent_str
     character(len=512) :: nc_filename
     character(len=16)  :: orog_var_name
 
-    integer :: parent_tile = 6 ! TODO: Later this will be configurable from namelist
+    !integer :: parent_tile != 6 ! TODO: Later this will be configurable from namelist
     integer :: this_pe
 
     this_pe = mpp_pe()
 
+    print '("[INFO] WDR mn_orog_read_hires_parent npe=",I0," ",I0)', this_pe, parent_tile
+    
     nx_cubic = npx - 1
     nx = npx - 1
     ny = npy - 1
@@ -945,9 +1056,10 @@ contains
     mid_nx = (fp_iend_fine - fp_istart_fine) / 2
     mid_ny = (fp_jend_fine - fp_jstart_fine) / 2
 
-    write(res_str, '(I0)'), nx_cubic * refine
-    write(parent_str, '(I0)'), parent_tile
-    nc_filename = trim(surface_dir) // '/C' // trim(res_str) // '_oro_data.tile' // trim(parent_str) // '.nc'
+    !write(res_str, '(I0)'), nx_cubic * refine
+    !write(parent_str, '(I0)'), parent_tile
+
+    call mn_static_filename(surface_dir, parent_tile, 'oro_data', refine, nc_filename)
 
     if (filtered_terrain) then
        orog_var_name = 'orog_filt'
@@ -968,19 +1080,20 @@ contains
   end subroutine mn_orog_read_hires_parent
 
 
-  subroutine mn_static_read_hires(npx, npy, refine, surface_dir, file_prefix, var_name, data_grid)
+  subroutine mn_static_read_hires(npx, npy, refine, surface_dir, file_prefix, var_name, data_grid, parent_tile)
     integer, intent(in)                :: npx, npy, refine
-    character(len=*), intent(in)     :: surface_dir, file_prefix
-    character(len=*), intent(in)      :: var_name
+    character(len=*), intent(in)       :: surface_dir, file_prefix
+    character(len=*), intent(in)       :: var_name
     real, allocatable, intent(out)     :: data_grid(:,:)
+    integer, intent(in)                :: parent_tile
 
     integer :: nx_cubic, nx, ny, fp_nx, fp_ny
     integer :: fp_istart_fine, fp_iend_fine, fp_jstart_fine, fp_jend_fine
 
     character(len=256) :: res_str, parent_str
+    character(len=16)  :: halo
     character(len=512) :: nc_filename
 
-    integer :: parent_tile = 6 ! TODO: Later this will be configurable from namelist
     integer :: this_pe
 
     this_pe = mpp_pe()
@@ -999,14 +1112,7 @@ contains
 
     if (debug_log) print '("[INFO] WDR NCREAD LOFC mn_static_read_hires npe=",I0,I4,I4," ",A128," ",A128)', this_pe, fp_nx, fp_ny, var_name, nc_filename
 
-    write(res_str, '(I0)'), nx_cubic * refine
-    write(parent_str, '(I0)'), parent_tile
-
-    if (trim(file_prefix) .eq. "oro_data") then
-       nc_filename = trim(surface_dir) // '/C' // trim(res_str) // '_' // trim(file_prefix) // '.tile' // trim(parent_str) // '.nc'
-    else
-       nc_filename = trim(surface_dir) // '/C' // trim(res_str) // '.' // trim(file_prefix) // '.tile' // trim(parent_str) // '.nc'
-    end if
+    call mn_static_filename(surface_dir, parent_tile, file_prefix, refine, nc_filename)
 
     call alloc_read_data(nc_filename, var_name, fp_nx, fp_ny, data_grid)
 

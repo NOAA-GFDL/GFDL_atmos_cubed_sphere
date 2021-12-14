@@ -593,7 +593,11 @@ contains
                 enddo
 
                 !IPD_Data(nb)%Sfcprop%sfalb_lnd(ix) = mn_phys%sfalb_lnd(i,j)
-                IPD_Data(nb)%Sfcprop%emis_lnd(ix) = mn_phys%emis_lnd(i,j)
+                if (mn_phys%emis_lnd(i,j) .ge. 0.0) then
+                   IPD_Data(nb)%Sfcprop%emis_lnd(ix) = mn_phys%emis_lnd(i,j)
+                else
+                   IPD_Data(nb)%Sfcprop%emis_lnd(ix) = 0.5
+                end if
                 !IPD_Data(nb)%Sfcprop%sfalb_lnd_bck(ix) = mn_phys%sfalb_lnd_bck(i,j)
 
                 !IPD_Data(nb)%Radtend%semis(ix) = mn_phys%semis(i,j)
@@ -633,10 +637,29 @@ contains
                 IPD_Data(nb)%Sfcprop%tsfc(ix)   = mn_phys%tsfc(i,j)
                 !IPD_Data(nb)%Coupling%tsfc_radtime(ix)   = mn_phys%tsfc_radtime(i,j)
 
-                IPD_Data(nb)%Sfcprop%albdirvis_lnd (ix)   = mn_phys%albdirvis_lnd (i,j)
-                IPD_Data(nb)%Sfcprop%albdirnir_lnd (ix)   = mn_phys%albdirnir_lnd (i,j)
-                IPD_Data(nb)%Sfcprop%albdifvis_lnd (ix)   = mn_phys%albdifvis_lnd (i,j)
-                IPD_Data(nb)%Sfcprop%albdifnir_lnd (ix)   = mn_phys%albdifnir_lnd (i,j)
+                if (mn_phys%albdirvis_lnd (i,j) .ge. 0.0) then
+                   IPD_Data(nb)%Sfcprop%albdirvis_lnd (ix)   = mn_phys%albdirvis_lnd (i,j)
+                else
+                   IPD_Data(nb)%Sfcprop%albdirvis_lnd (ix)   = 0.5
+                end if
+                
+                if (mn_phys%albdirnir_lnd (i,j) .ge. 0.0) then
+                   IPD_Data(nb)%Sfcprop%albdirnir_lnd (ix)   = mn_phys%albdirnir_lnd (i,j)
+                else
+                   IPD_Data(nb)%Sfcprop%albdirnir_lnd (ix)   = 0.5
+                end if
+                
+                if (mn_phys%albdifvis_lnd (i,j) .ge. 0.0) then
+                   IPD_Data(nb)%Sfcprop%albdifvis_lnd (ix)   = mn_phys%albdifvis_lnd (i,j)
+                else
+                   IPD_Data(nb)%Sfcprop%albdifvis_lnd (ix)   = 0.5
+                end if
+
+                if (mn_phys%albdifnir_lnd (i,j) .ge. 0.0) then
+                   IPD_Data(nb)%Sfcprop%albdifnir_lnd (ix)   = mn_phys%albdifnir_lnd (i,j)
+                else 
+                   IPD_Data(nb)%Sfcprop%albdifnir_lnd (ix)   = 0.5
+                end if
 
                 ! Cloud properties
                 IPD_Data(nb)%Cldprop%cv(ix) = mn_phys%cv(i,j)
@@ -1434,6 +1457,8 @@ contains
     real, allocatable :: lakefrac_pr_local (:,:)  !< lake fraction
     real, allocatable :: landfrac_pr_local (:,:)  !< land fraction
 
+    real, allocatable :: emis_lnd_pr_local (:,:)  !< emissivity land
+
 
     this_pe = mpp_pe()
 
@@ -1484,6 +1509,8 @@ contains
        allocate ( lakefrac_pr_local(is:ie, js:je) )
        allocate ( landfrac_pr_local(is:ie, js:je) )
 
+       allocate ( emis_lnd_pr_local(is:ie, js:je) )
+
        allocate ( phy_f2d_pr_local(is:ie, js:je, IPD_Control%ntot2d) )
        allocate ( phy_f3d_pr_local(is:ie, js:je, IPD_Control%levs, IPD_Control%ntot3d) )
 
@@ -1528,6 +1555,8 @@ contains
        lakefrac_pr_local = +99999.9
        landfrac_pr_local = +99999.9
 
+       emis_lnd_pr_local = +99999.9
+
        phy_f2d_pr_local = +99999.9
        phy_f3d_pr_local = +99999.9
 
@@ -1565,6 +1594,8 @@ contains
              sealand_pr_local(i,j) = real(IPD_Data(nb)%Sfcprop%slmsk(ix))
              lakefrac_pr_local(i,j) = real(IPD_Data(nb)%Sfcprop%lakefrac(ix))
              landfrac_pr_local(i,j) = real(IPD_Data(nb)%Sfcprop%landfrac(ix))
+
+             emis_lnd_pr_local(i,j) = real(IPD_Data(nb)%Sfcprop%emis_lnd(ix))
 
              deep_soil_t_pr_local(i, j) = IPD_data(nb)%Sfcprop%tg3(ix)
              soil_type_pr_local(i, j) = IPD_data(nb)%Sfcprop%stype(ix)
@@ -1627,6 +1658,8 @@ contains
        call mn_var_dump_to_netcdf(lakefrac_pr_local   , is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "LAKEFRAC")
        call mn_var_dump_to_netcdf(landfrac_pr_local   , is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "LANDFRAC")
 
+       call mn_var_dump_to_netcdf(emis_lnd_pr_local   , is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "EMISLAND")
+
        call mn_var_dump_to_netcdf(deep_soil_t_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "DEEPSOIL")
        call mn_var_dump_to_netcdf(soil_type_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "SOILTP")
        !call mn_var_dump_to_netcdf(veg_frac_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "VEGFRAC")
@@ -1676,6 +1709,8 @@ contains
        deallocate(slc_pr_local)
        deallocate(lakefrac_pr_local)
        deallocate(landfrac_pr_local)
+
+       deallocate(emis_lnd_pr_local)
 
        deallocate(sealand_pr_local, deep_soil_t_pr_local, soil_type_pr_local, veg_type_pr_local, max_snow_alb_pr_local)
 

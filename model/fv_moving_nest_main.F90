@@ -210,6 +210,10 @@ contains
 
     is_moving_nest = Atm(child_grid_num)%neststruct%is_moving_nest
 
+    !call show_atm("RRR", Atm(1), 1, this_pe)
+    !call show_atm("RRR", Atm(n), n, this_pe)
+
+
     if (is_moving_nest) then
        call eval_move_nest(Atm, a_step, parent_grid_num, child_grid_num, do_move, delta_i_c, delta_j_c, dt_atmos)
 
@@ -271,7 +275,7 @@ contains
     !   if (debug_log) print '("[INFO] WDR after outputting to netCDF fv_dynamics atmosphere.F90 npe=",I0, " psc=",I0)', this_pe, psc
     !end if
 
-    if (a_step .lt. 10 .or. mod(a_step, 5) .eq. 0) then
+    if (a_step .lt. 10 .or. mod(a_step, 40) .eq. 0) then
     !if (mod(a_step, 20) .eq. 0) then
        if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
        if (tsvar_out) call mn_phys_dump_to_netcdf(Atm(n), Atm_block, IPD_control, IPD_data, a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
@@ -516,7 +520,7 @@ contains
    integer  :: shalo = 3
    integer  :: extra_halo = 0   ! Extra halo for moving nest routines
 
-   integer  :: tile_fine, tile_coarse, this_tile
+   !integer  :: tile_fine, tile_coarse, this_tile
    integer  :: istart_fine, iend_fine, jstart_fine, jend_fine
    integer  :: istart_coarse, iend_coarse, jstart_coarse, jend_coarse
 
@@ -569,6 +573,11 @@ contains
 
    !! TODO Refine this per Atm(n) structure to allow some static and some moving nests in same run
    logical  :: is_moving_nest = .true.  ! Attach this to the namelist reading
+
+   !! Regional configuration data
+   !logical  :: is_regional = .true.           ! TODO read from namelist 
+   !logical  :: is_regional = .false.           ! TODO read from namelist 
+   !integer  :: global_coarse_res = 96  ! TODO read this from namelist or Atm
 
    real(kind=R_GRID)   :: pi = 4 * atan(1.0d0)
    real                :: rad2deg
@@ -635,7 +644,7 @@ contains
    if (debug_log) print '("[INFO] WDR MV_NST1 run step 1 fv_moving_nest_main.F90 npe=",I0)', this_pe
 
     !! This tile is 1-6 for the global tiles, 7 for nest 1, 8 for nest 2, etc.
-    this_tile = Atm(n)%global_tile
+   !this_tile = Atm(n)%global_tile
 
     domain_fine => Atm(child_grid_num)%domain
     parent_tile = Atm(child_grid_num)%neststruct%parent_tile
@@ -646,15 +655,15 @@ contains
 
     if (debug_log) then
        if (is_fine_pe) then
-          print '("[INFO] WDR move_nest FINE. npe=",I0, " ", I2.2, " ", I2.2," do_move=",L1," delta_i_c=",I0," delta_j_c=",I0)', this_pe, n, this_tile, do_move, delta_i_c, delta_j_c
+          print '("[INFO] WDR move_nest FINE. npe=",I0, " ", I2.2," do_move=",L1," delta_i_c=",I0," delta_j_c=",I0)', this_pe, n, do_move, delta_i_c, delta_j_c
        else
-          print '("[INFO] WDR move_nest COARSE. npe=",I0, " ", I2.2, " ", I2.2)', this_pe, n, this_tile
+          print '("[INFO] WDR move_nest COARSE. npe=",I0, " ", I2.2)', this_pe, n
        end if
 
        do nn = 1, size(Atm)
           call show_atm("1", Atm(nn), nn, this_pe)
        end do
-       print '("[INFO] WDR diag Atm DONE npe=",I0," Atm(",I0,") this_tile=",I0)', this_pe, n, this_tile
+       print '("[INFO] WDR diag Atm DONE npe=",I0," Atm(",I0,")")', this_pe, n
     end if
 
     !if (a_step .eq. 1) then
@@ -686,7 +695,7 @@ contains
        x_refine = Atm(child_grid_num)%neststruct%refinement
        y_refine = x_refine
 
-       if (debug_log) print '("[INFO] WDR global_nest_domain npe=",I0," tile_file=",I0," tile_coarse=",I0," istart_coarse=",I0)', this_pe, global_nest_domain%tile_fine, global_nest_domain%tile_coarse, global_nest_domain%istart_coarse
+       !if (debug_log) print '("[INFO] WDR global_nest_domain npe=",I0," tile_file=",I0," tile_coarse=",I0," istart_coarse=",I0)', this_pe, global_nest_domain%tile_fine, global_nest_domain%tile_coarse, global_nest_domain%istart_coarse
 
        ioffset => Atm(child_grid_num)%neststruct%ioffset
        joffset => Atm(child_grid_num)%neststruct%joffset
@@ -695,8 +704,14 @@ contains
 
        ! TODO update tile_fine to support multiple nests
        !tile_fine = n + 6 - 1  ! TODO: Not clear this is correct for both parent and child values of n
-       tile_fine = 7
-       tile_coarse = parent_tile
+
+       !if (Atm(n)%neststruct%regional) then
+       !   tile_fine = 8
+       !else
+       !   tile_fine = 7
+       !end if
+
+       !tile_coarse = parent_tile
 
        istart_fine = global_nest_domain%istart_fine(nest_num)
        iend_fine = global_nest_domain%iend_fine(nest_num)
@@ -781,32 +796,53 @@ contains
           if (first_nest_move) then
              if (debug_log) print '("[INFO] WDR mn_latlon_read_hires_parent READING static fine file on npe=",I0)', this_pe
 
+             !call mn_latlon_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, fp_super_tile_geo, &
+             !     Atm(child_grid_num)%neststruct%surface_dir, Atm(1)%gridstruct%regional, parent_tile)
+
+             print '("[INFO] WDR PPP npe=",I0," parent_tile=",I0," ",I0," ",I0)', this_pe, parent_tile, Atm(1)%neststruct%parent_tile, Atm(child_grid_num)%neststruct%parent_tile
+             print '("[INFO] WDR PPP npe=",I0," ntiles_g=",I0," ",I0)', this_pe, Atm(1)%gridstruct%ntiles_g, Atm(child_grid_num)%gridstruct%ntiles_g
+             print '("[INFO] WDR PPP npe=",I0," bounded=",L1," ",L1)', this_pe, Atm(1)%gridstruct%bounded_domain, Atm(child_grid_num)%gridstruct%bounded_domain
+
+             
+             !if (is_regional) then
+             !   ! Note that for regional, npx and npy are the dimensions of the regional grid, not the cubed sphere tile.
+             !   global_coarse_res = 96
+             !   parent_tile = 7
+             !else
+             !   global_coarse_res = Atm(1)%npx - 1
+             !end if
+
              call mn_latlon_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, fp_super_tile_geo, &
-                  Atm(child_grid_num)%neststruct%surface_dir)
+                  Atm(child_grid_num)%neststruct%surface_dir,  parent_tile)
 
              !print '("[INFO] WDR mn_orog_read_hires_parent BEFORE READING static orog fine file on npe=",I0)', this_pe
-             call mn_orog_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(child_grid_num)%neststruct%surface_dir, filtered_terrain, &
-                  mn_static%orog_grid, mn_static%orog_std_grid, mn_static%ls_mask_grid, mn_static%land_frac_grid)
+             call mn_orog_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, &
+                  Atm(child_grid_num)%neststruct%surface_dir, filtered_terrain, &
+                  mn_static%orog_grid, mn_static%orog_std_grid, mn_static%ls_mask_grid, mn_static%land_frac_grid,  parent_tile)
              !print '("[INFO] WDR mn_orog_read_hires_parent COMPLETED READING static orog fine file on npe=",I0)', this_pe
 
              ! If terrain_smoother method 1 is chosen, we need the parent coarse terrain
              if (Atm(n)%neststruct%terrain_smoother .eq. 1) then
                 if (filtered_terrain) then
-                   call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, trim(Atm(child_grid_num)%neststruct%surface_dir), "oro_data", "orog_filt", mn_static%parent_orog_grid)
+                   !call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, trim(Atm(child_grid_num)%neststruct%surface_dir), "oro_data", "orog_filt", mn_static%parent_orog_grid,  parent_tile)
+                   !call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, './INPUT', "oro_data", "orog_filt", mn_static%parent_orog_grid,  parent_tile)
+                   call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, Atm(child_grid_num)%neststruct%surface_dir, "oro_data", "orog_filt", mn_static%parent_orog_grid,  parent_tile)
                 else
-                   call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, trim(Atm(child_grid_num)%neststruct%surface_dir), "oro_data", "orog_raw", mn_static%parent_orog_grid)
+                   !call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, trim(Atm(child_grid_num)%neststruct%surface_dir), "oro_data", "orog_raw", mn_static%parent_orog_grid,  parent_tile)
+                   !call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, './INPUT', "oro_data", "orog_raw", mn_static%parent_orog_grid,  parent_tile)
+                   call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, Atm(child_grid_num)%neststruct%surface_dir, "oro_data", "orog_raw", mn_static%parent_orog_grid,  parent_tile)
                 end if
              end if
 
-             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "substrate_temperature", "substrate_temperature", mn_static%deep_soil_temp_grid)
-             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "soil_type", "soil_type", mn_static%soil_type_grid)
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "substrate_temperature", "substrate_temperature", mn_static%deep_soil_temp_grid,  parent_tile)
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "soil_type", "soil_type", mn_static%soil_type_grid,  parent_tile)
 
              !call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "", mn_static%veg_frac_grid)
-             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "vegetation_type", "vegetation_type", mn_static%veg_type_grid)
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "vegetation_type", "vegetation_type", mn_static%veg_type_grid,  parent_tile)
 
-             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "slope_type", "slope_type", mn_static%slope_type_grid)
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "slope_type", "slope_type", mn_static%slope_type_grid,  parent_tile)
 
-             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "maximum_snow_albedo", "maximum_snow_albedo", mn_static%max_snow_alb_grid)
+             call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir) // "/fix_sfc", "maximum_snow_albedo", "maximum_snow_albedo", mn_static%max_snow_alb_grid,  parent_tile)
 
              ! Monthly static data
              !call mn_static_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(child_grid_num)%neststruct%surface_dir, "vegetation_greenness", mn_static%veg_greenness_grid)
@@ -878,7 +914,7 @@ contains
        if (debug_log) print '("[INFO] WDR MV_NST3 run step 3 fv_moving_nest_main.F90 processing Atm(n) npe=",I0," n=",I0," ioffset=",I0," joffset=",I0)', this_pe, n, ioffset, joffset
 
        call mn_meta_move_nest(delta_i_c, delta_j_c, pelist, is_fine_pe, extra_halo, &
-            global_nest_domain, domain_fine, domain_coarse, tile_fine, tile_coarse, &
+            global_nest_domain, domain_fine, domain_coarse, & !tile_fine, tile_coarse, &
             istart_coarse, iend_coarse, jstart_coarse, jend_coarse,  &
             istart_fine, iend_fine, jstart_fine, jend_fine)
 
@@ -931,7 +967,8 @@ contains
 
           ! parent_geo is only loaded first time; afterwards it is reused.
           ! This is the coarse resolution data for the parent
-          call mn_latlon_load_parent(Atm, n, delta_i_c, delta_j_c, child_grid_num, &
+          call mn_latlon_load_parent(Atm(child_grid_num)%neststruct%surface_dir, Atm, n, parent_tile, &
+               delta_i_c, delta_j_c, child_grid_num, &
                parent_geo, tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, &
                p_grid, n_grid, p_grid_u, n_grid_u, p_grid_v, n_grid_v)
 
@@ -1114,6 +1151,14 @@ contains
                 if (Atm(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) then
                    print '("[INFO] WDR ALBLND fv_moving_nest_main.F90 npe=",I0," albdirvis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%albdirvis_lnd(i,j)
                 end if
+
+                ! Force to positive at all locations.
+                if (Atm(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_lnd(i,j) = 0.5
+                if (Atm(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
+                if (Atm(n)%mn_phys%albdirnir_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
+                if (Atm(n)%mn_phys%albdifvis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdifvis_lnd(i,j) = 0.5
+                if (Atm(n)%mn_phys%albdifnir_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdifnir_lnd(i,j) = 0.5
+                
              end do
           end do
        end if
