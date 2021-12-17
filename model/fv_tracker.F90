@@ -529,11 +529,19 @@ contains
            "W10 = ",F7.3," kn, PMIN = ",F8.3," mbar, ", &
            "LAT = ",F6.3,A1,", LON = ",F7.3,A1,", ",    &
            "RMW = ",F7.3," nmi")
-    write(Atm%neststruct%outatcf_lun+Atm%grid_number,313) sec,   &
-         Atm%tracker_vmax*mps2kn,Atm%tracker_pmin/100.,          &
-         abs(Atm%tracker_fixlat),get_lat_ns(Atm%tracker_fixlat), &
-         abs(Atm%tracker_fixlon),get_lon_ew(Atm%tracker_fixlon), &
-         Atm%tracker_rmw*km2nmi
+    if (Atm%tracker_fixlon .gt. 180.0) then
+       write(Atm%neststruct%outatcf_lun+Atm%grid_number,313) sec,   &
+            Atm%tracker_vmax*mps2kn,Atm%tracker_pmin/100.,          &
+            abs(Atm%tracker_fixlat),get_lat_ns(Atm%tracker_fixlat), &
+            abs(Atm%tracker_fixlon-360.0),get_lon_ew(Atm%tracker_fixlon-360.0), &
+            Atm%tracker_rmw*km2nmi
+    else       
+       write(Atm%neststruct%outatcf_lun+Atm%grid_number,313) sec,   &
+            Atm%tracker_vmax*mps2kn,Atm%tracker_pmin/100.,          &
+            abs(Atm%tracker_fixlat),get_lat_ns(Atm%tracker_fixlat), &
+            abs(Atm%tracker_fixlon),get_lon_ew(Atm%tracker_fixlon), &
+            Atm%tracker_rmw*km2nmi
+    end if
     ! write(message,313) sec,                                      &
     !      Atm%tracker_vmax*mps2kn,Atm%tracker_pmin/100.,          &
     !      abs(Atm%tracker_fixlat),get_lat_ns(Atm%tracker_fixlat), &
