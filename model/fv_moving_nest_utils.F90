@@ -678,7 +678,7 @@ end subroutine fill_nest_halos_from_parent_r8_2d
 
 
 
-subroutine fill_nest_halos_from_parent_masked(var_name, data_var, interp_type, wt, ind, x_refine, y_refine, is_fine_pe, nest_domain, position, mask_var, default_val)
+subroutine fill_nest_halos_from_parent_masked(var_name, data_var, interp_type, wt, ind, x_refine, y_refine, is_fine_pe, nest_domain, position, mask_var, mask_val, default_val)
   character(len=*), intent(in)                :: var_name
   real*8, allocatable, intent(inout)          :: data_var(:,:)
   integer, intent(in)                         :: interp_type
@@ -689,6 +689,7 @@ subroutine fill_nest_halos_from_parent_masked(var_name, data_var, interp_type, w
   type(nest_domain_type), intent(inout)       :: nest_domain
   integer, intent(in)                         :: position
   real*4, allocatable, intent(in)             :: mask_var(:,:)
+  integer, intent(in)                         :: mask_val
   real*8, intent(in)                          :: default_val
 
 
@@ -746,16 +747,16 @@ subroutine fill_nest_halos_from_parent_masked(var_name, data_var, interp_type, w
 
      if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
 
-     call fill_nest_from_buffer_masked(interp_type, data_var, nbuffer, north_fine, north_coarse, NORTH, x_refine, y_refine, wt, ind, mask_var, default_val)
+     call fill_nest_from_buffer_masked(interp_type, data_var, nbuffer, north_fine, north_coarse, NORTH, x_refine, y_refine, wt, ind, mask_var, mask_val, default_val)
      if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
 
-     call fill_nest_from_buffer_masked(interp_type, data_var, sbuffer, south_fine, south_coarse, SOUTH, x_refine, y_refine, wt, ind, mask_var, default_val)
+     call fill_nest_from_buffer_masked(interp_type, data_var, sbuffer, south_fine, south_coarse, SOUTH, x_refine, y_refine, wt, ind, mask_var, mask_val, default_val)
      if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
 
-     call fill_nest_from_buffer_masked(interp_type, data_var, ebuffer, east_fine, east_coarse, EAST, x_refine, y_refine, wt, ind, mask_var, default_val)
+     call fill_nest_from_buffer_masked(interp_type, data_var, ebuffer, east_fine, east_coarse, EAST, x_refine, y_refine, wt, ind, mask_var, mask_val, default_val)
      if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
 
-     call fill_nest_from_buffer_masked(interp_type, data_var, wbuffer, west_fine, west_coarse, WEST, x_refine, y_refine, wt, ind, mask_var, default_val)
+     call fill_nest_from_buffer_masked(interp_type, data_var, wbuffer, west_fine, west_coarse, WEST, x_refine, y_refine, wt, ind, mask_var, mask_val, default_val)
      if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
 
   end if
@@ -1964,7 +1965,7 @@ end subroutine find_nest_alignment
   end subroutine fill_nest_from_buffer_r8_2d
 
 
-  subroutine fill_nest_from_buffer_masked(interp_type, x, buffer, bbox_fine, bbox_coarse, dir, x_refine, y_refine, wt, ind, mask_var, default_val)
+  subroutine fill_nest_from_buffer_masked(interp_type, x, buffer, bbox_fine, bbox_coarse, dir, x_refine, y_refine, wt, ind, mask_var, mask_val, default_val)
     implicit none
 
     integer, intent(in)                         :: interp_type
@@ -1975,6 +1976,7 @@ end subroutine find_nest_alignment
     real, allocatable, intent(in)               :: wt(:,:,:)    ! The final dimension is always 4
     integer, allocatable, intent(in)            :: ind(:,:,:)
     real, allocatable, intent(in)               :: mask_var(:,:)
+    integer, intent(in)                         :: mask_val
     real*8, intent(in)                          :: default_val
 
     integer   :: this_pe
@@ -1992,7 +1994,7 @@ end subroutine find_nest_alignment
        call fill_nest_from_buffer_cell_center("D", x, buffer, bbox_fine, bbox_coarse, dir, x_refine, y_refine, wt, ind)
     case (7)
        if (debug_log) print '("[INFO] WDR FNB this_tile. npe=",I0," interp_type=",I0,"= MASKED")', this_pe, interp_type
-       call fill_nest_from_buffer_cell_center_masked("A", x, buffer, bbox_fine, bbox_coarse, dir, x_refine, y_refine, wt, ind, mask_var, default_val)
+       call fill_nest_from_buffer_cell_center_masked("A", x, buffer, bbox_fine, bbox_coarse, dir, x_refine, y_refine, wt, ind, mask_var, mask_val, default_val)
     case (9)
        if (debug_log) print '("[INFO] WDR FNB this_tile. npe=",I0," interp_type=",I0,"= nearest neighbor cell centered")', this_pe, interp_type
        !call fill_nest_from_buffer_nearest_neighbor(x, buffer, bbox_fine, bbox_coarse, dir, wt)
@@ -2304,7 +2306,7 @@ end subroutine find_nest_alignment
   end subroutine fill_nest_from_buffer_cell_center_r8_2d
 
 
-  subroutine fill_nest_from_buffer_cell_center_masked(stagger, x, buffer, bbox_fine, bbox_coarse, dir, x_refine, y_refine, wt, ind, mask_var, default_val)
+  subroutine fill_nest_from_buffer_cell_center_masked(stagger, x, buffer, bbox_fine, bbox_coarse, dir, x_refine, y_refine, wt, ind, mask_var, mask_val, default_val)
     implicit none
     character ( len = 1 ), intent(in)             :: stagger
     real*8, allocatable, intent(inout)            :: x(:,:)
@@ -2314,6 +2316,7 @@ end subroutine find_nest_alignment
     real, allocatable, intent(in)                 :: wt(:,:,:)    ! The final dimension is always 4
     integer, allocatable, intent(in)              :: ind(:,:,:)
     real, allocatable, intent(in)                 :: mask_var(:,:) 
+    integer, intent(in)                           :: mask_val
     real*8, intent(in)                            :: default_val
 
     character(len=8)       :: dir_str
@@ -2362,7 +2365,7 @@ end subroutine find_nest_alignment
              !     wt(i,j,4)*buffer(ic+1,jc  )
 
              ! Land type
-             !if (mask_var(i,j) .eq. 1) then
+             !if (mask_var(i,j) .eq. mask_val) then
                 x(i,j) = 0.0
                 tw = 0.0
                 if (buffer(ic,jc) .gt. -1.0)     x(i,j) = x(i,j) + wt(i,j,1)*buffer(ic,  jc  )

@@ -799,9 +799,9 @@ contains
              !call mn_latlon_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, fp_super_tile_geo, &
              !     Atm(child_grid_num)%neststruct%surface_dir, Atm(1)%gridstruct%regional, parent_tile)
 
-             print '("[INFO] WDR PPP npe=",I0," parent_tile=",I0," ",I0," ",I0)', this_pe, parent_tile, Atm(1)%neststruct%parent_tile, Atm(child_grid_num)%neststruct%parent_tile
-             print '("[INFO] WDR PPP npe=",I0," ntiles_g=",I0," ",I0)', this_pe, Atm(1)%gridstruct%ntiles_g, Atm(child_grid_num)%gridstruct%ntiles_g
-             print '("[INFO] WDR PPP npe=",I0," bounded=",L1," ",L1)', this_pe, Atm(1)%gridstruct%bounded_domain, Atm(child_grid_num)%gridstruct%bounded_domain
+             !print '("[INFO] WDR PPP npe=",I0," parent_tile=",I0," ",I0," ",I0)', this_pe, parent_tile, Atm(1)%neststruct%parent_tile, Atm(child_grid_num)%neststruct%parent_tile
+             !print '("[INFO] WDR PPP npe=",I0," ntiles_g=",I0," ",I0)', this_pe, Atm(1)%gridstruct%ntiles_g, Atm(child_grid_num)%gridstruct%ntiles_g
+             !print '("[INFO] WDR PPP npe=",I0," bounded=",L1," ",L1)', this_pe, Atm(1)%gridstruct%bounded_domain, Atm(child_grid_num)%gridstruct%bounded_domain
 
              
              !if (is_regional) then
@@ -1145,19 +1145,21 @@ contains
                 !if (Atm(n)%mn_phys%semisbase(i,j) .lt. 0.0) then
                 !   print '("[INFO] WDR SEMISBASE fv_moving_nest_main.F90 npe=",I0," semisbase(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%semisbase(i,j)
                 !end if
-                if (Atm(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) then
-                   print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%emis_lnd(i,j)
-                end if
-                if (Atm(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) then
-                   print '("[INFO] WDR ALBLND fv_moving_nest_main.F90 npe=",I0," albdirvis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%albdirvis_lnd(i,j)
-                end if
+                !if (Atm(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) then
+                !   print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%emis_lnd(i,j)
+                !end if
+                !if (Atm(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) then
+                !   print '("[INFO] WDR ALBLND fv_moving_nest_main.F90 npe=",I0," albdirvis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%albdirvis_lnd(i,j)
+                !end if
 
-                ! Force to positive at all locations.
-                if (Atm(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_lnd(i,j) = 0.5
-                if (Atm(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
-                if (Atm(n)%mn_phys%albdirnir_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
-                if (Atm(n)%mn_phys%albdifvis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdifvis_lnd(i,j) = 0.5
-                if (Atm(n)%mn_phys%albdifnir_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdifnir_lnd(i,j) = 0.5
+                ! WDR EMIS PATCH - Force to positive at all locations.
+                !if (Atm(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_lnd(i,j) = 0.5
+                !if (Atm(n)%mn_phys%emis_ice(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_ice(i,j) = 0.5
+                !if (Atm(n)%mn_phys%emis_wat(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_wat(i,j) = 0.5
+                !if (Atm(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
+                !if (Atm(n)%mn_phys%albdirnir_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
+                !if (Atm(n)%mn_phys%albdifvis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdifvis_lnd(i,j) = 0.5
+                !if (Atm(n)%mn_phys%albdifnir_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdifnir_lnd(i,j) = 0.5
                 
              end do
           end do

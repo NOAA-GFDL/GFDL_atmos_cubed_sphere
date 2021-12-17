@@ -401,14 +401,18 @@ contains
                mn_phys%slc(i,j,k) = IPD_Data(nb)%Sfcprop%slc(ix,k)
             enddo
 
+
+
             if (debug_log) print '("[INFO] WDR mn_phys_fill_temp_variables. PAB npe=",I0)', this_pe
-            !mn_phys%sfalb_lnd(i,j)     = IPD_Data(nb)%Sfcprop%sfalb_lnd(ix)
-            if (debug_log) print '("[INFO] WDR mn_phys_fill_temp_variables. PAC npe=",I0)', this_pe
             mn_phys%emis_lnd(i,j)      = IPD_Data(nb)%Sfcprop%emis_lnd(ix)
+            if (debug_log) print '("[INFO] WDR mn_phys_fill_temp_variables. PAC npe=",I0)', this_pe
+            mn_phys%emis_ice(i,j)      = IPD_Data(nb)%Sfcprop%emis_ice(ix)
             if (debug_log) print '("[INFO] WDR mn_phys_fill_temp_variables. PAD npe=",I0)', this_pe
-            !mn_phys%sfalb_lnd_bck(i,j) = IPD_Data(nb)%Sfcprop%sfalb_lnd_bck(ix)
+            mn_phys%emis_wat(i,j)      = IPD_Data(nb)%Sfcprop%emis_wat(ix)
             if (debug_log) print '("[INFO] WDR mn_phys_fill_temp_variables. PAE npe=",I0)', this_pe
 
+            !mn_phys%sfalb_lnd(i,j)     = IPD_Data(nb)%Sfcprop%sfalb_lnd(ix)
+            !mn_phys%sfalb_lnd_bck(i,j) = IPD_Data(nb)%Sfcprop%sfalb_lnd_bck(ix)
             !mn_phys%semis(i,j)      = IPD_Data(nb)%Radtend%semis(ix)
             !if (debug_log) print '("[INFO] WDR mn_phys_fill_temp_variables. PAF npe=",I0)', this_pe
             !mn_phys%semisbase(i,j)      = IPD_Data(nb)%Sfcprop%semisbase(ix)
@@ -592,12 +596,26 @@ contains
                    IPD_Data(nb)%Sfcprop%slc(ix,k) = mn_phys%slc(i,j,k)
                 enddo
 
-                !IPD_Data(nb)%Sfcprop%sfalb_lnd(ix) = mn_phys%sfalb_lnd(i,j)
-                if (mn_phys%emis_lnd(i,j) .ge. 0.0) then
+                ! WDR EMIS PATCH - Force to positive at all locations.
+                !if (mn_phys%emis_lnd(i,j) .ge. 0.0) then
                    IPD_Data(nb)%Sfcprop%emis_lnd(ix) = mn_phys%emis_lnd(i,j)
-                else
-                   IPD_Data(nb)%Sfcprop%emis_lnd(ix) = 0.5
-                end if
+                !else
+                !   IPD_Data(nb)%Sfcprop%emis_lnd(ix) = 0.5
+                !end if
+                !if (mn_phys%emis_ice(i,j) .ge. 0.0) then
+                   IPD_Data(nb)%Sfcprop%emis_ice(ix) = mn_phys%emis_ice(i,j)
+                !else
+                !   IPD_Data(nb)%Sfcprop%emis_ice(ix) = 0.5
+                !end if
+                !if (mn_phys%emis_wat(i,j) .ge. 0.0) then
+                   IPD_Data(nb)%Sfcprop%emis_wat(ix) = mn_phys%emis_wat(i,j)
+                !else
+                !   IPD_Data(nb)%Sfcprop%emis_wat(ix) = 0.5
+                !end if
+
+
+
+                !IPD_Data(nb)%Sfcprop%sfalb_lnd(ix) = mn_phys%sfalb_lnd(i,j)
                 !IPD_Data(nb)%Sfcprop%sfalb_lnd_bck(ix) = mn_phys%sfalb_lnd_bck(i,j)
 
                 !IPD_Data(nb)%Radtend%semis(ix) = mn_phys%semis(i,j)
@@ -775,10 +793,23 @@ contains
        !     Atm(child_grid_num)%neststruct%ind_h, &
        !     x_refine, y_refine, &
        !     is_fine_pe, nest_domain, position)
+
+       ! sea/land mask array (sea:0,land:1,sea-ice:2)
+
        call fill_nest_halos_from_parent_masked("emis_lnd", mn_phys%emis_lnd, interp_type_lmask, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
-            is_fine_pe, nest_domain, position, mn_phys%slmsk, 0.5D0)
+            is_fine_pe, nest_domain, position, mn_phys%slmsk, 1, 0.5D0)
+
+       call fill_nest_halos_from_parent_masked("emis_ice", mn_phys%emis_ice, interp_type_lmask, Atm(child_grid_num)%neststruct%wt_h, &
+            Atm(child_grid_num)%neststruct%ind_h, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position, mn_phys%slmsk, 2, 0.5D0)
+
+       call fill_nest_halos_from_parent_masked("emis_wat", mn_phys%emis_wat, interp_type_lmask, Atm(child_grid_num)%neststruct%wt_h, &
+            Atm(child_grid_num)%neststruct%ind_h, &
+            x_refine, y_refine, &
+            is_fine_pe, nest_domain, position, mn_phys%slmsk, 0, 0.5D0)
 
 !       call fill_nest_halos_from_parent("emis_lnd", mn_phys%emis_lnd, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
 !            Atm(child_grid_num)%neststruct%ind_h, &
@@ -941,19 +972,19 @@ contains
        call fill_nest_halos_from_parent_masked("albdirvis_lnd", mn_phys%albdirvis_lnd, interp_type_lmask, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
-            is_fine_pe, nest_domain, position, mn_phys%slmsk, 0.5D0)
+            is_fine_pe, nest_domain, position, mn_phys%slmsk, 1, 0.5D0)
        call fill_nest_halos_from_parent_masked("albdirnir_lnd", mn_phys%albdirnir_lnd, interp_type_lmask, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
-            is_fine_pe, nest_domain, position, mn_phys%slmsk, 0.5D0)
+            is_fine_pe, nest_domain, position, mn_phys%slmsk, 1, 0.5D0)
        call fill_nest_halos_from_parent_masked("albdifvis_lnd", mn_phys%albdifvis_lnd, interp_type_lmask, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
-            is_fine_pe, nest_domain, position, mn_phys%slmsk, 0.5D0)
+            is_fine_pe, nest_domain, position, mn_phys%slmsk, 1, 0.5D0)
        call fill_nest_halos_from_parent_masked("albdifnir_lnd", mn_phys%albdifnir_lnd, interp_type_lmask, Atm(child_grid_num)%neststruct%wt_h, &
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
-            is_fine_pe, nest_domain, position, mn_phys%slmsk, 0.5D0)
+            is_fine_pe, nest_domain, position, mn_phys%slmsk, 1, 0.5D0)
 
 
 
@@ -1072,10 +1103,12 @@ contains
        call mn_var_fill_intern_nest_halos(mn_phys%phy_f2d, domain_fine, is_fine_pe)
        call mn_var_fill_intern_nest_halos(mn_phys%phy_f3d, domain_fine, is_fine_pe)
 
-       !call mn_var_fill_intern_nest_halos(mn_phys%sfalb_lnd, domain_fine, is_fine_pe)
        call mn_var_fill_intern_nest_halos(mn_phys%emis_lnd, domain_fine, is_fine_pe)
-       !call mn_var_fill_intern_nest_halos(mn_phys%sfalb_lnd_bck, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%emis_ice, domain_fine, is_fine_pe)
+       call mn_var_fill_intern_nest_halos(mn_phys%emis_wat, domain_fine, is_fine_pe)
 
+       !call mn_var_fill_intern_nest_halos(mn_phys%sfalb_lnd, domain_fine, is_fine_pe)
+       !call mn_var_fill_intern_nest_halos(mn_phys%sfalb_lnd_bck, domain_fine, is_fine_pe)
        !call mn_var_fill_intern_nest_halos(mn_phys%semis, domain_fine, is_fine_pe)
        !call mn_var_fill_intern_nest_halos(mn_phys%semisbase, domain_fine, is_fine_pe)
        !call mn_var_fill_intern_nest_halos(mn_phys%sfalb, domain_fine, is_fine_pe)
@@ -1205,14 +1238,18 @@ contains
 
        ! Surface variables
 
+       call mn_var_shift_data(mn_phys%emis_lnd, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+         delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(mn_phys%emis_ice, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+         delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
+       call mn_var_shift_data(mn_phys%emis_wat, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
+         delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
+
+
        !call mn_var_shift_data(mn_phys%sfalb_lnd, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
        !  delta_i_c, delta_j_c, &
        !  x_refine, y_refine, &
        !  is_fine_pe, nest_domain, position)
-       call mn_var_shift_data(mn_phys%emis_lnd, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-         delta_i_c, delta_j_c, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position)
        !call mn_var_shift_data(mn_phys%sfalb_lnd_bck, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
        !  delta_i_c, delta_j_c, &
        !  x_refine, y_refine, &

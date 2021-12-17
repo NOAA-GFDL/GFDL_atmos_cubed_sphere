@@ -1248,6 +1248,8 @@ use IPD_typedefs,           only: kind_phys => IPD_kind_phys
 
      real (kind=kind_phys), _ALLOCATABLE :: sfalb_lnd(:,:)   _NULL   !< surface albedo over land for LSM
      real (kind=kind_phys), _ALLOCATABLE :: emis_lnd(:,:)    _NULL   !< surface emissivity over land for LSM
+     real (kind=kind_phys), _ALLOCATABLE :: emis_ice(:,:)    _NULL   !< surface emissivity over ice for LSM
+     real (kind=kind_phys), _ALLOCATABLE :: emis_wat(:,:)    _NULL   !< surface emissivity over water for LSM
      real (kind=kind_phys), _ALLOCATABLE :: sfalb_lnd_bck(:,:) _NULL !< snow-free albedo over land
 
      !real (kind=kind_phys), _ALLOCATABLE :: semis(:,:)       _NULL   !< surface lw emissivity in fraction 
@@ -2447,6 +2449,8 @@ end subroutine deallocate_fv_nest_BC_type_3d
 
        allocate ( mn_phys%sfalb_lnd(isd:ied, jsd:jed) )
        allocate ( mn_phys%emis_lnd(isd:ied, jsd:jed) )
+       allocate ( mn_phys%emis_ice(isd:ied, jsd:jed) )
+       allocate ( mn_phys%emis_wat(isd:ied, jsd:jed) )
        allocate ( mn_phys%sfalb_lnd_bck(isd:ied, jsd:jed) )
 
        !allocate ( mn_phys%semis(isd:ied, jsd:jed) )
@@ -2530,6 +2534,8 @@ end subroutine deallocate_fv_nest_BC_type_3d
 
        mn_phys%sfalb_lnd = +99999.9
        mn_phys%emis_lnd = +99999.9
+       mn_phys%emis_ice = +99999.9
+       mn_phys%emis_wat = +99999.9
        mn_phys%sfalb_lnd_bck = +99999.9
 
        !mn_phys%semis = +99999.9
@@ -2624,6 +2630,8 @@ end subroutine deallocate_fv_nest_BC_type_3d
 
        deallocate( mn_phys%sfalb_lnd )
        deallocate( mn_phys%emis_lnd )
+       deallocate( mn_phys%emis_ice )
+       deallocate( mn_phys%emis_wat )
        deallocate( mn_phys%sfalb_lnd_bck )
 
        !deallocate( mn_phys%semis )
