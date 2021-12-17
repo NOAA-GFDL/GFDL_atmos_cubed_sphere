@@ -752,10 +752,10 @@ contains
     parent_geo%nx = Atm(1)%npx - 1
     parent_geo%ny = Atm(1)%npy - 1
 
-    !if (debug_log) then
+    if (debug_log) then
        call show_tile_geo(parent_geo, this_pe, "parent_geo")
        call show_atm_grids(Atm, n)
-    !end if
+    end if
 
     ! Actually, is the nest in grid_global??
 
@@ -939,11 +939,10 @@ contains
     grid_filename = trim(grid_filename)
 
     inquire(FILE=grid_filename, EXIST=file_exists)
-    if (file_exists) then
-       print '("[INFO] WDR mn_static_filename DOES EXIST npe=",I0," exists="L1," ",A256)', mpp_pe(), file_exists, grid_filename
-    else
+    if (.not. file_exists) then
        print '("[ERROR] WDR mn_static_filename DOES NOT EXIST npe=",I0," exists="L1," ",A256)', mpp_pe(), file_exists, grid_filename
     end if
+
   end subroutine mn_static_filename
 
 
@@ -1007,7 +1006,7 @@ contains
     integer                            :: fp_super_istart_fine, fp_super_jstart_fine,fp_super_iend_fine, fp_super_jend_fine
     character(len=256)                 :: grid_filename
 
-    print '("[INFO] WDR mn_latlon_read_hires_parent ",I0)', parent_tile
+    !print '("[INFO] WDR mn_latlon_read_hires_parent ",I0)', parent_tile
 
     call mn_static_filename(surface_dir, parent_tile, 'grid',  refine, grid_filename)
 
@@ -1039,7 +1038,7 @@ contains
 
     this_pe = mpp_pe()
 
-    print '("[INFO] WDR mn_orog_read_hires_parent npe=",I0," ",I0)', this_pe, parent_tile
+    !print '("[INFO] WDR mn_orog_read_hires_parent npe=",I0," ",I0)', this_pe, parent_tile
     
     nx_cubic = npx - 1
     nx = npx - 1
