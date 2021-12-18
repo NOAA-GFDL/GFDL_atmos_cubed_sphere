@@ -1027,7 +1027,7 @@ use IPD_typedefs,           only: kind_phys => IPD_kind_phys
 #ifdef MOVING_NEST
      ! Moving Nest Namelist Variables
      logical               :: is_moving_nest = .false.
-     character(len=120)    :: surface_dir = "  "
+     character(len=120)    :: surface_dir = "INPUT/moving_nest"
      integer               :: terrain_smoother = 1
      integer               :: vortex_tracker = 0
      integer               :: ntrack = 1
