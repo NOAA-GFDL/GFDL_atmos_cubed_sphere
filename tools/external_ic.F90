@@ -202,7 +202,7 @@ module external_ic_mod
 ! Include variable "version" to be written to log file.
 #include<file_version.h>
 
-   public get_external_ic, get_cubed_sphere_terrain, remap_scalar, remap_dwinds, source
+   public get_external_ic, get_cubed_sphere_terrain, remap_scalar, remap_dwinds
 
 contains
 
