@@ -305,19 +305,17 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
        return
    endif
 
-   t1=iau_state%hr1 - IPD_Control%iau_delthrs*0.5
-   t2=iau_state%hr1 + IPD_Control%iau_delthrs*0.5
    if (IPD_Control%iau_filter_increments) then
       ! compute increment filter weight
-      ! t1 beginning of window, t2 end of window
+      ! IPD_Control%iaufhrs(1) beginning of window, IPD_Control%iaufhrs(nfiles) end of window
       ! IPD_Control%fhour current time
       ! in window kstep=-nstep,nstep (2*nstep+1 total)
       ! time step IPD_control%dtp
       dtp=IPD_control%dtp
       nstep = 0.5*IPD_Control%iau_delthrs*3600/dtp
       ! compute normalized filter weight
-      kstep = (IPD_Control%fhour-(t1+IPD_Control%iau_delthrs*0.5))*3600./dtp
-      if (kstep .ge. -nstep .and. kstep .le. nstep) then
+      kstep = ((IPD_Control%fhour-IPD_Control%iaufhrs(1)) - 0.5*IPD_Control%iau_delthrs)*3600./dtp
+      if (IPD_Control%fhour >= IPD_Control%iaufhrs(1) .and. IPD_Control%fhour < IPD_Control%iaufhrs(nfiles)) then
          sx     = acos(-1.)*kstep/nstep
          wx     = acos(-1.)*kstep/(nstep+1)
          if (kstep .ne. 0) then
@@ -326,7 +324,7 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
             wt = 1.
          endif
          iau_state%wt = iau_state%wt_normfact*wt
-         if (is_master()) print *,'filter wt',kstep,IPD_Control%fhour,iau_state%wt
+         if (is_master()) print *,'filter wt',kstep,IPD_Control%iaufhrs(1),IPD_Control%fhour,IPD_Control%iaufhrs(nfiles),iau_state%wt/iau_state%wt_normfact
       else
          iau_state%wt = 0.
       endif
@@ -335,12 +333,11 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
    if (nfiles.EQ.1) then
 !  on check to see if we are in the IAU window,  no need to update the
 !  tendencies since they are fixed over the window
-      if ( IPD_Control%fhour < t1 .or. IPD_Control%fhour >= t2 ) then
-!         if (is_master()) print *,'no iau forcing',t1,IPD_Control%fhour,t2
+      if (IPD_Control%fhour < IPD_Control%iaufhrs(1) .or. IPD_Control%fhour >= IPD_Control%iaufhrs(nfiles)) then
          IAU_Data%in_interval=.false.
       else
          if (IPD_Control%iau_filter_increments) call setiauforcing(IPD_Control,IAU_Data,iau_state%wt)
-         if (is_master()) print *,'apply iau forcing',t1,IPD_Control%fhour,t2
+         if (is_master()) print *,'apply iau forcing',IPD_Control%iaufhrs(1),IPD_Control%fhour,IPD_Control%iaufhrs(nfiles)
          IAU_Data%in_interval=.true.
       endif
       return
@@ -352,6 +349,7 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
 !         if (is_master()) print *,'no iau forcing',IPD_Control%iaufhrs(1),IPD_Control%fhour,IPD_Control%iaufhrs(nfiles)
          IAU_Data%in_interval=.false.
       else
+         if (is_master()) print *,'apply iau forcing',IPD_Control%iaufhrs(1),IPD_Control%fhour,IPD_Control%iaufhrs(nfiles)
          IAU_Data%in_interval=.true.
          do k=nfiles,1,-1
             if (IPD_Control%iaufhrs(k) > IPD_Control%fhour) then
