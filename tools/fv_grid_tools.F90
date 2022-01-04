@@ -576,6 +576,10 @@ contains
 
     real(kind=R_GRID), pointer, dimension(:,:,:) :: agrid, grid
     real(kind=R_GRID), pointer, dimension(:,:) :: area, area_c
+    real(kind=R_GRID), pointer, dimension(:,:) ::  area_u,  area_v
+    real(kind=R_GRID), pointer, dimension(:,:) ::  dx6,  dy6
+    real, pointer, dimension(:,:) :: rarea_u, rarea_v
+    real, pointer, dimension(:,:) :: rdx6, rdy6
 
     real(kind=R_GRID), pointer, dimension(:,:) :: sina, cosa, dx, dy, dxc, dyc, dxa, dya
     real, pointer, dimension(:,:,:) :: e1, e2
@@ -614,6 +618,18 @@ contains
     area_c  => Atm%gridstruct%area_c_64
     rarea   => Atm%gridstruct%rarea
     rarea_c => Atm%gridstruct%rarea_c
+
+!   For MOLECULAR_DIFFUSION
+    if ( Atm%flagstruct%molecular_diffusion ) then
+       area_u  => Atm%gridstruct%area_u_64
+       area_v  => Atm%gridstruct%area_v_64
+       dx6     => Atm%gridstruct%dx6_64
+       dy6     => Atm%gridstruct%dy6_64
+       rarea_u => Atm%gridstruct%rarea_u
+       rarea_v => Atm%gridstruct%rarea_v
+       rdx6    => Atm%gridstruct%rdx6
+       rdy6    => Atm%gridstruct%rdy6
+    endif
 
     sina   => Atm%gridstruct%sina_64
     cosa   => Atm%gridstruct%cosa_64
@@ -956,6 +972,84 @@ contains
           dyc(i,jed+1) = dyc(i,jed)
        end do
 
+       if ( Atm%flagstruct%molecular_diffusion ) then
+! dx6, dy6
+          do j=jsd,jed+1
+             do i=isd+1,ied
+                call mid_pt_sphere(grid(i-1,j,1:2), grid(i  ,j,1:2), p1)
+                call mid_pt_sphere(grid(i  ,j,1:2), grid(i+1,j,1:2), p2)
+                dx6(i,j) = great_circle_dist( p2, p1, radius )
+             enddo
+!xxxxxx
+      !Are the following 2 lines appropriate for the regional domain?
+!xxxxxx
+            dx6(isd  ,j) = dx6(isd+1,j)
+            dx6(ied+1,j) = dx6(ied  ,j)
+         enddo
+
+         do j=jsd+1,jed
+            do i=isd,ied+1
+               call mid_pt_sphere(grid(i,j-1,1:2), grid(i,j  ,1:2), p1)
+               call mid_pt_sphere(grid(i,j  ,1:2), grid(i,j+1,1:2), p2)
+               dy6(i,j) = great_circle_dist( p2, p1, radius )
+            enddo
+         enddo
+!xxxxxx
+      !Are the following 2 lines appropriate for the regional domain?
+!xxxxxx
+         do i=isd,ied+1
+            dy6(i,jsd)   = dy6(i,jsd+1)
+            dy6(i,jed+1) = dy6(i,jed)
+         enddo
+! area_u, area_v
+         do j=jsd,jed
+            do i=isd+1,ied
+               call mid_pt_sphere(grid(i-1,j  ,1:2), grid(i  ,j  ,1:2), p1)
+               call mid_pt_sphere(grid(i-1,j+1,1:2), grid(i  ,j+1,1:2), p4)
+               call mid_pt_sphere(grid(i  ,j  ,1:2), grid(i+1,j  ,1:2), p2)
+               call mid_pt_sphere(grid(i  ,j+1,1:2), grid(i+1,j+1,1:2), p3)
+               area_v(i,j) = get_area(p1, p4, p2, p3, radius)
+            enddo
+!xxxxxx
+      !Are the following 2 lines appropriate for the regional domain?
+!xxxxxx
+            area_v(isd  ,j) = area_v(isd+1,j)
+            area_v(ied+1,j) = area_v(ied  ,j)
+         enddo
+
+         do j=jsd+1,jed
+            do i=isd,ied
+               call mid_pt_sphere(grid(i  ,j-1,1:2), grid(i  ,j  ,1:2), p1)
+               call mid_pt_sphere(grid(i  ,j  ,1:2), grid(i  ,j+1,1:2), p4)
+               call mid_pt_sphere(grid(i+1,j-1,1:2), grid(i+1,j  ,1:2), p2)
+               call mid_pt_sphere(grid(i+1,j  ,1:2), grid(i+1,j+1,1:2), p3)
+               area_u(i,j) = get_area(p1, p4, p2, p3, radius)
+            enddo
+         enddo
+!xxxxxx
+      !Are the following 2 lines appropriate for the regional domain?
+!xxxxxx
+         do i=isd,ied
+            area_u(i,jsd)   = area_u(i,jsd+1)
+            area_u(i,jed+1) = area_u(i,jed)
+         enddo
+
+! we are not really using the outmost, so no need to tune this
+! so update and fill corners should be enough
+
+         call mpp_update_domains( dx6, Atm%domain, position=CORNER, complete=.true.)
+         call mpp_update_domains( dy6, Atm%domain, position=CORNER, complete=.true.)
+         call mpp_update_domains( area_v, area_u, Atm%domain, flags=SCALAR_PAIR, &
+                                gridtype=CGRID_NE_PARAM, complete=.true.)
+
+         if (cubed_sphere  .and. (.not. (Atm%neststruct%nested .or. Atm%flagstruct%regional))) then
+            call fill_corners( dx6, npx, npy, FILL=XDir, BGRID=.true.)
+            call fill_corners( dy6, npx, npy, FILL=XDir, BGRID=.true.)
+            call fill_corners( area_v, area_u, npx, npy, CGRID=.true.)
+         endif
+
+       endif ! MOLECULAR_DIFFUSION
+
 
        if( .not. stretched_grid )      &
            call sorted_intb(isd, ied, jsd, jed, is, ie, js, je, npx, npy, &
@@ -1143,6 +1237,29 @@ contains
           enddo
        enddo
 
+       if ( Atm%flagstruct%molecular_diffusion ) then
+          do j=jsd,jed+1
+             do i=isd,ied
+                rarea_u(i,j) = 1.0/area_u(i,j)
+             enddo
+          enddo
+          do j=jsd,jed
+             do i=isd,ied+1
+                rarea_v(i,j) = 1.0/area_v(i,j)
+             enddo
+          enddo
+          do j=jsd,jed+1
+             do i=isd,ied+1
+                rdx6(i,j) = 1.0/dx6(i,j)
+             enddo
+          enddo
+          do j=jsd,jed+1
+             do i=isd,ied+1
+                rdy6(i,j) = 1.0/dy6(i,j)
+             enddo
+          enddo
+       endif
+
 200    format(A,f9.2,A,f9.2,A,f9.2)
 201    format(A,f9.2,A,f9.2,A,f9.2,A,f9.2)
 202    format(A,A,i4.4,A,i4.4,A)
@@ -1243,6 +1360,17 @@ contains
     nullify(rarea)
     nullify( area_c)
     nullify(rarea_c)
+
+    if ( Atm%flagstruct%molecular_diffusion ) then
+       nullify( area_u)
+       nullify( area_v)
+       nullify(rarea_u)
+       nullify(rarea_v)
+       nullify( dx6)
+       nullify( dy6)
+       nullify(rdx6)
+       nullify(rdy6)
+    endif
 
     nullify(sina)
     nullify(cosa)

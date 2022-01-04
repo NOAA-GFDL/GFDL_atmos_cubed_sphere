@@ -361,10 +361,10 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
 !         if (is_master()) print *,'t2=',t2
          if (IPD_Control%fhour >= iau_state%hr2) then ! need to read in next increment file
             iau_state%hr1=iau_state%hr2
-            iau_state%hr2=IPD_Control%iaufhrs(t2)
+            iau_state%hr2=IPD_Control%iaufhrs(int(t2))
             iau_state%inc1=iau_state%inc2
-            if (is_master()) print *,'reading next increment file',trim(IPD_Control%iau_inc_files(t2))
-            call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(t2)))
+            if (is_master()) print *,'reading next increment file',trim(IPD_Control%iau_inc_files(int(t2)))
+            call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(int(t2))))
          endif
          call updateiauforcing(IPD_Control,IAU_Data,iau_state%wt)
       endif

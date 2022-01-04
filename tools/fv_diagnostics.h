@@ -96,6 +96,10 @@
      integer :: id_t_dt_nudge, id_ps_dt_nudge, id_delp_dt_nudge, id_u_dt_nudge, id_v_dt_nudge
 
 ! EMC additions
-     integer :: id_diss, id_zratio, id_hw, id_qvw, id_qlw, id_qiw, id_o3w
-
+     integer :: id_diss, id_zratio, id_hw, id_qvw, id_qlw, id_qiw
+#ifdef MULTI_GASES
+     integer :: id_spo2w, id_spow, id_spo3w
+#else
+     integer :: id_o3w
+#endif
 #endif _FV_DIAG__
