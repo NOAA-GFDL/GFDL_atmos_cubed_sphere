@@ -315,7 +315,7 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
    endif
    if (IPD_Control%iau_filter_increments) then
       ! compute increment filter weight
-      ! t1 isbeginning of window, t2 end of window
+      ! t1 is beginning of window, t2 end of window
       ! IPD_Control%fhour current time
       ! in window kstep=-nstep,nstep (2*nstep+1 total)
       ! time step IPD_control%dtp
@@ -341,7 +341,9 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
    if (nfiles.EQ.1) then
 !  on check to see if we are in the IAU window,  no need to update the
 !  tendencies since they are fixed over the window
-      if (IPD_Control%fhour < t1 .or. IPD_Control%fhour >= t2) then
+      if ( IPD_Control%fhour < t1 .or. IPD_Control%fhour >= t2 ) then
+!         if (is_master()) print *,'no iau forcing',t1,IPD_Control%fhour,t2
+         IAU_Data%in_interval=.false.
       else
          if (IPD_Control%iau_filter_increments) call setiauforcing(IPD_Control,IAU_Data,iau_state%wt)
          if (is_master()) print *,'apply iau forcing t1,t,t2,filter wt=',t1,IPD_Control%fhour,t2,iau_state%wt/iau_state%wt_normfact
