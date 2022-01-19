@@ -137,6 +137,7 @@ module fv_regional_mod
 !
       integer,save :: cld_amt_index                                    &   !<--
                      ,graupel_index                                    &   !
+                     ,hailwat_index                                    &   !
                      ,ice_water_index                                  &   !    Locations of
                      ,liq_water_index                                  &   !    tracer vbls
                      ,o3mr_index                                       &   !    in the tracers
@@ -741,6 +742,7 @@ contains
       rain_water_index = get_tracer_index(MODEL_ATMOS, 'rainwat')
       snow_water_index = get_tracer_index(MODEL_ATMOS, 'snowwat')
       graupel_index    = get_tracer_index(MODEL_ATMOS, 'graupel')
+      hailwat_index    = get_tracer_index(MODEL_ATMOS, 'hailwat')
       cld_amt_index    = get_tracer_index(MODEL_ATMOS, 'cld_amt')
       o3mr_index       = get_tracer_index(MODEL_ATMOS, 'o3mr')
 !  write(0,*)' setup_regional_bc'
@@ -3492,7 +3494,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
   real(kind=R_GRID):: pst
 !!! High-precision
   integer i,ie,is,j,je,js,k,l,m, k2,iq
-  integer  sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt
+  integer  sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, cld_amt
 !
 !---------------------------------------------------------------------------------
 !
@@ -3502,6 +3504,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
   rainwat = rain_water_index
   snowwat = snow_water_index
   graupel = graupel_index
+  hailwat = hailwat_index
   cld_amt = cld_amt_index
   o3mr    = o3mr_index
 
@@ -3808,7 +3811,51 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
          enddo
       enddo
    endif
-  endif ! data source /= FV3GFS GAUSSIAN NEMSIO/NETCDF and GRIB2 FILE
+   if ( Atm%flagstruct%nwat .eq. 7 ) then
+      do k=1,npz
+         do i=is,ie
+            qn1(i,k) = BC_side%q_BC(i,j,k,liq_wat)
+            BC_side%q_BC(i,j,k,rainwat) = 0.
+            BC_side%q_BC(i,j,k,snowwat) = 0.
+            BC_side%q_BC(i,j,k,graupel) = 0.
+            BC_side%q_BC(i,j,k,hailwat) = 0.
+            if ( BC_side%pt_BC(i,j,k) > 273.16 ) then       ! > 0C all liq_wat
+               BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)
+               BC_side%q_BC(i,j,k,ice_wat) = 0.
+#ifdef ORIG_CLOUDS_PART
+            else if ( BC_side%pt_BC(i,j,k) < 258.16 ) then  ! < -15C all ice_wat
+               BC_side%q_BC(i,j,k,liq_wat) = 0.
+               BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k)
+            else                                     ! between -15~0C: linear interpolation
+               BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)*((BC_side%pt_BC(i,j,k)-258.16)/15.)
+               BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k) - BC_side%q_BC(i,j,k,liq_wat)
+            endif
+#else
+            else if ( BC_side%pt_BC(i,j,k) < 233.16 ) then  ! < -40C all ice_wat
+               BC_side%q_BC(i,j,k,liq_wat) = 0.
+               BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k)
+            else
+               if ( k.eq.1 ) then  ! between [-40,0]: linear interpolation
+                  BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)*((BC_side%pt_BC(i,j,k)-233.16)/40.)
+                  BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k) - BC_side%q_BC(i,j,k,liq_wat)
+               else
+                 if (BC_side%pt_BC(i,j,k)<258.16 .and. BC_side%q_BC(i,j,k-1,ice_wat)>1.e-5 ) then
+                    BC_side%q_BC(i,j,k,liq_wat) = 0.
+                    BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k)
+                 else  ! between [-40,0]: linear interpolation
+                    BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)*((BC_side%pt_BC(i,j,k)-233.16)/40.)
+                    BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k) - BC_side%q_BC(i,j,k,liq_wat)
+                 endif
+               endif
+            endif
+#endif
+            call mp_auto_conversion(BC_side%q_BC(i,j,k,liq_wat), BC_side%q_BC(i,j,k,rainwat),  &
+                                    BC_side%q_BC(i,j,k,ice_wat), BC_side%q_BC(i,j,k,snowwat) )
+         enddo
+      enddo
+   endif
+
+  endif ! data source /= FV3GFS GAUSSIAN NEMSIO FILE
 !
 ! For GFS spectral input, omega in pa/sec is stored as w in the input data so actual w(m/s) is calculated
 ! For GFS nemsio input, omega is 0, so best not to use for input since boundary data will not exist for w
@@ -6752,12 +6799,19 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       allocate(pes(mpp_npes()))
       call mpp_get_current_pelist(pes)
 
-        if (open_file(Gfs_data , 'INPUT/gfs_data.nc', "read", pelist=pes) .or. &
-            open_file(Gfs_data , 'INPUT/gfs_data.tile1.nc', "read", pelist=pes)) then
+      if (regional) then
+        if (open_file(Gfs_data , 'INPUT/gfs_data.nc', "read", pelist=pes)) then
           lstatus = global_att_exists(Gfs_data, "source")
           if(lstatus) call get_global_attribute(Gfs_data, "source", source)
           call close_file(Gfs_data)
         endif
+      else
+        if (open_file(Gfs_data , 'INPUT/gfs_data.tile1.nc', "read", pelist=pes)) then
+          lstatus = global_att_exists(Gfs_data, "source")
+          if(lstatus) call get_global_attribute(Gfs_data, "source", source)
+          call close_file(Gfs_data)
+        endif
+      endif
 
       deallocate(pes)
       if (.not. lstatus) then

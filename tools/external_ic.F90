@@ -3084,7 +3084,7 @@ contains
 
 ! map tracers
       do iq=1,ncnst
-        if (floor(qa(is,j,1,iq)) == -1000) cycle !skip missing scalars [floor(-999.99) is -1000]
+!        if (floor(qa(is,j,1,iq)) == -1000) cycle !skip missing scalars [floor(-999.99) is -1000]
          do k=1,km
             do i=is,ie
                qp(i,k) = qa(i,j,k,iq)
@@ -4367,4 +4367,5 @@ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
 
 
  end module external_ic_mod
+
 
