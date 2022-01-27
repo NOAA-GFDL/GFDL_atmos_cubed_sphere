@@ -955,11 +955,13 @@ contains
           if (data_source_fv3gfs) call register_restart_field(GFS_restart, 't', temp, dim_names_3d3, is_optional=.true.)
 
           ! prognostic tracers
+
           do nt = 1, ntracers
-             IF ( nt <= 6 ) THEN
+
+             IF ( .not. ( nt == Atm%flagstruct%nwat .and. Atm%flagstruct%nwat == 7 ) ) THEN
               q(:,:,:,nt) = -999.99
              ELSE
-              q(:,:,:,nt) = 0 ! nonzero values can cause problems for tracers not in the input (like hail mixing ratio)
+              q(:,:,:,nt) = 0 ! nonzero values can cause problems for water mass tracers not in the input (like hail mixing ratio; hailwat not defined at this point)
              ENDIF
              
             call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
