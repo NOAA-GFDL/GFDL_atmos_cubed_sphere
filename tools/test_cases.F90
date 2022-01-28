@@ -4927,11 +4927,17 @@ end subroutine terminator_tracers
               do i=is,ie
                  pt(i,j,k)   = ts1(k)
                   q(i,j,k,1) = qs1(k)
-                 delz(i,j,k) = rdgas/grav*ts1(k)*(1.+zvir*qs1(k))*(peln(i,k,j)-peln(i,k+1,j))
+!                 delz(i,j,k) = rdgas/grav*ts1(k)*(1.+zvir*qs1(k))*(peln(i,k,j)-peln(i,k+1,j))
                 enddo
              enddo
           enddo
 
+          call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
+                     pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass, .false., .false., &
+                     moist_phys, .false., nwat, domain, flagstruct%adiabatic, .true.)
+
+        
+          
         ze1(npz+1) = 0.
         do k=npz,1,-1
            ze1(k) = ze1(k+1) - delz(is,js,k)
@@ -4952,25 +4958,23 @@ end subroutine terminator_tracers
                    .true., hydrostatic, nwat, domain, flagstruct%adiabatic)
 
 ! *** Add Initial perturbation ***
-        pturb = 2.
-        r0 = 10.e3
-        zc = 1.4e3         ! center of bubble  from surface
-        icenter = (npx-1)/3 + 1
-        jcenter = (npy-1)/2 + 1
-        do k=1, npz
-           zm = 0.5*(ze1(k)+ze1(k+1))
-           ptmp = ( (zm-zc)/zc ) **2
-           if ( ptmp < 1. ) then
+        if (bubble_do) then
+           pturb = 2.
+           r0 = 10.e3
+           zc = 1.4e3         ! center of bubble  from surface
+           icenter = (npx-1)/3 + 1
+           jcenter = (npy-1)/2 + 1
+           do k=1, npz
+              zm = 0.5*(ze1(k)+ze1(k+1))
+              ptmp = ( (zm-zc)/zc ) **2
               do j=js,je
                  do i=is,ie
-                   dist = ptmp+((i-icenter)*dx_const/r0)**2+((j-jcenter)*dy_const/r0)**2
-                   if ( dist < 1. ) then
-                        pt(i,j,k) = pt(i,j,k) + pturb*(1.-sqrt(dist))
-                   endif
+                    dist = ptmp+((i-icenter)*dx_const/r0)**2+((j-jcenter)*dy_const/r0)**2
+                    pt(i,j,k) = pt(i,j,k) + pturb*max(1.-sqrt(dist),0.)
                  enddo
               enddo
-           endif
-        enddo
+           enddo
+        endif
 
       case ( 18 )
 !---------------------------
@@ -5566,7 +5570,8 @@ end subroutine terminator_tracers
 
 
  subroutine SuperCell_Sounding(km, ps, pk1, tp, qp)
- use gfdl_cloud_microphys_mod, only: wqsat_moist, qsmith_init, qs_blend
+ use gfdl_cloud_microphys_mod, only: qsmith_init, qs_blend
+ use gfdl_mp_mod, only: wqsat_moist
 ! Morris Weisman & J. Klemp 2002 sounding
 ! Output sounding on pressure levels:
  integer, intent(in):: km
@@ -5587,12 +5592,6 @@ end subroutine terminator_tracers
  real, parameter:: pt0 = 300.    ! surface potential temperature
  real:: dz0, zvir, fac_z, pk0, temp1, p2
  integer:: k, n, kk
-
-#ifdef GFS_PHYS
-
- call mpp_error(FATAL, 'SuperCell sounding cannot perform with GFS Physics.')
-
-#else
 
  zvir = rvgas/rdgas - 1.
  pk0 = p00**kappa
@@ -5647,21 +5646,11 @@ end subroutine terminator_tracers
 !      if ( (is_master()) ) write(*,*) k, temp1, rh(k)
        if ( pk(k) > 0. ) then
             pp(k) = exp(log(pk(k))/kappa)
-#ifdef SUPER_K
-            qs(k) = 380./pp(k)*exp(17.27*(temp1-273.)/(temp1-36.))
-            qs(k) = min( qv0, rh(k)*qs(k) )
-            if ( (is_master()) ) write(*,*) 0.01*pp(k), qs(k)
-#else
-
-#ifdef USE_MIXED_TABLE
-            qs(k) = min(qv0, rh(k)*qs_blend(temp1, pp(k), qs(k)))
-#else
             qs(k) = min(qv0, rh(k)*wqsat_moist(temp1, qs(k), pp(k)))
-#endif
-
-#endif
+            !qs(k) = min(qv0, rh(k)*qs_blend(temp1, pp(k), qs(k)))
+            !if ( (is_master()) ) write(*,*) 0.001*pp(k), qs(k)
        else
-            if ( (is_master()) ) write(*,*) n, k, pk(k)
+            !if ( (is_master()) ) write(*,*) n, k, pk(k)
             call mpp_error(FATAL, 'Super-Cell case: pk < 0')
        endif
     enddo
@@ -5691,8 +5680,6 @@ end subroutine terminator_tracers
     tp(k) = tp(k)*pk1(k)    ! temperature
     tp(k) = max(Tmin, tp(k))
  enddo
-
-#endif
 
  end subroutine SuperCell_Sounding
 

@@ -43,7 +43,7 @@ module gfdl_mp_mod
 
     private
 
-    public gfdl_mp_driver, gfdl_mp_init, gfdl_mp_end, wqs1, do_hail, wqs2, iqs1, iqs2, qsmith_init, c_liq
+    public gfdl_mp_driver, gfdl_mp_init, gfdl_mp_end, wqs1, do_hail, wqsat_moist, wqs2, iqs1, iqs2, qsmith_init, c_liq
 
     real :: missing_value = - 1.e10
 
@@ -3316,6 +3316,26 @@ end subroutine qsmith_init
 ! =======================================================================
 ! compute the saturated specific humidity for table ii
 ! =======================================================================
+
+real function wqsat_moist (ta, qv, pa)
+
+    implicit none
+
+    real, intent (in) :: ta, pa, qv
+
+    real :: es, ap1, tmin
+
+    integer :: it
+
+    tmin = table_ice - 160.
+    ap1 = 10. * dim (ta, tmin) + 1.
+    ap1 = min (2621., ap1)
+    it = ap1
+    es = tablew (it) + (ap1 - it) * desw (it)
+    wqsat_moist = eps * es * (1. + zvir * qv) / pa
+
+end function wqsat_moist
+
 
 real function wqs1 (ta, den)
 
