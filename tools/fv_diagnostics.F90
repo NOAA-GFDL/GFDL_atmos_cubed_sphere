@@ -118,7 +118,8 @@ module fv_diagnostics_mod
  use time_manager_mod,   only: time_type, get_date, get_time
  use mpp_domains_mod,    only: domain2d, mpp_update_domains, DGRID_NE, NORTH, EAST
  use diag_manager_mod,   only: diag_axis_init, register_diag_field, &
-                               register_static_field, send_data, diag_grid_init
+                               register_static_field, send_data, diag_grid_init, &
+                               diag_field_add_attribute
  use fv_arrays_mod,      only: fv_atmos_type, fv_grid_type, fv_diag_type, fv_grid_bounds_type, &
                                R_GRID
  use fv_mapz_mod,        only: E_Flux, moist_cv, moist_cp, mappm
@@ -570,6 +571,9 @@ contains
                                          'latitude', 'degrees_N' )
        id_area = register_static_field ( trim(field), 'area', axes(1:2),  &
                                          'cell area', 'm**2' )
+       if (id_area > 0) then
+         call diag_field_add_attribute (id_area, 'cell_methods', 'area: sum')
+       endif
        id_dx = register_static_field( trim(field), 'dx', (/id_xt,id_y/), &
             'dx', 'm')
        id_dy = register_static_field( trim(field), 'dy', (/id_x,id_yt/), &
