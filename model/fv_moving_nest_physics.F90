@@ -122,6 +122,14 @@ module fv_moving_nest_physics_mod
   logical :: move_physics = .true.
   logical :: move_nsst = .true.
 
+
+  type (fv_atmos_type), pointer                 :: save_Atm_n
+  type (block_control_type), pointer            :: save_Atm_block
+  type(IPD_control_type), pointer               :: save_IPD_Control
+  type(IPD_data_type), pointer                  :: save_IPD_Data(:)
+
+
+
 #include <fms_platform.h>
 
   type mn_surface_grids
@@ -285,8 +293,6 @@ contains
     allocate(lons(isc:iec, jsc:jec))
     allocate(area(isc:iec, jsc:jec))
 
-    !print '("WDR mn_reset_phys_latlon AA npe=",I0)', this_pe
-
     ! This is going to be slow -- replace with better way to calculate index offsets, or pass them from earlier calculations
     call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
     !print '("WDR mn_reset_phys_latlon AB npe=",I0)', this_pe
@@ -346,11 +352,57 @@ contains
   end subroutine mn_reset_phys_latlon
 
 
+  subroutine dump_surface_physics(i_out, j_out, k_out)
+    integer, intent(in)    :: i_out, j_out, k_out
+
+    integer :: nb, blen, ix, i, j, k
+    integer :: this_pe
+
+    this_pe = mpp_pe()
+
+    print '("WDR dump_surface_physics npe=",I0)', this_pe
+
+    k = k_out
+
+    do nb = 1,save_Atm_block%nblks
+      blen = save_Atm_block%blksz(nb)
+      do ix = 1, blen
+         ! Get the indices only once, before iterating through vertical levels or number of variables
+         !  Was there a different efficiency from having the k loop outside?
+         i = save_Atm_block%index(nb)%ii(ix)
+         j = save_Atm_block%index(nb)%jj(ix)
+
+         !if (i .eq. i_out .and. j .eq. j_out) then
+         if (i .ge. i_out-2 .and. i .le. i_out+2 .and. j .ge. j_out-2 .and. j .le. j_out+2) then
+
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") slmsk=",I0, " lakefrac=",F10.5, " lakedepth=",F14.5, " landfrac=",F10.5, " oro=",F10.5, " oro_uf=",F10.5)', this_pe, i, j, int(save_IPD_Data(nb)%Sfcprop%slmsk(ix)), save_IPD_Data(nb)%Sfcprop%lakefrac(ix), save_IPD_Data(nb)%Sfcprop%lakedepth(ix), save_IPD_Data(nb)%Sfcprop%landfrac(ix), save_IPD_Data(nb)%Sfcprop%oro(ix), save_IPD_Data(nb)%Sfcprop%oro_uf(ix)
+
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") oro=",F10.5, " oro_uf=",F10.5, " phis/g=",F10.5, " slope=",F10.5)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%oro(ix), save_IPD_Data(nb)%Sfcprop%oro_uf(ix), save_Atm_n%phis(i,j)/grav, save_IPD_Data(nb)%Sfcprop%slope(ix)
+
+
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") emis_lnd=",F15.5," emis_ice=",F15.5," emis_wat=",F15.5," hflx=",F15.5)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%emis_lnd(ix), save_IPD_Data(nb)%Sfcprop%emis_ice(ix), save_IPD_Data(nb)%Sfcprop%emis_wat(ix), save_IPD_Data(nb)%Sfcprop%hflx(ix)
+
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") tsfc=",F15.5," tsfco=",F15.5," tsfcl=",F15.5," tisfc=",F15.5," stc1=",F15.5)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%tsfc(ix), save_IPD_Data(nb)%Sfcprop%tsfco(ix), save_IPD_Data(nb)%Sfcprop%tsfcl(ix), save_IPD_Data(nb)%Sfcprop%tisfc(ix), save_IPD_Data(nb)%Sfcprop%stc(ix,1)
+
+
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") psurf=",F15.5," t2m=",F15.5," th2m=",F15.5)', this_pe, i, j, save_IPD_Data(nb)%IntDiag%psurf(ix), save_IPD_Data(nb)%Sfcprop%t2m(ix), save_IPD_Data(nb)%Sfcprop%th2m(ix)
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j,k=(",I0,",",I0,",",I0,") pe=",F15.5," ze0=",F15.5," delp=",F15.5," delz=",F15.5," omga=",F15.5," w=",F15.5)', this_pe, i, j, k, save_Atm_n%pe(i,j,k), save_Atm_n%ze0(i,j,k), save_Atm_n%delp(i,j,k), save_Atm_n%delz(i,j,k), save_Atm_n%omga(i,j,k), save_Atm_n%w(i,j,k)
+
+
+            !return    !! We can exit this subroutine after the printing of the matching index.
+         end if
+      end do
+   end do
+
+
+  end subroutine dump_surface_physics
+
+
   subroutine mn_phys_fill_temp_variables(Atm, Atm_block, IPD_Control, IPD_Data, n, child_grid_num, is_fine_pe, npz)
     type(fv_atmos_type), allocatable, target, intent(inout)  :: Atm(:)
-    type (block_control_type), intent(in)            :: Atm_block
-    type(IPD_control_type), intent(in)               :: IPD_Control
-    type(IPD_data_type), intent(inout)               :: IPD_Data(:)
+    type (block_control_type), target, intent(in)            :: Atm_block
+    type(IPD_control_type), target, intent(in)               :: IPD_Control
+    type(IPD_data_type), target, intent(inout)               :: IPD_Data(:)
     integer, intent(in)                              :: n, child_grid_num
     logical, intent(in)                              :: is_fine_pe
     integer, intent(in)                              :: npz
@@ -364,6 +416,10 @@ contains
 
     this_pe = mpp_pe()
 
+    save_Atm_n => Atm(n)
+    save_Atm_block => Atm_block
+    save_IPD_Control => IPD_Control
+    save_IPD_Data => IPD_Data
 
     if (debug_log) print '("[INFO] WDR start mn_phys_fill_temp_variables. npe=",I0," n=",I0)', this_pe, n
 
@@ -597,21 +653,21 @@ contains
                 enddo
 
                 ! WDR EMIS PATCH - Force to positive at all locations.
-                !if (mn_phys%emis_lnd(i,j) .ge. 0.0) then
+                if (mn_phys%emis_lnd(i,j) .ge. 0.0) then
                    IPD_Data(nb)%Sfcprop%emis_lnd(ix) = mn_phys%emis_lnd(i,j)
-                !else
-                !   IPD_Data(nb)%Sfcprop%emis_lnd(ix) = 0.5
-                !end if
-                !if (mn_phys%emis_ice(i,j) .ge. 0.0) then
+                else
+                   IPD_Data(nb)%Sfcprop%emis_lnd(ix) = 0.5
+                end if
+                if (mn_phys%emis_ice(i,j) .ge. 0.0) then
                    IPD_Data(nb)%Sfcprop%emis_ice(ix) = mn_phys%emis_ice(i,j)
-                !else
-                !   IPD_Data(nb)%Sfcprop%emis_ice(ix) = 0.5
-                !end if
-                !if (mn_phys%emis_wat(i,j) .ge. 0.0) then
+                else
+                   IPD_Data(nb)%Sfcprop%emis_ice(ix) = 0.5
+                end if
+                if (mn_phys%emis_wat(i,j) .ge. 0.0) then
                    IPD_Data(nb)%Sfcprop%emis_wat(ix) = mn_phys%emis_wat(i,j)
-                !else
-                !   IPD_Data(nb)%Sfcprop%emis_wat(ix) = 0.5
-                !end if
+                else
+                   IPD_Data(nb)%Sfcprop%emis_wat(ix) = 0.5
+                end if
 
 
 

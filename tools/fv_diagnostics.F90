@@ -136,6 +136,10 @@ module fv_diagnostics_mod
 
  use fv_arrays_mod, only: max_step
 
+#ifdef MOVING_NEST
+ use fv_moving_nest_physics_mod, only : dump_surface_physics
+#endif
+
 #ifndef GFS_PHYS
  use gfdl_mp_mod, only: wqs1, qsmith_init, c_liq
 #endif
@@ -4359,12 +4363,18 @@ contains
             do j=js,je
                do i=is,ie
                   if( q(i,j,k)<q_low .or. q(i,j,k)>q_hi ) then
-                      write(*,998) k,i,j, pos(i,j,1)*rad2deg, pos(i,j,2)*rad2deg, qname, q(i,j,k)
+                      write(*,998) k,i,j, pos(i,j,1)*rad2deg-360.0, pos(i,j,2)*rad2deg, qname, q(i,j,k)
 !                      write(*,*) 'Warn_K=',k,'(i,j)=',i,j, pos(i,j,1)*rad2deg, pos(i,j,2)*rad2deg, q(i,j,k)
 998                   format('Warn_K=',I4,' (i,j)=',2I5,' (lon,lat)=',f7.3,1x,f7.3,1x, A,' =',f10.5)
 997                   format('     K=',I4,3x,f10.5)
                       if ( k/= 1 ) write(*,997) k-1, q(i,j,k-1)
                       if ( k/=km ) write(*,997) k+1, q(i,j,k+1)
+#ifdef MOVING_NEST
+                      !if ( k .eq. km) then
+                      print '("[INFO] WDR ",A," RANGE error at lowest level (",I0,",",I0,",",I0,")")', qname, i, j, k
+                      call dump_surface_physics(i, j, k)
+                      !endif
+#endif
                   endif
                enddo
             enddo
