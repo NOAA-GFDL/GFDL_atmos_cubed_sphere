@@ -3769,7 +3769,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
   if ( .not. data_source_fv3gfs ) then
    if ( Atm%flagstruct%nwat .eq. 6 .or. Atm%flagstruct%nwat .eq. 7 ) then
-      if ( Atm%flagstruct%nwat .eq. 7 ) then
+      if ( hailwat > 0 ) then
         BC_side%q_BC(is:ie,j,1:npz,hailwat) = 0.
       endif
       do k=1,npz
