@@ -3768,7 +3768,10 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 ! and may not provide a very good result
 !
   if ( .not. data_source_fv3gfs ) then
-   if ( Atm%flagstruct%nwat .eq. 6 ) then
+   if ( Atm%flagstruct%nwat .eq. 6 .or. Atm%flagstruct%nwat .eq. 7 ) then
+      if ( Atm%flagstruct%nwat .eq. 7 ) then
+        BC_side%q_BC(is:ie,j,1:npz,hailwat) = 0.
+      endif
       do k=1,npz
          do i=is,ie
             qn1(i,k) = BC_side%q_BC(i,j,k,liq_wat)
@@ -3776,49 +3779,6 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
             BC_side%q_BC(i,j,k,snowwat) = 0.
             BC_side%q_BC(i,j,k,graupel) = 0.
             if (cld_amt > 0) BC_side%q_BC(i,j,k,cld_amt) = 0.
-            if ( BC_side%pt_BC(i,j,k) > 273.16 ) then       ! > 0C all liq_wat
-               BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)
-               BC_side%q_BC(i,j,k,ice_wat) = 0.
-#ifdef ORIG_CLOUDS_PART
-            else if ( BC_side%pt_BC(i,j,k) < 258.16 ) then  ! < -15C all ice_wat
-               BC_side%q_BC(i,j,k,liq_wat) = 0.
-               BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k)
-            else                                     ! between -15~0C: linear interpolation
-               BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)*((BC_side%pt_BC(i,j,k)-258.16)/15.)
-               BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k) - BC_side%q_BC(i,j,k,liq_wat)
-            endif
-#else
-            else if ( BC_side%pt_BC(i,j,k) < 233.16 ) then  ! < -40C all ice_wat
-               BC_side%q_BC(i,j,k,liq_wat) = 0.
-               BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k)
-            else
-               if ( k.eq.1 ) then  ! between [-40,0]: linear interpolation
-                  BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)*((BC_side%pt_BC(i,j,k)-233.16)/40.)
-                  BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k) - BC_side%q_BC(i,j,k,liq_wat)
-               else
-                 if (BC_side%pt_BC(i,j,k)<258.16 .and. BC_side%q_BC(i,j,k-1,ice_wat)>1.e-5 ) then
-                    BC_side%q_BC(i,j,k,liq_wat) = 0.
-                    BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k)
-                 else  ! between [-40,0]: linear interpolation
-                    BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)*((BC_side%pt_BC(i,j,k)-233.16)/40.)
-                    BC_side%q_BC(i,j,k,ice_wat) = qn1(i,k) - BC_side%q_BC(i,j,k,liq_wat)
-                 endif
-               endif
-            endif
-#endif
-            call mp_auto_conversion(BC_side%q_BC(i,j,k,liq_wat), BC_side%q_BC(i,j,k,rainwat),  &
-                                    BC_side%q_BC(i,j,k,ice_wat), BC_side%q_BC(i,j,k,snowwat) )
-         enddo
-      enddo
-   endif
-   if ( Atm%flagstruct%nwat .eq. 7 ) then
-      do k=1,npz
-         do i=is,ie
-            qn1(i,k) = BC_side%q_BC(i,j,k,liq_wat)
-            BC_side%q_BC(i,j,k,rainwat) = 0.
-            BC_side%q_BC(i,j,k,snowwat) = 0.
-            BC_side%q_BC(i,j,k,graupel) = 0.
-            BC_side%q_BC(i,j,k,hailwat) = 0.
             if ( BC_side%pt_BC(i,j,k) > 273.16 ) then       ! > 0C all liq_wat
                BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)
                BC_side%q_BC(i,j,k,ice_wat) = 0.

@@ -804,13 +804,6 @@ contains
                            Atm%q(i,j,k,rainwat) + &
                            Atm%q(i,j,k,snowwat) + &
                            Atm%q(i,j,k,graupel)))
-          elseif ( Atm%flagstruct%nwat == 7 ) then ! may not need this. 'else' should cover both 6 and 7?
-            qt = wt/(1. - (Atm%q(i,j,k,liq_wat) + &
-                           Atm%q(i,j,k,ice_wat) + &
-                           Atm%q(i,j,k,rainwat) + &
-                           Atm%q(i,j,k,snowwat) + &
-                           Atm%q(i,j,k,graupel) + &
-                           Atm%q(i,j,k,hailwat)))
           else   ! all other values of nwat
             qt = wt/(1. - sum(Atm%q(i,j,k,2:Atm%flagstruct%nwat)))
           endif
@@ -832,13 +825,6 @@ contains
                            Atm%q(i,j,k,rainwat) + &
                            Atm%q(i,j,k,snowwat) + &
                            Atm%q(i,j,k,graupel))
-          elseif ( Atm%flagstruct%nwat == 7 ) then ! may not need this. 'else' should cover both 6 and 7?
-             qt = wt*(1. + Atm%q(i,j,k,liq_wat) + &
-                           Atm%q(i,j,k,ice_wat) + &
-                           Atm%q(i,j,k,rainwat) + &
-                           Atm%q(i,j,k,snowwat) + &
-                           Atm%q(i,j,k,graupel) + &
-                           Atm%q(i,j,k,hailwat))
           else   ! all other values of nwat
              qt = wt*(1. + sum(Atm%q(i,j,k,2:Atm%flagstruct%nwat)))
           endif
@@ -958,11 +944,7 @@ contains
 
           do nt = 1, ntracers
 
-             IF ( .not. ( nt == Atm%flagstruct%nwat .and. Atm%flagstruct%nwat == 7 ) ) THEN
               q(:,:,:,nt) = -999.99
-             ELSE
-              q(:,:,:,nt) = 0 ! nonzero values can cause problems for water mass tracers not in the input (like hail mixing ratio; hailwat not defined at this point)
-             ENDIF
              
             call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
             call register_restart_field(GFS_restart, trim(tracer_name), q(:,:,:,nt), dim_names_3d3, is_optional=.true.)
@@ -3117,7 +3099,7 @@ contains
 
 ! map tracers
       do iq=1,ncnst
-!        if (floor(qa(is,j,1,iq)) == -1000) cycle !skip missing scalars [floor(-999.99) is -1000]
+        if (floor(qa(is,j,1,iq)) == -1000) cycle !skip missing scalars [floor(-999.99) is -1000]
          do k=1,km
             do i=is,ie
                qp(i,k) = qa(i,j,k,iq)
