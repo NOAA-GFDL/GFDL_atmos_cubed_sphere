@@ -210,6 +210,9 @@ contains
 
     is_moving_nest = Atm(child_grid_num)%neststruct%is_moving_nest
 
+    !print '("[INFO] WDR AAA npe=",I0, " is_moving_nest=",L1)', this_pe, is_moving_nest
+
+
     !call show_atm("RRR", Atm(1), 1, this_pe)
     !call show_atm("RRR", Atm(n), n, this_pe)
 
@@ -275,7 +278,7 @@ contains
     !   if (debug_log) print '("[INFO] WDR after outputting to netCDF fv_dynamics atmosphere.F90 npe=",I0, " psc=",I0)', this_pe, psc
     !end if
 
-    if (a_step .lt. 10 .or. mod(a_step, 40) .eq. 0) then
+    if (a_step .lt. 10 .or. mod(a_step, 40) .eq. 0 .or. (a_step .ge. 60 .and. a_step .le. 65) ) then
     !if (mod(a_step, 20) .eq. 0) then
        if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
        if (tsvar_out) call mn_phys_dump_to_netcdf(Atm(n), Atm_block, IPD_control, IPD_data, a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
@@ -483,6 +486,7 @@ contains
 
   ! TODO  clarify the naming of all the grid indices;  are some of these repeated?
   subroutine fv_moving_nest_exec(Atm, Atm_block, IPD_control, IPD_data, delta_i_c, delta_j_c, n, nest_num, parent_grid_num, child_grid_num, dt_atmos)
+    implicit none
     type(fv_atmos_type), allocatable, target, intent(inout) :: Atm(:)
     type(block_control_type), intent(in) :: Atm_block
     type(IPD_control_type), intent(in) :: IPD_control
@@ -565,6 +569,8 @@ contains
    integer :: isc, iec, jsc, jec
    integer :: isd, ied, jsd, jed
    integer :: nq                       !  number of transported tracers
+   
+   integer :: is, ie, js, je, k        ! For recalculation of omga
 
    integer, save :: output_step = 0
 
@@ -572,7 +578,7 @@ contains
    character(len=16) :: errstring
 
    !! TODO Refine this per Atm(n) structure to allow some static and some moving nests in same run
-   logical  :: is_moving_nest = .true.  ! Attach this to the namelist reading
+   logical  :: is_moving_nest
 
    !! Regional configuration data
    !logical  :: is_regional = .true.           ! TODO read from namelist 
@@ -649,6 +655,9 @@ contains
     domain_fine => Atm(child_grid_num)%domain
     parent_tile = Atm(child_grid_num)%neststruct%parent_tile
     domain_coarse => Atm(parent_grid_num)%domain
+
+    is_moving_nest = Atm(child_grid_num)%neststruct%is_moving_nest
+    !print '("[INFO] WDR BBB npe=",I0, " is_moving_nest=",L1)', this_pe, is_moving_nest
 
     is_fine_pe = Atm(n)%neststruct%nested .and. ANY(Atm(n)%pelist(:) == this_pe)
     nz = Atm(n)%npz
@@ -1049,6 +1058,8 @@ contains
           ! phis is allocated in fv_arrays.F90 as:  allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
           ! 0 -- all high-resolution data, 1 - static nest smoothing algorithm, 5 - 5 point smoother, 9 - 9 point smoother
           ! Defaults to 1 - static nest smoothing algorithm; this seems to produce the most stable solutions
+          print '("[INFO] WDR Moving Nest terrain_smoother=",I0," High-resolution terrain. npe=",I0)', Atm(n)%neststruct%terrain_smoother, this_pe
+
           select case(Atm(n)%neststruct%terrain_smoother)
           case (0)
              ! High-resolution terrain for entire nest
@@ -1139,18 +1150,46 @@ contains
        if (is_fine_pe) then
           do i=isc,iec
              do j=jsc,jec
+
+                ! WDR EMIS PATCH - Force to positive at all locations.
+                !if (Atm(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Atm(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_lnd(i,j) = 0.5
+                !if (Atm(n)%mn_phys%slmsk(i,j) .eq. 2 .and. Atm(n)%mn_phys%emis_ice(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_ice(i,j) = 0.5
+                !if (Atm(n)%mn_phys%slmsk(i,j) .eq. 0 .and. Atm(n)%mn_phys%emis_wat(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_wat(i,j) = 0.5
+                !if (Atm(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Atm(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
+                !if (Atm(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Atm(n)%mn_phys%albdirnir_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
+                !if (Atm(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Atm(n)%mn_phys%albdifvis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdifvis_lnd(i,j) = 0.5
+                !if (Atm(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Atm(n)%mn_phys%albdifnir_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdifnir_lnd(i,j) = 0.5
+
+
+                ! WDR EMIS PATCH - Force to positive at all locations.
+                if (Atm(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_lnd(i,j) = 0.5
+                if (Atm(n)%mn_phys%emis_ice(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_ice(i,j) = 0.5
+                if (Atm(n)%mn_phys%emis_wat(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_wat(i,j) = 0.5
+                if (Atm(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
+                if (Atm(n)%mn_phys%albdirnir_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
+                if (Atm(n)%mn_phys%albdifvis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdifvis_lnd(i,j) = 0.5
+                if (Atm(n)%mn_phys%albdifnir_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdifnir_lnd(i,j) = 0.5
+
                 !if (Atm(n)%mn_phys%semis(i,j) .lt. 0.0) then
                 !   print '("[INFO] WDR SEMIS fv_moving_nest_main.F90 npe=",I0," semis(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%semis(i,j)
                 !end if
                 !if (Atm(n)%mn_phys%semisbase(i,j) .lt. 0.0) then
                 !   print '("[INFO] WDR SEMISBASE fv_moving_nest_main.F90 npe=",I0," semisbase(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%semisbase(i,j)
                 !end if
-                !if (Atm(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) then
-                !   print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%emis_lnd(i,j)
-                !end if
-                !if (Atm(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) then
-                !   print '("[INFO] WDR ALBLND fv_moving_nest_main.F90 npe=",I0," albdirvis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%albdirvis_lnd(i,j)
-                !end if
+
+
+                if ( Atm(n)%mn_phys%slmsk(i,j) .eq. 1 .and.  Atm(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) then
+                   print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%emis_lnd(i,j)
+                end if
+                if ( Atm(n)%mn_phys%slmsk(i,j) .eq. 2 .and. Atm(n)%mn_phys%emis_ice(i,j) .lt. 0.0) then
+                   print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_ice(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%emis_ice(i,j)
+                end if
+                if ( Atm(n)%mn_phys%slmsk(i,j) .eq. 0 .and. Atm(n)%mn_phys%emis_wat(i,j) .lt. 0.0) then
+                   print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_wat(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%emis_wat(i,j)
+                end if
+                if ( Atm(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Atm(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) then
+                   print '("[INFO] WDR ALBLND fv_moving_nest_main.F90 npe=",I0," albdirvis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%albdirvis_lnd(i,j)
+                end if
 
                 ! WDR EMIS PATCH - Force to positive at all locations.
                 !if (Atm(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_lnd(i,j) = 0.5
@@ -1190,16 +1229,16 @@ contains
           !if (debug_log) print '("[INFO] WDR MV_NST L2E after vertical remapping fv_moving_nest_main.F90 npe=",I0)', this_pe
 
           !! Recalculate omga; not sure if Lagrangian_to_Eulerian did this earlier
-          !if( .not. Atm(n)%flagstruct%hydrostatic ) then
-          !   ! !$O M P  parallel do default(none) shared(is,ie,js,je,npz,omga,delp,delz,w)
-          !   do k=1,npz
-          !      do j=js,je
-          !         do i=is,ie
-          !            Atm(n)%omga(i,j,k) = Atm(n)%delp(i,j,k)/Atm(n)%delz(i,j,k)*Atm(n)%w(i,j,k)
-          !         enddo
-          !      enddo
-          !   enddo
-          !end if
+!          if( .not. Atm(n)%flagstruct%hydrostatic ) then
+!$O M P  parallel do default(none) shared(is,ie,js,je,npz,Atm,n)
+!             do k=1,npz
+!                do j=js,je
+!                   do i=is,ie
+!                      Atm(n)%omga(i,j,k) = Atm(n)%delp(i,j,k)/Atm(n)%delz(i,j,k)*Atm(n)%w(i,j,k)
+!                   enddo
+!                enddo
+!             enddo
+!          end if
 
 #ifdef REPROJ_WINDS
           ! TODO d2c_setup was removed in recent version of dycore.  Find appropriate subroutine to
