@@ -138,7 +138,7 @@ module fv_diagnostics_mod
  use fv_arrays_mod, only: max_step
 
 #ifdef MOVING_NEST
- use fv_moving_nest_physics_mod, only : dump_surface_physics
+!use fv_moving_nest_physics_mod, only : dump_surface_physics
 #endif
 
 #ifndef GFS_PHYS
@@ -4375,8 +4375,8 @@ contains
                       if ( k/=km ) write(*,997) k+1, q(i,j,k+1)
 #ifdef MOVING_NEST
                       !if ( k .eq. km) then
-                      print '("[INFO] WDR ",A," RANGE error at lowest level (",I0,",",I0,",",I0,")")', qname, i, j, k
-                      call dump_surface_physics(i, j, k)
+!                     print '("[INFO] WDR ",A," RANGE error at lowest level (",I0,",",I0,",",I0,")")', qname, i, j, k
+!                     call dump_surface_physics(i, j, k)
                       !endif
 #endif
                   endif
