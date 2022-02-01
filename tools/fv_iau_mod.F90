@@ -298,8 +298,8 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
    implicit none
    type (IPD_control_type), intent(in) :: IPD_Control
    type(IAU_external_data_type),  intent(inout) :: IAU_Data
-   real(kind=kind_phys) t1,t2,tnext,sx,wx,wt,dtp
-   integer n,i,j,k,sphum,kstep,nstep
+   real(kind=kind_phys) t1,t2,sx,wx,wt,dtp
+   integer n,i,j,k,sphum,kstep,nstep,itnext
 
    IAU_Data%in_interval=.false.
    if (nfiles.LE.0) then
@@ -353,7 +353,7 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
    endif
 
    if (nfiles > 1) then
-      tnext=2
+      itnext=2
       if (IPD_Control%fhour < t1 .or. IPD_Control%fhour >= t2) then
 !         if (is_master()) print *,'no iau forcing',IPD_Control%iaufhrs(1),IPD_Control%fhour,IPD_Control%iaufhrs(nfiles)
          IAU_Data%in_interval=.false.
@@ -362,16 +362,16 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
          IAU_Data%in_interval=.true.
          do k=nfiles,1,-1
             if (IPD_Control%iaufhrs(k) > IPD_Control%fhour) then
-               tnext=k
+               itnext=k
             endif
          enddo
-!         if (is_master()) print *,'tnext=',tnext
+!         if (is_master()) print *,'itnext=',itnext
          if (IPD_Control%fhour >= iau_state%hr2) then ! need to read in next increment file
             iau_state%hr1=iau_state%hr2
-            iau_state%hr2=IPD_Control%iaufhrs(int(tnext))
+            iau_state%hr2=IPD_Control%iaufhrs(itnext)
             iau_state%inc1=iau_state%inc2
-            if (is_master()) print *,'reading next increment file',trim(IPD_Control%iau_inc_files(int(tnext)))
-            call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(int(tnext))))
+            if (is_master()) print *,'reading next increment file',trim(IPD_Control%iau_inc_files(itnext))
+            call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(itnext)))
          endif
          call updateiauforcing(IPD_Control,IAU_Data,iau_state%wt)
       endif
