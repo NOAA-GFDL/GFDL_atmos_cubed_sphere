@@ -1650,7 +1650,7 @@ contains
         call ncep2fms(im, jm, lon, lat, wk2)
         if( is_master() ) then
           write(*,*) 'External_ic_mod: i_sst=', i_sst, ' j_sst=', j_sst
-          call pmaxmin( 'SST_ncep_fms',  sst_ncep, i_sst, j_sst, 1.)
+          call pmaxmin( 'SST_ncep_fms',  real(sst_ncep), i_sst, j_sst, 1.)
         endif
 #endif
       endif  !(read_ts)
@@ -4171,29 +4171,22 @@ contains
       integer, intent(in):: im, jm
       character(len=*) :: qname
       integer i, j
-      class(*) a(im,jm)
+      real a(im,jm)
 
-      real(r4_kind), dimension(:), allocatable :: qmin, qmax
-      real(r4_kind) pmax, pmin
-      class(*)  fac                     ! multiplication factor
-      real(r8_kind), dimension(:), allocatable :: qmin8, qmax8
-      real(r8_kind) pmax8, pmin8
+      real qmin(jm), qmax(jm)
+      real pmax, pmin
+      real fac                     ! multiplication factor
 
-      select type (fac)
-      type is (real(kind=r4_kind))
-         select type (a)
-         type is (real(kind=r4_kind))
-         allocate(qmax(jm), qmin(jm))
-         do j=1,jm
-            pmax = a(1,j)
-            pmin = a(1,j)
-            do i=2,im
-               pmax = max(pmax, a(i,j))
-               pmin = min(pmin, a(i,j))
-            enddo
-            qmax(j) = pmax
-            qmin(j) = pmin
+      do j=1,jm
+         pmax = a(1,j)
+         pmin = a(1,j)
+         do i=2,im
+            pmax = max(pmax, a(i,j))
+            pmin = min(pmin, a(i,j))
          enddo
+         qmax(j) = pmax
+         qmin(j) = pmin
+      enddo
 !
 ! Now find max/min of amax/amin
 !
@@ -4203,45 +4196,8 @@ contains
             pmax = max(pmax, qmax(j))
             pmin = min(pmin, qmin(j))
          enddo
-         deallocate(qmax, qmin)
 
-         write(*,*) qname, ' max = ', pmax*fac, ' min = ', pmin*fac
-         class default
-            call mpp_error(FATAL,'==> Error in external_ic: unsupported types in pmaxmin')
-         end select
-
-      type is (real(kind=r8_kind))
-         select type (a)
-         type is (real(kind=r8_kind))
-         allocate(qmax8(jm), qmin8(jm))
-         do j=1,jm
-            pmax8 = a(1,j)
-            pmin8 = a(1,j)
-            do i=2,im
-               pmax8 = max(pmax8, a(i,j))
-               pmin8 = min(pmin8, a(i,j))
-            enddo
-            qmax8(j) = pmax8
-            qmin8(j) = pmin8
-         enddo
-!
-! Now find max/min of amax/amin
-!
-            pmax8 = qmax8(1)
-            pmin8 = qmin8(1)
-         do j=2,jm
-            pmax8 = max(pmax8, qmax8(j))
-            pmin8 = min(pmin8, qmin8(j))
-         enddo
-         deallocate(qmax8, qmin8)
-
-         write(*,*) qname, ' max = ', pmax8*fac, ' min = ', pmin8*fac
-         class default
-            call mpp_error(FATAL,'==> Error in external_ic: unsupported types in pmaxmin')
-         end select
-      class default
-         call mpp_error(FATAL,'==> Error in external_ic: unsupported types in pmaxmin')
-      end select
+      write(*,*) qname, ' max = ', pmax*fac, ' min = ', pmin*fac
 
  end subroutine pmaxmin
 

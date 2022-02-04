@@ -1659,7 +1659,7 @@ module fv_nwp_nudge_mod
 #ifndef DYCORE_SOLO
 ! Perform interp to FMS SST format/grid
       call ncep2fms( wk1 )
-      if(master) call pmaxmin( 'SST_ncep', sst_ncep, i_sst, j_sst, 1.)
+      if(master) call pmaxmin( 'SST_ncep', real(sst_ncep), i_sst, j_sst, 1.)
 !     if(nfile/=1 .and. master) call pmaxmin( 'SST_anom', sst_anom, i_sst, j_sst, 1.)
 #endif
        deallocate ( wk1 )
@@ -3536,36 +3536,27 @@ module fv_nwp_nudge_mod
 
   end function leap_year
 
-
  subroutine pmaxmin( qname, a, imax, jmax, fac )
 
       character(len=*)  qname
       integer imax, jmax
       integer i, j
-      class(*) a(imax,jmax)
-      class(*) fac                     ! multiplication factor
+      real a(imax,jmax)
 
-      real(r4_kind), dimension(:), allocatable :: qmin, qmax
-      real(r4_kind) pmax, pmin
+      real qmin(jmax), qmax(jmax)
+      real pmax, pmin
+      real fac                     ! multiplication factor
 
-      real(r8_kind), dimension(:), allocatable :: qmin8, qmax8
-      real(r8_kind) pmax8, pmin8
-
-      select type (fac)
-      type is (real(kind=r4_kind))
-         select type (a)
-         type is (real(kind=r4_kind))
-         allocate(qmax(jmax), qmin(jmax))
-         do j=1,jmax
-            pmax = a(1,j)
-            pmin = a(1,j)
-            do i=2,imax
-               pmax = max(pmax, a(i,j))
-               pmin = min(pmin, a(i,j))
-            enddo
-            qmax(j) = pmax
-            qmin(j) = pmin
+      do j=1,jmax
+         pmax = a(1,j)
+         pmin = a(1,j)
+         do i=2,imax
+            pmax = max(pmax, a(i,j))
+            pmin = min(pmin, a(i,j))
          enddo
+         qmax(j) = pmax
+         qmin(j) = pmin
+      enddo
 !
 ! Now find max/min of amax/amin
 !
@@ -3575,45 +3566,8 @@ module fv_nwp_nudge_mod
             pmax = max(pmax, qmax(j))
             pmin = min(pmin, qmin(j))
          enddo
-         deallocate(qmax, qmin)
 
-         write(*,*) qname, ' max = ', pmax*fac, ' min = ', pmin*fac
-         class default
-            call mpp_error(FATAL,'==> Error in fv_nudge: unsupported types in pmaxmin')
-         end select
-
-      type is (real(kind=r8_kind))
-         select type (a)
-         type is (real(kind=r8_kind))
-         allocate(qmax8(jmax), qmin8(jmax))
-         do j=1,jmax
-            pmax8 = a(1,j)
-            pmin8 = a(1,j)
-            do i=2,imax
-               pmax8 = max(pmax8, a(i,j))
-               pmin8 = min(pmin8, a(i,j))
-            enddo
-            qmax8(j) = pmax8
-            qmin8(j) = pmin8
-         enddo
-!
-! Now find max/min of amax/amin
-!
-            pmax8 = qmax8(1)
-            pmin8 = qmin8(1)
-         do j=2,jmax
-            pmax8 = max(pmax8, qmax8(j))
-            pmin8 = min(pmin8, qmin8(j))
-         enddo
-         deallocate(qmax8, qmin8)
-
-         write(*,*) qname, ' max = ', pmax8*fac, ' min = ', pmin8*fac
-         class default
-            call mpp_error(FATAL,'==> Error in fv_nudge: unsupported types in pmaxmin')
-         end select
-      class default
-         call mpp_error(FATAL,'==> Error in fv_nudge: unsupported types in pmaxmin')
-      end select
+      write(*,*) qname, ' max = ', pmax*fac, ' min = ', pmin*fac
 
  end subroutine pmaxmin
 
