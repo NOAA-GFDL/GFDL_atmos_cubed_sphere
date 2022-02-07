@@ -966,16 +966,19 @@ contains
 !! the "domain2d" variable associated with the coupling grid and the
 !! decomposition for the current cubed-sphere tile.
 !>@detail Coupling is done using the mass/temperature grid with no halos.
- subroutine atmosphere_domain ( fv_domain, layout, regional, nested, ngrids_atmos, mygrid_atmos, pelist )
+ subroutine atmosphere_domain ( fv_domain, layout, regional, nested, is_moving_nest, ngrids_atmos, mygrid_atmos, pelist )
    type(domain2d), intent(out) :: fv_domain
    integer, intent(out) :: layout(2)
    logical, intent(out) :: regional
    logical, intent(out) :: nested
+   logical, intent(out) :: is_moving_nest
    integer, intent(out) :: ngrids_atmos
    integer, intent(out) :: mygrid_atmos
    integer, pointer, intent(out) :: pelist(:)
 !  returns the domain2d variable associated with the coupling grid
 !  note: coupling is done using the mass/temperature grid with no halos
+
+   integer :: child_grid_num
 
    fv_domain = Atm(mygrid)%domain_for_coupler
    layout(1:2) =  Atm(mygrid)%layout(1:2)
@@ -985,6 +988,22 @@ contains
    mygrid_atmos = mygrid
    call set_atmosphere_pelist()
    pelist => Atm(mygrid)%pelist
+
+   is_moving_nest = .False.
+
+#ifdef MOVING_NEST
+    ! This will need to be looked up on each PE when multiple and telescoped nests are enabled.
+    child_grid_num = 2
+
+    if (size(Atm) .gt. 1) then
+       is_moving_nest = Atm(child_grid_num)%neststruct%is_moving_nest
+    else
+       is_moving_nest = .False.
+    end if
+#endif MOVING_NEST
+
+    !print '("[INFO] WDR MMM3 atmosphere_domain() npe=",I0, " is_moving_nest=",L1)', mpp_pe(), is_moving_nest
+
 
  end subroutine atmosphere_domain
 

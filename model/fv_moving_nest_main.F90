@@ -187,7 +187,6 @@ contains
     type(IPD_data_type), intent(inout) :: IPD_data(:)
     type(time_type), intent(in)     :: time_step
 
-    logical :: is_moving_nest
     logical :: do_move
     integer :: delta_i_c, delta_j_c
     integer :: parent_grid_num, child_grid_num, nest_num
@@ -207,39 +206,25 @@ contains
     parent_grid_num = 1
     child_grid_num = 2
     nest_num = 1
-
-    is_moving_nest = Atm(child_grid_num)%neststruct%is_moving_nest
-
-    !print '("[INFO] WDR AAA npe=",I0, " is_moving_nest=",L1)', this_pe, is_moving_nest
-
-
-    !call show_atm("RRR", Atm(1), 1, this_pe)
-    !call show_atm("RRR", Atm(n), n, this_pe)
-
-
-    if (is_moving_nest) then
-       call eval_move_nest(Atm, a_step, parent_grid_num, child_grid_num, do_move, delta_i_c, delta_j_c, dt_atmos)
-
-       allocate(global_pelist(Atm(parent_grid_num)%npes_this_grid+Atm(child_grid_num)%npes_this_grid))
-       global_pelist=(/Atm(parent_grid_num)%pelist, Atm(child_grid_num)%pelist/)
-
-      !print '("[INFO] WDR update_moving_nest before mpp_broadcast npe, delta_i/j_c, do_move=",3I6, L)', this_pe, delta_i_c, delta_j_c, do_move
-
-       call mpp_set_current_pelist(global_pelist)
-       call mpp_broadcast( delta_i_c, Atm(child_grid_num)%pelist(1), global_pelist )
-       call mpp_broadcast( delta_j_c, Atm(child_grid_num)%pelist(1), global_pelist )
-       call mpp_broadcast( do_move, Atm(child_grid_num)%pelist(1), global_pelist )
-       call mpp_set_current_pelist(Atm(n)%pelist)
-
-      !print '("[INFO] WDR update_moving_nest after mpp_broadcast npe, delta_i/j_c, do_move=",3I6, L)', this_pe, delta_i_c, delta_j_c, do_move
-
-       if (do_move) then
-          call fv_moving_nest_exec(Atm, Atm_block, IPD_control, IPD_data, delta_i_c, delta_j_c, n, nest_num, parent_grid_num, child_grid_num, dt_atmos)
-       end if
-
+    
+    call eval_move_nest(Atm, a_step, parent_grid_num, child_grid_num, do_move, delta_i_c, delta_j_c, dt_atmos)
+    
+    allocate(global_pelist(Atm(parent_grid_num)%npes_this_grid+Atm(child_grid_num)%npes_this_grid))
+    global_pelist=(/Atm(parent_grid_num)%pelist, Atm(child_grid_num)%pelist/)
+    
+    !print '("[INFO] WDR update_moving_nest before mpp_broadcast npe, delta_i/j_c, do_move=",3I6, L)', this_pe, delta_i_c, delta_j_c, do_move
+    
+    call mpp_set_current_pelist(global_pelist)
+    call mpp_broadcast( delta_i_c, Atm(child_grid_num)%pelist(1), global_pelist )
+    call mpp_broadcast( delta_j_c, Atm(child_grid_num)%pelist(1), global_pelist )
+    call mpp_broadcast( do_move, Atm(child_grid_num)%pelist(1), global_pelist )
+    call mpp_set_current_pelist(Atm(n)%pelist)
+    
+    !print '("[INFO] WDR update_moving_nest after mpp_broadcast npe, delta_i/j_c, do_move=",3I6, L)', this_pe, delta_i_c, delta_j_c, do_move
+    
+    if (do_move) then
+       call fv_moving_nest_exec(Atm, Atm_block, IPD_control, IPD_data, delta_i_c, delta_j_c, n, nest_num, parent_grid_num, child_grid_num, dt_atmos)
     end if
-
-    !a_step = a_step + 1
 
   end subroutine update_moving_nest
 
@@ -268,18 +253,18 @@ contains
     domain_coarse => Atm(parent_grid_num)%domain
     is_fine_pe = Atm(n)%neststruct%nested .and. ANY(Atm(n)%pelist(:) == this_pe)
     nz = Atm(n)%npz
-
+    
     if (debug_log) print '("[INFO] WDR ptbounds 3 atmosphere.F90  npe=",I0," pt(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(Atm(n)%pt,1), ubound(Atm(n)%pt,1), lbound(Atm(n)%pt,2), ubound(Atm(n)%pt,2), lbound(Atm(n)%pt,3), ubound(Atm(n)%pt,3)
-
+    
     !if (is_fine_pe) then
     !   if (wxvar_out) call mn_prog_dump_to_netcdf(Atm(n), output_step, "wxavar", is_fine_pe, domain_coarse, domain_fine, nz)
     !   if (wxvar_out) call mn_phys_dump_to_netcdf(Atm(n), Atm_block, IPD_control, IPD_data, output_step, "wxavar", is_fine_pe, domain_coarse, domain_fine, nz)
     !   output_step = output_step + 1
     !   if (debug_log) print '("[INFO] WDR after outputting to netCDF fv_dynamics atmosphere.F90 npe=",I0, " psc=",I0)', this_pe, psc
     !end if
-
+    
     if (a_step .lt. 10 .or. mod(a_step, 40) .eq. 0 .or. (a_step .ge. 60 .and. a_step .le. 65) ) then
-    !if (mod(a_step, 20) .eq. 0) then
+       !if (mod(a_step, 20) .eq. 0) then
        if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
        if (tsvar_out) call mn_phys_dump_to_netcdf(Atm(n), Atm_block, IPD_control, IPD_data, a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
     endif
