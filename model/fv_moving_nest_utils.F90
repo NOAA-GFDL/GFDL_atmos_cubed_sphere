@@ -220,7 +220,7 @@ contains
     else
        ! Don't smooth if at the edge.  Could do partial smoothing here also, but don't expect moving nest to reach the edge.
        val = data_var(i,j)
-    end if
+    endif
 
   end subroutine smooth_5_point
 
@@ -237,7 +237,7 @@ contains
     else
        ! Don't smooth if at the edge.  Could do partial smoothing here also, but don't expect moving nest to reach the edge.
        val = data_var(i,j)
-    end if
+    endif
 
   end subroutine smooth_9_point
 
@@ -292,10 +292,10 @@ contains
 
           !if (this_pe .ge. 96) then
           !   print '("[INFO] WDR BLEND npe=",I0," a_step=",I0," i,j=",I0,",",I0," smoothed_orog=",F10.5," hires_orog=",F10.5," blend_wt=",F6.4," blend_orog=",F10.5)', this_pe, a_step, i, j, smoothed_orog, hires_orog, blend_wt, blend_orog
-          !end if
+          !endif
 
-       end do
-    end do
+       enddo
+    enddo
 
   end subroutine set_blended_terrain
 
@@ -342,9 +342,9 @@ contains
                 Atm%phis(i,j) = smoothed_orog * grav
              else
                 Atm%phis(i,j) = fp_orog((ioffset-1)*refine + i, (joffset-1)*refine + j) * grav
-             end if
-          end do
-       end do
+             endif
+          enddo
+       enddo
 
        case (9)
 
@@ -355,9 +355,9 @@ contains
                 Atm%phis(i,j) = smoothed_orog * grav
              else
                 Atm%phis(i,j) = fp_orog((ioffset-1)*refine + i, (joffset-1)*refine + j) * grav
-             end if
-          end do
-       end do
+             endif
+          enddo
+       enddo
 
     case default
        write (errstring, "(I0)") num_points
@@ -419,7 +419,7 @@ contains
        !print '("[INFO] WDR compare_terrain II. npe=",I0)', this_pe
        call compare_buffer(west_coarse, west_fine, ind, wbuffer, data_var)
        !print '("[INFO] WDR compare_terrain JJ. npe=",I0)', this_pe
-    end if
+    endif
 
     print '("[INFO] WDR compare_terrain ZZ. npe=",I0)', this_pe
 
@@ -473,21 +473,21 @@ contains
                   (buffer(ic+1,jc+1) .gt. 0.01) .or. &
                   (buffer(ic+1,jc) .gt. 0.01)) then
                 print '("[INFO] WDR COMP_TERR npe=",I0," i=",I0," j=",I0," ic=",I0," jc=",I0,F10.3," ",F10.3," ",F10.3," ",F10.3," ",F10.3)', this_pe, i, j, ic, jc, fine_var(i,j), buffer(ic,  jc  ), buffer(ic,  jc+1), buffer(ic+1,jc+1), buffer(ic+1,jc  )
-          end if
+          endif
 
              !wt(i,j,1)*buffer(ic,  jc  ) +  &
              !wt(i,j,2)*buffer(ic,  jc+1) +  &
              !wt(i,j,3)*buffer(ic+1,jc+1) +  &
              !wt(i,j,4)*buffer(ic+1,jc  )
 
-          end do
-       end do
+          enddo
+       enddo
        !print '("[INFO] WDR BOUNDS_DONE npe=",I0," i=",I0," j=",I0)', this_pe, i, j
 
        debug_log = .false.
     !else
     !   print '("[INFO] WDR NIL BUFR. npe=",I0)', this_pe
-    end if
+    endif
   end subroutine compare_buffer
 
 
@@ -537,7 +537,7 @@ subroutine fill_nest_halos_from_parent_r4_2d(var_name, data_var, interp_type, wt
           this_pe,  var_name, lbound(data_var, 1), ubound(data_var, 1), lbound(data_var, 2), ubound(data_var, 2)
      print '("[INFO] wt npe=",I0," var_name=",A16," wt(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', &
           this_pe,  var_name, lbound(wt, 1), ubound(wt, 1), lbound(wt, 2), ubound(wt, 2), lbound(wt, 3), ubound(wt, 3)
-  end if
+  endif
 
   !====================================================
 
@@ -575,7 +575,7 @@ subroutine fill_nest_halos_from_parent_r4_2d(var_name, data_var, interp_type, wt
      call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, WEST, x_refine, y_refine, wt, ind)
      if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
 
-  end if
+  endif
 
   if (debug_log) print '("[INFO] WDR End fill_nest_halos_from_parent2D. npe=",I0," var_name=",A16)', this_pe, var_name
 
@@ -627,7 +627,7 @@ subroutine fill_nest_halos_from_parent_r8_2d(var_name, data_var, interp_type, wt
           this_pe,  var_name, lbound(data_var, 1), ubound(data_var, 1), lbound(data_var, 2), ubound(data_var, 2)
      print '("[INFO] wt npe=",I0," var_name=",A16," wt(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', &
           this_pe,  var_name, lbound(wt, 1), ubound(wt, 1), lbound(wt, 2), ubound(wt, 2), lbound(wt, 3), ubound(wt, 3)
-  end if
+  endif
 
   !====================================================
 
@@ -665,7 +665,7 @@ subroutine fill_nest_halos_from_parent_r8_2d(var_name, data_var, interp_type, wt
      call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, WEST, x_refine, y_refine, wt, ind)
      if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
 
-  end if
+  endif
 
   deallocate(nbuffer)
   deallocate(sbuffer)
@@ -721,7 +721,7 @@ subroutine fill_nest_halos_from_parent_masked(var_name, data_var, interp_type, w
           this_pe,  var_name, lbound(data_var, 1), ubound(data_var, 1), lbound(data_var, 2), ubound(data_var, 2)
      print '("[INFO] wt npe=",I0," var_name=",A16," wt(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', &
           this_pe,  var_name, lbound(wt, 1), ubound(wt, 1), lbound(wt, 2), ubound(wt, 2), lbound(wt, 3), ubound(wt, 3)
-  end if
+  endif
 
   !====================================================
 
@@ -759,7 +759,7 @@ subroutine fill_nest_halos_from_parent_masked(var_name, data_var, interp_type, w
      call fill_nest_from_buffer_masked(interp_type, data_var, wbuffer, west_fine, west_coarse, WEST, x_refine, y_refine, wt, ind, mask_var, mask_val, default_val)
      if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
 
-  end if
+  endif
 
   deallocate(nbuffer)
   deallocate(sbuffer)
@@ -811,7 +811,7 @@ subroutine fill_nest_halos_from_parent_r4_3d(var_name, data_var, interp_type, wt
           this_pe,  var_name, lbound(data_var, 1), ubound(data_var, 1), lbound(data_var, 2), ubound(data_var, 2), lbound(data_var, 3), ubound(data_var, 3)
      print '("[INFO] wt npe=",I0," var_name=",A16," wt(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', &
           this_pe,  var_name, lbound(wt, 1), ubound(wt, 1), lbound(wt, 2), ubound(wt, 2), lbound(wt, 3), ubound(wt, 3)
-  end if
+  endif
 
   !====================================================
 
@@ -849,7 +849,7 @@ subroutine fill_nest_halos_from_parent_r4_3d(var_name, data_var, interp_type, wt
      call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, nz, WEST, x_refine, y_refine, wt, ind)
      if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
 
-  end if
+  endif
 
   deallocate(nbuffer)
   deallocate(sbuffer)
@@ -900,7 +900,7 @@ subroutine fill_nest_halos_from_parent_r8_3d(var_name, data_var, interp_type, wt
           this_pe,  var_name, lbound(data_var, 1), ubound(data_var, 1), lbound(data_var, 2), ubound(data_var, 2), lbound(data_var, 3), ubound(data_var, 3)
      print '("[INFO] wt npe=",I0," var_name=",A16," wt(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', &
           this_pe,  var_name, lbound(wt, 1), ubound(wt, 1), lbound(wt, 2), ubound(wt, 2), lbound(wt, 3), ubound(wt, 3)
-  end if
+  endif
 
   !====================================================
 
@@ -938,7 +938,7 @@ subroutine fill_nest_halos_from_parent_r8_3d(var_name, data_var, interp_type, wt
      call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, nz, WEST, x_refine, y_refine, wt, ind)
      if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
 
-  end if
+  endif
 
   deallocate(nbuffer)
   deallocate(sbuffer)
@@ -1037,7 +1037,7 @@ subroutine fill_nest_halos_from_parent_r4_4d(var_name, data_var, interp_type, wt
      call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, nz, WEST, x_refine, y_refine, wt, ind)
      if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
 
-  end if
+  endif
 
   deallocate(nbuffer)
   deallocate(sbuffer)
@@ -1138,7 +1138,7 @@ subroutine fill_nest_halos_from_parent_r8_4d(var_name, data_var, interp_type, wt
      call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, nz, WEST, x_refine, y_refine, wt, ind)
      if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
 
-  end if
+  endif
 
   deallocate(nbuffer)
   deallocate(sbuffer)
@@ -1597,16 +1597,16 @@ subroutine find_nest_alignment(nest_geo, parent_geo, nest_x, nest_y, parent_x, p
 
               if (debug_log) print '("[INFO] WDR find_nest_alignment parent(",I0,",",I0,") nest(",I0,",",I0,")")', x,y,nest_bbox.is, nest_bbox.js
               if (debug_log) print '("[INFO] WDR find_nest_alignment ",F10.5, F10.5)', parent_geo%lats(x,y)*rad2deg, parent_geo%lons(x,y)*rad2deg
-           end if
-        end if
-     end do
-  end do
+           endif
+        endif
+     enddo
+  enddo
 
   if (found) then
      if (debug_log) print '("[INFO] WDR find_nest_alignment MATCH FOUND",F10.5, F10.5)', nest_geo%lats(nest_bbox.is, nest_bbox.js)*rad2deg, nest_geo%lons(nest_bbox.is, nest_bbox.js)*rad2deg
   else
      if (debug_log) print '("[INFO] WDR find_nest_alignment NO MATCH FOUND",F10.5, F10.5)', nest_geo%lats(nest_bbox.is, nest_bbox.js)*rad2deg, nest_geo%lons(nest_bbox.is, nest_bbox.js)*rad2deg
-  end if
+  endif
 
 end subroutine find_nest_alignment
 
@@ -1732,22 +1732,22 @@ end subroutine find_nest_alignment
           elseif (stagger_type == CORNER) then
              fp_i = (i - nest_x) * 2 + parent_x - 1
              fp_j = (j - nest_y) * 2 + parent_y - 1
-          end if
+          endif
 
           ! Make sure we don't run off the edge of the parent supergrid
           if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
              print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
              stop  ! TODO replace with a fatal error
-          end if
+          endif
           if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
              print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
              stop  ! TODO replace with a fatal error
-          end if
+          endif
 
           in_grid(i,j,2) = fp_super_tile_geo%lats(fp_i, fp_j)
           in_grid(i,j,1) = fp_super_tile_geo%lons(fp_i, fp_j)
-       end do
-    end do
+       enddo
+    enddo
 
     ! Validate at the end
     !call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
@@ -1798,22 +1798,22 @@ end subroutine find_nest_alignment
           elseif (stagger_type == CORNER) then
              fp_i = (i - nest_x) * 2 + parent_x - 1
              fp_j = (j - nest_y) * 2 + parent_y - 1
-          end if
+          endif
 
           ! Make sure we don't run off the edge of the parent supergrid
           if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
              print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
              stop  ! TODO replace with a fatal error
-          end if
+          endif
           if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
              print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
              stop  ! TODO replace with a fatal error
-          end if
+          endif
 
           in_grid(i,j,2) = fp_super_tile_geo%lats(fp_i, fp_j)
           in_grid(i,j,1) = fp_super_tile_geo%lons(fp_i, fp_j)
-       end do
-    end do
+       enddo
+    enddo
 
     ! Validate at the end
     !call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
@@ -1864,22 +1864,22 @@ end subroutine find_nest_alignment
           elseif (stagger_type == CORNER) then
              fp_i = (i - nest_x) * 2 + parent_x - 1
              fp_j = (j - nest_y) * 2 + parent_y - 1
-          end if
+          endif
 
           ! Make sure we don't run off the edge of the parent supergrid
           if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
              print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
              stop  ! TODO replace with a fatal error
-          end if
+          endif
           if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
              print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
              stop  ! TODO replace with a fatal error
-          end if
+          endif
 
           in_grid(i,j,2,1) = fp_super_tile_geo%lats(fp_i, fp_j)
           in_grid(i,j,1,1) = fp_super_tile_geo%lons(fp_i, fp_j)
-       end do
-    end do
+       enddo
+    enddo
 
     ! Validate at the end
     !call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
@@ -2209,7 +2209,7 @@ end subroutine find_nest_alignment
              !if (stagger == "A") then
              !else if (stagger == "C") then
              !else if (stagger == "D") then
-             !end if
+             !endif
 
              ic = ind(i,j,1)
              jc = ind(i,j,2)
@@ -2223,8 +2223,8 @@ end subroutine find_nest_alignment
              !call check_array(buffer, this_pe, "buffer"//dir_str, -300.0, 300.0)
              !call check_array(wt, this_pe, "wt"//dir_str, 0.0, 1.0)
              if (debug_log) print '("[INFO] WDR FILL WEIGHTS ",A8,"  npe=",I0," (",I0,",",I0,") ic,jc=(",I0,",",I0,"): wt:",F12.5,F12.5,F12.5,F12.5)', dir_str, this_pe, i, j, ic, jc, wt(i,j,1), wt(i,j,2), wt(i,j,3), wt(i,j,4)
-          end do
-       end do
+          enddo
+       enddo
     else
        if (debug_log) print '("[INFO] WDR NIL BUFR print ",A8,"  buffer. npe=",I0)', dir_str, this_pe
     endif
@@ -2281,7 +2281,7 @@ end subroutine find_nest_alignment
              !if (stagger == "A") then
              !else if (stagger == "C") then
              !else if (stagger == "D") then
-             !end if
+             !endif
 
              ic = ind(i,j,1)
              jc = ind(i,j,2)
@@ -2295,8 +2295,8 @@ end subroutine find_nest_alignment
              !call check_array(buffer, this_pe, "buffer"//dir_str, -300.0, 300.0)
              !call check_array(wt, this_pe, "wt"//dir_str, 0.0, 1.0)
              if (debug_log) print '("[INFO] WDR FILL WEIGHTS ",A8,"  npe=",I0," (",I0,",",I0,") ic,jc=(",I0,",",I0,"): wt:",F12.5,F12.5,F12.5,F12.5)', dir_str, this_pe, i, j, ic, jc, wt(i,j,1), wt(i,j,2), wt(i,j,3), wt(i,j,4)
-          end do
-       end do
+          enddo
+       enddo
     else
        if (debug_log) print '("[INFO] WDR NIL BUFR print ",A8,"  buffer. npe=",I0)', dir_str, this_pe
     endif
@@ -2382,7 +2382,7 @@ end subroutine find_nest_alignment
                    x(i,j) = x(i,j) / tw
                 else
                    x(i,j) = default_val
-                end if
+                endif
 
 
                 if (x(i,j) .lt. 0.0) print '("[WARN] WDR MASK npe=",I0," i,j=",I5,I5," x()=",F15.5," tw=",F10.5)', this_pe, i, j, x(i,j), tw
@@ -2393,13 +2393,13 @@ end subroutine find_nest_alignment
              !        wt(i,j,2)*buffer(ic,  jc+1) +  &
              !        wt(i,j,3)*buffer(ic+1,jc+1) +  &
              !        wt(i,j,4)*buffer(ic+1,jc  )
-             !end if
+             !endif
 
              !call check_array(buffer, this_pe, "buffer"//dir_str, -300.0, 300.0)
              !call check_array(wt, this_pe, "wt"//dir_str, 0.0, 1.0)
              if (debug_log) print '("[INFO] WDR FILL WEIGHTS ",A8,"  npe=",I0," (",I0,",",I0,") ic,jc=(",I0,",",I0,"): wt:",F12.5,F12.5,F12.5,F12.5)', dir_str, this_pe, i, j, ic, jc, wt(i,j,1), wt(i,j,2), wt(i,j,3), wt(i,j,4)
-          end do
-       end do
+          enddo
+       enddo
     else
        if (debug_log) print '("[INFO] WDR NIL BUFR print ",A8,"  buffer. npe=",I0)', dir_str, this_pe
     endif
@@ -2458,7 +2458,7 @@ end subroutine find_nest_alignment
                 !if (stagger == "A") then
                 !else if (stagger == "C") then
                 !else if (stagger == "D") then
-                !end if
+                !endif
 
                 ic = ind(i,j,1)
                 jc = ind(i,j,2)
@@ -2481,11 +2481,11 @@ end subroutine find_nest_alignment
                 !   if (debug_log) print '("[INFO] WDR FOCUS FILL WEIGHTS ",A8,"  npe=",I0," (",I0,",",I0,",",I0,") : buffer:",F12.5,F12.5,F12.5,F12.5)', dir_str, this_pe, i, j, k, buffer(ic,jc,k), buffer(ic,jc+1,k), buffer(ic+1,jc+1,k), buffer(ic+1,jc,k)
                 !   if (debug_log) print '("[INFO] WDR FOCUS after FILL nest from ",A8," buffer. npe=",I0," x(",I0,",",I0,",",I0,")=",F12.5)', dir_str, this_pe, i, j, k, x(i,j,k)
                 !   if (debug_log) print '("[INFO] WDR FOCUS FILLNEST from ",A8," buffer. npe=",I0," i,j=(",I0,",",I0,") ic,jc=(",I0,",",I0") x=",F12.5)', dir_str, this_pe, i, j, ic, jc, x(i,j,k)
-                !end if
+                !endif
 
-             end do
-          end do
-       end do
+             enddo
+          enddo
+       enddo
     else
        if (debug_log) print '("[INFO] WDR NIL BUFR print ",A8,"  buffer. npe=",I0)', dir_str, this_pe
        !if (debug_log) print '("[INFO WDR NIL BUFR ",A8," BOUNDS i npe=",I0,"is_f=",I0," ie_f=",I0,"is_c=",I0," ie_c=",I0)', dir_str, this_pe, is_f, ie_f, is_c, ie_c
@@ -2546,7 +2546,7 @@ end subroutine find_nest_alignment
                 !if (stagger == "A") then
                 !else if (stagger == "C") then
                 !else if (stagger == "D") then
-                !end if
+                !endif
 
                 ic = ind(i,j,1)
                 jc = ind(i,j,2)
@@ -2569,11 +2569,11 @@ end subroutine find_nest_alignment
                 !   if (debug_log) print '("[INFO] WDR FOCUS FILL WEIGHTS ",A8,"  npe=",I0," (",I0,",",I0,",",I0,") : buffer:",F12.5,F12.5,F12.5,F12.5)', dir_str, this_pe, i, j, k, buffer(ic,jc,k), buffer(ic,jc+1,k), buffer(ic+1,jc+1,k), buffer(ic+1,jc,k)
                 !   if (debug_log) print '("[INFO] WDR FOCUS after FILL nest from ",A8," buffer. npe=",I0," x(",I0,",",I0,",",I0,")=",F12.5)', dir_str, this_pe, i, j, k, x(i,j,k)
                 !   if (debug_log) print '("[INFO] WDR FOCUS FILLNEST from ",A8," buffer. npe=",I0," i,j=(",I0,",",I0,") ic,jc=(",I0,",",I0") x=",F12.5)', dir_str, this_pe, i, j, ic, jc, x(i,j,k)
-                !end if
+                !endif
 
-             end do
-          end do
-       end do
+             enddo
+          enddo
+       enddo
     else
        if (debug_log) print '("[INFO] WDR NIL BUFR print ",A8,"  buffer. npe=",I0)', dir_str, this_pe
        !if (debug_log) print '("[INFO WDR NIL BUFR ",A8," BOUNDS i npe=",I0,"is_f=",I0," ie_f=",I0,"is_c=",I0," ie_c=",I0)', dir_str, this_pe, is_f, ie_f, is_c, ie_c
@@ -2666,10 +2666,10 @@ end subroutine find_nest_alignment
 
                    !if (debug_log) print '("[INFO] WDR FILLNEST4D from ",A8," buffer. npe=",I0," i,j=(",I0,",",I0,") ic,jc=(",I0,",",I0") x=",F12.5)', dir_str, this_pe, i, j, ic, jc, x(i,j,k,v)
 
-                end do
-             end do
-          end do
-       end do
+                enddo
+             enddo
+          enddo
+       enddo
     else
        if (debug_log) print '("[INFO] WDR NIL BUFR print ",A8,"  buffer. npe=",I0)', dir_str, this_pe
     endif
@@ -2759,10 +2759,10 @@ end subroutine find_nest_alignment
 
                    !if (debug_log) print '("[INFO] WDR FILLNEST4D from ",A8," buffer. npe=",I0," i,j=(",I0,",",I0,") ic,jc=(",I0,",",I0") x=",F12.5)', dir_str, this_pe, i, j, ic, jc, x(i,j,k,v)
 
-                end do
-             end do
-          end do
-       end do
+                enddo
+             enddo
+          enddo
+       enddo
     else
        if (debug_log) print '("[INFO] WDR NIL BUFR print ",A8,"  buffer. npe=",I0)', dir_str, this_pe
     endif
@@ -2851,9 +2851,9 @@ end subroutine find_nest_alignment
                 if (debug_log) print '("[INFO] WDR FILL WEIGHTS ",A8,"  npe=",I0," (",I0,",",I0,",",I0,") : wt:",F12.5,F12.5,F12.5,F12.5)', dir_str, this_pe, i, j, k, wt(i,j,1), wt(i,j,2), wt(i,j,3), wt(i,j,4)
 
                 if (debug_log) print '("[INFO] WDR after FILL nest from ",A8," buffer. npe=",I0," x(",I0,",",I0,",",I0,")=",F12.5)', dir_str, this_pe, i, j, k, x(i,j,k)
-             end do
-          end do
-       end do
+             enddo
+          enddo
+       enddo
     else
        if (debug_log) print '("[INFO] WDR NIL BUFR print ",A8,"  buffer. npe=",I0)', dir_str, this_pe
     endif
@@ -2874,21 +2874,21 @@ end subroutine find_nest_alignment
        if (lbound(atm_wt, n) .ne. lbound(new_wt, n)) then
           print '("[ERROR] WDR fill_weight_grid lbound mismatch fv_moving_nest.F90 npe=",I0," n=",I0, I0, I0)', this_pe, n, lbound(atm_wt, n), lbound(new_wt, n)
           stop
-       end if
+       endif
        if (ubound(atm_wt, n) .ne. ubound(new_wt, n)) then
           print '("[ERROR] WDR fill_weight_grid ubound mismatch fv_moving_nest.F90 npe=",I0," n=",I0, I0, I0)', this_pe, n, ubound(atm_wt, n), ubound(new_wt, n)
           stop
-       end if
-    end do
+       endif
+    enddo
 
     if (debug_log) print '("[INFO] WDR running fill_weight_grid fv_moving_nest.F90 npe=",I0)', this_pe
     do x = lbound(atm_wt,1),ubound(atm_wt,1)
        do y = lbound(atm_wt,2),ubound(atm_wt,2)
           do z = 1,4
              atm_wt(x,y,z) = new_wt(x,y,z)
-          end do
-       end do
-    end do
+          enddo
+       enddo
+    enddo
 
   end subroutine fill_weight_grid
 
@@ -2930,19 +2930,19 @@ end subroutine find_nest_alignment
                 invalid_last = array(i,j)
              else
                 num_valid = num_valid + 1
-             end if
-          end do
-       end do
+             endif
+          enddo
+       enddo
 
        if (num_invalid > 0 ) then
           print '("[ERROR] WDR 2Darray invalid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0," last invalid=",E12.5)', this_pe, var_name, num_invalid, num_valid, invalid_last
        else
           print '("[INFO] WDR 2Darray all valid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
-       end if
+       endif
 
     else
        print '("[INFO] WDR 2Darray not allocated  npe=",I0," ",A32)', this_pe, var_name
-    end if
+    endif
 
   end subroutine check_array_r4_2d
 
@@ -2978,19 +2978,19 @@ end subroutine find_nest_alignment
                 invalid_last = array(i,j)
              else
                 num_valid = num_valid + 1
-             end if
-          end do
-       end do
+             endif
+          enddo
+       enddo
 
        if (num_invalid > 0 ) then
           print '("[ERROR] WDR 2D64array invalid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0," last invalid=",E12.5)', this_pe, var_name, num_invalid, num_valid, invalid_last
        else
           print '("[INFO] WDR 2D64array all valid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
-       end if
+       endif
 
     else
        print '("[INFO] WDR 2D64array not allocated  npe=",I0," ",A32)', this_pe, var_name
-    end if
+    endif
 
   end subroutine check_array_r8_2d
 
@@ -3019,15 +3019,15 @@ end subroutine find_nest_alignment
              num_invalid = num_invalid + 1
           else
              num_valid = num_valid + 1
-          end if
-       end do
-    end do
+          endif
+       enddo
+    enddo
 
     if (num_invalid > 0 ) then
        print '("[ERROR] WDR 2DLarray invalid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
     else
        print '("[INFO] WDR 2DLarray all valid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
-    end if
+    endif
 
   end subroutine check_local_array_r4_2d
 
@@ -3055,15 +3055,15 @@ end subroutine find_nest_alignment
              num_invalid = num_invalid + 1
           else
              num_valid = num_valid + 1
-          end if
-       end do
-    end do
+          endif
+       enddo
+    enddo
 
     if (num_invalid > 0 ) then
        print '("[ERROR] WDR 2DLarray invalid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
     else
        print '("[INFO] WDR 2DLarray all valid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
-    end if
+    endif
 
   end subroutine check_local_array_r8_2d
 
@@ -3096,20 +3096,20 @@ end subroutine find_nest_alignment
                    num_invalid = num_invalid + 1
                 else
                    num_valid = num_valid + 1
-                end if
-             end do
-          end do
-       end do
+                endif
+             enddo
+          enddo
+       enddo
 
        if (num_invalid > 0 ) then
           print '("[ERROR] WDR 3Darray invalid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
        else
           print '("[INFO] WDR 3Darray all valid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
-       end if
+       endif
 
     else
        print '("[INFO] WDR 3Darray not allocated  npe=",I0," ",A32)', this_pe, var_name
-    end if
+    endif
 
   end subroutine check_array_r4_3d
 
@@ -3142,20 +3142,20 @@ end subroutine find_nest_alignment
                    num_invalid = num_invalid + 1
                 else
                    num_valid = num_valid + 1
-                end if
-             end do
-          end do
-       end do
+                endif
+             enddo
+          enddo
+       enddo
 
        if (num_invalid > 0 ) then
           print '("[ERROR] WDR 3Darray invalid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
        else
           print '("[INFO] WDR 3Darray all valid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
-       end if
+       endif
 
     else
        print '("[INFO] WDR 3Darray not allocated  npe=",I0," ",A32)', this_pe, var_name
-    end if
+    endif
 
   end subroutine check_array_r8_3d
 
@@ -3186,16 +3186,16 @@ end subroutine find_nest_alignment
                 num_invalid = num_invalid + 1
              else
                 num_valid = num_valid + 1
-             end if
-          end do
-       end do
-    end do
+             endif
+          enddo
+       enddo
+    enddo
 
     if (num_invalid > 0 ) then
        print '("[ERROR] WDR 3DLarray invalid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
     else
        print '("[INFO] WDR 3DLarray all valid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
-    end if
+    endif
 
   end subroutine check_local_array_r4_3d
 
@@ -3226,16 +3226,16 @@ end subroutine find_nest_alignment
                 num_invalid = num_invalid + 1
              else
                 num_valid = num_valid + 1
-             end if
-          end do
-       end do
-    end do
+             endif
+          enddo
+       enddo
+    enddo
 
     if (num_invalid > 0 ) then
        print '("[ERROR] WDR 3DLarray invalid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
     else
        print '("[INFO] WDR 3DLarray all valid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
-    end if
+    endif
 
   end subroutine check_local_array_r8_3d
 
@@ -3270,20 +3270,20 @@ end subroutine find_nest_alignment
                       num_invalid = num_invalid + 1
                    else
                       num_valid = num_valid + 1
-                   end if
-                end do
-             end do
-          end do
-       end do
+                   endif
+                enddo
+             enddo
+          enddo
+       enddo
 
        if (num_invalid > 0 ) then
           print '("[ERROR] WDR 4Darray invalid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
        else
           print '("[INFO] WDR 4Darray all valid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
-       end if
+       endif
     else
        print '("[INFO] WDR 4Darray not allocated  npe=",I0," ",A32)', this_pe, var_name
-    end if
+    endif
   end subroutine check_array_r4_4d
 
 
@@ -3317,20 +3317,20 @@ end subroutine find_nest_alignment
                       num_invalid = num_invalid + 1
                    else
                       num_valid = num_valid + 1
-                   end if
-                end do
-             end do
-          end do
-       end do
+                   endif
+                enddo
+             enddo
+          enddo
+       enddo
 
        if (num_invalid > 0 ) then
           print '("[ERROR] WDR 4Darray invalid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
        else
           print '("[INFO] WDR 4Darray all valid entries npe=",I0," ",A32," num_invalid=",I0," num_valid=",I0)', this_pe, var_name, num_invalid, num_valid
-       end if
+       endif
     else
        print '("[INFO] WDR 4Darray not allocated  npe=",I0," ",A32)', this_pe, var_name
-    end if
+    endif
   end subroutine check_array_r8_4d
 
 
@@ -3360,12 +3360,12 @@ end subroutine find_nest_alignment
        if (lbound(grid1,x) /= lbound(grid2,x)) then
           print '("[ERROR] WDR grid_equal ",A16," npe=",I0," lbound mismatch ",I0, I0,I0)', tag, x, lbound(grid1,x), lbound(grid2,x)
           is_equal = .false.
-       end if
+       endif
        if (ubound(grid1,x) /= ubound(grid2,x)) then
           print '("[ERROR] WDR grid_equal ",A16," npe=",I0," ubound mismatch ",I0, I0,I0)', tag, x, ubound(grid1,x), ubound(grid2,x)
           is_equal = .false.
-       end if
-    end do
+       endif
+    enddo
 
     if (is_equal) then
        do x=lbound(grid1,1), ubound(grid1,1)
@@ -3380,17 +3380,17 @@ end subroutine find_nest_alignment
                    print '("[INFO]  WDR grid_equal ",A16," npe=",I0," DEG value match    at (",I0,",",I0,",",I0,") ",F15.11, " ",F15.11, " ",F15.11)', tag, this_pe, x, y, z, grid1(x,y,z)*rad2deg, grid2(x,y,z)*rad2deg, grid1(x,y,z)*rad2deg - grid2(x,y,z)*rad2deg
 
                    print '("[INFO]  WDR grid_equal ",A16," npe=",I0," RAD value match    at (",I0,",",I0,",",I0,") ",F15.11, " ",F15.11, " ",F15.11)', tag, this_pe, x, y, z, grid1(x,y,z), grid2(x,y,z), grid1(x,y,z) - grid2(x,y,z)
-                end if
-             end do
-          end do
-       end do
-    end if
+                endif
+             enddo
+          enddo
+       enddo
+    endif
 
     if (is_equal) then
        print '("[INFO] WDR grid_equal ",A16," npe=",I0," MATCH.")', tag, this_pe
     else
        print '("[ERROR] WDR grid_equal ",A16," npe=",I0," MISMATCH.")', tag, this_pe
-    end if
+    endif
 
   end subroutine grid_equal
 
@@ -3478,7 +3478,7 @@ end subroutine find_nest_alignment
 
     else
        print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") neststruct%",A12," is not allocated.")', tag, this_pe, trim(array_name)
-    end if
+    endif
 
   end subroutine show_atm_array4
 
@@ -3516,17 +3516,17 @@ end subroutine find_nest_alignment
     !               neststruct%ind_update_h(lbound(neststruct%ind_update_h,1)+4,  lbound(neststruct%ind_update_h,2)+4,  ubound(neststruct%ind_update_h,3))
     !
     !
-    !       end if
+    !       endif
     !    else
     !       print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") neststruct%ind_update_h is not allocated.")', tag, this_pe, atm_n
-    !    end if
+    !    endif
 
     ! WDR nest_domain_all appears to be obsolete in new dycore
     !if (allocated(neststruct%nest_domain_all)) then
     !   print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") neststruct%nest_domain_all(",I0,"-",I0,")")', tag, this_pe, atm_n, lbound(neststruct%nest_domain_all), ubound(neststruct%nest_domain_all)
     !else
     !   print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") neststruct%nest_domain_all is not allocated.")', tag, this_pe, atm_n
-    !end if
+    !endif
 
     ! WDR nest_domain has moved to fv_mp_mod.F90 as a global
     !print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") neststruct%nest_domain%tile_fine=",I0," %tile_coarse=",I0)', tag, this_pe, atm_n, neststruct%nest_domain%tile_fine, neststruct%nest_domain%tile_coarse
@@ -3550,7 +3550,7 @@ end subroutine find_nest_alignment
        print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") gridstruct%nested=",L1)', tag, this_pe, atm_n, gridstruct%nested
     else
        print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") gridstruct%nested is not set.")', tag, this_pe, atm_n
-    end if
+    endif
 
     print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") gridstruct%cubed_sphere=",L1)', tag, this_pe, atm_n, gridstruct%cubed_sphere
     print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") gridstruct%have_north_pole=",L1)', tag, this_pe, atm_n, gridstruct%have_north_pole
@@ -3559,13 +3559,13 @@ end subroutine find_nest_alignment
        print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") gridstruct%agrid(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', tag, this_pe, atm_n, lbound(gridstruct%agrid, 1), ubound(gridstruct%agrid, 1), lbound(gridstruct%agrid, 2), ubound(gridstruct%agrid, 2), lbound(gridstruct%agrid, 3), ubound(gridstruct%agrid, 3)
     else
        print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") gridstruct%agrid is not allocated.")', tag, this_pe, atm_n
-    end if
+    endif
 
     if (allocated(gridstruct%grid)) then
        print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") gridstruct%grid(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', tag, this_pe, atm_n, lbound(gridstruct%grid, 1), ubound(gridstruct%grid, 1), lbound(gridstruct%grid, 2), ubound(gridstruct%grid, 2), lbound(gridstruct%grid, 3), ubound(gridstruct%grid, 3)
     else
        print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") gridstruct%grid is not allocated.")', tag, this_pe, atm_n
-    end if
+    endif
 
   end subroutine show_atm_gridstruct
 
@@ -3589,10 +3589,10 @@ end subroutine find_nest_alignment
        print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") pelist(",I0,"-",I0,")=",I0,"...",I0)', tag, this_pe, atm_n, is, ie, Atm%pelist(is),  Atm%pelist(ie)
        !do i = is, ie
        !   print '("[INFO]    show_atm ",A8," npe=",I0," Atm(",I0,") pelist(",I0,")=",I0)', tag, this_pe, atm_n, i, Atm%pelist(i)
-       !end do
+       !enddo
     else
        print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") pelist is not allocated.")', tag, this_pe, atm_n
-    end if
+    endif
 
     print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") bd%(is-ie)=",I0,"-",I0,") (js-je)=",I0,"-",I0,")"  )', tag, this_pe, atm_n, Atm%bd%is, Atm%bd%ie, Atm%bd%js, Atm%bd%je
     print '("[INFO] show_atm ",A8," npe=",I0," Atm(",I0,") bd%(isd-ied)=",I0,"-",I0,") (jsd-jed)=",I0,"-",I0,")"  )', tag, this_pe, atm_n, Atm%bd%isd, Atm%bd%ied, Atm%bd%jsd, Atm%bd%jed
@@ -3661,8 +3661,8 @@ end subroutine find_nest_alignment
     !   do y = lbound(Atm%gridstruct%grid,2), ubound(Atm%gridstruct%grid,2)
     !      print '("WDR NEST_GRID, ",I0,",",I0,",",I0,",",I0,",",F10.5,",",F10.5)', this_pe, step_num, x, y, &
     !           Atm%gridstruct%grid(x,y,2) * rad2deg, Atm%gridstruct%grid(x,y,1) * rad2deg - 360.0
-    !   end do
-    !end do
+    !   enddo
+    !enddo
 
     ! Log the bounds of this PE's grid
 
@@ -3692,8 +3692,8 @@ end subroutine find_nest_alignment
     do x=1,4
        if (crn_lon(x) .gt. 180.0) then
           crn_lon(x) = crn_lon(x) - 360.0
-       end if
-    end do
+       endif
+    enddo
 
     print '("PLOT",I0,"_data_corners,",I4.4 ,",",F10.5,",",F10.5,",",F10.5,",",F10.5,",",F10.5,",",F10.5,",",F10.5,",",F10.5)', &
          step_num, this_pe, crn_lat(1),  crn_lon(1),  crn_lat(2),  crn_lon(2),  crn_lat(3),  crn_lon(3),  crn_lat(4),  crn_lon(4)
@@ -3725,8 +3725,8 @@ end subroutine find_nest_alignment
     do x=1,4
        if (crn_lon(x) .gt. 180.0) then
           crn_lon(x) = crn_lon(x) - 360.0
-       end if
-    end do
+       endif
+    enddo
 
     print '("PLOT",I0,"_compute_corners,",I4.4 ,",",F10.5,",",F10.5,",",F10.5,",",F10.5,",",F10.5,",",F10.5,",",F10.5,",",F10.5)', &
          step_num, this_pe, crn_lat(1),  crn_lon(1),  crn_lat(2),  crn_lon(2),  crn_lat(3),  crn_lon(3),  crn_lat(4),  crn_lon(4)
@@ -3788,18 +3788,18 @@ end subroutine find_nest_alignment
           do z = lbound(grid,3), ubound(grid,3)
              print '("[INFO]  WDR grid_comp ",A16," npe=",I0," DEG value at (",I0,",",I0,",",I0,") ",F15.11, " ",F15.11, " ",F15.11)', "GRID", this_pe, x, y, z, local_grid(x,y,z)*rad2deg, grid(x,y,z)*rad2deg, local_grid(x,y,z)*rad2deg - grid(x,y,z)*rad2deg
              print '("[INFO]  WDR grid_comp ",A16," npe=",I0," RAD value at (",I0,",",I0,",",I0,") ",F15.11, " ",F15.11, " ",F15.11)', "GRID", this_pe, x, y, z, local_grid(x,y,z), grid(x,y,z), local_grid(x,y,z) - grid(x,y,z)
-          end do
-       end do
-    end do
+          enddo
+       enddo
+    enddo
 
     do x = lbound(agrid,1), lbound(agrid,1)+4
        do y = lbound(agrid,2), lbound(agrid,2)+4
           do z = lbound(agrid,3), ubound(agrid,3)
              print '("[INFO]  WDR agrid_comp ",A16," npe=",I0," DEG value at (",I0,",",I0,",",I0,") ",F15.11, " ",F15.11, " ",F15.11)', "AGRID", this_pe, x, y, z, local_agrid(x,y,z)*rad2deg, agrid(x,y,z)*rad2deg, local_agrid(x,y,z)*rad2deg - agrid(x,y,z)*rad2deg
              print '("[INFO]  WDR agrid_comp ",A16," npe=",I0," RAD value at (",I0,",",I0,",",I0,") ",F15.11, " ",F15.11, " ",F15.11)', "AGRID", this_pe, x, y, z, local_agrid(x,y,z), agrid(x,y,z), local_agrid(x,y,z) - agrid(x,y,z)
-          end do
-       end do
-    end do
+          enddo
+       enddo
+    enddo
 
     ! Validate at the end
     !call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)

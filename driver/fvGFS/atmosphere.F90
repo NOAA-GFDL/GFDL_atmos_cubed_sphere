@@ -530,8 +530,8 @@ contains
       if (ierr/=0) then
          cdata%errmsg = ' atmosphere_dynamics: error in ccpp_physics_init for group fast_physics: ' // trim(cdata%errmsg)
          call mpp_error (FATAL, cdata%errmsg)
-      end if
-   end if
+      endif
+   endif
 
 !  --- initiate the start for a restarted regional forecast
    if ( Atm(mygrid)%gridstruct%regional .and. Atm(mygrid)%flagstruct%warm_start ) then
@@ -718,7 +718,7 @@ contains
      !   call mpp_exit()
      !   print '("[INFO] WDR calling STOP after moving nest atmosphere.F90 npe=",I0)', this_pe
      !   stop
-     !end if
+     !endif
 
      !! WDR End code
 #endif ! MOVING_NEST
@@ -730,7 +730,7 @@ contains
        call timing_off('TWOWAY_UPDATE')
     endif
 
-    end do !p_split
+    enddo !p_split
     call mpp_clock_end (id_dynam)
 
 !-----------------------------------------------------
@@ -778,18 +778,18 @@ contains
 
     if (Atm(1)%idiag%id_u_dt_sg > 0) then
        used = send_data(Atm(1)%idiag%id_u_dt_sg, u_dt(isc:iec,jsc:jec,:), fv_time)
-    end if
+    endif
     if (Atm(1)%idiag%id_v_dt_sg > 0) then
        used = send_data(Atm(1)%idiag%id_v_dt_sg, v_dt(isc:iec,jsc:jec,:), fv_time)
-    end if
+    endif
     if (Atm(1)%idiag%id_t_dt_sg > 0) then
        t_dt(:,:,:) = rdt*(Atm(1)%pt(isc:iec,jsc:jec,:) - t_dt(:,:,:))
        used = send_data(Atm(1)%idiag%id_t_dt_sg, t_dt, fv_time)
-    end if
+    endif
     if (Atm(1)%idiag%id_qv_dt_sg > 0) then
        qv_dt(:,:,:) = rdt*(Atm(1)%q(isc:iec,jsc:jec,:,sphum) - qv_dt(:,:,:))
        used = send_data(Atm(1)%idiag%id_qv_dt_sg, qv_dt, fv_time)
-    end if
+    endif
 
 ! zero out t_dt for use as an accumulator
     t_dt = 0.
@@ -818,8 +818,8 @@ contains
       if (ierr/=0) then
          cdata%errmsg = ' atmosphere_dynamics: error in ccpp_physics_finalize for group fast_physics: ' // trim(cdata%errmsg)
          call mpp_error (FATAL, cdata%errmsg)
-      end if
-   end if
+      endif
+   endif
 
   ! initialize domains for writing global physics data
    if ( Atm(mygrid)%flagstruct%nudge ) call fv_nwp_nudge_end
@@ -873,7 +873,7 @@ contains
    else
        i_size = npx - 1
        j_size = npy - 1
-   end if
+   endif
 
  end subroutine atmosphere_resolution
 
@@ -916,7 +916,7 @@ contains
           lon(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%agrid_64(i,j,1)
           lat(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%agrid_64(i,j,2)
        enddo
-    end do
+    enddo
 
  end subroutine atmosphere_grid_ctr
 
@@ -939,7 +939,7 @@ contains
           blon(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid(i,j,1)
           blat(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid(i,j,2)
        enddo
-    end do
+    enddo
 
  end subroutine atmosphere_grid_bdry
 
@@ -999,7 +999,7 @@ contains
        is_moving_nest = Atm(child_grid_num)%neststruct%is_moving_nest
     else
        is_moving_nest = .False.
-    end if
+    endif
 #endif MOVING_NEST
 
     !print '("[INFO] WDR MMM3 atmosphere_domain() npe=",I0, " is_moving_nest=",L1)', mpp_pe(), is_moving_nest

@@ -185,8 +185,8 @@ contains
           j_idx = (joffset-1)*refine + j_pe
           
           Atm(n)%mn_phys%slmsk(i_pe, j_pe) = mn_static%ls_mask_grid(i_idx, j_idx)
-       end do
-    end do
+       enddo
+    enddo
 
     ! Reset the land sea mask from the hires parent data
     !  Reset the variables from the fix_sfc files
@@ -213,7 +213,7 @@ contains
              IPD_data(nb)%Sfcprop%ifd(ix) = 1         ! Ocean
              IPD_data(nb)%Sfcprop%oceanfrac(ix) = 1   ! Ocean -- TODO permit fractions
              IPD_data(nb)%Sfcprop%landfrac(ix) = 0    ! Ocean -- TODO permit fractions
-          end if
+          endif
 
           IPD_data(nb)%Sfcprop%tg3(ix) = mn_static%deep_soil_temp_grid(i_idx, j_idx)
 
@@ -225,7 +225,7 @@ contains
           if (mn_static%ls_mask_grid(i_idx, j_idx) .eq. 1 .and. nint(mn_static%land_frac_grid(i_idx, j_idx)) == 0 ) then
 
              ! Water soil type == lake, etc. -- override the other variables and make this water
-             print '("WDR mn_phys_reset_sfc_props LAKE SOIL npe=",I0," x,y=",I0,",",I0)', mpp_pe(), i_idx, j_idx
+             !print '("WDR mn_phys_reset_sfc_props LAKE SOIL npe=",I0," x,y=",I0,",",I0)', mpp_pe(), i_idx, j_idx
 
              IPD_data(nb)%Sfcprop%ifd(ix) = 1         ! Ocean
              IPD_data(nb)%Sfcprop%oceanfrac(ix) = 1   ! Ocean -- TODO permit fractions
@@ -235,7 +235,7 @@ contains
              IPD_data(nb)%Sfcprop%slmsk(ix) = 0
           else
              IPD_data(nb)%Sfcprop%stype(ix) = mn_static%soil_type_grid(i_idx, j_idx)
-          end if
+          endif
 
           IPD_data(nb)%Sfcprop%stype_save(ix) = IPD_data(nb)%Sfcprop%stype(ix)
 
@@ -255,12 +255,12 @@ contains
           phys_oro =  Atm(n)%phis(i_pe, j_pe) / grav
           !if (phys_oro .gt. 15000.0) then
           !   phys_oro = 0.0
-          !end if
+          !endif
           IPD_data(nb)%Sfcprop%oro(ix) = phys_oro
           IPD_data(nb)%Sfcprop%oro_uf(ix) = phys_oro
 
-       end do
-    end do
+       enddo
+    enddo
 
   end subroutine mn_phys_reset_sfc_props
 
@@ -336,8 +336,8 @@ contains
           area(x,y) = fp_super_tile_geo%area(fp_i - 1, fp_j - 1) + fp_super_tile_geo%area(fp_i - 1, fp_j) + &
                fp_super_tile_geo%area(fp_i, fp_j - 1) + fp_super_tile_geo%area(fp_i, fp_j)   ! TODO make sure these offsets are correct.
           !print '("WDR mn_reset_phys_latlon EE npe=",I0," ix=",I0," x,y=",I0,",",I0)', this_pe, x,y
-       end do
-    end do
+       enddo
+    enddo
 
     !print '("WDR mn_reset_phys_latlon FF npe=",I0," xlon_d=",F15.10," xlat_d=",F15.10," area=",F20.5)', this_pe, IPD_data(1)%Grid%xlon_d(1), IPD_data(1)%Grid%xlat_d(1), IPD_data(1)%Grid%area(1)
 
@@ -390,9 +390,9 @@ contains
 
 
             !return    !! We can exit this subroutine after the printing of the matching index.
-         end if
-      end do
-   end do
+         endif
+      enddo
+   enddo
 
 
   end subroutine dump_surface_physics
@@ -491,7 +491,7 @@ contains
 
             do k = 1, IPD_Control%nmtvr
                mn_phys%hprime(i,j,k)  = IPD_Data(nb)%Sfcprop%hprime(ix,k)
-            end do
+            enddo
 
             mn_phys%alvsf(i,j) = IPD_Data(nb)%Sfcprop%alvsf(ix)
             mn_phys%alvwf(i,j) = IPD_Data(nb)%Sfcprop%alvwf(ix)
@@ -525,19 +525,19 @@ contains
 
             do nv = 1, IPD_Control%ntot2d
                mn_phys%phy_f2d(i,j,nv) = IPD_Data(nb)%Tbd%phy_f2d(ix, nv)
-            end do
+            enddo
 
             do k = 1, IPD_Control%levs
                do nv = 1, IPD_Control%ntot3d
                   mn_phys%phy_f3d(i,j,k,nv) = IPD_Data(nb)%Tbd%phy_f3d(ix, k, nv)
-               end do
-            end do
+               enddo
+            enddo
 
             ! Cloud prop data has x,y dimensions
             mn_phys%cv(i,j)  = IPD_Data(nb)%Cldprop%cv(ix)
             mn_phys%cvt(i,j) = IPD_Data(nb)%Cldprop%cvt(ix)
             mn_phys%cvb(i,j) = IPD_Data(nb)%Cldprop%cvb(ix)
-         end if
+         endif
 
          if (move_nsst) then
             mn_phys%tref(i,j)   = IPD_Data(nb)%Sfcprop%tref(ix)
@@ -558,7 +558,7 @@ contains
             !mn_phys%ifd(i,j)    = IPD_Data(nb)%Sfcprop%ifd(ix)
             mn_phys%dt_cool(i,j)= IPD_Data(nb)%Sfcprop%dt_cool(ix)
             mn_phys%qrain(i,j)  = IPD_Data(nb)%Sfcprop%qrain(ix)
-         end if
+         endif
       enddo
     enddo
 
@@ -601,9 +601,9 @@ contains
                    bad_values = bad_values + 1
                 else
                    good_values = good_values + 1
-                end if
-             end do
-          end do
+                endif
+             enddo
+          enddo
        else
           do i = Atm(n)%bd%is, Atm(n)%bd%ie
              do j = Atm(n)%bd%js, Atm(n)%bd%je
@@ -612,10 +612,10 @@ contains
                    bad_values = bad_values + 1
                 else
                    good_values = good_values + 1
-                end if
-             end do
-          end do
-       end if
+                endif
+             enddo
+          enddo
+       endif
 
        i = Atm(n)%bd%is
        j = Atm(n)%bd%js
@@ -623,7 +623,7 @@ contains
        print '("[WARN] WDR Surface ts value. npe=",I0," ts(",I0,",",I0,")=",F18.3)', this_pe, i, j, mn_phys%ts(i,j)
 
        print '("INFO] WDR ts values. npe=",I0," good_values=",I0," bad_values=",I0)', this_pe, good_values, bad_values
-    end if
+    endif
 
     !  Needed to fill the local grids for parent and nest PEs in order to transmit/interpolate data from parent to nest
     !  But only the nest PE's have changed the values with nest motion, so they are the only ones that need to update the original arrays
@@ -657,17 +657,17 @@ contains
                    IPD_Data(nb)%Sfcprop%emis_lnd(ix) = mn_phys%emis_lnd(i,j)
                 else
                    IPD_Data(nb)%Sfcprop%emis_lnd(ix) = 0.5
-                end if
+                endif
                 if (mn_phys%emis_ice(i,j) .ge. 0.0) then
                    IPD_Data(nb)%Sfcprop%emis_ice(ix) = mn_phys%emis_ice(i,j)
                 else
                    IPD_Data(nb)%Sfcprop%emis_ice(ix) = 0.5
-                end if
+                endif
                 if (mn_phys%emis_wat(i,j) .ge. 0.0) then
                    IPD_Data(nb)%Sfcprop%emis_wat(ix) = mn_phys%emis_wat(i,j)
                 else
                    IPD_Data(nb)%Sfcprop%emis_wat(ix) = 0.5
-                end if
+                endif
 
 
 
@@ -684,7 +684,7 @@ contains
 
                 do k = 1, IPD_Control%nmtvr
                    IPD_Data(nb)%Sfcprop%hprime(ix,k) = mn_phys%hprime(i,j,k)
-                end do
+                enddo
 
                 IPD_Data(nb)%Sfcprop%alvsf(ix) = mn_phys%alvsf(i,j)
                 IPD_Data(nb)%Sfcprop%alvwf(ix) = mn_phys%alvwf(i,j)
@@ -715,25 +715,25 @@ contains
                    IPD_Data(nb)%Sfcprop%albdirvis_lnd (ix)   = mn_phys%albdirvis_lnd (i,j)
                 else
                    IPD_Data(nb)%Sfcprop%albdirvis_lnd (ix)   = 0.5
-                end if
+                endif
                 
                 if (mn_phys%albdirnir_lnd (i,j) .ge. 0.0) then
                    IPD_Data(nb)%Sfcprop%albdirnir_lnd (ix)   = mn_phys%albdirnir_lnd (i,j)
                 else
                    IPD_Data(nb)%Sfcprop%albdirnir_lnd (ix)   = 0.5
-                end if
+                endif
                 
                 if (mn_phys%albdifvis_lnd (i,j) .ge. 0.0) then
                    IPD_Data(nb)%Sfcprop%albdifvis_lnd (ix)   = mn_phys%albdifvis_lnd (i,j)
                 else
                    IPD_Data(nb)%Sfcprop%albdifvis_lnd (ix)   = 0.5
-                end if
+                endif
 
                 if (mn_phys%albdifnir_lnd (i,j) .ge. 0.0) then
                    IPD_Data(nb)%Sfcprop%albdifnir_lnd (ix)   = mn_phys%albdifnir_lnd (i,j)
                 else 
                    IPD_Data(nb)%Sfcprop%albdifnir_lnd (ix)   = 0.5
-                end if
+                endif
 
                 ! Cloud properties
                 IPD_Data(nb)%Cldprop%cv(ix) = mn_phys%cv(i,j)
@@ -749,7 +749,7 @@ contains
                       IPD_Data(nb)%Tbd%phy_f3d(ix, k, nv) = mn_phys%phy_f3d(i,j,k,nv)
                    enddo
                 enddo
-             end if
+             endif
 
              if (move_nsst) then
                 IPD_Data(nb)%Sfcprop%tref(ix)    = mn_phys%tref(i,j)
@@ -770,10 +770,10 @@ contains
                 !IPD_Data(nb)%Sfcprop%ifd(ix)    = mn_phys%ifd(i,j)
                 IPD_Data(nb)%Sfcprop%dt_cool(ix) = mn_phys%dt_cool(i,j)
                 IPD_Data(nb)%Sfcprop%qrain(ix)   = mn_phys%qrain(i,j)
-             end if
+             endif
           enddo
        enddo
-   end if
+   endif
 
    if (debug_log) print '("[INFO] WDR end mn_phys_apply_temp_variables. npe=",I0," n=",I0)', this_pe, n
 
@@ -1056,7 +1056,7 @@ contains
             Atm(child_grid_num)%neststruct%ind_h, &
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
-    end if
+    endif
 
     if (move_nsst) then
 
@@ -1133,7 +1133,7 @@ contains
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
 
-       end if
+       endif
 
   end subroutine mn_phys_fill_nest_halos_from_parent
 
@@ -1209,7 +1209,7 @@ contains
        call mn_var_fill_intern_nest_halos(mn_phys%cv, domain_fine, is_fine_pe)
        call mn_var_fill_intern_nest_halos(mn_phys%cvt, domain_fine, is_fine_pe)
        call mn_var_fill_intern_nest_halos(mn_phys%cvb, domain_fine, is_fine_pe)
-    end if
+    endif
 
     if (move_nsst) then
        call mn_var_fill_intern_nest_halos(mn_phys%tref, domain_fine, is_fine_pe)
@@ -1230,7 +1230,7 @@ contains
        !call mn_var_fill_intern_nest_halos(mn_phys%ifd, domain_fine, is_fine_pe)
        call mn_var_fill_intern_nest_halos(mn_phys%dt_cool, domain_fine, is_fine_pe)
        call mn_var_fill_intern_nest_halos(mn_phys%qrain, domain_fine, is_fine_pe)
-    end if
+    endif
     !call check_array(Atm%u, this_pe, "Atm%pt", 100.0, 400.0)
 
   end subroutine mn_phys_fill_intern_nest_halos
@@ -1462,7 +1462,7 @@ contains
             x_refine, y_refine, &
             is_fine_pe, nest_domain, position)
 
-       end if
+       endif
 
        if (move_nsst) then
           call mn_var_shift_data(mn_phys%tref, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
@@ -1501,7 +1501,7 @@ contains
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
           call mn_var_shift_data(mn_phys%qrain, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
                delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position)
-       end if
+       endif
 
   end subroutine mn_phys_shift_data
 
@@ -1577,7 +1577,7 @@ contains
             time_val, Atm%global_tile, file_prefix, "STDDEV")
     !else
        !print '("[INFO] WDR mn_phys_dump_to_netcdf fv_land FALSE npe=",I0, " size(oro)=(",I0,",",I0,")")', this_pe, size(Atm%oro, 1), size(Atm%oro, 1)
-    end if
+    endif
 
     ! Latitude and longitude in radians
     !call mn_var_dump_to_netcdf( Atm%gridstruct%agrid(:,:,2), is_fine_pe, domain_coarse, domain_fine, position, nz, &
@@ -1628,7 +1628,7 @@ contains
        allocate ( facsf_pr_local(is:ie, js:je) )
        allocate ( facwf_pr_local(is:ie, js:je) )
 
-    end if
+    endif
 
     if (move_nsst) then
        allocate ( tref_pr_local(is:ie, js:je) )
@@ -1637,7 +1637,7 @@ contains
        allocate ( xu_pr_local(is:ie, js:je) )
        allocate ( xv_pr_local(is:ie, js:je) )
        allocate ( ifd_pr_local(is:ie, js:je) )
-    end if
+    endif
 
     if (move_physics) then
        smc_pr_local = +99999.9
@@ -1660,7 +1660,7 @@ contains
        alvsf_pr_local = +99999.9
        alvwf_pr_local = +99999.9
 
-    end if
+    endif
     if (move_nsst) then
        tref_pr_local = +99999.9
        c_0_pr_local = +99999.9
@@ -1668,7 +1668,7 @@ contains
        xu_pr_local = +99999.9
        xv_pr_local = +99999.9
        ifd_pr_local = +99999.9
-    end if
+    endif
 
     do nb = 1,Atm_block%nblks
       blen = Atm_block%blksz(nb)
@@ -1713,15 +1713,15 @@ contains
              do nv = 1, IPD_Control%ntot2d
                 ! Use real() to lower the precision
                 phy_f2d_pr_local(i,j,nv) = real(IPD_Data(nb)%Tbd%phy_f2d(ix, nv))
-             end do
+             enddo
 
              do k = 1, IPD_Control%levs
                 do nv = 1, IPD_Control%ntot3d
                    ! Use real() to lower the precision
                    phy_f3d_pr_local(i,j,k,nv) = real(IPD_Data(nb)%Tbd%phy_f3d(ix, k, nv))
-                end do
-             end do
-          end if
+                enddo
+             enddo
+          endif
 
           if (move_nsst) then
              tref_pr_local(i, j) = IPD_data(nb)%Sfcprop%tref(ix)
@@ -1732,7 +1732,7 @@ contains
 
              ifd_pr_local(i, j) = IPD_data(nb)%Sfcprop%ifd(ix)
 
-          end if
+          endif
 
        enddo
     enddo
@@ -1775,13 +1775,13 @@ contains
           write (phys_var_name, "(A4,I0.3)")  'PH2D', nv
           call mn_var_dump_to_netcdf(phy_f2d_pr_local(:,:,nv), is_fine_pe, domain_coarse, domain_fine, position, 1, &
                time_val, Atm%global_tile, file_prefix, phys_var_name)
-       end do
+       enddo
 
        do nv = 1, IPD_Control%ntot3d
           write (phys_var_name, "(A4,I0.3)")  'PH3D', nv
           call mn_var_dump_to_netcdf(phy_f3d_pr_local(:,:,:,nv), is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%levs, &
                time_val, Atm%global_tile, file_prefix, phys_var_name)
-       end do
+       enddo
     endif
 
     if (move_nsst) then
@@ -1793,7 +1793,7 @@ contains
 
        call mn_var_dump_to_netcdf(ifd_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "IFD")
 
-    end if
+    endif
 
     ! TODO does skin temp need to be deallocated?
     if (move_physics) then
@@ -1812,7 +1812,7 @@ contains
 
        deallocate(phy_f2d_pr_local)
        deallocate(phy_f3d_pr_local)
-    end if
+    endif
     if (move_nsst) deallocate(tref_pr_local, c_0_pr_local, xt_pr_local,  xu_pr_local,  xv_pr_local, ifd_pr_local)
 
     if (debug_log) print '("[INFO] WDR end mn_phys_dump_tp_netcdf npe=",I0)', this_pe
