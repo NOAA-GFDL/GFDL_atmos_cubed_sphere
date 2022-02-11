@@ -36,24 +36,24 @@ module bounding_box_mod
   use fv_arrays_mod,   only : R_GRID
 
 #ifdef GFS_TYPES
-use GFS_typedefs,      only : kind_phys
+  use GFS_typedefs,      only : kind_phys
 #else
-use IPD_typedefs,      only : kind_phys => IPD_kind_phys
+  use IPD_typedefs,      only : kind_phys => IPD_kind_phys
 #endif
 
   ! Simple aggregation of the start and end indices of a 2D grid
   ! Makes argument lists clearer to read
   type bbox
-     integer :: is, ie, js, je
+    integer :: is, ie, js, je
   end type bbox
 
   interface fill_bbox
-     module procedure fill_bbox_r4_2d
-     module procedure fill_bbox_r4_3d
-     module procedure fill_bbox_r4_4d
-     module procedure fill_bbox_r8_2d
-     module procedure fill_bbox_r8_3d
-     module procedure fill_bbox_r8_4d
+    module procedure fill_bbox_r4_2d
+    module procedure fill_bbox_r4_3d
+    module procedure fill_bbox_r4_4d
+    module procedure fill_bbox_r8_2d
+    module procedure fill_bbox_r8_3d
+    module procedure fill_bbox_r8_4d
   end interface fill_bbox
 
 contains
@@ -166,7 +166,7 @@ contains
     !print '("[INFO] WDR enter bbox_get_C2F_index npe=",I0)', this_pe
 
     call mpp_get_C2F_index(nest_domain, bbox_fine%is, bbox_fine%ie, bbox_fine%js, bbox_fine%je, &
-         bbox_coarse%is, bbox_coarse%ie, bbox_coarse%js, bbox_coarse%je, direction,  nest_level, position=position)
+        bbox_coarse%is, bbox_coarse%ie, bbox_coarse%js, bbox_coarse%je, direction,  nest_level, position=position)
 
     !print '("[INFO] WDR bbox_get_C2F_index npe=",I0," dir=",I0," pos=",I0," fine (",I0,"-",I0,",",I0,"-",I0,")")', this_pe, direction, position, bbox_fine%is, bbox_fine%ie, bbox_fine%js, bbox_fine%je
 

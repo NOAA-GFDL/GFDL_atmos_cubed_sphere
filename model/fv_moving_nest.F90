@@ -71,7 +71,7 @@ module fv_moving_nest_mod
 
 #ifdef GFS_TYPES
   use GFS_typedefs,           only: IPD_data_type => GFS_data_type, &
-                                    IPD_control_type => GFS_control_type, kind_phys
+      IPD_control_type => GFS_control_type, kind_phys
 #else
   use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => IPD_kind_phys
 #endif
@@ -120,33 +120,33 @@ module fv_moving_nest_mod
 
   !! Step 2
   interface mn_var_fill_intern_nest_halos
-     module procedure mn_var_fill_intern_nest_halos_r4_2d
-     module procedure mn_var_fill_intern_nest_halos_r4_3d
-     module procedure mn_var_fill_intern_nest_halos_r4_4d
+    module procedure mn_var_fill_intern_nest_halos_r4_2d
+    module procedure mn_var_fill_intern_nest_halos_r4_3d
+    module procedure mn_var_fill_intern_nest_halos_r4_4d
 
-     module procedure mn_var_fill_intern_nest_halos_r8_2d
-     module procedure mn_var_fill_intern_nest_halos_r8_3d
-     module procedure mn_var_fill_intern_nest_halos_r8_4d
+    module procedure mn_var_fill_intern_nest_halos_r8_2d
+    module procedure mn_var_fill_intern_nest_halos_r8_3d
+    module procedure mn_var_fill_intern_nest_halos_r8_4d
 
-     module procedure mn_var_fill_intern_nest_halos_wind
+    module procedure mn_var_fill_intern_nest_halos_wind
   end interface mn_var_fill_intern_nest_halos
 
 
   !! Step 6
   interface mn_var_shift_data
-     module procedure mn_var_shift_data_r4_2d
-     module procedure mn_var_shift_data_r4_3d
-     module procedure mn_var_shift_data_r4_4d
+    module procedure mn_var_shift_data_r4_2d
+    module procedure mn_var_shift_data_r4_3d
+    module procedure mn_var_shift_data_r4_4d
 
-     module procedure mn_var_shift_data_r8_2d
-     module procedure mn_var_shift_data_r8_3d
-     module procedure mn_var_shift_data_r8_4d
+    module procedure mn_var_shift_data_r8_2d
+    module procedure mn_var_shift_data_r8_3d
+    module procedure mn_var_shift_data_r8_4d
   end interface mn_var_shift_data
 
   !! Step 8
   interface mn_var_dump_to_netcdf
-     module procedure mn_var_dump_2d_to_netcdf
-     module procedure mn_var_dump_3d_to_netcdf
+    module procedure mn_var_dump_2d_to_netcdf
+    module procedure mn_var_dump_3d_to_netcdf
   end interface mn_var_dump_to_netcdf
 
 contains
@@ -222,55 +222,55 @@ contains
     ! Check if the variables were filled in properly.
 
     if (debug_log) then
-       good_values = 0
-       bad_values = 0
+      good_values = 0
+      bad_values = 0
 
-       if (is_fine_pe) then
-          do i = Atm(n)%bd%isd, Atm(n)%bd%ied
-             do j = Atm(n)%bd%jsd, Atm(n)%bd%jed
-                do k = 1, npz
-                   if (mn_prog%delz(i,j,k) .gt. 20000.0) then
-                      print '("[WARN] WDR BAD NEST mn_prog%delz value. npe=",I0," mn_prog%delz(",I0,",",I0,",",I0,")=",F12.3)', this_pe, i, j, k, mn_prog%delz(i,j,k)
-                      bad_values = bad_values + 1
-                   else
-                      good_values = good_values + 1
-                   endif
-                enddo
-             enddo
+      if (is_fine_pe) then
+        do i = Atm(n)%bd%isd, Atm(n)%bd%ied
+          do j = Atm(n)%bd%jsd, Atm(n)%bd%jed
+            do k = 1, npz
+              if (mn_prog%delz(i,j,k) .gt. 20000.0) then
+                print '("[WARN] WDR BAD NEST mn_prog%delz value. npe=",I0," mn_prog%delz(",I0,",",I0,",",I0,")=",F12.3)', this_pe, i, j, k, mn_prog%delz(i,j,k)
+                bad_values = bad_values + 1
+              else
+                good_values = good_values + 1
+              endif
+            enddo
           enddo
-       else
-          do i = Atm(n)%bd%is, Atm(n)%bd%ie
-             do j = Atm(n)%bd%js, Atm(n)%bd%je
-                do k = 1, npz
-                   if (mn_prog%delz(i,j,k) .gt. 20000.0) then
-                      print '("[WARN] WDR BAD GLOBAL mn_prog%delz value. npe=",I0," mn_prog%delz(",I0,",",I0,",",I0,")=",F12.3)', this_pe, i, j, k, mn_prog%delz(i,j,k)
-                      bad_values = bad_values + 1
-                   else
-                      good_values = good_values + 1
-                   endif
-                enddo
-             enddo
+        enddo
+      else
+        do i = Atm(n)%bd%is, Atm(n)%bd%ie
+          do j = Atm(n)%bd%js, Atm(n)%bd%je
+            do k = 1, npz
+              if (mn_prog%delz(i,j,k) .gt. 20000.0) then
+                print '("[WARN] WDR BAD GLOBAL mn_prog%delz value. npe=",I0," mn_prog%delz(",I0,",",I0,",",I0,")=",F12.3)', this_pe, i, j, k, mn_prog%delz(i,j,k)
+                bad_values = bad_values + 1
+              else
+                good_values = good_values + 1
+              endif
+            enddo
           enddo
-       endif
+        enddo
+      endif
 
-       i = Atm(n)%bd%is
-       j = Atm(n)%bd%js
-       k = npz
+      i = Atm(n)%bd%is
+      j = Atm(n)%bd%js
+      k = npz
 
-       print '("[WARN] WDR Surface mn_prog%delz value. npe=",I0," mn_prog%delz(",I0,",",I0,",",I0,")=",F18.3)', this_pe, i, j, k, mn_prog%delz(i,j,k)
+      print '("[WARN] WDR Surface mn_prog%delz value. npe=",I0," mn_prog%delz(",I0,",",I0,",",I0,")=",F18.3)', this_pe, i, j, k, mn_prog%delz(i,j,k)
 
-       print '("INFO] WDR mn_prog%delz values. npe=",I0," good_values=",I0," bad_values=",I0)', this_pe, good_values, bad_values
+      print '("INFO] WDR mn_prog%delz values. npe=",I0," good_values=",I0," bad_values=",I0)', this_pe, good_values, bad_values
     endif
 
     if (is_fine_pe) then
-       is = Atm(n)%bd%is
-       ie = Atm(n)%bd%ie
-       js = Atm(n)%bd%js
-       je = Atm(n)%bd%je
+      is = Atm(n)%bd%is
+      ie = Atm(n)%bd%ie
+      js = Atm(n)%bd%js
+      je = Atm(n)%bd%je
 
-       if (debug_log) print '("[INFO] WDR mn_prog_apply_temp_variables. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
+      if (debug_log) print '("[INFO] WDR mn_prog_apply_temp_variables. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
 
-       Atm(n)%delz(is:ie, js:je, 1:npz) =  mn_prog%delz(is:ie, js:je, 1:npz)
+      Atm(n)%delz(is:ie, js:je, 1:npz) =  mn_prog%delz(is:ie, js:je, 1:npz)
     endif
 
     if (debug_log) print '("[INFO] WDR end mn_prog_apply_temp_variables. npe=",I0," n=",I0)', this_pe, n
@@ -316,19 +316,19 @@ contains
 
     !  Fill centered-grid variables
     call fill_nest_halos_from_parent("q_con", Atm(n)%q_con, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
-         Atm(child_grid_num)%neststruct%ind_h, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        Atm(child_grid_num)%neststruct%ind_h, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     call fill_nest_halos_from_parent("pt", Atm(n)%pt, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
-         Atm(child_grid_num)%neststruct%ind_h, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        Atm(child_grid_num)%neststruct%ind_h, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     call fill_nest_halos_from_parent("w", Atm(n)%w, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
-         Atm(child_grid_num)%neststruct%ind_h, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        Atm(child_grid_num)%neststruct%ind_h, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     !call fill_nest_halos_from_parent("omga", Atm(n)%omga, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
     !     Atm(child_grid_num)%neststruct%ind_h, &
@@ -336,9 +336,9 @@ contains
     !     is_fine_pe, nest_domain, position, nz)
 
     call fill_nest_halos_from_parent("delp", Atm(n)%delp, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
-         Atm(child_grid_num)%neststruct%ind_h, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        Atm(child_grid_num)%neststruct%ind_h, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     !call fill_nest_halos_from_parent("delz", Atm(n)%delz, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
     !     Atm(child_grid_num)%neststruct%ind_h, &
@@ -346,36 +346,36 @@ contains
     !     is_fine_pe, nest_domain, position, nz)
 
     call fill_nest_halos_from_parent("delz", mn_prog%delz, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
-         Atm(child_grid_num)%neststruct%ind_h, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        Atm(child_grid_num)%neststruct%ind_h, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     call fill_nest_halos_from_parent("q", Atm(n)%q, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
-         Atm(child_grid_num)%neststruct%ind_h, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        Atm(child_grid_num)%neststruct%ind_h, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     !  move the a-grid winds.  TODO consider recomputing them from D grid instead
     call fill_nest_halos_from_parent("ua", Atm(n)%ua, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
-         Atm(child_grid_num)%neststruct%ind_h, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        Atm(child_grid_num)%neststruct%ind_h, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     call fill_nest_halos_from_parent("va", Atm(n)%va, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
-         Atm(child_grid_num)%neststruct%ind_h, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        Atm(child_grid_num)%neststruct%ind_h, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     !  Fill staggered D-grid variables
     call fill_nest_halos_from_parent("u", Atm(n)%u, interp_type_u, Atm(child_grid_num)%neststruct%wt_u, &
-         Atm(child_grid_num)%neststruct%ind_u, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position_u, nz)
+        Atm(child_grid_num)%neststruct%ind_u, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position_u, nz)
 
     call fill_nest_halos_from_parent("v", Atm(n)%v, interp_type_v, Atm(child_grid_num)%neststruct%wt_v, &
-         Atm(child_grid_num)%neststruct%ind_v, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position_v, nz)
+        Atm(child_grid_num)%neststruct%ind_v, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position_v, nz)
 
   end subroutine mn_prog_fill_nest_halos_from_parent
 
@@ -387,8 +387,8 @@ contains
   !!============================================================================
 
   subroutine mn_meta_move_nest(delta_i_c, delta_j_c, pelist, is_fine_pe, extra_halo, &
-       nest_domain, domain_fine, domain_coarse, &  !tile_fine, tile_coarse, 
-       istart_coarse, iend_coarse, jstart_coarse, jend_coarse,  istart_fine, iend_fine, jstart_fine, jend_fine)
+      nest_domain, domain_fine, domain_coarse, &  !tile_fine, tile_coarse, 
+      istart_coarse, iend_coarse, jstart_coarse, jend_coarse,  istart_fine, iend_fine, jstart_fine, jend_fine)
 
     implicit none
 
@@ -464,9 +464,9 @@ contains
     ! WDR TODO Verify whether rerunning this will cause (small) memory leaks.
 
     if (is_fine_pe) then
-       call mpp_shift_nest_domains(nest_domain, domain_fine, delta_i_coarse, delta_j_coarse, extra_halo)
+      call mpp_shift_nest_domains(nest_domain, domain_fine, delta_i_coarse, delta_j_coarse, extra_halo)
     else
-       call mpp_shift_nest_domains(nest_domain, domain_coarse, delta_i_coarse, delta_j_coarse, extra_halo)
+      call mpp_shift_nest_domains(nest_domain, domain_coarse, delta_i_coarse, delta_j_coarse, extra_halo)
     endif
 
     ! New dycore, from fv_control.F90
@@ -512,8 +512,8 @@ contains
     call mn_var_fill_intern_nest_halos(Atm%va, domain_fine, is_fine_pe)
 
     if (debug_log) then
-       call check_array(Atm%u, this_pe, "Atm%u", -300.0, 300.0)
-       call check_array(Atm%v, this_pe, "Atm%v", -300.0, 300.0)
+      call check_array(Atm%u, this_pe, "Atm%u", -300.0, 300.0)
+      call check_array(Atm%v, this_pe, "Atm%v", -300.0, 300.0)
     endif
 
     ! The vector form of the subroutine takes care of the staggering of the wind variables internally.
@@ -539,14 +539,14 @@ contains
     this_pe = mpp_pe()
 
     if (is_fine_pe) then
-       if (debug_log) print '("[INFO] WDR INH2 before call to mpp_update_domains. npe=",I0)', this_pe
-       ! mpp_update_domains fills the halo region of the fine grids for the interior of the nest.
-       ! The fine nest boundary with the coarse grid remains unchanged.
-       ! seems that this only performs communication between fine nest PEs
-       ! Just transfers halo data between tiles of same resolution -- doesn't perform any interpolation!
-       call mpp_update_domains(data_var, domain_fine,  flags=NUPDATE + EUPDATE + SUPDATE + WUPDATE)
+      if (debug_log) print '("[INFO] WDR INH2 before call to mpp_update_domains. npe=",I0)', this_pe
+      ! mpp_update_domains fills the halo region of the fine grids for the interior of the nest.
+      ! The fine nest boundary with the coarse grid remains unchanged.
+      ! seems that this only performs communication between fine nest PEs
+      ! Just transfers halo data between tiles of same resolution -- doesn't perform any interpolation!
+      call mpp_update_domains(data_var, domain_fine,  flags=NUPDATE + EUPDATE + SUPDATE + WUPDATE)
 
-       if (debug_log) print '("[INFO] WDR INH2 after call to mpp_update_domains. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR INH2 after call to mpp_update_domains. npe=",I0)', this_pe
     endif
 
   end subroutine mn_var_fill_intern_nest_halos_r4_2d
@@ -561,14 +561,14 @@ contains
     this_pe = mpp_pe()
 
     if (is_fine_pe) then
-       if (debug_log) print '("[INFO] WDR INH2p before call to mpp_update_domains. npe=",I0)', this_pe
-       ! mpp_update_domains fills the halo region of the fine grids for the interior of the nest.
-       ! The fine nest boundary with the coarse grid remains unchanged.
-       ! seems that this only performs communication between fine nest PEs
-       ! Just transfers halo data between tiles of same resolution -- doesn't perform any interpolation!
-       call mpp_update_domains(data_var, domain_fine,  flags=NUPDATE + EUPDATE + SUPDATE + WUPDATE)
+      if (debug_log) print '("[INFO] WDR INH2p before call to mpp_update_domains. npe=",I0)', this_pe
+      ! mpp_update_domains fills the halo region of the fine grids for the interior of the nest.
+      ! The fine nest boundary with the coarse grid remains unchanged.
+      ! seems that this only performs communication between fine nest PEs
+      ! Just transfers halo data between tiles of same resolution -- doesn't perform any interpolation!
+      call mpp_update_domains(data_var, domain_fine,  flags=NUPDATE + EUPDATE + SUPDATE + WUPDATE)
 
-       if (debug_log) print '("[INFO] WDR INH2p after call to mpp_update_domains. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR INH2p after call to mpp_update_domains. npe=",I0)', this_pe
     endif
 
   end subroutine mn_var_fill_intern_nest_halos_r8_2d
@@ -583,14 +583,14 @@ contains
     this_pe = mpp_pe()
 
     if (is_fine_pe) then
-       if (debug_log) print '("[INFO] WDR INH3 before call to mpp_update_domains. npe=",I0)', this_pe
-       ! mpp_update_domains fills the halo region of the fine grids for the interior of the nest.
-       ! The fine nest boundary with the coarse grid remains unchanged.
-       ! seems that this only performs communication between fine nest PEs
-       ! Just transfers halo data between tiles of same resolution -- doesn't perform any interpolation!
-       call mpp_update_domains(data_var, domain_fine,  flags=NUPDATE + EUPDATE + SUPDATE + WUPDATE)
+      if (debug_log) print '("[INFO] WDR INH3 before call to mpp_update_domains. npe=",I0)', this_pe
+      ! mpp_update_domains fills the halo region of the fine grids for the interior of the nest.
+      ! The fine nest boundary with the coarse grid remains unchanged.
+      ! seems that this only performs communication between fine nest PEs
+      ! Just transfers halo data between tiles of same resolution -- doesn't perform any interpolation!
+      call mpp_update_domains(data_var, domain_fine,  flags=NUPDATE + EUPDATE + SUPDATE + WUPDATE)
 
-       if (debug_log) print '("[INFO] WDR INH3 after call to mpp_update_domains. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR INH3 after call to mpp_update_domains. npe=",I0)', this_pe
     endif
 
   end subroutine mn_var_fill_intern_nest_halos_r4_3d
@@ -605,14 +605,14 @@ contains
     this_pe = mpp_pe()
 
     if (is_fine_pe) then
-       if (debug_log) print '("[INFO] WDR INH3p before call to mpp_update_domains. npe=",I0)', this_pe
-       ! mpp_update_domains fills the halo region of the fine grids for the interior of the nest.
-       ! The fine nest boundary with the coarse grid remains unchanged.
-       ! seems that this only performs communication between fine nest PEs
-       ! Just transfers halo data between tiles of same resolution -- doesn't perform any interpolation!
-       call mpp_update_domains(data_var, domain_fine,  flags=NUPDATE + EUPDATE + SUPDATE + WUPDATE)
+      if (debug_log) print '("[INFO] WDR INH3p before call to mpp_update_domains. npe=",I0)', this_pe
+      ! mpp_update_domains fills the halo region of the fine grids for the interior of the nest.
+      ! The fine nest boundary with the coarse grid remains unchanged.
+      ! seems that this only performs communication between fine nest PEs
+      ! Just transfers halo data between tiles of same resolution -- doesn't perform any interpolation!
+      call mpp_update_domains(data_var, domain_fine,  flags=NUPDATE + EUPDATE + SUPDATE + WUPDATE)
 
-       if (debug_log) print '("[INFO] WDR INH3p after call to mpp_update_domains. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR INH3p after call to mpp_update_domains. npe=",I0)', this_pe
     endif
 
   end subroutine mn_var_fill_intern_nest_halos_r8_3d
@@ -628,14 +628,14 @@ contains
     this_pe = mpp_pe()
 
     if (is_fine_pe) then
-       if (debug_log) print '("[INFO] WDR INH3W before call to mpp_update_domains. npe=",I0)', this_pe
-       ! mpp_update_domains fills the halo region of the fine grids for the interior of the nest.
-       ! The fine nest boundary with the coarse grid remains unchanged.
-       ! seems that this only performs communication between fine nest PEs
-       ! Just transfers halo data between tiles of same resolution -- doesn't perform any interpolation!
-       call mpp_update_domains(u_var, v_var, domain_fine,  flags=NUPDATE + EUPDATE + SUPDATE + WUPDATE, gridtype=DGRID_NE)
+      if (debug_log) print '("[INFO] WDR INH3W before call to mpp_update_domains. npe=",I0)', this_pe
+      ! mpp_update_domains fills the halo region of the fine grids for the interior of the nest.
+      ! The fine nest boundary with the coarse grid remains unchanged.
+      ! seems that this only performs communication between fine nest PEs
+      ! Just transfers halo data between tiles of same resolution -- doesn't perform any interpolation!
+      call mpp_update_domains(u_var, v_var, domain_fine,  flags=NUPDATE + EUPDATE + SUPDATE + WUPDATE, gridtype=DGRID_NE)
 
-       if (debug_log) print '("[INFO] WDR INH3W after call to mpp_update_domains. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR INH3W after call to mpp_update_domains. npe=",I0)', this_pe
     endif
 
   end subroutine mn_var_fill_intern_nest_halos_wind
@@ -650,14 +650,14 @@ contains
     this_pe = mpp_pe()
 
     if (is_fine_pe) then
-       if (debug_log) print '("[INFO] WDR INH4 before call to mpp_update_domains. npe=",I0)', this_pe
-       ! mpp_update_domains fills the halo region of the fine grids for the interior of the nest.
-       ! The fine nest boundary with the coarse grid remains unchanged.
-       ! seems that this only performs communication between fine nest PEs
-       ! Just transfers halo data between tiles of same resolution -- doesn't perform any interpolation!
-       call mpp_update_domains(data_var, domain_fine,  flags=NUPDATE + EUPDATE + SUPDATE + WUPDATE)
+      if (debug_log) print '("[INFO] WDR INH4 before call to mpp_update_domains. npe=",I0)', this_pe
+      ! mpp_update_domains fills the halo region of the fine grids for the interior of the nest.
+      ! The fine nest boundary with the coarse grid remains unchanged.
+      ! seems that this only performs communication between fine nest PEs
+      ! Just transfers halo data between tiles of same resolution -- doesn't perform any interpolation!
+      call mpp_update_domains(data_var, domain_fine,  flags=NUPDATE + EUPDATE + SUPDATE + WUPDATE)
 
-       if (debug_log) print '("[INFO] WDR INH4 after call to mpp_update_domains. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR INH4 after call to mpp_update_domains. npe=",I0)', this_pe
     endif
 
   end subroutine mn_var_fill_intern_nest_halos_r4_4d
@@ -672,14 +672,14 @@ contains
     this_pe = mpp_pe()
 
     if (is_fine_pe) then
-       if (debug_log) print '("[INFO] WDR INH4 before call to mpp_update_domains. npe=",I0)', this_pe
-       ! mpp_update_domains fills the halo region of the fine grids for the interior of the nest.
-       ! The fine nest boundary with the coarse grid remains unchanged.
-       ! seems that this only performs communication between fine nest PEs
-       ! Just transfers halo data between tiles of same resolution -- doesn't perform any interpolation!
-       call mpp_update_domains(data_var, domain_fine,  flags=NUPDATE + EUPDATE + SUPDATE + WUPDATE)
+      if (debug_log) print '("[INFO] WDR INH4 before call to mpp_update_domains. npe=",I0)', this_pe
+      ! mpp_update_domains fills the halo region of the fine grids for the interior of the nest.
+      ! The fine nest boundary with the coarse grid remains unchanged.
+      ! seems that this only performs communication between fine nest PEs
+      ! Just transfers halo data between tiles of same resolution -- doesn't perform any interpolation!
+      call mpp_update_domains(data_var, domain_fine,  flags=NUPDATE + EUPDATE + SUPDATE + WUPDATE)
 
-       if (debug_log) print '("[INFO] WDR INH4 after call to mpp_update_domains. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR INH4 after call to mpp_update_domains. npe=",I0)', this_pe
     endif
 
   end subroutine mn_var_fill_intern_nest_halos_r8_4d
@@ -729,21 +729,21 @@ contains
     !write(res_str, '(I0)'), Atm(1)%npx - 1
 
     if (first_nest_move) then
-       if (debug_log) print '("[INFO] WDR mn_latlon_load_parent READING static coarse file on npe=",I0)', this_pe
-       !call load_nest_latlons_from_nc(trim(Atm(child_grid_num)%neststruct%surface_dir) //  '/C' // trim(res_str) //  '_grid.tile6.nc', &
-       !     Atm(1)%npx, Atm(1)%npy, 1, &
-       !     parent_geo, &
-       !     p_istart_fine, p_iend_fine, p_jstart_fine, p_jend_fine)
-       
-       !call mn_static_filename('./INPUT', parent_tile, 'grid', x_refine, grid_filename)
-       call mn_static_filename(surface_dir, parent_tile, 'grid', 1, grid_filename)
+      if (debug_log) print '("[INFO] WDR mn_latlon_load_parent READING static coarse file on npe=",I0)', this_pe
+      !call load_nest_latlons_from_nc(trim(Atm(child_grid_num)%neststruct%surface_dir) //  '/C' // trim(res_str) //  '_grid.tile6.nc', &
+      !     Atm(1)%npx, Atm(1)%npy, 1, &
+      !     parent_geo, &
+      !     p_istart_fine, p_iend_fine, p_jstart_fine, p_jend_fine)
 
-       call load_nest_latlons_from_nc(grid_filename, Atm(1)%npx, Atm(1)%npy, 1, &
-            parent_geo, p_istart_fine, p_iend_fine, p_jstart_fine, p_jend_fine)
+      !call mn_static_filename('./INPUT', parent_tile, 'grid', x_refine, grid_filename)
+      call mn_static_filename(surface_dir, parent_tile, 'grid', 1, grid_filename)
 
-       first_nest_move = .false.
-    !else
-    !   print '("[INFO] WDR mn_latlon_load_parent SKIPPING static coarse file on npe=",I0)', this_pe
+      call load_nest_latlons_from_nc(grid_filename, Atm(1)%npx, Atm(1)%npy, 1, &
+          parent_geo, p_istart_fine, p_iend_fine, p_jstart_fine, p_jend_fine)
+
+      first_nest_move = .false.
+      !else
+      !   print '("[INFO] WDR mn_latlon_load_parent SKIPPING static coarse file on npe=",I0)', this_pe
     endif
 
     parent_geo%nxp = Atm(1)%npx
@@ -753,8 +753,8 @@ contains
     parent_geo%ny = Atm(1)%npy - 1
 
     if (debug_log) then
-       call show_tile_geo(parent_geo, this_pe, "parent_geo")
-       call show_atm_grids(Atm, n)
+      call show_tile_geo(parent_geo, this_pe, "parent_geo")
+      call show_atm_grids(Atm, n)
     endif
 
     ! Actually, is the nest in grid_global??
@@ -795,18 +795,18 @@ contains
     !tile_geo%area = -999.9
 
     do x = lbound(Atm(n)%gridstruct%agrid, 1), ubound(Atm(n)%gridstruct%agrid, 1)
-       do y = lbound(Atm(n)%gridstruct%agrid, 2), ubound(Atm(n)%gridstruct%agrid, 2)
-          tile_geo%lons(x,y) = Atm(n)%gridstruct%agrid(x,y,1)
-          tile_geo%lats(x,y) = Atm(n)%gridstruct%agrid(x,y,2)
-       enddo
+      do y = lbound(Atm(n)%gridstruct%agrid, 2), ubound(Atm(n)%gridstruct%agrid, 2)
+        tile_geo%lons(x,y) = Atm(n)%gridstruct%agrid(x,y,1)
+        tile_geo%lats(x,y) = Atm(n)%gridstruct%agrid(x,y,2)
+      enddo
     enddo
 
     if (debug_log) call show_tile_geo(tile_geo, this_pe, "tile_geo")
     call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
-    
+
     if (parent_x .eq. -999) then
-       print '("[ERROR] WDR mn_latlon_load_parent on npe=",I0," parent and nest grids are not aligned!")', this_pe       
-       call mpp_error(FATAL, "mn_latlon_load_parent parent and nest grids are not aligned.")
+      print '("[ERROR] WDR mn_latlon_load_parent on npe=",I0," parent and nest grids are not aligned!")', this_pe       
+      call mpp_error(FATAL, "mn_latlon_load_parent parent and nest grids are not aligned.")
     endif
 
     ! Allocate tile_geo_u just for this PE, copied from Atm(n)%gridstruct%grid
@@ -824,15 +824,15 @@ contains
     tile_geo_u%lats = -999.9
 
     do x = lbound(tile_geo_u%lats, 1), ubound(tile_geo_u%lats, 1)
-       do y = lbound(tile_geo_u%lats, 2), ubound(tile_geo_u%lats, 2)
-          fp_i = (x - nest_x) * 2 + parent_x - 1
-          fp_j = (y - nest_y) * 2 + parent_y
+      do y = lbound(tile_geo_u%lats, 2), ubound(tile_geo_u%lats, 2)
+        fp_i = (x - nest_x) * 2 + parent_x - 1
+        fp_j = (y - nest_y) * 2 + parent_y
 
-          !print '("[INFO] WDR mn_latlon_load_parent on npe=",I0," fp_i=",I0," fp_j=",I0,4I6)', this_pe, fp_i, fp_j, nest_x, nest_y, parent_x, parent_y
+        !print '("[INFO] WDR mn_latlon_load_parent on npe=",I0," fp_i=",I0," fp_j=",I0,4I6)', this_pe, fp_i, fp_j, nest_x, nest_y, parent_x, parent_y
 
-          tile_geo_u%lons(x,y) = fp_super_tile_geo%lons(fp_i, fp_j)
-          tile_geo_u%lats(x,y) = fp_super_tile_geo%lats(fp_i, fp_j)
-       enddo
+        tile_geo_u%lons(x,y) = fp_super_tile_geo%lons(fp_i, fp_j)
+        tile_geo_u%lats(x,y) = fp_super_tile_geo%lats(fp_i, fp_j)
+      enddo
     enddo
 
     if (debug_log) call show_tile_geo(tile_geo_u, this_pe, "tile_geo_u")
@@ -852,13 +852,13 @@ contains
     tile_geo_v%lats = -999.9
 
     do x = lbound(tile_geo_v%lats, 1), ubound(tile_geo_v%lats, 1)
-       do y = lbound(tile_geo_v%lats, 2), ubound(tile_geo_v%lats, 2)
-          fp_i = (x - nest_x) * 2 + parent_x
-          fp_j = (y - nest_y) * 2 + parent_y - 1
+      do y = lbound(tile_geo_v%lats, 2), ubound(tile_geo_v%lats, 2)
+        fp_i = (x - nest_x) * 2 + parent_x
+        fp_j = (y - nest_y) * 2 + parent_y - 1
 
-          tile_geo_v%lons(x,y) = fp_super_tile_geo%lons(fp_i, fp_j)
-          tile_geo_v%lats(x,y) = fp_super_tile_geo%lats(fp_i, fp_j)
-       enddo
+        tile_geo_v%lons(x,y) = fp_super_tile_geo%lons(fp_i, fp_j)
+        tile_geo_v%lats(x,y) = fp_super_tile_geo%lats(fp_i, fp_j)
+      enddo
     enddo
 
     if (debug_log) call show_tile_geo(tile_geo_v, this_pe, "tile_geo_v")
@@ -909,16 +909,16 @@ contains
     write(parent_str, '(I0)'), tile_num
 
     if (refine .eq. 1 .and. (tag .eq. 'grid' .or. tag .eq. 'oro_data')) then
-       ! For 1x files in INPUT directory; go at the symbolic link 
-       !grid_filename = trim(trim(surface_dir) // '/' // trim(tag) // '.nc')
-       grid_filename = trim(trim(surface_dir) // '/' // trim(tag) // '.tile' // trim(parent_str) // '.nc')
+      ! For 1x files in INPUT directory; go at the symbolic link 
+      !grid_filename = trim(trim(surface_dir) // '/' // trim(tag) // '.nc')
+      grid_filename = trim(trim(surface_dir) // '/' // trim(tag) // '.tile' // trim(parent_str) // '.nc')
     else
-       if (refine .eq. 1) then
-          grid_filename = trim(trim(surface_dir) // '/' // trim(tag) // '.tile' // trim(parent_str) // '.nc')
-       else
-          write(refine_str, '(I0,A1)'), refine, 'x'
-          grid_filename = trim(trim(surface_dir) // '/' // trim(tag) // '.tile' // trim(parent_str) // '.' // trim(refine_str) // '.nc')
-       endif
+      if (refine .eq. 1) then
+        grid_filename = trim(trim(surface_dir) // '/' // trim(tag) // '.tile' // trim(parent_str) // '.nc')
+      else
+        write(refine_str, '(I0,A1)'), refine, 'x'
+        grid_filename = trim(trim(surface_dir) // '/' // trim(tag) // '.tile' // trim(parent_str) // '.' // trim(refine_str) // '.nc')
+      endif
     endif
 
     !if (regional) then
@@ -940,7 +940,7 @@ contains
 
     inquire(FILE=grid_filename, EXIST=file_exists)
     if (.not. file_exists) then
-       print '("[ERROR] WDR mn_static_filename DOES NOT EXIST npe=",I0," exists="L1," ",A256)', mpp_pe(), file_exists, grid_filename
+      print '("[ERROR] WDR mn_static_filename DOES NOT EXIST npe=",I0," exists="L1," ",A256)', mpp_pe(), file_exists, grid_filename
     endif
 
   end subroutine mn_static_filename
@@ -961,26 +961,26 @@ contains
     write(parent_str, '(I0)'), tile_num
 
     if (tag .eq. 'grid' .or. tag .eq. 'oro_data') then
-       divider = '_'
+      divider = '_'
     else
-       divider = '.'
+      divider = '.'
     endif
 
 
     if (regional) then
-       if (halo0) then
-          grid_filename = trim(trim(surface_dir) // '/C' // trim(res_str) // divider // trim(tag) // '.tile' // trim(parent_str) // '.halo0.nc')
-       else
-          grid_filename = trim(trim(surface_dir) // '/C' // trim(res_str) // divider // trim(tag) // '.tile' // trim(parent_str) // '.nc')
-       endif
+      if (halo0) then
+        grid_filename = trim(trim(surface_dir) // '/C' // trim(res_str) // divider // trim(tag) // '.tile' // trim(parent_str) // '.halo0.nc')
+      else
+        grid_filename = trim(trim(surface_dir) // '/C' // trim(res_str) // divider // trim(tag) // '.tile' // trim(parent_str) // '.nc')
+      endif
     else
 
-       if (tag .eq. 'oro_data' .and. surface_dir .eq. './INPUT') then
-          ! INPUT for global oro_data doesn't have C{res}
-          grid_filename = trim(trim(surface_dir) //  '/' // trim(tag) // '.tile' // trim(parent_str) // '.nc')
-       else
-          grid_filename = trim(trim(surface_dir) // '/C' // trim(res_str) // divider // trim(tag) // '.tile' // trim(parent_str) // '.nc')
-    endif
+      if (tag .eq. 'oro_data' .and. surface_dir .eq. './INPUT') then
+        ! INPUT for global oro_data doesn't have C{res}
+        grid_filename = trim(trim(surface_dir) //  '/' // trim(tag) // '.tile' // trim(parent_str) // '.nc')
+      else
+        grid_filename = trim(trim(surface_dir) // '/C' // trim(res_str) // divider // trim(tag) // '.tile' // trim(parent_str) // '.nc')
+      endif
     endif
 
 
@@ -991,9 +991,9 @@ contains
 
     inquire(FILE=grid_filename, EXIST=file_exists)
     if (file_exists) then
-       print '("[INFO] WDR mn_static_filename DOES EXIST npe=",I0," exists="L1," ",A256)', mpp_pe(), file_exists, grid_filename
+      print '("[INFO] WDR mn_static_filename DOES EXIST npe=",I0," exists="L1," ",A256)', mpp_pe(), file_exists, grid_filename
     else
-       print '("[ERROR] WDR mn_static_filename DOES NOT EXIST npe=",I0," exists="L1," ",A256)', mpp_pe(), file_exists, grid_filename
+      print '("[ERROR] WDR mn_static_filename DOES NOT EXIST npe=",I0," exists="L1," ",A256)', mpp_pe(), file_exists, grid_filename
     endif
   end subroutine old_mn_static_filename
 
@@ -1011,7 +1011,7 @@ contains
     call mn_static_filename(surface_dir, parent_tile, 'grid',  refine, grid_filename)
 
     call load_nest_latlons_from_nc(trim(grid_filename), npx, npy, refine, fp_super_tile_geo, &
-         fp_super_istart_fine, fp_super_iend_fine, fp_super_jstart_fine, fp_super_jend_fine)
+        fp_super_istart_fine, fp_super_iend_fine, fp_super_jstart_fine, fp_super_jend_fine)
 
   end subroutine mn_latlon_read_hires_parent
 
@@ -1039,7 +1039,7 @@ contains
     this_pe = mpp_pe()
 
     !print '("[INFO] WDR mn_orog_read_hires_parent npe=",I0," ",I0)', this_pe, parent_tile
-    
+
     nx_cubic = npx - 1
     nx = npx - 1
     ny = npy - 1
@@ -1061,9 +1061,9 @@ contains
     call mn_static_filename(surface_dir, parent_tile, 'oro_data', refine, nc_filename)
 
     if (filtered_terrain) then
-       orog_var_name = 'orog_filt'
+      orog_var_name = 'orog_filt'
     else
-       orog_var_name = 'orog_raw'
+      orog_var_name = 'orog_raw'
     endif
 
     if (debug_log) print '("[INFO] WDR NCREAD LOFC mn_orog_read_hires_parent npe=",I0,I4,I4,I4,I4," ",A12," ",A128)', this_pe, fp_nx, fp_ny, mid_nx,mid_ny, orog_var_name, nc_filename
@@ -1123,7 +1123,7 @@ contains
   !!============================================================================
 
   subroutine mn_meta_recalc( delta_i_c, delta_j_c, x_refine, y_refine, tile_geo, parent_geo, fp_super_tile_geo, &
-       is_fine_pe, nest_domain, position, p_grid, n_grid, wt, istart_coarse, jstart_coarse)
+      is_fine_pe, nest_domain, position, p_grid, n_grid, wt, istart_coarse, jstart_coarse)
 
     integer, intent(in)                           :: delta_i_c, delta_j_c, x_refine, y_refine
     type(grid_geometry), intent(inout)            :: tile_geo, parent_geo, fp_super_tile_geo
@@ -1143,25 +1143,25 @@ contains
     ! Update the coarse and fine indices after shifting the nest
     if (is_fine_pe) then
 
-       if (debug_log) print '("[INFO] WDR NRD4 is_fine_pe=TRUE about to call bbox_get_C2F_index. npe=",I0, " position=",I0)', this_pe, position
+      if (debug_log) print '("[INFO] WDR NRD4 is_fine_pe=TRUE about to call bbox_get_C2F_index. npe=",I0, " position=",I0)', this_pe, position
 
-       !!===========================================================
-       !!
-       !!  Recalculate halo weights
-       !!
-       !!===========================================================
+      !!===========================================================
+      !!
+      !!  Recalculate halo weights
+      !!
+      !!===========================================================
 
-       call bbox_get_C2F_index(nest_domain, wt_fine, wt_coarse, EAST,  position)
-       call calc_nest_halo_weights(wt_fine, wt_coarse, p_grid, n_grid, wt, istart_coarse, jstart_coarse, x_refine, y_refine)
+      call bbox_get_C2F_index(nest_domain, wt_fine, wt_coarse, EAST,  position)
+      call calc_nest_halo_weights(wt_fine, wt_coarse, p_grid, n_grid, wt, istart_coarse, jstart_coarse, x_refine, y_refine)
 
-       call bbox_get_C2F_index(nest_domain, wt_fine, wt_coarse, WEST,  position)
-       call calc_nest_halo_weights(wt_fine, wt_coarse, p_grid, n_grid, wt, istart_coarse, jstart_coarse, x_refine, y_refine)
+      call bbox_get_C2F_index(nest_domain, wt_fine, wt_coarse, WEST,  position)
+      call calc_nest_halo_weights(wt_fine, wt_coarse, p_grid, n_grid, wt, istart_coarse, jstart_coarse, x_refine, y_refine)
 
-       call bbox_get_C2F_index(nest_domain, wt_fine, wt_coarse, NORTH,  position)
-       call calc_nest_halo_weights(wt_fine, wt_coarse, p_grid, n_grid, wt, istart_coarse, jstart_coarse, x_refine, y_refine)
+      call bbox_get_C2F_index(nest_domain, wt_fine, wt_coarse, NORTH,  position)
+      call calc_nest_halo_weights(wt_fine, wt_coarse, p_grid, n_grid, wt, istart_coarse, jstart_coarse, x_refine, y_refine)
 
-       call bbox_get_C2F_index(nest_domain, wt_fine, wt_coarse, SOUTH,  position)
-       call calc_nest_halo_weights(wt_fine, wt_coarse, p_grid, n_grid, wt, istart_coarse, jstart_coarse, x_refine, y_refine)
+      call bbox_get_C2F_index(nest_domain, wt_fine, wt_coarse, SOUTH,  position)
+      call calc_nest_halo_weights(wt_fine, wt_coarse, p_grid, n_grid, wt, istart_coarse, jstart_coarse, x_refine, y_refine)
 
     endif
 
@@ -1181,10 +1181,10 @@ contains
     integer  :: i, j
 
     do i = lbound(ind,1), ubound(ind,1)
-       do j = lbound(ind,2), ubound(ind,2)
-          ind(i,j,1) = ind(i,j,1) + delta_i_c
-          ind(i,j,2) = ind(i,j,2) + delta_j_c
-       enddo
+      do j = lbound(ind,2), ubound(ind,2)
+        ind(i,j,1) = ind(i,j,1) + delta_i_c
+        ind(i,j,2) = ind(i,j,2) + delta_j_c
+      enddo
     enddo
 
   end subroutine mn_shift_index
@@ -1202,8 +1202,8 @@ contains
   !!============================================================================
 
   subroutine mn_prog_shift_data(Atm, n, child_grid_num, wt_h, wt_u, wt_v, &
-       delta_i_c, delta_j_c, x_refine, y_refine, &
-       is_fine_pe, nest_domain, nz)
+      delta_i_c, delta_j_c, x_refine, y_refine, &
+      is_fine_pe, nest_domain, nz)
     type(fv_atmos_type), allocatable, target, intent(inout)  :: Atm(:)
     integer, intent(in)                                      :: n, child_grid_num
     real, allocatable, intent(in)                            :: wt_h(:,:,:), wt_u(:,:,:), wt_v(:,:,:)
@@ -1225,19 +1225,19 @@ contains
     mn_prog => Atm(n)%mn_prog
 
     call mn_var_shift_data(Atm(n)%q_con, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-         delta_i_c, delta_j_c, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        delta_i_c, delta_j_c, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     call mn_var_shift_data(Atm(n)%pt, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-         delta_i_c, delta_j_c, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        delta_i_c, delta_j_c, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     call mn_var_shift_data(Atm(n)%w, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-         delta_i_c, delta_j_c, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        delta_i_c, delta_j_c, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     !call mn_var_shift_data(Atm(n)%omga, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
     !     delta_i_c, delta_j_c, &
@@ -1245,9 +1245,9 @@ contains
     !     is_fine_pe, nest_domain, position, nz)
 
     call mn_var_shift_data(Atm(n)%delp, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-         delta_i_c, delta_j_c, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        delta_i_c, delta_j_c, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     !call mn_var_shift_data(Atm(n)%delz, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
     !     delta_i_c, delta_j_c, &
@@ -1255,24 +1255,24 @@ contains
     !     is_fine_pe, nest_domain, position, nz)
 
     call mn_var_shift_data(mn_prog%delz, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-         delta_i_c, delta_j_c, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        delta_i_c, delta_j_c, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     call mn_var_shift_data(Atm(n)%ua, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-         delta_i_c, delta_j_c, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        delta_i_c, delta_j_c, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     call mn_var_shift_data(Atm(n)%va, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-         delta_i_c, delta_j_c, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        delta_i_c, delta_j_c, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     call mn_var_shift_data(Atm(n)%q, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
-         delta_i_c, delta_j_c, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position, nz)
+        delta_i_c, delta_j_c, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position, nz)
 
     !if (debug_log) print '("[INFO] WDR MV_NST6 show wt_u run step 6 atmosphere.F90 npe=",I0," n=",I0)', this_pe, n
     !call check_array(Atm(n)%neststruct%wt_u, this_pe, "Atm(n)%neststruct%wt_u", 0.0, 1.0)
@@ -1280,14 +1280,14 @@ contains
     !if (debug_log) print '("[INFO] WDR MV_NST6 stagger run step 6 atmosphere.F90 npe=",I0," n=",I0)', this_pe, n
 
     call mn_var_shift_data(Atm(n)%u, interp_type_u, wt_u, Atm(child_grid_num)%neststruct%ind_u, &
-         delta_i_c, delta_j_c, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position_u, nz)
+        delta_i_c, delta_j_c, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position_u, nz)
 
     call mn_var_shift_data(Atm(n)%v, interp_type_v, wt_v, Atm(child_grid_num)%neststruct%ind_v, &
-         delta_i_c, delta_j_c, &
-         x_refine, y_refine, &
-         is_fine_pe, nest_domain, position_v, nz)
+        delta_i_c, delta_j_c, &
+        x_refine, y_refine, &
+        is_fine_pe, nest_domain, position_v, nz)
 
   end subroutine mn_prog_shift_data
 
@@ -1362,43 +1362,43 @@ contains
     if (debug_log) print '("[INFO] WDR NRF2 mn_var_shift_data start. npe=",I0)', this_pe
 
     if (is_fine_pe) then
-       if (debug_log) print '("[INFO] WDR NRF3 mn_var_shift_data start. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR NRF3 mn_var_shift_data start. npe=",I0)', this_pe
 
-       !!===========================================================
-       !!
-       !! Shift grids internal to each nest PE
-       !!
-       !!===========================================================
+      !!===========================================================
+      !!
+      !! Shift grids internal to each nest PE
+      !!
+      !!===========================================================
 
-       if ( delta_i_c .ne. 0 ) then
-          if (debug_log) print '("[INFO] WDR NREX mn_var_shift_data start. npe=",I0)', this_pe
-          data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
-       endif
+      if ( delta_i_c .ne. 0 ) then
+        if (debug_log) print '("[INFO] WDR NREX mn_var_shift_data start. npe=",I0)', this_pe
+        data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
+      endif
 
-       if (delta_j_c .ne.  0) then
-          if (debug_log) print '("[INFO] WDR NREY mn_var_shift_data start. npe=",I0)', this_pe
-          data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
-       endif
+      if (delta_j_c .ne.  0) then
+        if (debug_log) print '("[INFO] WDR NREY mn_var_shift_data start. npe=",I0)', this_pe
+        data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
+      endif
 
-       !!===========================================================
-       !!
-       !! Apply halo data
-       !!
-       !!===========================================================
+      !!===========================================================
+      !!
+      !! Apply halo data
+      !!
+      !!===========================================================
 
-       if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, nbuffer, north_fine, north_coarse, NORTH, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, nbuffer, north_fine, north_coarse, NORTH, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, sbuffer, south_fine, south_coarse, SOUTH, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, sbuffer, south_fine, south_coarse, SOUTH, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, ebuffer, east_fine, east_coarse, EAST, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, ebuffer, east_fine, east_coarse, EAST, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, WEST, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, WEST, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
 
     endif
 
@@ -1476,43 +1476,43 @@ contains
     if (debug_log) print '("[INFO] WDR NRF2 mn_var_shift_data start. npe=",I0)', this_pe
 
     if (is_fine_pe) then
-       if (debug_log) print '("[INFO] WDR NRF3 mn_var_shift_data start. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR NRF3 mn_var_shift_data start. npe=",I0)', this_pe
 
-       !!===========================================================
-       !!
-       !! Shift grids internal to each nest PE
-       !!
-       !!===========================================================
+      !!===========================================================
+      !!
+      !! Shift grids internal to each nest PE
+      !!
+      !!===========================================================
 
-       if ( delta_i_c .ne. 0 ) then
-          if (debug_log) print '("[INFO] WDR NREX mn_var_shift_data start. npe=",I0)', this_pe
-          data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
-       endif
+      if ( delta_i_c .ne. 0 ) then
+        if (debug_log) print '("[INFO] WDR NREX mn_var_shift_data start. npe=",I0)', this_pe
+        data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
+      endif
 
-       if (delta_j_c .ne.  0) then
-          if (debug_log) print '("[INFO] WDR NREY mn_var_shift_data start. npe=",I0)', this_pe
-          data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
-       endif
+      if (delta_j_c .ne.  0) then
+        if (debug_log) print '("[INFO] WDR NREY mn_var_shift_data start. npe=",I0)', this_pe
+        data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
+      endif
 
-       !!===========================================================
-       !!
-       !! Apply halo data
-       !!
-       !!===========================================================
+      !!===========================================================
+      !!
+      !! Apply halo data
+      !!
+      !!===========================================================
 
-       if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, nbuffer, north_fine, north_coarse, NORTH, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, nbuffer, north_fine, north_coarse, NORTH, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, sbuffer, south_fine, south_coarse, SOUTH, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, sbuffer, south_fine, south_coarse, SOUTH, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, ebuffer, east_fine, east_coarse, EAST, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, ebuffer, east_fine, east_coarse, EAST, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, WEST, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, WEST, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
 
     endif
 
@@ -1591,43 +1591,43 @@ contains
     if (debug_log) print '("[INFO] WDR NRF2 mn_var_shift_data start. npe=",I0)', this_pe
 
     if (is_fine_pe) then
-       if (debug_log) print '("[INFO] WDR NRF3 mn_var_shift_data start. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR NRF3 mn_var_shift_data start. npe=",I0)', this_pe
 
-       !!===========================================================
-       !!
-       !! Shift grids internal to each nest PE
-       !!
-       !!===========================================================
+      !!===========================================================
+      !!
+      !! Shift grids internal to each nest PE
+      !!
+      !!===========================================================
 
-       if ( delta_i_c .ne. 0 ) then
-          if (debug_log) print '("[INFO] WDR NREX mn_var_shift_data start. npe=",I0)', this_pe
-          data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
-       endif
+      if ( delta_i_c .ne. 0 ) then
+        if (debug_log) print '("[INFO] WDR NREX mn_var_shift_data start. npe=",I0)', this_pe
+        data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
+      endif
 
-       if (delta_j_c .ne.  0) then
-          if (debug_log) print '("[INFO] WDR NREY mn_var_shift_data start. npe=",I0)', this_pe
-          data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
-       endif
+      if (delta_j_c .ne.  0) then
+        if (debug_log) print '("[INFO] WDR NREY mn_var_shift_data start. npe=",I0)', this_pe
+        data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
+      endif
 
-       !!===========================================================
-       !!
-       !! Apply halo data
-       !!
-       !!===========================================================
+      !!===========================================================
+      !!
+      !! Apply halo data
+      !!
+      !!===========================================================
 
-       if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, nbuffer, north_fine, north_coarse, nz, NORTH, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, nbuffer, north_fine, north_coarse, nz, NORTH, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, sbuffer, south_fine, south_coarse, nz, SOUTH, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, sbuffer, south_fine, south_coarse, nz, SOUTH, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, ebuffer, east_fine, east_coarse, nz, EAST, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, ebuffer, east_fine, east_coarse, nz, EAST, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, nz, WEST, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, nz, WEST, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
 
     endif
 
@@ -1706,43 +1706,43 @@ contains
     if (debug_log) print '("[INFO] WDR NRF2 mn_var_shift_data start. npe=",I0)', this_pe
 
     if (is_fine_pe) then
-       if (debug_log) print '("[INFO] WDR NRF3 mn_var_shift_data start. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR NRF3 mn_var_shift_data start. npe=",I0)', this_pe
 
-       !!===========================================================
-       !!
-       !! Shift grids internal to each nest PE
-       !!
-       !!===========================================================
+      !!===========================================================
+      !!
+      !! Shift grids internal to each nest PE
+      !!
+      !!===========================================================
 
-       if ( delta_i_c .ne. 0 ) then
-          if (debug_log) print '("[INFO] WDR NREX mn_var_shift_data start. npe=",I0)', this_pe
-          data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
-       endif
+      if ( delta_i_c .ne. 0 ) then
+        if (debug_log) print '("[INFO] WDR NREX mn_var_shift_data start. npe=",I0)', this_pe
+        data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
+      endif
 
-       if (delta_j_c .ne.  0) then
-          if (debug_log) print '("[INFO] WDR NREY mn_var_shift_data start. npe=",I0)', this_pe
-          data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
-       endif
+      if (delta_j_c .ne.  0) then
+        if (debug_log) print '("[INFO] WDR NREY mn_var_shift_data start. npe=",I0)', this_pe
+        data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
+      endif
 
-       !!===========================================================
-       !!
-       !! Apply halo data
-       !!
-       !!===========================================================
+      !!===========================================================
+      !!
+      !! Apply halo data
+      !!
+      !!===========================================================
 
-       if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, nbuffer, north_fine, north_coarse, nz, NORTH, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, nbuffer, north_fine, north_coarse, nz, NORTH, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, sbuffer, south_fine, south_coarse, nz, SOUTH, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, sbuffer, south_fine, south_coarse, nz, SOUTH, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, ebuffer, east_fine, east_coarse, nz, EAST, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, ebuffer, east_fine, east_coarse, nz, EAST, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, nz, WEST, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, nz, WEST, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
 
     endif
 
@@ -1825,45 +1825,45 @@ contains
     if (debug_log) print '("[INFO] WDR NRF2 mn_var_shift_data start. npe=",I0)', this_pe
 
     if (is_fine_pe) then
-       if (debug_log) print '("[INFO] WDR NRF3 mn_var_shift_data start. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR NRF3 mn_var_shift_data start. npe=",I0)', this_pe
 
-       !!===========================================================
-       !!
-       !! Shift grids internal to each nest PE
-       !!
-       !!===========================================================
+      !!===========================================================
+      !!
+      !! Shift grids internal to each nest PE
+      !!
+      !!===========================================================
 
-       if ( delta_i_c .ne. 0 ) then
-          if (debug_log) print '("[INFO] WDR NREX mn_var_shift_data start. npe=",I0)', this_pe
-          data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
-       endif
+      if ( delta_i_c .ne. 0 ) then
+        if (debug_log) print '("[INFO] WDR NREX mn_var_shift_data start. npe=",I0)', this_pe
+        data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
+      endif
 
-       if (delta_j_c .ne.  0) then
-          if (debug_log) print '("[INFO] WDR NREY mn_var_shift_data start. npe=",I0)', this_pe
-          data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
-       endif
+      if (delta_j_c .ne.  0) then
+        if (debug_log) print '("[INFO] WDR NREY mn_var_shift_data start. npe=",I0)', this_pe
+        data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
+      endif
 
-       !call output_logical_grid("FF", isd_fine, ied_fine, jsd_fine, jed_fine, nz, x)
+      !call output_logical_grid("FF", isd_fine, ied_fine, jsd_fine, jed_fine, nz, x)
 
-       !!===========================================================
-       !!
-       !! Apply halo data
-       !!
-       !!===========================================================
+      !!===========================================================
+      !!
+      !! Apply halo data
+      !!
+      !!===========================================================
 
-       if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, nbuffer, north_fine, north_coarse, nz, NORTH, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, nbuffer, north_fine, north_coarse, nz, NORTH, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, sbuffer, south_fine, south_coarse, nz, SOUTH, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, sbuffer, south_fine, south_coarse, nz, SOUTH, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, ebuffer, east_fine, east_coarse, nz, EAST, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, ebuffer, east_fine, east_coarse, nz, EAST, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, nz, WEST, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, nz, WEST, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
 
     endif
 
@@ -1946,45 +1946,45 @@ contains
     if (debug_log) print '("[INFO] WDR NRF2 mn_var_shift_data start. npe=",I0)', this_pe
 
     if (is_fine_pe) then
-       if (debug_log) print '("[INFO] WDR NRF3 mn_var_shift_data start. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR NRF3 mn_var_shift_data start. npe=",I0)', this_pe
 
-       !!===========================================================
-       !!
-       !! Shift grids internal to each nest PE
-       !!
-       !!===========================================================
+      !!===========================================================
+      !!
+      !! Shift grids internal to each nest PE
+      !!
+      !!===========================================================
 
-       if ( delta_i_c .ne. 0 ) then
-          if (debug_log) print '("[INFO] WDR NREX mn_var_shift_data start. npe=",I0)', this_pe
-          data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
-       endif
+      if ( delta_i_c .ne. 0 ) then
+        if (debug_log) print '("[INFO] WDR NREX mn_var_shift_data start. npe=",I0)', this_pe
+        data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
+      endif
 
-       if (delta_j_c .ne.  0) then
-          if (debug_log) print '("[INFO] WDR NREY mn_var_shift_data start. npe=",I0)', this_pe
-          data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
-       endif
+      if (delta_j_c .ne.  0) then
+        if (debug_log) print '("[INFO] WDR NREY mn_var_shift_data start. npe=",I0)', this_pe
+        data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
+      endif
 
-       !call output_logical_grid("FF", isd_fine, ied_fine, jsd_fine, jed_fine, nz, x)
+      !call output_logical_grid("FF", isd_fine, ied_fine, jsd_fine, jed_fine, nz, x)
 
-       !!===========================================================
-       !!
-       !! Apply halo data
-       !!
-       !!===========================================================
+      !!===========================================================
+      !!
+      !! Apply halo data
+      !!
+      !!===========================================================
 
-       if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR NRFI mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, nbuffer, north_fine, north_coarse, nz, NORTH, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, nbuffer, north_fine, north_coarse, nz, NORTH, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF N mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, sbuffer, south_fine, south_coarse, nz, SOUTH, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, sbuffer, south_fine, south_coarse, nz, SOUTH, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF S mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, ebuffer, east_fine, east_coarse, nz, EAST, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, ebuffer, east_fine, east_coarse, nz, EAST, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF E mn_var_shift_data start. npe=",I0)', this_pe
 
-       call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, nz, WEST, x_refine, y_refine, wt, ind)
-       if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
+      call fill_nest_from_buffer(interp_type, data_var, wbuffer, west_fine, west_coarse, nz, WEST, x_refine, y_refine, wt, ind)
+      if (debug_log) print '("[INFO] WDR NRF W mn_var_shift_data start. npe=",I0)', this_pe
 
     endif
 
@@ -2028,13 +2028,13 @@ contains
     logical             :: use_timers = .false. !  Set this to true to generate performance profiling information in out.* file
 
     if (first_time .and. use_timers) then
-       id_reset1     = mpp_clock_id ('MN 7 Reset 1',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-       id_reset2     = mpp_clock_id ('MN 7 Reset 2',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-       id_reset3     = mpp_clock_id ('MN 7 Reset 3',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-       id_reset4     = mpp_clock_id ('MN 7 Reset 4',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-       id_reset5     = mpp_clock_id ('MN 7 Reset 5',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-       id_reset6     = mpp_clock_id ('MN 7 Reset 6',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-       id_reset7     = mpp_clock_id ('MN 7 Reset 7',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+      id_reset1     = mpp_clock_id ('MN 7 Reset 1',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+      id_reset2     = mpp_clock_id ('MN 7 Reset 2',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+      id_reset3     = mpp_clock_id ('MN 7 Reset 3',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+      id_reset4     = mpp_clock_id ('MN 7 Reset 4',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+      id_reset5     = mpp_clock_id ('MN 7 Reset 5',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+      id_reset6     = mpp_clock_id ('MN 7 Reset 6',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+      id_reset7     = mpp_clock_id ('MN 7 Reset 7',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
     endif
 
     rad2deg = 180.0 / pi
@@ -2048,51 +2048,51 @@ contains
 
     ! Log the bounds of this PE's grid after nest motion.  TODO replace step 4 with timestep
     if (is_fine_pe .and. debug_log) then
-       call show_nest_grid(Atm(n), this_pe, 4)
+      call show_nest_grid(Atm(n), this_pe, 4)
     endif
 
     !  Reset the gridstruct values for the nest
     if (is_fine_pe) then
-       ! Fill in values from high resolution, full panel, supergrid
-       if (use_timers) call mpp_clock_begin (id_reset1)
+      ! Fill in values from high resolution, full panel, supergrid
+      if (use_timers) call mpp_clock_begin (id_reset1)
 
-       call fill_grid_from_supergrid(Atm(n)%gridstruct%grid, CORNER, fp_super_tile_geo, ioffset, joffset, &
-            x_refine, y_refine)
-       call fill_grid_from_supergrid(Atm(n)%gridstruct%agrid, CENTER, fp_super_tile_geo, ioffset, joffset, &
-            x_refine, y_refine)
-       call fill_grid_from_supergrid(Atm(n)%gridstruct%grid_64, CORNER, fp_super_tile_geo, &
-            ioffset, joffset, x_refine, y_refine)
-       call fill_grid_from_supergrid(Atm(n)%gridstruct%agrid_64, CENTER, fp_super_tile_geo, &
-            ioffset, joffset, x_refine, y_refine)
+      call fill_grid_from_supergrid(Atm(n)%gridstruct%grid, CORNER, fp_super_tile_geo, ioffset, joffset, &
+          x_refine, y_refine)
+      call fill_grid_from_supergrid(Atm(n)%gridstruct%agrid, CENTER, fp_super_tile_geo, ioffset, joffset, &
+          x_refine, y_refine)
+      call fill_grid_from_supergrid(Atm(n)%gridstruct%grid_64, CORNER, fp_super_tile_geo, &
+          ioffset, joffset, x_refine, y_refine)
+      call fill_grid_from_supergrid(Atm(n)%gridstruct%agrid_64, CENTER, fp_super_tile_geo, &
+          ioffset, joffset, x_refine, y_refine)
 
-       ! What's the status of Atm(n)%grid_global?
-       if (debug_log) print '("[INFO] WDR Atm(1) GLOBAL npe=",I0," grid_global(",I0,"-",I0",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, &
-            lbound(Atm(1)%grid_global,1), ubound(Atm(1)%grid_global,1), &
-            lbound(Atm(1)%grid_global,2), ubound(Atm(1)%grid_global,2), &
-            lbound(Atm(1)%grid_global,3), ubound(Atm(1)%grid_global,3), &
-            lbound(Atm(1)%grid_global,4), ubound(Atm(1)%grid_global,4)
+      ! What's the status of Atm(n)%grid_global?
+      if (debug_log) print '("[INFO] WDR Atm(1) GLOBAL npe=",I0," grid_global(",I0,"-",I0",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, &
+          lbound(Atm(1)%grid_global,1), ubound(Atm(1)%grid_global,1), &
+          lbound(Atm(1)%grid_global,2), ubound(Atm(1)%grid_global,2), &
+          lbound(Atm(1)%grid_global,3), ubound(Atm(1)%grid_global,3), &
+          lbound(Atm(1)%grid_global,4), ubound(Atm(1)%grid_global,4)
 
-       if (debug_log) print '("[INFO] WDR Atm(n) GLOBAL npe=",I0," grid_global(",I0,"-",I0",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, &
-            lbound(Atm(n)%grid_global,1), ubound(Atm(n)%grid_global,1), &
-            lbound(Atm(n)%grid_global,2), ubound(Atm(n)%grid_global,2), &
-            lbound(Atm(n)%grid_global,3), ubound(Atm(n)%grid_global,3), &
-            lbound(Atm(n)%grid_global,4), ubound(Atm(n)%grid_global,4)
+      if (debug_log) print '("[INFO] WDR Atm(n) GLOBAL npe=",I0," grid_global(",I0,"-",I0",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, &
+          lbound(Atm(n)%grid_global,1), ubound(Atm(n)%grid_global,1), &
+          lbound(Atm(n)%grid_global,2), ubound(Atm(n)%grid_global,2), &
+          lbound(Atm(n)%grid_global,3), ubound(Atm(n)%grid_global,3), &
+          lbound(Atm(n)%grid_global,4), ubound(Atm(n)%grid_global,4)
 
-       !! Let this get reset in init_grid()/setup_aligned_nest()
-       !call fill_grid_from_supergrid(Atm(n)%grid_global, CORNER, fp_super_tile_geo, &
-       !     ioffset, joffset, x_refine, y_refine)
+      !! Let this get reset in init_grid()/setup_aligned_nest()
+      !call fill_grid_from_supergrid(Atm(n)%grid_global, CORNER, fp_super_tile_geo, &
+      !     ioffset, joffset, x_refine, y_refine)
 
-       if (use_timers) call mpp_clock_end (id_reset1)
-       if (use_timers) call mpp_clock_begin (id_reset2)
+      if (use_timers) call mpp_clock_end (id_reset1)
+      if (use_timers) call mpp_clock_begin (id_reset2)
 
-       ! TODO should these get reset by init_grid instead??
-       call fill_weight_grid(Atm(n)%neststruct%wt_h, wt_h)
-       call fill_weight_grid(Atm(n)%neststruct%wt_u, wt_u)
-       call fill_weight_grid(Atm(n)%neststruct%wt_v, wt_v)
-       ! WDR TODO -- Seems like this is not used anywhere, other than being allocated, filled, deallocated
-       !call fill_weight_grid(Atm(n)%neststruct%wt_b, wt_b)
+      ! TODO should these get reset by init_grid instead??
+      call fill_weight_grid(Atm(n)%neststruct%wt_h, wt_h)
+      call fill_weight_grid(Atm(n)%neststruct%wt_u, wt_u)
+      call fill_weight_grid(Atm(n)%neststruct%wt_v, wt_v)
+      ! WDR TODO -- Seems like this is not used anywhere, other than being allocated, filled, deallocated
+      !call fill_weight_grid(Atm(n)%neststruct%wt_b, wt_b)
 
-       if (use_timers) call mpp_clock_end (id_reset2)
+      if (use_timers) call mpp_clock_end (id_reset2)
 
     endif
 
@@ -2122,32 +2122,32 @@ contains
     !  which happens before we enter the moving nest code.
     if (this_pe .eq. 0 .and. first_time) then
 
-       ! This is the Atm index for the nest values.
-       pp = child_grid_num
+      ! This is the Atm index for the nest values.
+      pp = child_grid_num
 
-       if (debug_log) print '("[INFO] WDR INIT_GRID AP2 fv_moving_nest.F90 npe=",I0," n=",I0," pp=",I0)', this_pe, n, pp
+      if (debug_log) print '("[INFO] WDR INIT_GRID AP2 fv_moving_nest.F90 npe=",I0," n=",I0," pp=",I0)', this_pe, n, pp
 
-       refinement = x_refine
-       ng = Atm(n)%ng
+      refinement = x_refine
+      ng = Atm(n)%ng
 
-       call mpp_get_global_domain( Atm(n)%domain, isg, ieg, jsg, jeg)
+      call mpp_get_global_domain( Atm(n)%domain, isg, ieg, jsg, jeg)
 
-       !if (debug_log) print '("[INFO] WDR INIT_GRID AP3.1 fv_moving_nest.F90 npe=",I0," gid=",I0," associated(parent_grid)=",L1)', this_pe, gid, associated(Atm(pp)%parent_grid)
-       if (debug_log) print '("[INFO] WDR INIT_GRID AP3.1 fv_moving_nest.F90 npe=",I0," gid=",I0," parent_tile=",I0)', this_pe, gid, parent_tile
-       if (debug_log) print '("[INFO] WDR INIT_GRID AP3.2 fv_moving_nest.F90 npe=",I0," gid=",I0," size(pelist)=",I0)', this_pe, gid, size(Atm(pp)%pelist)
-       if (debug_log) print '("[INFO] WDR INIT_GRID AP3.3 fv_moving_nest.F90 npe=",I0," gid=",I0," pelist1=",I0)', this_pe, gid, Atm(pp)%pelist(1)
-       !FIXME: Should replace this by generating the global grid (or at least one face thereof) on the
-       ! nested PEs instead of sending it around.
-       !if (gid == Atm(pp)%parent_grid%pelist(1)) then
-       if (debug_log) print '("[INFO] WDR INIT_GRID XFER AP4 fv_moving_nest.F90 npe=",I0," send to pe=",I0," size=",I0)', this_pe, Atm(pp)%pelist(1), size(Atm(n)%grid_global(isg-ng:ieg+1+ng,jsg-ng:jeg+1+ng,1:2,parent_tile))
+      !if (debug_log) print '("[INFO] WDR INIT_GRID AP3.1 fv_moving_nest.F90 npe=",I0," gid=",I0," associated(parent_grid)=",L1)', this_pe, gid, associated(Atm(pp)%parent_grid)
+      if (debug_log) print '("[INFO] WDR INIT_GRID AP3.1 fv_moving_nest.F90 npe=",I0," gid=",I0," parent_tile=",I0)', this_pe, gid, parent_tile
+      if (debug_log) print '("[INFO] WDR INIT_GRID AP3.2 fv_moving_nest.F90 npe=",I0," gid=",I0," size(pelist)=",I0)', this_pe, gid, size(Atm(pp)%pelist)
+      if (debug_log) print '("[INFO] WDR INIT_GRID AP3.3 fv_moving_nest.F90 npe=",I0," gid=",I0," pelist1=",I0)', this_pe, gid, Atm(pp)%pelist(1)
+      !FIXME: Should replace this by generating the global grid (or at least one face thereof) on the
+      ! nested PEs instead of sending it around.
+      !if (gid == Atm(pp)%parent_grid%pelist(1)) then
+      if (debug_log) print '("[INFO] WDR INIT_GRID XFER AP4 fv_moving_nest.F90 npe=",I0," send to pe=",I0," size=",I0)', this_pe, Atm(pp)%pelist(1), size(Atm(n)%grid_global(isg-ng:ieg+1+ng,jsg-ng:jeg+1+ng,1:2,parent_tile))
 
-       call mpp_send(Atm(n)%grid_global(isg-ng:ieg+1+ng,jsg-ng:jeg+1+ng,1:2,parent_tile), &
-            size(Atm(n)%grid_global(isg-ng:ieg+1+ng,jsg-ng:jeg+1+ng,1:2,parent_tile)), &
-            Atm(pp)%pelist(1)) !send to p_ind in setup_aligned_nest
-       if (debug_log) print '("[INFO] WDR INIT_GRID AP5 fv_moving_nest.F90 npe=",I0)', this_pe
-       call mpp_sync_self()
-       if (debug_log) print '("[INFO] WDR INIT_GRID AP6 fv_moving_nest.F90 npe=",I0)', this_pe
-       !endif
+      call mpp_send(Atm(n)%grid_global(isg-ng:ieg+1+ng,jsg-ng:jeg+1+ng,1:2,parent_tile), &
+          size(Atm(n)%grid_global(isg-ng:ieg+1+ng,jsg-ng:jeg+1+ng,1:2,parent_tile)), &
+          Atm(pp)%pelist(1)) !send to p_ind in setup_aligned_nest
+      if (debug_log) print '("[INFO] WDR INIT_GRID AP5 fv_moving_nest.F90 npe=",I0)', this_pe
+      call mpp_sync_self()
+      if (debug_log) print '("[INFO] WDR INIT_GRID AP6 fv_moving_nest.F90 npe=",I0)', this_pe
+      !endif
     endif
 
     if (debug_log) print '("[INFO] WDR INIT_GRID AP9 fv_moving_nest.F90 npe=",I0)', this_pe
@@ -2159,26 +2159,26 @@ contains
     if (use_timers) call mpp_clock_begin (id_reset4)
 
     if (Atm(n)%neststruct%nested) then
-       if (debug_log) print '("[INFO] WDR INIT_GRID setup_aligned_nestA fv_moving_nest.F90 npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR INIT_GRID setup_aligned_nestA fv_moving_nest.F90 npe=",I0)', this_pe
 
-       ! New code from fv_control.F90
-       ! call init_grid(Atm(this_grid), Atm(this_grid)%flagstruct%grid_name, Atm(this_grid)%flagstruct%grid_file, &
-       !    Atm(this_grid)%flagstruct%npx, Atm(this_grid)%flagstruct%npy, Atm(this_grid)%flagstruct%npz, Atm(this_grid)%flagstruct%ndims, Atm(this_grid)%flagstruct%ntiles, Atm(this_grid)%ng, tile_coarse)
+      ! New code from fv_control.F90
+      ! call init_grid(Atm(this_grid), Atm(this_grid)%flagstruct%grid_name, Atm(this_grid)%flagstruct%grid_file, &
+      !    Atm(this_grid)%flagstruct%npx, Atm(this_grid)%flagstruct%npy, Atm(this_grid)%flagstruct%npz, Atm(this_grid)%flagstruct%ndims, Atm(this_grid)%flagstruct%ntiles, Atm(this_grid)%ng, tile_coarse)
 
-       ! Atm(n)%neststruct%parent_tile            = tile_coarse(n)
+      ! Atm(n)%neststruct%parent_tile            = tile_coarse(n)
 
-       ! Old Code
-       !call init_grid(Atm(n), Atm(n)%flagstruct%grid_name, Atm(n)%flagstruct%grid_file, &
-       !     Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%flagstruct%ndims, Atm(n)%flagstruct%ntiles, Atm(n)%ng)
+      ! Old Code
+      !call init_grid(Atm(n), Atm(n)%flagstruct%grid_name, Atm(n)%flagstruct%grid_file, &
+      !     Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%flagstruct%ndims, Atm(n)%flagstruct%ntiles, Atm(n)%ng)
 
-       !tile_coarse(1) = Atm(n)%neststruct%parent_tile
-       tile_coarse(1) = parent_tile
-       tile_coarse(2) = parent_tile
+      !tile_coarse(1) = Atm(n)%neststruct%parent_tile
+      tile_coarse(1) = parent_tile
+      tile_coarse(2) = parent_tile
 
-       call init_grid(Atm(n), Atm(n)%flagstruct%grid_name, Atm(n)%flagstruct%grid_file, &
-            Atm(n)%flagstruct%npx, Atm(n)%flagstruct%npy, Atm(n)%flagstruct%npz, &
-            Atm(n)%flagstruct%ndims, Atm(n)%flagstruct%ntiles, Atm(n)%ng, tile_coarse)
-       if (debug_log) print '("[INFO] WDR INIT_GRID setup_aligned_nestB fv_moving_nest.F90 npe=",I0)', this_pe
+      call init_grid(Atm(n), Atm(n)%flagstruct%grid_name, Atm(n)%flagstruct%grid_file, &
+          Atm(n)%flagstruct%npx, Atm(n)%flagstruct%npy, Atm(n)%flagstruct%npz, &
+          Atm(n)%flagstruct%ndims, Atm(n)%flagstruct%ntiles, Atm(n)%ng, tile_coarse)
+      if (debug_log) print '("[INFO] WDR INIT_GRID setup_aligned_nestB fv_moving_nest.F90 npe=",I0)', this_pe
     endif
 
     if (use_timers) call mpp_clock_end (id_reset4)
@@ -2186,13 +2186,13 @@ contains
 
     !  Reset the gridstruct values for the nest
     if (is_fine_pe) then
-       if (debug_log) print '("[INFO] WDR INIT_GRID AA fv_moving_nest.F90 npe=",I0)', this_pe
-       if (debug_log) print '("[INFO] WDR INIT_GRID BB fv_moving_nest.F90 npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR INIT_GRID AA fv_moving_nest.F90 npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR INIT_GRID BB fv_moving_nest.F90 npe=",I0)', this_pe
 
-       call grid_utils_init(Atm(n), Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, &
-            Atm(n)%flagstruct%non_ortho, Atm(n)%flagstruct%grid_type, Atm(n)%flagstruct%c2l_ord)
+      call grid_utils_init(Atm(n), Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, &
+          Atm(n)%flagstruct%non_ortho, Atm(n)%flagstruct%grid_type, Atm(n)%flagstruct%c2l_ord)
 
-       if (debug_log) print '("[INFO] WDR INIT_GRID CC fv_moving_nest.F90 npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR INIT_GRID CC fv_moving_nest.F90 npe=",I0)', this_pe
     endif
 
     if (use_timers) call mpp_clock_end (id_reset5)
@@ -2201,10 +2201,10 @@ contains
     if (debug_log) print '("[INFO] WDR NEST_DOMAIN ZZ fv_moving_nest.F90 npe=",I0)', this_pe
 
     if (debug_log) print '("[INFO] WDR REINIT1 CT fv_moving_nest.F90. npe=",I0," twowaynest=",L1" Atm(1)%neststruct%parent_tile=",I0)', &
-         this_pe, Atm(1)%neststruct%twowaynest, Atm(1)%neststruct%parent_tile
+        this_pe, Atm(1)%neststruct%twowaynest, Atm(1)%neststruct%parent_tile
 
     if (debug_log) print '("[INFO] WDR REINIT2 CT fv_moving_nest.F90. npe=",I0," twowaynest=",L1," Atm(2)%neststruct%parent_tile=",I0," n=",I0)', &
-         this_pe, Atm(2)%neststruct%twowaynest, Atm(2)%neststruct%parent_tile, n
+        this_pe, Atm(2)%neststruct%twowaynest, Atm(2)%neststruct%parent_tile, n
 
     !call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
@@ -2220,7 +2220,7 @@ contains
     !if (debug_log) print '("[INFO] WDR REINIT CW fv_moving_nest.F90. npe=",I0)', this_pe
 
     do nn = 1, size(Atm)
-       if (debug_log) call show_atm("3", Atm(nn), nn, this_pe)
+      if (debug_log) call show_atm("3", Atm(nn), nn, this_pe)
     enddo
 
 
@@ -2228,18 +2228,18 @@ contains
     !   only the PE that holds the center point will output this information to the logfile
     !   lat = agrid(:,:,2) and lon = agrid(:,:,1), in radians
     if (is_fine_pe) then
-       half_x = Atm(child_grid_num)%npx / 2
-       half_y = Atm(child_grid_num)%npy / 2
+      half_x = Atm(child_grid_num)%npx / 2
+      half_y = Atm(child_grid_num)%npy / 2
 
-       if (half_x .ge. Atm(child_grid_num)%bd%is .and. half_x .le. Atm(child_grid_num)%bd%ie .and. half_y .ge. Atm(child_grid_num)%bd%js .and. half_y .le. Atm(child_grid_num)%bd%je) then
+      if (half_x .ge. Atm(child_grid_num)%bd%is .and. half_x .le. Atm(child_grid_num)%bd%ie .and. half_y .ge. Atm(child_grid_num)%bd%js .and. half_y .le. Atm(child_grid_num)%bd%je) then
 
-           half_lat = Atm(child_grid_num)%gridstruct%agrid(half_x, half_y,2) * rad2deg
-           half_lon = Atm(child_grid_num)%gridstruct%agrid(half_x, half_y,1) * rad2deg
-           if (half_lon .gt. 180.0) half_lon = half_lon - 360.0
+        half_lat = Atm(child_grid_num)%gridstruct%agrid(half_x, half_y,2) * rad2deg
+        half_lon = Atm(child_grid_num)%gridstruct%agrid(half_x, half_y,1) * rad2deg
+        if (half_lon .gt. 180.0) half_lon = half_lon - 360.0
 
-           print '("[INFO] fv_moving_nest.F90 NEST MOVED to npe=",I0," x=",I0," y=",I0," lat=",F6.2," lon=",F7.2," a_step=",I8," fcst_hr=",F12.3)', this_pe, \
-           half_x, half_y, half_lat, half_lon, a_step,  a_step * dt_atmos / 3600.0
-        endif
+        print '("[INFO] fv_moving_nest.F90 NEST MOVED to npe=",I0," x=",I0," y=",I0," lat=",F6.2," lon=",F7.2," a_step=",I8," fcst_hr=",F12.3)', this_pe, \
+        half_x, half_y, half_lat, half_lon, a_step,  a_step * dt_atmos / 3600.0
+      endif
 
     endif
 
@@ -2251,34 +2251,34 @@ contains
     if (use_timers) call mpp_clock_begin (id_reset7)
 
     if (is_fine_pe) then
-       !call reallocate_BC_buffers(Atm(child_grid_num))
-       call reallocate_BC_buffers(Atm(1))
-       if (debug_log) print '("[INFO] WDR INIT_GRID DD fv_moving_nest.F90 npe=",I0)', this_pe
+      !call reallocate_BC_buffers(Atm(child_grid_num))
+      call reallocate_BC_buffers(Atm(1))
+      if (debug_log) print '("[INFO] WDR INIT_GRID DD fv_moving_nest.F90 npe=",I0)', this_pe
 
-       ! Reallocate buffers that are declared in fv_nesting.F90
-       call dealloc_nested_buffers(Atm(1))
+      ! Reallocate buffers that are declared in fv_nesting.F90
+      call dealloc_nested_buffers(Atm(1))
 
-       if (debug_log) print '("[INFO] WDR INIT_GRID EE fv_moving_nest.F90 npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR INIT_GRID EE fv_moving_nest.F90 npe=",I0)', this_pe
 
-       ! Set both to true so the call to setup_nested_grid_BCs() (at the beginning of fv_dynamics()) will reset t0 buffers
-       ! They will be returned to false by setup_nested_grid_BCs()
+      ! Set both to true so the call to setup_nested_grid_BCs() (at the beginning of fv_dynamics()) will reset t0 buffers
+      ! They will be returned to false by setup_nested_grid_BCs()
 
-       if (debug_log) print '("[INFO] WDR RESET_BCs first_step=.true.  fv_moving_nest.F90 npe=",I0)', this_pe
-       Atm(n)%neststruct%first_step = .true.
-       !Atm(n)%flagstruct%make_nh= .true.
+      if (debug_log) print '("[INFO] WDR RESET_BCs first_step=.true.  fv_moving_nest.F90 npe=",I0)', this_pe
+      Atm(n)%neststruct%first_step = .true.
+      !Atm(n)%flagstruct%make_nh= .true.
 
-       !! Fill in the BC time1 buffers
-       !call setup_nested_grid_BCs(npx, npy, npz, zvir, ncnst, &
-       !     u, v, w, pt, delp, delz, q, uc, vc, pkz, &
-       !     neststruct%nested, flagstruct%inline_q, flagstruct%make_nh, ng, &
-       !     gridstruct, flagstruct, neststruct, &
-       !     neststruct%nest_timestep, neststruct%tracer_nest_timestep, &
-       !     domain, bd, nwat)
+      !! Fill in the BC time1 buffers
+      !call setup_nested_grid_BCs(npx, npy, npz, zvir, ncnst, &
+      !     u, v, w, pt, delp, delz, q, uc, vc, pkz, &
+      !     neststruct%nested, flagstruct%inline_q, flagstruct%make_nh, ng, &
+      !     gridstruct, flagstruct, neststruct, &
+      !     neststruct%nest_timestep, neststruct%tracer_nest_timestep, &
+      !     domain, bd, nwat)
 
-       ! Transfer the BC time1 buffers to time0
+      ! Transfer the BC time1 buffers to time0
 
-       !call set_NH_BCs_t0(neststruct)
-       !call set_BCs_t0(ncnst, flagstruct%hydrostatic, neststruct)
+      !call set_NH_BCs_t0(neststruct)
+      !call set_BCs_t0(ncnst, flagstruct%hydrostatic, neststruct)
 
     endif
     if (use_timers) call mpp_clock_end (id_reset7)
@@ -2325,118 +2325,118 @@ contains
     if (debug_log) print '("[INFO] WDR SUR fv_moving_nest.F90. npe=",I0," ngrids=",I0," nest_domain%tile_coarse(",I0,"-",I0,")")', this_pe, ngrids, lbound(nest_domain%tile_coarse), ubound(nest_domain%tile_coarse)
 
     if (debug_log) print '("[INFO] WDR tile_coarse fv_moving_nest.F90 npe=",I0," tile_coarse(",I0,"-",I0") ngrids=",I0," tile_coarse(1)=",I0)', this_pe, &
-         lbound(nest_domain%tile_coarse,1), ubound(nest_domain%tile_coarse,1), ngrids, nest_domain%tile_coarse(1)
+        lbound(nest_domain%tile_coarse,1), ubound(nest_domain%tile_coarse,1), ngrids, nest_domain%tile_coarse(1)
 
     if (debug_log) print '("[INFO] WDR tile_coarse fv_moving_nest.F90 npe=",I0," istart_coarse(",I0,"-",I0")")', this_pe, &
-         lbound(nest_domain%istart_coarse,1), ubound(nest_domain%istart_coarse,1)
+        lbound(nest_domain%istart_coarse,1), ubound(nest_domain%istart_coarse,1)
 
     do n=2,ngrids
-       nn = n - 1  !  WDR TODO revise this to handle multiple nests.  This adjusts to match fv_control.F90 where these
-       !  arrays are passed in to mpp_define_nest_domains with bounds (2:ngrids)
+      nn = n - 1  !  WDR TODO revise this to handle multiple nests.  This adjusts to match fv_control.F90 where these
+      !  arrays are passed in to mpp_define_nest_domains with bounds (2:ngrids)
 
-       ! Updated code from new fv_control.F90   November 8. 2021 Ramstrom
+      ! Updated code from new fv_control.F90   November 8. 2021 Ramstrom
 
-       if (nest_domain%tile_coarse(nn) == Atm(this_grid)%global_tile) then
+      if (nest_domain%tile_coarse(nn) == Atm(this_grid)%global_tile) then
 
-          !isu = nest_ioffsets(n)
-          isu = nest_domain%istart_coarse(nn)
-          !ieu = isu + icount_coarse(n) - 1
-          ieu = isu + (nest_domain%iend_coarse(nn) - nest_domain%istart_coarse(nn) + 1) - 1
+        !isu = nest_ioffsets(n)
+        isu = nest_domain%istart_coarse(nn)
+        !ieu = isu + icount_coarse(n) - 1
+        ieu = isu + (nest_domain%iend_coarse(nn) - nest_domain%istart_coarse(nn) + 1) - 1
 
-          !jsu = nest_joffsets(n)
-          jsu = nest_domain%jstart_coarse(nn)
-          !jeu = jsu + jcount_coarse(n) - 1
-          jeu = jsu + (nest_domain%jend_coarse(nn) - nest_domain%jstart_coarse(nn) + 1) - 1
+        !jsu = nest_joffsets(n)
+        jsu = nest_domain%jstart_coarse(nn)
+        !jeu = jsu + jcount_coarse(n) - 1
+        jeu = jsu + (nest_domain%jend_coarse(nn) - nest_domain%jstart_coarse(nn) + 1) - 1
 
-          !!! Begin new
-          isu_stag = isu
-          jsu_stag = jsu
-          ieu_stag = ieu
-          jeu_stag = jeu+1
+!!! Begin new
+        isu_stag = isu
+        jsu_stag = jsu
+        ieu_stag = ieu
+        jeu_stag = jeu+1
 
-          isv_stag = isu
-          jsv_stag = jsu
-          iev_stag = ieu+1
-          jev_stag = jeu
-          !!! End new
+        isv_stag = isu
+        jsv_stag = jsu
+        iev_stag = ieu+1
+        jev_stag = jeu
+!!! End new
 
 
-          !update offset adjustment
-          isu = isu + upoff
-          ieu = ieu - upoff
-          jsu = jsu + upoff
-          jeu = jeu - upoff
+        !update offset adjustment
+        isu = isu + upoff
+        ieu = ieu - upoff
+        jsu = jsu + upoff
+        jeu = jeu - upoff
 
-          !!! Begin new
-          isu_stag = isu_stag + upoff
-          ieu_stag = ieu_stag - upoff
-          jsu_stag = jsu_stag + upoff
-          jeu_stag = jeu_stag - upoff
+!!! Begin new
+        isu_stag = isu_stag + upoff
+        ieu_stag = ieu_stag - upoff
+        jsu_stag = jsu_stag + upoff
+        jeu_stag = jeu_stag - upoff
 
-          isv_stag = isv_stag + upoff
-          iev_stag = iev_stag - upoff
-          jsv_stag = jsv_stag + upoff
-          jev_stag = jev_stag - upoff
+        isv_stag = isv_stag + upoff
+        iev_stag = iev_stag - upoff
+        jsv_stag = jsv_stag + upoff
+        jev_stag = jev_stag - upoff
 
-          ! Absolute boundary for the staggered point update region on the parent.
-          ! This is used in remap_uv to control the update of the last staggered point
-          ! when the the update region coincides with a pe domain to avoid cross-restart repro issues
-          
-          Atm(n)%neststruct%jeu_stag_boundary = jeu_stag
-          Atm(n)%neststruct%iev_stag_boundary = iev_stag
-          
-          if (isu > iec .or. ieu < isc .or. &
-               jsu > jec .or. jeu < jsc ) then
-             isu = -999 ; jsu = -999 ; ieu = -1000 ; jeu = -1000
-          else
-             isu = max(isu,isc) ; jsu = max(jsu,jsc)
-             ieu = min(ieu,iec) ; jeu = min(jeu,jec)
-          endif
-          
-          ! Update region for staggered quantity to avoid cross repro issues when the pe domain boundary
-          ! coincide with the nest. Basically write the staggered update on compute domains
-          
-          if (isu_stag > iec .or. ieu_stag < isc .or. &
-               jsu_stag > jec .or. jeu_stag < jsc ) then
-             isu_stag = -999 ; jsu_stag = -999 ; ieu_stag = -1000 ; jeu_stag = -1000
-          else
-             isu_stag = max(isu_stag,isc) ; jsu_stag = max(jsu_stag,jsc)
-             ieu_stag = min(ieu_stag,iec) ; jeu_stag = min(jeu_stag,jec)
-          endif
-          
-          if (isv_stag > iec .or. iev_stag < isc .or. &
-               jsv_stag > jec .or. jev_stag < jsc ) then
-             isv_stag = -999 ; jsv_stag = -999 ; iev_stag = -1000 ; jev_stag = -1000
-          else
-             isv_stag = max(isv_stag,isc) ; jsv_stag = max(jsv_stag,jsc)
-             iev_stag = min(iev_stag,iec) ; jev_stag = min(jev_stag,jec)
-          endif
-          !!! End new
+        ! Absolute boundary for the staggered point update region on the parent.
+        ! This is used in remap_uv to control the update of the last staggered point
+        ! when the the update region coincides with a pe domain to avoid cross-restart repro issues
 
-          if (isu > iec .or. ieu < isc .or. &
-               jsu > jec .or. jeu < jsc ) then
-             isu = -999 ; jsu = -999 ; ieu = -1000 ; jeu = -1000
-          else
-             isu = max(isu,isc) ; jsu = max(jsu,jsc)
-             ieu = min(ieu,iec) ; jeu = min(jeu,jec)
-          endif
+        Atm(n)%neststruct%jeu_stag_boundary = jeu_stag
+        Atm(n)%neststruct%iev_stag_boundary = iev_stag
 
-          ! lump indices
-          isu=max(isu, isu_stag, isv_stag)
-          jsu=max(jsu, jsu_stag, jsv_stag)
-          jeu_stag=max(jeu, jeu_stag)
-          jev_stag=max(jeu, jev_stag)
-          ieu_stag=max(ieu ,ieu_stag)
-          iev_stag=max(ieu ,iev_stag)
-          
-          Atm(n)%neststruct%isu = isu
-          Atm(n)%neststruct%ieu = ieu_stag
-          Atm(n)%neststruct%jsu = jsu
-          Atm(n)%neststruct%jeu = jev_stag
-          
-          Atm(n)%neststruct%jeu_stag = jeu_stag
-          Atm(n)%neststruct%iev_stag = iev_stag
-       endif
+        if (isu > iec .or. ieu < isc .or. &
+            jsu > jec .or. jeu < jsc ) then
+          isu = -999 ; jsu = -999 ; ieu = -1000 ; jeu = -1000
+        else
+          isu = max(isu,isc) ; jsu = max(jsu,jsc)
+          ieu = min(ieu,iec) ; jeu = min(jeu,jec)
+        endif
+
+        ! Update region for staggered quantity to avoid cross repro issues when the pe domain boundary
+        ! coincide with the nest. Basically write the staggered update on compute domains
+
+        if (isu_stag > iec .or. ieu_stag < isc .or. &
+            jsu_stag > jec .or. jeu_stag < jsc ) then
+          isu_stag = -999 ; jsu_stag = -999 ; ieu_stag = -1000 ; jeu_stag = -1000
+        else
+          isu_stag = max(isu_stag,isc) ; jsu_stag = max(jsu_stag,jsc)
+          ieu_stag = min(ieu_stag,iec) ; jeu_stag = min(jeu_stag,jec)
+        endif
+
+        if (isv_stag > iec .or. iev_stag < isc .or. &
+            jsv_stag > jec .or. jev_stag < jsc ) then
+          isv_stag = -999 ; jsv_stag = -999 ; iev_stag = -1000 ; jev_stag = -1000
+        else
+          isv_stag = max(isv_stag,isc) ; jsv_stag = max(jsv_stag,jsc)
+          iev_stag = min(iev_stag,iec) ; jev_stag = min(jev_stag,jec)
+        endif
+!!! End new
+
+        if (isu > iec .or. ieu < isc .or. &
+            jsu > jec .or. jeu < jsc ) then
+          isu = -999 ; jsu = -999 ; ieu = -1000 ; jeu = -1000
+        else
+          isu = max(isu,isc) ; jsu = max(jsu,jsc)
+          ieu = min(ieu,iec) ; jeu = min(jeu,jec)
+        endif
+
+        ! lump indices
+        isu=max(isu, isu_stag, isv_stag)
+        jsu=max(jsu, jsu_stag, jsv_stag)
+        jeu_stag=max(jeu, jeu_stag)
+        jev_stag=max(jeu, jev_stag)
+        ieu_stag=max(ieu ,ieu_stag)
+        iev_stag=max(ieu ,iev_stag)
+
+        Atm(n)%neststruct%isu = isu
+        Atm(n)%neststruct%ieu = ieu_stag
+        Atm(n)%neststruct%jsu = jsu
+        Atm(n)%neststruct%jeu = jev_stag
+
+        Atm(n)%neststruct%jeu_stag = jeu_stag
+        Atm(n)%neststruct%iev_stag = iev_stag
+      endif
     enddo
 
   end subroutine mn_setup_update_regions
@@ -2464,9 +2464,9 @@ contains
     call deallocate_fv_nest_BC_type(Atm%neststruct%divg_BC)
 
     if (allocated(Atm%neststruct%q_BC)) then
-       do n=1,size(Atm%neststruct%q_BC)
-          call deallocate_fv_nest_BC_type(Atm%neststruct%q_BC(n))
-       enddo
+      do n=1,size(Atm%neststruct%q_BC)
+        call deallocate_fv_nest_BC_type(Atm%neststruct%q_BC(n))
+      enddo
     endif
 
 #ifndef SW_DYNAMICS
@@ -2478,8 +2478,8 @@ contains
 #endif
 #endif
     if (.not.Atm%flagstruct%hydrostatic) then
-       call deallocate_fv_nest_BC_type(Atm%neststruct%w_BC)
-       call deallocate_fv_nest_BC_type(Atm%neststruct%delz_BC)
+      call deallocate_fv_nest_BC_type(Atm%neststruct%w_BC)
+      call deallocate_fv_nest_BC_type(Atm%neststruct%delz_BC)
     endif
 #endif
 
@@ -2502,9 +2502,9 @@ contains
     !  endif
 
     if (allocated(Atm%neststruct%q_BC)) then
-       do n=1,size(Atm%neststruct%q_BC)
-          call allocate_fv_nest_BC_type(Atm%neststruct%q_BC(n),Atm,ns,0,0,dummy)
-       enddo
+      do n=1,size(Atm%neststruct%q_BC)
+        call allocate_fv_nest_BC_type(Atm%neststruct%q_BC(n),Atm,ns,0,0,dummy)
+      enddo
     endif
 
 #ifndef SW_DYNAMICS
@@ -2516,8 +2516,8 @@ contains
 #endif
 #endif
     if (.not.Atm%flagstruct%hydrostatic) then
-       call allocate_fv_nest_BC_type(Atm%neststruct%w_BC,Atm,ns,0,0,dummy)
-       call allocate_fv_nest_BC_type(Atm%neststruct%delz_BC,Atm,ns,0,0,dummy)
+      call allocate_fv_nest_BC_type(Atm%neststruct%w_BC,Atm,ns,0,0,dummy)
+      call allocate_fv_nest_BC_type(Atm%neststruct%delz_BC,Atm,ns,0,0,dummy)
     endif
 #endif
 
@@ -2550,86 +2550,86 @@ contains
     ! This code is from fv_control.F90
     if (Atm%neststruct%twowaynest) then
 
-       if (debug_log) print '("[INFO] WDR REINIT AA fv_moving_nest.F90. npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR REINIT AA fv_moving_nest.F90. npe=",I0)', this_pe
 
-       ioffset = Atm%neststruct%ioffset
-       joffset = Atm%neststruct%joffset
-       refinement = Atm%neststruct%refinement
-       npx = Atm%npx
-       npy = Atm%npy
+      ioffset = Atm%neststruct%ioffset
+      joffset = Atm%neststruct%joffset
+      refinement = Atm%neststruct%refinement
+      npx = Atm%npx
+      npy = Atm%npy
 
-       if (debug_log) print '("[INFO] WDR REINIT BB fv_moving_nest.F90. npe=",I0," ioffset=",I0," joffset=",I0)', this_pe, ioffset, joffset
-       if (debug_log) print '("[INFO] WDR REINIT CC fv_moving_nest.F90. npe=",I0," isu=",I0," ieu",I0," jsu=",I0," jeu",I0)', &
-            this_pe, Atm%neststruct%isu, Atm%neststruct%ieu, Atm%neststruct%jsu, Atm%neststruct%jeu
+      if (debug_log) print '("[INFO] WDR REINIT BB fv_moving_nest.F90. npe=",I0," ioffset=",I0," joffset=",I0)', this_pe, ioffset, joffset
+      if (debug_log) print '("[INFO] WDR REINIT CC fv_moving_nest.F90. npe=",I0," isu=",I0," ieu",I0," jsu=",I0," jeu",I0)', &
+          this_pe, Atm%neststruct%isu, Atm%neststruct%ieu, Atm%neststruct%jsu, Atm%neststruct%jeu
 
-       !This in reality should be very simple. With the
-       ! restriction that only the compute domain data is
-       ! sent from the coarse grid, we can compute
-       ! exactly which coarse grid cells should use
-       ! which nested-grid data. We then don't need to send around p_ind.
+      !This in reality should be very simple. With the
+      ! restriction that only the compute domain data is
+      ! sent from the coarse grid, we can compute
+      ! exactly which coarse grid cells should use
+      ! which nested-grid data. We then don't need to send around p_ind.
 
-       !! WDR 12/17/2020 comment out obsolete ind_update_h
-       !Atm%neststruct%ind_update_h = -99999
+      !! WDR 12/17/2020 comment out obsolete ind_update_h
+      !Atm%neststruct%ind_update_h = -99999
 
-       !if (debug_log) print '("[INFO] WDR REINIT CT fv_moving_nest.F90. npe=",I0," Atm%parent_grid%tile=",I0," Atm%neststruct%parent_tile=",I0)', &
-       !     this_pe, Atm%parent_grid%tile, Atm%neststruct%parent_tile
+      !if (debug_log) print '("[INFO] WDR REINIT CT fv_moving_nest.F90. npe=",I0," Atm%parent_grid%tile=",I0," Atm%neststruct%parent_tile=",I0)', &
+      !     this_pe, Atm%parent_grid%tile, Atm%neststruct%parent_tile
 
-       if (Atm%parent_grid%tile == Atm%neststruct%parent_tile) then
-          if (debug_log) print '("[INFO] WDR REINIT DD fv_moving_nest.F90. npe=",I0)', this_pe
+      if (Atm%parent_grid%tile == Atm%neststruct%parent_tile) then
+        if (debug_log) print '("[INFO] WDR REINIT DD fv_moving_nest.F90. npe=",I0)', this_pe
 
-          !! Reinitialize the ind_update_h values
+        !! Reinitialize the ind_update_h values
 
-          isc_p = Atm%parent_grid%bd%isc
-          iec_p = Atm%parent_grid%bd%iec
-          jsc_p = Atm%parent_grid%bd%jsc
-          jec_p = Atm%parent_grid%bd%jec
-          upoff = Atm%neststruct%upoff
+        isc_p = Atm%parent_grid%bd%isc
+        iec_p = Atm%parent_grid%bd%iec
+        jsc_p = Atm%parent_grid%bd%jsc
+        jec_p = Atm%parent_grid%bd%jec
+        upoff = Atm%neststruct%upoff
 
-          if (debug_log) print '("[INFO] WDR REINIT JSU fv_moving_nest.F90. npe=",I0)', this_pe
-          !! WDR 12/17/2020 comment out obsolete ind_update_h
+        if (debug_log) print '("[INFO] WDR REINIT JSU fv_moving_nest.F90. npe=",I0)', this_pe
+        !! WDR 12/17/2020 comment out obsolete ind_update_h
 
-          Atm%neststruct%jsu = jsc_p
-          Atm%neststruct%jeu = jsc_p-1
-          do j=jsc_p,jec_p+1
-             if (j < joffset+upoff) then
-                !do i=isc_p,iec_p+1
-                !   Atm%neststruct%ind_update_h(i,j,2) = -9999
-                !enddo
-                Atm%neststruct%jsu = Atm%neststruct%jsu + 1
-                !elseif (j > joffset + (npy-1)/refinement - upoff) then
-                !   !do i=isc_p,iec_p+1
-                !   !   Atm%neststruct%ind_update_h(i,j,2) = -9999
-                !   !enddo
-             else
-                jind = (j - joffset)*refinement + 1
-                !do i=isc_p,iec_p+1
-                !   Atm%neststruct%ind_update_h(i,j,2) = jind
-                !enddo
-                if ( (j < joffset + (npy-1)/refinement - upoff) .and. j <= jec_p)  Atm%neststruct%jeu = j
-             endif
-             !write(mpp_pe()+4000,*) j, joffset, upoff, Atm%neststruct%ind_update_h(isc_p,j,2)
-          enddo
+        Atm%neststruct%jsu = jsc_p
+        Atm%neststruct%jeu = jsc_p-1
+        do j=jsc_p,jec_p+1
+          if (j < joffset+upoff) then
+            !do i=isc_p,iec_p+1
+            !   Atm%neststruct%ind_update_h(i,j,2) = -9999
+            !enddo
+            Atm%neststruct%jsu = Atm%neststruct%jsu + 1
+            !elseif (j > joffset + (npy-1)/refinement - upoff) then
+            !   !do i=isc_p,iec_p+1
+            !   !   Atm%neststruct%ind_update_h(i,j,2) = -9999
+            !   !enddo
+          else
+            jind = (j - joffset)*refinement + 1
+            !do i=isc_p,iec_p+1
+            !   Atm%neststruct%ind_update_h(i,j,2) = jind
+            !enddo
+            if ( (j < joffset + (npy-1)/refinement - upoff) .and. j <= jec_p)  Atm%neststruct%jeu = j
+          endif
+          !write(mpp_pe()+4000,*) j, joffset, upoff, Atm%neststruct%ind_update_h(isc_p,j,2)
+        enddo
 
-          Atm%neststruct%isu = isc_p
-          Atm%neststruct%ieu = isc_p-1
-          do i=isc_p,iec_p+1
-             if (i < ioffset+upoff) then
-                !Atm%neststruct%ind_update_h(i,:,1) = -9999
-                if (debug_log) print '("[INFO] WDR REINIT ISU fv_moving_nest.F90. npe=",I0)', this_pe
-                Atm%neststruct%isu = Atm%neststruct%isu + 1
-                !elseif (i > ioffset + (npx-1)/refinement - upoff) then
-                !   Atm%neststruct%ind_update_h(i,:,1) = -9999
-             else
-                !Atm%neststruct%ind_update_h(i,:,1) = (i-ioffset)*refinement + 1
-                if ( (i < ioffset + (npx-1)/refinement - upoff) .and. i <= iec_p) Atm%neststruct%ieu = i
-             endif
-             !write(mpp_pe()+5000,*) i, ioffset, upoff, Atm%neststruct%ind_update_h(i,jsc_p,1)
-          enddo
-       endif
+        Atm%neststruct%isu = isc_p
+        Atm%neststruct%ieu = isc_p-1
+        do i=isc_p,iec_p+1
+          if (i < ioffset+upoff) then
+            !Atm%neststruct%ind_update_h(i,:,1) = -9999
+            if (debug_log) print '("[INFO] WDR REINIT ISU fv_moving_nest.F90. npe=",I0)', this_pe
+            Atm%neststruct%isu = Atm%neststruct%isu + 1
+            !elseif (i > ioffset + (npx-1)/refinement - upoff) then
+            !   Atm%neststruct%ind_update_h(i,:,1) = -9999
+          else
+            !Atm%neststruct%ind_update_h(i,:,1) = (i-ioffset)*refinement + 1
+            if ( (i < ioffset + (npx-1)/refinement - upoff) .and. i <= iec_p) Atm%neststruct%ieu = i
+          endif
+          !write(mpp_pe()+5000,*) i, ioffset, upoff, Atm%neststruct%ind_update_h(i,jsc_p,1)
+        enddo
+      endif
     endif
 
     if (debug_log) print '("[INFO] WDR REINIT ZZ fv_moving_nest.F90. npe=",I0," isu=",I0," ieu",I0," jsu=",I0," jeu",I0)', &
-         this_pe, Atm%neststruct%isu, Atm%neststruct%ieu, Atm%neststruct%jsu, Atm%neststruct%jeu
+        this_pe, Atm%neststruct%isu, Atm%neststruct%ieu, Atm%neststruct%jsu, Atm%neststruct%jeu
 
   end subroutine reinit_parent_indices
 
@@ -2652,17 +2652,17 @@ contains
     integer            :: position = CENTER
     !integer            :: position_u = NORTH
     !integer            :: position_v = EAST
-    
+
     call mn_var_dump_to_netcdf(Atm%pt   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
-         time_val, Atm%global_tile, file_prefix, "tempK")
+        time_val, Atm%global_tile, file_prefix, "tempK")
     call mn_var_dump_to_netcdf(Atm%pt(:,:,64)   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
-         time_val, Atm%global_tile, file_prefix, "T64")
+        time_val, Atm%global_tile, file_prefix, "T64")
     !call mn_var_dump_to_netcdf(Atm%delp , is_fine_pe, domain_coarse, domain_fine, position, nz, &
     !     time_val, Atm%global_tile, file_prefix, "DELP")
     call mn_var_dump_to_netcdf(Atm%delz , is_fine_pe, domain_coarse, domain_fine, position, nz, &
-         time_val, Atm%global_tile, file_prefix, "DELZ")
+        time_val, Atm%global_tile, file_prefix, "DELZ")
     call mn_var_dump_to_netcdf(Atm%q_con, is_fine_pe, domain_coarse, domain_fine, position, nz, &
-         time_val, Atm%global_tile, file_prefix, "qcon")
+        time_val, Atm%global_tile, file_prefix, "qcon")
 
     !call mn_var_dump_to_netcdf(Atm%w    , is_fine_pe, domain_coarse, domain_fine, position, nz, &
     !     time_val, Atm%global_tile, file_prefix, "WWND")
@@ -2672,7 +2672,7 @@ contains
     !     time_val, Atm%global_tile, file_prefix, "VA")
 
     call mn_var_dump_to_netcdf(Atm%ps   , is_fine_pe, domain_coarse, domain_fine, position, 1 , &
-         time_val, Atm%global_tile, file_prefix, "PS")
+        time_val, Atm%global_tile, file_prefix, "PS")
 
     !! TODO figure out what to do with ze0;  different bounds - only compute domain
 
@@ -2684,9 +2684,9 @@ contains
 
     ! Latitude and longitude in radians
     call mn_var_dump_to_netcdf( Atm%gridstruct%agrid(:,:,2), is_fine_pe, domain_coarse, domain_fine, position, nz, &
-         time_val, Atm%global_tile, file_prefix, "latrad")
+        time_val, Atm%global_tile, file_prefix, "latrad")
     call mn_var_dump_to_netcdf( Atm%gridstruct%agrid(:,:,1), is_fine_pe, domain_coarse, domain_fine, position, nz, &
-         time_val, Atm%global_tile, file_prefix, "lonrad")
+        time_val, Atm%global_tile, file_prefix, "lonrad")
 
     !do n_moist = lbound(Atm%q, 4), ubound(Atm%q, 4)
     !   call get_tracer_names(MODEL_ATMOS, n_moist, out_var_name)
@@ -2726,31 +2726,31 @@ contains
     !!===========================================================
 
     if (is_fine_pe) then
-       call mpp_get_data_domain(domain_fine, isd_fine, ied_fine, jsd_fine, jed_fine, position=position)
+      call mpp_get_data_domain(domain_fine, isd_fine, ied_fine, jsd_fine, jed_fine, position=position)
 
-       if (debug_log) print '("[INFO] WDR NRF FG mn_var_dump_to_netcdf start. npe=",I0," size of x=(",I0,",",I0,",",I0")")', this_pe, size(data_var,1), size(data_var,2), size(data_var,3)
-       if (debug_log) print '("[INFO] WDR NRF FG mn_var_dump_to_netcdf start. npe=",I0," Data domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
-            this_pe, isd_fine, ied_fine, jsd_fine, jed_fine, ied_fine - isd_fine + 1,  jed_fine - jsd_fine + 1
+      if (debug_log) print '("[INFO] WDR NRF FG mn_var_dump_to_netcdf start. npe=",I0," size of x=(",I0,",",I0,",",I0")")', this_pe, size(data_var,1), size(data_var,2), size(data_var,3)
+      if (debug_log) print '("[INFO] WDR NRF FG mn_var_dump_to_netcdf start. npe=",I0," Data domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
+          this_pe, isd_fine, ied_fine, jsd_fine, jed_fine, ied_fine - isd_fine + 1,  jed_fine - jsd_fine + 1
 
-       call output_grid_to_nc("GH", isd_fine, ied_fine, jsd_fine, jed_fine, nz, data_var, prefix_fine, var_name, time_step, domain_fine, position)
+      call output_grid_to_nc("GH", isd_fine, ied_fine, jsd_fine, jed_fine, nz, data_var, prefix_fine, var_name, time_step, domain_fine, position)
 
     else
-       if (this_tile == 6) then
-          !call mpp_get_compute_domain(domain_coarse, isc_coarse, iec_coarse, jsc_coarse, jec_coarse, position=position)
-          call mpp_get_data_domain(domain_coarse, isd_coarse, ied_coarse, jsd_coarse, jed_coarse, position=position)
-          !call mpp_get_memory_domain(domain_coarse, ism_coarse, iem_coarse, jsm_coarse, jem_coarse, position=position)
+      if (this_tile == 6) then
+        !call mpp_get_compute_domain(domain_coarse, isc_coarse, iec_coarse, jsc_coarse, jec_coarse, position=position)
+        call mpp_get_data_domain(domain_coarse, isd_coarse, ied_coarse, jsd_coarse, jed_coarse, position=position)
+        !call mpp_get_memory_domain(domain_coarse, ism_coarse, iem_coarse, jsm_coarse, jem_coarse, position=position)
 
-          if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," size of x=(",I0,",",I0,",",I0")")', this_pe, size(data_var,1), size(data_var,2), size(data_var,3)
-          if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," Data domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
-               this_pe, isd_coarse, ied_coarse, jsd_coarse, jed_coarse, ied_coarse - isd_coarse + 1,  jed_coarse - jsd_coarse + 1
-          !if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," Compute domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
-          !     this_pe, isc_coarse, iec_coarse, jsc_coarse, jec_coarse, iec_coarse - isc_coarse + 1,  jec_coarse - jsc_coarse + 1
-          !if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," Memory domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
-          !     this_pe, ism_coarse, iem_coarse, jsm_coarse, jem_coarse, iem_coarse - ism_coarse + 1,  jem_coarse - jsm_coarse + 1
+        if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," size of x=(",I0,",",I0,",",I0")")', this_pe, size(data_var,1), size(data_var,2), size(data_var,3)
+        if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," Data domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
+            this_pe, isd_coarse, ied_coarse, jsd_coarse, jed_coarse, ied_coarse - isd_coarse + 1,  jed_coarse - jsd_coarse + 1
+        !if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," Compute domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
+        !     this_pe, isc_coarse, iec_coarse, jsc_coarse, jec_coarse, iec_coarse - isc_coarse + 1,  jec_coarse - jsc_coarse + 1
+        !if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," Memory domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
+        !     this_pe, ism_coarse, iem_coarse, jsm_coarse, jem_coarse, iem_coarse - ism_coarse + 1,  jem_coarse - jsm_coarse + 1
 
-          call output_grid_to_nc("GH", isd_coarse, ied_coarse, jsd_coarse, jed_coarse, nz, data_var, prefix_coarse, var_name, time_step, domain_coarse, position)
+        call output_grid_to_nc("GH", isd_coarse, ied_coarse, jsd_coarse, jed_coarse, nz, data_var, prefix_coarse, var_name, time_step, domain_coarse, position)
 
-       endif
+      endif
     endif
 
   end subroutine mn_var_dump_3d_to_netcdf
@@ -2790,38 +2790,38 @@ contains
     !!===========================================================
 
     if (is_fine_pe) then
-       ! Maybe don't need to call mpp_get_compute_domain here?
-       !call mpp_get_compute_domain(domain_fine, isc_fine, iec_fine, jsc_fine, jec_fine, position=position)
-       call mpp_get_data_domain(domain_fine, isd_fine, ied_fine, jsd_fine, jed_fine, position=position)
-       !call mpp_get_memory_domain(domain_fine, ism_fine, iem_fine, jsm_fine, jem_fine, position=position)
+      ! Maybe don't need to call mpp_get_compute_domain here?
+      !call mpp_get_compute_domain(domain_fine, isc_fine, iec_fine, jsc_fine, jec_fine, position=position)
+      call mpp_get_data_domain(domain_fine, isd_fine, ied_fine, jsd_fine, jed_fine, position=position)
+      !call mpp_get_memory_domain(domain_fine, ism_fine, iem_fine, jsm_fine, jem_fine, position=position)
 
-       if (debug_log) print '("[INFO] WDR NRF FG mn_var_dump_to_netcdf start. npe=",I0," size of x=(",I0,",",I0,")")', this_pe, size(data_var,1), size(data_var,2)
-       if (debug_log) print '("[INFO] WDR NRF FG mn_var_dump_to_netcdf start. npe=",I0," Data domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
-            this_pe, isd_fine, ied_fine, jsd_fine, jed_fine, ied_fine - isd_fine + 1,  jed_fine - jsd_fine + 1
-       !if (debug_log) print '("[INFO] WDR NRF FG mn_var_dump_to_netcdf start. npe=",I0," Compute domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
-       !     this_pe, isc_fine, iec_fine, jsc_fine, jec_fine, iec_fine - isc_fine + 1,  jec_fine - jsc_fine + 1
-       !if (debug_log) print '("[INFO] WDR NRF FG mn_var_dump_to_netcdf start. npe=",I0," Memory domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
-       !     this_pe, ism_fine, iem_fine, jsm_fine, jem_fine, iem_fine - ism_fine + 1,  jem_fine - jsm_fine + 1
+      if (debug_log) print '("[INFO] WDR NRF FG mn_var_dump_to_netcdf start. npe=",I0," size of x=(",I0,",",I0,")")', this_pe, size(data_var,1), size(data_var,2)
+      if (debug_log) print '("[INFO] WDR NRF FG mn_var_dump_to_netcdf start. npe=",I0," Data domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
+          this_pe, isd_fine, ied_fine, jsd_fine, jed_fine, ied_fine - isd_fine + 1,  jed_fine - jsd_fine + 1
+      !if (debug_log) print '("[INFO] WDR NRF FG mn_var_dump_to_netcdf start. npe=",I0," Compute domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
+      !     this_pe, isc_fine, iec_fine, jsc_fine, jec_fine, iec_fine - isc_fine + 1,  jec_fine - jsc_fine + 1
+      !if (debug_log) print '("[INFO] WDR NRF FG mn_var_dump_to_netcdf start. npe=",I0," Memory domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
+      !     this_pe, ism_fine, iem_fine, jsm_fine, jem_fine, iem_fine - ism_fine + 1,  jem_fine - jsm_fine + 1
 
-       call output_grid_to_nc("GH", isd_fine, ied_fine, jsd_fine, jed_fine, nz, data_var, prefix_fine, var_name, time_step, domain_fine, position)
+      call output_grid_to_nc("GH", isd_fine, ied_fine, jsd_fine, jed_fine, nz, data_var, prefix_fine, var_name, time_step, domain_fine, position)
     else
 
-       if (this_tile == 6) then
-          !call mpp_get_compute_domain(domain_coarse, isc_coarse, iec_coarse, jsc_coarse, jec_coarse, position=position)
-          call mpp_get_data_domain(domain_coarse, isd_coarse, ied_coarse, jsd_coarse, jed_coarse, position=position)
-          !call mpp_get_memory_domain(domain_coarse, ism_coarse, iem_coarse, jsm_coarse, jem_coarse, position=position)
+      if (this_tile == 6) then
+        !call mpp_get_compute_domain(domain_coarse, isc_coarse, iec_coarse, jsc_coarse, jec_coarse, position=position)
+        call mpp_get_data_domain(domain_coarse, isd_coarse, ied_coarse, jsd_coarse, jed_coarse, position=position)
+        !call mpp_get_memory_domain(domain_coarse, ism_coarse, iem_coarse, jsm_coarse, jem_coarse, position=position)
 
-          if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," size of x=(",I0,",",I0,")")', this_pe, size(data_var,1), size(data_var,2)
-          if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," Data domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
-               this_pe, isd_coarse, ied_coarse, jsd_coarse, jed_coarse, ied_coarse - isd_coarse + 1,  jed_coarse - jsd_coarse + 1
-          !if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," Compute domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
-          !     this_pe, isc_coarse, iec_coarse, jsc_coarse, jec_coarse, iec_coarse - isc_coarse + 1,  jec_coarse - jsc_coarse + 1
-          !if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," Memory domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
-          !     this_pe, ism_coarse, iem_coarse, jsm_coarse, jem_coarse, iem_coarse - ism_coarse + 1,  jem_coarse - jsm_coarse + 1
+        if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," size of x=(",I0,",",I0,")")', this_pe, size(data_var,1), size(data_var,2)
+        if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," Data domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
+            this_pe, isd_coarse, ied_coarse, jsd_coarse, jed_coarse, ied_coarse - isd_coarse + 1,  jed_coarse - jsd_coarse + 1
+        !if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," Compute domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
+        !     this_pe, isc_coarse, iec_coarse, jsc_coarse, jec_coarse, iec_coarse - isc_coarse + 1,  jec_coarse - jsc_coarse + 1
+        !if (debug_log) print '("[INFO] WDR NRF CG mn_var_dump_to_netcdf start. npe=",I0," Memory domain i=",I0,"-",I0," j=",I0,"-",I0," (",I0,",",I0,")")', &
+        !     this_pe, ism_coarse, iem_coarse, jsm_coarse, jem_coarse, iem_coarse - ism_coarse + 1,  jem_coarse - jsm_coarse + 1
 
-          call output_grid_to_nc("GH", isd_coarse, ied_coarse, jsd_coarse, jed_coarse, nz, data_var, prefix_coarse, var_name, time_step, domain_coarse, position)
+        call output_grid_to_nc("GH", isd_coarse, ied_coarse, jsd_coarse, jed_coarse, nz, data_var, prefix_coarse, var_name, time_step, domain_coarse, position)
 
-       endif
+      endif
     endif
 
   end subroutine mn_var_dump_2d_to_netcdf
@@ -2844,14 +2844,14 @@ contains
     ! TODO determine if this is the correct way to recalculate the auxiliary pressure variables
 
     call p_var(Atm%npz, Atm%bd%is, Atm%bd%ie, Atm%bd%js, Atm%bd%je, Atm%ptop, ptop_min,  &
-         Atm%delp, Atm%delz, &
-         Atm%pt, Atm%ps, &
-         Atm%pe, Atm%peln,   &
-         Atm%pk,   Atm%pkz, kappa, &
-         Atm%q, Atm%ng, Atm%flagstruct%ncnst, Atm%gridstruct%area_64, 0.,  &
-         .false.,  .false., & !mountain argument not used
-         Atm%flagstruct%moist_phys,  Atm%flagstruct%hydrostatic, &
-         Atm%flagstruct%nwat, Atm%domain, .false.)
+        Atm%delp, Atm%delz, &
+        Atm%pt, Atm%ps, &
+        Atm%pe, Atm%peln,   &
+        Atm%pk,   Atm%pkz, kappa, &
+        Atm%q, Atm%ng, Atm%flagstruct%ncnst, Atm%gridstruct%area_64, 0.,  &
+        .false.,  .false., & !mountain argument not used
+        Atm%flagstruct%moist_phys,  Atm%flagstruct%hydrostatic, &
+        Atm%flagstruct%nwat, Atm%domain, .false.)
 
   end subroutine recalc_aux_pressures
 
@@ -2894,10 +2894,10 @@ contains
     integer :: ierr
 
     ccpp_associate:associate(cappa=>CCPP_interstitial%cappa,&
-         dp1=>CCPP_interstitial%te0,&
-         dtdt_m=>CCPP_interstitial%dtdt,&
-         last_step=>CCPP_interstitial%last_step,&
-         te_2d=>CCPP_interstitial%te0_2d)
+        dp1=>CCPP_interstitial%te0,&
+        dtdt_m=>CCPP_interstitial%dtdt,&
+        last_step=>CCPP_interstitial%last_step,&
+        te_2d=>CCPP_interstitial%te0_2d)
 
     this_pe = mpp_pe()
 
@@ -2928,14 +2928,14 @@ contains
     ! TODO determine if this is the correct way to recalculate the auxiliary pressure variables
 
     call p_var(npz, Atm%bd%is, Atm%bd%ie, Atm%bd%js, Atm%bd%je, Atm%ptop, ptop_min,  &
-         Atm%delp, Atm%delz, &
-         Atm%pt, Atm%ps, &
-         Atm%pe, Atm%peln,   &
-         Atm%pk,   Atm%pkz, kappa, &
-         Atm%q, Atm%ng, Atm%flagstruct%ncnst, Atm%gridstruct%area_64, 0.,  &
-         .false.,  .false., & !mountain argument not used
-         Atm%flagstruct%moist_phys,  Atm%flagstruct%hydrostatic, &
-         Atm%flagstruct%nwat, Atm%domain, Atm%flagstruct%adiabatic, .false.)
+        Atm%delp, Atm%delz, &
+        Atm%pt, Atm%ps, &
+        Atm%pe, Atm%peln,   &
+        Atm%pk,   Atm%pkz, kappa, &
+        Atm%q, Atm%ng, Atm%flagstruct%ncnst, Atm%gridstruct%area_64, 0.,  &
+        .false.,  .false., & !mountain argument not used
+        Atm%flagstruct%moist_phys,  Atm%flagstruct%hydrostatic, &
+        Atm%flagstruct%nwat, Atm%domain, Atm%flagstruct%adiabatic, .false.)
 
     ! Allocate arrays
 
@@ -2962,9 +2962,9 @@ contains
     !do_adiabatic_init = .false.   ! TODO Not sure what this should be.
 
     do k=1,npz
-       ph1 = Atm%ak(k  ) + Atm%bk(k  ) * Atm%flagstruct%p_ref
-       ph2 = Atm%ak(k+1) + Atm%bk(k+1) * Atm%flagstruct%p_ref
-       pfull(k) = (ph2 - ph1) / log(ph2/ph1)
+      ph1 = Atm%ak(k  ) + Atm%bk(k  ) * Atm%flagstruct%p_ref
+      ph2 = Atm%ak(k+1) + Atm%bk(k+1) * Atm%flagstruct%p_ref
+      pfull(k) = (ph2 - ph1) / log(ph2/ph1)
     enddo
 
     ! Variables needed for vertical remapping Lagrangian_to_Eulerian call
@@ -2975,33 +2975,33 @@ contains
     ! print '("[INFO] WDR REMAP npe=",I0," nr=",I0," nq=",I0)', this_pe, nr, nq    !! TODO Validate which is correct to use here
 
     do iq=1,nq
-       kord_tracer(iq) = Atm%flagstruct%kord_tr
-       if ( iq==cld_amt )  kord_tracer(iq) = 9      ! monotonic
+      kord_tracer(iq) = Atm%flagstruct%kord_tr
+      if ( iq==cld_amt )  kord_tracer(iq) = 9      ! monotonic
     enddo
 
     do_omega = Atm%flagstruct%hydrostatic .and. last_step
 
     do i=Atm%bd%is, Atm%bd%ie
-       do k=1,npz
-          do j=Atm%bd%js, Atm%bd%je
-             dp1(i,j,k) = zvir * Atm%q(i,j,k,sphum)
-          enddo
-       enddo
+      do k=1,npz
+        do j=Atm%bd%js, Atm%bd%je
+          dp1(i,j,k) = zvir * Atm%q(i,j,k,sphum)
+        enddo
+      enddo
     enddo
 
     ! cappa initialization code taken from fv_dynamics.F90
 #ifdef MOIST_CAPPA
     if (debug_log) print '("[INFO] WDR VERT_REMAP MV_NST L2E computing moist cv before vertical remapping fv_moving_nest.F90 npe=",I0)', this_pe
     do k=1,npz
-       do j=Atm%bd%js, Atm%bd%je
-          call moist_cv(Atm%bd%is, Atm%bd%ie, Atm%bd%isd, Atm%bd%ied, Atm%bd%jsd, Atm%bd%jed, &
-               npz, j, k, Atm%flagstruct%nwat, sphum, liq_wat, rainwat,    &
-               ice_wat, snowwat, graupel, Atm%q, Atm%q_con(Atm%bd%is:Atm%bd%ie,j,k), cvm)
+      do j=Atm%bd%js, Atm%bd%je
+        call moist_cv(Atm%bd%is, Atm%bd%ie, Atm%bd%isd, Atm%bd%ied, Atm%bd%jsd, Atm%bd%jed, &
+            npz, j, k, Atm%flagstruct%nwat, sphum, liq_wat, rainwat,    &
+            ice_wat, snowwat, graupel, Atm%q, Atm%q_con(Atm%bd%is:Atm%bd%ie,j,k), cvm)
 
-          do i=Atm%bd%is, Atm%bd%ie
-             cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)))
-          enddo
-       enddo
+        do i=Atm%bd%is, Atm%bd%ie
+          cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)))
+        enddo
+      enddo
     enddo
 #else
     if (debug_log) print '("[INFO] WDR VERT_REMAP MV_NST L2E NOT computing moist cv before vertical remapping fv_moving_nest.F90 npe=",I0)', this_pe
@@ -3019,17 +3019,17 @@ contains
     ! ua,va are not actually referenced in the subroutine
 
     if ( Atm%flagstruct%consv_te > 0.  .and. (.not. do_adiabatic_init) ) then
-       if (debug_log) print '("[INFO] WDR VERT_REMAP MV_NST L2E computing total energy before vertical remapping fv_moving_nest.F90 npe=",I0)', this_pe
-       call compute_total_energy(Atm%bd%is, Atm%bd%ie, Atm%bd%js, Atm%bd%je, &
-            Atm%bd%isd, Atm%bd%ied, Atm%bd%jsd, Atm%bd%jed, Atm%npz,        &
-            Atm%u, Atm%v, Atm%w, Atm%delz, Atm%pt, Atm%delp, Atm%q, &
-            dp1, Atm%pe, Atm%peln, Atm%phis, &
-            Atm%gridstruct%rsin2, Atm%gridstruct%cosa_s, &
-            zvir, cp_air, rdgas, hlv, te_2d, Atm%ua, Atm%va, teq,        &
-            Atm%flagstruct%moist_phys, Atm%flagstruct%nwat, sphum, liq_wat, rainwat,   &
-            ice_wat, snowwat, graupel, Atm%flagstruct%hydrostatic, Atm%idiag%id_te)
+      if (debug_log) print '("[INFO] WDR VERT_REMAP MV_NST L2E computing total energy before vertical remapping fv_moving_nest.F90 npe=",I0)', this_pe
+      call compute_total_energy(Atm%bd%is, Atm%bd%ie, Atm%bd%js, Atm%bd%je, &
+          Atm%bd%isd, Atm%bd%ied, Atm%bd%jsd, Atm%bd%jed, Atm%npz,        &
+          Atm%u, Atm%v, Atm%w, Atm%delz, Atm%pt, Atm%delp, Atm%q, &
+          dp1, Atm%pe, Atm%peln, Atm%phis, &
+          Atm%gridstruct%rsin2, Atm%gridstruct%cosa_s, &
+          zvir, cp_air, rdgas, hlv, te_2d, Atm%ua, Atm%va, teq,        &
+          Atm%flagstruct%moist_phys, Atm%flagstruct%nwat, sphum, liq_wat, rainwat,   &
+          ice_wat, snowwat, graupel, Atm%flagstruct%hydrostatic, Atm%idiag%id_te)
     else
-       if (debug_log) print '("[INFO] WDR VERT_REMAP MV_NST L2E NOT computing total energy before vertical remapping fv_moving_nest.F90 npe=",I0," te_2d=",F10.5)', this_pe, te_2d(Atm%bd%is, Atm%bd%js)
+      if (debug_log) print '("[INFO] WDR VERT_REMAP MV_NST L2E NOT computing total energy before vertical remapping fv_moving_nest.F90 npe=",I0," te_2d=",F10.5)', this_pe, te_2d(Atm%bd%is, Atm%bd%js)
     endif
 
     if (debug_log) print '("[INFO] WDR VERT_REMAP MV_NST L2E before vertical remapping fv_moving_nest.F90 npe=",I0)', this_pe
@@ -3060,46 +3060,46 @@ contains
     !nq = nq_tot - Atm%flagstruct%dnats
 
     ! From updated fv_dynamics.F90 on June 24, 2021
-!    call Lagrangian_to_Eulerian(last_step, consv_te, &
-!         ps, pe, delp,          &
-!         pkz, pk, mdt, bdt, npx, npy, npz, &
-!         is,ie,js,je, isd,ied,jsd,jed,       &
-!         nr, nwat, sphum, &
-!         q_con, u,  v, w, &
-!         delz, pt, q, phis,    &
-!         zvir, cp_air, akap, cappa, flagstruct%kord_mt, flagstruct%kord_wz, &
-!         kord_tracer, flagstruct%kord_tm, peln, te_2d,               &
-!         ng, ua, va, omga, dp1, ws, &
-!         fill, reproduce_sum,             &
-!         idiag%id_mdt>0, dtdt_m, &
-!         ptop, ak, bk, pfull, gridstruct, domain,   &
-!         flagstruct%do_sat_adj, hydrostatic, flagstruct%phys_hydrostatic, &
-!         hybrid_z, do_omega,     &
-!         flagstruct%adiabatic, do_adiabatic_init, &
-!         flagstruct%do_inline_mp, &
-!         inline_mp, flagstruct%c2l_ord, bd, flagstruct%fv_debug, &
-!         flagstruct%moist_phys)
+    !    call Lagrangian_to_Eulerian(last_step, consv_te, &
+    !         ps, pe, delp,          &
+    !         pkz, pk, mdt, bdt, npx, npy, npz, &
+    !         is,ie,js,je, isd,ied,jsd,jed,       &
+    !         nr, nwat, sphum, &
+    !         q_con, u,  v, w, &
+    !         delz, pt, q, phis,    &
+    !         zvir, cp_air, akap, cappa, flagstruct%kord_mt, flagstruct%kord_wz, &
+    !         kord_tracer, flagstruct%kord_tm, peln, te_2d,               &
+    !         ng, ua, va, omga, dp1, ws, &
+    !         fill, reproduce_sum,             &
+    !         idiag%id_mdt>0, dtdt_m, &
+    !         ptop, ak, bk, pfull, gridstruct, domain,   &
+    !         flagstruct%do_sat_adj, hydrostatic, flagstruct%phys_hydrostatic, &
+    !         hybrid_z, do_omega,     &
+    !         flagstruct%adiabatic, do_adiabatic_init, &
+    !         flagstruct%do_inline_mp, &
+    !         inline_mp, flagstruct%c2l_ord, bd, flagstruct%fv_debug, &
+    !         flagstruct%moist_phys)
 
     call Lagrangian_to_Eulerian(last_step, Atm%flagstruct%consv_te,  &
-         Atm%ps, Atm%pe, Atm%delp,                              &
-         Atm%pkz, Atm%pk, mdt, bdt, Atm%npx, Atm%npy, Atm%npz,  &
-         Atm%bd%is,Atm%bd%ie,Atm%bd%js,Atm%bd%je,               &
-         Atm%bd%isd, Atm%bd%ied, Atm%bd%jsd, Atm%bd%jed,        &
-         nq, Atm%flagstruct%nwat, sphum,                        &  ! TODO check if nq is the same as nr?
-         Atm%q_con, Atm%u,  Atm%v, Atm%w,                       &
-         Atm%delz, Atm%pt, Atm%q, Atm%phis,                     &
-         zvir, cp_air, akap, cappa, Atm%flagstruct%kord_mt, Atm%flagstruct%kord_wz, &
-         kord_tracer, Atm%flagstruct%kord_tm, Atm%peln, te_2d,                      &
-         Atm%ng, Atm%ua, Atm%va, Atm%omga, te_local, ws, &  ! TODO check if te_local is the same as dp1?
-         Atm%flagstruct%fill, Atm%flagstruct%reproduce_sum,  &
-         Atm%idiag%id_mdt>0, dtdt_m, &
-         Atm%ptop, Atm%ak, Atm%bk, pfull, Atm%gridstruct, Atm%domain,   &
-         Atm%flagstruct%do_sat_adj, Atm%flagstruct%hydrostatic, Atm%flagstruct%phys_hydrostatic, &
-         Atm%flagstruct%hybrid_z, do_omega,            &
-         Atm%flagstruct%adiabatic, do_adiabatic_init, &
-         Atm%flagstruct%do_inline_mp, &
-         Atm%inline_mp, Atm%flagstruct%c2l_ord, Atm%bd, Atm%flagstruct%fv_debug, &
-         Atm%flagstruct%moist_phys)
+        Atm%ps, Atm%pe, Atm%delp,                              &
+        Atm%pkz, Atm%pk, mdt, bdt, Atm%npx, Atm%npy, Atm%npz,  &
+        Atm%bd%is,Atm%bd%ie,Atm%bd%js,Atm%bd%je,               &
+        Atm%bd%isd, Atm%bd%ied, Atm%bd%jsd, Atm%bd%jed,        &
+        nq, Atm%flagstruct%nwat, sphum,                        &  ! TODO check if nq is the same as nr?
+        Atm%q_con, Atm%u,  Atm%v, Atm%w,                       &
+        Atm%delz, Atm%pt, Atm%q, Atm%phis,                     &
+        zvir, cp_air, akap, cappa, Atm%flagstruct%kord_mt, Atm%flagstruct%kord_wz, &
+        kord_tracer, Atm%flagstruct%kord_tm, Atm%peln, te_2d,                      &
+        Atm%ng, Atm%ua, Atm%va, Atm%omga, te_local, ws, &  ! TODO check if te_local is the same as dp1?
+        Atm%flagstruct%fill, Atm%flagstruct%reproduce_sum,  &
+        Atm%idiag%id_mdt>0, dtdt_m, &
+        Atm%ptop, Atm%ak, Atm%bk, pfull, Atm%gridstruct, Atm%domain,   &
+        Atm%flagstruct%do_sat_adj, Atm%flagstruct%hydrostatic, Atm%flagstruct%phys_hydrostatic, &
+        Atm%flagstruct%hybrid_z, do_omega,            &
+        Atm%flagstruct%adiabatic, do_adiabatic_init, &
+        Atm%flagstruct%do_inline_mp, &
+        Atm%inline_mp, Atm%flagstruct%c2l_ord, Atm%bd, Atm%flagstruct%fv_debug, &
+        Atm%flagstruct%moist_phys)
 
     !call vertical_remap(Atm, last_step, mdt, bdt, nq, sphum,       &
     !     zvir, cp_air, akap, cappa, kord_tracer, te_2d,               &
@@ -3160,309 +3160,310 @@ contains
     !! Output some of the data for validation
 
     !!  This is needed to pair with the associate clause above
-    end associate ccpp_associate
+  end associate ccpp_associate
 
-  end subroutine vertical_remap_nest
+end subroutine vertical_remap_nest
 
 #endif REMAP
 
-  !==================================================================================================
-  !
-  !  Utility Section  -- After Step 9
-  !
-  !==================================================================================================
+!==================================================================================================
+!
+!  Utility Section  -- After Step 9
+!
+!==================================================================================================
 
-  ! copied from dyn_core.F90 to avoid circular dependencies
-  subroutine init_ijk_mem(i1, i2, j1, j2, km, array, var)
-    integer, intent(in):: i1, i2, j1, j2, km
-    real, intent(inout):: array(i1:i2,j1:j2,km)
-    real, intent(in):: var
-    integer:: i, j, k
+! copied from dyn_core.F90 to avoid circular dependencies
+subroutine init_ijk_mem(i1, i2, j1, j2, km, array, var)
+  integer, intent(in):: i1, i2, j1, j2, km
+  real, intent(inout):: array(i1:i2,j1:j2,km)
+  real, intent(in):: var
+  integer:: i, j, k
 
-    !$OMP parallel do default(none) shared(i1,i2,j1,j2,km,array,var)
-    do k=1,km
-       do j=j1,j2
-          do i=i1,i2
-             array(i,j,k) = var
-          enddo
-       enddo
+  !$OMP parallel do default(none) shared(i1,i2,j1,j2,km,array,var)
+  do k=1,km
+    do j=j1,j2
+      do i=i1,i2
+        array(i,j,k) = var
+      enddo
+    enddo
+  enddo
+
+end subroutine init_ijk_mem
+
+
+function almost_equal(a, b)
+  logical :: almost_equal
+  real, intent(in):: a,b
+
+  real :: tolerance = 0.00001
+
+  if ( abs(a - b) < tolerance ) then
+    almost_equal = .true.
+  else
+    almost_equal = .false.
+  endif
+end function almost_equal
+
+
+! Shifts tile_geo values using the data from fp_super_tile_geo
+subroutine move_nest_geo(tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, delta_i_c, delta_j_c, x_refine, y_refine)
+  implicit none
+  type(grid_geometry), intent(inout)  :: tile_geo
+  type(grid_geometry), intent(inout)  :: tile_geo_u
+  type(grid_geometry), intent(inout)  :: tile_geo_v
+  type(grid_geometry), intent(in)     :: fp_super_tile_geo
+  integer, intent(in)                 :: delta_i_c, delta_j_c, x_refine, y_refine
+
+  integer :: nest_x, nest_y, parent_x, parent_y
+
+  type(bbox)  :: tile_bbox, fp_tile_bbox, tile_bbox_u, tile_bbox_v
+  integer   :: i, j, fp_i, fp_j
+
+  ! tile_geo is cell-centered, at nest refinement
+  ! fp_super_tile_geo is a supergrid, at nest refinement
+
+  call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
+
+  call fill_bbox(tile_bbox, tile_geo%lats)
+  call fill_bbox(tile_bbox_u, tile_geo_u%lats)
+  call fill_bbox(tile_bbox_v, tile_geo_v%lats)
+  call fill_bbox(fp_tile_bbox, fp_super_tile_geo%lats)
+
+  ! Calculate new parent alignment -- supergrid at the refine ratio
+  !  delta_{i,j}_c are at the coarse center grid resolution
+  parent_x = parent_x + delta_i_c * 2 * x_refine
+  parent_y = parent_y + delta_j_c * 2 * y_refine
+
+  ! Brute force repopulation of full tile_geo grids.
+  ! Optimization would be to use EOSHIFT and bring in just leading edge
+  do i = tile_bbox%is, tile_bbox%ie
+    do j = tile_bbox%js, tile_bbox%je
+      fp_i = (i - nest_x) * 2 + parent_x
+      fp_j = (j - nest_y) * 2 + parent_y
+
+      if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
+        if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
+        stop  ! replace with a fatal error
+      endif
+      if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
+        if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
+        stop  ! replace with a fatal error
+      endif
+
+      tile_geo%lats(i,j) = fp_super_tile_geo%lats(fp_i, fp_j)
+      tile_geo%lons(i,j) = fp_super_tile_geo%lons(fp_i, fp_j)
+    enddo
+  enddo
+
+  do i = tile_bbox_u%is, tile_bbox_u%ie
+    do j = tile_bbox_u%js, tile_bbox_u%je
+      fp_i = (i - nest_x) * 2 + parent_x
+      fp_j = (j - nest_y) * 2 + parent_y - 1
+
+      if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
+        if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
+        stop  ! replace with a fatal error
+      endif
+      if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
+        if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
+        stop  ! replace with a fatal error
+      endif
+
+      tile_geo_u%lats(i,j) = fp_super_tile_geo%lats(fp_i, fp_j)
+      tile_geo_u%lons(i,j) = fp_super_tile_geo%lons(fp_i, fp_j)
+    enddo
+  enddo
+
+  do i = tile_bbox_v%is, tile_bbox_v%ie
+    do j = tile_bbox_v%js, tile_bbox_v%je
+      fp_i = (i - nest_x) * 2 + parent_x - 1
+      fp_j = (j - nest_y) * 2 + parent_y
+
+      if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
+        if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
+        stop  ! replace with a fatal error
+      endif
+      if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
+        if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
+        stop  ! replace with a fatal error
+      endif
+
+      tile_geo_v%lats(i,j) = fp_super_tile_geo%lats(fp_i, fp_j)
+      tile_geo_v%lons(i,j) = fp_super_tile_geo%lons(fp_i, fp_j)
+    enddo
+  enddo
+
+  ! Validate at the end
+  call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
+
+end subroutine move_nest_geo
+
+
+subroutine assign_n_p_grids(parent_geo, tile_geo, p_grid, n_grid, position)
+  type(grid_geometry), intent(in)          ::  parent_geo, tile_geo
+  real(kind=R_GRID), allocatable, intent(inout)            :: p_grid(:,:,:)
+  real(kind=R_GRID), allocatable, intent(inout)            :: n_grid(:,:,:)
+  integer, intent(in)                      :: position
+
+  integer :: i,j
+
+  if (position == CENTER) then
+    do j = lbound(tile_geo%lats,2), ubound(tile_geo%lats,2)
+      do i = lbound(tile_geo%lats,1), ubound(tile_geo%lats,1)
+        ! centered grid version
+        n_grid(i, j, 1) = tile_geo%lons(i, j)
+        n_grid(i, j, 2) = tile_geo%lats(i, j)
+        !if (debug_log) print '("[INFO] WDR populate ngrid npe=",I0, I4,I4, F12.4, F12.4)', this_pe, i, j, n_grid(i,j,1), n_grid(i,j,2)
+      enddo
     enddo
 
-  end subroutine init_ijk_mem
-
-
-  function almost_equal(a, b)
-    logical :: almost_equal
-    real, intent(in):: a,b
-
-    real :: tolerance = 0.00001
-
-    if ( abs(a - b) < tolerance ) then
-       almost_equal = .true.
-    else
-       almost_equal = .false.
-    endif
-  end function almost_equal
-
-
-  ! Shifts tile_geo values using the data from fp_super_tile_geo
-  subroutine move_nest_geo(tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, delta_i_c, delta_j_c, x_refine, y_refine)
-    implicit none
-    type(grid_geometry), intent(inout)  :: tile_geo
-    type(grid_geometry), intent(inout)  :: tile_geo_u
-    type(grid_geometry), intent(inout)  :: tile_geo_v
-    type(grid_geometry), intent(in)     :: fp_super_tile_geo
-    integer, intent(in)                 :: delta_i_c, delta_j_c, x_refine, y_refine
-
-    integer :: nest_x, nest_y, parent_x, parent_y
-
-    type(bbox)  :: tile_bbox, fp_tile_bbox, tile_bbox_u, tile_bbox_v
-    integer   :: i, j, fp_i, fp_j
-
-    ! tile_geo is cell-centered, at nest refinement
-    ! fp_super_tile_geo is a supergrid, at nest refinement
-
-    call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
-
-    call fill_bbox(tile_bbox, tile_geo%lats)
-    call fill_bbox(tile_bbox_u, tile_geo_u%lats)
-    call fill_bbox(tile_bbox_v, tile_geo_v%lats)
-    call fill_bbox(fp_tile_bbox, fp_super_tile_geo%lats)
-
-    ! Calculate new parent alignment -- supergrid at the refine ratio
-    !  delta_{i,j}_c are at the coarse center grid resolution
-    parent_x = parent_x + delta_i_c * 2 * x_refine
-    parent_y = parent_y + delta_j_c * 2 * y_refine
-
-    ! Brute force repopulation of full tile_geo grids.
-    ! Optimization would be to use EOSHIFT and bring in just leading edge
-    do i = tile_bbox%is, tile_bbox%ie
-       do j = tile_bbox%js, tile_bbox%je
-          fp_i = (i - nest_x) * 2 + parent_x
-          fp_j = (j - nest_y) * 2 + parent_y
-
-          if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
-             if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
-             stop  ! replace with a fatal error
-          endif
-          if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
-             if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
-             stop  ! replace with a fatal error
-          endif
-
-          tile_geo%lats(i,j) = fp_super_tile_geo%lats(fp_i, fp_j)
-          tile_geo%lons(i,j) = fp_super_tile_geo%lons(fp_i, fp_j)
-       enddo
+    do j = 1, parent_geo%ny
+      do i = 1, parent_geo%nx
+        ! centered grid version
+        p_grid(i, j, 1) = parent_geo%lons(2*i, 2*j)
+        p_grid(i, j, 2) = parent_geo%lats(2*i, 2*j)
+      enddo
     enddo
 
-    do i = tile_bbox_u%is, tile_bbox_u%ie
-       do j = tile_bbox_u%js, tile_bbox_u%je
-          fp_i = (i - nest_x) * 2 + parent_x
-          fp_j = (j - nest_y) * 2 + parent_y - 1
-
-          if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
-             if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
-             stop  ! replace with a fatal error
-          endif
-          if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
-             if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
-             stop  ! replace with a fatal error
-          endif
-
-          tile_geo_u%lats(i,j) = fp_super_tile_geo%lats(fp_i, fp_j)
-          tile_geo_u%lons(i,j) = fp_super_tile_geo%lons(fp_i, fp_j)
-       enddo
+    ! u(npx, npy+1)
+  elseif (position == NORTH) then  ! u wind on D-stagger
+    do j = lbound(tile_geo%lats,2), ubound(tile_geo%lats,2)
+      do i = lbound(tile_geo%lats,1), ubound(tile_geo%lats,1)
+        ! centered grid version
+        n_grid(i, j, 1) = tile_geo%lons(i, j)
+        n_grid(i, j, 2) = tile_geo%lats(i, j)
+        !if (debug_log) print '("[INFO] WDR populate ngrid_u npe=",I0, I4,I4, F12.4, F12.4)', this_pe, i, j, n_grid(i,j,1), n_grid(i,j,2)
+      enddo
     enddo
 
-    do i = tile_bbox_v%is, tile_bbox_v%ie
-       do j = tile_bbox_v%js, tile_bbox_v%je
-          fp_i = (i - nest_x) * 2 + parent_x - 1
-          fp_j = (j - nest_y) * 2 + parent_y
-
-          if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
-             if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
-             stop  ! replace with a fatal error
-          endif
-          if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
-             if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
-             stop  ! replace with a fatal error
-          endif
-
-          tile_geo_v%lats(i,j) = fp_super_tile_geo%lats(fp_i, fp_j)
-          tile_geo_v%lons(i,j) = fp_super_tile_geo%lons(fp_i, fp_j)
-       enddo
+    do j = 1, parent_geo%ny
+      do i = 1, parent_geo%nx
+        ! centered grid version
+        p_grid(i, j, 1) = parent_geo%lons(2*i, 2*j-1)
+        p_grid(i, j, 2) = parent_geo%lats(2*i, 2*j-1)
+      enddo
     enddo
 
-    ! Validate at the end
-    call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
+    ! v(npx+1, npy)
+  elseif (position == EAST) then  ! v wind on D-stagger
+    do j = lbound(tile_geo%lats,2), ubound(tile_geo%lats,2)
+      do i = lbound(tile_geo%lats,1), ubound(tile_geo%lats,1)
+        ! centered grid version
+        n_grid(i, j, 1) = tile_geo%lons(i, j)
+        n_grid(i, j, 2) = tile_geo%lats(i, j)
+        !if (debug_log) print '("[INFO] WDR populate ngrid_v npe=",I0, I4,I4, F12.4, F12.4)', this_pe, i, j, n_grid(i,j,1), n_grid(i,j,2)
+      enddo
+    enddo
 
-  end subroutine move_nest_geo
+    do j = 1, parent_geo%ny
+      do i = 1, parent_geo%nx
+        ! centered grid version
+        p_grid(i, j, 1) = parent_geo%lons(2*i-1, 2*j)
+        p_grid(i, j, 2) = parent_geo%lats(2*i-1, 2*j)
+      enddo
+    enddo
 
+  endif
 
-  subroutine assign_n_p_grids(parent_geo, tile_geo, p_grid, n_grid, position)
-    type(grid_geometry), intent(in)          ::  parent_geo, tile_geo
-    real(kind=R_GRID), allocatable, intent(inout)            :: p_grid(:,:,:)
-    real(kind=R_GRID), allocatable, intent(inout)            :: n_grid(:,:,:)
-    integer, intent(in)                      :: position
-
-    integer :: i,j
-
-    if (position == CENTER) then
-       do j = lbound(tile_geo%lats,2), ubound(tile_geo%lats,2)
-          do i = lbound(tile_geo%lats,1), ubound(tile_geo%lats,1)
-             ! centered grid version
-             n_grid(i, j, 1) = tile_geo%lons(i, j)
-             n_grid(i, j, 2) = tile_geo%lats(i, j)
-             !if (debug_log) print '("[INFO] WDR populate ngrid npe=",I0, I4,I4, F12.4, F12.4)', this_pe, i, j, n_grid(i,j,1), n_grid(i,j,2)
-          enddo
-       enddo
-
-       do j = 1, parent_geo%ny
-          do i = 1, parent_geo%nx
-             ! centered grid version
-             p_grid(i, j, 1) = parent_geo%lons(2*i, 2*j)
-             p_grid(i, j, 2) = parent_geo%lats(2*i, 2*j)
-          enddo
-       enddo
-
-       ! u(npx, npy+1)
-    elseif (position == NORTH) then  ! u wind on D-stagger
-       do j = lbound(tile_geo%lats,2), ubound(tile_geo%lats,2)
-          do i = lbound(tile_geo%lats,1), ubound(tile_geo%lats,1)
-             ! centered grid version
-             n_grid(i, j, 1) = tile_geo%lons(i, j)
-             n_grid(i, j, 2) = tile_geo%lats(i, j)
-             !if (debug_log) print '("[INFO] WDR populate ngrid_u npe=",I0, I4,I4, F12.4, F12.4)', this_pe, i, j, n_grid(i,j,1), n_grid(i,j,2)
-          enddo
-       enddo
-
-       do j = 1, parent_geo%ny
-          do i = 1, parent_geo%nx
-             ! centered grid version
-             p_grid(i, j, 1) = parent_geo%lons(2*i, 2*j-1)
-             p_grid(i, j, 2) = parent_geo%lats(2*i, 2*j-1)
-          enddo
-       enddo
-
-       ! v(npx+1, npy)
-    elseif (position == EAST) then  ! v wind on D-stagger
-       do j = lbound(tile_geo%lats,2), ubound(tile_geo%lats,2)
-          do i = lbound(tile_geo%lats,1), ubound(tile_geo%lats,1)
-             ! centered grid version
-             n_grid(i, j, 1) = tile_geo%lons(i, j)
-             n_grid(i, j, 2) = tile_geo%lats(i, j)
-             !if (debug_log) print '("[INFO] WDR populate ngrid_v npe=",I0, I4,I4, F12.4, F12.4)', this_pe, i, j, n_grid(i,j,1), n_grid(i,j,2)
-          enddo
-       enddo
-
-       do j = 1, parent_geo%ny
-          do i = 1, parent_geo%nx
-             ! centered grid version
-             p_grid(i, j, 1) = parent_geo%lons(2*i-1, 2*j)
-             p_grid(i, j, 2) = parent_geo%lats(2*i-1, 2*j)
-          enddo
-       enddo
-
-    endif
-
-  end subroutine assign_n_p_grids
+end subroutine assign_n_p_grids
 
 
-  !! How should weights for interpolation work?
-  !! When grid is aligned, it's much easier - weights are related to fractional differences
+!! How should weights for interpolation work?
+!! When grid is aligned, it's much easier - weights are related to fractional differences
 
-  subroutine calc_nest_halo_weights(bbox_fine, bbox_coarse, p_grid, n_grid, wt, istart_coarse, jstart_coarse, x_refine, y_refine)
-    implicit none
+subroutine calc_nest_halo_weights(bbox_fine, bbox_coarse, p_grid, n_grid, wt, istart_coarse, jstart_coarse, x_refine, y_refine)
+  implicit none
 
-    type(bbox), intent(in)                       :: bbox_coarse, bbox_fine
-    real(kind=R_GRID), allocatable, intent(in)   :: p_grid(:,:,:), n_grid(:,:,:)
-    real, allocatable, intent(inout)             :: wt(:,:,:)
-    integer, intent(in)                          :: istart_coarse, jstart_coarse, x_refine, y_refine
+  type(bbox), intent(in)                       :: bbox_coarse, bbox_fine
+  real(kind=R_GRID), allocatable, intent(in)   :: p_grid(:,:,:), n_grid(:,:,:)
+  real, allocatable, intent(inout)             :: wt(:,:,:)
+  integer, intent(in)                          :: istart_coarse, jstart_coarse, x_refine, y_refine
 
-    integer       :: i,j, ic, jc
-    real          :: dist1, dist2, dist3, dist4, sum
-    logical       :: verbose = .false.
-    !logical       :: verbose = .true.
+  integer       :: i,j, ic, jc
+  real          :: dist1, dist2, dist3, dist4, sum
+  logical       :: verbose = .false.
+  !logical       :: verbose = .true.
 
-    integer       :: this_pe
+  integer       :: this_pe
 
-    real(kind=R_GRID)  :: pi = 4 * atan(1.0d0)
-    real               :: pi180
-    real               :: rad2deg, deg2rad
+  real(kind=R_GRID)  :: pi = 4 * atan(1.0d0)
+  real               :: pi180
+  real               :: rad2deg, deg2rad
 
-    pi180 = pi / 180.0
-    deg2rad = pi / 180.0
-    rad2deg = 1.0 / pi180
+  pi180 = pi / 180.0
+  deg2rad = pi / 180.0
+  rad2deg = 1.0 / pi180
 
-    this_pe = mpp_pe()
+  this_pe = mpp_pe()
 
-    if ( bbox_coarse%is == 0 .and. bbox_coarse%ie == -1 ) then
-       ! Skip this one
-       if (debug_log) print '("[INFO] WDR skip calc weights npe=",I0)', this_pe
+  if ( bbox_coarse%is == 0 .and. bbox_coarse%ie == -1 ) then
+    ! Skip this one
+    if (debug_log) print '("[INFO] WDR skip calc weights npe=",I0)', this_pe
 
-    else
-       if (debug_log) print '("[INFO] WDR run calc weights npe=",I0)', this_pe
+  else
+    if (debug_log) print '("[INFO] WDR run calc weights npe=",I0)', this_pe
 
-       ! Calculate the bounding parent grid points for the nest grid point
-       ! Rely on the nest being aligned
-       ! code is from $CUBE/tools/fv_grid_tools.F90
-       !
+    ! Calculate the bounding parent grid points for the nest grid point
+    ! Rely on the nest being aligned
+    ! code is from $CUBE/tools/fv_grid_tools.F90
+    !
 
-       do j = bbox_fine%js, bbox_fine%je
-          ! F90 integer division truncates
-          jc = jstart_coarse  + (j + y_refine/2 + 1) / y_refine
-          do i = bbox_fine%is, bbox_fine%ie
-             ic = istart_coarse  + (i + x_refine/2 + 1) / x_refine
+    do j = bbox_fine%js, bbox_fine%je
+      ! F90 integer division truncates
+      jc = jstart_coarse  + (j + y_refine/2 + 1) / y_refine
+      do i = bbox_fine%is, bbox_fine%ie
+        ic = istart_coarse  + (i + x_refine/2 + 1) / x_refine
 
-             if (verbose) then
-                if (debug_log) print '("[INFO] WDR MAP npe=",I0," istart_coarse, jstart_coarse,   ic,if,jc,jf",I3,I3," ",I3,I3,I3,I3)', this_pe, istart_coarse, jstart_coarse,ic,i,jc,j
+        if (verbose) then
+          if (debug_log) print '("[INFO] WDR MAP npe=",I0," istart_coarse, jstart_coarse,   ic,if,jc,jf",I3,I3," ",I3,I3,I3,I3)', this_pe, istart_coarse, jstart_coarse,ic,i,jc,j
 
-                if (debug_log) print '("[INFO] WDR LATLON npe=",I0,"  p_grid(",I3,I3,")",F8.2,F8.2, F8.2)', this_pe, ic, jc, rad2deg*p_grid(ic,jc,1)-360.0 , rad2deg*p_grid(ic,jc,2), rad2deg*p_grid(ic,jc,1)
-                if (debug_log) print '("[INFO] WDR LATLON npe=",I0,"  nest n_grid(",I3,I3,") ",F8.2,F8.2, F8.2)', this_pe, i, j, rad2deg*n_grid(i,j,1)-360.0, rad2deg*n_grid(i,j,2), rad2deg*n_grid(i,j,1)
+          if (debug_log) print '("[INFO] WDR LATLON npe=",I0,"  p_grid(",I3,I3,")",F8.2,F8.2, F8.2)', this_pe, ic, jc, rad2deg*p_grid(ic,jc,1)-360.0 , rad2deg*p_grid(ic,jc,2), rad2deg*p_grid(ic,jc,1)
+          if (debug_log) print '("[INFO] WDR LATLON npe=",I0,"  nest n_grid(",I3,I3,") ",F8.2,F8.2, F8.2)', this_pe, i, j, rad2deg*n_grid(i,j,1)-360.0, rad2deg*n_grid(i,j,2), rad2deg*n_grid(i,j,1)
 
-                if (debug_log) print '("[INFO] WDR LOC npe=",I0,"  -------------------")', this_pe
-                if (debug_log) print '("[INFO] WDR LOC npe=",I0,"  A p_grid(",I3,I3,")",F12.6,F12.6, F12.6)', this_pe, ic, jc, rad2deg*p_grid(ic,jc,1)-360.0, rad2deg*p_grid(ic,jc,2), rad2deg*p_grid(ic,jc,1)
-                if (debug_log) print '("[INFO] WDR LOC npe=",I0,"  B p_grid(",I3,I3,")",F12.6,F12.6, F12.6)', this_pe, ic, jc+1, rad2deg*p_grid(ic,jc+1,1)-360.0, rad2deg*p_grid(ic,jc+1,2), rad2deg*p_grid(ic,jc+1,1)
-                if (debug_log) print '("[INFO] WDR LOC npe=",I0,"  C p_grid(",I3,I3,")",F12.6,F12.6, F12.6)', this_pe, ic+1, jc+1, rad2deg*p_grid(ic+1,jc+1,1)-360.0, rad2deg*p_grid(ic+1,jc+1,2), rad2deg*p_grid(ic+1,jc+1,1)
-                if (debug_log) print '("[INFO] WDR LOC npe=",I0,"  D p_grid(",I3,I3,")",F12.6,F12.6, F12.6)', this_pe, ic+1, jc, rad2deg*p_grid(ic+1,jc,1)-360.0, rad2deg*p_grid(ic+1,jc,2), rad2deg*p_grid(ic+1,jc,1)
-                if (debug_log) print '("[INFO] WDR LOC npe=",I0,"  nest n_grid(",I3,I3,") ",F12.6,F12.6, F12.6)', this_pe, i, j, rad2deg*n_grid(i,j,1)-360.0, rad2deg*n_grid(i,j,2), rad2deg*n_grid(i,j,1)
-             endif
+          if (debug_log) print '("[INFO] WDR LOC npe=",I0,"  -------------------")', this_pe
+          if (debug_log) print '("[INFO] WDR LOC npe=",I0,"  A p_grid(",I3,I3,")",F12.6,F12.6, F12.6)', this_pe, ic, jc, rad2deg*p_grid(ic,jc,1)-360.0, rad2deg*p_grid(ic,jc,2), rad2deg*p_grid(ic,jc,1)
+          if (debug_log) print '("[INFO] WDR LOC npe=",I0,"  B p_grid(",I3,I3,")",F12.6,F12.6, F12.6)', this_pe, ic, jc+1, rad2deg*p_grid(ic,jc+1,1)-360.0, rad2deg*p_grid(ic,jc+1,2), rad2deg*p_grid(ic,jc+1,1)
+          if (debug_log) print '("[INFO] WDR LOC npe=",I0,"  C p_grid(",I3,I3,")",F12.6,F12.6, F12.6)', this_pe, ic+1, jc+1, rad2deg*p_grid(ic+1,jc+1,1)-360.0, rad2deg*p_grid(ic+1,jc+1,2), rad2deg*p_grid(ic+1,jc+1,1)
+          if (debug_log) print '("[INFO] WDR LOC npe=",I0,"  D p_grid(",I3,I3,")",F12.6,F12.6, F12.6)', this_pe, ic+1, jc, rad2deg*p_grid(ic+1,jc,1)-360.0, rad2deg*p_grid(ic+1,jc,2), rad2deg*p_grid(ic+1,jc,1)
+          if (debug_log) print '("[INFO] WDR LOC npe=",I0,"  nest n_grid(",I3,I3,") ",F12.6,F12.6, F12.6)', this_pe, i, j, rad2deg*n_grid(i,j,1)-360.0, rad2deg*n_grid(i,j,2), rad2deg*n_grid(i,j,1)
+        endif
 
-             ! dist2side_latlon takes points in longitude-latitude coordinates.
-             dist1 = dist2side_latlon(p_grid(ic,jc,:),     p_grid(ic,jc+1,:),   n_grid(i,j,:))
+        ! dist2side_latlon takes points in longitude-latitude coordinates.
+        dist1 = dist2side_latlon(p_grid(ic,jc,:),     p_grid(ic,jc+1,:),   n_grid(i,j,:))
 
-             if (verbose) then
-                if (debug_log) print '("[INFO] WDR LATLON npe=",I0," dist1=",F9.4," p_grid(",I3,I3,")=",F9.4,F9.4," p_grid(",I3,I3,")=",F9.4,F9.4," n_grid(",I3,I3,")=",F9.4,F9.4)', this_pe, dist1, ic, jc, rad2deg*p_grid(ic,jc,1)-360.0,  rad2deg*p_grid(ic,jc,2),  ic, jc+1, rad2deg*p_grid(ic,jc+1,1)-360.0,  rad2deg*p_grid(ic,jc+1,2), i, j, rad2deg*n_grid(i,j,1)-360.0,  rad2deg*n_grid(i,j,2)
-             endif
-             dist2 = dist2side_latlon(p_grid(ic,jc+1,:),   p_grid(ic+1,jc+1,:), n_grid(i,j,:))
-             dist3 = dist2side_latlon(p_grid(ic+1,jc+1,:), p_grid(ic+1,jc,:),   n_grid(i,j,:))
-             dist4 = dist2side_latlon(p_grid(ic,jc,:),     p_grid(ic+1,jc,:),   n_grid(i,j,:))
+        if (verbose) then
+          if (debug_log) print '("[INFO] WDR LATLON npe=",I0," dist1=",F9.4," p_grid(",I3,I3,")=",F9.4,F9.4," p_grid(",I3,I3,")=",F9.4,F9.4," n_grid(",I3,I3,")=",F9.4,F9.4)', this_pe, dist1, ic, jc, rad2deg*p_grid(ic,jc,1)-360.0,  rad2deg*p_grid(ic,jc,2),  ic, jc+1, rad2deg*p_grid(ic,jc+1,1)-360.0,  rad2deg*p_grid(ic,jc+1,2), i, j, rad2deg*n_grid(i,j,1)-360.0,  rad2deg*n_grid(i,j,2)
+        endif
+        dist2 = dist2side_latlon(p_grid(ic,jc+1,:),   p_grid(ic+1,jc+1,:), n_grid(i,j,:))
+        dist3 = dist2side_latlon(p_grid(ic+1,jc+1,:), p_grid(ic+1,jc,:),   n_grid(i,j,:))
+        dist4 = dist2side_latlon(p_grid(ic,jc,:),     p_grid(ic+1,jc,:),   n_grid(i,j,:))
 
-             !if (debug_log) print '("[INFO] WDR LATLON npe=",I0,"  dists at (",I3,I3,"): dist: ",F12.4, F12.4, F12.4, F12.4)', this_pe, i, j, dist1*RADIUS, dist2*RADIUS, dist3*RADIUS, dist4*RADIUS
-             if (verbose) then
-                if (debug_log) print '("[INFO] WDR LATLON npe=",I0,"  dists at (",I3,I3,"): dist: ",F12.4, F12.4, F12.4, F12.4)', this_pe, i, j, dist1, dist2, dist3, dist4
-             endif
+        !if (debug_log) print '("[INFO] WDR LATLON npe=",I0,"  dists at (",I3,I3,"): dist: ",F12.4, F12.4, F12.4, F12.4)', this_pe, i, j, dist1*RADIUS, dist2*RADIUS, dist3*RADIUS, dist4*RADIUS
+        if (verbose) then
+          if (debug_log) print '("[INFO] WDR LATLON npe=",I0,"  dists at (",I3,I3,"): dist: ",F12.4, F12.4, F12.4, F12.4)', this_pe, i, j, dist1, dist2, dist3, dist4
+        endif
 
-             wt(i,j,1)=dist2*dist3      ! ic,   jc    weight
-             wt(i,j,2)=dist3*dist4      ! ic,   jc+1  weight
-             wt(i,j,3)=dist4*dist1      ! ic+1, jc+1  weight
-             wt(i,j,4)=dist1*dist2      ! ic+1, jc    weight
+        wt(i,j,1)=dist2*dist3      ! ic,   jc    weight
+        wt(i,j,2)=dist3*dist4      ! ic,   jc+1  weight
+        wt(i,j,3)=dist4*dist1      ! ic+1, jc+1  weight
+        wt(i,j,4)=dist1*dist2      ! ic+1, jc    weight
 
-             sum=wt(i,j,1)+wt(i,j,2)+wt(i,j,3)+wt(i,j,4)
-             wt(i,j,:)=wt(i,j,:)/sum
+        sum=wt(i,j,1)+wt(i,j,2)+wt(i,j,3)+wt(i,j,4)
+        wt(i,j,:)=wt(i,j,:)/sum
 
-             if (verbose) then
-                if (debug_log) print '("[INFO] WDR LATLON npe=",I0,"  sum (",I3,I3,"): ",F12.2,"  wt: ",F12.6, F12.6, F12.6, F12.6)', this_pe, i, j, sum, wt(i,j,1), wt(i,j,2), wt(i,j,3), wt(i,j,4)
-             endif
+        if (verbose) then
+          if (debug_log) print '("[INFO] WDR LATLON npe=",I0,"  sum (",I3,I3,"): ",F12.2,"  wt: ",F12.6, F12.6, F12.6, F12.6)', this_pe, i, j, sum, wt(i,j,1), wt(i,j,2), wt(i,j,3), wt(i,j,4)
+        endif
 
-          enddo
-       enddo
-    endif
+      enddo
+    enddo
+  endif
 
-    if (debug_log) print '("[INFO] WDR DONE calc weights npe=",I0)', this_pe
+  if (debug_log) print '("[INFO] WDR DONE calc weights npe=",I0)', this_pe
 
-  end subroutine calc_nest_halo_weights
+end subroutine calc_nest_halo_weights
 
 #endif ! MOVING_NEST
 
 end module fv_moving_nest_mod
+
