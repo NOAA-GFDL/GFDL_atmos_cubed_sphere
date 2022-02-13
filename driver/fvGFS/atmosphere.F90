@@ -160,18 +160,21 @@ use mpp_mod,                only: mpp_error, stdout, FATAL, WARNING, NOTE, &
                                   input_nml_file, mpp_root_pe,    &
                                   mpp_npes, mpp_pe, mpp_chksum,   &
                                   mpp_get_current_pelist,         &
-                                  mpp_set_current_pelist, mpp_sync
+                                  mpp_set_current_pelist,         &
+                                  mpp_sync, mpp_sync_self, mpp_send, mpp_recv
 use mpp_parameter_mod,      only: EUPDATE, WUPDATE, SUPDATE, NUPDATE
-use mpp_domains_mod,        only: domain2d, mpp_update_domains
+use mpp_domains_mod,        only: CENTER, CORNER, NORTH, EAST, WEST, SOUTH
+use mpp_domains_mod,        only: domain2d, mpp_update_domains, mpp_global_field
+use mpp_domains_mod,        only: mpp_get_data_domain, mpp_get_compute_domain, mpp_get_global_domain
 use xgrid_mod,              only: grid_box_type
 use field_manager_mod,      only: MODEL_ATMOS
 use tracer_manager_mod,     only: get_tracer_index, get_number_tracers, &
                                   NO_TRACER, get_tracer_names
 use DYCORE_typedefs,        only: DYCORE_data_type
 #ifdef GFS_TYPES
-use GFS_typedefs,           only: IPD_data_type => GFS_data_type, kind_phys
+use GFS_typedefs,           only: IPD_data_type => GFS_data_type, IPD_control_type => GFS_control_type, kind_phys
 #else
-use IPD_typedefs,           only: IPD_data_type, kind_phys => IPD_kind_phys
+use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => IPD_kind_phys
 #endif
 use fv_iau_mod,             only: IAU_external_data_type
 #ifdef MULTI_GASES
@@ -187,6 +190,7 @@ use fv_eta_mod,         only: get_eta_level
 use fv_fill_mod,        only: fill_gfs
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
+use boundary_mod,       only: fill_nested_grid
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
 #ifdef MOVING_NEST
 use fv_diagnostics_mod, only: fv_diag_tracker
@@ -195,7 +199,7 @@ use fv_tracker_mod,     only: fv_tracker_init, fv_tracker_center, fv_tracker_pos
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
-use fv_mp_mod,          only: is_master
+use fv_mp_mod,          only: is_master, tile_fine
 use fv_sg_mod,          only: fv_subgrid_z
 use fv_update_phys_mod, only: fv_update_phys
 use fv_io_mod,          only: fv_io_register_nudge_restart
@@ -203,7 +207,6 @@ use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_
 use fv_regional_mod,    only: start_regional_restart, read_new_bc_data, &
                               a_step, p_step, current_time_in_seconds
 use fv_grid_utils_mod,  only: g_sum
-use mpp_domains_mod, only:  mpp_get_data_domain, mpp_get_compute_domain
 use coarse_graining_mod, only: coarse_graining_init
 use coarse_grained_diagnostics_mod, only: fv_coarse_diag_init, fv_coarse_diag
 use coarse_grained_restart_files_mod, only: fv_coarse_restart_init
@@ -233,6 +236,9 @@ public :: atmosphere_resolution,   atmosphere_grid_bdry,         &
 
 !--- physics/radiation data exchange routines
 public :: atmos_phys_driver_statein
+
+!--- coupling data exchange routines
+public :: atmosphere_fill_nest_cpl
 
 !-----------------------------------------------------------------------
 ! version number of this module
@@ -966,19 +972,17 @@ contains
 !! the "domain2d" variable associated with the coupling grid and the
 !! decomposition for the current cubed-sphere tile.
 !>@detail Coupling is done using the mass/temperature grid with no halos.
- subroutine atmosphere_domain ( fv_domain, layout, regional, nested, is_moving_nest, ngrids_atmos, mygrid_atmos, pelist )
+ subroutine atmosphere_domain ( fv_domain, layout, regional, nested, moving_nesting, ngrids_atmos, mygrid_atmos, pelist )
    type(domain2d), intent(out) :: fv_domain
    integer, intent(out) :: layout(2)
    logical, intent(out) :: regional
    logical, intent(out) :: nested
-   logical, intent(out) :: is_moving_nest
+   logical, intent(out) :: moving_nesting
    integer, intent(out) :: ngrids_atmos
    integer, intent(out) :: mygrid_atmos
    integer, pointer, intent(out) :: pelist(:)
-!  returns the domain2d variable associated with the coupling grid
-!  note: coupling is done using the mass/temperature grid with no halos
 
-   integer :: child_grid_num
+   integer :: n
 
    fv_domain = Atm(mygrid)%domain_for_coupler
    layout(1:2) =  Atm(mygrid)%layout(1:2)
@@ -989,21 +993,24 @@ contains
    call set_atmosphere_pelist()
    pelist => Atm(mygrid)%pelist
 
-   is_moving_nest = .False.
+   moving_nesting = .false.
 
 #ifdef MOVING_NEST
-    ! This will need to be looked up on each PE when multiple and telescoped nests are enabled.
-    child_grid_num = 2
+   ! Currently, the moving nesting configuration only supports one parent (global
+   ! or regional) with one moving nest. And moving_nesting is set to .true. if
+   ! the grid is a moving nest or if the grid has a moving nest child.
+   ! This will need to be revisited when multiple and telescoping moving nests are enabled.
 
-    if (size(Atm) .gt. 1) then
-       is_moving_nest = Atm(child_grid_num)%neststruct%is_moving_nest
-    else
-       is_moving_nest = .False.
-    endif
+   ! Set moving_nesting to true if this is a moving nest
+   if ( Atm(mygrid)%neststruct%is_moving_nest ) moving_nesting = .true.
+   ! Set moving_nesting to true if any nest is a moving nest
+   do n=2,ngrids
+     if ( mygrid == Atm(n)%parent_grid%grid_number .and. &
+          Atm(n)%neststruct%is_moving_nest ) then
+       moving_nesting = .true.
+     endif
+   enddo
 #endif MOVING_NEST
-
-    !print '("[INFO] WDR MMM3 atmosphere_domain() npe=",I0, " is_moving_nest=",L1)', mpp_pe(), is_moving_nest
-
 
  end subroutine atmosphere_domain
 
@@ -2401,5 +2408,147 @@ contains
    endif
 
  end subroutine atmos_phys_qdt_diag
+
+!>@brief The subroutine 'atmosphere_fill_grid_cpl' is to downscale/pass the
+!! coupling variables (e.g., sea surface temperature) received by the parent grid
+!! down into the nested grid(s).
+!>@details First the coupling field(s) is retreived from the IPD_data structure,
+!! and then loops through nested grids and call the fill_nest_grid_cpl to actually
+!! communicate and fill the nested grid(s) for coupling variables from its parent.
+!! After that the updated coupling field(s) is put back to the IPD_data structure.
+!! Note: Currently, only sea surface temperature is passed down into the nest(s).
+  subroutine atmosphere_fill_nest_cpl(Atm_block, IPD_control, IPD_data)
+    type(block_control_type), intent(in) :: Atm_block     !< Physics block layout
+    type(IPD_control_type), intent(in)   :: IPD_control   !< Physics metadata
+    type(IPD_data_type), intent(inout)   :: IPD_data(:)   !< Physics variable data
+
+    integer :: nb, blen, ix, i, j, n
+    character*255 :: message
+
+    ! Deal with tsfco (sea surface temperature)
+    if (IPD_control%cplocn2atm) then
+      ! Extract the coupling field
+      do nb = 1,Atm_block%nblks
+        blen = Atm_block%blksz(nb)
+        do ix = 1, blen
+          i = Atm_block%index(nb)%ii(ix)
+          j = Atm_block%index(nb)%jj(ix)
+          Atm(mygrid)%downcpl2d(i,j) = IPD_Data(nb)%Sfcprop%tsfco(ix)
+        enddo
+      enddo
+      ! Loop through and fill all nested grids
+      do n=2,ngrids
+        if (n==mygrid .or. mygrid==Atm(n)%parent_grid%grid_number) then
+          call fill_nested_grid_cpl(n, n==mygrid)
+        endif
+      enddo
+      ! Update the nested grids
+      if (Atm(mygrid)%neststruct%nested) then
+        do nb = 1,Atm_block%nblks
+          blen = Atm_block%blksz(nb)
+          do ix = 1, blen
+            i = Atm_block%index(nb)%ii(ix)
+            j = Atm_block%index(nb)%jj(ix)
+            if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
+              IPD_data(nb)%Sfcprop%tsfco(ix) = Atm(mygrid)%downcpl2d(i,j)
+            endif
+          enddo
+        enddo
+      endif
+    endif
+
+!   ! Deal with zorlwav (sea surface roughness length)
+!   if (IPD_control%cplwav2atm) then
+!     ! Extract the coupling field
+!     do nb = 1,Atm_block%nblks
+!       blen = Atm_block%blksz(nb)
+!       do ix = 1, blen
+!         i = Atm_block%index(nb)%ii(ix)
+!         j = Atm_block%index(nb)%jj(ix)
+!         Atm(mygrid)%downcpl2d(i,j) = IPD_Data(nb)%Sfcprop%zorlwav(ix)
+!       enddo
+!     enddo
+!     ! Loop through and fill all nested grids
+!     do n=2,ngrids
+!       if (n==mygrid .or. mygrid==Atm(n)%parent_grid%grid_number) then
+!         call fill_nested_grid_cpl(n, n==mygrid)
+!       endif
+!     enddo
+!     ! Update the nested grids
+!     if (Atm(grid)%neststruct%nested) then
+!       do nb = 1,Atm_block%nblks
+!         blen = Atm_block%blksz(nb)
+!         do ix = 1, blen
+!           i = Atm_block%index(nb)%ii(ix)
+!           j = Atm_block%index(nb)%jj(ix)
+!           if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
+!             IPD_data(nb)%Sfcprop%zorlwav(ix) = Atm(mygrid)%downcpl2d(i,j)
+!           ! IPD_data(nb)%Sfcprop%zorlw(ix) = Atm(mygrid)%downcpl2d(i,j)
+!           endif
+!         enddo
+!       enddo
+!     endif
+!   endif
+
+  end subroutine atmosphere_fill_nest_cpl
+
+!>@brief The subroutine 'fill_nested_grid_cpl' fills the nested grid for
+!! coupling variables from its parent grid
+!>@details Fill downcpl2d on the nested grid with values from its parent.
+  subroutine fill_nested_grid_cpl(this_grid, proc_in)
+    integer, intent(in) :: this_grid
+    logical, intent(in), optional :: proc_in
+
+    real, allocatable :: g_dat(:,:,:)
+    integer :: p, sending_proc
+    integer :: isd_p, ied_p, jsd_p, jed_p
+    integer :: isg, ieg, jsg, jeg
+    integer :: isc, iec, jsc, jec
+    logical :: process
+    character*255 :: message
+
+    process = .true.
+    if (present(proc_in)) then
+       process = proc_in
+    else
+       process = .true.
+    endif
+
+    call mpp_get_global_domain(Atm(this_grid)%parent_grid%domain, isg, ieg, jsg, jeg)
+    call mpp_get_data_domain(Atm(this_grid)%parent_grid%domain, isd_p, ied_p, jsd_p, jed_p)
+    call mpp_get_compute_domain(Atm(this_grid)%domain, isc, iec, jsc, jec)
+    allocate( g_dat(isg:ieg, jsg:jeg, 1) )
+
+  ! call prt_maxmin('downcpl2d', Atm(this_grid)%downcpl2d, isc, iec, jsc, jec, Atm(this_grid)%ng, 1, 1.)
+    call timing_on('COMM_TOTAL')
+    sending_proc = Atm(this_grid)%parent_grid%pelist(1) + &
+                   ( Atm(this_grid)%neststruct%parent_tile-tile_fine(Atm(this_grid)%parent_grid%grid_number)+ &
+                     Atm(this_grid)%parent_grid%flagstruct%ntiles-1 )*Atm(this_grid)%parent_grid%npes_per_tile
+   !if (Atm(this_grid)%neststruct%parent_proc .and. Atm(this_grid)%neststruct%parent_tile == Atm(this_grid)%parent_grid%global_tile) then
+    if (Atm(this_grid)%neststruct%parent_tile == Atm(this_grid)%parent_grid%global_tile) then
+      call mpp_global_field(Atm(this_grid)%parent_grid%domain, &
+                            Atm(this_grid)%parent_grid%downcpl2d(isd_p:ied_p,jsd_p:jed_p), &
+                            g_dat(isg:,jsg:,1), position=CENTER)
+      if (mpp_pe() == sending_proc) then
+        do p=1,size(Atm(this_grid)%pelist)
+          call mpp_send(g_dat, size(g_dat), Atm(this_grid)%pelist(p))
+        enddo
+      endif
+    endif
+    if (any(Atm(this_grid)%pelist == mpp_pe())) then
+      call mpp_recv(g_dat, size(g_dat), sending_proc)
+    endif
+    call timing_off('COMM_TOTAL')
+    if (process) then
+      call fill_nested_grid(Atm(this_grid)%downcpl2d, g_dat(isg:,jsg:,1), &
+                            Atm(this_grid)%neststruct%ind_h, Atm(this_grid)%neststruct%wt_h, &
+                            0, 0, isg, ieg, jsg, jeg, Atm(this_grid)%bd)
+    endif
+  ! call prt_maxmin('downcpl2d', Atm(this_grid)%downcpl2d, isc, iec, jsc, jec, Atm(this_grid)%ng, 1, 1.)
+
+    call mpp_sync_self
+    deallocate(g_dat)
+
+  end subroutine fill_nested_grid_cpl
 
 end module atmosphere_mod

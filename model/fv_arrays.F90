@@ -1422,8 +1422,10 @@ use IPD_typedefs,           only: kind_phys => IPD_kind_phys
 
     logical :: tracker_havefix = .false. !< True = storm fix locations are valid
     logical :: tracker_gave_up = .false. !< True = inline tracker gave up on tracking the storm
-
 #endif
+
+! For downscaling coupling variables from parent to nested grids
+    real, _ALLOCATABLE :: downcpl2d(:,:) _NULL !< temporary 2d arrary for downscaling coupling variables
 
 ! For phys coupling:
     real, _ALLOCATABLE :: u_srf(:,:)    _NULL  !< Surface u-wind
@@ -1672,6 +1674,8 @@ contains
     allocate ( Atm%tracker_angle(is:ie,js:je) )
     allocate ( Atm%tracker_fixes(is:ie,js:je) )
 #endif
+
+    allocate ( Atm%downcpl2d(isd:ied,jsd:jed) )
 
     allocate ( Atm%u_srf(is:ie,js:je) )
     allocate ( Atm%v_srf(is:ie,js:je) )
@@ -2080,6 +2084,8 @@ contains
     deallocate ( Atm%v10m )
     deallocate ( Atm%slp )
 #endif
+
+    deallocate ( Atm%downcpl2d )
 
     deallocate ( Atm%u_srf )
     deallocate ( Atm%v_srf )

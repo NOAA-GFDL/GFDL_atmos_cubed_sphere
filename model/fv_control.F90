@@ -222,7 +222,7 @@ module fv_control_mod
 
 #ifdef MOVING_NEST
      ! Moving Nest Namelist Variables
-     logical, dimension(MAX_NNEST) :: is_moving_nest = .False.
+     logical, dimension(MAX_NNEST) :: is_moving_nest = .false.
      character(len=120)            :: surface_dir = "INPUT/moving_nest"
      integer, dimension(MAX_NNEST) :: terrain_smoother = 1  ! 0 -- all high-resolution data, 1 - static nest smoothing algorithm, 5 - 5 point smoother, 9 - 9 point smoother
      integer, dimension(MAX_NNEST) :: vortex_tracker = 0 ! 0 - not a moving nest, tracker not needed

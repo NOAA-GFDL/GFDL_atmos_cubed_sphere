@@ -173,7 +173,7 @@ module fv_moving_nest_main_mod
   integer :: id_movnest1, id_movnest1_9, id_movnest2, id_movnest3, id_movnest4, id_movnest5
   integer :: id_movnest6, id_movnest7_0, id_movnest7_1, id_movnest7_2, id_movnest7_3, id_movnest8, id_movnest9
   integer :: id_movnestTot
-  logical :: use_timers = .False. ! Set this to true for detailed performance profiling.  False only profiles total moving nest time.
+  logical :: use_timers = .false. ! Set this to true for detailed performance profiling.  False only profiles total moving nest time.
   integer, save :: output_step = 0
 
 
