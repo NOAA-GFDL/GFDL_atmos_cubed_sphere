@@ -115,7 +115,7 @@ module fv_moving_nest_main_mod
       mn_prog_dump_to_netcdf, mn_prog_shift_data
   !      Physics variable routines
   use fv_moving_nest_physics_mod, only: mn_phys_fill_intern_nest_halos, mn_phys_fill_nest_halos_from_parent, &
-      mn_phys_dump_to_netcdf, mn_phys_shift_data, mn_phys_reset_sfc_props
+      mn_phys_dump_to_netcdf, mn_phys_shift_data, mn_phys_reset_sfc_props, move_nsst
 
   !      Metadata routines
   use fv_moving_nest_mod,         only: mn_meta_move_nest, mn_meta_recalc, mn_meta_reset_gridstruct, mn_shift_index
@@ -602,6 +602,8 @@ contains
     if (first_nest_move) then
       if (debug_log) print '("[INFO] WDR Start Clocks npe=",I0," n=",I0)', this_pe, n
       call fv_moving_nest_init_clocks()
+
+      move_nsst = IPD_Control%nst_anl
 
       ! This will only allocate the mn_prog and mn_phys for the active Atm(n), not all of them
       !  The others can safely remain unallocated.
