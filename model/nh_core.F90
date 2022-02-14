@@ -51,6 +51,7 @@ module nh_core_mod
    use nh_utils_mod,      only: sim_solver, sim1_solver, sim3_solver
    use nh_utils_mod,      only: sim3p0_solver, rim_2d
    use nh_utils_mod,      only: Riem_Solver_c
+   use forpy_mod
 
    implicit none
    private
