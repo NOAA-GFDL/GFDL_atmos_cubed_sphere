@@ -603,7 +603,13 @@ contains
       if (debug_log) print '("[INFO] WDR Start Clocks npe=",I0," n=",I0)', this_pe, n
       call fv_moving_nest_init_clocks()
 
-      move_nsst = IPD_Control%nst_anl
+      ! If NSST is turned off, do not move the NSST variables.
+      !  Namelist switches are confusing; this should be the correct way to distinguish, not using nst_anl
+      if (IPD_Control%nstf_name(1) == 0) then
+        move_nsst=.false.
+      else
+        move_nsst=.true.
+      endif
 
       ! This will only allocate the mn_prog and mn_phys for the active Atm(n), not all of them
       !  The others can safely remain unallocated.
