@@ -972,12 +972,15 @@ contains
 !! the "domain2d" variable associated with the coupling grid and the
 !! decomposition for the current cubed-sphere tile.
 !>@detail Coupling is done using the mass/temperature grid with no halos.
- subroutine atmosphere_domain ( fv_domain, layout, regional, nested, moving_nesting, ngrids_atmos, mygrid_atmos, pelist )
+ subroutine atmosphere_domain ( fv_domain, layout, regional, nested, &
+                                moving_nest_parent, is_moving_nest, &
+                                ngrids_atmos, mygrid_atmos, pelist )
    type(domain2d), intent(out) :: fv_domain
    integer, intent(out) :: layout(2)
    logical, intent(out) :: regional
    logical, intent(out) :: nested
-   logical, intent(out) :: moving_nesting
+   logical, intent(out) :: moving_nest_parent
+   logical, intent(out) :: is_moving_nest
    integer, intent(out) :: ngrids_atmos
    integer, intent(out) :: mygrid_atmos
    integer, pointer, intent(out) :: pelist(:)
@@ -993,21 +996,21 @@ contains
    call set_atmosphere_pelist()
    pelist => Atm(mygrid)%pelist
 
-   moving_nesting = .false.
+   moving_nest_parent = .false.
+   is_moving_nest = .false.
 
 #ifdef MOVING_NEST
    ! Currently, the moving nesting configuration only supports one parent (global
-   ! or regional) with one moving nest. And moving_nesting is set to .true. if
-   ! the grid is a moving nest or if the grid has a moving nest child.
+   ! or regional) with one moving nest.
    ! This will need to be revisited when multiple and telescoping moving nests are enabled.
 
-   ! Set moving_nesting to true if this is a moving nest
-   if ( Atm(mygrid)%neststruct%is_moving_nest ) moving_nesting = .true.
-   ! Set moving_nesting to true if any nest is a moving nest
+   ! Set is_moving_nest to true if this is a moving nest
+   is_moving_nest = Atm(mygrid)%neststruct%is_moving_nest
+   ! Set parent_of_moving_nest to true if it has a moving nest child
    do n=2,ngrids
      if ( mygrid == Atm(n)%parent_grid%grid_number .and. &
           Atm(n)%neststruct%is_moving_nest ) then
-       moving_nesting = .true.
+       moving_nest_parent = .true.
      endif
    enddo
 #endif MOVING_NEST
