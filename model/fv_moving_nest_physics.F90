@@ -204,11 +204,11 @@ contains
         !  Land Sea Mask has values of 0 for oceans/lakes, 1 for land, 2 for sea ice
         !  TODO figure out what ifd should be for sea ice
         if (mn_static%ls_mask_grid(i_idx, j_idx) .eq. 1 ) then
-          IPD_data(nb)%Sfcprop%ifd(ix) = 0         ! Land
+          if (move_nsst) IPD_data(nb)%Sfcprop%ifd(ix) = 0         ! Land
           IPD_data(nb)%Sfcprop%oceanfrac(ix) = 0   ! Land -- TODO permit fractions
           IPD_data(nb)%Sfcprop%landfrac(ix) = 1    ! Land -- TODO permit fractions
         else
-          IPD_data(nb)%Sfcprop%ifd(ix) = 1         ! Ocean
+          if (move_nsst) IPD_data(nb)%Sfcprop%ifd(ix) = 1         ! Ocean
           IPD_data(nb)%Sfcprop%oceanfrac(ix) = 1   ! Ocean -- TODO permit fractions
           IPD_data(nb)%Sfcprop%landfrac(ix) = 0    ! Ocean -- TODO permit fractions
         endif
@@ -225,7 +225,7 @@ contains
           ! Water soil type == lake, etc. -- override the other variables and make this water
           !print '("WDR mn_phys_reset_sfc_props LAKE SOIL npe=",I0," x,y=",I0,",",I0)', mpp_pe(), i_idx, j_idx
 
-          IPD_data(nb)%Sfcprop%ifd(ix) = 1         ! Ocean
+          if (move_nsst) IPD_data(nb)%Sfcprop%ifd(ix) = 1         ! Ocean
           IPD_data(nb)%Sfcprop%oceanfrac(ix) = 1   ! Ocean -- TODO permit fractions
           IPD_data(nb)%Sfcprop%landfrac(ix) = 0    ! Ocean -- TODO permit fractions
 
