@@ -730,10 +730,23 @@ contains
 !-------------------
 ! Time-dependent lon-lat (moving nest) [Ahern, AOML/HRD]
 !-------------------
+       id_mlon  = register_diag_field ( trim(field), 'grid_mlon', (/id_x,id_y/), Time, &
+                                       'longitude', 'degrees_E' )
+       id_mlat  = register_diag_field ( trim(field), 'grid_mlat', (/id_x,id_y/), Time, &
+                                       'latitude', 'degrees_N' )
        id_mlont = register_diag_field ( trim(field), 'grid_mlont', (/id_xt,id_yt/), Time, &
-            'longitude', 'degrees_E' )
+                                       'longitude', 'degrees_E' )
        id_mlatt = register_diag_field ( trim(field), 'grid_mlatt', (/id_xt,id_yt/), Time, &
-            'latitude', 'degrees_N' )
+                                       'latitude', 'degrees_N' )
+       id_marea = register_diag_field ( trim(field), 'marea', axes(1:2), Time, &
+                                        'cell area', 'm**2' )
+       if (id_marea > 0) then
+         call diag_field_add_attribute (id_marea, 'cell_methods', 'area: sum')
+       endif
+       id_mdx = register_diag_field ( trim(field), 'mdx', (/id_xt,id_y/), Time, &
+                                      'dx', 'm')
+       id_mdy = register_diag_field ( trim(field), 'mdy', (/id_x,id_yt/), Time, &
+                                      'dy', 'm')
 #endif
 !-------------------
 ! Surface pressure
@@ -1582,6 +1595,7 @@ contains
     integer :: isd, ied, jsd, jed, npz, itrac
     integer :: ngc, nwater
 
+    real, allocatable :: dx(:,:), dy(:,:)
     real, allocatable :: a2(:,:),a3(:,:,:),a4(:,:,:), wk(:,:,:), wz(:,:,:), ucoor(:,:,:), vcoor(:,:,:)
     real, allocatable :: ustm(:,:), vstm(:,:)
     real, allocatable :: slp(:,:), depress(:,:), ws_max(:,:), tc_count(:,:)
@@ -1822,8 +1836,23 @@ contains
 #endif
 #ifdef MOVING_NEST
        ! send current lon/lat data for moving nest/grid [Ahern, AOML/HRD]
-       if(id_mlont > 0) used=send_data(id_mlont, rad2deg*Atm(n)%gridstruct%agrid(isc:iec,jsc:jec,1), Time)
-       if(id_mlatt > 0) used=send_data(id_mlatt, rad2deg*Atm(n)%gridstruct%agrid(isc:iec,jsc:jec,2), Time)
+       if (id_mlon  > 0) used = send_data(id_mlon,  rad2deg*Atm(n)%gridstruct%grid(isc:iec+1,jsc:jec+1,1), Time)
+       if (id_mlat  > 0) used = send_data(id_mlat,  rad2deg*Atm(n)%gridstruct%grid(isc:iec+1,jsc:jec+1,2), Time)
+       if (id_mlont > 0) used = send_data(id_mlont, rad2deg*Atm(n)%gridstruct%agrid(isc:iec,jsc:jec,1), Time)
+       if (id_mlatt > 0) used = send_data(id_mlatt, rad2deg*Atm(n)%gridstruct%agrid(isc:iec,jsc:jec,2), Time)
+       if (id_marea > 0) used = send_data(id_marea, Atm(n)%gridstruct%area(isc:iec,jsc:jec), Time)
+       if (id_mdx > 0) then
+         allocate(dx(isc:iec+1,jsc:jec+1))
+         dx(isc:iec,jsc:jec+1) = Atm(n)%gridstruct%dx(isc:iec,jsc:jec+1)
+         used = send_data(id_mdx, dx, Time)
+         deallocate(dx)
+       endif
+       if (id_mdy > 0) then
+         allocate(dy(isc:iec+1,jsc:jec+1))
+         dy(isc:iec+1,jsc:jec) = Atm(n)%gridstruct%dy(isc:iec+1,jsc:jec)
+         used = send_data(id_mdy, dy, Time)
+         deallocate(dy)
+       endif
 #endif
        if(id_ps > 0) used=send_data(id_ps, Atm(n)%ps(isc:iec,jsc:jec), Time)
 
