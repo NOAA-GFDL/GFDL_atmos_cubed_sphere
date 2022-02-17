@@ -184,7 +184,8 @@
       integer :: Nsolitons = 1, n_bub = 1
       real    :: soliton_size = 750.e3, soliton_Umax = 50.
       integer :: t_profile = 0, q_profile = 0, ws_profile = 0, do_coriolis = 0, bubble_type = 0
-      real    :: bubble_t = 2., bubble_q = 0., bubble_rad = 10.0E3, bubble_zc = 1.4E3
+      real    :: bubble_t = 2., bubble_q = 0., bubble_rad_x = 10.0E3 
+      real    :: bubble_rad_y = 10.0E3, bubble_zc = 1.4E3
       real    :: iso_t = 300., adi_th = 300., us0 = 30.
       real,dimension(max_bub)    :: icenters, jcenters
 
@@ -4660,9 +4661,10 @@ end subroutine terminator_tracers
         integer, parameter :: nl_max = 2500
         real, dimension(nl_max) ::  z_snd, p_snd, t_snd, rho_snd, u_snd, v_snd, qv_snd
         real, dimension(bd%is:bd%ie):: pm, qs
-        real, dimension(1:npz):: pk1, ts1, qs1, dummy
+        real, dimension(1:npz):: pk1, pe1, ts1, qs1, dummy
         !real :: us0 = 30.
-        real :: dist, r0, f0_const, prf, rgrav
+        real :: dist,r0, f0_const, prf, rgrav, xrad, yrad, zrad,RAD
+        real :: xradbub, yradbub
         real :: ptmp, ze, zc, zm, utmp, vtmp
         real :: t00, p00, xmax, xc, xx, yy, pk0, pturb, ztop
         real :: ze1(npz+1)
@@ -5334,6 +5336,7 @@ end subroutine terminator_tracers
         j = js
         do k=1,npz
            pk1(k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
+           pe1(k) = sqrt(pe(i,k+1,j)*pe(i,k,j))
         enddo
 
         if (t_profile == -1 .or. q_profile == -1 .or. ws_profile == -1) then
@@ -5341,7 +5344,7 @@ end subroutine terminator_tracers
         endif
         if (t_profile == -1) then
           do k = 1,npz
-           ts1(k) =  interp_log( t_snd, p_snd, pe(i,k,j), nl_max, nl_snd  )
+           ts1(k) =  interp_log( t_snd, p_snd, pe1(k), nl_max, nl_snd  )
           enddo
         elseif ( t_profile == 0 ) then
           call SuperCell_Sounding(npz, p00, pk1, ts1, qs1)
@@ -5349,8 +5352,7 @@ end subroutine terminator_tracers
           !adiabatic
           print*, "kappa, adi_th = ", kappa, adi_th
           do k=1,npz
-            ts1(k) = adi_th * ( pe(i,k,j) / 1E5) ** kappa
-            print*, k, pe(i,k,j), ts1(k)
+            ts1(k) = adi_th * ( pe1(k) / 1E5) ** kappa
           enddo
         elseif (t_profile == 2) then
           !isothermal
@@ -5361,7 +5363,7 @@ end subroutine terminator_tracers
 
         if (q_profile == -1) then
           do k = 1,npz
-           qs1(k) =  interp_log( qv_snd, p_snd, pe(i,k,j), nl_max,nl_snd  )
+           qs1(k) =  interp_log( qv_snd, p_snd, pe1(k), nl_max,nl_snd  )
           enddo
         elseif ( q_profile==0 ) then
           if (t_profile == 0) then
@@ -5397,9 +5399,9 @@ end subroutine terminator_tracers
 
         if (ws_profile == -1) then
           do k = 1,npz
-           utmp =  interp_lin( u_snd, z_snd, ze1(k), nl_max, nl_snd  )
-           vtmp = interp_lin( v_snd, z_snd,ze1(k), nl_max, nl_snd  )
-           if(is_master()) print*, "k, z, u, v = ",k, ze1(k),utmp, vtmp  
+           zm = 0.5*(ze1(k)+ze1(k+1))
+           utmp =  interp_lin( u_snd, z_snd, zm, nl_max, nl_snd  )
+           vtmp = interp_lin( v_snd, z_snd,zm, nl_max, nl_snd  )
             do j=js,je+1
               do i=is,ie
                  u(i,j,k) = utmp
@@ -5483,7 +5485,8 @@ end subroutine terminator_tracers
         if (bubble_type > 0) then
 ! *** Add Initial perturbation ***
           pturb = bubble_t
-          r0 = bubble_rad     ! radius
+          xradbub = bubble_rad_x
+          yradbub = bubble_rad_y
           zc = bubble_zc     ! center of bubble from surface
           if (bubble_type == 1) then
             icenter = (npx-1)/2 + 1
@@ -5499,32 +5502,31 @@ end subroutine terminator_tracers
             if ( is_master() ) print*, "initializing ", n_bub , " bubbles"
             if ( is_master() ) print*, "at locations i = ", icenters(1:n_bub), "j = ", jcenters(1:n_bub)
           endif
-          do b = 1, n_bub
-            if (bubble_type == 2) jcenter=((npy-1)/2+1)-((n_bub+1)/2-b)*30000.0/dy_const
-            if (bubble_type == 3) then
-              icenter = icenters(b)
-              jcenter = jcenters(b)
-            endif
-            if ( is_master() ) print*, "icenter, jcenter =", icenter, jcenter
-            do k=1, npz
+          do j = js, je
+          do i = is, ie
+          do k=1, npz
+            do b = 1, n_bub
+              if (bubble_type == 2) then
+                jcenter=((npy-1)/2+1)-((n_bub+1)/2-b)*30000.0/dy_const
+              elseif (bubble_type == 3) then
+                icenter = icenters(b)
+                jcenter = jcenters(b)
+              endif
+              if ( is_master() ) print*, "icenter, jcenter =", icenter, jcenter
               zm = 0.5*(ze1(k)+ze1(k+1))
-              ptmp = ( (zm-zc)/zc ) **2
-              if ( ptmp < 1. ) then
-                do j=js,je
-                  do i=is,ie
-                    call random_number(rand1)
-                    call random_number(rand2)
-                    dist=ptmp+((i-icenter)*dx_const/r0)**2+((j-jcenter)*dy_const/r0)**2
-                    if ( dist < 1. ) then
-                      pt(i,j,k) = pt(i,j,k) + pturb*(1.-sqrt(dist)) +amplitude*(2.0*rand1-1.0)
-                      q(i,j,k,1)= q(i,j,k,1) + bubble_q*(1.-sqrt(dist)) +amplitude*1.E-6*(2.0*rand2-1.0)
-                    endif !dist
-                  enddo !i
-                enddo !j
-              endif ! ptmp
-            enddo!npz
-          enddo!nbub
-        endif!bubble_type
+              yrad = dy_const*float(j-jcenter)/yradbub
+              xrad = dx_const*float(i-icenter)/xradbub
+
+              zrad = (zm-zc)/zc
+              RAD=SQRT(xrad*xrad+yrad*yrad+zrad*zrad)
+              IF(RAD <= 1.) THEN
+                pt(i,j,k) = pt(i,j,k) + pturb*COS(.5*pi*RAD)**2
+               ENDIF
+             enddo !nbub
+           enddo!npz
+           enddo!i
+           enddo!j
+         endif !bubbletype  
     
         uc(isd:ied,:,:) =  u(:,jsd:jed,:)
         uc(ied+1,:,:) = u(ied,jsd:jed,:)
@@ -5580,8 +5582,9 @@ end subroutine terminator_tracers
         character(*), intent(IN) :: nml_filename
         integer :: ierr, f_unit, unit, ios
         namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size, &
-                                t_profile, q_profile, ws_profile, bubble_t, bubble_q, bubble_rad, &
-                                bubble_zc, do_coriolis, iso_t, adi_th, us0, bubble_type,n_bub,icenters,jcenters
+                                t_profile, q_profile, ws_profile, bubble_t, bubble_q,  &
+                                bubble_zc, do_coriolis, iso_t, adi_th, us0, bubble_type,n_bub, &
+                                icenters,jcenters, bubble_rad_x, bubble_rad_y
 
 #include<file_version.h>
 
