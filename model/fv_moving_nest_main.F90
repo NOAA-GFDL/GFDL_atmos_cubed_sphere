@@ -1035,7 +1035,7 @@ contains
         ! phis is allocated in fv_arrays.F90 as:  allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
         ! 0 -- all high-resolution data, 1 - static nest smoothing algorithm, 5 - 5 point smoother, 9 - 9 point smoother
         ! Defaults to 1 - static nest smoothing algorithm; this seems to produce the most stable solutions
-        !print '("[INFO] WDR Moving Nest terrain_smoother=",I0," High-resolution terrain. npe=",I0)', Atm(n)%neststruct%terrain_smoother, this_pe
+        print '("[INFO] WDR Moving Nest terrain_smoother=",I0," High-resolution terrain. npe=",I0)', Atm(n)%neststruct%terrain_smoother, this_pe
 
         select case(Atm(n)%neststruct%terrain_smoother)
         case (0)
@@ -1044,8 +1044,12 @@ contains
           Atm(n)%phis(isd:ied, jsd:jed) = mn_static%orog_grid((ioffset-1)*x_refine+isd:(ioffset-1)*x_refine+ied, (joffset-1)*y_refine+jsd:(joffset-1)*y_refine+jed) * grav
         case (1)
           ! Static nest smoothing algorithm - interpolation of coarse terrain in halo zone and 5 point blending zone of coarse and fine data
-          if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=1 Blending algorithm. npe=",I0)', this_pe
+          if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=1 Blending5 algorithm. npe=",I0)', this_pe
           call set_blended_terrain(Atm(n), mn_static%parent_orog_grid, mn_static%orog_grid, x_refine, Atm(n)%bd%ng, 5, a_step)
+        case (2)
+          ! Static nest smoothing algorithm - interpolation of coarse terrain in halo zone and 5 point blending zone of coarse and fine data
+          if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=1 Blending10 algorithm. npe=",I0)', this_pe
+          call set_blended_terrain(Atm(n), mn_static%parent_orog_grid, mn_static%orog_grid, x_refine, Atm(n)%bd%ng, 10, a_step)
         case (5)
           ! 5 pt smoother.  blend zone of 5 to match static nest
           if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=5  5-point smoother. npe=",I0)', this_pe
