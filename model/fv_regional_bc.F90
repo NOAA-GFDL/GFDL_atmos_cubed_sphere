@@ -384,18 +384,12 @@ contains
         file_name='INPUT/gfs_bndy.tile7.'//int_to_char//'_gsi.nc'          !<-- The DA-updated BC file.
       endif
 !
-      if (is_master()) then
-        write(*,20011)trim(file_name)
-20011   format(' regional_bc_data file_name=',a)
-      endif
 !-----------------------------------------------------------------------
 !***  Open the regional BC file.
 !-----------------------------------------------------------------------
 !
       call check(nf90_open(file_name,nf90_nowrite,ncid))                   !<-- Open the BC file; get the file ID.
-      if (is_master()) then
-        write(0,*)' opened BC file ',trim(file_name)
-      endif
+      call mpp_error(NOTE, 'Opened BC file: '//trim(file_name))
 !
 !-----------------------------------------------------------------------
 !***  Check if the desired number of blending rows are present in
@@ -1077,7 +1071,7 @@ contains
 !
       call check(nf90_open(filename,nf90_nowrite,ncid_grid))               !<-- Open the grid data netcdf file; get the file ID.
 !
-      call  mpp_error(NOTE,' opened grid file '//trim(filename))
+      call  mpp_error(NOTE, 'Opened grid file: '//trim(filename))
 !
 !-----------------------------------------------------------------------
 !***  The longitude and latitude are on the super grid.  We need only
@@ -1172,12 +1166,9 @@ contains
 !
       filename='INPUT/'//trim(oro_data)
 
-      if (is_master()) then
-        write(*,23421)trim(filename)
-23421   format(' topo filename=',a)
-      endif
 !
       call check(nf90_open(filename,nf90_nowrite,ncid_oro))                !<-- Open the netcdf file; get the file ID.
+      call mpp_error(NOTE, 'Opened topo file: '//trim(filename))
 !
 !-----------------------------------------------------------------------
 !***  Read in the data including the extra outer row.
@@ -1663,19 +1654,13 @@ contains
         file_name='INPUT/gfs_bndy.tile7.'//int_to_char//'_gsi.nc'          !<-- The DA-updated BC file.
       endif
 !
-      if (is_master()) then
-        write(*,22211)trim(file_name)
-22211   format(' regional_bc_data file_name=',a)
-      endif
 !-----------------------------------------------------------------------
 !***  Open the regional BC file.
 !***  Find the # of layers (klev_in) in the BC input.
 !-----------------------------------------------------------------------
 !
       call check(nf90_open(file_name,nf90_nowrite,ncid))                   !<-- Open the BC file; get the file ID.
-      if (is_master()) then
-        write(0,*)' opened BC file ',trim(file_name)
-      endif
+      call mpp_error(NOTE, 'Opened BC file: '//trim(file_name))
 !
       call check(nf90_inq_dimid(ncid,'lev',dimid))                         !<-- Get the vertical dimension's NetCDF ID.
       call check(nf90_inquire_dimension(ncid,dimid,len=klev_in))           !<-- Get the vertical dimension's value (klev_in).
@@ -3307,7 +3292,9 @@ contains
               call check(status)
             endif
             if (status /= nf90_noerr) then
-              if (east_bc.and.is_master()) write(0,*)' WARNING: Tracer ',trim(var_name),' not in input file'
+              if (east_bc) then
+                call mpp_error(NOTE, 'Tracer '//trim(var_name)//' not in input file')
+              endif
               array_4d(:,:,:,tlev)=0.                                        !<-- Tracer not in input so set to zero in boundary.
 !
               blend_this_tracer(tlev)=.false.                                !<-- Tracer not in input so do not apply blending.
@@ -3884,7 +3871,6 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
   enddo
 !   call pmaxmn('PS_diff (mb)', wk, is, ie, js, je, 1, 0.01, Atm%gridstruct%area_64, Atm%domain)
   deallocate (pe0,qn1,dp2,pe1,qp)
-  if (is_master()) write(*,*) 'done remap_scalar_nggps_regional_bc'
 !---------------------------------------------------------------------
 
  end subroutine remap_scalar_nggps_regional_bc
@@ -4003,8 +3989,6 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       deallocate(pe1)
       deallocate(qn1_d)
       deallocate(qn1_c)
-
-  if (is_master()) write(*,*) 'done remap_dwinds'
 
  end subroutine remap_dwinds_regional_bc
 
@@ -6748,7 +6732,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       logical, intent(out):: data_source_fv3gfs
 
       character (len=80) :: source
-      logical :: lstatus
+      logical :: lstatus = .false.
       type(FmsNetcdfFile_t) :: Gfs_data
       integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
 !
@@ -6771,7 +6755,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
        if (mpp_pe() == 0) write(0,*) 'INPUT source not found ',lstatus,' set source=No Source Attribute'
        source='No Source Attribute'
       endif
-      if (mpp_pe()==0) write(*,*) 'INPUT gfs_data source string=',source
+      call mpp_error(NOTE, 'INPUT gfs_data source string: '//trim(source))
 
 ! Logical flag for fv3gfs nemsio/netcdf/grib2 --------
       if ( trim(source)=='FV3GFS GAUSSIAN NEMSIO FILE' .or.        &
@@ -6781,7 +6765,6 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       else
          data_source_fv3gfs = .FALSE.
       endif
-      if (mpp_pe()==0) write(*,*) 'data_source_fv3gfs=',data_source_fv3gfs
 
   end subroutine get_data_source
 
