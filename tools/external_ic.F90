@@ -3914,17 +3914,16 @@ contains
       integer i, j
       class(*) a(im,jm)
 
-      real(r4_kind), dimension(:), allocatable :: qmin, qmax
-      real(r4_kind) pmax, pmin
+      real(r4_kind) qmin(jm), qmax(jm)
+      real(r4_kind)  pmax, pmin
       class(*)  fac                     ! multiplication factor
-      real(r8_kind), dimension(:), allocatable :: qmin8, qmax8
-      real(r8_kind) pmax8, pmin8
+      real(r8_kind) qmin8(jm), qmax8(jm)
+      real(r8_kind)  pmax8, pmin8
 
       select type (fac)
       type is (real(kind=r4_kind))
          select type (a)
          type is (real(kind=r4_kind))
-         allocate(qmax(jm), qmin(jm))
          do j=1,jm
             pmax = a(1,j)
             pmin = a(1,j)
@@ -3944,7 +3943,6 @@ contains
             pmax = max(pmax, qmax(j))
             pmin = min(pmin, qmin(j))
          enddo
-         deallocate(qmax, qmin)
 
          write(*,*) qname, ' max = ', pmax*fac, ' min = ', pmin*fac
          class default
@@ -3954,7 +3952,6 @@ contains
       type is (real(kind=r8_kind))
          select type (a)
          type is (real(kind=r8_kind))
-         allocate(qmax8(jm), qmin8(jm))
          do j=1,jm
             pmax8 = a(1,j)
             pmin8 = a(1,j)
@@ -3974,7 +3971,6 @@ contains
             pmax8 = max(pmax8, qmax8(j))
             pmin8 = min(pmin8, qmin8(j))
          enddo
-         deallocate(qmax8, qmin8)
 
          write(*,*) qname, ' max = ', pmax8*fac, ' min = ', pmin8*fac
          class default

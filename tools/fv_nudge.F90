@@ -3403,17 +3403,16 @@ module fv_nwp_nudge_mod
       class(*) a(imax,jmax)
       class(*) fac                     ! multiplication factor
 
-      real(r4_kind), dimension(:), allocatable :: qmin, qmax
+      real(r4_kind) qmin(jmax), qmax(jmax)
       real(r4_kind) pmax, pmin
 
-      real(r8_kind), dimension(:), allocatable :: qmin8, qmax8
+      real(r8_kind) qmin8(jmax), qmax8(jmax)
       real(r8_kind) pmax8, pmin8
 
       select type (fac)
       type is (real(kind=r4_kind))
          select type (a)
          type is (real(kind=r4_kind))
-         allocate(qmax(jmax), qmin(jmax))
          do j=1,jmax
             pmax = a(1,j)
             pmin = a(1,j)
@@ -3433,7 +3432,6 @@ module fv_nwp_nudge_mod
             pmax = max(pmax, qmax(j))
             pmin = min(pmin, qmin(j))
          enddo
-         deallocate(qmax, qmin)
 
          write(*,*) qname, ' max = ', pmax*fac, ' min = ', pmin*fac
          class default
@@ -3443,7 +3441,6 @@ module fv_nwp_nudge_mod
       type is (real(kind=r8_kind))
          select type (a)
          type is (real(kind=r8_kind))
-         allocate(qmax8(jmax), qmin8(jmax))
          do j=1,jmax
             pmax8 = a(1,j)
             pmin8 = a(1,j)
@@ -3463,7 +3460,6 @@ module fv_nwp_nudge_mod
             pmax8 = max(pmax8, qmax8(j))
             pmin8 = min(pmin8, qmin8(j))
          enddo
-         deallocate(qmax8, qmin8)
 
          write(*,*) qname, ' max = ', pmax8*fac, ' min = ', pmin8*fac
          class default
