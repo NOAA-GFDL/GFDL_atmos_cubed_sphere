@@ -86,6 +86,7 @@ module fv_moving_nest_utils_mod
   use fms_io_mod,        only: read_data, write_data, get_global_att_value, fms_io_init, fms_io_exit
   use fv_arrays_mod,     only: R_GRID
   use fv_arrays_mod,     only: fv_grid_type, fv_nest_type, fv_atmos_type
+  use fv_surf_map_mod,     only: FV3_zs_filter
 
   implicit none
 
@@ -240,7 +241,10 @@ contains
     endif
 
   end subroutine smooth_9_point
-
+  
+  ! blend_size is 5 for static nests.  We may increase it for moving nests.
+  !  This is only called for fine PEs.
+  !  Blends a few points into the nest.  Calls zs filtering if enabled in namelist.
   subroutine set_blended_terrain(Atm, parent_orog_grid, nest_orog_grid, refine, halo_size, blend_size, a_step)
     type(fv_atmos_type), intent(inout), target :: Atm
     real, allocatable, intent(in)              :: parent_orog_grid(:,:)   ! Coarse grid orography
@@ -286,8 +290,17 @@ contains
         hires_orog = nest_orog_grid((ioffset-1)*refine+i, (joffset-1)*refine+j)
 
         ! From tools/external_ic.F90
-        blend_wt = max(0.,min(1.,real(5 - min(i,j,npx-i,npy-j,5))/5. ))
+        if (blend_size .eq. 10) then
+          blend_wt = max(0.,min(1.,real(10 - min(i,j,npx-i,npy-j,10))/10. ))
+        else
+          blend_wt = max(0.,min(1.,real(5 - min(i,j,npx-i,npy-j,5))/5. ))
+        end if
+
+        !blend_wt = max(0.,min(1.,real(blend_size - min(i,j,npx-i,npy-j,blend_size))/real(blend_size) ))
         blend_orog = (1.-blend_wt)*hires_orog + blend_wt*smoothed_orog
+
+
+
         Atm%phis(i,j) = blend_orog * grav
 
         !if (this_pe .ge. 96) then
@@ -296,6 +309,30 @@ contains
 
       enddo
     enddo
+
+
+    ! From tools/fv_surf_map.F90::surfdrv()
+    print '("[INFO] WDR BLEND npe=",I0," full_zs_filter=",L1," blend_size=",I0)', this_pe, Atm%flagstruct%full_zs_filter, blend_size
+    if ( Atm%flagstruct%full_zs_filter ) then
+      !if(is_master()) then
+      !  write(*,*) 'Applying terrain filters. zero_ocean is', zero_ocean
+      !endif
+      !call FV3_zs_filter (bd, isd, ied, jsd, jed, npx, npy, npx_global,  &
+      !    stretch_fac, bounded_domain, domain, area, dxa, dya, dx, dy, dxc, dyc, grid,  &
+      !    agrid, sin_sg, phis, oro_g)
+      
+      call FV3_zs_filter (Atm%bd, isd, ied, jsd, jed, Atm%npx, Atm%npy, Atm%neststruct%npx_global,  &
+          Atm%flagstruct%stretch_fac, Atm%gridstruct%bounded_domain, Atm%domain, &
+          Atm%gridstruct%area_64, Atm%gridstruct%dxa, Atm%gridstruct%dya, &
+          Atm%gridstruct%dx, Atm%gridstruct%dy, &
+          Atm%gridstruct%dxc, Atm%gridstruct%dyc, &
+          Atm%gridstruct%grid_64,  &
+          Atm%gridstruct%agrid_64, Atm%gridstruct%sin_sg, Atm%phis, parent_orog_grid)
+      
+      call mpp_update_domains(Atm%phis, Atm%domain)
+    endif          ! end terrain filter                                                                                                   
+    
+
 
   end subroutine set_blended_terrain
 
