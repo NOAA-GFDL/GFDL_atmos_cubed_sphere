@@ -2467,10 +2467,10 @@ contains
 
 ! Share the load
           if(is_master()) call pmaxmin( 'ZS_data', gz0, im,    jm, 1./grav)
-          if(mpp_pe()==1) call pmaxmin( 'U_data',   reshape(u0, (/ im*jm, km /)), im*jm, km, 1.)
-          if(mpp_pe()==1) call pmaxmin( 'V_data',   reshape(v0, (/ im*jm, km /)), im*jm, km, 1.)
-          if(mpp_pe()==2) call pmaxmin( 'T_data',   reshape(t0, (/ im*jm, km /)), im*jm, km, 1.)
-          if(mpp_pe()==3) call pmaxmin( 'DEL-P',   reshape(dp0, (/ im*jm, km /)), im*jm, km, 0.01)
+          if(mpp_pe()==1) call pmaxmin( 'U_data',   u0, im*jm, km, 1.)
+          if(mpp_pe()==1) call pmaxmin( 'V_data',   v0, im*jm, km, 1.)
+          if(mpp_pe()==2) call pmaxmin( 'T_data',   t0, im*jm, km, 1.)
+          if(mpp_pe()==3) call pmaxmin( 'DEL-P',   dp0, im*jm, km, 0.01)
           call close_file(Latlon_dyn)
 
       else
@@ -2508,8 +2508,8 @@ contains
       deallocate ( u0 )
       deallocate ( v0 )
 
-      if(mpp_pe()==4) call pmaxmin( 'UA', reshape(ua, (/ im*jm, km /)), im*jm, km, 1.)
-      if(mpp_pe()==4) call pmaxmin( 'VA', reshape(va, (/ im*jm, km /)), im*jm, km, 1.)
+      if(mpp_pe()==4) call pmaxmin( 'UA', ua, im*jm, km, 1.)
+      if(mpp_pe()==4) call pmaxmin( 'VA', va, im*jm, km, 1.)
 
       do j=1,jm
          do i=1,im
