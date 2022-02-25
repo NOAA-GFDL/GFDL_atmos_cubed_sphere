@@ -4305,7 +4305,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                          ,is,ie,js,je                 &
                                          ,isd,ied,jsd,jed             &
                                          ,fcst_time                   &
-                                         ,index4 )
+                                         ,it,index4 )
 !
 !---------------------------------------------------------------------
 !***  Select the given variable's boundary data at the two
@@ -4323,7 +4323,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       integer,intent(in) :: lbnd_x,ubnd_x,lbnd_y,ubnd_y,ubnd_z           !<-- Dimensions of full prognostic array to be updated.
 !
       integer,intent(in) :: is,ie,js,je                               &  !<-- Compute limits
-                           ,isd,ied,jsd,jed                              !<-- Memory limits
+                           ,isd,ied,jsd,jed                           &  !<-- Memory limits
+                           ,it                                           !<-- Acoustic step 
 !
       integer,intent(in),optional :: index4                              !<-- Index for the 4-D tracer array.
 !
@@ -4579,7 +4580,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                     ,fcst_time                           &
                                     ,bc_update_interval                  &
                                     ,i1_blend,i2_blend,j1_blend,j2_blend &
-                                    ,i_bc,j_bc,nside,bc_vbl_name,blend )
+                                    ,i_bc,j_bc,nside,bc_vbl_name,blend,it )
         endif
 !
 !---------------------------------------------------------------------
@@ -4709,7 +4710,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                       ,fcst_time                           &
                                       ,bc_update_interval                  &
                                       ,i1_blend,i2_blend,j1_blend,j2_blend &
-                                      ,i_bc,j_bc,nside,bc_vbl_name,blend )
+                                      ,i_bc,j_bc,nside,bc_vbl_name,blend,it )
 
 !---------------------------------------------------------------------
 !***  Update the boundary region of the input array at the given
@@ -4734,7 +4735,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       integer,intent(in) :: is,ie,js,je                                  !<-- Min/Max index limits on task's computational subdomain
 !
-      integer,intent(in) :: bc_update_interval                           !<-- Time (hours) between BC data states
+      integer,intent(in) :: bc_update_interval,it                           !<-- Time (hours) between BC data states, acoustic step
 !
       real,intent(in) :: fcst_time                                       !<-- Current forecast time (sec)
 !
@@ -4771,6 +4772,19 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       fraction_interval=mod(fcst_time,(bc_update_interval*3600.))     &
                        /(bc_update_interval*3600.)
+
+!---------------------------------------------------------------------
+!***  Special check for final acoustic step prior to new boundary information
+!***  being ingested.
+!---------------------------------------------------------------------
+
+       if (fraction_interval .eq. 0.0 .and. it .gt. 1) then
+        fraction_interval=1.0
+        if (is_master()) then
+         write(0,*) 'reset of fraction_interval ', trim(bc_vbl_name),it, fcst_time
+        endif
+       endif
+
 !
 !---------------------------------------------------------------------
 !
