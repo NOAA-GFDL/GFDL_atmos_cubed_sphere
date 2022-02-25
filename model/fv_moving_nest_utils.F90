@@ -312,7 +312,7 @@ contains
 
 
     ! From tools/fv_surf_map.F90::surfdrv()
-    print '("[INFO] WDR BLEND npe=",I0," full_zs_filter=",L1," blend_size=",I0)', this_pe, Atm%flagstruct%full_zs_filter, blend_size
+    !print '("[INFO] WDR BLEND npe=",I0," full_zs_filter=",L1," blend_size=",I0)', this_pe, Atm%flagstruct%full_zs_filter, blend_size
     if ( Atm%flagstruct%full_zs_filter ) then
       !if(is_master()) then
       !  write(*,*) 'Applying terrain filters. zero_ocean is', zero_ocean
@@ -1513,10 +1513,11 @@ contains
   end subroutine load_nest_latlons_from_nc
 
 #ifdef OVERLOAD_R8
-  subroutine alloc_read_data_r4_2d(nc_filename, var_name, x_size, y_size, data_array)
+  subroutine alloc_read_data_r4_2d(nc_filename, var_name, x_size, y_size, data_array, time)
     character(len=*), intent(in)           :: nc_filename, var_name
     integer, intent(in)                    :: x_size, y_size
-    real*4, allocatable, intent(inout)       :: data_array(:,:)
+    real*4, allocatable, intent(inout)     :: data_array(:,:)
+    integer, intent(in),optional           :: time
 
     integer                      :: start(4), nread(4)
     integer                      :: this_pe
@@ -1539,6 +1540,11 @@ contains
     start(2) = 1
     nread(1) = x_size
     nread(2) = y_size
+
+    if (present(time)) then
+      start(3) = time
+      nread(3) = 1
+    endif
 
     if (debug_log) print '("[INFO] WDR NCREAD NCRA alloc_read_data. npe=",I0," ",A96," ", A16)', this_pe, trim(nc_filename), var_name
     if (debug_log) print '("[INFO] WDR NCREAD NCRB alloc_read_data, nread npe=",I0, " ", A16,I4,I4,I4,I4)', this_pe, var_name, start(1), start(2), nread(1), nread(2)

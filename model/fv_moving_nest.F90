@@ -149,6 +149,11 @@ module fv_moving_nest_mod
     module procedure mn_var_dump_3d_to_netcdf
   end interface mn_var_dump_to_netcdf
 
+  interface mn_static_read_hires
+    module procedure  mn_static_read_hires_r4
+    module procedure  mn_static_read_hires_r8
+  end interface mn_static_read_hires
+
 contains
 
   !!=====================================================================================
@@ -1079,11 +1084,54 @@ contains
   end subroutine mn_orog_read_hires_parent
 
 
-  subroutine mn_static_read_hires(npx, npy, refine, surface_dir, file_prefix, var_name, data_grid, parent_tile)
+  subroutine mn_static_read_hires_r4(npx, npy, refine, surface_dir, file_prefix, var_name, data_grid, parent_tile, time)
     integer, intent(in)                :: npx, npy, refine
     character(len=*), intent(in)       :: surface_dir, file_prefix
     character(len=*), intent(in)       :: var_name
-    real, allocatable, intent(out)     :: data_grid(:,:)
+    real*4, allocatable, intent(out)   :: data_grid(:,:)
+    integer, intent(in)                :: parent_tile
+    integer, intent(in), optional      :: time
+
+    integer :: nx_cubic, nx, ny, fp_nx, fp_ny
+    integer :: fp_istart_fine, fp_iend_fine, fp_jstart_fine, fp_jend_fine
+
+    character(len=256) :: res_str, parent_str
+    character(len=16)  :: halo
+    character(len=512) :: nc_filename
+
+    integer :: this_pe
+
+    this_pe = mpp_pe()
+
+    nx_cubic = npx - 1
+    nx = npx - 1
+    ny = npy - 1
+
+    fp_istart_fine = 0
+    fp_iend_fine = nx * refine
+    fp_jstart_fine = 0
+    fp_jend_fine = ny * refine
+
+    fp_nx = fp_iend_fine - fp_istart_fine
+    fp_ny = fp_jend_fine - fp_jstart_fine
+
+    if (debug_log) print '("[INFO] WDR NCREAD LOFC mn_static_read_hires npe=",I0,I4,I4," ",A128," ",A128)', this_pe, fp_nx, fp_ny, var_name, nc_filename
+
+    call mn_static_filename(surface_dir, parent_tile, file_prefix, refine, nc_filename)
+
+    if (present(time)) then
+      call alloc_read_data(nc_filename, var_name, fp_nx, fp_ny, data_grid, time)
+    else
+      call alloc_read_data(nc_filename, var_name, fp_nx, fp_ny, data_grid)
+    endif
+
+  end subroutine mn_static_read_hires_r4
+
+  subroutine mn_static_read_hires_r8(npx, npy, refine, surface_dir, file_prefix, var_name, data_grid, parent_tile)
+    integer, intent(in)                :: npx, npy, refine
+    character(len=*), intent(in)       :: surface_dir, file_prefix
+    character(len=*), intent(in)       :: var_name
+    real*8, allocatable, intent(out)   :: data_grid(:,:)
     integer, intent(in)                :: parent_tile
 
     integer :: nx_cubic, nx, ny, fp_nx, fp_ny
@@ -1115,7 +1163,7 @@ contains
 
     call alloc_read_data(nc_filename, var_name, fp_nx, fp_ny, data_grid)
 
-  end subroutine mn_static_read_hires
+  end subroutine mn_static_read_hires_r8
 
 
   !!============================================================================
