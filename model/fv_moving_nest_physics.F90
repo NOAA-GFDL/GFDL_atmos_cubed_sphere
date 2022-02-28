@@ -413,6 +413,8 @@ contains
 
           print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") albdirvis_lnd=",F10.4," albdirnir_lnd=",F10.4," albdifvis_lnd=",F10.4," albdifnir_lnd=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%albdirvis_lnd(ix), save_IPD_Data(nb)%Sfcprop%albdirnir_lnd(ix), save_IPD_Data(nb)%Sfcprop%albdifvis_lnd(ix), save_IPD_Data(nb)%Sfcprop%albdifnir_lnd(ix)
 
+          !print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") albdirvis_ice=",F10.4," albdirnir_ice=",F10.4," albdifvis_ice=",F10.4," albdifnir_ice=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%albdirvis_ice(ix), save_IPD_Data(nb)%Sfcprop%albdirnir_ice(ix), save_IPD_Data(nb)%Sfcprop%albdifvis_ice(ix), save_IPD_Data(nb)%Sfcprop%albdifnir_ice(ix)
+
 
           if (associated(save_IPD_Data(nb)%Sfcprop%qss)) then
             print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") qss=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%qss(ix)
@@ -421,6 +423,19 @@ contains
             print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") evap=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%evap(ix)
           endif
 
+
+          if (associated(save_IPD_Data(nb)%Sfcprop%sncovr)) then
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") sncovr",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%sncovr(ix)
+          endif
+          if (associated(save_IPD_Data(nb)%Sfcprop%sncovr_ice)) then
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") sncovr_ice",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%sncovr_ice(ix)
+          endif
+
+
+
+          if (associated(save_IPD_Data(nb)%Intdiag%total_albedo)) then
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") Intdiag%total_albedo=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Intdiag%total_albedo(ix)
+          endif
 
 
 
@@ -442,6 +457,20 @@ contains
           if (associated(save_IPD_Data(nb)%Sfcprop%sfalb_lnd_bck)) then
             print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") sfalb_lnd_bck=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%sfalb_lnd_bck(ix)
           endif
+
+
+
+          if (associated(save_IPD_Data(nb)%Sfcprop%emis_lnd)) then
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") emis_lnd=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%emis_lnd(ix)
+          endif
+          if (associated(save_IPD_Data(nb)%Sfcprop%emis_ice)) then
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") emis_ice=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%emis_ice(ix)
+          endif
+          if (associated(save_IPD_Data(nb)%Sfcprop%emis_wat)) then
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") emis_wat=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%emis_wat(ix)
+          endif
+
+
 
 
           if (associated(save_IPD_Data(nb)%Sfcprop%tvxy)) then
@@ -518,22 +547,27 @@ contains
 
 
           if (associated(save_IPD_Data(nb)%Sfcprop%z0base)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") z0base=",F15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%z0base(ix)
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") z0base=",F18.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%z0base(ix)
           endif
           if (associated(save_IPD_Data(nb)%Sfcprop%zorl)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") zorl=",F15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%zorl(ix)
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") zorl=",F18.6," ",E15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%zorl(ix), save_IPD_Data(nb)%Sfcprop%zorl(ix)
           endif
           if (associated(save_IPD_Data(nb)%Sfcprop%zorlw)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") zorlw=",F15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%zorlw(ix)
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") zorlw=",F18.6," ",E15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%zorlw(ix), save_IPD_Data(nb)%Sfcprop%zorlw(ix)
           endif
           if (associated(save_IPD_Data(nb)%Sfcprop%zorll)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") zorll=",F15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%zorll(ix)
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") zorll=",F18.6," ",E15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%zorll(ix), save_IPD_Data(nb)%Sfcprop%zorll(ix)
           endif
           if (associated(save_IPD_Data(nb)%Sfcprop%zorli)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") zorli=",F15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%zorli(ix)
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") zorli=",F15.6," ",E15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%zorli(ix), save_IPD_Data(nb)%Sfcprop%zorli(ix)
           endif
           if (associated(save_IPD_Data(nb)%Sfcprop%zorlwav)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") zorlwav=",F15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%zorlwav(ix)
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") zorlwav=",F15.6," ",E15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%zorlwav(ix), save_IPD_Data(nb)%Sfcprop%zorlwav(ix)
+          endif
+
+
+          if (associated(save_IPD_Data(nb)%Coupling%tsfc_radtime)) then
+            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") Coupling%tsfc_radtime=",F15.6)', this_pe, i, j, save_IPD_Data(nb)%Coupling%tsfc_radtime(ix)
           endif
 
 
@@ -968,10 +1002,36 @@ contains
             IPD_Data(nb)%Sfcprop%uustar(ix) = mn_phys%uustar(i,j)
             IPD_Data(nb)%Sfcprop%shdmin(ix) = mn_phys%shdmin(i,j)
             IPD_Data(nb)%Sfcprop%shdmax(ix) = mn_phys%shdmax(i,j)
-            IPD_Data(nb)%Sfcprop%zorl(ix)   = mn_phys%zorl(i,j)
-            IPD_Data(nb)%Sfcprop%zorll(ix)  = mn_phys%zorll(i,j)
-            IPD_Data(nb)%Sfcprop%zorlwav(ix)= mn_phys%zorlwav(i,j)
-            IPD_Data(nb)%Sfcprop%zorlw(ix)  = mn_phys%zorlw(i,j)
+
+            !< sea/land mask array (sea:0,land:1,sea-ice:2)
+            if (nint(IPD_data(nb)%Sfcprop%slmsk(ix)) .eq. 1 .and. mn_phys%zorll(i,j) .gt. 1e6) then
+              IPD_Data(nb)%Sfcprop%zorll(ix)  = 82.0   ! 
+            else
+              IPD_Data(nb)%Sfcprop%zorll(ix)  = mn_phys%zorll(i,j)
+            endif
+
+            if (nint(IPD_data(nb)%Sfcprop%slmsk(ix)) .eq. 0 .and. mn_phys%zorlw(i,j) .gt. 1e6) then
+              IPD_Data(nb)%Sfcprop%zorlw(ix)  = 83.0   ! 
+            else
+              IPD_Data(nb)%Sfcprop%zorlw(ix)  = mn_phys%zorlw(i,j)
+            endif
+
+            if (nint(IPD_data(nb)%Sfcprop%slmsk(ix)) .eq. 0 .and. mn_phys%zorlwav(i,j) .gt. 1e6) then
+              IPD_Data(nb)%Sfcprop%zorlwav(ix)  = 84.0   ! 
+            else
+              IPD_Data(nb)%Sfcprop%zorlwav(ix)  = mn_phys%zorlwav(i,j)
+            endif
+            
+            if (mn_phys%zorl(i,j) .gt. 1e6) then
+              IPD_Data(nb)%Sfcprop%zorl(ix)   = 85.0
+            else
+              IPD_Data(nb)%Sfcprop%zorl(ix)   = mn_phys%zorl(i,j)
+            endif
+
+            !IPD_Data(nb)%Sfcprop%zorll(ix)  = mn_phys%zorll(i,j)
+            !IPD_Data(nb)%Sfcprop%zorlwav(ix)= mn_phys%zorlwav(i,j)
+            !IPD_Data(nb)%Sfcprop%zorlw(ix)  = mn_phys%zorlw(i,j)
+
             IPD_Data(nb)%Sfcprop%tsfco(ix)  = mn_phys%tsfco(i,j)
             IPD_Data(nb)%Sfcprop%tsfcl(ix)  = mn_phys%tsfcl(i,j)
             IPD_Data(nb)%Sfcprop%tsfc(ix)   = mn_phys%tsfc(i,j)
@@ -1271,18 +1331,18 @@ contains
           Atm(child_grid_num)%neststruct%ind_h, &
           x_refine, y_refine, &
           is_fine_pe, nest_domain, position)
-      call fill_nest_halos_from_parent("zorll", mn_phys%zorll, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+      call fill_nest_halos_from_parent_masked("zorll", mn_phys%zorll, interp_type_lmask, Atm(child_grid_num)%neststruct%wt_h, &
           Atm(child_grid_num)%neststruct%ind_h, &
           x_refine, y_refine, &
-          is_fine_pe, nest_domain, position)
-      call fill_nest_halos_from_parent("zorlwav", mn_phys%zorlwav, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+          is_fine_pe, nest_domain, position, mn_phys%slmsk, 1, 86.0D0)
+      call fill_nest_halos_from_parent_masked("zorlwav", mn_phys%zorlwav, interp_type_lmask, Atm(child_grid_num)%neststruct%wt_h, &
           Atm(child_grid_num)%neststruct%ind_h, &
           x_refine, y_refine, &
-          is_fine_pe, nest_domain, position)
-      call fill_nest_halos_from_parent("zorlw", mn_phys%zorlw, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
+          is_fine_pe, nest_domain, position, mn_phys%slmsk, 0, 77.0D0)
+      call fill_nest_halos_from_parent_masked("zorlw", mn_phys%zorlw, interp_type_lmask, Atm(child_grid_num)%neststruct%wt_h, &
           Atm(child_grid_num)%neststruct%ind_h, &
           x_refine, y_refine, &
-          is_fine_pe, nest_domain, position)
+          is_fine_pe, nest_domain, position, mn_phys%slmsk, 0, 78.0D0)
 
       call fill_nest_halos_from_parent("tsfco", mn_phys%tsfco, interp_type, Atm(child_grid_num)%neststruct%wt_h, &
           Atm(child_grid_num)%neststruct%ind_h, &
@@ -1846,6 +1906,8 @@ contains
     real, allocatable, dimension(:,:) :: facsf_pr_local, facwf_pr_local
     real, allocatable, dimension(:,:) :: alvsf_pr_local, alvwf_pr_local, alnsf_pr_local, alnwf_pr_local
 
+    real, allocatable, dimension(:,:) :: zorl_pr_local, zorll_pr_local, zorlw_pr_local, zorli_pr_local
+
     real, allocatable :: phy_f2d_pr_local (:,:,:)
     real, allocatable :: phy_f3d_pr_local (:,:,:,:)
 
@@ -1932,6 +1994,13 @@ contains
       allocate ( facsf_pr_local(is:ie, js:je) )
       allocate ( facwf_pr_local(is:ie, js:je) )
 
+      allocate ( zorl_pr_local(is:ie, js:je) )
+      allocate ( zorll_pr_local(is:ie, js:je) )
+      allocate ( zorlw_pr_local(is:ie, js:je) )
+      allocate ( zorli_pr_local(is:ie, js:je) )
+
+
+
     endif
 
     if (move_nsst) then
@@ -2007,6 +2076,11 @@ contains
           facsf_pr_local(i, j) = IPD_data(nb)%Sfcprop%facsf(ix)
           facwf_pr_local(i, j) = IPD_data(nb)%Sfcprop%facwf(ix)
 
+          zorl_pr_local(i, j) = IPD_data(nb)%Sfcprop%zorl(ix)
+          zorlw_pr_local(i, j) = IPD_data(nb)%Sfcprop%zorlw(ix)
+          zorll_pr_local(i, j) = IPD_data(nb)%Sfcprop%zorll(ix)
+          zorli_pr_local(i, j) = IPD_data(nb)%Sfcprop%zorli(ix)
+
           max_snow_alb_pr_local(i, j) = IPD_data(nb)%Sfcprop%snoalb(ix)
 
           tsfco_pr_local(i, j) = IPD_data(nb)%Sfcprop%tsfco(ix)
@@ -2081,6 +2155,12 @@ contains
       call mn_var_dump_to_netcdf(facsf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "FACSF")
       call mn_var_dump_to_netcdf(facwf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "FACWF")
 
+      call mn_var_dump_to_netcdf(zorl_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ZORL")
+      call mn_var_dump_to_netcdf(zorlw_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ZORLW")
+      call mn_var_dump_to_netcdf(zorll_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ZORLL")
+      call mn_var_dump_to_netcdf(zorli_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ZORLI")
+
+
       do nv = 1, IPD_Control%ntot2d
         write (phys_var_name, "(A4,I0.3)")  'PH2D', nv
         call mn_var_dump_to_netcdf(phy_f2d_pr_local(:,:,nv), is_fine_pe, domain_coarse, domain_fine, position, 1, &
@@ -2120,6 +2200,8 @@ contains
       deallocate(tsfco_pr_local, tsfcl_pr_local, tsfc_pr_local, vegfrac_pr_local)
       deallocate(alvsf_pr_local, alvwf_pr_local, alnsf_pr_local, alnwf_pr_local)
       deallocate(facsf_pr_local, facwf_pr_local)
+
+      deallocate(zorl_pr_local,zorlw_pr_local,zorll_pr_local,zorli_pr_local)
 
       deallocate(phy_f2d_pr_local)
       deallocate(phy_f3d_pr_local)

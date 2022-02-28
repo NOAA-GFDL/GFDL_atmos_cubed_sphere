@@ -139,6 +139,9 @@ module fv_diagnostics_mod
 
 #ifdef MOVING_NEST
 !use fv_moving_nest_physics_mod, only : dump_surface_physics
+!use fms_io_mod,                 only : fms_io_exit
+!use fv_io_mod,                  only : fv_io_exit
+!use mpp_mod,                    only : mpp_exit
 #endif
 
 #ifndef GFS_PHYS
@@ -4413,6 +4416,18 @@ contains
             enddo
          enddo
          call mpp_error(NOTE,'==> Error from range_check: data out of bound')
+#ifdef MOVING_NEST
+!!         !! Dump FMS debugging information
+!         call fms_io_exit()   !! Force the output of the buffered NC files
+!         print '("[INFO] WDR calling mpp_exit after moving nest atmosphere.F90 npe=",I0)', mpp_pe()
+!         call fv_io_exit()
+!         call mpp_exit()
+!         print '("[INFO] WDR calling STOP after moving nest atmosphere.F90 npe=",I0)', mpp_pe()
+!         stop              
+#endif
+
+
+
       endif
 
  end subroutine range_check_3d
