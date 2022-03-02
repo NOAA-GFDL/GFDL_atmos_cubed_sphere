@@ -1007,6 +1007,7 @@ contains
        line=__LINE__, &
        file=__FILE__)) &
        return  ! bail out
+     deallocate(axis_name_vert)
    endif
 
    do id = 1,num_axes
@@ -1349,6 +1350,8 @@ contains
 !                    name="output_file", value=fld_outfilename, rc=rc)
 !     print *,'in dyn bundle setup, i=',i,' fieldname=',trim(fieldnamelist(i)),' out filename=',trim(fld_outfilename)
 !   enddo
+   deallocate(axis_name)
+   deallocate(all_axes)
 
  end subroutine fv_dyn_bundle_setup
 

@@ -229,7 +229,8 @@ public :: atmosphere_resolution,   atmosphere_grid_bdry,         &
           atmosphere_get_bottom_layer, &
           atmosphere_nggps_diag,       &
           get_bottom_mass, get_bottom_wind,   &
-          get_stock_pe, set_atmosphere_pelist
+          get_stock_pe, set_atmosphere_pelist, &
+          get_nth_domain_info
 
 !--- physics/radiation data exchange routines
 public :: atmos_phys_driver_statein
@@ -918,15 +919,30 @@ contains
  end subroutine set_atmosphere_pelist
 
 
+ subroutine get_nth_domain_info(n, layout, nx, ny, pelist)
+   integer, intent(in)  :: n
+   integer, intent(out) :: layout(2)
+   integer, intent(out) :: nx, ny
+   integer, pointer, intent(out) :: pelist(:)
+
+   layout(1:2) = Atm(n)%layout(1:2)
+   nx = Atm(n)%npx -1
+   ny = Atm(n)%npy -1
+   pelist => Atm(n)%pelist
+
+ end subroutine get_nth_domain_info
+
 !>@brief The subroutine 'atmosphere_domain' is an API to return
 !! the "domain2d" variable associated with the coupling grid and the
 !! decomposition for the current cubed-sphere tile.
 !>@detail Coupling is done using the mass/temperature grid with no halos.
- subroutine atmosphere_domain ( fv_domain, layout, regional, nested, pelist )
+ subroutine atmosphere_domain ( fv_domain, layout, regional, nested, ngrids_atmos, mygrid_atmos, pelist )
    type(domain2d), intent(out) :: fv_domain
    integer, intent(out) :: layout(2)
    logical, intent(out) :: regional
    logical, intent(out) :: nested
+   integer, intent(out) :: ngrids_atmos
+   integer, intent(out) :: mygrid_atmos
    integer, pointer, intent(out) :: pelist(:)
 !  returns the domain2d variable associated with the coupling grid
 !  note: coupling is done using the mass/temperature grid with no halos
@@ -935,6 +951,8 @@ contains
    layout(1:2) =  Atm(mygrid)%layout(1:2)
    regional = Atm(mygrid)%flagstruct%regional
    nested = ngrids > 1
+   ngrids_atmos = ngrids
+   mygrid_atmos = mygrid
    call set_atmosphere_pelist()
    pelist => Atm(mygrid)%pelist
 

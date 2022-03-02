@@ -803,7 +803,7 @@ contains
                                           isd, ied, jsd, jed, npz, &
                                           is,  ie,  js,  je,       &
                                           isd, ied, jsd, jed,      &
-                                          reg_bc_update_time )
+                                          reg_bc_update_time,1 )
          endif
 #endif
 
