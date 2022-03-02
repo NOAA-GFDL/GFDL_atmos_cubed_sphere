@@ -814,6 +814,8 @@ contains
           endif
 
           call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "substrate_temperature", "substrate_temperature", mn_static%deep_soil_temp_grid,  parent_tile)
+          ! set any -999s to +4C
+          call mn_replace_low_values(mn_static%deep_soil_temp_grid, -100.0, 277.0)
 
           !print '("[INFO] WDR mn_latlon_read_hires_parent READING static soil_type_grid file on npe=",I0)', this_pe
 
@@ -837,6 +839,8 @@ contains
 
 
           call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "maximum_snow_albedo", "maximum_snow_albedo", mn_static%max_snow_alb_grid,  parent_tile)
+          ! Set any -999s to 0.5
+          call mn_replace_low_values(mn_static%max_snow_alb_grid, -100.0, 0.5)
 
           ! Albedo fraction -- read and calculate
           call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "facsf", "facsf", mn_static%facsf_grid,  parent_tile)
