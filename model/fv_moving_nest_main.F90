@@ -42,7 +42,7 @@ module fv_moving_nest_main_mod
   !-----------------
   use block_control_mod,      only: block_control_type
   use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
-  use time_manager_mod,       only: time_type, get_time, set_time, operator(+), &
+  use time_manager_mod,       only: time_type, get_time, get_date, set_time, operator(+), &
       operator(-), operator(/), time_type_to_real
   use fms_mod,                only: file_exist, open_namelist_file,    &
       close_file, error_mesg, FATAL,     &
@@ -173,7 +173,7 @@ module fv_moving_nest_main_mod
   integer :: id_movnest1, id_movnest1_9, id_movnest2, id_movnest3, id_movnest4, id_movnest5
   integer :: id_movnest6, id_movnest7_0, id_movnest7_1, id_movnest7_2, id_movnest7_3, id_movnest8, id_movnest9
   integer :: id_movnestTot
-  logical :: use_timers = .false. ! Set this to true for detailed performance profiling.  False only profiles total moving nest time.
+  logical :: use_timers = .False. ! Set this to true for detailed performance profiling.  False only profiles total moving nest time.
   integer, save :: output_step = 0
 
 
@@ -254,10 +254,13 @@ contains
 
     if (debug_log) print '("[INFO] WDR ptbounds 3 atmosphere.F90  npe=",I0," pt(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(Atm(n)%pt,1), ubound(Atm(n)%pt,1), lbound(Atm(n)%pt,2), ubound(Atm(n)%pt,2), lbound(Atm(n)%pt,3), ubound(Atm(n)%pt,3)
 
-    if (a_step .lt. 10 .or. mod(a_step, 40) .eq. 0 .or. (a_step .ge. 60 .and. a_step .le. 65) ) then
-      if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
-      if (tsvar_out) call mn_phys_dump_to_netcdf(Atm(n), Atm_block, IPD_control, IPD_data, a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
-    endif
+    !if (a_step .lt. 10 .or. mod(a_step, 40) .eq. 0 .or. (a_step .ge. 60 .and. a_step .le. 65) ) then
+    !if (mod(a_step, 20) .eq. 0 ) then
+    !if (a_step .ge. 2360 .and. (mod(a_step, 20) .eq. 0 .or. (a_step .ge. 2425 .and. a_step .le. 2435) )) then
+    !if (a_step .ge. 2360) then
+    !  if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
+    !  if (tsvar_out) call mn_phys_dump_to_netcdf(Atm(n), Atm_block, IPD_control, IPD_data, a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
+    !endif
 
   end subroutine dump_moving_nest
 
@@ -557,11 +560,7 @@ contains
     !! TODO Refine this per Atm(n) structure to allow some static and some moving nests in same run
     logical  :: is_moving_nest
 
-    !! Regional configuration data
-    !logical  :: is_regional = .true.           ! TODO read from namelist 
-    !logical  :: is_regional = .false.           ! TODO read from namelist 
-    !integer  :: global_coarse_res = 96  ! TODO read this from namelist or Atm
-
+    integer             :: year, month, day, hour, minute, second
     real(kind=R_GRID)   :: pi = 4 * atan(1.0d0)
     real                :: rad2deg
 
@@ -574,6 +573,9 @@ contains
 
     allocate(pelist(mpp_npes()))
     call mpp_get_current_pelist(pelist)
+
+    ! Get month to use for reading static datasets
+    call get_date(Atm(n)%Time_init, year, month, day, hour, minute, second)
 
     !-----------------------------------
 
@@ -797,15 +799,6 @@ contains
           !print '("[INFO] WDR PPP npe=",I0," ntiles_g=",I0," ",I0)', this_pe, Atm(1)%gridstruct%ntiles_g, Atm(child_grid_num)%gridstruct%ntiles_g
           !print '("[INFO] WDR PPP npe=",I0," bounded=",L1," ",L1)', this_pe, Atm(1)%gridstruct%bounded_domain, Atm(child_grid_num)%gridstruct%bounded_domain
 
-
-          !if (is_regional) then
-          !   ! Note that for regional, npx and npy are the dimensions of the regional grid, not the cubed sphere tile.
-          !   global_coarse_res = 96
-          !   parent_tile = 7
-          !else
-          !   global_coarse_res = Atm(1)%npx - 1
-          !endif
-
           call mn_latlon_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, fp_super_tile_geo, &
               Atm(child_grid_num)%neststruct%surface_dir,  parent_tile)
 
@@ -829,14 +822,74 @@ contains
           endif
 
           call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "substrate_temperature", "substrate_temperature", mn_static%deep_soil_temp_grid,  parent_tile)
+          ! set any -999s to +4C
+          call mn_replace_low_values(mn_static%deep_soil_temp_grid, -100.0, 277.0)
+
+          !print '("[INFO] WDR mn_latlon_read_hires_parent READING static soil_type_grid file on npe=",I0)', this_pe
+
           call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "soil_type", "soil_type", mn_static%soil_type_grid,  parent_tile)
 
+          ! To match initialization behavior, set any -999s to 0 in soil_type
+          call mn_replace_low_values(mn_static%soil_type_grid, -100.0, 0.0)
+
+          
           !call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "", mn_static%veg_frac_grid)
           call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "vegetation_type", "vegetation_type", mn_static%veg_type_grid,  parent_tile)
+          ! To match initialization behavior, set any -999s to 0 in veg_type
+          call mn_replace_low_values(mn_static%veg_type_grid, -100.0, 0.0)
+
 
           call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "slope_type", "slope_type", mn_static%slope_type_grid,  parent_tile)
+          ! To match initialization behavior, set any -999s to 0 in slope_type
+          call mn_replace_low_values(mn_static%slope_type_grid, -100.0, 0.0)
+
+
+
 
           call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "maximum_snow_albedo", "maximum_snow_albedo", mn_static%max_snow_alb_grid,  parent_tile)
+          ! Set any -999s to 0.5
+          call mn_replace_low_values(mn_static%max_snow_alb_grid, -100.0, 0.5)
+
+          ! Albedo fraction -- read and calculate
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "facsf", "facsf", mn_static%facsf_grid,  parent_tile)
+
+          allocate(mn_static%facwf_grid(lbound(mn_static%facsf_grid,1):ubound(mn_static%facsf_grid,1),lbound(mn_static%facsf_grid,2):ubound(mn_static%facsf_grid,2)))
+
+          ! For land points, set facwf = 1.0 - facsf
+          ! To match initialization behavior, set any -999s to 0 
+          do i=lbound(mn_static%facsf_grid,1),ubound(mn_static%facsf_grid,1)
+            do j=lbound(mn_static%facsf_grid,2),ubound(mn_static%facsf_grid,2)
+              if (mn_static%facsf_grid(i,j) .lt. -100) then
+                mn_static%facsf_grid(i,j) = 0
+                mn_static%facwf_grid(i,j) = 0
+              else 
+                mn_static%facwf_grid(i,j) = 1.0 - mn_static%facsf_grid(i,j)
+              endif
+            enddo
+          enddo
+
+          ! Additional albedo variables
+          !  black sky = strong cosz -- direct sunlight
+          !  white sky = weak cosz -- diffuse light
+
+          ! alvsf = visible strong cosz = visible_black_sky_albedo
+          ! alvwf = visible weak cosz = visible_white_sky_albedo
+          ! alnsf = near IR strong cosz = near_IR_black_sky_albedo
+          ! alnwf = near IR weak cosz = near_IR_white_sky_albedo
+
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "snowfree_albedo", "visible_black_sky_albedo", mn_static%alvsf_grid,  parent_tile, time=month)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "snowfree_albedo", "visible_white_sky_albedo", mn_static%alvwf_grid,  parent_tile, time=month)
+
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "snowfree_albedo", "near_IR_black_sky_albedo", mn_static%alnsf_grid,  parent_tile, time=month)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "snowfree_albedo", "near_IR_white_sky_albedo", mn_static%alnwf_grid,  parent_tile, time=month)
+
+          ! Set the -999s to small value of 0.06, matching initialization code in chgres
+
+          call mn_replace_low_values(mn_static%alvsf_grid, -100.0, 0.06)
+          call mn_replace_low_values(mn_static%alvwf_grid, -100.0, 0.06)
+          call mn_replace_low_values(mn_static%alnsf_grid, -100.0, 0.06)
+          call mn_replace_low_values(mn_static%alnwf_grid, -100.0, 0.06)
+         
 
           ! Monthly static data
           !call mn_static_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(child_grid_num)%neststruct%surface_dir, "vegetation_greenness", mn_static%veg_greenness_grid)
@@ -1043,7 +1096,7 @@ contains
         ! phis is allocated in fv_arrays.F90 as:  allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
         ! 0 -- all high-resolution data, 1 - static nest smoothing algorithm, 5 - 5 point smoother, 9 - 9 point smoother
         ! Defaults to 1 - static nest smoothing algorithm; this seems to produce the most stable solutions
-        print '("[INFO] WDR Moving Nest terrain_smoother=",I0," High-resolution terrain. npe=",I0)', Atm(n)%neststruct%terrain_smoother, this_pe
+        !print '("[INFO] WDR Moving Nest terrain_smoother=",I0," High-resolution terrain. npe=",I0)', Atm(n)%neststruct%terrain_smoother, this_pe
 
         select case(Atm(n)%neststruct%terrain_smoother)
         case (0)
@@ -1291,6 +1344,19 @@ contains
   if (debug_log) call show_nest_grid(Atm(n), this_pe, 99)
 
 end subroutine fv_moving_nest_exec
+
+subroutine mn_replace_low_values(data_grid, low_value, new_value)
+  real, _ALLOCATABLE, intent(inout)   :: data_grid(:,:)
+  real, intent(in)                    :: low_value, new_value
+
+  integer :: i, j
+  
+  do i=lbound(data_grid,1),ubound(data_grid,1)
+    do j=lbound(data_grid,2),ubound(data_grid,2)
+      if (data_grid(i,j) .le. low_value) data_grid(i,j) = new_value
+    enddo
+  enddo
+end subroutine mn_replace_low_values
 
 #endif ! MOVING_NEST
 

@@ -764,7 +764,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
                                                is,  ie,  js,  je,       &
                                                isd, ied, jsd, jed,      &
                                                reg_bc_update_time,      &
-                                               iq )
+                                               it, iq )
             enddo
       endif
 
