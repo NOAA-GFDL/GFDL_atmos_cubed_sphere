@@ -226,7 +226,7 @@ contains
   real rcp, rg, rrg, bkh, dtmp, k1k
   integer:: i,j,k
   integer:: kdelz
-  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, ccn_cm3, iq, n, kp, k_next
+  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, hailwat, ccn_cm3, iq, n, kmp, kp, k_next
   integer :: ierr
 
       ccpp_associate: associate( fast_mp_consv => CCPP_interstitial%fast_mp_consv, &
@@ -242,6 +242,7 @@ contains
        rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
        snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
        graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+       hailwat = get_tracer_index (MODEL_ATMOS, 'hailwat')
        cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
        ccn_cm3 = get_tracer_index (MODEL_ATMOS, 'ccn_cm3')
 
@@ -251,7 +252,7 @@ contains
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,pe,ptop,kord_tm,hydrostatic, &
 !$OMP                                  pt,pk,rg,peln,q,nwat,liq_wat,rainwat,ice_wat,snowwat, &
-!$OMP                                  graupel,q_con,sphum,cappa,r_vir,rcp,k1k,delp, &
+!$OMP                                  graupel,hailwat,q_con,sphum,cappa,r_vir,rcp,k1k,delp, &
 !$OMP                                  delz,akap,pkz,te,u,v,ps, gridstruct, last_step, &
 !$OMP                                  ak,bk,nq,isd,ied,jsd,jed,kord_tr,fill, adiabatic, &
 #ifdef MULTI_GASES
@@ -294,7 +295,7 @@ contains
                do k=1,km
 #ifdef MOIST_CAPPA
                   call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
-                                ice_wat, snowwat, graupel, q, gz, cvm)
+                                ice_wat, snowwat, graupel, hailwat, q, gz, cvm)
                   do i=is,ie
                      q_con(i,j,k) = gz(i)
 #ifdef MULTI_GASES
@@ -545,7 +546,7 @@ contains
          do k=1,km
 #ifdef MOIST_CAPPA
             call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
-                          ice_wat, snowwat, graupel, q, gz, cvm)
+                          ice_wat, snowwat, graupel, hailwat, q, gz, cvm)
             do i=is,ie
                q_con(i,j,k) = gz(i)
 #ifdef MULTI_GASES
@@ -667,7 +668,7 @@ contains
 !$OMP parallel default(none) shared(is,ie,js,je,km,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt,     &
 !$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln, adiabatic,        &
 !$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,              &
-!$OMP                               graupel,q_con,r_vir,sphum,w,pk,pkz,last_step,consv,        &
+!$OMP                               graupel,hailwat,q_con,r_vir,sphum,w,pk,pkz,last_step,consv,        &
 !$OMP                               do_adiabatic_init,zsum1,zsum0,te0_2d,domain,               &
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
@@ -682,7 +683,7 @@ contains
 !$OMP parallel default(none) shared(is,ie,js,je,km,kmp,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt, &
 !$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln, adiabatic,        &
 !$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,              &
-!$OMP                               graupel,q_con,r_vir,sphum,w,pk,pkz,last_step,consv,        &
+!$OMP                               graupel,hailwat,q_con,r_vir,sphum,w,pk,pkz,last_step,consv,        &
 !$OMP                               do_adiabatic_init,zsum1,zsum0,te0_2d,domain,               &
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
@@ -744,7 +745,7 @@ if( last_step .and. (.not.do_adiabatic_init)  ) then
            do k=1,km
 #ifdef MOIST_CAPPA
               call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
-                            ice_wat, snowwat, graupel, q, gz, cvm)
+                            ice_wat, snowwat, graupel, hailwat, q, gz, cvm)
               do i=is,ie
 ! KE using 3D winds:
               q_con(i,j,k) = gz(i)
@@ -876,9 +877,18 @@ endif        ! end last_step check
                     pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k))/((1.+r_vir*q(i,j,k,sphum))*(1.-gz(i)))
 #endif
                  enddo
+              elseif ( nwat==7 ) then
+                 do i=is,ie
+                    gz(i) = q(i,j,k,liq_wat)+q(i,j,k,rainwat)+q(i,j,k,ice_wat)+q(i,j,k,snowwat)+q(i,j,k,graupel)+q(i,j,k,hailwat)
+#ifdef MULTI_GASES
+                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k))/ virq(q(i,j,k,1:num_gas))
+#else
+                    pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k))/((1.+r_vir*q(i,j,k,sphum))*(1.-gz(i)))
+#endif
+                 enddo
               else
                  call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
-                               ice_wat, snowwat, graupel, q, gz, cvm)
+                               ice_wat, snowwat, graupel, hailwat, q, gz, cvm)
                  do i=is,ie
 #ifdef MULTI_GASES
                     pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k)) / virq(q(i,j,k,1:num_gas))
@@ -925,13 +935,13 @@ endif        ! end last_step check
                                  u, v, w, delz, pt, delp, q, qc, pe, peln, hs, &
                                  rsin2_l, cosa_s_l, &
                                  r_vir,  cp, rg, hlv, te_2d, ua, va, teq, &
-                                 moist_phys, nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hydrostatic, id_te)
+                                 moist_phys, nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, hydrostatic, id_te)
 !------------------------------------------------------
 ! Compute vertically integrated total energy per column
 !------------------------------------------------------
 ! !INPUT PARAMETERS:
    integer,  intent(in):: km, is, ie, js, je, isd, ied, jsd, jed, id_te
-   integer,  intent(in):: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, nwat
+   integer,  intent(in):: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, nwat
    real, intent(inout), dimension(isd:ied,jsd:jed,km):: ua, va
    real, intent(in), dimension(isd:ied,jsd:jed,km):: pt, delp
    real, intent(in), dimension(isd:ied,jsd:jed,km,*):: q
@@ -966,7 +976,7 @@ endif        ! end last_step check
 #ifdef MULTI_GASES
 !$OMP                                  num_gas,                                           &
 #endif
-!$OMP                                  q,nwat,liq_wat,rainwat,ice_wat,snowwat,graupel,sphum)   &
+!$OMP                                  q,nwat,liq_wat,rainwat,ice_wat,snowwat,graupel,hailwat,sphum)   &
 !$OMP                          private(phiz, tv, cvm, qd)
   do j=js,je
 
@@ -1012,7 +1022,7 @@ endif        ! end last_step check
      do k=1,km
 #ifdef MOIST_CAPPA
         call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
-                      ice_wat, snowwat, graupel, q, qd, cvm)
+                      ice_wat, snowwat, graupel, hailwat, q, qd, cvm)
 #endif
         do i=is,ie
 #ifdef MOIST_CAPPA
@@ -3408,9 +3418,9 @@ endif        ! end last_step check
 !! including the heating capacity of water vapor and condensates.
 !>@details See \cite emanuel1994atmospheric for information on variable heat capacities.
  subroutine moist_cv(is,ie, isd,ied, jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
-                     ice_wat, snowwat, graupel, q, qd, cvm, t1)
+                     ice_wat, snowwat, graupel, hailwat, q, qd, cvm, t1)
   integer, intent(in):: is, ie, isd,ied, jsd,jed, km, nwat, j, k
-  integer, intent(in):: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel
+  integer, intent(in):: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat
 #ifdef MULTI_GASES
   real, intent(in), dimension(isd:ied,jsd:jed,km,num_gas):: q
 #else
@@ -3501,6 +3511,18 @@ endif        ! end last_step check
         cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
 #endif
      enddo
+  case(7)
+     do i=is,ie 
+        qv(i) = q(i,j,k,sphum)
+        ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) 
+        qs(i) = q(i,j,k,ice_wat) + q(i,j,k,snowwat) + q(i,j,k,graupel) + q(i,j,k,hailwat)
+        qd(i) = ql(i) + qs(i)
+#ifdef MULTI_GASES
+        cvm(i) = (1.-(qv(i)+qd(i)))*cv_air*vicvqd(q(i,j,k,1:num_gas)) + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
+#else
+        cvm(i) = (1.-(qv(i)+qd(i)))*cv_air + qv(i)*cv_vap + ql(i)*c_liq + qs(i)*c_ice
+#endif
+     enddo
   case default
      !call mpp_error (NOTE, 'fv_mapz::moist_cv - using default cv_air')
      do i=is,ie
@@ -3518,10 +3540,10 @@ endif        ! end last_step check
 !>@brief The subroutine 'moist_cp' computes the FV3-consistent moist heat capacity under constant pressure,
 !! including the heating capacity of water vapor and condensates.
  subroutine moist_cp(is,ie, isd,ied, jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
-                     ice_wat, snowwat, graupel, q, qd, cpm, t1)
+                     ice_wat, snowwat, graupel, hailwat, q, qd, cpm, t1)
 
   integer, intent(in):: is, ie, isd,ied, jsd,jed, km, nwat, j, k
-  integer, intent(in):: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel
+  integer, intent(in):: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat
 #ifdef MULTI_GASES
   real, intent(in), dimension(isd:ied,jsd:jed,km,num_gas):: q
 #else
@@ -3617,6 +3639,20 @@ endif        ! end last_step check
         cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
 #endif
      enddo
+
+  case(7)
+     do i=is,ie 
+        qv(i) = q(i,j,k,sphum)
+        ql(i) = q(i,j,k,liq_wat) + q(i,j,k,rainwat) 
+        qs(i) = q(i,j,k,ice_wat) + q(i,j,k,snowwat) + q(i,j,k,graupel) + q(i,j,k,hailwat)
+        qd(i) = ql(i) + qs(i)
+#ifdef MULTI_GASES
+        cpm(i) = (1.-(qv(i)+qd(i)))*cp_air*vicpqd(q(i,j,k,:)) + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
+#else
+        cpm(i) = (1.-(qv(i)+qd(i)))*cp_air + qv(i)*cp_vapor + ql(i)*c_liq + qs(i)*c_ice
+#endif
+     enddo
+
   case default
      !call mpp_error (NOTE, 'fv_mapz::moist_cp - using default cp_air')
      do i=is,ie
