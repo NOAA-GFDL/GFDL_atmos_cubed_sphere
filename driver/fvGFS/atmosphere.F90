@@ -930,7 +930,7 @@ contains
 !>@brief The subroutine 'atmosphere_grid_bdry' is an API to returns the
 !! longitude and latitude finite volume edges (grid box) for the current MPI-rank.
  subroutine atmosphere_grid_bdry (blon, blat, global)
-    real,    intent(out) :: blon(:,:), blat(:,:)   !< Unit: radian
+    real(kind=kind_phys),    intent(out) :: blon(:,:), blat(:,:)   !< Unit: radian
     logical, intent(in), optional :: global
 ! Local data:
     integer i,j
