@@ -750,6 +750,8 @@ contains
                                       'dx', 'm')
        id_mdy = register_diag_field ( trim(field), 'mdy', (/id_x,id_yt/), Time, &
                                       'dy', 'm')
+       id_mzsurf = register_diag_field ( trim(field), 'mzsurf', axes(1:2), Time, &
+                                         'surface height', 'm' )
 #endif
 !-------------------
 ! Surface pressure
@@ -1838,7 +1840,7 @@ contains
        if(id_zsurf > 0)  used=send_data(id_zsurf, zsurf, Time)
 #endif
 #ifdef MOVING_NEST
-       ! send current lon/lat data for moving nest/grid [Ahern, AOML/HRD]
+       ! send current lon/lat and orog data for moving nest/grid [Ahern, AOML/HRD]
        if (id_mlon  > 0) used = send_data(id_mlon,  rad2deg*Atm(n)%gridstruct%grid(isc:iec+1,jsc:jec+1,1), Time)
        if (id_mlat  > 0) used = send_data(id_mlat,  rad2deg*Atm(n)%gridstruct%grid(isc:iec+1,jsc:jec+1,2), Time)
        if (id_mlont > 0) used = send_data(id_mlont, rad2deg*Atm(n)%gridstruct%agrid(isc:iec,jsc:jec,1), Time)
@@ -1856,6 +1858,7 @@ contains
          used = send_data(id_mdy, dy, Time)
          deallocate(dy)
        endif
+       if (id_mzsurf > 0) used = send_data(id_mzsurf, zsurf, Time)
 #endif
        if(id_ps > 0) used=send_data(id_ps, Atm(n)%ps(isc:iec,jsc:jec), Time)
 

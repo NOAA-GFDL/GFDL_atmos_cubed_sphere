@@ -36,7 +36,8 @@
            id_ctz, id_w1km, id_wmaxup, id_wmaxdn, id_cape, id_cin
 
 ! Time-dependent lon-lat fields, moving grids:
- integer :: id_mlon, id_mlat, id_mlont, id_mlatt, id_marea, id_mdx, id_mdy
+ integer :: id_mlon, id_mlat, id_mlont, id_mlatt, id_marea, id_mdx, id_mdy, &
+            id_mzsurf
 
 ! Selected theta-level fields from 3D variables:
  integer :: id_pv350K, id_pv550K
