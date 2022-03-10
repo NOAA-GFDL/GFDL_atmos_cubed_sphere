@@ -62,9 +62,8 @@ module fv_nggps_diags_mod
 !   </tr>
 ! </table>
 
- use mpp_mod,            only: mpp_pe, mpp_root_pe,FATAL,mpp_error,NOTE, stdlog, input_nml_file
+ use mpp_mod,            only: mpp_pe, mpp_root_pe,FATAL,mpp_error,NOTE
  use constants_mod,      only: grav, rdgas
- use fms_mod,               only: check_nml_error
  use time_manager_mod,   only: time_type, get_time
  use diag_manager_mod,   only: register_diag_field, send_data
  use diag_axis_mod,      only: get_axis_global_length, get_diag_axis, get_diag_axis_name
@@ -75,7 +74,7 @@ module fv_nggps_diags_mod
  use fv_diagnostics_mod, only: range_check, dbzcalc,max_vv,get_vorticity, &
                                max_uh,max_vorticity,bunkers_vector,       &
                                helicity_relative_CAPS,max_vorticity_hy1
- use module_diag_hailcast,  only: hailcast_diagnostic_driver
+ use module_diag_hailcast
  use fv_arrays_mod,      only: fv_atmos_type
  use mpp_domains_mod,    only: domain1d, domainUG
 #ifdef MULTI_GASES
@@ -101,18 +100,11 @@ module fv_nggps_diags_mod
  integer :: id_wmaxup,id_wmaxdn,kstt_wup, kend_wup,kstt_wdn,kend_wdn
  integer :: id_uhmax03,id_uhmin03,id_uhmax25,id_uhmin25,id_maxvort01
  integer :: id_maxvorthy1,kstt_maxvorthy1,kstt_maxvort01,id_ustm
- integer :: id_hailcast_dhail
- integer :: id_hailcast_dhail1, id_hailcast_dhail2, id_hailcast_dhail3, id_hailcast_dhail4, id_hailcast_dhail5, id_hailcast_wdur, id_hailcast_wup_mask
- integer :: id_hailcast_diam_mean, id_hailcast_diam_std
  integer :: kend_maxvorthy1,kend_maxvort01,id_vstm,id_srh01,id_srh03
  integer :: kstt_uhmax03,kstt_uhmin03,kend_uhmax03,kend_uhmin03
  integer :: kstt_uhmax25,kstt_uhmin25,kend_uhmax25,kend_uhmin25
  integer :: kstt_ustm,kstt_vstm,kend_ustm,kend_vstm,kstt_srh01
  integer :: kstt_srh03,kend_srh01,kend_srh03
- integer :: kstt_hc, kend_hc
- integer :: kstt_hc1,kstt_hc2,kstt_hc3,kstt_hc4,kstt_hc5
- integer :: kend_hc1,kend_hc2,kend_hc3,kend_hc4,kend_hc5
- integer :: kstt_hcd, kend_hcd, kstt_hcm, kend_hcm
  integer :: id_maxvort02,kstt_maxvort02,kend_maxvort02
  integer :: isco, ieco, jsco, jeco, npzo, ncnsto
  integer :: isdo, iedo, jsdo, jedo
@@ -132,6 +124,7 @@ module fv_nggps_diags_mod
 
 ! file name
  character(len=64) :: file_name = 'gfs_dyn'
+ INTEGER :: istatus
 
 ! tracers
  character(len=128)   :: tname
@@ -146,11 +139,6 @@ module fv_nggps_diags_mod
  real, dimension(:,:),allocatable :: uhmax25,uhmin25,maxvort01
  real, dimension(:,:),allocatable :: maxvorthy1,maxvort02
 
- real, allocatable :: hailcast_dhail1(:,:), hailcast_dhail2(:,:), hailcast_dhail3(:,:), hailcast_dhail4(:,:), hailcast_dhail5(:,:) !hailstone diameters (mm)
- real, allocatable :: hailcast_dhail1_max(:,:), hailcast_dhail2_max(:,:), hailcast_dhail3_max(:,:), hailcast_dhail4_max(:,:), hailcast_dhail5_max(:,:) !hailstone diameters (mm)
- real, allocatable :: hailcast_diam_mean(:,:), hailcast_diam_std(:,:) !mean and standard deviation of five hailstones (mm)
- real, allocatable :: hailcast_wdur(:,:), hailcast_wup_mask(:,:) !persistent arrays for updraft duration (s) and mask
-
  public :: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 #ifdef use_WRTCOMP
  public :: fv_dyn_bundle_setup
@@ -163,32 +151,6 @@ contains
     integer, intent(in)         :: axes(4)
     type(time_type), intent(in) :: Time
     integer :: n, i, j, nz
-    logical :: do_hailcast = .true. !This controls whether hailcast is used
-    namelist /fv_diagnostics_nml/ do_hailcast
-    integer :: ios, ierr
-    integer :: unit
-
-    !namelist file for hailcast
-#ifdef INTERNAL_FILE_NML
-    ! Read Main namelist
-    read (input_nml_file,fv_diagnostics_nml,iostat=ios)
-    ierr = check_nml_error(ios,'fv_diagnostics_nml')
-#else
-    f_unit=open_namelist_file()
-    rewind (f_unit)
-    ! Read Main namelist
-    read (f_unit,fv_diagnostics_nml,iostat=ios)
-    ierr = check_nml_error(ios,'fv_diagnostics_nml')
-    call close_file(f_unit)
-#endif
-
-    unit = stdlog()
-    write(unit, nml=fv_diagnostics_nml)
-    !end hailcast nml
-
-    if (mpp_pe() == mpp_root_pe()) then
-        print*, 'do_hailcast = ', do_hailcast
-    end if
 
     n = 1
     ncnsto = Atm(1)%ncnst
@@ -471,93 +433,8 @@ contains
 
     endif
 
-    !register hailcast arrays
-    if (do_hailcast) then
-       id_hailcast_dhail = register_diag_field ( trim(file_name), 'hailcast_dhail_max', axes(1:2), Time,   &
-                     'hourly max hail diameter', 'mm', missing_value=missing_value )
-       id_hailcast_dhail1 = register_diag_field ( trim(file_name), 'hailcast_dhail1_max', axes(1:2), Time,   &
-                     'hourly max hail diameter (embryo 1)', 'mm', missing_value=missing_value )
-       id_hailcast_dhail2 = register_diag_field ( trim(file_name), 'hailcast_dhail2_max', axes(1:2), Time,   &
-                     'hourly max hail diameter (embryo 2)', 'mm', missing_value=missing_value )
-       id_hailcast_dhail3 = register_diag_field ( trim(file_name), 'hailcast_dhail3_max', axes(1:2), Time,   &
-                     'hourly max hail diameter (embryo 3)', 'mm', missing_value=missing_value )
-       id_hailcast_dhail4 = register_diag_field ( trim(file_name), 'hailcast_dhail4_max', axes(1:2), Time,   &
-                     'hourly max hail diameter (embryo 4)', 'mm', missing_value=missing_value )
-       id_hailcast_dhail5 = register_diag_field ( trim(file_name), 'hailcast_dhail5_max', axes(1:2), Time,   &
-                     'hourly max hail diameter (embryo 5)', 'mm', missing_value=missing_value )
-       id_hailcast_diam_mean = register_diag_field ( trim(file_name), 'hailcast_diam_mean', axes(1:2), Time,   &
-                     'mean hail diameter', 'mm', missing_value=missing_value )
-       id_hailcast_diam_std = register_diag_field ( trim(file_name), 'hailcast_diam_std', axes(1:2), Time,   &
-                     'standard deviation of hail diameter', 'mm', missing_value=missing_value )
-       id_hailcast_wdur = register_diag_field ( trim(file_name), 'hailcast_wdur', axes(1:2), Time,   &
-                     'updraft duration', 's', missing_value=missing_value )
-       id_hailcast_wup_mask = register_diag_field ( trim(file_name), 'hailcast_wup_mask', axes(1:2), Time,   &
-                     'updraft mask', '', missing_value=missing_value )
-
-       if (id_hailcast_dhail > 0) then
-         kstt_hc = nlevs+1; kend_hc = nlevs+1
-         nlevs = nlevs + 1
-       endif
-
-       if (id_hailcast_dhail1 > 0) then
-         kstt_hc1 = nlevs+1; kend_hc1 = nlevs+1
-         nlevs = nlevs + 1
-       endif
-       if (id_hailcast_dhail2 > 0) then
-         kstt_hc2 = nlevs+1; kend_hc2 = nlevs+1
-         nlevs = nlevs + 1
-       endif
-       if (id_hailcast_dhail3 > 0) then
-         kstt_hc3 = nlevs+1; kend_hc3 = nlevs+1
-         nlevs = nlevs + 1
-       endif
-       if (id_hailcast_dhail4 > 0) then
-         kstt_hc4 = nlevs+1; kend_hc4 = nlevs+1
-         nlevs = nlevs + 1
-       endif
-       if (id_hailcast_dhail5 > 0) then
-         kstt_hc5 = nlevs+1; kend_hc5 = nlevs+1
-         nlevs = nlevs + 1
-    endif
-       if (id_hailcast_wdur > 0) then
-         kstt_hcd = nlevs+1; kend_hcd = nlevs+1
-         nlevs = nlevs + 1
-       endif
-       if (id_hailcast_wup_mask > 0) then
-         kstt_hcm = nlevs+1; kend_hcm = nlevs+1
-         nlevs = nlevs + 1
-       endif
-
-       if (.not.allocated(hailcast_dhail1)) then
-          allocate(hailcast_dhail1(isco:ieco,jsco:jeco), &
-                   hailcast_dhail2(isco:ieco,jsco:jeco), &
-                   hailcast_dhail3(isco:ieco,jsco:jeco), &
-                   hailcast_dhail4(isco:ieco,jsco:jeco), &
-                   hailcast_dhail5(isco:ieco,jsco:jeco), &
-                   hailcast_diam_mean(isco:ieco,jsco:jeco), &
-                   hailcast_diam_std(isco:ieco,jsco:jeco))
-          allocate ( hailcast_dhail1_max(isco:ieco,jsco:jeco) )
-          allocate ( hailcast_dhail2_max(isco:ieco,jsco:jeco) )
-          allocate ( hailcast_dhail3_max(isco:ieco,jsco:jeco) )
-          allocate ( hailcast_dhail4_max(isco:ieco,jsco:jeco) )
-          allocate ( hailcast_dhail5_max(isco:ieco,jsco:jeco) )
-
-          do i=isco,ieco
-             do j=jsco,jeco
-                hailcast_dhail1(i,j)=0; hailcast_dhail2(i,j)=0; hailcast_dhail3(i,j)=0; hailcast_dhail4(i,j)=0; hailcast_dhail5(i,j)=0
-                hailcast_dhail1_max(i,j)=0; hailcast_dhail2_max(i,j)=0; hailcast_dhail3_max(i,j)=0; hailcast_dhail4_max(i,j)=0; hailcast_dhail5_max(i,j)=0
-             enddo
-          enddo
-       endif
-       if (.not.allocated(hailcast_wdur)) then
-          allocate(hailcast_wdur(isdo:iedo,jsdo:jedo),hailcast_wup_mask(isdo:iedo,jsdo:jedo))
-          do i=isdo,iedo
-             do j=jsdo,jedo
-                hailcast_wdur(i,j)=0;hailcast_wup_mask(i,j)=0
-             enddo
-          enddo
-       endif
-    endif
+    !initialize hailcast
+    call hailcast_init(file_name, axes, Time, isdo,iedo,jsdo,jedo,nlevs, missing_value, istatus)
 
 !
 !------------------------------------
@@ -578,7 +455,7 @@ contains
     logical :: bad_range
     real    :: ptop, allmax
     real, allocatable :: wk(:,:,:), wk2(:,:,:)
-    real, dimension(:,:),allocatable :: ustm,vstm,srh01,srh03,hailcast_dhail_max
+    real, dimension(:,:),allocatable :: ustm,vstm,srh01,srh03
 
     n = 1
     ngc = Atm(n)%ng
@@ -865,59 +742,48 @@ contains
       call store_data(id_uhmin25, uhmin25, Time, kstt_uhmin25, kend_uhmin25)
     endif
 
-    !--- max hourly hailcast hail diameter
-    if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_hailcast_dhail > 0) then
-      allocate(hailcast_dhail_max(isco:ieco,jsco:jeco))
+    IF ( .not. Atm(n)%flagstruct%hydrostatic .and. do_hailcast ) THEN
+        !--- max hourly hailcast hail diameter
+        if (id_hailcast_dhail > 0) then
+          call hailcast_compute_dhailmax(isco,ieco,jsco,jeco,istatus)
+          call store_data(id_hailcast_dhail, hailcast_dhail_max, Time, kstt_hc, kend_hc)
+          if (allocated(hailcast_dhail_max)) deallocate(hailcast_dhail_max)
+        endif
 
-      do j=jsco,jeco
-        do i=isco,ieco
-          hailcast_dhail_max(i,j) = 0.
-          hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j), hailcast_dhail1_max(i,j))
-          hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j), hailcast_dhail2_max(i,j))
-          hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j), hailcast_dhail3_max(i,j))
-          hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j), hailcast_dhail4_max(i,j))
-          hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j), hailcast_dhail5_max(i,j))
-        end do
-      end do
+        !--- max hourly hailcast hail diameter (embryo 1)
+        if ( id_hailcast_dhail1 > 0) then
+          call store_data(id_hailcast_dhail1, hailcast_dhail1_max, Time, kstt_hc1, kend_hc1)
+        endif
 
-      call store_data(id_hailcast_dhail, hailcast_dhail_max, Time, kstt_hc, kend_hc)
-      deallocate(hailcast_dhail_max)
-    endif
+        !--- max hourly hailcast hail diameter (embryo 2)
+        if ( id_hailcast_dhail2 > 0) then
+          call store_data(id_hailcast_dhail2, hailcast_dhail2_max, Time, kstt_hc2, kend_hc2)
+        endif
 
-    !--- max hourly hailcast hail diameter (embryo 1)
-    if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_hailcast_dhail1 > 0) then
-      call store_data(id_hailcast_dhail1, hailcast_dhail1_max, Time, kstt_hc1, kend_hc1)
-    endif
+        !--- max hourly hailcast hail diameter (embryo 3)
+        if ( id_hailcast_dhail3 > 0) then
+          call store_data(id_hailcast_dhail3, hailcast_dhail3_max, Time, kstt_hc3, kend_hc3)
+        endif
 
-    !--- max hourly hailcast hail diameter (embryo 2)
-    if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_hailcast_dhail2 > 0) then
-      call store_data(id_hailcast_dhail2, hailcast_dhail2_max, Time, kstt_hc2, kend_hc2)
-    endif
+        !--- max hourly hailcast hail diameter (embryo 4)
+        if ( id_hailcast_dhail4 > 0) then
+          call store_data(id_hailcast_dhail4, hailcast_dhail4_max, Time, kstt_hc4, kend_hc4)
+        endif
 
-    !--- max hourly hailcast hail diameter (embryo 3)
-    if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_hailcast_dhail3 > 0) then
-      call store_data(id_hailcast_dhail3, hailcast_dhail3_max, Time, kstt_hc3, kend_hc3)
-    endif
+        !--- max hourly hailcast hail diameter (embryo 5)
+        if ( id_hailcast_dhail5 > 0) then
+          call store_data(id_hailcast_dhail5, hailcast_dhail5_max, Time, kstt_hc5, kend_hc5)
+        endif
 
-    !--- max hourly hailcast hail diameter (embryo 4)
-    if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_hailcast_dhail4 > 0) then
-      call store_data(id_hailcast_dhail4, hailcast_dhail4_max, Time, kstt_hc4, kend_hc4)
-    endif
-
-    !--- max hourly hailcast hail diameter (embryo 5)
-    if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_hailcast_dhail5 > 0) then
-      call store_data(id_hailcast_dhail5, hailcast_dhail5_max, Time, kstt_hc5, kend_hc5)
-    endif
-
-    !--- hailcast updraft duration
-    if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_hailcast_wdur > 0) then
-      call store_data(id_hailcast_wdur, hailcast_wdur(isco:ieco, jsco:jeco), Time, kstt_hcd, kend_hcd)
-    endif
-    !--- hailcast updraft mask
-    if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_hailcast_wup_mask > 0) then
-      call store_data(id_hailcast_wup_mask, hailcast_wup_mask(isco:ieco, jsco:jeco), Time, kstt_hcm, kend_hcm)
-    endif
-
+        !--- hailcast updraft duration
+        if ( id_hailcast_wdur > 0) then
+          call store_data(id_hailcast_wdur, hailcast_wdur(isco:ieco, jsco:jeco), Time, kstt_hcd, kend_hcd)
+        endif
+        !--- hailcast updraft mask
+        if ( id_hailcast_wup_mask > 0) then
+          call store_data(id_hailcast_wup_mask, hailcast_wup_mask(isco:ieco, jsco:jeco), Time, kstt_hcm, kend_hcm)
+        endif
+    END IF
 
     !call nullify_domain()
 
@@ -934,7 +800,6 @@ contains
     integer, save :: kdtt = 0
     real :: avg_max_length
     real,dimension(:,:,:),allocatable :: vort
-    real, allocatable :: rhoair_layer(:,:,:), z(:), z_layer(:,:,:), p_layer(:,:,:),zsfc(:,:)
     n = 1
     ngc = Atm(n)%ng
     nq = size (Atm(n)%q,4)
@@ -1019,87 +884,9 @@ contains
    endif
 
    !allocate hailcast met field arrays
-   if (id_hailcast_dhail>0 .or. id_hailcast_dhail1>0 .or. id_hailcast_dhail2>0 .or. id_hailcast_dhail3>0 &
-      .or. id_hailcast_dhail4>0 .or. id_hailcast_dhail5>0 .or. id_hailcast_diam_mean>0 &
-      .or. id_hailcast_diam_std>0) then
-
-       do j=jsco,jeco
-         do i=isco,ieco
-            if(mod(kdtt,nsteps_per_reset)==0)then
-               hailcast_dhail1_max(i,j) = 0.
-               hailcast_dhail2_max(i,j) = 0.
-               hailcast_dhail3_max(i,j) = 0.
-               hailcast_dhail4_max(i,j) = 0.
-               hailcast_dhail5_max(i,j) = 0.
-            endif
-
-            hailcast_dhail1(i,j) = 0
-            hailcast_dhail2(i,j) = 0
-            hailcast_dhail3(i,j) = 0
-            hailcast_dhail4(i,j) = 0
-            hailcast_dhail5(i,j) = 0
-         enddo
-       enddo
-
-
-      if (.not. allocated(rhoair_layer)) allocate(rhoair_layer(isco:ieco,jsco:jeco,1:npzo))  !layer 3-D air density
-      if (.not. allocated(z)) allocate(z(1:npzo+1))                                          !interace levels
-      if (.not. allocated(z_layer)) allocate(z_layer(isco:ieco,jsco:jeco,1:npzo))            !layer 3-D height ASL
-      if (.not. allocated(p_layer)) allocate(p_layer(isco:ieco,jsco:jeco,1:npzo))            !layer 3-D pressure
-      if (.not. allocated(zsfc)) allocate(zsfc(isco:ieco,jsco:jeco))                         !terrain height
-
-      do k=npzo,1,-1
-         do j=jsco, jeco
-            if (Atm(n)%flagstruct%hydrostatic) then
-               call mpp_error(FATAL, 'HAILCAST can only be run with non-hydrostatic FV3')
-               !do i=is, ie
-                  !rhoair(i,j,k) = Atm(n)%delp(i,j,k)/( ( Atm(n)%peln(i,k+1,j)- Atm(n)%peln(i,k,j)) &
-                  !                  * rdgas *  Atm(n)%pt(i,j,k) * ( 1. + zvir*q(i,j,k,sphum)))
-               !enddo
-            else !non-hydrostatic
-               do i=isco, ieco
-                  if (k==npzo) then
-                     zsfc(i,j)=Atm(n)%phis(i,j) / grav
-                     z(npzo+1)=zsfc(i,j)
-                  endif
-                  rhoair_layer(i,j,k) = -Atm(n)%delp(i,j,k)/(grav*Atm(n)%delz(i,j,k))
-                  !height of interfaces and layer height
-                  z(k)=z(k+1)-Atm(n)%delz(i,j,k)
-                  z_layer(i,j,k)=(z(k+1)+z(k))/2
-                  p_layer(i,j,k)=Atm(n)%delp(i,j,k)*(1.-sum(Atm(n)%q(i,j,k,2:Atm(n)%flagstruct%nwat)))/&
-                              (-Atm(n)%delz(i,j,k)*grav)*rdgas*Atm(n)%pt(i,j,k)*(1.+zvir*Atm(n)%q(i,j,k,sphum))
-               enddo
-            endif
-         enddo !j loop
-      enddo !k loop
-
-      !call hailcast diagnostic driver once per time step and provide three-dimensional met fields
-      call hailcast_diagnostic_driver(Atm(n)%pt(isco:ieco,jsco:jeco,1:npzo), Atm(n)%w(isco:ieco,jsco:jeco,1:npzo), p_layer, z_layer, rhoair_layer, Atm(n)%q(isco:ieco,jsco:jeco,1:npzo,:), &  !3D fields
-                                      Atm(n)%flagstruct%nwat, sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, &  !number of tracer indices, indices
-                                      isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,                           &  !grid dimensions data array (with halo) and physical grid dimensions
-                                      1,npzo, zsfc,                                               &  !vertical dimensions, terrain height
-                                      first_time, Atm(n)%domain,                                 &  !call hailcast every model step and info for updating haloes
-                                      hailcast_dhail1,hailcast_dhail2,hailcast_dhail3,hailcast_dhail4,hailcast_dhail5, & !hailcast embryos sizes
-                                      hailcast_diam_mean, hailcast_diam_std,                     & !hailcast embryo mean/std
-                                      hailcast_wdur, hailcast_wup_mask)                            !persistent updraft duration and mask
-
-      do j=jsco,jeco
-        do i=isco,ieco
-          hailcast_dhail1_max(i,j) = max(hailcast_dhail1_max(i,j), hailcast_dhail1(i,j))
-          hailcast_dhail2_max(i,j) = max(hailcast_dhail2_max(i,j), hailcast_dhail2(i,j))
-          hailcast_dhail3_max(i,j) = max(hailcast_dhail3_max(i,j), hailcast_dhail3(i,j))
-          hailcast_dhail4_max(i,j) = max(hailcast_dhail4_max(i,j), hailcast_dhail4(i,j))
-          hailcast_dhail5_max(i,j) = max(hailcast_dhail5_max(i,j), hailcast_dhail5(i,j))
-        enddo
-      enddo
-
-
-      !deallocate hailcast met variables
-      deallocate(p_layer)
-      deallocate(z_layer)
-      deallocate(rhoair_layer)
-      deallocate(z)
-      deallocate(zsfc)
+   if (do_hailcast) then
+      call hailcast_compute(Atm(n),sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, &
+           isco,jsco,ieco,jeco,npzo,kdtt,nsteps_per_reset)
    endif
 
    kdtt=kdtt+1
@@ -1608,69 +1395,71 @@ contains
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
 
-   if( .not.hydrostatico .and. id_hailcast_dhail > 0 ) then
-     call find_outputname(trim(file_name),'hailcast_dhail_max',output_name)
-     if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter, output name=',trim(output_name)
-     call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter', 'mm', "time: point",   &
-          axes(1:2), fcst_grid, kstt_hc,kend_hc, dyn_bundle, output_file, rcd=rc)
-     if(rc==0)  num_field_dyn=num_field_dyn+1
-   endif
+   if( .not.hydrostatico .and. do_hailcast) then
+        if( id_hailcast_dhail > 0 ) then
+            call find_outputname(trim(file_name),'hailcast_dhail_max',output_name)
+            if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter, output name=',trim(output_name)
+            call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter', 'mm', "time: point",   &
+                 axes(1:2), fcst_grid, kstt_hc,kend_hc, dyn_bundle, output_file, rcd=rc)
+            if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
 
-   if( .not.hydrostatico .and. id_hailcast_dhail1 > 0 ) then
-     call find_outputname(trim(file_name),'hailcast_dhail1_max',output_name)
-     if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter (embryo 1), output name=',trim(output_name)
-     call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter (embryo 1)', 'mm', "time: point",   &
-          axes(1:2), fcst_grid, kstt_hc1,kend_hc1, dyn_bundle, output_file, rcd=rc)
-     if(rc==0)  num_field_dyn=num_field_dyn+1
-   endif
+        if( id_hailcast_dhail1 > 0 ) then
+          call find_outputname(trim(file_name),'hailcast_dhail1_max',output_name)
+          if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter (embryo 1), output name=',trim(output_name)
+          call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter (embryo 1)', 'mm', "time: point",   &
+               axes(1:2), fcst_grid, kstt_hc1,kend_hc1, dyn_bundle, output_file, rcd=rc)
+          if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
 
-   if( .not.hydrostatico .and. id_hailcast_dhail2 > 0 ) then
-     call find_outputname(trim(file_name),'hailcast_dhail2_max',output_name)
-     if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter (embryo 2), output name=',trim(output_name)
-     call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter (embryo 2)', 'mm', "time: point",   &
-          axes(1:2), fcst_grid, kstt_hc2,kend_hc2, dyn_bundle, output_file, rcd=rc)
-     if(rc==0)  num_field_dyn=num_field_dyn+1
-   endif
+        if( id_hailcast_dhail2 > 0 ) then
+          call find_outputname(trim(file_name),'hailcast_dhail2_max',output_name)
+          if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter (embryo 2), output name=',trim(output_name)
+          call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter (embryo 2)', 'mm', "time: point",   &
+               axes(1:2), fcst_grid, kstt_hc2,kend_hc2, dyn_bundle, output_file, rcd=rc)
+          if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
 
-   if( .not.hydrostatico .and. id_hailcast_dhail3 > 0 ) then
-     call find_outputname(trim(file_name),'hailcast_dhail3_max',output_name)
-     if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter (embryo 3), output name=',trim(output_name)
-     call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter (embryo 3)', 'mm', "time: point",   &
-          axes(1:2), fcst_grid, kstt_hc3,kend_hc3, dyn_bundle, output_file, rcd=rc)
-     if(rc==0)  num_field_dyn=num_field_dyn+1
-   endif
+        if( id_hailcast_dhail3 > 0 ) then
+          call find_outputname(trim(file_name),'hailcast_dhail3_max',output_name)
+          if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter (embryo 3), output name=',trim(output_name)
+          call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter (embryo 3)', 'mm', "time: point",   &
+               axes(1:2), fcst_grid, kstt_hc3,kend_hc3, dyn_bundle, output_file, rcd=rc)
+          if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
 
-   if( .not.hydrostatico .and. id_hailcast_dhail4 > 0 ) then
-     call find_outputname(trim(file_name),'hailcast_dhail4_max',output_name)
-     if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter (embryo 4), output name=',trim(output_name)
-     call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter (embryo 4)', 'mm', "time: point",   &
-          axes(1:2), fcst_grid, kstt_hc4,kend_hc4, dyn_bundle, output_file, rcd=rc)
-     if(rc==0)  num_field_dyn=num_field_dyn+1
-   endif
+        if( id_hailcast_dhail4 > 0 ) then
+          call find_outputname(trim(file_name),'hailcast_dhail4_max',output_name)
+          if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter (embryo 4), output name=',trim(output_name)
+          call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter (embryo 4)', 'mm', "time: point",   &
+               axes(1:2), fcst_grid, kstt_hc4,kend_hc4, dyn_bundle, output_file, rcd=rc)
+          if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
 
-   if( .not.hydrostatico .and. id_hailcast_dhail5 > 0 ) then
-     call find_outputname(trim(file_name),'hailcast_dhail5_max',output_name)
-     if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter (embryo 5), output name=',trim(output_name)
-     call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter (embryo 5)', 'mm', "time: point",   &
-          axes(1:2), fcst_grid, kstt_hc5,kend_hc5, dyn_bundle, output_file, rcd=rc)
-     if(rc==0)  num_field_dyn=num_field_dyn+1
-   endif
+        if( id_hailcast_dhail5 > 0 ) then
+          call find_outputname(trim(file_name),'hailcast_dhail5_max',output_name)
+          if(mpp_pe()==mpp_root_pe())print *,'max hourly hailcast hail diameter (embryo 5), output name=',trim(output_name)
+          call add_field_to_bundle(trim(output_name),'Max hourly hailcast hail diameter (embryo 5)', 'mm', "time: point",   &
+               axes(1:2), fcst_grid, kstt_hc5,kend_hc5, dyn_bundle, output_file, rcd=rc)
+          if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
 
-   if( .not.hydrostatico .and. id_hailcast_wdur > 0 ) then
-     call find_outputname(trim(file_name),'hailcast_wdur',output_name)
-     if(mpp_pe()==mpp_root_pe())print *,'hailcast updraft duration, output name=',trim(output_name)
-     call add_field_to_bundle(trim(output_name),'Hailcast updraft duration', 's', "time: point",   &
-          axes(1:2), fcst_grid, kstt_hcd,kend_hcd, dyn_bundle, output_file, rcd=rc)
-     if(rc==0)  num_field_dyn=num_field_dyn+1
-   endif
+        if( id_hailcast_wdur > 0 ) then
+          call find_outputname(trim(file_name),'hailcast_wdur',output_name)
+          if(mpp_pe()==mpp_root_pe())print *,'hailcast updraft duration, output name=',trim(output_name)
+          call add_field_to_bundle(trim(output_name),'Hailcast updraft duration', 's', "time: point",   &
+               axes(1:2), fcst_grid, kstt_hcd,kend_hcd, dyn_bundle, output_file, rcd=rc)
+          if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
 
-   if( .not.hydrostatico .and. id_hailcast_wup_mask > 0 ) then
-     call find_outputname(trim(file_name),'hailcast_wup_mask',output_name)
-     if(mpp_pe()==mpp_root_pe())print *,'hailcast updraft mask, output name=',trim(output_name)
-     call add_field_to_bundle(trim(output_name),'Hailcast updraft mask', '', "time: point",   &
-          axes(1:2), fcst_grid, kstt_hcm,kend_hcm, dyn_bundle, output_file, rcd=rc)
-     if(rc==0)  num_field_dyn=num_field_dyn+1
-   endif
+        if( id_hailcast_wup_mask > 0 ) then
+          call find_outputname(trim(file_name),'hailcast_wup_mask',output_name)
+          if(mpp_pe()==mpp_root_pe())print *,'hailcast updraft mask, output name=',trim(output_name)
+          call add_field_to_bundle(trim(output_name),'Hailcast updraft mask', '', "time: point",   &
+               axes(1:2), fcst_grid, kstt_hcm,kend_hcm, dyn_bundle, output_file, rcd=rc)
+          if(rc==0)  num_field_dyn=num_field_dyn+1
+        endif
+    endif
 
 !jwtest:
 !   call ESMF_FieldBundleGet(dyn_bundle, fieldCount=fieldCount, rc=rc)

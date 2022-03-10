@@ -62,8 +62,8 @@ module fv_arrays_mod
      integer :: steps
 
      !for hailcast
-     integer :: id_hailcast_dhail1, id_hailcast_dhail2, id_hailcast_dhail3, id_hailcast_dhail4, id_hailcast_dhail5
-     integer :: id_hailcast_diam_mean, id_hailcast_diam_std
+     !integer :: id_hailcast_dhail1, id_hailcast_dhail2, id_hailcast_dhail3, id_hailcast_dhail4, id_hailcast_dhail5
+     !integer :: id_hailcast_diam_mean, id_hailcast_diam_std
 
   end type fv_diag_type
 

@@ -2,77 +2,316 @@
 !John Henderson AER 20190425
 !time management handling from WRF is preserved but commented out
 
-!MODULE module_diag_hailcast
-!CONTAINS
-!   SUBROUTINE diag_hailcast_stub
-!   END SUBROUTINE diag_hailcast_stub
-!END MODULE module_diag_hailcast
+! Y. Wang NSSL/CIWRO 20220310
+! Remodeled as recommended for PR #164.
+!
 
 MODULE module_diag_hailcast
+    USE time_manager_mod, ONLY: time_type
+    use mpp_mod,          only: mpp_error, FATAL, input_nml_file, stdlog, mpp_pe, mpp_root_pe
+    use fms_mod,          only: check_nml_error
+    !use fv_mp_mod,        only: is_master
 
+    use constants_mod,    only: grav
+
+    logical :: do_hailcast = .false. !This controls whether hailcast is used
+
+    INTEGER :: id_hailcast_dhail
+    INTEGER :: id_hailcast_dhail1, id_hailcast_dhail2, id_hailcast_dhail3, &
+               id_hailcast_dhail4, id_hailcast_dhail5, id_hailcast_wdur,   &
+               id_hailcast_wup_mask
+    INTEGER :: id_hailcast_diam_mean, id_hailcast_diam_std
+    REAL, ALLOCATABLE :: hailcast_dhail1(:,:), hailcast_dhail2(:,:),    &
+                         hailcast_dhail3(:,:), hailcast_dhail4(:,:),    &
+                         hailcast_dhail5(:,:) !hailstone diameters (mm)
+    REAL, ALLOCATABLE :: hailcast_dhail1_max(:,:), hailcast_dhail2_max(:,:), &
+                         hailcast_dhail3_max(:,:), hailcast_dhail4_max(:,:), &
+                         hailcast_dhail5_max(:,:) !hailstone diameters (mm)
+    REAL, ALLOCATABLE :: hailcast_diam_mean(:,:), hailcast_diam_std(:,:) !mean and standard deviation of five hailstones (mm)
+    REAL, ALLOCATABLE :: hailcast_wdur(:,:), hailcast_wup_mask(:,:) !persistent arrays for updraft duration (s) and mask
+    real, allocatable :: hailcast_dhail_max(:,:)
+
+    integer :: kstt_hc, kend_hc
+    integer :: kstt_hc1,kstt_hc2,kstt_hc3,kstt_hc4,kstt_hc5
+    integer :: kend_hc1,kend_hc2,kend_hc3,kend_hc4,kend_hc5
+    integer :: kstt_hcd, kend_hcd, kstt_hcm, kend_hcm
+
+    PRIVATE :: INTERPP, INTERP, TERMINL, VAPORCLOSE, MASSAGR, HEATBUD, BREAKUP, MELT
+    PRIVATE :: hailstone_driver, hailcast_diagnostic_driver
 CONTAINS
 
-!  SUBROUTINE hailcast_diagnostic_driver (   grid , config_flags     &
-!                             , moist                             &
-!                             , rho  &
-!                             , ids, ide, jds, jde, kds, kde      &
-!                             , ims, ime, jms, jme, kms, kme      &
-!                             , ips, ipe, jps, jpe, kps, kpe      &
-!                             , its, ite, jts, jte                &
-!                             , k_start, k_end                    &
-!                             , dt, itimestep                     &
-!                             , haildt,curr_secs                  &
-!                             , haildtacttime                     )
-   SUBROUTINE hailcast_diagnostic_driver ( t, w, p, z, rho, q,                & ! 3D temperature, updraft, pressure, height, density and moisture tracers
+    SUBROUTINE hailcast_init(file_name, axes, Time, isdo,iedo,jsdo,jedo,nlevs, missing_value, istatus)
+
+        use diag_manager_mod,   only: register_diag_field
+
+        CHARACTER(LEN=64), INTENT(IN)    :: file_name
+        integer,           intent(in)    :: axes(4)
+        type(time_type),   intent(in)    :: Time
+        INTEGER,           INTENT(IN)    :: isdo,iedo,jsdo,jedo
+        INTEGER,           INTENT(INOUT) :: nlevs
+        real,              INTENT(IN)    :: missing_value
+        INTEGER,           INTENT(OUT)   :: istatus
+
+        namelist /fv_diagnostics_nml/ do_hailcast
+        integer :: ios, ierr
+        integer :: unit, f_unit
+
+        !namelist file for hailcast
+#ifdef INTERNAL_FILE_NML
+        ! Read Main namelist
+        read (input_nml_file,fv_diagnostics_nml,iostat=ios)
+        ierr = check_nml_error(ios,'fv_diagnostics_nml')
+#else
+        f_unit=open_namelist_file()
+        rewind (f_unit)
+        ! Read Main namelist
+        read (f_unit,fv_diagnostics_nml,iostat=ios)
+        ierr = check_nml_error(ios,'fv_diagnostics_nml')
+        call close_file(f_unit)
+#endif
+
+        unit = stdlog()
+        write(unit, nml=fv_diagnostics_nml)
+        !end hailcast nml
+
+        if (mpp_pe() == mpp_root_pe()) then
+            print*, 'do_hailcast = ', do_hailcast
+        end if
+
+        !register hailcast arrays
+        if (do_hailcast) then
+            id_hailcast_dhail = register_diag_field ( trim(file_name), 'hailcast_dhail_max', axes(1:2), Time,    &
+                          'hourly max hail diameter', 'mm', missing_value=missing_value )
+            id_hailcast_dhail1 = register_diag_field ( trim(file_name), 'hailcast_dhail1_max', axes(1:2), Time,   &
+                          'hourly max hail diameter (embryo 1)', 'mm', missing_value=missing_value )
+            id_hailcast_dhail2 = register_diag_field ( trim(file_name), 'hailcast_dhail2_max', axes(1:2), Time,   &
+                          'hourly max hail diameter (embryo 2)', 'mm', missing_value=missing_value )
+            id_hailcast_dhail3 = register_diag_field ( trim(file_name), 'hailcast_dhail3_max', axes(1:2), Time,   &
+                          'hourly max hail diameter (embryo 3)', 'mm', missing_value=missing_value )
+            id_hailcast_dhail4 = register_diag_field ( trim(file_name), 'hailcast_dhail4_max', axes(1:2), Time,   &
+                          'hourly max hail diameter (embryo 4)', 'mm', missing_value=missing_value )
+            id_hailcast_dhail5 = register_diag_field ( trim(file_name), 'hailcast_dhail5_max', axes(1:2), Time,   &
+                          'hourly max hail diameter (embryo 5)', 'mm', missing_value=missing_value )
+            id_hailcast_diam_mean = register_diag_field ( trim(file_name), 'hailcast_diam_mean', axes(1:2), Time, &
+                          'mean hail diameter', 'mm', missing_value=missing_value )
+            id_hailcast_diam_std = register_diag_field ( trim(file_name), 'hailcast_diam_std', axes(1:2), Time,   &
+                          'standard deviation of hail diameter', 'mm', missing_value=missing_value )
+            id_hailcast_wdur = register_diag_field ( trim(file_name), 'hailcast_wdur', axes(1:2), Time,           &
+                          'updraft duration', 's', missing_value=missing_value )
+            id_hailcast_wup_mask = register_diag_field ( trim(file_name), 'hailcast_wup_mask', axes(1:2), Time,   &
+                          'updraft mask', '', missing_value=missing_value )
+
+            if (id_hailcast_dhail > 0) then
+                kstt_hc = nlevs+1; kend_hc = nlevs+1
+                nlevs = nlevs + 1
+            endif
+
+            if (id_hailcast_dhail1 > 0) then
+                kstt_hc1 = nlevs+1; kend_hc1 = nlevs+1
+                nlevs = nlevs + 1
+            endif
+            if (id_hailcast_dhail2 > 0) then
+                kstt_hc2 = nlevs+1; kend_hc2 = nlevs+1
+                nlevs = nlevs + 1
+            endif
+            if (id_hailcast_dhail3 > 0) then
+                kstt_hc3 = nlevs+1; kend_hc3 = nlevs+1
+                nlevs = nlevs + 1
+            endif
+            if (id_hailcast_dhail4 > 0) then
+                kstt_hc4 = nlevs+1; kend_hc4 = nlevs+1
+                nlevs = nlevs + 1
+            endif
+            if (id_hailcast_dhail5 > 0) then
+                kstt_hc5 = nlevs+1; kend_hc5 = nlevs+1
+                nlevs = nlevs + 1
+            endif
+            if (id_hailcast_wdur > 0) then
+                kstt_hcd = nlevs+1; kend_hcd = nlevs+1
+                nlevs = nlevs + 1
+            endif
+            if (id_hailcast_wup_mask > 0) then
+                kstt_hcm = nlevs+1; kend_hcm = nlevs+1
+                nlevs = nlevs + 1
+            endif
+
+            if (.not.allocated(hailcast_dhail1)) then
+                allocate(hailcast_dhail1(isco:ieco,jsco:jeco), &
+                         hailcast_dhail2(isco:ieco,jsco:jeco), &
+                         hailcast_dhail3(isco:ieco,jsco:jeco), &
+                         hailcast_dhail4(isco:ieco,jsco:jeco), &
+                         hailcast_dhail5(isco:ieco,jsco:jeco), &
+                         hailcast_diam_mean(isco:ieco,jsco:jeco), &
+                         hailcast_diam_std(isco:ieco,jsco:jeco))
+                allocate ( hailcast_dhail1_max(isco:ieco,jsco:jeco) )
+                allocate ( hailcast_dhail2_max(isco:ieco,jsco:jeco) )
+                allocate ( hailcast_dhail3_max(isco:ieco,jsco:jeco) )
+                allocate ( hailcast_dhail4_max(isco:ieco,jsco:jeco) )
+                allocate ( hailcast_dhail5_max(isco:ieco,jsco:jeco) )
+
+                do i=isco,ieco
+                   do j=jsco,jeco
+                      hailcast_dhail1(i,j)=0; hailcast_dhail2(i,j)=0
+                      hailcast_dhail3(i,j)=0; hailcast_dhail4(i,j)=0
+                      hailcast_dhail5(i,j)=0
+                      hailcast_dhail1_max(i,j)=0; hailcast_dhail2_max(i,j)=0
+                      hailcast_dhail3_max(i,j)=0; hailcast_dhail4_max(i,j)=0
+                      hailcast_dhail5_max(i,j)=0
+                   enddo
+                enddo
+            endif
+            if (.not.allocated(hailcast_wdur)) then
+                allocate(hailcast_wdur(isdo:iedo,jsdo:jedo),hailcast_wup_mask(isdo:iedo,jsdo:jedo))
+                do i=isdo,iedo
+                   do j=jsdo,jedo
+                      hailcast_wdur(i,j)=0
+                      hailcast_wup_mask(i,j)=0
+                   enddo
+                enddo
+            endif
+        endif
+
+        RETURN
+    END SUBROUTINE hailcast_init
+
+    SUBROUTINE hailcast_compute(Atm,sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, &
+           isco,jsco,ieco,jeco,npzo, kdtt, nsteps_per_reset)
+
+        !moved this code from subroutine fv_nggps_tavg(Atm, Time_step_atmos,avg_max_length,zvir) in fv_nggps_diag
+        use fv_arrays_mod,      only: fv_atmos_type
+        type(fv_atmos_type), intent(inout) :: Atm
+        integer, INTENT(IN) :: isco, ieco, jsco, jeco, npzo
+        integer, INTENT(IN) :: sphum, liq_wat, ice_wat       !< GFDL physics
+        integer, INTENT(IN) :: rainwat, snowwat, graupel
+        integer, INTENT(IN) :: nsteps_per_reset, kdtt
+
+        !declare temporary hailcast variables
+        real, allocatable :: rhoair_layer(:,:,:), z(:), z_layer(:,:,:), p_layer(:,:,:),zsfc(:,:)
+        !automatic 3-D arrays for layer air density, height ASL and pressure
+        !automatic 2-D array for terrain height
+        !automatic 1-D array for interface levels
+
+        IF (id_hailcast_dhail>0  .or. id_hailcast_dhail1>0 .or.         &
+            id_hailcast_dhail2>0 .or. id_hailcast_dhail3>0 .or.         &
+            id_hailcast_dhail4>0 .or. id_hailcast_dhail5>0 .or.         &
+            id_hailcast_diam_mean>0 .or. id_hailcast_diam_std>0) THEN
+            do j=jsco,jeco
+              do i=isco,ieco
+                 if(mod(kdtt,nsteps_per_reset)==0)then
+                    hailcast_dhail1_max(i,j) = 0.
+                    hailcast_dhail2_max(i,j) = 0.
+                    hailcast_dhail3_max(i,j) = 0.
+                    hailcast_dhail4_max(i,j) = 0.
+                    hailcast_dhail5_max(i,j) = 0.
+                 endif
+
+                 hailcast_dhail1(i,j) = 0
+                 hailcast_dhail2(i,j) = 0
+                 hailcast_dhail3(i,j) = 0
+                 hailcast_dhail4(i,j) = 0
+                 hailcast_dhail5(i,j) = 0
+              enddo
+            enddo
+
+
+            if (.not. allocated(rhoair_layer)) allocate(rhoair_layer(isco:ieco,jsco:jeco,1:npzo))  !layer 3-D air density
+            if (.not. allocated(z)) allocate(z(1:npzo+1))                                          !interace levels
+            if (.not. allocated(z_layer)) allocate(z_layer(isco:ieco,jsco:jeco,1:npzo))            !layer 3-D height ASL
+            if (.not. allocated(p_layer)) allocate(p_layer(isco:ieco,jsco:jeco,1:npzo))            !layer 3-D pressure
+            if (.not. allocated(zsfc)) allocate(zsfc(isco:ieco,jsco:jeco))                         !terrain height
+
+            do k=npzo,1,-1
+               do j=jsco, jeco
+                  if (Atm%flagstruct%hydrostatic) then
+                     call mpp_error(FATAL, 'HAILCAST can only be run with non-hydrostatic FV3')
+                     !do i=is, ie
+                        !rhoair(i,j,k) = Atm%delp(i,j,k)/( ( Atm%peln(i,k+1,j)- Atm%peln(i,k,j)) &
+                        !                  * rdgas *  Atm%pt(i,j,k) * ( 1. + zvir*q(i,j,k,sphum)))
+                     !enddo
+                  else !non-hydrostatic
+                     do i=isco, ieco
+                        if (k==npzo) then
+                           zsfc(i,j)=Atm%phis(i,j) / grav
+                           z(npzo+1)=zsfc(i,j)
+                        endif
+                        rhoair_layer(i,j,k) = -Atm%delp(i,j,k)/(grav*Atm%delz(i,j,k))
+                        !height of interfaces and layer height
+                        z(k)=z(k+1)-Atm%delz(i,j,k)
+                        z_layer(i,j,k)=(z(k+1)+z(k))/2
+                        p_layer(i,j,k)=Atm%delp(i,j,k)*(1.-sum(Atm%q(i,j,k,2:Atm%flagstruct%nwat)))/&
+                                    (-Atm%delz(i,j,k)*grav)*rdgas*Atm%pt(i,j,k)*(1.+zvir*Atm%q(i,j,k,sphum))
+                     enddo
+                  endif
+               enddo !j loop
+            enddo !k loop
+
+            !call hailcast diagnostic driver once per time step and provide three-dimensional met fields
+            call hailcast_diagnostic_driver(Atm%pt(isco:ieco,jsco:jeco,1:npzo), Atm%w(isco:ieco,jsco:jeco,1:npzo), p_layer, z_layer, rhoair_layer, Atm%q(isco:ieco,jsco:jeco,1:npzo,:), &  !3D fields
+                                            Atm%flagstruct%nwat, sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, &  !number of tracer indices, indices
+                                            isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,                               &  !grid dimensions data array (with halo) and physical grid dimensions
+                                            1,npzo, zsfc,                                                          &  !vertical dimensions, terrain height
+                                            first_time, Atm%domain)                                                !call hailcast every model step and info for updating haloes
+                                            !hailcast_dhail1,hailcast_dhail2,hailcast_dhail3,hailcast_dhail4,hailcast_dhail5, & !hailcast embryos sizes
+                                            !hailcast_diam_mean, hailcast_diam_std,                                 & !hailcast embryo mean/std
+                                            !hailcast_wdur, hailcast_wup_mask)                                        !persistent updraft duration and mask
+
+            do j=jsco,jeco
+              do i=isco,ieco
+                hailcast_dhail1_max(i,j) = max(hailcast_dhail1_max(i,j), hailcast_dhail1(i,j))
+                hailcast_dhail2_max(i,j) = max(hailcast_dhail2_max(i,j), hailcast_dhail2(i,j))
+                hailcast_dhail3_max(i,j) = max(hailcast_dhail3_max(i,j), hailcast_dhail3(i,j))
+                hailcast_dhail4_max(i,j) = max(hailcast_dhail4_max(i,j), hailcast_dhail4(i,j))
+                hailcast_dhail5_max(i,j) = max(hailcast_dhail5_max(i,j), hailcast_dhail5(i,j))
+              enddo
+            enddo
+
+
+            !deallocate hailcast met variables
+            deallocate(p_layer)
+            deallocate(z_layer)
+            deallocate(rhoair_layer)
+            deallocate(z)
+            deallocate(zsfc)
+        END IF
+
+        RETURN
+    END SUBROUTINE hailcast_compute
+
+    SUBROUTINE hailcast_compute_dhailmax(isco,ieco,jsco,jeco,istatus)
+
+        INTEGER, INTENT(IN)         :: isco,ieco,jsco,jeco
+        INTEGER, INTENT(OUT)        :: istatus
+
+        allocate(hailcast_dhail_max(isco:ieco,jsco:jeco))
+
+        do j=jsco,jeco
+          do i=isco,ieco
+            hailcast_dhail_max(i,j) = 0.
+            hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j), hailcast_dhail1_max(i,j))
+            hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j), hailcast_dhail2_max(i,j))
+            hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j), hailcast_dhail3_max(i,j))
+            hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j), hailcast_dhail4_max(i,j))
+            hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j), hailcast_dhail5_max(i,j))
+          end do
+        end do
+
+        RETURN
+    END SUBROUTINE hailcast_compute_dhailmax
+
+    SUBROUTINE hailcast_diagnostic_driver ( t, w, p, z, rho, q,                    & ! 3D temperature, updraft, pressure, height, density and moisture tracers
                         moist_count,sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, & ! tracer indices
-                        is,ie,js,je,ishalo,iehalo,jshalo,jehalo,                         & ! i,j halo data array dimensions and physical grid dimensions (2 smaller on each end)
-                        k_start, k_end, terr_z,                                  & ! bottom and top z indices and terrain height
-                        dt, domainid,                                              & ! call frequency of hailcast = model time step = physics
-                        hailcast_dhail1,hailcast_dhail2,hailcast_dhail3,hailcast_dhail4,hailcast_dhail5, hailcast_diam_mean, hailcast_diam_std, hailcast_wdur, hailcast_wup_mask) !hailcast persistent variables
-     
-!    USE module_domain, ONLY : domain , domain_clock_get
-!    USE module_configure, ONLY : grid_config_rec_type, model_config_rec
-!    USE module_state_description
-!    USE module_model_constants
-!    USE module_utility
-!    USE module_streams, ONLY: history_alarm, auxhist2_alarm
-!#ifdef DM_PARALLEL
-!    USE module_dm, ONLY: wrf_dm_sum_real, wrf_dm_maxval
-!     #endif
+                        is,ie,js,je,ishalo,iehalo,jshalo,jehalo,                   & ! i,j halo data array dimensions and physical grid dimensions (2 smaller on each end)
+                        k_start, k_end, terr_z,                                    & ! bottom and top z indices and terrain height
+                        dt, domainid)                                                ! call frequency of hailcast = model time step = physics
 
-    use constants_mod,      only: grav, rdgas, rvgas, pi=>pi_8, radius, kappa, WTMAIR, WTMCO2, &
-                                  omega, hlv, cp_air, cp_vapor
-    !use fms_mod,            only: write_version_number
-    use fms_io_mod,         only: set_domain, nullify_domain
-    use time_manager_mod,   only: time_type, get_date, get_time
-    use mpp_domains_mod,    only: domain2d, mpp_update_domains, DGRID_NE
-    use diag_manager_mod,   only: diag_axis_init, register_diag_field, &
-                                  register_static_field, send_data, diag_grid_init
-    use fv_arrays_mod,      only: fv_atmos_type, fv_grid_type, fv_diag_type, fv_grid_bounds_type, & 
-                                  R_GRID
-    use tracer_manager_mod, only: get_tracer_names, get_number_tracers, get_tracer_index
-    use field_manager_mod,  only: MODEL_ATMOS
-    use fv_mp_mod,          only: mp_reduce_sum, mp_reduce_min, mp_reduce_max, is_master
-    use mpp_mod,            only: mpp_error, FATAL, stdlog, mpp_pe, mpp_root_pe, mpp_sum, mpp_max, NOTE
-    use sat_vapor_pres_mod, only: compute_qs, lookup_es
-
-    use fv_arrays_mod, only: max_step 
-
+    use mpp_domains_mod,    only: domain2d, mpp_update_domains
 
     IMPLICIT NONE
 
-!    TYPE ( domain ), INTENT(INOUT) :: grid
-!     TYPE ( grid_config_rec_type ), INTENT(IN) :: config_flags
-!      type(fv_atmos_type), intent(inout) :: grid
-!!!!      type(time_type),     intent(in) :: Time !will not compile
-     INTEGER:: ishalo, iehalo, jshalo, jehalo, k_start, k_end      !dimensions of halo data array
-     INTEGER:: is, ie, js, je
-      
-!    INTEGER, INTENT(IN) :: ids, ide, jds, jde, kds, kde,        &
-!                           ims, ime, jms, jme, kms, kme,        &
-!                           ips, ipe, jps, jpe, kps, kpe
+    INTEGER:: ishalo, iehalo, jshalo, jehalo, k_start, k_end      !dimensions of halo data array
+    INTEGER:: is, ie, js, je
 
-    logical             :: master
+    !logical             :: master
     INTEGER             :: moist_count,sphum,rainwat,snowwat,graupel,liq_wat,ice_wat
 
     REAL, DIMENSION( is:ie, js:je, k_start: k_end, moist_count),    &
@@ -83,15 +322,6 @@ CONTAINS
 
     REAL, DIMENSION( is:ie, js:je), &
          INTENT(IN   ) ::              terr_z
-
-    REAL, DIMENSION( is:ie, js:je), &
-         INTENT(INOUT) ::              hailcast_dhail1, hailcast_dhail2, &
-                                       hailcast_dhail3, hailcast_dhail4, &
-                                       hailcast_dhail5,                  &
-                                       hailcast_diam_mean, hailcast_diam_std
-
-    REAL, DIMENSION( ishalo:iehalo, jshalo:jehalo), &
-         INTENT(INOUT) ::              hailcast_wdur, hailcast_wup_mask
 
 !    REAL,       INTENT(IN   ),OPTIONAL    ::     haildt
 !    REAL,       INTENT(IN   ),OPTIONAL    ::     curr_secs
@@ -104,7 +334,7 @@ CONTAINS
     ! Local
     ! -----
     CHARACTER*512 :: message
-    CHARACTER*256 :: timestr 
+    CHARACTER*256 :: timestr
     INTEGER :: i,j,k, numlevs
     REAL, DIMENSION( is:ie, js:je, k_start:k_end ) ::        qr  &
                                               ,          qs  &
@@ -112,12 +342,12 @@ CONTAINS
                                               ,          qv  &
                                               ,          qc  &
                                               ,          qi  &
-                                              ,        ptot 
+                                              ,        ptot
 
     REAL, DIMENSION( ishalo:iehalo, jshalo:jehalo) :: wdur_prev, wup_mask_prev
 
     REAL :: dhail1,dhail2,dhail3,dhail4,dhail5
-    
+
 !    ! Timing
 !    ! ------
 !    TYPE(WRFU_Time) :: hist_time, aux2_time, CurrTime, StartTime
@@ -132,7 +362,7 @@ CONTAINS
 !    write ( message, * ) 'inside hailcast_diagnostics_driver'
 !    CALL wrf_debug( 100 , message )
 
-!    ! Get timing info 
+!    ! Get timing info
 !    ! Want to know if when the last history output was
 !    ! Check history and auxhist2 alarms to check last ring time and how often
 !    ! they are set to ring
@@ -145,7 +375,7 @@ CONTAINS
 !    ! Get domain clock
 !    ! ----------------
 !    CALL domain_clock_get ( grid, current_time=CurrTime, &
-!         simulationStartTime=StartTime, &            
+!         simulationStartTime=StartTime, &
 !         current_timestr=timestr, time_step=dtint )
 
 !    ! Set some booleans for use later
@@ -163,8 +393,8 @@ CONTAINS
 !    ! Following uses an overloaded .eq.
 !    ! ---------------------------------
 !    is_first_timestep = ( Currtime .eq. StartTime + dtint )
-        
-     master = (mpp_pe()==mpp_root_pe()) .or. is_master()
+
+     !master = (mpp_pe()==mpp_root_pe()) .or. is_master()
 
     !FV3: No need to reset arrays to zero at dump time, thus no need to keep track of dump times
     !
@@ -183,7 +413,7 @@ CONTAINS
     !ENDIF  ! is_after_history_dump
 
     ! We need to do some neighboring gridpoint comparisons for the updraft
-    ! duration calculations; set i,j start and end values so we don't go off 
+    ! duration calculations; set i,j start and end values so we don't go off
     ! the edges of the domain.  Updraft duration on domain edges will always be 0.
     ! ----------------------------------------------------------------------
 
@@ -198,7 +428,7 @@ CONTAINS
 !         config_flags%nested) j_end   = MIN( jde-2, jte )  !-1
 !    IF ( config_flags%periodic_x ) i_start = its
 !    IF ( config_flags%periodic_x ) i_end = ite
-    
+
 
     ! Make a copy of the updraft duration, mask variables
     ! ---------------------------------------------------
@@ -225,7 +455,7 @@ CONTAINS
         hailcast_wdur(i,j) = 0
 
         DO k = k_start, k_end
-           IF ( w(i,j,k) .ge. 10. ) THEN 
+           IF ( w(i,j,k) .ge. 10. ) THEN
               hailcast_wup_mask(i,j) = 1
            ENDIF
         ENDDO
@@ -264,13 +494,13 @@ CONTAINS
 !       END IF
 !    END IF
 
-!    !  Calculate STEPHAIL 
-!    stephail = NINT(haildt / dt)      
+!    !  Calculate STEPHAIL
+!    stephail = NINT(haildt / dt)
 !    stephail = MAX(stephail,1)
 
 !    ! itimestep starts at 1 - we want it to start at 0 so correctly
 !    ! divisibile by stephail.
-!    itimestep_basezero = itimestep -1 
+!    itimestep_basezero = itimestep -1
 
 
 !    !  Do we run through this scheme or not?
@@ -286,9 +516,9 @@ CONTAINS
 !    !                CURR_SECS >= HAILDTACTTIME
 
 !    !  If we do run through the scheme, we set the flag run_param to TRUE and we set
-!    !  the decided flag to TRUE.  The decided flag says that one of these tests was 
-!    !  able to say "yes", run the scheme. We only proceed to other tests if the 
-!    !  previous tests all have left decided as FALSE. If we set run_param to TRUE 
+!    !  the decided flag to TRUE.  The decided flag says that one of these tests was
+!    !  able to say "yes", run the scheme. We only proceed to other tests if the
+!    !  previous tests all have left decided as FALSE. If we set run_param to TRUE
 !    !  and this is adaptive time stepping, we set the time to the next hailcast run.
 
 !    run_param = .FALSE.
@@ -332,7 +562,7 @@ CONTAINS
 !    CALL wrf_debug( 100 , message )
 
 !    IF (run_param) THEN
-    
+
         ! 3-D arrays for moisture variables
         ! ---------------------------------
          numlevs=k_end-k_start+1
@@ -340,16 +570,16 @@ CONTAINS
            DO k=1, numlevs
              DO j=js, je
               qv(i,j,k)=0;qr(i,j,k)=0;qs(i,j,k)=0;qg(i,j,k)=0;qc(i,j,k)=0;qi(i,j,k)=0
-              qv(i,j,k) = q(i,j,k,sphum)   
-              qr(i,j,k) = q(i,j,k,rainwat) 
-              qs(i,j,k) = q(i,j,k,snowwat) 
-              qg(i,j,k) = q(i,j,k,graupel) 
-              qc(i,j,k) = q(i,j,k,liq_wat) 
-              qi(i,j,k) = q(i,j,k,ice_wat) 
+              qv(i,j,k) = q(i,j,k,sphum)
+              qr(i,j,k) = q(i,j,k,rainwat)
+              qs(i,j,k) = q(i,j,k,snowwat)
+              qg(i,j,k) = q(i,j,k,graupel)
+              qc(i,j,k) = q(i,j,k,liq_wat)
+              qi(i,j,k) = q(i,j,k,ice_wat)
             ENDDO
           ENDDO
         ENDDO
-        
+
         ! Hail diameter in millimeters (HAILCAST)
         ! ---------------------------------------------------
         DO j = js, je
@@ -368,7 +598,7 @@ CONTAINS
                                       qi(i,j,k_end:k_start:-1),     &
                                       qc(i,j,k_end:k_start:-1),     &
                                       qr(i,j,k_end:k_start:-1),     &
-                                      qs(i,j,k_end:k_start:-1),     & 
+                                      qs(i,j,k_end:k_start:-1),     &
                                       qg(i,j,k_end:k_start:-1),     &
                                       w(i,j,k_end:k_start:-1), &
                                       hailcast_wdur(i,j),          &
@@ -424,7 +654,7 @@ CONTAINS
         ENDDO
       !END IF
 
-END SUBROUTINE hailcast_diagnostic_driver
+    END SUBROUTINE hailcast_diagnostic_driver
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!!!
@@ -444,13 +674,13 @@ END SUBROUTINE hailcast_diagnostic_driver
 !!!!     VUU          updraft speed at each level (m/s)
 !!!!    Float
 !!!!     ht         terrain height (m)
-!!!!     wdur       duration of any updraft > 10 m/s within 1 surrounding 
-!!!!                 gridpoint 
+!!!!     wdur       duration of any updraft > 10 m/s within 1 surrounding
+!!!!                 gridpoint
 !!!!    Integer
 !!!!     nz         number of vertical levels
 !!!!
 !!!!  Output:
-!!!!     dhail      hail diameter in mm 
+!!!!     dhail      hail diameter in mm
 !!!!                1st-5th rank-ordered hail diameters returned
 !!!!
 !!!!  13 Aug 2013 .................................Becky Adams-Selin AER
@@ -468,8 +698,8 @@ END SUBROUTINE hailcast_diagnostic_driver
 !!!!     embryo size and location to better match literature.  Added
 !!!!     enhanced melting when hailstone collides with liquid water
 !!!!     in regions above freezing.  Final diameter returned is ice diameter
-!!!!     only. Added hailstone temperature averaging over previous timesteps 
-!!!!     to decrease initial temperature instability at small embyro diameters.  
+!!!!     only. Added hailstone temperature averaging over previous timesteps
+!!!!     to decrease initial temperature instability at small embyro diameters.
 !!!!  3 Sep 2015...................................Becky Adams-Selin AER
 !!!!    Insert embryos at -13C; interpret pressure and other variables to
 !!!!    that exact temperature level.
@@ -481,16 +711,16 @@ END SUBROUTINE hailcast_diagnostic_driver
 !!!!     the saturation vapor pressure using the model temperature
 !!!!     profile.
 !!!! 04 Feb 2017...................................Becky Adams-Selin AER
-!!!!     Added adaptive time-stepping option.  
+!!!!     Added adaptive time-stepping option.
 !!!!     ***Don't set any higher than 60 seconds***
 !!!! 06 May 2017...................................Becky Adams-Selin AER
 !!!!     Bug fixes for some memory issues in the adiabatic liquid
 !!!!     water profile code.
-!!!!    
+!!!!
 !!!! See Adams-Selin and Ziegler 2016, MWR for further documentation.
 !!!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  SUBROUTINE hailstone_driver ( ii,jj,TCA, h1d, ht, PA, rho1d,&
+    SUBROUTINE hailstone_driver ( ii,jj,TCA, h1d, ht, PA, rho1d,&
                                 RA, qi1d,qc1d,qr1d,qs1d,qg1d,   &
                                 VUU, wdur,                          &
                                 nz,dhail1,dhail2,dhail3,dhail4,     &
@@ -510,7 +740,7 @@ END SUBROUTINE hailcast_diagnostic_driver
 
     REAL, INTENT(IN   ) ::                                  ht  &
                                               ,           wdur
-    
+
     !Output: 1st-5th rank-ordered hail diameters returned
     REAL, INTENT(INOUT) ::                              dhail1 & ! hail diameter (mm);
                                               ,         dhail2 &
@@ -559,7 +789,7 @@ END SUBROUTINE hailcast_diagnostic_driver
       RSA                      ! saturation mixing ratio
     !in-cloud updraft parameters at location of hailstone
     REAL P                     ! in-cloud pressure (Pa)
-    REAL RS                    ! in-cloud saturation mixing ratio 
+    REAL RS                    ! in-cloud saturation mixing ratio
     REAL RI, RW                ! ice, liquid water mix. ratio (kg/kg)
     REAL XI, XW                ! ice, liquid water content (kg/m3 air)
     REAL PC                    ! in-cloud fraction of frozen water
@@ -578,7 +808,7 @@ END SUBROUTINE hailcast_diagnostic_driver
     !internal function variables
     REAL GM,GM1,GMW,GMI,DGM,DGMW,DGMI,DGMV,DI,ANU,RE,AE
     REAL dum, icefactor, adiabatic_factor
-      
+
     REAL sec, secdel           ! time step, increment in seconds
     INTEGER i, j, k, IFOUT, ind(1)
     CHARACTER*256 :: message
@@ -586,7 +816,7 @@ END SUBROUTINE hailcast_diagnostic_driver
     secdel = 5.0
     g=9.81
     r_d = 287.
-            
+
     !!!!!!!!!!!!!!!! 1. UPDRAFT PROPERTIES !!!!!!!!!!!!!!!!!!!!!!!
     !!!              DEFINE UPDRAFT PROPERTIES                 !!!
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -599,7 +829,7 @@ END SUBROUTINE hailcast_diagnostic_driver
        VUU_pert(i) = VUU(i) * 1.
     ENDDO
 
-      
+
 !   Initialize diameters to 0.
     DO i=1,5
        dhails(i) = 0.
@@ -612,7 +842,7 @@ END SUBROUTINE hailcast_diagnostic_driver
         RTIME = wdur
     ENDIF
 
- 
+
     !!!!!!!!!!!!!!!! 2. INITIAL EMBRYO !!!!!!!!!!!!!!!!!!!!!!!!!!!
     !!!       FIND PROPERTIES OF INITIAL EMBRYO LOCATION       !!!
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -646,7 +876,7 @@ END SUBROUTINE hailcast_diagnostic_driver
     RBAS = RA(KBAS)
 
     !At coarser resolutions WRF underestimates liquid water aloft.
-    !A fairer estimate is of the adiabatic liquid water profile, or 
+    !A fairer estimate is of the adiabatic liquid water profile, or
     !the difference between the saturation mixing ratio at each level
     !and the cloud base water vapor mixing ratio
     DO k=1,nz
@@ -683,7 +913,7 @@ END SUBROUTINE hailcast_diagnostic_driver
           RWA_new(k) = RWA_adiabat(k)*(h1d(k)-h1d(k-1)) - RWA_new(k-1)
           IF (RWA_new(k).LT.0) RWA_new(k) = 0.
        ENDIF
-       ! - old code - ! 
+       ! - old code - !
        !IF (k.eq.KBAS+1) THEN
        !   RWA_new(k) = RWA_adiabat(k)*(h1d(k)-h1d(k-1))
        !ELSE IF ((k.ge.KBAS+2).AND.(RWA_adiabat(k).ge.1.E-12)) THEN
@@ -706,7 +936,7 @@ END SUBROUTINE hailcast_diagnostic_driver
     ! these sizes were picked.
     !Run each initial embryo size perturbation
     DO i=1,5
-      SELECT CASE (i)   
+      SELECT CASE (i)
         CASE (1)
         !Initial hail embryo diameter in m, at cloud base
           DD = 5.E-3
@@ -714,7 +944,7 @@ END SUBROUTINE hailcast_diagnostic_driver
         CASE (2)
           DD = 7.5E-3
           tk_embryo = 265.155  !-8C
-        CASE (3)  
+        CASE (3)
           DD = 5.E-3
           tk_embryo = 260.155  !-13C
         CASE (4)
@@ -738,7 +968,7 @@ END SUBROUTINE hailcast_diagnostic_driver
 
       !Begin hail simulation time (seconds)
       sec = 0.
- 
+
 
       !!!!!!!!!!!!!!!!!!  4. INITIAL PARAMETERS    !!!!!!!!!!!!!!!!!
       !!!          PUT INITIAL PARAMETERS IN VARIABLES           !!!
@@ -747,7 +977,7 @@ END SUBROUTINE hailcast_diagnostic_driver
       P = WFZLP
       RS = RFZL
       TC = TFZL
-      VU = VUFZL  
+      VU = VUFZL
       Z = ZFZL - ht
       LDEPTH = Z
       DENSA = DENSAFZL
@@ -756,43 +986,43 @@ END SUBROUTINE hailcast_diagnostic_driver
       nofroze=1 !Set test for embryo: 0 for never been frozen; 1 frozen
       TS = TC
       TSm1 = TS
-      TSm2 = TS      
+      TSm2 = TS
       D = DD   !hailstone diameter in m
       FW = 0.0
-      DENSE = 500.  !kg/m3  
+      DENSE = 500.  !kg/m3
       ITYPE=1.  !Assume starts in dry growth.
       CLOUDON=1  !we'll eventually turn cloud "off" once updraft past time limit
 
       !Start time loop.
       DO WHILE (sec .lt. TAU)
          sec = sec + secdel
-         
+
          !!!!!!!!!!!!!!!!!!  5. CALCULATE PARAMETERS  !!!!!!!!!!!!!!!!!
          !!!              CALCULATE UPDRAFT PROPERTIES              !!!
          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
          !Intepolate vertical velocity to our new pressure level
          CALL INTERP(VUU_pert,VUMAX,P,IFOUT,PA,nz)
          !print *, 'INTERP VU: ', VU, P
-         
+
          !Outside pressure levels?  If so, exit loop
          IF (IFOUT.EQ.1) GOTO 100
-                  
+
          !Sine wave multiplier on updraft strength
          IF (SEC .GT. 0.0 .AND. SEC .LT. RTIME) THEN
             VUCORE = VUMAX * (0.5*SIN((3.14159*SEC)/(RTIME))+0.5)*1.2
-            VU = VUCORE      
+            VU = VUCORE
          ELSEIF (SEC .GE. RTIME) THEN
             VU = 0.0
             CLOUDON = 0
          ENDIF
-         
-         !Calculate terminal velocity of the hailstone 
+
+         !Calculate terminal velocity of the hailstone
          ! (use previous values)
          CALL TERMINL(DENSA,DENSE,D,VT,TC)
-         
+
          !Actual velocity of hailstone (upwards positive)
          V = VU - VT
-         
+
          !Use hydrostatic eq'n to calc height of next level
          P = P - DENSA*g*V*secdel
          Z = Z + V*secdel
@@ -800,10 +1030,10 @@ END SUBROUTINE hailcast_diagnostic_driver
          !Interpolate cloud temp, qvapor at new p-level
          CALL INTERP(TCA,TC,P,IFOUT,PA,nz)
          CALL INTERP(RA,RS,P,IFOUT,PA,nz)
-         
+
          !New density of in-cloud air
          DENSA=P/(r_d*(1.+0.609*RS/(1.+RS))*TC)
-         
+
          !Interpolate liquid, frozen water mix ratio at new level
          CALL INTERP(RIA,RI,P,IFOUT,PA,nz)
          CALL INTERP(RWA_new,RW,P,IFOUT,PA,nz)
@@ -814,32 +1044,32 @@ END SUBROUTINE hailcast_diagnostic_driver
          ELSE
            PC = 1.
          ENDIF
-         
-          
+
+
         ! SATURATION VAPOUR DENSITY DIFFERENCE BETWTEEN STONE AND CLOUD
         CALL VAPORCLOSE(DELRW,PC,TS,TC,ITYPE)
-      
-        
+
+
         !!!!!!!!!!!!!!!!!!  6. STONE'S MASS GROWTH !!!!!!!!!!!!!!!!!!!!
         CALL MASSAGR(D,GM,GM1,GMW,GMI,DGM,DGMW,DGMI,DGMV,DI,ANU,RE,AE,&
-                 TC,TS,P,DENSE,DENSA,FW,VT,XW,XI,secdel,ITYPE,DELRW) 
+                 TC,TS,P,DENSE,DENSA,FW,VT,XW,XI,secdel,ITYPE,DELRW)
 
 
         !!!!!!!!!!!!!!!!!!  7. HEAT BUDGET OF HAILSTONE !!!!!!!!!!!!!!!
-        CALL HEATBUD(TS,TSm1,TSm2,FW,TC,VT,DELRW,D,DENSA,GM1,GM,DGM,DGMW,  & 
+        CALL HEATBUD(TS,TSm1,TSm2,FW,TC,VT,DELRW,D,DENSA,GM1,GM,DGM,DGMW,  &
                      DGMV,DGMI,GMW,GMI,DI,ANU,RE,AE,secdel,ITYPE,P)
 
- 
+
         !!!!! 8. TEST DIAMETER OF STONE AND HEIGHT ABOVE GROUND !!!!!!!
-        !!!  TEST IF DIAMETER OF STONE IS GREATER THAN CRITICAL LIMIT, IF SO  
-        !!!  BREAK UP 
+        !!!  TEST IF DIAMETER OF STONE IS GREATER THAN CRITICAL LIMIT, IF SO
+        !!!  BREAK UP
         WATER=FW*GM  !KG
-        ! CRTICAL MASS CAPABLE OF BEING "SUPPORTED" ON THE STONE'S SURFACE 
+        ! CRTICAL MASS CAPABLE OF BEING "SUPPORTED" ON THE STONE'S SURFACE
         CRIT = 2.0E-4
         IF (WATER.GT.CRIT)THEN
            CALL BREAKUP(DENSE,D,GM,FW,CRIT)
         ENDIF
-        
+
         !!! Has stone reached below cloud base?
         !IF (Z .LE. 0) GOTO 200
         IF (Z .LE. ZBAS) then
@@ -847,15 +1077,15 @@ END SUBROUTINE hailcast_diagnostic_driver
         endif
 
         !calculate ice-only diameter size
-        D_ICE = ( (6*GM*(1.-FW)) / (3.141592654*DENSE) )**0.33333333 
+        D_ICE = ( (6*GM*(1.-FW)) / (3.141592654*DENSE) )**0.33333333
 
-        !Has the stone entirely melted and it's below the freezing level?  
+        !Has the stone entirely melted and it's below the freezing level?
         IF ((D_ICE .LT. 1.E-8) .AND. (TC.GT.273.155)) GOTO 300
 
         !move values to previous timestep value
         TSm1 = TS
         TSm2 = TSm1
-        
+
       ENDDO  !end cloud lifetime loop
 
 100   CONTINUE !outside pressure levels in model
@@ -863,7 +1093,7 @@ END SUBROUTINE hailcast_diagnostic_driver
 300   CONTINUE !stone has entirely melted and is below freezing level
 
       !!!!!!!!!!!!!!!!!! 9. MELT STONE BELOW CLOUD !!!!!!!!!!!!!!!!!!!!
-      !Did the stone shoot out the top of the storm? 
+      !Did the stone shoot out the top of the storm?
       !Then let's assume it's lost in the murky "outside storm" world.
       IF (P.lt.PA(nz)) THEN
          D=0.0
@@ -873,7 +1103,7 @@ END SUBROUTINE hailcast_diagnostic_driver
       ELSE IF (Z.GT.0) THEN
          !If still frozen, then use melt routine to melt below cloud
          ! based on mean below-cloud conditions.
-        
+
          !Calculate mean sub-cloud layer conditions
          TSUM = 0.
          RSUM = 0.
@@ -886,12 +1116,12 @@ END SUBROUTINE hailcast_diagnostic_driver
          TLAYER = TSUM / KBAS
          PLAYER = PSUM / KBAS
          RLAYER = RSUM / KBAS
-         
+
          !MELT is expecting a hailstone of only ice.  At the surface
          !we're only interested in the actual ice diameter of the hailstone,
          !so let's shed any excess water now.
-         D_ICE = ( (6*GM*(1.-FW)) / (3.141592654*DENSE) )**0.33333333 
-         D = D_ICE  
+         D_ICE = ( (6*GM*(1.-FW)) / (3.141592654*DENSE) )**0.33333333
+         D = D_ICE
          CALL MELT(D,TLAYER,PLAYER,RLAYER,LDEPTH,VT)
 
       ENDIF !end check for melting call
@@ -901,14 +1131,14 @@ END SUBROUTINE hailcast_diagnostic_driver
 
       !Check to make sure something hasn't gone horribly wrong
       IF (D.GT.0.254) D = 0.  !just consider missing for now if > 10 in
-      
+
       !assign hail size in mm for output
       !dhails(i) = D * 1000
       dhails(i) = D
 
     ENDDO  !end embryo size loop
-  
-    
+
+
     dhail1 = dhails(1)
     dhail2 = dhails(2)
     dhail3 = dhails(3)
@@ -920,7 +1150,7 @@ END SUBROUTINE hailcast_diagnostic_driver
        print*,'jmh KBAS,ZBAS,TBAS',ii,jj,KBAS,ZBAS,TBAS
        print*,'jmh WBASP,RBAS=',ii,jj,WBASP,RBAS
        print*,'jmh embryo sizes: ',ii,jj,dhail1,dhail2,dhail3,dhail4,dhail5
-       if (ii.eq. 847 .and. jj.eq.394) then      
+       if (ii.eq. 847 .and. jj.eq.394) then
           print*,'jmh i=847,j=394 TCA:',ii,jj,TCA(1:nz)
           print*,'jmh i=847,j=394 h1d:',ii,jj,h1d(1:nz)
           print*,'jmh i=847,j=394 ht:',ii,jj,ht
@@ -936,7 +1166,7 @@ END SUBROUTINE hailcast_diagnostic_driver
           print*,'jmh i=847,j=394 wdur:',ii,jj,wdur
           print*,'jmh i=847,j=394 nz:',ii,jj,nz
        endif
-       if (KBAS .gt. 30) then      
+       if (KBAS .gt. 30) then
           print*,'jmh KBAS>30 TCA:',ii,jj,TCA(1:nz)
           print*,'jmh KBAS>30 h1d:',ii,jj,h1d(1:nz)
           print*,'jmh KBAS>30 ht:',ii,jj,ht
@@ -951,13 +1181,12 @@ END SUBROUTINE hailcast_diagnostic_driver
           print*,'jmh KBAS>30 VUU:',ii,jj,VUU(1:nz)
           print*,'jmh KBAS>30 wdur:',ii,jj,wdur
           print*,'jmh KBAS>30 nz:',ii,jj,nz
-       endif   
+       endif
        print*,'jmh ------end of hailstone driver------- jmh'
     endif
-  END SUBROUTINE hailstone_driver
+    END SUBROUTINE hailstone_driver
 
-
-  SUBROUTINE INTERPP(PA,PVAL,TA,TVAL,IFOUT,ITEL)
+    SUBROUTINE INTERPP(PA,PVAL,TA,TVAL,IFOUT,ITEL)
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   !!!!
   !!!! INTERP: to linearly interpolate value of pval at temperature tval
@@ -972,16 +1201,16 @@ END SUBROUTINE hailcast_diagnostic_driver
   !!!!
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       IMPLICIT NONE
-      
+
       REAL PVAL, TVAL
       REAL, DIMENSION( ITEL) :: TA, PA
       INTEGER ITEL, IFOUT
       !local variables
       INTEGER I
       REAL FRACT
-      
+
       IFOUT=1
-      
+
       DO I=1,ITEL-1
          IF ( (TVAL .LT. TA(I) .AND. TVAL .GE. TA(I+1)) .or.  &   ! dT/dz < 0
               (TVAL .GT. TA(I) .AND. TVAL .LE. TA(I+1)) ) THEN    ! dT/dz > 0
@@ -989,18 +1218,16 @@ END SUBROUTINE hailcast_diagnostic_driver
             FRACT = (TA(I) - TVAL) / (TA(I) - TA(I+1))
             !.... compute the pressure value pval at temperature tval
             PVAL = ((1.0 - FRACT) * PA(I)) + (FRACT * PA(I+1))
-          
+
             !End loop
             IFOUT=0
             EXIT
          ENDIF
       ENDDO
-      
-  END SUBROUTINE INTERPP
 
+    END SUBROUTINE INTERPP
 
-
-  SUBROUTINE INTERP(AA,A,P,IFOUT,PA,ITEL)
+    SUBROUTINE INTERP(AA,A,P,IFOUT,PA,ITEL)
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   !!!!
   !!!! INTERP: to linearly interpolate values of A at level P
@@ -1015,39 +1242,38 @@ END SUBROUTINE hailcast_diagnostic_driver
   !!!!
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       IMPLICIT NONE
-      
+
       REAL A, P
       REAL, DIMENSION( ITEL) :: AA, PA
       INTEGER ITEL, IFOUT
       !local variables
       INTEGER I
       REAL PDIFF, VDIFF, RDIFF, VERH, ADIFF
-      
+
       IFOUT=1
-      
+
       DO I=1,ITEL-1
         IF (P.LE.PA(I) .AND. P.GT.PA(I+1)) THEN
           !Calculate ratio between vdiff and pdiff
           PDIFF = PA(I)-PA(I+1)
           VDIFF = PA(I)-P
-          VERH = VDIFF/PDIFF     
-          
+          VERH = VDIFF/PDIFF
+
           !Calculate the difference between the 2 A values
           RDIFF = AA(I+1) - AA(I)
-          
+
           !Calculate new value
           A = AA(I) + RDIFF*VERH
-          
+
           !End loop
           IFOUT=0
           EXIT
         ENDIF
       ENDDO
-      
-  END SUBROUTINE INTERP
-      
 
-  SUBROUTINE TERMINL(DENSA,DENSE,D,VT,TC)
+    END SUBROUTINE INTERP
+
+    SUBROUTINE TERMINL(DENSA,DENSE,D,VT,TC)
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   !!!!
   !!!! INTERP: Calculate terminal velocity of the hailstone
@@ -1060,28 +1286,28 @@ END SUBROUTINE hailcast_diagnostic_driver
   !!!!
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       IMPLICIT NONE
-      
+
       REAL*8 D
       REAL DENSA, DENSE, TC, VT
       REAL GMASS, GX, RE, W, Y
       REAL, PARAMETER :: PI = 3.141592654, G = 9.78956
       REAL ANU
-      
+
       !Mass of stone in kg
       GMASS = (DENSE * PI * (D**3.)) / 6.
-      
+
       !Dynamic viscosity
       ANU = (0.00001718)*(273.155+120.)/(TC+120.)*(TC/273.155)**(1.5)
-      
-      !CALC THE BEST NUMBER, X AND REYNOLDS NUMBER, RE 
+
+      !CALC THE BEST NUMBER, X AND REYNOLDS NUMBER, RE
       GX=(8.0*GMASS*G*DENSA)/(PI*(ANU*ANU))
       RE=(GX/0.6)**0.5
 
-      !SELECT APPROPRIATE EQUATIONS FOR TERMINAL VELOCITY DEPENDING ON 
+      !SELECT APPROPRIATE EQUATIONS FOR TERMINAL VELOCITY DEPENDING ON
       !THE BEST NUMBER
       IF (GX.LT.550) THEN
         W=LOG10(GX)
-        Y= -1.7095 + 1.33438*W - 0.11591*(W**2.0)      
+        Y= -1.7095 + 1.33438*W - 0.11591*(W**2.0)
         RE=10**Y
         VT=ANU*RE/(D*DENSA)
       ELSE IF (GX.GE.550.AND.GX.LT.1800) THEN
@@ -1092,20 +1318,18 @@ END SUBROUTINE hailcast_diagnostic_driver
       ELSE IF (GX.GE.1800.AND.GX.LT.3.45E08) THEN
         RE=0.4487*(GX**0.5536)
         VT=ANU*RE/(D*DENSA)
-      ELSE 
+      ELSE
         RE=(GX/0.6)**0.5
         VT=ANU*RE/(D*DENSA)
       ENDIF
-      
-  END SUBROUTINE TERMINL   
 
-   
-   
-  SUBROUTINE VAPORCLOSE(DELRW,PC,TS,TC,ITYPE)
+    END SUBROUTINE TERMINL
+
+    SUBROUTINE VAPORCLOSE(DELRW,PC,TS,TC,ITYPE)
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  !!!  VAPORCLOSE: CALC THE DIFFERENCE IN SATURATION VAPOUR DENSITY 
-  !!!  BETWEEN THAT OVER THE HAILSTONE'S SURFACE AND THE IN-CLOUD 
-  !!!  AIR, DEPENDS ON THE WATER/ICE RATIO OF THE UPDRAFT, 
+  !!!  VAPORCLOSE: CALC THE DIFFERENCE IN SATURATION VAPOUR DENSITY
+  !!!  BETWEEN THAT OVER THE HAILSTONE'S SURFACE AND THE IN-CLOUD
+  !!!  AIR, DEPENDS ON THE WATER/ICE RATIO OF THE UPDRAFT,
   !!!  AND IF THE STONE IS IN WET OR DRY GROWTH REGIME
   !!!
   !!!  INPUT:  PC    fraction of updraft water that is frozen
@@ -1122,7 +1346,7 @@ END SUBROUTINE hailcast_diagnostic_driver
       INTEGER ITYPE
       !local variables
       REAL RV, ALV, ALS, RATIO
-      DATA RV/461.48/,ALV/2500000./,ALS/2836050./ 
+      DATA RV/461.48/,ALV/2500000./,ALS/2836050./
       REAL ESAT, RHOKOR, ESATW, RHOOMGW, ESATI, RHOOMGI, RHOOMG
 
       !!!  FOR HAILSTONE:  FIRST TEST IF STONE IS IN WET OR DRY GROWTH
@@ -1133,8 +1357,8 @@ END SUBROUTINE hailcast_diagnostic_driver
         ESAT=611.*EXP(ALS/RV*(RATIO-1./TS))
       ENDIF
       RHOKOR=ESAT/(RV*TS)
-      
-      !!!  NOW FOR THE AMBIENT/IN-CLOUD CONDITIONS 
+
+      !!!  NOW FOR THE AMBIENT/IN-CLOUD CONDITIONS
       ESATW=611.*EXP(ALV/RV*(RATIO-1./TC))
       RHOOMGW=ESATW/(RV*TC)
       ESATI=611.*EXP(ALS/RV*(RATIO-1./TC))
@@ -1142,28 +1366,26 @@ END SUBROUTINE hailcast_diagnostic_driver
       !RHOOMG=PC*(RHOOMGI-RHOOMGW)+RHOOMGW
       RHOOMG = RHOOMGI  !done as in hailtraj.f
 
-      !!!  CALC THE DIFFERENCE(KG/M3): <0 FOR CONDENSATION, 
+      !!!  CALC THE DIFFERENCE(KG/M3): <0 FOR CONDENSATION,
       !!!  >0 FOR EVAPORATION
-      DELRW=(RHOKOR-RHOOMG) 
+      DELRW=(RHOKOR-RHOOMG)
 
-  END SUBROUTINE VAPORCLOSE
-     
-      
+    END SUBROUTINE VAPORCLOSE
 
-  SUBROUTINE MASSAGR(D,GM,GM1,GMW,GMI,DGM,DGMW,DGMI,DGMV,DI,ANU,RE,AE,& 
-                 TC,TS,P,DENSE,DENSA,FW,VT,XW,XI,SEKDEL,ITYPE,DELRW) 
+    SUBROUTINE MASSAGR(D,GM,GM1,GMW,GMI,DGM,DGMW,DGMI,DGMV,DI,ANU,RE,AE,&
+                 TC,TS,P,DENSE,DENSA,FW,VT,XW,XI,SEKDEL,ITYPE,DELRW)
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  !!! CALC THE STONE'S INCREASE IN MASS 
+  !!! CALC THE STONE'S INCREASE IN MASS
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            
+
       IMPLICIT NONE
       REAL*8 D
       REAL GM,GM1,GMW,GMI,DGM,DGMW,DGMI,DI,ANU,RE,AE,  &
                  TC,TS,P,DENSE,DENSA,FW,VT,XW,XI,SEKDEL,DELRW
-      INTEGER ITYPE 
+      INTEGER ITYPE
       !local variables
       REAL PI, D0, GMW2, GMI2, EW, EI,DGMV
-      REAL DENSEL, DENSELI, DENSELW 
+      REAL DENSEL, DENSELI, DENSELW
       REAL DC !MEAN CLOUD DROPLET DIAMETER (MICRONS, 1E-6M)
       REAL VOLL, VOLT !VOLUME OF NEW LAYER, TOTAL (M3)
       REAL VOL1, DGMW_NOSOAK, SOAK, SOAKM
@@ -1173,19 +1395,19 @@ END SUBROUTINE hailcast_diagnostic_driver
       !!!  CALCULATE THE DIFFUSIVITY DI (m2/s)
       D0=0.226*1.E-4  ! change to m2/s, not cm2/s
       DI=D0*(TC/273.155)**1.81*(100000./P)
-  
-      !!!  COLLECTION EFFICIENCY FOR WATER AND ICE 
-      !EW=1.0      
-      !!!!   IF TS WARMER THAN -5C THEN ACCRETE ALL THE ICE (EI=1.0) 
-      !!!!   OTHERWISE EI=0.21      
+
+      !!!  COLLECTION EFFICIENCY FOR WATER AND ICE
+      !EW=1.0
+      !!!!   IF TS WARMER THAN -5C THEN ACCRETE ALL THE ICE (EI=1.0)
+      !!!!   OTHERWISE EI=0.21
       !IF(TS.GE.268.15)THEN
       !  EI=1.00
       !ELSE
       !  EI=0.21
       !ENDIF
 
-      !!!  COLLECTION EFFICIENCY FOR WATER AND ICE 
-      EW=1.0      
+      !!!  COLLECTION EFFICIENCY FOR WATER AND ICE
+      EW=1.0
       !!!  Linear function for ice accretion efficiency
       IF (TC .GE. 273.155) THEN
          EI=1.00
@@ -1196,13 +1418,13 @@ END SUBROUTINE hailcast_diagnostic_driver
       ENDIF
 
       !!!  CALCULATE THE VENTILATION COEFFICIENT - NEEDED FOR GROWTH FROM VAPOR
-      !The coefficients in the ventilation coefficient equations have been 
+      !The coefficients in the ventilation coefficient equations have been
       !experimentally derived, and are expecting cal-C-g units.  Do some conversions.
       DENSAC = DENSA * (1.E3) * (1.E-6)
-      !dynamic viscosity 
+      !dynamic viscosity
       ANU=1.717E-4*(393.0/(TC+120.0))*(TC/273.155)**1.5
       !!!  CALCULATE THE REYNOLDS NUMBER - unitless
-      RE=D*VT*DENSAC/ANU   
+      RE=D*VT*DENSAC/ANU
       E=(0.60)**(0.333333333)*(RE**0.50) !ventilation coefficient vapor (fv)
       !!!   SELECT APPROPRIATE VALUES OF AE ACCORDING TO RE
       IF(RE.LT.6000.0)THEN
@@ -1214,42 +1436,42 @@ END SUBROUTINE hailcast_diagnostic_driver
       ENDIF
 
 
-      !!!  CALC HAILSTONE'S MASS (GM), MASS OF WATER (GMW) AND THE  
+      !!!  CALC HAILSTONE'S MASS (GM), MASS OF WATER (GMW) AND THE
       !!!  MASS OF ICE IN THE STONE (GMI)
       GM=PI/6.*(D**3.)*DENSE
       GMW=FW*GM
       GMI=GM-GMW
-  
+
       !!!  STORE THE MASS
       GM1=GM
-      
-      !!! NEW MASS GROWTH CALCULATIONS WITH VARIABLE RIME 
+
+      !!! NEW MASS GROWTH CALCULATIONS WITH VARIABLE RIME
       !!! LAYER DENSITY BASED ON ZIEGLER ET AL. (1983)
-      
+
       !!! CALCULATE INCREASE IN MASS DUE INTERCEPTED CLD WATER, USE
       !!! ORIGINAL DIAMETER
       GMW2=GMW+SEKDEL*(PI/4.*D**2.*VT*XW*EW)
-      DGMW=GMW2-GMW 
+      DGMW=GMW2-GMW
       GMW=GMW2
 
       !!!  CALCULATE THE INCREASE IN MASS DUE INTERCEPTED CLOUD ICE
       GMI2=GMI+SEKDEL*(PI/4.*D**2.*VT*XI*EI)
-      DGMI=GMI2-GMI 
+      DGMI=GMI2-GMI
       GMI=GMI2
-  
-      !!! CALCULATE INCREASE IN MASS DUE TO SUBLIMATION/CONDENSATION OF 
+
+      !!! CALCULATE INCREASE IN MASS DUE TO SUBLIMATION/CONDENSATION OF
       !!! WATER VAPOR
       DGMV = SEKDEL*2*PI*D*AE*DI*DELRW
       IF (DGMV .LT. 0) DGMV=0
 
-      !!!  CALCULATE THE TOTAL MASS CHANGE 
+      !!!  CALCULATE THE TOTAL MASS CHANGE
       DGM=DGMW+DGMI+DGMV
       !Dummy arguments in the event of no water, vapor, or ice growth
       DENSELW = 900.
       DENSELI = 700.
       !!! CALCULATE DENSITY OF NEW LAYER, DEPENDS ON FW AND ITYPE
       IF (ITYPE.EQ.1) THEN !DRY GROWTH
-          !If hailstone encountered supercooled water, calculate new layer density 
+          !If hailstone encountered supercooled water, calculate new layer density
           ! using Macklin form
           IF ((DGMW.GT.0).OR.(DGMV.GT.0)) THEN
              !MEAN CLOUD DROPLET RADIUS, ASSUME CLOUD DROPLET CONC OF 3E8 M-3 (300 CM-3)
@@ -1299,9 +1521,9 @@ END SUBROUTINE hailcast_diagnostic_driver
                    VIMP = 0.57*VT
                 ENDIF
              ENDIF
-              
+
              !RIME LAYER DENSITY, HEYMSFIELD AND PFLAUM 1985 FORM
-             TSCELSIUS = TS - 273.16 
+             TSCELSIUS = TS - 273.16
              AFACTOR = -DC*VIMP/TSCELSIUS
              IF ((TSCELSIUS.LE.-5.).OR.(AFACTOR.GE.-1.60)) THEN
                  DENSELW = 0.30*(AFACTOR)**0.44
@@ -1321,7 +1543,7 @@ END SUBROUTINE hailcast_diagnostic_driver
              !Ice collection main source of growth, so set new density layer
              DENSELI = 700.
           ENDIF
-          
+
           !All liquid water contributes to growth, none is soaked into center.
           DGMW_NOSOAK = DGMW  !All liquid water contributes to growth,
                               ! none of it is soaked into center.
@@ -1329,7 +1551,7 @@ END SUBROUTINE hailcast_diagnostic_driver
       ELSE !WET GROWTH
           !Collected liquid water can soak into the stone before freezing,
           ! increasing mass and density but leaving volume constant.
-          !Volume of current drop, before growth 
+          !Volume of current drop, before growth
           VOL1 = GM/DENSE
           !Difference b/w mass of stone if density is 900 kg/m3, and
           ! current mass
@@ -1340,15 +1562,15 @@ END SUBROUTINE hailcast_diagnostic_driver
           IF (SOAKM.GT.SOAK) SOAKM=SOAK
           GM = GM+SOAKM  !Mass of current drop, plus soaking
           !New density of current drop, including soaking but before growth
-          DENSE = GM/VOL1 
+          DENSE = GM/VOL1
           !Mass increment of liquid water growth that doesn't
           ! include the liquid water we just soaked into the stone.
           DGMW_NOSOAK = DGMW - SOAKM
-          
+
           !Whatever growth does occur has high density
           DENSELW = 900.  !KG M-3
           DENSELI = 900.
-         
+
       ENDIF
 
       !!!VOLUME OF NEW LAYER
@@ -1367,18 +1589,16 @@ END SUBROUTINE hailcast_diagnostic_driver
       VOLT = VOLL + GM/DENSE
       !DENSE = (GM+DGM) / VOLT
       DENSE = (GM+DGMI+DGMV+DGMW_NOSOAK) / VOLT
-      !D=D+SEKDEL*0.5*VT/DENSE*(XW*EW+XI*EI)      
+      !D=D+SEKDEL*0.5*VT/DENSE*(XW*EW+XI*EI)
       GM = GM+DGMI+DGMW_NOSOAK+DGMV
-      D = ( (6*GM) / (PI*DENSE) )**0.33333333 
+      D = ( (6*GM) / (PI*DENSE) )**0.33333333
 
-  END SUBROUTINE MASSAGR
+    END SUBROUTINE MASSAGR
 
-
-
-  SUBROUTINE HEATBUD(TS,TSm1,TSm2,FW,TC,VT,DELRW,D,DENSA,GM1,GM,DGM,DGMW,     &
+    SUBROUTINE HEATBUD(TS,TSm1,TSm2,FW,TC,VT,DELRW,D,DENSA,GM1,GM,DGM,DGMW,     &
                      DGMV,DGMI,GMW,GMI,DI,ANU,RE,AE,SEKDEL,ITYPE,P)
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  !!! CALCULATE HAILSTONE'S HEAT BUDGET 
+  !!! CALCULATE HAILSTONE'S HEAT BUDGET
   !!! See Rasmussen and Heymsfield 1987; JAS
   !!! Original Hailcast's variable units
   !!! TS - Celsius
@@ -1398,7 +1618,7 @@ END SUBROUTINE hailcast_diagnostic_driver
       REAL TS,TSm1,TSm2,FW,TC,VT,DELRW,DENSA,GM1,GM,DGM,DGMW,DGMV,  &
                     DGMI,GMW,GMI,DI,ANU,RE,AE,SEKDEL,P
       INTEGER ITYPE
-      
+
       REAL RV, RD, G, PI, ALF, ALV, ALS, CI, CW, AK
       REAL H, AH, TCC, TSC, DELRWC, DENSAC, TDIFF
       REAL DMLT
@@ -1406,7 +1626,7 @@ END SUBROUTINE hailcast_diagnostic_driver
       DATA RV/461.48/,RD/287.04/,G/9.78956/
       DATA PI/3.141592654/,ALF/79.7/,ALV/597.3/
       DATA ALS/677.0/,CI/0.5/,CW/1./
-      
+
       !Convert values to non-SI units here
       TSC = TS - 273.155
       TSCm1 = TSm1 - 273.155
@@ -1417,14 +1637,14 @@ END SUBROUTINE hailcast_diagnostic_driver
       !DI still in cm2/sec
 
 
-      !!!  CALCULATE THE CONSTANTS 
+      !!!  CALCULATE THE CONSTANTS
       AK=(5.8+0.0184*TCC)*1.E-5  !thermal conductivity - cal/(cm*sec*K)
       !dynamic viscosity - calculated in MASSAGR
       !ANU=1.717E-4*(393.0/(TC+120.0))*(TC/273.155)**1.5
 
       !!!  CALCULATE THE REYNOLDS NUMBER - unitless
-      !RE=D*VT*DENSAC/ANU  - calculated in MASSAGR  
-      
+      !RE=D*VT*DENSAC/ANU  - calculated in MASSAGR
+
       H=(0.71)**(0.333333333)*(RE**0.50) !ventilation coefficient heat (fh)
       !E=(0.60)**(0.333333333)*(RE**0.50) !ventilation coefficient vapor (fv)
 
@@ -1440,12 +1660,12 @@ END SUBROUTINE hailcast_diagnostic_driver
          !AE=(0.57+9.0E-6*RE)*E  calculated in MASSAGR
       ENDIF
 
-      !!!  FOR DRY GROWTH FW=0, CALCULATE NEW TS, ITIPE=1 
+      !!!  FOR DRY GROWTH FW=0, CALCULATE NEW TS, ITIPE=1
       !!!  FOR WET GROWTH TS=0, CALCULATE NEW FW, ITIPE=2
 
 
       IF(ITYPE.EQ.1) THEN
-      !!!  DRY GROWTH; CALC NEW TEMP OF THE STONE 
+      !!!  DRY GROWTH; CALC NEW TEMP OF THE STONE
          !Original Hailcast algorithm (no time differencing)
          !TSC=TSC-TSC*DGM/GM1+SEKDEL/(GM1*CI)*                &
          !   (2.*PI*D*(AH*AK*(TCC-TSC)-AE*ALS*DI*DELRWC)+     &
@@ -1454,17 +1674,17 @@ END SUBROUTINE hailcast_diagnostic_driver
             (2.*PI*D*(AH*AK*(TCC-TSC)-AE*ALS*DI*DELRWC)+     &
             DGMW/SEKDEL*(ALF+CW*TCC)+DGMI/SEKDEL*CI*TCC)) + &
             0.2*TSCm1 + 0.2*TSCm2
-         
+
          TS = TSC+273.155
-         IF (TS.GE.273.155) THEN 
+         IF (TS.GE.273.155) THEN
             TS=273.155
          ENDIF
-         TDIFF = ABS(TS-273.155)         
+         TDIFF = ABS(TS-273.155)
          IF (TDIFF.LE.1.E-6) ITYPE=2  !NOW IN WET GROWTH
-     
+
       ELSE IF (ITYPE.EQ.2) THEN
-      !!!  WET GROWTH; CALC NEW FW          
-         
+      !!!  WET GROWTH; CALC NEW FW
+
          IF (TCC.LT.0.) THEN
             !Original Hailcast algorithm
             FW=FW-FW*DGM/GM1+SEKDEL/(GM1*ALF)*               &
@@ -1476,25 +1696,23 @@ END SUBROUTINE hailcast_diagnostic_driver
                     DGMW/SEKDEL*CW*TCC) / ALF
             FW = (FW*GM + DMLT) / GM
          ENDIF
-         
+
          IF(FW.GT.1.)FW=1.
          IF(FW.LT.0.)FW=0.
 
          !IF ALL OUR ACCRETED WATER WAS FROZEN, WE ARE BACK IN DRY GROWTH
          IF(FW.LE.1.E-6) THEN
-            ITYPE=1  
+            ITYPE=1
          ENDIF
-         
+
       ENDIF
 
-  END SUBROUTINE HEATBUD
+    END SUBROUTINE HEATBUD
 
-
-  
-  SUBROUTINE BREAKUP(DENSE,D,GM,FW,CRIT)
+    SUBROUTINE BREAKUP(DENSE,D,GM,FW,CRIT)
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  !!!  TEST IF AMOUNT OF WATER ON SURFACE EXCEEDS CRTICAL LIMIT- 
-  !!!  IF SO INVOKE SHEDDING SCHEME 
+  !!!  TEST IF AMOUNT OF WATER ON SURFACE EXCEEDS CRTICAL LIMIT-
+  !!!  IF SO INVOKE SHEDDING SCHEME
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
       IMPLICIT NONE
@@ -1508,9 +1726,9 @@ END SUBROUTINE hailcast_diagnostic_driver
       !GMI=(GM-WATER) !KG
       !REMAIN = CRIT*GM
 
-      ! CALC CRTICAL MASS CAPABLE OF BEING "SUPPORTED" ON THE STONE'S 
-      ! SURFACE 
-      !CRIT=0.268+0.1389*GMI 
+      ! CALC CRTICAL MASS CAPABLE OF BEING "SUPPORTED" ON THE STONE'S
+      ! SURFACE
+      !CRIT=0.268+0.1389*GMI
       !CRIT=0.268*1.E-3 + 0.1389*1.E-3*GMI  !mass now in kg instead of g
       !CRIT = 1.0E-10
       !CRIT - now passed from main subroutine
@@ -1518,21 +1736,20 @@ END SUBROUTINE hailcast_diagnostic_driver
       WAT=WATER-CRIT
       GM=GM-WAT
       FW=(CRIT)/GM
-    
+
       IF(FW.GT.1.0) FW=1.0
       IF(FW.LT.0.0) FW=0.0
 
-      ! RECALCULATE DIAMETER AFTER SHEDDING 
+      ! RECALCULATE DIAMETER AFTER SHEDDING
       ! Assume density remains the same
       D=(6.*GM/(PI*DENSE))**(0.333333333)
-  END SUBROUTINE BREAKUP
-  
-  
-  SUBROUTINE MELT(D,TLAYER,PLAYER,RLAYER,LDEPTH,VT)
+    END SUBROUTINE BREAKUP
+
+    SUBROUTINE MELT(D,TLAYER,PLAYER,RLAYER,LDEPTH,VT)
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  !!!  This is a spherical hail melting estimate based on the Goyer 
-  !!!  et al. (1969) eqn (3).  The depth of the warm layer, estimated 
-  !!!  terminal velocity, and mean temperature of the warm layer are 
+  !!!  This is a spherical hail melting estimate based on the Goyer
+  !!!  et al. (1969) eqn (3).  The depth of the warm layer, estimated
+  !!!  terminal velocity, and mean temperature of the warm layer are
   !!!  used.  DRB.  11/17/2003.
   !!!
   !!!  INPUT:  TLAYER   mean sub-cloud layer temperature (K)
@@ -1540,7 +1757,7 @@ END SUBROUTINE hailcast_diagnostic_driver
   !!!          RLAYER   mean sub-cloud layer mixing ratio (kg/kg)
   !!!          VT       terminal velocity of stone (m/s)
   !!!  OUTPUT: D        diameter (m)
-  !!!          
+  !!!
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       IMPLICIT NONE
 
@@ -1553,7 +1770,7 @@ END SUBROUTINE hailcast_diagnostic_driver
            tres, re, delt, esenv, rhosenv, essfc, rhosfc, dsig, &
            dmdt, mass, massorg, newmass, gamma, r, rho
       INTEGER wcnt
-      
+
       !Convert temp to Celsius, calculate dewpoint in celsius
       eps = 0.622
       tclayer = TLAYER - 273.155
@@ -1561,20 +1778,20 @@ END SUBROUTINE hailcast_diagnostic_driver
       b = 5.42E3
       tdclayer = b / LOG(a*eps / (rlayer*player))
       hplayer = player / 100.
-      
+
       !Calculate partial vapor pressure
       eenv = (player*rlayer) / (rlayer+eps)
       eenv = eenv / 100.  !convert to mb
-      
+
       !Estimate wet bulb temperature (C)
       gamma = 6.6E-4*player
       delta = (4098.0*eenv)/((tdclayer+237.7)*(tdclayer+237.7))
       wetbulb = ((gamma*tclayer)+(delta*tdclayer))/(gamma+delta)
-      
+
       !Iterate to get exact wet bulb
       wcnt = 0
       DO WHILE (wcnt .lt. 11)
-        ewet = 6.108*(exp((17.27*wetbulb)/(237.3 + wetbulb))) 
+        ewet = 6.108*(exp((17.27*wetbulb)/(237.3 + wetbulb)))
         de = (0.0006355*hplayer*(tclayer-wetbulb))-(ewet-eenv)
         der= (ewet*(.0091379024 - (6106.396/(273.155+wetbulb)**2))) &
              - (0.0006355*hplayer)
@@ -1585,7 +1802,7 @@ END SUBROUTINE hailcast_diagnostic_driver
            EXIT
         ENDIF
       ENDDO
-      
+
       wetbulbk = wetbulb + 273.155  !convert to K
       ka = .02 ! thermal conductivity of air
       lf = 3.34e5 ! latent heat of melting/fusion
@@ -1596,16 +1813,16 @@ END SUBROUTINE hailcast_diagnostic_driver
       rv = 1004. - 287. ! gas constant for water vapor
       rhoice = 917.0 ! density of ice (kg/m**3)
       r = D/2. ! radius of stone (m)
-      
+
       !Compute residence time in warm layer
       tres = LDEPTH / VT
-        
+
       !Calculate dmdt based on eqn (3) of Goyer et al. (1969)
       !Reynolds number...from pg 317 of Atmo Physics (Salby 1996)
       !Just use the density of air at 850 mb...close enough.
       rho = 85000./(287.*TLAYER)
       re = rho*r*VT*.01/1.7e-5
-      
+
       !Temperature difference between environment and hailstone surface
       delt = wetbulb !- 0.0 !assume stone surface is at 0C
                             !wetbulb is in Celsius
@@ -1624,14 +1841,12 @@ END SUBROUTINE hailcast_diagnostic_driver
       dmdt = (-1.7*pi*r*(re**0.5)/lf)*((ka*delt)+((lv-lf)*dv*dsig))
       IF (dmdt.gt.0.) dmdt = 0
       mass = dmdt*tres
-      
+
       !Find the new hailstone diameter
       massorg = 1.33333333*pi*r*r*r*rhoice
       newmass = massorg + mass
       if (newmass.lt.0.0) newmass = 0.0
       D = 2.*(0.75*newmass/(pi*rhoice))**0.333333333
-  END SUBROUTINE MELT
+    END SUBROUTINE MELT
 
-  
 END MODULE module_diag_hailcast
-
