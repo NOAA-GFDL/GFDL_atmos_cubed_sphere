@@ -19,18 +19,13 @@
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
-!----------------------------------------------------------
-! Moving Nest Initial Release    W. Ramstrom - 07/28/2021
-!----------------------------------------------------------
-
 
 !***********************************************************************
-!>@brief!   Provides subroutines to enable moving nest functionality in FV3 dynamic core.
-!!>@author W. Ramstrom, AOML/HRD   01/15/2021
-!
+!> @file
+!! @brief   Provides subroutines to enable moving nest functionality in FV3 dynamic core.
+!! @author W. Ramstrom, AOML/HRD   01/15/2021
+!! @email William.Ramstrom@noaa.gov
 ! =======================================================================!
-
-! Notes
 
 module fv_moving_nest_utils_mod
 

@@ -19,13 +19,14 @@
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
-!*************************************************************************
-!>@brief!   Provides Moving Nest functionality for physics and surface variables
-!!>@author W. Ramstrom, AOML/HRD  09/29/2021
-!! Collaboration with Bin Liu and Chunxi Zhang, EMC
-!
+
+!***********************************************************************
+!> @file
+!! @brief Provides Moving Nest functionality for physics and surface variables
+!! @author W. Ramstrom.  Collaboration with Bin Liu and Chunxi Zhang, EMC
+!! @email William.Ramstrom@noaa.gov
 ! =======================================================================!
-!
+
 
 ! =======================================================================!
 !

@@ -19,9 +19,15 @@
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
-!>@brief The module 'fv_moving_nest_main' provides the top-level
-!! interface for moving nests in the Cubed-Sphere FV dynamical core
-!!>@author W. Ramstrom, AOML/HRD/CIMAS  05/27/2021
+
+!***********************************************************************
+!> @file
+!! @brief Provides top-level interface for moving nest functionality
+!! @author W. Ramstrom, AOML/HRD   05/27/2021
+!! @email William.Ramstrom@noaa.gov
+! =======================================================================!
+
+
 
 module fv_moving_nest_main_mod
 #ifdef MOVING_NEST

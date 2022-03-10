@@ -19,16 +19,14 @@
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
-!----------------------------------------------------------
-! Moving Nest Initial Release    W. Ramstrom - 07/28/2021
-!----------------------------------------------------------
 
 !***********************************************************************
-!>@brief!   Provides subroutines for grid bounding boxes as part of moving nest functionality in FV3 dynamic core.
-!!>@author W. Ramstrom, AOML/HRD
-!
-! =======================================================================!
-!
+!> @file
+!! @brief Provides subroutines for grid bounding boxes for moving nest
+!! @author W. Ramstrom, AOML/HRD  07/28/2021
+!! @email William.Ramstrom@noaa.gov
+!=======================================================================!
+
 
 module bounding_box_mod
   use mpp_domains_mod, only : mpp_get_C2F_index, nest_domain_type
