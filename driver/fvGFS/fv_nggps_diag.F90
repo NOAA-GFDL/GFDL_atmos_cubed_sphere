@@ -62,7 +62,7 @@ module fv_nggps_diags_mod
 !   </tr>
 ! </table>
 
- use mpp_mod,            only: mpp_pe, mpp_root_pe,FATAL,mpp_error,NOTE
+ use mpp_mod,            only: mpp_pe, mpp_root_pe,FATAL,mpp_error
  use constants_mod,      only: grav, rdgas
  use time_manager_mod,   only: time_type, get_time
  use diag_manager_mod,   only: register_diag_field, send_data
@@ -434,7 +434,8 @@ contains
     endif
 
     !initialize hailcast
-    call hailcast_init(file_name, axes, Time, isdo,iedo,jsdo,jedo,nlevs, missing_value, istatus)
+    call hailcast_init(file_name, axes, Time, isco,ieco,jsco,jeco,      &
+                isdo,iedo,jsdo,jedo,nlevs, missing_value, istatus)
 
 !
 !------------------------------------
@@ -615,7 +616,7 @@ contains
            do i=isco,ieco
              wk(i,j,k) = -Atm(n)%delp(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*rdgas*Atm(n)%pt(i,j,k)
 #ifdef MULTI_GASES
-             wk(i,j,k) = wk(i,j,k)*virq(Atm(n)%q(i,j,k,:)
+             wk(i,j,k) = wk(i,j,k)*virq(Atm(n)%q(i,j,k,:))
 #else
              wk(i,j,k) = wk(i,j,k)*(1.+zvir*Atm(n)%q(i,j,k,sphum))
 #endif
@@ -745,9 +746,7 @@ contains
     IF ( .not. Atm(n)%flagstruct%hydrostatic .and. do_hailcast ) THEN
         !--- max hourly hailcast hail diameter
         if (id_hailcast_dhail > 0) then
-          call hailcast_compute_dhailmax(isco,ieco,jsco,jeco,istatus)
           call store_data(id_hailcast_dhail, hailcast_dhail_max, Time, kstt_hc, kend_hc)
-          if (allocated(hailcast_dhail_max)) deallocate(hailcast_dhail_max)
         endif
 
         !--- max hourly hailcast hail diameter (embryo 1)
@@ -800,6 +799,8 @@ contains
     integer, save :: kdtt = 0
     real :: avg_max_length
     real,dimension(:,:,:),allocatable :: vort
+    logical :: reset_step
+
     n = 1
     ngc = Atm(n)%ng
     nq = size (Atm(n)%q,4)
@@ -823,17 +824,17 @@ contains
          kdtt=0
        endif
        nsteps_per_reset = nint(avg_max_length/first_time)
-        if(mod(kdtt,nsteps_per_reset)==0)then
-       do j=jsco,jeco
-          do i=isco,ieco
-                up2(i,j) = -999.
-                dn2(i,j) = 999.
-                maxvorthy1(i,j)= 0.
-                maxvort01(i,j)= 0.
-                maxvort02(i,j)= 0.
-          enddo
-        enddo
-             endif
+       if(mod(kdtt,nsteps_per_reset)==0)then
+            do j=jsco,jeco
+              do i=isco,ieco
+                    up2(i,j) = -999.
+                    dn2(i,j) = 999.
+                    maxvorthy1(i,j)= 0.
+                    maxvort01(i,j)= 0.
+                    maxvort02(i,j)= 0.
+              enddo
+            enddo
+       endif
          call get_vorticity(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo, &
                            npzo,Atm(n)%u,Atm(n)%v,vort,    &
                            Atm(n)%gridstruct%dx,Atm(n)%gridstruct%dy,&
@@ -852,15 +853,15 @@ contains
          if( .not.Atm(n)%flagstruct%hydrostatic ) then
             call max_vv(isco,ieco,jsco,jeco,npzo,ngc,up2,dn2,Atm(n)%pe,Atm(n)%w)
             if(mod(kdtt,nsteps_per_reset)==0)then
-            do j=jsco,jeco
-               do i=isco,ieco
-                    uhmax03(i,j)= 0.
-                    uhmin03(i,j)= 0.
-                    uhmax25(i,j)= 0.
-                    uhmin25(i,j)= 0.
-               enddo
-             enddo
-                  endif
+                do j=jsco,jeco
+                  do i=isco,ieco
+                       uhmax03(i,j)= 0.
+                       uhmin03(i,j)= 0.
+                       uhmax25(i,j)= 0.
+                       uhmin25(i,j)= 0.
+                  enddo
+                enddo
+            endif
 
              call max_uh(isco,ieco,jsco,jeco,ngc,npzo,zvir, &
                            sphum,uhmax03,uhmin03,Atm(n)%w,vort,Atm(n)%delz, &
@@ -873,7 +874,7 @@ contains
                            Atm(n)%pt,Atm(n)%peln,Atm(n)%phis,grav, &
                            2.e3, 5.e3)
          endif
-    deallocate (vort)
+         deallocate (vort)
     else
        print *,'Missing max/min hourly field in diag_table'
        print *,'Make sure the following are listed in the diag_table under gfs_dyn:'
@@ -885,8 +886,10 @@ contains
 
    !allocate hailcast met field arrays
    if (do_hailcast) then
-      call hailcast_compute(Atm(n),sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, &
-           isco,jsco,ieco,jeco,npzo,kdtt,nsteps_per_reset)
+        reset_step = (mod(kdtt,nsteps_per_reset)==0)
+        call hailcast_compute(Atm(n),sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, zvir, &
+                isco,jsco,ieco,jeco,isdo,iedo,jsdo,jedo,npzo,           &
+                reset_step,first_time)
    endif
 
    kdtt=kdtt+1

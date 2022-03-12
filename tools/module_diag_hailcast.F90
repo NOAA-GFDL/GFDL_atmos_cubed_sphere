@@ -2,7 +2,7 @@
 !John Henderson AER 20190425
 !time management handling from WRF is preserved but commented out
 
-! Y. Wang NSSL/CIWRO 20220310
+! Yunheng Wang NSSL/CIWRO 20220310
 ! Remodeled as recommended for PR #164.
 !
 
@@ -12,7 +12,9 @@ MODULE module_diag_hailcast
     use fms_mod,          only: check_nml_error
     !use fv_mp_mod,        only: is_master
 
-    use constants_mod,    only: grav
+    use constants_mod,    only: grav, rdgas
+
+    implicit none
 
     logical :: do_hailcast = .false. !This controls whether hailcast is used
 
@@ -40,7 +42,8 @@ MODULE module_diag_hailcast
     PRIVATE :: hailstone_driver, hailcast_diagnostic_driver
 CONTAINS
 
-    SUBROUTINE hailcast_init(file_name, axes, Time, isdo,iedo,jsdo,jedo,nlevs, missing_value, istatus)
+    SUBROUTINE hailcast_init(file_name, axes, Time, isco,ieco,jsco,jeco,&
+            isdo,iedo,jsdo,jedo,nlevs, missing_value, istatus)
 
         use diag_manager_mod,   only: register_diag_field
 
@@ -48,27 +51,22 @@ CONTAINS
         integer,           intent(in)    :: axes(4)
         type(time_type),   intent(in)    :: Time
         INTEGER,           INTENT(IN)    :: isdo,iedo,jsdo,jedo
+        INTEGER,           INTENT(IN)    :: isco,ieco,jsco,jeco
         INTEGER,           INTENT(INOUT) :: nlevs
         real,              INTENT(IN)    :: missing_value
         INTEGER,           INTENT(OUT)   :: istatus
 
+        INTEGER :: i, j
+
         namelist /fv_diagnostics_nml/ do_hailcast
         integer :: ios, ierr
-        integer :: unit, f_unit
+        integer :: unit
 
         !namelist file for hailcast
-#ifdef INTERNAL_FILE_NML
+
         ! Read Main namelist
         read (input_nml_file,fv_diagnostics_nml,iostat=ios)
         ierr = check_nml_error(ios,'fv_diagnostics_nml')
-#else
-        f_unit=open_namelist_file()
-        rewind (f_unit)
-        ! Read Main namelist
-        read (f_unit,fv_diagnostics_nml,iostat=ios)
-        ierr = check_nml_error(ios,'fv_diagnostics_nml')
-        call close_file(f_unit)
-#endif
 
         unit = stdlog()
         write(unit, nml=fv_diagnostics_nml)
@@ -80,7 +78,7 @@ CONTAINS
 
         !register hailcast arrays
         if (do_hailcast) then
-            id_hailcast_dhail = register_diag_field ( trim(file_name), 'hailcast_dhail_max', axes(1:2), Time,    &
+            id_hailcast_dhail = register_diag_field ( trim(file_name), 'hailcast_dhail_max', axes(1:2), Time,     &
                           'hourly max hail diameter', 'mm', missing_value=missing_value )
             id_hailcast_dhail1 = register_diag_field ( trim(file_name), 'hailcast_dhail1_max', axes(1:2), Time,   &
                           'hourly max hail diameter (embryo 1)', 'mm', missing_value=missing_value )
@@ -136,37 +134,44 @@ CONTAINS
             endif
 
             if (.not.allocated(hailcast_dhail1)) then
-                allocate(hailcast_dhail1(isco:ieco,jsco:jeco), &
-                         hailcast_dhail2(isco:ieco,jsco:jeco), &
-                         hailcast_dhail3(isco:ieco,jsco:jeco), &
-                         hailcast_dhail4(isco:ieco,jsco:jeco), &
-                         hailcast_dhail5(isco:ieco,jsco:jeco), &
-                         hailcast_diam_mean(isco:ieco,jsco:jeco), &
+                allocate(hailcast_dhail1(isco:ieco,jsco:jeco),          &
+                         hailcast_dhail2(isco:ieco,jsco:jeco),          &
+                         hailcast_dhail3(isco:ieco,jsco:jeco),          &
+                         hailcast_dhail4(isco:ieco,jsco:jeco),          &
+                         hailcast_dhail5(isco:ieco,jsco:jeco),          &
+                         hailcast_diam_mean(isco:ieco,jsco:jeco),       &
                          hailcast_diam_std(isco:ieco,jsco:jeco))
                 allocate ( hailcast_dhail1_max(isco:ieco,jsco:jeco) )
                 allocate ( hailcast_dhail2_max(isco:ieco,jsco:jeco) )
                 allocate ( hailcast_dhail3_max(isco:ieco,jsco:jeco) )
                 allocate ( hailcast_dhail4_max(isco:ieco,jsco:jeco) )
                 allocate ( hailcast_dhail5_max(isco:ieco,jsco:jeco) )
+                allocate ( hailcast_dhail_max(isco:ieco,jsco:jeco)  )
 
                 do i=isco,ieco
-                   do j=jsco,jeco
-                      hailcast_dhail1(i,j)=0; hailcast_dhail2(i,j)=0
-                      hailcast_dhail3(i,j)=0; hailcast_dhail4(i,j)=0
-                      hailcast_dhail5(i,j)=0
-                      hailcast_dhail1_max(i,j)=0; hailcast_dhail2_max(i,j)=0
-                      hailcast_dhail3_max(i,j)=0; hailcast_dhail4_max(i,j)=0
-                      hailcast_dhail5_max(i,j)=0
-                   enddo
+                    do j=jsco,jeco
+                       hailcast_dhail1(i,j)=0
+                       hailcast_dhail2(i,j)=0
+                       hailcast_dhail3(i,j)=0
+                       hailcast_dhail4(i,j)=0
+                       hailcast_dhail5(i,j)=0
+                       hailcast_dhail1_max(i,j)=0
+                       hailcast_dhail2_max(i,j)=0
+                       hailcast_dhail3_max(i,j)=0
+                       hailcast_dhail4_max(i,j)=0
+                       hailcast_dhail5_max(i,j)=0
+                       hailcast_dhail_max(i,j) =0
+                    enddo
                 enddo
             endif
             if (.not.allocated(hailcast_wdur)) then
-                allocate(hailcast_wdur(isdo:iedo,jsdo:jedo),hailcast_wup_mask(isdo:iedo,jsdo:jedo))
+                allocate(hailcast_wdur(isdo:iedo,jsdo:jedo))
+                allocate(hailcast_wup_mask(isdo:iedo,jsdo:jedo))
                 do i=isdo,iedo
-                   do j=jsdo,jedo
-                      hailcast_wdur(i,j)=0
-                      hailcast_wup_mask(i,j)=0
-                   enddo
+                    do j=jsdo,jedo
+                       hailcast_wdur(i,j)    = 0
+                       hailcast_wup_mask(i,j)= 0
+                    enddo
                 enddo
             endif
         endif
@@ -174,16 +179,21 @@ CONTAINS
         RETURN
     END SUBROUTINE hailcast_init
 
-    SUBROUTINE hailcast_compute(Atm,sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, &
-           isco,jsco,ieco,jeco,npzo, kdtt, nsteps_per_reset)
+    SUBROUTINE hailcast_compute(Atm,sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, zvir,  &
+           isco,jsco,ieco,jeco,isdo,iedo,jsdo,jedo,npzo, reset_step, first_time)
 
         !moved this code from subroutine fv_nggps_tavg(Atm, Time_step_atmos,avg_max_length,zvir) in fv_nggps_diag
         use fv_arrays_mod,      only: fv_atmos_type
         type(fv_atmos_type), intent(inout) :: Atm
         integer, INTENT(IN) :: isco, ieco, jsco, jeco, npzo
+        integer, INTENT(IN) :: isdo, iedo, jsdo, jedo
         integer, INTENT(IN) :: sphum, liq_wat, ice_wat       !< GFDL physics
         integer, INTENT(IN) :: rainwat, snowwat, graupel
-        integer, INTENT(IN) :: nsteps_per_reset, kdtt
+        real,    intent(in) :: zvir
+        LOGICAL, INTENT(IN) :: reset_step
+        real,    INTENT(IN) :: first_time
+
+        INTEGER :: i, j, k
 
         !declare temporary hailcast variables
         real, allocatable :: rhoair_layer(:,:,:), z(:), z_layer(:,:,:), p_layer(:,:,:),zsfc(:,:)
@@ -191,25 +201,26 @@ CONTAINS
         !automatic 2-D array for terrain height
         !automatic 1-D array for interface levels
 
-        IF (id_hailcast_dhail>0  .or. id_hailcast_dhail1>0 .or.         &
+        IF (id_hailcast_dhail >0 .or. id_hailcast_dhail1>0 .or.         &
             id_hailcast_dhail2>0 .or. id_hailcast_dhail3>0 .or.         &
             id_hailcast_dhail4>0 .or. id_hailcast_dhail5>0 .or.         &
             id_hailcast_diam_mean>0 .or. id_hailcast_diam_std>0) THEN
             do j=jsco,jeco
               do i=isco,ieco
-                 if(mod(kdtt,nsteps_per_reset)==0)then
-                    hailcast_dhail1_max(i,j) = 0.
-                    hailcast_dhail2_max(i,j) = 0.
-                    hailcast_dhail3_max(i,j) = 0.
-                    hailcast_dhail4_max(i,j) = 0.
-                    hailcast_dhail5_max(i,j) = 0.
-                 endif
+                if (reset_step) then
+                   hailcast_dhail1_max(i,j) = 0.
+                   hailcast_dhail2_max(i,j) = 0.
+                   hailcast_dhail3_max(i,j) = 0.
+                   hailcast_dhail4_max(i,j) = 0.
+                   hailcast_dhail5_max(i,j) = 0.
+                   hailcast_dhail_max(i,j)  = 0.
+                endif
 
-                 hailcast_dhail1(i,j) = 0
-                 hailcast_dhail2(i,j) = 0
-                 hailcast_dhail3(i,j) = 0
-                 hailcast_dhail4(i,j) = 0
-                 hailcast_dhail5(i,j) = 0
+                hailcast_dhail1(i,j) = 0.
+                hailcast_dhail2(i,j) = 0.
+                hailcast_dhail3(i,j) = 0.
+                hailcast_dhail4(i,j) = 0.
+                hailcast_dhail5(i,j) = 0.
               enddo
             enddo
 
@@ -238,22 +249,20 @@ CONTAINS
                         !height of interfaces and layer height
                         z(k)=z(k+1)-Atm%delz(i,j,k)
                         z_layer(i,j,k)=(z(k+1)+z(k))/2
-                        p_layer(i,j,k)=Atm%delp(i,j,k)*(1.-sum(Atm%q(i,j,k,2:Atm%flagstruct%nwat)))/&
-                                    (-Atm%delz(i,j,k)*grav)*rdgas*Atm%pt(i,j,k)*(1.+zvir*Atm%q(i,j,k,sphum))
+                        p_layer(i,j,k)=Atm%delp(i,j,k)*(1.-sum(Atm%q(i,j,k,2:Atm%flagstruct%nwat)))/     &
+                                     (-Atm%delz(i,j,k)*grav)*rdgas*Atm%pt(i,j,k)*(1.+zvir*Atm%q(i,j,k,sphum))
                      enddo
                   endif
                enddo !j loop
             enddo !k loop
 
             !call hailcast diagnostic driver once per time step and provide three-dimensional met fields
-            call hailcast_diagnostic_driver(Atm%pt(isco:ieco,jsco:jeco,1:npzo), Atm%w(isco:ieco,jsco:jeco,1:npzo), p_layer, z_layer, rhoair_layer, Atm%q(isco:ieco,jsco:jeco,1:npzo,:), &  !3D fields
-                                            Atm%flagstruct%nwat, sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, &  !number of tracer indices, indices
+            call hailcast_diagnostic_driver(Atm%pt(isco:ieco,jsco:jeco,1:npzo), Atm%w(isco:ieco,jsco:jeco,1:npzo), &
+                                            p_layer, z_layer, rhoair_layer, Atm%q(isco:ieco,jsco:jeco,1:npzo,:),   &  !3D fields
+                                            Atm%flagstruct%nwat, sphum,liq_wat,ice_wat,rainwat,snowwat,graupel,    &  !number of tracer indices, indices
                                             isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,                               &  !grid dimensions data array (with halo) and physical grid dimensions
                                             1,npzo, zsfc,                                                          &  !vertical dimensions, terrain height
-                                            first_time, Atm%domain)                                                !call hailcast every model step and info for updating haloes
-                                            !hailcast_dhail1,hailcast_dhail2,hailcast_dhail3,hailcast_dhail4,hailcast_dhail5, & !hailcast embryos sizes
-                                            !hailcast_diam_mean, hailcast_diam_std,                                 & !hailcast embryo mean/std
-                                            !hailcast_wdur, hailcast_wup_mask)                                        !persistent updraft duration and mask
+                                            first_time, Atm%domain)                                                   !call hailcast every model step and info for updating haloes
 
             do j=jsco,jeco
               do i=isco,ieco
@@ -262,9 +271,12 @@ CONTAINS
                 hailcast_dhail3_max(i,j) = max(hailcast_dhail3_max(i,j), hailcast_dhail3(i,j))
                 hailcast_dhail4_max(i,j) = max(hailcast_dhail4_max(i,j), hailcast_dhail4(i,j))
                 hailcast_dhail5_max(i,j) = max(hailcast_dhail5_max(i,j), hailcast_dhail5(i,j))
+
+                hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j),  hailcast_dhail1_max(i,j), &
+                                              hailcast_dhail2_max(i,j), hailcast_dhail3_max(i,j), &
+                                              hailcast_dhail4_max(i,j), hailcast_dhail5_max(i,j))
               enddo
             enddo
-
 
             !deallocate hailcast met variables
             deallocate(p_layer)
@@ -276,27 +288,6 @@ CONTAINS
 
         RETURN
     END SUBROUTINE hailcast_compute
-
-    SUBROUTINE hailcast_compute_dhailmax(isco,ieco,jsco,jeco,istatus)
-
-        INTEGER, INTENT(IN)         :: isco,ieco,jsco,jeco
-        INTEGER, INTENT(OUT)        :: istatus
-
-        allocate(hailcast_dhail_max(isco:ieco,jsco:jeco))
-
-        do j=jsco,jeco
-          do i=isco,ieco
-            hailcast_dhail_max(i,j) = 0.
-            hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j), hailcast_dhail1_max(i,j))
-            hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j), hailcast_dhail2_max(i,j))
-            hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j), hailcast_dhail3_max(i,j))
-            hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j), hailcast_dhail4_max(i,j))
-            hailcast_dhail_max(i,j) = max(hailcast_dhail_max(i,j), hailcast_dhail5_max(i,j))
-          end do
-        end do
-
-        RETURN
-    END SUBROUTINE hailcast_compute_dhailmax
 
     SUBROUTINE hailcast_diagnostic_driver ( t, w, p, z, rho, q,                    & ! 3D temperature, updraft, pressure, height, density and moisture tracers
                         moist_count,sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, & ! tracer indices
@@ -336,13 +327,13 @@ CONTAINS
     CHARACTER*512 :: message
     CHARACTER*256 :: timestr
     INTEGER :: i,j,k, numlevs
-    REAL, DIMENSION( is:ie, js:je, k_start:k_end ) ::        qr  &
-                                              ,          qs  &
-                                              ,          qg  &
-                                              ,          qv  &
-                                              ,          qc  &
-                                              ,          qi  &
-                                              ,        ptot
+    REAL, DIMENSION( is:ie, js:je, k_start:k_end ) ::        qr         &
+                                                         ,   qs         &
+                                                         ,   qg         &
+                                                         ,   qv         &
+                                                         ,   qc         &
+                                                         ,   qi         &
+                                                         , ptot
 
     REAL, DIMENSION( ishalo:iehalo, jshalo:jehalo) :: wdur_prev, wup_mask_prev
 
@@ -439,7 +430,7 @@ CONTAINS
     !    DO i = MAX( its-1 , ids ), MIN( ite+1 , ide-1)
     DO j = jshalo, jehalo
         DO i = ishalo, iehalo
-           wdur_prev(i,j) =      hailcast_wdur(i,j)
+           wdur_prev(i,j)     =  hailcast_wdur(i,j)
            wup_mask_prev(i,j) =  hailcast_wup_mask(i,j)
         ENDDO
     ENDDO
@@ -452,12 +443,12 @@ CONTAINS
     DO j = js, je
       DO i = is, ie
         hailcast_wup_mask(i,j) = 0
-        hailcast_wdur(i,j) = 0
+        hailcast_wdur(i,j)     = 0
 
         DO k = k_start, k_end
-           IF ( w(i,j,k) .ge. 10. ) THEN
-              hailcast_wup_mask(i,j) = 1
-           ENDIF
+            IF ( w(i,j,k) .ge. 10. ) THEN
+                hailcast_wup_mask(i,j) = 1
+            ENDIF
         ENDDO
       ENDDO
     ENDDO
@@ -469,8 +460,8 @@ CONTAINS
 
         ! Determine updraft duration using updraft masks
         ! ---------------------------------------------------
-           IF ( (hailcast_wup_mask(i,j).eq.1) .OR.                   &
-           (MAXVAL(wup_mask_prev(i-1:i+1,j-1:j+1)).eq.1) ) THEN
+           IF ( (hailcast_wup_mask(i,j).eq.1) .OR.                      &
+                (MAXVAL(wup_mask_prev(i-1:i+1,j-1:j+1)) .eq. 1) ) THEN
               hailcast_wdur(i,j) = MAXVAL(wdur_prev(i-1:i+1,j-1:j+1)) + dt
         ENDIF
       ENDDO
@@ -569,7 +560,12 @@ CONTAINS
          DO i=is, ie
            DO k=1, numlevs
              DO j=js, je
-              qv(i,j,k)=0;qr(i,j,k)=0;qs(i,j,k)=0;qg(i,j,k)=0;qc(i,j,k)=0;qi(i,j,k)=0
+              qv(i,j,k)=0
+              qr(i,j,k)=0
+              qs(i,j,k)=0
+              qg(i,j,k)=0
+              qc(i,j,k)=0
+              qi(i,j,k)=0
               qv(i,j,k) = q(i,j,k,sphum)
               qr(i,j,k) = q(i,j,k,rainwat)
               qs(i,j,k) = q(i,j,k,snowwat)
@@ -642,14 +638,15 @@ CONTAINS
             !     hailcast_dhail2(i,j), hailcast_dhail3(i,j),&
             !     hailcast_dhail4(i,j), hailcast_dhail5(i,j))
             !sample standard deviation
-            hailcast_diam_std(i,j) = SQRT( ( &
-              (hailcast_dhail1(i,j)-hailcast_diam_mean(i,j))**2.+&
-              (hailcast_dhail2(i,j)-hailcast_diam_mean(i,j))**2.+&
-              (hailcast_dhail3(i,j)-hailcast_diam_mean(i,j))**2.+&
-              (hailcast_dhail4(i,j)-hailcast_diam_mean(i,j))**2.+&
-              (hailcast_dhail5(i,j)-hailcast_diam_mean(i,j))**2.)&
+            hailcast_diam_std(i,j) = SQRT( (                            &
+              (hailcast_dhail1(i,j)-hailcast_diam_mean(i,j))**2.+       &
+              (hailcast_dhail2(i,j)-hailcast_diam_mean(i,j))**2.+       &
+              (hailcast_dhail3(i,j)-hailcast_diam_mean(i,j))**2.+       &
+              (hailcast_dhail4(i,j)-hailcast_diam_mean(i,j))**2.+       &
+              (hailcast_dhail5(i,j)-hailcast_diam_mean(i,j))**2.)       &
               / 4.0)
-           if (hailcast_diam_mean(i,j).ne.0.0 .and. hailcast_diam_std(i,j).ne.0.0) print*,'jmh mean std=',i,j,hailcast_diam_mean(i,j),hailcast_diam_std(i,j)
+           if (hailcast_diam_mean(i,j).ne.0.0 .and. hailcast_diam_std(i,j).ne.0.0) &
+                print*,'jmh mean std=',i,j,hailcast_diam_mean(i,j),hailcast_diam_std(i,j)
           ENDDO
         ENDDO
       !END IF
