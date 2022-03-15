@@ -133,17 +133,17 @@ contains
     deg2rad = pi / 180.0
     rad2deg = 1.0 / pi180
 
-    x = in_bbox.is
-    y = in_bbox.js
+    x = in_bbox%is
+    y = in_bbox%js
     !print '("[INFO] WDR show_bbox ",A8," lats(",I0,",",I0,")=",F10.5," lons(",I0,",",I0,")="F10.5)', tag, x, y, lats(x,y)*rad2deg,  x, y, lons(x,y)*rad2deg
-    x = in_bbox.ie
-    y = in_bbox.js
+    x = in_bbox%ie
+    y = in_bbox%js
     !print '("[INFO] WDR show_bbox ",A8," lats(",I0,",",I0,")=",F10.5," lons(",I0,",",I0,")="F10.5)', tag, x, y, lats(x,y)*rad2deg,  x, y, lons(x,y)*rad2deg
-    x = in_bbox.is
-    y = in_bbox.je
+    x = in_bbox%is
+    y = in_bbox%je
     !print '("[INFO] WDR show_bbox ",A8," lats(",I0,",",I0,")=",F10.5," lons(",I0,",",I0,")="F10.5)', tag, x, y, lats(x,y)*rad2deg,  x, y, lons(x,y)*rad2deg
-    x = in_bbox.ie
-    y = in_bbox.je
+    x = in_bbox%ie
+    y = in_bbox%je
     !print '("[INFO] WDR show_bbox ",A8," lats(",I0,",",I0,")=",F10.5," lons(",I0,",",I0,")="F10.5)', tag, x, y, lats(x,y)*rad2deg,  x, y, lons(x,y)*rad2deg
 
   end subroutine show_bbox
