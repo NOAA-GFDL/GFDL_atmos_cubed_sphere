@@ -7,7 +7,7 @@
 !
 
 MODULE module_diag_hailcast
-    USE time_manager_mod, ONLY: time_type
+    USE time_manager_mod, ONLY: time_type, get_time
     use mpp_mod,          only: mpp_error, FATAL, input_nml_file, stdlog, mpp_pe, mpp_root_pe
     use fms_mod,          only: check_nml_error
     !use fv_mp_mod,        only: is_master
@@ -38,8 +38,12 @@ MODULE module_diag_hailcast
     integer :: kend_hc1,kend_hc2,kend_hc3,kend_hc4,kend_hc5
     integer :: kstt_hcd, kend_hcd, kstt_hcm, kend_hcm
 
+    real    :: time_step
+    integer :: kdtt = 0
+
     PRIVATE :: INTERPP, INTERP, TERMINL, VAPORCLOSE, MASSAGR, HEATBUD, BREAKUP, MELT
     PRIVATE :: hailstone_driver, hailcast_diagnostic_driver
+    PRIVATE :: time_step, kdtt
 CONTAINS
 
     SUBROUTINE hailcast_init(file_name, axes, Time, isco,ieco,jsco,jeco,&
@@ -180,26 +184,41 @@ CONTAINS
     END SUBROUTINE hailcast_init
 
     SUBROUTINE hailcast_compute(Atm,sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, zvir,  &
-           isco,jsco,ieco,jeco,isdo,iedo,jsdo,jedo,npzo, reset_step, first_time)
+           isco,jsco,ieco,jeco,isdo,iedo,jsdo,jedo,npzo, Time_step_atmos, avg_max_length)
 
         !moved this code from subroutine fv_nggps_tavg(Atm, Time_step_atmos,avg_max_length,zvir) in fv_nggps_diag
         use fv_arrays_mod,      only: fv_atmos_type
         type(fv_atmos_type), intent(inout) :: Atm
+        type(time_type),     intent(in)    :: Time_step_atmos
+        real,    INTENT(IN) :: avg_max_length
         integer, INTENT(IN) :: isco, ieco, jsco, jeco, npzo
         integer, INTENT(IN) :: isdo, iedo, jsdo, jedo
         integer, INTENT(IN) :: sphum, liq_wat, ice_wat       !< GFDL physics
         integer, INTENT(IN) :: rainwat, snowwat, graupel
         real,    intent(in) :: zvir
-        LOGICAL, INTENT(IN) :: reset_step
-        real,    INTENT(IN) :: first_time
 
         INTEGER :: i, j, k
+        logical, save :: first_call=.true.
+        integer       :: seconds, days
+        LOGICAL       :: reset_step
+        integer       :: nsteps_per_reset
 
         !declare temporary hailcast variables
         real, allocatable :: rhoair_layer(:,:,:), z(:), z_layer(:,:,:), p_layer(:,:,:),zsfc(:,:)
         !automatic 3-D arrays for layer air density, height ASL and pressure
         !automatic 2-D array for terrain height
         !automatic 1-D array for interface levels
+
+        if (first_call) then
+            call get_time (Time_step_atmos, seconds,  days)
+            !write(*,*) "setting hailcast: seconds= ", seconds
+            time_step = seconds
+            first_call= .false.
+            kdtt=0
+        endif
+
+        nsteps_per_reset = nint(avg_max_length/time_step)
+        reset_step = (mod(kdtt,nsteps_per_reset)==0)
 
         IF (id_hailcast_dhail >0 .or. id_hailcast_dhail1>0 .or.         &
             id_hailcast_dhail2>0 .or. id_hailcast_dhail3>0 .or.         &
@@ -262,7 +281,7 @@ CONTAINS
                                             Atm%flagstruct%nwat, sphum,liq_wat,ice_wat,rainwat,snowwat,graupel,    &  !number of tracer indices, indices
                                             isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,                               &  !grid dimensions data array (with halo) and physical grid dimensions
                                             1,npzo, zsfc,                                                          &  !vertical dimensions, terrain height
-                                            first_time, Atm%domain)                                                   !call hailcast every model step and info for updating haloes
+                                            time_step, Atm%domain)                                                   !call hailcast every model step and info for updating haloes
 
             do j=jsco,jeco
               do i=isco,ieco
@@ -285,6 +304,8 @@ CONTAINS
             deallocate(z)
             deallocate(zsfc)
         END IF
+
+        kdtt=kdtt+1
 
         RETURN
     END SUBROUTINE hailcast_compute
@@ -1123,7 +1144,7 @@ CONTAINS
 
       ENDIF !end check for melting call
 
-      !Check to make sure embryo didn’t just immediately fall out
+      !Check to make sure embryo didnt just immediately fall out
       IF (sec .LT. 60) D=0.0
 
       !Check to make sure something hasn't gone horribly wrong

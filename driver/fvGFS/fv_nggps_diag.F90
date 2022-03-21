@@ -799,8 +799,6 @@ contains
     integer, save :: kdtt = 0
     real :: avg_max_length
     real,dimension(:,:,:),allocatable :: vort
-    logical :: reset_step
-
     n = 1
     ngc = Atm(n)%ng
     nq = size (Atm(n)%q,4)
@@ -874,6 +872,7 @@ contains
                            Atm(n)%pt,Atm(n)%peln,Atm(n)%phis,grav, &
                            2.e3, 5.e3)
          endif
+         kdtt=kdtt+1
          deallocate (vort)
     else
        print *,'Missing max/min hourly field in diag_table'
@@ -886,13 +885,11 @@ contains
 
    !allocate hailcast met field arrays
    if (do_hailcast) then
-        reset_step = (mod(kdtt,nsteps_per_reset)==0)
         call hailcast_compute(Atm(n),sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, zvir, &
                 isco,jsco,ieco,jeco,isdo,iedo,jsdo,jedo,npzo,           &
-                reset_step,first_time)
+                Time_step_atmos,avg_max_length)
    endif
 
-   kdtt=kdtt+1
  end subroutine fv_nggps_tavg
 !
  subroutine store_data(id, work, Time, nstt, nend)
