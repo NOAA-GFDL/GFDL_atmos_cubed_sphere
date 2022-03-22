@@ -75,7 +75,7 @@ module fv_moving_nest_mod
 
   use boundary_mod,           only: update_coarse_grid, update_coarse_grid_mpp
   use bounding_box_mod,       only: bbox, bbox_get_C2F_index, fill_bbox, show_bbox
-  use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks, hlv
+  use constants_mod,          only: cp_air, omega, rdgas, grav, rvgas, kappa, pstd_mks, hlv
   use field_manager_mod,      only: MODEL_ATMOS
   use fms_io_mod,             only: read_data, write_data, get_global_att_value, fms_io_init, fms_io_exit
   use fv_arrays_mod,          only: fv_atmos_type, fv_nest_type, fv_grid_type, R_GRID
@@ -386,6 +386,8 @@ contains
     !!
     !!===========================================================
 
+    if (debug_log) print '("[INFO] WDR NRD0. npe=",I0," ",I0," ",I0," ",I0," ",I0," num_nest=",I0," delta_i_c=",I0," delta_j_c=",I0)', this_pe, istart_coarse, iend_coarse, jstart_coarse, jend_coarse, num_nest, delta_i_c, delta_j_c
+
     istart_coarse = istart_coarse + delta_i_c
     iend_coarse = iend_coarse + delta_i_c
 
@@ -394,9 +396,10 @@ contains
 
     ! The fine nest will maintain the same indices
 
-    if (debug_log) print '("[INFO] WDR NRD1 about to call mpp_define_nest_domains. npe=",I0," ",I0," ",I0," ",I0," ",I0)', this_pe, istart_coarse, iend_coarse, istart_fine, iend_fine
-
     num_nest = nest_domain%num_nest
+
+    if (debug_log) print '("[INFO] WDR NRD1 about to call mpp_shift_nest_domains. npe=",I0," ",I0," ",I0," ",I0," ",I0," num_nest=",I0," delta_i_c=",I0," delta_j_c=",I0)', this_pe, istart_coarse, iend_coarse, jstart_coarse, jend_coarse, num_nest, delta_i_c, delta_j_c
+
 
     ! WDR TODO Verify whether rerunning this will cause (small) memory leaks.
     if (is_fine_pe) then
@@ -1650,7 +1653,7 @@ contains
   !>@brief The subroutine 'mn_meta_reset_gridstruct' resets navigation data and reallocates needed data in the gridstruct after nest move
   !>@details This routine is computationally demanding and is a target for later optimization.
   subroutine mn_meta_reset_gridstruct(Atm, n, child_grid_num, nest_domain, fp_super_tile_geo, x_refine, y_refine, is_fine_pe, wt_h, wt_u, wt_v, a_step, dt_atmos)
-    type(fv_atmos_type), allocatable, intent(inout)  :: Atm(:)                                       !< Atm data array
+    type(fv_atmos_type), allocatable, target, intent(inout)  :: Atm(:)                               !< Atm data array
     integer, intent(in)                              :: n, child_grid_num                            !< This level and nest level
     type(nest_domain_type),     intent(in)           :: nest_domain                                  !< Nest domain structure
     type(grid_geometry), intent(in)                  :: fp_super_tile_geo                            !< Parent high-resolution geometry
@@ -1668,6 +1671,13 @@ contains
 
     real(kind=R_GRID)   :: pi = 4 * atan(1.0d0)
     real                :: rad2deg, half_lat, half_lon
+
+    ! Coriolis parameter variables
+    real                :: alpha = 0.
+    real, pointer, dimension(:,:,:) :: grid, agrid
+    real, pointer, dimension(:,:) :: fC, f0
+    integer             :: isd, ied, jsd, jed
+    integer             :: i, j
 
     logical, save       :: first_time = .true.
     integer, save       :: id_reset1, id_reset2, id_reset3, id_reset4, id_reset5, id_reset6, id_reset7
@@ -1724,6 +1734,39 @@ contains
           lbound(Atm(n)%grid_global,2), ubound(Atm(n)%grid_global,2), &
           lbound(Atm(n)%grid_global,3), ubound(Atm(n)%grid_global,3), &
           lbound(Atm(n)%grid_global,4), ubound(Atm(n)%grid_global,4)
+
+
+      ! Reset the coriolis parameters, using code from external_ic.F90::get_external_ic()
+
+      isd = Atm(n)%bd%isd
+      ied = Atm(n)%bd%ied
+      jsd = Atm(n)%bd%jsd
+      jed = Atm(n)%bd%jed
+
+      grid  => Atm(n)%gridstruct%grid
+      agrid => Atm(n)%gridstruct%agrid
+      fC    => Atm(n)%gridstruct%fC
+      f0    => Atm(n)%gridstruct%f0
+
+      ! * Initialize coriolis param:                                                                                                 
+      
+      do j=jsd,jed+1
+        do i=isd,ied+1
+          fC(i,j) = 2.*omega*( -1.*cos(grid(i,j,1))*cos(grid(i,j,2))*sin(alpha) + &
+              sin(grid(i,j,2))*cos(alpha) )
+        enddo
+      enddo
+      
+      do j=jsd,jed
+        do i=isd,ied
+          f0(i,j) = 2.*omega*( -1.*cos(agrid(i,j,1))*cos(agrid(i,j,2))*sin(alpha) + &
+              sin(agrid(i,j,2))*cos(alpha) )
+        enddo
+      enddo
+
+
+
+
 
       !! Let this get reset in init_grid()/setup_aligned_nest()
       !call fill_grid_from_supergrid(Atm(n)%grid_global, CORNER, fp_super_tile_geo, &
@@ -1806,7 +1849,7 @@ contains
     if (use_timers) call mpp_clock_begin (id_reset4)
 
     if (Atm(n)%neststruct%nested) then
-      if (debug_log) print '("[INFO] WDR INIT_GRID setup_aligned_nestA fv_moving_nest.F90 npe=",I0)', this_pe
+      if (debug_log) print '("[INFO] WDR INIT_GRID setup_aligned_nestA fv_moving_nest.F90 npe=",I0," n=",I0)', this_pe, n
 
       ! New code from fv_control.F90
       ! call init_grid(Atm(this_grid), Atm(this_grid)%flagstruct%grid_name, Atm(this_grid)%flagstruct%grid_file, &
