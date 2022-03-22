@@ -62,7 +62,7 @@ module fv_nggps_diags_mod
 !   </tr>
 ! </table>
 
- use mpp_mod,            only: mpp_pe, mpp_root_pe,FATAL,mpp_error
+ use mpp_mod,            only: mpp_pe, mpp_root_pe,FATAL,mpp_error, input_nml_file, stdlog
  use constants_mod,      only: grav, rdgas
  use time_manager_mod,   only: time_type, get_time
  use diag_manager_mod,   only: register_diag_field, send_data
@@ -74,8 +74,23 @@ module fv_nggps_diags_mod
  use fv_diagnostics_mod, only: range_check, dbzcalc,max_vv,get_vorticity, &
                                max_uh,max_vorticity,bunkers_vector,       &
                                helicity_relative_CAPS,max_vorticity_hy1
- use module_diag_hailcast
  use fv_arrays_mod,      only: fv_atmos_type
+ use module_diag_hailcast, only: do_hailcast, id_hailcast_dhail,         &
+                                 id_hailcast_dhail1, id_hailcast_dhail2, &
+                                 id_hailcast_dhail3, id_hailcast_dhail4, id_hailcast_dhail5, &
+                                 id_hailcast_wdur, id_hailcast_wup_mask, &
+                                 hailcast_dhail1, hailcast_dhail1_max,   &
+                                 hailcast_dhail2, hailcast_dhail2_max,   &
+                                 hailcast_dhail3, hailcast_dhail3_max,   &
+                                 hailcast_dhail4, hailcast_dhail4_max,   &
+                                 hailcast_dhail5, hailcast_dhail5_max,   &
+                                 hailcast_wdur, hailcast_wup_mask, hailcast_dhail_max, &
+                                 kstt_hc, kend_hc,                       &
+                                 kstt_hc1,kstt_hc2,kstt_hc3,kstt_hc4,kstt_hc5, &
+                                 kend_hc1,kend_hc2,kend_hc3,kend_hc4,kend_hc5, &
+                                 kstt_hcd, kend_hcd, kstt_hcm, kend_hcm,       &
+                                 hailcast_init, hailcast_compute
+ use fms_mod,            only: check_nml_error
  use mpp_domains_mod,    only: domain1d, domainUG
 #ifdef MULTI_GASES
  use multi_gases_mod,  only:  virq
@@ -151,6 +166,20 @@ contains
     integer, intent(in)         :: axes(4)
     type(time_type), intent(in) :: Time
     integer :: n, i, j, nz
+
+    namelist /fv_diagnostics_nml/ do_hailcast
+    integer :: ios, ierr
+    integer :: unit
+
+    !namelist file for hailcast
+
+    ! Read Main namelist
+    read (input_nml_file,fv_diagnostics_nml,iostat=ios)
+    ierr = check_nml_error(ios,'fv_diagnostics_nml')
+
+    unit = stdlog()
+    write(unit, nml=fv_diagnostics_nml)
+    !end hailcast nml
 
     n = 1
     ncnsto = Atm(1)%ncnst
@@ -433,10 +462,11 @@ contains
 
     endif
 
-    !initialize hailcast
-    call hailcast_init(file_name, axes, Time, isco,ieco,jsco,jeco,      &
+    if (do_hailcast) then
+        !initialize hailcast
+        call hailcast_init(file_name, axes, Time, isco,ieco,jsco,jeco,      &
                 isdo,iedo,jsdo,jedo,nlevs, missing_value, istatus)
-
+    endif
 !
 !------------------------------------
 ! use wrte grid component for output

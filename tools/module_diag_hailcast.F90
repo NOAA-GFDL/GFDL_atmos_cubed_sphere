@@ -8,8 +8,8 @@
 
 MODULE module_diag_hailcast
     USE time_manager_mod, ONLY: time_type, get_time
-    use mpp_mod,          only: mpp_error, FATAL, input_nml_file, stdlog, mpp_pe, mpp_root_pe
-    use fms_mod,          only: check_nml_error
+    use mpp_mod,          only: mpp_pe, mpp_root_pe, mpp_error, FATAL   !, input_nml_file, stdlog
+    !use fms_mod,          only: check_nml_error
     !use fv_mp_mod,        only: is_master
 
     use constants_mod,    only: grav, rdgas
@@ -62,19 +62,21 @@ CONTAINS
 
         INTEGER :: i, j
 
-        namelist /fv_diagnostics_nml/ do_hailcast
-        integer :: ios, ierr
-        integer :: unit
+        !namelist /fv_diagnostics_nml/ do_hailcast
+        !integer :: ios, ierr
+        !integer :: unit
 
-        !namelist file for hailcast
-
-        ! Read Main namelist
-        read (input_nml_file,fv_diagnostics_nml,iostat=ios)
-        ierr = check_nml_error(ios,'fv_diagnostics_nml')
-
-        unit = stdlog()
-        write(unit, nml=fv_diagnostics_nml)
-        !end hailcast nml
+        !@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+        !
+        !!namelist file for hailcast
+        !
+        !! Read Main namelist
+        !read (input_nml_file,fv_diagnostics_nml,iostat=ios)
+        !ierr = check_nml_error(ios,'fv_diagnostics_nml')
+        !
+        !unit = stdlog()
+        !write(unit, nml=fv_diagnostics_nml)
+        !!end hailcast nml
 
         if (mpp_pe() == mpp_root_pe()) then
             print*, 'do_hailcast = ', do_hailcast
@@ -335,10 +337,6 @@ CONTAINS
     REAL, DIMENSION( is:ie, js:je), &
          INTENT(IN   ) ::              terr_z
 
-!    REAL,       INTENT(IN   ),OPTIONAL    ::     haildt
-!    REAL,       INTENT(IN   ),OPTIONAL    ::     curr_secs
-!    REAL,       INTENT(INOUT),OPTIONAL    ::     haildtacttime
-!    INTEGER,    INTENT(IN   )             ::     itimestep
     REAL,       INTENT(IN   )             ::     dt
     TYPE(domain2d), INTENT(INOUT  )       ::     domainid
 
@@ -360,101 +358,15 @@ CONTAINS
 
     REAL :: dhail1,dhail2,dhail3,dhail4,dhail5
 
-!    ! Timing
-!    ! ------
-!    TYPE(WRFU_Time) :: hist_time, aux2_time, CurrTime, StartTime
-!    TYPE(WRFU_TimeInterval) :: dtint, histint, aux2int
-!    LOGICAL :: is_after_history_dump, is_output_timestep, is_first_timestep
-!    LOGICAL :: doing_adapt_dt, run_param, decided
-!    INTEGER :: stephail, itimestep_basezero
+    !@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
-
-!    ! Chirp the routine name for debugging purposes
-!    ! ---------------------------------------------
-!    write ( message, * ) 'inside hailcast_diagnostics_driver'
-!    CALL wrf_debug( 100 , message )
-
-!    ! Get timing info
-!    ! Want to know if when the last history output was
-!    ! Check history and auxhist2 alarms to check last ring time and how often
-!    ! they are set to ring
-!    ! -----------------------------------------------------------------------
-!    CALL WRFU_ALARMGET( grid%alarms( HISTORY_ALARM ), prevringtime=hist_time, &
-!         ringinterval=histint)
-!    CALL WRFU_ALARMGET( grid%alarms( AUXHIST2_ALARM ), prevringtime=aux2_time, &
-!         ringinterval=aux2int)
-
-!    ! Get domain clock
-!    ! ----------------
-!    CALL domain_clock_get ( grid, current_time=CurrTime, &
-!         simulationStartTime=StartTime, &
-!         current_timestr=timestr, time_step=dtint )
-
-!    ! Set some booleans for use later
-!    ! Following uses an overloaded .lt.
-!    ! ---------------------------------
-!    is_after_history_dump = ( Currtime .lt. hist_time + dtint )
-
-!    ! Following uses an overloaded .ge.
-!    ! ---------------------------------
-!    is_output_timestep = (Currtime .ge. hist_time + histint - dtint .or. &
-!                         Currtime .ge. aux2_time + aux2int - dtint )
-!    write ( message, * ) 'is output timestep? ', is_output_timestep
-!    CALL wrf_debug( 100 , message )
-
-!    ! Following uses an overloaded .eq.
-!    ! ---------------------------------
-!    is_first_timestep = ( Currtime .eq. StartTime + dtint )
-
-     !master = (mpp_pe()==mpp_root_pe()) .or. is_master()
-
-    !FV3: No need to reset arrays to zero at dump time, thus no need to keep track of dump times
-    !
-    ! After each history dump, reset max/min value arrays
-    ! ----------------------------------------------------------------------
-!    IF ( is_after_history_dump ) THEN
-    !!  DO j = jsc, jec   !jts, jte
-    !!    DO i = isc, iec !its, ite
-    !!       hailcast_dhail1(i,j) = 0.
-    !!       hailcast_dhail2(i,j) = 0.
-    !!       hailcast_dhail3(i,j) = 0.
-    !!!       hailcast_dhail4(i,j) = 0.
-    !!       hailcast_dhail5(i,j) = 0.
-    !!    ENDDO
-    !!  ENDDO
-    !ENDIF  ! is_after_history_dump
-
-    ! We need to do some neighboring gridpoint comparisons for the updraft
-    ! duration calculations; set i,j start and end values so we don't go off
-    ! the edges of the domain.  Updraft duration on domain edges will always be 0.
-    ! ----------------------------------------------------------------------
-
-!      !WRF config_flags contains: open_xs, specified, nested,open_xe,open_yx,open_ye,periodic_x
-!    IF ( config_flags%open_xs .OR. config_flags%specified .OR. &
-!         config_flags%nested) i_start = MAX( ids+1, its )
-!    IF ( config_flags%open_xe .OR. config_flags%specified .OR. &
-!         config_flags%nested) i_end   = MIN( ide-2, ite )  !-1
-!    IF ( config_flags%open_ys .OR. config_flags%specified .OR. &
-!         config_flags%nested) j_start = MAX( jds+1, jts )
-!    IF ( config_flags%open_ye .OR. config_flags%specified .OR. &
-!         config_flags%nested) j_end   = MIN( jde-2, jte )  !-1
-!    IF ( config_flags%periodic_x ) i_start = its
-!    IF ( config_flags%periodic_x ) i_end = ite
-
-
-    ! Make a copy of the updraft duration, mask variables
-    ! ---------------------------------------------------
-    !from WRF:
-    !!wdur_prev(:,:) = grid%hailcast_wdur(:,:)
-    !!wup_mask_prev(:,:) = grid%hailcast_wup_mask(:,:)
-    !DO j = MAX( jts-1 , jds ), MIN( jte+1 , jde-1 )
-    !    DO i = MAX( its-1 , ids ), MIN( ite+1 , ide-1)
     DO j = jshalo, jehalo
         DO i = ishalo, iehalo
            wdur_prev(i,j)     =  hailcast_wdur(i,j)
            wup_mask_prev(i,j) =  hailcast_wup_mask(i,j)
         ENDDO
     ENDDO
+
     !update halo:
     call mpp_update_domains(wup_mask_prev,domainid)
     call mpp_update_domains(wdur_prev,domainid)
@@ -624,8 +536,6 @@ CONTAINS
                                       dhail3, dhail4,     &
                                       dhail5              )
 
-              !diag_table should select largest value of these variables during requested period
-              !thus do not need to accumulate largest value between data dumps
               !IF (dhail1 .gt. hailcast_dhail1(i,j)) THEN
                   hailcast_dhail1(i,j) = dhail1
               !ENDIF
@@ -664,10 +574,9 @@ CONTAINS
               (hailcast_dhail2(i,j)-hailcast_diam_mean(i,j))**2.+       &
               (hailcast_dhail3(i,j)-hailcast_diam_mean(i,j))**2.+       &
               (hailcast_dhail4(i,j)-hailcast_diam_mean(i,j))**2.+       &
-              (hailcast_dhail5(i,j)-hailcast_diam_mean(i,j))**2.)       &
-              / 4.0)
-           if (hailcast_diam_mean(i,j).ne.0.0 .and. hailcast_diam_std(i,j).ne.0.0) &
-                print*,'jmh mean std=',i,j,hailcast_diam_mean(i,j),hailcast_diam_std(i,j)
+              (hailcast_dhail5(i,j)-hailcast_diam_mean(i,j))**2.) / 4.0)
+            !if (hailcast_diam_mean(i,j).ne.0.0 .and. hailcast_diam_std(i,j).ne.0.0) &
+            !    print*,'jmh mean std=',i,j,hailcast_diam_mean(i,j),hailcast_diam_std(i,j)
           ENDDO
         ENDDO
       !END IF
@@ -1023,7 +932,7 @@ CONTAINS
          !print *, 'INTERP VU: ', VU, P
 
          !Outside pressure levels?  If so, exit loop
-         IF (IFOUT.EQ.1) GOTO 100
+         IF (IFOUT.EQ.1) EXIT
 
          !Sine wave multiplier on updraft strength
          IF (SEC .GT. 0.0 .AND. SEC .LT. RTIME) THEN
@@ -1089,16 +998,15 @@ CONTAINS
         ENDIF
 
         !!! Has stone reached below cloud base?
-        !IF (Z .LE. 0) GOTO 200
         IF (Z .LE. ZBAS) then
-           GOTO 200
+           EXIT
         endif
 
         !calculate ice-only diameter size
         D_ICE = ( (6*GM*(1.-FW)) / (3.141592654*DENSE) )**0.33333333
 
         !Has the stone entirely melted and it's below the freezing level?
-        IF ((D_ICE .LT. 1.E-8) .AND. (TC.GT.273.155)) GOTO 300
+        IF ((D_ICE .LT. 1.E-8) .AND. (TC.GT.273.155)) EXIT
 
         !move values to previous timestep value
         TSm1 = TS
@@ -1106,9 +1014,9 @@ CONTAINS
 
       ENDDO  !end cloud lifetime loop
 
-100   CONTINUE !outside pressure levels in model
-200   CONTINUE !stone reached surface
-300   CONTINUE !stone has entirely melted and is below freezing level
+      !100   CONTINUE !outside pressure levels in model
+      !200   CONTINUE !stone reached surface
+      !300   CONTINUE !stone has entirely melted and is below freezing level
 
       !!!!!!!!!!!!!!!!!! 9. MELT STONE BELOW CLOUD !!!!!!!!!!!!!!!!!!!!
       !Did the stone shoot out the top of the storm?
@@ -1292,24 +1200,27 @@ CONTAINS
     END SUBROUTINE INTERP
 
     SUBROUTINE TERMINL(DENSA,DENSE,D,VT,TC)
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  !!!!
-  !!!! INTERP: Calculate terminal velocity of the hailstone
-  !!!!
-  !!!! INPUT: DENSA  density of updraft air (kg/m3)
-  !!!!        DENSE  density of hailstone
-  !!!!        D      diameter of hailstone (m)
-  !!!!        TC     updraft temperature (K)
-  !!!! OUTPUT:VT     hailstone terminal velocity (m/s)
-  !!!!
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    !!!!
+    !!!! INTERP: Calculate terminal velocity of the hailstone
+    !!!!
+    !!!! INPUT: DENSA  density of updraft air (kg/m3)
+    !!!!        DENSE  density of hailstone
+    !!!!        D      diameter of hailstone (m)
+    !!!!        TC     updraft temperature (K)
+    !!!! OUTPUT:VT     hailstone terminal velocity (m/s)
+    !!!!
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       IMPLICIT NONE
 
-      REAL*8 D
-      REAL DENSA, DENSE, TC, VT
-      REAL GMASS, GX, RE, W, Y
+      REAL*8 :: D
+      REAL   :: DENSA, DENSE, TC, VT
+      REAL   :: GMASS, GX, RE, W, Y
       REAL, PARAMETER :: PI = 3.141592654, G = 9.78956
-      REAL ANU
+      REAL   :: ANU
+      REAL   :: W2, W3
+
+      !@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
       !Mass of stone in kg
       GMASS = (DENSE * PI * (D**3.)) / 6.
@@ -1325,12 +1236,15 @@ CONTAINS
       !THE BEST NUMBER
       IF (GX.LT.550) THEN
         W=LOG10(GX)
-        Y= -1.7095 + 1.33438*W - 0.11591*(W**2.0)
+        W2 = W*W
+        Y= -1.7095 + 1.33438*W - 0.11591*(W2)
         RE=10**Y
         VT=ANU*RE/(D*DENSA)
       ELSE IF (GX.GE.550.AND.GX.LT.1800) THEN
         W=LOG10(GX)
-        Y= -1.81391 + 1.34671*W - 0.12427*(W**2.0) + 0.0063*(W**3.0)
+        W2 = W*W
+        W3 = W2*W
+        Y= -1.81391 + 1.34671*W - 0.12427*(W2) + 0.0063*(W3)
         RE=10**Y
         VT=ANU*RE/(D*DENSA)
       ELSE IF (GX.GE.1800.AND.GX.LT.3.45E08) THEN
@@ -1344,20 +1258,20 @@ CONTAINS
     END SUBROUTINE TERMINL
 
     SUBROUTINE VAPORCLOSE(DELRW,PC,TS,TC,ITYPE)
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  !!!  VAPORCLOSE: CALC THE DIFFERENCE IN SATURATION VAPOUR DENSITY
-  !!!  BETWEEN THAT OVER THE HAILSTONE'S SURFACE AND THE IN-CLOUD
-  !!!  AIR, DEPENDS ON THE WATER/ICE RATIO OF THE UPDRAFT,
-  !!!  AND IF THE STONE IS IN WET OR DRY GROWTH REGIME
-  !!!
-  !!!  INPUT:  PC    fraction of updraft water that is frozen
-  !!!          TS    temperature of hailstone (K)
-  !!!          TC    temperature of updraft air (K)
-  !!!          ITYPE wet (2) or dry (1) growth regime
-  !!!  OUTPUT: DELRW difference in sat vap. dens. between hail and air
-  !!!          (kg/m3)
-  !!!
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    !!!  VAPORCLOSE: CALC THE DIFFERENCE IN SATURATION VAPOUR DENSITY
+    !!!  BETWEEN THAT OVER THE HAILSTONE'S SURFACE AND THE IN-CLOUD
+    !!!  AIR, DEPENDS ON THE WATER/ICE RATIO OF THE UPDRAFT,
+    !!!  AND IF THE STONE IS IN WET OR DRY GROWTH REGIME
+    !!!
+    !!!  INPUT:  PC    fraction of updraft water that is frozen
+    !!!          TS    temperature of hailstone (K)
+    !!!          TC    temperature of updraft air (K)
+    !!!          ITYPE wet (2) or dry (1) growth regime
+    !!!  OUTPUT: DELRW difference in sat vap. dens. between hail and air
+    !!!          (kg/m3)
+    !!!
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
       IMPLICIT NONE
       REAL DELRW, PC, TS, TC
@@ -1392,22 +1306,28 @@ CONTAINS
 
     SUBROUTINE MASSAGR(D,GM,GM1,GMW,GMI,DGM,DGMW,DGMI,DGMV,DI,ANU,RE,AE,&
                  TC,TS,P,DENSE,DENSA,FW,VT,XW,XI,SEKDEL,ITYPE,DELRW)
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  !!! CALC THE STONE'S INCREASE IN MASS
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    !!! CALC THE STONE'S INCREASE IN MASS
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
       IMPLICIT NONE
-      REAL*8 D
-      REAL GM,GM1,GMW,GMI,DGM,DGMW,DGMI,DI,ANU,RE,AE,  &
-                 TC,TS,P,DENSE,DENSA,FW,VT,XW,XI,SEKDEL,DELRW
-      INTEGER ITYPE
+      REAL*8 :: D, D2, D3
+      REAL   :: GM,GM1,GMW,GMI,DGM,DGMW,DGMI,DI,ANU,RE,AE,  &
+                TC,TS,P,DENSE,DENSA,FW,VT,XW,XI,SEKDEL,DELRW
+      INTEGER :: ITYPE
+
       !local variables
-      REAL PI, D0, GMW2, GMI2, EW, EI,DGMV
-      REAL DENSEL, DENSELI, DENSELW
-      REAL DC !MEAN CLOUD DROPLET DIAMETER (MICRONS, 1E-6M)
-      REAL VOLL, VOLT !VOLUME OF NEW LAYER, TOTAL (M3)
-      REAL VOL1, DGMW_NOSOAK, SOAK, SOAKM
-      REAL DENSAC, E, AFACTOR, NS, TSCELSIUS, VIMP, W
+      REAL :: PI, D0, GMW2, GMI2, EW, EI,DGMV
+      REAL :: DENSEL, DENSELI, DENSELW
+      REAL :: DC, DC2 !MEAN CLOUD DROPLET DIAMETER (MICRONS, 1E-6M)
+      REAL :: VOLL, VOLT !VOLUME OF NEW LAYER, TOTAL (M3)
+      REAL :: VOL1, DGMW_NOSOAK, SOAK, SOAKM
+      REAL :: DENSAC, E, AFACTOR, NS, TSCELSIUS, VIMP, W
+      REAL :: AFACTOR2, AFACTOR3
+      REAL :: W2, W3, W4
+
+      !@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
       PI=3.141592654
 
       !!!  CALCULATE THE DIFFUSIVITY DI (m2/s)
@@ -1453,10 +1373,11 @@ CONTAINS
          AE=(0.57+9.0E-6*RE)*E
       ENDIF
 
-
       !!!  CALC HAILSTONE'S MASS (GM), MASS OF WATER (GMW) AND THE
       !!!  MASS OF ICE IN THE STONE (GMI)
-      GM=PI/6.*(D**3.)*DENSE
+      D2 = D*D
+      D3 = D2*D
+      GM=PI/6.*D3*DENSE
       GMW=FW*GM
       GMI=GM-GMW
 
@@ -1468,12 +1389,12 @@ CONTAINS
 
       !!! CALCULATE INCREASE IN MASS DUE INTERCEPTED CLD WATER, USE
       !!! ORIGINAL DIAMETER
-      GMW2=GMW+SEKDEL*(PI/4.*D**2.*VT*XW*EW)
+      GMW2=GMW+SEKDEL*(PI/4.*D2*VT*XW*EW)
       DGMW=GMW2-GMW
       GMW=GMW2
 
       !!!  CALCULATE THE INCREASE IN MASS DUE INTERCEPTED CLOUD ICE
-      GMI2=GMI+SEKDEL*(PI/4.*D**2.*VT*XI*EI)
+      GMI2=GMI+SEKDEL*(PI/4.*D2*VT*XI*EI)
       DGMI=GMI2-GMI
       GMI=GMI2
 
@@ -1494,20 +1415,25 @@ CONTAINS
           IF ((DGMW.GT.0).OR.(DGMV.GT.0)) THEN
              !MEAN CLOUD DROPLET RADIUS, ASSUME CLOUD DROPLET CONC OF 3E8 M-3 (300 CM-3)
              DC = (0.74*XW / (3.14159*1000.*3.E8))**0.33333333 * 1.E6 !MICRONS
+             DC2 = DC*DC
              !!! FIND THE STOKES NUMBER  (rasmussen heymsfield 1985)
-             NS = 2*VT*100.*(DC*1.E-4)**2. / (9*ANU*D*50)  !need hail radius in cm
+             !NS = 2*VT*100.*(DC*1.E-4)**2. / (9*ANU*D*50)  !need hail radius in cm
+             NS = 2*VT*100.*DC2*1.E-8 / (9*ANU*D*50)  !need hail radius in cm
              !!! FIND IMPACT VELOCITY (rasmussen heymsfield 1985)
              IF (NS.LT.0.1)THEN
                 W=-1.
              ELSE
                 W = LOG10(NS)
              ENDIF
+             W2 = W*W
+             W3 = W2*W
+             W4 = W3*W
              IF (RE.GT.200) THEN
                 IF (NS.LT.0.1) THEN
                    VIMP = 0.0
                 ELSEIF ((NS.GE.0.1).AND.(NS.LE.10)) THEN
-                   VIMP = (0.356 + 0.4738*W - 0.1233*W**2. &
-                           -0.1618*W**3. + 0.0807*W**4.)*VT
+                   VIMP = (0.356 + 0.4738*W - 0.1233*W2                 &
+                           -0.1618*W3 + 0.0807*W4)*VT
                 ELSEIF (NS.GT.10) THEN
                    VIMP = 0.63*VT
                 ENDIF
@@ -1515,8 +1441,8 @@ CONTAINS
                 IF (NS.LT.0.1) THEN
                    VIMP = 0.0
                 ELSEIF ((NS.GE.0.1).AND.(NS.LE.10)) THEN
-                   VIMP = (0.3272 + 0.4907*W - 0.09452*W**2. &
-                           -0.1906*W**3. + 0.07105*W**4.)*VT
+                   VIMP = (0.3272 + 0.4907*W - 0.09452*W2               &
+                           -0.1906*W3 + 0.07105*W4)*VT
                 ELSEIF (NS.GT.10) THEN
                    VIMP = 0.61*VT
                 ENDIF
@@ -1524,8 +1450,8 @@ CONTAINS
                 IF (NS.LT.0.1) THEN
                    VIMP = 0.0
                 ELSEIF ((NS.GE.0.1).AND.(NS.LE.10)) THEN
-                   VIMP = (0.2927 + 0.5085*W - 0.03453*W**2. &
-                           -0.2184*W**3. + 0.03595*W**4.)*VT
+                   VIMP = (0.2927 + 0.5085*W - 0.03453*W2               &
+                           -0.2184*W3 + 0.03595*W4)*VT
                 ELSEIF (NS.GT.10) THEN
                    VIMP = 0.59*VT
                 ENDIF
@@ -1533,8 +1459,8 @@ CONTAINS
                 IF (NS.LT.0.4) THEN
                    VIMP = 0.0
                 ELSEIF ((NS.GE.0.4).AND.(NS.LE.10)) THEN
-                   VIMP = (0.1701 + 0.7246*W + 0.2257*W**2. &
-                           -1.13*W**3. + 0.5756*W**4.)*VT
+                   VIMP = (0.1701 + 0.7246*W + 0.2257*W2                &
+                           -1.13*W3 + 0.5756*W4)*VT
                 ELSEIF (NS.GT.10) THEN
                    VIMP = 0.57*VT
                 ENDIF
@@ -1543,11 +1469,13 @@ CONTAINS
              !RIME LAYER DENSITY, HEYMSFIELD AND PFLAUM 1985 FORM
              TSCELSIUS = TS - 273.16
              AFACTOR = -DC*VIMP/TSCELSIUS
+             AFACTOR2 = AFACTOR*AFACTOR
+             AFACTOR3 = AFACTOR2*AFACTOR
              IF ((TSCELSIUS.LE.-5.).OR.(AFACTOR.GE.-1.60)) THEN
                  DENSELW = 0.30*(AFACTOR)**0.44
              ELSEIF (TSCELSIUS.GT.-5.) THEN
                  DENSELW = EXP(-0.03115 - 1.7030*AFACTOR + &
-                               0.9116*AFACTOR**2. - 0.1224*AFACTOR**3.)
+                               0.9116*AFACTOR2 - 0.1224*AFACTOR3)
              ENDIF
 
              DENSELW = DENSELW * 1000. !KG M-3
