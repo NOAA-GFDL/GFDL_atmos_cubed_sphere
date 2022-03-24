@@ -1210,12 +1210,12 @@ contains
 
       if ( delta_i_c .ne. 0 ) then
         if (debug_log) print '("[INFO] WDR NREX mn_var_shift_data start. npe=",I0)', this_pe
-        data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
+        data_var = eoshift(data_var, x_refine * delta_i_c, DIM=1)
       endif
 
       if (delta_j_c .ne.  0) then
         if (debug_log) print '("[INFO] WDR NREY mn_var_shift_data start. npe=",I0)', this_pe
-        data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
+        data_var = eoshift(data_var, y_refine * delta_j_c, DIM=2)
       endif
 
       !!===========================================================
@@ -1301,11 +1301,11 @@ contains
       !!===========================================================
 
       if ( delta_i_c .ne. 0 ) then
-        data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
+        data_var = eoshift(data_var, x_refine * delta_i_c, DIM=1)
       endif
 
       if (delta_j_c .ne.  0) then
-        data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
+        data_var = eoshift(data_var, y_refine * delta_j_c, DIM=2)
       endif
 
       !!===========================================================
@@ -1380,11 +1380,11 @@ contains
       !!===========================================================
 
       if ( delta_i_c .ne. 0 ) then
-        data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
+        data_var = eoshift(data_var, x_refine * delta_i_c, DIM=1)
       endif
 
       if (delta_j_c .ne.  0) then
-        data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
+        data_var = eoshift(data_var, y_refine * delta_j_c, DIM=2)
       endif
 
       !!===========================================================
@@ -1458,11 +1458,11 @@ contains
       !!===========================================================
 
       if ( delta_i_c .ne. 0 ) then
-        data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
+        data_var = eoshift(data_var, x_refine * delta_i_c, DIM=1)
       endif
 
       if (delta_j_c .ne.  0) then
-        data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
+        data_var = eoshift(data_var, y_refine * delta_j_c, DIM=2)
       endif
 
       !!===========================================================
@@ -1538,11 +1538,11 @@ contains
       !!===========================================================
 
       if ( delta_i_c .ne. 0 ) then
-        data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
+        data_var = eoshift(data_var, x_refine * delta_i_c, DIM=1)
       endif
 
       if (delta_j_c .ne.  0) then
-        data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
+        data_var = eoshift(data_var, y_refine * delta_j_c, DIM=2)
       endif
 
       !!===========================================================
@@ -1617,11 +1617,11 @@ contains
       !!===========================================================
 
       if ( delta_i_c .ne. 0 ) then
-        data_var = eoshift(data_var, x_refine * delta_i_c, 0.0, 1)
+        data_var = eoshift(data_var, x_refine * delta_i_c, DIM=1)
       endif
 
       if (delta_j_c .ne.  0) then
-        data_var = eoshift(data_var, y_refine * delta_j_c, 0.0, 2)
+        data_var = eoshift(data_var, y_refine * delta_j_c, DIM=2)
       endif
 
       !!===========================================================
