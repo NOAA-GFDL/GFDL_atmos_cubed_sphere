@@ -535,7 +535,7 @@ contains
           abs(Atm%tracker_fixlat),get_lat_ns(Atm%tracker_fixlat), &
           abs(Atm%tracker_fixlon-360.0),get_lon_ew(Atm%tracker_fixlon-360.0), &
           Atm%tracker_rmw*km2nmi
-    else       
+    else
       write(Atm%neststruct%outatcf_lun+Atm%grid_number,313) sec,   &
           Atm%tracker_vmax*mps2kn,Atm%tracker_pmin/100.,          &
           abs(Atm%tracker_fixlat),get_lat_ns(Atm%tracker_fixlat), &

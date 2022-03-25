@@ -478,7 +478,7 @@ contains
 
 #ifdef MOVING_NEST
    id_fv_tracker= mpp_clock_id ('FV tracker',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-#endif MOVING_NEST
+#endif
                     call timing_off('ATMOS_INIT')
 
    ! Do CCPP fast physics initialization before call to adiabatic_init (since this calls fv_dynamics)
@@ -651,7 +651,7 @@ contains
 #ifdef MOVING_NEST
    character(len=15) :: str_time
    character*255 :: message
-#endif MOVING_NEST
+#endif
 
 !---- Call FV dynamics -----
 
@@ -711,10 +711,10 @@ contains
      !  This is solely debugging information; not required for moving nest functionality.
 #ifdef MOVING_NEST
 
-     call date_and_time(TIME=str_time)
+     !call date_and_time(TIME=str_time)
 
-     write(message,'("TIMESTEP atmosphere.F90 a_step=",I0," fcst_hr=",F8.2," time=",A12)')  a_step, a_step * dt_atmos / 3600.0, str_time
-     call mpp_error(NOTE,message)
+     !write(message,'("TIMESTEP atmosphere.F90 a_step=",I0," fcst_hr=",F8.2," time=",A12)')  a_step, a_step * dt_atmos / 3600.0, str_time
+     !call mpp_error(NOTE,message)
 
      !! Re-enable to output buffered NC files early in a run.
      !if (tsvar_out .and. a_step .eq. 4800) then
@@ -727,7 +727,7 @@ contains
      !endif
 
      !! WDR End code
-#endif ! MOVING_NEST
+#endif
 
     if (ngrids > 1 .and. (psc < p_split .or. p_split < 0)) then
        call mpp_sync()
@@ -1013,7 +1013,7 @@ contains
        moving_nest_parent = .true.
      endif
    enddo
-#endif MOVING_NEST
+#endif
 
  end subroutine atmosphere_domain
 
@@ -2460,38 +2460,38 @@ contains
       endif
     endif
 
-!   ! Deal with zorlwav (sea surface roughness length)
-!   if (IPD_control%cplwav2atm) then
-!     ! Extract the coupling field
-!     do nb = 1,Atm_block%nblks
-!       blen = Atm_block%blksz(nb)
-!       do ix = 1, blen
-!         i = Atm_block%index(nb)%ii(ix)
-!         j = Atm_block%index(nb)%jj(ix)
-!         Atm(mygrid)%downcpl2d(i,j) = IPD_Data(nb)%Sfcprop%zorlwav(ix)
-!       enddo
-!     enddo
-!     ! Loop through and fill all nested grids
-!     do n=2,ngrids
-!       if (n==mygrid .or. mygrid==Atm(n)%parent_grid%grid_number) then
-!         call fill_nested_grid_cpl(n, n==mygrid)
-!       endif
-!     enddo
-!     ! Update the nested grids
-!     if (Atm(grid)%neststruct%nested) then
-!       do nb = 1,Atm_block%nblks
-!         blen = Atm_block%blksz(nb)
-!         do ix = 1, blen
-!           i = Atm_block%index(nb)%ii(ix)
-!           j = Atm_block%index(nb)%jj(ix)
-!           if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
-!             IPD_data(nb)%Sfcprop%zorlwav(ix) = Atm(mygrid)%downcpl2d(i,j)
-!           ! IPD_data(nb)%Sfcprop%zorlw(ix) = Atm(mygrid)%downcpl2d(i,j)
-!           endif
-!         enddo
-!       enddo
-!     endif
-!   endif
+    ! Deal with zorlwav (sea surface roughness length)
+    if (IPD_control%cplwav2atm) then
+      ! Extract the coupling field
+      do nb = 1,Atm_block%nblks
+        blen = Atm_block%blksz(nb)
+        do ix = 1, blen
+          i = Atm_block%index(nb)%ii(ix)
+          j = Atm_block%index(nb)%jj(ix)
+          Atm(mygrid)%downcpl2d(i,j) = IPD_Data(nb)%Sfcprop%zorlwav(ix)
+        enddo
+      enddo
+      ! Loop through and fill all nested grids
+      do n=2,ngrids
+        if (n==mygrid .or. mygrid==Atm(n)%parent_grid%grid_number) then
+          call fill_nested_grid_cpl(n, n==mygrid)
+        endif
+      enddo
+      ! Update the nested grids
+      if (Atm(grid)%neststruct%nested) then
+        do nb = 1,Atm_block%nblks
+          blen = Atm_block%blksz(nb)
+          do ix = 1, blen
+            i = Atm_block%index(nb)%ii(ix)
+            j = Atm_block%index(nb)%jj(ix)
+            if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
+              IPD_data(nb)%Sfcprop%zorlwav(ix) = Atm(mygrid)%downcpl2d(i,j)
+            ! IPD_data(nb)%Sfcprop%zorlw(ix) = Atm(mygrid)%downcpl2d(i,j)
+            endif
+          enddo
+        enddo
+      endif
+    endif
 
   end subroutine atmosphere_fill_nest_cpl
 
@@ -2522,7 +2522,6 @@ contains
     call mpp_get_compute_domain(Atm(this_grid)%domain, isc, iec, jsc, jec)
     allocate( g_dat(isg:ieg, jsg:jeg, 1) )
 
-  ! call prt_maxmin('downcpl2d', Atm(this_grid)%downcpl2d, isc, iec, jsc, jec, Atm(this_grid)%ng, 1, 1.)
     call timing_on('COMM_TOTAL')
     sending_proc = Atm(this_grid)%parent_grid%pelist(1) + &
                    ( Atm(this_grid)%neststruct%parent_tile-tile_fine(Atm(this_grid)%parent_grid%grid_number)+ &
@@ -2547,7 +2546,6 @@ contains
                             Atm(this_grid)%neststruct%ind_h, Atm(this_grid)%neststruct%wt_h, &
                             0, 0, isg, ieg, jsg, jeg, Atm(this_grid)%bd)
     endif
-  ! call prt_maxmin('downcpl2d', Atm(this_grid)%downcpl2d, isc, iec, jsc, jec, Atm(this_grid)%ng, 1, 1.)
 
     call mpp_sync_self
     deallocate(g_dat)

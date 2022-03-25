@@ -252,7 +252,7 @@ contains
   end subroutine dump_moving_nest
 
   !>@brief The subroutine 'fv_moving_nest_init_clocks' intializes performance profiling timers of sections of the moving nest code.
-  !>@details Starts timers for subcomponents of moving nest code to determine performance.  mpp routines group them into separate 
+  !>@details Starts timers for subcomponents of moving nest code to determine performance.  mpp routines group them into separate
   !! sections for parent and nest PEs.
   subroutine fv_moving_nest_init_clocks()
 
@@ -453,7 +453,7 @@ contains
   subroutine fv_moving_nest_exec(Atm, Atm_block, IPD_control, IPD_data, delta_i_c, delta_j_c, n, nest_num, parent_grid_num, child_grid_num, dt_atmos)
     implicit none
     type(fv_atmos_type), allocatable, target, intent(inout) :: Atm(:)                !< Atmospheric variables
-    type(block_control_type), intent(in)                    :: Atm_block             !< Physics block   
+    type(block_control_type), intent(in)                    :: Atm_block             !< Physics block
     type(IPD_control_type), intent(in)                      :: IPD_control           !< Physics metadata
     type(IPD_data_type), intent(inout)                      :: IPD_data(:)           !< Physics variable data
     integer, intent(in)                                     :: delta_i_c, delta_j_c  !< Nest motion increments
@@ -771,13 +771,13 @@ contains
           allocate(mn_static%facwf_grid(lbound(mn_static%facsf_grid,1):ubound(mn_static%facsf_grid,1),lbound(mn_static%facsf_grid,2):ubound(mn_static%facsf_grid,2)))
 
           ! For land points, set facwf = 1.0 - facsf
-          ! To match initialization behavior, set any -999s to 0 
+          ! To match initialization behavior, set any -999s to 0
           do i=lbound(mn_static%facsf_grid,1),ubound(mn_static%facsf_grid,1)
             do j=lbound(mn_static%facsf_grid,2),ubound(mn_static%facsf_grid,2)
               if (mn_static%facsf_grid(i,j) .lt. -100) then
                 mn_static%facsf_grid(i,j) = 0
                 mn_static%facwf_grid(i,j) = 0
-              else 
+              else
                 mn_static%facwf_grid(i,j) = 1.0 - mn_static%facsf_grid(i,j)
               endif
             enddo
@@ -1139,7 +1139,7 @@ contains
       !!=========================================================================================
       !! Step 9 -- Recalculate auxiliary pressures
       !!           Should help stabilize the fields before dynamics runs
-      !! TODO Consider whether vertical remapping, recalculation of omega, interpolation of winds 
+      !! TODO Consider whether vertical remapping, recalculation of omega, interpolation of winds
       !!  to A or C grids, and/or divergence recalculation are needed here.
       !!=========================================================================================
 
@@ -1169,27 +1169,27 @@ contains
     !!  endif
 
     !call compare_terrain("phis", Atm(n)%phis, 1, Atm(n)%neststruct%ind_h, x_refine, y_refine, is_fine_pe, global_nest_domain)
-    
+
     if (debug_log) call show_nest_grid(Atm(n), this_pe, 99)
-    
+
   end subroutine fv_moving_nest_exec
 
   !>@brief The subroutine 'mn_replace_low_values' replaces low values with a default value.
-  subroutine mn_replace_low_values(data_grid, low_value, new_value) 
+  subroutine mn_replace_low_values(data_grid, low_value, new_value)
     real, _ALLOCATABLE, intent(inout)   :: data_grid(:,:)  !< 2D grid of data
     real, intent(in)                    :: low_value       !< Low value to check for; e.g. negative or fill value
-    real, intent(in)                    :: new_value       !< Value to replace low value with 
-    
+    real, intent(in)                    :: new_value       !< Value to replace low value with
+
     integer :: i, j
-    
+
     do i=lbound(data_grid,1),ubound(data_grid,1)
       do j=lbound(data_grid,2),ubound(data_grid,2)
         if (data_grid(i,j) .le. low_value) data_grid(i,j) = new_value
       enddo
     enddo
   end subroutine mn_replace_low_values
-  
+
 #endif ! MOVING_NEST
-  
+
 end module fv_moving_nest_main_mod
 

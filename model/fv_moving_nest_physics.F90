@@ -160,7 +160,7 @@ module fv_moving_nest_physics_mod
     !   type(esmf_field), public           :: alvsf_target_grid !< visible black sky albedo
     !   type(esmf_field), public           :: alvwf_target_grid !< visible white sky albedo
     !   type(esmf_field), public           :: alnsf_target_grid !< near ir black sky albedo
-    !   type(esmf_field), public           :: alnwf_target_grid !< near ir white sky albedo       
+    !   type(esmf_field), public           :: alnwf_target_grid !< near ir white sky albedo
 
     real, allocatable  :: alvsf_grid(:,:)              _NULL  ! Visible black sky albedo; netCDF file has monthly values
     real, allocatable  :: alvwf_grid(:,:)              _NULL  ! Visible white sky albedo; netCDF file has monthly values
@@ -197,7 +197,7 @@ contains
         Atm(n)%mn_phys%slmsk(i_pe, j_pe) = mn_static%ls_mask_grid(i_idx, j_idx)
       enddo
     enddo
-   
+
     !  Reset the variables from the fix_sfc files
     do nb = 1,Atm_block%nblks
       blen = Atm_block%blksz(nb)
@@ -229,8 +229,8 @@ contains
         ! Follow logic from FV3/io/FV3GFS_io.F90 line 1187
         ! TODO this will need to be more complicated if we support frac_grid
         !if (nint(mn_static%soil_type_grid(i_idx, j_idx)) == 14 .or. int(mn_static%soil_type_grid(i_idx, j_idx)+0.5) <= 0) then
-        !if (nint(mn_static%soil_type_grid(i_idx, j_idx)) == 14 .or. 
-        
+        !if (nint(mn_static%soil_type_grid(i_idx, j_idx)) == 14 .or.
+
         !if ( (mn_static%ls_mask_grid(i_idx, j_idx) .eq. 1 .and. nint(mn_static%land_frac_grid(i_idx, j_idx)) == 0) .or. &
         !    mn_static%soil_type_grid(i_idx, j_idx) < 0.5) then
         if (mn_static%ls_mask_grid(i_idx, j_idx) .eq. 1 .and. nint(mn_static%land_frac_grid(i_idx, j_idx)) == 0 ) then
@@ -527,13 +527,13 @@ contains
           !  !if (associated(save_IPD_Data(nb)%Sfcprop%sfalb_ice)) then
           !  print '("[INFO] WDR RANGEP AC this_pe= ",I0)', this_pe
           !  if (associated(save_IPD_Data(nb)%Sfcprop%sfalb_lnd_bck)) then
-          !    !print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") semisbase=",F10.4," sfalb_lnd=",F10.4," sfalb_ice=",F10.4," sfalb_lnd_bck=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%semisbase(ix), save_IPD_Data(nb)%Sfcprop%sfalb_lnd(ix), save_IPD_Data(nb)%Sfcprop%sfalb_ice(ix), save_IPD_Data(nb)%Sfcprop%sfalb_lnd_bck(ix)              
+          !    !print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") semisbase=",F10.4," sfalb_lnd=",F10.4," sfalb_ice=",F10.4," sfalb_lnd_bck=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%semisbase(ix), save_IPD_Data(nb)%Sfcprop%sfalb_lnd(ix), save_IPD_Data(nb)%Sfcprop%sfalb_ice(ix), save_IPD_Data(nb)%Sfcprop%sfalb_lnd_bck(ix)
           !    print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") semisbase=",F10.4," sfalb_lnd_bck=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%semisbase(ix), save_IPD_Data(nb)%Sfcprop%sfalb_lnd_bck(ix)
           !  endif
           !  !endif
           !  !endif
           !endif
-          
+
           if (associated(save_IPD_Data(nb)%Sfcprop%alvsf)) then
             !print '("[INFO] WDR RANGEP BA this_pe= ",I0)', this_pe
             if (associated(save_IPD_Data(nb)%Sfcprop%alnsf)) then
@@ -555,7 +555,7 @@ contains
             else
               print '("[INFO] WDR RANGEP CB this_pe= ",I0)', this_pe
             endif
-          else 
+          else
             print '("[INFO] WDR RANGEP CA this_pe= ",I0)', this_pe
           endif
 
@@ -611,7 +611,7 @@ contains
     jed = Atm(n)%bd%jed
 
     !if (is_fine_pe) call dump_surface_physics(isd+8, jsd+8, npz-1)
-    
+
     if (debug_log) print '("[INFO] WDR mn_phys_fill_temp_variables. npe=",I0," isd=",I0," ied=",I0," jsd=",I0," jed=",I0)', this_pe, isd, ied, jsd, jed
 
     is = Atm(n)%bd%is
@@ -856,23 +856,23 @@ contains
             ! Set roughness lengths to physically reasonable values if they have fill value (possible at coastline)
             ! sea/land mask array (sea:0,land:1,sea-ice:2)
             if (nint(IPD_data(nb)%Sfcprop%slmsk(ix)) .eq. 1 .and. mn_phys%zorll(i,j) .gt. 1e6) then
-              IPD_Data(nb)%Sfcprop%zorll(ix)  = 82.0   ! 
+              IPD_Data(nb)%Sfcprop%zorll(ix)  = 82.0   !
             else
               IPD_Data(nb)%Sfcprop%zorll(ix)  = mn_phys%zorll(i,j)
             endif
 
             if (nint(IPD_data(nb)%Sfcprop%slmsk(ix)) .eq. 0 .and. mn_phys%zorlw(i,j) .gt. 1e6) then
-              IPD_Data(nb)%Sfcprop%zorlw(ix)  = 83.0   ! 
+              IPD_Data(nb)%Sfcprop%zorlw(ix)  = 83.0   !
             else
               IPD_Data(nb)%Sfcprop%zorlw(ix)  = mn_phys%zorlw(i,j)
             endif
 
             if (nint(IPD_data(nb)%Sfcprop%slmsk(ix)) .eq. 0 .and. mn_phys%zorlwav(i,j) .gt. 1e6) then
-              IPD_Data(nb)%Sfcprop%zorlwav(ix)  = 84.0   ! 
+              IPD_Data(nb)%Sfcprop%zorlwav(ix)  = 84.0   !
             else
               IPD_Data(nb)%Sfcprop%zorlwav(ix)  = mn_phys%zorlwav(i,j)
             endif
-            
+
             if (mn_phys%zorl(i,j) .gt. 1e6) then
               IPD_Data(nb)%Sfcprop%zorl(ix)   = 85.0
             else
@@ -904,7 +904,7 @@ contains
 
             if (mn_phys%albdifnir_lnd (i,j) .ge. 0.0) then
               IPD_Data(nb)%Sfcprop%albdifnir_lnd (ix)   = mn_phys%albdifnir_lnd (i,j)
-            else 
+            else
               IPD_Data(nb)%Sfcprop%albdifnir_lnd (ix)   = 0.5
             endif
 
@@ -946,7 +946,7 @@ contains
 
           ! Check if stype and vtype are properly set for land points.  Set to reasonable values if they have fill values.
           if ( (int(IPD_data(nb)%Sfcprop%slmsk(ix)) .eq. 1) )  then
-            
+
             if (IPD_data(nb)%Sfcprop%vtype(ix) .lt. 0.5) then
               print '("[INFO] WDR FIXPHYS resetting vtype from 0. npe=",I0," i,j=",I0,",",I0," lat=",F10.3," lon=",F10.3)', this_pe, i,j, IPD_data(nb)%Grid%xlat_d(ix), IPD_data(nb)%Grid%xlon_d(ix)-360.0
               IPD_data(nb)%Sfcprop%vtype(ix) = 7    ! Force to grassland
@@ -996,7 +996,7 @@ contains
     interp_type_v = 4      ! D-grid
     interp_type_lmask = 7  ! land mask, cell-centered A-grid
 
-    position = CENTER 
+    position = CENTER
     position_u = NORTH
     position_v = EAST
 
@@ -1514,13 +1514,13 @@ contains
   !>@details This subroutine is called for the nest and parent PEs.
   subroutine mn_phys_dump_to_netcdf(Atm, Atm_block, IPD_Control, IPD_Data, time_val, file_prefix, is_fine_pe, domain_coarse, domain_fine, nz)
     type(fv_atmos_type), intent(in)            :: Atm                           !< Single instance of atmospheric data
-    type (block_control_type), intent(in)      :: Atm_block                     !< Physics block layout  
+    type (block_control_type), intent(in)      :: Atm_block                     !< Physics block layout
     type(IPD_control_type), intent(in)         :: IPD_Control                   !< Physics metadata
     type(IPD_data_type), intent(in)            :: IPD_Data(:)                   !< Physics variable data
     integer, intent(in)                        :: time_val                      !< Timestep number for filename
     character(len=*), intent(in)               :: file_prefix                   !< Prefix for output netCDF filenames
     logical, intent(in)                        :: is_fine_pe                    !< Is this the nest PE?
-    type(domain2d), intent(in)                 :: domain_coarse, domain_fine    !< Domain structures for parent and nest 
+    type(domain2d), intent(in)                 :: domain_coarse, domain_fine    !< Domain structures for parent and nest
     integer, intent(in)                        :: nz                            !< Number of vertical levels
 
     integer :: is, ie, js, je

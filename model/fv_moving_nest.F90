@@ -345,12 +345,12 @@ contains
 
   !!============================================================================
   !! Step 3 -- Redefine the nest domain to new location
-  !!   This calls mpp_shift_nest_domains.  
+  !!   This calls mpp_shift_nest_domains.
   !!  --  Similar to med_nest_configure() from HWRF
   !!============================================================================
 
-  !>@brief The subroutine 'mn_meta_move_nest' resets the metadata for the nest 
-  !>@details Parent and  nest PEs run this subroutine. 
+  !>@brief The subroutine 'mn_meta_move_nest' resets the metadata for the nest
+  !>@details Parent and  nest PEs run this subroutine.
   subroutine mn_meta_move_nest(delta_i_c, delta_j_c, pelist, is_fine_pe, extra_halo, nest_domain, domain_fine, domain_coarse, &
       istart_coarse, iend_coarse, jstart_coarse, jend_coarse,  istart_fine, iend_fine, jstart_fine, jend_fine)
 
@@ -418,7 +418,7 @@ contains
   !================================================================================
 
   !>@brief The subroutine 'mn_prog_fill_intern_nest_halos' fill internal nest halos for prognostic variables
-  !>@details Only nest PEs call this subroutine. 
+  !>@details Only nest PEs call this subroutine.
   subroutine mn_prog_fill_intern_nest_halos(Atm, domain_fine, is_fine_pe)
     type(fv_atmos_type), target, intent(inout)  :: Atm           !< Single instance of atmospheric data
     type(domain2d), intent(inout)               :: domain_fine   !< Domain structure for nest
@@ -461,7 +461,7 @@ contains
 
   !>@brief The subroutine 'mn_var_fill_intern_nest_halos_r4_2d' fills internal nest halos
   !>@details This version of the subroutine is for 2D arrays of single precision reals.
-  subroutine mn_var_fill_intern_nest_halos_r4_2d(data_var, domain_fine, is_fine_pe) 
+  subroutine mn_var_fill_intern_nest_halos_r4_2d(data_var, domain_fine, is_fine_pe)
     real*4, allocatable, intent(inout)          :: data_var(:,:)  !< Model variable data
     type(domain2d), intent(inout)               :: domain_fine    !< Nest domain structure
     logical, intent(in)                         :: is_fine_pe     !< Is this the nest PE?
@@ -502,9 +502,9 @@ contains
   !>@brief The subroutine 'mn_var_fill_intern_nest_halos_r4_3d' fills internal nest halos
   !>@details This version of the subroutine is for 3D arrays of single precision reals.
   subroutine mn_var_fill_intern_nest_halos_r4_3d(data_var, domain_fine, is_fine_pe)
-    real*4, allocatable, intent(inout)          :: data_var(:,:,:)  !< Single precision model variable 
-    type(domain2d), intent(inout)               :: domain_fine      !< Nest domain structure 
-    logical, intent(in)                         :: is_fine_pe       !< Is this a nest PE? 
+    real*4, allocatable, intent(inout)          :: data_var(:,:,:)  !< Single precision model variable
+    type(domain2d), intent(inout)               :: domain_fine      !< Nest domain structure
+    logical, intent(in)                         :: is_fine_pe       !< Is this a nest PE?
 
     integer                      :: this_pe
     this_pe = mpp_pe()
@@ -535,7 +535,7 @@ contains
 
   end subroutine mn_var_fill_intern_nest_halos_r8_3d
 
-  !>@brief The subroutine 'mn_var_fill_intern_nest_halos_wind' fills internal nest halos for u and v wind 
+  !>@brief The subroutine 'mn_var_fill_intern_nest_halos_wind' fills internal nest halos for u and v wind
   !>@details This version of the subroutine is for 3D arrays of single precision reals for each wind component
   subroutine mn_var_fill_intern_nest_halos_wind(u_var, v_var, domain_fine, is_fine_pe)
     real, allocatable, intent(inout)            :: u_var(:,:,:) !< Staggered u wind
@@ -692,7 +692,7 @@ contains
     call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
 
     if (parent_x .eq. -999) then
-      print '("[ERROR] WDR mn_latlon_load_parent on npe=",I0," parent and nest grids are not aligned!")', this_pe       
+      print '("[ERROR] WDR mn_latlon_load_parent on npe=",I0," parent and nest grids are not aligned!")', this_pe
       call mpp_error(FATAL, "mn_latlon_load_parent parent and nest grids are not aligned.")
     endif
 
@@ -787,8 +787,8 @@ contains
   !>@details Constructs the full pathname for a variable and refinement level and tests whether it exists
   subroutine mn_static_filename(surface_dir, tile_num, tag, refine, grid_filename)
     character(len=*), intent(in)       :: surface_dir     !< Directory
-    character(len=*), intent(in)       :: tag             !< Variable name 
-    integer, intent(in)                :: tile_num        !< Tile number 
+    character(len=*), intent(in)       :: tag             !< Variable name
+    integer, intent(in)                :: tile_num        !< Tile number
     integer, intent(in)                :: refine          !< Nest refinement
     character(len=*), intent(out)      :: grid_filename   !< Output pathname to netCDF file
 
@@ -799,7 +799,7 @@ contains
     write(parent_str, '(I0)'), tile_num
 
     if (refine .eq. 1 .and. (tag .eq. 'grid' .or. tag .eq. 'oro_data')) then
-      ! For 1x files in INPUT directory; go at the symbolic link 
+      ! For 1x files in INPUT directory; go at the symbolic link
       grid_filename = trim(trim(surface_dir) // '/' // trim(tag) // '.tile' // trim(parent_str) // '.nc')
     else
       if (refine .eq. 1) then
@@ -1141,7 +1141,7 @@ contains
     real, allocatable, intent(in)               :: wt(:,:,:)                                    !< Interpolation weight array
     integer, allocatable, intent(in)            :: ind(:,:,:)                                   !< Fine to coarse index array
     integer, intent(in)                         :: delta_i_c, delta_j_c, x_refine, y_refine     !< delta i,j for nest move.  Nest refinement.
-    logical, intent(in)                         :: is_fine_pe                                   !< Is nest PE? 
+    logical, intent(in)                         :: is_fine_pe                                   !< Is nest PE?
     type(nest_domain_type), intent(inout)       :: nest_domain                                  !< Nest domain structure
     integer, intent(in)                         :: position                                     !< Grid offset
 
@@ -1256,7 +1256,7 @@ contains
     real, allocatable, intent(in)               :: wt(:,:,:)                                !< Interpolation weight array
     integer, allocatable, intent(in)            :: ind(:,:,:)                               !< Fine to coarse index array
     integer, intent(in)                         :: delta_i_c, delta_j_c, x_refine, y_refine !< delta i,j for nest move.  Nest refinement.
-    logical, intent(in)                         :: is_fine_pe                                   !< Is nest PE? 
+    logical, intent(in)                         :: is_fine_pe                                   !< Is nest PE?
     type(nest_domain_type), intent(inout)       :: nest_domain                                  !< Nest domain structure
     integer, intent(in)                         :: position                                     !< Grid offset
 
@@ -1336,7 +1336,7 @@ contains
     real, allocatable, intent(in)               :: wt(:,:,:)                                !< Interpolation weight array
     integer, allocatable, intent(in)            :: ind(:,:,:)                               !< Fine to coarse index array
     integer, intent(in)                         :: delta_i_c, delta_j_c, x_refine, y_refine !< delta i,j for nest move.  Nest refinement.
-    logical, intent(in)                         :: is_fine_pe                               !< Is nest PE? 
+    logical, intent(in)                         :: is_fine_pe                               !< Is nest PE?
     type(nest_domain_type), intent(inout)       :: nest_domain                              !< Nest domain structure
     integer, intent(in)                         :: position, nz                             !< Grid offset, number of vertical levels
 
@@ -1416,7 +1416,7 @@ contains
     real, allocatable, intent(in)               :: wt(:,:,:)                                    !< Interpolation weight array
     integer, allocatable, intent(in)            :: ind(:,:,:)                                   !< Fine to coarse index array
     integer, intent(in)                         :: delta_i_c, delta_j_c, x_refine, y_refine     !< delta i,j for nest move.  Nest refinement.
-    logical, intent(in)                         :: is_fine_pe                                   !< Is nest PE? 
+    logical, intent(in)                         :: is_fine_pe                                   !< Is nest PE?
     type(nest_domain_type), intent(inout)       :: nest_domain                                  !< Nest domain structure
     integer, intent(in)                         :: position, nz                                 !< Grid offset, number vertical levels
 
@@ -1493,7 +1493,7 @@ contains
     real, allocatable, intent(in)               :: wt(:,:,:)                                    !< Interpolation weight array
     integer, allocatable, intent(in)            :: ind(:,:,:)                                   !< Fine to coarse index array
     integer, intent(in)                         :: delta_i_c, delta_j_c, x_refine, y_refine     !< delta i,j for nest move.  Nest refinement.
-    logical, intent(in)                         :: is_fine_pe                                   !< Is nest PE? 
+    logical, intent(in)                         :: is_fine_pe                                   !< Is nest PE?
     type(nest_domain_type), intent(inout)       :: nest_domain                                  !< Nest domain structure
     integer, intent(in)                         :: position, nz                                 !< Grid offset, number of vertical levels
 
@@ -1573,7 +1573,7 @@ contains
     real, allocatable, intent(in)               :: wt(:,:,:)                                    !< Interpolation weight array
     integer, allocatable, intent(in)            :: ind(:,:,:)                                   !< Fine to coarse index array
     integer, intent(in)                         :: delta_i_c, delta_j_c, x_refine, y_refine     !< delta i,j for nest move.  Nest refinement.
-    logical, intent(in)                         :: is_fine_pe                                   !< Is nest PE? 
+    logical, intent(in)                         :: is_fine_pe                                   !< Is nest PE?
     type(nest_domain_type), intent(inout)       :: nest_domain                                  !< Nest domain structure
     integer, intent(in)                         :: position, nz                                 !< Grid offset, number of vertical levels
 
@@ -1658,9 +1658,9 @@ contains
     type(nest_domain_type),     intent(in)           :: nest_domain                                  !< Nest domain structure
     type(grid_geometry), intent(in)                  :: fp_super_tile_geo                            !< Parent high-resolution geometry
     integer, intent(in)                              :: x_refine, y_refine                           !< Nest refinement
-    logical, intent(in)                              :: is_fine_pe                                   !< Is nest PE? 
+    logical, intent(in)                              :: is_fine_pe                                   !< Is nest PE?
     real, allocatable, intent(in)                    :: wt_h(:,:,:), wt_u(:,:,:), wt_v(:,:,:)        !< Interpolation weights
-    integer, intent(in)                              :: a_step                                       !< Which timestep 
+    integer, intent(in)                              :: a_step                                       !< Which timestep
     real, intent(in)                                 :: dt_atmos                                     !< Timestep duration in seconds
 
     integer :: isg, ieg, jsg, jeg
@@ -1748,15 +1748,15 @@ contains
       fC    => Atm(n)%gridstruct%fC
       f0    => Atm(n)%gridstruct%f0
 
-      ! * Initialize coriolis param:                                                                                                 
-      
+      ! * Initialize coriolis param:
+
       do j=jsd,jed+1
         do i=isd,ied+1
           fC(i,j) = 2.*omega*( -1.*cos(grid(i,j,1))*cos(grid(i,j,2))*sin(alpha) + &
               sin(grid(i,j,2))*cos(alpha) )
         enddo
       enddo
-      
+
       do j=jsd,jed
         do i=isd,ied
           f0(i,j) = 2.*omega*( -1.*cos(agrid(i,j,1))*cos(agrid(i,j,2))*sin(alpha) + &
@@ -2227,7 +2227,7 @@ contains
     type(fv_atmos_type), intent(in)            :: Atm                                  !< Single instance of atmospheric data
     integer, intent(in)                        :: time_val                             !< Timestep number
     character(len=*), intent(in)               :: file_prefix                          !< Filename prefix
-    logical, intent(in)                        :: is_fine_pe                           !< Is nest PE? 
+    logical, intent(in)                        :: is_fine_pe                           !< Is nest PE?
     type(domain2d), intent(in)                 :: domain_coarse, domain_fine           !< Domain structures
     integer, intent(in)                        :: nz                                   !< Number of vertical levels
 
@@ -2286,8 +2286,8 @@ contains
   !>@brief The subroutine 'mn_var_dump_3d_to_netcdf' dumps a 3D single precision variable to netCDF file.
   subroutine mn_var_dump_3d_to_netcdf( data_var, is_fine_pe, domain_coarse, domain_fine, position, nz, time_step, this_tile, file_prefix, var_name)
     real, intent(in)                            :: data_var(:,:,:)                      !< Single precision model variable
-    logical, intent(in)                         :: is_fine_pe                           !< Is nest PE? 
-    type(domain2d), intent(in)                  :: domain_coarse, domain_fine           !< Domain structures 
+    logical, intent(in)                         :: is_fine_pe                           !< Is nest PE?
+    type(domain2d), intent(in)                  :: domain_coarse, domain_fine           !< Domain structures
     integer, intent(in)                         :: position, nz, time_step, this_tile   !< Stagger, number vertical levels, timestep, tile number
     character(len=*)                            :: file_prefix, var_name                !< Filename prefix, and netCDF variable name
 
@@ -2341,10 +2341,10 @@ contains
   subroutine mn_var_dump_2d_to_netcdf( data_var, is_fine_pe, domain_coarse, domain_fine, position, nz, time_step, this_tile, file_prefix, var_name)
     implicit none
     real, intent(in)                            :: data_var(:,:)                         !< Data variable
-    logical, intent(in)                         :: is_fine_pe                            !< Is nest PE? 
+    logical, intent(in)                         :: is_fine_pe                            !< Is nest PE?
     type(domain2d), intent(in)                  :: domain_coarse, domain_fine            !< Domain structures
     integer, intent(in)                         :: position, nz, time_step, this_tile    !< Stagger, number vertical levels, timestep, tile number
-    character(len=*)                            :: file_prefix, var_name                 !< Filename prefix, and netCDF variable name  
+    character(len=*)                            :: file_prefix, var_name                 !< Filename prefix, and netCDF variable name
 
     integer                      :: isc_coarse, iec_coarse, jsc_coarse, jec_coarse
     integer                      :: isd_coarse, ied_coarse, jsd_coarse, jed_coarse
@@ -2413,7 +2413,7 @@ contains
   !!=========================================================================================
 
   !>@brief The subroutine 'recalc_aux_pressures' updates auxiliary pressures after a nest move.
-  subroutine recalc_aux_pressures(Atm) 
+  subroutine recalc_aux_pressures(Atm)
     type(fv_atmos_type), intent(inout) :: Atm      !< Single Atm structure
 
     !  Update the auxiliary pressure variables

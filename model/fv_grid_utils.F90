@@ -921,7 +921,7 @@
       deallocate ( Atm%gridstruct%sina_64 )
 
 ! WDR TODO double checking on this
-#endif !MOVING_NEST
+#endif
 
       if ( Atm%flagstruct%molecular_diffusion ) then
          deallocate ( Atm%gridstruct%area_u_64 )
@@ -1765,7 +1765,6 @@
 
  end subroutine latlon2xyz2
 
-
 !>@brief The subroutine 'latlon2xyz' maps (lon, lat) to (x,y,z)
  subroutine latlon2xyz(p, e, id)
 
@@ -1779,7 +1778,6 @@
 
  logical, save       :: first_time = .true.
  integer, save       :: id_latlon
-
 
     !if (first_time) then
     !   id_latlon     = mpp_clock_id ('latlon2xyz',  flags = clock_flag_default, grain=CLOCK_ROUTINE )

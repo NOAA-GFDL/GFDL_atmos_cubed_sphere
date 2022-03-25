@@ -198,13 +198,14 @@ module fv_diagnostics_mod
  real :: sphum_ll_fix = 0.
  real :: qcly0 ! initial value for terminator test
 
- public :: fv_diag_init, fv_diag_reinit, fv_time, fv_diag, prt_mxm, prt_maxmin, range_check!, id_divg, id_te
+ public :: fv_diag_init, fv_time, fv_diag, prt_mxm, prt_maxmin, range_check!, id_divg, id_te
  public :: prt_mass, prt_minmax, ppme, fv_diag_init_gn, z_sum, sphum_ll_fix, eqv_pot, qcly0, gn
  public :: prt_height, prt_gb_nh_sh, interpolate_vertical, rh_calc, get_height_field, dbzcalc
  public :: max_vv, get_vorticity, max_uh
  public :: max_vorticity, max_vorticity_hy1, bunkers_vector, helicity_relative_CAPS
  public :: cs3_interpolator, get_height_given_pressure
 #ifdef MOVING_NEST
+ public :: fv_diag_reinit
  public :: fv_diag_tracker
 #endif
 
@@ -239,6 +240,7 @@ module fv_diagnostics_mod
 
 contains
 
+#ifdef MOVING_NEST
  ! For reinitializing zsurf after moving nest advances -- Ramstrom, HRD/AOML
  subroutine fv_diag_reinit(Atm)
     type(fv_atmos_type), intent(inout), target :: Atm(:)
@@ -270,6 +272,7 @@ contains
 !#endif
 
   end subroutine fv_diag_reinit
+#endif
 
  subroutine fv_diag_init(Atm, axes, Time, npx, npy, npz, p_ref)
     type(fv_atmos_type), intent(inout), target :: Atm(:)
@@ -4452,10 +4455,8 @@ contains
 !         call fv_io_exit()
 !         call mpp_exit()
 !         print '("[INFO] WDR calling STOP after moving nest atmosphere.F90 npe=",I0)', mpp_pe()
-!         stop              
+!         stop
 #endif
-
-
 
       endif
 

@@ -236,7 +236,7 @@ contains
     endif
 
   end subroutine smooth_9_point
-  
+
   ! blend_size is 5 for static nests.  We may increase it for moving nests.
   !  This is only called for fine PEs.
   !  Blends a few points into the nest.  Calls zs filtering if enabled in namelist.
@@ -315,7 +315,7 @@ contains
       !call FV3_zs_filter (bd, isd, ied, jsd, jed, npx, npy, npx_global,  &
       !    stretch_fac, bounded_domain, domain, area, dxa, dya, dx, dy, dxc, dyc, grid,  &
       !    agrid, sin_sg, phis, oro_g)
-      
+
       call FV3_zs_filter (Atm%bd, isd, ied, jsd, jed, Atm%npx, Atm%npy, Atm%neststruct%npx_global,  &
           Atm%flagstruct%stretch_fac, Atm%gridstruct%bounded_domain, Atm%domain, &
           Atm%gridstruct%area_64, Atm%gridstruct%dxa, Atm%gridstruct%dya, &
@@ -323,10 +323,10 @@ contains
           Atm%gridstruct%dxc, Atm%gridstruct%dyc, &
           Atm%gridstruct%grid_64,  &
           Atm%gridstruct%agrid_64, Atm%gridstruct%sin_sg, Atm%phis, parent_orog_grid)
-      
+
       call mpp_update_domains(Atm%phis, Atm%domain)
-    endif          ! end terrain filter                                                                                                   
-    
+    endif          ! end terrain filter
+
 
 
   end subroutine set_blended_terrain
@@ -2353,7 +2353,7 @@ contains
     integer, intent(in)                           :: dir, x_refine, y_refine
     real, allocatable, intent(in)                 :: wt(:,:,:)    ! The final dimension is always 4
     integer, allocatable, intent(in)              :: ind(:,:,:)
-    real, allocatable, intent(in)                 :: mask_var(:,:) 
+    real, allocatable, intent(in)                 :: mask_var(:,:)
     integer, intent(in)                           :: mask_val
     real*8, intent(in)                            :: default_val
 
