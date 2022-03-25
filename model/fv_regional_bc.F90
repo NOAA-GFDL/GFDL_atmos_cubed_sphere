@@ -137,6 +137,7 @@ module fv_regional_mod
 !
       integer,save :: cld_amt_index                                    &   !<--
                      ,graupel_index                                    &   !
+                     ,hailwat_index                                    &   !
                      ,ice_water_index                                  &   !    Locations of
                      ,liq_water_index                                  &   !    tracer vbls
                      ,o3mr_index                                       &   !    in the tracers
@@ -735,6 +736,7 @@ contains
       rain_water_index = get_tracer_index(MODEL_ATMOS, 'rainwat')
       snow_water_index = get_tracer_index(MODEL_ATMOS, 'snowwat')
       graupel_index    = get_tracer_index(MODEL_ATMOS, 'graupel')
+      hailwat_index    = get_tracer_index(MODEL_ATMOS, 'hailwat')
       cld_amt_index    = get_tracer_index(MODEL_ATMOS, 'cld_amt')
       o3mr_index       = get_tracer_index(MODEL_ATMOS, 'o3mr')
 !  write(0,*)' setup_regional_bc'
@@ -3479,7 +3481,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
   real(kind=R_GRID):: pst
 !!! High-precision
   integer i,ie,is,j,je,js,k,l,m, k2,iq
-  integer  sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel, cld_amt
+  integer  sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, cld_amt
 !
 !---------------------------------------------------------------------------------
 !
@@ -3489,6 +3491,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
   rainwat = rain_water_index
   snowwat = snow_water_index
   graupel = graupel_index
+  hailwat = hailwat_index
   cld_amt = cld_amt_index
   o3mr    = o3mr_index
 
@@ -3752,7 +3755,10 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 ! and may not provide a very good result
 !
   if ( .not. data_source_fv3gfs ) then
-   if ( Atm%flagstruct%nwat .eq. 6 ) then
+   if ( Atm%flagstruct%nwat .eq. 6 .or. Atm%flagstruct%nwat .eq. 7 ) then
+      if ( hailwat > 0 ) then
+        BC_side%q_BC(is:ie,j,1:npz,hailwat) = 0.
+      endif
       do k=1,npz
          do i=is,ie
             qn1(i,k) = BC_side%q_BC(i,j,k,liq_wat)
@@ -3795,7 +3801,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
          enddo
       enddo
    endif
-  endif ! data source /= FV3GFS GAUSSIAN NEMSIO/NETCDF and GRIB2 FILE
+
+  endif ! data source /= FV3GFS GAUSSIAN NEMSIO FILE
 !
 ! For GFS spectral input, omega in pa/sec is stored as w in the input data so actual w(m/s) is calculated
 ! For GFS nemsio input, omega is 0, so best not to use for input since boundary data will not exist for w
