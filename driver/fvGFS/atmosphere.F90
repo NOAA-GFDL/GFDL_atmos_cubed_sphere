@@ -2478,7 +2478,7 @@ contains
         endif
       enddo
       ! Update the nested grids
-      if (Atm(grid)%neststruct%nested) then
+      if (Atm(mygrid)%neststruct%nested) then
         do nb = 1,Atm_block%nblks
           blen = Atm_block%blksz(nb)
           do ix = 1, blen
