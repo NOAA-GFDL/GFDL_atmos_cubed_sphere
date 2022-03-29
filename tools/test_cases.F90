@@ -180,6 +180,7 @@
       real(kind=R_GRID), parameter :: one = 1.d0
       integer :: test_case = 11
       logical :: bubble_do = .false.
+      logical :: do_rand_perts = .false.
       real    :: alpha = 0.0
       integer :: Nsolitons = 1, n_bub = 1
       real    :: soliton_size = 750.e3, soliton_Umax = 50.
@@ -5336,7 +5337,7 @@ end subroutine terminator_tracers
         j = js
         do k=1,npz
            pk1(k) = (pk(i,j,k+1)-pk(i,j,k))/(kappa*(peln(i,k+1,j)-peln(i,k,j)))
-           pe1(k) = sqrt(pe(i,k+1,j)*pe(i,k,j))
+           pe1(k) = (pe(i,k+1,j)-pe(i,k,j))/(peln(i,k+1,j)-peln(i,k,j))
         enddo
 
         if (t_profile == -1 .or. q_profile == -1 .or. ws_profile == -1) then
@@ -5506,13 +5507,14 @@ end subroutine terminator_tracers
           do i = is, ie
           do k=1, npz
             do b = 1, n_bub
+              call random_number(rand1)
+              call random_number(rand2)
               if (bubble_type == 2) then
                 jcenter=((npy-1)/2+1)-((n_bub+1)/2-b)*30000.0/dy_const
               elseif (bubble_type == 3) then
                 icenter = icenters(b)
                 jcenter = jcenters(b)
               endif
-              if ( is_master() ) print*, "icenter, jcenter =", icenter, jcenter
               zm = 0.5*(ze1(k)+ze1(k+1))
               yrad = dy_const*float(j-jcenter)/yradbub
               xrad = dx_const*float(i-icenter)/xradbub
@@ -5520,8 +5522,14 @@ end subroutine terminator_tracers
               zrad = (zm-zc)/zc
               RAD=SQRT(xrad*xrad+yrad*yrad+zrad*zrad)
               IF(RAD <= 1.) THEN
-                pt(i,j,k) = pt(i,j,k) + pturb*COS(.5*pi*RAD)**2
-               ENDIF
+                 if (do_rand_perts) then
+                    pt(i,j,k) = pt(i,j,k) + pturb*COS(.5*pi*RAD)**2 + 0.2 * (2.0*rand1-1.0)
+                    q(i,j,k,1) = q(i,j,k,1) + bubble_q *COS(.5*pi*RAD)**2 + 1.0E-7 *(2.0*rand2-1.0)
+                 else
+                    pt(i,j,k) = pt(i,j,k) + pturb*COS(.5*pi*RAD)**2
+                    q(i,j,k,1) = q(i,j,k,1) + bubble_q *COS(.5*pi*RAD)**2
+                 endif
+              ENDIF
              enddo !nbub
            enddo!npz
            enddo!i
@@ -5584,7 +5592,7 @@ end subroutine terminator_tracers
         namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size, &
                                 t_profile, q_profile, ws_profile, bubble_t, bubble_q,  &
                                 bubble_zc, do_coriolis, iso_t, adi_th, us0, bubble_type,n_bub, &
-                                icenters,jcenters, bubble_rad_x, bubble_rad_y
+                                icenters,jcenters, bubble_rad_x, bubble_rad_y, do_rand_perts
 
 #include<file_version.h>
 
