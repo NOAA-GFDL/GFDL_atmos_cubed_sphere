@@ -95,6 +95,10 @@ module fv_dynamics_mod
 !     <td>neg_adj2</td>
 !   </tr>
 !   <tr>
+!     <td>fv_sg_mod</td>
+!     <td>neg_adj4</td>
+!   </tr>
+!   <tr>
 !     <td>fv_timing_mod</td>
 !     <td>timing_on, timing_off</td>
 !   </tr>
@@ -113,6 +117,10 @@ module fv_dynamics_mod
 !   <tr>
 !     <td>fv_sg_mod</td>
 !     <td>neg_adj3</td>
+!   </tr>
+!   <tr>
+!     <td>fv_sg_mod</td>
+!     <td>neg_adj4</td>
 !   </tr>
 !   <tr>
 !     <td>tracer_manager_mod</td>
@@ -140,7 +148,7 @@ module fv_dynamics_mod
    use mpp_mod,             only: mpp_pe
    use field_manager_mod,   only: MODEL_ATMOS
    use tracer_manager_mod,  only: get_tracer_index
-   use fv_sg_mod,           only: neg_adj3, neg_adj2
+   use fv_sg_mod,           only: neg_adj3, neg_adj2, neg_adj4
    use fv_nesting_mod,      only: setup_nested_grid_BCs
    use fv_regional_mod,     only: regional_boundary_update, set_regional_BCs
    use fv_regional_mod,     only: dump_field, H_STAGGER, U_STAGGER, V_STAGGER
@@ -283,7 +291,7 @@ contains
       integer:: kord_tracer(ncnst)
       integer :: i,j,k, n, iq, n_map, nq, nr, nwat, k_split
       integer :: sphum, liq_wat = -999, ice_wat = -999      ! GFDL physics
-      integer :: rainwat = -999, snowwat = -999, graupel = -999, cld_amt = -999
+      integer :: rainwat = -999, snowwat = -999, graupel = -999, hailwat = -999, cld_amt = -999
       integer :: theta_d = -999
       logical used, do_omega
       integer, parameter :: max_packs=13
@@ -399,6 +407,7 @@ contains
            rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
            snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
            graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+           hailwat = get_tracer_index (MODEL_ATMOS, 'hailwat')
            cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
       endif
 
@@ -424,12 +433,12 @@ contains
 #else
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,nwat,q,q_con,sphum,liq_wat, &
 #endif
-!$OMP      rainwat,ice_wat,snowwat,graupel) private(cvm,i,j,k)
+!$OMP      rainwat,ice_wat,snowwat,graupel,hailwat) private(cvm,i,j,k)
       do k=1,npz
          do j=js,je
 #ifdef USE_COND
              call moist_cp(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
-                           ice_wat, snowwat, graupel, q, q_con(is:ie,j,k), cvm)
+                           ice_wat, snowwat, graupel, hailwat, q, q_con(is:ie,j,k), cvm)
 #endif
             do i=is,ie
                dp1(i,j,k) = zvir*q(i,j,k,sphum)
@@ -442,7 +451,7 @@ contains
 #else
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,liq_wat, &
 #endif
-!$OMP                                  rainwat,ice_wat,snowwat,graupel,pkz,flagstruct, &
+!$OMP                                  rainwat,ice_wat,snowwat,graupel,hailwat,pkz,flagstruct, &
 #ifdef MULTI_GASES
 !$OMP                                  kapad,                                          &
 #endif
@@ -457,7 +466,7 @@ contains
            do j=js,je
 #ifdef MOIST_CAPPA
              call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
-                           ice_wat, snowwat, graupel, q, q_con(is:ie,j,k), cvm)
+                           ice_wat, snowwat, graupel, hailwat, q, q_con(is:ie,j,k), cvm)
 #endif
              do i=is,ie
 #ifdef MULTI_GASES
@@ -522,7 +531,7 @@ contains
                                      gridstruct%rsin2, gridstruct%cosa_s, &
                                      zvir, cp_air, rdgas, hlv, te_2d, ua, va, teq,        &
                                      flagstruct%moist_phys, nwat, sphum, liq_wat, rainwat,   &
-                                     ice_wat, snowwat, graupel, hydrostatic, idiag%id_te)
+                                     ice_wat, snowwat, graupel, hailwat, hydrostatic, idiag%id_te)
            if( idiag%id_te>0 ) then
                used = send_data(idiag%id_te, teq, fv_time)
 !              te_den=1.E-9*g_sum(teq, is, ie, js, je, ng, area, 0)/(grav*4.*pi*radius**2)
@@ -728,6 +737,9 @@ contains
         call fill2D(is, ie, js, je, ng, npz, q(isd,jsd,1,snowwat), delp, gridstruct%area, domain, gridstruct%bounded_domain, npx, npy)
        if ( graupel > 0 )  &
         call fill2D(is, ie, js, je, ng, npz, q(isd,jsd,1,graupel), delp, gridstruct%area, domain, gridstruct%bounded_domain, npx, npy)
+       if ( hailwat > 0 )  &
+        call fill2D(is, ie, js, je, ng, npz, q(isd,jsd,1,hailwat), delp, gridstruct%area, domain, gridstruct%bounded_domain, npx, npy)
+
                                                   call timing_off('Fill2D')
      endif
 #endif
@@ -786,6 +798,7 @@ contains
        if (ice_wat > 0) call prt_mxm('ice_wat_dyn', q(isd,jsd,1,ice_wat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
        if (snowwat > 0) call prt_mxm('snowwat_dyn', q(isd,jsd,1,snowwat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
        if (graupel > 0) call prt_mxm('graupel_dyn', q(isd,jsd,1,graupel), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       if (hailwat > 0) call prt_mxm('hailwat_dyn', q(isd,jsd,1,hailwat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
      endif
 #ifdef AVEC_TIMERS
                                                   call avec_timer_stop(6)
@@ -853,7 +866,44 @@ contains
        used = send_data(idiag%id_mdt, dtdt_m, fv_time)
   endif
 
-  if( nwat==6 ) then
+  if( nwat==7 ) then
+     if (cld_amt > 0) then
+      call neg_adj4(is, ie, js, je, ng, npz,        &
+                    flagstruct%hydrostatic,         &
+                    peln, delz,                     &
+                    pt, delp, q(isd,jsd,1,sphum),   &
+                              q(isd,jsd,1,liq_wat), &
+                              q(isd,jsd,1,rainwat), &
+                              q(isd,jsd,1,ice_wat), &
+                              q(isd,jsd,1,snowwat), &
+                              q(isd,jsd,1,graupel), &
+                              q(isd,jsd,1,hailwat), &
+                              q(isd,jsd,1,cld_amt), flagstruct%check_negative)
+     else
+        call neg_adj4(is, ie, js, je, ng, npz,        &
+                      flagstruct%hydrostatic,         &
+                      peln, delz,                     &
+                      pt, delp, q(isd,jsd,1,sphum),   &
+                                q(isd,jsd,1,liq_wat), &
+                                q(isd,jsd,1,rainwat), &
+                                q(isd,jsd,1,ice_wat), &
+                                q(isd,jsd,1,snowwat), &
+                                q(isd,jsd,1,graupel), &
+                                q(isd,jsd,1,hailwat), check_negative=flagstruct%check_negative)
+     endif
+     if ( flagstruct%fv_debug ) then
+       call prt_mxm('T_dyn_a3',    pt, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
+       call prt_mxm('SPHUM_dyn',   q(isd,jsd,1,sphum  ), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       call prt_mxm('liq_wat_dyn', q(isd,jsd,1,liq_wat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       call prt_mxm('rainwat_dyn', q(isd,jsd,1,rainwat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       call prt_mxm('ice_wat_dyn', q(isd,jsd,1,ice_wat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       call prt_mxm('snowwat_dyn', q(isd,jsd,1,snowwat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       call prt_mxm('graupel_dyn', q(isd,jsd,1,graupel), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+       IF ( hailwat > 0 ) call prt_mxm('hailwat_dyn', q(isd,jsd,1,hailwat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
+     endif
+  endif
+
+  if( nwat == 6 ) then
      if (cld_amt > 0) then
       call neg_adj3(is, ie, js, je, ng, npz,        &
                     flagstruct%hydrostatic,         &

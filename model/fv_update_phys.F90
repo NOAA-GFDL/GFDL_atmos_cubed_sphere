@@ -227,6 +227,7 @@ module fv_update_phys_mod
     integer  i, j, k, m, n, nwat
     integer  sphum, liq_wat, ice_wat, cld_amt   ! GFDL AM physics
     integer  rainwat, snowwat, graupel          ! GFDL Cloud Microphysics
+    integer  hailwat                            ! NSSL Cloud Microphysics
     integer  w_diff                             ! w-tracer for PBL diffusion
     real:: qstar, dbk, rdg, zvir, p_fac, cv_air, gama_dt, tbad
     logical :: bad_range
@@ -269,6 +270,7 @@ module fv_update_phys_mod
     rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
     snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
     graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+    hailwat = get_tracer_index (MODEL_ATMOS, 'hailwat')
     cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
 
     if ( .not. hydrostatic ) then
@@ -328,7 +330,7 @@ module fv_update_phys_mod
 !$OMP parallel do default(none) &
 !$OMP             shared(is,ie,js,je,npz,flagstruct,pfull,q_dt,sphum,q,qdiag,  &
 !$OMP                    nq,w_diff,dt,nwat,liq_wat,rainwat,ice_wat,snowwat,    &
-!$OMP                    graupel,delp,cld_amt,hydrostatic,pt,t_dt,delz,adj_vmr,&
+!$OMP                    graupel,hailwat,delp,cld_amt,hydrostatic,pt,t_dt,delz,adj_vmr,&
 !$OMP                    gama_dt,cv_air,ua,u_dt,va,v_dt,isd,ied,jsd,jed,       &
 #ifdef MULTI_GASES
 !$OMP                    nn, nm,                                               &
@@ -439,7 +441,7 @@ module fv_update_phys_mod
       if ( hydrostatic ) then
          do j=js,je
             call moist_cp(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
-                          ice_wat, snowwat, graupel, q, qc, cvm, pt(is:ie,j,k) )
+                          ice_wat, snowwat, graupel, hailwat, q, qc, cvm, pt(is:ie,j,k) )
             do i=is,ie
                pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
             enddo
@@ -449,7 +451,7 @@ module fv_update_phys_mod
 ! Constant pressure
              do j=js,je
                 call moist_cp(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
-                              ice_wat, snowwat, graupel, q, qc, cvm, pt(is:ie,j,k) )
+                              ice_wat, snowwat, graupel, hailwat, q, qc, cvm, pt(is:ie,j,k) )
                 do i=is,ie
                    delz(i,j,k) = delz(i,j,k) / pt(i,j,k)
                    pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
@@ -467,7 +469,7 @@ module fv_update_phys_mod
             else
                do j=js,je
                   call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
-                                ice_wat, snowwat, graupel, q, qc, cvm, pt(is:ie,j,k))
+                                ice_wat, snowwat, graupel, hailwat, q, qc, cvm, pt(is:ie,j,k))
                   do i=is,ie
                      pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
                   enddo

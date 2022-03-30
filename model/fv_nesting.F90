@@ -1420,15 +1420,15 @@ contains
     real, parameter:: c_ice = 1972.       !< heat capacity of ice at 0C: c=c_ice+7.3*(T-Tice)
     real, parameter:: cv_vap = cp_vapor - rvgas  !< 1384.5
 
-   real, dimension(:,:,:), pointer :: liq_watBC_west, ice_watBC_west, rainwatBC_west, snowwatBC_west, graupelBC_west
-   real, dimension(:,:,:), pointer :: liq_watBC_east, ice_watBC_east, rainwatBC_east, snowwatBC_east, graupelBC_east
-   real, dimension(:,:,:), pointer :: liq_watBC_north, ice_watBC_north, rainwatBC_north, snowwatBC_north, graupelBC_north
-   real, dimension(:,:,:), pointer :: liq_watBC_south, ice_watBC_south, rainwatBC_south, snowwatBC_south, graupelBC_south
+   real, dimension(:,:,:), pointer :: liq_watBC_west, ice_watBC_west, rainwatBC_west, snowwatBC_west, graupelBC_west, hailwatBC_west
+   real, dimension(:,:,:), pointer :: liq_watBC_east, ice_watBC_east, rainwatBC_east, snowwatBC_east, graupelBC_east, hailwatBC_east
+   real, dimension(:,:,:), pointer :: liq_watBC_north, ice_watBC_north, rainwatBC_north, snowwatBC_north, graupelBC_north, hailwatBC_north
+   real, dimension(:,:,:), pointer :: liq_watBC_south, ice_watBC_south, rainwatBC_south, snowwatBC_south, graupelBC_south, hailwatBC_south
 
    real :: dp1, q_liq, q_sol, q_con = 0., cvm, pkz, rdg, cv_air
 
    integer :: i,j,k, istart, iend
-   integer :: liq_wat, ice_wat, rainwat, snowwat, graupel
+   integer :: liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat
    real, parameter:: tice = 273.16 !< For GFS Partitioning
    real, parameter:: t_i0 = 15.
 
@@ -1561,11 +1561,22 @@ contains
       graupelBC_north => dum_north
       graupelBC_south => dum_south
    endif
+   if (hailwat > 0) then
+      hailwatBC_west  => q_BC(hailwat)%west_t1
+      hailwatBC_east  => q_BC(hailwat)%east_t1
+      hailwatBC_north => q_BC(hailwat)%north_t1
+      hailwatBC_south => q_BC(hailwat)%south_t1
+   else
+      hailwatBC_west  => dum_west
+      hailwatBC_east  => dum_east
+      hailwatBC_north => dum_north
+      hailwatBC_south => dum_south
+   endif
 
    if (is == 1) then
 
       call setup_pt_NH_BC_k(pt_BC%west_t1, sphum_BC%west_t1, delp_BC%west_t1, delz_BC%west_t1, &
-           liq_watBC_west, rainwatBC_west, ice_watBC_west, snowwatBC_west, graupelBC_west, &
+           liq_watBC_west, rainwatBC_west, ice_watBC_west, snowwatBC_west, graupelBC_west, hailwatBC_west, &
 #ifdef USE_COND
            q_con_BC%west_t1, &
 #ifdef MOIST_CAPPA
@@ -1589,7 +1600,7 @@ contains
       end if
 
       call setup_pt_NH_BC_k(pt_BC%south_t1, sphum_BC%south_t1, delp_BC%south_t1, delz_BC%south_t1, &
-           liq_watBC_south, rainwatBC_south, ice_watBC_south, snowwatBC_south, graupelBC_south, &
+           liq_watBC_south, rainwatBC_south, ice_watBC_south, snowwatBC_south, graupelBC_south, hailwatBC_south, &
 #ifdef USE_COND
            q_con_BC%south_t1, &
 #ifdef MOIST_CAPPA
@@ -1603,7 +1614,7 @@ contains
    if (ie == npx-1) then
 
       call setup_pt_NH_BC_k(pt_BC%east_t1, sphum_BC%east_t1, delp_BC%east_t1, delz_BC%east_t1, &
-           liq_watBC_east, rainwatBC_east, ice_watBC_east, snowwatBC_east, graupelBC_east, &
+           liq_watBC_east, rainwatBC_east, ice_watBC_east, snowwatBC_east, graupelBC_east, hailwatBC_east, &
 #ifdef USE_COND
            q_con_BC%east_t1, &
 #ifdef MOIST_CAPPA
@@ -1626,7 +1637,7 @@ contains
       end if
 
       call setup_pt_NH_BC_k(pt_BC%north_t1, sphum_BC%north_t1, delp_BC%north_t1, delz_BC%north_t1, &
-           liq_watBC_north, rainwatBC_north, ice_watBC_north, snowwatBC_north, graupelBC_north, &
+           liq_watBC_north, rainwatBC_north, ice_watBC_north, snowwatBC_north, graupelBC_north, hailwatBC_north, &
 #ifdef USE_COND
            q_con_BC%north_t1, &
 #ifdef MOIST_CAPPA
@@ -1640,7 +1651,7 @@ contains
 
 
  subroutine setup_pt_NH_BC_k(ptBC,sphumBC,delpBC,delzBC, &
-                             liq_watBC,rainwatBC,ice_watBC,snowwatBC,graupelBC, &
+                             liq_watBC,rainwatBC,ice_watBC,snowwatBC,graupelBC,hailwatBC, &
 #ifdef USE_COND
                              q_conBC, &
 #ifdef MOIST_CAPPA
@@ -1652,7 +1663,7 @@ contains
    integer, intent(IN) :: isd_BC, ied_BC, istart, iend, jstart, jend, npz
    real, intent(OUT), dimension(isd_BC:ied_BC,jstart:jend,npz) :: ptBC
    real, intent(IN),  dimension(isd_BC:ied_BC,jstart:jend,npz) :: sphumBC, delpBC, delzBC
-   real, intent(IN),  dimension(isd_BC:ied_BC,jstart:jend,npz) :: liq_watBC,rainwatBC,ice_watBC,snowwatBC,graupelBC
+   real, intent(IN),  dimension(isd_BC:ied_BC,jstart:jend,npz) :: liq_watBC,rainwatBC,ice_watBC,snowwatBC,graupelBC,hailwatBC
 #ifdef USE_COND
    real, intent(OUT), dimension(isd_BC:ied_BC,jstart:jend,npz) ::   q_conBC
 #ifdef MOIST_CAPPA
@@ -1673,7 +1684,7 @@ contains
    rdg = -rdgas / grav
    cv_air =  cp_air - rdgas
 
-!$OMP parallel do default(none) shared(istart,iend,jstart,jend,npz,zvir,ptBC,sphumBC,delpBC,delzBC,liq_watBC,rainwatBC,ice_watBC,snowwatBC,graupelBC, &
+!$OMP parallel do default(none) shared(istart,iend,jstart,jend,npz,zvir,ptBC,sphumBC,delpBC,delzBC,liq_watBC,rainwatBC,ice_watBC,snowwatBC,graupelBC,hailwatBC, &
 #ifdef USE_COND
 !$OMP                                  q_conBC, &
 #ifdef MOIST_CAPPA
@@ -1688,7 +1699,7 @@ contains
          dp1 = zvir*sphumBC(i,j,k)
 #ifdef USE_COND
          q_liq = liq_watBC(i,j,k) + rainwatBC(i,j,k)
-         q_sol = ice_watBC(i,j,k) + snowwatBC(i,j,k) + graupelBC(i,j,k)
+         q_sol = ice_watBC(i,j,k) + snowwatBC(i,j,k) + graupelBC(i,j,k) + hailwatBC(i,j,k)
          q_con = q_liq + q_sol
          q_conBC(i,j,k) = q_con
 #ifdef MOIST_CAPPA

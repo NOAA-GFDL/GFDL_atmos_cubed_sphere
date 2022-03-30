@@ -235,6 +235,14 @@ contains
     index = index + 1
     coarse_diagnostics(index)%axes = 3
     coarse_diagnostics(index)%module_name = DYNAMICS
+    coarse_diagnostics(index)%name = 'qh_dt_phys_coarse'
+    coarse_diagnostics(index)%description = 'coarse-grained hail tracer tendency from physics'                          
+    coarse_diagnostics(index)%units = 'kg/kg/s'
+    coarse_diagnostics(index)%reduction_method = MASS_WEIGHTED
+
+    index = index + 1
+    coarse_diagnostics(index)%axes = 3
+    coarse_diagnostics(index)%module_name = DYNAMICS
     coarse_diagnostics(index)%name = 't_dt_phys_coarse'
     coarse_diagnostics(index)%description = 'coarse-grained temperature tendency from physics'
     coarse_diagnostics(index)%units = 'K/s'
@@ -366,6 +374,15 @@ contains
     coarse_diagnostics(index)%module_name = DYNAMICS
     coarse_diagnostics(index)%name = 'int_qg_dt_phys_coarse'
     coarse_diagnostics(index)%description = 'coarse-grained vertically integrated graupel tracer tendency from physics'
+    coarse_diagnostics(index)%units = 'kg/m**2/s'
+    coarse_diagnostics(index)%vertically_integrated = .true.
+    coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
+
+    index = index + 1
+    coarse_diagnostics(index)%axes = 2
+    coarse_diagnostics(index)%module_name = DYNAMICS
+    coarse_diagnostics(index)%name = 'int_qh_dt_phys_coarse'
+    coarse_diagnostics(index)%description = 'coarse-grained vertically integrated hail tracer tendency from physics'
     coarse_diagnostics(index)%units = 'kg/m**2/s'
     coarse_diagnostics(index)%vertically_integrated = .true.
     coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
@@ -1218,17 +1235,18 @@ contains
     real, dimension(isd:ied,jsd:jed,1:npz), intent(in) :: pt
     real, dimension(isc:iec,jsc:jec,1:npz), intent(out) :: cvm
     real, dimension(isc:iec) :: qc, cvm_tmp
-    integer :: j, k, sphum, liq_wat, ice_wat, rainwat, snowwat, graupel
+    integer :: j, k, sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat
     sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
     liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
     ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
     rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
     snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
     graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+    hailwat = get_tracer_index (MODEL_ATMOS, 'hailwat')
     do j = jsc, jec
        do k = 1, npz
           call moist_cv(isc, iec, isd, ied, jsd, jed, npz, j, k, nwat, sphum, &
-               liq_wat, rainwat, ice_wat, snowwat, graupel, &
+               liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, &
                q, qc, cvm_tmp, pt(isc:iec,j,k))
           cvm(isc:iec,j,k) = cvm_tmp
        enddo
@@ -1241,17 +1259,18 @@ contains
     real, dimension(isd:ied,jsd:jed,1:npz), intent(in) :: pt
     real, dimension(isc:iec,jsc:jec,1:npz), intent(out) :: cpm
     real, dimension(isc:iec) :: qc, cpm_tmp
-    integer :: j, k, sphum, liq_wat, ice_wat, rainwat, snowwat, graupel
+    integer :: j, k, sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat
     sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
     liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
     ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
     rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
     snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
     graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+    hailwat = get_tracer_index (MODEL_ATMOS, 'hailwat')
     do j = jsc, jec
        do k = 1, npz
           call moist_cp(isc, iec, isd, ied, jsd, jed, npz, j, k, nwat, sphum, &
-               liq_wat, rainwat, ice_wat, snowwat, graupel, &
+               liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, &
                q, qc, cpm_tmp, pt(isc:iec,j,k))
           cpm(isc:iec,j,k) = cpm_tmp
        enddo
