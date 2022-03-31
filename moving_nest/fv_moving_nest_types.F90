@@ -19,15 +19,12 @@
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
-
 !***********************************************************************
 !> @file
 !! @brief Provides data structures for moving nest functionality
 !! @author W. Ramstrom, AOML/HRD   03/24/2022
 !! @email William.Ramstrom@noaa.gov
 ! =======================================================================!
-
-
 
 module fv_moving_nest_types_mod
 
@@ -41,7 +38,7 @@ module fv_moving_nest_types_mod
 #endif
 
   use fms_mod,         only: check_nml_error
-  use fv_arrays_mod,   only : fv_atmos_type
+  use fv_arrays_mod,   only: fv_atmos_type
   use fv_mp_mod,       only: MAX_NNEST
   use mpp_mod,         only: input_nml_file, mpp_pe
 
@@ -85,17 +82,17 @@ module fv_moving_nest_types_mod
   !  Note these are only 32 bits for now; matching the precision of the input netCDF files
   !  though the model generally handles physics variables with 64 bit precision
   type mn_surface_grids
-    real, allocatable  :: orog_grid(:,:)                _NULL  ! orography -- raw or filtered depending on namelist option, in meters
-    real, allocatable  :: orog_std_grid(:,:)            _NULL  ! terrain standard deviation for gravity wave drag, in meters (?)
-    real, allocatable  :: ls_mask_grid(:,:)             _NULL  ! land sea mask -- 0 for ocean/lakes, 1, for land.  Perhaps 2 for sea ice.
-    real, allocatable  :: land_frac_grid(:,:)           _NULL  ! Continuous land fraction - 0.0 ocean, 0.5 half of each, 1.0 all land
+    real, allocatable  :: orog_grid(:,:)               _NULL  ! orography -- raw or filtered depending on namelist option, in meters
+    real, allocatable  :: orog_std_grid(:,:)           _NULL  ! terrain standard deviation for gravity wave drag, in meters (?)
+    real, allocatable  :: ls_mask_grid(:,:)            _NULL  ! land sea mask -- 0 for ocean/lakes, 1, for land.  Perhaps 2 for sea ice.
+    real, allocatable  :: land_frac_grid(:,:)          _NULL  ! Continuous land fraction - 0.0 ocean, 0.5 half of each, 1.0 all land
 
-    real, allocatable  :: parent_orog_grid(:,:)         _NULL  ! parent orography -- only used for terrain_smoother=1.
-    !     raw or filtered depending on namelist option, in meters
+    real, allocatable  :: parent_orog_grid(:,:)        _NULL  ! parent orography -- only used for terrain_smoother=1.
+    !     raw or filtered depending on namelist option,in meters
 
     ! Soil variables
-    real, allocatable  :: deep_soil_temp_grid(:,:)      _NULL  ! deep soil temperature at 5m, in degrees K
-    real, allocatable  :: soil_type_grid(:,:)           _NULL  ! STATSGO soil type
+    real, allocatable  :: deep_soil_temp_grid(:,:)     _NULL  ! deep soil temperature at 5m, in degrees K
+    real, allocatable  :: soil_type_grid(:,:)          _NULL  ! STATSGO soil type
 
     ! Vegetation variables
     real, allocatable  :: veg_frac_grid(:,:)           _NULL  ! vegetation fraction
@@ -143,7 +140,7 @@ module fv_moving_nest_types_mod
     real (kind=kind_phys), _ALLOCATABLE :: zorll (:,:)      _NULL   !< land roughness length
     !real (kind=kind_phys), _ALLOCATABLE :: zorli (:,:)     _NULL   !< ice surface roughness length ! TODO do we need this?
     real (kind=kind_phys), _ALLOCATABLE :: zorlw (:,:)      _NULL   !< wave surface roughness length
-    real (kind=kind_phys), _ALLOCATABLE :: zorlwav (:,:)      _NULL   !< wave surface roughness in cm derived from wave model
+    real (kind=kind_phys), _ALLOCATABLE :: zorlwav (:,:)    _NULL   !< wave surface roughness in cm derived from wave model
 
     real (kind=kind_phys), _ALLOCATABLE :: sfalb_lnd(:,:)   _NULL   !< surface albedo over land for LSM
     real (kind=kind_phys), _ALLOCATABLE :: emis_lnd(:,:)    _NULL   !< surface emissivity over land for LSM
@@ -255,12 +252,8 @@ contains
 
     integer :: n, ngrids
 
-    !print '("[INFO] WDR fv_moving_nest_init AA npe=",I0)', mpp_pe()
-
     ! Allocate the array of fv_moving_nest_type structures of the proper length
     allocate(Moving_nest(size(Atm)))
-
-    !print '("[INFO] WDR fv_moving_nest_init ZZ npe=",I0)', mpp_pe()
 
     ! Configure namelist variables
 
@@ -301,11 +294,9 @@ contains
         vortex_tracker, ntrack, move_cd_x, move_cd_y, corral_x, corral_y, outatcf_lun
 
 #ifdef INTERNAL_FILE_NML
-    !print '("[INFO] WDR read_namelist_moving_nest_nml AA npe=",I0," input_nml_file=",A64)', mpp_pe(), input_nml_file
     read (input_nml_file,fv_moving_nest_nml,iostat=ios)
     ierr = check_nml_error(ios,'fv_moving_nest_nml')
 #else
-    !print '("[INFO] WDR read_namelist_moving_nest_nml BB npe=",I0," input_nml_file=",A64)', mpp_pe(), "open_namelist_file()"
     f_unit=open_namelist_file()
     rewind (f_unit)
     read (f_unit,fv_moving_nest_nml,iostat=ios)
@@ -625,7 +616,6 @@ contains
     end if
 
   end subroutine deallocate_fv_moving_nest_physics_type
-
 
 #endif
 end module fv_moving_nest_types_mod

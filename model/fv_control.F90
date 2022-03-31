@@ -164,7 +164,7 @@ module fv_control_mod
 #ifdef MOVING_NEST
    use fms_io_mod,               only: fms_io_exit
    use fv_moving_nest_types_mod, only: fv_moving_nest_init, deallocate_fv_moving_nests
-   use fv_tracker_mod,           only: deallocate_trackers
+   use fv_tracker_mod,           only: deallocate_tracker
 #endif
 
    implicit none
@@ -1345,7 +1345,7 @@ module fv_control_mod
 
 #ifdef MOVING_NEST
     call deallocate_fv_moving_nests(ngrids)
-    call deallocate_trackers(ngrids)
+    call deallocate_tracker(ngrids)
 #endif
 
  end subroutine fv_end
