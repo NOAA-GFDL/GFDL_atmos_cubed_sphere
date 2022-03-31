@@ -162,7 +162,9 @@ module fv_control_mod
                                           read_namelist_molecular_diffusion_nml
 
 #ifdef MOVING_NEST
-   use fms_io_mod,         only: fms_io_exit
+   use fms_io_mod,               only: fms_io_exit
+   use fv_moving_nest_types_mod, only: fv_moving_nest_init, deallocate_fv_moving_nests
+   use fv_tracker_mod,           only: deallocate_trackers
 #endif
 
    implicit none
@@ -219,31 +221,6 @@ module fv_control_mod
      integer, dimension(MAX_NNEST) :: nest_level = 0
      integer, dimension(MAX_NNEST) :: tile_coarse = 0
      integer, dimension(MAX_NTILE) :: npes_nest_tile = 0
-
-#ifdef MOVING_NEST
-     ! Moving Nest Namelist Variables
-     logical, dimension(MAX_NNEST) :: is_moving_nest = .False.
-     character(len=120)            :: surface_dir = "INPUT/moving_nest"
-     integer, dimension(MAX_NNEST) :: terrain_smoother = 1  ! 0 -- all high-resolution data, 1 - static nest smoothing algorithm with blending zone of 5 points, 2 - blending zone of 10 points, 5 - 5 point smoother, 9 - 9 point smoother
-     integer, dimension(MAX_NNEST) :: vortex_tracker = 0 ! 0 - not a moving nest, tracker not needed
-                                                         ! 1 - prescribed nest moving
-                                                         ! 2 - following child domain center
-                                                         ! 3 - tracking Min MSLP
-                                                         ! 6 - simplified version of GFDL tracker, adopted from HWRF's internal vortex tracker.
-                                                         ! 7 - nearly the full storm tracking algorithm from GFDL vortex tracker. The only part that is missing is the part that gives up when the storm dissipates, which is left out intentionally. Adopted from HWRF's internal vortex tracker.
-     integer, dimension(MAX_NNEST) :: ntrack = 1 ! number of dt_atmos steps to call the vortex tracker, tracker time step = ntrack*dt_atmos
-     integer, dimension(MAX_NNEST) :: move_cd_x = 0 ! the number of parent domain grid cells to move in i direction
-     integer, dimension(MAX_NNEST) :: move_cd_y = 0 ! the number of parent domain grid cells to move in j direction
-                                                    ! used to control prescribed nest moving, when vortex_tracker=1
-                                                    ! the move happens every ntrack*dt_atmos seconds
-                                                    ! positive is to move in increasing i and j direction, and
-                                                    ! negative is to move in decreasing i and j direction.
-                                                    ! 0 means no move. The limitation is to move only 1 grid cell at each move.
-     integer, dimension(MAX_NNEST) :: corral_x = 5 ! Minimum parent gridpoints on each side of nest in i direction
-     integer, dimension(MAX_NNEST) :: corral_y = 5 ! Minimum parent gridpoints on each side of nest in j direction
-
-     integer, dimension(MAX_NNEST) :: outatcf_lun = 600  ! base fortran unit number to write out the partial atcfunix file from the internal tracker
-#endif
 
      real :: sdt
      integer :: unit, ens_root_pe, tile_id(1)
@@ -453,9 +430,6 @@ module fv_control_mod
      ! 1. read nesting namelists
      call read_namelist_nest_nml
      call read_namelist_fv_nest_nml
-#ifdef MOVING_NEST
-     call read_namelist_moving_nest_nml
-#endif
 
      ! 2. Set up Atm and PElists
      do n=2,MAX_NNEST
@@ -560,42 +534,20 @@ module fv_control_mod
            Atm(n)%neststruct%joffset                = nest_joffsets(n)
            Atm(n)%neststruct%parent_tile            = tile_coarse(n)
            Atm(n)%neststruct%refinement             = nest_refine(n)
-
-#ifdef MOVING_NEST
-           Atm(n)%neststruct%is_moving_nest         = is_moving_nest(n)
-           Atm(n)%neststruct%surface_dir            = trim(surface_dir)
-           Atm(n)%neststruct%terrain_smoother       = terrain_smoother(n)
-           Atm(n)%neststruct%vortex_tracker         = vortex_tracker(n)
-           Atm(n)%neststruct%ntrack                 = ntrack(n)
-           Atm(n)%neststruct%move_cd_x              = move_cd_x(n)
-           Atm(n)%neststruct%move_cd_y              = move_cd_y(n)
-           Atm(n)%neststruct%corral_x               = corral_x(n)
-           Atm(n)%neststruct%corral_y               = corral_y(n)
-           Atm(n)%neststruct%outatcf_lun            = outatcf_lun(n)
-#endif
-
         else
-
            Atm(n)%neststruct%ioffset                = -999
            Atm(n)%neststruct%joffset                = -999
            Atm(n)%neststruct%parent_tile            = -1
            Atm(n)%neststruct%refinement             = -1
+        endif
+     enddo
 
 #ifdef MOVING_NEST
-           Atm(n)%neststruct%is_moving_nest         = .false.
-           Atm(n)%neststruct%vortex_tracker         = 0
-           Atm(n)%neststruct%ntrack                 = 1
-           Atm(n)%neststruct%move_cd_x              = 0
-           Atm(n)%neststruct%move_cd_y              = 0
-           Atm(n)%neststruct%corral_x               = 5
-           Atm(n)%neststruct%corral_y               = 5
-           Atm(n)%neststruct%outatcf_lun            = 600
-
+     ! This has to be called on the input.nml namelist for all PEs
+     !   input_nest02.nml does not have any of the moving nest parameters
+     !   Later call to read_input_nml changes which namelist is used
+     call fv_moving_nest_init(Atm)
 #endif
-
-        endif
-
-     enddo
 
      if (pecounter /= npes) then
         if (mpp_pe() == 0) then
@@ -1062,26 +1014,6 @@ module fv_control_mod
 
      end subroutine read_namelist_fv_nest_nml
 
-#ifdef MOVING_NEST
-     subroutine read_namelist_moving_nest_nml
-       integer :: f_unit, ios, ierr
-       namelist /fv_moving_nest_nml/ surface_dir, is_moving_nest, terrain_smoother, &
-          vortex_tracker, ntrack, move_cd_x, move_cd_y, corral_x, corral_y, outatcf_lun
-
-#ifdef INTERNAL_FILE_NML
-       read (input_nml_file,fv_moving_nest_nml,iostat=ios)
-       ierr = check_nml_error(ios,'fv_moving_nest_nml')
-#else
-       f_unit=open_namelist_file()
-       rewind (f_unit)
-       read (f_unit,fv_moving_nest_nml,iostat=ios)
-       ierr = check_nml_error(ios,'fv_moving_nest_nml')
-       call close_file(f_unit)
-#endif
-
-     end subroutine read_namelist_moving_nest_nml
-#endif
-
 
      subroutine read_namelist_fv_grid_nml
 
@@ -1411,6 +1343,10 @@ module fv_control_mod
        call deallocate_coarse_restart_type(Atm(n)%coarse_graining%restart)
     end do
 
+#ifdef MOVING_NEST
+    call deallocate_fv_moving_nests(ngrids)
+    call deallocate_trackers(ngrids)
+#endif
 
  end subroutine fv_end
 !-------------------------------------------------------------------------------

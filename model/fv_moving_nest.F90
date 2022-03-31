@@ -79,7 +79,6 @@ module fv_moving_nest_mod
   use field_manager_mod,      only: MODEL_ATMOS
   use fms_io_mod,             only: read_data, write_data, get_global_att_value, fms_io_init, fms_io_exit
   use fv_arrays_mod,          only: fv_atmos_type, fv_nest_type, fv_grid_type, R_GRID
-  use fv_arrays_mod,          only: fv_moving_nest_prog_type, fv_moving_nest_physics_type
   use fv_arrays_mod,          only: allocate_fv_nest_bc_type, deallocate_fv_nest_bc_type
   use fv_grid_tools_mod,      only: init_grid
   use fv_grid_utils_mod,      only: grid_utils_init, ptop_min, dist2side_latlon
@@ -89,6 +88,7 @@ module fv_moving_nest_mod
   use fv_nwp_nudge_mod,       only: do_adiabatic_init
   use init_hydro_mod,         only: p_var
   use tracer_manager_mod,     only: get_tracer_index, get_tracer_names
+  use fv_moving_nest_types_mod, only: fv_moving_nest_prog_type, fv_moving_nest_physics_type, Moving_nest
   use fv_moving_nest_utils_mod,  only: alloc_halo_buffer, load_nest_latlons_from_nc, grid_geometry, output_grid_to_nc, find_nest_alignment
   use fv_moving_nest_utils_mod,  only: fill_nest_from_buffer, fill_nest_from_buffer_cell_center, fill_nest_from_buffer_nearest_neighbor
   use fv_moving_nest_utils_mod,  only: fill_nest_halos_from_parent, fill_grid_from_supergrid, fill_weight_grid
@@ -171,7 +171,7 @@ contains
     integer :: this_pe
     type(fv_moving_nest_prog_type), pointer :: mn_prog
 
-    mn_prog => Atm(n)%mn_prog
+    mn_prog => Moving_nest(n)%mn_prog
 
     this_pe = mpp_pe()
 
@@ -214,7 +214,7 @@ contains
     integer :: bad_values, good_values
     type(fv_moving_nest_prog_type), pointer :: mn_prog
 
-    mn_prog => Atm(n)%mn_prog
+    mn_prog => Moving_nest(n)%mn_prog
 
     this_pe = mpp_pe()
 
@@ -299,7 +299,7 @@ contains
     integer  :: x_refine, y_refine
     type(fv_moving_nest_prog_type), pointer :: mn_prog
 
-    mn_prog => Atm(n)%mn_prog
+    mn_prog => Moving_nest(n)%mn_prog
 
     !  TODO Rename this from interp_type to stagger_type
     interp_type = 1    ! cell-centered A-grid
@@ -427,7 +427,7 @@ contains
     integer :: this_pe
     type(fv_moving_nest_prog_type), pointer :: mn_prog
 
-    mn_prog => Atm%mn_prog
+    mn_prog => Moving_nest(2)%mn_prog  ! TODO allow nest number to vary
     this_pe = mpp_pe()
 
     call mn_var_fill_intern_nest_halos(Atm%q_con, domain_fine, is_fine_pe)
@@ -1083,7 +1083,7 @@ contains
 
     type(fv_moving_nest_prog_type), pointer :: mn_prog
 
-    mn_prog => Atm(n)%mn_prog
+    mn_prog => Moving_nest(n)%mn_prog
 
     call mn_var_shift_data(Atm(n)%q_con, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &
         delta_i_c, delta_j_c, x_refine, y_refine, is_fine_pe, nest_domain, position, nz)

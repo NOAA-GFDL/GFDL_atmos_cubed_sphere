@@ -77,7 +77,7 @@ module fv_moving_nest_physics_mod
   use field_manager_mod,      only: MODEL_ATMOS
   use fms_io_mod,             only: read_data, write_data, get_global_att_value, fms_io_init, fms_io_exit
   use fv_arrays_mod,          only: fv_atmos_type, fv_nest_type, fv_grid_type, R_GRID
-  use fv_arrays_mod,          only: fv_moving_nest_prog_type, fv_moving_nest_physics_type
+  use fv_moving_nest_types_mod,   only: fv_moving_nest_prog_type, fv_moving_nest_physics_type, mn_surface_grids, fv_moving_nest_type
   use fv_arrays_mod,          only: allocate_fv_nest_bc_type, deallocate_fv_nest_bc_type
   use fv_grid_tools_mod,      only: init_grid
   use fv_grid_utils_mod,      only: grid_utils_init, ptop_min, dist2side_latlon
@@ -95,7 +95,7 @@ module fv_moving_nest_physics_mod
   use fv_moving_nest_utils_mod,  only: fill_nest_halos_from_parent_masked
 
   use fv_moving_nest_mod,     only: mn_var_fill_intern_nest_halos, mn_var_dump_to_netcdf, mn_var_shift_data
-
+  use fv_moving_nest_types_mod, only: Moving_nest
   implicit none
 
 #ifdef NO_QUAD_PRECISION
@@ -124,52 +124,6 @@ module fv_moving_nest_physics_mod
 
 #include <fms_platform.h>
 
-  ! TODO deallocate these at end of model run.  They are only allocated once, at first nest move, inside mn_static_read_hires().
-  !  Note these are only 32 bits for now; matching the precision of the input netCDF files
-  !  though the model generally handles physics variables with 64 bit precision
-  type mn_surface_grids
-    real, allocatable  :: orog_grid(:,:)                _NULL  ! orography -- raw or filtered depending on namelist option, in meters
-    real, allocatable  :: orog_std_grid(:,:)            _NULL  ! terrain standard deviation for gravity wave drag, in meters (?)
-    real, allocatable  :: ls_mask_grid(:,:)             _NULL  ! land sea mask -- 0 for ocean/lakes, 1, for land.  Perhaps 2 for sea ice.
-    real, allocatable  :: land_frac_grid(:,:)           _NULL  ! Continuous land fraction - 0.0 ocean, 0.5 half of each, 1.0 all land
-
-    real, allocatable  :: parent_orog_grid(:,:)         _NULL  ! parent orography -- only used for terrain_smoother=1.
-    !     raw or filtered depending on namelist option, in meters
-
-    ! Soil variables
-    real, allocatable  :: deep_soil_temp_grid(:,:)      _NULL  ! deep soil temperature at 5m, in degrees K
-    real, allocatable  :: soil_type_grid(:,:)           _NULL  ! STATSGO soil type
-
-    ! Vegetation variables
-    real, allocatable  :: veg_frac_grid(:,:)           _NULL  ! vegetation fraction
-    real, allocatable  :: veg_type_grid(:,:)           _NULL  ! IGBP vegetation type
-    real, allocatable  :: veg_greenness_grid(:,:)      _NULL  ! NESDIS vegetation greenness; netCDF file has monthly values
-
-    ! Orography variables
-    real, allocatable  :: slope_type_grid(:,:)         _NULL  ! legacy 1 degree GFS slope type
-
-    ! Albedo variables
-    real, allocatable  :: max_snow_alb_grid(:,:)       _NULL  ! max snow albedo
-    real, allocatable  :: facsf_grid(:,:)              _NULL  ! fractional coverage with strong cosz dependency
-    real, allocatable  :: facwf_grid(:,:)              _NULL  ! fractional coverage with weak cosz dependency
-
-    ! Snow free albedo
-    !   strong cosz angle dependence = black sky
-    !   weak cosz angle dependence = white sky
-    !  From the chgres code in static_data.F90, we see the linkage of variable names:
-    !   type(esmf_field), public           :: alvsf_target_grid !< visible black sky albedo
-    !   type(esmf_field), public           :: alvwf_target_grid !< visible white sky albedo
-    !   type(esmf_field), public           :: alnsf_target_grid !< near ir black sky albedo
-    !   type(esmf_field), public           :: alnwf_target_grid !< near ir white sky albedo
-
-    real, allocatable  :: alvsf_grid(:,:)              _NULL  ! Visible black sky albedo; netCDF file has monthly values
-    real, allocatable  :: alvwf_grid(:,:)              _NULL  ! Visible white sky albedo; netCDF file has monthly values
-    real, allocatable  :: alnsf_grid(:,:)              _NULL  ! Near IR black sky albedo; netCDF file has monthly values
-    real, allocatable  :: alnwf_grid(:,:)              _NULL  ! Near IR white sky albedo; netCDF file has monthly values
-
-  end type mn_surface_grids
-
-
 contains
 
   !>@brief The subroutine 'mn_phys_reset_sfc_props' sets the static surface parameters from the high-resolution input file data
@@ -194,7 +148,7 @@ contains
         i_idx = (ioffset-1)*refine + i_pe
         j_idx = (joffset-1)*refine + j_pe
 
-        Atm(n)%mn_phys%slmsk(i_pe, j_pe) = mn_static%ls_mask_grid(i_idx, j_idx)
+        Moving_nest(n)%mn_phys%slmsk(i_pe, j_pe) = mn_static%ls_mask_grid(i_idx, j_idx)
       enddo
     enddo
 
@@ -621,7 +575,7 @@ contains
 
     if (debug_log) print '("[INFO] WDR mn_phys_fill_temp_variables. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
 
-    mn_phys => Atm(n)%mn_phys
+    mn_phys => Moving_nest(n)%mn_phys
 
     mn_phys%ts(is:ie, js:je) =  Atm(n)%ts(is:ie, js:je)
 
@@ -744,7 +698,7 @@ contains
     type(fv_moving_nest_physics_type), pointer       :: mn_phys
 
     this_pe = mpp_pe()
-    mn_phys => Atm(n)%mn_phys
+    mn_phys => Moving_nest(n)%mn_phys
 
     if (debug_log) print '("[INFO] WDR start mn_phys_apply_temp_variables. npe=",I0," n=",I0)', this_pe, n
 
@@ -1003,7 +957,7 @@ contains
     x_refine = Atm(child_grid_num)%neststruct%refinement
     y_refine = x_refine
 
-    mn_phys => Atm(n)%mn_phys
+    mn_phys => Moving_nest(n)%mn_phys
 
     !  Fill centered-grid variables
 
@@ -1268,8 +1222,8 @@ contains
 
   !>@brief The subroutine 'mn_phys_fill_intern_nest_halos' fills the intenal nest halos for the physics variables
   !>@details This subroutine is only called for the nest PEs.
-  subroutine mn_phys_fill_intern_nest_halos(Atm, IPD_Control, IPD_Data, domain_fine, is_fine_pe)
-    type(fv_atmos_type), target, intent(inout)       :: Atm                 !< Single instance of atmospheric data
+  subroutine mn_phys_fill_intern_nest_halos(moving_nest, IPD_Control, IPD_Data, domain_fine, is_fine_pe)
+    type(fv_moving_nest_type), target, intent(inout) :: moving_nest         !< Single instance of moving nest data
     type(IPD_control_type), intent(in)               :: IPD_Control         !< Physics metadata
     type(IPD_data_type), intent(inout)               :: IPD_Data(:)         !< Physics variable data
     type(domain2d), intent(inout)                    :: domain_fine         !< Domain structure for this nest
@@ -1277,7 +1231,7 @@ contains
 
     type(fv_moving_nest_physics_type), pointer :: mn_phys
 
-    mn_phys => Atm%mn_phys
+    mn_phys => moving_nest%mn_phys
 
     call mn_var_fill_intern_nest_halos(mn_phys%ts, domain_fine, is_fine_pe)   !! Skin Temp/SST
     if (move_physics) then
@@ -1376,7 +1330,7 @@ contains
     integer  :: position_v    = EAST
     type(fv_moving_nest_physics_type), pointer :: mn_phys
 
-    mn_phys => Atm(n)%mn_phys
+    mn_phys => Moving_nest(n)%mn_phys
 
     !! Skin temp/SST
     call mn_var_shift_data(mn_phys%ts, interp_type, wt_h, Atm(child_grid_num)%neststruct%ind_h, &

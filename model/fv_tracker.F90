@@ -26,6 +26,7 @@
 module fv_tracker_mod
 
 #ifdef MOVING_NEST
+#include <fms_platform.h>
 
   use constants_mod,       only: pi=>pi_8, rad_to_deg, deg_to_rad
   use time_manager_mod,    only: time_type, get_time, set_time, operator(+), &
@@ -37,14 +38,27 @@ module fv_tracker_mod
   use mpp_domains_mod,     only: mpp_get_data_domain, mpp_get_compute_domain
   use fv_arrays_mod,       only: fv_atmos_type, R_GRID
   use fv_diagnostics_mod,  only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
+  use fv_diagnostics_mod,  only: interpolate_vertical, interpolate_z, get_vorticity, &
+      get_height_field, get_pressure_given_height, get_height_given_pressure, cs3_interpolator
   use fv_mp_mod,           only: is_master, &
       mp_reduce_sum, mp_reduce_max, mp_reduce_min, &
       mp_reduce_minval, mp_reduce_maxval, &
       mp_reduce_minloc, mp_reduce_maxloc
 
+  use fv_moving_nest_types_mod, only: Moving_nest
+
   implicit none
   private
   public :: fv_tracker_init, fv_tracker_center, fv_tracker_post_move
+  public :: fv_diag_tracker, allocate_tracker, deallocate_trackers
+  public :: Tracker
+
+#ifdef FEWER_PLEVS
+ integer :: nplev = 11 !< # of levels in plev interpolated standard level output, with levels given by levs. 11 by default
+#else
+ integer :: nplev = 31 !< # of levels in plev interpolated standard level output, with levels given by levs. 31 by default
+#endif
+
 
   integer, parameter :: maxtp=11 ! number of tracker parameters
 
@@ -65,48 +79,182 @@ module fv_tracker_mod
 
   real, parameter :: km2nmi=0.539957, kn2mps=0.514444, mps2kn=1./kn2mps
 
+
+  type fv_tracker_type
+    ! For internal vortex tracker
+    real, _ALLOCATABLE :: vort850(:,:)  _NULL  !< relative vorticity at 850 mb
+    real, _ALLOCATABLE :: spd850(:,:)   _NULL  !< wind speed at 850 mb
+    real, _ALLOCATABLE :: u850(:,:)     _NULL  !< ua at 850 mb
+    real, _ALLOCATABLE :: v850(:,:)     _NULL  !< va at 850 mb
+    real, _ALLOCATABLE :: z850(:,:)     _NULL  !< geopotential height at 850 mb
+    real, _ALLOCATABLE :: vort700(:,:)  _NULL  !< relative vorticity at 700 mb
+    real, _ALLOCATABLE :: spd700(:,:)   _NULL  !< wind speed at 700 mb
+    real, _ALLOCATABLE :: u700(:,:)     _NULL  !< ua at 700 mb
+    real, _ALLOCATABLE :: v700(:,:)     _NULL  !< va at 700 mb
+    real, _ALLOCATABLE :: z700(:,:)     _NULL  !< geopotential height at 700 mb
+    real, _ALLOCATABLE :: vort10m(:,:)  _NULL  !< relative vorticity at 10-m
+    real, _ALLOCATABLE :: spd10m(:,:)   _NULL  !< wind speed at 10-m
+    real, _ALLOCATABLE :: u10m(:,:)     _NULL  !< ua at 10-m
+    real, _ALLOCATABLE :: v10m(:,:)     _NULL  !< va at 10-m
+    real, _ALLOCATABLE :: slp(:,:)      _NULL  !< sea level pressure
+
+    ! For inline NCEP tracker
+    real, _ALLOCATABLE :: distsq(:,:)             _NULL  !< Square of distance from nest center
+    real, _ALLOCATABLE :: tracker_distsq(:,:)     _NULL  !< Square of distance from tracker fix location
+    real, _ALLOCATABLE :: tracker_angle(:,:)      _NULL  !< Angle to storm center (East=0, North=pi/2, etc.)
+    real, _ALLOCATABLE :: tracker_fixes(:,:)      _NULL  !< Tracker fix information for debugging
+
+    logical :: track_have_guess = .false. !< Is a first guess available?
+    real :: track_guess_lat !< First guess latitude
+    real :: track_guess_lon !< First guess longitude
+    real :: tracker_edge_dist !< Distance from storm center to domain edge
+
+    real :: track_stderr_m1 = -99.9 !< Standard deviation of tracker centers one hour ago
+    real :: track_stderr_m2 = -99.9 !< Standard deviation of tracker centers two hours ago
+    real :: track_stderr_m3 = -99.9 !< Standard deviation of tracker centers three hours ago
+
+    integer :: track_last_hour=0 !< Last completed forecast hour
+
+    real :: tracker_fixlon = -999.0 !< Storm fix longitude according to inline NCEP tracker
+    real :: tracker_fixlat = -999.0 !< Storm fix latitude according to inline NCEP tracker
+    integer :: tracker_ifix = -99 !< Storm fix i location
+    integer :: tracker_jfix = -99 !< Storm fix j location
+
+    real :: tracker_rmw = -99. !< Storm RMW according to inline NCEP tracker
+    real :: tracker_pmin = -99999. !< Storm min MSLP according to inline NCEP tracker
+    real :: tracker_vmax =-99. !< Storm max 10m wind according to inline NCEP tracker
+
+    logical :: tracker_havefix = .false. !< True = storm fix locations are valid
+    logical :: tracker_gave_up = .false. !< True = inline tracker gave up on tracking the storm
+  end type fv_tracker_type
+
+
+
+  type(fv_tracker_type), _ALLOCATABLE, target :: Tracker(:)
+  integer :: n = 2 ! TODO allow to vary for multiple nests
+
+
 contains
 
-  subroutine fv_tracker_init(Atm)
+  subroutine fv_tracker_init(length)
     ! Initialize tracker variables in the Atm structure.
     implicit none
-    type(fv_atmos_type), intent(inout) :: Atm
+    integer, intent(in)     :: length
+
+    integer :: i
+
+    !print '("[INFO] WDR fv_tracker_init AA npe=",I0)', mpp_pe()
 
     call mpp_error(NOTE, 'fv_tracker_init')
 
-    Atm%track_stderr_m1=-99.9
-    Atm%track_stderr_m2=-99.9
-    Atm%track_stderr_m3=-99.9
-    ! Atm%track_n_old=0
-    ! Atm%track_old_lon=0
-    ! Atm%track_old_lat=0
-    ! Atm%track_old_ntsd=0
+    allocate(Tracker(length))
 
-    Atm%tracker_angle=0
-    Atm%tracker_fixlon=-999.0
-    Atm%tracker_fixlat=-999.0
-    Atm%tracker_ifix=-99
-    Atm%tracker_jfix=-99
-    Atm%tracker_havefix=.false.
-    Atm%tracker_gave_up=.false.
-    Atm%tracker_pmin=-99999.
-    Atm%tracker_vmax=-99.
-    Atm%tracker_rmw=-99.
+    do i=1,length
+      Tracker(i)%track_stderr_m1=-99.9
+      Tracker(i)%track_stderr_m2=-99.9
+      Tracker(i)%track_stderr_m3=-99.9
+      ! Tracker(i)%track_n_old=0
+      ! Tracker(i)%track_old_lon=0
+      ! Tracker(i)%track_old_lat=0
+      ! Tracker(i)%track_old_ntsd=0
 
-    Atm%track_have_guess=.false.
-    Atm%track_guess_lat=-999.0
-    Atm%track_guess_lon=-999.0
+      Tracker(i)%tracker_angle=0
+      Tracker(i)%tracker_fixlon=-999.0
+      Tracker(i)%tracker_fixlat=-999.0
+      Tracker(i)%tracker_ifix=-99
+      Tracker(i)%tracker_jfix=-99
+      Tracker(i)%tracker_havefix=.false.
+      Tracker(i)%tracker_gave_up=.false.
+      Tracker(i)%tracker_pmin=-99999.
+      Tracker(i)%tracker_vmax=-99.
+      Tracker(i)%tracker_rmw=-99.
+
+      Tracker(i)%track_have_guess=.false.
+      Tracker(i)%track_guess_lat=-999.0
+      Tracker(i)%track_guess_lon=-999.0
+    enddo
+
+    !print '("[INFO] WDR fv_tracker_init ZZ npe=",I0)', mpp_pe()
 
   end subroutine fv_tracker_init
 
-  subroutine fv_tracker_center(Atm, Time)
+
+
+  subroutine allocate_tracker(i, is, ie, js, je)
+    integer, intent(in) :: i, is, ie, js, je
+    ! Allocate internal vortex tracker arrays
+
+    !print '("[INFO] WDR allocate_tracker npe=",I0," i=",I0," ",I0,"-",I0," ",I0,"-",I0)', mpp_pe(), i, is, ie, js, je
+
+    allocate ( Tracker(i)%vort850(is:ie,js:je) )
+    allocate ( Tracker(i)%spd850(is:ie,js:je) )
+    allocate ( Tracker(i)%u850(is:ie,js:je) )
+    allocate ( Tracker(i)%v850(is:ie,js:je) )
+    allocate ( Tracker(i)%z850(is:ie,js:je) )
+    allocate ( Tracker(i)%vort700(is:ie,js:je) )
+    allocate ( Tracker(i)%spd700(is:ie,js:je) )
+    allocate ( Tracker(i)%u700(is:ie,js:je) )
+    allocate ( Tracker(i)%v700(is:ie,js:je) )
+    allocate ( Tracker(i)%z700(is:ie,js:je) )
+    allocate ( Tracker(i)%vort10m(is:ie,js:je) )
+    allocate ( Tracker(i)%spd10m(is:ie,js:je) )
+    allocate ( Tracker(i)%u10m(is:ie,js:je) )
+    allocate ( Tracker(i)%v10m(is:ie,js:je) )
+    allocate ( Tracker(i)%slp(is:ie,js:je) )
+
+    allocate ( Tracker(i)%distsq(is:ie,js:je) )
+    allocate ( Tracker(i)%tracker_distsq(is:ie,js:je) )
+    allocate ( Tracker(i)%tracker_angle(is:ie,js:je) )
+    allocate ( Tracker(i)%tracker_fixes(is:ie,js:je) )
+  end subroutine allocate_tracker
+
+  subroutine deallocate_trackers(n)
+    integer, intent(in) :: n
+    
+    integer :: i
+    
+    do i=1,n
+      call deallocate_tracker(i)
+    enddo
+    deallocate(Tracker)
+
+  end subroutine deallocate_trackers
+
+  subroutine deallocate_tracker(i)
+    integer, intent(in) :: i
+
+    if (.not. allocated(Tracker(i)%vort850)) return
+
+    ! Deallocate internal vortex tracker arrays
+    deallocate ( Tracker(i)%vort850 )
+    deallocate ( Tracker(i)%spd850 )
+    deallocate ( Tracker(i)%u850 )
+    deallocate ( Tracker(i)%v850 )
+    deallocate ( Tracker(i)%z850 )
+    deallocate ( Tracker(i)%vort700 )
+    deallocate ( Tracker(i)%spd700 )
+    deallocate ( Tracker(i)%u700 )
+    deallocate ( Tracker(i)%v700 )
+    deallocate ( Tracker(i)%z700 )
+    deallocate ( Tracker(i)%vort10m )
+    deallocate ( Tracker(i)%spd10m )
+    deallocate ( Tracker(i)%u10m )
+    deallocate ( Tracker(i)%v10m )
+    deallocate ( Tracker(i)%slp )
+  end subroutine deallocate_tracker
+    
+
+
+
+  subroutine fv_tracker_center(Atm, n, Time)
     ! Top-level entry to the internal GFDL/NCEP vortex tracker. Finds the center of
     ! the storm in the specified Atm and updates the Atm variables.
     ! Will do nothing and return immediately if
-    ! Atm%tracker_gave_up=.true.
+    ! tracker%tracker_gave_up=.true.
     implicit none
     type(fv_atmos_type), intent(inout) :: Atm
-    type(time_type),     intent(in) :: Time
+    integer, intent(in)                :: n
+    type(time_type),     intent(in)    :: Time
 
     integer :: ids,ide,jds,jde,kds,kde
     integer :: ims,ime,jms,jme,kms,kme
@@ -118,14 +266,137 @@ contains
         ims, ime, jms, jme, kms, kme,    &
         ips, ipe, jps, jpe, kps, kpe    )
 
-    call ntc_impl(Atm, Time,              &
+    call ntc_impl(Atm, Tracker(n), Time,    &
         ids, ide, jds, jde, kds, kde,    &
         ims, ime, jms, jme, kms, kme,    &
         ips, ipe, jps, jpe, kps, kpe    )
 
   end subroutine fv_tracker_center
 
-  subroutine ntc_impl(Atm,Time, &
+  subroutine fv_diag_tracker(Atm, zvir, Time)
+
+    type(fv_atmos_type), intent(inout) :: Atm(:)
+    type(time_type),     intent(in) :: Time
+    real,                intent(in):: zvir
+
+    integer :: isc, iec, jsc, jec, n, ntileMe
+    integer :: isd, ied, jsd, jed, npz, itrac
+    integer :: ngc
+    integer :: nt = 2  ! TODO adjust to nest number for multiple nests
+
+    real, allocatable :: a2(:,:),a3(:,:,:),a4(:,:,:), wk(:,:,:), wz(:,:,:)
+    real :: height(2)
+    real :: ptop
+    integer, parameter:: nplev_tracker=2
+    real:: plevs(nplev_tracker), pout(nplev_tracker)
+    integer:: idg(nplev_tracker), id1(nplev_tracker)
+
+    integer i,j,k, yr, mon, dd, hr, mn, days, seconds, nq, theta_d
+    character(len=128)   :: tname
+
+    !print '("[INFO] WDR fv_diag_tracker AA npe=",I0)', mpp_pe()
+
+
+    height(1) = 5.E3      ! for computing 5-km "pressure"
+    height(2) = 0.        ! for sea-level pressure
+
+    pout(1) = 700 * 1.e2
+    plevs(1) = log( pout(1) )
+    pout(2) = 850 * 1.e2
+    plevs(2) = log( pout(2) )
+
+    ntileMe = size(Atm(:))
+    n = 1
+    isc = Atm(n)%bd%isc; iec = Atm(n)%bd%iec
+    jsc = Atm(n)%bd%jsc; jec = Atm(n)%bd%jec
+    ngc = Atm(n)%ng
+    npz = Atm(n)%npz
+    ptop = Atm(n)%ak(1)
+    nq = size (Atm(n)%q,4)
+
+    isd = Atm(n)%bd%isd; ied = Atm(n)%bd%ied
+    jsd = Atm(n)%bd%jsd; jed = Atm(n)%bd%jed
+
+    fv_time = Time
+
+    if (.not. allocated(a2)) allocate ( a2(isc:iec,jsc:jec) )
+    if (.not. allocated(wk)) allocate ( wk(isc:iec,jsc:jec,npz) )
+    if (.not. allocated(a3)) allocate ( a3(isc:iec,jsc:jec,nplev_tracker) )
+    if (.not. allocated(wz)) allocate ( wz(isc:iec,jsc:jec,npz+1) )
+
+    !    do n = 1, ntileMe
+    n = 1
+    call get_height_field(isc, iec, jsc, jec, ngc, npz, Atm(n)%flagstruct%hydrostatic, Atm(n)%delz,  &
+        wz, Atm(n)%pt, Atm(n)%q, Atm(n)%peln, zvir)
+
+    call get_pressure_given_height(isc, iec, jsc, jec, ngc, npz, wz, 1, height(2),   &
+        Atm(n)%pt(:,:,npz), Atm(n)%peln, a2, 1.)
+    ! sea level pressure in Pa
+    Tracker(nt)%slp=a2(:,:)
+    call prt_maxmin('slp', Tracker(nt)%slp, isc, iec, jsc, jec, 0, 1, 1.)
+
+    idg(:) = 1
+    call get_height_given_pressure(isc, iec, jsc, jec, npz, wz, nplev_tracker, idg, plevs, Atm(n)%peln, a3)
+    Tracker(nt)%z700=a3(isc:iec,jsc:jec,1)
+    Tracker(nt)%z850=a3(isc:iec,jsc:jec,2)
+    call prt_maxmin('z700', Tracker(nt)%z700, isc, iec, jsc, jec, 0, 1, 1.)
+    call prt_maxmin('z850', Tracker(nt)%z850, isc, iec, jsc, jec, 0, 1, 1.)
+
+    call cs3_interpolator(isc,iec,jsc,jec,npz, Atm(n)%ua(isc:iec,jsc:jec,:), nplev_tracker,    &
+        pout(1:nplev_tracker), wz, Atm(n)%pe(isc:iec,1:npz+1,jsc:jec), idg, a3, -1)
+    Tracker(nt)%u700=a3(isc:iec,jsc:jec,1)
+    Tracker(nt)%u850=a3(isc:iec,jsc:jec,2)
+    call prt_maxmin('u700', Tracker(nt)%u700, isc, iec, jsc, jec, 0, 1, 1.)
+    call prt_maxmin('u850', Tracker(nt)%u850, isc, iec, jsc, jec, 0, 1, 1.)
+
+    call cs3_interpolator(isc,iec,jsc,jec,npz, Atm(n)%va(isc:iec,jsc:jec,:), nplev_tracker,    &
+        pout(1:nplev), wz, Atm(n)%pe(isc:iec,1:npz+1,jsc:jec), idg, a3, -1)
+    Tracker(nt)%v700=a3(isc:iec,jsc:jec,1)
+    Tracker(nt)%v850=a3(isc:iec,jsc:jec,2)
+    call prt_maxmin('v700', Tracker(nt)%v700, isc, iec, jsc, jec, 0, 1, 1.)
+    call prt_maxmin('v850', Tracker(nt)%v850, isc, iec, jsc, jec, 0, 1, 1.)
+
+    call interpolate_z(isc, iec, jsc, jec, npz, 10., wz, Atm(n)%ua(isc:iec,jsc:jec,:), a2)
+    Tracker(nt)%u10m=a2(isc:iec,jsc:jec)
+    call interpolate_z(isc, iec, jsc, jec, npz, 10., wz, Atm(n)%va(isc:iec,jsc:jec,:), a2)
+    Tracker(nt)%v10m=a2(isc:iec,jsc:jec)
+    call prt_maxmin('u10m', Tracker(nt)%u10m, isc, iec, jsc, jec, 0, 1, 1.)
+    call prt_maxmin('v10m', Tracker(nt)%v10m, isc, iec, jsc, jec, 0, 1, 1.)
+
+    call get_vorticity(isc, iec, jsc, jec, isd, ied, jsd, jed, npz, Atm(n)%u, Atm(n)%v, wk, &
+        Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy, Atm(n)%gridstruct%rarea)
+    call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+        700.e2, Atm(n)%peln, wk, a2)
+    Tracker(nt)%vort700=a2(:,:)
+    call interpolate_vertical(isc, iec, jsc, jec, npz,   &
+        850.e2, Atm(n)%peln, wk, a2)
+    Tracker(nt)%vort850=a2(:,:)
+    call interpolate_z(isc, iec, jsc, jec, npz, 10., wz, wk, a2)
+    Tracker(nt)%vort10m=a2(:,:)
+    call prt_maxmin('vort700', Tracker(nt)%vort700, isc, iec, jsc, jec, 0, 1, 1.)
+    call prt_maxmin('vort850', Tracker(nt)%vort850, isc, iec, jsc, jec, 0, 1, 1.)
+    call prt_maxmin('vort10m', Tracker(nt)%vort10m, isc, iec, jsc, jec, 0, 1, 1.)
+
+    do j=jsc,jec
+      do i=isc,iec
+        Tracker(nt)%spd700(i,j)=sqrt(Tracker(nt)%u700(i,j)**2 + Tracker(nt)%v700(i,j)**2)
+        Tracker(nt)%spd850(i,j)=sqrt(Tracker(nt)%u850(i,j)**2 + Tracker(nt)%v850(i,j)**2)
+        Tracker(nt)%spd10m(i,j)=sqrt(Tracker(nt)%u10m(i,j)**2 + Tracker(nt)%v10m(i,j)**2)
+      enddo
+    enddo
+    ! enddo  ! end ntileMe do-loop
+
+    if (allocated(a2)) deallocate(a2)
+    if (allocated(wk)) deallocate(wk)
+    if (allocated(a3)) deallocate(a3)
+    if (allocated(wz)) deallocate(wz)
+
+    !print '("[INFO] WDR fv_diag_tracker ZZ npe=",I0)', mpp_pe()
+
+
+  end subroutine fv_diag_tracker
+
+  subroutine ntc_impl(Atm,tracker,Time, &
       ids,ide,jds,jde,kds,kde, &
       ims,ime,jms,jme,kms,kme, &
       ips,ipe,jps,jpe,kps,kpe)
@@ -134,6 +405,7 @@ contains
 
     implicit none
     type(fv_atmos_type), intent(inout) :: Atm
+    type(fv_tracker_type), intent(inout) :: tracker
     type(time_type),     intent(in) :: Time
     integer, intent(in) :: ids,ide,jds,jde,kds,kde
     integer, intent(in) :: ims,ime,jms,jme,kms,kme
@@ -188,7 +460,7 @@ contains
     loncen=9e9
     rcen=9e9
     calcparm=.false.
-    if(Atm%neststruct%vortex_tracker==6) then
+    if(Moving_nest(2)%mn_flag%vortex_tracker==6) then   ! TODO pick correct Moving_nest structure 
       srsq=searchrad_6*searchrad_6*1e6
     else
       srsq=searchrad_7*searchrad_7*1e6
@@ -215,11 +487,11 @@ contains
         ips,ipe,jps,jpe,kps,kpe)
 
     ! Get the first guess from the prior nest motion timestep:
-    have_guess=Atm%track_have_guess
+    have_guess=tracker%track_have_guess
     if(have_guess) then
       ! We have a first guess center.  We have to translate it to gridpoint space.
-      longuess=Atm%track_guess_lon
-      latguess=Atm%track_guess_lat
+      longuess=tracker%track_guess_lon
+      latguess=tracker%track_guess_lat
       call get_nearest_lonlat(Atm,iguess,jguess,ierr,longuess,latguess, &
           ids,ide, jds,jde, kds,kde, &
           ims,ime, jms,jme, kms,kme, &
@@ -231,7 +503,7 @@ contains
 108       format('WARNING: guess lon=',F0.3,',lat=',F0.3, &
               ' too far (',F0.3,'km) from nearest point lon=',F0.3,',lat=',F0.3, &
               '.  Will use domain center as first guess.')
-          write(message,108) Atm%track_guess_lon,Atm%track_guess_lat, &
+          write(message,108) tracker%track_guess_lon,tracker%track_guess_lat, &
               guessdist,lonnear,latnear
           call mpp_error(NOTE, message)
           have_guess=.false. ! indicate that the first guess is unusable
@@ -243,21 +515,21 @@ contains
         have_guess=.false. ! indicate that the first guess is unusable.
 109     format('WARNING: guess lon=',F0.3,',lat=',F0.3, &
             ' does not exist in this domain.  Will use domain center as first guess.')
-        write(message,109) Atm%track_guess_lon,Atm%track_guess_lat
+        write(message,109) tracker%track_guess_lon,tracker%track_guess_lat
         call mpp_error(NOTE, message)
       endif
     endif
 
     ! If we could not get the first guess from the prior nest motion
     ! timestep, then use the default first guess: the domain center.
-    if(Atm%neststruct%vortex_tracker==6 .or. .not.have_guess) then
+    if(Moving_nest(2)%mn_flag%vortex_tracker==6 .or. .not.have_guess) then
       ! vt=6: hard coded first-guess center is domain center:
       ! vt=7: first guess comes from prior timestep
       !     Initial first guess is domain center.
       !     Backup first guess is domain center if first guess is unusable.
       iguess=(ide-ids)/2+ids
       jguess=(jde-jds)/2+jds
-      if(Atm%neststruct%vortex_tracker==7) then
+      if(Moving_nest(2)%mn_flag%vortex_tracker==7) then
         call mpp_error(NOTE, 'Using domain center as first guess since no valid first guess is available.')
       endif
       call get_lonlat(Atm,iguess,jguess,longuess,latguess,ierr, &
@@ -277,32 +549,32 @@ contains
     north_hemi = latguess>0.0
 
     ! Find the centers of all fields except the wind minima:
-    call find_center(Atm,Atm%vort850,srsq, &
+    call find_center(Atm,tracker%vort850,srsq, &
         icen(1),jcen(1),rcen(1),calcparm(1),loncen(1),latcen(1),dxdymean,'zeta', &
         ids,ide,jds,jde,kds,kde, &
         ims,ime,jms,jme,kms,kme, &
         ips,ipe,jps,jpe,kps,kpe, north_hemi=north_hemi)
-    call find_center(Atm,Atm%vort700,srsq, &
+    call find_center(Atm,tracker%vort700,srsq, &
         icen(2),jcen(2),rcen(2),calcparm(2),loncen(2),latcen(2),dxdymean,'zeta', &
         ids,ide,jds,jde,kds,kde, &
         ims,ime,jms,jme,kms,kme, &
         ips,ipe,jps,jpe,kps,kpe, north_hemi=north_hemi)
-    call find_center(Atm,Atm%z850,srsq, &
+    call find_center(Atm,tracker%z850,srsq, &
         icen(7),jcen(7),rcen(7),calcparm(7),loncen(7),latcen(7),dxdymean,'hgt', &
         ids,ide,jds,jde,kds,kde, &
         ims,ime,jms,jme,kms,kme, &
         ips,ipe,jps,jpe,kps,kpe)
-    call find_center(Atm,Atm%z700,srsq, &
+    call find_center(Atm,tracker%z700,srsq, &
         icen(8),jcen(8),rcen(8),calcparm(8),loncen(8),latcen(8),dxdymean,'hgt', &
         ids,ide,jds,jde,kds,kde, &
         ims,ime,jms,jme,kms,kme, &
         ips,ipe,jps,jpe,kps,kpe)
-    call find_center(Atm,Atm%slp,srsq, &
+    call find_center(Atm,tracker%slp,srsq, &
         icen(9),jcen(9),rcen(9),calcparm(9),loncen(9),latcen(9),dxdymean,'slp', &
         ids,ide,jds,jde,kds,kde, &
         ims,ime,jms,jme,kms,kme, &
         ips,ipe,jps,jpe,kps,kpe)
-    call find_center(Atm,Atm%vort10m,srsq, &
+    call find_center(Atm,tracker%vort10m,srsq, &
         icen(11),jcen(11),rcen(11),calcparm(11),loncen(11),latcen(11),dxdymean,'zeta', &
         ids,ide,jds,jde,kds,kde, &
         ims,ime,jms,jme,kms,kme, &
@@ -316,39 +588,39 @@ contains
         ips,ipe,jps,jpe,kps,kpe)
 
     ! Find wind minima.  Requires a first guess center:
-    windmin: if(Atm%neststruct%vortex_tracker==6) then
-      call find_center(Atm,Atm%spd850,srsq, &
+    windmin: if(Moving_nest(2)%mn_flag%vortex_tracker==6) then
+      call find_center(Atm,tracker%spd850,srsq, &
           icen(3),jcen(3),rcen(3),calcparm(3),loncen(3),latcen(3),dxdymean,'wind', &
           ids,ide,jds,jde,kds,kde, &
           ims,ime,jms,jme,kms,kme, &
           ips,ipe,jps,jpe,kps,kpe, &
           iuvguess=iuvguess, juvguess=juvguess)
-      call find_center(Atm,Atm%spd700,srsq, &
+      call find_center(Atm,tracker%spd700,srsq, &
           icen(5),jcen(5),rcen(5),calcparm(5),loncen(5),latcen(5),dxdymean,'wind', &
           ids,ide,jds,jde,kds,kde, &
           ims,ime,jms,jme,kms,kme, &
           ips,ipe,jps,jpe,kps,kpe, &
           iuvguess=iuvguess, juvguess=juvguess)
-      call find_center(Atm,Atm%spd10m,srsq, &
+      call find_center(Atm,tracker%spd10m,srsq, &
           icen(10),jcen(10),rcen(10),calcparm(10),loncen(10),latcen(10),dxdymean,'wind', &
           ids,ide,jds,jde,kds,kde, &
           ims,ime,jms,jme,kms,kme, &
           ips,ipe,jps,jpe,kps,kpe, &
           iuvguess=iuvguess, juvguess=juvguess)
     else
-      call get_uv_center(Atm,Atm%spd850, &
+      call get_uv_center(Atm,tracker%spd850, &
           icen(3),jcen(3),rcen(3),calcparm(3),loncen(3),latcen(3),dxdymean,'wind', &
           ids,ide,jds,jde,kds,kde, &
           ims,ime,jms,jme,kms,kme, &
           ips,ipe,jps,jpe,kps,kpe, &
           iuvguess=iuvguess, juvguess=juvguess)
-      call get_uv_center(Atm,Atm%spd700, &
+      call get_uv_center(Atm,tracker%spd700, &
           icen(5),jcen(5),rcen(5),calcparm(5),loncen(5),latcen(5),dxdymean,'wind', &
           ids,ide,jds,jde,kds,kde, &
           ims,ime,jms,jme,kms,kme, &
           ips,ipe,jps,jpe,kps,kpe, &
           iuvguess=iuvguess, juvguess=juvguess)
-      call get_uv_center(Atm,Atm%spd10m, &
+      call get_uv_center(Atm,tracker%spd10m, &
           icen(10),jcen(10),rcen(10),calcparm(10),loncen(10),latcen(10),dxdymean,'wind', &
           ids,ide,jds,jde,kds,kde, &
           ims,ime,jms,jme,kms,kme, &
@@ -365,14 +637,14 @@ contains
         ims,ime, jms,jme, kms,kme, &
         ips,ipe, jps,jpe, kps,kpe)
 
-    Atm%tracker_fixes=0
+    tracker%tracker_fixes=0
     do ip=1,maxtp
       if(calcparm(ip)) then
 300     format('Parameter ',I0,': i=',I0,' j=',I0,' lon=',F0.2,' lat=',F0.2)
         !write(0,300) ip,icen(ip),jcen(ip),loncen(ip),latcen(ip)
         if(icen(ip)>=ips .and. icen(ip)<=ipe &
             .and. jcen(ip)>=jps .and. jcen(ip)<=jpe) then
-          Atm%tracker_fixes(icen(ip),jcen(ip))=ip
+          tracker%tracker_fixes(icen(ip),jcen(ip))=ip
         endif
       else
 301     format('Parameter ',I0,' invalid')
@@ -381,13 +653,13 @@ contains
     enddo
 
     if(iguess>=ips .and. iguess<=ipe .and. jguess>=jps .and. jguess<=jpe) then
-      Atm%tracker_fixes(iguess,jguess)=-1
+      tracker%tracker_fixes(iguess,jguess)=-1
 201   format('First guess: i=',I0,' j=',I0,' lon=',F0.2,' lat=',F0.2)
       !write(0,201) iguess,jguess,longuess,latguess
     endif
 
     if(iuvguess>=ips .and. iuvguess<=ipe .and. juvguess>=jps .and. juvguess<=jpe) then
-      Atm%tracker_fixes(iuvguess,juvguess)=-2
+      tracker%tracker_fixes(iuvguess,juvguess)=-2
 202   format('UV guess: i=',I0,' j=',I0)
       !write(0,202) iguess,jguess
     endif
@@ -396,7 +668,7 @@ contains
     !write(0,1000) ifinal,jfinal,lonfinal,latfinal
 
     if(ifinal>=ips .and. ifinal<=ipe .and. jfinal>=jps .and. jfinal<=jpe) then
-      Atm%tracker_fixes(ifinal,jfinal)=-3
+      tracker%tracker_fixes(ifinal,jfinal)=-3
 203   format('Final fix: i=',I0,' j=',I0,' lon=',F0.2,' lat=',F0.2)
       !write(0,201) ifinal,jfinal,lonfinal,latfinal
     endif
@@ -407,7 +679,7 @@ contains
         ips,ipe,jps,jpe,kps,kpe)
 
     call get_wind_pres_intensity(Atm, &
-        Atm%tracker_pmin,Atm%tracker_vmax,Atm%tracker_rmw, &
+        tracker%tracker_pmin,tracker%tracker_vmax,tracker%tracker_rmw, &
         max_wind_search_radius, min_mlsp_search_radius, &
         lonfinal,latfinal, &
         ids,ide,jds,jde,kds,kde, &
@@ -417,9 +689,9 @@ contains
 205 format('tracker fixlon=',F8.3, ' fixlat=',F8.3, &
         ' ifix=',I6,' jfix=',I6, &
         ' pmin=',F12.3,' vmax=',F8.3,' rmw=',F8.3)
-    write(message,205) Atm%tracker_fixlon, Atm%tracker_fixlat, &
-        Atm%tracker_ifix, Atm%tracker_jfix, &
-        Atm%tracker_pmin, Atm%tracker_vmax, Atm%tracker_rmw
+    write(message,205) tracker%tracker_fixlon, tracker%tracker_fixlat, &
+        tracker%tracker_ifix, tracker%tracker_jfix, &
+        tracker%tracker_pmin, tracker%tracker_vmax, tracker%tracker_rmw
     call mpp_error(NOTE, message)
 
     if(is_master()) then
@@ -529,24 +801,24 @@ contains
         "W10 = ",F7.3," kn, PMIN = ",F8.3," mbar, ", &
         "LAT = ",F6.3,A1,", LON = ",F7.3,A1,", ",    &
         "RMW = ",F7.3," nmi")
-    if (Atm%tracker_fixlon .gt. 180.0) then
-      write(Atm%neststruct%outatcf_lun+Atm%grid_number,313) sec,   &
-          Atm%tracker_vmax*mps2kn,Atm%tracker_pmin/100.,          &
-          abs(Atm%tracker_fixlat),get_lat_ns(Atm%tracker_fixlat), &
-          abs(Atm%tracker_fixlon-360.0),get_lon_ew(Atm%tracker_fixlon-360.0), &
-          Atm%tracker_rmw*km2nmi
+    if (Tracker(n)%tracker_fixlon .gt. 180.0) then
+      write(Moving_nest(n)%mn_flag%outatcf_lun+Atm%grid_number,313) sec,   &
+          Tracker(n)%tracker_vmax*mps2kn,Tracker(n)%tracker_pmin/100.,          &
+          abs(Tracker(n)%tracker_fixlat),get_lat_ns(Tracker(n)%tracker_fixlat), &
+          abs(Tracker(n)%tracker_fixlon-360.0),get_lon_ew(Tracker(n)%tracker_fixlon-360.0), &
+          Tracker(n)%tracker_rmw*km2nmi
     else
-      write(Atm%neststruct%outatcf_lun+Atm%grid_number,313) sec,   &
-          Atm%tracker_vmax*mps2kn,Atm%tracker_pmin/100.,          &
-          abs(Atm%tracker_fixlat),get_lat_ns(Atm%tracker_fixlat), &
-          abs(Atm%tracker_fixlon),get_lon_ew(Atm%tracker_fixlon), &
-          Atm%tracker_rmw*km2nmi
+      write(Moving_nest(n)%mn_flag%outatcf_lun+Atm%grid_number,313) sec,   &
+          Tracker(n)%tracker_vmax*mps2kn,Tracker(n)%tracker_pmin/100.,          &
+          abs(Tracker(n)%tracker_fixlat),get_lat_ns(Tracker(n)%tracker_fixlat), &
+          abs(Tracker(n)%tracker_fixlon),get_lon_ew(Tracker(n)%tracker_fixlon), &
+          Tracker(n)%tracker_rmw*km2nmi
     end if
     ! write(message,313) sec,                                      &
-    !      Atm%tracker_vmax*mps2kn,Atm%tracker_pmin/100.,          &
-    !      abs(Atm%tracker_fixlat),get_lat_ns(Atm%tracker_fixlat), &
-    !      abs(Atm%tracker_fixlon),get_lon_ew(Atm%tracker_fixlon), &
-    !      Atm%tracker_rmw*km2nmi
+    !      Tracker(n)%tracker_vmax*mps2kn,Tracker(n)%tracker_pmin/100.,          &
+    !      abs(Tracker(n)%tracker_fixlat),get_lat_ns(Tracker(n)%tracker_fixlat), &
+    !      abs(Tracker(n)%tracker_fixlon),get_lon_ew(Tracker(n)%tracker_fixlon), &
+    !      Tracker(n)%tracker_rmw*km2nmi
     ! call mpp_error(NOTE, message)
   end subroutine output_partial_atcfunix
 
@@ -577,9 +849,9 @@ contains
     sdistsq=min_mlsp_search_radius*min_mlsp_search_radius*1e6
     do j=jts,min(jte,jde-1)
       do i=its,min(ite,ide-1)
-        if(Atm%slp(i,j)<localextreme .and. &
-            Atm%tracker_distsq(i,j)<sdistsq) then
-          localextreme=Atm%slp(i,j)
+        if(Tracker(n)%slp(i,j)<localextreme .and. &
+            Tracker(n)%tracker_distsq(i,j)<sdistsq) then
+          localextreme=Tracker(n)%slp(i,j)
           locali=i
           localj=j
         endif
@@ -604,9 +876,9 @@ contains
     sdistsq=max_wind_search_radius*max_wind_search_radius*1e6
     do j=jts,min(jte,jde-1)
       do i=its,min(ite,ide-1)
-        if(Atm%tracker_distsq(i,j)<sdistsq) then
-          windsq=Atm%u10m(i,j)*Atm%u10m(i,j) + &
-              Atm%v10m(i,j)*Atm%v10m(i,j)
+        if(Tracker(n)%tracker_distsq(i,j)<sdistsq) then
+          windsq=Tracker(n)%u10m(i,j)*Tracker(n)%u10m(i,j) + &
+              Tracker(n)%v10m(i,j)*Tracker(n)%v10m(i,j)
           if(windsq>localextreme) then
             localextreme=windsq
             locali=i
@@ -718,12 +990,12 @@ contains
     endif
 
     if(hours>4.) then
-      xavg_stderr = ( Atm%track_stderr_m1 + &
-          Atm%track_stderr_m2 + Atm%track_stderr_m3 ) / 3.0
+      xavg_stderr = ( Tracker(n)%track_stderr_m1 + &
+          Tracker(n)%track_stderr_m2 + Tracker(n)%track_stderr_m3 ) / 3.0
     elseif(hours>3.) then
-      xavg_stderr = ( Atm%track_stderr_m1 + Atm%track_stderr_m2 ) / 2.0
+      xavg_stderr = ( Tracker(n)%track_stderr_m1 + Tracker(n)%track_stderr_m2 ) / 2.0
     elseif(hours>2.) then
-      xavg_stderr = Atm%track_stderr_m1
+      xavg_stderr = Tracker(n)%track_stderr_m1
     endif
 
     if(hours>2.) then
@@ -877,17 +1149,17 @@ contains
     endif
 
     ! Store the lat/lon location:
-    Atm%tracker_fixlon=lonfinal
-    Atm%tracker_fixlat=latfinal
-    Atm%tracker_ifix=ifinal
-    Atm%tracker_jfix=jfinal
-    Atm%tracker_havefix=.true.
+    Tracker(n)%tracker_fixlon=lonfinal
+    Tracker(n)%tracker_fixlat=latfinal
+    Tracker(n)%tracker_ifix=ifinal
+    Tracker(n)%tracker_jfix=jfinal
+    Tracker(n)%tracker_havefix=.true.
 
 1000 format('Stored lat/lon at i=',I0,' j=',I0,' lon=',F0.3,' lat=',F0.3)
     !write(0,1000) ifinal,jfinal,lonfinal,latfinal
 
 
-    if(nint(hours) > Atm%track_last_hour ) then
+    if(nint(hours) > Tracker(n)%track_last_hour ) then
       ! It is time to recalculate the std. dev. of the track:
       count=0
       dist_from_mean=0.0
@@ -913,10 +1185,10 @@ contains
         stderr_close=max(1.0,sqrt(1./(count-1) * total))
       endif
 
-      Atm%track_stderr_m3=Atm%track_stderr_m2
-      Atm%track_stderr_m2=Atm%track_stderr_m1
-      Atm%track_stderr_m1=stderr_close
-      Atm%track_last_hour=nint(hours)
+      Tracker(n)%track_stderr_m3=Tracker(n)%track_stderr_m2
+      Tracker(n)%track_stderr_m2=Tracker(n)%track_stderr_m1
+      Tracker(n)%track_stderr_m1=stderr_close
+      Tracker(n)%track_last_hour=nint(hours)
     endif
 
     !write(0,*) 'got to return'
@@ -925,10 +1197,10 @@ contains
     ! We jump here if we're giving up on finding the center
 999 continue
     ! Use domain center as storm location
-    Atm%tracker_ifix=(ide-ids)/2+ids
-    Atm%tracker_jfix=(jde-jds)/2+jds
-    Atm%tracker_havefix=.false.
-    Atm%tracker_gave_up=.true.
+    Tracker(n)%tracker_ifix=(ide-ids)/2+ids
+    Tracker(n)%tracker_jfix=(jde-jds)/2+jds
+    Tracker(n)%tracker_havefix=.false.
+    Tracker(n)%tracker_gave_up=.true.
     call get_lonlat(Atm,ifinal,jfinal,lonfinal,latfinal,ierr, &
         ids,ide, jds,jde, kds,kde, &
         ims,ime, jms,jme, kms,kme, &
@@ -938,8 +1210,8 @@ contains
       goto 999
     endif
 
-    Atm%tracker_fixlon=-999.0
-    Atm%tracker_fixlat=-999.0
+    Tracker(n)%tracker_fixlon=-999.0
+    Tracker(n)%tracker_fixlat=-999.0
 
   end subroutine fixcenter
 
@@ -1063,7 +1335,7 @@ contains
     rcen=9e9
     do j=jstart,jstop
       do i=istart,istop
-        if(orig(i,j)<rcen .and. Atm%distsq(i,j)<srsq) then
+        if(orig(i,j)<rcen .and. Tracker(n)%distsq(i,j)<srsq) then
           rcen=orig(i,j)
           icen=i
           jcen=j
@@ -1210,8 +1482,8 @@ contains
       rcen=9e9
       do j=jstart,jstop
         do i=istart,istop
-          !write(0,*) 'i,j,smooth(i,j),rcen,Atm%distsq(i,j),srsq=',i,j,smooth(i,j),rcen,Atm%distsq(i,j),srsq
-          if(smooth(i,j)<rcen .and. Atm%distsq(i,j)<srsq) then
+          !write(0,*) 'i,j,smooth(i,j),rcen,Tracker(n)%distsq(i,j),srsq=',i,j,smooth(i,j),rcen,Tracker(n)%distsq(i,j),srsq
+          if(smooth(i,j)<rcen .and. Tracker(n)%distsq(i,j)<srsq) then
             rcen=smooth(i,j)
             icen=i
             jcen=j
@@ -1223,8 +1495,8 @@ contains
       rcen=-9e9
       do j=jstart,jstop
         do i=istart,istop
-          !write(0,*) 'i,j,smooth(i,j),rcen,Atm%distsq(i,j),srsq=',i,j,smooth(i,j),rcen,Atm%distsq(i,j),srsq
-          if(smooth(i,j)>rcen .and. Atm%distsq(i,j)<srsq) then
+          !write(0,*) 'i,j,smooth(i,j),rcen,Tracker(n)%distsq(i,j),srsq=',i,j,smooth(i,j),rcen,Tracker(n)%distsq(i,j),srsq
+          if(smooth(i,j)>rcen .and. Tracker(n)%distsq(i,j)<srsq) then
             rcen=smooth(i,j)
             icen=i
             jcen=j
@@ -1292,7 +1564,7 @@ contains
         xfar=(i-cx)*Atm%gridstruct%dxa(i,j)
         yfar=(j-cy)*Atm%gridstruct%dya(i,j)
         far = xfar*xfar + yfar*yfar
-        Atm%distsq(i,j)=far
+        Tracker(n)%distsq(i,j)=far
       enddo
     enddo
 
@@ -1320,8 +1592,8 @@ contains
     real xfar,yfar,far,xshift,max_edge_distsq,clatr,clonr
     real ylat1,ylat2,xlon1,xlon2,mindistsq
 
-    cx=Atm%tracker_ifix
-    cy=Atm%tracker_jfix
+    cx=Tracker(n)%tracker_ifix
+    cy=Tracker(n)%tracker_jfix
 
     call get_lonlat(Atm,cx,cy,clonr,clatr,ierr, &
         ids,ide,jds,jde,kds,kde, &
@@ -1336,7 +1608,7 @@ contains
         xfar=(i-cx)*Atm%gridstruct%dxa(i,j)
         yfar=(j-cy)*Atm%gridstruct%dya(i,j)
         far = xfar*xfar + yfar*yfar
-        Atm%tracker_distsq(i,j)=far
+        Tracker(n)%tracker_distsq(i,j)=far
       enddo
     enddo
 
@@ -1354,7 +1626,7 @@ contains
         call clean_lon_lat(xlon2,ylat2)
         xlon2=xlon2*deg_to_rad
         ylat2=ylat2*deg_to_rad
-        Atm%tracker_angle(i,j)=atan2(xlon2-xlon1,ylat2-ylat1)
+        Tracker(n)%tracker_angle(i,j)=atan2(xlon2-xlon1,ylat2-ylat1)
       enddo
     enddo
 
@@ -1362,26 +1634,26 @@ contains
     ! domain edge.
     mindistsq=9e19
     if(jts==jds) then
-      mindistsq=min(mindistsq,minval(Atm%tracker_distsq(its:min(ite,ide-1),jds)))
+      mindistsq=min(mindistsq,minval(Tracker(n)%tracker_distsq(its:min(ite,ide-1),jds)))
     endif
     if(jte==jde) then
-      mindistsq=min(mindistsq,minval(Atm%tracker_distsq(its:min(ite,ide-1),jde-1)))
+      mindistsq=min(mindistsq,minval(Tracker(n)%tracker_distsq(its:min(ite,ide-1),jde-1)))
     endif
     if(its==ids) then
-      mindistsq=min(mindistsq,minval(Atm%tracker_distsq(ids,jts:min(jte,jde-1))))
+      mindistsq=min(mindistsq,minval(Tracker(n)%tracker_distsq(ids,jts:min(jte,jde-1))))
     endif
     if(ite==ide) then
-      mindistsq=min(mindistsq,minval(Atm%tracker_distsq(ide-1,jts:min(jte,jde-1))))
+      mindistsq=min(mindistsq,minval(Tracker(n)%tracker_distsq(ide-1,jts:min(jte,jde-1))))
     endif
     wilbur=1
     harvey=2
     call mp_reduce_minval(mindistsq,wilbur,harvey)
 
-    Atm%tracker_edge_dist=sqrt(mindistsq)
+    Tracker(n)%tracker_edge_dist=sqrt(mindistsq)
 
 17  format('Min distance from lon=',F9.3,', lat=',F9.3,' to center is ',F19.3)
-    !print *,'Min distance from edge to center is ',Atm%tracker_edge_dist
-    write(message,17) clonr, clatr, Atm%tracker_edge_dist
+    !print *,'Min distance from edge to center is ',Tracker(n)%tracker_edge_dist
+    write(message,17) clonr, clatr, Tracker(n)%tracker_edge_dist
     call mpp_error(NOTE, message)
   end subroutine get_tracker_distsq
 
@@ -1557,8 +1829,8 @@ contains
 
     ! Get the i/j center location from the fix location:
     ierr=0
-    call get_nearest_lonlat(Atm,Atm%tracker_ifix,Atm%tracker_jfix, &
-        ierr,Atm%tracker_fixlon,Atm%tracker_fixlat, &
+    call get_nearest_lonlat(Atm,Tracker(n)%tracker_ifix,Tracker(n)%tracker_jfix, &
+        ierr,Tracker(n)%tracker_fixlon,Tracker(n)%tracker_fixlat, &
         ids,ide,jds,jde,kds,kde, &
         ims,ime,jms,jme,kms,kme, &
         ips,ipe,jps,jpe,kps,kpe)

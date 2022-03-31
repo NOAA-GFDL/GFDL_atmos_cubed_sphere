@@ -74,6 +74,7 @@ list(APPEND model_srcs
   model/fv_moving_nest.F90
   model/fv_moving_nest_main.F90
   model/fv_moving_nest_physics.F90
+  model/fv_moving_nest_types.F90
   model/fv_moving_nest_utils.F90
   model/fv_nesting.F90
   model/fv_regional_bc.F90

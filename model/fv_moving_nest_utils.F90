@@ -81,7 +81,8 @@ module fv_moving_nest_utils_mod
   use fms_io_mod,        only: read_data, write_data, get_global_att_value, fms_io_init, fms_io_exit
   use fv_arrays_mod,     only: R_GRID
   use fv_arrays_mod,     only: fv_grid_type, fv_nest_type, fv_atmos_type
-  use fv_surf_map_mod,     only: FV3_zs_filter
+  use fv_surf_map_mod,   only: FV3_zs_filter
+  use fv_moving_nest_types_mod, only: grid_geometry
 
   implicit none
 
@@ -100,18 +101,6 @@ module fv_moving_nest_utils_mod
 
 
 #include <fms_platform.h>
-
-  ! Encapsulates the grid definition data, such as read from the netCDF files
-  type grid_geometry
-    integer   :: nx, ny, nxp, nyp
-
-    real(kind=kind_phys), allocatable  :: lats(:,:)
-    real(kind=kind_phys), allocatable  :: lons(:,:)
-
-    !real, allocatable  :: dx(:,:)
-    !real, allocatable  :: dy(:,:)
-    real(kind=kind_phys), allocatable  :: area(:,:)
-  end type grid_geometry
 
 
   interface alloc_read_data

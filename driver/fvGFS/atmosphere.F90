@@ -193,8 +193,9 @@ use fv_nesting_mod,     only: twoway_nesting
 use boundary_mod,       only: fill_nested_grid
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
 #ifdef MOVING_NEST
-use fv_diagnostics_mod, only: fv_diag_tracker
+use fv_tracker_mod,     only: fv_diag_tracker, allocate_tracker
 use fv_tracker_mod,     only: fv_tracker_init, fv_tracker_center, fv_tracker_post_move
+use fv_moving_nest_types_mod, only: Moving_nest
 #endif
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
@@ -351,6 +352,13 @@ contains
    cold_start = (.not.file_exists('INPUT/fv_core.res.nc') .and. .not.file_exists('INPUT/fv_core.res.tile1.nc'))
 
    call fv_control_init( Atm, dt_atmos, mygrid, grids_on_this_pe, p_split )  ! allocates Atm components; sets mygrid
+
+   ! TODO move this higher into atmos_model.F90 for better modularization
+#ifdef MOVING_NEST
+   call fv_tracker_init(size(Atm))
+   if (mygrid .eq. 2) call allocate_tracker(mygrid, Atm(mygrid)%bd%isc, Atm(mygrid)%bd%iec, Atm(mygrid)%bd%jsc, Atm(mygrid)%bd%jec)
+#endif   
+
 
    Atm(mygrid)%Time_init = Time_init
 
@@ -712,7 +720,6 @@ contains
 #ifdef MOVING_NEST
 
      !call date_and_time(TIME=str_time)
-
      !write(message,'("TIMESTEP atmosphere.F90 a_step=",I0," fcst_hr=",F8.2," time=",A12)')  a_step, a_step * dt_atmos / 3600.0, str_time
      !call mpp_error(NOTE,message)
 
@@ -1005,14 +1012,20 @@ contains
    ! This will need to be revisited when multiple and telescoping moving nests are enabled.
 
    ! Set is_moving_nest to true if this is a moving nest
-   is_moving_nest = Atm(mygrid)%neststruct%is_moving_nest
+   is_moving_nest = Moving_nest(mygrid)%mn_flag%is_moving_nest
    ! Set parent_of_moving_nest to true if it has a moving nest child
+   !do n=1,ngrids
+   !  print '("[INFO] WDR atmosphere_domain npe=",I0," mygrid=",I0," n=",I0," is_moving_nest=",L1)', mpp_pe(), mygrid, n, Moving_nest(n)%mn_flag%is_moving_nest
+   !enddo
+
    do n=2,ngrids
      if ( mygrid == Atm(n)%parent_grid%grid_number .and. &
-          Atm(n)%neststruct%is_moving_nest ) then
+          Moving_nest(n)%mn_flag%is_moving_nest ) then
        moving_nest_parent = .true.
      endif
    enddo
+   !print '("[INFO] WDR atmosphere_domain npe=",I0," moving_nest_parent=",L1," is_moving_nest=",L1)', mpp_pe(), moving_nest_parent, is_moving_nest
+
 #endif
 
  end subroutine atmosphere_domain
@@ -1798,19 +1811,19 @@ contains
 
 #ifdef MOVING_NEST
   !---- FV internal vortex tracker -----
-   if ( Atm(mygrid)%neststruct%is_moving_nest ) then
-   if ( Atm(mygrid)%neststruct%vortex_tracker .eq. 2 .or. &
-        Atm(mygrid)%neststruct%vortex_tracker .eq. 6 .or. &
-        Atm(mygrid)%neststruct%vortex_tracker .eq. 7 ) then
+   if ( Moving_nest(mygrid)%mn_flag%is_moving_nest ) then
+   if ( Moving_nest(mygrid)%mn_flag%vortex_tracker .eq. 2 .or. &
+        Moving_nest(mygrid)%mn_flag%vortex_tracker .eq. 6 .or. &
+        Moving_nest(mygrid)%mn_flag%vortex_tracker .eq. 7 ) then
 
    fv_time = Time_next
    call get_time (fv_time, seconds,  days)
    call get_time (Time_step_atmos, sec)
-   if (mod(seconds,Atm(mygrid)%neststruct%ntrack*sec) .eq. 0) then
+   if (mod(seconds,Moving_nest(mygrid)%mn_flag%ntrack*sec) .eq. 0) then
      call mpp_clock_begin(id_fv_tracker)
      call timing_on('FV_TRACKER')
      call fv_diag_tracker(Atm(mygrid:mygrid), zvir, fv_time)
-     call fv_tracker_center(Atm(mygrid), fv_time)
+     call fv_tracker_center(Atm(mygrid), mygrid, fv_time)
      call timing_off('FV_TRACKER')
      call mpp_clock_end(id_fv_tracker)
    endif

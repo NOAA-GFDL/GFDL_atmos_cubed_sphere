@@ -77,7 +77,8 @@ module fv_moving_nest_main_mod
   !-----------------
   use atmosphere_mod,     only: Atm, mygrid, p_split, dt_atmos
   use fv_arrays_mod,      only: fv_atmos_type, R_GRID, fv_grid_bounds_type, phys_diag_type
-  use fv_arrays_mod,      only: allocate_fv_moving_nest_prog_type, allocate_fv_moving_nest_physics_type
+  use fv_moving_nest_types_mod, only: allocate_fv_moving_nest_prog_type, allocate_fv_moving_nest_physics_type
+  use fv_moving_nest_types_mod, only: Moving_nest
   use fv_diagnostics_mod, only: fv_diag_init, fv_diag_reinit, fv_diag, fv_time, prt_maxmin, prt_height
   use fv_restart_mod,     only: fv_restart, fv_write_restart
   use fv_timing_mod,      only: timing_on, timing_off
@@ -140,8 +141,10 @@ module fv_moving_nest_main_mod
 
   !      Logging and debugging information
   use fv_moving_nest_mod,         only: check_array
-  use fv_moving_nest_utils_mod, only  : show_atm, show_atm_grids, show_tile_geo, show_nest_grid, show_gridstruct, grid_equal
-  use fv_moving_nest_utils_mod, only  : validate_hires_parent
+  use fv_moving_nest_utils_mod,   only: show_atm, show_atm_grids, show_tile_geo, show_nest_grid, show_gridstruct, grid_equal
+  use fv_moving_nest_utils_mod,   only: validate_hires_parent
+
+  use fv_tracker_mod,             only: Tracker, allocate_tracker
 
   implicit none
 
@@ -309,29 +312,29 @@ contains
     delta_i_c = 0
     delta_j_c = 0
 
-    if ( Atm(n)%neststruct%vortex_tracker .eq. 0  .or. Atm(n)%grid_number .eq. 1) then
+    if ( Moving_nest(n)%mn_flag%vortex_tracker .eq. 0  .or. Atm(n)%grid_number .eq. 1) then
       ! No need to move
       do_move = .false.
       delta_i_c = 0
       delta_j_c = 0
-    else if ( Atm(n)%neststruct%vortex_tracker .eq. 1 ) then
+    else if ( Moving_nest(n)%mn_flag%vortex_tracker .eq. 1 ) then
       ! Prescribed move according to ntrack, move_cd_x and move_cd_y
       ! Move every ntrack of dt_atmos time step
-      if ( mod(a_step,Atm(n)%neststruct%ntrack) .eq. 0) then
+      if ( mod(a_step,Moving_nest(n)%mn_flag%ntrack) .eq. 0) then
         do_move = .true.
-        delta_i_c = Atm(n)%neststruct%move_cd_x
-        delta_j_c = Atm(n)%neststruct%move_cd_y
+        delta_i_c = Moving_nest(n)%mn_flag%move_cd_x
+        delta_j_c = Moving_nest(n)%mn_flag%move_cd_y
       endif
-    else if ( Atm(n)%neststruct%vortex_tracker .eq. 2 .or. &
-        Atm(n)%neststruct%vortex_tracker .eq. 6 .or. &
-        Atm(n)%neststruct%vortex_tracker .eq. 7 ) then
+    else if ( Moving_nest(n)%mn_flag%vortex_tracker .eq. 2 .or. &
+        Moving_nest(n)%mn_flag%vortex_tracker .eq. 6 .or. &
+        Moving_nest(n)%mn_flag%vortex_tracker .eq. 7 ) then
       ! Automatic moving following the internal storm tracker
-      if ( mod(a_step,Atm(n)%neststruct%ntrack) .eq. 0) then
-        if(Atm(n)%tracker_gave_up) then
+      if ( mod(a_step,Moving_nest(n)%mn_flag%ntrack) .eq. 0) then
+        if(Tracker(n)%tracker_gave_up) then
           call mpp_error(NOTE,'Not moving: tracker decided the storm dissapated')
           return
         endif
-        if(.not.Atm(n)%tracker_havefix) then
+        if(.not.Tracker(n)%tracker_havefix) then
           call mpp_error(NOTE,'Not moving: tracker did not find a storm')
           return
         endif
@@ -341,27 +344,27 @@ contains
         ! Calculate distance in parent grid index space between storm
         ! center and domain center
         ! Consider using xydiff as integers in the future?
-        xdiff=(Atm(n)%tracker_ifix-real(cx))/Atm(n)%neststruct%refinement
-        ydiff=(Atm(n)%tracker_jfix-real(cy))/Atm(n)%neststruct%refinement
+        xdiff=(Tracker(n)%tracker_ifix-real(cx))/Atm(n)%neststruct%refinement
+        ydiff=(Tracker(n)%tracker_jfix-real(cy))/Atm(n)%neststruct%refinement
         if(xdiff .ge. 1.0) then
-          Atm(n)%neststruct%move_cd_x=1
+          Moving_nest(n)%mn_flag%move_cd_x=1
         else if(xdiff .le. -1.0) then
-          Atm(n)%neststruct%move_cd_x=-1
+          Moving_nest(n)%mn_flag%move_cd_x=-1
         else
-          Atm(n)%neststruct%move_cd_x=0
+          Moving_nest(n)%mn_flag%move_cd_x=0
         endif
         if(ydiff .ge. 1.0) then
-          Atm(n)%neststruct%move_cd_y=1
+          Moving_nest(n)%mn_flag%move_cd_y=1
         else if(ydiff .le. -1.0) then
-          Atm(n)%neststruct%move_cd_y=-1
+          Moving_nest(n)%mn_flag%move_cd_y=-1
         else
-          Atm(n)%neststruct%move_cd_y=0
+          Moving_nest(n)%mn_flag%move_cd_y=0
         endif
-        if(abs(Atm(n)%neststruct%move_cd_x)>0 .or. abs(Atm(n)%neststruct%move_cd_y)>0) then
+        if(abs(Moving_nest(n)%mn_flag%move_cd_x)>0 .or. abs(Moving_nest(n)%mn_flag%move_cd_y)>0) then
           call mpp_error(NOTE,'Moving: tracker center shifted from nest center')
           do_move = .true.
-          delta_i_c = Atm(n)%neststruct%move_cd_x
-          delta_j_c = Atm(n)%neststruct%move_cd_y
+          delta_i_c = Moving_nest(n)%mn_flag%move_cd_x
+          delta_j_c = Moving_nest(n)%mn_flag%move_cd_y
         else
           call mpp_error(NOTE,'Not moving: tracker center is near nest center')
           do_move = .false.
@@ -370,7 +373,7 @@ contains
         endif
       endif
     else
-      write(message,*) 'Wrong vortex_tracker option: ', Atm(n)%neststruct%vortex_tracker
+      write(message,*) 'Wrong vortex_tracker option: ', Moving_nest(n)%mn_flag%vortex_tracker
       call mpp_error(FATAL,message)
     endif
 
@@ -410,26 +413,26 @@ contains
       !  Handle each direction individually, so that nest could slide along edge
 
       ! Causes a crash if we use .le. 1
-      if (nis .le. Atm(child_grid_num)%neststruct%corral_x) then
+      if (nis .le. Moving_nest(child_grid_num)%mn_flag%corral_x) then
         delta_i_c = 0
         !      block_moves = .true.
         write(message,*) 'eval_move_nest motion in x direction blocked.  small nis: ', nis
         call mpp_error(WARNING,message)
       endif
-      if (njs .le. Atm(child_grid_num)%neststruct%corral_y) then
+      if (njs .le. Moving_nest(child_grid_num)%mn_flag%corral_y) then
         delta_j_c = 0
         !      block_moves = .true.
         write(message,*) 'eval_move_nest motion in y direction blocked.  small njs: ', njs
         call mpp_error(WARNING,message)
       endif
 
-      if (nie .ge. Atm(parent_grid_num)%flagstruct%npx - Atm(child_grid_num)%neststruct%corral_x) then
+      if (nie .ge. Atm(parent_grid_num)%flagstruct%npx - Moving_nest(child_grid_num)%mn_flag%corral_x) then
         delta_i_c = 0
         !      block_moves = .true.
         write(message,*) 'eval_move_nest motion in x direction blocked.  large nie: ', nie
         call mpp_error(WARNING,message)
       endif
-      if (nje .ge. Atm(parent_grid_num)%flagstruct%npy - Atm(child_grid_num)%neststruct%corral_y) then
+      if (nje .ge. Atm(parent_grid_num)%flagstruct%npy - Moving_nest(child_grid_num)%mn_flag%corral_y) then
         delta_j_c = 0
         !      block_moves = .true.
         write(message,*) 'eval_move_nest motion in y direction blocked.  large nje: ', nje
@@ -560,7 +563,15 @@ contains
     jsd = jsc - Atm(n)%bd%ng
     jed = jec + Atm(n)%bd%ng
 
+    is = Atm(n)%bd%is
+    ie = Atm(n)%bd%ie
+    js = Atm(n)%bd%js
+    je = Atm(n)%bd%je
+
     nq = ncnst-pnats
+
+    is_fine_pe = Atm(n)%neststruct%nested .and. ANY(Atm(n)%pelist(:) == this_pe)
+
 
     if (first_nest_move) then
       if (debug_log) print '("[INFO] WDR Start Clocks npe=",I0," n=",I0)', this_pe, n
@@ -577,10 +588,12 @@ contains
       ! This will only allocate the mn_prog and mn_phys for the active Atm(n), not all of them
       !  The others can safely remain unallocated.
       if (debug_log) print '("[INFO] WDR call allocate_fv_moving_nest_prog npe=",I0," n=",I0)', this_pe, n
-      call allocate_fv_moving_nest_prog_type(isd, ied, jsd, jed, npz, Atm(n)%mn_prog)
+      call allocate_fv_moving_nest_prog_type(isd, ied, jsd, jed, npz, Moving_nest(n)%mn_prog)
       call allocate_fv_moving_nest_physics_type(isd, ied, jsd, jed, npz, move_physics, move_nsst, &
           IPD_Control%lsoil, IPD_Control%nmtvr, IPD_Control%levs, IPD_Control%ntot2d, IPD_Control%ntot3d, &
-          Atm(n)%mn_phys)
+          Moving_nest(n)%mn_phys)
+
+
     endif
 
     !==================================================================================================
@@ -600,8 +613,7 @@ contains
     domain_fine => Atm(child_grid_num)%domain
     parent_tile = Atm(child_grid_num)%neststruct%parent_tile
     domain_coarse => Atm(parent_grid_num)%domain
-    is_moving_nest = Atm(child_grid_num)%neststruct%is_moving_nest
-    is_fine_pe = Atm(n)%neststruct%nested .and. ANY(Atm(n)%pelist(:) == this_pe)
+    is_moving_nest = Moving_nest(child_grid_num)%mn_flag%is_moving_nest
     nz = Atm(n)%npz
 
     if (debug_log) then
@@ -724,49 +736,49 @@ contains
           if (debug_log) print '("[INFO] WDR mn_latlon_read_hires_parent READING static fine file on npe=",I0)', this_pe
 
           call mn_latlon_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, fp_super_tile_geo, &
-              Atm(child_grid_num)%neststruct%surface_dir,  parent_tile)
+              Moving_nest(child_grid_num)%mn_flag%surface_dir,  parent_tile)
 
           call mn_orog_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, &
-              Atm(child_grid_num)%neststruct%surface_dir, filtered_terrain, &
+              Moving_nest(child_grid_num)%mn_flag%surface_dir, filtered_terrain, &
               mn_static%orog_grid, mn_static%orog_std_grid, mn_static%ls_mask_grid, mn_static%land_frac_grid,  parent_tile)
 
           ! If terrain_smoother method 1 is chosen, we need the parent coarse terrain
-          if (Atm(n)%neststruct%terrain_smoother .eq. 1) then
+          if (Moving_nest(n)%mn_flag%terrain_smoother .eq. 1) then
             if (filtered_terrain) then
-              call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, Atm(child_grid_num)%neststruct%surface_dir, "oro_data", "orog_filt", mn_static%parent_orog_grid,  parent_tile)
+              call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, Moving_nest(child_grid_num)%mn_flag%surface_dir, "oro_data", "orog_filt", mn_static%parent_orog_grid,  parent_tile)
             else
-              call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, Atm(child_grid_num)%neststruct%surface_dir, "oro_data", "orog_raw", mn_static%parent_orog_grid,  parent_tile)
+              call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, Moving_nest(child_grid_num)%mn_flag%surface_dir, "oro_data", "orog_raw", mn_static%parent_orog_grid,  parent_tile)
             endif
           endif
 
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "substrate_temperature", "substrate_temperature", mn_static%deep_soil_temp_grid,  parent_tile)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "substrate_temperature", "substrate_temperature", mn_static%deep_soil_temp_grid,  parent_tile)
           ! set any -999s to +4C
           call mn_replace_low_values(mn_static%deep_soil_temp_grid, -100.0, 277.0)
 
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "soil_type", "soil_type", mn_static%soil_type_grid,  parent_tile)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "soil_type", "soil_type", mn_static%soil_type_grid,  parent_tile)
           ! To match initialization behavior, set any -999s to 0 in soil_type
           call mn_replace_low_values(mn_static%soil_type_grid, -100.0, 0.0)
 
 
           !! TODO investigate reading high-resolution veg_frac and veg_greenness
-          !call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "", mn_static%veg_frac_grid)
+          !call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "", mn_static%veg_frac_grid)
 
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "vegetation_type", "vegetation_type", mn_static%veg_type_grid,  parent_tile)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "vegetation_type", "vegetation_type", mn_static%veg_type_grid,  parent_tile)
           ! To match initialization behavior, set any -999s to 0 in veg_type
           call mn_replace_low_values(mn_static%veg_type_grid, -100.0, 0.0)
 
 
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "slope_type", "slope_type", mn_static%slope_type_grid,  parent_tile)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "slope_type", "slope_type", mn_static%slope_type_grid,  parent_tile)
           ! To match initialization behavior, set any -999s to 0 in slope_type
           call mn_replace_low_values(mn_static%slope_type_grid, -100.0, 0.0)
 
 
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "maximum_snow_albedo", "maximum_snow_albedo", mn_static%max_snow_alb_grid,  parent_tile)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "maximum_snow_albedo", "maximum_snow_albedo", mn_static%max_snow_alb_grid,  parent_tile)
           ! Set any -999s to 0.5
           call mn_replace_low_values(mn_static%max_snow_alb_grid, -100.0, 0.5)
 
           ! Albedo fraction -- read and calculate
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "facsf", "facsf", mn_static%facsf_grid,  parent_tile)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "facsf", "facsf", mn_static%facsf_grid,  parent_tile)
 
           allocate(mn_static%facwf_grid(lbound(mn_static%facsf_grid,1):ubound(mn_static%facsf_grid,1),lbound(mn_static%facsf_grid,2):ubound(mn_static%facsf_grid,2)))
 
@@ -792,11 +804,11 @@ contains
           ! alnsf = near IR strong cosz = near_IR_black_sky_albedo
           ! alnwf = near IR weak cosz = near_IR_white_sky_albedo
 
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "snowfree_albedo", "visible_black_sky_albedo", mn_static%alvsf_grid,  parent_tile, time=month)
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "snowfree_albedo", "visible_white_sky_albedo", mn_static%alvwf_grid,  parent_tile, time=month)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "snowfree_albedo", "visible_black_sky_albedo", mn_static%alvsf_grid,  parent_tile, time=month)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "snowfree_albedo", "visible_white_sky_albedo", mn_static%alvwf_grid,  parent_tile, time=month)
 
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "snowfree_albedo", "near_IR_black_sky_albedo", mn_static%alnsf_grid,  parent_tile, time=month)
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Atm(child_grid_num)%neststruct%surface_dir), "snowfree_albedo", "near_IR_white_sky_albedo", mn_static%alnwf_grid,  parent_tile, time=month)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "snowfree_albedo", "near_IR_black_sky_albedo", mn_static%alnsf_grid,  parent_tile, time=month)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "snowfree_albedo", "near_IR_white_sky_albedo", mn_static%alnwf_grid,  parent_tile, time=month)
 
           ! Set the -999s to small value of 0.06, matching initialization code in chgres
 
@@ -885,7 +897,7 @@ contains
       ! TODO should/can this run before the mn_meta_move_nest?
       if (is_fine_pe) then
         call mn_prog_fill_intern_nest_halos(Atm(n), domain_fine, is_fine_pe)
-        call mn_phys_fill_intern_nest_halos(Atm(n), IPD_control, IPD_data, domain_fine, is_fine_pe)
+        call mn_phys_fill_intern_nest_halos(Moving_nest(n), IPD_control, IPD_data, domain_fine, is_fine_pe)
       else
         if (debug_log) print '("[INFO] WDR MV_NST4 skip step 4 fv_moving_nest_main.F90 npe=",I0)', this_pe
       endif
@@ -912,7 +924,7 @@ contains
 
         ! parent_geo is only loaded first time; afterwards it is reused.
         ! This is the coarse resolution data for the parent
-        call mn_latlon_load_parent(Atm(child_grid_num)%neststruct%surface_dir, Atm, n, parent_tile, &
+        call mn_latlon_load_parent(Moving_nest(child_grid_num)%mn_flag%surface_dir, Atm, n, parent_tile, &
             delta_i_c, delta_j_c, child_grid_num, &
             parent_geo, tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, &
             p_grid, n_grid, p_grid_u, n_grid_u, p_grid_v, n_grid_v)
@@ -996,7 +1008,7 @@ contains
         ! Defaults to 1 - static nest smoothing algorithm; this seems to produce the most stable solutions
         !print '("[INFO] WDR Moving Nest terrain_smoother=",I0," High-resolution terrain. npe=",I0)', Atm(n)%neststruct%terrain_smoother, this_pe
 
-        select case(Atm(n)%neststruct%terrain_smoother)
+        select case(Moving_nest(n)%mn_flag%terrain_smoother)
         case (0)
           ! High-resolution terrain for entire nest
           if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=0 High-resolution terrain. npe=",I0)', this_pe
@@ -1018,7 +1030,7 @@ contains
           if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=9  9-point smoother. npe=",I0)', this_pe
           call set_smooth_nest_terrain(Atm(n), mn_static%orog_grid, x_refine, 9, Atm(n)%bd%ng, 5)
         case default
-          write (errstring, "(I0)") Atm(n)%neststruct%terrain_smoother
+          write (errstring, "(I0)") Moving_nest(n)%mn_flag%terrain_smoother
           call mpp_error(FATAL,'Invalid terrain_smoother in fv_moving_nest_main '//errstring)
         end select
 
@@ -1060,7 +1072,7 @@ contains
 
         ! Refill the internal halos after nest motion
         call mn_prog_fill_intern_nest_halos(Atm(n), domain_fine, is_fine_pe)
-        call mn_phys_fill_intern_nest_halos(Atm(n), IPD_control, IPD_data, domain_fine, is_fine_pe)
+        call mn_phys_fill_intern_nest_halos(Moving_nest(n), IPD_control, IPD_data, domain_fine, is_fine_pe)
 
         if (use_timers) call mpp_clock_end (id_movnest7_2)
       endif
@@ -1089,41 +1101,41 @@ contains
         do i=isc,iec
           do j=jsc,jec
             ! WDR EMIS PATCH - Force to positive at all locations matching the landmask
-            !if (Atm(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Atm(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_lnd(i,j) = 0.5
-            !if (Atm(n)%mn_phys%slmsk(i,j) .eq. 2 .and. Atm(n)%mn_phys%emis_ice(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_ice(i,j) = 0.5
-            !if (Atm(n)%mn_phys%slmsk(i,j) .eq. 0 .and. Atm(n)%mn_phys%emis_wat(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_wat(i,j) = 0.5
-            !if (Atm(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Atm(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
-            !if (Atm(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Atm(n)%mn_phys%albdirnir_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
-            !if (Atm(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Atm(n)%mn_phys%albdifvis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdifvis_lnd(i,j) = 0.5
-            !if (Atm(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Atm(n)%mn_phys%albdifnir_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdifnir_lnd(i,j) = 0.5
+            !if (Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Moving_nest(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%emis_lnd(i,j) = 0.5
+            !if (Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 2 .and. Moving_nest(n)%mn_phys%emis_ice(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%emis_ice(i,j) = 0.5
+            !if (Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 0 .and. Moving_nest(n)%mn_phys%emis_wat(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%emis_wat(i,j) = 0.5
+            !if (Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Moving_nest(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
+            !if (Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Moving_nest(n)%mn_phys%albdirnir_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
+            !if (Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Moving_nest(n)%mn_phys%albdifvis_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%albdifvis_lnd(i,j) = 0.5
+            !if (Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Moving_nest(n)%mn_phys%albdifnir_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%albdifnir_lnd(i,j) = 0.5
 
             ! WDR EMIS PATCH - Force to positive at all locations.
-            if (Atm(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_lnd(i,j) = 0.5
-            if (Atm(n)%mn_phys%emis_ice(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_ice(i,j) = 0.5
-            if (Atm(n)%mn_phys%emis_wat(i,j) .lt. 0.0) Atm(n)%mn_phys%emis_wat(i,j) = 0.5
-            if (Atm(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
-            if (Atm(n)%mn_phys%albdirnir_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
-            if (Atm(n)%mn_phys%albdifvis_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdifvis_lnd(i,j) = 0.5
-            if (Atm(n)%mn_phys%albdifnir_lnd(i,j) .lt. 0.0) Atm(n)%mn_phys%albdifnir_lnd(i,j) = 0.5
+            if (Moving_nest(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%emis_lnd(i,j) = 0.5
+            if (Moving_nest(n)%mn_phys%emis_ice(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%emis_ice(i,j) = 0.5
+            if (Moving_nest(n)%mn_phys%emis_wat(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%emis_wat(i,j) = 0.5
+            if (Moving_nest(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
+            if (Moving_nest(n)%mn_phys%albdirnir_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%albdirvis_lnd(i,j) = 0.5
+            if (Moving_nest(n)%mn_phys%albdifvis_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%albdifvis_lnd(i,j) = 0.5
+            if (Moving_nest(n)%mn_phys%albdifnir_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%albdifnir_lnd(i,j) = 0.5
 
-            !if (Atm(n)%mn_phys%semis(i,j) .lt. 0.0) then
-            !   print '("[INFO] WDR SEMIS fv_moving_nest_main.F90 npe=",I0," semis(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%semis(i,j)
+            !if (Moving_nest(n)%mn_phys%semis(i,j) .lt. 0.0) then
+            !   print '("[INFO] WDR SEMIS fv_moving_nest_main.F90 npe=",I0," semis(",I0,",",I0,")=",F15.5)', this_pe, i, j, Moving_nest(n)%mn_phys%semis(i,j)
             !endif
-            !if (Atm(n)%mn_phys%semisbase(i,j) .lt. 0.0) then
-            !   print '("[INFO] WDR SEMISBASE fv_moving_nest_main.F90 npe=",I0," semisbase(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%semisbase(i,j)
+            !if (Moving_nest(n)%mn_phys%semisbase(i,j) .lt. 0.0) then
+            !   print '("[INFO] WDR SEMISBASE fv_moving_nest_main.F90 npe=",I0," semisbase(",I0,",",I0,")=",F15.5)', this_pe, i, j, Moving_nest(n)%mn_phys%semisbase(i,j)
             !endif
 
-            if ( Atm(n)%mn_phys%slmsk(i,j) .eq. 1 .and.  Atm(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) then
-              print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%emis_lnd(i,j)
+            if ( Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 1 .and.  Moving_nest(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) then
+              print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Moving_nest(n)%mn_phys%emis_lnd(i,j)
             endif
-            if ( Atm(n)%mn_phys%slmsk(i,j) .eq. 2 .and. Atm(n)%mn_phys%emis_ice(i,j) .lt. 0.0) then
-              print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_ice(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%emis_ice(i,j)
+            if ( Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 2 .and. Moving_nest(n)%mn_phys%emis_ice(i,j) .lt. 0.0) then
+              print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_ice(",I0,",",I0,")=",F15.5)', this_pe, i, j, Moving_nest(n)%mn_phys%emis_ice(i,j)
             endif
-            if ( Atm(n)%mn_phys%slmsk(i,j) .eq. 0 .and. Atm(n)%mn_phys%emis_wat(i,j) .lt. 0.0) then
-              print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_wat(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%emis_wat(i,j)
+            if ( Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 0 .and. Moving_nest(n)%mn_phys%emis_wat(i,j) .lt. 0.0) then
+              print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_wat(",I0,",",I0,")=",F15.5)', this_pe, i, j, Moving_nest(n)%mn_phys%emis_wat(i,j)
             endif
-            if ( Atm(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Atm(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) then
-              print '("[INFO] WDR ALBLND fv_moving_nest_main.F90 npe=",I0," albdirvis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Atm(n)%mn_phys%albdirvis_lnd(i,j)
+            if ( Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Moving_nest(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) then
+              print '("[INFO] WDR ALBLND fv_moving_nest_main.F90 npe=",I0," albdirvis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Moving_nest(n)%mn_phys%albdirvis_lnd(i,j)
             endif
           enddo
         enddo
