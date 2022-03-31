@@ -721,10 +721,6 @@ module fv_control_mod
         call mpp_set_current_pelist( global_pelist )
         !Except for npes_nest_tile all arrays should be just the nests and should NOT include the top level
 
-        !print '("[INFO] WDR tile_coarse fv_control.F90 npe=",I0," tile_coarse(",I0,"-",I0") ngrids=",I0," tile_coarse(1)=",I0," tile_coarse(2)=",I0)', mpp_pe(), &
-        !          lbound(tile_coarse,1), ubound(tile_coarse,1), ngrids, tile_coarse(1), tile_coarse(2)
-
-
         call mpp_define_nest_domains(global_nest_domain, Atm(this_grid)%domain, &
              ngrids-1, nest_level=nest_level(2:ngrids) , &
              istart_coarse=nest_ioffsets(2:ngrids), jstart_coarse=nest_joffsets(2:ngrids), &
@@ -1327,11 +1323,6 @@ module fv_control_mod
     call timing_prt( mpp_pe() )
 
     call fv_restart_end(Atm(this_grid), restart_endfcst)
-
-#ifdef MOVING_NEST
-    !call fms_io_exit()   !! Force the output of the buffered NC files
-#endif
-
     call fv_io_exit()
 
   ! Free temporary memory from sw_core routines
