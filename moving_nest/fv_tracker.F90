@@ -30,35 +30,29 @@ module fv_tracker_mod
 
   use constants_mod,       only: pi=>pi_8, rad_to_deg, deg_to_rad
   use time_manager_mod,    only: time_type, get_time, set_time, operator(+), &
-      operator(-), operator(/), time_type_to_real
+                                 operator(-), operator(/), time_type_to_real
   use mpp_mod,             only: mpp_error, stdout, FATAL, WARNING, NOTE, &
-      mpp_root_pe, mpp_npes, mpp_pe, mpp_chksum, &
-      mpp_get_current_pelist, &
-      mpp_set_current_pelist, mpp_sync
+                                 mpp_root_pe, mpp_npes, mpp_pe, mpp_chksum, &
+                                 mpp_get_current_pelist, &
+                                 mpp_set_current_pelist, mpp_sync
   use mpp_domains_mod,     only: mpp_get_data_domain, mpp_get_compute_domain
   use fv_arrays_mod,       only: fv_atmos_type, R_GRID
   use fv_diagnostics_mod,  only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
   use fv_diagnostics_mod,  only: interpolate_vertical, interpolate_z, get_vorticity, &
-      get_height_field, get_pressure_given_height, get_height_given_pressure, cs3_interpolator
+                                 get_height_field, get_pressure_given_height, &
+                                 get_height_given_pressure, cs3_interpolator
   use fv_mp_mod,           only: is_master, &
-      mp_reduce_sum, mp_reduce_max, mp_reduce_min, &
-      mp_reduce_minval, mp_reduce_maxval, &
-      mp_reduce_minloc, mp_reduce_maxloc
+                                 mp_reduce_sum, mp_reduce_max, mp_reduce_min, &
+                                 mp_reduce_minval, mp_reduce_maxval, &
+                                 mp_reduce_minloc, mp_reduce_maxloc
 
   use fv_moving_nest_types_mod, only: Moving_nest
 
   implicit none
   private
   public :: fv_tracker_init, fv_tracker_center, fv_tracker_post_move
-  public :: fv_diag_tracker, allocate_tracker, deallocate_trackers
+  public :: fv_diag_tracker, allocate_tracker, deallocate_tracker
   public :: Tracker
-
-#ifdef FEWER_PLEVS
- integer :: nplev = 11 !< # of levels in plev interpolated standard level output, with levels given by levs. 11 by default
-#else
- integer :: nplev = 31 !< # of levels in plev interpolated standard level output, with levels given by levs. 31 by default
-#endif
-
 
   integer, parameter :: maxtp=11 ! number of tracker parameters
 
@@ -128,11 +122,8 @@ module fv_tracker_mod
     logical :: tracker_gave_up = .false. !< True = inline tracker gave up on tracking the storm
   end type fv_tracker_type
 
-
-
   type(fv_tracker_type), _ALLOCATABLE, target :: Tracker(:)
   integer :: n = 2 ! TODO allow to vary for multiple nests
-
 
 contains
 
@@ -143,8 +134,6 @@ contains
 
     integer :: i
 
-    !print '("[INFO] WDR fv_tracker_init AA npe=",I0)', mpp_pe()
-
     call mpp_error(NOTE, 'fv_tracker_init')
 
     allocate(Tracker(length))
@@ -153,10 +142,10 @@ contains
       Tracker(i)%track_stderr_m1=-99.9
       Tracker(i)%track_stderr_m2=-99.9
       Tracker(i)%track_stderr_m3=-99.9
-      ! Tracker(i)%track_n_old=0
-      ! Tracker(i)%track_old_lon=0
-      ! Tracker(i)%track_old_lat=0
-      ! Tracker(i)%track_old_ntsd=0
+    ! Tracker(i)%track_n_old=0
+    ! Tracker(i)%track_old_lon=0
+    ! Tracker(i)%track_old_lat=0
+    ! Tracker(i)%track_old_ntsd=0
 
       Tracker(i)%tracker_angle=0
       Tracker(i)%tracker_fixlon=-999.0
@@ -174,17 +163,11 @@ contains
       Tracker(i)%track_guess_lon=-999.0
     enddo
 
-    !print '("[INFO] WDR fv_tracker_init ZZ npe=",I0)', mpp_pe()
-
   end subroutine fv_tracker_init
-
-
 
   subroutine allocate_tracker(i, is, ie, js, je)
     integer, intent(in) :: i, is, ie, js, je
     ! Allocate internal vortex tracker arrays
-
-    !print '("[INFO] WDR allocate_tracker npe=",I0," i=",I0," ",I0,"-",I0," ",I0,"-",I0)', mpp_pe(), i, is, ie, js, je
 
     allocate ( Tracker(i)%vort850(is:ie,js:je) )
     allocate ( Tracker(i)%spd850(is:ie,js:je) )
@@ -208,43 +191,34 @@ contains
     allocate ( Tracker(i)%tracker_fixes(is:ie,js:je) )
   end subroutine allocate_tracker
 
-  subroutine deallocate_trackers(n)
+  subroutine deallocate_tracker(n)
     integer, intent(in) :: n
-    
+
     integer :: i
-    
+
+    ! Deallocate internal vortex tracker arrays
     do i=1,n
-      call deallocate_tracker(i)
+      if (allocated(Tracker(i)%vort850)) then
+        deallocate ( Tracker(i)%vort850 )
+        deallocate ( Tracker(i)%spd850 )
+        deallocate ( Tracker(i)%u850 )
+        deallocate ( Tracker(i)%v850 )
+        deallocate ( Tracker(i)%z850 )
+        deallocate ( Tracker(i)%vort700 )
+        deallocate ( Tracker(i)%spd700 )
+        deallocate ( Tracker(i)%u700 )
+        deallocate ( Tracker(i)%v700 )
+        deallocate ( Tracker(i)%z700 )
+        deallocate ( Tracker(i)%vort10m )
+        deallocate ( Tracker(i)%spd10m )
+        deallocate ( Tracker(i)%u10m )
+        deallocate ( Tracker(i)%v10m )
+        deallocate ( Tracker(i)%slp )
+      endif
     enddo
     deallocate(Tracker)
 
-  end subroutine deallocate_trackers
-
-  subroutine deallocate_tracker(i)
-    integer, intent(in) :: i
-
-    if (.not. allocated(Tracker(i)%vort850)) return
-
-    ! Deallocate internal vortex tracker arrays
-    deallocate ( Tracker(i)%vort850 )
-    deallocate ( Tracker(i)%spd850 )
-    deallocate ( Tracker(i)%u850 )
-    deallocate ( Tracker(i)%v850 )
-    deallocate ( Tracker(i)%z850 )
-    deallocate ( Tracker(i)%vort700 )
-    deallocate ( Tracker(i)%spd700 )
-    deallocate ( Tracker(i)%u700 )
-    deallocate ( Tracker(i)%v700 )
-    deallocate ( Tracker(i)%z700 )
-    deallocate ( Tracker(i)%vort10m )
-    deallocate ( Tracker(i)%spd10m )
-    deallocate ( Tracker(i)%u10m )
-    deallocate ( Tracker(i)%v10m )
-    deallocate ( Tracker(i)%slp )
   end subroutine deallocate_tracker
-    
-
-
 
   subroutine fv_tracker_center(Atm, n, Time)
     ! Top-level entry to the internal GFDL/NCEP vortex tracker. Finds the center of
@@ -293,9 +267,6 @@ contains
 
     integer i,j,k, yr, mon, dd, hr, mn, days, seconds, nq, theta_d
     character(len=128)   :: tname
-
-    !print '("[INFO] WDR fv_diag_tracker AA npe=",I0)', mpp_pe()
-
 
     height(1) = 5.E3      ! for computing 5-km "pressure"
     height(2) = 0.        ! for sea-level pressure
@@ -350,7 +321,7 @@ contains
     call prt_maxmin('u850', Tracker(nt)%u850, isc, iec, jsc, jec, 0, 1, 1.)
 
     call cs3_interpolator(isc,iec,jsc,jec,npz, Atm(n)%va(isc:iec,jsc:jec,:), nplev_tracker,    &
-        pout(1:nplev), wz, Atm(n)%pe(isc:iec,1:npz+1,jsc:jec), idg, a3, -1)
+        pout(1:nplev_tracker), wz, Atm(n)%pe(isc:iec,1:npz+1,jsc:jec), idg, a3, -1)
     Tracker(nt)%v700=a3(isc:iec,jsc:jec,1)
     Tracker(nt)%v850=a3(isc:iec,jsc:jec,2)
     call prt_maxmin('v700', Tracker(nt)%v700, isc, iec, jsc, jec, 0, 1, 1.)
@@ -390,9 +361,6 @@ contains
     if (allocated(wk)) deallocate(wk)
     if (allocated(a3)) deallocate(a3)
     if (allocated(wz)) deallocate(wz)
-
-    !print '("[INFO] WDR fv_diag_tracker ZZ npe=",I0)', mpp_pe()
-
 
   end subroutine fv_diag_tracker
 
@@ -460,7 +428,7 @@ contains
     loncen=9e9
     rcen=9e9
     calcparm=.false.
-    if(Moving_nest(2)%mn_flag%vortex_tracker==6) then   ! TODO pick correct Moving_nest structure 
+    if(Moving_nest(2)%mn_flag%vortex_tracker==6) then   ! TODO pick correct Moving_nest structure
       srsq=searchrad_6*searchrad_6*1e6
     else
       srsq=searchrad_7*searchrad_7*1e6
@@ -640,37 +608,23 @@ contains
     tracker%tracker_fixes=0
     do ip=1,maxtp
       if(calcparm(ip)) then
-300     format('Parameter ',I0,': i=',I0,' j=',I0,' lon=',F0.2,' lat=',F0.2)
-        !write(0,300) ip,icen(ip),jcen(ip),loncen(ip),latcen(ip)
         if(icen(ip)>=ips .and. icen(ip)<=ipe &
             .and. jcen(ip)>=jps .and. jcen(ip)<=jpe) then
           tracker%tracker_fixes(icen(ip),jcen(ip))=ip
         endif
-      else
-301     format('Parameter ',I0,' invalid')
-      !write(0,301) ip
       endif
     enddo
 
     if(iguess>=ips .and. iguess<=ipe .and. jguess>=jps .and. jguess<=jpe) then
       tracker%tracker_fixes(iguess,jguess)=-1
-201   format('First guess: i=',I0,' j=',I0,' lon=',F0.2,' lat=',F0.2)
-      !write(0,201) iguess,jguess,longuess,latguess
     endif
 
     if(iuvguess>=ips .and. iuvguess<=ipe .and. juvguess>=jps .and. juvguess<=jpe) then
       tracker%tracker_fixes(iuvguess,juvguess)=-2
-202   format('UV guess: i=',I0,' j=',I0)
-      !write(0,202) iguess,jguess
     endif
-
-1000 format('Back with final lat/lon at i=',I0,' j=',I0,' lon=',F0.3,' lat=',F0.3)
-    !write(0,1000) ifinal,jfinal,lonfinal,latfinal
 
     if(ifinal>=ips .and. ifinal<=ipe .and. jfinal>=jps .and. jfinal<=jpe) then
       tracker%tracker_fixes(ifinal,jfinal)=-3
-203   format('Final fix: i=',I0,' j=',I0,' lon=',F0.2,' lat=',F0.2)
-      !write(0,201) ifinal,jfinal,lonfinal,latfinal
     endif
 
     call get_tracker_distsq(Atm, &
@@ -706,7 +660,7 @@ contains
       ids, ide, jds, jde, kds, kde, &
       ims, ime, jms, jme, kms, kme, &
       ips, ipe, jps, jpe, kps, kpe )
-    ! This is
+
     implicit none
     type(fv_atmos_type), intent(in) :: Atm
 
@@ -796,7 +750,6 @@ contains
 
     call get_time(fv_time, seconds, days)
     sec=seconds
-    !write(0,*) 'output_partial_atcfunix: sec=', sec
 313 format(F11.2,", ",                                  &
         "W10 = ",F7.3," kn, PMIN = ",F8.3," mbar, ", &
         "LAT = ",F6.3,A1,", LON = ",F7.3,A1,", ",    &
@@ -814,12 +767,6 @@ contains
           abs(Tracker(n)%tracker_fixlon),get_lon_ew(Tracker(n)%tracker_fixlon), &
           Tracker(n)%tracker_rmw*km2nmi
     end if
-    ! write(message,313) sec,                                      &
-    !      Tracker(n)%tracker_vmax*mps2kn,Tracker(n)%tracker_pmin/100.,          &
-    !      abs(Tracker(n)%tracker_fixlat),get_lat_ns(Tracker(n)%tracker_fixlat), &
-    !      abs(Tracker(n)%tracker_fixlon),get_lon_ew(Tracker(n)%tracker_fixlon), &
-    !      Tracker(n)%tracker_rmw*km2nmi
-    ! call mpp_error(NOTE, message)
   end subroutine output_partial_atcfunix
 
   subroutine get_wind_pres_intensity(Atm, &
@@ -1015,11 +962,6 @@ contains
     jsum=0
     ifound=0
 
-    !write(0,*) 'errpmax=',errpmax
-    !write(0,*) 'errmax=',errmax
-
-500 format('Parm ip=',I0,' dist=',F0.3)
-501 format('  too far, but discard')
     do ip=1,maxtp
       if(ip==4 .or. ip==6) then
         calcparm(ip)=.false.
@@ -1028,28 +970,20 @@ contains
         ifound=ifound+1
         call calcdist(longuess,latguess,loncen(ip),latcen(ip),dist,degrees)
         errdist(ip)=dist
-        !write(0,500) ip,dist
         if(dist<=errpmax) then
           if(ip==3 .or. ip==5 .or. ip==10) then
             use4next(ip)=.false.
-            !write(0,'(A)') '  within range but discard: errpmax'
           else
-            !write(0,'(A)') '  within range and keep: errpmax'
             use4next(ip)=.true.
             trkerr_avg=trkerr_avg+dist
             itot4next=itot4next+1
           endif
         endif
         if(dist<=errmax) then
-502       format('  apply i=',I0,' j=',I0)
-          !write(0,502) icen(ip),jcen(ip)
           iclose=iclose+1
           isum=isum+icen(ip)
           jsum=jsum+jcen(ip)
-503       format(' added things isum=',I0,' jsum=',I0,' iclose=',I0)
-          !write(0,503) isum,jsum,iclose
         else
-          !write(0,*) '  discard; too far: errmax'
           calcparm(ip)=.false.
         endif
       endif
@@ -1058,14 +992,28 @@ contains
     if(ifound<=0) then
       call mpp_error(NOTE, 'The tracker could not find the centers for any parameters. &
           Thus, a center position could not be obtained for this storm.')
-      goto 999
+      ! Use domain center as storm location
+      Tracker(n)%tracker_ifix=(ide-ids)/2+ids
+      Tracker(n)%tracker_jfix=(jde-jds)/2+jds
+      Tracker(n)%tracker_havefix=.false.
+      Tracker(n)%tracker_gave_up=.true.
+      Tracker(n)%tracker_fixlon=-999.0
+      Tracker(n)%tracker_fixlat=-999.0
+      return
     endif
 
     if(iclose<=0) then
 200   format('No storms are within errmax=',F0.1,'km of the parameters')
       write(message,200) errmax
       call mpp_error(NOTE, message)
-      goto 999
+      ! Use domain center as storm location
+      Tracker(n)%tracker_ifix=(ide-ids)/2+ids
+      Tracker(n)%tracker_jfix=(jde-jds)/2+jds
+      Tracker(n)%tracker_havefix=.false.
+      Tracker(n)%tracker_gave_up=.true.
+      Tracker(n)%tracker_fixlon=-999.0
+      Tracker(n)%tracker_fixlat=-999.0
+      return
     endif
 
     ifinal=real(isum)/real(iclose)
@@ -1080,7 +1028,14 @@ contains
         ips,ipe, jps,jpe, kps,kpe)
     if(ierr/=0) then
       call mpp_error(NOTE, 'Gave up on finding the storm location due to error in get_lonlat (1).')
-      goto 999
+      ! Use domain center as storm location
+      Tracker(n)%tracker_ifix=(ide-ids)/2+ids
+      Tracker(n)%tracker_jfix=(jde-jds)/2+jds
+      Tracker(n)%tracker_havefix=.false.
+      Tracker(n)%tracker_gave_up=.true.
+      Tracker(n)%tracker_fixlon=-999.0
+      Tracker(n)%tracker_fixlat=-999.0
+      return
     endif
 
     count=0
@@ -1115,7 +1070,14 @@ contains
       call mpp_error(NOTE, 'In fixcenter, STOPPING PROCESSING for this storm.  The reason is that')
       call mpp_error(NOTE, 'none of the fix locations for parms z850, z700, zeta 850, zeta 700')
       call mpp_error(NOTE, 'MSLP or sfc zeta were within a reasonable distance of the guess location.')
-      goto 999
+      ! Use domain center as storm location
+      Tracker(n)%tracker_ifix=(ide-ids)/2+ids
+      Tracker(n)%tracker_jfix=(jde-jds)/2+jds
+      Tracker(n)%tracker_havefix=.false.
+      Tracker(n)%tracker_gave_up=.true.
+      Tracker(n)%tracker_fixlon=-999.0
+      Tracker(n)%tracker_fixlat=-999.0
+      return
     endif
 
     ! Recalculate the final center location using weights
@@ -1145,7 +1107,14 @@ contains
         ips,ipe, jps,jpe, kps,kpe)
     if(ierr/=0) then
       call mpp_error(NOTE, 'Gave up on finding the storm location due to error in get_lonlat (2).')
-      goto 999
+      ! Use domain center as storm location
+      Tracker(n)%tracker_ifix=(ide-ids)/2+ids
+      Tracker(n)%tracker_jfix=(jde-jds)/2+jds
+      Tracker(n)%tracker_havefix=.false.
+      Tracker(n)%tracker_gave_up=.true.
+      Tracker(n)%tracker_fixlon=-999.0
+      Tracker(n)%tracker_fixlat=-999.0
+      return
     endif
 
     ! Store the lat/lon location:
@@ -1154,10 +1123,6 @@ contains
     Tracker(n)%tracker_ifix=ifinal
     Tracker(n)%tracker_jfix=jfinal
     Tracker(n)%tracker_havefix=.true.
-
-1000 format('Stored lat/lon at i=',I0,' j=',I0,' lon=',F0.3,' lat=',F0.3)
-    !write(0,1000) ifinal,jfinal,lonfinal,latfinal
-
 
     if(nint(hours) > Tracker(n)%track_last_hour ) then
       ! It is time to recalculate the std. dev. of the track:
@@ -1191,27 +1156,7 @@ contains
       Tracker(n)%track_last_hour=nint(hours)
     endif
 
-    !write(0,*) 'got to return'
     return
-
-    ! We jump here if we're giving up on finding the center
-999 continue
-    ! Use domain center as storm location
-    Tracker(n)%tracker_ifix=(ide-ids)/2+ids
-    Tracker(n)%tracker_jfix=(jde-jds)/2+jds
-    Tracker(n)%tracker_havefix=.false.
-    Tracker(n)%tracker_gave_up=.true.
-    call get_lonlat(Atm,ifinal,jfinal,lonfinal,latfinal,ierr, &
-        ids,ide, jds,jde, kds,kde, &
-        ims,ime, jms,jme, kms,kme, &
-        ips,ipe, jps,jpe, kps,kpe)
-    if(ierr/=0) then
-      call mpp_error(FATAL, 'Center of domain is not in domain (!?)')
-      goto 999
-    endif
-
-    Tracker(n)%tracker_fixlon=-999.0
-    Tracker(n)%tracker_fixlat=-999.0
 
   end subroutine fixcenter
 
@@ -1428,8 +1373,6 @@ contains
 
     logical :: findmin
 
-
-
     ! Restrict the search area.  By default, we search everywhere except the boundary:
     istart=max(ids+1,ips)
     istop=min(ide-2,ipe)
@@ -1459,7 +1402,7 @@ contains
     ! Figure out whether we're finding a min or max:
     ifmin: if(trim(cparm)=='zeta') then
       if(.not.present(north_hemi)) then
-        call mpp_error(FATAL, 'When calling module_tracker find_center for zeta, you must specify the hemisphere parameter.')
+        call mpp_error(FATAL, 'When calling find_center for zeta, you must specify the hemisphere parameter.')
       endif
       findmin=.not.north_hemi
     elseif(trim(cparm)=='hgt') then
@@ -1469,7 +1412,7 @@ contains
     elseif(trim(cparm)=='wind') then
       findmin=.true.
     else
-100   format('Invalid parameter cparm="',A,'" in module_tracker find_center')
+100   format('Invalid parameter cparm="',A,'" in find_center')
       write(message,100) trim(cparm)
       call mpp_error(FATAL, message)
     endif ifmin
@@ -1482,7 +1425,6 @@ contains
       rcen=9e9
       do j=jstart,jstop
         do i=istart,istop
-          !write(0,*) 'i,j,smooth(i,j),rcen,Tracker(n)%distsq(i,j),srsq=',i,j,smooth(i,j),rcen,Tracker(n)%distsq(i,j),srsq
           if(smooth(i,j)<rcen .and. Tracker(n)%distsq(i,j)<srsq) then
             rcen=smooth(i,j)
             icen=i
@@ -1495,7 +1437,6 @@ contains
       rcen=-9e9
       do j=jstart,jstop
         do i=istart,istop
-          !write(0,*) 'i,j,smooth(i,j),rcen,Tracker(n)%distsq(i,j),srsq=',i,j,smooth(i,j),rcen,Tracker(n)%distsq(i,j),srsq
           if(smooth(i,j)>rcen .and. Tracker(n)%distsq(i,j)<srsq) then
             rcen=smooth(i,j)
             icen=i
@@ -1652,7 +1593,6 @@ contains
     Tracker(n)%tracker_edge_dist=sqrt(mindistsq)
 
 17  format('Min distance from lon=',F9.3,', lat=',F9.3,' to center is ',F19.3)
-    !print *,'Min distance from edge to center is ',Tracker(n)%tracker_edge_dist
     write(message,17) clonr, clatr, Tracker(n)%tracker_edge_dist
     call mpp_error(NOTE, message)
   end subroutine get_tracker_distsq

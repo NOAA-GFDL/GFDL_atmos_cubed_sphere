@@ -316,8 +316,6 @@ contains
       call mpp_update_domains(Atm%phis, Atm%domain)
     endif          ! end terrain filter
 
-
-
   end subroutine set_blended_terrain
 
   subroutine set_smooth_nest_terrain(Atm, fp_orog, refine, num_points, halo_size, blend_size)
@@ -343,13 +341,11 @@ contains
     ioffset = Atm%neststruct%ioffset
     joffset = Atm%neststruct%joffset
 
-
     smooth_i_lo = 1 + blend_size
     smooth_i_hi = npx - blend_size - halo_size
 
     smooth_j_lo = 1 + blend_size
     smooth_j_hi = npy - blend_size - halo_size
-
 
     !Atm(n)%phis(isd:ied, jsd:jed) = mn_static%orog_grid((ioffset-1)*x_refine+isd:(ioffset-1)*x_refine+ied, (joffset-1)*y_refine+jsd:(joffset-1)*y_refine+jed) * grav
 
@@ -511,7 +507,6 @@ contains
     endif
   end subroutine compare_buffer
 
-
   !==================================================================================================
   !
   !  Fill Nest Halos from Parent
@@ -528,7 +523,6 @@ contains
     logical, intent(in)                         :: is_fine_pe
     type(nest_domain_type), intent(inout)       :: nest_domain
     integer, intent(in)                         :: position
-
 
     real*4, dimension(:,:), allocatable :: nbuffer, sbuffer, ebuffer, wbuffer
     type(bbox)                          :: north_fine, north_coarse
@@ -698,7 +692,6 @@ contains
   end subroutine fill_nest_halos_from_parent_r8_2d
 
 
-
   subroutine fill_nest_halos_from_parent_masked(var_name, data_var, interp_type, wt, ind, x_refine, y_refine, is_fine_pe, nest_domain, position, mask_var, mask_val, default_val)
     character(len=*), intent(in)                :: var_name
     real*8, allocatable, intent(inout)          :: data_var(:,:)
@@ -712,7 +705,6 @@ contains
     real*4, allocatable, intent(in)             :: mask_var(:,:)
     integer, intent(in)                         :: mask_val
     real*8, intent(in)                          :: default_val
-
 
     real*8, dimension(:,:), allocatable :: nbuffer, sbuffer, ebuffer, wbuffer
     type(bbox)                          :: north_fine, north_coarse
@@ -790,7 +782,6 @@ contains
     if (debug_log) print '("[INFO] WDR End fill_nest_halos_from_parent2D_kindphys. npe=",I0," var_name=",A16)', this_pe, var_name
 
   end subroutine fill_nest_halos_from_parent_masked
-
 
 
   subroutine fill_nest_halos_from_parent_r4_3d(var_name, data_var, interp_type, wt, ind, x_refine, y_refine, is_fine_pe, nest_domain, position, nz)
