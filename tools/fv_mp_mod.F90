@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -18,6 +18,7 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
 !------------------------------------------------------------------------------
 !BOP
 !
@@ -138,10 +139,16 @@
         MODULE PROCEDURE mp_bcst_i4
         MODULE PROCEDURE mp_bcst_r4
         MODULE PROCEDURE mp_bcst_r8
+        MODULE PROCEDURE mp_bcst_1d_r4
+        MODULE PROCEDURE mp_bcst_1d_r8
+        MODULE PROCEDURE mp_bcst_2d_r4
+        MODULE PROCEDURE mp_bcst_2d_r8
         MODULE PROCEDURE mp_bcst_3d_r4
         MODULE PROCEDURE mp_bcst_3d_r8
         MODULE PROCEDURE mp_bcst_4d_r4
         MODULE PROCEDURE mp_bcst_4d_r8
+        MODULE PROCEDURE mp_bcst_1d_i
+        MODULE PROCEDURE mp_bcst_2d_i
         MODULE PROCEDURE mp_bcst_3d_i8
         MODULE PROCEDURE mp_bcst_4d_i8
       END INTERFACE
@@ -162,8 +169,12 @@
       INTERFACE mp_reduce_sum
         MODULE PROCEDURE mp_reduce_sum_r4
         MODULE PROCEDURE mp_reduce_sum_r4_1d
+        MODULE PROCEDURE mp_reduce_sum_r4_1darr
+        MODULE PROCEDURE mp_reduce_sum_r4_2darr
         MODULE PROCEDURE mp_reduce_sum_r8
         MODULE PROCEDURE mp_reduce_sum_r8_1d
+        MODULE PROCEDURE mp_reduce_sum_r8_1darr
+        MODULE PROCEDURE mp_reduce_sum_r8_2darr
       END INTERFACE
 
       INTERFACE mp_gather !WARNING only works with one level (ldim == 1)
@@ -1730,6 +1741,70 @@ end subroutine switch_current_Atm
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
 !
+!     mp_bcst_1d_r4 :: Call SPMD broadcast
+!
+      subroutine mp_bcst_1d_r4(q, idim)
+         integer, intent(IN)  :: idim
+         real(kind=4), intent(INOUT)  :: q(idim)
+
+         call MPI_BCAST(q, idim, MPI_REAL, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_1d_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_bcst_1d_r8 :: Call SPMD broadcast
+!
+      subroutine mp_bcst_1d_r8(q, idim)
+         integer, intent(IN)  :: idim
+         real(kind=8), intent(INOUT)  :: q(idim)
+
+         call MPI_BCAST(q, idim, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_1d_r8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_bcst_2d_r4 :: Call SPMD broadcast
+!
+      subroutine mp_bcst_2d_r4(q, idim, jdim)
+         integer, intent(IN)  :: idim, jdim
+         real(kind=4), intent(INOUT)  :: q(idim,jdim)
+
+         call MPI_BCAST(q, idim*jdim, MPI_REAL, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_2d_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_bcst_2d_r8 :: Call SPMD broadcast
+!
+      subroutine mp_bcst_2d_r8(q, idim, jdim)
+         integer, intent(IN)  :: idim, jdim
+         real(kind=8), intent(INOUT)  :: q(idim,jdim)
+
+         call MPI_BCAST(q, idim*jdim, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_2d_r8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
 !     mp_bcst_3d_r4 :: Call SPMD broadcast
 !
       subroutine mp_bcst_3d_r4(q, idim, jdim, kdim)
@@ -1787,6 +1862,38 @@ end subroutine switch_current_Atm
          call MPI_BCAST(q, idim*jdim*kdim*ldim, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
 
       end subroutine mp_bcst_4d_r8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_bcst_1d_i :: Call SPMD broadcast
+!
+      subroutine mp_bcst_1d_i(q, idim)
+         integer, intent(IN)  :: idim
+         integer, intent(INOUT)  :: q(idim)
+
+         call MPI_BCAST(q, idim, MPI_INTEGER, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_1d_i
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_bcst_2d_i :: Call SPMD broadcast
+!
+      subroutine mp_bcst_2d_i(q, idim, jdim)
+         integer, intent(IN)  :: idim, jdim
+         integer, intent(INOUT)  :: q(idim,jdim)
+
+         call MPI_BCAST(q, idim*jdim, MPI_INTEGER, masterproc, commglobal, ierror)
+
+      end subroutine mp_bcst_2d_i
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
@@ -2044,6 +2151,95 @@ end subroutine switch_current_Atm
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_sum_r4_1darr :: Call SPMD REDUCE_SUM
+!
+      subroutine mp_reduce_sum_r4_1darr(mysum, npts)
+         integer, intent(in)  :: npts
+         real(kind=4), intent(inout)  :: mysum(npts)
+         real(kind=4)                 :: gsum(npts)
+
+         gsum = 0.0
+         call MPI_ALLREDUCE( mysum, gsum, npts, MPI_REAL, MPI_SUM, &
+                             commglobal, ierror )
+
+         mysum = gsum
+
+      end subroutine mp_reduce_sum_r4_1darr
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_sum_r4_2darr :: Call SPMD REDUCE_SUM
+!
+      subroutine mp_reduce_sum_r4_2darr(mysum, npts1,npts2)
+         integer, intent(in)  :: npts1,npts2
+         real(kind=4), intent(inout)  :: mysum(npts1,npts2)
+         real(kind=4)                 :: gsum(npts1,npts2)
+
+         gsum = 0.0
+         call MPI_ALLREDUCE( mysum, gsum, npts1*npts2, MPI_REAL, MPI_SUM, &
+                             commglobal, ierror )
+
+         mysum = gsum
+
+      end subroutine mp_reduce_sum_r4_2darr
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_sum_r8_1darr :: Call SPMD REDUCE_SUM
+!
+      subroutine mp_reduce_sum_r8_1darr(mysum, npts)
+         integer, intent(in)  :: npts
+         real(kind=8), intent(inout)  :: mysum(npts)
+         real(kind=8)                 :: gsum(npts)
+
+         gsum = 0.0
+
+         call MPI_ALLREDUCE( mysum, gsum, npts, MPI_DOUBLE_PRECISION, &
+                             MPI_SUM,                                 &
+                             commglobal, ierror )
+
+         mysum = gsum
+
+      end subroutine mp_reduce_sum_r8_1darr
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_sum_r8_2darr :: Call SPMD REDUCE_SUM
+!
+      subroutine mp_reduce_sum_r8_2darr(mysum, npts1,npts2)
+         integer, intent(in)  :: npts1,npts2
+         real(kind=8), intent(inout)  :: mysum(npts1,npts2)
+         real(kind=8)                 :: gsum(npts1,npts2)
+
+         gsum = 0.0
+
+         call MPI_ALLREDUCE( mysum, gsum, npts1*npts2,      &
+                             MPI_DOUBLE_PRECISION, MPI_SUM, &
+                             commglobal, ierror )
+
+         mysum = gsum
+
+      end subroutine mp_reduce_sum_r8_2darr
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
 #else
       implicit none
       private

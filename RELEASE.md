@@ -1,3 +1,17 @@
+# RELEASE NOTES for FV3 202202: Summary
+FV3-202202-public --- February 2022
+Lucas Harris, GFDL lucas.harris@noaa.gov
+
+This version has been tested against the current SHiELD physics
+and with FMS release 2021.04 from https://github.com/NOAA-GFDL/FMS
+
+This release includes the following:
+- Release of stand-alone solo_core functionality with simple physics. 
+- Updated GFDL Microphysics, used for real-time 2021 C-SHiELD and T-SHiELD.  (L Zhou)
+- Merges numerous updates from dev/emc
+- Leverage DA functionality from UFS with additional changes (M Tong).
+- Updates to use the latest FMS release, including fms2_io
+
 
 # RELEASE NOTES for FV3 202107: Summary
 

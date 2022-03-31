@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -18,7 +18,6 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
-! $Id$
 
 module init_hydro_mod
 
@@ -34,7 +33,7 @@ module init_hydro_mod
       implicit none
       private
 
-      public :: p_var, hydro_eq
+      public :: p_var, hydro_eq, hydro_eq_ext
 
 contains
 
@@ -314,7 +313,7 @@ contains
         z1 = 10.E3 * grav
         t1 = 200.
         t0 = 300.            ! sea-level temp.
-        a0 = (t1-t0)/z1
+        a0 = (t1-t0)/z1*0.5
         c0 = t0/a0
 
      if ( hybrid_z ) then
@@ -330,7 +329,8 @@ contains
      mslp = 100917.4
      do j=js,je
         do i=is,ie
-           ps(i,j) = mslp*( c0/(hs(i,j)+c0))**(1./(a0*rdgas))
+           !ps(i,j) = mslp*( c0/(hs(i,j)+c0))**(1./(a0*rdgas))
+           ps(i,j) = mslp*exp(-1./(a0*rdgas)*hs(i,j)/(hs(i,j)+c0))
         enddo
      enddo
      psm = g_sum(domain, ps(is:ie,js:je), is, ie, js, je, ng, area, 1, .true.)
@@ -378,7 +378,8 @@ contains
                  ph(i,k) = ptop*exp( (gz(i,1)-gz(i,k))/(rdgas*t1) )
               else
 ! Constant lapse rate region (troposphere)
-                 ph(i,k) = ps(i,j)*((hs(i,j)+c0)/(gz(i,k)+c0))**(1./(a0*rdgas))
+                 !ph(i,k) = ps(i,j)*((hs(i,j)+c0)/(gz(i,k)+c0))**(1./(a0*rdgas))
+                 ph(i,k) = ps(i,j)*exp(-1./(a0*rdgas)*(gz(i,k)-hs(i,j))/(gz(i,k)-hs(i,j)+c0))
               endif
            enddo
         enddo
@@ -397,7 +398,9 @@ contains
              if (ph(i,k) <= p1) then
                 gz(i,k) = gz(i,k+1) +  (rdgas*t1)*log(ph(i,k+1)/ph(i,k))
              else
-                gz(i,k) = (hs(i,j)+c0)/(ph(i,k)/ps(i,j))**(a0*rdgas) - c0
+! Constant lapse rate region (troposphere)
+                 !gz(i,k) = (hs(i,j)+c0)/(ph(i,k)/ps(i,j))**(a0*rdgas) - c0
+                 gz(i,k) = c0/(1+a0*rdgas*log(ph(i,k)/ps(i,j)))+hs(i,j)-c0
              endif
           enddo
        enddo
@@ -437,6 +440,175 @@ contains
 
 
  end subroutine hydro_eq
+
+
+ ! Added by Linjiong Zhou, bugfix + increase temperature above tropospause
+ subroutine hydro_eq_ext(km, is, ie, js, je, ps, hs, drym, delp, ak, bk,  &
+                     pt, delz, area, ng, mountain, hydrostatic, hybrid_z, domain)
+! Input:
+  integer, intent(in):: is, ie, js, je, km, ng
+  real, intent(in):: ak(km+1), bk(km+1)
+  real, intent(in):: hs(is-ng:ie+ng,js-ng:je+ng)
+  real, intent(in):: drym
+  logical, intent(in):: mountain
+  logical, intent(in):: hydrostatic
+  logical, intent(in):: hybrid_z
+  real(kind=R_GRID), intent(IN) :: area(is-ng:ie+ng,js-ng:je+ng)
+  type(domain2d), intent(IN) :: domain
+! Output
+  real, intent(out):: ps(is-ng:ie+ng,js-ng:je+ng)
+  real, intent(out)::   pt(is-ng:ie+ng,js-ng:je+ng,km)
+  real, intent(out):: delp(is-ng:ie+ng,js-ng:je+ng,km)
+  real, intent(inout):: delz(is:,js:,1:)
+! Local
+  real   gz(is:ie,km+1)
+  real   ph(is:ie,km+1)
+  real mslp, z1, z2, t1, t2, p1, p2, t0, a0, a1, psm
+  real ztop, c0, c1
+#ifdef INIT_4BYTE
+  real(kind=4) ::  dps
+#else
+  real dps    ! note that different PEs will get differt dps during initialization
+              ! this has no effect after cold start
+#endif
+  real p0, gztop, ptop
+  integer  i,j,k
+
+  if ( is_master() ) write(*,*) 'Initializing ATM hydrostatically'
+
+  if ( is_master() ) write(*,*) 'Initializing Earth'
+! Given p1 and z1 (100mb, 15km)
+! Given p2 and z2 (1mb, 45km)
+        p2 = 1.e2
+        p1 = 100.e2
+        z2 = 45.E3 * grav
+        z1 = 15.E3 * grav
+        t2 = 260.
+        t1 = 200.
+        t0 = 300.            ! sea-level temp.
+        a0 = (t1-t0)/z1*0.5
+        a1 = (t2-t1)/(z2-z1)*0.5
+        c0 = t0/a0
+        c1 = t1/a1
+
+     if ( hybrid_z ) then
+          ptop = 100.   ! *** hardwired model top ***
+     else
+          ptop = ak(1)
+     endif
+
+     ztop = z2 + (rdgas*t2)*log(p2/ptop)
+     if(is_master()) write(*,*) 'ZTOP is computed as', ztop/grav*1.E-3
+
+  if ( mountain ) then
+     mslp = 100917.4
+     do j=js,je
+        do i=is,ie
+           !ps(i,j) = mslp*( c0/(hs(i,j)+c0))**(1./(a0*rdgas))
+           ps(i,j) = mslp*exp(-1./(a0*rdgas)*hs(i,j)/(hs(i,j)+c0))
+        enddo
+     enddo
+     psm = g_sum(domain, ps(is:ie,js:je), is, ie, js, je, ng, area, 1, .true.)
+     dps = drym - psm
+     if(is_master()) write(*,*) 'Computed mean ps=', psm
+     if(is_master()) write(*,*) 'Correction delta-ps=', dps
+  else
+     mslp = drym  ! 1000.E2
+     do j=js,je
+        do i=is,ie
+           ps(i,j) = mslp
+        enddo
+     enddo
+     dps = 0.
+  endif
+
+
+  do j=js,je
+     do i=is,ie
+        ps(i,j) = ps(i,j) + dps
+        gz(i,   1) = ztop
+        gz(i,km+1) = hs(i,j)
+        ph(i,   1) = ptop
+        ph(i,km+1) = ps(i,j)
+     enddo
+
+     if ( hybrid_z ) then
+!---------------
+! Hybrid Z
+!---------------
+        do k=km,2,-1
+           do i=is,ie
+              gz(i,k) = gz(i,k+1) - delz(i,j,k)*grav
+           enddo
+        enddo
+! Correct delz at the top:
+        do i=is,ie
+            delz(i,j,1) = (gz(i,2) - ztop) / grav
+        enddo
+
+        do k=2,km
+           do i=is,ie
+              if ( gz(i,k) >= z2 ) then
+! Isothermal
+                 ph(i,k) = ptop*exp( (gz(i,1)-gz(i,k))/(rdgas*t2) )
+              else if ( gz(i,k) >= z1 ) then
+! Constant lapse rate region (troposphere)
+                 !ph(i,k) = p1*((z1+c1)/(gz(i,k)+c1))**(1./(a1*rdgas))
+                 ph(i,k) = p1*exp(-1./(a1*rdgas)*(gz(i,k)-z1)/(gz(i,k)-z1+c1))
+              else
+! Constant lapse rate region (troposphere)
+                 !ph(i,k) = ps(i,j)*((hs(i,j)+c0)/(gz(i,k)+c0))**(1./(a0*rdgas))
+                 ph(i,k) = ps(i,j)*exp(-1./(a0*rdgas)*(gz(i,k)-hs(i,j))/(gz(i,k)-hs(i,j)+c0))
+              endif
+           enddo
+        enddo
+     else
+!---------------
+! Hybrid sigma-p
+!---------------
+       do k=2,km+1
+          do i=is,ie
+             ph(i,k) = ak(k) + bk(k)*ps(i,j)
+          enddo
+       enddo
+
+       do k=2,km
+          do i=is,ie
+             if ( ph(i,k) <= p2 ) then
+! Isothermal
+                 gz(i,k) = ztop + (rdgas*t2)*log(ptop/ph(i,k))
+             else if ( ph(i,k) <= p1 ) then
+! Constant lapse rate region (troposphere)
+                 !gz(i,k) = (z1+c1)/(ph(i,k)/p1)**(a1*rdgas) - c1
+                 gz(i,k) = c1/(1+a1*rdgas*log(ph(i,k)/p1))+z1-c1
+             else
+! Constant lapse rate region (troposphere)
+                 !gz(i,k) = (hs(i,j)+c0)/(ph(i,k)/ps(i,j))**(a0*rdgas) - c0
+                 gz(i,k) = c0/(1+a0*rdgas*log(ph(i,k)/ps(i,j)))+hs(i,j)-c0
+             endif
+          enddo
+       enddo
+       if ( .not. hydrostatic ) then
+          do k=1,km
+             do i=is,ie
+                delz(i,j,k) = ( gz(i,k+1) - gz(i,k) ) / grav
+             enddo
+          enddo
+       endif
+     endif  ! end hybrid_z
+
+! Convert geopotential to Temperature
+      do k=1,km
+         do i=is,ie
+              pt(i,j,k) = (gz(i,k)-gz(i,k+1))/(rdgas*(log(ph(i,k+1)/ph(i,k))))
+              pt(i,j,k) = max(t1, pt(i,j,k))
+            delp(i,j,k) = ph(i,k+1) - ph(i,k)
+         enddo
+      enddo
+   enddo    ! j-loop
+
+
+ end subroutine hydro_eq_ext
 
 
 end module init_hydro_mod
