@@ -19,15 +19,12 @@
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
-
 !***********************************************************************
 !> @file
 !! @brief Provides top-level interface for moving nest functionality
 !! @author W. Ramstrom, AOML/HRD   05/27/2021
 !! @email William.Ramstrom@noaa.gov
 ! =======================================================================!
-
-
 
 module fv_moving_nest_main_mod
 #ifdef MOVING_NEST
@@ -85,7 +82,6 @@ module fv_moving_nest_main_mod
   use fv_mp_mod,          only: is_master
   use fv_regional_mod,    only: start_regional_restart, read_new_bc_data, a_step, p_step, current_time_in_seconds
 
-
   !-----------------------------------------
   !  External routines
   !-----------------------------------------
@@ -97,7 +93,6 @@ module fv_moving_nest_main_mod
   use mpp_mod,            only: mpp_send, mpp_sync_self, mpp_broadcast
 
   use fv_mp_mod,          only: global_nest_domain
-
 
   use tracer_manager_mod, only: get_tracer_names
   use field_manager_mod,  only: MODEL_ATMOS
@@ -154,7 +149,6 @@ module fv_moving_nest_main_mod
 #include<file_version.h>
   character(len=20)   :: mod_name = 'fvGFS/fv_moving_nest_main_mod'
 
-
 #ifdef OVERLOAD_R4
   real, parameter:: real_snan=x'FFBFFFFF'
 #else
@@ -171,7 +165,6 @@ module fv_moving_nest_main_mod
   integer :: id_movnestTot
   logical :: use_timers = .False. ! Set this to true for detailed performance profiling.  False only profiles total moving nest time.
   integer, save :: output_step = 0
-
 
 contains
 
@@ -592,7 +585,6 @@ contains
       call allocate_fv_moving_nest_physics_type(isd, ied, jsd, jed, npz, move_physics, move_nsst, &
           IPD_Control%lsoil, IPD_Control%nmtvr, IPD_Control%levs, IPD_Control%ntot2d, IPD_Control%ntot3d, &
           Moving_nest(n)%mn_phys)
-
 
     endif
 

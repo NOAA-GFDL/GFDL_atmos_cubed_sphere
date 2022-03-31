@@ -754,8 +754,6 @@ contains
                                       'dx', 'm')
        id_mdy = register_diag_field ( trim(field), 'mdy', (/id_x,id_yt/), Time, &
                                       'dy', 'm')
-       id_mzsurf = register_diag_field ( trim(field), 'mzsurf', axes(1:2), Time, &
-                                         'surface height', 'm' )
 #endif
 !-------------------
 ! Surface pressure
@@ -1862,7 +1860,6 @@ contains
          used = send_data(id_mdy, dy, Time)
          deallocate(dy)
        endif
-       if (id_mzsurf > 0) used = send_data(id_mzsurf, zsurf, Time)
 #endif
        if(id_ps > 0) used=send_data(id_ps, Atm(n)%ps(isc:iec,jsc:jec), Time)
 
