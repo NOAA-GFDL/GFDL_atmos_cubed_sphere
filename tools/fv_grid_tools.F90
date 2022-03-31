@@ -2124,12 +2124,12 @@ contains
 
          if ( delta_i_c .ne. 0 ) then
             if (debug_log) print '("[INFO] setup_nest_grid EOSHIFT delta_i_c=",I0," start. npe=",I0)', delta_i_c, this_pe
-            out_grid = eoshift(out_grid, refinement * delta_i_c, 0.0, 1)
+            out_grid = eoshift(out_grid, refinement * delta_i_c, DIM=1)
          end if
 
          if (delta_j_c .ne.  0) then
             if (debug_log) print '("[INFO] setup_nest_grid EOSHIFT delta_j_c=",I0," start. npe=",I0)', delta_j_c, this_pe
-            out_grid = eoshift(out_grid, refinement * delta_j_c, 0.0, 2)
+            out_grid = eoshift(out_grid, refinement * delta_j_c, DIM=2)
          end if
 
          shift_p_ind(:,:,1) = shift_p_ind(:,:,1) + delta_i_c
