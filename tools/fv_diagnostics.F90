@@ -4311,7 +4311,7 @@ contains
             do j=js,je
                do i=is,ie
                   if( q(i,j,k)<q_low .or. q(i,j,k)>q_hi ) then
-                      write(*,998) k,i,j, pos(i,j,1)*rad2deg-360.0, pos(i,j,2)*rad2deg, qname, q(i,j,k)
+                      write(*,998) k,i,j, pos(i,j,1)*rad2deg, pos(i,j,2)*rad2deg, qname, q(i,j,k)
 !                      write(*,*) 'Warn_K=',k,'(i,j)=',i,j, pos(i,j,1)*rad2deg, pos(i,j,2)*rad2deg, q(i,j,k)
 998                   format('Warn_K=',I4,' (i,j)=',2I5,' (lon,lat)=',f7.3,1x,f7.3,1x, A,' =',f10.5)
 997                   format('     K=',I4,3x,f10.5)
