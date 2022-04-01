@@ -359,7 +359,6 @@ contains
    if (mygrid .eq. 2) call allocate_tracker(mygrid, Atm(mygrid)%bd%isc, Atm(mygrid)%bd%iec, Atm(mygrid)%bd%jsc, Atm(mygrid)%bd%jec)
 #endif   
 
-
    Atm(mygrid)%Time_init = Time_init
 
    if(Atm(mygrid)%flagstruct%warm_start) then
@@ -2449,7 +2448,7 @@ contains
         do ix = 1, blen
           i = Atm_block%index(nb)%ii(ix)
           j = Atm_block%index(nb)%jj(ix)
-          Atm(mygrid)%downcpl2d(i,j) = IPD_Data(nb)%Sfcprop%tsfco(ix)
+          Atm(mygrid)%parent2nest_2d(i,j) = IPD_Data(nb)%Sfcprop%tsfco(ix)
         enddo
       enddo
       ! Loop through and fill all nested grids
@@ -2466,7 +2465,7 @@ contains
             i = Atm_block%index(nb)%ii(ix)
             j = Atm_block%index(nb)%jj(ix)
             if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
-              IPD_data(nb)%Sfcprop%tsfco(ix) = Atm(mygrid)%downcpl2d(i,j)
+              IPD_data(nb)%Sfcprop%tsfco(ix) = Atm(mygrid)%parent2nest_2d(i,j)
             endif
           enddo
         enddo
@@ -2481,7 +2480,7 @@ contains
         do ix = 1, blen
           i = Atm_block%index(nb)%ii(ix)
           j = Atm_block%index(nb)%jj(ix)
-          Atm(mygrid)%downcpl2d(i,j) = IPD_Data(nb)%Sfcprop%zorlwav(ix)
+          Atm(mygrid)%parent2nest_2d(i,j) = IPD_Data(nb)%Sfcprop%zorlwav(ix)
         enddo
       enddo
       ! Loop through and fill all nested grids
@@ -2498,8 +2497,8 @@ contains
             i = Atm_block%index(nb)%ii(ix)
             j = Atm_block%index(nb)%jj(ix)
             if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
-              IPD_data(nb)%Sfcprop%zorlwav(ix) = Atm(mygrid)%downcpl2d(i,j)
-            ! IPD_data(nb)%Sfcprop%zorlw(ix) = Atm(mygrid)%downcpl2d(i,j)
+              IPD_data(nb)%Sfcprop%zorlwav(ix) = Atm(mygrid)%parent2nest_2d(i,j)
+            ! IPD_data(nb)%Sfcprop%zorlw(ix) = Atm(mygrid)%parent2nest_2d(i,j)
             endif
           enddo
         enddo
@@ -2510,7 +2509,7 @@ contains
 
 !>@brief The subroutine 'fill_nested_grid_cpl' fills the nested grid for
 !! coupling variables from its parent grid
-!>@details Fill downcpl2d on the nested grid with values from its parent.
+!>@details Fill parent2nest_2d on the nested grid with values from its parent.
   subroutine fill_nested_grid_cpl(this_grid, proc_in)
     integer, intent(in) :: this_grid
     logical, intent(in), optional :: proc_in
@@ -2542,7 +2541,7 @@ contains
    !if (Atm(this_grid)%neststruct%parent_proc .and. Atm(this_grid)%neststruct%parent_tile == Atm(this_grid)%parent_grid%global_tile) then
     if (Atm(this_grid)%neststruct%parent_tile == Atm(this_grid)%parent_grid%global_tile) then
       call mpp_global_field(Atm(this_grid)%parent_grid%domain, &
-                            Atm(this_grid)%parent_grid%downcpl2d(isd_p:ied_p,jsd_p:jed_p), &
+                            Atm(this_grid)%parent_grid%parent2nest_2d(isd_p:ied_p,jsd_p:jed_p), &
                             g_dat(isg:,jsg:,1), position=CENTER)
       if (mpp_pe() == sending_proc) then
         do p=1,size(Atm(this_grid)%pelist)
@@ -2555,7 +2554,7 @@ contains
     endif
     call timing_off('COMM_TOTAL')
     if (process) then
-      call fill_nested_grid(Atm(this_grid)%downcpl2d, g_dat(isg:,jsg:,1), &
+      call fill_nested_grid(Atm(this_grid)%parent2nest_2d, g_dat(isg:,jsg:,1), &
                             Atm(this_grid)%neststruct%ind_h, Atm(this_grid)%neststruct%wt_h, &
                             0, 0, isg, ieg, jsg, jeg, Atm(this_grid)%bd)
     endif
