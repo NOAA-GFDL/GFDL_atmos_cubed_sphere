@@ -1254,9 +1254,8 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: peln(:,:,:)   _NULL  !< ln(pe)
     real, _ALLOCATABLE :: pkz (:,:,:)   _NULL  !< finite-volume mean pk
 
-
-! For downscaling coupling variables from parent to nested grids
-    real, _ALLOCATABLE :: downcpl2d(:,:) _NULL !< temporary 2d arrary for downscaling coupling variables
+! For downscaling/remapping a 2d variable from parent to its nest
+    real, _ALLOCATABLE :: parent2nest_2d(:,:) _NULL !< 2d arrary for downscaling a variable from parent to its nest
 
 ! For phys coupling:
     real, _ALLOCATABLE :: u_srf(:,:)    _NULL  !< Surface u-wind
@@ -1482,7 +1481,7 @@ contains
     allocate ( Atm%peln(is:ie,npz+1,js:je) )
     allocate (  Atm%pkz(is:ie,js:je,npz) )
 
-    allocate ( Atm%downcpl2d(isd:ied,jsd:jed) )
+    allocate ( Atm%parent2nest_2d(isd:ied,jsd:jed) )
 
     allocate ( Atm%u_srf(is:ie,js:je) )
     allocate ( Atm%v_srf(is:ie,js:je) )
@@ -1873,8 +1872,7 @@ contains
     deallocate ( Atm%inline_mp%pres )
     deallocate ( Atm%inline_mp%preg )
 
-
-    deallocate ( Atm%downcpl2d )
+    deallocate ( Atm%parent2nest_2d )
 
     deallocate ( Atm%u_srf )
     deallocate ( Atm%v_srf )
