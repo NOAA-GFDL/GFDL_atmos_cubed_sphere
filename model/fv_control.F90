@@ -162,7 +162,6 @@ module fv_control_mod
                                           read_namelist_molecular_diffusion_nml
 
 #ifdef MOVING_NEST
-   use fms_io_mod,               only: fms_io_exit
    use fv_moving_nest_types_mod, only: fv_moving_nest_init, deallocate_fv_moving_nests
    use fv_tracker_mod,           only: deallocate_tracker
 #endif

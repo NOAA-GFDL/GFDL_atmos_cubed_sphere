@@ -137,13 +137,6 @@ module fv_diagnostics_mod
 
  use fv_arrays_mod, only: max_step
 
-#ifdef MOVING_NEST
-!use fv_moving_nest_physics_mod, only : dump_surface_physics
-!use fms_io_mod,                 only : fms_io_exit
-!use fv_io_mod,                  only : fv_io_exit
-!use mpp_mod,                    only : mpp_exit
-#endif
-
 #ifndef GFS_PHYS
  use gfdl_mp_mod, only: wqs1, qsmith_init, c_liq
 #endif
@@ -4317,27 +4310,11 @@ contains
 997                   format('     K=',I4,3x,f10.5)
                       if ( k/= 1 ) write(*,997) k-1, q(i,j,k-1)
                       if ( k/=km ) write(*,997) k+1, q(i,j,k+1)
-#ifdef MOVING_NEST
-                      !if ( k .eq. km) then
-!                     print '("[INFO] WDR ",A," RANGE error at lowest level (",I0,",",I0,",",I0,")")', qname, i, j, k
-!                     call dump_surface_physics(i, j, k)
-                      !endif
-#endif
                   endif
                enddo
             enddo
          enddo
          call mpp_error(NOTE,'==> Error from range_check: data out of bound')
-#ifdef MOVING_NEST
-!!         !! Dump FMS debugging information
-!         call fms_io_exit()   !! Force the output of the buffered NC files
-!         print '("[INFO] WDR calling mpp_exit after moving nest atmosphere.F90 npe=",I0)', mpp_pe()
-!         call fv_io_exit()
-!         call mpp_exit()
-!         print '("[INFO] WDR calling STOP after moving nest atmosphere.F90 npe=",I0)', mpp_pe()
-!         stop
-#endif
-
       endif
 
  end subroutine range_check_3d

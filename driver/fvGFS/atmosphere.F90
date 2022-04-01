@@ -656,10 +656,6 @@ contains
    logical :: used
    real    :: rdt
    type(time_type) :: atmos_time
-#ifdef MOVING_NEST
-   character(len=15) :: str_time
-   character*255 :: message
-#endif
 
 !---- Call FV dynamics -----
 
@@ -714,27 +710,6 @@ contains
                       Atm(n)%inline_mp)
 
      call timing_off('fv_dynamics')
-
-     ! WDR start code to output moving nest debug information after timestep.
-     !  This is solely debugging information; not required for moving nest functionality.
-#ifdef MOVING_NEST
-
-     !call date_and_time(TIME=str_time)
-     !write(message,'("TIMESTEP atmosphere.F90 a_step=",I0," fcst_hr=",F8.2," time=",A12)')  a_step, a_step * dt_atmos / 3600.0, str_time
-     !call mpp_error(NOTE,message)
-
-     !! Re-enable to output buffered NC files early in a run.
-     !if (tsvar_out .and. a_step .eq. 4800) then
-     !   call fms_io_exit()   !! Force the output of the buffered NC files
-     !   print '("[INFO] WDR calling mpp_exit after moving nest atmosphere.F90 npe=",I0)', this_pe
-     !   call fv_io_exit()
-     !   call mpp_exit()
-     !   print '("[INFO] WDR calling STOP after moving nest atmosphere.F90 npe=",I0)', this_pe
-     !   stop
-     !endif
-
-     !! WDR End code
-#endif
 
     if (ngrids > 1 .and. (psc < p_split .or. p_split < 0)) then
        call mpp_sync()

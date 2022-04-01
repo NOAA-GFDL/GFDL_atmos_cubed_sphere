@@ -76,7 +76,6 @@
 
 #include <fms_platform.h>
  use constants_mod,   only: omega, pi=>pi_8, cnst_radius=>radius
- use fms_mod,         only : mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_ROUTINE, clock_flag_default
  use mpp_mod,         only: FATAL, mpp_error, WARNING
  use external_sst_mod, only: i_sst, j_sst, sst_ncep, sst_anom
  use mpp_domains_mod, only: mpp_update_domains, DGRID_NE, mpp_global_sum
@@ -1779,12 +1778,6 @@
  logical, save       :: first_time = .true.
  integer, save       :: id_latlon
 
-    !if (first_time) then
-    !   id_latlon     = mpp_clock_id ('latlon2xyz',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-    !end if
-
-    !call mpp_clock_begin (id_latlon)
-
     do n=1,2
        q(n) = p(n)
     enddo
@@ -1798,8 +1791,6 @@
     e(1) = e1
     e(2) = e2
     e(3) = e3
-
-    !call mpp_clock_end (id_latlon)
 
  end subroutine latlon2xyz
 
