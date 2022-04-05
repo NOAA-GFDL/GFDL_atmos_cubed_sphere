@@ -1,9 +1,9 @@
-# RELEASE NOTES for FV3 202202: Summary
-FV3-202202-public --- February 2022
+# RELEASE NOTES for FV3 202204: Summary
+FV3-202204-public --- April 2022
 Lucas Harris, GFDL lucas.harris@noaa.gov
 
 This version has been tested against the current SHiELD physics
-and with FMS release 2021.04 from https://github.com/NOAA-GFDL/FMS
+and with FMS release 2022.01 from https://github.com/NOAA-GFDL/FMS
 
 This release includes the following:
 - Release of stand-alone solo_core functionality with simple physics. 
