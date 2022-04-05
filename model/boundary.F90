@@ -30,7 +30,6 @@ module boundary_mod
   use mpp_domains_mod,    only: AGRID, BGRID_NE, CGRID_NE, DGRID_NE
   use mpp_mod,            only: mpp_error, FATAL, mpp_sum, mpp_sync, mpp_npes, mpp_broadcast, WARNING, mpp_pe
 
-  use fv_mp_mod,          only: mp_bcst
   use fv_arrays_mod,      only: fv_atmos_type, fv_nest_BC_type_3D, fv_grid_bounds_type
   use mpp_mod,            only: mpp_send, mpp_recv
   use fv_timing_mod,      only: timing_on, timing_off
