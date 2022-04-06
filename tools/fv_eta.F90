@@ -632,12 +632,6 @@ module fv_eta_mod
          stretch_fac = 1.03
          auto_routine = 1
 
-      !case (75)   ! HS-SGO test configuration
-      !   pint = 100.E2
-      !   ptop = 10.E2
-      !   stretch_fac = 1.035
-      !   auto_routine = 6
-
       ! kgao: introduce EMC's L75 config
       case (75)
          if (trim(npz_type) == 'emc') then

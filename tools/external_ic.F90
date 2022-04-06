@@ -215,14 +215,6 @@ contains
         call prt_maxmin('cld_amt', Atm%q(:,:,:,cld_amt), is, ie, js, je, ng, Atm%npz, 1.)
       endif
 
-!Now in fv_restart
-!!$      call p_var(Atm%npz,  is, ie, js, je, Atm%ak(1),  ptop_min,         &
-!!$                 Atm%delp, Atm%delz, Atm%pt, Atm%ps,               &
-!!$                 Atm%pe,   Atm%peln, Atm%pk, Atm%pkz,              &
-!!$                 kappa, Atm%q, ng, Atm%ncnst, Atm%gridstruct%area_64, Atm%flagstruct%dry_mass,           &
-!!$                 Atm%flagstruct%adjust_dry_mass, Atm%flagstruct%mountain, Atm%flagstruct%moist_phys,   &
-!!$                 Atm%flagstruct%hydrostatic, Atm%flagstruct%nwat, Atm%domain, Atm%flagstruct%adiabatic, Atm%flagstruct%make_nh)
-
   end subroutine get_external_ic
 
 

@@ -718,14 +718,6 @@ contains
          Atm(n)%flagstruct%srf_init = .true.
       endif
 
-      !if (n==this_grid) then
-      !  if (Atm(n)%flagstruct%external_ic) then
-      !    call fv_io_write_atminput(Atm(n))
-      !  else
-      !    call fv_io_write_atminput(Atm(n),'atmrst','ATMRST')
-      !  endif
-      !endif
-
     end do   ! n_tile
 
   end subroutine fv_restart
