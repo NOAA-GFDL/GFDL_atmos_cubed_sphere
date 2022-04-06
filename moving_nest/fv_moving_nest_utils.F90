@@ -1577,13 +1577,17 @@ contains
 
     type(bbox)  :: nest_bbox, parent_bbox
     integer     :: x,y
-    logical     :: found = .false.
+    logical     :: found
 
     real(kind=R_GRID) :: pi = 4 * atan(1.0d0)
     real                :: rad2deg
+    integer     :: this_pe
+
+    this_pe = mpp_pe()
 
     rad2deg =  180.0 / pi
 
+    found = .false.
     parent_x = -999
     parent_y = -999
     nest_x = -999
@@ -1616,14 +1620,39 @@ contains
             if (debug_log) print '("[INFO] WDR find_nest_alignment parent(",I0,",",I0,") nest(",I0,",",I0,")")', x,y,nest_bbox.is, nest_bbox.js
             if (debug_log) print '("[INFO] WDR find_nest_alignment ",F10.5, F10.5)', parent_geo%lats(x,y)*rad2deg, parent_geo%lons(x,y)*rad2deg
           endif
+
+          if (   abs(abs(parent_geo%lons(x,y) - nest_geo%lons(nest_bbox.is, nest_bbox.js)) - 2*pi)  .lt. 0.0001) then
+            found = .true.
+            if (debug_log) print '("[INFO] WDR find_nest_alignment nest WRAP MATCH FOUND npe=",I0,F10.5, F10.5)', this_pe, nest_geo%lats(nest_bbox.is, nest_bbox.js)*rad2deg, nest_geo%lons(nest_bbox.is, nest_bbox.js)*rad2deg
+            if (debug_log) print '("[INFO] WDR find_nest_alignment WRAP MATCH ",F10.5, F10.5)', parent_geo%lats(x,y)*rad2deg, parent_geo%lons(x,y)*rad2deg
+
+            parent_x = x
+            parent_y = y
+            nest_x = nest_bbox.is
+            nest_y = nest_bbox.js
+
+            if (debug_log) print '("[INFO] WDR find_nest_alignment parent(",I0,",",I0,") nest(",I0,",",I0,")")', x,y,nest_bbox.is, nest_bbox.js
+            if (debug_log) print '("[INFO] WDR find_nest_alignment ",F10.5, F10.5)', parent_geo%lats(x,y)*rad2deg, parent_geo%lons(x,y)*rad2deg
+          endif
         endif
       enddo
     enddo
 
     if (found) then
       if (debug_log) print '("[INFO] WDR find_nest_alignment MATCH FOUND",F10.5, F10.5)', nest_geo%lats(nest_bbox.is, nest_bbox.js)*rad2deg, nest_geo%lons(nest_bbox.is, nest_bbox.js)*rad2deg
-    else
-      if (debug_log) print '("[INFO] WDR find_nest_alignment NO MATCH FOUND",F10.5, F10.5)', nest_geo%lats(nest_bbox.is, nest_bbox.js)*rad2deg, nest_geo%lons(nest_bbox.is, nest_bbox.js)*rad2deg
+    endif
+
+    if (.not. found .and. debug_log) then
+      print '("[INFO] WDR find_nest_alignment nest NO MATCH FOUND npe=",I0,F10.5, F10.5)', this_pe, nest_geo%lats(nest_bbox.is, nest_bbox.js)*rad2deg, nest_geo%lons(nest_bbox.is, nest_bbox.js)*rad2deg
+      print '("[INFO] WDR find_nest_alignment nest NO MATCH FOUND npe=",I0,F10.5, F10.5)', this_pe, nest_geo%lats(nest_bbox.is, nest_bbox.je)*rad2deg, nest_geo%lons(nest_bbox.is, nest_bbox.je)*rad2deg
+      print '("[INFO] WDR find_nest_alignment nest NO MATCH FOUND npe=",I0,F10.5, F10.5)', this_pe, nest_geo%lats(nest_bbox.ie, nest_bbox.je)*rad2deg, nest_geo%lons(nest_bbox.ie, nest_bbox.je)*rad2deg
+      print '("[INFO] WDR find_nest_alignment nest NO MATCH FOUND npe=",I0,F10.5, F10.5)', this_pe, nest_geo%lats(nest_bbox.ie, nest_bbox.js)*rad2deg, nest_geo%lons(nest_bbox.ie, nest_bbox.js)*rad2deg
+
+      do x = parent_bbox.is, parent_bbox.ie
+        do y = parent_bbox.js, parent_bbox.je          
+          print '("[INFO] WDR find_nest_alignment parent NO MATCH FOUND npe="I0," ",I0," ",I0," ",F10.5, F10.5)', this_pe, x, y, parent_geo%lats(x,y)*rad2deg, parent_geo%lons(x,y)*rad2deg
+        enddo
+      enddo
     endif
 
   end subroutine find_nest_alignment
