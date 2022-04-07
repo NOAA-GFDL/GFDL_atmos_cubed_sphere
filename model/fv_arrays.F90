@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -29,9 +29,12 @@ module fv_arrays_mod
   use horiz_interp_type_mod, only: horiz_interp_type
   use mpp_mod,               only: mpp_broadcast
   use platform_mod,          only: r8_kind
+  use constants_mod,         only: cnst_radius => radius, cnst_omega => omega
   public
 
   integer, public, parameter :: R_GRID = r8_kind
+  real(kind=r8_kind), public :: radius = cnst_radius
+  real(kind=r8_kind), public :: omega = cnst_omega
 
   !Several 'auxiliary' structures are introduced here. These are for
   ! the internal use by certain modules, and although fv_atmos_type
@@ -55,8 +58,6 @@ module fv_arrays_mod
      integer :: id_u_dt_sg, id_v_dt_sg, id_t_dt_sg, id_qv_dt_sg
      integer :: id_ws, id_te, id_amdt, id_mdt, id_divg, id_aam
      logical :: initialized = .false.
-     real  sphum, liq_wat, ice_wat       ! GFDL physics
-     real  rainwat, snowwat, graupel
 
      real :: efx(max_step), efx_sum, efx_nest(max_step), efx_sum_nest, mtq(max_step), mtq_sum
      integer :: steps
@@ -164,8 +165,11 @@ module fv_arrays_mod
      integer :: npx_g, npy_g, ntiles_g ! global domain
 
      real(kind=R_GRID) :: global_area
-     logical :: g_sum_initialized = .false. !< Not currently used but can be useful
-     logical:: sw_corner = .false., se_corner = .false., ne_corner = .false., nw_corner = .false.
+     logical :: g_sum_initialized = .false. !Not currently used but can be useful
+     logical:: sw_corner = .false.
+     logical:: se_corner = .false.
+     logical:: ne_corner = .false.
+     logical:: nw_corner = .false.
 
      real(kind=R_GRID) :: da_min, da_max, da_min_c, da_max_c
 
@@ -187,7 +191,7 @@ module fv_arrays_mod
                                    !< cubed-sphere will be used. If 4, a doubly-periodic
                                    !< f-plane cartesian grid will be used. If 5, a user-defined
                                    !< orthogonal grid will be used. If -1, the grid is read
-                                   !< from INPUT/grid_spec.nc. Values 2, 3, 5, 6, and 7 are not
+                                   !< from INPUT/grid_spec.nc. Values 2, 3, 6, and 7 are not
                                    !< supported and will likely not run. The default value is 0.
 
      logical, pointer :: nested   !< Whether this is a nested grid. .false. by default.
@@ -223,6 +227,7 @@ module fv_arrays_mod
 !                                   !<  4: double periodic boundary condition on Cartesian grid
 !                                   !<  5: a user-defined orthogonal grid for stand alone regional model
 !  -> moved to grid_tools
+
 
 !> Momentum (or KE) options:
    integer :: hord_mt = 10   !< Horizontal advection scheme for momentum fluxes. A
@@ -381,6 +386,9 @@ module fv_arrays_mod
                                      !< horizontal advection schemes are enabled, but is unnecessary and
                                      !< not recommended when using monotonic advection. The default is .false.
    logical :: use_old_omega = .true.
+   logical :: remap_te = .false.  !< A developmental option, remap total energy based on abs(kord_tm)
+                                  !< if kord_tm=0 use GMAO Cubic, otherwise as
+                                  !< Tv remapping
 !> PG off centering:
    real    :: beta  = 0.0  !< Parameter specifying fraction of time-off-centering for backwards
                            !< evaluation of the pressure gradient force. The default is 0.0, which
@@ -394,7 +402,7 @@ module fv_arrays_mod
                            !< the values of 'a_imp' and 'beta' should add to 1, so that the time-centering is
                            !< consistent between the PGF and the nonhydrostatic solver.
                            !< The proper range is 0 to 0.45.
-#ifdef SW_DYNAMIC
+#ifdef SW_DYNAMICS
    integer :: n_sponge = 0 !< Controls the number of layers at the upper boundary on
                            !< which the 2Dx filter is applied. This does not control the sponge layer.
                            !< The default value is 0.
@@ -764,6 +772,7 @@ module fv_arrays_mod
                                   !< wave drag parameterization and for the land surface roughness than
                                   !< either computes internally. This has no effect on the representation of
                                   !< the terrain in the dynamics.
+   logical :: do_am4_remap = .false.   !< Use AM4 vertical remapping operators
 !--------------------------------------------------------------------------------------
 ! The following options are useful for NWP experiments using datasets on the lat-lon grid
 !--------------------------------------------------------------------------------------
@@ -781,6 +790,9 @@ module fv_arrays_mod
                                    !< horizontally-interpolated output from chgres. The default is .false.
                                    !< Additional options are available through external_ic_nml.
    logical :: hrrrv3_ic = .false.
+! following are namelist parameters for Stochastic Energy Baskscatter
+! dissipation estimate
+   logical :: do_diss_est  = .false.     !< compute and save dissipation estimate
    logical :: ecmwf_ic = .false.   !< If external_ic = .true., reads initial conditions from ECMWF analyses.
                                    !< The default is .false.
    logical :: gfs_phil = .false.      !< if .T., compute geopotential inside of GFS physics (not used?)
@@ -875,23 +887,22 @@ module fv_arrays_mod
   real(kind=R_GRID) :: deglon_start = -30., deglon_stop = 30., &  !< boundaries of latlon patch
                        deglat_start = -30., deglat_stop = 30.
 
-   logical :: regional = .false.       !< Default setting for the regional domain.
-
-   integer :: bc_update_interval = 3   !< Default setting for interval (hours) between external regional BC data files.
-
-  integer :: nrows_blend = 0          !< # of blending rows in the outer integration domain.
-  logical :: write_restart_with_bcs = .false.   !< Default setting for using DA-updated BC files
-  logical :: regional_bcs_from_gsi = .false.    !< Default setting for writing restart files with boundary rows
-
-
   !>Convenience pointers
   integer, pointer :: grid_number
 
   !f1p
   logical  :: adj_mass_vmr = .false. !TER: This is to reproduce answers for verona patch.  This default can be changed
                                      !     to .true. in the next city release if desired
-  !integer, pointer :: test_case
-  !real,    pointer :: alpha
+
+  logical :: w_limiter = .true. ! Fix excessive w - momentum conserving --- sjl
+
+  ! options related to regional mode
+  logical :: regional = .false.       !< Default setting for the regional domain.
+  integer :: bc_update_interval = 3   !< Default setting for interval (hours) between external regional BC data files.
+  integer :: nrows_blend = 0          !< # of blending rows in the outer integration domain.
+  logical :: write_restart_with_bcs = .false.   !< Default setting for using DA-updated BC files
+  logical :: regional_bcs_from_gsi = .false.    !< Default setting for writing restart files with boundary rows.
+  logical :: pass_full_omega_to_physics_in_non_hydrostatic_mode = .false.  !< Default to passing local omega to physics in non-hydrostatic mode
 
   end type fv_flags_type
 
@@ -1019,6 +1030,10 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: prei(:,:)     _NULL
     real, _ALLOCATABLE :: pres(:,:)     _NULL
     real, _ALLOCATABLE :: preg(:,:)     _NULL
+    real, _ALLOCATABLE :: cond(:,:)     _NULL
+    real, _ALLOCATABLE :: dep(:,:)     _NULL
+    real, _ALLOCATABLE :: reevap(:,:)     _NULL
+    real, _ALLOCATABLE :: sub(:,:)     _NULL
 
     real, _ALLOCATABLE :: qv_dt(:,:,:)
     real, _ALLOCATABLE :: ql_dt(:,:,:)
@@ -1058,6 +1073,15 @@ module fv_arrays_mod
      real, _ALLOCATABLE :: nudge_v_dt(:,:,:)
 
   end type nudge_diag_type
+
+  type sg_diag_type
+
+     real, _ALLOCATABLE :: t_dt(:,:,:)
+     real, _ALLOCATABLE :: u_dt(:,:,:)
+     real, _ALLOCATABLE :: v_dt(:,:,:)
+     real, _ALLOCATABLE :: qv_dt(:,:,:)
+
+  end type sg_diag_type
 
   type coarse_restart_type
 
@@ -1113,18 +1137,11 @@ module fv_arrays_mod
 
   end type fv_coarse_graining_type
 
-!>@brief 'allocate_fv_nest_BC_type' is an interface to subroutines
-!! that allocate the 'fv_nest_BC_type' structure that holds the nested-grid BCs.
-!>@details The subroutines can pass the array bounds explicitly or not.
-!! The bounds in Atm%bd are used for the non-explicit case.
   interface allocate_fv_nest_BC_type
      module procedure allocate_fv_nest_BC_type_3D
      module procedure allocate_fv_nest_BC_type_3D_Atm
   end interface
 
-!>@brief 'deallocate_fv_nest_BC_type' is an interface to a subroutine
-!! that deallocates the 'fv_nest_BC_type' structure that holds the nested-grid
-!BCs.
   interface deallocate_fv_nest_BC_type
      module procedure deallocate_fv_nest_BC_type_3D
   end interface
@@ -1216,11 +1233,12 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: pkz (:,:,:)   _NULL  !< finite-volume mean pk
 
 ! For phys coupling:
-    real, _ALLOCATABLE :: u_srf(:,:)    _NULL  !< Surface u-wind
-    real, _ALLOCATABLE :: v_srf(:,:)    _NULL  !< Surface v-wind
-    real, _ALLOCATABLE :: sgh(:,:)      _NULL  !< Terrain standard deviation
-    real, _ALLOCATABLE :: oro(:,:)      _NULL  !< land fraction (1: all land; 0: all water)
-    real, _ALLOCATABLE :: ts(:,:)       _NULL  !< skin temperature (sst) from NCEP/GFS (K) -- tile
+    real, _ALLOCATABLE :: u_srf(:,:)    _NULL  ! Surface u-wind
+    real, _ALLOCATABLE :: v_srf(:,:)    _NULL  ! Surface v-wind
+    real, _ALLOCATABLE :: sgh(:,:)      _NULL  ! Terrain standard deviation
+    real, _ALLOCATABLE :: oro(:,:)      _NULL  ! land fraction (1: all land; 0: all water)
+    real, _ALLOCATABLE :: ts(:,:)       _NULL  ! skin temperature (sst) from NCEP/GFS (K) -- tile
+    real, _ALLOCATABLE :: ci(:,:)       _NULL  ! sea-ice fraction from external file
 
 ! For stochastic kinetic energy backscatter (SKEB)
     real, _ALLOCATABLE :: diss_est(:,:,:) _NULL !< dissipation estimate taken from 'heat_source'
@@ -1228,9 +1246,10 @@ module fv_arrays_mod
 !-----------------------------------------------------------------------
 ! Others:
 !-----------------------------------------------------------------------
-    real, _ALLOCATABLE :: phis(:,:)     _NULL  !< Surface geopotential (g*Z_surf)
-    real, _ALLOCATABLE :: omga(:,:,:)   _NULL  !< Vertical pressure velocity (pa/s)
-    real, _ALLOCATABLE :: ua(:,:,:)     _NULL  !< (ua, va) are mostly used as the A grid winds
+    real, _ALLOCATABLE :: phis(:,:)     _NULL  ! Surface geopotential (g*Z_surf)
+    real, _ALLOCATABLE :: omga(:,:,:)   _NULL  ! Vertical pressure velocity (pa/s)
+    real, _ALLOCATABLE :: local_omga(:,:,:)   _NULL  ! Vertical pressure velocity (pa/s)
+    real, _ALLOCATABLE :: ua(:,:,:)     _NULL  ! (ua, va) are mostly used as the A grid winds
     real, _ALLOCATABLE :: va(:,:,:)     _NULL
     real, _ALLOCATABLE :: uc(:,:,:)     _NULL  ! (uc, vc) are mostly used as the C grid winds
     real, _ALLOCATABLE :: vc(:,:,:)     _NULL
@@ -1286,7 +1305,7 @@ module fv_arrays_mod
 
      real    :: ptop
 
-  type(fv_grid_type) :: gridstruct
+     type(fv_grid_type) :: gridstruct
 
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1313,20 +1332,18 @@ module fv_arrays_mod
      !Hold on to coarse-grid global grid, so we don't have to waste processor time getting it again when starting to do grid nesting
      real(kind=R_GRID), allocatable, dimension(:,:,:,:) :: grid_global
 
-  integer :: atmos_axes(4)
+     integer :: atmos_axes(4)
 
      type(inline_mp_type) :: inline_mp
      type(phys_diag_type) :: phys_diag
      type(nudge_diag_type) :: nudge_diag
+     type(sg_diag_type) :: sg_diag
+     type(coarse_restart_type) :: coarse_restart
      type(fv_coarse_graining_type) :: coarse_graining
-
   end type fv_atmos_type
 
 contains
 
-!>@brief The subroutine 'allocate_fv_atmos_type' allocates the fv_atmos_type
-!>@details It includes an option to define dummy grids that have scalar and
-!! small arrays defined as null 3D arrays.
   subroutine allocate_fv_atmos_type(Atm, isd_in, ied_in, jsd_in, jed_in, is_in, ie_in, js_in, je_in, &
        npx_in, npy_in, npz_in, ndims_in, ntiles_in, ncnst_in, nq_in, dummy, alloc_2d, ngrids_in)
 
@@ -1450,9 +1467,13 @@ contains
     endif
 
     ! Allocate others
+    allocate ( Atm%diss_est(isd:ied  ,jsd:jed  ,npz) )
     allocate ( Atm%ts(is:ie,js:je) )
     allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
     allocate ( Atm%omga(isd:ied  ,jsd:jed  ,npz) ); Atm%omga=0.
+    if (.not. Atm%flagstruct%hydrostatic .and. .not. Atm%flagstruct%pass_full_omega_to_physics_in_non_hydrostatic_mode) then
+       allocate (Atm%local_omga(isd:ied,jsd:jed,npz)); Atm%local_omga = 0.
+    endif
     allocate (   Atm%ua(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%va(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%uc(isd:ied+1,jsd:jed  ,npz) )
@@ -1470,6 +1491,10 @@ contains
     allocate ( Atm%inline_mp%prei(is:ie,js:je) )
     allocate ( Atm%inline_mp%pres(is:ie,js:je) )
     allocate ( Atm%inline_mp%preg(is:ie,js:je) )
+    allocate ( Atm%inline_mp%cond(is:ie,js:je) )
+    allocate ( Atm%inline_mp%dep(is:ie,js:je) )
+    allocate ( Atm%inline_mp%reevap(is:ie,js:je) )
+    allocate ( Atm%inline_mp%sub(is:ie,js:je) )
 
     !--------------------------
     ! Non-hydrostatic dynamics:
@@ -1554,8 +1579,13 @@ contains
            Atm%inline_mp%prei(i,j) = real_big
            Atm%inline_mp%pres(i,j) = real_big
            Atm%inline_mp%preg(i,j) = real_big
+           Atm%inline_mp%cond(i,j) = real_big
+           Atm%inline_mp%dep(i,j) = real_big
+           Atm%inline_mp%reevap(i,j) = real_big
+           Atm%inline_mp%sub(i,j) = real_big
 
            Atm%ts(i,j) = 300.
+
            Atm%phis(i,j) = real_big
         enddo
      enddo
@@ -1788,6 +1818,7 @@ contains
     deallocate (   Atm%pk )
     deallocate ( Atm%peln )
     deallocate (  Atm%pkz )
+    deallocate (   Atm%ts )
     deallocate ( Atm%phis )
     deallocate ( Atm%omga )
     deallocate (   Atm%ua )
@@ -1800,11 +1831,16 @@ contains
     deallocate (  Atm%cy )
     deallocate (  Atm%ak )
     deallocate (  Atm%bk )
+    deallocate ( Atm%diss_est )
 
     deallocate ( Atm%inline_mp%prer )
     deallocate ( Atm%inline_mp%prei )
     deallocate ( Atm%inline_mp%pres )
     deallocate ( Atm%inline_mp%preg )
+    deallocate ( Atm%inline_mp%cond )
+    deallocate ( Atm%inline_mp%dep )
+    deallocate ( Atm%inline_mp%reevap )
+    deallocate ( Atm%inline_mp%sub )
 
     deallocate ( Atm%u_srf )
     deallocate ( Atm%v_srf )
@@ -2118,3 +2154,4 @@ end subroutine deallocate_fv_nest_BC_type_3d
 
 
 end module fv_arrays_mod
+
