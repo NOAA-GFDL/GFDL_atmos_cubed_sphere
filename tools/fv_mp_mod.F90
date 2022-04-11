@@ -138,6 +138,7 @@
       public mp_start, mp_assign_gid, mp_barrier, mp_stop!, npes
       public domain_decomp, mp_bcst, mp_reduce_max, mp_reduce_sum, mp_gather
       public mp_reduce_min
+      public mp_reduce_minval, mp_reduce_maxval, mp_reduce_minloc, mp_reduce_maxloc
       public fill_corners, XDir, YDir
       public switch_current_domain, switch_current_Atm, broadcast_domains
       public is_master, setup_master
@@ -213,6 +214,38 @@
         MODULE PROCEDURE mp_reduce_max_i4
       END INTERFACE
 
+      !> The interface 'mp_reduce_minval' contains routines that call SPMD_REDUCE.
+      !! The routines compute the minima of values and place the
+      !! absolute minimum value in a result together with the index location.
+      INTERFACE mp_reduce_minval
+        MODULE PROCEDURE mp_reduce_minval_r4
+        MODULE PROCEDURE mp_reduce_minval_r8
+      END INTERFACE
+
+      !> The interface 'mp_reduce_maxval' contains routines that call SPMD_REDUCE.
+      !! The routines compute the maxima of values and place the
+      !! absolute maximum value in a result together with the index location.
+      INTERFACE mp_reduce_maxval
+        MODULE PROCEDURE mp_reduce_maxval_r4
+        MODULE PROCEDURE mp_reduce_maxval_r8
+      END INTERFACE
+
+      !> The interface 'mp_reduce_minloc' contains routines that call SPMD_REDUCE.
+      !! The routines compute the minima of values and place the
+      !! absolute minimum value in a result together with the index and lat/lon/lev location.
+
+      INTERFACE mp_reduce_minloc
+        MODULE PROCEDURE mp_reduce_minloc_r4
+        MODULE PROCEDURE mp_reduce_minloc_r8
+      END INTERFACE
+
+      !> The interface 'mp_reduce_maxloc' contains routines that call SPMD_REDUCE.
+      !! The routines compute the maxima of values and place the
+      !! absolute minimum value in a result together with the index and lat/lon/lev location.
+      INTERFACE mp_reduce_maxloc
+        MODULE PROCEDURE mp_reduce_maxloc_r4
+        MODULE PROCEDURE mp_reduce_maxloc_r8
+      END INTERFACE
 
       !> The interface 'mp_reduce_sum' contains routines that call SPMD_REDUCE.
       !! The routines compute the sums of values and place the
@@ -1949,6 +1982,9 @@ end subroutine switch_current_Atm
          mymax = gmax
 
       end subroutine mp_reduce_max_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------
 ! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
@@ -1966,7 +2002,135 @@ end subroutine switch_current_Atm
          mymax = gmax
 
       end subroutine mp_reduce_max_r8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
 
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_maxval_r4 :: Call SPMD REDUCE_MAX
+!
+      subroutine mp_reduce_maxval_r4(mymax, idex, jdex)
+         real(kind=4), intent(INOUT)  :: mymax
+         integer, intent(INOUT)       :: idex, jdex
+
+         integer :: bcast(2), mrank
+         real(kind=4) :: inreduce(2), outreduce(2)
+
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymax, real(mrank,4)/)
+         bcast=(/idex, jdex/)
+         call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2REAL, MPI_MAXLOC, &
+                             commglobal, ierror )
+         mymax=outreduce(1)
+         mrank=outreduce(2)
+         call MPI_BCAST( bcast, 2, MPI_INTEGER, mrank, commglobal, ierror )
+         idex=bcast(1)
+         jdex=bcast(2)
+
+      end subroutine mp_reduce_maxval_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_maxval_r8 :: Call SPMD REDUCE_MAX
+!
+      subroutine mp_reduce_maxval_r8(mymax, idex, jdex)
+         real(kind=8), intent(INOUT)  :: mymax
+         integer, intent(INOUT)       :: idex, jdex
+
+         integer :: bcast(2), mrank
+         real(kind=8) :: inreduce(2), outreduce(2)
+
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymax, real(mrank,8)/)
+         bcast=(/idex, jdex/)
+         call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2DOUBLE_PRECISION, MPI_MAXLOC, &
+                             commglobal, ierror )
+         mymax=outreduce(1)
+         mrank=outreduce(2)
+         call MPI_BCAST( bcast, 2, MPI_INTEGER, mrank, commglobal, ierror )
+         idex=bcast(1)
+         jdex=bcast(2)
+
+      end subroutine mp_reduce_maxval_r8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_maxloc_r4 :: Call SPMD REDUCE_MAX
+!
+      subroutine mp_reduce_maxloc_r4(mymax, lat, lon, lev, idex, jdex)
+         real(kind=4), intent(INOUT)  :: mymax
+         real(kind=4), intent(INOUT)  :: lat, lon, lev
+         integer, intent(INOUT)       :: idex, jdex
+
+         integer :: mrank
+         real(kind=4) :: inreduce(2), outreduce(2), bcast(5)
+
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymax, real(mrank,4)/)
+         call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2REAL, MPI_MAXLOC, &
+                             commglobal, ierror )
+         mymax=outreduce(1)
+         mrank=outreduce(2)
+         bcast=(/lat, lon, lev, real(idex,4), real(jdex,4)/)
+         call MPI_BCAST( bcast, 5, MPI_REAL, mrank, commglobal, ierror )
+         lat=bcast(1)
+         lon=bcast(2)
+         lev=bcast(3)
+         idex=bcast(4)
+         jdex=bcast(5)
+
+      end subroutine mp_reduce_maxloc_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_maxloc_r8 :: Call SPMD REDUCE_MAX
+!
+      subroutine mp_reduce_maxloc_r8(mymax, lat, lon, lev, idex, jdex)
+         real(kind=8), intent(INOUT)  :: mymax
+         real(kind=8), intent(INOUT)  :: lat, lon, lev
+         integer, intent(INOUT)       :: idex, jdex
+
+         integer :: mrank
+         real(kind=8) :: inreduce(2), outreduce(2), bcast(5)
+
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymax, real(mrank,8)/)
+         call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2DOUBLE_PRECISION, MPI_MAXLOC, &
+                             commglobal, ierror )
+         mymax=outreduce(1)
+         mrank=outreduce(2)
+         bcast=(/lat, lon, lev, real(idex,8), real(jdex,8)/)
+         call MPI_BCAST( bcast, 5, MPI_DOUBLE_PRECISION, mrank, commglobal, ierror )
+         lat=bcast(1)
+         lon=bcast(2)
+         lev=bcast(3)
+         idex=bcast(4)
+         jdex=bcast(5)
+
+      end subroutine mp_reduce_maxloc_r8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_min_r4 :: Call SPMD REDUCE_MIN
+!
       subroutine mp_reduce_min_r4(mymin)
          real(kind=4), intent(INOUT)  :: mymin
 
@@ -1978,7 +2142,15 @@ end subroutine switch_current_Atm
          mymin = gmin
 
       end subroutine mp_reduce_min_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
 
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_min_r8 :: Call SPMD REDUCE_MIN
+!
       subroutine mp_reduce_min_r8(mymin)
          real(kind=8), intent(INOUT)  :: mymin
 
@@ -1990,6 +2162,126 @@ end subroutine switch_current_Atm
          mymin = gmin
 
       end subroutine mp_reduce_min_r8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_minval_r4 :: Call SPMD REDUCE_MIN
+!
+      subroutine mp_reduce_minval_r4(mymin, idex, jdex)
+         real(kind=4), intent(INOUT)  :: mymin
+         integer, intent(INOUT)       :: idex, jdex
+
+         integer :: bcast(2), mrank
+         real(kind=4) :: inreduce(2), outreduce(2)
+
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymin, real(mrank,4)/)
+         bcast=(/idex, jdex/)
+         call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2REAL, MPI_MINLOC, &
+                             commglobal, ierror )
+         mymin=outreduce(1)
+         mrank=outreduce(2)
+         call MPI_BCAST( bcast, 2, MPI_INTEGER, mrank, commglobal, ierror )
+         idex=bcast(1)
+         jdex=bcast(2)
+
+      end subroutine mp_reduce_minval_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_minval_r8 :: Call SPMD REDUCE_MIN
+!
+      subroutine mp_reduce_minval_r8(mymin, idex, jdex)
+         real(kind=8), intent(INOUT)  :: mymin
+         integer, intent(INOUT)       :: idex, jdex
+
+         integer :: bcast(2), mrank
+         real(kind=8) :: inreduce(2), outreduce(2)
+
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymin, real(mrank,8)/)
+         bcast=(/idex, jdex/)
+         call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2DOUBLE_PRECISION, MPI_MINLOC, &
+                             commglobal, ierror )
+         mymin=outreduce(1)
+         mrank=outreduce(2)
+         call MPI_BCAST( bcast, 2, MPI_INTEGER, mrank, commglobal, ierror )
+         idex=bcast(1)
+         jdex=bcast(2)
+
+      end subroutine mp_reduce_minval_r8
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_minloc_r4 :: Call SPMD REDUCE_MIN
+!
+      subroutine mp_reduce_minloc_r4(mymin, lat, lon, lev, idex, jdex)
+         real(kind=4), intent(INOUT)  :: mymin
+         real(kind=4), intent(INOUT)  :: lat, lon, lev
+         integer, intent(INOUT)       :: idex, jdex
+
+         integer :: mrank
+         real(kind=4) :: inreduce(2), outreduce(2), bcast(5)
+
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymin, real(mrank,4)/)
+         call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2REAL, MPI_MINLOC, &
+                             commglobal, ierror )
+         mymin=outreduce(1)
+         mrank=outreduce(2)
+         bcast=(/lat, lon, lev, real(idex,4), real(jdex,4)/)
+         call MPI_BCAST( bcast, 5, MPI_REAL, mrank, commglobal, ierror )
+         lat=bcast(1)
+         lon=bcast(2)
+         lev=bcast(3)
+         idex=bcast(4)
+         jdex=bcast(5)
+
+      end subroutine mp_reduce_minloc_r4
+!
+! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
+!-------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------
+! vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv !
+!
+!     mp_reduce_minloc_r8 :: Call SPMD REDUCE_MIN
+!
+      subroutine mp_reduce_minloc_r8(mymin, lat, lon, lev, idex, jdex)
+         real(kind=8), intent(INOUT)  :: mymin
+         real(kind=8), intent(INOUT)  :: lat, lon, lev
+         integer, intent(INOUT)       :: idex, jdex
+
+         integer :: mrank
+         real(kind=8) :: inreduce(2), outreduce(2), bcast(5)
+
+         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         inreduce=(/mymin, real(mrank,8)/)
+         call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2DOUBLE_PRECISION, MPI_MINLOC, &
+                             commglobal, ierror )
+         mymin=outreduce(1)
+         mrank=outreduce(2)
+         bcast=(/lat, lon, lev, real(idex,8), real(jdex,8)/)
+         call MPI_BCAST( bcast, 5, MPI_DOUBLE_PRECISION, mrank, commglobal, ierror )
+         lat=bcast(1)
+         lon=bcast(2)
+         lev=bcast(3)
+         idex=bcast(4)
+         jdex=bcast(5)
+
+      end subroutine mp_reduce_minloc_r8
 !
 ! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ !
 !-------------------------------------------------------------------------------

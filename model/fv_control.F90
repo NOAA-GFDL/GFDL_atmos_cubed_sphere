@@ -161,6 +161,11 @@ module fv_control_mod
    use molecular_diffusion_mod,     only: molecular_diffusion_init, &
                                           read_namelist_molecular_diffusion_nml
 
+#ifdef MOVING_NEST
+   use fv_moving_nest_types_mod, only: fv_moving_nest_init, deallocate_fv_moving_nests
+   use fv_tracker_mod,           only: deallocate_tracker
+#endif
+
    implicit none
    private
 
@@ -528,17 +533,20 @@ module fv_control_mod
            Atm(n)%neststruct%joffset                = nest_joffsets(n)
            Atm(n)%neststruct%parent_tile            = tile_coarse(n)
            Atm(n)%neststruct%refinement             = nest_refine(n)
-
         else
-
            Atm(n)%neststruct%ioffset                = -999
            Atm(n)%neststruct%joffset                = -999
            Atm(n)%neststruct%parent_tile            = -1
            Atm(n)%neststruct%refinement             = -1
-
         endif
-
      enddo
+
+#ifdef MOVING_NEST
+     ! This has to be called on the input.nml namelist for all PEs
+     !   input_nest02.nml does not have any of the moving nest parameters
+     !   Later call to read_input_nml changes which namelist is used
+     call fv_moving_nest_init(Atm)
+#endif
 
      if (pecounter /= npes) then
         if (mpp_pe() == 0) then
@@ -711,6 +719,7 @@ module fv_control_mod
         !reset to universal pelist
         call mpp_set_current_pelist( global_pelist )
         !Except for npes_nest_tile all arrays should be just the nests and should NOT include the top level
+
         call mpp_define_nest_domains(global_nest_domain, Atm(this_grid)%domain, &
              ngrids-1, nest_level=nest_level(2:ngrids) , &
              istart_coarse=nest_ioffsets(2:ngrids), jstart_coarse=nest_joffsets(2:ngrids), &
@@ -999,6 +1008,7 @@ module fv_control_mod
        ierr = check_nml_error(ios,'fv_nest_nml')
 
      end subroutine read_namelist_fv_nest_nml
+
 
      subroutine read_namelist_fv_grid_nml
 
@@ -1323,6 +1333,10 @@ module fv_control_mod
        call deallocate_coarse_restart_type(Atm(n)%coarse_graining%restart)
     end do
 
+#ifdef MOVING_NEST
+    call deallocate_fv_moving_nests(ngrids)
+    call deallocate_tracker(ngrids)
+#endif
 
  end subroutine fv_end
 !-------------------------------------------------------------------------------
