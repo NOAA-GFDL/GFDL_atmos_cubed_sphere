@@ -294,7 +294,7 @@ contains
    use ccpp_static_api,   only: ccpp_physics_init
    use CCPP_data,         only: ccpp_suite,          &
                                 cdata => cdata_tile, &
-                                CCPP_interstitial
+                                GFDL_interstitial
 #ifdef OPENMP
    use omp_lib
 #endif
@@ -512,7 +512,7 @@ contains
 #endif
    ! Create interstitial data type for fast physics; for multi-gases physics,
    ! pass q(:,:,:,1:num_gas) as qvi, otherwise pass q(:,:,:,1:1) as 4D array
-   call CCPP_interstitial%create(Atm(mygrid)%bd%is, Atm(mygrid)%bd%ie, Atm(mygrid)%bd%isd, Atm(mygrid)%bd%ied, &
+   call GFDL_interstitial%create(Atm(mygrid)%bd%is, Atm(mygrid)%bd%ie, Atm(mygrid)%bd%isd, Atm(mygrid)%bd%ied, &
                                  Atm(mygrid)%bd%js, Atm(mygrid)%bd%je, Atm(mygrid)%bd%jsd, Atm(mygrid)%bd%jed, &
                                  Atm(mygrid)%npz, Atm(mygrid)%ng,                                              &
                                  dt_atmos, p_split, Atm(mygrid)%flagstruct%k_split,                            &
