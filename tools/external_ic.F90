@@ -206,10 +206,9 @@ module external_ic_mod
 
 contains
 
-   subroutine get_external_ic( Atm, fv_domain, cold_start )
+   subroutine get_external_ic( Atm, cold_start )
 
       type(fv_atmos_type), intent(inout), target :: Atm
-      type(domain2d),      intent(inout) :: fv_domain
       logical, intent(IN) :: cold_start
       real:: alpha = 0.
       real rdg
@@ -260,14 +259,14 @@ contains
          enddo
       enddo
 
-      call mpp_update_domains( f0, fv_domain )
+      call mpp_update_domains( f0, Atm%domain )
       if ( Atm%gridstruct%cubed_sphere .and. (.not. Atm%gridstruct%bounded_domain))then
          call fill_corners(f0, Atm%npx, Atm%npy, YDir)
       endif
 
 ! Read in cubed_sphere terrain
       if ( Atm%flagstruct%mountain ) then
-           call get_cubed_sphere_terrain(Atm, fv_domain)
+           call get_cubed_sphere_terrain(Atm)
       else
          if (.not. Atm%neststruct%nested) Atm%phis = 0. !TODO: Not sure about this line --- lmh 30 may 18
       endif
@@ -276,32 +275,32 @@ contains
       if ( Atm%flagstruct%ncep_ic ) then
            nq = 1
                              call timing_on('NCEP_IC')
-           call get_ncep_ic( Atm, fv_domain, nq )
+           call get_ncep_ic( Atm, nq )
                              call timing_off('NCEP_IC')
 #ifdef FV_TRACERS
            if (.not. cold_start) then
-              call fv_io_read_tracers( fv_domain, Atm )
+              call fv_io_read_tracers( Atm )
               if(is_master()) write(*,*) 'All tracers except sphum replaced by FV IC'
            endif
 #endif
       elseif ( Atm%flagstruct%nggps_ic ) then
                              call timing_on('NGGPS_IC')
-           call get_nggps_ic( Atm, fv_domain )
+           call get_nggps_ic( Atm )
                              call timing_off('NGGPS_IC')
       elseif ( Atm%flagstruct%hrrrv3_ic ) then
                              call timing_on('HRRR_IC')
-           call get_hrrr_ic( Atm, fv_domain )
+           call get_hrrr_ic( Atm )
                              call timing_off('HRRR_IC')
       elseif ( Atm%flagstruct%ecmwf_ic ) then
            if( is_master() ) write(*,*) 'Calling get_ecmwf_ic'
                              call timing_on('ECMWF_IC')
-           call get_ecmwf_ic( Atm, fv_domain )
+           call get_ecmwf_ic( Atm )
                              call timing_off('ECMWF_IC')
       else
 ! The following is to read in legacy lat-lon FV core restart file
 !  is Atm%q defined in all cases?
            nq = size(Atm%q,4)
-           call get_fv_ic( Atm, fv_domain, nq )
+           call get_fv_ic( Atm, nq )
       endif
 
       call prt_maxmin('PS', Atm%ps, is, ie, js, je, ng, 1, 0.01)
@@ -368,9 +367,8 @@ contains
 
 
 !------------------------------------------------------------------
-  subroutine get_cubed_sphere_terrain( Atm, fv_domain )
+  subroutine get_cubed_sphere_terrain( Atm )
     type(fv_atmos_type), intent(inout), target :: Atm
-    type(domain2d),      intent(inout) :: fv_domain
     type(FmsNetcdfDomainFile_t) :: Fv_core
     integer :: tile_id(1)
     character(len=64)    :: fname
@@ -393,13 +391,13 @@ contains
     jed = Atm%bd%jed
     ng  = Atm%bd%ng
 
-    tile_id = mpp_get_tile_id( fv_domain )
+    tile_id = mpp_get_tile_id( Atm%domain )
 
     fname = 'INPUT/fv_core.res.nc'
     call mpp_error(NOTE, 'external_ic: looking for '//fname)
 
 
-       if( open_file(Fv_core, fname, "read", fv_domain, is_restart=.true.) ) then
+       if( open_file(Fv_core, fname, "read", Atm%domain_for_read, is_restart=.true.) ) then
          call read_data(Fv_core, 'phis', Atm%phis(is:ie,js:je))
          call close_file(Fv_core)
        else
@@ -428,7 +426,7 @@ contains
 !>@brief The subroutine 'get_nggps_ic' reads in data after it has been preprocessed with
 !!    NCEP/EMC orography maker and 'global_chgres', and has been horiztontally
 !! interpolated to the current cubed-sphere grid
-  subroutine get_nggps_ic (Atm, fv_domain)
+  subroutine get_nggps_ic (Atm)
 
 !>variables read in from 'gfs_ctrl.nc'
 !>       VCOORD  -  level information
@@ -456,7 +454,6 @@ contains
 #endif
 
     type(fv_atmos_type), intent(inout) :: Atm
-    type(domain2d),      intent(inout) :: fv_domain
 ! local:
     real, dimension(:), allocatable:: ak, bk
     real, dimension(:,:), allocatable:: wk2, ps, oro_g
@@ -585,7 +582,7 @@ contains
 
     !--- read in surface temperature (k) and land-frac
     ! surface skin temperature
-   if( open_file(SFC_restart, fn_sfc_ics, "read", Atm%domain, is_restart=.true., dont_add_res_to_filename=.true.) ) then
+   if( open_file(SFC_restart, fn_sfc_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
       naxis_dims = get_variable_num_dimensions(SFC_restart, 'tsea')
       allocate (dim_names_alloc(naxis_dims))
       call get_variable_dimension_names(SFC_restart, 'tsea', dim_names_alloc)
@@ -605,7 +602,7 @@ contains
     dim_names_2d(2) = "lon"
 
     ! terrain surface height -- (needs to be transformed into phis = zs*grav)
-    if( open_file(ORO_restart, fn_oro_ics, "read", Atm%domain, is_restart=.true., dont_add_res_to_filename=.true.) ) then
+    if( open_file(ORO_restart, fn_oro_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
       call register_axis(ORO_restart, "lat", "y")
       call register_axis(ORO_restart, "lon", "x")
       if (filtered_terrain) then
@@ -915,7 +912,7 @@ contains
         dim_names_3d4(1) = "levp"
 
         ! surface pressure (Pa)
-        if( open_file(GFS_restart, fn_gfs_ics, "read", Atm%domain, is_restart=.true., dont_add_res_to_filename=.true.) ) then
+        if( open_file(GFS_restart, fn_gfs_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
           call register_axis(GFS_restart, "lat", "y")
           call register_axis(GFS_restart, "lon", "x")
           call register_axis(GFS_restart, "lonp", "x", domain_position=east)
@@ -945,7 +942,7 @@ contains
           do nt = 1, ntracers
 
               q(:,:,:,nt) = -999.99
-             
+
             call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
             call register_restart_field(GFS_restart, trim(tracer_name), q(:,:,:,nt), dim_names_3d3, is_optional=.true.)
           enddo
@@ -964,7 +961,7 @@ contains
   end subroutine get_nggps_ic
 !------------------------------------------------------------------
 !------------------------------------------------------------------
-  subroutine get_hrrr_ic (Atm, fv_domain)
+  subroutine get_hrrr_ic (Atm)
 !    read in data after it has been preprocessed with
 !    NCEP/EMC orography maker
 !
@@ -990,7 +987,6 @@ contains
 
 
       type(fv_atmos_type), intent(inout) :: Atm
-      type(domain2d),      intent(inout) :: fv_domain
 ! local:
       real, dimension(:), allocatable:: ak, bk
       real, dimension(:,:), allocatable:: wk2, ps, oro_g
@@ -1104,7 +1100,7 @@ contains
 
 !--- read in surface temperature (k) and land-frac
         ! surface skin temperature
-       if( open_file(SFC_restart, fn_sfc_ics, "read", Atm%domain, is_restart=.true., dont_add_res_to_filename=.true.) ) then
+       if( open_file(SFC_restart, fn_sfc_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
           call get_variable_dimension_names(SFC_restart, 'tsea', dim_names_2d)
           call register_axis(SFC_restart, dim_names_2d(2), "y")
           call register_axis(SFC_restart, dim_names_2d(1), "x")
@@ -1121,7 +1117,7 @@ contains
         dim_names_2d(2) = "lon"
 
         ! terrain surface height -- (needs to be transformed into phis = zs*grav)
-        if( open_file(ORO_restart, fn_oro_ics, "read", Atm%domain, is_restart=.true., dont_add_res_to_filename=.true.) ) then
+        if( open_file(ORO_restart, fn_oro_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
           call register_axis(ORO_restart, "lat", "y")
           call register_axis(ORO_restart, "lon", "x")
           if (filtered_terrain) then
@@ -1164,7 +1160,7 @@ contains
         dim_names_3d4(1) = "levp"
 
         ! edge pressure (Pa)
-        if( open_file(HRRR_restart, fn_hrr_ics, "read", Atm%domain,is_restart=.true., dont_add_res_to_filename=.true.) ) then
+        if( open_file(HRRR_restart, fn_hrr_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
           call register_axis(HRRR_restart, "lat", "y")
           call register_axis(HRRR_restart, "lon", "x")
           call register_axis(HRRR_restart, "lonp", "x", domain_position=east)
@@ -1360,9 +1356,8 @@ contains
 !------------------------------------------------------------------
 !------------------------------------------------------------------
 !>@brief The subroutine 'get_ncep_ic' reads in the specified NCEP analysis or reanalysis dataset
-  subroutine get_ncep_ic( Atm, fv_domain, nq )
+  subroutine get_ncep_ic( Atm, nq )
       type(fv_atmos_type), intent(inout) :: Atm
-      type(domain2d),      intent(inout) :: fv_domain
       integer, intent(in):: nq
 ! local:
 #ifdef HIWPP_ETA
@@ -1818,7 +1813,7 @@ contains
 !>@brief The subroutine 'get_ecmwf_ic' reads in initial conditions from ECMWF analyses
 !! (EXPERIMENTAL: contact Jan-Huey Chen jan-huey.chen@noaa.gov for support)
 !>@authors Jan-Huey Chen, Xi Chen, Shian-Jiann Lin
-  subroutine get_ecmwf_ic( Atm, fv_domain )
+  subroutine get_ecmwf_ic( Atm )
 
 #ifdef __PGI
       use GFS_restart, only : GFS_restart_type
@@ -1827,7 +1822,6 @@ contains
 #endif
 
       type(fv_atmos_type), intent(inout) :: Atm
-      type(domain2d),      intent(inout) :: fv_domain
 ! local:
       real :: ak_ec(138), bk_ec(138)
       data ak_ec/ 0.000000,     2.000365,     3.102241,     4.666084,     6.827977,     9.746966, &
@@ -2062,7 +2056,7 @@ contains
       dim_names_3d4(1) = "levp"
 
 !! Read in model terrain from oro_data.tile?.nc
-      if( open_file(ORO_restart, fn_oro_ics, "read", Atm%domain, is_restart=.true., dont_add_res_to_filename=.true.) ) then
+      if( open_file(ORO_restart, fn_oro_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
         call register_axis(ORO_restart, "lat", "y")
         call register_axis(ORO_restart, "lon", "x")
         if (filtered_terrain) then
@@ -2088,7 +2082,7 @@ contains
       allocate (ps_gfs(is:ie,js:je))
       allocate (zh_gfs(is:ie,js:je,levp_gfs+1))
 
-      if( open_file(GFS_restart, fn_gfs_ics, "read", Atm%domain, is_restart=.true., dont_add_res_to_filename=.true.) ) then
+      if( open_file(GFS_restart, fn_gfs_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
         call register_axis(GFS_restart, "lat", "y")
         call register_axis(GFS_restart, "lon", "x")
         call register_axis(GFS_restart, "levp", size(zh_gfs,3))
@@ -2622,9 +2616,8 @@ contains
   end subroutine get_ecmwf_ic
 !------------------------------------------------------------------
 !------------------------------------------------------------------
-  subroutine get_fv_ic( Atm, fv_domain, nq )
+  subroutine get_fv_ic( Atm, nq )
       type(fv_atmos_type), intent(inout) :: Atm
-      type(domain2d),      intent(inout) :: fv_domain
       integer, intent(in):: nq
 
       type(FmsNetcdfFile_t) :: Latlon_dyn, Latlon_tra
