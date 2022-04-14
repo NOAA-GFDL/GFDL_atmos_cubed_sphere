@@ -260,7 +260,7 @@ contains
           !3. External_ic
           if (Atm(n)%flagstruct%external_ic) then
              if( is_master() ) write(*,*) 'Calling get_external_ic'
-             call get_external_ic(Atm(n), Atm(n)%domain, .not. do_read_restart)
+             call get_external_ic(Atm(n), .not. do_read_restart)
              if( is_master() ) write(*,*) 'IC generated from the specified external source'
 
           !4. Restart
@@ -275,11 +275,11 @@ contains
                    write(*,*) '***** End Note from FV core **************************'
                    write(*,*) ' '
                 endif
-                call remap_restart( Atm(n)%domain, Atm(n:n) )
+                call remap_restart( Atm(n:n) )
                 if( is_master() ) write(*,*) 'Done remapping dynamical IC'
              else
                 if( is_master() ) write(*,*) 'Warm starting, calling fv_io_restart'
-                call fv_io_read_restart(Atm(n)%domain,Atm(n:n))
+                call fv_io_read_restart(Atm(n)%domain_for_read,Atm(n:n))
                 !====== PJP added DA functionality ======
                 if (Atm(n)%flagstruct%read_increment) then
                    ! print point in middle of domain for a sanity check

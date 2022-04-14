@@ -372,7 +372,7 @@ contains
     if ( Atm(mygrid)%flagstruct%nudge ) then
         call fv_ada_nudge_init( Time, Atm(mygrid)%atmos_axes, npz, zvir, Atm(mygrid)%ak, Atm(mygrid)%bk, &
            Atm(mygrid)%ts, Atm(mygrid)%phis, Atm(mygrid)%gridstruct, Atm(mygrid)%ks, Atm(mygrid)%npx,    &
-           Atm(mygrid)%neststruct, Atm(mygrid)%bd, Atm(mygrid)%domain)
+           Atm(mygrid)%neststruct, Atm(mygrid)%bd, Atm(mygrid)%domain_for_read)
         call mpp_error(NOTE, 'ADA nudging is active')
      endif
 #else
