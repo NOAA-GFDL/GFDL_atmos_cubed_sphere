@@ -188,7 +188,7 @@ module fv_control_mod
      real(kind=R_GRID) , pointer :: target_lon
 
      logical , pointer :: reset_eta
-     logical , pointer :: enforce_rst_cksum
+     logical , pointer :: ignore_rst_cksum
      real    , pointer :: p_fac
      real    , pointer :: a_imp
      integer , pointer :: n_split
@@ -730,7 +730,7 @@ module fv_control_mod
        write_restart_with_bcs        => Atm%flagstruct%write_restart_with_bcs
        regional_bcs_from_gsi         => Atm%flagstruct%regional_bcs_from_gsi
        reset_eta                     => Atm%flagstruct%reset_eta
-       enforce_rst_cksum             => Atm%flagstruct%enforce_rst_cksum
+       ignore_rst_cksum              => Atm%flagstruct%ignore_rst_cksum
        p_fac                         => Atm%flagstruct%p_fac
        a_imp                         => Atm%flagstruct%a_imp
        n_split                       => Atm%flagstruct%n_split
@@ -943,7 +943,7 @@ module fv_control_mod
             w_limiter, write_coarse_restart_files, write_coarse_diagnostics,&
             write_only_coarse_intermediate_restarts, &
             write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst, &
-            pass_full_omega_to_physics_in_non_hydrostatic_mode, enforce_rst_cksum
+            pass_full_omega_to_physics_in_non_hydrostatic_mode, ignore_rst_cksum
 
 
        ! Read FVCORE namelist

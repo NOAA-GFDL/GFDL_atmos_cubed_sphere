@@ -456,7 +456,7 @@ contains
     Atm(1)%Fv_restart_tile_is_open = open_file(Atm(1)%Fv_restart_tile, fname, "read", fv_domain, is_restart=.true.)
     if (Atm(1)%Fv_restart_tile_is_open) then
       call fv_io_register_restart(Atm(1))
-      call read_restart(Atm(1)%Fv_restart_tile, ignore_checksum=Atm(1)%flagstruct%enforce_rst_cksum)
+      call read_restart(Atm(1)%Fv_restart_tile, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
       call close_file(Atm(1)%Fv_restart_tile)
       Atm(1)%Fv_restart_tile_is_open = .false.
     endif
@@ -466,7 +466,7 @@ contains
     Atm(1)%Tra_restart_is_open = open_file(Atm(1)%Tra_restart, fname, "read", fv_domain, is_restart=.true.)
     if (Atm(1)%Tra_restart_is_open) then
       call fv_io_register_restart(Atm(1))
-      call read_restart(Atm(1)%Tra_restart, ignore_checksum=Atm(1)%flagstruct%enforce_rst_cksum)
+      call read_restart(Atm(1)%Tra_restart, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
       call close_file(Atm(1)%Tra_restart)
       Atm(1)%Tra_restart_is_open = .false.
     else
@@ -479,7 +479,7 @@ contains
     if (Atm(1)%Rsf_restart_is_open) then
       Atm(1)%flagstruct%srf_init = .true.
       call fv_io_register_restart(Atm(1))
-      call read_restart(Atm(1)%Rsf_restart, ignore_checksum=Atm(1)%flagstruct%enforce_rst_cksum)
+      call read_restart(Atm(1)%Rsf_restart, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
       call close_file(Atm(1)%Rsf_restart)
       Atm(1)%Rsf_restart_is_open = .false.
     else
@@ -493,7 +493,7 @@ contains
          Atm(1)%Mg_restart_is_open = open_file(Atm(1)%Mg_restart, fname, "read", fv_domain, is_restart=.true.)
          if (Atm(1)%Mg_restart_is_open) then
            call fv_io_register_restart(Atm(1))
-           call read_restart(Atm(1)%Mg_restart, ignore_checksum=Atm(1)%flagstruct%enforce_rst_cksum)
+           call read_restart(Atm(1)%Mg_restart, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
            call close_file(Atm(1)%Mg_restart)
            Atm(1)%Mg_restart_is_open = .false.
          else
@@ -504,7 +504,7 @@ contains
          Atm(1)%Lnd_restart_is_open = open_file(Atm(1)%Lnd_restart, fname, "read", fv_domain, is_restart=.true.)
          if (Atm(1)%Lnd_restart_is_open) then
            call fv_io_register_restart(Atm(1))
-           call read_restart(Atm(1)%Lnd_restart, ignore_checksum=Atm(1)%flagstruct%enforce_rst_cksum)
+           call read_restart(Atm(1)%Lnd_restart, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
            call close_file(Atm(1)%Lnd_restart)
            Atm(1)%Lnd_restart_is_open = .false.
          else
@@ -674,7 +674,7 @@ contains
        if (Atm(1)%Rsf_restart_is_open) then
           Atm%flagstruct%srf_init = .true.
           call fv_io_register_restart(Atm(1))
-          call read_restart(Atm(1)%Rsf_restart, ignore_checksum=Atm(1)%flagstruct%enforce_rst_cksum)
+          call read_restart(Atm(1)%Rsf_restart, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
           call close_file(Atm(1)%Rsf_restart)
           Atm(1)%Rsf_restart_is_open = .false.
          call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
@@ -1435,12 +1435,12 @@ contains
     call fv_io_register_restart_BCs(Atm)
 
     if (Atm%neststruct%BCfile_sw_is_open) then
-      call read_restart_bc(Atm%neststruct%BCfile_sw, ignore_checksum=Atm%flagstruct%enforce_rst_cksum)
+      call read_restart_bc(Atm%neststruct%BCfile_sw, ignore_checksum=Atm%flagstruct%ignore_rst_cksum)
       call close_file(Atm%neststruct%BCfile_sw)
     endif
 
     if (Atm%neststruct%BCfile_ne_is_open) then
-     call read_restart_bc(Atm%neststruct%BCfile_ne, ignore_checksum=Atm%flagstruct%enforce_rst_cksum)
+     call read_restart_bc(Atm%neststruct%BCfile_ne, ignore_checksum=Atm%flagstruct%ignore_rst_cksum)
      call close_file(Atm%neststruct%BCfile_ne)
     endif
 
