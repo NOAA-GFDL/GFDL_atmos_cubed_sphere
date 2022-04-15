@@ -591,7 +591,69 @@ contains
 
   end subroutine mn_var_fill_intern_nest_halos_r8_4d
 
+  !>@brief Find the parent point that corresponds to the is,js point of the nest, and returns that nest point also
+  subroutine calc_nest_alignment(Atm, n, nest_x, nest_y, parent_x, parent_y)
+    type(fv_atmos_type), allocatable, intent(in) :: Atm(:)                                        !< Atm data array
+    integer, intent(in)                          :: n                                             !< Grid numbers
+    integer, intent(out)                         :: nest_x, nest_y, parent_x, parent_y
 
+    integer :: refine
+    integer :: child_grid_num
+    integer :: ioffset, joffset
+
+    child_grid_num = n
+
+    refine = Atm(child_grid_num)%neststruct%refinement
+    
+    ! parent_x and parent_y are on the supergrid, so an increment of ioffset is an increment of 2*refine
+
+    nest_x = Atm(child_grid_num)%bd%isd
+    nest_y = Atm(child_grid_num)%bd%jsd
+
+    ioffset = Atm(n)%neststruct%ioffset
+    joffset = Atm(n)%neststruct%joffset
+    
+    ! Increment of 3 is for halo.  Factor of 2 is for supergrid.
+    parent_x = (nest_x - 3)*2 + ioffset*refine*2
+    parent_y = (nest_y - 3)*2 + joffset*refine*2
+
+  end subroutine calc_nest_alignment
+
+
+
+  subroutine check_nest_alignment(nest_geo, parent_geo, nest_x, nest_y, parent_x, parent_y, found)
+    type(grid_geometry), intent(in)              :: nest_geo                                      !< Tile geometry
+    type(grid_geometry), intent(in)              :: parent_geo                                    !< Parent grid at high-resolution geometry
+    integer, intent(in)                          :: nest_x, nest_y, parent_x, parent_y
+    logical, intent(out)                         :: found
+
+    real(kind=R_GRID) :: pi = 4 * atan(1.0d0)
+    real              :: rad2deg
+    integer           :: this_pe
+
+    this_pe = mpp_pe()
+    rad2deg =  180.0 / pi
+
+    found = .False.
+
+    if (abs(parent_geo%lats(parent_x, parent_y) - nest_geo%lats(nest_x, nest_y)) .lt. 0.0001) then
+      if (abs(parent_geo%lons(parent_x, parent_y) - nest_geo%lons(nest_x, nest_y)) .lt. 0.0001) then
+        found = .True.        
+      endif
+      if (abs(abs(parent_geo%lons(parent_x, parent_y) - nest_geo%lons(nest_x, nest_y)) - 2*pi)  .lt. 0.0001) then
+        found = .True.        
+      endif
+    endif
+
+    !print '("[INFO] WDR C-ALIGN check_nest_alignment npe=",I0," found=",L1," parent(",I0,",",I0,") nest(",I0,",",I0,")",4F16.9)', &
+    !    this_pe, found, parent_x, parent_y, nest_x, nest_y, &
+    !    parent_geo%lats(parent_x, parent_y)*rad2deg, parent_geo%lons(parent_x, parent_y)*rad2deg, &
+    !    nest_geo%lats(nest_x, nest_y)*rad2deg, nest_geo%lons(nest_x, nest_y)*rad2deg
+
+
+
+  end subroutine check_nest_alignment
+  
   !!============================================================================
   !! Step 5.1 -- Load the latlon data from NetCDF
   !!             update parent_geo, tile_geo*, p_grid*, n_grid*
@@ -689,12 +751,6 @@ contains
     enddo
 
     if (debug_log) call show_tile_geo(tile_geo, this_pe, "tile_geo")
-    call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
-
-    if (parent_x .eq. -999) then
-      print '("[ERROR] WDR mn_latlon_load_parent on npe=",I0," parent and nest grids are not aligned!")', this_pe
-      call mpp_error(FATAL, "mn_latlon_load_parent parent and nest grids are not aligned.")
-    endif
 
     ! Allocate tile_geo_u just for this PE, copied from Atm(n)%gridstruct%grid
     ! grid is 1 larger than agrid
@@ -704,25 +760,17 @@ contains
     tile_geo_u%nxp = tile_geo_u%nx + 1
     tile_geo_u%nyp = tile_geo_u%ny + 1
 
-    allocate(tile_geo_u%lons(lbound(Atm(n)%gridstruct%agrid, 1):ubound(Atm(n)%gridstruct%agrid, 1), lbound(Atm(n)%gridstruct%grid, 2):ubound(Atm(n)%gridstruct%grid, 2)))
-    allocate(tile_geo_u%lats(lbound(Atm(n)%gridstruct%agrid, 1):ubound(Atm(n)%gridstruct%agrid, 1), lbound(Atm(n)%gridstruct%grid, 2):ubound(Atm(n)%gridstruct%grid, 2)))
+
+    if (.not. allocated(tile_geo_u%lons)) then
+      !print '("[INFO] WDR mn_latlon_load_parent ALLOCATE tile_geo_u%lons npe=",I0)', this_pe
+      allocate(tile_geo_u%lons(lbound(Atm(n)%gridstruct%agrid, 1):ubound(Atm(n)%gridstruct%agrid, 1), lbound(Atm(n)%gridstruct%grid, 2):ubound(Atm(n)%gridstruct%grid, 2)))
+      allocate(tile_geo_u%lats(lbound(Atm(n)%gridstruct%agrid, 1):ubound(Atm(n)%gridstruct%agrid, 1), lbound(Atm(n)%gridstruct%grid, 2):ubound(Atm(n)%gridstruct%grid, 2)))
+    !else
+    !  print '("[INFO] WDR mn_latlon_load_parent ALREADY ALLOCATED tile_geo_u%lons npe=",I0)', this_pe
+    endif 
 
     tile_geo_u%lons = -999.9
     tile_geo_u%lats = -999.9
-
-    do x = lbound(tile_geo_u%lats, 1), ubound(tile_geo_u%lats, 1)
-      do y = lbound(tile_geo_u%lats, 2), ubound(tile_geo_u%lats, 2)
-        fp_i = (x - nest_x) * 2 + parent_x - 1
-        fp_j = (y - nest_y) * 2 + parent_y
-
-        !print '("[INFO] WDR mn_latlon_load_parent on npe=",I0," fp_i=",I0," fp_j=",I0,4I6)', this_pe, fp_i, fp_j, nest_x, nest_y, parent_x, parent_y
-
-        tile_geo_u%lons(x,y) = fp_super_tile_geo%lons(fp_i, fp_j)
-        tile_geo_u%lats(x,y) = fp_super_tile_geo%lats(fp_i, fp_j)
-      enddo
-    enddo
-
-    if (debug_log) call show_tile_geo(tile_geo_u, this_pe, "tile_geo_u")
 
     ! Allocate tile_geo_v just for this PE, copied from Atm(n)%gridstruct%grid
     ! grid is 1 larger than agrid
@@ -737,18 +785,6 @@ contains
 
     tile_geo_v%lons = -999.9
     tile_geo_v%lats = -999.9
-
-    do x = lbound(tile_geo_v%lats, 1), ubound(tile_geo_v%lats, 1)
-      do y = lbound(tile_geo_v%lats, 2), ubound(tile_geo_v%lats, 2)
-        fp_i = (x - nest_x) * 2 + parent_x
-        fp_j = (y - nest_y) * 2 + parent_y - 1
-
-        tile_geo_v%lons(x,y) = fp_super_tile_geo%lons(fp_i, fp_j)
-        tile_geo_v%lats(x,y) = fp_super_tile_geo%lats(fp_i, fp_j)
-      enddo
-    enddo
-
-    if (debug_log) call show_tile_geo(tile_geo_v, this_pe, "tile_geo_v")
 
     !===========================================================
     !  End tile_geo per PE.
@@ -775,7 +811,12 @@ contains
     if (debug_log) print '("[INFO] WDR MV_NST2 bounds1 (tile_geo%lats)=",I0,"-",I0)', lbound(tile_geo%lats,1), ubound(tile_geo%lats,1)
     if (debug_log) print '("[INFO] WDR MV_NST2 bounds2 (tile_geo%lats)=",I0,"-",I0)', lbound(tile_geo%lats,2), ubound(tile_geo%lats,2)
 
-    call move_nest_geo(tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, delta_i_c, delta_j_c, x_refine, y_refine)
+    call move_nest_geo(Atm, n, tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, delta_i_c, delta_j_c, x_refine, y_refine)
+
+    if (parent_x .eq. -999) then
+      print '("[ERROR] WDR mn_latlon_load_parent on npe=",I0," parent and nest grids are not aligned!")', this_pe
+      call mpp_error(FATAL, "mn_latlon_load_parent parent and nest grids are not aligned.")
+    endif
 
     call assign_n_p_grids(parent_geo, tile_geo, p_grid, n_grid, position)
     call assign_n_p_grids(parent_geo, tile_geo_u, p_grid_u, n_grid_u, position_u)
@@ -1682,7 +1723,7 @@ contains
     logical, save       :: first_time = .true.
     integer, save       :: id_reset1, id_reset2, id_reset3, id_reset4, id_reset5, id_reset6, id_reset7
 
-    logical             :: use_timers = .false. !  Set this to true to generate performance profiling information in out.* file
+    logical             :: use_timers = .False. !  Set this to true to generate performance profiling information in out.* file
 
     if (first_time .and. use_timers) then
       id_reset1     = mpp_clock_id ('MN 7 Reset 1',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
@@ -2478,33 +2519,43 @@ contains
 
 
   !>@brief The subroutine 'move_nest_geo' shifts tile_geo values using the data from fp_super_tile_geo
-  subroutine move_nest_geo(tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, delta_i_c, delta_j_c, x_refine, y_refine)
+  subroutine move_nest_geo(Atm, n, tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, delta_i_c, delta_j_c, x_refine, y_refine)
     implicit none
+    type(fv_atmos_type), allocatable, intent(in) :: Atm(:)                                        !< Atm data array
+    integer, intent(in)                          :: n                                             !< Grid numbers
     type(grid_geometry), intent(inout)  :: tile_geo                                     !< A-grid tile geometry
     type(grid_geometry), intent(inout)  :: tile_geo_u                                   !< u-wind tile geometry
     type(grid_geometry), intent(inout)  :: tile_geo_v                                   !< v-wind tile geometry
     type(grid_geometry), intent(in)     :: fp_super_tile_geo                            !< Parent high-resolution supergrid tile geometry
     integer, intent(in)                 :: delta_i_c, delta_j_c, x_refine, y_refine     !< delta i,j for nest move.  Nest refinement.
 
-    integer :: nest_x, nest_y, parent_x, parent_y
-
-    type(bbox)  :: tile_bbox, fp_tile_bbox, tile_bbox_u, tile_bbox_v
-    integer   :: i, j, fp_i, fp_j
+    integer    :: nest_x, nest_y, parent_x, parent_y
+    type(bbox) :: tile_bbox, fp_tile_bbox, tile_bbox_u, tile_bbox_v
+    integer    :: i, j, fp_i, fp_j
+    integer    :: this_pe
+    logical    :: found
 
     ! tile_geo is cell-centered, at nest refinement
     ! fp_super_tile_geo is a supergrid, at nest refinement
 
-    call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
+    this_pe = mpp_pe()
 
     call fill_bbox(tile_bbox, tile_geo%lats)
     call fill_bbox(tile_bbox_u, tile_geo_u%lats)
     call fill_bbox(tile_bbox_v, tile_geo_v%lats)
     call fill_bbox(fp_tile_bbox, fp_super_tile_geo%lats)
 
-    ! Calculate new parent alignment -- supergrid at the refine ratio
-    !  delta_{i,j}_c are at the coarse center grid resolution
-    parent_x = parent_x + delta_i_c * 2 * x_refine
-    parent_y = parent_y + delta_j_c * 2 * y_refine
+    !! Calculate new parent alignment -- supergrid at the refine ratio
+    !!  delta_{i,j}_c are at the coarse center grid resolution
+    !parent_x = parent_x + delta_i_c * 2 * x_refine
+    !parent_y = parent_y + delta_j_c * 2 * y_refine
+
+    !print '("[INFO] WDR ALIGN-D npe=",I0," ioffset=",I0," joffset=",I0," delta_i_c=",I0," delta_j_c=",I0," nest_x=",I0," nest_y=",I0," parent_x=",I0," parent_y=",I0)', this_pe, ioffset, joffset, delta_i_c, delta_j_c, nest_x, nest_y, parent_x, parent_y
+
+    call calc_nest_alignment(Atm, n, nest_x, nest_y, parent_x, parent_y)
+
+    !print '("[INFO] WDR ALIGN-E npe=",I0," ioffset=",I0," joffset=",I0," delta_i_c=",I0," delta_j_c=",I0," nest_x=",I0," nest_y=",I0," parent_x=",I0," parent_y=",I0)', &
+    !    this_pe, Atm(n)%neststruct%ioffset, Atm(n)%neststruct%joffset, delta_i_c, delta_j_c, nest_x, nest_y, parent_x, parent_y
 
     ! Brute force repopulation of full tile_geo grids.
     ! Optimization would be to use EOSHIFT and bring in just leading edge
@@ -2566,7 +2617,10 @@ contains
     enddo
 
     ! Validate at the end
-    call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
+    call check_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y, found)
+
+    !print '("[INFO] WDR ALIGN-C npe=",I0," delta_i_c=",I0," delta_j_c=",I0," nest_x=",I0," nest_y=",I0," parent_x=",I0," parent_y=",I0)', this_pe, delta_i_c, delta_j_c, nest_x, nest_y, parent_x, parent_y
+
 
   end subroutine move_nest_geo
 

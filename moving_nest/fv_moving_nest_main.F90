@@ -125,7 +125,7 @@ module fv_moving_nest_main_mod
   use fv_moving_nest_physics_mod, only: mn_reset_phys_latlon, mn_surface_grids
 
   !      Grid reset routines
-  use fv_moving_nest_mod,         only: grid_geometry, assign_n_p_grids, move_nest_geo
+  use fv_moving_nest_mod,         only: grid_geometry
   use fv_moving_nest_utils_mod,   only: fill_grid_from_supergrid, fill_weight_grid
 
   !      Physics moving logical variables
@@ -494,7 +494,7 @@ contains
     real(kind=R_GRID), allocatable   :: p_grid(:,:,:), n_grid(:,:,:)
     real(kind=R_GRID), allocatable   :: p_grid_u(:,:,:), n_grid_u(:,:,:)
     real(kind=R_GRID), allocatable   :: p_grid_v(:,:,:), n_grid_v(:,:,:)
-    real, allocatable  :: wt_h(:,:,:)
+    real, allocatable  :: wt_h(:,:,:)  ! TODO verify that these are deallocated 
     real, allocatable  :: wt_u(:,:,:)
     real, allocatable  :: wt_v(:,:,:)
     !real :: ua(isd:ied,jsd:jed)
@@ -1173,6 +1173,14 @@ contains
     !!  endif
 
     !call compare_terrain("phis", Atm(n)%phis, 1, Atm(n)%neststruct%ind_h, x_refine, y_refine, is_fine_pe, global_nest_domain)
+
+    !deallocate(tile_geo%lats, tile_geo%lons)
+    !deallocate(tile_geo_u%lats, tile_geo_u%lons)
+    !deallocate(tile_geo_v%lats, tile_geo_v%lons)
+
+    !deallocate(p_grid, n_grid)
+    !deallocate(p_grid_u, n_grid_u)
+    !deallocate(p_grid_v, n_grid_v)
 
     if (debug_log) call show_nest_grid(Atm(n), this_pe, 99)
 

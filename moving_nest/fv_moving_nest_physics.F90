@@ -94,7 +94,7 @@ module fv_moving_nest_physics_mod
   use fv_moving_nest_utils_mod,  only: fill_nest_from_buffer_cell_center_masked
   use fv_moving_nest_utils_mod,  only: fill_nest_halos_from_parent_masked
 
-  use fv_moving_nest_mod,     only: mn_var_fill_intern_nest_halos, mn_var_dump_to_netcdf, mn_var_shift_data
+  use fv_moving_nest_mod,     only: mn_var_fill_intern_nest_halos, mn_var_dump_to_netcdf, mn_var_shift_data, calc_nest_alignment
   use fv_moving_nest_types_mod, only: Moving_nest
   implicit none
 
@@ -227,7 +227,7 @@ contains
   !>@brief The subroutine 'mn_phys_reset_phys_latlon' sets the lat/lons from the high-resolution input file data
   !>@details This subroutine sets lat/lons of the moved nest, then recalculates all the derived quantities (dx,dy,etc.)
   subroutine mn_reset_phys_latlon(Atm, n, tile_geo, fp_super_tile_geo, Atm_block, IPD_control, IPD_data)
-    type(fv_atmos_type), intent(in)      :: Atm(:)               !< Array of atmospheric data
+    type(fv_atmos_type), allocatable, intent(in)      :: Atm(:)               !< Array of atmospheric data
     integer, intent(in)                  :: n                    !< Current grid number
     type(grid_geometry), intent(in)      :: tile_geo             !< Bounds of this grid
     type(grid_geometry), intent(in)      :: fp_super_tile_geo    !< Bounds of high-resolution parent grid
@@ -253,10 +253,8 @@ contains
     allocate(lons(isc:iec, jsc:jec))
     allocate(area(isc:iec, jsc:jec))
 
-    ! This is going to be slow -- replace with better way to calculate index offsets, or pass them from earlier calculations
-    ! TODO optimization here
-    call find_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y)
-    !print '("WDR mn_reset_phys_latlon AB npe=",I0)', this_pe
+    call calc_nest_alignment(Atm, n, nest_x, nest_y, parent_x, parent_y)
+    !print '("[INFO] WDR ALIGN-PHYS-NEW npe=",I0," nest_x=",I0," nest_y=",I0," parent_x=",I0," parent_y=",I0)', this_pe, nest_x, nest_y, parent_x, parent_y
 
     do x = isc, iec
       do y = jsc, jec

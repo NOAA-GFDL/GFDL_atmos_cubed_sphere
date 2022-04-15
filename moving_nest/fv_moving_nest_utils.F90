@@ -30,7 +30,7 @@
 module fv_moving_nest_utils_mod
 
 #ifdef MOVING_NEST
-
+  use fms_mod,           only : mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_ROUTINE, clock_flag_default
   use mpp_mod,           only: FATAL, WARNING, MPP_DEBUG, NOTE, MPP_CLOCK_SYNC,MPP_CLOCK_DETAILED
   use mpp_mod,           only: mpp_pe, mpp_npes, mpp_root_pe, mpp_error, mpp_set_warn_level
   use mpp_mod,           only: mpp_declare_pelist, mpp_set_current_pelist, mpp_sync, mpp_sync_self
@@ -1582,8 +1582,18 @@ contains
     real(kind=R_GRID) :: pi = 4 * atan(1.0d0)
     real                :: rad2deg
     integer     :: this_pe
+    
+    logical, save       :: first_time = .true.
+    integer, save       :: id_nest_align 
+
 
     this_pe = mpp_pe()
+    
+    if (first_time) then
+       id_nest_align = mpp_clock_id ('MN Nest Align',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+      first_time = .false.
+    endif
+    call mpp_clock_begin (id_nest_align)
 
     rad2deg =  180.0 / pi
 
@@ -1654,6 +1664,9 @@ contains
         enddo
       enddo
     endif
+
+    call mpp_clock_end (id_nest_align)
+
 
   end subroutine find_nest_alignment
 
