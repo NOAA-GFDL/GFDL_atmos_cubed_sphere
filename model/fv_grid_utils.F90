@@ -900,6 +900,11 @@
            Atm%gridstruct%dy6    = Atm%gridstruct%dy6_64
       endif
 
+#ifndef MOVING_NEST
+! WDR Need to use these arrays again if moving the nest
+!     So don't deallocate them.
+!     TODO clean them up at end of model run for completeness
+
 !--- deallocate the higher-order gridstruct arrays
 !rab      deallocate ( Atm%gridstruct%grid_64 )
 !rab      deallocate ( Atm%gridstruct%agrid_64 )
@@ -913,6 +918,10 @@
       deallocate ( Atm%gridstruct%dyc_64 )
       deallocate ( Atm%gridstruct%cosa_64 )
       deallocate ( Atm%gridstruct%sina_64 )
+
+! WDR TODO double checking on this
+#endif
+
       if ( Atm%flagstruct%molecular_diffusion ) then
          deallocate ( Atm%gridstruct%area_u_64 )
          deallocate ( Atm%gridstruct%area_v_64 )
@@ -1765,6 +1774,9 @@
  integer n
  real (f_p):: q(2)
  real (f_p):: e1, e2, e3
+
+ logical, save       :: first_time = .true.
+ integer, save       :: id_latlon
 
     do n=1,2
        q(n) = p(n)

@@ -61,7 +61,7 @@ module fv_mapz_mod
 !   </tr>
 !   <tr>
 !     <td>CCPP_data</td>
-!     <td>ccpp_suite, cdata_tile, CCPP_interstitial</td>
+!     <td>ccpp_suite, cdata_tile, GFDL_interstitial</td>
 !   </tr>
 !   <tr>
 !     <td>fv_timing_mod</td>
@@ -99,7 +99,7 @@ module fv_mapz_mod
   use ccpp_static_api,   only: ccpp_physics_run
   use CCPP_data,         only: ccpp_suite
   use CCPP_data,         only: cdata => cdata_tile
-  use CCPP_data,         only: CCPP_interstitial
+  use CCPP_data,         only: GFDL_interstitial
 #ifdef MULTI_GASES
   use multi_gases_mod,  only:  virq, virqd, vicpqd, vicvqd, num_gas
 #endif
@@ -229,8 +229,8 @@ contains
   integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, hailwat, ccn_cm3, iq, n, kmp, kp, k_next
   integer :: ierr
 
-      ccpp_associate: associate( fast_mp_consv => CCPP_interstitial%fast_mp_consv, &
-                                 kmp           => CCPP_interstitial%kmp            )
+      ccpp_associate: associate( fast_mp_consv => GFDL_interstitial%fast_mp_consv, &
+                                 kmp           => GFDL_interstitial%kmp            )
 
        k1k = rdgas/cv_air   ! akap / (1.-akap) = rg/Cv=0.4
         rg = rdgas
@@ -673,7 +673,7 @@ contains
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
 !$OMP                               kord_tm,pe4, npx,npy,ccn_cm3,u_dt,v_dt, c2l_ord,bd,dp0,ps, &
-!$OMP                                cdata,CCPP_interstitial)                           &
+!$OMP                                cdata,GFDL_interstitial)                           &
 !$OMP                        shared(ccpp_suite)                                                &
 #ifdef MULTI_GASES
 !$OMP                        shared(num_gas)                                                   &
@@ -688,7 +688,7 @@ contains
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
 !$OMP                               fast_mp_consv,kord_tm, pe4,npx,npy, ccn_cm3,               &
-!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps,cdata,CCPP_interstitial)        &
+!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps,cdata,GFDL_interstitial)        &
 !$OMP                        shared(ccpp_suite)                                                &
 #ifdef MULTI_GASES
 !$OMP                        shared(num_gas)                                                   &

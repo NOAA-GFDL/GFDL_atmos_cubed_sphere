@@ -115,16 +115,17 @@ module fv_grid_tools_mod
 ! </table>
 
 
-  use constants_mod, only: grav, omega, pi=>pi_8, cnst_radius=>radius, small_fac
-  use fv_arrays_mod, only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type, R_GRID
-  use fv_grid_utils_mod, only: gnomonic_grids, great_circle_dist,  &
-                           mid_pt_sphere, spherical_angle,     &
+  use constants_mod,     only: grav, omega, pi=>pi_8, cnst_radius=>radius, small_fac
+  use fms_mod,           only: mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_ROUTINE, clock_flag_default
+  use fv_arrays_mod,     only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type, R_GRID
+  use fv_grid_utils_mod, only: gnomonic_grids, great_circle_dist, &
+                               mid_pt_sphere, spherical_angle, &
                                cell_center2, get_area, inner_prod, fill_ghost, &
-                           direct_transform, cube_transform, dist2side_latlon, &
-                           spherical_linear_interpolation, big_number
-  use fv_timing_mod,  only: timing_on, timing_off
-  use fv_mp_mod,      only: is_master, fill_corners, XDir, YDir
-  use fv_mp_mod,      only: mp_bcst, mp_reduce_max, mp_stop, grids_master_procs
+                               direct_transform, cube_transform, dist2side_latlon, &
+                               spherical_linear_interpolation, big_number
+  use fv_timing_mod,     only: timing_on, timing_off
+  use fv_mp_mod,         only: is_master, fill_corners, XDir, YDir
+  use fv_mp_mod,         only: mp_bcst, mp_reduce_max, mp_stop, grids_master_procs
   use sorted_index_mod,  only: sorted_inta, sorted_intb
   use mpp_mod,           only: mpp_error, FATAL, get_unit, mpp_chksum, mpp_pe, stdout, &
                                mpp_send, mpp_recv, mpp_sync_self, EVENT_RECV, mpp_npes, &
@@ -134,7 +135,7 @@ module fv_grid_tools_mod
                                mpp_get_compute_domains, mpp_global_field, &
                                mpp_get_data_domain, mpp_get_compute_domain, &
                                mpp_get_global_domain, mpp_global_sum, mpp_global_max, mpp_global_min
- use mpp_domains_mod,    only: domain2d
+  use mpp_domains_mod,   only: domain2d
 
   use mpp_parameter_mod, only: AGRID_PARAM=>AGRID,       &
                                DGRID_NE_PARAM=>DGRID_NE, &
@@ -147,7 +148,7 @@ module fv_grid_tools_mod
   use fms2_io_mod,       only: file_exists, variable_exists, open_file, read_data, &
                                get_global_attribute, get_variable_attribute, &
                                close_file, get_mosaic_tile_grid, FmsNetcdfFile_t
-  use mosaic_mod,       only : get_mosaic_ntiles
+  use mosaic_mod,        only: get_mosaic_ntiles
 
   implicit none
   private
@@ -155,9 +156,9 @@ module fv_grid_tools_mod
 
   real(kind=R_GRID), parameter:: radius = cnst_radius
 
-  real(kind=R_GRID) , parameter:: todeg = 180.0d0/pi          !< convert to degrees
-  real(kind=R_GRID) , parameter:: torad = pi/180.0d0          !< convert to radians
-  real(kind=R_GRID) , parameter:: missing = 1.d25
+  real(kind=R_GRID), parameter:: todeg = 180.0d0/pi          !< convert to degrees
+  real(kind=R_GRID), parameter:: torad = pi/180.0d0          !< convert to radians
+  real(kind=R_GRID), parameter:: missing = 1.d25
 
   real(kind=R_GRID) :: csFac
 
@@ -601,6 +602,33 @@ contains
     integer :: istart, iend, jstart, jend
     integer :: isection_s, isection_e, jsection_s, jsection_e
 
+    !  Setup timing variables
+
+    logical, save       :: first_time = .true.
+    integer, save       :: id_timer1, id_timer2, id_timer3, id_timer3a, id_timer4, id_timer5, id_timer6, id_timer7, id_timer8
+    logical             :: use_timer = .false.  ! Set to True for detailed performance profiling
+    logical             :: debug_log = .false.
+    integer             :: this_pe
+
+    this_pe = mpp_pe()
+
+    if (first_time) then
+       if (use_timer) then
+          id_timer1     = mpp_clock_id ('init_grid Step 1',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer2     = mpp_clock_id ('init_grid Step 2',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer3     = mpp_clock_id ('init_grid Step 3',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer3a    = mpp_clock_id ('init_grid Step 3a',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer4     = mpp_clock_id ('init_grid Step 4',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer5     = mpp_clock_id ('init_grid Step 5',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer6     = mpp_clock_id ('init_grid Step 6',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer7     = mpp_clock_id ('init_grid Step 7',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer8     = mpp_clock_id ('init_grid Step 8',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+       end if
+       first_time = .false.
+    end if
+
+    if (use_timer) call mpp_clock_begin (id_timer1)
+
     is  = Atm%bd%is
     ie  = Atm%bd%ie
     js  = Atm%bd%js
@@ -649,8 +677,10 @@ contains
     e2     => Atm%gridstruct%e2
 
     if (Atm%neststruct%nested .or. ANY(Atm%neststruct%child_grids)) then
+       if (debug_log) print '("[INFO] WDR grid_global => Atm%grid_global in init_grid fv_grid_tools.F90. npe=",I0)', this_pe
         grid_global => Atm%grid_global
     else if( trim(grid_file) .EQ. 'Inline') then
+       if (debug_log) print '("[INFO] WDR inline, allocating grid_global in init_grid fv_grid_tools.F90. npe=",I0)', this_pe
        allocate(grid_global(1-ng:npx  +ng,1-ng:npy  +ng,ndims,1:nregions))
     endif
 
@@ -688,7 +718,11 @@ contains
        endif
     endif
 
+    if (use_timer) call mpp_clock_end (id_timer1)
+
     if (Atm%flagstruct%grid_type>3) then
+       if (use_timer) call mpp_clock_begin (id_timer2)
+
        if (Atm%flagstruct%grid_type == 4) then
           call setup_cartesian(npx, npy, Atm%flagstruct%dx_const, Atm%flagstruct%dy_const, &
                Atm%flagstruct%deglat, Atm%bd)
@@ -697,13 +731,17 @@ contains
        else
           call mpp_error(FATAL, 'init_grid: unsupported grid type')
        endif
+       if (use_timer) call mpp_clock_end (id_timer2)
+
     else
+       if (use_timer) call mpp_clock_begin (id_timer3)
 
           cubed_sphere = .true.
 
           if (Atm%neststruct%nested) then
              !Read grid if it exists
 
+             if (use_timer) call mpp_clock_begin (id_timer3a)
              if (Atm%flagstruct%grid_type < 0) then
                 !Note that read_grid only reads in grid corners. Will still need to compute all other grid metrics.
                 !NOTE: cannot currently read in mosaic for both coarse and nested grids simultaneously
@@ -711,6 +749,7 @@ contains
              endif
              ! still need to set up weights
              call setup_aligned_nest(Atm)
+             if (use_timer) call mpp_clock_end (id_timer3a)
 
           else
              if(trim(grid_file) .NE. 'Inline' .or. Atm%flagstruct%grid_type < 0) then
@@ -945,6 +984,8 @@ contains
 
           end if !if nested
 
+    if (use_timer) call mpp_clock_end (id_timer3)
+    if (use_timer) call mpp_clock_begin (id_timer4)
 
        do j=jsd,jed
           do i=isd+1,ied
@@ -971,6 +1012,9 @@ contains
           dyc(i,jsd)   = dyc(i,jsd+1)
           dyc(i,jed+1) = dyc(i,jed)
        end do
+
+       if (use_timer) call mpp_clock_end (id_timer4)
+       if (use_timer) call mpp_clock_begin (id_timer5)
 
        if ( Atm%flagstruct%molecular_diffusion ) then
 ! dx6, dy6
@@ -1050,7 +1094,6 @@ contains
 
        endif ! MOLECULAR_DIFFUSION
 
-
        if( .not. stretched_grid )      &
            call sorted_intb(isd, ied, jsd, jed, is, ie, js, je, npx, npy, &
                             cubed_sphere, agrid, iintb, jintb)
@@ -1058,9 +1101,12 @@ contains
        call grid_area( npx, npy, ndims, nregions, Atm%gridstruct%bounded_domain, Atm%gridstruct, Atm%domain, Atm%bd )
 !      stretched_grid = .false.
 
+       if (use_timer) call mpp_clock_end (id_timer5)
+
 !----------------------------------
 ! Compute area_c, rarea_c, dxc, dyc
 !----------------------------------
+       if (use_timer) call mpp_clock_begin (id_timer6)
   if ( .not. stretched_grid .and. (.not. (Atm%gridstruct%bounded_domain))) then
 ! For symmetrical grids:
        if ( is==1 ) then
@@ -1158,6 +1204,8 @@ contains
        endif
    endif
 !-----------------
+       if (use_timer) call mpp_clock_end (id_timer6)
+       if (use_timer) call mpp_clock_begin (id_timer7)
 
        call mpp_update_domains( dxc, dyc, Atm%domain, flags=SCALAR_PAIR,   &
                                 gridtype=CGRID_NE_PARAM, complete=.true.)
@@ -1236,6 +1284,9 @@ contains
              rarea_c(i,j) = 1.0/area_c(i,j)
           enddo
        enddo
+
+       if (use_timer) call mpp_clock_end (id_timer7)
+       if (use_timer) call mpp_clock_begin (id_timer8)
 
        if ( Atm%flagstruct%molecular_diffusion ) then
           do j=jsd,jed+1
@@ -1410,6 +1461,8 @@ contains
 
     nullify(domain)
 
+    if (use_timer) call mpp_clock_end (id_timer8)
+
   contains
 
     subroutine setup_cartesian(npx, npy, dx_const, dy_const, deglat, bd)
@@ -1479,6 +1532,81 @@ contains
        e2(3,:,:) = 0.
 
     end subroutine setup_cartesian
+
+
+    ! Subroutine to be used by setup_aligned_nest to configure the nest grid -- either the entire grid, or just the leading edge
+    !  based on the input dimensions in range_x and range_y.  Algorithm copied from setup_aligned_nest.
+    subroutine compute_nest_points(p_grid, p_ind, out_grid, refinement, ioffset, joffset, range_x, range_y, isg, ieg, jsg, jeg)
+      real(kind=R_GRID), allocatable, intent(in)      :: p_grid(:,:,:)
+      !integer, intent(inout)                          :: p_ind(:,:,:)
+      integer, intent(inout)                          :: p_ind(1-ng:npx  +ng,1-ng:npy  +ng,4)
+      real(kind=R_GRID), allocatable, intent(inout)   :: out_grid(:,:,:,:)
+      integer, intent(in)                             :: refinement, ioffset, joffset
+      integer, intent(in)                             :: range_x(2), range_y(2)
+      integer, intent(in)                             :: isg, ieg, jsg, jeg
+
+      real(kind=R_GRID), dimension(2) :: q1, q2
+      integer  :: i, j, ic, jc, imod, jmod
+      integer  :: this_pe
+
+      ! Need isg, ieg, jsg, jeg
+
+      this_pe = mpp_pe()
+
+      if (debug_log) print '("[INFO] Filling out_grid(",I0,"-",I0,",",I0,"-",I0,",1-2,1) in compute_nest_points fv_grid_tools.F90. npe=",I0)', range_x(1), range_x(2), range_y(1), range_y(2), this_pe
+
+      do j=range_y(1), range_y(2)
+         jc = joffset + (j-1)/refinement !int( real(j-1) / real(refinement) )
+         jmod = mod(j-1,refinement)
+         if (j-1 < 0 .and. jmod /= 0) jc = jc - 1
+         if (jmod < 0) jmod = jmod + refinement
+
+         do i=range_x(1), range_x(2)
+            ic = ioffset + (i-1)/refinement !int( real(i-1) / real(refinement) )
+            imod = mod(i-1,refinement)
+            if (i-1 < 0 .and. imod /= 0) ic = ic - 1
+            if (imod < 0) imod = imod + refinement
+
+            if (ic+1 > ieg+1 .or. ic < isg .or. jc+1 > jeg+1 .or. jc < jsg) then
+               print*, 'p_grid:',  i, j,  ' OUT OF BOUNDS'
+               print*, ic, jc
+               print*, isg, ieg, jsg, jeg
+               print*, imod, jmod
+            end if
+
+            if (jmod == 0) then
+               q1 = p_grid(ic, jc, 1:2)
+               q2 = p_grid(ic+1,jc,1:2)
+            else
+               call spherical_linear_interpolation( real(jmod,kind=R_GRID)/real(refinement,kind=R_GRID),  &
+                    p_grid(ic, jc, 1:2), p_grid(ic, jc+1, 1:2), q1)
+               call spherical_linear_interpolation( real(jmod,kind=R_GRID)/real(refinement,kind=R_GRID),  &
+                    p_grid(ic+1, jc, 1:2), p_grid(ic+1, jc+1, 1:2), q2)
+            end if
+
+            if (imod == 0) then
+               out_grid(i,j,:,1) = q1
+            else
+               call spherical_linear_interpolation( real(imod,kind=R_GRID)/real(refinement,kind=R_GRID),  &
+                    q1,q2,out_grid(i,j,:,1))
+            end if
+
+            !SW coarse-grid index; assumes grid does
+            !not overlie other cube panels. (These indices
+            !are also for the corners and thus need modification
+            !to be used for cell-centered and edge-
+            !centered variables; see below)
+            p_ind(i,j,1) = ic
+            p_ind(i,j,2) = jc
+            p_ind(i,j,3) = imod
+            p_ind(i,j,4) = jmod
+
+            if (out_grid(i,j,1,1) > 2.*pi) out_grid(i,j,1,1) = out_grid(i,j,1,1) - 2.*pi
+            if (out_grid(i,j,1,1) < 0.) out_grid(i,j,1,1) = out_grid(i,j,1,1) + 2.*pi
+
+         end do
+      end do
+    end subroutine compute_nest_points
 
     subroutine setup_orthogonal_grid(npx, npy, bd, grid_file)
       type(fv_grid_bounds_type), intent(IN) :: bd
@@ -1826,11 +1954,14 @@ contains
       integer :: isg, ieg, jsg, jeg
       integer :: ic, jc, imod, jmod
 
-
-      real(kind=R_GRID), allocatable, dimension(:,:,:) :: p_grid_u, p_grid_v, pa_grid, p_grid, c_grid_u, c_grid_v
+      !  Hold these between executions if moving nest
+      real(kind=R_GRID), allocatable, dimension(:,:,:), save  :: p_grid_u, p_grid_v, pa_grid, p_grid
+      real(kind=R_GRID), allocatable, dimension(:,:,:) :: c_grid_u, c_grid_v
       integer ::    p_ind(1-ng:npx  +ng,1-ng:npy  +ng,4) !< First two entries along dim 3 are
                                                          !! for the corner source indices;
                                                          !! the last two are for the remainders
+
+      integer, allocatable, save  ::   shift_p_ind(:,:,:)
 
       integer i,j,k, p
       real(kind=R_GRID) sum
@@ -1846,6 +1977,40 @@ contains
 
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
+
+    !  Setup timing variables
+
+    logical, save       :: first_time = .true.
+    integer, save       :: id_timer1, id_timer2, id_timer3a,  id_timer3b,  id_timer3c,  id_timer3d, id_timer4, id_timer5, id_timer6, id_timer7, id_timer8
+    integer, save       :: prev_ioffset, prev_joffset    ! not pointers, because we want to save them between runs of this subroutine
+    integer, save       :: move_step
+    integer             :: delta_i_c, delta_j_c
+    integer             :: range_x(2), range_y(2)
+
+    real(kind=R_GRID), allocatable, dimension(:,:,:,:) :: out_grid
+
+    logical             :: moving_nest = .true.  ! TODO set this from the Atm structure
+
+    if (first_time .and. use_timer) then
+       id_timer1     = mpp_clock_id ('setup_aligned_nest Step 1',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+       id_timer2     = mpp_clock_id ('setup_aligned_nest Step 2 sph_lin_interp',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+       id_timer3a    = mpp_clock_id ('setup_aligned_nest Step 3a mid_pt_sphere',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+       id_timer3b    = mpp_clock_id ('setup_aligned_nest Step 3b mid_pt_sphere',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+       id_timer3c    = mpp_clock_id ('setup_aligned_nest Step 3c cell_ctr',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+       id_timer3d    = mpp_clock_id ('setup_aligned_nest Step 3d',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+       id_timer4     = mpp_clock_id ('setup_aligned_nest Step 4',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+       id_timer5     = mpp_clock_id ('setup_aligned_nest Step 5',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+       id_timer6     = mpp_clock_id ('setup_aligned_nest Step 6',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+       id_timer7     = mpp_clock_id ('setup_aligned_nest Step 7',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+       id_timer8     = mpp_clock_id ('setup_aligned_nest Step 8',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+
+       prev_ioffset = Atm%neststruct%ioffset
+       prev_joffset = Atm%neststruct%joffset
+
+       !first_time = .false.
+    end if
+
+    if (use_timer) call mpp_clock_begin (id_timer1)
 
       is  = Atm%bd%is
       ie  = Atm%bd%ie
@@ -1874,30 +2039,136 @@ contains
       ind_b => Atm%neststruct%ind_b
       wt_b => Atm%neststruct%wt_b
 
+      ! For moving nest
+      if (first_time) then
+         delta_i_c = 0
+         delta_j_c = 0
+         prev_ioffset = ioffset
+         prev_joffset = joffset
+      else
+         delta_i_c = ioffset - prev_ioffset
+         delta_j_c = joffset - prev_joffset
+      end if
+
+      if (debug_log) print '("[INFO] WDR setup_aligned_nest fv_grid_tools.F90. npe=",I0," delta_i_c=",I0," delta_j_c=",I0," ioffset=",I0," joffset=",I0)', this_pe, delta_i_c, delta_j_c, ioffset, joffset
+
       call mpp_get_data_domain( Atm%parent_grid%domain, &
            isd_p,  ied_p,  jsd_p,  jed_p  )
       call mpp_get_global_domain( Atm%parent_grid%domain, &
            isg, ieg, jsg, jeg)
 
-      allocate(p_grid_u(isg:ieg  ,jsg:jeg+1,1:2))
-      allocate(p_grid_v(isg:ieg+1,jsg:jeg  ,1:2))
-      allocate(pa_grid(isg:ieg,jsg:jeg  ,1:2))
       p_ind = -1000000000
 
-      allocate(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2) )
-      p_grid = 1.e25
+      if (first_time) then
+         !! Initial allocation of p_grid_u, pgrid_v, pa_grid, and p_grid
+         !! Save these parent grids between executions if using moving nest.
+
+         allocate(p_grid_u(isg:ieg  ,jsg:jeg+1,1:2))
+         allocate(p_grid_v(isg:ieg+1,jsg:jeg  ,1:2))
+         allocate(pa_grid(isg:ieg,jsg:jeg  ,1:2))
+
+         allocate(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2) )
+         p_grid = 1.e25
+
+      end if
+
+      ! Note this will be called during model initialization, then not repeated once moving nest functionality is used
+      !  Moving nest will rely on the saved data in p_grid, which does not change (as long as nest remains on same parent tile).
+      if (first_time) then
 
          !Need to RECEIVE parent grid_global;
-      !matching mpp_send of grid_global from parent grid is in init_grid()
-      if( is_master() ) then
+         !matching mpp_send of grid_global from parent grid is in init_grid()
+         if( is_master() ) then
 
-         call mpp_recv(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2), size(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2)), &
-                       Atm%parent_grid%pelist(1))
-      endif
+            call mpp_recv(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2), size(p_grid( isg-ng:ieg+1+ng, jsg-ng:jeg+1+ng,1:2)), &
+                 Atm%parent_grid%pelist(1))
 
-      call mpp_broadcast( p_grid(isg-ng:ieg+ng+1, jsg-ng:jeg+ng+1, :), &
-           (ieg-isg+2+2*ng)*(jeg-jsg+2+2*ng)*ndims, mpp_root_pe() )
+         endif
 
+         call mpp_broadcast( p_grid(isg-ng:ieg+ng+1, jsg-ng:jeg+ng+1, :), &
+              (ieg-isg+2+2*ng)*(jeg-jsg+2+2*ng)*ndims, mpp_root_pe() )
+
+       end if
+
+       if (use_timer) call mpp_clock_end (id_timer1)
+       if (use_timer) call mpp_clock_begin (id_timer2)
+
+    !!  Setup full grid for nest; confusingly called grid_global.  Each nest PE is computing the grid lat/lons for the entire nest
+    !!    not just its section.
+    !!  INPUTS:  ioffset, joffset, p_grid
+    !!  OUTPUTS:  grid_global
+
+      ! Begin calculate shifted version of global_grid
+
+      if (first_time) allocate(shift_p_ind(1-ng:npx  +ng,1-ng:npy  +ng,4))   ! TODO need to deallocate this somewhere
+
+      if (.not. first_time) then
+
+         ! Make copies of grid_global and p_ind to validate that code is correct
+         allocate( out_grid( lbound(grid_global,1):ubound(grid_global,1), &
+              lbound(grid_global,2):ubound(grid_global,2), &
+              lbound(grid_global,3):ubound(grid_global,3), &
+              lbound(grid_global,4):ubound(grid_global,4) ) )
+
+         if (debug_log) print '("[INFO] WDR bounds grid_global setup_nest_grid npe=",I0," grid_global(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(grid_global,1), ubound(grid_global,1), &
+              lbound(grid_global,2), ubound(grid_global,2), &
+              lbound(grid_global,3), ubound(grid_global,3), &
+              lbound(grid_global,4), ubound(grid_global,4)
+
+         if (debug_log) print '("[INFO] WDR bounds out_grid setup_nest_grid npe=",I0," out_grid(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(out_grid,1), ubound(out_grid,1), &
+              lbound(out_grid,2), ubound(out_grid,2), &
+              lbound(out_grid,3), ubound(out_grid,3), &
+              lbound(out_grid,4), ubound(out_grid,4)
+
+         out_grid = grid_global
+
+         if ( delta_i_c .ne. 0 ) then
+            if (debug_log) print '("[INFO] setup_nest_grid EOSHIFT delta_i_c=",I0," start. npe=",I0)', delta_i_c, this_pe
+            out_grid = eoshift(out_grid, refinement * delta_i_c, DIM=1)
+         end if
+
+         if (delta_j_c .ne.  0) then
+            if (debug_log) print '("[INFO] setup_nest_grid EOSHIFT delta_j_c=",I0," start. npe=",I0)', delta_j_c, this_pe
+            out_grid = eoshift(out_grid, refinement * delta_j_c, DIM=2)
+         end if
+
+         shift_p_ind(:,:,1) = shift_p_ind(:,:,1) + delta_i_c
+         shift_p_ind(:,:,2) = shift_p_ind(:,:,2) + delta_j_c
+
+         !  Compute nest points on any of the halo edges that are empty.  This could be 1 leading edge for N,S,E, or W motion
+         !    or two leading edges for NW, NE, SW, or SE motion.
+         range_y(1) = 1-ng
+         range_y(2) = npy+ng
+         if (delta_i_c .lt. 0) then
+            range_x(1) = 1-ng
+            range_x(2) = 0
+            call compute_nest_points(p_grid, shift_p_ind, out_grid, refinement, ioffset, joffset, range_x, range_y, isg, ieg, jsg, jeg)
+         elseif  (delta_i_c .gt. 0) then
+            range_x(1) = npx
+            range_x(2) = npx+ng
+            call compute_nest_points(p_grid, shift_p_ind, out_grid, refinement, ioffset, joffset, range_x, range_y, isg, ieg, jsg, jeg)
+         end if
+
+         range_x(1) = 1-ng
+         range_x(2) = npx+ng
+         if (delta_j_c .lt. 0) then
+            range_y(1) = 1-ng
+            range_y(2) = 0
+            call compute_nest_points(p_grid, shift_p_ind, out_grid, refinement, ioffset, joffset, range_x, range_y, isg, ieg, jsg, jeg)
+         elseif (delta_j_c .gt. 0) then
+            range_y(1) = npy
+            range_y(2) = npy+ng
+            call compute_nest_points(p_grid, shift_p_ind, out_grid, refinement, ioffset, joffset, range_x, range_y, isg, ieg, jsg, jeg)
+         end if
+
+      end if
+
+         ! End calculate shifted version of global_grid
+         !  Validate that they match
+
+         if (debug_log) print '("[INFO] Filling grid_global(",I0,"-",I0,",",I0,"-",I0,",1-2,1) in setup_aligned_grid fv_grid_tools.F90. npe=",I0)', 1-ng, npx+ng, 1-ng, npy+ng, this_pe
+
+         if (first_time) then
       ! Generate grid global and parent_grid indices
       ! Grid global only needed in case we create a new child nest on-the-fly?
       !TODO If reading in grid from disk then simply mpp_GATHER grid global from local grid arrays
@@ -1954,27 +2225,111 @@ contains
 
             end do
          end do
+         else
+            p_ind = shift_p_ind
+            grid_global = out_grid
+         end if
 
-         ! Set up parent grids for interpolation purposes
-         do j=jsg,jeg+1
-            do i=isg,ieg
-               call mid_pt_sphere(p_grid(i,  j,1:2), p_grid(i+1,  j,1:2), p_grid_u(i,j,:))
-               !call mid_pt_sphere(p_grid(i,  j,1:2), p_grid(i,  j+1,1:2), p_grid_u(i,j,:))
+         if (use_timer) call mpp_clock_end (id_timer2)
+
+         ! Move this elsewhere later.
+         if (.not. first_time) deallocate(out_grid)
+
+         if (first_time) shift_p_ind = p_ind
+
+         !if (.not. first_time) then
+         if (.false.) then
+            !  Do fully recomputed p_ind and grid_global match with shifted grids?
+            do i=1-ng,npx+ng
+               do j=1-ng,npy+ng
+                  do k=1,4
+                     if (p_ind(i,j,k) .ne. shift_p_ind(i,j,k)) then
+                        print '("[ERROR] WDR setup_nest_grid MISMATCH p_ind(",I0,",",I0,",",I0,")=",I0," shift_p_ind(",I0,",",I0,",",I0,")=",I0," npe=",I0, " move_step=",I0," ")', &
+                             i, j, k, p_ind(i,j,k), i, j, k, shift_p_ind(i,j,k), this_pe, move_step
+                     end if
+                  end do
+               end do
             end do
-         end do
-         do j=jsg,jeg
-            do i=isg,ieg+1
-               call mid_pt_sphere(p_grid(i,  j,1:2), p_grid(i,  j+1,1:2), p_grid_v(i,j,:))
-               !call mid_pt_sphere(p_grid(i,  j,1:2), p_grid(i+1,  j,1:2), p_grid_v(i,j,:))
+
+            do i=1-ng,npx+ng
+               do j=1-ng,npy+ng
+                  if (abs(grid_global(i,j,1,1) -  out_grid(i,j,1,1)) .gt. 0.01) then
+                     print '("[ERROR] WDR setup_nest_grid MISMATCH grid_global(",I0,",",I0,",",I0,",1)=",F18.12," out_grid(",I0,",",I0,",",I0,",1)=",F18.12," npe=",I0," move_step=",I0," ")', &
+                          i, j, 1, grid_global(i,j,1,1)*180.0/pi, i, j, 1, out_grid(i,j,1,1)*180.0/pi, this_pe, move_step
+                  end if
+                  if (abs(grid_global(i,j,2,1) -  out_grid(i,j,2,1)) .gt. 0.01) then
+                     print '("[ERROR] WDR setup_nest_grid MISMATCH grid_global(",I0,",",I0,",",I0,",1)=",F18.12," out_grid(",I0,",",I0,",",I0,",1)=",F18.12," npe=",I0, " move_step=",I0," ")', &
+                          i, j, 2, grid_global(i,j,2,1)*180.0/pi, i, j, 2, out_grid(i,j,2,1)*180.0/pi, this_pe, move_step
+                  end if
+               end do
             end do
-         end do
-         do j=jsg,jeg
-            do i=isg,ieg
-               call cell_center2(p_grid(i,j,  1:2), p_grid(i+1,j,  1:2),   &
-                    p_grid(i,j+1,1:2), p_grid(i+1,j+1,1:2),   &
-                    pa_grid(i,j,1:2) )
+
+            ! Move this elsewhere later.
+            deallocate(out_grid)
+
+         end if
+
+         if (first_time) then
+            ! These are the various staggers of the parent grid
+            !  They do not vary if the nest moves.  Safe to preserve them between
+            !  calls to this routine to save processing time.
+
+            if (use_timer) call mpp_clock_begin (id_timer3a)
+
+            !!  Setup parent staggered grids
+            !!  INPUTS:  p_grid
+            !!  OUTPUTS:  p_grid_u, p_grid_v, pa_grid
+
+            ! Set up parent grids for interpolation purposes
+            do j=jsg,jeg+1
+               do i=isg,ieg
+                  call mid_pt_sphere(p_grid(i,  j,1:2), p_grid(i+1,  j,1:2), p_grid_u(i,j,:))
+                  !call mid_pt_sphere(p_grid(i,  j,1:2), p_grid(i,  j+1,1:2), p_grid_u(i,j,:))
+               end do
             end do
-         end do
+
+            if (use_timer) call mpp_clock_end (id_timer3a)
+            if (use_timer) call mpp_clock_begin (id_timer3b)
+
+            do j=jsg,jeg
+               do i=isg,ieg+1
+                  call mid_pt_sphere(p_grid(i,  j,1:2), p_grid(i,  j+1,1:2), p_grid_v(i,j,:))
+                  !call mid_pt_sphere(p_grid(i,  j,1:2), p_grid(i+1,  j,1:2), p_grid_v(i,j,:))
+               end do
+            end do
+            if (use_timer) call mpp_clock_end (id_timer3b)
+            if (use_timer) call mpp_clock_begin (id_timer3c)
+
+            do j=jsg,jeg
+               do i=isg,ieg
+                  call cell_center2(p_grid(i,j,  1:2), p_grid(i+1,j,  1:2),   &
+                       p_grid(i,j+1,1:2), p_grid(i+1,j+1,1:2),   &
+                       pa_grid(i,j,1:2) )
+               end do
+            end do
+
+!!$      !TODO: can we just send around ONE grid and re-calculate
+!!$      ! staggered grids from that??
+!!$      call mpp_broadcast(grid_global(1-ng:npx+ng,  1-ng:npy+ng  ,:,1), &
+!!$           ((npx+ng)-(1-ng)+1)*((npy+ng)-(1-ng)+1)*ndims, mpp_root_pe() )
+!!$      call mpp_broadcast(      p_ind(1-ng:npx+ng,  1-ng:npy+ng  ,1:4),   &
+!!$           ((npx+ng)-(1-ng)+1)*((npy+ng)-(1-ng)+1)*4, mpp_root_pe() )
+!!$      call mpp_broadcast(    pa_grid( isg:ieg  , jsg:jeg  , :), &
+!!$           ((ieg-isg+1))*(jeg-jsg+1)*ndims, mpp_root_pe())
+!!$      call mpp_broadcast(  p_grid_u( isg:ieg  , jsg:jeg+1, :), &
+!!$           (ieg-isg+1)*(jeg-jsg+2)*ndims, mpp_root_pe())
+!!$      call mpp_broadcast(  p_grid_v( isg:ieg+1, jsg:jeg  , :), &
+!!$           (ieg-isg+2)*(jeg-jsg+1)*ndims, mpp_root_pe())
+
+            if (use_timer) call mpp_clock_end (id_timer3c)
+
+         end if
+
+         if (use_timer) call mpp_clock_begin (id_timer3d)
+
+         !!  Setup "grid" -- what is this doing??
+         !!  INPUTS:  grid_global
+         !!  OUTPUTS:  grid
 
          if (Atm%flagstruct%grid_type >= 0) then
             do n=1,ndims
@@ -1985,6 +2340,9 @@ contains
             enddo
             enddo
          endif
+
+    if (use_timer) call mpp_clock_end (id_timer3d)
+    if (use_timer) call mpp_clock_begin (id_timer4)
 
          ind_h = -999999999
          do j=jsd,jed
@@ -2096,6 +2454,9 @@ contains
 
          call mpp_update_domains( agrid, Atm%domain, position=CENTER, complete=.true. )
 
+    if (use_timer) call mpp_clock_end (id_timer4)
+    if (use_timer) call mpp_clock_begin (id_timer5)
+
       ! Compute dx
       do j=jsd,jed+1
          do i=isd,ied
@@ -2135,9 +2496,10 @@ contains
          end do
       end do
 
+      if (.not. moving_nest) deallocate(pa_grid)
 
-
-      deallocate(pa_grid)
+    if (use_timer) call mpp_clock_end (id_timer5)
+    if (use_timer) call mpp_clock_begin (id_timer6)
 
       do j=jsd,jed+1
       do i=isd,ied+1
@@ -2161,7 +2523,7 @@ contains
       enddo
       enddo
 
-      deallocate(p_grid)
+      if (.not. moving_nest) deallocate(p_grid)
 
 
       allocate(c_grid_u(isd:ied+1,jsd:jed,2))
@@ -2192,6 +2554,8 @@ contains
          end do
       end do
 
+      if (use_timer) call mpp_clock_end (id_timer6)
+      if (use_timer) call mpp_clock_begin (id_timer7)
 
       !Compute interpolation weights. (Recall that the weights are defined with respect to a d-grid)
 
@@ -2244,6 +2608,9 @@ contains
       end do
       !v weights
 
+      if (use_timer) call mpp_clock_end (id_timer7)
+      if (use_timer) call mpp_clock_begin (id_timer8)
+
       do j=jsd,jed
          do i=isd,ied+1
 
@@ -2289,9 +2656,10 @@ contains
       deallocate(c_grid_u)
       deallocate(c_grid_v)
 
+      if (.not. moving_nest) deallocate(p_grid_u)
+      if (.not. moving_nest) deallocate(p_grid_v)
 
-      deallocate(p_grid_u)
-      deallocate(p_grid_v)
+      if (use_timer) call mpp_clock_end (id_timer8)
 
       if (is_master()) then
          if (Atm%neststruct%nested) then
@@ -2318,6 +2686,12 @@ contains
             write(*,'(A, 2I5, 4F10.4)') 'SE CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
          endif
       end if
+
+      !  Finalize variables in case moving nest calls this again
+      first_time = .false.
+      move_step = move_step + 1
+      prev_ioffset = ioffset
+      prev_joffset = joffset
 
     end subroutine setup_aligned_nest
 
