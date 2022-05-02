@@ -605,8 +605,8 @@ contains
     !  Setup timing variables
 
     logical, save       :: first_time = .true.
-    integer, save       :: id_timer1, id_timer2, id_timer3, id_timer3a, id_timer4, id_timer5, id_timer6, id_timer7, id_timer8
-    logical             :: use_timer = .false.  ! Set to True for detailed performance profiling
+    integer, save       :: id_timer1, id_timer2, id_timer3, id_timer3a, id_timer3b, id_timer4, id_timer5, id_timer6, id_timer7, id_timer8
+    logical             :: use_timer = .True.  ! Set to True for detailed performance profiling
     logical             :: debug_log = .false.
     integer             :: this_pe
 
@@ -617,7 +617,8 @@ contains
           id_timer1     = mpp_clock_id ('init_grid Step 1',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
           id_timer2     = mpp_clock_id ('init_grid Step 2',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
           id_timer3     = mpp_clock_id ('init_grid Step 3',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-          id_timer3a    = mpp_clock_id ('init_grid Step 3a',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer3a    = mpp_clock_id ('init_grid Step 3a read_grid',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer3b    = mpp_clock_id ('init_grid Step 3b setup_aligned_nest',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
           id_timer4     = mpp_clock_id ('init_grid Step 4',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
           id_timer5     = mpp_clock_id ('init_grid Step 5',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
           id_timer6     = mpp_clock_id ('init_grid Step 6',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
@@ -741,15 +742,17 @@ contains
           if (Atm%neststruct%nested) then
              !Read grid if it exists
 
-             if (use_timer) call mpp_clock_begin (id_timer3a)
              if (Atm%flagstruct%grid_type < 0) then
+                if (use_timer) call mpp_clock_begin (id_timer3a)
                 !Note that read_grid only reads in grid corners. Will still need to compute all other grid metrics.
                 !NOTE: cannot currently read in mosaic for both coarse and nested grids simultaneously
                 call read_grid(Atm, grid_file, ndims, 1, ng)
+                if (use_timer) call mpp_clock_end (id_timer3a)
              endif
              ! still need to set up weights
+             if (use_timer) call mpp_clock_begin (id_timer3b)
              call setup_aligned_nest(Atm)
-             if (use_timer) call mpp_clock_end (id_timer3a)
+             if (use_timer) call mpp_clock_end (id_timer3b)
 
           else
              if(trim(grid_file) .NE. 'Inline' .or. Atm%flagstruct%grid_type < 0) then

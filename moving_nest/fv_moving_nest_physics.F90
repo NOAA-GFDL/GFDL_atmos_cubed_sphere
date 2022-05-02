@@ -72,7 +72,6 @@ module fv_moving_nest_physics_mod
   use GFS_init,               only: GFS_grid_populate
 
   use boundary_mod,           only: update_coarse_grid, update_coarse_grid_mpp
-  use bounding_box_mod,       only: bbox, bbox_get_C2F_index, fill_bbox, show_bbox
   use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks, hlv
   use field_manager_mod,      only: MODEL_ATMOS
   use fms_io_mod,             only: read_data, write_data, get_global_att_value, fms_io_init, fms_io_exit

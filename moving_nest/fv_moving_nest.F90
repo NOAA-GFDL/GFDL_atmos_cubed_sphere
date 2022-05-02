@@ -56,7 +56,7 @@ module fv_moving_nest_mod
 #ifdef MOVING_NEST
 
   use block_control_mod,      only : block_control_type
-  use fms_mod,                only : mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_ROUTINE, clock_flag_default
+  use fms_mod,                only : mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_ROUTINE, clock_flag_default, CLOCK_SUBCOMPONENT
   use mpp_mod,                only : mpp_pe, mpp_sync, mpp_sync_self, mpp_send, mpp_error, NOTE, FATAL
   use mpp_domains_mod,        only : mpp_update_domains, mpp_get_data_domain, mpp_get_global_domain
   use mpp_domains_mod,        only : mpp_define_nest_domains, mpp_shift_nest_domains, nest_domain_type, domain2d
@@ -668,9 +668,12 @@ contains
     integer, intent(in)                          :: delta_i_c, delta_j_c                          !< Nest motion in delta i,j
     type(grid_geometry), intent(inout)           :: parent_geo, tile_geo, tile_geo_u, tile_geo_v  !< Tile geometries
     type(grid_geometry), intent(in)              :: fp_super_tile_geo                             !< Parent grid at high-resolution geometry
-    real(kind=R_GRID), allocatable, intent(out)  :: p_grid(:,:,:), n_grid(:,:,:)                  !< A-stagger lat/lon grids
-    real(kind=R_GRID), allocatable, intent(out)  :: p_grid_u(:,:,:), n_grid_u(:,:,:)              !< u-wind staggered lat/lon grids
-    real(kind=R_GRID), allocatable, intent(out)  :: p_grid_v(:,:,:), n_grid_v(:,:,:)              !< v-wind staggered lat/lon grids
+    real(kind=R_GRID), allocatable, intent(inout):: p_grid(:,:,:)                                 !< A-stagger lat/lon grids
+    real(kind=R_GRID), allocatable, intent(inout):: p_grid_u(:,:,:)                               !< u-wind staggered lat/lon grids
+    real(kind=R_GRID), allocatable, intent(inout):: p_grid_v(:,:,:)                               !< v-wind staggered lat/lon grids
+    real(kind=R_GRID), allocatable, intent(out)  :: n_grid(:,:,:)                                 !< A-stagger lat/lon grids
+    real(kind=R_GRID), allocatable, intent(out)  :: n_grid_u(:,:,:)                               !< u-wind staggered lat/lon grids
+    real(kind=R_GRID), allocatable, intent(out)  :: n_grid_v(:,:,:)                               !< v-wind staggered lat/lon grids
 
     character(len=256) :: grid_filename
     logical, save  :: first_nest_move = .true.
@@ -681,7 +684,21 @@ contains
     integer :: nest_x, nest_y, parent_x, parent_y
     integer :: this_pe
 
+    logical, save :: first_time = .True.
+    integer, save :: id_load1, id_load2, id_load3, id_load4, id_load5
+    logical       :: use_timers = .True.
+    
     this_pe = mpp_pe()
+
+    if (first_time) then
+       id_load1     = mpp_clock_id ('MN LatLon Part 1 File',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       id_load2     = mpp_clock_id ('MN LatLon Part 2 File',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       id_load3     = mpp_clock_id ('MN LatLon Part 3 File',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       id_load4     = mpp_clock_id ('MN LatLon Part 4 File',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       id_load5     = mpp_clock_id ('MN LatLon Part 5 File',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+       
+       first_time = .False.
+    endif
 
     position = CENTER
     position_u = NORTH
@@ -696,13 +713,27 @@ contains
 
     if (first_nest_move) then
       if (debug_log) print '("[INFO] WDR mn_latlon_load_parent READING static coarse file on npe=",I0)', this_pe
+      if (use_timers) call mpp_clock_begin (id_load1)
 
       call mn_static_filename(surface_dir, parent_tile, 'grid', 1, grid_filename)
       call load_nest_latlons_from_nc(grid_filename, Atm(1)%npx, Atm(1)%npy, 1, &
           parent_geo, p_istart_fine, p_iend_fine, p_jstart_fine, p_jend_fine)
 
+      ! These are saved between timesteps in fv_moving_nest_main.F90 
+      allocate(p_grid(1:parent_geo%nxp, 1:parent_geo%nyp,2))
+      allocate(p_grid_u(1:parent_geo%nxp, 1:parent_geo%nyp+1,2))
+      allocate(p_grid_v(1:parent_geo%nxp+1, 1:parent_geo%nyp,2))
+      
+      ! These are big (parent grid size), and do not change during the model integration.
+      call assign_p_grids(parent_geo, p_grid, position)
+      call assign_p_grids(parent_geo, p_grid_u, position_u)
+      call assign_p_grids(parent_geo, p_grid_v, position_v)
+      
       first_nest_move = .false.
+      if (use_timers) call mpp_clock_end (id_load1)
     endif
+
+    if (use_timers) call mpp_clock_begin (id_load2)
 
     parent_geo%nxp = Atm(1)%npx
     parent_geo%nyp = Atm(1)%npy
@@ -750,6 +781,10 @@ contains
       enddo
     enddo
 
+    if (use_timers) call mpp_clock_end (id_load2)
+    if (use_timers) call mpp_clock_begin (id_load3)
+
+
     if (debug_log) call show_tile_geo(tile_geo, this_pe, "tile_geo")
 
     ! Allocate tile_geo_u just for this PE, copied from Atm(n)%gridstruct%grid
@@ -790,15 +825,12 @@ contains
     !  End tile_geo per PE.
     !===========================================================
 
-    allocate(p_grid(1:parent_geo%nxp, 1:parent_geo%nyp,2))
     allocate(n_grid(Atm(child_grid_num)%bd%isd:Atm(child_grid_num)%bd%ied, Atm(child_grid_num)%bd%jsd:Atm(child_grid_num)%bd%jed, 2))
     n_grid = real_snan
 
-    allocate(p_grid_u(1:parent_geo%nxp, 1:parent_geo%nyp+1,2))
     allocate(n_grid_u(Atm(child_grid_num)%bd%isd:Atm(child_grid_num)%bd%ied, Atm(child_grid_num)%bd%jsd:Atm(child_grid_num)%bd%jed+1, 2))
     n_grid_u = real_snan
 
-    allocate(p_grid_v(1:parent_geo%nxp+1, 1:parent_geo%nyp,2))
     allocate(n_grid_v(Atm(child_grid_num)%bd%isd:Atm(child_grid_num)%bd%ied+1, Atm(child_grid_num)%bd%jsd:Atm(child_grid_num)%bd%jed, 2))
     n_grid_v = real_snan
 
@@ -811,16 +843,27 @@ contains
     if (debug_log) print '("[INFO] WDR MV_NST2 bounds1 (tile_geo%lats)=",I0,"-",I0)', lbound(tile_geo%lats,1), ubound(tile_geo%lats,1)
     if (debug_log) print '("[INFO] WDR MV_NST2 bounds2 (tile_geo%lats)=",I0,"-",I0)', lbound(tile_geo%lats,2), ubound(tile_geo%lats,2)
 
+
+    if (use_timers) call mpp_clock_end (id_load3)
+    if (use_timers) call mpp_clock_begin (id_load4)
+
     call move_nest_geo(Atm, n, tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, delta_i_c, delta_j_c, x_refine, y_refine)
+
+    if (use_timers) call mpp_clock_end (id_load4)
+    if (use_timers) call mpp_clock_begin (id_load5)
+
 
     if (parent_x .eq. -999) then
       print '("[ERROR] WDR mn_latlon_load_parent on npe=",I0," parent and nest grids are not aligned!")', this_pe
       call mpp_error(FATAL, "mn_latlon_load_parent parent and nest grids are not aligned.")
     endif
 
-    call assign_n_p_grids(parent_geo, tile_geo, p_grid, n_grid, position)
-    call assign_n_p_grids(parent_geo, tile_geo_u, p_grid_u, n_grid_u, position_u)
-    call assign_n_p_grids(parent_geo, tile_geo_v, p_grid_v, n_grid_v, position_v)
+    ! These grids are small (nest size), and change each time nest moves.
+    call assign_n_grids(tile_geo, n_grid, position)
+    call assign_n_grids(tile_geo_u, n_grid_u, position_u)
+    call assign_n_grids(tile_geo_v, n_grid_v, position_v)
+
+    if (use_timers) call mpp_clock_end (id_load5)
 
   end subroutine mn_latlon_load_parent
 
@@ -1187,14 +1230,10 @@ contains
     integer, intent(in)                         :: position                                     !< Grid offset
 
     real*4, dimension(:,:), allocatable :: nbuffer, sbuffer, ebuffer, wbuffer
-    logical         :: parent_proc, child_proc
     type(bbox)      :: north_fine, north_coarse ! step 4
     type(bbox)      :: south_fine, south_coarse
     type(bbox)      :: east_fine, east_coarse
     type(bbox)      :: west_fine, west_coarse
-    integer         :: my_stat
-    character(256)  :: my_errmsg
-    integer         :: is, ie, js, je
     integer         :: this_pe
 
     integer         :: nest_level = 1  ! WDR TODO allow to vary
@@ -1302,14 +1341,10 @@ contains
     integer, intent(in)                         :: position                                     !< Grid offset
 
     real*8, dimension(:,:), allocatable :: nbuffer, sbuffer, ebuffer, wbuffer
-    logical         :: parent_proc, child_proc
     type(bbox)      :: north_fine, north_coarse ! step 4
     type(bbox)      :: south_fine, south_coarse
     type(bbox)      :: east_fine, east_coarse
     type(bbox)      :: west_fine, west_coarse
-    integer         :: my_stat
-    character(256)  :: my_errmsg
-    integer         :: is, ie, js, je
     integer         :: this_pe
 
     integer         :: nest_level = 1  ! WDR TODO allow to vary
@@ -1382,14 +1417,10 @@ contains
     integer, intent(in)                         :: position, nz                             !< Grid offset, number of vertical levels
 
     real*4, dimension(:,:,:), allocatable :: nbuffer, sbuffer, ebuffer, wbuffer
-    logical         :: parent_proc, child_proc
     type(bbox)      :: north_fine, north_coarse ! step 4
     type(bbox)      :: south_fine, south_coarse
     type(bbox)      :: east_fine, east_coarse
     type(bbox)      :: west_fine, west_coarse
-    integer         :: my_stat
-    character(256)  :: my_errmsg
-    integer         :: is, ie, js, je
     integer         :: this_pe
 
     integer         :: nest_level = 1  ! WDR TODO allow to vary
@@ -1462,14 +1493,10 @@ contains
     integer, intent(in)                         :: position, nz                                 !< Grid offset, number vertical levels
 
     real*8, dimension(:,:,:), allocatable :: nbuffer, sbuffer, ebuffer, wbuffer
-    logical         :: parent_proc, child_proc
     type(bbox)      :: north_fine, north_coarse ! step 4
     type(bbox)      :: south_fine, south_coarse
     type(bbox)      :: east_fine, east_coarse
     type(bbox)      :: west_fine, west_coarse
-    integer         :: my_stat
-    character(256)  :: my_errmsg
-    integer         :: is, ie, js, je
     integer         :: this_pe
 
     integer         :: nest_level = 1  ! WDR TODO allow to vary
@@ -1539,16 +1566,12 @@ contains
     integer, intent(in)                         :: position, nz                                 !< Grid offset, number of vertical levels
 
     real*4, dimension(:,:,:,:), allocatable     :: nbuffer, sbuffer, ebuffer, wbuffer
-    logical         :: parent_proc, child_proc
     type(bbox)      :: north_fine, north_coarse ! step 4
     type(bbox)      :: south_fine, south_coarse
     type(bbox)      :: east_fine, east_coarse
     type(bbox)      :: west_fine, west_coarse
-    integer         :: my_stat
-    character(256)  :: my_errmsg
     integer         :: n4d
     integer         :: this_pe
-    integer         :: is, ie, js, je
     integer         :: nest_level = 1  ! WDR TODO allow to vary
 
     this_pe = mpp_pe()
@@ -1619,16 +1642,12 @@ contains
     integer, intent(in)                         :: position, nz                                 !< Grid offset, number of vertical levels
 
     real*8, dimension(:,:,:,:), allocatable     :: nbuffer, sbuffer, ebuffer, wbuffer
-    logical         :: parent_proc, child_proc
     type(bbox)      :: north_fine, north_coarse ! step 4
     type(bbox)      :: south_fine, south_coarse
     type(bbox)      :: east_fine, east_coarse
     type(bbox)      :: west_fine, west_coarse
-    integer         :: my_stat
-    character(256)  :: my_errmsg
     integer         :: n4d
     integer         :: this_pe
-    integer         :: is, ie, js, je
     integer         :: nest_level = 1  ! WDR TODO allow to vary
 
     this_pe = mpp_pe()
@@ -1723,7 +1742,7 @@ contains
     logical, save       :: first_time = .true.
     integer, save       :: id_reset1, id_reset2, id_reset3, id_reset4, id_reset5, id_reset6, id_reset7
 
-    logical             :: use_timers = .False. !  Set this to true to generate performance profiling information in out.* file
+    logical             :: use_timers = .True. !  Set this to true to generate performance profiling information in out.* file
 
     if (first_time .and. use_timers) then
       id_reset1     = mpp_clock_id ('MN 7 Reset 1',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
@@ -2692,6 +2711,94 @@ contains
     endif
 
   end subroutine assign_n_p_grids
+
+  !>@brief The subroutine 'assign_p_grids' sets values for parent grid arrays from the grid_geometry structures.  This is static through the model run.
+  subroutine assign_p_grids(parent_geo, p_grid, position)
+    type(grid_geometry), intent(in)               :: parent_geo       !< Parent geometry
+    real(kind=R_GRID), allocatable, intent(inout) :: p_grid(:,:,:)     !< Parent grid
+    integer, intent(in)                           :: position          !< Grid offset
+
+    integer :: i,j
+
+    if (position == CENTER) then
+      do j = 1, parent_geo%ny
+        do i = 1, parent_geo%nx
+          ! centered grid version
+          p_grid(i, j, 1) = parent_geo%lons(2*i, 2*j)
+          p_grid(i, j, 2) = parent_geo%lats(2*i, 2*j)
+        enddo
+      enddo
+
+      ! u(npx, npy+1)
+    elseif (position == NORTH) then  ! u wind on D-stagger
+      do j = 1, parent_geo%ny
+        do i = 1, parent_geo%nx
+          ! centered grid version
+          p_grid(i, j, 1) = parent_geo%lons(2*i, 2*j-1)
+          p_grid(i, j, 2) = parent_geo%lats(2*i, 2*j-1)
+        enddo
+      enddo
+
+      ! v(npx+1, npy)
+    elseif (position == EAST) then  ! v wind on D-stagger
+      do j = 1, parent_geo%ny
+        do i = 1, parent_geo%nx
+          ! centered grid version
+          p_grid(i, j, 1) = parent_geo%lons(2*i-1, 2*j)
+          p_grid(i, j, 2) = parent_geo%lats(2*i-1, 2*j)
+        enddo
+      enddo
+    endif
+
+  end subroutine assign_p_grids
+
+
+
+  !>@brief The subroutine 'assign_n_grids' sets values for nest grid arrays from the grid_geometry structures.
+  subroutine assign_n_grids(tile_geo, n_grid, position)
+    type(grid_geometry), intent(in)                :: tile_geo           !< Parent geometry, nest geometry
+    real(kind=R_GRID), allocatable, intent(inout)  :: n_grid(:,:,:)      !< Nest grid
+    integer, intent(in)                            :: position           !< Grid offset
+
+    integer :: i,j
+
+    if (position == CENTER) then
+      do j = lbound(tile_geo%lats,2), ubound(tile_geo%lats,2)
+        do i = lbound(tile_geo%lats,1), ubound(tile_geo%lats,1)
+          ! centered grid version
+          n_grid(i, j, 1) = tile_geo%lons(i, j)
+          n_grid(i, j, 2) = tile_geo%lats(i, j)
+          !if (debug_log) print '("[INFO] WDR populate ngrid npe=",I0, I4,I4, F12.4, F12.4)', this_pe, i, j, n_grid(i,j,1), n_grid(i,j,2)
+        enddo
+      enddo
+
+      ! u(npx, npy+1)
+    elseif (position == NORTH) then  ! u wind on D-stagger
+      do j = lbound(tile_geo%lats,2), ubound(tile_geo%lats,2)
+        do i = lbound(tile_geo%lats,1), ubound(tile_geo%lats,1)
+          ! centered grid version
+          n_grid(i, j, 1) = tile_geo%lons(i, j)
+          n_grid(i, j, 2) = tile_geo%lats(i, j)
+          !if (debug_log) print '("[INFO] WDR populate ngrid_u npe=",I0, I4,I4, F12.4, F12.4)', this_pe, i, j, n_grid(i,j,1), n_grid(i,j,2)
+        enddo
+      enddo
+
+      ! v(npx+1, npy)
+    elseif (position == EAST) then  ! v wind on D-stagger
+      do j = lbound(tile_geo%lats,2), ubound(tile_geo%lats,2)
+        do i = lbound(tile_geo%lats,1), ubound(tile_geo%lats,1)
+          ! centered grid version
+          n_grid(i, j, 1) = tile_geo%lons(i, j)
+          n_grid(i, j, 2) = tile_geo%lats(i, j)
+          !if (debug_log) print '("[INFO] WDR populate ngrid_v npe=",I0, I4,I4, F12.4, F12.4)', this_pe, i, j, n_grid(i,j,1), n_grid(i,j,2)
+        enddo
+      enddo
+
+    endif
+
+  end subroutine assign_n_grids
+
+
 
 
   !>@brief The subroutine 'calc_nest_halo_weights' calculates the interpolation weights

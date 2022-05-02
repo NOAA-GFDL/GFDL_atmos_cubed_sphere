@@ -161,9 +161,10 @@ module fv_moving_nest_main_mod
 
   !  --- Clock ids for moving_nest performance metering
   integer :: id_movnest1, id_movnest1_9, id_movnest2, id_movnest3, id_movnest4, id_movnest5
+  integer :: id_movnest5_1, id_movnest5_2, id_movnest5_3, id_movnest5_4
   integer :: id_movnest6, id_movnest7_0, id_movnest7_1, id_movnest7_2, id_movnest7_3, id_movnest8, id_movnest9
   integer :: id_movnestTot
-  logical :: use_timers = .False. ! Set this to true for detailed performance profiling.  False only profiles total moving nest time.
+  logical :: use_timers = .True. ! Set this to true for detailed performance profiling.  False only profiles total moving nest time.
   integer, save :: output_step = 0
 
 contains
@@ -260,6 +261,11 @@ contains
       id_movnest3     = mpp_clock_id ('MN Part 3 Meta Move Nest',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
       id_movnest4     = mpp_clock_id ('MN Part 4 Fill Intern Nest Halos',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
       id_movnest5     = mpp_clock_id ('MN Part 5 Recalc Weights',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+      id_movnest5_1   = mpp_clock_id ('MN Part 5.1 read_parent',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+      id_movnest5_2   = mpp_clock_id ('MN Part 5.2 reset latlon',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+      id_movnest5_3   = mpp_clock_id ('MN Part 5.3 meta recalc',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+      id_movnest5_4   = mpp_clock_id ('MN Part 5.4 shift indx',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+
       id_movnest6     = mpp_clock_id ('MN Part 6 EOSHIFT',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
       id_movnest7_0   = mpp_clock_id ('MN Part 7.0 Recalc gridstruct',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
@@ -489,11 +495,14 @@ contains
     type(grid_geometry), save              :: parent_geo
     type(grid_geometry), save              :: fp_super_tile_geo
     type(mn_surface_grids), save           :: mn_static
+    real(kind=R_GRID), allocatable, save   :: p_grid(:,:,:)
+    real(kind=R_GRID), allocatable, save   :: p_grid_u(:,:,:)
+    real(kind=R_GRID), allocatable, save   :: p_grid_v(:,:,:)
 
     type(grid_geometry)              :: tile_geo, tile_geo_u, tile_geo_v
-    real(kind=R_GRID), allocatable   :: p_grid(:,:,:), n_grid(:,:,:)
-    real(kind=R_GRID), allocatable   :: p_grid_u(:,:,:), n_grid_u(:,:,:)
-    real(kind=R_GRID), allocatable   :: p_grid_v(:,:,:), n_grid_v(:,:,:)
+    real(kind=R_GRID), allocatable   :: n_grid(:,:,:)
+    real(kind=R_GRID), allocatable   :: n_grid_u(:,:,:)
+    real(kind=R_GRID), allocatable   :: n_grid_v(:,:,:)
     real, allocatable  :: wt_h(:,:,:)  ! TODO verify that these are deallocated 
     real, allocatable  :: wt_u(:,:,:)
     real, allocatable  :: wt_v(:,:,:)
@@ -913,16 +922,23 @@ contains
         !!============================================================================
         if (debug_log) print '("[INFO] WDR MV_NST5 run step 5 fv_moving_nest_main.F90 npe=",I0, " tile_geo%lats allocated:",L1)', this_pe, allocated(tile_geo%lats)
         if (debug_log) print '("[INFO] WDR MV_NST5 run step 5 fv_moving_nest_main.F90 npe=",I0, " parent_geo%lats allocated:",L1)', this_pe, allocated(parent_geo%lats)
+        if (use_timers) call mpp_clock_begin (id_movnest5_1)
 
-        ! parent_geo is only loaded first time; afterwards it is reused.
-        ! This is the coarse resolution data for the parent
+        ! parent_geo, p_grid, p_grid_u, and p_grid_v are only loaded first time; afterwards they are reused.
+        ! Because they are the coarse resolution grids (supergrid, a-grid, u stagger, v stagger) for the parent
         call mn_latlon_load_parent(Moving_nest(child_grid_num)%mn_flag%surface_dir, Atm, n, parent_tile, &
             delta_i_c, delta_j_c, child_grid_num, &
             parent_geo, tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, &
             p_grid, n_grid, p_grid_u, n_grid_u, p_grid_v, n_grid_v)
 
+        if (use_timers) call mpp_clock_end (id_movnest5_1)
+        if (use_timers) call mpp_clock_begin (id_movnest5_2)
+
         ! tile_geo holds the center lat/lons for the entire nest (all PEs).
         call mn_reset_phys_latlon(Atm, n, tile_geo, fp_super_tile_geo, Atm_block, IPD_control, IPD_data)
+
+        if (use_timers) call mpp_clock_end (id_movnest5_2)
+        if (use_timers) call mpp_clock_begin (id_movnest5_3)
 
         !!============================================================================
         !! Step 5.2 -- Fill the wt* variables for each stagger
@@ -937,7 +953,10 @@ contains
         call mn_meta_recalc( delta_i_c, delta_j_c, x_refine, y_refine, tile_geo_v, parent_geo, fp_super_tile_geo, &
             is_fine_pe, global_nest_domain, position_v, p_grid_v, n_grid_v, wt_v, istart_coarse, jstart_coarse)
 
+        if (use_timers) call mpp_clock_end (id_movnest5_3)
       endif
+
+      if (use_timers) call mpp_clock_begin (id_movnest5_4)
 
       !!============================================================================
       !! Step 5.3 -- Adjust the indices by the values of delta_i_c, delta_j_c
@@ -949,6 +968,8 @@ contains
       call mn_shift_index(delta_i_c, delta_j_c, Atm(child_grid_num)%neststruct%ind_b)
 
       if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
+
+      if (use_timers) call mpp_clock_end (id_movnest5_4)
 
       if (use_timers) call mpp_clock_end (id_movnest5)
       if (use_timers) call mpp_clock_begin (id_movnest6)
