@@ -37,7 +37,7 @@ TornadicSupercell
 : Global super-stretched grid with Toy semi-circle hodograph creating supercell thunderstorms with tornado-like vortices, demonstrating the importance of vorticity preservation at kilometer scales. See animations on [Google Drive](https://drive.google.com/drive/folders/1pVNAuKrYKwxVAlCdVa5faIVRBaK2hdVI) (noaa.gov only).
 
 HSzuritasuperrotation
-: The classic Held-Suarez idealized climate, with modifications from Zurita-Gotor et al. (JAS, 2022) to demonstrate superrotation. 
+: The classic Held-Suarez idealized climate, with modifications from [Zurita-Gotor et al. (JAS, 2022)](https://journals.ametsoc.org/view/journals/atsc/79/5/JAS-D-21-0269.1.xml) to demonstrate superrotation. 
 
 ## 2D Periodic
 
