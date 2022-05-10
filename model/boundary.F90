@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -18,6 +18,7 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
 module boundary_mod
 
   use fv_mp_mod,         only: is_master
@@ -29,7 +30,6 @@ module boundary_mod
   use mpp_domains_mod,    only: AGRID, BGRID_NE, CGRID_NE, DGRID_NE
   use mpp_mod,            only: mpp_error, FATAL, mpp_sum, mpp_sync, mpp_npes, mpp_broadcast, WARNING, mpp_pe
 
-  use fv_mp_mod,          only: mp_bcst
   use fv_arrays_mod,      only: fv_atmos_type, fv_nest_BC_type_3D, fv_grid_bounds_type
   use mpp_mod,            only: mpp_send, mpp_recv
   use fv_timing_mod,      only: timing_on, timing_off
@@ -541,35 +541,6 @@ contains
    end do
 
  end subroutine fill_nested_grid_3D
-
-!!$ subroutine nested_grid_BC_mpp_2d(var_nest, nest_domain, ind, wt, istag, jstag, &
-!!$      npx, npy, bd, isg, ieg, jsg, jeg, nstep_in, nsplit_in, proc_in)
-!!$
-!!$   type(fv_grid_bounds_type), intent(IN) :: bd
-!!$   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag), intent(INOUT) :: var_nest
-!!$   real, dimension(isg:ieg+istag,jsg:jeg+jstag), intent(IN) :: var_coarse
-!!$   type(nest_domain_type), intent(INOUT) :: nest_domain
-!!$   integer, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,2), intent(IN) :: ind
-!!$   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,4), intent(IN) :: wt
-!!$   integer, intent(IN) :: istag, jstag, npx, npy, isg, ieg, jsg, jeg
-!!$   integer, intent(IN), OPTIONAL :: nstep_in, nsplit_in
-!!$   logical, intent(IN), OPTIONAL :: proc_in
-!!$
-!!$   real, dimension(bd%isd:bd%ied+istag,bd%jsd:bd%jed+jstag,1) :: var_nest_3d
-!!$
-!!$   integer :: i,j
-!!$
-!!$   do j=bd%jsd,bd%jed+jstag
-!!$   do i=bd%isd,bd%ied+istag
-!!$      var_nest_3d(i,j,1) = var_nest(i,j)
-!!$   enddo
-!!$   enddo
-!!$
-!!$   call nested_grid_BC_mpp_3d(var_nest_3d, nest_domain, ind, wt, istag, jstag, &
-!!$      npx, npy, 1, bd, isg, ieg, jsg, jeg, nstep_in, nsplit_in, proc_in)
-!!$
-!!$
-!!$ end subroutine nested_grid_BC_mpp_2d
 
  subroutine nested_grid_BC_mpp_3d(var_nest, var_coarse, nest_domain, ind, wt, istag, jstag, &
       npx, npy, npz, bd, isg, ieg, jsg, jeg, nest_level, nstep_in, nsplit_in, proc_in)
@@ -1717,11 +1688,6 @@ contains
 
    integer                      :: position
 
-!!$   integer                      :: isw_f, iew_f, jsw_f, jew_f, isw_c, iew_c, jsw_c, jew_c
-!!$   integer                      :: ise_f, iee_f, jse_f, jee_f, ise_c, iee_c, jse_c, jee_c
-!!$   integer                      :: iss_f, ies_f, jss_f, jes_f, iss_c, ies_c, jss_c, jes_c
-!!$   integer                      :: isn_f, ien_f, jsn_f, jen_f, isn_c, ien_c, jsn_c, jen_c
-
    integer :: i,j, k
 
    if (istag == 1 .and. jstag == 1) then
@@ -2543,7 +2509,7 @@ contains
 
   subroutine update_coarse_grid_mpp_vector(u_coarse, v_coarse, u_nest, v_nest, nest_domain, dx, dy, area, &
       bd, isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n, &
-      isu, ieu, jsu, jeu, npx, npy, npz, istag_u, jstag_u, istag_v, jstag_v, &
+      isu, ieu, jsu, jeu, jeu_stag, iev_stag, npx, npy, npz, istag_u, jstag_u, istag_v, jstag_v, &
       r, nestupdate, upoff, nsponge, &
       parent_proc, child_proc, parent_grid, nest_level, flags, gridtype)
 
@@ -2553,7 +2519,7 @@ contains
 
    type(fv_grid_bounds_type), intent(IN) :: bd
    integer, intent(IN) :: isd_p, ied_p, jsd_p, jed_p, is_n, ie_n, js_n, je_n
-   integer, intent(IN) :: isu, ieu, jsu, jeu
+   integer, intent(IN) :: isu, ieu, jsu, jeu, jeu_stag, iev_stag
    integer, intent(IN) :: istag_u, jstag_u, istag_v, jstag_v
    integer, intent(IN) :: npx, npy, npz, r, nestupdate, upoff, nsponge
    real, intent(IN)    :: u_nest(is_n:ie_n+istag_u,js_n:je_n+jstag_u,npz)
@@ -2614,13 +2580,14 @@ contains
    s = r/2 !rounds down (since r > 0)
    qr = r*upoff + nsponge - s
 
-   if (parent_proc .and. .not. (ieu < isu .or. jeu < jsu)) then
+   if (parent_proc .and. .not. (ieu < isu .or. jeu_stag < jsu)) then
       call fill_var_coarse(u_coarse, coarse_dat_recv_u, isd_p, ied_p, jsd_p, jed_p, &
-           isu, ieu, jsu, jeu, npx, npy, npz, istag_u, jstag_u, nestupdate, parent_grid)
+           isu, ieu, jsu, jeu_stag, npx, npy, npz, istag_u, jstag_u, nestupdate, parent_grid)
    endif
-   if (parent_proc .and. .not. (ieu < isu .or. jeu < jsu)) then
+
+   if (parent_proc .and. .not. (iev_stag < isu .or. jeu < jsu)) then
       call fill_var_coarse(v_coarse, coarse_dat_recv_v, isd_p, ied_p, jsd_p, jed_p, &
-           isu, ieu, jsu, jeu, npx, npy, npz, istag_v, jstag_v, nestupdate, parent_grid)
+           isu, iev_stag, jsu, jeu, npx, npy, npz, istag_v, jstag_v, nestupdate, parent_grid)
    endif
 
    if (allocated(coarse_dat_recv_u)) deallocate(coarse_dat_recv_u)

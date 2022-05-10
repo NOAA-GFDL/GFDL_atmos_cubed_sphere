@@ -11,7 +11,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -28,7 +28,8 @@ use fms2_io_mod,   only: open_file, close_file, get_num_dimensions, &
                          get_dimension_names, get_dimension_size, FmsNetcdfFile_t, &
                          get_num_variables, get_variable_names, get_variable_size, &
                          get_variable_num_dimensions, get_variable_units, &
-                         get_time_calendar, read_data, variable_att_exists
+                         get_time_calendar, read_data, variable_att_exists, &
+                         is_dimension_unlimited
 use mpp_mod,       only: input_nml_file, mpp_npes, mpp_get_current_pelist
 use constants_mod, only: PI, GRAV, RDGAS, RVGAS
 
@@ -107,6 +108,7 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
   character(len=32), allocatable :: fields(:)
   type(FmsNetcdfFile_t) :: fileobj
   integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pelist
+  character(len=128), dimension(:), allocatable :: names
 
   if (module_is_initialized) return
   ! initial file names to blanks
@@ -147,22 +149,32 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
      if (open_file(fileobj, trim(filenames(n)), "read", pelist=pes)) then
          Files(n)%ndim=get_num_dimensions(fileobj)
 
-         allocate (Files(n)%length_axes(Files(n)%ndim))
+         allocate(files(n)%length_axes(Files(n)%ndim))
+         allocate(names(files(n)%ndim))
+         call get_dimension_names(fileobj, names)
+         files(n)%axes(:) = ""
 
          ! inquire dimension sizes
          do i = 1, Files(n)%ndim
-            call get_dimension_names(fileobj, Files(n)%axes)
             do j = 1, NUM_REQ_AXES
-               if (trim(Files(n)%axes(j)) .eq. trim(required_axis_names(j))) then
+               if (trim(names(i)) .eq. trim(required_axis_names(j))) then
+                  files(n)%axes(j) = trim(names(i))
                   call get_dimension_size(fileobj, Files(n)%axes(j), Files(n)%length_axes(j))
                   call check_axis_size (j,Files(n)%length_axes(j))
                   Files(n)%axis_index(j) = i
                   exit
                endif
             enddo
+            if (j .gt. num_req_axes) then
+              if (is_dimension_unlimited(fileobj, trim(names(i)))) then
+                ! time axis indexing
+                files(n)%axes(index_time) = trim(names(i))
+                call get_dimension_size(fileobj, files(n)%axes(index_time), &
+                                        files(n)%length_axes(index_time))
+              endif
+            endif
          enddo
-         ! time axis indexing
-         call get_dimension_size(fileobj, Files(n)%axes(INDEX_TIME), Files(n)%length_axes(INDEX_TIME))
+         deallocate(names)
          Files(n)%ntim = Files(n)%length_axes(INDEX_TIME)
          Files(n)%time_offset = numtime
          numtime = numtime + Files(n)%ntim
@@ -173,7 +185,7 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
          Files(n)%field_index = 0
          do i = 1, Files(n)%nvar
             nd = get_variable_num_dimensions(fileobj, fields(i))
-            call get_variable_size(fileobj, fields(i), siz)
+            call get_variable_size(fileobj, fields(i), siz(1:nd))
             do j = 1, NUM_REQ_FLDS
                if (trim(fields(i)) .eq. trim(required_field_names(j))) then
                   Files(n)%field_index(j) = i
@@ -250,7 +262,7 @@ integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pe
           if( n == 1) then
              time_axis = Files(n)%axes(INDEX_TIME)
              call get_variable_units(fileobj, time_axis, units)
-             if( variable_att_exists(fileobj, time_axis, calendar) ) then
+             if( variable_att_exists(fileobj, time_axis, "calendar") ) then
                  call get_time_calendar(fileobj, time_axis, calendar)
              else
                  calendar = 'gregorian  '
@@ -433,16 +445,15 @@ integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pe
      start = 1
      if (present(is)) start(1) = is
      if (present(js)) start(2) = js
-     start(3) = atime
 
-     nread = 1
      nread(1) = size(dat,1)
      nread(2) = size(dat,2)
 
      allocate(pes(mpp_npes()))
      call mpp_get_current_pelist(pes)
      if (open_file(fileobj, trim(filenames(n)), "read", pelist=pes)) then
-         call read_data(fileobj, Files(n)%fields(this_index), dat, corner=start, edge_lengths=nread)
+         call read_data(fileobj, Files(n)%fields(this_index), dat, unlim_dim_level=atime, &
+                        corner=start(1:2), edge_lengths=nread(1:2))
          call close_file(fileobj)
      endif
      deallocate(pes)
@@ -517,9 +528,7 @@ integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pe
      start = 1
      if (present(is)) start(1) = is
      if (present(js)) start(2) = js
-     start(4) = atime
 
-     nread = 1
      nread(1) = size(dat,1)
      nread(2) = size(dat,2)
      nread(3) = size(dat,3)
@@ -527,7 +536,8 @@ integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pe
      allocate(pes(mpp_npes()))
      call mpp_get_current_pelist(pes)
      if (open_file(fileobj, trim(filenames(n)), "read", pelist=pes)) then
-         call read_data(fileobj, Files(n)%fields(this_index), dat, corner=start, edge_lengths=nread)
+         call read_data(fileobj, Files(n)%fields(this_index), dat, unlim_dim_level=atime, &
+                        corner=start(1:3), edge_lengths=nread(1:3))
          call close_file(fileobj)
      endif
      deallocate(pes)

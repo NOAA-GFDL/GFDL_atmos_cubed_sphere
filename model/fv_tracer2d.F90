@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -18,6 +18,7 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
 module fv_tracer2d_mod
    use tp_core_mod,       only: fv_tp_2d, copy_corners
    use fv_mp_mod,         only: mp_reduce_max
@@ -722,7 +723,7 @@ subroutine tracer_2d_nested(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, np
                                                is,  ie,  js,  je,       &
                                                isd, ied, jsd, jed,      &
                                                reg_bc_update_time,      &
-                                               iq )
+                                               it, iq )
             enddo
       endif
 

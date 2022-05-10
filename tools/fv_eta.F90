@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -18,10 +18,12 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
 module fv_eta_mod
  use constants_mod,  only: kappa, grav, cp_air, rdgas
  use fv_mp_mod,      only: is_master
- use mpp_mod,        only: FATAL, mpp_error
+ use fms_mod,        only: FATAL, error_mesg
+ use fms2_io_mod,    only: ascii_read
  implicit none
  private
  public set_eta, set_external_eta, get_eta_level, compute_dz_var,  &
@@ -39,7 +41,7 @@ module fv_eta_mod
       integer,  intent(in)::  km           ! vertical dimension
       integer,  intent(out):: ks           ! number of pure p layers
       real:: a60(61),b60(61)
-! Thfollowing L63 setting is the same as NCEP GFS's L64 except the top
+! The following L63 setting is the same as NCEP GFS's L64 except the top
 ! 3 layers
       data a60/300.0000,     430.00000,     558.00000,    &
               700.00000,     863.05803,    1051.07995,    &
@@ -256,12 +258,14 @@ module fv_eta_mod
       ptop = ak(1)
       pint = ak(ks+1)
 
+      call check_eta_levels (ak, bk)
+
  end subroutine set_eta
 
 
 #else
- !This is the version of set_eta used in fvGFS and AM4
- subroutine set_eta(km, ks, ptop, ak, bk, npz_type)
+ !This is the version of set_eta used in SHiELD and AM4
+ subroutine set_eta(km, ks, ptop, ak, bk, npz_type,fv_eta_file)
 
 !Level definitions are now in this header file
 #include <fv_eta.h>
@@ -272,13 +276,15 @@ module fv_eta_mod
    real, intent(out):: bk(km+1)
    real, intent(out):: ptop         ! model top (Pa)
    character(24), intent(IN) :: npz_type
+   character(120), intent(IN) :: fv_eta_file
+   character(len=:), dimension(:), allocatable :: eta_level_unit
 
    real:: p0=1000.E2
    real:: pc=200.E2
 
    real pt, lnpe, dlnp
    real press(km+1), pt1(km)
-   integer  k
+   integer :: l, k
    integer :: var_fn = 0
 
    real :: pint = 100.E2
@@ -328,6 +334,27 @@ module fv_eta_mod
          auto_routine = 2
       end select
 
+   else if (trim(npz_type) == 'input') then
+! Jili Dong add ak/bk input
+       call ascii_read (trim(fv_eta_file), eta_level_unit)
+       !--- fv_eta_file being read in must have the following format:
+       !       include a single line description
+       !       ak/bk pairs, with each pair occupying a single line
+       !       the pairs must be ordered from surface to TOA
+       !       the pairs define the levels of the grid to create levels-1 layers
+       if (size(eta_level_unit(:)) /= km+2) then
+          print *,' size is ', size(eta_level_unit(:))
+          call error_mesg ('FV3 set_eta',trim(fv_eta_file)//" has too few or too many entries or has extra &
+                          &spaces at the end of the file", FATAL)
+       endif
+       l = 1
+       read(eta_level_unit(l),*)
+       do k=km+1,1,-1
+          l = l + 1
+          read(eta_level_unit(l),*) ak(k),bk(k)
+       end do
+       deallocate (eta_level_unit)
+       call set_external_eta(ak, bk, ptop, ks)
    else
 
       select case (km)
@@ -583,6 +610,15 @@ module fv_eta_mod
             enddo
 
          endif
+
+         ! xi chen's l65
+      case (65)
+         ks = 29
+         do k=1,km+1
+            ak(k) = a65(k)
+            bk(k) = b65(k)
+         enddo
+
          !-->cjg
       case (68)
          ks = 27
@@ -595,11 +631,24 @@ module fv_eta_mod
          ptop = 1.
          stretch_fac = 1.03
          auto_routine = 1
-      case (75)   ! HS-SGO test configuration
-         pint = 100.E2
-         ptop = 10.E2
-         stretch_fac = 1.035
-         auto_routine = 6
+
+      ! kgao: introduce EMC's L75 config
+      case (75)
+         if (trim(npz_type) == 'emc') then
+           ! EMC's L75 config
+           ks = 12
+           do k=1,km+1
+              ak(k) = a75(k)
+              bk(k) = b75(k)
+           enddo
+         else
+           ! HS-SGO test configuration
+           pint = 100.E2
+           ptop = 10.E2
+           stretch_fac = 1.035
+           auto_routine = 6
+         endif
+
       case (79)               ! N = 10, M=5
          if (trim(npz_type) == 'gcrm') then
            pint = 100.E2
@@ -638,6 +687,14 @@ module fv_eta_mod
          enddo
          !<--cjg
 
+      ! kgao L88
+      case (88)
+         ks = 20 !19 bug fix
+         do k=1,km+1
+            ak(k) = a88(k)
+            bk(k) = b88(k)
+         enddo
+
       case (100)
          ks = 38
          do k=1,km+1
@@ -667,6 +724,14 @@ module fv_eta_mod
             ptop = 1.
             stretch_fac = 1.03
             auto_routine = 2
+         elseif (trim(npz_type) == 'gfs') then
+            ks = 39
+            ptop = a127(1)
+            pint = a127(ks+1)
+            do k=1,km+1
+               ak(k) = a127(k)
+               bk(k) = b127(k)
+            enddo
          else
             ptop = 1.
             pint = 75.E2
@@ -728,6 +793,8 @@ module fv_eta_mod
    ptop = ak(1)
    pint = ak(ks+1)
 
+   call check_eta_levels (ak, bk)
+
    if (is_master()) then
       write(*, '(A4, A13, A13, A11)') 'klev', 'ak', 'bk', 'p_ref'
       do k=1,km+1
@@ -757,7 +824,10 @@ module fv_eta_mod
    enddo
    !--- change ks to layers from levels
    ks = ks - 1
+
    if (is_master()) write(6,*) ' ptop & ks ', ptop, ks
+
+   call check_eta_levels (ak, bk)
 
  end subroutine set_external_eta
 
@@ -778,7 +848,7 @@ module fv_eta_mod
   real ep, es, alpha, beta, gama
   real, parameter:: akap = 2./7.
 !---- Tunable parameters:
-  real:: k_inc = 10   ! # of layers from bottom up to near const dz region
+  integer:: k_inc = 10   ! # of layers from bottom up to near const dz region
   real:: s0 = 0.8     ! lowest layer stretch factor
 !-----------------------
   real:: s_inc
@@ -1809,6 +1879,40 @@ module fv_eta_mod
 
  end subroutine hybrid_z_dz
 
+
+ subroutine check_eta_levels(ak, bk)
+  real,    intent(in) :: ak(:)
+  real,    intent(in) :: bk(:)
+  !--- local variables
+  real :: ph1, tmp
+  integer :: nlev, k
+  logical :: monotonic
+
+  nlev = size(ak(:))
+
+  monotonic = .true.
+  ph1 = ak(1)
+  do k=2,nlev
+     tmp = ak(k) + bk(k)*1000.E2
+     if (tmp <= ph1) then
+       monotonic = .false.
+       exit
+     endif
+     ph1 = tmp
+  enddo
+
+  if (.not. monotonic) then
+    if (is_master()) then
+       write(*, '(A4, A13, A13, A11)') 'klev', 'ak', 'bk', 'p_ref'
+       do k=1,nlev
+          write(*,'(I4, F13.5, F13.5, F11.2)') k, ak(k), bk(k), ak(k) + bk(k)*1000.E2
+       enddo
+    endif
+    call error_mesg ('FV3 check_eta_levels',"ak/bk pairs do not provide a monotonic vertical coordinate", &
+                    & FATAL)
+  endif
+
+ end subroutine check_eta_levels
 
 
  subroutine get_eta_level(npz, p_s, pf, ph, ak, bk, pscale)

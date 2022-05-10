@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -18,6 +18,7 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
 module fv_restart_mod
 
   !<OVERVIEW>
@@ -29,38 +30,37 @@ module fv_restart_mod
   ! for the model.
   !</DESCRIPTION>
 
-  use constants_mod,       only: kappa, pi=>pi_8, omega, rdgas, grav, rvgas, cp_air, radius
+  use constants_mod,       only: kappa, pi=>pi_8, rdgas, grav, rvgas, cp_air
+  use fv_arrays_mod,       only: radius, omega ! scaled for small earth
   use fv_arrays_mod,       only: fv_atmos_type, fv_nest_type, fv_grid_bounds_type, R_GRID
   use fv_io_mod,           only: fv_io_init, fv_io_read_restart, fv_io_write_restart, &
-                                 remap_restart, fv_io_register_nudge_restart, &
-                                 fv_io_register_restart_BCs, fv_io_write_BCs, fv_io_read_BCs
+                                 remap_restart, fv_io_write_BCs, fv_io_read_BCs
   use fv_grid_utils_mod,   only: ptop_min, fill_ghost, g_sum, &
                                  make_eta_level, cubed_to_latlon, great_circle_dist
   use fv_diagnostics_mod,  only: prt_maxmin
   use init_hydro_mod,      only: p_var
   use mpp_domains_mod,     only: mpp_update_domains, domain2d, DGRID_NE
+  use mpp_domains_mod,     only: mpp_get_compute_domain, mpp_get_data_domain, mpp_get_global_domain
+  use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST,  mpp_get_C2F_index, WEST, SOUTH
+  use mpp_domains_mod,     only: mpp_global_field
   use mpp_mod,             only: mpp_chksum, stdout, mpp_error, FATAL, NOTE
-  use mpp_mod,             only: get_unit, mpp_sum, mpp_broadcast
+  use mpp_mod,             only: get_unit, mpp_sum, mpp_broadcast, mpp_max
   use mpp_mod,             only: mpp_get_current_pelist, mpp_npes, mpp_set_current_pelist
+  use mpp_mod,             only: mpp_send, mpp_recv, mpp_sync_self, mpp_pe, mpp_sync
+  use fms2_io_mod,         only: file_exists, set_filename_appendix, FmsNetcdfFile_t, open_file, close_file
+  use fms_io_mod,          only: fmsset_filename_appendix=> set_filename_appendix
   use test_cases_mod,      only: alpha, init_case, init_double_periodic!, init_latlon
   use fv_mp_mod,           only: is_master, mp_reduce_min, mp_reduce_max, corners_YDir => YDir, fill_corners, tile_fine, global_nest_domain
   use fv_surf_map_mod,     only: sgh_g, oro_g
-  use tracer_manager_mod,  only: get_tracer_names
+  use tracer_manager_mod,  only: get_tracer_index, get_tracer_names, set_tracer_profile
   use field_manager_mod,   only: MODEL_ATMOS
   use external_ic_mod,     only: get_external_ic
   use fv_eta_mod,          only: compute_dz_var, compute_dz_L32, set_hybrid_z
   use fv_surf_map_mod,     only: del2_cubed_sphere, del4_cubed_sphere
   use boundary_mod,        only: fill_nested_grid, nested_grid_BC, update_coarse_grid
-  use tracer_manager_mod,  only: get_tracer_index
-  use field_manager_mod,   only: MODEL_ATMOS
   use fv_timing_mod,       only: timing_on, timing_off
-  use mpp_domains_mod,     only: mpp_get_compute_domain, mpp_get_data_domain, mpp_get_global_domain
-  use mpp_mod,             only: mpp_send, mpp_recv, mpp_sync_self, mpp_set_current_pelist, mpp_get_current_pelist, mpp_npes, mpp_pe, mpp_sync
-  use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST,  mpp_get_C2F_index, WEST, SOUTH
-  use mpp_domains_mod,     only: mpp_global_field
   use fv_treat_da_inc_mod, only: read_da_inc
-  use fms2_io_mod,         only: file_exists, set_filename_appendix, FmsNetcdfFile_t, open_file, close_file
-  use fms_io_mod,          only: fmsset_filename_appendix=> set_filename_appendix
+  use fv_regional_mod,     only: write_full_fields
   use coarse_grained_restart_files_mod, only: fv_io_write_restart_coarse
 
   implicit none
@@ -97,7 +97,8 @@ contains
   ! The fv core restart facility
   ! </DESCRIPTION>
   !
-  subroutine fv_restart(fv_domain, Atm, dt_atmos, seconds, days, cold_start, grid_type, this_grid)
+  subroutine fv_restart(fv_domain, Atm, dt_atmos, seconds, days, cold_start, grid_type, &
+                        this_grid)
     type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
     real,                intent(in)    :: dt_atmos
@@ -106,7 +107,7 @@ contains
     logical,             intent(inout)    :: cold_start
     integer,             intent(in)    :: grid_type, this_grid
 
-    integer :: i, j, k, n, ntileMe, nt, iq
+    integer :: i, j, k, l, m, n, ntileMe, nt, iq
     integer :: isc, iec, jsc, jec, ncnst, ntprog, ntdiag
     integer :: isd, ied, jsd, jed, npz
     integer isd_p, ied_p, jsd_p, jed_p, isc_p, iec_p, jsc_p, jec_p, isg, ieg, jsg,jeg, npx_p, npy_p
@@ -119,18 +120,20 @@ contains
     character(len=128):: tname, errstring, fname, tracer_name
     character(len=120):: fname_ne, fname_sw
     character(len=3) :: gn
+    character(len=10) :: inputdir
     character(len=6) :: gnn
 
     integer :: npts, sphum
-    integer, allocatable :: pelist(:), smoothed_topo(:)
+    integer, allocatable :: pelist(:), global_pelist(:), smoothed_topo(:)
     real    :: sumpertn
-    real    :: zvir
+    real    :: zvir, nbg_inv
 
     type(FmsNetcdfFile_t) :: fileobj
     logical :: do_read_restart = .false.
     logical :: do_read_restart_bc = .false.
     integer, allocatable :: ideal_test_case(:), new_nest_topo(:)
     integer :: nest_level
+    integer, allocatable :: BC_remap_level(:)
 
     rgrav = 1. / grav
 
@@ -160,11 +163,7 @@ contains
        ntprog = size(Atm(n)%q,4)
        ntdiag = size(Atm(n)%qdiag,4)
 
-!!$       if (is_master()) then
-!!$          print*, 'FV_RESTART: ', n, cold_start_grids(n)
-!!$       endif
-
-       !1. sort out restart, external_ic, and cold-start (idealized)
+       !1. sort out restart, external_ic, and cold-start (idealized) plus initialize tracers
        if (Atm(n)%neststruct%nested) then
           write(fname,   '(A, I2.2, A)') 'INPUT/fv_core.res.nest', Atm(n)%grid_number, '.nc'
           write(fname_ne,'(A, I2.2, A)') 'INPUT/fv_BC_ne.res.nest', Atm(n)%grid_number, '.nc'
@@ -183,6 +182,18 @@ contains
           if (do_read_restart) call close_file(fileobj)
           if (is_master()) print*, 'FV_RESTART: ', n, do_read_restart, do_read_restart_bc
        endif
+
+       !initialize tracers
+       do nt = 1, ntprog
+          call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
+          ! set all tracers to an initial profile value
+          call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%q(:,:,:,nt))
+       enddo
+       do nt = ntprog+1, ntprog+ntdiag
+          call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
+          ! set all tracers to an initial profile value
+          call set_tracer_profile (MODEL_ATMOS, nt, Atm(n)%qdiag(:,:,:,nt))
+       enddo
 
        !2. Register restarts
        !No longer need to register restarts in fv_restart_mod with fms2_io implementation
@@ -213,6 +224,27 @@ contains
                 call fill_nested_grid_topo(Atm(n), n==this_grid)
              endif
 
+! This sets the nest BCs. Ideally, it should be done outside of this loop but
+! it is moved here -before ex_ic- to avoid repro issues on the nest
+             do nest_level=1,Atm(this_grid)%neststruct%num_nest_level
+
+                if (Atm(this_grid)%neststruct%nested .AND. Atm(this_grid)%neststruct%nlevel==nest_level)then
+                   call nested_grid_BC(Atm(this_grid)%ps, Atm(this_grid)%parent_grid%ps, global_nest_domain, &
+                        Atm(this_grid)%neststruct%ind_h, Atm(this_grid)%neststruct%wt_h, 0, 0, &
+                        Atm(this_grid)%npx, Atm(this_grid)%npy, Atm(this_grid)%bd, 1, Atm(this_grid)%npx-1, 1,&
+                        Atm(this_grid)%npy-1,nest_level=Atm(this_grid)%neststruct%nlevel)
+                   call nested_grid_BC(Atm(this_grid)%phis, Atm(this_grid)%parent_grid%phis, global_nest_domain, &
+                        Atm(this_grid)%neststruct%ind_h, Atm(this_grid)%neststruct%wt_h, 0, 0, &
+                        Atm(this_grid)%npx, Atm(this_grid)%npy, Atm(this_grid)%bd, 1, Atm(this_grid)%npx-1, 1, &
+                        Atm(this_grid)%npy-1,nest_level=Atm(this_grid)%neststruct%nlevel)
+               endif
+
+                if (ANY (Atm(this_grid)%neststruct%child_grids) .AND. Atm(this_grid)%neststruct%nlevel==nest_level-1) then
+                   call nested_grid_BC(Atm(this_grid)%ps, global_nest_domain, 0, 0, nest_level=Atm(this_grid)%neststruct%nlevel+1)
+                   call nested_grid_BC(Atm(this_grid)%phis, global_nest_domain, 0, 0, nest_level=Atm(this_grid)%neststruct%nlevel+1)
+                endif
+
+            enddo
           endif
        endif
 
@@ -231,7 +263,7 @@ contains
              call get_external_ic(Atm(n), Atm(n)%domain, .not. do_read_restart)
              if( is_master() ) write(*,*) 'IC generated from the specified external source'
 
-             !4. Restart
+          !4. Restart
           elseif (do_read_restart) then
 
              if ( Atm(n)%flagstruct%npz_rst /= 0 .and. Atm(n)%flagstruct%npz_rst /= Atm(n)%npz ) then
@@ -255,8 +287,7 @@ contains
                    j = (Atm(n)%bd%jsc + Atm(n)%bd%jec)/2
                    k = Atm(n)%npz/2
                    if( is_master() ) write(*,*) 'Calling read_da_inc',Atm(n)%pt(i,j,k)
-                   call read_da_inc(Atm(n), Atm(n)%domain, Atm(n)%bd, Atm(n)%npz, Atm(n)%ncnst, &
-                        Atm(n)%u, Atm(n)%v, Atm(n)%q, Atm(n)%delp, Atm(n)%pt, isd, jsd, ied, jed)
+                   call read_da_inc(Atm(n), Atm(n)%domain)
                    if( is_master() ) write(*,*) 'Back from read_da_inc',Atm(n)%pt(i,j,k)
                 endif
                 !====== end PJP added DA functionailty======
@@ -368,11 +399,6 @@ contains
           !Currently even though we do fill in the nested-grid IC from
           ! init_case or external_ic we appear to overwrite it using
           !  coarse-grid data
-!!$          if (Atm(n)%neststruct%nested) then
-!!$             if (.not. Atm(n)%flagstruct%external_ic .and.  .not. Atm(n)%flagstruct%nggps_ic .and. grid_type < 4 ) then
-!!$                call fill_nested_grid_data(Atm(n:n))
-!!$             endif
-!!$          end if
 
 !       endif  !end cold_start check
 
@@ -434,34 +460,45 @@ contains
 
     end do !break cycling loop to finish nesting setup
 
-!Send data to nests per levels
-     do nest_level=1,Atm(this_grid)%neststruct%num_nest_level
-
-        if (Atm(this_grid)%neststruct%nested .AND. Atm(this_grid)%neststruct%nlevel==nest_level)then
-           call nested_grid_BC(Atm(this_grid)%ps, Atm(this_grid)%parent_grid%ps, global_nest_domain, &
-                Atm(this_grid)%neststruct%ind_h, Atm(this_grid)%neststruct%wt_h, 0, 0, &
-                Atm(this_grid)%npx, Atm(this_grid)%npy, Atm(this_grid)%bd, 1, Atm(this_grid)%npx-1, 1,&
-                Atm(this_grid)%npy-1,nest_level=Atm(this_grid)%neststruct%nlevel)
-           call nested_grid_BC(Atm(this_grid)%phis, Atm(this_grid)%parent_grid%phis, global_nest_domain, &
-                Atm(this_grid)%neststruct%ind_h, Atm(this_grid)%neststruct%wt_h, 0, 0, &
-                Atm(this_grid)%npx, Atm(this_grid)%npy, Atm(this_grid)%bd, 1, Atm(this_grid)%npx-1, 1, &
-                Atm(this_grid)%npy-1,nest_level=Atm(this_grid)%neststruct%nlevel)
+    ! The following section is simply to set up the logical do_remap_BC_level
+    ! do_remap_BC_level is true if the BCs of any grid need remapping at a certain nest level
+    ! This is to accomodate the BC communications in fv_nesting which is done by level
+    ! and does not mean that all nests at a certain level are undergoing a BC remapping
+    ! remapping is actually happening when do_remap_BC=.true.
+    if (ntileMe>1) then
+       if (.not. allocated (BC_remap_level))then
+          allocate (BC_remap_level(Atm(this_grid)%neststruct%num_nest_level))
+          BC_remap_level(:)=0
        endif
 
-        if (ANY (Atm(this_grid)%neststruct%child_grids) .AND. Atm(this_grid)%neststruct%nlevel==nest_level-1) then
-           call nested_grid_BC(Atm(this_grid)%ps, global_nest_domain, 0, 0, nest_level=Atm(this_grid)%neststruct%nlevel+1)
-           call nested_grid_BC(Atm(this_grid)%phis, global_nest_domain, 0, 0, nest_level=Atm(this_grid)%neststruct%nlevel+1)
-        endif
+       do nest_level=1,Atm(this_grid)%neststruct%num_nest_level
+          if (Atm(this_grid)%neststruct%nlevel==nest_level .AND. (Atm(this_grid)%neststruct%do_remap_BC(this_grid))) then
+             BC_remap_level(nest_level) = 1
+          endif
+       enddo
 
-    enddo
+       call mpp_set_current_pelist() !global
 
+       if (.not. allocated (global_pelist))     allocate(global_pelist(mpp_npes()))
 
+       call mpp_get_current_pelist(global_pelist)
+       call mpp_max(BC_remap_level,Atm(this_grid)%neststruct%num_nest_level,global_pelist)
+       call mpp_set_current_pelist(pelist)
+
+       do nest_level=1,Atm(this_grid)%neststruct%num_nest_level
+          Atm(this_grid)%neststruct%do_remap_BC_level(nest_level) = (BC_remap_level(nest_level) == 1 )
+       enddo
+    endif
+
+    ! Topo twoway update
     do n = ntileMe,1,-1
-       if (new_nest_topo(n) > 0) then
-          if (Atm(n)%parent_grid%grid_number==this_grid) then    !only parent?!
-             call twoway_topo_update(Atm(n), n==this_grid)
-          elseif (n==this_grid .or. Atm(this_grid)%neststruct%nlevel==Atm(n)%neststruct%nlevel) then
-             call twoway_topo_update(Atm(this_grid), n==this_grid)
+       if (atm(n)%neststruct%twowaynest) then
+          if (new_nest_topo(n) > 0) then
+             if (Atm(n)%parent_grid%grid_number==this_grid) then    !only parent?!
+                call twoway_topo_update(Atm(n), n==this_grid)
+             elseif (n==this_grid .or. Atm(this_grid)%neststruct%nlevel==Atm(n)%neststruct%nlevel) then
+                call twoway_topo_update(Atm(this_grid), n==this_grid)
+             endif
           endif
        endif
     end do
@@ -484,7 +521,6 @@ contains
        npz = Atm(n)%npz
        ntprog = size(Atm(n)%q,4)
        ntdiag = size(Atm(n)%qdiag,4)
-
 
        if (ideal_test_case(n) == 0) then
 #ifdef SW_DYNAMICS
@@ -667,7 +703,7 @@ contains
 !--------------------------------------------
 ! Initialize surface winds for flux coupler:
 !--------------------------------------------
-    if ( .not. Atm(n)%flagstruct%srf_init ) then
+      if ( .not. Atm(n)%flagstruct%srf_init ) then
          call cubed_to_latlon(Atm(n)%u, Atm(n)%v, Atm(n)%ua, Atm(n)%va, &
               Atm(n)%gridstruct, &
               Atm(n)%npx, Atm(n)%npy, npz, 1, &
@@ -680,7 +716,7 @@ contains
             enddo
          enddo
          Atm(n)%flagstruct%srf_init = .true.
-    endif
+      endif
 
     end do   ! n_tile
 
@@ -727,8 +763,6 @@ contains
     else
        process = .true.
     endif
-
-!!$    if (.not. Atm%neststruct%nested) return
 
     call mpp_get_global_domain( Atm%parent_grid%domain, &
          isg, ieg, jsg, jeg)
@@ -1142,12 +1176,10 @@ contains
 
     type(fv_atmos_type), intent(INOUT) :: Atm
     logical, intent(IN), OPTIONAL :: proc_in
-    real, allocatable :: g_dat(:,:,:), pt_coarse(:,:,:)
     integer :: i,j,k,nq, sphum, ncnst, istart, iend, npz
     integer :: isc, iec, jsc, jec, isd, ied, jsd, jed
     integer :: isd_p, ied_p, jsd_p, jed_p, isc_p, iec_p, jsc_p, jec_p
     integer :: isg, ieg, jsg,jeg, npx_p, npy_p
-    integer :: isg_n, ieg_n, jsg_n, jeg_n, npx_n, npy_n
     real zvir
 
     integer :: p , sending_proc
@@ -1184,7 +1216,7 @@ contains
     !NOW: what we do is to update the nested-grid terrain to the coarse grid,
     !to ensure consistency between the two grids.
     if ( process ) call mpp_update_domains(Atm%phis, Atm%domain, complete=.true.)
-    if (Atm%neststruct%twowaynest) then
+ !   if (Atm%neststruct%twowaynest) then
        if (ANY(Atm%parent_grid%pelist == mpp_pe()) .or. Atm%neststruct%child_proc) then
           call update_coarse_grid(Atm%parent_grid%phis, &
                Atm%phis, global_nest_domain, &
@@ -1203,21 +1235,10 @@ contains
          if (ANY(Atm%parent_grid%pelist == mpp_pe())) call mpp_update_domains(Atm%parent_grid%phis, Atm%parent_grid%domain)
        end if
 
-    end if
+  !  end if
 
 
 #ifdef SW_DYNAMICS
-!!$    !ps: first level only
-!!$    !This is only valid for shallow-water simulations
-!!$    if (process) then
-!!$    do j=jsd,jed
-!!$       do i=isd,ied
-!!$
-!!$          Atm%ps(i,j) = Atm%delp(i,j,1)/grav
-!!$
-!!$       end do
-!!$    end do
-!!$    endif
 #else
     !Reset p_var after updating topography
     if (process) call p_var(npz, isc, iec, jsc, jec, Atm%ptop, ptop_min, Atm%delp, &
@@ -1244,10 +1265,10 @@ contains
     if (Atm%coarse_graining%write_coarse_restart_files) then
        call fv_io_write_restart_coarse(Atm, timestamp)
        if (.not. Atm%coarse_graining%write_only_coarse_intermediate_restarts) then
-          call fv_io_write_restart(Atm, timestamp)
+          call fv_io_write_restart(Atm, prefix=timestamp)
        endif
     else
-       call fv_io_write_restart(Atm, timestamp)
+       call fv_io_write_restart(Atm, prefix=timestamp)
     endif
 
     if (Atm%neststruct%nested) then
@@ -1337,12 +1358,14 @@ contains
     ! Write4 energy correction term
 #endif
 
+       call fv_io_write_restart(Atm)
        if (Atm%coarse_graining%write_coarse_restart_files) then
           call fv_io_write_restart_coarse(Atm)
        endif
-       call fv_io_write_restart(Atm)
 
  if (Atm%neststruct%nested) call fv_io_write_BCs(Atm)
+
+ if (Atm%flagstruct%write_restart_with_bcs) call write_full_fields(Atm)
 
  module_is_initialized = .FALSE.
 
@@ -1403,4 +1426,5 @@ subroutine pmaxmn_g(qname, q, is, ie, js, je, km, fac, area, domain)
       if(is_master()) write(6,*) qname, qmax*fac, qmin*fac, gmean*fac
 
 end subroutine pmaxmn_g
+
 end module fv_restart_mod
