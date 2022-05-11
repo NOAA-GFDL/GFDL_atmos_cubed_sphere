@@ -7,7 +7,7 @@ tp_core
 : 1D advection operators in FV3. This is designed to be an *interactive* notebook for downloading and playing with the options, initial conditions, zooms, and so on.
 
 fv3_level_transmogrifier
-: An *interactive* notebook that shows different hybrid-level setups within FV3, and allows detection of discontinuities within the levels that may cause errors or instabilities. The directory contains the notebook and its dependencies, including source and binaries (Intel Linux only) for a wrapped version of `set_eta()`. 
+: An *interactive* notebook that shows different hybrid-level setups within FV3, and allows detection of discontinuities within the levels that may cause errors or instabilities. The directory contains the notebook and its dependencies, including source for a Python-wrapped version of `set_eta()`. 
 
 ## 2D Global Shallow-water Cases
 RHwave
