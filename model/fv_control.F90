@@ -188,6 +188,7 @@ module fv_control_mod
      real(kind=R_GRID) , pointer :: target_lon
 
      logical , pointer :: reset_eta
+     logical , pointer :: ignore_rst_cksum
      real    , pointer :: p_fac
      real    , pointer :: a_imp
      integer , pointer :: n_split
@@ -550,7 +551,8 @@ module fv_control_mod
           Atm(this_grid)%flagstruct%grid_type,Atm(this_grid)%neststruct%nested, &
           Atm(this_grid)%layout,Atm(this_grid)%io_layout,Atm(this_grid)%bd,Atm(this_grid)%tile_of_mosaic, &
           Atm(this_grid)%gridstruct%square_domain,Atm(this_grid)%npes_per_tile,Atm(this_grid)%domain, &
-          Atm(this_grid)%domain_for_coupler,Atm(this_grid)%num_contact,Atm(this_grid)%pelist)
+          Atm(this_grid)%domain_for_coupler,Atm(this_grid)%domain_for_read,Atm(this_grid)%num_contact, &
+          Atm(this_grid)%pelist)
      call broadcast_domains(Atm,Atm(this_grid)%pelist,size(Atm(this_grid)%pelist))
      do n=1,ngrids
         tile_id = mpp_get_tile_id(Atm(n)%domain)
@@ -728,6 +730,7 @@ module fv_control_mod
        write_restart_with_bcs        => Atm%flagstruct%write_restart_with_bcs
        regional_bcs_from_gsi         => Atm%flagstruct%regional_bcs_from_gsi
        reset_eta                     => Atm%flagstruct%reset_eta
+       ignore_rst_cksum              => Atm%flagstruct%ignore_rst_cksum
        p_fac                         => Atm%flagstruct%p_fac
        a_imp                         => Atm%flagstruct%a_imp
        n_split                       => Atm%flagstruct%n_split
@@ -940,7 +943,7 @@ module fv_control_mod
             w_limiter, write_coarse_restart_files, write_coarse_diagnostics,&
             write_only_coarse_intermediate_restarts, &
             write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst, &
-            pass_full_omega_to_physics_in_non_hydrostatic_mode
+            pass_full_omega_to_physics_in_non_hydrostatic_mode, ignore_rst_cksum
 
 
        ! Read FVCORE namelist

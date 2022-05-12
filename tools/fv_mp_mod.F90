@@ -49,7 +49,7 @@
       use mpp_domains_mod, only : mpp_group_update_initialized, mpp_do_group_update
       use mpp_domains_mod, only : mpp_create_group_update,mpp_reset_group_update_field
       use mpp_domains_mod, only : group_halo_update_type => mpp_group_update_type
-      use mpp_domains_mod, only: nest_domain_type
+      use mpp_domains_mod, only : nest_domain_type, mpp_get_io_domain_layout, mpp_get_layout, mpp_copy_domain
       use mpp_parameter_mod, only : WUPDATE, EUPDATE, SUPDATE, NUPDATE, XUPDATE, YUPDATE
       use fv_arrays_mod, only: fv_atmos_type, fv_grid_bounds_type
       use mpp_mod, only : mpp_get_current_pelist, mpp_set_current_pelist
@@ -275,7 +275,7 @@ contains
 !     domain_decomp :: Setup domain decomp
 !
       subroutine domain_decomp(grid_num,npx,npy,nregions,grid_type,nested,layout,io_layout,bd,tile,square_domain,&
-           npes_per_tile,domain,domain_for_coupler,num_contact,pelist)
+           npes_per_tile,domain,domain_for_coupler,domain_for_read,num_contact,pelist)
 
          integer, intent(IN)  :: grid_num
          integer, intent(IN)  :: npx,npy,grid_type
@@ -297,8 +297,9 @@ contains
          integer, intent(INOUT) :: pelist(:)
          integer, intent(OUT) :: num_contact, npes_per_tile
          logical, intent(OUT) :: square_domain
-         type(domain2D), intent(OUT) :: domain, domain_for_coupler
+         type(domain2D), intent(OUT) :: domain, domain_for_coupler, domain_for_read
          type(fv_grid_bounds_type), intent(INOUT) :: bd
+         integer :: l_layout(2)
 
          nx = npx-1
          ny = npy-1
@@ -562,6 +563,17 @@ contains
             call mpp_define_io_domain(domain, io_layout)
             call mpp_define_io_domain(domain_for_coupler, io_layout)
 
+            !--- create a read domain that can be used to improve read performance
+            !--- if io_layout=(1,1) then read io_layout=layout (all read)
+            !--- if io_layout\=(1,1) then read io_layout=io_layout (no change)
+            l_layout = mpp_get_io_domain_layout(domain)
+            call mpp_copy_domain(domain, domain_for_read)
+            if (ALL(l_layout == 1)) then
+              call mpp_get_layout(domain, l_layout)
+              call mpp_define_io_domain(domain_for_read, l_layout)
+            else
+              call mpp_define_io_domain(domain_for_read, l_layout)
+            endif
          endif
 
        deallocate(pe_start,pe_end)
