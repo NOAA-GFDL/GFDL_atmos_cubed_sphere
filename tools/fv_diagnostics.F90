@@ -118,7 +118,8 @@ module fv_diagnostics_mod
  use time_manager_mod,   only: time_type, get_date, get_time
  use mpp_domains_mod,    only: domain2d, mpp_update_domains, DGRID_NE, NORTH, EAST
  use diag_manager_mod,   only: diag_axis_init, register_diag_field, &
-                               register_static_field, send_data, diag_grid_init
+                               register_static_field, send_data, diag_grid_init, &
+                               diag_field_add_attribute
  use fv_arrays_mod,      only: fv_atmos_type, fv_grid_type, fv_diag_type, fv_grid_bounds_type, &
                                R_GRID
  use fv_mapz_mod,        only: E_Flux, moist_cv, moist_cp, mappm
@@ -171,7 +172,7 @@ module fv_diagnostics_mod
  logical :: prt_minmax =.false.
  logical :: m_calendar
  integer  sphum, liq_wat, ice_wat, cld_amt    ! GFDL physics
- integer  rainwat, snowwat, graupel
+ integer  rainwat, snowwat, graupel, hailwat
 #ifdef MULTI_GASES
  integer  spo, spo2, spo3
 #else
@@ -196,6 +197,10 @@ module fv_diagnostics_mod
  public :: max_vv, get_vorticity, max_uh
  public :: max_vorticity, max_vorticity_hy1, bunkers_vector, helicity_relative_CAPS
  public :: cs3_interpolator, get_height_given_pressure
+#ifdef MOVING_NEST
+ public :: interpolate_z, get_pressure_given_height
+ public :: fv_diag_reinit
+#endif
 
  integer, parameter :: MAX_PLEVS = 31
 #ifdef FEWER_PLEVS
@@ -227,6 +232,40 @@ module fv_diagnostics_mod
 #include<fv_diagnostics.h>
 
 contains
+
+#ifdef MOVING_NEST
+ ! For reinitializing zsurf after moving nest advances -- Ramstrom, HRD/AOML
+ subroutine fv_diag_reinit(Atm)
+    type(fv_atmos_type), intent(inout), target :: Atm(:)
+    !integer, intent(out) :: axes(4)
+    !type(time_type), intent(in) :: Time
+    !integer,         intent(in) :: npx, npy, npz
+    !real, intent(in):: p_ref
+
+    integer :: i, j, n
+    integer :: isc, iec, jsc, jec
+
+    n=1  ! Hardcoded to 1 because we pass in only the Atm that defines the nest grid - e.g. Atm(2:2).
+    isc = Atm(n)%bd%isc; iec = Atm(n)%bd%iec
+    jsc = Atm(n)%bd%jsc; jec = Atm(n)%bd%jec
+
+    !print '("[INFO] WDR fv_diag_reinit npe=",I0," i=",I0,"-",I0," j=",I0,"-",I0)', this_pe, isc, iec, jsc, jec
+
+    ginv = 1./GRAV
+
+    do j=jsc,jec
+       do i=isc,iec
+          zsurf(i,j) = ginv * Atm(n)%phis(i,j)
+       enddo
+    enddo
+
+    ! Appears to update the zsurf data at each time this subroutine is called, not just at init.
+!#ifndef DYNAMICS_ZS
+!       if (id_zsurf > 0) used = send_data(id_zsurf, zsurf, Time)
+!#endif
+
+  end subroutine fv_diag_reinit
+#endif
 
  subroutine fv_diag_init(Atm, axes, Time, npx, npy, npz, p_ref)
     type(fv_atmos_type), intent(inout), target :: Atm(:)
@@ -266,6 +305,7 @@ contains
     real, allocatable :: dx(:,:), dy(:,:)
 
     call write_version_number ( 'FV_DIAGNOSTICS_MOD', version )
+
     idiag => Atm(1)%idiag
 
 ! For total energy diagnostics:
@@ -283,6 +323,7 @@ contains
     rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
     snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
     graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+    hailwat = get_tracer_index (MODEL_ATMOS, 'hailwat')
 #ifdef MULTI_GASES
     spo     = get_tracer_index (MODEL_ATMOS, 'spo')
     spo2    = get_tracer_index (MODEL_ATMOS, 'spo2')
@@ -534,6 +575,9 @@ contains
                                          'latitude', 'degrees_N' )
        id_area = register_static_field ( trim(field), 'area', axes(1:2),  &
                                          'cell area', 'm**2' )
+       if (id_area > 0) then
+         call diag_field_add_attribute (id_area, 'cell_methods', 'area: sum')
+       endif
        id_dx = register_static_field( trim(field), 'dx', (/id_xt,id_y/), &
             'dx', 'm')
        id_dy = register_static_field( trim(field), 'dy', (/id_x,id_yt/), &
@@ -680,6 +724,29 @@ contains
 #ifdef DYNAMICS_ZS
        id_zsurf = register_diag_field ( trim(field), 'zsurf', axes(1:2), Time,           &
                                        'surface height', 'm')
+#endif
+
+#ifdef MOVING_NEST
+!-------------------
+! Time-dependent lon-lat (moving nest) [Ahern, AOML/HRD]
+!-------------------
+       id_mlon  = register_diag_field ( trim(field), 'grid_mlon', (/id_x,id_y/), Time, &
+                                       'longitude', 'degrees_E' )
+       id_mlat  = register_diag_field ( trim(field), 'grid_mlat', (/id_x,id_y/), Time, &
+                                       'latitude', 'degrees_N' )
+       id_mlont = register_diag_field ( trim(field), 'grid_mlont', (/id_xt,id_yt/), Time, &
+                                       'longitude', 'degrees_E' )
+       id_mlatt = register_diag_field ( trim(field), 'grid_mlatt', (/id_xt,id_yt/), Time, &
+                                       'latitude', 'degrees_N' )
+       id_marea = register_diag_field ( trim(field), 'marea', axes(1:2), Time, &
+                                        'cell area', 'm**2' )
+       if (id_marea > 0) then
+         call diag_field_add_attribute (id_marea, 'cell_methods', 'area: sum')
+       endif
+       id_mdx = register_diag_field ( trim(field), 'mdx', (/id_xt,id_y/), Time, &
+                                      'dx', 'm')
+       id_mdy = register_diag_field ( trim(field), 'mdy', (/id_x,id_yt/), Time, &
+                                      'dy', 'm')
 #endif
 !-------------------
 ! Surface pressure
@@ -1528,6 +1595,7 @@ contains
     integer :: isd, ied, jsd, jed, npz, itrac
     integer :: ngc, nwater
 
+    real, allocatable :: dx(:,:), dy(:,:)
     real, allocatable :: a2(:,:),a3(:,:,:),a4(:,:,:), wk(:,:,:), wz(:,:,:), ucoor(:,:,:), vcoor(:,:,:)
     real, allocatable :: ustm(:,:), vstm(:,:)
     real, allocatable :: slp(:,:), depress(:,:), ws_max(:,:), tc_count(:,:)
@@ -1687,7 +1755,7 @@ contains
           call nh_total_energy(isc, iec, jsc, jec, isd, ied, jsd, jed, npz,  &
                                Atm(n)%w, Atm(n)%delz, Atm(n)%pt, Atm(n)%delp,  &
                                Atm(n)%q, Atm(n)%phis, Atm(n)%gridstruct%area, Atm(n)%domain, &
-                               sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, Atm(n)%flagstruct%nwat,     &
+                               sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, Atm(n)%flagstruct%nwat,     &
                                Atm(n)%ua, Atm(n)%va, Atm(n)%flagstruct%moist_phys, a2)
 #endif
         call prt_maxmin('UA_top', Atm(n)%ua(isc:iec,jsc:jec,1),    &
@@ -1765,6 +1833,26 @@ contains
 
 #ifdef DYNAMICS_ZS
        if(id_zsurf > 0)  used=send_data(id_zsurf, zsurf, Time)
+#endif
+#ifdef MOVING_NEST
+       ! send current lon/lat and orog data for moving nest/grid [Ahern, AOML/HRD]
+       if (id_mlon  > 0) used = send_data(id_mlon,  rad2deg*Atm(n)%gridstruct%grid(isc:iec+1,jsc:jec+1,1), Time)
+       if (id_mlat  > 0) used = send_data(id_mlat,  rad2deg*Atm(n)%gridstruct%grid(isc:iec+1,jsc:jec+1,2), Time)
+       if (id_mlont > 0) used = send_data(id_mlont, rad2deg*Atm(n)%gridstruct%agrid(isc:iec,jsc:jec,1), Time)
+       if (id_mlatt > 0) used = send_data(id_mlatt, rad2deg*Atm(n)%gridstruct%agrid(isc:iec,jsc:jec,2), Time)
+       if (id_marea > 0) used = send_data(id_marea, Atm(n)%gridstruct%area(isc:iec,jsc:jec), Time)
+       if (id_mdx > 0) then
+         allocate(dx(isc:iec+1,jsc:jec+1))
+         dx(isc:iec,jsc:jec+1) = Atm(n)%gridstruct%dx(isc:iec,jsc:jec+1)
+         used = send_data(id_mdx, dx, Time)
+         deallocate(dx)
+       endif
+       if (id_mdy > 0) then
+         allocate(dy(isc:iec+1,jsc:jec+1))
+         dy(isc:iec+1,jsc:jec) = Atm(n)%gridstruct%dy(isc:iec+1,jsc:jec)
+         used = send_data(id_mdy, dy, Time)
+         deallocate(dy)
+       endif
 #endif
        if(id_ps > 0) used=send_data(id_ps, Atm(n)%ps(isc:iec,jsc:jec), Time)
 
@@ -2721,6 +2809,17 @@ contains
              enddo
              enddo
           endif
+          if (hailwat > 0) then
+             do k=1,npz
+             do j=jsc,jec
+             do i=isc,iec
+                a2(i,j) = a2(i,j) + Atm(n)%delp(i,j,k) *      &
+                                    Atm(n)%q(i,j,k,hailwat)
+             enddo
+             enddo
+             enddo
+          endif
+
           used = send_data(id_iw, a2*ginv, Time)
        endif
        if ( id_lw>0 ) then
@@ -2829,7 +2928,8 @@ contains
        endif
 
 ! Cloud top temperature & cloud top press:
-       if ( (id_ctt>0 .or. id_ctp>0 .or. id_ctz>0).and. Atm(n)%flagstruct%nwat==6) then
+       if ( (id_ctt>0 .or. id_ctp>0 .or. id_ctz>0)  &
+            .and. (Atm(n)%flagstruct%nwat==6 .or. Atm(n)%flagstruct%nwat==7)) then
             allocate ( var1(isc:iec,jsc:jec) )
             allocate ( var2(isc:iec,jsc:jec) )
 !$OMP parallel do default(shared) private(tmp)
@@ -2838,6 +2938,9 @@ contains
                   do k=2,npz
                      tmp = atm(n)%q(i,j,k,liq_wat)+atm(n)%q(i,j,k,rainwat)+atm(n)%q(i,j,k,ice_wat)+  &
                            atm(n)%q(i,j,k,snowwat)+atm(n)%q(i,j,k,graupel)
+                     IF ( Atm(n)%flagstruct%nwat==7) THEN
+                       tmp = tmp + atm(n)%q(i,j,k,hailwat)
+                     ENDIF
                      if( tmp>5.e-6 ) then
                          a2(i,j) = Atm(n)%pt(i,j,k)
                          var1(i,j) = 0.01*Atm(n)%pe(i,k,j)
@@ -2951,6 +3054,16 @@ contains
              enddo
              enddo
           endif
+          if (hailwat > 0) then
+!$OMP parallel do default(shared)
+             do k=1,npz
+             do j=jsc,jec
+             do i=isc,iec
+                wk(i,j,k) = wk(i,j,k) + Atm(n)%q(i,j,k,hailwat)*Atm(n)%delp(i,j,k)
+             enddo
+             enddo
+             enddo
+          endif
           used = send_data(id_qp, wk, Time)
        endif
 
@@ -3001,7 +3114,7 @@ contains
              do j=jsc,jec
 #ifdef USE_COND
                 call moist_cv(isc,iec,isd,ied,jsd,jed,npz,j,k,Atm(n)%flagstruct%nwat,sphum,liq_wat,rainwat, &
-                     ice_wat,snowwat,graupel,Atm(n)%q,Atm(n)%q_con(isc:iec,j,k),cvm)
+                     ice_wat,snowwat,graupel,hailwat,Atm(n)%q,Atm(n)%q_con(isc:iec,j,k),cvm)
                 do i=isc,iec
                    a3(i,j,k) = Atm(n)%pt(i,j,k)*cvm(i)*wk(i,j,k)
                 enddo
@@ -4028,6 +4141,7 @@ contains
 
  end subroutine fv_diag
 
+
  subroutine wind_max(isc, iec, jsc, jec ,isd, ied, jsd, jed, us, vs, ws_max, domain)
  integer isc, iec, jsc, jec
  integer isd, ied, jsd, jed
@@ -4371,6 +4485,7 @@ contains
     rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
     snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
     graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+    hailwat = get_tracer_index (MODEL_ATMOS, 'hailwat')
 
  if ( nwat==0 ) then
       psmo = g_sum(domain, ps(is:ie,js:je), is, ie, js, je, n_g, area, 1)
@@ -4396,6 +4511,8 @@ contains
       call z_sum(is, ie, js, je, km, n_g, delp, q(is-n_g,js-n_g,1,snowwat), psq(is,js,snowwat))
  if (graupel > 0) &
       call z_sum(is, ie, js, je, km, n_g, delp, q(is-n_g,js-n_g,1,graupel), psq(is,js,graupel))
+ if (hailwat > 0) &
+      call z_sum(is, ie, js, je, km, n_g, delp, q(is-n_g,js-n_g,1,hailwat), psq(is,js,hailwat))
 
 
 ! Mean water vapor in the "stratosphere" (75 mb and above):
@@ -4439,6 +4556,9 @@ contains
                write(*,*) 'Total snow       ', trim(gn), '=', qtot(snowwat)*ginv
           if (graupel > 0) &
                write(*,*) 'Total graupel    ', trim(gn), '=', qtot(graupel)*ginv
+          if (hailwat > 0) &
+               write(*,*) 'Total hailwat    ', trim(gn), '=', qtot(hailwat)*ginv
+
           write(*,*) '---------------------------------------------'
      elseif ( nwat==2 ) then
           write(*,*) 'GFS condensate (kg/m^2)', trim(gn), '=', qtot(liq_wat)*ginv
@@ -5770,13 +5890,13 @@ end subroutine eqv_pot
  subroutine nh_total_energy(is, ie, js, je, isd, ied, jsd, jed, km,  &
                             w, delz, pt, delp, q, hs, area, domain,  &
                             sphum, liq_wat, rainwat, ice_wat,        &
-                            snowwat, graupel, nwat, ua, va, moist_phys, te)
+                            snowwat, graupel, hailwat, nwat, ua, va, moist_phys, te)
 !------------------------------------------------------
 ! Compute vertically integrated total energy per column
 !------------------------------------------------------
 ! !INPUT PARAMETERS:
    integer,  intent(in):: km, is, ie, js, je, isd, ied, jsd, jed
-   integer,  intent(in):: nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel
+   integer,  intent(in):: nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat
    real, intent(in), dimension(isd:ied,jsd:jed,km):: ua, va, pt, delp, w
    real, intent(in), dimension(is:ie,js:je,km) :: delz
    real, intent(in), dimension(isd:ied,jsd:jed,km,nwat):: q
@@ -5800,7 +5920,7 @@ end subroutine eqv_pot
 #ifdef MULTI_GASES
 !$OMP          num_gas,                                                                &
 #endif
-!$OMP          w,q,pt,delp,delz,hs,cv_air,moist_phys,sphum,liq_wat,rainwat,ice_wat,snowwat,graupel) &
+!$OMP          w,q,pt,delp,delz,hs,cv_air,moist_phys,sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,hailwat) &
 !$OMP          private(phiz,cvm, qc)
   do j=js,je
 
@@ -5818,7 +5938,7 @@ end subroutine eqv_pot
      if ( moist_phys ) then
         do k=1,km
            call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
-                         ice_wat, snowwat, graupel, q, qc, cvm)
+                         ice_wat, snowwat, graupel, hailwat, q, qc, cvm)
            do i=is,ie
               te(i,j) = te(i,j) + delp(i,j,k)*( cvm(i)*pt(i,j,k) + hlv*q(i,j,k,sphum) +  &
                       0.5*(phiz(i,k)+phiz(i,k+1)+ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2) )
