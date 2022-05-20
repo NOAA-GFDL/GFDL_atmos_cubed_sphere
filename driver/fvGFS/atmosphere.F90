@@ -357,7 +357,7 @@ contains
 #ifdef MOVING_NEST
    call fv_tracker_init(size(Atm))
    if (mygrid .eq. 2) call allocate_tracker(mygrid, Atm(mygrid)%bd%isc, Atm(mygrid)%bd%iec, Atm(mygrid)%bd%jsc, Atm(mygrid)%bd%jec)
-#endif   
+#endif
 
    Atm(mygrid)%Time_init = Time_init
 
@@ -953,10 +953,10 @@ contains
 !! the "domain2d" variable associated with the coupling grid and the
 !! decomposition for the current cubed-sphere tile.
 !>@detail Coupling is done using the mass/temperature grid with no halos.
- subroutine atmosphere_domain ( fv_domain, layout, regional, nested, &
+ subroutine atmosphere_domain ( fv_domain, rd_domain, layout, regional, nested, &
                                 moving_nest_parent, is_moving_nest, &
                                 ngrids_atmos, mygrid_atmos, pelist )
-   type(domain2d), intent(out) :: fv_domain
+   type(domain2d), intent(out) :: fv_domain, rd_domain
    integer, intent(out) :: layout(2)
    logical, intent(out) :: regional
    logical, intent(out) :: nested
@@ -969,6 +969,7 @@ contains
    integer :: n
 
    fv_domain = Atm(mygrid)%domain_for_coupler
+   rd_domain = Atm(mygrid)%domain_for_read
    layout(1:2) =  Atm(mygrid)%layout(1:2)
    regional = Atm(mygrid)%flagstruct%regional
    nested = ngrids > 1
