@@ -324,10 +324,10 @@ contains
    logical :: dycore_only  = .false.
    logical :: debug        = .false.
    logical :: sync         = .false.
-   integer, parameter     :: maxhr = 4096
-   real, dimension(maxhr) :: fdiag = 0.
-   real                   :: fhmax=384.0, fhmaxhf=120.0, fhout=3.0, fhouthf=1.0,avg_max_length=3600.
-   namelist /atmos_model_nml/ blocksize, chksum_debug, dycore_only, debug, sync, fdiag, fhmax, fhmaxhf, fhout, fhouthf, ccpp_suite, avg_max_length
+   real                   :: avg_max_length=3600.
+   logical :: ignore_rst_cksum = .false.
+   namelist /atmos_model_nml/ blocksize, chksum_debug, dycore_only, debug, sync, ccpp_suite, avg_max_length, &
+                              ignore_rst_cksum
    ! *DH 20210326
 
    !For regional
