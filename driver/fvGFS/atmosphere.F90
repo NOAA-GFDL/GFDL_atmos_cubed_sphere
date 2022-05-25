@@ -265,7 +265,7 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
   logical :: cold_start = .false.     !  used in initial condition
 
   integer, dimension(:), allocatable :: id_tracerdt_dyn
-  integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, cld_amt  ! condensate species tracer indices
+  integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, cld_amt  ! condensate species tracer indices
 
   integer :: mygrid = 1
   integer :: p_split = 1
@@ -403,9 +403,10 @@ contains
    rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat' )
    snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat' )
    graupel = get_tracer_index (MODEL_ATMOS, 'graupel' )
+   hailwat = get_tracer_index (MODEL_ATMOS, 'hailwat' )
    cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
 
-   if (max(sphum,liq_wat,ice_wat,rainwat,snowwat,graupel) > Atm(mygrid)%flagstruct%nwat) then
+   if (max(sphum,liq_wat,ice_wat,rainwat,snowwat,graupel,hailwat) > Atm(mygrid)%flagstruct%nwat) then
       call mpp_error (FATAL,' atmosphere_init: condensate species are not first in the list of &
                             &tracers defined in the field_table')
    endif
