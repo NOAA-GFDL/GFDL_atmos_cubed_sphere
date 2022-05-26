@@ -4515,6 +4515,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
              i1_blend=is
              i2_blend=is+nrows_blend_user-1
+! Original code avoided overlap, but changed this to blend corners from both boundaries
 !             j1_blend=js
 !             j2_blend=je
 !             if(north_bc)then
@@ -4582,6 +4583,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
             i1_blend=i1-nrows_blend_user
             i2_blend=i1-1
+! Original code avoided overlap, but changed this to blend corners from both boundaries
 !             j1_blend=js
 !             j2_blend=je
 !             if(north_bc)then
