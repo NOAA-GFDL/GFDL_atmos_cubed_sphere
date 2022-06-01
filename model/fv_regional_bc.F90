@@ -4513,17 +4513,9 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
               endif
             endif
 !
+! Note: Original code checked for corner region and avoided overlap, but changed this to blend corners from both boundaries
              i1_blend=is
              i2_blend=is+nrows_blend_user-1
-! Original code avoided overlap, but changed this to blend corners from both boundaries
-!             j1_blend=js
-!             j2_blend=je
-!             if(north_bc)then
-!               j1_blend=js+nrows_blend_user     !<-- North BC already handles nrows_blend_user blending rows
-!             endif
-!             if(south_bc)then
-!               j2_blend=je-nrows_blend_user     !<-- South BC already handles nrows_blend_user blending rows
-!             endif
 
             IF ( north_bc ) THEN
             j1_blend=js
@@ -4581,17 +4573,9 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
               endif
             endif
 !
+! Note: Original code checked for corner region and avoided overlap, but changed this to blend corners from both boundaries
             i1_blend=i1-nrows_blend_user
             i2_blend=i1-1
-! Original code avoided overlap, but changed this to blend corners from both boundaries
-!             j1_blend=js
-!             j2_blend=je
-!             if(north_bc)then
-!               j1_blend=js+nrows_blend_user   !<-- North BC already handled nrows_blend_user blending rows.
-!             endif
-!             if(south_bc)then
-!               j2_blend=je-nrows_blend_user   !<-- South BC already handled nrows_blend_user blending rows.
-!             endif
 
             IF ( north_bc ) THEN
             j1_blend=js
