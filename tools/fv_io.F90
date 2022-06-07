@@ -574,7 +574,7 @@ contains
 
     character(len=64)    :: fname, tracer_name
     character(len=6)     :: stile_name
-    integer              :: isc, iec, jsc, jec, n, nt, nk, ntracers, ntprog, ntdiag
+    integer              :: isc, iec, jsc, jec, nt, nk, ntracers, ntprog, ntdiag
     integer              :: isd, ied, jsd, jed
     integer              :: ntiles
 
@@ -730,17 +730,17 @@ contains
           j = (jsc + jec)/2
           k = npz_rst/2
           if( is_master() ) write(*,*) 'Calling read_da_inc',pt_r(i,j,k)
-          call read_da_inc(Atm(n), Atm(n)%domain)
+          call read_da_inc(Atm(1), Atm(1)%domain)
           if( is_master() ) write(*,*) 'Back from read_da_inc',pt_r(i,j,k)
        endif
 !      ====== end PJP added DA functionailty======
 
        call rst_remap(npz_rst, npz, isc, iec, jsc, jec, isd, ied, jsd, jed, ntracers, ntprog,      &
                       delp_r,      u_r,      v_r,      w_r,      delz_r,      pt_r,  q_r,  qdiag_r,&
-                      Atm(n)%delp, Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%pt, Atm(n)%q, &
-                      Atm(n)%qdiag, ak_r,  bk_r, Atm(n)%ptop, Atm(n)%ak, Atm(n)%bk,                &
-                      Atm(n)%flagstruct%hydrostatic, Atm(n)%flagstruct%make_nh, Atm(n)%domain,     &
-                      Atm(n)%gridstruct%square_domain)
+                      Atm(1)%delp, Atm(1)%u, Atm(1)%v, Atm(1)%w, Atm(1)%delz, Atm(1)%pt, Atm(1)%q, &
+                      Atm(1)%qdiag, ak_r,  bk_r, Atm(1)%ptop, Atm(1)%ak, Atm(1)%bk,                &
+                      Atm(1)%flagstruct%hydrostatic, Atm(1)%flagstruct%make_nh, Atm(1)%domain,     &
+                      Atm(1)%gridstruct%square_domain)
     !end do
 
     deallocate( ak_r )
