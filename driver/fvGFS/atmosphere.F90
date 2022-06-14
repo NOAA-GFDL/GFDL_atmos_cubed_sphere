@@ -324,10 +324,12 @@ contains
    logical :: dycore_only  = .false.
    logical :: debug        = .false.
    logical :: sync         = .false.
+   logical :: ignore_rst_cksum = .false.
    integer, parameter     :: maxhr = 4096
    real, dimension(maxhr) :: fdiag = 0.
    real                   :: fhmax=384.0, fhmaxhf=120.0, fhout=3.0, fhouthf=1.0,avg_max_length=3600.
-   namelist /atmos_model_nml/ blocksize, chksum_debug, dycore_only, debug, sync, fdiag, fhmax, fhmaxhf, fhout, fhouthf, ccpp_suite, avg_max_length
+   namelist /atmos_model_nml/ blocksize, chksum_debug, dycore_only, debug, sync, fdiag, fhmax, fhmaxhf, fhout, fhouthf, ccpp_suite, &
+                            & avg_max_length, ignore_rst_cksum
    ! *DH 20210326
 
    !For regional
@@ -449,6 +451,15 @@ contains
 !--- allocate pref
    allocate(pref(npz+1,2), dum1d(npz+1))
 
+   ! DH* 20210326
+   ! First, read atmos_model_nml namelist section - this is a workaround to avoid
+   ! unnecessary additional changes to the input namelists, in anticipation of the
+   ! implementation of a generic interface for GFDL and CCPP fast physics soon
+   read(input_nml_file, nml=atmos_model_nml, iostat=io)
+   ierr = check_nml_error(io, 'atmos_model_nml')
+   !write(0,'(a)') "It's me, and my physics suite is '" // trim(ccpp_suite) // "'"
+   ! *DH 20210326
+
    call fv_restart(Atm(mygrid)%domain, Atm, seconds, days, cold_start, Atm(mygrid)%gridstruct%grid_type, mygrid)
 
    fv_time = Time
@@ -489,15 +500,6 @@ contains
                     call timing_off('ATMOS_INIT')
 
    ! Do CCPP fast physics initialization before call to adiabatic_init (since this calls fv_dynamics)
-
-   ! DH* 20210326
-   ! First, read atmos_model_nml namelist section - this is a workaround to avoid
-   ! unnecessary additional changes to the input namelists, in anticipation of the
-   ! implementation of a generic interface for GFDL and CCPP fast physics soon
-   read(input_nml_file, nml=atmos_model_nml, iostat=io)
-   ierr = check_nml_error(io, 'atmos_model_nml')
-   !write(0,'(a)') "It's me, and my physics suite is '" // trim(ccpp_suite) // "'"
-   ! *DH 20210326
 
    ! For fast physics running over the entire domain, block
    ! and thread number are not used; set to safe values
