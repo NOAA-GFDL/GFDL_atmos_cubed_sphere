@@ -198,7 +198,7 @@ contains
                                  ccpp_physics_timestep_finalize
     use CCPP_data,         only: ccpp_suite
     use CCPP_data,         only: cdata => cdata_tile
-    use CCPP_data,         only: CCPP_interstitial
+    use CCPP_data,         only: GFDL_interstitial
 
     use molecular_diffusion_mod, only: md_time, md_wait_sec, md_tadj_layers,          &
                                        thermosphere_adjustment
@@ -303,11 +303,11 @@ contains
       real :: time_total
       integer :: seconds, days
 
-      ccpp_associate: associate( cappa     => CCPP_interstitial%cappa,     &
-                                 dp1       => CCPP_interstitial%te0,       &
-                                 dtdt_m    => CCPP_interstitial%dtdt,      &
-                                 last_step => CCPP_interstitial%last_step, &
-                                 te_2d     => CCPP_interstitial%te0_2d     )
+      ccpp_associate: associate( cappa     => GFDL_interstitial%cappa,     &
+                                 dp1       => GFDL_interstitial%te0,       &
+                                 dtdt_m    => GFDL_interstitial%dtdt,      &
+                                 last_step => GFDL_interstitial%last_step, &
+                                 te_2d     => GFDL_interstitial%te0_2d     )
 
       is  = bd%is
       ie  = bd%ie
@@ -333,9 +333,9 @@ contains
       call ccpp_physics_timestep_init(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
       ! Reset all interstitial variables for CCPP version
       ! of fast physics, and manually set runtime parameters
-      call CCPP_interstitial%reset()
+      call GFDL_interstitial%reset()
       if (flagstruct%do_sat_adj) then
-         CCPP_interstitial%out_dt = (idiag%id_mdt > 0)
+         GFDL_interstitial%out_dt = (idiag%id_mdt > 0)
       end if
 
 #ifdef MULTI_GASES

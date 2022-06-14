@@ -29,6 +29,8 @@ module fv_arrays_mod
   use horiz_interp_type_mod, only: horiz_interp_type
   use mpp_mod,               only: mpp_broadcast
   use platform_mod,          only: r8_kind
+
+
   public
 
   integer, public, parameter :: R_GRID = r8_kind
@@ -1193,6 +1195,7 @@ module fv_arrays_mod
                ,is_west_uvw  ,ie_west_uvw  ,js_west_uvw  ,je_west_uvw
 
   end type fv_regional_bc_bounds_type
+
   type fv_atmos_type
 
      logical :: allocated = .false.
@@ -1250,6 +1253,9 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: pk  (:,:,:)   _NULL  !< pe**cappa
     real, _ALLOCATABLE :: peln(:,:,:)   _NULL  !< ln(pe)
     real, _ALLOCATABLE :: pkz (:,:,:)   _NULL  !< finite-volume mean pk
+
+! For downscaling/remapping a 2d variable from parent to its nest
+    real, _ALLOCATABLE :: parent2nest_2d(:,:) _NULL !< 2d arrary for downscaling a variable from parent to its nest
 
 ! For phys coupling:
     real, _ALLOCATABLE :: u_srf(:,:)    _NULL  !< Surface u-wind
@@ -1474,6 +1480,8 @@ contains
     allocate (   Atm%pk(is:ie    ,js:je  , npz+1) )
     allocate ( Atm%peln(is:ie,npz+1,js:je) )
     allocate (  Atm%pkz(is:ie,js:je,npz) )
+
+    allocate ( Atm%parent2nest_2d(isd:ied,jsd:jed) )
 
     allocate ( Atm%u_srf(is:ie,js:je) )
     allocate ( Atm%v_srf(is:ie,js:je) )
@@ -1864,6 +1872,8 @@ contains
     deallocate ( Atm%inline_mp%pres )
     deallocate ( Atm%inline_mp%preg )
 
+    deallocate ( Atm%parent2nest_2d )
+
     deallocate ( Atm%u_srf )
     deallocate ( Atm%v_srf )
     if( Atm%flagstruct%fv_land ) deallocate ( Atm%sgh )
@@ -2172,12 +2182,14 @@ subroutine deallocate_fv_nest_BC_type_3d(BC)
 
   type(fv_nest_BC_type_3d) :: BC
 
-  if (.not. BC%allocated) return
+ !if (.not. BC%allocated) return
 
+  if (allocated(BC%north_t1)) then  ! Added WDR
      deallocate(BC%north_t1)
      deallocate(BC%south_t1)
      deallocate(BC%west_t1)
      deallocate(BC%east_t1)
+     endif ! Added WDR
 
   if (allocated(BC%north_t0)) then
      deallocate(BC%north_t0)
@@ -2189,6 +2201,5 @@ subroutine deallocate_fv_nest_BC_type_3d(BC)
   BC%allocated = .false.
 
 end subroutine deallocate_fv_nest_BC_type_3d
-
 
 end module fv_arrays_mod

@@ -26,6 +26,7 @@ endif()
 option(OPENMP      "Enable OpenMP threading"                               OFF)
 option(32BIT       "Enable single precision (r4) arithmetic in FV3 dycore" ON)
 option(DEBUG       "Enable compiler definition -DDEBUG"                    OFF)
+option(MOVING_NEST "Enable compiler definition -DMOVING_NEST"              OFF)
 option(MULTI_GASES "Enable compiler definition -DMULTI_GASES"              OFF)
 option(USE_GFSL63  "Enable compiler definition -DUSE_GFSL63"               OFF)
 option(GFS_PHYS    "Enable compiler definition -DGFS_PHYS"                 OFF)
@@ -55,6 +56,15 @@ if(NOT FMS_FOUND)
   find_package(FMS REQUIRED COMPONENTS ${kind})
   add_library(fms ALIAS FMS::fms_${kind})
 endif()
+
+list(APPEND moving_srcs
+  moving_nest/bounding_box.F90
+  moving_nest/fv_tracker.F90
+  moving_nest/fv_moving_nest.F90
+  moving_nest/fv_moving_nest_main.F90
+  moving_nest/fv_moving_nest_physics.F90
+  moving_nest/fv_moving_nest_types.F90
+  moving_nest/fv_moving_nest_utils.F90)
 
 list(APPEND model_srcs
   model/a2b_edge.F90
@@ -96,6 +106,7 @@ list(APPEND tools_srcs
   tools/fv_surf_map.F90
   tools/fv_timing.F90
   tools/init_hydro.F90
+  tools/module_diag_hailcast.F90
   tools/sim_nc_mod.F90
   tools/sorted_index.F90
   tools/test_cases.F90)
@@ -109,6 +120,7 @@ list(APPEND driver_srcs
   driver/fvGFS/atmosphere.F90)
 
 list(APPEND fv3_srcs ${model_srcs}
+                     ${moving_srcs}
                      ${tools_srcs})
 
 list(APPEND fv3_defs SPMD
@@ -136,6 +148,10 @@ if(use_WRTCOMP)
   list(APPEND fv3_defs use_WRTCOMP)
   list(APPEND fv3_srcs ${tools_srcs_extra}
                        ${driver_srcs})
+endif()
+
+if(MOVING_NEST)
+  list(APPEND fv3_defs MOVING_NEST)
 endif()
 
 if(MULTI_GASES)

@@ -202,6 +202,10 @@ module fv_diagnostics_mod
  public :: max_vv, get_vorticity, max_uh
  public :: max_vorticity, max_vorticity_hy1, bunkers_vector, helicity_relative_CAPS
  public :: cs3_interpolator, get_height_given_pressure
+#ifdef MOVING_NEST
+ public :: interpolate_z, get_pressure_given_height
+ public :: fv_diag_reinit
+#endif
 
  integer, parameter :: MAX_PLEVS = 31
 #ifdef FEWER_PLEVS
@@ -233,6 +237,40 @@ module fv_diagnostics_mod
 #include<fv_diagnostics.h>
 
 contains
+
+#ifdef MOVING_NEST
+ ! For reinitializing zsurf after moving nest advances -- Ramstrom, HRD/AOML
+ subroutine fv_diag_reinit(Atm)
+    type(fv_atmos_type), intent(inout), target :: Atm(:)
+    !integer, intent(out) :: axes(4)
+    !type(time_type), intent(in) :: Time
+    !integer,         intent(in) :: npx, npy, npz
+    !real, intent(in):: p_ref
+
+    integer :: i, j, n
+    integer :: isc, iec, jsc, jec
+
+    n=1  ! Hardcoded to 1 because we pass in only the Atm that defines the nest grid - e.g. Atm(2:2).
+    isc = Atm(n)%bd%isc; iec = Atm(n)%bd%iec
+    jsc = Atm(n)%bd%jsc; jec = Atm(n)%bd%jec
+
+    !print '("[INFO] WDR fv_diag_reinit npe=",I0," i=",I0,"-",I0," j=",I0,"-",I0)', this_pe, isc, iec, jsc, jec
+
+    ginv = 1./GRAV
+
+    do j=jsc,jec
+       do i=isc,iec
+          zsurf(i,j) = ginv * Atm(n)%phis(i,j)
+       enddo
+    enddo
+
+    ! Appears to update the zsurf data at each time this subroutine is called, not just at init.
+!#ifndef DYNAMICS_ZS
+!       if (id_zsurf > 0) used = send_data(id_zsurf, zsurf, Time)
+!#endif
+
+  end subroutine fv_diag_reinit
+#endif
 
  subroutine fv_diag_init(Atm, axes, Time, npx, npy, npz, p_ref)
     type(fv_atmos_type), intent(inout), target :: Atm(:)
@@ -272,6 +310,7 @@ contains
     real, allocatable :: dx(:,:), dy(:,:)
 
     call write_version_number ( 'FV_DIAGNOSTICS_MOD', version )
+
     idiag => Atm(1)%idiag
 
 ! For total energy diagnostics:
@@ -690,6 +729,29 @@ contains
 #ifdef DYNAMICS_ZS
        id_zsurf = register_diag_field ( trim(field), 'zsurf', axes(1:2), Time,           &
                                        'surface height', 'm')
+#endif
+
+#ifdef MOVING_NEST
+!-------------------
+! Time-dependent lon-lat (moving nest) [Ahern, AOML/HRD]
+!-------------------
+       id_mlon  = register_diag_field ( trim(field), 'grid_mlon', (/id_x,id_y/), Time, &
+                                       'longitude', 'degrees_E' )
+       id_mlat  = register_diag_field ( trim(field), 'grid_mlat', (/id_x,id_y/), Time, &
+                                       'latitude', 'degrees_N' )
+       id_mlont = register_diag_field ( trim(field), 'grid_mlont', (/id_xt,id_yt/), Time, &
+                                       'longitude', 'degrees_E' )
+       id_mlatt = register_diag_field ( trim(field), 'grid_mlatt', (/id_xt,id_yt/), Time, &
+                                       'latitude', 'degrees_N' )
+       id_marea = register_diag_field ( trim(field), 'marea', axes(1:2), Time, &
+                                        'cell area', 'm**2' )
+       if (id_marea > 0) then
+         call diag_field_add_attribute (id_marea, 'cell_methods', 'area: sum')
+       endif
+       id_mdx = register_diag_field ( trim(field), 'mdx', (/id_xt,id_y/), Time, &
+                                      'dx', 'm')
+       id_mdy = register_diag_field ( trim(field), 'mdy', (/id_x,id_yt/), Time, &
+                                      'dy', 'm')
 #endif
 !-------------------
 ! Surface pressure
@@ -1538,6 +1600,7 @@ contains
     integer :: isd, ied, jsd, jed, npz, itrac
     integer :: ngc, nwater
 
+    real, allocatable :: dx(:,:), dy(:,:)
     real, allocatable :: a2(:,:),a3(:,:,:),a4(:,:,:), wk(:,:,:), wz(:,:,:), ucoor(:,:,:), vcoor(:,:,:)
     real, allocatable :: ustm(:,:), vstm(:,:)
     real, allocatable :: slp(:,:), depress(:,:), ws_max(:,:), tc_count(:,:)
@@ -1775,6 +1838,26 @@ contains
 
 #ifdef DYNAMICS_ZS
        if(id_zsurf > 0)  used=send_data(id_zsurf, zsurf, Time)
+#endif
+#ifdef MOVING_NEST
+       ! send current lon/lat and orog data for moving nest/grid [Ahern, AOML/HRD]
+       if (id_mlon  > 0) used = send_data(id_mlon,  rad2deg*Atm(n)%gridstruct%grid(isc:iec+1,jsc:jec+1,1), Time)
+       if (id_mlat  > 0) used = send_data(id_mlat,  rad2deg*Atm(n)%gridstruct%grid(isc:iec+1,jsc:jec+1,2), Time)
+       if (id_mlont > 0) used = send_data(id_mlont, rad2deg*Atm(n)%gridstruct%agrid(isc:iec,jsc:jec,1), Time)
+       if (id_mlatt > 0) used = send_data(id_mlatt, rad2deg*Atm(n)%gridstruct%agrid(isc:iec,jsc:jec,2), Time)
+       if (id_marea > 0) used = send_data(id_marea, Atm(n)%gridstruct%area(isc:iec,jsc:jec), Time)
+       if (id_mdx > 0) then
+         allocate(dx(isc:iec+1,jsc:jec+1))
+         dx(isc:iec,jsc:jec+1) = Atm(n)%gridstruct%dx(isc:iec,jsc:jec+1)
+         used = send_data(id_mdx, dx, Time)
+         deallocate(dx)
+       endif
+       if (id_mdy > 0) then
+         allocate(dy(isc:iec+1,jsc:jec+1))
+         dy(isc:iec+1,jsc:jec) = Atm(n)%gridstruct%dy(isc:iec+1,jsc:jec)
+         used = send_data(id_mdy, dy, Time)
+         deallocate(dy)
+       endif
 #endif
        if(id_ps > 0) used=send_data(id_ps, Atm(n)%ps(isc:iec,jsc:jec), Time)
 
@@ -4062,6 +4145,7 @@ contains
     if (allocated(dvmr)) deallocate(dvmr)
 
  end subroutine fv_diag
+
 
  subroutine wind_max(isc, iec, jsc, jec ,isd, ied, jsd, jed, us, vs, ws_max, domain)
  integer isc, iec, jsc, jec

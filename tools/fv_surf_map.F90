@@ -523,7 +523,7 @@
       real(kind=R_GRID), intent(IN):: stretch_fac
       logical, intent(IN) :: bounded_domain
       real, intent(inout):: phis(isd:ied,jsd,jed)
-      real, intent(inout):: oro(isd:ied,jsd,jed)
+      real, intent(in):: oro(isd:ied,jsd,jed)
       type(domain2d), intent(INOUT) :: domain
       integer mdim
       real(kind=R_GRID) da_max

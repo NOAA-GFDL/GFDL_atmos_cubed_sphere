@@ -147,9 +147,92 @@ implicit none
    real, dimension(:,:,:), allocatable, target :: dum_West, dum_East, dum_North, dum_South
 
 private
-public :: twoway_nesting, setup_nested_grid_BCs, set_physics_BCs
+public :: twoway_nesting, setup_nested_grid_BCs, set_physics_BCs, dealloc_nested_buffers
 
 contains
+
+!>@brief The subroutine 'dealloc_nested_buffers' deallocates the BC buffers
+!! so that they can be resized after nest motion.
+!!   Ramstrom/HRD Moving Nest upgrade
+subroutine dealloc_nested_buffers(Atm)
+  type(fv_atmos_type), intent(in) :: Atm
+
+  integer :: n, ncnst
+  !logical :: dummy = .false.
+  logical :: debug_log = .false.
+
+  integer :: this_pe
+
+  this_pe = mpp_pe()
+
+  if (debug_log) print '("[INFO] WDR NBC deallocating buffers fv_nesting.F90 npe=",I0)', this_pe
+
+  call deallocate_fv_nest_BC_type(u_buf)
+  call deallocate_fv_nest_BC_type(v_buf)
+  call deallocate_fv_nest_BC_type(uc_buf)
+  call deallocate_fv_nest_BC_type(vc_buf)
+
+  call deallocate_fv_nest_BC_type(delp_buf)
+  call deallocate_fv_nest_BC_type(delz_buf)
+
+  call deallocate_fv_nest_BC_type(pt_buf)
+  call deallocate_fv_nest_BC_type(w_buf)
+  call deallocate_fv_nest_BC_type(divg_buf)
+
+  call deallocate_fv_nest_BC_type(pe_u_buf)
+  call deallocate_fv_nest_BC_type(pe_v_buf)
+  call deallocate_fv_nest_BC_type(pe_b_buf)
+
+  ncnst = size(q_buf)
+  do n=1,ncnst
+     call deallocate_fv_nest_BC_type(q_buf(n))
+  end do
+
+  ! TODO remove the allocation steps
+
+  ! Reallocate based on the new Atm structure
+  !ns = Atm%neststruct%nsponge
+
+  !! The code for using the BC buffers will allocate when needed in boundary.F90::nested_grid_BC_recv()
+
+  !allocate_fv_nest_BC_type_3D_Atm(BC,Atm,ns,istag,jstag,dummy)
+
+  ! Rely on the previously set values for istag, jstag
+
+!       call allocate_fv_nest_BC_type(Atm%neststruct%delp_BC,Atm,ns,0,0,dummy)
+!       call allocate_fv_nest_BC_type(Atm%neststruct%u_BC,Atm,ns,0,1,dummy)
+!       call allocate_fv_nest_BC_type(Atm%neststruct%v_BC,Atm,ns,1,0,dummy)
+!       call allocate_fv_nest_BC_type(Atm%neststruct%uc_BC,Atm,ns,1,0,dummy)
+!       call allocate_fv_nest_BC_type(Atm%neststruct%vc_BC,Atm,ns,0,1,dummy)
+!       call allocate_fv_nest_BC_type(Atm%neststruct%divg_BC,Atm,ns,1,1,dummy)
+
+!       if (ncnst > 0) then
+!          allocate(Atm%neststruct%q_BC(ncnst))
+!          do n=1,ncnst
+!             call allocate_fv_nest_BC_type(Atm%neststruct%q_BC(n),Atm,ns,0,0,dummy)
+!          enddo
+!       endif
+
+  !call allocate_fv_nest_BC_type_3D_Atm(u_buf, Atm, ns, u_buf%istag, u_buf%jstag, dummy)
+  !call allocate_fv_nest_BC_type_3D_Atm(v_buf, Atm, ns, v_buf%istag, v_buf%jstag, dummy)
+  !call allocate_fv_nest_BC_type_3D_Atm(uc_buf, Atm, ns, uc_buf%istag, uc_buf%jstag, dummy)
+  !call allocate_fv_nest_BC_type_3D_Atm(vc_buf, Atm, ns, vc_buf%istag, vc_buf%jstag, dummy)
+
+  !call allocate_fv_nest_BC_type_3D_Atm(delp_buf, Atm, ns, 0, 0, dummy)
+  !call allocate_fv_nest_BC_type_3D_Atm(delz_buf, Atm, ns, delz_buf%istag, delz_buf%jstag, dummy)
+
+  !call allocate_fv_nest_BC_type_3D_Atm(pt_buf, Atm, ns, pt_buf%istag, pt_buf%jstag, dummy)
+  !call allocate_fv_nest_BC_type_3D_Atm(pkz_buf, Atm, ns, pkz_buf%istag, pkz_buf%jstag, dummy)
+  !call allocate_fv_nest_BC_type_3D_Atm(w_buf, Atm, ns, w_buf%istag, w_buf%jstag, dummy)
+  !call allocate_fv_nest_BC_type_3D_Atm(divg_buf, Atm, ns, divg_buf%istag, divg_buf%jstag, dummy)
+
+  !do n=1,ncnst
+  !   call allocate_fv_nest_BC_type_3D_Atm(q_buf(n), Atm, ns, q_buf(n)%istag, q_buf(n)%jstag, dummy)
+  !end do
+
+end subroutine dealloc_nested_buffers
+
+
 !>@brief The subroutine 'setup_nested_grid_BCs' fetches data from the coarse grid
 !! to set up  the nested-grid boundary conditions.
  subroutine setup_nested_grid_BCs(npx, npy, npz, zvir, ncnst,     &
