@@ -31,7 +31,13 @@ module atmosphere_mod
 ! FMS modules:
 !-----------------
 use block_control_mod,      only: block_control_type
-use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks, pi
+#ifdef OVERLOAD_R4
+use constantsR4_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks,
+pi
+#else
+use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks,
+pi
+#endif
 use time_manager_mod,       only: time_type, get_time, set_time, operator(+), &
                                   operator(-), operator(/), time_type_to_real
 use fms_mod,                only: error_mesg, FATAL,                 &
