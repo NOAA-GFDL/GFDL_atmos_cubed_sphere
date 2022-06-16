@@ -1585,12 +1585,12 @@ contains
    call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3", &
         attrList=(/"missing_value"/), rc=rc)
    call ESMF_AttributeSet(field, convention="NetCDF", purpose="FV3", &
-        name='missing_value',value=missing_value,rc=rc)
+        name='missing_value',value=real(missing_value,kind=4),rc=rc)
 
    call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3", &
         attrList=(/"_FillValue"/), rc=rc)
    call ESMF_AttributeSet(field, convention="NetCDF", purpose="FV3", &
-        name='_FillValue',value=missing_value,rc=rc)
+        name='_FillValue',value=real(missing_value,kind=4),rc=rc)
 
    call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3", &
         attrList=(/"cell_methods"/), rc=rc)
