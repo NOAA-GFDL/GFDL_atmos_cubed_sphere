@@ -414,6 +414,17 @@ contains
       else
         nrows_blend=nrows_blend_in_data                                    !<-- # of blending rows in the BC files.
       endif
+
+      IF ( north_bc .or. south_bc ) THEN
+        IF ( nrows_blend_user > jed - nhalo_model - (jsd + nhalo_model) + 1 ) THEN
+        call mpp_error(FATAL,'Number of blending rows is greater than the north-south tile size!')
+        ENDIF
+      ENDIF
+      IF ( west_bc .or. east_bc ) THEN
+        IF ( nrows_blend_user > ied - nhalo_model - (isd + nhalo_model) + 1 ) THEN
+        call mpp_error(FATAL,'Number of blending rows is greater than the east-west tile size!')
+        ENDIF
+      ENDIF
 !
       call check(nf90_close(ncid))                                         !<-- Close the BC file for now.
 !
@@ -4378,7 +4389,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       real,dimension(:,:,:),pointer :: bc_t0,bc_t1                       !<-- Boundary data at the two bracketing times.
 !
-      logical :: blend,call_interp
+      logical :: blend,call_interp,blendtmp
 !
 !---------------------------------------------------------------------
 !*********************************************************************
@@ -4422,13 +4433,21 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
               i2=ied+1
             endif
 !
-            j1=jsd
-            j2=js-1
+            j1=jsd  ! -2  -- outermost boundary ghost zone
+            j2=js-1 ! 0  -- first boundary ghost zone
 !
+            IF ( east_bc ) THEN
             i1_blend=is
+            ELSE
+            i1_blend=isd !is-nhalo_model
+            ENDIF
+            IF ( west_bc ) THEN
             i2_blend=ie
+            ELSE
+            i2_blend=ied ! ie+nhalo_model
+            ENDIF
             if(trim(bc_vbl_name)=='uc'.or.trim(bc_vbl_name)=='v'.or.trim(bc_vbl_name)=='divgd')then
-              i2_blend=ie+1
+              i2_blend=i2_blend+1 ! ie+1
             endif
             j1_blend=js
             j2_blend=js+nrows_blend_user-1
@@ -4463,8 +4482,19 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
             i1_blend=is
             i2_blend=ie
-            if(trim(bc_vbl_name)=='uc'.or.trim(bc_vbl_name)=='v'.or.trim(bc_vbl_name)=='divgd')then
-              i2_blend=ie+1
+            IF ( east_bc ) THEN
+            i1_blend=is
+            ELSE
+            i1_blend=isd !is-nhalo_model
+            ENDIF
+            IF ( west_bc ) THEN
+            i2_blend=ie
+            ELSE
+            i2_blend=ied ! ie+nhalo_model
+            ENDIF
+           if(trim(bc_vbl_name)=='uc'.or.trim(bc_vbl_name)=='v'.or.trim(bc_vbl_name)=='divgd')then
+!              i2_blend=ie+1
+              i2_blend=i2_blend+1
             endif
             j2_blend=je
             if(trim(bc_vbl_name)=='u'.or.trim(bc_vbl_name)=='vc'.or.trim(bc_vbl_name)=='divgd')then
@@ -4509,16 +4539,21 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
               endif
             endif
 !
-            i1_blend=is
-            i2_blend=is+nrows_blend_user-1
+! Note: Original code checked for corner region and avoided overlap, but changed this to blend corners from both boundaries
+             i1_blend=is
+             i2_blend=is+nrows_blend_user-1
+
+            IF ( north_bc ) THEN
             j1_blend=js
+            ELSE
+            j1_blend=jsd !js-nhalo_model
+            ENDIF
+            IF ( south_bc ) THEN
             j2_blend=je
-            if(north_bc)then
-              j1_blend=js+nrows_blend_user     !<-- North BC already handles nrows_blend_user blending rows
-            endif
-            if(south_bc)then
-              j2_blend=je-nrows_blend_user     !<-- South BC already handles nrows_blend_user blending rows
-            endif
+            ELSE
+            j2_blend=jed ! ie+nhalo_model
+            ENDIF
+
             if(trim(bc_vbl_name)=='u'.or.trim(bc_vbl_name)=='vc'.or.trim(bc_vbl_name)=='divgd')then
               j2_blend=j2_blend+1
             endif
@@ -4564,16 +4599,20 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
               endif
             endif
 !
+! Note: Original code checked for corner region and avoided overlap, but changed this to blend corners from both boundaries
             i1_blend=i1-nrows_blend_user
             i2_blend=i1-1
+
+            IF ( north_bc ) THEN
             j1_blend=js
+            ELSE
+            j1_blend=jsd !is-nhalo_model
+            ENDIF
+            IF ( south_bc ) THEN
             j2_blend=je
-            if(north_bc)then
-              j1_blend=js+nrows_blend_user   !<-- North BC already handled nrows_blend_user blending rows.
-            endif
-            if(south_bc)then
-              j2_blend=je-nrows_blend_user   !<-- South BC already handled nrows_blend_user blending rows.
-            endif
+            ELSE
+            j2_blend=jed ! ie+nhalo_model
+            ENDIF
             if(trim(bc_vbl_name)=='u'.or.trim(bc_vbl_name)=='vc'.or.trim(bc_vbl_name)=='divgd')then
               j2_blend=j2_blend+1
             endif
@@ -4589,6 +4628,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  then update the boundary points.
 !---------------------------------------------------------------------
 !
+
+
         if(call_interp)then
 !
           call retrieve_bc_variable_data(bc_vbl_name                  &
@@ -4815,7 +4856,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
 !
 !---------------------------------------------------------------------
-!
+! Set values in the boundary points only
       do k=1,ubnd_z
         do j=j1,j2
         do i=i1,i2
@@ -4846,7 +4887,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !-----------
 !
       if(nside==1.and.north_bc)then
-        rdenom=1./real(j2_blend-j_bc-1)
+        rdenom=1./real(Max(1,j2_blend-j_bc-1))
         do k=1,ubnd_z
           do j=j1_blend,j2_blend
             factor_dist=exp(-(blend_exp1+blend_exp2*(j-j_bc-1)*rdenom)) !<-- Exponential falloff of blending weights.
@@ -4865,7 +4906,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !-----------
 !
       if(nside==2.and.south_bc)then
-        rdenom=1./real(j_bc-j1_blend-1)
+        rdenom=1./real(Max(1,j_bc-j1_blend-1))
         do k=1,ubnd_z
           do j=j1_blend,j2_blend
             factor_dist=exp(-(blend_exp1+blend_exp2*(j_bc-j-1)*rdenom)) !<-- Exponential falloff of blending weights.
@@ -4883,7 +4924,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !----------
 !
       if(nside==3.and.east_bc)then
-        rdenom=1./real(i2_blend-i_bc-1)
+        rdenom=1./real(Max(1,i2_blend-i_bc-1))
         do k=1,ubnd_z
           do j=j1_blend,j2_blend
             do i=i1_blend,i2_blend
@@ -4904,7 +4945,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !----------
 !
       if(nside==4.and.west_bc)then
-        rdenom=1./real(i_bc-i1_blend-1)
+        rdenom=1./real(Max(1, i_bc-i1_blend-1))
         do k=1,ubnd_z
           do j=j1_blend,j2_blend
             do i=i1_blend,i2_blend
