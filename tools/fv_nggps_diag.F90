@@ -63,11 +63,7 @@ module fv_nggps_diags_mod
 ! </table>
 
  use mpp_mod,            only: mpp_pe, mpp_root_pe,FATAL,mpp_error
-#ifdef OVERLOAD_R4
- use constantsR4_mod,    only: grav, rdgas
-#else
  use constants_mod,      only: grav, rdgas
-#endif
  use time_manager_mod,   only: time_type, get_time
  use diag_manager_mod,   only: register_diag_field, send_data
  use diag_axis_mod,      only: get_axis_global_length, get_diag_axis, get_diag_axis_name
