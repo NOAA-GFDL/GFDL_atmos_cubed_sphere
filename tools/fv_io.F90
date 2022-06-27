@@ -419,7 +419,7 @@ contains
     Atm(1)%Fv_restart_tile_is_open = open_file(Atm(1)%Fv_restart_tile, fname, "read", fv_domain, is_restart=.true.)
     if (Atm(1)%Fv_restart_tile_is_open) then
       call fv_io_register_restart(Atm(1))
-      call read_restart(Atm(1)%Fv_restart_tile)
+      call read_restart(Atm(1)%Fv_restart_tile, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
       call close_file(Atm(1)%Fv_restart_tile)
       Atm(1)%Fv_restart_tile_is_open = .false.
     endif
@@ -429,7 +429,7 @@ contains
     Atm(1)%Tra_restart_is_open = open_file(Atm(1)%Tra_restart, fname, "read", fv_domain, is_restart=.true.)
     if (Atm(1)%Tra_restart_is_open) then
       call fv_io_register_restart(Atm(1))
-      call read_restart(Atm(1)%Tra_restart)
+      call read_restart(Atm(1)%Tra_restart, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
       call close_file(Atm(1)%Tra_restart)
       Atm(1)%Tra_restart_is_open = .false.
     else
@@ -442,7 +442,7 @@ contains
     if (Atm(1)%Rsf_restart_is_open) then
       Atm(1)%flagstruct%srf_init = .true.
       call fv_io_register_restart(Atm(1))
-      call read_restart(Atm(1)%Rsf_restart)
+      call read_restart(Atm(1)%Rsf_restart, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
       call close_file(Atm(1)%Rsf_restart)
       Atm(1)%Rsf_restart_is_open = .false.
     else
@@ -456,7 +456,7 @@ contains
          Atm(1)%Mg_restart_is_open = open_file(Atm(1)%Mg_restart, fname, "read", fv_domain, is_restart=.true.)
          if (Atm(1)%Mg_restart_is_open) then
            call fv_io_register_restart(Atm(1))
-           call read_restart(Atm(1)%Mg_restart)
+           call read_restart(Atm(1)%Mg_restart, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
            call close_file(Atm(1)%Mg_restart)
            Atm(1)%Mg_restart_is_open = .false.
          else
@@ -467,7 +467,7 @@ contains
          Atm(1)%Lnd_restart_is_open = open_file(Atm(1)%Lnd_restart, fname, "read", fv_domain, is_restart=.true.)
          if (Atm(1)%Lnd_restart_is_open) then
            call fv_io_register_restart(Atm(1))
-           call read_restart(Atm(1)%Lnd_restart)
+           call read_restart(Atm(1)%Lnd_restart, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
            call close_file(Atm(1)%Lnd_restart)
            Atm(1)%Lnd_restart_is_open = .false.
          else
@@ -483,8 +483,7 @@ contains
   !>@details This subroutine is useful when initializing a cycled or nudged model
   !! from an analysis that does not have a whole set of microphysical, aerosol, or
   !! chemical tracers
-  subroutine fv_io_read_tracers(fv_domain,Atm)
-    type(domain2d),      intent(inout) :: fv_domain
+  subroutine fv_io_read_tracers(Atm)
     type(fv_atmos_type), intent(inout) :: Atm(:)
     integer :: ntracers, ntprog, nt, isc, iec, jsc, jec
     character(len=6) :: stile_name
@@ -499,7 +498,7 @@ contains
     call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
 
 ! fix for single tile runs where you need fv_core.res.nc and fv_core.res.tile1.nc
-    ntiles = mpp_get_ntile_count(fv_domain)
+    ntiles = mpp_get_ntile_count(Atm(1)%domain_for_read)
     if(ntiles == 1 .and. .not. Atm(1)%neststruct%nested) then
        stile_name = '.tile1'
     else
@@ -508,7 +507,7 @@ contains
 
     fname = 'INPUT/fv_tracer.res'//trim(stile_name)//'.nc'
 
-    if (open_file(Tra_restart_r,fname,"read",fv_domain, is_restart=.true.)) then
+    if (open_file(Tra_restart_r,fname,"read",Atm(1)%domain_for_read, is_restart=.true.)) then
     do nt = 2, ntprog
        call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
        call set_tracer_profile (MODEL_ATMOS, nt, Atm(1)%q(isc:iec,jsc:jec,:,nt)  )
@@ -534,10 +533,9 @@ contains
   !>@brief The subroutine 'remap_restart' remaps the model state from remap files
   !! to a new set of Eulerian coordinates.
   !>@details Use if npz (run time z-dimension) /= npz_rst (restart z-dimension)
-  subroutine  remap_restart(fv_domain,Atm)
+  subroutine  remap_restart(Atm)
   use fv_mapz_mod,       only: rst_remap
 
-    type(domain2d),      intent(inout) :: fv_domain
     type(fv_atmos_type), intent(inout) :: Atm(:)
 
     character(len=64)    :: fname, tracer_name
@@ -546,6 +544,7 @@ contains
     integer              :: isd, ied, jsd, jed
     integer              :: ntiles
 
+    type(domain2d) :: fv_domain
     type(FmsNetcdfDomainFile_t) :: FV_tile_restart_r, Tra_restart_r
     type(FmsNetcdfFile_t)       :: Fv_restart_r
     integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
@@ -560,6 +559,7 @@ contains
     integer npz, npz_rst, ng
     integer i,j,k
 
+    fv_domain = Atm(1)%domain_for_read
     npz     = Atm(1)%npz       ! run time z dimension
     npz_rst = Atm(1)%flagstruct%npz_rst   ! restart z dimension
     isc = Atm(1)%bd%isc; iec = Atm(1)%bd%iec; jsc = Atm(1)%bd%jsc; jec = Atm(1)%bd%jec
@@ -640,7 +640,7 @@ contains
        if (Atm(1)%Rsf_restart_is_open) then
           Atm%flagstruct%srf_init = .true.
           call fv_io_register_restart(Atm(1))
-          call read_restart(Atm(1)%Rsf_restart)
+          call read_restart(Atm(1)%Rsf_restart, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
           call close_file(Atm(1)%Rsf_restart)
           Atm(1)%Rsf_restart_is_open = .false.
          call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
@@ -1279,12 +1279,12 @@ contains
     call fv_io_register_restart_BCs(Atm)
 
     if (Atm%neststruct%BCfile_sw_is_open) then
-      call read_restart_bc(Atm%neststruct%BCfile_sw)
+      call read_restart_bc(Atm%neststruct%BCfile_sw, ignore_checksum=Atm%flagstruct%ignore_rst_cksum)
       call close_file(Atm%neststruct%BCfile_sw)
     endif
 
     if (Atm%neststruct%BCfile_ne_is_open) then
-     call read_restart_bc(Atm%neststruct%BCfile_ne)
+     call read_restart_bc(Atm%neststruct%BCfile_ne, ignore_checksum=Atm%flagstruct%ignore_rst_cksum)
      call close_file(Atm%neststruct%BCfile_ne)
     endif
 
