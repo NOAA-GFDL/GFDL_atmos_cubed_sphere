@@ -54,7 +54,8 @@ endif()
 
 if(NOT FMS_FOUND)
   find_package(FMS REQUIRED COMPONENTS ${kind})
-  add_library(fms ALIAS FMS::fms_${kind})
+  string(TOLOWER ${kind} kind_lower)
+  add_library(fms ALIAS FMS::fms_${kind_lower})
 endif()
 
 list(APPEND moving_srcs
