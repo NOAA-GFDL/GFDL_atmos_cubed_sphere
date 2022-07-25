@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -33,7 +33,7 @@
            id_qn, id_qn200, id_qn500, id_qn850, id_qp,            &
            id_qdt, id_acly, id_acl, id_acl2,                              &
            id_dbz, id_maxdbz, id_basedbz, id_dbz4km, id_dbztop, id_dbz_m10C, &
-           id_ctz, id_w1km, id_wmaxup, id_wmaxdn, id_cape, id_cin
+           id_ctz, id_w1km, id_wmaxup, id_wmaxdn, id_cape, id_cin, id_brn, id_shear06
 
 ! Selected theta-level fields from 3D variables:
  integer :: id_pv350K, id_pv550K
@@ -66,6 +66,10 @@
      integer ic_ps, ic_ua, ic_va, ic_ppt
      integer ic_sphum
      integer, allocatable :: id_tracer(:)
+
+! dissipation estimates
+ integer :: id_diss
+
 ! ESM requested diagnostics  -  dry mass/volume mixing ratios
  integer, allocatable :: id_tracer_dmmr(:)
  integer, allocatable :: id_tracer_dvmr(:)
@@ -75,7 +79,7 @@
      real, allocatable :: zsurf(:,:)
      real, allocatable :: pt1(:)
 
-     integer :: id_prer, id_prei, id_pres, id_preg, id_cond, id_dep, id_reevap, id_sub
+     integer :: id_prec, id_prer, id_prei, id_pres, id_preg, id_cond, id_dep, id_reevap, id_sub
      integer :: id_qv_dt_gfdlmp, id_T_dt_gfdlmp, id_ql_dt_gfdlmp, id_qi_dt_gfdlmp
      integer :: id_qr_dt_gfdlmp, id_qg_dt_gfdlmp, id_qs_dt_gfdlmp
      integer :: id_liq_wat_dt_gfdlmp, id_ice_wat_dt_gfdlmp
@@ -92,7 +96,6 @@
                 id_iuu, id_iuv, id_iuw, id_ivv, id_ivw, id_iww   ! vertically integral of momentum flux
 
      integer :: id_uw, id_vw
-
+     integer :: id_lagrangian_tendency_of_hydrostatic_pressure
      integer :: id_t_dt_nudge, id_ps_dt_nudge, id_delp_dt_nudge, id_u_dt_nudge, id_v_dt_nudge
-
 #endif _FV_DIAG__

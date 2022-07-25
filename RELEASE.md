@@ -1,4 +1,26 @@
 # RELEASE NOTES for GFDL FV3: Summary
+GFDL_2022.XX.YY --- July 2022
+
+This version has been tested against the current SHiELD physics
+and with FMS release 2022.01 from https://github.com/NOAA-GFDL/FMS
+
+This release includes the following:
+- Release of stand-alone solo_core functionality with simple physics.
+- Updated GFDL Microphysics, used for real-time 2021 C-SHiELD and T-SHiELD.  (L Zhou)
+- Merges numerous updates from dev/emc.
+- Leverage DA functionality from UFS with additional changes (M Tong).
+- Updates to use the latest FMS release, including fms2_io.
+- Adds license header to missing files and fixes typo in header.
+- Fixes a bug where long_name and units attributes were not being captured in restart files.
+- Adds the ability to specify prefix and directory when reading and writing restarts.
+- The planetary radius and rotation rate are now re-scalable by a namelist parameter (small_earth_scale) instead of using exclusively the hard-coded FMS constant.
+- Removes obsolete driver/SHiELD files.
+- Removes unused function fv_diagnostics::max_vorticity_hy1.
+- Removes avec timer remnants.
+- Removes old style namelist read in favor of read from internal character variable.
+- Adds option for a mean wind.
+- Addresses GNU warnings.
+
 
 # RELEASE NOTES for GFDL_2021.03.01: Summary
 GFDL_2021.03.01 --- August 2021

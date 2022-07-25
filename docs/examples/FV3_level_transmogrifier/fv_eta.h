@@ -1,3 +1,4 @@
+! -*-f90-*-*
 !***********************************************************************
 !*                   GNU Lesser General Public License
 !*
@@ -22,7 +23,7 @@
 #ifndef _FV_ETA_
 #define _FV_ETA__
 
-! -*-f90-*-*
+
 
 ! local
       real a24(25),b24(25)            ! GFDL AM2L24

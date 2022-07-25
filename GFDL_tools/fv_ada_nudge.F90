@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -262,7 +262,7 @@ module fv_ada_nudge_mod
  contains
 
 
-  subroutine fv_ada_nudge ( Time, dt, npx, npy, npz, ps_dt, u_dt, v_dt, t_dt, q_dt, zvir, ptop, &
+  subroutine fv_ada_nudge ( Time, dt, npx, npy, npz, ps_dt, u_dt, v_dt, t_dt, q_dt, zvir, &
                             ak, bk, ts, ps, delp, ua, va, pt, nwat, q, phis, gridstruct, &
                             bd, domain )
 
@@ -271,7 +271,7 @@ module fv_ada_nudge_mod
   integer,         intent(in):: npz           ! vertical dimension
   integer,         intent(in):: nwat
   real,            intent(in):: dt
-  real,            intent(in):: zvir, ptop
+  real,            intent(in):: zvir
   type(domain2d), intent(INOUT), target :: domain
   type(fv_grid_bounds_type), intent(IN) :: bd
   real, intent(in   ), dimension(npz+1):: ak, bk
@@ -435,7 +435,7 @@ module fv_ada_nudge_mod
 
 
   call get_obs(Time, dt, zvir, ak, bk, ps, ts, ps_obs, delp, pt, nwat, q, u_obs, v_obs, t_obs, q_obs,   &
-               phis, gz_int, ua, va, u_dt, v_dt, npx, npy, npz, factor, mask, ptop, bd, gridstruct, domain)
+               phis, gz_int, ua, va, u_dt, v_dt, npx, npy, npz, factor, mask, bd, gridstruct, domain)
 ! *t_obs* is virtual temperature
 #ifdef ENABLE_ADA ! snz
 
@@ -1269,10 +1269,10 @@ endif
 
 
  subroutine get_obs(Time, dt, zvir, ak, bk, ps, ts, ps_obs, delp, pt, nwat, q, u_obs, v_obs, t_obs, q_obs,  &
-                    phis, gz_int, ua, va, u_dt, v_dt, npx, npy, npz, factor, mask, ptop, bd, gridstruct, domain)
+                    phis, gz_int, ua, va, u_dt, v_dt, npx, npy, npz, factor, mask, bd, gridstruct, domain)
   type(time_type), intent(in):: Time
   integer,         intent(in):: npz, nwat, npx, npy
-  real,            intent(in):: zvir, ptop
+  real,            intent(in):: zvir
   real,            intent(in):: dt, factor
   real, intent(in), dimension(npz+1):: ak, bk
   type(fv_grid_bounds_type), intent(IN) :: bd
@@ -1423,26 +1423,26 @@ endif
   if ( nudge_winds ) then
 
        call remap_uv(npz, ak,  bk, ps(is:ie,js:je), delp,  ut,     vt,   &
-                     km, ps_dat(is:ie,js:je,1),  u_dat(:,:,:,1), v_dat(:,:,:,1), ptop, bd )
+                     km, ps_dat(is:ie,js:je,1),  u_dat(:,:,:,1), v_dat(:,:,:,1), bd )
 
        u_obs(:,:,:) = alpha*ut(:,:,:)
        v_obs(:,:,:) = alpha*vt(:,:,:)
 
        call remap_uv(npz, ak, bk, ps(is:ie,js:je), delp,   ut,      vt,   &
-                     km, ps_dat(is:ie,js:je,2),  u_dat(:,:,:,2), v_dat(:,:,:,2), ptop, bd )
+                     km, ps_dat(is:ie,js:je,2),  u_dat(:,:,:,2), v_dat(:,:,:,2), bd )
 
        u_obs(:,:,:) = u_obs(:,:,:) + beta*ut(:,:,:)
        v_obs(:,:,:) = v_obs(:,:,:) + beta*vt(:,:,:)
   endif
 
        call remap_tq(npz, ak, bk, ps(is:ie,js:je), delp,  ut,  vt,  &
-                     km,  ps_dat(is:ie,js:je,1),  t_dat(:,:,:,1), q_dat(:,:,:,1), zvir, ptop, bd)
+                     km,  ps_dat(is:ie,js:je,1),  t_dat(:,:,:,1), q_dat(:,:,:,1), zvir, bd)
 
        t_obs(:,:,:) = alpha*ut(:,:,:)
        q_obs(:,:,:) = alpha*vt(:,:,:)
 
        call remap_tq(npz, ak, bk, ps(is:ie,js:je), delp,  ut,  vt,  &
-                     km,  ps_dat(is:ie,js:je,2),  t_dat(:,:,:,2), q_dat(:,:,:,2), zvir, ptop, bd)
+                     km,  ps_dat(is:ie,js:je,2),  t_dat(:,:,:,2), q_dat(:,:,:,2), zvir, bd)
 
        t_obs(:,:,:) = t_obs(:,:,:) + beta*ut(:,:,:)
        q_obs(:,:,:) = q_obs(:,:,:) + beta*vt(:,:,:)
@@ -2309,9 +2309,9 @@ endif
 
 
  subroutine remap_tq( npz, ak,  bk,  ps, delp,  t,  q,  &
-                      kmd, ps0, ta, qa, zvir, ptop, bd)
+                      kmd, ps0, ta, qa, zvir, bd)
   integer, intent(in):: npz, kmd
-  real,    intent(in):: zvir, ptop
+  real,    intent(in):: zvir
   real,    intent(in):: ak(npz+1), bk(npz+1)
   type(fv_grid_bounds_type), intent(IN) :: bd
   real,    intent(in), dimension(bd%is:bd%ie,bd%js:bd%je):: ps0
@@ -2373,7 +2373,7 @@ endif
               qp(i,k) = qa(i,j,k)
            enddo
         enddo
-        call mappm(kmd, pe0, qp, npz, pe1, qn1, is,ie, 0, kord_data, ptop)
+        call mappm(kmd, pe0, qp, npz, pe1, qn1, is,ie, 0, kord_data)
         do k=1,npz
            do i=is,ie
               q(i,j,k) = qn1(i,k)
@@ -2388,7 +2388,7 @@ endif
          tp(i,k) = ta(i,j,k)
       enddo
    enddo
-   call mappm(kmd, pn0, tp, npz, pn1, qn1, is,ie, 1, kord_data, ptop)
+   call mappm(kmd, pn0, tp, npz, pn1, qn1, is,ie, 1, kord_data)
 
    do k=1,npz
       do i=is,ie
@@ -2401,9 +2401,8 @@ endif
  end subroutine remap_tq
 
 
- subroutine remap_uv(npz, ak, bk, ps, delp, u, v, kmd, ps0, u0, v0, ptop, bd)
+ subroutine remap_uv(npz, ak, bk, ps, delp, u, v, kmd, ps0, u0, v0, bd)
   integer, intent(in):: npz
-  real,    intent(IN):: ptop
   real,    intent(in):: ak(npz+1), bk(npz+1)
   type(fv_grid_bounds_type), intent(IN) :: bd
   real,    intent(inout):: ps(bd%is:bd%ie,bd%js:bd%je)
@@ -2460,7 +2459,7 @@ endif
             qt(i,k) = u0(i,j,k)
          enddo
       enddo
-      call mappm(kmd, pe0, qt, npz, pe1, qn1, is,ie, -1, kord_data, ptop)
+      call mappm(kmd, pe0, qt, npz, pe1, qn1, is,ie, -1, kord_data)
       do k=1,npz
          do i=is,ie
             u(i,j,k) = qn1(i,k)
@@ -2474,7 +2473,7 @@ endif
             qt(i,k) = v0(i,j,k)
          enddo
       enddo
-      call mappm(kmd, pe0, qt, npz, pe1, qn1, is,ie, -1, kord_data, ptop)
+      call mappm(kmd, pe0, qt, npz, pe1, qn1, is,ie, -1, kord_data)
       do k=1,npz
          do i=is,ie
             v(i,j,k) = qn1(i,k)
@@ -2516,14 +2515,34 @@ endif
        call fv_io_register_axis(ada_driver_restart, numx=1, numy=1, numz=1, zsize=(/size(Atm_var%u_adj,3)/))
        call register_restart_field(ada_driver_restart, &
             & "u_adj", Atm_var%u_adj(:,:,:), dim_names_4d)
+       call register_variable_attribute(ada_driver_restart, &
+            & "u_adj", "long_name", "u_adj", str_len=len("u_adj"))
+       call register_variable_attribute(ada_driver_restart, &
+            & "u_adj", "units", "none", str_len=len("none"))
        call register_restart_field(ada_driver_restart, &
             & "v_adj", Atm_var%v_adj(:,:,:), dim_names_4d)
+       call register_variable_attribute(ada_driver_restart, &
+            & "v_adj", "long_name", "v_adj", str_len=len("v_adj"))
+       call register_variable_attribute(ada_driver_restart, &
+            & "v_adj", "units", "none", str_len=len("none"))
        call register_restart_field(ada_driver_restart, &
             & "t_adj", Atm_var%t_adj(:,:,:), dim_names_4d)
+       call register_variable_attribute(ada_driver_restart, &
+            & "t_adj", "long_name", "t_adj", str_len=len("t_adj"))
+       call register_variable_attribute(ada_driver_restart, &
+            & "t_adj", "units", "none", str_len=len("none"))
        call register_restart_field(ada_driver_restart, &
             & "q_adj", Atm_var%q_adj(:,:,:), dim_names_4d)
+       call register_variable_attribute(ada_driver_restart, &
+            & "q_adj", "long_name", "q_adj", str_len=len("q_adj"))
+       call register_variable_attribute(ada_driver_restart, &
+            & "q_adj", "units", "none", str_len=len("none"))
        call register_restart_field(ada_driver_restart, &
             & "ps_adj", Atm_var%ps_adj(:,:), dim_names_4d)
+       call register_variable_attribute(ada_driver_restart, &
+            & "ps_adj", "long_name", "ps_adj", str_len=len("ps_adj"))
+       call register_variable_attribute(ada_driver_restart, &
+            & "ps_adj", "units", "none", str_len=len("none"))
        call write_restart(ada_driver_restart)
        call close_file(ada_driver_restart)
     endif

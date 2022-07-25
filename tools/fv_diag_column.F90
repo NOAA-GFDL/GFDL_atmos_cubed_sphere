@@ -1,3 +1,24 @@
+!***********************************************************************
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+!* If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
+
 module fv_diag_column_mod
 
   use fv_arrays_mod,      only: fv_atmos_type, fv_grid_type, fv_diag_type, fv_grid_bounds_type, &
@@ -38,6 +59,8 @@ module fv_diag_column_mod
  character(10) :: init_str
  real, parameter    ::     rad2deg = 180./pi
 
+ logical :: m_calendar
+
  public :: do_diag_debug_dyn, debug_column, debug_column_dyn, fv_diag_column_init, sounding_column
 
 
@@ -50,15 +73,17 @@ module fv_diag_column_mod
 
 contains
 
- subroutine fv_diag_column_init(Atm, yr_init, mo_init, dy_init, hr_init, do_diag_debug_out, do_diag_sonde_out, sound_freq_out)
+ subroutine fv_diag_column_init(Atm, yr_init, mo_init, dy_init, hr_init, do_diag_debug_out, do_diag_sonde_out, sound_freq_out, m_calendar_in)
 
    type(fv_atmos_type), intent(inout), target :: Atm
    integer, intent(IN) :: yr_init, mo_init, dy_init, hr_init
+   logical, intent(IN) :: m_calendar_in
    logical, intent(OUT) :: do_diag_debug_out, do_diag_sonde_out
    integer, intent(OUT) :: sound_freq_out
 
-   integer :: ios, nlunit
-   logical :: exists
+   integer :: ios
+
+   m_calendar = m_calendar_in
 
    call write_version_number ( 'FV_DIAG_COLUMN_MOD', version )
 
@@ -99,7 +124,6 @@ contains
     do_diag_debug_out = do_diag_debug
     do_diag_sonde_out = do_diag_sonde
     sound_freq_out    = sound_freq
-
 
  end subroutine fv_diag_column_init
 
@@ -287,10 +311,9 @@ contains
        if (point_found) then
 
           !Initialize output file
-          diag_units(m) = get_unit()
           write(filename, 202) trim(diag_names(m)), trim(diag_class)
 202       format(A, '.', A, '.out')
-          open(diag_units(m), file=trim(filename), action='WRITE', position='rewind', iostat=io)
+          open(newunit=diag_units(m), file=trim(filename), action='WRITE', position='rewind', iostat=io)
           if(io/=0) call mpp_error(FATAL, ' find_diagnostic_column: Error in opening file '//trim(filename))
           !Print debug message
           write(*,'(A, 1x, A, 1x, 1x, A, 2F8.3, 2I5, I3, I04)') trim(diag_class), 'point: ', diag_names(m), diag_lon(m), diag_lat(m), diag_i(m), diag_j(m), diag_tile(m), mpp_pe()
@@ -321,7 +344,7 @@ contains
 
     rdg = -rdgas/grav
 
-    do n=1,size(diag_debug_i)
+    do n=1,size(diag_debug_units)
 
        i=diag_debug_i(n)
        j=diag_debug_j(n)
@@ -342,8 +365,13 @@ contains
 
        write(unit, *) "DEBUG POINT ",  diag_debug_names(n)
        write(unit, *)
-       call get_date(Time, yr, mon, dd, hr, mn, seconds)
-       write(unit, '(A, I6, A12, 4I4)') " Time: ", yr, month_name(mon), dd, hr, mn, seconds
+       if (m_calendar) then
+          call get_date(Time, yr, mon, dd, hr, mn, seconds)
+          write(unit, '(A, I6, A12, 4I4)') " Time: ", yr, month_name(mon), dd, hr, mn, seconds
+       else
+          call get_time (Time, seconds,  days)
+          write(unit, '(A, I6, I6)') " Time: ", days, seconds
+       endif
        write(unit, *)
        write(unit, '(A, F8.3, A, F8.3)') ' longitude = ', diag_debug_lon(n), ' latitude = ', diag_debug_lat(n)
        write(unit, '(A, I8, A, I6, A, I6, A, I3)') ' on processor # ', mpp_pe(), ' :  local i = ', i, ',   local j = ', j, ' tile = ', diag_debug_tile(n)
@@ -380,7 +408,9 @@ contains
 
        write(unit, *) '==================================================================='
        write(unit, *)
-       flush(unit)
+
+       call flush(unit)
+
 
     enddo
 
@@ -412,7 +442,7 @@ contains
     rdg = -rdgas/grav
     cv_air = cp_air - rdgas
 
-    do n=1,size(diag_debug_i)
+    do n=1,size(diag_debug_units)
 
        i=diag_debug_i(n)
        j=diag_debug_j(n)
@@ -423,8 +453,13 @@ contains
 
        write(unit, *) "DEBUG POINT ",  diag_debug_names(n)
        write(unit, *)
-       call get_date(Time, yr, mon, dd, hr, mn, seconds)
-       write(unit, '(A, I6, A12, 4I4)') " Time: ", yr, month_name(mon), dd, hr, mn, seconds
+       if (m_calendar) then
+          call get_date(Time, yr, mon, dd, hr, mn, seconds)
+          write(unit, '(A, I6, A12, 4I4)') " Time: ", yr, month_name(mon), dd, hr, mn, seconds
+       else
+          call get_time (Time, seconds,  dd)
+          write(unit, '(A, I6, I6)') " Time: ", dd, seconds
+       endif
        write(unit,*) 'k_split = ', k_step, ', n_split = ', n_step
        write(unit, *)
        write(unit, '(A, F8.3, A, F8.3)') ' longitude = ', diag_debug_lon(n), ' latitude = ', diag_debug_lat(n)
@@ -471,6 +506,8 @@ contains
        write(unit, *) '==================================================================='
        write(unit, *)
 
+       call flush(unit)
+
     enddo
 
   end subroutine debug_column_dyn
@@ -503,9 +540,13 @@ contains
     integer :: i, j, k, n, unit
     integer :: yr_v, mo_v, dy_v, hr_v, mn_v, sec_v ! need to get numbers for these
 
-    call get_date(Time, yr_v, mo_v, dy_v, hr_v, mn_v, sec_v)
+    if (m_calendar) then
+       call get_date(Time, yr_v, mo_v, dy_v, hr_v, mn_v, sec_v)
+    else
+       call get_time (Time, sec_v,  dy_v)
+    endif
 
-    do n=1,size(diag_sonde_i)
+    do n=1,size(diag_sonde_units)
 
        i=diag_sonde_i(n)
        j=diag_sonde_j(n)
@@ -515,11 +556,13 @@ contains
        if (j < bd%js .or. j > bd%je) cycle
 
 
+       if (m_calendar) then
           write(unit,600)        &
                trim(diag_sonde_names(n)), yr_v, mo_v, dy_v, hr_v, init_str, trim(runname)
 600       format(A,'.v', I4, I2.2, I2.2, I2.2, '.i', A10, '.', A, '.dat########################################################')
           write(unit,601) trim(diag_sonde_names(n)), yr_v, mo_v, dy_v, hr_v, init_str(1:8),init_str(9:10)
 601       format(3x, A16, ' Valid ', I4, I2.2, I2.2, '.', I2.2, 'Z  Init ', A8, '.', A2, 'Z')
+       endif
           write(unit,'(5x, A, 2F8.3)') trim(runname), diag_sonde_lon(n), diag_sonde_lat(n)
           write(unit,*)
           write(unit,*)        '-------------------------------------------------------------------------------'
@@ -563,6 +606,8 @@ contains
                      pres*1.e-2, int(hght(k)), pt(i,j,k)-TFREEZE, dewpt, int(rh*100.), mixr*1.e3, int(wdir), wspd, theta, thetae(i,j,k), thetav
              enddo
           endif
+
+          call flush(unit)
 
     enddo
 
