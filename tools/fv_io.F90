@@ -394,7 +394,7 @@ contains
     Atm(1)%Fv_restart_is_open = open_file(Atm(1)%Fv_restart,fname,"read", is_restart=.true., pelist=pes)
     if (Atm(1)%Fv_restart_is_open) then
       call fv_io_register_restart(Atm(1))
-      call read_restart(Atm(1)%Fv_restart, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
+      call read_restart(Atm(1)%Fv_restart)
       call close_file(Atm(1)%Fv_restart)
       Atm(1)%Fv_restart_is_open = .false.
     endif
@@ -1279,12 +1279,12 @@ contains
     call fv_io_register_restart_BCs(Atm)
 
     if (Atm%neststruct%BCfile_sw_is_open) then
-      call read_restart_bc(Atm%neststruct%BCfile_sw, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
+      call read_restart_bc(Atm%neststruct%BCfile_sw, ignore_checksum=Atm%flagstruct%ignore_rst_cksum)
       call close_file(Atm%neststruct%BCfile_sw)
     endif
 
     if (Atm%neststruct%BCfile_ne_is_open) then
-     call read_restart_bc(Atm%neststruct%BCfile_ne, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum) 
+     call read_restart_bc(Atm%neststruct%BCfile_ne, ignore_checksum=Atm%flagstruct%ignore_rst_cksum)
      call close_file(Atm%neststruct%BCfile_ne)
     endif
 
