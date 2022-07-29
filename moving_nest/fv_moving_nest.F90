@@ -681,7 +681,6 @@ contains
     integer :: x, y, fp_i, fp_j
     integer :: position, position_u, position_v
     integer :: x_refine, y_refine
-    integer :: nest_x, nest_y, parent_x, parent_y
     integer :: this_pe
 
     logical, save :: first_time = .True.
@@ -851,12 +850,6 @@ contains
 
     if (use_timers) call mpp_clock_end (id_load4)
     if (use_timers) call mpp_clock_begin (id_load5)
-
-
-    if (parent_x .eq. -999) then
-      print '("[ERROR] WDR mn_latlon_load_parent on npe=",I0," parent and nest grids are not aligned!")', this_pe
-      call mpp_error(FATAL, "mn_latlon_load_parent parent and nest grids are not aligned.")
-    endif
 
     ! These grids are small (nest size), and change each time nest moves.
     call assign_n_grids(tile_geo, n_grid, position)
