@@ -104,7 +104,7 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
 !   ntime       number of time levels
 
   integer :: iunit, ierr, io
-  integer :: istat, i, j, k, n, nd, siz(4), i1, i2
+  integer :: istat, i, j, k, n, i1, i2
   character(len=32), allocatable :: fields(:)
   type(FmsNetcdfFile_t) :: fileobj
   integer, allocatable, dimension(:) :: pes !< Array of ther pes in the current pelist
@@ -184,14 +184,12 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
          call get_variable_names(fileobj, fields)
          Files(n)%field_index = 0
          do i = 1, Files(n)%nvar
-            nd = get_variable_num_dimensions(fileobj, fields(i))
-            call get_variable_size(fileobj, fields(i), siz(1:nd))
             do j = 1, NUM_REQ_FLDS
                if (trim(fields(i)) .eq. trim(required_field_names(j))) then
                   Files(n)%field_index(j) = i
                   Files(n)%fields(j) = fields(i)
                   if (j .gt. 3) then
-                     call check_resolution (siz(1:nd))
+                     call check_resolution (fileobj, fields(i))
                   endif
                   exit
                endif
@@ -201,7 +199,7 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
             if (trim(fields(i)) .eq. 'PHIS') then
                Files(n)%field_index(INDEX_ZS) = i
                Files(n)%fields(INDEX_ZS) = fields(i)
-               call check_resolution (siz(1:nd))
+               call check_resolution (fileobj, fields(i))
             endif
          enddo
          deallocate(fields)
@@ -579,23 +577,35 @@ end subroutine read_climate_nudge_data_end
 
 !------------------------------------
 
- subroutine check_resolution (axis_len)
- integer, intent(in) :: axis_len(:)
+ subroutine check_resolution (fileobj, field_name)
 
-   if (size(axis_len(:)) .lt. 2) then
+ type(FmsNetcdfFile_t), intent(in) :: fileobj
+ character(len=*), intent(in) :: field_name
+
+ integer :: nd
+ integer, allocatable :: siz(:)
+
+   nd = get_variable_num_dimensions(fileobj, field_name)
+
+   if (nd .lt. 2) then
       call error_mesg ('read_climate_nudge_data_mod', 'incorrect number of array dimensions', FATAL)
    endif
-   if (axis_len(1) .ne. global_axis_size(INDEX_LON)) then
+
+   allocate(siz(nd))
+   call get_variable_size(fileobj, field_name, siz)
+
+   if (siz(1) .ne. global_axis_size(INDEX_LON)) then
       call error_mesg ('read_climate_nudge_data_mod', 'incorrect array dimension one', FATAL)
    endif
-   if (axis_len(2) .ne. global_axis_size(INDEX_LAT)) then
+   if (siz(2) .ne. global_axis_size(INDEX_LAT)) then
       call error_mesg ('read_climate_nudge_data_mod', 'incorrect array dimension two', FATAL)
    endif
-   if (size(axis_len(:)) .gt. 3) then
-      if (axis_len(3) .ne. global_axis_size(INDEX_LEV)) then
+   if (nd .gt. 3) then
+      if (siz(3) .ne. global_axis_size(INDEX_LEV)) then
          call error_mesg ('read_climate_nudge_data_mod', 'incorrect array dimension three', FATAL)
       endif
    endif
+   deallocate(siz)
 
  end subroutine check_resolution
 
