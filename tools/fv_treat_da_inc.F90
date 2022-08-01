@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -47,8 +47,9 @@ module fv_treat_da_inc_mod
                                get_tracer_index
   use field_manager_mod, only: MODEL_ATMOS
 
-  use constants_mod,     only: pi=>pi_8, omega, grav, kappa, &
+  use constants_mod,     only: pi=>pi_8, grav, kappa, &
                                rdgas, rvgas, cp_air
+  use fv_arrays_mod,     only: omega ! scaled for small earth
   use fv_arrays_mod,     only: fv_atmos_type, &
                                fv_grid_type, &
                                fv_grid_bounds_type, &
@@ -68,7 +69,8 @@ module fv_treat_da_inc_mod
                                get_var1_double, &
                                get_var2_real,   &
                                get_var3_r4, &
-                               get_var1_real
+                               get_var1_real, &
+                               check_var_exists
   implicit none
   private
 
@@ -82,17 +84,9 @@ contains
 
   !> Do NOT Have delz increment available yet
   !> EMC reads in delz increments but does NOT use them!!
-  subroutine read_da_inc(Atm, fv_domain, bd, npz_in, nq, u, v, q, delp, pt, is_in, js_in, ie_in, je_in )
-    type(fv_atmos_type),       intent(inout) :: Atm
-    type(domain2d),            intent(inout) :: fv_domain
-    type(fv_grid_bounds_type), intent(IN) :: bd
-    integer,                   intent(IN) :: npz_in, nq, is_in, js_in, ie_in, je_in
-    real, intent(inout), dimension(is_in:ie_in,  js_in:je_in+1,npz_in):: u  ! D grid zonal wind (m/s)
-    real, intent(inout), dimension(is_in:ie_in+1,js_in:je_in  ,npz_in):: v  ! D grid meridional wind (m/s)
-    real, intent(inout) :: delp(is_in:ie_in  ,js_in:je_in  ,npz_in)  ! pressure thickness (pascal)
-    real, intent(inout) :: pt(  is_in:ie_in  ,js_in:je_in  ,npz_in)  ! temperature (K)
-    real, intent(inout) :: q(   is_in:ie_in  ,js_in:je_in  ,npz_in, nq)  !
-
+  subroutine read_da_inc(Atm, fv_domain)
+    type(fv_atmos_type), intent(inout) :: Atm
+    type(domain2d),      intent(inout) :: fv_domain
     ! local
     real :: deg2rad
     character(len=128) :: fname
@@ -112,17 +106,19 @@ contains
     integer, dimension(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je+1)::&
         id1_d, id2_d, jdc_d
 
-    integer:: i, j, k, im, jm, km, npt
+    integer:: i, j, k, im, jm, km, npz, npt
     integer:: i1, i2, j1, ncid
     integer:: jbeg, jend
     integer tsize(3)
     real(kind=R_GRID), dimension(2):: p1, p2, p3
     real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
 
-    logical:: found
+    logical:: found, cliptracers
     integer :: is,  ie,  js,  je
     integer :: isd, ied, jsd, jed
-    integer :: sphum, liq_wat, o3mr
+    integer :: isc, iec, jsc, jec
+    integer :: sphum, liq_wat, o3mr, ice_wat
+    integer :: snowwat, rainwat, graupel
 
     is  = Atm%bd%is
     ie  = Atm%bd%ie
@@ -132,8 +128,17 @@ contains
     ied = Atm%bd%ied
     jsd = Atm%bd%jsd
     jed = Atm%bd%jed
+    isc = Atm%bd%isc
+    iec = Atm%bd%iec
+    jsc = Atm%bd%jsc
+    jec = Atm%bd%jec
+
 
     deg2rad = pi/180.
+
+    npz = Atm%npz
+
+    cliptracers = .true.
 
     fname = 'INPUT/'//Atm%flagstruct%res_latlon_dynamics
 
@@ -145,10 +150,10 @@ contains
 
       im = tsize(1); jm = tsize(2); km = tsize(3)
 
-      if (km.ne.npz_in) then
+      if (km.ne.npz) then
         if (is_master()) print *, 'km = ', km
         call mpp_error(FATAL, &
-            '==> Error in read_da_inc: km is not equal to npz_in')
+            '==> Error in read_da_inc: km is not equal to npz')
       endif
 
       if(is_master())  write(*,*) fname, ' DA increment dimensions:', tsize
@@ -190,16 +195,30 @@ contains
     sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
     o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
     liq_wat = get_tracer_index(MODEL_ATMOS, 'liq_wat')
+    ice_wat = get_tracer_index(MODEL_ATMOS, 'ice_wat')
+    rainwat = get_tracer_index(MODEL_ATMOS, 'rainwat')
+    snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
+    graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
+
+    if (is_master()) print *, 'index: sphum,o3mr,ql,qi,qr,qs,qg,nq=', &
+    sphum,o3mr,liq_wat,ice_wat,rainwat,snowwat,graupel,Atm%ncnst
 
     ! perform increments on scalars
     allocate ( wk3(1:im,jbeg:jend, 1:km) )
     allocate (  tp(is:ie,js:je,km) )
 
-    call apply_inc_on_3d_scalar('T_inc',pt, is_in, js_in, ie_in, je_in)
-    call apply_inc_on_3d_scalar('delp_inc',delp, is_in, js_in, ie_in, je_in)
-    call apply_inc_on_3d_scalar('sphum_inc',q(:,:,:,sphum), is_in, js_in, ie_in, je_in)
-    call apply_inc_on_3d_scalar('liq_wat_inc',q(:,:,:,liq_wat), is_in, js_in, ie_in, je_in)
-    call apply_inc_on_3d_scalar('o3mr_inc',q(:,:,:,o3mr), is_in, js_in, ie_in, je_in)
+    call apply_inc_on_3d_scalar('T_inc',Atm%pt,isd,jsd,ied,jed)
+    call apply_inc_on_3d_scalar('delp_inc',Atm%delp,isd,jsd,ied,jed)
+    if (.not. Atm%flagstruct%hydrostatic) then
+        call apply_inc_on_3d_scalar('delz_inc',Atm%delz,isc,jsc,iec,jec)
+    endif
+    call apply_inc_on_3d_scalar('sphum_inc',Atm%q(:,:,:,sphum),isd,jsd,ied,jed,cliptracers)
+    call apply_inc_on_3d_scalar('liq_wat_inc',Atm%q(:,:,:,liq_wat),isd,jsd,ied,jed,cliptracers)
+    if(ice_wat > 0) call apply_inc_on_3d_scalar('icmr_inc',Atm%q(:,:,:,ice_wat),isd,jsd,ied,jed,cliptracers)
+    if(rainwat > 0) call apply_inc_on_3d_scalar('rwmr_inc',Atm%q(:,:,:,rainwat),isd,jsd,ied,jed,cliptracers)
+    if(snowwat > 0) call apply_inc_on_3d_scalar('snmr_inc',Atm%q(:,:,:,snowwat),isd,jsd,ied,jed,cliptracers)
+    if(graupel > 0) call apply_inc_on_3d_scalar('grle_inc',Atm%q(:,:,:,graupel),isd,jsd,ied,jed,cliptracers)
+    call apply_inc_on_3d_scalar('o3mr_inc',Atm%q(:,:,:,o3mr),isd,jsd,ied,jed,cliptracers)
 
     deallocate ( tp )
     deallocate ( wk3 )
@@ -260,7 +279,7 @@ contains
           call get_latlon_vector(p3, ex, ey)
           vd_inc(i,j,k) = u_inc(i,j,k)*inner_prod(e2,ex) + &
                           v_inc(i,j,k)*inner_prod(e2,ey)
-          v(i,j,k) = v(i,j,k) + vd_inc(i,j,k)
+          Atm%v(i,j,k) = Atm%v(i,j,k) + vd_inc(i,j,k)
         enddo
       enddo
     enddo
@@ -313,7 +332,7 @@ contains
           call get_latlon_vector(p3, ex, ey)
           ud_inc(i,j,k) = u_inc(i,j,k)*inner_prod(e1,ex) + &
                           v_inc(i,j,k)*inner_prod(e1,ey)
-          u(i,j,k) = u(i,j,k) + ud_inc(i,j,k)
+          Atm%u(i,j,k) = Atm%u(i,j,k) + ud_inc(i,j,k)
         enddo
       enddo
     enddo
@@ -335,14 +354,30 @@ contains
 
   contains
     !---------------------------------------------------------------------------
-    subroutine apply_inc_on_3d_scalar(field_name,var, is_in, js_in, ie_in, je_in)
+    subroutine apply_inc_on_3d_scalar(field_name,var,is_in,js_in,ie_in,je_in, &
+                                      cliptracers)
       character(len=*), intent(in) :: field_name
       integer, intent(IN) :: is_in, js_in, ie_in, je_in
       real, dimension(is_in:ie_in,js_in:je_in,1:km), intent(inout) :: var
+      logical, intent(in), optional :: cliptracers
+      integer :: ierr
+      real :: clip
+
+      if (field_name == 'sphum_inc' .or. field_name == 'o3mr_inc') then
+         clip=tiny(0.0)
+      else
+         clip=0.0
+      endif
 
       if (is_master()) print*, 'Reading increments ', field_name
-      call get_var3_r4( ncid, field_name, 1,im, jbeg,jend, 1,km, wk3 )
-      if (is_master()) print*,trim(field_name),'before=',var(4,4,30)
+      call check_var_exists(ncid, field_name, ierr)
+      if (ierr == 0) then
+         call get_var3_r4( ncid, field_name, 1,im, jbeg,jend, 1,km, wk3 )
+      else
+         if (is_master()) print *,'warning: no increment for ', &
+             trim(field_name),' found, assuming zero'
+         wk3 = 0.
+      endif
 
       do k=1,km
         do j=js,je
@@ -353,10 +388,11 @@ contains
             tp(i,j,k) = s2c(i,j,1)*wk3(i1,j1  ,k) + s2c(i,j,2)*wk3(i2,j1  ,k)+&
                         s2c(i,j,3)*wk3(i2,j1+1,k) + s2c(i,j,4)*wk3(i1,j1+1,k)
             var(i,j,k) = var(i,j,k)+tp(i,j,k)
+            if (present(cliptracers) .and. cliptracers .and. var(i,j,k) < clip) &
+            var(i,j,k)=clip
           enddo
         enddo
       enddo
-      if (is_master()) print*,trim(field_name),'after=',var(4,4,30),tp(4,4,30)
 
     end subroutine apply_inc_on_3d_scalar
     !---------------------------------------------------------------------------

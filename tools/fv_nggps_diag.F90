@@ -11,7 +11,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -71,11 +71,12 @@ module fv_nggps_diags_mod
  use diag_util_mod,      only: find_input_field
  use tracer_manager_mod, only: get_tracer_names, get_number_tracers, get_tracer_index
  use field_manager_mod,  only: MODEL_ATMOS
- use fv_diagnostics_mod, only: range_check, dbzcalc,max_vv,get_vorticity, &
-                               max_uh,max_vorticity,bunkers_vector,       &
-                               helicity_relative_CAPS,max_vorticity_hy1
+ use fv_diagnostics_mod, only: range_check, max_vv, get_vorticity, &
+                               max_uh, bunkers_vector, helicity_relative_CAPS
  use fv_arrays_mod,      only: fv_atmos_type
  use mpp_domains_mod,    only: domain1d, domainUG
+ use rad_ref_mod,        only: rad_ref
+ use fv_eta_mod,         only: get_eta_level
 #ifdef MULTI_GASES
  use multi_gases_mod,  only:  virq
 #endif
@@ -107,6 +108,7 @@ module fv_nggps_diags_mod
  integer :: id_maxvort02,kstt_maxvort02,kend_maxvort02
  integer :: isco, ieco, jsco, jeco, npzo, ncnsto
  integer :: isdo, iedo, jsdo, jedo
+ integer :: mp_top
  integer :: nlevs
  logical :: hydrostatico
  integer, allocatable :: id_tracer(:), all_axes(:)
@@ -149,7 +151,9 @@ contains
     type(fv_atmos_type), intent(inout), target :: Atm(:)
     integer, intent(in)         :: axes(4)
     type(time_type), intent(in) :: Time
+
     integer :: n, i, j, nz
+    real, allocatable, dimension(:) :: pfull, phalf
 
     n = 1
     ncnsto = Atm(1)%ncnst
@@ -167,6 +171,20 @@ contains
     rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
     snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
     graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+
+    allocate ( pfull(npzo) )
+    allocate ( phalf(npzo+1) )
+    call get_eta_level(Atm(1)%npz, Atm(1)%flagstruct%p_ref, pfull, phalf, Atm(1)%ak, Atm(1)%bk, 0.01)
+
+    mp_top = 1
+    do i=1,npzo
+       if ( pfull(i) > 30.e2 ) then
+            mp_top = i
+            exit
+       endif
+    enddo
+    deallocate (phalf)
+    deallocate (pfull)
 
 !--------------------------------------------------------------
 ! Register main prognostic fields: ps, (u,v), t, omega (dp/dt)
@@ -639,9 +657,10 @@ contains
 
     !--- 3-D Reflectivity field
     if ( rainwat > 0 .and. id_dbz>0) then
-      call dbzcalc(Atm(n)%q, Atm(n)%pt, Atm(n)%delp, Atm(n)%peln, Atm(n)%delz, &
+      call rad_ref(Atm(n)%q, Atm(n)%pt, Atm(n)%delp, Atm(n)%peln, Atm(n)%delz, &
                    wk, wk2, allmax, Atm(n)%bd, npzo, Atm(n)%ncnst, Atm(n)%flagstruct%hydrostatic, &
-                   zvir, .false., .false., .false., .true., Atm(n)%flagstruct%do_inline_mp ) ! GFDL MP has constant N_0 intercept
+                   zvir, .false., .false., .false., .true., Atm(n)%flagstruct%do_inline_mp, &
+                   sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, mp_top) !  GFDL MP has constant N_0 intercept
       call store_data(id_dbz, wk, Time, kstt_dbz, kend_dbz)
     endif
 
@@ -819,6 +838,75 @@ contains
     endif
    endif
  end subroutine fv_nggps_tavg
+!
+ subroutine max_vorticity_hy1(is, ie, js, je, km, vort, maxvorthy1)
+   integer, intent(in):: is, ie, js, je, km
+   real, intent(in), dimension(is:ie,js:je,km):: vort
+   real, intent(inout), dimension(is:ie,js:je):: maxvorthy1
+   integer i, j, k
+
+   do j=js,je
+      do i=is,ie
+         maxvorthy1(i,j)=max(maxvorthy1(i,j),vort(i,j,km))
+      enddo  ! i-loop
+   enddo   ! j-loop
+ end subroutine max_vorticity_hy1
+!
+ subroutine max_vorticity(is, ie, js, je, ng, km, zvir, sphum, delz, q, hydrostatic, &
+                          pt, peln, phis, grav, vort, maxvort, z_bot, z_top)
+   integer, intent(in):: is, ie, js, je, ng, km, sphum
+   real, intent(in):: grav, zvir, z_bot, z_top
+   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt
+   real, intent(in), dimension(is:ie,js:je,km):: vort
+   real, intent(in):: delz(is:ie,js:je,km)
+   real, intent(in):: q(is-ng:ie+ng,js-ng:je+ng,km,*)
+   real, intent(in):: phis(is-ng:ie+ng,js-ng:je+ng)
+   real, intent(in):: peln(is:ie,km+1,js:je)
+   logical, intent(in):: hydrostatic
+   real, intent(inout), dimension(is:ie,js:je):: maxvort
+
+   real:: rdg
+   real, dimension(is:ie):: zh, dz, zh0
+   integer i, j, k,klevel
+   logical below(is:ie)
+
+   rdg = rdgas / grav
+
+   do j=js,je
+
+      do i=is,ie
+         zh(i) = 0.
+         below(i) = .true.
+         zh0(i) = 0.
+
+     K_LOOP:do k=km,1,-1
+            if ( hydrostatic ) then
+#ifdef MULTI_GASES
+                 dz(i) = rdg*pt(i,j,k)*virq(q(i,j,k,1:num_gas))*(peln(i,k+1,j)-peln(i,k,j))
+#else
+                 dz(i) = rdg*pt(i,j,k)*(1.+zvir*q(i,j,k,sphum))*(peln(i,k+1,j)-peln(i,k,j))
+#endif
+            else
+                 dz(i) = - delz(i,j,k)
+            endif
+            zh(i) = zh(i) + dz(i)
+            if (zh(i) <= z_bot ) continue
+            if (zh(i) > z_bot .and. below(i)) then
+               maxvort(i,j) = max(maxvort(i,j),vort(i,j,k))
+               below(i) = .false.
+            elseif ( zh(i) < z_top ) then
+               maxvort(i,j) = max(maxvort(i,j),vort(i,j,k))
+            else
+               maxvort(i,j) = max(maxvort(i,j),vort(i,j,k))
+               EXIT K_LOOP
+            endif
+         enddo K_LOOP
+!      maxvorthy1(i,j)=max(maxvorthy1(i,j),vort(i,j,km))
+      enddo  ! i-loop
+   enddo   ! j-loop
+
+
+ end subroutine max_vorticity
 !
  subroutine store_data(id, work, Time, nstt, nend)
    integer, intent(in)         :: id
