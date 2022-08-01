@@ -41,7 +41,7 @@ module external_ic_mod
    use tracer_manager_mod, only: get_tracer_names, get_number_tracers, get_tracer_index
    use tracer_manager_mod, only: set_tracer_profile
    use field_manager_mod,  only: MODEL_ATMOS
-
+   use platform_mod,       only: r4_kind, r8_kind
    use constants_mod,     only: pi=>pi_8, omega, grav, kappa, rdgas, rvgas, cp_air
    use fv_arrays_mod,     only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type, R_GRID
    use fv_diagnostics_mod,only: prt_maxmin, prt_gb_nh_sh, prt_height
@@ -1493,7 +1493,7 @@ contains
         call ncep2fms(im, jm, lon, lat, wk2)
         if( is_master() ) then
           write(*,*) 'External_ic_mod: i_sst=', i_sst, ' j_sst=', j_sst
-          call pmaxmin( 'SST_ncep_fms',  sst_ncep, i_sst, j_sst, 1.)
+          call pmaxmin( 'SST_ncep_fms',  real(sst_ncep), i_sst, j_sst, 1.)
         endif
 #endif
       endif  !(read_ts)
@@ -2463,10 +2463,10 @@ contains
 
 ! Share the load
           if(is_master()) call pmaxmin( 'ZS_data', gz0, im,    jm, 1./grav)
-          if(mpp_pe()==1) call pmaxmin( 'U_data',   u0, im*jm, km, 1.)
-          if(mpp_pe()==1) call pmaxmin( 'V_data',   v0, im*jm, km, 1.)
-          if(mpp_pe()==2) call pmaxmin( 'T_data',   t0, im*jm, km, 1.)
-          if(mpp_pe()==3) call pmaxmin( 'DEL-P',   dp0, im*jm, km, 0.01)
+          if(mpp_pe()==1) call pmaxmin( 'U_data',   reshape(u0, (/ im*jm, km /)), im*jm, km, 1.)
+          if(mpp_pe()==1) call pmaxmin( 'V_data',   reshape(v0, (/ im*jm, km /)), im*jm, km, 1.)
+          if(mpp_pe()==2) call pmaxmin( 'T_data',   reshape(t0, (/ im*jm, km /)), im*jm, km, 1.)
+          if(mpp_pe()==3) call pmaxmin( 'DEL-P',   reshape(dp0, (/ im*jm, km /)), im*jm, km, 0.01)
           call close_file(Latlon_dyn)
 
       else
@@ -2504,8 +2504,8 @@ contains
       deallocate ( u0 )
       deallocate ( v0 )
 
-      if(mpp_pe()==4) call pmaxmin( 'UA', ua, im*jm, km, 1.)
-      if(mpp_pe()==4) call pmaxmin( 'VA', va, im*jm, km, 1.)
+      if(mpp_pe()==4) call pmaxmin( 'UA', reshape(ua, (/ im*jm, km /)), im*jm, km, 1.)
+      if(mpp_pe()==4) call pmaxmin( 'VA', reshape(va, (/ im*jm, km /)), im*jm, km, 1.)
 
       do j=1,jm
          do i=1,im
@@ -3903,8 +3903,6 @@ contains
 
   end subroutine d2a3d
 
-
-
   subroutine pmaxmin( qname, a, im, jm, fac )
 
       integer, intent(in):: im, jm
@@ -3940,7 +3938,7 @@ contains
 
  end subroutine pmaxmin
 
-subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
+ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
       character(len=*), intent(in)::  qname
       integer, intent(in):: is, ie, js, je
       integer, intent(in):: km
