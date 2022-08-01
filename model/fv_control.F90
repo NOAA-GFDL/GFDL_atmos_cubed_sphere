@@ -448,7 +448,6 @@ module fv_control_mod
      call read_input_nml(alt_input_nml_path=Atm(this_grid)%nml_filename) !re-reads into internal namelist
      call read_namelist_fv_grid_nml
      call read_namelist_fv_core_nml(Atm(this_grid)) ! do options processing here too?
-     call read_namelist_test_case_nml
      !TODO test_case_nml moved to test_cases
      call read_namelist_test_case_nml
      call mpp_get_current_pelist(Atm(this_grid)%pelist, commID=commID) ! for commID
