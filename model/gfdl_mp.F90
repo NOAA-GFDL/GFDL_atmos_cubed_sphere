@@ -1775,7 +1775,7 @@ subroutine subgrid_z_proc (ks, ke, p1, den, denfac, dts, rh_adj, tz, qv, &
             evap = min (ql (k), factor * dq0 / (1. + tcp3 (k) * dwsdt))
         elseif (do_cond_timescale) then
            factor = min ( 1., fac_v2l * ( 10. * (-dq0) / qsw ))
-           evap = - min ( qv (k), factor * -dq0 / (1. + tcp3 (k) * dwsdt))
+           evap = - min ( qv (k), factor * (-dq0) / (1. + tcp3 (k) * dwsdt))
         else ! condensate all excess vapor into cloud water
             evap = dq0 / (1. + tcp3 (k) * dwsdt)
         endif
