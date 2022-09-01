@@ -1,0 +1,45 @@
+name: Compile SHiELD SOLO and run tests
+
+on:
+  pull_request:
+    branches:
+      - main
+jobs:
+  buildstep:
+    runs-on: [self-hosted]
+    name: SOLO SHiELD build
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix:
+        runpath: [/pw/storage/PWscripts]
+        runscript: [FV3checkoutStartClusters.py, FV3swStartClusters.py, FV3nhStartClusters.py, FV3hydroStartClusters.py]
+    steps:
+      - env:
+          RUNPATH: ${{ matrix.runpath }}
+          RUNSCRIPT: ${{ matrix.runscript }}
+        run: python3 $RUNPATH/$RUNSCRIPT $GITHUB_REF
+        
+  tests:
+    runs-on: [self-hosted]
+    name: SOLO SHiELD test suite
+    needs: [buildstep]
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        runpath: [/pw/storage/PWscripts]
+        runscript: [FV3C128r20.solo.superCStartClusters.py]
+    steps:
+      - env:
+          RUNPATH: ${{ matrix.runpath }}
+          RUNSCRIPT: ${{ matrix.runscript }}
+        run: python3 $RUNPATH/$RUNSCRIPT $GITHUB_REF
+        
+  shutdowncluster:
+    runs-on: [self-hosted]
+    name: Shutdown cluster
+    if: always()
+    needs: [buildstep, tests]
+    steps:
+      - run: python3 /home/Lauren.Chilutti/pw/storage/PWscripts/stopClusters.py ci_fv3
