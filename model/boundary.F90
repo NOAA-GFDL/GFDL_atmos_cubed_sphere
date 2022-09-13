@@ -2214,20 +2214,13 @@ contains
 
    real :: var_nest_3d(is_n:ie_n+istag,js_n:je_n+jstag,1)
    real :: var_coarse_3d(isd_p:ied_p+istag,jsd_p:jed_p+jstag,1)
+   integer( KIND = 8) :: ptr_nest=0
+   integer( KIND = 8) :: ptr_coarse=0
    pointer(ptr_nest, var_nest_3d)
    pointer(ptr_coarse, var_coarse_3d)
 
-   if (child_proc .and. size(var_nest) > 1) then
-           ptr_nest = LOC(var_nest)
-   else
-           ptr_nest = 0
-   endif
-
-   if (parent_proc .and. size(var_coarse) > 1) then
-           ptr_coarse = LOC(var_coarse)
-   else
-           ptr_coarse = 0
-   endif
+   if (child_proc .and. size(var_nest) > 1) ptr_nest = LOC(var_nest)
+   if (parent_proc .and. size(var_coarse) > 1) ptr_coarse = LOC(var_coarse)
 
    call update_coarse_grid_mpp(var_coarse_3d, var_nest_3d, &
         nest_domain, dx, dy, area, &
