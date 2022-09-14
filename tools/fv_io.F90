@@ -333,7 +333,7 @@ contains
     ! fname = 'fv_srf_wnd.res'//trim(stile_name)//'.nc
     elseif (Atm%Rsf_restart_is_open) then
        call fv_io_register_axis(Atm%Rsf_restart, numx=numx, numy=numy, xpos=xpos, ypos=ypos)
-       call register_restart_field(Atm%Rsf_restart, 'u_srf', Atm%u_srf, dim_names_3d2)
+       call register_restart_field(Atm%Rsf_restart, 'u_srf_TEST', Atm%u_srf, dim_names_3d2)
        call register_restart_field(Atm%Rsf_restart, 'v_srf', Atm%v_srf, dim_names_3d2)
 #ifdef SIM_PHYS
        call register_restart_field(Atm%Rsf_restart, 'ts', Atm%ts, dim_names_3d2)
