@@ -258,7 +258,7 @@ contains
           call register_variable_attribute(Atm%Fv_restart, dim_names_2d(2), "cartesian_axis", "T", str_len=1)
           call write_data(Atm%Fv_restart, dim_names_2d(2), 1)
        endif
-       call register_restart_field (Atm%Fv_restart, 'ak', Atm%ak(:), dim_names_2d)
+       !call register_restart_field (Atm%Fv_restart, 'ak', Atm%ak(:), dim_names_2d)
        call register_restart_field (Atm%Fv_restart, 'bk', Atm%bk(:), dim_names_2d)
        if (.not. Atm%Fv_restart%is_readonly) then !if writing file
          call register_variable_attribute(Atm%Fv_restart, 'ak', "long_name", "ak", str_len=len("ak"))
