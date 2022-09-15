@@ -333,13 +333,13 @@ contains
     ! fname = 'fv_srf_wnd.res'//trim(stile_name)//'.nc
     elseif (Atm%Rsf_restart_is_open) then
        call fv_io_register_axis(Atm%Rsf_restart, numx=numx, numy=numy, xpos=xpos, ypos=ypos)
-       call register_restart_field(Atm%Rsf_restart, 'u_srf_TEST', Atm%u_srf, dim_names_3d2)
+       call register_restart_field(Atm%Rsf_restart, 'u_srf', Atm%u_srf, dim_names_3d2)
        call register_restart_field(Atm%Rsf_restart, 'v_srf', Atm%v_srf, dim_names_3d2)
 #ifdef SIM_PHYS
        call register_restart_field(Atm%Rsf_restart, 'ts', Atm%ts, dim_names_3d2)
 #endif
        if (.not. Atm%Rsf_restart%is_readonly) then !if writing file
-         call register_variable_attribute(Atm%Rsf_restart, 'u_srf', "long_name", "u_srf", str_len=len("u_srf"))
+         call register_variable_attribute(Atm%Rsf_restart, 'u_srf', "long_name", "u_srf_test", str_len=len("u_srf_test"))
          call register_variable_attribute(Atm%Rsf_restart, 'u_srf', "units", "none", str_len=len("none"))
          call register_variable_attribute(Atm%Rsf_restart, 'v_srf', "long_name", "v_srf", str_len=len("v_srf"))
          call register_variable_attribute(Atm%Rsf_restart, 'v_srf', "units", "none", str_len=len("none"))
