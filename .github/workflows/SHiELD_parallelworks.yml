@@ -49,4 +49,4 @@ jobs:
     if: always()
     needs: [checkout, build, test]
     steps:
-      - run: python3 /home/Lauren.Chilutti/pw/storage/PWscripts/stopClusters.py ci_fv3
+      - run: python3 /home/Lauren.Chilutti/pw/storage/PWscripts/stopClusters.py cifv3
