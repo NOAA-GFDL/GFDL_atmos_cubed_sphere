@@ -54,7 +54,6 @@ module fv_control_mod
    use fv_mp_mod,           only: mp_start, domain_decomp, mp_assign_gid, global_nest_domain
    use fv_mp_mod,           only: broadcast_domains, mp_barrier, is_master, setup_master, grids_master_procs, tile_fine
    use fv_mp_mod,           only: MAX_NNEST, MAX_NTILE
-   !use test_cases_mod,      only: test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size
    use test_cases_mod,      only: read_namelist_test_case_nml
    use fv_timing_mod,       only: timing_on, timing_off, timing_init, timing_prt
    use mpp_domains_mod,     only: domain2D
@@ -389,7 +388,7 @@ module fv_control_mod
            Atm(n)%nml_filename = 'input.nml'
         endif
         if (.not. file_exists(Atm(n)%nml_filename)) then
-           call mpp_error(FATAL, "Could not find nested grid namelist "//Atm(n)%nml_filename)
+           call mpp_error(FATAL, "Could not find namelist "//Atm(n)%nml_filename)
         endif
      enddo
 
@@ -445,22 +444,10 @@ module fv_control_mod
 
      call set_namelist_pointers(Atm(this_grid))
      call fv_diag_init_gn(Atm(this_grid))
-#ifdef INTERNAL_FILE_NML
-     if (this_grid .gt. 1) then
-        write(Atm(this_grid)%nml_filename,'(A4, I2.2)') 'nest', this_grid
-        if (.not. file_exists('input_'//trim(Atm(this_grid)%nml_filename)//'.nml')) then
-           call mpp_error(FATAL, "Could not find nested grid namelist "//'input_'//trim(Atm(this_grid)%nml_filename)//'.nml')
-        endif
-     else
-        Atm(this_grid)%nml_filename = ''
-     endif
-     call read_input_nml(Atm(this_grid)%nml_filename) !re-reads into internal namelist
-#endif
+     call read_input_nml(alt_input_nml_path=Atm(this_grid)%nml_filename) !re-reads into internal namelist
      call read_namelist_fv_grid_nml
      call read_namelist_fv_core_nml(Atm(this_grid)) ! do options processing here too?
-     call read_namelist_test_case_nml(Atm(this_grid)%nml_filename)
-     !TODO test_case_nml moved to test_cases
-     call read_namelist_test_case_nml(Atm(this_grid)%nml_filename)
+     call read_namelist_test_case_nml
      call mpp_get_current_pelist(Atm(this_grid)%pelist, commID=commID) ! for commID
      call mp_start(commID,halo_update_type)
 
@@ -1050,7 +1037,6 @@ module fv_control_mod
 198    format(A,i2.2,A,i4.4,'x',i4.4,'x',i1.1,'-',f9.3)
 199    format(A,i3.3)
 
-       !if (.not. (nested .or. regional)) alpha = alpha*pi  !TODO for test_case_nml
 
        !allocate(Atm%neststruct%child_grids(size(Atm))) !TODO want to remove
        !Atm(N)%neststruct%child_grids = .false.
