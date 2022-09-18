@@ -263,6 +263,7 @@ contains
 !-----------------------------------------------------------------------
 !***  Regional boundary data is obtained from the external BC file.
 !-----------------------------------------------------------------------
+      use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
       use netcdf
 !-----------------------------------------------------------------------
       implicit none
@@ -765,8 +766,8 @@ contains
 !***  reference pressure profile.  Compute it now.
 !-----------------------------------------------------------------------
 !
-      allocate(pref(npz+1))
-      allocate(dum1d(npz+1))
+      allocate(pref(npz+1)) ; pref=real_snan
+      allocate(dum1d(npz+1)) ; dum1d=real_snan
 !
       ps1=101325.
       pref(npz+1)=ps1
@@ -1307,8 +1308,8 @@ contains
       enddo
       enddo
 !
-      allocate (ak_in(1:levp+1))                                           !<-- Save the input vertical structure for
-      allocate (bk_in(1:levp+1))                                           !    remapping BC updates during the forecast.
+      allocate (ak_in(1:levp+1)) ; ak_in=real_snan                         !<-- Save the input vertical structure for
+      allocate (bk_in(1:levp+1)) ; bk_in=real_snan                         !    remapping BC updates during the forecast.
       do k=1,levp+1
         ak_in(k)=ak(k)
         bk_in(k)=bk(k)
@@ -1402,9 +1403,9 @@ contains
                             ,isd, ied, jsd, jed                         &
                             ,Atm%npx, Atm%npy )
 !
-      allocate (wk2(levp+1,2))
-      allocate (ak_in(levp+1))                                               !<-- Save the input vertical structure for
-      allocate (bk_in(levp+1))                                               !    remapping BC updates during the forecast.
+      allocate (wk2(levp+1,2)) ; wk2=real_snan
+      allocate (ak_in(levp+1)) ; ak_in=real_snan                             !<-- Save the input vertical structure for
+      allocate (bk_in(levp+1)) ; bk_in=real_snan                             !    remapping BC updates during the forecast.
       if (Atm%flagstruct%hrrrv3_ic) then
         if (open_file(Grid_input, 'INPUT/hrrr_ctrl.nc', "read", pelist=pes)) then
           call read_data(Grid_input,'vcoord',wk2)
@@ -1552,6 +1553,7 @@ contains
 !***  Regional boundary data is obtained from the external BC file.
 !-----------------------------------------------------------------------
 !-----------------------------------------------------------------------
+      use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
       implicit none
 !-----------------------------------------------------------------------
 !
@@ -1908,7 +1910,45 @@ contains
 !***  the integration levels.
 !-----------------------------------------------------------------------
 !
-        allocate(ps_reg(is_input:ie_input,js_input:je_input)) ; ps_reg=-9999999 ! for now don't set to snan until remap dwinds is changed
+        allocate(ps_reg(is_input:ie_input,js_input:je_input))              !<-- Sfc pressure in domain's boundary region derived from BC files
+!
+!-----------------------------------------------------------------------
+!*** Whoever did this intentionally added a bug to the code and hid it.
+!*** I'm retaining this code, commented out, as a reminder to others.
+!-----------------------------------------------------------------------
+!
+        !ps_reg=-9999999 ! for now don't set to snan until remap dwinds is changed
+        ps_reg=real_snan
+!
+!-----------------------------------------------------------------------
+!*** Initialize the domain boundary surface pressure to the input
+!*** surface pressure on points remap dwinds can't handle.
+!*** When data is missing or invalid, use nearby points. If all nearby
+!*** points are invalid, use standard atmospheric pressure.
+!-----------------------------------------------------------------------
+!
+        do j=js_input,je_input
+          do i=is_input,ie_input
+            if(ieee_is_finite(ps_input(i,j,1))) then
+              ps_reg(i,j) = ps_input(i,j,1)
+
+            ! When there is invalid data at a point, search nearby points.
+            else if(ieee_is_finite(ps_input(max(is_input,i-1),j,1))) then
+              ps_reg(i,j) = ps_input(max(is_input,i-1),j,1)
+            else if(ieee_is_finite(ps_input(min(ie_input,i+1),j,1))) then
+              ps_reg(i,j) = ps_input(min(ie_input,i+1),j,1)
+            else if(ieee_is_finite(ps_input(i,max(js_input,j-1),1))) then
+              ps_reg(i,j) = ps_input(i,max(js_input,j-1),1)
+            else if(ieee_is_finite(ps_input(i,min(je_input,j+1),1))) then
+              ps_reg(i,j) = ps_input(i,min(je_input,j+1),1)
+
+            else
+              ! Handle severe bugs in reader or input conditions with
+              ! standard atmospheric pressure. (Should never get here.)
+              ps_reg(i,j) = 1e5
+            endif
+          enddo
+        enddo
 !
 !-----------------------------------------------------------------------
 !***  We have the boundary variables from the BC file on the levels
@@ -1942,16 +1982,7 @@ contains
           endif
         endif
 !
-        if(nside==2)then
-          if(south_bc)then
-            call_remap=.true.
-            side='south'
-            bc_side_t1=>BC_t1%south
-            bc_side_t0=>BC_t0%south
-          endif
-        endif
-!
-          if(nside==3)then
+          if(nside==2)then
             if(east_bc)then
               call_remap=.true.
               side='east '
@@ -1960,12 +1991,21 @@ contains
             endif
           endif
 !
-        if(nside==4)then
+        if(nside==3)then
           if(west_bc)then
             call_remap=.true.
             side='west '
             bc_side_t1=>BC_t1%west
             bc_side_t0=>BC_t0%west
+          endif
+        endif
+!
+        if(nside==4)then
+          if(south_bc)then
+            call_remap=.true.
+            side='south'
+            bc_side_t1=>BC_t1%south
+            bc_side_t0=>BC_t0%south
           endif
         endif
 !
@@ -2045,7 +2085,59 @@ contains
               endif
            endif
 
+!
+
            if(nside==2)then
+              if(east_bc)then
+                if (js == 1) then
+                    jstart = 1
+                else
+                    jstart = jsd
+                endif
+                if (je == npy-1) then
+                   jend = je
+                else
+                   jend = jed
+                endif
+
+
+                do k=1,npz
+                do j=jstart,jend
+                do i=isd,0
+                     delz_regBC%west_t1(i,j,k) = bc_side_t1%delz_BC(i,j,k)
+                     delz_regBC%west_t0(i,j,k) = bc_side_t0%delz_BC(i,j,k)
+                enddo
+                enddo
+                enddo
+              endif
+            endif
+
+          if(nside==3)then
+              if(west_bc)then
+                if (js == 1) then
+                    jstart = 1
+                else
+                    jstart = jsd
+                endif
+                if (je == npy-1) then
+                   jend = je
+                else
+                   jend = jed
+                endif
+
+
+                do k=1,npz
+                do j=jstart,jend
+                do i=npx,ied
+                     delz_regBC%east_t1(i,j,k) = bc_side_t1%delz_BC(i,j,k)
+                     delz_regBC%east_t0(i,j,k) = bc_side_t0%delz_BC(i,j,k)
+                enddo
+                enddo
+                enddo
+              endif
+            endif
+
+           if(nside==4)then
               if(south_bc)then
                 if (is == 1) then
                    istart = 1
@@ -2092,58 +2184,6 @@ contains
                 endif
               endif
            endif
-
-!
-
-           if(nside==3)then
-              if(east_bc)then
-                if (js == 1) then
-                    jstart = 1
-                else
-                    jstart = jsd
-                endif
-                if (je == npy-1) then
-                   jend = je
-                else
-                   jend = jed
-                endif
-
-
-                do k=1,npz
-                do j=jstart,jend
-                do i=isd,0
-                     delz_regBC%west_t1(i,j,k) = bc_side_t1%delz_BC(i,j,k)
-                     delz_regBC%west_t0(i,j,k) = bc_side_t0%delz_BC(i,j,k)
-                enddo
-                enddo
-                enddo
-              endif
-            endif
-
-          if(nside==4)then
-              if(west_bc)then
-                if (js == 1) then
-                    jstart = 1
-                else
-                    jstart = jsd
-                endif
-                if (je == npy-1) then
-                   jend = je
-                else
-                   jend = jed
-                endif
-
-
-                do k=1,npz
-                do j=jstart,jend
-                do i=npx,ied
-                     delz_regBC%east_t1(i,j,k) = bc_side_t1%delz_BC(i,j,k)
-                     delz_regBC%east_t0(i,j,k) = bc_side_t0%delz_BC(i,j,k)
-                enddo
-                enddo
-                enddo
-              endif
-            endif
 
         endif
 !
@@ -2225,23 +2265,6 @@ contains
           endif
 !
           if(nside==2)then
-            if(south_bc)then
-              call_remap=.true.
-              bc_side_t1=>BC_t1%south
-!
-              is_u=Atm%regional_bc_bounds%is_south_uvs
-              ie_u=Atm%regional_bc_bounds%ie_south_uvs
-              js_u=Atm%regional_bc_bounds%js_south_uvs
-              je_u=Atm%regional_bc_bounds%je_south_uvs
-!
-              is_v=Atm%regional_bc_bounds%is_south_uvw
-              ie_v=Atm%regional_bc_bounds%ie_south_uvw
-              js_v=Atm%regional_bc_bounds%js_south_uvw
-              je_v=Atm%regional_bc_bounds%je_south_uvw
-            endif
-          endif
-!
-          if(nside==3)then
             if(east_bc)then
               call_remap=.true.
               bc_side_t1=>BC_t1%east
@@ -2258,7 +2281,7 @@ contains
             endif
           endif
 !
-          if(nside==4)then
+          if(nside==3)then
             if(west_bc)then
               call_remap=.true.
               bc_side_t1=>BC_t1%west
@@ -2272,6 +2295,23 @@ contains
               ie_v=Atm%regional_bc_bounds%ie_west_uvw
               js_v=Atm%regional_bc_bounds%js_west_uvw
               je_v=Atm%regional_bc_bounds%je_west_uvw
+            endif
+          endif
+!
+          if(nside==4)then
+            if(south_bc)then
+              call_remap=.true.
+              bc_side_t1=>BC_t1%south
+!
+              is_u=Atm%regional_bc_bounds%is_south_uvs
+              ie_u=Atm%regional_bc_bounds%ie_south_uvs
+              js_u=Atm%regional_bc_bounds%js_south_uvs
+              je_u=Atm%regional_bc_bounds%je_south_uvs
+!
+              is_v=Atm%regional_bc_bounds%is_south_uvw
+              ie_v=Atm%regional_bc_bounds%ie_south_uvw
+              js_v=Atm%regional_bc_bounds%js_south_uvw
+              je_v=Atm%regional_bc_bounds%je_south_uvw
             endif
           endif
 !
@@ -2767,17 +2807,6 @@ contains
         endif
 !
         if(nside==2)then
-          if(south_bc)then
-            call_set=.true.
-            bc_side_t1=>BC_t1%south
-            is0=lbound(BC_t1%south%divgd_BC,1)
-            ie0=ubound(BC_t1%south%divgd_BC,1)
-            js0=lbound(BC_t1%south%divgd_BC,2)
-            je0=ubound(BC_t1%south%divgd_BC,2)
-          endif
-        endif
-!
-        if(nside==3)then
           if(east_bc)then
             call_set=.true.
             bc_side_t1=>BC_t1%east
@@ -2788,7 +2817,7 @@ contains
           endif
         endif
 !
-        if(nside==4)then
+        if(nside==3)then
           if(west_bc)then
             call_set=.true.
             bc_side_t1=>BC_t1%west
@@ -2796,6 +2825,17 @@ contains
             ie0=ubound(BC_t1%west%divgd_BC,1)
             js0=lbound(BC_t1%west%divgd_BC,2)
             je0=ubound(BC_t1%west%divgd_BC,2)
+          endif
+        endif
+!
+        if(nside==4)then
+          if(south_bc)then
+            call_set=.true.
+            bc_side_t1=>BC_t1%south
+            is0=lbound(BC_t1%south%divgd_BC,1)
+            ie0=ubound(BC_t1%south%divgd_BC,1)
+            js0=lbound(BC_t1%south%divgd_BC,2)
+            je0=ubound(BC_t1%south%divgd_BC,2)
           endif
         endif
 !
@@ -2860,17 +2900,6 @@ contains
         endif
 !
         if(nside==2)then
-          if(south_bc)then
-            call_set=.true.
-            bc_side_t1=>BC_t1%south
-            is0=lbound(BC_t1%south%q_con_BC,1)
-            ie0=ubound(BC_t1%south%q_con_BC,1)
-            js0=lbound(BC_t1%south%q_con_BC,2)
-            je0=ubound(BC_t1%south%q_con_BC,2)
-          endif
-        endif
-!
-        if(nside==3)then
           if(east_bc)then
             call_set=.true.
             bc_side_t1=>BC_t1%east
@@ -2881,7 +2910,7 @@ contains
           endif
         endif
 !
-        if(nside==4)then
+        if(nside==3)then
           if(west_bc)then
             call_set=.true.
             bc_side_t1=>BC_t1%west
@@ -2889,6 +2918,17 @@ contains
             ie0=ubound(BC_t1%west%q_con_BC,1)
             js0=lbound(BC_t1%west%q_con_BC,2)
             je0=ubound(BC_t1%west%q_con_BC,2)
+          endif
+        endif
+!
+        if(nside==4)then
+          if(south_bc)then
+            call_set=.true.
+            bc_side_t1=>BC_t1%south
+            is0=lbound(BC_t1%south%q_con_BC,1)
+            ie0=ubound(BC_t1%south%q_con_BC,1)
+            js0=lbound(BC_t1%south%q_con_BC,2)
+            je0=ubound(BC_t1%south%q_con_BC,2)
           endif
         endif
 !
@@ -2948,23 +2988,23 @@ contains
         endif
 !
         if(nside==2)then
-          if(south_bc)then
-            call_compute=.true.
-            bc_side_t1=>BC_t1%south
-          endif
-        endif
-!
-        if(nside==3)then
           if(east_bc)then
             call_compute=.true.
             bc_side_t1=>BC_t1%east
           endif
         endif
 !
-        if(nside==4)then
+        if(nside==3)then
           if(west_bc)then
             call_compute=.true.
             bc_side_t1=>BC_t1%west
+          endif
+        endif
+!
+        if(nside==4)then
+          if(south_bc)then
+            call_compute=.true.
+            bc_side_t1=>BC_t1%south
           endif
         endif
 !
@@ -3179,34 +3219,11 @@ contains
           endif
         endif
 !
-!-----------
-!***  South
-!-----------
-!
-        if(nside==2)then
-          if(south_bc)then
-            call_get_var=.true.
-!
-            var_name=trim(var_name_root)//"_top"
-!
-            i_start_array=is_input
-            i_end_array  =ie_input
-            j_start_array=je_input-nhalo_data-nrows_blend+1
-            j_end_array  =je_input
-!
-            i_start_data=i_start_array+nhalo_data
-            i_count=i_end_array-i_start_array+1
-            j_start_data=1
-            j_count=j_end_array-j_start_array+1
-!
-          endif
-        endif
-!
 !----------
 !***  East
 !----------
 !
-        if(nside==3)then
+        if(nside==2)then
           if(east_bc)then
             call_get_var=.true.
 !
@@ -3250,7 +3267,7 @@ contains
 !***  West
 !----------
 !
-        if(nside==4)then
+        if(nside==3)then
           if(west_bc)then
             call_get_var=.true.
 !
@@ -3281,6 +3298,29 @@ contains
             else
               j_start_data=j_start_array
             endif
+            j_count=j_end_array-j_start_array+1
+!
+          endif
+        endif
+!
+!-----------
+!***  South
+!-----------
+!
+        if(nside==4)then
+          if(south_bc)then
+            call_get_var=.true.
+!
+            var_name=trim(var_name_root)//"_top"
+!
+            i_start_array=is_input
+            i_end_array  =ie_input
+            j_start_array=je_input-nhalo_data-nrows_blend+1
+            j_end_array  =je_input
+!
+            i_start_data=i_start_array+nhalo_data
+            i_count=i_end_array-i_start_array+1
+            j_start_data=1
             j_count=j_end_array-j_start_array+1
 !
           endif
@@ -3545,6 +3585,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         je=js_bc+nhalo_data+nrows_blend-1
       endif
 !
+      pn0 = real_snan
       allocate(pe0(is:ie,km+1)) ; pe0=real_snan
       allocate(qn1(is:ie,npz)) ; qn1=real_snan
       allocate(dp2(is:ie,npz)) ; dp2=real_snan
@@ -3575,13 +3616,14 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
            pn(k) = 2.*pn(km+1) - pn(l)
         enddo
 
+        pst = real_snan
         do k=km+k2-1, 2, -1
           if( phis_reg(i,j).le.gz(k) .and. phis_reg(i,j).ge.gz(k+1) ) then
             pst = pn(k) + (pn(k+1)-pn(k))*(gz(k)-phis_reg(i,j))/(gz(k)-gz(k+1))
-            go to 123
+            exit
           endif
         enddo
-  123   ps(i,j) = exp(pst)
+        ps(i,j) = exp(pst)
 
      enddo   ! i-loop
 
@@ -4431,61 +4473,11 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           endif
         endif
 !
-!-----------
-!***  South
-!-----------
-!
-        if(nside==2)then
-          if(south_bc)then
-            call_interp=.true.
-            bc_side_t0=>bc_south_t0
-            bc_side_t1=>bc_south_t1
-!
-            i1=isd
-            i2=ied
-            if(trim(bc_vbl_name)=='uc'.or.trim(bc_vbl_name)=='v'.or.trim(bc_vbl_name)=='divgd')then
-              i2=ied+1
-            endif
-!
-            j1=je+1
-            j2=jed
-            if(trim(bc_vbl_name)=='u'.or.trim(bc_vbl_name)=='vc'.or.trim(bc_vbl_name)=='divgd')then
-              j1=je+2
-              j2=jed+1
-            endif
-!
-            i1_blend=is
-            i2_blend=ie
-            IF ( east_bc ) THEN
-            i1_blend=is
-            ELSE
-            i1_blend=isd !is-nhalo_model
-            ENDIF
-            IF ( west_bc ) THEN
-            i2_blend=ie
-            ELSE
-            i2_blend=ied ! ie+nhalo_model
-            ENDIF
-           if(trim(bc_vbl_name)=='uc'.or.trim(bc_vbl_name)=='v'.or.trim(bc_vbl_name)=='divgd')then
-!              i2_blend=ie+1
-              i2_blend=i2_blend+1
-            endif
-            j2_blend=je
-            if(trim(bc_vbl_name)=='u'.or.trim(bc_vbl_name)=='vc'.or.trim(bc_vbl_name)=='divgd')then
-              j2_blend=je+1
-            endif
-            j1_blend=j2_blend-nrows_blend_user+1
-            i_bc=-9e9
-            j_bc=j1
-!
-          endif
-        endif
-!
 !----------
 !***  East
 !----------
 !
-        if(nside==3)then
+        if(nside==2)then
           if(east_bc)then
             call_interp=.true.
             bc_side_t0=>bc_east_t0
@@ -4541,7 +4533,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  West
 !----------
 !
-        if(nside==4)then
+        if(nside==3)then
           if(west_bc)then
             call_interp=.true.
             bc_side_t0=>bc_west_t0
@@ -4592,6 +4584,56 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
             endif
             i_bc=i1
             j_bc=-9e9
+!
+          endif
+        endif
+!
+!-----------
+!***  South
+!-----------
+!
+        if(nside==4)then
+          if(south_bc)then
+            call_interp=.true.
+            bc_side_t0=>bc_south_t0
+            bc_side_t1=>bc_south_t1
+!
+            i1=isd
+            i2=ied
+            if(trim(bc_vbl_name)=='uc'.or.trim(bc_vbl_name)=='v'.or.trim(bc_vbl_name)=='divgd')then
+              i2=ied+1
+            endif
+!
+            j1=je+1
+            j2=jed
+            if(trim(bc_vbl_name)=='u'.or.trim(bc_vbl_name)=='vc'.or.trim(bc_vbl_name)=='divgd')then
+              j1=je+2
+              j2=jed+1
+            endif
+!
+            i1_blend=is
+            i2_blend=ie
+            IF ( east_bc ) THEN
+            i1_blend=is
+            ELSE
+            i1_blend=isd !is-nhalo_model
+            ENDIF
+            IF ( west_bc ) THEN
+            i2_blend=ie
+            ELSE
+            i2_blend=ied ! ie+nhalo_model
+            ENDIF
+           if(trim(bc_vbl_name)=='uc'.or.trim(bc_vbl_name)=='v'.or.trim(bc_vbl_name)=='divgd')then
+!              i2_blend=ie+1
+              i2_blend=i2_blend+1
+            endif
+            j2_blend=je
+            if(trim(bc_vbl_name)=='u'.or.trim(bc_vbl_name)=='vc'.or.trim(bc_vbl_name)=='divgd')then
+              j2_blend=je+1
+            endif
+            j1_blend=j2_blend-nrows_blend_user+1
+            i_bc=-9e9
+            j_bc=j1
 !
           endif
         endif
@@ -4758,6 +4800,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  forecast time that is within the interval bracketed by the
 !***  two current boundary region states.
 !---------------------------------------------------------------------
+      use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
       implicit none
 !---------------------------------------------------------------------
 !
@@ -4864,27 +4907,12 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           do j=j1_blend,j2_blend
             factor_dist=exp(-(blend_exp1+blend_exp2*(j-j_bc-1)*rdenom)) !<-- Exponential falloff of blending weights.
             do i=i1_blend,i2_blend
+              if(.not.ieee_is_finite(array(i,j,k))) then
+                cycle ! Bad data from caller
+              endif
               blend_value=bc_t0(i,j,k)                                &  !<-- Blend data interpolated
                          +(bc_t1(i,j,k)-bc_t0(i,j,k))*fraction_interval  !    between t0 and t1.
 !
-              array(i,j,k)=(1.-factor_dist)*array(i,j,k)+factor_dist*blend_value
-            enddo
-          enddo
-        enddo
-      endif
-!
-!-----------
-!***  South
-!-----------
-!
-      if(nside==2.and.south_bc)then
-        rdenom=1./real(Max(1,j_bc-j1_blend-1))
-        do k=1,ubnd_z
-          do j=j1_blend,j2_blend
-            factor_dist=exp(-(blend_exp1+blend_exp2*(j_bc-j-1)*rdenom)) !<-- Exponential falloff of blending weights.
-            do i=i1_blend,i2_blend
-              blend_value=bc_t0(i,j,k)                                &  !<-- Blend data interpolated
-                         +(bc_t1(i,j,k)-bc_t0(i,j,k))*fraction_interval  !    between t0 and t1.
               array(i,j,k)=(1.-factor_dist)*array(i,j,k)+factor_dist*blend_value
             enddo
           enddo
@@ -4895,12 +4923,15 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  East
 !----------
 !
-      if(nside==3.and.east_bc)then
+      if(nside==2.and.east_bc)then
         rdenom=1./real(Max(1,i2_blend-i_bc-1))
         do k=1,ubnd_z
           do j=j1_blend,j2_blend
             do i=i1_blend,i2_blend
 !
+              if(.not.ieee_is_finite(array(i,j,k))) then
+                cycle ! Bad data from caller
+              endif
               blend_value=bc_t0(i,j,k)                                  &  !<-- Blend data interpolated
                          +(bc_t1(i,j,k)-bc_t0(i,j,k))*fraction_interval    !    between t0 and t1.
 !
@@ -4916,17 +4947,41 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  West
 !----------
 !
-      if(nside==4.and.west_bc)then
+      if(nside==3.and.west_bc)then
         rdenom=1./real(Max(1, i_bc-i1_blend-1))
         do k=1,ubnd_z
           do j=j1_blend,j2_blend
             do i=i1_blend,i2_blend
 !
+              if(.not.ieee_is_finite(array(i,j,k))) then
+                cycle ! Bad data from caller
+              endif
               blend_value=bc_t0(i,j,k)                                  &  !<-- Blend data interpolated
                          +(bc_t1(i,j,k)-bc_t0(i,j,k))*fraction_interval    !    between t0 and t1.
 !
               factor_dist=exp(-(blend_exp1+blend_exp2*(i_bc-i-1)*rdenom))  !<-- Exponential falloff of blending weights.
 !
+              array(i,j,k)=(1.-factor_dist)*array(i,j,k)+factor_dist*blend_value
+            enddo
+          enddo
+        enddo
+      endif
+!
+!-----------
+!***  South
+!-----------
+!
+      if(nside==4.and.south_bc)then
+        rdenom=1./real(Max(1,j_bc-j1_blend-1))
+        do k=1,ubnd_z
+          do j=j1_blend,j2_blend
+            factor_dist=exp(-(blend_exp1+blend_exp2*(j_bc-j-1)*rdenom)) !<-- Exponential falloff of blending weights.
+            do i=i1_blend,i2_blend
+              if(.not.ieee_is_finite(array(i,j,k))) then
+                cycle ! Bad data from caller
+              endif
+              blend_value=bc_t0(i,j,k)                                &  !<-- Blend data interpolated
+                         +(bc_t1(i,j,k)-bc_t0(i,j,k))*fraction_interval  !    between t0 and t1.
               array(i,j,k)=(1.-factor_dist)*array(i,j,k)+factor_dist*blend_value
             enddo
           enddo
@@ -5011,29 +5066,6 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         endif
 !
         if(nside==2)then
-          if(south_bc)then
-            move=.true.
-            bc_side_t0=>BC_t0%south
-            bc_side_t1=>BC_t1%south
-!
-            is_c=bnds%is_south                                               !<--
-            ie_c=bnds%ie_south                                               !  South BC index limits
-            js_c=bnds%js_south                                               !  for centers of grid cells.
-            je_c=bnds%je_south                                               !<--
-!
-            is_s=bnds%is_south_uvs                                           !<--
-            ie_s=bnds%ie_south_uvs                                           !  South BC index limits
-            js_s=bnds%js_south_uvs                                           !  for winds on N/S sides of grid cells.
-            je_s=bnds%je_south_uvs                                           !<--
-!
-            is_w=bnds%is_south_uvw                                           !<--
-            ie_w=bnds%ie_south_uvw                                           !  South BC index limits
-            js_w=bnds%js_south_uvw                                           !  for winds on E/W sides of grid cells.
-            je_w=bnds%je_south_uvw                                           !<--
-          endif
-        endif
-!
-        if(nside==3)then
           if(east_bc)then
             move=.true.
             bc_side_t0=>BC_t0%east
@@ -5056,7 +5088,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           endif
         endif
 !
-        if(nside==4)then
+        if(nside==3)then
           if(west_bc)then
             move=.true.
             bc_side_t0=>BC_t0%west
@@ -5076,6 +5108,29 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
             ie_w=bnds%ie_west_uvw                                            !  West BC index limits
             js_w=bnds%js_west_uvw                                            !  for winds on E/W sides of grid cells.
             je_w=bnds%je_west_uvw                                            !<--
+          endif
+        endif
+!
+        if(nside==4)then
+          if(south_bc)then
+            move=.true.
+            bc_side_t0=>BC_t0%south
+            bc_side_t1=>BC_t1%south
+!
+            is_c=bnds%is_south                                               !<--
+            ie_c=bnds%ie_south                                               !  South BC index limits
+            js_c=bnds%js_south                                               !  for centers of grid cells.
+            je_c=bnds%je_south                                               !<--
+!
+            is_s=bnds%is_south_uvs                                           !<--
+            ie_s=bnds%ie_south_uvs                                           !  South BC index limits
+            js_s=bnds%js_south_uvs                                           !  for winds on N/S sides of grid cells.
+            je_s=bnds%je_south_uvs                                           !<--
+!
+            is_w=bnds%is_south_uvw                                           !<--
+            ie_w=bnds%ie_south_uvw                                           !  South BC index limits
+            js_w=bnds%js_south_uvw                                           !  for winds on E/W sides of grid cells.
+            je_w=bnds%je_south_uvw                                           !<--
           endif
         endif
 !
@@ -5727,7 +5782,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     nyg = npy + 2*halo + jext
     nz = size(field,dim=3)
 
-    allocate( glob_field(isg-halo:ieg+halo+iext, jsg-halo:jeg+halo+jext, 1:nz) )
+    allocate( glob_field(isg-halo:ieg+halo+iext, jsg-halo:jeg+halo+jext, 1:nz) ) ; glob_field=real_snan
 
     isection_s = is
     isection_e = ie
@@ -5846,7 +5901,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     nxg = npx + 2*halo + iext
     nyg = npy + 2*halo + jext
 
-    allocate( glob_field(isg-halo:ieg+halo+iext, jsg-halo:jeg+halo+jext) )
+    allocate( glob_field(isg-halo:ieg+halo+iext, jsg-halo:jeg+halo+jext) ) ; glob_field=real_snan
 
     isection_s = is
     isection_e = ie
@@ -6154,6 +6209,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         nz=size(fields_core(nv)%ptr,3)
 !
         allocate( global_field(istart_g:iend_g, jstart_g:jend_g, 1:nz) )
+        global_field=real_snan
 !
 !-----------------------------------------------------------------------
 !***  What is the local extent of the variable on the task subdomain?
@@ -6258,6 +6314,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       nz=size(fields_tracers(1)%ptr,3)
 !
       allocate( global_field(istart_g:iend_g, jstart_g:jend_g, 1:nz) )
+      global_field=real_snan
 !
 !-----------------------------------------------------------------------
 !***  What is the local extent of the variable on the task subdomain?
@@ -6614,10 +6671,10 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     ! buf1 and buf4 must be of the same size (sim. for buf2 and buf3).
     ! Changes to the code below should be tested with debug flags
     ! enabled (out-of-bounds reads/writes).
-    allocate(buf1(1:24*npz))
-    allocate(buf2(1:36*npz))
-    allocate(buf3(1:36*npz))
-    allocate(buf4(1:24*npz))
+    allocate(buf1(1:24*npz)) ; buf1=real_snan
+    allocate(buf2(1:36*npz)) ; buf2=real_snan
+    allocate(buf3(1:36*npz)) ; buf3=real_snan
+    allocate(buf4(1:24*npz)) ; buf4=real_snan
 
 ! FIXME: MPI_COMM_WORLD
 
