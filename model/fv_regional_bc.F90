@@ -1913,42 +1913,21 @@ contains
         allocate(ps_reg(is_input:ie_input,js_input:je_input))              !<-- Sfc pressure in domain's boundary region derived from BC files
 !
 !-----------------------------------------------------------------------
-!*** Whoever did this intentionally added a bug to the code and hid it.
-!*** I'm retaining this code, commented out, as a reminder to others.
+!*** Whoever did this intentionally added a bug to the code and hid it,
+!*** to avoid fixing other bugs elsewhere.
+!*** The result is that RRFS debug mode was broken for a long time
+!*** and some boundary data was gibberish.
+!*** I'm retaining this code, commented out, as a reminder to others
+!*** of what NOT to do.
 !-----------------------------------------------------------------------
 !
         !ps_reg=-9999999 ! for now don't set to snan until remap dwinds is changed
+!
+!-----------------------------------------------------------------------
+!*** Initialize ps_reg to real_snan to detect errors later in code.
+!-----------------------------------------------------------------------
+!
         ps_reg=real_snan
-!
-!-----------------------------------------------------------------------
-!*** Initialize the domain boundary surface pressure to the input
-!*** surface pressure on points remap dwinds can't handle.
-!*** When data is missing or invalid, use nearby points. If all nearby
-!*** points are invalid, use standard atmospheric pressure.
-!-----------------------------------------------------------------------
-!
-        do j=js_input,je_input
-          do i=is_input,ie_input
-            if(ieee_is_finite(ps_input(i,j,1))) then
-              ps_reg(i,j) = ps_input(i,j,1)
-
-            ! When there is invalid data at a point, search nearby points.
-            else if(ieee_is_finite(ps_input(max(is_input,i-1),j,1))) then
-              ps_reg(i,j) = ps_input(max(is_input,i-1),j,1)
-            else if(ieee_is_finite(ps_input(min(ie_input,i+1),j,1))) then
-              ps_reg(i,j) = ps_input(min(ie_input,i+1),j,1)
-            else if(ieee_is_finite(ps_input(i,max(js_input,j-1),1))) then
-              ps_reg(i,j) = ps_input(i,max(js_input,j-1),1)
-            else if(ieee_is_finite(ps_input(i,min(je_input,j+1),1))) then
-              ps_reg(i,j) = ps_input(i,min(je_input,j+1),1)
-
-            else
-              ! Handle severe bugs in reader or input conditions with
-              ! standard atmospheric pressure. (Should never get here.)
-              ps_reg(i,j) = 1e5
-            endif
-          enddo
-        enddo
 !
 !-----------------------------------------------------------------------
 !***  We have the boundary variables from the BC file on the levels
@@ -3586,6 +3565,11 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       endif
 !
       pn0 = real_snan
+      pn1 = real_snan
+      gz_fv = real_snan
+      gz = real_snan
+      pn = real_snan
+!
       allocate(pe0(is:ie,km+1)) ; pe0=real_snan
       allocate(qn1(is:ie,npz)) ; qn1=real_snan
       allocate(dp2(is:ie,npz)) ; dp2=real_snan
@@ -3636,10 +3620,10 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  the Atm object.
 !---------------------------------------------------------------------------------
 !
-      is=lbound(Atm%ps,1)
-      ie=ubound(Atm%ps,1)
-      js=lbound(Atm%ps,2)
-      je=ubound(Atm%ps,2)
+      is=min(ie,max(is,lbound(Atm%ps,1)))
+      ie=min(ie,max(is,ubound(Atm%ps,1)))
+      js=min(je,max(js,lbound(Atm%ps,2)))
+      je=min(je,max(js,ubound(Atm%ps,2)))
 !
       do j=js,je
       do i=is,ie
