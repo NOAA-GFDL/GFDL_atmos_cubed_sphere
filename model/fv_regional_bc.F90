@@ -3482,7 +3482,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                        ,npz   &                  !<-- # of levels in final 3-D integration variables
                        ,ncnst                    !<-- # of tracer variables
   real,    intent(in):: ak0(km+1), bk0(km+1)
-  real,    intent(in), dimension(is_bc:ie_bc,js_bc:je_bc):: psc
+  real,    intent(inout), dimension(is_bc:ie_bc,js_bc:je_bc):: psc
   real,    intent(in), dimension(is_bc:ie_bc,js_bc:je_bc,km):: t_in
   real,    intent(in), dimension(is_bc:ie_bc,js_bc:je_bc,km):: omga
   real,    intent(in), dimension(is_bc:ie_bc,js_bc:je_bc,km,ncnst):: qa
@@ -3510,7 +3510,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
   real(kind=R_GRID), dimension(is_bc:ie_bc,km+1):: pn0
   real(kind=R_GRID):: pst
 !!! High-precision
-  integer i,ie,is,j,je,js,k,l,m, k2,iq
+  integer i,ie,is,j,je,js,k,l,m, k2,iq, iss,ies,jss,jes, isv,iev,jsv,jev
   integer  sphum, o3mr, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, cld_amt
 !
 !---------------------------------------------------------------------------------
@@ -3544,26 +3544,77 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  This is needed to obtain pressures that will surround the wind points.
 !---------------------------------------------------------------------------------
 !
-      is=is_bc
+      isv=is_bc
+      iss=isv
       if(side=='west')then
-        is=ie_bc-nhalo_data-nrows_blend+1
+        isv=ie_bc-nhalo_data-nrows_blend
+        iss=isv+1
       endif
 !
-      ie=ie_bc
+      iev=ie_bc
+      ies=iev
       if(side=='east')then
-        ie=is_bc+nhalo_data+nrows_blend-1
+        iev=is_bc+nhalo_data+nrows_blend
+        ies=iev-1
       endif
 !
-      js=js_bc
+      jsv=js_bc
+      jss=jsv
       if(side=='south')then
-        js=je_bc-nhalo_data-nrows_blend+1
+        jsv=je_bc-nhalo_data-nrows_blend
+        jss=jsv+1
       endif
 !
-      je=je_bc
+      jev=je_bc
+      jes=jev
       if(side=='north')then
-        je=js_bc+nhalo_data+nrows_blend-1
+        jev=js_bc+nhalo_data+nrows_blend
+        jes=jev-1
       endif
 !
+!---------------------------------------------------------------------------------
+!*** Workaround for incomplete 'ps' in boundary condition files. Copy from
+!*** scalar halo regions (s) to velocity halo regions (v) beyond them.
+!---------------------------------------------------------------------------------
+!
+      if(side=='west')then
+        do j=jss,jes
+          psc(isv,j) = psc(iss,j)
+        enddo
+        psc(iev,jsv) = psc(ies,jss)
+        psc(iev,jev) = psc(ies,jes)
+      endif
+!
+      if(side=='east')then
+        do j=jss,jes
+          psc(iev,j) = psc(ies,j)
+        enddo
+        psc(iev,jev) = psc(ies,jes)
+        psc(iev,jev) = psc(ies,jes)
+      endif
+!
+      if(side=='south')then
+        do i=iss,ies
+          psc(i,jsv) = psc(i,jss)
+        enddo
+        psc(isv,jsv) = psc(iss,jss)
+        psc(iev,jsv) = psc(ies,jss)
+      endif
+!
+      if(side=='north')then
+        do i=iss,ies
+          psc(i,jev) = psc(i,jes)
+        enddo
+        psc(isv,jev) = psc(iss,jes)
+        psc(iev,jev) = psc(ies,jes)
+      endif
+!
+      is = iss
+      js = jss
+      ie = ies
+      je = jes
+!
+! Ensure uninitialized memory isn't used
       pn0 = real_snan
       pn1 = real_snan
       gz_fv = real_snan
@@ -3614,16 +3665,53 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !---------------------------------------------------------------------------------
      enddo jloop1
 !---------------------------------------------------------------------------------
+!
+!---------------------------------------------------------------------------------
+!*** Workaround for incomplete 'ps' in boundary condition files. Copy from
+!*** scalar halo regions (s) to velocity halo regions (v) beyond them.
+!---------------------------------------------------------------------------------
+!
+      if(side=='west')then
+        do j=jss,jes
+          ps(isv,j) = ps(iss,j)
+        enddo
+        ps(iev,jsv) = ps(ies,jss)
+        ps(iev,jev) = ps(ies,jes)
+      endif
+!
+      if(side=='east')then
+        do j=jss,jes
+          ps(iev,j) = ps(ies,j)
+        enddo
+        ps(iev,jev) = ps(ies,jes)
+        ps(iev,jev) = ps(ies,jes)
+      endif
+!
+      if(side=='south')then
+        do i=iss,ies
+          ps(i,jsv) = ps(i,jss)
+        enddo
+        ps(isv,jsv) = ps(iss,jss)
+        ps(iev,jsv) = ps(ies,jss)
+      endif
+!
+      if(side=='north')then
+        do i=iss,ies
+          ps(i,jev) = ps(i,jes)
+        enddo
+        ps(isv,jev) = ps(iss,jes)
+        ps(iev,jev) = ps(ies,jes)
+      endif
 
 !---------------------------------------------------------------------------------
 !***  Transfer values from the expanded boundary array for sfc pressure into
 !***  the Atm object.
 !---------------------------------------------------------------------------------
 !
-      is=min(ie,max(is,lbound(Atm%ps,1)))
-      ie=min(ie,max(is,ubound(Atm%ps,1)))
-      js=min(je,max(js,lbound(Atm%ps,2)))
-      je=min(je,max(js,ubound(Atm%ps,2)))
+      is=min(ubound(Atm%ps,1),max(lbound(Atm%ps,1),isv))
+      ie=min(ubound(Atm%ps,1),max(lbound(Atm%ps,1),iev))
+      js=min(ubound(Atm%ps,2),max(lbound(Atm%ps,2),jsv))
+      je=min(ubound(Atm%ps,2),max(lbound(Atm%ps,2),jev))
 !
       do j=js,je
       do i=is,ie
@@ -3960,12 +4048,12 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !------
      do k=1,km+1
         do i=is_u,ie_u
-           pe0(i,k) = ak0(k) + bk0(k)*0.5*(psc(i,j-1)+psc(i,j))
+           pe0(i,k) = ak0(k) + bk0(k)*psc(i,j)
         enddo
      enddo
      do k=1,npz+1
         do i=is_u,ie_u
-           pe1(i,k) = Atm%ak(k) + Atm%bk(k)*0.5*(psc(i,j-1)+psc(i,j))
+           pe1(i,k) = Atm%ak(k) + Atm%bk(k)*psc(i,j)
         enddo
      enddo
      call mappm(km, pe0(is_u:ie_u,1:km+1), ud(is_u:ie_u,j,1:km), npz, pe1(is_u:ie_u,1:npz+1),   &
@@ -4001,12 +4089,12 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
      do k=1,km+1
         do i=is_v,ie_v
-           pe0(i,k) = ak0(k) + bk0(k)*0.5*(psc(i-1,j)+psc(i,j))
+           pe0(i,k) = ak0(k) + bk0(k)*psc(i,j)
         enddo
      enddo
      do k=1,npz+1
         do i=is_v,ie_v
-           pe1(i,k) = Atm%ak(k) + Atm%bk(k)*0.5*(psc(i-1,j)+psc(i,j))
+           pe1(i,k) = Atm%ak(k) + Atm%bk(k)*psc(i,j)
         enddo
      enddo
      call mappm(km, pe0(is_v:ie_v,1:km+1), vd(is_v:ie_v,j,1:km), npz, pe1(is_v:ie_v,1:npz+1),  &
