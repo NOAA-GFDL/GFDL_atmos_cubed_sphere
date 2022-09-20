@@ -1914,11 +1914,10 @@ contains
 !
 !-----------------------------------------------------------------------
 !*** Whoever did this intentionally added a bug to the code and hid it,
-!*** to avoid fixing other bugs elsewhere.
-!*** The result is that RRFS debug mode was broken for a long time
-!*** and some boundary data was gibberish.
-!*** I'm retaining this code, commented out, as a reminder to others
-!*** of what NOT to do.
+!*** to conceal fixing other bugs elsewhere. This produced gibberish
+!*** initial surface pressure, and made it impossible to test RRFS in
+!*** debug mode for a long time. I'm retaining this code, commented out,
+!*** as a reminder to others of what NOT to do.
 !-----------------------------------------------------------------------
 !
         !ps_reg=-9999999 ! for now don't set to snan until remap dwinds is changed
@@ -3578,35 +3577,27 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !---------------------------------------------------------------------------------
 !
       if(side=='west')then
-        do j=jss,jes
+        do j=jsv,jev
           psc(isv,j) = psc(iss,j)
         enddo
-        psc(iev,jsv) = psc(ies,jss)
-        psc(iev,jev) = psc(ies,jes)
       endif
 !
       if(side=='east')then
-        do j=jss,jes
+        do j=jsv,jev
           psc(iev,j) = psc(ies,j)
         enddo
-        psc(iev,jev) = psc(ies,jes)
-        psc(iev,jev) = psc(ies,jes)
       endif
 !
       if(side=='south')then
-        do i=iss,ies
+        do i=isv,iev
           psc(i,jsv) = psc(i,jss)
         enddo
-        psc(isv,jsv) = psc(iss,jss)
-        psc(iev,jsv) = psc(ies,jss)
       endif
 !
       if(side=='north')then
-        do i=iss,ies
+        do i=isv,iev
           psc(i,jev) = psc(i,jes)
         enddo
-        psc(isv,jev) = psc(iss,jes)
-        psc(iev,jev) = psc(ies,jes)
       endif
 !
       is = iss
@@ -3672,35 +3663,27 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !---------------------------------------------------------------------------------
 !
       if(side=='west')then
-        do j=jss,jes
+        do j=jsv,jev
           ps(isv,j) = ps(iss,j)
         enddo
-        ps(iev,jsv) = ps(ies,jss)
-        ps(iev,jev) = ps(ies,jes)
       endif
 !
       if(side=='east')then
-        do j=jss,jes
+        do j=jsv,jev
           ps(iev,j) = ps(ies,j)
         enddo
-        ps(iev,jev) = ps(ies,jes)
-        ps(iev,jev) = ps(ies,jes)
       endif
 !
       if(side=='south')then
-        do i=iss,ies
+        do i=isv,iev
           ps(i,jsv) = ps(i,jss)
         enddo
-        ps(isv,jsv) = ps(iss,jss)
-        ps(iev,jsv) = ps(ies,jss)
       endif
 !
       if(side=='north')then
-        do i=iss,ies
+        do i=isv,iev
           ps(i,jev) = ps(i,jes)
         enddo
-        ps(isv,jev) = ps(iss,jes)
-        ps(iev,jev) = ps(ies,jes)
       endif
 
 !---------------------------------------------------------------------------------
