@@ -235,6 +235,29 @@ module fv_regional_mod
       character(len=100) :: grid_data='grid.tile7.halo4.nc'             &
                            ,oro_data ='oro_data.tile7.halo4.nc'
 
+!
+!-----------------------------------------------------------------------
+!***  All arrays and variables that contain boundary data should be
+!***  initialized to real_snan or dbl_snan (as appropriate) because that
+!***  is the only way to detect errors in the boundary generation.
+!***  Usual approaches like detecting out-of-bounds accesses won't work
+!***  because the arrays may be larger than the boundaries.
+!***  
+!***  Regions of the arrays that should have valid boundary data should
+!***  never contain a NaN. If they do, then there is an error that has
+!***  not yet been identified. In particular, the blending code has an
+!***  unidentified problem.
+!***
+!***  Presently, the blending code is asked to blend data in regions
+!***  that contain NaN. This means either:
+!***
+!***  1) not all boundary areas are filled in, OR
+!***  2) the blending code is accessing beyond the boundaries
+!***
+!***  The reasons for this are unknown, but the workaround does work:
+!***  detect the NaNs and don't use those points in blending.
+!-----------------------------------------------------------------------
+!
 #ifdef OVERLOAD_R4
       real, parameter:: real_snan=real(Z'FFBFFFFF') ! <-- One of many ways to express 32-bit signalling NaN
       real, parameter:: real_qnan=real(Z'FFFFFFFF') ! <-- One of many ways to express 32-bit quiet NaN
@@ -263,28 +286,22 @@ contains
 !
 !-----------------------------------------------------------------------
 !*** This routine is equivalent to ".not. ieee_is_finite(val)"
-!*** which does not work with signaling Not a Number (NaN) in gfortran
-!*** before version 12. It has the added advantage of being easily
-!*** inlined and vectorized. It will detect all possible infinite and
-!*** not-a-number (NaN) values in standard-conforming 32 bit and 64 bit
-!*** floating-point. This is used to detect access beyond boundary
-!*** regions in the blending code, which has no control over how the
-!*** caller stores data in memory.
-!***
-!*** The gfortran bug is documented here:
+!*** which returns .true. for infinite and Not a Number (NaN), or
+!*** .false. otherwise. It's here as a workaround for this gfortran bug:
 !***
 !***    https://gcc.gnu.org/bugzilla/show_bug.cgi?id=82207
 !***
-!*** A sufficiently intelligent compiler will optimize this function
-!*** away, into three assembly instructions that can be vectorized.
-!***
-!*** Technically, this routine needs Fortran 2008 due to shiftr() but
-!*** that intrinsic is widely implemented in compilers that lack
-!*** support for Fortran versions of the current millennium.
+!*** The compiler must use IEEE-standard floating point for this to work
 !-----------------------------------------------------------------------
 !
     use, intrinsic :: iso_c_binding, only: c_int32_t, c_int64_t
     implicit none
+!
+!-----------------------------------------------------------------------
+! Portability note: shiftr() is part of Fortran 2008, but it is widely
+! supported in older compilers.
+!-----------------------------------------------------------------------
+!
     intrinsic shiftr, transfer, iand ! <--- for the benefit of older compilers
 !
 !-----------------------------------------------------------------------
@@ -314,11 +331,9 @@ contains
 #endif
 !
 !-----------------------------------------------------------------------
-! For standard-conforming floating point numbers, non-finite values
-! follow a mandatory bit pattern. They have the mantissa sign bit on,
-! and all exponent bits on, except the exponent sign which can be on
-! or off. This will work with IEEE standard floating-point types
-! besides 32 and 64, but we don't use those other types.
+! For IEEE standard floating point numbers, non-finite values follow
+! a mandatory bit pattern. They have the mantissa sign bit on, and all
+! exponent bits on, except the exponent sign which can be on or off.
 !-----------------------------------------------------------------------
 !
     is_not_finite = iand(shiftr(transfer(val,check),shift),check)==check
@@ -1982,12 +1997,7 @@ contains
 !-----------------------------------------------------------------------
 !
         allocate(ps_reg(is_input:ie_input,js_input:je_input))              !<-- Sfc pressure in domain's boundary region derived from BC files
-!
-!-----------------------------------------------------------------------
-!*** Initialize ps_reg to real_snan to detect errors later in code.
-!-----------------------------------------------------------------------
-!
-        ps_reg=real_snan
+        ps_reg=real_snan !<-- detect access of uninitialized pressures
 !
 !-----------------------------------------------------------------------
 !***  We have the boundary variables from the BC file on the levels
