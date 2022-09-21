@@ -236,11 +236,14 @@ module fv_regional_mod
                            ,oro_data ='oro_data.tile7.halo4.nc'
 
 #ifdef OVERLOAD_R4
-      real, parameter:: real_snan=real(Z'FFBFFFFF')
+      real, parameter:: real_snan=real(Z'FFBFFFFF') ! <-- One of many ways to express 32-bit signalling NaN
+      real, parameter:: real_qnan=real(Z'FFFFFFFF') ! <-- One of many ways to express 32-bit quiet NaN
 #else
-      real, parameter:: real_snan=real(Z'FFF7FFFFFFFFFFFF')
+      real, parameter:: real_snan=real(Z'FFF7FFFFFFFFFFFF') ! <-- One of many ways to express 64-bit signalling NaN
+      real, parameter:: real_qnan=real(Z'FFFFFFFFFFFFFFFF') ! <-- One of many ways to express 64-bit quiet NaN
 #endif
-      real(kind=R_GRID), parameter:: dbl_snan=real(Z'FFF7FFFFFFFFFFFF',kind=R_GRID)
+      real(kind=R_GRID), parameter:: dbl_snan=real(Z'FFF7FFFFFFFFFFFF',kind=R_GRID) ! <-- One of many ways to express 64-bit signalling NaN
+      real(kind=R_GRID), parameter:: dbl_qnan=real(Z'FFFFFFFFFFFFFFFF',kind=R_GRID) ! <-- One of many ways to express 64-bit quiet NaN
 
       interface dump_field
         module procedure dump_field_3d
@@ -260,12 +263,13 @@ contains
 !
 !-----------------------------------------------------------------------
 !*** This routine is equivalent to ".not. ieee_is_finite(val)"
-!*** which does not work with signaling NaN in gfortran < version 12.
-!*** It has the added advantage of being easily inlined and vectorized.
-!*** It will detect all possible infinite and not-a-number (NaN) values
-!*** in standard-conforming 32 bit and 64 bit floating-point. This is
-!*** used to detect access beyond boundary regions in the blending code,
-!*** which has no control over how the caller stores data in memory.
+!*** which does not work with signaling Not a Number (NaN) in gfortran
+!*** before version 12. It has the added advantage of being easily
+!*** inlined and vectorized. It will detect all possible infinite and
+!*** not-a-number (NaN) values in standard-conforming 32 bit and 64 bit
+!*** floating-point. This is used to detect access beyond boundary
+!*** regions in the blending code, which has no control over how the
+!*** caller stores data in memory.
 !***
 !*** The gfortran bug is documented here:
 !***
@@ -310,7 +314,7 @@ contains
 #endif
 !
 !-----------------------------------------------------------------------
-! For standard-conforming floating point numbers, non-finite numbers
+! For standard-conforming floating point numbers, non-finite values
 ! follow a mandatory bit pattern. They have the mantissa sign bit on,
 ! and all exponent bits on, except the exponent sign which can be on
 ! or off. This will work with IEEE standard floating-point types
@@ -2225,6 +2229,21 @@ contains
 !-----------------------------------------------------------------------
         enddo sides_scalars
 !-----------------------------------------------------------------------
+
+!
+!-----------------------------------------------------------------------
+!***  The caller may eventually print or write Atm%ps to disk, so it
+!***  cannot contain signalling NaN. Here, we replace all non-finite
+!***  data with quiet NaN instead.
+!-----------------------------------------------------------------------
+!
+      do j=lbound(Atm%ps,2),ubound(Atm%ps,2)
+        do i=lbound(Atm%ps,1),ubound(Atm%ps,1)
+          if(is_not_finite(Atm%ps(i,j))) then
+            Atm%ps(i,j) = real_qnan
+          endif
+        enddo
+      enddo
 !
 !-----------------------------------------------------------------------
 !***  Now that we have the pressure throughout the boundary region
