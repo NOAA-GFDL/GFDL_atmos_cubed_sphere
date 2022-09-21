@@ -1980,16 +1980,6 @@ contains
         allocate(ps_reg(is_input:ie_input,js_input:je_input))              !<-- Sfc pressure in domain's boundary region derived from BC files
 !
 !-----------------------------------------------------------------------
-!*** Whoever did this intentionally added a bug to the code and hid it,
-!*** to conceal fixing other bugs elsewhere. This produced gibberish
-!*** initial surface pressure, and made it impossible to test RRFS in
-!*** debug mode for a long time. I'm retaining this code, commented out,
-!*** as a reminder to others of what NOT to do.
-!-----------------------------------------------------------------------
-!
-        !ps_reg=-9999999 ! for now don't set to snan until remap dwinds is changed
-!
-!-----------------------------------------------------------------------
 !*** Initialize ps_reg to real_snan to detect errors later in code.
 !-----------------------------------------------------------------------
 !
