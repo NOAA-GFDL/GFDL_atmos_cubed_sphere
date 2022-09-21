@@ -256,6 +256,75 @@ contains
 
 !-----------------------------------------------------------------------
 !
+  logical function is_not_finite(val)
+!
+!-----------------------------------------------------------------------
+!*** This routine is equivalent to ".not. ieee_is_finite(val)"
+!*** which does not work with signaling NaN in gfortran < version 12.
+!*** It has the added advantage of being easily inlined and vectorized.
+!*** It will detect all possible infinite and not-a-number (NaN) values
+!*** in standard-conforming 32 bit and 64 bit floating-point. This is
+!*** used to detect access beyond boundary regions in the blending code,
+!*** which has no control over how the caller stores data in memory.
+!***
+!*** The gfortran bug is documented here:
+!***
+!***    https://gcc.gnu.org/bugzilla/show_bug.cgi?id=82207
+!***
+!*** A sufficiently intelligent compiler will optimize this function
+!*** away, into three assembly instructions that can be vectorized.
+!***
+!*** Technically, this routine needs Fortran 2008 due to shiftr() but
+!*** that intrinsic is widely implemented in compilers that lack
+!*** support for Fortran versions of the current millennium.
+!-----------------------------------------------------------------------
+!
+    use, intrinsic :: iso_c_binding, only: c_int32_t, c_int64_t
+    implicit none
+    intrinsic shiftr, transfer, iand ! <--- for the benefit of older compilers
+!
+!-----------------------------------------------------------------------
+! Use value-based argument passing instead of reference-based to avoid
+! signaling a NaN on conversion to addressable storage.
+!-----------------------------------------------------------------------
+!
+    real, value :: val ! <-- bit pattern to test for infinity or NaN
+!
+!-----------------------------------------------------------------------
+! Bit manipulation constants for testing 32-bit floating-point
+! non-finite values.
+!-----------------------------------------------------------------------
+!
+#ifdef OVERLOAD_R4
+    integer(c_int32_t), parameter :: check = 255 ! <-- all bits on, size of exponent (8 bits)
+    integer, parameter :: shift = 23 ! <-- number of mantissa bits except sign
+!
+!-----------------------------------------------------------------------
+! Bit manipulation constants for testing 64-bit floating-point
+! non-finite values.
+!-----------------------------------------------------------------------
+!
+#else
+    integer(c_int64_t), parameter :: check = 2047 ! <-- all bits on, size of exponent (11 bits)
+    integer, parameter :: shift = 52 ! <-- number of mantissa bits except sign
+#endif
+!
+!-----------------------------------------------------------------------
+! For standard-conforming floating point numbers, non-finite numbers
+! follow a mandatory bit pattern. They have the mantissa sign bit on,
+! and all exponent bits on, except the exponent sign which can be on
+! or off. This will work with IEEE standard floating-point types
+! besides 32 and 64, but we don't use those other types.
+!-----------------------------------------------------------------------
+!
+    is_not_finite = iand(shiftr(transfer(val,check),shift),check)==check
+!
+  end function is_not_finite
+!
+!-----------------------------------------------------------------------
+
+!-----------------------------------------------------------------------
+!
       subroutine setup_regional_BC(Atm                                  &
                                   ,isd,ied,jsd,jed                      &
                                   ,npx,npy )
@@ -263,7 +332,6 @@ contains
 !-----------------------------------------------------------------------
 !***  Regional boundary data is obtained from the external BC file.
 !-----------------------------------------------------------------------
-      use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
       use netcdf
 !-----------------------------------------------------------------------
       implicit none
@@ -1553,7 +1621,6 @@ contains
 !***  Regional boundary data is obtained from the external BC file.
 !-----------------------------------------------------------------------
 !-----------------------------------------------------------------------
-      use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
       implicit none
 !-----------------------------------------------------------------------
 !
@@ -3577,25 +3644,53 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !---------------------------------------------------------------------------------
 !
       if(side=='west')then
-        do j=jsv,jev
+        do j=jss,jes
           psc(isv,j) = psc(iss,j)
         enddo
       endif
 !
       if(side=='east')then
-        do j=jsv,jev
+        do j=jss,jes
           psc(iev,j) = psc(ies,j)
         enddo
       endif
 !
       if(side=='south')then
-        do i=isv,iev
+        ! Special handling of corners
+        if(west_bc) then
+          is=iss
+          psc(isv,jsv) = psc(iss,jss)
+        else
+          is=isv
+        endif
+        if(east_bc) then
+          ie=ies
+          psc(iev,jsv) = psc(ies,jss)
+        else
+          ie=iev
+        endif
+        ! The rest of the south boundary
+        do i=is,ie
           psc(i,jsv) = psc(i,jss)
         enddo
       endif
 !
       if(side=='north')then
-        do i=isv,iev
+        ! Special handling of corners
+        if(west_bc) then
+          is=iss
+          psc(isv,jev) = psc(iss,jes)
+        else
+          is=isv
+        endif
+        if(east_bc) then
+          ie=ies
+          psc(iev,jev) = psc(ies,jes)
+        else
+          ie=iev
+        endif
+        ! The rest of the north boundary
+        do i=is,ie
           psc(i,jev) = psc(i,jes)
         enddo
       endif
@@ -3663,25 +3758,53 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !---------------------------------------------------------------------------------
 !
       if(side=='west')then
-        do j=jsv,jev
+        do j=jss,jes
           ps(isv,j) = ps(iss,j)
         enddo
       endif
 !
       if(side=='east')then
-        do j=jsv,jev
+        do j=jss,jes
           ps(iev,j) = ps(ies,j)
         enddo
       endif
 !
       if(side=='south')then
-        do i=isv,iev
+        ! Special handling of corners
+        if(west_bc) then
+          is=iss
+          ps(isv,jsv) = ps(iss,jss)
+        else
+          is=isv
+        endif
+        if(east_bc) then
+          ie=ies
+          ps(iev,jsv) = ps(ies,jss)
+        else
+          ie=iev
+        endif
+        ! The rest of the south boundary
+        do i=is,ie
           ps(i,jsv) = ps(i,jss)
         enddo
       endif
 !
       if(side=='north')then
-        do i=isv,iev
+        ! Special handling of corners
+        if(west_bc) then
+          is=iss
+          ps(isv,jev) = ps(iss,jes)
+        else
+          is=isv
+        endif
+        if(east_bc) then
+          ie=ies
+          ps(iev,jev) = ps(ies,jes)
+        else
+          ie=iev
+        endif
+        ! The rest of the north boundary
+        do i=is,ie
           ps(i,jev) = ps(i,jes)
         enddo
       endif
@@ -4855,7 +4978,6 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  forecast time that is within the interval bracketed by the
 !***  two current boundary region states.
 !---------------------------------------------------------------------
-      use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
       implicit none
 !---------------------------------------------------------------------
 !
@@ -4962,8 +5084,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           do j=j1_blend,j2_blend
             factor_dist=exp(-(blend_exp1+blend_exp2*(j-j_bc-1)*rdenom)) !<-- Exponential falloff of blending weights.
             do i=i1_blend,i2_blend
-              if(.not.ieee_is_finite(array(i,j,k))) then
-                cycle ! Bad data from caller
+              if(is_not_finite(array(i,j,k))) then
+                cycle ! Outside boundary
               endif
               blend_value=bc_t0(i,j,k)                                &  !<-- Blend data interpolated
                          +(bc_t1(i,j,k)-bc_t0(i,j,k))*fraction_interval  !    between t0 and t1.
@@ -4984,8 +5106,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           do j=j1_blend,j2_blend
             do i=i1_blend,i2_blend
 !
-              if(.not.ieee_is_finite(array(i,j,k))) then
-                cycle ! Bad data from caller
+              if(is_not_finite(array(i,j,k))) then
+                cycle ! Outside boundary
               endif
               blend_value=bc_t0(i,j,k)                                  &  !<-- Blend data interpolated
                          +(bc_t1(i,j,k)-bc_t0(i,j,k))*fraction_interval    !    between t0 and t1.
@@ -5008,8 +5130,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           do j=j1_blend,j2_blend
             do i=i1_blend,i2_blend
 !
-              if(.not.ieee_is_finite(array(i,j,k))) then
-                cycle ! Bad data from caller
+              if(is_not_finite(array(i,j,k))) then
+                cycle ! Outside boundary
               endif
               blend_value=bc_t0(i,j,k)                                  &  !<-- Blend data interpolated
                          +(bc_t1(i,j,k)-bc_t0(i,j,k))*fraction_interval    !    between t0 and t1.
@@ -5032,8 +5154,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           do j=j1_blend,j2_blend
             factor_dist=exp(-(blend_exp1+blend_exp2*(j_bc-j-1)*rdenom)) !<-- Exponential falloff of blending weights.
             do i=i1_blend,i2_blend
-              if(.not.ieee_is_finite(array(i,j,k))) then
-                cycle ! Bad data from caller
+              if(is_not_finite(array(i,j,k))) then
+                cycle ! Outside boundary
               endif
               blend_value=bc_t0(i,j,k)                                &  !<-- Blend data interpolated
                          +(bc_t1(i,j,k)-bc_t0(i,j,k))*fraction_interval  !    between t0 and t1.
