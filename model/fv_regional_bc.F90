@@ -256,6 +256,10 @@ module fv_regional_mod
 !***
 !***  The reasons for this are unknown, but the workaround does work:
 !***  detect the NaNs and don't use those points in blending.
+!***
+!***  Also, the wind remapping code needs surface pressure beyond the
+!***  wind boundary regions, but the surface pressure boundary data
+!***  doesn't extend that far.
 !-----------------------------------------------------------------------
 !
 #ifdef OVERLOAD_R4
@@ -4173,12 +4177,22 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !------
      do k=1,km+1
         do i=is_u,ie_u
-           pe0(i,k) = ak0(k) + bk0(k)*psc(i,j)
+           if(is_not_finite(psc(i,j-1))) then
+              ! Workaround for bug: PS not available in some velocity areas
+              pe0(i,k) = ak0(k) + bk0(k)*psc(i,j)
+           else
+              pe0(i,k) = ak0(k) + bk0(k)*0.5*(psc(i,j-1)+psc(i,j))
+           endif
         enddo
      enddo
      do k=1,npz+1
         do i=is_u,ie_u
-           pe1(i,k) = Atm%ak(k) + Atm%bk(k)*psc(i,j)
+           if(is_not_finite(psc(i,j-1))) then
+              ! Workaround for bug: PS not available in some velocity areas
+              pe1(i,k) = Atm%ak(k) + Atm%bk(k)*psc(i,j)
+           else
+              pe1(i,k) = Atm%ak(k) + Atm%bk(k)*0.5*(psc(i,j-1)+psc(i,j))
+           endif
         enddo
      enddo
      call mappm(km, pe0(is_u:ie_u,1:km+1), ud(is_u:ie_u,j,1:km), npz, pe1(is_u:ie_u,1:npz+1),   &
@@ -4214,12 +4228,22 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
      do k=1,km+1
         do i=is_v,ie_v
-           pe0(i,k) = ak0(k) + bk0(k)*psc(i,j)
+           if(is_not_finite(psc(i-1,j))) then
+              ! Workaround for bug: PS not available in some velocity areas
+              pe0(i,k) = ak0(k) + bk0(k)*psc(i,j)
+           else
+              pe0(i,k) = ak0(k) + bk0(k)*0.5*(psc(i-1,j)+psc(i,j))
+           endif
         enddo
      enddo
      do k=1,npz+1
         do i=is_v,ie_v
-           pe1(i,k) = Atm%ak(k) + Atm%bk(k)*psc(i,j)
+           if(is_not_finite(psc(i-1,j))) then
+              ! Workaround for bug: PS not available in some velocity areas
+              pe1(i,k) = Atm%ak(k) + Atm%bk(k)*psc(i,j)
+           else
+              pe1(i,k) = Atm%ak(k) + Atm%bk(k)*0.5*(psc(i-1,j)+psc(i,j))
+           endif
         enddo
      enddo
      call mappm(km, pe0(is_v:ie_v,1:km+1), vd(is_v:ie_v,j,1:km), npz, pe1(is_v:ie_v,1:npz+1),  &
