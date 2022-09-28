@@ -954,7 +954,7 @@ contains
         regional_bc_bounds%ie_north_uvs=ied
 !
         regional_bc_bounds%js_north_uvs=jsd
-        regional_bc_bounds%je_north_uvs=nrows_blend+1
+        regional_bc_bounds%je_north_uvs=nrows_blend
 !
         regional_bc_bounds%is_north_uvw=isd
         regional_bc_bounds%ie_north_uvw=ied+1
@@ -971,7 +971,7 @@ contains
         regional_bc_bounds%is_south_uvs=isd
         regional_bc_bounds%ie_south_uvs=ied
 !
-        regional_bc_bounds%js_south_uvs=jed-nhalo_model-nrows_blend+1
+        regional_bc_bounds%js_south_uvs=jed-nhalo_model-nrows_blend+2
         regional_bc_bounds%je_south_uvs=jed+1
 !
         regional_bc_bounds%is_south_uvw=isd
@@ -1031,7 +1031,7 @@ contains
           regional_bc_bounds%je_west_uvs=jed-nhalo_model+1
         endif
 !
-        regional_bc_bounds%is_west_uvw=ied-nhalo_model-nrows_blend+1
+        regional_bc_bounds%is_west_uvw=ied-nhalo_model-nrows_blend+2
         regional_bc_bounds%ie_west_uvw=ied+1
 !
         regional_bc_bounds%js_west_uvw=jsd
@@ -1920,7 +1920,7 @@ contains
 !***  the integration levels.
 !-----------------------------------------------------------------------
 !
-        allocate(ps_reg(is_input:ie_input,js_input:je_input)) ; ps_reg=-9999999 ! for now don't set to snan until remap dwinds is changed
+        allocate(ps_reg(is_input:ie_input,js_input:je_input)) ; ps_reg=real_snan ! for now don't set to snan until remap dwinds is changed
 !
 !-----------------------------------------------------------------------
 !***  We have the boundary variables from the BC file on the levels
