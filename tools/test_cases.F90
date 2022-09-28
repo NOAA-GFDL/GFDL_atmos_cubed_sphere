@@ -160,6 +160,10 @@
      real  , allocatable :: case9_B(:,:)
      real   :: AofT(2)
 
+     ! case 20 -doubly periodic- idealized TC
+     real :: dp_TC = 1115.
+     real :: rp_TC = 100000.
+     real :: Ts_TC = 300.
 
      !  Validating fields used in statistics
      real  , allocatable :: phi0(:,:,:) ! Validating Field
@@ -4502,6 +4506,24 @@ end subroutine terminator_tracers
         real :: sigma, mu, amp, zint, zmid, qsum, pint, pmid
         real :: N2, N2b, th0, ths, pks, rkap, ampb, thl
         real :: dz, thp, pp, zt, p_t, pkp
+
+!Test case 20
+        real, dimension(npz+1) :: pe0, gz0, ue, ve, we, pte, qe
+        real :: d, dp, cor, exppr, exppz, gamma, Ts0, q00, exponent, ztrop, height, zp, rp
+        real :: qtrop, ttrop, zq1, zq2, r
+        real :: dum, dum1, dum2, dum3, dum4, dum5, dum6, uetmp, vetmp
+        real ::   pe_u(bd%is:bd%ie,npz+1,bd%js:bd%je+1)
+        real ::   pe_v(bd%is:bd%ie+1,npz+1,bd%js:bd%je)
+        real ::   ps_u(bd%is:bd%ie,bd%js:bd%je+1)
+        real ::   ps_v(bd%is:bd%ie+1,bd%js:bd%je)
+  
+        real(kind=R_GRID) :: p1(2), p2(2), p3(2), p4(2)
+        real(kind=R_GRID) :: e1(3), e2(3), ex(3), ey(3)
+        integer :: z
+        real(kind=R_GRID)   :: p0(2)       ! Temporary Point
+        real :: d1, d2
+
+
         integer :: o3mr
         integer :: i, j, k, m, icenter, jcenter
 
@@ -5166,6 +5188,248 @@ end subroutine terminator_tracers
 
         endif
 
+
+
+        case ( 20 )
+!---------------------------------------------------------
+! Tropical cyclone
+! adapted from case 55 - Joseph M.
+!---------------------------------------------------------
+
+         !p0(1) = (0.) * pi / 180. 
+         p0(1) = (-50.) * pi / 180. !weird physics IC (tsc) when this is around 0
+         p0(2) = (flagstruct%deglat) * pi / 180. 
+
+         !original
+         !dp = 1115.
+         !rp = 100000.
+
+         dp = dp_TC
+         rp = rp_TC
+         Ts0 = Ts_TC
+
+         if (is_master()) print*, "Initializing TC (dp,rp):", dp, rp, &
+         "in a doubly periodic domain at: lon/lat (deg)", p0(1) * 180./pi, p0(2)*180. /pi
+
+         p00 = 101500.
+
+         ps = p00
+
+         do j=js,je
+         do i=is,ie
+            p2(:) = agrid(i,j,1:2)
+            r = great_circle_dist( p0, p2, radius )
+            ps(i,j) = p00 - dp*exp(-(r/rp)**1.5)
+            phis(i,j) = 0.
+         enddo
+         enddo
+
+        call prt_maxmin('PS', ps(is:ie,js:je), is, ie, js, je, 0, 1, 0.01)
+
+         ! Initialize delta-P
+         do z=1,npz
+         do j=js,je
+         do i=is,ie
+            delp(i,j,z) = ak(z+1)-ak(z) + ps(i,j)*(bk(z+1)-bk(z))
+         enddo
+         enddo
+         enddo
+
+         !Pressure
+         do j=js,je
+            do i=is,ie
+               pe(i,1,j) = ptop
+            enddo
+            do k=2,npz+1
+            do i=is,ie
+               pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+            enddo
+            enddo
+         enddo
+
+         !Pressure on v-grid and u-grid points
+         do j=js,je
+         do i=is,ie+1
+            p2(:) = 0.5*(grid(i,j,1:2)+grid(i,j+1,1:2))
+            r = great_circle_dist( p0, p2, radius )
+            ps_v(i,j) = p00 - dp*exp(-(r/rp)**1.5)
+         enddo
+         enddo
+         do j=js,je+1
+         do i=is,ie
+            p2(:) = 0.5*(grid(i,j,1:2)+grid(i+1,j,1:2))
+            r = great_circle_dist( p0, p2, radius )
+            ps_u(i,j) = p00 - dp*exp(-(r/rp)**1.5)
+         enddo
+         enddo
+
+         !Pressure
+         do j=js,je
+            do i=is,ie+1
+               pe_v(i,1,j) = ptop
+            enddo
+            do k=2,npz+1
+            do i=is,ie+1
+               pe_v(i,k,j) = ak(k) + ps_v(i,j)*bk(k)
+            enddo
+            enddo
+         enddo
+         do j=js,je+1
+            do i=is,ie
+               pe_u(i,1,j) = ptop
+            enddo
+            do k=2,npz+1
+            do i=is,ie
+               pe_u(i,k,j) = ak(k) + ps_u(i,j)*bk(k)
+            enddo
+            enddo
+         enddo
+
+         !Everything else
+         !if (adiabatic) then
+         !   zvir = 0.
+         !else
+            zvir = rvgas/rdgas - 1.
+         !endif
+
+         ! Use p0 from above
+         !p0 = (/ pi, pi/18. /)
+
+         exppr = 1.5
+         exppz = 2.
+         gamma = 0.007
+         !Ts0 = 302.15
+         q00 = 0.021
+         t00 = Ts0*(1.+zvir*q00)
+         exponent = rdgas*gamma/grav
+         ztrop = 15000.
+         zp = 7000.
+         cor = 2.*omega*sin(p0(2)) !Coriolis at vortex center
+
+         !Initialize winds separately on the D-grid
+         do j=js,je
+            do i=is,ie+1
+               p1(:) = grid(i  ,j ,1:2)
+               p2(:) = grid(i,j+1 ,1:2)
+               call mid_pt_sphere(p1, p2, p3)
+               call get_unit_vect2(p1, p2, e2)
+               call get_latlon_vector(p3, ex, ey)
+
+               d1 = sin(p0(2))*cos(p3(2)) - cos(p0(2))*sin(p3(2))*cos(p3(1)-p0(1))
+               d2 = cos(p0(2))*sin(p3(1)-p0(1))
+               d = max(1.e-15,sqrt(d1**2+d2**2))
+
+               r = great_circle_dist( p0, p3, radius )
+
+               do k=1,npz
+                  ptmp = 0.5*(pe_v(i,k,j)+pe_v(i,k+1,j))
+                  height = (t00/gamma)*(1.-(ptmp/ps_v(i,j))**exponent)
+                  if (height > ztrop) then
+                     v(i,j,k) = 0.
+                  else
+                     utmp = 1.d0/d*(-cor*r/2.d0+sqrt((cor*r/2.d0)**(2.d0) &
+                          - exppr*(r/rp)**exppr*rdgas*(t00-gamma*height) &
+                          /(exppz*height*rdgas*(t00-gamma*height)/(grav*zp**exppz) &
+                          +(1.d0-p00/dp*exp((r/rp)**exppr)*exp((height/zp)**exppz)))))
+                     vtmp = utmp*d2
+                     utmp = utmp*d1
+
+                     v(i,j,k) = utmp*inner_prod(e2,ex) + vtmp*inner_prod(e2,ey)
+
+                  endif
+               enddo
+            enddo
+         enddo
+         do j=js,je+1
+            do i=is,ie
+               p1(:) = grid(i,  j,1:2)
+               p2(:) = grid(i+1,j,1:2)
+               call mid_pt_sphere(p1, p2, p3)
+               call get_unit_vect2(p1, p2, e1)
+               call get_latlon_vector(p3, ex, ey)
+
+               d1 = sin(p0(2))*cos(p3(2)) - cos(p0(2))*sin(p3(2))*cos(p3(1)-p0(1))
+               d2 = cos(p0(2))*sin(p3(1)-p0(1))
+               d = max(1.e-15,sqrt(d1**2+d2**2))
+
+               r = great_circle_dist( p0, p3, radius )
+
+               do k=1,npz
+                  ptmp = 0.5*(pe_u(i,k,j)+pe_u(i,k+1,j))
+                  height = (t00/gamma)*(1.-(ptmp/ps_u(i,j))**exponent)
+                  if (height > ztrop) then
+                     v(i,j,k) = 0.
+                  else
+                     utmp = 1.d0/d*(-cor*r/2.d0+sqrt((cor*r/2.d0)**(2.d0) &
+                          - exppr*(r/rp)**exppr*rdgas*(t00-gamma*height) &
+                          /(exppz*height*rdgas*(t00-gamma*height)/(grav*zp**exppz) &
+                          +(1.d0-p00/dp*exp((r/rp)**exppr)*exp((height/zp)**exppz)))))
+                     vtmp = utmp*d2
+                     utmp = utmp*d1
+
+                     u(i,j,k) = utmp*inner_prod(e1,ex) + vtmp*inner_prod(e1,ey)
+                  endif
+               enddo
+
+            enddo
+         enddo
+
+         qtrop = 1.e-11
+         ttrop = t00 - gamma*ztrop
+         zq1 = 3000.
+         zq2 = 8000.
+
+         q(:,:,:,:) = 0.
+
+         do k=1,npz
+         do j=js,je
+         do i=is,ie
+               ptmp = 0.5*(pe(i,k,j)+pe(i,k+1,j))
+               height = (t00/gamma)*(1.-(ptmp/ps(i,j))**exponent)
+               if (height > ztrop) then
+                  q(i,j,k,1) = qtrop
+                  pt(i,j,k) = Ttrop
+               else
+                  q(i,j,k,1) = q00*exp(-height/zq1)*exp(-(height/zq2)**exppz)
+                  p2(:) = agrid(i,j,1:2)
+                  r = great_circle_dist( p0, p2, radius )
+                  pt(i,j,k) = (T00-gamma*height)/(1.d0+zvir*q(i,j,k,1))/(1.d0+exppz*Rdgas*(T00-gamma*height)*height &
+                       /(grav*zp**exppz*(1.d0-p00/dp*exp((r/rp)**exppr)*exp((height/zp)**exppz))))
+               end if
+         enddo
+         enddo
+         enddo
+
+
+         !Note that this is already the moist pressure
+         do j=js,je
+         do i=is,ie
+            ps(i,j) = pe(i,npz+1,j)
+         enddo
+         enddo
+
+         if (.not.hydrostatic) then
+             do k=1,npz
+                do j=js,je
+                   do i=is,ie
+                      delz(i,j,k) = rdgas*pt(i,j,k)*(1.+zvir*q(i,j,k,1))/grav*log(pe(i,k,j)/pe(i,k+1,j))
+                         w(i,j,k) = 0.0
+                   enddo
+                enddo
+             enddo
+         endif
+
+         call dtoa(u , v , ua, va, dx,dy,dxa,dya,dxc,dyc,npx, npy, ng, bd)
+
+         call prt_maxmin('PS end', ps(is:ie,js:je), is, ie, js, je, 0, 1, 0.01)
+         call prt_maxmin('Delz', delz(is:ie,js:je,:), is, ie, js, je, 0, 1, 0.01)
+
+         call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
+                   pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass, .false., .false., &
+                   .true., hydrostatic, nwat, domain, flagstruct%adiabatic)
+
+
+
         case ( 21 )
 !---------------------------------------------------------
 ! Mountain wave
@@ -5575,7 +5839,7 @@ end subroutine terminator_tracers
 
         integer :: ierr, f_unit, unit, ios
         namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size, &
-             no_wind, gaussian_dt, dt_amp, do_marine_sounding, checker_tr, small_earth_scale, Umean
+             no_wind, gaussian_dt, dt_amp, do_marine_sounding, checker_tr, small_earth_scale, Umean, dp_TC, rp_TC, Ts_TC
 
 #include<file_version.h>
 

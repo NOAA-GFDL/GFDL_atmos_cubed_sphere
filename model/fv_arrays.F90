@@ -895,6 +895,8 @@ module fv_arrays_mod
   real(kind=R_GRID) :: deglat=15.   !< Latitude (in degrees) used to compute the uniform f-plane
                                     !< Coriolis parameter for doubly-periodic simulations
                                     !< (grid_type = 4). The default value is 15.
+  real(kind=R_GRID) :: domain_deg = 0. 
+
   !The following deglat_*, deglon_* options are not used.
   real(kind=R_GRID) :: deglon_start = -30., deglon_stop = 30., &  !< boundaries of latlon patch
                        deglat_start = -30., deglat_stop = 30.
