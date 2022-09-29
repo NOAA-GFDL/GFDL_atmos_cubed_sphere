@@ -11,7 +11,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -184,6 +184,8 @@ integer, intent(out) :: nlon, nlat, nlev, ntime
          call get_variable_names(fileobj, fields)
          Files(n)%field_index = 0
          do i = 1, Files(n)%nvar
+            nd = get_variable_num_dimensions(fileobj, fields(i))
+            call get_variable_size(fileobj, fields(i), siz(1:nd))
             do j = 1, NUM_REQ_FLDS
                if (trim(fields(i)) .eq. trim(required_field_names(j))) then
                   Files(n)%field_index(j) = i

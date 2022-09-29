@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -18,10 +18,12 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
  module fv_grid_utils_mod
 
 #include <fms_platform.h>
- use constants_mod,   only: omega, pi=>pi_8, cnst_radius=>radius
+ use constants_mod,   only: pi=>pi_8
+ use fv_arrays_mod,   only: radius, omega ! scaled for small earth
  use mpp_mod,         only: FATAL, mpp_error, WARNING
  use external_sst_mod, only: i_sst, j_sst, sst_ncep, sst_anom
  use mpp_domains_mod, only: mpp_update_domains, DGRID_NE, mpp_global_sum
@@ -49,8 +51,6 @@
 #endif
  real, parameter::  big_number=1.d8
  real, parameter:: tiny_number=1.d-8
-
- real(kind=R_GRID) :: radius=cnst_radius
 
  real, parameter:: ptop_min=1.d-8
 
@@ -485,14 +485,8 @@
               call normalize_vect( ee2(1:3,i,j) )
 
 ! symmetrical grid
-#ifdef TEST_FP
-              tmp1 = inner_prod(ee1(1:3,i,j), ee2(1:3,i,j))
-              cosa(i,j) = sign(min(1., abs(tmp1)), tmp1)
-              sina(i,j) = sqrt(max(0.,1. -cosa(i,j)**2))
-#else
               cosa(i,j) = 0.5*(cos_sg(i-1,j-1,8)+cos_sg(i,j,6))
               sina(i,j) = 0.5*(sin_sg(i-1,j-1,8)+sin_sg(i,j,6))
-#endif
            enddo
         enddo
 
@@ -582,56 +576,35 @@
               sin_sg(i,0,4) = sin_sg(1,i,1)
               cos_sg(0,i,3) = cos_sg(i,1,2)
               cos_sg(i,0,4) = cos_sg(1,i,1)
-!!!           cos_sg(0,i,7) = cos_sg(i,1,6)
-!!!           cos_sg(0,i,8) = cos_sg(i,1,7)
-!!!           cos_sg(i,0,8) = cos_sg(1,i,9)
-!!!           cos_sg(i,0,9) = cos_sg(1,i,6)
            enddo
-!!!        cos_sg(0,0,8) = 0.5*(cos_sg(0,1,7)+cos_sg(1,0,9))
-
       endif
       if ( nw_corner ) then
            do i=npy,npy+2
               sin_sg(0,i,3) = sin_sg(npy-i,npy-1,4)
               cos_sg(0,i,3) = cos_sg(npy-i,npy-1,4)
-!!!           cos_sg(0,i,7) = cos_sg(npy-i,npy-1,8)
-!!!           cos_sg(0,i,8) = cos_sg(npy-i,npy-1,9)
            enddo
            do i=0,-2,-1
               sin_sg(i,npy,2) = sin_sg(1,npy-i,1)
               cos_sg(i,npy,2) = cos_sg(1,npy-i,1)
-!!!           cos_sg(i,npy,6) = cos_sg(1,npy-i,9)
-!!!           cos_sg(i,npy,7) = cos_sg(1,npy-i,6)
            enddo
-!!!        cos_sg(0,npy,7) = 0.5*(cos_sg(1,npy,6)+cos_sg(0,npy-1,8))
       endif
       if ( se_corner ) then
            do j=0,-2,-1
               sin_sg(npx,j,1) = sin_sg(npx-j,1,2)
               cos_sg(npx,j,1) = cos_sg(npx-j,1,2)
-!!!           cos_sg(npx,j,6) = cos_sg(npx-j,1,7)
-!!!           cos_sg(npx,j,9) = cos_sg(npx-j,1,6)
            enddo
            do i=npx,npx+2
               sin_sg(i,0,4) = sin_sg(npx-1,npx-i,3)
               cos_sg(i,0,4) = cos_sg(npx-1,npx-i,3)
-!!!           cos_sg(i,0,9) = cos_sg(npx-1,npx-i,8)
-!!!           cos_sg(i,0,8) = cos_sg(npx-1,npx-i,7)
            enddo
-!!!        cos_sg(npx,0,9) = 0.5*(cos_sg(npx,1,6)+cos_sg(npx-1,0,8))
       endif
       if ( ne_corner ) then
          do i=0,2
             sin_sg(npx,npy+i,1) = sin_sg(npx+i,npy-1,4)
             sin_sg(npx+i,npy,2) = sin_sg(npx-1,npy+i,3)
             cos_sg(npx,npy+i,1) = cos_sg(npx+i,npy-1,4)
-!!!         cos_sg(npx,npy+i,6) = cos_sg(npx+i,npy-1,9)
-!!!         cos_sg(npx,npy+i,9) = cos_sg(npx+i,npy-1,8)
             cos_sg(npx+i,npy,2) = cos_sg(npx-1,npy+i,3)
-!!!         cos_sg(npx+i,npy,6) = cos_sg(npx-1,npy+i,7)
-!!!         cos_sg(npx+i,npy,7) = cos_sg(npx-1,npy+i,8)
          end do
-!!!      cos_sg(npx,npy,6) = 0.5*(cos_sg(npx-1,npy,7)+cos_sg(npx,npy-1,9))
       endif
 
    else
@@ -649,42 +622,6 @@
    endif
 
    if ( grid_type < 3 ) then
-
-#ifdef USE_NORM_VECT
-!-------------------------------------------------------------
-! Make normal vect at face edges after consines are computed:
-!-------------------------------------------------------------
-! for old d2a2c_vect routines
-      if (.not. Atm%gridstruct%bounded_domain) then
-         do j=js-1,je+1
-            if ( is==1 ) then
-               i=1
-               call vect_cross(ew(1,i,j,1), grid3(1,i,j+1), grid3(1,i,j))
-               call normalize_vect( ew(1,i,j,1) )
-            endif
-            if ( (ie+1)==npx ) then
-               i=npx
-               call vect_cross(ew(1,i,j,1), grid3(1,i,j+1), grid3(1,i,j))
-               call normalize_vect( ew(1,i,j,1) )
-            endif
-         enddo
-
-         if ( js==1 ) then
-            j=1
-            do i=is-1,ie+1
-               call vect_cross(es(1,i,j,2), grid3(1,i,j),grid3(1,i+1,j))
-               call normalize_vect( es(1,i,j,2) )
-            enddo
-         endif
-         if ( (je+1)==npy ) then
-            j=npy
-            do i=is-1,ie+1
-               call vect_cross(es(1,i,j,2), grid3(1,i,j),grid3(1,i+1,j))
-               call normalize_vect( es(1,i,j,2) )
-            enddo
-         endif
-      endif
-#endif
 
 ! For omega computation:
 ! Unit vectors:
@@ -741,7 +678,7 @@
 
      call global_mx_c(area_c(is:ie,js:je), is, ie, js, je, Atm%gridstruct%da_min_c, Atm%gridstruct%da_max_c)
 
-     if( is_master() ) write(*,*) 'da_max_c/da_min_c=', Atm%gridstruct%da_max_c/Atm%gridstruct%da_min_c
+     if( is_master() ) write(*,*) 'da_max_c, da_min_c, da_max_c/da_min_c=', Atm%gridstruct%da_max_c, Atm%gridstruct%da_min_c, Atm%gridstruct%da_max_c/Atm%gridstruct%da_min_c
 
 !------------------------------------------------
 ! Initialization for interpolation at face edges
@@ -1815,14 +1752,6 @@
              u1(1:3,i,j) = 0.d0
              u2(1:3,i,j) = 0.d0
         else
-#ifdef OLD_VECT
-          do k=1,3
-             u1(k,i,j) = pp(k,i+1,j)+pp(k,i+1,j+1) - pp(k,i,j)-pp(k,i,j+1)
-             u2(k,i,j) = pp(k,i,j+1)+pp(k,i+1,j+1) - pp(k,i,j)-pp(k,i+1,j)
-          enddo
-          call normalize_vect( u1(1,i,j) )
-          call normalize_vect( u2(1,i,j) )
-#else
           call cell_center3(pp(1,i,j), pp(1,i+1,j), pp(1,i,j+1), pp(1,i+1,j+1), pc)
 ! e1:
           call mid_pt3_cart(pp(1,i,j),   pp(1,i,j+1),   p1)
@@ -1836,7 +1765,6 @@
           call vect_cross(p3, p2, p1)
           call vect_cross(u2(1,i,j), pc, p3)
           call normalize_vect( u2(1,i,j) )
-#endif
         endif
        enddo
     enddo
@@ -3205,11 +3133,6 @@
 
     if ( is_master() ) then
          write(*,*) 'Make_eta_level ...., ptop=', ptop
-#ifdef PRINT_GRID
-         do k=1,km+1
-            write(*,*) ph(k), ak(k), bk(k)
-         enddo
-#endif
     endif
 
     deallocate ( pem )

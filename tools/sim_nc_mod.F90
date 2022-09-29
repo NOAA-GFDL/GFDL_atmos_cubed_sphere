@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -18,6 +18,7 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
 module sim_nc_mod
 
 ! This is S-J Lin's private netcdf file reader
@@ -39,7 +40,8 @@ module sim_nc_mod
  private
  public  open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var2_double,   &
          get_var3_real, get_var3_double, get_var3_r4, get_var2_real, get_var2_r4,   &
-         handle_err, check_var, get_var1_real, get_var_att_double
+         handle_err, check_var, get_var1_real, get_var_att_double, &
+         check_var_exists
 
  contains
 
@@ -357,6 +359,14 @@ module sim_nc_mod
       check_var = (status == NF_NOERR)
 
       end function check_var
+
+      subroutine check_var_exists(ncid, var_name, status)
+      integer, intent(in):: ncid
+      integer, intent(inout) :: status
+      character(len=*), intent(in)::  var_name
+      integer:: varid
+      status = nf_inq_varid (ncid, var_name, varid)
+      end subroutine check_var_exists
 
       subroutine get_var_att_str(ncid, var_name, att_name, att)
       implicit none

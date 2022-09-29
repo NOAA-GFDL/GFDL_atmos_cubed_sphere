@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -18,9 +18,12 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
 module fv_grid_tools_mod
 
-  use constants_mod, only: grav, omega, pi=>pi_8, cnst_radius=>radius, small_fac
+  use constants_mod,  only: grav, pi=>pi_8
+  use fv_arrays_mod,  only: radius, omega ! scaled for small earth
+!  use test_cases_mod, only: small_earth_scale
   use fv_arrays_mod, only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type, R_GRID
   use fv_grid_utils_mod, only: gnomonic_grids, great_circle_dist,  &
                            mid_pt_sphere, spherical_angle,     &
@@ -29,7 +32,7 @@ module fv_grid_tools_mod
                            spherical_linear_interpolation, big_number
   use fv_timing_mod,  only: timing_on, timing_off
   use fv_mp_mod,      only: is_master, fill_corners, XDir, YDir
-  use fv_mp_mod,      only: mp_bcst, mp_reduce_max, mp_stop, grids_master_procs
+  use fv_mp_mod,      only: grids_master_procs
   use sorted_index_mod,  only: sorted_inta, sorted_intb
   use mpp_mod,           only: mpp_error, FATAL, get_unit, mpp_chksum, mpp_pe, stdout, &
                                mpp_send, mpp_recv, mpp_sync_self, EVENT_RECV, mpp_npes, &
@@ -58,8 +61,6 @@ module fv_grid_tools_mod
   implicit none
   private
 #include <netcdf.inc>
-
-  real(kind=R_GRID), parameter:: radius = cnst_radius
 
   real(kind=R_GRID) , parameter:: todeg = 180.0d0/pi          ! convert to degrees
   real(kind=R_GRID) , parameter:: torad = pi/180.0d0          ! convert to radians
@@ -604,7 +605,7 @@ contains
              call setup_aligned_nest(Atm)
 
           else
-             if( trim(grid_file) == 'INPUT/grid_spec.nc' .or. Atm%flagstruct%grid_type < 0  ) then
+             if( trim(grid_file) == 'INPUT/grid_spec.nc' .or. Atm%flagstruct%grid_type < 0 ) then
                 call read_grid(Atm, grid_file, ndims, nregions, ng)
 
              ! Here if we are reading from grid_spec and the grid has a nest we need to assemble
@@ -626,19 +627,6 @@ contains
                                    grid(isection_s:isection_e,jsection_s:jsection_e,1),grid_global(1-ng:npx+ng,1-ng:npy+ng,1,1),is_master(),ng,ng)
                    call mpp_gather(isection_s,isection_e,jsection_s,jsection_e,atm%pelist, &
                                    grid(isection_s:isection_e,jsection_s:jsection_e,2),grid_global(1-ng:npx+ng,1-ng:npy+ng,2,1),is_master(),ng,ng)
-                   !do we need the haloes?!
-                   !do j=jsd,jed
-                   !do i=isd,ied
-                     !grid_global(i,j,1,1)=grid(i,j,1)
-                     !grid_global(i,j,2,1)=grid(i,j,2)
-                   !enddo
-                   !enddo
-                   !do j=1,npy
-                   !do i=1,npx
-                     !call mpp_max(grid_global(i,j,1,1),atm%pelist)
-                     !call mpp_max(grid_global(i,j,2,1),atm%pelist)
-                   !enddo
-                   !enddo
                 endif
 
              else
@@ -939,38 +927,6 @@ contains
           enddo
        endif
 
-       if ( sw_corner ) then
-             i=1; j=1
-             p1(1:2) = grid(i,j,1:2)
-             call mid_pt_sphere(grid(i,j,1:2), grid(i+1,j,1:2), p2)
-             p3(1:2) = agrid(i,j,1:2)
-             call mid_pt_sphere(grid(i,j,1:2), grid(i,j+1,1:2), p4)
-             area_c(i,j) = 3.*get_area(p1, p4, p2, p3, radius)
-       endif
-       if ( se_corner ) then
-             i=npx; j=1
-             call mid_pt_sphere(grid(i-1,j,1:2), grid(i,j,1:2), p1)
-             p2(1:2) = grid(i,j,1:2)
-             call mid_pt_sphere(grid(i,j,1:2), grid(i,j+1,1:2), p3)
-             p4(1:2) = agrid(i,j,1:2)
-             area_c(i,j) = 3.*get_area(p1, p4, p2, p3, radius)
-       endif
-       if ( ne_corner ) then
-             i=npx; j=npy
-             p1(1:2) = agrid(i-1,j-1,1:2)
-             call mid_pt_sphere(grid(i,j-1,1:2), grid(i,j,1:2), p2)
-             p3(1:2) = grid(i,j,1:2)
-             call mid_pt_sphere(grid(i-1,j,1:2), grid(i,j,1:2), p4)
-             area_c(i,j) = 3.*get_area(p1, p4, p2, p3, radius)
-       endif
-       if ( nw_corner ) then
-             i=1; j=npy
-             call mid_pt_sphere(grid(i,j-1,1:2), grid(i,j,1:2), p1)
-             p2(1:2) = agrid(i,j-1,1:2)
-             call mid_pt_sphere(grid(i,j,1:2), grid(i+1,j,1:2), p3)
-             p4(1:2) = grid(i,j,1:2)
-             area_c(i,j) = 3.*get_area(p1, p4, p2, p3, radius)
-       endif
    endif
 !-----------------
 
@@ -1113,7 +1069,7 @@ contains
           dxAV  = dxAV  / ( (ceiling(npy/2.0))*(ceiling(npx/2.0)) )
           aspAV = aspAV / ( (ceiling(npy/2.0))*(ceiling(npx/2.0)) )
           write(*,*  ) ''
-          write(*,*) ' Radius is ', radius, ', omega is ', omega, ' small_fac = ', small_fac
+          write(*,*) ' Radius is ', radius, ', omega is ', omega!, ' small_earth_scale = ', small_earth_scale
           write(*,*  ) ' Cubed-Sphere Grid Stats : ', npx,'x',npy,'x',nregions
           print*, dxN, dxM, dxAV, dxN, dxM
           write(*,'(A,f11.2,A,f11.2,A,f11.2,A,f11.2)') '      Grid Length               : min: ', dxN,' max: ', dxM,' avg: ', dxAV, ' min/max: ',dxN/dxM
@@ -2449,8 +2405,13 @@ contains
          minarea = mpp_global_min(domain, area)
 
         if (is_master()) write(*,209) 'MAX    AREA (m*m):', maxarea,            '          MIN AREA (m*m):', minarea
-        if (is_master()) write(*,209) 'GLOBAL AREA (m*m):', globalarea, ' IDEAL GLOBAL AREA (m*m):', 4.0*pi*radius**2
+        if (bounded_domain) then
+           if (is_master()) write(*,210) 'REGIONAL AREA (m*m):', globalarea
+        else
+           if (is_master()) write(*,209) 'GLOBAL AREA (m*m):', globalarea, ' IDEAL GLOBAL AREA (m*m):', 4.0*pi*radius**2
+        endif
  209  format(A,e21.14,A,e21.14)
+ 210  format(A,e21.14)
 
         if (bounded_domain) then
            nh = ng-1 !cannot get rarea_c on boundary directly

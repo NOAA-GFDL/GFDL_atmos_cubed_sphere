@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -262,12 +262,11 @@ end subroutine fv_climate_nudge_init
 !###################################################################################
 
 subroutine fv_climate_nudge (Time, dt, is, ie, js, je, npz, pfull, &
-                                   lon, lat, phis, ptop, ak, bk,        &
+                                   lon, lat, phis, ak, bk,        &
                                    ps, u, v, t, q, psdt, udt, vdt, tdt, qdt )
 type(time_type), intent(in) :: Time
 real,            intent(in) :: dt
 integer,         intent(in) :: is, ie, js, je, npz
-real,            intent(IN) :: ptop
 
 real, intent(in)    :: phis(is:ie,js:je)
 real, intent(in)    :: lon (is:ie,js:je)
@@ -439,15 +438,15 @@ logical :: virtual_temp_obs = .false.
           enddo
 
           if (get_wind) then
-             call remap_3d (is, ie, js, je, nlev_obs, npz, phaf_obs, u_obs, phaf, State(n)%u, -1, ptop)
-             call remap_3d (is, ie, js, je, nlev_obs, npz, phaf_obs, v_obs, phaf, State(n)%v, -1, ptop)
+             call remap_3d (is, ie, js, je, nlev_obs, npz, phaf_obs, u_obs, phaf, State(n)%u, -1)
+             call remap_3d (is, ie, js, je, nlev_obs, npz, phaf_obs, v_obs, phaf, State(n)%v, -1)
           endif
           if (get_qhum .or. get_temp) then
-             call remap_3d (is, ie, js, je, nlev_obs, npz, phaf_obs, q_obs, phaf, State(n)%q(:,:,:,1), 0, ptop)
+             call remap_3d (is, ie, js, je, nlev_obs, npz, phaf_obs, q_obs, phaf, State(n)%q(:,:,:,1), 0)
           endif
           if (get_temp) then
              ! use logp
-             call remap_3d (is, ie, js, je, nlev_obs, npz, lphaf_obs, t_obs, lphaf, State(n)%t, 1, ptop)
+             call remap_3d (is, ie, js, je, nlev_obs, npz, lphaf_obs, t_obs, lphaf, State(n)%t, 1)
              State(n)%t = State(n)%t/(1.+ZVIR*State(n)%q(:,:,:,1)) ! virtual effect
           endif
 
@@ -1023,7 +1022,7 @@ end subroutine prt_minmax_3d
 !---------------------------------------------------
 
   subroutine remap_3d( is, ie, js, je, km, npz, &
-                       pe0, qn0, pe1, qn1, n, ptop )
+                       pe0, qn0, pe1, qn1, n )
 
 !--------
 ! Input:
@@ -1035,7 +1034,6 @@ end subroutine prt_minmax_3d
     real,  intent(in):: qn0(is:ie,js:je,km)    ! scalar quantity on input data levels
     real,  intent(in):: pe1(is:ie,js:je,npz+1) ! pressure at layer interfaces for model data
   integer, intent(in):: n                      ! -1 wind; 0 sphum; +1 ptemp
-    real,  intent(IN):: ptop
 
 !--------
 ! Output:
@@ -1046,7 +1044,7 @@ end subroutine prt_minmax_3d
   integer :: i, j, k
 
     do j = js,je
-       call mappm(km, pe0(is:ie,j,:), qn0(is:ie,j,:), npz, pe1(is:ie,j,:), qn1(is:ie,j,:), is,ie, n, 8, ptop)
+       call mappm(km, pe0(is:ie,j,:), qn0(is:ie,j,:), npz, pe1(is:ie,j,:), qn1(is:ie,j,:), is,ie, n, 8)
     enddo
 
   end subroutine remap_3d
