@@ -3009,11 +3009,12 @@ endif        ! end last_step check
 
 
 
- subroutine mappm(km, pe1, q1, kn, pe2, q2, i1, i2, iv, kord, ptop)
+ subroutine mappm(km, pe1, q1, kn, pe2, q2, i1, i2, iv, kord)
 
 ! IV = 0: constituents
 ! IV = 1: potential temp
 ! IV =-1: winds
+! IV =-2: vertical velocity
 
 ! Mass flux preserving mapping: q1(im,km) -> q2(im,kn)
 
@@ -3024,9 +3025,8 @@ endif        ! end last_step check
 
  integer, intent(in):: i1, i2, km, kn, kord, iv
  real, intent(in ):: pe1(i1:i2,km+1), pe2(i1:i2,kn+1)
- real, intent(in )::  q1(i1:i2,km)
- real, intent(out)::  q2(i1:i2,kn)
- real, intent(IN) :: ptop
+ real, intent(in )::  q1(i1:i2,km) ! input field
+ real, intent(out)::  q2(i1:i2,kn) ! output field
 ! local
       real  qs(i1:i2)
       real dp1(i1:i2,km)
@@ -3048,17 +3048,6 @@ endif        ! end last_step check
            call ppm_profile( a4, dp1, km, i1, i2, iv, kord )
       endif
 
-!------------------------------------
-! Lowest layer: constant distribution
-!------------------------------------
-#ifdef NGGPS_SUBMITTED
-      do i=i1,i2
-         a4(2,i,km) = q1(i,km)
-         a4(3,i,km) = q1(i,km)
-         a4(4,i,km) = 0.
-      enddo
-#endif
-
       do 5555 i=i1,i2
          k0 = 1
       do 555 k=1,kn
@@ -3068,11 +3057,7 @@ endif        ! end last_step check
             q2(i,k) = q1(i,1)
          elseif(pe2(i,k) .ge. pe1(i,km+1)) then
 ! Entire grid below old ps
-#ifdef NGGPS_SUBMITTED
-            q2(i,k) = a4(3,i,km)   ! this is not good.
-#else
             q2(i,k) = q1(i,km)
-#endif
          else
 
          do 45 L=k0,km
@@ -3123,11 +3108,7 @@ endif        ! end last_step check
         delp = pe2(i,k+1) - pe1(i,km+1)
         if(delp > 0.) then
 ! Extended below old ps
-#ifdef NGGPS_SUBMITTED
-           qsum = qsum + delp * a4(3,i,km)    ! not good.
-#else
            qsum = qsum + delp * q1(i,km)
-#endif
           dpsum = dpsum + delp
         endif
 123     q2(i,k) = qsum / dpsum
