@@ -33,7 +33,7 @@ module fv_mapz_mod
   use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, R_GRID, inline_mp_type
   use fv_timing_mod,     only: timing_on, timing_off
   use fv_mp_mod,         only: is_master, mp_reduce_min, mp_reduce_max
-  use fv_cmp_mod,        only: qs_init, fv_sat_adj
+  use fast_sat_adj_mod,  only: fast_sat_adj, qsmith_init
 
   implicit none
   real, parameter:: consv_min = 0.001   ! below which no correction applies
@@ -178,7 +178,7 @@ contains
                kmp = k
                if ( pfull(k) > 10.E2 ) exit
             enddo
-            call qs_init(kmp)
+            call qsmith_init
        endif
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,pe,ptop,kord_tm,hydrostatic, &
