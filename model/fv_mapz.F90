@@ -3009,7 +3009,7 @@ endif        ! end last_step check
 
 
 
- subroutine mappm(km, pe1, q1, kn, pe2, q2, i1, i2, iv, kord, ptop)
+ subroutine mappm(km, pe1, q1, kn, pe2, q2, i1, i2, iv, kord)
 
 ! IV = 0: constituents
 ! IV = 1: potential temp
@@ -3026,7 +3026,6 @@ endif        ! end last_step check
  real, intent(in ):: pe1(i1:i2,km+1), pe2(i1:i2,kn+1)
  real, intent(in )::  q1(i1:i2,km)
  real, intent(out)::  q2(i1:i2,kn)
- real, intent(IN) :: ptop
 ! local
       real  qs(i1:i2)
       real dp1(i1:i2,km)
