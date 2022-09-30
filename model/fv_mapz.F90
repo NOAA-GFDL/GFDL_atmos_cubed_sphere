@@ -63,14 +63,16 @@ contains
  subroutine Lagrangian_to_Eulerian(last_step, consv, ps, pe, delp, pkz, pk,   &
                                    mdt, pdt, npx, npy, km, is,ie,js,je, isd,ied,jsd,jed,       &
                       nq, nwat, sphum, q_con, u, v, w, delz, pt, q, hs, r_vir, cp,  &
-                      akap, cappa, kord_mt, kord_wz, kord_tr, kord_tm,  peln, te0_2d,        &
+                      akap, cappa, kord_mt, kord_wz, kord_tr, kord_tm, remap_te, peln, te0_2d,        &
                       ng, ua, va, omga, te, ws, fill, reproduce_sum, out_dt, dtdt,      &
                       ptop, ak, bk, pfull, gridstruct, domain, do_sat_adj, &
-                      hydrostatic, phys_hydrostatic, hybrid_z, do_omega, adiabatic, do_adiabatic_init, &
+                      hydrostatic, hybrid_z, adiabatic, do_adiabatic_init, &
                       do_inline_mp, inline_mp, c2l_ord, bd, fv_debug, &
-                      moist_phys)
+                      moist_phys, dum_w_limiter, do_am4_remap)
   logical, intent(in):: last_step
   logical, intent(in):: fv_debug
+  logical, intent(in):: dum_w_limiter
+  logical, intent(in):: do_am4_remap
   real,    intent(in):: mdt                   ! remap time step
   real,    intent(in):: pdt                   ! phys time step
   integer, intent(in):: npx, npy
@@ -99,7 +101,8 @@ contains
   logical, intent(in):: do_inline_mp
   logical, intent(in):: fill                  ! fill negative tracers
   logical, intent(in):: reproduce_sum
-  logical, intent(in):: do_omega, adiabatic, do_adiabatic_init
+  logical, intent(in):: adiabatic, do_adiabatic_init
+  logical, intent(in):: remap_te
   real, intent(in) :: ptop
   real, intent(in) :: ak(km+1)
   real, intent(in) :: bk(km+1)
@@ -123,10 +126,10 @@ contains
                                                      ! as input; output: temperature
   real, intent(inout), dimension(isd:,jsd:,1:)::q_con, cappa
   real, intent(inout), dimension(is:,js:,1:)::delz
-  logical, intent(in):: hydrostatic, phys_hydrostatic
+  logical, intent(in):: hydrostatic
   logical, intent(in):: hybrid_z
   logical, intent(in):: out_dt
-  logical, intent(in):: moist_phys
+  logical, intent(in):: moist_phys !not used --- lmh 13 may 21
 
   real, intent(inout)::   ua(isd:ied,jsd:jed,km)   ! u-wind (m/s) on physics grid
   real, intent(inout)::   va(isd:ied,jsd:jed,km)   ! v-wind (m/s) on physics grid
@@ -144,6 +147,7 @@ contains
 ! SJL 03.11.04: Initial version for partial remapping
 !
 !-----------------------------------------------------------------------
+  real, allocatable, dimension(:,:) :: dz
   real, allocatable, dimension(:,:,:) :: dp0, u0, v0
   real, allocatable, dimension(:,:,:) :: u_dt, v_dt
   real, dimension(is:ie,js:je):: te_2d, zsum0, zsum1, dpln
@@ -152,6 +156,7 @@ contains
   real, dimension(isd:ied,jsd:jed,km):: pe4
   real, dimension(is:ie+1,km+1):: pe0, pe3
   real, dimension(is:ie):: gsize, gz, cvm, qv
+  real, dimension(isd:ied,jsd:jed,km):: qnl, qni
 
   real rcp, rg, rrg, bkh, dtmp, k1k
   logical:: fast_mp_consv
@@ -186,7 +191,7 @@ contains
 !$OMP                                  graupel,q_con,sphum,cappa,r_vir,rcp,k1k,delp, &
 !$OMP                                  delz,akap,pkz,te,u,v,ps, gridstruct, last_step, &
 !$OMP                                  ak,bk,nq,isd,ied,jsd,jed,kord_tr,fill, adiabatic, &
-!$OMP                                  hs,w,ws,kord_wz,do_omega,omga,rrg,kord_mt,pe4)    &
+!$OMP                                  hs,w,ws,kord_wz,omga,rrg,kord_mt,pe4)    &
 !$OMP                          private(qv,gz,cvm,kp,k_next,bkh,dp2,   &
 !$OMP                                  pe0,pe1,pe2,pe3,pk1,pk2,pn2,phis,q2,w2)
   do 1000 j=js,je+1
@@ -366,8 +371,8 @@ contains
    enddo
 
 !----------------
-   if ( do_omega ) then
-! Start do_omega
+   if ( last_step ) then
+! Start last_step
 ! Copy omega field to pe3
       do i=is,ie
          pe3(i,1) = 0.
@@ -430,7 +435,7 @@ contains
    endif
 
 ! Interpolate omega/pe3 (defined at pe0) to remapped cell center (dp2)
-   if ( do_omega ) then
+   if ( last_step ) then
    do k=1,km
       do i=is,ie
          dp2(i,k) = 0.5*(peln(i,k,j) + peln(i,k+1,j))
@@ -450,7 +455,7 @@ contains
           enddo
        enddo
    enddo
-   endif     ! end do_omega
+   endif     ! end last_step
 
   endif !(j < je+1)
 
@@ -660,12 +665,24 @@ endif        ! end last_step check
                     dpln(i,j) = peln(i,k+1,j) - peln(i,k,j)
                  enddo
               enddo
-              call fv_sat_adj(abs(mdt), r_vir, is, ie, js, je, ng, hydrostatic, fast_mp_consv, &
+              call fast_sat_adj(abs(mdt), is, ie, js, je, ng, hydrostatic, fast_mp_consv, &
                              te(isd,jsd,k), q(isd,jsd,k,sphum), q(isd,jsd,k,liq_wat),   &
                              q(isd,jsd,k,ice_wat), q(isd,jsd,k,rainwat),    &
-                             q(isd,jsd,k,snowwat), q(isd,jsd,k,graupel),    &
-                             hs, dpln, delz(is:ie,js:je,k), pt(isd,jsd,k), delp(isd,jsd,k), q_con(isd:,jsd:,k), &
-                             cappa(isd:,jsd:,k), gridstruct%area_64, dtdt(is,js,k), out_dt, last_step, cld_amt>0, q(isd,jsd,k,cld_amt))
+                             q(isd,jsd,k,snowwat), q(isd,jsd,k,graupel), q(isd,jsd,k,cld_amt), &
+                             qnl(isd,jsd,k), qni(isd,jsd,k), hs ,dpln, dz(is:ie,js:je), &
+                             pt(isd,jsd,k), delp(isd,jsd,k), &
+#ifdef USE_COND
+                             q_con(isd:,jsd:,k), &
+#else
+                             q_con(isd:,jsd:,1), &
+#endif
+#ifdef MOIST_CAPPA
+                             cappa(isd:,jsd:,k), &
+#else
+                             cappa(isd:,jsd:,1), &
+#endif
+                             sqrt(gridstruct%area_64(is:ie,js:je)), &
+                             dtdt(is,js,k), out_dt, last_step)
               if ( .not. hydrostatic  ) then
                  do j=js,je
                     do i=is,ie
