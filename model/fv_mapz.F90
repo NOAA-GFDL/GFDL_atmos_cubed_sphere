@@ -522,7 +522,7 @@ contains
 !$OMP                               fast_mp_consv,kord_tm,pe4, &
 !$OMP                               npx,npy,ccn_cm3,u_dt,v_dt,   &
 !$OMP                               c2l_ord,bd,dp0,ps) &
-!$OMP                       private(q2,pe0,pe1,pe2,pe3,qv,cvm,gz,gsize,phis,dpln,dp2,t0)
+!$OMP                       private(q2,pe0,pe1,pe2,pe3,qv,cvm,gz,gsize,phis,dpln,dp2,t0,qnl,qni,dz)
 
 !$OMP do
   do k=2,km
