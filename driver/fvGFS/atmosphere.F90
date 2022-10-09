@@ -265,7 +265,7 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
   logical :: cold_start = .false.     !  used in initial condition
 
   integer, dimension(:), allocatable :: id_tracerdt_dyn
-  integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, cld_amt  ! condensate species tracer indices
+  integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, cld_amt  ! condensate species tracer indices
 
   integer :: mygrid = 1
   integer :: p_split = 1
@@ -324,8 +324,8 @@ contains
    logical :: dycore_only  = .false.
    logical :: debug        = .false.
    logical :: sync         = .false.
-   real                   :: avg_max_length=3600.
    logical :: ignore_rst_cksum = .false.
+   real    :: avg_max_length = 3600.
    namelist /atmos_model_nml/ blocksize, chksum_debug, dycore_only, debug, sync, ccpp_suite, avg_max_length, &
                               ignore_rst_cksum
    ! *DH 20210326
@@ -403,9 +403,10 @@ contains
    rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat' )
    snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat' )
    graupel = get_tracer_index (MODEL_ATMOS, 'graupel' )
+   hailwat = get_tracer_index (MODEL_ATMOS, 'hailwat' )
    cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
 
-   if (max(sphum,liq_wat,ice_wat,rainwat,snowwat,graupel) > Atm(mygrid)%flagstruct%nwat) then
+   if (max(sphum,liq_wat,ice_wat,rainwat,snowwat,graupel,hailwat) > Atm(mygrid)%flagstruct%nwat) then
       call mpp_error (FATAL,' atmosphere_init: condensate species are not first in the list of &
                             &tracers defined in the field_table')
    endif
@@ -449,6 +450,15 @@ contains
 !--- allocate pref
    allocate(pref(npz+1,2), dum1d(npz+1))
 
+   ! DH* 20210326
+   ! First, read atmos_model_nml namelist section - this is a workaround to avoid
+   ! unnecessary additional changes to the input namelists, in anticipation of the
+   ! implementation of a generic interface for GFDL and CCPP fast physics soon
+   read(input_nml_file, nml=atmos_model_nml, iostat=io)
+   ierr = check_nml_error(io, 'atmos_model_nml')
+   !write(0,'(a)') "It's me, and my physics suite is '" // trim(ccpp_suite) // "'"
+   ! *DH 20210326
+
    call fv_restart(Atm(mygrid)%domain, Atm, seconds, days, cold_start, Atm(mygrid)%gridstruct%grid_type, mygrid)
 
    fv_time = Time
@@ -489,15 +499,6 @@ contains
                     call timing_off('ATMOS_INIT')
 
    ! Do CCPP fast physics initialization before call to adiabatic_init (since this calls fv_dynamics)
-
-   ! DH* 20210326
-   ! First, read atmos_model_nml namelist section - this is a workaround to avoid
-   ! unnecessary additional changes to the input namelists, in anticipation of the
-   ! implementation of a generic interface for GFDL and CCPP fast physics soon
-   read(input_nml_file, nml=atmos_model_nml, iostat=io)
-   ierr = check_nml_error(io, 'atmos_model_nml')
-   !write(0,'(a)') "It's me, and my physics suite is '" // trim(ccpp_suite) // "'"
-   ! *DH 20210326
 
    ! For fast physics running over the entire domain, block
    ! and thread number are not used; set to safe values

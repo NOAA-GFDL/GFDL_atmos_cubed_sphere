@@ -404,10 +404,16 @@ contains
             qcon(i,k) = q0(i,k,liq_wat)+q0(i,k,ice_wat)+q0(i,k,snowwat)+q0(i,k,rainwat)
          enddo
       enddo
-   else
+   elseif ( nwat==6 ) then
       do k=1,kbot
          do i=is,ie
             qcon(i,k) = q0(i,k,liq_wat)+q0(i,k,ice_wat)+q0(i,k,snowwat)+q0(i,k,rainwat)+q0(i,k,graupel)
+         enddo
+      enddo
+   elseif ( nwat==7 ) then
+      do k=1,kbot
+         do i=is,ie
+            qcon(i,k) = q0(i,k,liq_wat)+q0(i,k,ice_wat)+q0(i,k,snowwat)+q0(i,k,rainwat)+q0(i,k,graupel)+q0(i,k,hailwat)
          enddo
       enddo
    endif
@@ -985,10 +991,16 @@ contains
          do i=is,ie
             qcon(i,k) = q0(i,k,liq_wat)+q0(i,k,ice_wat)+q0(i,k,snowwat)+q0(i,k,rainwat)
          enddo
-   else
+   elseif ( nwat==6 ) then
       do k=1,kbot
          do i=is,ie
             qcon(i,k) = q0(i,k,liq_wat)+q0(i,k,ice_wat)+q0(i,k,snowwat)+q0(i,k,rainwat)+q0(i,k,graupel)
+         enddo
+      enddo
+   elseif ( nwat==7 ) then
+      do k=1,kbot
+         do i=is,ie
+            qcon(i,k) = q0(i,k,liq_wat)+q0(i,k,ice_wat)+q0(i,k,snowwat)+q0(i,k,rainwat)+q0(i,k,graupel)+q0(i,k,hailwat)
          enddo
       enddo
    endif
