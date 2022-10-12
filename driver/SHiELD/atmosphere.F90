@@ -83,8 +83,8 @@ use fv_grid_utils_mod,  only: g_sum
 
 use mpp_domains_mod, only:  mpp_get_data_domain, mpp_get_compute_domain
 use gfdl_mp_mod,        only: gfdl_mp_init, gfdl_mp_end
-use cld_eff_rad_mod,    only: cld_eff_rad_init
 use diag_manager_mod,   only: send_data
+use external_aero_mod,  only: load_aero, read_aero, clean_aero
 use coarse_graining_mod, only: coarse_graining_init
 use coarse_grained_diagnostics_mod, only: fv_coarse_diag_init, fv_coarse_diag
 use coarse_grained_restart_files_mod, only: fv_coarse_restart_init
@@ -283,8 +283,8 @@ contains
 !--- allocate pref
    allocate(pref(npz+1,2), dum1d(npz+1))
 
-   call gfdl_mp_init(input_nml_file, stdlog())
-   call cld_eff_rad_init(input_nml_file, stdlog())
+   call gfdl_mp_init(input_nml_file, stdlog(), Atm(mygrid)%flagstruct%hydrostatic)
+
    call fv_restart(Atm(mygrid)%domain, Atm, dt_atmos, seconds, days, cold_start, &
                    Atm(mygrid)%gridstruct%grid_type, mygrid)
 
@@ -293,6 +293,13 @@ contains
 !----- initialize atmos_axes and fv_dynamics diagnostics
        !I've had trouble getting this to work with multiple grids at a time; worth revisiting?
    call fv_diag_init(Atm(mygrid:mygrid), Atm(mygrid)%atmos_axes, Time, npx, npy, npz, Atm(mygrid)%flagstruct%p_ref)
+
+   if (Atm(mygrid)%flagstruct%do_aerosol) then
+     call load_aero(Atm(mygrid), Time)
+     call read_aero(isc, iec, jsc, jec, npz, nq, Time, Atm(mygrid)%pe(isc:iec,:,jsc:jec), &
+       Atm(mygrid)%peln(isc:iec,:,jsc:jec), Atm(mygrid)%q(isc:iec,jsc:jec,:,:), &
+       Atm(mygrid)%flagstruct%kord_tr, Atm(mygrid)%flagstruct%fill)
+   endif
 
    if (Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
       call fv_coarse_diag_init(Atm, Time, Atm(mygrid)%atmos_axes(3), &
@@ -337,7 +344,6 @@ contains
       call mpp_error(NOTE, 'NWP nudging is active')
    endif
    call fv_io_register_nudge_restart ( Atm )
-
 
    if ( Atm(mygrid)%flagstruct%na_init>0 ) then
       if ( .not. Atm(mygrid)%flagstruct%hydrostatic ) then
@@ -447,6 +453,12 @@ contains
 
      call read_new_bc_data(Atm(n), Time, Time_step_atmos, p_split, &
                            isd, ied, jsd, jed )
+   endif
+
+   if (Atm(mygrid)%flagstruct%do_aerosol) then
+     call read_aero(isc, iec, jsc, jec, npz, nq, Time, Atm(mygrid)%pe(isc:iec,:,jsc:jec), &
+	     Atm(mygrid)%peln(isc:iec,:,jsc:jec), Atm(mygrid)%q(isc:iec,jsc:jec,:,:), &
+         Atm(mygrid)%flagstruct%kord_tr, Atm(mygrid)%flagstruct%fill)
    endif
 
 !save ps to ps_dt before dynamics update
@@ -578,9 +590,11 @@ contains
   ! initialize domains for writing global physics data
   if ( Atm(mygrid)%flagstruct%nudge ) call fv_nwp_nudge_end
 
-   if (Atm(mygrid)%flagstruct%do_inline_mp) then
-     call gfdl_mp_end ( )
+   if (Atm(mygrid)%flagstruct%do_aerosol) then
+     call clean_aero()
    endif
+
+   call gfdl_mp_end ( )
 
    if (first_diag) then
       call timing_on('FV_DIAG')
@@ -655,13 +669,8 @@ contains
 
    if (present(p_hydro)) p_hydro = Atm(mygrid)%flagstruct%phys_hydrostatic
    if (present(  hydro))   hydro = Atm(mygrid)%flagstruct%hydrostatic
-   if (present(tile_num)) then
-     if (Atm(mygrid)%gridstruct%nested) then
-       tile_num = Atm(mygrid)%tile_of_mosaic + 6
-     else
-       tile_num = Atm(mygrid)%tile_of_mosaic
-     endif
-   endif
+   if (present(tile_num)) tile_num = Atm(mygrid)%global_tile
+
  end subroutine atmosphere_control_data
 
 
@@ -1385,12 +1394,12 @@ contains
       enddo
    enddo
 
-   if (is_master()) then
-     fhr=time_type_to_real( Time_next - Atm(n)%Time_init )/3600.
-     if (fhr <= 12.0 .or. (fhr - int(fhr)) == 0.0) then
-        write(555,*) fhr, psdt_mean
-     endif
-   endif
+   !if (is_master()) then
+   !  fhr=time_type_to_real( Time_next - Atm(n)%Time_init )/3600.
+   !  if (fhr <= 12.0 .or. (fhr - int(fhr)) == 0.0) then
+   !     write(555,*) fhr, psdt_mean
+   !  endif
+   !endif
 
 !LMH 7jan2020: Update PBL and other clock tracers, if present
    tracer_clock = time_type_to_real(Time_next - Atm(n)%Time_init)*1.e-6
@@ -1769,10 +1778,19 @@ contains
          do ix = 1, blen
            i = Atm_block%index(nb)%ii(ix)
            j = Atm_block%index(nb)%jj(ix)
+           IPD_Data(nb)%Statein%prew(ix) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prew(i,j)))
            IPD_Data(nb)%Statein%prer(ix) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prer(i,j)))
            IPD_Data(nb)%Statein%prei(ix) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prei(i,j)))
            IPD_Data(nb)%Statein%pres(ix) = _DBL_(_RL_(Atm(mygrid)%inline_mp%pres(i,j)))
            IPD_Data(nb)%Statein%preg(ix) = _DBL_(_RL_(Atm(mygrid)%inline_mp%preg(i,j)))
+           do k = 1, npz
+             k1 = npz+1-k ! flipping the index
+             IPD_Data(nb)%Statein%prefluxw(ix,k) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prefluxw(i,j,k1)))
+             IPD_Data(nb)%Statein%prefluxr(ix,k) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prefluxr(i,j,k1)))
+             IPD_Data(nb)%Statein%prefluxi(ix,k) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prefluxi(i,j,k1)))
+             IPD_Data(nb)%Statein%prefluxs(ix,k) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prefluxs(i,j,k1)))
+             IPD_Data(nb)%Statein%prefluxg(ix,k) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prefluxg(i,j,k1)))
+           enddo
          enddo
      endif
 

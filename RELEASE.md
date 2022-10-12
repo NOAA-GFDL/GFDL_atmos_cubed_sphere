@@ -1,3 +1,17 @@
+# RELEASE NOTES for FV3 202210: Summary
+FV3-202210-public --- October 2022
+Lucas Harris, GFDL lucas.harris@noaa.gov
+
+This version has been tested with SHiELD physics release 202210
+and with FMS release 2022.03 from https://github.com/NOAA-GFDL/FMS
+
+This release includes the following:
+- Release of the GFDL Microphysics Version 3
+- Fix pressure-coarse-graining weighting from AI2's fork of FV3GFS
+- Add A-grid restart functionality from AI2's fork of FV3GFS
+- Fix for telescoping nest and GFS FIX file read
+
+
 # RELEASE NOTES for FV3 202204: Summary
 FV3-202204-public --- April 2022
 Lucas Harris, GFDL lucas.harris@noaa.gov

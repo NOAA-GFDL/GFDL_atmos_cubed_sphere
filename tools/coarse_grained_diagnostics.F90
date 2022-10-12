@@ -31,7 +31,7 @@ module coarse_grained_diagnostics_mod
   use mpp_mod, only: FATAL, mpp_error
   use coarse_graining_mod, only: block_sum, get_fine_array_bounds, get_coarse_array_bounds, MODEL_LEVEL, &
                                  weighted_block_average, PRESSURE_LEVEL, vertically_remap_field, &
-                                 vertical_remapping_requirements, mask_area_weights, mask_mass_weights, &
+                                 vertical_remapping_requirements, mask_area_weights, &
                                  block_edge_sum_x, block_edge_sum_y,&
                                  eddy_covariance_2d_weights, eddy_covariance_3d_weights
 
@@ -1206,15 +1206,10 @@ contains
 
     call get_need_nd_work_array(2, need_2d_work_array)
     call get_need_nd_work_array(3, need_3d_work_array)
-    call get_need_mass_array(need_mass_array)
+    call get_need_mass_array(Atm(tile_count)%coarse_graining%strategy, need_mass_array)
     call get_need_height_array(need_height_array)
     call get_need_vorticity_array(need_vorticity_array)
-
-    if (trim(Atm(tile_count)%coarse_graining%strategy) .eq. PRESSURE_LEVEL) then
-      call get_need_masked_area_array(need_masked_area_array)
-    else
-      need_masked_area_array = .false.
-    endif
+    call get_need_masked_area_array(Atm(tile_count)%coarse_graining%strategy, need_masked_area_array)
 
     call get_fine_array_bounds(is, ie, js, je)
     call get_coarse_array_bounds(is_coarse, ie_coarse, js_coarse, je_coarse)
@@ -1245,16 +1240,7 @@ contains
 
     if (need_mass_array) then
       allocate(mass(is:ie,js:je,1:npz))
-      if (trim(Atm(tile_count)%coarse_graining%strategy) .eq. MODEL_LEVEL) then
-        call compute_mass(Atm(tile_count), is, ie, js, je, npz, mass)
-      else if (trim(Atm(tile_count)%coarse_graining%strategy) .eq. PRESSURE_LEVEL) then
-        call mask_mass_weights( &
-             Atm(tile_count)%gridstruct%area(is:ie,js:je), &
-             Atm(tile_count)%delp(is:ie,js:je,1:npz), &
-             phalf, &
-             upsampled_coarse_phalf, &
-             mass)
-      endif
+      call compute_mass(Atm(tile_count), is, ie, js, je, npz, mass)
     endif
 
     if (need_masked_area_array) then
@@ -1306,7 +1292,7 @@ contains
                  work_3d_coarse)
           else if (trim(Atm(tile_count)%coarse_graining%strategy) .eq. PRESSURE_LEVEL) then
              call coarse_grain_3D_field_on_pressure_levels(is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, npz, &
-                 coarse_diagnostics(index), masked_area, mass, phalf, &
+                 coarse_diagnostics(index), masked_area, phalf, &
                  upsampled_coarse_phalf, Atm(tile_count)%ptop, &
                  Atm(tile_count)%omga(is:ie,js:je,1:npz),&
                  work_3d_coarse)
@@ -1359,11 +1345,11 @@ contains
    end subroutine coarse_grain_3D_field_on_model_levels
 
    subroutine coarse_grain_3D_field_on_pressure_levels(is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, &
-        npz, coarse_diag, masked_area, masked_mass, phalf, upsampled_coarse_phalf, &
+        npz, coarse_diag, masked_area, phalf, upsampled_coarse_phalf, &
         ptop, omega, result)
     integer, intent(in) :: is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, npz
     type(coarse_diag_type) :: coarse_diag
-    real, intent(in) :: masked_mass(is:ie,js:je,1:npz), masked_area(is:ie,js:je,1:npz)
+    real, intent(in) :: masked_area(is:ie,js:je,1:npz)
     real, intent(in) :: phalf(is:ie,js:je,1:npz+1), upsampled_coarse_phalf(is:ie,js:je,1:npz+1)
     real, intent(in) :: ptop
     real, intent(in) :: omega(is:ie,js:je,1:npz)
@@ -1389,15 +1375,10 @@ contains
             remapped_omega)
     endif
 
-    if (trim(coarse_diag%reduction_method) .eq. AREA_WEIGHTED) then
+    if ((trim(coarse_diag%reduction_method) .eq. AREA_WEIGHTED) .or. (trim(coarse_diag%reduction_method) .eq. MASS_WEIGHTED)) then
+      ! area-weighted and mass-weighted are equivalent when pressure-level coarse-graining
       call weighted_block_average( &
         masked_area(is:ie,js:je,1:npz), &
-        remapped_field(is:ie,js:je,1:npz), &
-        result &
-      )
-    elseif (trim(coarse_diag%reduction_method) .eq. MASS_WEIGHTED) then
-      call weighted_block_average( &
-        masked_mass(is:ie,js:je,1:npz), &
         remapped_field(is:ie,js:je,1:npz), &
         result &
       )
@@ -1604,19 +1585,22 @@ contains
      enddo
    end subroutine get_need_nd_work_array
 
-   subroutine get_need_mass_array(need_mass_array)
+   subroutine get_need_mass_array(coarsening_strategy, need_mass_array)
+     character(len=64), intent(in) :: coarsening_strategy
      logical, intent(out) :: need_mass_array
 
+     logical :: valid_strategy, valid_axes, valid_id, valid_reduction_method
      integer :: index
 
      need_mass_array = .false.
+     valid_strategy = trim(coarsening_strategy) .eq. MODEL_LEVEL
+     if (.not. valid_strategy) return
      do index = 1, DIAG_SIZE
-       if ((coarse_diagnostics(index)%axes == 3) .and. &
-           (trim(coarse_diagnostics(index)%reduction_method) .eq. MASS_WEIGHTED) .and. &
-           (coarse_diagnostics(index)%id > 0)) then
-           need_mass_array = .true.
-           exit
-       endif
+        valid_axes = coarse_diagnostics(index)%axes .eq. 3
+        valid_id = coarse_diagnostics(index)%id .gt. 0
+        valid_reduction_method = trim(coarse_diagnostics(index)%reduction_method) .eq. MASS_WEIGHTED
+        need_mass_array = valid_axes .and. valid_id .and. valid_reduction_method
+        if (need_mass_array) exit
      enddo
   end subroutine get_need_mass_array
 
@@ -1653,20 +1637,20 @@ contains
     enddo
  end subroutine get_need_vorticity_array
 
-  subroutine get_need_masked_area_array(need_masked_area_array)
+  subroutine get_need_masked_area_array(coarsening_strategy, need_masked_area_array)
+    character(len=64), intent(in) :: coarsening_strategy
     logical, intent(out) :: need_masked_area_array
 
-    logical :: valid_axes, valid_reduction_method, valid_id
+    logical :: valid_strategy, valid_axes, valid_id
     integer :: index
 
     need_masked_area_array = .false.
+    valid_strategy = trim(coarsening_strategy) .eq. PRESSURE_LEVEL
+    if (.not. valid_strategy) return
     do index = 1, DIAG_SIZE
-       valid_reduction_method = &
-            trim(coarse_diagnostics(index)%reduction_method) .eq. AREA_WEIGHTED .or. &
-            trim(coarse_diagnostics(index)%reduction_method) .eq. EDDY_COVARIANCE
        valid_axes = coarse_diagnostics(index)%axes .eq. 3
        valid_id = coarse_diagnostics(index)%id .gt. 0
-       need_masked_area_array = valid_reduction_method .and. valid_axes .and. valid_id
+       need_masked_area_array = valid_axes .and. valid_id
        if (need_masked_area_array) exit
    enddo
  end subroutine get_need_masked_area_array

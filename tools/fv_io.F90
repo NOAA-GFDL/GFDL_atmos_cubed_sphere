@@ -46,19 +46,22 @@ module fv_io_mod
   use mpp_domains_mod,         only: domain2d, EAST, WEST, NORTH, CENTER, SOUTH, CORNER, &
                                      mpp_get_compute_domain, mpp_get_data_domain, &
                                      mpp_get_layout, mpp_get_ntile_count, &
-                                     mpp_get_global_domain
+                                     mpp_get_global_domain, mpp_update_domains
   use tracer_manager_mod,      only: tr_get_tracer_names=>get_tracer_names, &
                                      get_tracer_names, get_number_tracers, &
                                      set_tracer_profile, &
                                      get_tracer_index
   use field_manager_mod,       only: MODEL_ATMOS
   use external_sst_mod,        only: sst_ncep, sst_anom, use_ncep_sst
-  use fv_arrays_mod,           only: fv_atmos_type, fv_nest_BC_type_3D
+  use fv_arrays_mod,           only: fv_atmos_type, fv_nest_BC_type_3D, R_GRID, &
+                                     fv_grid_bounds_type, fv_grid_type
   use fv_eta_mod,              only: set_external_eta
 
   use fv_mp_mod,               only: mp_gather, is_master
   use fv_treat_da_inc_mod,     only: read_da_inc
-
+  use mpp_parameter_mod,       only: DGRID_NE
+  use fv_grid_utils_mod,       only: cubed_a2d
+  
   implicit none
   private
 
@@ -271,8 +274,29 @@ contains
     elseif (Atm%Fv_restart_tile_is_open) then
        zsize = (/size(Atm%u,3)/)
        call fv_io_register_axis(Atm%Fv_restart_tile, numx=numx_2d, numy=numy_2d, xpos=xpos_2d, ypos=ypos_2d, numz=numz, zsize=zsize)
-       call register_restart_field(Atm%Fv_restart_tile, 'u', Atm%u, dim_names_4d)
-       call register_restart_field(Atm%Fv_restart_tile, 'v', Atm%v, dim_names_4d2)
+
+       !--- optionally include D-grid winds even if restarting from A-grid winds
+       if (Atm%flagstruct%write_optional_dgrid_vel_rst .and. Atm%flagstruct%restart_from_agrid_winds) then
+          call register_restart_field(Atm%Fv_restart_tile, 'u', Atm%u, &
+               dim_names_4d, is_optional=.true.)
+          call register_restart_field(Atm%Fv_restart_tile, 'v', Atm%v, &
+               dim_names_4d2, is_optional=.true.)
+       endif
+       
+       !--- include agrid winds in restarts for use in data assimilation or for restarting
+       if (Atm%flagstruct%agrid_vel_rst .or. Atm%flagstruct%restart_from_agrid_winds) then
+          call register_restart_field(Atm%Fv_restart_tile, 'ua', Atm%ua, &
+               dim_names_4d3)
+          call register_restart_field(Atm%Fv_restart_tile, 'va', Atm%va, &
+               dim_names_4d3)
+       endif
+       
+       if (.not. Atm%flagstruct%restart_from_agrid_winds) then
+          call register_restart_field(Atm%Fv_restart_tile, 'u', Atm%u, &
+               dim_names_4d)
+          call register_restart_field(Atm%Fv_restart_tile, 'v', Atm%v, &
+               dim_names_4d2)
+       endif
 
        if (.not.Atm%flagstruct%hydrostatic) then
           if (Atm%flagstruct%make_nh) then ! Hydrostatic restarts dont have these variables
@@ -293,17 +317,15 @@ contains
        call register_restart_field(Atm%Fv_restart_tile,  'delp', Atm%delp, dim_names_4d3)
        call register_restart_field(Atm%Fv_restart_tile,  'phis', Atm%phis, dim_names_3d)
 
-       !--- include agrid winds in restarts for use in data assimilation
-       if (Atm%flagstruct%agrid_vel_rst) then
-          call register_restart_field(Atm%Fv_restart_tile,  'ua', Atm%ua, dim_names_4d3)
-          call register_restart_field(Atm%Fv_restart_tile,  'va', Atm%va, dim_names_4d3)
-       endif
-
        if (.not. Atm%Fv_restart_tile%is_readonly) then !if writing file
-         call register_variable_attribute(Atm%Fv_restart_tile, 'u', "long_name", "u", str_len=len("u"))
-         call register_variable_attribute(Atm%Fv_restart_tile, 'u', "units", "none", str_len=len("none"))
-         call register_variable_attribute(Atm%Fv_restart_tile, 'v', "long_name", "v", str_len=len("v"))
-         call register_variable_attribute(Atm%Fv_restart_tile, 'v', "units", "none", str_len=len("none"))
+         if (variable_exists(Atm%Fv_restart_tile, 'u')) then
+           call register_variable_attribute(Atm%Fv_restart_tile, 'u', "long_name", "u", str_len=len("u"))
+           call register_variable_attribute(Atm%Fv_restart_tile, 'u', "units", "none", str_len=len("none"))
+         endif
+         if (variable_exists(Atm%Fv_restart_tile, 'v')) then
+           call register_variable_attribute(Atm%Fv_restart_tile, 'v', "long_name", "v", str_len=len("v"))
+           call register_variable_attribute(Atm%Fv_restart_tile, 'v', "units", "none", str_len=len("none"))
+         endif
          if (variable_exists(Atm%Fv_restart_tile, 'W')) then
            call register_variable_attribute(Atm%Fv_restart_tile, 'W', "long_name", "W", str_len=len("W"))
            call register_variable_attribute(Atm%Fv_restart_tile, 'W', "units", "none", str_len=len("none"))
@@ -322,9 +344,11 @@ contains
          call register_variable_attribute(Atm%Fv_restart_tile, 'delp', "units", "none", str_len=len("none"))
          call register_variable_attribute(Atm%Fv_restart_tile, 'phis', "long_name", "phis", str_len=len("phis"))
          call register_variable_attribute(Atm%Fv_restart_tile, 'phis', "units", "none", str_len=len("none"))
-         if (Atm%flagstruct%agrid_vel_rst) then
+         if (variable_exists(Atm%Fv_restart_tile, 'ua')) then
            call register_variable_attribute(Atm%Fv_restart_tile, 'ua', "long_name", "ua", str_len=len("ua"))
            call register_variable_attribute(Atm%Fv_restart_tile, 'ua', "units", "none", str_len=len("none"))
+         endif
+         if (variable_exists(Atm%Fv_restart_tile, 'va')) then
            call register_variable_attribute(Atm%Fv_restart_tile, 'va', "long_name", "va", str_len=len("va"))
            call register_variable_attribute(Atm%Fv_restart_tile, 'va', "units", "none", str_len=len("none"))
          endif
@@ -459,6 +483,12 @@ contains
       call read_restart(Atm(1)%Fv_restart_tile, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
       call close_file(Atm(1)%Fv_restart_tile)
       Atm(1)%Fv_restart_tile_is_open = .false.
+      if (Atm(1)%flagstruct%restart_from_agrid_winds) then
+         call cubed_a2d(Atm(1)%npx, Atm(1)%npy, Atm(1)%npz, &
+              Atm(1)%ua, Atm(1)%va, Atm(1)%u, Atm(1)%v, &
+              Atm(1)%gridstruct, Atm(1)%domain, Atm(1)%bd)
+         call mpp_update_domains(Atm(1)%u, Atm(1)%v, Atm(1)%domain, gridtype=DGRID_NE, complete=.true.)
+      endif
     endif
 
 !--- restore data for fv_tracer - if it exists

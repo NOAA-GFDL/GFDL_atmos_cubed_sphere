@@ -66,7 +66,7 @@
         direct_transform, cube_transform, &
         make_eta_level, expand_cell, cart_to_latlon, intp_great_circle, normalize_vect, &
         dist2side_latlon, spherical_linear_interpolation, get_latlon_vector
- public symm_grid
+ public symm_grid, cubed_a2d
 
  INTERFACE fill_ghost
 #ifdef OVERLOAD_R4
@@ -3612,6 +3612,189 @@
 
  end subroutine update2d_dwinds_phys
 
+ subroutine cubed_a2d( npx, npy, npz, ua, va, u, v, gridstruct, fv_domain, bd )
+
+! Purpose; Transform wind on A grid to D grid
+
+  type(fv_grid_bounds_type), intent(IN) :: bd
+  integer, intent(in):: npx, npy, npz
+  real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: ua, va
+  real, intent(out):: u(bd%isd:bd%ied,  bd%jsd:bd%jed+1,npz)
+  real, intent(out):: v(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz)
+  type(fv_grid_type), intent(IN), target :: gridstruct
+  type(domain2d), intent(INOUT) :: fv_domain
+! local:
+  real v3(3,bd%is-1:bd%ie+1,bd%js-1:bd%je+1)
+  real ue(3,bd%is-1:bd%ie+1,bd%js:bd%je+1)    ! 3D winds at edges
+  real ve(3,bd%is:bd%ie+1,bd%js-1:bd%je+1)    ! 3D winds at edges
+  real, dimension(bd%is:bd%ie):: ut1, ut2, ut3
+  real, dimension(bd%js:bd%je):: vt1, vt2, vt3
+  integer i, j, k, im2, jm2
+
+  real(kind=R_GRID), pointer, dimension(:,:,:)   :: vlon, vlat
+  real(kind=R_GRID), pointer, dimension(:)       :: edge_vect_w, edge_vect_e, edge_vect_s, edge_vect_n
+  real(kind=R_GRID), pointer, dimension(:,:,:,:) :: ew, es
+
+  integer :: is,  ie,  js,  je
+  integer :: isd, ied, jsd, jed
+
+  is  = bd%is
+  ie  = bd%ie
+  js  = bd%js
+  je  = bd%je
+  isd = bd%isd
+  ied = bd%ied
+  jsd = bd%jsd
+  jed = bd%jed
+
+  vlon => gridstruct%vlon
+  vlat => gridstruct%vlat
+
+  edge_vect_w => gridstruct%edge_vect_w
+  edge_vect_e => gridstruct%edge_vect_e
+  edge_vect_s => gridstruct%edge_vect_s
+  edge_vect_n => gridstruct%edge_vect_n
+
+  ew => gridstruct%ew
+  es => gridstruct%es
+
+  call mpp_update_domains(ua, fv_domain, complete=.false.)
+  call mpp_update_domains(va, fv_domain, complete=.true.)
+
+    im2 = (npx-1)/2
+    jm2 = (npy-1)/2
+
+    do k=1, npz
+! Compute 3D wind on A grid
+       do j=js-1,je+1
+          do i=is-1,ie+1
+             v3(1,i,j) = ua(i,j,k)*vlon(i,j,1) + va(i,j,k)*vlat(i,j,1)
+             v3(2,i,j) = ua(i,j,k)*vlon(i,j,2) + va(i,j,k)*vlat(i,j,2)
+             v3(3,i,j) = ua(i,j,k)*vlon(i,j,3) + va(i,j,k)*vlat(i,j,3)
+          enddo
+       enddo
+
+! A --> D
+! Interpolate to cell edges
+       do j=js,je+1
+          do i=is-1,ie+1
+             ue(1,i,j) = 0.5*(v3(1,i,j-1) + v3(1,i,j))
+             ue(2,i,j) = 0.5*(v3(2,i,j-1) + v3(2,i,j))
+             ue(3,i,j) = 0.5*(v3(3,i,j-1) + v3(3,i,j))
+          enddo
+       enddo
+
+       do j=js-1,je+1
+          do i=is,ie+1
+             ve(1,i,j) = 0.5*(v3(1,i-1,j) + v3(1,i,j))
+             ve(2,i,j) = 0.5*(v3(2,i-1,j) + v3(2,i,j))
+             ve(3,i,j) = 0.5*(v3(3,i-1,j) + v3(3,i,j))
+          enddo
+       enddo
+
+! --- E_W edges (for v-wind):
+     if (.not. gridstruct%bounded_domain) then
+     if ( is==1) then
+       i = 1
+       do j=js,je
+        if ( j>jm2 ) then
+             vt1(j) = edge_vect_w(j)*ve(1,i,j-1)+(1.-edge_vect_w(j))*ve(1,i,j)
+             vt2(j) = edge_vect_w(j)*ve(2,i,j-1)+(1.-edge_vect_w(j))*ve(2,i,j)
+             vt3(j) = edge_vect_w(j)*ve(3,i,j-1)+(1.-edge_vect_w(j))*ve(3,i,j)
+        else
+             vt1(j) = edge_vect_w(j)*ve(1,i,j+1)+(1.-edge_vect_w(j))*ve(1,i,j)
+             vt2(j) = edge_vect_w(j)*ve(2,i,j+1)+(1.-edge_vect_w(j))*ve(2,i,j)
+             vt3(j) = edge_vect_w(j)*ve(3,i,j+1)+(1.-edge_vect_w(j))*ve(3,i,j)
+        endif
+       enddo
+       do j=js,je
+          ve(1,i,j) = vt1(j)
+          ve(2,i,j) = vt2(j)
+          ve(3,i,j) = vt3(j)
+       enddo
+     endif
+
+     if ( (ie+1)==npx ) then
+       i = npx
+       do j=js,je
+        if ( j>jm2 ) then
+             vt1(j) = edge_vect_e(j)*ve(1,i,j-1)+(1.-edge_vect_e(j))*ve(1,i,j)
+             vt2(j) = edge_vect_e(j)*ve(2,i,j-1)+(1.-edge_vect_e(j))*ve(2,i,j)
+             vt3(j) = edge_vect_e(j)*ve(3,i,j-1)+(1.-edge_vect_e(j))*ve(3,i,j)
+        else
+             vt1(j) = edge_vect_e(j)*ve(1,i,j+1)+(1.-edge_vect_e(j))*ve(1,i,j)
+             vt2(j) = edge_vect_e(j)*ve(2,i,j+1)+(1.-edge_vect_e(j))*ve(2,i,j)
+             vt3(j) = edge_vect_e(j)*ve(3,i,j+1)+(1.-edge_vect_e(j))*ve(3,i,j)
+        endif
+       enddo
+       do j=js,je
+          ve(1,i,j) = vt1(j)
+          ve(2,i,j) = vt2(j)
+          ve(3,i,j) = vt3(j)
+       enddo
+     endif
+
+! N-S edges (for u-wind):
+     if ( js==1 ) then
+       j = 1
+       do i=is,ie
+        if ( i>im2 ) then
+             ut1(i) = edge_vect_s(i)*ue(1,i-1,j)+(1.-edge_vect_s(i))*ue(1,i,j)
+             ut2(i) = edge_vect_s(i)*ue(2,i-1,j)+(1.-edge_vect_s(i))*ue(2,i,j)
+             ut3(i) = edge_vect_s(i)*ue(3,i-1,j)+(1.-edge_vect_s(i))*ue(3,i,j)
+        else
+             ut1(i) = edge_vect_s(i)*ue(1,i+1,j)+(1.-edge_vect_s(i))*ue(1,i,j)
+             ut2(i) = edge_vect_s(i)*ue(2,i+1,j)+(1.-edge_vect_s(i))*ue(2,i,j)
+             ut3(i) = edge_vect_s(i)*ue(3,i+1,j)+(1.-edge_vect_s(i))*ue(3,i,j)
+        endif
+       enddo
+       do i=is,ie
+          ue(1,i,j) = ut1(i)
+          ue(2,i,j) = ut2(i)
+          ue(3,i,j) = ut3(i)
+       enddo
+     endif
+
+     if ( (je+1)==npy ) then
+       j = npy
+       do i=is,ie
+        if ( i>im2 ) then
+             ut1(i) = edge_vect_n(i)*ue(1,i-1,j)+(1.-edge_vect_n(i))*ue(1,i,j)
+             ut2(i) = edge_vect_n(i)*ue(2,i-1,j)+(1.-edge_vect_n(i))*ue(2,i,j)
+             ut3(i) = edge_vect_n(i)*ue(3,i-1,j)+(1.-edge_vect_n(i))*ue(3,i,j)
+        else
+             ut1(i) = edge_vect_n(i)*ue(1,i+1,j)+(1.-edge_vect_n(i))*ue(1,i,j)
+             ut2(i) = edge_vect_n(i)*ue(2,i+1,j)+(1.-edge_vect_n(i))*ue(2,i,j)
+             ut3(i) = edge_vect_n(i)*ue(3,i+1,j)+(1.-edge_vect_n(i))*ue(3,i,j)
+        endif
+       enddo
+       do i=is,ie
+          ue(1,i,j) = ut1(i)
+          ue(2,i,j) = ut2(i)
+          ue(3,i,j) = ut3(i)
+       enddo
+     endif
+
+     endif ! .not. bounded_domain
+
+     do j=js,je+1
+        do i=is,ie
+           u(i,j,k) =  ue(1,i,j)*es(1,i,j,1) +  &
+                       ue(2,i,j)*es(2,i,j,1) +  &
+                       ue(3,i,j)*es(3,i,j,1)
+        enddo
+     enddo
+     do j=js,je
+        do i=is,ie+1
+           v(i,j,k) = ve(1,i,j)*ew(1,i,j,2) +  &
+                      ve(2,i,j)*ew(2,i,j,2) +  &
+                      ve(3,i,j)*ew(3,i,j,2)
+        enddo
+     enddo
+
+   enddo         ! k-loop
+
+ end subroutine cubed_a2d 
 
 #ifdef TO_DO_MQ
  subroutine init_mq(phis, gridstruct, npx, npy, is, ie, js, je, ng)

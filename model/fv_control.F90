@@ -165,7 +165,10 @@ module fv_control_mod
      logical , pointer :: RF_fast
      logical , pointer :: consv_am
      logical , pointer :: do_sat_adj
+     logical , pointer :: consv_checker
+     logical , pointer :: do_fast_phys
      logical , pointer :: do_inline_mp
+     logical , pointer :: do_aerosol
      logical , pointer :: do_f3d
      logical , pointer :: no_dycore
      logical , pointer :: convert_ke
@@ -230,6 +233,8 @@ module fv_control_mod
      real    , pointer :: consv_te
      real    , pointer :: tau
      real    , pointer :: rf_cutoff
+     real    , pointer :: te_err
+     real    , pointer :: tw_err
      logical , pointer :: filter_phys
      logical , pointer :: dwind_2d
      logical , pointer :: breed_vortex_inline
@@ -304,6 +309,8 @@ module fv_control_mod
      logical, pointer :: write_only_coarse_intermediate_restarts
      logical, pointer :: write_coarse_agrid_vel_rst
      logical, pointer :: write_coarse_dgrid_vel_rst
+     logical, pointer :: restart_from_agrid_winds
+     logical, pointer :: write_optional_dgrid_vel_rst
      logical, pointer :: pass_full_omega_to_physics_in_non_hydrostatic_mode
      !!!!!!!!!! END POINTERS !!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -692,7 +699,10 @@ module fv_control_mod
        RF_fast                       => Atm%flagstruct%RF_fast
        consv_am                      => Atm%flagstruct%consv_am
        do_sat_adj                    => Atm%flagstruct%do_sat_adj
+       consv_checker                 => Atm%flagstruct%consv_checker
+       do_fast_phys                  => Atm%flagstruct%do_fast_phys
        do_inline_mp                  => Atm%flagstruct%do_inline_mp
+       do_aerosol                    => Atm%flagstruct%do_aerosol
        do_f3d                        => Atm%flagstruct%do_f3d
        no_dycore                     => Atm%flagstruct%no_dycore
        convert_ke                    => Atm%flagstruct%convert_ke
@@ -754,6 +764,8 @@ module fv_control_mod
        consv_te                      => Atm%flagstruct%consv_te
        tau                           => Atm%flagstruct%tau
        rf_cutoff                     => Atm%flagstruct%rf_cutoff
+       te_err                        => Atm%flagstruct%te_err
+       tw_err                        => Atm%flagstruct%tw_err
        filter_phys                   => Atm%flagstruct%filter_phys
        dwind_2d                      => Atm%flagstruct%dwind_2d
        breed_vortex_inline           => Atm%flagstruct%breed_vortex_inline
@@ -836,6 +848,8 @@ module fv_control_mod
        write_only_coarse_intermediate_restarts => Atm%coarse_graining%write_only_coarse_intermediate_restarts
        write_coarse_agrid_vel_rst    => Atm%coarse_graining%write_coarse_agrid_vel_rst
        write_coarse_dgrid_vel_rst    => Atm%coarse_graining%write_coarse_dgrid_vel_rst
+       restart_from_agrid_winds      => Atm%flagstruct%restart_from_agrid_winds
+       write_optional_dgrid_vel_rst  => Atm%flagstruct%write_optional_dgrid_vel_rst
        pass_full_omega_to_physics_in_non_hydrostatic_mode => Atm%flagstruct%pass_full_omega_to_physics_in_non_hydrostatic_mode
      end subroutine set_namelist_pointers
 
@@ -907,8 +921,8 @@ module fv_control_mod
             use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, write_3d_diags, &
             do_schmidt, do_cube_transform, &
             hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
-            kord_mt, kord_wz, kord_tm, kord_tr, remap_te, fv_debug, fv_land, &
-            do_am4_remap, nudge, do_sat_adj, do_inline_mp, do_f3d, &
+            kord_mt, kord_wz, kord_tm, kord_tr, remap_te, fv_debug, fv_land, consv_checker, &
+            do_am4_remap, nudge, do_sat_adj, do_fast_phys, do_inline_mp, do_aerosol, do_f3d, &
             external_ic, read_increment, ncep_ic, nggps_ic, hrrrv3_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
             external_eta, res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, lim_fac, &
             dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
@@ -916,7 +930,7 @@ module fv_control_mod
             dry_mass, grid_type, do_Held_Suarez, &
             consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, consv_am, RF_fast, &
             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
-            tau, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
+            tau, tau_h2o, rf_cutoff, te_err, tw_err, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
             na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
             pnats, dnats, dnrts, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
             c2l_ord, dx_const, dy_const, umax, deglat,      &
@@ -930,6 +944,7 @@ module fv_control_mod
             w_limiter, write_coarse_restart_files, write_coarse_diagnostics,&
             write_only_coarse_intermediate_restarts, &
             write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst, &
+            restart_from_agrid_winds, write_optional_dgrid_vel_rst, &
             pass_full_omega_to_physics_in_non_hydrostatic_mode, ignore_rst_cksum
 
 

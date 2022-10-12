@@ -29,7 +29,7 @@ module fv_diag_column_mod
   use fms_mod,            only: write_version_number, lowercase
   use mpp_mod,            only: mpp_error, FATAL, stdlog, mpp_pe, mpp_root_pe, mpp_sum, &
                                 mpp_max, NOTE, input_nml_file, get_unit
-  use fv_sg_mod,          only: qsmith
+  use gfdl_mp_mod,        only: mqs3d
 
   implicit none
   private
@@ -584,7 +584,7 @@ contains
                 pres = delp(i,j,k)/delz(i,j,k)*rdg*Tv
                 !if (pres < sounding_top) cycle
 
-                call qsmith(1, 1, 1, pt(i,j,k:k),   &
+                call mqs3d(1, 1, 1, pt(i,j,k:k),   &
                      (/pres/), q(i,j,k:k,sphum), qs)
 
                 mixr = q(i,j,k,sphum)/(1.-sum(q(i,j,k,1:nwat))) ! convert from sphum to mixing ratio

@@ -75,7 +75,7 @@ module fv_nggps_diags_mod
                                max_uh, bunkers_vector, helicity_relative_CAPS
  use fv_arrays_mod,      only: fv_atmos_type
  use mpp_domains_mod,    only: domain1d, domainUG
- use rad_ref_mod,        only: rad_ref
+ use gfdl_mp_mod,        only: rad_ref
  use fv_eta_mod,         only: get_eta_level
 #ifdef MULTI_GASES
  use multi_gases_mod,  only:  virq
@@ -657,10 +657,11 @@ contains
 
     !--- 3-D Reflectivity field
     if ( rainwat > 0 .and. id_dbz>0) then
-      call rad_ref(Atm(n)%q, Atm(n)%pt, Atm(n)%delp, Atm(n)%peln, Atm(n)%delz, &
-                   wk, wk2, allmax, Atm(n)%bd, npzo, Atm(n)%ncnst, Atm(n)%flagstruct%hydrostatic, &
-                   zvir, .false., .false., .false., .true., Atm(n)%flagstruct%do_inline_mp, &
-                   sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, mp_top) !  GFDL MP has constant N_0 intercept
+      call rad_ref(isco, ieco, jsco, jeco, isdo, iedo, jsdo, jedo, &
+                   Atm(n)%q, Atm(n)%pt, Atm(n)%delp, Atm(n)%peln, Atm(n)%delz, &
+                   wk, wk2, allmax, npzo, Atm(n)%ncnst, Atm(n)%flagstruct%hydrostatic, &
+                   zvir, Atm(n)%flagstruct%do_inline_mp, &
+                   sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, mp_top) ! GFDL MP has constant N_0 intercept
       call store_data(id_dbz, wk, Time, kstt_dbz, kend_dbz)
     endif
 
