@@ -408,7 +408,7 @@ module fv_control_mod
      integer, pointer :: nrows_blend
      logical, pointer :: regional_bcs_from_gsi
      logical, pointer :: write_restart_with_bcs
-     integer, pointer :: parent_tile, refinement, nestbctype, nestupdate, nsponge, ioffset, joffset
+     integer, pointer :: parent_tile, refinement, nestbctype, nestupdate, upoff, nsponge, ioffset, joffset
      real, pointer :: s_weight, update_blend
 
      character(len=16), pointer :: restart_resolution
@@ -971,6 +971,7 @@ module fv_control_mod
        refinement                    => Atm%neststruct%refinement
        nestbctype                    => Atm%neststruct%nestbctype
        nestupdate                    => Atm%neststruct%nestupdate
+       upoff                         => Atm%neststruct%upoff
        nsponge                       => Atm%neststruct%nsponge
        s_weight                      => Atm%neststruct%s_weight
        ioffset                       => Atm%neststruct%ioffset
@@ -1071,7 +1072,7 @@ module fv_control_mod
             deglon_start, deglon_stop, deglat_start, deglat_stop, &
             phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, butterfly_effect, &
             molecular_diffusion, dz_min, psm_bc, nested, twowaynest, nudge_qv, &
-            nestbctype, nestupdate, nsponge, s_weight, &
+            nestbctype, nestupdate, upoff, nsponge, s_weight, &
             check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
             do_uni_zfull, adj_mass_vmr, fac_n_spl, fhouri, update_blend, regional, bc_update_interval,  &
             regional_bcs_from_gsi, write_restart_with_bcs, nrows_blend,  &
