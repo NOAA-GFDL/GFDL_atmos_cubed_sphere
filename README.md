@@ -1,6 +1,6 @@
 # GFDL_atmos_cubed_sphere
 
-The source contained herein merges in the [2021 January Release](https://github.com/NOAA-GFDL/GFDL_atmos_cubed_sphere/releases/tag/FV3-202101-public) of the Finite Volume Cubed-Sphere Dynamical Core (FV3) for use in the current GFDL models (AM4/CM4/ESM4/SPEAR).
+The source contained herein merges in the [2022 April Release](https://github.com/NOAA-GFDL/GFDL_atmos_cubed_sphere/releases/tag/FV3-202204-public) of the Finite Volume Cubed-Sphere Dynamical Core (FV3) for use in the current GFDL models (AM4/CM4/ESM4/SPEAR).
 
 # Where to find information
 

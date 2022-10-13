@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -18,6 +18,7 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
 #ifdef OVERLOAD_R4
 #define _GET_VAR1 get_var1_real
 #else
@@ -228,7 +229,7 @@ module fv_nwp_nudge_mod
  contains
 
 
-  subroutine fv_nwp_nudge ( Time, dt, npx, npy, npz, ps_dt, u_dt, v_dt, t_dt, q_dt, zvir, ptop, &
+  subroutine fv_nwp_nudge ( Time, dt, npx, npy, npz, ps_dt, u_dt, v_dt, t_dt, q_dt, zvir, &
                             ak, bk, ts, ps, delp, ua, va, pt, nwat, q, phis, gridstruct, &
                             bd, domain )
 
@@ -237,7 +238,7 @@ module fv_nwp_nudge_mod
   integer,         intent(in):: npz           ! vertical dimension
   integer,         intent(in):: nwat
   real,            intent(in):: dt
-  real,            intent(in):: zvir, ptop
+  real,            intent(in):: zvir
   type(domain2d), intent(INOUT), target :: domain
   type(fv_grid_bounds_type), intent(IN) :: bd
   real, intent(in   ), dimension(npz+1):: ak, bk
@@ -435,7 +436,7 @@ module fv_nwp_nudge_mod
 
 
   call get_obs(Time, dt, zvir, ak, bk, ps, ts, ps_obs, delp, pt, nwat, q, u_obs, v_obs, t_obs, q_obs,   &
-               phis, ua, va, u_dt, v_dt, npx, npy, npz, factor, factor_nwp, mask, ptop, bd, gridstruct, domain)
+               phis, ua, va, u_dt, v_dt, npx, npy, npz, factor, factor_nwp, mask, bd, gridstruct, domain)
 ! *t_obs* is virtual temperature
 
   if ( no_obs ) then
@@ -1030,10 +1031,10 @@ module fv_nwp_nudge_mod
 
 
  subroutine get_obs(Time, dt, zvir, ak, bk, ps, ts, ps_obs, delp, pt, nwat, q, u_obs, v_obs, t_obs, q_obs,  &
-                    phis, ua, va, u_dt, v_dt, npx, npy, npz, factor, factor_nwp, mask, ptop, bd, gridstruct, domain)
+                    phis, ua, va, u_dt, v_dt, npx, npy, npz, factor, factor_nwp, mask, bd, gridstruct, domain)
   type(time_type), intent(in):: Time
   integer,         intent(in):: npz, nwat, npx, npy
-  real,            intent(in):: zvir, ptop
+  real,            intent(in):: zvir
   real,            intent(in):: dt, factor, factor_nwp
   real, intent(in), dimension(npz+1):: ak, bk
   type(fv_grid_bounds_type), intent(IN) :: bd
@@ -1161,26 +1162,26 @@ module fv_nwp_nudge_mod
   if ( nudge_winds ) then
 
        call remap_uv(npz, ak,  bk, ps(is:ie,js:je), delp,  ut,     vt,   &
-                     km, ps_dat(is:ie,js:je,1),  u_dat(:,:,:,1), v_dat(:,:,:,1), ptop )
+                     km, ps_dat(is:ie,js:je,1),  u_dat(:,:,:,1), v_dat(:,:,:,1) )
 
        u_obs(:,:,:) = alpha*ut(:,:,:)
        v_obs(:,:,:) = alpha*vt(:,:,:)
 
        call remap_uv(npz, ak, bk, ps(is:ie,js:je), delp,   ut,      vt,   &
-                     km, ps_dat(is:ie,js:je,2),  u_dat(:,:,:,2), v_dat(:,:,:,2), ptop )
+                     km, ps_dat(is:ie,js:je,2),  u_dat(:,:,:,2), v_dat(:,:,:,2) )
 
        u_obs(:,:,:) = u_obs(:,:,:) + beta*ut(:,:,:)
        v_obs(:,:,:) = v_obs(:,:,:) + beta*vt(:,:,:)
   endif
 
        call remap_tq(npz, ak, bk, ps(is:ie,js:je), delp,  ut,  vt,  &
-                     km,  ps_dat(is:ie,js:je,1),  t_dat(:,:,:,1), q_dat(:,:,:,1), zvir, ptop)
+                     km,  ps_dat(is:ie,js:je,1),  t_dat(:,:,:,1), q_dat(:,:,:,1), zvir)
 
        t_obs(:,:,:) = alpha*ut(:,:,:)
        q_obs(:,:,:) = alpha*vt(:,:,:)
 
        call remap_tq(npz, ak, bk, ps(is:ie,js:je), delp,  ut,  vt,  &
-                     km,  ps_dat(is:ie,js:je,2),  t_dat(:,:,:,2), q_dat(:,:,:,2), zvir, ptop)
+                     km,  ps_dat(is:ie,js:je,2),  t_dat(:,:,:,2), q_dat(:,:,:,2), zvir)
 
        t_obs(:,:,:) = t_obs(:,:,:) + beta*ut(:,:,:)
        q_obs(:,:,:) = q_obs(:,:,:) + beta*vt(:,:,:)
@@ -1866,9 +1867,9 @@ module fv_nwp_nudge_mod
 
 
  subroutine remap_tq( npz, ak,  bk,  ps, delp,  t,  q,  &
-                      kmd, ps0, ta, qa, zvir, ptop)
+                      kmd, ps0, ta, qa, zvir)
   integer, intent(in):: npz, kmd
-  real,    intent(in):: zvir, ptop
+  real,    intent(in):: zvir
   real,    intent(in):: ak(npz+1), bk(npz+1)
   real,    intent(in),    dimension(is:ie,js:je):: ps0
   real,    intent(inout), dimension(is:ie,js:je):: ps
@@ -1919,7 +1920,7 @@ module fv_nwp_nudge_mod
               qp(i,k) = qa(i,j,k)
            enddo
         enddo
-        call mappm(kmd, pe0, qp, npz, pe1, qn1, is,ie, 0, kord_data, ptop)
+        call mappm(kmd, pe0, qp, npz, pe1, qn1, is,ie, 0, kord_data)
         do k=1,npz
            do i=is,ie
               q(i,j,k) = qn1(i,k)
@@ -1932,7 +1933,7 @@ module fv_nwp_nudge_mod
          tp(i,k) = ta(i,j,k)
       enddo
    enddo
-   call mappm(kmd, pn0, tp, npz, pn1, qn1, is,ie, 1, kord_data, ptop)
+   call mappm(kmd, pn0, tp, npz, pn1, qn1, is,ie, 1, kord_data)
 
    do k=1,npz
       do i=is,ie
@@ -1945,9 +1946,8 @@ module fv_nwp_nudge_mod
  end subroutine remap_tq
 
 
- subroutine remap_uv(npz, ak, bk, ps, delp, u, v, kmd, ps0, u0, v0, ptop)
+ subroutine remap_uv(npz, ak, bk, ps, delp, u, v, kmd, ps0, u0, v0)
   integer, intent(in):: npz
-  real,    intent(IN):: ptop
   real,    intent(in):: ak(npz+1), bk(npz+1)
   real,    intent(inout):: ps(is:ie,js:je)
   real, intent(in), dimension(isd:ied,jsd:jed,npz):: delp
@@ -1995,7 +1995,7 @@ module fv_nwp_nudge_mod
             qt(i,k) = u0(i,j,k)
          enddo
       enddo
-      call mappm(kmd, pe0, qt, npz, pe1, qn1, is,ie, -1, kord_data, ptop)
+      call mappm(kmd, pe0, qt, npz, pe1, qn1, is,ie, -1, kord_data)
       do k=1,npz
          do i=is,ie
             u(i,j,k) = qn1(i,k)
@@ -2009,7 +2009,7 @@ module fv_nwp_nudge_mod
             qt(i,k) = v0(i,j,k)
          enddo
       enddo
-      call mappm(kmd, pe0, qt, npz, pe1, qn1, is,ie, -1, kord_data, ptop)
+      call mappm(kmd, pe0, qt, npz, pe1, qn1, is,ie, -1, kord_data)
       do k=1,npz
          do i=is,ie
             v(i,j,k) = qn1(i,k)
