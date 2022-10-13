@@ -1394,13 +1394,6 @@ contains
       enddo
    enddo
 
-   !if (is_master()) then
-   !  fhr=time_type_to_real( Time_next - Atm(n)%Time_init )/3600.
-   !  if (fhr <= 12.0 .or. (fhr - int(fhr)) == 0.0) then
-   !     write(555,*) fhr, psdt_mean
-   !  endif
-   !endif
-
 !LMH 7jan2020: Update PBL and other clock tracers, if present
    tracer_clock = time_type_to_real(Time_next - Atm(n)%Time_init)*1.e-6
    lat_thresh = 15.*pi/180.

@@ -161,7 +161,6 @@ contains
            if ( grids_on_this_pe(n) ) then
                 call fv_phys_init(isc,iec,jsc,jec,Atm(n)%npz,Atm(n)%flagstruct%nwat, Atm(n)%ts, Atm(n)%pt(isc:iec,jsc:jec,:),   &
                              Time, axes, Atm(n)%gridstruct%agrid(isc:iec,jsc:jec,2))
-                !if ( Atm(n)%flagstruct%nwat==6) call gfdl_cld_mp_init(input_nml_file, stdlog(), Atm(n)%flagstruct%hydrostatic)
            endif
         endif
         if (.not. Atm(n)%flagstruct%adiabatic) call gfdl_mp_init (input_nml_file, stdlog(), Atm(n)%flagstruct%hydrostatic)

@@ -10,6 +10,8 @@ This release includes the following:
 - Fix pressure-coarse-graining weighting from AI2's fork of FV3GFS
 - Add A-grid restart functionality from AI2's fork of FV3GFS
 - Fix for telescoping nest and GFS FIX file read
+- Total precipitation diag field has changed from prec to pret
+- Clean-up of the diagnostic messages to stdout
 
 
 # RELEASE NOTES for FV3 202204: Summary
