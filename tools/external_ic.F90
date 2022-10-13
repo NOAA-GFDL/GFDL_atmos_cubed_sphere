@@ -1978,7 +1978,7 @@ contains
           if ( bk0(1) < 1.E-9 ) ak0(1) = max(1.e-9, ak0(1))
 
       else
-          call mpp_error(FATAL,'==> Error in get_external_ic: Expected file '//trim(fname)//' for NCEP IC does not exist')
+          call mpp_error(FATAL,'==> Error in get_external_ic: Expected file '//trim(fname)//' for ECMWF IC does not exist')
       endif
 
 ! Initialize lat-lon to Cubed bi-linear interpolation coeff:
