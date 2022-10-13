@@ -1,8 +1,8 @@
 # RELEASE NOTES for GFDL FV3: Summary
-GFDL_2022.XX.YY --- July 2022
+GFDL_2022.04 --- October 2022
 
 This version has been tested against the current SHiELD physics
-and with FMS release 2022.01 from https://github.com/NOAA-GFDL/FMS
+and with FMS release 2022.04 from https://github.com/NOAA-GFDL/FMS
 
 This release includes the following:
 - Release of stand-alone solo_core functionality with simple physics.
