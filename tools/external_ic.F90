@@ -45,7 +45,7 @@ module external_ic_mod
    use constants_mod,     only: pi=>pi_8, grav, kappa, rdgas, rvgas, cp_air
    use fv_arrays_mod,     only: omega ! scaled for small earth
    use fv_arrays_mod,     only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type, R_GRID
-   use fv_diagnostics_mod,only: prt_maxmin, prt_gb_nh_sh, prt_height
+   use fv_diagnostics_mod,only: prt_maxmin, prt_mxm, prt_gb_nh_sh, prt_height
    use fv_grid_utils_mod, only: ptop_min, g_sum,mid_pt_sphere,get_unit_vect2,get_latlon_vector,inner_prod
    use fv_io_mod,         only: fv_io_read_tracers
    use fv_mapz_mod,       only: mappm
@@ -69,7 +69,8 @@ module external_ic_mod
 
    use boundary_mod,      only: nested_grid_BC, extrapolation_BC
    use mpp_domains_mod,       only: mpp_get_data_domain, mpp_get_global_domain, mpp_get_compute_domain
-
+   use fv_grid_utils_mod, only: cubed_a2d
+   
    implicit none
    private
 
@@ -182,10 +183,10 @@ contains
            call get_fv_ic( Atm, nq )
       endif
 
-      call prt_maxmin('PS', Atm%ps, is, ie, js, je, ng, 1, 0.01)
-      call prt_maxmin('T', Atm%pt, is, ie, js, je, ng, Atm%npz, 1.)
-      if (.not.Atm%flagstruct%hydrostatic) call prt_maxmin('W', Atm%w, is, ie, js, je, ng, Atm%npz, 1.)
-      call prt_maxmin('SPHUM', Atm%q(:,:,:,1), is, ie, js, je, ng, Atm%npz, 1.)
+      call prt_mxm('PS', Atm%ps, is, ie, js, je, ng, 1, 0.01, Atm%gridstruct%area_64, Atm%domain)
+      call prt_mxm('T', Atm%pt, is, ie, js, je, ng, Atm%npz, 1., Atm%gridstruct%area_64, Atm%domain)
+      if (.not.Atm%flagstruct%hydrostatic) call prt_mxm('W', Atm%w, is, ie, js, je, ng, Atm%npz, 1., Atm%gridstruct%area_64, Atm%domain)
+      call prt_mxm('SPHUM', Atm%q(:,:,:,1), is, ie, js, je, ng, Atm%npz, 1., Atm%gridstruct%area_64, Atm%domain)
       if ( Atm%flagstruct%nggps_ic .or. Atm%flagstruct%ecmwf_ic .or. Atm%flagstruct%hrrrv3_ic ) then
         sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
         liq_wat   = get_tracer_index(MODEL_ATMOS, 'liq_wat')
@@ -197,21 +198,21 @@ contains
         sgs_tke = get_tracer_index(MODEL_ATMOS, 'sgs_tke')
         cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
         if ( liq_wat > 0 ) &
-        call prt_maxmin('liq_wat', Atm%q(:,:,:,liq_wat), is, ie, js, je, ng, Atm%npz, 1.)
+        call prt_mxm('liq_wat', Atm%q(:,:,:,liq_wat), is, ie, js, je, ng, Atm%npz, 1., Atm%gridstruct%area_64, Atm%domain)
         if ( ice_wat > 0 ) &
-        call prt_maxmin('ice_wat', Atm%q(:,:,:,ice_wat), is, ie, js, je, ng, Atm%npz, 1.)
+        call prt_mxm('ice_wat', Atm%q(:,:,:,ice_wat), is, ie, js, je, ng, Atm%npz, 1., Atm%gridstruct%area_64, Atm%domain)
         if ( rainwat > 0 ) &
-        call prt_maxmin('rainwat', Atm%q(:,:,:,rainwat), is, ie, js, je, ng, Atm%npz, 1.)
+        call prt_mxm('rainwat', Atm%q(:,:,:,rainwat), is, ie, js, je, ng, Atm%npz, 1., Atm%gridstruct%area_64, Atm%domain)
         if ( snowwat > 0 ) &
-        call prt_maxmin('snowwat', Atm%q(:,:,:,snowwat), is, ie, js, je, ng, Atm%npz, 1.)
+        call prt_mxm('snowwat', Atm%q(:,:,:,snowwat), is, ie, js, je, ng, Atm%npz, 1., Atm%gridstruct%area_64, Atm%domain)
         if ( graupel > 0 ) &
-        call prt_maxmin('graupel', Atm%q(:,:,:,graupel), is, ie, js, je, ng, Atm%npz, 1.)
+        call prt_mxm('graupel', Atm%q(:,:,:,graupel), is, ie, js, je, ng, Atm%npz, 1., Atm%gridstruct%area_64, Atm%domain)
         if ( o3mr > 0    ) &
-        call prt_maxmin('O3MR',    Atm%q(:,:,:,o3mr),    is, ie, js, je, ng, Atm%npz, 1.)
+        call prt_mxm('O3MR',    Atm%q(:,:,:,o3mr),    is, ie, js, je, ng, Atm%npz, 1., Atm%gridstruct%area_64, Atm%domain)
         if ( sgs_tke > 0    ) &
-        call prt_maxmin('sgs_tke', Atm%q(:,:,:,sgs_tke), is, ie, js, je, ng, Atm%npz, 1.)
+        call prt_mxm('sgs_tke', Atm%q(:,:,:,sgs_tke), is, ie, js, je, ng, Atm%npz, 1., Atm%gridstruct%area_64, Atm%domain)
         if ( cld_amt > 0    ) &
-        call prt_maxmin('cld_amt', Atm%q(:,:,:,cld_amt), is, ie, js, je, ng, Atm%npz, 1.)
+        call prt_mxm('cld_amt', Atm%q(:,:,:,cld_amt), is, ie, js, je, ng, Atm%npz, 1., Atm%gridstruct%area_64, Atm%domain)
       endif
 
   end subroutine get_external_ic
@@ -268,7 +269,7 @@ contains
     call mpp_update_domains( Atm%phis, Atm%domain )
     ftop = g_sum(Atm%domain, Atm%phis(is:ie,js:je), is, ie, js, je, ng, Atm%gridstruct%area_64, 1)
 
-    call prt_maxmin('ZS', Atm%phis,  is, ie, js, je, ng, 1, 1./grav)
+    call prt_mxm('ZS', Atm%phis,  is, ie, js, je, ng, 1, 1./grav, Atm%gridstruct%area_64, Atm%domain)
     if(is_master()) write(*,*) 'mean terrain height (m)=', ftop/grav
 
   end subroutine get_cubed_sphere_terrain
@@ -1477,7 +1478,7 @@ contains
                              s2c(i,j,3)*wk2(i2,j1+1) + s2c(i,j,4)*wk2(i1,j1+1)
           enddo
         enddo
-        call prt_maxmin('SST_model', Atm%ts, is, ie, js, je, 0, 1, 1.)
+        call prt_mxm('SST_model', Atm%ts, is, ie, js, je, 0, 1, 1., Atm%gridstruct%area_64, Atm%domain)
 
 ! Perform interp to FMS SST format/grid
 #ifndef DYCORE_SOLO
@@ -1807,7 +1808,7 @@ contains
       jsd = Atm%bd%jsd
       jed = Atm%bd%jed
 
-      call open_ncfile( trim(inputdir)//'/'//trim(fn_gfs_ctl), ncid )
+      call open_ncfile( trim(fn_gfs_ctl), ncid )
       call get_ncdim1( ncid, 'levsp', levsp )
       call close_ncfile( ncid )
       levp_gfs = levsp-1
@@ -1892,7 +1893,7 @@ contains
         call register_axis(GFS_restart, "levp", size(zh_gfs,3))
         call register_restart_field(GFS_restart, 'o3mr', o3mr_gfs, dim_names_3d3, is_optional=.true.)
         call register_restart_field(GFS_restart, 'ps', ps_gfs, dim_names_2d)
-        call register_restart_field(GFS_restart, 'ZH', zh_gfs, dim_names_3d4)
+        call register_restart_field(GFS_restart, 'zh', zh_gfs, dim_names_3d4)
         call read_restart(GFS_restart)
         call close_file(GFS_restart)
       endif
@@ -3360,9 +3361,9 @@ contains
 
 5000 continue
 
-  call prt_maxmin('UT', ut, is, ie, js, je, ng, npz, 1.)
-  call prt_maxmin('VT', vt, is, ie, js, je, ng, npz, 1.)
-  call prt_maxmin('UA_top',ut(:,:,1), is, ie, js, je, ng, 1, 1.)
+  call prt_mxm('UT', ut, is, ie, js, je, ng, npz, 1., Atm%gridstruct%area_64, Atm%domain)
+  call prt_mxm('VT', vt, is, ie, js, je, ng, npz, 1., Atm%gridstruct%area_64, Atm%domain)
+  call prt_mxm('UA_top',ut(:,:,1), is, ie, js, je, ng, 1, 1., Atm%gridstruct%area_64, Atm%domain)
 
 !----------------------------------------------
 ! winds: lat-lon ON A to Cubed-D transformation:
@@ -3621,9 +3622,9 @@ contains
 
 5000 continue
 
-  call prt_maxmin('PS_model', Atm%ps, is, ie, js, je, ng, 1, 0.01)
-  call prt_maxmin('UT', ut, is, ie, js, je, ng, npz, 1.)
-  call prt_maxmin('VT', vt, is, ie, js, je, ng, npz, 1.)
+  call prt_mxm('PS_model', Atm%ps, is, ie, js, je, ng, 1, 0.01, Atm%gridstruct%area_64, Atm%domain)
+  call prt_mxm('UT', ut, is, ie, js, je, ng, npz, 1., Atm%gridstruct%area_64, Atm%domain)
+  call prt_mxm('VT', vt, is, ie, js, je, ng, npz, 1., Atm%gridstruct%area_64, Atm%domain)
 
 !----------------------------------------------
 ! winds: lat-lon ON A to Cubed-D transformation:
@@ -3633,195 +3634,6 @@ contains
   if (is_master()) write(*,*) 'done remap_xyz'
 
  end subroutine remap_xyz
-
-
- subroutine cubed_a2d( npx, npy, npz, ua, va, u, v, gridstruct, fv_domain, bd )
-
-! Purpose; Transform wind on A grid to D grid
-
-  use mpp_domains_mod,    only: mpp_update_domains
-
-  type(fv_grid_bounds_type), intent(IN) :: bd
-  integer, intent(in):: npx, npy, npz
-  real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: ua, va
-  real, intent(out):: u(bd%isd:bd%ied,  bd%jsd:bd%jed+1,npz)
-  real, intent(out):: v(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz)
-  type(fv_grid_type), intent(IN), target :: gridstruct
-  type(domain2d), intent(INOUT) :: fv_domain
-! local:
-  real v3(3,bd%is-1:bd%ie+1,bd%js-1:bd%je+1)
-  real ue(3,bd%is-1:bd%ie+1,bd%js:bd%je+1)    ! 3D winds at edges
-  real ve(3,bd%is:bd%ie+1,bd%js-1:bd%je+1)    ! 3D winds at edges
-  real, dimension(bd%is:bd%ie):: ut1, ut2, ut3
-  real, dimension(bd%js:bd%je):: vt1, vt2, vt3
-  integer i, j, k, im2, jm2
-
-  real(kind=R_GRID), pointer, dimension(:,:,:)   :: vlon, vlat
-  real(kind=R_GRID), pointer, dimension(:)       :: edge_vect_w, edge_vect_e, edge_vect_s, edge_vect_n
-  real(kind=R_GRID), pointer, dimension(:,:,:,:) :: ew, es
-
-  integer :: is,  ie,  js,  je
-  integer :: isd, ied, jsd, jed
-
-  is  = bd%is
-  ie  = bd%ie
-  js  = bd%js
-  je  = bd%je
-  isd = bd%isd
-  ied = bd%ied
-  jsd = bd%jsd
-  jed = bd%jed
-
-  vlon => gridstruct%vlon
-  vlat => gridstruct%vlat
-
-  edge_vect_w => gridstruct%edge_vect_w
-  edge_vect_e => gridstruct%edge_vect_e
-  edge_vect_s => gridstruct%edge_vect_s
-  edge_vect_n => gridstruct%edge_vect_n
-
-  ew => gridstruct%ew
-  es => gridstruct%es
-
-  call mpp_update_domains(ua, fv_domain, complete=.false.)
-  call mpp_update_domains(va, fv_domain, complete=.true.)
-
-    im2 = (npx-1)/2
-    jm2 = (npy-1)/2
-
-    do k=1, npz
-! Compute 3D wind on A grid
-       do j=js-1,je+1
-          do i=is-1,ie+1
-             v3(1,i,j) = ua(i,j,k)*vlon(i,j,1) + va(i,j,k)*vlat(i,j,1)
-             v3(2,i,j) = ua(i,j,k)*vlon(i,j,2) + va(i,j,k)*vlat(i,j,2)
-             v3(3,i,j) = ua(i,j,k)*vlon(i,j,3) + va(i,j,k)*vlat(i,j,3)
-          enddo
-       enddo
-
-! A --> D
-! Interpolate to cell edges
-       do j=js,je+1
-          do i=is-1,ie+1
-             ue(1,i,j) = 0.5*(v3(1,i,j-1) + v3(1,i,j))
-             ue(2,i,j) = 0.5*(v3(2,i,j-1) + v3(2,i,j))
-             ue(3,i,j) = 0.5*(v3(3,i,j-1) + v3(3,i,j))
-          enddo
-       enddo
-
-       do j=js-1,je+1
-          do i=is,ie+1
-             ve(1,i,j) = 0.5*(v3(1,i-1,j) + v3(1,i,j))
-             ve(2,i,j) = 0.5*(v3(2,i-1,j) + v3(2,i,j))
-             ve(3,i,j) = 0.5*(v3(3,i-1,j) + v3(3,i,j))
-          enddo
-       enddo
-
-! --- E_W edges (for v-wind):
-     if (.not. gridstruct%bounded_domain) then
-     if ( is==1) then
-       i = 1
-       do j=js,je
-        if ( j>jm2 ) then
-             vt1(j) = edge_vect_w(j)*ve(1,i,j-1)+(1.-edge_vect_w(j))*ve(1,i,j)
-             vt2(j) = edge_vect_w(j)*ve(2,i,j-1)+(1.-edge_vect_w(j))*ve(2,i,j)
-             vt3(j) = edge_vect_w(j)*ve(3,i,j-1)+(1.-edge_vect_w(j))*ve(3,i,j)
-        else
-             vt1(j) = edge_vect_w(j)*ve(1,i,j+1)+(1.-edge_vect_w(j))*ve(1,i,j)
-             vt2(j) = edge_vect_w(j)*ve(2,i,j+1)+(1.-edge_vect_w(j))*ve(2,i,j)
-             vt3(j) = edge_vect_w(j)*ve(3,i,j+1)+(1.-edge_vect_w(j))*ve(3,i,j)
-        endif
-       enddo
-       do j=js,je
-          ve(1,i,j) = vt1(j)
-          ve(2,i,j) = vt2(j)
-          ve(3,i,j) = vt3(j)
-       enddo
-     endif
-
-     if ( (ie+1)==npx ) then
-       i = npx
-       do j=js,je
-        if ( j>jm2 ) then
-             vt1(j) = edge_vect_e(j)*ve(1,i,j-1)+(1.-edge_vect_e(j))*ve(1,i,j)
-             vt2(j) = edge_vect_e(j)*ve(2,i,j-1)+(1.-edge_vect_e(j))*ve(2,i,j)
-             vt3(j) = edge_vect_e(j)*ve(3,i,j-1)+(1.-edge_vect_e(j))*ve(3,i,j)
-        else
-             vt1(j) = edge_vect_e(j)*ve(1,i,j+1)+(1.-edge_vect_e(j))*ve(1,i,j)
-             vt2(j) = edge_vect_e(j)*ve(2,i,j+1)+(1.-edge_vect_e(j))*ve(2,i,j)
-             vt3(j) = edge_vect_e(j)*ve(3,i,j+1)+(1.-edge_vect_e(j))*ve(3,i,j)
-        endif
-       enddo
-       do j=js,je
-          ve(1,i,j) = vt1(j)
-          ve(2,i,j) = vt2(j)
-          ve(3,i,j) = vt3(j)
-       enddo
-     endif
-
-! N-S edges (for u-wind):
-     if ( js==1 ) then
-       j = 1
-       do i=is,ie
-        if ( i>im2 ) then
-             ut1(i) = edge_vect_s(i)*ue(1,i-1,j)+(1.-edge_vect_s(i))*ue(1,i,j)
-             ut2(i) = edge_vect_s(i)*ue(2,i-1,j)+(1.-edge_vect_s(i))*ue(2,i,j)
-             ut3(i) = edge_vect_s(i)*ue(3,i-1,j)+(1.-edge_vect_s(i))*ue(3,i,j)
-        else
-             ut1(i) = edge_vect_s(i)*ue(1,i+1,j)+(1.-edge_vect_s(i))*ue(1,i,j)
-             ut2(i) = edge_vect_s(i)*ue(2,i+1,j)+(1.-edge_vect_s(i))*ue(2,i,j)
-             ut3(i) = edge_vect_s(i)*ue(3,i+1,j)+(1.-edge_vect_s(i))*ue(3,i,j)
-        endif
-       enddo
-       do i=is,ie
-          ue(1,i,j) = ut1(i)
-          ue(2,i,j) = ut2(i)
-          ue(3,i,j) = ut3(i)
-       enddo
-     endif
-
-     if ( (je+1)==npy ) then
-       j = npy
-       do i=is,ie
-        if ( i>im2 ) then
-             ut1(i) = edge_vect_n(i)*ue(1,i-1,j)+(1.-edge_vect_n(i))*ue(1,i,j)
-             ut2(i) = edge_vect_n(i)*ue(2,i-1,j)+(1.-edge_vect_n(i))*ue(2,i,j)
-             ut3(i) = edge_vect_n(i)*ue(3,i-1,j)+(1.-edge_vect_n(i))*ue(3,i,j)
-        else
-             ut1(i) = edge_vect_n(i)*ue(1,i+1,j)+(1.-edge_vect_n(i))*ue(1,i,j)
-             ut2(i) = edge_vect_n(i)*ue(2,i+1,j)+(1.-edge_vect_n(i))*ue(2,i,j)
-             ut3(i) = edge_vect_n(i)*ue(3,i+1,j)+(1.-edge_vect_n(i))*ue(3,i,j)
-        endif
-       enddo
-       do i=is,ie
-          ue(1,i,j) = ut1(i)
-          ue(2,i,j) = ut2(i)
-          ue(3,i,j) = ut3(i)
-       enddo
-     endif
-
-     endif ! .not. bounded_domain
-
-     do j=js,je+1
-        do i=is,ie
-           u(i,j,k) =  ue(1,i,j)*es(1,i,j,1) +  &
-                       ue(2,i,j)*es(2,i,j,1) +  &
-                       ue(3,i,j)*es(3,i,j,1)
-        enddo
-     enddo
-     do j=js,je
-        do i=is,ie+1
-           v(i,j,k) = ve(1,i,j)*ew(1,i,j,2) +  &
-                      ve(2,i,j)*ew(2,i,j,2) +  &
-                      ve(3,i,j)*ew(3,i,j,2)
-        enddo
-     enddo
-
-   enddo         ! k-loop
-
- end subroutine cubed_a2d
-
-
 
  subroutine d2a3d(u, v,  ua,   va,  im,  jm, km, lon)
       integer, intent(in):: im, jm, km           ! Dimensions

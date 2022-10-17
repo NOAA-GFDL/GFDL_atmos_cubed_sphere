@@ -42,7 +42,7 @@
       use mpp_domains_mod,   only: mpp_update_domains, domain2d
       use mpp_parameter_mod, only: AGRID_PARAM=>AGRID,CGRID_NE_PARAM=>CGRID_NE, &
                                    SCALAR_PAIR
-      use fv_sg_mod,         only: qsmith
+      use gfdl_mp_mod,       only: mqs3d
       use fv_diagnostics_mod, only: prt_maxmin, ppme, eqv_pot, qcly0, is_ideal_case
       use mpp_mod,            only: mpp_pe, mpp_chksum, stdout
       use fv_arrays_mod,         only: fv_grid_type, fv_flags_type, fv_grid_bounds_type, R_GRID
@@ -3843,7 +3843,7 @@ end subroutine terminator_tracers
 
   real, intent(in):: ubar ! max wind (m/s)
   real, intent(in):: r0   ! Radius of max wind (m)
-  real, intent(in):: p1(2)   ! center position (longitude, latitude) in radian
+  real(kind=R_GRID), intent(in):: p1(2)   ! center position (longitude, latitude) in radian
   real, intent(inout):: u(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
   real, intent(inout):: v(bd%isd:bd%ied+1,bd%jsd:bd%jed)
   real(kind=R_GRID), intent(IN) :: grid(bd%isd:bd%ied+1,bd%jsd:bd%jed+1,2)
@@ -3928,8 +3928,9 @@ end subroutine terminator_tracers
 
      real function gh_jet(npy, lat_in)
      integer, intent(in):: npy
-     real, intent(in):: lat_in
-     real lat, lon, dp, uu
+     real(kind=R_GRID), intent(in):: lat_in
+     real(kind=R_GRID) lat, lon, dp
+     real uu
      real h0, ft
      integer j,jm
 
@@ -3974,7 +3975,7 @@ end subroutine terminator_tracers
      end function gh_jet
 
      real function u_jet(lat)
-      real lat, lon, dp
+      real(kind=R_GRID) lat, lon, dp
       real umax, en, ph0, ph1
 
       umax = 80.
@@ -3992,7 +3993,7 @@ end subroutine terminator_tracers
       subroutine get_case9_B(B, agrid, isd, ied, jsd, jed)
       integer, intent(IN) :: isd, ied, jsd, jed
       real, intent(OUT) :: B(isd:ied,jsd:jed)
-      real, intent(IN) :: agrid(isd:ied,jsd:jed,2)
+      real(kind=R_GRID), intent(IN) :: agrid(isd:ied,jsd:jed,2)
       real :: myC,yy,myB
       integer :: i,j
 ! Generate B forcing function
@@ -4669,7 +4670,7 @@ end subroutine terminator_tracers
                do i=is,ie
                   pm(i) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
                enddo
-               call qsmith(ie-is+1, 1, 1, pt(is:ie,j,k), pm, q(is:ie,j,k,1), qs)
+               call mqs3d(ie-is+1, 1, 1, pt(is:ie,j,k), pm, q(is:ie,j,k,1), qs)
                do i=is,ie
                   q(i,j,k,1) = max(2.E-6, 0.8*pm(i)/ps(i,j)*qs(i) )
                enddo
@@ -5494,7 +5495,7 @@ end subroutine terminator_tracers
                do i=is,ie
                   pm(i) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
                enddo
-               call qsmith(ie-is+1, 1, 1, pt(is:ie,j,k), pm, q(is:ie,j,k,1), qs)
+               call mqs3d(ie-is+1, 1, 1, pt(is:ie,j,k), pm, q(is:ie,j,k,1), qs)
                do i=is,ie
                   if ( pm(i) > 100.E2 ) then
                        q(i,j,k,1) = 0.9*qs(i)
@@ -5917,7 +5918,7 @@ end subroutine terminator_tracers
 
 
  subroutine SuperCell_Sounding(km, ps, pk1, tp, qp)
- use gfdl_mp_mod, only: wqsat_moist, qsmith_init, qs_blend
+ use gfdl_mp_mod, only: qs_init, wqs, mqs
 ! Morris Weisman & J. Klemp 2002 sounding
 ! Output sounding on pressure levels:
  integer, intent(in):: km
@@ -5947,7 +5948,7 @@ end subroutine terminator_tracers
      write(*,*) 'Computing sounding for super-cell test'
  endif
 
- call qsmith_init
+ call qs_init
 
  dz0 = 50.
  zs(ns) = 0.
@@ -5992,7 +5993,7 @@ end subroutine terminator_tracers
 !      if ( (is_master()) ) write(*,*) k, temp1, rh(k)
        if ( pk(k) > 0. ) then
             pp(k) = exp(log(pk(k))/kappa)
-            qs(k) = min(qv0, rh(k)*wqsat_moist(temp1, qs(k), pp(k)))
+            qs(k) = min(qv0, rh(k)*wqs(temp1, pp(k), qs(k)))
             !qs(k) = min(qv0, rh(k)*qs_blend(temp1, pp(k), qs(k)))
             !if ( (is_master()) ) write(*,*) 0.001*pp(k), qs(k)
        else
@@ -6031,7 +6032,7 @@ end subroutine terminator_tracers
 
 ! added by Linjiong Zhou
  subroutine SuperCell_Sounding_Marine(km, ps, pk1, tp, qp)
- use gfdl_mp_mod, only: wqsat_moist, qsmith_init, qs_blend
+ use gfdl_mp_mod, only: qs_init, wqs, mqs
 ! Morris Weisman & J. Klemp 2002 sounding
 ! Output sounding on pressure levels:
  integer, intent(in):: km
@@ -6061,7 +6062,7 @@ end subroutine terminator_tracers
      write(*,*) 'Computing sounding for super-cell test'
  endif
 
- !call qsmith_init
+ !call qs_init
 
  dz0 = 50.
  zs(ns) = 0.
@@ -6113,9 +6114,9 @@ end subroutine terminator_tracers
 !#else
 !
 !#ifdef USE_MIXED_TABLE
-!            qs(k) = min(qv0, rh(k)*qs_blend(temp1, pp(k), qs(k)))
+!            qs(k) = min(qv0, rh(k)*mqs(temp1, pp(k), qs(k)))
 !#else
-!            qs(k) = min(qv0, rh(k)*wqsat_moist(temp1, qs(k), pp(k)))
+!            qs(k) = min(qv0, rh(k)*wqs(temp1, pp(k), qs(k)))
 !#endif
 !
 !#endif
@@ -6155,7 +6156,7 @@ end subroutine terminator_tracers
 
  ! added by Linjiong Zhou
  subroutine Marine_Sounding(km, ps, pk1, tp, qp)
- use gfdl_mp_mod, only: wqsat_moist, qsmith_init, qs_blend
+ use gfdl_mp_mod, only: qs_init, wqs, mqs
 ! JASMINE CETRONE AND ROBERT A. HOUZE JR. MWR 225
 ! Output sounding on pressure levels:
  integer, intent(in):: km
@@ -6186,7 +6187,7 @@ end subroutine terminator_tracers
      write(*,*) 'Computing sounding for super-cell test'
  endif
 
- call qsmith_init
+ call qs_init
 
  dz0 = 50.
  zs(ns) = 0.
@@ -6240,9 +6241,9 @@ end subroutine terminator_tracers
 #else
 
 #ifdef USE_MIXED_TABLE
-            qs(k) = min(qv0, rh(k)*qs_blend(temp1, pp(k), qs(k)))
+            qs(k) = min(qv0, rh(k)*mqs(temp1, pp(k), qs(k)))
 #else
-            qs(k) = min(qv0, rh(k)*wqsat_moist(temp1, qs(k), pp(k)))
+            qs(k) = min(qv0, rh(k)*wqs(temp1, pp(k), qs(k)))
 #endif
 
 #endif

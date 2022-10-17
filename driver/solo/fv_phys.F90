@@ -25,7 +25,7 @@ use constants_mod,         only: grav, rdgas, rvgas, pi, cp_air, cp_vapor, hlv, 
 use fv_arrays_mod,         only: radius, omega ! scaled for small earth
 
 use time_manager_mod,      only: time_type, get_time
-use gfdl_cld_mp_mod,       only: gfdl_cld_mp_driver, qsmith, wet_bulb
+use gfdl_mp_mod,           only: mqs3d, wet_bulb, c_liq
 use hswf_mod,              only: Held_Suarez_Tend
 use fv_sg_mod,             only: fv_subgrid_z
 use fv_update_phys_mod,    only: fv_update_phys
@@ -70,8 +70,6 @@ public :: fv_phys, fv_nudge
 
   real, parameter:: e0 = 610.71  ! saturation vapor pressure at T0
   real, parameter:: tice = 273.16
-! real, parameter:: c_liq = 4.1855e+3    ! GFS
-  real, parameter:: c_liq = 4218.0       ! IFS
   real, parameter:: cp_vap = cp_vapor   ! 1846.
 ! For consistency, cv_vap derived FMS constants:
   real, parameter:: cv_vap = cp_vap - rvgas  ! 1384.5
@@ -899,8 +897,8 @@ contains
 
 if( do_mon_obkv ) then
 
-  call qsmith(ie-is+1, je-js+1, 1, sst, ps, q3(is:ie,js:je,km,sphum), qs)
-  call qsmith(ie-is+1, je-js+1, 1, sst, ps, qs, qs) ! Iterate once
+  call mqs3d(ie-is+1, je-js+1, 1, sst, ps, q3(is:ie,js:je,km,sphum), qs)
+  call mqs3d(ie-is+1, je-js+1, 1, sst, ps, qs, qs) ! Iterate once
 
 ! Need to save ustar in a restart file (sim_phys)
 ! Because u_star is prognostic but not saved

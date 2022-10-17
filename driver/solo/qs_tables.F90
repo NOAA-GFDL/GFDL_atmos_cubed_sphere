@@ -22,6 +22,7 @@
 module qs_tables_mod
 
 use constants_mod,         only: rdgas, rvgas, cp_air, cp_vapor, hlv
+use gfdl_mp_mod,           only: c_liq
 
 implicit none
 logical:: qs_table_is_initialized = .false.
@@ -30,8 +31,6 @@ public :: qs_wat0, qs_wat, qs_wat_init
 
   real, parameter:: e0 = 610.71  ! saturation vapor pressure at T0
   real, parameter:: tice = 273.16
-! real, parameter:: c_liq = 4190.       ! heat capacity of water at 0C
-  real, parameter:: c_liq = 4218.0      ! heat capacity of water at 0C
   real, parameter:: cp_vap = cp_vapor   ! 1846.
 ! For consistency, cv_vap derived FMS constants:
   real, parameter:: cv_vap = cp_vap - rvgas  ! 1384.5

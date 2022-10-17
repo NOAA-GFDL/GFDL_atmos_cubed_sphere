@@ -33,7 +33,7 @@ module coarse_graining_mod
        get_coarse_array_bounds, coarse_graining_init, weighted_block_average, &
        weighted_block_edge_average_x, weighted_block_edge_average_y, MODEL_LEVEL, &
        block_upsample, mask_area_weights, PRESSURE_LEVEL, vertical_remapping_requirements, &
-       vertically_remap_field, mask_mass_weights, remap_edges_along_x, remap_edges_along_y, &
+       vertically_remap_field, remap_edges_along_x, remap_edges_along_y, &
        block_edge_sum_x, block_edge_sum_y, block_mode, block_min, block_max, &
        eddy_covariance, eddy_covariance_2d_weights, eddy_covariance_3d_weights
 
@@ -1027,25 +1027,6 @@ contains
       endwhere
     enddo
    end subroutine mask_area_weights_real8
-
-   subroutine mask_mass_weights(area, delp, phalf, upsampled_coarse_phalf, &
-    masked_mass_weights)
-    real, intent(in) :: area(is:ie,js:je)
-    real, intent(in) :: delp(is:ie,js:je,1:npz)
-    real, intent(in) :: phalf(is:ie,js:je,1:npz+1)
-    real, intent(in) :: upsampled_coarse_phalf(is:ie,js:je,1:npz+1)
-    real, intent(out) :: masked_mass_weights(is:ie,js:je,1:npz)
-
-    integer :: k
-
-    do k = 1, npz
-      where (upsampled_coarse_phalf(:,:,k+1) .lt. phalf(is:ie,js:je,npz+1))
-        masked_mass_weights(:,:,k) = delp(:,:,k) * area(:,:)
-      elsewhere
-        masked_mass_weights(:,:,k) = 0.0
-      endwhere
-    enddo
-   end subroutine mask_mass_weights
 
    ! A naive routine for interpolating a field from the A-grid to the y-boundary
    ! of the D-grid; this is a specialized function that automatically

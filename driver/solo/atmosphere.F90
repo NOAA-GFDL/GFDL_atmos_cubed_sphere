@@ -51,9 +51,7 @@ use fv_timing_mod,      only: timing_on, timing_off
 use fv_restart_mod,     only: fv_restart
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
-use gfdl_cld_mp_mod,    only: gfdl_cld_mp_init, gfdl_cld_mp_end
 use gfdl_mp_mod,        only: gfdl_mp_init, gfdl_mp_end
-use cld_eff_rad_mod,    only: cld_eff_rad_init
 use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
 use field_manager_mod,  only: MODEL_ATMOS
 use tracer_manager_mod, only: get_tracer_index
@@ -163,12 +161,9 @@ contains
            if ( grids_on_this_pe(n) ) then
                 call fv_phys_init(isc,iec,jsc,jec,Atm(n)%npz,Atm(n)%flagstruct%nwat, Atm(n)%ts, Atm(n)%pt(isc:iec,jsc:jec,:),   &
                              Time, axes, Atm(n)%gridstruct%agrid(isc:iec,jsc:jec,2))
-!                if ( Atm(n)%flagstruct%nwat==6) call gfdl_cld_mp_init(mpp_pe(),  &
-!                                                mpp_root_pe(), input_nml_file, stdlog())
-!                if ( Atm(n)%flagstruct%nwat==6) call cld_eff_rad_init(input_nml_file)
            endif
         endif
-        if (.not. Atm(n)%flagstruct%adiabatic) call gfdl_mp_init (input_nml_file, stdlog())
+        if (.not. Atm(n)%flagstruct%adiabatic) call gfdl_mp_init (input_nml_file, stdlog(), Atm(n)%flagstruct%hydrostatic)
 
 
 
@@ -534,7 +529,6 @@ contains
 
     do n=1,ngrids
        if ( Atm(n)%flagstruct%moist_phys .and. Atm(n)%flagstruct%nwat==6 .and. grids_on_this_pe(N)) call gfdl_mp_end
-       !if ( Atm(n)%flagstruct%moist_phys .and. Atm(n)%flagstruct%nwat==6 .and. grids_on_this_pe(N)) call gfdl_cld_mp_end
     enddo
 
     call fv_end(Atm, mytile)

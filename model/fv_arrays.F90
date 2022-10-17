@@ -55,8 +55,8 @@ module fv_arrays_mod
 
      real, allocatable :: zxg(:,:)
 
-     integer :: id_u_dt_sg, id_v_dt_sg, id_t_dt_sg, id_qv_dt_sg
-     integer :: id_ws, id_te, id_amdt, id_mdt, id_divg, id_aam
+     integer :: id_u_dt_sg, id_v_dt_sg, id_t_dt_sg, id_qv_dt_sg, id_diss
+     integer :: id_ws, id_te, id_amdt, id_divg, id_aam
      logical :: initialized = .false.
 
      real :: efx(max_step), efx_sum, efx_nest(max_step), efx_sum_nest, mtq(max_step), mtq_sum
@@ -361,9 +361,15 @@ module fv_arrays_mod
    logical :: do_sat_adj= .false.   !< Controls split GFDL Microphysics. .false. by default. Must have the same
                                     !< value as do_sat_adj in gfdl_mp_nml. Not compatible with other microphysics
                                     !< schemes. Also requires GFDL microphysics be installed within the physics driver.
+   logical :: consv_checker = .false.!< turn on energy and water conservation checker
+   logical :: do_fast_phys = .false.!< Controls fast physics, in which the SA-TKE-EDMF and part of the GWD are 
+                                    !< within the acoustic time step of FV3. If .true. disabling the SA-TKE-EDMF 
+                                    !< and part of the GWD in the intermediate physics.
    logical :: do_inline_mp = .false.!< Controls Inline GFDL cloud microphysics, in which the full microphysics is
                                     !< called entirely within FV3. If .true. disabling microphysics within the physics
                                     !< is very strongly recommended. .false. by default.
+   logical :: do_aerosol = .false.  !< Controls climatological aerosol data used in the GFDL cloud microphyiscs.
+                                    !< .false. by default.
    logical :: do_f3d    = .false.   !
    logical :: no_dycore = .false.   !< Disables execution of the dynamical core, only running
                                     !< the initialization, diagnostic, and I/O routines, and
@@ -684,6 +690,8 @@ module fv_arrays_mod
                          !< considered; and for non-hydrostatic models values of 10 or less should be
                          !< considered, with smaller values for higher-resolution.
    real    :: rf_cutoff = 30.E2   !< Pressure below which no Rayleigh damping is applied if tau > 0.
+   real    :: te_err = 1.e-5 !< 64bit: 1.e-14, 32bit: 1.e-7; turn off to save computer time
+   real    :: tw_err = 1.e-8 !< 64bit: 1.e-14, 32bit: 1.e-7; turn off to save computer time
    logical :: filter_phys = .false.
    logical :: dwind_2d = .false.   !< Whether to use a simpler & faster algorithm for interpolating
                                    !< the A-grid (cell-centered) wind tendencies computed from the physics
@@ -904,7 +912,8 @@ module fv_arrays_mod
   logical :: write_restart_with_bcs = .false.   !< Default setting for using DA-updated BC files
   logical :: regional_bcs_from_gsi = .false.    !< Default setting for writing restart files with boundary rows.
   logical :: pass_full_omega_to_physics_in_non_hydrostatic_mode = .false.  !< Default to passing local omega to physics in non-hydrostatic mode
-
+  logical :: restart_from_agrid_winds = .false.  !< Whether to restart from A-grid winds
+  logical :: write_optional_dgrid_vel_rst = .true. !< Whether to write out optional D-grid winds when restart_from_agrid_winds is active
   end type fv_flags_type
 
   type fv_nest_BC_type_3D
@@ -1027,14 +1036,47 @@ module fv_arrays_mod
   end type fv_nest_type
 
   type inline_mp_type
+
+    real, _ALLOCATABLE :: prew(:,:)     _NULL
     real, _ALLOCATABLE :: prer(:,:)     _NULL
     real, _ALLOCATABLE :: prei(:,:)     _NULL
     real, _ALLOCATABLE :: pres(:,:)     _NULL
     real, _ALLOCATABLE :: preg(:,:)     _NULL
+    real, _ALLOCATABLE :: prefluxw(:,:,:)     _NULL
+    real, _ALLOCATABLE :: prefluxr(:,:,:)     _NULL
+    real, _ALLOCATABLE :: prefluxi(:,:,:)     _NULL
+    real, _ALLOCATABLE :: prefluxs(:,:,:)     _NULL
+    real, _ALLOCATABLE :: prefluxg(:,:,:)     _NULL
     real, _ALLOCATABLE :: cond(:,:)     _NULL
     real, _ALLOCATABLE :: dep(:,:)     _NULL
     real, _ALLOCATABLE :: reevap(:,:)     _NULL
     real, _ALLOCATABLE :: sub(:,:)     _NULL
+
+    real, _ALLOCATABLE :: pcw(:,:,:)     _NULL
+    real, _ALLOCATABLE :: edw(:,:,:)     _NULL
+    real, _ALLOCATABLE :: oew(:,:,:)     _NULL
+    real, _ALLOCATABLE :: rrw(:,:,:)     _NULL
+    real, _ALLOCATABLE :: tvw(:,:,:)     _NULL
+    real, _ALLOCATABLE :: pci(:,:,:)     _NULL
+    real, _ALLOCATABLE :: edi(:,:,:)     _NULL
+    real, _ALLOCATABLE :: oei(:,:,:)     _NULL
+    real, _ALLOCATABLE :: rri(:,:,:)     _NULL
+    real, _ALLOCATABLE :: tvi(:,:,:)     _NULL
+    real, _ALLOCATABLE :: pcr(:,:,:)     _NULL
+    real, _ALLOCATABLE :: edr(:,:,:)     _NULL
+    real, _ALLOCATABLE :: oer(:,:,:)     _NULL
+    real, _ALLOCATABLE :: rrr(:,:,:)     _NULL
+    real, _ALLOCATABLE :: tvr(:,:,:)     _NULL
+    real, _ALLOCATABLE :: pcs(:,:,:)     _NULL
+    real, _ALLOCATABLE :: eds(:,:,:)     _NULL
+    real, _ALLOCATABLE :: oes(:,:,:)     _NULL
+    real, _ALLOCATABLE :: rrs(:,:,:)     _NULL
+    real, _ALLOCATABLE :: tvs(:,:,:)     _NULL
+    real, _ALLOCATABLE :: pcg(:,:,:)     _NULL
+    real, _ALLOCATABLE :: edg(:,:,:)     _NULL
+    real, _ALLOCATABLE :: oeg(:,:,:)     _NULL
+    real, _ALLOCATABLE :: rrg(:,:,:)     _NULL
+    real, _ALLOCATABLE :: tvg(:,:,:)     _NULL
 
     real, _ALLOCATABLE :: qv_dt(:,:,:)
     real, _ALLOCATABLE :: ql_dt(:,:,:)
@@ -1047,6 +1089,7 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: t_dt(:,:,:)
     real, _ALLOCATABLE :: u_dt(:,:,:)
     real, _ALLOCATABLE :: v_dt(:,:,:)
+
   end type inline_mp_type
 
   type phys_diag_type
@@ -1489,14 +1532,45 @@ contains
     allocate (  Atm%ak(npz_2d+1) )
     allocate (  Atm%bk(npz_2d+1) )
 
+    allocate ( Atm%inline_mp%prew(is:ie,js:je) )
     allocate ( Atm%inline_mp%prer(is:ie,js:je) )
     allocate ( Atm%inline_mp%prei(is:ie,js:je) )
     allocate ( Atm%inline_mp%pres(is:ie,js:je) )
     allocate ( Atm%inline_mp%preg(is:ie,js:je) )
+    allocate ( Atm%inline_mp%prefluxw(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%prefluxr(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%prefluxi(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%prefluxs(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%prefluxg(is:ie,js:je,npz) )
     allocate ( Atm%inline_mp%cond(is:ie,js:je) )
     allocate ( Atm%inline_mp%dep(is:ie,js:je) )
     allocate ( Atm%inline_mp%reevap(is:ie,js:je) )
     allocate ( Atm%inline_mp%sub(is:ie,js:je) )
+    allocate ( Atm%inline_mp%pcw(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%edw(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%oew(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%rrw(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%tvw(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%pci(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%edi(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%oei(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%rri(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%tvi(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%pcr(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%edr(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%oer(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%rrr(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%tvr(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%pcs(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%eds(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%oes(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%rrs(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%tvs(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%pcg(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%edg(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%oeg(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%rrg(is:ie,js:je,npz) )
+    allocate ( Atm%inline_mp%tvg(is:ie,js:je,npz) )
 
     !--------------------------
     ! Non-hydrostatic dynamics:
@@ -1577,14 +1651,45 @@ contains
      enddo
      do j=js, je
         do i=is, ie
+           Atm%inline_mp%prew(i,j) = real_big
            Atm%inline_mp%prer(i,j) = real_big
            Atm%inline_mp%prei(i,j) = real_big
            Atm%inline_mp%pres(i,j) = real_big
            Atm%inline_mp%preg(i,j) = real_big
+           Atm%inline_mp%prefluxw(i,j,:) = real_big
+           Atm%inline_mp%prefluxr(i,j,:) = real_big
+           Atm%inline_mp%prefluxi(i,j,:) = real_big
+           Atm%inline_mp%prefluxs(i,j,:) = real_big
+           Atm%inline_mp%prefluxg(i,j,:) = real_big
            Atm%inline_mp%cond(i,j) = real_big
            Atm%inline_mp%dep(i,j) = real_big
            Atm%inline_mp%reevap(i,j) = real_big
            Atm%inline_mp%sub(i,j) = real_big
+           Atm%inline_mp%pcw(i,j,:) = real_big
+           Atm%inline_mp%edw(i,j,:) = real_big
+           Atm%inline_mp%oew(i,j,:) = real_big
+           Atm%inline_mp%rrw(i,j,:) = real_big
+           Atm%inline_mp%tvw(i,j,:) = real_big
+           Atm%inline_mp%pci(i,j,:) = real_big
+           Atm%inline_mp%edi(i,j,:) = real_big
+           Atm%inline_mp%oei(i,j,:) = real_big
+           Atm%inline_mp%rri(i,j,:) = real_big
+           Atm%inline_mp%tvi(i,j,:) = real_big
+           Atm%inline_mp%pcr(i,j,:) = real_big
+           Atm%inline_mp%edr(i,j,:) = real_big
+           Atm%inline_mp%oer(i,j,:) = real_big
+           Atm%inline_mp%rrr(i,j,:) = real_big
+           Atm%inline_mp%tvr(i,j,:) = real_big
+           Atm%inline_mp%pcs(i,j,:) = real_big
+           Atm%inline_mp%eds(i,j,:) = real_big
+           Atm%inline_mp%oes(i,j,:) = real_big
+           Atm%inline_mp%rrs(i,j,:) = real_big
+           Atm%inline_mp%tvs(i,j,:) = real_big
+           Atm%inline_mp%pcg(i,j,:) = real_big
+           Atm%inline_mp%edg(i,j,:) = real_big
+           Atm%inline_mp%oeg(i,j,:) = real_big
+           Atm%inline_mp%rrg(i,j,:) = real_big
+           Atm%inline_mp%tvg(i,j,:) = real_big
 
            Atm%ts(i,j) = 300.
 
@@ -1835,14 +1940,45 @@ contains
     deallocate (  Atm%bk )
     deallocate ( Atm%diss_est )
 
+    deallocate ( Atm%inline_mp%prew )
     deallocate ( Atm%inline_mp%prer )
     deallocate ( Atm%inline_mp%prei )
     deallocate ( Atm%inline_mp%pres )
     deallocate ( Atm%inline_mp%preg )
+    deallocate ( Atm%inline_mp%prefluxw )
+    deallocate ( Atm%inline_mp%prefluxr )
+    deallocate ( Atm%inline_mp%prefluxi )
+    deallocate ( Atm%inline_mp%prefluxs )
+    deallocate ( Atm%inline_mp%prefluxg )
     deallocate ( Atm%inline_mp%cond )
     deallocate ( Atm%inline_mp%dep )
     deallocate ( Atm%inline_mp%reevap )
     deallocate ( Atm%inline_mp%sub )
+    deallocate ( Atm%inline_mp%pcw )
+    deallocate ( Atm%inline_mp%edw )
+    deallocate ( Atm%inline_mp%oew )
+    deallocate ( Atm%inline_mp%rrw )
+    deallocate ( Atm%inline_mp%tvw )
+    deallocate ( Atm%inline_mp%pci )
+    deallocate ( Atm%inline_mp%edi )
+    deallocate ( Atm%inline_mp%oei )
+    deallocate ( Atm%inline_mp%rri )
+    deallocate ( Atm%inline_mp%tvi )
+    deallocate ( Atm%inline_mp%pcr )
+    deallocate ( Atm%inline_mp%edr )
+    deallocate ( Atm%inline_mp%oer )
+    deallocate ( Atm%inline_mp%rrr )
+    deallocate ( Atm%inline_mp%tvr )
+    deallocate ( Atm%inline_mp%pcs )
+    deallocate ( Atm%inline_mp%eds )
+    deallocate ( Atm%inline_mp%oes )
+    deallocate ( Atm%inline_mp%rrs )
+    deallocate ( Atm%inline_mp%tvs )
+    deallocate ( Atm%inline_mp%pcg )
+    deallocate ( Atm%inline_mp%edg )
+    deallocate ( Atm%inline_mp%oeg )
+    deallocate ( Atm%inline_mp%rrg )
+    deallocate ( Atm%inline_mp%tvg )
 
     deallocate ( Atm%u_srf )
     deallocate ( Atm%v_srf )

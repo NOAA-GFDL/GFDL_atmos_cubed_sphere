@@ -46,8 +46,10 @@
  integer :: id_srh1, id_srh3, id_ustm, id_vstm
 ! NGGPS 31-level diag
  integer, allocatable :: id_u(:), id_v(:), id_t(:), id_h(:), id_q(:), id_omg(:)
+ integer, allocatable :: id_ql(:), id_qi(:), id_qr(:), id_qs(:), id_qg(:), id_cf(:)
 
  integer:: id_u_plev, id_v_plev, id_t_plev, id_h_plev, id_q_plev, id_omg_plev
+ integer:: id_ql_plev, id_qi_plev, id_qr_plev, id_qs_plev, id_qg_plev, id_cf_plev
  integer:: id_t_plev_ave, id_q_plev_ave, id_qv_dt_gfdlmp_plev_ave, id_t_dt_gfdlmp_plev_ave, id_qv_dt_phys_plev_ave, id_t_dt_phys_plev_ave
 
  ! IPCC diag
@@ -79,7 +81,13 @@
      real, allocatable :: zsurf(:,:)
      real, allocatable :: pt1(:)
 
-     integer :: id_prec, id_prer, id_prei, id_pres, id_preg, id_cond, id_dep, id_reevap, id_sub
+     integer :: id_pret, id_prew, id_prer, id_prei, id_pres, id_preg, id_cond, id_dep, id_reevap, id_sub
+     integer :: id_prefluxw, id_prefluxr, id_prefluxi, id_prefluxs, id_prefluxg
+     integer :: id_pcw, id_edw, id_oew, id_rrw, id_tvw
+     integer :: id_pci, id_edi, id_oei, id_rri, id_tvi
+     integer :: id_pcr, id_edr, id_oer, id_rrr, id_tvr
+     integer :: id_pcs, id_eds, id_oes, id_rrs, id_tvs
+     integer :: id_pcg, id_edg, id_oeg, id_rrg, id_tvg
      integer :: id_qv_dt_gfdlmp, id_T_dt_gfdlmp, id_ql_dt_gfdlmp, id_qi_dt_gfdlmp
      integer :: id_qr_dt_gfdlmp, id_qg_dt_gfdlmp, id_qs_dt_gfdlmp
      integer :: id_liq_wat_dt_gfdlmp, id_ice_wat_dt_gfdlmp
