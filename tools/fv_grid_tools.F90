@@ -1175,11 +1175,15 @@ contains
        jsd = bd%jsd
        jed = bd%jed
 
-       domain_rad = pi/180. * domain_deg 
+       if (domain_deg > 0.05) then
+          domain_rad = pi/180. * domain_deg 
+       else 
+          domain_rad = pi/16. ! arbitrary 
+       endif
 
        lat_rad = deglat * pi/180.
        !lon_rad = 0.          ! arbitrary
-       lon_rad = - 50.  * pi /180.         ! arbitrary !carefull: weird physics IC (tsc) when this is around 0
+       lon_rad = - 50.  * pi /180.         ! careful: weird physics IC (tsc) when this is around 0
 
        !added by Joseph
        if (domain_deg > 0.05) then
