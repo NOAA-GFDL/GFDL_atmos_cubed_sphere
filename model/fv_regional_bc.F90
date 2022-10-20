@@ -254,6 +254,67 @@ module fv_regional_mod
       logical :: data_source_fv3gfs
 contains
 
+
+!-----------------------------------------------------------------------
+!
+  logical function is_not_finite(val)
+!
+!-----------------------------------------------------------------------
+!*** This routine is equivalent to ".not. ieee_is_finite(val)"
+!*** which returns .true. for infinite and Not a Number (NaN), or
+!*** .false. otherwise. It's here as a workaround for this gfortran bug:
+!***
+!***    https://gcc.gnu.org/bugzilla/show_bug.cgi?id=82207
+!***
+!*** The compiler must use IEEE-standard floating point for this to work
+!-----------------------------------------------------------------------
+!
+    use, intrinsic :: iso_c_binding, only: c_int32_t, c_int64_t
+    implicit none
+!
+!-----------------------------------------------------------------------
+! Portability note: shiftr() is part of Fortran 2008, but it is widely
+! supported in older compilers.
+!-----------------------------------------------------------------------
+!
+    intrinsic shiftr, transfer, iand ! <--- declare intrinsic to help older compilers
+!
+!-----------------------------------------------------------------------
+! Use value-based argument passing instead of reference-based to avoid
+! signaling a NaN on conversion to addressable storage.
+!-----------------------------------------------------------------------
+!
+    real, value :: val ! <-- bit pattern to test for infinity or NaN
+!
+!-----------------------------------------------------------------------
+! Bit manipulation constants for testing 32-bit floating-point
+! non-finite values.
+!-----------------------------------------------------------------------
+!
+#ifdef OVERLOAD_R4
+    integer(c_int32_t), parameter :: check = 255 ! <-- all bits on, size of exponent (8 bits)
+    integer, parameter :: shift = 23 ! <-- number of mantissa bits except sign
+!
+!-----------------------------------------------------------------------
+! Bit manipulation constants for testing 64-bit floating-point
+! non-finite values.
+!-----------------------------------------------------------------------
+!
+#else
+    integer(c_int64_t), parameter :: check = 2047 ! <-- all bits on, size of exponent (11 bits)
+    integer, parameter :: shift = 52 ! <-- number of mantissa bits except sign
+#endif
+!
+!-----------------------------------------------------------------------
+! For IEEE standard floating point numbers, non-finite values follow
+! a mandatory bit pattern. They have the mantissa sign bit on, and all
+! exponent bits on, except the exponent sign which can be on or off.
+!-----------------------------------------------------------------------
+!
+    is_not_finite = iand(shiftr(transfer(val,check),shift),check)==check
+!
+  end function is_not_finite
+!
 !-----------------------------------------------------------------------
 !
       subroutine setup_regional_BC(Atm                                  &
@@ -765,8 +826,8 @@ contains
 !***  reference pressure profile.  Compute it now.
 !-----------------------------------------------------------------------
 !
-      allocate(pref(npz+1))
-      allocate(dum1d(npz+1))
+      allocate(pref(npz+1)) ; pref=real_snan
+      allocate(dum1d(npz+1)) ; dum1d=real_snan
 !
       ps1=101325.
       pref(npz+1)=ps1
@@ -951,7 +1012,7 @@ contains
         regional_bc_bounds%ie_north_uvs=ied
 !
         regional_bc_bounds%js_north_uvs=jsd
-        regional_bc_bounds%je_north_uvs=nrows_blend+1
+        regional_bc_bounds%je_north_uvs=nrows_blend
 !
         regional_bc_bounds%is_north_uvw=isd
         regional_bc_bounds%ie_north_uvw=ied+1
@@ -968,7 +1029,7 @@ contains
         regional_bc_bounds%is_south_uvs=isd
         regional_bc_bounds%ie_south_uvs=ied
 !
-        regional_bc_bounds%js_south_uvs=jed-nhalo_model-nrows_blend+1
+        regional_bc_bounds%js_south_uvs=jed-nhalo_model-nrows_blend+2
         regional_bc_bounds%je_south_uvs=jed+1
 !
         regional_bc_bounds%is_south_uvw=isd
@@ -1028,7 +1089,7 @@ contains
           regional_bc_bounds%je_west_uvs=jed-nhalo_model+1
         endif
 !
-        regional_bc_bounds%is_west_uvw=ied-nhalo_model-nrows_blend+1
+        regional_bc_bounds%is_west_uvw=ied-nhalo_model-nrows_blend+2
         regional_bc_bounds%ie_west_uvw=ied+1
 !
         regional_bc_bounds%js_west_uvw=jsd
@@ -1307,8 +1368,8 @@ contains
       enddo
       enddo
 !
-      allocate (ak_in(1:levp+1))                                           !<-- Save the input vertical structure for
-      allocate (bk_in(1:levp+1))                                           !    remapping BC updates during the forecast.
+      allocate (ak_in(1:levp+1)) ; ak_in=real_snan                         !<-- Save the input vertical structure for
+      allocate (bk_in(1:levp+1)) ; bk_in=real_snan                         !    remapping BC updates during the forecast.
       do k=1,levp+1
         ak_in(k)=ak(k)
         bk_in(k)=bk(k)
@@ -1402,9 +1463,9 @@ contains
                             ,isd, ied, jsd, jed                         &
                             ,Atm%npx, Atm%npy )
 !
-      allocate (wk2(levp+1,2))
-      allocate (ak_in(levp+1))                                               !<-- Save the input vertical structure for
-      allocate (bk_in(levp+1))                                               !    remapping BC updates during the forecast.
+      allocate (wk2(levp+1,2)) ; wk2=real_snan
+      allocate (ak_in(levp+1)) ; ak_in=real_snan                             !<-- Save the input vertical structure for
+      allocate (bk_in(levp+1)) ; bk_in=real_snan                             !    remapping BC updates during the forecast.
       if (Atm%flagstruct%hrrrv3_ic) then
         if (open_file(Grid_input, 'INPUT/hrrr_ctrl.nc', "read", pelist=pes)) then
           call read_data(Grid_input,'vcoord',wk2)
@@ -1908,7 +1969,8 @@ contains
 !***  the integration levels.
 !-----------------------------------------------------------------------
 !
-        allocate(ps_reg(is_input:ie_input,js_input:je_input)) ; ps_reg=-9999999 ! for now don't set to snan until remap dwinds is changed
+        allocate(ps_reg(is_input:ie_input,js_input:je_input))              !<-- Sfc pressure in domain's boundary region derived from BC files
+        ps_reg=real_snan !<-- detect access of uninitialized pressures
 !
 !-----------------------------------------------------------------------
 !***  We have the boundary variables from the BC file on the levels
@@ -3545,6 +3607,12 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         je=js_bc+nhalo_data+nrows_blend-1
       endif
 !
+! Ensure uninitialized memory isn't used
+      pn0 = real_snan
+      pn1 = real_snan
+      gz_fv = real_snan
+      gz = real_snan
+      pn = real_snan
       allocate(pe0(is:ie,km+1)) ; pe0=real_snan
       allocate(qn1(is:ie,npz)) ; qn1=real_snan
       allocate(dp2(is:ie,npz)) ; dp2=real_snan
@@ -3575,13 +3643,14 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
            pn(k) = 2.*pn(km+1) - pn(l)
         enddo
 
+        pst = real_snan
         do k=km+k2-1, 2, -1
           if( phis_reg(i,j).le.gz(k) .and. phis_reg(i,j).ge.gz(k+1) ) then
             pst = pn(k) + (pn(k+1)-pn(k))*(gz(k)-phis_reg(i,j))/(gz(k)-gz(k+1))
-            go to 123
+            exit
           endif
         enddo
-  123   ps(i,j) = exp(pst)
+        ps(i,j) = exp(pst)
 
      enddo   ! i-loop
 
@@ -3594,10 +3663,10 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  the Atm object.
 !---------------------------------------------------------------------------------
 !
-      is=lbound(Atm%ps,1)
-      ie=ubound(Atm%ps,1)
-      js=lbound(Atm%ps,2)
-      je=ubound(Atm%ps,2)
+      is=min(ubound(Atm%ps,1),max(lbound(Atm%ps,1),is))
+      ie=min(ubound(Atm%ps,1),max(lbound(Atm%ps,1),ie))
+      js=min(ubound(Atm%ps,2),max(lbound(Atm%ps,2),js))
+      je=min(ubound(Atm%ps,2),max(lbound(Atm%ps,2),je))
 !
       do j=js,je
       do i=is,ie
@@ -4864,6 +4933,9 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           do j=j1_blend,j2_blend
             factor_dist=exp(-(blend_exp1+blend_exp2*(j-j_bc-1)*rdenom)) !<-- Exponential falloff of blending weights.
             do i=i1_blend,i2_blend
+              if(is_not_finite(array(i,j,k))) then
+                cycle ! Outside boundary
+              endif
               blend_value=bc_t0(i,j,k)                                &  !<-- Blend data interpolated
                          +(bc_t1(i,j,k)-bc_t0(i,j,k))*fraction_interval  !    between t0 and t1.
 !
@@ -4883,6 +4955,9 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           do j=j1_blend,j2_blend
             factor_dist=exp(-(blend_exp1+blend_exp2*(j_bc-j-1)*rdenom)) !<-- Exponential falloff of blending weights.
             do i=i1_blend,i2_blend
+              if(is_not_finite(array(i,j,k))) then
+                cycle ! Outside boundary
+              endif
               blend_value=bc_t0(i,j,k)                                &  !<-- Blend data interpolated
                          +(bc_t1(i,j,k)-bc_t0(i,j,k))*fraction_interval  !    between t0 and t1.
               array(i,j,k)=(1.-factor_dist)*array(i,j,k)+factor_dist*blend_value
@@ -4900,6 +4975,9 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         do k=1,ubnd_z
           do j=j1_blend,j2_blend
             do i=i1_blend,i2_blend
+              if(is_not_finite(array(i,j,k))) then
+                cycle ! Outside boundary
+              endif
 !
               blend_value=bc_t0(i,j,k)                                  &  !<-- Blend data interpolated
                          +(bc_t1(i,j,k)-bc_t0(i,j,k))*fraction_interval    !    between t0 and t1.
@@ -4921,6 +4999,9 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         do k=1,ubnd_z
           do j=j1_blend,j2_blend
             do i=i1_blend,i2_blend
+              if(is_not_finite(array(i,j,k))) then
+                cycle ! Outside boundary
+              endif
 !
               blend_value=bc_t0(i,j,k)                                  &  !<-- Blend data interpolated
                          +(bc_t1(i,j,k)-bc_t0(i,j,k))*fraction_interval    !    between t0 and t1.
@@ -5727,7 +5808,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     nyg = npy + 2*halo + jext
     nz = size(field,dim=3)
 
-    allocate( glob_field(isg-halo:ieg+halo+iext, jsg-halo:jeg+halo+jext, 1:nz) )
+    allocate( glob_field(isg-halo:ieg+halo+iext, jsg-halo:jeg+halo+jext, 1:nz) ) ; glob_field=real_snan
 
     isection_s = is
     isection_e = ie
@@ -5846,7 +5927,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     nxg = npx + 2*halo + iext
     nyg = npy + 2*halo + jext
 
-    allocate( glob_field(isg-halo:ieg+halo+iext, jsg-halo:jeg+halo+jext) )
+    allocate( glob_field(isg-halo:ieg+halo+iext, jsg-halo:jeg+halo+jext) ) ; glob_field=real_snan
 
     isection_s = is
     isection_e = ie
@@ -6154,6 +6235,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         nz=size(fields_core(nv)%ptr,3)
 !
         allocate( global_field(istart_g:iend_g, jstart_g:jend_g, 1:nz) )
+        global_field=real_snan
 !
 !-----------------------------------------------------------------------
 !***  What is the local extent of the variable on the task subdomain?
@@ -6258,6 +6340,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       nz=size(fields_tracers(1)%ptr,3)
 !
       allocate( global_field(istart_g:iend_g, jstart_g:jend_g, 1:nz) )
+      global_field=real_snan
 !
 !-----------------------------------------------------------------------
 !***  What is the local extent of the variable on the task subdomain?
@@ -6614,10 +6697,10 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     ! buf1 and buf4 must be of the same size (sim. for buf2 and buf3).
     ! Changes to the code below should be tested with debug flags
     ! enabled (out-of-bounds reads/writes).
-    allocate(buf1(1:24*npz))
-    allocate(buf2(1:36*npz))
-    allocate(buf3(1:36*npz))
-    allocate(buf4(1:24*npz))
+    allocate(buf1(1:24*npz)) ; buf1=real_snan
+    allocate(buf2(1:36*npz)) ; buf2=real_snan
+    allocate(buf3(1:36*npz)) ; buf3=real_snan
+    allocate(buf4(1:24*npz)) ; buf4=real_snan
 
 ! FIXME: MPI_COMM_WORLD
 
