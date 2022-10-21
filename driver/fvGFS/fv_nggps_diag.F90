@@ -73,7 +73,8 @@ module fv_nggps_diags_mod
  use field_manager_mod,  only: MODEL_ATMOS
  use fv_diagnostics_mod, only: range_check, dbzcalc,max_vv,get_vorticity, &
                                max_uh,max_vorticity,bunkers_vector,       &
-                               helicity_relative_CAPS,max_vorticity_hy1
+                               helicity_relative_CAPS,max_vorticity_hy1,  &
+                               average_tracer_hy1,get_pm25
  use fv_arrays_mod,      only: fv_atmos_type
  use module_diag_hailcast, only: do_hailcast, id_hailcast_dhail,         &
                                  id_hailcast_dhail1, id_hailcast_dhail2, &
@@ -112,9 +113,17 @@ module fv_nggps_diags_mod
  integer :: kend_pfnh, kend_w, kend_delz, kend_diss, kend_ps,kend_hs
  integer :: kstt_dbz, kend_dbz, kstt_omga, kend_omga
  integer :: kstt_windvect, kend_windvect
+ integer :: kstt_o3_ave, kend_o3_ave, kstt_pm25_ave, kend_pm25_ave
+ integer :: kstt_no3_ave, kend_no3_ave, kstt_so4_ave, kend_so4_ave
+ integer :: kstt_nh4_ave, kend_nh4_ave, kstt_ec_ave, kend_ec_ave
+ integer :: kstt_oc_ave, kend_oc_ave, kstt_om_ave, kend_om_ave
+ integer :: kstt_no_ave, kend_no_ave, kstt_no2_ave, kend_no2_ave
  integer :: id_wmaxup,id_wmaxdn,kstt_wup, kend_wup,kstt_wdn,kend_wdn
  integer :: id_uhmax03,id_uhmin03,id_uhmax25,id_uhmin25,id_maxvort01
  integer :: id_maxvorthy1,kstt_maxvorthy1,kstt_maxvort01,id_ustm
+ integer :: id_o3_ave,id_pm25_ave,id_no3_ave,id_so4_ave
+ integer :: id_nh4_ave,id_ec_ave,id_oc_ave,id_om_ave
+ integer :: id_no_ave,id_no2_ave
  integer :: kend_maxvorthy1,kend_maxvort01,id_vstm,id_srh01,id_srh03
  integer :: kstt_uhmax03,kstt_uhmin03,kend_uhmax03,kend_uhmin03
  integer :: kstt_uhmax25,kstt_uhmin25,kend_uhmax25,kend_uhmin25
@@ -153,6 +162,9 @@ module fv_nggps_diags_mod
  real, dimension(:,:),allocatable :: up2,dn2,uhmax03,uhmin03
  real, dimension(:,:),allocatable :: uhmax25,uhmin25,maxvort01
  real, dimension(:,:),allocatable :: maxvorthy1,maxvort02
+ real, dimension(:,:,:),allocatable :: o3_ave,pm25_ave,no3_ave,so4_ave
+ real, dimension(:,:,:),allocatable :: nh4_ave,ec_ave,oc_ave,om_ave
+ real, dimension(:,:,:),allocatable :: no_ave,no2_ave
 
  public :: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 #ifdef use_WRTCOMP
@@ -429,6 +441,86 @@ contains
           allocate ( uhmin25(isco:ieco,jsco:jeco) )
           kstt_uhmin25 = nlevs+1; kend_uhmin25 = nlevs+1
           nlevs = nlevs + 1
+       endif
+       
+       id_o3_ave = register_diag_field ( trim(file_name), 'o3_ave',axes(1:3), Time,      &
+          'Hourly averaged o3', 'ppmv', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_o3_ave > 0 ) then
+          allocate ( o3_ave(isco:ieco,jsco:jeco,npzo) )
+          kstt_o3_ave = nlevs+1; kend_o3_ave = nlevs+npzo
+          nlevs = nlevs + npzo 
+       endif
+!
+       id_no_ave = register_diag_field ( trim(file_name), 'no_ave',axes(1:3), Time,      &
+          'Hourly averaged no', 'ppmv', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_no_ave > 0 ) then
+          allocate ( no_ave(isco:ieco,jsco:jeco,npzo) )
+          kstt_no_ave = nlevs+1; kend_no_ave = nlevs+npzo
+          nlevs = nlevs + npzo 
+       endif
+!       
+       id_no2_ave = register_diag_field ( trim(file_name), 'no2_ave',axes(1:3), Time,      &
+          'Hourly averaged no2', 'ppmv', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_no2_ave > 0 ) then
+          allocate ( no2_ave(isco:ieco,jsco:jeco,npzo) )
+          kstt_no2_ave = nlevs+1; kend_no2_ave = nlevs+npzo
+          nlevs = nlevs + npzo 
+       endif
+!
+       id_pm25_ave = register_diag_field ( trim(file_name), 'pm25_ave',axes(1:3), Time,      &
+          'Hourly averaged pm25', 'ug/m^3', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_pm25_ave > 0 ) then
+          allocate ( pm25_ave(isco:ieco,jsco:jeco,npzo) )
+          kstt_pm25_ave = nlevs+1; kend_pm25_ave = nlevs+npzo
+          nlevs = nlevs + npzo 
+       endif
+!
+       id_no3_ave = register_diag_field ( trim(file_name), 'no3_ave',axes(1:3), Time,      &
+          'Hourly averaged no3', 'ug/m^3', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_no3_ave > 0 ) then
+          allocate ( no3_ave(isco:ieco,jsco:jeco,npzo) )
+          kstt_no3_ave = nlevs+1; kend_no3_ave = nlevs+npzo
+          nlevs = nlevs + npzo 
+       endif
+!       
+       id_so4_ave = register_diag_field ( trim(file_name), 'so4_ave',axes(1:3), Time,      &
+          'Hourly averaged so4', 'ug/m^3', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_so4_ave > 0 ) then
+          allocate ( so4_ave(isco:ieco,jsco:jeco,npzo) )
+          kstt_so4_ave = nlevs+1; kend_so4_ave = nlevs+npzo
+          nlevs = nlevs + npzo 
+       endif
+!
+       id_nh4_ave = register_diag_field ( trim(file_name), 'nh4_ave',axes(1:3), Time,      &
+          'Hourly averaged nh4', 'ug/m^3', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_nh4_ave > 0 ) then
+          allocate ( nh4_ave(isco:ieco,jsco:jeco,npzo) )
+          kstt_nh4_ave = nlevs+1; kend_nh4_ave = nlevs+npzo
+          nlevs = nlevs + npzo 
+       endif
+!
+       id_ec_ave = register_diag_field ( trim(file_name), 'ec_ave',axes(1:3), Time,      &
+          'Hourly averaged ec', 'ug/m^3', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_ec_ave > 0 ) then
+          allocate ( ec_ave(isco:ieco,jsco:jeco,npzo) )
+          kstt_ec_ave = nlevs+1; kend_ec_ave = nlevs+npzo
+          nlevs = nlevs + npzo 
+       endif
+!
+       id_oc_ave = register_diag_field ( trim(file_name), 'oc_ave',axes(1:3), Time,      &
+          'Hourly averaged oc', 'ug/m^3', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_oc_ave > 0 ) then
+          allocate ( oc_ave(isco:ieco,jsco:jeco,npzo) )
+          kstt_oc_ave = nlevs+1; kend_oc_ave = nlevs+npzo
+          nlevs = nlevs + npzo 
+       endif
+!
+       id_om_ave = register_diag_field ( trim(file_name), 'om_ave',axes(1:3), Time,      &
+          'Hourly averaged om', 'ug/m^3', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_om_ave > 0 ) then
+          allocate ( om_ave(isco:ieco,jsco:jeco,npzo) )
+          kstt_om_ave = nlevs+1; kend_om_ave = nlevs+npzo
+          nlevs = nlevs + npzo 
        endif
 !
        nz = size(atm(1)%ak)
@@ -732,6 +824,66 @@ contains
         deallocate ( srh01 )
         deallocate ( srh03 )
 
+    !--- hourly averaged o3  
+
+    if ( id_o3_ave > 0) then
+      call store_data(id_o3_ave, o3_ave, Time, kstt_o3_ave, kend_o3_ave)
+    endif
+
+    !--- hourly averaged no  
+
+    if ( id_no_ave > 0) then
+      call store_data(id_no_ave, no_ave, Time, kstt_no_ave, kend_no_ave)
+    endif
+
+    !--- hourly averaged no2  
+
+    if ( id_no2_ave > 0) then
+      call store_data(id_no2_ave, no2_ave, Time, kstt_no2_ave, kend_no2_ave)
+    endif
+
+    !--- hourly averaged pm25  
+
+    if ( id_pm25_ave > 0) then
+      call store_data(id_pm25_ave, pm25_ave, Time, kstt_pm25_ave, kend_pm25_ave)
+    endif
+
+    !--- hourly averaged no3  
+
+    if ( id_no3_ave > 0) then
+      call store_data(id_no3_ave, no3_ave, Time, kstt_no3_ave, kend_no3_ave)
+    endif
+
+    !--- hourly averaged so4  
+
+    if ( id_so4_ave > 0) then
+      call store_data(id_so4_ave, so4_ave, Time, kstt_so4_ave, kend_so4_ave)
+    endif
+
+    !--- hourly averaged nh4  
+
+    if ( id_nh4_ave > 0) then
+      call store_data(id_nh4_ave, nh4_ave, Time, kstt_nh4_ave, kend_nh4_ave)
+    endif
+
+    !--- hourly averaged ec  
+
+    if ( id_ec_ave > 0) then
+      call store_data(id_ec_ave, ec_ave, Time, kstt_ec_ave, kend_ec_ave)
+    endif
+
+    !--- hourly averaged oc  
+
+    if ( id_oc_ave > 0) then
+      call store_data(id_oc_ave, oc_ave, Time, kstt_oc_ave, kend_oc_ave)
+    endif
+
+    !--- hourly averaged om  
+
+    if ( id_om_ave > 0) then
+      call store_data(id_om_ave, om_ave, Time, kstt_om_ave, kend_om_ave)
+    endif
+
     !--- max hourly 0-1km vert. vorticity
     if ( id_maxvort01 > 0) then
       call store_data(id_maxvort01, maxvort01, Time, kstt_maxvort01, kend_maxvort01)
@@ -823,21 +975,27 @@ contains
     type(time_type),     intent(in) :: Time_step_atmos
     real,                intent(in):: zvir
     integer :: i, j, k, n, ngc, nq, itrac
-    integer seconds, days, nsteps_per_reset
+    integer :: o3_idx,no_idx,no2_idx
+    integer :: seconds, days, nsteps_per_reset
     logical, save :: first_call=.true.
     real, save :: first_time = 0.
     integer, save :: kdtt = 0
+    integer, save :: kdtt1 = 0
     real :: avg_max_length
     real,dimension(:,:,:),allocatable :: vort
+    real,dimension(:,:,:),allocatable :: o3,pm25,pm25_tmp,no3_tmp,so4_tmp,nh4_tmp,ec_tmp,oc_tmp,om_tmp
+    real,dimension(:,:,:),allocatable :: no3,so4,nh4,ec,oc,om,no,no2
+
     n = 1
     ngc = Atm(n)%ng
     nq = size (Atm(n)%q,4)
+
 !
 !Check if any of the max hourly fields are being requested otherwise skip
 !
     if(id_wmaxup > 0 .or. id_wmaxdn > 0 .or. id_uhmax03 > 0 .or. id_uhmin03 > 0 &
           .or. id_uhmax25 > 0 .or. id_uhmin25 > 0 .or. id_maxvort01 > 0 &
-          .or. id_maxvorthy1 > 0 .or. id_maxvort02 > 0) then
+          .or. id_maxvorthy1 > 0 .or. id_maxvort02 > 0 ) then
 !Make sure the group of max hrly fields listed below are ALL present otherwise
 !abort
 !
@@ -912,6 +1070,120 @@ contains
        stop
     endif
    endif
+
+!    if ( id_o3_ave > 0 .or. id_pm25_ave >0 ) then
+     if ( id_o3_ave > 0 .and. id_pm25_ave >0 & 
+         .and. id_no3_ave > 0 .and. id_so4_ave >0 & 
+         .and. id_nh4_ave > 0 .and. id_ec_ave >0 &
+         .and. id_oc_ave > 0 .and. id_om_ave >0 & 
+         .and. id_no_ave > 0 .and. id_no2_ave >0 ) then 
+
+       allocate ( o3(isco:ieco,jsco:jeco,npzo) )
+       allocate ( no(isco:ieco,jsco:jeco,npzo) )
+       allocate ( no2(isco:ieco,jsco:jeco,npzo) )
+       allocate ( pm25_tmp(isco:ieco,jsco:jeco,npzo) )
+       allocate ( no3_tmp(isco:ieco,jsco:jeco,npzo) )
+       allocate ( so4_tmp(isco:ieco,jsco:jeco,npzo) )
+       allocate ( nh4_tmp(isco:ieco,jsco:jeco,npzo) )
+       allocate ( ec_tmp(isco:ieco,jsco:jeco,npzo) )
+       allocate ( oc_tmp(isco:ieco,jsco:jeco,npzo) )
+       allocate ( om_tmp(isco:ieco,jsco:jeco,npzo) )
+       allocate ( pm25(isco:ieco,jsco:jeco,npzo) )
+       allocate ( no3(isco:ieco,jsco:jeco,npzo) )
+       allocate ( so4(isco:ieco,jsco:jeco,npzo) )
+       allocate ( nh4(isco:ieco,jsco:jeco,npzo) )
+       allocate ( ec(isco:ieco,jsco:jeco,npzo) )
+       allocate ( oc(isco:ieco,jsco:jeco,npzo) )
+       allocate ( om(isco:ieco,jsco:jeco,npzo) )
+
+       o3_idx = get_tracer_index (MODEL_ATMOS, 'O3')
+       o3(isco:ieco,jsco:jeco,1:npzo)  = Atm(n)%q(isco:ieco,jsco:jeco,1:npzo,o3_idx)
+       no_idx = get_tracer_index (MODEL_ATMOS, 'NO')
+       no(isco:ieco,jsco:jeco,1:npzo)  = Atm(n)%q(isco:ieco,jsco:jeco,1:npzo,no_idx)
+       no2_idx = get_tracer_index (MODEL_ATMOS, 'NO2')
+       no2(isco:ieco,jsco:jeco,1:npzo)  = Atm(n)%q(isco:ieco,jsco:jeco,1:npzo,no2_idx)
+
+      call get_pm25(isco,ieco,jsco,jeco,Atm(n)%q(isco:ieco,jsco:jeco,&
+           1:npzo,1:ncnsto),npzo,ncnsto,pm25_tmp,no3_tmp,so4_tmp,nh4_tmp,ec_tmp,oc_tmp,om_tmp)
+
+! unit conversion: ug/kg ==> ug/m^3
+        do k=1,npzo
+          do j=jsco,jeco
+            do i=isco,ieco
+              pm25(i,j,k)=-Atm(n)%delp(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*pm25_tmp(i,j,k)          
+              no3(i,j,k)=-Atm(n)%delp(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*no3_tmp(i,j,k)          
+              so4(i,j,k)=-Atm(n)%delp(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*so4_tmp(i,j,k)          
+              nh4(i,j,k)=-Atm(n)%delp(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*nh4_tmp(i,j,k)          
+              ec(i,j,k)=-Atm(n)%delp(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*ec_tmp(i,j,k)          
+              oc(i,j,k)=-Atm(n)%delp(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*oc_tmp(i,j,k)          
+              om(i,j,k)=-Atm(n)%delp(i,j,k)/(Atm(n)%delz(i,j,k)*grav)*om_tmp(i,j,k)          
+            enddo
+          enddo
+        enddo
+
+       if (first_call) then
+         call get_time (Time_step_atmos, seconds,  days)
+         first_time=seconds
+         first_call=.false.
+         kdtt1=0
+       endif
+       nsteps_per_reset = nint(avg_max_length/first_time)
+       if(mod(kdtt1,nsteps_per_reset)==0)then
+           do k=1,npzo
+            do j=jsco,jeco
+              do i=isco,ieco
+                    o3_ave(i,j,k)= 0.
+                    no_ave(i,j,k)= 0.
+                    no2_ave(i,j,k)= 0.
+                    pm25_ave(i,j,k)= 0.
+                    no3_ave(i,j,k)= 0.
+                    so4_ave(i,j,k)= 0.
+                    nh4_ave(i,j,k)= 0.
+                    ec_ave(i,j,k)= 0.
+                    oc_ave(i,j,k)= 0.
+                    om_ave(i,j,k)= 0.
+              enddo
+            enddo
+           enddo
+       endif
+
+         call average_tracer_hy1(isco,ieco,jsco,jeco,npzo,o3,o3_ave,nsteps_per_reset)
+         call average_tracer_hy1(isco,ieco,jsco,jeco,npzo,no,no_ave,nsteps_per_reset)
+         call average_tracer_hy1(isco,ieco,jsco,jeco,npzo,no2,no2_ave,nsteps_per_reset)
+
+         call average_tracer_hy1(isco,ieco,jsco,jeco,npzo,pm25,pm25_ave,nsteps_per_reset)
+         call average_tracer_hy1(isco,ieco,jsco,jeco,npzo,pm25,no3_ave,nsteps_per_reset)
+         call average_tracer_hy1(isco,ieco,jsco,jeco,npzo,pm25,so4_ave,nsteps_per_reset)
+         call average_tracer_hy1(isco,ieco,jsco,jeco,npzo,pm25,nh4_ave,nsteps_per_reset)
+         call average_tracer_hy1(isco,ieco,jsco,jeco,npzo,pm25,ec_ave,nsteps_per_reset)
+         call average_tracer_hy1(isco,ieco,jsco,jeco,npzo,pm25,oc_ave,nsteps_per_reset)
+         call average_tracer_hy1(isco,ieco,jsco,jeco,npzo,pm25,om_ave,nsteps_per_reset)
+
+         kdtt1=kdtt1+1
+         deallocate (o3)
+         deallocate (no)
+         deallocate (no2)
+         deallocate ( pm25)
+         deallocate ( pm25_tmp)
+         deallocate ( no3_tmp)
+         deallocate ( so4_tmp)
+         deallocate ( nh4_tmp)
+         deallocate ( ec_tmp)
+         deallocate ( oc_tmp)
+         deallocate ( om_tmp)
+         deallocate ( no3)
+         deallocate ( so4)
+         deallocate ( nh4)
+         deallocate ( ec)
+         deallocate ( oc)
+         deallocate ( om)
+
+    else
+       print *,'calculating hourly-averaegtd o3 or pm25'
+       call mpp_error(FATAL, 'Missing hourly-averaged o3 or pm25 in diag_table')
+       stop
+    endif
+!   endif
 
    !allocate hailcast met field arrays
    if (do_hailcast) then
@@ -1314,6 +1586,76 @@ contains
    enddo
 !
 !
+   if ( id_o3_ave > 0 ) then
+     call find_outputname(trim(file_name),'o3_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged o3', 'ppmv', "time: point",   &
+          axes(1:3), fcst_grid, kstt_o3_ave,kend_o3_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
+   if ( id_no_ave > 0 ) then
+     call find_outputname(trim(file_name),'no_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged no', 'ppmv', "time: point",   &
+          axes(1:3), fcst_grid, kstt_no_ave,kend_no_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
+   if ( id_no2_ave > 0 ) then
+     call find_outputname(trim(file_name),'no2_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged no2', 'ppmv', "time: point",   &
+          axes(1:3), fcst_grid, kstt_no2_ave,kend_no2_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
+   if ( id_pm25_ave > 0 ) then
+     call find_outputname(trim(file_name),'pm25_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged pm25', 'ug/m^3', "time: point",   &
+          axes(1:3), fcst_grid, kstt_pm25_ave,kend_pm25_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+
+   if ( id_no3_ave > 0 ) then
+     call find_outputname(trim(file_name),'no3_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged no3', 'ug/m^3', "time: point",   &
+          axes(1:3), fcst_grid, kstt_no3_ave,kend_no3_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+
+   if ( id_so4_ave > 0 ) then
+     call find_outputname(trim(file_name),'so4_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged so4', 'ug/m^3', "time: point",   &
+          axes(1:3), fcst_grid, kstt_so4_ave,kend_so4_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+
+   if ( id_nh4_ave > 0 ) then
+     call find_outputname(trim(file_name),'nh4_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged nh4', 'ug/m^3', "time: point",   &
+          axes(1:3), fcst_grid, kstt_nh4_ave,kend_nh4_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+
+   if ( id_ec_ave > 0 ) then
+     call find_outputname(trim(file_name),'ec_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged ec', 'ug/m^3', "time: point",   &
+          axes(1:3), fcst_grid, kstt_ec_ave,kend_ec_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+
+   if ( id_oc_ave > 0 ) then
+     call find_outputname(trim(file_name),'oc_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged oc', 'ug/m^3', "time: point",   &
+          axes(1:3), fcst_grid, kstt_oc_ave,kend_oc_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+
+   if ( id_om_ave > 0 ) then
+     call find_outputname(trim(file_name),'om_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged om', 'ug/m^3', "time: point",   &
+          axes(1:3), fcst_grid, kstt_om_ave,kend_om_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+
    if( id_ps > 0) then
      call find_outputname(trim(file_name),'ps',output_name)
      call add_field_to_bundle(trim(output_name),'surface pressure', 'pa', "time: point",   &
