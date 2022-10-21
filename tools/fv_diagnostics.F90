@@ -196,6 +196,7 @@ module fv_diagnostics_mod
  public :: prt_height, prt_gb_nh_sh, interpolate_vertical, rh_calc, get_height_field, dbzcalc
  public :: max_vv, get_vorticity, max_uh
  public :: max_vorticity, max_vorticity_hy1, bunkers_vector, helicity_relative_CAPS
+ public :: get_pm25,average_tracer_hy1
  public :: cs3_interpolator, get_height_given_pressure
 #ifdef MOVING_NEST
  public :: interpolate_z, get_pressure_given_height
@@ -6183,6 +6184,470 @@ end subroutine eqv_pot
       enddo  ! i-loop
    enddo   ! j-loop
  end subroutine max_vorticity_hy1
+
+ subroutine get_pm25(isco,ieco,jsco,jeco,aq,npzo,ncn,pm25,no3,so4,nh4,ec,oc,om)
+   integer, intent(in):: isco, ieco, jsco, jeco,npzo,ncn
+   real, intent(in) , dimension(isco:ieco,jsco:jeco,npzo,ncn):: aq
+   real, intent(inout), dimension(isco:ieco,jsco:jeco,npzo):: pm25,no3,so4,nh4,ec,oc,om 
+   integer i, j, k
+
+   integer :: aso4j_idx,aso4i_idx,anh4j_idx,anh4i_idx
+   integer :: ano3j_idx,ano3i_idx,aalk1j_idx,aalk2j_idx
+   integer :: axyl1j_idx,axyl2j_idx,axyl3j_idx,atol1j_idx,atol2j_idx,atol3j_idx
+   integer :: abnz1j_idx,abnz2j_idx,abnz3j_idx,apah1j_idx,apah2j_idx,apah3j_idx
+   integer :: atrp1j_idx,atrp2j_idx,aiso1j_idx,aiso2j_idx,asqtj_idx,aorgcj_idx
+   integer :: aecj_idx,aeci_idx,aothrj_idx,aothri_idx,afej_idx,aalj_idx,asij_idx
+   integer :: atij_idx,acaj_idx,amgj_idx,     akj_idx,amnj_idx,acors_idx,asoil_idx
+   integer :: anaj_idx,anai_idx
+   integer :: aclj_idx,acli_idx,aseacat_idx,aclk_idx,aso4k_idx,anh4k_idx,ano3k_idx
+   integer :: aiso3j_idx,aolgaj_idx,aolgbj_idx,aglyj_idx
+   integer :: apcsoj_idx,alvpo1i_idx,asvpo1i_idx,asvpo2i_idx,alvpo1j_idx,asvpo1j_idx
+   integer :: asvpo2j_idx,asvpo3j_idx,aivpo1j_idx,alvoo1i_idx,alvoo2i_idx
+   integer :: asvoo1i_idx,asvoo2i_idx,alvoo1j_idx,alvoo2j_idx,asvoo1j_idx,asvoo2j_idx
+   integer :: asvoo3j_idx
+   integer :: pm25at_idx,pm25ac_idx,pm25co_idx
+
+   real,dimension(:,:),allocatable :: aso4j,aso4i,anh4j,anh4i
+   real,dimension(:,:),allocatable :: ano3j,ano3i,aalk1j,aalk2j
+   real,dimension(:,:),allocatable :: axyl1j,axyl2j,axyl3j,atol1j,atol2j,atol3j
+   real,dimension(:,:),allocatable :: abnz1j,abnz2j,abnz3j,apah1j,apah2j,apah3j
+   real,dimension(:,:),allocatable :: atrp1j,atrp2j,aiso1j,aiso2j,asqtj,aorgcj
+   real,dimension(:,:),allocatable :: aecj,aeci,aothrj,aothri,afej,aalj,asij
+   real,dimension(:,:),allocatable :: atij,acaj,amgj,akj,amnj,acors,asoil
+   real,dimension(:,:),allocatable :: anaj,anai
+   real,dimension(:,:),allocatable :: aclj,acli,aseacat,aclk,aso4k,anh4k,ano3k
+   real,dimension(:,:),allocatable :: aiso3j,aolgaj,aolgbj,aglyj
+   real,dimension(:,:),allocatable :: apcsoj,alvpo1i,asvpo1i,asvpo2i,alvpo1j,asvpo1j
+   real,dimension(:,:),allocatable :: asvpo2j,asvpo3j,aivpo1j,alvoo1i,alvoo2i
+   real,dimension(:,:),allocatable :: asvoo1i,asvoo2i,alvoo1j,alvoo2j,asvoo1j,asvoo2j
+   real,dimension(:,:),allocatable :: asvoo3j
+   real,dimension(:,:),allocatable :: pm25at,pm25ac,pm25co
+   real,dimension(:,:),allocatable :: asomj_1,asomj_2,asomj_3,asomj_4
+   real,dimension(:,:),allocatable :: asoci,asocj,apoci,apocj
+   real,dimension(:,:),allocatable :: asocj_1,asocj_2,asocj_3,asocj_4,asocj_5
+   real,dimension(:,:),allocatable :: atoti,apomi,asomi,atotj,apomj,asomj,atotk
+
+   allocate ( aso4j(isco:ieco,jsco:jeco) )
+   allocate ( aso4i(isco:ieco,jsco:jeco) )
+   allocate ( anh4j(isco:ieco,jsco:jeco) )
+   allocate ( anh4i(isco:ieco,jsco:jeco) )
+   allocate ( ano3j(isco:ieco,jsco:jeco) )
+   allocate ( ano3i(isco:ieco,jsco:jeco) )
+   allocate ( aalk1j(isco:ieco,jsco:jeco) )
+   allocate ( aalk2j(isco:ieco,jsco:jeco) )
+   allocate ( axyl1j(isco:ieco,jsco:jeco) )
+   allocate ( axyl2j(isco:ieco,jsco:jeco) )
+   allocate ( axyl3j(isco:ieco,jsco:jeco) )
+   allocate ( atol1j(isco:ieco,jsco:jeco) )
+   allocate ( atol2j(isco:ieco,jsco:jeco) )
+   allocate ( atol3j(isco:ieco,jsco:jeco) )
+   allocate ( abnz1j(isco:ieco,jsco:jeco) )
+   allocate ( abnz2j(isco:ieco,jsco:jeco) )
+   allocate ( abnz3j(isco:ieco,jsco:jeco) )
+   allocate ( apah1j(isco:ieco,jsco:jeco) )
+   allocate ( apah2j(isco:ieco,jsco:jeco) )
+   allocate ( apah3j(isco:ieco,jsco:jeco) )
+   allocate ( atrp1j(isco:ieco,jsco:jeco) )
+   allocate ( atrp2j(isco:ieco,jsco:jeco) )
+   allocate ( aiso1j(isco:ieco,jsco:jeco) )
+   allocate ( aiso2j(isco:ieco,jsco:jeco) )
+   allocate ( asqtj(isco:ieco,jsco:jeco) )
+   allocate ( aorgcj(isco:ieco,jsco:jeco) )
+   allocate ( aecj(isco:ieco,jsco:jeco) )
+   allocate ( aeci(isco:ieco,jsco:jeco) )
+   allocate ( aothrj(isco:ieco,jsco:jeco) )
+   allocate ( aothri(isco:ieco,jsco:jeco) )
+   allocate ( afej(isco:ieco,jsco:jeco) )
+   allocate ( aalj(isco:ieco,jsco:jeco) )
+   allocate ( asij(isco:ieco,jsco:jeco) )
+   allocate ( atij(isco:ieco,jsco:jeco) )
+   allocate ( acaj(isco:ieco,jsco:jeco) )
+   allocate ( amgj(isco:ieco,jsco:jeco) )
+   allocate ( akj(isco:ieco,jsco:jeco) )
+   allocate ( amnj(isco:ieco,jsco:jeco) )
+   allocate ( acors(isco:ieco,jsco:jeco) )
+   allocate ( asoil(isco:ieco,jsco:jeco) )
+   allocate ( anaj(isco:ieco,jsco:jeco) )
+   allocate ( anai(isco:ieco,jsco:jeco) )
+   allocate ( aclj(isco:ieco,jsco:jeco) )
+   allocate ( acli(isco:ieco,jsco:jeco) )
+   allocate ( aseacat(isco:ieco,jsco:jeco) )
+   allocate ( aclk(isco:ieco,jsco:jeco) )
+   allocate ( aso4k(isco:ieco,jsco:jeco) )
+   allocate ( anh4k(isco:ieco,jsco:jeco) )
+   allocate ( ano3k(isco:ieco,jsco:jeco) )
+   allocate ( aiso3j(isco:ieco,jsco:jeco) )
+   allocate ( aolgaj(isco:ieco,jsco:jeco) )
+   allocate ( aolgbj(isco:ieco,jsco:jeco) )
+   allocate ( aglyj(isco:ieco,jsco:jeco) )
+   allocate ( apcsoj(isco:ieco,jsco:jeco) )
+   allocate ( alvpo1i(isco:ieco,jsco:jeco) )
+   allocate ( asvpo1i(isco:ieco,jsco:jeco) )
+   allocate ( asvpo2i(isco:ieco,jsco:jeco) )
+   allocate ( alvpo1j(isco:ieco,jsco:jeco) )
+   allocate ( asvpo1j(isco:ieco,jsco:jeco) )
+   allocate ( asvpo2j(isco:ieco,jsco:jeco) )
+   allocate ( asvpo3j(isco:ieco,jsco:jeco) )
+   allocate ( aivpo1j(isco:ieco,jsco:jeco) )
+   allocate ( alvoo1i(isco:ieco,jsco:jeco) )
+   allocate ( alvoo2i(isco:ieco,jsco:jeco) )
+   allocate ( asvoo1i(isco:ieco,jsco:jeco) )
+   allocate ( asvoo2i(isco:ieco,jsco:jeco) )
+   allocate ( alvoo1j(isco:ieco,jsco:jeco) )
+   allocate ( alvoo2j(isco:ieco,jsco:jeco) )
+   allocate ( asvoo1j(isco:ieco,jsco:jeco) )
+   allocate ( asvoo2j(isco:ieco,jsco:jeco) )
+   allocate ( asvoo3j(isco:ieco,jsco:jeco) )
+   allocate ( pm25at(isco:ieco,jsco:jeco) )
+   allocate ( pm25ac(isco:ieco,jsco:jeco) )
+   allocate ( pm25co(isco:ieco,jsco:jeco) )
+   allocate ( asomj_1(isco:ieco,jsco:jeco) )
+   allocate ( asomj_2(isco:ieco,jsco:jeco) )
+   allocate ( asomj_3(isco:ieco,jsco:jeco) )
+   allocate ( asomj_4(isco:ieco,jsco:jeco) )
+   allocate ( asocj_1(isco:ieco,jsco:jeco) )
+   allocate ( asocj_2(isco:ieco,jsco:jeco) )
+   allocate ( asocj_3(isco:ieco,jsco:jeco) )
+   allocate ( asocj_4(isco:ieco,jsco:jeco) )
+   allocate ( asocj_5(isco:ieco,jsco:jeco) )
+   allocate ( asocj(isco:ieco,jsco:jeco) )
+   allocate ( asoci(isco:ieco,jsco:jeco) )
+   allocate ( apoci(isco:ieco,jsco:jeco) )
+   allocate ( apocj(isco:ieco,jsco:jeco) )
+   allocate ( atoti(isco:ieco,jsco:jeco) )
+   allocate ( apomi(isco:ieco,jsco:jeco) )
+   allocate ( asomi(isco:ieco,jsco:jeco) )
+   allocate ( atotj(isco:ieco,jsco:jeco) )
+   allocate ( apomj(isco:ieco,jsco:jeco) )
+   allocate ( asomj(isco:ieco,jsco:jeco) )
+   allocate ( atotk(isco:ieco,jsco:jeco) )
+
+   aso4j_idx = get_tracer_index (MODEL_ATMOS, 'ASO4J')
+   aso4i_idx = get_tracer_index (MODEL_ATMOS, 'ASO4I')
+   anh4j_idx = get_tracer_index (MODEL_ATMOS, 'ANH4J')
+   anh4i_idx = get_tracer_index (MODEL_ATMOS, 'ANH4I')
+   ano3j_idx = get_tracer_index (MODEL_ATMOS, 'ANO3J')
+   ano3i_idx = get_tracer_index (MODEL_ATMOS, 'ANO3I')
+   aalk1j_idx = get_tracer_index (MODEL_ATMOS, 'AALK1J')
+   aalk2j_idx = get_tracer_index (MODEL_ATMOS, 'AALK2J')
+   axyl1j_idx = get_tracer_index (MODEL_ATMOS, 'AXYL1J')
+   axyl2j_idx = get_tracer_index (MODEL_ATMOS, 'AXYL2J')
+   axyl3j_idx = get_tracer_index (MODEL_ATMOS, 'AXYL3J')
+   atol1j_idx = get_tracer_index (MODEL_ATMOS, 'ATOL1J')
+   atol2j_idx = get_tracer_index (MODEL_ATMOS, 'ATOL2J')
+   atol3j_idx = get_tracer_index (MODEL_ATMOS, 'ATOL3J')
+   abnz1j_idx = get_tracer_index (MODEL_ATMOS, 'ABNZ1J')
+   abnz2j_idx = get_tracer_index (MODEL_ATMOS, 'ABNZ2J')
+   abnz3j_idx = get_tracer_index (MODEL_ATMOS, 'ABNZ3J')
+   apah1j_idx = get_tracer_index (MODEL_ATMOS, 'APAH1J')
+   apah2j_idx = get_tracer_index (MODEL_ATMOS, 'APAH2J')
+   apah3j_idx = get_tracer_index (MODEL_ATMOS, 'APAH3J')
+   atrp2j_idx = get_tracer_index (MODEL_ATMOS, 'ATRP2J')
+   aiso1j_idx = get_tracer_index (MODEL_ATMOS, 'AISO1J')
+   aiso2j_idx = get_tracer_index (MODEL_ATMOS, 'AISO2J')
+   asqtj_idx = get_tracer_index (MODEL_ATMOS, 'ASQTJ')
+   aorgcj_idx = get_tracer_index (MODEL_ATMOS, 'AORGCJ')
+   aeci_idx = get_tracer_index (MODEL_ATMOS, 'AECI')
+   aecj_idx = get_tracer_index (MODEL_ATMOS, 'AECJ')
+   aothrj_idx = get_tracer_index (MODEL_ATMOS, 'AOTHRJ')
+   aothri_idx = get_tracer_index (MODEL_ATMOS, 'AOTHRI')
+   afej_idx = get_tracer_index (MODEL_ATMOS, 'AFEJ')
+   aalj_idx = get_tracer_index (MODEL_ATMOS, 'AALJ')
+   asij_idx = get_tracer_index (MODEL_ATMOS, 'ASIJ')
+   atrp1j_idx = get_tracer_index (MODEL_ATMOS, 'ATRP1J')
+   atij_idx = get_tracer_index (MODEL_ATMOS, 'ATIJ')
+   acaj_idx = get_tracer_index (MODEL_ATMOS, 'ACAJ')
+   amgj_idx = get_tracer_index (MODEL_ATMOS, 'AMGJ')
+   akj_idx = get_tracer_index (MODEL_ATMOS, 'AKJ')
+   amnj_idx = get_tracer_index (MODEL_ATMOS, 'AMNJ')
+   acors_idx = get_tracer_index (MODEL_ATMOS, 'ACORS')
+   aseacat_idx = get_tracer_index (MODEL_ATMOS, 'ASEACAT')
+   asoil_idx = get_tracer_index (MODEL_ATMOS, 'ASOIL')
+   anaj_idx = get_tracer_index (MODEL_ATMOS, 'ANAJ')
+   anai_idx = get_tracer_index (MODEL_ATMOS, 'ANAI')
+   aclj_idx = get_tracer_index (MODEL_ATMOS, 'ACLJ')
+   acli_idx = get_tracer_index (MODEL_ATMOS, 'ACLI')
+   aclk_idx = get_tracer_index (MODEL_ATMOS, 'ACLK')
+   aso4k_idx = get_tracer_index (MODEL_ATMOS, 'ASO4K')
+   anh4k_idx = get_tracer_index (MODEL_ATMOS, 'ANH4K')
+   ano3k_idx = get_tracer_index (MODEL_ATMOS, 'ANO3K')
+   aiso3j_idx = get_tracer_index (MODEL_ATMOS, 'AISO3J')
+   aolgaj_idx = get_tracer_index (MODEL_ATMOS, 'AOLGAJ')
+   aolgbj_idx = get_tracer_index (MODEL_ATMOS, 'AOLGBJ')
+   aglyj_idx = get_tracer_index (MODEL_ATMOS, 'AGLYJ')
+   apcsoj_idx = get_tracer_index (MODEL_ATMOS, 'APCSOJ')
+   alvpo1i_idx = get_tracer_index (MODEL_ATMOS, 'ALVPO1I')
+   asvpo1i_idx = get_tracer_index (MODEL_ATMOS, 'ASVPO1I')
+   asvpo2i_idx = get_tracer_index (MODEL_ATMOS, 'ASVPO2I')
+   alvpo1j_idx = get_tracer_index (MODEL_ATMOS, 'ALVPO1J')
+   asvpo1j_idx = get_tracer_index (MODEL_ATMOS, 'ASVPO1J')
+   asvpo2j_idx = get_tracer_index (MODEL_ATMOS, 'ASVPO2J')
+   asvpo3j_idx = get_tracer_index (MODEL_ATMOS, 'ASVPO3J')
+   aivpo1j_idx = get_tracer_index (MODEL_ATMOS, 'AIVPO1J')
+   alvoo1i_idx = get_tracer_index (MODEL_ATMOS, 'ALVOO1I')
+   alvoo2i_idx = get_tracer_index (MODEL_ATMOS, 'ALVOO2I')
+   asvoo1i_idx = get_tracer_index (MODEL_ATMOS, 'ASVOO1I')
+   asvoo2i_idx = get_tracer_index (MODEL_ATMOS, 'ASVOO2I')
+   alvoo1j_idx = get_tracer_index (MODEL_ATMOS, 'ALVOO1J')
+   alvoo2j_idx = get_tracer_index (MODEL_ATMOS, 'ALVOO2J')
+   asvoo1j_idx = get_tracer_index (MODEL_ATMOS, 'ASVOO1J')
+   asvoo2j_idx = get_tracer_index (MODEL_ATMOS, 'ASVOO2J')
+   asvoo3j_idx = get_tracer_index (MODEL_ATMOS,'ASVOO3J')
+   pm25at_idx = get_tracer_index (MODEL_ATMOS, 'PM25AT')
+   pm25ac_idx = get_tracer_index (MODEL_ATMOS, 'PM25AC')
+   pm25co_idx = get_tracer_index (MODEL_ATMOS, 'PM25CO')
+
+   do k=npzo,1,-1
+   aso4j(:,:)  = aq(isco:ieco,jsco:jeco,k,aso4j_idx)
+   aso4i(:,:)  = aq(isco:ieco,jsco:jeco,k,aso4i_idx)
+   anh4j(:,:)  = aq(isco:ieco,jsco:jeco,k,anh4j_idx)
+   anh4i(:,:)  = aq(isco:ieco,jsco:jeco,k,anh4i_idx)
+   ano3j(:,:)  = aq(isco:ieco,jsco:jeco,k,ano3j_idx)
+   ano3i(:,:)  = aq(isco:ieco,jsco:jeco,k,ano3i_idx)
+   aalk1j(:,:) = aq(isco:ieco,jsco:jeco,k,aalk1j_idx)
+   aalk2j(:,:) = aq(isco:ieco,jsco:jeco,k,aalk2j_idx)
+   axyl1j(:,:) = aq(isco:ieco,jsco:jeco,k,axyl1j_idx)
+   axyl2j(:,:) = aq(isco:ieco,jsco:jeco,k,axyl2j_idx)
+   axyl3j(:,:) = aq(isco:ieco,jsco:jeco,k,axyl3j_idx)
+   atol1j(:,:) = aq(isco:ieco,jsco:jeco,k,atol1j_idx)
+   atol2j(:,:) = aq(isco:ieco,jsco:jeco,k,atol2j_idx)
+   atol3j(:,:)     = aq(isco:ieco,jsco:jeco,k,atol3j_idx)
+   abnz1j(:,:)     = aq(isco:ieco,jsco:jeco,k,abnz1j_idx)
+   abnz2j(:,:)     = aq(isco:ieco,jsco:jeco,k,abnz2j_idx)
+   abnz3j(:,:)     = aq(isco:ieco,jsco:jeco,k,abnz3j_idx)
+   apah1j(:,:)     = aq(isco:ieco,jsco:jeco,k,apah1j_idx)
+   apah2j(:,:)     = aq(isco:ieco,jsco:jeco,k,apah2j_idx)
+   apah3j(:,:)     = aq(isco:ieco,jsco:jeco,k,apah3j_idx)
+   atrp1j(:,:)     = aq(isco:ieco,jsco:jeco,k,atrp1j_idx)
+   atrp2j(:,:)     = aq(isco:ieco,jsco:jeco,k,atrp2j_idx)
+   aiso1j(:,:)     = aq(isco:ieco,jsco:jeco,k,aiso1j_idx)
+   aiso2j(:,:)     = aq(isco:ieco,jsco:jeco,k,aiso2j_idx)
+   asqtj(:,:)     = aq(isco:ieco,jsco:jeco,k,asqtj_idx)
+   aorgcj(:,:)     = aq(isco:ieco,jsco:jeco,k,aorgcj_idx)
+   aecj(:,:)     = aq(isco:ieco,jsco:jeco,k,aecj_idx)
+   aeci(:,:)     = aq(isco:ieco,jsco:jeco,k,aeci_idx)
+   aothrj(:,:)     = aq(isco:ieco,jsco:jeco,k,aothrj_idx)
+   aothri(:,:)     = aq(isco:ieco,jsco:jeco,k,aothri_idx)
+   afej(:,:)     = aq(isco:ieco,jsco:jeco,k,afej_idx)
+   aalj(:,:)     = aq(isco:ieco,jsco:jeco,k,aalj_idx)
+   asij(:,:)     = aq(isco:ieco,jsco:jeco,k,asij_idx)
+   atij(:,:)     = aq(isco:ieco,jsco:jeco,k,atij_idx)
+   acaj(:,:)     = aq(isco:ieco,jsco:jeco,k,acaj_idx)
+   amgj(:,:)     = aq(isco:ieco,jsco:jeco,k,amgj_idx)
+   akj(:,:)     = aq(isco:ieco,jsco:jeco,k,akj_idx)
+   amnj(:,:)     = aq(isco:ieco,jsco:jeco,k,amnj_idx)
+   acors(:,:)     = aq(isco:ieco,jsco:jeco,k,acors_idx)
+   asoil(:,:)     = aq(isco:ieco,jsco:jeco,k,asoil_idx)
+   anaj(:,:)     = aq(isco:ieco,jsco:jeco,k,anaj_idx)
+   anai(:,:)     = aq(isco:ieco,jsco:jeco,k,anai_idx)
+   aclj(:,:)     = aq(isco:ieco,jsco:jeco,k,aclj_idx)
+   acli(:,:)     = aq(isco:ieco,jsco:jeco,k,acli_idx)
+   aseacat(:,:)     = aq(isco:ieco,jsco:jeco,k,aseacat_idx)
+   aclk(:,:)     = aq(isco:ieco,jsco:jeco,k,aclk_idx)
+   aso4k(:,:)     = aq(isco:ieco,jsco:jeco,k,aso4k_idx)
+   anh4k(:,:)     = aq(isco:ieco,jsco:jeco,k,anh4k_idx)
+   ano3k(:,:)     = aq(isco:ieco,jsco:jeco,k,ano3k_idx)
+   aiso3j(:,:)     = aq(isco:ieco,jsco:jeco,k,aiso3j_idx)
+   aolgaj(:,:)     = aq(isco:ieco,jsco:jeco,k,aolgaj_idx)
+   aolgbj(:,:)     = aq(isco:ieco,jsco:jeco,k,aolgbj_idx)
+   aglyj(:,:)     = aq(isco:ieco,jsco:jeco,k,aglyj_idx)
+   apcsoj(:,:)     =  aq(isco:ieco,jsco:jeco,k,apcsoj_idx)
+   alvpo1i(:,:)     = aq(isco:ieco,jsco:jeco,k,alvpo1i_idx)
+   asvpo1i(:,:)     = aq(isco:ieco,jsco:jeco,k,asvpo1i_idx)
+   asvpo2i(:,:)     = aq(isco:ieco,jsco:jeco,k,asvpo2i_idx)
+   alvpo1j(:,:)     = aq(isco:ieco,jsco:jeco,k,alvpo1j_idx)
+   asvpo1j(:,:)     = aq(isco:ieco,jsco:jeco,k,asvpo1j_idx)
+   asvpo2j(:,:)     = aq(isco:ieco,jsco:jeco,k,asvpo2j_idx)
+   asvpo3j(:,:)     = aq(isco:ieco,jsco:jeco,k,asvpo3j_idx)
+   aivpo1j(:,:)     = aq(isco:ieco,jsco:jeco,k,aivpo1j_idx)
+   alvoo1i(:,:)     = aq(isco:ieco,jsco:jeco,k,alvoo1i_idx)
+   alvoo2i(:,:)     = aq(isco:ieco,jsco:jeco,k,alvoo2i_idx)
+   asvoo1i(:,:)     = aq(isco:ieco,jsco:jeco,k,asvoo1i_idx)
+   asvoo2i(:,:)     = aq(isco:ieco,jsco:jeco,k,asvoo2i_idx)
+   alvoo1j(:,:)     = aq(isco:ieco,jsco:jeco,k,alvoo1j_idx)
+   alvoo2j(:,:)     = aq(isco:ieco,jsco:jeco,k,alvoo2j_idx)
+   asvoo1j(:,:)     = aq(isco:ieco,jsco:jeco,k,asvoo1j_idx)
+   asvoo2j(:,:)     = aq(isco:ieco,jsco:jeco,k,asvoo2j_idx)
+   asvoo3j(:,:)     = aq(isco:ieco,jsco:jeco,k,asvoo3j_idx)
+   pm25at(:,:)     = aq(isco:ieco,jsco:jeco,k,pm25at_idx)
+   pm25ac(:,:)     = aq(isco:ieco,jsco:jeco,k,pm25ac_idx)
+   pm25co(:,:)     = aq(isco:ieco,jsco:jeco,k,pm25co_idx)
+
+   do j=jsco,jeco
+     do i=isco,ieco
+        atoti(i,j)=aso4i(i,j)+ano3i(i,j)+anh4i(i,j)+anai(i,j) &
+              + acli(i,j)+aeci(i,j)+aothri(i,j)
+        atotj(i,j)=aso4j(i,j)+ano3j(i,j)+anh4j(i,j)+anaj(i,j) &
+              +aclj(i,j)+aecj(i,j)+aothrj(i,j) &
+              +afej(i,j)+asij(i,j)+atij(i,j)+acaj(i,j) &
+              +amgj(i,j)+amnj(i,j)+aalj(i,j)+akj(i,j)
+        atotk(i,j)=asoil(i,j)+acors(i,j)+aseacat(i,j)+aclk(i,j) &
+                +aso4k(i,j)+ano3k(i,j)+anh4k(i,j)
+        apomi(i,j)=alvpo1i(i,j)+asvpo1i(i,j)+asvpo2i(i,j)
+        asoci(i,j)=alvoo1i(i,j)/2.27+alvoo2i(i,j)/2.06+asvoo1i(i,j)/1.88 &
+             +asvoo2i(i,j)/1.73
+        apoci(i,j)=alvpo1i(i,j)/1.39+asvpo1i(i,j)/1.32+asvpo2i(i,j)/1.26
+        apocj(i,j)=alvpo1j(i,j)/1.39+asvpo1j(i,j)/1.32+asvpo2j(i,j)/1.26 &
+              +asvpo3j(i,j)/1.21+aivpo1j(i,j)/1.17
+        apomj(i,j)=alvpo1j(i,j)+asvpo1j(i,j)+asvpo2j(i,j) &
+                   +asvpo3j(i,j)+aivpo1j(i,j)
+        asomi(i,j)=alvoo1i(i,j)+alvoo2i(i,j)+asvoo1i(i,j) &
+                    +asvoo2i(i,j)
+        asomj_1(i,j)=axyl1j(i,j)+axyl2j(i,j)+axyl3j(i,j) &
+                    +atol1j(i,j)+atol2j(i,j)+atol3j(i,j)
+        asomj_2(i,j)=abnz1j(i,j)+abnz2j(i,j)+abnz3j(i,j) &
+                    +aiso1j(i,j)+aiso2j(i,j) &
+                    +aiso3j(i,j)+atrp1j(i,j)+atrp2j(i,j)
+        asomj_3(i,j)=asqtj(i,j)+aalk1j(i,j)+aalk2j(i,j) &
+                    +apah1j(i,j)+apah2j(i,j)+apah3j(i,j) &
+                    +aorgcj(i,j)+aolgbj(i,j)+aolgaj(i,j)+aglyj(i,j)
+        asomj_4(i,j)=alvoo1j(i,j)+alvoo2j(i,j)+asvoo1j(i,j) &
+                     +asvoo2j(i,j)+asvoo3j(i,j)+apcsoj(i,j)
+        asomj(i,j)=asomj_1(i,j)+asomj_2(i,j)+asomj_3(i,j) &
+                      +asomj_4(i,j)
+        asocj_1(i,j)=axyl1j(i,j)/2.42+axyl2j(i,j)/1.93 &
+                  +axyl3j(i,j)/2.30+atol1j(i,j)/2.26 &
+                  +atol2j(i,j)/1.82+atol3j(i,j)/2.70
+        asocj_2(i,j)=abnz1j(i,j)/2.68+abnz2j(i,j)/2.23 &
+                  +abnz3j(i,j)/3.00+aiso1j(i,j)/2.20+aiso2j(i,j)/2.23 &
+                  +aiso3j(i,j)/2.80
+        asocj_3(i,j)=atrp1j(i,j)/1.84+atrp2j(i,j)/1.83 &
+                  +asqtj(i,j)/1.52+aalk1j(i,j)/1.56 &
+                  +aalk2j(i,j)/1.42 
+        asocj_4(i,j)=aorgcj(i,j)/2.00+aolgbj(i,j)/2.10 &
+                +aolgaj(i,j)/2.50+apah1j(i,j)/1.63+apah2j(i,j)/1.49 &
+                +apah3j(i,j)/1.77
+        asocj_5(i,j)=alvoo1j(i,j)/2.27+alvoo2j(i,j)/2.06 &
+                +asvoo1j(i,j)/1.88+asvoo2j(i,j)/1.73+asvoo3j(i,j)/1.60 &
+                +apcsoj(i,j)/2.
+        asocj(i,j)=asocj_1(i,j)+asocj_2(i,j)+asocj_3(i,j)+asocj_4(i,j) &
+                +asocj_5(i,j)
+
+        pm25(i,j,k)=(atoti(i,j)+apomi(i,j)+asomi(i,j))*pm25at(i,j)  &
+             +(atotj(i,j)+apomj(i,j)+asomj(i,j))*pm25ac(i,j)+atotk(i,j)*pm25co(i,j)
+        so4(i,j,k)=aso4i(i,j)*pm25at(i,j)+aso4j(i,j)*pm25ac(i,j)+aso4k(i,j)*pm25co(i,j)
+        no3(i,j,k)=ano3i(i,j)*pm25at(i,j)+ano3j(i,j)*pm25ac(i,j)+ano3k(i,j)*pm25co(i,j)
+        nh4(i,j,k)=anh4i(i,j)*pm25at(i,j)+anh4j(i,j)*pm25ac(i,j)+anh4k(i,j)*pm25co(i,j)
+        ec(i,j,k)=aeci(i,j)*pm25at(i,j)+aecj(i,j)*pm25ac(i,j)
+        om(i,j,k)=(apomi(i,j)+asomi(i,j))*pm25at(i,j) &
+                +(apomj(i,j)+asomj(i,j))*pm25ac(i,j)
+        oc(i,j,k)=(apoci(i,j)+asoci(i,j))*pm25at(i,j)+(apocj(i,j) &
+                +asocj(i,j))*pm25ac(i,j)
+    enddo
+   enddo
+   enddo
+
+   deallocate ( aso4j)
+   deallocate ( aso4i)
+   deallocate ( anh4j)
+   deallocate ( anh4i)
+   deallocate ( ano3j)
+   deallocate ( ano3i)
+   deallocate ( aalk1j)
+   deallocate ( aalk2j)
+   deallocate ( axyl1j)
+   deallocate ( axyl2j)
+   deallocate ( axyl3j)
+   deallocate ( atol1j)
+   deallocate ( atol2j)
+   deallocate ( atol3j)
+   deallocate ( abnz1j)
+   deallocate ( abnz2j)
+   deallocate ( abnz3j)
+   deallocate ( apah1j)
+   deallocate ( apah2j)
+   deallocate ( apah3j)
+   deallocate ( atrp1j)
+   deallocate ( atrp2j)
+   deallocate ( aiso1j)
+   deallocate ( aiso2j)
+   deallocate ( asqtj)
+   deallocate ( aorgcj)
+   deallocate ( aecj)
+   deallocate ( aeci)
+   deallocate ( aothrj)
+   deallocate ( aothri)
+   deallocate ( afej)
+   deallocate ( aalj)
+   deallocate ( asij)
+   deallocate ( atij)
+   deallocate ( acaj)
+   deallocate ( amgj)
+   deallocate ( akj)
+   deallocate ( amnj)
+   deallocate ( acors)
+   deallocate ( asoil)
+   deallocate ( anaj)
+   deallocate ( anai)
+   deallocate ( aclj)
+   deallocate ( acli)
+   deallocate ( aseacat)
+   deallocate ( aclk)
+   deallocate ( aso4k)
+   deallocate ( anh4k)
+   deallocate ( ano3k)
+   deallocate ( aiso3j)
+   deallocate ( aolgaj)
+   deallocate ( aolgbj)
+   deallocate ( aglyj)
+   deallocate ( apcsoj)
+   deallocate ( alvpo1i)
+   deallocate ( asvpo1i)
+   deallocate ( asvpo2i)
+   deallocate ( alvpo1j)
+   deallocate ( asvpo1j)
+   deallocate ( asvpo2j)
+   deallocate ( asvpo3j)
+   deallocate ( aivpo1j)
+   deallocate ( alvoo1i)
+   deallocate ( alvoo2i)
+   deallocate ( asvoo1i)
+   deallocate ( asvoo2i)
+   deallocate ( alvoo1j)
+   deallocate ( alvoo2j)
+   deallocate ( asvoo1j)
+   deallocate ( asvoo2j)
+   deallocate ( asvoo3j)
+   deallocate ( pm25at)
+   deallocate ( pm25ac)
+   deallocate ( pm25co)
+   deallocate ( asomj_1)
+   deallocate ( asomj_2)
+   deallocate ( asomj_3)
+   deallocate ( asomj_4)
+   deallocate ( asocj_1)
+   deallocate ( asocj_2)
+   deallocate ( asocj_3)
+   deallocate ( asocj_4)
+   deallocate ( asocj_5)
+   deallocate ( asocj)
+   deallocate ( asoci)
+   deallocate ( apoci)
+   deallocate ( apocj)
+   deallocate ( atoti)
+   deallocate ( apomi)
+   deallocate ( asomi)
+   deallocate ( atotj)
+   deallocate ( apomj)
+   deallocate ( asomj)
+   deallocate ( atotk)
+
+ end subroutine get_pm25 
+
+ subroutine average_tracer_hy1(is, ie, js, je, npz,tracer, tracer_ave,nstp)
+   integer, intent(in):: is, ie, js, je, npz, nstp
+   real, intent(in), dimension(is:ie,js:je,npz):: tracer 
+   real, intent(inout), dimension(is:ie,js:je,npz):: tracer_ave 
+   integer i, j, k
+
+   do k=1,npz
+    do j=js,je
+      do i=is,ie
+         tracer_ave(i,j,k)=tracer_ave(i,j,k)+tracer(i,j,k)/nstp
+      enddo  ! i-loop
+    enddo   ! j-loop
+   enddo   ! k-loop
+ end subroutine average_tracer_hy1 
 
  subroutine max_vorticity(is, ie, js, je, ng, km, zvir, sphum, delz, q, hydrostatic, &
                           pt, peln, phis, grav, vort, maxvort, z_bot, z_top)
