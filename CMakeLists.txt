@@ -54,8 +54,7 @@ endif()
 
 if(NOT FMS_FOUND)
   find_package(FMS REQUIRED COMPONENTS ${kind})
-  string(TOLOWER ${kind} kind_lower)
-  add_library(fms ALIAS FMS::fms_${kind_lower})
+  add_library(fms ALIAS FMS::fms_${kind})
 endif()
 
 list(APPEND moving_srcs
@@ -190,7 +189,7 @@ set_property(SOURCE model/fv_mapz.F90  APPEND_STRING PROPERTY COMPILE_FLAGS "${F
 set_property(SOURCE tools/fv_diagnostics.F90  APPEND_STRING PROPERTY COMPILE_FLAGS "-O0")
 
 set_target_properties(fv3 PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/fv3)
-target_include_directories(fv3 PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/fv3>
+target_include_directories(fv3 INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/fv3>
                                          $<INSTALL_INTERFACE:include/fv3>)
 
 target_include_directories(fv3 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
