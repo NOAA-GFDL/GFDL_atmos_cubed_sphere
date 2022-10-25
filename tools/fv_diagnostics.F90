@@ -91,12 +91,11 @@ module fv_diagnostics_mod
  real :: sphum_ll_fix = 0.
  real :: qcly0 ! initial value for terminator test
 
- logical :: is_ideal_case = .false.
  public :: fv_diag_init, fv_time, fv_diag, prt_mxm, prt_maxmin, range_check
 
  public :: prt_mass, prt_minmax, ppme, fv_diag_init_gn, z_sum, sphum_ll_fix, eqv_pot, qcly0, gn
  public :: prt_height, prt_gb_nh_sh, interpolate_vertical, rh_calc, get_height_field, get_height_given_pressure
- public :: cs3_interpolator, get_vorticity, is_ideal_case
+ public :: cs3_interpolator, get_vorticity
 ! needed by fv_nggps_diag
  public :: max_vv, max_uh, bunkers_vector, helicity_relative_CAPS
  public :: max_vorticity
@@ -892,7 +891,7 @@ contains
                'zonal wind', 'm/sec', missing_value=missing_value, range=vrange )
           id_v_plev = register_diag_field ( trim(field), 'v_plev', axe2(1:3), Time,        &
                'meridional wind', 'm/sec', missing_value=missing_value, range=vrange )
-          if (is_ideal_case) then
+          if (Atm(n)%flagstruct%is_ideal_case) then
              id_t_plev = register_diag_field ( trim(field), 't_plev', axe2(1:3), Time,        &
                   'temperature', 'K', missing_value=missing_value )
           else
@@ -999,7 +998,7 @@ contains
           if ( .not. Atm(n)%flagstruct%hydrostatic )                                        &
                id_w = register_diag_field ( trim(field), 'w', axes(1:3), Time,        &
                'vertical wind', 'm/sec', missing_value=missing_value, range=wrange )
-          if (is_ideal_case) then
+          if (Atm(n)%flagstruct%is_ideal_case) then
              id_pt   = register_diag_field ( trim(field), 'temp', axes(1:3), Time,       &
                   'temperature', 'K', missing_value=missing_value )
           else
@@ -1763,7 +1762,7 @@ contains
          call range_check('VA', Atm(n)%va, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
                            -250., 250., bad_range, Time)
 #ifndef SW_DYNAMICS
-         if (is_ideal_case) then
+         if (Atm(n)%flagstruct%is_ideal_case) then
             call range_check('TA', Atm(n)%pt, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
                            100., 500., bad_range, Time) !DCMIP ICs have very wide range of temperatures
          else

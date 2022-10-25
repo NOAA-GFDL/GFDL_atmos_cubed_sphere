@@ -43,7 +43,7 @@
       use mpp_parameter_mod, only: AGRID_PARAM=>AGRID,CGRID_NE_PARAM=>CGRID_NE, &
                                    SCALAR_PAIR
       use gfdl_mp_mod,       only: mqs3d
-      use fv_diagnostics_mod, only: prt_maxmin, ppme, eqv_pot, qcly0, is_ideal_case
+      use fv_diagnostics_mod, only: prt_maxmin, ppme, eqv_pot, qcly0
       use mpp_mod,            only: mpp_pe, mpp_chksum, stdout
       use fv_arrays_mod,         only: fv_grid_type, fv_flags_type, fv_grid_bounds_type, R_GRID
       use tracer_manager_mod,    only: get_tracer_index
@@ -3627,8 +3627,6 @@
 
     call mp_update_dwinds(u, v, npx, npy, npz, domain, bd)
 
-    is_ideal_case = .true.
-
     nullify(agrid)
     nullify(grid)
 
@@ -5792,8 +5790,6 @@ end subroutine terminator_tracers
            enddo
 
         end select
-
-        is_ideal_case = .true.
 
         nullify(grid)
         nullify(agrid)

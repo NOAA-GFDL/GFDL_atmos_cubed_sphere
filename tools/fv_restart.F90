@@ -332,7 +332,7 @@ contains
 
 
              !5. Idealized test case
-          else
+          elseif (Atm(n)%flagstruct%is_ideal_case) then
 
              ideal_test_case(n) = 1
 
@@ -386,6 +386,10 @@ contains
                    enddo
                 enddo
              endif
+
+          else
+
+                call mpp_error(FATAL, "If there is no restart file, either external_ic or is_ideal_case must be set true.")
 
           endif !external_ic vs. restart vs. idealized
 

@@ -826,6 +826,7 @@ module fv_arrays_mod
                                        !< from either the restart file (if restarting) or from the external initial
                                        !< condition file (if nggps_ic or ecwmf_ic are .true.). This overrides the
                                        !< hard-coded levels in fv_eta. The default is .false.
+   logical :: is_ideal_case = .false.    !< if .T., this is an ideal test case
    logical :: read_increment = .false.   !< read in analysis increment and add to restart
 ! Default restart files from the "Memphis" latlon FV core:
    character(len=128) :: res_latlon_dynamics = 'INPUT/fv_rst.res.nc'   !< If external_ic =.true.gives the filename of the

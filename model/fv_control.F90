@@ -274,6 +274,7 @@ module fv_control_mod
      logical , pointer :: fv_diag_ic
      logical , pointer :: external_ic
      logical , pointer :: external_eta
+     logical , pointer :: is_ideal_case
      logical , pointer :: read_increment
      logical , pointer :: hydrostatic
      logical , pointer :: phys_hydrostatic
@@ -457,6 +458,7 @@ module fv_control_mod
      call read_namelist_fv_grid_nml
      call read_namelist_fv_core_nml(Atm(this_grid)) ! do options processing here too?
      call read_namelist_test_case_nml
+     call read_namelist_integ_phys_nml
      call mpp_get_current_pelist(Atm(this_grid)%pelist, commID=commID) ! for commID
      call mp_start(commID,halo_update_type)
 
@@ -806,6 +808,7 @@ module fv_control_mod
        fv_diag_ic                    => Atm%flagstruct%fv_diag_ic
        external_ic                   => Atm%flagstruct%external_ic
        external_eta                  => Atm%flagstruct%external_eta
+       is_ideal_case                 => Atm%flagstruct%is_ideal_case
        read_increment                => Atm%flagstruct%read_increment
 
        hydrostatic                   => Atm%flagstruct%hydrostatic
@@ -925,16 +928,16 @@ module fv_control_mod
             use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, write_3d_diags, &
             do_schmidt, do_cube_transform, &
             hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
-            kord_mt, kord_wz, kord_tm, kord_tr, remap_te, fv_debug, fv_land, consv_checker, &
-            do_am4_remap, nudge, do_sat_adj, do_fast_phys, do_inline_mp, do_aerosol, do_f3d, &
-            external_ic, read_increment, ncep_ic, nggps_ic, hrrrv3_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
+            kord_mt, kord_wz, kord_tm, kord_tr, remap_te, fv_debug, fv_land, &
+            do_am4_remap, nudge, do_f3d, external_ic, is_ideal_case, read_increment, &
+            ncep_ic, nggps_ic, hrrrv3_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
             external_eta, res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, lim_fac, &
             dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
             warm_start, adjust_dry_mass, mountain, d_con, ke_bg, nord, nord_tr, convert_ke, use_old_omega, &
             dry_mass, grid_type, do_Held_Suarez, &
             consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, consv_am, RF_fast, &
             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
-            tau, fast_tau_w_sec, tau_h2o, rf_cutoff, te_err, tw_err, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
+            tau, fast_tau_w_sec, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
             na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
             pnats, dnats, dnrts, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
             c2l_ord, dx_const, dy_const, umax, deglat, domain_deg,     &
@@ -1064,6 +1067,21 @@ module fv_control_mod
        target_lat = target_lat * pi/180.
 
      end subroutine read_namelist_fv_core_nml
+
+     subroutine read_namelist_integ_phys_nml
+
+       integer :: ios, ierr
+       namelist /integ_phys_nml/ do_sat_adj, do_fast_phys, do_inline_mp, do_aerosol, consv_checker, te_err, tw_err
+
+       read (input_nml_file,integ_phys_nml,iostat=ios)
+       ierr = check_nml_error(ios,'integ_phys_nml')
+
+       call write_version_number ( 'FV_CONTROL_MOD', version )
+       unit = stdlog()
+       write(unit, nml=integ_phys_nml)
+
+       !Basic option processing
+     end subroutine read_namelist_integ_phys_nml
 
      subroutine setup_update_regions
 
