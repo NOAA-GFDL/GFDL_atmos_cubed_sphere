@@ -1071,7 +1071,6 @@ contains
     endif
    endif
 
-!    if ( id_o3_ave > 0 .or. id_pm25_ave >0 ) then
      if ( id_o3_ave > 0 .and. id_pm25_ave >0 & 
          .and. id_no3_ave > 0 .and. id_so4_ave >0 & 
          .and. id_nh4_ave > 0 .and. id_ec_ave >0 &
@@ -1183,7 +1182,6 @@ contains
        call mpp_error(FATAL, 'Missing hourly-averaged o3 or pm25 in diag_table')
        stop
     endif
-!   endif
 
    !allocate hailcast met field arrays
    if (do_hailcast) then
