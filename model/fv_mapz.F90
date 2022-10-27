@@ -838,11 +838,13 @@ contains
 ! Intermediate Physics >>>
 !-----------------------------------------------------------------------
 
+    call timing_on('INTERMEDIATE_PHYS')
     call intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, nq, nwat, &
              c2l_ord, mdt, consv, akap, ptop, pfull, hs, te0_2d, u, &
              v, w, pt, delp, delz, q_con, cappa, q, pkz, r_vir, te_err, tw_err, &
              inline_mp, gridstruct, domain, bd, hydrostatic, do_adiabatic_init, &
              do_inline_mp, do_sat_adj, last_step, do_fast_phys, consv_checker, adj_mass_vmr)
+    call timing_off('INTERMEDIATE_PHYS')
 
 !-----------------------------------------------------------------------
 ! <<< Intermediate Physics
@@ -3674,10 +3676,10 @@ else ! all others
 
 !This routine should be moved to fv_io.F90.
  subroutine rst_remap(km, kn, is,ie,js,je, isd,ied,jsd,jed, nq, ntp, &
-                      delp_r, u_r, v_r, w_r, delz_r, pt_r, q_r, qdiag_r, &
-                      delp,   u,   v,   w,   delz,   pt,   q,   qdiag,   &
+                      delp_r, u0_r, v0_r, u_r, v_r, w_r, delz_r, pt_r, q_r, qdiag_r, &
+                      delp,   u0,   v0,   u,   v,   w,   delz,   pt,   q,   qdiag,   &
                       ak_r, bk_r, ptop, ak, bk, hydrostatic, make_nh, &
-                      domain, square_domain)
+                      domain, square_domain, is_ideal_case)
 !------------------------------------
 ! Assuming hybrid sigma-P coordinate:
 !------------------------------------
@@ -3687,13 +3689,15 @@ else ! all others
   integer, intent(in):: nq, ntp               ! number of tracers (including h2o)
   integer, intent(in):: is,ie,isd,ied         ! starting & ending X-Dir index
   integer, intent(in):: js,je,jsd,jed         ! starting & ending Y-Dir index
-  logical, intent(in):: hydrostatic, make_nh, square_domain
+  logical, intent(in):: hydrostatic, make_nh, square_domain, is_ideal_case
   real, intent(IN) :: ptop
   real, intent(in) :: ak_r(km+1)
   real, intent(in) :: bk_r(km+1)
   real, intent(in) :: ak(kn+1)
   real, intent(in) :: bk(kn+1)
   real, intent(in):: delp_r(is:ie,js:je,km) ! pressure thickness
+  real, intent(in)::   u0_r(is:ie,  js:je+1,km)   ! initial (t=0) u-wind (m/s)
+  real, intent(in)::   v0_r(is:ie+1,js:je  ,km)   ! initial (t=0) v-wind (m/s)
   real, intent(in)::   u_r(is:ie,  js:je+1,km)   ! u-wind (m/s)
   real, intent(in)::   v_r(is:ie+1,js:je  ,km)   ! v-wind (m/s)
   real, intent(inout)::  pt_r(is:ie,js:je,km)
@@ -3704,6 +3708,8 @@ else ! all others
   type(domain2d), intent(INOUT) :: domain
 ! Output:
   real, intent(out):: delp(isd:ied,jsd:jed,kn) ! pressure thickness
+  real, intent(out):: u0(isd:,jsd:,1:)   ! initial (t=0) u-wind (m/s)
+  real, intent(out):: v0(isd:,jsd:,1:)   ! initial (t=0) v-wind (m/s)
   real, intent(out)::  u(isd:ied  ,jsd:jed+1,kn)   ! u-wind (m/s)
   real, intent(out)::  v(isd:ied+1,jsd:jed  ,kn)   ! v-wind (m/s)
   real, intent(out)::  w(isd:     ,jsd:     ,1:)   ! vertical velocity (m/s)
@@ -3783,9 +3789,9 @@ else ! all others
      enddo
   enddo
 
-!$OMP parallel do default(none) shared(is,ie,js,je,km,ak_r,bk_r,ps,kn,ak,bk,u_r,u,delp, &
+!$OMP parallel do default(none) shared(is,ie,js,je,km,ak_r,bk_r,ps,kn,ak,bk,u0_r,u_r,u0,u,delp, &
 !$OMP                                  ntp,nq,hydrostatic,make_nh,w_r,w,delz_r,delp_r,delz, &
-!$OMP                                  pt_r,pt,v_r,v,q,q_r,qdiag,qdiag_r) &
+!$OMP                                  pt_r,pt,v0_r,v_r,v0,v,q,q_r,qdiag,qdiag_r,is_ideal_case) &
 !$OMP                          private(pe1,  pe2, pv1, pv2)
   do 1000 j=js,je+1
 !------
@@ -3802,6 +3808,12 @@ else ! all others
            pe2(i,k) = ak(k) + 0.5*bk(k)*(ps(i,j-1)+ps(i,j))
         enddo
      enddo
+
+     if (is_ideal_case) then
+        call remap_2d(km, pe1, u0_r(is:ie,j:j,1:km),      &
+                      kn, pe2,   u0(is:ie,j:j,1:kn),      &
+                      is, ie, -1, kord)
+     endif
 
      call remap_2d(km, pe1, u_r(is:ie,j:j,1:km),       &
                    kn, pe2,   u(is:ie,j:j,1:kn),       &
@@ -3930,6 +3942,12 @@ else ! all others
              pv2(i,k) = ak(k) + 0.5*bk(k)*(ps(i-1,j)+ps(i,j))
           enddo
        enddo
+
+       if (is_ideal_case) then
+          call remap_2d(km, pv1, v0_r(is:ie+1,j:j,1:km),      &
+                        kn, pv2,   v0(is:ie+1,j:j,1:kn),      &
+                        is, ie+1, -1, kord)
+       endif
 
        call remap_2d(km, pv1, v_r(is:ie+1,j:j,1:km),       &
                      kn, pv2,   v(is:ie+1,j:j,1:kn),       &

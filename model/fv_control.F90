@@ -55,7 +55,6 @@ module fv_control_mod
    use fv_mp_mod,           only: broadcast_domains, mp_barrier, is_master, setup_master, grids_master_procs, tile_fine
    use fv_mp_mod,           only: MAX_NNEST, MAX_NTILE
    use test_cases_mod,      only: read_namelist_test_case_nml
-   use fv_timing_mod,       only: timing_on, timing_off, timing_init, timing_prt
    use mpp_domains_mod,     only: domain2D
    use mpp_domains_mod,     only: mpp_define_nest_domains, nest_domain_type, mpp_get_global_domain
    use mpp_domains_mod,     only: mpp_get_C2F_index, mpp_get_F2C_index
@@ -169,6 +168,7 @@ module fv_control_mod
      logical , pointer :: do_fast_phys
      logical , pointer :: do_inline_mp
      logical , pointer :: do_aerosol
+     logical , pointer :: do_cosp
      logical , pointer :: do_f3d
      logical , pointer :: no_dycore
      logical , pointer :: convert_ke
@@ -446,10 +446,6 @@ module fv_control_mod
         endif
      endif
 
-     ! 3pre.
-     call timing_init
-     call timing_on('TOTAL')
-
      ! 3. Read namelists, do option processing and I/O
 
      call set_namelist_pointers(Atm(this_grid))
@@ -707,6 +703,7 @@ module fv_control_mod
        do_fast_phys                  => Atm%flagstruct%do_fast_phys
        do_inline_mp                  => Atm%flagstruct%do_inline_mp
        do_aerosol                    => Atm%flagstruct%do_aerosol
+       do_cosp                       => Atm%flagstruct%do_cosp
        do_f3d                        => Atm%flagstruct%do_f3d
        no_dycore                     => Atm%flagstruct%no_dycore
        convert_ke                    => Atm%flagstruct%convert_ke
@@ -1071,7 +1068,7 @@ module fv_control_mod
      subroutine read_namelist_integ_phys_nml
 
        integer :: ios, ierr
-       namelist /integ_phys_nml/ do_sat_adj, do_fast_phys, do_inline_mp, do_aerosol, consv_checker, te_err, tw_err
+       namelist /integ_phys_nml/ do_sat_adj, do_fast_phys, do_inline_mp, do_aerosol, do_cosp, consv_checker, te_err, tw_err
 
        read (input_nml_file,integ_phys_nml,iostat=ios)
        ierr = check_nml_error(ios,'integ_phys_nml')
@@ -1205,9 +1202,6 @@ module fv_control_mod
     integer, intent(IN) :: this_grid
 
     integer :: n
-
-    call timing_off('TOTAL')
-    call timing_prt( mpp_pe() )
 
     call fv_restart_end(Atm(this_grid))
     call fv_io_exit()

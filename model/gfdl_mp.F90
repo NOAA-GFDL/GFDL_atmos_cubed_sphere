@@ -593,10 +593,7 @@ end subroutine gfdl_mp_init
 subroutine gfdl_mp_driver (qv, ql, qr, qi, qs, qg, qa, qnl, qni, pt, wa, &
         ua, va, delz, delp, gsize, dtm, hs, water, rain, ice, snow, graupel, &
         hydrostatic, is, ie, ks, ke, q_con, cappa, consv_te, adj_vmr, te, dte, &
-        pcw, edw, oew, rrw, tvw, pci, edi, oei, rri, tvi, pcr, edr, oer, rrr, tvr, &
-        pcs, eds, oes, rrs, tvs, pcg, edg, oeg, rrg, tvg, &
-        prefluxw, prefluxr, prefluxi, prefluxs, prefluxg, condensation, &
-        deposition, evaporation, sublimation, last_step, do_inline_mp)
+        prefluxw, prefluxr, prefluxi, prefluxs, prefluxg, last_step, do_inline_mp)
     
     implicit none
     
@@ -621,15 +618,8 @@ subroutine gfdl_mp_driver (qv, ql, qr, qi, qs, qg, qa, qnl, qni, pt, wa, &
     real, intent (inout), dimension (is:, ks:) :: q_con, cappa
     
     real, intent (inout), dimension (is:ie) :: water, rain, ice, snow, graupel
-    real, intent (inout), dimension (is:ie) :: condensation, deposition
-    real, intent (inout), dimension (is:ie) :: evaporation, sublimation
     
     real, intent (out), dimension (is:ie, ks:ke) :: adj_vmr
-    real, intent (out), dimension (is:ie, ks:ke) :: pcw, edw, oew, rrw, tvw
-    real, intent (out), dimension (is:ie, ks:ke) :: pci, edi, oei, rri, tvi
-    real, intent (out), dimension (is:ie, ks:ke) :: pcr, edr, oer, rrr, tvr
-    real, intent (out), dimension (is:ie, ks:ke) :: pcs, eds, oes, rrs, tvs
-    real, intent (out), dimension (is:ie, ks:ke) :: pcg, edg, oeg, rrg, tvg
 
     real (kind = r8), intent (out), dimension (is:ie) :: dte
 
@@ -639,11 +629,8 @@ subroutine gfdl_mp_driver (qv, ql, qr, qi, qs, qg, qa, qnl, qni, pt, wa, &
     
     call mpdrv (hydrostatic, ua, va, wa, delp, pt, qv, ql, qr, qi, qs, qg, qa, &
         qnl, qni, delz, is, ie, ks, ke, dtm, water, rain, ice, snow, graupel, &
-        gsize, hs, q_con, cappa, consv_te, adj_vmr, te, dte, pcw, edw, oew, rrw, tvw, &
-        pci, edi, oei, rri, tvi, pcr, edr, oer, rrr, tvr, pcs, eds, oes, rrs, tvs, &
-        pcg, edg, oeg, rrg, tvg, prefluxw, prefluxr, prefluxi, &
-        prefluxs, prefluxg, condensation, deposition, evaporation, sublimation, &
-        last_step, do_inline_mp, .false., .true.)
+        gsize, hs, q_con, cappa, consv_te, adj_vmr, te, dte, prefluxw, prefluxr, &
+        prefluxi, prefluxs, prefluxg, last_step, do_inline_mp, .false., .true.)
     
 end subroutine gfdl_mp_driver
 
@@ -1142,11 +1129,8 @@ end subroutine setup_mhc_lhc
 
 subroutine mpdrv (hydrostatic, ua, va, wa, delp, pt, qv, ql, qr, qi, qs, qg, &
         qa, qnl, qni, delz, is, ie, ks, ke, dtm, water, rain, ice, snow, graupel, &
-        gsize, hs, q_con, cappa, consv_te, adj_vmr, te, dte, pcw, edw, oew, rrw, tvw, &
-        pci, edi, oei, rri, tvi, pcr, edr, oer, rrr, tvr, pcs, eds, oes, rrs, tvs, &
-        pcg, edg, oeg, rrg, tvg, prefluxw, prefluxr, prefluxi, prefluxs, prefluxg, &
-        condensation, deposition, evaporation, sublimation, last_step, do_inline_mp, &
-        do_mp_fast, do_mp_full)
+        gsize, hs, q_con, cappa, consv_te, adj_vmr, te, dte, prefluxw, prefluxr, &
+        prefluxi, prefluxs, prefluxg, last_step, do_inline_mp, do_mp_fast, do_mp_full)
     
     implicit none
     
@@ -1172,15 +1156,8 @@ subroutine mpdrv (hydrostatic, ua, va, wa, delp, pt, qv, ql, qr, qi, qs, qg, &
     real, intent (inout), dimension (is:, ks:) :: q_con, cappa
     
     real, intent (inout), dimension (is:ie) :: water, rain, ice, snow, graupel
-    real, intent (inout), dimension (is:ie) :: condensation, deposition
-    real, intent (inout), dimension (is:ie) :: evaporation, sublimation
     
     real, intent (out), dimension (is:ie, ks:ke) :: te, adj_vmr
-    real, intent (out), dimension (is:ie, ks:ke) :: pcw, edw, oew, rrw, tvw
-    real, intent (out), dimension (is:ie, ks:ke) :: pci, edi, oei, rri, tvi
-    real, intent (out), dimension (is:ie, ks:ke) :: pcr, edr, oer, rrr, tvr
-    real, intent (out), dimension (is:ie, ks:ke) :: pcs, eds, oes, rrs, tvs
-    real, intent (out), dimension (is:ie, ks:ke) :: pcg, edg, oeg, rrg, tvg
     
     real (kind = r8), intent (out), dimension (is:ie) :: dte
 
@@ -1198,6 +1175,15 @@ subroutine mpdrv (hydrostatic, ua, va, wa, delp, pt, qv, ql, qr, qi, qs, qg, &
     real, dimension (ks:ke) :: den, pz, denfac, ccn, cin
     real, dimension (ks:ke) :: u, v, w
     
+    real, dimension (is:ie, ks:ke) :: pcw, edw, oew, rrw, tvw
+    real, dimension (is:ie, ks:ke) :: pci, edi, oei, rri, tvi
+    real, dimension (is:ie, ks:ke) :: pcr, edr, oer, rrr, tvr
+    real, dimension (is:ie, ks:ke) :: pcs, eds, oes, rrs, tvs
+    real, dimension (is:ie, ks:ke) :: pcg, edg, oeg, rrg, tvg
+
+    real, dimension (is:ie) :: condensation, deposition
+    real, dimension (is:ie) :: evaporation, sublimation
+
     real (kind = r8) :: con_r8, c8, cp8
     
     real (kind = r8), dimension (is:ie, ks:ke) :: te_beg_d, te_end_d, tw_beg_d, tw_end_d
@@ -1222,6 +1208,11 @@ subroutine mpdrv (hydrostatic, ua, va, wa, delp, pt, qv, ql, qr, qi, qs, qg, &
     dte = 0.0
     cond = 0.0
     adj_vmr = 1.0
+
+    condensation = 0.0
+    deposition = 0.0
+    evaporation = 0.0
+    sublimation = 0.0
     
     ! -----------------------------------------------------------------------
     ! unit convert to mm/day
@@ -5576,8 +5567,7 @@ end subroutine sedi_heat
 
 subroutine fast_sat_adj (dtm, is, ie, ks, ke, hydrostatic, consv_te, &
         adj_vmr, te, dte, qv, ql, qr, qi, qs, qg, qa, qnl, qni, hs, delz, &
-        pt, delp, q_con, cappa, gsize, last_step, condensation, &
-        evaporation, deposition, sublimation, do_sat_adj)
+        pt, delp, q_con, cappa, gsize, last_step, do_sat_adj)
     
     implicit none
     
@@ -5600,9 +5590,6 @@ subroutine fast_sat_adj (dtm, is, ie, ks, ke, hydrostatic, consv_te, &
     
     real, intent (inout), dimension (is:, ks:) :: q_con, cappa
     
-    real, intent (inout), dimension (is:ie) :: condensation, deposition
-    real, intent (inout), dimension (is:ie) :: evaporation, sublimation
-    
     real, intent (out), dimension (is:ie, ks:ke) :: adj_vmr
 
     real (kind = r8), intent (out), dimension (is:ie) :: dte
@@ -5615,12 +5602,6 @@ subroutine fast_sat_adj (dtm, is, ie, ks, ke, hydrostatic, consv_te, &
     
     real, dimension (is:ie) :: water, rain, ice, snow, graupel
     
-    real, dimension (is:ie, ks:ke) :: pcw, edw, oew, rrw, tvw
-    real, dimension (is:ie, ks:ke) :: pci, edi, oei, rri, tvi
-    real, dimension (is:ie, ks:ke) :: pcr, edr, oer, rrr, tvr
-    real, dimension (is:ie, ks:ke) :: pcs, eds, oes, rrs, tvs
-    real, dimension (is:ie, ks:ke) :: pcg, edg, oeg, rrg, tvg
-
     ! -----------------------------------------------------------------------
     ! initialization
     ! -----------------------------------------------------------------------
@@ -5647,11 +5628,8 @@ subroutine fast_sat_adj (dtm, is, ie, ks, ke, hydrostatic, consv_te, &
     
     call mpdrv (hydrostatic, ua, va, wa, delp, pt, qv, ql, qr, qi, qs, qg, qa, &
         qnl, qni, delz, is, ie, ks, ke, dtm, water, rain, ice, snow, graupel, &
-        gsize, hs, q_con, cappa, consv_te, adj_vmr, te, dte, pcw, edw, oew, rrw, tvw, &
-        pci, edi, oei, rri, tvi, pcr, edr, oer, rrr, tvr, pcs, eds, oes, rrs, tvs, &
-        pcg, edg, oeg, rrg, tvg, prefluxw, prefluxr, prefluxi, &
-        prefluxs, prefluxg, condensation, deposition, evaporation, sublimation, &
-        last_step, .true., do_sat_adj, .false.)
+        gsize, hs, q_con, cappa, consv_te, adj_vmr, te, dte, prefluxw, prefluxr, &
+        prefluxi, prefluxs, prefluxg, last_step, .true., do_sat_adj, .false.)
     
 end subroutine fast_sat_adj
 

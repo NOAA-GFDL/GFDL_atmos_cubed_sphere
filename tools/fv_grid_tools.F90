@@ -30,7 +30,6 @@ module fv_grid_tools_mod
                                cell_center2, get_area, inner_prod, fill_ghost, &
                            direct_transform, cube_transform, dist2side_latlon, &
                            spherical_linear_interpolation, big_number
-  use fv_timing_mod,  only: timing_on, timing_off
   use fv_mp_mod,      only: is_master, fill_corners, XDir, YDir
   use fv_mp_mod,      only: grids_master_procs
   use sorted_index_mod,  only: sorted_inta, sorted_intb

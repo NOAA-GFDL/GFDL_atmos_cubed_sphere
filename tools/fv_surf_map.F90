@@ -331,11 +331,11 @@
 
       allocate ( oro_g(isd:ied, jsd:jed) )
       allocate ( sgh_g(isd:ied, jsd:jed) )
-                                                     call timing_on('map_to_cubed')
+      call timing_on('map_to_cubed')
       call map_to_cubed_raw(igh, nlon, jt, lat1(jstart:jend+1), lon1, zs, ft, grid, agrid,  &
                             phis, oro_g, sgh_g, npx, npy, jstart, jend, stretch_fac, bounded_domain, npx_global, bd)
       if (is_master()) write(*,*) 'map_to_cubed_raw: master PE done'
-                                                     call timing_off('map_to_cubed')
+      call timing_off('map_to_cubed')
 
       deallocate ( zs )
       deallocate ( ft )
@@ -386,7 +386,7 @@
       if ( is_master() ) write(*,*) 'ORO', trim(grid_string), ' min=', da_min, ' Max=', da_max
 
       call global_mx(area, ng, da_min, da_max, bd)
-                                                    call timing_on('Terrain_filter')
+      call timing_on('Terrain_filter')
 ! Del-2: high resolution only
       if ( zs_filter ) then
          if(is_master()) then

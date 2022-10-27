@@ -55,7 +55,6 @@ module external_ic_mod
    use fv_surf_map_mod,   only: surfdrv, FV3_zs_filter
    use fv_surf_map_mod,   only: sgh_g, oro_g
    use fv_surf_map_mod,   only: del2_cubed_sphere, del4_cubed_sphere
-   use fv_timing_mod,     only: timing_on, timing_off
    use init_hydro_mod,    only: p_var
    use fv_fill_mod,       only: fillz
    use fv_eta_mod,        only: set_eta, set_external_eta
@@ -154,9 +153,8 @@ contains
 ! Read in the specified external dataset and do all the needed transformation
       if ( Atm%flagstruct%ncep_ic ) then
            nq = 1
-                             call timing_on('NCEP_IC')
+           if( is_master() ) write(*,*) 'Calling get_ncep_ic'
            call get_ncep_ic( Atm, nq )
-                             call timing_off('NCEP_IC')
 #ifdef FV_TRACERS
            if (.not. cold_start) then
               call fv_io_read_tracers( Atm )
@@ -164,18 +162,14 @@ contains
            endif
 #endif
       elseif ( Atm%flagstruct%nggps_ic ) then
-                             call timing_on('NGGPS_IC')
+           if( is_master() ) write(*,*) 'Calling get_nggps_ic'
            call get_nggps_ic( Atm )
-                             call timing_off('NGGPS_IC')
       elseif ( Atm%flagstruct%hrrrv3_ic ) then
-                             call timing_on('HRRR_IC')
+           if( is_master() ) write(*,*) 'Calling get_hrrr_ic'
            call get_hrrr_ic( Atm )
-                             call timing_off('HRRR_IC')
       elseif ( Atm%flagstruct%ecmwf_ic ) then
            if( is_master() ) write(*,*) 'Calling get_ecmwf_ic'
-                             call timing_on('ECMWF_IC')
            call get_ecmwf_ic( Atm )
-                             call timing_off('ECMWF_IC')
       else
 ! The following is to read in legacy lat-lon FV core restart file
 !  is Atm%q defined in all cases?

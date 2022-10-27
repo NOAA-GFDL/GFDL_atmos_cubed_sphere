@@ -2364,9 +2364,9 @@
   je  = bd%je
 
   if ( mode > 0 ) then
-                                   call timing_on('COMM_TOTAL')
+       call timing_on('COMM_TOTAL')
        call mpp_update_domains(u, v, domain, gridtype=DGRID_NE)
-                                  call timing_off('COMM_TOTAL')
+       call timing_off('COMM_TOTAL')
   endif
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,npx,npy,grid_type,bounded_domain,c2,c1, &
@@ -3525,9 +3525,9 @@
        enddo
     enddo
 ! (u_dt,v_dt) are now on local coordinate system
-       call timing_on('COMM_TOTAL')
+  call timing_on('COMM_TOTAL')
   call mpp_update_domains(u_dt, v_dt, domain, gridtype=AGRID_PARAM)
-       call timing_off('COMM_TOTAL')
+  call timing_off('COMM_TOTAL')
 
     dt5 = 0.5 * dt
 

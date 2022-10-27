@@ -628,74 +628,6 @@ contains
             'snow precipitation', 'mm/day', missing_value=missing_value )
        id_preg = register_diag_field ( trim(field), 'preg', axes(1:2), Time,           &
             'graupel precipitation', 'mm/day', missing_value=missing_value )
-       id_prefluxw = register_diag_field ( trim(field), 'prefluxw', axes(1:3), Time,           &
-            'water precipitation flux', 'mm/day', missing_value=missing_value )
-       id_prefluxr = register_diag_field ( trim(field), 'prefluxr', axes(1:3), Time,           &
-            'rain precipitation flux', 'mm/day', missing_value=missing_value )
-       id_prefluxi = register_diag_field ( trim(field), 'prefluxi', axes(1:3), Time,           &
-            'ice precipitation flux', 'mm/day', missing_value=missing_value )
-       id_prefluxs = register_diag_field ( trim(field), 'prefluxs', axes(1:3), Time,           &
-            'snow precipitation flux', 'mm/day', missing_value=missing_value )
-       id_prefluxg = register_diag_field ( trim(field), 'prefluxg', axes(1:3), Time,           &
-            'graupel precipitation flux', 'mm/day', missing_value=missing_value )
-       id_cond = register_diag_field ( trim(field), 'cond', axes(1:2), Time,           &
-            'condensation', 'mm/day', missing_value=missing_value )
-       id_dep = register_diag_field ( trim(field), 'dep', axes(1:2), Time,           &
-            'deposition', 'mm/day', missing_value=missing_value )
-       id_reevap = register_diag_field ( trim(field), 'reevap', axes(1:2), Time,           &
-            'evaporation', 'mm/day', missing_value=missing_value )
-       id_sub = register_diag_field ( trim(field), 'sub', axes(1:2), Time,           &
-            'sublimation', 'mm/day', missing_value=missing_value )
-       id_pcw = register_diag_field ( trim(field), 'pcw', axes(1:3), Time,           &
-            'water particle concentration', '1/m^3', missing_value=missing_value )
-       id_edw = register_diag_field ( trim(field), 'edw', axes(1:3), Time,           &
-            'water effective diameter', 'm', missing_value=missing_value )
-       id_oew = register_diag_field ( trim(field), 'oew', axes(1:3), Time,           &
-            'water optical extinction', '1/m', missing_value=missing_value )
-       id_rrw = register_diag_field ( trim(field), 'rrw', axes(1:3), Time,           &
-            'water radar reflectivity factor', 'm^3', missing_value=missing_value )
-       id_tvw = register_diag_field ( trim(field), 'tvw', axes(1:3), Time,           &
-            'water terminal velocity', 'm/s', missing_value=missing_value )
-       id_pci = register_diag_field ( trim(field), 'pci', axes(1:3), Time,           &
-            'ice particle concentration', '1/m^3', missing_value=missing_value )
-       id_edi = register_diag_field ( trim(field), 'edi', axes(1:3), Time,           &
-            'ice effective diameter', 'm', missing_value=missing_value )
-       id_oei = register_diag_field ( trim(field), 'oei', axes(1:3), Time,           &
-            'ice optical extinction', '1/m', missing_value=missing_value )
-       id_rri = register_diag_field ( trim(field), 'rri', axes(1:3), Time,           &
-            'ice radar reflectivity factor', 'm^3', missing_value=missing_value )
-       id_tvi = register_diag_field ( trim(field), 'tvi', axes(1:3), Time,           &
-            'ice terminal velocity', 'm/s', missing_value=missing_value )
-       id_pcr = register_diag_field ( trim(field), 'pcr', axes(1:3), Time,           &
-            'rain particle concentration', '1/m^3', missing_value=missing_value )
-       id_edr = register_diag_field ( trim(field), 'edr', axes(1:3), Time,           &
-            'rain effective diameter', 'm', missing_value=missing_value )
-       id_oer = register_diag_field ( trim(field), 'oer', axes(1:3), Time,           &
-            'rain optical extinction', '1/m', missing_value=missing_value )
-       id_rrr = register_diag_field ( trim(field), 'rrr', axes(1:3), Time,           &
-            'rain radar reflectivity factor', 'm^3', missing_value=missing_value )
-       id_tvr = register_diag_field ( trim(field), 'tvr', axes(1:3), Time,           &
-            'rain terminal velocity', 'm/s', missing_value=missing_value )
-       id_pcs = register_diag_field ( trim(field), 'pcs', axes(1:3), Time,           &
-            'snow particle concentration', '1/m^3', missing_value=missing_value )
-       id_eds = register_diag_field ( trim(field), 'eds', axes(1:3), Time,           &
-            'snow effective diameter', 'm', missing_value=missing_value )
-       id_oes = register_diag_field ( trim(field), 'oes', axes(1:3), Time,           &
-            'snow optical extinction', '1/m', missing_value=missing_value )
-       id_rrs = register_diag_field ( trim(field), 'rrs', axes(1:3), Time,           &
-            'snow radar reflectivity factor', 'm^3', missing_value=missing_value )
-       id_tvs = register_diag_field ( trim(field), 'tvs', axes(1:3), Time,           &
-            'snow terminal velocity', 'm/s', missing_value=missing_value )
-       id_pcg = register_diag_field ( trim(field), 'pcg', axes(1:3), Time,           &
-            'graupel particle concentration', '1/m^3', missing_value=missing_value )
-       id_edg = register_diag_field ( trim(field), 'edg', axes(1:3), Time,           &
-            'graupel effective diameter', 'm', missing_value=missing_value )
-       id_oeg = register_diag_field ( trim(field), 'oeg', axes(1:3), Time,           &
-            'graupel optical extinction', '1/m', missing_value=missing_value )
-       id_rrg = register_diag_field ( trim(field), 'rrg', axes(1:3), Time,           &
-            'graupel radar reflectivity factor', 'm^3', missing_value=missing_value )
-       id_tvg = register_diag_field ( trim(field), 'tvg', axes(1:3), Time,           &
-            'graupel terminal velocity', 'm/s', missing_value=missing_value )
 !-------------------
 !! 3D Tendency terms from GFDL MP and physics
 !-------------------
@@ -1806,51 +1738,19 @@ contains
 #endif
        if(id_ps > 0) used=send_data(id_ps, Atm(n)%ps(isc:iec,jsc:jec), Time)
 
-       if(id_pret > 0) used=send_data(id_pret, &
-            Atm(n)%inline_mp%prew(isc:iec,jsc:jec)+&
-            Atm(n)%inline_mp%prer(isc:iec,jsc:jec)+&
-            Atm(n)%inline_mp%prei(isc:iec,jsc:jec)+&
-            Atm(n)%inline_mp%pres(isc:iec,jsc:jec)+&
-            Atm(n)%inline_mp%preg(isc:iec,jsc:jec), Time)
-       if(id_prew > 0) used=send_data(id_prew, Atm(n)%inline_mp%prew(isc:iec,jsc:jec), Time)
-       if(id_prer > 0) used=send_data(id_prer, Atm(n)%inline_mp%prer(isc:iec,jsc:jec), Time)
-       if(id_prei > 0) used=send_data(id_prei, Atm(n)%inline_mp%prei(isc:iec,jsc:jec), Time)
-       if(id_pres > 0) used=send_data(id_pres, Atm(n)%inline_mp%pres(isc:iec,jsc:jec), Time)
-       if(id_preg > 0) used=send_data(id_preg, Atm(n)%inline_mp%preg(isc:iec,jsc:jec), Time)
-       if(id_prefluxw > 0) used=send_data(id_prefluxw, Atm(n)%inline_mp%prefluxw(isc:iec,jsc:jec,1:npz), Time)
-       if(id_prefluxr > 0) used=send_data(id_prefluxr, Atm(n)%inline_mp%prefluxr(isc:iec,jsc:jec,1:npz), Time)
-       if(id_prefluxi > 0) used=send_data(id_prefluxi, Atm(n)%inline_mp%prefluxi(isc:iec,jsc:jec,1:npz), Time)
-       if(id_prefluxs > 0) used=send_data(id_prefluxs, Atm(n)%inline_mp%prefluxs(isc:iec,jsc:jec,1:npz), Time)
-       if(id_prefluxg > 0) used=send_data(id_prefluxg, Atm(n)%inline_mp%prefluxg(isc:iec,jsc:jec,1:npz), Time)
-       if(id_cond > 0) used=send_data(id_cond, Atm(n)%inline_mp%cond(isc:iec,jsc:jec), Time)
-       if(id_dep > 0) used=send_data(id_dep, Atm(n)%inline_mp%dep(isc:iec,jsc:jec), Time)
-       if(id_reevap > 0) used=send_data(id_reevap, Atm(n)%inline_mp%reevap(isc:iec,jsc:jec), Time)
-       if(id_sub > 0) used=send_data(id_sub, Atm(n)%inline_mp%sub(isc:iec,jsc:jec), Time)
-       if(id_pcw > 0) used=send_data(id_pcw, Atm(n)%inline_mp%pcw(isc:iec,jsc:jec,1:npz), Time)
-       if(id_edw > 0) used=send_data(id_edw, Atm(n)%inline_mp%edw(isc:iec,jsc:jec,1:npz), Time)
-       if(id_oew > 0) used=send_data(id_oew, Atm(n)%inline_mp%oew(isc:iec,jsc:jec,1:npz), Time)
-       if(id_rrw > 0) used=send_data(id_rrw, Atm(n)%inline_mp%rrw(isc:iec,jsc:jec,1:npz), Time)
-       if(id_tvw > 0) used=send_data(id_tvw, Atm(n)%inline_mp%tvw(isc:iec,jsc:jec,1:npz), Time)
-       if(id_pci > 0) used=send_data(id_pci, Atm(n)%inline_mp%pci(isc:iec,jsc:jec,1:npz), Time)
-       if(id_edi > 0) used=send_data(id_edi, Atm(n)%inline_mp%edi(isc:iec,jsc:jec,1:npz), Time)
-       if(id_oei > 0) used=send_data(id_oei, Atm(n)%inline_mp%oei(isc:iec,jsc:jec,1:npz), Time)
-       if(id_rri > 0) used=send_data(id_rri, Atm(n)%inline_mp%rri(isc:iec,jsc:jec,1:npz), Time)
-       if(id_tvi > 0) used=send_data(id_tvi, Atm(n)%inline_mp%tvi(isc:iec,jsc:jec,1:npz), Time)
-       if(id_pcr > 0) used=send_data(id_pcr, Atm(n)%inline_mp%pcr(isc:iec,jsc:jec,1:npz), Time)
-       if(id_edr > 0) used=send_data(id_edr, Atm(n)%inline_mp%edr(isc:iec,jsc:jec,1:npz), Time)
-       if(id_oer > 0) used=send_data(id_oer, Atm(n)%inline_mp%oer(isc:iec,jsc:jec,1:npz), Time)
-       if(id_rrr > 0) used=send_data(id_rrr, Atm(n)%inline_mp%rrr(isc:iec,jsc:jec,1:npz), Time)
-       if(id_tvr > 0) used=send_data(id_tvr, Atm(n)%inline_mp%tvr(isc:iec,jsc:jec,1:npz), Time)
-       if(id_pcs > 0) used=send_data(id_pcs, Atm(n)%inline_mp%pcs(isc:iec,jsc:jec,1:npz), Time)
-       if(id_eds > 0) used=send_data(id_eds, Atm(n)%inline_mp%eds(isc:iec,jsc:jec,1:npz), Time)
-       if(id_oes > 0) used=send_data(id_oes, Atm(n)%inline_mp%oes(isc:iec,jsc:jec,1:npz), Time)
-       if(id_rrs > 0) used=send_data(id_rrs, Atm(n)%inline_mp%rrs(isc:iec,jsc:jec,1:npz), Time)
-       if(id_tvs > 0) used=send_data(id_tvs, Atm(n)%inline_mp%tvs(isc:iec,jsc:jec,1:npz), Time)
-       if(id_pcg > 0) used=send_data(id_pcg, Atm(n)%inline_mp%pcg(isc:iec,jsc:jec,1:npz), Time)
-       if(id_edg > 0) used=send_data(id_edg, Atm(n)%inline_mp%edg(isc:iec,jsc:jec,1:npz), Time)
-       if(id_oeg > 0) used=send_data(id_oeg, Atm(n)%inline_mp%oeg(isc:iec,jsc:jec,1:npz), Time)
-       if(id_rrg > 0) used=send_data(id_rrg, Atm(n)%inline_mp%rrg(isc:iec,jsc:jec,1:npz), Time)
-       if(id_tvg > 0) used=send_data(id_tvg, Atm(n)%inline_mp%tvg(isc:iec,jsc:jec,1:npz), Time)
+       if (Atm(n)%flagstruct%do_inline_mp) then
+          if(id_pret > 0) used=send_data(id_pret, &
+             Atm(n)%inline_mp%prew(isc:iec,jsc:jec)+&
+             Atm(n)%inline_mp%prer(isc:iec,jsc:jec)+&
+             Atm(n)%inline_mp%prei(isc:iec,jsc:jec)+&
+             Atm(n)%inline_mp%pres(isc:iec,jsc:jec)+&
+             Atm(n)%inline_mp%preg(isc:iec,jsc:jec), Time)
+          if(id_prew > 0) used=send_data(id_prew, Atm(n)%inline_mp%prew(isc:iec,jsc:jec), Time)
+          if(id_prer > 0) used=send_data(id_prer, Atm(n)%inline_mp%prer(isc:iec,jsc:jec), Time)
+          if(id_prei > 0) used=send_data(id_prei, Atm(n)%inline_mp%prei(isc:iec,jsc:jec), Time)
+          if(id_pres > 0) used=send_data(id_pres, Atm(n)%inline_mp%pres(isc:iec,jsc:jec), Time)
+          if(id_preg > 0) used=send_data(id_preg, Atm(n)%inline_mp%preg(isc:iec,jsc:jec), Time)
+       endif
 
        if (id_qv_dt_gfdlmp > 0) used=send_data(id_qv_dt_gfdlmp, Atm(n)%inline_mp%qv_dt(isc:iec,jsc:jec,1:npz), Time)
        if (id_ql_dt_gfdlmp > 0) used=send_data(id_ql_dt_gfdlmp, Atm(n)%inline_mp%ql_dt(isc:iec,jsc:jec,1:npz), Time)

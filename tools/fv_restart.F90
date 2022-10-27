@@ -257,6 +257,7 @@ contains
 
           !3. External_ic
           if (Atm(n)%flagstruct%external_ic) then
+
              if( is_master() ) write(*,*) 'Calling get_external_ic'
              call get_external_ic(Atm(n), .not. do_read_restart)
              if( is_master() ) write(*,*) 'IC generated from the specified external source'
@@ -329,8 +330,6 @@ contains
                 if( is_master() ) write(*,*) 'phis set to zero'
              endif !mountain
 
-
-
              !5. Idealized test case
           elseif (Atm(n)%flagstruct%is_ideal_case) then
 
@@ -386,6 +385,9 @@ contains
                    enddo
                 enddo
              endif
+
+             Atm(n)%u0 = Atm(n)%u
+             Atm(n)%v0 = Atm(n)%v
 
           else
 
@@ -781,6 +783,7 @@ contains
          isd_p,  ied_p,  jsd_p,  jed_p  )
 
     allocate(g_dat( isg:ieg, jsg:jeg, 1) )
+
     call timing_on('COMM_TOTAL')
 
     !!! FIXME: For whatever reason this code CRASHES if the lower-left corner
@@ -807,6 +810,7 @@ contains
     endif
 
     call timing_off('COMM_TOTAL')
+
     if (process) call fill_nested_grid(Atm%phis, g_dat(isg:,jsg:,1), &
          Atm%neststruct%ind_h, Atm%neststruct%wt_h, &
          0, 0,  isg, ieg, jsg, jeg, Atm%bd)
@@ -880,22 +884,23 @@ contains
     call timing_on('COMM_TOTAL')
 
     !Call mpp_global_field on the procs that have the required data.
-       !Then broadcast from the head PE to the receiving PEs
-       if (Atm(1)%neststruct%parent_proc .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
-          call mpp_global_field( &
-               Atm(1)%parent_grid%domain, &
-               Atm(1)%parent_grid%delp(isd_p:ied_p,jsd_p:jed_p,:), g_dat, position=CENTER)
-          if (gid == sending_proc) then !crazy logic but what we have for now
-             do p=1,size(Atm(1)%pelist)
-                call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
-             enddo
-          endif
+    !Then broadcast from the head PE to the receiving PEs
+    if (Atm(1)%neststruct%parent_proc .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
+       call mpp_global_field( &
+            Atm(1)%parent_grid%domain, &
+            Atm(1)%parent_grid%delp(isd_p:ied_p,jsd_p:jed_p,:), g_dat, position=CENTER)
+       if (gid == sending_proc) then !crazy logic but what we have for now
+          do p=1,size(Atm(1)%pelist)
+             call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
+          enddo
        endif
-       if (ANY(Atm(1)%pelist == gid)) then
-          call mpp_recv(g_dat, size(g_dat), sending_proc)
-       endif
+    endif
+    if (ANY(Atm(1)%pelist == gid)) then
+       call mpp_recv(g_dat, size(g_dat), sending_proc)
+    endif
 
     call timing_off('COMM_TOTAL')
+
     if (process) call fill_nested_grid(Atm(1)%delp, g_dat, &
          Atm(1)%neststruct%ind_h, Atm(1)%neststruct%wt_h, &
          0, 0,  isg, ieg, jsg, jeg, npz, Atm(1)%bd)
@@ -907,26 +912,27 @@ contains
 
        call timing_on('COMM_TOTAL')
 
-          if (ANY(Atm(1)%parent_grid%pelist == gid) .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
-             call mpp_global_field( &
-               Atm(1)%parent_grid%domain, &
-               Atm(1)%parent_grid%q(isd_p:ied_p,jsd_p:jed_p,:,nq), g_dat, position=CENTER)
-             if (gid == sending_proc) then
-                do p=1,size(Atm(1)%pelist)
-                   call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
-                enddo
-             endif
+       if (ANY(Atm(1)%parent_grid%pelist == gid) .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
+          call mpp_global_field( &
+            Atm(1)%parent_grid%domain, &
+            Atm(1)%parent_grid%q(isd_p:ied_p,jsd_p:jed_p,:,nq), g_dat, position=CENTER)
+          if (gid == sending_proc) then
+             do p=1,size(Atm(1)%pelist)
+                call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
+             enddo
           endif
-          if (ANY(Atm(1)%pelist == gid)) then
-             call mpp_recv(g_dat, size(g_dat), sending_proc)
-          endif
+       endif
+       if (ANY(Atm(1)%pelist == gid)) then
+          call mpp_recv(g_dat, size(g_dat), sending_proc)
+       endif
 
        call timing_off('COMM_TOTAL')
+
        if (process) call fill_nested_grid(Atm(1)%q(isd:ied,jsd:jed,:,nq), g_dat, &
             Atm(1)%neststruct%ind_h, Atm(1)%neststruct%wt_h, &
             0, 0,  isg, ieg, jsg, jeg, npz, Atm(1)%bd)
 
-    call mpp_sync_self
+       call mpp_sync_self
 
     end do
 
@@ -939,23 +945,24 @@ contains
 
     call timing_on('COMM_TOTAL')
 
-       if (ANY(Atm(1)%parent_grid%pelist == gid) .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
-             call mpp_global_field( &
-               Atm(1)%parent_grid%domain, &
-               Atm(1)%parent_grid%pt(isd_p:ied_p,jsd_p:jed_p,:), g_dat, position=CENTER)
-          if (gid == sending_proc) then
-             do p=1,size(Atm(1)%pelist)
-                call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
-             enddo
-          endif
+    if (ANY(Atm(1)%parent_grid%pelist == gid) .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
+          call mpp_global_field( &
+            Atm(1)%parent_grid%domain, &
+            Atm(1)%parent_grid%pt(isd_p:ied_p,jsd_p:jed_p,:), g_dat, position=CENTER)
+       if (gid == sending_proc) then
+          do p=1,size(Atm(1)%pelist)
+             call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
+          enddo
        endif
-       if (ANY(Atm(1)%pelist == gid)) then
-          call mpp_recv(g_dat, size(g_dat), sending_proc)
-       endif
+    endif
+    if (ANY(Atm(1)%pelist == gid)) then
+       call mpp_recv(g_dat, size(g_dat), sending_proc)
+    endif
 
     call mpp_sync_self
 
     call timing_off('COMM_TOTAL')
+
     if (process) call fill_nested_grid(Atm(1)%pt, g_dat, &
          Atm(1)%neststruct%ind_h, Atm(1)%neststruct%wt_h, &
          0, 0,  isg, ieg, jsg, jeg, npz, Atm(1)%bd)
@@ -974,23 +981,24 @@ contains
 
     call timing_on('COMM_TOTAL')
 
-       if (ANY(Atm(1)%parent_grid%pelist == gid) .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
-             call mpp_global_field( &
-               Atm(1)%parent_grid%domain, &
-               Atm(1)%parent_grid%pkz(isc_p:iec_p,jsc_p:jec_p,:), g_dat, position=CENTER)
-          if (gid == sending_proc) then
-             do p=1,size(Atm(1)%pelist)
-                call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
-             enddo
-          endif
+    if (ANY(Atm(1)%parent_grid%pelist == gid) .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
+          call mpp_global_field( &
+            Atm(1)%parent_grid%domain, &
+            Atm(1)%parent_grid%pkz(isc_p:iec_p,jsc_p:jec_p,:), g_dat, position=CENTER)
+       if (gid == sending_proc) then
+          do p=1,size(Atm(1)%pelist)
+             call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
+          enddo
        endif
-       if (ANY(Atm(1)%pelist == gid)) then
-          call mpp_recv(g_dat, size(g_dat), sending_proc)
-       endif
+    endif
+    if (ANY(Atm(1)%pelist == gid)) then
+       call mpp_recv(g_dat, size(g_dat), sending_proc)
+    endif
 
     call mpp_sync_self
 
     call timing_off('COMM_TOTAL')
+
     if (process) then
        allocate(pt_coarse(isd:ied,jsd:jed,npz))
        call fill_nested_grid(pt_coarse, g_dat, &
@@ -1068,23 +1076,24 @@ contains
        !delz
        call timing_on('COMM_TOTAL')
 
-          if (ANY(Atm(1)%parent_grid%pelist == gid) .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
-             call mpp_global_field( &
-               Atm(1)%parent_grid%domain, &
-               Atm(1)%parent_grid%delz(isd_p:ied_p,jsd_p:jed_p,:), g_dat, position=CENTER)
-             if (gid == sending_proc) then
-                do p=1,size(Atm(1)%pelist)
-                   call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
-                enddo
-             endif
+       if (ANY(Atm(1)%parent_grid%pelist == gid) .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
+          call mpp_global_field( &
+            Atm(1)%parent_grid%domain, &
+            Atm(1)%parent_grid%delz(isd_p:ied_p,jsd_p:jed_p,:), g_dat, position=CENTER)
+          if (gid == sending_proc) then
+             do p=1,size(Atm(1)%pelist)
+                call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
+             enddo
           endif
-          if (ANY(Atm(1)%pelist == gid)) then
-             call mpp_recv(g_dat, size(g_dat), sending_proc)
-          endif
+       endif
+       if (ANY(Atm(1)%pelist == gid)) then
+          call mpp_recv(g_dat, size(g_dat), sending_proc)
+       endif
 
-    call mpp_sync_self
+       call mpp_sync_self
 
        call timing_off('COMM_TOTAL')
+
        if (process) call fill_nested_grid(Atm(1)%delz, g_dat, &
             Atm(1)%neststruct%ind_h, Atm(1)%neststruct%wt_h, &
             0, 0,  isg, ieg, jsg, jeg, npz, Atm(1)%bd)
@@ -1093,23 +1102,24 @@ contains
 
        call timing_on('COMM_TOTAL')
 
-          if (ANY(Atm(1)%parent_grid%pelist == gid) .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
-             call mpp_global_field( &
-               Atm(1)%parent_grid%domain, &
-               Atm(1)%parent_grid%w(isd_p:ied_p,jsd_p:jed_p,:), g_dat, position=CENTER)
-             if (gid == sending_proc) then
-                do p=1,size(Atm(1)%pelist)
-                   call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
-                enddo
-             endif
+       if (ANY(Atm(1)%parent_grid%pelist == gid) .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
+          call mpp_global_field( &
+            Atm(1)%parent_grid%domain, &
+            Atm(1)%parent_grid%w(isd_p:ied_p,jsd_p:jed_p,:), g_dat, position=CENTER)
+          if (gid == sending_proc) then
+             do p=1,size(Atm(1)%pelist)
+                call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
+             enddo
           endif
-          if (ANY(Atm(1)%pelist == gid)) then
-             call mpp_recv(g_dat, size(g_dat), sending_proc)
-          endif
+       endif
+       if (ANY(Atm(1)%pelist == gid)) then
+          call mpp_recv(g_dat, size(g_dat), sending_proc)
+       endif
 
-    call mpp_sync_self
+       call mpp_sync_self
 
        call timing_off('COMM_TOTAL')
+
        if (process) call fill_nested_grid(Atm(1)%w, g_dat, &
             Atm(1)%neststruct%ind_h, Atm(1)%neststruct%wt_h, &
             0, 0,  isg, ieg, jsg, jeg, npz, Atm(1)%bd)
@@ -1127,23 +1137,24 @@ contains
 
     call timing_on('COMM_TOTAL')
 
-       if (ANY(Atm(1)%parent_grid%pelist == gid) .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
-             call mpp_global_field( &
-               Atm(1)%parent_grid%domain, &
-               Atm(1)%parent_grid%u(isd_p:ied_p,jsd_p:jed_p+1,:), g_dat, position=NORTH)
-          if (gid == sending_proc) then
-             do p=1,size(Atm(1)%pelist)
-                call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
-             enddo
-          endif
+    if (ANY(Atm(1)%parent_grid%pelist == gid) .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
+          call mpp_global_field( &
+            Atm(1)%parent_grid%domain, &
+            Atm(1)%parent_grid%u(isd_p:ied_p,jsd_p:jed_p+1,:), g_dat, position=NORTH)
+       if (gid == sending_proc) then
+          do p=1,size(Atm(1)%pelist)
+             call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
+          enddo
        endif
-       if (ANY(Atm(1)%pelist == gid)) then
-          call mpp_recv(g_dat, size(g_dat), sending_proc)
-       endif
+    endif
+    if (ANY(Atm(1)%pelist == gid)) then
+       call mpp_recv(g_dat, size(g_dat), sending_proc)
+    endif
 
     call mpp_sync_self
 
     call timing_off('COMM_TOTAL')
+
     call mpp_sync_self
     if (process) call fill_nested_grid(Atm(1)%u, g_dat, &
          Atm(1)%neststruct%ind_u, Atm(1)%neststruct%wt_u, &
@@ -1157,22 +1168,23 @@ contains
 
     call timing_on('COMM_TOTAL')
 
-       if (ANY(Atm(1)%parent_grid%pelist == gid) .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
-             call mpp_global_field( &
-               Atm(1)%parent_grid%domain, &
-               Atm(1)%parent_grid%v(isd_p:ied_p+1,jsd_p:jed_p,:), g_dat, position=EAST)
-          if (gid == sending_proc) then
-             do p=1,size(Atm(1)%pelist)
-                call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
-             enddo
-          endif
+    if (ANY(Atm(1)%parent_grid%pelist == gid) .and. Atm(1)%neststruct%parent_tile == Atm(1)%parent_grid%global_tile) then
+          call mpp_global_field( &
+            Atm(1)%parent_grid%domain, &
+            Atm(1)%parent_grid%v(isd_p:ied_p+1,jsd_p:jed_p,:), g_dat, position=EAST)
+       if (gid == sending_proc) then
+          do p=1,size(Atm(1)%pelist)
+             call mpp_send(g_dat,size(g_dat),Atm(1)%pelist(p))
+          enddo
        endif
-       if (ANY(Atm(1)%pelist == gid)) then
-          call mpp_recv(g_dat, size(g_dat), sending_proc)
-       endif
+    endif
+    if (ANY(Atm(1)%pelist == gid)) then
+       call mpp_recv(g_dat, size(g_dat), sending_proc)
+    endif
 
     call mpp_sync_self
-                                      call timing_off('COMM_TOTAL')
+
+    call timing_off('COMM_TOTAL')
 
     if (process) call fill_nested_grid(Atm(1)%v, g_dat, &
          Atm(1)%neststruct%ind_v, Atm(1)%neststruct%wt_v, &

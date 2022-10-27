@@ -28,7 +28,6 @@ module hswf_mod
  use mpp_domains_mod,    only: mpp_update_domains, domain2d
  use time_manager_mod,   only: time_type, get_date, get_time
  use diag_manager_mod,   only: send_data
- use fv_timing_mod,      only: timing_on, timing_off
 
       implicit none
 !-----------------------------------------------------------------------

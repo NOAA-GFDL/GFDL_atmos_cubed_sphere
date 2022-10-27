@@ -452,12 +452,12 @@ contains
 
     if ( do_GFDL_sim_phys ) then
        moist_phys = .true.
-                                             call timing_on('GFDL_SIM_PHYS')
+       call timing_on('GFDL_SIM_PHYS')
        call GFDL_sim_phys(npx, npy, npz, is, ie, js, je, ng, nq, nwat, pk, pkz, &
                      u_dt, v_dt, t_dt, q_dt, u, v, w, ua, va, pt, delz, q, &
                      pe, delp, peln, ts, oro, hydrostatic, pdt, grid, ak, bk, & !ts --> sst
                      p_ref, Time, time_total, flagstruct%grid_type, gridstruct)
-                                            call timing_off('GFDL_SIM_PHYS')
+       call timing_off('GFDL_SIM_PHYS')
        no_tendency = .false.
     endif
 
@@ -591,7 +591,7 @@ contains
 
 
     if ( .not. no_tendency ) then
-                        call timing_on('UPDATE_PHYS')
+    call timing_on('FV_UPDATE_PHYS')
     call fv_update_phys (pdt, is, ie, js, je, isd, ied, jsd, jed, ng, nq,   &
                          u, v, w, delp, pt, q, qdiag, ua, va, ps, pe, peln, pk, pkz,  &
                          ak, bk, phis, u_srf, v_srf, ts,  &
@@ -601,7 +601,7 @@ contains
                          npx, npy, npz, flagstruct, neststruct, bd, domain, ptop, &
                          phys_diag, nudge_diag, q_dt=q_dt)
 
-                        call timing_off('UPDATE_PHYS')
+    call timing_off('FV_UPDATE_PHYS')
     endif
     deallocate ( u_dt )
     deallocate ( v_dt )
@@ -910,12 +910,12 @@ if( do_mon_obkv ) then
        u_star(:,:) = 1.E-3
   endif
 
-                                                                             call timing_on('mon_obkv')
+  call timing_on('MON_OBKV')
   call mon_obkv(zvir, ps, t3(is:ie,js:je, km), zfull(is:ie,js:je,km),     &
                 rho, p3(is:ie,js:je,km), u3(is:ie,js:je,km), v3(is:ie,js:je,km), mo_u_mean, do_mo_fixed_cd, mo_cd,  sst,  &
                 qs, q3(is:ie,js:je,km,sphum), drag_t, drag_q, flux_t, flux_q, flux_u, flux_v, u_star, &
                 delm, pdt, mu, mo_t_fac, master)
-                                                                             call timing_off('mon_obkv')
+  call timing_off('MON_OBKV')
 !---------------------------------------------------
 ! delp/grav = delm = kg/m**2
 ! watts = J/s = N*m/s = kg * m**2 / s**3
