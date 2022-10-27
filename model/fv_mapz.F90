@@ -28,7 +28,7 @@ module fv_mapz_mod
 
   use constants_mod,     only: pi=>pi_8, rvgas, rdgas, grav, hlv, hlf, cp_air, cp_vapor
   use fv_arrays_mod,     only: radius ! scaled for small earth
-  use tracer_manager_mod,only: get_tracer_index
+  use tracer_manager_mod,only: get_tracer_index, adjust_mass
   use field_manager_mod, only: MODEL_ATMOS
   use fv_grid_utils_mod, only: g_sum, ptop_min, cubed_to_latlon
   use fv_fill_mod,       only: fillz
@@ -69,6 +69,7 @@ contains
                       hydrostatic, hybrid_z, adiabatic, do_adiabatic_init, &
                       do_inline_mp, inline_mp, c2l_ord, bd, fv_debug, &
                       w_limiter, do_am4_remap, do_fast_phys, consv_checker, adj_mass_vmr)
+
   logical, intent(in):: last_step
   logical, intent(in):: fv_debug
   logical, intent(in):: w_limiter
@@ -159,7 +160,7 @@ contains
 
   real rcp, rg, rrg, bkh, dtmp, k1k, dlnp, tpe
   integer:: i,j,k
-  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, iq, n, kmp, kp, k_next
+  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, w_diff, iq, n, kmp, kp, k_next
   integer:: ccn_cm3, cin_cm3, aerosol
 
   k1k = rdgas/cv_air   ! akap / (1.-akap) = rg/Cv=0.4
@@ -173,6 +174,7 @@ contains
   snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
   graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
   cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
+  w_diff  = get_tracer_index (MODEL_ATMOS, 'w_diff')
   ccn_cm3 = get_tracer_index (MODEL_ATMOS, 'ccn_cm3')
   cin_cm3 = get_tracer_index (MODEL_ATMOS, 'cin_cm3')
   aerosol = get_tracer_index (MODEL_ATMOS, 'aerosol')

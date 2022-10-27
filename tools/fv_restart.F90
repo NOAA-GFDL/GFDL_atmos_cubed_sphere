@@ -37,7 +37,7 @@ module fv_restart_mod
                                  remap_restart, fv_io_write_BCs, fv_io_read_BCs
   use fv_grid_utils_mod,   only: ptop_min, fill_ghost, g_sum, &
                                  make_eta_level, cubed_to_latlon, great_circle_dist
-  use fv_diagnostics_mod,  only: prt_maxmin
+  use fv_diagnostics_mod,  only: prt_maxmin, gn
   use init_hydro_mod,      only: p_var
   use mpp_domains_mod,     only: mpp_update_domains, domain2d, DGRID_NE
   use mpp_domains_mod,     only: mpp_get_compute_domain, mpp_get_data_domain, mpp_get_global_domain
@@ -323,6 +323,14 @@ contains
                       if ( is_master() ) write(*,*) 'Warning !!! del-4 terrain filter has been applied ', &
                            Atm(n)%flagstruct%n_zs_filter, ' times'
                    endif
+                   if ( Atm(n)%flagstruct%fv_land .and. allocated(sgh_g) .and. allocated(oro_g) ) then
+                      do j=jsc,jec
+                         do i=isc,iec
+                            Atm(n)%sgh(i,j) = sgh_g(i,j)
+                            Atm(n)%oro(i,j) = oro_g(i,j)
+                         enddo
+                      enddo
+                   endif
                 endif
                 call mpp_update_domains( Atm(n)%phis, Atm(n)%domain, complete=.true. )
              else
@@ -377,7 +385,7 @@ contains
 
              !Turn this off on the nested grid if you are just interpolating topography from the coarse grid!
              !These parameters are needed in LM3/LM4, and are communicated through restart files
-             if ( Atm(n)%flagstruct%fv_land ) then
+             if ( Atm(n)%flagstruct%fv_land  .and. allocated(sgh_g) .and. allocated(oro_g)) then
                 do j=jsc,jec
                    do i=isc,iec
                       Atm(n)%sgh(i,j) = sgh_g(i,j)
@@ -685,8 +693,16 @@ contains
                         1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
       enddo
 #endif
-      call prt_maxmin('U ', Atm(n)%u(isc:iec,jsc:jec,1:npz), isc, iec, jsc, jec, 0, npz, 1.)
-      call prt_maxmin('V ', Atm(n)%v(isc:iec,jsc:jec,1:npz), isc, iec, jsc, jec, 0, npz, 1.)
+      call prt_maxmin('U (local) ', Atm(n)%u(isc:iec,jsc:jec,1:npz), isc, iec, jsc, jec, 0, npz, 1.)
+      call prt_maxmin('V (local) ', Atm(n)%v(isc:iec,jsc:jec,1:npz), isc, iec, jsc, jec, 0, npz, 1.)
+      ! compute ua, va
+      call cubed_to_latlon(Atm(n)%u, Atm(n)%v, Atm(n)%ua, Atm(n)%va, &
+           Atm(n)%gridstruct, &
+           Atm(n)%npx, Atm(n)%npy, npz, 1, &
+           Atm(n)%gridstruct%grid_type, Atm(n)%domain, &
+           Atm(n)%gridstruct%bounded_domain, Atm(n)%flagstruct%c2l_ord, Atm(n)%bd)
+      call prt_maxmin('UA ', Atm(n)%ua, isc, iec, jsc, jec, Atm(n)%ng, npz, 1.)
+      call prt_maxmin('VA ', Atm(n)%va, isc, iec, jsc, jec, Atm(n)%ng, npz, 1.)
 
       if ( (.not.Atm(n)%flagstruct%hydrostatic) .and. Atm(n)%flagstruct%make_nh ) then
          call mpp_error(NOTE, "  Initializing w to 0")
@@ -1370,8 +1386,10 @@ contains
     call pmaxmn_g('ZS', Atm%phis, isc, iec, jsc, jec, 1, 1./grav, Atm%gridstruct%area_64, Atm%domain)
     call pmaxmn_g('PS ', Atm%ps,   isc, iec, jsc, jec, 1, 0.01   , Atm%gridstruct%area_64, Atm%domain)
     call prt_maxmin('PS*', Atm%ps, isc, iec, jsc, jec, Atm%ng, 1, 0.01)
-    call prt_maxmin('U ', Atm%u(isd:ied,jsd:jed,1:npz), isc, iec, jsc, jec, Atm%ng, npz, 1.)
-    call prt_maxmin('V ', Atm%v(isd:ied,jsd:jed,1:npz), isc, iec, jsc, jec, Atm%ng, npz, 1.)
+    call prt_maxmin('U (local) ', Atm%u(isc:iec,jsc:jec,1:npz), isc, iec, jsc, jec, 0, npz, 1.)
+    call prt_maxmin('V (local) ', Atm%v(isc:iec,jsc:jec,1:npz), isc, iec, jsc, jec, 0, npz, 1.)
+    call prt_maxmin('UA ', Atm%ua, isc, iec, jsc, jec, Atm%ng, npz, 1.)
+    call prt_maxmin('VA ', Atm%va, isc, iec, jsc, jec, Atm%ng, npz, 1.)
     if ( .not. Atm%flagstruct%hydrostatic )    &
          call prt_maxmin('W ', Atm%w , isc, iec, jsc, jec, Atm%ng, npz, 1.)
     call prt_maxmin('T ', Atm%pt, isc, iec, jsc, jec, Atm%ng, npz, 1.)
@@ -1425,6 +1443,9 @@ subroutine pmaxmn_g(qname, q, is, ie, js, je, km, fac, area, domain)
 !
       real qmin, qmax, gmean
       integer i,j,k
+      character(len=8) :: display_name
+
+      logical, SAVE :: first_time = .true.
 
       qmin = q(is,js,1)
       qmax = qmin
@@ -1448,7 +1469,12 @@ subroutine pmaxmn_g(qname, q, is, ie, js, je, km, fac, area, domain)
       call mp_reduce_max(qmax)
 
       gmean = g_sum(domain, q(is:ie,js:je,km), is, ie, js, je, 3, area, 1, .true.)
-      if(is_master()) write(6,*) qname, qmax*fac, qmin*fac, gmean*fac
+
+      if(is_master()) then
+         j = min(len(trim(qname)),8)
+         display_name = qname(1:j)
+         write(6,*) display_name, trim(gn), qmax*fac, qmin*fac, gmean*fac
+      endif
 
 end subroutine pmaxmn_g
 

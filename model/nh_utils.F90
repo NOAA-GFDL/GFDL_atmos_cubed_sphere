@@ -36,7 +36,7 @@ module nh_utils_mod
    public update_dz_c, update_dz_d, nh_bc
    public sim_solver, sim1_solver, sim3_solver
    public sim3p0_solver, rim_2d
-   public Riem_Solver_c, edge_scalar
+   public Riem_Solver_c, edge_scalar, imp_diff_w
 
 #ifdef DZ_MIN_6
    real, parameter:: dz_min = 6.
@@ -611,13 +611,12 @@ CONTAINS
   end subroutine Riem_Solver3test
 
 
-  subroutine imp_diff_w(j, is, ie, js, je, ng, km, cd, delz, ws, w, w3)
-  integer, intent(in) :: j, is, ie, js, je, km, ng
+  subroutine imp_diff_w(is, ie, km, cd, delz, ws, w)
+  integer, intent(in) :: is, ie, km
   real, intent(in) :: cd
   real, intent(in) :: delz(is:ie, km)  ! delta-height (m)
-  real, intent(in) :: w(is:ie, km)  ! vertical vel. (m/s)
+  real, intent(inout) :: w(is:ie, km)  ! vertical vel. (m/s)
   real, intent(in) :: ws(is:ie)
-  real, intent(out) :: w3(is-ng:ie+ng,js-ng:je+ng,km)
 ! Local:
   real, dimension(is:ie,km):: c, gam, dz, wt
   real:: bet(is:ie)
@@ -655,22 +654,23 @@ CONTAINS
      do i=is,ie
         gam(i,km) = c(i,km-1) / bet(i)
                 a = cd/(dz(i,km)*delz(i,km))
-         wt(i,km) = (w(i,km) + 2.*ws(i)*cd/delz(i,km)**2                        &
+         w(i,km) = (w(i,km) + 2.*ws(i)*cd/delz(i,km)**2                        &
                   +  a*wt(i,km-1))/(1. + a + (cd+cd)/delz(i,km)**2 + a*gam(i,km))
      enddo
 
      do k=km-1,1,-1
         do i=is,ie
-           wt(i,k) = wt(i,k) - gam(i,k+1)*wt(i,k+1)
+           w(i,k) = wt(i,k) - gam(i,k+1)*w(i,k+1)
         enddo
      enddo
 
-     do k=1,km
-        do i=is,ie
-           w3(i,j,k) = wt(i,k)
-        enddo
-     enddo
-
+!!$
+!!$     do k=1,km
+!!$        do i=is,ie
+!!$           w3(i,j,k) = wt(i,k)
+!!$        enddo
+!!$     enddo
+!!$
   end subroutine imp_diff_w
 
 

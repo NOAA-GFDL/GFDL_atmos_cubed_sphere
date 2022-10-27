@@ -447,6 +447,7 @@ contains
    type(time_type) :: atmos_time
    integer :: atmos_time_step
    real :: rdt
+   real :: time_total
 !---- Call FV dynamics -----
 
    call timing_on('ATMOS_DYNAMICS')
@@ -496,8 +497,9 @@ contains
                       Atm(n)%gridstruct, Atm(n)%flagstruct,                &
                       Atm(n)%neststruct, Atm(n)%idiag, Atm(n)%bd,          &
                       Atm(n)%parent_grid, Atm(n)%domain, Atm(n)%inline_mp, &
-                      Atm(n)%diss_est)
-    call timing_off('FV_DYNAMICS')
+                      Atm(n)%diss_est,time_total=time_total)
+
+     call timing_off('FV_DYNAMICS')
 
     if (ngrids > 1 .and. (psc < p_split .or. p_split < 0)) then
        call mpp_sync()

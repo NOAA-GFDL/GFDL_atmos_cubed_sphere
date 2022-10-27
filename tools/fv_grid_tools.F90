@@ -1015,6 +1015,8 @@ contains
 202    format(A,A,i4.4,A,i4.4,A)
 
        ! Get and print Grid Statistics
+       !NOTE: This only computes for a small part of the global domain sor the results can be inaccurate
+       ! for non-uniform grids.
        dxAV =0.0
        angAV=0.0
        aspAV=0.0
@@ -1073,7 +1075,6 @@ contains
           write(*,*  ) ''
           write(*,*) ' Radius is ', radius, ', omega is ', omega!, ' small_earth_scale = ', small_earth_scale
           write(*,*  ) ' Cubed-Sphere Grid Stats : ', npx,'x',npy,'x',nregions
-          print*, dxN, dxM, dxAV, dxN, dxM
           write(*,'(A,f11.2,A,f11.2,A,f11.2,A,f11.2)') '      Grid Length               : min: ', dxN,' max: ', dxM,' avg: ', dxAV, ' min/max: ',dxN/dxM
           write(*,'(A,e21.14,A,e21.14,A,e21.14)') '      Deviation from Orthogonal : min: ',angN,' max: ',angM,' avg: ',angAV
           write(*,'(A,e21.14,A,e21.14,A,e21.14)') '      Aspect Ratio              : min: ',aspN,' max: ',aspM,' avg: ',aspAV

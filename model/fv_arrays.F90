@@ -282,6 +282,7 @@ module fv_arrays_mod
    real    :: scale_z = 0.   !< diff_z = scale_z**2 * 0.25 (only used for Riemann solver)
    real    :: w_max = 75.    !< Not used.
    real    :: z_min = 0.05   !< Not used.
+   real    :: d2bg_zq = 0.0  !< Implicit vertical diffusion for scalars (currently vertical velocity only)
    real    :: lim_fac = 1.0  !< linear scheme limiting factor when using hord = 1. 1: hord = 5, 3: hord = 6
 
    integer :: nord=1         !< Order of divergence damping: 0 for second-order; 1 for fourth-order
@@ -1841,7 +1842,7 @@ contains
     Atm%gridstruct%grid_type => Atm%flagstruct%grid_type
     Atm%flagstruct%grid_number => Atm%grid_number
     Atm%gridstruct%regional  => Atm%flagstruct%regional
-    Atm%gridstruct%bounded_domain = Atm%flagstruct%regional .or. Atm%neststruct%nested
+    Atm%gridstruct%bounded_domain = Atm%flagstruct%regional .or. Atm%neststruct%nested .or. (Atm%flagstruct%grid_type == 4)
     if (Atm%neststruct%nested) Atm%neststruct%parent_grid => Atm%parent_grid
 
     Atm%allocated = .true.
@@ -2210,4 +2211,3 @@ end subroutine deallocate_fv_nest_BC_type_3d
 
 
 end module fv_arrays_mod
-

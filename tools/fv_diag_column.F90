@@ -175,6 +175,7 @@ contains
              print*, ' read_column_table: error on line ', nline
              call mpp_error(FATAL,'error in column_table format')
           endif
+
        else !debug or sonde record with specified lat-lon
           if (index(lowercase(record), "debug") .ne. 0 ) then
           if (num_diag_debug >= MAX_DIAG_COLUMN) continue
@@ -241,7 +242,7 @@ contains
        !Index specified
        if (diag_i(m) >= -10 .and. diag_j(m) >= -10) then
 
-          if ((diag_tile(m) < 0 .or. diag_tile(m) > ntiles)) then
+          if ((diag_tile(m) < 0)) then
              if (ntiles > 1) then
                 call mpp_error(FATAL, ' find_diagnostic_column: diag_tile must be specified for '//trim(diag_class)//' point '//trim(diag_names(m))//' since ntiles > 1')
              else
@@ -377,12 +378,30 @@ contains
        write(unit, '(A, I8, A, I6, A, I6, A, I3)') ' on processor # ', mpp_pe(), ' :  local i = ', i, ',   local j = ', j, ' tile = ', diag_debug_tile(n)
        write(unit, *)
 
-       write(unit,500) 'k', 'T', 'delp', 'delz',   'u',   'v',   'w', 'sphum', 'cond', 'pres', 'NHprime'!, 'pdry', 'NHpdry'
-       write(unit,500) ' ', 'K',   'mb',    'm', 'm/s', 'm/s', 'm/s',  'g/kg', 'g/kg', 'mb',   'mb'!,    !  'mb',   'mb'
-500    format(A4, A7, A8, A6, A8, A8, A8, A8, A9, A9, A9)
        if (hydrostatic) then
-          call mpp_error(NOTE, 'Hydrostatic debug sounding not yet supported')
+          write(unit,500) 'k', 'T', 'delp',   'u',   'v',  'sphum', 'cond', 'pres' !, 'pdry', 'NHpdry'
+          write(unit,500) ' ', 'K',   'mb', 'm/s', 'm/s',   'g/kg', 'g/kg', 'mb'    !  'mb',   'mb'
+500       format(A4, A7, A8, A8, A8, A8, A9, A9)
+          pehyd = ptop
+          do k=1,npz
+             pehyd(k+1) = pehyd(k) + delp(i,j,k)
+             preshyd(k) = (pehyd(k+1) - pehyd(k))/log(pehyd(k+1)/pehyd(k))
+          enddo
+
+          do k=max(diag_debug_kbottom-diag_debug_nlevels,1),min(diag_debug_kbottom,npz)
+             cond = 0.
+             do l=2,nwat
+                cond = cond + q(i,j,k,l)
+             enddo
+             write(unit,'(I4, F7.2, F8.3, F8.3, F8.3, F8.3, F9.5, F9.3)') &
+                  k, pt(i,j,k), delp(i,j,k)*0.01, u(i,j,k), v(i,j,k), &
+                  q(i,j,k,sphum)*1000., cond*1000., preshyd(k)*1.e-2!, presdry*1.e-2, (presdry-preshyddry(k))*1.e-2
+          enddo
+
        else
+          write(unit,501) 'k', 'T', 'delp', 'delz',   'u',   'v',   'w', 'sphum', 'cond', 'pres', 'NHprime'!, 'pdry', 'NHpdry'
+          write(unit,501) ' ', 'K',   'mb',    'm', 'm/s', 'm/s', 'm/s',  'g/kg', 'g/kg', 'mb',   'mb'!,    !  'mb',   'mb'
+501       format(A4, A7, A8, A6, A8, A8, A8, A8, A9, A9, A9)
           pehyd = ptop
           pehyddry = ptop
           do k=1,npz
@@ -410,7 +429,6 @@ contains
        write(unit, *)
 
        call flush(unit)
-
 
     enddo
 
@@ -466,42 +484,68 @@ contains
        write(unit, '(A, I8, A, I6, A, I6)') ' on processor # ', mpp_pe(), ' :  local i = ', i, ',   local j = ', j
        write(unit, *)
 
-       write(unit,500) 'k', 'T', 'delp', 'delz',   'u',   'v',   'w', 'sphum', 'cond', 'pres', 'NHprime', 'heat'
-       write(unit,500)  ' ', 'K',   'mb',    'm', 'm/s', 'm/s', 'm/s',  'g/kg', 'g/kg', 'mb', 'mb', 'K'
-500    format(A4, A7, A8, A6, A8, A8, A8, A8, A9, A9, A9, A8)
-          if (hydrostatic) then
-             call mpp_error(NOTE, 'Hydrostatic debug sounding not yet supported')
-          else
-             pehyd = ptop
-             do k=1,npz
-                pehyd(k+1) = pehyd(k) + delp(i,j,k)
-                preshyd(k) = (pehyd(k+1) - pehyd(k))/log(pehyd(k+1)/pehyd(k))
+       if (hydrostatic) then
+          write(unit,501) 'k', 'T', 'delp',   'u',   'v',  'sphum', 'cond', 'pres' !, 'pdry', 'NHpdry'
+          write(unit,501) ' ', 'K',   'mb', 'm/s', 'm/s',   'g/kg', 'g/kg', 'mb'    !  'mb',   'mb'
+501       format(A4, A7, A8, A8, A8, A8, A9, A9)
+          pehyd = ptop
+          do k=1,npz
+             pehyd(k+1) = pehyd(k) + delp(i,j,k)
+             preshyd(k) = (pehyd(k+1) - pehyd(k))/log(pehyd(k+1)/pehyd(k))
+          enddo
+
+          do k=max(diag_debug_kbottom-diag_debug_nlevels,1),min(diag_debug_kbottom,npz)
+             cond = 0.
+             do l=2,nwat
+                cond = cond + q(i,j,k,l)
              enddo
-             !do k=2*npz/3,npz
-             do k=max(diag_debug_kbottom-diag_debug_nlevels,1),min(diag_debug_kbottom,npz)
-                cond = 0.
-                do l=2,nwat
-                   cond = cond + q(i,j,k,l)
-                enddo
-                virt = (1.+zvir*q(i,j,k,sphum))
+             virt = (1.+zvir*q(i,j,k,sphum))
+             !NOTE: Moist cappa not implemented for hydrostatic dynamics.
+             pk = exp(akap*log(preshyd(k)))
+             temp = pt(i,j,k)*pk/virt
+             if (use_heat_source) then
+                heats = heat_source(i,j,k) / (cp_air*delp(i,j,k))
+             else
+                heats = 0.0
+             endif
+             write(unit,'(I4, F7.2, F8.3, F8.3, F8.3, F8.3, F9.5, F9.3, 1x, G9.3)') &
+                  k, temp, delp(i,j,k)*0.01, u(i,j,k), v(i,j,k), &
+                  q(i,j,k,sphum)*1000., cond*1000., preshyd(k)*1.e-2, heats!, presdry*1.e-2, (presdry-preshyddry(k))*1.e-2
+          enddo
+       else
+          write(unit,500) 'k', 'T', 'delp', 'delz',   'u',   'v',   'w', 'sphum', 'cond', 'pres', 'NHprime', 'heat'
+          write(unit,500)  ' ', 'K',   'mb',    'm', 'm/s', 'm/s', 'm/s',  'g/kg', 'g/kg', 'mb', 'mb', 'K'
+500       format(A4, A7, A8, A6, A8, A8, A8, A8, A9, A9, A9, A8)
+          pehyd = ptop
+          do k=1,npz
+             pehyd(k+1) = pehyd(k) + delp(i,j,k)
+             preshyd(k) = (pehyd(k+1) - pehyd(k))/log(pehyd(k+1)/pehyd(k))
+          enddo
+          !do k=2*npz/3,npz
+          do k=max(diag_debug_kbottom-diag_debug_nlevels,1),min(diag_debug_kbottom,npz)
+             cond = 0.
+             do l=2,nwat
+                cond = cond + q(i,j,k,l)
+             enddo
+             virt = (1.+zvir*q(i,j,k,sphum))
 #ifdef MOIST_CAPPA
-                pres = exp(1./(1.-cappa(i,j,k))*log(rdg*(delp(i,j,k)-cond)/delz(i,j,k)*pt(i,j,k)) )
-                pk = exp(cappa(i,j,k)*log(pres))
+             pres = exp(1./(1.-cappa(i,j,k))*log(rdg*(delp(i,j,k)-cond)/delz(i,j,k)*pt(i,j,k)) )
+             pk = exp(cappa(i,j,k)*log(pres))
 #else
-                pres = exp(1./(1.-akap)*log(rdg*(delp(i,j,k))/delz(i,j,k)*pt(i,j,k)) )
-                pk = exp(akap*log(pres))
+             pres = exp(1./(1.-akap)*log(rdg*(delp(i,j,k))/delz(i,j,k)*pt(i,j,k)) )
+             pk = exp(akap*log(pres))
 #endif
-                temp = pt(i,j,k)*pk/virt
-                if (use_heat_source) then
-                   heats = heat_source(i,j,k) / (cv_air*delp(i,j,k))
-                else
-                   heats = 0.0
-                endif
-                write(unit,'(I4, F7.2, F8.3, I6, F8.3, F8.3, F8.3, F8.3, F9.5, F9.3, F9.3, G9.3 )') &
-                     k, temp, delp(i,j,k)*0.01, -int(delz(i,j,k)), u(i,j,k), v(i,j,k), w(i,j,k), &
-                     q(i,j,k,sphum)*1000., cond*1000., pres*1.e-2, (pres-preshyd(k))*1.e-2, heats
-             enddo
-          endif
+             temp = pt(i,j,k)*pk/virt
+             if (use_heat_source) then
+                heats = heat_source(i,j,k) / (cv_air*delp(i,j,k))
+             else
+                heats = 0.0
+             endif
+             write(unit,'(I4, F7.2, F8.3, I6, F8.3, F8.3, F8.3, F8.3, F9.5, F9.3, F9.3, 1x, G9.3 )') &
+                  k, temp, delp(i,j,k)*0.01, -int(delz(i,j,k)), u(i,j,k), v(i,j,k), w(i,j,k), &
+                  q(i,j,k,sphum)*1000., cond*1000., pres*1.e-2, (pres-preshyd(k))*1.e-2, heats
+          enddo
+       endif
 
        write(unit, *) '==================================================================='
        write(unit, *)

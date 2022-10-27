@@ -194,7 +194,7 @@
            if (.not. Atm%flagstruct%external_eta) then
               call set_eta(npz, Atm%ks, Atm%ptop, Atm%ak, Atm%bk, Atm%flagstruct%npz_type, Atm%flagstruct%fv_eta_file)
               if ( is_master() ) then
-                 write(*,*) 'Grid_init', npz, Atm%ks, Atm%ptop
+                 !write(*,*) 'Grid_init', npz, Atm%ks, Atm%ptop
                  tmp1 = Atm%ak(Atm%ks+1)
                  do k=Atm%ks+1,npz
                     tmp1 = max(tmp1, (Atm%ak(k)-Atm%ak(k+1))/max(1.E-9, (Atm%bk(k+1)-Atm%bk(k))) )
@@ -230,7 +230,7 @@
   if ( sw_corner ) then
        tmp1 = great_circle_dist(grid(1,1,1:2), agrid(1,1,1:2))
        tmp2 = great_circle_dist(grid(1,1,1:2), agrid(2,2,1:2))
-       write(*,*) 'Corner interpolation coefficient=', tmp2/(tmp2-tmp1)
+       if (Atm%flagstruct%fv_debug) write(*,*) 'Corner interpolation coefficient=', tmp2/(tmp2-tmp1)
   endif
 
   if (grid_type < 3) then
@@ -674,12 +674,15 @@
      call init_cubed_to_latlon( Atm%gridstruct, Atm%flagstruct%hydrostatic, agrid, grid_type, c2l_order, Atm%bd )
 
      call global_mx(area, Atm%ng, Atm%gridstruct%da_min, Atm%gridstruct%da_max, Atm%bd)
-     if( is_master() ) write(*,*) 'da_max/da_min=', Atm%gridstruct%da_max/Atm%gridstruct%da_min
+     if( is_master() ) write(*,'(A, G)') 'da_max/da_min=', Atm%gridstruct%da_max/Atm%gridstruct%da_min
 
      call global_mx_c(area_c(is:ie,js:je), is, ie, js, je, Atm%gridstruct%da_min_c, Atm%gridstruct%da_max_c)
 
-     if( is_master() ) write(*,*) 'da_max_c, da_min_c, da_max_c/da_min_c=', Atm%gridstruct%da_max_c, Atm%gridstruct%da_min_c, Atm%gridstruct%da_max_c/Atm%gridstruct%da_min_c
-
+     if( is_master() ) then
+        write(*,'(A, G)') 'da_max_c = ', Atm%gridstruct%da_max_c
+        write(*,'(A, G)') 'da_min_c = ', Atm%gridstruct%da_min_c
+        write(*,'(A, G)') 'da_max_c/da_min_c=', Atm%gridstruct%da_max_c/Atm%gridstruct%da_min_c
+     endif
 !------------------------------------------------
 ! Initialization for interpolation at face edges
 !------------------------------------------------

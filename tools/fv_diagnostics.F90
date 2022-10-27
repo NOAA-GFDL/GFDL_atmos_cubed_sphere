@@ -235,7 +235,9 @@ contains
             exit
        endif
     enddo
-    if ( is_master() ) write(*,*) 'mp_top=', mp_top, 'pfull=', pfull(mp_top)
+    if ( Atm(1)%flagstruct%fv_debug .and. is_master() ) then
+       write(*,*) 'radar reflectivity: mp_top=', mp_top, 'pfull=', pfull(mp_top)
+    endif
 
 !   allocate(grid_xt(npx-1), grid_yt(npy-1), grid_xe(npx), grid_ye(npy-1), grid_xn(npx-1), grid_yn(npy))
     allocate(grid_xt(npx-1), grid_yt(npy-1))
@@ -343,10 +345,10 @@ contains
     levs = 0
 #ifdef FEWER_PLEVS
     levs(1:nplev) = (/50,70,100,200,250,300,500,750,850,925,1000/) ! lmh mini-levs for MJO simulations
-    k100 = 2
-    k200 = 3
-    k300 = 5
-    k500 = 6
+    k100 = 3
+    k200 = 4
+    k300 = 6
+    k500 = 7
 #else
     levs(1:nplev) = (/1,2,3,5,7,10,20,30,50,70,100,150,200,250,300,350,400,450,500,550,600,650,700,750,800,850,900,925,950,975,1000/)
     k100 = 11
@@ -366,20 +368,20 @@ contains
        endif
     endif
     levs(nplev+1:MAX_PLEVS) = -1.
-    if (abs(levs(k100)-100.) > 1.0) then
-       call mpp_error(NOTE, "fv_diag_plevs_nml: k100 set incorrectly, finding closest entry in plevs")
+    if (abs(levs(k100)-100.) > 10.) then
+       !call mpp_error(NOTE, "fv_diag_plevs_nml: k100 set incorrectly, finding closest entry in plevs")
        k100 = minloc(abs(levs(1:nplev)-100),1)
     endif
-    if (abs(levs(k200)-200.) > 1.0) then
-       call mpp_error(NOTE, "fv_diag_plevs_nml: k200 set incorrectly, finding closest entry in plevs")
+    if (abs(levs(k200)-200.) > 10.) then
+       !call mpp_error(NOTE, "fv_diag_plevs_nml: k200 set incorrectly, finding closest entry in plevs")
        k200 = minloc(abs(levs(1:nplev)-200),1)
     endif
-    if (abs(levs(k300)-300.) > 1.0) then
-       call mpp_error(NOTE, "fv_diag_plevs_nml: k300 set incorrectly, finding closest entry in plevs")
+    if (abs(levs(k300)-300.) > 10.) then
+       !call mpp_error(NOTE, "fv_diag_plevs_nml: k300 set incorrectly, finding closest entry in plevs")
        k300 = minloc(abs(levs(1:nplev)-300),1)
     endif
-    if (abs(levs(k500)-500.) > 1.0) then
-       call mpp_error(NOTE, "fv_diag_plevs_nml: k500 set incorrectly, finding closest entry in plevs")
+    if (abs(levs(k500)-500.) > 10.) then
+       !call mpp_error(NOTE, "fv_diag_plevs_nml: k500 set incorrectly, finding closest entry in plevs")
        k500 = minloc(abs(levs(1:nplev)-500),1)
     endif
 
@@ -501,6 +503,7 @@ contains
 
 #ifndef DYNAMICS_ZS
        if (id_zsurf > 0) used = send_data(id_zsurf, zsurf, Time)
+       call prt_mxm('ZS', zsurf, isc, iec, jsc, jec, 0,   1, 1.0, Atm(n)%gridstruct%area_64, Atm(n)%domain)
 #endif
        if ( Atm(n)%flagstruct%fv_land ) then
          if (id_zs  > 0) used = send_data(id_zs , zs_g, Time)
@@ -1687,8 +1690,8 @@ contains
 #endif
 
     elseif ( Atm(n)%flagstruct%range_warn ) then
-         call range_check('DELP', Atm(n)%delp, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,    &
-                           0.01*ptop, 200.E2, bad_range, Time)
+         if (ptop < 200.e2) call range_check('DELP', Atm(n)%delp, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,    &
+                                              0.01*ptop, 200.E2, bad_range, Time)
          call range_check('UA', Atm(n)%ua, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
                            -250., 250., bad_range, Time)
          call range_check('VA', Atm(n)%va, isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
@@ -1735,6 +1738,7 @@ contains
        enddo
 
        if(id_zsurf > 0)  used=send_data(id_zsurf, zsurf, Time)
+       call prt_mxm('ZS', zsurf,     isc, iec, jsc, jec, 0,   1, 1.0, Atm(n)%gridstruct%area_64, Atm(n)%domain)
 #endif
        if(id_ps > 0) used=send_data(id_ps, Atm(n)%ps(isc:iec,jsc:jec), Time)
 
@@ -1804,7 +1808,9 @@ contains
 
        if ( id_vort200>0 .or. id_vort500>0 .or. id_vort850>0 .or. id_vorts>0   &
             .or. id_vort>0 .or. id_pv>0 .or. id_pv350k>0 .or. id_pv550k>0 &
-            .or. id_rh>0 .or. id_x850>0 .or. id_uh03>0 .or. id_uh25>0) then
+            .or. id_rh>0 .or. id_x850>0 .or. id_uh03>0 .or. id_uh25>0 &
+            .or. id_srh1 > 0 .or. id_srh3 > 0 .or. id_srh25 > 0 &
+            .or. id_ustm > 0 .or. id_vstm > 0) then
           call get_vorticity(isc, iec, jsc, jec, isd, ied, jsd, jed, npz, Atm(n)%u, Atm(n)%v, wk, &
                Atm(n)%gridstruct%dx, Atm(n)%gridstruct%dy, Atm(n)%gridstruct%rarea)
 
@@ -2261,7 +2267,9 @@ contains
           endif
           used = send_data (id_slp, slp, Time)
              if( prt_minmax ) then
-             call prt_mxm('SLP (Pa): ', slp, isc, iec, jsc, jec, 0, 1, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
+                call prt_mxm('SLP (Pa): ', slp, isc, iec, jsc, jec, 0, 1, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
+                call prt_maxmin('SLP', slp, isc, iec, jsc, jec, 0, 1, 1.)
+                if ( .not. Atm(n)%gridstruct%bounded_domain ) then
 ! US Potential Landfall TCs (PLT):
                  do j=jsc,jec
                     do i=isc,iec
@@ -2274,6 +2282,7 @@ contains
                     enddo
                  enddo
                  call prt_mxm('SLP_ATL (Pa): ', a2, isc, iec, jsc, jec, 0,   1, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
+                endif
              endif
           endif
 
@@ -2317,7 +2326,7 @@ contains
                    if (Atm(n)%gridstruct%bounded_domain) then
                       call prt_mxm('Z500 (m): ',a3(isc:iec,jsc:jec,k500),isc,iec,jsc,jec,0,1,1.,Atm(n)%gridstruct%area_64,Atm(n)%domain)
                    else
-                      call prt_gb_nh_sh('fv_GFS Z500 (m): ', isc,iec, jsc,jec, a3(isc,jsc,k500), Atm(n)%gridstruct%area_64(isc:iec,jsc:jec),   &
+                      call prt_gb_nh_sh('Z500', isc,iec, jsc,jec, a3(isc,jsc,k500), Atm(n)%gridstruct%area_64(isc:iec,jsc:jec),   &
                                         Atm(n)%gridstruct%agrid_64(isc:iec,jsc:jec,2))
                    endif
                 endif
@@ -4048,7 +4057,7 @@ contains
              enddo
              enddo
           enddo
-          call prt_gb_nh_sh('Max_cld GB_NH_SH_EQ',isc,iec, jsc,jec, a2, Atm(n)%gridstruct%area_64(isc:iec,jsc:jec),   &
+          call prt_gb_nh_sh('Max_cld',isc,iec, jsc,jec, a2, Atm(n)%gridstruct%area_64(isc:iec,jsc:jec),   &
                             Atm(n)%gridstruct%agrid_64(isc:iec,jsc:jec,2))
         endif
       endif
@@ -4297,9 +4306,16 @@ contains
       if( qmin<q_low .or. qmax>q_hi ) then
           if(master) write(*,*) 'Range_check Warning:', qname, ' max = ', qmax, ' min = ', qmin
           if (present(Time)) then
-             call get_date(Time, year, month, day, hour, minute, second)
-             if (master) write(*,999) year, month, day, hour, minute, second
-999          format(' Range violation on: ', I4, '/', I02, '/', I02, ' ', I02, ':', I02, ':', I02)
+             if (m_calendar) then
+                call get_date(Time, year, month, day, hour, minute, second)
+                if (master) write(*,999) year, month, day, hour, minute, second
+999             format(' Range violation on: ', I4, '/', I02, '/', I02, ' ', I02, ':', I02, ':', I02)
+             else
+                call get_time(Time, second, day)
+                year = 0 ; month = 0 ; hour = 0 ; minute = 0
+                if (master) write(*,996) day, second
+996             format(' Range violation on: ', I6, ' days ', I05, ' seconds')
+             endif
           endif
           if ( present(bad_range) ) then
                bad_range = .true.
@@ -4312,7 +4328,11 @@ contains
          do j=js,je
             do i=is,ie
                if( q(i,j)<q_low .or. q(i,j)>q_hi ) then
-                   write(*,*) 'Warn_(i,j)=',i,j, pos(i,j,1)*rad2deg, pos(i,j,2)*rad2deg, q(i,j)
+                   write(*,995) i, j, pos(i,j,1)*rad2deg, pos(i,j,2)*rad2deg, qname, q(i,j)
+!                   write(*,*) 'Warn_(i,j)=',i,j, pos(i,j,1)*rad2deg, pos(i,j,2)*rad2deg, q(i,j)
+!                      write(*,998) k,i,j, pos(i,j,1)*rad2deg, pos(i,j,2)*rad2deg, qname, q(i,j,k)
+
+995                format('Warn_2D: (i,j)=',2I5,' (lon,lat)=',f7.3,1x,f7.3,1x, A,' =',G10.5)
                endif
             enddo
          enddo
@@ -4330,6 +4350,7 @@ contains
 
       real qmin, qmax
       integer i,j,k
+      character(len=12) :: display_name
       !mpp_root_pe doesn't appear to recognize nested grid
       master = (mpp_pe()==mpp_root_pe()) .or. is_master()
 
@@ -4354,7 +4375,9 @@ contains
       call mp_reduce_max(qmax)
 
       if(master) then
-            write(*,*) qname//trim(gn), ' max = ', qmax*fac, ' min = ', qmin*fac
+         j = min(len(trim(qname)),12)
+         display_name = qname(1:j)
+         write(*,*) display_name, ' ', trim(gn), ' max=', qmax*fac, 'min=',qmin*fac
       endif
 
  end subroutine prt_maxmin
@@ -4372,6 +4395,7 @@ contains
 !
       real qmin, qmax, gmean
       integer i,j,k
+      character(len=8) :: display_name
 
       !mpp_root_pe doesn't appear to recognize nested grid
       master = (mpp_pe()==mpp_root_pe()) .or. is_master()
@@ -4400,7 +4424,11 @@ contains
 !     gmean = g_sum(domain, q(is,js,km), is, ie, js, je, 3, area, 1)
       gmean = g_sum(domain, q(is:ie,js:je,km), is, ie, js, je, 3, area, 1)
 
-      if(master) write(6,*) qname, gn, qmax*fac, qmin*fac, gmean*fac
+      if(master) then
+         j = min(len(trim(qname)),8)
+         display_name = qname(1:j)
+         write(6,*) display_name, trim(gn), qmax*fac, qmin*fac, gmean*fac
+      endif
 
  end subroutine prt_mxm
 
@@ -4429,6 +4457,8 @@ contains
     rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
     snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
     graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+
+ if (master) write(*,*) '--- Mass Diagnostics ------------------------'
 
  if ( nwat==0 ) then
       psmo = g_sum(domain, ps(is:ie,js:je), is, ie, js, je, n_g, area, 1)
@@ -4715,6 +4745,7 @@ contains
   real:: t_eq, t_nh, t_sh, t_gb
   real:: area_eq, area_nh, area_sh, area_gb
   integer:: i,j
+  character(len=12) :: display_name
 
      t_eq = 0.   ;    t_nh = 0.;    t_sh = 0.;    t_gb = 0.
      area_eq = 0.; area_nh = 0.; area_sh = 0.; area_gb = 0.
@@ -4748,7 +4779,13 @@ contains
      if (area_nh <= 1.) area_nh = -1.0
      if (area_sh <= 1.) area_sh = -1.0
      if (area_eq <= 1.) area_eq = -1.0
-     if (is_master()) write(*,*) qname, t_gb/area_gb, t_nh/area_nh, t_sh/area_sh, t_eq/area_eq
+     if (is_master()) then
+        j = min(len(trim(qname)),12)
+        display_name = qname(1:j)
+        write(*,*) display_name, 'GB=',t_gb/area_gb, 'NH=',t_nh/area_nh
+        display_name=''
+        write(*,*) display_name, 'SH=',t_sh/area_sh, 'EQ=',t_eq/area_eq
+     endif
 
  end subroutine prt_gb_nh_sh
 
