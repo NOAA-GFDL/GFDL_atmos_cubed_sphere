@@ -926,7 +926,7 @@ contains
                          pe, pkc, pk3, pk, peln, ws, &
                          flagstruct%scale_z, flagstruct%p_fac, flagstruct%a_imp, &
                          flagstruct%use_logp, remap_step, beta<-0.1, flagstruct%d2bg_zq, &
-                         flagstruct%fast_tau_w_sec)
+                         flagstruct%fv_debug, flagstruct%fast_tau_w_sec)
         call timing_off('Riem_Solver')
 
         call timing_on('COMM_TOTAL')
