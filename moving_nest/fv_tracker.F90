@@ -30,7 +30,7 @@ module fv_tracker_mod
 
   use constants_mod,       only: pi=>pi_8, rad_to_deg, deg_to_rad
   use time_manager_mod,    only: time_type, get_time, set_time, operator(+), &
-                                 operator(-), operator(/), time_type_to_real
+                                 operator(-), operator(/), time_type_to_real, date_to_string
   use mpp_mod,             only: mpp_error, stdout, FATAL, WARNING, NOTE, &
                                  mpp_root_pe, mpp_npes, mpp_pe, mpp_chksum, &
                                  mpp_get_current_pelist, &
@@ -744,24 +744,23 @@ contains
     integer, intent(in) :: ids,ide,jds,jde,kds,kde
     integer, intent(in) :: ims,ime,jms,jme,kms,kme
     integer, intent(in) :: its,ite,jts,jte,kts,kte
-    integer :: days, seconds
-    real :: sec
+    character*15 timestr
     character*255 message
 
-    call get_time(fv_time, seconds, days)
-    sec=seconds
-313 format(F11.2,", ",                                  &
+    ! timestr in the format of yyyymmdd.hhmmss
+    timestr=date_to_string(fv_time)
+313 format(A15,", ",                                 &
         "W10 = ",F7.3," kn, PMIN = ",F8.3," mbar, ", &
         "LAT = ",F6.3,A1,", LON = ",F7.3,A1,", ",    &
         "RMW = ",F7.3," nmi")
     if (Tracker(n)%tracker_fixlon .gt. 180.0) then
-      write(Moving_nest(n)%mn_flag%outatcf_lun+Atm%grid_number,313) sec,   &
+      write(Moving_nest(n)%mn_flag%outatcf_lun+Atm%grid_number,313) timestr,    &
           Tracker(n)%tracker_vmax*mps2kn,Tracker(n)%tracker_pmin/100.,          &
           abs(Tracker(n)%tracker_fixlat),get_lat_ns(Tracker(n)%tracker_fixlat), &
           abs(Tracker(n)%tracker_fixlon-360.0),get_lon_ew(Tracker(n)%tracker_fixlon-360.0), &
           Tracker(n)%tracker_rmw*km2nmi
     else
-      write(Moving_nest(n)%mn_flag%outatcf_lun+Atm%grid_number,313) sec,   &
+      write(Moving_nest(n)%mn_flag%outatcf_lun+Atm%grid_number,313) timestr,    &
           Tracker(n)%tracker_vmax*mps2kn,Tracker(n)%tracker_pmin/100.,          &
           abs(Tracker(n)%tracker_fixlat),get_lat_ns(Tracker(n)%tracker_fixlat), &
           abs(Tracker(n)%tracker_fixlon),get_lon_ew(Tracker(n)%tracker_fixlon), &
