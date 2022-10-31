@@ -34,6 +34,8 @@
 
 module gfdl_mp_mod
 
+    use fms_mod, only: check_nml_error
+
     implicit none
 
     private
@@ -556,13 +558,14 @@ subroutine gfdl_mp_init (input_nml_file, logunit, hydrostatic)
 
     logical :: exists
 
+    integer :: ios, ierr
+
     ! -----------------------------------------------------------------------
     ! read namelist
     ! -----------------------------------------------------------------------
 
-    !TODO Check if namelist exists,
-    !     but *don't* crash if it doesn't
-    read (input_nml_file, nml = gfdl_mp_nml)
+    read (input_nml_file, nml = gfdl_mp_nml, iostat = ios)
+    ierr = check_nml_error (ios, 'gfdl_mp_nml')
 
     ! -----------------------------------------------------------------------
     ! write namelist to log file
