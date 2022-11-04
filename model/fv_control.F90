@@ -162,8 +162,7 @@ module fv_control_mod
                                           read_namelist_molecular_diffusion_nml
 
 #ifdef MOVING_NEST
-   use fv_moving_nest_types_mod, only: fv_moving_nest_init, deallocate_fv_moving_nests
-   use fv_tracker_mod,           only: deallocate_tracker
+   use fv_moving_nest_types_mod, only: fv_moving_nest_init
 #endif
 
    implicit none
@@ -1336,11 +1335,6 @@ module fv_control_mod
        call deallocate_fv_atmos_type(Atm(n))
        call deallocate_coarse_restart_type(Atm(n)%coarse_graining%restart)
     end do
-
-#ifdef MOVING_NEST
-    call deallocate_fv_moving_nests(ngrids)
-    call deallocate_tracker(ngrids)
-#endif
 
  end subroutine fv_end
 !-------------------------------------------------------------------------------

@@ -1797,11 +1797,11 @@ contains
         ! Make sure we don't run off the edge of the parent supergrid
         if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
           print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
-          stop  ! TODO replace with a fatal error
+          call mpp_error(FATAL, "fill_grid_from_supergrid_r4_3d invalid bounds i")
         endif
         if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
           print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
-          stop  ! TODO replace with a fatal error
+          call mpp_error(FATAL, "fill_grid_from_supergrid_r4_3d invalid bounds j")
         endif
 
         in_grid(i,j,2) = fp_super_tile_geo%lats(fp_i, fp_j)
@@ -1863,11 +1863,11 @@ contains
         ! Make sure we don't run off the edge of the parent supergrid
         if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
           print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
-          stop  ! TODO replace with a fatal error
+          call mpp_error(FATAL, "fill_grid_from_supergrid_r8_3d invalid bounds i")
         endif
         if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
           print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
-          stop  ! TODO replace with a fatal error
+          call mpp_error(FATAL, "fill_grid_from_supergrid_r8_3d invalid bounds j")
         endif
 
         in_grid(i,j,2) = fp_super_tile_geo%lats(fp_i, fp_j)
@@ -1929,11 +1929,11 @@ contains
         ! Make sure we don't run off the edge of the parent supergrid
         if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
           print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
-          stop  ! TODO replace with a fatal error
+          call mpp_error(FATAL, "fill_grid_from_supergrid_r8_4d invalid bounds i")
         endif
         if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
           print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
-          stop  ! TODO replace with a fatal error
+          call mpp_error(FATAL, "fill_grid_from_supergrid_r8_4d invalid bounds j")
         endif
 
         in_grid(i,j,2,1) = fp_super_tile_geo%lats(fp_i, fp_j)
@@ -2933,11 +2933,11 @@ contains
     do n=1,3
       if (lbound(atm_wt, n) .ne. lbound(new_wt, n)) then
         print '("[ERROR] WDR fill_weight_grid lbound mismatch fv_moving_nest.F90 npe=",I0," n=",I0, I0, I0)', this_pe, n, lbound(atm_wt, n), lbound(new_wt, n)
-        stop
+        call mpp_error(FATAL, "fill_weight_grid invalid lower bounds")
       endif
       if (ubound(atm_wt, n) .ne. ubound(new_wt, n)) then
         print '("[ERROR] WDR fill_weight_grid ubound mismatch fv_moving_nest.F90 npe=",I0," n=",I0, I0, I0)', this_pe, n, ubound(atm_wt, n), ubound(new_wt, n)
-        stop
+        call mpp_error(FATAL, "fill_weight_grid invalid upper bounds")
       endif
     enddo
 

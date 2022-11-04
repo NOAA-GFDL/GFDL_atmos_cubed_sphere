@@ -2578,11 +2578,11 @@ contains
 
         if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
           if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
-          stop  ! replace with a fatal error
+          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo i")
         endif
         if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
           if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
-          stop  ! replace with a fatal error
+          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo j")
         endif
 
         tile_geo%lats(i,j) = fp_super_tile_geo%lats(fp_i, fp_j)
@@ -2597,11 +2597,11 @@ contains
 
         if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
           if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
-          stop  ! replace with a fatal error
+          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo_u i")
         endif
         if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
           if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
-          stop  ! replace with a fatal error
+          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo_u j")
         endif
 
         tile_geo_u%lats(i,j) = fp_super_tile_geo%lats(fp_i, fp_j)
@@ -2616,11 +2616,11 @@ contains
 
         if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
           if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
-          stop  ! replace with a fatal error
+          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo_v i")
         endif
         if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
           if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
-          stop  ! replace with a fatal error
+          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo_v j")
         endif
 
         tile_geo_v%lats(i,j) = fp_super_tile_geo%lats(fp_i, fp_j)

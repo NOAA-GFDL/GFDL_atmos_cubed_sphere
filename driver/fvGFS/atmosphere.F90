@@ -192,11 +192,6 @@ use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
 use boundary_mod,       only: fill_nested_grid
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
-#ifdef MOVING_NEST
-use fv_tracker_mod,     only: fv_diag_tracker, allocate_tracker
-use fv_tracker_mod,     only: fv_tracker_init, fv_tracker_center, fv_tracker_post_move
-use fv_moving_nest_types_mod, only: Moving_nest
-#endif
 use fv_nggps_diags_mod, only: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
@@ -260,7 +255,6 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
   integer :: nq                       !  number of transported tracers
   integer :: sec, seconds, days
   integer :: id_dynam, id_fv_diag, id_subgridz
-  integer :: id_fv_tracker
 
   logical :: cold_start = .false.     !  used in initial condition
 
@@ -352,12 +346,6 @@ contains
    cold_start = (.not.file_exists('INPUT/fv_core.res.nc') .and. .not.file_exists('INPUT/fv_core.res.tile1.nc'))
 
    call fv_control_init( Atm, dt_atmos, mygrid, grids_on_this_pe, p_split )  ! allocates Atm components; sets mygrid
-
-   ! TODO move this higher into atmos_model.F90 for better modularization
-#ifdef MOVING_NEST
-   call fv_tracker_init(size(Atm))
-   if (mygrid .eq. 2) call allocate_tracker(mygrid, Atm(mygrid)%bd%isc, Atm(mygrid)%bd%iec, Atm(mygrid)%bd%jsc, Atm(mygrid)%bd%jec)
-#endif
 
    Atm(mygrid)%Time_init = Time_init
 
@@ -493,9 +481,6 @@ contains
    id_subgridz  = mpp_clock_id ('FV subgrid_z',flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
    id_fv_diag   = mpp_clock_id ('FV Diag',     flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
-#ifdef MOVING_NEST
-   id_fv_tracker= mpp_clock_id ('FV tracker',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
-#endif
                     call timing_off('ATMOS_INIT')
 
    ! Do CCPP fast physics initialization before call to adiabatic_init (since this calls fv_dynamics)
@@ -955,14 +940,11 @@ contains
 !! decomposition for the current cubed-sphere tile.
 !>@detail Coupling is done using the mass/temperature grid with no halos.
  subroutine atmosphere_domain ( fv_domain, rd_domain, layout, regional, nested, &
-                                moving_nest_parent, is_moving_nest, &
                                 ngrids_atmos, mygrid_atmos, pelist )
    type(domain2d), intent(out) :: fv_domain, rd_domain
    integer, intent(out) :: layout(2)
    logical, intent(out) :: regional
    logical, intent(out) :: nested
-   logical, intent(out) :: moving_nest_parent
-   logical, intent(out) :: is_moving_nest
    integer, intent(out) :: ngrids_atmos
    integer, intent(out) :: mygrid_atmos
    integer, pointer, intent(out) :: pelist(:)
@@ -978,31 +960,6 @@ contains
    mygrid_atmos = mygrid
    call set_atmosphere_pelist()
    pelist => Atm(mygrid)%pelist
-
-   moving_nest_parent = .false.
-   is_moving_nest = .false.
-
-#ifdef MOVING_NEST
-   ! Currently, the moving nesting configuration only supports one parent (global
-   ! or regional) with one moving nest.
-   ! This will need to be revisited when multiple and telescoping moving nests are enabled.
-
-   ! Set is_moving_nest to true if this is a moving nest
-   is_moving_nest = Moving_nest(mygrid)%mn_flag%is_moving_nest
-   ! Set parent_of_moving_nest to true if it has a moving nest child
-   !do n=1,ngrids
-   !  print '("[INFO] WDR atmosphere_domain npe=",I0," mygrid=",I0," n=",I0," is_moving_nest=",L1)', mpp_pe(), mygrid, n, Moving_nest(n)%mn_flag%is_moving_nest
-   !enddo
-
-   do n=2,ngrids
-     if ( mygrid == Atm(n)%parent_grid%grid_number .and. &
-          Moving_nest(n)%mn_flag%is_moving_nest ) then
-       moving_nest_parent = .true.
-     endif
-   enddo
-   !print '("[INFO] WDR atmosphere_domain npe=",I0," moving_nest_parent=",L1," is_moving_nest=",L1)', mpp_pe(), moving_nest_parent, is_moving_nest
-
-#endif
 
  end subroutine atmosphere_domain
 
@@ -1784,29 +1741,6 @@ contains
 
      call mpp_clock_end(id_fv_diag)
    endif
-
-#ifdef MOVING_NEST
-  !---- FV internal vortex tracker -----
-   if ( Moving_nest(mygrid)%mn_flag%is_moving_nest ) then
-   if ( Moving_nest(mygrid)%mn_flag%vortex_tracker .eq. 2 .or. &
-        Moving_nest(mygrid)%mn_flag%vortex_tracker .eq. 6 .or. &
-        Moving_nest(mygrid)%mn_flag%vortex_tracker .eq. 7 ) then
-
-   fv_time = Time_next
-   call get_time (fv_time, seconds,  days)
-   call get_time (Time_step_atmos, sec)
-   if (mod(seconds,Moving_nest(mygrid)%mn_flag%ntrack*sec) .eq. 0) then
-     call mpp_clock_begin(id_fv_tracker)
-     call timing_on('FV_TRACKER')
-     call fv_diag_tracker(Atm(mygrid:mygrid), zvir, fv_time)
-     call fv_tracker_center(Atm(mygrid), mygrid, fv_time)
-     call timing_off('FV_TRACKER')
-     call mpp_clock_end(id_fv_tracker)
-   endif
-
-   endif
-   endif
-#endif
 
  end subroutine atmosphere_state_update
 

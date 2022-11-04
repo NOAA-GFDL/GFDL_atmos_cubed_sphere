@@ -74,8 +74,7 @@ module fv_moving_nest_main_mod
   !-----------------
   use atmosphere_mod,     only: Atm, mygrid, p_split, dt_atmos
   use fv_arrays_mod,      only: fv_atmos_type, R_GRID, fv_grid_bounds_type, phys_diag_type
-  use fv_moving_nest_types_mod, only: allocate_fv_moving_nest_prog_type, allocate_fv_moving_nest_physics_type
-  use fv_moving_nest_types_mod, only: Moving_nest
+  use fv_control_mod,     only: ngrids
   use fv_diagnostics_mod, only: fv_diag_init, fv_diag_reinit, fv_diag, fv_time, prt_maxmin, prt_height
   use fv_restart_mod,     only: fv_restart, fv_write_restart
   use fv_timing_mod,      only: timing_on, timing_off
@@ -102,6 +101,10 @@ module fv_moving_nest_main_mod
   !------------------------------------
   !  Moving Nest Routines
   !------------------------------------
+
+  use fv_moving_nest_types_mod, only: allocate_fv_moving_nest_prog_type, allocate_fv_moving_nest_physics_type
+  use fv_moving_nest_types_mod, only: deallocate_fv_moving_nests
+  use fv_moving_nest_types_mod, only: Moving_nest
 
   !      Prognostic variable routines
   use fv_moving_nest_mod,         only: mn_prog_fill_intern_nest_halos, mn_prog_fill_nest_halos_from_parent, &
@@ -139,7 +142,7 @@ module fv_moving_nest_main_mod
   use fv_moving_nest_utils_mod,   only: show_atm, show_atm_grids, show_tile_geo, show_nest_grid, show_gridstruct, grid_equal
   use fv_moving_nest_utils_mod,   only: validate_hires_parent
 
-  use fv_tracker_mod,             only: Tracker, allocate_tracker
+  use fv_tracker_mod,             only: Tracker, allocate_tracker, fv_tracker_init, deallocate_tracker
 
   implicit none
 
@@ -214,6 +217,38 @@ contains
     endif
 
   end subroutine update_moving_nest
+
+
+
+  subroutine moving_nest_end()
+    integer :: n
+
+    call deallocate_fv_moving_nests(ngrids)
+
+    ! From fv_grid_utils.F90
+    n = mygrid
+    deallocate ( Atm(n)%gridstruct%area_c_64 )
+    deallocate ( Atm(n)%gridstruct%dxa_64 )
+    deallocate ( Atm(n)%gridstruct%dya_64 )
+    deallocate ( Atm(n)%gridstruct%dxc_64 )
+    deallocate ( Atm(n)%gridstruct%dyc_64 )
+    deallocate ( Atm(n)%gridstruct%cosa_64 )
+    deallocate ( Atm(n)%gridstruct%sina_64 )
+
+  end subroutine moving_nest_end
+
+
+  ! This subroutine sits in this file to have access to Atm structure
+  subroutine nest_tracker_init()
+    call fv_tracker_init(size(Atm))
+    if (mygrid .eq. 2) call allocate_tracker(mygrid, Atm(mygrid)%bd%isc, Atm(mygrid)%bd%iec, Atm(mygrid)%bd%jsc, Atm(mygrid)%bd%jec)
+  end subroutine nest_tracker_init
+
+  subroutine nest_tracker_end()
+    call deallocate_tracker(ngrids)
+  end subroutine nest_tracker_end
+
+
 
   !>@brief The subroutine 'dump_moving_nest' outputs native grid format data to netCDF files
   !>@details This subroutine exports model variables using FMS IO to netCDF files if tsvar_out is set to .True.

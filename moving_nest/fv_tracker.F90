@@ -28,7 +28,9 @@ module fv_tracker_mod
 #ifdef MOVING_NEST
 #include <fms_platform.h>
 
-  use constants_mod,       only: pi=>pi_8, rad_to_deg, deg_to_rad
+  use constants_mod,       only: pi=>pi_8, rad_to_deg, deg_to_rad, RVGAS, RDGAS
+  use fms_mod,             only: mpp_clock_id, CLOCK_SUBCOMPONENT, clock_flag_default, &
+                                 mpp_clock_begin, mpp_clock_end
   use time_manager_mod,    only: time_type, get_time, set_time, operator(+), &
                                  operator(-), operator(/), time_type_to_real, date_to_string
   use mpp_mod,             only: mpp_error, stdout, FATAL, WARNING, NOTE, &
@@ -46,12 +48,14 @@ module fv_tracker_mod
                                  mp_reduce_minval, mp_reduce_maxval, &
                                  mp_reduce_minloc, mp_reduce_maxloc
 
+  use fv_timing_mod,       only: timing_on, timing_off
   use fv_moving_nest_types_mod, only: Moving_nest
 
   implicit none
   private
   public :: fv_tracker_init, fv_tracker_center, fv_tracker_post_move
   public :: fv_diag_tracker, allocate_tracker, deallocate_tracker
+  public :: check_is_moving_nest
   public :: Tracker
 
   integer, parameter :: maxtp=11 ! number of tracker parameters
@@ -124,6 +128,7 @@ module fv_tracker_mod
 
   type(fv_tracker_type), _ALLOCATABLE, target :: Tracker(:)
   integer :: n = 2 ! TODO allow to vary for multiple nests
+  integer :: id_fv_tracker
 
 contains
 
@@ -135,6 +140,7 @@ contains
     integer :: i
 
     call mpp_error(NOTE, 'fv_tracker_init')
+    id_fv_tracker= mpp_clock_id ('FV tracker',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
 
     allocate(Tracker(length))
 
@@ -219,6 +225,71 @@ contains
     deallocate(Tracker)
 
   end subroutine deallocate_tracker
+
+  subroutine check_is_moving_nest(Atm, mygrid, ngrids, is_moving_nest, moving_nest_parent)
+    type(fv_atmos_type), intent(inout) :: Atm(:)
+    integer, intent(in) :: mygrid, ngrids
+    logical,   intent(out) :: is_moving_nest, moving_nest_parent
+
+   ! Currently, the moving nesting configuration only supports one parent (global
+   ! or regional) with one moving nest.
+   ! This will need to be revisited when multiple and telescoping moving nests are enabled.
+
+   ! Set is_moving_nest to true if this is a moving nest
+   is_moving_nest = Moving_nest(mygrid)%mn_flag%is_moving_nest
+   ! Set parent_of_moving_nest to true if it has a moving nest child                                                         
+   !do n=1,ngrids
+   !  print '("[INFO] WDR atmosphere_domain npe=",I0," mygrid=",I0," n=",I0," is_moving_nest=",L1)', mpp_pe(), mygrid, n, Moving_nest(n)%mn_flag%is_moving_nest
+   !enddo
+
+   do n=2,ngrids
+     if ( mygrid == Atm(n)%parent_grid%grid_number .and. &
+          Moving_nest(n)%mn_flag%is_moving_nest ) then
+       moving_nest_parent = .true.
+     endif 
+   enddo
+   !print '("[INFO] WDR atmosphere_domain npe=",I0," moving_nest_parent=",L1," is_moving_nest=",L1)', mpp_pe(), moving_nest_parent, is_moving_nest
+
+  end subroutine check_is_moving_nest
+
+
+  subroutine execute_tracker(Atm, mygrid, Time, Time_step)
+    implicit none
+    type(fv_atmos_type), intent(inout) :: Atm(:)
+    integer, intent(in) :: mygrid
+    type(time_type),   intent(in) :: Time, Time_step 
+
+    real            :: zvir
+    type(time_type) :: Time_next, Time_step_atmos
+    integer         :: sec, seconds, days
+
+
+    zvir = real(RVGAS/RDGAS) - 1.0
+    
+    Time_step_atmos = Time_step
+    Time_next = Time + Time_step_atmos
+
+    !---- FV internal vortex tracker -----                                                                                                                                
+    if ( Moving_nest(mygrid)%mn_flag%is_moving_nest ) then
+      if ( Moving_nest(mygrid)%mn_flag%vortex_tracker .eq. 2 .or. &
+          Moving_nest(mygrid)%mn_flag%vortex_tracker .eq. 6 .or. &
+          Moving_nest(mygrid)%mn_flag%vortex_tracker .eq. 7 ) then
+        
+        fv_time = Time_next
+        call get_time (fv_time, seconds,  days)
+        call get_time (Time_step_atmos, sec)
+        if (mod(seconds,Moving_nest(mygrid)%mn_flag%ntrack*sec) .eq. 0) then
+          call mpp_clock_begin(id_fv_tracker)
+          call timing_on('FV_TRACKER')
+          call fv_diag_tracker(Atm(mygrid:mygrid), zvir, fv_time)
+          call fv_tracker_center(Atm(mygrid), mygrid, fv_time)
+          call timing_off('FV_TRACKER')
+          call mpp_clock_end(id_fv_tracker)
+        endif
+        
+      endif
+    endif
+  end subroutine execute_tracker
 
   subroutine fv_tracker_center(Atm, n, Time)
     ! Top-level entry to the internal GFDL/NCEP vortex tracker. Finds the center of
