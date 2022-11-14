@@ -30,11 +30,12 @@ module nh_core_mod
    use nh_utils_mod,      only: sim_solver, sim1_solver, sim3_solver
    use nh_utils_mod,      only: sim3p0_solver, rim_2d
    use nh_utils_mod,      only: Riem_Solver_c, imp_diff_w
+   use nh_utils_mod,      only: edge_profile1
 
    implicit none
    private
 
-   public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, nh_bc
+   public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, nh_bc, edge_profile1
    real, parameter:: r3 = 1./3.
 
 CONTAINS

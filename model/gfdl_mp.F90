@@ -35,7 +35,6 @@
 module gfdl_mp_mod
 
     use fms_mod, only: check_nml_error
-
     implicit none
 
     private

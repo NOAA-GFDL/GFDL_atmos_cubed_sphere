@@ -4741,23 +4741,7 @@ end subroutine terminator_tracers
                         dist = dist0 + ((zm-zc)/zc)**2 !1500 m height
                         dist = min(1.0,dist)
                         pt(i,j,k) = pt(i,j,k) + dt_amp*cos(0.5*pi*dist)
-!!! DEBUG CODE
-!!$                        if (abs(zm - zc) < 50. .and. abs(i-icenter) < 4 .and. abs(j-jcenter) < 4) then
-!!$                           write(*,'(3I4, 3F)') i, j, k, dist0, dist, dt_rad
-!!$                        endif
-                        if (i == icenter .and. j == jcenter) then
-                           write(*,'(A, 3I, 4F)') "Bubble:", i,j,k, zm, dist0, dist, delz(i,j,k)
-                        endif
-!!! END DEBUG CODE
                      enddo
-!!$                     do k=1,npz
-!!$                        prf = ak(k) + ps(i,j)*bk(k)
-!!$                        if ( prf > 100.E2 ) then
-!!$                             pt(i,j,k) = pt(i,j,k) + dt_amp*(1. - (dist/dt_rad)) * prf/ps(i,j)
-!!$                             !pt(i,j,k) = pt(i,j,k) + dt_amp*(1. - (dist/dt_rad)) * prf/ps(i,j)
-!!$!                             pt(i,j,k) = pt(i,j,k) + 0.01*(1. - (dist/dt_rad)) * prf/ps(i,j)
-!!$                        endif
-!!$                     enddo
                   enddo
                enddo
            endif
@@ -6667,21 +6651,11 @@ end subroutine terminator_tracers
 !      if ( (is_master()) ) write(*,*) k, temp1, rh(k)
        if ( pk(k) > 0. ) then
             pp(k) = exp(log(pk(k))/kappa)
-!#ifdef SUPER_K
             qs(k) = 380./pp(k)*exp(17.27*(temp1-273.)/(temp1-36.))
             qs(k) = min( qv0, rh(k)*qs(k) )
-            if ( (is_master()) ) write(*,*) 0.01*pp(k), qs(k)
-!#else
-!
-!#ifdef USE_MIXED_TABLE
-!            qs(k) = min(qv0, rh(k)*mqs(temp1, pp(k), qs(k)))
-!#else
-!            qs(k) = min(qv0, rh(k)*wqs(temp1, pp(k), qs(k)))
-!#endif
-!
-!#endif
+            !if ( (is_master()) .and. n=1 ) write(*,*) 0.01*pp(k), qs(k)
        else
-            if ( (is_master()) ) write(*,*) n, k, pk(k)
+            !if ( (is_master()) ) write(*,*) n, k, pk(k)
             call mpp_error(FATAL, 'Super-Cell case: pk < 0')
        endif
     enddo
@@ -6797,7 +6771,7 @@ end subroutine terminator_tracers
 #ifdef SUPER_K
             qs(k) = 380./pp(k)*exp(17.27*(temp1-273.)/(temp1-36.))
             qs(k) = min( qv0, rh(k)*qs(k) )
-            if ( (is_master()) ) write(*,*) 0.01*pp(k), qs(k)
+            !if ( (is_master()) ) write(*,*) 0.01*pp(k), qs(k)
 #else
 
 #ifdef USE_MIXED_TABLE
@@ -6808,7 +6782,7 @@ end subroutine terminator_tracers
 
 #endif
        else
-            if ( (is_master()) ) write(*,*) n, k, pk(k)
+            !if ( (is_master()) ) write(*,*) n, k, pk(k)
             call mpp_error(FATAL, 'Super-Cell case: pk < 0')
        endif
     enddo

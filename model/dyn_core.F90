@@ -32,7 +32,8 @@ module dyn_core_mod
   use fv_mp_mod,          only: group_halo_update_type
   use sw_core_mod,        only: c_sw, d_sw
   use a2b_edge_mod,       only: a2b_ord2, a2b_ord4
-  use nh_core_mod,        only: Riem_Solver3, Riem_Solver_C, update_dz_c, update_dz_d, nh_bc
+  use nh_core_mod,        only: Riem_Solver3, Riem_Solver_C, update_dz_c, update_dz_d
+  use nh_core_mod,        only: nh_bc, edge_profile1
   use tp_core_mod,        only: copy_corners
   use fv_timing_mod,      only: timing_on, timing_off
   use fv_diagnostics_mod, only: prt_maxmin, fv_time, prt_mxm
@@ -71,7 +72,8 @@ public :: dyn_core, del2_cubed, init_ijk_mem
   real :: ptk, peln1, rgrav
   real :: d3_damp
   real, allocatable, dimension(:,:,:) ::  ut, vt, crx, cry, xfx, yfx, divgd, &
-                                          zh, du, dv, pkc, delpc, pk3, ptc, gz
+                                          zh, du, dv, pkc, delpc, pk3, ptc, gz, &
+                                          dudz, dvdz
 ! real, parameter:: delt_max = 1.e-1   ! Max dissipative heating/cooling rate
                                        ! 6 deg per 10-min
   real(kind=R_GRID), parameter :: cnst_0p20=0.20d0
@@ -263,6 +265,11 @@ contains
 !                    call init_ijk_mem(isd,ied, jsd,jed, npz, ut, 0.)
            allocate( vt(isd:ied, jsd:jed, npz) )
 !                    call init_ijk_mem(isd,ied, jsd,jed, npz, vt, 0.)
+           if (flagstruct%smag2d > 1.e-3) then
+              allocate(dudz(isd:ied,  jsd:jed+1,npz))
+              allocate(dvdz(isd:ied+1,jsd:jed,  npz))
+           endif
+
 
           if ( .not. hydrostatic ) then
                allocate( zh(isd:ied, jsd:jed, npz+1) )
@@ -586,6 +593,11 @@ contains
 #endif
     call timing_off('COMM_TOTAL')
 
+    if (flagstruct%smag2d > 1.e-3) then
+       call compute_dudz(bd, npz, u, v, dudz, dvdz, zh, dp_ref)
+       !call mpp_update_domains(dudz, dvdz, domain, gridtype=DGRID_NE, complete=.true.)
+    endif
+
       if (gridstruct%nested) then
          !On a nested grid we have to do SOMETHING with uc and vc in
          ! the boundary halo, particularly at the corners of the
@@ -664,7 +676,7 @@ contains
 !$OMP                                  is,ie,js,je,isd,ied,jsd,jed,omga,delp,gridstruct,npx,npy,  &
 !$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,ua,va,divgd,mfx,mfy,cx,cy,     &
 !$OMP                                  crx,cry,xfx,yfx,q_con,zvir,sphum,nq,q,dt,bd,rdt,iep1,jep1, &
-!$OMP                                  heat_source,diss_est,radius)                               &
+!$OMP                                  heat_source,diss_est,radius,dudz,dvdz)                     &
 !$OMP                          private(nord_k, nord_w, nord_t, damp_w, damp_t, d2_divg,   &
 !$OMP                          d_con_k,kgb, hord_m, hord_v, hord_t, hord_p, wk, heat_s, diss_e, z_rat)
     do k=1,npz
@@ -771,7 +783,8 @@ contains
                   kgb, heat_s, diss_e, zvir, sphum, nq,  q,  k,  npz, flagstruct%inline_q,  dt,  &
                   flagstruct%hord_tr, hord_m, hord_v, hord_t, hord_p,    &
                   nord_k, nord_v(k), nord_w, nord_t, flagstruct%dddmp, d2_divg, flagstruct%d4_bg,  &
-                  damp_vt(k), damp_w, damp_t, d_con_k, hydrostatic, gridstruct, flagstruct, bd)
+                  damp_vt(k), damp_w, damp_t, d_con_k, dudz(isd,jsd,k), dvdz(isd,jsd,k), &
+                  hydrostatic, gridstruct, flagstruct, bd)
 
        if((.not.flagstruct%use_old_omega) .and. last_step ) then
 ! Average horizontal "convergence" to cell center
@@ -1363,6 +1376,8 @@ contains
          deallocate( zh )
          if( allocated(pk3) )   deallocate ( pk3 )
     endif
+    if (allocated(dudz)) deallocate(dudz)
+    if (allocated(dvdz)) deallocate(dvdz)
 
   endif
   if( allocated(pem) )   deallocate ( pem )
@@ -2663,5 +2678,66 @@ do 1000 j=jfirst,jlast
 
  end subroutine gz_bc
 
+ !routine to compute vertical gradients in winds
+ ! for 2D smag damping
+ ! Call AFTER updating gz
+ !TODO needs cubed-sphere support (don't compute in corners)
+ subroutine compute_dudz(bd, npz, u, v, dudz, dvdz, gz, dp_ref)
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   integer, intent(IN) :: npz
+   real, intent(in) :: u(bd%isd:bd%ied,  bd%jsd:bd%jed+1,npz)
+   real, intent(in) :: v(bd%isd:bd%ied+1,bd%jsd:bd%jed,  npz)
+   real, intent(in) :: gz(bd%isd:bd%ied, bd%jsd:bd%jed,  npz+1)
+   real, intent(IN) :: dp_ref(npz)
+   real, intent(OUT) :: dudz(bd%isd:bd%ied,bd%jsd:bd%jed+1,npz)
+   real, intent(OUT) :: dvdz(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz)
+
+   real :: dz
+   real :: ue(bd%isd:bd%ied  ,npz+1)
+   real :: ve(bd%isd:bd%ied+1,npz+1)
+   integer :: i,j,k
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd  = bd%isd
+   ied  = bd%ied
+   jsd  = bd%jsd
+   jed  = bd%jed
+
+   dudz = -1.e50
+   dvdz = -1.e50
+
+   do j=jsd,jed
+
+      !TODO: pass by reference and not copy
+      call edge_profile1(v(isd:ied+1,j,:), ve, isd,  ied+1, npz, dp_ref, 0)
+      do k=1,npz
+         do i=isd+1,ied
+            dz = gz(i,j,k) + gz(i-1,j,k)
+            dz = dz - (gz(i,j,k+1) + gz(i-1,j,k+1))
+            dz = 0.5*dz*rgrav
+            dvdz(i,j,k) = (ve(i,k)-ve(i,k+1))/dz
+         enddo
+      enddo
+   enddo
+
+   do j=jsd+1,jed
+      call edge_profile1(u(isd:ied,j,:), ue, isd, ied, npz, dp_ref, 0)
+      do k=1,npz
+         do i=isd,ied
+            dz = gz(i,j,k) + gz(i,j-1,k)
+            dz = dz - (gz(i,j,k+1) + gz(i,j-1,k+1))
+            dz = 0.5*dz*rgrav
+            dudz(i,j,k) = (ue(i,k)-ue(i,k+1))/dz
+         enddo
+      enddo
+   enddo
+
+
+ end subroutine compute_dudz
 
 end module dyn_core_mod

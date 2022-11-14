@@ -37,6 +37,7 @@ module nh_utils_mod
    public sim_solver, sim1_solver, sim3_solver
    public sim3p0_solver, rim_2d
    public Riem_Solver_c, edge_scalar, imp_diff_w
+   public edge_profile1
 
 #ifdef DZ_MIN_6
    real, parameter:: dz_min = 6.
@@ -1706,6 +1707,72 @@ CONTAINS
     enddo
 
  end subroutine edge_profile
+
+  subroutine edge_profile1(q1, q1e, i1, i2, km, dp0, limiter)
+! Edge profiles for a single scalar quantity
+ integer, intent(in):: i1, i2
+ integer, intent(in):: km
+ integer, intent(in):: limiter
+ real, intent(in):: dp0(km)
+ real, intent(in),  dimension(i1:i2,km):: q1
+ real, intent(out), dimension(i1:i2,km+1):: q1e
+!-----------------------------------------------------------------------
+ real, dimension(i1:i2,km+1):: qe1, gam  ! edge values
+ real  gak(km)
+ real  bet, r2o3, r4o3
+ real  g0, gk, xt1, xt2, a_bot
+ integer i, k
+
+! Assuming grid varying in vertical only
+   g0 = dp0(2) / dp0(1)
+  xt1 = 2.*g0*(g0+1. )
+  bet =    g0*(g0+0.5)
+  do i=i1,i2
+      qe1(i,1) = ( xt1*q1(i,1) + q1(i,2) ) / bet
+      gam(i,1) = ( 1. + g0*(g0+1.5) ) / bet
+  enddo
+
+  do k=2,km
+     gk = dp0(k-1) / dp0(k)
+     do i=i1,i2
+             bet =  2. + 2.*gk - gam(i,k-1)
+        qe1(i,k) = ( 3.*(q1(i,k-1)+gk*q1(i,k)) - qe1(i,k-1) ) / bet
+        gam(i,k) = gk / bet
+     enddo
+  enddo
+
+  a_bot = 1. + gk*(gk+1.5)
+    xt1 =   2.*gk*(gk+1.)
+  do i=i1,i2
+             xt2 = gk*(gk+0.5) - a_bot*gam(i,km)
+     qe1(i,km+1) = ( xt1*q1(i,km) + q1(i,km-1) - a_bot*qe1(i,km) ) / xt2
+  enddo
+
+  do k=km,1,-1
+     do i=i1,i2
+        qe1(i,k) = qe1(i,k) - gam(i,k)*qe1(i,k+1)
+     enddo
+  enddo
+
+!------------------
+! Apply constraints
+!------------------
+    if ( limiter/=0 ) then   ! limit the top & bottom winds
+         do i=i1,i2
+! Top
+            if ( q1(i,1)*qe1(i,1) < 0. ) qe1(i,1) = 0.
+! Surface:
+            if ( q1(i,km)*qe1(i,km+1) < 0. ) qe1(i,km+1) = 0.
+         enddo
+    endif
+
+    do k=1,km+1
+       do i=i1,i2
+          q1e(i,k) = qe1(i,k)
+       enddo
+    enddo
+
+  end subroutine edge_profile1
 
  subroutine nh_bc(ptop, grav, kappa, cp, delp, delzBC, pt, phis, &
 #ifdef USE_COND
