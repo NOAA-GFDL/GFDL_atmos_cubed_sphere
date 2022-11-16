@@ -678,10 +678,8 @@ contains
     e2     => Atm%gridstruct%e2
 
     if (Atm%neststruct%nested .or. ANY(Atm%neststruct%child_grids)) then
-       if (debug_log) print '("[INFO] WDR grid_global => Atm%grid_global in init_grid fv_grid_tools.F90. npe=",I0)', this_pe
         grid_global => Atm%grid_global
     else if( trim(grid_file) .EQ. 'Inline') then
-       if (debug_log) print '("[INFO] WDR inline, allocating grid_global in init_grid fv_grid_tools.F90. npe=",I0)', this_pe
        allocate(grid_global(1-ng:npx  +ng,1-ng:npy  +ng,ndims,1:nregions))
     endif
 
@@ -2053,8 +2051,6 @@ contains
          delta_j_c = joffset - prev_joffset
       end if
 
-      if (debug_log) print '("[INFO] WDR setup_aligned_nest fv_grid_tools.F90. npe=",I0," delta_i_c=",I0," delta_j_c=",I0," ioffset=",I0," joffset=",I0)', this_pe, delta_i_c, delta_j_c, ioffset, joffset
-
       call mpp_get_data_domain( Atm%parent_grid%domain, &
            isd_p,  ied_p,  jsd_p,  jed_p  )
       call mpp_get_global_domain( Atm%parent_grid%domain, &
@@ -2113,25 +2109,13 @@ contains
               lbound(grid_global,3):ubound(grid_global,3), &
               lbound(grid_global,4):ubound(grid_global,4) ) )
 
-         if (debug_log) print '("[INFO] WDR bounds grid_global setup_nest_grid npe=",I0," grid_global(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(grid_global,1), ubound(grid_global,1), &
-              lbound(grid_global,2), ubound(grid_global,2), &
-              lbound(grid_global,3), ubound(grid_global,3), &
-              lbound(grid_global,4), ubound(grid_global,4)
-
-         if (debug_log) print '("[INFO] WDR bounds out_grid setup_nest_grid npe=",I0," out_grid(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(out_grid,1), ubound(out_grid,1), &
-              lbound(out_grid,2), ubound(out_grid,2), &
-              lbound(out_grid,3), ubound(out_grid,3), &
-              lbound(out_grid,4), ubound(out_grid,4)
-
          out_grid = grid_global
 
          if ( delta_i_c .ne. 0 ) then
-            if (debug_log) print '("[INFO] setup_nest_grid EOSHIFT delta_i_c=",I0," start. npe=",I0)', delta_i_c, this_pe
             out_grid = eoshift(out_grid, refinement * delta_i_c, DIM=1)
          end if
 
          if (delta_j_c .ne.  0) then
-            if (debug_log) print '("[INFO] setup_nest_grid EOSHIFT delta_j_c=",I0," start. npe=",I0)', delta_j_c, this_pe
             out_grid = eoshift(out_grid, refinement * delta_j_c, DIM=2)
          end if
 

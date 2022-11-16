@@ -55,7 +55,7 @@ module fv_tracker_mod
   private
   public :: fv_tracker_init, fv_tracker_center, fv_tracker_post_move
   public :: fv_diag_tracker, allocate_tracker, deallocate_tracker
-  public :: check_is_moving_nest
+  public :: check_is_moving_nest, execute_tracker
   public :: Tracker
 
   integer, parameter :: maxtp=11 ! number of tracker parameters
@@ -197,13 +197,13 @@ contains
     allocate ( Tracker(i)%tracker_fixes(is:ie,js:je) )
   end subroutine allocate_tracker
 
-  subroutine deallocate_tracker(n)
-    integer, intent(in) :: n
+  subroutine deallocate_tracker(nn)
+    integer, intent(in) :: nn
 
     integer :: i
 
     ! Deallocate internal vortex tracker arrays
-    do i=1,n
+    do i=1,nn
       if (allocated(Tracker(i)%vort850)) then
         deallocate ( Tracker(i)%vort850 )
         deallocate ( Tracker(i)%spd850 )
@@ -231,25 +231,23 @@ contains
     integer, intent(in) :: mygrid, ngrids
     logical,   intent(out) :: is_moving_nest, moving_nest_parent
 
-   ! Currently, the moving nesting configuration only supports one parent (global
-   ! or regional) with one moving nest.
-   ! This will need to be revisited when multiple and telescoping moving nests are enabled.
-
-   ! Set is_moving_nest to true if this is a moving nest
-   is_moving_nest = Moving_nest(mygrid)%mn_flag%is_moving_nest
-   ! Set parent_of_moving_nest to true if it has a moving nest child                                                         
-   !do n=1,ngrids
-   !  print '("[INFO] WDR atmosphere_domain npe=",I0," mygrid=",I0," n=",I0," is_moving_nest=",L1)', mpp_pe(), mygrid, n, Moving_nest(n)%mn_flag%is_moving_nest
-   !enddo
-
-   do n=2,ngrids
-     if ( mygrid == Atm(n)%parent_grid%grid_number .and. &
-          Moving_nest(n)%mn_flag%is_moving_nest ) then
-       moving_nest_parent = .true.
-     endif 
-   enddo
-   !print '("[INFO] WDR atmosphere_domain npe=",I0," moving_nest_parent=",L1," is_moving_nest=",L1)', mpp_pe(), moving_nest_parent, is_moving_nest
-
+    integer :: nn
+    
+    ! Currently, the moving nesting configuration only supports one parent (global
+    ! or regional) with one moving nest.
+    ! This will need to be revisited when multiple and telescoping moving nests are enabled.
+    
+    ! Set is_moving_nest to true if this is a moving nest
+    is_moving_nest = Moving_nest(mygrid)%mn_flag%is_moving_nest
+    ! Set parent_of_moving_nest to true if it has a moving nest child                                                         
+    
+    do nn=2,ngrids
+      if ( mygrid == Atm(nn)%parent_grid%grid_number .and. &
+          Moving_nest(nn)%mn_flag%is_moving_nest ) then
+        moving_nest_parent = .true.
+      endif
+    enddo
+    
   end subroutine check_is_moving_nest
 
 
@@ -263,7 +261,6 @@ contains
     type(time_type) :: Time_next, Time_step_atmos
     integer         :: sec, seconds, days
 
-
     zvir = real(RVGAS/RDGAS) - 1.0
     
     Time_step_atmos = Time_step
@@ -274,10 +271,11 @@ contains
       if ( Moving_nest(mygrid)%mn_flag%vortex_tracker .eq. 2 .or. &
           Moving_nest(mygrid)%mn_flag%vortex_tracker .eq. 6 .or. &
           Moving_nest(mygrid)%mn_flag%vortex_tracker .eq. 7 ) then
-        
+
         fv_time = Time_next
         call get_time (fv_time, seconds,  days)
         call get_time (Time_step_atmos, sec)
+
         if (mod(seconds,Moving_nest(mygrid)%mn_flag%ntrack*sec) .eq. 0) then
           call mpp_clock_begin(id_fv_tracker)
           call timing_on('FV_TRACKER')
@@ -289,6 +287,7 @@ contains
         
       endif
     endif
+
   end subroutine execute_tracker
 
   subroutine fv_tracker_center(Atm, n, Time)
@@ -306,6 +305,7 @@ contains
     integer :: ips,ipe,jps,jpe,kps,kpe
 
     call mpp_error(NOTE, 'fv_tracker_center')
+
     call get_ijk_from_domain(Atm,         &
         ids, ide, jds, jde, kds, kde,    &
         ims, ime, jms, jme, kms, kme,    &
@@ -514,6 +514,7 @@ contains
         sumdya=sumdya+Atm%gridstruct%dya(i,j)
       enddo
     enddo
+
     call mp_reduce_sum(sumdxa)
     call mp_reduce_sum(sumdya)
     dxdymean=0.5*(sumdxa + sumdya)/((ide-ids) * (jde-jds)) / 1000.0
@@ -725,6 +726,7 @@ contains
           ims,ime,jms,jme,kms,kme, &
           ips,ipe,jps,jpe,kps,kpe)
     endif
+
   end subroutine ntc_impl
 
   subroutine get_ijk_from_domain(Atm,  &

@@ -227,6 +227,7 @@ contains
 
     ! From fv_grid_utils.F90
     n = mygrid
+
     deallocate ( Atm(n)%gridstruct%area_c_64 )
     deallocate ( Atm(n)%gridstruct%dxa_64 )
     deallocate ( Atm(n)%gridstruct%dya_64 )
@@ -241,6 +242,7 @@ contains
   ! This subroutine sits in this file to have access to Atm structure
   subroutine nest_tracker_init()
     call fv_tracker_init(size(Atm))
+
     if (mygrid .eq. 2) call allocate_tracker(mygrid, Atm(mygrid)%bd%isc, Atm(mygrid)%bd%iec, Atm(mygrid)%bd%jsc, Atm(mygrid)%bd%jec)
   end subroutine nest_tracker_init
 
@@ -611,7 +613,6 @@ contains
 
 
     if (first_nest_move) then
-      if (debug_log) print '("[INFO] WDR Start Clocks npe=",I0," n=",I0)', this_pe, n
       call fv_moving_nest_init_clocks()
 
       ! If NSST is turned off, do not move the NSST variables.
