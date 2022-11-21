@@ -33,10 +33,45 @@ jobs:
     needs: [checkout, build]
     strategy:
       fail-fast: false
-      max-parallel: 3
+      max-parallel: 13
       matrix:
         runpath: [/pw/storage/PWscripts]
-        runscript: [FV3C128r20.solo.superCStartClusters.py]
+        runscript:
+          - FV3C128r20.solo.superCStartClusters.py
+          - FV3C128r3.solo.TC.d1StartClusters.py
+          - FV3C128r3.solo.TC.h6StartClusters.py
+          - FV3C128r3.solo.TCStartClusters.py
+          - FV3C128r3.solo.TC.tr8StartClusters.py
+          - FV3C192.sw.BLvortexStartClusters.py
+          - FV3C192.sw.BTwaveStartClusters.py
+          - FV3C192.sw.modonStartClusters.py
+          - FV3C256r20.solo.superCStartClusters.py
+          - FV3C384.sw.BLvortexStartClusters.py
+          - FV3C384.sw.BTwaveStartClusters.py
+          - FV3C512r20.solo.superCStartClusters.py
+          - FV3C768.sw.BTwaveStartClusters.py
+          - FV3C96.solo.BCdry.hydStartClusters.py
+          - FV3C96.solo.BCdryStartClusters.py
+          - FV3C96.solo.BCmoist.hyd.d3StartClusters.py
+          - FV3C96.solo.BCmoist.hydStartClusters.py
+          - FV3C96.solo.BCmoist.nhKStartClusters.py
+          - FV3C96.solo.BCmoistStartClusters.py
+          - FV3C96.solo.mtn_rest.hyd.diff2StartClusters.py
+          - FV3C96.solo.mtn_rest.hydStartClusters.py
+          - FV3C96.solo.mtn_rest.nonmono.diff2StartClusters.py
+          - FV3C96.solo.mtn_restStartClusters.py
+          - FV3C96.sw.BLvortexStartClusters.py
+          - FV3C96.sw.BTwaveStartClusters.py
+          - FV3C96.sw.modonStartClusters.py
+          - FV3C96.sw.RHwaveStartClusters.py
+          - FV3d96_1k.solo.mtn_rest_shear.olddampStartClusters.py
+          - FV3d96_1k.solo.mtn_rest_shearStartClusters.py
+          - FV3d96_1k.solo.mtn_schar.monoStartClusters.py
+          - FV3d96_1k.solo.mtn_scharStartClusters.py
+          - FV3d96_2k.solo.bubble.n0StartClusters.py
+          - FV3d96_2k.solo.bubble.nhKStartClusters.py
+          - FV3d96_2k.solo.bubbleStartClusters.py
+          - FV3d96_500m.solo.mtn_scharStartClusters.py
     steps:
       - env:
           RUNPATH: ${{ matrix.runpath }}
