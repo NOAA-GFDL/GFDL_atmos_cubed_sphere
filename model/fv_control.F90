@@ -168,6 +168,7 @@ module fv_control_mod
      logical , pointer :: do_sat_adj
      logical , pointer :: consv_checker
      logical , pointer :: do_fast_phys
+     logical , pointer :: do_intermediate_phys
      logical , pointer :: do_inline_mp
      logical , pointer :: do_aerosol
      logical , pointer :: do_cosp
@@ -705,6 +706,7 @@ module fv_control_mod
        do_sat_adj                    => Atm%flagstruct%do_sat_adj
        consv_checker                 => Atm%flagstruct%consv_checker
        do_fast_phys                  => Atm%flagstruct%do_fast_phys
+       do_intermediate_phys          => Atm%flagstruct%do_intermediate_phys
        do_inline_mp                  => Atm%flagstruct%do_inline_mp
        do_aerosol                    => Atm%flagstruct%do_aerosol
        do_cosp                       => Atm%flagstruct%do_cosp
@@ -1072,7 +1074,7 @@ module fv_control_mod
      subroutine read_namelist_integ_phys_nml
 
        integer :: ios, ierr
-       namelist /integ_phys_nml/ do_sat_adj, do_fast_phys, do_inline_mp, do_aerosol, do_cosp, consv_checker, te_err, tw_err
+       namelist /integ_phys_nml/ do_sat_adj, do_fast_phys, do_intermediate_phys, do_inline_mp, do_aerosol, do_cosp, consv_checker, te_err, tw_err
 
        read (input_nml_file,integ_phys_nml,iostat=ios)
        ierr = check_nml_error(ios,'integ_phys_nml')
