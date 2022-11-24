@@ -52,6 +52,7 @@ module multi_gases_mod
       integer sphum, sphump1
       real, allocatable :: ri(:)
       real, allocatable :: cpi(:)
+      real, allocatable :: cvi(:)      
       real, allocatable :: vir(:)
       real, allocatable :: vicp(:)
       real, allocatable :: vicv(:)
@@ -87,7 +88,7 @@ module multi_gases_mod
       integer, intent(in):: ngas, nwat
 ! Local:
       integer n
-      real   cvi(0:ngas)
+
       real   cv_air
       logical :: default_gas=.false.
 
@@ -95,7 +96,11 @@ module multi_gases_mod
       sphump1 = sphum+1
       num_wat = nwat
       ind_gas = num_wat+1
-      do n=0,ngas
+!      
+! ngas =ncnst = nq_tracers +1 [12+1]	  nwat = 6  o3-o2-o 789 10-11(TKE+?) 12-KAPPA  
+! extra-tracer in FV3-dycore w/o description in field_table: "multi_gases_nml => 0:ncnst-1
+!  
+      do n=0,ngas-1
         if( ri(n).ne.0.0 .or. cpi(n).ne.0.0 ) num_gas=n
       enddo
       if ( num_gas.eq.1 ) default_gas=.true.
@@ -104,10 +109,17 @@ module multi_gases_mod
       allocate( vicv(0:num_gas) )
 
       cv_air = cp_air - rdgas
-      do n=0,num_gas
-        cvi(n) = cpi(n) - ri(n)
-      enddo
-
+!      
+! cvi is allocated/computed after read nml
+!    
+!      do n=0,num_gas
+!        cvi(n) = cpi(n) - ri(n)
+!      enddo
+!
+! major assumption for FV3WAM: q(N2)=q(0)=1. -sum(q[h2o]+q[oxi]) w/o condensate
+!       with condensate, different condensate corrections (1.-q_con) inside
+!       fv_mapz.F90,nh_core.F90,nh_utils.F90 fv_dynamics.F90
+!
       vir (0) =  ri(0)/rdgas
       vicp(0) = cpi(0)/cp_air
       vicv(0) = cvi(0)/cv_air
@@ -137,6 +149,11 @@ module multi_gases_mod
       end subroutine multi_gases_init
       subroutine read_namelist_multi_gases_nml(nml_filename,ncnst,nwat)
 
+
+!     call read_namelist_multi_gases_nml(Atm(this_grid)%nml_filename, &
+!           Atm(this_grid)%flagstruct%ncnst,  Atm(this_grid)%flagstruct%nwat)     
+
+    
        character(*), intent(IN) :: nml_filename
        integer, intent(IN) :: ncnst, nwat
        integer :: ierr, f_unit, unit, ios
@@ -145,15 +162,18 @@ module multi_gases_mod
 
        unit = stdlog()
 
-       allocate (ri(0:ncnst))
-       allocate (cpi(0:ncnst))
-
+       allocate (ri(0:ncnst-1))
+       allocate (cpi(0:ncnst-1))
+       allocate (cvi(0:ncnst-1))
        ri     =    0.0
        cpi    =    0.0
+       cvi    =    0.0       
        ri(0)  = rdgas
-       ri(1)  = rvgas
-       cpi(0) = cp_air
-       cpi(1) = 4*cp_air
+       cpi(0) = cp_air      
+        
+       ri(1)  = 461.50       
+       cpi(1) = 1846.004
+       
 #ifdef INTERNAL_FILE_NML
 
       ! Read multi_gases namelist
@@ -170,6 +190,8 @@ module multi_gases_mod
         call close_file(f_unit)
 #endif
       write(unit, nml=multi_gases_nml)
+      
+      cvi(0:ncnst-1) = cpi(0:ncnst-1) -ri(0:ncnst-1)
       call multi_gases_init(ncnst,nwat)
 
       return

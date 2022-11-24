@@ -440,6 +440,7 @@ module fv_update_phys_mod
                           ice_wat, snowwat, graupel, hailwat, q, qc, cvm, pt(is:ie,j,k) )
             do i=is,ie
                pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
+	       
             enddo
          enddo
       else
@@ -467,7 +468,9 @@ module fv_update_phys_mod
                   call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
                                 ice_wat, snowwat, graupel, hailwat, q, qc, cvm, pt(is:ie,j,k))
                   do i=is,ie
-                     pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
+!                     pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt*con_cp/cvm(i)
+                      pt(i,j,k) = pt(i,j,k) + t_dt(i,j,k)*dt
+		     		     
                   enddo
                enddo
             endif
