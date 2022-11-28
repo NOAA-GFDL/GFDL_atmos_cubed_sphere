@@ -878,7 +878,6 @@ contains
     integer, save :: kdtt = 0, kdtt1 = 0
     real :: avg_max_length
     real,dimension(:,:,:),allocatable :: vort
-!jp    real,dimension(:,:,:),allocatable :: o3,no,no2,pm25
     n = 1
     ngc = Atm(n)%ng
     nq = size (Atm(n)%q,4)
