@@ -876,6 +876,7 @@ contains
     logical, save :: first_call=.true.
     real, save :: first_time = 0.
     integer, save :: kdtt = 0, kdtt1 = 0
+    real, save :: ucf1 = 1000., ucf2 = 1.
     real :: avg_max_length
     real,dimension(:,:,:),allocatable :: vort
     n = 1
@@ -964,18 +965,18 @@ contains
 
    if ( id_o3_ave > 0 .and. id_no_ave >0 &
        .and. id_no2_ave > 0 .and. id_pm25_ave >0 ) then
-       o3_idx = get_tracer_index (MODEL_ATMOS, 'O3')
-       no_idx = get_tracer_index (MODEL_ATMOS, 'NO')
-       no2_idx = get_tracer_index (MODEL_ATMOS, 'NO2')
-       pm25_idx = get_tracer_index (MODEL_ATMOS, 'PM25_TOT')
-   if (first_call) then
-       call get_time (Time_step_atmos, seconds,  days)
+       o3_idx = get_tracer_index(MODEL_ATMOS, 'O3')
+       no_idx = get_tracer_index(MODEL_ATMOS, 'NO')
+       no2_idx = get_tracer_index(MODEL_ATMOS, 'NO2')
+       pm25_idx = get_tracer_index(MODEL_ATMOS, 'PM25_TOT')
+    if (first_call) then
+       call get_time(Time_step_atmos, seconds,  days)
        first_time=seconds
        first_call=.false.
        kdtt1=0
-   endif
-        nsteps_per_reset = nint(avg_max_length/first_time)
-   if(mod(kdtt1,nsteps_per_reset)==0)then
+    endif
+       nsteps_per_reset = nint(avg_max_length/first_time)
+    if(mod(kdtt1,nsteps_per_reset)==0)then
        do k=1,npzo
         do j=jsco,jeco
          do i=isco,ieco
@@ -986,15 +987,15 @@ contains
          enddo      
         enddo      
        enddo      
-   endif
+    endif
        call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
-               Atm(n)%q,o3_idx,o3_ave,nsteps_per_reset)
+               Atm(n)%q,o3_idx,o3_ave,nsteps_per_reset,ucf1)
        call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
-               Atm(n)%q,no_idx,no_ave,nsteps_per_reset)
+               Atm(n)%q,no_idx,no_ave,nsteps_per_reset,ucf1)
        call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
-               Atm(n)%q,no2_idx,no2_ave,nsteps_per_reset)
+               Atm(n)%q,no2_idx,no2_ave,nsteps_per_reset,ucf1)
        call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
-               Atm(n)%q,pm25_idx,pm25_ave,nsteps_per_reset)
+               Atm(n)%q,pm25_idx,pm25_ave,nsteps_per_reset,ucf2)
        kdtt1=kdtt1+1
    else
        print *,'calculating hourly-averaegtd o3 or pm25'
@@ -1012,20 +1013,21 @@ contains
  end subroutine fv_nggps_tavg
 !
  subroutine average_tracer_hy1(is,ie,js,je,isd,ied,jsd,jed, &
-                 ncns,npz,tracer,tr_idx,tracer_ave,nstp) 
+                 ncns,npz,tracer,tr_idx,tracer_ave,nstp,unitcf) 
    integer, intent(in):: is, ie, js, je, isd, ied, jsd, jed
    integer, intent(in):: ncns, npz, nstp, tr_idx
+   real, intent(in) :: unitcf
    real, intent(in), dimension(isd:ied,jsd:jed,npz,ncns):: tracer 
    real, intent(inout), dimension(is:ie,js:je,npz):: tracer_ave
    integer i, j, k
-
+!
    do k=1,npz
     do j=js,je
      do i=is,ie
-        tracer_ave(i,j,k)=tracer_ave(i,j,k)+tracer(i,j,k,tr_idx)/nstp
+        tracer_ave(i,j,k)=tracer_ave(i,j,k)+tracer(i,j,k,tr_idx)/nstp*unitcf
      enddo 
     enddo 
-  enddo  
+   enddo  
 
  end subroutine average_tracer_hy1
 
