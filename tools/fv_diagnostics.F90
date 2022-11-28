@@ -197,7 +197,6 @@ module fv_diagnostics_mod
  public :: max_vv, get_vorticity, max_uh
  public :: max_vorticity, max_vorticity_hy1, bunkers_vector, helicity_relative_CAPS
  public :: cs3_interpolator, get_height_given_pressure
- public :: average_tracer_hy1
 #ifdef MOVING_NEST
  public :: interpolate_z, get_pressure_given_height
  public :: fv_diag_reinit
@@ -6171,20 +6170,6 @@ end subroutine eqv_pot
    enddo
 
  end subroutine dbzcalc
-
- subroutine average_tracer_hy1(is, ie, js, je, npz,tracer, tracer_ave,nstp)
-   integer, intent(in):: is, ie, js, je, npz, nstp
-   real, intent(in), dimension(is:ie,js:je,npz):: tracer
-   real, intent(inout), dimension(is:ie,js:je,npz):: tracer_ave
-   integer i, j, k
-   do k=1,npz
-    do j=js,je
-     do i=is,ie
-        tracer_ave(i,j,k)=tracer_ave(i,j,k)+tracer(i,j,k)/nstp
-     enddo  ! i-loop
-    enddo   ! j-loop
-   enddo   ! k-loop
- end subroutine average_tracer_hy1
 
  subroutine max_vorticity_hy1(is, ie, js, je, km, vort, maxvorthy1)
    integer, intent(in):: is, ie, js, je, km

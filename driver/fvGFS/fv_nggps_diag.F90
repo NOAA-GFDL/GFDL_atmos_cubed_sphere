@@ -73,8 +73,7 @@ module fv_nggps_diags_mod
  use field_manager_mod,  only: MODEL_ATMOS
  use fv_diagnostics_mod, only: range_check, dbzcalc,max_vv,get_vorticity, &
                                max_uh,max_vorticity,bunkers_vector,       &
-                               helicity_relative_CAPS,max_vorticity_hy1,  &
-                               average_tracer_hy1
+                               helicity_relative_CAPS,max_vorticity_hy1
  use fv_arrays_mod,      only: fv_atmos_type
  use module_diag_hailcast, only: do_hailcast, id_hailcast_dhail,         &
                                  id_hailcast_dhail1, id_hailcast_dhail2, &
@@ -879,7 +878,7 @@ contains
     integer, save :: kdtt = 0, kdtt1 = 0
     real :: avg_max_length
     real,dimension(:,:,:),allocatable :: vort
-    real,dimension(:,:,:),allocatable :: o3,no,no2,pm25
+!jp    real,dimension(:,:,:),allocatable :: o3,no,no2,pm25
     n = 1
     ngc = Atm(n)%ng
     nq = size (Atm(n)%q,4)
@@ -966,58 +965,43 @@ contains
 
    if ( id_o3_ave > 0 .and. id_no_ave >0 &
        .and. id_no2_ave > 0 .and. id_pm25_ave >0 ) then
-
-        allocate ( o3(isco:ieco,jsco:jeco,npzo) )
-        allocate ( no(isco:ieco,jsco:jeco,npzo) )
-        allocate ( no2(isco:ieco,jsco:jeco,npzo) )
-        allocate ( pm25(isco:ieco,jsco:jeco,npzo) )
-        o3_idx = get_tracer_index (MODEL_ATMOS, 'O3')
-        o3(isco:ieco,jsco:jeco,1:npzo)  = Atm(n)%q(isco:ieco,jsco:jeco,1:npzo,o3_idx)*1000. ! ppmv->ppbv
-        no_idx = get_tracer_index (MODEL_ATMOS, 'NO')
-        no(isco:ieco,jsco:jeco,1:npzo)  = Atm(n)%q(isco:ieco,jsco:jeco,1:npzo,no_idx)*1000.
-        no2_idx = get_tracer_index (MODEL_ATMOS, 'NO2')
-        no2(isco:ieco,jsco:jeco,1:npzo)  = Atm(n)%q(isco:ieco,jsco:jeco,1:npzo,no2_idx)*1000.  
-        pm25_idx = get_tracer_index (MODEL_ATMOS, 'PM25_TOT')
-        pm25(isco:ieco,jsco:jeco,1:npzo)  = Atm(n)%q(isco:ieco,jsco:jeco,1:npzo,pm25_idx)
-
-
+       o3_idx = get_tracer_index (MODEL_ATMOS, 'O3')
+       no_idx = get_tracer_index (MODEL_ATMOS, 'NO')
+       no2_idx = get_tracer_index (MODEL_ATMOS, 'NO2')
+       pm25_idx = get_tracer_index (MODEL_ATMOS, 'PM25_TOT')
    if (first_call) then
-        call get_time (Time_step_atmos, seconds,  days)
-        first_time=seconds
-        first_call=.false.
-        kdtt1=0
+       call get_time (Time_step_atmos, seconds,  days)
+       first_time=seconds
+       first_call=.false.
+       kdtt1=0
    endif
         nsteps_per_reset = nint(avg_max_length/first_time)
    if(mod(kdtt1,nsteps_per_reset)==0)then
-        do k=1,npzo
-         do j=jsco,jeco
-          do i=isco,ieco
-              o3_ave(i,j,k)= 0.
-              no_ave(i,j,k)= 0.
-              no2_ave(i,j,k)= 0.
-              pm25_ave(i,j,k)= 0.
-          enddo      
+       do k=1,npzo
+        do j=jsco,jeco
+         do i=isco,ieco
+            o3_ave(i,j,k)= 0.
+            no_ave(i,j,k)= 0.
+            no2_ave(i,j,k)= 0.
+            pm25_ave(i,j,k)= 0.
          enddo      
         enddo      
+       enddo      
    endif
-
-        call average_tracer_hy1(isco,ieco,jsco,jeco,npzo,o3,o3_ave,nsteps_per_reset)
-        call average_tracer_hy1(isco,ieco,jsco,jeco,npzo,no,no_ave,nsteps_per_reset)
-        call average_tracer_hy1(isco,ieco,jsco,jeco,npzo,no2,no2_ave,nsteps_per_reset)
-        call average_tracer_hy1(isco,ieco,jsco,jeco,npzo,pm25,pm25_ave,nsteps_per_reset)
-        
-        kdtt1=kdtt1+1
-        deallocate (o3)
-        deallocate (no)
-        deallocate (no2)
-        deallocate (pm25)
-
+       call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+               Atm(n)%q,o3_idx,o3_ave,nsteps_per_reset)
+       call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+               Atm(n)%q,no_idx,no_ave,nsteps_per_reset)
+       call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+               Atm(n)%q,no2_idx,no2_ave,nsteps_per_reset)
+       call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+               Atm(n)%q,pm25_idx,pm25_ave,nsteps_per_reset)
+       kdtt1=kdtt1+1
    else
-        print *,'calculating hourly-averaegtd o3 or pm25'
-        call mpp_error(FATAL, 'Missing hourly-averaged o3 or pm25 in diag_table')
-        stop
+       print *,'calculating hourly-averaegtd o3 or pm25'
+       call mpp_error(FATAL, 'Missing hourly-averaged o3 or pm25 in diag_table')
+       stop
    endif
-        
 
    !allocate hailcast met field arrays
    if (do_hailcast) then
@@ -1027,6 +1011,25 @@ contains
    endif
 
  end subroutine fv_nggps_tavg
+!
+ subroutine average_tracer_hy1(is,ie,js,je,isd,ied,jsd,jed, &
+                 ncns,npz,tracer,tr_idx,tracer_ave,nstp) 
+   integer, intent(in):: is, ie, js, je, isd, ied, jsd, jed
+   integer, intent(in):: ncns, npz, nstp, tr_idx
+   real, intent(in), dimension(isd:ied,jsd:jed,npz,ncns):: tracer 
+   real, intent(inout), dimension(is:ie,js:je,npz):: tracer_ave
+   integer i, j, k
+
+   do k=1,npz
+    do j=js,je
+     do i=is,ie
+        tracer_ave(i,j,k)=tracer_ave(i,j,k)+tracer(i,j,k,tr_idx)/nstp
+     enddo 
+    enddo 
+  enddo  
+
+ end subroutine average_tracer_hy1
+
 !
  subroutine store_data(id, work, Time, nstt, nend)
    integer, intent(in)         :: id
