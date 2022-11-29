@@ -988,19 +988,19 @@ contains
         enddo      
        enddo      
     endif
-       call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
-               Atm(n)%q,o3_idx,o3_ave,nsteps_per_reset,ucf1)
-       call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
-               Atm(n)%q,no_idx,no_ave,nsteps_per_reset,ucf1)
-       call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
-               Atm(n)%q,no2_idx,no2_ave,nsteps_per_reset,ucf1)
-       call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
-               Atm(n)%q,pm25_idx,pm25_ave,nsteps_per_reset,ucf2)
-       kdtt1=kdtt1+1
+    call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+            Atm(n)%q,o3_idx,o3_ave,nsteps_per_reset,ucf1)
+    call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+            Atm(n)%q,no_idx,no_ave,nsteps_per_reset,ucf1)
+    call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+            Atm(n)%q,no2_idx,no2_ave,nsteps_per_reset,ucf1)
+    call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+            Atm(n)%q,pm25_idx,pm25_ave,nsteps_per_reset,ucf2)
+    kdtt1=kdtt1+1
    else
-       print *,'calculating hourly-averaegtd o3 or pm25'
-       call mpp_error(FATAL, 'Missing hourly-averaged o3 or pm25 in diag_table')
-       stop
+    print *,'calculating hourly-averaegtd o3 or pm25'
+    call mpp_error(FATAL, 'Missing hourly-averaged o3 or pm25 in diag_table')
+    stop
    endif
 
    !allocate hailcast met field arrays
